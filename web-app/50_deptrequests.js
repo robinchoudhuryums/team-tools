@@ -38,7 +38,12 @@ function getDeptRequestsSS_() {
     const id = PropertiesService.getScriptProperties().getProperty('DEPT_REQUESTS_SS_ID');
     if (id && id.trim()) return SpreadsheetApp.openById(id.trim());
   } catch (e) {}
-  return getAdpSS_();   // back-compat: PHI-free, so co-locating on the ADP sheet is fine
+  // Back-compat fallback. NOT PHI-free since operator testing note 6
+  // (2026-09-10): the trailing PatientTrx column names a patient, so this
+  // co-locates patient-identifying rows with the payroll sheet (F-11) —
+  // Storage Health warns while DEPT_REQUESTS_SS_ID is unset; set it to the
+  // Intake spreadsheet (the PHI store), the FORMS_SS_ID recommendation.
+  return getAdpSS_();
 }
 function getOrCreateDeptRequestsSheet_() {
   const ss = getDeptRequestsSS_();

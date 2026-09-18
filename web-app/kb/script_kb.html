@@ -2824,8 +2824,16 @@ function kbRenderLanding_() {
       });
     } else if (KB_STATE.usage && KB_STATE.usage.loadFailed) {
       h += '<div class="kb-land-none">Usage stats failed to load — retry by re-entering Reference.</div>';   // E11
+    } else if (KB_STATE.usage && (KB_STATE.usage.unavailable || []).length) {
+      // F-25 (2026-09-17): the endpoint answered but a count READ failed —
+      // "No opens recorded" would be a claim the server could not make.
+      h += '<div class="kb-land-none">' + icon('warning', 12) + ' Could not read: ' + esc((KB_STATE.usage.unavailable || []).join(', ')) + ' — usage is unavailable, not zero.</div>';
     } else {
       h += '<div class="kb-land-none">No opens recorded in the last 30 days yet.</div>';
+    }
+    // F-25: a partial read (items present, a chip source missing) says which.
+    if (usage.length && KB_STATE.usage && (KB_STATE.usage.unavailable || []).length) {
+      h += '<div class="kb-land-none">' + icon('warning', 12) + ' Could not read: ' + esc(KB_STATE.usage.unavailable.join(', ')) + ' — those counts are unavailable, not zero.</div>';
     }
     h += '</div>';
   }
@@ -2866,6 +2874,14 @@ function kbRenderLanding_() {
       // used to silently vanish.
       h += '<div class="kb-land-sec"><div class="kb-land-h">Review due</div>' +
         '<div class="kb-land-none">Failed to load — retry by re-entering Reference.</div></div>';
+    } else if (KB_STATE.reviewDue && (KB_STATE.reviewDue.unavailable || []).length) {
+      // F-25: the queue answered but a count read failed — an empty queue
+      // whose stale-flag read died is not "nothing due".
+      h += '<div class="kb-land-sec"><div class="kb-land-h">Review due</div>' +
+        '<div class="kb-land-none">' + icon('warning', 12) + ' Could not read: ' + esc(KB_STATE.reviewDue.unavailable.join(', ')) + ' — the queue may be incomplete.</div></div>';
+    }
+    if (rd.length && KB_STATE.reviewDue && (KB_STATE.reviewDue.unavailable || []).length) {
+      h += '<div class="kb-land-none">' + icon('warning', 12) + ' Could not read: ' + esc(KB_STATE.reviewDue.unavailable.join(', ')) + ' — the queue above may be incomplete.</div>';
     }
   }
 
@@ -3613,10 +3629,26 @@ function kbFeedbackDone_(btn, msg) {
   if (bar) bar.innerHTML = '<span class="kb-fb-done">' + icon('check', 13) + ' ' + esc(msg) + '</span>';
 }
 function kbSendFeedback_(id, kind, btn) {
-  kbFeedbackDone_(btn, 'Thanks for the feedback.');
+  // F-45 (2026-09-17): the bar used to say "Thanks" BEFORE the RPC and swallow
+  // its outcome, so a failed write was invisible and the manager tally
+  // under-counted silently. Disable the buttons while it is in flight; thank
+  // on success; on failure say so and put the buttons back.
+  var bar = (btn && btn.closest) ? btn.closest('.kb-feedback') : null;
+  var btns = bar ? Array.prototype.slice.call(bar.querySelectorAll('button')) : [];
+  btns.forEach(function (b) { b.disabled = true; });
+  var status = bar ? bar.querySelector('.kb-fb-status') : null;
+  if (bar && !status) { status = document.createElement('span'); status.className = 'kb-fb-status'; status.setAttribute('role', 'status'); bar.appendChild(status); }
+  if (status) status.textContent = 'Saving…';
+  var fail = function (msg) {
+    btns.forEach(function (b) { b.disabled = false; });
+    if (status) status.textContent = 'Could not record that — ' + (msg || 'try again') + '.';
+  };
   google.script.run
-    .withSuccessHandler(function () {})
-    .withFailureHandler(function () {})
+    .withSuccessHandler(function (r) {
+      if (!r || !r.success) { fail((r && r.error) || 'try again'); return; }
+      kbFeedbackDone_(btn, 'Thanks for the feedback.');
+    })
+    .withFailureHandler(function (err) { fail((err && err.message) || 'try again'); })
     .kbFlagItem(id, kind, '');
 }
 function kbFlagStale_(id, btn) {
@@ -4125,7 +4157,7 @@ function kbCloseModal_() {
 //  Reads reuse the three enrolled-employee KB endpoints; opens are recorded
 //  best-effort via kbRecordView (fire-and-forget, never blocks the UI).
 // ============================================================================
-var KB_DRAWER = { open: false, tree: null, view: 'home', lastQuery: '', searchSeq: 0, item: null, suggestSeq: 0, suggestCache: null, guidanceSeq: 0, guidanceCache: null };
+var KB_DRAWER = { open: false, tree: null, view: 'home', lastQuery: '', searchSeq: 0, item: null, suggestSeq: 0, suggestCache: null, guidanceSeq: 0, guidanceCache: null, restoreFocus: null };   // F-43: restoreFocus
 var KB_PANEL_LS_KEY = 'umsKbPanel';
 
 function kbPanelPrefs_() {
@@ -4214,9 +4246,16 @@ function kbDrawerMount_() {
   if (document.getElementById('kb-drawer')) return;
   var d = document.createElement('div');
   d.id = 'kb-drawer';
+  // F-43 (2026-09-18): the drawer announced as an unlabelled generic region.
+  // role="dialog" + a name from its own heading (so the two cannot drift).
+  // Deliberately NOT aria-modal: it does not trap focus — the shell's trap
+  // exempts it by design (the hover-popover precedent) — and claiming a
+  // modality it does not enforce is the lie this a11y family exists to avoid.
+  d.setAttribute('role', 'dialog');
+  d.setAttribute('aria-labelledby', 'kbd-title');
   d.innerHTML =
     '<div class="kbd-head">' + icon('list', 14) +
-      '<span class="kbd-kicker">Reference</span>' +
+      '<span class="kbd-kicker" id="kbd-title">Reference</span>' +
       '<button class="kbd-x" onclick="kbDrawerClose_()" aria-label="Close">' + icon('x', 15) + '</button></div>' +
     '<div class="kbd-search"><input type="text" id="kbd-q" placeholder="Search reference\u2026 (Ctrl/\u2318+K)" autocomplete="off" aria-label="Search reference\u2026 (Ctrl/\u2318+K)"><span class="kbd-spin" id="kbd-spin"></span></div>' +
     '<div class="kbd-body" id="kbd-body"></div>';
@@ -4246,6 +4285,13 @@ function kbDrawerMount_() {
 
 function kbDrawerOpen_() {
   kbDrawerMount_();
+  // F-43: stash the trigger so closing hands focus back. The drawer moves
+  // focus into its search box below, so without this a rep who opened it
+  // mid-note with Ctrl/⌘+K lost their place in the form on close.
+  if (!KB_DRAWER.open) {
+    var kbAe = document.activeElement;
+    KB_DRAWER.restoreFocus = (kbAe && kbAe !== document.body) ? kbAe : null;
+  }
   KB_DRAWER.open = true;
   document.getElementById('kb-drawer').classList.add('open');
   if (!KB_DRAWER.tree) {
@@ -4264,9 +4310,16 @@ function kbDrawerOpen_() {
 }
 
 function kbDrawerClose_() {
+  var wasOpen = KB_DRAWER.open;
   KB_DRAWER.open = false;
   var d = document.getElementById('kb-drawer');
   if (d) d.classList.remove('open');
+  // F-43: hand focus back to whatever opened it, exactly once.
+  var kbRestore = KB_DRAWER.restoreFocus;
+  KB_DRAWER.restoreFocus = null;
+  if (wasOpen && kbRestore) {
+    try { if (kbRestore.isConnected) kbRestore.focus(); } catch (_) {}
+  }
 }
 function kbDrawerToggle_() { if (KB_DRAWER.open) kbDrawerClose_(); else kbDrawerOpen_(); }
 /** Core Esc handler hook: returns true when it consumed the keypress. */

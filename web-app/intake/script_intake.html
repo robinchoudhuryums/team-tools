@@ -1063,7 +1063,7 @@ function intakePpdControlHtml_(ctrl, qNum, ariaLabel) {
     case 'ynreveal':  return intakeYnRevealControlHtml_(ctrl, qNum, ariaLabel);
     case 'ynnum':     return intakeYnNumControlHtml_(ctrl, qNum, ariaLabel);
     case 'condition': return intakeConditionControlHtml_(ctrl, qNum);
-    default:          return '<input type="text" autocomplete="off" aria-label="' + esc(text) + '" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">';
+    default:          return '<input type="text" autocomplete="off" aria-label="' + esc(ariaLabel) + '" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">';
   }
 }
 
@@ -2719,7 +2719,10 @@ function intakeRenderSentDetail_(d) {
       if (L.headers.indexOf(j) >= 0) { rowsHtml += '<div class="intk-head">' + esc(label2) + '</div>'; continue; }
       var v2 = (d.answers || {})[j];
       var disp;
-      if (L.checkboxes.indexOf(j) >= 0) disp = (v2 === 'TRUE') ? 'Yes' : 'No';
+      // F-18 (2026-09-17): since F(L-15) an UNTOUCHED toggle collects as '' and
+      // a deliberate No as 'FALSE'; rendering both as "No" attested a refusal
+      // nobody gave. Blank stays blank (the N/A the PPD branch renders).
+      if (L.checkboxes.indexOf(j) >= 0) disp = (v2 === 'TRUE') ? 'Yes' : ((v2 === 'FALSE' || v2 === false) ? 'No' : '');
       else disp = (v2 == null || v2 === '') ? '' : String(v2);
       rowsHtml += '<div class="intk-row' + (L.secondary.indexOf(j) >= 0 ? ' secondary' : '') + '">' +
         '<div class="q">' + esc(label2) + '</div>' +

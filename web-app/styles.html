@@ -1195,6 +1195,18 @@
      deliberate floor rather than a rendering artifact. */
   .emp-spark .bar.zero  { background: var(--muted-3); min-height: 3px; }
   .emp-spark .bar.short { background: var(--warn-soft); }
+  /* F-48 (cycle 20): an UNMEASURABLE day. V-10 gave "didn't work" a visible
+     3px floor; this is the third state that was being painted as that floor —
+     the rep is still clocked in, or a stamp would not parse, so the server has
+     no hours rather than zero hours. Full-height hatch: it occupies the day's
+     slot (so the week still reads as seven days) without claiming a value, and
+     is unmistakable against both the dim zero bar and a real short day. */
+  .emp-spark .bar.unknown {
+    background: repeating-linear-gradient(45deg,
+      var(--muted-3) 0 2px, transparent 2px 5px);
+    min-height: 36px; opacity: .7;
+  }
+  .emp-spark-unk { color: var(--muted-2); font-weight: 500; }
   .emp-spark-total {
     font-family: var(--mono); font-size: 10px; font-weight: 600;
     color: var(--muted); letter-spacing: .04em;

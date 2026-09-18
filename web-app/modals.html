@@ -130,6 +130,9 @@
       <div class="field"><label for="exp-start">Start Date</label><input type="date" id="exp-start"></div>
       <div class="field"><label for="exp-end">End Date</label><input type="date" id="exp-end"></div>
     </div>
+    <!-- F-36: the generated sheet's link lands here, so a blocked pop-up
+         never loses the URL. Cleared on each open. -->
+    <div id="exp-result"></div>
     <div class="modal-footer">
       <button class="btn-modal-cancel" id="exp-cancel">Cancel</button>
       <button class="btn-modal-ok" id="exp-submit">Generate Export</button>

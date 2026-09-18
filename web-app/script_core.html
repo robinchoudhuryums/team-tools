@@ -451,7 +451,13 @@ function popOutCurrentView() {
     const h = geom ? geom.h : 800;
     let feat = 'width=' + w + ',height=' + h + ',menubar=no,toolbar=no,location=no,status=no,resizable=yes';
     if (geom && geom.x != null && geom.y != null) feat += ',left=' + geom.x + ',top=' + geom.y;
-    window.open(url, 'umsTeamToolsCompact_' + tool, feat);
+    // F-37 (2026-09-18): a blocked pop-up makes window.open return NULL — it
+    // does not throw, so the catch below could never fire and a rep whose
+    // browser blocked the window got no feedback at all. Check the RETURN.
+    var win = null;
+    try { win = window.open(url, 'umsTeamToolsCompact_' + tool, feat); } catch (openErr) { win = null; }
+    if (!win) { showToast('Pop-out blocked by your browser — allow pop-ups for this site and try again', 'toast-warn'); return; }
+    try { win.focus(); } catch (_) {}
   } catch (e) { showToast('Pop-out blocked by browser', 'toast-warn'); }
 }
 
@@ -512,7 +518,7 @@ function renderError(msg) {
       <div class="state-icon" style="color:var(--warn)">${icon('warning', 44)}</div>
       <div class="state-title">Couldn't Load</div>
       <div class="state-detail">${esc(msg)}</div>
-      <button type="button" class="refresh-btn" onclick="location.reload()">${icon('refresh', 14)}Retry</button></div>`;
+      <button type="button" class="refresh-btn" onclick="reloadApp_()">${icon('refresh', 14)}Retry</button></div>`;
 }
 
 /** Batch J — shared inline ERROR state for view sections. Visually distinct
@@ -1716,6 +1722,15 @@ function esc(s) {
 // value stays UNCLASSED — absence is not a low score (INV-187).
 function mtPctTone_(p, hi, lo) {
   return (p == null) ? '' : (p >= hi ? 'm-pct-high' : p >= lo ? 'm-pct-mid' : 'm-pct-low');
+}
+/** F-07 (2026-09-17) — the ONE null-band rule for % Answered. The amber width
+ *  is the PUBLISHED `Amber Band` (H2); a standard that publishes no band has
+ *  NO amber tier — below the target is red — and never a local slack. Shared
+ *  by the Metrics table (mPctClass_) and the Clock KPI card (clkDashTone_),
+ *  which read the same payload field and until this rule disagreed on it
+ *  (0 pt here, 5 pt there) for the same number on the same morning. */
+function mtAnswerBand_(band) {
+  return (band != null && isFinite(band)) ? Number(band) : 0;
 }
 
 // ── Shared date-range control (.mt-range) ─────────────────────────────────

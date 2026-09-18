@@ -389,6 +389,23 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   months later is still lost, and every legitimate credit is delayed for a rare
   case. The top-up subsumes it.
 
+  **Batch 4 (2026-09-18, F-19): the ledger row is PER MONTH.** A catch-up
+  credit (a first credit, a re-enabled rep) covered several months in ONE row
+  keyed `2026-06,2026-07`, and the reconcile pass — which values months INSIDE
+  its 3-month window — reported that key as unreconcilable every day for months
+  once one member aged out. Now `accrualMonthRows_` turns one plan into one
+  plan-shaped entry per month, the unchanged note builders write a single-month
+  `months=`, and the ledger's keys are per month by construction. The rep's
+  earned total is the SUM of the per-month roundings (`accrualEarnedByMonth_`)
+  rather than a once-rounded total — they differ by ≤0.01 day per extra month,
+  and the ledger must add up to the balance moved; the preview shares the sum,
+  so it cannot promise a different amount than the job lands. A legacy
+  multi-month key (none is expected in production) names itself when skipped.
+  F-46 in the same batch made the reconcile stamp honest on EVERY path: the
+  early returns (tracking off, no accruing reps) rewrite it to an empty pass
+  with a `reason` and clear the job's error, so a stale shortfall stops
+  alarming after the toggle.
+
 - <a id="the-accrual-dry-run-shares-the-one-resolver-and-writes-nothin"></a>**The accrual dry run shares the ONE resolver and writes nothing (`previewPtoAccruals`, operator 2026-09-14).**
   `creditMonthlyPtoAccruals` runs unattended at 18:00 manager-tz, credits real
   leave balances, and advances a stamp that closes the month against retry. Its
@@ -1531,6 +1548,20 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   rejected with "The form changed since you previewed it" (INV-111). That is
   the guard working; re-previewing clears it, and the window is one page load
   wide.
+
+  **Batch 5 (2026-09-18, F-27): the LABELS are the server's, not the
+  payload's.** The email builders rendered whatever `payload.rows[].label`
+  arrived, so "the email is always English" (g43, after a Spanish PPD reached
+  the Power dept live) was enforced in the client collector alone — a
+  convention held by the one party that cannot be trusted to hold it. The
+  server now carries the English banks and builds every preview and send's
+  rows from the bank plus the client's ANSWERS map. The alternative — ship the
+  bank to the client and keep rendering what comes back — was rejected for the
+  same reason the original bug existed. The cost is a client↔server MIRROR of
+  four literals, accepted because a drift shows up as a wrong LABEL rather
+  than a refused send (the cheap side of the OOP-B question) and because the
+  F-27 pin compares the banks by value, so a one-sided edit turns the harness
+  red instead of shipping.
 - <a id="department-emails-and-state-tax-rates-are-editable-via-the-a"></a>**Department emails and state tax rates are editable via the Admin
   tab.** Call Notes → Admin (manager-only) reads the current config
   from `getDepartmentEmails_()` / `getStateTaxRates_()` and writes
@@ -1776,6 +1807,12 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   existing `ExternalEmailSent` audit row — item, exact price, effective date,
   and still the recipient DOMAIN only: g36's minimization is not relaxed by the
   quote being commercially significant. INV-208.
+  **Batch 1 of the 2026-09-17 /broad-scan (F-01):** the verify path keyed the
+  live sheet by column A while OOP-C had moved the picker's name to the
+  header-discovered Item column, so on the operator's sheet every quoted send
+  was refused — closed, as designed, but for a listed item. The verifier now
+  keys `byName` on `oopNameCol_(headers)`; INV-213 makes "one resolver per
+  operator tab" the rule and the OOP-B fixture carries the operator's shape.
 
 - <a id="which-eligibility-restrictions-lift-out-of-pocket-is-a-rule"></a>**Which eligibility restrictions LIFT out of pocket is a RULE, not a
   table (ELIG, operator 2026-09-16).** The OOP sheet's `Area Eligibility` column
@@ -1804,6 +1841,14 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   which is the opposite of what "straight-line is only an estimate" suggests: a
   straight line is never longer than the drive, so over-the-limit is over either
   way, and a close YES says so rather than implying precision. INV-209.
+
+  **Batch 2 of the 2026-09-17 /broad-scan (F-15):** the geocoder's SERVICE
+  failure (quota, denial, throw) is its own return shape and reaches the rep as
+  "the address service could not be reached (<status>) — not a problem with
+  the address"; the bad-address message is reserved for ZERO_RESULTS. Same
+  batch, F-04: the eligibility filter scores through the ONE scorer the price
+  lookup uses (name OR code), so a by-name query no longer reports "No item
+  matched" for a listed item (INV-213).
 
 - <a id="the-operator-maintained-lookup-tables-are-named-tabs-in-the"></a>**The operator-maintained lookup tables are NAMED TABS in the KB store,
   not stores of their own (operator 2026-09-16, decided the day OOP shipped).**
@@ -2687,12 +2732,30 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   **Trend** (inline sparkline `cnTrendSparkSvg_`) / **Δ wk** / Actions
   (Rename / Merge / Archive); the prior separate "Tag Trends" panel +
   `#cn-admin-trends` slot were removed (the low-value "Last seen" column was
-  dropped for Trend+Δ). Manager-gated. Taxonomy scans each enrolled rep's Sheet
+  dropped for Trend+Δ). ADMIN-gated (`callerEmp.isAdmin` — this read
+  "manager-gated" until F-26, cycle 20, while every one of these endpoints
+  refused a manager who is not also an admin). Taxonomy scans each enrolled rep's Sheet
   for `subformData.tags[]`, marking each with an `archived` flag from
   `CN_ARCHIVED_TAGS`; `archivedOnlyTags[]` surfaces archived tags no longer in
   use (Restore). Trends bucket by ISO week over the trailing 12 (INV-125,
   archived excluded). **Compliance** = the audit panel; **Config** = the
   dept-email / state-tax / suggestions controls (preserved unchanged).
+
+  **Batch 6 (2026-09-18, F-12): the strip reports TEAM scope, and each cell
+  states its own.** Two of the four cells took `getCallNotesAmbient` — the
+  CALLER'S OWN Sheet — and captioned the first of them "across team", so an
+  admin with a quiet week read the whole team as quiet. The convenient source
+  was the wrong one: the endpoint exists to feed that admin's own sidebar.
+  Notes is now `getCallNotesTagTaxonomy.totalNotes` (every enrolled rep's
+  notes, all-time — the same walk the table below it already pays for) and
+  Unresolved is `managerGetUnresolvedActionCount`, the 2-minute-cached
+  cross-rep walk behind the Team Notes badge, added as a fourth parallel
+  fetch. Scope moved OUT of the strip's implication and INTO each cell's
+  sub-line, because two of the four are genuinely not team-wide-all-time and
+  a single header would have to lie about one of them. The cross-rep walk
+  already reported `partial` when a rep Sheet could not be read and nothing
+  rendered it: `≥ N` with the reason now, a dash plus "could not be read" on
+  an error, and a plain number only for a complete walk (INV-187).
 - <a id="external-email-message-template-library-admin-tab"></a>**External-email message template library (Admin tab).** Manager-
   curated canned message bodies for the external (customer/provider)
   email composer — resolving the deferred "template library Admin
@@ -3433,7 +3496,8 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
 - <a id="compliance-audit-panel-admin-tab"></a>**Compliance audit panel (Admin tab).** Manager-only call-note
   AuditLog search living in the Admin tab below the tag taxonomy —
   resolving the deferred "compliance audit Admin panel." Backed by
-  `getCallNotesAuditLog(filters)` (manager-gated): filters by rep
+  `getCallNotesAuditLog(filters)` (ADMIN-gated — `callerEmp.isAdmin`; the
+  panel lives on the Admin tab and the gate always said so, F-26): filters by rep
   (EmployeeId), action (the `CN_AUDIT_ACTIONS` call-note set), and date
   range (defaults to the last 30 days in the manager's tz). It reads the
   shared AuditLog via a **bounded** tail scan (`cnReadCallNoteAuditRows_`
@@ -3549,7 +3613,10 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   · Retention · link, row-toned `sv-row-danger/warn`) with an expandable detail
   row per store (INV-182 `detailRow`/`rowId`; the disclosure is a real button
   driven by `cnToggleDetailRow_`, INV-174) carrying the note / per-rep problems
-  / the exact tz fix; the VERDICTS live in the findings list above it (see the
+  / the exact tz fix — and, on the CDR Report row since Batch 3 (2026-09-17),
+  which holiday calendar and which answer standard are LIVE (`cdrHolidayProbe_`
+  / `cdrStandardProbe_`, each with a CDR-area finding for every fallback
+  state, g123/g124); the VERDICTS live in the findings list above it (see the
   Admin KDD) and the Overview Storage card links here. The hand-rolled
   `.cn-storage-row/-main/-role/-meta` rows are retired (INV-184). For each of the
   eight stores (see the Operator State Checklist's storage map — the QA store joined 2026-08-28 #3, its retention field reflecting the LIVE `QA_REVIEW_RETENTION_DAYS` window so an enabled review-record purge is visible where every other store's policy is; its not-set pill is muted, the no-fallback-by-design tone) it reports which
@@ -3684,6 +3751,19 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   never flagged, so the check is false-positive-free and never nags a clean
   deployment. It changes NO gate logic (the split stays) and needs no new
   trigger — it only surfaces the hazard).
+
+  **Batch 4 (2026-09-18, F-20): every daily trigger has a liveness signal.**
+  Three daily jobs wrote no audit row and had no heartbeat — the missed-punch
+  alerts, the ADP export CHECK (its `AdpExportAuto` row lands only at a period
+  end, deliberately absent from JOB_CHECKS) and the failure digest itself — so
+  each could die silently. They heartbeat now (`missedPunch` / `exportCheck` /
+  `automationHealth`, 26h) rather than gaining JOB_CHECKS rows, because a
+  JOB_CHECKS row needs an audit action to compare against and a row per run
+  would be two AuditLog rows a day for jobs whose only signal is "I ran".
+  Each stamps its own failure, `automationProblems_` carries a stamp under ANY
+  key (the table's rows stay with the table), and the Admin finding shows the
+  stamp's message — it had read the wrong field and rendered every stamped
+  failure as "unknown error".
 - <a id="open-email-button-round-2-8f"></a>**"Open Email" button (Round 2 · 8f).** The Phase-4 "External"
   button on the Log view's action row was renamed "Open Email"
   (still binds `cn-ext-email-btn` → opens the external composer
@@ -3738,6 +3818,16 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   names exist purely for audit-trail clarity ("merge" tells future
   investigators that the manager expected the target to already
   exist on some notes).
+
+  **Batch 5 (2026-09-18, F-10): the per-rep try/catch REPORTS.** Isolating a
+  failure per rep is right — one unreachable Sheet must not fail the other
+  N−1 — but the catch was empty, so a rename that missed a rep returned
+  success, wrote `reps=N−1` in the audit row with nothing marking the gap, and
+  left that rep's notes on the old tag for good. The walk returns
+  `skippedReps: [{id, error}]`; both callers append the ids to the audit row
+  (`cnTagSkippedNote_` — ids only, INV-32) and ship the list; the Admin toast
+  turns WARN and names the reps to re-share and re-run. INV-220 generalises
+  it: a cross-rep walk that skips a member owes all three.
 - <a id="uiconfirm-uiprompt-replace-native-window-confirm-window-prom"></a>**`uiConfirm` / `uiPrompt` replace native `window.confirm` /
   `window.prompt`.** Promise-returning helpers in `script_core.html`
   that consume the existing `.overlay` + `.modal` vocabulary so
@@ -3765,6 +3855,21 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   (`cnDoDeleteNote_`, `cnDoToggleFlag_`, `cnDoSelfUndo_`,
   `handleBulkActionConfirmed_`) so the click-handler signatures stay
   synchronous from the dispatcher's perspective.
+
+  **Batch 6 (2026-09-18, F-40 + F-30): every overlay goes through the two
+  functions, static ones included.** `uiConfirm`/`uiPrompt` and the dynamic
+  overlays had the focus lifecycle from the day it was built; the six STATIC
+  modals in `modals.html` never did, because they predate `ensureOverlay` and
+  were opened with `classList.add('open')`. They kept their aria attributes
+  (which is why the a11y sweep never flagged them) and quietly lacked the
+  behaviour those attributes promise: focus stayed put on open and landed at
+  the top of the document on close, on five dialogs a manager opens daily.
+  Routing them through `ensureOverlay`/`closeOverlay` is additive — the helper
+  writes `role`/`aria-*` only when asked — and it is now INV-221. The one
+  wrinkle is worth the entry: `ensureOverlay` ASSIGNS `className`, so
+  `day-overlay`'s `hover-mode` (it doubles as the calendar's tethered popover)
+  had to be read off the node and handed back through `extraClass`, or a hover
+  preview would have become a focus-stealing modal (g134).
 - <a id="training-rides-on-the-reference-kb-layer-t1"></a>**Training rides ON the Reference/KB layer (T1).** Training content is
   just KB items — no second content store, editor, or renderer. The
   tracking overlay is two auto-provisioned tabs in the KB spreadsheet
@@ -4191,5 +4296,109 @@ pick them up without re-deriving the context.
   rep still sees their OWN numbers against a benchmark that does not include
   them.
 
+  **Batch 3 follow-through (cycle-20 scan, 2026-09-17).** H2 shipped the
+  band and the source and left two things undecided: what a NULL band means
+  (each consumer decided alone -- 0 pt on the table, the local 5 pt on the
+  Clock card) and who reads `standardSource` (nobody). `mtAnswerBand_` is now
+  the ONE null-band rule -- no published band means no amber tier, on every
+  surface, because a band the dashboard did not publish is a number nobody
+  set (the same reasoning as the null target); Transfer % keeps its local
+  slack because it has no published standard at all. The source is rendered
+  wherever the verdict is: beside the target on both heroes, and on the
+  Admin → System CDR row with a finding. The badge tooltip's residual `|| 85`
+  is gone (a badge exists only with a published target, so the caption needs
+  no fallback). And a window with nothing answered or missed has NO rate --
+  `cdrAnswerPct_` returns null, which every surface dashes -- because the 0
+  it returned read as "every call missed". Gotcha g131; INV-216..218.
+
   Recorded in `.cycle/config.md` as INV-211 and scenario S111; the gotcha is
   g124. The formula change bumped every rate-carrying cache key (INV-85).
+
+- <a id="a-sparkline-day-has-three-states-and-the-unknown-one"></a>**A sparkline day has THREE states, and the unknown one is drawn (Batch 7 of the cycle-20 scan, F-48, 2026-09-18)**
+
+  The manager's live-status card carries a 7-workday hours sparkline. Its
+  source map is sparse: a day lands in it only when both a Clock In and a
+  Clock Out exist and `calcHours_` returns a number. The card filled the
+  missing slots with `|| 0`, which merged three genuinely different days into
+  one bar — the rep did not work, the rep is clocked in RIGHT NOW, and the
+  rep's stamps would not parse.
+
+  The alternatives were to drop the unknown day from the series, to leave it
+  as a zero, or to draw it as itself. Dropping it was rejected because the
+  strip is a WEEK: six bars where there should be seven silently shifts every
+  other day's position, which is the V-10 mistake in a different costume.
+  Leaving it as zero was the defect. So the unknown is drawn — a hatched
+  full-height bar, its tooltip reading "no data", visibly not a measurement.
+  Full height rather than a stub because the slot's job is to hold the day's
+  place, and a hatch cannot be misread as a value.
+
+  Three consequences follow, and all three are deliberate. The server tells
+  the states apart by PRESENCE in the map rather than truthiness, so a genuine
+  `0.0h` day is still a measured zero. The card's total counts only the days
+  it could measure and carries a `·N?` suffix saying how many it could not,
+  because a quietly under-reported total is the same lie one step on
+  (INV-187). And a week of nothing BUT unknowns renders, where the old
+  `totalHrs === 0` early return would have hidden it — that is the week most
+  worth seeing, since it usually means a rep has not clocked out in days.
+
+  Recorded as gotcha g136, scenario S10's third-state expectation, and the
+  visual fixture's own null day (INV-185: a fixture that never produces null
+  can never photograph the difference).
+
+- <a id="one-voicemail-fold-serves-the-spanish-list-and-the"></a>**ONE voicemail fold serves the Spanish list and the Spanish stats card (Batch 7 of the cycle-20 scan, F-34, 2026-09-18)**
+
+  8x8 sends its A_Q_Spanish voicemail notifications to each member's
+  individual inbox, never to the Spanish group address, so a voicemail cannot
+  match `spanishSearchQuery_`. The operator round of 2026-08-25 taught
+  `getSpanishInboxPending` to run a second sender-and-subject search and fold
+  those threads in. It did not teach `getSpanishInboxStats`, which computes
+  from the same mailbox and renders directly ABOVE that list. The two had
+  disagreed every day since: four pending cards under a card that said three.
+
+  The fix could have been a second fold in the stats function. It is one
+  shared fold instead, because the two had already drifted once on their own
+  and the fold is where every judgement lives — which threads count, which are
+  hang-ups, what counts as resolved. `spanishVmFold_` returns the surviving
+  threads with a resolution stamp, and each caller builds its own shape from
+  the thread, so the list pays for `getPermalink()` and the stats card does
+  not.
+
+  Two ordering decisions inside it. The SP4 duration gate runs BEFORE the
+  resolution check, so a hang-up is work on neither surface; the cost is that
+  `vmSuppressed` now counts a short voicemail that was later resolved, and
+  the counter's meaning becomes "hang-ups the gate hid from both surfaces".
+  And the fold reports `on` separately from an empty result, so a caller can
+  tell "not configured" from "none came in" — the stats card renders those two
+  differently rather than both as nothing (INV-187).
+
+  The visual fixture had been photographing the disagreement for a month with
+  nobody reading it as a bug, so the pin now requires the fixture's stats count
+  to equal the number of cards it renders. Recorded as INV-223.
+
+- <a id="a-gate-claim-is-derived-from-the-refusal"></a>**A gate CLAIM is derived from the refusal, never written by hand (Batch 7 of the cycle-20 scan, F-26 + F-51, 2026-09-18)**
+
+  Twenty-one places in this repo said "manager-gated" about an endpoint that
+  enforces `callerEmp.isAdmin`: nine doc comments the scan named, ten more it
+  did not, INV-31 for nineteen endpoints, INV-82, and two paragraphs in this
+  file. A manager who is not also in `ADMIN_EMAILS` is refused by every one of
+  them. The cost is not academic — INV-31 is what an operator reads when
+  deciding how wide `ADMIN_EMAILS` needs to be.
+
+  The same hand-carrying ran through the generated counts block from the other
+  end. "Manager-gated endpoints" counted the `'Manager access required.'`
+  literal alone, so every endpoint gated by `assertManagerCaller_` — which
+  THROWS rather than returning, and covers the trigger handlers — was missing
+  from a figure captioned as the size of the manager surface, along with the
+  whole QA tier.
+
+  So the rule is one rule for both: the gate claim is DERIVED from what the
+  endpoint refuses with. The doc-comment check walks every server function and
+  compares the comment ending immediately above the declaration against the
+  refusal literal in the body; the counts derive three families the same way.
+  `canSeeQa_` gets a row of its own rather than joining manager, because it
+  admits `isManager OR QA_MEMBERS` and folding it in would swap an undercount
+  for a wrong claim about who may call. And a family is counted by its
+  REFUSAL, never by a mention of its helper: `getEmployeeState` calls
+  `canSeeQa_` to ship a flag to the client and gates nothing at all.
+
+  Recorded as INV-224.

@@ -1838,6 +1838,11 @@ test('the async prefill never overwrites what the manager already typed, ignores
   const h = boot();
   h.read('openDayEditModal')('E-1077', 'Nina Patel');
   assert.strictEqual(h.run.pending('getEmployeeTimesheetForManager').length, 1, 'the prefill is in flight');
+  // F-05 (2026-09-17): a PENDING prefill is the same saveable-blank form as a
+  // failed one — a Save before the punches land sends blank slots, and a blank
+  // slot DELETES that punch. Save must be dead until the load lands.
+  assert.strictEqual(h.document.getElementById('de-save').disabled, true, 'Save is DISABLED while the prefill is pending');
+  assert.match(h.document.getElementById('de-save').textContent, /Loading/, 'and says so');
   const ci = h.document.getElementById('de-clockin');
   ci.value = '08:30'; ci.dispatchEvent(new h.window.Event('input'));
   const date = h.read('_deDate');
@@ -2829,6 +2834,134 @@ const OOP_MATCHES = [
   { name: 'Widget', price: '$129.00', eligibility: '', effective: '2026-09-01', details: [] },
   { name: 'Priceless Thing', price: '', eligibility: '', effective: '', details: [] },
 ];
+
+test('F-02 DOM (2026-09-17): the Scheduled-reminders and Scratchpad modals CLOSE — Close button, Escape and the hook path all remove the overlay', () => {
+  // closeOverlay delegates ENTIRELY to a registered onClose hook (INV-145: a
+  // hook may refuse). Both hooks here returned without removing anything, so
+  // every close affordance was a no-op and the only way out was a reload.
+  const h = boot();
+  const doc = h.document;
+  h.window.schedFetch_ = function () {};   // the open refreshes the shell list; not under test
+  h.read('cnOpenSchedModal_')();
+  let ov = doc.getElementById('cn-sched-overlay');
+  assert.ok(ov && ov.classList.contains('open'), 'sched modal opens');
+  h.window.closeOverlay(ov);
+  ov = doc.getElementById('cn-sched-overlay');
+  assert.ok(!ov || !ov.classList.contains('open'), 'closeOverlay CLOSES the sched modal');
+  // Escape, through the shell's document handler.
+  h.read('cnOpenSchedModal_')();
+  assert.ok(doc.getElementById('cn-sched-overlay').classList.contains('open'), 'reopened');
+  doc.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  ov = doc.getElementById('cn-sched-overlay');
+  assert.ok(!ov || !ov.classList.contains('open'), 'Escape closes the sched modal');
+  // The Close button the modal renders routes through closeOverlay too.
+  h.read('cnOpenSchedModal_')();
+  // jsdom under runScripts:'outside-only' never executes inline onclick
+  // attributes, so the button is checked for its WIRING: it routes through
+  // closeOverlay (whose behaviour is asserted above), not a private path.
+  const btn = Array.from(doc.querySelectorAll('#cn-sched-overlay button')).find((b) => /^Close$/.test(b.textContent.trim()));
+  assert.ok(btn, 'the modal has a Close button');
+  assert.match(btn.getAttribute('onclick') || '', /closeOverlay\(document\.getElementById\('cn-sched-overlay'\)\)/,
+    'the Close button routes through closeOverlay');
+  h.window.closeOverlay(doc.getElementById('cn-sched-overlay'));
+
+  // Scratchpad: same contract, plus the flush-on-close it already had.
+  h.read('cnOpenScratchpadModal_')();
+  let sp = doc.getElementById('cn-scratch-overlay');
+  assert.ok(sp && sp.classList.contains('open'), 'scratchpad opens');
+  h.run.flushSuccess({ success: true, content: 'notes', updatedAtMs: Date.now() }, 'getMyScratchpad');
+  const ta = doc.getElementById('cn-scratch-text');
+  ta.value = 'edited'; ta.dispatchEvent(new h.window.Event('input'));
+  h.window.closeOverlay(sp);
+  sp = doc.getElementById('cn-scratch-overlay');
+  assert.ok(!sp || !sp.classList.contains('open'), 'closeOverlay CLOSES the scratchpad');
+  assert.strictEqual(h.run.pending('saveMyScratchpad').length, 1, 'and the dirty pad was flushed on the way out (INV-148)');
+
+  // Generic sweep: every hook registered right now closes its overlay when
+  // nothing is in flight. A hook that legitimately REFUSES (the composer
+  // mid-send, INV-145) is not in this state, so the sweep is a floor, not a
+  // claim that no hook may ever refuse.
+  h.read('cnOpenSchedModal_')();
+  h.read('cnOpenScratchpadModal_')();
+  const hooks = h.read('OVERLAY_CLOSE_HOOKS');
+  Object.keys(hooks).forEach((id) => {
+    const el = doc.getElementById(id);
+    if (!el || !el.classList.contains('open')) return;
+    h.window.closeOverlay(el);
+    const after = doc.getElementById(id);
+    assert.ok(!after || !after.classList.contains('open'), 'hook for #' + id + ' closes its overlay');
+  });
+});
+
+test('F-06 DOM (2026-09-17): a failed department-config fetch is NOT cached as an empty config — the next open re-asks, and a structured {error} is a failure too', () => {
+  const h = boot();
+  let ran = 0;
+  h.read('cnFetchDeptConfigIfNeeded_')(() => { ran++; });
+  assert.strictEqual(h.run.pending('getCallNotesDepartments').length, 1, 'first call fetches');
+  h.run.flushFailure(new Error('boom'), 'getCallNotesDepartments');
+  assert.strictEqual(ran, 1, 'the continuation still runs (the view paints with a null config)');
+  assert.strictEqual(h.read('CN_STATE.deptConfig'), null, 'NOTHING is cached on failure — no empty stub');
+  h.read('cnFetchDeptConfigIfNeeded_')(() => { ran++; });
+  assert.strictEqual(h.run.pending('getCallNotesDepartments').length, 1, 'the next call RE-FETCHES instead of honouring a stub');
+  h.run.flushSuccess({ error: 'Employee not found.' }, 'getCallNotesDepartments');
+  assert.strictEqual(h.read('CN_STATE.deptConfig'), null, 'a structured {error} is not a config either');
+  h.read('cnFetchDeptConfigIfNeeded_')(() => { ran++; });
+  h.run.flushSuccess({ departments: ['Billing'], suggestionsByDept: {}, defaultSuggestions: [] }, 'getCallNotesDepartments');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.read('CN_STATE.deptConfig').departments)), ['Billing'], 'a real config is stored');
+  h.read('cnFetchDeptConfigIfNeeded_')(() => { ran++; });
+  assert.strictEqual(h.run.pending('getCallNotesDepartments').length, 0, 'and then it is honoured without a refetch');
+  assert.strictEqual(ran, 4);
+});
+
+test('F-13 DOM (2026-09-17): the dashboard carousels render a FAILED read as the warn card, never "No call data for this period"', () => {
+  const h = boot();
+  const own = h.read('clkDashOwnCard_'), team = h.read('clkDashTeamCard_');
+  assert.match(own({ error: 'CDR unreachable' }), /CDR unreachable/, 'own: a server {error} is shown');
+  assert.doesNotMatch(own({ error: 'CDR unreachable' }), /No call data/, 'own: …and is not "no data"');
+  assert.match(own(null), /Could not load call data/, 'own: a transport failure with no last-good says so');
+  assert.match(own({ own: null, label: 'Sep 2026' }), /No call data for Sep 2026/, 'own: a real empty period is still the empty state');
+  assert.match(team({ error: 'boom' }), /boom/, 'team: a server {error} is shown');
+  assert.match(team(null), /Could not load call data/, 'team: a transport failure says so');
+  assert.match(team({ team: null, label: 'x' }), /No team call data/, 'team: a real empty period is still the empty state');
+  assert.match(own(undefined), /skel/i, 'own: pending is still the skeleton');
+});
+
+test('F-41 DOM (2026-09-17): the coverage strip renders a failed read as "coverage unavailable", never the blank that means "no call activity"', () => {
+  const h = boot();
+  const slot = h.document.createElement('div'); slot.id = 'clk-shift-cov'; h.document.body.appendChild(slot);
+  h.read('clkCoverageUnavailable_')(slot);
+  assert.match(slot.textContent, /coverage unavailable/, 'the strip names its own failure');
+  slot.innerHTML = '';
+  h.read('renderCoverageStrip_')(slot, { cdrUnavailable: true, cdr: null, noteCount: 0 });
+  assert.match(slot.textContent, /coverage unavailable/, 'a cdrUnavailable payload is unavailable, not "no activity"');
+  slot.innerHTML = '';
+  h.read('renderCoverageStrip_')(slot, { cdr: null, noteCount: 0 });
+  assert.strictEqual(slot.innerHTML, '', 'a genuine no-activity day still hides the strip');
+  slot.remove();
+});
+
+test('F-45 DOM (2026-09-17): "Was this helpful?" thanks the rep only AFTER the server records it — a failed write is visible and retryable', () => {
+  const h = boot();
+  const host = h.document.createElement('div');
+  host.innerHTML = h.read('kbFeedbackBarHtml_')({ id: 'kb-1' });
+  h.document.body.appendChild(host);
+  const bar = host.querySelector('.kb-feedback');
+  const yes = bar.querySelector('button');
+  h.read('kbSendFeedback_')('kb-1', 'helpful', yes);
+  assert.strictEqual(h.run.pending('kbFlagItem').length, 1, 'the write is in flight');
+  assert.ok(Array.from(bar.querySelectorAll('button')).every((b) => b.disabled), 'buttons are disabled while it is in flight');
+  assert.doesNotMatch(bar.textContent, /Thanks/, 'no thanks before the server answers');
+  h.run.flushFailure(new Error('quota'), 'kbFlagItem');
+  assert.match(bar.textContent, /Could not record/, 'the failure is stated');
+  assert.ok(Array.from(bar.querySelectorAll('button')).every((b) => !b.disabled), 'and the buttons come back for a retry');
+  h.read('kbSendFeedback_')('kb-1', 'helpful', bar.querySelector('button'));
+  h.run.flushSuccess({ success: false, error: 'Unknown feedback kind.' }, 'kbFlagItem');
+  assert.match(bar.textContent, /Could not record that — Unknown feedback kind/, 'a {success:false} is a failure too');
+  h.read('kbSendFeedback_')('kb-1', 'helpful', bar.querySelector('button'));
+  h.run.flushSuccess({ success: true }, 'kbFlagItem');
+  assert.match(bar.textContent, /Thanks for the feedback/, 'thanked once the server says so');
+  host.remove();
+});
 
 test('OOP-B DOM: the picker inserts the CANONICAL line, records the quote and ships it for re-verification — and an item with no price cannot be inserted at all', () => {
   const h = bootExtComposer(OOP_MATCHES);

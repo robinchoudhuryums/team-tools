@@ -54,10 +54,22 @@ var _TEST_OVERRIDE_HRDOCS_SS_ID = null;   // consumed by Code.js:getHrDocsSS_ (T
 // ASSIGNS the KB one, and an assignment to an undeclared name only works
 // because Apps Script runs sloppy mode. Declaring them here makes the KB
 // fixture's redirect explicit instead of an implicit global, and puts all
-// eight overrides in one place. See g118 / `npm run lint:server`.
+// eight store overrides in one place (the ninth, a mail seam, is below).
+// See g118 / `npm run lint:server`.
 var _TEST_OVERRIDE_KB_SS_ID = null;      // assigned by _withTestKb_
 var _TEST_OVERRIDE_FORMS_SS_ID = null;   // assigned by _withTestForms_
 var _TEST_OVERRIDE_QA_SS_ID = null;      // assigned by _withTestQa_
+
+// The NINTH override, and the only one that is a FUNCTION rather than a sheet
+// id: when it is assigned, every coaching mail send is handed to it instead of
+// MailApp, so the editor suite can assert "critical mails, minor does not" and
+// "a throwing send still returns success + mailed:false" without a real send.
+// It lived in 00_config.js until cycle 20 (F-53) — a test seam declared in
+// production code, which is exactly what the comment above says this block
+// exists to stop. Its consumer (`82_coaching.js`) reads it through
+// `typeof … === 'function'`, so the declaration moving here does not change
+// what production sees: undeclared and null both fail that check.
+var _TEST_OVERRIDE_COACH_MAIL = null;    // assigned by the coaching mail tests
 
 // Sentinel dates used by integration tests. Cleanup keys off these.
 const _TEST_DATE_RECENT = (() => {
@@ -266,6 +278,12 @@ function _clearCdrCacheForDate_(date) {
     const roster = getEmployeeRosterRows_();
     const names = [];
     for (let r = 1; r < roster.length; r++) {
+      // F-31 (cycle 20): the roster set must be built through the ONE
+      // inclusion predicate (g03/F3), exactly as every production caller of
+      // getCdrAgentMetrics_ builds it. This walked every row with a non-empty
+      // NAME instead, so one offboarded-but-named row produced a DIFFERENT
+      // cdrRosterHash_ and this helper removed a key nothing had written.
+      if (!empRosterEmail_(roster[r])) continue;
       const n = String(roster[r][EMP.NAME]).trim();
       if (n) names.push(n);
     }
@@ -940,6 +958,40 @@ function cleanupTestData() {
     }
   } catch (e) { Logger.log('cleanupTestData: ADMIN_EMAILS strip skipped: ' + e.message); }
 
+  // F-21 (2026-09-18): the MANAGER_EMAILS twin. Five trigger-gate tests APPEND
+  // _TEST_MGR_EMAIL to MANAGER_EMAILS for their run and restore it in
+  // `finally` — a run killed by the 6-minute limit between the append and the
+  // restore left a non-routable @example.invalid address holding the
+  // assertManagerCaller_ gate until someone noticed. Same predicate, same
+  // rule: strip every test address, never a real one; an empty list is
+  // deleted (unset ⇒ nobody passes the gate, which is at least honest).
+  try {
+    const mgrProps = PropertiesService.getScriptProperties();
+    const mgrRaw = mgrProps.getProperty('MANAGER_EMAILS');
+    if (mgrRaw !== null && mgrRaw !== undefined) {
+      const mgrSplit = _testAdminEmailsSplit_(mgrRaw);
+      if (mgrSplit.test.length) {
+        if (mgrSplit.real.length) mgrProps.setProperty('MANAGER_EMAILS', mgrSplit.real.join(','));
+        else mgrProps.deleteProperty('MANAGER_EMAILS');
+        Logger.log('cleanupTestData: ' + mgrSplit.test.length + ' test address(es) removed from MANAGER_EMAILS' + (mgrSplit.real.length ? ' (real list kept).' : ' (property deleted — nothing real remained).'));
+      }
+    }
+  } catch (e) { Logger.log('cleanupTestData: MANAGER_EMAILS strip skipped: ' + e.message); }
+
+  // F-22 (2026-09-18): the two LIVE tabs the suite probes and never swept.
+  // DeptRequests (its own store or the ADP fallback) and ClientErrors carry
+  // TEST_-keyed rows from three self-cleaning tests whose own tidy-up ran in
+  // `finally` — a killed run left them on a live tab, and the DeptRequests
+  // tests deleted by POSITION (`deleteRows(before + 1, after - before)`), so a
+  // real request landing mid-test would have been the row deleted. Both sweep
+  // by KEY here, through getSheetByName (never provisioning a tab).
+  try {
+    _cleanupRowsByPrefix(getDeptRequestsSS_().getSheetByName('DeptRequests'), 'TEST_', DR.REQ_ID, 2);
+  } catch (e) { Logger.log('cleanupTestData: DeptRequests sweep skipped: ' + e.message); }
+  try {
+    _cleanupRowsByPrefix(ss.getSheetByName(CLIENT_ERRORS_TAB), 'TEST_', 1, 2);
+  } catch (e) { Logger.log('cleanupTestData: ClientErrors sweep skipped: ' + e.message); }
+
   invalidateRosterCache_();
   Logger.log('cleanupTestData: TEST_* rows removed, balances reset.');
 }
@@ -1205,6 +1257,7 @@ function _registerSmokeTests_() {
   _smokeTest('calcHours_overnight',                test_calcHours_overnight);
   _smokeTest('calcHours_overnightWithLunch',       test_calcHours_overnightWithLunch);
   _smokeTest('calcHours_multipleBreaks',           test_calcHours_multipleBreaks);
+  _smokeTest('calcHours_equalMinuteIsZeroNotADay', test_calcHours_equalMinuteIsZeroNotADay);
   _smokeTest('timeToMins_nullOnUnparseable',       test_timeToMins_nullOnUnparseable);
 
   _smokeTest('daysBetween_basic',                  test_daysBetween_basic);
@@ -1724,6 +1777,21 @@ function test_calcHours_overnight() {
   // 22:00 → 06:00 next day = 8 hours
   _assertEqClose(calcHours_('22:00:00','06:00:00',null,null), 8.0);
 }
+/** 2026-09-17 broad-scan F-03: timeToMins_ drops seconds, so a clock-in at
+ *  09:00:10 and a clock-out at 09:00:45 compared EQUAL and the `<=` wrap paid
+ *  a 24-hour day. An equal minute pair is zero hours; the strict overnight
+ *  wrap (22:00 → 06:00) is unchanged. */
+function test_calcHours_equalMinuteIsZeroNotADay() {
+  _assertEqClose(calcHours_('09:00:10','09:00:45',null,null), 0.0);
+  _assertEqClose(calcHours_('09:00','09:00',null,null), 0.0);
+  _assertEqClose(calcHours_('22:00:00','06:00:00',null,null), 8.0);
+  _assertEq(managerClockOrderError_({ ClockIn: '09:00', ClockOut: '09:00' }) !== null, true,
+    'the manager writers refuse an equal pair');
+  _assertEq(managerClockOrderError_({ ClockIn: '22:00', ClockOut: '06:00' }), null,
+    'a reversed pair stays the overnight wrap');
+  _assertEq(managerClockOrderError_({ ClockIn: '09:00', ClockOut: '' }), null,
+    'a single slot is not this rule\'s call');
+}
 function test_calcHours_overnightWithLunch() {
   // 22:00 → 06:00 with 02:00-03:00 lunch = 7 hours
   _assertEqClose(calcHours_('22:00:00','06:00:00','02:00:00','03:00:00'), 7.0);
@@ -1860,7 +1928,7 @@ function test_cdrAnswerPct_isTheDashboardFormula() {
   _assertEq(cdrAnswerPct_(8, 2), 80, '8/(8+2)');
   _assertEq(cdrAnswerPct_(8, 1), 89, 'rung is NOT the denominator: 10 rung / 8 ans / 1 missed reads 89, not 80');
   _assertEq(cdrAnswerPct_(11, 1), 92, 'whole percent, like the dashboard cell (91.67 -> 92, never 91.7)');
-  _assertEq(cdrAnswerPct_(0, 0), 0, 'nothing to divide -> 0');
+  _assertEq(cdrAnswerPct_(0, 0), null, 'nothing to divide -> null, never 0 (F-32: 0 reads as every call missed)');
   const saved = _cdrStandardsMemo;
   try {
     _cdrStandardsMemo = { dept: 'CSR', target: null, band: null, teamAvgExcludes: [], source: 'no-tab' };
@@ -1878,7 +1946,7 @@ function test_teamBenchmark_subtractsPublishedExcludes() {
     Mgr: { totalRung: 10, totalAnswered: 10, totalMissed: 0, attSeconds: 50 },
   };
   _assertEq(dashboardTeamAggregate_(agents, 2, ['Mgr']).team.pctAnswered, 85, 'benchmark without the manager');
-  _assertEq(dashboardTeamAggregate_(agents, 2).team.pctAnswered, 85.7, 'with the manager it drifts');
+  _assertEq(dashboardTeamAggregate_(agents, 2).team.pctAnswered, 86, 'with the manager it drifts (180/210 = 85.7 -> 86, a WHOLE percent like the dashboard cell)');
   const ser = metricsTeamAvgSeries_({ '2026-05-15': { a: { v: 80 }, b: { v: 90 }, c: { v: 100 }, Mgr: { v: 100 } } }, ['2026-05-15'], 'v', 3, ['Mgr']);
   _assertEq(ser[0].avg, 90, 'the anonymized series excludes too');
 }
@@ -5389,10 +5457,9 @@ function test_recordClientError_authBoundsAndAppend() {
     _assertEq(String(row[4]).length, CLIENT_ERR_MSG_MAX, 'message truncated to the server cap');
     _assertEq(String(row[5]).length, CLIENT_ERR_STACK_MAX, 'stack truncated to the server cap');
   } finally {
-    // Delete every TEST_ row this (or a prior aborted) run appended.
-    for (let r = sheet.getLastRow(); r >= 2; r--) {
-      if (String(sheet.getRange(r, 2).getValue()).indexOf('TEST_') === 0) sheet.deleteRow(r);
-    }
+    // Delete every TEST_ row this (or a prior aborted) run appended — by KEY,
+    // through the one sweep helper (F-22; cleanupTestData backstops it).
+    _cleanupRowsByPrefix(sheet, 'TEST_', 1, 2);
   }
 }
 
@@ -6407,11 +6474,11 @@ function test_qa_gates_rejectNonMember() {
 // A5 — drFindOpenRequest_ is the re-send dedup lookup: a re-send of the same note
 // to the same dept reuses the OPEN row's token instead of opening a second
 // request. Self-cleaning: appends two probe rows to the DeptRequests tab and
-// deletes exactly those rows in `finally` (DeptRequests is not swept by
-// cleanupTestData). The probe noteId is TEST_-prefixed for identifiability.
+// deletes them in `finally` BY KEY (F-22 — a positional delete would have
+// removed a real request that landed mid-test; cleanupTestData backstops the
+// sweep). The probe ids and noteId are TEST_-prefixed for identifiability.
 function test_deptReq_resendDedupLookup() {
   const sh = getOrCreateDeptRequestsSheet_();
-  const before = sh.getLastRow();
   const nid = 'TEST_DR_NOTE_A5';
   try {
     // An OPEN (nid, 'Sales') row and a RESOLVED (nid, 'Shipping') row.
@@ -6429,8 +6496,7 @@ function test_deptReq_resendDedupLookup() {
     _assertEq(drFindOpenRequest_('', 'Sales'), null,
       'no noteId → null (legacy rows never dedupe)');
   } finally {
-    const after = sh.getLastRow();
-    if (after > before) sh.deleteRows(before + 1, after - before);
+    _cleanupRowsByPrefix(sh, 'TEST_DR_', DR.REQ_ID, 2);   // F-22: by key, never by position
   }
 }
 
@@ -6450,7 +6516,6 @@ function test_deptReq_incomingAndMemberResolve() {
   if (empRow < 0) { _skipTest('India test emp not on roster'); }
   const prevDept = ss.getRange(empRow, EMP.DEPARTMENTS + 1).getValue();
   const sh = getOrCreateDeptRequestsSheet_();
-  const before = sh.getLastRow();
   try {
     ss.getRange(empRow, EMP.DEPARTMENTS + 1).setValue(dept);
     invalidateRosterCache_();
@@ -6473,8 +6538,7 @@ function test_deptReq_incomingAndMemberResolve() {
   } finally {
     ss.getRange(empRow, EMP.DEPARTMENTS + 1).setValue(prevDept);
     invalidateRosterCache_();
-    const after = sh.getLastRow();
-    if (after > before) sh.deleteRows(before + 1, after - before);
+    _cleanupRowsByPrefix(sh, 'TEST_DR_', DR.REQ_ID, 2);   // F-22: by key, never by position
     drBumpCacheGen_();   // and again on the way out — no later read may see the deleted row
   }
 }
@@ -6498,7 +6562,6 @@ function test_deptReq_detailScoped() {
   if (empRow < 0) { _skipTest('India test emp not on roster'); }
   const prevDept = ss.getRange(empRow, EMP.DEPARTMENTS + 1).getValue();
   const sh = getOrCreateDeptRequestsSheet_();
-  const before = sh.getLastRow();
   try {
     ss.getRange(empRow, EMP.DEPARTMENTS + 1).setValue(dept);
     invalidateRosterCache_();
@@ -6520,8 +6583,7 @@ function test_deptReq_detailScoped() {
   } finally {
     ss.getRange(empRow, EMP.DEPARTMENTS + 1).setValue(prevDept);
     invalidateRosterCache_();
-    const after = sh.getLastRow();
-    if (after > before) sh.deleteRows(before + 1, after - before);
+    _cleanupRowsByPrefix(sh, 'TEST_DR_', DR.REQ_ID, 2);   // F-22: by key, never by position
     drBumpCacheGen_();
   }
 }

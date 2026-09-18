@@ -1,0 +1,65 @@
+---BROAD SCAN IMPLEMENTATION SUMMARY---
+Findings implemented: F-06 — a failed getCallNotesDepartments was cached as an EMPTY config for the whole session. F-13 — the dashboard carousels rendered a cold-miss RPC failure or {error} as "No call data for this period." F-18 — Intake Sent detail rendered an UNTOUCHED PMD/PAP toggle ('') as "No". F-15 — kbGeocodeOne_ collapsed a quota/denial/throw to null, so every caller told the rep the ADDRESS was wrong. F-47 — getMyPendingTasks read a DQE meta.error as "0 answered" and cached the clean round. F-41 — the coverage strip rendered a cold-miss failure as the same blank as "no activity today". F-25 — the four KB count helpers returned {} on failure; "Most used" and "Review due" rendered that as none. F-45 — "Was this helpful?" thanked the rep before, and regardless of, the RPC.
+Files modified: web-app/cn/script_callnotes.html, web-app/tc/script_clock.html, web-app/intake/script_intake.html, web-app/70_kb.js, web-app/40_metrics.js, web-app/20_timeclock.js, web-app/kb/script_kb.html, test/client/run.js, test/client/dom/runDom.js, test/client/server-split-manifest.json, CLAUDE.md (generated block), .cycle/STATE.md
+
+Estimate: M (~7 h) — recorded 2026-09-17 in STATE.md BEFORE the first edit
+Actual: ~1.5 h
+
+CHANGES:
+F-06 | web-app/cn/script_callnotes.html | `cnFetchDeptConfigIfNeeded_` stores NOTHING on a transport failure or a structured {error} (toast + continuation only); every consumer already tolerates a null config, so the next open re-asks instead of honouring a truthy empty stub.
+F-13 | web-app/tc/script_clock.html | `clkLoadDashboard_` keeps a last-good payload only when it is not an error object, and carries `{error}` (never null) when there is none; `clkDashOwnCard_` / `clkDashTeamCard_` render a failed read through `errorStateHtml_` BEFORE the empty state (the Spanish/Requests cards' A12 posture).
+F-18 | web-app/intake/script_intake.html | the Sent-detail checkbox branch has three outcomes: 'TRUE' → Yes, 'FALSE'/false → No, anything else → blank (rendered as the N/A the PPD branch already uses).
+F-15 | web-app/70_kb.js | `kbGeocodeOne_` returns `{unavailable:true, status}` for any non-OK status other than ZERO_RESULTS and for a throw (message kept); ZERO_RESULTS stays null (a genuine miss). New `kbGeocodeUnavailableMsg_` is the ONE message ("not a problem with the address", names the status, mentions the quota); `checkOopEligibility` and `kbMapDistances` return it BEFORE the bad-address branch; `kbGeocodeCached_` treats an unavailable geocode as "not placed" and never caches it.
+F-47 | web-app/40_metrics.js, web-app/20_timeclock.js | `getMyMetrics` ships `cdrUnavailable` (true when the DQE reader returned meta.error); `getMyPendingTasks` throws to `unavailable` on it, so the round is not cached as clean.
+F-41 | web-app/tc/script_clock.html | new `clkCoverageUnavailable_(slot)` renders "coverage unavailable" (the F5 shape); `loadCoverageStrip_` uses it for both the {error} response and the transport failure on a cold miss; `renderCoverageStrip_` honours `cdrUnavailable` before the no-activity hide.
+F-25 | web-app/70_kb.js, web-app/kb/script_kb.html | `kbUsageCounts_` / `kbStaleFlags_` / `kbFeedbackCounts_` / `kbCommentCounts_` return `{map, unavailable}` (a missing tab is a genuine empty; a throw is unavailable). `kbGetUsageStats` and `kbGetReviewDue` name the reads that failed in `unavailable: [...]`; the landing renders "Could not read: views, feedback — usage is unavailable, not zero" instead of "No opens recorded", and "the queue may be incomplete" instead of an empty Review-due block (checked BEFORE the empty claims; also appended under a partial list).
+F-45 | web-app/kb/script_kb.html | `kbSendFeedback_` disables the bar's buttons, shows "Saving…", thanks only on `{success:true}`, and on a transport failure or `{success:false}` states "Could not record that — <reason>" and re-enables the buttons.
+Pins | test/client/run.js, test/client/dom/runDom.js | Pure: the geocoder driven with a stubbed Maps through OK / ZERO_RESULTS / OVER_QUERY_LIMIT / REQUEST_DENIED / throw, the shared cache never storing a failure, both callers branching on `unavailable` before the bad-address return; the four KB helpers driven against an unreachable store and a missing tab, both endpoints and the landing checked for the named lists; the Sent-detail expression driven for all five inputs; the dashboard loader's last-good rule and the strip's unavailable state. Two existing pins updated (the dashboard card order; PR6-1's throw regex + getMyMetrics's cdrUnavailable). DOM: the dept-config refetch across failure / {error} / success; the carousel cards for {error} / null / empty / undefined; the strip's unavailable vs no-activity; the feedback bar through failure, {success:false} and success.
+Tooling | test/client/server-split-manifest.json, CLAUDE.md | manifest regenerated for `kbGeocodeUnavailableMsg_` (1284 declarations); counts block updated (pure 871, DOM 126).
+
+TEST RESULTS: passed. Pure harness 871/871 (was 867 — four new pins), DOM harness 126/126 (was 122 — four new pins), `lint-server` clean, `split-manifest --check` current, `counts --check` green. Editor suite NOT RUN HERE (editor-only); registrations unchanged at 337.
+Bite-checks — EIGHT written, EIGHT bite (committed file mutated, the named pin went red, file restored): B1 the geocoder quota collapses to null again → F-15 · B2 a KB count helper swallows its failure again → F-25 · B3 pending tasks ignore cdrUnavailable again → PR6-1 · B4 an untouched toggle reads No again → F-18 · B5 the coverage strip blanks on failure again → F-13/F-41 · B6 the own card renders a failure as empty again → the dashboard pin · D1 the dept-config stub is cached again → F-06 DOM · D2 "Thanks" before the RPC again → F-45 DOM.
+Regression Scenarios (Test Command is `manual` — no editor or browser here):
+- S1 / S2 | Test Suite | NOT RUN HERE — editor-only; no registration change.
+- S3 Employee golden path · S101 Time Clock surface · S39 Clock view | Server, Client (Time Clock) | NOT RUN HERE — browser. Unchanged on every successful read; a failed `getDashboardMetrics` now shows the warn card per carousel slide (DOM-pinned) and a failed `getMyMetrics` shows "coverage unavailable" in the shift-strip header (DOM-pinned).
+- S43 Metrics — CDR unavailable fallback | Server, Client (Metrics) | NOT RUN HERE — browser. `getMyMetrics` gains `cdrUnavailable` (additive; the Metrics client ignores it — its own unavailable path is unchanged).
+- S18 / S19 Call Notes submit + composer | Client (Call Notes), Server | NOT RUN HERE — browser. One added step worth walking: fail the department fetch once (network off), reopen the composer — it re-asks and the Recipients grid fills (DOM-pinned).
+- S59 / S60 Intake PPD · PMD/PAP | Server, Client (Intake) | NOT RUN HERE — browser. In Sent, a PMD/PAP submission with a toggle nobody touched shows N/A for it, not "No"; a deliberate No still says No.
+- S62 / S64 / S71 Reference browse · drawer · review-due | Server, Client (Reference) | NOT RUN HERE — browser. "Was this helpful?" now shows "Saving…" then "Thanks"; the manager landing says which count reads failed instead of "No opens recorded".
+- S110 OOP pricing (eligibility both ways) | Server, Client (Reference, Call Notes) | NOT RUN HERE — browser + Maps. With the geocoder unreachable (or the quota spent) the check now says the SERVICE could not be reached, by status, instead of "Could not find that location"; a genuinely unknown address still gets the ZIP hint. Batch 1's S110 walk is still owed and this rides it.
+- S89 Every form control announces a name | Client | PASS by harness posture — the new status span is `role="status"`, not a control; the a11y-names companion harness can re-confirm on the next visual run.
+- S97 Admin → System findings-first | Client (Call Notes) | NOT APPLICABLE — untouched.
+- S107 / S108 / S109 accrual, open punches | Server | NOT APPLICABLE — `getMyPendingTasks` changed only its notes-row guard.
+
+REGRESSION RISKS:
+- `getMyMetrics` returns an additional field (`cdrUnavailable`); the endpoint is result-cached 5 min (L-1) and the cache key is unchanged — a cached pre-deploy payload lacks the field for ≤5 min after deploy, during which the old behaviour (a failed DQE read reads as no calls) persists once. Acceptable; no key bump for an additive boolean.
+- The four KB helpers changed return shape from a map to `{map, unavailable}`. All eight call sites are in the two endpoints updated here; the run.js pin now asserts no bare-map consumer remains. A future caller must read `.map`.
+- `kbGeocodeOne_` now returns an object for a service failure; every caller was updated (`checkOopEligibility`, `kbMapDistances`, `kbGeocodeCached_`), and the pin asserts the two query callers branch on it. A future caller that checks only `if (!g)` would read an unavailable service as a hit with no coordinates — the pin's caller list should grow with any new caller.
+- The dashboard's per-period store now holds `{error}` objects for failed periods with no last-good payload; `clkDashSaveLs_` still writes through only on a fully successful round, and the last-good lookup skips error objects, so an error never seeds tomorrow's boot.
+- A dept-config failure now leaves the composer with a NULL config (the same empty Recipients grid as before, one toast), but the next open retries; a rep who opens the composer during a sustained outage sees the same empty state each time rather than once — with a toast each time, which is the honest signal.
+
+INVARIANTS AT RISK: none violated. INV-01 (no writers touched), INV-02 (manager gates on kbGetUsageStats/kbGetReviewDue unchanged), INV-85 (no cached SHAPE changed in a way that needs a key bump — additive fields only), INV-129 (the dashboard localStorage tier still caches only a complete successful round), INV-175/187 (this batch is the class: eight absences that read as data now carry their outcome), INV-209 (the eligibility engine's fail direction is unchanged; the service failure now reaches the rep as an error, never as a verdict).
+
+NET SCORE: 6 − 0 = 6
+  a) Would this have fired in production this month? F-06 YES (one transient RPC failure on view enter is routine; the composer stayed empty for the session). F-13 YES (any CDR-store outage at boot painted "No call data"). F-18 YES (every PMD/PAP submission with an untouched toggle read "No" in Sent). F-15 YES for the class (the geocoder's daily quota is shared and uncapped — a quota event reads as "wrong address"; whether one landed this month is unverified — counted because the message is wrong on every occurrence). F-47 NO-as-observed (needs the DQE tab missing/renamed — counted as defensive). F-41 YES (any cold-miss failure hid the "File N missing" CTA behind the no-activity blank). F-25 NO-as-observed (needs an unreadable KbViews/KbFeedback/KbComments tab — defensive). F-45 YES (a failed feedback write was invisible on every occurrence).
+  b) New failure mode? NO for all eight. The one behaviour a reader should know: the KB helpers' return shape changed (pinned; all callers updated).
+
+OPERATOR ACTIONS / DEPLOY:
+- `clasp push -f` + cut a New version. | BLOCKS DEPLOY: Y
+- `runSmokeTests` on prod — registrations still 337; read the count off the run. | BLOCKS DEPLOY: N
+- Walk the "fail the department fetch once" step in S18/S19 and read a PMD/PAP Sent detail with an untouched toggle. | BLOCKS DEPLOY: N
+- Batch 1's S110 walk (still owed) now also covers the geocoder-unavailable message. | BLOCKS DEPLOY: N
+Deploy: Server — `cd web-app && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit → Version: New version → Deploy. Client (Time Clock, Call Notes, Intake, Reference views) — same push, same New-version step.
+
+(Not complete in production until blocking operator actions are done AND the deploy step is confirmed.)
+
+FOLLOW-ON ITEMS:
+- The visual matrix has no `?failrpc=getDashboardMetrics` or `?failrpc=getMyMetrics` scenario — the two new warn states on the Dashboard are DOM-pinned but not on camera. One tuple each in `shoot.mjs` (the Visual Audit Stage's "a new block ships THREE scenarios" rule).
+- The geocode QUOTA itself is still shared and uncapped between the eligibility box and the map block (scan gap; the OOP round's follow-on). This batch makes exhaustion HONEST, not bounded.
+- `getMyMetrics`'s `cdrUnavailable` is consumed by pending tasks and the coverage strip; the Metrics My Stats view has its own unavailable path and does not read it — a later batch could unify.
+
+DOCUMENTATION UPDATES NEEDED:
+- docs/gotchas.md "Honest failure" family: F-15's shape (a service failure reported as a user error) is worth a rule — "a lookup's `not found` and `could not look up` are different answers; collapse them and the rep is told to fix the wrong thing".
+- .cycle/config.md: S110's Expected should add the geocoder-unavailable message; S18/S19 could add the failed-then-retried dept fetch step.
+- The running-totals block is already regenerated (counts --check green).
+---END BROAD SCAN IMPLEMENTATION SUMMARY---

@@ -10,6 +10,175 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-18 (final) — Batch 7 of the cycle-20 scan: test and docs hygiene
+
+**Adds NO operator state.** No Script Property, no sheet, no tab, no migration,
+no deploy step beyond the usual push and New version. Two things an operator
+will nevertheless SEE after the deploy, and one number in the docs that moved.
+
+**The manager live-status sparkline gained a third bar.** A day the server
+could not measure — the rep is still clocked in at the moment you open the
+page, or one of their stamps would not parse — now draws as a hatched
+full-height bar reading "no data" instead of the flat zero bar it used to
+share with a genuine day off. The total under the bars counts only the days it
+could measure and carries a `·N?` suffix saying how many it could not. Nothing
+about the underlying punches changed; the card had been reporting "0 hours
+worked" about days it had no hours for.
+
+**The Spanish Inbox stats card counts voicemails now, so its numbers move.**
+8x8 mails each member's individual inbox rather than the group address, so the
+card had been counting none of them while the list directly below it folded
+them in — four pending cards under a card that said three, every day. Resolved,
+Pending, Avg time and Median all step as a result, and the step appears
+immediately rather than after the cache TTL because the payload change bumped
+the cache key. The head note now names how many voicemails are in the figures
+and how many short ones the duration gate hid, and it says "voicemails not
+counted — fold not configured" rather than a zero when `SPANISH_VM_SENDER` and
+`SPANISH_VM_SUBJECT_FILTER` are unset. **If you have been watching
+`vmSuppressed`, expect it to tick up:** the gate now runs before the resolution
+check, so it counts a short voicemail even when someone later resolved it, and
+its meaning is "hang-ups hidden from both surfaces".
+
+**"Manager-gated" was wrong in twenty-one places, and the endpoint count with
+it.** Nineteen endpoints that the docs described as manager-gated in fact
+enforce `isAdmin`: every Admin-tab surface — Storage Health, Automation Health,
+Deploy readiness, the retention and feature-flag saves, the department-email and
+tax-rate saves, the tag taxonomy and its rename/merge/archive actions, the
+compliance audit search, the KB Doc converter. **A manager who is not also in
+`ADMIN_EMAILS` is refused by all of them.** That matters when sizing
+`ADMIN_EMAILS`, which is what INV-31 is read for. In the same pass the
+"Manager-gated endpoints" figure in the running-totals block went from 61 to 95,
+because it had been counting one refusal message and missing every endpoint
+gated by `assertManagerCaller_` — the trigger handlers among them — and a new
+row was added for the QA tier. The figures are derived from the code in three
+families now, so none of them can drift again.
+
+Nothing else here reaches an operator: the linter stopped pre-approving six
+Google advanced services the project does not enable, a test seam moved out of
+production code, the CDR metrics cache stopped leaking between fixture runs and
+real reads on the dev instance, the queue-inventory panel stopped warning
+"possibly incomplete" on every run, and four test pins were rewritten to check
+the behaviour they were named for.
+
+## 2026-09-18 (last) — Batch 6 of the cycle-20 scan: shell, accessibility and copy
+
+Adds NO Script Property and no sheet change; every fix is client-side. What an
+operator notices after the push + New version: (1) when the app fails to load,
+the **Retry** button on the "Couldn't Load" screen actually reloads the app —
+it used to refetch the sandboxed inner frame and paint blank, so the only way
+out was the browser's own reload; (2) the five Time Clock dialogs (Adjust, Day
+Detail, Day Edit, Export, Manager Time-Off) and the Call Notes shortcuts
+dialog now move focus into themselves on open and hand it back to the button
+you pressed on close — keyboard users stop landing at the top of the page
+after every close; (3) **Manage → Admin → Overview's KPI strip now reports the
+TEAM**: the first cell is every enrolled rep's notes all-time (expect a much
+larger number than the week-of-your-own-notes it used to show) and Unresolved
+is the cross-rep count, with each cell captioned with its own scope; if a rep's
+Notes Sheet cannot be read it says `≥ N` rather than a confident total; (4) the
+**ADP export dialog stays open** on success and shows an "Open the export
+sheet" link — if your browser blocks the new tab the URL is still there, where
+before it was lost and you had to regenerate; (5) pressing **Pop out** with
+pop-ups blocked now tells you so and names the remedy (it was silent); (6) on
+the public form, the five collapsible sections announce whether they are open;
+(7) the Reference drawer announces itself and returns focus to the field you
+opened it from; (8) two labels stopped lying — the quick-chip row says "all
+time" (its counts always did) and a training thread you read as a manager says
+"Rep", not "You". Registrations unchanged at 337.
+
+## 2026-09-18 (later still) — Batch 5 of the cycle-20 scan: access boundary and data integrity
+
+Adds NO Script Property you must set, but makes ONE worth setting visible.
+What an operator notices after the push + New version: (1) Manage → Admin →
+System's Storage inventory gains a **Dept Requests (PHI-adjacent)** row, and
+it WARNS while `DEPT_REQUESTS_SS_ID` is unset — the tracker's rows have named
+a patient since 2026-09-10 (the `PatientTrx` column) and by default they sit
+on the ADP/payroll sheet; set the property to the Intake spreadsheet's id to
+move new rows onto the PHI store (existing rows stay put, and nothing reads
+them afterwards, so move or leave them as you prefer); (2) QA: attributing a
+recording now stores the agent's roster ID beside the name, and My Reviews
+matches on that — if two roster rows share a name, attribution stores no id
+and neither agent sees the review, which is the point; re-attribute anything
+shared before this deploy whose agent's name is duplicated; (3) the QA
+coverage table's Grant/Revoke exemption buttons work for an agent whose name
+carries an apostrophe (they threw silently before); (4) a tag rename or merge
+that cannot open a rep's Notes Sheet now says so — a warning naming the rep,
+and `skipped=<n> (<ids>)` in the audit row — instead of reporting success
+while that rep's notes keep the old tag; (5) an Employee Doc with no integrity
+hash on record (a hand-entered row, never an app-issued one) is REFUSED at
+signing with the reason, and Verify says "Integrity NOT verified" instead of a
+reassuring "legacy row" note; (6) an OopPricing Area Eligibility cell that
+names a state beside a radius ("TX, 100 miles of Dallas") reads UNKNOWN in the
+diagnostics — split the cell, or accept unknown; a warehouse's own state
+("100 miles of the Dallas TX warehouse") is unaffected; (7) intake emails are
+unchanged for an English completion — the labels now come from the server, so
+a Spanish completion is English whatever the client sends. Registrations
+unchanged at 337.
+
+## 2026-09-18 (later) — Batch 4 of the cycle-20 scan: automation liveness and accrual diagnostics
+
+Adds NO Script Property to set and no sheet change; three auto-managed
+properties grow. What an operator notices after the push + New version: (1)
+Manage → Admin → System → Automation detail lists three more heartbeats —
+"Daily missed-punch alerts" (8am), "Daily ADP export check" (12pm) and
+"Automation-health failure digest" (9am) — reading "no heartbeat recorded yet"
+until each has run once, then stale past 26h; a dead trigger for any of them
+is now a finding, and a payroll export that silently never went out is no
+longer possible without one; (2) a stamped job failure on the Admin card shows
+its MESSAGE (every one had read "unknown error"); (3) a rep credited for two
+or more months at once gets one `PtoAccrualCredit` row per month, and the
+balance moves by exactly what `previewPtoAccruals` predicted; (4) switching
+`enablePtoTracking` off no longer leaves last month's shortfall alarming; (5)
+a fresh deployment's team calendar renders before the first time-off request;
+(6) a killed test run no longer leaves a test address in `MANAGER_EMAILS` or
+TEST_ rows on the DeptRequests / ClientErrors tabs — `cleanupTestData` sweeps
+both by key. Registrations unchanged at 337. Walk S107 once with a rep two
+months behind, and S9 to see the heartbeat land.
+
+## 2026-09-18 — Batch 3 of the cycle-20 scan (H1/H2 follow-through), the editor-test fix, and cycle 19's last reflection
+
+Adds NO Script Property and no sheet change. What an operator notices after
+the push + New version: (1) both Metrics heroes say where the answer target
+comes from — "target 92% · from the Dashboard Standards tab" — and when there
+is none, WHY (a missing row in muted text; an unreadable tab as a warning);
+(2) Manage → Admin → System's CDR Report row gained a chevron whose detail
+states which holiday calendar and which answer standard are LIVE, with a
+finding for every fallback state — on a normal deployment two more ok facts,
+otherwise the first place a federal-list fallback or a missing standard has
+ever been visible; (3) a standard published WITHOUT an Amber Band tones one
+point under the target RED on the team table and the Dashboard card alike
+(the card used to say amber); (4) the manager sidebar badge now judges the
+previous WORKDAY — it can fire on a Monday (Friday's rate) and the morning
+after a holiday, two mornings it was silent — and its tooltip names the
+Dashboard Standards target instead of a literal 85; (5) a window with nothing
+answered or missed shows a dash, not 0%; (6) the time-off legend, conflict
+card and manager chips read "Company holiday". Registrations unchanged at 337;
+one editor test corrected (`test_teamBenchmark_subtractsPublishedExcludes`
+expected 85.7 where the formula has rounded whole since H2 — it had never
+run). Walk S111 step 5 and S110 step 5 (the two new findings) with the batch.
+Cycle 19 is fully reflected (`19-e`: the H1–H3 round, net 5 − 2 = 3 — the two
+new failure modes H2 shipped are exactly what this batch closed).
+
+## 2026-09-17 (later still) — the cycle-20 /broad-scan, Batches 1 and 2
+
+Adds NO Script Property and no sheet change. Fourteen fixes from the scan, all
+in code; what an operator notices after the push + New version: (1) a quoted
+price SENDS again from the external composer on the real `OopPricing` sheet
+(every quoted send had been refused as "no longer lists" since OOP-C, because
+the verifier still keyed column A); (2) the eligibility check finds an item by
+NAME; (3) the Scheduled-reminders and Scratchpad modals CLOSE (Close, Escape,
+backdrop had all been dead since 2026-09-02); (4) an equal Clock In / Clock
+Out is zero hours, not a 24-hour day — run the sheet doctor once and read
+"inverted pairs" for any such day that was paying 24 h, then Day Edit it; Day
+Edit refuses an equal pair by name and its Save waits for the punches to load;
+(5) a failed read no longer looks like data on the Dashboard carousels, the
+coverage chip, the Needs-you notes row, the composer's department list, the
+Intake Sent viewer (an untouched toggle is N/A, not "No"), the Reference
+landing's manager blocks, the "Was this helpful?" bar, and the eligibility /
+map geocoder (a quota or outage says "the address service could not be
+reached", not "wrong address"). Walk S112 (OOP, renumbered from the duplicate
+S110) first, then S7's two new steps, then S113 (the two modals). Registrations
+337 (one new smoke test); read the count off the run.
+
 ## 2026-09-17 (later) — H2: one answer rate, one standard, shared with the Department Dashboard
 
 Adds NO Script Property that must be set (`CDR_DASHBOARD_DEPT` is an optional

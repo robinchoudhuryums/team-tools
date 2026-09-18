@@ -2651,11 +2651,22 @@ function enterCallNotesManageView(area) {
 
 function cnFetchDeptConfigIfNeeded_(then) {
   if (CN_STATE.deptConfig) { then(); return; }
+  // F-06 (2026-09-17): a FAILED fetch used to be cached as an EMPTY config
+  // (a truthy stub this guard then honoured for the whole session), so one
+  // transient failure left the composer with zero departments, Preview
+  // refusing, no templates and no auto-tags until a reload. Now nothing is
+  // stored on failure — every consumer already tolerates a null config — so
+  // the next open re-asks. A structured {error} is a failure too, not a config.
   google.script.run
-    .withSuccessHandler(function (cfg) { CN_STATE.deptConfig = cfg; then(); })
+    .withSuccessHandler(function (cfg) {
+      if (!cfg || cfg.error) {
+        showToast('Failed to load department config: ' + ((cfg && cfg.error) || 'no response'), 'toast-error');
+        then(); return;
+      }
+      CN_STATE.deptConfig = cfg; then();
+    })
     .withFailureHandler(function (err) {
       showToast('Failed to load department config: ' + err.message, 'toast-error');
-      CN_STATE.deptConfig = { departments: [], suggestionsByDept: {}, defaultSuggestions: [] };
       then();
     })
     .getCallNotesDepartments();
@@ -2822,8 +2833,8 @@ function cnRenderNotesView(area) {
     </div>
     <div id="cn-shortcuts-overlay" class="overlay">
       <div class="cn-shortcuts-modal">
-        <button class="cn-shortcuts-close" onclick="document.getElementById('cn-shortcuts-overlay').classList.remove('open')">${icon('x', 16)}</button>
-        <div class="cn-shortcuts-title">Keyboard Shortcuts</div>
+        <button class="cn-shortcuts-close" aria-label="Close keyboard shortcuts" onclick="closeOverlay(document.getElementById('cn-shortcuts-overlay'))">${icon('x', 16)}</button>
+        <div class="cn-shortcuts-title" id="cn-shortcuts-title">Keyboard Shortcuts</div>
         <table class="cn-shortcuts-table">
           <tr><td>Save &amp; Copy</td><td><kbd>${esc(mod)}</kbd> + <kbd>Shift</kbd> + <kbd>C</kbd></td></tr>
           <tr><td>Save &amp; Compose</td><td><kbd>${esc(mod)}</kbd> + <kbd>Shift</kbd> + <kbd>Enter</kbd></td></tr>
@@ -2841,7 +2852,7 @@ function cnRenderNotesView(area) {
           <tr><td>Show Shortcuts</td><td><kbd>${esc(mod)}</kbd> + <kbd>/</kbd>&nbsp; or &nbsp;<kbd>?</kbd></td></tr>
         </table>
         <button class="tour-btn primary" style="margin-top:14px;width:100%;justify-content:center"
-                onclick="document.getElementById('cn-shortcuts-overlay').classList.remove('open'); if (typeof tourStart==='function') tourStart();">
+                onclick="closeOverlay(document.getElementById('cn-shortcuts-overlay')); if (typeof tourStart==='function') tourStart();">
           ${icon('info', 14)} Replay the app tour
         </button>
       </div>
@@ -4937,7 +4948,14 @@ function cnOpenSchedModal_(opts) {
   if (typeof schedFetch_ === 'function') schedFetch_(true);
 }
 
-function cnCloseSchedModal_() { /* idempotent — no module state to clear */ }
+/** onClose — the hook OWNS the close (closeOverlay delegates entirely to a
+ *  registered hook; INV-145 lets a hook refuse). No module state to clear;
+ *  the one thing it must do is REMOVE the overlay — until 2026-09-17 this was
+ *  a no-op, so Close, Escape and the backdrop all left the modal open. */
+function cnCloseSchedModal_() {
+  var o = document.getElementById('cn-sched-overlay');
+  if (o) o.remove();
+}
 
 /** Hook the shell's schedFetch_ calls after every list refresh (typeof-guarded
  *  there). Re-renders only while the modal is actually open. */
@@ -5081,7 +5099,11 @@ function cnOpenScratchpadModal_() {
 /** onClose — flush a pending debounce so typed text never dies with the
  *  modal (the INV-148 rule). Idempotent (safe when already closed). */
 function cnCloseScratchpadModal_() {
-  if (CN_SCRATCH.dirty) cnScratchSave_(true);
+  if (CN_SCRATCH.dirty) cnScratchSave_(true);   // reads the field synchronously, BEFORE the DOM goes
+  // The hook OWNS the close (closeOverlay delegates to it) — remove the
+  // overlay, or Close / Escape / backdrop do nothing (fixed 2026-09-17).
+  var o = document.getElementById('cn-scratch-overlay');
+  if (o) o.remove();
 }
 
 function cnScratchStatus_(msg, warn) {
@@ -7776,7 +7798,7 @@ function cnMgrRenderReadonlyCard_(note) {
     // appends to subformData.feedback[] via setCallNoteManagerComment (item 9).
     editor = `
       <div class="cn-mgr-reply-row" data-note-id="${esc(note.noteId)}" data-rep-id="${esc(repId)}">
-        <input type="text" class="cn-mgr-reply-input" aria-label="Reply to this training question" placeholder="Add a comment for this rep…" aria-label="Add a comment for this rep">
+        <input type="text" class="cn-mgr-reply-input" placeholder="Add a comment for this rep…" aria-label="Add a comment for this rep">
         <button type="button" class="cn-mgr-reply-save" onclick="cnMgrSaveComment_(this)">
           ${icon('check', 12)}<span>Comment</span>
         </button>
@@ -8530,7 +8552,11 @@ function cnRenderQAThread_(note, opts) {
       : esc(e.message || '');
     const ts = e.at ? '<span class="qa-ts">' + esc(String(e.at).slice(11, 16)) + '</span>' : '';
     return '<div class="qa-row ' + roleCls + '">'
-      + '<span class="qa-role">' + (e.role === 'manager' ? 'Mgr' : 'You') + ' ' + kindLabel + '</span>'
+      // F-29 (2026-09-18): "You" is only true on the REP's own view. In the
+      // manager's read-only Team Notes card the agent entries belong to the
+      // rep being read, and labelling them "You" told the manager they had
+      // written the rep's question.
+      + '<span class="qa-role">' + (e.role === 'manager' ? 'Mgr' : (readonly ? 'Rep' : 'You')) + ' ' + kindLabel + '</span>'
       + '<span class="qa-msg">' + body + '</span>'
       + ts
       + '</div>';
@@ -8731,7 +8757,11 @@ function cnUpdateQuickChipRow_(res) {
   ];
   // V-12: the label names the destination and every chip carries a chevron, so
   // "this click leaves the page" is legible without reading the kicker.
-  row.innerHTML = '<span class="cn-quick-chip-row-label">' + icon('chevronRight', 11) + ' Open in History · this week</span>'
+  // F-28 (2026-09-18): these counts span the rep's WHOLE Sheet by design
+  // (INV-39 — historical totals), and the label said "this week". The label
+  // moves to the counts rather than the counts to the label: a weekly count
+  // here would contradict the same numbers everywhere else they appear.
+  row.innerHTML = '<span class="cn-quick-chip-row-label">' + icon('chevronRight', 11) + ' Open in History · all time</span>'
     + chips.map(c => `<button type="button" class="cn-quick-chip" data-flag="${esc(c.flag)}" ` +
         `title="Open History filtered to ${esc(c.label)}">${esc(c.label)} ` +
         `<span class="count">${c.count}</span>` +
@@ -8779,8 +8809,12 @@ function cnIsMac_() {
 }
 
 function cnOpenShortcutsOverlay_() {
-  var overlay = document.getElementById('cn-shortcuts-overlay');
-  if (overlay) overlay.classList.add('open');
+  // F-30 (2026-09-18): through ensureOverlay, so the shortcuts dialog gets
+  // what every other overlay has — an accessible NAME (it announced as a bare
+  // "dialog"), the focus stash/restore, and Escape-to-close through the
+  // shared handler. It was the one overlay in this partial opened by hand.
+  if (!document.getElementById('cn-shortcuts-overlay')) return;
+  ensureOverlay('cn-shortcuts-overlay', { labelledBy: 'cn-shortcuts-title' });
 }
 
 function cnFormToggleFlag_(kind) {
@@ -9379,13 +9413,19 @@ function cnLoadAdminAugment_() {
   // 2nd-pass Admin consolidation: taxonomy + trends are ONE table now, so the
   // trends fetch joins this parallel load (was a separate panel). Trends failure
   // is non-fatal — the table renders without the sparkline/Δ columns' data.
-  let kpi = null, tax = null, trends = null, done = 0;
+  // F-12 (2026-09-18): the strip labelled the ADMIN'S OWN counts "across
+  // team" — `getCallNotesAmbient` is the caller's own Sheet. The two cells
+  // that claimed team scope now read team-wide sources:
+  // `getCallNotesTagTaxonomy.totalNotes` (every enrolled rep's notes) and
+  // `managerGetUnresolvedActionCount` (the cross-rep walk behind the Team
+  // Notes badge, 2-min cached, and it REPORTS a partial walk).
+  let kpi = null, tax = null, trends = null, unres = null, done = 0;
   function maybeRender() {
-    if (done < 3) return;
+    if (done < 4) return;
     if (currentView !== 'callNotesAdmin') return;
     // KPI strip → Overview (#cn-admin-kpis); merged tag table → Tags
     // (#cn-admin-augment). Falls back to a single slot if the KPI host is absent.
-    const parts = cnRenderAdminAugmentHtml_(kpi, tax, trends);
+    const parts = cnRenderAdminAugmentHtml_(kpi, tax, trends, unres);
     const kpiSlot = document.getElementById('cn-admin-kpis');
     if (kpiSlot) { kpiSlot.innerHTML = parts.kpiHtml; slot.innerHTML = parts.taxHtml; }
     else { slot.innerHTML = parts.kpiHtml + parts.taxHtml; }
@@ -9405,21 +9445,36 @@ function cnLoadAdminAugment_() {
     .withSuccessHandler(function (r) { trends = r || null; done++; maybeRender(); })
     .withFailureHandler(function () { done++; maybeRender(); })
     .getCallNotesTagTrends();
+  google.script.run
+    .withSuccessHandler(function (r) { unres = r || null; done++; maybeRender(); })
+    .withFailureHandler(function () { done++; maybeRender(); })
+    .managerGetUnresolvedActionCount();
 }
 
 /** Round 2 · 8h + 2nd-pass merge — render the KPI strip + the merged tag table
  *  (taxonomy taxonomy + inline trend sparkline + this-week Δ). */
-function cnRenderAdminAugmentHtml_(kpi, tax, trends) {
-  // KPI strip: Notes this week, Unresolved actions, Tags in use, Reps scanned
-  const weekVal = kpi && typeof kpi.weekTotal === 'number' ? kpi.weekTotal : '—';
-  const unresolvedVal = kpi && typeof kpi.unresolvedActionCount === 'number' ? kpi.unresolvedActionCount : '—';
+function cnRenderAdminAugmentHtml_(kpi, tax, trends, unres) {
+  // KPI strip: Notes across team, Unresolved action flags across team, Tags in
+  // use, Reps scanned. F-12 (2026-09-18): the first two cells took the
+  // CALLER'S OWN numbers from getCallNotesAmbient and captioned them "across
+  // team" — an admin with a quiet week read the whole team as quiet. Both come
+  // from cross-rep sources now, and each cell's sub-line states its own SCOPE
+  // rather than the strip implying one. `kpi` still rides for the ok-shape.
+  const notesVal = tax && typeof tax.totalNotes === 'number' ? tax.totalNotes : '—';
   const tagsCount = tax && Array.isArray(tax.tags) ? tax.tags.length : '—';
   const repsCount = tax && typeof tax.repsScanned === 'number' ? tax.repsScanned : '—';
-  const unresolvedClass = (typeof unresolvedVal === 'number' && unresolvedVal > 3) ? 'crit'
-    : (typeof unresolvedVal === 'number' && unresolvedVal > 0 ? 'warn' : '');
+  // A cross-rep walk that could not read every Sheet is a LOWER BOUND and says
+  // so (INV-187) — "≥ 7" beside a partial note, never a confident 7.
+  const unresOk = unres && !unres.error && typeof unres.count === 'number';
+  const unresolvedVal = unresOk ? unres.count : '—';
+  const unresPartial = !!(unresOk && unres.partial);
+  const unresolvedClass = (unresOk && unres.count > 3) ? 'crit' : (unresOk && unres.count > 0 ? 'warn' : '');
+  const unresText = unresOk ? ((unresPartial ? '≥ ' : '') + String(unresolvedVal)) : '—';
+  const unresSub = !unresOk ? 'could not be read'
+    : (unresPartial ? 'across team · a rep Sheet was unreadable' : 'action flags open across team');
   const kpiHtml = '<div class="telemetry" style="margin-bottom:16px">'
-    + '<div class="tel-cell"><div class="tel-label">Week notes</div><div class="tel-value">' + esc(String(weekVal)) + '</div><div class="tel-sub">across team</div></div>'
-    + '<div class="tel-cell"><div class="tel-label">Unresolved</div><div class="tel-value ' + unresolvedClass + '">' + esc(String(unresolvedVal)) + '</div><div class="tel-sub">action flags open</div></div>'
+    + '<div class="tel-cell"><div class="tel-label">Notes</div><div class="tel-value">' + esc(String(notesVal)) + '</div><div class="tel-sub">across team · all time</div></div>'
+    + '<div class="tel-cell"><div class="tel-label">Unresolved</div><div class="tel-value ' + unresolvedClass + '">' + esc(unresText) + '</div><div class="tel-sub">' + esc(unresSub) + '</div></div>'
     + '<div class="tel-cell"><div class="tel-label">Tags</div><div class="tel-value">' + esc(String(tagsCount)) + '</div><div class="tel-sub">unique in use</div></div>'
     + '<div class="tel-cell"><div class="tel-label">Reps</div><div class="tel-value">' + esc(String(repsCount)) + '</div><div class="tel-sub">enrolled scanned</div></div>'
     + '</div>';
@@ -9599,7 +9654,7 @@ function cnPromptRenameTag_(oldTag) {
             showToast((res && res.error) || 'Rename failed', 'toast-error');
             return;
           }
-          showToast('Renamed: ' + res.notesUpdated + ' notes across ' + res.repsTouched + ' rep(s)', 'toast-success');
+          cnTagTransformToast_('Renamed', res);   // F-10: a skipped rep Sheet is a warning, not a success
           cnLoadAdminAugment_();
         })
         .withFailureHandler(function (err) {
@@ -9639,7 +9694,7 @@ function cnPromptMergeTag_(sourceTag) {
             showToast((res && res.error) || 'Merge failed', 'toast-error');
             return;
           }
-          showToast('Merged: ' + res.notesUpdated + ' notes across ' + res.repsTouched + ' rep(s)', 'toast-success');
+          cnTagTransformToast_('Merged', res);   // F-10
           cnLoadAdminAugment_();
         })
         .withFailureHandler(function (err) {
@@ -10029,6 +10084,16 @@ function cnLoadStoragePanel_() {
  *  problems / the exact tz fix. The VERDICTS (what needs attention) live in
  *  the findings list above the table — this is the reference detail behind
  *  them, so it states facts per row and never repeats the judgement. */
+/** F-10 (2026-09-18): the tag rename/merge outcome. A rep Sheet the server
+ *  could not read is NAMED and the toast is a WARNING — the old tag still
+ *  lives in that rep's notes, which a green "Renamed" toast used to hide. */
+function cnTagTransformToast_(verb, res) {
+  var skipped = (res && res.skippedReps) || [];
+  var base = verb + ': ' + res.notesUpdated + ' notes across ' + res.repsTouched + ' rep(s)';
+  if (!skipped.length) { showToast(base, 'toast-success'); return; }
+  showToast(base + ' — ' + skipped.length + ' rep Sheet(s) could not be read (' +
+    skipped.map(function (r) { return r.id; }).join(', ') + '); those notes still carry the old tag. Re-share the Sheet and run it again.', 'toast-warn');
+}
 function cnRenderStoragePanel_(res) {
   var stores = (res && res.stores) || [];
   var cfgTz = (res && res.configTimezone) || '';
@@ -10042,6 +10107,20 @@ function cnRenderStoragePanel_(res) {
   var detailFor = function (s) {
     var parts = [];
     if (s.note) parts.push('<div>' + esc(s.note) + '</div>');
+    // F-08 / F-09 — the CDR row states which standard and which calendar are
+    // live (facts; the verdicts are the findings above).
+    if (s.standard) {
+      var st = s.standard;
+      parts.push('<div>Dashboard Standards: <strong>' + esc(st.source) + '</strong>' +
+        (st.target != null ? ' · target ' + esc(st.target) + '%' + (st.band != null ? ' · amber band ' + esc(st.band) + ' pt' : ' · no amber band') : ' · no target') +
+        (st.dept ? ' · dept ' + esc(st.dept) : '') + (st.error ? ' · ' + esc(st.error) : '') + '</div>');
+    }
+    if (s.holidays) {
+      var ho = s.holidays;
+      parts.push('<div>Company Holidays: <strong>' + esc(ho.source) + '</strong>' +
+        (ho.source === 'sheet' ? ' · ' + esc(ho.thisYear) + ' in ' + esc(ho.year) + ' (' + esc(ho.ranges) + ' on the tab)' : ' · federal fallback in use') +
+        (ho.error ? ' · ' + esc(ho.error) : '') + '</div>');
+    }
     // Cycle 7 (M-14 class) — locale drift: a locale that differs from the ADP
     // sheet's changes WHICH string shapes Sheets coerces to Dates on read.
     if (s.localeMatch === false) {
@@ -10306,6 +10385,48 @@ function cnLoadHealthPanel_() {
  *  (`ok`), not a warning — there is nothing to fall back to.
  *  Failed loads are FINDINGS (`fail`), not silence: a health check that
  *  could not run must not render as "All OK" (INV-187). */
+/** F-08 — the answer standard (Dashboard Standards tab) as ONE finding. A
+ *  published row is the ok fact; every other source is a warning that names
+ *  what Metrics does about it (no target line, no tone, no sidebar badge),
+ *  and an unreadable tab is distinct from a missing row (g128). */
+function cnStandardFindings_(add, st) {
+  var dept = st.dept ? ' for ' + st.dept : '';
+  var fix = 'Add a Department row (or a * row) to the CDR Report’s Dashboard Standards tab — Answer Target, Amber Band, Team Avg Excludes. Read again within the hour (the standard is cached 1h).';
+  if (st.source === 'sheet' || st.source === 'global') {
+    add('cdrStandard', 'cdr', 'ok', 'Answer standard published' + (st.source === 'global' ? ' (the * row)' : dept),
+      'target ' + st.target + '%' + (st.band != null ? ' · amber band ' + st.band + ' pt' : ' · no amber band — below target is red'));
+  } else if (st.source === 'unavailable') {
+    add('cdrStandard', 'cdr', 'warn', 'Answer standard could not be read',
+      (st.error || 'the Dashboard Standards tab did not read') + ' — Metrics shows no target, tone or badge until it does',
+      'Open the CDR Report and check the Dashboard Standards tab’s headers (Department · Answer Target · Amber Band · Team Avg Excludes).');
+  } else {
+    var why = st.source === 'no-tab' ? 'no Dashboard Standards tab in the CDR Report'
+      : st.source === 'empty' ? 'the Dashboard Standards tab is empty'
+      : 'no Dashboard Standards row' + dept + ' (and no * row)';
+    add('cdrStandard', 'cdr', 'warn', 'No answer standard' + dept, why + ' — Metrics shows no target line, no % Answered tone and no sidebar badge', fix);
+  }
+}
+/** F-09 — which holiday calendar is LIVE. getCompanyHolidays_ falls back to
+ *  the computed US-federal list whenever the CDR tab is absent, empty or
+ *  unreadable (g123) and says nothing; this finding says it. The fallback
+ *  itself is unchanged here (deferred to the operator). */
+function cnHolidayFindings_(add, hol) {
+  var fix = 'Add or fill the Company Holidays tab in the CDR Report (the calendar the Department Dashboard walks); it is read again within the hour.';
+  if (hol.source === 'sheet') {
+    add('cdrHolidays', 'cdr', hol.thisYear > 0 ? 'ok' : 'warn',
+      hol.thisYear > 0 ? 'Company holidays from the CDR Report' : 'No company holidays listed for ' + (hol.year || 'this year'),
+      hol.thisYear > 0 ? hol.thisYear + ' in ' + hol.year + ' (' + hol.ranges + ' range' + (hol.ranges === 1 ? '' : 's') + ' on the tab)'
+        : hol.ranges + ' range' + (hol.ranges === 1 ? '' : 's') + ' on the tab, none in ' + (hol.year || 'this year') + ' — an unlisted year is a year with no holidays (the tab is maintained yearly)',
+      hol.thisYear > 0 ? '' : fix);
+  } else if (hol.source === 'unavailable') {
+    add('cdrHolidays', 'cdr', 'warn', 'Company Holidays could not be read',
+      (hol.error || 'the tab did not read') + ' — the computed US-federal list is in use meanwhile (previous-workday, PTO and coverage math)',
+      'Open the CDR Report and check the Company Holidays tab (From · To · Name); until it reads, holidays the team actually observes are missing.');
+  } else {
+    add('cdrHolidays', 'cdr', 'warn', hol.source === 'no-tab' ? 'No Company Holidays tab' : 'Company Holidays tab is empty',
+      'the computed US-federal list is in use instead — Columbus and Veterans Day count as closures, and the closures the team actually observes do not', fix);
+  }
+}
 function cnHealthFindings_(health, storage) {
   var items = [];
   var degraded = { automation: null, cdr: null, storage: null };
@@ -10346,7 +10467,7 @@ function cnHealthFindings_(health, storage) {
     aeJobs.forEach(function (job) {
       var e = ae[job] || {};
       add('automationError:' + job, 'automation', 'fail', job + ' failed on its last run',
-        (e.at ? 'at ' + e.at + ' — ' : '') + (e.error || 'unknown error'),
+        (e.at ? 'at ' + e.at + ' — ' : '') + (e.message || e.error || 'unknown error'),   // F-20: the stamp's field is `message`
         'Run the job from the editor to reproduce; a clean run clears this flag.');
     });
     if (!aeJobs.length) add('automationErrors', 'automation', 'ok', 'Automation jobs', 'no stamped failures');
@@ -10486,6 +10607,10 @@ function cnHealthFindings_(health, storage) {
       } else {
         add(id, 'storage', 'ok', s.label, 'reachable' + (s.tzMatch === true ? ' · tz matches' : ''));
       }
+      // F-08 / F-09 (2026-09-17) — the two published tabs the CDR row carries.
+      // Both are CDR-area findings: what the app judges call data against.
+      if (s.standard) cnStandardFindings_(add, s.standard);
+      if (s.holidays) cnHolidayFindings_(add, s.holidays);
     });
     // (F3, 2026-09-09) Where copies of every outgoing email go. MAIL_BCC_ALL
     // is merged into EVERY send — intake bodies carry full patient answers —
@@ -10588,6 +10713,10 @@ var CN_DIGEST_LABELS_ = {
   trainingOverdue: 'Training-overdue digest', deptReqReminder: 'Dept-request SLA reminder',
   managerBrief: 'Manager daily brief', selfTest: 'Nightly self-test',
   coachingRecap: 'Weekly coaching recap',
+  // F-20 (2026-09-18) — the three heartbeat-only daily jobs.
+  missedPunch: 'Daily missed-punch alerts',
+  exportCheck: 'Daily ADP export check',
+  automationHealth: 'Automation-health failure digest',
   spanishAutoAssign: 'Spanish Inbox auto-assign',
 };
 var CN_SYS_AREAS_ = [['automation', 'Automation'], ['cdr', 'CDR'], ['storage', 'Storage']];
@@ -10885,6 +11014,10 @@ function cnRenderHealthPanel_(res) {
     selfTest: { label: 'Nightly self-test', expect: 'daily 1am — smoke on prod, full suite on the dev instance' },
     coachingRecap: { label: 'Weekly coaching recap', expect: 'Friday 8am — agent-facing recap of non-critical coaching; stale past 8d' },
     spanishAutoAssign: { label: 'Spanish Inbox auto-assign', expect: 'hourly in business hours while the spanishAutoAssign toggle is on; stale past 2h' },
+    // F-20 (2026-09-18) — the three heartbeat-only daily jobs (no audit row).
+    missedPunch: { label: 'Daily missed-punch alerts', expect: 'daily 8am — stale past 26h; heartbeats even on a morning with no missed punch' },
+    exportCheck: { label: 'Daily ADP export check', expect: 'daily 12pm — stale past 26h; the export itself lands only at a period end (AdpExportAuto)' },
+    automationHealth: { label: 'Automation-health failure digest', expect: 'daily 9am — stale past 26h; heartbeats on an all-clear morning too, and its own failure is stamped' },
   };
   var digestsHtml = (res.digests || []).map(function (d) {
     var meta = DIGEST_LABELS[d.key] || { label: d.key, expect: '' };

@@ -41,6 +41,45 @@ not restate it. Server endpoints live in the fourteen server files
 
 
 <a id="call-notes"></a>
+     **2026-09-17 (the /broad-scan's Batches 1 + 2):** an EQUAL Clock In /
+     Clock Out is zero hours, not the 24-hour day the `<=` overnight wrap paid
+     (INV-215 — the manager writers refuse it by name and the sheet doctor
+     reports it at minute granularity); Day Edit's Save is disabled until the
+     prefill lands (a Save in that window sent blank slots, which delete
+     punches); the Dashboard's two metric carousels render a failed read as the
+     warn card, never "No call data for this period"; the shift-strip coverage
+     chip says "coverage unavailable" on a failed read instead of the blank that
+     means "no call activity"; and the Needs-you "calls without a note" row
+     treats a failed DQE read as "couldn't check", never "0 missing"
+     (`getMyMetrics.cdrUnavailable`).
+     **Batch 4 (2026-09-18):** the monthly PTO accrual credit writes ONE
+     `PtoAccrualCredit` ledger row per MONTH (a catch-up is per-month keys, and
+     the total is the per-month sum — the accrual decision, F-19); the accrual
+     job rewrites its reconcile stamp on every path (F-46); the team calendar
+     reads the time-off tab through its provisioner, so a fresh deployment
+     renders it (F-49); the missed-punch alerts and the export check heartbeat
+     (F-20, the Automation Health decision).
+
+     **Batch 6 (2026-09-18):** the five static modals (Adjust, Day Detail, Day
+     Edit, Export, Manager Time-Off) open through `ensureOverlay` and close
+     through `closeOverlay`, so focus moves into the dialog and returns to the
+     control that opened it (F-40); the day popover keeps its `hover-mode`
+     across that rewrite (g134). The ADP export renders the generated sheet's
+     LINK into the dialog and keeps it open, so a pop-up blocker can no longer
+     take the URL with it (F-36, g135).
+
+     **Batch 7 (2026-09-18):** the live-status card's 7-workday sparkline has
+     THREE bar states rather than two. A day the rep did not work stays the dim
+     `zero` bar (V-10); a day the server could not MEASURE — the rep is still
+     clocked in at the moment of the read, or a stamp `calcHours_` refused —
+     is a hatched full-height bar reading "no data"; a measured day is its own
+     height, including a genuine `0.0h` day, which is told apart from the
+     others by PRESENCE in the hours map rather than by truthiness. The total
+     under the bars counts only what could be measured and carries a `·N?`
+     suffix naming how many it could not, and a week of nothing but unknowns
+     renders instead of collapsing to nothing (F-48, g136, the sparkline
+     decision).
+
 ## Call Notes
 
    - **Call Notes** — rolling-note panel for CSR call logging. Each
@@ -70,6 +109,16 @@ not restate it. Server endpoints live in the fourteen server files
 
 
 <a id="metrics"></a>
+     **Batch 6 (2026-09-18):** the Admin Overview KPI strip reports TEAM
+     numbers — notes across every enrolled rep (all-time) and the cross-rep
+     unresolved-action walk — with each cell stating its own scope, and a
+     partial walk rendered as `≥ N` rather than a confident total (F-12). The
+     keyboard-shortcuts overlay joined the overlay lifecycle: a name, focus
+     stash and restore, and the shared Escape handler (F-30). The quick-chip
+     row's label reads "all time", matching counts that always spanned the
+     whole Sheet (F-28), and the Q&A thread says "Rep" rather than "You" when
+     a manager is the one reading it (F-29).
+
 ## Metrics
 
    - **Metrics** — CDR integration module that reads DQE Historical
@@ -113,6 +162,17 @@ not restate it. Server endpoints live in the fourteen server files
      scans the date column and each reader reads only the window's row span
      at full width, keeping its per-row filter — and a bare Sheets serial in
      the Date column is a date rather than a silently dropped row (g125).
+     **Batch 3 of the cycle-20 scan (2026-09-17)** closed H2's leftovers: both
+     heroes name the standard's SOURCE beside the target (and say "no target,
+     tone or badge" when there is none — muted for a missing row, warn for an
+     unreadable tab); a standard with no Amber Band has no amber tier on the
+     team table AND the Clock card (`mtAnswerBand_`, the one rule); a window
+     with nothing answered or missed shows a dash, not 0%; the manager sidebar
+     badge judges the previous WORKDAY (Monday reads Friday, the morning after
+     a holiday steps over it) and its tooltip names the Dashboard Standards
+     target instead of a literal 85 (g131). Admin → System's CDR Report row
+     states which calendar and which standard are live, with a finding for
+     every fallback state (F-08/F-09).
      **Intake-call analytics (operator 2026-08-25):** long PPD /
      account-creation calls are EXPLAINABLE beside the KPIs as honest
      COUNTS — per-call CDR attribution does not exist (DQE is one row per
@@ -141,10 +201,32 @@ not restate it. Server endpoints live in the fourteen server files
      hang-ups from a dead parser. Auto-assign inherits the gate. The card's
      snippet is now the voicemail TRANSCRIPT rather than the first 240 chars of
      the body, which were almost entirely 8x8 boilerplate.
+     **Batch 7 (2026-09-18):** the STATS card above that list now counts the
+     same voicemails. It never had — 8x8 mails each member's individual inbox
+     rather than the group address, so a voicemail matched neither
+     `spanishSearchQuery_` nor the card computed from it, and the card read
+     three pending above a list of four every day. `spanishVmFold_` is the ONE
+     fold and both surfaces read it, so Resolved, Pending, Avg and Median all
+     move (a voicemail resolved by a member reply is timed like any other
+     request). The card states its own voicemail figures — how many are
+     included, how many short ones the gate hid — and says "voicemails not
+     counted — fold not configured" rather than a zero when the two Script
+     Properties are unset. The stats cache key is bumped `v2` → `v3` so a
+     cached thread-only aggregate cannot keep serving for the TTL (F-34,
+     INV-223, the one-fold decision).
      Backs the CDR Report spreadsheet (`CONFIG.CDR_SS_ID`).
 
 
 <a id="intake"></a>
+     **Batch 5 (2026-09-18):** `QaRecordings` carries a trailing `AgentId`
+     written from the roster when a reviewer attributes a recording, and the
+     agent-facing My Reviews list + playback scope by that id rather than by
+     the free-text name — a legacy row matches by name only when the name is
+     unique on the roster, and a name two agents share releases to neither
+     (F-16). The coverage table's exemption buttons fire through a delegated
+     `data-qa-exempt` handler, so an apostrophe in an agent's name no longer
+     breaks the click (F-17, g133).
+
 ## Intake
 
    - **Intake** — patient-intake forms ported from the bound
@@ -230,6 +312,13 @@ not restate it. Server endpoints live in the fourteen server files
 
 
 <a id="reference"></a>
+     **Batch 5 (2026-09-18):** the email's question LABELS come from
+     SERVER-held English banks (`INTAKE_PPD_Q_EN` / `INTAKE_PMD_Q_EN` /
+     `INTAKE_PAP_Q_EN`) and the client's ANSWERS map — `payload.rows` is read
+     nowhere, so the g43 English rule no longer depends on the client keeping
+     it (F-27). The banks mirror the client's byte-for-byte and are pinned
+     equal.
+
 ## Reference
 
    - **Reference** — in-app knowledge base (Phase 1). A per-department
@@ -313,6 +402,14 @@ not restate it. Server endpoints live in the fourteen server files
      warehouse registry, any addressless or unreadable location row BY NAME, and
      how every eligibility value in the sheet parses — because an unreadable
      value renders "cannot tell", which reads like caution rather than a typo.
+     **2026-09-17 (the /broad-scan's Batches 1 + 2):** both search surfaces
+     score through ONE helper (`oopMatchScore_`, name OR code) on the
+     header-resolved row (INV-213 — the eligibility filter and the send-time
+     verifier had each kept a column-A read OOP-C removed from the lookup); a
+     geocoder SERVICE failure is named as such, never as a bad address (g128);
+     the manager landing's "Most used" / "Review due" blocks say which count
+     reads FAILED instead of "No opens recorded" or an empty queue; and "Was
+     this helpful?" thanks the rep only once the server has recorded it.
      **File ingest (operator 2026-08-25) — two paths, because they answer
      different questions.** (a) **Editor file-drop** (`kbIngestFile`, admin-gated,
      READ-ONLY w.r.t. the KB sheet, review-before-save like the converters):
@@ -352,6 +449,12 @@ not restate it. Server endpoints live in the fourteen server files
 
 
 <a id="training-employee-docs"></a>
+     **Batch 6 (2026-09-18):** the drawer is `role="dialog"` named by its own
+     heading and hands focus back to whatever opened it — open it with
+     Ctrl/⌘+K from inside a note field and Escape returns you there. It is
+     deliberately NOT `aria-modal`: it does not trap focus, and the shell's
+     trap exempts it (F-43).
+
 ## Training & Employee Docs
 
    - **Training & Employee Docs** — phased module

@@ -52,6 +52,14 @@ const SCENARIOS = [
   // "nothing pending" — INV-175/187).
   ['clock-needsyou-empty-light-wide', { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '?fixture=empty'],
   ['clock-needsyou-error-light-wide', { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '?failrpc=getMyPendingTasks'],
+  // F-13 / F-41 (2026-09-17 broad-scan, Batch 2): the two Dashboard reads that
+  // used to render a FAILURE as data — the carousels as the authoritative "No
+  // call data for this period.", the shift-strip coverage chip as the same
+  // blank that means "no call activity today". Both are DOM-pinned; these put
+  // the warn card and the "coverage unavailable" chip on camera (a new block
+  // ships its error scenario — INV-175: failed ≠ absent, on camera).
+  ['clock-dash-error-light-wide',     { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '?failrpc=getDashboardMetrics'],
+  ['clock-coverage-error-light-wide', { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '?failrpc=getMyMetrics'],
   ['timeoff-light-wide',    { tool: 'timeClock', tab: 'timeoff' },    WIDE, 'light', ''],
   ['timeoff-dark-wide',     { tool: 'timeClock', tab: 'timeoff' },    WIDE, 'dark',  ''],
   ['manage-light-wide',     { tool: 'manage',    tab: 'manage' },     WIDE, 'light', ''],

@@ -70,6 +70,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   count, ask what that count reads on a healthy production system — if the
   answer is not zero, it is reference detail, not a signal.**
 
+  **A second instance, 2026-09-18 (Batch 7, F-33):** `cdrQueueInventory_` set
+  its `truncated` flag from the SHEET's length rather than the WINDOW's, so on
+  a DQE tab longer than `CDR_QUEUE_SCAN_MAX` the Phase 0 panel warned
+  "possibly incomplete" on every run, for ever — including every run that had
+  read every row the window asked for. Same shape, one level down: the flag was
+  computed from something that is permanently true on a real deployment, so it
+  carried no information and taught the reader to scroll past it. Span-bounding
+  the read made the flag mean what it says.
+
 <a id="g03-roster-inclusion-goes-through-emprosteremail-row-the"></a>
 
 - **Roster INCLUSION goes through `empRosterEmail_(row)` — the one predicate
@@ -342,7 +351,8 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   audit rows (the S7 full-day-reconcile contract; note this also collapses a
   legitimate multi-lunch day to the 4 displayed slots — the modal can only
   express one pair). RELATED DECISION (C3, retracted finding): `calcHours_`'s
-  overnight wrap (`out <= in` → +24h) is DELIBERATE, pinned by
+  overnight wrap (`out < in` → +24h; STRICT since Batch 1, 2026-09-17 — an
+  EQUAL minute pair is zero hours, see g127) is DELIBERATE, pinned by
   `test_calcHours_overnight` — it trades mis-keyed AM/PM pairs rendering as
   long days for same-date overnight pairs computing correctly; don't "fix"
   one direction without an operator decision. Pinned by
@@ -448,6 +458,20 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   ordering assert (bump strictly between the append and the read — a bump only
   in `finally` is too late, which is how the first version of the pin failed to
   bite).
+
+  **The other direction, 2026-09-18 (Batch 7, F-31):** the fixture does not
+  always get to reach the cache at all. `getCdrAgentMetrics_` is the LOWEST CDR
+  tier — every cached reader above it sits on it — and it was the only one that
+  did not bypass its cache under `_TEST_OVERRIDE_CDR_SS_ID`. So a fixture read
+  was served production's numbers, and then wrote the fixture's numbers back
+  under production's key for the TTL. The editor suite had been clearing those
+  keys by hand instead, and its helper built the roster set from every row with
+  a non-empty NAME rather than through `empRosterEmail_` (g03) — a different
+  set is a different `cdrRosterHash_`, so the removal hit a key nothing had
+  written. TWO rules: a test-override bypass must cover BOTH ends (a bypassed
+  read with a live put still poisons the key, and that half-fix reads as done),
+  and a fixture that clears a derived cache key must build that key exactly the
+  way production builds it — or, better, not need to.
 
 <a id="g23-test-override-email-only-intercepts-getactiveuseremail"></a>
 
@@ -1017,6 +1041,21 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   underline span), so it is injected raw — never put a user-supplied value into
   a justification string. HCPCS / pdfLink / imageUrl (from the Robin-owned
   Offerings sheet) are still `esc_`'d in attributes defensively.
+
+  **Batch 5 (2026-09-18, F-27): the rule is now held SERVER-side.** Until
+  then the server rendered whatever LABEL text arrived in `payload.rows`, so
+  "the labels are always English" was a CLIENT convention — the one thing a
+  client cannot be trusted to keep, and exactly what failed live. The server
+  holds `INTAKE_PPD_Q_EN` / `INTAKE_PPD_NOTES_EN` / `INTAKE_PMD_Q_EN` /
+  `INTAKE_PAP_Q_EN` (00_config.js), builds every preview and send's rows from
+  the bank plus the client's ANSWERS map (`intakePpdRowsEn_` /
+  `intakeAcctRowsEn_`, reproducing the client collectors' walk — headers,
+  the indent-derived secondary flag, the notes pseudo-question), labels the
+  amend banner from it (`intakePpdLabelEn_`), and reads `payload.rows`
+  NOWHERE. The banks are a byte-for-byte client↔server MIRROR and the F-27
+  pin holds them equal by value; a drift costs a wrong LABEL in an email and
+  never a refused send, so the mirror is the cheap side of g120's question.
+  Edit the client bank, then copy it across.
 
 <a id="g45-intake-pmd-pap-layout-is-duplicated-client"></a>
 
@@ -1668,6 +1707,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the blank frame, which is why the pin COUNTS the reloads rather than
   checking that one appears last (the first version of it did, and a
   reload-first mutation passed). Pinned by BCN-3.
+  **Batch 6 (2026-09-18, F-14): it is a TRIPWIRE now, not a convention.** The
+  rule had survived as a habit, and the one surface that still broke it was
+  the worst possible one — `renderError`'s Retry button, the BOOT failure
+  screen, where the app has nothing else to offer and the rep's only move is
+  to press it. Pressing it refetched the iframe and painted blank. The pin
+  budgets `location.reload()` at exactly TWO occurrences, both inside
+  `reloadApp_` (the not-framed/no-base fallback and the final escape hatch),
+  and ZERO anywhere else in `script_core` or the eight view partials — so a
+  new call site is red the day it lands rather than the day an operator
+  reports a white screen.
 
 <a id="g70-a-class-wide-attribute-write-assumes-every"></a>
 
@@ -2160,6 +2209,22 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   closed — a hook may legitimately refuse (the INV-145 mid-send guard),
   and yanking focus then would fight the module (DOM-pinned).
   `uiConfirm`/`uiPrompt` also restore the trigger on cleanup.
+  **Batch 6 (2026-09-18, F-40 + F-30): the STATIC modals joined too.** The
+  focus lifecycle above was built into `ensureOverlay`/`closeOverlay`, and the
+  six static modals never went through either — they were opened with
+  `classList.add('open')` and closed with `classList.remove('open')` in
+  thirteen places, so a keyboard user's focus stayed wherever it was when the
+  dialog appeared and landed at the top of the document when it closed, on
+  every open of the five modals a manager uses daily. Five of the six
+  (`adjust-overlay`, `export-overlay`, `mgr-timeoff-overlay`,
+  `day-edit-overlay`, `day-overlay`) plus the Call Notes shortcuts overlay now
+  open through `ensureOverlay(id)` and close through `closeOverlay(el)` on
+  EVERY path — cancel, backdrop, Escape and post-submit. They keep the
+  `role` / `aria-modal` / `aria-labelledby` they already carried in
+  `modals.html`, because `ensureOverlay` writes those only when told to.
+  `cn-export-overlay` is the one that was NOT in the finding's list and still
+  opens by hand — the known exception until it is fixed. RULE: no overlay,
+  static or dynamic, is opened or closed by `classList` any more.
 
 <a id="g101-public-form-endpoints-have-no-employee-auth"></a>
 
@@ -2636,6 +2701,30 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   bite-check claim more or less than it proved. Both halves matter, because a
   bite-check is the ONLY evidence that a pin can fail — and a project that
   writes pins as its main defence has no second line when the checker is wrong.
+  **A third direction, 2026-09-17:** a pin that is RED but never RUN counts
+  as green. `test_oop_verifyQuotes_currentStaleAndDeleted` used the operator's
+  real-shape fixture and would have failed on the column-A verifier (g126),
+  but it is an integration test, the deploy walk ran smoke only, and the walk
+  recorded "green". A round's integration pins are owed a run from the editor
+  after the push until the dev instance makes the nightly full run real.
+
+  **A fourth direction, 2026-09-18 (Batch 4, F-49):** a bite mutation is a
+  REGEX over a whole file, and `scripts/bite.sh` reports on whichever match
+  it changed. The F-49 mutation ("read the time-off tab by name again")
+  matched a two-line shape that `getTeamCalendar` shares with an unrelated
+  function 700 lines earlier, changed THAT one, and reported NO BITE — a true
+  statement about the wrong code. Anchoring the regex on a line unique to the
+  function under test (its own `monthIso` filter) made both F-49 pins bite.
+  RULE: a bite mutation names something only the pinned function contains,
+  and a NO BITE is first checked against `git diff` to see WHAT changed.
+
+  **A fifth direction, 2026-09-18 (Batch 7, F-52) — see g138:** a mutation can
+  land, and the pin can stay green, because the CLAIM is not observable rather
+  than because the pin is weak. Three NO BITEs in that batch were three
+  different things: two real pin weaknesses (a fake kinder than production, an
+  assertion that varied the input it meant to hold fixed), one unobservable
+  claim that was deleted, and a fourth that was an equivalent rewrite. The
+  verdict is a question, not an answer.
 
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
@@ -2913,10 +3002,27 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `mPrevWorkdayIso_` and the server agree; `test/visual/build.mjs` strips that
   scriptlet BEFORE the straggler strip, the SERVER_BUILD_STAMP rule.
   `getUsHolidays_` is referenced exactly twice in the server -- its own
-  definition and the fallback -- and the H1-3 pin counts them. Fires when you
+  definition and the fallback -- and the H1-3 pin counts them. **The
+  fallback was SILENT until Batch 3 of the cycle-20 scan (F-09, 2026-09-17):**
+  an absent, empty or unreadable tab swapped in the federal list with a
+  Logger line nobody reads, so a deployment on the wrong calendar looked
+  identical to one on the right calendar. Now `cdrHolidayProbe_` rides the
+  CDR row of `getStorageHealth` (`holidays: {source, ranges, thisYear, year,
+  error}`; a `sheet` source with no range is reported as `empty`, the shape
+  the accessor actually falls back on) and `cnHolidayFindings_` raises ONE
+  CDR-area finding on Admin → System: ok when the tab lists dates this year,
+  warn when it has ranges but none this year (the yearly-maintenance
+  reminder), warn naming "the computed US-federal list is in use" for
+  `empty` / `no-tab`, warn with the reader's error for `unavailable`. The
+  fallback rule itself is unchanged (deferred to the operator: keep the
+  fail-open, or match the dashboard's no-fallback). The manager sidebar badge
+  also judges `prevWorkdayIso_` now (F-35) -- it read calendar-yesterday, so
+  it was silent every Sunday and Monday and judged the morning after a holiday
+  on an empty CDR day. Fires when you
   compute a "previous workday", walk business days, or read `getUsHolidays_`
   directly. Verify: the H1-1..H1-5 pins, `test_companyHolidays_tabWinsElseFederal`,
-  `test_companyHolidays_readsFixtureTab`; the dashboard side is pinned in
+  `test_companyHolidays_readsFixtureTab`, the F-08/F-09 server + client pins and
+  the F-35 vm-driven `getMetricsAmbient` pin; the dashboard side is pinned in
   call-data-reporting's `util.test.js` / `setup.test.js`.
 
 <a id="g124-answer-is-the-dashboard-s-formula-and"></a>
@@ -2956,10 +3062,30 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   carries a rate (`cdr_metrics_v4`, `dash_metrics_v5`, `metrics_my_v3`,
   `metrics_range_v3`, `team_metrics_v3`, `metrics_ambient_v2`) -- INV-85:
   a rate under the old formula must never serve under the new shape for the
-  TTL. Fires when you compute or tone an answer rate, add a KPI band, or
-  read `CONFIG` for a threshold. Verify: the H2-1..H2-4 pins,
+  TTL. **Four leftovers of H2 closed by Batch 3 of the cycle-20 scan
+  (2026-09-17):** (F-07) H2 let the band be NULL and left each consumer to
+  decide what null meant -- `mPctClass_` said 0 pt, `dashPctTone_` fell back
+  to the local 5-pt slack -- so the same value toned red on the table and
+  amber on the Clock card the moment a standard published without a band;
+  `mtAnswerBand_` (script_core) is now the ONE rule (no band = no amber tier
+  on both; Transfer % keeps its local slack because it has no published
+  standard at all). (F-08) `standardSource` was shipped and never read;
+  `mStandardSourceHtml_` renders it beside the target on both heroes (muted
+  for a missing standard, warn for an unreadable tab), the badge tooltip
+  drops its residual `res.threshold || 85` (a badge captioned "below 85%"
+  while judging against 92), and `cdrStandardProbe_` + `cnStandardFindings_`
+  put the verdict on Admin → System's CDR row. (F-32) `cdrAnswerPct_`
+  returned 0 when answered + missed was zero, so a window of rung legs with a
+  third disposition read "every call missed"; it is NULL now and every
+  surface dashes it (`mPctValueHtml_`, the team cell) while every average
+  already skipped it -- `0 / 3` is still a real 0%. (F-35) the badge judges
+  the previous workday, see g123. Fires when you compute or tone an answer
+  rate, add a KPI band, or read `CONFIG` for a threshold. Verify: the
+  H2-1..H2-4 pins (H2-1 expects null for nothing-to-divide), the F-07 grid
+  pin, the F-08 client + server pins, the F-32 consumer pin,
   `test_cdrAnswerPct_isTheDashboardFormula`,
-  `test_teamBenchmark_subtractsPublishedExcludes`,
+  `test_teamBenchmark_subtractsPublishedExcludes` (86, a whole percent --
+  it said 85.7 and had never run),
   `test_dashboardStandard_readsFixtureTab`; the dashboard side is pinned in
   call-data-reporting's `answer-targets.test.js` / `setup.test.js` /
   `system-health.test.js`.
@@ -2993,3 +3119,360 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   behavioural, the real reader over an out-of-order fixture equal to the old
   full scan, both readers routed with the filter kept) and
   `test_metrics_cdrRowDateIso_serial`.
+
+<a id="g126-two-readers-of-one-operator-sheet"></a>
+
+- **Two readers of ONE operator sheet share ONE column resolver (Batch 1 of the
+  2026-09-17 /broad-scan, F-01 + F-04).** OOP-C (2026-09-16) taught
+  `searchOopPricing` to find the item name BY HEADER because the operator's real
+  `OopPricing` sheet has `HCPCS` in column A and the item in C. Two sibling
+  readers of the same tab were not taught: `oopVerifyQuotes_` — the send-time
+  re-verify that INV-208 makes load-bearing — still keyed its lookup on
+  `rows[i][0]`, so on the real sheet `byName` held billing codes, the picker's
+  name never matched, and EVERY price-quoted external send was refused with
+  "The pricing sheet no longer lists…" for an item that was listed; and
+  `checkOopEligibility` still scored column A, so a filtered eligibility query
+  said "No item matched — do not check a similar item" about a listed item. The
+  fail direction was closed both times (no wrong price shipped), but the
+  features were dead on the deployed sheet, and the OOP-B Node pin could not
+  see it because ITS fake sheet had the item in column A — the exact shape the
+  OOP-C entry in `docs/test-harness-log.md` warns "cannot test it". g120 frames
+  the mirror hazard as client↔server; this one was server↔server: two functions
+  reading one operator tab through different column assumptions. RULE: an
+  operator-maintained tab gets ONE row resolver (`oopRowObj_`) and ONE scorer
+  (`oopMatchScore_`), every reader goes through them, and no OOP function reads
+  a cell at position 0. The fixture rule follows: a fake sheet for that tab
+  carries the OPERATOR'S column order, never the code's assumption. Fires when
+  a second function reads an operator-maintained tab another function already
+  reads by header. Verify: the F-04 shared-scorer pin (behavioural on the
+  scorer, structural on all four readers — no `rows[i][0]` / `row[0]`), the
+  OOP-B grid guard (`column A is never the item`), and the editor test
+  `test_oop_verifyQuotes_currentStaleAndDeleted` against the real-shape fixture.
+
+<a id="g127-calchours-wraps-out-in-as-overnight"></a>
+
+- **`calcHours_` wraps `out < in` as overnight; an EQUAL minute pair is ZERO
+  hours (Batch 1 of the 2026-09-17 /broad-scan, F-03).** `timeToMins_` drops
+  seconds, so a clock-in at 09:00:10 and a clock-out at 09:00:45 — legal on the
+  live path the moment the 30-second debounce clears — compared EQUAL, and the
+  C3 wrap (`out <= in` → +1440) paid a 24-hour day into the timesheet total,
+  the pay statement's estimated gross, the accrual hours index and the manager
+  sparkline. The sheet doctor did not see it: its inverted-pair test compared
+  full `HH:mm:ss` strings, where `09:00:45 <= 09:00:10` is false. Executed in
+  the scan: `calcHours_('09:00:10','09:00:45')` → 24. The rule now has three
+  parts, each pinned: the wrap is STRICT (an equal pair is a genuine zero, not
+  a shift that ended a day later and not `null`); both manager writers refuse an
+  equal Clock In / Clock Out by name through the one pure rule
+  `managerClockOrderError_`, after format validation and before the plan; and
+  the doctor compares at MINUTE granularity — the frame `calcHours_` pays in —
+  so an equal-minute pair is reported (report-only, Day Edit is the fix). The
+  live punch path still ACCEPTS a same-minute clock-out (a rep may legitimately
+  clock straight back out); it now pays zero and the doctor lists it. Fires when
+  you compare two clock stamps at minute granularity, or add a clock writer.
+  Verify: the A1 pin's equal-minute cases (both sides of the boundary), the
+  `managerClockOrderError_` pin (behavioural + both writers + the strict wrap +
+  the doctor's minute compare), and the smoke test
+  `calcHours_equalMinuteIsZeroNotADay`.
+
+<a id="g128-not-found-and-could-not-look-up"></a>
+
+- **"Not found" and "could not look up" are DIFFERENT answers (Batch 2 of the
+  2026-09-17 /broad-scan, F-15).** `kbGeocodeOne_` returned `null` for every
+  non-OK outcome — a place that does not exist (ZERO_RESULTS), the shared daily
+  quota (OVER_QUERY_LIMIT), a denial, a service error, and a thrown "Service
+  invoked too many times" alike — and both callers turned `null` into "Could
+  not find that location — try a 5-digit ZIP code." So a quota event mid-shift
+  told every rep that every customer's address was wrong, and the eligibility
+  box and the map block, which share the geocoder with no cap between them,
+  degraded each other into the same false message. The two answers ask the rep
+  to do different things (fix the address / wait and retry), and collapsing
+  them sends the rep to fix the wrong one. RULE: a lookup's MISS and its
+  FAILURE never share a return value. `kbGeocodeOne_` returns
+  `{unavailable:true, status}` for a service failure (ZERO_RESULTS stays
+  `null`), `kbGeocodeUnavailableMsg_` is the ONE message every caller uses
+  (names the status; says "not a problem with the address"; mentions the
+  quota), both query callers return it BEFORE the bad-address branch, and the
+  shared coordinate cache never stores a failure. The same shape closed seven
+  more sites in the same batch (F-06, F-13, F-18, F-41, F-47, F-25, F-45): a
+  failed read rendered as an empty config, "No call data", "No", a blank
+  coverage chip, zero missing calls, no usage, and a premature "Thanks". Fires
+  when a lookup's miss and its failure share one return value, or a failure
+  handler renders the success path's empty state. Verify: the F-15 geocoder pin
+  (a stubbed Maps through OK / ZERO_RESULTS / OVER_QUERY_LIMIT / REQUEST_DENIED
+  / throw; the cache; both callers' branch order) and the Batch 2 DOM pins.
+
+<a id="g129-never-cache-a-failure-as-a-value"></a>
+
+- **Never cache a FAILURE as a value (Batch 2 of the 2026-09-17 /broad-scan,
+  F-06).** `cnFetchDeptConfigIfNeeded_` guarded on `if (CN_STATE.deptConfig)`
+  and its failure handler assigned an EMPTY config `{departments: [], …}` —
+  truthy, so the guard honoured it for the rest of the session. One transient
+  RPC failure on the first Log enter (a routine event) left the composer with
+  zero Recipients, Preview refusing ("Pick at least one recipient first"), no
+  state options, no templates, no quick links and no auto-tags until a reload —
+  and the structured `{error}` shape was stored as the config verbatim. The
+  external composer had already fixed its own copy of this class
+  (`CN_STATE.formCatalog = null` on failure, F(L-26)); this was the sibling.
+  RULE: a failure handler stores NOTHING in a slot a truthiness guard reads;
+  every consumer of that slot already tolerates null, and the next open re-asks.
+  A structured `{error}` from the success handler is a failure too. Fires when
+  a failure handler assigns a default into a cache slot, or a success handler
+  stores a payload without checking `.error`. Verify: the F-06 DOM pin
+  (failure → null → refetch; `{error}` → null; a real config → stored and then
+  honoured).
+
+<a id="g130-a-registered-onclose-hook-owns-the-close"></a>
+
+- **A registered `onClose` hook OWNS the close, removal included (Batch 1 of
+  the 2026-09-17 /broad-scan, F-02).** `closeOverlay` delegates ENTIRELY to a
+  hook registered through `ensureOverlay(id, {onClose})` — it strips the `open`
+  class itself only when no hook exists or the hook throws — because INV-145
+  lets a hook REFUSE (the composer mid-send). The Scheduled-reminders and
+  Scratchpad modals registered hooks that cleared module state and returned,
+  so Close, Escape and the backdrop click all ran the hook and nothing else:
+  the overlay stayed `open`, `aria-modal`, focus-trapped over the Log view, and
+  the only exit was a reload (g69's blank iframe). Both shipped that way on
+  2026-09-02 and were deployed twice; the pin asserted the hook EXISTED and the
+  visual scenario only OPENED the modal (g116). Reproduced in jsdom: after
+  `closeOverlay` and after an Escape keydown, both overlays still read
+  `overlay open`. RULE: a hook that does not refuse must REMOVE its overlay (the
+  sibling pattern — `cnCloseComposerModal_`, `cnCloseFormSubOverlay_`,
+  `cnCloseTimelineOverlay_` all `overlay.remove()`); `ensureOverlay` recreates
+  the node on the next open. Fires when you register an `onClose` hook, or add
+  a dynamic overlay. Verify: the F-02 DOM pin — both modals through
+  `closeOverlay`, Escape and the Close button's wiring, the scratchpad's
+  flush-on-close, and a SWEEP that closes every hook registered at that moment
+  (a floor, not a claim that no hook may ever refuse).
+
+<a id="g131-a-null-a-payload-ships-is-a-rule"></a>
+
+- **A NULL a payload ships is a RULE one helper decides, never a per-consumer
+  default — and a caption that names a published number never carries a
+  literal of it (Batch 3 of the 2026-09-17 /broad-scan, F-07 + F-08).** H2
+  made the amber band a PUBLISHED value that can be null, and shipped it to
+  two consumers with no rule for null: the Metrics table read it as 0 (no
+  amber tier), the Clock card as "not passed" and fell back to the local
+  5-pt slack. Both were reasonable readings; together they toned the same
+  number two ways on the same morning, and no pin could see it because each
+  surface was pinned alone. The same round replaced the hand-carried 85
+  everywhere except one caption -- `'below ' + (res.threshold || 85) + '%'`
+  -- so the badge said 85 while judging against 92, and the H2-4 ban on
+  `alertThreshold || \d` did not cover the word `threshold`. RULES: (1) when a
+  shipped field can be null, ONE shared helper decides what null means
+  (`mtAnswerBand_`: null = 0 = no amber tier) and every consumer calls it --
+  a per-surface `x != null ? x : <default>` is a mirror of a rule, and g120
+  says what a mirror costs; (2) a client string that interpolates a server
+  number carries NO literal fallback -- if the number can be absent, the
+  string is absent (a caption that exists only because the number does needs
+  no fallback at all). Fires when two surfaces read the same shipped field,
+  or a client string interpolates a server number with a `|| N`. Verify: the
+  F-07 pin (the two vocabularies agree on nine (value, target, band) triples,
+  the null-band and Transfer % branches, both delegations) and the F-08 pin's
+  `threshold || \d` ban over the Metrics partial.
+
+<a id="g132-a-test-that-appends-to-a-gate"></a>
+
+- **A test that APPENDS to a gate property or a LIVE tab owes
+  `cleanupTestData` a by-key backstop (Batch 4 of the 2026-09-17
+  /broad-scan, F-21 + F-22).** Five trigger-gate tests append
+  `_TEST_MGR_EMAIL` to `MANAGER_EMAILS` for their run and restore it in
+  `finally`; three DeptRequests tests and the ClientErrors test append probe
+  rows to LIVE tabs and delete them in `finally`. Both are correct until the
+  execution is killed — and this suite IS killed, by the six-minute limit,
+  which is why Part A / Part B exist. A killed run left a non-routable
+  `@example.invalid` address holding the `assertManagerCaller_` gate, and
+  TEST_ rows on tabs `cleanupTestData` never swept. Worse, the DeptRequests
+  tests deleted BY POSITION (`deleteRows(before + 1, after - before)`): a real
+  request landing during the seconds a test held its probe rows would have
+  been the row deleted, on a live tab, silently. RULES: (1) every property a
+  test appends to is stripped by `cleanupTestData` through the ONE
+  `@example.invalid` predicate (`_testAdminEmailsSplit_`; ADMIN_EMAILS and
+  MANAGER_EMAILS both, now); (2) every live tab a test writes to is swept by
+  `cleanupTestData` by its TEST_ KEY (`_cleanupRowsByPrefix`) through
+  `getSheetByName` — never provisioning the tab; (3) a test's own tidy-up
+  deletes by the same key, never by row position. `TEST_` is the cleanup key
+  on properties and tabs alike (g24). Fires when a test writes outside the
+  TEST_ rows' own tabs, or restores a Script Property in `finally`. Verify:
+  the F-21/F-22 pin — the strip form is the only cleanup write to
+  MANAGER_EMAILS, both sweeps by key on the right store, no positional delete
+  survives in `Tests.js`, every DeptRequests probe row is `TEST_DR_`-keyed.
+
+<a id="g133-an-onclick-literal-cannot-carry-a-name"></a>
+
+- **An `onclick` LITERAL cannot carry a name — `esc()` has already encoded the
+  apostrophe, so the `.replace()` beside it is a no-op and the button throws
+  on click (Batch 5 of the 2026-09-17 /broad-scan, F-17).** The QA coverage
+  table built its exemption buttons as
+  `onclick="qaSetExemption_('" + esc(r.name).replace(/'/g, "\\'") + "', true)"`.
+  It reads like a belt-and-braces escape and is neither: `esc()` turns `'`
+  into `&#39;` FIRST (script_core's `esc` escapes both quote kinds), so the
+  `.replace` finds no apostrophe to escape — and the browser decodes `&#39;`
+  back to `'` when it parses the attribute, closing the JavaScript string
+  early. Every agent whose name carries an apostrophe got a button that threw
+  a SyntaxError on click, silently, on a manager-only path nobody screenshots.
+  The two escaping layers are ordered against each other and cannot be fixed
+  by adding a third. RULE: a handler that needs a VALUE takes it from a
+  `data-*` attribute through a DELEGATED listener (the `data-cn-action`
+  pattern, g91) — the attribute value comes back DECODED (g49), which is
+  correct here because it goes to a function ARGUMENT and never back into
+  `innerHTML`. Fires when you build a handler call by string concatenation.
+  Verify: the F-17 pin — no `onclick="qaSetExemption_` survives, both button
+  forms carry `data-qa-exempt` + `data-qa-exempt-on`, ONE document listener
+  dispatches on `closest('[data-qa-exempt]')`, and the `esc()` round trip is
+  asserted on a name carrying both quote kinds.
+
+<a id="g134-ensureoverlay-rewrites-classname-so-a-second"></a>
+
+- **`ensureOverlay` REWRITES `className`, so any class an overlay carries
+  beyond `overlay` is lost unless it rides `extraClass` (Batch 6 of the
+  2026-09-17 /broad-scan, F-40).** The helper's second line is
+  `overlay.className = 'overlay open' + (opts.extraClass ? ' ' + opts.extraClass : '')`
+  — an assignment, not a `classList.add`, because it must also re-assert the
+  open state on reuse. That is invisible for the modals that carry only
+  `overlay`, and it bites the one that does not: `day-overlay` doubles as the
+  calendar's HOVER POPOVER, and `openDayPopover_` sets `hover-mode` on it
+  BEFORE calling the open path. Routing that open through `ensureOverlay`
+  naively would have silently dropped the class, turning a tethered
+  transparent preview into a centred modal with a backdrop that steals focus —
+  and `ensureOverlay`'s own "skip the focus move for hover-mode popovers"
+  guard would have stopped working, because by the time it ran the class was
+  gone. The fix reads the class off the live node and hands it back:
+  `ensureOverlay('day-overlay', dayHover ? { extraClass: 'hover-mode' } : {})`.
+  Fires when you route an overlay that carries any class beyond `overlay`
+  through `ensureOverlay`. Verify: the F-40 pin's hover-mode assertions.
+
+<a id="g135-a-blocked-window-open-returns-null"></a>
+
+- **A blocked `window.open` returns NULL — it does not throw, so a `catch`
+  around it can never see the block (Batch 6 of the 2026-09-17 /broad-scan,
+  F-37 + F-36).** `popOutCurrentView` wrapped its `window.open` in a
+  `try/catch` whose handler showed "Pop-out blocked by browser". The handler
+  was unreachable: a pop-up blocker returns `null`, quietly, and the only
+  thing that throws there is a malformed feature string. A rep whose browser
+  blocked the window got NO feedback of any kind — the button simply did
+  nothing. Checking the RETURN is the whole fix, and it is worth stating as a
+  rule because the wrong shape reads as careful code. The sibling case is
+  worse: the ADP export called `window.open(result.url, '_blank')` inside an
+  RPC success handler, which is OUTSIDE the user gesture — exactly where
+  blockers fire — and the dialog had already closed, so the generated sheet's
+  URL existed nowhere on screen and the manager's only recourse was to
+  regenerate it. RULES: (1) capture the return and treat `null` as the
+  blocked case, with a message naming the remedy; (2) when the URL comes back
+  from an async call, RENDER it as a link FIRST and keep its surface open —
+  the `window.open` is then a convenience that can fail harmlessly.
+  Fires when you open a window or tab, especially after an async RPC.
+  Verify: the F-37 return check and the F-36 link-before-open ordering.
+
+<a id="g136-a-per-day-series-must-tell-no-data"></a>
+
+- **A per-day series must tell "no data" apart from a real zero — the manager
+  live-status sparkline (Batch 7 of the 2026-09-17 /broad-scan, F-48,
+  2026-09-18).** `getManagerDashboard` built each rep's 7-workday
+  `recentHours[]` as `hours: sparkHoursMap[key] || 0`. That map is SPARSE by
+  construction: a key lands only when the day had both a Clock In and a Clock
+  Out *and* `calcHours_` returned non-null. So three different days collapsed
+  onto one bar — the rep did not work, the rep is still clocked in right now,
+  and the rep's stamps would not parse. The first is a fact. The other two are
+  the absence of a fact, and the card told the manager "0 hours worked" about
+  both. V-10 had already given the zero day a deliberately visible dim bar so
+  "didn't work" could not be mistaken for "no data", which is exactly the
+  distinction the `|| 0` then erased one layer up.
+
+  The general shape is g54's ("an UNKNOWN duration is not the same as an
+  elapsed one") applied to a SERIES rather than a single value, and the series
+  form is easier to miss: the chart still renders, every slot is filled, and
+  nothing looks degraded. The fix is three states, not two, and the middle one
+  has to be carried all the way to the pixel: a day with NO punch rows is a
+  real `0`; a day WITH punch rows and no computable total is `null`; a measured
+  day is its number, told apart from the first by PRESENCE in the map rather
+  than by truthiness (so a genuine `0.0h` day is still measured). The renderer
+  paints `null` as a hatched full-height gap with a "no data" tooltip, the
+  total counts only the measurable days and SAYS how many it could not measure,
+  and a week of nothing but unknowns renders instead of collapsing to nothing —
+  it is the week most worth seeing.
+
+  RULE: before writing `|| 0` against a lookup, ask whether the map is sparse.
+  If it is, the fallback is inventing a measurement. Fires when you fill a
+  fixed-length series from a keyed map, or default a missing datum for a chart.
+  Verify: the F-48 server three-state assertion plus the `renderEmpSparkline_`
+  drive (bar classes, tooltips, the unmeasurable count, the all-unknown week),
+  and the visual fixture's own null day — INV-185, because a fixture that never
+  produces null can never photograph the difference.
+
+<a id="g137-a-static-net-that-pre-declares-names"></a>
+
+- **A static net that PRE-DECLARES names the runtime does not provide silences
+  the class it exists to catch (Batch 7 of the 2026-09-17 /broad-scan, F-50,
+  2026-09-18).** `scripts/lint-server.mjs` runs `no-undef` over the fourteen
+  server files as one scope — the only static net for a ReferenceError in this
+  codebase (g118). Its globals list carried `Drive`, `Docs`, `Sheets`, `Gmail`,
+  `BigQuery` and `People` beside `DriveApp` and `GmailApp`, as though all eight
+  were the same kind of thing. They are not. The first six are ADVANCED
+  services: each is a global ONLY while `appsscript.json` enables it, under the
+  `userSymbol` the manifest names. This project's manifest reads
+  `"dependencies": {}`. So a use of any one of the six would have linted clean
+  and thrown `ReferenceError` on its first real call in production — the net
+  pre-approving exactly the defect it was built to find.
+
+  Nothing had fired, because nothing uses them yet. That is the reason to fix
+  it rather than not to: the trap is armed for whoever reaches for `Drive.Files`
+  because `DriveApp` could not do the thing, sees green, and ships.
+
+  RULE: a name is in a static analyser's globals list because the RUNTIME
+  provides it unconditionally. Anything conditional on configuration is DERIVED
+  from that configuration, so enabling a service is what makes it lintable and
+  disabling one puts its uses back under the net. Fires when you add a name to
+  an allowlist to make a linter quiet. Verify: the F-50 pin drives
+  `advancedServiceGlobals()` over manifests the repo does not have (none
+  enabled, two enabled, an entry with no `userSymbol`) and separately checks no
+  un-enabled service is used in the server, over comment- and string-stripped
+  source.
+
+<a id="g138-a-pin-whose-name-promises-a-behaviour"></a>
+
+- **A pin whose NAME promises a behaviour must DRIVE it — and an assertion that
+  cannot be made to fail is deleted, not dressed up (Batch 7 of the 2026-09-17
+  /broad-scan, F-52, 2026-09-18).** Four pins in `run.js` were named for
+  behaviours and asserted only source shapes. "archiveSheetRowsOlderThan_
+  honors a per-run bound" matched the `break` line; a `break` that never fires
+  reads identically in source and moves the whole tab in one run past the
+  six-minute ceiling. "dept-email config is sanitized on read" matched
+  `clean[name] = email`; a whitelist that assigns before validating matches it
+  too. "the deploy-version beacon's derived hash" matched the derivation; a
+  hash that reads index.html and then digests a constant matches every one of
+  those assertions, and a beacon that never changes never prompts, which is the
+  entire failure mode it exists to prevent. All three are drivable, so all
+  three are now drives against a fake sheet, a fake PropertiesService and a
+  fake HtmlService, and the originals were RETIRED rather than left beside
+  them: a weak pin that stays green under the mutation is the finding, and
+  keeping it means keeping a green light on a broken claim.
+
+  The fourth is the honest one. "Punctuality + Admin fill the view width" is an
+  ABSENCE assertion — there is no function to call, and it cannot see the cap
+  arrive by another route (a class that sets `width`, a grid track, an inline
+  style built at render time), which is how the cap got in the first time. It
+  stays structural, SAYS it cannot be driven, and asserts that the measured
+  visual scenarios carrying the real claim still exist, so nobody deletes the
+  measurement and leaves the grep behind.
+
+  Writing the replacements taught the sharper half, and it is g116's fifth
+  direction: **a mutation that lands while the pin stays green does not always
+  mean the pin is weak — sometimes it means the claim is not observable at
+  all.** The build-hash pin asserted that a missing partial's marker NAMES the
+  file it lost. Two attempts to isolate that failed, and the third reading was
+  the right one: the markers sit at different POSITIONS in the concatenation,
+  so two broken builds digest differently even with every marker collapsed to
+  one constant. Naming the lost file is a debuggability property of the string,
+  not of the fingerprint. The assertion was deleted with the reasoning left in
+  place. Two other NO BITEs in the same batch WERE real: a fake archive sheet
+  accepted a zero-row `setValues` that Sheets refuses, and an assertion varied
+  the input it was meant to hold fixed. A fourth was an equivalent rewrite
+  (`ceil(n/14) === floor((n+13)/14)` for every integer), verified rather than
+  assumed.
+
+  RULES: (1) if the function can be driven, drive it, and retire the structural
+  pin rather than stacking one on the other; (2) if it cannot, say so in the
+  pin and name where the real check lives; (3) a NO BITE is a question, not an
+  answer — check `git diff` for what the mutation changed, then ask whether the
+  claim is observable before weakening or deleting anything. Fires when you
+  write a pin, and every time you read a bite-check's verdict.

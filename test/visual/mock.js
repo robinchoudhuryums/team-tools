@@ -442,7 +442,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // shape depends on its arguments must BE a function of them.
     getMyMetrics: function (date) {
       return { date: date || todayIso, repName: 'Avery Blake', cdr: kpis, trend: trend30(), series: kpiSeries(), kpiMinCohort: 3, noteCount: 35, noteCoverage: 85, missingCount: 6, intakeNotes: 3,
-        transfer: { transferred: 4, transferPct: 9.8 }, alertThreshold: 85 };
+        transfer: { transferred: 4, transferPct: 9.8 }, alertThreshold: 85, standardSource: 'sheet' };   // F-08: the source rides every Metrics payload
     },
     // Batch 8 — the Catalog browse tab. Mirrors intakeListOfferings exactly:
     // named string fields (the server String()+trim()s every cell), the
@@ -468,7 +468,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       cdr: { totalRung: 287, totalAnswered: 254, totalMissed: 33, pctAnswered: 89,
              tttFormatted: '19:54:20', attFormatted: '0:04:42', tttSeconds: 71660, attSeconds: 282 },
       noteCount: 218, noteCoverage: 86, intakeNotes: 17, trend: trend30(),
-      transfer: { transferred: 23, transferPct: 9.1 }, alertThreshold: 85 },
+      transfer: { transferred: 23, transferPct: 9.1 }, alertThreshold: 85, standardSource: 'sheet' },
     // Cycle-14 Phase 2 — Team Metrics with the per-queue transfer split. The
     // shape mirrors getTeamMetrics exactly, INCLUDING the INV-180 contract:
     // queueTotal is the SUM of `queues` and queueUnattributed is the remainder
@@ -543,6 +543,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         queueRows: qRows,
         alertThreshold: 85,   // #4 / H2 — mirrors the published Dashboard Standards target
         alertBand: 5,         // H2 — the amber band that rides with it
+        standardSource: 'sheet',   // F-08 — where the standard came from (rendered beside the target)
         // F4 (cycle 15): this fixture used to REIMPLEMENT the grouping fold by
         // hand, and had already drifted — it omitted the per-group queues.sort()
         // the server does, so the screenshot showed a group's queues in the
@@ -913,13 +914,21 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // nothing, so the zero-bar row is on camera.
       members: ['avery@umsupply.com', 'sam@umsupply.com', 'ines@umsupply.com'],
       truncated: false },
-    getSpanishInboxStats: { address: 'spanishcalls@universalmedsupply.com', days: 30, pending: 3, resolved: 12, avgMinutes: 78, medianMinutes: 45,
+    // F-34 (cycle 20): `pending` is 4, not 3 — the voicemail in the list below
+    // is one of them. The fixture carried the DEFECT: the stats card said 3
+    // while the list it sits above rendered 4 cards, and every Spanish
+    // screenshot for a month showed the two disagreeing with nobody reading it
+    // as a bug. The vm* fields are what the card now states about its own
+    // figures; `vmOn: false` is a different screenshot (the fold unconfigured)
+    // and the note says so rather than rendering a zero (INV-185/187).
+    getSpanishInboxStats: { address: 'spanishcalls@universalmedsupply.com', days: 30, pending: 4, resolved: 12, avgMinutes: 78, medianMinutes: 45,
       // Business-hours figures (operator 2026-08-31) — deliberately SMALLER
       // than the wall-clock pair beside them, which is the whole point of the
       // change and the thing a screenshot must show.
       avgBusinessMinutes: 52, medianBusinessMinutes: 31, businessCount: 11, manualCount: 1,
       businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true },
-      membersConfigured: 3, threadsScanned: 15, truncated: false },
+      membersConfigured: 3, threadsScanned: 15, truncated: false,
+      vmOn: true, vmCounted: 1, vmSuppressed: 2, vmUnparsed: 0, vmMinSeconds: 5 },
     getPatientTimeline: { events: [], partial: false, failedSources: [] },
     cnPing: { ok: true },
     getCalendarData: function (year, month) {
@@ -1016,7 +1025,12 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // screenshot never shows a weekend bar the server cannot produce (INV-185).
       function workdaysEnding(n, endOffset) { var out = []; for (var off = endOffset; out.length < n; off++) { var d = new Date(); d.setDate(d.getDate() - off); if (d.getDay() === 0 || d.getDay() === 6) continue; out.unshift(d.toISOString().slice(0, 10)); } return out; }
       function wspark(n, base, endOffset) { return workdaysEnding(n, endOffset).map(function (ds, i) { return { date: ds, count: ((n - i) * base) % 4 }; }); }
-      function rh() { return workdaysEnding(7, 1).map(function (ds, i) { return { date: ds, hours: [4, 8.5, 9, 8.75, 0, 9, 8.5][i] }; }); }
+      // F-48 (cycle 20): index 5 is NULL on purpose — an UNMEASURABLE day (the
+      // rep was still clocked in, or a stamp would not parse). The server ships
+      // null for it and the bar is hatched, not the V-10 dim zero at index 4.
+      // A fixture that never produces null cannot photograph the difference,
+      // which is how the `|| 0` collapse survived (INV-185).
+      function rh() { return workdaysEnding(7, 1).map(function (ds, i) { return { date: ds, hours: [4, 8.5, 9, 8.75, 0, null, 8.5][i] }; }); }
       // The server's liveStatus rows carry `id`, NOT `empId` (getManagerDashboard's
       // return block) — the drift made every Day-Edit button in every manager
       // screenshot render data-emp-id="undefined", and surfaced only when the
@@ -1425,7 +1439,10 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         { tag: 'billing', count: 26, lastSeen: daysAgo(1), archived: false },
         { tag: 'mask-fit', count: 12, lastSeen: daysAgo(4), archived: false }],
       archivedOnlyTags: [{ tag: 'legacy-tag', count: 0, lastSeen: '', archived: true }],
-      repsScanned: 3, skippedReps: [],
+      // F-12 — the server has always returned totalNotes (every enrolled rep's
+      // notes); the fixture omitted it, so the Admin strip's team-wide Notes
+      // cell shot as a dash (INV-185: a fixture mirrors the real contract).
+      totalNotes: 1284, repsScanned: 3, skippedReps: [],
     },
     getCallNotesTagTrends: (function () {
       var mk = function (tag, base) {
@@ -1573,6 +1590,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         { key: 'KB_SS_ID', label: 'Knowledge Base + Training', status: 'ok', detail: 'Reachable · tz matches' },
         { key: 'INTAKE_SS_ID', label: 'Intake (PHI)', status: 'ok', detail: 'Reachable · tz matches' },
         { key: 'FORMS_SS_ID', label: 'Forms (PHI)', status: 'warn', detail: 'Optional — unset (falls back to the ADP sheet)' },
+        { key: 'DEPT_REQUESTS_SS_ID', label: 'Dept Requests (PHI-adjacent)', status: 'warn', detail: 'Optional — unset (falls back to the ADP sheet)' },
         { key: 'QA_SS_ID', label: 'QA (recordings)', status: 'warn', detail: 'Optional — unset (no fallback store, by design — INV-196)' },
         { key: 'digests', label: 'Digest heartbeats', status: 'warn', detail: 'No heartbeat recorded yet (fresh deploy)' }],
       summary: { ok: 4, warn: 3, fail: 0 },
@@ -1601,7 +1619,11 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         { key: 'managerBrief', last: null, stale: false },
         { key: 'selfTest', last: daysAgo(0) + ' 01:00:21', stale: false },
         { key: 'coachingRecap', last: daysAgo(3) + ' 08:00:15', stale: false },
-        { key: 'spanishAutoAssign', last: daysAgo(0) + ' 09:00:12', stale: false }],
+        { key: 'spanishAutoAssign', last: daysAgo(0) + ' 09:00:12', stale: false },
+        // F-20 — the three heartbeat-only daily jobs.
+        { key: 'missedPunch', last: daysAgo(0) + ' 08:00:06', stale: false },
+        { key: 'exportCheck', last: daysAgo(0) + ' 12:00:03', stale: false },
+        { key: 'automationHealth', last: daysAgo(0) + ' 09:00:20', stale: false }],
       cdr: {
         ok: true, from: daysAgo(7), to: todayIso, rowsMatched: 96, columnWarning: null,
         transferColumnWarning: null,
@@ -1659,11 +1681,19 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         configTimezone: 'Asia/Kolkata', adpLocale: 'en_US',
         stores: [
           store('Time Clock / ADP', 'Roster, Timesheet, TimeOffRequests, shared AuditLog, punch-adjust', 'Payroll', 'Kept · diagnostics tabs — ViewUsage kept · ClientErrors kept', 'ADP_SS_ID'),
-          store('CDR Report', 'DQE + CSR Transfer + Agent Alias Overrides (read-only)', 'External', 'n/a — owned by call-data-reporting', 'CDR_SS_ID'),
+          store('CDR Report', 'DQE + CSR Transfer + Agent Alias Overrides + Company Holidays + Dashboard Standards (read-only)', 'External', 'n/a — owned by call-data-reporting', 'CDR_SS_ID',
+            // F-08 / F-09 — cdrStandardProbe_ / cdrHolidayProbe_'s shapes: the
+            // published, all-clear state (the System tab still reads clean).
+            { standard: { dept: 'CSR', target: 92, band: 2, source: 'sheet', error: '' },
+              holidays: { source: 'sheet', ranges: 9, thisYear: 9, year: '2026', error: '' } }),
           store('Intake (PHI)', 'Offerings + PPD/PMD/PAP submissions', 'PHI', 'Optional purge', 'INTAKE_SS_ID'),
           store('Forms (PHI)', 'FormTokens + FormSubmissions', 'PHI', '90-day purge (if enabled)', 'FORMS_SS_ID',
             { configured: false, reachable: false, name: '', tz: '', tzMatch: null, url: '', source: 'unset',
               note: 'Falls back to the ADP sheet — set FORMS_SS_ID to segregate form PHI.' }),
+          // F-11 — the Dept Requests row, in the SAME unset-fallback state as Forms.
+          store('Dept Requests (PHI-adjacent)', 'DeptRequests (inter-department request tracker; PatientTrx names a patient)', 'PHI-adjacent', 'Kept', 'DEPT_REQUESTS_SS_ID',
+            { configured: true, reachable: true, source: 'ADP fallback', name: 'Time Clock / ADP (live)',
+              note: 'Unset → DeptRequests rows (each names a patient + TRX) are co-located with the ADP/payroll sheet. Recommend setting DEPT_REQUESTS_SS_ID to the Intake spreadsheet.' }),
           store('Knowledge Base + Training', 'KB, KbViews, Training/Quiz tabs', 'PHI-free', 'Kept', 'KB_SS_ID'),
           store('Employee Docs (HR)', 'EmpDocs + DocSignatures', 'HR — keep-forever', 'Never purged', 'HR_DOCS_SS_ID'),
           store('QA (recordings)', 'QaRecordings index + QaComments + QaScorecards', 'QA/HR-adjacent',
@@ -1812,7 +1842,11 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         { key: 'managerBrief', last: daysAgo(0) + ' 08:00:02', stale: false },
         { key: 'selfTest', last: daysAgo(0) + ' 01:00:21', stale: false },
         { key: 'coachingRecap', last: daysAgo(3) + ' 08:00:15', stale: false },
-        { key: 'spanishAutoAssign', last: daysAgo(0) + ' 09:00:12', stale: false }],
+        { key: 'spanishAutoAssign', last: daysAgo(0) + ' 09:00:12', stale: false },
+        // F-20 — the three heartbeat-only daily jobs.
+        { key: 'missedPunch', last: daysAgo(0) + ' 08:00:06', stale: false },
+        { key: 'exportCheck', last: daysAgo(0) + ' 12:00:03', stale: false },
+        { key: 'automationHealth', last: daysAgo(0) + ' 09:00:20', stale: false }],
       cdr: { ok: true, from: daysAgo(7), to: todayIso, rowsMatched: 96, columnWarning: null, transferColumnWarning: null,
         unmatchedAgents: ['Ada Tran', 'Casey Lund'], rosterWithNoCdr: ['Robin Choudhury'], likelyMismatches: [],
         queueInventory: { ok: true, from: daysAgo(7), to: todayIso, queues: [], sentinels: [], transferCols: [], rowsScanned: 900, rowsInWindow: 120,

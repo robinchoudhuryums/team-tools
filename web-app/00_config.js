@@ -746,8 +746,9 @@ const TIMEOFF_RANGE_MAX_DAYS = 31;
 //     findExistingPunch_ updates and managerSaveDay's snapshot displays —
 //     and deletes the rest with `duplicate collapsed` audit rows.
 //   • INVERTED PAIRS — a day whose last ClockOut is at-or-before its first
-//     ClockIn. calcHours_ deliberately wraps out<=in as an overnight +24h
-//     (the pinned C3 decision), so a mis-keyed AM/PM pair silently computes
+//     ClockIn. calcHours_ deliberately wraps out<in as an overnight +24h
+//     (the pinned C3 decision; an EQUAL minute pair is zero hours since
+//     2026-09-17, not a wrap), so a mis-keyed AM/PM pair silently computes
 //     a huge day. REPORT-ONLY: the doctor can't know intent — the fix is a
 //     manager Day Edit, never an auto-swap.
 var TS_DOCTOR_WINDOW_DAYS = 92;   // ~a quarter — covers every open export period
@@ -1495,10 +1496,85 @@ var PENDING_TASKS_CAP = 30;                // items returned; `total` carries th
 var PENDING_TASKS_KINDS = ['training', 'coaching', 'notes', 'requests', 'sched', 'docs'];
 const INTAKE_PPD_SUB_HEADERS  = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','Language','AnswersJSON','Recommendations','Selections','Recipient','AmendsId'];
 const INTAKE_ACCT_SUB_HEADERS = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','DOB','Language','AnswersJSON','Recipient','ImageCount','AmendsId'];
+// ── F-27 (2026-09-18): the ENGLISH question banks, server-held ─────────────
+// The email is ALWAYS English whatever language the form was completed in
+// (g43), and until Batch 5 the server rendered whatever LABEL text the client
+// sent beside each answer — the English rule was enforced on the client only,
+// and a client that sent Spanish (or anything) labels put them in the Power
+// dept's inbox. The server now builds the email rows from these banks + the
+// client's ANSWERS (keyed by question number / form index) and ignores
+// client-sent labels entirely. These three arrays and the notes pair are a
+// BYTE-FOR-BYTE MIRROR of the client's `INTAKE_PPD_Q.EN` / `INTAKE_PMD_Q.EN` /
+// `INTAKE_PAP_Q.EN` / `INTAKE_PPD_NOTES.EN` (script_intake.html) — a drift
+// costs a wrong label in an email, never a refused send (g120), and the F-27
+// pin holds them equal. Edit the client bank, then copy it here.
+const INTAKE_PPD_Q_EN = [
+    "PPD (English)", "", "", "MRADL",
+    "1. Do you currently use a cane, walker, manual wheelchair, scooter, or PWC?",
+    "2. Going to the restroom and using the toilet", "3. Preparing meals in the kitchen",
+    "4. Getting fully dressed", "5. Grooming (fixing hair, shaving, etc.)",
+    "6. Bathing (getting in & out of shower/tub, washing all areas)", "",
+    "Extremity Strength", "7. Can you move both arms at all?",
+    "8. Can you raise both arms straight out in front of you, as if pointing?",
+    "9. Can you raise both hands straight above your head?", "10. Can you move your legs at all?",
+    "11. While sitting, can you extend your legs straight out in front of you?",
+    "12. Could you push an unlocked door open with your feet?",
+    "13. Have you fallen, nearly fallen, or experienced dizziness in the past six months? If so, how many times?", "",
+    "Consistent Pain", "14. Neck?", "15. Shoulder?", "16. Elbows?", "17. Arms?",
+    "18. Hands?", "19. Back?", "20. Hips?", "21. Knees?", "22. Legs?", "23. Ankles?", "",
+    "Additional Information", "24. Do you take pain medications (over the counter or prescribed)?",
+    "25. Do you have consistent or frequent numbness/tingling in hands, feet or legs?",
+    "26. Do you use caloric/nutritional supplements like Ensure or Boost?",
+    "27. Do you ever have the need for incontinence supplies?",
+    "28. Do you have diabetes?",
+    "29. Do you have any peripheral vascular disease?",
+    "30. Do you use intermittent catheters?",
+    "31. Have you had a stroke in the past?",
+    "        31a. Did it result in weakness or paralysis in either side?",
+    "32. Do you have spasticity?",
+    "33. History of pressure ulcers or “bedsores”?",
+    "        33a. If so, where and do you have absent or impaired sensation in that area?",
+    "34. Any amputations? If so, where and is it above or below the knee?",
+    "35. Any curvature of the spine (like scoliosis or humpback)?",
+    "36. Consistent swelling in feet, ankles, or legs?",
+    "37. Height (inches):",
+    "38. Weight (lbs):",
+    "39. Live alone or w/ friends/family?",
+    "39a. Does the patient live in a House, Apartment, or Mobile Home?",
+    "40. Do you have a home health attendant at your home for a few hours per week?",
+    "41. What diagnoses do you have that would qualify you for the PWC?",
+    "42. Any heart or lung conditions not already mentioned?",
+    "43. Any neurological conditions not already mentioned?",
+    "44. Are you on Oxygen?",
+    "45. Do you have arthritis? If so, where and what type (Rheumatoid, Osteo, Psoriatic)?",
+];
+const INTAKE_PPD_NOTES_EN = { title: 'Additional Notes', label: 'Additional notes (optional)' };
+const INTAKE_PMD_Q_EN = [
+    "Demographics", "Patient Full Name", "Patient Primary Contact Phone #", "Secondary Contact Ph#",
+    "Patient Email Address", "DOB", "Home Address",
+    "Insurance", "Primary Insurance & Member ID#", "Secondary Insurance & Member ID#", "SSN # (if insurance details N/A)",
+    "Clinical Information", "PCP Name", "MDO Ph#", "MDO Fax#", "Height", "Weight (lbs)",
+    "Currently used mobility devices", "Diagnoses", "Currently staying at Home or Facility?",
+    "If in facility what is the approximate discharge date?",
+    "Mobility Evaluation & Scheduling", "Already had a Power Mobility Evaluation in last 6 months?",
+    "If so please provide appointment details",
+    "Explained mobility evaluation with doctor is needed for insurance purposes and that we will send MDO paperwork to be filled out during the appointment to be sent back to us",
+    "Permission to call & schedule Mobility Evaluation with MDO?", "ME Availability", "PPD Availability", "Other Notes",
+];
+const INTAKE_PAP_Q_EN = [
+    "Demographics", "Patient Full Name", "Patient Primary Contact Phone #", "Secondary Contact Ph#", "Patient Email Address", "DOB", "Home Address",
+    "Insurance", "Primary Insurance & Member ID#", "Secondary Insurance & Member ID#", "SSN # (if insurance details N/A)",
+    "Clinical Information", "PCP Name", "MDO Ph#", "MDO Fax#", "MDO Address", "Height", "Weight (lbs)",
+    "PAP Details", "Already have a CPAP?", "Make & Model of current CPAP (if applicable)?", "How long have you had the current CPAP (if applicable)?",
+    "What kind of mask are you using (make/model/size)?", "Looking for Machine, PAP Supplies, or Both?", "Have you done a Sleep Study in the past?",
+    "If so please provide Sleep Study details (approx. date & provider details)",
+    "Informed that we will reach out to MDO for the information required by insurance, and work with both to process your order efficiently.", "Other Notes",
+];
 // Per-form structural layout (0-based FORM_RANGE row index → role). Ported from
-// the bound tool's AC_CONFIG / PAP_CONFIG. The question LABELS arrive from the
-// client (EN/ES, so no parallel server-side question bank to drift); these
-// fixed structural rules stay server-side so styling can't be spoofed.
+// the bound tool's AC_CONFIG / PAP_CONFIG. The question LABELS come from the
+// server-held English banks above since F-27 (they used to arrive from the
+// client); these fixed structural rules stay server-side so styling can't be
+// spoofed.
 const INTAKE_PMD_LAYOUT = {
   HEADER_ROWS:             [1, 8, 12, 22],          // 1-based offset rows (matches original HEADER_ROWS check i+1)
   CHECKBOX_ROWS:           [22, 24, 25],
@@ -2096,11 +2172,6 @@ const COACH_TEXT_MAX = 4000;
 const COACH_TRX_MAX = 200;
 const COACH_RESPONSE_MAX = 2000;
 const COACH_VOIDED_CAP = 50;
-/** Test seam (the _TEST_OVERRIDE_EMAIL pattern): when a function is assigned
- *  here, every coaching mail send is handed to it INSTEAD of MailApp so the
- *  editor suite can assert "critical mails, minor does not" and "a throwing
- *  send still returns success + mailed:false" without a real send. */
-var _TEST_OVERRIDE_COACH_MAIL = null;
 const QA_RECORDINGS_TAB = 'QaRecordings';
 // Phase 2 added the trailing Agent column (which agent the call belongs to —
 // feeds the per-agent stats); Phase 3 added SharedMs (the explicit
@@ -2111,8 +2182,13 @@ const QA_RECORDINGS_TAB = 'QaRecordings';
 // client on loadedmetadata — the queue's Length column) and SkipReason (the
 // free-text reason a recording was skipped; plain-text-pinned). These two
 // self-heal: getOrCreateQaSheet_ extends a short header in place.
-const QA_RECORDINGS_HEADERS = ['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url', 'Agent', 'SharedMs', 'DurationSec', 'SkipReason'];
-const QAR = { FILE_ID: 0, NAME: 1, SIZE: 2, MIME: 3, CREATED_MS: 4, ADDED_MS: 5, STATUS: 6, ASSIGNEE: 7, STATUS_MS: 8, URL: 9, AGENT: 10, SHARED_MS: 11, DURATION_SEC: 12, SKIP_REASON: 13 };
+// F-16 (2026-09-18): the trailing AgentId column — the ROSTER ID resolved when
+// the reviewer attributes a recording (qaSetRecordingAgent), so the agent-
+// facing reads scope by id rather than by a free-text name that any two roster
+// rows could share. A legacy row (blank AgentId) still matches by name, but
+// ONLY when that name is unique on the roster. Header self-heals (PR 5).
+const QA_RECORDINGS_HEADERS = ['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url', 'Agent', 'SharedMs', 'DurationSec', 'SkipReason', 'AgentId'];
+const QAR = { FILE_ID: 0, NAME: 1, SIZE: 2, MIME: 3, CREATED_MS: 4, ADDED_MS: 5, STATUS: 6, ASSIGNEE: 7, STATUS_MS: 8, URL: 9, AGENT: 10, SHARED_MS: 11, DURATION_SEC: 12, SKIP_REASON: 13, AGENT_ID: 14 };
 const QA_SKIP_REASON_MAX = 500;
 const QA_DURATION_MAX_SEC = 86400;
 // Q4 — audit-period exemptions (operator decision 6): a manager grants an

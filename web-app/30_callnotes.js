@@ -907,7 +907,8 @@ function getEnrolledCallNotesReps() {
     return { reps };
   } catch (err) { return { error: err.message }; }
 }
-/** Manager-gated enrollment roster for the Admin tab's auto-provision panel.
+/** ADMIN-gated (`callerEmp.isAdmin`) enrollment roster for the Admin tab's
+ *  auto-provision panel — it is an Admin-tab surface and the gate says so (F-26).
  *  Returns every roster member with an email, split into enrolled (has a
  *  CallNotesSheetId) and unenrolled. Read-only. */
 function getCallNotesEnrollment() {
@@ -935,8 +936,8 @@ function getCallNotesEnrollment() {
 }
 /** Auto-provision a per-rep call-notes Sheet — the one-click replacement for the
  *  manual "copy the template Sheet, share it, paste the ID into column L"
- *  workflow. Manager-gated (INV-02) + locked (INV-01, mutates the Employees
- *  sheet). Creates a fresh Spreadsheet owned by the deployer (the script runs as
+ *  workflow. ADMIN-gated (`callerEmp.isAdmin` — F-26; INV-02 names the tier,
+ *  the code enforces admin) + locked (INV-01, mutates the Employees sheet). Creates a fresh Spreadsheet owned by the deployer (the script runs as
  *  USER_DEPLOYING, so the new Sheet lands in the deployer's Drive — exactly the
  *  ownership the per-rep model wants), provisions the `Notes` tab with the
  *  canonical CN_HEADERS, writes the new ID into EMP.CALL_NOTES_SHEET_ID (column
@@ -1009,7 +1010,8 @@ function provisionCallNotesSheet(repEmpId) {
 // ════════════════════════════════════════════════════════════════════════════
 /** Round 2 · 8h — Tag taxonomy aggregate for the Admin tab. Scans every
  *  enrolled rep's call-notes Sheet for subformData.tags[] entries and
- *  returns unique tags with usage counts. Manager-gated; read-only.
+ *  returns unique tags with usage counts. ADMIN-gated (`callerEmp.isAdmin`,
+ *  not `isManager` — F-26); read-only.
  *  Returns: { tags: [{ tag, count, lastSeen, archived }], archivedOnlyTags,
  *  totalNotes, repsScanned }. Archived tags (from CN_ARCHIVED_TAGS Script
  *  Property) are marked but kept in the response so the admin UI can show
@@ -1159,7 +1161,8 @@ function cnTagTrendsFromEvents_(events, refIso, weeks, topK) {
   return { weekStarts: starts.map(cnDayNumToIso_), series: series };
 }
 /** Manager Admin "Tag Trends" — weekly per-tag counts over the trailing
- *  CN_TAG_TRENDS_WEEKS. Manager-gated (INV-02/31), read-only, cached, PHI-free.
+ *  CN_TAG_TRENDS_WEEKS. ADMIN-gated (`callerEmp.isAdmin` — F-26; INV-02/31
+ *  describe the tier, the code enforces admin), read-only, cached, PHI-free.
  *  Reuses the taxonomy's 2-column scan (SubformData tags + DateLocal) but
  *  buckets by week instead of total+lastSeen; archived tags are excluded; the
  *  scan is window-pre-filtered so the events array stays bounded. */
@@ -1306,14 +1309,20 @@ function normalizeTagForAdmin_(raw) {
 function applyTagTransformAcrossReps_(oldTag, transform) {
   const roster = getEmployeeRosterRows_();
   let repsTouched = 0, notesUpdated = 0;
+  // F-10 (2026-09-18): a rep Sheet the deployer cannot open used to be skipped
+  // in SILENCE — the rename reported success and the audit row counted N-1
+  // reps, so the old tag lived on in that rep's notes with nothing saying so.
+  // The skip is still the right move (one unreachable Sheet must not fail the
+  // other N-1); it is now REPORTED, by rep, to the caller and the audit row.
+  const skippedReps = [];
   for (let i = 1; i < roster.length; i++) {
     const sheetId = cnEnrolledSheetId_(roster[i]);   // F14: trimmed predicate
     if (!sheetId) continue;
+    const repEmp = {
+      id: String(roster[i][EMP.ID]).trim(),
+      callNotesSheetId: sheetId,
+    };
     try {
-      const repEmp = {
-        id: String(roster[i][EMP.ID]).trim(),
-        callNotesSheetId: sheetId,
-      };
       const sheet = getCallNotesSheet_(repEmp);
       const rows = sheet.getDataRange().getValues();
       let repHadUpdate = false;
@@ -1333,12 +1342,21 @@ function applyTagTransformAcrossReps_(oldTag, transform) {
         }
       }
       if (repHadUpdate) repsTouched++;
-    } catch (e) { /* skip unreachable rep sheet */ }
+    } catch (e) {
+      skippedReps.push({ id: repEmp.id, error: String((e && e.message) || e).slice(0, 200) });   // F-10: reported, never silent
+    }
   }
-  return { repsTouched: repsTouched, notesUpdated: notesUpdated };
+  return { repsTouched: repsTouched, notesUpdated: notesUpdated, skippedReps: skippedReps };
+}
+/** F-10: the audit-row tail naming the rep Sheets a cross-rep tag transform
+ *  could NOT read — ids only (INV-32: the shared trail carries no names). */
+function cnTagSkippedNote_(skippedReps) {
+  const s = skippedReps || [];
+  return s.length ? `; skipped=${s.length} (${s.map(function (r) { return r.id; }).join(',')}) — those reps' notes still carry the old tag` : '';
 }
 /** Round 2 follow-on (8h Admin tag actions) — Renames a tag across every
- *  enrolled rep's notes. Manager-gated, locked at the project level so
+ *  enrolled rep's notes. ADMIN-gated (`callerEmp.isAdmin` — F-26), locked at
+ *  the project level so
  *  concurrent submits / other tag mutations can't interleave. If the new
  *  tag already exists on a note, the rename collapses (dedupes) by
  *  dropping the old tag from those rows. Audit row records old+new+counts. */
@@ -1364,11 +1382,12 @@ function renameCallNoteTag(oldTag, newTag) {
       return out;
     });
     writeAuditLog_(callerEmp, 'CallNoteTagAdmin', '', '', false, 0,
-      `rename ${oldT} → ${newT}; reps=${result.repsTouched}, notes=${result.notesUpdated}`,
+      `rename ${oldT} → ${newT}; reps=${result.repsTouched}, notes=${result.notesUpdated}` + cnTagSkippedNote_(result.skippedReps),
       callerEmp.email);
     invalidateCnTaxonomyCache_();
     return { success: true, action: 'rename', oldTag: oldT, newTag: newT,
-             repsTouched: result.repsTouched, notesUpdated: result.notesUpdated };
+             repsTouched: result.repsTouched, notesUpdated: result.notesUpdated,
+             skippedReps: result.skippedReps };   // F-10
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
@@ -1399,11 +1418,12 @@ function mergeCallNoteTags(sourceTag, targetTag) {
       return out;
     });
     writeAuditLog_(callerEmp, 'CallNoteTagAdmin', '', '', false, 0,
-      `merge ${srcT} → ${tgtT}; reps=${result.repsTouched}, notes=${result.notesUpdated}`,
+      `merge ${srcT} → ${tgtT}; reps=${result.repsTouched}, notes=${result.notesUpdated}` + cnTagSkippedNote_(result.skippedReps),
       callerEmp.email);
     invalidateCnTaxonomyCache_();
     return { success: true, action: 'merge', sourceTag: srcT, targetTag: tgtT,
-             repsTouched: result.repsTouched, notesUpdated: result.notesUpdated };
+             repsTouched: result.repsTouched, notesUpdated: result.notesUpdated,
+             skippedReps: result.skippedReps };   // F-10
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
@@ -1669,7 +1689,8 @@ function cnReadCallNoteAuditRows_() {
   }
   return { rows: out, scannedAll: scannedAll, oldestScannedDay: oldestScannedDay };
 }
-/** Manager-gated compliance audit search over the shared AuditLog. Filters by
+/** ADMIN-gated (`callerEmp.isAdmin` — F-26) compliance audit search over the
+ *  shared AuditLog. Filters by
  *  rep (EmployeeId), action, and date range (defaults to the last
  *  CN_AUDIT_DEFAULT_DAYS in the manager's tz). Returns PHI-free rows only —
  *  the AuditLog never carries note content (INV-32); the client deep-links a
@@ -1726,7 +1747,8 @@ function getCallNotesAuditLog(filters) {
     };
   } catch (err) { return { error: err.message }; }
 }
-/** Manager-gated. Returns the full chronological audit history for a single
+/** ADMIN-gated (`callerEmp.isAdmin` — F-26). Returns the full chronological
+ *  audit history for a single
  *  noteId — every AuditLog row whose Notes embed that noteId — oldest-first,
  *  so the lifecycle (create → flag → email → … → delete) reads top to bottom.
  *  Scans the same bounded window as the search; deliberately independent of
@@ -2355,8 +2377,10 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     // request) — else mint a new token. The lookup is best-effort (a throw falls
     // back to a fresh token, never failing the send). The "Mark resolved" CTA is
     // appended to the SENT body ONLY, AFTER the INV-41 hash check, so the
-    // preview/hash contract is untouched. The PHI-free DeptRequests row is logged
-    // below, after the send succeeds (only when this is a NEW request).
+    // preview/hash contract is untouched. The DeptRequests row is logged
+    // below, after the send succeeds (only when this is a NEW request) — its
+    // PatientTrx column names a patient, so the store is PHI-ADJACENT (F-11):
+    // set DEPT_REQUESTS_SS_ID to the Intake spreadsheet to keep it off payroll.
     // F(M-16): request-track ONLY sends that include a REAL internal
     // department. 'Other' is the free-text (possibly customer/external)
     // recipient path — tracking those (a) mailed an external recipient an

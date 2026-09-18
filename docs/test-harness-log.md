@@ -1333,3 +1333,311 @@ recreated by `git push` from the stale pre-merge tip, silently diverging from
 `main`. GitHub deletes the branch at merge; a push recreates it wherever the
 local ref happens to point. Restart from `origin/main` after a merge — it is now
 a Decisions entry in STATE.md rather than something to rediscover.
+
+## 2026-09-17 — the cycle-20 /broad-scan, Batches 1 and 2, and two Dashboard error scenarios
+
+Pure +6, DOM +5, visual +2, one smoke registration; the live totals are
+CLAUDE.md's running-totals block. Fifteen mutations bite-checked, fifteen bite
+(eleven through `scripts/bite.sh`, four DOM by hand). Three things worth
+recording.
+
+**The pin that would have caught the High never ran.** Batch 1's F-01 (the
+send-time price verifier keyed column A) had an editor pin against the
+real-shape fixture that would have FAILED — but it is an integration test, the
+2026-09-17 deploy ran smoke, and the walk recorded green (g116's third
+direction). The Node twin could not see it either: its fake sheet had `Item`
+in column A. The OOP-B grid now carries the operator's shape with a guard that
+the item is never in A, and the F-04 pin forbids a position-0 read in any of
+the four OopPricing readers.
+
+**`bite.sh` refuses a mutation with a double quote — quote the JS with regex
+instead.** Six Batch 2 bites were silently skipped on the first pass because
+the mutation strings quoted JavaScript string literals (`'…'` inside `"…"`),
+which the helper refuses by design. Rewriting each as `re.sub(r'…', …, s,
+count=1)` with `.` for the quote characters (and `chr(39)` in a lambda when the
+replacement needs one) got every bite through. A refused bite prints REFUSING
+and exits 2; a loop that only greps for BITES reads that as silence — grep for
+`BITE|REFUS|FAILED`.
+
+**jsdom under `runScripts: 'outside-only'` never executes inline `onclick`
+attributes.** The first F-02 DOM pin clicked the modal's Close button and
+asserted it closed; it did not, because the handler never ran. The pin now
+asserts the button's WIRING (`onclick` routes through `closeOverlay`) and
+exercises the same path via `closeOverlay` and the document Escape handler.
+Any DOM pin that clicks an inline-handler button is testing nothing.
+
+**Visual:** `clock-dash-error-light-wide` (`?failrpc=getDashboardMetrics`) and
+`clock-coverage-error-light-wide` (`?failrpc=getMyMetrics`) put Batch 2's two
+Dashboard warn states on camera; both rendered clean on the first shoot.
+
+## 2026-09-18 — Batch 3 of the cycle-20 scan, and one editor test that had never run
+
+**Pure harness — seven pins (see the running-totals block for the count):**
+`F-07` drives the two tone vocabularies (`mPctClass_` → `m-pct-*`,
+`dashPctTone_` → good/warn/crit) over nine (value, target, band) triples and
+asserts they AGREE, then the null-band and Transfer % branches and both
+delegations to `mtAnswerBand_`; `F-08` renders every `standardSource` string,
+the warn/muted split, both heroes' call sites, and bans `threshold || \d`
+over the Metrics partial (H2-4's ban named `alertThreshold` and missed the
+tooltip); `F-08/F-09 server` runs `cdrStandardProbe_` and `cdrHolidayProbe_`
+in a vm through sheet / no-row / empty / unavailable / throw and pins the
+reachable-only gate in `getStorageHealth` — cross-context objects are compared
+by `JSON.stringify`, not `deepStrictEqual` (a vm context's `Object` is not the
+harness's, so a shape-equal object fails the prototype check — the g116
+class); `F-08/F-09 client` drives `cnHealthFindings_` through every source for
+both findings and asserts an older payload raises neither; `F-35` executes
+`getMetricsAmbient` in a vm with stubbed roster / cache / standard / CDR
+reader and asserts the DATE it asks for — Monday asks Friday, a Friday holiday
+steps to Thursday — the first behavioural pin on that function (H2-4's was
+structural); `F-32` pins null from the formula, the team aggregate, both
+heroes, the cell, the two averages and the editor smoke; `F-38` bans "US
+holiday" / "Federal observance" in the two tc partials (comments stripped
+first). H2-1 now expects null for nothing-to-divide; H2-4's Clock-card regex
+follows the delegation; the stale "mid band floor stays 50" message in the #4
+pin is replaced by the rule it now asserts.
+
+**Bite-checks:** ten mutations, ten bites — incl. the two that matter most:
+`mtAnswerBand_` null → 5 (the old card behaviour) and the `unavailable`
+message rewritten to say "not set" (the g128 split).
+
+**Fixtures (INV-185):** the three Metrics fixtures carry `standardSource:
+'sheet'`; the Storage Health fixture's CDR row carries both probe shapes in the
+all-clear state, so the System tab still reaches "Nothing needs attention" and
+the passing-check count rises by two.
+
+**Editor suite:** `test_cdrAnswerPct_isTheDashboardFormula` expects null for
+`(0, 0)`; `/test-sync` found `test_teamBenchmark_subtractsPublishedExcludes`
+expecting 85.7 where `cdrAnswerPct_` has rounded to a whole percent since H2
+(run.js H2-2 expected 86 all along) — an editor test that was red as written
+and had never run, because the integration tier has never run against the
+deployed project (cycle 19 step 8). The pure harness now pins the editor
+assertion's text too.
+
+**Visual:** the `metrics` and `admin-system` scenarios were re-shot (0 missing,
+0 overflow); the two WARN states of the new CDR findings are pinned but not on
+camera — a `?fixture=` variant of `admin-system` is the follow-on.
+
+## 2026-09-18 (later) — Batch 4 of the cycle-20 scan, and a bite that hit the wrong function
+
+**Pure harness — five pins (see the running-totals block for the count):**
+`F-20` pins the three `DIGEST_STALE_HOURS` windows, the heartbeat's PLACEMENT
+(index arithmetic: missed-punch after the read and before the early return;
+the digest's after `if (!report) return`), both digest stamps, then DRIVES
+`sendAutomationHealthDigest` in a vm through a throwing and a clean report
+(stamp / no heartbeat vs heartbeat + clear + no mail) and `automationProblems_`
+with an untabled and a tabled stamp (each reported exactly once), and asserts
+the client finding shows the stamp's `message`; `F-19` drives
+`accrualEarnedByMonth_` on two 5-hour months (0.02 + 0.02 = 0.04 where the
+once-rounded 10 h says 0.05), `accrualMonthRows_`'s split with emp/plan
+carried, and round-trips a per-month credit note and a per-month zero note
+through the unchanged builders to single-month keys; `F-46` drives
+`creditMonthlyPtoAccruals` through both early returns with a stubbed lock,
+flag and planner (stamp reason + window, error cleared, lock released,
+`stampAutomationError_` a throwing stub so an accidental failure stamp fails
+the pin); `F-21 / F-22` reads `cleanupTestData` for the MANAGER_EMAILS strip
+form, both by-key sweeps on the right store, no provisioning, and sweeps
+`Tests.js` for any surviving positional delete and every DeptRequests probe
+row's `TEST_DR_` key; `F-49` is structural plus a fresh-deployment run APPENDED
+to the calendar's behavioural pin (the by-name tab returns null, the
+provisioner serves an empty tab, the calendar renders). Five existing pins
+repointed; the F5 coupling pin, which read only the detail panel's
+`DIGEST_LABELS`, made the miss visible when the first edit updated only
+`CN_DIGEST_LABELS_`.
+
+**Bite-checks:** twelve mutations, twelve bites — after one lesson. The
+un-anchored F-49 mutation ("read the time-off tab by name again") matched a
+two-line shape `getTeamCalendar` shares with an unrelated function 700 lines
+earlier, changed THAT function, and `bite.sh` reported NO BITE — a true verdict
+about the wrong code. A `git diff` showed it; anchoring the regex on
+`getTeamCalendar`'s own `monthIso` filter made both F-49 pins bite. g116's
+fourth direction; a `--fn` span guard for `bite.sh` is the follow-on.
+
+**Fixtures (INV-185):** both Automation Health fixtures carry the three new
+heartbeats fresh, so the all-clear System scenario still reaches "Nothing
+needs attention".
+
+**Editor suite:** four tests changed their tidy-up (by key through
+`_cleanupRowsByPrefix`), none its assertions; `cleanupTestData` gained the
+MANAGER_EMAILS strip and the DeptRequests + ClientErrors sweeps. Registrations
+unchanged.
+
+## 2026-09-18 (later still) — Batch 5 of the cycle-20 scan, and two harness lessons
+
+**Pure harness — seven pins (see the running-totals block for the count):**
+`F-16` drives the pure `qaRowIsMine_` through six shapes (id wins, a
+non-matching id is refused even under my own name, a legacy row under a unique
+name, a legacy row under a SHARED name, unattributed, no caller name) and
+`qaRosterIdsForName_` over a roster carrying a duplicate and an offboarded row;
+`F-10` drives `applyTagTransformAcrossReps_` in a vm whose `getCallNotesSheet_`
+THROWS for one rep of three, so the skip list is measured rather than read;
+`F-11` checks the probe's fallback + recommendation, that no server comment
+still says "PHI-free", the storage map, both fixtures, and drives
+`cnHealthFindings_` to confirm the unset store is a WARNING (not the
+no-fallback ok); `F-17` bans the `onclick` literal, pins both `data-*` forms
+and the single delegated listener, and asserts the `esc()` round trip on a name
+carrying both quote kinds; `F-24` pins the refusal BEFORE the mismatch check
+(by index), that the conditional gate is gone, both `warning` returns and the
+client copy; `F-23` drives six eligibility values; `F-27` compares the three
+server banks and the notes pair against the client's BY VALUE, then drives the
+server's PPD and PMD/PAP walks (first header, an answered question, the
+indent-derived secondary 31a, an unanswered blank, the notes tail, 49
+non-header rows, numeric vs string keys, the 1-based secondary rows) and
+asserts no preview or send path reads `payload.rows`.
+
+**Two lessons, both about the harness rather than the code.** (1) Arrays
+evaluated in two vm realms are never `deepStrictEqual` — the prototypes differ
+— so the F-27 bank mirror compares `JSON.parse(JSON.stringify(...))` on both
+sides; the same rule the R-reconcile pin learned about `months.join(',')`
+(g116). (2) The GATE-SHAPE pin follows the FIRST `return helper_(` inside an
+endpoint as a DELEGATING wrapper; F-27's first draft put a `return` inside a
+`.map()` callback in `intakeSendPPD` and the pin resolved the callback's
+helper as the delegate and failed on it. Hoisting the callback's result into a
+local fixed it, and the pin's regex would be better anchored on a top-level
+return.
+
+**Bite-checks:** twelve mutations, twelve bites — including the three that
+matter most for a PHI-adjacent boundary (an id that is not mine falling
+through to the name; a legacy row ignoring name uniqueness; an ambiguous name
+resolving to the first roster row) and the server bank drifting by one word.
+
+**Fixtures (INV-185):** both Storage Health fixtures and the deploy-readiness
+fixture carry the Dept Requests row; the default Admin System shot gains a
+fourth "Needs attention" item (the unset store), which is the finding, and the
+all-clear fixture stays clear. `admin-system` and `qa` re-shot: 0 missing, 0
+overflow.
+
+## 2026-09-18 (last) — Batch 6 of the cycle-20 scan, and the shot that caught what the pins could not
+
+**Pure harness — eight pins (see the running-totals block for the count):** the
+one worth describing is `F-14`'s, which is a BUDGET rather than a match: it
+counts `location.reload()` across `script_core` (exactly two, both inside
+`reloadApp_`'s documented fallbacks) and asserts ZERO across eight view
+partials, so a new call site is red the day it lands. `F-40/F-30` sweeps six
+overlays for four properties each (opens through `ensureOverlay`, closes
+through `closeOverlay`, no bare `classList` open, no bare `classList` close)
+plus the `hover-mode` carry. `F-12` is behavioural: it drives
+`cnRenderAdminAugmentHtml_` with the admin's OWN counts present and asserts
+they reach no cell, then walks the complete / partial / unreadable / null /
+real-zero states. `F-29` is a regex SWEEP for any `<input>` carrying two
+`aria-label` attributes rather than a check of the one that was wrong. `F-43`
+pins the ABSENCE of `aria-modal` — the drawer does not trap focus, and a pin
+that only demanded a role would have invited the lie. `F-36` pins ORDER (the
+link is in the DOM before the blockable call) and `F-42`/`F-28` are
+straightforward attribute and copy pins. One existing pin repointed: the D1
+modal-ordering pin followed `classList.remove('open')`, which no longer exists
+in that path, and `indexOf` returning −1 made the comparison silently false —
+it follows `closeOverlay` now.
+
+**The lesson of the batch is that the VISUAL matrix caught what eight pins
+could not.** Every pin passed and `admin-light-wide` photographed the new KPI
+strip's first cell as an em dash: the server has always returned
+`getCallNotesTagTaxonomy.totalNotes`, and the visual fixture had never carried
+it, so the cell rendered its honest "absent" branch. Nothing in the pure
+harness could see it — the pin drove the function with a fixture of its own —
+and nothing in the fixture was WRONG in a way a shape check would catch; it was
+simply less than the server returns. INV-185's rule ("a fixture mirrors the
+real contract") is now pinned for this field too. It is the third time a shoot
+has found a fixture gap that a pin could not, and the second where the gap
+rendered as a plausible-looking state rather than a crash.
+
+**Bite-checks:** thirteen mutations, thirteen bites, anchored per the g116
+fourth-direction rule (each names something only the pinned code contains).
+Two are worth keeping: reverting the `hover-mode` carry (the trap g134
+describes), and adding `aria-modal` to the drawer (the honesty assertion — a
+pin that only checked for a role would have gone green).
+
+**Companion harness:** `a11y-names.mjs` re-run over all twelve surfaces
+including the three public forms — `unnamed 0` everywhere, with the shortcuts
+close button and the five accordion toggles newly in scope. The `admin`,
+`clock` and `reference` scenario groups were re-shot: 0 missing, 0 overflow.
+
+## 2026-09-18 (final) — Batch 7 of the cycle-20 scan: the batch about the pins themselves
+
+The last batch in the scan's plan, and the only one whose subject was the test
+layer. Three pins were RETIRED and replaced rather than supplemented, three
+bite-checks reported NO BITE and each was a different kind of problem, and two
+fixtures turned out to have been photographing defects for weeks.
+
+**Three structural pins became drives, and the originals were deleted (F-52).**
+Each had been named for a behaviour and asserted a source shape, and each stayed
+green under a mutation that broke the thing its name promised.
+
+- `archiveSheetRowsOlderThan_` runs against a fake source sheet and a fake
+  archive sheet. The bound really stops the scan; a second run drains the NEXT
+  batch rather than re-appending the one before it (the monotonic-drain property
+  the bound exists for); an unbounded run takes every eligible row and only
+  those; a slack bound is not a truncation; a tab with nothing eligible appends
+  nothing and flushes nothing. The fake archive REFUSES a zero-row `setValues`,
+  because Sheets does — see the bite-check note below.
+- `getDepartmentEmails_` and `saveDepartmentEmails` run against a fake
+  PropertiesService. An array, a number, a blank, a bare name and a
+  whitespace-only key are each dropped entry-wise; an all-junk map falls back
+  whole rather than to `{}`; names and emails are trimmed; and not one refusal
+  on the write path reaches the property.
+- `clientBuildHash_` runs against a fake HtmlService plus a fake CacheService
+  that hands back SIGNED bytes, as Apps Script does. The hash moves when a
+  partial's bytes move, moves when index.html moves, is stable when nothing
+  does, and a lost partial is a different build. A warm cache is served and not
+  re-put, and a planted cache value wins — so the read is real rather than
+  decorative.
+
+The fourth pin, the width-cap one, stayed structural and now says why: it is an
+ABSENCE assertion with no function to call, and it cannot see a cap arrive by
+another route, which is how the cap arrived the first time. It asserts the
+measured visual scenarios that carry the real claim still exist, so nobody
+deletes the measurement and leaves the grep behind.
+
+**Three NO BITEs, three different lessons.** The bite-checker was right every
+time; what it was right ABOUT differed.
+
+1. Deleting the mover's `if (!toMoveRows.length) return 0;` guard reported NO
+   BITE because the fake archive accepted a zero-row range that real Sheets
+   refuses. A fixture kinder than production let a mover that appends an empty
+   block read as correct here while it would throw on the first nightly run with
+   nothing eligible. The fake asserts the range has at least one row now.
+2. Collapsing every missing-partial marker to one constant reported NO BITE
+   because the assertion varied the FILENAME inside index.html to produce its
+   two cases — so the digest input differed whatever the marker did. Holding
+   index.html fixed and removing the partials from the fixture instead isolated
+   it.
+3. After that isolation, the same mutation STILL reported NO BITE, and the third
+   reading was the right one: the claim is not observable. The markers sit at
+   different positions in the concatenation, so two broken builds digest
+   differently even with every marker collapsed. Naming the lost file is a
+   property of the log string, not of the fingerprint. The assertion was
+   DELETED with the reasoning left in place rather than dressed up into
+   something that looks like a check. This is g116's fifth direction and the
+   substance of g138.
+
+A fourth NO BITE was not a problem at all: rewriting the client's
+`Math.floor((daysDiff + 13) / 14)` as `Math.ceil(daysDiff / 14)` is an
+equivalent expression for every integer, verified over the range rather than
+assumed, and the follow-up mutation with a genuinely different index bit.
+
+**Two fixtures had been photographing defects.** `test/visual/mock.js`'s
+`recentHours` could not produce a null day, so no screenshot could ever show the
+sparkline's third state; it ships one now. Worse, the Spanish stats fixture said
+`pending: 3` directly above a pending list of four cards, and every Spanish
+screenshot for a month showed the two disagreeing with nobody reading it as a
+bug. It agrees with itself now, and a pin requires it to: the stats count must
+equal the number of cards the list fixture renders. Both are INV-185 — the
+fixture has to be able to produce the state the pin claims, and it has to
+satisfy the arithmetic a reader would do by eye.
+
+**Two derived walks replaced hand lists.** The gate-tier check walks every
+server function and compares the doc comment ENDING immediately above the
+declaration against the refusal literal in the body — the first version took
+the nearest comment behind the declaration, which resolves to the previous
+function's and reports a phantom. The gate counts re-derive all three families
+independently of `counts.mjs` and require the generated block to agree with both
+derivations. Together they found ten mislabelled endpoints the scan finding had
+never named.
+
+**The rest of the batch's pins.** The linter's advanced-service derivation is
+driven over manifests the repo does not have; the CDR cache-bypass boolean is
+evaluated under three override states and `cdrRosterHash_` is driven to show one
+extra name really is a different key; `cdrQueueInventory_` is driven end to end
+against a fake sheet for three window shapes; `spanishVmFold_` is driven for the
+unconfigured fold, suppression, resolution and the already-seen skip; and the
+timesheet mirror is driven on BOTH sides over 70 consecutive days spanning three
+period boundaries.

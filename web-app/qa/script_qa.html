@@ -569,8 +569,12 @@ function qaCoverageSectionHtml_(d) {
   ];
   if (d.isManager) {
     cols.push({ key: 'actions', label: '', cell: function (r) {
-      if (r.exempt) return '<button type="button" class="qa-btn" onclick="qaSetExemption_(\'' + esc(r.name).replace(/'/g, '\\\'') + '\', false)">Revoke exemption</button>';
-      if (r.eligible) return '<button type="button" class="qa-btn" onclick="qaSetExemption_(\'' + esc(r.name).replace(/'/g, '\\\'') + '\', true)">Grant exemption</button>';
+      // F-17 (2026-09-18): the name rides a data-* attribute and a DELEGATED
+      // handler, never an onclick literal — esc() had already turned an
+      // apostrophe into &#39;, so the old `.replace(/'/g, "\\'")` was a
+      // no-op and the button for "O'Brien" threw on click.
+      if (r.exempt) return '<button type="button" class="qa-btn" data-qa-exempt="' + esc(r.name) + '" data-qa-exempt-on="0">Revoke exemption</button>';
+      if (r.eligible) return '<button type="button" class="qa-btn" data-qa-exempt="' + esc(r.name) + '" data-qa-exempt-on="1">Grant exemption</button>';
       return '';
     } });
   }
@@ -739,6 +743,19 @@ function qaSample_() {
 
 /** Q4 — grant/revoke an audit-period exemption (manager-only server-side;
  *  the button renders only for managers on eligible rows). */
+// F-17: ONE delegated listener for the coverage table's exemption buttons
+// (the CN card `data-cn-action` pattern, g91). The attribute value comes back
+// DECODED (g49) — it goes to a function argument, never back into innerHTML.
+(function () {
+  if (window.__qaExemptDelegated) return;
+  window.__qaExemptDelegated = true;
+  document.addEventListener('click', function (ev) {
+    var b = ev.target && ev.target.closest ? ev.target.closest('[data-qa-exempt]') : null;
+    if (!b) return;
+    ev.preventDefault();
+    qaSetExemption_(b.getAttribute('data-qa-exempt') || '', b.getAttribute('data-qa-exempt-on') === '1');
+  });
+})();
 function qaSetExemption_(name, on) {
   const d = QA_STATE.queue || {};
   const label = qaPeriodLabelOf_(d.period);

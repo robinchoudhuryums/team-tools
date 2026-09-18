@@ -712,7 +712,12 @@ function clkLoadDashboard_(isMgr) {
     // D2a (cycle 10): a failed refetch keeps the LAST-GOOD payload for that
     // period instead of overwriting it with null (which rendered the
     // authoritative-sounding "No call data for this period.").
-    got[pk] = ok ? res : ((CLK_DASH.data && CLK_DASH.data[pk]) || null);
+    // F-13 (2026-09-17): with no last-good payload a failure used to become
+    // null, which the cards rendered as the authoritative "No call data for
+    // this period." Keep the LAST-GOOD entry when one exists (an error object
+    // is never last-good); otherwise carry the failure so the card can say so.
+    var lastGood = (CLK_DASH.data && CLK_DASH.data[pk] && !CLK_DASH.data[pk].error) ? CLK_DASH.data[pk] : null;
+    got[pk] = ok ? res : (lastGood || { error: (res && res.error) || 'Could not load call data' });
     if (!ok) anyFail = true;
     done++;
     if (currentView !== requestedView) return;
@@ -963,7 +968,9 @@ function clkDashPrev_(res, which) {
 /** The banding thresholds ride the payload (never mirrored client-side); an
  *  older server that ships neither simply renders untoned. */
 function clkDashTone_(res, kind, value) {
-  if (kind === 'answered') return dashPctTone_(value, res && res.alertThreshold, false, res && res.alertBand);   // H2
+  // H2 + F-07: the published band through the ONE null-band rule — no
+  // published band means no amber tier here, exactly as on the Metrics table.
+  if (kind === 'answered') return dashPctTone_(value, res && res.alertThreshold, false, mtAnswerBand_(res && res.alertBand));
   return dashPctTone_(value, res && res.transferTarget, true);   // Transfer % — lower is better
 }
 
@@ -972,7 +979,10 @@ function clkDashOwnCard_(res) {
   // period must render as loading, never as the authoritative-sounding
   // "No call data" (INV-187: absence of a read is not an empty read).
   if (res === undefined) return clkDashSkelKpis_();
-  if (!res || !res.own) return clkDashEmpty_(res);
+  // F-13: a FAILED read is the warn card (the Spanish/Requests cards' A12
+  // posture), never the empty state — "no data" is a claim about the period.
+  if (!res || res.error) return errorStateHtml_((res && res.error) || 'Could not load call data');
+  if (!res.own) return clkDashEmpty_(res);
   var o = res.own;
   var pr = clkDashPrev_(res, 'own'), pv = pr && pr.v, pl = pr && pr.label;
   var kpis = '<div class="dash-kpis">' +
@@ -1002,7 +1012,7 @@ function clkDashOwnCard_(res) {
 }
 function clkDashTeamCard_(res) {
   if (res === undefined) return clkDashSkelKpis_();   // pending ≠ empty (see own card)
-  if (!res) return clkDashEmpty_(res);
+  if (!res || res.error) return errorStateHtml_((res && res.error) || 'Could not load call data');   // F-13: failed ≠ empty
   // Operator 2026-08-06: the cohort hide was dropped for this card (server
   // MIN_COHORT=1) — team:null now only means nobody reported at all.
   if (!res.team) return '<div class="dash-empty">No team call data for this period.</div>';
@@ -1928,17 +1938,29 @@ function loadCoverageStrip_() {
   if (hadCache && currentView === 'clock') renderCoverageStrip_(slot, CLK_COVERAGE_CACHE.data);
   google.script.run
     .withSuccessHandler(function (data) {
-      // Keep the last-good render on an error response (blank only when we
-      // had nothing to show — the pre-SWR behavior for a cold miss).
-      if (!data || data.error) { if (!hadCache) slot.innerHTML = ''; return; }
+      // Keep the last-good render on an error response. F-41 (2026-09-17): a
+      // cold miss used to render '' — the SAME blank as "no call activity
+      // today", which is the one absence that is reassuring (no "File N
+      // missing" CTA). A failed read says so instead (g53).
+      if (!data || data.error) { if (!hadCache && currentView === 'clock') clkCoverageUnavailable_(slot); return; }
       CLK_COVERAGE_CACHE = { date: today, data };
       if (currentView === 'clock') renderCoverageStrip_(slot, data);
     })
-    .withFailureHandler(function () { if (!hadCache) slot.innerHTML = ''; })
+    .withFailureHandler(function () { if (!hadCache && currentView === 'clock') clkCoverageUnavailable_(slot); })
     .getMyMetrics(today);
 }
 
+/** F-41 — the strip's own warn state: the read failed, so the coverage figure
+ *  is unavailable, not "no activity". Inline, the F5 shape below. */
+function clkCoverageUnavailable_(slot) {
+  if (!slot) return;
+  slot.innerHTML = '<span class="ss-cov-pct warn" title="Today\u2019s call/notes coverage could not be read — the figure is unavailable, not zero">' +
+    icon('warning', 11) + ' coverage unavailable</span>';
+}
 function renderCoverageStrip_(slot, data) {
+  // F-47/F-41: a DQE read that failed without throwing ships cdr:null AND
+  // cdrUnavailable:true — that is not "no calls today".
+  if (data && data.cdrUnavailable) { clkCoverageUnavailable_(slot); return; }
   const cdr = data.cdr;
   const noteCount = data.noteCount || 0;
   const answered = cdr ? (cdr.totalAnswered || 0) : 0;
@@ -2635,7 +2657,7 @@ function openAdjustModal(prefillDate, prefillType) {
   // flag is on; the server enforces the same gate (recordPunch).
   const applyBtn = document.getElementById('adj-apply-now');
   if (applyBtn) applyBtn.style.display = flagOn_('employeeImmediateAdjust') ? '' : 'none';
-  document.getElementById('adjust-overlay').classList.add('open');
+  ensureOverlay('adjust-overlay');   // F-40: the focus stash/restore lifecycle
 }
 
 /**
@@ -2663,10 +2685,10 @@ function updateAdjReasonRequirement() {
 
 
 document.getElementById('adj-cancel').addEventListener('click', () =>
-  document.getElementById('adjust-overlay').classList.remove('open'));
+  closeOverlay(document.getElementById('adjust-overlay')));
 document.getElementById('adjust-overlay').addEventListener('click', e => {
   if (e.target === document.getElementById('adjust-overlay'))
-    document.getElementById('adjust-overlay').classList.remove('open');
+    closeOverlay(document.getElementById('adjust-overlay'));
 });
 document.getElementById('adj-date').addEventListener('change', updateAdjReasonRequirement);
 
@@ -2685,7 +2707,7 @@ document.getElementById('adj-add').addEventListener('click', () => {
 document.getElementById('adj-apply-now').addEventListener('click', () => {
   const entry = adjReadEntry_();
   if (!entry) return;
-  document.getElementById('adjust-overlay').classList.remove('open');
+  closeOverlay(document.getElementById('adjust-overlay'));
   submitPunch(entry.punchType, { date: entry.date, time: entry.time, reason: entry.reason });
 });
 
@@ -2706,7 +2728,7 @@ document.getElementById('adj-submit').addEventListener('click', () => {
     .withSuccessHandler(function (res) {
       btn.disabled = false;
       if (!res || !res.success) { showToast((res && res.error) || 'Submit failed', 'toast-error'); return; }
-      document.getElementById('adjust-overlay').classList.remove('open');
+      closeOverlay(document.getElementById('adjust-overlay'));
       ADJ_BATCH = [];
       showToast(res.count + ' adjustment request(s) submitted for approval', 'toast-success');
     })

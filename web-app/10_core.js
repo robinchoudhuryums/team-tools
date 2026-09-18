@@ -339,7 +339,8 @@ function retentionWarnings_(archiveDays, retentionDays, archiveRetentionDays) {
   }
   return w;
 }
-/** Retention config (Admin Config panel) — manager-gated, read-only summary of
+/** Retention config (Admin Config panel) — ADMIN-gated (`callerEmp.isAdmin`;
+ *  the doc said manager for a whole cycle — F-26), read-only summary of
  *  the three call-note retention windows + their resolved values, source, and
  *  safety-ordering warnings. PHI-free. */
 function getRetentionConfig() {
@@ -367,7 +368,8 @@ function getRetentionConfig() {
     };
   } catch (err) { return { error: err.message }; }
 }
-/** Manager-gated write of the three retention windows to Script Properties
+/** ADMIN-gated (`callerEmp.isAdmin` — F-26) write of the three retention
+ *  windows to Script Properties
  *  (CN_NOTE_ARCHIVE_DAYS / CN_NOTE_RETENTION_DAYS / CN_ARCHIVE_RETENTION_DAYS).
  *  Each must be a whole number of days ≥ 0 (0 = disabled). Writes an
  *  AdminConfigChange audit row (INV-57 family). Takes effect immediately — the
@@ -425,7 +427,8 @@ function getFeatureFlags() {
     return { registry: FEATURE_FLAGS, values: getFeatureFlagsResolved_() };
   } catch (err) { return { error: err.message }; }
 }
-/** Manager-gated write of the feature toggles to Script Property
+/** ADMIN-gated (`callerEmp.isAdmin` — F-26) write of the feature toggles to
+ *  Script Property
  *  CN_FEATURE_FLAGS. Only registry keys with strict-boolean values are
  *  accepted (unknown key / non-boolean → rejected, never persisted). Writes an
  *  AdminConfigChange audit row (INV-57 family). Takes effect immediately:
@@ -469,7 +472,8 @@ function saveUpdateSuggestions(suggestionsJson) {
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
 }
-/** Manager-gated. Persists the external-email template library to Script
+/** ADMIN-gated (`callerEmp.isAdmin` — F-26). Persists the external-email
+ *  template library to Script
  *  Property CN_EMAIL_TEMPLATES (JSON array). Validates each entry's name,
  *  recipientType, and body; caps count + body length. Writes an
  *  AdminConfigChange audit row (INV-57). Matches the sibling admin-save
@@ -505,7 +509,8 @@ function saveEmailTemplates(templates) {
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
 }
-/** Manager-gated. Persists the external-email quick-link library to Script
+/** ADMIN-gated (`callerEmp.isAdmin` — F-26). Persists the external-email
+ *  quick-link library to Script
  *  Property CN_EXTERNAL_LINKS (JSON array of {label, url}). Validates each
  *  entry's label + http(s) url; caps count. Writes an AdminConfigChange audit
  *  row (INV-57 family). Same single-property-write pattern as saveEmailTemplates. */
@@ -1136,7 +1141,8 @@ function automationJobProblems_(lastRuns, errors, nowMs, todayDom, thisMonthPref
   });
   return out;
 }
-/** Manager-gated, read-only. One bounded AuditLog tail scan (CN_AUDIT_MAX_SCAN
+/** ADMIN-gated (`callerEmp.isAdmin` — F-26), read-only. One bounded AuditLog
+ *  tail scan (CN_AUDIT_MAX_SCAN
  *  rows, INV-13 spirit) + the 5-min-cached CDR aggregate. Never throws — CDR
  *  unreachability degrades to { cdr: { ok:false, error } } so the rest of the
  *  panel still renders (same best-effort posture as the shift-stats overlay). */
@@ -1410,7 +1416,11 @@ function computeAutomationHealth_(opts) {
     // Staleness windows: EOD trigger is hourly (stale > 2h), urgent is daily
     // (> 26h), weekly is Friday-only (> 8 days). last:null = no heartbeat
     // recorded yet (pre-heartbeat deploy or trigger never installed).
-    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26, managerBrief: 26, selfTest: 26, coachingRecap: 192, spanishAutoAssign: 2 };
+    // F-20 (2026-09-18): the three daily jobs that write NO audit row and had
+    // no heartbeat either — the missed-punch alerts, the ADP export check and
+    // this failure digest itself — could die silently. Each stamps here now.
+    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26, managerBrief: 26, selfTest: 26, coachingRecap: 192, spanishAutoAssign: 2,
+                                 missedPunch: 26, exportCheck: 26, automationHealth: 26 };
     let digestMap = {};
     try {
       digestMap = JSON.parse(PropertiesService.getScriptProperties()
@@ -1535,6 +1545,17 @@ function automationProblems_(report) {
     parseInt(Utilities.formatDate(nowD, mgrTzNow, 'd'), 10),
     Utilities.formatDate(nowD, mgrTzNow, 'yyyy-MM')
   ).forEach(function (m) { problems.push(m); });
+  // F-20 (2026-09-18): a failure stamped under a key OUTSIDE the JOB_CHECKS
+  // table — the heartbeat-only jobs (MissedPunchAlerts, DailyExportCheck) and
+  // this digest's own AutomationHealthDigest — reaches the digest too. The
+  // table's rows are handled above; a stamp nobody reads is the F4 silence.
+  const tabledActions = {};
+  AUTOMATION_JOB_CHECKS.forEach(function (j) { tabledActions[j.action] = true; });
+  Object.keys(report.automationErrors || {}).forEach(function (k) {
+    if (tabledActions[k]) return;
+    const e = report.automationErrors[k] || {};
+    problems.push('The ' + k + ' job FAILED on ' + (e.at || '?') + ': ' + (e.message || 'unknown error'));
+  });
   // PTO accrual reconciliation (operator 2026-09-15). The top-up heals late
   // data on its own, so a top-up is NOT a problem — it is the system working.
   // What reaches a manager is what the pass deliberately would NOT fix: hours
@@ -1764,8 +1785,17 @@ function sendAutomationHealthDigest() {
     const mgrEmails = getManagerEmails_();
     if (!mgrEmails.length) { Logger.log('No manager emails — skipping automation-health digest.'); return; }
     let report = null;
-    try { report = computeAutomationHealth_(); } catch (e) { Logger.log('automation-health digest: report failed: ' + e.message); }
+    try { report = computeAutomationHealth_(); }
+    catch (e) {
+      // F-20: the watchdog's own failure used to reach nobody — a Logger line
+      // and a silent return. Stamp it (the panel lists every stamped key) and
+      // leave the heartbeat UNSTAMPED, so a dead computation reads stale too.
+      Logger.log('automation-health digest: report failed: ' + e.message);
+      stampAutomationError_('AutomationHealthDigest', e.message);
+    }
     if (!report) return;
+    stampDigestLastRun_('automationHealth');
+    clearAutomationError_('AutomationHealthDigest');
 
     const problems = automationProblems_(report);
 
@@ -1788,10 +1818,12 @@ function sendAutomationHealthDigest() {
     } catch (mailErr) { Logger.log('automation-health digest send failed: ' + mailErr.message); }
     Logger.log('sendAutomationHealthDigest: ' + problems.length + ' issue(s) emailed to ' + mgrEmails.length + ' manager(s).');
   } catch (err) {
+    stampAutomationError_('AutomationHealthDigest', err.message);
     Logger.log('sendAutomationHealthDigest failed: ' + err.message);
   }
 }
-/** Storage Health (#1) — manager-gated, read-only one-pane-of-glass over every
+/** Storage Health (#1) — ADMIN-gated (`callerEmp.isAdmin` — F-26), read-only
+ *  one-pane-of-glass over every
  *  spreadsheet the app uses: which Script Property resolves it, whether it's
  *  configured + reachable, and — the headline — whether its timezone matches
  *  CONFIG.TIMEZONE (a mismatch silently drifts every coerced date/time read;
@@ -1846,10 +1878,23 @@ function getStorageHealth(opts) {
 
     const cdrProp = props.getProperty('CDR_SS_ID');
     const cdrId = cdrProp || (isPlaceholder(CONFIG.CDR_SS_ID) ? '' : CONFIG.CDR_SS_ID);
-    stores.push(probe({ label: 'CDR Report', role: 'DQE + CSR Transfer + Agent Alias Overrides (read-only)',
+    const cdrStore = probe({ label: 'CDR Report', role: 'DQE + CSR Transfer + Agent Alias Overrides + Company Holidays + Dashboard Standards (read-only)',
       cls: 'External', retention: 'n/a — owned by call-data-reporting', prop: 'CDR_SS_ID', id: cdrId,
       source: cdrProp ? 'Script Property' : (cdrId ? 'CONFIG' : 'unset'),
-      note: cdrId ? '' : 'Optional — Metrics + the shift-stats CDR overlay degrade gracefully when unset.' }));
+      note: cdrId ? '' : 'Optional — Metrics + the shift-stats CDR overlay degrade gracefully when unset.' });
+    // F-08 / F-09 (2026-09-17): the two PUBLISHED tabs this app judges against
+    // ride the row, each with the SOURCE its reader resolved. Both readers
+    // fall back or go silent without a word to the operator — the answer
+    // standard to "no target, tone or badge" (H2), the holiday calendar to
+    // the computed federal list (H1, g123) — and neither state was visible
+    // anywhere. Reachable store only: an unreachable one is already the
+    // row's own fail finding. Each probe is best-effort and reports its own
+    // failure as source 'unavailable' rather than taking the inventory down.
+    if (cdrStore.reachable) {
+      cdrStore.standard = cdrStandardProbe_();
+      cdrStore.holidays = cdrHolidayProbe_();
+    }
+    stores.push(cdrStore);
 
     const intakeProp = props.getProperty('INTAKE_SS_ID');
     const intakeId = intakeProp || (isPlaceholder(CONFIG.INTAKE.SS_ID) ? '' : CONFIG.INTAKE.SS_ID);
@@ -1864,6 +1909,17 @@ function getStorageHealth(opts) {
       cls: 'PHI', retention: '90-day purge (if enabled)', prop: 'FORMS_SS_ID', id: formsId,
       source: formsProp ? 'Script Property' : (formsId ? 'ADP fallback' : 'unset'),
       note: formsProp ? '' : 'Unset → form PHI is co-located with the ADP/payroll sheet. Recommend setting FORMS_SS_ID to the Intake spreadsheet.' }));
+
+    // F-11 (2026-09-18): the DeptRequests tab carries a PatientTrx column
+    // (operator testing note 6) — the store is PHI-adjacent, defaults onto
+    // the ADP/payroll sheet, and was probed by nothing. Same fallback posture
+    // as Forms: unset warns and recommends the PHI store.
+    const drProp = props.getProperty('DEPT_REQUESTS_SS_ID');
+    const drId = drProp || adpId;
+    stores.push(probe({ label: 'Dept Requests (PHI-adjacent)', role: 'DeptRequests (inter-department request tracker; PatientTrx names a patient)',
+      cls: 'PHI-adjacent', retention: 'Kept', prop: 'DEPT_REQUESTS_SS_ID', id: drId,
+      source: drProp ? 'Script Property' : (drId ? 'ADP fallback' : 'unset'),
+      note: drProp ? '' : 'Unset → DeptRequests rows (each names a patient + TRX) are co-located with the ADP/payroll sheet. Recommend setting DEPT_REQUESTS_SS_ID to the Intake spreadsheet.' }));
 
     const kbProp = props.getProperty('KB_SS_ID');
     const kbId = kbProp || (isPlaceholder(CONFIG.KB.SS_ID) ? '' : CONFIG.KB.SS_ID);
@@ -1982,6 +2038,36 @@ function getStorageHealth(opts) {
   } catch (err) { return { error: err.message }; }
 }
 
+/** F-08 — the Dashboard Standards verdict as the Storage Health row carries
+ *  it: {dept, target, band, source, error}. Same reader as Metrics
+ *  (getCdrDashboardStandard_, so its 1h cache applies — the detail says so). */
+function cdrStandardProbe_() {
+  try {
+    const std = getCdrDashboardStandard_() || {};
+    return { dept: std.dept || '', target: (std.target == null ? null : std.target),
+             band: (std.band == null ? null : std.band), source: std.source || 'unavailable',
+             error: std.error || '' };
+  } catch (e) { return { dept: '', target: null, band: null, source: 'unavailable', error: String((e && e.message) || e) }; }
+}
+/** F-09 — the Company Holidays verdict: {source, ranges, thisYear, error}.
+ *  `source` is what getCompanyHolidays_ decides on: only 'sheet' with ≥1 range
+ *  uses the tab; everything else is the federal fallback, silently, and this
+ *  is the ONE place that says which calendar is live. `thisYear` counts the
+ *  tab's dates inside the current year (an unlisted year is a year with no
+ *  holidays, so a zero here on a 'sheet' source is the yearly-maintenance
+ *  reminder). */
+function cdrHolidayProbe_() {
+  try {
+    const hol = getCdrCompanyHolidayRanges_() || {};
+    const ranges = hol.ranges || [];
+    const source = (hol.source === 'sheet' && !ranges.length) ? 'empty' : (hol.source || 'unavailable');
+    const year = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy');
+    let thisYear = 0;
+    try { thisYear = (source === 'sheet') ? companyHolidayDatesInYear_(ranges, year).length : 0; } catch (e2) { thisYear = 0; }
+    return { source: source, ranges: ranges.length, thisYear: thisYear, year: year, error: hol.error || '' };
+  } catch (e) { return { source: 'unavailable', ranges: 0, thisYear: 0, year: '', error: String((e && e.message) || e) }; }
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 //  ADMIN SHEET VIEWER (Tier 2) — read-only, highlighted, in-app table view of
 //  a SAFE, allowlisted tab. The view KEY is the security boundary: a caller can
@@ -2005,7 +2091,8 @@ function adminAuditRowTone_(action) {
   if (/Reconcile|Export|Archive|Provision|Install|Remove|Digest/i.test(a)) return 'info';
   return '';
 }
-/** Manager-gated (INV-02), read-only, PHI-free in-app viewer of an allowlisted
+/** ADMIN-gated (`callerEmp.isAdmin` — F-26; INV-02 names the tier, the code
+ *  enforces admin), read-only, PHI-free in-app viewer of an allowlisted
  *  tab. Returns { ok, viewKey, label, storeUrl, mgrTzAbbr, columns, rows, truncated }
  *  where each row is { cells:{...}, tone, rowUrl }. rowUrl deep-links to that
  *  exact row in Sheets (the Tier-1 pattern, per-row). */
@@ -2260,7 +2347,8 @@ function deployReadinessItems_(storage, automation, managerCount) {
   items.forEach(function (it) { summary[it.status] = (summary[it.status] || 0) + 1; });
   return { items: items, summary: summary };
 }
-/** Deploy-readiness checklist (#1) — manager-gated, read-only. One-click
+/** Deploy-readiness checklist (#1) — ADMIN-gated (`callerEmp.isAdmin` — F-26),
+ *  read-only. One-click
  *  pre-deploy report: composes the existing Storage Health (all 7 stores'
  *  configured/reachable/tz-vs-CONFIG) + Automation Health (digest heartbeats,
  *  CDR) + the MANAGER_EMAILS count into a pass/warn/fail checklist. PHI-free
