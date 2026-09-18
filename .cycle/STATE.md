@@ -5,10 +5,8 @@ Cycle: 21
 Phase: implement
 Scope: Reference lookups — the two-panel restructure (KB / Reference subsystem)
 Test Command: manual
-Estimates: R (reference lookups restructure): M (~4 h) — one batch, written
-before the first edit. Server payload shape + one shared row renderer + the
-two-column band with both collapse rules + the degraded-address fallback +
-pins (DOM, Node) + a visual pass.
+Estimates: R (reference lookups restructure): M (~4 h) — written before the
+first edit. Actual ~3.5 h.
 Subsystem cycles since last Seams audit: 6 — **still overdue.** This cycle is
 an operator-requested interface batch, not an audit, so it does NOT reset the
 counter and does NOT discharge the cadence. The next `/audit` MUST be a Seams
@@ -16,29 +14,32 @@ counter and does NOT discharge the cadence. The next `/audit` MUST be a Seams
 Updated: 2026-09-18
 
 ## In progress (facts to carry forward — NOT judgments)
-- Nothing is in flight. `main` is at PR #262's merge; the branch
-  `claude/festive-noether-unougu` has no unmerged commits.
-- Cycle 20 shipped: 52 of the scan's 53 findings are live on prod as of
-  2026-09-18, verified by `runAllTestsPartB` 122/122 on the deployed project
-  and by the operator's S112 walk.
-- The next concrete step is a decision, not a task: either the Seams &
-  Invariants audit (overdue) or the Reference three-panel restructure the
-  operator raised on 2026-09-18.
+- Batch R is implemented, committed and pushed on `claude/festive-noether-unougu`
+  (3 commits on top of the cycle-20 close-out). NOT deployed, and no PR opened —
+  the operator has not asked for one.
+- The block is `.cycle/blocks/21-reference-lookups-broad-implement.md`.
+- The next concrete step is the operator's: `clasp push -f` + a New-version
+  deploy, then the S112 walk. `/sync-docs` is owed first — five doc files
+  describe the three-panel surface that no longer exists.
 
 ## Completed this cycle
-- (Cycle 20's per-finding record is in `.cycle/HISTORY.md` and the seven
-  `.cycle/blocks/20-batch*-broad-implement.md` blocks. Nothing has been
-  completed against a NEW cycle — none is open.)
+- R-1 | web-app/70_kb.js | checkOopEligibility ships the whole oopRowObj_ shape
+- R-2 | web-app/kb/script_kb.html | one panel, one row renderer, both payloads
+- R-3 | web-app/kb/script_kb.html | oopDegraded_ — a failing address keeps the prices
+- R-4 | web-app/kb/script_kb.html | the band, both g50 triggers, auto-fit fields, V-9 cap
+- R-5 | web-app/kb/script_kb.html | visible labels on both fields
+- S112 + S73 rewritten for the merged panel
 
 ## Pending / not yet done
 - **DEFERRED by the cycle-20 scan, still an operator decision:** F-09's holiday
   FALLBACK. Keep g123's federal fail-open, or match the Department Dashboard's
   no-fallback. Batch 3 surfaces which calendar is live either way, so this is a
   policy call rather than a defect.
-- **Reference three-panel restructure (operator, 2026-09-18).** Insurance
-  lookup, OOP price lookup and area eligibility are three stacked panels on the
-  Reference landing and in the drawer. The operator confirmed they WORK and
-  asked for the format/design/UI to be planned. The assessment is in the
+- **DONE this cycle — the restructure shipped as TWO panels, not three** (the
+  operator chose the merge after the plan showed panels 2 and 3 read the same
+  tab). What remains is the deploy and the S112 walk. The superseded note:
+  three stacked panels on the Reference landing and in the drawer, the
+  assessment being in the
   2026-09-18 session; the one item in it that is a defect rather than a polish
   is the pair of unlabelled twin inputs on area eligibility, where the item
   field carries only an `aria-label` and its placeholder vanishes once filled.
@@ -93,14 +94,26 @@ Updated: 2026-09-18
 - Reserved invariant numbers are written NOT in `INV-N |` entry shape, so the
   derived library count stays honest rather than depending on a regex accident.
 
+## Decisions made (so the next session doesn't re-litigate)
+- TWO panels, not three. Panels 2 and 3 read the SAME operator tab through the
+  same row reader; panel 1 keys on payor name with no join key to items. The
+  operator chose the merge once that was shown.
+- The grid lives in the landing HOST, never in the shared section renderer —
+  that is what lets one section serve the landing and the ~340px drawer.
+- The field pair is `auto-fit`, NOT a media query. A third responsive case
+  exists that g50's two triggers cannot see: the drawer's width is set by
+  neither the viewport nor data-compact.
+- `checkOopEligibility` ships the WHOLE row object rather than a subset. The
+  subset is what let the two readers drift; shipping the shape makes one
+  renderer possible, which makes the drift unrepresentable rather than
+  remembered.
+
 ## Where I left off
-Cycle 20 is closed, deployed and archived. Nothing is in flight and the tree is
-clean.
+Batch R is done and pushed; the tree is clean and every harness is green
+(pure 914, DOM 131, lint, manifest, counts, visual 6/6 with the shots read).
 
-Two candidate next moves, and they are not equivalent. The **Seams & Invariants
-audit** is overdue by the project's own cadence and is what the counter says to
-do. The **Reference three-panel restructure** is what the operator asked about
-on 2026-09-18; it carries one genuine defect (the unlabelled twin inputs) that
-could be fixed on its own in minutes without waiting for the redesign.
+Do `/sync-docs` next — five doc files still describe three lookup panels, and
+the block lists exactly which. Then the operator deploys and walks S112.
 
-Whichever opens next sets `Cycle: 21` in this file.
+The Seams & Invariants audit is STILL overdue (counter 6, cadence 4). This
+batch was operator-requested interface work and does not discharge it.
