@@ -20755,6 +20755,8 @@ test('F-12: the Admin KPI strip reports TEAM-WIDE numbers — a partial cross-re
   const zero = fn(ownKpi, tax, null, { count: 0, partial: false }).kpiHtml;
   assert.ok(/>0<\/div><div class="tel-sub">action flags open across team</.test(zero), 'a REAL zero still renders as 0');
   // The loader fetches the fourth source and waits for it.
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/totalNotes: \d+, repsScanned:/.test(mock), 'the taxonomy fixture carries totalNotes — the server always returned it (INV-185)');
   const load = foNc(extractFunction('cn/script_callnotes.html', 'cnLoadAdminAugment_'));
   assert.ok(/if \(done < 4\) return;/.test(load) && /\.managerGetUnresolvedActionCount\(\);/.test(load),
     'the strip waits on all four parallel sources');

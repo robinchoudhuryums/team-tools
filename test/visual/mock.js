@@ -1426,7 +1426,10 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         { tag: 'billing', count: 26, lastSeen: daysAgo(1), archived: false },
         { tag: 'mask-fit', count: 12, lastSeen: daysAgo(4), archived: false }],
       archivedOnlyTags: [{ tag: 'legacy-tag', count: 0, lastSeen: '', archived: true }],
-      repsScanned: 3, skippedReps: [],
+      // F-12 — the server has always returned totalNotes (every enrolled rep's
+      // notes); the fixture omitted it, so the Admin strip's team-wide Notes
+      // cell shot as a dash (INV-185: a fixture mirrors the real contract).
+      totalNotes: 1284, repsScanned: 3, skippedReps: [],
     },
     getCallNotesTagTrends: (function () {
       var mk = function (tag, base) {
