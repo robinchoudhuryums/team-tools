@@ -23785,6 +23785,32 @@ test('F1-followon: bite.sh refuses a file with uncommitted changes BEFORE it mut
   // A mutation that changes nothing reads as a passing bite while proving
   // nothing — the vacuous-pin class, in the tool that checks for it.
   assert.ok(/the mutation changed nothing/.test(src), 'a no-op mutation is refused');
+
+  // `--fn` scopes the mutation to ONE function's span. Without it a mutation is
+  // a replace over the whole file and edits the first match anywhere in it, so
+  // the tool reports a true verdict about code you were not testing — g116's
+  // fourth direction, hit twice (Batch 4's F-49, and the accrual ledger fix of
+  // 2026-09-18, where two NO BITEs running were both about an unrelated test).
+  //
+  // STRUCTURAL, and it says so: bite.sh cannot bite itself (bash reads it as it
+  // runs), and driving it from here would mean a subprocess that mutates real
+  // files, which is not something the pure harness should do. The six branches
+  // were verified by direct execution instead — scoped hit, missing name,
+  // ambiguous name, malformed name, unscoped fallback, and the NO BITE diff.
+  // This asserts only that the capability has not been deleted.
+  assert.ok(/--fn/.test(src), 'bite.sh still takes --fn');
+  assert.ok(/declarations of it in/.test(src), 'an ambiguous function name is refused, never guessed');
+  assert.ok(/no \\`function/.test(src) || /no .function/.test(src), 'a missing function name is refused');
+  const spanAt = src.indexOf('lo, hi = i, k + 1');
+  const mutAt = src.indexOf('\n$mutation\n');   // the line INSIDE the python program, not the quote-refusal case above
+  assert.ok(spanAt > 0 && mutAt > spanAt,
+    'the span is resolved BEFORE the mutation runs — a mutation applied first and sliced after would scope nothing');
+  // And the NO BITE path shows what actually changed, because the file is
+  // restored immediately afterwards and checking by hand is then too late.
+  const noBiteAt = src.indexOf('NO BITE:');
+  const diffAt = src.indexOf('git --no-pager diff');
+  assert.ok(diffAt > noBiteAt && diffAt < restoreAt,
+    'a NO BITE prints the real diff, between the verdict and the restore');
 });
 
 // ---------------------------------------------------------------------------
