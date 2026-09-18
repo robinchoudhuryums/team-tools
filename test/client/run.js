@@ -24508,13 +24508,24 @@ test('BCN-1b (BEHAVIOURAL, F-52): the build hash really CHANGES when a partial c
   indexRaw += '<!-- a comment -->';
   assert.notStrictEqual(H(), afterPartial, 'index.html changed → a different hash');
 
-  // A MISSING partial is recorded rather than swallowed: two different broken
-  // builds must not collide, and a build that loses a partial must not hash
-  // the same as the build before it lost it.
-  indexRaw = "<?!= include('script_core.html') ?><?!= include('gone.html') ?>";
-  const missing = H();
-  indexRaw = "<?!= include('script_core.html') ?><?!= include('alsoGone.html') ?>";
-  assert.notStrictEqual(H(), missing, 'two different missing partials hash differently');
+  // A MISSING partial is RECORDED rather than swallowed. index.html is held
+  // FIXED across these three so the difference can only come from the marker —
+  // varying the filename in index.html would make `all` differ anyway and the
+  // assertion would pass with the marker deleted (it did, on the first
+  // bite-check of this pin: NO BITE for collapsing every marker to one
+  // string). g116, again.
+  indexRaw = "<?!= include('script_core.html') ?><?!= include('cn/script_callnotes.html') ?>";
+  const bothPresent = H();
+  const keepCore = partials['script_core.html'];
+  delete partials['script_core.html'];
+  const lostCore = H();
+  partials['script_core.html'] = keepCore;
+  const keepCn = partials['cn/script_callnotes.html'];
+  delete partials['cn/script_callnotes.html'];
+  const lostCn = H();
+  partials['cn/script_callnotes.html'] = keepCn;
+  assert.notStrictEqual(lostCore, bothPresent, 'a build that LOSES a partial does not hash as the build before it lost it');
+  assert.notStrictEqual(lostCore, lostCn, 'and losing a DIFFERENT partial is a different build — the marker names the file');
 
   // The cache is a CACHE, not the answer: a hit is served, and a put happens
   // exactly once per cold compute (an eternal entry would never notice a
