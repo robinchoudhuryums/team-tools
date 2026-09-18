@@ -1,17 +1,18 @@
 # Cycle State
 
 ## Current
-Cycle: 20 — CLOSED 2026-09-18 (deployed, confirmed, reflected; the whole block
-is in `.cycle/HISTORY.md`). **No cycle is open.** The next `/audit` or
-`/broad-scan` opens cycle 21 and sets this field to 21.
-Phase: idle
-Scope: —
+Cycle: 21
+Phase: implement
+Scope: Reference lookups — the two-panel restructure (KB / Reference subsystem)
 Test Command: manual
-Estimates: — (written per batch, BEFORE the first edit, once a cycle opens)
-Subsystem cycles since last Seams audit: 6 — **the every-4 cadence has been
-missed twice. The next `/audit` MUST be a Seams & Invariants audit**, not
-another broad scan. Cycle 20 makes the case louder: the library gained fourteen
-entries and nothing has probed the older ones.
+Estimates: R (reference lookups restructure): M (~4 h) — one batch, written
+before the first edit. Server payload shape + one shared row renderer + the
+two-column band with both collapse rules + the degraded-address fallback +
+pins (DOM, Node) + a visual pass.
+Subsystem cycles since last Seams audit: 6 — **still overdue.** This cycle is
+an operator-requested interface batch, not an audit, so it does NOT reset the
+counter and does NOT discharge the cadence. The next `/audit` MUST be a Seams
+& Invariants audit.
 Updated: 2026-09-18
 
 ## In progress (facts to carry forward — NOT judgments)

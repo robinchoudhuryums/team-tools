@@ -1390,8 +1390,21 @@ function checkOopEligibility(address, query) {
     const items = picked.map(function (row, i) {
       const o = oopRowObj_(headers, row);
       const rule = parsed[i];
+      // The WHOLE row object, not a hand-picked subset of it. `price` on its
+      // own is `prices[0]` — the LEFTMOST price column — and on the operator's
+      // real sheet that is the pick-up total: the one price that is wrong for
+      // every delivery. This endpoint is ABOUT delivery, so shipping only that
+      // field meant the delivery surface quoted the collect-in-person number
+      // and silently dropped "W/ Shipping" and "W/ Tech Delivery".
+      //
+      // searchOopPricing already shipped `prices` and rendered them labelled.
+      // Two readers of ONE operator tab, diverging because each picked its own
+      // subset, is g126 exactly. Shipping the same shape from both lets ONE
+      // client row renderer serve both, so they cannot drift apart by being
+      // edited separately again.
       return {
-        name: o.name, price: o.price, effective: o.effective, eligibility: o.eligibility,
+        name: o.name, code: o.code, price: o.price, prices: o.prices,
+        effective: o.effective, eligibility: o.eligibility, details: o.details,
         rule: rule.kind,
         insurance: oopEligibilityCheck_(oopEligibilityForPayment_(rule, false), loc),
         oop: oopEligibilityCheck_(oopEligibilityForPayment_(rule, true), loc),

@@ -13731,12 +13731,18 @@ test('ELIG: the client shows both verdicts with three distinct states, and the c
     'a near-boundary yes reads differently from a flat yes');
   assert.ok(/esc\(\(v && v\.why\)/.test(verdict), 'the server reason is escaped before innerHTML');
 
-  const render = extractFunction('kb/script_kb.html', 'eligRenderResults_');
-  assert.ok(/Through insurance/.test(render) && /Paying out of pocket/.test(render),
+  // The verdicts moved INTO the shared row renderer with the 2026-09-18 merge,
+  // so that is where the labels now live.
+  const row = extractFunction('kb/script_kb.html', 'oopItemRowHtml_');
+  assert.ok(/Through insurance/.test(row) && /Paying out of pocket/.test(row),
     'both verdicts are LABELLED — an unlabelled pair is worse than one answer');
-  assert.ok(/straight-line/.test(render), 'the distance caveat rides the warehouse strip');
-  assert.ok(/Could not place/.test(render), 'an unplaceable warehouse is surfaced, not silently dropped');
-  assert.ok(/Do not check a similar item/.test(render), 'a no-match refuses to offer a near-miss');
+
+  const header = extractFunction('kb/script_kb.html', 'oopEligHeaderHtml_');
+  assert.ok(/straight-line/.test(header), 'the distance caveat rides the warehouse strip');
+  assert.ok(/Could not place/.test(header), 'an unplaceable warehouse is surfaced, not silently dropped');
+
+  const render = extractFunction('kb/script_kb.html', 'oopRenderResults_');
+  assert.ok(/do not quote a similar item/i.test(render), 'a no-match refuses to offer a near-miss');
 
   // g50, which this very file has been bitten by: data-compact is the POP-OUT,
   // not a viewport breakpoint. The grid override needs both rules.
@@ -13747,8 +13753,173 @@ test('ELIG: the client shows both verdicts with three distinct states, and the c
     'and so does a narrow VIEWPORT — one without the other is the g50 defect');
 
   // Mounted on BOTH hosts, like every other lookup in this partial.
-  assert.ok(/eligSecHtml_\(''\)/.test(cli), 'mounted on the Reference landing');
-  assert.ok(/eligSecHtml_\('-d'\)/.test(cli), 'and in the Ctrl/\u2318+K drawer');
+  assert.ok(/oopLookupSecHtml_\(''\)/.test(cli), 'mounted on the Reference landing');
+  assert.ok(/oopLookupSecHtml_\('-d'\)/.test(cli), 'and in the Ctrl/⌘+K drawer');
+});
+
+// ═══ R (operator 2026-09-18) — the two-panel restructure ═══════════════════
+// Price lookup and area eligibility were separate panels reading the SAME
+// operator tab through the SAME row reader, and they had diverged: the price
+// panel rendered every priced column labelled, the eligibility panel rendered
+// `prices[0]` bare. On the operator's real sheet that leftmost column is the
+// PICK-UP total — so the DELIVERY surface was quoting the collect-in-person
+// price. These pins hold the merge that makes the divergence unrepresentable.
+
+test('R-1: checkOopEligibility ships EVERY field oopRowObj_ produces — the field list is DERIVED from oopRowObj_, so a new column cannot be added there and silently dropped here', () => {
+  const rowObj = extractRawFunction('Code.js', 'oopRowObj_');
+  const init = /const out = \{([\s\S]*?)\};/.exec(rowObj);
+  assert.ok(init, 'oopRowObj_ still builds its result in one object literal');
+  const fields = (init[1].match(/(\w+)\s*:/g) || []).map((s) => s.replace(/\s*:$/, ''));
+  // Sanity: the derivation found a real list, not an empty one that would make
+  // every assertion below vacuous (g116 — a pin that cannot fail is not a pin).
+  assert.ok(fields.length >= 5, 'the derivation found the field list, not an empty match: ' + JSON.stringify(fields));
+  assert.ok(fields.indexOf('prices') >= 0, 'and `prices` is one of them');
+
+  const elig = extractRawFunction('Code.js', 'checkOopEligibility');
+  const search = extractRawFunction('Code.js', 'searchOopPricing');
+  fields.forEach((f) => {
+    assert.ok(new RegExp('\\bo\\.' + f + '\\b').test(elig),
+      'checkOopEligibility ships oopRowObj_’s `' + f + '` — shipping a SUBSET is how the two readers drifted');
+  });
+  // The price lookup hands the whole object out, so it is covered by
+  // construction; assert it still does rather than assuming it.
+  assert.ok(/matches/.test(search), 'searchOopPricing still returns its matches list');
+});
+
+test('R-2: ONE renderer draws a price row — the eligibility payload and the price payload go through the SAME function, so they cannot be styled apart again', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const cli = extractScript('kb/script_kb.html');
+
+  // The merged panel replaced eligRenderResults_/eligSecHtml_/eligInput_. If
+  // any of them comes back, a second render path has come back with it.
+  ['eligRenderResults_', 'eligSecHtml_', 'eligInput_'].forEach((gone) => {
+    assert.ok(!new RegExp('function\\s+' + gone + '\\s*\\(').test(cli),
+      gone + ' is gone — a second render path for the same sheet is the defect this merge removed');
+  });
+
+  // Exactly one function in this partial emits a price span. Two would be two
+  // things to keep in step, which is how the pick-up price ended up on the
+  // delivery surface.
+  const emitters = (cli.match(/function\s+(\w+)\s*\([^)]*\)\s*\{[\s\S]*?\n\}/g) || [])
+    .filter((f) => /class="kb-oop-price/.test(f))
+    .map((f) => /function\s+(\w+)/.exec(f)[1]);
+  assert.deepStrictEqual(emitters, ['oopPriceHtml_'],
+    'exactly ONE function emits a price span, and it is oopPriceHtml_ — found: ' + JSON.stringify(emitters));
+
+  // And it renders EVERY priced column, labelled once there is more than one.
+  const price = extractFunction('kb/script_kb.html', 'oopPriceHtml_');
+  assert.ok(/m\.prices/.test(price), 'it reads the prices ARRAY, not the scalar');
+  assert.ok(/prices\.length > 1/.test(price), 'and labels them once there is more than one');
+  assert.ok(/no price on file/.test(price),
+    'a row with no price SAYS so — a blank where a number belongs reads as free');
+
+  // Both payload shapes reach it through the one row renderer.
+  const render = extractFunction('kb/script_kb.html', 'oopRenderResults_');
+  assert.ok(/res\.items/.test(render) && /res\.matches/.test(render),
+    'the one renderer handles both payload shapes');
+  assert.ok(/oopItemRowHtml_\(/.test(render), 'and draws every row through the one row renderer');
+  assert.strictEqual((render.match(/oopItemRowHtml_\(/g) || []).length, 1,
+    'from exactly ONE call site — a second would be a second shape to keep in step');
+
+  // `truncated` means DIFFERENT things on the two payloads (more items than the
+  // cap; the sheet is longer than the scan limit and rows were never searched).
+  // Sharing one line for them would state one as the other.
+  assert.ok(/scan limit/.test(render),
+    'the price payload’s truncation still says rows were never SEARCHED');
+  assert.ok(/Narrow with an item name/.test(render),
+    'and the eligibility payload’s still says the LIST was capped');
+
+  // The band lives in the landing HOST, never in the section renderer — the
+  // drawer shares that renderer and cannot take columns.
+  assert.ok(/kb-lookups/.test(cli), 'the landing wraps the two panels in the band');
+  const sec = extractFunction('kb/script_kb.html', 'oopLookupSecHtml_');
+  assert.ok(!/kb-lookups/.test(sec),
+    'and the section renderer knows nothing about it — that is what lets one section serve both hosts');
+  assert.ok(!/kb-lookups/.test(kb.slice(kb.indexOf('function kbDrawerRenderHome_'))),
+    'the drawer keeps its sections stacked');
+});
+
+test('R-3: an address that produces no verdict does NOT cost the rep the prices — the degraded path re-asks for the item under the SAME seq', () => {
+  const cli = extractScript('kb/script_kb.html');
+  const deg = extractFunction('kb/script_kb.html', 'oopDegraded_');
+  assert.ok(/searchOopPricing\(item\)/.test(deg),
+    'the fallback re-asks the PRICE endpoint — before the merge the price was already on screen in the other panel');
+  assert.ok(/degraded: why/.test(deg), 'and the reason rides the render so the banner can state it');
+
+  // The seq is CARRIED, not re-minted: this is the same keystroke still being
+  // answered, so a newer one must still win (INV-156).
+  assert.ok(/mySeq !== KB_OOP\.seq/.test(deg), 'a superseded keystroke still voids it');
+  assert.ok(!/\+\+KB_OOP\.seq/.test(deg),
+    're-minting the seq here would let a stale answer beat a newer keystroke');
+
+  // Both failure channels route there — a structured {error} and a thrown RPC.
+  const input = extractFunction('kb/script_kb.html', 'oopLookupInput_');
+  assert.strictEqual((input.match(/oopDegraded_\(/g) || []).length, 2,
+    'the structured {error} AND the failure handler both degrade — one without the other blanks the panel half the time');
+  assert.ok(/item\.length >= 2/.test(input),
+    'but only when there IS an item to fall back to — an address alone has nothing to degrade to');
+
+  // The banner states the absence of a verdict, and hands the SERVER's message
+  // through verbatim: only the server knows whether the address was not found
+  // or the service could not be reached, and those are different answers (g128).
+  const banner = extractFunction('kb/script_kb.html', 'oopDegradedHtml_');
+  assert.ok(/No eligibility verdict/.test(banner), 'it says no verdict was reached');
+  assert.ok(/esc\(why\)/.test(banner), 'the server reason is escaped and passed through');
+  assert.ok(/still current/.test(banner), 'and the prices below it are not disowned');
+  assert.ok(!/quota|unavailable|not found/i.test(banner),
+    'the banner never GUESSES which failure it was — from the client that is not observable');
+  assert.ok(/oopDegradedHtml_\(/.test(cli), 'and it is actually mounted');
+});
+
+test('R-4: the band collapses on BOTH triggers, and the field pair sizes off its container because neither trigger can see the drawer (g50)', () => {
+  const css = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+
+  // The band is an explicit ratio, so it needs the two INDEPENDENT triggers.
+  assert.ok(/:root\[data-compact\] \.kb-lookups \{[^}]*grid-template-columns: 1fr/.test(css),
+    'the POP-OUT stacks the band');
+  assert.ok(/@media \(max-width: \d+px\) \{\s*\.kb-lookups \{[^}]*grid-template-columns: 1fr/.test(css),
+    'and so does a narrow VIEWPORT — one without the other is the g50 defect, four instances of which this repo has already fixed');
+
+  // The FIELD pair is the case neither trigger can see: the Ctrl/⌘+K drawer is
+  // ~340px wide on a 1920px desktop with data-compact unset, so a viewport rule
+  // and a pop-out rule would both PASS while the two fields rendered at 160px.
+  // Sizing off the container's own width is the only thing right in all three
+  // hosts at once — so this one must NOT be a media query.
+  assert.ok(/\.kb-oop-fields \{[^}]*repeat\(auto-fit, minmax\(\d+px, 1fr\)\)/.test(css),
+    'the field pair is intrinsically sized, not breakpoint-sized');
+  assert.ok(!/@media[^{]*\{\s*\.kb-oop-fields/.test(css),
+    'a viewport rule here would be silently wrong in the drawer, which is where it matters most');
+
+  // The results scroll inside their own panel. The cap must sit on the
+  // scrolling element: a max-height on a GRID CONTAINER does not constrain its
+  // row (V-9), so capping .kb-lookups would overflow instead of scrolling.
+  assert.ok(/\.kb-lookups \.kb-ins-results \{[^}]*max-height:[^}]*overflow-y: auto/.test(css),
+    'the results scroll inside the panel');
+  assert.ok(!/\.kb-lookups \{[^}]*max-height/.test(css),
+    'and the cap is NOT on the grid container, which would not constrain the row (V-9)');
+
+  // The landing widened for the band; the CONTENT blocks keep the old measure.
+  assert.ok(/\.kb-land \{ max-width: 1200px/.test(css), 'the landing widened for the band');
+  assert.ok(/\.kb-land-sec \{[^}]*max-width: 760px/.test(css),
+    'and the content blocks below it keep the reading measure');
+});
+
+test('R-5: both fields in the merged panel carry a VISIBLE label bound to their own input — a placeholder is not a label', () => {
+  const sec = extractFunction('kb/script_kb.html', 'oopLookupSecHtml_');
+  const ids = (sec.match(/id="([a-z-]+)' \+ suffix \+ '"/g) || [])
+    .map((s) => /id="([a-z-]+)'/.exec(s)[1]);
+  const inputs = ids.filter((i) => i !== 'kb-oop-results');
+  assert.deepStrictEqual(inputs.sort(), ['kb-oop-addr', 'kb-oop-item'],
+    'the panel has exactly the two inputs — found: ' + JSON.stringify(inputs));
+  inputs.forEach((id) => {
+    assert.ok(new RegExp('<label class="kb-oop-lbl" for="' + id + "' \\+ suffix").test(sec),
+      id + ' has a <label for> of its own, per host suffix');
+  });
+  // The section HEADING is no longer a <label>: one heading cannot be the
+  // accessible name of two fields, and before the merge the item field had only
+  // an aria-label whose placeholder vanished the moment it was filled.
+  assert.ok(/<div class="kb-land-h">/.test(sec), 'the heading is a plain div');
+  assert.ok(!/aria-label/.test(sec), 'and no field is left naming itself with aria-label alone');
 });
 
 // OOP-B (operator 2026-09-16) — the composer price picker. The operator's answer
