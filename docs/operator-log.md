@@ -10,6 +10,37 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-18 (after the merge) — the first full editor run of the integration tier
+
+**Adds NO operator state.** Nothing in this round changes a Script Property, a
+sheet, a tab or a deploy step, and no production code was touched.
+
+**What happened.** The operator ran `runAllTestsPartA` and `runAllTestsPartB`
+against the deployed project. Part A was clean; Part B reported one failure of
+122, with the expected-registration line matching, so the suite itself was
+intact. This was the first time the integration tier has ever run against the
+deployed project, which is the gap cycle 19's reflection named and which let
+F-01's red pin count as green.
+
+**The one failure was a test defect, not a product defect.**
+`accrualReconcile_topsUpLateData` expected one rep topped up and got zero. An
+earlier test in the same execution credits the same test employee for the same
+month and clears only the Timesheet afterwards; the AuditLog is append-only and
+only swept at the end of the suite, and the accrual ledger reads the HIGHEST
+hours per employee and month. So the reconcile test measured the earlier test's
+credit instead of its own. The accrual code is unchanged and correct: that
+high-water mark is what stops a credited month being credited twice.
+
+**What an operator should take from it.** Nothing about PTO balances is in
+doubt. The accrual job, its reconcile pass and its ledger behaved exactly as
+designed throughout. The ONLY thing that was wrong was a test's starting
+assumption. If you had been about to hand-check a rep's balance because of this
+failure, you do not need to.
+
+**One thing to re-run.** After the next `clasp push -f`, run
+`runAllTestsPartB` once more. Expect that test to pass and the other 121 to be
+unaffected, since only that one test body changed.
+
 ## 2026-09-18 (final) — Batch 7 of the cycle-20 scan: test and docs hygiene
 
 **Adds NO operator state.** No Script Property, no sheet, no tab, no migration,

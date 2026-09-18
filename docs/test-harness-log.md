@@ -1641,3 +1641,66 @@ against a fake sheet for three window shapes; `spanishVmFold_` is driven for the
 unconfigured fold, suppression, resolution and the already-seen skip; and the
 timesheet mirror is driven on BOTH sides over 70 consecutive days spanning three
 period boundaries.
+
+## 2026-09-18 (after the merge) — the first full editor run, and the tool that was lying about it
+
+The operator ran `runAllTestsPartA` and `runAllTestsPartB` against the deployed
+project. Part A was clean. Part B reported one failure out of 122, and the
+expected-registration line matched, so the suite itself was intact.
+
+**The failure was real and the production code was not at fault.**
+`accrualReconcile_topsUpLateData` expected one rep topped up and got zero. The
+reconcile compares a month's hours now against what the ledger says was already
+paid for, and `readAccrualLedger_` keeps the HIGHEST hours per (employee,
+month). `test_previewPtoAccrual_predictsTheCredit` runs earlier in Part B,
+credits the same test employee for the same month off an eight-hour day, and
+clears only the Timesheet in its `finally`. The AuditLog is append-only and
+`cleanupTestData` sweeps it at the end of the suite, so the reconcile test wrote
+its own zero-hour row into a ledger that already held the sibling's eight, and
+the delta came out zero.
+
+The asymmetry worth remembering: the same test's other assertions read
+`_findLatestAuditNote`, which takes the most recent row and therefore saw this
+test's own work. Only the ledger takes the maximum. A test can be reading its
+own output in one assertion and a sibling's in the next, and nothing about the
+failure message says which.
+
+The fix is `_clearTestState(_TEST_INDIA_ID)` before the test reads any baseline,
+which is precisely what that helper's own comment says it is for. The
+alternative considered was moving the test onto the Philippines test employee;
+clearing won because it survives reordering and any future third accrual test.
+The pay-cycle difference between the two test identities turned out to be
+irrelevant — the accrual path never reads pay cycle. A new pin requires any test
+asserting on `toppedUp` / `shortfalls` / `topUpDays` to clear its rep before the
+first credit.
+
+**The bite-checker was wrong twice about that fix, in the same way, and it is
+now the tool's problem rather than the reader's.** The first two bite attempts
+both reported NO BITE. Both had landed: the mutation
+`_clearTestState(_TEST_INDIA_ID);` matched the first of TWENTY-FOUR identical
+call sites and edited `test_getTodayPunches_sortsOutOfOrderBackfill`, a true
+verdict about code that was never under test. That is g116's fourth direction,
+and it had already fired once in Batch 4 on `getTeamCalendar`. Two instances in
+two sessions is a tooling defect, not a discipline problem.
+
+`scripts/bite.sh` now takes `--fn <function>`. It resolves that function's span
+by brace-matching from its declaration, applies the mutation inside it, and
+splices the result back; a name that is missing, ambiguous or malformed is
+refused rather than guessed. And on a NO BITE it prints the real diff before
+restoring the file, because the file is gone a moment later and checking by hand
+is then too late. On the case that fired, the printed hunk header names
+`test_getTodayPunches_sortsOutOfOrderBackfill` outright, which is the whole
+diagnosis in one line.
+
+Six branches were verified by direct execution rather than by a pin, because
+bash reads `bite.sh` as it runs and it cannot bite itself: the scoped hit, a
+missing name, an ambiguous name, a malformed name, the unscoped fallback, and
+the diff output. The pin assertion added to `F1-followon` is structural and says
+so, in the posture Batch 7 set for the width-cap pin.
+
+**What this run is really evidence of.** The failing test was written on
+2026-09-15, reasoned about carefully, and never executed until three days later.
+The integration tier had never run against the deployed project, which is the
+same gap that let F-01's red pin count as green. One run, one real find, and the
+find was in the tests rather than the product. That is the outcome a first run
+should have.
