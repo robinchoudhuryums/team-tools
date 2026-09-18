@@ -9621,7 +9621,7 @@ function cnPromptRenameTag_(oldTag) {
             showToast((res && res.error) || 'Rename failed', 'toast-error');
             return;
           }
-          showToast('Renamed: ' + res.notesUpdated + ' notes across ' + res.repsTouched + ' rep(s)', 'toast-success');
+          cnTagTransformToast_('Renamed', res);   // F-10: a skipped rep Sheet is a warning, not a success
           cnLoadAdminAugment_();
         })
         .withFailureHandler(function (err) {
@@ -9661,7 +9661,7 @@ function cnPromptMergeTag_(sourceTag) {
             showToast((res && res.error) || 'Merge failed', 'toast-error');
             return;
           }
-          showToast('Merged: ' + res.notesUpdated + ' notes across ' + res.repsTouched + ' rep(s)', 'toast-success');
+          cnTagTransformToast_('Merged', res);   // F-10
           cnLoadAdminAugment_();
         })
         .withFailureHandler(function (err) {
@@ -10051,6 +10051,16 @@ function cnLoadStoragePanel_() {
  *  problems / the exact tz fix. The VERDICTS (what needs attention) live in
  *  the findings list above the table — this is the reference detail behind
  *  them, so it states facts per row and never repeats the judgement. */
+/** F-10 (2026-09-18): the tag rename/merge outcome. A rep Sheet the server
+ *  could not read is NAMED and the toast is a WARNING — the old tag still
+ *  lives in that rep's notes, which a green "Renamed" toast used to hide. */
+function cnTagTransformToast_(verb, res) {
+  var skipped = (res && res.skippedReps) || [];
+  var base = verb + ': ' + res.notesUpdated + ' notes across ' + res.repsTouched + ' rep(s)';
+  if (!skipped.length) { showToast(base, 'toast-success'); return; }
+  showToast(base + ' — ' + skipped.length + ' rep Sheet(s) could not be read (' +
+    skipped.map(function (r) { return r.id; }).join(', ') + '); those notes still carry the old tag. Re-share the Sheet and run it again.', 'toast-warn');
+}
 function cnRenderStoragePanel_(res) {
   var stores = (res && res.stores) || [];
   var cfgTz = (res && res.configTimezone) || '';

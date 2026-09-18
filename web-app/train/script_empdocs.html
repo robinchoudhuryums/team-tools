@@ -728,12 +728,13 @@ function edVerify_(docId) {
       // Cycle-9 M-8: a fields-only completion carries the same hash artifact
       // (empty-signature DocSignatures row) — res.completed distinguishes it
       // from a signature so the copy doesn't claim a signature that isn't there.
-      if (!res.signed && !res.completed) { showToast('Not signed yet' + (res.contentMatch === false ? ' — CONTENT HASH MISMATCH (row altered after issue!)' : '.'), res.contentMatch === false ? 'error' : 'info'); return; }
+      // F-24: a missing content hash is a WARNING ("cannot verify"), never a pass.
+      if (!res.signed && !res.completed) { showToast('Not signed yet' + (res.contentMatch === false ? ' — CONTENT HASH MISMATCH (row altered after issue!)' : (res.warning ? ' — ' + res.warning : '.')), res.contentMatch === false ? 'error' : (res.warning ? 'warn' : 'info')); return; }
       var word = res.completed ? 'completed' : 'signed';
       if (!res.tampered && res.match === true) {
         showToast('✓ Integrity verified — ' + (res.completed ? 'completion' : 'signature') + ' and content hashes match (' + word + ' ' + String(res.signedAt).substring(0, 10) + ').', 'success');
-      } else if (res.match === null) {
-        showToast((res.completed ? 'Completed' : 'Signed') + ' (legacy row — no stored hash to verify).', 'info');
+      } else if (res.match === null || res.warning) {
+        showToast((res.completed ? 'Completed' : 'Signed') + ' — ' + (res.warning || 'legacy row — no stored hash to verify') + ' Integrity NOT verified.', 'warn');   // F-24
       } else {
         showToast('✗ INTEGRITY MISMATCH — the stored record was altered after ' + word + '. Investigate via the AuditLog witness row.', 'error');
       }

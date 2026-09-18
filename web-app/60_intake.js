@@ -867,7 +867,54 @@ function intakePpdAnswerStyles_() {
     yellow: 'background-color:' + P.warnSoft + ';color:' + P.warnDeep + ';border:1px solid ' + P.warnBorder + ';font-weight:bold;border-radius:4px;padding:4px 8px;display:inline-block;',
   };
 }
-// rows: [{ qNum, label, value, isHeader, isSecondary }]
+/** F-27 (2026-09-18): the PPD email rows, built SERVER-SIDE from the English
+ *  bank and the client's ANSWERS map — the same walk as the client's
+ *  `intakeCollectPpd_`, so the row order, headers, secondary flags and the
+ *  notes pseudo-question are the bank's; the client's `rows[].label` is never
+ *  read. `answers` keys are question numbers ('1', '31a', 'notes'). PURE. */
+function intakePpdRowsEn_(answers) {
+  const a = answers || {};
+  const rows = [];
+  for (let i = 1; i < INTAKE_PPD_Q_EN.length; i++) {
+    const raw = INTAKE_PPD_Q_EN[i];
+    if (!raw || !String(raw).trim()) continue;
+    const isSecondary = /^\s+/.test(raw);
+    const text = String(raw).trim();
+    const m = text.match(/^(\d+[a-z]?)\./);
+    if (!m) { rows.push({ isHeader: true, label: text }); continue; }
+    const qNum = m[1];
+    const v = a[qNum];
+    rows.push({ qNum: qNum, label: text, value: (v == null ? '' : String(v)), isSecondary: isSecondary });
+  }
+  rows.push({ isHeader: true, label: INTAKE_PPD_NOTES_EN.title });
+  const nv = a.notes;
+  rows.push({ qNum: 'notes', label: INTAKE_PPD_NOTES_EN.label, value: (nv == null ? '' : String(nv)), isSecondary: false });
+  return rows;
+}
+/** F-27: the PPD label for one question number, from the bank (amend banners). */
+function intakePpdLabelEn_(qNum) {
+  const rows = intakePpdRowsEn_({});
+  for (let i = 0; i < rows.length; i++) if (rows[i].qNum === String(qNum)) return rows[i].label;
+  return '';
+}
+/** F-27: the account-form rows (PMD / PAP), built from the English bank and the
+ *  client's ANSWERS map keyed by form index — the client's `intakeCollectAcct_`
+ *  walk. Headers come from the server layout (1-based HEADER_ROWS). PURE. */
+function intakeAcctRowsEn_(formType, answers) {
+  const qs = formType === 'PAP' ? INTAKE_PAP_Q_EN : INTAKE_PMD_Q_EN;
+  const layout = formType === 'PAP' ? INTAKE_PAP_LAYOUT : INTAKE_PMD_LAYOUT;
+  const a = answers || {};
+  const rows = [];
+  for (let i = 0; i < qs.length; i++) {
+    const label = String(qs[i] || '');
+    if (layout.HEADER_ROWS.indexOf(i + 1) >= 0) { rows.push({ qIndex: i, label: label, isHeader: true }); continue; }
+    const v = a[i] != null ? a[i] : a[String(i)];
+    rows.push({ qIndex: i, label: label, value: (v == null ? '' : String(v)),
+                isSecondary: layout.SECONDARY_QUESTION_ROWS.indexOf(i + 1) >= 0 });
+  }
+  return rows;
+}
+// rows: [{ qNum, label, value, isHeader, isSecondary }] — from intakePpdRowsEn_ (F-27)
 function intakeBuildPpdBodyHtml_(patientInfo, rows, recData, selections) {
   const P = CN_EMAIL_PALETTE;
   const s = intakePpdAnswerStyles_();
@@ -1146,7 +1193,7 @@ function intakePreviewPPD(payload) {
     if (!patientInfo) return { error: 'Enter the Patient Name & Trx# before previewing.' };
     const recData = intakeFilterRecommendations_(payload.answers || {}, getIntakeOfferings_());
     const subject = 'PPD for ' + patientInfo;
-    const body = intakeBuildPpdBodyHtml_(patientInfo, payload.rows || [], recData, null);
+    const body = intakeBuildPpdBodyHtml_(patientInfo, intakePpdRowsEn_(payload.answers), recData, null);   // F-27: labels from the bank, never the client
     const html = intakeEmailShell_(subject, body, 'Intake · PPD');
     return { success: true, html: html, subject: subject, recommendations: recData, bodyHash: intakeBodyHash_(body, subject) };
   } catch (err) { return { error: err.message }; }
@@ -1181,7 +1228,8 @@ function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
     const recData = intakeFilterRecommendations_(payload.answers || {}, getIntakeOfferings_());
     const subject = 'PPD for ' + patientInfo;
     // Re-build WITHOUT selections to verify the patient answers haven't drifted.
-    const baseBody = intakeBuildPpdBodyHtml_(patientInfo, payload.rows || [], recData, null);
+    const ppdRows = intakePpdRowsEn_(payload.answers);   // F-27
+    const baseBody = intakeBuildPpdBodyHtml_(patientInfo, ppdRows, recData, null);
     // The hash is REQUIRED (L2 — parity with emailFromCallNote/INV-41): a
     // direct RPC without it must not bypass the preview gate.
     if (!expectedBodyHash) {
@@ -1208,12 +1256,11 @@ function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
     let amendBanner = '', sendSubject = subject;
     if (amendSrc) {
       const changedKeys = intakeAmendDiff_(amendSrc.answers, payload.answers || {});
-      const labelByKey = {};
-      (payload.rows || []).forEach(function (r) { if (r.qNum) labelByKey[r.qNum] = r.label || r.qNum; });
-      amendBanner = intakeAmendBannerHtml_(amendSrc.ts, changedKeys.map(function (k) { return labelByKey[k] || ('Q' + k); }));
+      const amendLabels = changedKeys.map(function (k) { const lbl = intakePpdLabelEn_(k); return lbl || ('Q' + k); });   // F-27: the bank's labels
+      amendBanner = intakeAmendBannerHtml_(amendSrc.ts, amendLabels);
       sendSubject = 'AMENDED: ' + subject;
     }
-    const finalBody = amendBanner + intakeBuildPpdBodyHtml_(patientInfo, payload.rows || [], recData, payload.selections || {})
+    const finalBody = amendBanner + intakeBuildPpdBodyHtml_(patientInfo, ppdRows, recData, payload.selections || {})
       + intakeFeedbackCta_(submissionId, 'PPD');
     const html = intakeEmailShell_(sendSubject, finalBody, 'Intake · PPD');
 
@@ -1255,7 +1302,7 @@ function intakePreviewAcct_(formType, payload) {
   const dob = String(payload.dob || '').trim();
   const layout = formType === 'PAP' ? INTAKE_PAP_LAYOUT : INTAKE_PMD_LAYOUT;
   const subject = (formType === 'PAP' ? 'PAP' : 'PMD') + ' Account Creation for ' + patientInfo + (dob ? ' ' + dob : '');
-  const body = intakeBuildAcctBodyHtml_(payload.rows || [], layout);
+  const body = intakeBuildAcctBodyHtml_(intakeAcctRowsEn_(formType, payload.answers), layout);   // F-27
   const html = intakeEmailShell_(subject, body, 'Intake · ' + (formType === 'PAP' ? 'PAP' : 'PMD'));
   return { success: true, html: html, subject: subject, bodyHash: intakeBodyHash_(body, subject) };
 }
@@ -1269,7 +1316,8 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
   const layout = formType === 'PAP' ? INTAKE_PAP_LAYOUT : INTAKE_PMD_LAYOUT;
   const subject = (formType === 'PAP' ? 'PAP' : 'PMD') + ' Account Creation for ' + patientInfo + (dob ? ' ' + dob : '');
 
-  const body = intakeBuildAcctBodyHtml_(payload.rows || [], layout);
+  const acctRows = intakeAcctRowsEn_(formType, payload.answers);   // F-27
+  const body = intakeBuildAcctBodyHtml_(acctRows, layout);
   // Hash REQUIRED (L2) — same preview-gate parity as intakeSendPPD.
   if (!expectedBodyHash) {
     return { success: false, error: 'Missing preview hash — open Preview and send from there.' };
@@ -1291,7 +1339,7 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
   if (amendSrc) {
     const changedKeys = intakeAmendDiff_(amendSrc.answers, payload.answers || {});
     const labelByKey = {};
-    (payload.rows || []).forEach(function (r) { if (r.qIndex != null && !r.isHeader) labelByKey[r.qIndex] = r.label || String(r.qIndex); });
+    acctRows.forEach(function (r) { if (r.qIndex != null && !r.isHeader) labelByKey[r.qIndex] = r.label || String(r.qIndex); });   // F-27: the bank's labels
     amendBanner = intakeAmendBannerHtml_(amendSrc.ts, changedKeys.map(function (k) { return labelByKey[k] || ('#' + k); }));
     sendSubject = 'AMENDED: ' + subject;
   }

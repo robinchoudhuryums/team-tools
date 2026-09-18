@@ -808,7 +808,11 @@ entry says which it is.
   `sendDeptRequest` composer endpoint was REMOVED — it had no caller; auto-tracking
   replaced the manual compose tab.) **Store:**
   optional Script Property **`DEPT_REQUESTS_SS_ID`** (a dedicated sheet); falls
-  back to the ADP sheet. **The store was PHI-free until 2026-09-10 (operator
+  back to the ADP sheet — **recommended: set it to the Intake spreadsheet (the
+  PHI store), the `FORMS_SS_ID` recommendation, because the row names a
+  patient (below); Manage → Admin → System's Storage inventory carries a
+  "Dept Requests (PHI-adjacent)" row since Batch 5 (2026-09-18) that warns
+  while the property is unset.** **The store was PHI-free until 2026-09-10 (operator
   testing note 6):** the email BODY still never enters it and the row keeps its
   short `label`, but a trailing **`PatientTrx`** column (`DR.PATIENT_TRX:13`,
   `DR_HEADERS` 14 wide, header self-heals; capped `DR_PATIENT_TRX_MAX`=120)

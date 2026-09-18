@@ -471,6 +471,69 @@
     "sendDailyMissedPunchAlerts"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-18",
+   "why": "Batch 5: intakePpdRowsEn_/intakePpdLabelEn_/intakeAcctRowsEn_ (F-27), qaRosterIdsForName_/qaRowIsMine_/qaMyNameUnique_ (F-16), cnTagSkippedNote_ (F-10)",
+   "added": [
+    "INTAKE_PAP_Q_EN",
+    "INTAKE_PMD_Q_EN",
+    "INTAKE_PPD_NOTES_EN",
+    "INTAKE_PPD_Q_EN",
+    "cnTagSkippedNote_",
+    "intakeAcctRowsEn_",
+    "intakePpdLabelEn_",
+    "intakePpdRowsEn_",
+    "qaMyNameUnique_",
+    "qaRosterIdsForName_",
+    "qaRowIsMine_"
+   ],
+   "removed": [],
+   "changed": [
+    "QAR",
+    "QA_RECORDINGS_HEADERS",
+    "acknowledgeDoc",
+    "applyTagTransformAcrossReps_",
+    "emailFromCallNote",
+    "getDeptRequestsSS_",
+    "getMyQaReviewAudioChunk",
+    "getMyQaReviews",
+    "getOrCreateQaRecordingsSheet_",
+    "getStorageHealth",
+    "intakePreviewAcct_",
+    "intakePreviewPPD",
+    "intakeSendAcct_",
+    "intakeSendPPD",
+    "mergeCallNoteTags",
+    "oopEligibilityParse_",
+    "qaRosterIdByName_",
+    "qaSetRecordingAgent",
+    "qaSyncRecordings",
+    "renameCallNoteTag",
+    "verifyDocSignature"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-18",
+   "why": "Batch 5 follow-through: intakeSendPPD amend labels from the bank without a delegate-shaped return (F-27); oopEligibilityParse_ strips a warehouse's own state before the leftover-state check (F-23)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "intakeSendPPD",
+    "oopEligibilityParse_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-18",
+   "why": "F-23: the warehouse-address strip treats only an UPPERCASE adjacent state code as the address",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "oopEligibilityParse_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -1190,10 +1253,30 @@
    "kind": "const",
    "sha": "cc00d98f6bf7719d"
   },
+  "INTAKE_PAP_Q_EN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9d4e1f8b721cf386"
+  },
   "INTAKE_PMD_LAYOUT": {
    "file": "00_config.js",
    "kind": "const",
    "sha": "e575416c0b74b196"
+  },
+  "INTAKE_PMD_Q_EN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "fd5277eb8ea0fd4b"
+  },
+  "INTAKE_PPD_NOTES_EN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5df0cadc03d26f87"
+  },
+  "INTAKE_PPD_Q_EN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "053c488812fde0f3"
   },
   "INTAKE_PPD_SUB_HEADERS": {
    "file": "00_config.js",
@@ -1768,7 +1851,7 @@
   "QAR": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "a2f35c1d7129033c"
+   "sha": "4e5e303c364baff4"
   },
   "QA_AUDIO_CHUNK_BYTES": {
    "file": "00_config.js",
@@ -1913,7 +1996,7 @@
   "QA_RECORDINGS_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "37fd58d10db7ae76"
+   "sha": "8f3855982e110905"
   },
   "QA_RECORDINGS_TAB": {
    "file": "00_config.js",
@@ -2463,7 +2546,7 @@
   "acknowledgeDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "6e0fe6b30ff4101f"
+   "sha": "3c0711d010ba7715"
   },
   "addDaysIso_": {
    "file": "10_core.js",
@@ -2543,7 +2626,7 @@
   "applyTagTransformAcrossReps_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "9d5898e1a0b154e7"
+   "sha": "507c635ab4b63b09"
   },
   "archiveCallNoteTag": {
    "file": "30_callnotes.js",
@@ -3030,6 +3113,11 @@
    "kind": "function",
    "sha": "e3ef8698c81ca85a"
   },
+  "cnTagSkippedNote_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "50329ad8a07e96bc"
+  },
   "cnTagTrendsFromEvents_": {
    "file": "30_callnotes.js",
    "kind": "function",
@@ -3403,7 +3491,7 @@
   "emailFromCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "b3a140760eab908a"
+   "sha": "2952001792dbdde6"
   },
   "empDepartments_": {
    "file": "20_timeclock.js",
@@ -3888,7 +3976,7 @@
   "getDeptRequestsSS_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "5eca3dff78646127"
+   "sha": "9a41dfa05e295456"
   },
   "getDocsDashboard": {
    "file": "81_empdocs.js",
@@ -4158,12 +4246,12 @@
   "getMyQaReviewAudioChunk": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "9d327e44f28f84ef"
+   "sha": "733a41e951bb17bd"
   },
   "getMyQaReviews": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "632d7d537b641cff"
+   "sha": "33110b1473783142"
   },
   "getMyScheduledCalls": {
    "file": "30_callnotes.js",
@@ -4308,7 +4396,7 @@
   "getOrCreateQaRecordingsSheet_": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "94bd3fa8199a8491"
+   "sha": "4735cdbe0028945b"
   },
   "getOrCreateQaScorecardsSheet_": {
    "file": "90_qa.js",
@@ -4488,7 +4576,7 @@
   "getStorageHealth": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "581641ff9b1a55f6"
+   "sha": "bd503593b5892a4d"
   },
   "getTeamCalendar": {
    "file": "20_timeclock.js",
@@ -4605,6 +4693,11 @@
    "kind": "function",
    "sha": "f12204590c1398a5"
   },
+  "intakeAcctRowsEn_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "dc1c961fb964857d"
+  },
   "intakeAmendBannerHtml_": {
    "file": "60_intake.js",
    "kind": "function",
@@ -4715,10 +4808,20 @@
    "kind": "function",
    "sha": "2cdadb352a48b845"
   },
+  "intakePpdLabelEn_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "f8ebbe23d5f4b009"
+  },
+  "intakePpdRowsEn_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "386c79142a4209a7"
+  },
   "intakePreviewAcct_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "89e08e87e18f985c"
+   "sha": "ff46a146d3678325"
   },
   "intakePreviewPAP": {
    "file": "60_intake.js",
@@ -4733,7 +4836,7 @@
   "intakePreviewPPD": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "00610c2f2e2d695f"
+   "sha": "106afc2c4eea0f26"
   },
   "intakeRecListHtml_": {
    "file": "60_intake.js",
@@ -4753,7 +4856,7 @@
   "intakeSendAcct_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "3bece8c9474ea35a"
+   "sha": "c21575de95963f4a"
   },
   "intakeSendPAP": {
    "file": "60_intake.js",
@@ -4768,7 +4871,7 @@
   "intakeSendPPD": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "20b1eb58bd437f84"
+   "sha": "3f0391c19f277e04"
   },
   "intakeStoreFailWarn_": {
    "file": "60_intake.js",
@@ -5383,7 +5486,7 @@
   "mergeCallNoteTags": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "71b41ece5a34c160"
+   "sha": "1f7dbf4bb3c230ab"
   },
   "metricsBuildKpiSeries_": {
    "file": "40_metrics.js",
@@ -5543,7 +5646,7 @@
   "oopEligibilityParse_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "a6722ad0708a18b0"
+   "sha": "ea861f28a5e6e9e9"
   },
   "oopHeaderRole_": {
    "file": "70_kb.js",
@@ -5875,6 +5978,11 @@
    "kind": "function",
    "sha": "20a8fec5e9d1f1da"
   },
+  "qaMyNameUnique_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "a5123b86ccfa431c"
+  },
   "qaOptionIsNumeric_": {
    "file": "90_qa.js",
    "kind": "function",
@@ -5938,7 +6046,17 @@
   "qaRosterIdByName_": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "7cc88ade5c535fc1"
+   "sha": "119e22b0e3c6813a"
+  },
+  "qaRosterIdsForName_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "23518219958b6c9c"
+  },
+  "qaRowIsMine_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "4f97e75f88c1d79b"
   },
   "qaSamplePick_": {
    "file": "90_qa.js",
@@ -5963,7 +6081,7 @@
   "qaSetRecordingAgent": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "86801cfe020a17b6"
+   "sha": "8da7e2946d5c51a1"
   },
   "qaSetRecordingDuration": {
    "file": "90_qa.js",
@@ -5998,7 +6116,7 @@
   "qaSyncRecordings": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "7fe5465bf9b87c09"
+   "sha": "dfcc613f46fd7636"
   },
   "qaYmdMs_": {
    "file": "90_qa.js",
@@ -6078,7 +6196,7 @@
   "renameCallNoteTag": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "b1c9f9b3076d1388"
+   "sha": "9e09c79c1c973ae8"
   },
   "renderOopDetailsHtml_": {
    "file": "30_callnotes.js",
@@ -6863,7 +6981,7 @@
   "verifyDocSignature": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "b8150bc14cc63c95"
+   "sha": "3bdf8f1efd5a92df"
   },
   "verifyFormSubmissionIntegrity_": {
    "file": "61_forms.js",

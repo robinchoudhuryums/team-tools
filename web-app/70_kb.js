@@ -1151,7 +1151,34 @@ function oopEligibilityParse_(text, warehouseNames) {
       const name = String(n || '').trim();
       if (name && lc.indexOf(name.toLowerCase()) >= 0 && hits.indexOf(name) < 0) hits.push(name);
     });
-    if (miles > 0 && hits.length) return { kind: 'radius', miles: miles, warehouses: hits };
+    if (miles > 0 && hits.length) {
+      // F-23 (2026-09-18): a value that ALSO names a state — "TX, 100 miles
+      // of Dallas" — is two rules in one cell, and reading it as the radius
+      // alone silently dropped the state. Strip the distance and the matched
+      // warehouse names, and if an UPPERCASE state code is left standing the
+      // value is UNKNOWN (g41: fail closed on operator data we cannot read).
+      // Uppercase only: the operator's prose ("100 miles of Dallas or San
+      // Antonio") carries "or", and OR is Oregon.
+      let rest = raw.replace(m[0], ' ');
+      // A warehouse name followed by its own state ("Dallas TX", "Dallas, TX")
+      // is the warehouse's ADDRESS, not a second rule — strip the pair.
+      hits.forEach(function (n) {
+        const nameRe = new RegExp('(' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')(\\s*,?\\s*)([A-Za-z]{2})?\\b', 'ig');
+        rest = rest.replace(nameRe, function (all, nm, gap, st) {
+          // The adjacent token is the warehouse's state only when it is an
+          // UPPERCASE state code (the name match itself is case-insensitive).
+          const own = st && st === st.toUpperCase() && US_STATE_CODES.indexOf(st) >= 0;
+          return own ? ' ' : (' ' + (gap || '') + (st || ''));
+        });
+      });
+      const leftover = rest.split(/[\s,;/|&+()]+/).filter(function (t) { return !!t; });
+      const stateLeft = leftover.some(function (t) {
+        const u = t.replace(/[^A-Za-z]/g, '');
+        return u.length === 2 && u === u.toUpperCase() && US_STATE_CODES.indexOf(u) >= 0;
+      });
+      if (stateLeft) return { kind: 'unknown', raw: raw };
+      return { kind: 'radius', miles: miles, warehouses: hits };
+    }
     return { kind: 'unknown', raw: raw };
   }
 

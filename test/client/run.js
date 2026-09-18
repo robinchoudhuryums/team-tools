@@ -9416,8 +9416,8 @@ test('intake feedback loop: gated writer, existence check, PHI-free audit, CTA o
   // The BASE body (the hashed one) must stay CTA-free — asserting the exact
   // statement catches an appended CTA, where "the CTA call comes after the
   // hash check" would not (the mutated base line adds its OWN call earlier).
-  assert.ok(/const baseBody = intakeBuildPpdBodyHtml_\(patientInfo, payload\.rows \|\| \[\], recData, null\);/.test(ppd),
-    'PPD: the hashed base body carries no CTA (INV-41 contract untouched)');
+  assert.ok(/const baseBody = intakeBuildPpdBodyHtml_\(patientInfo, ppdRows, recData, null\);/.test(ppd),
+    'PPD: the hashed base body carries no CTA (INV-41 contract untouched; rows from the server bank since F-27)');
   assert.ok(ppd.indexOf("intakeFeedbackCta_(submissionId, 'PPD')") > ppd.indexOf('intakeBodyHash_(baseBody, subject)'),
     'PPD: CTA joins the final body after the hash check');
   const mintAt = ppd.indexOf('const submissionId = Utilities.getUuid()');
@@ -15892,15 +15892,15 @@ test('QA-10: Phase 2 wiring — agent boundary, headers, stats gate, waveform fa
   // column — and AGAIN for design handoff PR 5, which added DurationSec +
   // SkipReason and, because a live tab may now exist, a header SELF-HEAL;
   // the honest bookkeeping when a contract changes under a pin.)
-  assert.ok(/QA_RECORDINGS_HEADERS = \['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url', 'Agent', 'SharedMs', 'DurationSec', 'SkipReason'\]/.test(stripped),
-    'Agent, SharedMs, DurationSec, SkipReason are the trailing recordings columns');
-  assert.ok(/AGENT: 10/.test(stripped) && /SHARED_MS: 11/.test(stripped) && /DURATION_SEC: 12/.test(stripped) && /SKIP_REASON: 13/.test(stripped), 'QAR positions match');
+  assert.ok(/QA_RECORDINGS_HEADERS = \['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url', 'Agent', 'SharedMs', 'DurationSec', 'SkipReason', 'AgentId'\]/.test(stripped),
+    'Agent, SharedMs, DurationSec, SkipReason, AgentId (F-16) are the trailing recordings columns');
+  assert.ok(/AGENT: 10/.test(stripped) && /SHARED_MS: 11/.test(stripped) && /DURATION_SEC: 12/.test(stripped) && /SKIP_REASON: 13/.test(stripped) && /AGENT_ID: 14/.test(stripped), 'QAR positions match');
   const sync = nc(extractRawFunction('Code.js', 'qaSyncRecordings'));
   assert.ok(/String\(f\.getUrl\(\) \|\| ''\), '', 0, '', '',/.test(sync), 'sync rows carry the trailing empty Agent / SharedMs / DurationSec / SkipReason cells');
   const mk = nc(extractRawFunction('Code.js', 'getOrCreateQaSheet_'));
   assert.ok(/sheet\.getLastColumn\(\) < headers\.length/.test(mk) && /headers\.slice\(have\)/.test(mk),
     'a short header self-heals in place (a QaRecordings tab provisioned before PR 5 gains the two columns)');
-  assert.ok(/QA_RECORDINGS_HEADERS, \['A', 'B', 'K', 'N'\]/.test(stripped), 'SkipReason (col N) is plain-text-pinned like the other free-text columns');
+  assert.ok(/QA_RECORDINGS_HEADERS, \['A', 'B', 'K', 'N', 'O'\]/.test(stripped), 'SkipReason (col N) and AgentId (col O) are plain-text-pinned like the other free-text columns');
   const setAgent = nc(extractRawFunction('Code.js', 'qaSetRecordingAgent'));
   assert.ok(/'QA access required\.'/.test(setAgent) && /substring\(0, 80\)/.test(setAgent),
     'agent set is QA-gated and bounded');
@@ -16032,8 +16032,8 @@ test('QA-12: share requires attribution; getMyQaReviews is employee-gated, doubl
   assert.ok(!/canSeeQa_/.test(mine), 'deliberately NOT the QA-member gate — this is the agent-facing read');
   assert.ok(/if \(!\(Number\(rows\[i\]\[QAR\.SHARED_MS\]\) > 0\)\) continue;/.test(mine),
     'SHARED filter — an unshared review is invisible even to its own agent');
-  assert.ok(/String\(rows\[i\]\[QAR\.AGENT\] \|\| ''\)\.trim\(\)\.toLowerCase\(\) !== myName\) continue;/.test(mine),
-    'NAME scope — an agent can never read another agent\'s reviews');
+  assert.ok(/if \(!qaRowIsMine_\(rows\[i\], emp, nameUnique\)\) continue;/.test(mine),
+    'ID scope (F-16) — an agent can never read another agent\'s reviews; a legacy row matches by name only when the name is unique');
   // Read-only: never provisions the store, never writes; soft-deleted
   // comments stay invisible; the list is capped.
   assert.ok(/getSheetByName\(QA_RECORDINGS_TAB\)/.test(mine) && !/getOrCreateQa/.test(mine),
@@ -16260,7 +16260,7 @@ test('QA-16: getMyQaReviewAudioChunk — employee gate, double scope BEFORE Driv
   // resolved from the STORE before any Drive access, i.e. before the
   // delegate call that owns the bytes.
   const sharedIdx = f.indexOf("if (!(Number(found.row[QAR.SHARED_MS]) > 0)) return { error: 'Recording not found.' };");
-  const nameIdx = f.indexOf("String(found.row[QAR.AGENT] || '').trim().toLowerCase() !== myName");
+  const nameIdx = f.indexOf("if (!qaRowIsMine_(found.row, emp, qaMyNameUnique_(emp))) return { error: 'Recording not found.' };");
   const drvIdx = f.indexOf('qaAudioChunkFor_(fid, chunkIndex)');
   assert.ok(sharedIdx > -1 && nameIdx > sharedIdx && drvIdx > nameIdx,
     'SHARED filter, then NAME scope, then (and only then) the Drive boundary delegate');
@@ -18825,7 +18825,7 @@ test('QA-23: PR 5 client wiring — period control + pref, coverage-derived stri
   assert.ok(/const sum = qaCoverageSummary_\(rows, d\.todayYmd, d\.periodEnd\);/.test(cov) && /qaSummaryStripHtml_\(sum, label\)/.test(cov), 'strip from the same rows');
   assert.ok(/if \(d\.coverageUnavailable\) \{[\s\S]{0,400}errorStateHtml_\(/.test(cov), 'coverageUnavailable → errorStateHtml_');
   assert.ok(/rowClass: function \(r\) \{\s*const k = qaCoverageTier_\(r\)\.key;/.test(cov) && /const tier = qaCoverageTier_\(r\);[\s\S]{0,200}kicker-pill/.test(cov), 'row tint AND status pill come from the ONE tier rule');
-  assert.ok(/if \(d\.isManager\) \{[\s\S]{0,600}qaSetExemption_\(/.test(cov), 'exemption controls are manager-only');
+  assert.ok(/if \(d\.isManager\) \{[\s\S]{0,900}data-qa-exempt=/.test(cov), 'exemption controls are manager-only (data-* + a delegated handler since F-17)');
   assert.ok(/qaSampleRecordings\(n, QA_STATE\.period \|\| ''\)/.test(qa) && /Math\.max\(1, Math\.min\(10, Number\(sum\.gaps\) \|\| 0\)\)/.test(qa), 'sample-the-gaps count = Σ(target − sampled), clamped to the endpoint bound');
   // (c) Skip asks WHY and posts the reason; the queue renders it; Unattributed is warn-toned; Length is em-dash-when-unknown.
   const skip = nc(extractFnFrom(qa, 'qaSkip_'));
@@ -20483,6 +20483,167 @@ test('F-49: getTeamCalendar reads the time-off tab through the PROVISIONER — a
   const src = foNc(extractRawFunction('Code.js', 'getTeamCalendar'));
   assert.ok(/getOrCreateTimeOffSheet_\(\)\.getDataRange\(\)\.getValues\(\)/.test(src), 'through getOrCreateTimeOffSheet_');
   assert.ok(!/getSheetByName\(CONFIG\.TIMEOFF_TAB\)/.test(src), 'never by name (null.getDataRange on a fresh deployment)');
+});
+
+// ── Batch 5 (2026-09-17 /broad-scan): access boundary and data integrity ─────
+// F-16 QA reviews scoped by roster ID · F-10 tag transforms report skipped
+// reps · F-11 the DeptRequests store is PHI-adjacent and probed · F-17 the
+// exemption button through data-* · F-24 a hash-less doc is refused, and
+// "cannot verify" is a warning · F-23 states + radius → unknown · F-27 the
+// intake email's labels come from the server's English bank.
+test('F-16: the agent-facing QA reads scope by ROSTER ID — the id written at attribution wins, a legacy name match needs a UNIQUE name, and an ambiguous name resolves to nobody', () => {
+  const ctx = { String, Number, Object, Array, QAR: { AGENT: 10, AGENT_ID: 14 }, EMP: { ID: 0, NAME: 1, EMAIL: 2 },
+    empRosterEmail_: (r) => String(r[2] || '').trim() };
+  vm.createContext(ctx);
+  ['qaRosterIdsForName_', 'qaRowIsMine_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const row = (agent, id) => { const r = []; r[10] = agent; r[14] = id; return r; };
+  const me = { id: 'E-2', name: 'Ana Reyes' };
+  assert.strictEqual(ctx.qaRowIsMine_(row('Ana Reyes', 'E-2'), me, false), true, 'an AgentId equal to mine is mine, unique name or not');
+  assert.strictEqual(ctx.qaRowIsMine_(row('Ana Reyes', 'E-9'), me, true), false, 'an AgentId that is NOT mine is not mine, even with my name on the row');
+  assert.strictEqual(ctx.qaRowIsMine_(row(' ana reyes ', ''), me, true), true, 'a legacy row (blank id) matches by name when my name is unique');
+  assert.strictEqual(ctx.qaRowIsMine_(row('Ana Reyes', ''), me, false), false, 'a legacy row never matches a name two roster rows share');
+  assert.strictEqual(ctx.qaRowIsMine_(row('', ''), me, true), false, 'an unattributed row is nobody\'s');
+  assert.strictEqual(ctx.qaRowIsMine_(row('Ana Reyes', ''), { id: 'E-2', name: '' }, true), false, 'no caller name, no name match');
+  const roster = [['h'], ['E-1', 'Sam Ortiz', 's@x'], ['E-2', 'Ana Reyes', 'a@x'], ['E-3', 'Ana Reyes', 'b@x'], ['E-4', 'Leo Kim', '']];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.qaRosterIdsForName_(roster, 'ana reyes'))), ['E-2', 'E-3'], 'two included rows share the name');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.qaRosterIdsForName_(roster, 'leo kim'))), [], 'an offboarded row (no email) is not counted');
+  const byName = foNc(extractRawFunction('Code.js', 'qaRosterIdByName_'));
+  assert.ok(/return ids\.length === 1 \? ids\[0\] : '';/.test(byName), 'the write-time resolver returns NOTHING for an ambiguous name (never the first row)');
+  const setAgent = foNc(extractRawFunction('Code.js', 'qaSetRecordingAgent'));
+  assert.ok(/const agentId = qaRosterIdByName_\(name\);/.test(setAgent) && /QAR\.AGENT_ID \+ 1, 1, 1\)\.setValue\(agentId\)/.test(setAgent), 'attribution writes the resolved id beside the name');
+  ['getMyQaReviews', 'getMyQaReviewAudioChunk'].forEach((n) => {
+    const src = foNc(extractRawFunction('Code.js', n));
+    assert.ok(/qaRowIsMine_\(/.test(src) && !/toLowerCase\(\) !== myName/.test(src), n + ' scopes through qaRowIsMine_ — no bare name compare survives');
+  });
+  assert.ok(/String\(f\.getUrl\(\) \|\| ''\), '', 0, '', '', '',/.test(foNc(extractRawFunction('Code.js', 'qaSyncRecordings'))), 'sync rows carry the trailing empty AgentId cell');
+});
+
+test('F-10: a cross-rep tag transform REPORTS the rep Sheets it could not read — to the caller and the audit row — and the client toast is a warning, not a success', () => {
+  const ctx = { String, Object, Array, JSON, EMP: { ID: 0 }, CN: { SUBFORM_DATA: 3 },
+    getEmployeeRosterRows_: () => [['h'], ['E-1'], ['E-2'], ['E-3']],
+    cnEnrolledSheetId_: (r) => (r[0] === 'E-3' ? '' : 'sheet-' + r[0]),
+    arraysEqual_: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+    getCallNotesSheet_: (emp) => {
+      if (emp.id === 'E-2') throw new Error('You do not have permission');
+      return { getDataRange: () => ({ getValues: () => [['h'], ['', '', '', JSON.stringify({ tags: ['old', 'keep'] })], ['', '', '', '']] }),
+               getRange: () => ({ setValue() {} }) };
+    } };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'applyTagTransformAcrossReps_'), ctx);
+  const r = JSON.parse(JSON.stringify(ctx.applyTagTransformAcrossReps_('old', (tags) => tags.map((t) => (t === 'old' ? 'new' : t)))));
+  assert.strictEqual(r.repsTouched, 1); assert.strictEqual(r.notesUpdated, 1);
+  assert.deepStrictEqual(r.skippedReps, [{ id: 'E-2', error: 'You do not have permission' }], 'the unreadable rep is named with the reason; the unenrolled one is not a skip');
+  const note = vm.runInContext(extractRawFunction('Code.js', 'cnTagSkippedNote_') + "; cnTagSkippedNote_([{ id: 'E-2' }, { id: 'E-5' }])", ctx);
+  assert.ok(/skipped=2 \(E-2,E-5\)/.test(note) && /still carry the old tag/.test(note), 'the audit tail names ids only');
+  assert.strictEqual(vm.runInContext("cnTagSkippedNote_([])", ctx), '', 'no skip, no tail');
+  ['renameCallNoteTag', 'mergeCallNoteTags'].forEach((n) => {
+    const src = foNc(extractRawFunction('Code.js', n));
+    assert.ok(/\+ cnTagSkippedNote_\(result\.skippedReps\)/.test(src) && /skippedReps: result\.skippedReps/.test(src), n + ' carries the skips into the audit row and the return');
+  });
+  const toast = foNc(extractFunction('cn/script_callnotes.html', 'cnTagTransformToast_'));
+  assert.ok(/toast-warn/.test(toast) && /could not be read/.test(toast) && /still carry the old tag/.test(toast), 'the client says which reps still carry the old tag');
+  const cn = foNc(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  assert.strictEqual((cn.match(/cnTagTransformToast_\('(Renamed|Merged)', res\)/g) || []).length, 2, 'both admin actions route through it');
+});
+
+test('F-11: the DeptRequests store is PHI-ADJACENT — probed by Storage Health with the Forms fallback posture, named in the map, and no comment calls it PHI-free', () => {
+  const sh = foNc(extractRawFunction('Code.js', 'getStorageHealth'));
+  assert.ok(/prop: 'DEPT_REQUESTS_SS_ID', id: drId/.test(sh) && /const drId = drProp \|\| adpId;/.test(sh), 'the row probes the property with the ADP fallback (the Forms shape)');
+  assert.ok(/Recommend setting DEPT_REQUESTS_SS_ID to the Intake spreadsheet/.test(sh), 'unset recommends the PHI store');
+  const src = foNc(serverSource());
+  assert.ok(!/PHI-free DeptRequests|PHI-free, so co-locating/.test(src), 'no server comment still calls the store PHI-free');
+  const claude = fs.readFileSync(path.join(__dirname, '../../CLAUDE.md'), 'utf8');
+  assert.ok(/\| Dept Requests \| `DEPT_REQUESTS_SS_ID` \(\*\*falls back to the ADP sheet\*\*\)/.test(claude), 'the storage map carries the store');
+  assert.ok(!/^EIGHT distinct spreadsheets/m.test(claude), 'the map no longer counts eight');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/'DEPT_REQUESTS_SS_ID'/.test(mock) && /key: 'DEPT_REQUESTS_SS_ID'/.test(mock), 'both the Storage Health and deploy-readiness fixtures carry the row (INV-185)');
+  // The findings derivation warns on the fallback (it is not a no-fallback store).
+  sb.CN_DIGEST_LABELS_ = { eod: 'EOD' };
+  const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
+  const f = fn(null, { configTimezone: 'x', stores: [{ label: 'Dept Requests (PHI-adjacent)', cls: 'PHI-adjacent', prop: 'DEPT_REQUESTS_SS_ID', configured: false, note: 'falls back' }] }).items.find((x) => x.id === 'store:DEPT_REQUESTS_SS_ID');
+  assert.ok(f && f.severity === 'warn', 'unset Dept Requests store is a WARNING (it falls back onto payroll), never the no-fallback ok');
+});
+
+test('F-17: the exemption buttons carry the agent name in a data-* attribute and fire through ONE delegated handler — an apostrophe in the name no longer breaks the click', () => {
+  const qa = fs.readFileSync(path.join(__dirname, '../../web-app/qa/script_qa.html'), 'utf8');
+  const cov = foNc(extractFunction('qa/script_qa.html', 'qaCoverageSectionHtml_'));
+  assert.ok(!/onclick="qaSetExemption_/.test(cov), 'no onclick literal survives');
+  assert.ok(/data-qa-exempt="' \+ esc\(r\.name\) \+ '" data-qa-exempt-on="1"/.test(cov) && /data-qa-exempt-on="0"/.test(cov), 'grant and revoke ride data-* attributes, escaped');
+  assert.ok(/closest\('\[data-qa-exempt\]'\)/.test(qa) && /qaSetExemption_\(b\.getAttribute\('data-qa-exempt'\) \|\| '', b\.getAttribute\('data-qa-exempt-on'\) === '1'\)/.test(qa), 'ONE delegated document listener dispatches by attribute');
+  assert.ok(/window\.__qaExemptDelegated/.test(qa), 'registered once');
+  // The attribute round trip: esc() encodes the apostrophe, the DOM decodes it, the function gets the real name.
+  const escaped = sb.esc("O'Brien \"Sam\"");
+  assert.strictEqual(escaped, 'O&#39;Brien &quot;Sam&quot;', 'esc encodes both quote kinds (the old replace was a no-op on &#39;)');
+});
+
+test('F-24: a doc with NO content hash is REFUSED at signing, and verify reports "cannot verify" as a warning — never tampered:false with nothing said', () => {
+  const ack = foNc(extractRawFunction('Code.js', 'acknowledgeDoc'));
+  assert.ok(/if \(!d\.contentHash\) \{\s*return \{ success: false, error: 'This document has no integrity hash on record/.test(ack), 'a hash-less doc cannot be signed');
+  assert.ok(ack.indexOf('if (!d.contentHash)') < ack.indexOf('empDocContentHashMatches_('), 'the missing-hash refusal precedes the mismatch check');
+  assert.ok(!/if \(d\.contentHash && !empDocContentHashMatches_/.test(ack), 'the gate is no longer conditional on the hash existing');
+  const ver = foNc(extractRawFunction('Code.js', 'verifyDocSignature'));
+  assert.ok(/const hashWarning = \(contentMatch === null\) \? 'No content hash on record/.test(ver), 'a null contentMatch is named');
+  assert.strictEqual((ver.match(/warning: hashWarning/g) || []).length, 2, 'both the unsigned and the signed returns carry it');
+  const cli = foNc(fs.readFileSync(path.join(__dirname, '../../web-app/train/script_empdocs.html'), 'utf8'));
+  assert.ok(/res\.warning \? ' — ' \+ res\.warning/.test(cli) && /Integrity NOT verified/.test(cli), 'the client renders the warning, never a bare "legacy row" info toast');
+});
+
+test('F-23: an Area Eligibility value that names a STATE beside a radius is UNKNOWN — a warehouse\'s own state and the operator\'s prose are not', () => {
+  const P = (t) => JSON.parse(vm.runInContext('JSON.stringify(oopEligibilityParse_(' + JSON.stringify(t) + ', ["Dallas", "San Antonio"]))', _vmCtx));
+  assert.deepStrictEqual(P('TX, 100 miles of Dallas'), { kind: 'unknown', raw: 'TX, 100 miles of Dallas' }, 'two rules in one cell is a value we cannot read (g41)');
+  assert.deepStrictEqual(P('100 miles of Dallas and TX'), { kind: 'unknown', raw: '100 miles of Dallas and TX' }, 'a state that is not the warehouse\'s own address is a second rule');
+  assert.strictEqual(P('100 miles of the Dallas TX warehouse').kind, 'radius', 'a state that is the warehouse\'s own address stays a radius');
+  assert.strictEqual(P('100 miles of Dallas, TX').kind, 'radius', 'comma-separated address form too');
+  assert.strictEqual(P('100 miles of Dallas or San Antonio warehouse').kind, 'radius', 'lowercase "or" is prose, not Oregon');
+  assert.deepStrictEqual(P('100 miles of Dallas or San Antonio warehouse').warehouses, ['Dallas', 'San Antonio']);
+  assert.strictEqual(P('100 miles of Dallas OR San Antonio').kind, 'radius', 'an UPPERCASE OR adjacent to a warehouse name reads as its address form (Dallas, OR) — a radius either way');
+  assert.deepStrictEqual(P('100 miles of Dallas OR San Antonio').warehouses, ['Dallas', 'San Antonio']);
+  assert.strictEqual(P('OR, 100 miles of Dallas').kind, 'unknown', 'a leading uppercase OR is a state rule (Oregon) beside a radius — unknown');
+});
+
+test('F-27: the intake email rows come from the SERVER\'s English bank and the client\'s answers — the bank mirrors the client byte-for-byte, and no send path reads a client label', () => {
+  const cli = fs.readFileSync(path.join(__dirname, '../../web-app/intake/script_intake.html'), 'utf8');
+  const srv = serverSource();
+  // Arrays evaluated in separate vm realms differ by prototype, so the mirror is compared by value (JSON).
+  const arr = (src, re) => { const m = re.exec(src); assert.ok(m, 'bank found: ' + re); return JSON.parse(JSON.stringify(vm.runInNewContext('[' + m[1] + ']'))); };
+  const cPpd = arr(cli, /var INTAKE_PPD_Q = \{\n  EN: \[\n([\s\S]*?)\n  \],\n  ES: \[/);
+  const sPpd = arr(srv, /const INTAKE_PPD_Q_EN = \[\n([\s\S]*?)\n\];/);
+  assert.deepStrictEqual(sPpd, cPpd, 'the PPD English bank is a byte-for-byte mirror');
+  assert.deepStrictEqual(arr(srv, /const INTAKE_PMD_Q_EN = \[\n([\s\S]*?)\n\];/), arr(cli, /var INTAKE_PMD_Q = \{\n  EN: \[\n([\s\S]*?)\n  \],\n  ES: \[/), 'the PMD bank mirrors');
+  assert.deepStrictEqual(arr(srv, /const INTAKE_PAP_Q_EN = \[\n([\s\S]*?)\n\];/), arr(cli, /var INTAKE_PAP_Q = \{\n  EN: \[\n([\s\S]*?)\n  \],\n  ES: \[/), 'the PAP bank mirrors');
+  const cNotes = /var INTAKE_PPD_NOTES = \{\n  EN: (\{[^\n]*\}),/.exec(cli)[1], sNotes = /const INTAKE_PPD_NOTES_EN = (\{[^\n]*\});/.exec(srv)[1];
+  assert.strictEqual(sNotes, cNotes, 'the notes pseudo-question mirrors');
+  // Behavioural: the server walk equals the client walk for the same answers.
+  const ctx = { String, Object, Array, JSON, INTAKE_PPD_Q_EN: sPpd, INTAKE_PPD_NOTES_EN: vm.runInNewContext('(' + sNotes + ')'),
+    INTAKE_PMD_Q_EN: arr(srv, /const INTAKE_PMD_Q_EN = \[\n([\s\S]*?)\n\];/), INTAKE_PAP_Q_EN: arr(srv, /const INTAKE_PAP_Q_EN = \[\n([\s\S]*?)\n\];/),
+    INTAKE_PMD_LAYOUT: { HEADER_ROWS: [1, 8, 12, 22], SECONDARY_QUESTION_ROWS: [2, 10, 19, 20, 23, 26, 28] },
+    INTAKE_PAP_LAYOUT: { HEADER_ROWS: [1, 8, 12, 19], SECONDARY_QUESTION_ROWS: [3, 10, 20, 21, 22, 25, 27] } };
+  vm.createContext(ctx);
+  ['intakePpdRowsEn_', 'intakePpdLabelEn_', 'intakeAcctRowsEn_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const rows = JSON.parse(JSON.stringify(ctx.intakePpdRowsEn_({ '1': 'Yes', '31a': 'Left side', notes: 'call back' })));
+  assert.strictEqual(rows[0].label, 'MRADL'); assert.strictEqual(rows[0].isHeader, true, 'the first bank header (the title row is skipped, like the client)');
+  const q1 = rows.find((r) => r.qNum === '1'); assert.ok(/^1\. Do you currently use a cane/.test(q1.label) && q1.value === 'Yes');
+  const q31a = rows.find((r) => r.qNum === '31a'); assert.ok(q31a.isSecondary === true && q31a.value === 'Left side', 'a lettered sub-question is secondary, from the bank\'s indent');
+  assert.strictEqual(rows.find((r) => r.qNum === '2').value, '', 'an unanswered question is a blank value (N/A in the email), never a missing row');
+  assert.strictEqual(rows[rows.length - 2].label, 'Additional Notes'); assert.strictEqual(rows[rows.length - 1].value, 'call back', 'the notes pseudo-question closes the list');
+  assert.strictEqual(rows.filter((r) => !r.isHeader).length, 49, '45 numbered questions + 31a/33a/39a + notes');
+  assert.ok(/^31a\./.test(ctx.intakePpdLabelEn_('31a')) && ctx.intakePpdLabelEn_('nope') === '', 'labels for the amend banner resolve from the bank');
+  const acct = JSON.parse(JSON.stringify(ctx.intakeAcctRowsEn_('PMD', { '1': 'Pat', 5: '1950-01-01' })));
+  assert.strictEqual(acct[0].label, 'Demographics'); assert.strictEqual(acct[0].isHeader, true);
+  assert.strictEqual(acct[1].label, 'Patient Full Name'); assert.strictEqual(acct[1].value, 'Pat');
+  assert.strictEqual(acct[5].value, '1950-01-01', 'numeric and string keys both resolve');
+  assert.strictEqual(acct[1].isSecondary, true, 'SECONDARY_QUESTION_ROWS is 1-based (row 2 = index 1)');
+  const pap = JSON.parse(JSON.stringify(ctx.intakeAcctRowsEn_('PAP', {})));
+  assert.strictEqual(pap.length, ctx.INTAKE_PAP_Q_EN.length); assert.strictEqual(pap[18].isHeader, true, 'PAP Details is a header (row 19)');
+  // No send or preview path reads a client label any more.
+  ['intakePreviewPPD', 'intakeSendPPD', 'intakePreviewAcct_', 'intakeSendAcct_'].forEach((n) => {
+    const src = foNc(extractRawFunction('Code.js', n));
+    assert.ok(!/payload\.rows/.test(src), n + ' never reads payload.rows');
+    assert.ok(/intakePpdRowsEn_\(payload\.answers\)|intakeAcctRowsEn_\(formType, payload\.answers\)/.test(src), n + ' builds rows from the bank + answers');
+  });
+  assert.ok(!/labelByKey\[r\.qNum\] = r\.label/.test(srv) && !/labelByKey\[r\.qIndex\] = r\.label \|\| String\(r\.qIndex\)/.test(foNc(extractRawFunction('Code.js', 'intakeSendPPD'))), 'the amend banner never labels from the client either');
+  // The walk regex is the client's.
+  assert.ok(/\/\^\(\\d\+\[a-z\]\?\)\\\.\//.test(extractRawFunction('Code.js', 'intakePpdRowsEn_')) && /\/\^\(\\d\+\[a-z\]\?\)\\\.\//.test(cli), 'both sides split a question number with the same regex');
 });
 
 // ── Infrastructure adaptation (from the dashboard's app-email.test.js): a

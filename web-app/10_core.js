@@ -1903,6 +1903,17 @@ function getStorageHealth(opts) {
       source: formsProp ? 'Script Property' : (formsId ? 'ADP fallback' : 'unset'),
       note: formsProp ? '' : 'Unset → form PHI is co-located with the ADP/payroll sheet. Recommend setting FORMS_SS_ID to the Intake spreadsheet.' }));
 
+    // F-11 (2026-09-18): the DeptRequests tab carries a PatientTrx column
+    // (operator testing note 6) — the store is PHI-adjacent, defaults onto
+    // the ADP/payroll sheet, and was probed by nothing. Same fallback posture
+    // as Forms: unset warns and recommends the PHI store.
+    const drProp = props.getProperty('DEPT_REQUESTS_SS_ID');
+    const drId = drProp || adpId;
+    stores.push(probe({ label: 'Dept Requests (PHI-adjacent)', role: 'DeptRequests (inter-department request tracker; PatientTrx names a patient)',
+      cls: 'PHI-adjacent', retention: 'Kept', prop: 'DEPT_REQUESTS_SS_ID', id: drId,
+      source: drProp ? 'Script Property' : (drId ? 'ADP fallback' : 'unset'),
+      note: drProp ? '' : 'Unset → DeptRequests rows (each names a patient + TRX) are co-located with the ADP/payroll sheet. Recommend setting DEPT_REQUESTS_SS_ID to the Intake spreadsheet.' }));
+
     const kbProp = props.getProperty('KB_SS_ID');
     const kbId = kbProp || (isPlaceholder(CONFIG.KB.SS_ID) ? '' : CONFIG.KB.SS_ID);
     // OOP pricing and delivery reach are NAMED TABS in this store rather than a

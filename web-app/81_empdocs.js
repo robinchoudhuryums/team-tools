@@ -155,7 +155,14 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
     // fields). C13 dual-verify — a doc issued before the NUL-delimiter change
     // carries a legacy space-form hash and must still sign.
     const expect = empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw);
-    if (d.contentHash && !empDocContentHashMatches_(d.contentHash, d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw)) {
+    // F-24 (2026-09-18): a row with NO ContentHash used to skip the gate
+    // entirely — an attestation over content nothing had fixed at issue.
+    // Every app-issued doc carries a hash (issueEmpDoc); a blank one is a
+    // hand-entered or legacy row, and it is REFUSED rather than signed blind.
+    if (!d.contentHash) {
+      return { success: false, error: 'This document has no integrity hash on record (it was not issued by the app). Ask your manager to re-issue it before signing.' };
+    }
+    if (!empDocContentHashMatches_(d.contentHash, d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw)) {
       return { success: false, error: 'Integrity check failed — this document was altered after issue. Ask your manager to re-issue it.' };
     }
     const now = new Date();
@@ -359,7 +366,9 @@ function verifyDocSignature(docId) {
         }
       }
     }
-    if (!sigRow) return { signed: false, contentMatch: contentMatch, tampered: (contentMatch === false) };
+    // F-24: a null contentMatch is "cannot verify", not "verified" — say so.
+    const hashWarning = (contentMatch === null) ? 'No content hash on record — integrity cannot be verified (legacy or hand-entered row).' : '';
+    if (!sigRow) return { signed: false, contentMatch: contentMatch, tampered: (contentMatch === false), warning: hashWarning };
     const rowSig = String(sigRow[EDS.SIGNATURE] || '');
     // Cycle-9 M-8: an EMPTY signature cell marks a fields-only COMPLETION row
     // (acknowledgeDoc's else-branch) — same hash machinery, no signature
@@ -397,6 +406,7 @@ function verifyDocSignature(docId) {
       contentMatch: contentMatch,
       match: match,
       tampered: (contentMatch === false || match === false),
+      warning: hashWarning,   // F-24
       signedAt: trainCellTs_(sigRow[EDS.SIGNED_AT], getHrDocsSS_().getSpreadsheetTimeZone()),
       ackVersion: String(sigRow[EDS.ACK_VERSION] || ''),
     };

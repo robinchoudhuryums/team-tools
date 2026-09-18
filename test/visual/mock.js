@@ -1574,6 +1574,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         { key: 'KB_SS_ID', label: 'Knowledge Base + Training', status: 'ok', detail: 'Reachable · tz matches' },
         { key: 'INTAKE_SS_ID', label: 'Intake (PHI)', status: 'ok', detail: 'Reachable · tz matches' },
         { key: 'FORMS_SS_ID', label: 'Forms (PHI)', status: 'warn', detail: 'Optional — unset (falls back to the ADP sheet)' },
+        { key: 'DEPT_REQUESTS_SS_ID', label: 'Dept Requests (PHI-adjacent)', status: 'warn', detail: 'Optional — unset (falls back to the ADP sheet)' },
         { key: 'QA_SS_ID', label: 'QA (recordings)', status: 'warn', detail: 'Optional — unset (no fallback store, by design — INV-196)' },
         { key: 'digests', label: 'Digest heartbeats', status: 'warn', detail: 'No heartbeat recorded yet (fresh deploy)' }],
       summary: { ok: 4, warn: 3, fail: 0 },
@@ -1673,6 +1674,10 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
           store('Forms (PHI)', 'FormTokens + FormSubmissions', 'PHI', '90-day purge (if enabled)', 'FORMS_SS_ID',
             { configured: false, reachable: false, name: '', tz: '', tzMatch: null, url: '', source: 'unset',
               note: 'Falls back to the ADP sheet — set FORMS_SS_ID to segregate form PHI.' }),
+          // F-11 — the Dept Requests row, in the SAME unset-fallback state as Forms.
+          store('Dept Requests (PHI-adjacent)', 'DeptRequests (inter-department request tracker; PatientTrx names a patient)', 'PHI-adjacent', 'Kept', 'DEPT_REQUESTS_SS_ID',
+            { configured: true, reachable: true, source: 'ADP fallback', name: 'Time Clock / ADP (live)',
+              note: 'Unset → DeptRequests rows (each names a patient + TRX) are co-located with the ADP/payroll sheet. Recommend setting DEPT_REQUESTS_SS_ID to the Intake spreadsheet.' }),
           store('Knowledge Base + Training', 'KB, KbViews, Training/Quiz tabs', 'PHI-free', 'Kept', 'KB_SS_ID'),
           store('Employee Docs (HR)', 'EmpDocs + DocSignatures', 'HR — keep-forever', 'Never purged', 'HR_DOCS_SS_ID'),
           store('QA (recordings)', 'QaRecordings index + QaComments + QaScorecards', 'QA/HR-adjacent',

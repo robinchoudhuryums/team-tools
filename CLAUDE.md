@@ -515,7 +515,7 @@ for the reasoning, which is usually the part that matters.
 
 ### Spreadsheet / storage map (one-screen reference)
 
-EIGHT distinct spreadsheets, split deliberately along PHI / payroll / HR /
+NINE distinct stores (the ninth, Dept Requests, is a tab that defaults onto the ADP sheet — F-11), split deliberately along PHI / payroll / HR /
 PHI-free / external lines and by retention policy — **consolidation is NOT
 advised** (the boundaries are the point); manage them as a set instead. The
 manager **Call Notes → Admin → Storage Health** panel (`getStorageHealth`)
@@ -527,6 +527,7 @@ one-pane-of-glass for this table. Keep them in one Drive folder for sanity.
 | Time Clock / ADP | `ADP_SS_ID` (CONFIG placeholder) | Employees (roster), Timesheet, TimesheetArchive (cold tier, INV-153 — **read back by the ADP export**, F1), TimeOffRequests, AuditLog, PunchAdjustRequests, ClientErrors (INV-150), ViewUsage (feature-usage telemetry, 2026-08-13), SpanishManualResolved, SpanishClaims (advisory claim/assign, append-only PHI-free — pilot round 2) | Payroll + shared audit | kept (archive moves, never deletes) | `getAdpSS_` |
 | CDR Report | `CDR_SS_ID` (CONFIG placeholder) | DQE Historical Data, CSR Transfer Historical Data, Agent Alias Overrides, Inbound Calls (the break-coverage demand layer), Company Holidays (H1 — the ONE holiday calendar, `getCompanyHolidays_`; federal fallback only while the tab is absent/empty/unreadable), Dashboard Standards (H2 — the answer target / amber band / team-avg excludes this app tones and benchmarks against, `getCdrDashboardStandard_`; no tab = no standard, never a fallback number). **Since Batch 3 the Storage Health CDR row states which calendar and which standard are LIVE, with a CDR-area finding for every fallback state** | External (read-only) | owned by `call-data-reporting` | `getCdrSS_` |
 | Intake | `INTAKE_SS_ID` (CONFIG placeholder) | Offerings, PPD/PMD/PAPSubmissions | **PHI** | optional purge | `getIntakeSS_` |
+| Dept Requests | `DEPT_REQUESTS_SS_ID` (**falls back to the ADP sheet**) | DeptRequests (the inter-department request tracker — its trailing `PatientTrx` column names a patient, operator testing note 6) | **PHI-adjacent** | kept | `getDeptRequestsSS_` — Storage Health probes it since Batch 5 (2026-09-18) and warns while unset: set it to the Intake spreadsheet, the `FORMS_SS_ID` recommendation |
 | Forms | `FORMS_SS_ID` (**falls back to the ADP sheet**) | FormTokens, FormSubmissions, ScheduledCalls (scheduled-call reminders — labels may name a patient, so PHI-class; epoch-ms NUMBER cells; pilot round 2) | **PHI** | 90-day purge (if enabled; ScheduledCalls is NOT purged) | `getFormsSS_` |
 | Knowledge Base + Training | `KB_SS_ID` (CONFIG placeholder) | KB, KbViews, KbFeedback, KbContentRequests, KbComments (per-article discussion — append-only + soft-delete moderation, pilot round 3), KbRevisions, TrainingAssignments, TrainingCompletions, Quizzes, QuizAttempts, **the THREE operator-maintained, app-never-writes lookup tables:** InsurancePayors (payor acceptance, 2026-08-25), OopPricing (out-of-pocket prices — **every column discovered BY HEADER STEM, including the item name**: a name-ish header wins and column A is only the fallback, because the operator's real sheet has `HCPCS` in A and the item in C. EVERY price-role column is kept and labelled, since one item carries pick-up / with-shipping / with-tech-delivery totals that are all correct for different fulfilments; any other column passes through verbatim. **The Area Eligibility column is READ BY AN ENGINE, not displayed** — see INV-209 — and a quoted price is re-verified against this tab at SEND time, see INV-208) and LocationAcceptance (delivery reach — `Type` = warehouse rows with a geocoded Address, or city rows with State + Accepts; both 2026-09-16) | PHI-free by policy | kept | `getKbSS_` |
 | Employee Docs (HR) | `HR_DOCS_SS_ID` (**no fallback**) | EmpDocs, DocSignatures, EmpDocTemplates, Coaching | HR — keep-forever | **never purged** (INV-122/INV-134) | `getHrDocsSS_` |
@@ -853,7 +854,7 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 883 | `node test/client/run.js` |
+| Pure harness tests | 890 | `node test/client/run.js` |
 | DOM harness tests | 126 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 104 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 337 | `Tests.js`; a run prints its own `Expected:` line |

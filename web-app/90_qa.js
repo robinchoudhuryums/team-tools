@@ -127,7 +127,7 @@ function getOrCreateQaSheet_(tabName, headers, textCols) {
   }
   return sheet;
 }
-function getOrCreateQaRecordingsSheet_() { return getOrCreateQaSheet_(QA_RECORDINGS_TAB, QA_RECORDINGS_HEADERS, ['A', 'B', 'K', 'N']); }
+function getOrCreateQaRecordingsSheet_() { return getOrCreateQaSheet_(QA_RECORDINGS_TAB, QA_RECORDINGS_HEADERS, ['A', 'B', 'K', 'N', 'O']); }
 function getOrCreateQaExemptionsSheet_() { return getOrCreateQaSheet_(QA_EXEMPTIONS_TAB, QA_EXEMPTIONS_HEADERS, ['A', 'B', 'C']); }
 function getOrCreateQaCommentsSheet_()   { return getOrCreateQaSheet_(QA_COMMENTS_TAB, QA_COMMENTS_HEADERS, ['F']); }
 function getOrCreateQaScorecardsSheet_() { return getOrCreateQaSheet_(QA_SCORECARDS_TAB, QA_SCORECARDS_HEADERS, ['F']); }
@@ -284,7 +284,7 @@ function qaSyncRecordings() {
       rows.push([
         id, String(f.getName() || ''), f.getSize(), mime,
         f.getDateCreated().getTime(), Date.now(),   // NUMBER cells — coercion-immune
-        'new', '', 0, String(f.getUrl() || ''), '', 0, '', '',   // Agent + SharedMs + DurationSec + SkipReason set later in the detail
+        'new', '', 0, String(f.getUrl() || ''), '', 0, '', '', '',   // Agent + SharedMs + DurationSec + SkipReason + AgentId set later in the detail
       ]);
       added++;
     }
@@ -463,7 +463,7 @@ function getMyQaReviewAudioChunk(fileId, chunkIndex) {
     const found = qaFindRecordingRow_(sheet, fid);
     if (!found) return { error: 'Recording not found.' };
     if (!(Number(found.row[QAR.SHARED_MS]) > 0)) return { error: 'Recording not found.' };   // shared-gated
-    if (String(found.row[QAR.AGENT] || '').trim().toLowerCase() !== myName) return { error: 'Recording not found.' };   // name-scoped
+    if (!qaRowIsMine_(found.row, emp, qaMyNameUnique_(emp))) return { error: 'Recording not found.' };   // id-scoped (F-16)
     return qaAudioChunkFor_(fid, chunkIndex);
   } catch (err) { return { error: err.message }; }
 }
@@ -813,11 +813,17 @@ function qaSetRecordingAgent(fileId, agentName) {
     const sheet = getOrCreateQaRecordingsSheet_();
     const found = qaFindRecordingRow_(sheet, fid);
     if (!found) return { success: false, error: 'Recording not found.' };
-    sheet.getRange(found.rowIdx, QAR.AGENT + 1).setValue(name);
+    // F-16 (2026-09-18): the roster id is resolved AT WRITE and stored beside
+    // the name, so the agent-facing reads scope by id ('' when the name is
+    // blank, off-roster, or shared by two roster rows — an ambiguous name
+    // releases to nobody rather than to both).
+    const agentId = qaRosterIdByName_(name);
+    sheet.getRange(found.rowIdx, QAR.AGENT + 1, 1, 1).setValue(name);
+    sheet.getRange(found.rowIdx, QAR.AGENT_ID + 1, 1, 1).setValue(agentId);
     writeAuditLog_(emp, 'QaAgentSet', '', '', false, 0, 'fileId=' + fid + (name ? '' : '; cleared'), emp.email);
     // Q7 — the roster id the coaching hand-off keys off (the name itself
     // never leaves the QA store's return; the id is what the composer needs).
-    return { success: true, agent: name, agentEmpId: qaRosterIdByName_(name) };
+    return { success: true, agent: name, agentEmpId: agentId };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
@@ -1272,6 +1278,7 @@ function getMyQaReviews() {
     if (!storeSet || !myName) return { recordings: [], criteria: getQaScorecardCriteria_() };
     const sheet = getQaSS_().getSheetByName(QA_RECORDINGS_TAB);   // read-only — never provisions
     const mine = [];
+    const nameUnique = qaMyNameUnique_(emp);   // F-16: the legacy name match needs a unique name
     if (sheet && sheet.getLastRow() >= 2) {
       const last = sheet.getLastRow();
       const start = Math.max(2, last - QA_LIST_SCAN + 1);
@@ -1280,7 +1287,7 @@ function getMyQaReviews() {
         const fid = String(rows[i][QAR.FILE_ID] || '').trim();
         if (!fid) continue;
         if (!(Number(rows[i][QAR.SHARED_MS]) > 0)) continue;                                   // shared-gated
-        if (String(rows[i][QAR.AGENT] || '').trim().toLowerCase() !== myName) continue;        // name-scoped
+        if (!qaRowIsMine_(rows[i], emp, nameUnique)) continue;                                  // id-scoped (F-16)
         mine.push({
           fileId: fid,
           name: String(rows[i][QAR.NAME] || ''),
@@ -1446,13 +1453,43 @@ function qaRosterIdByName_(name) {
   const key = String(name || '').trim().toLowerCase();
   if (!key) return '';
   try {
-    const rrows = getEmployeeRosterRows_();
-    for (let i = 1; i < rrows.length; i++) {
-      if (!empRosterEmail_(rrows[i])) continue;
-      if (String(rrows[i][EMP.NAME] || '').trim().toLowerCase() === key) return String(rrows[i][EMP.ID] || '').trim();
-    }
+    // F-16: an AMBIGUOUS name (two roster rows) resolves to '' — never to
+    // whichever row happens to come first.
+    const ids = qaRosterIdsForName_(getEmployeeRosterRows_(), key);
+    return ids.length === 1 ? ids[0] : '';
   } catch (e) { /* best-effort */ }
   return '';
+}
+/** PURE (Node-pinned): every INCLUDED roster row's id whose name matches
+ *  `key` (already trimmed + lowercased). Two ids = an ambiguous name. */
+function qaRosterIdsForName_(rrows, key) {
+  const out = [];
+  for (let i = 1; i < (rrows || []).length; i++) {
+    if (!empRosterEmail_(rrows[i])) continue;
+    if (String(rrows[i][EMP.NAME] || '').trim().toLowerCase() === key) out.push(String(rrows[i][EMP.ID] || '').trim());
+  }
+  return out;
+}
+/** PURE (Node-pinned): does this QaRecordings row belong to the calling
+ *  agent? (F-16, 2026-09-18.) An AgentId cell wins outright — it was resolved
+ *  from the roster when the reviewer attributed the recording. A legacy row
+ *  (blank AgentId) falls back to the name, but ONLY when `nameUnique` says the
+ *  caller's name has exactly one roster row: a name two agents share must
+ *  never release one agent's review to the other. */
+function qaRowIsMine_(row, emp, nameUnique) {
+  const id = String((row && row[QAR.AGENT_ID]) || '').trim();
+  const myId = String((emp && emp.id) || '').trim();
+  if (id) return !!myId && id === myId;
+  if (!nameUnique) return false;
+  const n = String((row && row[QAR.AGENT]) || '').trim().toLowerCase();
+  const myName = String((emp && emp.name) || '').trim().toLowerCase();
+  return !!n && !!myName && n === myName;
+}
+/** Is the caller's roster name unique (exactly one included row)? */
+function qaMyNameUnique_(emp) {
+  const key = String((emp && emp.name) || '').trim().toLowerCase();
+  if (!key) return false;
+  try { return qaRosterIdsForName_(getEmployeeRosterRows_(), key).length === 1; } catch (e) { return false; }
 }
 /** PURE — a period key is `yyyy-MM` (a month) or `yyyy-Qn` (a quarter). */
 function qaPeriodValid_(key) {
