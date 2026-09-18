@@ -10424,7 +10424,7 @@ function cnHealthFindings_(health, storage) {
     aeJobs.forEach(function (job) {
       var e = ae[job] || {};
       add('automationError:' + job, 'automation', 'fail', job + ' failed on its last run',
-        (e.at ? 'at ' + e.at + ' — ' : '') + (e.error || 'unknown error'),
+        (e.at ? 'at ' + e.at + ' — ' : '') + (e.message || e.error || 'unknown error'),   // F-20: the stamp's field is `message`
         'Run the job from the editor to reproduce; a clean run clears this flag.');
     });
     if (!aeJobs.length) add('automationErrors', 'automation', 'ok', 'Automation jobs', 'no stamped failures');
@@ -10670,6 +10670,10 @@ var CN_DIGEST_LABELS_ = {
   trainingOverdue: 'Training-overdue digest', deptReqReminder: 'Dept-request SLA reminder',
   managerBrief: 'Manager daily brief', selfTest: 'Nightly self-test',
   coachingRecap: 'Weekly coaching recap',
+  // F-20 (2026-09-18) — the three heartbeat-only daily jobs.
+  missedPunch: 'Daily missed-punch alerts',
+  exportCheck: 'Daily ADP export check',
+  automationHealth: 'Automation-health failure digest',
   spanishAutoAssign: 'Spanish Inbox auto-assign',
 };
 var CN_SYS_AREAS_ = [['automation', 'Automation'], ['cdr', 'CDR'], ['storage', 'Storage']];
@@ -10967,6 +10971,10 @@ function cnRenderHealthPanel_(res) {
     selfTest: { label: 'Nightly self-test', expect: 'daily 1am — smoke on prod, full suite on the dev instance' },
     coachingRecap: { label: 'Weekly coaching recap', expect: 'Friday 8am — agent-facing recap of non-critical coaching; stale past 8d' },
     spanishAutoAssign: { label: 'Spanish Inbox auto-assign', expect: 'hourly in business hours while the spanishAutoAssign toggle is on; stale past 2h' },
+    // F-20 (2026-09-18) — the three heartbeat-only daily jobs (no audit row).
+    missedPunch: { label: 'Daily missed-punch alerts', expect: 'daily 8am — stale past 26h; heartbeats even on a morning with no missed punch' },
+    exportCheck: { label: 'Daily ADP export check', expect: 'daily 12pm — stale past 26h; the export itself lands only at a period end (AdpExportAuto)' },
+    automationHealth: { label: 'Automation-health failure digest', expect: 'daily 9am — stale past 26h; heartbeats on an all-clear morning too, and its own failure is stamped' },
   };
   var digestsHtml = (res.digests || []).map(function (d) {
     var meta = DIGEST_LABELS[d.key] || { label: d.key, expect: '' };

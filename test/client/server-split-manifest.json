@@ -449,6 +449,28 @@
     "getStorageHealth"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-18",
+   "why": "Batch 4: accrualEarnedByMonth_ + accrualMonthRows_ (F-19 per-month ledger rows), accrualNothingToDo_ (F-46)",
+   "added": [
+    "accrualEarnedByMonth_",
+    "accrualMonthRows_",
+    "accrualNothingToDo_"
+   ],
+   "removed": [],
+   "changed": [
+    "automationProblems_",
+    "computeAutomationHealth_",
+    "creditMonthlyPtoAccruals",
+    "getTeamCalendar",
+    "planAccrualReconcile_",
+    "planPtoAccrualRun_",
+    "runDailyExportCheck",
+    "sendAutomationHealthDigest",
+    "sendDailyMissedPunchAlerts"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2373,6 +2395,11 @@
    "kind": "function",
    "sha": "3203cf146874d025"
   },
+  "accrualEarnedByMonth_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "a83d74fdb8a9a971"
+  },
   "accrualInspectMonthError_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -2383,10 +2410,20 @@
    "kind": "function",
    "sha": "3563e879b902281c"
   },
+  "accrualMonthRows_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "20168d6e5ce6fd19"
+  },
   "accrualMonthsToCredit_": {
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "f7a5061cd9eb56b4"
+  },
+  "accrualNothingToDo_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "78f690d407f597b8"
   },
   "accrualReconcileMonths_": {
    "file": "20_timeclock.js",
@@ -2581,7 +2618,7 @@
   "automationProblems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "b27acafba604f9ff"
+   "sha": "cb9c92f72c2e9e3f"
   },
   "bizMinutesLocal_": {
    "file": "10_core.js",
@@ -3116,7 +3153,7 @@
   "computeAutomationHealth_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "4992e7fc70dad470"
+   "sha": "f14872f711b7df24"
   },
   "computeCnEmailHash_": {
    "file": "30_callnotes.js",
@@ -3181,7 +3218,7 @@
   "creditMonthlyPtoAccruals": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "56af11cc8d5489f0"
+   "sha": "fe56e59c531151f7"
   },
   "csrTransferHeaderMismatches_": {
    "file": "40_metrics.js",
@@ -4456,7 +4493,7 @@
   "getTeamCalendar": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "f3e681c69d98ca24"
+   "sha": "c9aa9441bcd04bcf"
   },
   "getTeamMetrics": {
    "file": "40_metrics.js",
@@ -5591,7 +5628,7 @@
   "planAccrualReconcile_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "aa98ba272c5c2c46"
+   "sha": "69c8c7c261ecefb6"
   },
   "planOpenPunchCheck_": {
    "file": "20_timeclock.js",
@@ -5601,7 +5638,7 @@
   "planPtoAccrualRun_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "cbced56bbf27e68e"
+   "sha": "51bf7cc942048dc0"
   },
   "presenceMap_": {
    "file": "20_timeclock.js",
@@ -6136,7 +6173,7 @@
   "runDailyExportCheck": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "581e29d9b2488b34"
+   "sha": "2ac8aca1451f7816"
   },
   "runHourlyJobs": {
    "file": "10_core.js",
@@ -6346,7 +6383,7 @@
   "sendAutomationHealthDigest": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "8ba7d9ba12036553"
+   "sha": "c766012abae13300"
   },
   "sendCallNotesEodDigest": {
    "file": "30_callnotes.js",
@@ -6371,7 +6408,7 @@
   "sendDailyMissedPunchAlerts": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "bb83db0b33c14b9e"
+   "sha": "2a8a533961b1ff2d"
   },
   "sendDeptRequestReminderDigest": {
    "file": "50_deptrequests.js",

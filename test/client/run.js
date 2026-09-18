@@ -11073,8 +11073,8 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
     'a failed read THROWS — the run aborts with no credits rather than crediting from partial hours');
   // ── Unchanged guarantees, re-pinned against the rewrite.
   assert.ok(/empRosterEmail_\(rows\[i\]\)/.test(plan[0]), 'INV-183 — the roster-inclusion predicate guards the walk');
-  assert.ok(/adjustLeaveBalance_\(p\.emp\.id, 'annual', earned\.days\)/.test(h[0]),
-    'credits go through THE balance mutator (per-row gate + cache invalidation ride along)');
+  assert.ok(/adjustLeaveBalance_\(p\.emp\.id, 'annual', m\.earned\.days\)/.test(h[0]),
+    'credits go through THE balance mutator (per-row gate + cache invalidation ride along) — per MONTH since F-19');
   // The forward-stamp NO-OP above is only a no-op because the caller's write is
   // CONDITIONAL on the stamp actually changing. Both halves or neither.
   assert.ok(/if \(p\.stamp !== p\.plan\.newStamp\) \{[\s\S]{0,200}?EMP\.ACCRUED_THROUGH \+ 1\)\.setValue\(p\.plan\.newStamp\)/.test(h[0]),
@@ -11377,8 +11377,8 @@ test('previewPtoAccruals is a READ-ONLY dry run that shares the ONE accrual reso
   assert.ok(between.length > 0, 'the resolver records whether the rep was found on the Timesheet');
   assert.ok(!/\breturn\b/.test(between),
     'no early return between the Timesheet lookup and the months walk — a rep with no rows earns a legitimate ZERO and must reach the audit row');
-  assert.ok(plan[0].indexOf('p.earned = accrualDaysForHours_') > plan[0].indexOf('p.months.forEach('),
-    'what the plan earns is computed AFTER the walk, for every planned rep');
+  assert.ok(plan[0].indexOf('p.earned = accrualEarnedByMonth_') > plan[0].indexOf('p.months.forEach('),
+    'what the plan earns is computed AFTER the walk, for every planned rep (the per-month SUM since F-19)');
 
   // ── The zero-reason split, behaviourally. This is the finding itself.
   vm.runInContext(extractRawFunction('Code.js', 'accrualZeroReason_'), sb, { filename: 'Code.js#accrualZeroReason_' });
@@ -16574,6 +16574,8 @@ test('getTeamCalendar — behavioral (real enums + empRosterEmail_/normalizeType
     getCompanyHolidays_: () => [{ date: '2026-08-31', name: 'Test Holiday' }],   // H1: consumers read the company calendar
     getAdpSS_: () => ({ getSheetByName: (tab) => ({ getDataRange: () => ({ getValues:
       () => (tab === 'Timesheet' ? adpRows : toRows) }) }) }),
+    // F-49: the time-off tab is read through the PROVISIONER, never by name.
+    getOrCreateTimeOffSheet_: () => ({ getDataRange: () => ({ getValues: () => toRows }) }),
     CONFIG: { ADP_TAB: 'Timesheet', TIMEOFF_TAB: 'TimeOffRequests', ADJUST_WINDOW_DAYS: 30 },
   });
   vm.runInContext(extractRawFunction('Code.js', 'getTeamCalendar'), tcCtx, { filename: 'Code.js#getTeamCalendar' });
@@ -16613,6 +16615,13 @@ test('getTeamCalendar — behavioral (real enums + empRosterEmail_/normalizeType
   const older = vm.runInContext("getTeamCalendar('2026-06')", tcCtx);
   assert.strictEqual(older.archiveNote, true,
     'a month wholly older than the live tab says so instead of rendering a confident empty month (INV-187)');
+  // F-49 (2026-09-18): a FRESH deployment has no TimeOffRequests tab yet, so a
+  // by-name read is `null.getDataRange` and the whole calendar failed to load
+  // until the first request was submitted. The provisioner path renders.
+  tcCtx.getAdpSS_ = () => ({ getSheetByName: (tab) => (tab === 'Timesheet' ? { getDataRange: () => ({ getValues: () => adpRows }) } : null) });
+  tcCtx.getOrCreateTimeOffSheet_ = () => ({ getDataRange: () => ({ getValues: () => [['EmployeeId', 'EmployeeName', 'Date', 'Type', 'Notes', 'Status', 'SubmittedAt']] }) });
+  const fresh = vm.runInContext("getTeamCalendar('2026-08')", tcCtx);
+  assert.ok(fresh && !fresh.error && fresh.days, 'no time-off tab → the calendar still renders (F-49), got: ' + JSON.stringify(fresh && fresh.error));
 });
 
 test('team calendar — client SWR/wiring, Day Edit prefill, fixture shape (source)', () => {
@@ -20304,6 +20313,178 @@ test('F-38: the holiday chips, legend and conflict card say "Company holiday" �
   assert.strictEqual((mg.match(/parts\.push\('Company holiday'\)/g) || []).length, 1);
 });
 
+// ── Batch 4 (2026-09-17 /broad-scan): automation liveness + accrual diagnostics ─
+// F-20 heartbeats for the three row-less daily jobs + the digest stamps its own
+// failure · F-19 per-month ledger rows · F-46 the accrual job's early returns
+// rewrite the reconcile stamp · F-21 cleanup strips MANAGER_EMAILS residue ·
+// F-22 TEST_ rows on live tabs deleted by KEY + a cleanup backstop · F-49
+// getTeamCalendar through the time-off provisioner.
+test('F-20: the three heartbeat-only daily jobs stamp a heartbeat and their own failure, and a stamped failure OUTSIDE the JOB_CHECKS table still reaches the digest', () => {
+  const src = foNc(serverSource());
+  const stale = /DIGEST_STALE_HOURS\s*=\s*\{([^}]*)\}/.exec(src);
+  assert.ok(stale && /missedPunch: 26/.test(stale[1]) && /exportCheck: 26/.test(stale[1]) && /automationHealth: 26/.test(stale[1]),
+    'the three daily jobs have a 26h staleness window (the urgent-digest precedent)');
+  const mp = foNc(extractRawFunction('Code.js', 'sendDailyMissedPunchAlerts'));
+  assert.ok(mp.indexOf("stampDigestLastRun_('missedPunch')") > mp.indexOf('computeMissedClockOuts_()') &&
+            mp.indexOf("stampDigestLastRun_('missedPunch')") < mp.indexOf('missed.length === 0'),
+    'missed-punch heartbeats once the read succeeded and BEFORE the no-work early return (a quiet morning is still a live trigger)');
+  assert.ok(/clearAutomationError_\('MissedPunchAlerts'\)/.test(mp) && /catch \(err\) \{\s*stampAutomationError_\('MissedPunchAlerts', err\.message\)/.test(mp),
+    'missed-punch clears on a clean run and stamps its own failure (F4)');
+  const ex = foNc(extractRawFunction('Code.js', 'runDailyExportCheck'));
+  assert.ok(ex.indexOf("stampDigestLastRun_('exportCheck')") > ex.indexOf('getCurrentBiweeklyRange_') && /clearAutomationError_\('DailyExportCheck'\)/.test(ex),
+    'the export check heartbeats at the END of a clean run (after both period gates)');
+  assert.ok(/catch \(err\) \{\s*stampAutomationError_\('DailyExportCheck', err\.message\)/.test(ex), 'and stamps its own failure');
+  const dg = foNc(extractRawFunction('Code.js', 'sendAutomationHealthDigest'));
+  assert.strictEqual((dg.match(/stampAutomationError_\('AutomationHealthDigest'/g) || []).length, 2, 'the digest stamps a failed report AND its own outer failure');
+  assert.ok(dg.indexOf("stampDigestLastRun_('automationHealth')") > dg.indexOf('if (!report) return;'), 'the heartbeat lands only when a report was computed — a dead computation reads stale');
+  assert.ok(/clearAutomationError_\('AutomationHealthDigest'\)/.test(dg), 'and clears on a computed report');
+
+  // Behavioural: the digest itself, driven through a throwing and a clean report.
+  const drive = (compute) => {
+    const log = { err: [], hb: [], clr: [], mail: 0 };
+    const ctx = { String, Object, JSON, Date, Logger: { log() {} },
+      assertManagerCaller_() {}, getManagerEmails_: () => ['m@x.com'],
+      computeAutomationHealth_: compute, automationProblems_: () => [],
+      stampAutomationError_: (k, m) => log.err.push(k + ':' + m), stampDigestLastRun_: (k) => log.hb.push(k),
+      clearAutomationError_: (k) => log.clr.push(k), appSendMail_: () => { log.mail++; }, buildBrandedEmailHtml_: () => '', esc_: (x) => x };
+    vm.createContext(ctx);
+    vm.runInContext(extractRawFunction('Code.js', 'sendAutomationHealthDigest'), ctx);
+    ctx.sendAutomationHealthDigest();
+    return log;
+  };
+  const dead = drive(() => { throw new Error('audit tab gone'); });
+  assert.deepStrictEqual(dead.err, ['AutomationHealthDigest:audit tab gone'], 'a failed report is stamped under the digest\'s own key');
+  assert.strictEqual(dead.hb.length, 0, '…and NO heartbeat, so the dead computation also reads stale');
+  const ok = drive(() => ({}));
+  assert.deepStrictEqual(ok.hb, ['automationHealth']); assert.deepStrictEqual(ok.clr, ['AutomationHealthDigest']);
+  assert.strictEqual(ok.err.length, 0); assert.strictEqual(ok.mail, 0, 'an all-clear morning heartbeats and sends nothing');
+
+  // Behavioural: automationProblems_ carries a stamp for a key the table does
+  // not know, exactly once, beside the table's own line for a tabled key.
+  const ctx = { String, Object, Date, Number, parseInt, JSON, CONFIG: { TIMEZONE: 'Asia/Kolkata', ADJUST_WINDOW_DAYS: 30 },
+    Utilities: { formatDate: (d, tz, f) => (f === 'd' ? '15' : '2026-09') },
+    AUTOMATION_JOB_CHECKS: [{ action: 'CallNotesReconcile', label: 'nightly Sheets reconcile', cadence: 'daily', staleHours: 30, enabled: () => true }] };
+  vm.createContext(ctx);
+  ['automationJobProblems_', 'automationProblems_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const lines = ctx.automationProblems_({ automationLastRuns: [], digests: [],
+    automationErrors: { DailyExportCheck: { at: '2026-09-18 12:00:01', message: 'boom' }, CallNotesReconcile: { at: 't', message: 'tabled' } } });
+  assert.strictEqual(lines.filter((l) => /DailyExportCheck/.test(l)).length, 1, 'the untabled stamp reaches the digest once');
+  assert.ok(lines.some((l) => /DailyExportCheck job FAILED on 2026-09-18 12:00:01: boom/.test(l)), 'with its time and message');
+  assert.strictEqual(lines.filter((l) => /tabled/.test(l)).length, 1, 'the tabled key is reported by the table, not twice');
+
+  // Client: the finding reads the stamp's real field (`message`; it read `error`).
+  sb.CN_DIGEST_LABELS_ = { eod: 'EOD' };
+  const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
+  const f = fn({ automationErrors: { MissedPunchAlerts: { at: 't', message: 'why it broke' } } }, null).items.find((x) => x.id === 'automationError:MissedPunchAlerts');
+  assert.ok(f && f.severity === 'fail' && /why it broke/.test(f.detail), 'the Admin finding shows the stamped message, never "unknown error"');
+  ['CN_DIGEST_LABELS_', 'DIGEST_LABELS'].forEach((name) => {
+    const m = new RegExp(name + '\\s*=\\s*\\{([\\s\\S]*?)\\n\\s*\\};').exec(cnHealthSrc);
+    assert.ok(m && /missedPunch/.test(m[1]) && /exportCheck/.test(m[1]) && /automationHealth/.test(m[1]), name + ' labels the three keys');
+  });
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.strictEqual((mock.match(/key: 'automationHealth'/g) || []).length, 2, 'both Automation Health fixtures carry the three heartbeats (INV-185)');
+});
+
+test('F-19: the credit writes ONE ledger row PER MONTH — a catch-up is per-month keys, each rounded as its row records it, and the total is their SUM', () => {
+  const ctx = { String, Number, Object, Array, Date, isFinite, parseFloat, Math };
+  vm.createContext(ctx);
+  ['accrualDaysForHours_', 'accrualEarnedByMonth_', 'accrualMonthRows_', 'accrualCreditNote_', 'accrualZeroNote_',
+   'accrualZeroReason_', 'accrualUncountedNote_', 'parseAccrualLedger_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const J = JSON.stringify;
+  // Two 5-hour months: per-month 0.02 + 0.02 = 0.04 days; the old single call on 10 h said 0.05.
+  const by = [{ ym: '2026-06', hours: 5, incompleteDays: 0, orphanDays: 0 }, { ym: '2026-07', hours: 5, incompleteDays: 1, orphanDays: 0 }];
+  const total = ctx.accrualEarnedByMonth_(by, 3.08, 80, 8);
+  assert.strictEqual(total.days, 0.04, 'the total is the SUM of the per-month days (each rounded as its row is)');
+  assert.strictEqual(by[0].earned.days, 0.02); assert.strictEqual(by[1].earned.days, 0.02, 'each month carries its own earned');
+  assert.strictEqual(ctx.accrualDaysForHours_(10, 3.08, 80, 8).days, 0.05, '…which is NOT the once-rounded total — the ledger must add up to the balance moved');
+  assert.strictEqual(J(ctx.accrualEarnedByMonth_([], 3.08, 80, 8)), J({ ptoHours: 0, days: 0 }), 'no slices (no Timesheet rows) is the legitimate zero');
+  assert.strictEqual(ctx.accrualEarnedByMonth_([{ ym: '2026-06', hours: 5 }], 0, 80, 8), null, 'an unusable rate is null, as before');
+  const p = { emp: { id: 'E1', name: 'E' }, rate: 3.08, plan: { newStamp: '2026-07', capped: 0 }, onTimesheet: true,
+              months: ['2026-06', '2026-07'], byMonth: by, totalHours: 10, incompleteDays: 1, orphanDays: 0, earned: total };
+  const rows = ctx.accrualMonthRows_(p);
+  assert.strictEqual(rows.length, 2);
+  assert.strictEqual(J(rows.map((r) => r.months)), J([['2026-06'], ['2026-07']]), 'one row per month, single-month keys');
+  assert.strictEqual(rows[1].totalHours, 5); assert.strictEqual(rows[1].incompleteDays, 1); assert.strictEqual(rows[1].earned.days, 0.02);
+  assert.strictEqual(rows[0].emp.id, 'E1'); assert.strictEqual(rows[0].plan.newStamp, '2026-07', 'emp + plan ride every row');
+  // The unchanged note builders now write a single-month key that the ledger reads back per month.
+  const note = ctx.accrualCreditNote_(rows[1], 80, rows[1].earned, 4.2);
+  const back = ctx.parseAccrualLedger_(note);
+  assert.strictEqual(back.months.join(','), '2026-07'); assert.strictEqual(back.hours, 5);
+  assert.ok(/1 incomplete day\(s\) NOT counted/.test(note), 'the per-month row names ITS uncounted day');
+  // No slices at all: one ZERO row per owed month, each naming the reason.
+  const bare = ctx.accrualMonthRows_({ emp: { id: 'E2' }, rate: 3.08, plan: { newStamp: '2026-07' }, onTimesheet: false,
+                                       months: ['2026-06', '2026-07'], byMonth: [], earned: { ptoHours: 0, days: 0 } });
+  assert.strictEqual(bare.length, 2);
+  assert.ok(/no Timesheet rows at all under employee id E2/.test(ctx.accrualZeroNote_(bare[0], 80)), 'a no-rows rep gets a zero row per month, with the reason');
+  assert.strictEqual(ctx.parseAccrualLedger_(ctx.accrualZeroNote_(bare[1], 80)).months.join(','), '2026-07');
+  // The job: per month, through the same mutator and note builders.
+  const h = foNc(extractRawFunction('Code.js', 'creditMonthlyPtoAccruals'));
+  assert.ok(/const months = accrualMonthRows_\(p\);/.test(h) && /accrualCreditNote_\(m, basis, m\.earned, newBal\)/.test(h) && /accrualZeroNote_\(m, basis\)/.test(h),
+    'the credit loop iterates the per-month rows');
+  assert.ok(/if \(newBal === null\) return;/.test(h), 'a rep gated away mid-run still skips their stamp');
+  const plan = foNc(extractRawFunction('Code.js', 'planPtoAccrualRun_'));
+  assert.ok(/p\.byMonth\.push\(\{ ym: ym, hours: \+m\.hours\.toFixed\(2\)/.test(plan) && /p\.earned = accrualEarnedByMonth_\(p\.byMonth, p\.rate, basis, perDay\);/.test(plan),
+    'the planner keeps the per-month slices and earns their SUM — so the preview promises what the rows add up to');
+  const rec = foNc(extractRawFunction('Code.js', 'planAccrualReconcile_'));
+  assert.ok(/months\.length > 1 \? ' \(a multi-month row written before per-month ledger rows/.test(rec), 'a legacy multi-month key says what it is when it is skipped');
+});
+
+test('F-46: the accrual job REWRITES the reconcile stamp and clears its error on every path — PTO tracking off, and no accruing reps', () => {
+  const drive = (flagOn, entries) => {
+    const log = { stamp: null, clr: [], released: 0 };
+    const ctx = { String, Object, Date, JSON, Array, Number,
+      CONFIG: { MANAGER_TIMEZONE: 'America/Chicago', TIMEZONE: 'Asia/Kolkata', EMPLOYEE_TAB: 'Employees' }, PTO_ACCRUAL_RECONCILE_MONTHS: 3,
+      assertManagerCaller_() {}, getFlag_: () => flagOn,
+      LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() { log.released++; } }) },
+      Utilities: { formatDate: () => '2026-09' },
+      getAdpSS_: () => ({ getSheetByName: () => ({ getDataRange: () => ({ getValues: () => [[]] }) }) }),
+      planPtoAccrualRun_: () => ({ entries: entries, basis: 80, perDay: 8, hoursIdx: null }),
+      stampAccrualReconcile_: (r) => { log.stamp = JSON.parse(JSON.stringify(r)); },
+      clearAutomationError_: (k) => log.clr.push(k), stampAutomationError_: () => { throw new Error('must not stamp an error'); } };
+    vm.createContext(ctx);
+    ['accrualReconcileMonths_', 'accrualNothingToDo_', 'creditMonthlyPtoAccruals'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+    return { res: ctx.creditMonthlyPtoAccruals(), log };
+  };
+  const off = drive(false, []);
+  assert.strictEqual(off.res.skipped, 'PTO tracking disabled');
+  assert.ok(off.log.stamp && off.log.stamp.reason === 'PTO tracking disabled' && off.log.stamp.shortfalls.length === 0 && off.log.stamp.skipped.length === 0,
+    'tracking OFF rewrites the stamp to an empty pass (a stale shortfall stops alarming)');
+  assert.deepStrictEqual(off.log.clr, ['PtoAccrualCredit'], 'and clears the job\'s error');
+  const none = drive(true, []);
+  assert.strictEqual(none.res.credited, 0);
+  assert.ok(none.log.stamp && none.log.stamp.reason === 'no accruing reps', 'no accruing reps rewrites the stamp too');
+  assert.strictEqual(none.log.stamp.window.join('|'), '2026-08|2026-07|2026-06', 'with the window it would have reconciled');
+  assert.deepStrictEqual(none.log.clr, ['PtoAccrualCredit']); assert.strictEqual(none.log.released, 1, 'the lock is released on the early return');
+});
+
+test('F-21 / F-22: cleanupTestData strips MANAGER_EMAILS residue through the one predicate, sweeps DeptRequests + ClientErrors by KEY, and no test deletes a live tab by POSITION', () => {
+  const tests = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8'));
+  const cleanup = /function cleanupTestData\(\) \{([\s\S]*?)\n\}/.exec(tests)[1];
+  // F-21 — the MANAGER_EMAILS twin of the ADMIN_EMAILS strip.
+  const mgr = cleanup.slice(cleanup.indexOf("getProperty('MANAGER_EMAILS')"));
+  assert.ok(/_testAdminEmailsSplit_\(mgrRaw\)/.test(mgr), 'classified through the SAME predicate as ADMIN_EMAILS');
+  assert.ok(/if \(mgrSplit\.real\.length\) mgrProps\.setProperty\('MANAGER_EMAILS', mgrSplit\.real\.join\(','\)\);\s*else mgrProps\.deleteProperty\('MANAGER_EMAILS'\);/.test(mgr),
+    'real addresses are kept verbatim; an all-test list is deleted');
+  assert.strictEqual((cleanup.match(/setProperty\('MANAGER_EMAILS'/g) || []).length, 1, 'the only cleanup write to MANAGER_EMAILS is the strip form');
+  // F-22 — the two live tabs, swept by key and never provisioned.
+  assert.ok(/_cleanupRowsByPrefix\(getDeptRequestsSS_\(\)\.getSheetByName\('DeptRequests'\), 'TEST_', DR\.REQ_ID, 2\)/.test(cleanup), 'DeptRequests swept by ReqId prefix on ITS store');
+  assert.ok(/_cleanupRowsByPrefix\(ss\.getSheetByName\(CLIENT_ERRORS_TAB\), 'TEST_', 1, 2\)/.test(cleanup), 'ClientErrors swept by EmpId prefix');
+  assert.ok(!/getOrCreateDeptRequestsSheet_|getOrCreateClientErrorsSheet_/.test(cleanup), 'cleanup never provisions a tab');
+  assert.ok(!/deleteRows\(before \+ 1, after - before\)/.test(tests) && !/const before = sh\.getLastRow\(\)/.test(tests),
+    'no DeptRequests test deletes by POSITION any more (a real request landing mid-test was the row deleted)');
+  assert.strictEqual((tests.match(/_cleanupRowsByPrefix\(sh, 'TEST_DR_', DR\.REQ_ID, 2\)/g) || []).length, 3, 'the three DeptRequests tests tidy by key');
+  assert.ok(/getOrCreateClientErrorsSheet_\(\);[\s\S]{0,1500}_cleanupRowsByPrefix\(sheet, 'TEST_', 1, 2\)/.test(tests), 'the ClientErrors test tidies by key through the one helper');
+  // Every probe row those tests append carries a TEST_DR_ ReqId, so the sweep can see it.
+  const drAppends = tests.match(/sh\.appendRow\(\['([^']+)'/g) || [];
+  assert.ok(drAppends.length >= 4 && drAppends.every((a) => /\['TEST_DR_/.test(a)), 'every DeptRequests probe row is TEST_DR_-keyed: ' + drAppends.join(' '));
+});
+
+test('F-49: getTeamCalendar reads the time-off tab through the PROVISIONER — a fresh deployment with no TimeOffRequests tab renders the calendar', () => {
+  const src = foNc(extractRawFunction('Code.js', 'getTeamCalendar'));
+  assert.ok(/getOrCreateTimeOffSheet_\(\)\.getDataRange\(\)\.getValues\(\)/.test(src), 'through getOrCreateTimeOffSheet_');
+  assert.ok(!/getSheetByName\(CONFIG\.TIMEOFF_TAB\)/.test(src), 'never by name (null.getDataRange on a fresh deployment)');
+});
+
 // ── Infrastructure adaptation (from the dashboard's app-email.test.js): a
 // third mail sender must not appear silently. The two sanctioned senders are
 // sendRepEmail_ (rep identity) and appSendMail_ (system identity); both ride
@@ -21667,7 +21848,7 @@ test('SA-1: autoAssignSpanishThreadsScheduled — gated, heartbeat-first, flag-g
   assert.ok(m, 'spanishAutoAssign is in the FEATURE_FLAGS registry');
   assert.strictEqual(m[1], 'server', 'server scope — it gates a trigger, never a client control');
   assert.ok(/key:\s*'spanishAutoAssign'[\s\S]{0,900}?default:\s*false/.test(codeSrc), 'defaults OFF — a fresh deploy is a behavioural no-op');
-  assert.ok(/spanishAutoAssign: 2 \}/.test(codeStripped), 'the heartbeat has an HOURLY staleness window (the eod precedent)');
+  assert.ok(/spanishAutoAssign: 2[,\s}]/.test(codeStripped), 'the heartbeat has an HOURLY staleness window (the eod precedent)');
   assert.ok(/const digestHealth = Object\.keys\(DIGEST_STALE_HOURS\)\.map\(/.test(codeStripped),
     'the reported digest set is DERIVED from the staleness map (INV-179)');
   // Since 2026-09-11 (the trigger quota) it runs inside the HOURLY dispatcher

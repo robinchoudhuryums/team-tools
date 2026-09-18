@@ -1410,7 +1410,11 @@ function computeAutomationHealth_(opts) {
     // Staleness windows: EOD trigger is hourly (stale > 2h), urgent is daily
     // (> 26h), weekly is Friday-only (> 8 days). last:null = no heartbeat
     // recorded yet (pre-heartbeat deploy or trigger never installed).
-    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26, managerBrief: 26, selfTest: 26, coachingRecap: 192, spanishAutoAssign: 2 };
+    // F-20 (2026-09-18): the three daily jobs that write NO audit row and had
+    // no heartbeat either — the missed-punch alerts, the ADP export check and
+    // this failure digest itself — could die silently. Each stamps here now.
+    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26, managerBrief: 26, selfTest: 26, coachingRecap: 192, spanishAutoAssign: 2,
+                                 missedPunch: 26, exportCheck: 26, automationHealth: 26 };
     let digestMap = {};
     try {
       digestMap = JSON.parse(PropertiesService.getScriptProperties()
@@ -1535,6 +1539,17 @@ function automationProblems_(report) {
     parseInt(Utilities.formatDate(nowD, mgrTzNow, 'd'), 10),
     Utilities.formatDate(nowD, mgrTzNow, 'yyyy-MM')
   ).forEach(function (m) { problems.push(m); });
+  // F-20 (2026-09-18): a failure stamped under a key OUTSIDE the JOB_CHECKS
+  // table — the heartbeat-only jobs (MissedPunchAlerts, DailyExportCheck) and
+  // this digest's own AutomationHealthDigest — reaches the digest too. The
+  // table's rows are handled above; a stamp nobody reads is the F4 silence.
+  const tabledActions = {};
+  AUTOMATION_JOB_CHECKS.forEach(function (j) { tabledActions[j.action] = true; });
+  Object.keys(report.automationErrors || {}).forEach(function (k) {
+    if (tabledActions[k]) return;
+    const e = report.automationErrors[k] || {};
+    problems.push('The ' + k + ' job FAILED on ' + (e.at || '?') + ': ' + (e.message || 'unknown error'));
+  });
   // PTO accrual reconciliation (operator 2026-09-15). The top-up heals late
   // data on its own, so a top-up is NOT a problem — it is the system working.
   // What reaches a manager is what the pass deliberately would NOT fix: hours
@@ -1764,8 +1779,17 @@ function sendAutomationHealthDigest() {
     const mgrEmails = getManagerEmails_();
     if (!mgrEmails.length) { Logger.log('No manager emails — skipping automation-health digest.'); return; }
     let report = null;
-    try { report = computeAutomationHealth_(); } catch (e) { Logger.log('automation-health digest: report failed: ' + e.message); }
+    try { report = computeAutomationHealth_(); }
+    catch (e) {
+      // F-20: the watchdog's own failure used to reach nobody — a Logger line
+      // and a silent return. Stamp it (the panel lists every stamped key) and
+      // leave the heartbeat UNSTAMPED, so a dead computation reads stale too.
+      Logger.log('automation-health digest: report failed: ' + e.message);
+      stampAutomationError_('AutomationHealthDigest', e.message);
+    }
     if (!report) return;
+    stampDigestLastRun_('automationHealth');
+    clearAutomationError_('AutomationHealthDigest');
 
     const problems = automationProblems_(report);
 
@@ -1788,6 +1812,7 @@ function sendAutomationHealthDigest() {
     } catch (mailErr) { Logger.log('automation-health digest send failed: ' + mailErr.message); }
     Logger.log('sendAutomationHealthDigest: ' + problems.length + ' issue(s) emailed to ' + mgrEmails.length + ' manager(s).');
   } catch (err) {
+    stampAutomationError_('AutomationHealthDigest', err.message);
     Logger.log('sendAutomationHealthDigest failed: ' + err.message);
   }
 }

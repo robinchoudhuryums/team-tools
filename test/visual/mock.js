@@ -1602,7 +1602,11 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         { key: 'managerBrief', last: null, stale: false },
         { key: 'selfTest', last: daysAgo(0) + ' 01:00:21', stale: false },
         { key: 'coachingRecap', last: daysAgo(3) + ' 08:00:15', stale: false },
-        { key: 'spanishAutoAssign', last: daysAgo(0) + ' 09:00:12', stale: false }],
+        { key: 'spanishAutoAssign', last: daysAgo(0) + ' 09:00:12', stale: false },
+        // F-20 — the three heartbeat-only daily jobs.
+        { key: 'missedPunch', last: daysAgo(0) + ' 08:00:06', stale: false },
+        { key: 'exportCheck', last: daysAgo(0) + ' 12:00:03', stale: false },
+        { key: 'automationHealth', last: daysAgo(0) + ' 09:00:20', stale: false }],
       cdr: {
         ok: true, from: daysAgo(7), to: todayIso, rowsMatched: 96, columnWarning: null,
         transferColumnWarning: null,
@@ -1817,7 +1821,11 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         { key: 'managerBrief', last: daysAgo(0) + ' 08:00:02', stale: false },
         { key: 'selfTest', last: daysAgo(0) + ' 01:00:21', stale: false },
         { key: 'coachingRecap', last: daysAgo(3) + ' 08:00:15', stale: false },
-        { key: 'spanishAutoAssign', last: daysAgo(0) + ' 09:00:12', stale: false }],
+        { key: 'spanishAutoAssign', last: daysAgo(0) + ' 09:00:12', stale: false },
+        // F-20 — the three heartbeat-only daily jobs.
+        { key: 'missedPunch', last: daysAgo(0) + ' 08:00:06', stale: false },
+        { key: 'exportCheck', last: daysAgo(0) + ' 12:00:03', stale: false },
+        { key: 'automationHealth', last: daysAgo(0) + ' 09:00:20', stale: false }],
       cdr: { ok: true, from: daysAgo(7), to: todayIso, rowsMatched: 96, columnWarning: null, transferColumnWarning: null,
         unmatchedAgents: ['Ada Tran', 'Casey Lund'], rosterWithNoCdr: ['Robin Choudhury'], likelyMismatches: [],
         queueInventory: { ok: true, from: daysAgo(7), to: todayIso, queues: [], sentinels: [], transferCols: [], rowsScanned: 900, rowsInWindow: 120,

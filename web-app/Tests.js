@@ -940,6 +940,40 @@ function cleanupTestData() {
     }
   } catch (e) { Logger.log('cleanupTestData: ADMIN_EMAILS strip skipped: ' + e.message); }
 
+  // F-21 (2026-09-18): the MANAGER_EMAILS twin. Five trigger-gate tests APPEND
+  // _TEST_MGR_EMAIL to MANAGER_EMAILS for their run and restore it in
+  // `finally` — a run killed by the 6-minute limit between the append and the
+  // restore left a non-routable @example.invalid address holding the
+  // assertManagerCaller_ gate until someone noticed. Same predicate, same
+  // rule: strip every test address, never a real one; an empty list is
+  // deleted (unset ⇒ nobody passes the gate, which is at least honest).
+  try {
+    const mgrProps = PropertiesService.getScriptProperties();
+    const mgrRaw = mgrProps.getProperty('MANAGER_EMAILS');
+    if (mgrRaw !== null && mgrRaw !== undefined) {
+      const mgrSplit = _testAdminEmailsSplit_(mgrRaw);
+      if (mgrSplit.test.length) {
+        if (mgrSplit.real.length) mgrProps.setProperty('MANAGER_EMAILS', mgrSplit.real.join(','));
+        else mgrProps.deleteProperty('MANAGER_EMAILS');
+        Logger.log('cleanupTestData: ' + mgrSplit.test.length + ' test address(es) removed from MANAGER_EMAILS' + (mgrSplit.real.length ? ' (real list kept).' : ' (property deleted — nothing real remained).'));
+      }
+    }
+  } catch (e) { Logger.log('cleanupTestData: MANAGER_EMAILS strip skipped: ' + e.message); }
+
+  // F-22 (2026-09-18): the two LIVE tabs the suite probes and never swept.
+  // DeptRequests (its own store or the ADP fallback) and ClientErrors carry
+  // TEST_-keyed rows from three self-cleaning tests whose own tidy-up ran in
+  // `finally` — a killed run left them on a live tab, and the DeptRequests
+  // tests deleted by POSITION (`deleteRows(before + 1, after - before)`), so a
+  // real request landing mid-test would have been the row deleted. Both sweep
+  // by KEY here, through getSheetByName (never provisioning a tab).
+  try {
+    _cleanupRowsByPrefix(getDeptRequestsSS_().getSheetByName('DeptRequests'), 'TEST_', DR.REQ_ID, 2);
+  } catch (e) { Logger.log('cleanupTestData: DeptRequests sweep skipped: ' + e.message); }
+  try {
+    _cleanupRowsByPrefix(ss.getSheetByName(CLIENT_ERRORS_TAB), 'TEST_', 1, 2);
+  } catch (e) { Logger.log('cleanupTestData: ClientErrors sweep skipped: ' + e.message); }
+
   invalidateRosterCache_();
   Logger.log('cleanupTestData: TEST_* rows removed, balances reset.');
 }
@@ -5405,10 +5439,9 @@ function test_recordClientError_authBoundsAndAppend() {
     _assertEq(String(row[4]).length, CLIENT_ERR_MSG_MAX, 'message truncated to the server cap');
     _assertEq(String(row[5]).length, CLIENT_ERR_STACK_MAX, 'stack truncated to the server cap');
   } finally {
-    // Delete every TEST_ row this (or a prior aborted) run appended.
-    for (let r = sheet.getLastRow(); r >= 2; r--) {
-      if (String(sheet.getRange(r, 2).getValue()).indexOf('TEST_') === 0) sheet.deleteRow(r);
-    }
+    // Delete every TEST_ row this (or a prior aborted) run appended — by KEY,
+    // through the one sweep helper (F-22; cleanupTestData backstops it).
+    _cleanupRowsByPrefix(sheet, 'TEST_', 1, 2);
   }
 }
 
@@ -6423,11 +6456,11 @@ function test_qa_gates_rejectNonMember() {
 // A5 — drFindOpenRequest_ is the re-send dedup lookup: a re-send of the same note
 // to the same dept reuses the OPEN row's token instead of opening a second
 // request. Self-cleaning: appends two probe rows to the DeptRequests tab and
-// deletes exactly those rows in `finally` (DeptRequests is not swept by
-// cleanupTestData). The probe noteId is TEST_-prefixed for identifiability.
+// deletes them in `finally` BY KEY (F-22 — a positional delete would have
+// removed a real request that landed mid-test; cleanupTestData backstops the
+// sweep). The probe ids and noteId are TEST_-prefixed for identifiability.
 function test_deptReq_resendDedupLookup() {
   const sh = getOrCreateDeptRequestsSheet_();
-  const before = sh.getLastRow();
   const nid = 'TEST_DR_NOTE_A5';
   try {
     // An OPEN (nid, 'Sales') row and a RESOLVED (nid, 'Shipping') row.
@@ -6445,8 +6478,7 @@ function test_deptReq_resendDedupLookup() {
     _assertEq(drFindOpenRequest_('', 'Sales'), null,
       'no noteId → null (legacy rows never dedupe)');
   } finally {
-    const after = sh.getLastRow();
-    if (after > before) sh.deleteRows(before + 1, after - before);
+    _cleanupRowsByPrefix(sh, 'TEST_DR_', DR.REQ_ID, 2);   // F-22: by key, never by position
   }
 }
 
@@ -6466,7 +6498,6 @@ function test_deptReq_incomingAndMemberResolve() {
   if (empRow < 0) { _skipTest('India test emp not on roster'); }
   const prevDept = ss.getRange(empRow, EMP.DEPARTMENTS + 1).getValue();
   const sh = getOrCreateDeptRequestsSheet_();
-  const before = sh.getLastRow();
   try {
     ss.getRange(empRow, EMP.DEPARTMENTS + 1).setValue(dept);
     invalidateRosterCache_();
@@ -6489,8 +6520,7 @@ function test_deptReq_incomingAndMemberResolve() {
   } finally {
     ss.getRange(empRow, EMP.DEPARTMENTS + 1).setValue(prevDept);
     invalidateRosterCache_();
-    const after = sh.getLastRow();
-    if (after > before) sh.deleteRows(before + 1, after - before);
+    _cleanupRowsByPrefix(sh, 'TEST_DR_', DR.REQ_ID, 2);   // F-22: by key, never by position
     drBumpCacheGen_();   // and again on the way out — no later read may see the deleted row
   }
 }
@@ -6514,7 +6544,6 @@ function test_deptReq_detailScoped() {
   if (empRow < 0) { _skipTest('India test emp not on roster'); }
   const prevDept = ss.getRange(empRow, EMP.DEPARTMENTS + 1).getValue();
   const sh = getOrCreateDeptRequestsSheet_();
-  const before = sh.getLastRow();
   try {
     ss.getRange(empRow, EMP.DEPARTMENTS + 1).setValue(dept);
     invalidateRosterCache_();
@@ -6536,8 +6565,7 @@ function test_deptReq_detailScoped() {
   } finally {
     ss.getRange(empRow, EMP.DEPARTMENTS + 1).setValue(prevDept);
     invalidateRosterCache_();
-    const after = sh.getLastRow();
-    if (after > before) sh.deleteRows(before + 1, after - before);
+    _cleanupRowsByPrefix(sh, 'TEST_DR_', DR.REQ_ID, 2);   // F-22: by key, never by position
     drBumpCacheGen_();
   }
 }

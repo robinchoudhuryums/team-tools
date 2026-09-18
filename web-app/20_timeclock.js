@@ -271,6 +271,7 @@ function planPtoAccrualRun_(rows, nowYm, inspectYm, reconcileMonths) {
     // early return here would leave earned === null and that rep would pass
     // through the whole run recorded NOWHERE — the exact silence this batch
     // exists to remove.
+    p.byMonth = [];
     p.months.forEach((ym) => {
       if (!rec) return;
       // ALWAYS slice the month out of the index, never read the range-wide
@@ -280,9 +281,18 @@ function planPtoAccrualRun_(rows, nowYm, inspectYm, reconcileMonths) {
       // schedule. Slicing is an in-memory walk of that rep's days.
       const m = workedHoursForEmpMonth_(hoursIdx, p.emp.id, ym + '-01', monthEndIso_(ym));
       p.totalHours += m.hours; p.incompleteDays += m.incompleteDays; p.orphanDays += m.orphanDays;
+      // F-19 (2026-09-18): the per-MONTH slice is kept, because the credit
+      // writes ONE ledger row per month (accrualMonthRows_) — a multi-month
+      // catch-up used to write one row keyed `2026-06,2026-07`, and the
+      // reconcile pass skipped that key every day for months once one member
+      // left the window.
+      p.byMonth.push({ ym: ym, hours: +m.hours.toFixed(2), incompleteDays: m.incompleteDays, orphanDays: m.orphanDays });
     });
     p.totalHours = +p.totalHours.toFixed(2);
-    p.earned = accrualDaysForHours_(p.totalHours, p.rate, basis, perDay);
+    // The rep's earned total is the SUM of the per-month credits (each month
+    // rounded as the ledger row will record it), so the preview and the job
+    // promise exactly what the rows add up to — never a total rounded once.
+    p.earned = accrualEarnedByMonth_(p.byMonth, p.rate, basis, perDay);
   });
   return { entries: plans, basis: basis, perDay: perDay, range: range,
            inspectYm: inspectYm || '', hoursIdx: hoursIdx,
@@ -388,6 +398,40 @@ function accrualTopUpNote_(r, basis, earnedNow, deltaDays, newBal) {
     '; balance=' + newBal +
     accrualUncountedNote_(r);
 }
+/** PURE (Node-pinned): what each owed month earns, and the rep's total as the
+ *  SUM of those (F-19, 2026-09-18). Each month is rounded exactly as its ledger
+ *  row records it, so a two-month catch-up credits `days(June) + days(July)`,
+ *  never `days(June + July)` — the two differ by rounding, and the ledger must
+ *  add up to the balance moved. `byMonth[i].earned` is filled in place. With no
+ *  month slices (a rep with no Timesheet rows) the total is the legitimate
+ *  zero the old single call produced — or null on an unusable rate. */
+function accrualEarnedByMonth_(byMonth, rate, basis, perDay) {
+  let ptoHours = 0, days = 0, any = false;
+  (byMonth || []).forEach((m) => {
+    const e = accrualDaysForHours_(m.hours, rate, basis, perDay);
+    m.earned = e;
+    if (!e) return;
+    any = true; ptoHours += e.ptoHours; days += e.days;
+  });
+  return any ? { ptoHours: +ptoHours.toFixed(2), days: +days.toFixed(2) }
+             : accrualDaysForHours_(0, rate, basis, perDay);
+}
+/** PURE (Node-pinned): the per-MONTH ledger rows a credit writes for one plan
+ *  (F-19, 2026-09-18). Each is shaped like a one-month plan entry, so the
+ *  unchanged note builders (`accrualCreditNote_` / `accrualZeroNote_`) write a
+ *  row whose `months=` is a SINGLE month — the key `readAccrualLedger_` and the
+ *  reconcile pass want. A rep with no month slices (no Timesheet rows at all)
+ *  still gets one zero row per owed month, each naming that reason. */
+function accrualMonthRows_(p) {
+  const slices = (p.byMonth && p.byMonth.length) ? p.byMonth
+    : (p.months || []).map((ym) => ({ ym: ym, hours: 0, incompleteDays: 0, orphanDays: 0, earned: p.earned }));
+  return slices.map((m) => ({
+    emp: p.emp, rate: p.rate, plan: p.plan, onTimesheet: p.onTimesheet,
+    months: [m.ym], totalHours: m.hours,
+    incompleteDays: m.incompleteDays || 0, orphanDays: m.orphanDays || 0,
+    earned: m.earned,
+  }));
+}
 /** PURE (Node-pinned): the ledger fields back out of a note, or null when the
  *  row is not a readable ledger entry. Null is the FAIL-CLOSED answer — an
  *  unreadable row means "we do not know what was credited", which must never
@@ -484,8 +528,12 @@ function planAccrualReconcile_(entries, ledger, hoursIdx, windowMonths, basis, p
                      incompleteDays: 0, orphanDays: 0, deltaDays: 0 };
       const outside = months.filter((ym) => windowMonths.indexOf(ym) < 0);
       if (outside.length) {
+        // F-19: since 2026-09-18 the credit writes one row per month, so only
+        // a LEGACY catch-up row can carry a multi-month key — say so, because
+        // this line repeats daily until the row leaves the ledger read.
         out.push(Object.assign(base, { action: 'skipped',
-          why: 'covers ' + outside.join(',') + ', outside the ' + windowMonths.length + '-month reconcile window' }));
+          why: 'covers ' + outside.join(',') + ', outside the ' + windowMonths.length + '-month reconcile window' +
+            (months.length > 1 ? ' (a multi-month row written before per-month ledger rows, 2026-09-18 — it leaves the ledger read once the window moves past its write date)' : '') }));
         return;
       }
       let hoursNow = 0, incompleteDays = 0, orphanDays = 0;
@@ -714,9 +762,23 @@ function readAccrualReconcile_() {
  *  is NOT tolerated is crediting from hours we could not read: a failed
  *  Timesheet/archive read aborts the whole run with no credits and no stamp
  *  movement, so tomorrow's run retries intact. */
+/** F-46 (2026-09-18): the reconcile stamp and the job's error flag are
+ *  REWRITTEN on every path the job takes, the early returns included. Until
+ *  now only the full path reached `stampAccrualReconcile_` / the clear, so a
+ *  shortfall stamped one month kept alarming Automation Health after PTO
+ *  tracking was switched off or the last accruing rep left the roster — and a
+ *  stamped failure never cleared on a run that had nothing to do. */
+function accrualNothingToDo_(window, reason) {
+  stampAccrualReconcile_({ at: Date.now(), window: (window || []).slice(), toppedUp: 0, days: 0,
+                           shortfalls: [], skipped: [], incomplete: [], truncated: false, reason: reason });
+  clearAutomationError_('PtoAccrualCredit');
+}
 function creditMonthlyPtoAccruals() {
   assertManagerCaller_('creditMonthlyPtoAccruals');
-  if (!getFlag_('enablePtoTracking')) return { success: true, skipped: 'PTO tracking disabled' };
+  if (!getFlag_('enablePtoTracking')) {
+    accrualNothingToDo_([], 'PTO tracking disabled');   // F-46
+    return { success: true, skipped: 'PTO tracking disabled' };
+  }
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -730,29 +792,42 @@ function creditMonthlyPtoAccruals() {
     // resolver was extracted (the credit used to compute both itself), and the
     // reconcile call below threw ReferenceError on every run — see g118.
     const basis = run.basis, perDay = run.perDay;
-    if (run.entries.length === 0) return { success: true, credited: 0, seeded: 0 };
+    if (run.entries.length === 0) {
+      accrualNothingToDo_(recMonths, 'no accruing reps');   // F-46
+      return { success: true, credited: 0, seeded: 0 };
+    }
 
     let credited = 0, seeded = 0, zeroHourReps = 0;
     run.entries.forEach((p) => {
       const earned = p.earned;
       if (p.months.length > 0 && earned) {
-        if (earned.days > 0) {
-          const newBal = adjustLeaveBalance_(p.emp.id, 'annual', earned.days);
-          if (newBal === null) return;      // gated away mid-run — leave the stamp for a clean retry
-          // WITNESS-class since the reconcile ledger reads these rows back: a
-          // dropped row would read as "never credited" and the next run would
-          // top up the whole month again. Retry, then stamp WITNESS_AUDIT_FAILS.
-          writeWitnessAuditLog_(p.emp, 'PtoAccrualCredit', '', '', false, 0,
-            accrualCreditNote_(p, basis, earned, newBal));
-          credited++;
-        } else {
-          // Zero hours worked = zero accrual. Correct under an hours-driven
-          // rule, but recorded — WITH the reason — so a month of unexpected
-          // silence is something the operator can act on rather than re-derive.
-          zeroHourReps++;
-          writeWitnessAuditLog_(p.emp, 'PtoAccrualCredit', '', '', false, 0,
-            accrualZeroNote_(p, basis));
+        // F-19 (2026-09-18): ONE ledger row PER MONTH. A catch-up (a first
+        // credit, a re-enabled rep) used to write one row keyed by the whole
+        // month-set, and the reconcile pass — which values months INSIDE its
+        // window — reported that key as unreconcilable every day for months
+        // once one member aged out. Per-month rows are per-month keys.
+        const months = accrualMonthRows_(p);
+        let repCredited = false;
+        for (let mi = 0; mi < months.length; mi++) {
+          const m = months[mi];
+          if (m.earned && m.earned.days > 0) {
+            const newBal = adjustLeaveBalance_(p.emp.id, 'annual', m.earned.days);
+            if (newBal === null) return;      // gated away mid-run — leave the stamp for a clean retry
+            // WITNESS-class since the reconcile ledger reads these rows back: a
+            // dropped row would read as "never credited" and the next run would
+            // top up the whole month again. Retry, then stamp WITNESS_AUDIT_FAILS.
+            writeWitnessAuditLog_(p.emp, 'PtoAccrualCredit', '', '', false, 0,
+              accrualCreditNote_(m, basis, m.earned, newBal));
+            repCredited = true;
+          } else {
+            // Zero hours worked = zero accrual. Correct under an hours-driven
+            // rule, but recorded — WITH the reason — so a month of unexpected
+            // silence is something the operator can act on rather than re-derive.
+            writeWitnessAuditLog_(p.emp, 'PtoAccrualCredit', '', '', false, 0,
+              accrualZeroNote_(m, basis));
+          }
         }
+        if (repCredited) credited++; else zeroHourReps++;
       }
       if (p.stamp !== p.plan.newStamp) {
         sheet.getRange(p.rowIndex + 1, EMP.ACCRUED_THROUGH + 1).setValue(p.plan.newStamp);
@@ -2083,7 +2158,10 @@ function getTeamCalendar(monthIso) {
 
     // PTO overlay — normalize the status cell ONCE at the read (the INV-183
     // DR.STATUS/TO.STATUS family): trimmed + lowercased, approved/pending only.
-    const toRows = getAdpSS_().getSheetByName(CONFIG.TIMEOFF_TAB).getDataRange().getValues();
+    // F-49 (2026-09-18): through the provisioner — a fresh deployment with no
+    // TimeOffRequests tab yet threw on `null.getDataRange` here, and the team
+    // calendar failed to load until someone submitted the first request.
+    const toRows = getOrCreateTimeOffSheet_().getDataRange().getValues();
     for (let i = 1; i < toRows.length; i++) {
       const dateIso = normalizeDate_(toRows[i][TO.DATE]);
       if (!dateIso || dateIso.substring(0, 7) !== monthIso) continue;
@@ -4347,6 +4425,11 @@ function sendDailyMissedPunchAlerts() {
   assertManagerCaller_('sendDailyMissedPunchAlerts');
   try {
     const missed = computeMissedClockOuts_();
+    // F-20 (2026-09-18): this job writes no audit row, so a dead trigger was
+    // invisible — the heartbeat (stale > 26h) is the liveness signal, stamped
+    // once the read succeeded and BEFORE the no-work early return.
+    stampDigestLastRun_('missedPunch');
+    clearAutomationError_('MissedPunchAlerts');
     if (missed.length === 0) { Logger.log('No missed clock-outs.'); return; }
 
     missed.forEach(emp => {
@@ -4406,6 +4489,8 @@ function sendDailyMissedPunchAlerts() {
       } catch (e) { Logger.log('Manager missed-punch digest email failed: ' + e.message); }
     }
   } catch (err) {
+    // F-20: a caught failure reaches nobody unless stamped (the F4 rule).
+    stampAutomationError_('MissedPunchAlerts', err.message);
     Logger.log('sendDailyMissedPunchAlerts failed: ' + err.message);
   }
 }
@@ -4430,7 +4515,13 @@ function runDailyExportCheck() {
     if (biweeklyRange && biweeklyRange.end === yestStr) {
       sendAutomatedExport_('Biweekly', biweeklyRange, '📊 Biweekly Payroll Export — Philippines Team');
     }
+    // F-20 (2026-09-18): the AdpExportAuto audit row lands only at a period
+    // end, so the daily CHECK itself had no liveness signal — a dead trigger
+    // meant a silently missing payroll export. The heartbeat is the signal.
+    stampDigestLastRun_('exportCheck');
+    clearAutomationError_('DailyExportCheck');
   } catch (err) {
+    stampAutomationError_('DailyExportCheck', err.message);
     Logger.log('runDailyExportCheck failed: ' + err.message);
   }
 }
