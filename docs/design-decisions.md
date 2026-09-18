@@ -4313,3 +4313,92 @@ pick them up without re-deriving the context.
 
   Recorded in `.cycle/config.md` as INV-211 and scenario S111; the gotcha is
   g124. The formula change bumped every rate-carrying cache key (INV-85).
+
+- <a id="a-sparkline-day-has-three-states-and-the-unknown-one"></a>**A sparkline day has THREE states, and the unknown one is drawn (Batch 7 of the cycle-20 scan, F-48, 2026-09-18)**
+
+  The manager's live-status card carries a 7-workday hours sparkline. Its
+  source map is sparse: a day lands in it only when both a Clock In and a
+  Clock Out exist and `calcHours_` returns a number. The card filled the
+  missing slots with `|| 0`, which merged three genuinely different days into
+  one bar — the rep did not work, the rep is clocked in RIGHT NOW, and the
+  rep's stamps would not parse.
+
+  The alternatives were to drop the unknown day from the series, to leave it
+  as a zero, or to draw it as itself. Dropping it was rejected because the
+  strip is a WEEK: six bars where there should be seven silently shifts every
+  other day's position, which is the V-10 mistake in a different costume.
+  Leaving it as zero was the defect. So the unknown is drawn — a hatched
+  full-height bar, its tooltip reading "no data", visibly not a measurement.
+  Full height rather than a stub because the slot's job is to hold the day's
+  place, and a hatch cannot be misread as a value.
+
+  Three consequences follow, and all three are deliberate. The server tells
+  the states apart by PRESENCE in the map rather than truthiness, so a genuine
+  `0.0h` day is still a measured zero. The card's total counts only the days
+  it could measure and carries a `·N?` suffix saying how many it could not,
+  because a quietly under-reported total is the same lie one step on
+  (INV-187). And a week of nothing BUT unknowns renders, where the old
+  `totalHrs === 0` early return would have hidden it — that is the week most
+  worth seeing, since it usually means a rep has not clocked out in days.
+
+  Recorded as gotcha g136, scenario S10's third-state expectation, and the
+  visual fixture's own null day (INV-185: a fixture that never produces null
+  can never photograph the difference).
+
+- <a id="one-voicemail-fold-serves-the-spanish-list-and-the"></a>**ONE voicemail fold serves the Spanish list and the Spanish stats card (Batch 7 of the cycle-20 scan, F-34, 2026-09-18)**
+
+  8x8 sends its A_Q_Spanish voicemail notifications to each member's
+  individual inbox, never to the Spanish group address, so a voicemail cannot
+  match `spanishSearchQuery_`. The operator round of 2026-08-25 taught
+  `getSpanishInboxPending` to run a second sender-and-subject search and fold
+  those threads in. It did not teach `getSpanishInboxStats`, which computes
+  from the same mailbox and renders directly ABOVE that list. The two had
+  disagreed every day since: four pending cards under a card that said three.
+
+  The fix could have been a second fold in the stats function. It is one
+  shared fold instead, because the two had already drifted once on their own
+  and the fold is where every judgement lives — which threads count, which are
+  hang-ups, what counts as resolved. `spanishVmFold_` returns the surviving
+  threads with a resolution stamp, and each caller builds its own shape from
+  the thread, so the list pays for `getPermalink()` and the stats card does
+  not.
+
+  Two ordering decisions inside it. The SP4 duration gate runs BEFORE the
+  resolution check, so a hang-up is work on neither surface; the cost is that
+  `vmSuppressed` now counts a short voicemail that was later resolved, and
+  the counter's meaning becomes "hang-ups the gate hid from both surfaces".
+  And the fold reports `on` separately from an empty result, so a caller can
+  tell "not configured" from "none came in" — the stats card renders those two
+  differently rather than both as nothing (INV-187).
+
+  The visual fixture had been photographing the disagreement for a month with
+  nobody reading it as a bug, so the pin now requires the fixture's stats count
+  to equal the number of cards it renders. Recorded as INV-223.
+
+- <a id="a-gate-claim-is-derived-from-the-refusal"></a>**A gate CLAIM is derived from the refusal, never written by hand (Batch 7 of the cycle-20 scan, F-26 + F-51, 2026-09-18)**
+
+  Twenty-one places in this repo said "manager-gated" about an endpoint that
+  enforces `callerEmp.isAdmin`: nine doc comments the scan named, ten more it
+  did not, INV-31 for nineteen endpoints, INV-82, and two paragraphs in this
+  file. A manager who is not also in `ADMIN_EMAILS` is refused by every one of
+  them. The cost is not academic — INV-31 is what an operator reads when
+  deciding how wide `ADMIN_EMAILS` needs to be.
+
+  The same hand-carrying ran through the generated counts block from the other
+  end. "Manager-gated endpoints" counted the `'Manager access required.'`
+  literal alone, so every endpoint gated by `assertManagerCaller_` — which
+  THROWS rather than returning, and covers the trigger handlers — was missing
+  from a figure captioned as the size of the manager surface, along with the
+  whole QA tier.
+
+  So the rule is one rule for both: the gate claim is DERIVED from what the
+  endpoint refuses with. The doc-comment check walks every server function and
+  compares the comment ending immediately above the declaration against the
+  refusal literal in the body; the counts derive three families the same way.
+  `canSeeQa_` gets a row of its own rather than joining manager, because it
+  admits `isManager OR QA_MEMBERS` and folding it in would swap an undercount
+  for a wrong claim about who may call. And a family is counted by its
+  REFUSAL, never by a mention of its helper: `getEmployeeState` calls
+  `canSeeQa_` to ship a flag to the client and gates nothing at all.
+
+  Recorded as INV-224.

@@ -1550,3 +1550,94 @@ pin that only checked for a role would have gone green).
 including the three public forms — `unnamed 0` everywhere, with the shortcuts
 close button and the five accordion toggles newly in scope. The `admin`,
 `clock` and `reference` scenario groups were re-shot: 0 missing, 0 overflow.
+
+## 2026-09-18 (final) — Batch 7 of the cycle-20 scan: the batch about the pins themselves
+
+The last batch in the scan's plan, and the only one whose subject was the test
+layer. Three pins were RETIRED and replaced rather than supplemented, three
+bite-checks reported NO BITE and each was a different kind of problem, and two
+fixtures turned out to have been photographing defects for weeks.
+
+**Three structural pins became drives, and the originals were deleted (F-52).**
+Each had been named for a behaviour and asserted a source shape, and each stayed
+green under a mutation that broke the thing its name promised.
+
+- `archiveSheetRowsOlderThan_` runs against a fake source sheet and a fake
+  archive sheet. The bound really stops the scan; a second run drains the NEXT
+  batch rather than re-appending the one before it (the monotonic-drain property
+  the bound exists for); an unbounded run takes every eligible row and only
+  those; a slack bound is not a truncation; a tab with nothing eligible appends
+  nothing and flushes nothing. The fake archive REFUSES a zero-row `setValues`,
+  because Sheets does — see the bite-check note below.
+- `getDepartmentEmails_` and `saveDepartmentEmails` run against a fake
+  PropertiesService. An array, a number, a blank, a bare name and a
+  whitespace-only key are each dropped entry-wise; an all-junk map falls back
+  whole rather than to `{}`; names and emails are trimmed; and not one refusal
+  on the write path reaches the property.
+- `clientBuildHash_` runs against a fake HtmlService plus a fake CacheService
+  that hands back SIGNED bytes, as Apps Script does. The hash moves when a
+  partial's bytes move, moves when index.html moves, is stable when nothing
+  does, and a lost partial is a different build. A warm cache is served and not
+  re-put, and a planted cache value wins — so the read is real rather than
+  decorative.
+
+The fourth pin, the width-cap one, stayed structural and now says why: it is an
+ABSENCE assertion with no function to call, and it cannot see a cap arrive by
+another route, which is how the cap arrived the first time. It asserts the
+measured visual scenarios that carry the real claim still exist, so nobody
+deletes the measurement and leaves the grep behind.
+
+**Three NO BITEs, three different lessons.** The bite-checker was right every
+time; what it was right ABOUT differed.
+
+1. Deleting the mover's `if (!toMoveRows.length) return 0;` guard reported NO
+   BITE because the fake archive accepted a zero-row range that real Sheets
+   refuses. A fixture kinder than production let a mover that appends an empty
+   block read as correct here while it would throw on the first nightly run with
+   nothing eligible. The fake asserts the range has at least one row now.
+2. Collapsing every missing-partial marker to one constant reported NO BITE
+   because the assertion varied the FILENAME inside index.html to produce its
+   two cases — so the digest input differed whatever the marker did. Holding
+   index.html fixed and removing the partials from the fixture instead isolated
+   it.
+3. After that isolation, the same mutation STILL reported NO BITE, and the third
+   reading was the right one: the claim is not observable. The markers sit at
+   different positions in the concatenation, so two broken builds digest
+   differently even with every marker collapsed. Naming the lost file is a
+   property of the log string, not of the fingerprint. The assertion was
+   DELETED with the reasoning left in place rather than dressed up into
+   something that looks like a check. This is g116's fifth direction and the
+   substance of g138.
+
+A fourth NO BITE was not a problem at all: rewriting the client's
+`Math.floor((daysDiff + 13) / 14)` as `Math.ceil(daysDiff / 14)` is an
+equivalent expression for every integer, verified over the range rather than
+assumed, and the follow-up mutation with a genuinely different index bit.
+
+**Two fixtures had been photographing defects.** `test/visual/mock.js`'s
+`recentHours` could not produce a null day, so no screenshot could ever show the
+sparkline's third state; it ships one now. Worse, the Spanish stats fixture said
+`pending: 3` directly above a pending list of four cards, and every Spanish
+screenshot for a month showed the two disagreeing with nobody reading it as a
+bug. It agrees with itself now, and a pin requires it to: the stats count must
+equal the number of cards the list fixture renders. Both are INV-185 — the
+fixture has to be able to produce the state the pin claims, and it has to
+satisfy the arithmetic a reader would do by eye.
+
+**Two derived walks replaced hand lists.** The gate-tier check walks every
+server function and compares the doc comment ENDING immediately above the
+declaration against the refusal literal in the body — the first version took
+the nearest comment behind the declaration, which resolves to the previous
+function's and reports a phantom. The gate counts re-derive all three families
+independently of `counts.mjs` and require the generated block to agree with both
+derivations. Together they found ten mislabelled endpoints the scan finding had
+never named.
+
+**The rest of the batch's pins.** The linter's advanced-service derivation is
+driven over manifests the repo does not have; the CDR cache-bypass boolean is
+evaluated under three override states and `cdrRosterHash_` is driven to show one
+extra name really is a different key; `cdrQueueInventory_` is driven end to end
+against a fake sheet for three window shapes; `spanishVmFold_` is driven for the
+unconfigured fold, suppression, resolution and the already-seen skip; and the
+timesheet mirror is driven on BOTH sides over 70 consecutive days spanning three
+period boundaries.

@@ -70,6 +70,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   count, ask what that count reads on a healthy production system — if the
   answer is not zero, it is reference detail, not a signal.**
 
+  **A second instance, 2026-09-18 (Batch 7, F-33):** `cdrQueueInventory_` set
+  its `truncated` flag from the SHEET's length rather than the WINDOW's, so on
+  a DQE tab longer than `CDR_QUEUE_SCAN_MAX` the Phase 0 panel warned
+  "possibly incomplete" on every run, for ever — including every run that had
+  read every row the window asked for. Same shape, one level down: the flag was
+  computed from something that is permanently true on a real deployment, so it
+  carried no information and taught the reader to scroll past it. Span-bounding
+  the read made the flag mean what it says.
+
 <a id="g03-roster-inclusion-goes-through-emprosteremail-row-the"></a>
 
 - **Roster INCLUSION goes through `empRosterEmail_(row)` — the one predicate
@@ -449,6 +458,20 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   ordering assert (bump strictly between the append and the read — a bump only
   in `finally` is too late, which is how the first version of the pin failed to
   bite).
+
+  **The other direction, 2026-09-18 (Batch 7, F-31):** the fixture does not
+  always get to reach the cache at all. `getCdrAgentMetrics_` is the LOWEST CDR
+  tier — every cached reader above it sits on it — and it was the only one that
+  did not bypass its cache under `_TEST_OVERRIDE_CDR_SS_ID`. So a fixture read
+  was served production's numbers, and then wrote the fixture's numbers back
+  under production's key for the TTL. The editor suite had been clearing those
+  keys by hand instead, and its helper built the roster set from every row with
+  a non-empty NAME rather than through `empRosterEmail_` (g03) — a different
+  set is a different `cdrRosterHash_`, so the removal hit a key nothing had
+  written. TWO rules: a test-override bypass must cover BOTH ends (a bypassed
+  read with a live put still poisons the key, and that half-fix reads as done),
+  and a fixture that clears a derived cache key must build that key exactly the
+  way production builds it — or, better, not need to.
 
 <a id="g23-test-override-email-only-intercepts-getactiveuseremail"></a>
 
@@ -2695,6 +2718,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   RULE: a bite mutation names something only the pinned function contains,
   and a NO BITE is first checked against `git diff` to see WHAT changed.
 
+  **A fifth direction, 2026-09-18 (Batch 7, F-52) — see g138:** a mutation can
+  land, and the pin can stay green, because the CLAIM is not observable rather
+  than because the pin is weak. Three NO BITEs in that batch were three
+  different things: two real pin weaknesses (a fake kinder than production, an
+  assertion that varied the input it meant to hold fixed), one unobservable
+  claim that was deleted, and a fourth that was an equivalent rewrite. The
+  verdict is a question, not an answer.
+
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
   done (operator 2026-09-15).** The reconcile pass (g115) makes late punch data
@@ -3331,3 +3362,117 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the `window.open` is then a convenience that can fail harmlessly.
   Fires when you open a window or tab, especially after an async RPC.
   Verify: the F-37 return check and the F-36 link-before-open ordering.
+
+<a id="g136-a-per-day-series-must-tell-no-data"></a>
+
+- **A per-day series must tell "no data" apart from a real zero — the manager
+  live-status sparkline (Batch 7 of the 2026-09-17 /broad-scan, F-48,
+  2026-09-18).** `getManagerDashboard` built each rep's 7-workday
+  `recentHours[]` as `hours: sparkHoursMap[key] || 0`. That map is SPARSE by
+  construction: a key lands only when the day had both a Clock In and a Clock
+  Out *and* `calcHours_` returned non-null. So three different days collapsed
+  onto one bar — the rep did not work, the rep is still clocked in right now,
+  and the rep's stamps would not parse. The first is a fact. The other two are
+  the absence of a fact, and the card told the manager "0 hours worked" about
+  both. V-10 had already given the zero day a deliberately visible dim bar so
+  "didn't work" could not be mistaken for "no data", which is exactly the
+  distinction the `|| 0` then erased one layer up.
+
+  The general shape is g54's ("an UNKNOWN duration is not the same as an
+  elapsed one") applied to a SERIES rather than a single value, and the series
+  form is easier to miss: the chart still renders, every slot is filled, and
+  nothing looks degraded. The fix is three states, not two, and the middle one
+  has to be carried all the way to the pixel: a day with NO punch rows is a
+  real `0`; a day WITH punch rows and no computable total is `null`; a measured
+  day is its number, told apart from the first by PRESENCE in the map rather
+  than by truthiness (so a genuine `0.0h` day is still measured). The renderer
+  paints `null` as a hatched full-height gap with a "no data" tooltip, the
+  total counts only the measurable days and SAYS how many it could not measure,
+  and a week of nothing but unknowns renders instead of collapsing to nothing —
+  it is the week most worth seeing.
+
+  RULE: before writing `|| 0` against a lookup, ask whether the map is sparse.
+  If it is, the fallback is inventing a measurement. Fires when you fill a
+  fixed-length series from a keyed map, or default a missing datum for a chart.
+  Verify: the F-48 server three-state assertion plus the `renderEmpSparkline_`
+  drive (bar classes, tooltips, the unmeasurable count, the all-unknown week),
+  and the visual fixture's own null day — INV-185, because a fixture that never
+  produces null can never photograph the difference.
+
+<a id="g137-a-static-net-that-pre-declares-names"></a>
+
+- **A static net that PRE-DECLARES names the runtime does not provide silences
+  the class it exists to catch (Batch 7 of the 2026-09-17 /broad-scan, F-50,
+  2026-09-18).** `scripts/lint-server.mjs` runs `no-undef` over the fourteen
+  server files as one scope — the only static net for a ReferenceError in this
+  codebase (g118). Its globals list carried `Drive`, `Docs`, `Sheets`, `Gmail`,
+  `BigQuery` and `People` beside `DriveApp` and `GmailApp`, as though all eight
+  were the same kind of thing. They are not. The first six are ADVANCED
+  services: each is a global ONLY while `appsscript.json` enables it, under the
+  `userSymbol` the manifest names. This project's manifest reads
+  `"dependencies": {}`. So a use of any one of the six would have linted clean
+  and thrown `ReferenceError` on its first real call in production — the net
+  pre-approving exactly the defect it was built to find.
+
+  Nothing had fired, because nothing uses them yet. That is the reason to fix
+  it rather than not to: the trap is armed for whoever reaches for `Drive.Files`
+  because `DriveApp` could not do the thing, sees green, and ships.
+
+  RULE: a name is in a static analyser's globals list because the RUNTIME
+  provides it unconditionally. Anything conditional on configuration is DERIVED
+  from that configuration, so enabling a service is what makes it lintable and
+  disabling one puts its uses back under the net. Fires when you add a name to
+  an allowlist to make a linter quiet. Verify: the F-50 pin drives
+  `advancedServiceGlobals()` over manifests the repo does not have (none
+  enabled, two enabled, an entry with no `userSymbol`) and separately checks no
+  un-enabled service is used in the server, over comment- and string-stripped
+  source.
+
+<a id="g138-a-pin-whose-name-promises-a-behaviour"></a>
+
+- **A pin whose NAME promises a behaviour must DRIVE it — and an assertion that
+  cannot be made to fail is deleted, not dressed up (Batch 7 of the 2026-09-17
+  /broad-scan, F-52, 2026-09-18).** Four pins in `run.js` were named for
+  behaviours and asserted only source shapes. "archiveSheetRowsOlderThan_
+  honors a per-run bound" matched the `break` line; a `break` that never fires
+  reads identically in source and moves the whole tab in one run past the
+  six-minute ceiling. "dept-email config is sanitized on read" matched
+  `clean[name] = email`; a whitelist that assigns before validating matches it
+  too. "the deploy-version beacon's derived hash" matched the derivation; a
+  hash that reads index.html and then digests a constant matches every one of
+  those assertions, and a beacon that never changes never prompts, which is the
+  entire failure mode it exists to prevent. All three are drivable, so all
+  three are now drives against a fake sheet, a fake PropertiesService and a
+  fake HtmlService, and the originals were RETIRED rather than left beside
+  them: a weak pin that stays green under the mutation is the finding, and
+  keeping it means keeping a green light on a broken claim.
+
+  The fourth is the honest one. "Punctuality + Admin fill the view width" is an
+  ABSENCE assertion — there is no function to call, and it cannot see the cap
+  arrive by another route (a class that sets `width`, a grid track, an inline
+  style built at render time), which is how the cap got in the first time. It
+  stays structural, SAYS it cannot be driven, and asserts that the measured
+  visual scenarios carrying the real claim still exist, so nobody deletes the
+  measurement and leaves the grep behind.
+
+  Writing the replacements taught the sharper half, and it is g116's fifth
+  direction: **a mutation that lands while the pin stays green does not always
+  mean the pin is weak — sometimes it means the claim is not observable at
+  all.** The build-hash pin asserted that a missing partial's marker NAMES the
+  file it lost. Two attempts to isolate that failed, and the third reading was
+  the right one: the markers sit at different POSITIONS in the concatenation,
+  so two broken builds digest differently even with every marker collapsed to
+  one constant. Naming the lost file is a debuggability property of the string,
+  not of the fingerprint. The assertion was deleted with the reasoning left in
+  place. Two other NO BITEs in the same batch WERE real: a fake archive sheet
+  accepted a zero-row `setValues` that Sheets refuses, and an assertion varied
+  the input it was meant to hold fixed. A fourth was an equivalent rewrite
+  (`ceil(n/14) === floor((n+13)/14)` for every integer), verified rather than
+  assumed.
+
+  RULES: (1) if the function can be driven, drive it, and retire the structural
+  pin rather than stacking one on the other; (2) if it cannot, say so in the
+  pin and name where the real check lives; (3) a NO BITE is a question, not an
+  answer — check `git diff` for what the mutation changed, then ask whether the
+  claim is observable before weakening or deleting anything. Fires when you
+  write a pin, and every time you read a bite-check's verdict.

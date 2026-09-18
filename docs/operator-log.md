@@ -10,6 +10,56 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-18 (final) — Batch 7 of the cycle-20 scan: test and docs hygiene
+
+**Adds NO operator state.** No Script Property, no sheet, no tab, no migration,
+no deploy step beyond the usual push and New version. Two things an operator
+will nevertheless SEE after the deploy, and one number in the docs that moved.
+
+**The manager live-status sparkline gained a third bar.** A day the server
+could not measure — the rep is still clocked in at the moment you open the
+page, or one of their stamps would not parse — now draws as a hatched
+full-height bar reading "no data" instead of the flat zero bar it used to
+share with a genuine day off. The total under the bars counts only the days it
+could measure and carries a `·N?` suffix saying how many it could not. Nothing
+about the underlying punches changed; the card had been reporting "0 hours
+worked" about days it had no hours for.
+
+**The Spanish Inbox stats card counts voicemails now, so its numbers move.**
+8x8 mails each member's individual inbox rather than the group address, so the
+card had been counting none of them while the list directly below it folded
+them in — four pending cards under a card that said three, every day. Resolved,
+Pending, Avg time and Median all step as a result, and the step appears
+immediately rather than after the cache TTL because the payload change bumped
+the cache key. The head note now names how many voicemails are in the figures
+and how many short ones the duration gate hid, and it says "voicemails not
+counted — fold not configured" rather than a zero when `SPANISH_VM_SENDER` and
+`SPANISH_VM_SUBJECT_FILTER` are unset. **If you have been watching
+`vmSuppressed`, expect it to tick up:** the gate now runs before the resolution
+check, so it counts a short voicemail even when someone later resolved it, and
+its meaning is "hang-ups hidden from both surfaces".
+
+**"Manager-gated" was wrong in twenty-one places, and the endpoint count with
+it.** Nineteen endpoints that the docs described as manager-gated in fact
+enforce `isAdmin`: every Admin-tab surface — Storage Health, Automation Health,
+Deploy readiness, the retention and feature-flag saves, the department-email and
+tax-rate saves, the tag taxonomy and its rename/merge/archive actions, the
+compliance audit search, the KB Doc converter. **A manager who is not also in
+`ADMIN_EMAILS` is refused by all of them.** That matters when sizing
+`ADMIN_EMAILS`, which is what INV-31 is read for. In the same pass the
+"Manager-gated endpoints" figure in the running-totals block went from 61 to 95,
+because it had been counting one refusal message and missing every endpoint
+gated by `assertManagerCaller_` — the trigger handlers among them — and a new
+row was added for the QA tier. The figures are derived from the code in three
+families now, so none of them can drift again.
+
+Nothing else here reaches an operator: the linter stopped pre-approving six
+Google advanced services the project does not enable, a test seam moved out of
+production code, the CDR metrics cache stopped leaking between fixture runs and
+real reads on the dev instance, the queue-inventory panel stopped warning
+"possibly incomplete" on every run, and four test pins were rewritten to check
+the behaviour they were named for.
+
 ## 2026-09-18 (last) — Batch 6 of the cycle-20 scan: shell, accessibility and copy
 
 Adds NO Script Property and no sheet change; every fix is client-side. What an

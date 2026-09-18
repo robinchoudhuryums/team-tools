@@ -68,6 +68,18 @@ not restate it. Server endpoints live in the fourteen server files
      LINK into the dialog and keeps it open, so a pop-up blocker can no longer
      take the URL with it (F-36, g135).
 
+     **Batch 7 (2026-09-18):** the live-status card's 7-workday sparkline has
+     THREE bar states rather than two. A day the rep did not work stays the dim
+     `zero` bar (V-10); a day the server could not MEASURE — the rep is still
+     clocked in at the moment of the read, or a stamp `calcHours_` refused —
+     is a hatched full-height bar reading "no data"; a measured day is its own
+     height, including a genuine `0.0h` day, which is told apart from the
+     others by PRESENCE in the hours map rather than by truthiness. The total
+     under the bars counts only what could be measured and carries a `·N?`
+     suffix naming how many it could not, and a week of nothing but unknowns
+     renders instead of collapsing to nothing (F-48, g136, the sparkline
+     decision).
+
 ## Call Notes
 
    - **Call Notes** — rolling-note panel for CSR call logging. Each
@@ -189,6 +201,19 @@ not restate it. Server endpoints live in the fourteen server files
      hang-ups from a dead parser. Auto-assign inherits the gate. The card's
      snippet is now the voicemail TRANSCRIPT rather than the first 240 chars of
      the body, which were almost entirely 8x8 boilerplate.
+     **Batch 7 (2026-09-18):** the STATS card above that list now counts the
+     same voicemails. It never had — 8x8 mails each member's individual inbox
+     rather than the group address, so a voicemail matched neither
+     `spanishSearchQuery_` nor the card computed from it, and the card read
+     three pending above a list of four every day. `spanishVmFold_` is the ONE
+     fold and both surfaces read it, so Resolved, Pending, Avg and Median all
+     move (a voicemail resolved by a member reply is timed like any other
+     request). The card states its own voicemail figures — how many are
+     included, how many short ones the gate hid — and says "voicemails not
+     counted — fold not configured" rather than a zero when the two Script
+     Properties are unset. The stats cache key is bumped `v2` → `v3` so a
+     cached thread-only aggregate cannot keep serving for the TTL (F-34,
+     INV-223, the one-fold decision).
      Backs the CDR Report spreadsheet (`CONFIG.CDR_SS_ID`).
 
 
