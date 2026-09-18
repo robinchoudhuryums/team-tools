@@ -24525,21 +24525,20 @@ test('BCN-1b (BEHAVIOURAL, F-52): the build hash really CHANGES when a partial c
   const lostCn = H();
   partials['cn/script_callnotes.html'] = keepCn;
   assert.notStrictEqual(lostCore, bothPresent, 'a build that LOSES a partial does not hash as the build before it lost it');
-  // …and the marker NAMES the file. Only observable when the two partials are
-  // otherwise identical: with different contents the two broken builds differ
-  // for a reason that has nothing to do with the marker, and collapsing the
-  // marker to a constant passed (NO BITE, the second time on this pin).
-  partials['script_core.html'] = 'SAME';
-  partials['cn/script_callnotes.html'] = 'SAME';
-  delete partials['script_core.html'];
-  const twinLostA = H();
-  partials['script_core.html'] = 'SAME';
-  delete partials['cn/script_callnotes.html'];
-  const twinLostB = H();
-  partials['cn/script_callnotes.html'] = keepCn;
+  // …and losing a DIFFERENT partial is a different build.
+  //
+  // NOT asserted here, deliberately: that the marker NAMES the file. Two
+  // bite-checks went looking for it and both reported NO BITE, because the
+  // claim is not hash-observable at all — the markers sit at different
+  // POSITIONS in the concatenation, so `[missing]SAME` and `SAME[missing]`
+  // digest differently even with every marker collapsed to one constant.
+  // Naming the file is a debuggability property of the log line, not of the
+  // fingerprint, and a pin that cannot fail for it would be decoration. g116
+  // in the third direction: the mutation lands, the pin is green, and the
+  // honest answer is to delete the assertion rather than dress it up.
   partials['script_core.html'] = keepCore;
-  assert.notStrictEqual(twinLostA, twinLostB,
-    'losing one of two IDENTICAL partials is still a distinguishable build — the marker names the file it lost');
+  partials['cn/script_callnotes.html'] = keepCn;
+  assert.notStrictEqual(lostCore, lostCn, 'losing a different partial is a different build');
 
   // The cache is a CACHE, not the answer: a hit is served, and a put happens
   // exactly once per cold compute (an eternal entry would never notice a
