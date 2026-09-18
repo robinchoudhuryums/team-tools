@@ -24611,6 +24611,50 @@ test('Punctuality + Admin fill the view width (F-52: the one claim here that CAN
   assert.ok(/overflowPx/.test(shoot), 'and the matrix measures overflow, so a squeezed render is a reported number');
 });
 
+// ---------------------------------------------------------------------------
+// The accrual LEDGER baseline. Found by the first full editor run that ever
+// reached the integration tier (operator, 2026-09-18).
+console.log('\naccrual ledger — test baseline');
+
+test('a test that asserts on the reconcile OUTCOME clears its rep first', () => {
+  // `readAccrualLedger_` keeps the HIGHEST hours per (emp, month), which is what
+  // makes the credit idempotent on hours already paid for. It also means a test
+  // asserting "N hours were topped up" is asserting about every PtoAccrualCredit
+  // row that rep has in the AuditLog, not only its own — and the AuditLog is
+  // append-only, swept by `cleanupTestData` at the END of a run. Two accrual
+  // tests sharing a rep and a month therefore share a ledger, and the second one
+  // silently measures the first one's credit.
+  //
+  // That is not hypothetical: `accrualReconcile_topsUpLateData` failed its first
+  // ever execution this way, reporting toppedUp 0 where it expected 1, against
+  // correct production code. The rule is the cheap one — depend on the reconcile
+  // outcome, clear the rep's state first.
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  const re = /^function (test_[A-Za-z0-9_]+)\s*\(/gm;
+  let m;
+  const offenders = [], checked = [];
+  while ((m = re.exec(src)) !== null) {
+    const start = src.indexOf('{', m.index + m[0].length - 1);
+    let d = 0, k = start;
+    for (; k < src.length; k++) { if (src[k] === '{') d++; else if (src[k] === '}' && --d === 0) break; }
+    const body = src.slice(start, k + 1);
+    if (body.indexOf('creditMonthlyPtoAccruals(') < 0) continue;
+    // Only tests that READ the reconcile's verdict depend on the ledger baseline.
+    // A gate test that calls it to be refused, or one asserting only on a balance
+    // it captured itself, does not.
+    if (!/\.toppedUp|\.shortfalls|topUpDays/.test(body)) continue;
+    checked.push(m[1]);
+    const clearAt = body.indexOf('_clearTestState(');
+    const creditAt = body.indexOf('creditMonthlyPtoAccruals(');
+    if (clearAt < 0 || clearAt > creditAt) offenders.push(m[1]);
+  }
+  assert.ok(checked.length >= 1,
+    'the scan found the reconcile-asserting tests (found ' + checked.length + ')');
+  assert.deepStrictEqual(offenders, [],
+    'test(s) asserting on the reconcile outcome without clearing the rep first — ' +
+    'they will measure whatever an earlier accrual test credited: ' + offenders.join(', '));
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
