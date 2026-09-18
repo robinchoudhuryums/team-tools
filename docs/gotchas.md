@@ -3157,6 +3157,32 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   OOP-B grid guard (`column A is never the item`), and the editor test
   `test_oop_verifyQuotes_currentStaleAndDeleted` against the real-shape fixture.
 
+  **A THIRD instance, and the one that reached production (R, 2026-09-18).**
+  Batch 1 unified the column RESOLVER and the SCORER, which is where the
+  attention was — and the two readers still shipped different SHAPES and drew
+  them with different renderers. `searchOopPricing` returned the whole row
+  object and rendered every priced column labelled; `checkOopEligibility` hand-
+  picked a subset whose `price` is `prices[0]`, the LEFTMOST price column, and
+  rendered that one number bare. On the operator's real sheet the leftmost
+  price is the PICK-UP total, so the surface whose entire subject is delivery
+  answered "how much is it?" with the one price that is never right for a
+  delivery, and silently dropped "W/ Shipping" and "W/ Tech Delivery". It was
+  live for the working day between the 2026-09-16 round shipping and this one;
+  it did not show on the operator's own check because the item they tried has a
+  single price column. RULE EXTENSION: one resolver is NOT enough. Two readers
+  of one operator tab must ship the SAME SHAPE and render through the SAME
+  function — an endpoint that hand-picks fields is choosing, per reader, which
+  of the operator's columns exist, and a per-reader renderer is a second place
+  for that choice to be made differently. `checkOopEligibility` now returns the
+  whole `oopRowObj_` result and one client renderer (`oopItemRowHtml_` →
+  `oopPriceHtml_`) draws both payloads. Verify: R-1 DERIVES the required field
+  list from `oopRowObj_`'s own object literal, so a column added there cannot
+  be dropped by an endpoint unnoticed; R-2 pins one price emitter and one row
+  call site; and the R DOM eligibility pin DRIVES the three-price row — which
+  matters, because R-2's structural assertions stayed GREEN against truncating
+  the map to `[prices[0]]`, the exact defect, and R-2 now says so in place
+  (g138).
+
 <a id="g127-calchours-wraps-out-in-as-overnight"></a>
 
 - **`calcHours_` wraps `out < in` as overnight; an EQUAL minute pair is ZERO

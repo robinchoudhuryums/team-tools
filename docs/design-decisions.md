@@ -1850,6 +1850,38 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   lookup uses (name OR code), so a by-name query no longer reports "No item
   matched" for a listed item (INV-213).
 
+- <a id="price-and-area-eligibility-are-one-panel-because-they-are"></a>**Price and area eligibility are ONE panel, because they are one
+  question asked of one table (operator 2026-09-18).** They shipped as two
+  cards two days apart and the split was an artefact of that order, not a
+  distinction a rep makes: both read `OopPricing`, both resolve the row through
+  `oopRowObj_`, and "what does this cost" and "can we get it there" are asked in
+  the same breath on the same call. The split had a cost that a layout review
+  would not have found — each panel chose its own subset of the row and its own
+  renderer, and they diverged into quoting different prices for the same item
+  (g126). So the merge is the structural fix, and the layout follows from it
+  rather than the other way round.
+
+  The ITEM is the key and the ADDRESS is an optional upgrade, never a gate: with
+  an item alone the panel answers with prices and NO verdicts, because nothing
+  was checked and nothing may look checked, and it says what an address would
+  add rather than leaving the empty field to imply it. This is also why an
+  eligibility failure degrades instead of erroring: as two panels an outage cost
+  the rep eligibility only, since the price sat in the card above, and a merge
+  that let the same outage blank both would have spent a capability on a layout.
+  The banner states that no verdict was reached and hands the server's own
+  reason through verbatim — from the client, "the address is wrong" and "the
+  service is down" are not distinguishable, and they send a rep to two different
+  next actions (g128).
+
+  The band lives in the LANDING HOST, never in the section renderers. The same
+  two sections render into the ~340px Ctrl/⌘+K drawer, and a renderer that knew
+  about columns could not serve both. That also produced the one rule g50 does
+  not cover: the band is an explicit ratio and takes g50's two independent
+  triggers, but the Item/Address pair inside it uses `auto-fit`, because the
+  drawer is ~340px wide on a 1920px desktop with `data-compact` unset — a
+  viewport rule and a pop-out rule would BOTH pass while the two fields rendered
+  at 160px each. A breakpoint can only describe hosts the breakpoint can see.
+
 - <a id="the-operator-maintained-lookup-tables-are-named-tabs-in-the"></a>**The operator-maintained lookup tables are NAMED TABS in the KB store,
   not stores of their own (operator 2026-09-16, decided the day OOP shipped).**
   OOP pricing launched as a ninth spreadsheet with its own `OOP_SS_ID`. The

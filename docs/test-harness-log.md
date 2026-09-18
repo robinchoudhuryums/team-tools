@@ -1704,3 +1704,62 @@ The integration tier had never run against the deployed project, which is the
 same gap that let F-01's red pin count as green. One run, one real find, and the
 find was in the tests rather than the product. That is the outcome a first run
 should have.
+
+---
+
+## 2026-09-18 — batch R, the Reference two-panel restructure
+
+**Five pure pins (R-1..R-5) and six DOM pins** — the three-price drive, the
+degraded path, item-alone, the band, the labels, and R-6. Two existing pins
+(ELIG client, OOP-A DOM) were rewritten for the merged panel rather than added
+to. Every new pin bite-checked; the two NO BITEs are the point of this entry.
+
+**R-1 derives its field list rather than listing it.** It reads `oopRowObj_`'s
+own `const out = {…}` literal and requires each field to appear as `o.<field>`
+in `checkOopEligibility`. A hand-written list would have been a second copy of
+the contract that drifts the first time a column is added — which is the exact
+failure the pin exists to prevent. It carries a `fields.length >= 5` sanity
+assert, because a derivation that matches nothing makes every assertion below
+it vacuously true (g116).
+
+**NO BITE #1 — a structural pin cannot see a truncated loop.** R-2 is named for
+the one-renderer rule and asserts `m.prices` is read and labelled past one
+entry. Truncating the map to `[prices[0]]` — the literal defect the batch
+exists to fix — left both regexes green. The R DOM eligibility pin goes red on
+that mutation, so the net is real, but R-2 now carries a NOTE saying which half
+it holds. The general shape: a regex over source can pin that the right DATA is
+reached and not that all of it is USED. g138 said a pin whose name promises a
+behaviour must drive it; this is the narrower corollary — when a structural pin
+and a behavioural pin split a claim, the structural one should say where its
+half ends, or the next reader assumes it covers more than it does.
+
+**NO BITE #2 — a guard nothing drives cannot bite.** Removing the item guard
+from `oopLookupInput_`'s FAILURE handler changed nothing, while the identical
+removal on the success branch bit immediately. The cause was not the pin: the
+DOM fixture returned a structured `{error}` for every eligibility call, so the
+thrown-RPC channel had no coverage at all. `run.clearResponder` +
+`run.flushFailure` now drive it, and the guard bites. Two guards need two
+pieces of evidence, and a NO BITE that is confined to one of a pair of
+symmetric branches is a coverage report, not a pin report.
+
+**R-6 found its own defect, which is the argument for writing it.** It drives
+`kbRenderLanding_` with every manager block seeded — deliberately including the
+partial-read branches (`items` present AND a count source unavailable) that a
+happy-path fixture never enters — and requires every direct child of `.kb-land`
+to be a `.kb-land-sec` or the `.kb-lookups` band. It went red on first run: the
+review-due partial-read warning was emitted after its section closed, so it had
+always been a direct child of the landing. It rendered correctly for months
+only because `.kb-land` and `.kb-land-sec` were both 760px — widening the
+landing for the band separated the two measures and would have rendered that
+one warning at full band width. Nothing could have caught it before, because
+until the band there was no observable difference between being inside the
+section and merely sharing its width.
+
+**g65 fired a fifth time, on a hand-rolled bite.** `scripts/bite.sh` refuses a
+dirty file precisely because it ends in `git checkout`. A one-off shell helper
+written inline for the DOM harness (which `bite.sh` does not drive) had no such
+guard, and its restore discarded the uncommitted R-6 fix; the next run's red
+was read as a bite before the cause was traced. The fix is procedural and
+already in the tool for the pure harness: commit first, then bite. Worth
+extending `bite.sh` to run the DOM harness so there is no reason to hand-roll
+one — noted, not done.
