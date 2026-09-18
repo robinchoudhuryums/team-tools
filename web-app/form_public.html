@@ -740,15 +740,15 @@ function renderSeatingEvalForm() {
         '<textarea id="f-diagnoses" rows="3" placeholder="List primary and secondary diagnoses"></textarea></div>' +
     '</div>' +
 
-    '<button type="button" class="accordion-toggle" data-accordion="mradl">' +
+    '<button type="button" class="accordion-toggle" data-accordion="mradl" aria-expanded="false" aria-controls="acc-mradl">' +
       'Compromised MRADLs <span class="chevron">&#9660;</span></button>' +
-    '<div class="accordion-body" data-accordion-body="mradl">' +
+    '<div class="accordion-body" data-accordion-body="mradl" id="acc-mradl">' +
       '<div class="field"><div class="checkbox-group">' + mradlChecks + '</div></div>' +
     '</div>' +
 
-    '<button type="button" class="accordion-toggle" data-accordion="functional">' +
+    '<button type="button" class="accordion-toggle" data-accordion="functional" aria-expanded="false" aria-controls="acc-functional">' +
       'Functional Limitations <span class="chevron">&#9660;</span></button>' +
-    '<div class="accordion-body" data-accordion-body="functional">' +
+    '<div class="accordion-body" data-accordion-body="functional" id="acc-functional">' +
       scaleRow('upperStrength', 'Upper Extremity Strength', 5) +
       scaleRow('lowerStrength', 'Lower Extremity Strength', 5) +
       scaleRow('rom', 'Range of Motion Limitation', 5) +
@@ -759,15 +759,15 @@ function renderSeatingEvalForm() {
         '<textarea id="f-functionalNotes" rows="2"></textarea></div>' +
     '</div>' +
 
-    '<button type="button" class="accordion-toggle" data-accordion="features">' +
+    '<button type="button" class="accordion-toggle" data-accordion="features" aria-expanded="false" aria-controls="acc-features">' +
       'Power / Multi-Power Features <span class="chevron">&#9660;</span></button>' +
-    '<div class="accordion-body" data-accordion-body="features">' +
+    '<div class="accordion-body" data-accordion-body="features" id="acc-features">' +
       '<div class="field"><div class="checkbox-group">' + featureChecks + '</div></div>' +
     '</div>' +
 
-    '<button type="button" class="accordion-toggle" data-accordion="cushion">' +
+    '<button type="button" class="accordion-toggle" data-accordion="cushion" aria-expanded="false" aria-controls="acc-cushion">' +
       'Seat / Back Cushion <span class="chevron">&#9660;</span></button>' +
-    '<div class="accordion-body" data-accordion-body="cushion">' +
+    '<div class="accordion-body" data-accordion-body="cushion" id="acc-cushion">' +
       '<div class="field"><label>History of pressure ulcers?</label>' +
         '<div class="radio-group">' +
           '<label><input type="radio" name="pressureUlcer" value="yes"> Yes</label>' +
@@ -787,9 +787,9 @@ function renderSeatingEvalForm() {
         '<textarea id="f-cushionNotes" rows="2"></textarea></div>' +
     '</div>' +
 
-    '<button type="button" class="accordion-toggle" data-accordion="utilization">' +
+    '<button type="button" class="accordion-toggle" data-accordion="utilization" aria-expanded="false" aria-controls="acc-utilization">' +
       'Utilization <span class="chevron">&#9660;</span></button>' +
-    '<div class="accordion-body" data-accordion-body="utilization">' +
+    '<div class="accordion-body" data-accordion-body="utilization" id="acc-utilization">' +
       '<div class="field"><label for="f-managementNeeds">Management needs (positioning, spasticity, skin protection, etc.)</label>' +
         '<textarea id="f-managementNeeds" rows="2"></textarea></div>' +
       '<div class="field"><label for="f-mradlImprovement">How will equipment improve MRADLs?</label>' +
@@ -891,6 +891,11 @@ function wireAccordions() {
       var isOpen = body.classList.contains('open');
       body.classList.toggle('open', !isOpen);
       btn.classList.toggle('open', !isOpen);
+      // F-42 (2026-09-18): the button IS the disclosure control, so its state
+      // has to be exposed — a screen reader announced five buttons with no
+      // hint that any of them opened anything, and no way to tell which were
+      // already open. aria-controls names the body it toggles.
+      btn.setAttribute('aria-expanded', !isOpen ? 'true' : 'false');
     });
   });
 }

@@ -1240,14 +1240,16 @@ function openExportModal() {
   const firstOfMonth = todayIso.substring(0, 7) + '-01';
   document.getElementById('exp-start').value = firstOfMonth;
   document.getElementById('exp-end').value   = todayIso;
-  document.getElementById('export-overlay').classList.add('open');
+  const expRes = document.getElementById('exp-result');
+  if (expRes) expRes.innerHTML = '';   // F-36: last run's link never carries into a new one
+  ensureOverlay('export-overlay');   // F-40: the focus stash/restore lifecycle
 }
 
 document.getElementById('exp-cancel').addEventListener('click', () =>
-  document.getElementById('export-overlay').classList.remove('open'));
+  closeOverlay(document.getElementById('export-overlay')));
 document.getElementById('export-overlay').addEventListener('click', e => {
   if (e.target === document.getElementById('export-overlay'))
-    document.getElementById('export-overlay').classList.remove('open');
+    closeOverlay(document.getElementById('export-overlay'));
 });
 
 document.querySelectorAll('.preset-btn').forEach(btn => {
@@ -1291,14 +1293,28 @@ document.getElementById('exp-submit').addEventListener('click', () => {
       btn.disabled = false;
       btn.textContent = 'Generate Export';
       if (!result.success) { showToast((result.error||'Error'),'toast-error'); return; }
-      document.getElementById('export-overlay').classList.remove('open');
       // F1 (cycle 12): say so when the range reached into the Timesheet cold
       // archive — the rows are included now, but a manager exporting an old
       // period should know the archive was part of the answer.
       const archNote = result.archivedRowCount
         ? ` (incl. ${result.archivedRowCount} archived)` : '';
-      showToast(`Generated ${result.rowCount} rows${archNote} — opening sheet`, 'toast-success');
-      window.open(result.url, '_blank');
+      // F-36 (2026-09-18): window.open AFTER an async RPC is outside the
+      // user gesture, so a pop-up blocker swallows it and the generated
+      // sheet's URL was GONE — the modal had already closed and nothing
+      // else carried it. Render the link FIRST (and keep the modal open so
+      // it is reachable), then attempt the open as the convenience it is.
+      const resSlot = document.getElementById('exp-result');
+      if (resSlot) {
+        resSlot.innerHTML = `<a class="exp-result-link" href="${esc(result.url)}" target="_blank" rel="noopener">`
+          + `${icon('popOut', 13)}Open the export sheet — ${esc(String(result.rowCount))} rows${esc(archNote)}</a>`;
+      }
+      let exWin = null;
+      try { exWin = window.open(result.url, '_blank'); } catch (_) { exWin = null; }
+      if (exWin) {
+        showToast(`Generated ${result.rowCount} rows${archNote} — opening sheet`, 'toast-success');
+      } else {
+        showToast(`Generated ${result.rowCount} rows${archNote} — use the link in the dialog (your browser blocked the new tab)`, 'toast-warn');
+      }
     })
     .withFailureHandler(err => {
       btn.disabled = false;
@@ -1319,18 +1335,18 @@ function openMgrTimeOffModal(data) {
   document.getElementById('mto-type').value = 'Full Day';
   document.getElementById('mto-notes').value = '';
   document.getElementById('mto-auto').checked = true;
-  document.getElementById('mgr-timeoff-overlay').classList.add('open');
+  ensureOverlay('mgr-timeoff-overlay');   // F-40: the focus stash/restore lifecycle
 }
 
 document.getElementById('mto-cancel').addEventListener('click', () => {
-  document.getElementById('mgr-timeoff-overlay').classList.remove('open');
+  closeOverlay(document.getElementById('mgr-timeoff-overlay'));
 });
 // Cycle-9 L-33: this was the ONLY static overlay without backdrop-click close
 // (every sibling — export, adjust, day-edit, day popover — wires it), which
 // read as a hang to a manager expecting the app-wide convention.
 document.getElementById('mgr-timeoff-overlay').addEventListener('click', e => {
   if (e.target === document.getElementById('mgr-timeoff-overlay'))
-    document.getElementById('mgr-timeoff-overlay').classList.remove('open');
+    closeOverlay(document.getElementById('mgr-timeoff-overlay'));
 });
 
 document.getElementById('mto-submit').addEventListener('click', () => {
@@ -1350,7 +1366,7 @@ document.getElementById('mto-submit').addEventListener('click', () => {
       btn.disabled = false;
       btn.textContent = 'File Request';
       if (!result.success) { showToast((result.error||'Error'),'toast-error'); return; }
-      document.getElementById('mgr-timeoff-overlay').classList.remove('open');
+      closeOverlay(document.getElementById('mgr-timeoff-overlay'));
       showToast(`Time off filed${result.status === 'Approved' ? ' & approved' : ''}`, 'toast-success');
       refreshViewIfCurrent('manage', 'Refreshing…', loadManagerDashboard);
     })
@@ -1788,7 +1804,7 @@ function openDayEditModal(empId, empName, prefillDate) {
   // usually re-syncs a moment later, but not when the day has no row or the
   // read fails, which is exactly when a manager is adding punches by hand.
   deRenderBreaks_([]);
-  document.getElementById('day-edit-overlay').classList.add('open');
+  ensureOverlay('day-edit-overlay');   // F-40: the focus stash/restore lifecycle
   loadDayEditPunches(empId, _deDate, _deDate);
 }
 
@@ -1852,11 +1868,11 @@ document.getElementById('de-date-to').addEventListener('change', deSyncRangeMode
 document.getElementById('de-breaks').addEventListener('input', deSyncRangeMode_);
 
 document.getElementById('de-cancel').addEventListener('click', function () {
-  document.getElementById('day-edit-overlay').classList.remove('open');
+  closeOverlay(document.getElementById('day-edit-overlay'));
 });
 document.getElementById('day-edit-overlay').addEventListener('click', function (e) {
   if (e.target === document.getElementById('day-edit-overlay'))
-    document.getElementById('day-edit-overlay').classList.remove('open');
+    closeOverlay(document.getElementById('day-edit-overlay'));
 });
 
 /** ISO day after `iso` (UTC math — DST-immune, the deMin pattern above). */
@@ -1921,7 +1937,7 @@ document.getElementById('de-save').addEventListener('click', function () {
     btn.disabled = false;
     btn.textContent = 'Save Changes';
     if (!result.success) { showToast((result.error || 'Error'), 'toast-error'); return; }
-    document.getElementById('day-edit-overlay').classList.remove('open');
+    closeOverlay(document.getElementById('day-edit-overlay'));
     showToast(rangeMode
       ? ('Applied ' + (result.punchesWritten || 0) + ' punch(es) across ' + (result.daysTouched || 0) + ' day(s)')
       : (result.changes > 0 ? result.summary : 'No changes needed'), 'toast-success');

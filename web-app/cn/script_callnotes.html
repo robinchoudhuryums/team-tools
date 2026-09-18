@@ -2833,8 +2833,8 @@ function cnRenderNotesView(area) {
     </div>
     <div id="cn-shortcuts-overlay" class="overlay">
       <div class="cn-shortcuts-modal">
-        <button class="cn-shortcuts-close" onclick="document.getElementById('cn-shortcuts-overlay').classList.remove('open')">${icon('x', 16)}</button>
-        <div class="cn-shortcuts-title">Keyboard Shortcuts</div>
+        <button class="cn-shortcuts-close" aria-label="Close keyboard shortcuts" onclick="closeOverlay(document.getElementById('cn-shortcuts-overlay'))">${icon('x', 16)}</button>
+        <div class="cn-shortcuts-title" id="cn-shortcuts-title">Keyboard Shortcuts</div>
         <table class="cn-shortcuts-table">
           <tr><td>Save &amp; Copy</td><td><kbd>${esc(mod)}</kbd> + <kbd>Shift</kbd> + <kbd>C</kbd></td></tr>
           <tr><td>Save &amp; Compose</td><td><kbd>${esc(mod)}</kbd> + <kbd>Shift</kbd> + <kbd>Enter</kbd></td></tr>
@@ -2852,7 +2852,7 @@ function cnRenderNotesView(area) {
           <tr><td>Show Shortcuts</td><td><kbd>${esc(mod)}</kbd> + <kbd>/</kbd>&nbsp; or &nbsp;<kbd>?</kbd></td></tr>
         </table>
         <button class="tour-btn primary" style="margin-top:14px;width:100%;justify-content:center"
-                onclick="document.getElementById('cn-shortcuts-overlay').classList.remove('open'); if (typeof tourStart==='function') tourStart();">
+                onclick="closeOverlay(document.getElementById('cn-shortcuts-overlay')); if (typeof tourStart==='function') tourStart();">
           ${icon('info', 14)} Replay the app tour
         </button>
       </div>
@@ -7798,7 +7798,7 @@ function cnMgrRenderReadonlyCard_(note) {
     // appends to subformData.feedback[] via setCallNoteManagerComment (item 9).
     editor = `
       <div class="cn-mgr-reply-row" data-note-id="${esc(note.noteId)}" data-rep-id="${esc(repId)}">
-        <input type="text" class="cn-mgr-reply-input" aria-label="Reply to this training question" placeholder="Add a comment for this rep…" aria-label="Add a comment for this rep">
+        <input type="text" class="cn-mgr-reply-input" placeholder="Add a comment for this rep…" aria-label="Add a comment for this rep">
         <button type="button" class="cn-mgr-reply-save" onclick="cnMgrSaveComment_(this)">
           ${icon('check', 12)}<span>Comment</span>
         </button>
@@ -8552,7 +8552,11 @@ function cnRenderQAThread_(note, opts) {
       : esc(e.message || '');
     const ts = e.at ? '<span class="qa-ts">' + esc(String(e.at).slice(11, 16)) + '</span>' : '';
     return '<div class="qa-row ' + roleCls + '">'
-      + '<span class="qa-role">' + (e.role === 'manager' ? 'Mgr' : 'You') + ' ' + kindLabel + '</span>'
+      // F-29 (2026-09-18): "You" is only true on the REP's own view. In the
+      // manager's read-only Team Notes card the agent entries belong to the
+      // rep being read, and labelling them "You" told the manager they had
+      // written the rep's question.
+      + '<span class="qa-role">' + (e.role === 'manager' ? 'Mgr' : (readonly ? 'Rep' : 'You')) + ' ' + kindLabel + '</span>'
       + '<span class="qa-msg">' + body + '</span>'
       + ts
       + '</div>';
@@ -8753,7 +8757,11 @@ function cnUpdateQuickChipRow_(res) {
   ];
   // V-12: the label names the destination and every chip carries a chevron, so
   // "this click leaves the page" is legible without reading the kicker.
-  row.innerHTML = '<span class="cn-quick-chip-row-label">' + icon('chevronRight', 11) + ' Open in History · this week</span>'
+  // F-28 (2026-09-18): these counts span the rep's WHOLE Sheet by design
+  // (INV-39 — historical totals), and the label said "this week". The label
+  // moves to the counts rather than the counts to the label: a weekly count
+  // here would contradict the same numbers everywhere else they appear.
+  row.innerHTML = '<span class="cn-quick-chip-row-label">' + icon('chevronRight', 11) + ' Open in History · all time</span>'
     + chips.map(c => `<button type="button" class="cn-quick-chip" data-flag="${esc(c.flag)}" ` +
         `title="Open History filtered to ${esc(c.label)}">${esc(c.label)} ` +
         `<span class="count">${c.count}</span>` +
@@ -8801,8 +8809,12 @@ function cnIsMac_() {
 }
 
 function cnOpenShortcutsOverlay_() {
-  var overlay = document.getElementById('cn-shortcuts-overlay');
-  if (overlay) overlay.classList.add('open');
+  // F-30 (2026-09-18): through ensureOverlay, so the shortcuts dialog gets
+  // what every other overlay has — an accessible NAME (it announced as a bare
+  // "dialog"), the focus stash/restore, and Escape-to-close through the
+  // shared handler. It was the one overlay in this partial opened by hand.
+  if (!document.getElementById('cn-shortcuts-overlay')) return;
+  ensureOverlay('cn-shortcuts-overlay', { labelledBy: 'cn-shortcuts-title' });
 }
 
 function cnFormToggleFlag_(kind) {
@@ -9401,13 +9413,19 @@ function cnLoadAdminAugment_() {
   // 2nd-pass Admin consolidation: taxonomy + trends are ONE table now, so the
   // trends fetch joins this parallel load (was a separate panel). Trends failure
   // is non-fatal — the table renders without the sparkline/Δ columns' data.
-  let kpi = null, tax = null, trends = null, done = 0;
+  // F-12 (2026-09-18): the strip labelled the ADMIN'S OWN counts "across
+  // team" — `getCallNotesAmbient` is the caller's own Sheet. The two cells
+  // that claimed team scope now read team-wide sources:
+  // `getCallNotesTagTaxonomy.totalNotes` (every enrolled rep's notes) and
+  // `managerGetUnresolvedActionCount` (the cross-rep walk behind the Team
+  // Notes badge, 2-min cached, and it REPORTS a partial walk).
+  let kpi = null, tax = null, trends = null, unres = null, done = 0;
   function maybeRender() {
-    if (done < 3) return;
+    if (done < 4) return;
     if (currentView !== 'callNotesAdmin') return;
     // KPI strip → Overview (#cn-admin-kpis); merged tag table → Tags
     // (#cn-admin-augment). Falls back to a single slot if the KPI host is absent.
-    const parts = cnRenderAdminAugmentHtml_(kpi, tax, trends);
+    const parts = cnRenderAdminAugmentHtml_(kpi, tax, trends, unres);
     const kpiSlot = document.getElementById('cn-admin-kpis');
     if (kpiSlot) { kpiSlot.innerHTML = parts.kpiHtml; slot.innerHTML = parts.taxHtml; }
     else { slot.innerHTML = parts.kpiHtml + parts.taxHtml; }
@@ -9427,21 +9445,36 @@ function cnLoadAdminAugment_() {
     .withSuccessHandler(function (r) { trends = r || null; done++; maybeRender(); })
     .withFailureHandler(function () { done++; maybeRender(); })
     .getCallNotesTagTrends();
+  google.script.run
+    .withSuccessHandler(function (r) { unres = r || null; done++; maybeRender(); })
+    .withFailureHandler(function () { done++; maybeRender(); })
+    .managerGetUnresolvedActionCount();
 }
 
 /** Round 2 · 8h + 2nd-pass merge — render the KPI strip + the merged tag table
  *  (taxonomy taxonomy + inline trend sparkline + this-week Δ). */
-function cnRenderAdminAugmentHtml_(kpi, tax, trends) {
-  // KPI strip: Notes this week, Unresolved actions, Tags in use, Reps scanned
-  const weekVal = kpi && typeof kpi.weekTotal === 'number' ? kpi.weekTotal : '—';
-  const unresolvedVal = kpi && typeof kpi.unresolvedActionCount === 'number' ? kpi.unresolvedActionCount : '—';
+function cnRenderAdminAugmentHtml_(kpi, tax, trends, unres) {
+  // KPI strip: Notes across team, Unresolved action flags across team, Tags in
+  // use, Reps scanned. F-12 (2026-09-18): the first two cells took the
+  // CALLER'S OWN numbers from getCallNotesAmbient and captioned them "across
+  // team" — an admin with a quiet week read the whole team as quiet. Both come
+  // from cross-rep sources now, and each cell's sub-line states its own SCOPE
+  // rather than the strip implying one. `kpi` still rides for the ok-shape.
+  const notesVal = tax && typeof tax.totalNotes === 'number' ? tax.totalNotes : '—';
   const tagsCount = tax && Array.isArray(tax.tags) ? tax.tags.length : '—';
   const repsCount = tax && typeof tax.repsScanned === 'number' ? tax.repsScanned : '—';
-  const unresolvedClass = (typeof unresolvedVal === 'number' && unresolvedVal > 3) ? 'crit'
-    : (typeof unresolvedVal === 'number' && unresolvedVal > 0 ? 'warn' : '');
+  // A cross-rep walk that could not read every Sheet is a LOWER BOUND and says
+  // so (INV-187) — "≥ 7" beside a partial note, never a confident 7.
+  const unresOk = unres && !unres.error && typeof unres.count === 'number';
+  const unresolvedVal = unresOk ? unres.count : '—';
+  const unresPartial = !!(unresOk && unres.partial);
+  const unresolvedClass = (unresOk && unres.count > 3) ? 'crit' : (unresOk && unres.count > 0 ? 'warn' : '');
+  const unresText = unresOk ? ((unresPartial ? '≥ ' : '') + String(unresolvedVal)) : '—';
+  const unresSub = !unresOk ? 'could not be read'
+    : (unresPartial ? 'across team · a rep Sheet was unreadable' : 'action flags open across team');
   const kpiHtml = '<div class="telemetry" style="margin-bottom:16px">'
-    + '<div class="tel-cell"><div class="tel-label">Week notes</div><div class="tel-value">' + esc(String(weekVal)) + '</div><div class="tel-sub">across team</div></div>'
-    + '<div class="tel-cell"><div class="tel-label">Unresolved</div><div class="tel-value ' + unresolvedClass + '">' + esc(String(unresolvedVal)) + '</div><div class="tel-sub">action flags open</div></div>'
+    + '<div class="tel-cell"><div class="tel-label">Notes</div><div class="tel-value">' + esc(String(notesVal)) + '</div><div class="tel-sub">across team · all time</div></div>'
+    + '<div class="tel-cell"><div class="tel-label">Unresolved</div><div class="tel-value ' + unresolvedClass + '">' + esc(unresText) + '</div><div class="tel-sub">' + esc(unresSub) + '</div></div>'
     + '<div class="tel-cell"><div class="tel-label">Tags</div><div class="tel-value">' + esc(String(tagsCount)) + '</div><div class="tel-sub">unique in use</div></div>'
     + '<div class="tel-cell"><div class="tel-label">Reps</div><div class="tel-value">' + esc(String(repsCount)) + '</div><div class="tel-sub">enrolled scanned</div></div>'
     + '</div>';

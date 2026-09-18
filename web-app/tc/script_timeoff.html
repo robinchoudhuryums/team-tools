@@ -975,7 +975,13 @@ function openDayModal(dateStr) {
   } else {
     formSec.style.display = 'none'; submitBtn.style.display = 'none';
   }
-  document.getElementById('day-overlay').classList.add('open');
+  // F-40 (2026-09-18): through ensureOverlay for the focus stash/restore.
+  // ensureOverlay REWRITES className, so carry `hover-mode` across when the
+  // caller (openDayPopover_) set it — a hover popover is deliberately NOT a
+  // modal, and losing the class would give it a backdrop and steal focus.
+  const dayOv = document.getElementById('day-overlay');
+  const dayHover = !!(dayOv && dayOv.classList.contains('hover-mode'));
+  ensureOverlay('day-overlay', dayHover ? { extraClass: 'hover-mode' } : {});
 }
 
 /** Live-updates the "Annual leave after" preview row when the rep
@@ -1108,7 +1114,7 @@ function openDayPopover_(cell, pin) {
 function closeDayPopover_() {
   const overlay = document.getElementById('day-overlay');
   if (!overlay) return;
-  overlay.classList.remove('open');
+  closeOverlay(overlay);   // F-40: hands focus back to the calendar cell
   overlay.classList.remove('hover-mode');
   const modal = overlay.querySelector('.modal');
   if (modal) { modal.style.top = ''; modal.style.left = ''; }
@@ -1164,7 +1170,7 @@ document.getElementById('day-submit').addEventListener('click', () => {
       // selection, while a transport failure correctly kept it open. Both
       // failure shapes now keep the modal open for fix-and-retry.
       if (!result.success) { showToast((result.error||'Error'),'toast-error'); return; }
-      document.getElementById('day-overlay').classList.remove('open');
+      closeOverlay(document.getElementById('day-overlay'));
       // Cycle-9 L-30: a request is typically submitted from a CLICK-PINNED
       // popover, and this close path never reset the pin flag — the re-bound
       // calendar cells' mouseenter handlers early-return on it, so hover-open

@@ -4157,7 +4157,7 @@ function kbCloseModal_() {
 //  Reads reuse the three enrolled-employee KB endpoints; opens are recorded
 //  best-effort via kbRecordView (fire-and-forget, never blocks the UI).
 // ============================================================================
-var KB_DRAWER = { open: false, tree: null, view: 'home', lastQuery: '', searchSeq: 0, item: null, suggestSeq: 0, suggestCache: null, guidanceSeq: 0, guidanceCache: null };
+var KB_DRAWER = { open: false, tree: null, view: 'home', lastQuery: '', searchSeq: 0, item: null, suggestSeq: 0, suggestCache: null, guidanceSeq: 0, guidanceCache: null, restoreFocus: null };   // F-43: restoreFocus
 var KB_PANEL_LS_KEY = 'umsKbPanel';
 
 function kbPanelPrefs_() {
@@ -4246,9 +4246,16 @@ function kbDrawerMount_() {
   if (document.getElementById('kb-drawer')) return;
   var d = document.createElement('div');
   d.id = 'kb-drawer';
+  // F-43 (2026-09-18): the drawer announced as an unlabelled generic region.
+  // role="dialog" + a name from its own heading (so the two cannot drift).
+  // Deliberately NOT aria-modal: it does not trap focus — the shell's trap
+  // exempts it by design (the hover-popover precedent) — and claiming a
+  // modality it does not enforce is the lie this a11y family exists to avoid.
+  d.setAttribute('role', 'dialog');
+  d.setAttribute('aria-labelledby', 'kbd-title');
   d.innerHTML =
     '<div class="kbd-head">' + icon('list', 14) +
-      '<span class="kbd-kicker">Reference</span>' +
+      '<span class="kbd-kicker" id="kbd-title">Reference</span>' +
       '<button class="kbd-x" onclick="kbDrawerClose_()" aria-label="Close">' + icon('x', 15) + '</button></div>' +
     '<div class="kbd-search"><input type="text" id="kbd-q" placeholder="Search reference\u2026 (Ctrl/\u2318+K)" autocomplete="off" aria-label="Search reference\u2026 (Ctrl/\u2318+K)"><span class="kbd-spin" id="kbd-spin"></span></div>' +
     '<div class="kbd-body" id="kbd-body"></div>';
@@ -4278,6 +4285,13 @@ function kbDrawerMount_() {
 
 function kbDrawerOpen_() {
   kbDrawerMount_();
+  // F-43: stash the trigger so closing hands focus back. The drawer moves
+  // focus into its search box below, so without this a rep who opened it
+  // mid-note with Ctrl/⌘+K lost their place in the form on close.
+  if (!KB_DRAWER.open) {
+    var kbAe = document.activeElement;
+    KB_DRAWER.restoreFocus = (kbAe && kbAe !== document.body) ? kbAe : null;
+  }
   KB_DRAWER.open = true;
   document.getElementById('kb-drawer').classList.add('open');
   if (!KB_DRAWER.tree) {
@@ -4296,9 +4310,16 @@ function kbDrawerOpen_() {
 }
 
 function kbDrawerClose_() {
+  var wasOpen = KB_DRAWER.open;
   KB_DRAWER.open = false;
   var d = document.getElementById('kb-drawer');
   if (d) d.classList.remove('open');
+  // F-43: hand focus back to whatever opened it, exactly once.
+  var kbRestore = KB_DRAWER.restoreFocus;
+  KB_DRAWER.restoreFocus = null;
+  if (wasOpen && kbRestore) {
+    try { if (kbRestore.isConnected) kbRestore.focus(); } catch (_) {}
+  }
 }
 function kbDrawerToggle_() { if (KB_DRAWER.open) kbDrawerClose_(); else kbDrawerOpen_(); }
 /** Core Esc handler hook: returns true when it consumed the keypress. */

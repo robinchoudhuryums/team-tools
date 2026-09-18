@@ -4690,7 +4690,11 @@ test('cycle-10 batch D: client guards hold', () => {
   // D1 — the PTO day-submit checks the result BEFORE closing the modal.
   const to = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_timeoff.html'), 'utf8');
   const seg = to.slice(to.indexOf("document.getElementById('day-submit').addEventListener"));
-  assert.ok(seg.indexOf('if (!result.success)') < seg.indexOf("classList.remove('open')"),
+  // F-40 (2026-09-18): the close is `closeOverlay(...)` now (the focus
+  // stash/restore lifecycle), not a bare classList.remove — the ORDER is what
+  // D1 guards, so the pin follows the call rather than the mechanism.
+  const segClose = seg.indexOf("closeOverlay(document.getElementById('day-overlay'))");
+  assert.ok(segClose > 0 && seg.indexOf('if (!result.success)') < segClose,
     'day-submit keeps the modal open on a server rejection (D1)');
   // D3 — unknown live-status enum degrades, never throws.
   const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
@@ -20644,6 +20648,195 @@ test('F-27: the intake email rows come from the SERVER\'s English bank and the c
   assert.ok(!/labelByKey\[r\.qNum\] = r\.label/.test(srv) && !/labelByKey\[r\.qIndex\] = r\.label \|\| String\(r\.qIndex\)/.test(foNc(extractRawFunction('Code.js', 'intakeSendPPD'))), 'the amend banner never labels from the client either');
   // The walk regex is the client's.
   assert.ok(/\/\^\(\\d\+\[a-z\]\?\)\\\.\//.test(extractRawFunction('Code.js', 'intakePpdRowsEn_')) && /\/\^\(\\d\+\[a-z\]\?\)\\\.\//.test(cli), 'both sides split a question number with the same regex');
+});
+
+// ── Batch 6 (2026-09-17 /broad-scan): shell, accessibility and copy ──────────
+// F-14 the boot Retry through reloadApp_ · F-12 the Admin KPI strip reports
+// TEAM numbers · F-40 five static modals join the focus lifecycle · F-30 the
+// shortcuts overlay too · F-29 one aria-label, and "Rep" under a manager ·
+// F-42 the public form's accordions expose their state · F-43 the KB drawer is
+// a named dialog that hands focus back · F-36 the export link survives a
+// popup blocker · F-37 the blocked pop-out actually says so · F-28 the chip
+// row's label matches its counts.
+test('F-14 / F-37: the boot Retry reloads the APP (never the sandboxed iframe), and a blocked pop-out is detected by the RETURN value', () => {
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const nc = foNc(core);
+  // F-14 — g69: location.reload() reloads the IFRAME, whose URL is
+  // session-bound and renders blank. renderError is the BOOT failure surface,
+  // so its Retry was the one most likely to be pressed on a cold start.
+  const re = foNc(extractFunction('script_core.html', 'renderError'));
+  assert.ok(/onclick="reloadApp_\(\)"/.test(re) && !/location\.reload/.test(re), 'the boot Retry goes through reloadApp_');
+  // The tripwire the finding asked for: reloadApp_ is the ONLY place that may
+  // call location.reload(), and it does so exactly on its two escape hatches
+  // (not framed / no server URL, and the final fallback).
+  const reload = foNc(extractFunction('script_core.html', 'reloadApp_'));
+  const total = (nc.match(/location\.reload\(\)/g) || []).length;
+  const inside = (reload.match(/location\.reload\(\)/g) || []).length;
+  assert.strictEqual(inside, 2, 'reloadApp_ keeps its two documented fallbacks');
+  assert.strictEqual(total, inside, 'no OTHER call site in script_core reloads the iframe (g69)');
+  const partials = ['cn/script_callnotes.html', 'tc/script_clock.html', 'tc/script_manager.html', 'tc/script_timeoff.html',
+                    'metrics/script_metrics.html', 'kb/script_kb.html', 'qa/script_qa.html', 'intake/script_intake.html'];
+  partials.forEach((p) => {
+    const src = foNc(fs.readFileSync(path.join(__dirname, '../../web-app/' + p), 'utf8'));
+    assert.ok(!/location\.reload\(\)/.test(src), p + ' reloads the app through reloadApp_, never location.reload (g69)');
+  });
+  // F-37 — window.open returns NULL when blocked; it does not throw, so the
+  // catch could never fire and the rep got nothing.
+  const pop = foNc(extractFunction('script_core.html', 'popOutCurrentView'));
+  assert.ok(/var win = null;/.test(pop) && /win = window\.open\(url, 'umsTeamToolsCompact_' \+ tool, feat\);/.test(pop),
+    'the pop-out captures the return value');
+  assert.ok(/if \(!win\) \{ showToast\(/.test(pop), 'a null window IS the blocked case, and it toasts');
+  assert.ok(pop.indexOf('if (!win)') < pop.indexOf('win.focus()'), 'and the focus call never runs on a null window');
+});
+
+test('F-40 / F-30: every static modal and the shortcuts overlay open through ensureOverlay and close through closeOverlay — the focus stash/restore, and hover-mode survives', () => {
+  const MODALS = [
+    ['tc/script_clock.html', ['adjust-overlay']],
+    ['tc/script_manager.html', ['export-overlay', 'mgr-timeoff-overlay', 'day-edit-overlay']],
+    ['tc/script_timeoff.html', ['day-overlay']],
+  ];
+  MODALS.forEach(([file, ids]) => {
+    const src = foNc(fs.readFileSync(path.join(__dirname, '../../web-app/' + file), 'utf8'));
+    ids.forEach((id) => {
+      assert.ok(new RegExp("ensureOverlay\\('" + id + "'").test(src), id + ' opens through ensureOverlay (' + file + ')');
+      assert.ok(!new RegExp("getElementById\\('" + id + "'\\)\\.classList\\.add\\('open'\\)").test(src),
+        id + ' has no bare classList.add(open) left');
+      assert.ok(!new RegExp("getElementById\\('" + id + "'\\)\\.classList\\.remove\\('open'\\)").test(src),
+        id + ' has no bare classList.remove(open) left — closeOverlay restores focus');
+      assert.ok(new RegExp("closeOverlay\\(document\\.getElementById\\('" + id + "'\\)\\)").test(src),
+        id + ' closes through closeOverlay');
+    });
+  });
+  // day-overlay doubles as the hover POPOVER: ensureOverlay rewrites
+  // className, so the class that marks it non-modal has to be carried across
+  // or a hover preview would gain a backdrop and steal focus.
+  const to = foNc(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_timeoff.html'), 'utf8'));
+  assert.ok(/const dayHover = !!\(dayOv && dayOv\.classList\.contains\('hover-mode'\)\);/.test(to) &&
+            /ensureOverlay\('day-overlay', dayHover \? \{ extraClass: 'hover-mode' \} : \{\}\)/.test(to),
+    'the hover-mode class survives the ensureOverlay className rewrite');
+  const closePop = foNc(extractFunction('tc/script_timeoff.html', 'closeDayPopover_'));
+  assert.ok(/closeOverlay\(overlay\);/.test(closePop) && !/classList\.remove\('open'\)/.test(closePop),
+    'closeDayPopover_ restores focus to the calendar cell');
+  // F-30 — the shortcuts overlay was the one dialog in the CN partial opened
+  // by hand: no name, no focus lifecycle, no shared Escape.
+  const open = foNc(extractFunction('cn/script_callnotes.html', 'cnOpenShortcutsOverlay_'));
+  assert.ok(/ensureOverlay\('cn-shortcuts-overlay', \{ labelledBy: 'cn-shortcuts-title' \}\)/.test(open),
+    'the shortcuts overlay opens through ensureOverlay, named by its own heading');
+  assert.ok(!/classList\.add\('open'\)/.test(open), 'and not by hand');
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/<div class="cn-shortcuts-title" id="cn-shortcuts-title">/.test(cn), 'the heading carries the id the name points at');
+  assert.strictEqual((cn.match(/closeOverlay\(document\.getElementById\('cn-shortcuts-overlay'\)\)/g) || []).length, 2,
+    'both close paths (the X and the tour link) go through closeOverlay');
+  assert.ok(!/getElementById\('cn-shortcuts-overlay'\)\.classList\.remove\('open'\)/.test(cn), 'no bare close survives');
+});
+
+test('F-12: the Admin KPI strip reports TEAM-WIDE numbers — a partial cross-rep walk is a lower bound, and an unreadable one says so instead of showing a dash as data', () => {
+  sb.cnRenderTagRow_ = function () { return ''; };
+  sb.cnSkippedRepsNoteHtml_ = function () { return ''; };
+  const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnRenderAdminAugmentHtml_');
+  const tax = { tags: [], archivedOnlyTags: [], totalNotes: 1284, repsScanned: 6 };
+  const ownKpi = { weekTotal: 3, unresolvedActionCount: 1 };   // the ADMIN'S OWN counts — must reach no cell
+  const clean = fn(ownKpi, tax, null, { count: 7, partial: false }).kpiHtml;
+  assert.ok(/1284<\/div><div class="tel-sub">across team · all time</.test(clean), 'the notes cell is the team-wide total, and says its scope');
+  assert.ok(!/>3</.test(clean), "the admin's own weekTotal reaches no cell");
+  assert.ok(/>7<\/div><div class="tel-sub">action flags open across team</.test(clean), 'unresolved is the cross-rep count');
+  assert.ok(/tel-value crit/.test(clean), '7 open action flags is the crit band');
+  assert.ok(/>6<\/div><div class="tel-sub">enrolled scanned</.test(clean), 'reps scanned rides the same taxonomy walk');
+  // A walk that could not read every Sheet is a LOWER BOUND (INV-187).
+  const partial = fn(ownKpi, tax, null, { count: 7, partial: true }).kpiHtml;
+  assert.ok(/≥ 7</.test(partial) && /a rep Sheet was unreadable/.test(partial), 'a partial walk reads "≥ 7" and names why');
+  // Unreadable / absent: a dash that SAYS it is a failed read, never a 0.
+  [null, { error: 'Manager access required.' }].forEach((u) => {
+    const bad = fn(ownKpi, tax, null, u).kpiHtml;
+    assert.ok(/>—<\/div><div class="tel-sub">could not be read</.test(bad), 'an unreadable count is a dash plus the reason');
+    assert.ok(!/>0<\/div><div class="tel-sub">(could not be read|action flags open across team)</.test(bad),
+      'the unresolved cell is never a confident zero when the walk failed');
+  });
+  const zero = fn(ownKpi, tax, null, { count: 0, partial: false }).kpiHtml;
+  assert.ok(/>0<\/div><div class="tel-sub">action flags open across team</.test(zero), 'a REAL zero still renders as 0');
+  // The loader fetches the fourth source and waits for it.
+  const load = foNc(extractFunction('cn/script_callnotes.html', 'cnLoadAdminAugment_'));
+  assert.ok(/if \(done < 4\) return;/.test(load) && /\.managerGetUnresolvedActionCount\(\);/.test(load),
+    'the strip waits on all four parallel sources');
+  assert.ok(/cnRenderAdminAugmentHtml_\(kpi, tax, trends, unres\)/.test(load), 'and passes the cross-rep count through');
+});
+
+test('F-29: one aria-label per input, and the Q&A thread says "Rep" when a MANAGER is reading it', () => {
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  // A second aria-label on one element is not an override — it is invalid, and
+  // which one wins is the parser's business, not ours.
+  const dupes = (cn.match(/<input[^>]*aria-label[^>]*aria-label[^>]*>/g) || []);
+  assert.deepStrictEqual(dupes, [], 'no input carries two aria-labels: ' + dupes.join(' | '));
+  assert.ok(/placeholder="Add a comment for this rep…" aria-label="Add a comment for this rep"/.test(cn),
+    'the general comment box keeps the label that matches what it does');
+  const thread = foNc(extractFunction('cn/script_callnotes.html', 'cnRenderQAThread_'));
+  assert.ok(/\(e\.role === 'manager' \? 'Mgr' : \(readonly \? 'Rep' : 'You'\)\)/.test(thread),
+    '"You" only on the rep\'s own view; a manager reading the card sees "Rep"');
+  assert.ok(/const readonly = !!\(opts && opts\.readonly\);/.test(thread), 'readonly IS the manager-view flag the card passes');
+  assert.ok(/cnRenderQAThread_\(note, \{ readonly: true \}\)/.test(cn), 'and the manager card passes it');
+});
+
+test('F-42: the public form\'s accordions expose their state — aria-expanded on every toggle, aria-controls naming the body it opens, and the handler keeps it in step', () => {
+  const fp = fs.readFileSync(path.join(__dirname, '../../web-app/form_public.html'), 'utf8');
+  const toggles = fp.match(/class="accordion-toggle" data-accordion="(\w+)" aria-expanded="false" aria-controls="acc-\1"/g) || [];
+  assert.strictEqual(toggles.length, 5, 'all five toggles ship collapsed-and-labelled: ' + toggles.length);
+  assert.ok(!/class="accordion-toggle" data-accordion="\w+">/.test(fp), 'no toggle is left without the aria pair');
+  const bodies = fp.match(/class="accordion-body" data-accordion-body="(\w+)" id="acc-\1"/g) || [];
+  assert.strictEqual(bodies.length, 5, 'every body carries the id its toggle points at');
+  const wire = foNc(extractFunction('form_public.html', 'wireAccordions'));
+  assert.ok(/btn\.setAttribute\('aria-expanded', !isOpen \? 'true' : 'false'\);/.test(wire),
+    'the handler updates aria-expanded with the class it toggles');
+  assert.ok(wire.indexOf("classList.toggle('open', !isOpen)") < wire.indexOf('aria-expanded'),
+    'and does it from the SAME !isOpen it renders with (never a second read of the DOM)');
+});
+
+test('F-43: the Reference drawer is a NAMED dialog that hands focus back — and does not claim a modality it never enforces', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const mount = foNc(extractFunction('kb/script_kb.html', 'kbDrawerMount_'));
+  assert.ok(/d\.setAttribute\('role', 'dialog'\);/.test(mount), 'role=dialog');
+  assert.ok(/d\.setAttribute\('aria-labelledby', 'kbd-title'\);/.test(mount), 'named by its own heading (the name and the heading cannot drift)');
+  assert.ok(!/aria-modal/.test(mount), 'NOT aria-modal — it does not trap focus, and the shell\'s trap exempts it (g116 honesty)');
+  assert.ok(/id="kbd-title"/.test(kb), 'the heading carries that id');
+  const open = foNc(extractFunction('kb/script_kb.html', 'kbDrawerOpen_'));
+  assert.ok(/if \(!KB_DRAWER\.open\) \{[\s\S]{0,220}KB_DRAWER\.restoreFocus = \(kbAe && kbAe !== document\.body\) \? kbAe : null;/.test(open),
+    'the trigger is stashed on a CLOSED→open transition only (a re-open must not overwrite it with the drawer\'s own input)');
+  const close = foNc(extractFunction('kb/script_kb.html', 'kbDrawerClose_'));
+  assert.ok(/var wasOpen = KB_DRAWER\.open;/.test(close) && /if \(wasOpen && kbRestore\)/.test(close),
+    'focus goes back only when it was actually open (close is called on every navigation)');
+  assert.ok(/KB_DRAWER\.restoreFocus = null;/.test(close) && close.indexOf('KB_DRAWER.restoreFocus = null;') < close.indexOf('if (wasOpen && kbRestore)'),
+    'and exactly once — the stash is cleared before the focus call');
+  assert.ok(/restoreFocus: null/.test(kb), 'the state shape declares it');
+});
+
+test('F-36: the export sheet\'s URL survives a popup blocker — the link renders BEFORE the open is attempted, the dialog stays open, and the slot is cleared on each run', () => {
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  const seg = foNc(mgr.slice(mgr.indexOf("document.getElementById('exp-submit').addEventListener"),
+                            mgr.indexOf('MANAGER: ADD TIME OFF FOR EMPLOYEE')));
+  const linkIdx = seg.indexOf('exp-result-link');
+  const openIdx = seg.indexOf("exWin = window.open(result.url, '_blank')");
+  assert.ok(linkIdx > 0 && openIdx > linkIdx, 'the link is in the DOM before the blockable call');
+  assert.ok(/href="\$\{esc\(result\.url\)\}" target="_blank" rel="noopener"/.test(seg), 'escaped href, and rel=noopener');
+  assert.ok(!/closeOverlay\(document\.getElementById\('export-overlay'\)\)/.test(seg),
+    'the dialog stays OPEN on success — closing it is what lost the URL');
+  assert.ok(/if \(exWin\) \{[\s\S]{0,200}toast-success[\s\S]{0,200}\} else \{[\s\S]{0,260}toast-warn/.test(seg),
+    'a blocked tab is a WARNING pointing at the link, not the success toast');
+  const openFn = foNc(extractFunction('tc/script_manager.html', 'openExportModal'));
+  assert.ok(/if \(expRes\) expRes\.innerHTML = '';/.test(openFn), "a previous run's link never carries into a new open");
+  const modals = fs.readFileSync(path.join(__dirname, '../../web-app/modals.html'), 'utf8');
+  assert.ok(/<div id="exp-result"><\/div>/.test(modals) && modals.indexOf('id="exp-result"') < modals.indexOf('id="exp-cancel"'),
+    'the slot exists, above the footer');
+});
+
+test('F-28: the quick-chip row\'s label matches what its counts actually span', () => {
+  const row = foNc(extractFunction('cn/script_callnotes.html', 'cnUpdateQuickChipRow_'));
+  assert.ok(/Open in History · all time/.test(row), 'the label says all time');
+  assert.ok(!/this week/.test(row), 'the "this week" claim is gone');
+  // The counts themselves are unchanged — INV-39 keeps them historical, and
+  // the server comment says so; the label moved, not the numbers.
+  const srv = foNc(extractRawFunction('Code.js', 'getCallNotesAmbient'));
+  assert.ok(/Counts still span the entire Sheet \(INV-39/.test(extractRawFunction('Code.js', 'getCallNotesAmbient')) ||
+            /entire Sheet/.test(srv), 'the server still counts the whole Sheet');
+  assert.ok(/counts\.all \|\| 0/.test(row) && /counts\.unresolved \|\| 0/.test(row), 'the chips still read flagCounts');
 });
 
 // ── Infrastructure adaptation (from the dashboard's app-email.test.js): a

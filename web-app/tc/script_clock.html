@@ -2657,7 +2657,7 @@ function openAdjustModal(prefillDate, prefillType) {
   // flag is on; the server enforces the same gate (recordPunch).
   const applyBtn = document.getElementById('adj-apply-now');
   if (applyBtn) applyBtn.style.display = flagOn_('employeeImmediateAdjust') ? '' : 'none';
-  document.getElementById('adjust-overlay').classList.add('open');
+  ensureOverlay('adjust-overlay');   // F-40: the focus stash/restore lifecycle
 }
 
 /**
@@ -2685,10 +2685,10 @@ function updateAdjReasonRequirement() {
 
 
 document.getElementById('adj-cancel').addEventListener('click', () =>
-  document.getElementById('adjust-overlay').classList.remove('open'));
+  closeOverlay(document.getElementById('adjust-overlay')));
 document.getElementById('adjust-overlay').addEventListener('click', e => {
   if (e.target === document.getElementById('adjust-overlay'))
-    document.getElementById('adjust-overlay').classList.remove('open');
+    closeOverlay(document.getElementById('adjust-overlay'));
 });
 document.getElementById('adj-date').addEventListener('change', updateAdjReasonRequirement);
 
@@ -2707,7 +2707,7 @@ document.getElementById('adj-add').addEventListener('click', () => {
 document.getElementById('adj-apply-now').addEventListener('click', () => {
   const entry = adjReadEntry_();
   if (!entry) return;
-  document.getElementById('adjust-overlay').classList.remove('open');
+  closeOverlay(document.getElementById('adjust-overlay'));
   submitPunch(entry.punchType, { date: entry.date, time: entry.time, reason: entry.reason });
 });
 
@@ -2728,7 +2728,7 @@ document.getElementById('adj-submit').addEventListener('click', () => {
     .withSuccessHandler(function (res) {
       btn.disabled = false;
       if (!res || !res.success) { showToast((res && res.error) || 'Submit failed', 'toast-error'); return; }
-      document.getElementById('adjust-overlay').classList.remove('open');
+      closeOverlay(document.getElementById('adjust-overlay'));
       ADJ_BATCH = [];
       showToast(res.count + ' adjustment request(s) submitted for approval', 'toast-success');
     })
