@@ -54,10 +54,22 @@ var _TEST_OVERRIDE_HRDOCS_SS_ID = null;   // consumed by Code.js:getHrDocsSS_ (T
 // ASSIGNS the KB one, and an assignment to an undeclared name only works
 // because Apps Script runs sloppy mode. Declaring them here makes the KB
 // fixture's redirect explicit instead of an implicit global, and puts all
-// eight overrides in one place. See g118 / `npm run lint:server`.
+// eight store overrides in one place (the ninth, a mail seam, is below).
+// See g118 / `npm run lint:server`.
 var _TEST_OVERRIDE_KB_SS_ID = null;      // assigned by _withTestKb_
 var _TEST_OVERRIDE_FORMS_SS_ID = null;   // assigned by _withTestForms_
 var _TEST_OVERRIDE_QA_SS_ID = null;      // assigned by _withTestQa_
+
+// The NINTH override, and the only one that is a FUNCTION rather than a sheet
+// id: when it is assigned, every coaching mail send is handed to it instead of
+// MailApp, so the editor suite can assert "critical mails, minor does not" and
+// "a throwing send still returns success + mailed:false" without a real send.
+// It lived in 00_config.js until cycle 20 (F-53) — a test seam declared in
+// production code, which is exactly what the comment above says this block
+// exists to stop. Its consumer (`82_coaching.js`) reads it through
+// `typeof … === 'function'`, so the declaration moving here does not change
+// what production sees: undeclared and null both fail that check.
+var _TEST_OVERRIDE_COACH_MAIL = null;    // assigned by the coaching mail tests
 
 // Sentinel dates used by integration tests. Cleanup keys off these.
 const _TEST_DATE_RECENT = (() => {
@@ -266,6 +278,12 @@ function _clearCdrCacheForDate_(date) {
     const roster = getEmployeeRosterRows_();
     const names = [];
     for (let r = 1; r < roster.length; r++) {
+      // F-31 (cycle 20): the roster set must be built through the ONE
+      // inclusion predicate (g03/F3), exactly as every production caller of
+      // getCdrAgentMetrics_ builds it. This walked every row with a non-empty
+      // NAME instead, so one offboarded-but-named row produced a DIFFERENT
+      // cdrRosterHash_ and this helper removed a key nothing had written.
+      if (!empRosterEmail_(roster[r])) continue;
       const n = String(roster[r][EMP.NAME]).trim();
       if (n) names.push(n);
     }

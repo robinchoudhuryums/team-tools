@@ -907,7 +907,8 @@ function getEnrolledCallNotesReps() {
     return { reps };
   } catch (err) { return { error: err.message }; }
 }
-/** Manager-gated enrollment roster for the Admin tab's auto-provision panel.
+/** ADMIN-gated (`callerEmp.isAdmin`) enrollment roster for the Admin tab's
+ *  auto-provision panel — it is an Admin-tab surface and the gate says so (F-26).
  *  Returns every roster member with an email, split into enrolled (has a
  *  CallNotesSheetId) and unenrolled. Read-only. */
 function getCallNotesEnrollment() {
@@ -935,8 +936,8 @@ function getCallNotesEnrollment() {
 }
 /** Auto-provision a per-rep call-notes Sheet — the one-click replacement for the
  *  manual "copy the template Sheet, share it, paste the ID into column L"
- *  workflow. Manager-gated (INV-02) + locked (INV-01, mutates the Employees
- *  sheet). Creates a fresh Spreadsheet owned by the deployer (the script runs as
+ *  workflow. ADMIN-gated (`callerEmp.isAdmin` — F-26; INV-02 names the tier,
+ *  the code enforces admin) + locked (INV-01, mutates the Employees sheet). Creates a fresh Spreadsheet owned by the deployer (the script runs as
  *  USER_DEPLOYING, so the new Sheet lands in the deployer's Drive — exactly the
  *  ownership the per-rep model wants), provisions the `Notes` tab with the
  *  canonical CN_HEADERS, writes the new ID into EMP.CALL_NOTES_SHEET_ID (column
@@ -1009,7 +1010,8 @@ function provisionCallNotesSheet(repEmpId) {
 // ════════════════════════════════════════════════════════════════════════════
 /** Round 2 · 8h — Tag taxonomy aggregate for the Admin tab. Scans every
  *  enrolled rep's call-notes Sheet for subformData.tags[] entries and
- *  returns unique tags with usage counts. Manager-gated; read-only.
+ *  returns unique tags with usage counts. ADMIN-gated (`callerEmp.isAdmin`,
+ *  not `isManager` — F-26); read-only.
  *  Returns: { tags: [{ tag, count, lastSeen, archived }], archivedOnlyTags,
  *  totalNotes, repsScanned }. Archived tags (from CN_ARCHIVED_TAGS Script
  *  Property) are marked but kept in the response so the admin UI can show
@@ -1159,7 +1161,8 @@ function cnTagTrendsFromEvents_(events, refIso, weeks, topK) {
   return { weekStarts: starts.map(cnDayNumToIso_), series: series };
 }
 /** Manager Admin "Tag Trends" — weekly per-tag counts over the trailing
- *  CN_TAG_TRENDS_WEEKS. Manager-gated (INV-02/31), read-only, cached, PHI-free.
+ *  CN_TAG_TRENDS_WEEKS. ADMIN-gated (`callerEmp.isAdmin` — F-26; INV-02/31
+ *  describe the tier, the code enforces admin), read-only, cached, PHI-free.
  *  Reuses the taxonomy's 2-column scan (SubformData tags + DateLocal) but
  *  buckets by week instead of total+lastSeen; archived tags are excluded; the
  *  scan is window-pre-filtered so the events array stays bounded. */
@@ -1352,7 +1355,8 @@ function cnTagSkippedNote_(skippedReps) {
   return s.length ? `; skipped=${s.length} (${s.map(function (r) { return r.id; }).join(',')}) — those reps' notes still carry the old tag` : '';
 }
 /** Round 2 follow-on (8h Admin tag actions) — Renames a tag across every
- *  enrolled rep's notes. Manager-gated, locked at the project level so
+ *  enrolled rep's notes. ADMIN-gated (`callerEmp.isAdmin` — F-26), locked at
+ *  the project level so
  *  concurrent submits / other tag mutations can't interleave. If the new
  *  tag already exists on a note, the rename collapses (dedupes) by
  *  dropping the old tag from those rows. Audit row records old+new+counts. */
@@ -1685,7 +1689,8 @@ function cnReadCallNoteAuditRows_() {
   }
   return { rows: out, scannedAll: scannedAll, oldestScannedDay: oldestScannedDay };
 }
-/** Manager-gated compliance audit search over the shared AuditLog. Filters by
+/** ADMIN-gated (`callerEmp.isAdmin` — F-26) compliance audit search over the
+ *  shared AuditLog. Filters by
  *  rep (EmployeeId), action, and date range (defaults to the last
  *  CN_AUDIT_DEFAULT_DAYS in the manager's tz). Returns PHI-free rows only —
  *  the AuditLog never carries note content (INV-32); the client deep-links a
@@ -1742,7 +1747,8 @@ function getCallNotesAuditLog(filters) {
     };
   } catch (err) { return { error: err.message }; }
 }
-/** Manager-gated. Returns the full chronological audit history for a single
+/** ADMIN-gated (`callerEmp.isAdmin` — F-26). Returns the full chronological
+ *  audit history for a single
  *  noteId — every AuditLog row whose Notes embed that noteId — oldest-first,
  *  so the lifecycle (create → flag → email → … → delete) reads top to bottom.
  *  Scans the same bounded window as the search; deliberately independent of

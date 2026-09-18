@@ -2044,6 +2044,23 @@ function spanishVmNote_(d) {
   return out;
 }
 
+/** F-34 (cycle 20) — the voicemail half of the STATS figures, on the card that
+ *  now reports them. The stats card counted group-address threads only while
+ *  the list beside it folded 8x8 voicemails in, so the two disagreed every day;
+ *  now that they agree, the card says how many voicemails are in its numbers.
+ *  `vmOn === false` means the fold is NOT CONFIGURED, which is a different
+ *  answer from "no voicemails came in" (INV-187) — the two render differently
+ *  rather than both rendering nothing. An older server ships neither field and
+ *  the note is omitted entirely: the client never invents one. */
+function spanishVmCountNote_(d) {
+  if (!d || d.vmOn === undefined || d.vmOn === null) return '';
+  if (!d.vmOn) {
+    return ' · <span title="Set Script Properties SPANISH_VM_SENDER and SPANISH_VM_SUBJECT_FILTER to count 8x8 voicemails in these figures.">voicemails not counted — fold not configured</span>';
+  }
+  var n = Number(d.vmCounted) || 0;
+  return ' · ' + esc(String(n)) + ' voicemail' + (n === 1 ? '' : 's') + ' included';
+}
+
 /** The stats note + telemetry strip + filter tabs — extracted so a background
  *  SWR stats refresh can swap the head alone (#spanish-head) without touching
  *  the list below it. */
@@ -2051,8 +2068,9 @@ function spanishHeadHtml_(d) {
   var total = d.resolved + d.pending;
   var note = '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Inbox <b>' + esc(d.address) + '</b> · ' +
     esc(String(d.threadsScanned || 0)) + ' threads scanned' +
+    spanishVmCountNote_(d) +
     (d.membersConfigured ? '' : ' · <span style="color:var(--warning-deep)">no member list set — counting any reply as resolved</span>') +
-    spanishTruncNote_(d) + '</div>';
+    spanishTruncNote_(d) + spanishVmNote_(d) + '</div>';
   // Operator 2026-08-31 — response times are BUSINESS hours (weekends,
   // holidays and after-hours excluded), so a Friday-afternoon request answered
   // Monday morning no longer reads as a 3-day reply. The wall-clock figure the

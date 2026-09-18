@@ -29,22 +29,42 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB_APP = path.join(ROOT, 'web-app');
 
-/** Apps Script platform globals. Not derivable — they are provided by the
- *  runtime, not by a file in this repo. Add a name here only after checking
- *  it against the Apps Script reference; a wrong entry silences a real bug. */
-const APPS_SCRIPT_GLOBALS = [
+/** Apps Script BUILT-IN globals — the ones the V8 runtime provides to every
+ *  project with no manifest entry. Not derivable: they come from the runtime,
+ *  not from a file in this repo. Add a name here only after checking it
+ *  against the Apps Script reference; a wrong entry silences a real bug.
+ *
+ *  ADVANCED services are deliberately NOT in this list — see below. */
+const APPS_SCRIPT_BUILTINS = [
   'SpreadsheetApp', 'DriveApp', 'GmailApp', 'MailApp', 'CalendarApp',
   'DocumentApp', 'FormApp', 'SlidesApp', 'ContactsApp', 'GroupsApp',
   'HtmlService', 'ContentService', 'CacheService', 'PropertiesService',
   'LockService', 'ScriptApp', 'UrlFetchApp', 'Utilities', 'Session',
-  'Logger', 'console', 'Browser', 'Drive', 'Docs', 'Sheets', 'Gmail',
-  'XmlService', 'Charts', 'Maps', 'LanguageApp', 'BigQuery', 'People',
+  'Logger', 'console', 'Browser',
+  'XmlService', 'Charts', 'Maps', 'LanguageApp',
   'JSON', 'Math', 'Date', 'Array', 'Object', 'String', 'Number', 'Boolean',
   'RegExp', 'Error', 'TypeError', 'RangeError', 'Map', 'Set', 'WeakMap',
   'WeakSet', 'Promise', 'Symbol', 'Infinity', 'NaN', 'undefined',
   'isNaN', 'isFinite', 'parseInt', 'parseFloat', 'encodeURIComponent',
   'decodeURIComponent', 'encodeURI', 'decodeURI', 'globalThis',
 ];
+
+/** An ADVANCED service is a global ONLY while appsscript.json enables it, and
+ *  only under the `userSymbol` the manifest names. Six of them — Drive, Docs,
+ *  Sheets, Gmail, BigQuery, People — were hardcoded above while the manifest
+ *  read `"dependencies": {}`, so a use of any one would have thrown
+ *  ReferenceError on the first call in production and been GREEN here (F-50,
+ *  cycle 20). This is the g118 shape one level down: the static net that exists
+ *  to catch an undefined name was itself pre-declaring names the runtime does
+ *  not define. Derive them from the manifest instead, so enabling a service is
+ *  what makes it lintable and disabling one puts its uses back under the net. */
+function advancedServiceGlobals() {
+  const manifest = JSON.parse(fs.readFileSync(path.join(WEB_APP, 'appsscript.json'), 'utf8'));
+  const svcs = (manifest.dependencies && manifest.dependencies.enabledAdvancedServices) || [];
+  return svcs.map((s) => s && s.userSymbol).filter(Boolean);
+}
+
+const APPS_SCRIPT_GLOBALS = APPS_SCRIPT_BUILTINS.concat(advancedServiceGlobals());
 
 /** Server files in the order Apps Script would see them: filePushOrder first,
  *  then everything else clasp pushes, sorted. Membership is the DIRECTORY, not

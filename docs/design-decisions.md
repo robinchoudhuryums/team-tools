@@ -2732,7 +2732,9 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   **Trend** (inline sparkline `cnTrendSparkSvg_`) / **Δ wk** / Actions
   (Rename / Merge / Archive); the prior separate "Tag Trends" panel +
   `#cn-admin-trends` slot were removed (the low-value "Last seen" column was
-  dropped for Trend+Δ). Manager-gated. Taxonomy scans each enrolled rep's Sheet
+  dropped for Trend+Δ). ADMIN-gated (`callerEmp.isAdmin` — this read
+  "manager-gated" until F-26, cycle 20, while every one of these endpoints
+  refused a manager who is not also an admin). Taxonomy scans each enrolled rep's Sheet
   for `subformData.tags[]`, marking each with an `archived` flag from
   `CN_ARCHIVED_TAGS`; `archivedOnlyTags[]` surfaces archived tags no longer in
   use (Restore). Trends bucket by ISO week over the trailing 12 (INV-125,
@@ -3494,7 +3496,8 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
 - <a id="compliance-audit-panel-admin-tab"></a>**Compliance audit panel (Admin tab).** Manager-only call-note
   AuditLog search living in the Admin tab below the tag taxonomy —
   resolving the deferred "compliance audit Admin panel." Backed by
-  `getCallNotesAuditLog(filters)` (manager-gated): filters by rep
+  `getCallNotesAuditLog(filters)` (ADMIN-gated — `callerEmp.isAdmin`; the
+  panel lives on the Admin tab and the gate always said so, F-26): filters by rep
   (EmployeeId), action (the `CN_AUDIT_ACTIONS` call-note set), and date
   range (defaults to the last 30 days in the manager's tz). It reads the
   shared AuditLog via a **bounded** tail scan (`cnReadCallNoteAuditRows_`

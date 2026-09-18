@@ -1773,8 +1773,21 @@ function getManagerDashboard() {
         if (h !== null) sparkHoursMap[key] = h;
       }
     });
+    // F-48 (cycle 20): THREE states, not two. `|| 0` collapsed two different
+    // days onto the same bar — a rep who did not work (a real zero, the V-10
+    // dim bar) and a rep whose day could not be measured (still clocked in at
+    // the moment of the read, or an unparseable stamp calcHours_ refused).
+    // The second is an UNKNOWN, and an unknown is not an elapsed zero (g54):
+    // painting it as one told a manager "0 hours worked" about a day the
+    // server had no hours for. A day with NO punch rows keeps reading 0; a
+    // day WITH punches and no computable total ships null, and the sparkline
+    // renders it as a gap, not a bar.
     liveStatus.forEach(ls => {
-      ls.recentHours = sparkIsos.map(ds => ({ date: ds, hours: sparkHoursMap[`${ls.id}|${ds}`] || 0 }));
+      ls.recentHours = sparkIsos.map(ds => {
+        const k = `${ls.id}|${ds}`;
+        if (Object.prototype.hasOwnProperty.call(sparkHoursMap, k)) return { date: ds, hours: sparkHoursMap[k] };
+        return { date: ds, hours: sparkPunchMap[k] ? null : 0 };
+      });
     });
 
     // Pending time-off (with leave balance context).

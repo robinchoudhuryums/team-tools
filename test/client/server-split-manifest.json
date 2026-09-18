@@ -534,6 +534,32 @@
     "oopEligibilityParse_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-18",
+   "why": "F-53: the coaching mail test seam moves out of 00_config.js into Tests.js",
+   "added": [],
+   "removed": [
+    "_TEST_OVERRIDE_COACH_MAIL"
+   ],
+   "changed": [],
+   "moved": []
+  },
+  {
+   "date": "2026-09-18",
+   "why": "F-34: spanishVmFold_ — ONE voicemail fold, shared by the Spanish pending list and the stats card",
+   "added": [
+    "spanishVmFold_"
+   ],
+   "removed": [],
+   "changed": [
+    "cdrQueueInventory_",
+    "getCdrAgentMetrics_",
+    "getManagerDashboard",
+    "getSpanishInboxPending",
+    "getSpanishInboxStats"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2368,11 +2394,6 @@
    "kind": "const",
    "sha": "db7c30ff17fc0b37"
   },
-  "_TEST_OVERRIDE_COACH_MAIL": {
-   "file": "00_config.js",
-   "kind": "var",
-   "sha": "72a16e4b22d982f9"
-  },
   "_adpSsMemo": {
    "file": "00_config.js",
    "kind": "let",
@@ -2966,7 +2987,7 @@
   "cdrQueueInventory_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "c1509e59dcdea8c9"
+   "sha": "bae82878cf4d415b"
   },
   "cdrRosterHash_": {
    "file": "40_metrics.js",
@@ -3861,7 +3882,7 @@
   "getCdrAgentMetrics_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "dc5628c3ef341848"
+   "sha": "851bcb1c95a0812f"
   },
   "getCdrCompanyHolidayRanges_": {
    "file": "40_metrics.js",
@@ -4166,7 +4187,7 @@
   "getManagerDashboard": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "908f18c569938334"
+   "sha": "630da8074990ff5c"
   },
   "getManagerEmails_": {
    "file": "10_core.js",
@@ -4536,7 +4557,7 @@
   "getSpanishInboxPending": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "a04a54775c2e9dd4"
+   "sha": "48fb1b14328aa6ab"
   },
   "getSpanishInboxResolved": {
    "file": "51_spanish.js",
@@ -4546,7 +4567,7 @@
   "getSpanishInboxStats": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "52bf2787ba710e6d"
+   "sha": "84c0b761e2b99ed7"
   },
   "getSpanishInboxThreadBody": {
    "file": "51_spanish.js",
@@ -6692,6 +6713,11 @@
    "file": "51_spanish.js",
    "kind": "function",
    "sha": "07575f230f04ff40"
+  },
+  "spanishVmFold_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "97e2f7334aff9094"
   },
   "spanishVmMatch_": {
    "file": "51_spanish.js",

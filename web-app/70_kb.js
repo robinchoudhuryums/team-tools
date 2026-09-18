@@ -9,7 +9,9 @@
 //  the one it replaced, and the SPLIT-MANIFEST pin proves it.
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Manager-gated (Phase A). Admin-adjustable KB AI settings: the daily
+/** ADMIN-gated (Phase A) — `callerEmp.isAdmin`, not `isManager`; the doc
+ *  claimed the wrong tier for a whole cycle while the code refused every
+ *  manager who is not also an admin (F-26). KB AI settings: the daily
  *  org-wide spend cap (USD) + the vendor model. Persists Script Properties
  *  KB_AI_DAILY_CAP / KB_AI_MODEL; AdminConfigChange audit row (INV-57
  *  family; same single-property-write pattern as the sibling saves). The
@@ -2706,7 +2708,8 @@ function kbParseImageDataUrl_(dataUrl) {
   if (!m) return null;
   return { contentType: m[1].toLowerCase(), base64: m[2].replace(/\s+/g, '') };
 }
-/** Manager-gated (INV-02 — the editor is manager-only). Validates the data
+/** ADMIN-gated (`emp.isAdmin`) — the KB editor is admin-only in the code,
+ *  whatever INV-02 says about the tier (F-26). Validates the data
  *  URL (type whitelist + size cap), writes the blob to the KB Images folder
  *  as kbpaste-<stamp>-<rand>, audits a PHI-free KbImageUpload row, and
  *  returns the thumbnail URL. Deliberately NO ScriptLock: this writes only a

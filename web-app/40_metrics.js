@@ -539,7 +539,15 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
   var rHash = cdrRosterHash_(rosterNames);
   var cacheKey = CONFIG.CDR_CACHE_KEY + ':' + rHash + ':' + from + ':' + to;
   var cache = CacheService.getScriptCache();
-  var cached = cache.get(cacheKey);
+  // F-31 (cycle 20): bypass the cache whenever a test points the CDR reader at
+  // a fixture spreadsheet — the getMyMetrics pattern, which every OTHER cached
+  // CDR reader here already follows. This is the LOWEST tier, the one all of
+  // them sit on, and it was the one still serving production's numbers to a
+  // fixture read (and writing the fixture's numbers back under a key
+  // production reads). The editor suite cleared two guessed keys by hand
+  // instead; a bypass needs no guessing.
+  var useCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
+  var cached = useCache ? cache.get(cacheKey) : null;
   if (cached) {
     try { return JSON.parse(cached); } catch (_) {}
   }
@@ -619,6 +627,7 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
   var result = { agents: agents, meta: { rowsScanned: values.length, rowsMatched: rowsMatched, columnWarning: colWarning,
     offRosterAgents: Object.keys(offRoster).sort() } };   // F(M-11)
   try {
+    if (!useCache) return result;   // F-31: a fixture read never writes prod's key
     var payload = JSON.stringify(result);
     // C10 (cycle 10): CacheService hard-caps values at 100KB — an oversized
     // put THROWS (caught below, but every subsequent read then re-reads the
@@ -1092,15 +1101,21 @@ function cdrQueueInventory_(from, to) {
     const lastRow = sheet.getLastRow();
     if (lastRow < 2) { out.ok = true; return out; }
 
-    // Bound the scan the same way every other tail reader here does. DQE is
-    // append-ordered by date, so the newest rows are the ones a 7-day window
-    // wants; a sheet longer than the cap reports truncated rather than
-    // silently describing only part of itself (the INV-169 posture).
+    // F-33 (cycle 20): SPAN-bound, not tail-bound — the H3 posture the two
+    // sibling DQE readers already use. The tail scan read the last
+    // CDR_QUEUE_SCAN_MAX rows whatever the window asked for, and set
+    // `truncated` from the SHEET's length rather than the window's: on a tab
+    // longer than the cap the diagnostic said "possibly incomplete" on every
+    // single run, for ever, including the runs that had read every row in the
+    // window. A caution that is always on is a caution nobody reads (g02).
+    // Now the date column decides the rows, and `truncated` means what it
+    // says: the WINDOW itself was wider than the cap and the newest `cap` rows
+    // of it are what this describes (INV-169).
     const cap = CDR_QUEUE_SCAN_MAX;
-    const totalRows = lastRow - 1;
-    const startRow = totalRows > cap ? (lastRow - cap + 1) : 2;
-    out.truncated = totalRows > cap;
-    const nRows = lastRow - startRow + 1;
+    const span = cdrDqeWindowSpan_(sheet, lastRow, from, to, tz);
+    if (!span) { out.ok = true; return out; }   // no row in the window
+    let startRow = span.startRow, nRows = span.numRows;
+    if (nRows > cap) { startRow = span.startRow + (nRows - cap); nRows = cap; out.truncated = true; }
     // Columns 2..4 = DATE, AGENT, QUEUE_EXT. Reading 3 columns instead of 34.
     // Offsets are DERIVED from the enum rather than written as 0/1/2, so the
     // read follows a column move instead of silently reading its neighbour.

@@ -4955,20 +4955,6 @@ test('F2: sheet doctor reports truncation and the destructive collapse is bounde
 
 // F3: unbounded row-by-row deletion could never finish a large first enable,
 // and each killed run re-appended the undeleted rows into the archive.
-test('F3: archiveSheetRowsOlderThan_ honors a per-run bound; the Timesheet caller passes one', () => {
-  const helper = extractRawFunction('Code.js', 'archiveSheetRowsOlderThan_');
-  assert.ok(/opts\.maxRows/.test(helper), 'the shared mover accepts a per-run row bound');
-  assert.ok(/toMoveRows\.length >= maxRows/.test(helper), 'the scan stops once the bound is reached');
-  assert.ok(/\(opts\.maxRows > 0\) \? opts\.maxRows : 0/.test(helper),
-    'no maxRows → unbounded, so the CN call sites stay byte-identical (their 4-arg pin above)');
-  const ts = extractRawFunction('Code.js', 'archiveOldTimesheetRows');
-  assert.ok(/maxRows: TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN/.test(ts),
-    'the Timesheet archive (the large, unboundedly-growing tab) passes the bound');
-  assert.ok(/hitPerRunCap/.test(ts),
-    'a capped run is visible in the audit trail — a draining backlog must not look like a normal small run');
-  const m = codeSrc.match(/TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN = (\d+)/);
-  assert.ok(m && parseInt(m[1], 10) > 0, 'the per-run cap constant exists');
-});
 
 // F4: the INV-124 cohort guard + team average were computed over a roster that
 // still included offboarded/placeholder rows every sibling walk excludes.
@@ -7271,13 +7257,6 @@ test('batch-5: the last uncapped client-writable cells are bounded + validated',
   assert.ok(/slice\(0, 1000\)/.test(to1) && /slice\(0, 1000\)/.test(to2), 'time-off notes capped on both paths');
 });
 
-test('batch-5: dept-email config is sanitized on read and comma-safe on write', () => {
-  const get = c17strip(extractRawFunction('Code.js', 'getDepartmentEmails_'));
-  assert.ok(/clean\[name\] = email/.test(get) && /indexOf\('@'\) > 0/.test(get),
-    'getDepartmentEmails_ whitelist-rebuilds on read (the L-12 rule)');
-  const save = c17strip(extractRawFunction('Code.js', 'saveDepartmentEmails'));
-  assert.ok(/\[,;\]/.test(save), 'saveDepartmentEmails rejects comma/semicolon dept names (the join-on-comma shape)');
-});
 
 test('batch-5: capped/annotated list contracts (INV-169) + search hit status + cache-buster', () => {
   const il = c17strip(extractRawFunction('Code.js', 'intakeListMySubmissions'));
@@ -10569,22 +10548,6 @@ test('Spanish + Dept Requests use the full view width (operator 2026-08-17)', ()
     'the share card fills its .sp-top column');
 });
 
-test('Punctuality + Admin fill the view width (operator 2026-08-18)', () => {
-  // The Admin tab was a 900px column inside a 1280px view (every card carried
-  // its own inline cap) and Punctuality hard-capped its 7-column table at
-  // 780px — ~400px dead on both manager surfaces. The caps must not return.
-  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
-  assert.ok(!/max-width:\s*900px/.test(cn) && !/max-width:900px/.test(cn),
-    'no 900px card caps anywhere in the Admin partial');
-  assert.ok(!/'<div style="max-width:1000px">'/.test(cn), 'the Sheets viewer wrapper is uncapped');
-  const tm = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
-  // REWRITTEN in place (design handoff PR 3): the hand-rolled .punct-table /
-  // .punct-card are retired (the table rides mtRenderTable_ inside .pt-wrap);
-  // the cap must not return on the new wrapper either.
-  const ptWrap = tm.match(/\.pt-wrap[^{]*\{[^}]*\}/g) || [];
-  assert.ok(ptWrap.length >= 1 && ptWrap.every((r) => !/max-width/.test(r)), '.pt-wrap carries no max-width');
-  assert.ok(!/telemetry" style="max-width:760px/.test(tm), 'the punctuality summary strip is uncapped');
-});
 
 test('Auto-tag rules editor is compact + bounded (operator 2026-08-18)', () => {
   const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
@@ -14189,15 +14152,23 @@ test('wiring: the fold rides both lists, first-message re-check, one predicate a
     throw new Error('unbalanced ' + name);
   };
   const pend = grab('getSpanishInboxPending'), res = grab('getSpanishInboxResolved');
-  [pend, res].forEach((src, i) => {
-    assert.ok(/spanishVmQuery_\(/.test(src), ['pending', 'resolved'][i] + ' runs the VM scan');
-    assert.ok(/kind: 'voicemail'/.test(src), ['pending', 'resolved'][i] + ' tags VM items');
-    // The Gmail query matches subject across the THREAD; the first message is
-    // re-checked so a stray reply-match can't smuggle a foreign thread in.
-    assert.ok(/spanishVmMatch_\(req\.getFrom\(\)/.test(src), ['pending', 'resolved'][i] + ' re-checks the FIRST message');
+  const stats = grab('getSpanishInboxStats'), fold = grab('spanishVmFold_');
+  // F-34 (cycle 20): the pending list's inline fold became `spanishVmFold_`,
+  // and the STATS card — which had no fold at all and so reported a smaller
+  // pending count than the list right beside it — now reads the same one.
+  // Both callers, or the two surfaces drift again.
+  [pend, stats].forEach((src, i) => {
+    assert.ok(/spanishVmFold_\(/.test(src), ['pending', 'stats'][i] + ' folds voicemails through the ONE helper');
   });
+  assert.ok(/spanishVmQuery_\(/.test(fold), 'the fold runs the VM scan');
+  assert.ok(/kind: 'voicemail'/.test(pend), 'pending tags VM items');
+  assert.ok(/kind: 'voicemail'/.test(res), 'resolved tags VM items');
+  // The Gmail query matches subject across the THREAD; the first message is
+  // re-checked so a stray reply-match can't smuggle a foreign thread in.
+  assert.ok(/spanishVmMatch_\(req\.getFrom\(\)/.test(fold), 'the fold re-checks the FIRST message');
+  assert.ok(/spanishVmMatch_\(req\.getFrom\(\)/.test(res), 'resolved re-checks the FIRST message');
   // Both halves gate the fold (fail-quiet, never fail-wide).
-  assert.ok(/vmSender && vmFilter/.test(pend), 'pending fold gated on BOTH filter halves');
+  assert.ok(/if \(!vmSender \|\| !vmFilter\) return out;/.test(fold), 'the fold is gated on BOTH filter halves (behaviour: the F-34 pin drives it)');
   assert.ok(/vmSenderR && vmFilterR/.test(res), 'resolved fold gated on BOTH filter halves');
   // The resolved fold admits ONLY manually-resolved VM threads (a VM has no
   // reply-based resolution semantics) and ships a NULL duration — "clicked
@@ -14205,8 +14176,11 @@ test('wiring: the fold rides both lists, first-message re-check, one predicate a
   const vmFold = res.slice(res.indexOf('vmSenderR &&'));
   assert.ok(/if \(!man \|\| seenR/.test(vmFold), 'resolved fold: manual-map rows only');
   assert.ok(/resolveMinutes: null/.test(vmFold), 'VM duration is null, never a fake response time');
-  // VM truncation folds into the ONE truncated flag (INV-169/SPANISH cap).
-  assert.ok(/vmTruncated/.test(pend) && /\|\| vmTruncated/.test(pend), 'VM cap rides the truncated flag');
+  // VM truncation folds into the ONE truncated flag (INV-169/SPANISH cap) on
+  // BOTH surfaces — a capped VM scan the stats card did not mention would be a
+  // silently partial figure, the thing F-34 was about.
+  assert.ok(/vmTruncated/.test(pend) && /\|\| vmTruncated/.test(pend), 'pending: VM cap rides the truncated flag');
+  assert.ok(/\|\| vmFold\.truncated/.test(stats), 'stats: VM cap rides the truncated flag');
   // The by-id scope family: ThreadBody + resolve + claim all route through
   // the ONE predicate — no site keeps a private copy to drift.
   const sites = ['getSpanishInboxThreadBody', 'resolveSpanishThread', 'claimSpanishThread'];
@@ -21472,8 +21446,8 @@ test('N3-SP: a Spanish manual mark-resolve is counted but never timed — stats,
   assert.ok(iCount > -1 && iGuard > iCount && iPush > iGuard, 'count → manual guard → duration pushes, in that order');
   assert.ok(/if \(wasManual\) \{ manualCount\+\+; \}\s*else \{/.test(sp), 'the pushes sit in the ELSE of the manual guard');
   assert.ok(/manualCount: manualCount,/.test(sp), 'the excluded count is shipped (INV-187 — visible, not absorbed)');
-  assert.ok(/'spanish_inbox_v2:'/.test(sp) && !/'spanish_inbox_v1:'/.test(sp),
-    'the stats cache key is bumped — a cached v1 payload would still carry manual resolves in its median (INV-85)');
+  assert.ok(/'spanish_inbox_v3:'/.test(sp) && !/'spanish_inbox_v[12]:'/.test(sp),
+    'the stats cache key is bumped — a cached v1 payload would still carry manual resolves in its median, and a cached v2 the thread-only counts F-34 widened (INV-85)');
   // The resolved-list card: null on BOTH units (BIZ-2 pins the exact literals).
   const res = nc(codeSrc.slice(codeSrc.indexOf('function getSpanishInboxResolved'),
                                codeSrc.indexOf('function claimSpanishThread')));
@@ -23811,6 +23785,777 @@ test('F1-followon: bite.sh refuses a file with uncommitted changes BEFORE it mut
   // A mutation that changes nothing reads as a passing bite while proving
   // nothing — the vacuous-pin class, in the tool that checks for it.
   assert.ok(/the mutation changed nothing/.test(src), 'a no-op mutation is refused');
+});
+
+// ---------------------------------------------------------------------------
+// Cycle 20, Batch 7 — test + docs hygiene. Every pin below is BEHAVIOURAL
+// where the claim can be driven: the batch's own headline finding (F-52) was
+// that four structural pins stayed green under a mutation that broke the
+// thing they were named for, so a batch about pin quality that added more
+// source-shape assertions would be the g116 joke told twice.
+console.log('\ncycle 20 batch 7 — test + docs hygiene');
+
+test('F-50: the linter\'s ADVANCED-service globals come from appsscript.json, not from a hand list', () => {
+  const lint = fs.readFileSync(path.join(__dirname, '../../scripts/lint-server.mjs'), 'utf8');
+  // (a) The six that were hardcoded are GONE from the built-in list. An
+  // advanced service is a global only while the manifest enables it, so
+  // pre-declaring one means a use of it lints clean and throws ReferenceError
+  // on the first real call — the static net silencing the exact class it exists
+  // to catch (g118, one level down).
+  const builtins = lint.slice(lint.indexOf('const APPS_SCRIPT_BUILTINS = ['),
+                              lint.indexOf('];', lint.indexOf('const APPS_SCRIPT_BUILTINS = [')));
+  ['Drive', 'Docs', 'Sheets', 'Gmail', 'BigQuery', 'People'].forEach((n) => {
+    assert.ok(!new RegExp("'" + n + "'").test(builtins),
+      n + ' is an ADVANCED service — it must not be pre-declared as a built-in');
+  });
+  // …and the DriveApp/GmailApp built-ins they are easily confused with stay.
+  ['DriveApp', 'GmailApp', 'SpreadsheetApp'].forEach((n) => {
+    assert.ok(new RegExp("'" + n + "'").test(builtins), n + ' is a real built-in and stays');
+  });
+
+  // (b) BEHAVIOURAL: drive the derivation over a manifest the repo does not
+  // have. A structural "it reads appsscript.json" assertion would pass for a
+  // function that reads the file and returns [] regardless.
+  const src = lint.slice(lint.indexOf('function advancedServiceGlobals()'));
+  const fn = src.slice(0, src.indexOf('\n}') + 2);
+  const written = {};
+  const sb = vm.createContext({
+    fs: { readFileSync: (p) => written[String(p)] },
+    path: { join: (...a) => a.join('/') },
+    WEB_APP: 'W', JSON, console,
+  });
+  vm.runInContext(fn + '\nthis.advancedServiceGlobals = advancedServiceGlobals;', sb, { filename: 'lint-server#advancedServiceGlobals' });
+  written['W/appsscript.json'] = JSON.stringify({ dependencies: {} });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sb.advancedServiceGlobals())), [],
+    'no enabledAdvancedServices → no advanced globals (the repo\'s current manifest)');
+  written['W/appsscript.json'] = JSON.stringify({ dependencies: { enabledAdvancedServices: [
+    { userSymbol: 'Drive', serviceId: 'drive', version: 'v3' },
+    { userSymbol: 'Docs', serviceId: 'docs', version: 'v1' },
+  ] } });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sb.advancedServiceGlobals())), ['Drive', 'Docs'],
+    'enabling a service makes its userSymbol a global — under the SYMBOL, not the serviceId');
+  written['W/appsscript.json'] = JSON.stringify({ dependencies: { enabledAdvancedServices: [
+    { serviceId: 'drive', version: 'v3' },
+  ] } });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sb.advancedServiceGlobals())), [],
+    'an entry with no userSymbol declares no global (never `undefined` into the globals map)');
+
+  // (c) And the real manifest still agrees with what the linter runs against.
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '../../web-app/appsscript.json'), 'utf8'));
+  const enabled = ((manifest.dependencies || {}).enabledAdvancedServices || []).map((s) => s.userSymbol);
+  // Comments AND string literals stripped: the server explains in prose that
+  // a scope refusal "says nothing about Drive" and warns that a bare range
+  // "gets date-coerced by Sheets.", and an unstripped scan reads both as
+  // calls. INV-188, one step further — a pin that reports a sentence is a pin
+  // someone silences.
+  const server = serverSource()
+    .replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ')
+    .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+    .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
+    .replace(/`(?:[^`\\]|\\.)*`/g, '``');
+  ['Drive', 'Docs', 'Sheets', 'Gmail', 'BigQuery', 'People'].forEach((n) => {
+    if (enabled.indexOf(n) >= 0) return;
+    assert.ok(!new RegExp('(^|[^.\\w])' + n + '\\.').test(server),
+      n + ' is used in the server but not enabled in appsscript.json — that call throws at runtime');
+  });
+});
+
+test('F-51: the gate rows cover all THREE refusal literals, and each counts what it refuses with', () => {
+  // The block's "Manager-gated endpoints" row counted `'Manager access
+  // required.'` alone. `assertManagerCaller_` THROWS instead of returning, so
+  // the whole trigger-handler family was invisible; `canSeeQa_` was invisible
+  // too, under a caption an operator reads to decide how wide MANAGER_EMAILS
+  // should be. Re-derive all three here, independently of counts.mjs, and
+  // require the generated block to agree with BOTH derivations.
+  const src = serverSource();
+  const fam = { admin: [], manager: [], qa: [] };
+  const re = /^function ([A-Za-z0-9_]+)\s*\(/gm;
+  let m;
+  while ((m = re.exec(src)) !== null) {
+    const start = src.indexOf('{', m.index + m[0].length - 1);
+    let d = 0, k = start;
+    for (; k < src.length; k++) { if (src[k] === '{') d++; else if (src[k] === '}' && --d === 0) break; }
+    const body = src.slice(start, k + 1);
+    if (body.indexOf("'Admin access required.'") >= 0) fam.admin.push(m[1]);
+    else if (body.indexOf("'Manager access required.'") >= 0 ||
+             body.indexOf('assertManagerCaller_(') >= 0) fam.manager.push(m[1]);
+    else if (body.indexOf("'QA access required.'") >= 0) fam.qa.push(m[1]);
+  }
+  const c = countsJson_();
+  assert.strictEqual(c.adminEndpoints, fam.admin.length, 'admin family');
+  assert.strictEqual(c.managerEndpoints, fam.manager.length, 'manager family');
+  assert.strictEqual(c.qaEndpoints, fam.qa.length, 'QA family');
+  assert.strictEqual(countsBlockRow_('QA-gated endpoints (`canSeeQa_`)'), c.qaEndpoints,
+    'the block carries the QA row (regenerate with `node scripts/counts.mjs --block`)');
+
+  // The manager family must actually INCLUDE the throwing gate — the whole
+  // point of widening it. A `assertManagerCaller_` caller that returns no
+  // literal is the case the old single-literal count missed.
+  const throwers = fam.manager.filter((n) => {
+    const i = src.indexOf('function ' + n + '(');
+    const start = src.indexOf('{', i);
+    let d = 0, k = start;
+    for (; k < src.length; k++) { if (src[k] === '{') d++; else if (src[k] === '}' && --d === 0) break; }
+    const b = src.slice(start, k + 1);
+    return b.indexOf('assertManagerCaller_(') >= 0 && b.indexOf("'Manager access required.'") < 0;
+  });
+  assert.ok(throwers.length > 10,
+    'the widened count reaches the throwing gate (found ' + throwers.length + ' endpoints it alone covers)');
+
+  // Counted by what it REFUSES with, never by a mention of the helper:
+  // getEmployeeState calls canSeeQa_ to SHIP the flag to the client and gates
+  // nothing. Counting it would have replaced an undercount with a wrong claim.
+  assert.ok(fam.qa.indexOf('getEmployeeState') < 0,
+    'getEmployeeState reads canSeeQa_ to ship a flag — it is not a QA-gated endpoint');
+  assert.ok(fam.qa.indexOf('getQaQueue') >= 0 && fam.qa.indexOf('qaSaveScorecard') >= 0,
+    'the real QA endpoints are in the family');
+  // No endpoint is in two families — tiers are exclusive, admin first.
+  const seen = {};
+  ['admin', 'manager', 'qa'].forEach((f) => fam[f].forEach((n) => {
+    assert.ok(!seen[n], n + ' is counted in two gate families');
+    seen[n] = f;
+  }));
+});
+
+test('F-53: every _TEST_OVERRIDE_* is DECLARED in Tests.js, never in a production server file', () => {
+  // `_TEST_OVERRIDE_COACH_MAIL` was declared in 00_config.js while the comment
+  // block in Tests.js said the overrides live "in one place". A test seam in
+  // production code is shipped code: it is pushed by clasp, it is in the one
+  // global scope, and anything that assigns it at runtime changes where mail
+  // goes. The consumer reads it through `typeof`, so the declaration is not
+  // load-bearing for production at all.
+  const webApp = path.resolve(__dirname, '../../web-app');
+  const prod = JSON.parse(fs.readFileSync(path.join(webApp, '.clasp.json'), 'utf8'))
+    .filePushOrder.filter((f) => f.endsWith('.js') && f !== 'Tests.js');
+  prod.forEach((f) => {
+    const src = fs.readFileSync(path.join(webApp, f), 'utf8');
+    const decls = src.match(/^\s*(?:var|let|const)\s+(_TEST_OVERRIDE_[A-Z_]+)/gm) || [];
+    assert.deepStrictEqual(decls, [],
+      f + ' declares a test override — move it to Tests.js beside the others');
+  });
+  const tests = fs.readFileSync(path.join(webApp, 'Tests.js'), 'utf8');
+  assert.ok(/^var _TEST_OVERRIDE_COACH_MAIL = null;/m.test(tests),
+    'the coaching mail seam is declared in Tests.js');
+  // …and the consumer still resolves it the undeclared-safe way, which is what
+  // makes the move free. A `!== null` read here would throw in production.
+  const coach = serverSource();
+  assert.ok(/typeof _TEST_OVERRIDE_COACH_MAIL === 'function'/.test(coach),
+    'the consumer guards with typeof — an undeclared name is not a ReferenceError through typeof');
+});
+
+test('F-26: no doc comment claims a gate the code does not enforce (derived, both directions)', () => {
+  // Nine endpoint doc comments said "manager-gated" over `isAdmin`, and INV-31
+  // said the same for nineteen. A manager who is not in ADMIN_EMAILS is
+  // refused by every one of them, so the prose described a different product.
+  // DERIVED (INV-179): walk every server function and compare its doc comment
+  // against the literal it refuses with — a hand list would not have caught
+  // the ten in 10_core.js that the scan finding never named.
+  const webApp = path.resolve(__dirname, '../../web-app');
+  const files = JSON.parse(fs.readFileSync(path.join(webApp, '.clasp.json'), 'utf8'))
+    .filePushOrder.filter((f) => f.endsWith('.js'));
+  const bad = [];
+  files.forEach((f) => {
+    const src = fs.readFileSync(path.join(webApp, f), 'utf8');
+    const re = /^function ([A-Za-z0-9_]+)\s*\(/gm;
+    let m;
+    while ((m = re.exec(src)) !== null) {
+      const start = src.indexOf('{', m.index + m[0].length - 1);
+      let d = 0, k = start;
+      for (; k < src.length; k++) { if (src[k] === '{') d++; else if (src[k] === '}' && --d === 0) break; }
+      if (src.slice(start, k + 1).indexOf("'Admin access required.'") < 0) continue;
+      // The doc comment is the block that ENDS immediately above the
+      // declaration — not merely the nearest one behind it, which resolves to
+      // the previous function's comment and reports a phantom.
+      const before = src.slice(0, m.index);
+      const open = before.lastIndexOf('/**');
+      if (open < 0) continue;
+      const close = before.indexOf('*/', open);
+      if (close < 0 || before.slice(close + 2).trim() !== '') continue;
+      const doc = before.slice(open, close + 2);
+      if (/manager-gated|manager gated|manager-only/i.test(doc)) bad.push(f + ':' + m[1]);
+    }
+  });
+  assert.deepStrictEqual(bad, [],
+    'doc comment(s) claiming manager gating over an ADMIN gate — say admin, or change the gate');
+  // The invariant library carried the same claim for nineteen endpoints; the
+  // amendment names them, so an operator reading INV-31 to size ADMIN_EMAILS
+  // reads the truth.
+  const cfg = configDoc_();
+  const inv31 = cfg.slice(cfg.indexOf('INV-31 |'), cfg.indexOf('| Subsystem:', cfg.indexOf('INV-31 |')));
+  assert.ok(/ADMIN-tier, not manager-tier/.test(inv31), 'INV-31 carries the admin amendment');
+  ['getStorageHealth', 'renameCallNoteTag', 'getCallNotesAuditLog'].forEach((n) => {
+    assert.ok(inv31.indexOf('`' + n + '`') >= 0 && inv31.indexOf('ADMIN-tier') < inv31.lastIndexOf('`' + n + '`'),
+      'INV-31 names ' + n + ' in the admin amendment');
+  });
+  const inv82 = cfg.slice(cfg.indexOf('INV-82 |'), cfg.indexOf('| Subsystem:', cfg.indexOf('INV-82 |')));
+  assert.ok(/ADMIN-gated/.test(inv82) && !/are manager-gated/.test(inv82), 'INV-82 says admin');
+});
+
+test('F-31: the CDR agent-metrics cache is BYPASSED under the test override, and the fixture clears the key production writes', () => {
+  const fn = extractRawFunction('Code.js', 'getCdrAgentMetrics_');
+  // (a) BEHAVIOURAL — the boolean itself, under both override states. This is
+  // the lowest CDR tier, the one every cached reader above it sits on, and it
+  // was the one still serving production's numbers to a fixture read (and
+  // writing the fixture's numbers back under production's key).
+  const expr = /var useCache = (.+);/.exec(fn);
+  assert.ok(expr, 'the bypass is a named boolean');
+  const run = (ctx) => vm.runInNewContext('(' + expr[1] + ')', ctx);
+  assert.strictEqual(run({}), true, 'no override declared at all → cache ON (production)');
+  assert.strictEqual(run({ _TEST_OVERRIDE_CDR_SS_ID: null }), true, 'declared but unset → cache ON');
+  assert.strictEqual(run({ _TEST_OVERRIDE_CDR_SS_ID: '1abcFIXTURE' }), false, 'pointed at a fixture → cache OFF');
+
+  // (b) BOTH ends are gated. A bypassed read with a live put still poisons the
+  // production key with fixture numbers — the half-fix that reads as done.
+  assert.ok(/var cached = useCache \? cache\.get\(cacheKey\) : null;/.test(fn), 'the read is gated');
+  assert.ok(/if \(!useCache\) return result;/.test(fn), 'the put is gated (early return before the payload build)');
+
+  // (c) The editor fixture clears the key PRODUCTION would have written, which
+  // means hashing the roster through the ONE inclusion predicate. It walked
+  // every row with a non-empty NAME instead, so one offboarded-but-named row
+  // produced a different hash and the removal hit a key nothing had written.
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  const clear = tests.slice(tests.indexOf('function _clearCdrCacheForDate_'));
+  const clearFn = clear.slice(0, clear.indexOf('\n}') + 2);
+  assert.ok(/empRosterEmail_\(roster\[r\]\)/.test(clearFn),
+    'the fixture builds its roster set through empRosterEmail_ (g03/F3) — the same predicate every production caller uses');
+  // BEHAVIOURAL: the hash really is sensitive to the set, so a wrong set is a
+  // wrong key rather than a harmless difference.
+  const hb = buildSandbox([]);
+  hb.Utilities = {
+    DigestAlgorithm: { MD5: 'MD5' },
+    computeDigest: (alg, s) => Array.from(Buffer.from(require('crypto').createHash('md5').update(s).digest())),
+  };
+  vm.runInContext(extractRawFunction('Code.js', 'cdrRosterHash_'), hb, { filename: 'Code.js#cdrRosterHash_' });
+  const h = hb.cdrRosterHash_;
+  assert.notStrictEqual(h(['Ana', 'Ben']), h(['Ana', 'Ben', 'Offboarded Cara']),
+    'one extra name is a DIFFERENT cache key — a fixture that clears the wrong set clears nothing');
+  assert.strictEqual(h(['Ben', 'Ana']), h(['Ana', 'Ben']), 'order does not matter (the hash sorts)');
+  assert.strictEqual(h([]), 'all', 'an empty roster is the unfiltered key');
+});
+
+test('F-33: cdrQueueInventory_ reads the WINDOW, and `truncated` describes the window rather than the tab', () => {
+  // The tail scan read the last CDR_QUEUE_SCAN_MAX rows whatever the window
+  // asked for, and set `truncated` from the SHEET's length: on a tab longer
+  // than the cap the diagnostic warned "possibly incomplete" on every run for
+  // ever, including the runs that had read every row in the window. A caution
+  // that is always on is a caution nobody reads (g02).
+  const sb = buildSandbox([]);
+  sb.Utilities = { formatDate: () => '' };
+  sb.CDR = { DATE: 2, AGENT: 3, QUEUE_EXT: 4 };
+  sb.CDR_QUEUE_SCAN_MAX = 10;
+  sb.CDR_QUEUE_LIST_CAP = 40;
+  sb.CSR_TRANSFER_TAB = 'CSR Transfer Historical Data';
+  sb.CSR_TRANSFER_NUM_COLS = 19;
+  sb.CSRT_QUEUE_COL_FIRST = 7; sb.CSRT_QUEUE_COL_LAST = 17;
+  ['cdrRowDateIso_', 'isCdrQueueSentinel_', 'cdrDqeWindowSpan_', 'cdrQueueInventory_'].forEach((n) => {
+    vm.runInContext(extractRawFunction('Code.js', n), sb, { filename: 'Code.js#' + n });
+  });
+
+  // 40 rows of old data, then 4 rows inside the window. cap is 10, so the old
+  // tail scan would have read rows 35..44 — and reported truncated for ever.
+  const rows = [];
+  for (let i = 0; i < 40; i++) rows.push(['x', '2026-01-0' + ((i % 9) + 1), 'Agent ' + (i % 3), 'Q-OLD']);
+  rows.push(['x', '2026-09-10', 'Ana', 'Q-A']);
+  rows.push(['x', '2026-09-10', 'Ben', 'Q-A']);
+  rows.push(['x', '2026-09-11', 'Ana', 'Q-B']);
+  rows.push(['x', '2026-09-11', 'A_Q_Spanish', 'Q-B']);
+  const reads = [];
+  const sheet = {
+    getLastRow: () => rows.length + 1,
+    getRange: (r, c, n, w) => {
+      reads.push({ r, c, n, w });
+      return { getValues: () => {
+        const out = [];
+        for (let i = 0; i < n; i++) {
+          const src = rows[r - 2 + i] || [];
+          out.push(src.slice(c - 1, c - 1 + w));
+        }
+        return out;
+      } };
+    },
+  };
+  sb.getCdrSS_ = () => ({
+    getSpreadsheetTimeZone: () => 'America/Chicago',
+    getSheetByName: (n) => (n === 'DQE Historical Data' ? sheet : null),
+  });
+  const out = JSON.parse(JSON.stringify(sb.cdrQueueInventory_('2026-09-10', '2026-09-11')));
+  assert.strictEqual(out.ok, true, 'the DQE half completed (the Transfer half is best-effort and absent here)');
+  assert.strictEqual(out.truncated, false,
+    'the window is 4 rows on a 44-row tab with cap 10 — nothing was truncated, and the old tail scan said it was');
+  assert.strictEqual(out.rowsScanned, 4, 'exactly the window rows were READ — not the last `cap` rows of the tab');
+  assert.strictEqual(out.rowsInWindow, 4, 'all four window rows were seen');
+  assert.strictEqual(out.sentinels.length, 1, 'the A_Q_ aggregate row is reported apart, never as a rep row');
+  assert.strictEqual(JSON.parse(JSON.stringify(out.queues)).length, 2, 'two real queues, the sentinel excluded');
+  assert.strictEqual(out.agentDateRows.max, 1, 'one row per (agent, date) — the Phase 0 question this panel exists to answer');
+  // The narrow read is still 3 columns, and it starts at the window, not at 2.
+  const dqeRead = reads.find((x) => x.w === 3);
+  assert.ok(dqeRead && dqeRead.n === 4 && dqeRead.r === 42,
+    'the 3-column read starts at the first row IN the window (row ' + (dqeRead && dqeRead.r) + ')');
+
+  // And truncation is real when the WINDOW itself outgrows the cap: the newest
+  // `cap` rows of the window are what the panel then describes.
+  const big = [];
+  for (let i = 0; i < 25; i++) big.push(['x', '2026-09-10', 'Rep' + i, 'Q-A']);
+  rows.length = 0; Array.prototype.push.apply(rows, big);
+  const out2 = JSON.parse(JSON.stringify(sb.cdrQueueInventory_('2026-09-10', '2026-09-11')));
+  assert.strictEqual(out2.truncated, true, 'a 25-row window under a cap of 10 IS truncated');
+  assert.strictEqual(out2.rowsScanned, 10, 'and exactly the cap was read');
+  assert.strictEqual(out2.rowsInWindow, 10, 'the newest cap rows of the window');
+
+  // A window with no rows at all returns cleanly rather than describing the tail.
+  rows.length = 0;
+  for (let i = 0; i < 12; i++) rows.push(['x', '2026-01-05', 'Old', 'Q-OLD']);
+  const out3 = JSON.parse(JSON.stringify(sb.cdrQueueInventory_('2026-09-10', '2026-09-11')));
+  assert.strictEqual(out3.ok, true, 'an empty window is a clean answer');
+  assert.strictEqual(out3.rowsScanned, 0, 'and reads nothing');
+  assert.strictEqual(out3.truncated, false, 'and is not truncated');
+});
+
+test('F-34: ONE voicemail fold — the stats card counts the voicemails the list shows', () => {
+  // 8x8 mails each member's individual inbox rather than the group address, so
+  // a voicemail never matches the group-address query. The list folded them in
+  // (operator 2026-08-25); the stats card computed from the same mailbox did
+  // not, so the Spanish tab showed five pending cards under a card that said
+  // two. The card is what a manager quotes.
+  const sb = buildSandbox([]);
+  let searched = [];
+  sb.GmailApp = { search: (q) => { searched.push(q); return sb._threads; } };
+  sb.SPANISH_THREAD_SCAN_MAX = 200;
+  sb.getSpanishVmMinSeconds_ = () => 5;
+  sb.getSpanishVmSender_ = () => 'no-reply@8x8.com';
+  sb.getSpanishVmFilter_ = () => 'A_Q_Spanish';
+  sb.spanishVmQuery_ = (s, f, d) => 'from:' + s + ' subject:' + f + ' newer_than:' + d + 'd';
+  sb.spanishVmMatch_ = (from, subj, s, f) => String(from).indexOf(s) >= 0 && String(subj).indexOf(f) >= 0;
+  sb.spanishVmDurationSec_ = (b) => { const m = /Duration: (\d+):(\d+)/.exec(b); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
+  sb.spanishVmTooShort_ = (sec, min) => (sec == null ? 'unparsed' : (sec < min ? 'short' : 'show'));
+  sb.emailAddrOnly_ = (s) => String(s).replace(/^.*</, '').replace(/>.*$/, '').trim().toLowerCase();
+  vm.runInContext(extractRawFunction('Code.js', 'spanishVmFold_'), sb, { filename: 'Code.js#spanishVmFold_' });
+
+  const th = (id, msgs) => ({ getId: () => id, getMessages: () => msgs, getPermalink: () => 'link/' + id });
+  const msg = (from, subj, body, ms) => ({
+    getFrom: () => from, getSubject: () => subj, getPlainBody: () => body,
+    getDate: () => ({ getTime: () => ms }),
+  });
+  const vmBody = (mmss) => 'You have a new voicemail\nDuration: ' + mmss + '\nTranscript: hola';
+  const T0 = Date.UTC(2026, 8, 10, 9, 0, 0);
+
+  // (a) Both filter halves must resolve, or the fold is OFF and SAYS so — the
+  // caller can tell "not configured" from "no voicemails" (INV-187).
+  sb._threads = [th('v1', [msg('no-reply@8x8.com', 'VM via A_Q_Spanish', vmBody('01:20'), T0)])];
+  sb.getSpanishVmFilter_ = () => '';
+  let off = sb.spanishVmFold_(30, {}, {}, false, {});
+  assert.strictEqual(off.on, false, 'half-configured → the fold is OFF');
+  assert.strictEqual(off.rows.length, 0, 'and scans nothing');
+  assert.strictEqual(searched.length, 0, 'not even a Gmail search — fail-quiet, not fail-wide');
+  sb.getSpanishVmFilter_ = () => 'A_Q_Spanish';
+
+  // (b) A voicemail at or above the threshold is a row; a hang-up is
+  // SUPPRESSED and counted; an unmeasurable one is SHOWN and counted apart.
+  sb._threads = [
+    th('v1', [msg('no-reply@8x8.com', 'VM via A_Q_Spanish', vmBody('01:20'), T0)]),
+    th('hangup', [msg('no-reply@8x8.com', 'VM via A_Q_Spanish', vmBody('00:02'), T0)]),
+    th('noDur', [msg('no-reply@8x8.com', 'VM via A_Q_Spanish', 'You have a new voicemail', T0)]),
+    th('foreign', [msg('someone@else.com', 'Re: VM via A_Q_Spanish', vmBody('02:00'), T0)]),
+  ];
+  const f1 = sb.spanishVmFold_(30, {}, {}, false, {});
+  assert.strictEqual(f1.on, true, 'configured → the fold is ON');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(f1.rows.map((r) => r.threadId))), ['v1', 'noDur'],
+    'the hang-up is gone; the unmeasurable one is SHOWN (fail-open — a vendor artifact must not cost a callback)');
+  assert.strictEqual(f1.suppressed, 1, 'the hidden hang-up is counted');
+  assert.strictEqual(f1.unparsed, 1, 'and the unmeasurable one is counted SEPARATELY');
+  assert.strictEqual(f1.minSeconds, 5, 'the threshold it hid at rides along');
+  assert.strictEqual(f1.truncated, false, 'four threads is not the cap');
+  // The first message is re-checked, so a stray reply-match cannot smuggle a
+  // foreign thread in even though the Gmail query matched the thread.
+  assert.ok(JSON.parse(JSON.stringify(f1.rows)).every((r) => r.threadId !== 'foreign'), 'a foreign thread is refused on the FIRST message');
+
+  // (c) Resolution: a member reply resolves and TIMES; a manual mark-resolve
+  // resolves and is flagged so the caller can leave it out of the series.
+  sb._threads = [
+    th('replied', [msg('no-reply@8x8.com', 'VM via A_Q_Spanish', vmBody('01:00'), T0),
+                   msg('Ana <ana@umsupply.com>', 're', '', T0 + 30 * 60000)]),
+    th('manual', [msg('no-reply@8x8.com', 'VM via A_Q_Spanish', vmBody('01:00'), T0)]),
+    th('open', [msg('no-reply@8x8.com', 'VM via A_Q_Spanish', vmBody('01:00'), T0)]),
+  ];
+  const f2 = sb.spanishVmFold_(30, { manual: { ms: T0 + 2 * 3600000 } },
+                               { 'ana@umsupply.com': true }, true, {});
+  const byId = {}; JSON.parse(JSON.stringify(f2.rows)).forEach((r) => { byId[r.threadId] = r; });
+  assert.strictEqual(byId.replied.resolveMs - byId.replied.reqMs, 30 * 60000, 'a member reply is a real 30-minute response');
+  assert.strictEqual(byId.replied.wasManual, false, 'and is timed');
+  assert.strictEqual(byId.manual.wasManual, true, 'a manual mark-resolve is flagged');
+  assert.strictEqual(byId.open.resolveMs, null, 'an untouched voicemail is still pending');
+
+  // (d) `seen` is the group-address pass: a voicemail that also reached the
+  // group address is folded ONCE, not counted on both surfaces.
+  const f3 = sb.spanishVmFold_(30, {}, {}, false, { replied: true, manual: true });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(f3.rows.map((r) => r.threadId))), ['open'], 'an already-seen thread is skipped');
+
+  // (e) BOTH surfaces call it. This is the finding: one fold, two readers.
+  const code = serverSource();
+  const grab = (n) => {
+    const i = code.indexOf('function ' + n + '(');
+    let d = 0, k = code.indexOf('{', i);
+    for (; k < code.length; k++) { if (code[k] === '{') d++; else if (code[k] === '}' && --d === 0) break; }
+    return code.slice(i, k + 1);
+  };
+  assert.ok(/spanishVmFold_\(/.test(grab('getSpanishInboxStats')), 'the STATS card folds voicemails');
+  assert.ok(/spanishVmFold_\(/.test(grab('getSpanishInboxPending')), 'the LIST folds voicemails');
+
+  // (f) The stats card RENDERS the voicemail half of its own figures, and
+  // says "not configured" differently from "none came in" (INV-187). Four
+  // shipped-but-unread payload fields would be the same defect one layer up.
+  const cb = buildSandbox([]);
+  ['esc'].forEach((n) => loadFunction(cb, 'script_core.html', n));
+  loadFunction(cb, 'metrics/script_metrics.html', 'spanishVmCountNote_');
+  assert.strictEqual(cb.spanishVmCountNote_({}), '', 'an older server (no vmOn) gets no note — never an invented one');
+  assert.ok(/not configured/.test(cb.spanishVmCountNote_({ vmOn: false })),
+    'the fold being OFF is stated, not rendered as zero voicemails');
+  assert.ok(/1 voicemail included/.test(cb.spanishVmCountNote_({ vmOn: true, vmCounted: 1 })), 'singular reads correctly');
+  assert.ok(/0 voicemails included/.test(cb.spanishVmCountNote_({ vmOn: true, vmCounted: 0 })),
+    'a configured fold with nothing to show says zero — which is the reassuring answer, so it must be said');
+  const head = extractFunction('metrics/script_metrics.html', 'spanishHeadHtml_');
+  assert.ok(/spanishVmCountNote_\(d\)/.test(head) && /spanishVmNote_\(d\)/.test(head),
+    'the stats head renders both the count and the suppression note — the same two the pending header carries');
+});
+
+test('F-39: the timesheet client\'s computeRange and the server\'s getCurrentBiweeklyRange_ agree, day by day', () => {
+  // A client↔server MIRROR of the pay-period arithmetic with no pin (g120):
+  // both compute `floor((daysDiff + 13) / 14)` and back off 13 days, in two
+  // languages, in two files. A drift here misprints a rep's pay period — the
+  // client's date range and the server's export would silently cover
+  // different fortnights.
+  const ANCHOR = '2026-01-09';
+
+  const cb = buildSandbox([]);
+  cb.empState = { payAnchor: ANCHOR };
+  vm.runInContext('function pad(n){return String(n).padStart(2,"0");}', cb, { filename: 'stub#pad' });
+  ['isoFromMs', 'computeRange'].forEach((n) => {
+    vm.runInContext(extractFunction('tc/script_timesheet.html', n), cb, { filename: 'script_timesheet.html#' + n });
+  });
+
+  const sbv = buildSandbox([]);
+  sbv.EMP = { PAY_CYCLE: 0, PAY_ANCHOR: 1 };
+  sbv.getEmployeeRosterRows_ = () => [['cycle', 'anchor'], ['biweekly', ANCHOR]];
+  sbv.normalizeDate_ = (v) => String(v);
+  vm.runInContext(extractRawFunction('Code.js', 'isoFromUtc_'), sbv, { filename: 'Code.js#isoFromUtc_' });
+  vm.runInContext(extractRawFunction('Code.js', 'getCurrentBiweeklyRange_'), sbv, { filename: 'Code.js#getCurrentBiweeklyRange_' });
+
+  // Sweep 70 consecutive days across three period boundaries, including the
+  // anchor day itself and the day after — the two the off-by-one lives on.
+  let checked = 0;
+  for (let i = -21; i < 49; i++) {
+    const d = new Date(Date.UTC(2026, 0, 9 + i));
+    const iso = d.toISOString().slice(0, 10);
+    const client = JSON.parse(JSON.stringify(cb.computeRange('period', iso, 0)));
+    const server = JSON.parse(JSON.stringify(sbv.getCurrentBiweeklyRange_(iso)));
+    assert.deepStrictEqual(client, server, 'the two halves disagree on ' + iso);
+    checked++;
+  }
+  assert.strictEqual(checked, 70, 'the sweep actually ran');
+
+  // The anchor is the END of its period, and a period is 14 days inclusive.
+  const at = JSON.parse(JSON.stringify(sbv.getCurrentBiweeklyRange_(ANCHOR)));
+  assert.strictEqual(at.end, ANCHOR, 'the anchor day ends its own period');
+  assert.strictEqual(at.start, '2025-12-27', 'and the period is 14 days inclusive');
+  // The client's `offset` walks whole periods — the half the server has no
+  // equivalent for, so it is pinned against the server one period back.
+  const prev = JSON.parse(JSON.stringify(cb.computeRange('period', ANCHOR, -1)));
+  const prevServer = JSON.parse(JSON.stringify(sbv.getCurrentBiweeklyRange_('2025-12-26')));
+  assert.deepStrictEqual(prev, prevServer, 'offset -1 is the period the server reports 14 days earlier');
+});
+
+test('F-48: an UNMEASURABLE day is a gap in the sparkline, never a 0-hour bar', () => {
+  // `hours: map[key] || 0` collapsed two different days onto one bar: a rep
+  // who did not work (a real zero — V-10 gave it a visible dim floor) and a
+  // rep whose day could not be measured (still clocked in at the read, or a
+  // stamp calcHours_ refused). The second is an UNKNOWN, and an unknown is not
+  // an elapsed zero (g54) — it told a manager "0 hours worked" about a day the
+  // server had no hours for.
+  const dash = extractRawFunction('Code.js', 'getManagerDashboard');
+  assert.ok(!/hours: sparkHoursMap\[[^\]]+\] \|\| 0/.test(dash),
+    'the `|| 0` collapse is gone');
+  assert.ok(/hasOwnProperty\.call\(sparkHoursMap, k\)/.test(dash),
+    'a measured day is recognised by PRESENCE in the map, not by truthiness — a genuine 0.0h day is measured');
+  assert.ok(/sparkPunchMap\[k\] \? null : 0/.test(dash),
+    'punched-but-unmeasurable → null; no punch rows at all → a real 0');
+
+  // BEHAVIOURAL — the renderer. A null day must not be painted as the zero
+  // day, must not drag the total, and must say what it is.
+  const sb = buildSandbox([]);
+  ['esc', 'formatHoursShort'].forEach((n) => loadFunction(sb, 'script_core.html', n));
+  loadFunction(sb, 'tc/script_manager.html', 'renderEmpSparkline_');
+  const R = sb.renderEmpSparkline_;
+  const day = (d, h) => ({ date: '2026-09-' + d, hours: h });
+
+  const html = R([day('07', 8), day('08', 0), day('09', null), day('10', 8.5)]);
+  const bars = html.match(/<div class="bar[^"]*"[^>]*>/g) || [];
+  assert.strictEqual(bars.length, 4, 'every day still gets a slot — the week reads as four days');
+  assert.ok(/class="bar zero"/.test(html), 'the real zero keeps its dim bar (V-10)');
+  assert.ok(/class="bar unknown"/.test(html), 'the unmeasurable day gets its OWN class');
+  assert.strictEqual((html.match(/class="bar unknown"/g) || []).length, 1, 'exactly one unknown');
+  assert.ok(!/class="bar zero"[^>]*title="09-09/.test(html), 'the unknown day is not the zero class');
+  assert.ok(/title="09-09: no data/.test(html), 'and its tooltip says no data, not "off"');
+  assert.ok(/title="09-08: off"/.test(html), 'while the real zero still says off');
+  // The total counts what could be measured, and SAYS how many could not
+  // (INV-187 — a quietly under-reported total is the same lie one step on).
+  assert.ok(/16\.5h?/.test(html) || /16\.5/.test(html), 'the total is 8 + 8.5, not 8 + 8.5 + a phantom 0');
+  assert.ok(/·1\?/.test(html), 'the count of unmeasurable days is stated');
+
+  // A week of nothing BUT unknowns still renders — it is the week most worth
+  // seeing, and the old `totalHrs === 0` early return would have hidden it.
+  const allUnknown = R([day('07', null), day('08', null)]);
+  assert.ok(/class="bar unknown"/.test(allUnknown), 'an all-unknown week renders');
+  // A genuine no-work week still collapses to nothing (unchanged).
+  assert.strictEqual(R([day('07', 0), day('08', 0)]), '', 'a real all-zero week still renders nothing');
+  // And the CSS gives the unknown bar its own treatment, distinct from zero.
+  const css = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  const rule = css.match(/\.emp-spark \.bar\.unknown \{[^}]*\}/);
+  assert.ok(rule, '.emp-spark .bar.unknown is styled');
+  assert.ok(/repeating-linear-gradient/.test(rule[0]), 'it is a hatch — unmistakably "no value", not a short bar');
+  // INV-185: the visual fixture must be able to produce the state, or no
+  // screenshot can ever show the difference (the totalNotes lesson, batch 6).
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/hours: \[[^\]]*null[^\]]*\]/.test(mock), 'the visual fixture ships a null day');
+});
+
+// --- F-52: four pins that stayed green under a mutation that broke them ----
+// These four were pure source-shape assertions over functions that are all
+// drivable. Each one below DRIVES the function and asserts the outcome the
+// pin's own name promises; the structural halves that are genuinely about
+// SHAPE (which caller passes a bound, which scriptlet form injects the stamp)
+// stay where they are. g116's standing lesson, applied to the pins themselves:
+// a green pin is not a checked one.
+test('F3 (rewritten BEHAVIOURAL, F-52): archiveSheetRowsOlderThan_ really stops at the bound, and a bounded run is monotonic', () => {
+  const sb = buildSandbox([]);
+  sb.CONFIG = { TIMEZONE: 'America/Chicago' };
+  sb.CN_HEADERS = ['A', 'B'];
+  sb.Utilities = { parseDate: () => { throw new Error('use Date.parse'); } };
+  let flushes = 0;
+  sb.SpreadsheetApp = { flush: () => { flushes++; } };
+  vm.runInContext(extractRawFunction('Code.js', 'parseRetentionDateMs_'), sb, { filename: 'Code.js#parseRetentionDateMs_' });
+  vm.runInContext(extractRawFunction('Code.js', 'archiveSheetRowsOlderThan_'), sb, { filename: 'Code.js#archiveSheetRowsOlderThan_' });
+
+  // A source tab of 1 header + 30 old rows + 3 recent ones.
+  const mkSheet = () => {
+    const rows = [['date', 'v']];
+    for (let i = 0; i < 30; i++) rows.push(['2026-01-' + String((i % 28) + 1).padStart(2, '0') + 'T08:00:00', 'old' + i]);
+    for (let i = 0; i < 3; i++) rows.push(['2026-09-1' + i + 'T08:00:00', 'new' + i]);
+    return {
+      rows,
+      getLastRow: () => rows.length,
+      getMaxRows: () => rows.length + 50,
+      getDataRange: () => ({ getValues: () => rows.map((r) => r.slice()) }),
+      insertRowAfter: () => {},
+      deleteRow: (n) => { rows.splice(n - 1, 1); },
+    };
+  };
+  const mkArchive = () => {
+    const written = [];
+    return {
+      written,
+      getLastRow: () => written.length,
+      getMaxColumns: () => 2,
+      insertColumnsAfter: () => {},
+      getRange: () => ({ setValues: (b) => { b.forEach((r) => written.push(r)); } }),
+    };
+  };
+  const CUT = Date.parse('2026-06-01T00:00:00Z');
+
+  // (a) BOUNDED: exactly maxRows move, and the rows that moved are GONE from
+  // the source — the monotonic-drain property the bound exists for. The old
+  // pin asserted the `break` was in the source; a `break` that never fires
+  // (the guard inverted, the counter compared to the wrong length) reads the
+  // same in source and moves the whole tab in one 6-minute-ceiling run.
+  const src1 = mkSheet(), arc1 = mkArchive();
+  const moved = sb.archiveSheetRowsOlderThan_(src1, arc1, 0, CUT, { maxRows: 7, width: 2 });
+  assert.strictEqual(moved, 7, 'exactly the bound moved');
+  assert.strictEqual(arc1.written.length, 7, 'and exactly the bound landed in the archive');
+  assert.strictEqual(src1.rows.length, 1 + 33 - 7, 'the source shrank by exactly the bound');
+  assert.ok(flushes > 0, 'the archive write is flushed BEFORE the deletes (an unflushed append + a delete loses rows)');
+  // Monotonic: a second run moves the NEXT batch, never the same one again.
+  const before = src1.rows.map((r) => r[1]).join(',');
+  const moved2 = sb.archiveSheetRowsOlderThan_(src1, arc1, 0, CUT, { maxRows: 7, width: 2 });
+  assert.strictEqual(moved2, 7, 'the next run drains the next batch');
+  assert.strictEqual(arc1.written.length, 14, 'nothing was re-appended');
+  assert.notStrictEqual(src1.rows.map((r) => r[1]).join(','), before, 'and the source moved on');
+
+  // (b) UNBOUNDED: no maxRows → every eligible row, and only the eligible
+  // ones. This is the CN call sites' contract, unchanged.
+  const src2 = mkSheet(), arc2 = mkArchive();
+  const all = sb.archiveSheetRowsOlderThan_(src2, arc2, 0, CUT, { width: 2 });
+  assert.strictEqual(all, 30, 'no bound → all 30 old rows');
+  assert.strictEqual(src2.rows.length, 4, 'header + the 3 rows newer than the cutoff survive');
+  assert.ok(src2.rows.slice(1).every((r) => /^new/.test(r[1])), 'and they are the RECENT ones');
+
+  // (c) A bound larger than the backlog is not a truncation, and a tab with
+  // nothing eligible writes nothing at all.
+  const src3 = mkSheet(), arc3 = mkArchive();
+  assert.strictEqual(sb.archiveSheetRowsOlderThan_(src3, arc3, 0, CUT, { maxRows: 999, width: 2 }), 30, 'a slack bound moves the backlog');
+  const src4 = mkSheet(), arc4 = mkArchive();
+  assert.strictEqual(sb.archiveSheetRowsOlderThan_(src4, arc4, 0, Date.parse('2020-01-01T00:00:00Z'), { maxRows: 7, width: 2 }), 0, 'nothing eligible → 0');
+  assert.strictEqual(arc4.written.length, 0, 'and NOTHING is appended (an empty append would still have flushed)');
+
+  // The caller half stays structural — it is a claim about WHICH call site
+  // passes the bound, which no drive of the helper can show.
+  const ts = extractRawFunction('Code.js', 'archiveOldTimesheetRows');
+  assert.ok(/maxRows: TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN/.test(ts),
+    'the Timesheet archive (the large, unboundedly-growing tab) passes the bound');
+  assert.ok(/hitPerRunCap/.test(ts),
+    'a capped run is visible in the audit trail — a draining backlog must not look like a normal small run');
+  const m = serverSource().match(/TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN = (\d+)/);
+  assert.ok(m && parseInt(m[1], 10) > 0, 'the per-run cap constant exists');
+});
+
+test('batch-5 (rewritten BEHAVIOURAL, F-52): the dept-email config really sanitizes on read and really refuses a comma on write', () => {
+  // The old pin matched `clean[name] = email` and `indexOf('@') > 0` in the
+  // source. Both survive a whitelist that assigns before validating, or a
+  // validator whose result is discarded — the L-12 shape it was written for.
+  const sb = buildSandbox([]);
+  sb.CONFIG = { CALL_NOTES: { DEPARTMENT_EMAILS: { Fallback: 'fallback@umsupply.com' } } };
+  let prop = null;
+  sb.PropertiesService = { getScriptProperties: () => ({ getProperty: () => prop }) };
+  vm.runInContext(extractRawFunction('Code.js', 'getDepartmentEmails_'), sb, { filename: 'Code.js#getDepartmentEmails_' });
+  const R = () => JSON.parse(JSON.stringify(sb.getDepartmentEmails_()));
+
+  prop = null;
+  assert.deepStrictEqual(R(), { Fallback: 'fallback@umsupply.com' }, 'unset → the CONFIG fallback');
+  prop = '{ not json';
+  assert.deepStrictEqual(R(), { Fallback: 'fallback@umsupply.com' }, 'unparseable → the CONFIG fallback, never a throw');
+  prop = JSON.stringify(['billing@umsupply.com']);
+  assert.deepStrictEqual(R(), { Fallback: 'fallback@umsupply.com' },
+    'an ARRAY → the fallback: Object.keys() on an array yields "0", and "0" reached the composer dept list');
+  prop = JSON.stringify({ Billing: 'billing@umsupply.com', Broken: 42, Blank: '', NoAt: 'billing', '  ': 'x@y.com' });
+  assert.deepStrictEqual(R(), { Billing: 'billing@umsupply.com' },
+    'every implausible entry is DROPPED entry-wise — a number would have ridden raw into MailApp `to`');
+  prop = JSON.stringify({ Broken: 42 });
+  assert.deepStrictEqual(R(), { Fallback: 'fallback@umsupply.com' }, 'an ALL-junk map falls back whole, never to {}');
+  prop = JSON.stringify({ '  Billing  ': '  billing@umsupply.com  ' });
+  assert.deepStrictEqual(R(), { Billing: 'billing@umsupply.com' }, 'names and emails are trimmed');
+
+  // The write half: a comma in a dept name splits into two phantom departments
+  // everywhere the joined ToDept string is parsed, so the save must REFUSE.
+  const wb = buildSandbox([]);
+  wb.getEmployeeInfo_ = () => ({ isAdmin: true, email: 'admin@umsupply.com' });
+  const saved = [];
+  wb.propSetBounded_ = (k, v) => { saved.push([k, v]); };
+  wb.writeAuditLog_ = () => {};
+  vm.runInContext(extractRawFunction('Code.js', 'saveDepartmentEmails'), wb, { filename: 'Code.js#saveDepartmentEmails' });
+  const S = (o) => JSON.parse(JSON.stringify(wb.saveDepartmentEmails(o)));
+  assert.strictEqual(S({ 'Billing, West': 'a@b.com' }).success, false, 'a comma in a dept name is refused');
+  assert.ok(/comma or semicolon/.test(S({ 'Billing, West': 'a@b.com' }).error), 'and the refusal says why');
+  assert.strictEqual(S({ 'Billing; West': 'a@b.com' }).success, false, 'a semicolon too');
+  assert.strictEqual(S({ '': 'a@b.com' }).success, false, 'an empty name is refused');
+  assert.strictEqual(S({ Billing: 'not-an-email' }).success, false, 'a non-email is refused');
+  assert.strictEqual(S({ Billing: '@b.com' }).success, false, 'and an @ at position 0 is not an address');
+  assert.strictEqual(saved.length, 0, 'NOT ONE refusal wrote the property — the refusal is a refusal, not a warning');
+  assert.strictEqual(S({ Billing: 'billing@umsupply.com' }).success, true, 'a clean map saves');
+  assert.strictEqual(saved.length, 1, 'exactly once');
+  // A non-admin never reaches the validation at all (GATE-SHAPE, writer form).
+  wb.getEmployeeInfo_ = () => ({ isAdmin: false, email: 'rep@umsupply.com' });
+  assert.deepStrictEqual(S({ Billing: 'billing@umsupply.com' }),
+    { success: false, error: 'Admin access required.' }, 'a non-admin is refused');
+  assert.strictEqual(saved.length, 1, 'and wrote nothing');
+});
+
+test('BCN-1b (BEHAVIOURAL, F-52): the build hash really CHANGES when a partial changes, and is stable when nothing does', () => {
+  // The old pin matched the derivation in source. A hash that reads index.html
+  // and then digests a constant matches every one of those assertions — and a
+  // beacon that never changes is a beacon that never prompts, which is the
+  // whole failure mode it exists to prevent (a version constant nobody bumps,
+  // one level down).
+  const sb = buildSandbox([]);
+  sb.BUILD_HASH_CACHE_KEY = 'bh';
+  sb.BUILD_HASH_CACHE_TTL_SEC = 300;
+  const crypto = require('crypto');
+  sb.Utilities = {
+    DigestAlgorithm: { MD5: 'MD5' }, Charset: { UTF_8: 'UTF-8' },
+    computeDigest: (alg, s) => Array.from(crypto.createHash('md5').update(String(s), 'utf8').digest())
+      .map((b) => (b > 127 ? b - 256 : b)),   // Apps Script hands back SIGNED bytes
+  };
+  const cacheStore = {};
+  let puts = 0;
+  sb.CacheService = { getScriptCache: () => ({
+    get: (k) => (k in cacheStore ? cacheStore[k] : null),
+    put: (k, v) => { puts++; cacheStore[k] = v; },
+  }) };
+  const partials = { 'script_core.html': 'CORE-V1', 'cn/script_callnotes.html': 'CN-V1' };
+  let indexRaw = "<?!= include('script_core.html') ?><?!= include('cn/script_callnotes.html') ?>";
+  sb.HtmlService = { createTemplateFromFile: () => ({ getRawContent: () => indexRaw }) };
+  sb.include = (f) => { if (!(f in partials)) throw new Error('no such file'); return partials[f]; };
+  sb._clientBuildHashMemo = null;
+  vm.runInContext(extractRawFunction('Code.js', 'clientBuildHash_'), sb, { filename: 'Code.js#clientBuildHash_' });
+  const H = () => { sb._clientBuildHashMemo = null; delete cacheStore.bh; return sb.clientBuildHash_(); };
+
+  const base = H();
+  assert.ok(/^[0-9a-f]{32}$/.test(base), 'the hash is a 32-char lowercase MD5 hex (signed bytes and all)');
+  assert.strictEqual(H(), base, 'nothing changed → the SAME hash (a beacon that always fires trains people to ignore it)');
+
+  // A byte in a PARTIAL must move it — that is the deploy the beacon is for.
+  partials['cn/script_callnotes.html'] = 'CN-V2';
+  const afterPartial = H();
+  assert.notStrictEqual(afterPartial, base, 'a partial changed → a different hash');
+  // …and so must a byte in index.html itself, scriptlets included.
+  indexRaw += '<!-- a comment -->';
+  assert.notStrictEqual(H(), afterPartial, 'index.html changed → a different hash');
+
+  // A MISSING partial is recorded rather than swallowed: two different broken
+  // builds must not collide, and a build that loses a partial must not hash
+  // the same as the build before it lost it.
+  indexRaw = "<?!= include('script_core.html') ?><?!= include('gone.html') ?>";
+  const missing = H();
+  indexRaw = "<?!= include('script_core.html') ?><?!= include('alsoGone.html') ?>";
+  assert.notStrictEqual(H(), missing, 'two different missing partials hash differently');
+
+  // The cache is a CACHE, not the answer: a hit is served, and a put happens
+  // exactly once per cold compute (an eternal entry would never notice a
+  // deploy — the TTL half stays pinned below).
+  indexRaw = "<?!= include('script_core.html') ?>";
+  delete cacheStore.bh; sb._clientBuildHashMemo = null;
+  const cold = sb.clientBuildHash_();
+  const putsAfterCold = puts;
+  sb._clientBuildHashMemo = null;
+  assert.strictEqual(sb.clientBuildHash_(), cold, 'a warm cache serves the same hash');
+  assert.strictEqual(puts, putsAfterCold, 'and does not re-put');
+  cacheStore.bh = 'deadbeef';
+  sb._clientBuildHashMemo = null;
+  assert.strictEqual(sb.clientBuildHash_(), 'deadbeef', 'the cached value WINS — the read is real, not decorative');
+
+  // The TTL, the boot-safety and the injection form are claims about SHAPE,
+  // not about this function's output, so they stay structural.
+  const ttl = serverSource().match(/BUILD_HASH_CACHE_TTL_SEC = (\d+)/);
+  assert.ok(ttl && Number(ttl[1]) <= 600, 'the TTL bounds post-deploy detection lag (≤10 min)');
+});
+
+test('Punctuality + Admin fill the view width (F-52: the one claim here that CANNOT be driven)', () => {
+  // This is the fourth pin, and the honest one: "no max-width anywhere in the
+  // partial" is an ABSENCE assertion, and an absence assertion cannot be
+  // driven — there is no function to call. It also cannot see the cap arrive
+  // by another route (a class that sets `width`, a grid track, an inline style
+  // built at render time), which is exactly how the cap got in the first time.
+  //
+  // So the absence half stays here, and the REAL check is the visual matrix's
+  // measured render: `test/visual/report.json` carries an `overflowPx` and a
+  // per-scenario element census for the Admin and Punctuality scenarios, and a
+  // squeezed layout shows up there as dead space no source scan can see. This
+  // pin asserts the absence AND that the measured scenarios still exist to
+  // carry the real claim, so nobody deletes the measurement and leaves the
+  // grep behind. (`/broad-scan`'s Visual Audit Stage runs them; they are
+  // manual by the project's Test Command, hence a shape check here.)
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(!/max-width:\s*900px/.test(cn) && !/max-width:900px/.test(cn),
+    'no 900px card caps anywhere in the Admin partial');
+  assert.ok(!/'<div style="max-width:1000px">'/.test(cn), 'the Sheets viewer wrapper is uncapped');
+  const tm = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  const ptWrap = tm.match(/\.pt-wrap[^{]*\{[^}]*\}/g) || [];
+  assert.ok(ptWrap.length >= 1 && ptWrap.every((r) => !/max-width/.test(r)), '.pt-wrap carries no max-width');
+  assert.ok(!/telemetry" style="max-width:760px/.test(tm), 'the punctuality summary strip is uncapped');
+  // The measured scenarios that carry the real claim must still be declared.
+  const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8');
+  ['admin-light-wide', 'punctuality'].forEach((name) => {
+    assert.ok(shoot.indexOf(name) >= 0,
+      'the visual matrix still declares a ' + name + ' scenario — the width claim is MEASURED there, not here');
+  });
+  assert.ok(/overflowPx/.test(shoot), 'and the matrix measures overflow, so a squeezed render is a reported number');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

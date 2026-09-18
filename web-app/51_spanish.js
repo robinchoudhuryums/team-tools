@@ -212,7 +212,7 @@ function getSpanishInboxStats(days) {
     // Cache key is scoped by address + member set (not just `days`) so an operator
     // editing SPANISH_INBOX_ADDRESS / SPANISH_INBOX_MEMBERS isn't served a stale
     // aggregate computed under the old config for the TTL.
-    const ckey = 'spanish_inbox_v2:' + d + ':' + spanishCacheHash_(addr, members);   // v2: manual resolves left the duration series (2026-09-10)
+    const ckey = 'spanish_inbox_v3:' + d + ':' + spanishCacheHash_(addr, members);   // v2: manual resolves left the duration series (2026-09-10); v3: voicemails joined the counts (F-34, cycle 20) — INV-85, a cached v2 aggregate must not keep serving the thread-only numbers for the TTL
     const hit = cache.get(ckey);
     if (hit) { try { return JSON.parse(hit); } catch (e) {} }
 
@@ -264,6 +264,27 @@ function getSpanishInboxStats(days) {
         pending.push({ requester: requester, ageHours: Math.round((nowMs - reqMs) / 3600000) });
       }
     });
+    // F-34: the SAME voicemail fold the list runs. `seen` is the group-address
+    // thread set, so a voicemail that also reached the group address is not
+    // double-counted. A voicemail resolved by a member reply gets its duration
+    // like any other request; a MANUAL resolve is counted and never timed, the
+    // same exclusion the loop above applies (INV-187).
+    const seenStats = {};
+    threads.forEach(function (th) { seenStats[th.getId()] = true; });
+    const vmFold = spanishVmFold_(d, manual, members, haveMembers, seenStats);
+    vmFold.rows.forEach(function (r) {
+      if (r.resolveMs == null) {
+        pending.push({ requester: spanishVmCaller_(r.subject) || emailAddrOnly_(r.from),
+                       ageHours: Math.round((nowMs - r.reqMs) / 3600000) });
+        return;
+      }
+      resolvedCount++;
+      if (r.wasManual) { manualCount++; return; }
+      durations.push(Math.max(0, Math.round((r.resolveMs - r.reqMs) / 60000)));
+      const vmBizMin = businessMinutesBetween_(r.reqMs, r.resolveMs);
+      if (vmBizMin != null) bizDurations.push(vmBizMin);
+    });
+
     durations.sort(function (a, b) { return a - b; });
     bizDurations.sort(function (a, b) { return a - b; });
     const avg = durations.length ? Math.round(durations.reduce(function (s, x) { return s + x; }, 0) / durations.length) : null;
@@ -293,11 +314,84 @@ function getSpanishInboxStats(days) {
       // authoritative.
       membersConfigured: Object.keys(members).length,
       threadsScanned: threads.length,
-      truncated: threads.length >= SPANISH_THREAD_SCAN_MAX,
+      truncated: threads.length >= SPANISH_THREAD_SCAN_MAX || vmFold.truncated,
+      // F-34 — the voicemail half of these figures, stated rather than folded
+      // in silently. `vmOn` false means the fold is not configured (both
+      // Script Properties unset), which is a different answer from "no
+      // voicemails came in"; `vmSuppressed` / `vmUnparsed` are the same two
+      // counters the pending list reports, on the same threshold.
+      vmOn: vmFold.on, vmCounted: vmFold.rows.length,
+      vmSuppressed: vmFold.suppressed, vmUnparsed: vmFold.unparsed,
+      vmMinSeconds: vmFold.minSeconds,
     };
     cache.put(ckey, JSON.stringify(result), 300);
     return result;
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
+}
+/** ONE voicemail fold — the 8x8 A_Q_Spanish notifications, folded the same way
+ *  for the LIST and for the STATS card (F-34, cycle 20).
+ *
+ *  Operator 2026-08-25 added the fold to `getSpanishInboxPending` only. 8x8
+ *  mails each member's individual inbox rather than the group address, so a
+ *  voicemail never matches `spanishSearchQuery_` and `getSpanishInboxStats`
+ *  counted none of them: the Spanish tab listed the voicemails as pending work
+ *  while the card above the list, computed from the same mailbox, said a
+ *  smaller number. Nothing reconciled the two, and the card is what a manager
+ *  quotes. Both surfaces now read this.
+ *
+ *  A voicemail has no reply-based resolution semantics of its own (nobody
+ *  replies to no-reply@) — it leaves pending via the manual mark-resolved /
+ *  claim machinery; a member reply on the notification thread also counts,
+ *  mirroring the main loop. Both filter halves blank/unset → the fold is OFF
+ *  (fail-quiet), and `on` says which, so a caller can tell "no voicemails" from
+ *  "not configured" (INV-187).
+ *
+ *  The SP4 duration gate runs BEFORE the resolution check, deliberately: a
+ *  hang-up is not work on either surface, so it is neither a pending card nor
+ *  a resolved request, and `suppressed` counts every one the gate hid. It
+ *  FAILS OPEN — an unreadable duration is shown and counted in `unparsed`
+ *  instead, because the body is a vendor artifact and the silent failure costs
+ *  a patient a callback.
+ *
+ *  Returns the surviving threads with their resolution stamp; each caller
+ *  builds its own shape from `thread`/`body` so neither pays for the other's
+ *  fields (the list calls `getPermalink()`, the stats card does not). */
+function spanishVmFold_(days, manual, members, haveMembers, seen) {
+  const out = { rows: [], suppressed: 0, unparsed: 0, truncated: false,
+                minSeconds: getSpanishVmMinSeconds_(), on: false };
+  const vmSender = getSpanishVmSender_(), vmFilter = getSpanishVmFilter_();
+  if (!vmSender || !vmFilter) return out;
+  out.on = true;
+  const vmThreads = GmailApp.search(spanishVmQuery_(vmSender, vmFilter, days), 0, SPANISH_THREAD_SCAN_MAX);
+  out.truncated = vmThreads.length >= SPANISH_THREAD_SCAN_MAX;
+  vmThreads.forEach(function (th) {
+    const id = th.getId();
+    if (seen && seen[id]) return;   // already folded in by the group-address pass
+    const msgs = th.getMessages();
+    if (!msgs.length) return;
+    const req = msgs[0];
+    // The query matches subject across the THREAD; re-check the first
+    // message so a stray reply-match can't smuggle a foreign thread in.
+    if (!spanishVmMatch_(req.getFrom(), req.getSubject(), vmSender, vmFilter)) return;
+    // ONE getPlainBody(): the gate and the transcript read the same string.
+    const body = String(req.getPlainBody() || '');
+    const verdict = spanishVmTooShort_(spanishVmDurationSec_(body), out.minSeconds);
+    if (verdict === 'short') { out.suppressed++; return; }
+    if (verdict === 'unparsed') out.unparsed++;
+    const reqMs = req.getDate().getTime();
+    let resolveMs = null, wasManual = false;
+    for (let i = 1; i < msgs.length; i++) {
+      const from = emailAddrOnly_(msgs[i].getFrom());
+      if (haveMembers ? !!members[from] : !!from) { resolveMs = msgs[i].getDate().getTime(); break; }
+    }
+    if (resolveMs == null && manual && manual[id]) {
+      resolveMs = Math.max(reqMs, manual[id].ms || reqMs);
+      wasManual = true;
+    }
+    out.rows.push({ threadId: id, thread: th, from: req.getFrom(), subject: req.getSubject(),
+                    reqMs: reqMs, resolveMs: resolveMs, wasManual: wasManual, body: body });
+  });
+  return out;
 }
 /** Pending (unresolved) Spanish-inbox requests as task cards — canSeeSpanishInbox_-gated (INV-31 amendment),
  *  live-read (NOT cached/stored, since it carries request content). Returns
@@ -344,68 +438,32 @@ function getSpanishInboxPending(days) {
         claim: claims[th.getId()] || null,   // pilot round 2 — {by, assignedBy, atMs} | null
       });
     });
-    // Operator 2026-08-25: fold in 8x8 A_Q_Spanish VOICEMAIL notifications.
-    // 8x8 mails each member's individual inbox (never the group address), so
-    // these ride a sender+subject filter over the same deployer mailbox. A VM
-    // has no reply-based resolution semantics (nobody replies to no-reply@) —
-    // it leaves pending via the manual mark-resolved / claim machinery; a
-    // member reply on the notification thread also counts, mirroring the main
-    // loop. Both filter halves blank/unset → the fold is OFF (fail-quiet).
-    let vmTruncated = false;
-    let vmSuppressed = 0, vmUnparsed = 0;   // SP4 — reported, never silent
-    const vmMinSec = getSpanishVmMinSeconds_();
-    const vmSender = getSpanishVmSender_(), vmFilter = getSpanishVmFilter_();
-    if (vmSender && vmFilter) {
-      const seen = {};
-      out.forEach(function (x) { seen[x.threadId] = true; });
-      const vmThreads = GmailApp.search(spanishVmQuery_(vmSender, vmFilter, d), 0, SPANISH_THREAD_SCAN_MAX);
-      vmTruncated = vmThreads.length >= SPANISH_THREAD_SCAN_MAX;
-      vmThreads.forEach(function (th) {
-        if (seen[th.getId()] || manual[th.getId()]) return;
-        const msgs = th.getMessages();
-        if (!msgs.length) return;
-        const req = msgs[0];
-        // The query matches subject across the THREAD; re-check the first
-        // message so a stray reply-match can't smuggle a foreign thread in.
-        if (!spanishVmMatch_(req.getFrom(), req.getSubject(), vmSender, vmFilter)) return;
-        let resolved = false;
-        for (let i = 1; i < msgs.length; i++) {
-          const from = emailAddrOnly_(msgs[i].getFrom());
-          if (haveMembers ? !!members[from] : !!from) { resolved = true; break; }
-        }
-        if (resolved) return;
-        // ONE getPlainBody() — it used to be called twice here (snippet and
-        // hasMore each re-read and re-normalized it) where the loop above
-        // already hoists it. SP4/SP5 both read this same string, so the gate
-        // and the transcript cost no extra Gmail work.
-        const vmBody = String(req.getPlainBody() || '');
-        const vmFlat = vmBody.replace(/\s+/g, ' ').trim();
-
-        // SP4 — a hang-up never becomes a task. 'unparsed' SHOWS the card and
-        // is counted SEPARATELY, because a suppressed card is invisible: one
-        // number could not tell three hang-ups from a dead parser.
-        const vmVerdict = spanishVmTooShort_(spanishVmDurationSec_(vmBody), vmMinSec);
-        if (vmVerdict === 'short') { vmSuppressed++; return; }
-        if (vmVerdict === 'unparsed') vmUnparsed++;
-
-        // SP5 — the transcript is what the rep needs; the 8x8 chrome ahead of
-        // it ate almost the whole 240-char snippet. No transcript (not every
-        // voicemail is transcribed) falls back to the old whole-body snippet,
-        // so this can only ADD information.
-        const vmText = spanishVmTranscript_(vmBody) || vmFlat;
-        out.push({
-          threadId: th.getId(),
-          kind: 'voicemail',
-          requester: spanishVmCaller_(req.getSubject()) || emailAddrOnly_(req.getFrom()),
-          ageHours: Math.round((nowMs - req.getDate().getTime()) / 3600000),
-          subject: req.getSubject() || '(no subject)',
-          snippet: vmText.slice(0, 240),
-          hasMore: vmText.length > 240,
-          permalink: th.getPermalink(),
-          claim: claims[th.getId()] || null,
-        });
+    // ONE voicemail fold, shared with getSpanishInboxStats since F-34.
+    const seen = {};
+    out.forEach(function (x) { seen[x.threadId] = true; });
+    const vmFold = spanishVmFold_(d, manual, members, haveMembers, seen);
+    const vmTruncated = vmFold.truncated;
+    const vmSuppressed = vmFold.suppressed, vmUnparsed = vmFold.unparsed;
+    const vmMinSec = vmFold.minSeconds;
+    vmFold.rows.forEach(function (r) {
+      if (r.resolveMs != null) return;   // only pending
+      // SP5 — the transcript is what the rep needs; the 8x8 chrome ahead of
+      // it ate almost the whole 240-char snippet. No transcript (not every
+      // voicemail is transcribed) falls back to the whole-body snippet, so
+      // this can only ADD information.
+      const vmText = spanishVmTranscript_(r.body) || r.body.replace(/\s+/g, ' ').trim();
+      out.push({
+        threadId: r.threadId,
+        kind: 'voicemail',
+        requester: spanishVmCaller_(r.subject) || emailAddrOnly_(r.from),
+        ageHours: Math.round((nowMs - r.reqMs) / 3600000),
+        subject: r.subject || '(no subject)',
+        snippet: vmText.slice(0, 240),
+        hasMore: vmText.length > 240,
+        permalink: r.thread.getPermalink(),
+        claim: claims[r.threadId] || null,
       });
-    }
+    });
     out.sort(function (a, b) { return b.ageHours - a.ageHours; });
     // Round 2 additive fields: `members` (the assign-select options — the same
     // internal team emails getSpanishInboxResolved already ships behind this

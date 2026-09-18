@@ -1017,7 +1017,12 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // screenshot never shows a weekend bar the server cannot produce (INV-185).
       function workdaysEnding(n, endOffset) { var out = []; for (var off = endOffset; out.length < n; off++) { var d = new Date(); d.setDate(d.getDate() - off); if (d.getDay() === 0 || d.getDay() === 6) continue; out.unshift(d.toISOString().slice(0, 10)); } return out; }
       function wspark(n, base, endOffset) { return workdaysEnding(n, endOffset).map(function (ds, i) { return { date: ds, count: ((n - i) * base) % 4 }; }); }
-      function rh() { return workdaysEnding(7, 1).map(function (ds, i) { return { date: ds, hours: [4, 8.5, 9, 8.75, 0, 9, 8.5][i] }; }); }
+      // F-48 (cycle 20): index 5 is NULL on purpose — an UNMEASURABLE day (the
+      // rep was still clocked in, or a stamp would not parse). The server ships
+      // null for it and the bar is hatched, not the V-10 dim zero at index 4.
+      // A fixture that never produces null cannot photograph the difference,
+      // which is how the `|| 0` collapse survived (INV-185).
+      function rh() { return workdaysEnding(7, 1).map(function (ds, i) { return { date: ds, hours: [4, 8.5, 9, 8.75, 0, null, 8.5][i] }; }); }
       // The server's liveStatus rows carry `id`, NOT `empId` (getManagerDashboard's
       // return block) — the drift made every Day-Edit button in every manager
       // screenshot render data-emp-id="undefined", and surfaced only when the

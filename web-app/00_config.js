@@ -2172,11 +2172,6 @@ const COACH_TEXT_MAX = 4000;
 const COACH_TRX_MAX = 200;
 const COACH_RESPONSE_MAX = 2000;
 const COACH_VOIDED_CAP = 50;
-/** Test seam (the _TEST_OVERRIDE_EMAIL pattern): when a function is assigned
- *  here, every coaching mail send is handed to it INSTEAD of MailApp so the
- *  editor suite can assert "critical mails, minor does not" and "a throwing
- *  send still returns success + mailed:false" without a real send. */
-var _TEST_OVERRIDE_COACH_MAIL = null;
 const QA_RECORDINGS_TAB = 'QaRecordings';
 // Phase 2 added the trailing Agent column (which agent the call belongs to —
 // feeds the per-agent stats); Phase 3 added SharedMs (the explicit

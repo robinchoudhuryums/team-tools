@@ -92,18 +92,30 @@ export function editorRegistrations() {
   return (stripComments(read('web-app/Tests.js')).match(/^\s*_(?:smokeTest|integrationTest)\(/gm) || []).length;
 }
 
-/** Gated server endpoints, by the message each one returns — the derivation
+/** Gated server endpoints, by the gate each one applies — the derivation
  *  run.js's F7/F9 pins already use, so INV-136's stated count cannot drift from
- *  what the code enforces (it drifted four times while hand-maintained). */
+ *  what the code enforces (it drifted four times while hand-maintained).
+ *
+ *  THREE families, not one (F-51, cycle 20). The manager row used to count the
+ *  returned `'Manager access required.'` literal alone, so the whole
+ *  `assertManagerCaller_` family — the trigger handlers, which THROW instead of
+ *  returning — and the whole `canSeeQa_` family were invisible to a figure
+ *  captioned "Manager-gated endpoints". A reader narrowing MANAGER_EMAILS was
+ *  reading a number that omitted most of what MANAGER_EMAILS actually governs.
+ *  `canSeeQa_` gets its OWN row rather than joining the manager one: it admits
+ *  `isManager OR email ∈ QA_MEMBERS`, so folding it in would have replaced an
+ *  undercount with a wrong claim about who may call. Admin wins over both. */
 export function gatedEndpoints() {
   const src = serverSource();
-  const out = { admin: [], manager: [] };
+  const out = { admin: [], manager: [], qa: [] };
   const re = /^function ([A-Za-z0-9_]+)\s*\(/gm;
   let m;
   while ((m = re.exec(src)) !== null) {
     const body = fnBody(src.slice(m.index), m[1]);
     if (body.indexOf("'Admin access required.'") >= 0) out.admin.push(m[1]);
-    else if (body.indexOf("'Manager access required.'") >= 0) out.manager.push(m[1]);
+    else if (body.indexOf("'Manager access required.'") >= 0 ||
+             body.indexOf('assertManagerCaller_(') >= 0) out.manager.push(m[1]);
+    else if (body.indexOf("'QA access required.'") >= 0) out.qa.push(m[1]);
   }
   return out;
 }
@@ -220,6 +232,7 @@ export function derive({ withHarness = true } = {}) {
     editorRegistrations: editorRegistrations(),
     adminEndpoints: gated.admin.length,
     managerEndpoints: gated.manager.length,
+    qaEndpoints: gated.qa.length,
     installedTriggers: trig.created,
     groupedTriggerJobs: trig.grouped,
     triggerQuota: trig.quota,
@@ -237,7 +250,8 @@ const ROWS = [
   ['visualScenarios', 'Visual matrix scenarios', "`shoot.mjs`'s `SCENARIOS`"],
   ['editorRegistrations', 'Editor suite registrations', "`Tests.js`; a run prints its own `Expected:` line"],
   ['adminEndpoints', 'Admin-tier endpoints (INV-136)', "`'Admin access required.'` in the server source"],
-  ['managerEndpoints', 'Manager-gated endpoints', "`'Manager access required.'` in the server source"],
+  ['managerEndpoints', 'Manager-gated endpoints', "`'Manager access required.'` or `assertManagerCaller_` in the server source"],
+  ['qaEndpoints', 'QA-gated endpoints (`canSeeQa_`)', "`'QA access required.'` in the server source"],
   ['installedTriggers', 'Installable triggers created', '`installAutomationTriggers`'],
   ['groupedTriggerJobs', 'Jobs riding a dispatcher', '`TRIGGER_GROUPS`'],
   ['localStorageKeys', 'localStorage keys', "`ums…` literals in `web-app/`"],

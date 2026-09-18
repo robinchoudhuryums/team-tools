@@ -339,7 +339,8 @@ function retentionWarnings_(archiveDays, retentionDays, archiveRetentionDays) {
   }
   return w;
 }
-/** Retention config (Admin Config panel) — manager-gated, read-only summary of
+/** Retention config (Admin Config panel) — ADMIN-gated (`callerEmp.isAdmin`;
+ *  the doc said manager for a whole cycle — F-26), read-only summary of
  *  the three call-note retention windows + their resolved values, source, and
  *  safety-ordering warnings. PHI-free. */
 function getRetentionConfig() {
@@ -367,7 +368,8 @@ function getRetentionConfig() {
     };
   } catch (err) { return { error: err.message }; }
 }
-/** Manager-gated write of the three retention windows to Script Properties
+/** ADMIN-gated (`callerEmp.isAdmin` — F-26) write of the three retention
+ *  windows to Script Properties
  *  (CN_NOTE_ARCHIVE_DAYS / CN_NOTE_RETENTION_DAYS / CN_ARCHIVE_RETENTION_DAYS).
  *  Each must be a whole number of days ≥ 0 (0 = disabled). Writes an
  *  AdminConfigChange audit row (INV-57 family). Takes effect immediately — the
@@ -425,7 +427,8 @@ function getFeatureFlags() {
     return { registry: FEATURE_FLAGS, values: getFeatureFlagsResolved_() };
   } catch (err) { return { error: err.message }; }
 }
-/** Manager-gated write of the feature toggles to Script Property
+/** ADMIN-gated (`callerEmp.isAdmin` — F-26) write of the feature toggles to
+ *  Script Property
  *  CN_FEATURE_FLAGS. Only registry keys with strict-boolean values are
  *  accepted (unknown key / non-boolean → rejected, never persisted). Writes an
  *  AdminConfigChange audit row (INV-57 family). Takes effect immediately:
@@ -469,7 +472,8 @@ function saveUpdateSuggestions(suggestionsJson) {
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
 }
-/** Manager-gated. Persists the external-email template library to Script
+/** ADMIN-gated (`callerEmp.isAdmin` — F-26). Persists the external-email
+ *  template library to Script
  *  Property CN_EMAIL_TEMPLATES (JSON array). Validates each entry's name,
  *  recipientType, and body; caps count + body length. Writes an
  *  AdminConfigChange audit row (INV-57). Matches the sibling admin-save
@@ -505,7 +509,8 @@ function saveEmailTemplates(templates) {
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
 }
-/** Manager-gated. Persists the external-email quick-link library to Script
+/** ADMIN-gated (`callerEmp.isAdmin` — F-26). Persists the external-email
+ *  quick-link library to Script
  *  Property CN_EXTERNAL_LINKS (JSON array of {label, url}). Validates each
  *  entry's label + http(s) url; caps count. Writes an AdminConfigChange audit
  *  row (INV-57 family). Same single-property-write pattern as saveEmailTemplates. */
@@ -1136,7 +1141,8 @@ function automationJobProblems_(lastRuns, errors, nowMs, todayDom, thisMonthPref
   });
   return out;
 }
-/** Manager-gated, read-only. One bounded AuditLog tail scan (CN_AUDIT_MAX_SCAN
+/** ADMIN-gated (`callerEmp.isAdmin` — F-26), read-only. One bounded AuditLog
+ *  tail scan (CN_AUDIT_MAX_SCAN
  *  rows, INV-13 spirit) + the 5-min-cached CDR aggregate. Never throws — CDR
  *  unreachability degrades to { cdr: { ok:false, error } } so the rest of the
  *  panel still renders (same best-effort posture as the shift-stats overlay). */
@@ -1816,7 +1822,8 @@ function sendAutomationHealthDigest() {
     Logger.log('sendAutomationHealthDigest failed: ' + err.message);
   }
 }
-/** Storage Health (#1) — manager-gated, read-only one-pane-of-glass over every
+/** Storage Health (#1) — ADMIN-gated (`callerEmp.isAdmin` — F-26), read-only
+ *  one-pane-of-glass over every
  *  spreadsheet the app uses: which Script Property resolves it, whether it's
  *  configured + reachable, and — the headline — whether its timezone matches
  *  CONFIG.TIMEZONE (a mismatch silently drifts every coerced date/time read;
@@ -2084,7 +2091,8 @@ function adminAuditRowTone_(action) {
   if (/Reconcile|Export|Archive|Provision|Install|Remove|Digest/i.test(a)) return 'info';
   return '';
 }
-/** Manager-gated (INV-02), read-only, PHI-free in-app viewer of an allowlisted
+/** ADMIN-gated (`callerEmp.isAdmin` — F-26; INV-02 names the tier, the code
+ *  enforces admin), read-only, PHI-free in-app viewer of an allowlisted
  *  tab. Returns { ok, viewKey, label, storeUrl, mgrTzAbbr, columns, rows, truncated }
  *  where each row is { cells:{...}, tone, rowUrl }. rowUrl deep-links to that
  *  exact row in Sheets (the Tier-1 pattern, per-row). */
@@ -2339,7 +2347,8 @@ function deployReadinessItems_(storage, automation, managerCount) {
   items.forEach(function (it) { summary[it.status] = (summary[it.status] || 0) + 1; });
   return { items: items, summary: summary };
 }
-/** Deploy-readiness checklist (#1) — manager-gated, read-only. One-click
+/** Deploy-readiness checklist (#1) — ADMIN-gated (`callerEmp.isAdmin` — F-26),
+ *  read-only. One-click
  *  pre-deploy report: composes the existing Storage Health (all 7 stores'
  *  configured/reachable/tz-vs-CONFIG) + Automation Health (digest heartbeats,
  *  CDR) + the MANAGER_EMAILS count into a pass/warn/fail checklist. PHI-free
