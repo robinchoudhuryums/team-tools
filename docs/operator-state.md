@@ -925,7 +925,11 @@ entry says which it is.
   under the JOB name into `AUTOMATION_LAST_ERRORS`, a clean run clears it,
   a typo'd name is stamped by name), and every grouped handler keeps its
   own `assertManagerCaller_` gate, audit rows and heartbeat, so Automation
-  Health's per-job liveness is UNCHANGED. **Known limit: a group shares one
+  Health's per-job liveness is UNCHANGED. Since Batch 4 (2026-09-18) the two
+  stand-alone daily jobs with no audit row — `sendDailyMissedPunchAlerts`
+  and `runDailyExportCheck` — and the failure digest itself carry a
+  heartbeat too (`AUTOMATION_DIGEST_LAST_RUNS`), so every daily trigger has a
+  liveness signal. **Known limit: a group shares one
   six-minute execution** — all eight grouped jobs are cheap by default (the
   purges no-op while their windows are 0), but a purge enabled against a
   large backlog that runs long is killed WITH the jobs after it; their own
@@ -1708,7 +1712,7 @@ entry says which it is.
   config fetch.
 <a id="operator-script-property-automation-digest-last-runs"></a>
 - **Script Property `AUTOMATION_DIGEST_LAST_RUNS`** (auto-managed). JSON
-  object `{ eod|urgent|weekly|trainingOverdue|deptReqReminder|managerBrief|selfTest|coachingRecap|spanishAutoAssign:
+  object `{ eod|urgent|weekly|trainingOverdue|deptReqReminder|managerBrief|selfTest|coachingRecap|spanishAutoAssign|missedPunch|exportCheck|automationHealth:
   "yyyy-MM-dd HH:mm:ss" }` (CONFIG.TIMEZONE
   wall time) stamped by each digest run (`stampDigestLastRun_`) — the
   heartbeat behind the Automation Health panel's "Digest heartbeats"
@@ -1720,6 +1724,18 @@ entry says which it is.
   does the same on every hourly run while the `spanishAutoAssign` toggle is
   off — stale past 2h; the reported heartbeat set is DERIVED from
   `DIGEST_STALE_HOURS`, so a new key with a window is read the day it lands.)
+  **Batch 4 (2026-09-18) added the three daily jobs that write NO audit row:**
+  `missedPunch` (8am `sendDailyMissedPunchAlerts` — stamps once the read
+  succeeded, BEFORE its no-work early return, so a quiet morning is a live
+  trigger), `exportCheck` (12pm `runDailyExportCheck` — the export itself
+  lands only at a period end as `AdpExportAuto`; the daily CHECK had no
+  signal at all, and a dead trigger was a silently missing payroll export)
+  and `automationHealth` (9am `sendAutomationHealthDigest` — stamps only
+  once a report was computed, so a failing computation reads stale AND
+  stamps `AutomationHealthDigest` into `AUTOMATION_LAST_ERRORS`). All three
+  are stale past 26h. Each also stamps its own failure (`MissedPunchAlerts`,
+  `DailyExportCheck`, `AutomationHealthDigest`), and a stamp under a key the
+  JOB_CHECKS table does not know still reaches the failure digest.
 <a id="operator-consolidated-manager-daily-brief-is-off-by-default-inv-151"></a>
 - **Consolidated manager daily brief is OFF by default (INV-151).** Flip the
   `managerDailyBrief` feature toggle (Manage → Admin → Feature Toggles; it

@@ -10,6 +10,26 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-18 (later) — Batch 4 of the cycle-20 scan: automation liveness and accrual diagnostics
+
+Adds NO Script Property to set and no sheet change; three auto-managed
+properties grow. What an operator notices after the push + New version: (1)
+Manage → Admin → System → Automation detail lists three more heartbeats —
+"Daily missed-punch alerts" (8am), "Daily ADP export check" (12pm) and
+"Automation-health failure digest" (9am) — reading "no heartbeat recorded yet"
+until each has run once, then stale past 26h; a dead trigger for any of them
+is now a finding, and a payroll export that silently never went out is no
+longer possible without one; (2) a stamped job failure on the Admin card shows
+its MESSAGE (every one had read "unknown error"); (3) a rep credited for two
+or more months at once gets one `PtoAccrualCredit` row per month, and the
+balance moves by exactly what `previewPtoAccruals` predicted; (4) switching
+`enablePtoTracking` off no longer leaves last month's shortfall alarming; (5)
+a fresh deployment's team calendar renders before the first time-off request;
+(6) a killed test run no longer leaves a test address in `MANAGER_EMAILS` or
+TEST_ rows on the DeptRequests / ClientErrors tabs — `cleanupTestData` sweeps
+both by key. Registrations unchanged at 337. Walk S107 once with a rep two
+months behind, and S9 to see the heartbeat land.
+
 ## 2026-09-18 — Batch 3 of the cycle-20 scan (H1/H2 follow-through), the editor-test fix, and cycle 19's last reflection
 
 Adds NO Script Property and no sheet change. What an operator notices after

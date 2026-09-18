@@ -52,6 +52,13 @@ not restate it. Server endpoints live in the fourteen server files
      means "no call activity"; and the Needs-you "calls without a note" row
      treats a failed DQE read as "couldn't check", never "0 missing"
      (`getMyMetrics.cdrUnavailable`).
+     **Batch 4 (2026-09-18):** the monthly PTO accrual credit writes ONE
+     `PtoAccrualCredit` ledger row per MONTH (a catch-up is per-month keys, and
+     the total is the per-month sum — the accrual decision, F-19); the accrual
+     job rewrites its reconcile stamp on every path (F-46); the team calendar
+     reads the time-off tab through its provisioner, so a fresh deployment
+     renders it (F-49); the missed-punch alerts and the export check heartbeat
+     (F-20, the Automation Health decision).
 
 ## Call Notes
 

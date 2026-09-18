@@ -351,9 +351,10 @@ Ways the suite can be green and wrong, and ways a tool can eat your work.
 - **A test function defined TWICE silently wins, and the registration count stays right (Batch S, 2026-09-11).** Fires when you add a test to `Tests.js`. [Detail](docs/gotchas.md#g08-a-test-function-defined-twice-silently-wins)
 - **A test fixture that writes DIRECTLY to a store behind a RESULT CACHE owes the production writer's invalidation (operator run, 2026-08-19).** Fires when you add a result cache, or a fixture writes straight to a cached store. Verify: an ordering assert. [Detail](docs/gotchas.md#g22-a-test-fixture-that-writes-directly-to)
 - **`TEST_` prefix is the cleanup key.** Fires when you name a production employee id, or hand-offboard a TEST row. Verify: the re-onboard/re-offboard Node pin. [Detail](docs/gotchas.md#g24-test-prefix-is-the-cleanup-key)
+- **A test that APPENDS to a gate property or a LIVE tab owes `cleanupTestData` a by-key backstop — its own `finally` never runs on a killed execution, and a positional delete on a live tab removes whatever landed there meanwhile (Batch 4, 2026-09-18).** Fires when a test writes outside the TEST_ rows' own tabs, or restores a Script Property in `finally`. Verify: the F-21/F-22 pin. [Detail](docs/gotchas.md#g132-a-test-that-appends-to-a-gate)
 - **Read the server through `serverSource()` — never by FILENAME, and never by POSITION (Batch F2, 2026-09-14).** Fires when a pin reaches for server source: `'Code.js'` is an ALIAS for the fourteen files, and two declarations that were adjacent in one file no longer are. Verify: the F1a filename ban + F2c/F2d. [Detail](docs/gotchas.md#g113-read-the-server-through-serversource-never-by)
 - **A bite-check ends in `git checkout`, so never run one against a file with uncommitted edits (cycle-18 batch 5B; `scripts/bite.sh` REFUSES a dirty file since Batch F2 — it fired a fourth time first).** Fires when you bite-check a pin. Verify: the F1-followon guard-ordering pin. [Detail](docs/gotchas.md#g65-a-bite-check-ends-in-git-checkout)
-- **Your test TOOLING lies in both directions — a green pin is not a checked one (operator 2026-09-15).** Fires when you write a structural assertion, compare a value returned from the vm sandbox, or read a bite-check's verdict. [Detail](docs/gotchas.md#g116-your-test-tooling-lies-in-both)
+- **Your test TOOLING lies in both directions — a green pin is not a checked one (operator 2026-09-15; a FOURTH direction 2026-09-18: an un-anchored bite mutation can hit a DIFFERENT function with the same shape and report NO BITE about the wrong code).** Fires when you write a structural assertion, compare a value returned from the vm sandbox, or read a bite-check's verdict. [Detail](docs/gotchas.md#g116-your-test-tooling-lies-in-both)
 - **A structural pin cannot see a ReferenceError — `no-undef` over the ONE global scope is the only static net for it (operator 2026-09-15).** Fires when you rely on source-shape pins over a function, or move a declaration out of the scope that uses it. Verify: `npm run lint:server`, bite-checked against the live `perDay` defect. [Detail](docs/gotchas.md#g118-a-structural-pin-cannot-see-a)
 - **A store override that is READ but never ASSIGNED is not isolation — the resolver LOOKS isolated while every test writes to production (2026-09-16).** Fires when you add a `_TEST_OVERRIDE_*` branch to a store resolver, or find a cleanup routine reaching into a production store to undo test writes. Verify: the `fixtures: every _TEST_OVERRIDE_*` pin, bite-checked three ways. [Detail](docs/gotchas.md#g119-a-store-override-that-is-read)
 
@@ -550,12 +551,15 @@ Auto-managed diagnostics: `WITNESS_AUDIT_FAILS` (cycle-10 C4 — the
 `{count, lastAt, lastAction}` lost-tamper-witness counter stamped by
 `writeWitnessAuditLog_` after a failed retry; surfaced in Automation Health +
 the failure digest's 48h window; delete the property to reset the counter)
-`AUTOMATION_LAST_ERRORS` (cycle-18 F4 — `{job: {at, error}}` stamped by a trigger handler's own catch and cleared on its next clean run, because a handler that RETURNS an error object reaches nobody; read by `automationProblems_` onto the health dot + failure digest. Auto-managed — delete the property to clear a stale failure flag) `PTO_ACCRUAL_RECONCILE` (operator 2026-09-15 — `{at, window, toppedUp, days,
+`AUTOMATION_LAST_ERRORS` (cycle-18 F4 — `{job: {at, message}}` stamped by a trigger handler's own catch and cleared on its next clean run, because a handler that RETURNS an error object reaches nobody; since Batch 4 (2026-09-18) the keys `MissedPunchAlerts`, `DailyExportCheck` and `AutomationHealthDigest` stamp too, a key the JOB_CHECKS table does not know still reaches the digest, and the Admin finding shows the stamped MESSAGE; read by `automationProblems_` onto the health dot + failure digest. Auto-managed — delete the property to clear a stale failure flag) `PTO_ACCRUAL_RECONCILE` (operator 2026-09-15 — `{at, window, toppedUp, days,
 shortfalls[], skipped[], incomplete[], truncated}`, the last accrual reconcile
 pass's outcome, stamped by `creditMonthlyPtoAccruals` and read by
 `automationProblems_` onto the health dot + failure digest so a shortfall or an
 unreconcilable month is visible without re-running two full sheet reads.
-Auto-managed — delete the property to clear a stale flag) `OPEN_PUNCH_CHECK`
+Since Batch 4 (2026-09-18) it is REWRITTEN on every path the job takes — an
+early return (tracking off, no accruing reps) stamps an empty pass with a
+`reason`, so a stale shortfall stops alarming. Auto-managed — delete the
+property to clear a stale flag) `OPEN_PUNCH_CHECK`
 (operator 2026-09-15 — `{at, window, reps, days, expiring, detail[]}` or
 `{at, error}`, the last daily open-punch scan, stamped by `checkOpenPunches`
 at 8am and read by `automationProblems_` an hour later so the 9am health digest
@@ -858,7 +862,7 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 10 | `TRIGGER_GROUPS` |
 | localStorage keys | 18 | `ums…` literals in `web-app/` |
-| Invariant library entries | 218 | `.cycle/config.md` |
+| Invariant library entries | 219 | `.cycle/config.md` |
 | Regression scenarios (S*) | 108 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second

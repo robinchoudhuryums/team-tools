@@ -389,6 +389,23 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   months later is still lost, and every legitimate credit is delayed for a rare
   case. The top-up subsumes it.
 
+  **Batch 4 (2026-09-18, F-19): the ledger row is PER MONTH.** A catch-up
+  credit (a first credit, a re-enabled rep) covered several months in ONE row
+  keyed `2026-06,2026-07`, and the reconcile pass — which values months INSIDE
+  its 3-month window — reported that key as unreconcilable every day for months
+  once one member aged out. Now `accrualMonthRows_` turns one plan into one
+  plan-shaped entry per month, the unchanged note builders write a single-month
+  `months=`, and the ledger's keys are per month by construction. The rep's
+  earned total is the SUM of the per-month roundings (`accrualEarnedByMonth_`)
+  rather than a once-rounded total — they differ by ≤0.01 day per extra month,
+  and the ledger must add up to the balance moved; the preview shares the sum,
+  so it cannot promise a different amount than the job lands. A legacy
+  multi-month key (none is expected in production) names itself when skipped.
+  F-46 in the same batch made the reconcile stamp honest on EVERY path: the
+  early returns (tracking off, no accruing reps) rewrite it to an empty pass
+  with a `reason` and clear the job's error, so a stale shortfall stops
+  alarming after the toggle.
+
 - <a id="the-accrual-dry-run-shares-the-one-resolver-and-writes-nothin"></a>**The accrual dry run shares the ONE resolver and writes nothing (`previewPtoAccruals`, operator 2026-09-14).**
   `creditMonthlyPtoAccruals` runs unattended at 18:00 manager-tz, credits real
   leave balances, and advances a stamp that closes the month against retry. Its
@@ -3701,6 +3718,19 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   never flagged, so the check is false-positive-free and never nags a clean
   deployment. It changes NO gate logic (the split stays) and needs no new
   trigger — it only surfaces the hazard).
+
+  **Batch 4 (2026-09-18, F-20): every daily trigger has a liveness signal.**
+  Three daily jobs wrote no audit row and had no heartbeat — the missed-punch
+  alerts, the ADP export CHECK (its `AdpExportAuto` row lands only at a period
+  end, deliberately absent from JOB_CHECKS) and the failure digest itself — so
+  each could die silently. They heartbeat now (`missedPunch` / `exportCheck` /
+  `automationHealth`, 26h) rather than gaining JOB_CHECKS rows, because a
+  JOB_CHECKS row needs an audit action to compare against and a row per run
+  would be two AuditLog rows a day for jobs whose only signal is "I ran".
+  Each stamps its own failure, `automationProblems_` carries a stamp under ANY
+  key (the table's rows stay with the table), and the Admin finding shows the
+  stamp's message — it had read the wrong field and rendered every stamped
+  failure as "unknown error".
 - <a id="open-email-button-round-2-8f"></a>**"Open Email" button (Round 2 · 8f).** The Phase-4 "External"
   button on the Log view's action row was renamed "Open Email"
   (still binds `cn-ext-email-btn` → opens the external composer

@@ -1416,3 +1416,47 @@ assertion's text too.
 **Visual:** the `metrics` and `admin-system` scenarios were re-shot (0 missing,
 0 overflow); the two WARN states of the new CDR findings are pinned but not on
 camera — a `?fixture=` variant of `admin-system` is the follow-on.
+
+## 2026-09-18 (later) — Batch 4 of the cycle-20 scan, and a bite that hit the wrong function
+
+**Pure harness — five pins (see the running-totals block for the count):**
+`F-20` pins the three `DIGEST_STALE_HOURS` windows, the heartbeat's PLACEMENT
+(index arithmetic: missed-punch after the read and before the early return;
+the digest's after `if (!report) return`), both digest stamps, then DRIVES
+`sendAutomationHealthDigest` in a vm through a throwing and a clean report
+(stamp / no heartbeat vs heartbeat + clear + no mail) and `automationProblems_`
+with an untabled and a tabled stamp (each reported exactly once), and asserts
+the client finding shows the stamp's `message`; `F-19` drives
+`accrualEarnedByMonth_` on two 5-hour months (0.02 + 0.02 = 0.04 where the
+once-rounded 10 h says 0.05), `accrualMonthRows_`'s split with emp/plan
+carried, and round-trips a per-month credit note and a per-month zero note
+through the unchanged builders to single-month keys; `F-46` drives
+`creditMonthlyPtoAccruals` through both early returns with a stubbed lock,
+flag and planner (stamp reason + window, error cleared, lock released,
+`stampAutomationError_` a throwing stub so an accidental failure stamp fails
+the pin); `F-21 / F-22` reads `cleanupTestData` for the MANAGER_EMAILS strip
+form, both by-key sweeps on the right store, no provisioning, and sweeps
+`Tests.js` for any surviving positional delete and every DeptRequests probe
+row's `TEST_DR_` key; `F-49` is structural plus a fresh-deployment run APPENDED
+to the calendar's behavioural pin (the by-name tab returns null, the
+provisioner serves an empty tab, the calendar renders). Five existing pins
+repointed; the F5 coupling pin, which read only the detail panel's
+`DIGEST_LABELS`, made the miss visible when the first edit updated only
+`CN_DIGEST_LABELS_`.
+
+**Bite-checks:** twelve mutations, twelve bites — after one lesson. The
+un-anchored F-49 mutation ("read the time-off tab by name again") matched a
+two-line shape `getTeamCalendar` shares with an unrelated function 700 lines
+earlier, changed THAT function, and `bite.sh` reported NO BITE — a true verdict
+about the wrong code. A `git diff` showed it; anchoring the regex on
+`getTeamCalendar`'s own `monthIso` filter made both F-49 pins bite. g116's
+fourth direction; a `--fn` span guard for `bite.sh` is the follow-on.
+
+**Fixtures (INV-185):** both Automation Health fixtures carry the three new
+heartbeats fresh, so the all-clear System scenario still reaches "Nothing
+needs attention".
+
+**Editor suite:** four tests changed their tidy-up (by key through
+`_cleanupRowsByPrefix`), none its assertions; `cleanupTestData` gained the
+MANAGER_EMAILS strip and the DeptRequests + ClientErrors sweeps. Registrations
+unchanged.

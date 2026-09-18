@@ -2644,6 +2644,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   recorded "green". A round's integration pins are owed a run from the editor
   after the push until the dev instance makes the nightly full run real.
 
+  **A fourth direction, 2026-09-18 (Batch 4, F-49):** a bite mutation is a
+  REGEX over a whole file, and `scripts/bite.sh` reports on whichever match
+  it changed. The F-49 mutation ("read the time-off tab by name again")
+  matched a two-line shape that `getTeamCalendar` shares with an unrelated
+  function 700 lines earlier, changed THAT one, and reported NO BITE — a true
+  statement about the wrong code. Anchoring the regex on a line unique to the
+  function under test (its own `monthIso` filter) made both F-49 pins bite.
+  RULE: a bite mutation names something only the pinned function contains,
+  and a NO BITE is first checked against `git diff` to see WHAT changed.
+
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
   done (operator 2026-09-15).** The reconcile pass (g115) makes late punch data
@@ -3187,3 +3197,30 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   F-07 pin (the two vocabularies agree on nine (value, target, band) triples,
   the null-band and Transfer % branches, both delegations) and the F-08 pin's
   `threshold || \d` ban over the Metrics partial.
+
+<a id="g132-a-test-that-appends-to-a-gate"></a>
+
+- **A test that APPENDS to a gate property or a LIVE tab owes
+  `cleanupTestData` a by-key backstop (Batch 4 of the 2026-09-17
+  /broad-scan, F-21 + F-22).** Five trigger-gate tests append
+  `_TEST_MGR_EMAIL` to `MANAGER_EMAILS` for their run and restore it in
+  `finally`; three DeptRequests tests and the ClientErrors test append probe
+  rows to LIVE tabs and delete them in `finally`. Both are correct until the
+  execution is killed — and this suite IS killed, by the six-minute limit,
+  which is why Part A / Part B exist. A killed run left a non-routable
+  `@example.invalid` address holding the `assertManagerCaller_` gate, and
+  TEST_ rows on tabs `cleanupTestData` never swept. Worse, the DeptRequests
+  tests deleted BY POSITION (`deleteRows(before + 1, after - before)`): a real
+  request landing during the seconds a test held its probe rows would have
+  been the row deleted, on a live tab, silently. RULES: (1) every property a
+  test appends to is stripped by `cleanupTestData` through the ONE
+  `@example.invalid` predicate (`_testAdminEmailsSplit_`; ADMIN_EMAILS and
+  MANAGER_EMAILS both, now); (2) every live tab a test writes to is swept by
+  `cleanupTestData` by its TEST_ KEY (`_cleanupRowsByPrefix`) through
+  `getSheetByName` — never provisioning the tab; (3) a test's own tidy-up
+  deletes by the same key, never by row position. `TEST_` is the cleanup key
+  on properties and tabs alike (g24). Fires when a test writes outside the
+  TEST_ rows' own tabs, or restores a Script Property in `finally`. Verify:
+  the F-21/F-22 pin — the strip form is the only cleanup write to
+  MANAGER_EMAILS, both sweeps by key on the right store, no positional delete
+  survives in `Tests.js`, every DeptRequests probe row is `TEST_DR_`-keyed.
