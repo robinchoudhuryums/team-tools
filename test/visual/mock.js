@@ -914,13 +914,21 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // nothing, so the zero-bar row is on camera.
       members: ['avery@umsupply.com', 'sam@umsupply.com', 'ines@umsupply.com'],
       truncated: false },
-    getSpanishInboxStats: { address: 'spanishcalls@universalmedsupply.com', days: 30, pending: 3, resolved: 12, avgMinutes: 78, medianMinutes: 45,
+    // F-34 (cycle 20): `pending` is 4, not 3 — the voicemail in the list below
+    // is one of them. The fixture carried the DEFECT: the stats card said 3
+    // while the list it sits above rendered 4 cards, and every Spanish
+    // screenshot for a month showed the two disagreeing with nobody reading it
+    // as a bug. The vm* fields are what the card now states about its own
+    // figures; `vmOn: false` is a different screenshot (the fold unconfigured)
+    // and the note says so rather than rendering a zero (INV-185/187).
+    getSpanishInboxStats: { address: 'spanishcalls@universalmedsupply.com', days: 30, pending: 4, resolved: 12, avgMinutes: 78, medianMinutes: 45,
       // Business-hours figures (operator 2026-08-31) — deliberately SMALLER
       // than the wall-clock pair beside them, which is the whole point of the
       // change and the thing a screenshot must show.
       avgBusinessMinutes: 52, medianBusinessMinutes: 31, businessCount: 11, manualCount: 1,
       businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true },
-      membersConfigured: 3, threadsScanned: 15, truncated: false },
+      membersConfigured: 3, threadsScanned: 15, truncated: false,
+      vmOn: true, vmCounted: 1, vmSuppressed: 2, vmUnparsed: 0, vmMinSeconds: 5 },
     getPatientTimeline: { events: [], partial: false, failedSources: [] },
     cnPing: { ok: true },
     getCalendarData: function (year, month) {

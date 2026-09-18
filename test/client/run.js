@@ -24216,6 +24216,25 @@ test('F-34: ONE voicemail fold — the stats card counts the voicemails the list
   const head = extractFunction('metrics/script_metrics.html', 'spanishHeadHtml_');
   assert.ok(/spanishVmCountNote_\(d\)/.test(head) && /spanishVmNote_\(d\)/.test(head),
     'the stats head renders both the count and the suppression note — the same two the pending header carries');
+
+  // (g) INV-185: the visual fixture must AGREE with itself, or the screenshot
+  // shows the defect and nobody reads it as one. It did for a month — the
+  // stats card photographed "PENDING 3" directly above a list of four cards,
+  // the fourth being the voicemail the card did not count.
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  const statsFx = /getSpanishInboxStats: \{[\s\S]*?\n {4}\}/.exec(mock) || /getSpanishInboxStats: \{[\s\S]*?vmMinSeconds: \d+ \}/.exec(mock);
+  assert.ok(statsFx, 'the Spanish stats fixture is present');
+  const fxPending = /pending: (\d+)/.exec(statsFx[0]);
+  assert.ok(fxPending, 'the stats fixture carries a pending count');
+  const listAt = mock.indexOf('getSpanishInboxPending: { pending: [');
+  assert.ok(listAt > 0, 'the Spanish pending fixture is present');
+  const listFx = mock.slice(listAt, mock.indexOf("self: 'avery@umsupply.com' }", listAt));
+  const cards = (listFx.match(/\{ threadId: '/g) || []).length;
+  assert.ok(cards > 0, 'the pending fixture carries cards (' + cards + ')');
+  assert.strictEqual(Number(fxPending[1]), cards,
+    'the fixture\'s stats pending count must equal the number of pending cards it renders — a screenshot of the two disagreeing is a screenshot of the bug');
+  assert.ok(/vmOn: true/.test(statsFx[0]) && /vmCounted: \d+/.test(statsFx[0]),
+    'and the fixture exercises the voicemail note (a fixture that never ships vmOn can never photograph it)');
 });
 
 test('F-39: the timesheet client\'s computeRange and the server\'s getCurrentBiweeklyRange_ agree, day by day', () => {
