@@ -4,15 +4,16 @@
 Cycle: 20 — OPEN (the /broad-scan of 2026-09-17 opened it; cycle 19's whole
 block moved to `.cycle/HISTORY.md` at that point, per the close-out procedure —
 **with cycle 19's `/reflect` still OWED; it reads the archived block**).
-Phase: implement — Batches 1, 2 and 3 of the scan's IMPLEMENTATION BATCH PLAN are
+Phase: implement — Batches 1–4 of the scan's IMPLEMENTATION BATCH PLAN are
 DONE (`.cycle/blocks/20-batch1-broad-implement.md`, net 5 − 0 = 5;
 `.cycle/blocks/20-batch2-broad-implement.md`, net 6 − 0 = 6;
-`.cycle/blocks/20-batch3-broad-implement.md`, net 4 − 0 = 4); Batches 4–7 are
+`.cycle/blocks/20-batch3-broad-implement.md`, net 4 − 0 = 4;
+`.cycle/blocks/20-batch4-broad-implement.md`, net 3 − 0 = 3); Batches 5–7 are
 in `.cycle/blocks/20-scan-batch-plan.md`. NOT DEPLOYED: everything since Batch 1
 is live only after `clasp push -f` + a New version.
 Scope: broad
 Test Command: manual
-Estimates: **Batch 4 (F-20 automation liveness: two JOB_CHECKS rows, a digest heartbeat, computeAutomationHealth_ stamps its own failure · F-19 per-month accrual ledger keys · F-46 the accrual job's early returns rewrite/clear PTO_ACCRUAL_RECONCILE · F-21 cleanup strips MANAGER_EMAILS residue · F-22 TEST_ rows on DeptRequests/ClientErrors deleted by key + cleanup backstop · F-49 getTeamCalendar through the time-off provisioner) — M (~7 h), recorded 2026-09-18 BEFORE the first edit.** · **Batch 3 (F-07 one null-band tone rule · F-08 standardSource rendered + the residual 85 · F-09 holiday source surfaced · F-35 ambient badge uses the previous workday · F-32 cdrAnswerPct_ null on no denominator · F-38 "Company holiday" copy) — M (~6 h), recorded 2026-09-17 BEFORE the first edit — ~1.5 h ACTUAL.** · **Batch 2 (F-06 dept-config cached empty · F-13 dashboard carousels "No call data" on failure · F-18 Sent detail blank→"No" · F-15 geocoder failure reads as a bad address · F-47 pending tasks DQE failure = 0 missing · F-41 coverage strip blank on failure · F-25 KB count helpers {} on failure · F-45 KB feedback "Thanks" before the RPC) — M (~7 h), recorded 2026-09-17 BEFORE the first edit — ~1.5 h ACTUAL.** · **Batch 1 (F-01 OOP verify column-A · F-03 the 24-hour equal-minute day · F-02 the two unclosable modals · F-04 eligibility column-A · F-05 Day Edit Save during prefill · F-44 undefined `text`) — M (~7.5 h), recorded 2026-09-17 BEFORE the first edit — ~1.5 h ACTUAL.** The scan's own estimates for the remaining batches, as written at scan time: B2 — ~7 h · B3 — ~6 h · B4 — ~7 h · B5 — ~6 h · B6 — ~6 h · B7 — ~4.5 h.
+Estimates: **Batch 4 (F-20 automation liveness: two JOB_CHECKS rows, a digest heartbeat, computeAutomationHealth_ stamps its own failure · F-19 per-month accrual ledger keys · F-46 the accrual job's early returns rewrite/clear PTO_ACCRUAL_RECONCILE · F-21 cleanup strips MANAGER_EMAILS residue · F-22 TEST_ rows on DeptRequests/ClientErrors deleted by key + cleanup backstop · F-49 getTeamCalendar through the time-off provisioner) — M (~7 h), recorded 2026-09-18 BEFORE the first edit — ~2 h ACTUAL.** · **Batch 3 (F-07 one null-band tone rule · F-08 standardSource rendered + the residual 85 · F-09 holiday source surfaced · F-35 ambient badge uses the previous workday · F-32 cdrAnswerPct_ null on no denominator · F-38 "Company holiday" copy) — M (~6 h), recorded 2026-09-17 BEFORE the first edit — ~1.5 h ACTUAL.** · **Batch 2 (F-06 dept-config cached empty · F-13 dashboard carousels "No call data" on failure · F-18 Sent detail blank→"No" · F-15 geocoder failure reads as a bad address · F-47 pending tasks DQE failure = 0 missing · F-41 coverage strip blank on failure · F-25 KB count helpers {} on failure · F-45 KB feedback "Thanks" before the RPC) — M (~7 h), recorded 2026-09-17 BEFORE the first edit — ~1.5 h ACTUAL.** · **Batch 1 (F-01 OOP verify column-A · F-03 the 24-hour equal-minute day · F-02 the two unclosable modals · F-04 eligibility column-A · F-05 Day Edit Save during prefill · F-44 undefined `text`) — M (~7.5 h), recorded 2026-09-17 BEFORE the first edit — ~1.5 h ACTUAL.** The scan's own estimates for the remaining batches, as written at scan time: B2 — ~7 h · B3 — ~6 h · B4 — ~7 h · B5 — ~6 h · B6 — ~6 h · B7 — ~4.5 h.
 Subsystem cycles since last Seams audit: 5 — **the every-4 cadence was met at 19-d (19-e, the H1–H3 reflection of 2026-09-18, incremented it to 5);
 the next `/audit` should be a Seams & Invariants audit** (carried forward; the
 2026-09-17 /broad-scan was a broad scan, not the seams round).
@@ -55,9 +56,16 @@ Updated: 2026-09-18
 - F-32 | web-app/40_metrics.js, web-app/metrics/script_metrics.html, web-app/Tests.js | cdrAnswerPct_ null on no denominator; heroes + table dash it
 - F-38 | web-app/tc/script_manager.html, web-app/tc/script_timeoff.html | "Company holiday" copy at the six sites
 - pins (Batch 3) | test/client/run.js, test/visual/mock.js, test/client/server-split-manifest.json | pure 871 → 878; ten bite-checks bite; manifest 1286
+- F-20 | web-app/10_core.js, web-app/20_timeclock.js, web-app/cn/script_callnotes.html | heartbeats for missed-punch / export-check / the failure digest; each stamps its own failure; untabled stamps reach the digest; the Admin finding shows the stamped message
+- F-19 | web-app/20_timeclock.js | one PtoAccrualCredit row per MONTH (accrualMonthRows_); the earned total is the per-month sum (accrualEarnedByMonth_)
+- F-46 | web-app/20_timeclock.js | accrualNothingToDo_ rewrites PTO_ACCRUAL_RECONCILE + clears the error on both early returns
+- F-21 / F-22 | web-app/Tests.js | cleanup strips MANAGER_EMAILS residue; DeptRequests + ClientErrors tidied and backstopped by KEY
+- F-49 | web-app/20_timeclock.js | getTeamCalendar through getOrCreateTimeOffSheet_
+- pins (Batch 4) | test/client/run.js, test/visual/mock.js, test/client/server-split-manifest.json | pure 878 → 883; twelve bite-checks bite; manifest 1289
 
 ## Pending / not yet done
-- Batches 4–7 of `.cycle/blocks/20-scan-batch-plan.md` (the operator chooses).
+- Batches 5–7 of `.cycle/blocks/20-scan-batch-plan.md` (the operator chooses).
+- `/sync-docs` after Batch 4 — its block lists the edits (operator-state entries for the three auto-managed properties, the accrual-ledger decision, a liveness invariant, S9/S107 expected, the g116 bite lesson).
 - **OPERATOR — still owed from cycle 19's post-deploy walk** (archived in HISTORY.md, "Where I left off"): step 2 (the editor lists FOURTEEN server files, no `Code.js`), step 5 (Manage → Admin → OOP pricing diagnostics: `nameCol` = `Item`, `nameByHeader: true`, three price columns, the first `OOP Price – pick-up`; unknown eligibility values now named by ITEM), step 6 (`previewPtoAccruals('2026-08')` — the three PH reps' zero row), step 7 (S112 — OOP, renumbered from the duplicate S110 — then S108/S109/S97 the next morning), step 8 (`INSTANCE_IS_PROD=true` + stand up the dev instance — the integration tier has NEVER run against the deployed project, which is how F-01's red pin counted as green).
 - ~~`/reflect` for cycle 19~~ DONE 2026-09-18 (`.cycle/blocks/19-e-reflect.md`, net 5 − 2 = 3 for the H1/H2/H3 round; every other cycle-19 round was already in 19-a..19-d and their estimates rows were already written). Cycle 19 is fully reflected.
 - Two follow-ons from the OOP round remain real work: the shared geocode quota
@@ -67,6 +75,8 @@ Updated: 2026-09-18
 ## Open follow-on items
 - Test Suite: the integration tier is the only place `test_oop_verifyQuotes_currentStaleAndDeleted` executes; it was RED for a day and unrun. Until the dev instance exists, every "integration pin touched by a round" should be run by hand from the editor after a push.
 - 20_timeclock.js: the LIVE punch path still accepts a Clock Out in the same minute as a Clock In (it now pays 0 h and the doctor reports it). A live-path refusal is a UX decision not taken in Batch 1.
+- `scripts/bite.sh` cannot tell which function a mutation hit — an un-anchored F-49 mutation changed a DIFFERENT function and reported NO BITE (a `--fn <name>` span guard would close it).
+- A legacy multi-month accrual ledger key (none expected in prod) produces a daily `skipped` line until it ages out of the ledger read; no tooling splits it.
 - Tests.js:1897 `test_teamBenchmark_subtractsPublishedExcludes` expects 85.7; `cdrAnswerPct_` rounds whole since H2 (run.js H2-2 says 86) — that editor test is RED as written and has never run. One line for `/test-sync`.
 - 40_metrics.js:1927 hand-carries `pctAnswered: cdr ? cdr.pctAnswered : 0` for a rep with no CDR row (F-32's class one level up); the "weekends and US holidays excluded" strings (deptrequests/metrics/coaching + `00_config.js:1266`, pinned at run.js:16930) are F-38's class outside its six sites.
 - Visual: the no-standard / federal-fallback warn states of the two new CDR findings are pinned, not on camera (a `?fixture=` variant of admin-system).
@@ -78,16 +88,19 @@ Updated: 2026-09-18
 - Both OopPricing search surfaces score through ONE helper (`oopMatchScore_`) on the header-discovered row object; no OOP function reads a cell at position 0 (pinned). The OOP-B fixture carries the operator's shape (code in A, item in C) and a guard forbids putting the item in A.
 - A registered `onClose` hook OWNS the close: `closeOverlay` will not remove the class for it (INV-145 lets a hook refuse), so every hook must remove its overlay itself. The DOM sweep pin closes every registered hook's overlay while nothing is in flight.
 - Day Edit Save is dead for the prefill's duration (typically 1–3 s) — the pending window is the one that deleted punches.
+- The three daily jobs that write no audit row (missed-punch alerts, the export check, the failure digest) are LIVE by heartbeat, not by a JOB_CHECKS row — a JOB_CHECKS row needs an audit action, and a row per run would be two AuditLog rows a day for jobs whose signal is "I ran".
+- A catch-up accrual credit writes one ledger row per MONTH, and its total is the SUM of the per-month roundings (≤0.01 day per extra month from the once-rounded total) — the ledger must add up to the balance moved, and the preview shares the sum.
 - A published standard with NO Amber Band has NO amber tier — one point under the target is red on the Metrics table AND the Clock card (mtAnswerBand_); Transfer % keeps its local 5-pt slack because it has no published standard at all.
 - `cdrAnswerPct_` is null (not 0) when answered + missed is zero; `0 / 3` is still a real 0%. Every surface dashes null; every average skips it.
 - The holiday FALLBACK to the federal list is unchanged (deferred to the operator); Batch 3 only makes the live calendar's source visible on Admin → System.
 - Cycle 19 was closed in substance by the 2026-09-17 deploy; the new /broad-scan opened cycle 20 and the block moved to HISTORY.md even though 19's /reflect is owed — the reflection reads the archive.
 
 ## Where I left off
-Batches 1, 2 and 3 are implemented, pinned, bite-checked and committed on
+Batches 1–4 are implemented, pinned, bite-checked and committed on
 `claude/festive-noether-unougu` (pushed); the harnesses, lint, manifest and counts
-are all green. Next: open the PR when the operator asks; after the merge + New version,
+are all green. Next: `/sync-docs` for Batch 4 (its block's DOCUMENTATION UPDATES
+list), then open the PR when the operator asks; after the merge + New version,
 walk S112 first (OOP), then S111 step 5 and S110 step 5 (the two new Admin →
 System findings), then S7's two new steps, then the sheet doctor. Then pick the
-next batch from `.cycle/blocks/20-scan-batch-plan.md` (Batch 4, automation
-liveness + accrual diagnostics). Cycle 19 is fully reflected (19-e).
+next batch from `.cycle/blocks/20-scan-batch-plan.md` (Batch 5, access boundary
+and data integrity). Cycle 19 is fully reflected (19-e).
