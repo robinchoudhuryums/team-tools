@@ -24356,7 +24356,15 @@ test('F3 (rewritten BEHAVIOURAL, F-52): archiveSheetRowsOlderThan_ really stops 
       getLastRow: () => written.length,
       getMaxColumns: () => 2,
       insertColumnsAfter: () => {},
-      getRange: () => ({ setValues: (b) => { b.forEach((r) => written.push(r)); } }),
+      // Sheets REFUSES a zero-row range ("number of rows must be at least 1"),
+      // so the fake refuses one too. A permissive fake would let a mover that
+      // appends an empty block read as correct here and throw on the first
+      // nightly run with nothing eligible — the fixture-is-kinder-than-
+      // production class this harness exists to avoid (INV-185).
+      getRange: (r, c, n) => {
+        assert.ok(n >= 1, 'a zero-row setValues would THROW in Sheets — the mover must return before appending nothing');
+        return { setValues: (b) => { b.forEach((x) => written.push(x)); } };
+      },
     };
   };
   const CUT = Date.parse('2026-06-01T00:00:00Z');
@@ -24392,8 +24400,10 @@ test('F3 (rewritten BEHAVIOURAL, F-52): archiveSheetRowsOlderThan_ really stops 
   const src3 = mkSheet(), arc3 = mkArchive();
   assert.strictEqual(sb.archiveSheetRowsOlderThan_(src3, arc3, 0, CUT, { maxRows: 999, width: 2 }), 30, 'a slack bound moves the backlog');
   const src4 = mkSheet(), arc4 = mkArchive();
+  const flushesBeforeEmpty = flushes;
   assert.strictEqual(sb.archiveSheetRowsOlderThan_(src4, arc4, 0, Date.parse('2020-01-01T00:00:00Z'), { maxRows: 7, width: 2 }), 0, 'nothing eligible → 0');
   assert.strictEqual(arc4.written.length, 0, 'and NOTHING is appended (an empty append would still have flushed)');
+  assert.strictEqual(flushes, flushesBeforeEmpty, 'and nothing was flushed — the early return happens before the append');
 
   // The caller half stays structural — it is a claim about WHICH call site
   // passes the bound, which no drive of the helper can show.
