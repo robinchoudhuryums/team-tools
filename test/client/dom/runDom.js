@@ -3424,3 +3424,51 @@ test('R DOM: both fields are named by a visible label bound to their own input �
   const addrLabel = h.window.document.querySelector('label[for="kb-oop-addr"]');
   assert.ok(/optional/.test(addrLabel.textContent), 'the address label says it is optional');
 });
+
+test('R-6: every block on the Reference landing is a SECTION or the band — nothing can render at the band’s width by accident', async () => {
+  const h = boot();
+  // Seed the per-browser prefs so Bookmarks and Recents render too — a pin that
+  // only ever sees two blocks is not checking the rule for the other five.
+  h.window.localStorage.setItem(h.read('KB_PANEL_LS_KEY'), JSON.stringify({
+    bookmarks: [{ id: 'a1', title: 'OOP quoting rules' }],
+    recents: [{ id: 'a2', title: 'Delivery radius by warehouse' }],
+  }));
+  bootLookups(h);
+
+  const st = h.read('KB_STATE');
+  st.isManager = true;
+  // Every manager block, and deliberately the PARTIAL-READ branches — the one
+  // orphan this pin found was reachable only with items present AND a count
+  // source missing, which is the branch a happy-path fixture never enters.
+  st.usage = { items: [{ id: 'a1', title: 'OOP quoting rules', count: 22, drawerCount: 9 }], unavailable: ['KbViews'] };
+  st.reviewDue = { items: [{ id: 'a2', title: 'Delivery radius by warehouse', ageDays: 120, views: 14, staleFlags: 0 }],
+    total: 1, dueDays: 90, unavailable: ['KbFeedback'] };
+  st.contentRequests = { loadFailed: true };
+  h.read('kbRenderLanding_')();
+
+  const land = h.$('.kb-land');
+  assert.ok(land, 'the landing rendered');
+  const kids = Array.from(land.children);
+  assert.ok(kids.length >= 5, 'several blocks rendered — found ' + kids.length +
+    ', so the assertion below is about a real landing rather than an empty one');
+
+  // THE RULE. `.kb-land` is 1200px so the two-panel band has room; its sections
+  // keep the 760px reading measure. A block that is neither renders at the band
+  // width, out of line with everything around it — and the two widths were
+  // identical before the band, so nothing before this pin could have caught it.
+  const stray = kids.filter((el) => !el.classList.contains('kb-land-sec') && !el.classList.contains('kb-lookups'));
+  assert.deepStrictEqual(stray.map((e) => e.className + ' :: ' + e.textContent.slice(0, 60)), [],
+    'every landing block is a .kb-land-sec or the .kb-lookups band');
+
+  // And the band is there exactly once, first.
+  assert.strictEqual(kids.filter((e) => e.classList.contains('kb-lookups')).length, 1, 'one band');
+  assert.ok(kids[0].classList.contains('kb-lookups'), 'and it leads — the lookups are why a rep opens this tool');
+
+  // The partial-read warning that was the orphan now sits inside the queue it
+  // is about, where a reader can tell WHICH list is incomplete.
+  const rdSec = kids.filter((e) => /Review due/.test(e.textContent))[0];
+  assert.ok(rdSec, 'the review-due section rendered');
+  assert.ok(/KbFeedback/.test(rdSec.textContent),
+    'its partial-read warning is INSIDE it — loose on the landing it named no list');
+  assert.ok(/queue above may be incomplete/.test(rdSec.textContent), 'and still says what it means');
+});

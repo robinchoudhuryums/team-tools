@@ -3011,6 +3011,17 @@ function kbRenderLanding_() {
             'onclick="kbMarkReviewedClick_(this.getAttribute(\'data-kb-id\'))">' + icon('check', 13) + ' Reviewed</button>' +
         '</div>';
       });
+      // F-25: a partial read (items present, a count source missing) says which.
+      // It belongs INSIDE the section, exactly like its Most-used twin. Emitted
+      // after the section closed, it was a direct child of `.kb-land` and only
+      // LOOKED aligned because the landing and its sections were both 760px
+      // wide; widening the landing for the two-panel band renders this one
+      // warning at the full band width, out of line with the queue it is about.
+      // Found by the R-6 pin below, which exists to make a block outside a
+      // section impossible rather than noticed.
+      if (KB_STATE.reviewDue && (KB_STATE.reviewDue.unavailable || []).length) {
+        h += '<div class="kb-land-none">' + icon('warning', 12) + ' Could not read: ' + esc(KB_STATE.reviewDue.unavailable.join(', ')) + ' — the queue above may be incomplete.</div>';
+      }
       h += '</div>';
     } else if (KB_STATE.reviewDue && KB_STATE.reviewDue.loadFailed) {
       // E11 — a failed load must not look like an empty queue: the review-due
@@ -3023,9 +3034,6 @@ function kbRenderLanding_() {
       // whose stale-flag read died is not "nothing due".
       h += '<div class="kb-land-sec"><div class="kb-land-h">Review due</div>' +
         '<div class="kb-land-none">' + icon('warning', 12) + ' Could not read: ' + esc(KB_STATE.reviewDue.unavailable.join(', ')) + ' — the queue may be incomplete.</div></div>';
-    }
-    if (rd.length && KB_STATE.reviewDue && (KB_STATE.reviewDue.unavailable || []).length) {
-      h += '<div class="kb-land-none">' + icon('warning', 12) + ' Could not read: ' + esc(KB_STATE.reviewDue.unavailable.join(', ')) + ' — the queue above may be incomplete.</div>';
     }
   }
 
