@@ -4,7 +4,10 @@
 Cycle: 20 — OPEN (the /broad-scan of 2026-09-17 opened it; cycle 19's whole
 block moved to `.cycle/HISTORY.md` at that point, per the close-out procedure —
 **with cycle 19's `/reflect` still OWED; it reads the archived block**).
-Phase: implement — Batches 1–6 of the scan's IMPLEMENTATION BATCH PLAN are
+Phase: reflect — DONE 2026-09-18 (`.cycle/blocks/20-a-reflect.md`, net 28 − 3 = 25;
+the seven batch blocks sum to 30 − 1 = 29 and the reflection corrects them in
+four places — read the REFLECT block for the cycle's tally, never the
+implementation blocks). Batches 1–6 of the scan's IMPLEMENTATION BATCH PLAN are
 DONE (`.cycle/blocks/20-batch1-broad-implement.md`, net 5 − 0 = 5;
 `.cycle/blocks/20-batch2-broad-implement.md`, net 6 − 0 = 6;
 `.cycle/blocks/20-batch3-broad-implement.md`, net 4 − 0 = 4;
@@ -19,9 +22,12 @@ decision). NOT DEPLOYED: everything since Batch 1 is live only after
 Scope: broad
 Test Command: manual
 Estimates: **Batch 7 (F-52 four structural pins made behavioural · F-50 lint-server's advanced-service globals derived from appsscript.json · F-51 the manager-gated endpoint count covers all three gates · F-53 _TEST_OVERRIDE_COACH_MAIL moves out of production code · F-31 the CDR agent-metrics cache bypassed under the test override + the roster hash · F-33 cdrQueueInventory_ span-bound · F-34 Spanish telemetry counts voicemails · F-26 "manager-gated" over admin gates · F-39 the timesheet computeRange mirror pinned · F-48 an open day is no bar, not a 0h bar) — M (~4.5 h), recorded 2026-09-18 BEFORE the first edit — ~4.5 h ACTUAL.** · **Batch 6 (F-14 boot Retry through reloadApp_ · F-12 the Admin KPI strip's "across team" labels own counts · F-40 five static modals never move/restore focus · F-30 the shortcuts overlay outside ensureOverlay · F-29 duplicate aria-label + "You" under a manager · F-42 public-form accordions lack aria-expanded · F-43 the KB drawer has no dialog role/label/focus restore · F-36 export window.open after an async RPC · F-37 the pop-out blocked toast is unreachable · F-28 the quick-chip row's "this week" over all-time counts) — M (~6 h), recorded 2026-09-18 BEFORE the first edit — ~2.5 h ACTUAL.** · **Batch 5 (F-16 QA My Reviews + audio scoped by roster ID · F-10 tag transforms report skipped reps · F-11 DeptRequests PHI comments/map/Storage Health row · F-17 QA exemption onclick apostrophe · F-24 hash-less doc refuses to sign, verify reports contentMatch null · F-23 eligibility states + radius · F-27 intake labels from the server bank) — M (~6 h), recorded 2026-09-18 BEFORE the first edit — ~2.5 h ACTUAL.** · **Batch 4 (F-20 automation liveness: two JOB_CHECKS rows, a digest heartbeat, computeAutomationHealth_ stamps its own failure · F-19 per-month accrual ledger keys · F-46 the accrual job's early returns rewrite/clear PTO_ACCRUAL_RECONCILE · F-21 cleanup strips MANAGER_EMAILS residue · F-22 TEST_ rows on DeptRequests/ClientErrors deleted by key + cleanup backstop · F-49 getTeamCalendar through the time-off provisioner) — M (~7 h), recorded 2026-09-18 BEFORE the first edit — ~2 h ACTUAL.** · **Batch 3 (F-07 one null-band tone rule · F-08 standardSource rendered + the residual 85 · F-09 holiday source surfaced · F-35 ambient badge uses the previous workday · F-32 cdrAnswerPct_ null on no denominator · F-38 "Company holiday" copy) — M (~6 h), recorded 2026-09-17 BEFORE the first edit — ~1.5 h ACTUAL.** · **Batch 2 (F-06 dept-config cached empty · F-13 dashboard carousels "No call data" on failure · F-18 Sent detail blank→"No" · F-15 geocoder failure reads as a bad address · F-47 pending tasks DQE failure = 0 missing · F-41 coverage strip blank on failure · F-25 KB count helpers {} on failure · F-45 KB feedback "Thanks" before the RPC) — M (~7 h), recorded 2026-09-17 BEFORE the first edit — ~1.5 h ACTUAL.** · **Batch 1 (F-01 OOP verify column-A · F-03 the 24-hour equal-minute day · F-02 the two unclosable modals · F-04 eligibility column-A · F-05 Day Edit Save during prefill · F-44 undefined `text`) — M (~7.5 h), recorded 2026-09-17 BEFORE the first edit — ~1.5 h ACTUAL.** The scan's own estimates for the remaining batches, as written at scan time: B2 — ~7 h · B3 — ~6 h · B4 — ~7 h · B5 — ~6 h · B6 — ~6 h · B7 — ~4.5 h.
-Subsystem cycles since last Seams audit: 5 — **the every-4 cadence was met at 19-d (19-e, the H1–H3 reflection of 2026-09-18, incremented it to 5);
-the next `/audit` should be a Seams & Invariants audit** (carried forward; the
-2026-09-17 /broad-scan was a broad scan, not the seams round).
+Subsystem cycles since last Seams audit: 6 — **the every-4 cadence has now been
+missed twice over; cycle 20's reflection (20-a, 2026-09-18) incremented it to 6.
+The next `/audit` MUST be a Seams & Invariants audit**, and cycle 20 makes the
+case louder rather than quieter: the library gained twelve entries this cycle
+(INV-213..224, plus INV-225..227 proposed by the reflection) and nothing has
+probed the older ones.
 Updated: 2026-09-18
 
 ## In progress (facts to carry forward — NOT judgments)
@@ -98,7 +104,8 @@ Updated: 2026-09-18
 
 ## Pending / not yet done
 - ~~Batch 7 of `.cycle/blocks/20-scan-batch-plan.md`~~ DONE 2026-09-18. The plan is exhausted; the only scan item left is the DEFERRED one (F-09's holiday fallback — keep g123's federal fail-open, or match the dashboard's no-fallback; an operator decision, and Batch 3 surfaces the source either way).
-- `/sync-docs` for Batch 7 — the block's DOCUMENTATION UPDATES NEEDED list names two gotchas, three invariant candidates, modules.md, the harness log.
+- ~~`/sync-docs` for Batch 7~~ DONE 2026-09-18 — g136/g137/g138, g02/g22/g116 amended, INV-222..224 (+ INV-169 amended), S10/S80 expected text, three decisions, both module narratives, the operator and harness logs; counts block invariants 224.
+- ~~`/reflect` for cycle 20~~ DONE 2026-09-18 (`.cycle/blocks/20-a-reflect.md`). INV-225..227 are PROPOSED there and not yet in the library — add them with the next round that can verify them, or let the Seams audit adopt them.
 - **OPERATOR — still owed from cycle 19's post-deploy walk** (archived in HISTORY.md, "Where I left off"): step 2 (the editor lists FOURTEEN server files, no `Code.js`), step 5 (Manage → Admin → OOP pricing diagnostics: `nameCol` = `Item`, `nameByHeader: true`, three price columns, the first `OOP Price – pick-up`; unknown eligibility values now named by ITEM), step 6 (`previewPtoAccruals('2026-08')` — the three PH reps' zero row), step 7 (S112 — OOP, renumbered from the duplicate S110 — then S108/S109/S97 the next morning), step 8 (`INSTANCE_IS_PROD=true` + stand up the dev instance — the integration tier has NEVER run against the deployed project, which is how F-01's red pin counted as green).
 - ~~`/reflect` for cycle 19~~ DONE 2026-09-18 (`.cycle/blocks/19-e-reflect.md`, net 5 − 2 = 3 for the H1/H2/H3 round; every other cycle-19 round was already in 19-a..19-d and their estimates rows were already written). Cycle 19 is fully reflected.
 - Two follow-ons from the OOP round remain real work: the shared geocode quota
@@ -168,6 +175,11 @@ own but changes two surfaces worth a look — the manager live-status sparkline
 (a hatched bar where a rep is still clocked in) and the Spanish stats card
 (its Pending must now equal the list's count).
 
-After the docs pass, cycle 20 is ready for `/reflect`. The seam counter is 5,
-so the NEXT `/audit` should be a Seams & Invariants audit, not another broad
-scan. Cycle 19 is fully reflected (19-e).
+Cycle 20 is CLOSED in substance: implemented, documented and reflected
+(`.cycle/blocks/20-a-reflect.md`, net 25). Nothing is deployed. When the deploy
+is confirmed, move this whole block into `.cycle/HISTORY.md` and reset STATE.md
+from the template, per the close-out procedure.
+
+The seam counter is 6 and the every-4 cadence has been missed twice, so the
+NEXT `/audit` must be a Seams & Invariants audit rather than another broad scan.
+Cycle 19 is fully reflected (19-a..19-e).
