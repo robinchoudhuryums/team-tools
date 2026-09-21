@@ -10,6 +10,43 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-18 (R) — Reference: the price and eligibility lookups became one panel
+
+**Adds NO operator state.** No Script Property, no sheet, no tab, no new
+permission, no migration. The `OopPricing` and `LocationAcceptance` tabs are
+read exactly as before. Ships on the ordinary `clasp push -f` + New-version
+deploy.
+
+**What the operator sees.** The Reference landing had three stacked lookups,
+which pushed Bookmarks, Recently viewed, Most used and Review due below the
+fold. It now has two side by side: **Insurance lookup** on the left,
+**OOP price & area eligibility** on the right. The Ctrl/⌘+K drawer carries the
+same two, stacked, as before.
+
+The merged panel takes an **Item** and an optional **Address or ZIP**. An item
+alone answers with prices and no verdicts; adding an address upgrades those same
+rows in place with the two verdicts. A blank item with an address filled still
+lists everything, as the eligibility check always did.
+
+**One defect this fixes was live.** For the working day between the 2026-09-16
+round and this one, the eligibility check showed only the FIRST price column for
+each item — on the real sheet, the pick-up total. An item with pick-up /
+with-shipping / with-tech-delivery prices answered a delivery question with the
+collect-in-person number and hid the other two. It did not show on the
+post-deploy check because the item tried had a single price. The eligibility
+rows now show every priced column, labelled, exactly as the price lookup does.
+
+**And one thing that now behaves better than before.** If the address service is
+unreachable or the address will not resolve, the panel no longer goes blank: the
+prices still render, under a warn-toned line reading "No eligibility verdict —"
+followed by the reason the server gave. No verdict is shown when nothing was
+checked. With the Item box empty there is nothing to fall back to, so that case
+stays a plain error.
+
+**To walk it:** S112, whose Reference steps were rewritten for the one panel,
+and S73, which now covers the band at phone width and the field pair in the
+drawer on a wide screen.
+
 ## 2026-09-18 (after the merge) — the first full editor run of the integration tier
 
 **Adds NO operator state.** Nothing in this round changes a Script Property, a

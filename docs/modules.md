@@ -371,9 +371,14 @@ not restate it. Server endpoints live in the fourteen server files
      warn; not-accepted/OON bad) and a legend disclosure spells out the
      operator's definitions. The rep's QUERY is never persisted (the
      kbMapDistances posture).
-     **OOP price lookup + area eligibility (operator 2026-09-16):** two more
-     cards on the SAME two surfaces, over two more operator-maintained tabs in
-     the KB spreadsheet — `OopPricing` and `LocationAcceptance`.
+     **OOP price + area eligibility (operator 2026-09-16; MERGED into ONE panel
+     2026-09-18):** one more card on the SAME two surfaces, over two more
+     operator-maintained tabs in the KB spreadsheet — `OopPricing` and
+     `LocationAcceptance`. It shipped as TWO cards and became one, because both
+     read the same tab through the same row reader and answered the same
+     mid-call question at different depths: the panel takes an ITEM and an
+     optional ADDRESS, and the address upgrades the answer from prices to
+     prices-plus-verdicts rather than gating it.
      `searchOopPricing` reuses `insPayorScore_` rather than copying it (two
      scorers for two lookups is two things to keep in step and nobody would
      notice them diverging) and shares the payor lookup's whole posture:
@@ -410,6 +415,28 @@ not restate it. Server endpoints live in the fourteen server files
      the manager landing's "Most used" / "Review due" blocks say which count
      reads FAILED instead of "No opens recorded" or an empty queue; and "Was
      this helpful?" thanks the rep only once the server has recorded it.
+     **2026-09-18 (R — the two-panel restructure):** the Reference landing
+     carried THREE stacked lookups, which pushed Bookmarks, Recents, Most used
+     and Review due entirely below the fold; it now carries two side by side,
+     with the insurance lookup left and the merged price/eligibility panel
+     right. The merge fixed a live defect, not just a layout: `checkOopEligibility`
+     had hand-picked `price` — which is `prices[0]`, the leftmost price column,
+     the PICK-UP total on the operator's sheet — while the price lookup rendered
+     every priced column labelled, so the delivery surface quoted the
+     collect-in-person number (g126's third instance). Both endpoints now ship
+     the same shape and ONE renderer draws it. An eligibility failure no longer
+     costs the rep the prices: as two panels the price sat in the card above, so
+     merged naively an outage would have blanked both; it degrades to the
+     price-only answer under a banner that states no verdict was reached and
+     passes the SERVER's reason through verbatim, because only the server can
+     tell a bad address from an unreachable service (g128). Both fields gained a
+     visible `<label>` — the item field had named itself with an `aria-label`
+     and a placeholder that vanished the moment it was filled. The band lives in
+     the landing HOST, not in the shared section renderer, which is what lets one
+     section still serve the ~340px Ctrl/⌘+K drawer: the band collapses on both
+     g50 triggers, while the field pair inside it sizes off its own container,
+     because the drawer's width is described by neither the viewport nor
+     `data-compact`.
      **File ingest (operator 2026-08-25) — two paths, because they answer
      different questions.** (a) **Editor file-drop** (`kbIngestFile`, admin-gated,
      READ-ONLY w.r.t. the KB sheet, review-before-save like the converters):

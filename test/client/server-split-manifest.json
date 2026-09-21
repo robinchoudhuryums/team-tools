@@ -560,6 +560,16 @@
     "getSpanishInboxStats"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-18",
+   "why": "checkOopEligibility now ships the WHOLE oopRowObj_ shape (prices, code, details), not just prices[0] — one client row renderer serves it and searchOopPricing",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "checkOopEligibility"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3012,7 +3022,7 @@
   "checkOopEligibility": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "3282318b552615b1"
+   "sha": "a8c07b3cac79aba6"
   },
   "checkOpenPunches": {
    "file": "20_timeclock.js",

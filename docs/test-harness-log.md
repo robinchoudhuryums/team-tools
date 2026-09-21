@@ -1704,3 +1704,116 @@ The integration tier had never run against the deployed project, which is the
 same gap that let F-01's red pin count as green. One run, one real find, and the
 find was in the tests rather than the product. That is the outcome a first run
 should have.
+
+---
+
+## 2026-09-18 — batch R, the Reference two-panel restructure
+
+**Five pure pins (R-1..R-5) and six DOM pins** — the three-price drive, the
+degraded path, item-alone, the band, the labels, and R-6. Two existing pins
+(ELIG client, OOP-A DOM) were rewritten for the merged panel rather than added
+to. Every new pin bite-checked; the two NO BITEs are the point of this entry.
+
+**R-1 derives its field list rather than listing it.** It reads `oopRowObj_`'s
+own `const out = {…}` literal and requires each field to appear as `o.<field>`
+in `checkOopEligibility`. A hand-written list would have been a second copy of
+the contract that drifts the first time a column is added — which is the exact
+failure the pin exists to prevent. It carries a `fields.length >= 5` sanity
+assert, because a derivation that matches nothing makes every assertion below
+it vacuously true (g116).
+
+**NO BITE #1 — a structural pin cannot see a truncated loop.** R-2 is named for
+the one-renderer rule and asserts `m.prices` is read and labelled past one
+entry. Truncating the map to `[prices[0]]` — the literal defect the batch
+exists to fix — left both regexes green. The R DOM eligibility pin goes red on
+that mutation, so the net is real, but R-2 now carries a NOTE saying which half
+it holds. The general shape: a regex over source can pin that the right DATA is
+reached and not that all of it is USED. g138 said a pin whose name promises a
+behaviour must drive it; this is the narrower corollary — when a structural pin
+and a behavioural pin split a claim, the structural one should say where its
+half ends, or the next reader assumes it covers more than it does.
+
+**NO BITE #2 — a guard nothing drives cannot bite.** Removing the item guard
+from `oopLookupInput_`'s FAILURE handler changed nothing, while the identical
+removal on the success branch bit immediately. The cause was not the pin: the
+DOM fixture returned a structured `{error}` for every eligibility call, so the
+thrown-RPC channel had no coverage at all. `run.clearResponder` +
+`run.flushFailure` now drive it, and the guard bites. Two guards need two
+pieces of evidence, and a NO BITE that is confined to one of a pair of
+symmetric branches is a coverage report, not a pin report.
+
+**R-6 found its own defect, which is the argument for writing it.** It drives
+`kbRenderLanding_` with every manager block seeded — deliberately including the
+partial-read branches (`items` present AND a count source unavailable) that a
+happy-path fixture never enters — and requires every direct child of `.kb-land`
+to be a `.kb-land-sec` or the `.kb-lookups` band. It went red on first run: the
+review-due partial-read warning was emitted after its section closed, so it had
+always been a direct child of the landing. It rendered correctly for months
+only because `.kb-land` and `.kb-land-sec` were both 760px — widening the
+landing for the band separated the two measures and would have rendered that
+one warning at full band width. Nothing could have caught it before, because
+until the band there was no observable difference between being inside the
+section and merely sharing its width.
+
+**g65 fired a fifth time, on a hand-rolled bite.** `scripts/bite.sh` refuses a
+dirty file precisely because it ends in `git checkout`. A one-off shell helper
+written inline for the DOM harness (which `bite.sh` does not drive) had no such
+guard, and its restore discarded the uncommitted R-6 fix; the next run's red
+was read as a bite before the cause was traced. The fix is procedural and
+already in the tool for the pure harness: commit first, then bite. Worth
+extending `bite.sh` to run the DOM harness so there is no reason to hand-roll
+one — noted, not done.
+
+---
+
+## 2026-09-18 — batch S, the seams round (F1–F5)
+
+**Five pins added or rewritten, eleven bite-checks, all BITE.** No `web-app/`
+file changed: this batch is entirely test surface.
+
+**The two-sided net shape, and the derivation that must NOT be built.** F1's
+obvious fix was to derive the guarded coerced-column set from the code —
+"whatever columns a recovery helper is applied to". That is self-defeating:
+delete the last `cnDateLocalString_(row[CN.DATE_LOCAL])` call and the column
+leaves the derived set at the same moment the raw read appears, so the net goes
+quiet exactly when the defect lands. The shape that works is the one the CN
+boundary already used: an EXPLICIT list (which keeps a column guarded whatever
+the code does) plus a DERIVED assertion running the other way (every column a
+recovery helper touches must be in that list). The list was hoisted to one
+place both scans read, so the two can no longer drift apart from each other
+either. Bite-checked four ways, including the one that proves the property:
+shrinking the list fails the derived half rather than silently narrowing cover.
+
+**`serverCallersOf()` (harness.js), and why it is applied to exactly one pin.**
+It derives the set of server declarations calling a marker, for the
+enumerated-reader pins whose lists mean "every caller". It is deliberately not
+retrofitted: some of those pins BAN their marker, and some guard a narrow set
+on purpose, so a blind sweep over all of them over-reports. Measured — a naive
+completeness assert flagged thirteen contracts and most were false. The one pin
+that needed it (H-1, coaching's parser boundary) was the one with no
+global-scan sibling.
+
+**An exemption written as a fact, not a convenience.** H-1 bans
+`parseTimestampMs_` in coaching consumers, and `automationDetectorChecks_`
+calls it — because it is the runtime self-check that drives BOTH parsers to
+prove each still works. Listing it would fail the ban; dropping it from the
+derivation silently would hide a real consumer if it ever became one. It is
+named in an `EXEMPT` array with the reason beside it, so both facts stay visible.
+
+**Two audit corrections, both the same direction.** The audit that produced
+these findings over-reported twice, and the implementation block carries both.
+F2 was one real gap of six, not six: five lists were correct as written and
+readable as correct because someone had written down what each was for (see
+g116's sixth direction). F5's count of entries carrying no `Verify:`
+clause was nearly double the real one — most of the difference names its
+verification as "Pinned by …", a named tripwire, or a `test_` function, which a
+`Verify:`-only scan cannot see. That correction improved the outcome: no
+backfill was needed, and the ratchet floor went to INV-139 rather than the
+planned INV-213, covering close to three times the span. The three clauses the
+plan budgeted for were already written, in the other phrasing.
+
+**The ratchet accepts the phrasings already in use.** Requiring the literal
+`Verify:` would have forced a rewrite of 74 entries that already say where
+their proof lives — churn, not rigour. Deliberately-vacant numbers
+(INV-163/164, claimed by a reflection whose proposals were lost and left
+unreused so the metrics note stays traceable) are exempt by shape, not by name.

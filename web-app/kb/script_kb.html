@@ -134,6 +134,53 @@
   }
   .kb-oop-price.none { font-weight: 500; color: var(--warning-deep); }
   .kb-oop-price-lbl { font-weight: 400; font-size: 10px; color: var(--muted); }
+  /* ── The lookup band (landing host only) ─────────────────────────────
+     TWO panels side by side. Three stacked lookups pushed Bookmarks, Recents,
+     Most used and Review due entirely below the fold, so the landing read as a
+     form rather than as the tool it is. Panel 2 gets the wider track: it
+     carries two fields and rows with two verdicts under them.
+
+     The two grids here use DIFFERENT mechanisms, deliberately:
+
+       .kb-lookups is an explicit ratio, so it needs the two independent
+       collapse triggers — g50 / A2 is precisely the mistake this file has made
+       before. `data-compact` is the POP-OUT, not a viewport breakpoint: the
+       pop-out override alone leaves desktop tracks on a phone, and the @media
+       alone leaves them in a 480px pop-out on a wide screen. Both, or neither
+       works. 1100px is where the 280px tree track plus this band stops fitting
+       (the .kb-wrap stack at 720px is a separate, later step).
+
+       .kb-oop-fields is auto-fit instead, because neither trigger can see the
+       case that actually breaks it: the Ctrl/⌘+K DRAWER is ~340px wide on a
+       1920px desktop with data-compact unset, so a viewport rule and a pop-out
+       rule would BOTH pass while the two fields rendered at 160px each. Sizing
+       off the container's own width is the only thing that is right in all
+       three hosts at once. */
+  .kb-lookups { display: grid; grid-template-columns: 1fr 1.35fr; gap: 16px; align-items: start; margin-bottom: 22px; }
+  .kb-lookup-card { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper); padding: 13px 14px; }
+  :root[data-compact] .kb-lookups { grid-template-columns: 1fr; }
+  @media (max-width: 1100px) {
+    .kb-lookups { grid-template-columns: 1fr; }
+  }
+  .kb-oop-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+  .kb-oop-field { min-width: 0; }
+  /* Both fields carry a VISIBLE label. They are twins in one panel now, and a
+     placeholder is not a label — it vanishes the moment the field is filled,
+     which is exactly when a rep looks up to check which box they are in. */
+  .kb-oop-lbl { display: block; font-size: 11.5px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+  .kb-oop-lbl-opt { font-weight: 400; color: var(--muted-2); }
+  /* Results scroll INSIDE their panel. Without this the two columns grow to
+     wildly different heights and everything below the band jumps as each
+     answer lands. The cap sits on the SCROLLING element, never on .kb-lookups
+     — a max-height on a grid container does not constrain its row (V-9). It is
+     scoped to the band so the drawer, which scrolls as a whole, does not get a
+     second scroll region nested inside it. */
+  .kb-lookups .kb-ins-results { max-height: 360px; overflow-y: auto; }
+  /* The degraded-eligibility banner: the address produced no verdict, and the
+     prices below it are still the answer. Warn-toned, not destructive —
+     nothing here failed the rep except the one upgrade they asked for. */
+  .kb-oop-degraded { display: flex; align-items: flex-start; gap: 6px; margin: 6px 0; padding: 7px 10px; border-radius: var(--radius); background: var(--warn-soft); color: var(--ink); font-size: 12px; }
+  .kb-oop-degraded svg { flex-shrink: 0; margin-top: 2px; color: var(--warning-deep); }
   .kb-ins-input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; background: var(--paper); color: var(--ink); }
   .kb-ins-card { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 8px; background: var(--paper-card); }
   .kb-ins-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
@@ -162,8 +209,11 @@
   .kb-ins-more { font-size: .74rem; color: var(--muted); margin-top: 6px; font-style: italic; }
 
   /* §4 — landing panel (right side when nothing is selected) */
-  .kb-land { max-width: 760px; }
-  .kb-land-sec { margin-bottom: 22px; }
+  /* The landing is wider than it was so the two-panel band has room; the
+     CONTENT blocks below it keep the old 760px measure, because a Recents list
+     at 1200px is worse, not better. */
+  .kb-land { max-width: 1200px; }
+  .kb-land-sec { margin-bottom: 22px; max-width: 760px; }
   .kb-land-h { font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
   .kb-land-h .kb-land-sub { font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted-2); }
   .kb-land-pill { font-family: var(--mono); font-size: 10px; font-weight: 700; background: var(--warn-soft); color: var(--warning-deep); border-radius: 999px; padding: 1px 7px; }
@@ -2448,150 +2498,201 @@ function insToneCls_(value) {
   return '';
 }
 
-// ── OOP price lookup (operator 2026-09-16) ─────────────────────────────────
-// The mid-call price check. Rides BOTH hosts exactly like the insurance
-// lookup — the Reference landing ('' suffix) and the Ctrl/⌘+K drawer ('-d') —
-// because a price is looked up mid-call, which is what the drawer is for.
+// ── OOP price + area eligibility ───────────────────────────────────────────
+// ONE panel (operator 2026-09-18) for what were two: "what does this cost" and
+// "can we get it there" are the same mid-call question, asked of the SAME
+// operator tab (OopPricing) through the SAME row reader.
+//
+// They had already drifted, which is why the merge is structural rather than
+// cosmetic. searchOopPricing shipped `prices` and the price panel rendered
+// every priced column labelled; checkOopEligibility shipped only `price` —
+// `prices[0]`, the leftmost column, which on the operator's real sheet is the
+// PICK-UP total — and the eligibility panel rendered that one number bare. The
+// delivery surface was quoting the collect-in-person price. Two readers of one
+// operator sheet, each picking its own subset (g126). Both endpoints now ship
+// the same shape and ONE renderer draws it, so they cannot diverge again by
+// being edited separately.
+//
+// Rides BOTH hosts exactly like the insurance lookup — the Reference landing
+// ('' suffix) and the Ctrl/⌘+K drawer ('-d') — because a price is looked up
+// mid-call, which is what the drawer is for.
 //
 // A quoted price is a COMMITMENT (the rep takes payment on that call), so this
 // surface states its own limits rather than implying certainty: the effective
 // date rides every result, and a no-match says so plainly instead of offering
 // a near-miss as though it were the answer.
+//
+// The ITEM is the key; the ADDRESS is optional and UPGRADES the answer from
+// prices to prices-plus-verdicts. It never gates it — see oopDegraded_.
 var KB_OOP = { seq: 0, timer: null };
 
+/** The lookup section (shared by both hosts; suffix '' = Reference landing,
+ *  '-d' = drawer).
+ *
+ *  BOTH inputs carry a visible <label>. They are twins in one panel now, and a
+ *  placeholder is not a label: it disappears the moment the field is filled,
+ *  which is exactly when a rep glances up to check which box they are in. The
+ *  section heading is a plain div rather than a <label> for the same reason —
+ *  one heading cannot be the accessible name of two fields. */
 function oopLookupSecHtml_(suffix) {
-  return '<label class="kb-land-h" for="kb-oop-input' + suffix + '">' + icon('search', 13) + ' OOP price lookup</label>' +
-    '<input type="text" class="kb-ins-input" id="kb-oop-input' + suffix + '" autocomplete="off" ' +
-      'placeholder="Item name…" oninput="oopLookupInput_(this)">' +
+  return '<div class="kb-land-h">' + icon('grid', 13) + ' OOP price &amp; area eligibility</div>' +
+    '<div class="kb-oop-fields">' +
+      '<div class="kb-oop-field">' +
+        '<label class="kb-oop-lbl" for="kb-oop-item' + suffix + '">Item</label>' +
+        '<input type="text" class="kb-ins-input" id="kb-oop-item' + suffix + '" autocomplete="off" ' +
+          'placeholder="Item name or code…" oninput="oopLookupInput_(this)">' +
+      '</div>' +
+      '<div class="kb-oop-field">' +
+        '<label class="kb-oop-lbl" for="kb-oop-addr' + suffix + '">Address or ZIP ' +
+          '<span class="kb-oop-lbl-opt">— optional</span></label>' +
+        '<input type="text" class="kb-ins-input" id="kb-oop-addr' + suffix + '" autocomplete="off" ' +
+          'placeholder="adds delivery eligibility" oninput="oopLookupInput_(this)">' +
+      '</div>' +
+    '</div>' +
     '<div class="kb-ins-results" id="kb-oop-results' + suffix + '"></div>';
 }
 
-/** Debounced search with a seq token — two hosts and out-of-order responses
- *  must not cross-paint (INV-156, the insLookupInput_ discipline). */
+/** Debounced, seq-tokened, and it chooses the endpoint from what is typed —
+ *  two hosts and out-of-order responses must not cross-paint (INV-156, the
+ *  insLookupInput_ discipline). */
 function oopLookupInput_(inp) {
-  var suffix = inp.id === 'kb-oop-input-d' ? '-d' : '';
-  var q = String(inp.value || '').trim();
+  var suffix = /-d$/.test(inp.id) ? '-d' : '';
+  var itemEl = document.getElementById('kb-oop-item' + suffix);
+  var addrEl = document.getElementById('kb-oop-addr' + suffix);
+  var item = itemEl ? String(itemEl.value || '').trim() : '';
+  var addr = addrEl ? String(addrEl.value || '').trim() : '';
   if (KB_OOP.timer) clearTimeout(KB_OOP.timer);
   var host = document.getElementById('kb-oop-results' + suffix);
-  if (q.length < 2) { if (host) host.innerHTML = ''; return; }
-  KB_OOP.timer = setTimeout(function () {
-    var mySeq = ++KB_OOP.seq;
-    if (host) host.innerHTML = '<div class="kb-ins-more">Searching…</div>';
-    google.script.run
-      .withSuccessHandler(function (res) {
-        if (mySeq !== KB_OOP.seq) return;
-        oopRenderResults_(suffix, q, res);
-      })
-      .withFailureHandler(function (err) {
-        if (mySeq !== KB_OOP.seq) return;
-        var h = document.getElementById('kb-oop-results' + suffix);
-        if (h) h.innerHTML = errorStateHtml_((err && err.message) || 'Lookup failed.');
-      })
-      .searchOopPricing(q);
-  }, 350);
-}
-
-function oopRenderResults_(suffix, q, res) {
-  var host = document.getElementById('kb-oop-results' + suffix);
-  if (!host) return;
-  if (!res || res.error) { host.innerHTML = errorStateHtml_((res && res.error) || 'Lookup failed.'); return; }
-  if (res.notFound || !(res.matches || []).length) {
-    // A no-match is stated plainly. The alternative — showing the nearest item
-    // anyway — is how a rep quotes the price of something else.
-    host.innerHTML = '<div class="kb-ins-guide">' + icon('info', 13) + ' No OOP price on file for “' + esc(q) + '”. ' +
-      'Check the spelling, or confirm with the team before quoting — do not quote a similar item.</div>';
+  // An address UPGRADES the answer; an item alone is already a whole answer.
+  // Its threshold is higher than the item's because a rep types a full address
+  // rather than a stem.
+  var wantElig = addr.length >= 4;
+  if (!wantElig && item.length < 2) {
+    // Below both thresholds there is nothing to ask. Bumping the seq voids
+    // whatever is in flight, so a late reply cannot paint over a cleared box.
+    ++KB_OOP.seq;
+    if (host) host.innerHTML = '';
     return;
   }
-  var html = '';
-  res.matches.forEach(function (m) {
-    // A MISSING price is called out rather than rendered as an empty cell: a
-    // blank where a number belongs reads as free, or as nothing to say.
-    // EVERY priced column, labelled when there is more than one. The operator's
-    // sheet carries pick-up / with-shipping / with-tech-delivery totals for one
-    // item, and showing only the first would answer a rep's "how much is it?"
-    // with the number that is right solely for a customer collecting in person.
-    var prices = (m.prices && m.prices.length) ? m.prices
-      : (String(m.price || '').trim() ? [{ label: '', value: m.price }] : []);
-    var priceHtml = prices.length
-      ? prices.map(function (pr) {
-          return '<span class="kb-oop-price">' +
-            (prices.length > 1 ? '<span class="kb-oop-price-lbl">' + esc(pr.label) + '</span> ' : '') +
-            esc(pr.value) + '</span>';
-        }).join(' ')
-      : '<span class="kb-oop-price none" title="This row has no price in the pricing sheet. Do not quote it.">no price on file</span>';
-    var bits = [];
-    if (m.code) bits.push(esc(m.code));
-    if (m.effective) bits.push('effective ' + esc(m.effective));
-    if (m.eligibility) bits.push('area: ' + esc(m.eligibility));
-    (m.details || []).forEach(function (d) { bits.push(esc(d.label) + ': ' + esc(d.value)); });
-    html += '<div class="kb-ins-row">' +
-      '<div class="kb-ins-name">' + esc(m.name) + ' ' + priceHtml + '</div>' +
-      (bits.length ? '<div class="kb-ins-meta">' + bits.join(' · ') + '</div>' : '') +
-      '</div>';
-  });
-  if (res.total > (res.matches || []).length) {
-    html += '<div class="kb-ins-more">' + esc(String(res.total)) + ' matches — showing the top ' + esc(String(res.cap)) + '. Narrow the search.</div>';
-  }
-  if (res.truncated) {
-    html += '<div class="kb-ins-more" style="color:var(--warning-deep)">The pricing sheet is longer than the scan limit — some items were not searched.</div>';
-  }
-  host.innerHTML = html;
-}
-
-// ── ELIG (operator 2026-09-16) — area eligibility ──────────────────────────
-// The OOP sheet's Area Eligibility column states the rule for an order going
-// THROUGH INSURANCE. Paying out of pocket transforms it: a STATE limit lifts
-// (it is licensure and network, and nobody is billing insurance), a DELIVERY
-// RADIUS does not (it is a van). So every item has TWO answers, and both are
-// shown, labelled — the rep mid-call is usually deciding between the two, and a
-// payment-method toggle would make them ask the same question twice.
-//
-// UNKNOWN is rendered as its own thing, never as "no". "We cannot tell" and
-// "not eligible" send a rep to two different next actions, and the first one is
-// a phone call (INV-187).
-var KB_ELIG = { seq: 0, timer: null };
-
-function eligSecHtml_(suffix) {
-  return '<label class="kb-land-h" for="kb-elig-addr' + suffix + '">' + icon('grid', 13) + ' Area eligibility</label>' +
-    '<input type="text" class="kb-ins-input" id="kb-elig-addr' + suffix + '" autocomplete="off" ' +
-      'placeholder="Address or ZIP code…" oninput="eligInput_(this)">' +
-    '<input type="text" class="kb-ins-input" id="kb-elig-item' + suffix + '" autocomplete="off" ' +
-      'aria-label="Item name to check (optional \u2014 leave blank to list every item)" ' +
-      'placeholder="Item (optional — blank lists everything)" oninput="eligInput_(this)">' +
-    '<div class="kb-ins-results" id="kb-elig-results' + suffix + '"></div>';
-}
-
-function eligInput_(inp) {
-  var suffix = /-d$/.test(inp.id) ? '-d' : '';
-  var addrEl = document.getElementById('kb-elig-addr' + suffix);
-  var itemEl = document.getElementById('kb-elig-item' + suffix);
-  var addr = addrEl ? String(addrEl.value || '').trim() : '';
-  var item = itemEl ? String(itemEl.value || '').trim() : '';
-  if (KB_ELIG.timer) clearTimeout(KB_ELIG.timer);
-  var host = document.getElementById('kb-elig-results' + suffix);
-  // A geocode is a real round trip, so the threshold is higher than the payor
-  // lookup's and the debounce longer — a rep types a full address, not a stem.
-  if (addr.length < 4) { ++KB_ELIG.seq; if (host) host.innerHTML = ''; return; }
-  KB_ELIG.timer = setTimeout(function () {
-    var mySeq = ++KB_ELIG.seq;
-    if (host) host.innerHTML = '<div class="kb-ins-more">Checking…</div>';
+  // A geocode is a real round trip, so the address path waits longer.
+  KB_OOP.timer = setTimeout(function () {
+    var mySeq = ++KB_OOP.seq;
+    if (host) host.innerHTML = '<div class="kb-ins-more">' + (wantElig ? 'Checking…' : 'Searching…') + '</div>';
+    if (!wantElig) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (mySeq !== KB_OOP.seq) return;
+          oopRenderResults_(suffix, { item: item, addr: '', elig: false }, res);
+        })
+        .withFailureHandler(function (err) {
+          if (mySeq !== KB_OOP.seq) return;
+          var h = document.getElementById('kb-oop-results' + suffix);
+          if (h) h.innerHTML = errorStateHtml_((err && err.message) || 'Lookup failed.');
+        })
+        .searchOopPricing(item);
+      return;
+    }
     google.script.run
       .withSuccessHandler(function (res) {
-        if (mySeq !== KB_ELIG.seq) return;
-        eligRenderResults_(suffix, addr, res);
+        if (mySeq !== KB_OOP.seq) return;
+        if (res && res.error && item.length >= 2) { oopDegraded_(suffix, mySeq, item, res.error); return; }
+        oopRenderResults_(suffix, { item: item, addr: addr, elig: true }, res);
       })
       .withFailureHandler(function (err) {
-        if (mySeq !== KB_ELIG.seq) return;
-        var h = document.getElementById('kb-elig-results' + suffix);
-        if (h) h.innerHTML = errorStateHtml_((err && err.message) || 'Eligibility check failed.');
+        if (mySeq !== KB_OOP.seq) return;
+        var msg = (err && err.message) || 'Eligibility check failed.';
+        if (item.length >= 2) { oopDegraded_(suffix, mySeq, item, msg); return; }
+        var h = document.getElementById('kb-oop-results' + suffix);
+        if (h) h.innerHTML = errorStateHtml_(msg);
       })
       .checkOopEligibility(addr, item);
-  }, 700);
+  }, wantElig ? 700 : 350);
+}
+
+/** The address produced no verdict, but the ITEM still has an answer.
+ *
+ *  This exists BECAUSE of the merge. As two panels, a geocoder outage cost the
+ *  rep eligibility and nothing else — the price was still on screen in the
+ *  panel above. Merged naively the same outage blanks the whole panel and
+ *  takes the prices with it, which is a capability LOST to a layout change.
+ *  So an eligibility failure falls back to the price-only answer and states
+ *  the failure as a failure, above the prices it did not stop.
+ *
+ *  The message is the SERVER's, verbatim: it is the only thing that knows
+ *  whether the address was not found or the service could not be reached, and
+ *  those send a rep to two different next actions (g128). The banner says no
+ *  verdict was reached — it never asserts which of the two happened, because
+ *  from here that is not observable.
+ *
+ *  `mySeq` is carried in rather than re-minted: this is the SAME keystroke
+ *  still being answered, so a newer one must still win. */
+function oopDegraded_(suffix, mySeq, item, why) {
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (mySeq !== KB_OOP.seq) return;
+      oopRenderResults_(suffix, { item: item, addr: '', elig: false, degraded: why }, res);
+    })
+    .withFailureHandler(function () {
+      if (mySeq !== KB_OOP.seq) return;
+      var h = document.getElementById('kb-oop-results' + suffix);
+      if (h) h.innerHTML = errorStateHtml_(why);
+    })
+    .searchOopPricing(item);
+}
+
+/** EVERY priced column, labelled when there is more than one.
+ *
+ *  The operator's sheet carries pick-up / with-shipping / with-tech-delivery
+ *  totals for one item and all three are correct, for different fulfilments.
+ *  Showing only the first answers "how much is it?" with the number that is
+ *  right solely for a customer collecting in person.
+ *
+ *  A MISSING price is called out rather than rendered as an empty cell: a
+ *  blank where a number belongs reads as free, or as nothing to say.
+ *
+ *  The `price` fallback covers a payload that carries only the scalar — an
+ *  older deployment answering a newer client. It renders that one price
+ *  unlabelled, which is exactly what it is, rather than showing nothing. */
+function oopPriceHtml_(m) {
+  var prices = (m.prices && m.prices.length) ? m.prices
+    : (String(m.price || '').trim() ? [{ label: '', value: m.price }] : []);
+  if (!prices.length) {
+    return '<span class="kb-oop-price none" title="This row has no price in the pricing sheet. Do not quote it.">no price on file</span>';
+  }
+  return prices.map(function (pr) {
+    return '<span class="kb-oop-price">' +
+      (prices.length > 1 ? '<span class="kb-oop-price-lbl">' + esc(pr.label) + '</span> ' : '') +
+      esc(pr.value) + '</span>';
+  }).join(' ');
+}
+
+/** ONE row, for BOTH endpoints. The verdicts are drawn when the payload has
+ *  them and omitted when it does not — that is the ONLY difference between a
+ *  price-lookup row and an eligibility row, and keeping it the only difference
+ *  is the point of this function existing. */
+function oopItemRowHtml_(m) {
+  var bits = [];
+  if (m.code) bits.push(esc(m.code));
+  if (m.effective) bits.push('effective ' + esc(m.effective));
+  if (m.eligibility) bits.push('area: ' + esc(m.eligibility));
+  (m.details || []).forEach(function (d) { bits.push(esc(d.label) + ': ' + esc(d.value)); });
+  return '<div class="kb-ins-row">' +
+    '<div class="kb-ins-name">' + esc(m.name) + ' ' + oopPriceHtml_(m) + '</div>' +
+    (bits.length ? '<div class="kb-ins-meta">' + bits.join(' · ') + '</div>' : '') +
+    ((m.insurance || m.oop)
+      ? eligVerdictHtml_('Through insurance', m.insurance) +
+        eligVerdictHtml_('Paying out of pocket', m.oop)
+      : '') +
+    '</div>';
 }
 
 /** One verdict pill. The THREE states are visually distinct on purpose: a
  *  yes-with-a-caveat and a flat yes must not look the same, because the caveat
- *  is the whole reason a near-boundary radius answer is not a commitment. */
+ *  is the whole reason a near-boundary radius answer is not a commitment.
+ *
+ *  UNKNOWN is its own thing, never "no". "We cannot tell" and "not eligible"
+ *  send a rep to two different next actions, and the first one is a phone
+ *  call (INV-187). */
 function eligVerdictHtml_(label, v) {
   var verdict = (v && v.verdict) || 'unknown';
   var cls = verdict === 'yes' ? (v.near ? 'maybe' : 'yes') : (verdict === 'no' ? 'no' : 'unknown');
@@ -2603,15 +2704,19 @@ function eligVerdictHtml_(label, v) {
   '</div>';
 }
 
-function eligRenderResults_(suffix, addr, res) {
-  var host = document.getElementById('kb-elig-results' + suffix);
-  if (!host) return;
-  if (!res || res.error) { host.innerHTML = errorStateHtml_((res && res.error) || 'Eligibility check failed.'); return; }
-  if (res.notFound || !(res.items || []).length) {
-    host.innerHTML = '<div class="kb-ins-guide">' + icon('info', 13) + ' No item matched. ' +
-      'Do not check a similar item — confirm the name against the pricing sheet.</div>';
-    return;
-  }
+/** The banner above a degraded result. Empty string when nothing degraded, so
+ *  callers can concatenate it unconditionally. */
+function oopDegradedHtml_(why) {
+  if (!why) return '';
+  return '<div class="kb-oop-degraded">' + icon('warning', 13) +
+    '<span>No eligibility verdict — ' + esc(why) +
+    ' The prices below are still current; confirm delivery before promising it.</span></div>';
+}
+
+/** The location chrome above the rows: where the address resolved to, how far
+ *  the warehouses are, which delivery cities are listed, and every way the
+ *  lookup was incomplete. Only drawn in eligibility mode. */
+function oopEligHeaderHtml_(addr, res) {
   var html = '<div class="kb-ins-more">' + esc(res.formatted || addr) +
     (res.state ? ' · ' + esc(res.state) : '') + '</div>';
   // Warehouse distances, once, above the list — every radius row measures
@@ -2633,9 +2738,9 @@ function eligRenderResults_(suffix, addr, res) {
     html += '<div class="kb-elig-city">' + icon('checkCircle', 12) + ' ' +
       dc.map(function (c) {
         return esc(c.name) + (c.state ? ', ' + esc(c.state) : '') +
-          (c.accepts ? ' \u2014 delivers ' + esc(c.accepts) : ' \u2014 listed delivery city');
-      }).join(' \u00b7 ') +
-      '<span class="kb-elig-city-note">Reference only \u2014 the verdicts below come from the item\u2019s Area Eligibility.</span>' +
+          (c.accepts ? ' — delivers ' + esc(c.accepts) : ' — listed delivery city');
+      }).join(' · ') +
+      '<span class="kb-elig-city-note">Reference only — the verdicts below come from the item’s Area Eligibility.</span>' +
     '</div>';
   }
   // A delivery table that could not be READ is surfaced. Without this, every
@@ -2650,21 +2755,53 @@ function eligRenderResults_(suffix, addr, res) {
       unplaced.map(function (w) { return esc(w.name); }).join(', ') +
       ' — any radius answer involving it is incomplete.</div>';
   }
-  res.items.forEach(function (it) {
-    var price = String(it.price || '').trim();
-    var priceHtml = price
-      ? '<span class="kb-oop-price">' + esc(price) + '</span>'
-      : '<span class="kb-oop-price none" title="This row has no price in the pricing sheet. Do not quote it.">no price on file</span>';
-    html += '<div class="kb-ins-row">' +
-      '<div class="kb-ins-name">' + esc(it.name) + ' ' + priceHtml + '</div>' +
-      (it.eligibility ? '<div class="kb-ins-meta">sheet: ' + esc(it.eligibility) + '</div>' : '') +
-      eligVerdictHtml_('Through insurance', it.insurance) +
-      eligVerdictHtml_('Paying out of pocket', it.oop) +
-      '</div>';
-  });
-  if (res.truncated || res.total > res.items.length) {
-    html += '<div class="kb-ins-more">' + esc(String(res.total)) + ' items — showing ' +
-      esc(String(res.items.length)) + '. Narrow with an item name.</div>';
+  return html;
+}
+
+/** ONE renderer, both endpoints. `ctx.elig` says which payload shape arrived:
+ *  eligibility ships `items` with verdicts, the price lookup ships `matches`
+ *  without them.
+ *
+ *  The two TAIL lines are deliberately NOT shared. `truncated` means different
+ *  things on the two payloads — "more items than the cap" on the eligibility
+ *  check, "the sheet is longer than the scan limit, some rows were never
+ *  searched" on the price lookup — and collapsing them would state one as the
+ *  other. */
+function oopRenderResults_(suffix, ctx, res) {
+  var host = document.getElementById('kb-oop-results' + suffix);
+  if (!host) return;
+  if (!res || res.error) { host.innerHTML = errorStateHtml_((res && res.error) || 'Lookup failed.'); return; }
+  var items = ctx.elig ? (res.items || []) : (res.matches || []);
+  if (res.notFound || !items.length) {
+    // A no-match is stated plainly. The alternative — showing the nearest item
+    // anyway — is how a rep quotes the price of something else.
+    host.innerHTML = oopDegradedHtml_(ctx.degraded) +
+      '<div class="kb-ins-guide">' + icon('info', 13) + ' ' +
+      (ctx.item ? 'No OOP price on file for “' + esc(ctx.item) + '”. ' : 'No items matched. ') +
+      'Check the spelling, or confirm with the team before quoting — do not quote a similar item.</div>';
+    return;
+  }
+  var html = oopDegradedHtml_(ctx.degraded);
+  if (ctx.elig) html += oopEligHeaderHtml_(ctx.addr, res);
+  items.forEach(function (m) { html += oopItemRowHtml_(m); });
+  if (ctx.elig) {
+    if (res.truncated || res.total > items.length) {
+      html += '<div class="kb-ins-more">' + esc(String(res.total)) + ' items — showing ' +
+        esc(String(items.length)) + '. Narrow with an item name.</div>';
+    }
+  } else {
+    if (res.total > items.length) {
+      html += '<div class="kb-ins-more">' + esc(String(res.total)) + ' matches — showing the top ' +
+        esc(String(res.cap)) + '. Narrow the search.</div>';
+    }
+    if (res.truncated) {
+      html += '<div class="kb-ins-more" style="color:var(--warning-deep)">The pricing sheet is longer than the scan limit — some items were not searched.</div>';
+    }
+    // The address is the difference between a price and a promise, so the
+    // panel says so rather than leaving the empty field to imply it.
+    if (!ctx.degraded) {
+      html += '<div class="kb-ins-more">Add an address or ZIP to check delivery eligibility for these items.</div>';
+    }
   }
   host.innerHTML = html;
 }
@@ -2770,9 +2907,16 @@ function kbRenderLanding_() {
   // Insurance lookup (operator 2026-08-25) — the mid-call payor check, ahead
   // of the content blocks. The typed query is transient (a re-render clears
   // it) — the lookup is a point question, not state worth persisting.
-  h += '<div class="kb-land-sec">' + insLookupSecHtml_('') + '</div>';
-  h += '<div class="kb-land-sec">' + oopLookupSecHtml_('') + '</div>';
-  h += '<div class="kb-land-sec">' + eligSecHtml_('') + '</div>';
+  // TWO panels side by side, not a stack. Three stacked lookups pushed
+  // Bookmarks, Recents, Most used and Review due entirely below the fold — the
+  // landing read as a form rather than as the tool it is. The grid lives HERE,
+  // in the host, never inside the section renderers: the drawer shares those
+  // renderers and is far too narrow for columns, so putting the layout in the
+  // host is what lets one section serve both widths unchanged.
+  h += '<div class="kb-lookups">' +
+    '<div class="kb-lookup-card">' + insLookupSecHtml_('') + '</div>' +
+    '<div class="kb-lookup-card">' + oopLookupSecHtml_('') + '</div>' +
+  '</div>';
 
   // #5 — Bookmarks (all users). Explicit favorites, above the auto Recents.
   var bookmarks = prefs.bookmarks || [];
@@ -2867,6 +3011,17 @@ function kbRenderLanding_() {
             'onclick="kbMarkReviewedClick_(this.getAttribute(\'data-kb-id\'))">' + icon('check', 13) + ' Reviewed</button>' +
         '</div>';
       });
+      // F-25: a partial read (items present, a count source missing) says which.
+      // It belongs INSIDE the section, exactly like its Most-used twin. Emitted
+      // after the section closed, it was a direct child of `.kb-land` and only
+      // LOOKED aligned because the landing and its sections were both 760px
+      // wide; widening the landing for the two-panel band renders this one
+      // warning at the full band width, out of line with the queue it is about.
+      // Found by the R-6 pin below, which exists to make a block outside a
+      // section impossible rather than noticed.
+      if (KB_STATE.reviewDue && (KB_STATE.reviewDue.unavailable || []).length) {
+        h += '<div class="kb-land-none">' + icon('warning', 12) + ' Could not read: ' + esc(KB_STATE.reviewDue.unavailable.join(', ')) + ' — the queue above may be incomplete.</div>';
+      }
       h += '</div>';
     } else if (KB_STATE.reviewDue && KB_STATE.reviewDue.loadFailed) {
       // E11 — a failed load must not look like an empty queue: the review-due
@@ -2879,9 +3034,6 @@ function kbRenderLanding_() {
       // whose stale-flag read died is not "nothing due".
       h += '<div class="kb-land-sec"><div class="kb-land-h">Review due</div>' +
         '<div class="kb-land-none">' + icon('warning', 12) + ' Could not read: ' + esc(KB_STATE.reviewDue.unavailable.join(', ')) + ' — the queue may be incomplete.</div></div>';
-    }
-    if (rd.length && KB_STATE.reviewDue && (KB_STATE.reviewDue.unavailable || []).length) {
-      h += '<div class="kb-land-none">' + icon('warning', 12) + ' Could not read: ' + esc(KB_STATE.reviewDue.unavailable.join(', ')) + ' — the queue above may be incomplete.</div>';
     }
   }
 
@@ -4349,7 +4501,6 @@ function kbDrawerRenderHome_() {
   // Insurance lookup (operator 2026-08-25) — same shared section, drawer host.
   html += '<div class="kbd-sec">' + insLookupSecHtml_('-d') + '</div>';
   html += '<div class="kbd-sec">' + oopLookupSecHtml_('-d') + '</div>';
-  html += '<div class="kbd-sec">' + eligSecHtml_('-d') + '</div>';
   var bookmarks = prefs.bookmarks || [];   // #5
   if (bookmarks.length) {
     html += '<div class="kbd-sec">Bookmarks</div>';

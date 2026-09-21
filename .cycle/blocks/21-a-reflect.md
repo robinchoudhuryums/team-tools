@@ -1,0 +1,11 @@
+---CYCLE SUMMARY BLOCK---
+Scope: Client (Reference views), Server (KB/OOP), Test Suite, Cycle machinery | Cycle: 21 / 2026-09-21
+Production fixes: 2 — severity: 1 High (the prices[0] defect: the delivery surface quoted the pick-up price, live on prod for a working day), 1 Low (unlabelled twin inputs — an interface defect on a path reps hit)
+New capabilities/features: 1 (the two-panel Reference landing, which puts Bookmarks / Recents / Most used / Review due back above the fold)
+Defensive/structural: 9 (R-2 the one row renderer · R-3 the degraded fallback · R-4 the band CSS · R-6 the landing-block pin and the orphan it found · F1 the coerced-column nets + derived half · F2 H-1 and serverCallersOf · F3 the stale pointers · F4 id uniqueness · F5 the ratchet)
+New failure modes: 1 — severity: 1 Low (R-3's degraded path issues a SECOND RPC, so a failing address during rapid typing roughly doubles requests on that path; bounded by the seq check, failing path only, but pre-merge no second RPC was issued)
+Net score: 2 − 1 = 1
+Invariant candidates: INV-229 (a net that enumerates what it guards is paired with a DERIVED check running the other way; the guarded set itself is never derived from the code it guards) · INV-230 (every Regression Scenario and Invariant id in .cycle/config.md is unique, and a RESERVED number stays absent from the library while STATE.md holds it) · INV-231 (every live invariant from INV-139 up names its verification, in any of the three phrasings in use; deliberately-vacant numbers are exempt by shape) · INV-232 (a section shared by hosts of different widths sizes off its CONTAINER — a viewport rule and a pop-out rule both pass in the ~340px drawer on a 1920px desktop) · AMENDMENT to INV-213 (one resolver and one scorer are not enough: two readers of ONE operator tab must also ship the same payload SHAPE and render through ONE function)
+Most structurally significant change: the two-sided net shape — an explicit guarded set plus a derived check running the other way — which retires a drift class this project had already patched by hand twice and could not have derived its way out of.
+Should-have-been-deferred: F2 as the audit scoped it. Five of its six reported instances were the audit's own error, and re-deriving that consumed more of the batch than the one real fix did.
+---END CYCLE SUMMARY BLOCK---

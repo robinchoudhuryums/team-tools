@@ -2597,7 +2597,7 @@ test('OOP-A DOM: the price lookup rides both hosts; a no-match refuses to offer 
   // is asserted from its section builder rather than by opening the drawer —
   // opening it would test the drawer's plumbing, which is not what this pin is
   // about, and would pass just as well with the section unmounted.
-  assert.ok(h.$('#kb-oop-input'), 'the Reference landing carries the lookup');
+  assert.ok(h.$('#kb-oop-item'), 'the Reference landing carries the lookup');
   // Drive the drawer's HOME RENDERER, not the section builder. The first
   // version of this assertion called oopLookupSecHtml_('-d') directly — and a
   // bite-check that DELETED the mount line left it green, because the builder
@@ -2607,10 +2607,10 @@ test('OOP-A DOM: the price lookup rides both hosts; a no-match refuses to offer 
   kbdBody.id = 'kbd-body';
   h.window.document.body.appendChild(kbdBody);
   h.read('kbDrawerRenderHome_')();
-  assert.ok(kbdBody.querySelector('#kb-oop-input-d'),
+  assert.ok(kbdBody.querySelector('#kb-oop-item-d'),
     'the drawer home MOUNTS the lookup — the drawer IS the mid-call surface');
 
-  const inp = h.$('#kb-oop-input');
+  const inp = h.$('#kb-oop-item');
   inp.value = 'widget';
   h.read('oopLookupInput_')(inp);
   h.flushTimers();
@@ -3097,31 +3097,31 @@ test('ELIG DOM: both verdicts render, labelled, on both hosts — a near-boundar
   h.window.enterTool('reference', 'reference');
   h.flushTimers();
 
-  assert.ok(h.$('#kb-elig-addr'), 'the Reference landing carries the eligibility check');
+  assert.ok(h.$('#kb-oop-addr'), 'the Reference landing carries the eligibility check');
   // The drawer host, driven through its HOME RENDERER — the OOP-A lesson: a
   // pin that calls the section builder directly cannot see the mount deleted.
   const kbdBody = h.window.document.createElement('div');
   kbdBody.id = 'kbd-body';
   h.window.document.body.appendChild(kbdBody);
   h.read('kbDrawerRenderHome_')();
-  assert.ok(kbdBody.querySelector('#kb-elig-addr-d'), 'and the drawer MOUNTS it — the drawer is the mid-call surface');
+  assert.ok(kbdBody.querySelector('#kb-oop-addr-d'), 'and the drawer MOUNTS it — the drawer is the mid-call surface');
 
   // A geocode is a real round trip, so a stem must not fire one.
-  const addr = h.$('#kb-elig-addr');
+  const addr = h.$('#kb-oop-addr');
   addr.value = 'aus';
-  h.read('eligInput_')(addr);
+  h.read('oopLookupInput_')(addr);
   h.flushTimers();
   await tick();
   assert.strictEqual(asked, null, 'three characters does not fire a geocode');
 
   addr.value = '500 Main St, Austin TX';
-  h.read('eligInput_')(addr);
+  h.read('oopLookupInput_')(addr);
   h.flushTimers();
   await tick(); await tick();
   assert.strictEqual(asked.addr, '500 Main St, Austin TX', 'the address reaches the server verbatim');
   assert.strictEqual(asked.item, '', 'a blank item means "list everything"');
 
-  const host = h.$('#kb-elig-results');
+  const host = h.$('#kb-oop-results');
   const txt = host.textContent;
 
   // BOTH verdicts, LABELLED. An unlabelled pair is worse than one answer.
@@ -3201,10 +3201,10 @@ test('ELIG DOM: both verdicts render, labelled, on both hosts — a near-boundar
       oop:       { verdict: 'unknown', near: false, why: 'cannot read' } }],
   }));
   addr.value = '500 Main St, Austin TX';
-  h.read('eligInput_')(addr);
+  h.read('oopLookupInput_')(addr);
   h.flushTimers();
   await tick(); await tick();
-  const missing = h.$('#kb-elig-results').textContent;
+  const missing = h.$('#kb-oop-results').textContent;
   assert.ok(/LocationAcceptance/.test(missing),
     'an unreadable delivery table NAMES the tab to create, rather than leaving every radius rule reading "cannot tell"');
   assert.ok(/Radius Item/.test(missing), 'and the items still render around it');
@@ -3212,10 +3212,263 @@ test('ELIG DOM: both verdicts render, labelled, on both hosts — a near-boundar
   // A failed geocode is an ERROR, never an empty eligible list — the two look
   // identical on screen and only one means "do not sell this here".
   addr.value = '00000';
-  h.read('eligInput_')(addr);
+  h.read('oopLookupInput_')(addr);
   h.flushTimers();
   await tick(); await tick();
-  const err = h.$('#kb-elig-results').textContent;
+  const err = h.$('#kb-oop-results').textContent;
   assert.ok(/Could not find that location/.test(err), 'the failure is surfaced');
   assert.ok(!/Open Item|State Item/.test(err), 'and no prior result bleeds through it');
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+section('R — the two-panel restructure (operator 2026-09-18)');
+
+/** The merged panel on the Reference landing, with both endpoints stubbed. */
+function bootLookups(h) {
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  h.run.respond('getReferenceTree', () => ({ items: [], isAdmin: true, isManager: true, departments: [] }));
+  h.window.enterTool('reference', 'reference');
+  h.flushTimers();
+}
+
+test('R DOM: the eligibility answer renders EVERY priced column, labelled — the delivery surface was drawing prices[0], which on the operator sheet is the PICK-UP total', async () => {
+  const h = boot();
+  let asked = null;
+  h.run.respond('checkOopEligibility', (addr, item) => {
+    asked = { addr: addr, item: item };
+    return {
+      success: true, formatted: 'Dallas, TX 75201, USA', state: 'TX', total: 1,
+      warehouses: [{ name: 'Dallas', miles: 4.1 }],
+      items: [{
+        name: 'Semi-Electric Hospital Bed', code: 'E0294', effective: '2026-09-01',
+        price: '$890.00',
+        prices: [{ label: 'Pick-up', value: '$890.00' },
+                 { label: 'W/ Shipping', value: '$1,040.00' },
+                 { label: 'W/ Tech Delivery', value: '$1,190.00' }],
+        eligibility: '60 miles of Dallas', rule: 'radius', details: [{ label: 'Weight cap', value: '450 lb' }],
+        insurance: { verdict: 'yes', near: false, why: 'within 60 mi of Dallas' },
+        oop: { verdict: 'yes', near: false, why: 'within 60 mi of Dallas' },
+      }],
+    };
+  });
+  bootLookups(h);
+
+  // BOTH fields feed one call — the item is no longer a second panel's field.
+  h.$('#kb-oop-item').value = 'hospital bed';
+  h.$('#kb-oop-addr').value = '75201';
+  h.read('oopLookupInput_')(h.$('#kb-oop-addr'));
+  h.flushTimers();
+  await tick(); await tick();
+  assert.deepStrictEqual(asked, { addr: '75201', item: 'hospital bed' },
+    'one panel, one call, both fields');
+
+  const row = h.$('#kb-oop-results .kb-ins-row');
+  assert.ok(row, 'the item rendered');
+  const prices = Array.from(row.querySelectorAll('.kb-oop-price'));
+  assert.strictEqual(prices.length, 3,
+    'ALL THREE priced columns render — one span here was the defect, and it was the pick-up price');
+  assert.ok(/\$1,190\.00/.test(row.textContent),
+    'including the TECH DELIVERY total, which is the one a delivery question is actually about');
+  assert.strictEqual(row.querySelectorAll('.kb-oop-price-lbl').length, 3,
+    'each carries the column label it came from — three bare numbers would be worse than one');
+  ['Pick-up', 'W/ Shipping', 'W/ Tech Delivery'].forEach((lbl) => {
+    assert.ok(new RegExp(lbl.replace('/', '\\/')).test(row.textContent), 'labelled: ' + lbl);
+  });
+
+  // ONE renderer means the eligibility row keeps everything the price row had.
+  assert.ok(/E0294/.test(row.textContent), 'the code rides it');
+  assert.ok(/effective 2026-09-01/.test(row.textContent), 'and the effective date — a commitment needs its as-of');
+  assert.ok(/Weight cap: 450 lb/.test(row.textContent), 'and an unrecognised column still rides along verbatim');
+  assert.strictEqual(row.querySelectorAll('.kb-elig-v').length, 2, 'with both verdicts still on it');
+});
+
+test('R DOM: an address that produces no verdict does NOT take the prices with it — the panel degrades to the price answer and states that no verdict was reached', async () => {
+  const h = boot();
+  let priceAsked = null;
+  h.run.respond('checkOopEligibility', () => ({ error: 'Address lookup is temporarily unavailable (daily quota reached).' }));
+  h.run.respond('searchOopPricing', (q) => {
+    priceAsked = q;
+    return { cap: 8, total: 1, matches: [{ name: 'Widget', price: '$129.00',
+      prices: [{ label: '', value: '$129.00' }], effective: '2026-09-01', details: [] }] };
+  });
+  bootLookups(h);
+
+  h.$('#kb-oop-item').value = 'widget';
+  h.$('#kb-oop-addr').value = '75201';
+  h.read('oopLookupInput_')(h.$('#kb-oop-addr'));
+  h.flushTimers();
+  await tick(); await tick(); await tick(); await tick();
+
+  // As two panels a geocoder outage cost the rep eligibility and nothing else,
+  // because the price sat in the panel above. Merged, the same outage must not
+  // become "the panel is empty" — that would be a capability lost to a layout.
+  assert.strictEqual(priceAsked, 'widget', 'the item is re-asked of the PRICE endpoint');
+  const out = h.$('#kb-oop-results');
+  assert.ok(/\$129\.00/.test(out.textContent), 'and the price still answers');
+  const banner = out.querySelector('.kb-oop-degraded');
+  assert.ok(banner, 'with the failure stated above it');
+  assert.ok(/No eligibility verdict/.test(banner.textContent), 'as an absence of a verdict');
+  assert.ok(/daily quota reached/.test(banner.textContent),
+    'carrying the SERVER’s reason verbatim — only it knows whether the address was wrong or the service was down (g128)');
+  assert.ok(/still current/.test(banner.textContent), 'and it does not disown the prices below it');
+  assert.strictEqual(out.querySelectorAll('.kb-elig-v').length, 0,
+    'no verdict is invented to fill the gap — an UNKNOWN pill here would read as a checked answer');
+
+  // An address with NO item has nothing to degrade to, so it stays an error.
+  h.$('#kb-oop-item').value = '';
+  h.$('#kb-oop-addr').value = '99999';
+  h.read('oopLookupInput_')(h.$('#kb-oop-addr'));
+  h.flushTimers();
+  await tick(); await tick(); await tick(); await tick();
+  assert.ok(/daily quota reached/.test(h.$('#kb-oop-results').textContent), 'the failure is still surfaced');
+  assert.strictEqual(h.$('#kb-oop-results .kb-oop-degraded'), null,
+    'but not dressed as a degraded PRICE answer, because there are no prices to show');
+
+  // The OTHER failure channel: an RPC that THROWS rather than returning a
+  // structured {error} — a script timeout, a transport drop. It is separate
+  // code with a separate guard, and nothing drove it: a bite-check that removed
+  // the item guard from the failure handler came back NO BITE while the same
+  // removal on the success branch bit. Two guards need two pieces of evidence.
+  h.run.clearResponder('checkOopEligibility');
+  h.$('#kb-oop-item').value = 'widget';
+  h.$('#kb-oop-addr').value = '75201';
+  h.read('oopLookupInput_')(h.$('#kb-oop-addr'));
+  h.flushTimers();
+  h.run.flushFailure(new Error('Script timed out.'), 'checkOopEligibility');
+  await tick(); await tick(); await tick(); await tick();
+  const thrown = h.$('#kb-oop-results');
+  assert.ok(thrown.querySelector('.kb-oop-degraded'), 'a thrown RPC degrades the same way');
+  assert.ok(/Script timed out/.test(thrown.textContent), 'naming what threw');
+  assert.ok(/\$129\.00/.test(thrown.textContent), 'and the price still answers');
+
+  // With no item, a throw stays an error rather than becoming a degraded price
+  // answer with no prices in it.
+  h.run.clearResponder('checkOopEligibility');
+  h.$('#kb-oop-item').value = '';
+  h.$('#kb-oop-addr').value = '75201';
+  h.read('oopLookupInput_')(h.$('#kb-oop-addr'));
+  h.flushTimers();
+  h.run.flushFailure(new Error('Script timed out.'), 'checkOopEligibility');
+  await tick(); await tick(); await tick(); await tick();
+  assert.ok(/Script timed out/.test(h.$('#kb-oop-results').textContent), 'the throw is surfaced');
+  assert.strictEqual(h.$('#kb-oop-results .kb-oop-degraded'), null,
+    'and not dressed as a degraded price answer with nothing in it');
+});
+
+test('R DOM: an item alone still answers, and says what the address would add', async () => {
+  const h = boot();
+  h.run.respond('searchOopPricing', () => ({ cap: 8, total: 1, matches: [
+    { name: 'Rollator', price: '$189.00', prices: [{ label: '', value: '$189.00' }], effective: '2026-09-01', details: [] }] }));
+  bootLookups(h);
+
+  h.$('#kb-oop-item').value = 'rollator';
+  h.read('oopLookupInput_')(h.$('#kb-oop-item'));
+  h.flushTimers();
+  await tick(); await tick();
+
+  const out = h.$('#kb-oop-results');
+  assert.ok(/\$189\.00/.test(out.textContent), 'the price answers with no address typed');
+  assert.strictEqual(out.querySelectorAll('.kb-elig-v').length, 0,
+    'and NO verdict is drawn — nothing was checked, so nothing may look checked');
+  assert.ok(/Add an address/.test(out.textContent),
+    'the panel says what the empty field would buy, rather than leaving it to be inferred');
+  // A single unlabelled price stays unlabelled: the label earns its place only
+  // when there is a choice between columns to make.
+  assert.strictEqual(out.querySelectorAll('.kb-oop-price-lbl').length, 0,
+    'one price needs no column label');
+});
+
+test('R DOM: the landing lays the two lookups side by side in one band; the drawer keeps them stacked, and the third panel is gone from both', async () => {
+  const h = boot();
+  bootLookups(h);
+
+  const band = h.$('.kb-lookups');
+  assert.ok(band, 'the landing wraps the lookups in one band');
+  assert.strictEqual(band.querySelectorAll('.kb-lookup-card').length, 2, 'holding exactly two panels');
+  assert.ok(band.querySelector('#kb-ins-input'), 'insurance in one');
+  assert.ok(band.querySelector('#kb-oop-item') && band.querySelector('#kb-oop-addr'),
+    'item and address in the other');
+  assert.strictEqual(h.$('#kb-elig-item'), null, 'and the separate eligibility panel is gone');
+
+  // The content blocks the three stacked panels used to push below the fold are
+  // now siblings of the band rather than of three panels.
+  assert.ok(h.$('.kb-land'), 'the landing still renders its content blocks');
+
+  // The DRAWER shares the section renderers and must NOT take the band: it is
+  // ~340px wide, where two columns would be 160px each.
+  const kbdBody = h.window.document.createElement('div');
+  kbdBody.id = 'kbd-body';
+  h.window.document.body.appendChild(kbdBody);
+  h.read('kbDrawerRenderHome_')();
+  assert.ok(kbdBody.querySelector('#kb-oop-item-d') && kbdBody.querySelector('#kb-oop-addr-d'),
+    'the drawer MOUNTS the merged panel — the drawer is the mid-call surface');
+  assert.strictEqual(kbdBody.querySelector('.kb-lookups'), null,
+    'but takes no columns — the band belongs to the landing host, not to the shared section');
+});
+
+test('R DOM: both fields are named by a visible label bound to their own input — the item field used to name itself with an aria-label whose placeholder vanished once filled', async () => {
+  const h = boot();
+  bootLookups(h);
+  [['kb-oop-item', 'Item'], ['kb-oop-addr', 'Address or ZIP']].forEach(([id, text]) => {
+    const input = h.$('#' + id);
+    assert.ok(input, id + ' is on the page');
+    const label = h.window.document.querySelector('label[for="' + id + '"]');
+    assert.ok(label, id + ' has a <label for> of its own');
+    assert.ok(new RegExp(text).test(label.textContent), 'reading "' + text + '"');
+    assert.ok(!input.getAttribute('aria-label'),
+      'and it does not fall back to an aria-label, which no sighted rep can read');
+  });
+  // The optional one SAYS it is optional, in the label rather than only in the
+  // placeholder — the placeholder is gone the moment the field is filled.
+  const addrLabel = h.window.document.querySelector('label[for="kb-oop-addr"]');
+  assert.ok(/optional/.test(addrLabel.textContent), 'the address label says it is optional');
+});
+
+test('R-6: every block on the Reference landing is a SECTION or the band — nothing can render at the band’s width by accident', async () => {
+  const h = boot();
+  // Seed the per-browser prefs so Bookmarks and Recents render too — a pin that
+  // only ever sees two blocks is not checking the rule for the other five.
+  h.window.localStorage.setItem(h.read('KB_PANEL_LS_KEY'), JSON.stringify({
+    bookmarks: [{ id: 'a1', title: 'OOP quoting rules' }],
+    recents: [{ id: 'a2', title: 'Delivery radius by warehouse' }],
+  }));
+  bootLookups(h);
+
+  const st = h.read('KB_STATE');
+  st.isManager = true;
+  // Every manager block, and deliberately the PARTIAL-READ branches — the one
+  // orphan this pin found was reachable only with items present AND a count
+  // source missing, which is the branch a happy-path fixture never enters.
+  st.usage = { items: [{ id: 'a1', title: 'OOP quoting rules', count: 22, drawerCount: 9 }], unavailable: ['KbViews'] };
+  st.reviewDue = { items: [{ id: 'a2', title: 'Delivery radius by warehouse', ageDays: 120, views: 14, staleFlags: 0 }],
+    total: 1, dueDays: 90, unavailable: ['KbFeedback'] };
+  st.contentRequests = { loadFailed: true };
+  h.read('kbRenderLanding_')();
+
+  const land = h.$('.kb-land');
+  assert.ok(land, 'the landing rendered');
+  const kids = Array.from(land.children);
+  assert.ok(kids.length >= 5, 'several blocks rendered — found ' + kids.length +
+    ', so the assertion below is about a real landing rather than an empty one');
+
+  // THE RULE. `.kb-land` is 1200px so the two-panel band has room; its sections
+  // keep the 760px reading measure. A block that is neither renders at the band
+  // width, out of line with everything around it — and the two widths were
+  // identical before the band, so nothing before this pin could have caught it.
+  const stray = kids.filter((el) => !el.classList.contains('kb-land-sec') && !el.classList.contains('kb-lookups'));
+  assert.deepStrictEqual(stray.map((e) => e.className + ' :: ' + e.textContent.slice(0, 60)), [],
+    'every landing block is a .kb-land-sec or the .kb-lookups band');
+
+  // And the band is there exactly once, first.
+  assert.strictEqual(kids.filter((e) => e.classList.contains('kb-lookups')).length, 1, 'one band');
+  assert.ok(kids[0].classList.contains('kb-lookups'), 'and it leads — the lookups are why a rep opens this tool');
+
+  // The partial-read warning that was the orphan now sits inside the queue it
+  // is about, where a reader can tell WHICH list is incomplete.
+  const rdSec = kids.filter((e) => /Review due/.test(e.textContent))[0];
+  assert.ok(rdSec, 'the review-due section rendered');
+  assert.ok(/KbFeedback/.test(rdSec.textContent),
+    'its partial-read warning is INSIDE it — loose on the landing it named no list');
+  assert.ok(/queue above may be incomplete/.test(rdSec.textContent), 'and still says what it means');
 });

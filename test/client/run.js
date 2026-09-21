@@ -12,7 +12,7 @@ const assert = require('assert');
 const vm = require('vm');
 const fs = require('fs');
 const path = require('path');
-const { buildSandbox, loadFunction, extractScript, extractRawFunction, extractFunction, serverFiles, serverSource, isServerFile, serverDecls } = require('./harness');
+const { buildSandbox, loadFunction, extractScript, extractRawFunction, extractFunction, serverFiles, serverSource, isServerFile, serverDecls, serverCallersOf } = require('./harness');
 
 let pass = 0, fail = 0;
 function test(name, fn) {
@@ -987,12 +987,39 @@ test('C9 M-11: coachCanManagerSee_ — creator OR roster column-M manager; blank
     'a missing roster row denies (fail-closed)');
 });
 test('TRIPWIRE (H-1): coaching overdue consumers use coachParseTs_, never the T-only parseTimestampMs_', () => {
-  ['getCoachingDashboard', 'coachUnackedAll_', 'getMyCoaching', 'coachRecapBuckets_'].forEach((fn) => {
+  // `coachAnalytics_` joined the list in the 2026-09-18 seams batch. It was a
+  // genuine fifth consumer, parsing createdAt through the right helper, and
+  // nothing guarded it — this pin is the one enumerated-reader check in the
+  // sample with NO global-scan sibling, so a sixth consumer on the wrong parser
+  // would have been invisible. The completeness assert below is the sibling.
+  const GUARDED = ['getCoachingDashboard', 'coachUnackedAll_', 'getMyCoaching',
+    'coachRecapBuckets_', 'coachAnalytics_'];
+  GUARDED.forEach((fn) => {
     const src = extractRawFunction('Code.js', fn);
     assert.ok(/coachParseTs_\(/.test(src), fn + ' parses createdAt via coachParseTs_');
     assert.ok(!/parseTimestampMs_\(/.test(src),
       fn + ' must NOT use parseTimestampMs_ on the space-form CreatedAt stamp — it returns null for every row (overdue detection silently dead)');
   });
+
+  // THE DERIVED HALF. A hand-list only asserts about the functions it already
+  // names, so it cannot see a consumer nobody added — which is exactly how
+  // coachAnalytics_ sat unguarded. Derive the caller set and require the list
+  // to account for all of it.
+  //
+  // `automationDetectorChecks_` is EXEMPT, and the exemption is the point
+  // rather than a convenience: it is the runtime self-check that deliberately
+  // drives BOTH parsers to prove each still works, so it must call the very
+  // function this pin bans in a consumer. Listing it would fail the ban;
+  // dropping it from the derivation silently would hide a real consumer if it
+  // ever became one. Naming it here keeps both facts visible.
+  const EXEMPT = ['automationDetectorChecks_'];
+  const callers = serverCallersOf('coachParseTs_');
+  assert.ok(callers.length >= 5,
+    'the derivation found real callers, not an empty set (g116) — found: ' + JSON.stringify(callers));
+  const unaccounted = callers.filter((fn) => GUARDED.indexOf(fn) < 0 && EXEMPT.indexOf(fn) < 0);
+  assert.deepStrictEqual(unaccounted, [],
+    'coachParseTs_ caller(s) this pin does not guard — add them to GUARDED (or to ' +
+    'EXEMPT with a reason, as automationDetectorChecks_ has)');
 });
 
 console.log('\nCode.js — sanitizeCallNotePayload_ subformData whitelist (cycle 7 · M-15)');
@@ -1058,6 +1085,29 @@ console.log('\nCode.js — sanitizeCallNotePayload_ subformData whitelist (cycle
   });
 }
 
+// ── The coerced-column boundary: ONE declaration, two scans, one completeness
+// assert (seams audit 2026-09-18, F1) ──────────────────────────────────────
+// Sheets hands back a Date (or a native boolean) for these columns, so every
+// read needs its recovery helper. Two global scans below enforce that; this is
+// the set they enforce it over, written ONCE so the two cannot drift apart.
+//
+// WHY THE SET IS WRITTEN OUT AND NOT DERIVED. The obvious move — "the guarded
+// set is whatever columns a recovery helper is applied to" — is SELF-DEFEATING:
+// delete the last `cnDateLocalString_(row[CN.DATE_LOCAL])` call and the column
+// leaves the derived set at the same moment the raw read appears, so the net
+// goes quiet exactly when the defect lands. The explicit list keeps the column
+// under guard whatever the code does.
+//
+// The DERIVED half is the other direction, and it is the pin right after the
+// AUDIT scan: every column some recovery helper touches must appear here. That
+// catches the drift that actually happened — a new guarded column nobody added
+// to the net — without the self-defeating property. Both directions covered.
+const COERCED_AUDIT_COLS = ['TS', 'PUNCH_DATE', 'PUNCH_TIME', 'IS_ADJUSTMENT'];
+const COERCED_CN_COLS = ['TIMESTAMP', 'EMAILED_AT', 'DATE_LOCAL'];
+// The sanctioned reader for each column — a line calling one of these is exempt.
+const COERCION_RECOVERY_HELPERS = ['normalizeAuditTs_', 'normalizeDate_', 'normalizeTime_',
+  'cnTimestampString_', 'cnDateLocalString_', 'auditRowObj_'];
+
 console.log('\nCode.js — CN Timestamp coercion boundary (INV-142) + kbRowStatus_ (INV-147)');
 test('TRIPWIRE (INV-142): CN Timestamp readers route through cnTimestampString_', () => {
   ['callNoteRowToObject_', 'deleteCallNote', 'getCallNotesAmbient', 'getMyTrainingQA',
@@ -1081,7 +1131,15 @@ test('TRIPWIRE (INV-142, cycle-8 M-15): no NEW raw [CN.TIMESTAMP] reads anywhere
   // COMPARISON read (`row[CN.TIMESTAMP] === x`, a Date-vs-string compare
   // that is always false, exactly the bug class this scan exists for) used
   // to match the `\]\s*=` write shape and pass silently.
-  const SAFE_LINE = /cnTimestampString_\(|CN\.(TIMESTAMP|EMAILED_AT) \+ 1|CN\.(TIMESTAMP|EMAILED_AT)\]\s*=(?!=)|^\s*\/\//;
+  // CN.DATE_LOCAL joins the set (seams audit 2026-09-18, F1). g16 documents it
+  // as Sheets-coerced on read, and it is the MOST recovery-guarded column in
+  // the codebase — fifteen sites route through cnDateLocalString_, more than
+  // every other column combined — yet a raw `row[CN.DATE_LOCAL] === x`
+  // comparison passed this scan (bite-checked). Its sanctioned reader is
+  // cnDateLocalString_, exactly as cnTimestampString_ is TIMESTAMP's.
+  const cnAlt = COERCED_CN_COLS.join('|');
+  const SAFE_LINE = new RegExp('cnTimestampString_\\(|cnDateLocalString_\\(|CN\\.(' + cnAlt +
+    ') \\+ 1|CN\\.(' + cnAlt + ')\\]\\s*=(?!=)|^\\s*//');
   // C1 (cycle 10): reconcileCallNotes now routes through cnTimestampString_
   // like every other reader (its "equivalent" inline guard recovered in the
   // REP's tz, not the sheet's — a real bug, and the whole-line exemption it
@@ -1090,12 +1148,12 @@ test('TRIPWIRE (INV-142, cycle-8 M-15): no NEW raw [CN.TIMESTAMP] reads anywhere
   // locale-coercible ISO-T form (emailFromCallNote's stamp) and its raw read
   // was the one untripwired sibling of this boundary.
   lines.forEach((line, idx) => {
-    if (line.indexOf('[CN.TIMESTAMP]') < 0 && line.indexOf('[CN.EMAILED_AT]') < 0) return;
+    if (!COERCED_CN_COLS.some((c) => line.indexOf('[CN.' + c + ']') >= 0)) return;
     if (SAFE_LINE.test(line)) return;
     offenders.push('line ' + (idx + 1) + ': ' + line.trim());
   });
   assert.deepStrictEqual(offenders, [],
-    'raw [CN.TIMESTAMP]/[CN.EMAILED_AT] read(s) outside the cnTimestampString_ boundary — see INV-142');
+    'raw [CN.TIMESTAMP]/[CN.EMAILED_AT]/[CN.DATE_LOCAL] read(s) outside the cnTimestampString_ / cnDateLocalString_ boundary — see INV-142');
 });
 test('coupling — showView\'s intakeFlushDraftNow_ hook resolves cross-partial (Turn-B seams audit)', () => {
   const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
@@ -1323,10 +1381,22 @@ test('TRIPWIRE (Batch 3): no raw read of a coerced AUDIT column outside auditRow
   // reading `row[AUDIT.PUNCH_DATE]` raw now fails CI (F1 would have).
   const src = serverSource();
   const reader = extractRawFunction('Code.js', 'auditRowObj_');
-  const COERCED = /\[AUDIT\.(PUNCH_DATE|PUNCH_TIME|IS_ADJUSTMENT)\]/;
+  // AUDIT.TS joins the set (seams audit 2026-09-18, F1). It is the column g11
+  // names FIRST — "AuditLog timestamp cells coerce to Dates too, read via
+  // normalizeAuditTs_()" — and it was the one coerced AUDIT column this scan
+  // did not cover. Bite-checked: a raw `r[AUDIT.TS]` and a raw
+  // `r[AUDIT.TS] === y` comparison both passed CI before this line. No live
+  // defect at the time — all five reads already routed through the helper —
+  // but the net could not have said so.
+  const auAlt = COERCED_AUDIT_COLS.join('|');
+  const COERCED = new RegExp('\\[AUDIT\\.(' + auAlt + ')\\]');
   // Cycle 10: `=(?!=)` — a raw comparison read must NOT pass as a write
   // (same hardening as the CN.TIMESTAMP scan above).
-  const WRITE_OR_COMMENT = /AUDIT\.(PUNCH_DATE|PUNCH_TIME|IS_ADJUSTMENT)\]\s*=(?!=)|AUDIT\.(PUNCH_DATE|PUNCH_TIME|IS_ADJUSTMENT) \+ 1|^\s*\/\//;
+  // `normalizeAuditTs_(` is the sanctioned-reader exemption for AUDIT.TS, the
+  // way `reader.indexOf(line)` exempts auditRowObj_'s own lines: the five live
+  // TS reads sit OUTSIDE auditRowObj_ and are already correct.
+  const WRITE_OR_COMMENT = new RegExp('AUDIT\\.(' + auAlt + ')\\]\\s*=(?!=)|AUDIT\\.(' + auAlt +
+    ') \\+ 1|^\\s*//|normalizeAuditTs_\\(');
   const offenders = [];
   src.split('\n').forEach((line, idx) => {
     if (!COERCED.test(line) || WRITE_OR_COMMENT.test(line)) return;
@@ -1335,6 +1405,39 @@ test('TRIPWIRE (Batch 3): no raw read of a coerced AUDIT column outside auditRow
   });
   assert.deepStrictEqual(offenders, [],
     'raw coerced-AUDIT-column read(s) outside auditRowObj_ — route through the typed reader (Batch 3 / F1 class)');
+});
+
+test('F1 (seams 2026-09-18): every column a recovery helper touches is COVERED by a coerced-column scan — the derived half', () => {
+  // The two scans above enforce an EXPLICIT list. This is the other direction,
+  // and it is the drift that actually happened: AUDIT.TS (g11's own column) and
+  // CN.DATE_LOCAL (g16's, and the most recovery-guarded column in the codebase
+  // at fifteen sites) were both guarded correctly in every live read and
+  // covered by NEITHER scan. A raw read of either passed CI — bite-checked.
+  //
+  // The rule: if production thinks a column needs recovering, the net must
+  // think so too. Derived from the recovery CALLS, so a column that gains a
+  // helper and not a scan entry fails here rather than in six months.
+  const src = serverSource();
+  // `helper_(anything[ENUM.COL])` — the shape every recovery site takes.
+  const pairs = new Set();
+  const call = new RegExp('(' + COERCION_RECOVERY_HELPERS.join('|') + ')\\(([^()]*)\\[(CN|AUDIT)\\.([A-Z_]+)\\]', 'g');
+  let m;
+  while ((m = call.exec(src)) !== null) pairs.add(m[3] + '.' + m[4]);
+
+  // NON-VACUITY. A derivation that matches nothing makes every assertion below
+  // it vacuously true, which is the fifth direction g116 names — the mutation
+  // lands, the pin stays green, and the CLAIM is what is not observable.
+  assert.ok(pairs.size >= 5,
+    'the derivation found real recovery sites, not an empty set — found: ' + JSON.stringify([...pairs]));
+  assert.ok(pairs.has('CN.DATE_LOCAL') && pairs.has('AUDIT.TS'),
+    'and it finds the two columns whose absence from the scans IS this finding');
+
+  const covered = new Set(
+    COERCED_AUDIT_COLS.map((c) => 'AUDIT.' + c).concat(COERCED_CN_COLS.map((c) => 'CN.' + c)));
+  const uncovered = [...pairs].filter((x) => !covered.has(x)).sort();
+  assert.deepStrictEqual(uncovered, [],
+    'column(s) with a recovery helper but NO scan covering them — add them to ' +
+    'COERCED_AUDIT_COLS / COERCED_CN_COLS, which is the set both global scans read');
 });
 
 // Runtime proof the typed reader actually recovers coerced cells (stub its
@@ -13731,12 +13834,18 @@ test('ELIG: the client shows both verdicts with three distinct states, and the c
     'a near-boundary yes reads differently from a flat yes');
   assert.ok(/esc\(\(v && v\.why\)/.test(verdict), 'the server reason is escaped before innerHTML');
 
-  const render = extractFunction('kb/script_kb.html', 'eligRenderResults_');
-  assert.ok(/Through insurance/.test(render) && /Paying out of pocket/.test(render),
+  // The verdicts moved INTO the shared row renderer with the 2026-09-18 merge,
+  // so that is where the labels now live.
+  const row = extractFunction('kb/script_kb.html', 'oopItemRowHtml_');
+  assert.ok(/Through insurance/.test(row) && /Paying out of pocket/.test(row),
     'both verdicts are LABELLED — an unlabelled pair is worse than one answer');
-  assert.ok(/straight-line/.test(render), 'the distance caveat rides the warehouse strip');
-  assert.ok(/Could not place/.test(render), 'an unplaceable warehouse is surfaced, not silently dropped');
-  assert.ok(/Do not check a similar item/.test(render), 'a no-match refuses to offer a near-miss');
+
+  const header = extractFunction('kb/script_kb.html', 'oopEligHeaderHtml_');
+  assert.ok(/straight-line/.test(header), 'the distance caveat rides the warehouse strip');
+  assert.ok(/Could not place/.test(header), 'an unplaceable warehouse is surfaced, not silently dropped');
+
+  const render = extractFunction('kb/script_kb.html', 'oopRenderResults_');
+  assert.ok(/do not quote a similar item/i.test(render), 'a no-match refuses to offer a near-miss');
 
   // g50, which this very file has been bitten by: data-compact is the POP-OUT,
   // not a viewport breakpoint. The grid override needs both rules.
@@ -13747,8 +13856,178 @@ test('ELIG: the client shows both verdicts with three distinct states, and the c
     'and so does a narrow VIEWPORT — one without the other is the g50 defect');
 
   // Mounted on BOTH hosts, like every other lookup in this partial.
-  assert.ok(/eligSecHtml_\(''\)/.test(cli), 'mounted on the Reference landing');
-  assert.ok(/eligSecHtml_\('-d'\)/.test(cli), 'and in the Ctrl/\u2318+K drawer');
+  assert.ok(/oopLookupSecHtml_\(''\)/.test(cli), 'mounted on the Reference landing');
+  assert.ok(/oopLookupSecHtml_\('-d'\)/.test(cli), 'and in the Ctrl/⌘+K drawer');
+});
+
+// ═══ R (operator 2026-09-18) — the two-panel restructure ═══════════════════
+// Price lookup and area eligibility were separate panels reading the SAME
+// operator tab through the SAME row reader, and they had diverged: the price
+// panel rendered every priced column labelled, the eligibility panel rendered
+// `prices[0]` bare. On the operator's real sheet that leftmost column is the
+// PICK-UP total — so the DELIVERY surface was quoting the collect-in-person
+// price. These pins hold the merge that makes the divergence unrepresentable.
+
+test('R-1: checkOopEligibility ships EVERY field oopRowObj_ produces — the field list is DERIVED from oopRowObj_, so a new column cannot be added there and silently dropped here', () => {
+  const rowObj = extractRawFunction('Code.js', 'oopRowObj_');
+  const init = /const out = \{([\s\S]*?)\};/.exec(rowObj);
+  assert.ok(init, 'oopRowObj_ still builds its result in one object literal');
+  const fields = (init[1].match(/(\w+)\s*:/g) || []).map((s) => s.replace(/\s*:$/, ''));
+  // Sanity: the derivation found a real list, not an empty one that would make
+  // every assertion below vacuous (g116 — a pin that cannot fail is not a pin).
+  assert.ok(fields.length >= 5, 'the derivation found the field list, not an empty match: ' + JSON.stringify(fields));
+  assert.ok(fields.indexOf('prices') >= 0, 'and `prices` is one of them');
+
+  const elig = extractRawFunction('Code.js', 'checkOopEligibility');
+  const search = extractRawFunction('Code.js', 'searchOopPricing');
+  fields.forEach((f) => {
+    assert.ok(new RegExp('\\bo\\.' + f + '\\b').test(elig),
+      'checkOopEligibility ships oopRowObj_’s `' + f + '` — shipping a SUBSET is how the two readers drifted');
+  });
+  // The price lookup hands the whole object out, so it is covered by
+  // construction; assert it still does rather than assuming it.
+  assert.ok(/matches/.test(search), 'searchOopPricing still returns its matches list');
+});
+
+test('R-2: ONE renderer draws a price row — the eligibility payload and the price payload go through the SAME function, so they cannot be styled apart again', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const cli = extractScript('kb/script_kb.html');
+
+  // The merged panel replaced eligRenderResults_/eligSecHtml_/eligInput_. If
+  // any of them comes back, a second render path has come back with it.
+  ['eligRenderResults_', 'eligSecHtml_', 'eligInput_'].forEach((gone) => {
+    assert.ok(!new RegExp('function\\s+' + gone + '\\s*\\(').test(cli),
+      gone + ' is gone — a second render path for the same sheet is the defect this merge removed');
+  });
+
+  // Exactly one function in this partial emits a price span. Two would be two
+  // things to keep in step, which is how the pick-up price ended up on the
+  // delivery surface.
+  const emitters = (cli.match(/function\s+(\w+)\s*\([^)]*\)\s*\{[\s\S]*?\n\}/g) || [])
+    .filter((f) => /class="kb-oop-price/.test(f))
+    .map((f) => /function\s+(\w+)/.exec(f)[1]);
+  assert.deepStrictEqual(emitters, ['oopPriceHtml_'],
+    'exactly ONE function emits a price span, and it is oopPriceHtml_ — found: ' + JSON.stringify(emitters));
+
+  // And it renders EVERY priced column, labelled once there is more than one.
+  const price = extractFunction('kb/script_kb.html', 'oopPriceHtml_');
+  assert.ok(/m\.prices/.test(price), 'it reads the prices ARRAY, not the scalar');
+  assert.ok(/prices\.length > 1/.test(price), 'and labels them once there is more than one');
+  // NOTE what these two assertions do NOT cover: that the map walks the WHOLE
+  // array. Truncating it to `[prices[0]]` leaves both regexes green — checked,
+  // and it is the R DOM eligibility pin that goes red on that mutation. The
+  // structural claim here is about the SHAPE (one emitter, one call site, both
+  // payloads through one renderer); the behaviour is held in the DOM harness.
+  assert.ok(/no price on file/.test(price),
+    'a row with no price SAYS so — a blank where a number belongs reads as free');
+
+  // Both payload shapes reach it through the one row renderer.
+  const render = extractFunction('kb/script_kb.html', 'oopRenderResults_');
+  assert.ok(/res\.items/.test(render) && /res\.matches/.test(render),
+    'the one renderer handles both payload shapes');
+  assert.ok(/oopItemRowHtml_\(/.test(render), 'and draws every row through the one row renderer');
+  assert.strictEqual((render.match(/oopItemRowHtml_\(/g) || []).length, 1,
+    'from exactly ONE call site — a second would be a second shape to keep in step');
+
+  // `truncated` means DIFFERENT things on the two payloads (more items than the
+  // cap; the sheet is longer than the scan limit and rows were never searched).
+  // Sharing one line for them would state one as the other.
+  assert.ok(/scan limit/.test(render),
+    'the price payload’s truncation still says rows were never SEARCHED');
+  assert.ok(/Narrow with an item name/.test(render),
+    'and the eligibility payload’s still says the LIST was capped');
+
+  // The band lives in the landing HOST, never in the section renderer — the
+  // drawer shares that renderer and cannot take columns.
+  assert.ok(/kb-lookups/.test(cli), 'the landing wraps the two panels in the band');
+  const sec = extractFunction('kb/script_kb.html', 'oopLookupSecHtml_');
+  assert.ok(!/kb-lookups/.test(sec),
+    'and the section renderer knows nothing about it — that is what lets one section serve both hosts');
+  assert.ok(!/kb-lookups/.test(kb.slice(kb.indexOf('function kbDrawerRenderHome_'))),
+    'the drawer keeps its sections stacked');
+});
+
+test('R-3: an address that produces no verdict does NOT cost the rep the prices — the degraded path re-asks for the item under the SAME seq', () => {
+  const cli = extractScript('kb/script_kb.html');
+  const deg = extractFunction('kb/script_kb.html', 'oopDegraded_');
+  assert.ok(/searchOopPricing\(item\)/.test(deg),
+    'the fallback re-asks the PRICE endpoint — before the merge the price was already on screen in the other panel');
+  assert.ok(/degraded: why/.test(deg), 'and the reason rides the render so the banner can state it');
+
+  // The seq is CARRIED, not re-minted: this is the same keystroke still being
+  // answered, so a newer one must still win (INV-156).
+  assert.ok(/mySeq !== KB_OOP\.seq/.test(deg), 'a superseded keystroke still voids it');
+  assert.ok(!/\+\+KB_OOP\.seq/.test(deg),
+    're-minting the seq here would let a stale answer beat a newer keystroke');
+
+  // Both failure channels route there — a structured {error} and a thrown RPC.
+  const input = extractFunction('kb/script_kb.html', 'oopLookupInput_');
+  assert.strictEqual((input.match(/oopDegraded_\(/g) || []).length, 2,
+    'the structured {error} AND the failure handler both degrade — one without the other blanks the panel half the time');
+  assert.ok(/item\.length >= 2/.test(input),
+    'but only when there IS an item to fall back to — an address alone has nothing to degrade to');
+
+  // The banner states the absence of a verdict, and hands the SERVER's message
+  // through verbatim: only the server knows whether the address was not found
+  // or the service could not be reached, and those are different answers (g128).
+  const banner = extractFunction('kb/script_kb.html', 'oopDegradedHtml_');
+  assert.ok(/No eligibility verdict/.test(banner), 'it says no verdict was reached');
+  assert.ok(/esc\(why\)/.test(banner), 'the server reason is escaped and passed through');
+  assert.ok(/still current/.test(banner), 'and the prices below it are not disowned');
+  assert.ok(!/quota|unavailable|not found/i.test(banner),
+    'the banner never GUESSES which failure it was — from the client that is not observable');
+  assert.ok(/oopDegradedHtml_\(/.test(cli), 'and it is actually mounted');
+});
+
+test('R-4: the band collapses on BOTH triggers, and the field pair sizes off its container because neither trigger can see the drawer (g50)', () => {
+  const css = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+
+  // The band is an explicit ratio, so it needs the two INDEPENDENT triggers.
+  assert.ok(/:root\[data-compact\] \.kb-lookups \{[^}]*grid-template-columns: 1fr/.test(css),
+    'the POP-OUT stacks the band');
+  assert.ok(/@media \(max-width: \d+px\) \{\s*\.kb-lookups \{[^}]*grid-template-columns: 1fr/.test(css),
+    'and so does a narrow VIEWPORT — one without the other is the g50 defect, four instances of which this repo has already fixed');
+
+  // The FIELD pair is the case neither trigger can see: the Ctrl/⌘+K drawer is
+  // ~340px wide on a 1920px desktop with data-compact unset, so a viewport rule
+  // and a pop-out rule would both PASS while the two fields rendered at 160px.
+  // Sizing off the container's own width is the only thing right in all three
+  // hosts at once — so this one must NOT be a media query.
+  assert.ok(/\.kb-oop-fields \{[^}]*repeat\(auto-fit, minmax\(\d+px, 1fr\)\)/.test(css),
+    'the field pair is intrinsically sized, not breakpoint-sized');
+  assert.ok(!/@media[^{]*\{\s*\.kb-oop-fields/.test(css),
+    'a viewport rule here would be silently wrong in the drawer, which is where it matters most');
+
+  // The results scroll inside their own panel. The cap must sit on the
+  // scrolling element: a max-height on a GRID CONTAINER does not constrain its
+  // row (V-9), so capping .kb-lookups would overflow instead of scrolling.
+  assert.ok(/\.kb-lookups \.kb-ins-results \{[^}]*max-height:[^}]*overflow-y: auto/.test(css),
+    'the results scroll inside the panel');
+  assert.ok(!/\.kb-lookups \{[^}]*max-height/.test(css),
+    'and the cap is NOT on the grid container, which would not constrain the row (V-9)');
+
+  // The landing widened for the band; the CONTENT blocks keep the old measure.
+  assert.ok(/\.kb-land \{ max-width: 1200px/.test(css), 'the landing widened for the band');
+  assert.ok(/\.kb-land-sec \{[^}]*max-width: 760px/.test(css),
+    'and the content blocks below it keep the reading measure');
+});
+
+test('R-5: both fields in the merged panel carry a VISIBLE label bound to their own input — a placeholder is not a label', () => {
+  const sec = extractFunction('kb/script_kb.html', 'oopLookupSecHtml_');
+  const ids = (sec.match(/id="([a-z-]+)' \+ suffix \+ '"/g) || [])
+    .map((s) => /id="([a-z-]+)'/.exec(s)[1]);
+  const inputs = ids.filter((i) => i !== 'kb-oop-results');
+  assert.deepStrictEqual(inputs.sort(), ['kb-oop-addr', 'kb-oop-item'],
+    'the panel has exactly the two inputs — found: ' + JSON.stringify(inputs));
+  inputs.forEach((id) => {
+    assert.ok(new RegExp('<label class="kb-oop-lbl" for="' + id + "' \\+ suffix").test(sec),
+      id + ' has a <label for> of its own, per host suffix');
+  });
+  // The section HEADING is no longer a <label>: one heading cannot be the
+  // accessible name of two fields, and before the merge the item field had only
+  // an aria-label whose placeholder vanished the moment it was filled.
+  assert.ok(/<div class="kb-land-h">/.test(sec), 'the heading is a plain div');
+  assert.ok(!/aria-label/.test(sec), 'and no field is left naming itself with aria-label alone');
 });
 
 // OOP-B (operator 2026-09-16) — the composer price picker. The operator's answer
@@ -23534,6 +23813,85 @@ test('D2: every Common Gotchas rule resolves to its narrative, and every narrati
   });
   assert.deepStrictEqual(dangling, [],
     'a code comment names a gotcha the docs no longer carry: ' + dangling.join(', '));
+});
+
+test('F4 (seams 2026-09-18): every Regression Scenario and Invariant id in .cycle/config.md is UNIQUE', () => {
+  // The OOP scenario shipped as a SECOND `S110` and had to be renumbered to
+  // S112 on 2026-09-17. Nothing caught the duplicate, and nothing would today:
+  // counts.mjs counts scenario LINES, so a duplicate id raises the total by one
+  // and the generated block is simply regenerated to match it.
+  //
+  // The renumber is also what left two invariants pointing at the wrong
+  // scenario (fixed in this batch). This pin cannot catch THAT — a stale
+  // pointer resolves to a real scenario — but it catches the collision that
+  // forced the renumber, which is the cheaper end of the same problem.
+  const cfg = fs.readFileSync(path.join(__dirname, '../../.cycle/config.md'), 'utf8');
+  const dupes = (label, re) => {
+    const seen = new Map();
+    let m;
+    while ((m = re.exec(cfg)) !== null) seen.set(m[1], (seen.get(m[1]) || 0) + 1);
+    assert.ok(seen.size > 50, label + ': the derivation found a real id list, not an empty one (g116) — ' + seen.size);
+    return [...seen.entries()].filter(([, n]) => n > 1).map(([id, n]) => id + ' \u00d7' + n);
+  };
+  assert.deepStrictEqual(dupes('scenarios', /^(S\d+) \|/gm), [],
+    'duplicate Regression Scenario id(s) — two scenarios under one number is how S110 ' +
+    'became two different walks, and every reference to it ambiguous');
+  assert.deepStrictEqual(dupes('invariants', /^(INV-\d+)\s*\|/gm), [],
+    'duplicate Invariant id(s) — a reused number silently merges two rules');
+
+  // The RESERVED numbers stay absent while STATE.md holds them. Cycle 20's
+  // reflection proposed INV-225..227 and could not verify any; reusing one
+  // would attach a new rule to a number another session is still holding.
+  const state = fs.readFileSync(path.join(__dirname, '../../.cycle/STATE.md'), 'utf8');
+  const reserved = [...state.matchAll(/INV-(\d+)[^\n]*RESERVED|RESERVED[^\n]*INV-(\d+)/g)];
+  if (reserved.length) {
+    const held = [...state.matchAll(/\*\*INV-(\d+), INV-(\d+) and INV-(\d+) are RESERVED/g)][0];
+    if (held) {
+      held.slice(1).forEach((n) => {
+        assert.ok(!new RegExp('^INV-' + n + '\\s*\\|', 'm').test(cfg),
+          'INV-' + n + ' is RESERVED in STATE.md but WRITTEN in config.md — do not reuse a held number');
+      });
+    }
+  }
+});
+
+test('F5 (seams 2026-09-18): every invariant from INV-139 up NAMES its verification — the ratchet', () => {
+  // The library is the project's safety net, and an invariant that names no
+  // way to check it is a claim rather than a rule. 91 of 225 name nothing, and
+  // they are almost all the OLD ones — the convention arrived partway through
+  // and has held since. This pin is the ratchet that keeps it holding, not a
+  // demand to backfill the early entries: writing clauses for invariants
+  // nobody currently verifies would put unverified claims in the one file
+  // whose whole value is that its claims are true.
+  //
+  // INV-139 is the LOWEST floor with zero live entries below the bar, so the
+  // ratchet covers as much as it honestly can on the day it lands. Lowering it
+  // further means backfilling INV-130 and INV-138 first; raising it gives up
+  // coverage for nothing.
+  //
+  // "Names its verification" accepts the three phrasings already in use — a
+  // `Verify:` clause, a "Pinned by …" sentence, or a named tripwire / test_
+  // function. Requiring the literal `Verify:` would force a rewrite of 74
+  // entries that already say where their proof lives, which is churn, not rigour.
+  const FLOOR = 139;
+  const cfg = fs.readFileSync(path.join(__dirname, '../../.cycle/config.md'), 'utf8');
+  const lib = cfg.slice(cfg.indexOf('### Invariant Library'), cfg.indexOf('### Visual Audit Stage'));
+  const rows = [...lib.matchAll(/^(INV-(\d+))\s*\|(.*)$/gm)];
+  assert.ok(rows.length > 200, 'the derivation found the library, not an empty slice (g116) — ' + rows.length);
+
+  // A deliberately VACANT number (INV-163/164: claimed by a reflection whose
+  // proposals were lost, left unreused so the metrics note stays traceable) is
+  // not an invariant and owes nothing.
+  const vacant = (body) => body.trim().startsWith('*(') || /\|\s*—\s*\|\s*—\s*$/.test(body);
+  const names = (body) => /Verify:/.test(body) ||
+    /[Pp]inned by|[Pp]inned in|[Tt]ripwire|test_\w+|`\w+` pin/.test(body);
+
+  const live = rows.filter((m) => Number(m[2]) >= FLOOR && !vacant(m[3]));
+  assert.ok(live.length > 50, 'the floor still covers a real span — ' + live.length);
+  const unnamed = live.filter((m) => !names(m[3])).map((m) => m[1]);
+  assert.deepStrictEqual(unnamed, [],
+    'invariant(s) at or above INV-' + FLOOR + ' that name no verification — add a ' +
+    '`Verify:` clause (or a "Pinned by …" sentence) naming the test that proves it');
 });
 
 test('D2: every Operator State inventory line resolves, and every entry is inventoried', () => {
