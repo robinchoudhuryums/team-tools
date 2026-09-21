@@ -14137,9 +14137,30 @@ test('ELIG: the client shows both verdicts with three distinct states, and the c
   // Strict agreement. A near-boundary yes and a flat yes are different answers
   // (INV-209), and two verdicts reached for different stated reasons are two
   // facts — collapsing either pair would state one as the other.
-  const agree = extractFunction('kb/script_kb.html', 'eligVerdictsAgree_');
-  assert.ok(/\.verdict/.test(agree) && /\.near/.test(agree) && /\.why/.test(agree),
-    'agreement compares verdict, near AND why — any looser and the collapse hides a real difference');
+  // DRIVEN, not read. Asserting the source mentions `.why` proved nothing: a
+  // bite that made the why-comparison compare verdicts instead left this pin
+  // green, because no fixture anywhere had two verdicts that matched on
+  // verdict and near but differed in REASON. That case is real — insurance
+  // yes because the address is inside the radius, out of pocket yes because
+  // the state limit does not apply — and collapsing it would print one
+  // reason as if it covered both.
+  const ctx = vm.createContext({ String: String, Boolean: Boolean });
+  vm.runInContext(extractFunction('kb/script_kb.html', 'eligVerdictsAgree_'), ctx,
+    { filename: 'eligVerdictsAgree_' });
+  const agrees = (a, b) => vm.runInContext(
+    'eligVerdictsAgree_(' + JSON.stringify(a) + ',' + JSON.stringify(b) + ')', ctx);
+
+  const Y = { verdict: 'yes', near: false, why: 'Available anywhere in the US.' };
+  assert.strictEqual(agrees(Y, { verdict: 'yes', near: false, why: 'Available anywhere in the US.' }), true,
+    'identical verdicts agree — this is the case that collapses');
+  assert.strictEqual(agrees(Y, { verdict: 'yes', near: false, why: 'Out of pocket there is no state restriction.' }), false,
+    'SAME verdict, DIFFERENT reason: two facts, not one');
+  assert.strictEqual(agrees(Y, { verdict: 'yes', near: true, why: 'Available anywhere in the US.' }), false,
+    'a near-boundary yes is not a flat yes (INV-209)');
+  assert.strictEqual(agrees(Y, { verdict: 'no', near: false, why: 'Available anywhere in the US.' }), false,
+    'opposite verdicts never agree, whatever they say');
+  assert.strictEqual(agrees(Y, null), false, 'a missing verdict is not agreement');
+  assert.strictEqual(agrees(null, null), false, 'and neither is two missing ones');
 
   const header = extractFunction('kb/script_kb.html', 'oopEligHeaderHtml_');
   assert.ok(/straight-line/.test(header), 'the distance caveat rides the warehouse strip');
@@ -14310,9 +14331,29 @@ test('R-2: ONE renderer draws a price row — the eligibility payload and the pr
   // 1 is on a payload carrying only the scalar, and the button would copy a
   // different number from the one beside it. So the pin now follows the
   // derivation instead of looking for `m.prices` in the renderer.
+  // DRIVEN. Reading `m.price` out of the source proved nothing — a bite that
+  // made the scalar branch unreachable left this green, because nothing ever
+  // put a scalar-only payload through it. That payload is a real shape: an
+  // older deployment answering a newer client, which is exactly what a New
+  // Version deploy produces for every tab already open.
+  const lctx = vm.createContext({ String: String });
+  vm.runInContext(extractFunction('kb/script_kb.html', 'oopPriceList_'), lctx,
+    { filename: 'oopPriceList_' });
+  const plist = (m) => JSON.parse(vm.runInContext(
+    'JSON.stringify(oopPriceList_(' + JSON.stringify(m) + '))', lctx));
+
+  assert.deepStrictEqual(plist({ prices: [{ label: 'A', value: '$1' }, { label: 'B', value: '$2' }] }),
+    [{ label: 'A', value: '$1' }, { label: 'B', value: '$2' }], 'every priced column, in order');
+  assert.deepStrictEqual(plist({ price: '$9.00' }), [{ label: '', value: '$9.00' }],
+    'a scalar-only payload yields ONE unlabelled price — an older deployment answering a newer client');
+  assert.deepStrictEqual(plist({ prices: [{ label: 'A', value: '$1' }], price: '$9.00' }),
+    [{ label: 'A', value: '$1' }], 'the array WINS — the scalar is prices[0] and would duplicate it');
+  assert.deepStrictEqual(plist({ prices: [], price: '   ' }), [], 'a blank price is no price, not an empty label');
+  assert.deepStrictEqual(plist({}), []);
+  assert.deepStrictEqual(plist(null), [], 'and a missing row does not throw on the way to "no price on file"');
+
   const list = extractFunction('kb/script_kb.html', 'oopPriceList_');
   assert.ok(/m\.prices/.test(list), 'it reads the prices ARRAY, not the scalar');
-  assert.ok(/m\.price\b/.test(list), 'with the scalar as the back-compat fallback, in ONE place');
 
   const price = extractFunction('kb/script_kb.html', 'oopPriceHtml_');
   const copy = extractFunction('kb/script_kb.html', 'oopCopyPrice_');
