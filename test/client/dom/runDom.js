@@ -3553,6 +3553,186 @@ test('R DOM: the drawer mounts each lookup in its own container, NOT inside the 
   });
 });
 
+/** The payor payload the join pins share: one code that names an item, one the
+ *  pricing tab does not carry, one that two rows carry, the SHORTHAND, and a
+ *  column that is not a code at all. Every branch of insCodeItemHtml_ in one
+ *  result, so a pin over it is never accidentally exercising just the easy one. */
+const T3_PAYORS = {
+  total: 1, cap: 8, codeJoin: { attempted: true, error: '' },
+  matches: [{
+    name: 'AETNA GOLD', networkStatus: 'IN-NETWORK', waystar: '60054', details: [
+      { label: 'K0800', value: 'SI/PR', code: { shaped: true, certain: true, tokens: ['K0800'] },
+        item: 'Drive Scout 3 Wheel', itemCount: 1 },
+      { label: 'K0802', value: 'Not Accepted', code: { shaped: true, certain: true, tokens: ['K0802'] },
+        item: '', itemCount: 0 },
+      { label: 'K0814', value: 'TRY', code: { shaped: true, certain: true, tokens: ['K0814'] },
+        item: '', itemCount: 2 },
+      { label: 'K0821/23/16', value: 'TRY', code: { shaped: true, certain: false, tokens: [] },
+        item: '', itemCount: 0 },
+      { label: 'Category', value: 'POV/Scooter', code: { shaped: false, certain: false, tokens: [] },
+        item: '', itemCount: 0 },
+    ] }],
+};
+const T3_ITEM_OK = { cap: 8, total: 1, matches: [{
+  name: 'Drive Scout 3 Wheel', code: 'K0800 (C/C)', effective: '', eligibility: 'Open',
+  codes: { raw: 'K0800 (C/C)', shaped: true, certain: true, tokens: ['K0800'] },
+  price: '$920.00', prices: [{ label: '', value: '$920.00' }], details: [] }] };
+const T3_ITEM_SHORTHAND = { cap: 8, total: 1, matches: [{
+  name: 'Multi Scooter', code: 'K0821/23/16', effective: '', eligibility: 'Open',
+  codes: { raw: 'K0821/23/16', shaped: true, certain: false, tokens: [] },
+  price: '$1,000.00', prices: [{ label: '', value: '$1,000.00' }], details: [] }] };
+
+async function t3Search(h, id, fn, value) {
+  const el = h.$(id);
+  el.value = value;
+  h.read(fn)(el);
+  h.flushTimers();
+  await tick(); await tick();
+  return el;
+}
+
+test('T3 DOM: a payor’s bare code columns are NAMED, and every state that is not a name says which', async () => {
+  const h = boot();
+  h.run.respond('searchInsurancePayors', () => T3_PAYORS);
+  bootLookups(h);
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'aetna');
+
+  const cells = Array.from(h.$('#kb-ins-results').querySelectorAll('.kb-ins-cell'));
+  assert.strictEqual(cells.length, 5, 'every detail column renders — the sweep below is not vacuous');
+  const byCode = {};
+  cells.forEach((c) => { byCode[c.querySelector('.c').textContent.trim().split(/\s{2,}|\n/)[0].trim()] = c; });
+
+  // THE FEATURE. `K0800 — Not Accepted` is a rule about an item the rep cannot
+  // name; the pricing tab one glance away knows what K0800 is.
+  const named = cells.find((c) => c.querySelector('.kb-ins-code-item'));
+  assert.ok(named, 'the unambiguous code is NAMED');
+  assert.strictEqual(named.querySelector('.kb-ins-code-item').textContent, 'Drive Scout 3 Wheel');
+  assert.ok(/K0800/.test(named.querySelector('.c').textContent),
+    'and the code itself is still there — the name is an addition, not a replacement');
+
+  const notes = Array.from(h.$('#kb-ins-results').querySelectorAll('.kb-ins-code-note'))
+    .map((n) => n.textContent.trim());
+  // AMBIGUOUS: two pricing rows carry K0814. Naming one would be a guess
+  // printed as a fact, so it says how many instead.
+  assert.ok(notes.indexOf('2 items') >= 0, 'an ambiguous code says HOW MANY and names none');
+  // THE SHORTHAND. Silence here would read as "nothing to say about this code",
+  // which is a far more reassuring claim than "we would not guess".
+  assert.ok(notes.indexOf('not matched') >= 0, 'the shorthand names its own refusal');
+  assert.strictEqual(notes.length, 2, 'and NOTHING else is annotated');
+
+  // A code the pricing tab simply does not carry is a fact about the pricing
+  // tab, not a failure of this payor — and `Category` is not a code column at
+  // all. Neither gets a note, or the grid would be all caveat and no content.
+  const quiet = cells.filter((c) => !c.querySelector('.kb-ins-code-item') && !c.querySelector('.kb-ins-code-note'));
+  assert.strictEqual(quiet.length, 2, 'the unmatched code and the non-code column are both left alone');
+  assert.ok(quiet.some((c) => /Category/.test(c.textContent)));
+  assert.ok(quiet.some((c) => /K0802/.test(c.textContent)));
+});
+
+test('T3 DOM: the item row cross-references the payors ON SCREEN, in EITHER search order, and drops it when they go', async () => {
+  const h = boot();
+  h.run.respond('searchInsurancePayors', () => T3_PAYORS);
+  h.run.respond('searchOopPricing', () => T3_ITEM_OK);
+  bootLookups(h);
+
+  // ── Item FIRST, payor second. This is the order that needs the repaint: the
+  // item rows are already painted when the payor result lands, and without a
+  // repaint the cross-reference would only ever appear for a rep who happened
+  // to search the payor first.
+  await t3Search(h, '#kb-oop-item', 'oopLookupInput_', 'scout');
+  assert.strictEqual(h.$('#kb-oop-results').querySelectorAll('.kb-oop-xref').length, 0,
+    'no payor on screen yet, so nothing is claimed');
+
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'aetna');
+  const xref = h.$('#kb-oop-results').querySelector('.kb-oop-xref');
+  assert.ok(xref, 'the item row picked the payor up without being re-searched');
+  assert.ok(/AETNA GOLD/.test(xref.textContent), 'and names the payor');
+  assert.ok(/SI\/PR/.test(xref.textContent), 'with the rule that payor records for THIS item’s code');
+  assert.strictEqual(xref.querySelectorAll('.kb-oop-xref-r').length, 1,
+    'ONE rule — the payor has five columns and only K0800 matches this item');
+
+  // The value explains itself through the SAME popover the payor panel uses:
+  // it is the same vocabulary, and a rep should not have to learn where each
+  // surface keeps its definitions.
+  const btn = xref.querySelector('button.kb-term');
+  assert.ok(btn, 'a value the vocabulary knows is a real button');
+  assert.strictEqual(btn.getAttribute('onclick'), 'insTermClick_(this)',
+    'wired to the SAME handler the payor panel uses — asserted separately because jsdom does ' +
+    'not evaluate inline handler attributes, so driving it below cannot prove it is attached');
+  h.read('insTermClick_')(btn);
+  const pop = h.window.document.querySelector('#kb-term-overlay .kb-term-modal');
+  assert.ok(pop, 'and really opens the term popover');
+  assert.ok(/SI\/PR/.test(pop.textContent), 'headed by the value the rep clicked');
+  assert.ok(/secondary insurance covering any patient responsibility/.test(pop.textContent),
+    'carrying the operator DEFINITION, not just the value again');
+  h.read('closeOverlay')(h.window.document.querySelector('#kb-term-overlay'));
+
+  // ── Emptying the payor field takes the claim away. The rules under an item
+  // are a claim about the payor ON SCREEN; leaving them once it is gone would
+  // attribute a rule to nobody.
+  const inp = h.$('#kb-ins-input');
+  inp.value = '';
+  h.read('insLookupInput_')(inp);
+  assert.strictEqual(h.$('#kb-oop-results').querySelectorAll('.kb-oop-xref').length, 0,
+    'the cross-reference goes with the payor that justified it');
+
+  // ── And a payor search that FAILS must do the same, not leave the previous
+  // payor's rules standing under the item rows.
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'aetna');
+  assert.strictEqual(h.$('#kb-oop-results').querySelectorAll('.kb-oop-xref').length, 1, 'back');
+  h.run.respond('searchInsurancePayors', () => ({ error: 'Insurance lookup failed: boom' }));
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'aetna gold');
+  assert.strictEqual(h.$('#kb-oop-results').querySelectorAll('.kb-oop-xref').length, 0,
+    'a failed payor lookup clears the cross-reference too');
+});
+
+test('T3 DOM: an item whose code is a SHORTHAND says it was not checked — it never renders as "no payor rules"', async () => {
+  const h = boot();
+  h.run.respond('searchInsurancePayors', () => T3_PAYORS);
+  h.run.respond('searchOopPricing', () => T3_ITEM_SHORTHAND);
+  bootLookups(h);
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'aetna');
+  await t3Search(h, '#kb-oop-item', 'oopLookupInput_', 'multi');
+
+  const un = h.$('#kb-oop-results').querySelector('.kb-oop-xref.unmatched');
+  assert.ok(un, 'the refusal is DRAWN, not left as silence');
+  assert.ok(/K0821\/23\/16/.test(un.textContent), 'the sheet’s own text is shown');
+  assert.ok(/shorthand/.test(un.textContent) && /before saying anything about coverage/.test(un.textContent),
+    'and says why, and what to do instead');
+  assert.strictEqual(h.$('#kb-oop-results').querySelectorAll('.kb-oop-xref-r').length, 0,
+    'and asserts NOTHING — this is the whole safety rule, on the surface where a quote is a commitment');
+  // The price is untouched. The join failing must not cost the rep the answer
+  // they actually came for.
+  assert.ok(/\$1,000\.00/.test(h.$('#kb-oop-results').textContent), 'the price still renders');
+});
+
+test('T3 DOM: a pricing tab the server could not read is ANNOUNCED — bare codes look identical to a payor sheet that has none', async () => {
+  const h = boot();
+  h.run.respond('searchInsurancePayors', () => ({
+    total: 1, cap: 8, codeJoin: { attempted: true, error: 'OOP pricing is not set up yet' },
+    matches: [{ name: 'AETNA GOLD', networkStatus: 'IN-NETWORK', details: [
+      { label: 'K0800', value: 'SI/PR', code: { shaped: true, certain: true, tokens: ['K0800'] }, item: '', itemCount: 0 }] }] }));
+  bootLookups(h);
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'aetna');
+
+  const banner = h.$('#kb-ins-results').querySelector('.kb-oop-degraded');
+  assert.ok(banner, 'the degraded join announces itself (g53)');
+  assert.ok(/not set up yet/.test(banner.textContent), 'passing the server’s reason through verbatim');
+  assert.ok(/acceptance rules themselves[\s\S]*unaffected/.test(banner.textContent),
+    'and scopes the damage — the payor sheet’s own rules are fine');
+
+  // The SAME payload with attempted:false must NOT warn. A payor whose columns
+  // are not codes is the sheet working, and a banner there would be the
+  // "diagnostic that can never be clean" defect (g02).
+  h.run.respond('searchInsurancePayors', () => ({
+    total: 1, cap: 8, codeJoin: { attempted: false, error: '' },
+    matches: [{ name: 'PACIFICARE', networkStatus: '', details: [
+      { label: 'Category', value: 'POV', code: { shaped: false, certain: false, tokens: [] }, item: '', itemCount: 0 }] }] }));
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'pacificare');
+  assert.strictEqual(h.$('#kb-ins-results').querySelectorAll('.kb-oop-degraded').length, 0,
+    'no join attempted, nothing to warn about');
+});
+
 test('R-6: every block on the Reference landing is a SECTION or the band — nothing can render at the band’s width by accident', async () => {
   const h = boot();
   // Seed the per-browser prefs so Bookmarks and Recents render too — a pin that

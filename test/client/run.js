@@ -13264,6 +13264,11 @@ const VM_SAMPLE_KEEP = 'New voicemail from Jake Jingo Inaanuran (327) Your exten
 vm.runInContext(extractRawFunction('Code.js', 'oopHeaderRole_'), _vmCtx, { filename: 'oopHeaderRole_' });
 vm.runInContext(extractRawFunction('Code.js', 'oopNameCol_'), _vmCtx, { filename: 'oopNameCol_' });
 vm.runInContext(extractRawFunction('Code.js', 'oopPriceByLabel_'), _vmCtx, { filename: 'oopPriceByLabel_' });
+// T3: oopRowObj_ parses the join key through the ONE tokenizer, so it must be
+// in the context before it. hcpcsParse_ is self-contained — loading it alone
+// really exercises the shorthand refusal, not a fragment of it.
+vm.runInContext(extractRawFunction('Code.js', 'hcpcsParse_'), _vmCtx, { filename: 'hcpcsParse_' });
+vm.runInContext(extractRawFunction('Code.js', 'insNameCodeDetail_'), _vmCtx, { filename: 'insNameCodeDetail_' });
 vm.runInContext(extractRawFunction('Code.js', 'oopRowObj_'), _vmCtx, { filename: 'oopRowObj_' });
 
 test('OOP-A: oopHeaderRole_ resolves by STEM, and tests `effective` BEFORE `price` so a date column can never be read as money', () => {
@@ -13361,7 +13366,7 @@ test("OOP-C: oopRowObj_ against the operator's REAL header row — the name is f
   const sCtx = { String: String, Array: Array, Math: Math, JSON: JSON, Object: Object,
     OOP_MAX_ROWS: 5000, OOP_TOP: 8 };
   vm.createContext(sCtx);
-  ['oopHeaderRole_', 'oopNameCol_', 'oopRowObj_', 'insPayorScore_', 'oopMatchScore_', 'searchOopPricing']
+  ['oopHeaderRole_', 'oopNameCol_', 'hcpcsParse_', 'oopRowObj_', 'insPayorScore_', 'oopMatchScore_', 'searchOopPricing']
     .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), sCtx, { filename: f }));
   const GRID = [
     ['HCPCS', 'Category', 'Item', 'OOP Price', 'Area Eligibility', 'EffectiveDate'],
@@ -13484,6 +13489,176 @@ test('OOP-C: oopPriceByLabel_ resolves a quote against the column it NAMES — c
     'a vanished column returns NULL rather than the nearest price');
   assert.strictEqual(P([], 'anything'), null);
   assert.strictEqual(P([], ''), null);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  T3 (2026-09-21) — the payor × item join on the HCPCS code
+// ════════════════════════════════════════════════════════════════════════════
+
+test('T3-1: hcpcsParse_ reads whole codes and REFUSES the shorthand — an uncertain parse carries no tokens AT ALL', () => {
+  const p = (s) => JSON.parse(vm.runInContext(
+    'JSON.stringify(hcpcsParse_(' + JSON.stringify(s) + '))', _vmCtx));
+
+  // ── The codes both operator tables really carry ──────────────────────────
+  assert.deepStrictEqual(p('K0800'), { raw: 'K0800', shaped: true, certain: true, tokens: ['K0800'] },
+    'a payor COLUMN HEADER is a bare code');
+  assert.deepStrictEqual(p('K0800 (C/C)').tokens, ['K0800'],
+    'the pricing tab writes a qualifier in parentheses — it is a qualifier, never a code');
+  assert.deepStrictEqual(p('E0247').tokens, ['E0247']);
+  assert.deepStrictEqual(p('k0800').tokens, ['K0800'], 'case-folded, so the two sheets need not agree on case');
+  assert.deepStrictEqual(p('  K0800  ').tokens, ['K0800']);
+  assert.deepStrictEqual(p('K0800BR').tokens, ['K0800BR'], 'a modifier suffix rides along');
+
+  // Several WHOLE codes, however they are separated, are all readable.
+  assert.deepStrictEqual(p('K0800, K0801').tokens, ['K0800', 'K0801']);
+  assert.deepStrictEqual(p('K0800/K0801').tokens, ['K0800', 'K0801']);
+  assert.deepStrictEqual(p('K0800 & K0801').tokens, ['K0800', 'K0801']);
+  assert.deepStrictEqual(p('K0800, K0800').tokens, ['K0800'], 'de-duplicated');
+
+  // ── THE RULE. The operator really writes this, and a human reads it as
+  // K0821/K0823/K0816. We will not: `23` and `16` are not codes by any rule we
+  // can defend, and the alternative reading would tell a rep a payor covers an
+  // item it may not. The refusal is the WHOLE string, and it is expressed as a
+  // SHAPE — there are no tokens to assert from, so no consumer can.
+  const sh = p('K0821/23/16');
+  assert.strictEqual(sh.shaped, true, 'it is recognisably a code column — that is WHY silence would mislead');
+  assert.strictEqual(sh.certain, false);
+  assert.deepStrictEqual(sh.tokens, [], 'NO tokens on the uncertain path — the safety rule as a shape, not a warning');
+  assert.strictEqual(sh.raw, 'K0821/23/16', 'the raw text is kept so the rep still sees what the sheet says');
+
+  // The readable leading code is NOT kept. Keeping it under-claims rather than
+  // over-claims, which sounds like the safe direction and is not: the rep asked
+  // about three items and would be answered about one, silently.
+  assert.ok(sh.tokens.indexOf('K0821') < 0, 'not even the fragment that IS a whole code');
+
+  // ── Not a code column at all — a different answer, and the client says which
+  ['Category', 'Comments', 'Network Status', ''].forEach((s) => {
+    const r = p(s);
+    assert.strictEqual(r.shaped, false, `"${s}" is not code-shaped`);
+    assert.strictEqual(r.certain, false);
+    assert.deepStrictEqual(r.tokens, []);
+  });
+
+  // ── The structural guarantee the whole feature rests on, over every input
+  // above plus the awkward ones: tokens are NEVER non-empty while certain is
+  // false. If this can be made to fail, an uncertain parse can assert coverage.
+  ['K0800', 'K0821/23/16', 'K0800 (C/C)', 'Category', '', 'K0800/23', '23/K0800',
+    'K99', 'K0800 or ask', '(K0800)', 'K08000', 'ZZ1234'].forEach((s) => {
+    const r = p(s);
+    assert.ok(r.certain || r.tokens.length === 0,
+      `"${s}": tokens must be empty whenever certain is false`);
+    assert.ok(!r.certain || r.tokens.length > 0,
+      `"${s}": a certain parse must actually produce tokens`);
+  });
+
+  // Named cases from that sweep, so a change of behaviour reads as a change.
+  assert.strictEqual(p('K0800/23').certain, false, 'one unreadable fragment refuses the whole string');
+  assert.strictEqual(p('K0800 or ask').certain, false, 'a word among the codes is not a code');
+  assert.strictEqual(p('K99').shaped, false, 'too short to be a code');
+  assert.deepStrictEqual(p('(K0800)').tokens, [],
+    'a string that is ONLY a parenthetical has nothing left after the qualifier is stripped');
+});
+
+test('T3-2: insNameCodeDetail_ names an unambiguous code, refuses an ambiguous one, and never names from an uncertain parse', () => {
+  const name = (label, byToken) => JSON.parse(vm.runInContext(
+    'JSON.stringify(insNameCodeDetail_(' + JSON.stringify({ label: label, value: 'SI/PR' }) +
+    ',' + JSON.stringify(byToken) + '))', _vmCtx));
+  const IDX = { K0800: ['Drive Scout 3 Wheel'], K0801: ['Drive Scout 4 Wheel'],
+    E0247: ['Bariatric Transfer Bench', 'Transfer Bench (HD)'] };
+
+  const one = name('K0800', IDX);
+  assert.strictEqual(one.item, 'Drive Scout 3 Wheel', 'the whole feature: a bare code column gets a name');
+  assert.strictEqual(one.itemCount, 1);
+  assert.strictEqual(one.code.certain, true);
+
+  // TWO pricing rows carry E0247. The spreadsheet allows that and cannot say
+  // which the payor meant, so naming one would be a guess printed as a fact.
+  const two = name('E0247', IDX);
+  assert.strictEqual(two.item, '', 'ambiguous → NAMES NOTHING');
+  assert.strictEqual(two.itemCount, 2, 'but says how many, so the client can offer the count instead of silence');
+
+  // The shorthand, on the naming side. `certain:false` carries no tokens, so
+  // there is nothing to look up — but the count must stay 0 rather than
+  // inheriting a stale value, or the client would print "0 items".
+  const sh = name('K0821/23/16', IDX);
+  assert.strictEqual(sh.item, '');
+  assert.strictEqual(sh.itemCount, 0);
+  assert.strictEqual(sh.code.shaped, true);
+  assert.strictEqual(sh.code.certain, false);
+
+  // A code the pricing tab simply does not carry: a fact about the pricing tab,
+  // not a failure. Distinguishable from the shorthand by `certain`.
+  const miss = name('K9999', IDX);
+  assert.strictEqual(miss.item, '');
+  assert.strictEqual(miss.itemCount, 0);
+  assert.strictEqual(miss.code.certain, true, 'READ fine — it is simply not in the pricing tab');
+
+  // Not a code column at all.
+  const cat = name('Category', IDX);
+  assert.strictEqual(cat.code.shaped, false);
+  assert.strictEqual(cat.item, '');
+
+  // A multi-code header collects every item it names, and one code naming an
+  // item the other also names must not count it twice.
+  const multi = name('K0800/K0801', IDX);
+  assert.strictEqual(multi.itemCount, 2, 'two codes, two items — ambiguous, so unnamed');
+  assert.strictEqual(multi.item, '');
+  assert.strictEqual(name('K0800/K0800', IDX).item, 'Drive Scout 3 Wheel',
+    'the same item reached twice is still ONE item');
+});
+
+test('T3-3: oopRowObj_ ships the parsed join key, so both OOP surfaces carry it from the ONE resolver', () => {
+  const obj = (h, row) => JSON.parse(vm.runInContext(
+    'JSON.stringify(oopRowObj_(' + JSON.stringify(h) + ',' + JSON.stringify(row) + '))', _vmCtx));
+  const H = ['HCPCS', 'Item', 'OOP Price'];
+
+  const ok = obj(H, ['K0800 (C/C)', 'Drive Scout 3 Wheel', '$920.00']);
+  assert.deepStrictEqual(ok.codes.tokens, ['K0800'], 'parsed HERE, not by each consumer');
+  assert.strictEqual(ok.codes.certain, true);
+  assert.strictEqual(ok.code, 'K0800 (C/C)', 'the RAW code is still shipped and still displayed verbatim');
+
+  const sh = obj(H, ['K0821/23/16', 'Multi Scooter', '$1,000.00']);
+  assert.strictEqual(sh.codes.certain, false);
+  assert.deepStrictEqual(sh.codes.tokens, [], 'the refusal reaches the item surface too');
+
+  assert.strictEqual(obj(H, ['', 'No Code Item', '$5.00']).codes.shaped, false);
+
+  // checkOopEligibility hand-lists the fields it ships (the R-1 shape). A field
+  // added to the resolver and forgotten there is the g126 defect returning, so
+  // the list is checked against the resolver rather than trusted.
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const elig = nc(extractRawFunction('Code.js', 'checkOopEligibility'));
+  assert.ok(/\bcodes: o\.codes\b/.test(elig),
+    'the eligibility endpoint ships `codes` too — both readers of the one tab carry the same shape');
+});
+
+test('T3-4: the join is built ONLY when a result has code columns, and its failure is NAMED rather than inferred', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const srv = nc(extractRawFunction('Code.js', 'searchInsurancePayors'));
+
+  // A payor with no code columns must cost no extra sheet read. Without the
+  // guard, every keystroke of every payor search would re-read the pricing tab.
+  assert.ok(/wantsCodes[\s\S]*hcpcsParse_\(d\.label\)\.shaped/.test(srv),
+    'the index is built only when some detail label is code-shaped');
+  assert.ok(/wantsCodes \? oopCodeIndex_\(\)/.test(srv),
+    'and the read itself is behind that flag, not merely the naming');
+
+  // codeJoin.attempted is the SERVER's word. Inferring "the join failed" from
+  // empty item fields cannot work: a payor sheet whose columns are not codes
+  // produces exactly the same empty fields, and that is the sheet working.
+  assert.ok(/codeJoin: \{ attempted: wantsCodes, error: idx\.error \}/.test(srv),
+    'the response states whether the join was attempted and how it went (g53)');
+
+  // The index refuses the same shorthand the tokenizer does — on the other side
+  // of the join. Without this a `K0821/23/16` pricing row would enter the index
+  // under a token nobody can defend.
+  const idx = nc(extractRawFunction('Code.js', 'oopCodeIndex_'));
+  assert.ok(/if \(!p\.certain\) continue;/.test(idx),
+    'an uncertain pricing code never enters the index');
+  assert.ok(/catch \(err\)[\s\S]*error: String\(err\.message/.test(idx),
+    'an unreadable pricing tab is PASSED THROUGH, not swallowed into an empty index');
+  assert.ok(/indexOf\(o\.name\) < 0/.test(idx),
+    'a token that names two items keeps BOTH rather than the last one written');
 });
 
 // ELIG (operator 2026-09-16) — area eligibility off the SAME column. The
@@ -14210,6 +14385,7 @@ test('OOP-B: the client picker line is a CHARACTER-FOR-CHARACTER mirror of the s
   vm.createContext(vCtx);
   vm.runInContext(extractRawFunction('Code.js', 'oopNameCol_'), vCtx, { filename: 'oopNameCol_' });
   vm.runInContext(extractRawFunction('Code.js', 'oopPriceByLabel_'), vCtx, { filename: 'oopPriceByLabel_' });
+  vm.runInContext(extractRawFunction('Code.js', 'hcpcsParse_'), vCtx, { filename: 'hcpcsParse_' });
   vm.runInContext(extractRawFunction('Code.js', 'oopRowObj_'), vCtx, { filename: 'oopRowObj_' });
   vm.runInContext(extractRawFunction('Code.js', 'oopHeaderRole_'), vCtx, { filename: 'oopHeaderRole_' });
   vm.runInContext(extractRawFunction('Code.js', 'oopQuoteLine_'), vCtx, { filename: 'oopQuoteLine_' });
@@ -14641,7 +14817,18 @@ test('wiring: gate + bounded read + cap on the server; dual host + seq + A12 + [
   assert.ok((kb.match(/insLookupSecHtml_\('(-d)?'\)/g) || []).length === 2, 'ONE shared section, two hosts (landing + drawer)');
   const inputFn = nc(extractFunction('kb/script_kb.html', 'insLookupInput_'));
   assert.ok(/\+\+KB_INS\.seq/.test(inputFn) && (inputFn.match(/mySeq !== KB_INS\.seq/g) || []).length === 2, 'seq token guards BOTH async handlers (INV-156)');
-  assert.ok(/errorStateHtml_/.test(inputFn), 'transport failure renders the error card (A12)');
+  // T3 STRENGTHENED it rather than relaxing it. The failure handler used to
+  // paint errorStateHtml_ at the host itself, which was fine while the renderer
+  // owned nothing else; it now owns the cross-reference stash, so a hand-painted
+  // error card would clear the panel and leave the previous payor's rules
+  // sitting under the item rows. Both halves are asserted: the handler DELEGATES,
+  // and the thing it delegates to renders the card.
+  assert.ok(!/errorStateHtml_/.test(inputFn),
+    'the failure handler does NOT paint the error card itself — it delegates, so the stash is cleared on both failure paths');
+  assert.ok(/insRenderResults_\(suffix, q, \{ error:/.test(inputFn),
+    'transport failure goes through insRenderResults_ with a structured {error} (A12)');
+  assert.ok(/errorStateHtml_/.test(nc(extractFunction('kb/script_kb.html', 'insRenderResults_'))),
+    'transport failure renders the error card (A12)');
   const renderFn = nc(extractFunction('kb/script_kb.html', 'insRenderResults_'));
   assert.ok(/errorStateHtml_/.test(renderFn), 'server {error} renders the error card too');
   assert.ok(/TRY<\/b> rules/.test(renderFn), 'not-found renders the operator TRY guidance, never an empty state');

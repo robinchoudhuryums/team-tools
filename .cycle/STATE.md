@@ -4,24 +4,27 @@
 Cycle: 21 — CLOSED 2026-09-21 (batch R deployed and operator-confirmed; batch S
 needed no deploy; reflected net +1; the whole block is in `.cycle/HISTORY.md`).
 **No cycle is open.** The next `/audit` or `/broad-scan` opens cycle 22.
-Phase: implement (between-cycles operator work — T1 + T2)
+Phase: implement (between-cycles operator work — T3)
 Scope: —
 Test Command: manual
 Estimates: T1 (landing re-render + pill + meta chips): S (~2 h) · T2 (legend
-popover + per-value terms): M (~3 h) — both written BEFORE the first edit.
-Actual ~3 h combined. Between-cycles operator work, the 19pre pattern.
+popover + per-value terms): M (~3 h) — both written BEFORE the first edit;
+actual ~3 h combined. **T3 (the payor × item HCPCS join): L (~8 h)** — written
+BEFORE the first edit, as it stood in the agreed four-batch plan ("L, ~1 day").
+Between-cycles operator work, the 19pre pattern.
 Subsystem cycles since last Seams audit: 0 — reset by the 2026-09-18 audit,
 whose findings shipped as batch S. The cadence is every 4; next due at cycle 25.
 Updated: 2026-09-21
 
 ## In progress (facts to carry forward — NOT judgments)
-- Nothing is in flight against an OPEN cycle. **PR #264 is open and green** —
-  the three pre-existing Reference-lookup defects the cycle-21 deploy exposed,
-  plus the pins, fixtures and scenarios that would have caught them. It needs
-  merging and one `clasp push -f` + New-version deploy.
+- Nothing is in flight against an OPEN cycle. **PR #264 MERGED 2026-09-21**
+  (`2487fd1`) — the three pre-existing Reference-lookup defects the cycle-21
+  deploy exposed, the cycle-21 close-out, and T1 + T2. The branch was restarted
+  from `main` afterwards, per the merged-PR rule. **Still needs one
+  `clasp push -f` + New-version deploy**, then S64 and S112.
 - A FOUR-BATCH plan (T1–T4) for the Reference lookups was agreed with the
-  operator on 2026-09-21 and is not yet started. It is in the session transcript
-  and summarised under "Pending".
+  operator on 2026-09-21. T1 and T2 shipped; **T3 is in flight**; T4 is
+  unstarted. Summarised under "Pending".
 
 ## Completed this cycle
 - (Cycle 21's record is in `.cycle/HISTORY.md` and the three blocks

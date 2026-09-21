@@ -570,6 +570,22 @@
     "checkOopEligibility"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-21",
+   "why": "T3: the payor x item HCPCS join — hcpcsParse_ (the ONE tokenizer), oopCodeIndex_ and insNameCodeDetail_ added; oopRowObj_ ships the parsed join key, checkOopEligibility ships it too, searchInsurancePayors names its code columns from the pricing tab and reports codeJoin",
+   "added": [
+    "hcpcsParse_",
+    "insNameCodeDetail_",
+    "oopCodeIndex_"
+   ],
+   "removed": [],
+   "changed": [
+    "checkOopEligibility",
+    "oopRowObj_",
+    "searchInsurancePayors"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3022,7 +3038,7 @@
   "checkOopEligibility": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "a8c07b3cac79aba6"
+   "sha": "480f1e1e18f31763"
   },
   "checkOpenPunches": {
    "file": "20_timeclock.js",
@@ -4684,6 +4700,11 @@
    "kind": "function",
    "sha": "a7df5c74fff20e6b"
   },
+  "hcpcsParse_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "4cbfd603203381fa"
+  },
   "humanizeFormFieldKey_": {
    "file": "61_forms.js",
    "kind": "function",
@@ -4703,6 +4724,11 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "5823beeb234155f1"
+  },
+  "insNameCodeDetail_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "f97ae732a91cf1d6"
   },
   "insPayorRowObj_": {
    "file": "70_kb.js",
@@ -5664,6 +5690,11 @@
    "kind": "function",
    "sha": "b3357dc2e76ac45d"
   },
+  "oopCodeIndex_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "1e3d158ffcdb7f7a"
+  },
   "oopEligibilityCheck_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -5707,7 +5738,7 @@
   "oopRowObj_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "e3081e04c9bc0c2b"
+   "sha": "c0856406be14769e"
   },
   "oopSheet_": {
    "file": "70_kb.js",
@@ -6497,7 +6528,7 @@
   "searchInsurancePayors": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "51610bb3a1f1794e"
+   "sha": "09ffcdee7bf7dfb9"
   },
   "searchMyCallNotes": {
    "file": "30_callnotes.js",
