@@ -7,29 +7,30 @@ Scope: Reference lookups (batch R, done) · Seams & Invariants (batch S, F1–F5
 Test Command: manual
 Estimates: R (reference lookups restructure): M (~4 h) — written before the
 first edit. Actual ~3.5 h. · S (seams batch F1–F5): M (~5 h) — written before
-the first edit.
-Subsystem cycles since last Seams audit: 6 — **still overdue.** This cycle is
-an operator-requested interface batch, not an audit, so it does NOT reset the
-counter and does NOT discharge the cadence. The next `/audit` MUST be a Seams
-& Invariants audit.
+the first edit. Actual ~2.5 h (two findings were smaller than the audit said).
+Subsystem cycles since last Seams audit: 6 — **the audit RAN on 2026-09-18 and
+its findings are implemented (batch S). `/reflect` resets this to 0.**
 Updated: 2026-09-18
 
 ## In progress (facts to carry forward — NOT judgments)
-- Batch R is implemented, committed and pushed on `claude/festive-noether-unougu`
-  (3 commits on top of the cycle-20 close-out). NOT deployed, and no PR opened —
-  the operator has not asked for one.
-- The block is `.cycle/blocks/21-reference-lookups-broad-implement.md`.
-- The next concrete step is the operator's: `clasp push -f` + a New-version
-  deploy, then the S112 walk. `/sync-docs` is owed first — five doc files
-  describe the three-panel surface that no longer exists.
+- Batch R (Reference two-panel restructure) and batch S (Seams F1–F5) are both
+  implemented and pushed on `claude/festive-noether-unougu`. No PR opened.
+- Blocks: `.cycle/blocks/21-reference-lookups-broad-implement.md` and
+  `.cycle/blocks/21-seams-broad-implement.md`.
+- The Seams & Invariants audit RAN this cycle and is discharged — `/reflect`
+  should reset the seam counter to 0.
+- Next: `/sync-docs` for batch S (the seams block lists what is owed), then
+  `/reflect` for cycle 21. The operator still owes batch R's deploy + S112 walk;
+  batch S needs NO deploy (no `web-app/` file changed).
 
 ## Completed this cycle
-- R-1 | web-app/70_kb.js | checkOopEligibility ships the whole oopRowObj_ shape
-- R-2 | web-app/kb/script_kb.html | one panel, one row renderer, both payloads
-- R-3 | web-app/kb/script_kb.html | oopDegraded_ — a failing address keeps the prices
-- R-4 | web-app/kb/script_kb.html | the band, both g50 triggers, auto-fit fields, V-9 cap
-- R-5 | web-app/kb/script_kb.html | visible labels on both fields
-- S112 + S73 rewritten for the merged panel
+- R-1..R-5 | web-app/70_kb.js, web-app/kb/script_kb.html | the two-panel merge
+- R-6 | web-app/kb/script_kb.html | every landing block is a section or the band
+- S-F1 | test/client/run.js | AUDIT.TS + CN.DATE_LOCAL covered; the derived half
+- S-F2 | test/client/run.js, harness.js | H-1's fifth consumer + serverCallersOf
+- S-F3 | .cycle/config.md | INV-208/209 now point at S112
+- S-F4 | test/client/run.js | id-uniqueness pin
+- S-F5 | test/client/run.js | the Verify ratchet at floor INV-139
 
 ## Pending / not yet done
 - **DEFERRED by the cycle-20 scan, still an operator decision:** F-09's holiday
@@ -110,11 +111,13 @@ Updated: 2026-09-18
   remembered.
 
 ## Where I left off
-Batch R is done and pushed; the tree is clean and every harness is green
-(pure 914, DOM 131, lint, manifest, counts, visual 6/6 with the shots read).
+Batches R and S are both done and pushed; the tree is clean and every harness is
+green. Batch R's `/sync-docs` is already applied; batch S's is NOT — its block
+lists the four files owed.
 
-Do `/sync-docs` next — five doc files still describe three lookup panels, and
-the block lists exactly which. Then the operator deploys and walks S112.
+Do `/sync-docs` for batch S, then `/reflect` for cycle 21 (which resets the seam
+counter to 0 and can adopt the three reserved invariant numbers).
 
-The Seams & Invariants audit is STILL overdue (counter 6, cadence 4). This
-batch was operator-requested interface work and does not discharge it.
+Batch S scored 0 − 0 honestly: every finding was a hole in a safety net, no live
+defect existed, and the audit over-reported two of the five. Do not let the
+effort tempt an upgrade at reflect time.
