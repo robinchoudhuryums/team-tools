@@ -13264,6 +13264,11 @@ const VM_SAMPLE_KEEP = 'New voicemail from Jake Jingo Inaanuran (327) Your exten
 vm.runInContext(extractRawFunction('Code.js', 'oopHeaderRole_'), _vmCtx, { filename: 'oopHeaderRole_' });
 vm.runInContext(extractRawFunction('Code.js', 'oopNameCol_'), _vmCtx, { filename: 'oopNameCol_' });
 vm.runInContext(extractRawFunction('Code.js', 'oopPriceByLabel_'), _vmCtx, { filename: 'oopPriceByLabel_' });
+// T3: oopRowObj_ parses the join key through the ONE tokenizer, so it must be
+// in the context before it. hcpcsParse_ is self-contained — loading it alone
+// really exercises the shorthand refusal, not a fragment of it.
+vm.runInContext(extractRawFunction('Code.js', 'hcpcsParse_'), _vmCtx, { filename: 'hcpcsParse_' });
+vm.runInContext(extractRawFunction('Code.js', 'insNameCodeDetail_'), _vmCtx, { filename: 'insNameCodeDetail_' });
 vm.runInContext(extractRawFunction('Code.js', 'oopRowObj_'), _vmCtx, { filename: 'oopRowObj_' });
 
 test('OOP-A: oopHeaderRole_ resolves by STEM, and tests `effective` BEFORE `price` so a date column can never be read as money', () => {
@@ -13361,7 +13366,7 @@ test("OOP-C: oopRowObj_ against the operator's REAL header row — the name is f
   const sCtx = { String: String, Array: Array, Math: Math, JSON: JSON, Object: Object,
     OOP_MAX_ROWS: 5000, OOP_TOP: 8 };
   vm.createContext(sCtx);
-  ['oopHeaderRole_', 'oopNameCol_', 'oopRowObj_', 'insPayorScore_', 'oopMatchScore_', 'searchOopPricing']
+  ['oopHeaderRole_', 'oopNameCol_', 'hcpcsParse_', 'oopRowObj_', 'insPayorScore_', 'oopMatchScore_', 'searchOopPricing']
     .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), sCtx, { filename: f }));
   const GRID = [
     ['HCPCS', 'Category', 'Item', 'OOP Price', 'Area Eligibility', 'EffectiveDate'],
@@ -13484,6 +13489,363 @@ test('OOP-C: oopPriceByLabel_ resolves a quote against the column it NAMES — c
     'a vanished column returns NULL rather than the nearest price');
   assert.strictEqual(P([], 'anything'), null);
   assert.strictEqual(P([], ''), null);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  T3 (2026-09-21) — the payor × item join on the HCPCS code
+// ════════════════════════════════════════════════════════════════════════════
+
+test('T3-1: hcpcsParse_ reads whole codes and REFUSES the shorthand — an uncertain parse carries no tokens AT ALL', () => {
+  const p = (s) => JSON.parse(vm.runInContext(
+    'JSON.stringify(hcpcsParse_(' + JSON.stringify(s) + '))', _vmCtx));
+
+  // ── The codes both operator tables really carry ──────────────────────────
+  assert.deepStrictEqual(p('K0800'), { raw: 'K0800', shaped: true, certain: true, tokens: ['K0800'] },
+    'a payor COLUMN HEADER is a bare code');
+  assert.deepStrictEqual(p('K0800 (C/C)').tokens, ['K0800'],
+    'the pricing tab writes a qualifier in parentheses — it is a qualifier, never a code');
+  assert.deepStrictEqual(p('E0247').tokens, ['E0247']);
+  assert.deepStrictEqual(p('k0800').tokens, ['K0800'], 'case-folded, so the two sheets need not agree on case');
+  assert.deepStrictEqual(p('  K0800  ').tokens, ['K0800']);
+  assert.deepStrictEqual(p('K0800BR').tokens, ['K0800BR'], 'a modifier suffix rides along');
+
+  // Several WHOLE codes, however they are separated, are all readable.
+  assert.deepStrictEqual(p('K0800, K0801').tokens, ['K0800', 'K0801']);
+  assert.deepStrictEqual(p('K0800/K0801').tokens, ['K0800', 'K0801']);
+  assert.deepStrictEqual(p('K0800 & K0801').tokens, ['K0800', 'K0801']);
+  assert.deepStrictEqual(p('K0800, K0800').tokens, ['K0800'], 'de-duplicated');
+
+  // ── THE RULE. The operator really writes this, and a human reads it as
+  // K0821/K0823/K0816. We will not: `23` and `16` are not codes by any rule we
+  // can defend, and the alternative reading would tell a rep a payor covers an
+  // item it may not. The refusal is the WHOLE string, and it is expressed as a
+  // SHAPE — there are no tokens to assert from, so no consumer can.
+  const sh = p('K0821/23/16');
+  assert.strictEqual(sh.shaped, true, 'it is recognisably a code column — that is WHY silence would mislead');
+  assert.strictEqual(sh.certain, false);
+  assert.deepStrictEqual(sh.tokens, [], 'NO tokens on the uncertain path — the safety rule as a shape, not a warning');
+  assert.strictEqual(sh.raw, 'K0821/23/16', 'the raw text is kept so the rep still sees what the sheet says');
+
+  // The readable leading code is NOT kept. Keeping it under-claims rather than
+  // over-claims, which sounds like the safe direction and is not: the rep asked
+  // about three items and would be answered about one, silently.
+  assert.ok(sh.tokens.indexOf('K0821') < 0, 'not even the fragment that IS a whole code');
+
+  // ── Not a code column at all — a different answer, and the client says which
+  ['Category', 'Comments', 'Network Status', ''].forEach((s) => {
+    const r = p(s);
+    assert.strictEqual(r.shaped, false, `"${s}" is not code-shaped`);
+    assert.strictEqual(r.certain, false);
+    assert.deepStrictEqual(r.tokens, []);
+  });
+
+  // ── The structural guarantee the whole feature rests on, over every input
+  // above plus the awkward ones: tokens are NEVER non-empty while certain is
+  // false. If this can be made to fail, an uncertain parse can assert coverage.
+  ['K0800', 'K0821/23/16', 'K0800 (C/C)', 'Category', '', 'K0800/23', '23/K0800',
+    'K99', 'K0800 or ask', '(K0800)', 'K08000', 'ZZ1234'].forEach((s) => {
+    const r = p(s);
+    assert.ok(r.certain || r.tokens.length === 0,
+      `"${s}": tokens must be empty whenever certain is false`);
+    assert.ok(!r.certain || r.tokens.length > 0,
+      `"${s}": a certain parse must actually produce tokens`);
+  });
+
+  // Named cases from that sweep, so a change of behaviour reads as a change.
+  assert.strictEqual(p('K0800/23').certain, false, 'one unreadable fragment refuses the whole string');
+  assert.strictEqual(p('K0800 or ask').certain, false, 'a word among the codes is not a code');
+  assert.strictEqual(p('K99').shaped, false, 'too short to be a code');
+  assert.deepStrictEqual(p('(K0800)').tokens, [],
+    'a string that is ONLY a parenthetical has nothing left after the qualifier is stripped');
+});
+
+test('T3-2: insNameCodeDetail_ names an unambiguous code, refuses an ambiguous one, and never names from an uncertain parse', () => {
+  const name = (label, byToken) => JSON.parse(vm.runInContext(
+    'JSON.stringify(insNameCodeDetail_(' + JSON.stringify({ label: label, value: 'SI/PR' }) +
+    ',' + JSON.stringify(byToken) + '))', _vmCtx));
+  const IDX = { K0800: ['Drive Scout 3 Wheel'], K0801: ['Drive Scout 4 Wheel'],
+    E0247: ['Bariatric Transfer Bench', 'Transfer Bench (HD)'] };
+
+  const one = name('K0800', IDX);
+  assert.strictEqual(one.item, 'Drive Scout 3 Wheel', 'the whole feature: a bare code column gets a name');
+  assert.strictEqual(one.itemCount, 1);
+  assert.strictEqual(one.code.certain, true);
+
+  // TWO pricing rows carry E0247. The spreadsheet allows that and cannot say
+  // which the payor meant, so naming one would be a guess printed as a fact.
+  const two = name('E0247', IDX);
+  assert.strictEqual(two.item, '', 'ambiguous → NAMES NOTHING');
+  assert.strictEqual(two.itemCount, 2, 'but says how many, so the client can offer the count instead of silence');
+
+  // The shorthand, on the naming side. `certain:false` carries no tokens, so
+  // there is nothing to look up — but the count must stay 0 rather than
+  // inheriting a stale value, or the client would print "0 items".
+  const sh = name('K0821/23/16', IDX);
+  assert.strictEqual(sh.item, '');
+  assert.strictEqual(sh.itemCount, 0);
+  assert.strictEqual(sh.code.shaped, true);
+  assert.strictEqual(sh.code.certain, false);
+
+  // A code the pricing tab simply does not carry: a fact about the pricing tab,
+  // not a failure. Distinguishable from the shorthand by `certain`.
+  const miss = name('K9999', IDX);
+  assert.strictEqual(miss.item, '');
+  assert.strictEqual(miss.itemCount, 0);
+  assert.strictEqual(miss.code.certain, true, 'READ fine — it is simply not in the pricing tab');
+
+  // Not a code column at all.
+  const cat = name('Category', IDX);
+  assert.strictEqual(cat.code.shaped, false);
+  assert.strictEqual(cat.item, '');
+
+  // A multi-code header collects every item it names, and one code naming an
+  // item the other also names must not count it twice.
+  const multi = name('K0800/K0801', IDX);
+  assert.strictEqual(multi.itemCount, 2, 'two codes, two items — ambiguous, so unnamed');
+  assert.strictEqual(multi.item, '');
+  assert.strictEqual(name('K0800/K0800', IDX).item, 'Drive Scout 3 Wheel',
+    'the same item reached twice is still ONE item');
+});
+
+test('T3-3: oopRowObj_ ships the parsed join key, so both OOP surfaces carry it from the ONE resolver', () => {
+  const obj = (h, row) => JSON.parse(vm.runInContext(
+    'JSON.stringify(oopRowObj_(' + JSON.stringify(h) + ',' + JSON.stringify(row) + '))', _vmCtx));
+  const H = ['HCPCS', 'Item', 'OOP Price'];
+
+  const ok = obj(H, ['K0800 (C/C)', 'Drive Scout 3 Wheel', '$920.00']);
+  assert.deepStrictEqual(ok.codes.tokens, ['K0800'], 'parsed HERE, not by each consumer');
+  assert.strictEqual(ok.codes.certain, true);
+  assert.strictEqual(ok.code, 'K0800 (C/C)', 'the RAW code is still shipped and still displayed verbatim');
+
+  const sh = obj(H, ['K0821/23/16', 'Multi Scooter', '$1,000.00']);
+  assert.strictEqual(sh.codes.certain, false);
+  assert.deepStrictEqual(sh.codes.tokens, [], 'the refusal reaches the item surface too');
+
+  assert.strictEqual(obj(H, ['', 'No Code Item', '$5.00']).codes.shaped, false);
+
+  // checkOopEligibility hand-lists the fields it ships (the R-1 shape). A field
+  // added to the resolver and forgotten there is the g126 defect returning, so
+  // the list is checked against the resolver rather than trusted.
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const elig = nc(extractRawFunction('Code.js', 'checkOopEligibility'));
+  assert.ok(/\bcodes: o\.codes\b/.test(elig),
+    'the eligibility endpoint ships `codes` too — both readers of the one tab carry the same shape');
+});
+
+test('T4-1: the lookup arrow-key mapping is total and never crosses the landing with the drawer', () => {
+  const kb = extractScript('kb/script_kb.html');
+  const ctx = vm.createContext({ String: String, RegExp: RegExp });
+  ['kbNavHostIdFor_', 'kbNavInputIdFor_'].forEach((f) => {
+    vm.runInContext(extractFunction('kb/script_kb.html', f), ctx, { filename: f });
+  });
+  const fwd = (s) => vm.runInContext('kbNavHostIdFor_(' + JSON.stringify(s) + ')', ctx);
+  const back = (s) => vm.runInContext('kbNavInputIdFor_(' + JSON.stringify(s) + ')', ctx);
+
+  // Landing and drawer are two independent pairs. A suffix that leaked between
+  // them would walk a rep from the drawer's field into the landing's results —
+  // off-screen, with the focus ring nowhere they can see it.
+  assert.strictEqual(fwd('kb-ins-input'), 'kb-ins-results');
+  assert.strictEqual(fwd('kb-ins-input-d'), 'kb-ins-results-d');
+  assert.strictEqual(fwd('kb-oop-item'), 'kb-oop-results');
+  assert.strictEqual(fwd('kb-oop-item-d'), 'kb-oop-results-d');
+  // The OOP panel has TWO fields and both walk into the same results.
+  assert.strictEqual(fwd('kb-oop-addr'), 'kb-oop-results');
+  assert.strictEqual(fwd('kb-oop-addr-d'), 'kb-oop-results-d');
+
+  // Anything else is not a lookup field, and must map to nothing rather than
+  // to a plausible-looking host id.
+  ['', 'kb-search', 'kb-ins-results', 'kb-oop-item-x', 'kb-ins-input-D', 'xkb-ins-input']
+    .forEach((s) => assert.strictEqual(fwd(s), '', JSON.stringify(s) + ' is not a lookup field'));
+
+  // Escape's return trip. The OOP panel's TWO fields collapse to the ITEM one:
+  // it is the field that decides what the rows are, and the address only
+  // refines them.
+  assert.strictEqual(back('kb-ins-results'), 'kb-ins-input');
+  assert.strictEqual(back('kb-ins-results-d'), 'kb-ins-input-d');
+  assert.strictEqual(back('kb-oop-results'), 'kb-oop-item');
+  assert.strictEqual(back('kb-oop-results-d'), 'kb-oop-item-d');
+  ['', 'kb-ins-input', 'kb-oop-results-x'].forEach((s) => assert.strictEqual(back(s), ''));
+
+  // ROUND TRIP over every field: the host you walk into returns you to a field
+  // of the same panel and the same suffix. Derived rather than listed, so a new
+  // field cannot be added to the forward map and forgotten in the reverse one.
+  ['kb-ins-input', 'kb-ins-input-d', 'kb-oop-item', 'kb-oop-item-d', 'kb-oop-addr', 'kb-oop-addr-d']
+    .forEach((field) => {
+      const host = fwd(field);
+      const home = back(host);
+      assert.ok(home, field + ' → ' + host + ' → (nothing) — Escape would have nowhere to go');
+      const sfx = (s) => (/-d$/.test(s) ? '-d' : '');
+      assert.strictEqual(sfx(home), sfx(field), field + ' returns to the SAME host pair, got ' + home);
+      assert.strictEqual(/kb-ins/.test(home), /kb-ins/.test(field), field + ' returns to the same PANEL, got ' + home);
+    });
+
+  // The rows must actually be focusable, or every arrow above lands nowhere.
+  const row = extractFunction('kb/script_kb.html', 'oopItemRowHtml_');
+  assert.ok(/data-kb-nav tabindex="-1"/.test(row), 'an item row is focusable but NOT a tab stop');
+  assert.ok(/data-kb-nav tabindex="-1"/.test(extractFunction('kb/script_kb.html', 'insRenderResults_')),
+    'and so is a payor card');
+  const nav = extractFunction('kb/script_kb.html', 'kbLookupKeydown_');
+  assert.ok(/if \(t !== row\) return;/.test(nav),
+    'Enter is the ROW’s only when the row itself has focus — on a button inside it, it is that button’s');
+  assert.ok(/document\.addEventListener\('keydown', kbLookupKeydown_\)/.test(kb),
+    'bound once at the document, so it survives every results re-render');
+});
+
+test('T4-2: the copy button yields the FIGURE from the parked payload, never a quote-shaped line and never the DOM', () => {
+  const copy = extractFunction('kb/script_kb.html', 'oopCopyPrice_');
+
+  // INV-208: the price never round-trips through the DOM. The row carries an
+  // INDEX and the figure comes from the payload parked on the results host —
+  // the composer picker's discipline, for the same reason (g49).
+  assert.ok(/_oopItems/.test(copy), 'the value is read from the PARKED payload');
+  assert.ok(/parseInt\(btn\.getAttribute\('data-oop-copy'\), 10\)/.test(copy),
+    'addressed by index');
+  assert.ok(!/textContent|innerText|innerHTML/.test(copy),
+    'and never scraped back out of the rendered row');
+
+  // THE BOUNDARY. A composer quote is re-verified against the live sheet at
+  // send (INV-208); a line pasted from here never would be, and would sit in
+  // the customer's email looking exactly like one that was. So this copies the
+  // FIGURE, and must never grow into the quote line's shape.
+  // Stated as what reaches the CLIPBOARD, exactly — not as a ban on quote-ish
+  // words anywhere in the function. The first draft banned the em dash and went
+  // red on the TOAST, which is allowed to say whatever reads best; the claim
+  // was never about the toast. `String(pr.value)` followed immediately by the
+  // callback leaves no room to concatenate a label, a date, or a sentence.
+  assert.ok(/copyWithFeedback_\(String\(pr\.value\), \{/.test(copy),
+    'what reaches the clipboard is the price value and NOTHING concatenated to it');
+  assert.ok(!/oopQuoteLine_/.test(copy), 'and it never reaches for the composer’s canonical line');
+
+  // A stale index must refuse rather than copy whatever is at that slot now.
+  assert.ok(/no longer on screen/.test(copy), 'a vanished row says so instead of copying something else');
+
+  // The honest-failure machinery moved to the shell in T5 and is pinned there
+  // (T5-1). What stays this pin's business is that the PRICE goes through it:
+  // copyWithFeedback_ owns the success branch, so this call site cannot report
+  // a copy it did not make, whatever else changes around it.
+  // Stated as the SUCCESS message, not as a ban on toasts. The call site still
+  // toasts its own REFUSAL ("that price is no longer on screen"), which is a
+  // different thing and is this function's to say — it is the only code that
+  // knows the index did not resolve. What it must not own is "copied".
+  assert.ok(!/toast-success/.test(copy),
+    'the success message is the shared helper’s to say, not this call site’s — six hand-written ' +
+    'success paths is exactly what T5 removed');
+  assert.ok(/no longer on screen/.test(copy),
+    'while its own refusal stays here, where the index is');
+  assert.ok(/label:/.test(copy),
+    'and it names the figure, so the manual failover can say WHICH price it is showing');
+});
+
+test('T5-1: ONE honest copy helper, and the raw clipboard APIs are banned everywhere else', () => {
+  // THE DEFECT, in one sentence: six partials each hand-wrote a copy helper,
+  // and every one of them ran its success path unconditionally. Two reasons,
+  // both invisible in a code read:
+  //   * execCommand('copy') returns FALSE when denied — it does not throw, so
+  //     the try/catch four of them had caught nothing.
+  //   * clipboard.writeText REJECTS — and one site attached no handler at all.
+  // The cost was the rep pasting the PREVIOUS clipboard contents: on the Call
+  // Notes save path, a different patient's note into the CRM.
+  //
+  // DERIVED, not enumerated. My own survey of the call sites said five; a grep
+  // found SEVEN, because a hand-list is only as good as the day it was written
+  // (g116's sixth direction). So the net scans every partial and exempts by
+  // NAME, with the reason beside each exemption.
+  const partials = fs.readdirSync(path.join(__dirname, '../../web-app'), { withFileTypes: true })
+    .flatMap((d) => d.isDirectory()
+      ? fs.readdirSync(path.join(__dirname, '../../web-app', d.name))
+          .filter((f) => /^script_.*\.html$/.test(f)).map((f) => d.name + '/' + f)
+      : (/^script_.*\.html$/.test(d.name) ? [d.name] : []));
+  assert.ok(partials.length >= 10, 'the partial sweep found them — ' + partials.length);
+
+  // The ONE place the raw APIs may appear, and the ONE legitimate other user.
+  const ALLOWED = {
+    'copyText_': 'the one honest helper — it owns both raw APIs and reports the outcome',
+    // Copies image BYTES, not text, and already degrades VISIBLY: it opens the
+    // image in a tab for a native right-click. Not a text copy, and not a
+    // silent success — so it is exempt as a fact, not as a convenience.
+    'intakeCopyImage_': 'copies image bytes via ClipboardItem and falls back to opening the image',
+  };
+
+  const offenders = [];
+  partials.forEach((rel) => {
+    const src = extractScript(rel);
+    // Split at top-level function declarations so a hit can be attributed.
+    const parts = src.split(/\n(?=function\s+\w+\s*\()/);
+    parts.forEach((chunk) => {
+      const m = /^function\s+(\w+)\s*\(/.exec(chunk);
+      const name = m ? m[1] : '(top level)';
+      const code = chunk.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+      if (!/navigator\.clipboard|execCommand\(\s*['"]copy['"]\s*\)/.test(code)) return;
+      if (ALLOWED[name]) return;
+      offenders.push(rel + ' → ' + name);
+    });
+  });
+  assert.deepStrictEqual(offenders, [],
+    'every text copy goes through copyText_/copyWithFeedback_ — found raw clipboard use in: ' +
+    JSON.stringify(offenders));
+
+  // NON-VACUITY. A scan that found no partials, or a split that produced no
+  // named functions, would pass the assert above while checking nothing.
+  assert.ok(/navigator\.clipboard/.test(extractScript('script_core.html')),
+    'the helper really is in the shell — the sweep above is not passing because nothing uses the clipboard');
+  assert.ok(/intakeCopyImage_/.test(extractScript('intake/script_intake.html')),
+    'and the exempted image copy really exists, so the exemption is a fact rather than a leftover');
+
+  // The helper itself: both failure modes handled, the outcome reported.
+  const ct = extractFunction('script_core.html', 'copyText_');
+  assert.ok(/document\.execCommand\('copy'\) === true/.test(ct),
+    'the execCommand RESULT is checked — it returns false when denied, it does not throw');
+  assert.ok(/\.then\(function \(\) \{ cb\(true\); \}, fallback\)/.test(ct),
+    'a REJECTED writeText falls through to the shim rather than vanishing');
+  assert.ok(/try \{\s*if \(navigator\.clipboard/.test(ct),
+    'even reading navigator.clipboard is inside the try — a sandboxed frame can throw on the property itself');
+
+  // The success branch is the HELPER'S. This is the structural half of the fix:
+  // a call site cannot say "copied" without the helper saying it worked.
+  const cw = extractFunction('script_core.html', 'copyWithFeedback_');
+  assert.ok(/copyText_\(text, function \(ok\) \{/.test(cw), 'it waits for the outcome');
+  assert.ok(/if \(ok\)/.test(cw) && /manualCopyModal_\(/.test(cw),
+    'success and failure are its two branches, and failure opens the failover');
+  assert.ok(/if \(!o\.silent\)/.test(cw),
+    '`silent` suppresses the SUCCESS toast only');
+  assert.ok(cw.indexOf('manualCopyModal_') > cw.indexOf('if (ok)'),
+    'and the failover is on the FAILURE side of that branch');
+
+  // The failover, which is what the "manual-copy failover" decision asked for.
+  const mc = extractFunction('script_core.html', 'manualCopyModal_');
+  assert.ok(/ensureOverlay\(/.test(mc), 'a real overlay through the hooks (g100), not a classList toggle');
+  assert.ok(/field\.value = body/.test(mc), 'the text is ASSIGNED, never interpolated into the markup');
+  assert.ok(/field\.select\(\)/.test(mc), 'and pre-selected, so the rep can just press copy');
+  assert.ok(/nothing was copied/.test(mc), 'and it says plainly that the copy did NOT happen');
+});
+
+test('T3-4: the join is built ONLY when a result has code columns, and its failure is NAMED rather than inferred', () => {
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
+  const srv = nc(extractRawFunction('Code.js', 'searchInsurancePayors'));
+
+  // A payor with no code columns must cost no extra sheet read. Without the
+  // guard, every keystroke of every payor search would re-read the pricing tab.
+  assert.ok(/wantsCodes[\s\S]*hcpcsParse_\(d\.label\)\.shaped/.test(srv),
+    'the index is built only when some detail label is code-shaped');
+  assert.ok(/wantsCodes \? oopCodeIndex_\(\)/.test(srv),
+    'and the read itself is behind that flag, not merely the naming');
+
+  // codeJoin.attempted is the SERVER's word. Inferring "the join failed" from
+  // empty item fields cannot work: a payor sheet whose columns are not codes
+  // produces exactly the same empty fields, and that is the sheet working.
+  assert.ok(/codeJoin: \{ attempted: wantsCodes, error: idx\.error \}/.test(srv),
+    'the response states whether the join was attempted and how it went (g53)');
+
+  // The index refuses the same shorthand the tokenizer does — on the other side
+  // of the join. Without this a `K0821/23/16` pricing row would enter the index
+  // under a token nobody can defend.
+  const idx = nc(extractRawFunction('Code.js', 'oopCodeIndex_'));
+  assert.ok(/if \(!p\.certain\) continue;/.test(idx),
+    'an uncertain pricing code never enters the index');
+  assert.ok(/catch \(err\)[\s\S]*error: String\(err\.message/.test(idx),
+    'an unreadable pricing tab is PASSED THROUGH, not swallowed into an empty index');
+  assert.ok(/indexOf\(o\.name\) < 0/.test(idx),
+    'a token that names two items keeps BOTH rather than the last one written');
 });
 
 // ELIG (operator 2026-09-16) — area eligibility off the SAME column. The
@@ -13835,10 +14197,50 @@ test('ELIG: the client shows both verdicts with three distinct states, and the c
   assert.ok(/esc\(\(v && v\.why\)/.test(verdict), 'the server reason is escaped before innerHTML');
 
   // The verdicts moved INTO the shared row renderer with the 2026-09-18 merge,
-  // so that is where the labels now live.
-  const row = extractFunction('kb/script_kb.html', 'oopItemRowHtml_');
-  assert.ok(/Through insurance/.test(row) && /Paying out of pocket/.test(row),
-    'both verdicts are LABELLED — an unlabelled pair is worse than one answer');
+  // and into their own function with T4's collapse (2026-09-21).
+  const vs = extractFunction('kb/script_kb.html', 'eligVerdictsHtml_');
+  assert.ok(/Through insurance'/.test(vs) && /Paying out of pocket/.test(vs),
+    'a DISAGREEMENT still renders as two labelled rows — an unlabelled pair is worse than one answer');
+
+  // T4 AMENDS INV-209 and this is the line that keeps the amendment honest.
+  // The original rule was "both verdicts shown, LABELLED, rather than behind a
+  // payment-method toggle", and its reason was that the rep is usually deciding
+  // BETWEEN them. When they agree there is nothing to decide, so the ROW
+  // collapses — but the CLAIM must still name both payment routes, or the
+  // single row reads as an answer about only one of them, which is exactly the
+  // failure the original decision was written to prevent.
+  assert.ok(/Through insurance or out of pocket/.test(vs),
+    'the COLLAPSED verdict names BOTH payment routes — collapsing the row must never collapse the claim');
+  assert.ok(!/toggle|button|hidden/i.test(vs),
+    'and neither answer is ever behind an interaction — that is what INV-209 forbade, and still does');
+
+  // Strict agreement. A near-boundary yes and a flat yes are different answers
+  // (INV-209), and two verdicts reached for different stated reasons are two
+  // facts — collapsing either pair would state one as the other.
+  // DRIVEN, not read. Asserting the source mentions `.why` proved nothing: a
+  // bite that made the why-comparison compare verdicts instead left this pin
+  // green, because no fixture anywhere had two verdicts that matched on
+  // verdict and near but differed in REASON. That case is real — insurance
+  // yes because the address is inside the radius, out of pocket yes because
+  // the state limit does not apply — and collapsing it would print one
+  // reason as if it covered both.
+  const ctx = vm.createContext({ String: String, Boolean: Boolean });
+  vm.runInContext(extractFunction('kb/script_kb.html', 'eligVerdictsAgree_'), ctx,
+    { filename: 'eligVerdictsAgree_' });
+  const agrees = (a, b) => vm.runInContext(
+    'eligVerdictsAgree_(' + JSON.stringify(a) + ',' + JSON.stringify(b) + ')', ctx);
+
+  const Y = { verdict: 'yes', near: false, why: 'Available anywhere in the US.' };
+  assert.strictEqual(agrees(Y, { verdict: 'yes', near: false, why: 'Available anywhere in the US.' }), true,
+    'identical verdicts agree — this is the case that collapses');
+  assert.strictEqual(agrees(Y, { verdict: 'yes', near: false, why: 'Out of pocket there is no state restriction.' }), false,
+    'SAME verdict, DIFFERENT reason: two facts, not one');
+  assert.strictEqual(agrees(Y, { verdict: 'yes', near: true, why: 'Available anywhere in the US.' }), false,
+    'a near-boundary yes is not a flat yes (INV-209)');
+  assert.strictEqual(agrees(Y, { verdict: 'no', near: false, why: 'Available anywhere in the US.' }), false,
+    'opposite verdicts never agree, whatever they say');
+  assert.strictEqual(agrees(Y, null), false, 'a missing verdict is not agreement');
+  assert.strictEqual(agrees(null, null), false, 'and neither is two missing ones');
 
   const header = extractFunction('kb/script_kb.html', 'oopEligHeaderHtml_');
   assert.ok(/straight-line/.test(header), 'the distance caveat rides the warehouse strip');
@@ -14001,8 +14403,45 @@ test('R-2: ONE renderer draws a price row — the eligibility payload and the pr
     'exactly ONE function emits a price span, and it is oopPriceHtml_ — found: ' + JSON.stringify(emitters));
 
   // And it renders EVERY priced column, labelled once there is more than one.
+  //
+  // T4 (2026-09-21) moved the derivation into oopPriceList_ and gave it a
+  // SECOND consumer — the copy button, which addresses a price by INDEX. That
+  // makes the shared derivation load-bearing rather than tidy: if the copy
+  // handler built its own list, the two would disagree about which price index
+  // 1 is on a payload carrying only the scalar, and the button would copy a
+  // different number from the one beside it. So the pin now follows the
+  // derivation instead of looking for `m.prices` in the renderer.
+  // DRIVEN. Reading `m.price` out of the source proved nothing — a bite that
+  // made the scalar branch unreachable left this green, because nothing ever
+  // put a scalar-only payload through it. That payload is a real shape: an
+  // older deployment answering a newer client, which is exactly what a New
+  // Version deploy produces for every tab already open.
+  const lctx = vm.createContext({ String: String });
+  vm.runInContext(extractFunction('kb/script_kb.html', 'oopPriceList_'), lctx,
+    { filename: 'oopPriceList_' });
+  const plist = (m) => JSON.parse(vm.runInContext(
+    'JSON.stringify(oopPriceList_(' + JSON.stringify(m) + '))', lctx));
+
+  assert.deepStrictEqual(plist({ prices: [{ label: 'A', value: '$1' }, { label: 'B', value: '$2' }] }),
+    [{ label: 'A', value: '$1' }, { label: 'B', value: '$2' }], 'every priced column, in order');
+  assert.deepStrictEqual(plist({ price: '$9.00' }), [{ label: '', value: '$9.00' }],
+    'a scalar-only payload yields ONE unlabelled price — an older deployment answering a newer client');
+  assert.deepStrictEqual(plist({ prices: [{ label: 'A', value: '$1' }], price: '$9.00' }),
+    [{ label: 'A', value: '$1' }], 'the array WINS — the scalar is prices[0] and would duplicate it');
+  assert.deepStrictEqual(plist({ prices: [], price: '   ' }), [], 'a blank price is no price, not an empty label');
+  assert.deepStrictEqual(plist({}), []);
+  assert.deepStrictEqual(plist(null), [], 'and a missing row does not throw on the way to "no price on file"');
+
+  const list = extractFunction('kb/script_kb.html', 'oopPriceList_');
+  assert.ok(/m\.prices/.test(list), 'it reads the prices ARRAY, not the scalar');
+
   const price = extractFunction('kb/script_kb.html', 'oopPriceHtml_');
-  assert.ok(/m\.prices/.test(price), 'it reads the prices ARRAY, not the scalar');
+  const copy = extractFunction('kb/script_kb.html', 'oopCopyPrice_');
+  [['oopPriceHtml_', price], ['oopCopyPrice_', copy]].forEach(([name, fn]) => {
+    assert.ok(/oopPriceList_\(/.test(fn), name + ' goes through the ONE derivation');
+    assert.ok(!/m\.prices/.test(fn) && !/\.prices &&/.test(fn),
+      name + ' does NOT re-derive the list — a second derivation is a second numbering');
+  });
   assert.ok(/prices\.length > 1/.test(price), 'and labels them once there is more than one');
   // NOTE what these two assertions do NOT cover: that the map walks the WHOLE
   // array. Truncating it to `[prices[0]]` leaves both regexes green — checked,
@@ -14210,6 +14649,7 @@ test('OOP-B: the client picker line is a CHARACTER-FOR-CHARACTER mirror of the s
   vm.createContext(vCtx);
   vm.runInContext(extractRawFunction('Code.js', 'oopNameCol_'), vCtx, { filename: 'oopNameCol_' });
   vm.runInContext(extractRawFunction('Code.js', 'oopPriceByLabel_'), vCtx, { filename: 'oopPriceByLabel_' });
+  vm.runInContext(extractRawFunction('Code.js', 'hcpcsParse_'), vCtx, { filename: 'hcpcsParse_' });
   vm.runInContext(extractRawFunction('Code.js', 'oopRowObj_'), vCtx, { filename: 'oopRowObj_' });
   vm.runInContext(extractRawFunction('Code.js', 'oopHeaderRole_'), vCtx, { filename: 'oopHeaderRole_' });
   vm.runInContext(extractRawFunction('Code.js', 'oopQuoteLine_'), vCtx, { filename: 'oopQuoteLine_' });
@@ -14641,7 +15081,18 @@ test('wiring: gate + bounded read + cap on the server; dual host + seq + A12 + [
   assert.ok((kb.match(/insLookupSecHtml_\('(-d)?'\)/g) || []).length === 2, 'ONE shared section, two hosts (landing + drawer)');
   const inputFn = nc(extractFunction('kb/script_kb.html', 'insLookupInput_'));
   assert.ok(/\+\+KB_INS\.seq/.test(inputFn) && (inputFn.match(/mySeq !== KB_INS\.seq/g) || []).length === 2, 'seq token guards BOTH async handlers (INV-156)');
-  assert.ok(/errorStateHtml_/.test(inputFn), 'transport failure renders the error card (A12)');
+  // T3 STRENGTHENED it rather than relaxing it. The failure handler used to
+  // paint errorStateHtml_ at the host itself, which was fine while the renderer
+  // owned nothing else; it now owns the cross-reference stash, so a hand-painted
+  // error card would clear the panel and leave the previous payor's rules
+  // sitting under the item rows. Both halves are asserted: the handler DELEGATES,
+  // and the thing it delegates to renders the card.
+  assert.ok(!/errorStateHtml_/.test(inputFn),
+    'the failure handler does NOT paint the error card itself — it delegates, so the stash is cleared on both failure paths');
+  assert.ok(/insRenderResults_\(suffix, q, \{ error:/.test(inputFn),
+    'transport failure goes through insRenderResults_ with a structured {error} (A12)');
+  assert.ok(/errorStateHtml_/.test(nc(extractFunction('kb/script_kb.html', 'insRenderResults_'))),
+    'transport failure renders the error card (A12)');
   const renderFn = nc(extractFunction('kb/script_kb.html', 'insRenderResults_'));
   assert.ok(/errorStateHtml_/.test(renderFn), 'server {error} renders the error card too');
   assert.ok(/TRY<\/b> rules/.test(renderFn), 'not-found renders the operator TRY guidance, never an empty state');
@@ -23796,6 +24247,187 @@ test('D1: CLAUDE.md keeps a Cycle Workflow Config stub that redirects to .cycle/
   for (const h of ['### Test Command', '### Subsystems', '### Invariant Library', '### Regression Scenarios', '### Deploy Command']) {
     assert.ok(cfg.indexOf(h) >= 0, '.cycle/config.md carries ' + h);
   }
+});
+
+test('T6: every class in the markup has a CSS RULE — the grandfathered set only shrinks', () => {
+  // THE DEFECT, three times in one file before anyone counted:
+  //   .kb-ins-row    — no rule at all, for its whole life
+  //   .kbd-sec       — a rule that meant something ELSE (a flex heading bar),
+  //                    so the drawer's lookups laid out in a row, live for weeks
+  //   .modal-head /
+  //   .modal-x       — no rule, so a popover's title and close button stacked
+  // All three were found by READING a screenshot. None overflowed anything;
+  // none raised a console error. A class in the markup is a CLAIM that a rule
+  // exists for it, and nothing in the source distinguishes a missing rule from
+  // a deliberate choice (g140).
+  //
+  // So this pin does NOT judge intent. It is a RATCHET: today's set is named
+  // below with the reason each one is fine, and a NEW bare class fails. The
+  // list may only SHRINK — removing a name without writing a rule turns this
+  // red, which is what makes it a ratchet rather than a suppression file.
+
+  const WEB = path.join(__dirname, '../../web-app');
+  const htmlFiles = (function walk(d, out) {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p, out);
+      else if (e.name.endsWith('.html')) out.push(p);
+    }
+    return out;
+  })(WEB, []);
+
+  // ── DEFINED: every .class token in any selector, in any <style> block ────
+  const defined = new Set();
+  // ── HOOK: every class named in a JS selector string ─────────────────────
+  const hooks = new Set();
+  // A hook is a class the code SELECTS ON. Three sources, each matched on the
+  // CALL rather than on the string, which is the whole lesson here — see the
+  // probe below for what the first draft did instead.
+  const addHooks = (src) => {
+    // 1. selector literals: '.foo', '.a .b', '[data-x] .c'
+    for (const m of src.matchAll(/['"`]([^'"`\n]*)['"`]/g)) {
+      if (/[.[]/.test(m[1])) for (const c of m[1].match(/\.[A-Za-z_][A-Za-z0-9_-]*/g) || []) hooks.add(c.slice(1));
+    }
+    // 2. classList.add/remove/toggle/contains/replace('a b')
+    for (const m of src.matchAll(/classList\s*\.\s*(?:add|remove|toggle|contains|replace)\s*\(([^)]*)\)/g))
+      for (const q of m[1].matchAll(/['"`]([A-Za-z0-9_ -]+)['"`]/g))
+        for (const c of q[1].split(/\s+/)) if (c) hooks.add(c);
+    // 3. className = 'a b'
+    for (const m of src.matchAll(/className\s*\+?=\s*['"`]([A-Za-z0-9_ -]+)['"`]/g))
+      for (const c of m[1].split(/\s+/)) if (c) hooks.add(c);
+  };
+  htmlFiles.forEach((f) => {
+    const src = fs.readFileSync(f, 'utf8');
+    for (const block of src.match(/<style[^>]*>[\s\S]*?<\/style>/g) || []) {
+      const css = block.replace(/\/\*[\s\S]*?\*\//g, '');
+      for (const sel of css.match(/[^{}]+(?=\{)/g) || [])
+        for (const c of sel.match(/\.[A-Za-z_][A-Za-z0-9_-]*/g) || []) defined.add(c.slice(1));
+    }
+    addHooks(src.replace(/<style[^>]*>[\s\S]*?<\/style>/g, ''));
+  });
+  // THE HARNESSES SELECT ON CLASSES TOO. Leaving this out called `agreed` a
+  // defect — a marker T4 added and the T4 DOM pin asserts against. Without it
+  // this pin would flag every new class a pin is written around.
+  ['../../test/client/dom/runDom.js', '../../test/visual/shoot.mjs'].forEach((rel) => {
+    const f = path.join(__dirname, rel);
+    if (fs.existsSync(f)) addHooks(fs.readFileSync(f, 'utf8'));
+  });
+
+  // ── USED: literal class="…" tokens, outside <style> ─────────────────────
+  const used = new Map();
+  htmlFiles.forEach((f) => {
+    const src = fs.readFileSync(f, 'utf8')
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/g, (s) => s.replace(/[^\n]/g, ' '));
+    src.split('\n').forEach((line, i) => {
+      for (const m of line.matchAll(/class="([^"]*)"/g)) {
+        // A value carrying a template break is BUILT — its tokens are variable
+        // names (`cls`, `extraClass`, `i`), not classes.
+        const dynamic = /'\s*\+|\+\s*'|\$\{|<\?/.test(m[1]);
+        for (const tok of m[1].split(/\s+/)) {
+          if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(tok)) continue;
+          if (!used.has(tok)) used.set(tok, { dynamic: false, where: path.basename(f) + ':' + (i + 1) });
+          if (dynamic) used.get(tok).dynamic = true;
+        }
+      }
+    });
+  });
+
+  // NON-VACUITY. A broken extractor silently passes everything below, which is
+  // the failure the batch-S pins were written against.
+  assert.ok(htmlFiles.length >= 15, 'the partial sweep found them — ' + htmlFiles.length);
+  assert.ok(defined.size >= 1500, 'the CSS extractor works — ' + defined.size + ' defined');
+  assert.ok(used.size >= 1500, 'the markup extractor works — ' + used.size + ' used');
+  assert.ok(hooks.has('modal') || hooks.has('overlay'), 'the hook extractor works');
+
+  // THE GUARD THAT WOULD HAVE CAUGHT THE FIRST DRAFT, and the reason it exists.
+  // That draft also treated any plain quoted word as a hook — meant for
+  // `classList.add('foo')`. But this app builds its markup in JS, so every
+  // `class="a b"` IS a quoted string: the branch swallowed ~3,500 tokens,
+  // i.e. nearly every class in the app, and the pin passed its first run while
+  // checking almost nothing. `.mono` — fifteen elements with no rule — sailed
+  // straight through it, and the non-vacuity check above PASSED BECAUSE OF the
+  // over-capture, which is g116 exactly.
+  //
+  // So the extractor is DRIVEN over a synthetic snippet whose only content is
+  // a class attribute. Nothing in it is selected on, so nothing may be a hook.
+  const probe = hooks.size;
+  addHooks('<div class="t6probeaaa t6probebbb">x</div>');
+  assert.strictEqual(hooks.size, probe,
+    'a class ATTRIBUTE is not a selector — the hook extractor must not harvest class="a b", ' +
+    'or it masks nearly every class in the app');
+  assert.ok(hooks.size < defined.size,
+    'more hooks than defined classes means the extractor is over-capturing again — ' +
+    hooks.size + ' vs ' + defined.size);
+
+  // ── GRANDFATHERED, each with the reason it is fine ──────────────────────
+  // Audited one by one on 2026-09-21. Four groups, and the reason matters
+  // more than the name: it is what stops the next person re-auditing these.
+  const GRANDFATHERED = {
+    // THE DEFAULT MEMBER OF A STYLED SET — these NEED the class, to be the
+    // thing their siblings are distinguished from. A rule here would be empty.
+    'mh-emp': '.mh-num is centred and .mh-cov right-aligned; this is the left default',
+    'qa-det-right': '.qa-det-left is sticky; this is the plain column of the same grid',
+    'is-mut': '.cn-ob-chip is ALREADY muted; .is-ok/.is-warn override it, this is the default',
+    // INLINE STYLE CARRIES IT. cn-form-sub-modal appears with THREE different
+    // inline widths, so a single class rule would be actively wrong.
+    'cn-form-sub-modal': 'inline max-width, and it differs per call site',
+    'cn-timeline-modal': 'inline max-width',
+    'cn-partial-note': 'fully inline-styled',
+    'cn-admin-sla-row': 'inline gap/align/margin',
+    'cn-card-rel': 'inline colour + weight',
+    'qa-myrev-audio': 'inline margin',
+    'sp-toolbar-row': 'inline flex layout',
+    // THE HOOK IS AN ID OR DATA-ATTRIBUTE — the class is a dead marker.
+    'cn-oop-ins': 'selected by [data-oop-insert]',
+    'cn-ext-form-item-wrap': 'selected by [data-form-wrap]',
+    'mgr-adj-chk-all': 'selected by #mgr-adj-all',
+    'cn-dt-preview': 'selected by its id',
+    // PLAIN WRAPPER — the parent lays it out, or it needs no box of its own.
+    'modal-body': 'semantic wrapper; .modal supplies the padding',
+    'skel-wrap': '.skel-row supplies the spacing',
+    'kb-dec-body': 'aria group container',
+    'kb-dec-q': 'wrapper',
+    'kb-map-list': 'wrapper; its rows are styled',
+    'kb-map-rk-name': 'inline span',
+    'kb-ros-cov': 'wrapper',
+    'exp-result-link': 'a bare <a>; link styling is inherited',
+    'sp-resolved-when': 'inline span',
+    'pt-week': 'wrapper',
+    // g73 LIVES HERE: <tr class="mt-detail" hidden>. It works BECAUSE there is
+    // no rule — give .mt-detail a `display` and `hidden` loses to it.
+    'mt-detail': 'hidden-attribute row; a display rule here would BREAK it (g73)',
+    // VARIANT MARKER, renders as the base component. Stated honestly: these
+    // may be exactly right, or an intended variant nobody wrote. The code
+    // cannot say which, and neither can this pin.
+    'dr-mgr': 'variant marker on .dr-section; renders as the base — intent unverified',
+    'ny-card': 'variant marker on .dash-card; renders as the base — intent unverified',
+    'coach-drawer': 'variant marker on .modal.drawer; renders as the base — intent unverified',
+    'kb-gloss-search': 'variant marker on .kb-ros-search; renders as the base — intent unverified',
+    'sp-autoassign': 'selected by #sp-autoassign',
+    'dash-greet-text': 'flex child of .dash-greet-bar, which lays it out',
+    'mgr-sum-item': 'wrapper span; .mgr-sum-state inside it carries the tone',
+    // `.v` is defined ONLY as a descendant (`.kb-ins-cell .v`), so this pin
+    // counts it globally defined and its partner `num` lands here alone.
+    // Both are plain spans in a leave tile the parent lays out.
+    'num': 'plain span in a .v-row the parent lays out',
+  };
+
+  const bare = [...used.keys()]
+    .filter((c) => !defined.has(c) && !used.get(c).dynamic && !hooks.has(c))
+    .sort();
+
+  const unexpected = bare.filter((c) => !GRANDFATHERED[c]);
+  assert.deepStrictEqual(unexpected, [],
+    'NEW class(es) with no CSS rule: ' + unexpected.map((c) => c + ' (' + used.get(c).where + ')').join(', ') +
+    ' — write the rule, or add it to GRANDFATHERED with the REASON it needs none');
+
+  // THE RATCHET. A name may leave this list only by being fixed; leaving it
+  // while still bare makes the assert above red. This half catches the other
+  // direction — a name kept after its rule was written, which would quietly
+  // re-open the hole for the next class of that name.
+  const stale = Object.keys(GRANDFATHERED).filter((c) => !bare.includes(c));
+  assert.deepStrictEqual(stale, [],
+    'GRANDFATHERED names that are no longer bare — delete them: ' + stale.join(', '));
 });
 
 test('D2: the module map covers every TOOLS key, and every detail link resolves', () => {

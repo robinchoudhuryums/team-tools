@@ -230,10 +230,15 @@
   .kb-term-modal .kb-ins-legend { margin-top: 0; }
   .kb-term-modal .kb-ins-legend dd:last-child { margin-bottom: 0; }
   .kb-ins-det-btn { background: none; border: none; font: inherit; font-size: .76rem; color: var(--info-deep); cursor: pointer; padding: 4px 0 0; display: inline-flex; align-items: center; gap: 4px; }
-  .kb-ins-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 5px 10px; margin-top: 7px; }
+  /* 190px, not 150: since T3 a cell carries the code AND the item it names, and
+     at 150 the drawer fitted two columns that both wrapped. One readable column
+     beats two squeezed ones — the T1/T2 lesson, applied before it bit. */
+  .kb-ins-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 5px 10px; margin-top: 7px; }
   .kb-ins-grid[hidden] { display: none; }   /* the [hidden] gotcha — the class display wins otherwise */
-  .kb-ins-cell { display: flex; justify-content: space-between; gap: 6px; font-size: .74rem; border-bottom: 1px dashed var(--line); padding: 2px 0; }
-  .kb-ins-cell .c { font-family: var(--mono); color: var(--muted-2); }
+  .kb-ins-cell { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; font-size: .74rem; border-bottom: 1px dashed var(--line); padding: 2px 0; }
+  .kb-ins-cell .c { display: flex; flex-direction: column; font-family: var(--mono); color: var(--muted-2); min-width: 0; }
+  .kb-ins-code-item { font-family: var(--ui); font-size: .92em; color: var(--ink); overflow-wrap: anywhere; }
+  .kb-ins-code-note { font-family: var(--ui); font-size: .92em; color: var(--muted); font-style: italic; }
   .kb-ins-cell .v { text-align: right; }
   .kb-ins-cell .v.good { color: var(--success-deep); }
   .kb-ins-cell .v.bad { color: var(--danger-deep); }
@@ -244,6 +249,38 @@
   .kb-ins-legend dt { font-family: var(--mono); font-weight: 600; color: var(--muted-2); }
   .kb-ins-legend dd { margin: 0 0 5px; }
   .kb-ins-more { font-size: .74rem; color: var(--muted); margin-top: 6px; font-style: italic; }
+  /* The cross-reference under an item: what the payors ON SCREEN say about it.
+     Wraps rather than scrolls — it sits inside a card that is already narrow in
+     the drawer, and a strip that pushes its own row sideways takes the page
+     with it (g71). */
+  /* A COLUMN of rows, each row payor-left / rule-right — the .kb-ins-cell shape,
+     because it is the same kind of line and a rep should not have to learn two.
+     As a wrapping inline row (the first attempt) a long payor name — and they
+     are long: "AETNA NETWORK GOLD S Plan Number 000001-EXTX0107" — squeezed its
+     rule into a narrow right column and wrapped it twice. Seen in a shot; no
+     measurement would have said anything, since it never overflowed. */
+  .kb-oop-xref { display: flex; flex-direction: column; gap: 3px; margin-top: 7px; padding-top: 6px; border-top: 1px dashed var(--line); font-size: .74rem; }
+  .kb-oop-xref-lbl { font-family: var(--mono); font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted-2); }
+  .kb-oop-xref-r { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; min-width: 0; }
+  .kb-oop-xref-r .p { color: var(--muted); overflow-wrap: anywhere; min-width: 0; }
+  .kb-oop-xref-v { font-weight: 600; color: var(--ink); text-align: right; flex-shrink: 0; max-width: 60%; }
+  .kb-oop-xref-v.good { color: var(--success-deep); }
+  .kb-oop-xref-v.bad { color: var(--danger-deep); }
+  .kb-oop-xref-v.warn { color: var(--warning-deep); }
+  .kb-oop-xref-v.info { color: var(--info-deep); }
+  /* No underline of its own: a value that explains itself carries .kb-term,
+     which supplies the dotted underline. Adding a border here drew both. */
+  button.kb-oop-xref-v { background: none; border: none; font: inherit; font-weight: 600; padding: 0; cursor: help; }
+  .kb-oop-xref.unmatched { display: flex; flex-wrap: nowrap; align-items: flex-start; gap: 6px; color: var(--muted); }
+  .kb-oop-xref.unmatched svg { flex-shrink: 0; margin-top: 2px; }
+  /* T4 — keyboard walk. The rows are focusable but not tab stops: Tab still
+     goes field → field, and the arrows walk the results, which is what a rep
+     with one hand on the keyboard mid-call actually wants. */
+  [data-kb-nav]:focus { outline: none; box-shadow: 0 0 0 2px var(--accent); }
+  [data-kb-nav]:focus:not(:focus-visible) { box-shadow: 0 0 0 2px var(--accent); }
+  .kb-oop-copy { background: none; border: none; padding: 0 3px 0 0; margin: 0; cursor: pointer;
+    color: var(--muted-2); vertical-align: baseline; line-height: 1; }
+  .kb-oop-copy:hover, .kb-oop-copy:focus-visible { color: var(--accent); }
 
   /* §4 — landing panel (right side when nothing is selected) */
   /* The landing is wider than it was so the two-panel band has room; the
@@ -2163,12 +2200,10 @@ function kbRosterFilter_(input) {
 function kbRosterCopy_(btn) {
   var name = btn && btn.getAttribute ? btn.getAttribute('data-name') : '';
   if (!name) return;
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(name);
-    else if (typeof cnFallbackCopy_ === 'function') cnFallbackCopy_(name);
-  } catch (e) {}
-  if (typeof flashCopied === 'function') flashCopied(btn);
-  else if (typeof showToast === 'function') showToast('Copied ' + name, 'toast-success');
+  // Was the worst of the six: the promise had NO rejection handler at all, and
+  // the button flashed "copied" on the next line regardless — so a denied
+  // clipboard left the rep typing the previous name into the phone system.
+  copyWithFeedback_(name, { ok: 'Copied ' + name, label: 'Name', el: btn });
 }
 
 function kbMd_(src) {
@@ -2331,16 +2366,12 @@ function kbCopySnippet_(btn) {
   var card = btn && btn.closest ? btn.closest('.kb-snippet') : null;
   var pre = card ? card.querySelector('.kb-snippet-body') : null;
   var text = pre ? pre.textContent : '';
-  var done = function () {
+  copyText_(text, function (ok) {
+    if (!ok) { manualCopyModal_(text, 'Snippet'); return; }
     if (!btn.getAttribute('data-lbl')) btn.setAttribute('data-lbl', btn.textContent);
     btn.textContent = 'Copied ✓';
     setTimeout(function () { btn.textContent = btn.getAttribute('data-lbl') || 'Copy'; }, 1500);
-  };
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(done, function () { kbLinkCardCopyFallback_(text); done(); });
-    } else { kbLinkCardCopyFallback_(text); done(); }
-  } catch (e) { kbLinkCardCopyFallback_(text); done(); }
+  });
 }
 
 function enterReferenceView(area) {
@@ -2606,7 +2637,7 @@ function insToneCls_(value) {
 //
 // The ITEM is the key; the ADDRESS is optional and UPGRADES the answer from
 // prices to prices-plus-verdicts. It never gates it — see oopDegraded_.
-var KB_OOP = { seq: 0, timer: null };
+var KB_OOP = { seq: 0, timer: null, last: {} };
 
 /** The lookup section (shared by both hosts; suffix '' = Reference landing,
  *  '-d' = drawer).
@@ -2735,14 +2766,39 @@ function oopDegraded_(suffix, mySeq, item, why) {
  *  The `price` fallback covers a payload that carries only the scalar — an
  *  older deployment answering a newer client. It renders that one price
  *  unlabelled, which is exactly what it is, rather than showing nothing. */
-function oopPriceHtml_(m) {
-  var prices = (m.prices && m.prices.length) ? m.prices
-    : (String(m.price || '').trim() ? [{ label: '', value: m.price }] : []);
+/** PURE (Node-pinned): the price list a row actually has, from either payload
+ *  shape. One definition, because T4's copy buttons must be numbered exactly
+ *  as the renderer numbers them — a second derivation here would let the two
+ *  disagree about which price index 1 is, and copy the wrong number. */
+function oopPriceList_(m) {
+  if (m && m.prices && m.prices.length) return m.prices;
+  if (m && String(m.price || '').trim()) return [{ label: '', value: m.price }];
+  return [];
+}
+
+function oopPriceHtml_(m, idx) {
+  var prices = oopPriceList_(m);
   if (!prices.length) {
     return '<span class="kb-oop-price none" title="This row has no price in the pricing sheet. Do not quote it.">no price on file</span>';
   }
-  return prices.map(function (pr) {
-    return '<span class="kb-oop-price">' +
+  return prices.map(function (pr, pi) {
+    // T4 — copy the FIGURE. See oopCopyPrice_ for why this is the price and
+    // not a quote-shaped line.
+    //
+    // No `idx == null` guard. The one caller always passes an index, so the
+    // guard was a branch nothing could reach or test; without it, a caller
+    // that forgot one renders a button whose index does not resolve, and
+    // oopCopyPrice_'s "no longer on screen" refusal already covers that —
+    // one path instead of two, and that path is driven.
+    var copy =
+      '<button type="button" class="kb-oop-copy" data-oop-copy="' + idx + '" data-oop-pidx="' + pi + '"' +
+        // The row's Enter target, but ONLY when there is one price. With three,
+        // there is no "the" price — and picking one for the rep is the guess
+        // this whole module refuses to make.
+        (prices.length === 1 ? ' data-kb-primary' : '') +
+        ' aria-label="Copy ' + esc(pr.label ? pr.label + ' price' : 'price') + ' for ' + esc(m.name || 'this item') + '"' +
+        ' title="Copy this figure" onclick="oopCopyPrice_(this)">' + icon('copy', 12) + '</button>';
+    return '<span class="kb-oop-price">' + copy +
       (prices.length > 1 ? '<span class="kb-oop-price-lbl">' + esc(pr.label) + '</span> ' : '') +
       esc(pr.value) + '</span>';
   }).join(' ');
@@ -2756,11 +2812,78 @@ function oopMetaChip_(label, value) {
     (l ? '<span class="k">' + esc(l) + '</span> ' : '') + esc(value) + '</span>';
 }
 
+/** PURE (Node-pinned): the payor rules ON SCREEN that apply to ONE item.
+ *
+ *  Matching is on the SERVER's tokens and nothing else. The client never parses
+ *  a code itself — that would be a client↔server mirror of the one rule this
+ *  whole feature turns on (g120), and the shorthand refusal would then live in
+ *  two places, one of which would eventually forget it.
+ *
+ *  Both sides must be CERTAIN — checked HERE as well, not merely relied upon.
+ *  `hcpcsParse_` fills `tokens` only on the certain path, so today no payload
+ *  can reach this function with tokens it must not use; the client is one
+ *  refactor away from being handed one that can, and a guard nothing drives is
+ *  the guard that quietly stops guarding. Pinned against a payload the server
+ *  cannot currently produce, deliberately. */
+function oopPayorRulesFor_(item, matches) {
+  var codes = (item && item.codes) || null;
+  if (!codes || !codes.certain || !(codes.tokens || []).length) return [];
+  var out = [];
+  (matches || []).forEach(function (m) {
+    (m.details || []).forEach(function (d) {
+      var c = d.code;
+      if (!c || !c.certain || !(c.tokens || []).length) return;
+      var hit = c.tokens.some(function (t) { return codes.tokens.indexOf(t) >= 0; });
+      if (hit) out.push({ payor: m.name, code: d.label, value: d.value });
+    });
+  });
+  return out;
+}
+
+/** The cross-reference block under an item: what the payors currently on screen
+ *  say about THIS item's code.
+ *
+ *  Three states, all of them stated — the middle one is the reason this is not
+ *  just `rules.length ? … : ''`:
+ *   - rules found          → the payor and its rule, each value explaining
+ *                            itself through the same popover the payor panel
+ *                            uses, because it is the same vocabulary.
+ *   - code UNMATCHABLE     → the sheet's shorthand, shown, with the refusal
+ *                            named. Silence here would read as "no payor has a
+ *                            rule for this", which is a different and much more
+ *                            reassuring claim than "we would not guess".
+ *   - nothing on screen    → nothing drawn. The rep has not searched a payor
+ *                            yet; an empty cross-reference would be noise. */
+function oopPayorXrefHtml_(m, matches) {
+  var codes = (m && m.codes) || null;
+  if (codes && codes.shaped && !codes.certain) {
+    return '<div class="kb-oop-xref unmatched">' + icon('info', 12) +
+      '<span>Payor rules not checked — the code <b>' + esc(codes.raw || m.code || '') +
+      '</b> is written as a shorthand this cannot read as whole HCPCS codes. ' +
+      'Look the payor up by code yourself before saying anything about coverage.</span></div>';
+  }
+  var rules = oopPayorRulesFor_(m, matches);
+  if (!rules.length) return '';
+  return '<div class="kb-oop-xref">' +
+    '<span class="kb-oop-xref-lbl">On-screen payors</span>' +
+    rules.map(function (r) {
+      var known = insTermsIn_(r.value).length > 0;
+      var cls = 'kb-oop-xref-v ' + esc(insToneCls_(r.value)) + (known ? ' kb-term' : '');
+      return '<span class="kb-oop-xref-r"><span class="p">' + esc(r.payor) + '</span>' +
+        (known
+          ? '<button type="button" class="' + cls + '" onclick="insTermClick_(this)">' + esc(r.value) + '</button>'
+          : '<span class="' + cls + '">' + esc(r.value) + '</span>') + '</span>';
+    }).join('') + '</div>';
+}
+
 /** ONE row, for BOTH endpoints. The verdicts are drawn when the payload has
  *  them and omitted when it does not — that is the ONLY difference between a
  *  price-lookup row and an eligibility row, and keeping it the only difference
- *  is the point of this function existing. */
-function oopItemRowHtml_(m) {
+ *  is the point of this function existing.
+ *
+ *  `matches` is the payor result currently on screen in the SAME host, passed
+ *  in rather than read from module state so the renderer stays drivable. */
+function oopItemRowHtml_(m, matches, idx) {
   // CHIPS, not a `·`-joined run. The meta line mixes a billing code, a date, a
   // delivery rule, money and colour options — a rep scans for ONE of them, and
   // a single sentence makes every one of them equally hard to find. No colon:
@@ -2775,17 +2898,53 @@ function oopItemRowHtml_(m) {
   // what made the panel unreadable at speed: a rep mid-call scans for ONE of
   // them. The prices in particular were inline with the name, so an item with
   // three priced columns read as a sentence.
-  return '<div class="kb-ins-row">' +
+  return '<div class="kb-ins-row" data-kb-nav tabindex="-1">' +
     '<div class="kb-ins-name">' + esc(m.name) + '</div>' +
-    '<div class="kb-oop-prices">' + oopPriceHtml_(m) + '</div>' +
+    '<div class="kb-oop-prices">' + oopPriceHtml_(m, idx) + '</div>' +
     (bits.length ? '<div class="kb-ins-meta kb-meta-chips">' + bits.join('') + '</div>' : '') +
-    ((m.insurance || m.oop)
-      ? '<div class="kb-elig-vs">' +
-          eligVerdictHtml_('Through insurance', m.insurance) +
-          eligVerdictHtml_('Paying out of pocket', m.oop) +
-        '</div>'
-      : '') +
+    oopPayorXrefHtml_(m, matches) +
+    eligVerdictsHtml_(m) +
     '</div>';
+}
+
+/** PURE (Node-pinned): do the two verdicts say the SAME thing?
+ *
+ *  Strict — verdict, near AND why must all match. A `yes` that is near the
+ *  radius boundary and a flat `yes` are different answers (INV-209), and two
+ *  verdicts reached for different stated reasons are two facts, not one. */
+function eligVerdictsAgree_(a, b) {
+  if (!a || !b) return false;
+  return String(a.verdict || '') === String(b.verdict || '') &&
+    !!a.near === !!b.near &&
+    String(a.why || '') === String(b.why || '');
+}
+
+/** The verdict block. **This is the INV-209 decision, as amended by T4.**
+ *
+ *  The rule was "both verdicts are shown, LABELLED, rather than behind a
+ *  payment-method toggle — the rep mid-call is usually deciding between the
+ *  two". That reason is the point, and it is about DECIDING between them: a
+ *  toggle hides one answer behind an interaction, so a rep comparing them has
+ *  to click to see the comparison.
+ *
+ *  When the two AGREE there is nothing to decide between, and the duplicate
+ *  row is what makes a real DISAGREEMENT hard to spot — which is the case that
+ *  matters, and the whole reason the pair exists. So the ROW collapses, and
+ *  the CLAIM does not: the label still names BOTH payment routes, so it can
+ *  never be read as an answer about only one of them. Nothing is behind a
+ *  toggle in either case, which is what the original decision forbade.
+ *
+ *  A disagreement always renders as two labelled rows, unchanged. */
+function eligVerdictsHtml_(m) {
+  if (!m || (!m.insurance && !m.oop)) return '';
+  if (eligVerdictsAgree_(m.insurance, m.oop)) {
+    return '<div class="kb-elig-vs agreed">' +
+      eligVerdictHtml_('Through insurance or out of pocket', m.insurance) + '</div>';
+  }
+  return '<div class="kb-elig-vs">' +
+    eligVerdictHtml_('Through insurance', m.insurance) +
+    eligVerdictHtml_('Paying out of pocket', m.oop) +
+  '</div>';
 }
 
 /** One verdict pill. The THREE states are visually distinct on purpose: a
@@ -2872,6 +3031,13 @@ function oopEligHeaderHtml_(addr, res) {
 function oopRenderResults_(suffix, ctx, res) {
   var host = document.getElementById('kb-oop-results' + suffix);
   if (!host) return;
+  // Stashed BEFORE the error return, and cleared by it, so a repaint triggered
+  // by the other panel can never resurrect rows this call just refused to draw.
+  KB_OOP.last[suffix || ''] = (res && !res.error) ? { ctx: ctx, res: res } : null;
+  // …and the parked payload goes with it, on EVERY path. A copy button is
+  // gone the moment its row is, but a stale payload outliving the rows it
+  // described is how an index would resolve against the wrong item.
+  host._oopItems = null;
   if (!res || res.error) { host.innerHTML = errorStateHtml_((res && res.error) || 'Lookup failed.'); return; }
   var items = ctx.elig ? (res.items || []) : (res.matches || []);
   if (res.notFound || !items.length) {
@@ -2885,7 +3051,10 @@ function oopRenderResults_(suffix, ctx, res) {
   }
   var html = oopDegradedHtml_(ctx.degraded);
   if (ctx.elig) html += oopEligHeaderHtml_(ctx.addr, res);
-  items.forEach(function (m) { html += oopItemRowHtml_(m); });
+  // The payor result in the SAME host, so the landing's two panels cross-
+  // reference each other and the drawer's two do, without either crossing over.
+  var payors = insLastMatches_(suffix);
+  items.forEach(function (m, i) { html += oopItemRowHtml_(m, payors, i); });
   if (ctx.elig) {
     if (res.truncated || res.total > items.length) {
       html += '<div class="kb-ins-more">' + esc(String(res.total)) + ' items — showing ' +
@@ -2906,9 +3075,160 @@ function oopRenderResults_(suffix, ctx, res) {
     }
   }
   host.innerHTML = html;
+  // THE PRICE NEVER ROUND-TRIPS THROUGH THE DOM (INV-208). The rendered row
+  // carries an INDEX; the figure a copy button yields is read from the payload
+  // parked here, exactly as the composer's price picker does it. A `data-*`
+  // attribute comes back DECODED (g49), and a price is the last value in this
+  // app that should be rebuilt from markup.
+  host._oopItems = items;
 }
 
-var KB_INS = { seq: 0, timer: null };
+// ── T4: keyboard navigation through the lookup results ─────────────────────
+// A mid-call lookup is typed, so the rep's hands are already on the keyboard;
+// reaching for the mouse to open one payor's code grid is the slow part.
+// ArrowDown from the field walks into the results, arrows move between rows,
+// Enter opens the row's primary control, Escape comes back to the field.
+//
+// The ids are the mapping. There is no wrapper element to walk up to — adding
+// one would change the containers the drawer and landing pins assert on — and
+// the two hosts differ only by the `-d` suffix, so a pair of pure functions
+// carries it and can be driven without a DOM.
+
+/** PURE (Node-pinned): the results host an input's arrows walk into. */
+function kbNavHostIdFor_(inputId) {
+  var m = /^kb-ins-input(-d)?$/.exec(String(inputId || ''));
+  if (m) return 'kb-ins-results' + (m[1] || '');
+  m = /^kb-oop-(?:item|addr)(-d)?$/.exec(String(inputId || ''));
+  if (m) return 'kb-oop-results' + (m[1] || '');
+  return '';
+}
+/** PURE (Node-pinned): the input Escape returns to, from a results host id.
+ *  The OOP panel has TWO fields and this names the ITEM one — it is the field
+ *  that decides what the rows are; the address only refines them. */
+function kbNavInputIdFor_(hostId) {
+  var m = /^kb-ins-results(-d)?$/.exec(String(hostId || ''));
+  if (m) return 'kb-ins-input' + (m[1] || '');
+  m = /^kb-oop-results(-d)?$/.exec(String(hostId || ''));
+  if (m) return 'kb-oop-item' + (m[1] || '');
+  return '';
+}
+function kbNavHostOf_(el) {
+  var n = el;
+  while (n && n.nodeType === 1) {
+    if (n.id && kbNavInputIdFor_(n.id)) return n;
+    n = n.parentElement;
+  }
+  return null;
+}
+function kbNavFocusInput_(host) {
+  var inp = document.getElementById(kbNavInputIdFor_(host.id));
+  if (inp) inp.focus();
+}
+function kbLookupKeydown_(e) {
+  var k = e.key;
+  if (k !== 'ArrowDown' && k !== 'ArrowUp' && k !== 'Escape' && k !== 'Enter' &&
+      k !== 'Home' && k !== 'End') return;
+  var t = e.target;
+  if (!t || t.nodeType !== 1) return;
+
+  // From a lookup FIELD: only ArrowDown does anything. Everything else there —
+  // Enter, Escape, Home, End — belongs to the text box.
+  var hostId = kbNavHostIdFor_(t.id);
+  if (hostId) {
+    if (k !== 'ArrowDown') return;
+    var into = document.getElementById(hostId);
+    var first = into && into.querySelector('[data-kb-nav]');
+    if (!first) return;
+    e.preventDefault();
+    first.focus();
+    return;
+  }
+
+  // From inside a results list.
+  var row = t.closest && t.closest('[data-kb-nav]');
+  if (!row) return;
+  var host = kbNavHostOf_(row);
+  if (!host) return;
+
+  if (k === 'Escape') { e.preventDefault(); kbNavFocusInput_(host); return; }
+  if (k === 'Enter') {
+    // ONLY when the ROW itself has focus. On a button inside it, Enter is that
+    // button's — hijacking it would make the copy button open the code grid.
+    if (t !== row) return;
+    var primary = row.querySelector('[data-kb-primary]');
+    if (!primary) return;
+    e.preventDefault();
+    primary.click();
+    return;
+  }
+  var rows = Array.prototype.slice.call(host.querySelectorAll('[data-kb-nav]'));
+  if (!rows.length) return;
+  if (k === 'Home') { e.preventDefault(); rows[0].focus(); return; }
+  if (k === 'End') { e.preventDefault(); rows[rows.length - 1].focus(); return; }
+  var i = rows.indexOf(row);
+  var next = k === 'ArrowDown' ? i + 1 : i - 1;
+  e.preventDefault();
+  // Off the TOP returns to the field, so the rep can keep typing without
+  // reaching for the mouse. Off the BOTTOM stays put — wrapping to the first
+  // row would silently re-answer a "show me the next one" with the first one.
+  if (next < 0) { kbNavFocusInput_(host); return; }
+  if (next >= rows.length) return;
+  rows[next].focus();
+}
+document.addEventListener('keydown', kbLookupKeydown_);
+
+/** Copy ONE price figure.
+ *
+ *  **It copies the FIGURE, never a quote-shaped line, and that is deliberate.**
+ *  The composer's price picker inserts `Item (Column) — $X (price effective D)`
+ *  and the SEND rebuilds that exact line from the live sheet and refuses if it
+ *  has moved (INV-208). A line pasted from here would never be recorded as a
+ *  quote, so it would never be re-verified — and it would sit in the customer's
+ *  email looking exactly like one that was. That is a second, unverified path
+ *  to the same sentence, which is worse than no copy button at all. A bare
+ *  figure cannot be mistaken for a verified quote.
+ *
+ *  The value is read from the PARKED payload by index, never from the DOM
+ *  (INV-208, g49).
+ *
+ *  A failed copy SAYS so and offers the figure to select by hand — the
+ *  manual-copy failover this app already uses on `#cn-frame`, for the same
+ *  reason (g76). */
+function oopCopyPrice_(btn) {
+  var host = btn.closest('[id^="kb-oop-results"]');
+  var items = (host && host._oopItems) || [];
+  var m = items[parseInt(btn.getAttribute('data-oop-copy'), 10)];
+  var pr = oopPriceList_(m)[parseInt(btn.getAttribute('data-oop-pidx'), 10)];
+  if (!pr || !String(pr.value || '').trim()) {
+    showToast('That price is no longer on screen — search again.', 'warn');
+    return;
+  }
+  var what = (m.name || 'price') + (pr.label ? ' · ' + pr.label : '');
+  copyWithFeedback_(String(pr.value), { ok: 'Copied ' + pr.value + ' — ' + what, label: what, el: btn });
+}
+
+/** The last PAINTED result per host, so the two panels can cross-reference each
+ *  other whichever order the rep searches in. Keyed by suffix ('' = landing,
+ *  '-d' = drawer): the drawer and the landing are two independent pairs and
+ *  must never read each other's results.
+ *
+ *  This is a repaint cache, NOT a result cache — nothing is served from it and
+ *  nothing is skipped because of it. A failed lookup stores `null` rather than
+ *  an empty stand-in, so a stale cross-reference cannot outlive the result it
+ *  came from (g129: never cache a failure as a value). */
+var KB_INS = { seq: 0, timer: null, last: {} };
+function insLastMatches_(suffix) {
+  var r = KB_INS.last[suffix || ''];
+  return (r && r.matches) || [];
+}
+/** Repaint the OOP panel from its last payload, because the payor result it
+ *  cross-references just changed. Does nothing when that panel has never
+ *  painted — the common case, and the reason this is not a full re-search. */
+function oopRepaintXref_(suffix) {
+  var stash = KB_OOP.last[suffix || ''];
+  if (!stash) return;
+  oopRenderResults_(suffix, stash.ctx, stash.res);
+}
 
 /** The lookup section (shared by both hosts; suffix '' = Reference landing,
  *  '-d' = drawer). */
@@ -2985,6 +3305,38 @@ function insShowTerms_(anchor, value) {
   kbTetherPopover_(overlay.querySelector('.modal'), anchor);
 }
 
+/** PURE (Node-pinned): the item NAME beside a payor's bare code column, or the
+ *  reason there isn't one.
+ *
+ *  `K0802 — Not Accepted` is a rule about an item the rep cannot name, and the
+ *  pricing tab next to it knows what K0802 is. Four states, and three of them
+ *  say something:
+ *   - one item       → name it. This is the whole feature.
+ *   - several items  → say HOW MANY and name none. The spreadsheet allows two
+ *                      items to share a code and cannot resolve which the payor
+ *                      meant; picking one would be a guess printed as a fact.
+ *   - unreadable code→ say so. The shorthand is shown by the label already.
+ *   - no match / not
+ *     a code column  → nothing. A `Category` column is not a failed join, and
+ *                      a code the pricing tab simply does not carry is a fact
+ *                      about the pricing tab, not about this payor.
+ *
+ *  Reads ONLY fields the server put there. There is no client-side parse to
+ *  drift from `hcpcsParse_`. */
+function insCodeItemHtml_(d) {
+  var c = (d && d.code) || null;
+  if (!c || !c.shaped) return '';
+  if (!c.certain) {
+    return ' <span class="kb-ins-code-note" title="Written as a shorthand this cannot read as whole HCPCS codes, so it was not matched to an item.">not matched</span>';
+  }
+  if (d.item) return ' <span class="kb-ins-code-item">' + esc(d.item) + '</span>';
+  if (d.itemCount > 1) {
+    return ' <span class="kb-ins-code-note" title="More than one row in the pricing tab carries this code, so naming one of them would be a guess.">' +
+      esc(String(d.itemCount)) + ' items</span>';
+  }
+  return '';
+}
+
 /** Click handler for an acceptance VALUE. The value is read from the element's
  *  own text rather than a data-* attribute: an attribute round-trips DECODED
  *  (g49), and there is no reason to hand an escaping hazard to a tooltip. */
@@ -2998,7 +3350,15 @@ function insLookupInput_(inp) {
   var q = String(inp.value || '').trim();
   if (KB_INS.timer) clearTimeout(KB_INS.timer);
   var host = document.getElementById('kb-ins-results' + suffix);
-  if (q.length < 2) { if (host) host.innerHTML = ''; return; }
+  if (q.length < 2) {
+    if (host) host.innerHTML = '';
+    // Emptying the field takes the cross-reference off the item rows too. The
+    // rules under an item are a claim about the payor ON SCREEN; with none on
+    // screen there is no claim to leave standing.
+    KB_INS.last[suffix || ''] = null;
+    oopRepaintXref_(suffix);
+    return;
+  }
   KB_INS.timer = setTimeout(function () {
     var mySeq = ++KB_INS.seq;
     if (host) host.innerHTML = '<div class="kb-ins-more">Searching…</div>';
@@ -3009,8 +3369,11 @@ function insLookupInput_(inp) {
       })
       .withFailureHandler(function (err) {
         if (mySeq !== KB_INS.seq) return;
-        var h = document.getElementById('kb-ins-results' + suffix);
-        if (h) h.innerHTML = errorStateHtml_((err && err.message) || 'Lookup failed.');
+        // Through the renderer, not straight at the host: a thrown RPC must
+        // clear the stash and drop the cross-reference exactly as a returned
+        // {error} does. Painting the error by hand here is how the two paths
+        // used to differ.
+        insRenderResults_(suffix, q, { error: (err && err.message) || 'Lookup failed.' });
       })
       .searchInsurancePayors(q);
   }, 350);
@@ -3019,14 +3382,34 @@ function insLookupInput_(inp) {
 function insRenderResults_(suffix, q, res) {
   var host = document.getElementById('kb-ins-results' + suffix);
   if (!host) return;
-  if (!res || res.error) { host.innerHTML = errorStateHtml_((res && res.error) || 'Lookup failed.'); return; }
+  // Same discipline as the OOP side: stash first, clear on every path that
+  // draws no matches, and repaint the other panel on the way out of ALL of
+  // them — a payor search that now finds nothing must take its cross-reference
+  // off the item rows, not leave the previous payor's rules sitting under them.
+  KB_INS.last[suffix || ''] = (res && !res.error && !res.notFound) ? res : null;
+  if (!res || res.error) {
+    host.innerHTML = errorStateHtml_((res && res.error) || 'Lookup failed.');
+    oopRepaintXref_(suffix);
+    return;
+  }
   if (res.notFound || !(res.matches || []).length) {
     // The operator's rule for a plan the sheet doesn't carry: TRY criteria.
     host.innerHTML = '<div class="kb-ins-guide">' + icon('info', 13) + ' “' + esc(q) + '” isn’t in the payor sheet. ' +
       'Per the acceptance criteria, a plan that isn’t listed follows the <b>TRY</b> rules — submit to test authorization; credentialing decides going forward.</div>';
+    oopRepaintXref_(suffix);
     return;
   }
   var html = '';
+  // The join is BEST-EFFORT and its absence is reassuring, so it announces
+  // itself when it fails: bare codes with no names look exactly like a payor
+  // sheet whose columns were never codes (g53). `attempted` is the server's
+  // word, not an inference from empty `item` fields.
+  var join = res.codeJoin || null;
+  if (join && join.attempted && join.error) {
+    html += '<div class="kb-oop-degraded">' + icon('warning', 13) +
+      '<span>Codes below are not named — the pricing tab could not be read (' + esc(join.error) +
+      '). The acceptance rules themselves are the payor sheet’s and are unaffected.</span></div>';
+  }
   res.matches.forEach(function (m, i) {
     // A pill's TONE is a claim. When insToneCls_ recognises nothing in the
     // value we have no claim to make, so it renders in the NEUTRAL `.none`
@@ -3047,7 +3430,7 @@ function insRenderResults_(suffix, q, res) {
     var det = (m.details || []);
     var detId = 'kb-ins-det' + suffix + '-' + i;
     var detHtml = det.length
-      ? '<button type="button" class="kb-ins-det-btn" aria-expanded="false" aria-controls="' + detId + '" onclick="insToggleLegend_(this)">' +
+      ? '<button type="button" class="kb-ins-det-btn" data-kb-primary aria-expanded="false" aria-controls="' + detId + '" onclick="insToggleLegend_(this)">' +
           icon('chevronDown', 11) + ' Acceptance by code (' + det.length + ')</button>' +
         '<div class="kb-ins-grid" id="' + detId + '" hidden>' +
           det.map(function (d) {
@@ -3057,13 +3440,14 @@ function insRenderResults_(suffix, q, res) {
             // so a button never promises an answer there isn't one for.
             var known = insTermsIn_(d.value).length > 0;
             var vAttrs = 'class="v ' + esc(insToneCls_(d.value)) + (known ? ' kb-term' : '') + '"';
-            return '<div class="kb-ins-cell"><span class="c">' + esc(d.label) + '</span>' +
+            return '<div class="kb-ins-cell"><span class="c">' + esc(d.label) +
+              insCodeItemHtml_(d) + '</span>' +
               (known
                 ? '<button type="button" ' + vAttrs + ' onclick="insTermClick_(this)">' + esc(d.value) + '</button>'
                 : '<span ' + vAttrs + '>' + esc(d.value) + '</span>') + '</div>';
           }).join('') + '</div>'
       : '';
-    html += '<div class="kb-ins-card">' +
+    html += '<div class="kb-ins-card" data-kb-nav tabindex="-1">' +
       '<div class="kb-ins-head"><span class="kb-ins-name">' + esc(m.name) + '</span>' + pill + '</div>' +
       (meta.length ? '<div class="kb-ins-meta">' + meta.join(' · ') + '</div>' : '') +
       detHtml + '</div>';
@@ -3072,6 +3456,7 @@ function insRenderResults_(suffix, q, res) {
     html += '<div class="kb-ins-more">Showing ' + res.matches.length + ' of ' + res.total + ' matches — type more of the name to narrow.</div>';
   }
   host.innerHTML = html;
+  oopRepaintXref_(suffix);
 }
 
 /** The landing's LOOKUP BAND. Rendered once per mount and then left alone —
@@ -3325,10 +3710,13 @@ function kbLinkCardShow_(a) {
   el.querySelector('.lc-url').textContent = shown;           // textContent — no injection surface
   el.querySelector('a.lc-btn').setAttribute('href', href);
   el.querySelector('[data-lc-copy]').addEventListener('click', function () {
-    var done = function () { this.textContent = 'Copied ✓'; }.bind(this);
-    try {
-      navigator.clipboard.writeText(href).then(done, function () { kbLinkCardCopyFallback_(href); done(); });
-    } catch (_) { kbLinkCardCopyFallback_(href); done(); }
+    var btn = this;
+    // `done()` used to run on BOTH branches, so the button said "Copied ✓"
+    // after a failover that had swallowed its own failure.
+    copyText_(href, function (ok) {
+      if (ok) { btn.textContent = 'Copied ✓'; return; }
+      manualCopyModal_(href, 'Link');
+    });
   });
   var r = a.getBoundingClientRect();
   el.classList.add('show');
@@ -3342,17 +3730,6 @@ function kbLinkCardHide_() {
   KB_LINKCARD.hideTimer = setTimeout(function () {
     if (KB_LINKCARD.el) KB_LINKCARD.el.classList.remove('show');
   }, 180);
-}
-function kbLinkCardCopyFallback_(text) {
-  try {
-    var ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed'; ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-  } catch (_) {}
 }
 (function kbBindLinkCard_() {
   document.addEventListener('mouseover', function (e) {

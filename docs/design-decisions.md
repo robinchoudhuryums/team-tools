@@ -1837,7 +1837,24 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   toggle.** The question a rep actually has mid-call is "can we deliver this, and
   does paying out of pocket change the answer?" — a toggle makes them ask it
   twice, and it is also the honest rendering of a column that genuinely means two
-  things. A radius NO is CERTAIN while a radius YES near the boundary is not,
+  things.
+
+  **AMENDED 2026-09-21 (T4): when the two verdicts AGREE the ROW collapses, and
+  the CLAIM does not.** The rule above is about DECIDING between the two answers,
+  and when they agree there is nothing to decide — while the duplicate row is
+  precisely what made a real disagreement hard to spot, which is the case the
+  pair exists for. So an agreeing pair renders once, labelled "Through insurance
+  or out of pocket", which names both routes and so can never be read as an
+  answer about only one of them. A disagreement still renders as two labelled
+  rows, unchanged. Nothing is behind a toggle in either case, which is what the
+  original decision actually forbade. Agreement is STRICT — verdict, near AND
+  why must all match: a near-boundary yes is not a flat yes, and two yeses
+  reached for different stated reasons are two facts, so collapsing either pair
+  would state one as the other. `eligVerdictsAgree_` is driven over all four of
+  those cases, because a pin that merely read `.why` out of the source stayed
+  green when a bite made the comparison ignore it.
+
+  A radius NO is CERTAIN while a radius YES near the boundary is not,
   which is the opposite of what "straight-line is only an estimate" suggests: a
   straight line is never longer than the drive, so over-the-limit is over either
   way, and a close YES says so rather than implying precision. INV-209.

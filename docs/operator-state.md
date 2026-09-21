@@ -1345,6 +1345,58 @@ entry says which it is.
   ribbon). Breaks + the break reminder still come from the per-tz schedule
   (the override changes start/length only). Overnight shifts are unsupported.
   `ROSTER_CACHE_KEY` bumped to `employee_roster_v8` for this column.
+<a id="operator-the-insurancepayors-tab-kb-spreadsheet"></a>
+- **The `InsurancePayors` tab** (operator 2026-08-25) lives in the **KB
+  spreadsheet** (`KB_SS_ID`) — no Script Property of its own. Import the payor
+  acceptance CSV and name the tab exactly that. It is the same kind of thing as
+  `OopPricing` and `LocationAcceptance` below: operator-maintained, read LIVE on
+  every lookup, and **the app NEVER writes to it**. Refresh it from Manage →
+  Admin → Config → Reference data tables, which replaces the tab wholesale.
+
+  It had no entry of its own until 2026-09-21 — only a mention inside the
+  `OopPricing` one — and T3 is what made that a real gap: its COLUMN HEADERS
+  are now load-bearing.
+
+  - **Column A is the payor / plan name.** It is the only column scanned for
+    matching, capped at `INS_PAYOR_MAX_ROWS` rows; the full row is fetched only
+    for the top `INS_PAYOR_TOP` matches.
+  - **The named columns are found by header STEM**, so you may reorder them
+    freely: `/waystar/`, `/network/`, `/qualif/` (the source header is
+    misspelled "Qualifaction" — the stem is deliberate) and `/reimbur/`.
+  - **Every other non-empty column rides along verbatim** in the per-payor
+    details disclosure. Nothing is dropped and nothing is guessed at.
+  - **A column header that is an HCPCS code is a JOIN KEY (T3, 2026-09-21).**
+    `K0800`, `K0802` and the like are matched against the `OopPricing` tab's
+    code column and the ITEM NAME is shown beneath the code, so a rep reading
+    `K0802 — Not Accepted` can see what K0802 is. Consequences worth knowing
+    before you edit a header:
+    - **A code written as a shorthand is SHOWN but never matched.**
+      `K0821/23/16` reads to a human as three codes; the app will not guess
+      that, because a wrong join would tell a rep a payor covers an item it may
+      not. It renders the header verbatim with "not matched" beside it. **If you
+      have many of these, writing them as whole codes (`K0821, K0823, K0816`)
+      makes them joinable with no code change** — the parser already reads a
+      comma- or slash-separated list of WHOLE codes.
+    - A code that **two** `OopPricing` rows carry names neither, and says "2
+      items" instead: the spreadsheet allows the ambiguity and cannot resolve
+      it, so naming one would be a guess printed as a fact.
+    - A code the pricing tab does not carry is simply left alone. That is a
+      fact about the pricing tab, not an error.
+  - **The ACCEPTANCE VALUES are a vocabulary, and the app tones and explains
+    them** (`INS_TERMS`): Not Accepted / NO, Location-based, Location-based
+    (285–325 lb), SI/PR, PR, TRY, A & B (combined), Accepted / X. A value the
+    vocabulary knows becomes a clickable term with the operator's own
+    definition behind it; a value it does not know renders VERBATIM in the
+    neutral tone and says there is no definition on file — it is never a
+    guessed verdict. **FOUR values in the live sheet are toned but undefined:
+    `OON`, `Plan Specific`, `OUT-OF-NETWORK` and `MDX Hawaii`.** A rep sees a
+    coloured pill and cannot learn why. Supplying one sentence for each is
+    operator text, not a code change.
+  - A payor the sheet does not list renders the operator's own
+    plan-not-listed → **TRY** guidance rather than an empty result.
+
+  The rep's QUERY is never persisted (the `kbMapDistances` privacy posture).
+
 <a id="operator-the-ooppricing-and-locationacceptance-tabs-kb-spreadsheet"></a>
 - **The `OopPricing` and `LocationAcceptance` tabs** (operator 2026-09-16) live
   in the **KB spreadsheet** (`KB_SS_ID`) — no Script Property of their own.

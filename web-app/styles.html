@@ -19,6 +19,14 @@
     -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
   }
   button, input, select, textarea { font-family: inherit; font-size: inherit; }
+  /* The ONE global typographic utility. Fifteen elements across four partials
+     carried `class="… mono"` — usage-table figures, the scratchpad status,
+     dashboard card feet, a bare `class="mono"` on a page counter — and there
+     was no rule, so every one of them rendered in the UI font. The token had
+     existed all along (2026-09-21, found by the T6 sweep).
+     FAMILY ONLY: each site sets its own size and colour through the class
+     beside this one, and adding either here would override all fifteen. */
+  .mono { font-family: var(--mono); }
   /* Selection must be clearly visible — --selection-bg is a mid-strength
      accent tint (the old --accent-soft was invisible against field
      backgrounds). No color override: the translucent tint keeps each
@@ -2027,6 +2035,28 @@
     letter-spacing: -.02em; line-height: 1.2;
     color: var(--ink); margin-bottom: 6px;
   }
+  /* A compact popover's header: title left, close right. INVENTED by T2's term
+     popover (2026-09-21) and never given a rule — so the heading and the X
+     stacked as two block elements, unstyled, in every modal that used it. The
+     `.kb-ins-row` defect again, three batches later: a class in the markup with
+     nothing behind it looks like a styling choice, not a missing one, and no
+     measurement can tell them apart. Found by READING a shot.
+     The app's other modals use .modal-title + a .modal-footer button; this pair
+     is for the small tethered ones, where a footer row would be most of it. */
+  .modal-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 10px; margin-bottom: 8px;
+  }
+  .modal-head h3 {
+    font-family: var(--display); font-size: 17px; font-weight: 500;
+    letter-spacing: -.01em; line-height: 1.25; color: var(--ink); margin: 0;
+  }
+  .modal-x {
+    flex-shrink: 0; background: none; border: none; padding: 2px;
+    margin: -2px -2px 0 0; cursor: pointer; color: var(--muted);
+    border-radius: var(--radius-sm); line-height: 0;
+  }
+  .modal-x:hover, .modal-x:focus-visible { color: var(--ink); background: var(--paper-2); }
   .modal-sub {
     font-family: var(--ui);
     font-size: 13px; color: var(--muted); margin-bottom: 20px;
@@ -2651,6 +2681,15 @@
   :root[data-compact="1"] .r-punch .bar { top: 0; bottom: 0; }
   :root[data-compact="1"] .r-now { top: -2px; bottom: -2px; }
   :root[data-compact="1"] .ribbon-legend { display: none; }
+  /* The manual-copy failover (2026-09-21). Shared by every partial, because
+     there is one copy helper now and one thing it does when the browser says
+     no. Mono, because what it holds is usually a figure or a code. */
+  .manual-copy-modal { width: 380px; max-width: calc(100vw - 16px); }
+  .manual-copy-why { font-size: .8rem; color: var(--muted); margin: 0 0 8px; }
+  .manual-copy-lbl { display: block; font-size: .72rem; color: var(--muted-2); margin-bottom: 3px; }
+  .manual-copy-val { width: 100%; font-family: var(--mono); font-size: .95rem; padding: 7px 9px;
+    border: 1px solid var(--line); border-radius: var(--radius-sm);
+    background: var(--paper-2); color: var(--ink); resize: vertical; }
   :root[data-compact="1"] .modal {
     max-width: 100%;
     padding: 18px 18px;

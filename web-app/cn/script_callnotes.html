@@ -4260,27 +4260,27 @@ function cnSaveSnapshotAsStickyDraft_(snap) {
   } catch (e) { /* localStorage unavailable — the clipboard copy is the fallback */ }
 }
 
-function cnAutoCopyNote_(note) {
+/** Copy the note the rep just saved, so they can paste it into the CRM
+ *  without waiting for the server.
+ *
+ *  **The most expensive copy in the app to get wrong.** It is automatic, so
+ *  the rep never watches it; it runs on the save path, so the clipboard is
+ *  what they paste into the patient record seconds later; and it used to fail
+ *  in COMPLETE silence — the promise rejection went to a fallback whose own
+ *  `catch` swallowed everything, and `execCommand` returns false rather than
+ *  throwing, so the catch saw nothing either way. A denied clipboard meant the
+ *  rep pasted the PREVIOUS note, about a different patient, into the CRM.
+ *
+ *  `silent` suppresses the success toast only — the rep did not ask for this
+ *  copy, so a toast on every save would be noise. The FAILURE is never silent,
+ *  for exactly the reason above. */
+function cnAutoCopyNote_(note, opts) {
   const text = cnFormatNoteForCopy_(note);
-  // Try the modern clipboard API first; fall back to textarea+execCommand
-  // since HtmlService iframes sometimes deny clipboard permissions.
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).catch(function () { cnFallbackCopy_(text); });
-  } else {
-    cnFallbackCopy_(text);
-  }
-}
-
-function cnFallbackCopy_(text) {
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed'; ta.style.left = '-9999px';
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    ta.remove();
-  } catch (e) { /* clipboard truly unavailable; toast is the only signal */ }
+  copyWithFeedback_(text, {
+    silent: !(opts && opts.announce),
+    ok: 'Copied to clipboard',
+    label: 'Call note',
+  });
 }
 
 // ── Marker text formatting (operator 2026-08-25 — batch 5) ─────────────────
@@ -5348,8 +5348,9 @@ function cnBuildFormSubModalHtml_(res) {
 function cnCopyNoteAgain_(noteId) {
   const note = cnFindNoteAnywhere_(noteId);
   if (!note) return;
-  cnAutoCopyNote_(note);
-  showToast('Copied to clipboard', 'toast-success');
+  // The toast used to fire here, synchronously, next to a copy that had not
+  // finished and might not have worked.
+  cnAutoCopyNote_(note, { announce: true });
 }
 
 function cnBeginEdit_(noteId) {

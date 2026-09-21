@@ -3124,18 +3124,40 @@ test('ELIG DOM: both verdicts render, labelled, on both hosts — a near-boundar
   const host = h.$('#kb-oop-results');
   const txt = host.textContent;
 
-  // BOTH verdicts, LABELLED. An unlabelled pair is worse than one answer.
+  // BOTH verdicts, LABELLED — when they DISAGREE. An unlabelled pair is worse
+  // than one answer, and that has not changed.
+  //
+  // **T4 (2026-09-21) AMENDS INV-209.** The rule was "both shown, labelled,
+  // rather than behind a payment-method toggle", and its stated reason is that
+  // the rep is usually deciding BETWEEN them. When the two agree there is
+  // nothing to decide, and the duplicate row is what makes a real disagreement
+  // hard to spot — which is the case the pair exists for. So the ROW collapses
+  // and the CLAIM does not: the label names both routes. Nothing is behind a
+  // toggle either way, which is what the decision actually forbade.
+  //
+  // This fixture carries one of each on purpose — agree/disagree/agree/agree —
+  // so both branches are driven here rather than one being reasoned about.
   const rows = Array.from(host.querySelectorAll('.kb-ins-row'));
   assert.strictEqual(rows.length, 4, 'every item renders');
-  rows.forEach((r) => {
-    const vs = r.querySelectorAll('.kb-elig-v');
-    assert.strictEqual(vs.length, 2, 'two verdicts per item');
-    assert.ok(/Through insurance/.test(vs[0].textContent), 'the first is labelled');
-    assert.ok(/Paying out of pocket/.test(vs[1].textContent), 'and so is the second');
+  assert.deepStrictEqual(rows.map((r) => r.querySelectorAll('.kb-elig-v').length), [1, 2, 1, 1],
+    'only the DISAGREEING item shows two');
+
+  [0, 2, 3].forEach((i) => {
+    const v = rows[i].querySelector('.kb-elig-v');
+    assert.ok(/Through insurance or out of pocket/.test(v.textContent),
+      'a collapsed verdict names BOTH payment routes — one route named alone would be a narrower ' +
+      'claim than the answer actually supports, row ' + i);
+    assert.ok(rows[i].querySelector('.kb-elig-vs.agreed'), 'and is marked as the agreed case, row ' + i);
   });
 
-  // The operator's key case, end to end: no through insurance, yes out of pocket.
+  // The operator's key case, end to end: no through insurance, yes out of
+  // pocket. It DISAGREES, so it is never collapsed — this is the row the whole
+  // two-verdict design exists for.
   const state = rows[1].querySelectorAll('.kb-elig-v');
+  assert.strictEqual(rows[1].querySelector('.kb-elig-vs.agreed'), null, 'a disagreement is never collapsed');
+  assert.ok(/Through insurance/.test(state[0].textContent) && !/or out of pocket/.test(state[0].textContent),
+    'the first names its OWN route only');
+  assert.ok(/Paying out of pocket/.test(state[1].textContent), 'and so does the second');
   assert.ok(state[0].classList.contains('no'), 'the insurance verdict is a NO');
   assert.ok(state[1].classList.contains('yes'), 'and the out-of-pocket one a YES');
   assert.ok(/no state restriction/.test(state[1].textContent), 'which explains ITSELF');
@@ -3280,7 +3302,12 @@ test('R DOM: the eligibility answer renders EVERY priced column, labelled — th
   assert.ok(/E0294/.test(row.textContent), 'the code rides it');
   assert.ok(/effective[:\s]+2026-09-01/.test(row.textContent), 'and the effective date — a commitment needs its as-of');
   assert.ok(/Weight cap[:\s]+450 lb/.test(row.textContent), 'and an unrecognised column still rides along verbatim');
-  assert.strictEqual(row.querySelectorAll('.kb-elig-v').length, 2, 'with both verdicts still on it');
+  // The verdicts still ride it. This fixture's two AGREE, so since T4 they
+  // render as one row naming both routes rather than two identical ones — the
+  // ELIG DOM pin drives the disagreeing branch.
+  assert.strictEqual(row.querySelectorAll('.kb-elig-v').length, 1, 'with the verdict still on it');
+  assert.ok(/Through insurance or out of pocket/.test(row.textContent),
+    'and it answers for BOTH payment routes, not just one of them');
 });
 
 test('R DOM: an address that produces no verdict does NOT take the prices with it — the panel degrades to the price answer and states that no verdict was reached', async () => {
@@ -3551,6 +3578,443 @@ test('R DOM: the drawer mounts each lookup in its own container, NOT inside the 
     assert.strictEqual(sec.querySelector('input'), null,
       '.kbd-sec carries a label, never a control — found one inside: ' + sec.textContent.slice(0, 40));
   });
+});
+
+/** The payor payload the join pins share: one code that names an item, one the
+ *  pricing tab does not carry, one that two rows carry, the SHORTHAND, and a
+ *  column that is not a code at all. Every branch of insCodeItemHtml_ in one
+ *  result, so a pin over it is never accidentally exercising just the easy one. */
+const T3_PAYORS = {
+  total: 1, cap: 8, codeJoin: { attempted: true, error: '' },
+  matches: [{
+    name: 'AETNA GOLD', networkStatus: 'IN-NETWORK', waystar: '60054', details: [
+      { label: 'K0800', value: 'SI/PR', code: { shaped: true, certain: true, tokens: ['K0800'] },
+        item: 'Drive Scout 3 Wheel', itemCount: 1 },
+      { label: 'K0802', value: 'Not Accepted', code: { shaped: true, certain: true, tokens: ['K0802'] },
+        item: '', itemCount: 0 },
+      { label: 'K0814', value: 'TRY', code: { shaped: true, certain: true, tokens: ['K0814'] },
+        item: '', itemCount: 2 },
+      { label: 'K0821/23/16', value: 'TRY', code: { shaped: true, certain: false, tokens: [] },
+        item: '', itemCount: 0 },
+      { label: 'Category', value: 'POV/Scooter', code: { shaped: false, certain: false, tokens: [] },
+        item: '', itemCount: 0 },
+    ] }],
+};
+const T3_ITEM_OK = { cap: 8, total: 1, matches: [{
+  name: 'Drive Scout 3 Wheel', code: 'K0800 (C/C)', effective: '', eligibility: 'Open',
+  codes: { raw: 'K0800 (C/C)', shaped: true, certain: true, tokens: ['K0800'] },
+  price: '$920.00', prices: [{ label: '', value: '$920.00' }], details: [] }] };
+const T3_ITEM_SHORTHAND = { cap: 8, total: 1, matches: [{
+  name: 'Multi Scooter', code: 'K0821/23/16', effective: '', eligibility: 'Open',
+  codes: { raw: 'K0821/23/16', shaped: true, certain: false, tokens: [] },
+  price: '$1,000.00', prices: [{ label: '', value: '$1,000.00' }], details: [] }] };
+
+async function t3Search(h, id, fn, value) {
+  const el = h.$(id);
+  el.value = value;
+  h.read(fn)(el);
+  h.flushTimers();
+  await tick(); await tick();
+  return el;
+}
+
+test('T3 DOM: a payor’s bare code columns are NAMED, and every state that is not a name says which', async () => {
+  const h = boot();
+  h.run.respond('searchInsurancePayors', () => T3_PAYORS);
+  bootLookups(h);
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'aetna');
+
+  const cells = Array.from(h.$('#kb-ins-results').querySelectorAll('.kb-ins-cell'));
+  assert.strictEqual(cells.length, 5, 'every detail column renders — the sweep below is not vacuous');
+  const byCode = {};
+  cells.forEach((c) => { byCode[c.querySelector('.c').textContent.trim().split(/\s{2,}|\n/)[0].trim()] = c; });
+
+  // THE FEATURE. `K0800 — Not Accepted` is a rule about an item the rep cannot
+  // name; the pricing tab one glance away knows what K0800 is.
+  const named = cells.find((c) => c.querySelector('.kb-ins-code-item'));
+  assert.ok(named, 'the unambiguous code is NAMED');
+  assert.strictEqual(named.querySelector('.kb-ins-code-item').textContent, 'Drive Scout 3 Wheel');
+  assert.ok(/K0800/.test(named.querySelector('.c').textContent),
+    'and the code itself is still there — the name is an addition, not a replacement');
+
+  const notes = Array.from(h.$('#kb-ins-results').querySelectorAll('.kb-ins-code-note'))
+    .map((n) => n.textContent.trim());
+  // AMBIGUOUS: two pricing rows carry K0814. Naming one would be a guess
+  // printed as a fact, so it says how many instead.
+  assert.ok(notes.indexOf('2 items') >= 0, 'an ambiguous code says HOW MANY and names none');
+  // THE SHORTHAND. Silence here would read as "nothing to say about this code",
+  // which is a far more reassuring claim than "we would not guess".
+  assert.ok(notes.indexOf('not matched') >= 0, 'the shorthand names its own refusal');
+  assert.strictEqual(notes.length, 2, 'and NOTHING else is annotated');
+
+  // A code the pricing tab simply does not carry is a fact about the pricing
+  // tab, not a failure of this payor — and `Category` is not a code column at
+  // all. Neither gets a note, or the grid would be all caveat and no content.
+  const quiet = cells.filter((c) => !c.querySelector('.kb-ins-code-item') && !c.querySelector('.kb-ins-code-note'));
+  assert.strictEqual(quiet.length, 2, 'the unmatched code and the non-code column are both left alone');
+  assert.ok(quiet.some((c) => /Category/.test(c.textContent)));
+  assert.ok(quiet.some((c) => /K0802/.test(c.textContent)));
+});
+
+test('T3 DOM: the item row cross-references the payors ON SCREEN, in EITHER search order, and drops it when they go', async () => {
+  const h = boot();
+  h.run.respond('searchInsurancePayors', () => T3_PAYORS);
+  h.run.respond('searchOopPricing', () => T3_ITEM_OK);
+  bootLookups(h);
+
+  // ── Item FIRST, payor second. This is the order that needs the repaint: the
+  // item rows are already painted when the payor result lands, and without a
+  // repaint the cross-reference would only ever appear for a rep who happened
+  // to search the payor first.
+  await t3Search(h, '#kb-oop-item', 'oopLookupInput_', 'scout');
+  assert.strictEqual(h.$('#kb-oop-results').querySelectorAll('.kb-oop-xref').length, 0,
+    'no payor on screen yet, so nothing is claimed');
+
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'aetna');
+  const xref = h.$('#kb-oop-results').querySelector('.kb-oop-xref');
+  assert.ok(xref, 'the item row picked the payor up without being re-searched');
+  assert.ok(/AETNA GOLD/.test(xref.textContent), 'and names the payor');
+  assert.ok(/SI\/PR/.test(xref.textContent), 'with the rule that payor records for THIS item’s code');
+  assert.strictEqual(xref.querySelectorAll('.kb-oop-xref-r').length, 1,
+    'ONE rule — the payor has five columns and only K0800 matches this item');
+
+  // The value explains itself through the SAME popover the payor panel uses:
+  // it is the same vocabulary, and a rep should not have to learn where each
+  // surface keeps its definitions.
+  const btn = xref.querySelector('button.kb-term');
+  assert.ok(btn, 'a value the vocabulary knows is a real button');
+  assert.strictEqual(btn.getAttribute('onclick'), 'insTermClick_(this)',
+    'wired to the SAME handler the payor panel uses — asserted separately because jsdom does ' +
+    'not evaluate inline handler attributes, so driving it below cannot prove it is attached');
+  h.read('insTermClick_')(btn);
+  const pop = h.window.document.querySelector('#kb-term-overlay .kb-term-modal');
+  assert.ok(pop, 'and really opens the term popover');
+  assert.ok(/SI\/PR/.test(pop.textContent), 'headed by the value the rep clicked');
+  assert.ok(/secondary insurance covering any patient responsibility/.test(pop.textContent),
+    'carrying the operator DEFINITION, not just the value again');
+  h.read('closeOverlay')(h.window.document.querySelector('#kb-term-overlay'));
+
+  // ── Emptying the payor field takes the claim away. The rules under an item
+  // are a claim about the payor ON SCREEN; leaving them once it is gone would
+  // attribute a rule to nobody.
+  const inp = h.$('#kb-ins-input');
+  inp.value = '';
+  h.read('insLookupInput_')(inp);
+  assert.strictEqual(h.$('#kb-oop-results').querySelectorAll('.kb-oop-xref').length, 0,
+    'the cross-reference goes with the payor that justified it');
+
+  // ── And a payor search that FAILS must do the same, not leave the previous
+  // payor's rules standing under the item rows.
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'aetna');
+  assert.strictEqual(h.$('#kb-oop-results').querySelectorAll('.kb-oop-xref').length, 1, 'back');
+  h.run.respond('searchInsurancePayors', () => ({ error: 'Insurance lookup failed: boom' }));
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'aetna gold');
+  assert.strictEqual(h.$('#kb-oop-results').querySelectorAll('.kb-oop-xref').length, 0,
+    'a failed payor lookup clears the cross-reference too');
+});
+
+test('T3 DOM: an item whose code is a SHORTHAND says it was not checked — it never renders as "no payor rules"', async () => {
+  const h = boot();
+  h.run.respond('searchInsurancePayors', () => T3_PAYORS);
+  h.run.respond('searchOopPricing', () => T3_ITEM_SHORTHAND);
+  bootLookups(h);
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'aetna');
+  await t3Search(h, '#kb-oop-item', 'oopLookupInput_', 'multi');
+
+  const un = h.$('#kb-oop-results').querySelector('.kb-oop-xref.unmatched');
+  assert.ok(un, 'the refusal is DRAWN, not left as silence');
+  assert.ok(/K0821\/23\/16/.test(un.textContent), 'the sheet’s own text is shown');
+  assert.ok(/shorthand/.test(un.textContent) && /before saying anything about coverage/.test(un.textContent),
+    'and says why, and what to do instead');
+  assert.strictEqual(h.$('#kb-oop-results').querySelectorAll('.kb-oop-xref-r').length, 0,
+    'and asserts NOTHING — this is the whole safety rule, on the surface where a quote is a commitment');
+  // The price is untouched. The join failing must not cost the rep the answer
+  // they actually came for.
+  assert.ok(/\$1,000\.00/.test(h.$('#kb-oop-results').textContent), 'the price still renders');
+});
+
+test('T3 DOM: the client will not join on tokens the payload did not mark CERTAIN, whatever the payload says', async () => {
+  // A payload the SERVER cannot produce — hcpcsParse_ fills `tokens` only on the
+  // certain path, and T3-1 pins that. This drives the client's own guard, which
+  // was otherwise unreachable: the bite-check for it reported NO BITE against
+  // every realistic fixture, because the server's shape already made it moot.
+  //
+  // Unreachable defence is not the same as safe defence. The guard exists
+  // because the client is one refactor away from being handed a shape the
+  // current server does not send, and an untested guard is the thing that
+  // quietly stops guarding (g138 — an assertion that cannot be made to fail is
+  // deleted rather than dressed up; the answer here is to make it fail).
+  const h = boot();
+  h.run.respond('searchInsurancePayors', () => ({
+    total: 1, cap: 8, codeJoin: { attempted: true, error: '' },
+    matches: [{ name: 'AETNA GOLD', networkStatus: 'IN-NETWORK', details: [
+      { label: 'K0800', value: 'SI/PR',
+        code: { shaped: true, certain: false, tokens: ['K0800'] }, item: '', itemCount: 0 }] }] }));
+  h.run.respond('searchOopPricing', () => T3_ITEM_OK);
+  bootLookups(h);
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'aetna');
+  await t3Search(h, '#kb-oop-item', 'oopLookupInput_', 'scout');
+
+  assert.strictEqual(h.$('#kb-oop-results').querySelectorAll('.kb-oop-xref-r').length, 0,
+    'the tokens MATCH the item exactly — and are still not used, because nothing marked them certain');
+  assert.strictEqual(h.$('#kb-oop-results').querySelectorAll('.kb-oop-xref').length, 0,
+    'and no empty cross-reference block is drawn either');
+  // The item itself is fine, so this is not the shorthand path taking over.
+  assert.ok(/Drive Scout 3 Wheel/.test(h.$('#kb-oop-results').textContent));
+  assert.strictEqual(h.$('#kb-oop-results').querySelectorAll('.kb-oop-xref.unmatched').length, 0,
+    'the ITEM code is certain — the refusal here is about the payor side, and is silent on purpose');
+});
+
+test('T3 DOM: a pricing tab the server could not read is ANNOUNCED — bare codes look identical to a payor sheet that has none', async () => {
+  const h = boot();
+  h.run.respond('searchInsurancePayors', () => ({
+    total: 1, cap: 8, codeJoin: { attempted: true, error: 'OOP pricing is not set up yet' },
+    matches: [{ name: 'AETNA GOLD', networkStatus: 'IN-NETWORK', details: [
+      { label: 'K0800', value: 'SI/PR', code: { shaped: true, certain: true, tokens: ['K0800'] }, item: '', itemCount: 0 }] }] }));
+  bootLookups(h);
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'aetna');
+
+  const banner = h.$('#kb-ins-results').querySelector('.kb-oop-degraded');
+  assert.ok(banner, 'the degraded join announces itself (g53)');
+  assert.ok(/not set up yet/.test(banner.textContent), 'passing the server’s reason through verbatim');
+  assert.ok(/acceptance rules themselves[\s\S]*unaffected/.test(banner.textContent),
+    'and scopes the damage — the payor sheet’s own rules are fine');
+
+  // The SAME payload with attempted:false must NOT warn. A payor whose columns
+  // are not codes is the sheet working, and a banner there would be the
+  // "diagnostic that can never be clean" defect (g02).
+  h.run.respond('searchInsurancePayors', () => ({
+    total: 1, cap: 8, codeJoin: { attempted: false, error: '' },
+    matches: [{ name: 'PACIFICARE', networkStatus: '', details: [
+      { label: 'Category', value: 'POV', code: { shaped: false, certain: false, tokens: [] }, item: '', itemCount: 0 }] }] }));
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'pacificare');
+  assert.strictEqual(h.$('#kb-ins-results').querySelectorAll('.kb-oop-degraded').length, 0,
+    'no join attempted, nothing to warn about');
+});
+
+function t3Key(h, el, key) {
+  const e = new h.window.KeyboardEvent('keydown', { key: key, bubbles: true, cancelable: true });
+  el.dispatchEvent(e);
+  return e;
+}
+
+test('T4 DOM: the arrows walk the results and Escape comes back, without the mouse', async () => {
+  const h = boot();
+  h.run.respond('searchInsurancePayors', () => ({
+    total: 3, cap: 8, codeJoin: { attempted: false, error: '' },
+    matches: [
+      { name: 'AETNA ONE', networkStatus: 'IN-NETWORK', details: [
+        { label: 'K0800', value: 'SI/PR', code: { shaped: true, certain: true, tokens: ['K0800'] }, item: '', itemCount: 0 }] },
+      { name: 'AETNA TWO', networkStatus: '', details: [] },
+      { name: 'AETNA THREE', networkStatus: '', details: [] },
+    ] }));
+  bootLookups(h);
+  const inp = h.$('#kb-ins-input');
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'aetna');
+
+  const rows = Array.from(h.$('#kb-ins-results').querySelectorAll('[data-kb-nav]'));
+  assert.strictEqual(rows.length, 3, 'three payor cards, each focusable');
+  rows.forEach((r) => assert.strictEqual(r.getAttribute('tabindex'), '-1',
+    'focusable but NOT a tab stop — Tab still goes field to field'));
+
+  // Down from the FIELD walks in.
+  inp.focus();
+  const ev = t3Key(h, inp, 'ArrowDown');
+  assert.strictEqual(h.window.document.activeElement, rows[0], 'ArrowDown from the field enters the results');
+  assert.ok(ev.defaultPrevented, 'and the caret does not also move');
+
+  // Nothing else in the field is hijacked — it is a text box.
+  ['ArrowUp', 'Home', 'End', 'Enter'].forEach((k) => {
+    inp.focus();
+    assert.ok(!t3Key(h, inp, k).defaultPrevented, k + ' still belongs to the text box');
+  });
+
+  t3Key(h, rows[0], 'ArrowDown');
+  assert.strictEqual(h.window.document.activeElement, rows[1], 'down through the list');
+  t3Key(h, rows[1], 'End');
+  assert.strictEqual(h.window.document.activeElement, rows[2], 'End jumps to the last');
+  // Off the BOTTOM stays put. Wrapping would silently answer "show me the next
+  // one" with the first one.
+  t3Key(h, rows[2], 'ArrowDown');
+  assert.strictEqual(h.window.document.activeElement, rows[2], 'the bottom does not wrap');
+  t3Key(h, rows[2], 'Home');
+  assert.strictEqual(h.window.document.activeElement, rows[0], 'Home jumps back to the first');
+  // Off the TOP returns to the field, so the rep can keep typing.
+  t3Key(h, rows[0], 'ArrowUp');
+  assert.strictEqual(h.window.document.activeElement, inp, 'up off the top returns to the field');
+
+  // Escape from anywhere in the list returns to the field too.
+  rows[2].focus();
+  t3Key(h, rows[2], 'Escape');
+  assert.strictEqual(h.window.document.activeElement, inp, 'Escape returns to the field');
+
+  // Enter ACTIVATES the row's primary control — here, the code disclosure.
+  // Stated as "clicks it", which is what can be observed: jsdom does not
+  // evaluate inline `onclick` attributes, so asserting aria-expanded flipped
+  // would be asserting the harness rather than the code. What the disclosure
+  // DOES when clicked is the T2 pins' job; what this pin owns is that Enter
+  // finds the right element and clicks it.
+  const disc = rows[0].querySelector('.kb-ins-det-btn');
+  assert.ok(disc && disc.hasAttribute('data-kb-primary'), 'the code disclosure is the payor row’s primary');
+  assert.strictEqual(disc.getAttribute('onclick'), 'insToggleLegend_(this)', 'wired to the real toggle');
+  let clicked = 0;
+  disc.click = () => { clicked++; };
+  rows[0].focus();
+  const entEv = t3Key(h, rows[0], 'Enter');
+  assert.strictEqual(clicked, 1, 'Enter on the ROW activates its primary control');
+  assert.ok(entEv.defaultPrevented, 'and the key does not also do whatever it would have done');
+
+  // But Enter on a BUTTON inside the row is that button's. Hijacking it would
+  // make every control in a row do the row's primary action instead.
+  assert.ok(!t3Key(h, disc, 'Enter').defaultPrevented,
+    'Enter on a control inside the row is left alone');
+  // A row with no primary swallows nothing either.
+  rows[1].focus();
+  assert.ok(!t3Key(h, rows[1], 'Enter').defaultPrevented,
+    'a row with no primary control does not eat the key');
+});
+
+test('T4 DOM: copy yields the parked FIGURE, and a blocked clipboard SAYS so instead of claiming success', async () => {
+  const h = boot();
+  h.run.respond('searchOopPricing', () => ({ cap: 8, total: 1, matches: [{
+    name: 'Drive Scout 3 Wheel', code: 'K0800 (C/C)', effective: '09/16/2026', eligibility: 'Open',
+    codes: { raw: 'K0800 (C/C)', shaped: true, certain: true, tokens: ['K0800'] },
+    price: '$920.00',
+    prices: [{ label: 'OOP Price - pick-up', value: '$920.00' },
+             { label: 'W/ Shipping Cost', value: '$1,070.00' },
+             { label: 'W/ Tech Delivery Cost', value: '$1,220.00' }],
+    details: [] }] }));
+  bootLookups(h);
+  await t3Search(h, '#kb-oop-item', 'oopLookupInput_', 'scout');
+
+  const host = h.$('#kb-oop-results');
+  const btns = Array.from(host.querySelectorAll('.kb-oop-copy'));
+  assert.strictEqual(btns.length, 3, 'one copy button per priced column');
+  // With three prices there is no "the" price, so NONE is the row's Enter
+  // target — picking one for the rep is the guess this module refuses to make.
+  assert.strictEqual(host.querySelectorAll('[data-kb-primary]').length, 0,
+    'a three-price row has no primary');
+
+  // The FIGURE, from the parked payload — and the one beside the button it was
+  // clicked on, which is the assertion that would catch an off-by-one between
+  // the renderer's numbering and the copy handler's.
+  const copied = [];
+  const setClipboard = (impl) => Object.defineProperty(h.window.navigator, 'clipboard',
+    { value: impl, configurable: true, writable: true });
+  setClipboard({ writeText: (t) => { copied.push(t); return Promise.resolve(); } });
+  h.read('oopCopyPrice_')(btns[1]);
+  await tick();
+  assert.deepStrictEqual(copied, ['$1,070.00'],
+    'the SHIPPING total, because that is the button that was pressed — not prices[0]');
+  h.read('oopCopyPrice_')(btns[2]);
+  await tick();
+  assert.strictEqual(copied[1], '$1,220.00');
+  // Nothing quote-shaped: no label, no effective date, no sentence. A line
+  // pasted from here would never be re-verified at send (INV-208).
+  copied.forEach((c) => {
+    assert.ok(!/Scout|effective|Shipping/.test(c),
+      'the clipboard gets the figure alone, never a quote-shaped line: ' + JSON.stringify(c));
+  });
+
+  // THE HONEST-FAILURE CASE. The clipboard API rejects and execCommand is
+  // denied — which returns FALSE rather than throwing, and is what actually
+  // happens inside an HtmlService iframe (g76).
+  setClipboard({ writeText: () => Promise.reject(new Error('denied')) });
+  h.window.document.execCommand = () => false;
+  h.read('oopCopyPrice_')(btns[0]);
+  await tick(); await tick();
+  const mc = h.window.document.querySelector('#manual-copy-overlay');
+  assert.ok(mc && mc.classList.contains('open'), 'the manual-copy failover opens');
+  assert.ok(/blocked the clipboard/.test(mc.textContent) && /nothing was copied/.test(mc.textContent),
+    'and SAYS nothing was copied — every other copy helper in this app claims success here');
+  const mcVal = mc.querySelector('#manual-copy-val');
+  assert.strictEqual(mcVal.value, '$920.00', 'with the figure there to select by hand');
+  // PRE-SELECTED, so the rep can press copy without dragging over it. Asserted
+  // on the selection range rather than the source: a bite that deleted the
+  // select() call left every other assertion here green.
+  assert.strictEqual(mcVal.selectionStart, 0);
+  assert.strictEqual(mcVal.selectionEnd, '$920.00'.length, 'the whole figure is selected');
+  assert.ok(/W\/ Shipping Cost|pick-up/.test(mc.textContent), 'named, so the rep knows which one it is');
+  h.read('closeOverlay')(mc);
+
+  // A SCALAR-ONLY payload — what an older deployment answers a newer client
+  // with, i.e. what every tab already open gets during a New Version deploy.
+  // Its one price still copies. Reaching for `m.prices` directly here would
+  // throw and the button would do nothing, silently.
+  setClipboard({ writeText: (t) => { copied.push(t); return Promise.resolve(); } });
+  h.run.respond('searchOopPricing', () => ({ cap: 8, total: 1, matches: [{
+    name: 'Legacy Item', code: 'E0247', effective: '', eligibility: 'Open',
+    price: '$65.00', details: [] }] }));
+  await t3Search(h, '#kb-oop-item', 'oopLookupInput_', 'legacy');
+  const lone = h.$('#kb-oop-results').querySelectorAll('.kb-oop-copy');
+  assert.strictEqual(lone.length, 1, 'one price, one button');
+  assert.ok(lone[0].hasAttribute('data-kb-primary'),
+    'and with only one price it IS the row’s Enter target — there is no choice to guess at');
+  copied.length = 0;
+  h.read('oopCopyPrice_')(lone[0]);
+  await tick();
+  assert.deepStrictEqual(copied, ['$65.00'], 'the scalar copies like any other price');
+
+  // And a row that is no longer on screen refuses rather than copying whatever
+  // now sits at that index.
+  host._oopItems = null;
+  setClipboard({ writeText: (t) => { copied.push(t); return Promise.resolve(); } });
+  const before = copied.length;
+  h.read('oopCopyPrice_')(lone[0]);
+  await tick();
+  assert.strictEqual(copied.length, before, 'a stale index copies NOTHING');
+});
+
+test('T5 DOM: the Call Notes auto-copy is SILENT on success and never on failure', async () => {
+  // THE WORST COPY IN THE APP to get wrong, and the one that had no coverage
+  // at all. It runs automatically on the save path so the rep never watches
+  // it; seconds later they paste into the CRM. It used to fail in complete
+  // silence — the promise rejection went to a fallback whose own catch
+  // swallowed everything, and execCommand returns false rather than throwing,
+  // so the catch saw nothing either way. The rep pasted the PREVIOUS note,
+  // about a different patient.
+  const h = boot();
+  h.bootShell({});
+  const note = { id: 'n1', caller: 'Jane Q', issue: 'Wheel wobble', resolution: 'Ordered part' };
+
+  // SUCCESS: silent by design — the rep did not ask for this copy, and a toast
+  // on every save is noise.
+  const copied = [];
+  const setClipboard = (impl) => Object.defineProperty(h.window.navigator, 'clipboard',
+    { value: impl, configurable: true, writable: true });
+  setClipboard({ writeText: (t) => { copied.push(t); return Promise.resolve(); } });
+  h.read('cnAutoCopyNote_')(note);
+  await tick(); await tick();
+  assert.strictEqual(copied.length, 1, 'the note reached the clipboard');
+  assert.ok(/Jane Q/.test(copied[0]), 'and it is the note, formatted');
+  assert.strictEqual(h.window.document.querySelector('#manual-copy-overlay'), null,
+    'nothing interrupts a save that worked');
+
+  // FAILURE: never silent. This is the whole change.
+  setClipboard({ writeText: () => Promise.reject(new Error('denied')) });
+  h.window.document.execCommand = () => false;
+  h.read('cnAutoCopyNote_')(note);
+  await tick(); await tick();
+  const mc = h.window.document.querySelector('#manual-copy-overlay');
+  assert.ok(mc && mc.classList.contains('open'),
+    'a blocked clipboard on the SAVE path interrupts the rep — silence here is the previous ' +
+    'patient’s note going into the CRM');
+  assert.ok(/nothing was copied/.test(mc.textContent), 'and says so plainly');
+  assert.ok(/Jane Q/.test(mc.querySelector('#manual-copy-val').value),
+    'with the note there to copy by hand');
+  // A note is multi-line, so the failover gives it room rather than a one-line
+  // input the rep has to scroll sideways through.
+  assert.strictEqual(mc.querySelector('#manual-copy-val').tagName, 'TEXTAREA');
+  h.read('closeOverlay')(mc);
+
+  // And the "copy again" button, which used to toast success SYNCHRONOUSLY —
+  // beside a copy that had not finished and might not have worked.
+  h.read('cnCopyNoteAgain_');   // present
+  setClipboard({ writeText: () => Promise.reject(new Error('denied')) });
+  h.read('cnAutoCopyNote_')(note, { announce: true });
+  await tick(); await tick();
+  assert.ok(h.window.document.querySelector('#manual-copy-overlay'),
+    'an explicitly requested copy fails loudly too');
 });
 
 test('R-6: every block on the Reference landing is a SECTION or the band — nothing can render at the band’s width by accident', async () => {

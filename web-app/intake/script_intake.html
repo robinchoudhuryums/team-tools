@@ -1861,23 +1861,14 @@ function intakeRecStatusChange_(sel) {
 }
 
 // Copy a URL (image or brochure) to the clipboard so the agent can paste it
-// into their texting tool. navigator.clipboard with a <textarea> execCommand
-// fallback (the HtmlService iframe often blocks the async clipboard API).
+// into their texting tool. Through the shell's ONE honest copy helper, which
+// owns the iframe's clipboard problems and, crucially, owns the success path.
 function intakeCopyLink_(btn) {
   var txt = btn.getAttribute('data-copy') || '';
   if (!txt) return;
-  function fallback() {
-    try {
-      var ta = document.createElement('textarea');
-      ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
-      document.body.appendChild(ta); ta.focus(); ta.select();
-      document.execCommand('copy'); document.body.removeChild(ta);
-      showToast('Link copied', 'toast-success');
-    } catch (e) { showToast('Copy failed — ' + txt, 'toast-error'); }
-  }
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(txt).then(function () { showToast('Link copied', 'toast-success'); flashCopied(btn); }, fallback);
-  } else { fallback(); flashCopied(btn); }
+  // The old `else` branch ran the fallback AND flashed the button on the next
+  // line, so a blocked clipboard still looked like a copy.
+  copyWithFeedback_(txt, { ok: 'Link copied', label: 'Link', el: btn });
 }
 
 // Best-effort copy of the actual device IMAGE bytes (so it can be pasted
@@ -3039,22 +3030,8 @@ function intakeCopyNoteBox_() {
   if (el) intakeCopyText_(el.value);
 }
 
-// Copy plain text to the clipboard (navigator.clipboard with an execCommand
-// fallback for HtmlService iframes — same pattern as the link/image copies).
+// Copy plain text to the clipboard, through the shell's ONE honest helper.
 function intakeCopyText_(txt) {
-  function fallback() {
-    try {
-      var ta = document.createElement('textarea');
-      ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
-      document.body.appendChild(ta); ta.focus(); ta.select();
-      document.execCommand('copy'); document.body.removeChild(ta);
-      showToast('Note copied', 'toast-success');
-    } catch (e) { showToast('Copy failed', 'toast-error'); }
-  }
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(txt).then(function () { showToast('Note copied', 'toast-success'); }, fallback);
-    } else { fallback(); }
-  } catch (e) { fallback(); }
+  copyWithFeedback_(txt, { ok: 'Note copied', label: 'Note' });
 }
 </script>

@@ -637,6 +637,115 @@ function insPayorScore_(name, query) {
   if (hits === toks.length) score += 30;            // every token present
   return score;
 }
+/** PURE (Node-pinned): the ONE HCPCS tokenizer. Both operator tables name the
+ *  same equipment in the same billing vocabulary — the payor sheet as COLUMN
+ *  HEADERS (`K0800`, `K0801`), the pricing sheet as a code CELL (`K0800 (C/C)`)
+ *  — and that shared vocabulary is the only join key the two tables have.
+ *
+ *  Returns `{ raw, shaped, certain, tokens }`.
+ *
+ *  **`tokens` is populated ONLY on the certain path**, which is the safety rule
+ *  expressed as a shape rather than as a warning: a consumer cannot assert
+ *  coverage from an uncertain parse, because there is nothing there to assert
+ *  from. That matters because of the shorthand the operator really writes —
+ *  `K0821/23/16`. A human reads that as K0821, K0823 and K0816; it could as
+ *  easily abbreviate something else, and the fragments `23` and `16` are not
+ *  codes by any rule we can defend. Expanding it would tell a rep a payor
+ *  covers an item it may not, on a surface where a quote is a commitment
+ *  (g41, and the ELIG no-seed precedent: a plausible substitute for real data
+ *  is worse than none). So the whole string refuses, and the RAW text is kept
+ *  for the client to show — the rep still sees what the sheet says, and sees
+ *  that we could not match it.
+ *
+ *  `shaped` separates "a code column we would not parse" from "not a code
+ *  column at all" (`Category`, `Comments`), so the client can say WHICH.
+ *
+ *  A parenthetical is a qualifier, never a code — `K0800 (C/C)` is one code.
+ *
+ *  SELF-CONTAINED on purpose: the whole rule, including the code shape, is
+ *  inside this one function, so a pin that loads it alone really exercises the
+ *  rule rather than a fragment of it. */
+function hcpcsParse_(raw) {
+  const text = String(raw == null ? '' : raw).trim();
+  const out = { raw: text, shaped: false, certain: false, tokens: [] };
+  const s = text.toUpperCase();
+  if (!s) return out;
+  out.shaped = /[A-Z]\d{4}/.test(s);
+  if (!out.shaped) return out;
+  const parts = s.replace(/\([^)]*\)/g, ' ').split(/[/,;&+\s]+/).filter(function (p) { return p; });
+  if (!parts.length) return out;
+  for (let i = 0; i < parts.length; i++) {
+    // One unreadable fragment refuses the WHOLE string. Keeping the readable
+    // ones would under-claim rather than over-claim, which sounds safer and is
+    // not: the rep asked about an item and would be answered about a different
+    // one, silently.
+    if (!/^[A-Z]\d{4}[A-Z0-9]{0,2}$/.test(parts[i])) return out;
+  }
+  const seen = {};
+  parts.forEach(function (p) { if (!seen[p]) { seen[p] = 1; out.tokens.push(p); } });
+  out.certain = true;
+  return out;
+}
+
+/** The code → item-name index over the pricing tab, for naming the payor
+ *  sheet's bare code columns. Read live, like every other OopPricing read.
+ *
+ *  Built only when a payor result actually carries code-shaped columns, so a
+ *  payor with none costs nothing.
+ *
+ *  A row whose code does not parse CERTAINLY never enters the index — the same
+ *  refusal as `hcpcsParse_`, on the other side of the join. A token that names
+ *  more than one item keeps BOTH names rather than picking one: the caller
+ *  declines to name it and says how many, which is the honest answer to an
+ *  ambiguity the spreadsheet allows and cannot resolve.
+ *
+ *  Returns `{ byToken, error }` — the error is PASSED THROUGH rather than
+ *  swallowed, because a payor lookup whose join silently degraded to bare codes
+ *  looks exactly like a payor sheet that has no item names to give (g53: a
+ *  best-effort overlay whose ABSENCE is reassuring must announce itself). */
+function oopCodeIndex_() {
+  try {
+    const sh = oopSheet_();
+    const last = Math.min(sh.getLastRow(), OOP_MAX_ROWS + 1);
+    if (last < 2) return { byToken: {}, error: '' };
+    const width = sh.getLastColumn();
+    const headers = sh.getRange(1, 1, 1, width).getDisplayValues()[0];
+    const rows = sh.getRange(2, 1, last - 1, width).getDisplayValues();
+    const byToken = {};
+    for (let i = 0; i < rows.length; i++) {
+      const o = oopRowObj_(headers, rows[i]);
+      if (!o.name || !o.code) continue;
+      const p = hcpcsParse_(o.code);
+      if (!p.certain) continue;
+      p.tokens.forEach(function (t) {
+        if (!byToken[t]) byToken[t] = [];
+        if (byToken[t].indexOf(o.name) < 0) byToken[t].push(o.name);
+      });
+    }
+    return { byToken: byToken, error: '' };
+  } catch (err) { return { byToken: {}, error: String(err.message || err) }; }
+}
+
+/** PURE (Node-pinned): name ONE payor detail entry from the code index.
+ *
+ *  Mutates and returns the entry, adding `code` (the parse) and, when the join
+ *  is unambiguous, `item`. `itemCount` is always set so the client can tell
+ *  "no item carries this code" from "two do" without re-deriving either. */
+function insNameCodeDetail_(d, byToken) {
+  const p = hcpcsParse_(d.label);
+  d.code = { shaped: p.shaped, certain: p.certain, tokens: p.tokens };
+  d.item = '';
+  d.itemCount = 0;
+  if (!p.certain) return d;
+  const names = [];
+  p.tokens.forEach(function (t) {
+    (byToken[t] || []).forEach(function (n) { if (names.indexOf(n) < 0) names.push(n); });
+  });
+  d.itemCount = names.length;
+  if (names.length === 1) d.item = names[0];
+  return d;
+}
+
 /** Pure (Node-pinned): one payor row → the result object, columns resolved by
  *  header name. Unmatched non-empty headers become generic details entries. */
 function insPayorRowObj_(headers, row) {
@@ -760,6 +869,10 @@ function oopRowObj_(headers, row) {
     else if (v) out.details.push({ label: h, value: v });
   }
   out.price = out.prices.length ? out.prices[0].value : '';
+  // The join key, parsed HERE so both OOP surfaces carry it from the ONE row
+  // resolver — the g126 discipline that R-1 applied to the price list applies
+  // to this for the same reason: a second parse is a second thing to drift.
+  out.codes = hcpcsParse_(out.code);
   return out;
 }
 
@@ -1403,7 +1516,7 @@ function checkOopEligibility(address, query) {
       // client row renderer serve both, so they cannot drift apart by being
       // edited separately again.
       return {
-        name: o.name, code: o.code, price: o.price, prices: o.prices,
+        name: o.name, code: o.code, codes: o.codes, price: o.price, prices: o.prices,
         effective: o.effective, eligibility: o.eligibility, details: o.details,
         rule: rule.kind,
         insurance: oopEligibilityCheck_(oopEligibilityForPayment_(rule, false), loc),
@@ -1533,7 +1646,28 @@ function searchInsurancePayors(query) {
       const row = sh.getRange(t.i + 2, 1, 1, width).getDisplayValues()[0];
       return insPayorRowObj_(headers, row);
     });
-    return { matches: matches, total: scored.length, notFound: scored.length === 0, cap: INS_PAYOR_TOP };
+    // The JOIN (T3). The payor sheet says `K0802 — Not Accepted`, which is a
+    // rule about an item the rep cannot name. The pricing tab knows what K0802
+    // is, so name it here rather than leaving the rep to look it up separately
+    // mid-call — the whole point of the two panels being one glance apart.
+    //
+    // Built ONLY when some result actually has code-shaped columns, so the
+    // common payor with none costs no extra read at all.
+    const wantsCodes = matches.some(function (m) {
+      return (m.details || []).some(function (d) { return hcpcsParse_(d.label).shaped; });
+    });
+    const idx = wantsCodes ? oopCodeIndex_() : { byToken: {}, error: '' };
+    if (wantsCodes) {
+      matches.forEach(function (m) {
+        (m.details || []).forEach(function (d) { insNameCodeDetail_(d, idx.byToken); });
+      });
+    }
+    return { matches: matches, total: scored.length, notFound: scored.length === 0, cap: INS_PAYOR_TOP,
+      // NAMED, not inferred from empty `item` fields. A pricing tab that is
+      // missing or unreadable produces exactly the same bare codes as a payor
+      // sheet whose columns are not codes, and the rep must be able to tell
+      // those apart — the second is the sheet working, the first is not.
+      codeJoin: { attempted: wantsCodes, error: idx.error } };
   } catch (err) { return { error: 'Insurance lookup failed: ' + err.message }; }
 }
 /** Pure (Node-pinned) RFC4180-ish CSV parse. Handles quoted fields with
