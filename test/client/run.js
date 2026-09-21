@@ -23815,6 +23815,85 @@ test('D2: every Common Gotchas rule resolves to its narrative, and every narrati
     'a code comment names a gotcha the docs no longer carry: ' + dangling.join(', '));
 });
 
+test('F4 (seams 2026-09-18): every Regression Scenario and Invariant id in .cycle/config.md is UNIQUE', () => {
+  // The OOP scenario shipped as a SECOND `S110` and had to be renumbered to
+  // S112 on 2026-09-17. Nothing caught the duplicate, and nothing would today:
+  // counts.mjs counts scenario LINES, so a duplicate id raises the total by one
+  // and the generated block is simply regenerated to match it.
+  //
+  // The renumber is also what left two invariants pointing at the wrong
+  // scenario (fixed in this batch). This pin cannot catch THAT — a stale
+  // pointer resolves to a real scenario — but it catches the collision that
+  // forced the renumber, which is the cheaper end of the same problem.
+  const cfg = fs.readFileSync(path.join(__dirname, '../../.cycle/config.md'), 'utf8');
+  const dupes = (label, re) => {
+    const seen = new Map();
+    let m;
+    while ((m = re.exec(cfg)) !== null) seen.set(m[1], (seen.get(m[1]) || 0) + 1);
+    assert.ok(seen.size > 50, label + ': the derivation found a real id list, not an empty one (g116) — ' + seen.size);
+    return [...seen.entries()].filter(([, n]) => n > 1).map(([id, n]) => id + ' \u00d7' + n);
+  };
+  assert.deepStrictEqual(dupes('scenarios', /^(S\d+) \|/gm), [],
+    'duplicate Regression Scenario id(s) — two scenarios under one number is how S110 ' +
+    'became two different walks, and every reference to it ambiguous');
+  assert.deepStrictEqual(dupes('invariants', /^(INV-\d+)\s*\|/gm), [],
+    'duplicate Invariant id(s) — a reused number silently merges two rules');
+
+  // The RESERVED numbers stay absent while STATE.md holds them. Cycle 20's
+  // reflection proposed INV-225..227 and could not verify any; reusing one
+  // would attach a new rule to a number another session is still holding.
+  const state = fs.readFileSync(path.join(__dirname, '../../.cycle/STATE.md'), 'utf8');
+  const reserved = [...state.matchAll(/INV-(\d+)[^\n]*RESERVED|RESERVED[^\n]*INV-(\d+)/g)];
+  if (reserved.length) {
+    const held = [...state.matchAll(/\*\*INV-(\d+), INV-(\d+) and INV-(\d+) are RESERVED/g)][0];
+    if (held) {
+      held.slice(1).forEach((n) => {
+        assert.ok(!new RegExp('^INV-' + n + '\\s*\\|', 'm').test(cfg),
+          'INV-' + n + ' is RESERVED in STATE.md but WRITTEN in config.md — do not reuse a held number');
+      });
+    }
+  }
+});
+
+test('F5 (seams 2026-09-18): every invariant from INV-139 up NAMES its verification — the ratchet', () => {
+  // The library is the project's safety net, and an invariant that names no
+  // way to check it is a claim rather than a rule. 91 of 225 name nothing, and
+  // they are almost all the OLD ones — the convention arrived partway through
+  // and has held since. This pin is the ratchet that keeps it holding, not a
+  // demand to backfill the early entries: writing clauses for invariants
+  // nobody currently verifies would put unverified claims in the one file
+  // whose whole value is that its claims are true.
+  //
+  // INV-139 is the LOWEST floor with zero live entries below the bar, so the
+  // ratchet covers as much as it honestly can on the day it lands. Lowering it
+  // further means backfilling INV-130 and INV-138 first; raising it gives up
+  // coverage for nothing.
+  //
+  // "Names its verification" accepts the three phrasings already in use — a
+  // `Verify:` clause, a "Pinned by …" sentence, or a named tripwire / test_
+  // function. Requiring the literal `Verify:` would force a rewrite of 74
+  // entries that already say where their proof lives, which is churn, not rigour.
+  const FLOOR = 139;
+  const cfg = fs.readFileSync(path.join(__dirname, '../../.cycle/config.md'), 'utf8');
+  const lib = cfg.slice(cfg.indexOf('### Invariant Library'), cfg.indexOf('### Visual Audit Stage'));
+  const rows = [...lib.matchAll(/^(INV-(\d+))\s*\|(.*)$/gm)];
+  assert.ok(rows.length > 200, 'the derivation found the library, not an empty slice (g116) — ' + rows.length);
+
+  // A deliberately VACANT number (INV-163/164: claimed by a reflection whose
+  // proposals were lost, left unreused so the metrics note stays traceable) is
+  // not an invariant and owes nothing.
+  const vacant = (body) => body.trim().startsWith('*(') || /\|\s*—\s*\|\s*—\s*$/.test(body);
+  const names = (body) => /Verify:/.test(body) ||
+    /[Pp]inned by|[Pp]inned in|[Tt]ripwire|test_\w+|`\w+` pin/.test(body);
+
+  const live = rows.filter((m) => Number(m[2]) >= FLOOR && !vacant(m[3]));
+  assert.ok(live.length > 50, 'the floor still covers a real span — ' + live.length);
+  const unnamed = live.filter((m) => !names(m[3])).map((m) => m[1]);
+  assert.deepStrictEqual(unnamed, [],
+    'invariant(s) at or above INV-' + FLOOR + ' that name no verification — add a ' +
+    '`Verify:` clause (or a "Pinned by …" sentence) naming the test that proves it');
+});
+
 test('D2: every Operator State inventory line resolves, and every entry is inventoried', () => {
   // The third instance of the split's one real hazard: an index in CLAUDE.md
   // and its entries in another file, with nothing noticing when they diverge.
