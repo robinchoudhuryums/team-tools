@@ -4,7 +4,7 @@
 Cycle: 21 — CLOSED 2026-09-21 (batch R deployed and operator-confirmed; batch S
 needed no deploy; reflected net +1; the whole block is in `.cycle/HISTORY.md`).
 **No cycle is open.** The next `/audit` or `/broad-scan` opens cycle 22.
-Phase: implement (between-cycles operator work — T3)
+Phase: implement (between-cycles operator work — T1–T4 COMPLETE, undeployed)
 Scope: —
 Test Command: manual
 Estimates: T1 (landing re-render + pill + meta chips): S (~2 h) · T2 (legend
@@ -12,8 +12,8 @@ popover + per-value terms): M (~3 h) — both written BEFORE the first edit;
 actual ~3 h combined. **T3 (the payor × item HCPCS join): L (~8 h)** — written
 BEFORE the first edit, as it stood in the agreed four-batch plan ("L, ~1 day");
 actual ~4 h. **T4 (keyboard nav · copy price · collapse agreeing verdicts):
-M (~3 h)** — written BEFORE the first edit, as it stood in the plan.
-Between-cycles operator work, the 19pre pattern.
+M (~3 h)** — written BEFORE the first edit, as it stood in the plan;
+actual ~3 h. Between-cycles operator work, the 19pre pattern.
 Subsystem cycles since last Seams audit: 0 — reset by the 2026-09-18 audit,
 whose findings shipped as batch S. The cadence is every 4; next due at cycle 25.
 Updated: 2026-09-21
@@ -25,8 +25,8 @@ Updated: 2026-09-21
   from `main` afterwards, per the merged-PR rule. **Still needs one
   `clasp push -f` + New-version deploy**, then S64 and S112.
 - A FOUR-BATCH plan (T1–T4) for the Reference lookups was agreed with the
-  operator on 2026-09-21. T1, T2 and T3 are all DONE and pushed; T4 is
-  unstarted. Summarised under "Pending".
+  operator on 2026-09-21. **All four are DONE and pushed.** Nothing is
+  deployed yet — T1+T2+T3+T4 ship in ONE push.
 
 ## Completed this cycle
 - (Cycle 21's record is in `.cycle/HISTORY.md` and the three blocks
@@ -34,8 +34,8 @@ Updated: 2026-09-21
   and `21-a-reflect.md`. Nothing has been completed against a NEW cycle.)
 
 ## Pending / not yet done
-- **The deploy** — ONE `clasp push -f` + New-version covers T1, T2 and T3;
-  then walk S64 (six new T3 steps), S112 and S73.
+- **The deploy** — ONE `clasp push -f` + New-version covers T1, T2, T3 AND T4;
+  then walk S64 (six T3 steps + four T4 steps), S112 and S73.
 - ~~T1~~ and ~~T2~~ are DONE — block `21post-T1-T2-broad-implement.md`, net
   2 − 0. The tone/explanation guarantee is held by a PIN rather
   than by one shared matcher: `insToneCls_` was left alone deliberately, since
@@ -61,10 +61,18 @@ Updated: 2026-09-21
   (`K0821/23/16` shorthand) is shown but NEVER used to assert coverage — a
   wrong join tells a rep a payor covers something it does not, on a surface
   where a quote is a commitment (g41, and the ELIG no-seed precedent).
-- **T4 (M, ~3h)** — keyboard navigation in the results, copy-price with the
-  g76 clipboard failover, and collapsing the two verdicts when they AGREE so
-  the disagreements stand out. That last one **changes a documented decision**
-  (ELIG / INV-209) and needs the decision entry rewritten, not just the code.
+- ~~T4~~ is DONE — block `21post-T4-broad-implement.md`, net 0 − 0 (3
+  capabilities). **INV-209 is AMENDED**, in the library AND in
+  `docs/design-decisions.md`, with the reasoning: an AGREEING verdict pair
+  renders as ONE row labelled "Through insurance or out of pocket"; a
+  disagreement still renders as two. Nothing is behind a toggle either way,
+  which is what the decision actually forbade. Thirteen bite-checks, all BITE,
+  after THREE NO BITEs that were each a real gap (agreement ignoring `why`;
+  the scalar price fallback never driven; a dead `idx == null` guard, removed).
+- **A follow-on T4 surfaced and did NOT fix:** FIVE copy helpers in this app
+  swallow failure and report success. `kbCopyText_` is the honest one and the
+  only one. The KB link card is the closest neighbour and still says
+  "Copied ✓" unconditionally; `kb/script_kb.html:2196` has no failover at all.
 - **DEFERRED, still an operator decision:** F-09's holiday FALLBACK — keep
   g123's federal fail-open, or match the Department Dashboard's no-fallback.
 - **Still owed from cycle 19's post-deploy walk:** step 8 — `INSTANCE_IS_PROD=true`
@@ -100,17 +108,20 @@ Updated: 2026-09-21
   whose value is that its claims are true.
 
 ## Where I left off
-T1, T2 and T3 are done. PR #264 merged 2026-09-21 (`2487fd1`); the branch was
-restarted from `main` and carries T3. Every harness is green, the counts block
-agrees, and the Reference shots were READ — the cross-reference's first layout
-passed every measurement and was unreadable.
+**T1, T2, T3 and T4 are all done and pushed.** PR #264 merged 2026-09-21
+(`2487fd1`); the branch was restarted from `main` and carries T3 and T4. Every
+harness is green, the counts block agrees, and the shots were READ — the
+drawer shot shows an agreeing verdict above a disagreeing one, which is the
+evidence the T4 amendment turns on.
 
-**Next: ONE deploy** (`clasp push -f` + New-version) covering T1 + T2 + T3,
-then walk S64 — it now carries six T3 steps, including renaming the
-`OopPricing` tab to see the degraded-join banner — and S112.
+**Next: ONE deploy** (`clasp push -f` + New-version) covering all four, then
+walk S64 — it now carries SIX T3 steps and FOUR T4 steps, including renaming
+the `OopPricing` tab to see the degraded-join banner — and S112. Note S112 was
+deliberately NOT widened for T4: T4 adds a second way to get a price onto the
+clipboard and explicitly not a second way to get one into an email.
 
-**`/sync-docs` is owed and has grown.** Four files: `docs/modules.md` (the
-split landing, the term popover, AND the join), `docs/gotchas.md` + the
+**`/sync-docs` is owed and has grown again.** Four files: `docs/modules.md`
+(the split landing, the term popover, the join, AND T4's three), `docs/gotchas.md` + the
 CLAUDE.md index (the drawer `.kbd-sec` defect and T1's re-render class, both
 still unwritten), `docs/operator-state.md` (`InsurancePayors` has no entry of
 its own, and T3 makes its column HEADERS load-bearing — they are the join key)
@@ -121,5 +132,5 @@ undefined acceptance values, and how many `OopPricing` codes use the
 `K0821/23/16` shorthand — every one of those is a code the join declines, and
 splitting them into whole codes needs no code change.
 
-T4 is unstarted; its verdict-collapse changes a documented decision
-(ELIG / INV-209) and needs that entry rewritten, not just the code.
+The four-batch plan is finished. The honest next step after the deploy is the
+owed `/sync-docs` pass, then the operator's two questions.
