@@ -10,7 +10,9 @@ Test Command: manual
 Estimates: T1 (landing re-render + pill + meta chips): S (~2 h) · T2 (legend
 popover + per-value terms): M (~3 h) — both written BEFORE the first edit;
 actual ~3 h combined. **T3 (the payor × item HCPCS join): L (~8 h)** — written
-BEFORE the first edit, as it stood in the agreed four-batch plan ("L, ~1 day").
+BEFORE the first edit, as it stood in the agreed four-batch plan ("L, ~1 day");
+actual ~4 h. **T4 (keyboard nav · copy price · collapse agreeing verdicts):
+M (~3 h)** — written BEFORE the first edit, as it stood in the plan.
 Between-cycles operator work, the 19pre pattern.
 Subsystem cycles since last Seams audit: 0 — reset by the 2026-09-18 audit,
 whose findings shipped as batch S. The cadence is every 4; next due at cycle 25.

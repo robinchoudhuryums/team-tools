@@ -13632,6 +13632,113 @@ test('T3-3: oopRowObj_ ships the parsed join key, so both OOP surfaces carry it 
     'the eligibility endpoint ships `codes` too — both readers of the one tab carry the same shape');
 });
 
+test('T4-1: the lookup arrow-key mapping is total and never crosses the landing with the drawer', () => {
+  const kb = extractScript('kb/script_kb.html');
+  const ctx = vm.createContext({ String: String, RegExp: RegExp });
+  ['kbNavHostIdFor_', 'kbNavInputIdFor_'].forEach((f) => {
+    vm.runInContext(extractFunction('kb/script_kb.html', f), ctx, { filename: f });
+  });
+  const fwd = (s) => vm.runInContext('kbNavHostIdFor_(' + JSON.stringify(s) + ')', ctx);
+  const back = (s) => vm.runInContext('kbNavInputIdFor_(' + JSON.stringify(s) + ')', ctx);
+
+  // Landing and drawer are two independent pairs. A suffix that leaked between
+  // them would walk a rep from the drawer's field into the landing's results —
+  // off-screen, with the focus ring nowhere they can see it.
+  assert.strictEqual(fwd('kb-ins-input'), 'kb-ins-results');
+  assert.strictEqual(fwd('kb-ins-input-d'), 'kb-ins-results-d');
+  assert.strictEqual(fwd('kb-oop-item'), 'kb-oop-results');
+  assert.strictEqual(fwd('kb-oop-item-d'), 'kb-oop-results-d');
+  // The OOP panel has TWO fields and both walk into the same results.
+  assert.strictEqual(fwd('kb-oop-addr'), 'kb-oop-results');
+  assert.strictEqual(fwd('kb-oop-addr-d'), 'kb-oop-results-d');
+
+  // Anything else is not a lookup field, and must map to nothing rather than
+  // to a plausible-looking host id.
+  ['', 'kb-search', 'kb-ins-results', 'kb-oop-item-x', 'kb-ins-input-D', 'xkb-ins-input']
+    .forEach((s) => assert.strictEqual(fwd(s), '', JSON.stringify(s) + ' is not a lookup field'));
+
+  // Escape's return trip. The OOP panel's TWO fields collapse to the ITEM one:
+  // it is the field that decides what the rows are, and the address only
+  // refines them.
+  assert.strictEqual(back('kb-ins-results'), 'kb-ins-input');
+  assert.strictEqual(back('kb-ins-results-d'), 'kb-ins-input-d');
+  assert.strictEqual(back('kb-oop-results'), 'kb-oop-item');
+  assert.strictEqual(back('kb-oop-results-d'), 'kb-oop-item-d');
+  ['', 'kb-ins-input', 'kb-oop-results-x'].forEach((s) => assert.strictEqual(back(s), ''));
+
+  // ROUND TRIP over every field: the host you walk into returns you to a field
+  // of the same panel and the same suffix. Derived rather than listed, so a new
+  // field cannot be added to the forward map and forgotten in the reverse one.
+  ['kb-ins-input', 'kb-ins-input-d', 'kb-oop-item', 'kb-oop-item-d', 'kb-oop-addr', 'kb-oop-addr-d']
+    .forEach((field) => {
+      const host = fwd(field);
+      const home = back(host);
+      assert.ok(home, field + ' → ' + host + ' → (nothing) — Escape would have nowhere to go');
+      const sfx = (s) => (/-d$/.test(s) ? '-d' : '');
+      assert.strictEqual(sfx(home), sfx(field), field + ' returns to the SAME host pair, got ' + home);
+      assert.strictEqual(/kb-ins/.test(home), /kb-ins/.test(field), field + ' returns to the same PANEL, got ' + home);
+    });
+
+  // The rows must actually be focusable, or every arrow above lands nowhere.
+  const row = extractFunction('kb/script_kb.html', 'oopItemRowHtml_');
+  assert.ok(/data-kb-nav tabindex="-1"/.test(row), 'an item row is focusable but NOT a tab stop');
+  assert.ok(/data-kb-nav tabindex="-1"/.test(extractFunction('kb/script_kb.html', 'insRenderResults_')),
+    'and so is a payor card');
+  const nav = extractFunction('kb/script_kb.html', 'kbLookupKeydown_');
+  assert.ok(/if \(t !== row\) return;/.test(nav),
+    'Enter is the ROW’s only when the row itself has focus — on a button inside it, it is that button’s');
+  assert.ok(/document\.addEventListener\('keydown', kbLookupKeydown_\)/.test(kb),
+    'bound once at the document, so it survives every results re-render');
+});
+
+test('T4-2: the copy button yields the FIGURE from the parked payload, never a quote-shaped line and never the DOM', () => {
+  const copy = extractFunction('kb/script_kb.html', 'oopCopyPrice_');
+
+  // INV-208: the price never round-trips through the DOM. The row carries an
+  // INDEX and the figure comes from the payload parked on the results host —
+  // the composer picker's discipline, for the same reason (g49).
+  assert.ok(/_oopItems/.test(copy), 'the value is read from the PARKED payload');
+  assert.ok(/parseInt\(btn\.getAttribute\('data-oop-copy'\), 10\)/.test(copy),
+    'addressed by index');
+  assert.ok(!/textContent|innerText|innerHTML/.test(copy),
+    'and never scraped back out of the rendered row');
+
+  // THE BOUNDARY. A composer quote is re-verified against the live sheet at
+  // send (INV-208); a line pasted from here never would be, and would sit in
+  // the customer's email looking exactly like one that was. So this copies the
+  // FIGURE, and must never grow into the quote line's shape.
+  // Stated as what reaches the CLIPBOARD, exactly — not as a ban on quote-ish
+  // words anywhere in the function. The first draft banned the em dash and went
+  // red on the TOAST, which is allowed to say whatever reads best; the claim
+  // was never about the toast. `String(pr.value)` followed immediately by the
+  // callback leaves no room to concatenate a label, a date, or a sentence.
+  assert.ok(/kbCopyText_\(String\(pr\.value\), function/.test(copy),
+    'what reaches the clipboard is the price value and NOTHING concatenated to it');
+  assert.ok(!/oopQuoteLine_/.test(copy), 'and it never reaches for the composer’s canonical line');
+
+  // A stale index must refuse rather than copy whatever is at that slot now.
+  assert.ok(/no longer on screen/.test(copy), 'a vanished row says so instead of copying something else');
+
+  // HONEST FAILURE (g76 + INV-175). execCommand returns FALSE when denied
+  // rather than throwing, and the clipboard API rejects — every other copy
+  // helper in this app reports success regardless. For a price that is the
+  // rep reading the previous clipboard contents to a customer.
+  const ct = extractFunction('kb/script_kb.html', 'kbCopyText_');
+  assert.ok(/document\.execCommand\('copy'\) === true/.test(ct),
+    'the execCommand result is CHECKED — it returns false when denied, it does not throw');
+  assert.ok(/done\(true\)/.test(ct) && /done\(ok\)/.test(ct), 'and the outcome is reported either way');
+  assert.ok(/try \{\s*if \(navigator\.clipboard/.test(ct),
+    'even reading navigator.clipboard is inside the try — a sandboxed frame can throw on the property itself');
+  assert.ok(/kbManualCopy_/.test(copy), 'a failed copy offers the manual failover, not a toast that says "do it yourself"');
+
+  const mc = extractFunction('kb/script_kb.html', 'kbManualCopy_');
+  assert.ok(/ensureOverlay\(/.test(mc) && /closeOverlay\(/.test(mc),
+    'the failover is a real overlay through the hooks (g100), not a classList toggle');
+  assert.ok(/input\.value = text/.test(mc),
+    'the figure is ASSIGNED, never interpolated into the markup');
+  assert.ok(/input\.select\(\)/.test(mc), 'and pre-selected, so the rep can just press copy');
+});
+
 test('T3-4: the join is built ONLY when a result has code columns, and its failure is NAMED rather than inferred', () => {
   const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   const srv = nc(extractRawFunction('Code.js', 'searchInsurancePayors'));
@@ -14010,10 +14117,29 @@ test('ELIG: the client shows both verdicts with three distinct states, and the c
   assert.ok(/esc\(\(v && v\.why\)/.test(verdict), 'the server reason is escaped before innerHTML');
 
   // The verdicts moved INTO the shared row renderer with the 2026-09-18 merge,
-  // so that is where the labels now live.
-  const row = extractFunction('kb/script_kb.html', 'oopItemRowHtml_');
-  assert.ok(/Through insurance/.test(row) && /Paying out of pocket/.test(row),
-    'both verdicts are LABELLED — an unlabelled pair is worse than one answer');
+  // and into their own function with T4's collapse (2026-09-21).
+  const vs = extractFunction('kb/script_kb.html', 'eligVerdictsHtml_');
+  assert.ok(/Through insurance'/.test(vs) && /Paying out of pocket/.test(vs),
+    'a DISAGREEMENT still renders as two labelled rows — an unlabelled pair is worse than one answer');
+
+  // T4 AMENDS INV-209 and this is the line that keeps the amendment honest.
+  // The original rule was "both verdicts shown, LABELLED, rather than behind a
+  // payment-method toggle", and its reason was that the rep is usually deciding
+  // BETWEEN them. When they agree there is nothing to decide, so the ROW
+  // collapses — but the CLAIM must still name both payment routes, or the
+  // single row reads as an answer about only one of them, which is exactly the
+  // failure the original decision was written to prevent.
+  assert.ok(/Through insurance or out of pocket/.test(vs),
+    'the COLLAPSED verdict names BOTH payment routes — collapsing the row must never collapse the claim');
+  assert.ok(!/toggle|button|hidden/i.test(vs),
+    'and neither answer is ever behind an interaction — that is what INV-209 forbade, and still does');
+
+  // Strict agreement. A near-boundary yes and a flat yes are different answers
+  // (INV-209), and two verdicts reached for different stated reasons are two
+  // facts — collapsing either pair would state one as the other.
+  const agree = extractFunction('kb/script_kb.html', 'eligVerdictsAgree_');
+  assert.ok(/\.verdict/.test(agree) && /\.near/.test(agree) && /\.why/.test(agree),
+    'agreement compares verdict, near AND why — any looser and the collapse hides a real difference');
 
   const header = extractFunction('kb/script_kb.html', 'oopEligHeaderHtml_');
   assert.ok(/straight-line/.test(header), 'the distance caveat rides the warehouse strip');
@@ -14176,8 +14302,25 @@ test('R-2: ONE renderer draws a price row — the eligibility payload and the pr
     'exactly ONE function emits a price span, and it is oopPriceHtml_ — found: ' + JSON.stringify(emitters));
 
   // And it renders EVERY priced column, labelled once there is more than one.
+  //
+  // T4 (2026-09-21) moved the derivation into oopPriceList_ and gave it a
+  // SECOND consumer — the copy button, which addresses a price by INDEX. That
+  // makes the shared derivation load-bearing rather than tidy: if the copy
+  // handler built its own list, the two would disagree about which price index
+  // 1 is on a payload carrying only the scalar, and the button would copy a
+  // different number from the one beside it. So the pin now follows the
+  // derivation instead of looking for `m.prices` in the renderer.
+  const list = extractFunction('kb/script_kb.html', 'oopPriceList_');
+  assert.ok(/m\.prices/.test(list), 'it reads the prices ARRAY, not the scalar');
+  assert.ok(/m\.price\b/.test(list), 'with the scalar as the back-compat fallback, in ONE place');
+
   const price = extractFunction('kb/script_kb.html', 'oopPriceHtml_');
-  assert.ok(/m\.prices/.test(price), 'it reads the prices ARRAY, not the scalar');
+  const copy = extractFunction('kb/script_kb.html', 'oopCopyPrice_');
+  [['oopPriceHtml_', price], ['oopCopyPrice_', copy]].forEach(([name, fn]) => {
+    assert.ok(/oopPriceList_\(/.test(fn), name + ' goes through the ONE derivation');
+    assert.ok(!/m\.prices/.test(fn) && !/\.prices &&/.test(fn),
+      name + ' does NOT re-derive the list — a second derivation is a second numbering');
+  });
   assert.ok(/prices\.length > 1/.test(price), 'and labels them once there is more than one');
   // NOTE what these two assertions do NOT cover: that the map walks the WHOLE
   // array. Truncating it to `[prices[0]]` leaves both regexes green — checked,

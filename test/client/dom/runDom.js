@@ -3124,18 +3124,40 @@ test('ELIG DOM: both verdicts render, labelled, on both hosts — a near-boundar
   const host = h.$('#kb-oop-results');
   const txt = host.textContent;
 
-  // BOTH verdicts, LABELLED. An unlabelled pair is worse than one answer.
+  // BOTH verdicts, LABELLED — when they DISAGREE. An unlabelled pair is worse
+  // than one answer, and that has not changed.
+  //
+  // **T4 (2026-09-21) AMENDS INV-209.** The rule was "both shown, labelled,
+  // rather than behind a payment-method toggle", and its stated reason is that
+  // the rep is usually deciding BETWEEN them. When the two agree there is
+  // nothing to decide, and the duplicate row is what makes a real disagreement
+  // hard to spot — which is the case the pair exists for. So the ROW collapses
+  // and the CLAIM does not: the label names both routes. Nothing is behind a
+  // toggle either way, which is what the decision actually forbade.
+  //
+  // This fixture carries one of each on purpose — agree/disagree/agree/agree —
+  // so both branches are driven here rather than one being reasoned about.
   const rows = Array.from(host.querySelectorAll('.kb-ins-row'));
   assert.strictEqual(rows.length, 4, 'every item renders');
-  rows.forEach((r) => {
-    const vs = r.querySelectorAll('.kb-elig-v');
-    assert.strictEqual(vs.length, 2, 'two verdicts per item');
-    assert.ok(/Through insurance/.test(vs[0].textContent), 'the first is labelled');
-    assert.ok(/Paying out of pocket/.test(vs[1].textContent), 'and so is the second');
+  assert.deepStrictEqual(rows.map((r) => r.querySelectorAll('.kb-elig-v').length), [1, 2, 1, 1],
+    'only the DISAGREEING item shows two');
+
+  [0, 2, 3].forEach((i) => {
+    const v = rows[i].querySelector('.kb-elig-v');
+    assert.ok(/Through insurance or out of pocket/.test(v.textContent),
+      'a collapsed verdict names BOTH payment routes — one route named alone would be a narrower ' +
+      'claim than the answer actually supports, row ' + i);
+    assert.ok(rows[i].querySelector('.kb-elig-vs.agreed'), 'and is marked as the agreed case, row ' + i);
   });
 
-  // The operator's key case, end to end: no through insurance, yes out of pocket.
+  // The operator's key case, end to end: no through insurance, yes out of
+  // pocket. It DISAGREES, so it is never collapsed — this is the row the whole
+  // two-verdict design exists for.
   const state = rows[1].querySelectorAll('.kb-elig-v');
+  assert.strictEqual(rows[1].querySelector('.kb-elig-vs.agreed'), null, 'a disagreement is never collapsed');
+  assert.ok(/Through insurance/.test(state[0].textContent) && !/or out of pocket/.test(state[0].textContent),
+    'the first names its OWN route only');
+  assert.ok(/Paying out of pocket/.test(state[1].textContent), 'and so does the second');
   assert.ok(state[0].classList.contains('no'), 'the insurance verdict is a NO');
   assert.ok(state[1].classList.contains('yes'), 'and the out-of-pocket one a YES');
   assert.ok(/no state restriction/.test(state[1].textContent), 'which explains ITSELF');
@@ -3280,7 +3302,12 @@ test('R DOM: the eligibility answer renders EVERY priced column, labelled — th
   assert.ok(/E0294/.test(row.textContent), 'the code rides it');
   assert.ok(/effective[:\s]+2026-09-01/.test(row.textContent), 'and the effective date — a commitment needs its as-of');
   assert.ok(/Weight cap[:\s]+450 lb/.test(row.textContent), 'and an unrecognised column still rides along verbatim');
-  assert.strictEqual(row.querySelectorAll('.kb-elig-v').length, 2, 'with both verdicts still on it');
+  // The verdicts still ride it. This fixture's two AGREE, so since T4 they
+  // render as one row naming both routes rather than two identical ones — the
+  // ELIG DOM pin drives the disagreeing branch.
+  assert.strictEqual(row.querySelectorAll('.kb-elig-v').length, 1, 'with the verdict still on it');
+  assert.ok(/Through insurance or out of pocket/.test(row.textContent),
+    'and it answers for BOTH payment routes, not just one of them');
 });
 
 test('R DOM: an address that produces no verdict does NOT take the prices with it — the panel degrades to the price answer and states that no verdict was reached', async () => {
@@ -3763,6 +3790,156 @@ test('T3 DOM: a pricing tab the server could not read is ANNOUNCED — bare code
   await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'pacificare');
   assert.strictEqual(h.$('#kb-ins-results').querySelectorAll('.kb-oop-degraded').length, 0,
     'no join attempted, nothing to warn about');
+});
+
+function t3Key(h, el, key) {
+  const e = new h.window.KeyboardEvent('keydown', { key: key, bubbles: true, cancelable: true });
+  el.dispatchEvent(e);
+  return e;
+}
+
+test('T4 DOM: the arrows walk the results and Escape comes back, without the mouse', async () => {
+  const h = boot();
+  h.run.respond('searchInsurancePayors', () => ({
+    total: 3, cap: 8, codeJoin: { attempted: false, error: '' },
+    matches: [
+      { name: 'AETNA ONE', networkStatus: 'IN-NETWORK', details: [
+        { label: 'K0800', value: 'SI/PR', code: { shaped: true, certain: true, tokens: ['K0800'] }, item: '', itemCount: 0 }] },
+      { name: 'AETNA TWO', networkStatus: '', details: [] },
+      { name: 'AETNA THREE', networkStatus: '', details: [] },
+    ] }));
+  bootLookups(h);
+  const inp = h.$('#kb-ins-input');
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'aetna');
+
+  const rows = Array.from(h.$('#kb-ins-results').querySelectorAll('[data-kb-nav]'));
+  assert.strictEqual(rows.length, 3, 'three payor cards, each focusable');
+  rows.forEach((r) => assert.strictEqual(r.getAttribute('tabindex'), '-1',
+    'focusable but NOT a tab stop — Tab still goes field to field'));
+
+  // Down from the FIELD walks in.
+  inp.focus();
+  const ev = t3Key(h, inp, 'ArrowDown');
+  assert.strictEqual(h.window.document.activeElement, rows[0], 'ArrowDown from the field enters the results');
+  assert.ok(ev.defaultPrevented, 'and the caret does not also move');
+
+  // Nothing else in the field is hijacked — it is a text box.
+  ['ArrowUp', 'Home', 'End', 'Enter'].forEach((k) => {
+    inp.focus();
+    assert.ok(!t3Key(h, inp, k).defaultPrevented, k + ' still belongs to the text box');
+  });
+
+  t3Key(h, rows[0], 'ArrowDown');
+  assert.strictEqual(h.window.document.activeElement, rows[1], 'down through the list');
+  t3Key(h, rows[1], 'End');
+  assert.strictEqual(h.window.document.activeElement, rows[2], 'End jumps to the last');
+  // Off the BOTTOM stays put. Wrapping would silently answer "show me the next
+  // one" with the first one.
+  t3Key(h, rows[2], 'ArrowDown');
+  assert.strictEqual(h.window.document.activeElement, rows[2], 'the bottom does not wrap');
+  t3Key(h, rows[2], 'Home');
+  assert.strictEqual(h.window.document.activeElement, rows[0], 'Home jumps back to the first');
+  // Off the TOP returns to the field, so the rep can keep typing.
+  t3Key(h, rows[0], 'ArrowUp');
+  assert.strictEqual(h.window.document.activeElement, inp, 'up off the top returns to the field');
+
+  // Escape from anywhere in the list returns to the field too.
+  rows[2].focus();
+  t3Key(h, rows[2], 'Escape');
+  assert.strictEqual(h.window.document.activeElement, inp, 'Escape returns to the field');
+
+  // Enter ACTIVATES the row's primary control — here, the code disclosure.
+  // Stated as "clicks it", which is what can be observed: jsdom does not
+  // evaluate inline `onclick` attributes, so asserting aria-expanded flipped
+  // would be asserting the harness rather than the code. What the disclosure
+  // DOES when clicked is the T2 pins' job; what this pin owns is that Enter
+  // finds the right element and clicks it.
+  const disc = rows[0].querySelector('.kb-ins-det-btn');
+  assert.ok(disc && disc.hasAttribute('data-kb-primary'), 'the code disclosure is the payor row’s primary');
+  assert.strictEqual(disc.getAttribute('onclick'), 'insToggleLegend_(this)', 'wired to the real toggle');
+  let clicked = 0;
+  disc.click = () => { clicked++; };
+  rows[0].focus();
+  const entEv = t3Key(h, rows[0], 'Enter');
+  assert.strictEqual(clicked, 1, 'Enter on the ROW activates its primary control');
+  assert.ok(entEv.defaultPrevented, 'and the key does not also do whatever it would have done');
+
+  // But Enter on a BUTTON inside the row is that button's. Hijacking it would
+  // make every control in a row do the row's primary action instead.
+  assert.ok(!t3Key(h, disc, 'Enter').defaultPrevented,
+    'Enter on a control inside the row is left alone');
+  // A row with no primary swallows nothing either.
+  rows[1].focus();
+  assert.ok(!t3Key(h, rows[1], 'Enter').defaultPrevented,
+    'a row with no primary control does not eat the key');
+});
+
+test('T4 DOM: copy yields the parked FIGURE, and a blocked clipboard SAYS so instead of claiming success', async () => {
+  const h = boot();
+  h.run.respond('searchOopPricing', () => ({ cap: 8, total: 1, matches: [{
+    name: 'Drive Scout 3 Wheel', code: 'K0800 (C/C)', effective: '09/16/2026', eligibility: 'Open',
+    codes: { raw: 'K0800 (C/C)', shaped: true, certain: true, tokens: ['K0800'] },
+    price: '$920.00',
+    prices: [{ label: 'OOP Price - pick-up', value: '$920.00' },
+             { label: 'W/ Shipping Cost', value: '$1,070.00' },
+             { label: 'W/ Tech Delivery Cost', value: '$1,220.00' }],
+    details: [] }] }));
+  bootLookups(h);
+  await t3Search(h, '#kb-oop-item', 'oopLookupInput_', 'scout');
+
+  const host = h.$('#kb-oop-results');
+  const btns = Array.from(host.querySelectorAll('.kb-oop-copy'));
+  assert.strictEqual(btns.length, 3, 'one copy button per priced column');
+  // With three prices there is no "the" price, so NONE is the row's Enter
+  // target — picking one for the rep is the guess this module refuses to make.
+  assert.strictEqual(host.querySelectorAll('[data-kb-primary]').length, 0,
+    'a three-price row has no primary');
+
+  // The FIGURE, from the parked payload — and the one beside the button it was
+  // clicked on, which is the assertion that would catch an off-by-one between
+  // the renderer's numbering and the copy handler's.
+  const copied = [];
+  const setClipboard = (impl) => Object.defineProperty(h.window.navigator, 'clipboard',
+    { value: impl, configurable: true, writable: true });
+  setClipboard({ writeText: (t) => { copied.push(t); return Promise.resolve(); } });
+  h.read('oopCopyPrice_')(btns[1]);
+  await tick();
+  assert.deepStrictEqual(copied, ['$1,070.00'],
+    'the SHIPPING total, because that is the button that was pressed — not prices[0]');
+  h.read('oopCopyPrice_')(btns[2]);
+  await tick();
+  assert.strictEqual(copied[1], '$1,220.00');
+  // Nothing quote-shaped: no label, no effective date, no sentence. A line
+  // pasted from here would never be re-verified at send (INV-208).
+  copied.forEach((c) => {
+    assert.ok(!/Scout|effective|Shipping/.test(c),
+      'the clipboard gets the figure alone, never a quote-shaped line: ' + JSON.stringify(c));
+  });
+
+  // THE HONEST-FAILURE CASE. The clipboard API rejects and execCommand is
+  // denied — which returns FALSE rather than throwing, and is what actually
+  // happens inside an HtmlService iframe (g76).
+  setClipboard({ writeText: () => Promise.reject(new Error('denied')) });
+  h.window.document.execCommand = () => false;
+  h.read('oopCopyPrice_')(btns[0]);
+  await tick(); await tick();
+  const mc = h.window.document.querySelector('#kb-manualcopy-overlay');
+  assert.ok(mc && mc.classList.contains('open'), 'the manual-copy failover opens');
+  assert.ok(/blocked the clipboard/.test(mc.textContent) && /nothing was copied/.test(mc.textContent),
+    'and SAYS nothing was copied — every other copy helper in this app claims success here');
+  assert.strictEqual(mc.querySelector('#kb-mc-val').value, '$920.00',
+    'with the figure there to select by hand');
+  assert.ok(/W\/ Shipping Cost|pick-up/.test(mc.textContent), 'named, so the rep knows which one it is');
+  h.read('closeOverlay')(mc);
+
+  // And a row that is no longer on screen refuses rather than copying whatever
+  // now sits at that index.
+  host._oopItems = null;
+  setClipboard({ writeText: (t) => { copied.push(t); return Promise.resolve(); } });
+  const before = copied.length;
+  h.read('oopCopyPrice_')(btns[0]);
+  await tick();
+  assert.strictEqual(copied.length, before, 'a stale index copies NOTHING');
 });
 
 test('R-6: every block on the Reference landing is a SECTION or the band — nothing can render at the band’s width by accident', async () => {

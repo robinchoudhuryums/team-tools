@@ -273,6 +273,19 @@
   button.kb-oop-xref-v { background: none; border: none; font: inherit; font-weight: 600; padding: 0; cursor: help; }
   .kb-oop-xref.unmatched { display: flex; flex-wrap: nowrap; align-items: flex-start; gap: 6px; color: var(--muted); }
   .kb-oop-xref.unmatched svg { flex-shrink: 0; margin-top: 2px; }
+  /* T4 — keyboard walk. The rows are focusable but not tab stops: Tab still
+     goes field → field, and the arrows walk the results, which is what a rep
+     with one hand on the keyboard mid-call actually wants. */
+  [data-kb-nav]:focus { outline: none; box-shadow: 0 0 0 2px var(--accent); }
+  [data-kb-nav]:focus:not(:focus-visible) { box-shadow: 0 0 0 2px var(--accent); }
+  .kb-oop-copy { background: none; border: none; padding: 0 3px 0 0; margin: 0; cursor: pointer;
+    color: var(--muted-2); vertical-align: baseline; line-height: 1; }
+  .kb-oop-copy:hover, .kb-oop-copy:focus-visible { color: var(--accent); }
+  .kb-mc-modal { width: 340px; max-width: calc(100vw - 16px); }
+  .kb-mc-why { font-size: .8rem; color: var(--muted); margin: 0 0 8px; }
+  .kb-mc-lbl { display: block; font-size: .72rem; color: var(--muted-2); margin-bottom: 3px; }
+  .kb-mc-val { width: 100%; font-family: var(--mono); font-size: 1rem; padding: 7px 9px;
+    border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-2); color: var(--ink); }
 
   /* §4 — landing panel (right side when nothing is selected) */
   /* The landing is wider than it was so the two-panel band has room; the
@@ -2764,14 +2777,33 @@ function oopDegraded_(suffix, mySeq, item, why) {
  *  The `price` fallback covers a payload that carries only the scalar — an
  *  older deployment answering a newer client. It renders that one price
  *  unlabelled, which is exactly what it is, rather than showing nothing. */
-function oopPriceHtml_(m) {
-  var prices = (m.prices && m.prices.length) ? m.prices
-    : (String(m.price || '').trim() ? [{ label: '', value: m.price }] : []);
+/** PURE (Node-pinned): the price list a row actually has, from either payload
+ *  shape. One definition, because T4's copy buttons must be numbered exactly
+ *  as the renderer numbers them — a second derivation here would let the two
+ *  disagree about which price index 1 is, and copy the wrong number. */
+function oopPriceList_(m) {
+  if (m && m.prices && m.prices.length) return m.prices;
+  if (m && String(m.price || '').trim()) return [{ label: '', value: m.price }];
+  return [];
+}
+
+function oopPriceHtml_(m, idx) {
+  var prices = oopPriceList_(m);
   if (!prices.length) {
     return '<span class="kb-oop-price none" title="This row has no price in the pricing sheet. Do not quote it.">no price on file</span>';
   }
-  return prices.map(function (pr) {
-    return '<span class="kb-oop-price">' +
+  return prices.map(function (pr, pi) {
+    // T4 — copy the FIGURE. See oopCopyPrice_ for why this is the price and
+    // not a quote-shaped line.
+    var copy = (idx == null) ? '' :
+      '<button type="button" class="kb-oop-copy" data-oop-copy="' + idx + '" data-oop-pidx="' + pi + '"' +
+        // The row's Enter target, but ONLY when there is one price. With three,
+        // there is no "the" price — and picking one for the rep is the guess
+        // this whole module refuses to make.
+        (prices.length === 1 ? ' data-kb-primary' : '') +
+        ' aria-label="Copy ' + esc(pr.label ? pr.label + ' price' : 'price') + ' for ' + esc(m.name || 'this item') + '"' +
+        ' title="Copy this figure" onclick="oopCopyPrice_(this)">' + icon('copy', 12) + '</button>';
+    return '<span class="kb-oop-price">' + copy +
       (prices.length > 1 ? '<span class="kb-oop-price-lbl">' + esc(pr.label) + '</span> ' : '') +
       esc(pr.value) + '</span>';
   }).join(' ');
@@ -2856,7 +2888,7 @@ function oopPayorXrefHtml_(m, matches) {
  *
  *  `matches` is the payor result currently on screen in the SAME host, passed
  *  in rather than read from module state so the renderer stays drivable. */
-function oopItemRowHtml_(m, matches) {
+function oopItemRowHtml_(m, matches, idx) {
   // CHIPS, not a `·`-joined run. The meta line mixes a billing code, a date, a
   // delivery rule, money and colour options — a rep scans for ONE of them, and
   // a single sentence makes every one of them equally hard to find. No colon:
@@ -2871,18 +2903,53 @@ function oopItemRowHtml_(m, matches) {
   // what made the panel unreadable at speed: a rep mid-call scans for ONE of
   // them. The prices in particular were inline with the name, so an item with
   // three priced columns read as a sentence.
-  return '<div class="kb-ins-row">' +
+  return '<div class="kb-ins-row" data-kb-nav tabindex="-1">' +
     '<div class="kb-ins-name">' + esc(m.name) + '</div>' +
-    '<div class="kb-oop-prices">' + oopPriceHtml_(m) + '</div>' +
+    '<div class="kb-oop-prices">' + oopPriceHtml_(m, idx) + '</div>' +
     (bits.length ? '<div class="kb-ins-meta kb-meta-chips">' + bits.join('') + '</div>' : '') +
     oopPayorXrefHtml_(m, matches) +
-    ((m.insurance || m.oop)
-      ? '<div class="kb-elig-vs">' +
-          eligVerdictHtml_('Through insurance', m.insurance) +
-          eligVerdictHtml_('Paying out of pocket', m.oop) +
-        '</div>'
-      : '') +
+    eligVerdictsHtml_(m) +
     '</div>';
+}
+
+/** PURE (Node-pinned): do the two verdicts say the SAME thing?
+ *
+ *  Strict — verdict, near AND why must all match. A `yes` that is near the
+ *  radius boundary and a flat `yes` are different answers (INV-209), and two
+ *  verdicts reached for different stated reasons are two facts, not one. */
+function eligVerdictsAgree_(a, b) {
+  if (!a || !b) return false;
+  return String(a.verdict || '') === String(b.verdict || '') &&
+    !!a.near === !!b.near &&
+    String(a.why || '') === String(b.why || '');
+}
+
+/** The verdict block. **This is the INV-209 decision, as amended by T4.**
+ *
+ *  The rule was "both verdicts are shown, LABELLED, rather than behind a
+ *  payment-method toggle — the rep mid-call is usually deciding between the
+ *  two". That reason is the point, and it is about DECIDING between them: a
+ *  toggle hides one answer behind an interaction, so a rep comparing them has
+ *  to click to see the comparison.
+ *
+ *  When the two AGREE there is nothing to decide between, and the duplicate
+ *  row is what makes a real DISAGREEMENT hard to spot — which is the case that
+ *  matters, and the whole reason the pair exists. So the ROW collapses, and
+ *  the CLAIM does not: the label still names BOTH payment routes, so it can
+ *  never be read as an answer about only one of them. Nothing is behind a
+ *  toggle in either case, which is what the original decision forbade.
+ *
+ *  A disagreement always renders as two labelled rows, unchanged. */
+function eligVerdictsHtml_(m) {
+  if (!m || (!m.insurance && !m.oop)) return '';
+  if (eligVerdictsAgree_(m.insurance, m.oop)) {
+    return '<div class="kb-elig-vs agreed">' +
+      eligVerdictHtml_('Through insurance or out of pocket', m.insurance) + '</div>';
+  }
+  return '<div class="kb-elig-vs">' +
+    eligVerdictHtml_('Through insurance', m.insurance) +
+    eligVerdictHtml_('Paying out of pocket', m.oop) +
+  '</div>';
 }
 
 /** One verdict pill. The THREE states are visually distinct on purpose: a
@@ -2972,6 +3039,10 @@ function oopRenderResults_(suffix, ctx, res) {
   // Stashed BEFORE the error return, and cleared by it, so a repaint triggered
   // by the other panel can never resurrect rows this call just refused to draw.
   KB_OOP.last[suffix || ''] = (res && !res.error) ? { ctx: ctx, res: res } : null;
+  // …and the parked payload goes with it, on EVERY path. A copy button is
+  // gone the moment its row is, but a stale payload outliving the rows it
+  // described is how an index would resolve against the wrong item.
+  host._oopItems = null;
   if (!res || res.error) { host.innerHTML = errorStateHtml_((res && res.error) || 'Lookup failed.'); return; }
   var items = ctx.elig ? (res.items || []) : (res.matches || []);
   if (res.notFound || !items.length) {
@@ -2988,7 +3059,7 @@ function oopRenderResults_(suffix, ctx, res) {
   // The payor result in the SAME host, so the landing's two panels cross-
   // reference each other and the drawer's two do, without either crossing over.
   var payors = insLastMatches_(suffix);
-  items.forEach(function (m) { html += oopItemRowHtml_(m, payors); });
+  items.forEach(function (m, i) { html += oopItemRowHtml_(m, payors, i); });
   if (ctx.elig) {
     if (res.truncated || res.total > items.length) {
       html += '<div class="kb-ins-more">' + esc(String(res.total)) + ' items — showing ' +
@@ -3009,6 +3080,200 @@ function oopRenderResults_(suffix, ctx, res) {
     }
   }
   host.innerHTML = html;
+  // THE PRICE NEVER ROUND-TRIPS THROUGH THE DOM (INV-208). The rendered row
+  // carries an INDEX; the figure a copy button yields is read from the payload
+  // parked here, exactly as the composer's price picker does it. A `data-*`
+  // attribute comes back DECODED (g49), and a price is the last value in this
+  // app that should be rebuilt from markup.
+  host._oopItems = items;
+}
+
+// ── T4: keyboard navigation through the lookup results ─────────────────────
+// A mid-call lookup is typed, so the rep's hands are already on the keyboard;
+// reaching for the mouse to open one payor's code grid is the slow part.
+// ArrowDown from the field walks into the results, arrows move between rows,
+// Enter opens the row's primary control, Escape comes back to the field.
+//
+// The ids are the mapping. There is no wrapper element to walk up to — adding
+// one would change the containers the drawer and landing pins assert on — and
+// the two hosts differ only by the `-d` suffix, so a pair of pure functions
+// carries it and can be driven without a DOM.
+
+/** PURE (Node-pinned): the results host an input's arrows walk into. */
+function kbNavHostIdFor_(inputId) {
+  var m = /^kb-ins-input(-d)?$/.exec(String(inputId || ''));
+  if (m) return 'kb-ins-results' + (m[1] || '');
+  m = /^kb-oop-(?:item|addr)(-d)?$/.exec(String(inputId || ''));
+  if (m) return 'kb-oop-results' + (m[1] || '');
+  return '';
+}
+/** PURE (Node-pinned): the input Escape returns to, from a results host id.
+ *  The OOP panel has TWO fields and this names the ITEM one — it is the field
+ *  that decides what the rows are; the address only refines them. */
+function kbNavInputIdFor_(hostId) {
+  var m = /^kb-ins-results(-d)?$/.exec(String(hostId || ''));
+  if (m) return 'kb-ins-input' + (m[1] || '');
+  m = /^kb-oop-results(-d)?$/.exec(String(hostId || ''));
+  if (m) return 'kb-oop-item' + (m[1] || '');
+  return '';
+}
+function kbNavHostOf_(el) {
+  var n = el;
+  while (n && n.nodeType === 1) {
+    if (n.id && kbNavInputIdFor_(n.id)) return n;
+    n = n.parentElement;
+  }
+  return null;
+}
+function kbNavFocusInput_(host) {
+  var inp = document.getElementById(kbNavInputIdFor_(host.id));
+  if (inp) inp.focus();
+}
+function kbLookupKeydown_(e) {
+  var k = e.key;
+  if (k !== 'ArrowDown' && k !== 'ArrowUp' && k !== 'Escape' && k !== 'Enter' &&
+      k !== 'Home' && k !== 'End') return;
+  var t = e.target;
+  if (!t || t.nodeType !== 1) return;
+
+  // From a lookup FIELD: only ArrowDown does anything. Everything else there —
+  // Enter, Escape, Home, End — belongs to the text box.
+  var hostId = kbNavHostIdFor_(t.id);
+  if (hostId) {
+    if (k !== 'ArrowDown') return;
+    var into = document.getElementById(hostId);
+    var first = into && into.querySelector('[data-kb-nav]');
+    if (!first) return;
+    e.preventDefault();
+    first.focus();
+    return;
+  }
+
+  // From inside a results list.
+  var row = t.closest && t.closest('[data-kb-nav]');
+  if (!row) return;
+  var host = kbNavHostOf_(row);
+  if (!host) return;
+
+  if (k === 'Escape') { e.preventDefault(); kbNavFocusInput_(host); return; }
+  if (k === 'Enter') {
+    // ONLY when the ROW itself has focus. On a button inside it, Enter is that
+    // button's — hijacking it would make the copy button open the code grid.
+    if (t !== row) return;
+    var primary = row.querySelector('[data-kb-primary]');
+    if (!primary) return;
+    e.preventDefault();
+    primary.click();
+    return;
+  }
+  var rows = Array.prototype.slice.call(host.querySelectorAll('[data-kb-nav]'));
+  if (!rows.length) return;
+  if (k === 'Home') { e.preventDefault(); rows[0].focus(); return; }
+  if (k === 'End') { e.preventDefault(); rows[rows.length - 1].focus(); return; }
+  var i = rows.indexOf(row);
+  var next = k === 'ArrowDown' ? i + 1 : i - 1;
+  e.preventDefault();
+  // Off the TOP returns to the field, so the rep can keep typing without
+  // reaching for the mouse. Off the BOTTOM stays put — wrapping to the first
+  // row would silently re-answer a "show me the next one" with the first one.
+  if (next < 0) { kbNavFocusInput_(host); return; }
+  if (next >= rows.length) return;
+  rows[next].focus();
+}
+document.addEventListener('keydown', kbLookupKeydown_);
+
+/** Copy `text`, and REPORT whether it worked — `done(ok)`.
+ *
+ *  Every other copy helper in this app swallows the failure and tells the rep
+ *  "Copied ✓" regardless (g76: the clipboard API often fails outright inside an
+ *  HtmlService iframe, and `execCommand` returns FALSE rather than throwing
+ *  when it is denied). For a link that is mildly annoying. For a PRICE it is
+ *  the honest-failure defect in its most expensive form: the rep pastes, gets
+ *  whatever was on the clipboard before, and reads it to a customer.
+ *
+ *  So this one returns the truth and the caller acts on it. Reading
+ *  `navigator.clipboard` can itself throw in a sandboxed frame, so even the
+ *  capability test is inside the try. */
+function kbCopyText_(text, done) {
+  var fallback = function () {
+    var ok = false;
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', 'readonly');
+      ta.style.position = 'fixed'; ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      if (ta.setSelectionRange) ta.setSelectionRange(0, String(text).length);
+      ok = document.execCommand('copy') === true;
+      document.body.removeChild(ta);
+    } catch (_) { ok = false; }
+    done(ok);
+  };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, fallback);
+      return;
+    }
+  } catch (_) { /* touching navigator.clipboard can throw in a sandboxed frame */ }
+  fallback();
+}
+
+/** Copy ONE price figure.
+ *
+ *  **It copies the FIGURE, never a quote-shaped line, and that is deliberate.**
+ *  The composer's price picker inserts `Item (Column) — $X (price effective D)`
+ *  and the SEND rebuilds that exact line from the live sheet and refuses if it
+ *  has moved (INV-208). A line pasted from here would never be recorded as a
+ *  quote, so it would never be re-verified — and it would sit in the customer's
+ *  email looking exactly like one that was. That is a second, unverified path
+ *  to the same sentence, which is worse than no copy button at all. A bare
+ *  figure cannot be mistaken for a verified quote.
+ *
+ *  The value is read from the PARKED payload by index, never from the DOM
+ *  (INV-208, g49).
+ *
+ *  A failed copy SAYS so and offers the figure to select by hand — the
+ *  manual-copy failover this app already uses on `#cn-frame`, for the same
+ *  reason (g76). */
+function oopCopyPrice_(btn) {
+  var host = btn.closest('[id^="kb-oop-results"]');
+  var items = (host && host._oopItems) || [];
+  var m = items[parseInt(btn.getAttribute('data-oop-copy'), 10)];
+  var pr = oopPriceList_(m)[parseInt(btn.getAttribute('data-oop-pidx'), 10)];
+  if (!pr || !String(pr.value || '').trim()) {
+    showToast('That price is no longer on screen — search again.', 'warn');
+    return;
+  }
+  var what = (m.name || 'price') + (pr.label ? ' · ' + pr.label : '');
+  kbCopyText_(String(pr.value), function (ok) {
+    if (ok) { showToast('Copied ' + pr.value + ' — ' + what, 'success'); return; }
+    // NOT a toast. A toast that says "copy it yourself" disappears before the
+    // rep can, and there is nothing to copy FROM.
+    kbManualCopy_(String(pr.value), what);
+  });
+}
+
+/** The manual-copy failover: show the figure, pre-selected, and say why.
+ *  Routed through ensureOverlay/closeOverlay like every other overlay (g100),
+ *  and the input is filled with `value` rather than interpolated into the
+ *  markup, so the figure is never an injection surface. */
+function kbManualCopy_(text, what) {
+  var overlay = ensureOverlay('kb-manualcopy-overlay', { labelledBy: 'kb-mc-h' });
+  overlay.innerHTML = '<div class="modal kb-mc-modal">' +
+    '<div class="modal-head"><h3 id="kb-mc-h">Copy it by hand</h3>' +
+      '<button type="button" class="modal-x" aria-label="Close" onclick="closeOverlay(this.closest(\'.overlay\'))">' + icon('x', 15) + '</button></div>' +
+    '<div class="modal-body">' +
+      '<p class="kb-mc-why">This browser blocked the clipboard, so nothing was copied. ' +
+        'Here is the figure — select it and press Ctrl/⌘+C.</p>' +
+      '<label class="kb-mc-lbl" for="kb-mc-val"></label>' +
+      '<input id="kb-mc-val" class="kb-mc-val" type="text" readonly>' +
+    '</div></div>';
+  overlay.querySelector('.kb-mc-lbl').textContent = what || '';
+  var input = overlay.querySelector('#kb-mc-val');
+  input.value = text;
+  input.focus();
+  input.select();
 }
 
 /** The last PAINTED result per host, so the two panels can cross-reference each
@@ -3234,7 +3499,7 @@ function insRenderResults_(suffix, q, res) {
     var det = (m.details || []);
     var detId = 'kb-ins-det' + suffix + '-' + i;
     var detHtml = det.length
-      ? '<button type="button" class="kb-ins-det-btn" aria-expanded="false" aria-controls="' + detId + '" onclick="insToggleLegend_(this)">' +
+      ? '<button type="button" class="kb-ins-det-btn" data-kb-primary aria-expanded="false" aria-controls="' + detId + '" onclick="insToggleLegend_(this)">' +
           icon('chevronDown', 11) + ' Acceptance by code (' + det.length + ')</button>' +
         '<div class="kb-ins-grid" id="' + detId + '" hidden>' +
           det.map(function (d) {
@@ -3251,7 +3516,7 @@ function insRenderResults_(suffix, q, res) {
                 : '<span ' + vAttrs + '>' + esc(d.value) + '</span>') + '</div>';
           }).join('') + '</div>'
       : '';
-    html += '<div class="kb-ins-card">' +
+    html += '<div class="kb-ins-card" data-kb-nav tabindex="-1">' +
       '<div class="kb-ins-head"><span class="kb-ins-name">' + esc(m.name) + '</span>' + pill + '</div>' +
       (meta.length ? '<div class="kb-ins-meta">' + meta.join(' · ') + '</div>' : '') +
       detHtml + '</div>';
