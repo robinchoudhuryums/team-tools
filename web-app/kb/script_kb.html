@@ -216,7 +216,16 @@
   .kb-term { font: inherit; background: none; border: none; padding: 0; cursor: help;
     text-decoration: underline dotted; text-underline-offset: 2px; color: inherit; }
   .kb-term:hover, .kb-term:focus-visible { text-decoration-style: solid; }
-  button.kb-ins-pill.kb-term { cursor: help; }
+  /* A pill that is ALSO a term keeps its pill: .kb-term zeroes background and
+     padding for the inline case (a value inside the code grid), which stripped
+     the pill to bare underlined text. Restore the pill's own box here — the
+     dotted underline is the only thing the term affordance should add. */
+  .kb-ins-pill.kb-term { cursor: help; background: var(--paper-2); color: var(--muted);
+    padding: 2px 9px; border-radius: var(--radius-pill); }
+  .kb-ins-pill.kb-term.good { background: var(--good-soft); color: var(--success-deep); }
+  .kb-ins-pill.kb-term.bad  { background: var(--danger-soft); color: var(--danger-deep); }
+  .kb-ins-pill.kb-term.warn { background: var(--warn-soft); color: var(--warning-deep); }
+  .kb-ins-pill.kb-term.info { background: var(--info-soft); color: var(--info-deep); }
   .kb-term-modal { width: 320px; max-width: calc(100vw - 16px); }
   .kb-term-modal .kb-ins-legend { margin-top: 0; }
   .kb-term-modal .kb-ins-legend dd:last-child { margin-bottom: 0; }

@@ -3425,6 +3425,49 @@ test('R DOM: both fields are named by a visible label bound to their own input �
   assert.ok(/optional/.test(addrLabel.textContent), 'the address label says it is optional');
 });
 
+test('T1 DOM: one meaning, one look — an unclassifiable payor status renders like a blank one, and the meta is chips', async () => {
+  const h = boot();
+  h.run.respond('searchInsurancePayors', () => ({ total: 2, cap: 8, matches: [
+    // The operator's sheet literally spells this out in one cell…
+    { name: 'AETNA', networkStatus: 'status not recorded', waystar: '60054', details: [] },
+    // …and leaves it BLANK in another. Same meaning.
+    { name: 'PACIFICARE', networkStatus: '', waystar: 'MULTIPLE', details: [] },
+  ] }));
+  bootLookups(h);
+  const inp = h.$('#kb-ins-input');
+  inp.value = 'aetna';
+  h.read('insLookupInput_')(inp);
+  h.flushTimers();
+  await tick(); await tick();
+
+  const pills = Array.from(h.$('#kb-ins-results').querySelectorAll('.kb-ins-pill'));
+  assert.strictEqual(pills.length, 2, 'both payors carry a status pill');
+  pills.forEach((pl) => {
+    assert.ok(pl.classList.contains('none'),
+      'a value insToneCls_ cannot classify renders NEUTRAL — a pill\u2019s tone is a claim, and ' +
+      'we have none to make. Before T1 the spelled-out cell got an uppercase untoned pill and ' +
+      'the blank one the lowercase neutral pill: one meaning, two looks, in the same list');
+  });
+  assert.ok(/status not recorded/.test(pills[0].textContent), 'and the operator\u2019s own words are kept');
+
+  // The OOP meta is chips, not a `·`-joined sentence.
+  h.run.respond('searchOopPricing', () => ({ cap: 8, total: 1, matches: [{
+    name: 'Widget', code: 'K0800', effective: '2026-09-01', eligibility: 'Open',
+    price: '$10.00', prices: [{ label: '', value: '$10.00' }],
+    details: [{ label: 'Category', value: 'POV' }, { label: 'Shipping', value: '$150.00' }] }] }));
+  const item = h.$('#kb-oop-item');
+  item.value = 'widget';
+  h.read('oopLookupInput_')(item);
+  h.flushTimers();
+  await tick(); await tick();
+  const chips = Array.from(h.$('#kb-oop-results').querySelectorAll('.kb-meta-chip'));
+  assert.strictEqual(chips.length, 5, 'code, effective, area and both details are separate chips — ' +
+    'the meta mixes a billing code, a date, a delivery rule, money and colour options, and one ' +
+    'sentence made every one equally hard to find');
+  assert.ok(chips.some((c) => /Shipping/.test(c.textContent) && /\$150\.00/.test(c.textContent)),
+    'a detail keeps its key with its value');
+});
+
 test('T1 DOM: a landing re-render does NOT destroy what the rep is typing into a lookup', async () => {
   const h = boot();
   bootLookups(h);
