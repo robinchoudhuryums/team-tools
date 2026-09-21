@@ -1058,6 +1058,29 @@ console.log('\nCode.js — sanitizeCallNotePayload_ subformData whitelist (cycle
   });
 }
 
+// ── The coerced-column boundary: ONE declaration, two scans, one completeness
+// assert (seams audit 2026-09-18, F1) ──────────────────────────────────────
+// Sheets hands back a Date (or a native boolean) for these columns, so every
+// read needs its recovery helper. Two global scans below enforce that; this is
+// the set they enforce it over, written ONCE so the two cannot drift apart.
+//
+// WHY THE SET IS WRITTEN OUT AND NOT DERIVED. The obvious move — "the guarded
+// set is whatever columns a recovery helper is applied to" — is SELF-DEFEATING:
+// delete the last `cnDateLocalString_(row[CN.DATE_LOCAL])` call and the column
+// leaves the derived set at the same moment the raw read appears, so the net
+// goes quiet exactly when the defect lands. The explicit list keeps the column
+// under guard whatever the code does.
+//
+// The DERIVED half is the other direction, and it is the pin right after the
+// AUDIT scan: every column some recovery helper touches must appear here. That
+// catches the drift that actually happened — a new guarded column nobody added
+// to the net — without the self-defeating property. Both directions covered.
+const COERCED_AUDIT_COLS = ['TS', 'PUNCH_DATE', 'PUNCH_TIME', 'IS_ADJUSTMENT'];
+const COERCED_CN_COLS = ['TIMESTAMP', 'EMAILED_AT', 'DATE_LOCAL'];
+// The sanctioned reader for each column — a line calling one of these is exempt.
+const COERCION_RECOVERY_HELPERS = ['normalizeAuditTs_', 'normalizeDate_', 'normalizeTime_',
+  'cnTimestampString_', 'cnDateLocalString_', 'auditRowObj_'];
+
 console.log('\nCode.js — CN Timestamp coercion boundary (INV-142) + kbRowStatus_ (INV-147)');
 test('TRIPWIRE (INV-142): CN Timestamp readers route through cnTimestampString_', () => {
   ['callNoteRowToObject_', 'deleteCallNote', 'getCallNotesAmbient', 'getMyTrainingQA',
@@ -1081,7 +1104,15 @@ test('TRIPWIRE (INV-142, cycle-8 M-15): no NEW raw [CN.TIMESTAMP] reads anywhere
   // COMPARISON read (`row[CN.TIMESTAMP] === x`, a Date-vs-string compare
   // that is always false, exactly the bug class this scan exists for) used
   // to match the `\]\s*=` write shape and pass silently.
-  const SAFE_LINE = /cnTimestampString_\(|CN\.(TIMESTAMP|EMAILED_AT) \+ 1|CN\.(TIMESTAMP|EMAILED_AT)\]\s*=(?!=)|^\s*\/\//;
+  // CN.DATE_LOCAL joins the set (seams audit 2026-09-18, F1). g16 documents it
+  // as Sheets-coerced on read, and it is the MOST recovery-guarded column in
+  // the codebase — fifteen sites route through cnDateLocalString_, more than
+  // every other column combined — yet a raw `row[CN.DATE_LOCAL] === x`
+  // comparison passed this scan (bite-checked). Its sanctioned reader is
+  // cnDateLocalString_, exactly as cnTimestampString_ is TIMESTAMP's.
+  const cnAlt = COERCED_CN_COLS.join('|');
+  const SAFE_LINE = new RegExp('cnTimestampString_\\(|cnDateLocalString_\\(|CN\\.(' + cnAlt +
+    ') \\+ 1|CN\\.(' + cnAlt + ')\\]\\s*=(?!=)|^\\s*//');
   // C1 (cycle 10): reconcileCallNotes now routes through cnTimestampString_
   // like every other reader (its "equivalent" inline guard recovered in the
   // REP's tz, not the sheet's — a real bug, and the whole-line exemption it
@@ -1090,12 +1121,12 @@ test('TRIPWIRE (INV-142, cycle-8 M-15): no NEW raw [CN.TIMESTAMP] reads anywhere
   // locale-coercible ISO-T form (emailFromCallNote's stamp) and its raw read
   // was the one untripwired sibling of this boundary.
   lines.forEach((line, idx) => {
-    if (line.indexOf('[CN.TIMESTAMP]') < 0 && line.indexOf('[CN.EMAILED_AT]') < 0) return;
+    if (!COERCED_CN_COLS.some((c) => line.indexOf('[CN.' + c + ']') >= 0)) return;
     if (SAFE_LINE.test(line)) return;
     offenders.push('line ' + (idx + 1) + ': ' + line.trim());
   });
   assert.deepStrictEqual(offenders, [],
-    'raw [CN.TIMESTAMP]/[CN.EMAILED_AT] read(s) outside the cnTimestampString_ boundary — see INV-142');
+    'raw [CN.TIMESTAMP]/[CN.EMAILED_AT]/[CN.DATE_LOCAL] read(s) outside the cnTimestampString_ / cnDateLocalString_ boundary — see INV-142');
 });
 test('coupling — showView\'s intakeFlushDraftNow_ hook resolves cross-partial (Turn-B seams audit)', () => {
   const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
@@ -1323,10 +1354,22 @@ test('TRIPWIRE (Batch 3): no raw read of a coerced AUDIT column outside auditRow
   // reading `row[AUDIT.PUNCH_DATE]` raw now fails CI (F1 would have).
   const src = serverSource();
   const reader = extractRawFunction('Code.js', 'auditRowObj_');
-  const COERCED = /\[AUDIT\.(PUNCH_DATE|PUNCH_TIME|IS_ADJUSTMENT)\]/;
+  // AUDIT.TS joins the set (seams audit 2026-09-18, F1). It is the column g11
+  // names FIRST — "AuditLog timestamp cells coerce to Dates too, read via
+  // normalizeAuditTs_()" — and it was the one coerced AUDIT column this scan
+  // did not cover. Bite-checked: a raw `r[AUDIT.TS]` and a raw
+  // `r[AUDIT.TS] === y` comparison both passed CI before this line. No live
+  // defect at the time — all five reads already routed through the helper —
+  // but the net could not have said so.
+  const auAlt = COERCED_AUDIT_COLS.join('|');
+  const COERCED = new RegExp('\\[AUDIT\\.(' + auAlt + ')\\]');
   // Cycle 10: `=(?!=)` — a raw comparison read must NOT pass as a write
   // (same hardening as the CN.TIMESTAMP scan above).
-  const WRITE_OR_COMMENT = /AUDIT\.(PUNCH_DATE|PUNCH_TIME|IS_ADJUSTMENT)\]\s*=(?!=)|AUDIT\.(PUNCH_DATE|PUNCH_TIME|IS_ADJUSTMENT) \+ 1|^\s*\/\//;
+  // `normalizeAuditTs_(` is the sanctioned-reader exemption for AUDIT.TS, the
+  // way `reader.indexOf(line)` exempts auditRowObj_'s own lines: the five live
+  // TS reads sit OUTSIDE auditRowObj_ and are already correct.
+  const WRITE_OR_COMMENT = new RegExp('AUDIT\\.(' + auAlt + ')\\]\\s*=(?!=)|AUDIT\\.(' + auAlt +
+    ') \\+ 1|^\\s*//|normalizeAuditTs_\\(');
   const offenders = [];
   src.split('\n').forEach((line, idx) => {
     if (!COERCED.test(line) || WRITE_OR_COMMENT.test(line)) return;
@@ -1335,6 +1378,39 @@ test('TRIPWIRE (Batch 3): no raw read of a coerced AUDIT column outside auditRow
   });
   assert.deepStrictEqual(offenders, [],
     'raw coerced-AUDIT-column read(s) outside auditRowObj_ — route through the typed reader (Batch 3 / F1 class)');
+});
+
+test('F1 (seams 2026-09-18): every column a recovery helper touches is COVERED by a coerced-column scan — the derived half', () => {
+  // The two scans above enforce an EXPLICIT list. This is the other direction,
+  // and it is the drift that actually happened: AUDIT.TS (g11's own column) and
+  // CN.DATE_LOCAL (g16's, and the most recovery-guarded column in the codebase
+  // at fifteen sites) were both guarded correctly in every live read and
+  // covered by NEITHER scan. A raw read of either passed CI — bite-checked.
+  //
+  // The rule: if production thinks a column needs recovering, the net must
+  // think so too. Derived from the recovery CALLS, so a column that gains a
+  // helper and not a scan entry fails here rather than in six months.
+  const src = serverSource();
+  // `helper_(anything[ENUM.COL])` — the shape every recovery site takes.
+  const pairs = new Set();
+  const call = new RegExp('(' + COERCION_RECOVERY_HELPERS.join('|') + ')\\(([^()]*)\\[(CN|AUDIT)\\.([A-Z_]+)\\]', 'g');
+  let m;
+  while ((m = call.exec(src)) !== null) pairs.add(m[3] + '.' + m[4]);
+
+  // NON-VACUITY. A derivation that matches nothing makes every assertion below
+  // it vacuously true, which is the fifth direction g116 names — the mutation
+  // lands, the pin stays green, and the CLAIM is what is not observable.
+  assert.ok(pairs.size >= 5,
+    'the derivation found real recovery sites, not an empty set — found: ' + JSON.stringify([...pairs]));
+  assert.ok(pairs.has('CN.DATE_LOCAL') && pairs.has('AUDIT.TS'),
+    'and it finds the two columns whose absence from the scans IS this finding');
+
+  const covered = new Set(
+    COERCED_AUDIT_COLS.map((c) => 'AUDIT.' + c).concat(COERCED_CN_COLS.map((c) => 'CN.' + c)));
+  const uncovered = [...pairs].filter((x) => !covered.has(x)).sort();
+  assert.deepStrictEqual(uncovered, [],
+    'column(s) with a recovery helper but NO scan covering them — add them to ' +
+    'COERCED_AUDIT_COLS / COERCED_CN_COLS, which is the set both global scans read');
 });
 
 // Runtime proof the typed reader actually recovers coerced cells (stub its

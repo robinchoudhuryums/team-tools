@@ -3,10 +3,11 @@
 ## Current
 Cycle: 21
 Phase: implement
-Scope: Reference lookups — the two-panel restructure (KB / Reference subsystem)
+Scope: Reference lookups (batch R, done) · Seams & Invariants (batch S, F1–F5)
 Test Command: manual
 Estimates: R (reference lookups restructure): M (~4 h) — written before the
-first edit. Actual ~3.5 h.
+first edit. Actual ~3.5 h. · S (seams batch F1–F5): M (~5 h) — written before
+the first edit.
 Subsystem cycles since last Seams audit: 6 — **still overdue.** This cycle is
 an operator-requested interface batch, not an audit, so it does NOT reset the
 counter and does NOT discharge the cadence. The next `/audit` MUST be a Seams
