@@ -3932,12 +3932,30 @@ test('T4 DOM: copy yields the parked FIGURE, and a blocked clipboard SAYS so ins
   assert.ok(/W\/ Shipping Cost|pick-up/.test(mc.textContent), 'named, so the rep knows which one it is');
   h.read('closeOverlay')(mc);
 
+  // A SCALAR-ONLY payload — what an older deployment answers a newer client
+  // with, i.e. what every tab already open gets during a New Version deploy.
+  // Its one price still copies. Reaching for `m.prices` directly here would
+  // throw and the button would do nothing, silently.
+  setClipboard({ writeText: (t) => { copied.push(t); return Promise.resolve(); } });
+  h.run.respond('searchOopPricing', () => ({ cap: 8, total: 1, matches: [{
+    name: 'Legacy Item', code: 'E0247', effective: '', eligibility: 'Open',
+    price: '$65.00', details: [] }] }));
+  await t3Search(h, '#kb-oop-item', 'oopLookupInput_', 'legacy');
+  const lone = h.$('#kb-oop-results').querySelectorAll('.kb-oop-copy');
+  assert.strictEqual(lone.length, 1, 'one price, one button');
+  assert.ok(lone[0].hasAttribute('data-kb-primary'),
+    'and with only one price it IS the row’s Enter target — there is no choice to guess at');
+  copied.length = 0;
+  h.read('oopCopyPrice_')(lone[0]);
+  await tick();
+  assert.deepStrictEqual(copied, ['$65.00'], 'the scalar copies like any other price');
+
   // And a row that is no longer on screen refuses rather than copying whatever
   // now sits at that index.
   host._oopItems = null;
   setClipboard({ writeText: (t) => { copied.push(t); return Promise.resolve(); } });
   const before = copied.length;
-  h.read('oopCopyPrice_')(btns[0]);
+  h.read('oopCopyPrice_')(lone[0]);
   await tick();
   assert.strictEqual(copied.length, before, 'a stale index copies NOTHING');
 });
