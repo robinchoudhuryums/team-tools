@@ -1,126 +1,92 @@
 # Cycle State
 
 ## Current
-Cycle: 21
-Phase: reflect
-Scope: Reference lookups (batch R, done) · Seams & Invariants (batch S, F1–F5)
+Cycle: 21 — CLOSED 2026-09-21 (batch R deployed and operator-confirmed; batch S
+needed no deploy; reflected net +1; the whole block is in `.cycle/HISTORY.md`).
+**No cycle is open.** The next `/audit` or `/broad-scan` opens cycle 22.
+Phase: idle
+Scope: —
 Test Command: manual
-Estimates: R (reference lookups restructure): M (~4 h) — written before the
-first edit. Actual ~3.5 h. · S (seams batch F1–F5): M (~5 h) — written before
-the first edit. Actual ~2.5 h (two findings were smaller than the audit said).
-Subsystem cycles since last Seams audit: 0 — **reset by the Seams & Invariants
-audit of 2026-09-18, whose findings shipped as batch S and were reflected on
-2026-09-21.** The cadence is every 4; the next is due at cycle 25.
-Updated: 2026-09-18
+Estimates: — (written per batch, BEFORE the first edit, once a cycle opens)
+Subsystem cycles since last Seams audit: 0 — reset by the 2026-09-18 audit,
+whose findings shipped as batch S. The cadence is every 4; next due at cycle 25.
+Updated: 2026-09-21
 
 ## In progress (facts to carry forward — NOT judgments)
-- Batch R (Reference two-panel restructure) and batch S (Seams F1–F5) are both
-  implemented and pushed on `claude/festive-noether-unougu`. No PR opened.
-- Blocks: `.cycle/blocks/21-reference-lookups-broad-implement.md` and
-  `.cycle/blocks/21-seams-broad-implement.md`.
-- The Seams & Invariants audit RAN this cycle and is discharged — `/reflect`
-  should reset the seam counter to 0.
-- Next: `/sync-docs` for batch S (the seams block lists what is owed), then
-  `/reflect` for cycle 21. The operator still owes batch R's deploy + S112 walk;
-  batch S needs NO deploy (no `web-app/` file changed).
+- Nothing is in flight against an OPEN cycle. **PR #264 is open and green** —
+  the three pre-existing Reference-lookup defects the cycle-21 deploy exposed,
+  plus the pins, fixtures and scenarios that would have caught them. It needs
+  merging and one `clasp push -f` + New-version deploy.
+- A FOUR-BATCH plan (T1–T4) for the Reference lookups was agreed with the
+  operator on 2026-09-21 and is not yet started. It is in the session transcript
+  and summarised under "Pending".
 
 ## Completed this cycle
-- R-1..R-5 | web-app/70_kb.js, web-app/kb/script_kb.html | the two-panel merge
-- R-6 | web-app/kb/script_kb.html | every landing block is a section or the band
-- S-F1 | test/client/run.js | AUDIT.TS + CN.DATE_LOCAL covered; the derived half
-- S-F2 | test/client/run.js, harness.js | H-1's fifth consumer + serverCallersOf
-- S-F3 | .cycle/config.md | INV-208/209 now point at S112
-- S-F4 | test/client/run.js | id-uniqueness pin
-- S-F5 | test/client/run.js | the Verify ratchet at floor INV-139
+- (Cycle 21's record is in `.cycle/HISTORY.md` and the three blocks
+  `21-reference-lookups-broad-implement.md`, `21-seams-broad-implement.md`
+  and `21-a-reflect.md`. Nothing has been completed against a NEW cycle.)
 
 ## Pending / not yet done
-- **DEFERRED by the cycle-20 scan, still an operator decision:** F-09's holiday
-  FALLBACK. Keep g123's federal fail-open, or match the Department Dashboard's
-  no-fallback. Batch 3 surfaces which calendar is live either way, so this is a
-  policy call rather than a defect.
-- **DONE this cycle — the restructure shipped as TWO panels, not three** (the
-  operator chose the merge after the plan showed panels 2 and 3 read the same
-  tab). What remains is the deploy and the S112 walk. The superseded note:
-  three stacked panels on the Reference landing and in the drawer, the
-  assessment being in the
-  2026-09-18 session; the one item in it that is a defect rather than a polish
-  is the pair of unlabelled twin inputs on area eligibility, where the item
-  field carries only an `aria-label` and its placeholder vanishes once filled.
+- **PR #264** — merge, deploy, then walk S112 and S73.
+- **T1 (S, ~2h)** — the landing re-render destroys typed lookup input: three
+  manager-only loaders call `kbRenderLanding_()`, which does
+  `main.innerHTML = h`. Split the landing into a band host and a blocks host so
+  the loaders re-render only the blocks. Plus the payor pill inconsistency
+  (a cell reading `status not recorded` renders differently from a BLANK one)
+  and chips for the `·`-joined meta line.
+- **T2 (M, ~3h)** — the acceptance legend becomes a non-modal popover
+  (`ensureOverlay` + `hover-mode` riding `extraClass`, g134; hooks not
+  `classList`, g100), and each acceptance VALUE explains itself. ONE term
+  matcher must serve both the tone (`insToneCls_`) and the explanation, or a
+  value can render amber while its popover explains the green rule.
+- **T3 (L, ~1 day)** — the payor × item JOIN. Payor `details` are keyed by the
+  sheet's column headers, which are HCPCS codes; OOP rows carry `code`. NOTE
+  the correction this rests on: the batch-R plan said panel 1 had no join key
+  to items, which was wrong. The key is the code. **Safety rule:** one
+  tokenizer, exact-token matching, and anything it cannot parse confidently
+  (`K0821/23/16` shorthand) is shown but NEVER used to assert coverage — a
+  wrong join tells a rep a payor covers something it does not, on a surface
+  where a quote is a commitment (g41, and the ELIG no-seed precedent).
+- **T4 (M, ~3h)** — keyboard navigation in the results, copy-price with the
+  g76 clipboard failover, and collapsing the two verdicts when they AGREE so
+  the disagreements stand out. That last one **changes a documented decision**
+  (ELIG / INV-209) and needs the decision entry rewritten, not just the code.
+- **DEFERRED, still an operator decision:** F-09's holiday FALLBACK — keep
+  g123's federal fail-open, or match the Department Dashboard's no-fallback.
 - **Still owed from cycle 19's post-deploy walk:** step 8 — `INSTANCE_IS_PROD=true`
-  plus standing up the DEV instance. The integration tier ran against the
-  deployed PROD project for the first time on 2026-09-18 and immediately found a
-  real defect, which is the argument for the dev instance rather than against
-  it: that run wrote TEST_ rows to production stores. Steps 2, 5 and 6 of that
-  walk are also unconfirmed.
-- **The remaining cycle-20 post-deploy walk items**, none blocking: S111 step 5
-  and S110 step 5 (the two Admin → System source findings), S7's two new Day
-  Edit steps, S113 (the two modals), and the sheet doctor run that would settle
-  whether the equal-minute 24-hour-day defect ever actually fired in payroll.
-- **INV-225, INV-226 and INV-227 are RESERVED, not written.** Cycle 20's
-  reflection proposed them and could not verify any; they are held by name in
-  `.cycle/config.md`. Adopt them with the round that can verify them, or let the
-  Seams audit take them. Do not reuse the numbers.
+  plus standing up the DEV instance. Cycle 21's reflection named
+  Operator-Only State Gaps the weakest axis on exactly this evidence: without
+  the dev instance the integration tier runs against PROD and writes TEST_ rows
+  into live payroll and PHI stores. Steps 2, 5 and 6 of that walk are also
+  unconfirmed.
+- **The cycle-20 post-deploy walk items**, none blocking: S111 step 5 and
+  S110 step 5, S7's two new Day Edit steps, S113, and the sheet doctor run.
+- **INV-225, INV-226 and INV-227 are RESERVED, not written** (cycle 20 holds
+  them for three rules it could not verify). **INV-229..232 and an amendment to
+  INV-213 are PROPOSED** by cycle 21's reflection and not yet written. Do not
+  reuse any of these numbers.
 
 ## Open follow-on items
-- `docs/gotchas.md` g139 and `bite.sh --fn` both landed on 2026-09-18 from the
-  first full editor run. The lesson generalises: a test asserting on an
-  aggregate over an append-only log needs its own baseline.
-- CLAUDE.md's storage map says the OopPricing **Area Eligibility column is
-  "READ BY AN ENGINE, not displayed"**, but `eligRenderResults_` renders it as
-  `sheet: <value>` under each item. Either the doc line is stale or the display
-  is unintended — a `/sync-docs` pass should resolve which.
-- The Reference browse tree shows pairs with identical labels distinguished
-  only by icon (Billing Procedures Guide, Oxygen Procedures, Power Roster).
-  Probably an article beside a Drive embed; if so the icon alone carries the
-  distinction and the tree reads as broken.
-- `gatedEndpointsFromSource_` in run.js knows TWO gate families while
-  counts.mjs now derives three. Widening it would require every
-  `assertManagerCaller_` and `canSeeQa_` endpoint to have a gate test in the
-  omnibus.
-- The geocode quota is shared and uncapped, and the eligibility RULE is not
-  shown in the price lookup itself. Both are real work, logged since the OOP
-  round.
-- `oopEligibilityParse_`'s STATES branch reads "TX or CA" as Texas plus Oregon
-  plus California, because it uppercases "or". The radius branch's equivalent
-  was closed by F-23; this one was not.
+- `.cycle/config.md` — INV-229..232 + the INV-213 amendment, to be written by
+  the round that adopts them.
+- `docs/gotchas.md` — the drawer/`.kbd-sec` defect and the mount-check lesson
+  are recorded in PR #264's body and the HISTORY block, but no gotcha entry
+  exists yet. It has bitten production, so it has earned one.
 
 ## Decisions made (so the next session doesn't re-litigate)
-- Cycle 20's tally is the REFLECT block's (net 25), not the sum of the
-  implementation blocks (29). The reflection corrects them in four places and
-  is the later, honest source.
-- The accrual ledger's high-water-mark rule is CORRECT and must not be changed
-  to latest-wins: it is what makes the credit idempotent on hours already paid
-  for, and latest-wins would double-credit a month whose audit row went stale.
-- A bite mutation is scoped with `--fn`. Unscoped it edits the first match
-  anywhere in the file, which produced two true verdicts about the wrong test
-  in one session.
-- Reserved invariant numbers are written NOT in `INV-N |` entry shape, so the
-  derived library count stays honest rather than depending on a regex accident.
-
-## Decisions made (so the next session doesn't re-litigate)
-- TWO panels, not three. Panels 2 and 3 read the SAME operator tab through the
-  same row reader; panel 1 keys on payor name with no join key to items. The
-  operator chose the merge once that was shown.
-- The grid lives in the landing HOST, never in the shared section renderer —
-  that is what lets one section serve the landing and the ~340px drawer.
-- The field pair is `auto-fit`, NOT a media query. A third responsive case
-  exists that g50's two triggers cannot see: the drawer's width is set by
-  neither the viewport nor data-compact.
-- `checkOopEligibility` ships the WHOLE row object rather than a subset. The
-  subset is what let the two readers drift; shipping the shape makes one
-  renderer possible, which makes the drift unrepresentable rather than
-  remembered.
+- Price and area eligibility are ONE panel; the address UPGRADES the answer
+  rather than gating it.
+- The lookup band lives in the LANDING HOST, never the shared section renderer,
+  which is what lets one section serve the ~340px drawer.
+- A net that enumerates what it guards is paired with a DERIVED check running
+  the other way; the guarded set itself is never derived from the code it
+  guards (that derivation is self-defeating).
+- No backfill of `Verify:` clauses below the ratchet floor — writing prose
+  against invariants nobody verifies puts unverified claims in the one file
+  whose value is that its claims are true.
 
 ## Where I left off
-Cycle 21 is REFLECTED (block `21-a-reflect.md`, net +1) and the seam counter is
-reset. Both batches, both `/sync-docs` passes and the reflection are pushed; the
-tree is clean and every harness is green.
+Cycle 21 is closed and archived. The tree is clean; every harness is green.
 
-The cycle is complete but NOT closed: batch R awaits the operator's
-`clasp push -f` + New-version deploy and the S112 walk. Close the cycle out
-(move this block to HISTORY.md, reset from the template) once that deploy is
-confirmed, per the documented close-out procedure.
-
-INV-229..232 and the INV-213 amendment are PROPOSED in the reflect block and NOT
-yet written into the library — write them with the round that adopts them.
-INV-225..227 stay RESERVED and untouched.
+Do PR #264 next — merge, deploy, walk S112/S73 — then T1, which is the only
+item in the T-plan that fixes a live defect rather than improving a surface.

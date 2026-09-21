@@ -1,6 +1,69 @@
 # Project Health — team-tools
 
 ## Current Standing
+**Cycle 21 CLOSED 2026-09-21 — reflected net +1 (2 production fixes − 1 Low new
+failure mode; 1 capability, 9 defensive). Batch R is DEPLOYED and
+operator-confirmed; batch S changed no `web-app/` file and needed no deploy.**
+Two batches: **R**, the operator-requested Reference two-panel restructure, and
+**S**, the overdue Seams & Invariants round (F1–F5). Merged as PR #263.
+**Axis-B lowest: Operator-Only State Gaps** — which breaks a seven-cycle Test
+Coverage Quality streak, deliberately (see below).
+
+**The High was live for a working day.** `checkOopEligibility` hand-picked
+`price`, which is `prices[0]` — the LEFTMOST price column, and on the operator's
+real sheet the PICK-UP total. So the surface whose entire subject is DELIVERY
+answered "how much is it?" with the collect-in-person number and silently
+dropped `W/ Shipping` and `W/ Tech Delivery`. It shipped on 2026-09-16 and was
+invisible to the operator's own post-deploy check because the item they tried
+has a single price column. Both endpoints now ship the same shape and ONE client
+renderer draws both, so they cannot diverge by being edited separately again.
+
+**Batch S found no live defect at all, and is scored 0 production fixes for it.**
+Every one of its five findings was a hole in a safety net: two coerced-column
+tripwires that omitted the very columns their gotchas are named for (`AUDIT.TS`,
+`CN.DATE_LOCAL` — the latter the most recovery-guarded column in the codebase),
+an enumerated-reader pin missing a fifth consumer, two invariant Verify clauses
+pointing at a renumbered scenario, and no check that ids are unique. The
+structural output is the **two-sided net shape**: an explicit guarded set plus a
+DERIVED check running the other way, because deriving the guarded set *from* the
+code is self-defeating — delete the last recovery call and the column leaves the
+set at the moment the raw read appears.
+
+**BOTH BATCHES' SELF-REPORTS SURVIVED STRICT RE-DERIVATION** — R reported 2−1,
+S reported 0−0, and per-template re-derivation gives the same +1. That is the
+second time in this project's record (cycle 18's seams round was the first),
+against a history of 17→6, 36→15, ~19→14 and 30→25.
+
+**The corrections this cycle run against the AUDIT, not the blocks**, and both
+the same way — it over-reported. Its F2 claimed six drifted enumerated-reader
+lists; **one** was real. Five were correct as written and readable as correct
+because someone had documented what each list was for. Its F5 counted entries
+lacking a `Verify:` clause at nearly double the real figure, because most name
+their verification as "Pinned by …", a named tripwire or a `test_` function.
+That second correction improved the outcome: no backfill was needed and the
+ratchet floor landed far lower than planned.
+
+**Why Axis-B moved off Test Coverage Quality after seven cycles:** this cycle
+was substantially about test coverage and measurably improved it — eleven
+bite-checks on batch S, all BITE; two NO BITEs in batch R, each investigated and
+acted on rather than explained away. Operator-Only State is the one category
+nothing touched, and its evidence is concrete and worsening: the DEV instance
+owed since cycle 19 step 8 still does not exist, so the integration tier runs
+against PROD and writes `TEST_` rows into live payroll and PHI stores — which
+happened for real on 2026-09-18.
+
+**Post-close, factual:** deploying batch R surfaced THREE Reference-lookup
+defects, **all pre-existing**: the drawer laid its sections out in a row because
+both lookups were wrapped in `.kbd-sec`, a mono/uppercase flex HEADING bar, since
+`0743f07`; `.kb-ins-row` had never carried a CSS rule at all; and the item name
+shared one div with every price. Fixed in **PR #264** (green, open at close-out).
+They survived because no visual scenario had ever opened the KB drawer, the mock
+had no fixture for any lookup endpoint so the matrix could only photograph empty
+boxes, and the DOM pins asserted the drawer MOUNTS each section — which it did,
+inside a heading bar. A mount check cannot see WHERE something mounted.
+Tests at close: pure **917**, DOM **133**, visual matrix **109**, editor **337**.
+
+## Prior standing (Cycles 18 + 19pre, closed 2026-08-21 / reflected 2026-09-01)
 **Cycle 18 (broad pre-audit + Seams & Invariants) CLOSED 2026-08-21 — reflected
 net +4 (6 prod fixes − 2 Low new failure modes; 3 capabilities; 19 defensive).**
 The row covers the pre-audit /broad-scan batches 1–8 + 5B (**merged PR #176**),
@@ -584,3 +647,7 @@ backlog was implemented):
 | 2026-08-05 | 17 | net +12 (15 prod fixes − 3 Low new failure modes; 3 capabilities; 28 defensive) | Broad scan (6 parallel deep-readers + the mandatory visual stage + independent re-verification of every Medium+ claim, zero retractions) → ~40 findings across 7 batches, **merged PR #154 and deployed**. **INV-187 closed as a CLASS** — every best-effort read now carries its outcome, finishing the pattern that produced the flagship finding of cycles 12, 16 AND 17. The one High was TEST INTEGRITY: the A2 scan's regex matched zero of `styles.html`'s ~67 compact selectors while the docs claimed coverage; fixing it surfaced 9 live obligations incl. two real missing breakpoints on the punch grid. Self-reports CORRECTED downward at reflection (batch nets summed to 33; strict per-template re-derivation gives 12). Axis-B lowest: Test Coverage Quality, second cycle running. Pure 407→433, DOM 69, matrix 29→37. |
 | 2026-08-19 | 18pre | net +3 (4 prod fixes − 1 Medium new failure mode; 8 capabilities; 6 defensive) | **Between-cycles operator work, not an audit** (three merged PRs: #171/#172/#173) — reflected in `.cycle/blocks/18pre-a-reflect.md`, deliberately NO metrics.csv row (one reflect row per CYCLE; 17's already exists). Shipped: Spanish-members editor, full-width + caching sweeps, rep-facing Team Metrics aggregate, **Time/PTO consolidated to one page** + quick-actions card + pay-statement request-edit click-through, CN pop-out fluid type + ≤400px stacking, **multi-day time-off requests**, **system-computed PTO accrual** (INV-194). **The headline is the new failure mode:** the accrual model does not match the entitlement rule for the population it was built for — the credit writer skips `PtoEnabled=FALSE` reps (documented as the PH team) and uses days-per-calendar-month while the real rule is 3.08 hours per 80 hours WORKED. Inert today; wrong the moment column Q is filled and the flag flipped. Awaiting an operator decision on the hours→days convention. |
 | 2026-08-21 | 18 | net +4 (6 prod fixes − 2 Low new failure modes; 3 capabilities; 19 defensive) | **Broad pre-audit (batches 1–8 + 5B, PR #176) + the DUE Seams & Invariants round (F1–F5, PR #177)** — one row for everything un-reflected since 18pre. The High: KB `data-src` stored XSS (attribute values DECODE on read; every interactive-block re-render pushed raw article text through innerHTML — reproduced in Chromium, closed via the `kbFenceSrc_` boundary, INV-193, pinned in the DOM harness because the pure harness had blessed the vulnerable line). Interface volume: 15 unnamed dialogs (five nested), the 168-control accessible-name debt → 0/0/0 (one real association bug inside it), weekend reminder nags, un-clipped printing (1587px of a pay statement was silently dropped). Capabilities: Intake Catalog tab, manager pay-statement UI, table-derived automation liveness + `AUTOMATION_LAST_ERRORS`. The accrual hours-rebuild closed 18pre's declared Medium before its first live credit. Seams value = verified-held (6/6 veteran tripwires bite; all doc counts match) + three closed drift channels (byte-equal server URL-whitelist twin; verbatim fixture mirror + DERIVED shape pins; the `AUTOMATION_JOB_CHECKS` coupling). **Self-reports corrected 17−0 → 6−2** (the cycle-17 pattern, larger); the seams round's own 0−0 survived scrutiny — the first block self-report in three cycles to do so. Axis-B lowest: Test Coverage Quality, third cycle running. Pure 433→585, DOM 69→75, matrix 37→44 + print/a11y-name companion harnesses. **NOT DEPLOYED — PRs #176+#177 await the one clasp push + New version + `runAllTests()`.** |
+| 2026-09-01 | 19pre | net +12 (14 prod fixes − 2 new failure modes; 20 capabilities, 15 defensive) | *(backfilled from `.cycle/metrics.csv` at the cycle-21 close-out — this row and the three below were reflected but never reached this file.)* 39 merged PRs (#178–#219) over 12 days, none scan-derived: the largest span the project has reflected, and the first drawn entirely from operator reports. Self-reports summed to ~19; strict re-derivation gives 14 — a NARROWER gap than cycles 17 or 18. |
+| 2026-09-18 | 19 | net +14 (23 prod fixes − 9 new failure modes; 64 defensive) | *(backfilled — the SUM of five separate reflections, blocks 19-a..19-e, spanning 2026-09-11 → 09-18.)* Headliners across the span: the CDR bridge round (H1 post-holiday zero day, which fired on Labor Day; H2 the published answer standard replacing a hand-carried 85), the Batch D doc split, and the F1/F2 server split into fourteen files. |
+| 2026-09-18 | 20 | net +25 (28 prod fixes − 3 new failure modes; 25 defensive) | *(backfilled.)* The `/broad-scan` of 2026-09-17 and ALL SEVEN batches of its plan — 53 findings, 52 implemented, 1 deferred to the operator. Dominant theme: honest failure (8 fixes in Batch 2 alone), and its matching hazard is the cycle-level new failure mode nobody's batch owned — eight helpers widened to `{value, unavailable}`, so a caller written `if (!x)` now reads an unavailable service as present-but-empty. FOUR corrections to the self-reports, which summed to 30−1. |
+| 2026-09-21 | 21 | net +1 (2 prod fixes − 1 Low new failure mode; 1 capability, 9 defensive) | Two batches: **R** the operator-requested Reference two-panel restructure, **S** the overdue Seams & Invariants round. The High shipped live for a working day — the eligibility panel quoted the PICK-UP price on the surface whose subject is delivery. Batch S found no live defect and is scored 0 fixes for it; its output is the two-sided net shape. **Both self-reports survived strict re-derivation** — the second time in the record. The corrections run against the AUDIT instead: its F2 claimed six drifted lists and one was real. Axis-B moves to **Operator-Only State Gaps** after seven cycles of Test Coverage Quality. |
