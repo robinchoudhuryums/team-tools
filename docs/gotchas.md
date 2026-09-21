@@ -229,7 +229,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   in this state until the first full `runAllTests` exposed it.
   `getManagerDashboard` (recent audits), `cnReadCallNoteAuditRows_`, and
   `getAutomationHealth` all route through `normalizeAuditTs_` now —
-  any new AuditLog timestamp read must too. **The AuditLog's OTHER coerced
+  any new AuditLog timestamp read must too. **And until the
+  2026-09-18 seams batch, nothing enforced that.** The global scan that bans a
+  raw coerced-AUDIT read covered `PUNCH_DATE`, `PUNCH_TIME` and `IS_ADJUSTMENT`
+  — the three columns the cycle-7/8 rounds added as they were found — and NOT
+  `AUDIT.TS`, the column this entry is named for. A raw `r[AUDIT.TS]`, and a raw
+  `r[AUDIT.TS] === y` comparison, both passed CI; bite-checked. No live defect
+  (all five reads already routed through the helper), but the net could not have
+  said so. It covers TS now, and a derived companion requires every column a
+  recovery helper touches to be in the scanned set, so the next column cannot be
+  guarded in code and unguarded in the net. **The AuditLog's OTHER coerced
   columns bit the same way (cycle 7 M-3/M-4):** the `PunchTime` cell (col 7,
   written `HH:mm:ss`) coerces to a time-of-day Date — read it via
   `normalizeTime_` (a raw `String()` rendered a constant "12:00 AM" in the
@@ -374,6 +383,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   (a PTA-3 derived scan bans `normalizeDate_` over that column); ADP/TO/
   PAR/AUDIT date reads keep `normalizeDate_` — the ADP sheet is its own
   host.
+
+  **The PTA-3 scan bans the wrong HELPER over this column; nothing banned a RAW
+  read until the 2026-09-18 seams batch.** Those are different guards: PTA-3
+  catches `normalizeDate_(row[CN.DATE_LOCAL])` (right shape, wrong timezone),
+  while a bare `row[CN.DATE_LOCAL] === x` — the Date-versus-string compare that
+  is always false, the original defect — went through both it and the INV-142
+  global scan, which covered `CN.TIMESTAMP` and `CN.EMAILED_AT` and not this
+  column. Bite-checked. It is the most recovery-guarded column in the codebase
+  — fifteen sites route through `cnDateLocalString_`, more than every other
+  column combined — which is the irony worth remembering: the column the code
+  was most careful about was the one the net had never heard of.
 
 <a id="g17-scriptlock-around-every-mutating-op"></a>
 
@@ -2733,6 +2753,31 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   assertion that varied the input it meant to hold fixed), one unobservable
   claim that was deleted, and a fourth that was an equivalent rewrite. The
   verdict is a question, not an answer.
+
+  **A SIXTH direction (2026-09-18 seams audit): a pin's hand-list is only as
+  good as its INTENT, and measuring the list against reality over-reports.** The
+  audit swept the enumerated-reader pins — the ones shaped
+  `['a','b','c'].forEach(fn => assert(/marker_\(/.test(…)))` — and flagged six of
+  ten sampled as "guards fewer callers than exist". Reading each pin's contract,
+  five were correct as written: one scopes its list to "the cross-rep walks that
+  had the bug" in its own comment and carries a complete global scan as its
+  strong half; one asserts globally that its banned function has exactly one call
+  site; one names the extra caller in its comment already; one lists rendering
+  surfaces while the extra caller is the helper beneath them; one lists readers
+  while the extra caller writes. Only one was a real gap. A broader automated
+  sweep was worse — it flagged thirteen, mostly false, because some markers are
+  BANS (a caller outside the list is the expected case) and some lists are
+  deliberately narrow.
+
+  The rule that generalises: **a derived check over a hand-list needs the list's
+  intent, and intent is not in the source.** Where a list means "every caller",
+  pair it with `serverCallersOf()` (the harness helper added for exactly this)
+  and it becomes self-maintaining. Where it does not, say so in the comment —
+  the five correct pins were all readable as correct precisely because someone
+  had written down what the list was for. An audit that skips that reading
+  produces confident, wrong findings; this one did, and the implementation block
+  carries the correction.
+
 
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel

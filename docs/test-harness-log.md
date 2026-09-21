@@ -1763,3 +1763,57 @@ was read as a bite before the cause was traced. The fix is procedural and
 already in the tool for the pure harness: commit first, then bite. Worth
 extending `bite.sh` to run the DOM harness so there is no reason to hand-roll
 one — noted, not done.
+
+---
+
+## 2026-09-18 — batch S, the seams round (F1–F5)
+
+**Five pins added or rewritten, eleven bite-checks, all BITE.** No `web-app/`
+file changed: this batch is entirely test surface.
+
+**The two-sided net shape, and the derivation that must NOT be built.** F1's
+obvious fix was to derive the guarded coerced-column set from the code —
+"whatever columns a recovery helper is applied to". That is self-defeating:
+delete the last `cnDateLocalString_(row[CN.DATE_LOCAL])` call and the column
+leaves the derived set at the same moment the raw read appears, so the net goes
+quiet exactly when the defect lands. The shape that works is the one the CN
+boundary already used: an EXPLICIT list (which keeps a column guarded whatever
+the code does) plus a DERIVED assertion running the other way (every column a
+recovery helper touches must be in that list). The list was hoisted to one
+place both scans read, so the two can no longer drift apart from each other
+either. Bite-checked four ways, including the one that proves the property:
+shrinking the list fails the derived half rather than silently narrowing cover.
+
+**`serverCallersOf()` (harness.js), and why it is applied to exactly one pin.**
+It derives the set of server declarations calling a marker, for the
+enumerated-reader pins whose lists mean "every caller". It is deliberately not
+retrofitted: some of those pins BAN their marker, and some guard a narrow set
+on purpose, so a blind sweep over all of them over-reports. Measured — a naive
+completeness assert flagged thirteen contracts and most were false. The one pin
+that needed it (H-1, coaching's parser boundary) was the one with no
+global-scan sibling.
+
+**An exemption written as a fact, not a convenience.** H-1 bans
+`parseTimestampMs_` in coaching consumers, and `automationDetectorChecks_`
+calls it — because it is the runtime self-check that drives BOTH parsers to
+prove each still works. Listing it would fail the ban; dropping it from the
+derivation silently would hide a real consumer if it ever became one. It is
+named in an `EXEMPT` array with the reason beside it, so both facts stay visible.
+
+**Two audit corrections, both the same direction.** The audit that produced
+these findings over-reported twice, and the implementation block carries both.
+F2 was one real gap of six, not six: five lists were correct as written and
+readable as correct because someone had written down what each was for (see
+g116's sixth direction). F5's count of entries carrying no `Verify:`
+clause was nearly double the real one — most of the difference names its
+verification as "Pinned by …", a named tripwire, or a `test_` function, which a
+`Verify:`-only scan cannot see. That correction improved the outcome: no
+backfill was needed, and the ratchet floor went to INV-139 rather than the
+planned INV-213, covering close to three times the span. The three clauses the
+plan budgeted for were already written, in the other phrasing.
+
+**The ratchet accepts the phrasings already in use.** Requiring the literal
+`Verify:` would have forced a rewrite of 74 entries that already say where
+their proof lives — churn, not rigour. Deliberately-vacant numbers
+(INV-163/164, claimed by a reflection whose proposals were lost and left
+unreused so the metrics note stays traceable) are exempt by shape, not by name.
