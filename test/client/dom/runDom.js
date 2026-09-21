@@ -3706,6 +3706,38 @@ test('T3 DOM: an item whose code is a SHORTHAND says it was not checked — it n
   assert.ok(/\$1,000\.00/.test(h.$('#kb-oop-results').textContent), 'the price still renders');
 });
 
+test('T3 DOM: the client will not join on tokens the payload did not mark CERTAIN, whatever the payload says', async () => {
+  // A payload the SERVER cannot produce — hcpcsParse_ fills `tokens` only on the
+  // certain path, and T3-1 pins that. This drives the client's own guard, which
+  // was otherwise unreachable: the bite-check for it reported NO BITE against
+  // every realistic fixture, because the server's shape already made it moot.
+  //
+  // Unreachable defence is not the same as safe defence. The guard exists
+  // because the client is one refactor away from being handed a shape the
+  // current server does not send, and an untested guard is the thing that
+  // quietly stops guarding (g138 — an assertion that cannot be made to fail is
+  // deleted rather than dressed up; the answer here is to make it fail).
+  const h = boot();
+  h.run.respond('searchInsurancePayors', () => ({
+    total: 1, cap: 8, codeJoin: { attempted: true, error: '' },
+    matches: [{ name: 'AETNA GOLD', networkStatus: 'IN-NETWORK', details: [
+      { label: 'K0800', value: 'SI/PR',
+        code: { shaped: true, certain: false, tokens: ['K0800'] }, item: '', itemCount: 0 }] }] }));
+  h.run.respond('searchOopPricing', () => T3_ITEM_OK);
+  bootLookups(h);
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'aetna');
+  await t3Search(h, '#kb-oop-item', 'oopLookupInput_', 'scout');
+
+  assert.strictEqual(h.$('#kb-oop-results').querySelectorAll('.kb-oop-xref-r').length, 0,
+    'the tokens MATCH the item exactly — and are still not used, because nothing marked them certain');
+  assert.strictEqual(h.$('#kb-oop-results').querySelectorAll('.kb-oop-xref').length, 0,
+    'and no empty cross-reference block is drawn either');
+  // The item itself is fine, so this is not the shorthand path taking over.
+  assert.ok(/Drive Scout 3 Wheel/.test(h.$('#kb-oop-results').textContent));
+  assert.strictEqual(h.$('#kb-oop-results').querySelectorAll('.kb-oop-xref.unmatched').length, 0,
+    'the ITEM code is certain — the refusal here is about the payor side, and is silent on purpose');
+});
+
 test('T3 DOM: a pricing tab the server could not read is ANNOUNCED — bare codes look identical to a payor sheet that has none', async () => {
   const h = boot();
   h.run.respond('searchInsurancePayors', () => ({

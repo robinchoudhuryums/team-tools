@@ -2786,9 +2786,12 @@ function oopMetaChip_(label, value) {
  *  whole feature turns on (g120), and the shorthand refusal would then live in
  *  two places, one of which would eventually forget it.
  *
- *  Both sides must be CERTAIN. An uncertain parse carries no tokens at all
- *  (`hcpcsParse_`), so this cannot accidentally assert from one — the guard
- *  below is belt-and-braces over a shape that already forbids it. */
+ *  Both sides must be CERTAIN — checked HERE as well, not merely relied upon.
+ *  `hcpcsParse_` fills `tokens` only on the certain path, so today no payload
+ *  can reach this function with tokens it must not use; the client is one
+ *  refactor away from being handed one that can, and a guard nothing drives is
+ *  the guard that quietly stops guarding. Pinned against a payload the server
+ *  cannot currently produce, deliberately. */
 function oopPayorRulesFor_(item, matches) {
   var codes = (item && item.codes) || null;
   if (!codes || !codes.certain || !(codes.tokens || []).length) return [];
