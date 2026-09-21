@@ -4,7 +4,15 @@
 # A "bite-check": break the thing a pin is supposed to catch and confirm the pin
 # goes red. A pin that never bit is a pin that has never been shown to work.
 #
-#   scripts/bite.sh [--fn <function>] "<label>" <file> "<python mutation on the string s>" "<test-name substring>"
+#   scripts/bite.sh [--dom] [--fn <function>] "<label>" <file> "<python mutation on the string s>" "<test-name substring>"
+#
+# `--dom` drives the DOM harness (test/client/dom/runDom.js) instead of the pure
+# one. Before it existed, biting a DOM pin meant hand-rolling the same mutate →
+# run → `git checkout` loop in a shell one-liner — and the one time that was
+# done, the hand-rolled version had no dirty-file guard and discarded an
+# uncommitted fix (g65's FIFTH firing, 2026-09-21, logged then as a follow-on).
+# Every guard below now covers both harnesses, which is the point: the guards
+# are the tool's job, not the caller's memory.
 #
 # `--fn` SCOPES the mutation to one function's span, and you almost always want
 # it. A mutation is a regex or a replace over the WHOLE file, and it edits the
@@ -24,6 +32,14 @@
 # documented mitigation was "remember". This is the guard instead.
 set -uo pipefail
 
+harness="test/client/run.js"
+harnessName="pure"
+if [ "${1:-}" = "--dom" ]; then
+  harness="test/client/dom/runDom.js"
+  harnessName="DOM"
+  shift
+fi
+
 fnName=""
 if [ "${1:-}" = "--fn" ]; then
   fnName="${2:-}"
@@ -35,8 +51,14 @@ if [ "${1:-}" = "--fn" ]; then
   esac
 fi
 
+if [ "${1:-}" = "--dom" ]; then
+  harness="test/client/dom/runDom.js"
+  harnessName="DOM"
+  shift
+fi
+
 if [ $# -lt 4 ]; then
-  echo "usage: scripts/bite.sh [--fn <function>] <label> <file> <python-mutation-on-s> <test-name-substring>" >&2
+  echo "usage: scripts/bite.sh [--dom] [--fn <function>] <label> <file> <python-mutation-on-s> <test-name-substring>" >&2
   exit 2
 fi
 label="$1"; file="$2"; mutation="$3"; needle="$4"
@@ -119,7 +141,7 @@ if s == before:
 io.open(p, 'w', encoding='utf-8').write(full[:lo] + s + full[hi:])
 " || { echo "  MUTATION FAILED: $label" >&2; exit 1; }
 
-out="$(node test/client/run.js 2>&1)"
+out="$(node "$harness" 2>&1)"
 # HERESTRING, not `echo "$out" | grep -q`. Under `set -o pipefail`, `grep -q`
 # exits the moment it matches; if the harness output is larger than the pipe
 # buffer (~64KB — it is ~83KB) the writer then dies of SIGPIPE and the PIPELINE
@@ -128,10 +150,10 @@ out="$(node test/client/run.js 2>&1)"
 # the same bite-check gave different answers on different days. Cost an hour
 # while bitting the previewPtoAccruals pin. The herestring has no writer to kill.
 if grep -q "✗.*$needle" <<<"$out"; then
-  echo "  BITES: $label"
+  echo "  BITES [$harnessName]: $label"
   rc=0
 else
-  echo "  NO BITE: $label"
+  echo "  NO BITE [$harnessName]: $label"
   echo "$out" | tail -3
   # A NO BITE is a QUESTION, not an answer, and the first thing to ask is what
   # the mutation actually changed — it may have landed somewhere you did not
