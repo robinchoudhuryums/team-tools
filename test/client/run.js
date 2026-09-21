@@ -13904,7 +13904,11 @@ test('R-2: ONE renderer draws a price row — the eligibility payload and the pr
   // things to keep in step, which is how the pick-up price ended up on the
   // delivery surface.
   const emitters = (cli.match(/function\s+(\w+)\s*\([^)]*\)\s*\{[\s\S]*?\n\}/g) || [])
-    .filter((f) => /class="kb-oop-price/.test(f))
+    // Anchored: `kb-oop-price` followed by the closing quote or a space, so the
+    // `kb-oop-prices` CONTAINER (which holds them but emits none) is not
+    // counted as a price emitter. A prefix match said oopItemRowHtml_ was a
+    // second emitter the moment the prices got their own wrapper.
+    .filter((f) => /class="kb-oop-price(?:"| )/.test(f))
     .map((f) => /function\s+(\w+)/.exec(f)[1]);
   assert.deepStrictEqual(emitters, ['oopPriceHtml_'],
     'exactly ONE function emits a price span, and it is oopPriceHtml_ — found: ' + JSON.stringify(emitters));

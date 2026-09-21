@@ -3425,6 +3425,42 @@ test('R DOM: both fields are named by a visible label bound to their own input �
   assert.ok(/optional/.test(addrLabel.textContent), 'the address label says it is optional');
 });
 
+test('R DOM: the drawer mounts each lookup in its own container, NOT inside the .kbd-sec heading bar', () => {
+  const h = boot();
+  bootLookups(h);
+  const kbdBody = h.window.document.createElement('div');
+  kbdBody.id = 'kbd-body';
+  h.window.document.body.appendChild(kbdBody);
+  h.read('kbDrawerRenderHome_')();
+
+  // THE BUG THIS PINS. `.kbd-sec` is a heading bar — mono, 10px, uppercase,
+  // display:flex — for the one-word labels ("Bookmarks", "Recent") that sit
+  // ABOVE a list of siblings. Both lookups were wrapped IN one, so the heading,
+  // the inputs and the results became three flex items in a row, every result
+  // rendered in uppercase mono, and the ~340px drawer scrolled sideways. It
+  // shipped that way for weeks.
+  //
+  // The previous pin here asserted the drawer MOUNTS the lookup, and it passed
+  // throughout — the section was mounted, inside a heading bar. A mount check
+  // cannot see WHERE it mounted, which is the g138 lesson in a new place: the
+  // pin's name promised the drawer carried the lookup, and it only proved the
+  // element existed somewhere.
+  ['kb-ins-input-d', 'kb-oop-item-d', 'kb-oop-addr-d'].forEach((id) => {
+    const el = kbdBody.querySelector('#' + id);
+    assert.ok(el, id + ' is mounted in the drawer');
+    assert.strictEqual(el.closest('.kbd-sec'), null,
+      id + ' must NOT sit inside .kbd-sec — that class is a flex heading bar, and it ' +
+      'turns a lookup section into a row of uppercase mono');
+    assert.ok(el.closest('.kbd-lookup'), id + ' sits in a .kbd-lookup container');
+  });
+
+  // .kbd-sec keeps its real job: the text-only headings, with items as SIBLINGS.
+  Array.from(kbdBody.querySelectorAll('.kbd-sec')).forEach((sec) => {
+    assert.strictEqual(sec.querySelector('input'), null,
+      '.kbd-sec carries a label, never a control — found one inside: ' + sec.textContent.slice(0, 40));
+  });
+});
+
 test('R-6: every block on the Reference landing is a SECTION or the band — nothing can render at the band’s width by accident', async () => {
   const h = boot();
   // Seed the per-browser prefs so Bookmarks and Recents render too — a pin that

@@ -91,7 +91,11 @@
   /* OOP price lookup — the price is the thing the eye should land on, so it is
      mono and emphasised. `none` is deliberately WARNING-toned rather than muted:
      a row with no price must not read as "free" or as "nothing to say". */
-  .kb-oop-price { font-family: var(--mono); font-weight: 600; margin-left: 6px; }
+  /* The price cluster is its own ROW, and each price is a label/value PAIR.
+     They used to sit inline after the item name with a bare 6px margin, so
+     three priced columns rendered as one run-on line. */
+  .kb-oop-prices { display: flex; flex-wrap: wrap; gap: 3px 16px; align-items: baseline; }
+  .kb-oop-price { font-family: var(--mono); font-weight: 600; display: inline-flex; align-items: baseline; gap: 5px; }
   /* ELIG — two verdicts per item, and THREE visual states, not two. A
      near-boundary "yes" must not look like a flat yes: the caveat is the whole
      reason a radius answer near the limit is not a commitment (straight-line
@@ -133,7 +137,11 @@
     .kb-elig-v { grid-template-columns: 1fr; gap: 1px; }
   }
   .kb-oop-price.none { font-weight: 500; color: var(--warning-deep); }
-  .kb-oop-price-lbl { font-weight: 400; font-size: 10px; color: var(--muted); }
+  .kb-oop-price-lbl { font-weight: 600; font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-2); }
+  /* The two verdicts are the ANSWER; the meta above them is reference. A rule
+     between them stops the eye sliding from a HCPCS code straight into a Yes. */
+  .kb-elig-vs { margin-top: 7px; padding-top: 6px; border-top: 1px dashed var(--line); }
+  .kb-elig-vs .kb-elig-v:first-child { margin-top: 0; }
   /* ── The lookup band (landing host only) ─────────────────────────────
      TWO panels side by side. Three stacked lookups pushed Bookmarks, Recents,
      Most used and Review due entirely below the fold, so the landing read as a
@@ -191,7 +199,14 @@
   .kb-ins-pill.warn { background: var(--warn-soft); color: var(--warning-deep); }
   .kb-ins-pill.info { background: var(--info-soft); color: var(--info-deep); }
   .kb-ins-pill.none { background: var(--paper-2); color: var(--muted); text-transform: none; letter-spacing: 0; font-family: var(--ui); }
-  .kb-ins-meta { font-size: .76rem; color: var(--muted); margin-top: 3px; }
+  /* The OOP / eligibility result row. It had NO rule at all — never one, not
+     one that was lost — so these results ran together as unbroken text while
+     the insurance results beside them were carded (`.kb-ins-card`). That
+     asymmetry is what made the panel hard to read at speed. Same card
+     vocabulary as its sibling, so the two halves of the band match. */
+  .kb-ins-row { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 9px 11px; margin-top: 8px; background: var(--paper-card); }
+  .kb-ins-row .kb-ins-name { display: block; margin-bottom: 4px; }
+  .kb-ins-meta { font-size: .74rem; color: var(--muted-2); margin-top: 5px; line-height: 1.45; }
   .kb-ins-det-btn { background: none; border: none; font: inherit; font-size: .76rem; color: var(--info-deep); cursor: pointer; padding: 4px 0 0; display: inline-flex; align-items: center; gap: 4px; }
   .kb-ins-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 5px 10px; margin-top: 7px; }
   .kb-ins-grid[hidden] { display: none; }   /* the [hidden] gotcha — the class display wins otherwise */
@@ -635,6 +650,11 @@
   .kbd-body { overflow-y: auto; flex: 1; padding: 10px 14px 16px; }
   .kbd-sec { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); padding: 12px 0 4px; display: flex; align-items: center; gap: 8px; }
   .kbd-sec .kbd-tgl { margin-left: auto; font-family: var(--ui); font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+  /* The lookup sections in the drawer. Deliberately NOT .kbd-sec: they carry
+     their own `.kb-land-h` heading and a body of normal-weight text, so they
+     need the drawer body's ordinary type, not the heading bar's. */
+  .kbd-lookup { padding: 12px 0 6px; font-family: var(--ui); font-size: .84rem; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--ink); }
+  .kbd-lookup + .kbd-lookup { border-top: 1px solid var(--line); }
   .kbd-item { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; font: inherit; font-size: .86rem; padding: 7px 9px; border: none; border-radius: 7px; background: none; color: var(--ink); cursor: pointer; }
   .kbd-item:hover { background: var(--paper-2); }
   .kbd-item .kb-snip { font-size: .74rem; color: var(--muted); }
@@ -2676,12 +2696,20 @@ function oopItemRowHtml_(m) {
   if (m.effective) bits.push('effective ' + esc(m.effective));
   if (m.eligibility) bits.push('area: ' + esc(m.eligibility));
   (m.details || []).forEach(function (d) { bits.push(esc(d.label) + ': ' + esc(d.value)); });
+  // Four DISTINCT blocks, not one paragraph. The name, the prices, the meta and
+  // the verdicts answer four different questions, and running them together is
+  // what made the panel unreadable at speed: a rep mid-call scans for ONE of
+  // them. The prices in particular were inline with the name, so an item with
+  // three priced columns read as a sentence.
   return '<div class="kb-ins-row">' +
-    '<div class="kb-ins-name">' + esc(m.name) + ' ' + oopPriceHtml_(m) + '</div>' +
+    '<div class="kb-ins-name">' + esc(m.name) + '</div>' +
+    '<div class="kb-oop-prices">' + oopPriceHtml_(m) + '</div>' +
     (bits.length ? '<div class="kb-ins-meta">' + bits.join(' · ') + '</div>' : '') +
     ((m.insurance || m.oop)
-      ? eligVerdictHtml_('Through insurance', m.insurance) +
-        eligVerdictHtml_('Paying out of pocket', m.oop)
+      ? '<div class="kb-elig-vs">' +
+          eligVerdictHtml_('Through insurance', m.insurance) +
+          eligVerdictHtml_('Paying out of pocket', m.oop) +
+        '</div>'
       : '') +
     '</div>';
 }
@@ -4499,8 +4527,16 @@ function kbDrawerRenderHome_() {
   var prefs = kbPanelPrefs_();
   var html = '<div id="kbd-guidance"></div><div id="kbd-suggest"></div>';
   // Insurance lookup (operator 2026-08-25) — same shared section, drawer host.
-  html += '<div class="kbd-sec">' + insLookupSecHtml_('-d') + '</div>';
-  html += '<div class="kbd-sec">' + oopLookupSecHtml_('-d') + '</div>';
+  // `.kbd-sec` is a HEADING BAR — mono, 10px, uppercase, `display: flex` — built
+  // for the one-word labels ("Bookmarks", "Recent") that sit ABOVE a list of
+  // siblings. Wrapping a whole lookup section in it made the heading, the
+  // input(s) and the results three FLEX ITEMS IN A ROW, rendered every result
+  // in 10px uppercase mono, and overflowed the ~340px drawer horizontally.
+  // Shipped that way since the insurance lookup joined the drawer and was never
+  // seen, because no visual scenario has ever opened this drawer and the DOM
+  // pins only asserted the section MOUNTS — which it did, inside a heading bar.
+  html += '<div class="kbd-lookup">' + insLookupSecHtml_('-d') + '</div>';
+  html += '<div class="kbd-lookup">' + oopLookupSecHtml_('-d') + '</div>';
   var bookmarks = prefs.bookmarks || [];   // #5
   if (bookmarks.length) {
     html += '<div class="kbd-sec">Bookmarks</div>';
