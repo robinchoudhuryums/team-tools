@@ -14,7 +14,9 @@ BEFORE the first edit, as it stood in the agreed four-batch plan ("L, ~1 day");
 actual ~4 h. **T4 (keyboard nav · copy price · collapse agreeing verdicts):
 M (~3 h)** — written BEFORE the first edit, as it stood in the plan;
 actual ~3 h. **T5 (one honest copy helper, SEVEN call sites): M (~4 h)** —
-written BEFORE the first edit; actual ~3.5 h. Between-cycles operator work, the 19pre pattern.
+written BEFORE the first edit; actual ~3.5 h. **T6 (the unstyled-class ratchet
++ the 3 real defects it found): M (~3 h)** — written BEFORE the first edit.
+Between-cycles operator work, the 19pre pattern.
 Subsystem cycles since last Seams audit: 0 — reset by the 2026-09-18 audit,
 whose findings shipped as batch S. The cadence is every 4; next due at cycle 25.
 Updated: 2026-09-21

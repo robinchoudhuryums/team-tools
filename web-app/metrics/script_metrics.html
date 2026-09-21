@@ -390,6 +390,14 @@
 }
 .m-dual-spark .own-dot { fill: var(--accent); }
 .m-trends-note { font-size: 10px; color: var(--muted); margin-top: 6px; }
+/* A role="alert" saying a CDR tab could not be read, so the columns beside it
+   may be incomplete. It had no rule at all: it rendered as plain body text,
+   larger and flatter than the MUTED note above it, with none of the warn tone
+   this app gives every other degraded read (g02 / INV-175). 2026-09-21. */
+.m-vol-note {
+  font-size: 11px; color: var(--warning-deep); background: var(--warn-soft);
+  border-radius: var(--radius-sm); padding: 6px 9px; margin-top: 6px;
+}
 
 .m-rail {
   display: flex; flex-direction: column; gap: 6px;

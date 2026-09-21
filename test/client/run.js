@@ -24249,6 +24249,151 @@ test('D1: CLAUDE.md keeps a Cycle Workflow Config stub that redirects to .cycle/
   }
 });
 
+test('T6: every class in the markup has a CSS RULE — the grandfathered set only shrinks', () => {
+  // THE DEFECT, three times in one file before anyone counted:
+  //   .kb-ins-row    — no rule at all, for its whole life
+  //   .kbd-sec       — a rule that meant something ELSE (a flex heading bar),
+  //                    so the drawer's lookups laid out in a row, live for weeks
+  //   .modal-head /
+  //   .modal-x       — no rule, so a popover's title and close button stacked
+  // All three were found by READING a screenshot. None overflowed anything;
+  // none raised a console error. A class in the markup is a CLAIM that a rule
+  // exists for it, and nothing in the source distinguishes a missing rule from
+  // a deliberate choice (g140).
+  //
+  // So this pin does NOT judge intent. It is a RATCHET: today's set is named
+  // below with the reason each one is fine, and a NEW bare class fails. The
+  // list may only SHRINK — removing a name without writing a rule turns this
+  // red, which is what makes it a ratchet rather than a suppression file.
+
+  const WEB = path.join(__dirname, '../../web-app');
+  const htmlFiles = (function walk(d, out) {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p, out);
+      else if (e.name.endsWith('.html')) out.push(p);
+    }
+    return out;
+  })(WEB, []);
+
+  // ── DEFINED: every .class token in any selector, in any <style> block ────
+  const defined = new Set();
+  // ── HOOK: every class named in a JS selector string ─────────────────────
+  const hooks = new Set();
+  const addHooks = (src) => {
+    for (const m of src.matchAll(/['"`]([^'"`\n]*)['"`]/g)) {
+      const lit = m[1];
+      if (/[.[]/.test(lit)) for (const c of lit.match(/\.[A-Za-z_][A-Za-z0-9_-]*/g) || []) hooks.add(c.slice(1));
+      if (/^[A-Za-z0-9_ -]+$/.test(lit)) for (const c of lit.split(/\s+/)) if (c) hooks.add(c);
+    }
+  };
+  htmlFiles.forEach((f) => {
+    const src = fs.readFileSync(f, 'utf8');
+    for (const block of src.match(/<style[^>]*>[\s\S]*?<\/style>/g) || []) {
+      const css = block.replace(/\/\*[\s\S]*?\*\//g, '');
+      for (const sel of css.match(/[^{}]+(?=\{)/g) || [])
+        for (const c of sel.match(/\.[A-Za-z_][A-Za-z0-9_-]*/g) || []) defined.add(c.slice(1));
+    }
+    addHooks(src.replace(/<style[^>]*>[\s\S]*?<\/style>/g, ''));
+  });
+  // THE HARNESSES SELECT ON CLASSES TOO. Leaving this out called `agreed` a
+  // defect — a marker T4 added and the T4 DOM pin asserts against. Without it
+  // this pin would flag every new class a pin is written around.
+  ['../../test/client/dom/runDom.js', '../../test/visual/shoot.mjs'].forEach((rel) => {
+    const f = path.join(__dirname, rel);
+    if (fs.existsSync(f)) addHooks(fs.readFileSync(f, 'utf8'));
+  });
+
+  // ── USED: literal class="…" tokens, outside <style> ─────────────────────
+  const used = new Map();
+  htmlFiles.forEach((f) => {
+    const src = fs.readFileSync(f, 'utf8')
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/g, (s) => s.replace(/[^\n]/g, ' '));
+    src.split('\n').forEach((line, i) => {
+      for (const m of line.matchAll(/class="([^"]*)"/g)) {
+        // A value carrying a template break is BUILT — its tokens are variable
+        // names (`cls`, `extraClass`, `i`), not classes.
+        const dynamic = /'\s*\+|\+\s*'|\$\{|<\?/.test(m[1]);
+        for (const tok of m[1].split(/\s+/)) {
+          if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(tok)) continue;
+          if (!used.has(tok)) used.set(tok, { dynamic: false, where: path.basename(f) + ':' + (i + 1) });
+          if (dynamic) used.get(tok).dynamic = true;
+        }
+      }
+    });
+  });
+
+  // NON-VACUITY. A broken extractor silently passes everything below, which is
+  // the failure the batch-S pins were written against.
+  assert.ok(htmlFiles.length >= 15, 'the partial sweep found them — ' + htmlFiles.length);
+  assert.ok(defined.size >= 1500, 'the CSS extractor works — ' + defined.size + ' defined');
+  assert.ok(used.size >= 1500, 'the markup extractor works — ' + used.size + ' used');
+  assert.ok(hooks.has('modal') || hooks.has('overlay'), 'the hook extractor works');
+
+  // ── GRANDFATHERED, each with the reason it is fine ──────────────────────
+  // Audited one by one on 2026-09-21. Four groups, and the reason matters
+  // more than the name: it is what stops the next person re-auditing these.
+  const GRANDFATHERED = {
+    // THE DEFAULT MEMBER OF A STYLED SET — these NEED the class, to be the
+    // thing their siblings are distinguished from. A rule here would be empty.
+    'mh-emp': '.mh-num is centred and .mh-cov right-aligned; this is the left default',
+    'qa-det-right': '.qa-det-left is sticky; this is the plain column of the same grid',
+    'is-mut': '.cn-ob-chip is ALREADY muted; .is-ok/.is-warn override it, this is the default',
+    // INLINE STYLE CARRIES IT. cn-form-sub-modal appears with THREE different
+    // inline widths, so a single class rule would be actively wrong.
+    'cn-form-sub-modal': 'inline max-width, and it differs per call site',
+    'cn-timeline-modal': 'inline max-width',
+    'cn-partial-note': 'fully inline-styled',
+    'cn-admin-sla-row': 'inline gap/align/margin',
+    'cn-card-rel': 'inline colour + weight',
+    'qa-myrev-audio': 'inline margin',
+    'sp-toolbar-row': 'inline flex layout',
+    // THE HOOK IS AN ID OR DATA-ATTRIBUTE — the class is a dead marker.
+    'cn-oop-ins': 'selected by [data-oop-insert]',
+    'cn-ext-form-item-wrap': 'selected by [data-form-wrap]',
+    'mgr-adj-chk-all': 'selected by #mgr-adj-all',
+    'cn-dt-preview': 'selected by its id',
+    // PLAIN WRAPPER — the parent lays it out, or it needs no box of its own.
+    'modal-body': 'semantic wrapper; .modal supplies the padding',
+    'skel-wrap': '.skel-row supplies the spacing',
+    'kb-dec-body': 'aria group container',
+    'kb-dec-q': 'wrapper',
+    'kb-map-list': 'wrapper; its rows are styled',
+    'kb-map-rk-name': 'inline span',
+    'kb-ros-cov': 'wrapper',
+    'exp-result-link': 'a bare <a>; link styling is inherited',
+    'sp-resolved-when': 'inline span',
+    'pt-week': 'wrapper',
+    // g73 LIVES HERE: <tr class="mt-detail" hidden>. It works BECAUSE there is
+    // no rule — give .mt-detail a `display` and `hidden` loses to it.
+    'mt-detail': 'hidden-attribute row; a display rule here would BREAK it (g73)',
+    // VARIANT MARKER, renders as the base component. Stated honestly: these
+    // may be exactly right, or an intended variant nobody wrote. The code
+    // cannot say which, and neither can this pin.
+    'dr-mgr': 'variant marker on .dr-section; renders as the base — intent unverified',
+    'ny-card': 'variant marker on .dash-card; renders as the base — intent unverified',
+    'coach-drawer': 'variant marker on .modal.drawer; renders as the base — intent unverified',
+    'kb-gloss-search': 'variant marker on .kb-ros-search; renders as the base — intent unverified',
+  };
+
+  const bare = [...used.keys()]
+    .filter((c) => !defined.has(c) && !used.get(c).dynamic && !hooks.has(c))
+    .sort();
+
+  const unexpected = bare.filter((c) => !GRANDFATHERED[c]);
+  assert.deepStrictEqual(unexpected, [],
+    'NEW class(es) with no CSS rule: ' + unexpected.map((c) => c + ' (' + used.get(c).where + ')').join(', ') +
+    ' — write the rule, or add it to GRANDFATHERED with the REASON it needs none');
+
+  // THE RATCHET. A name may leave this list only by being fixed; leaving it
+  // while still bare makes the assert above red. This half catches the other
+  // direction — a name kept after its rule was written, which would quietly
+  // re-open the hole for the next class of that name.
+  const stale = Object.keys(GRANDFATHERED).filter((c) => !bare.includes(c));
+  assert.deepStrictEqual(stale, [],
+    'GRANDFATHERED names that are no longer bare — delete them: ' + stale.join(', '));
+});
+
 test('D2: the module map covers every TOOLS key, and every detail link resolves', () => {
   // The Projects section used to open with "Hosts **eight** tools today" beside
   // a hand-maintained bullet per module. It read "six" for a whole cycle after

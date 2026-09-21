@@ -19,6 +19,14 @@
     -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
   }
   button, input, select, textarea { font-family: inherit; font-size: inherit; }
+  /* The ONE global typographic utility. Fifteen elements across four partials
+     carried `class="… mono"` — usage-table figures, the scratchpad status,
+     dashboard card feet, a bare `class="mono"` on a page counter — and there
+     was no rule, so every one of them rendered in the UI font. The token had
+     existed all along (2026-09-21, found by the T6 sweep).
+     FAMILY ONLY: each site sets its own size and colour through the class
+     beside this one, and adding either here would override all fifteen. */
+  .mono { font-family: var(--mono); }
   /* Selection must be clearly visible — --selection-bg is a mid-strength
      accent tint (the old --accent-soft was invisible against field
      backgrounds). No color override: the translucent tint keeps each
