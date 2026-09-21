@@ -3427,6 +3427,15 @@ test('R DOM: both fields are named by a visible label bound to their own input �
 
 test('R DOM: the drawer mounts each lookup in its own container, NOT inside the .kbd-sec heading bar', () => {
   const h = boot();
+  // Seed the prefs so the REAL .kbd-sec headings (Bookmarks, Recent) render.
+  // Without them the drawer has no .kbd-sec at all and the sweep at the bottom
+  // of this test asserts over an empty set — checked: it reported NO BITE
+  // against a control injected into a heading, because there was no heading
+  // (g116, the vacuous-assertion direction).
+  h.window.localStorage.setItem(h.read('KB_PANEL_LS_KEY'), JSON.stringify({
+    bookmarks: [{ id: 'a1', title: 'OOP quoting rules' }],
+    recents: [{ id: 'a2', title: 'Delivery radius by warehouse' }],
+  }));
   bootLookups(h);
   const kbdBody = h.window.document.createElement('div');
   kbdBody.id = 'kbd-body';
@@ -3455,7 +3464,9 @@ test('R DOM: the drawer mounts each lookup in its own container, NOT inside the 
   });
 
   // .kbd-sec keeps its real job: the text-only headings, with items as SIBLINGS.
-  Array.from(kbdBody.querySelectorAll('.kbd-sec')).forEach((sec) => {
+  const secs = Array.from(kbdBody.querySelectorAll('.kbd-sec'));
+  assert.ok(secs.length >= 2, 'the real headings rendered, so the sweep below is not vacuous — ' + secs.length);
+  secs.forEach((sec) => {
     assert.strictEqual(sec.querySelector('input'), null,
       '.kbd-sec carries a label, never a control — found one inside: ' + sec.textContent.slice(0, 40));
   });
