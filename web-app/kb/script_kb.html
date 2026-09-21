@@ -253,11 +253,17 @@
      Wraps rather than scrolls — it sits inside a card that is already narrow in
      the drawer, and a strip that pushes its own row sideways takes the page
      with it (g71). */
-  .kb-oop-xref { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin-top: 7px; padding-top: 6px; border-top: 1px dashed var(--line); font-size: .74rem; }
+  /* A COLUMN of rows, each row payor-left / rule-right — the .kb-ins-cell shape,
+     because it is the same kind of line and a rep should not have to learn two.
+     As a wrapping inline row (the first attempt) a long payor name — and they
+     are long: "AETNA NETWORK GOLD S Plan Number 000001-EXTX0107" — squeezed its
+     rule into a narrow right column and wrapped it twice. Seen in a shot; no
+     measurement would have said anything, since it never overflowed. */
+  .kb-oop-xref { display: flex; flex-direction: column; gap: 3px; margin-top: 7px; padding-top: 6px; border-top: 1px dashed var(--line); font-size: .74rem; }
   .kb-oop-xref-lbl { font-family: var(--mono); font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted-2); }
-  .kb-oop-xref-r { display: inline-flex; align-items: baseline; gap: 5px; min-width: 0; }
-  .kb-oop-xref-r .p { color: var(--muted); overflow-wrap: anywhere; }
-  .kb-oop-xref-v { font-weight: 600; color: var(--ink); }
+  .kb-oop-xref-r { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; min-width: 0; }
+  .kb-oop-xref-r .p { color: var(--muted); overflow-wrap: anywhere; min-width: 0; }
+  .kb-oop-xref-v { font-weight: 600; color: var(--ink); text-align: right; flex-shrink: 0; max-width: 60%; }
   .kb-oop-xref-v.good { color: var(--success-deep); }
   .kb-oop-xref-v.bad { color: var(--danger-deep); }
   .kb-oop-xref-v.warn { color: var(--warning-deep); }

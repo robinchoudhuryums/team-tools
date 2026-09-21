@@ -44,6 +44,26 @@ const MOBILE = { width: 390, height: 844 };
 const KBD_SEARCH = "kbDrawerOpen_(); setTimeout(function(){ var a=document.getElementById('kb-ins-input-d'); if(a){a.value='aetna'; insLookupInput_(a);} var b=document.getElementById('kb-oop-item-d'); var c=document.getElementById('kb-oop-addr-d'); if(b&&c){b.value='scout'; c.value='75038'; oopLookupInput_(c);} }, 10)";
 const KBL_SEARCH = "var a=document.getElementById('kb-ins-input'); if(a){a.value='aetna'; insLookupInput_(a);} var b=document.getElementById('kb-oop-item'); var c=document.getElementById('kb-oop-addr'); if(b&&c){b.value='scout'; c.value='75038'; oopLookupInput_(c);}";
 
+// The acceptance-by-code grid is behind a disclosure, so the codes T3 NAMES
+// were never in a shot. This polls for the button rather than guessing a delay:
+// the results arrive on a 350ms debounce and the shooter waits 1000ms, so a
+// fixed timeout that drifted either way would photograph a closed panel.
+const KBL_CODES = KBL_SEARCH +
+  "; (function tick(n){ var b=document.querySelector('#kb-ins-results .kb-ins-det-btn');" +
+  " if(b){ insToggleLegend_(b); return; } if(n>0) setTimeout(function(){tick(n-1);}, 50); })(16)";
+
+// The DRAWER's cross-reference sits under the item row, below the fold at
+// ~340px. That width is exactly where T1/T2's defects lived, so it is shot
+// rather than reasoned about: scroll the drawer body once the results land.
+// Scrolls whatever inside the drawer actually scrolls, rather than naming a
+// container — the first attempt named #kbd-body, which is not the scroller, and
+// produced a shot identical to the un-scrolled one. A hook that silently does
+// nothing photographs the wrong thing and reports 0px overflow either way.
+const KBD_XREF = KBD_SEARCH.replace('}, 10)',
+  " setTimeout(function(){ var root=document.getElementById('kb-drawer')||document.body;" +
+  " Array.prototype.forEach.call(root.querySelectorAll('*'), function(el){" +
+  " if (el.scrollHeight > el.clientHeight + 4) el.scrollTop = el.scrollHeight; }); }, 750); }, 10)");
+
 const SCENARIOS = [
   ['clock-light-wide',      { tool: 'timeClock', tab: 'clock' },      WIDE, 'light', ''],
   ['clock-dark-wide',       { tool: 'timeClock', tab: 'clock' },      WIDE, 'dark',  ''],
@@ -244,6 +264,12 @@ const SCENARIOS = [
   ['reference-drawer-light-compact',{ tool: 'reference', tab: null }, COMPACT, 'light', '?compact=1', KBD_SEARCH],
   ['reference-results-light-wide',  { tool: 'reference', tab: null }, WIDE,    'light', '',           KBL_SEARCH],
   ['reference-results-dark-wide',   { tool: 'reference', tab: null }, WIDE,    'dark',  '',           KBL_SEARCH],
+  // T3 — the join, both directions in one frame: the payor's code columns
+  // NAMED (and the three states that are not a name), and the item row's
+  // cross-reference to the payor on screen.
+  ['reference-codes-light-wide',    { tool: 'reference', tab: null }, WIDE,    'light', '',           KBL_CODES],
+  ['reference-codes-dark-wide',     { tool: 'reference', tab: null }, WIDE,    'dark',  '',           KBL_CODES],
+  ['reference-drawer-xref-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',            KBD_XREF],
 
   // Admin lands on OVERVIEW, so the CONFIG pane — where the operator-facing
   // editors live, incl. the 2026-08-25 Reference data-table upload — had no

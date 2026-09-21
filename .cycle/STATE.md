@@ -23,7 +23,7 @@ Updated: 2026-09-21
   from `main` afterwards, per the merged-PR rule. **Still needs one
   `clasp push -f` + New-version deploy**, then S64 and S112.
 - A FOUR-BATCH plan (T1–T4) for the Reference lookups was agreed with the
-  operator on 2026-09-21. T1 and T2 shipped; **T3 is in flight**; T4 is
+  operator on 2026-09-21. T1, T2 and T3 are all DONE and pushed; T4 is
   unstarted. Summarised under "Pending".
 
 ## Completed this cycle
@@ -32,17 +32,26 @@ Updated: 2026-09-21
   and `21-a-reflect.md`. Nothing has been completed against a NEW cycle.)
 
 ## Pending / not yet done
-- **PR #264** — merge, deploy, then walk S112 and S73.
+- **The deploy** — ONE `clasp push -f` + New-version covers T1, T2 and T3;
+  then walk S64 (six new T3 steps), S112 and S73.
 - ~~T1~~ and ~~T2~~ are DONE — block `21post-T1-T2-broad-implement.md`, net
-  2 − 0. Not deployed. The tone/explanation guarantee is held by a PIN rather
+  2 − 0. The tone/explanation guarantee is held by a PIN rather
   than by one shared matcher: `insToneCls_` was left alone deliberately, since
   rewriting a classifier that colours a compliance-adjacent field to share code
   with a tooltip trades a real guarantee for a tidy one.
+- ~~T3~~ is DONE — block `21post-T3-broad-implement.md`, net 0 − 0 (1
+  capability, 2 defensive; nothing here was broken). **Not deployed** — T1, T2
+  and T3 all ship in ONE `clasp push -f` + New-version. **INV-233 written**
+  (ambiguity refused as a SHAPE: `hcpcsParse_` fills `tokens` only on the
+  certain path, so no consumer can assert from an uncertain parse). Eleven
+  bite-checks, all BITE, and `scripts/bite.sh --dom` now drives the DOM harness
+  — the follow-on that caused g65's fifth firing is closed.
 - **Operator question raised by T2:** FOUR toned acceptance values have no
   definition on file — `OON`, `Plan Specific`, `OUT-OF-NETWORK`, `MDX Hawaii`.
   A rep sees a coloured pill and cannot learn why. The pin names them; the fix
   is operator text.
-- **T3 (L, ~1 day)** — the payor × item JOIN. Payor `details` are keyed by the
+- **T3 was estimated L (~8 h) and took ~4 h.** For the record, the original
+  scope note: the payor × item JOIN. Payor `details` are keyed by the
   sheet's column headers, which are HCPCS codes; OOP rows carry `code`. NOTE
   the correction this rests on: the batch-R plan said panel 1 had no join key
   to items, which was wrong. The key is the code. **Safety rule:** one
@@ -89,14 +98,26 @@ Updated: 2026-09-21
   whose value is that its claims are true.
 
 ## Where I left off
-T1 and T2 are done and pushed. The tree is clean; every harness is green and the
-Reference shots were read, not just measured.
+T1, T2 and T3 are done. PR #264 merged 2026-09-21 (`2487fd1`); the branch was
+restarted from `main` and carries T3. Every harness is green, the counts block
+agrees, and the Reference shots were READ — the cross-reference's first layout
+passed every measurement and was unreadable.
 
-**PR #264 is still open and now carries the cycle-21 close-out, T1 and T2 as
-well** — its title and body describe only the original drawer/card fixes and
-need updating before it merges, or it should be split. Decide that first.
+**Next: ONE deploy** (`clasp push -f` + New-version) covering T1 + T2 + T3,
+then walk S64 — it now carries six T3 steps, including renaming the
+`OopPricing` tab to see the degraded-join banner — and S112.
 
-Then: deploy, walk S64 (updated with the T1/T2 steps) and S112, and put the
-four undefined acceptance values to the operator. T3 (the payor × item join)
-and T4 (keyboard, copy, verdict collapse) are unstarted; T3 carries the safety
-rule about never asserting coverage from an unparseable code.
+**`/sync-docs` is owed and has grown.** Four files: `docs/modules.md` (the
+split landing, the term popover, AND the join), `docs/gotchas.md` + the
+CLAUDE.md index (the drawer `.kbd-sec` defect and T1's re-render class, both
+still unwritten), `docs/operator-state.md` (`InsurancePayors` has no entry of
+its own, and T3 makes its column HEADERS load-bearing — they are the join key)
+and `docs/test-harness-log.md`.
+
+**Two questions for the operator**, both now blocking nothing: the four
+undefined acceptance values, and how many `OopPricing` codes use the
+`K0821/23/16` shorthand — every one of those is a code the join declines, and
+splitting them into whole codes needs no code change.
+
+T4 is unstarted; its verdict-collapse changes a documented decision
+(ELIG / INV-209) and needs that entry rewritten, not just the code.
