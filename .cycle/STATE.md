@@ -4,10 +4,12 @@
 Cycle: 21 — CLOSED 2026-09-21 (batch R deployed and operator-confirmed; batch S
 needed no deploy; reflected net +1; the whole block is in `.cycle/HISTORY.md`).
 **No cycle is open.** The next `/audit` or `/broad-scan` opens cycle 22.
-Phase: idle
+Phase: implement (between-cycles operator work — T1 + T2)
 Scope: —
 Test Command: manual
-Estimates: — (written per batch, BEFORE the first edit, once a cycle opens)
+Estimates: T1 (landing re-render + pill + meta chips): S (~2 h) · T2 (legend
+popover + per-value terms): M (~3 h) — both written BEFORE the first edit.
+Between-cycles operator work, the 19pre pattern; no cycle is open.
 Subsystem cycles since last Seams audit: 0 — reset by the 2026-09-18 audit,
 whose findings shipped as batch S. The cadence is every 4; next due at cycle 25.
 Updated: 2026-09-21

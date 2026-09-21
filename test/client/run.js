@@ -13868,6 +13868,93 @@ test('ELIG: the client shows both verdicts with three distinct states, and the c
 // PICK-UP total — so the DELIVERY surface was quoting the collect-in-person
 // price. These pins hold the merge that makes the divergence unrepresentable.
 
+test('T2: a value the panel COLOURS is a value it can EXPLAIN — the tone and the vocabulary agree', () => {
+  const sb = { String: String, RegExp: RegExp, Array: Array };
+  vm.createContext(sb);
+  const cli = extractScript('kb/script_kb.html');
+  vm.runInContext(cli.match(/var INS_TERMS = \[[\s\S]*?\n\];/)[0], sb, { filename: 'INS_TERMS' });
+  vm.runInContext(extractFunction('kb/script_kb.html', 'insTermsIn_'), sb, { filename: 'insTermsIn_' });
+  vm.runInContext(extractFunction('kb/script_kb.html', 'insToneCls_'), sb, { filename: 'insToneCls_' });
+
+  // The operator's real acceptance values, from the payor sheet.
+  const REAL = ['X', 'x', 'YES', 'NO', 'no', 'Accepted', 'Not Accepted', 'In-Network',
+    'Location-based ( Up To 285) & SI/PR', 'Location-based ( 285-325 lb) SI/PR',
+    'Location-based', 'SI/PR', 'PR', 'TRY', 'A & B'];
+  // Toned, but the vocabulary has no definition for them. NAMED, not skipped:
+  // each is an amber or blue pill a rep cannot learn the meaning of, and the
+  // fix is operator text, not code. Dropping them from the table silently
+  // would hide that.
+  const UNDEFINED_BY_OPERATOR = ['OON', 'Plan Specific', 'OUT-OF-NETWORK', 'MDX Hawaii'];
+
+  REAL.forEach((v) => {
+    const tone = sb.insToneCls_(v);
+    const terms = sb.insTermsIn_(v);
+    assert.ok(tone, JSON.stringify(v) + ' is toned');
+    assert.ok(terms.length, JSON.stringify(v) + ' is toned but NOTHING explains it — a rep sees a ' +
+      'coloured pill with no way to learn why');
+  });
+
+  // The FIRST term found is the one that decided the colour, because the list
+  // is ordered to mirror the tone cascade. A value carrying both a refusal and
+  // a caveat is a refusal, and must explain itself as one.
+  assert.strictEqual(sb.insTermsIn_('Not Accepted (location-based)')[0].term, 'Not Accepted / NO',
+    'a refusal explains itself as a refusal, not as the caveat beside it');
+  assert.strictEqual(sb.insToneCls_('Not Accepted (location-based)'), 'bad', 'and is toned as one');
+
+  // The combined value resolves to ALL of its rules, not the first one. A
+  // single explanation for "Location-based ( Up To 285) & SI/PR" would be a
+  // partial answer to a question about a combined rule.
+  // JSON round-trip: the array comes from the vm sandbox, so its prototype is
+  // the SANDBOX's Array.prototype and deepStrictEqual fails on two arrays that
+  // print identically (g116, second direction — it bit here).
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(sb.insTermsIn_('Location-based ( Up To 285) & SI/PR').map((t) => t.term))),
+    ['SI/PR', 'Location-based', 'A & B (combined)'],
+    'every rule in a combined value is explained');
+
+  UNDEFINED_BY_OPERATOR.forEach((v) => {
+    assert.strictEqual(sb.insTermsIn_(v).length, 0,
+      JSON.stringify(v) + ' is still undefined — if the operator has supplied text for it, move it ' +
+      'into REAL rather than leaving it listed as a known gap');
+  });
+
+  // The legend is DERIVED from the term list, so the glossary and the
+  // per-value explanations cannot drift into saying different things.
+  const leg = cli.match(/var INS_LEGEND = [^;]+;/)[0];
+  assert.ok(/INS_TERMS\.map/.test(leg),
+    'INS_LEGEND is derived from INS_TERMS — a second hand-written copy is how a tooltip ' +
+    'and a glossary come to disagree about one term');
+  assert.ok(!/var INS_LEGEND = \[/.test(cli), 'and no literal legend array survives');
+});
+
+test('T2: the legend is a TETHERED popover through the overlay hooks, and the per-code disclosure stays inline', () => {
+  const cli = extractScript('kb/script_kb.html');
+  const sec = extractFunction('kb/script_kb.html', 'insLookupSecHtml_');
+  // No `hidden` <dl> in the section any more: inline, it pushed the results
+  // down, and in the ~340px drawer the glossary is longer than the answer.
+  assert.ok(!/kb-ins-legend/.test(sec), 'the section emits no inline legend');
+  assert.ok(/insLegendClick_\(this\)/.test(sec), 'its button opens the popover');
+
+  const show = extractFunction('kb/script_kb.html', 'insShowTerms_');
+  assert.ok(/ensureOverlay\(/.test(show), 'it opens through ensureOverlay, never by classList (g100)');
+  assert.ok(/extraClass: 'hover-mode'/.test(show),
+    "hover-mode rides extraClass — ensureOverlay REWRITES className, which is how the day " +
+    'popover lost its own hover-mode (g134)');
+  assert.ok(/labelledBy|label:/.test(show), 'and the dialog is NAMED, not announced as a bare "dialog"');
+  assert.ok(/kbTetherPopover_\(/.test(show), 'and it is tethered to its anchor');
+
+  // The per-payor code grid is per-RESULT detail and stays inline.
+  const toggle = extractFunction('kb/script_kb.html', 'insToggleLegend_');
+  assert.ok(/aria-expanded/.test(toggle), 'the code disclosure still toggles in place');
+  assert.ok(!/ensureOverlay/.test(toggle), 'and does NOT open a popover — it belongs beside its row');
+
+  // The value is read from its own TEXT, never a data-* attribute: an
+  // attribute round-trips DECODED (g49).
+  const click = extractFunction('kb/script_kb.html', 'insTermClick_');
+  assert.ok(/textContent/.test(click) && !/getAttribute|dataset/.test(click),
+    'the term is read from the element text, not a data-* round trip (g49)');
+});
+
 test('R-1: checkOopEligibility ships EVERY field oopRowObj_ produces — the field list is DERIVED from oopRowObj_, so a new column cannot be added there and silently dropped here', () => {
   const rowObj = extractRawFunction('Code.js', 'oopRowObj_');
   const init = /const out = \{([\s\S]*?)\};/.exec(rowObj);
