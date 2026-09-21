@@ -24280,12 +24280,21 @@ test('T6: every class in the markup has a CSS RULE — the grandfathered set onl
   const defined = new Set();
   // ── HOOK: every class named in a JS selector string ─────────────────────
   const hooks = new Set();
+  // A hook is a class the code SELECTS ON. Three sources, each matched on the
+  // CALL rather than on the string, which is the whole lesson here — see the
+  // probe below for what the first draft did instead.
   const addHooks = (src) => {
+    // 1. selector literals: '.foo', '.a .b', '[data-x] .c'
     for (const m of src.matchAll(/['"`]([^'"`\n]*)['"`]/g)) {
-      const lit = m[1];
-      if (/[.[]/.test(lit)) for (const c of lit.match(/\.[A-Za-z_][A-Za-z0-9_-]*/g) || []) hooks.add(c.slice(1));
-      if (/^[A-Za-z0-9_ -]+$/.test(lit)) for (const c of lit.split(/\s+/)) if (c) hooks.add(c);
+      if (/[.[]/.test(m[1])) for (const c of m[1].match(/\.[A-Za-z_][A-Za-z0-9_-]*/g) || []) hooks.add(c.slice(1));
     }
+    // 2. classList.add/remove/toggle/contains/replace('a b')
+    for (const m of src.matchAll(/classList\s*\.\s*(?:add|remove|toggle|contains|replace)\s*\(([^)]*)\)/g))
+      for (const q of m[1].matchAll(/['"`]([A-Za-z0-9_ -]+)['"`]/g))
+        for (const c of q[1].split(/\s+/)) if (c) hooks.add(c);
+    // 3. className = 'a b'
+    for (const m of src.matchAll(/className\s*\+?=\s*['"`]([A-Za-z0-9_ -]+)['"`]/g))
+      for (const c of m[1].split(/\s+/)) if (c) hooks.add(c);
   };
   htmlFiles.forEach((f) => {
     const src = fs.readFileSync(f, 'utf8');
@@ -24329,6 +24338,26 @@ test('T6: every class in the markup has a CSS RULE — the grandfathered set onl
   assert.ok(defined.size >= 1500, 'the CSS extractor works — ' + defined.size + ' defined');
   assert.ok(used.size >= 1500, 'the markup extractor works — ' + used.size + ' used');
   assert.ok(hooks.has('modal') || hooks.has('overlay'), 'the hook extractor works');
+
+  // THE GUARD THAT WOULD HAVE CAUGHT THE FIRST DRAFT, and the reason it exists.
+  // That draft also treated any plain quoted word as a hook — meant for
+  // `classList.add('foo')`. But this app builds its markup in JS, so every
+  // `class="a b"` IS a quoted string: the branch swallowed ~3,500 tokens,
+  // i.e. nearly every class in the app, and the pin passed its first run while
+  // checking almost nothing. `.mono` — fifteen elements with no rule — sailed
+  // straight through it, and the non-vacuity check above PASSED BECAUSE OF the
+  // over-capture, which is g116 exactly.
+  //
+  // So the extractor is DRIVEN over a synthetic snippet whose only content is
+  // a class attribute. Nothing in it is selected on, so nothing may be a hook.
+  const probe = hooks.size;
+  addHooks('<div class="t6probeaaa t6probebbb">x</div>');
+  assert.strictEqual(hooks.size, probe,
+    'a class ATTRIBUTE is not a selector — the hook extractor must not harvest class="a b", ' +
+    'or it masks nearly every class in the app');
+  assert.ok(hooks.size < defined.size,
+    'more hooks than defined classes means the extractor is over-capturing again — ' +
+    hooks.size + ' vs ' + defined.size);
 
   // ── GRANDFATHERED, each with the reason it is fine ──────────────────────
   // Audited one by one on 2026-09-21. Four groups, and the reason matters
@@ -24374,6 +24403,13 @@ test('T6: every class in the markup has a CSS RULE — the grandfathered set onl
     'ny-card': 'variant marker on .dash-card; renders as the base — intent unverified',
     'coach-drawer': 'variant marker on .modal.drawer; renders as the base — intent unverified',
     'kb-gloss-search': 'variant marker on .kb-ros-search; renders as the base — intent unverified',
+    'sp-autoassign': 'selected by #sp-autoassign',
+    'dash-greet-text': 'flex child of .dash-greet-bar, which lays it out',
+    'mgr-sum-item': 'wrapper span; .mgr-sum-state inside it carries the tone',
+    // `.v` is defined ONLY as a descendant (`.kb-ins-cell .v`), so this pin
+    // counts it globally defined and its partner `num` lands here alone.
+    // Both are plain spans in a leave tile the parent lays out.
+    'num': 'plain span in a .v-row the parent lays out',
   };
 
   const bare = [...used.keys()]
