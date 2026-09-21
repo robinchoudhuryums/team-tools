@@ -1817,3 +1817,79 @@ plan budgeted for were already written, in the other phrasing.
 their proof lives — churn, not rigour. Deliberately-vacant numbers
 (INV-163/164, claimed by a reflection whose proposals were lost and left
 unreused so the metrics note stays traceable) are exempt by shape, not by name.
+
+## T1–T5, the between-cycles Reference round (2026-09-21)
+
+**`scripts/bite.sh --dom`.** Bite-checking a DOM pin used to mean hand-rolling
+the mutate → run → `git checkout` loop in a shell one-liner. The one time that
+was done, the hand-rolled version had no dirty-file guard and discarded an
+uncommitted fix — g65's FIFTH firing, logged then as a follow-on rather than
+fixed. `--dom` picks the harness; every guard the tool already had (dirty file,
+double quotes in the mutation, the no-op check, `--fn` scoping, the diff on a
+NO BITE, the herestring instead of a pipe) now covers both, and the verdict
+names which harness ran so a NO BITE cannot be read against the wrong one.
+Twenty-one of this round's thirty-two bite-checks were DOM ones.
+
+**Two jsdom limits these pins had to state around, rather than assert through.**
+Both matter because the alternative is a pin that asserts the harness:
+
+- **Inline `onclick` attributes are not evaluated.** `el.click()` does not run
+  them, so a pin cannot open the term popover by clicking its button. The pins
+  assert the wiring (`getAttribute('onclick')`) and then drive the handler
+  directly — two assertions where one would have looked sufficient and proved
+  nothing. The T4 keyboard pin does the same for Enter: it spies on the primary
+  control's `click`, and says in the comment that what the disclosure DOES when
+  clicked is the T2 pins' business.
+- **`navigator.clipboard` is read-only.** Stubbing it needs
+  `Object.defineProperty(..., { configurable: true, writable: true })`; a plain
+  assignment throws.
+
+**Three NO BITEs in T4, and every one was a real gap.** The pattern in all
+three is the same and worth naming: *the pin READ the source where it should
+have DRIVEN the function.*
+
+1. `eligVerdictsAgree_` — the pin asserted the source mentions `.why`, so a
+   mutation making the why-comparison compare verdicts sailed through. No
+   fixture anywhere had two verdicts matching on verdict and `near` but
+   differing in REASON, which is a real case (insurance yes because the address
+   is inside the radius, out of pocket yes because the state limit does not
+   apply) and collapsing it would print one reason as covering both.
+2. The scalar price fallback — same shape. Asserting `m.price` appears in the
+   source left a mutation that made the branch unreachable green, because
+   nothing ever put a scalar-only payload through it. That payload is what an
+   older deployment answers a newer client with, i.e. what every already-open
+   tab gets during a New Version deploy.
+3. `oopPriceHtml_`'s `idx == null` guard could not be made to fail at all — its
+   one caller always passes an index. Dead defensive code, DELETED rather than
+   dressed up (g138), with the refusal path that already covered it left to do
+   the job.
+
+**A NO BITE in T3 that was NOT a gap, and what was done about it anyway.** The
+client's `certain` guard in `oopPayorRulesFor_` could not be made to fail,
+because `hcpcsParse_` structurally cannot emit tokens without certainty. That
+made it untested defence — unreachable defence is not the same as safe
+defence — so the pin now hands the client a payload the server *cannot*
+produce (`certain: false` WITH matching tokens) and asserts it still refuses.
+
+**The hand-list that was wrong before it was written.** T5's survey of copy
+call sites said five, from a note made one batch earlier; a grep found SEVEN.
+So the T5 pin sweeps every partial for `navigator.clipboard` /
+`execCommand('copy')` and exempts by NAME with the reason beside each, rather
+than listing the callers. This is g116's sixth direction turning up in the same
+session that documented it.
+
+**Fixtures that carry one of each.** The ELIG DOM fixture already held one
+disagreeing verdict pair among three agreeing ones, which is why T4's collapse
+could be pinned on both branches without inventing data. The T3 payor fixture
+was built the same way on purpose: one code that names an item, one the pricing
+tab lacks, one two rows carry, the shorthand, and a column that is not a code —
+every branch of `insCodeItemHtml_` in one result, so a pin over it is never
+accidentally exercising only the easy one.
+
+**What the numbers could not see, three times.** Every visual scenario in this
+round reported 0px overflow and no console errors while showing something
+wrong: the payor cross-reference squeezing a long payor name's rule into a
+twice-wrapped column; the manual-copy failover's close button stacked below its
+title because `.modal-head` had no CSS rule at all; and that failover's field
+scrolled to its END, so the rep saw the tail of a price line instead of the
+price. All three were found by READING the shot.

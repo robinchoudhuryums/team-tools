@@ -368,8 +368,46 @@ not restate it. Server endpoints live in the fourteen server files
      recorded", and a no-match renders the operator's own plan-not-listed
      → TRY guidance. `insToneCls_` maps the acceptance legend to tones
      (accepted/in-network good; TRY info; location/SI/PR/plan-specific
-     warn; not-accepted/OON bad) and a legend disclosure spells out the
-     operator's definitions. The rep's QUERY is never persisted (the
+     warn; not-accepted/OON bad). The rep's QUERY is never persisted (the
+     kbMapDistances posture).
+
+     **The acceptance vocabulary explains itself (T2, 2026-09-21).** `INS_TERMS`
+     is the ONE source for the legend, for the per-value explanations, and — by
+     pin — for agreement with the tone. Each acceptance VALUE the vocabulary
+     knows is a real button with a dotted underline that opens a tethered
+     popover; a value nobody has defined stays inert text and SAYS there is no
+     definition on file, so a button never promises an answer there isn't one
+     for. A COMBINED value explains every rule in it (`Location-based ( Up To
+     285) & SI/PR` → Location-based, SI/PR, and the "A & B" rule), because one
+     explanation for a combined rule is a partial answer. The legend was an
+     inline disclosure until then, which in the ~340px drawer meant a glossary
+     longer than the answer it interrupted. `insToneCls_` was deliberately NOT
+     rewritten to share code with the tooltip: it colours a compliance-adjacent
+     field, and trading a real guarantee for a tidy one is a bad trade — the
+     agreement between tone and explanation is held by a pin instead.
+     **FOUR toned values still have no operator definition** (`OON`,
+     `Plan Specific`, `OUT-OF-NETWORK`, `MDX Hawaii`); the pin names them
+     rather than skipping them, and the fix is operator text.
+
+     **The payor × item JOIN (T3, 2026-09-21).** The payor sheet's per-code
+     columns are HCPCS codes (`K0800`, `K0801`) and the pricing tab's code cell
+     is the same vocabulary — the only key the two operator tables share. A
+     payor column is now NAMED from the pricing tab, so `K0802 — Not Accepted`
+     stops being a rule about an item the rep cannot identify. ONE tokenizer
+     (`hcpcsParse_`, server-side) parses it, and it fills `tokens` **only on
+     the certain path**, so no consumer can assert coverage from an uncertain
+     parse — there is nothing there to assert from. That matters for the
+     shorthand the operator really writes: `K0821/23/16` refuses as a whole
+     string rather than yielding the readable leading code, because keeping it
+     would answer a question about three items with one, silently. Ambiguity
+     refuses the same way on both sides: a code two rows carry names NEITHER
+     and says how many; a code the pricing tab simply lacks is left unannotated,
+     because that is a fact about the pricing tab, not a failure. The client
+     never parses a code — it joins on the server's tokens, so the rule has one
+     home and no mirror to drift. The join is best-effort and its ABSENCE is
+     reassuring, so the payload NAMES whether it was attempted
+     (`codeJoin.attempted`): bare unnamed codes look exactly like a payor sheet
+     whose columns were never codes. INV-233.
      kbMapDistances posture).
      **OOP price + area eligibility (operator 2026-09-16; MERGED into ONE panel
      2026-09-18):** one more card on the SAME two surfaces, over two more
@@ -437,6 +475,31 @@ not restate it. Server endpoints live in the fourteen server files
      g50 triggers, while the field pair inside it sizes off its own container,
      because the drawer's width is described by neither the viewport nor
      `data-compact`.
+     **2026-09-21 (T1 + T2 + T4 — the legibility round, after the operator
+     walked the deployed panels).** The landing's renderer owned too much: it
+     rebuilt the whole surface, and three manager-only loaders called it on
+     completion, so a manager who started typing an address lost it 0.5–3s
+     later (g141). The band now renders ONCE and survives as NODES — restoring
+     the values would have left the caret and focus somewhere else. A payor's
+     status pill got ONE look per meaning: a cell literally reading `status not
+     recorded` used to get the uppercase toned pill while a BLANK cell got the
+     lowercase neutral one, side by side in one list. The OOP meta line became
+     chips, because it mixes a billing code, a date, a delivery rule, money and
+     colour options and one `·`-joined sentence made every one equally hard to
+     find.
+     **T4** added a keyboard walk (↓ from a field enters the results, arrows
+     move, Enter opens the row's primary control, Esc returns; off the top
+     returns to the field, off the bottom stays put rather than wrapping) and a
+     per-column **copy** button. The copy yields the FIGURE and deliberately
+     not a quote-shaped line: the composer's picker inserts a line the SEND
+     rebuilds from the live sheet and refuses if it moved (INV-208), while a
+     line pasted from here would never be recorded as a quote and so never
+     re-verified — it would sit in a customer's email looking exactly like one
+     that was. T4 also collapsed the eligibility pair when the two verdicts
+     AGREE, which AMENDS INV-209: the row collapses, the claim does not (the
+     single row is labelled "Through insurance or out of pocket"), and a
+     disagreement still renders as two labelled rows — so the disagreement is
+     now the one that catches the eye, which is the case the pair exists for.
      **File ingest (operator 2026-08-25) — two paths, because they answer
      different questions.** (a) **Editor file-drop** (`kbIngestFile`, admin-gated,
      READ-ONLY w.r.t. the KB sheet, review-before-save like the converters):

@@ -1851,12 +1851,53 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
 
 <a id="g76-clipboard-api-often-fails-in-htmlservice-iframes"></a>
 
-- **Clipboard API often fails in HtmlService iframes.** The auto-copy
-  feature tries `navigator.clipboard.writeText` first and falls back
-  to a `<textarea>` + `document.execCommand('copy')` shim
-  (`cnFallbackCopy_`). Both fire from the Ctrl/⌘+Enter user gesture so
-  permissions are usually granted, but never assume one path alone
-  works.
+- **Clipboard API often fails in HtmlService iframes — and a copy helper that
+  cannot report failure is one that LIES (2026-09-21).** Copying goes through
+  `navigator.clipboard.writeText` first and falls back to a `<textarea>` +
+  `document.execCommand('copy')` shim. Both fire from the user gesture so
+  permissions are usually granted, but never assume one path alone works.
+
+  **The second half of this rule cost far more than the first.** Until
+  2026-09-21 this app had SEVEN text-copy call sites across five partials, each
+  with its own hand-written helper, and every one of them ran its success path
+  unconditionally. Two reasons, both invisible in a code read:
+
+  - `document.execCommand('copy')` **returns `false`** when denied. It does not
+    throw — so the `try/catch` four of them had caught nothing, and the
+    success branch ran anyway.
+  - `navigator.clipboard.writeText` returns a promise that **rejects** when the
+    permission is refused. One site (`kbRosterCopy_`) attached no handler at
+    all, and flashed "copied" on the next line.
+
+  What that costs is not a button that lied. The rep pastes and gets whatever
+  was on the clipboard **before**. On the Call Notes save path — automatic,
+  unwatched, and followed seconds later by a paste into the CRM — that is the
+  PREVIOUS patient's note. On the Reference price panel it is a stale figure
+  read to a customer. Neither surface shows anything wrong.
+
+  **The fix is not "more fallbacks", it is one success path nobody else owns.**
+  `copyText_` (in `script_core.html`) reports the outcome; `manualCopyModal_`
+  shows the text pre-selected and says plainly that nothing was copied;
+  `copyWithFeedback_` owns the success branch, so a call site **cannot express
+  "copied" independently of it**. Six hand-written success paths were the
+  defect; six hand-written fallbacks were only the symptom.
+
+  Two cross-partial reaches went with it: Metrics and Reference both called
+  Call Notes' fallback through a `typeof` guard, and that fallback was the one
+  that swallowed failure outright — so reaching for it made them less honest,
+  not more.
+
+  **The pin DERIVES.** A hand-list of call sites is only as good as the day it
+  was written: the survey that opened this work said five sites, and a grep
+  found seven (g116's sixth direction). So the net sweeps every partial for
+  `navigator.clipboard` / `execCommand('copy')` and exempts by NAME with the
+  reason beside each — today `copyText_` itself, and `intakeCopyImage_`, which
+  copies image BYTES via `ClipboardItem` and already degrades visibly by
+  opening the image in a tab.
+
+  Verify: the T5-1 pin (the derived sweep plus its non-vacuity checks), the T4
+  and T5 DOM pins driving a denied `execCommand` and a rejected `writeText`,
+  bite-checked eight ways.
 
 <a id="g77-showtoast-msg-type-normalizes-the-variant-pass"></a>
 
@@ -3599,3 +3640,69 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   operator ran the full suite three days later. The integration tier had never
   run against the deployed project, which is the same gap that let F-01's red pin
   count as green. A test that has not run is a hypothesis.
+
+<a id="g140-a-class-in-the-markup-is-a-claim"></a>
+
+- **A class in the markup is a CLAIM that a rule exists for it — and a class
+  whose rule means something ELSE is the same defect wearing a hat.** Fired
+  twice in three batches, in one file, and neither instance overflowed anything
+  or raised a console error. Both were found by READING a screenshot.
+
+  **Instance one (`0743f07` → fixed in PR #264, live for weeks).** The
+  Ctrl/⌘+K drawer wrapped both lookup sections in `.kbd-sec`. That class is a
+  HEADING BAR — mono, 10px, uppercase, `display: flex` — built for the
+  one-word labels ("Bookmarks", "Recent") that sit ABOVE a list of siblings. So
+  the heading, the inputs and the results became three flex items in a ROW,
+  every result rendered in uppercase mono, and the ~340px drawer scrolled
+  sideways. **A container class is a contract about what it holds, not just
+  how it looks.**
+
+  **Instance two (T2 → fixed in T5, 2026-09-21).** The term popover invented
+  `.modal-head` and `.modal-x` and never wrote a rule for either. With no rule
+  at all, the heading and the close button stacked as two unstyled block
+  elements — in the popover, and then in the manual-copy failover that reused
+  them. **A class with nothing behind it looks like a styling choice, not a
+  missing one**, which is exactly why it survives review.
+
+  The same file had already been bitten by `.kb-ins-row`, which carried no CSS
+  rule at all for its whole life.
+
+  **Why the tests could not see any of it.** The DOM pins asserted each section
+  MOUNTS — and it did, inside a heading bar. A mount check cannot see WHERE
+  something mounted (the g138 lesson in a new place). The visual matrix had
+  never opened the drawer, and the mock had no fixture for any lookup endpoint,
+  so the matrix could only ever have photographed empty boxes. Overflow was 0px
+  throughout.
+
+  Verify: the `.kbd-sec` container pin (which asserts each control is NOT
+  inside one, and that `.kbd-sec` carries no control), the five
+  `reference-drawer-*` scenarios, and the `manual-copy-*` pair. **A naive
+  "every class has a rule" sweep is NOT the answer** — class names in this app
+  are routinely built by concatenation (`'kb-elig-v ' + cls`), so such a scan
+  over-reports badly; the net that works is a shot of the surface.
+
+<a id="g141-an-async-loader-that-re-renders-a-view"></a>
+
+- **An ASYNC loader that re-renders a view DESTROYS what the user has typed
+  into it — and restoring the VALUES is not enough, because focus and the
+  caret go with the nodes (T1, 2026-09-21).** The Reference landing rebuilt
+  itself with `main.innerHTML = h`, and three manager-only loaders called that
+  renderer on completion. A manager who opened Reference and started typing an
+  address into the lookup lost it 0.5–3s later — which is the normal way to
+  use a mid-call lookup, and the delay is exactly long enough that the rep
+  blames their own typing.
+
+  This is g68's sibling, not a restatement of it: g68 is a modal prefilling
+  ITSELF asynchronously, this is an unrelated loader wiping a field it has
+  nothing to do with. **The renderer simply owned too much.**
+
+  The fix splits the surface: the band that holds the inputs renders ONCE, the
+  content blocks rebuild freely, and the band survives **as nodes** rather than
+  being re-created and re-filled. Writing the values back would have left the
+  rep's caret at the end of a field they were typing in the middle of, and
+  focus somewhere else entirely.
+
+  Verify: the T1 input-survival pin, which asserts the address element is
+  literally the same object after a re-render, not merely that its value
+  matches.
+

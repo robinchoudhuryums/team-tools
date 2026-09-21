@@ -293,7 +293,7 @@ The hot path: the form, the cards, the composer, the per-rep store.
 
 - **Call Notes Sheet enrollment — one-click auto-provision (or manual).** Fires when a rep has no Call Notes panel, or you read roster column L. [Detail](docs/gotchas.md#g47-call-notes-sheet-enrollment-one-click-auto)
 - **`Notes` tab provisions on first touch.** Fires when you change `CN_HEADERS`. [Detail](docs/gotchas.md#g74-notes-tab-provisions-on-first-touch)
-- **Clipboard API often fails in HtmlService iframes.** Fires when you rely on the clipboard inside the HtmlService iframe. [Detail](docs/gotchas.md#g76-clipboard-api-often-fails-in-htmlservice-iframes)
+- **Clipboard API often fails in HtmlService iframes — and a copy helper that cannot report FAILURE is one that lies: `execCommand('copy')` returns `false` when denied (it does not throw) and `writeText` REJECTS, so seven hand-written helpers all ran their success path unconditionally and the rep pasted the PREVIOUS clipboard contents — a different patient's note into the CRM (2026-09-21).** Fires when you copy anything to the clipboard, or write a fallback for one. Verify: the T5-1 derived sweep + the T4/T5 DOM pins. [Detail](docs/gotchas.md#g76-clipboard-api-often-fails-in-htmlservice-iframes)
 - **Call-notes flag enum vs. blank.** Fires when you write to `FlagType` or `Resolved`. [Detail](docs/gotchas.md#g78-call-notes-flag-enum-vs-blank)
 - **`SubformData` (column P) is a generic per-note metadata JSON blob.** Fires when you add per-note metadata, or append to a `subformData` array. [Detail](docs/gotchas.md#g80-subformdata-column-p-is-a-generic-per)
 - **`cnRenderSubforms_` is shape-keyed via `host.dataset.shapeKey`.** Fires when a subform re-render could wipe in-progress values. [Detail](docs/gotchas.md#g82-cnrendersubforms-is-shape-keyed-via-host-dataset)
@@ -316,6 +316,7 @@ The iframe sandbox, the overlay lifecycle, and what persists per browser.
 
 - **An `outerHTML` patch replaces ONE element, so that element must contain everything its renderer emits (operator 2026-08-31).** Fires when a renderer grows a new sibling and something patches it by id. Verify: the BIZ-3 wrapper-shape assertion. [Detail](docs/gotchas.md#g66-an-outerhtml-patch-replaces-one-element-so)
 - **An ASYNC prefill must fill only the fields the user has not typed into, and a FAILED prefill must not leave a saveable blank form (operator 2026-09-03).** Fires when a modal prefills asynchronously. Verify: the Day Edit DOM test. [Detail](docs/gotchas.md#g68-an-async-prefill-must-fill-only-the)
+- **An ASYNC loader that re-renders a view DESTROYS what the user has typed into it, and restoring the VALUES is not enough — focus and the caret go with the nodes (T1, 2026-09-21).** Fires when a background loader re-renders a view that contains an input. Verify: the T1 input-survival pin, which asserts the element is literally the same object. [Detail](docs/gotchas.md#g141-an-async-loader-that-re-renders-a-view)
 - **`location.reload()` reloads the IFRAME, not the app — and that URL is session-bound (operator 2026-09-01; the rule is a TRIPWIRE since Batch 6, 2026-09-18 — `reloadApp_`'s two fallbacks are the only ones allowed, across script_core and eight partials).** Fires when client code navigates or reloads the app. Verify: BCN-3 + the F-14 budget pin. [Detail](docs/gotchas.md#g69-location-reload-reloads-the-iframe-not-the)
 - **A class-wide attribute write assumes every member of the class is yours (operator 2026-08-11).** Fires when a writer selects by a class that something else borrows for its looks. [Detail](docs/gotchas.md#g70-a-class-wide-attribute-write-assumes-every)
 - **`showToast(msg, type)` normalizes the variant — pass either form.** Fires when you call `showToast`. [Detail](docs/gotchas.md#g77-showtoast-msg-type-normalizes-the-variant-pass)
@@ -344,6 +345,7 @@ Nearly all of these were found by MEASUREMENT, not by reading. A squeezed layout
 - **A pill tab strip must scroll inside itself, or it pushes the whole page sideways (operator 2026-08-11).** Fires when a pill strip can outgrow the viewport. [Detail](docs/gotchas.md#g71-a-pill-tab-strip-must-scroll-inside)
 - **Two layout lessons that only MEASUREMENT found, both from one chip (operator testing note 10, 2026-09-10).** Fires when a nowrap pill sits in a `1fr` track, or you fight a shared descendant rule. [Detail](docs/gotchas.md#g72-two-layout-lessons-that-only-measurement-found)
 - **The `hidden` attribute LOSES to any class rule that sets `display` (operator #2 batch, 2026-08-06 — MEASURED).** Fires when an element carries a display-setting class AND the `hidden` attribute. [Detail](docs/gotchas.md#g73-the-hidden-attribute-loses-to-any-class)
+- **A class in the markup is a CLAIM that a rule exists for it — and a class whose rule means something ELSE is the same defect wearing a hat. Fired TWICE in three batches in one file: `.kbd-sec` is a flex HEADING BAR and wrapping the drawer's lookups in it laid them out in a row (live for weeks); `.modal-head`/`.modal-x` had no rule at all, so a popover's title and close button stacked unstyled.** Fires when you reuse a container class, or invent one. Both were found by READING a shot — 0px overflow, no console error. Verify: the `.kbd-sec` container pin + the `reference-drawer-*` and `manual-copy-*` scenarios. [Detail](docs/gotchas.md#g140-a-class-in-the-markup-is-a-claim)
 
 ### Test & tooling hazards
 
@@ -641,6 +643,7 @@ the dated round entries that used to sit here moved to
 - [`Employees` sheet column N = `Departments`](docs/operator-state.md#operator-employees-sheet-column-n-departments)
 - [`Employees` sheet column O = `Schedule`](docs/operator-state.md#operator-employees-sheet-column-o-schedule)
 - [Script Property `SPANISH_VM_MIN_SECONDS`](docs/operator-state.md#operator-script-property-spanish-vm-min-seconds)
+- [The `InsurancePayors` tab (KB spreadsheet) — payor acceptance, and since T3 its HCPCS column headers are a JOIN KEY](docs/operator-state.md#operator-the-insurancepayors-tab-kb-spreadsheet)
 - [The `OopPricing` and `LocationAcceptance` tabs (KB spreadsheet)](docs/operator-state.md#operator-the-ooppricing-and-locationacceptance-tabs-kb-spreadsheet)
 - [Script Property `CDR_QUEUE_GROUPS`](docs/operator-state.md#operator-script-property-cdr-queue-groups)
 - [Script Property `DR_SLA_TARGETS`](docs/operator-state.md#operator-script-property-dr-sla-targets)
