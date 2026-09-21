@@ -64,6 +64,15 @@ const KBD_XREF = KBD_SEARCH.replace('}, 10)',
   " Array.prototype.forEach.call(root.querySelectorAll('*'), function(el){" +
   " if (el.scrollHeight > el.clientHeight + 4) el.scrollTop = el.scrollHeight; }); }, 750); }, 10)");
 
+// The manual-copy failover (T5). It is the failure surface for every text copy
+// in the app now, including a saved call note, and nothing had ever drawn it.
+// Driven through the REAL path — a denied clipboard and a false execCommand —
+// rather than by calling the modal, so the shot is of what a rep would see.
+const MANUAL_COPY = "try { Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true }); } catch (e) {}" +
+  " document.execCommand = function () { return false; };" +
+  " copyWithFeedback_('Drive Scout 3 Wheel (W/ Shipping Cost) \u2014 $1,070.00'," +
+  " { ok: 'Copied', label: 'Drive Scout 3 Wheel \u00b7 W/ Shipping Cost' });";
+
 const SCENARIOS = [
   ['clock-light-wide',      { tool: 'timeClock', tab: 'clock' },      WIDE, 'light', ''],
   ['clock-dark-wide',       { tool: 'timeClock', tab: 'clock' },      WIDE, 'dark',  ''],
@@ -270,6 +279,8 @@ const SCENARIOS = [
   ['reference-codes-light-wide',    { tool: 'reference', tab: null }, WIDE,    'light', '',           KBL_CODES],
   ['reference-codes-dark-wide',     { tool: 'reference', tab: null }, WIDE,    'dark',  '',           KBL_CODES],
   ['reference-drawer-xref-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',            KBD_XREF],
+  ['manual-copy-light-wide',        { tool: 'reference', tab: null }, WIDE,    'light', '',           MANUAL_COPY],
+  ['manual-copy-dark-wide',         { tool: 'reference', tab: null }, WIDE,    'dark',  '',           MANUAL_COPY],
 
   // Admin lands on OVERVIEW, so the CONFIG pane — where the operator-facing
   // editors live, incl. the 2026-08-25 Reference data-table upload — had no

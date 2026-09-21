@@ -2027,6 +2027,28 @@
     letter-spacing: -.02em; line-height: 1.2;
     color: var(--ink); margin-bottom: 6px;
   }
+  /* A compact popover's header: title left, close right. INVENTED by T2's term
+     popover (2026-09-21) and never given a rule — so the heading and the X
+     stacked as two block elements, unstyled, in every modal that used it. The
+     `.kb-ins-row` defect again, three batches later: a class in the markup with
+     nothing behind it looks like a styling choice, not a missing one, and no
+     measurement can tell them apart. Found by READING a shot.
+     The app's other modals use .modal-title + a .modal-footer button; this pair
+     is for the small tethered ones, where a footer row would be most of it. */
+  .modal-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 10px; margin-bottom: 8px;
+  }
+  .modal-head h3 {
+    font-family: var(--display); font-size: 17px; font-weight: 500;
+    letter-spacing: -.01em; line-height: 1.25; color: var(--ink); margin: 0;
+  }
+  .modal-x {
+    flex-shrink: 0; background: none; border: none; padding: 2px;
+    margin: -2px -2px 0 0; cursor: pointer; color: var(--muted);
+    border-radius: var(--radius-sm); line-height: 0;
+  }
+  .modal-x:hover, .modal-x:focus-visible { color: var(--ink); background: var(--paper-2); }
   .modal-sub {
     font-family: var(--ui);
     font-size: 13px; color: var(--muted); margin-bottom: 20px;

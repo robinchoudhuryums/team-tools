@@ -1600,7 +1600,13 @@ function copyText_(text, done) {
  *  note full of angle brackets is not an injection surface. */
 function manualCopyModal_(text, what) {
   var body = String(text == null ? '' : text);
-  var multiline = body.indexOf('\n') >= 0 || body.length > 60;
+  // 40, not 60: a single-line input showed the TAIL of a 50-character price
+  // line, because select() leaves the caret at the end — the rep could not see
+  // what they were about to copy. Seen in a shot; it overflowed nothing.
+  var multiline = body.indexOf('\n') >= 0 || body.length > 40;
+  // Sized to the content, 3..12 lines. A fixed 8 made a two-line price look
+  // like an empty form the rep was meant to fill in.
+  var rows = Math.min(12, Math.max(3, body.split('\n').length + Math.floor(body.length / 48)));
   var overlay = ensureOverlay('manual-copy-overlay', { labelledBy: 'manual-copy-h' });
   overlay.innerHTML = '<div class="modal manual-copy-modal">' +
     '<div class="modal-head"><h3 id="manual-copy-h">Copy it by hand</h3>' +
@@ -1610,7 +1616,7 @@ function manualCopyModal_(text, what) {
         'Here it is — select it and press Ctrl/⌘+C.</p>' +
       '<label class="manual-copy-lbl" for="manual-copy-val"></label>' +
       (multiline
-        ? '<textarea id="manual-copy-val" class="manual-copy-val" rows="8" readonly></textarea>'
+        ? '<textarea id="manual-copy-val" class="manual-copy-val" rows="' + rows + '" readonly></textarea>'
         : '<input id="manual-copy-val" class="manual-copy-val" type="text" readonly>') +
     '</div></div>';
   overlay.querySelector('.manual-copy-lbl').textContent = what || '';
@@ -1618,6 +1624,9 @@ function manualCopyModal_(text, what) {
   field.value = body;
   field.focus();
   field.select();
+  // …and show the START. Selecting scrolls to the caret, which is the end.
+  field.scrollLeft = 0;
+  field.scrollTop = 0;
   return overlay;
 }
 

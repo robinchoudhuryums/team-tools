@@ -867,7 +867,7 @@ this block, or the command that prints the number.
 |---|---|---|
 | Pure harness tests | 926 | `node test/client/run.js` |
 | DOM harness tests | 143 | `node test/client/dom/runDom.js` |
-| Visual matrix scenarios | 112 | `shoot.mjs`'s `SCENARIOS` |
+| Visual matrix scenarios | 114 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 337 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 51 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 95 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
