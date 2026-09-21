@@ -1240,6 +1240,49 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // lowercase form meant no screenshot could ever render the TRX chip).
     kbGetReviewDue: { items: [{ id: 'kb-2', title: 'OOP payment policy', department: 'Billing', ageDays: 120, views: 14, staleFlags: 1, staleNote: 'Rates changed in July', comments: 2 }], total: 1, cap: 40, dueDays: 90 },
     kbGetUsageStats: { items: [{ id: 'kb-1', title: 'HIPAA refresher', count: 22, drawerCount: 9, helpful: 4, notHelpful: 0, comments: 2 }], windowDays: 30 },
+    // Cycle 21 (operator report 2026-09-21): the three LOOKUP endpoints had no
+    // fixture at all, so no scenario could ever render a RESULT — only empty
+    // boxes. Both defects the operator hit live in the results (the drawer's
+    // row-of-uppercase-mono layout, and price/eligibility rows with no
+    // separation), and both were unshootable. Field names mirror the server
+    // return sites (INV-185); the OOP rows carry MULTIPLE priced columns,
+    // because a single-price item is exactly the shape that hid the prices[0]
+    // defect from the operator's own post-deploy check.
+    searchInsurancePayors: { total: 3, cap: 8, matches: [
+      { name: 'AETNA NETWORK GOLD S Plan Number 000001-EXTX0107', networkStatus: 'status not recorded',
+        waystar: '60054', qualification: 'Standard', reimbursement: '',
+        details: [{ label: 'K0800', value: 'Location-based ( Up To 285) & SI/PR' },
+                  { label: 'K0801', value: 'Location-based ( 285-325 lb) SI/PR' },
+                  { label: 'K0802', value: 'Not Accepted' },
+                  { label: 'K0814', value: 'SI/PR' }] },
+      { name: 'MDX HAWAII (UHC AND HUMANA — MEDICARE ADVANTAGE PLANS)', networkStatus: 'in-network',
+        waystar: 'MDXHI', qualification: 'Yes', reimbursement: 'Yes', details: [] },
+      { name: 'PACIFICARE (UHC)', networkStatus: '', waystar: 'MULTIPLE', qualification: '', reimbursement: 'No', details: [] }] },
+    searchOopPricing: { total: 2, cap: 8, matches: [
+      { name: 'Drive Scout 3 Wheel', code: 'K0800 (C/C)', effective: '09/16/2026', eligibility: 'Open',
+        price: '$920.00',
+        prices: [{ label: 'OOP Price - pick-up', value: '$920.00' },
+                 { label: 'W/ Shipping Cost', value: '$1,070.00' },
+                 { label: 'W/ Tech Delivery Cost', value: '$1,220.00' }],
+        details: [{ label: 'Category', value: 'POV/Scooter' }, { label: 'Shipping', value: '$150.00' }, { label: 'Comments', value: 'Red, Blue' }] },
+      { name: 'Bariatric Transfer Bench', code: 'E0247', effective: '', eligibility: 'TX, OK',
+        price: '', prices: [], details: [] }] },
+    checkOopEligibility: { success: true, formatted: 'Irving, TX 75038, USA', state: 'TX', city: 'Irving',
+      total: 2, cap: 12, warehouses: [{ name: 'Dallas', miles: 12.4 }, { name: 'Houston', miles: 225.0 }],
+      deliveryCities: [{ name: 'Irving', state: 'TX', accepts: 'POV, scooter' }],
+      items: [
+        { name: 'Drive Scout 3 Wheel', code: 'K0800 (C/C)', effective: '09/16/2026', eligibility: 'Open', rule: 'open',
+          price: '$920.00',
+          prices: [{ label: 'OOP Price - pick-up', value: '$920.00' },
+                   { label: 'W/ Shipping Cost', value: '$1,070.00' },
+                   { label: 'W/ Tech Delivery Cost', value: '$1,220.00' }],
+          details: [{ label: 'Category', value: 'POV/Scooter' }],
+          insurance: { verdict: 'yes', near: false, why: 'Available anywhere in the US.' },
+          oop: { verdict: 'yes', near: false, why: 'Available anywhere in the US.' } },
+        { name: 'Portable Oxygen Concentrator', code: 'E1392', effective: '06/01/2026', eligibility: 'FL, GA, NC', rule: 'states',
+          price: '$2,150.00', prices: [{ label: '', value: '$2,150.00' }], details: [],
+          insurance: { verdict: 'no', near: false, why: 'TX is not a listed state.' },
+          oop: { verdict: 'yes', near: false, why: 'Out of pocket there is no state restriction (the sheet limits insurance orders to FL, GA, NC).' } }] },
     kbGetContentRequests: { open: [], resolved: [], openCount: 0 },
     kbGetRelated: { items: [] },
     kbRecordView: { ok: true },

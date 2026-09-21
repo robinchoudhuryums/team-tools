@@ -38,6 +38,12 @@ const MOBILE = { width: 390, height: 844 };
 // the nav settles — the first mechanism for shooting a MODAL state (the
 // Visual Audit Stage lists modal/overlay states as an uncovered gap; tab
 // landings alone cannot reach them).
+// The KB lookup post-hooks type a query and let the debounce fire, so the shot
+// carries RESULTS. Empty boxes are what the matrix photographed for weeks, and
+// empty boxes are not where either 2026-09-21 defect lived.
+const KBD_SEARCH = "kbDrawerOpen_(); setTimeout(function(){ var a=document.getElementById('kb-ins-input-d'); if(a){a.value='aetna'; insLookupInput_(a);} var b=document.getElementById('kb-oop-item-d'); var c=document.getElementById('kb-oop-addr-d'); if(b&&c){b.value='scout'; c.value='75038'; oopLookupInput_(c);} }, 10)";
+const KBL_SEARCH = "var a=document.getElementById('kb-ins-input'); if(a){a.value='aetna'; insLookupInput_(a);} var b=document.getElementById('kb-oop-item'); var c=document.getElementById('kb-oop-addr'); if(b&&c){b.value='scout'; c.value='75038'; oopLookupInput_(c);}";
+
 const SCENARIOS = [
   ['clock-light-wide',      { tool: 'timeClock', tab: 'clock' },      WIDE, 'light', ''],
   ['clock-dark-wide',       { tool: 'timeClock', tab: 'clock' },      WIDE, 'dark',  ''],
@@ -225,6 +231,19 @@ const SCENARIOS = [
   // delete cluster, add form) + the feedback bar were unshootable while the
   // matrix only walked the Reference landing.
   ['reference-reader-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', "kbOpenItem_('kb-1')"],
+  // Cycle 21 (operator report, 2026-09-21) — the KB DRAWER had never been shot,
+  // by any scenario, at any width. That is why both lookups sat inside
+  // `.kbd-sec` — a mono/uppercase flex HEADING bar — for weeks: every result
+  // rendered as a row of 10px uppercase and the ~340px drawer scrolled
+  // sideways, and nothing rendered it. The DOM pins passed throughout because
+  // they asserted the sections MOUNT, which they did, inside the heading bar.
+  // Shot at WIDE (the drawer is fixed-width, so this is its real geometry) and
+  // in the COMPACT pop-out, which is where a rep actually keeps it.
+  ['reference-drawer-light-wide',   { tool: 'reference', tab: null }, WIDE,    'light', '',           KBD_SEARCH],
+  ['reference-drawer-dark-wide',    { tool: 'reference', tab: null }, WIDE,    'dark',  '',           KBD_SEARCH],
+  ['reference-drawer-light-compact',{ tool: 'reference', tab: null }, COMPACT, 'light', '?compact=1', KBD_SEARCH],
+  ['reference-results-light-wide',  { tool: 'reference', tab: null }, WIDE,    'light', '',           KBL_SEARCH],
+  ['reference-results-dark-wide',   { tool: 'reference', tab: null }, WIDE,    'dark',  '',           KBL_SEARCH],
 
   // Admin lands on OVERVIEW, so the CONFIG pane — where the operator-facing
   // editors live, incl. the 2026-08-25 Reference data-table upload — had no

@@ -91,7 +91,11 @@
   /* OOP price lookup — the price is the thing the eye should land on, so it is
      mono and emphasised. `none` is deliberately WARNING-toned rather than muted:
      a row with no price must not read as "free" or as "nothing to say". */
-  .kb-oop-price { font-family: var(--mono); font-weight: 600; margin-left: 6px; }
+  /* The price cluster is its own ROW, and each price is a label/value PAIR.
+     They used to sit inline after the item name with a bare 6px margin, so
+     three priced columns rendered as one run-on line. */
+  .kb-oop-prices { display: flex; flex-wrap: wrap; gap: 3px 16px; align-items: baseline; }
+  .kb-oop-price { font-family: var(--mono); font-weight: 600; display: inline-flex; align-items: baseline; gap: 5px; }
   /* ELIG — two verdicts per item, and THREE visual states, not two. A
      near-boundary "yes" must not look like a flat yes: the caveat is the whole
      reason a radius answer near the limit is not a commitment (straight-line
@@ -133,7 +137,11 @@
     .kb-elig-v { grid-template-columns: 1fr; gap: 1px; }
   }
   .kb-oop-price.none { font-weight: 500; color: var(--warning-deep); }
-  .kb-oop-price-lbl { font-weight: 400; font-size: 10px; color: var(--muted); }
+  .kb-oop-price-lbl { font-weight: 600; font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-2); }
+  /* The two verdicts are the ANSWER; the meta above them is reference. A rule
+     between them stops the eye sliding from a HCPCS code straight into a Yes. */
+  .kb-elig-vs { margin-top: 7px; padding-top: 6px; border-top: 1px dashed var(--line); }
+  .kb-elig-vs .kb-elig-v:first-child { margin-top: 0; }
   /* ── The lookup band (landing host only) ─────────────────────────────
      TWO panels side by side. Three stacked lookups pushed Bookmarks, Recents,
      Most used and Review due entirely below the fold, so the landing read as a
@@ -191,7 +199,36 @@
   .kb-ins-pill.warn { background: var(--warn-soft); color: var(--warning-deep); }
   .kb-ins-pill.info { background: var(--info-soft); color: var(--info-deep); }
   .kb-ins-pill.none { background: var(--paper-2); color: var(--muted); text-transform: none; letter-spacing: 0; font-family: var(--ui); }
-  .kb-ins-meta { font-size: .76rem; color: var(--muted); margin-top: 3px; }
+  /* The OOP / eligibility result row. It had NO rule at all — never one, not
+     one that was lost — so these results ran together as unbroken text while
+     the insurance results beside them were carded (`.kb-ins-card`). That
+     asymmetry is what made the panel hard to read at speed. Same card
+     vocabulary as its sibling, so the two halves of the band match. */
+  .kb-ins-row { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 9px 11px; margin-top: 8px; background: var(--paper-card); }
+  .kb-ins-row .kb-ins-name { display: block; margin-bottom: 4px; }
+  .kb-ins-meta { font-size: .74rem; color: var(--muted-2); margin-top: 5px; line-height: 1.45; }
+  .kb-meta-chips { display: flex; flex-wrap: wrap; gap: 4px 6px; line-height: 1.3; }
+  .kb-meta-chip { background: var(--paper-2); border-radius: var(--radius-sm); padding: 2px 7px; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .kb-meta-chip .k { color: var(--muted); font-size: .92em; }
+  /* An acceptance value the vocabulary can explain. A dotted underline is the
+     long-standing "there is a definition behind this" affordance; it is a real
+     <button>, so it is reachable by Tab and announces as one. */
+  .kb-term { font: inherit; background: none; border: none; padding: 0; cursor: help;
+    text-decoration: underline dotted; text-underline-offset: 2px; color: inherit; }
+  .kb-term:hover, .kb-term:focus-visible { text-decoration-style: solid; }
+  /* A pill that is ALSO a term keeps its pill: .kb-term zeroes background and
+     padding for the inline case (a value inside the code grid), which stripped
+     the pill to bare underlined text. Restore the pill's own box here — the
+     dotted underline is the only thing the term affordance should add. */
+  .kb-ins-pill.kb-term { cursor: help; background: var(--paper-2); color: var(--muted);
+    padding: 2px 9px; border-radius: var(--radius-pill); }
+  .kb-ins-pill.kb-term.good { background: var(--good-soft); color: var(--success-deep); }
+  .kb-ins-pill.kb-term.bad  { background: var(--danger-soft); color: var(--danger-deep); }
+  .kb-ins-pill.kb-term.warn { background: var(--warn-soft); color: var(--warning-deep); }
+  .kb-ins-pill.kb-term.info { background: var(--info-soft); color: var(--info-deep); }
+  .kb-term-modal { width: 320px; max-width: calc(100vw - 16px); }
+  .kb-term-modal .kb-ins-legend { margin-top: 0; }
+  .kb-term-modal .kb-ins-legend dd:last-child { margin-bottom: 0; }
   .kb-ins-det-btn { background: none; border: none; font: inherit; font-size: .76rem; color: var(--info-deep); cursor: pointer; padding: 4px 0 0; display: inline-flex; align-items: center; gap: 4px; }
   .kb-ins-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 5px 10px; margin-top: 7px; }
   .kb-ins-grid[hidden] { display: none; }   /* the [hidden] gotcha — the class display wins otherwise */
@@ -635,6 +672,11 @@
   .kbd-body { overflow-y: auto; flex: 1; padding: 10px 14px 16px; }
   .kbd-sec { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); padding: 12px 0 4px; display: flex; align-items: center; gap: 8px; }
   .kbd-sec .kbd-tgl { margin-left: auto; font-family: var(--ui); font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+  /* The lookup sections in the drawer. Deliberately NOT .kbd-sec: they carry
+     their own `.kb-land-h` heading and a body of normal-weight text, so they
+     need the drawer body's ordinary type, not the heading bar's. */
+  .kbd-lookup { padding: 12px 0 6px; font-family: var(--ui); font-size: .84rem; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--ink); }
+  .kbd-lookup + .kbd-lookup { border-top: 1px solid var(--line); }
   .kbd-item { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; font: inherit; font-size: .86rem; padding: 7px 9px; border: none; border-radius: 7px; background: none; color: var(--ink); cursor: pointer; }
   .kbd-item:hover { background: var(--paper-2); }
   .kbd-item .kb-snip { font-size: .74rem; color: var(--muted); }
@@ -2469,17 +2511,57 @@ function kbToggleDept_(btn) {
 // the legend TRANSLATE known acceptance tokens (the operator's legend,
 // 2026-08-25) — an unknown token renders in neutral tone rather than being
 // guessed at, and a missing network status says "status not recorded".
-var INS_LEGEND = [
-  ['Accepted / X', 'We can accept orders for patients with this plan.'],
-  ['Not Accepted / NO', 'Don’t accept orders for this payor.'],
-  ['Location-based', 'Only if the patient is in one of the big cities listed on the source sheet’s "Location Based Acceptance Options" tab, or within 100 miles of a listed branch.'],
-  ['Location-based (285–325 lb)', 'The location rules above, and the patient must be 285–325 lb.'],
-  ['TRY', 'Submit to test authorization — credentialing then decides whether this payor stays accepted.'],
-  ['SI/PR', 'Accept only with secondary insurance covering any patient responsibility — or the patient is told PR may be collected up front by delivery.'],
-  ['PR', 'Proceed as normal, but tell the patient there may be a patient-responsibility cost before delivery; the amount is known once the device is determined.'],
-  ['A & B (combined)', 'Must meet BOTH criteria.'],
-  ['Plan not listed', 'Follow the TRY criteria.'],
+// ── The acceptance vocabulary: ONE list, three consumers ──────────────────
+// The operator's acceptance cells are shorthand — `X`, `SI/PR`, `TRY`,
+// `Location-based ( Up To 285) & SI/PR`. A rep needs to know what the value in
+// front of them means, which is not the same as needing a glossary: the term
+// they are stuck on is the one on screen.
+//
+// So this list is the single source for (a) the legend popover, (b) the
+// per-value explanation, and (c) — by pin, not by construction — agreement
+// with the TONE `insToneCls_` paints. The tone cascade is deliberately left
+// alone: it is load-bearing and correct, and rewriting a classifier that
+// colours a compliance field in order to share code with a tooltip would be
+// trading a real guarantee for a tidy one. The pin holds them together
+// instead.
+//
+// ORDER MIRRORS THE TONE CASCADE, so the first term found is the one that
+// decided the colour: a value reading "Not Accepted (location-based)" is bad,
+// not warn, and must explain itself as Not Accepted.
+var INS_TERMS = [
+  { term: 'Not Accepted / NO', why: 'Don\u2019t accept orders for this payor.',
+    match: function (v) { return v.indexOf('not accepted') >= 0 || v === 'no'; } },
+  { term: 'Location-based (285\u2013325 lb)', why: 'The location rules below, and the patient must be 285\u2013325 lb.',
+    match: function (v) { return /285\s*[-\u2013]\s*325/.test(v); } },
+  { term: 'SI/PR', why: 'Accept only with secondary insurance covering any patient responsibility \u2014 or the patient is told PR may be collected up front by delivery.',
+    match: function (v) { return v.indexOf('si/pr') >= 0; } },
+  { term: 'Location-based', why: 'Only if the patient is in one of the big cities listed on the source sheet\u2019s "Location Based Acceptance Options" tab, or within 100 miles of a listed branch.',
+    match: function (v) { return v.indexOf('location') >= 0; } },
+  { term: 'A & B (combined)', why: 'Must meet BOTH criteria.',
+    match: function (v) { return v.indexOf('&') >= 0; } },
+  { term: 'PR', why: 'Proceed as normal, but tell the patient there may be a patient-responsibility cost before delivery; the amount is known once the device is determined.',
+    match: function (v) { return /(^|[^a-z])pr([^a-z]|$)/.test(v) && v.indexOf('si/pr') < 0; } },
+  { term: 'TRY', why: 'Submit to test authorization \u2014 credentialing then decides whether this payor stays accepted.',
+    match: function (v) { return v.indexOf('try') >= 0; } },
+  { term: 'Accepted / X', why: 'We can accept orders for patients with this plan.',
+    match: function (v) { return v.indexOf('in-network') >= 0 || v.indexOf('accepted') >= 0 || v === 'x' || v === 'yes'; } },
+  // Legend-only: this one is the rule for a plan the sheet does not carry, so
+  // no cell ever reads it and it has no matcher.
+  { term: 'Plan not listed', why: 'Follow the TRY criteria.', match: null },
 ];
+
+/** Every term present in an acceptance value, in cascade order. The FIRST is
+ *  the one that decided the tone. Empty when the value is blank or is
+ *  shorthand nobody has defined. */
+function insTermsIn_(value) {
+  var v = String(value == null ? '' : value).trim().toLowerCase();
+  if (!v) return [];
+  return INS_TERMS.filter(function (t) { return t.match && t.match(v); });
+}
+
+/** The legend is DERIVED from the term list, so the glossary and the per-value
+ *  explanations cannot drift into saying different things about one term. */
+var INS_LEGEND = INS_TERMS.map(function (t) { return [t.term, t.why]; });
 
 /** PURE (Node-pinned) — tone class for an acceptance / network-status value.
  *  Order matters: negatives before the bare "accepted" substring, qualifiers
@@ -2666,22 +2748,42 @@ function oopPriceHtml_(m) {
   }).join(' ');
 }
 
+/** One meta chip. `label` may be empty (the bare HCPCS code, which needs no
+ *  key — it IS the key). Both halves are escaped here so callers pass RAW. */
+function oopMetaChip_(label, value) {
+  var l = String(label == null ? '' : label).trim();
+  return '<span class="kb-meta-chip">' +
+    (l ? '<span class="k">' + esc(l) + '</span> ' : '') + esc(value) + '</span>';
+}
+
 /** ONE row, for BOTH endpoints. The verdicts are drawn when the payload has
  *  them and omitted when it does not — that is the ONLY difference between a
  *  price-lookup row and an eligibility row, and keeping it the only difference
  *  is the point of this function existing. */
 function oopItemRowHtml_(m) {
+  // CHIPS, not a `·`-joined run. The meta line mixes a billing code, a date, a
+  // delivery rule, money and colour options — a rep scans for ONE of them, and
+  // a single sentence makes every one of them equally hard to find. No colon:
+  // the chip boundary already groups the key with its value.
   var bits = [];
-  if (m.code) bits.push(esc(m.code));
-  if (m.effective) bits.push('effective ' + esc(m.effective));
-  if (m.eligibility) bits.push('area: ' + esc(m.eligibility));
-  (m.details || []).forEach(function (d) { bits.push(esc(d.label) + ': ' + esc(d.value)); });
+  if (m.code) bits.push(oopMetaChip_('', m.code));
+  if (m.effective) bits.push(oopMetaChip_('effective', m.effective));
+  if (m.eligibility) bits.push(oopMetaChip_('area', m.eligibility));
+  (m.details || []).forEach(function (d) { bits.push(oopMetaChip_(d.label, d.value)); });
+  // Four DISTINCT blocks, not one paragraph. The name, the prices, the meta and
+  // the verdicts answer four different questions, and running them together is
+  // what made the panel unreadable at speed: a rep mid-call scans for ONE of
+  // them. The prices in particular were inline with the name, so an item with
+  // three priced columns read as a sentence.
   return '<div class="kb-ins-row">' +
-    '<div class="kb-ins-name">' + esc(m.name) + ' ' + oopPriceHtml_(m) + '</div>' +
-    (bits.length ? '<div class="kb-ins-meta">' + bits.join(' · ') + '</div>' : '') +
+    '<div class="kb-ins-name">' + esc(m.name) + '</div>' +
+    '<div class="kb-oop-prices">' + oopPriceHtml_(m) + '</div>' +
+    (bits.length ? '<div class="kb-ins-meta kb-meta-chips">' + bits.join('') + '</div>' : '') +
     ((m.insurance || m.oop)
-      ? eligVerdictHtml_('Through insurance', m.insurance) +
-        eligVerdictHtml_('Paying out of pocket', m.oop)
+      ? '<div class="kb-elig-vs">' +
+          eligVerdictHtml_('Through insurance', m.insurance) +
+          eligVerdictHtml_('Paying out of pocket', m.oop) +
+        '</div>'
       : '') +
     '</div>';
 }
@@ -2815,18 +2917,79 @@ function insLookupSecHtml_(suffix) {
     '<input type="text" class="kb-ins-input" id="kb-ins-input' + suffix + '" autocomplete="off" ' +
       'placeholder="Payor / plan name…" oninput="insLookupInput_(this)">' +
     '<div class="kb-ins-results" id="kb-ins-results' + suffix + '"></div>' +
-    '<button type="button" class="kb-ins-det-btn" aria-expanded="false" aria-controls="kb-ins-legend' + suffix + '" ' +
-      'onclick="insToggleLegend_(this)">' + icon('info', 12) + ' Acceptance legend</button>' +
-    '<dl class="kb-ins-legend" id="kb-ins-legend' + suffix + '" hidden>' +
-      INS_LEGEND.map(function (e) { return '<dt>' + esc(e[0]) + '</dt><dd>' + esc(e[1]) + '</dd>'; }).join('') +
-    '</dl>';
+    // The legend opens as a tethered popover. Inline it pushed the results
+    // down, and in the drawer the glossary is longer than the answer it
+    // interrupts. No `hidden` <dl> is emitted any more — the popover builds
+    // its content from INS_TERMS on open, so there is one copy, not one per
+    // host.
+    '<button type="button" class="kb-ins-det-btn" onclick="insLegendClick_(this)">' +
+      icon('info', 12) + ' Acceptance legend</button>';
 }
+/** The per-payor "Acceptance by code (N)" disclosure. Inline on purpose: it is
+ *  per-RESULT detail, and a rep reads it against the row it belongs to.
+ *
+ *  This used to serve the LEGEND too, which is why the legend expanded in flow
+ *  and shoved the results down — unusable in the ~340px drawer, where the
+ *  glossary is longer than the answer it interrupts. The legend is a popover
+ *  now (insShowTerms_); the two wanted opposite treatments all along. */
 function insToggleLegend_(btn) {
   var dl = document.getElementById(btn.getAttribute('aria-controls'));
   if (!dl) return;
   dl.hidden = !dl.hidden;
   btn.setAttribute('aria-expanded', dl.hidden ? 'false' : 'true');
 }
+
+/** Tether a hover-mode popover's modal beside its anchor, clamped to the
+ *  viewport. Mirrors positionDayPopover_ (tc/script_timeoff.html) — the same
+ *  read-then-place shape, because the modal has to be laid out before its size
+ *  can be measured. */
+function kbTetherPopover_(modal, anchor) {
+  if (!modal || !anchor) return;
+  modal.style.visibility = 'hidden';
+  modal.style.top = '0px'; modal.style.left = '0px';
+  var r = anchor.getBoundingClientRect();
+  var mw = modal.offsetWidth, mh = modal.offsetHeight, gap = 10;
+  var vw = window.innerWidth, vh = window.innerHeight;
+  var left = r.left;
+  if (left + mw > vw - 8) left = vw - mw - 8;
+  if (left < 8) left = 8;
+  var top = r.bottom + gap;                       // below the anchor by default
+  if (top + mh > vh - 8) top = r.top - mh - gap;  // flip above when it would run off
+  if (top < 8) top = 8;
+  modal.style.left = left + 'px';
+  modal.style.top = top + 'px';
+  modal.style.visibility = '';
+}
+
+/** The term popover. With a VALUE it explains just that value's terms; with
+ *  none it shows the whole legend.
+ *
+ *  Non-modal (`hover-mode`): the backdrop is transparent and click-through, so
+ *  a rep can read it without losing the result list behind it. It rides
+ *  `extraClass` because ensureOverlay REWRITES className — g134, which is how
+ *  the day popover lost its own hover-mode. */
+function insShowTerms_(anchor, value) {
+  var terms = value ? insTermsIn_(value) : INS_TERMS;
+  var head = value ? esc(String(value).trim()) : 'Acceptance legend';
+  var body = terms.length
+    ? '<dl class="kb-ins-legend">' + terms.map(function (t) {
+        return '<dt>' + esc(t.term) + '</dt><dd>' + esc(t.why) + '</dd>';
+      }).join('') + '</dl>'
+    : '<div class="kb-ins-guide">' + icon('info', 13) + ' No definition on file for this value. ' +
+      'It is shown exactly as the payor sheet records it \u2014 check with the team before acting on it.</div>';
+  var overlay = ensureOverlay('kb-term-overlay', { extraClass: 'hover-mode', labelledBy: 'kb-term-h' });
+  overlay.innerHTML = '<div class="modal kb-term-modal">' +
+    '<div class="modal-head"><h3 id="kb-term-h">' + head + '</h3>' +
+      '<button type="button" class="modal-x" aria-label="Close" onclick="closeOverlay(this.closest(\'.overlay\'))">' + icon('x', 15) + '</button></div>' +
+    '<div class="modal-body">' + body + '</div></div>';
+  kbTetherPopover_(overlay.querySelector('.modal'), anchor);
+}
+
+/** Click handler for an acceptance VALUE. The value is read from the element's
+ *  own text rather than a data-* attribute: an attribute round-trips DECODED
+ *  (g49), and there is no reason to hand an escaping hazard to a tooltip. */
+function insTermClick_(el) { insShowTerms_(el, el.textContent || ''); }
+function insLegendClick_(el) { insShowTerms_(el, ''); }
 
 /** Debounced search — a seq token guards the async render (INV-156: two
  *  hosts + out-of-order responses must not cross-paint). */
@@ -2865,10 +3028,18 @@ function insRenderResults_(suffix, q, res) {
   }
   var html = '';
   res.matches.forEach(function (m, i) {
+    // A pill's TONE is a claim. When insToneCls_ recognises nothing in the
+    // value we have no claim to make, so it renders in the NEUTRAL `.none`
+    // style — verbatim, normal case — exactly like a blank cell does.
+    // Before T1 a cell literally reading "status not recorded" got the
+    // uppercase untoned pill while a BLANK cell got the lowercase neutral one:
+    // one meaning, two looks, side by side in the same result list.
     var ns = String(m.networkStatus || '').trim();
-    var pill = ns
-      ? '<span class="kb-ins-pill ' + esc(insToneCls_(ns)) + '">' + esc(ns) + '</span>'
-      : '<span class="kb-ins-pill none">status not recorded</span>';
+    var tone = ns ? (insToneCls_(ns) || 'none') : 'none';
+    var pillKnown = insTermsIn_(ns).length > 0;
+    var pill = pillKnown
+      ? '<button type="button" class="kb-ins-pill kb-term ' + esc(tone) + '" onclick="insTermClick_(this)">' + esc(ns) + '</button>'
+      : '<span class="kb-ins-pill ' + esc(tone) + '">' + esc(ns || 'status not recorded') + '</span>';
     var meta = [];
     if (m.waystar) meta.push('Waystar ' + esc(m.waystar));
     if (m.qualification) meta.push('Qualification: ' + esc(m.qualification));
@@ -2880,8 +3051,16 @@ function insRenderResults_(suffix, q, res) {
           icon('chevronDown', 11) + ' Acceptance by code (' + det.length + ')</button>' +
         '<div class="kb-ins-grid" id="' + detId + '" hidden>' +
           det.map(function (d) {
+            // The value is the thing a rep is stuck on — `SI/PR` next to a
+            // HCPCS code, not the glossary as a whole. It explains itself when
+            // the vocabulary knows it, and stays inert text when it does not,
+            // so a button never promises an answer there isn't one for.
+            var known = insTermsIn_(d.value).length > 0;
+            var vAttrs = 'class="v ' + esc(insToneCls_(d.value)) + (known ? ' kb-term' : '') + '"';
             return '<div class="kb-ins-cell"><span class="c">' + esc(d.label) + '</span>' +
-              '<span class="v ' + esc(insToneCls_(d.value)) + '">' + esc(d.value) + '</span></div>';
+              (known
+                ? '<button type="button" ' + vAttrs + ' onclick="insTermClick_(this)">' + esc(d.value) + '</button>'
+                : '<span ' + vAttrs + '>' + esc(d.value) + '</span>') + '</div>';
           }).join('') + '</div>'
       : '';
     html += '<div class="kb-ins-card">' +
@@ -2895,28 +3074,29 @@ function insRenderResults_(suffix, q, res) {
   host.innerHTML = html;
 }
 
-function kbRenderLanding_() {
-  var main = document.getElementById('kb-main'); if (!main) return;
-  var prefs = kbPanelPrefs_();
-  var recents = prefs.recents || [];
-  var treeById = {};
-  (KB_STATE.tree || []).forEach(function (it) { treeById[it.id] = it; });
-
-  var h = '<div class="kb-land">';
-
-  // Insurance lookup (operator 2026-08-25) — the mid-call payor check, ahead
-  // of the content blocks. The typed query is transient (a re-render clears
-  // it) — the lookup is a point question, not state worth persisting.
+/** The landing's LOOKUP BAND. Rendered once per mount and then left alone —
+ *  see kbRenderLanding_ for why that matters. */
+function kbLandingBandHtml_() {
   // TWO panels side by side, not a stack. Three stacked lookups pushed
   // Bookmarks, Recents, Most used and Review due entirely below the fold — the
   // landing read as a form rather than as the tool it is. The grid lives HERE,
   // in the host, never inside the section renderers: the drawer shares those
   // renderers and is far too narrow for columns, so putting the layout in the
   // host is what lets one section serve both widths unchanged.
-  h += '<div class="kb-lookups">' +
+  return '<div class="kb-lookups">' +
     '<div class="kb-lookup-card">' + insLookupSecHtml_('') + '</div>' +
     '<div class="kb-lookup-card">' + oopLookupSecHtml_('') + '</div>' +
   '</div>';
+}
+
+/** The landing's CONTENT blocks — bookmarks, recents, most-used, review-due,
+ *  content requests. Rebuilt freely; carries no user input. */
+function kbLandingBlocksHtml_() {
+  var prefs = kbPanelPrefs_();
+  var recents = prefs.recents || [];
+  var treeById = {};
+  (KB_STATE.tree || []).forEach(function (it) { treeById[it.id] = it; });
+  var h = '';
 
   // #5 — Bookmarks (all users). Explicit favorites, above the auto Recents.
   var bookmarks = prefs.bookmarks || [];
@@ -3069,10 +3249,31 @@ function kbRenderLanding_() {
   }
 
   h += '</div>';
-  main.innerHTML = h;
+  return h;
 }
 
-// Group section-level results by doc (insertion order = best-score-first).
+/** T1 (operator 2026-09-21): the band is rendered ONCE and the content blocks
+ *  are patched in place, because this function used to rebuild the whole
+ *  landing with `main.innerHTML = h` and three manager-only loaders call it on
+ *  completion. A manager who opened Reference and started typing an address
+ *  lost it 0.5-3s later, when kbGetUsageStats / kbGetReviewDue /
+ *  kbGetContentRequests came back. The old comment here said the typed query
+ *  was "transient (a re-render clears it)" and treated that as a property; it
+ *  was written when the field was a short payor stem, not a street address.
+ *
+ *  Preserving the VALUES across an innerHTML swap would not have been enough —
+ *  focus and the caret go with the nodes. The band has to survive as nodes. */
+function kbRenderLanding_() {
+  var main = document.getElementById('kb-main'); if (!main) return;
+  var blocks = document.getElementById('kb-land-blocks');
+  if (blocks && main.querySelector('.kb-lookups')) {
+    blocks.innerHTML = kbLandingBlocksHtml_();   // the band, and anything typed into it, is untouched
+    return;
+  }
+  main.innerHTML = '<div class="kb-land">' + kbLandingBandHtml_() +
+    '<div id="kb-land-blocks">' + kbLandingBlocksHtml_() + '</div></div>';
+}
+
 function kbGroupResults_(results) {
   var groups = [], byId = {};
   (results || []).forEach(function (r) {
@@ -4499,8 +4700,16 @@ function kbDrawerRenderHome_() {
   var prefs = kbPanelPrefs_();
   var html = '<div id="kbd-guidance"></div><div id="kbd-suggest"></div>';
   // Insurance lookup (operator 2026-08-25) — same shared section, drawer host.
-  html += '<div class="kbd-sec">' + insLookupSecHtml_('-d') + '</div>';
-  html += '<div class="kbd-sec">' + oopLookupSecHtml_('-d') + '</div>';
+  // `.kbd-sec` is a HEADING BAR — mono, 10px, uppercase, `display: flex` — built
+  // for the one-word labels ("Bookmarks", "Recent") that sit ABOVE a list of
+  // siblings. Wrapping a whole lookup section in it made the heading, the
+  // input(s) and the results three FLEX ITEMS IN A ROW, rendered every result
+  // in 10px uppercase mono, and overflowed the ~340px drawer horizontally.
+  // Shipped that way since the insurance lookup joined the drawer and was never
+  // seen, because no visual scenario has ever opened this drawer and the DOM
+  // pins only asserted the section MOUNTS — which it did, inside a heading bar.
+  html += '<div class="kbd-lookup">' + insLookupSecHtml_('-d') + '</div>';
+  html += '<div class="kbd-lookup">' + oopLookupSecHtml_('-d') + '</div>';
   var bookmarks = prefs.bookmarks || [];   // #5
   if (bookmarks.length) {
     html += '<div class="kbd-sec">Bookmarks</div>';

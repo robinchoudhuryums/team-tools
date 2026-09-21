@@ -2619,9 +2619,9 @@ test('OOP-A DOM: the price lookup rides both hosts; a no-match refuses to offer 
 
   const out = h.$('#kb-oop-results').textContent;
   assert.ok(/\$129\.00/.test(out), 'the price renders as the SHEET displays it');
-  assert.ok(/effective 2026-09-01/.test(out), 'with the effective date — a commitment needs its as-of');
-  assert.ok(/area: AZ NV/.test(out), 'and the area eligibility');
-  assert.ok(/Manufacturer: Acme/.test(out), 'an unrecognised column rides along verbatim');
+  assert.ok(/effective[:\s]+2026-09-01/.test(out), 'with the effective date — a commitment needs its as-of');
+  assert.ok(/area[:\s]+AZ NV/.test(out), 'and the area eligibility');
+  assert.ok(/Manufacturer[:\s]+Acme/.test(out), 'an unrecognised column rides along verbatim');
 
   // THE ROW WITH NO PRICE. An empty span here reads as free, or as nothing to
   // say; both are worse than saying it plainly.
@@ -3278,8 +3278,8 @@ test('R DOM: the eligibility answer renders EVERY priced column, labelled — th
 
   // ONE renderer means the eligibility row keeps everything the price row had.
   assert.ok(/E0294/.test(row.textContent), 'the code rides it');
-  assert.ok(/effective 2026-09-01/.test(row.textContent), 'and the effective date — a commitment needs its as-of');
-  assert.ok(/Weight cap: 450 lb/.test(row.textContent), 'and an unrecognised column still rides along verbatim');
+  assert.ok(/effective[:\s]+2026-09-01/.test(row.textContent), 'and the effective date — a commitment needs its as-of');
+  assert.ok(/Weight cap[:\s]+450 lb/.test(row.textContent), 'and an unrecognised column still rides along verbatim');
   assert.strictEqual(row.querySelectorAll('.kb-elig-v').length, 2, 'with both verdicts still on it');
 });
 
@@ -3425,6 +3425,134 @@ test('R DOM: both fields are named by a visible label bound to their own input �
   assert.ok(/optional/.test(addrLabel.textContent), 'the address label says it is optional');
 });
 
+test('T1 DOM: one meaning, one look — an unclassifiable payor status renders like a blank one, and the meta is chips', async () => {
+  const h = boot();
+  h.run.respond('searchInsurancePayors', () => ({ total: 2, cap: 8, matches: [
+    // The operator's sheet literally spells this out in one cell…
+    { name: 'AETNA', networkStatus: 'status not recorded', waystar: '60054', details: [] },
+    // …and leaves it BLANK in another. Same meaning.
+    { name: 'PACIFICARE', networkStatus: '', waystar: 'MULTIPLE', details: [] },
+  ] }));
+  bootLookups(h);
+  const inp = h.$('#kb-ins-input');
+  inp.value = 'aetna';
+  h.read('insLookupInput_')(inp);
+  h.flushTimers();
+  await tick(); await tick();
+
+  const pills = Array.from(h.$('#kb-ins-results').querySelectorAll('.kb-ins-pill'));
+  assert.strictEqual(pills.length, 2, 'both payors carry a status pill');
+  pills.forEach((pl) => {
+    assert.ok(pl.classList.contains('none'),
+      'a value insToneCls_ cannot classify renders NEUTRAL — a pill\u2019s tone is a claim, and ' +
+      'we have none to make. Before T1 the spelled-out cell got an uppercase untoned pill and ' +
+      'the blank one the lowercase neutral pill: one meaning, two looks, in the same list');
+  });
+  assert.ok(/status not recorded/.test(pills[0].textContent), 'and the operator\u2019s own words are kept');
+
+  // The OOP meta is chips, not a `·`-joined sentence.
+  h.run.respond('searchOopPricing', () => ({ cap: 8, total: 1, matches: [{
+    name: 'Widget', code: 'K0800', effective: '2026-09-01', eligibility: 'Open',
+    price: '$10.00', prices: [{ label: '', value: '$10.00' }],
+    details: [{ label: 'Category', value: 'POV' }, { label: 'Shipping', value: '$150.00' }] }] }));
+  const item = h.$('#kb-oop-item');
+  item.value = 'widget';
+  h.read('oopLookupInput_')(item);
+  h.flushTimers();
+  await tick(); await tick();
+  const chips = Array.from(h.$('#kb-oop-results').querySelectorAll('.kb-meta-chip'));
+  assert.strictEqual(chips.length, 5, 'code, effective, area and both details are separate chips — ' +
+    'the meta mixes a billing code, a date, a delivery rule, money and colour options, and one ' +
+    'sentence made every one equally hard to find');
+  assert.ok(chips.some((c) => /Shipping/.test(c.textContent) && /\$150\.00/.test(c.textContent)),
+    'a detail keeps its key with its value');
+});
+
+test('T1 DOM: a landing re-render does NOT destroy what the rep is typing into a lookup', async () => {
+  const h = boot();
+  bootLookups(h);
+
+  // The rep opens Reference and starts typing. The manager-only loaders are
+  // still in flight — kbGetUsageStats / kbGetReviewDue / kbGetContentRequests
+  // are ordinary Apps Script round trips, 0.5-3s.
+  const item = h.$('#kb-oop-item');
+  const addr = h.$('#kb-oop-addr');
+  item.value = 'hospital bed';
+  addr.value = '500 Main St, Irving TX 750';   // mid-address: the caret matters too
+  addr.focus();
+
+  // …and now a loader lands. Before T1 this called kbRenderLanding_, which did
+  // `main.innerHTML = h` and took the whole band with it.
+  const st = h.read('KB_STATE');
+  st.isManager = true;
+  st.usage = { items: [{ id: 'a1', title: 'HIPAA refresher', count: 22, drawerCount: 9 }], unavailable: [] };
+  h.read('kbRenderLanding_')();
+
+  assert.strictEqual(h.$('#kb-oop-item').value, 'hospital bed', 'the item survives the re-render');
+  assert.strictEqual(h.$('#kb-oop-addr').value, '500 Main St, Irving TX 750', 'and so does the half-typed address');
+  assert.strictEqual(h.window.document.activeElement, h.$('#kb-oop-addr'),
+    'and FOCUS survives — restoring the values alone would still have moved the caret, ' +
+    'which is why the band survives as NODES rather than being rebuilt and refilled');
+  assert.strictEqual(h.$('#kb-oop-addr'), addr, 'literally the same element, not a replacement');
+
+  // The blocks DID update — the whole point is that one half re-renders.
+  assert.ok(/HIPAA refresher/.test(h.$('#kb-land-blocks').textContent),
+    'the content blocks took the loader\u2019s result');
+
+  // A full remount (entering the tool) still builds both halves.
+  h.$('#kb-main').innerHTML = '';
+  h.read('kbRenderLanding_')();
+  assert.ok(h.$('.kb-lookups') && h.$('#kb-land-blocks'), 'a cold render builds the band and the blocks');
+  assert.strictEqual(h.$('#kb-oop-addr').value, '', 'and starts the band empty');
+});
+
+test('R DOM: the drawer mounts each lookup in its own container, NOT inside the .kbd-sec heading bar', () => {
+  const h = boot();
+  // Seed the prefs so the REAL .kbd-sec headings (Bookmarks, Recent) render.
+  // Without them the drawer has no .kbd-sec at all and the sweep at the bottom
+  // of this test asserts over an empty set — checked: it reported NO BITE
+  // against a control injected into a heading, because there was no heading
+  // (g116, the vacuous-assertion direction).
+  h.window.localStorage.setItem(h.read('KB_PANEL_LS_KEY'), JSON.stringify({
+    bookmarks: [{ id: 'a1', title: 'OOP quoting rules' }],
+    recents: [{ id: 'a2', title: 'Delivery radius by warehouse' }],
+  }));
+  bootLookups(h);
+  const kbdBody = h.window.document.createElement('div');
+  kbdBody.id = 'kbd-body';
+  h.window.document.body.appendChild(kbdBody);
+  h.read('kbDrawerRenderHome_')();
+
+  // THE BUG THIS PINS. `.kbd-sec` is a heading bar — mono, 10px, uppercase,
+  // display:flex — for the one-word labels ("Bookmarks", "Recent") that sit
+  // ABOVE a list of siblings. Both lookups were wrapped IN one, so the heading,
+  // the inputs and the results became three flex items in a row, every result
+  // rendered in uppercase mono, and the ~340px drawer scrolled sideways. It
+  // shipped that way for weeks.
+  //
+  // The previous pin here asserted the drawer MOUNTS the lookup, and it passed
+  // throughout — the section was mounted, inside a heading bar. A mount check
+  // cannot see WHERE it mounted, which is the g138 lesson in a new place: the
+  // pin's name promised the drawer carried the lookup, and it only proved the
+  // element existed somewhere.
+  ['kb-ins-input-d', 'kb-oop-item-d', 'kb-oop-addr-d'].forEach((id) => {
+    const el = kbdBody.querySelector('#' + id);
+    assert.ok(el, id + ' is mounted in the drawer');
+    assert.strictEqual(el.closest('.kbd-sec'), null,
+      id + ' must NOT sit inside .kbd-sec — that class is a flex heading bar, and it ' +
+      'turns a lookup section into a row of uppercase mono');
+    assert.ok(el.closest('.kbd-lookup'), id + ' sits in a .kbd-lookup container');
+  });
+
+  // .kbd-sec keeps its real job: the text-only headings, with items as SIBLINGS.
+  const secs = Array.from(kbdBody.querySelectorAll('.kbd-sec'));
+  assert.ok(secs.length >= 2, 'the real headings rendered, so the sweep below is not vacuous — ' + secs.length);
+  secs.forEach((sec) => {
+    assert.strictEqual(sec.querySelector('input'), null,
+      '.kbd-sec carries a label, never a control — found one inside: ' + sec.textContent.slice(0, 40));
+  });
+});
+
 test('R-6: every block on the Reference landing is a SECTION or the band — nothing can render at the band’s width by accident', async () => {
   const h = boot();
   // Seed the per-browser prefs so Bookmarks and Recents render too — a pin that
@@ -3448,25 +3576,30 @@ test('R-6: every block on the Reference landing is a SECTION or the band — not
 
   const land = h.$('.kb-land');
   assert.ok(land, 'the landing rendered');
+
+  // THE SHAPE, since T1 split the landing (2026-09-21): `.kb-land` holds
+  // exactly the band and the blocks host, and the band leads. The band is
+  // rendered once and never rebuilt, which is what stops an async loader
+  // destroying a half-typed address.
   const kids = Array.from(land.children);
-  assert.ok(kids.length >= 5, 'several blocks rendered — found ' + kids.length +
+  assert.deepStrictEqual(kids.map((e) => e.id || e.className), ['kb-lookups', 'kb-land-blocks'],
+    'the landing is the band plus the blocks host, in that order — the lookups lead ' +
+    'because they are why a rep opens this tool');
+
+  // THE RULE. `.kb-land` is 1200px so the band has room; the sections keep the
+  // 760px reading measure. A block that is neither renders at the band width,
+  // out of line with everything around it — and the two widths were identical
+  // before the band, so nothing before this pin could have caught it.
+  const blocks = Array.from(h.$('#kb-land-blocks').children);
+  assert.ok(blocks.length >= 4, 'several blocks rendered — found ' + blocks.length +
     ', so the assertion below is about a real landing rather than an empty one');
-
-  // THE RULE. `.kb-land` is 1200px so the two-panel band has room; its sections
-  // keep the 760px reading measure. A block that is neither renders at the band
-  // width, out of line with everything around it — and the two widths were
-  // identical before the band, so nothing before this pin could have caught it.
-  const stray = kids.filter((el) => !el.classList.contains('kb-land-sec') && !el.classList.contains('kb-lookups'));
+  const stray = blocks.filter((el) => !el.classList.contains('kb-land-sec'));
   assert.deepStrictEqual(stray.map((e) => e.className + ' :: ' + e.textContent.slice(0, 60)), [],
-    'every landing block is a .kb-land-sec or the .kb-lookups band');
-
-  // And the band is there exactly once, first.
-  assert.strictEqual(kids.filter((e) => e.classList.contains('kb-lookups')).length, 1, 'one band');
-  assert.ok(kids[0].classList.contains('kb-lookups'), 'and it leads — the lookups are why a rep opens this tool');
+    'every landing content block is a .kb-land-sec');
 
   // The partial-read warning that was the orphan now sits inside the queue it
   // is about, where a reader can tell WHICH list is incomplete.
-  const rdSec = kids.filter((e) => /Review due/.test(e.textContent))[0];
+  const rdSec = blocks.filter((e) => /Review due/.test(e.textContent))[0];
   assert.ok(rdSec, 'the review-due section rendered');
   assert.ok(/KbFeedback/.test(rdSec.textContent),
     'its partial-read warning is INSIDE it — loose on the landing it named no list');
