@@ -1541,6 +1541,110 @@ function flashCopied(el) {
   setTimeout(function () { el.classList.remove('copied'); }, 800);
 }
 
+// ── Copying, honestly (2026-09-21) ─────────────────────────────────────────
+// This app had SIX text-copy helpers, one per partial, and every one of them
+// told the rep it had worked whether or not it had. Two distinct reasons, both
+// easy to miss and both live in an HtmlService iframe (g76):
+//
+//   * `document.execCommand('copy')` returns FALSE when denied. It does not
+//     throw, so a `try/catch` around it — which is what four of the six had —
+//     catches nothing and the success path runs anyway.
+//   * `navigator.clipboard.writeText` returns a PROMISE that REJECTS when the
+//     permission is refused. One site never attached a handler at all.
+//
+// What that cost: the rep pastes, gets whatever was on the clipboard before,
+// and uses it. On the Call Notes save path that is the PREVIOUS patient's note
+// going into the CRM; on the Reference price panel it is a stale figure read to
+// a customer. Neither surface would show anything wrong.
+//
+// So: ONE helper that reports the truth, ONE failover that shows the text, and
+// callers that cannot express "say it worked" independently of it. A pin bans
+// the raw APIs everywhere else.
+
+/** Copy `text` and report the outcome — `done(ok)`. Never throws.
+ *
+ *  Reading `navigator.clipboard` can itself throw in a sandboxed frame, so even
+ *  the capability test is inside the try. */
+function copyText_(text, done) {
+  var cb = typeof done === 'function' ? done : function () {};
+  var fallback = function () {
+    var ok = false;
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = String(text);
+      ta.setAttribute('readonly', 'readonly');
+      ta.style.position = 'fixed'; ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      if (ta.setSelectionRange) ta.setSelectionRange(0, String(text).length);
+      ok = document.execCommand('copy') === true;   // FALSE when denied — it does not throw
+      document.body.removeChild(ta);
+    } catch (_) { ok = false; }
+    cb(ok);
+  };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(String(text)).then(function () { cb(true); }, fallback);
+      return;
+    }
+  } catch (_) { /* touching navigator.clipboard can throw in a sandboxed frame */ }
+  fallback();
+}
+
+/** The manual-copy failover: show the text, pre-selected, and say plainly that
+ *  nothing was copied. A TOAST is not enough here — it disappears before the
+ *  rep can act and there is nothing in it to copy FROM, which is why the
+ *  "manual-copy failover" was written down as a decision in the first place.
+ *
+ *  The text is ASSIGNED to the field, never interpolated into the markup, so a
+ *  note full of angle brackets is not an injection surface. */
+function manualCopyModal_(text, what) {
+  var body = String(text == null ? '' : text);
+  var multiline = body.indexOf('\n') >= 0 || body.length > 60;
+  var overlay = ensureOverlay('manual-copy-overlay', { labelledBy: 'manual-copy-h' });
+  overlay.innerHTML = '<div class="modal manual-copy-modal">' +
+    '<div class="modal-head"><h3 id="manual-copy-h">Copy it by hand</h3>' +
+      '<button type="button" class="modal-x" aria-label="Close" onclick="closeOverlay(this.closest(\'.overlay\'))">' + icon('x', 15) + '</button></div>' +
+    '<div class="modal-body">' +
+      '<p class="manual-copy-why">This browser blocked the clipboard, so <b>nothing was copied</b>. ' +
+        'Here it is — select it and press Ctrl/⌘+C.</p>' +
+      '<label class="manual-copy-lbl" for="manual-copy-val"></label>' +
+      (multiline
+        ? '<textarea id="manual-copy-val" class="manual-copy-val" rows="8" readonly></textarea>'
+        : '<input id="manual-copy-val" class="manual-copy-val" type="text" readonly>') +
+    '</div></div>';
+  overlay.querySelector('.manual-copy-lbl').textContent = what || '';
+  var field = overlay.querySelector('#manual-copy-val');
+  field.value = body;
+  field.focus();
+  field.select();
+  return overlay;
+}
+
+/** Copy, and give the rep the RIGHT feedback for the outcome.
+ *
+ *  Every call site in this app goes through here rather than through
+ *  `copyText_` directly, because the defect was never the copying — it was six
+ *  hand-written success paths, each of which ran unconditionally. There is no
+ *  way to reach the success branch from a caller.
+ *
+ *  `opts`: `{ ok: 'Copied the thing', label: 'what it is', el: theButton,
+ *             silent: true }`. `silent` suppresses only the SUCCESS toast (for
+ *  an automatic copy the rep did not ask for) — a FAILURE is never silent,
+ *  because an automatic copy that quietly did not happen is the one the rep is
+ *  most sure about. */
+function copyWithFeedback_(text, opts) {
+  var o = opts || {};
+  copyText_(text, function (ok) {
+    if (ok) {
+      if (o.el) flashCopied(o.el);
+      if (!o.silent) showToast(o.ok || 'Copied', 'toast-success');
+      return;
+    }
+    manualCopyModal_(text, o.label || '');
+  });
+}
+
 /** 2nd-pass loader Role C — a thin indeterminate sweep bar for in-place
  *  refreshes (content stays visible / a panel is reloading). Returns markup. */
 function loSweep() { return '<div class="lo-sweep" role="status" aria-label="Loading"></div>'; }

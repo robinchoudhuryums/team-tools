@@ -13712,31 +13712,111 @@ test('T4-2: the copy button yields the FIGURE from the parked payload, never a q
   // red on the TOAST, which is allowed to say whatever reads best; the claim
   // was never about the toast. `String(pr.value)` followed immediately by the
   // callback leaves no room to concatenate a label, a date, or a sentence.
-  assert.ok(/kbCopyText_\(String\(pr\.value\), function/.test(copy),
+  assert.ok(/copyWithFeedback_\(String\(pr\.value\), \{/.test(copy),
     'what reaches the clipboard is the price value and NOTHING concatenated to it');
   assert.ok(!/oopQuoteLine_/.test(copy), 'and it never reaches for the composer’s canonical line');
 
   // A stale index must refuse rather than copy whatever is at that slot now.
   assert.ok(/no longer on screen/.test(copy), 'a vanished row says so instead of copying something else');
 
-  // HONEST FAILURE (g76 + INV-175). execCommand returns FALSE when denied
-  // rather than throwing, and the clipboard API rejects — every other copy
-  // helper in this app reports success regardless. For a price that is the
-  // rep reading the previous clipboard contents to a customer.
-  const ct = extractFunction('kb/script_kb.html', 'kbCopyText_');
+  // The honest-failure machinery moved to the shell in T5 and is pinned there
+  // (T5-1). What stays this pin's business is that the PRICE goes through it:
+  // copyWithFeedback_ owns the success branch, so this call site cannot report
+  // a copy it did not make, whatever else changes around it.
+  // Stated as the SUCCESS message, not as a ban on toasts. The call site still
+  // toasts its own REFUSAL ("that price is no longer on screen"), which is a
+  // different thing and is this function's to say — it is the only code that
+  // knows the index did not resolve. What it must not own is "copied".
+  assert.ok(!/toast-success/.test(copy),
+    'the success message is the shared helper’s to say, not this call site’s — six hand-written ' +
+    'success paths is exactly what T5 removed');
+  assert.ok(/no longer on screen/.test(copy),
+    'while its own refusal stays here, where the index is');
+  assert.ok(/label:/.test(copy),
+    'and it names the figure, so the manual failover can say WHICH price it is showing');
+});
+
+test('T5-1: ONE honest copy helper, and the raw clipboard APIs are banned everywhere else', () => {
+  // THE DEFECT, in one sentence: six partials each hand-wrote a copy helper,
+  // and every one of them ran its success path unconditionally. Two reasons,
+  // both invisible in a code read:
+  //   * execCommand('copy') returns FALSE when denied — it does not throw, so
+  //     the try/catch four of them had caught nothing.
+  //   * clipboard.writeText REJECTS — and one site attached no handler at all.
+  // The cost was the rep pasting the PREVIOUS clipboard contents: on the Call
+  // Notes save path, a different patient's note into the CRM.
+  //
+  // DERIVED, not enumerated. My own survey of the call sites said five; a grep
+  // found SEVEN, because a hand-list is only as good as the day it was written
+  // (g116's sixth direction). So the net scans every partial and exempts by
+  // NAME, with the reason beside each exemption.
+  const partials = fs.readdirSync(path.join(__dirname, '../../web-app'), { withFileTypes: true })
+    .flatMap((d) => d.isDirectory()
+      ? fs.readdirSync(path.join(__dirname, '../../web-app', d.name))
+          .filter((f) => /^script_.*\.html$/.test(f)).map((f) => d.name + '/' + f)
+      : (/^script_.*\.html$/.test(d.name) ? [d.name] : []));
+  assert.ok(partials.length >= 10, 'the partial sweep found them — ' + partials.length);
+
+  // The ONE place the raw APIs may appear, and the ONE legitimate other user.
+  const ALLOWED = {
+    'copyText_': 'the one honest helper — it owns both raw APIs and reports the outcome',
+    // Copies image BYTES, not text, and already degrades VISIBLY: it opens the
+    // image in a tab for a native right-click. Not a text copy, and not a
+    // silent success — so it is exempt as a fact, not as a convenience.
+    'intakeCopyImage_': 'copies image bytes via ClipboardItem and falls back to opening the image',
+  };
+
+  const offenders = [];
+  partials.forEach((rel) => {
+    const src = extractScript(rel);
+    // Split at top-level function declarations so a hit can be attributed.
+    const parts = src.split(/\n(?=function\s+\w+\s*\()/);
+    parts.forEach((chunk) => {
+      const m = /^function\s+(\w+)\s*\(/.exec(chunk);
+      const name = m ? m[1] : '(top level)';
+      const code = chunk.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+      if (!/navigator\.clipboard|execCommand\(\s*['"]copy['"]\s*\)/.test(code)) return;
+      if (ALLOWED[name]) return;
+      offenders.push(rel + ' → ' + name);
+    });
+  });
+  assert.deepStrictEqual(offenders, [],
+    'every text copy goes through copyText_/copyWithFeedback_ — found raw clipboard use in: ' +
+    JSON.stringify(offenders));
+
+  // NON-VACUITY. A scan that found no partials, or a split that produced no
+  // named functions, would pass the assert above while checking nothing.
+  assert.ok(/navigator\.clipboard/.test(extractScript('script_core.html')),
+    'the helper really is in the shell — the sweep above is not passing because nothing uses the clipboard');
+  assert.ok(/intakeCopyImage_/.test(extractScript('intake/script_intake.html')),
+    'and the exempted image copy really exists, so the exemption is a fact rather than a leftover');
+
+  // The helper itself: both failure modes handled, the outcome reported.
+  const ct = extractFunction('script_core.html', 'copyText_');
   assert.ok(/document\.execCommand\('copy'\) === true/.test(ct),
-    'the execCommand result is CHECKED — it returns false when denied, it does not throw');
-  assert.ok(/done\(true\)/.test(ct) && /done\(ok\)/.test(ct), 'and the outcome is reported either way');
+    'the execCommand RESULT is checked — it returns false when denied, it does not throw');
+  assert.ok(/\.then\(function \(\) \{ cb\(true\); \}, fallback\)/.test(ct),
+    'a REJECTED writeText falls through to the shim rather than vanishing');
   assert.ok(/try \{\s*if \(navigator\.clipboard/.test(ct),
     'even reading navigator.clipboard is inside the try — a sandboxed frame can throw on the property itself');
-  assert.ok(/kbManualCopy_/.test(copy), 'a failed copy offers the manual failover, not a toast that says "do it yourself"');
 
-  const mc = extractFunction('kb/script_kb.html', 'kbManualCopy_');
-  assert.ok(/ensureOverlay\(/.test(mc) && /closeOverlay\(/.test(mc),
-    'the failover is a real overlay through the hooks (g100), not a classList toggle');
-  assert.ok(/input\.value = text/.test(mc),
-    'the figure is ASSIGNED, never interpolated into the markup');
-  assert.ok(/input\.select\(\)/.test(mc), 'and pre-selected, so the rep can just press copy');
+  // The success branch is the HELPER'S. This is the structural half of the fix:
+  // a call site cannot say "copied" without the helper saying it worked.
+  const cw = extractFunction('script_core.html', 'copyWithFeedback_');
+  assert.ok(/copyText_\(text, function \(ok\) \{/.test(cw), 'it waits for the outcome');
+  assert.ok(/if \(ok\)/.test(cw) && /manualCopyModal_\(/.test(cw),
+    'success and failure are its two branches, and failure opens the failover');
+  assert.ok(/if \(!o\.silent\)/.test(cw),
+    '`silent` suppresses the SUCCESS toast only');
+  assert.ok(cw.indexOf('manualCopyModal_') > cw.indexOf('if (ok)'),
+    'and the failover is on the FAILURE side of that branch');
+
+  // The failover, which is what the "manual-copy failover" decision asked for.
+  const mc = extractFunction('script_core.html', 'manualCopyModal_');
+  assert.ok(/ensureOverlay\(/.test(mc), 'a real overlay through the hooks (g100), not a classList toggle');
+  assert.ok(/field\.value = body/.test(mc), 'the text is ASSIGNED, never interpolated into the markup');
+  assert.ok(/field\.select\(\)/.test(mc), 'and pre-selected, so the rep can just press copy');
+  assert.ok(/nothing was copied/.test(mc), 'and it says plainly that the copy did NOT happen');
 });
 
 test('T3-4: the join is built ONLY when a result has code columns, and its failure is NAMED rather than inferred', () => {

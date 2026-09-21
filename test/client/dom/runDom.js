@@ -3923,11 +3923,11 @@ test('T4 DOM: copy yields the parked FIGURE, and a blocked clipboard SAYS so ins
   h.window.document.execCommand = () => false;
   h.read('oopCopyPrice_')(btns[0]);
   await tick(); await tick();
-  const mc = h.window.document.querySelector('#kb-manualcopy-overlay');
+  const mc = h.window.document.querySelector('#manual-copy-overlay');
   assert.ok(mc && mc.classList.contains('open'), 'the manual-copy failover opens');
   assert.ok(/blocked the clipboard/.test(mc.textContent) && /nothing was copied/.test(mc.textContent),
     'and SAYS nothing was copied — every other copy helper in this app claims success here');
-  const mcVal = mc.querySelector('#kb-mc-val');
+  const mcVal = mc.querySelector('#manual-copy-val');
   assert.strictEqual(mcVal.value, '$920.00', 'with the figure there to select by hand');
   // PRE-SELECTED, so the rep can press copy without dragging over it. Asserted
   // on the selection range rather than the source: a bite that deleted the
@@ -3963,6 +3963,58 @@ test('T4 DOM: copy yields the parked FIGURE, and a blocked clipboard SAYS so ins
   h.read('oopCopyPrice_')(lone[0]);
   await tick();
   assert.strictEqual(copied.length, before, 'a stale index copies NOTHING');
+});
+
+test('T5 DOM: the Call Notes auto-copy is SILENT on success and never on failure', async () => {
+  // THE WORST COPY IN THE APP to get wrong, and the one that had no coverage
+  // at all. It runs automatically on the save path so the rep never watches
+  // it; seconds later they paste into the CRM. It used to fail in complete
+  // silence — the promise rejection went to a fallback whose own catch
+  // swallowed everything, and execCommand returns false rather than throwing,
+  // so the catch saw nothing either way. The rep pasted the PREVIOUS note,
+  // about a different patient.
+  const h = boot();
+  h.bootShell({});
+  const note = { id: 'n1', caller: 'Jane Q', issue: 'Wheel wobble', resolution: 'Ordered part' };
+
+  // SUCCESS: silent by design — the rep did not ask for this copy, and a toast
+  // on every save is noise.
+  const copied = [];
+  const setClipboard = (impl) => Object.defineProperty(h.window.navigator, 'clipboard',
+    { value: impl, configurable: true, writable: true });
+  setClipboard({ writeText: (t) => { copied.push(t); return Promise.resolve(); } });
+  h.read('cnAutoCopyNote_')(note);
+  await tick(); await tick();
+  assert.strictEqual(copied.length, 1, 'the note reached the clipboard');
+  assert.ok(/Jane Q/.test(copied[0]), 'and it is the note, formatted');
+  assert.strictEqual(h.window.document.querySelector('#manual-copy-overlay'), null,
+    'nothing interrupts a save that worked');
+
+  // FAILURE: never silent. This is the whole change.
+  setClipboard({ writeText: () => Promise.reject(new Error('denied')) });
+  h.window.document.execCommand = () => false;
+  h.read('cnAutoCopyNote_')(note);
+  await tick(); await tick();
+  const mc = h.window.document.querySelector('#manual-copy-overlay');
+  assert.ok(mc && mc.classList.contains('open'),
+    'a blocked clipboard on the SAVE path interrupts the rep — silence here is the previous ' +
+    'patient’s note going into the CRM');
+  assert.ok(/nothing was copied/.test(mc.textContent), 'and says so plainly');
+  assert.ok(/Jane Q/.test(mc.querySelector('#manual-copy-val').value),
+    'with the note there to copy by hand');
+  // A note is multi-line, so the failover gives it room rather than a one-line
+  // input the rep has to scroll sideways through.
+  assert.strictEqual(mc.querySelector('#manual-copy-val').tagName, 'TEXTAREA');
+  h.read('closeOverlay')(mc);
+
+  // And the "copy again" button, which used to toast success SYNCHRONOUSLY —
+  // beside a copy that had not finished and might not have worked.
+  h.read('cnCopyNoteAgain_');   // present
+  setClipboard({ writeText: () => Promise.reject(new Error('denied')) });
+  h.read('cnAutoCopyNote_')(note, { announce: true });
+  await tick(); await tick();
+  assert.ok(h.window.document.querySelector('#manual-copy-overlay'),
+    'an explicitly requested copy fails loudly too');
 });
 
 test('R-6: every block on the Reference landing is a SECTION or the band — nothing can render at the band’s width by accident', async () => {

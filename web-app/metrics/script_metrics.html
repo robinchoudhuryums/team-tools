@@ -1841,30 +1841,15 @@ function mCopyTeamTable_(btn) {
   var data = M_STATE.teamData;
   if (!data || !data.reps) { showToast('Nothing to copy yet', 'toast-warn'); return; }
   var tsv = mTeamTableTsv_(data, M_STATE.teamScopeActive || 'combined', M_STATE.teamSort);
-  var doneOk = function () {
-    if (btn && typeof flashCopied === 'function') flashCopied(btn);
-    showToast('Table copied — paste into a spreadsheet', 'toast-success');
-  };
-  // Clipboard API first, textarea shim as fallback — both from the click
-  // gesture (the documented HtmlService-iframe clipboard gotcha).
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(tsv).then(doneOk, function () { mCopyFallback_(tsv, doneOk); });
-      return;
-    }
-  } catch (_) { /* fall through to the shim */ }
-  mCopyFallback_(tsv, doneOk);
-}
-function mCopyFallback_(text, onOk) {
-  try {
-    if (typeof cnFallbackCopy_ === 'function') { cnFallbackCopy_(text); onOk(); return; }
-    var ta = document.createElement('textarea');
-    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
-    document.body.appendChild(ta); ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-    onOk();
-  } catch (e) { showToast('Copy failed — select the table and copy manually', 'toast-error'); }
+  // This one LOOKED honest — it had an onOk callback and an error toast — and
+  // was not: the toast only fired on a THROW, and a denied execCommand returns
+  // false instead. It also reached across partials for cn's fallback, which
+  // swallowed failure outright, so the reach made it less honest, not more.
+  copyWithFeedback_(tsv, {
+    ok: 'Table copied — paste into a spreadsheet',
+    label: 'Team table (TSV)',
+    el: btn,
+  });
 }
 
 // ── Ambient polling: answer-rate alert badge on Metrics sidebar icon ──
