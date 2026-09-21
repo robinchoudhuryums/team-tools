@@ -4,7 +4,7 @@
 Cycle: 21 — CLOSED 2026-09-21 (batch R deployed and operator-confirmed; batch S
 needed no deploy; reflected net +1; the whole block is in `.cycle/HISTORY.md`).
 **No cycle is open.** The next `/audit` or `/broad-scan` opens cycle 22.
-Phase: implement (between-cycles operator work — T1–T4 COMPLETE, undeployed)
+Phase: implement (between-cycles operator work — T1–T5 COMPLETE, undeployed)
 Scope: —
 Test Command: manual
 Estimates: T1 (landing re-render + pill + meta chips): S (~2 h) · T2 (legend
@@ -13,8 +13,8 @@ actual ~3 h combined. **T3 (the payor × item HCPCS join): L (~8 h)** — writte
 BEFORE the first edit, as it stood in the agreed four-batch plan ("L, ~1 day");
 actual ~4 h. **T4 (keyboard nav · copy price · collapse agreeing verdicts):
 M (~3 h)** — written BEFORE the first edit, as it stood in the plan;
-actual ~3 h. **T5 (one honest copy helper, six call sites): M (~4 h)** —
-written BEFORE the first edit. Between-cycles operator work, the 19pre pattern.
+actual ~3 h. **T5 (one honest copy helper, SEVEN call sites): M (~4 h)** —
+written BEFORE the first edit; actual ~3.5 h. Between-cycles operator work, the 19pre pattern.
 Subsystem cycles since last Seams audit: 0 — reset by the 2026-09-18 audit,
 whose findings shipped as batch S. The cadence is every 4; next due at cycle 25.
 Updated: 2026-09-21
@@ -25,9 +25,9 @@ Updated: 2026-09-21
   deploy exposed, the cycle-21 close-out, and T1 + T2. The branch was restarted
   from `main` afterwards, per the merged-PR rule. **Still needs one
   `clasp push -f` + New-version deploy**, then S64 and S112.
-- A FOUR-BATCH plan (T1–T4) for the Reference lookups was agreed with the
-  operator on 2026-09-21. **All four are DONE and pushed.** Nothing is
-  deployed yet — T1+T2+T3+T4 ship in ONE push.
+- A four-batch plan (T1–T4) for the Reference lookups was agreed with the
+  operator on 2026-09-21, and T5 followed from a T4 follow-on. **All five are
+  DONE and pushed.** Nothing is deployed yet — they ship in ONE push.
 
 ## Completed this cycle
 - (Cycle 21's record is in `.cycle/HISTORY.md` and the three blocks
@@ -35,7 +35,7 @@ Updated: 2026-09-21
   and `21-a-reflect.md`. Nothing has been completed against a NEW cycle.)
 
 ## Pending / not yet done
-- **The deploy** — ONE `clasp push -f` + New-version covers T1, T2, T3 AND T4;
+- **The deploy** — ONE `clasp push -f` + New-version covers T1 through T5;
   then walk S64 (six T3 steps + four T4 steps), S112 and S73.
 - ~~T1~~ and ~~T2~~ are DONE — block `21post-T1-T2-broad-implement.md`, net
   2 − 0. The tone/explanation guarantee is held by a PIN rather
@@ -44,7 +44,7 @@ Updated: 2026-09-21
   with a tooltip trades a real guarantee for a tidy one.
 - ~~T3~~ is DONE — block `21post-T3-broad-implement.md`, net 0 − 0 (1
   capability, 2 defensive; nothing here was broken). **Not deployed** — T1, T2
-  and T3 all ship in ONE `clasp push -f` + New-version. **INV-233 written**
+  and T3 ship together. **INV-233 written**
   (ambiguity refused as a SHAPE: `hcpcsParse_` fills `tokens` only on the
   certain path, so no consumer can assert from an uncertain parse). Eleven
   bite-checks, all BITE, and `scripts/bite.sh --dom` now drives the DOM harness
@@ -70,10 +70,21 @@ Updated: 2026-09-21
   which is what the decision actually forbade. Thirteen bite-checks, all BITE,
   after THREE NO BITEs that were each a real gap (agreement ignoring `why`;
   the scalar price fallback never driven; a dead `idx == null` guard, removed).
-- **A follow-on T4 surfaced and did NOT fix:** FIVE copy helpers in this app
-  swallow failure and report success. `kbCopyText_` is the honest one and the
-  only one. The KB link card is the closest neighbour and still says
-  "Copied ✓" unconditionally; `kb/script_kb.html:2196` has no failover at all.
+- ~~T5~~ is DONE — block `21post-T5-broad-implement.md`, net **1 − 0** (one
+  HIGH production fix: SEVEN copy sites reported success they had not
+  achieved, including the Call Notes save path whose clipboard the rep pastes
+  into the patient record seconds later). `copyText_` / `manualCopyModal_` /
+  `copyWithFeedback_` live in `script_core.html`; `copyWithFeedback_` OWNS the
+  success branch, so a call site cannot claim a copy it did not make. The pin
+  DERIVES the ban rather than listing callers — the survey said five and a grep
+  found seven. Eight bite-checks, all BITE.
+- **`.modal-head` and `.modal-x` had NO CSS rule** (invented by T2, merged
+  that way). Fixed here because the failover modal needed them; it also fixes
+  the term popover. Now g140.
+- **The `/sync-docs` pass owed since T1 is DONE** and shipped with T5: g76
+  rewritten, g140 + g141 added and indexed, the Reference narrative brought up
+  to T1–T5, a new `InsurancePayors` operator-state entry, and the harness-log
+  round notes.
 - **DEFERRED, still an operator decision:** F-09's holiday FALLBACK — keep
   g123's federal fail-open, or match the Department Dashboard's no-fallback.
 - **Still owed from cycle 19's post-deploy walk:** step 8 — `INSTANCE_IS_PROD=true`
@@ -91,10 +102,17 @@ Updated: 2026-09-21
 
 ## Open follow-on items
 - `.cycle/config.md` — INV-229..232 + the INV-213 amendment, to be written by
-  the round that adopts them.
-- `docs/gotchas.md` — the drawer/`.kbd-sec` defect and the mount-check lesson
-  are recorded in PR #264's body and the HISTORY block, but no gotcha entry
-  exists yet. It has bitten production, so it has earned one.
+  the round that adopts them. **T5's rule has no invariant yet either** (one
+  honest copy helper; the caller cannot own the success branch) — it is g76
+  and the T5-1 pin, but no INV number. Next free is **INV-234**.
+- **A "every class in the markup has a CSS rule" pin.** The defect has now
+  fired THREE times in one file: `.kb-ins-row` (no rule at all), `.kbd-sec`
+  (a rule meaning something else) and `.modal-head`/`.modal-x` (no rule).
+  A naive sweep is NOT the answer and was deliberately not built — class names
+  here are routinely assembled by concatenation (`'kb-elig-v ' + cls`), so it
+  would over-report badly. A careful version needs scoping.
+- `intakeCopyImage_` opens a tab on failure without checking the return, so a
+  blocked popup is invisible (g135). Out of T5's scope — it is the image path.
 
 ## Decisions made (so the next session doesn't re-litigate)
 - Price and area eligibility are ONE panel; the address UPGRADES the answer
@@ -109,29 +127,24 @@ Updated: 2026-09-21
   whose value is that its claims are true.
 
 ## Where I left off
-**T1, T2, T3 and T4 are all done and pushed.** PR #264 merged 2026-09-21
-(`2487fd1`); the branch was restarted from `main` and carries T3 and T4. Every
+**T1 through T5 are all done and pushed.** PR #264 merged 2026-09-21
+(`2487fd1`); the branch was restarted from `main` and carries T3, T4 and T5. Every
 harness is green, the counts block agrees, and the shots were READ — the
 drawer shot shows an agreeing verdict above a disagreeing one, which is the
 evidence the T4 amendment turns on.
 
-**Next: ONE deploy** (`clasp push -f` + New-version) covering all four, then
+**Next: ONE deploy** (`clasp push -f` + New-version) covering all five, then
 walk S64 — it now carries SIX T3 steps and FOUR T4 steps, including renaming
 the `OopPricing` tab to see the degraded-join banner — and S112. Note S112 was
 deliberately NOT widened for T4: T4 adds a second way to get a price onto the
 clipboard and explicitly not a second way to get one into an email.
 
-**`/sync-docs` is owed and has grown again.** Four files: `docs/modules.md`
-(the split landing, the term popover, the join, AND T4's three), `docs/gotchas.md` + the
-CLAUDE.md index (the drawer `.kbd-sec` defect and T1's re-render class, both
-still unwritten), `docs/operator-state.md` (`InsurancePayors` has no entry of
-its own, and T3 makes its column HEADERS load-bearing — they are the join key)
-and `docs/test-harness-log.md`.
+**`/sync-docs` is DONE** — it shipped with T5 and covered all four checks.
 
 **Two questions for the operator**, both now blocking nothing: the four
 undefined acceptance values, and how many `OopPricing` codes use the
 `K0821/23/16` shorthand — every one of those is a code the join declines, and
 splitting them into whole codes needs no code change.
 
-The four-batch plan is finished. The honest next step after the deploy is the
-owed `/sync-docs` pass, then the operator's two questions.
+The plan is finished and the docs are current. The honest next step is the
+DEPLOY, then the operator's two questions. Nothing else is in flight.
