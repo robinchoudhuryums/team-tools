@@ -345,7 +345,7 @@ Nearly all of these were found by MEASUREMENT, not by reading. A squeezed layout
 - **A pill tab strip must scroll inside itself, or it pushes the whole page sideways (operator 2026-08-11).** Fires when a pill strip can outgrow the viewport. [Detail](docs/gotchas.md#g71-a-pill-tab-strip-must-scroll-inside)
 - **Two layout lessons that only MEASUREMENT found, both from one chip (operator testing note 10, 2026-09-10).** Fires when a nowrap pill sits in a `1fr` track, or you fight a shared descendant rule. [Detail](docs/gotchas.md#g72-two-layout-lessons-that-only-measurement-found)
 - **The `hidden` attribute LOSES to any class rule that sets `display` (operator #2 batch, 2026-08-06 — MEASURED).** Fires when an element carries a display-setting class AND the `hidden` attribute. [Detail](docs/gotchas.md#g73-the-hidden-attribute-loses-to-any-class)
-- **A class in the markup is a CLAIM that a rule exists for it — and a class whose rule means something ELSE is the same defect wearing a hat. Fired TWICE in three batches in one file: `.kbd-sec` is a flex HEADING BAR and wrapping the drawer's lookups in it laid them out in a row (live for weeks); `.modal-head`/`.modal-x` had no rule at all, so a popover's title and close button stacked unstyled.** Fires when you reuse a container class, or invent one. Both were found by READING a shot — 0px overflow, no console error. Verify: the `.kbd-sec` container pin + the `reference-drawer-*` and `manual-copy-*` scenarios. [Detail](docs/gotchas.md#g140-a-class-in-the-markup-is-a-claim)
+- **A class in the markup is a CLAIM that a rule exists for it — and a class whose rule means something ELSE is the same defect wearing a hat. Fired TWICE in three batches in one file: `.kbd-sec` is a flex HEADING BAR and wrapping the drawer's lookups in it laid them out in a row (live for weeks); `.modal-head`/`.modal-x` had no rule at all, so a popover's title and close button stacked unstyled.** Fires when you reuse a container class, or invent one. Both were found by READING a shot — 0px overflow, no console error. Verify: the T6 RATCHET (every bare class named with the reason it needs none; the list only shrinks — INV-235) + the `.kbd-sec` container pin + the `reference-drawer-*` and `manual-copy-*` scenarios. [Detail](docs/gotchas.md#g140-a-class-in-the-markup-is-a-claim)
 
 ### Test & tooling hazards
 
@@ -878,7 +878,7 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 10 | `TRIGGER_GROUPS` |
 | localStorage keys | 18 | `ums…` literals in `web-app/` |
-| Invariant library entries | 226 | `.cycle/config.md` |
+| Invariant library entries | 228 | `.cycle/config.md` |
 | Regression scenarios (S*) | 108 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second

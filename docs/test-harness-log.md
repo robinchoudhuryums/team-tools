@@ -1893,3 +1893,41 @@ twice-wrapped column; the manual-copy failover's close button stacked below its
 title because `.modal-head` had no CSS rule at all; and that failover's field
 scrolled to its END, so the rep saw the tail of a price line instead of the
 price. All three were found by READING the shot.
+
+## T6 — the unstyled-class ratchet (2026-09-21)
+
+**The pin passed its first run while checking almost nothing, and a bite-check
+is the only reason anyone knows.** The hook derivation counted any plain quoted
+word as a selector — correct for `classList.add('foo')`, and catastrophic in an
+app that builds its markup in JS, where every `class="a b"` is itself a quoted
+string. ~3,500 tokens were harvested as "hooks", i.e. nearly every class in the
+app. `.mono` — fifteen elements with no rule — went straight through.
+
+**The non-vacuity check passed BECAUSE of the bug.** It asked whether `modal`
+was a hook. It was, for entirely the wrong reason. That is g116's first
+direction inside a pin written three batches after that gotcha was last
+extended, and it is worth stating plainly: *a non-vacuity check that the defect
+also satisfies is not a non-vacuity check.*
+
+The replacement DRIVES the extractor over a synthetic snippet whose only
+content is a class attribute, and asserts nothing is harvested from it. Plus a
+band check — more hooks than defined classes means over-capture has returned.
+
+**Numbers from the measurement, because the plan had guessed them wrong.**
+1,871 classes defined, 1,645 literal tokens used, 118 used-but-never-defined.
+Two derivations take that to 33. I had told the operator a naive sweep "would
+over-report badly"; it does not, and the claim was retracted.
+
+**Three of the candidates are correct as-is, and a sweep that called them
+defects would have you adding empty rules.** `.mh-emp` is the left default
+beside a centred `.mh-num` and a right-aligned `.mh-cov`; `.qa-det-right` is
+the plain column beside a sticky `.qa-det-left`; `.cn-ob-chip` is ALREADY
+muted, so `.is-mut` is the default that `.is-ok` and `.is-warn` override. The
+shape recurs: **the default member of a styled set needs its class precisely to
+be what the others are distinguished from.**
+
+**Known limits, both erring permissive** — the safe direction for a ratchet, and
+recorded so the next reader does not mistake them for coverage: an EMPTY rule
+satisfies the pin (deleting a rule's declarations does not bite; renaming its
+selector does), and a class defined only as a descendant (`.kb-ins-cell .v`)
+counts as globally defined.

@@ -4,7 +4,7 @@
 Cycle: 21 — CLOSED 2026-09-21 (batch R deployed and operator-confirmed; batch S
 needed no deploy; reflected net +1; the whole block is in `.cycle/HISTORY.md`).
 **No cycle is open.** The next `/audit` or `/broad-scan` opens cycle 22.
-Phase: implement (between-cycles operator work — T1–T5 COMPLETE, undeployed)
+Phase: implement (between-cycles operator work — T1–T6 COMPLETE, undeployed)
 Scope: —
 Test Command: manual
 Estimates: T1 (landing re-render + pill + meta chips): S (~2 h) · T2 (legend
@@ -15,7 +15,8 @@ actual ~4 h. **T4 (keyboard nav · copy price · collapse agreeing verdicts):
 M (~3 h)** — written BEFORE the first edit, as it stood in the plan;
 actual ~3 h. **T5 (one honest copy helper, SEVEN call sites): M (~4 h)** —
 written BEFORE the first edit; actual ~3.5 h. **T6 (the unstyled-class ratchet
-+ the 3 real defects it found): M (~3 h)** — written BEFORE the first edit.
++ the real defects it found): M (~3 h)** — written BEFORE the first edit;
+actual ~3 h.
 Between-cycles operator work, the 19pre pattern.
 Subsystem cycles since last Seams audit: 0 — reset by the 2026-09-18 audit,
 whose findings shipped as batch S. The cadence is every 4; next due at cycle 25.
@@ -28,8 +29,8 @@ Updated: 2026-09-21
   from `main` afterwards, per the merged-PR rule. **Still needs one
   `clasp push -f` + New-version deploy**, then S64 and S112.
 - A four-batch plan (T1–T4) for the Reference lookups was agreed with the
-  operator on 2026-09-21, and T5 followed from a T4 follow-on. **All five are
-  DONE and pushed.** Nothing is deployed yet — they ship in ONE push.
+  operator on 2026-09-21; T5 followed from a T4 follow-on and T6 from a T5 one.
+  **All six are DONE and pushed.** Nothing is deployed yet — ONE push.
 
 ## Completed this cycle
 - (Cycle 21's record is in `.cycle/HISTORY.md` and the three blocks
@@ -37,7 +38,7 @@ Updated: 2026-09-21
   and `21-a-reflect.md`. Nothing has been completed against a NEW cycle.)
 
 ## Pending / not yet done
-- **The deploy** — ONE `clasp push -f` + New-version covers T1 through T5;
+- **The deploy** — ONE `clasp push -f` + New-version covers T1 through T6;
   then walk S64 (six T3 steps + four T4 steps), S112 and S73.
 - ~~T1~~ and ~~T2~~ are DONE — block `21post-T1-T2-broad-implement.md`, net
   2 − 0. The tone/explanation guarantee is held by a PIN rather
@@ -72,6 +73,13 @@ Updated: 2026-09-21
   which is what the decision actually forbade. Thirteen bite-checks, all BITE,
   after THREE NO BITEs that were each a real gap (agreement ignoring `why`;
   the scalar price fallback never driven; a dead `idx == null` guard, removed).
+- ~~T6~~ is DONE — block `21post-T6-broad-implement.md`, net **2 − 0** (both
+  Low: `.mono`, fifteen elements asking for monospace with no rule; and
+  `.m-vol-note`, a `role="alert"` degraded-read warning rendering as plain
+  body text). **The pin passed its first run while checking almost nothing** —
+  its hook extractor harvested every `class="a b"` because this app builds
+  markup in JS, and its non-vacuity check passed BECAUSE of that. Found by a
+  bite-check that should have gone red. Six bites, all BITE now.
 - ~~T5~~ is DONE — block `21post-T5-broad-implement.md`, net **1 − 0** (one
   HIGH production fix: SEVEN copy sites reported success they had not
   achieved, including the Call Notes save path whose clipboard the rep pastes
@@ -104,15 +112,17 @@ Updated: 2026-09-21
 
 ## Open follow-on items
 - `.cycle/config.md` — INV-229..232 + the INV-213 amendment, to be written by
-  the round that adopts them. **T5's rule has no invariant yet either** (one
-  honest copy helper; the caller cannot own the success branch) — it is g76
-  and the T5-1 pin, but no INV number. Next free is **INV-234**.
-- **A "every class in the markup has a CSS rule" pin.** The defect has now
-  fired THREE times in one file: `.kb-ins-row` (no rule at all), `.kbd-sec`
-  (a rule meaning something else) and `.modal-head`/`.modal-x` (no rule).
-  A naive sweep is NOT the answer and was deliberately not built — class names
-  here are routinely assembled by concatenation (`'kb-elig-v ' + cls`), so it
-  would over-report badly. A careful version needs scoping.
+  the round that adopts them. **INV-234 (the honest-helper rule) and INV-235
+  (the class ratchet) are now WRITTEN.** Next free is **INV-236**.
+- ~~The "every class has a CSS rule" pin~~ is DONE — T6, INV-235. **I was
+  wrong that a sweep would over-report badly**: 118 raw, 33 after two
+  derivations, hand-auditable. All 33 audited; the four grandfathered with
+  "intent unverified" (`dr-mgr`, `ny-card`, `coach-drawer`, `kb-gloss-search`)
+  are the only soft spot — each renders as its base component and the code
+  cannot say whether that was intended.
+- **An EMPTY rule satisfies the T6 ratchet** (deleting a rule's declarations
+  does not bite; renaming its selector does). Closing that means parsing
+  declarations — a different, larger tool. Recorded in INV-235.
 - `intakeCopyImage_` opens a tab on failure without checking the return, so a
   blocked popup is invisible (g135). Out of T5's scope — it is the image path.
 
@@ -129,15 +139,16 @@ Updated: 2026-09-21
   whose value is that its claims are true.
 
 ## Where I left off
-**T1 through T5 are all done and pushed.** PR #264 merged 2026-09-21
+**T1 through T6 are all done and pushed.** PR #264 merged 2026-09-21
 (`2487fd1`); the branch was restarted from `main` and carries T3, T4 and T5. Every
 harness is green, the counts block agrees, and the shots were READ — the
 drawer shot shows an agreeing verdict above a disagreeing one, which is the
 evidence the T4 amendment turns on.
 
-**Next: ONE deploy** (`clasp push -f` + New-version) covering all five, then
-walk S64 — it now carries SIX T3 steps and FOUR T4 steps, including renaming
-the `OopPricing` tab to see the degraded-join banner — and S112. Note S112 was
+**Next: ONE deploy** (`clasp push -f` + New-version) covering all six, then
+walk S64 (SIX T3 steps + FOUR T4 steps, including renaming the `OopPricing`
+tab to see the degraded-join banner), S18's new denied-clipboard step, and
+S112. Note S112 was
 deliberately NOT widened for T4: T4 adds a second way to get a price onto the
 clipboard and explicitly not a second way to get one into an email.
 

@@ -3674,12 +3674,41 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   so the matrix could only ever have photographed empty boxes. Overflow was 0px
   throughout.
 
-  Verify: the `.kbd-sec` container pin (which asserts each control is NOT
-  inside one, and that `.kbd-sec` carries no control), the five
-  `reference-drawer-*` scenarios, and the `manual-copy-*` pair. **A naive
-  "every class has a rule" sweep is NOT the answer** — class names in this app
-  are routinely built by concatenation (`'kb-elig-v ' + cls`), so such a scan
-  over-reports badly; the net that works is a shot of the surface.
+  **A RATCHET now holds it (T6, INV-235)** — and the reason it took three
+  instances is that the obvious sweep looks unworkable. It is not: 118 classes
+  are used without being defined, and two mechanical derivations (a class
+  attribute carrying a template break holds VARIABLE names; a class named in a
+  JS selector string is a hook) take that to 33 — a hand-auditable list, not
+  noise. **I said it would over-report badly before measuring it. It does not.**
+
+  Three things the audit taught, none of them guessable:
+
+  - **The harnesses select on classes too.** Leaving `test/` out of the hook
+    derivation called `agreed` a defect — a marker T4 added and the T4 DOM pin
+    asserts against.
+  - **A hook comes from the CALL, never the string.** The first draft counted
+    any plain quoted word, which is right for `classList.add('foo')` and
+    catastrophic here: this app builds its markup in JS, so every `class="a b"`
+    IS a quoted string. ~3,500 tokens were harvested, the pin passed its first
+    run while checking almost nothing, and its non-vacuity check passed BECAUSE
+    of the over-capture. Caught by a bite-check that should have gone red.
+  - **Some bare classes are CORRECT and must stay.** `.mh-emp`, `.qa-det-right`
+    and `.cn-ob-chip.is-mut` are each the DEFAULT member of a styled set — they
+    need the class precisely to be the thing their siblings are distinguished
+    from, and a rule for any would restate the base. A sweep that called these
+    defects would have you adding empty rules.
+
+  The audit found two real ones: `.mono` (fifteen elements asking for monospace
+  with no rule, the token having existed all along) and `.m-vol-note` (a
+  `role="alert"` degraded-read warning rendering as plain body text while its
+  MUTED sibling was styled).
+
+  Verify: the T6 pin, whose hook extractor is DRIVEN over a synthetic class
+  attribute and asserted to harvest nothing from it; the `.kbd-sec` container
+  pin (each control NOT inside one, and `.kbd-sec` carrying no control); the
+  five `reference-drawer-*` scenarios; and the `manual-copy-*` pair. The net
+  that catches the SECOND kind — a rule that means something else — is still a
+  shot of the surface, because no derivation can read intent.
 
 <a id="g141-an-async-loader-that-re-renders-a-view"></a>
 
