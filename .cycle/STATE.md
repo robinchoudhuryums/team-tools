@@ -2,14 +2,15 @@
 
 ## Current
 Cycle: 21
-Phase: implement
+Phase: reflect
 Scope: Reference lookups (batch R, done) · Seams & Invariants (batch S, F1–F5)
 Test Command: manual
 Estimates: R (reference lookups restructure): M (~4 h) — written before the
 first edit. Actual ~3.5 h. · S (seams batch F1–F5): M (~5 h) — written before
 the first edit. Actual ~2.5 h (two findings were smaller than the audit said).
-Subsystem cycles since last Seams audit: 6 — **the audit RAN on 2026-09-18 and
-its findings are implemented (batch S). `/reflect` resets this to 0.**
+Subsystem cycles since last Seams audit: 0 — **reset by the Seams & Invariants
+audit of 2026-09-18, whose findings shipped as batch S and were reflected on
+2026-09-21.** The cadence is every 4; the next is due at cycle 25.
 Updated: 2026-09-18
 
 ## In progress (facts to carry forward — NOT judgments)
@@ -111,13 +112,15 @@ Updated: 2026-09-18
   remembered.
 
 ## Where I left off
-Batches R and S are both done and pushed; the tree is clean and every harness is
-green. Batch R's `/sync-docs` is already applied; batch S's is NOT — its block
-lists the four files owed.
+Cycle 21 is REFLECTED (block `21-a-reflect.md`, net +1) and the seam counter is
+reset. Both batches, both `/sync-docs` passes and the reflection are pushed; the
+tree is clean and every harness is green.
 
-Do `/sync-docs` for batch S, then `/reflect` for cycle 21 (which resets the seam
-counter to 0 and can adopt the three reserved invariant numbers).
+The cycle is complete but NOT closed: batch R awaits the operator's
+`clasp push -f` + New-version deploy and the S112 walk. Close the cycle out
+(move this block to HISTORY.md, reset from the template) once that deploy is
+confirmed, per the documented close-out procedure.
 
-Batch S scored 0 − 0 honestly: every finding was a hole in a safety net, no live
-defect existed, and the audit over-reported two of the five. Do not let the
-effort tempt an upgrade at reflect time.
+INV-229..232 and the INV-213 amendment are PROPOSED in the reflect block and NOT
+yet written into the library — write them with the round that adopts them.
+INV-225..227 stay RESERVED and untouched.
