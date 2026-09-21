@@ -257,10 +257,47 @@ function serverDecls() {
   return { decls: out, dupes };
 }
 
+/** Every server declaration whose body CALLS `marker(`, sorted, excluding the
+ *  marker's own declaration.
+ *
+ *  This exists for the ENUMERATED-READER pins — the ones shaped
+ *  `['a','b','c'].forEach((fn) => assert(/marker_\(/.test(extractRawFunction(…))))`.
+ *  Their hand-written lists drift from the code silently: the 2026-09-18 seams
+ *  audit sampled ten and found six short, the worst covering 12 of 23 actual
+ *  callers on a pin whose name was "every column-L read goes through
+ *  cnEnrolledSheetId_". Nothing had told anyone, because the list only asserts
+ *  about the functions it already names.
+ *
+ *  Pair a list with this and the pin fails when an eleventh caller appears.
+ *
+ *  NOT for blind use across every such pin. Some of them BAN their marker, so a
+ *  caller outside the list is the expected case; others guard a deliberately
+ *  narrow set ("exactly the four daily manager streams"). Applying this to
+ *  those over-reports — measured: a naive sweep flagged 13 and most were false.
+ *  Use it only where the list is meant to be EVERY caller.
+ *
+ *  Splits the same way serverDecls does (top-level declaration starts, per
+ *  file), so a call inside `const x = function () { … }` counts too. */
+function serverCallersOf(marker) {
+  const DECL = /^(function|const|let|var|class)\s+([A-Za-z_$][A-Za-z0-9_$]*)/;
+  const out = [];
+  serverFiles().forEach((f) => {
+    const lines = fs.readFileSync(path.join(WEB_APP, f), 'utf8').split('\n');
+    const starts = [];
+    lines.forEach((t, i) => { if (DECL.test(t)) starts.push(i); });
+    starts.forEach((i, k) => {
+      const name = DECL.exec(lines[i])[2];
+      const body = lines.slice(i, k + 1 < starts.length ? starts[k + 1] : lines.length).join('\n');
+      if (name !== marker && body.indexOf(marker + '(') >= 0) out.push(name);
+    });
+  });
+  return out.sort();
+}
+
 /** Eval an extracted function body into an already-built sandbox. */
 function loadFunction(sandbox, file, name) {
   vm.runInContext(extractFunction(file, name), sandbox, { filename: `${file}#${name}` });
   return sandbox[name];
 }
 
-module.exports = { extractScript, extractMarkup, extractFunction, extractRawFunction, serverFiles, serverSource, isServerFile, serverDecls, buildSandbox, loadFunction, fakeEl };
+module.exports = { extractScript, extractMarkup, extractFunction, extractRawFunction, serverFiles, serverSource, isServerFile, serverDecls, serverCallersOf, buildSandbox, loadFunction, fakeEl };

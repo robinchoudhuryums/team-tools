@@ -12,7 +12,7 @@ const assert = require('assert');
 const vm = require('vm');
 const fs = require('fs');
 const path = require('path');
-const { buildSandbox, loadFunction, extractScript, extractRawFunction, extractFunction, serverFiles, serverSource, isServerFile, serverDecls } = require('./harness');
+const { buildSandbox, loadFunction, extractScript, extractRawFunction, extractFunction, serverFiles, serverSource, isServerFile, serverDecls, serverCallersOf } = require('./harness');
 
 let pass = 0, fail = 0;
 function test(name, fn) {
@@ -987,12 +987,39 @@ test('C9 M-11: coachCanManagerSee_ — creator OR roster column-M manager; blank
     'a missing roster row denies (fail-closed)');
 });
 test('TRIPWIRE (H-1): coaching overdue consumers use coachParseTs_, never the T-only parseTimestampMs_', () => {
-  ['getCoachingDashboard', 'coachUnackedAll_', 'getMyCoaching', 'coachRecapBuckets_'].forEach((fn) => {
+  // `coachAnalytics_` joined the list in the 2026-09-18 seams batch. It was a
+  // genuine fifth consumer, parsing createdAt through the right helper, and
+  // nothing guarded it — this pin is the one enumerated-reader check in the
+  // sample with NO global-scan sibling, so a sixth consumer on the wrong parser
+  // would have been invisible. The completeness assert below is the sibling.
+  const GUARDED = ['getCoachingDashboard', 'coachUnackedAll_', 'getMyCoaching',
+    'coachRecapBuckets_', 'coachAnalytics_'];
+  GUARDED.forEach((fn) => {
     const src = extractRawFunction('Code.js', fn);
     assert.ok(/coachParseTs_\(/.test(src), fn + ' parses createdAt via coachParseTs_');
     assert.ok(!/parseTimestampMs_\(/.test(src),
       fn + ' must NOT use parseTimestampMs_ on the space-form CreatedAt stamp — it returns null for every row (overdue detection silently dead)');
   });
+
+  // THE DERIVED HALF. A hand-list only asserts about the functions it already
+  // names, so it cannot see a consumer nobody added — which is exactly how
+  // coachAnalytics_ sat unguarded. Derive the caller set and require the list
+  // to account for all of it.
+  //
+  // `automationDetectorChecks_` is EXEMPT, and the exemption is the point
+  // rather than a convenience: it is the runtime self-check that deliberately
+  // drives BOTH parsers to prove each still works, so it must call the very
+  // function this pin bans in a consumer. Listing it would fail the ban;
+  // dropping it from the derivation silently would hide a real consumer if it
+  // ever became one. Naming it here keeps both facts visible.
+  const EXEMPT = ['automationDetectorChecks_'];
+  const callers = serverCallersOf('coachParseTs_');
+  assert.ok(callers.length >= 5,
+    'the derivation found real callers, not an empty set (g116) — found: ' + JSON.stringify(callers));
+  const unaccounted = callers.filter((fn) => GUARDED.indexOf(fn) < 0 && EXEMPT.indexOf(fn) < 0);
+  assert.deepStrictEqual(unaccounted, [],
+    'coachParseTs_ caller(s) this pin does not guard — add them to GUARDED (or to ' +
+    'EXEMPT with a reason, as automationDetectorChecks_ has)');
 });
 
 console.log('\nCode.js — sanitizeCallNotePayload_ subformData whitelist (cycle 7 · M-15)');
