@@ -2795,7 +2795,13 @@ function oopPriceHtml_(m, idx) {
   return prices.map(function (pr, pi) {
     // T4 — copy the FIGURE. See oopCopyPrice_ for why this is the price and
     // not a quote-shaped line.
-    var copy = (idx == null) ? '' :
+    //
+    // No `idx == null` guard. The one caller always passes an index, so the
+    // guard was a branch nothing could reach or test; without it, a caller
+    // that forgot one renders a button whose index does not resolve, and
+    // oopCopyPrice_'s "no longer on screen" refusal already covers that —
+    // one path instead of two, and that path is driven.
+    var copy =
       '<button type="button" class="kb-oop-copy" data-oop-copy="' + idx + '" data-oop-pidx="' + pi + '"' +
         // The row's Enter target, but ONLY when there is one price. With three,
         // there is no "the" price — and picking one for the rep is the guess

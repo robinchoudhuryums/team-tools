@@ -3927,8 +3927,13 @@ test('T4 DOM: copy yields the parked FIGURE, and a blocked clipboard SAYS so ins
   assert.ok(mc && mc.classList.contains('open'), 'the manual-copy failover opens');
   assert.ok(/blocked the clipboard/.test(mc.textContent) && /nothing was copied/.test(mc.textContent),
     'and SAYS nothing was copied — every other copy helper in this app claims success here');
-  assert.strictEqual(mc.querySelector('#kb-mc-val').value, '$920.00',
-    'with the figure there to select by hand');
+  const mcVal = mc.querySelector('#kb-mc-val');
+  assert.strictEqual(mcVal.value, '$920.00', 'with the figure there to select by hand');
+  // PRE-SELECTED, so the rep can press copy without dragging over it. Asserted
+  // on the selection range rather than the source: a bite that deleted the
+  // select() call left every other assertion here green.
+  assert.strictEqual(mcVal.selectionStart, 0);
+  assert.strictEqual(mcVal.selectionEnd, '$920.00'.length, 'the whole figure is selected');
   assert.ok(/W\/ Shipping Cost|pick-up/.test(mc.textContent), 'named, so the rep knows which one it is');
   h.read('closeOverlay')(mc);
 
