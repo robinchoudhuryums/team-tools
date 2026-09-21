@@ -9,7 +9,7 @@ Scope: —
 Test Command: manual
 Estimates: T1 (landing re-render + pill + meta chips): S (~2 h) · T2 (legend
 popover + per-value terms): M (~3 h) — both written BEFORE the first edit.
-Between-cycles operator work, the 19pre pattern; no cycle is open.
+Actual ~3 h combined. Between-cycles operator work, the 19pre pattern.
 Subsystem cycles since last Seams audit: 0 — reset by the 2026-09-18 audit,
 whose findings shipped as batch S. The cadence is every 4; next due at cycle 25.
 Updated: 2026-09-21
@@ -30,17 +30,15 @@ Updated: 2026-09-21
 
 ## Pending / not yet done
 - **PR #264** — merge, deploy, then walk S112 and S73.
-- **T1 (S, ~2h)** — the landing re-render destroys typed lookup input: three
-  manager-only loaders call `kbRenderLanding_()`, which does
-  `main.innerHTML = h`. Split the landing into a band host and a blocks host so
-  the loaders re-render only the blocks. Plus the payor pill inconsistency
-  (a cell reading `status not recorded` renders differently from a BLANK one)
-  and chips for the `·`-joined meta line.
-- **T2 (M, ~3h)** — the acceptance legend becomes a non-modal popover
-  (`ensureOverlay` + `hover-mode` riding `extraClass`, g134; hooks not
-  `classList`, g100), and each acceptance VALUE explains itself. ONE term
-  matcher must serve both the tone (`insToneCls_`) and the explanation, or a
-  value can render amber while its popover explains the green rule.
+- ~~T1~~ and ~~T2~~ are DONE — block `21post-T1-T2-broad-implement.md`, net
+  2 − 0. Not deployed. The tone/explanation guarantee is held by a PIN rather
+  than by one shared matcher: `insToneCls_` was left alone deliberately, since
+  rewriting a classifier that colours a compliance-adjacent field to share code
+  with a tooltip trades a real guarantee for a tidy one.
+- **Operator question raised by T2:** FOUR toned acceptance values have no
+  definition on file — `OON`, `Plan Specific`, `OUT-OF-NETWORK`, `MDX Hawaii`.
+  A rep sees a coloured pill and cannot learn why. The pin names them; the fix
+  is operator text.
 - **T3 (L, ~1 day)** — the payor × item JOIN. Payor `details` are keyed by the
   sheet's column headers, which are HCPCS codes; OOP rows carry `code`. NOTE
   the correction this rests on: the batch-R plan said panel 1 had no join key
@@ -88,7 +86,14 @@ Updated: 2026-09-21
   whose value is that its claims are true.
 
 ## Where I left off
-Cycle 21 is closed and archived. The tree is clean; every harness is green.
+T1 and T2 are done and pushed. The tree is clean; every harness is green and the
+Reference shots were read, not just measured.
 
-Do PR #264 next — merge, deploy, walk S112/S73 — then T1, which is the only
-item in the T-plan that fixes a live defect rather than improving a surface.
+**PR #264 is still open and now carries the cycle-21 close-out, T1 and T2 as
+well** — its title and body describe only the original drawer/card fixes and
+need updating before it merges, or it should be split. Decide that first.
+
+Then: deploy, walk S64 (updated with the T1/T2 steps) and S112, and put the
+four undefined acceptance values to the operator. T3 (the payor × item join)
+and T4 (keyboard, copy, verdict collapse) are unstarted; T3 carries the safety
+rule about never asserting coverage from an unparseable code.
