@@ -612,6 +612,16 @@
     "oopEligibilityParse_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-22",
+   "why": "T7b: warehouse names match on a WORD BOUNDARY, never a bare substring",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "oopEligibilityParse_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5734,7 +5744,7 @@
   "oopEligibilityParse_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "2e56d7cbb44e4270"
+   "sha": "3c5dfe752d2b4fef"
   },
   "oopHeaderRole_": {
    "file": "70_kb.js",

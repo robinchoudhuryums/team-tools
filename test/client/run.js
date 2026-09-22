@@ -21462,6 +21462,16 @@ test('T7b: "any warehouse" is a rule about the NETWORK — it resolves against t
   assert.deepStrictEqual(P('100 miles of Dallas or San Antonio warehouse').warehouses,
     ['Dallas', 'San Antonio'], 'and a two-name rule keeps both');
 
+  // A SHORT registry name is otherwise found inside the rule's own prose, and
+  // every spurious hit BROADENS the rule to measure from a site it never
+  // named. Both of these were live before T7b: the match was a bare substring.
+  [['Ware', 'warehouse'], ['Mi', 'miles']].forEach(([n, where]) => {
+    const r = JSON.parse(vm.runInContext('JSON.stringify(oopEligibilityParse_(' +
+      JSON.stringify('100 miles of Dallas warehouse') + ',' + JSON.stringify(['Dallas', n]) + '))', _vmCtx));
+    assert.deepStrictEqual(r.warehouses, ['Dallas'],
+      '"' + n + '" is inside "' + where + '", not a warehouse this rule names');
+  });
+
   // A registry NAME ending in "a" sits immediately before the word
   // "warehouse", which is exactly where an "a warehouse" pattern could
   // over-match and silently widen a narrow rule.

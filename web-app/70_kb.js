@@ -1338,17 +1338,25 @@ function oopEligibilityParse_(text, warehouseNames) {
     // a warehouse extends every item carrying it with no edit to the pricing
     // sheet — the same delegation the city rule uses, for the same reason.
     //
-    // Tested BEFORE the name match, and deliberately so: a short registry name
-    // can appear as a substring of the phrase itself ("Ware" inside
-    // "warehouse"), and a name match here would silently narrow a rule the
-    // operator wrote to be broad.
+    // Tested before the name match only so we do not collect names we would
+    // then discard — the returns below key off `anyWh`, so the ORDER is not
+    // what keeps the two forms apart. What keeps them apart is the word
+    // boundary on the name match, immediately below.
     const anyRe = /\b(?:any|all|our|each|every|a)\s+(?:of\s+)?(?:our\s+|the\s+)?warehouses?\b/i;
     const anyWh = anyRe.test(raw);
     const hits = [];
     if (!anyWh) {
       (warehouseNames || []).forEach(function (n) {
         const name = String(n || '').trim();
-        if (name && lc.indexOf(name.toLowerCase()) >= 0 && hits.indexOf(name) < 0) hits.push(name);
+        if (!name || hits.indexOf(name) >= 0) return;
+        // WORD-BOUNDED, never a bare substring. A short registry name is
+        // otherwise found inside the ordinary prose of the rule itself —
+        // a warehouse called "Ware" matched inside "warehouse", one called
+        // "Mi" inside "miles" — and every spurious hit BROADENS the rule to
+        // measure from a site it never named. On a surface where a yes is a
+        // commitment, more permissive is the wrong way to be wrong (g41).
+        const re = new RegExp('\\b' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
+        if (re.test(raw)) hits.push(name);
       });
     }
     if (miles > 0 && (anyWh || hits.length)) {
