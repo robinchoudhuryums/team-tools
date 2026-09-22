@@ -2562,6 +2562,28 @@ function kbToggleDept_(btn) {
 var INS_TERMS = [
   { term: 'Not Accepted / NO', why: 'Don\u2019t accept orders for this payor.',
     match: function (v) { return v.indexOf('not accepted') >= 0 || v === 'no'; } },
+  // Operator, 2026-09-22: OON and OUT-OF-NETWORK are the same, and mean don't
+  // accept. BARE values only \u2014 the matcher is the tone rule's own regex, so a
+  // qualified value toned amber ("OON W/ PA") can never be explained by a red
+  // refusal sitting under it.
+  { term: 'Out-of-network / OON', why: 'Out of network \u2014 we don\u2019t accept orders for this plan.',
+    match: function (v) { return /^(oon|out[\s-]*of[\s-]*network)$/.test(v); } },
+  // The two QUALIFIED out-of-network values, both amber (operator, 2026-09-22).
+  // They are what the bare refusal above deliberately does NOT cover: the plan
+  // is out of network, and still leaves a route to an order.
+  { term: 'OON w/ PA', why: 'Out of network, but the plan may approve an order through a Prior Authorization request.',
+    match: function (v) {
+      return /(^|[^a-z])(oon|out[\s-]*of[\s-]*network)([^a-z]|$)/.test(v) &&
+        /(^|[^a-z])(pa|prior[\s-]*auth(orization)?)([^a-z]|$)/.test(v);
+    } },
+  { term: 'Out-of-Network Benefits', why: 'Out of network, but the plan lets members use out-of-network suppliers \u2014 usually at a higher co-insurance rate.',
+    match: function (v) {
+      return /(^|[^a-z])(oon|out[\s-]*of[\s-]*network)([^a-z]|$)/.test(v) && v.indexOf('benefit') >= 0;
+    } },
+  // Operator, 2026-09-22. First of the amber terms because the tone cascade
+  // tests it first.
+  { term: 'Plan Specific', why: 'Can\u2019t be confirmed from the sheet \u2014 only by contacting the insurance or attempting submission.',
+    match: function (v) { return v.indexOf('plan specific') >= 0; } },
   { term: 'Location-based (285\u2013325 lb)', why: 'The location rules below, and the patient must be 285\u2013325 lb.',
     match: function (v) { return /285\s*[-\u2013]\s*325/.test(v); } },
   { term: 'SI/PR', why: 'Accept only with secondary insurance covering any patient responsibility \u2014 or the patient is told PR may be collected up front by delivery.',
@@ -2602,7 +2624,14 @@ function insToneCls_(value) {
   var v = String(value == null ? '' : value).trim().toLowerCase();
   if (!v) return '';
   if (v.indexOf('not accepted') >= 0 || v === 'no') return 'bad';
-  if (v === 'out-of-network') return 'bad';
+  // BARE out-of-network, in any of its spellings, is the hard no — the operator
+  // confirmed on 2026-09-22 that OON and OUT-OF-NETWORK are the same thing and
+  // that it means "don't accept". Until then `oon` fell through to the amber
+  // branch below by substring while `out-of-network` was red, so one fact
+  // rendered in two colours depending on which spelling a row used.
+  // A QUALIFIED value ("OON W/ PA", "Out-of-Network Benefits") is NOT this
+  // rule and stays amber below — that split was deliberate and is pinned.
+  if (/^(oon|out[\s-]*of[\s-]*network)$/.test(v)) return 'bad';
   if (v.indexOf('oon') >= 0 || v.indexOf('out-of-network') >= 0 || v.indexOf('plan specific') >= 0) return 'warn';
   if (v.indexOf('location') >= 0 || v.indexOf('si/pr') >= 0 || /(^|[^a-z])pr([^a-z]|$)/.test(v) || v.indexOf('&') >= 0) return 'warn';
   if (v.indexOf('try') >= 0) return 'info';

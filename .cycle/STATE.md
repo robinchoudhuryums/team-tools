@@ -22,7 +22,9 @@ BEFORE the first edit; actual ~5 h. **T7b (a radius over ANY warehouse, the
 rule being about the NETWORK rather than a place): S (~2 h)** — written
 BEFORE the first edit. **T8 (an Admin home for the OOP
 pricing diagnostics, which had none): S (~2 h)** — written BEFORE the
-first edit.
+first edit. **T9 (the operator's answers: the code
+shorthand as a CONFIRMED rule, OON = OUT-OF-NETWORK = red, Plan Specific
+defined): S (~2 h)** — written BEFORE the first edit.
 Between-cycles operator work, the 19pre pattern.
 Subsystem cycles since last Seams audit: 0 — reset by the 2026-09-18 audit,
 whose findings shipped as batch S. The cadence is every 4; next due at cycle 25.

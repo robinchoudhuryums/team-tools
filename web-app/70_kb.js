@@ -647,15 +647,21 @@ function insPayorScore_(name, query) {
  *  **`tokens` is populated ONLY on the certain path**, which is the safety rule
  *  expressed as a shape rather than as a warning: a consumer cannot assert
  *  coverage from an uncertain parse, because there is nothing there to assert
- *  from. That matters because of the shorthand the operator really writes —
- *  `K0821/23/16`. A human reads that as K0821, K0823 and K0816; it could as
- *  easily abbreviate something else, and the fragments `23` and `16` are not
- *  codes by any rule we can defend. Expanding it would tell a rep a payor
- *  covers an item it may not, on a surface where a quote is a commitment
- *  (g41, and the ELIG no-seed precedent: a plausible substitute for real data
- *  is worse than none). So the whole string refuses, and the RAW text is kept
- *  for the client to show — the rep still sees what the sheet says, and sees
- *  that we could not match it.
+ *  from.
+ *
+ *  **The shorthand is a CONFIRMED rule, in exactly one shape.** The operator
+ *  writes `K0821/23/16`. Until 2026-09-22 this refused, because `23` and `16`
+ *  were codes by no rule we could defend, and guessing would tell a rep a
+ *  payor covers an item it may not (g41). The operator then confirmed the
+ *  rule: it means K0821, K0823 and K0816 — each digit fragment replaces that
+ *  many TRAILING digits of the code before it. That is now a rule we can
+ *  defend, so it is applied — but only to the shape that was confirmed: ONE
+ *  whole code, FIRST, with no modifier suffix, followed only by 1–3-digit
+ *  fragments. Everything else still refuses — a fragment before any code, a
+ *  fragment beside two whole codes (which code would it abbreviate?), a
+ *  modifier-suffixed anchor, and a range like `K0800-K0803`. Widening any of
+ *  those needs the operator's word the way this one got it, not a reading.
+ *  An uncertain string still keeps its RAW text for the client to show.
  *
  *  `shaped` separates "a code column we would not parse" from "not a code
  *  column at all" (`Category`, `Comments`), so the client can say WHICH.
@@ -672,8 +678,22 @@ function hcpcsParse_(raw) {
   if (!s) return out;
   out.shaped = /[A-Z]\d{4}/.test(s);
   if (!out.shaped) return out;
-  const parts = s.replace(/\([^)]*\)/g, ' ').split(/[/,;&+\s]+/).filter(function (p) { return p; });
+  let parts = s.replace(/\([^)]*\)/g, ' ').split(/[/,;&+\s]+/).filter(function (p) { return p; });
   if (!parts.length) return out;
+  // The confirmed shorthand (operator, 2026-09-22): `K0821/23/16` is K0821,
+  // K0823, K0816. Expanded ONLY in its confirmed shape — one bare whole code
+  // first, then nothing but 1–3-digit fragments. Any other string carrying a
+  // fragment refuses whole, exactly as before.
+  if (parts.some(function (p) { return /^\d{1,3}$/.test(p); })) {
+    const anchor = parts[0];
+    if (!/^[A-Z]\d{4}$/.test(anchor)) return out;
+    for (let j = 1; j < parts.length; j++) {
+      if (!/^\d{1,3}$/.test(parts[j])) return out;
+    }
+    parts = [anchor].concat(parts.slice(1).map(function (f) {
+      return anchor.slice(0, anchor.length - f.length) + f;
+    }));
+  }
   for (let i = 0; i < parts.length; i++) {
     // One unreadable fragment refuses the WHOLE string. Keeping the readable
     // ones would under-claim rather than over-claim, which sounds safer and is

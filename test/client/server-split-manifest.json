@@ -622,6 +622,16 @@
     "oopEligibilityParse_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-22",
+   "why": "T9: the code shorthand is a CONFIRMED rule in exactly one shape",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "hcpcsParse_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4739,7 +4749,7 @@
   "hcpcsParse_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "4cbfd603203381fa"
+   "sha": "08431146738269d7"
   },
   "humanizeFormFieldKey_": {
    "file": "61_forms.js",
