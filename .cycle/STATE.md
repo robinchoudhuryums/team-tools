@@ -20,7 +20,9 @@ actual ~3 h. **T7 (the exact-city eligibility rule, rules that COMBINE, and
 the silences that cost the operator real sheet data): L (~7 h)** — written
 BEFORE the first edit; actual ~5 h. **T7b (a radius over ANY warehouse, the
 rule being about the NETWORK rather than a place): S (~2 h)** — written
-BEFORE the first edit.
+BEFORE the first edit. **T8 (an Admin home for the OOP
+pricing diagnostics, which had none): S (~2 h)** — written BEFORE the
+first edit.
 Between-cycles operator work, the 19pre pattern.
 Subsystem cycles since last Seams audit: 0 — reset by the 2026-09-18 audit,
 whose findings shipped as batch S. The cadence is every 4; next due at cycle 25.

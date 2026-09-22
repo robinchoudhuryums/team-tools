@@ -3878,6 +3878,63 @@ test('T4 DOM: the arrows walk the results and Escape comes back, without the mou
     'a row with no primary control does not eat the key');
 });
 
+test('T8 DOM: the OOP pricing diagnostics have a HOME — the Admin System tab renders what the reader matched, and a failed read says so instead of showing an empty panel', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true, isAdmin: true });
+  let called = 0;
+  h.run.respond('getOopPricingDiagnostics', () => {
+    called++;
+    return {
+      tab: 'OopPricing', rows: 42, nameCol: 'HCPCS', nameByHeader: false, truncated: false,
+      cols: [{ header: 'HCPCS', role: 'name (the searched column)' }, { header: 'OOP Price – pick-up', role: 'price' }],
+      missing: ['effective'],
+      locationTab: 'LocationAcceptance', locationError: '', cities: 2,
+      warehouses: [{ name: 'Dallas', address: '1329 W Walnut Hill Ln, Irving, TX 75038' }],
+      locNoAddress: ['San Antonio'], locUnreadable: [],
+      eligibility: { open: 10, states: 4, radius: 20, cities: 3, any: 2,
+        unknownCount: 3, unknown: [{ item: 'Mystery Chair', value: 'Local' }] },
+    };
+  });
+  h.run.respond('getCallNotesAuditLog', () => ({ rows: [] }));
+  h.window.enterTool('manage', 'callNotesAdmin');
+  h.flushTimers();
+  await tick(); await tick();
+
+  const panel = h.window.document.getElementById('cn-sys-sec-oop');
+  assert.ok(panel, 'the diagnostics have a panel in the Admin System tab at all — until T8 the endpoint had NO caller anywhere in the client');
+  assert.strictEqual(called, 1, 'and it is fetched on enter, not left for a button nobody presses');
+  const txt = panel.textContent;
+
+  // What the READER matched, which is invisible until it goes wrong.
+  assert.ok(/OopPricing/.test(txt), 'it names the tab it read');
+  assert.ok(/HCPCS/.test(txt), 'and the column it searches');
+  assert.ok(/fallback/.test(txt), 'saying plainly when that column was a FALLBACK rather than a header match');
+  assert.ok(/effective/.test(txt), 'and naming the roles no column matched');
+
+  // The delivery registry, in the same panel — a radius rule is written in one
+  // tab and resolved in the other, which is exactly how 2026-09-22 went wrong.
+  assert.ok(/LocationAcceptance/.test(txt), 'the delivery tab is reported beside the pricing one');
+  assert.ok(/Dallas/.test(txt) && /Walnut Hill/.test(txt), 'naming each warehouse and the address that gets geocoded');
+  assert.ok(/San Antonio/.test(txt) && /no distance can be measured/.test(txt),
+    'and a warehouse with no address is called out, not silently dropped');
+
+  // How every eligibility value PARSES, with the unreadable ones named.
+  assert.ok(/Listed cities/.test(txt) && /Combined/.test(txt),
+    'every kind the grammar can return has a counter, T7’s two included');
+  assert.ok(/Mystery Chair/.test(txt) && /Local/.test(txt),
+    'and a value that reads "cannot tell" is named WITH the cell, so the operator can see the typo');
+
+  // A FAILED read renders the warn card, never an empty panel — a diagnostic
+  // that fails silently is the defect this whole panel exists to fix (INV-175).
+  h.window.document.getElementById('cn-admin-oop').innerHTML =
+    h.read('cnRenderOopDiagPanel_')({ error: 'Admin access required.' });
+  const failTxt = h.window.document.getElementById('cn-sys-sec-oop').textContent;
+  assert.ok(/unavailable/i.test(failTxt), 'a failed read says so');
+  assert.ok(/Admin access required/.test(failTxt), 'carrying the reason');
+  assert.ok(!/OopPricing/.test(failTxt), 'and does not leave the previous read on screen as if it were current');
+});
+
 test('T7 DOM: a delivery table that dropped rows SAYS so on the rep surface, and a city-delegated verdict names the city that decided', async () => {
   const h = boot();
   h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
