@@ -3598,7 +3598,10 @@ const T3_PAYORS = {
         item: '', itemCount: 0 },
       { label: 'K0814', value: 'TRY', code: { shaped: true, certain: true, tokens: ['K0814'] },
         item: '', itemCount: 2 },
-      { label: 'K0821/23/16', value: 'TRY', code: { shaped: true, certain: false, tokens: [] },
+      // A RANGE: the shorthand the server still refuses. `K0821/23/16` used to
+      // stand here, and since T9 the server expands it — a fixture the server
+      // can no longer produce tests nothing (g126's fixture rule).
+      { label: 'K0800-K0803', value: 'TRY', code: { shaped: true, certain: false, tokens: [] },
         item: '', itemCount: 0 },
       { label: 'Category', value: 'POV/Scooter', code: { shaped: false, certain: false, tokens: [] },
         item: '', itemCount: 0 },
@@ -3609,8 +3612,8 @@ const T3_ITEM_OK = { cap: 8, total: 1, matches: [{
   codes: { raw: 'K0800 (C/C)', shaped: true, certain: true, tokens: ['K0800'] },
   price: '$920.00', prices: [{ label: '', value: '$920.00' }], details: [] }] };
 const T3_ITEM_SHORTHAND = { cap: 8, total: 1, matches: [{
-  name: 'Multi Scooter', code: 'K0821/23/16', effective: '', eligibility: 'Open',
-  codes: { raw: 'K0821/23/16', shaped: true, certain: false, tokens: [] },
+  name: 'Multi Scooter', code: 'K0800-K0803', effective: '', eligibility: 'Open',
+  codes: { raw: 'K0800-K0803', shaped: true, certain: false, tokens: [] },
   price: '$1,000.00', prices: [{ label: '', value: '$1,000.00' }], details: [] }] };
 
 async function t3Search(h, id, fn, value) {
@@ -3727,7 +3730,7 @@ test('T3 DOM: an item whose code is a SHORTHAND says it was not checked — it n
 
   const un = h.$('#kb-oop-results').querySelector('.kb-oop-xref.unmatched');
   assert.ok(un, 'the refusal is DRAWN, not left as silence');
-  assert.ok(/K0821\/23\/16/.test(un.textContent), 'the sheet’s own text is shown');
+  assert.ok(/K0800-K0803/.test(un.textContent), 'the sheet’s own text is shown');
   assert.ok(/shorthand/.test(un.textContent) && /before saying anything about coverage/.test(un.textContent),
     'and says why, and what to do instead');
   assert.strictEqual(h.$('#kb-oop-results').querySelectorAll('.kb-oop-xref-r').length, 0,

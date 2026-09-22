@@ -13515,21 +13515,41 @@ test('T3-1: hcpcsParse_ reads whole codes and REFUSES the shorthand — an uncer
   assert.deepStrictEqual(p('K0800 & K0801').tokens, ['K0800', 'K0801']);
   assert.deepStrictEqual(p('K0800, K0800').tokens, ['K0800'], 'de-duplicated');
 
-  // ── THE RULE. The operator really writes this, and a human reads it as
-  // K0821/K0823/K0816. We will not: `23` and `16` are not codes by any rule we
-  // can defend, and the alternative reading would tell a rep a payor covers an
-  // item it may not. The refusal is the WHOLE string, and it is expressed as a
-  // SHAPE — there are no tokens to assert from, so no consumer can.
-  const sh = p('K0821/23/16');
+  // ── THE SHORTHAND, now a CONFIRMED rule (operator, 2026-09-22). Until
+  // then this refused: `23` and `16` were codes by no rule we could defend.
+  // The operator confirmed it means K0821/K0823/K0816 — each digit fragment
+  // replaces that many TRAILING digits of the code before it — so it is
+  // applied, in exactly the confirmed SHAPE and no wider.
+  assert.deepStrictEqual(p('K0821/23/16').tokens, ['K0821', 'K0823', 'K0816'], 'the operator\u2019s own example');
+  assert.strictEqual(p('K0821/23/16').certain, true);
+  assert.deepStrictEqual(p('K0821/3').tokens, ['K0821', 'K0823'], 'one digit replaces one');
+  assert.deepStrictEqual(p('K0821/21').tokens, ['K0821'], 'a fragment that reproduces the anchor is de-duplicated');
+
+  // Outside the confirmed shape it STILL refuses — each of these is a reading
+  // the operator has not confirmed, and guessing any of them could tell a rep
+  // a payor covers an item it does not.
+  [['23/K0800', 'a fragment before any code has nothing to abbreviate'],
+   ['K0800, K0801/23', 'beside TWO whole codes, which one does it abbreviate?'],
+   ['K0800BR/23', 'a modifier-suffixed anchor has no unambiguous trailing digits'],
+   ['K0800/0823', 'a four-digit fragment is outside the confirmed 1\u20133'],
+   ['K0800-K0803', 'a RANGE is a different shorthand, and not a confirmed one']].forEach(([s, why]) => {
+    assert.strictEqual(p(s).certain, false, s + ': ' + why);
+  });
+
+  // THE SAFETY RULE, on a shape that still refuses. The refusal is the WHOLE
+  // string, and it is expressed as a SHAPE — there are no tokens to assert
+  // from, so no consumer can.
+  const sh = p('K0800-K0803');
   assert.strictEqual(sh.shaped, true, 'it is recognisably a code column — that is WHY silence would mislead');
   assert.strictEqual(sh.certain, false);
   assert.deepStrictEqual(sh.tokens, [], 'NO tokens on the uncertain path — the safety rule as a shape, not a warning');
-  assert.strictEqual(sh.raw, 'K0821/23/16', 'the raw text is kept so the rep still sees what the sheet says');
+  assert.strictEqual(sh.raw, 'K0800-K0803', 'the raw text is kept so the rep still sees what the sheet says');
 
-  // The readable leading code is NOT kept. Keeping it under-claims rather than
+  // The readable parts are NOT kept. Keeping them under-claims rather than
   // over-claims, which sounds like the safe direction and is not: the rep asked
-  // about three items and would be answered about one, silently.
-  assert.ok(sh.tokens.indexOf('K0821') < 0, 'not even the fragment that IS a whole code');
+  // about a set of items and would be answered about one, silently.
+  const mixed = p('K0800, K0801/23');
+  assert.ok(mixed.tokens.indexOf('K0800') < 0, 'not even the part that IS a whole code');
 
   // ── Not a code column at all — a different answer, and the client says which
   ['Category', 'Comments', 'Network Status', ''].forEach((s) => {
@@ -13543,7 +13563,8 @@ test('T3-1: hcpcsParse_ reads whole codes and REFUSES the shorthand — an uncer
   // above plus the awkward ones: tokens are NEVER non-empty while certain is
   // false. If this can be made to fail, an uncertain parse can assert coverage.
   ['K0800', 'K0821/23/16', 'K0800 (C/C)', 'Category', '', 'K0800/23', '23/K0800',
-    'K99', 'K0800 or ask', '(K0800)', 'K08000', 'ZZ1234'].forEach((s) => {
+    'K99', 'K0800 or ask', '(K0800)', 'K08000', 'ZZ1234', 'K0800-K0803',
+    'K0800, K0801/23', 'K0800BR/23'].forEach((s) => {
     const r = p(s);
     assert.ok(r.certain || r.tokens.length === 0,
       `"${s}": tokens must be empty whenever certain is false`);
@@ -13552,7 +13573,7 @@ test('T3-1: hcpcsParse_ reads whole codes and REFUSES the shorthand — an uncer
   });
 
   // Named cases from that sweep, so a change of behaviour reads as a change.
-  assert.strictEqual(p('K0800/23').certain, false, 'one unreadable fragment refuses the whole string');
+  assert.strictEqual(p('K0800/2X').certain, false, 'one unreadable fragment refuses the whole string');
   assert.strictEqual(p('K0800 or ask').certain, false, 'a word among the codes is not a code');
   assert.strictEqual(p('K99').shaped, false, 'too short to be a code');
   assert.deepStrictEqual(p('(K0800)').tokens, [],
@@ -13580,7 +13601,7 @@ test('T3-2: insNameCodeDetail_ names an unambiguous code, refuses an ambiguous o
   // The shorthand, on the naming side. `certain:false` carries no tokens, so
   // there is nothing to look up — but the count must stay 0 rather than
   // inheriting a stale value, or the client would print "0 items".
-  const sh = name('K0821/23/16', IDX);
+  const sh = name('K0800-K0803', IDX);
   assert.strictEqual(sh.item, '');
   assert.strictEqual(sh.itemCount, 0);
   assert.strictEqual(sh.code.shaped, true);
@@ -13617,9 +13638,14 @@ test('T3-3: oopRowObj_ ships the parsed join key, so both OOP surfaces carry it 
   assert.strictEqual(ok.codes.certain, true);
   assert.strictEqual(ok.code, 'K0800 (C/C)', 'the RAW code is still shipped and still displayed verbatim');
 
-  const sh = obj(H, ['K0821/23/16', 'Multi Scooter', '$1,000.00']);
+  const sh = obj(H, ['K0800-K0803', 'Scooter Range', '$1,000.00']);
   assert.strictEqual(sh.codes.certain, false);
   assert.deepStrictEqual(sh.codes.tokens, [], 'the refusal reaches the item surface too');
+
+  // …and the CONFIRMED shorthand reaches it expanded, from the one resolver.
+  const multi = obj(H, ['K0821/23/16', 'Multi Scooter', '$1,000.00']);
+  assert.deepStrictEqual(multi.codes.tokens, ['K0821', 'K0823', 'K0816'],
+    'one pricing row now joins on all three codes the operator meant');
 
   assert.strictEqual(obj(H, ['', 'No Code Item', '$5.00']).codes.shaped, false);
 
@@ -14281,12 +14307,14 @@ test('T2: a value the panel COLOURS is a value it can EXPLAIN — the tone and t
   // The operator's real acceptance values, from the payor sheet.
   const REAL = ['X', 'x', 'YES', 'NO', 'no', 'Accepted', 'Not Accepted', 'In-Network',
     'Location-based ( Up To 285) & SI/PR', 'Location-based ( 285-325 lb) SI/PR',
-    'Location-based', 'SI/PR', 'PR', 'TRY', 'A & B'];
+    'Location-based', 'SI/PR', 'PR', 'TRY', 'A & B',
+    // Defined by the operator on 2026-09-22 — moved here from the gap list below.
+    'OON', 'OUT-OF-NETWORK', 'Plan Specific', 'OON W/ PA', 'Out-of-Network Benefits'];
   // Toned, but the vocabulary has no definition for them. NAMED, not skipped:
   // each is an amber or blue pill a rep cannot learn the meaning of, and the
   // fix is operator text, not code. Dropping them from the table silently
   // would hide that.
-  const UNDEFINED_BY_OPERATOR = ['OON', 'Plan Specific', 'OUT-OF-NETWORK', 'MDX Hawaii'];
+  const UNDEFINED_BY_OPERATOR = ['MDX Hawaii'];
 
   REAL.forEach((v) => {
     const tone = sb.insToneCls_(v);
@@ -14319,6 +14347,44 @@ test('T2: a value the panel COLOURS is a value it can EXPLAIN — the tone and t
       JSON.stringify(v) + ' is still undefined — if the operator has supplied text for it, move it ' +
       'into REAL rather than leaving it listed as a known gap');
   });
+
+  // ── T9: SYNONYMS render as one fact (operator, 2026-09-22) ──
+  // Every spelling of BARE out-of-network is the same colour AND the same
+  // explanation. Until T9, `OON` was amber by substring while
+  // `OUT-OF-NETWORK` was red — one fact, two colours, decided by which
+  // spelling a row happened to use.
+  ['OON', 'oon', 'OUT-OF-NETWORK', 'Out-of-Network', 'out of network', 'Out Of Network'].forEach((v) => {
+    assert.strictEqual(sb.insToneCls_(v), 'bad', JSON.stringify(v) + ' is the hard no');
+    assert.strictEqual(sb.insTermsIn_(v)[0].term, 'Out-of-network / OON',
+      JSON.stringify(v) + ' explains itself as out-of-network');
+  });
+
+  // And the other direction, which is the dangerous one: a QUALIFIED value is
+  // amber, so the red "don't accept" text must NEVER be what explains it. A
+  // matcher that caught `oon` by substring would put a refusal under a caution.
+  // Each is explained by its OWN rule instead (operator, 2026-09-22): out of
+  // network, but still a route to an order.
+  [['OON W/ PA', 'OON w/ PA', /Prior Authorization/],
+   ['OON with prior auth', 'OON w/ PA', /Prior Authorization/],
+   ['Out-of-Network Benefits', 'Out-of-Network Benefits', /higher co-insurance/],
+   ['OON Benefits', 'Out-of-Network Benefits', /higher co-insurance/]].forEach(([v, term, why]) => {
+    assert.strictEqual(sb.insToneCls_(v), 'warn', JSON.stringify(v) + ' stays amber — that split was deliberate');
+    assert.ok(!sb.insTermsIn_(v).some((t) => t.term === 'Out-of-network / OON'),
+      JSON.stringify(v) + ' is not explained by the refusal');
+    assert.strictEqual(sb.insTermsIn_(v)[0].term, term, JSON.stringify(v) + ' is explained by its own rule');
+    assert.match(sb.insTermsIn_(v)[0].why, why);
+  });
+  // "pa" must be the WORD, or "Spanish" or "Pacific" would read as prior auth.
+  assert.ok(!sb.insTermsIn_('OON Pacific').some((t) => t.term === 'OON w/ PA'),
+    'a word containing "pa" is not a prior-authorization request');
+
+  // A word that merely CONTAINS the letters is not out-of-network.
+  assert.notStrictEqual(sb.insToneCls_('Accepted soon'), 'bad', '"soon" is not OON');
+
+  // Plan Specific explains itself, and is still amber.
+  assert.strictEqual(sb.insToneCls_('Plan Specific'), 'warn');
+  assert.strictEqual(sb.insTermsIn_('Plan Specific')[0].term, 'Plan Specific');
+  assert.match(sb.insTermsIn_('Plan Specific')[0].why, /contacting the insurance or attempting submission/);
 
   // The legend is DERIVED from the term list, so the glossary and the
   // per-value explanations cannot drift into saying different things.
@@ -15054,6 +15120,7 @@ test('insToneCls_ — the legend tone map; unknown tokens stay NEUTRAL', () => {
   assert.strictEqual(t('In-Network'), 'good');
   assert.strictEqual(t('Not Accepted'), 'bad');
   assert.strictEqual(t('Out-of-Network'), 'bad');
+  assert.strictEqual(t('OON'), 'bad', 'bare OON is the same fact as bare Out-of-Network (operator, 2026-09-22)');
   assert.strictEqual(t('Out-of-Network Benefits'), 'warn', 'OON *Benefits* is NOT the hard no');
   assert.strictEqual(t('OON W/ PA'), 'warn');
   assert.strictEqual(t('Plan Specific'), 'warn');

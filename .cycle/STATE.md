@@ -4,7 +4,7 @@
 Cycle: 21 — CLOSED 2026-09-21 (batch R deployed and operator-confirmed; batch S
 needed no deploy; reflected net +1; the whole block is in `.cycle/HISTORY.md`).
 **No cycle is open.** The next `/audit` or `/broad-scan` opens cycle 22.
-Phase: implement (between-cycles operator work — T1–T6 DEPLOYED; T7/T7b/T8 undeployed)
+Phase: implement (between-cycles operator work — T1–T6 DEPLOYED; T7/T7b/T8/T9 undeployed)
 Scope: —
 Test Command: manual
 Estimates: T1 (landing re-render + pill + meta chips): S (~2 h) · T2 (legend
@@ -22,7 +22,9 @@ BEFORE the first edit; actual ~5 h. **T7b (a radius over ANY warehouse, the
 rule being about the NETWORK rather than a place): S (~2 h)** — written
 BEFORE the first edit. **T8 (an Admin home for the OOP
 pricing diagnostics, which had none): S (~2 h)** — written BEFORE the
-first edit.
+first edit. **T9 (the operator's answers: the code
+shorthand as a CONFIRMED rule, OON = OUT-OF-NETWORK = red, Plan Specific
+defined): S (~2 h)** — written BEFORE the first edit; actual ~1.5 h.
 Between-cycles operator work, the 19pre pattern.
 Subsystem cycles since last Seams audit: 0 — reset by the 2026-09-18 audit,
 whose findings shipped as batch S. The cadence is every 4; next due at cycle 25.
@@ -47,7 +49,7 @@ Updated: 2026-09-22
 ## Pending / not yet done
 - **The deploy** — T1–T6 are DEPLOYED and operator-confirmed (2026-09-22;
   `runAllTests` read 336 passed / 1 skipped, which matches the derived 337).
-  **T7, T7b and T8 are NOT deployed** — one `clasp push -f` + New-version covers all three; then
+  **T7, T7b, T8 and T9 are NOT deployed** — one `clasp push -f` + New-version covers all four; then
   walk S64 (six T3 + four T4 + six T7 + two T7b + one T8 step), S18's
   clipboard step, S112, S73.
 - ~~T1~~ and ~~T2~~ are DONE — block `21post-T1-T2-broad-implement.md`, net
@@ -62,10 +64,11 @@ Updated: 2026-09-22
   certain path, so no consumer can assert from an uncertain parse). Eleven
   bite-checks, all BITE, and `scripts/bite.sh --dom` now drives the DOM harness
   — the follow-on that caused g65's fifth firing is closed.
-- **Operator question raised by T2:** FOUR toned acceptance values have no
-  definition on file — `OON`, `Plan Specific`, `OUT-OF-NETWORK`, `MDX Hawaii`.
-  A rep sees a coloured pill and cannot learn why. The pin names them; the fix
-  is operator text.
+- **Operator question raised by T2 — ANSWERED 2026-09-22, shipped as T9.**
+  `OON` = `OUT-OF-NETWORK` = don't accept (red); `OON w/ PA` and
+  `Out-of-Network Benefits` stay amber with their own definitions; `Plan
+  Specific` defined. **`MDX Hawaii` is the one value still undefined** (and
+  `Hawaii only`, toned blue, is in the same position).
 - **T3 was estimated L (~8 h) and took ~4 h.** For the record, the original
   scope note: the payor × item JOIN. Payor `details` are keyed by the
   sheet's column headers, which are HCPCS codes; OOP rows carry `code`. NOTE
@@ -127,6 +130,14 @@ Updated: 2026-09-22
   fixed** — a comment claiming a guarantee the code did not make, and a pin
   that injected its own error markup instead of driving the loader (g138
   twice). Chasing the first found the substring defect.
+- ~~T9~~ is DONE — block `21post-T9-broad-implement.md`, net **1 − 0** (1
+  Medium fix + 2 capabilities). The operator's answers: the code shorthand is
+  a CONFIRMED rule (`K0821/23/16` = K0821/K0823/K0816), applied in exactly the
+  confirmed shape with every other shorthand still refused (INV-233
+  AMENDED — the premise changed, not the reasoning). Bare `OON` had been
+  AMBER by substring while bare `OUT-OF-NETWORK` was RED — one fact, two
+  colours; both are now the red refusal, and the qualified values stay amber
+  with their own explanations. Eight bite-checks, all BITE.
 - **`.modal-head` and `.modal-x` had NO CSS rule** (invented by T2, merged
   that way). Fixed here because the failover modal needed them; it also fixes
   the term popover. Now g140.
@@ -190,7 +201,7 @@ the `Type` column is DONE (operator, 2026-09-22). STILL OWED: restore
   Flagged, not dismissed.
 
 ## Where I left off
-**T1–T6 are DEPLOYED and confirmed; T7, T7b and T8 are done, pushed and UNDEPLOYED.** PR #264 merged 2026-09-21
+**T1–T6 are DEPLOYED and confirmed; T7, T7b, T8 and T9 are done, pushed and UNDEPLOYED. PR #267 MERGED T7–T8 (`ac8f0ae`); T9 is on the restarted branch.** PR #264 merged 2026-09-21
 (`2487fd1`); the branch was restarted from `main` and carries T3, T4 and T5. Every
 harness is green, the counts block agrees, and the shots were READ — the
 drawer shot shows an agreeing verdict above a disagreeing one, which is the
@@ -205,10 +216,9 @@ clipboard and explicitly not a second way to get one into an email.
 
 **`/sync-docs` is DONE** — it shipped with T5 and covered all four checks.
 
-**Two questions for the operator**, both now blocking nothing: the four
-undefined acceptance values, and how many `OopPricing` codes use the
-`K0821/23/16` shorthand — every one of those is a code the join declines, and
-splitting them into whole codes needs no code change.
+**Both operator questions are ANSWERED and shipped as T9** (2026-09-22). One
+small one remains, blocking nothing: what `MDX Hawaii` (and `Hawaii only`)
+mean.
 
-The plan is finished and the docs are current. The honest next step is the
-DEPLOY, then the operator's two questions. Nothing else is in flight.
+The docs are current. The honest next step is the DEPLOY — one push covers
+T7, T7b, T8 and T9 — then the S64 walk. Nothing else is in flight.

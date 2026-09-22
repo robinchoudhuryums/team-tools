@@ -1370,28 +1370,42 @@ entry says which it is.
     code column and the ITEM NAME is shown beneath the code, so a rep reading
     `K0802 — Not Accepted` can see what K0802 is. Consequences worth knowing
     before you edit a header:
-    - **A code written as a shorthand is SHOWN but never matched.**
-      `K0821/23/16` reads to a human as three codes; the app will not guess
-      that, because a wrong join would tell a rep a payor covers an item it may
-      not. It renders the header verbatim with "not matched" beside it. **If you
-      have many of these, writing them as whole codes (`K0821, K0823, K0816`)
-      makes them joinable with no code change** — the parser already reads a
-      comma- or slash-separated list of WHOLE codes.
+    - **The digit shorthand is READ, in one shape** (T9, 2026-09-22):
+      `K0821/23/16` means K0821, K0823 and K0816 — each digit fragment
+      replaces that many trailing digits of the code in front of it. You
+      confirmed that rule, so the app applies it. It applies ONLY when one
+      whole code comes FIRST and every piece after it is 1–3 digits.
+    - **Any other shorthand is SHOWN but never matched**, because a wrong join
+      would tell a rep a payor covers an item it may not: a range
+      (`K0800-K0803`), a fragment before any code (`23/K0800`), a fragment
+      beside two whole codes (`K0800, K0801/23` — which one does it
+      abbreviate?), or a code with a modifier suffix (`K0800BR/23`). Each
+      renders verbatim with "not matched" beside it. Writing such a cell as
+      whole codes (`K0800, K0801, K0802, K0803`) makes it joinable with no
+      code change.
     - A code that **two** `OopPricing` rows carry names neither, and says "2
       items" instead: the spreadsheet allows the ambiguity and cannot resolve
       it, so naming one would be a guess printed as a fact.
     - A code the pricing tab does not carry is simply left alone. That is a
       fact about the pricing tab, not an error.
   - **The ACCEPTANCE VALUES are a vocabulary, and the app tones and explains
-    them** (`INS_TERMS`): Not Accepted / NO, Location-based, Location-based
+    them** (`INS_TERMS`): Not Accepted / NO, Out-of-network / OON, OON w/ PA,
+    Out-of-Network Benefits, Plan Specific, Location-based, Location-based
     (285–325 lb), SI/PR, PR, TRY, A & B (combined), Accepted / X. A value the
     vocabulary knows becomes a clickable term with the operator's own
     definition behind it; a value it does not know renders VERBATIM in the
     neutral tone and says there is no definition on file — it is never a
-    guessed verdict. **FOUR values in the live sheet are toned but undefined:
-    `OON`, `Plan Specific`, `OUT-OF-NETWORK` and `MDX Hawaii`.** A rep sees a
-    coloured pill and cannot learn why. Supplying one sentence for each is
-    operator text, not a code change.
+    guessed verdict.
+  - **Out-of-network has three meanings, and the app keeps them apart**
+    (T9, 2026-09-22). A BARE `OON` or `OUT-OF-NETWORK` (any spelling) is RED:
+    we don't accept orders for that plan. `OON w/ PA` is AMBER: the plan may
+    approve an order through a Prior Authorization request. `Out-of-Network
+    Benefits` is AMBER: members may use out-of-network suppliers, usually at a
+    higher co-insurance rate. Anything written beside `OON` other than PA or
+    benefits reads as unexplained amber, never as the red refusal.
+  - **One value in the live sheet is still toned but undefined: `MDX Hawaii`.**
+    A rep sees a coloured pill and cannot learn why. One sentence is operator
+    text, not a code change.
   - A payor the sheet does not list renders the operator's own
     plan-not-listed → **TRY** guidance rather than an empty result.
 
