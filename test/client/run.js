@@ -21400,6 +21400,149 @@ test('F-23: an Area Eligibility value that names a STATE beside a radius is UNKN
   assert.strictEqual(P('OR, 100 miles of Dallas').kind, 'unknown', 'a leading uppercase OR is a state rule (Oregon) beside a radius — unknown');
 });
 
+test('T7-1: a CITY clause parses, COMBINES with the clause beside it, and an unreadable neighbour takes the whole value down with it', () => {
+  const WH = ['Dallas', 'San Antonio'];
+  const P = (t) => JSON.parse(vm.runInContext(
+    'JSON.stringify(oopEligibilityParse_(' + JSON.stringify(t) + ',' + JSON.stringify(WH) + '))', _vmCtx));
+
+  // The operator's own vocabulary, both spellings (2026-09-22: their sheet says
+  // "Exact city we can take scooter").
+  assert.deepStrictEqual(P('Listed cities'), { kind: 'cities' });
+  assert.deepStrictEqual(P('Exact city'), { kind: 'cities' });
+  assert.deepStrictEqual(P('Service cities'), { kind: 'cities' });
+
+  // The shape this batch exists for: EITHER qualifies, so it is a union and
+  // BOTH branches survive the parse.
+  const both = P('100 miles of Dallas warehouse, 100 miles of San Antonio warehouse, or listed cities');
+  assert.strictEqual(both.kind, 'any');
+  assert.deepStrictEqual(both.rules.map((r) => r.kind), ['radius', 'cities']);
+  assert.deepStrictEqual(both.rules[0].warehouses, WH, 'stripping the city clause must not eat a warehouse name');
+  assert.strictEqual(both.rules[0].miles, 100);
+
+  // A state rule combines the same way.
+  assert.deepStrictEqual(P('TX or listed cities').rules.map((r) => r.kind), ['states', 'cities']);
+
+  // `open` ABSORBS it — there is nothing more permissive to add.
+  assert.deepStrictEqual(P('Open, or listed cities'), { kind: 'open' });
+
+  // THE LOAD-BEARING ONE (g41, and F-23's lesson in the other direction): an
+  // unreadable clause beside a readable one makes the WHOLE value unknown. If
+  // this ever returns the city rule alone, an item the operator restricted by
+  // some rule we could not parse becomes eligible in every listed city.
+  const bad = P('gibberish here, or listed cities');
+  assert.strictEqual(bad.kind, 'unknown', 'the readable half must not become the answer');
+  assert.strictEqual(bad.raw, 'gibberish here, or listed cities', 'and the unknown carries the WHOLE cell, not the remainder');
+
+  // Non-vacuity, driven the only way that is true ONLY if the clause detector
+  // works: a value with no city clause must be untouched by any of it (g116's
+  // seventh direction — a check the defect also satisfies is not one).
+  assert.deepStrictEqual(P('100 miles of Dallas warehouse'),
+    { kind: 'radius', miles: 100, warehouses: ['Dallas'] },
+    'a value with no city clause parses exactly as it did before T7');
+});
+
+test('T7-2: EITHER branch of a union qualifies, an UNKNOWN branch outranks a NO branch, and a city limit does not lift out of pocket', () => {
+  const WH = ['Dallas', 'San Antonio'];
+  const rule = JSON.parse(vm.runInContext('JSON.stringify(oopEligibilityParse_(' +
+    JSON.stringify('100 miles of Dallas warehouse, 100 miles of San Antonio warehouse, or listed cities') +
+    ',' + JSON.stringify(WH) + '))', _vmCtx));
+  const V = (loc, oop) => JSON.parse(vm.runInContext('JSON.stringify(oopEligibilityCheck_(oopEligibilityForPayment_(' +
+    JSON.stringify(rule) + ',' + (oop ? 'true' : 'false') + '),' + JSON.stringify(loc) + '))', _vmCtx));
+  const base = { state: 'TX', hasCityRows: true, warehouseNames: WH };
+
+  // Far from every warehouse, but a listed city — the city branch carries it.
+  const listed = Object.assign({}, base, { city: 'Austin', cityMatches: [{ name: 'Austin' }], miles: { Dallas: 180, 'San Antonio': 150 } });
+  assert.strictEqual(V(listed, false).verdict, 'yes');
+  assert.match(V(listed, false).why, /listed service city/);
+
+  // Inside the radius, not a listed city — the distance branch carries it.
+  const near = Object.assign({}, base, { city: 'Waco', cityMatches: [], miles: { Dallas: 80 } });
+  assert.strictEqual(V(near, false).verdict, 'yes');
+  assert.match(V(near, false).why, /80 mi from Dallas/);
+
+  // Neither — and BOTH reasons are spoken, so the rep knows both were checked.
+  const nope = Object.assign({}, base, { city: 'Lubbock', cityMatches: [], miles: { Dallas: 320, 'San Antonio': 380 } });
+  assert.strictEqual(V(nope, false).verdict, 'no');
+  assert.match(V(nope, false).why, /over the 100 mi limit/);
+  assert.match(V(nope, false).why, /not one of the listed service cities/);
+
+  // One branch UNMEASURABLE and the other a plain NO is UNKNOWN, never NO —
+  // "we cannot tell" and "not eligible" send a rep to different next actions
+  // (INV-187). Collapsing this to `no` is the whole hazard of a union.
+  const cant = Object.assign({}, base, { city: 'Waco', cityMatches: [], miles: {} });
+  assert.strictEqual(V(cant, false).verdict, 'unknown');
+  assert.match(V(cant, false).why, /not one of the listed service cities/, 'the settled branch still speaks');
+
+  // A solid YES outranks a near-boundary YES: no caution the other rule cleared.
+  const nearAndListed = Object.assign({}, base, { city: 'Austin', cityMatches: [{ name: 'Austin' }], miles: { Dallas: 85 } });
+  assert.strictEqual(V(nearAndListed, false).near, false, 'the city match is exact, so nothing is near a boundary');
+  const nearOnly = Object.assign({}, base, { city: 'Waco', cityMatches: [], miles: { Dallas: 85 } });
+  assert.strictEqual(nearOnly && V(nearOnly, false).near, true, 'and a lone near-boundary yes keeps its caution');
+
+  // THE OPERATOR'S ANSWER, 2026-09-22: a service-city list is HOW IT GETS
+  // THERE, not WHO IS PAYING, so out of pocket does NOT open it up. A state
+  // rule in the same union still lifts.
+  assert.strictEqual(V(nope, true).verdict, 'no', 'paying out of pocket does not reach an unlisted city');
+  const st = JSON.parse(vm.runInContext('JSON.stringify(oopEligibilityForPayment_(oopEligibilityParse_(' +
+    JSON.stringify('TX or listed cities') + ',' + JSON.stringify(WH) + '), true))', _vmCtx));
+  assert.strictEqual(st.kind, 'open', 'a STATE branch lifting to open absorbs the union — nothing is more permissive');
+});
+
+test('T7-3: a delivery table that yields NOTHING says so, and a radius naming an unknown warehouse blames the delivery table rather than the pricing sheet', () => {
+  const src = serverSource();
+
+  // ── The silence that cost real operator data on 2026-09-22 ──
+  const loc = extractRawFunction('Code.js', 'getLocationAcceptance_');
+  assert.match(loc, /if \(col\.name === undefined\)/,
+    'a tab with no Name column is named as such — that alone made the registry empty');
+  assert.match(loc, /none could be read as a warehouse or a city/,
+    'and a tab with rows but no usable ones is a finding, not an empty registry');
+  // Non-vacuity that the defect CANNOT satisfy: the error must be set on a
+  // path where it was previously left empty, so assert the guard sits AFTER
+  // the row loop and reads the counters the loop fills.
+  assert.ok(loc.indexOf('seen++') < loc.indexOf('if (col.name === undefined)'),
+    'the finding is computed from what the loop actually read, not from the headers alone');
+  assert.match(loc, /!Object\.keys\(out\.warehouses\)\.length && !out\.cities\.length/,
+    'and it fires only when BOTH registries came back empty');
+
+  // ── The message that named the wrong file ──
+  const parse = extractRawFunction('Code.js', 'oopEligibilityParse_');
+  assert.match(parse, /noWarehouse: true/, 'a distance with no registry match is flagged distinctly');
+  const check = extractRawFunction('Code.js', 'oopEligibilityCheck_');
+  assert.match(check, /Fix the name in LocationAcceptance, not the pricing sheet/,
+    'and the verdict points the operator at the table that is actually wrong');
+  assert.match(check, /where\.warehouseNames/, 'naming the warehouses it DOES have, so the mismatch is visible');
+
+  // The per-row drops reach the REP now, not only an endpoint with no caller.
+  const ep = extractRawFunction('Code.js', 'checkOopEligibility');
+  assert.match(ep, /locationWarnings:/, 'the endpoint ships the rows the delivery table dropped');
+
+  // A radius nested in a union still needs the warehouses geocoded. The naive
+  // top-level test would leave every combined rule measuring against an empty
+  // distance map — a silent `unknown` on the exact shape T7 adds.
+  assert.ok(!/const needRadius = parsed\.some\(function \(r\) \{ return r\.kind === 'radius'; \}\)/.test(ep),
+    'needRadius must not test the TOP-LEVEL kind alone');
+  assert.match(ep, /if \(r\.kind === 'any'\) return \(r\.rules \|\| \[\]\)\.some\(ruleNeedsRadius\)/,
+    'it recurses into a union');
+  const cli = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  assert.match(cli, /res\.locationWarnings \|\| \[\]/, 'and the client draws them');
+
+  // ── The enumerated counter that would have broken on a new kind ──
+  const diag = extractRawFunction('Code.js', 'getOopPricingDiagnostics');
+  assert.ok(!/rows - elig\.open - elig\.states - elig\.radius/.test(diag),
+    'the unknown total is COUNTED, not derived by subtracting an enumerated set (g137)');
+  assert.match(diag, /unknownCount\+\+/, 'it is counted where the unknown is seen');
+  ['cities', 'any'].forEach((k) => assert.ok(diag.indexOf(k + ': 0') >= 0 || diag.indexOf('cities: elig.cities') >= 0,
+    'every kind the parser can return has a counter: ' + k));
+  // DERIVED, so a future kind cannot be added to the parser and forgotten here.
+  const kinds = (parse.match(/kind: '([a-z]+)'/g) || []).map((m) => m.replace(/.*'([a-z]+)'.*/, '$1'));
+  kinds.filter((k) => k !== 'unknown').forEach((k) => {
+    assert.ok(new RegExp('\\b' + k + '\\b').test(diag),
+      'oopEligibilityParse_ can return kind "' + k + '" — getOopPricingDiagnostics must count it');
+  });
+  assert.ok(kinds.length >= 5, 'non-vacuity: the kind list really was derived (' + kinds.join(',') + ')');
+});
+
 test('F-27: the intake email rows come from the SERVER\'s English bank and the client\'s answers — the bank mirrors the client byte-for-byte, and no send path reads a client label', () => {
   const cli = fs.readFileSync(path.join(__dirname, '../../web-app/intake/script_intake.html'), 'utf8');
   const srv = serverSource();

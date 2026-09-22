@@ -16,7 +16,9 @@ M (~3 h)** — written BEFORE the first edit, as it stood in the plan;
 actual ~3 h. **T5 (one honest copy helper, SEVEN call sites): M (~4 h)** —
 written BEFORE the first edit; actual ~3.5 h. **T6 (the unstyled-class ratchet
 + the real defects it found): M (~3 h)** — written BEFORE the first edit;
-actual ~3 h.
+actual ~3 h. **T7 (the exact-city eligibility rule, rules that COMBINE, and
+the two silences that cost the operator real sheet data): L (~7 h)** —
+written BEFORE the first edit.
 Between-cycles operator work, the 19pre pattern.
 Subsystem cycles since last Seams audit: 0 — reset by the 2026-09-18 audit,
 whose findings shipped as batch S. The cadence is every 4; next due at cycle 25.

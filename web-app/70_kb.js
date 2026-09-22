@@ -1176,10 +1176,12 @@ function getLocationAcceptance_() {
     return col[role] === undefined ? '' : String(row[col[role]] == null ? '' : row[col[role]]).trim();
   };
   const rows = sh.getRange(2, 1, last - 1, width).getDisplayValues();
+  let seen = 0;
   rows.forEach(function (row) {
     const name = at(row, 'name');
     const address = at(row, 'address');
     if (!name && !address) return;                 // a blank row is not a finding
+    seen++;
     const kind = locRowKind_(at(row, 'type'), !!address);
     if (kind === 'warehouse') {
       if (!address) { out.noAddress.push(name); return; }
@@ -1195,6 +1197,29 @@ function getLocationAcceptance_() {
     }
     out.unreadable.push({ name: name, reason: 'Type is "' + at(row, 'type') + '" and there is no address' });
   });
+  // ── A tab that yielded NOTHING USABLE is a finding, not an empty registry ──
+  // This silence cost the operator real data on 2026-09-22. Their tab had the
+  // headers in row 2 and no Name column, so every row read as blank, the
+  // registry came back empty with `error` unset, every radius rule fell to
+  // `unknown`, and the rep-facing message blamed the pricing sheet's
+  // eligibility column. They then rewrote good cells in that column to match
+  // what the app appeared to be asking for. A degraded read that reports
+  // nothing is indistinguishable from a working one (g02 / INV-175), and here
+  // it actively pointed at the wrong file.
+  if (!out.error) {
+    if (col.name === undefined) {
+      out.error = 'The "' + LOCATION_ACCEPTANCE_TAB + '" tab has no Name column, so nothing in it can be ' +
+        'matched by a "100 miles of …" rule. The headers must be in ROW 1, and one of them must name the ' +
+        'place (Name / Warehouse / City).';
+    } else if (!seen) {
+      out.error = 'The "' + LOCATION_ACCEPTANCE_TAB + '" tab has no rows with a Name or an Address — ' +
+        'check the headers are in ROW 1.';
+    } else if (!Object.keys(out.warehouses).length && !out.cities.length) {
+      out.error = 'The "' + LOCATION_ACCEPTANCE_TAB + '" tab has ' + seen + ' row' + (seen === 1 ? '' : 's') +
+        ', but none could be read as a warehouse or a city. A warehouse row needs a Name AND an Address; ' +
+        'a city row needs a Name and Type "city".';
+    }
+  }
   out.truncated = sh.getLastRow() > LOC_MAX_ROWS + 1;
   return out;
 }
@@ -1229,7 +1254,19 @@ function locCityMatches_(cities, city, state) {
  *    { kind: 'open'   }
  *    { kind: 'states', states: ['TX', …] }
  *    { kind: 'radius', miles: 100, warehouses: ['Dallas', …] }
- *    { kind: 'unknown', raw: '<the cell, verbatim>' }
+ *    { kind: 'cities' }                       — the LocationAcceptance city rows
+ *    { kind: 'any',    rules: [<rule>, …] }   — any ONE of them qualifies
+ *    { kind: 'unknown', raw: '<the cell, verbatim>'[, noWarehouse: true] }
+ *
+ *  `cities` DELEGATES to the delivery table's city rows rather than listing
+ *  them here (operator decision, 2026-09-22). That is the same shape the radius
+ *  rule already has — this column states the RULE, the registry supplies its
+ *  PARAMETER — and it is why it does not reopen the 2026-09-16 decision that
+ *  kept city rows out of verdicts. What that ruled out was city rows acting as
+ *  an INDEPENDENT overlay that could silently contradict this column; a value
+ *  here that explicitly hands the question to the list is the opposite of a
+ *  second opinion. One place to add a service city, and no edit to the pricing
+ *  sheet when the list grows.
  *
  *  RADIUS IS TESTED FIRST, and the honest reason is defence against a future
  *  edit rather than a defect in today's code: the STATES branch below requires
@@ -1253,8 +1290,38 @@ function locCityMatches_(cities, city, state) {
  *  still filling in, so unreadable values are the expected case, not the
  *  exceptional one). */
 function oopEligibilityParse_(text, warehouseNames) {
-  const raw = String(text == null ? '' : text).trim();
-  if (!raw) return { kind: 'unknown', raw: '' };
+  const raw0 = String(text == null ? '' : text).trim();
+  if (!raw0) return { kind: 'unknown', raw: '' };
+
+  // ── The CITY clause, detected and STRIPPED before anything else ─────────
+  // A value may carry it BESIDE another rule ("100 miles of Dallas, or listed
+  // cities"), and the operator's answer on 2026-09-22 was that either one
+  // qualifies. So the clause is removed and the remainder parsed on its own,
+  // then the two are combined. Reading one clause and dropping the other is
+  // F-23's defect exactly, and here it would drop the MORE permissive half.
+  const cityRe = /\b(?:listed|exact|service|serviceable|approved)\s+cit(?:y|ies)\b|\bcity\s+list\b/i;
+  const hasCity = cityRe.test(raw0);
+  let raw = raw0;
+  if (hasCity) {
+    raw = raw0.replace(cityRe, ' ')
+      // the conjunction that joined the two clauses is now dangling
+      .replace(/(^|[\s,;/|&+])(?:or|and|plus)(?=[\s,;/|&+]|$)/ig, '$1')
+      .replace(/[\s,;/|&+]+/g, ' ')
+      .trim();
+    if (!raw) return { kind: 'cities' };
+  }
+
+  // Combine whatever the REMAINDER parsed to with the city clause. `open`
+  // already covers every city, so it absorbs it. An unreadable remainder makes
+  // the WHOLE value unknown — the readable half must never quietly become the
+  // answer when the operator wrote two rules and we understood one (g41).
+  const wrap = function (r) {
+    if (!hasCity) return r;
+    if (r.kind === 'unknown') return { kind: 'unknown', raw: raw0, noWarehouse: !!r.noWarehouse };
+    if (r.kind === 'open') return r;
+    return { kind: 'any', rules: [r, { kind: 'cities' }], raw: raw0 };
+  };
+
   const lc = raw.toLowerCase();
 
   // 1. RADIUS — a distance and at least one registry name.
@@ -1291,16 +1358,22 @@ function oopEligibilityParse_(text, warehouseNames) {
         const u = t.replace(/[^A-Za-z]/g, '');
         return u.length === 2 && u === u.toUpperCase() && US_STATE_CODES.indexOf(u) >= 0;
       });
-      if (stateLeft) return { kind: 'unknown', raw: raw };
-      return { kind: 'radius', miles: miles, warehouses: hits };
+      if (stateLeft) return wrap({ kind: 'unknown', raw: raw });
+      return wrap({ kind: 'radius', miles: miles, warehouses: hits });
     }
-    return { kind: 'unknown', raw: raw };
+    // A DISTANCE with no registry name is a different failure from a value we
+    // cannot parse at all, and conflating them is what sent the operator to
+    // edit good pricing data on 2026-09-22: the message named the eligibility
+    // column when the delivery table was the thing that was empty. Flag it so
+    // the verdict can name the right file (g02 — a diagnostic that points at
+    // the wrong source is worse than a vague one).
+    return wrap({ kind: 'unknown', raw: raw, noWarehouse: true });
   }
 
   // 2. OPEN — the keyword, optionally followed by the operator's own
   //    parenthetical ("Open (anywhere in the US including Hawaii)").
   const bare = raw.replace(/\([^)]*\)/g, ' ').replace(/[.\s]+/g, ' ').trim();
-  if (/^(open|all|us|usa|nationwide|anywhere|any|everywhere)$/i.test(bare)) return { kind: 'open' };
+  if (/^(open|all|us|usa|nationwide|anywhere|any|everywhere)$/i.test(bare)) return wrap({ kind: 'open' });
 
   // 3. STATES — the WHOLE value must be state codes. A value that is partly
   //    codes and partly prose is not a state rule; it is a value we cannot read.
@@ -1313,10 +1386,10 @@ function oopEligibilityParse_(text, warehouseNames) {
       if (t.length !== 2 || US_STATE_CODES.indexOf(t) < 0) { allCodes = false; break; }
       if (codes.indexOf(t) < 0) codes.push(t);
     }
-    if (allCodes && codes.length) return { kind: 'states', states: codes };
+    if (allCodes && codes.length) return wrap({ kind: 'states', states: codes });
   }
 
-  return { kind: 'unknown', raw: raw };
+  return wrap({ kind: 'unknown', raw: raw });
 }
 
 /** PURE (Node-pinned): the rule as it applies to a given PAYMENT METHOD.
@@ -1339,6 +1412,18 @@ function oopEligibilityForPayment_(rule, payingOop) {
   const r = (rule && rule.kind) ? rule : { kind: 'unknown', raw: '' };
   if (!payingOop) return r;
   if (r.kind === 'states') return { kind: 'open', liftedFrom: (r.states || []).slice() };
+  // `cities` does NOT lift, and it is the same test the rest of this function
+  // applies rather than a special case: a service-city list is HOW IT GETS
+  // THERE, not WHO IS PAYING. The operator confirmed it on 2026-09-22 — a
+  // scooter in a listed city is available through insurance or out of pocket,
+  // and outside one it is available neither way.
+  if (r.kind === 'any') {
+    const mapped = (r.rules || []).map(function (x) { return oopEligibilityForPayment_(x, true); });
+    // One branch lifting to `open` makes the whole union open — nothing can be
+    // MORE permissive than open, so the other branches cannot narrow it.
+    for (let i = 0; i < mapped.length; i++) if (mapped[i].kind === 'open') return mapped[i];
+    return { kind: 'any', rules: mapped, raw: r.raw };
+  }
   return r;
 }
 
@@ -1410,6 +1495,60 @@ function oopEligibilityCheck_(rule, loc) {
         (anyUnplaced ? ' One warehouse could not be placed.' : '') };
   }
 
+  if (r.kind === 'cities') {
+    if (!where.hasCityRows) {
+      return { verdict: 'unknown', near: false,
+        why: 'This item is limited to the listed service cities, but the delivery table has no city rows yet.' };
+    }
+    const city = String(where.city || '').trim();
+    if (!city) {
+      return { verdict: 'unknown', near: false,
+        why: 'Could not determine the city for that address, and this item is limited to specific cities.' };
+    }
+    // The MATCHES are handed in already computed, by the one matcher the
+    // reference line also uses (`locCityMatches_`). Two matchers over one
+    // operator table is g126, and here they would decide and display
+    // differently for the same address.
+    if ((where.cityMatches || []).length) {
+      return { verdict: 'yes', near: false, why: city + ' is a listed service city.' };
+    }
+    return { verdict: 'no', near: false, why: city + ' is not one of the listed service cities.' };
+  }
+
+  if (r.kind === 'any') {
+    const subs = (r.rules || []).map(function (x) { return oopEligibilityCheck_(x, where); });
+    if (!subs.length) return { verdict: 'unknown', near: false, why: 'No rule to check.' };
+    const yes = subs.filter(function (s) { return s.verdict === 'yes'; });
+    if (yes.length) {
+      // The LEAST hedged yes is the headline. A near-boundary yes only keeps
+      // its caution when every branch that said yes was near — otherwise the
+      // rep would be warned about a boundary another rule already cleared.
+      const solid = yes.filter(function (s) { return !s.near; });
+      const pick = solid.length ? solid[0] : yes[0];
+      return { verdict: 'yes', near: pick.near,
+        why: pick.why + ' (Either the distance rule or the city list qualifies this item.)' };
+    }
+    // An UNKNOWN branch outranks a NO branch: one rule said no and another
+    // could not be evaluated, so the item is not established as ineligible.
+    // Folding that to NO is the collapse INV-187 exists to prevent.
+    // EVERY branch speaks, whichever way it went. A rep told only "could not
+    // measure the distance" does not know the city list was also checked and
+    // came back empty, and would go chase the wrong half.
+    const unk = subs.some(function (s) { return s.verdict === 'unknown'; });
+    return { verdict: unk ? 'unknown' : 'no', near: false,
+      why: subs.map(function (s) { return s.why; }).join(' ') };
+  }
+
+  if (r.noWarehouse) {
+    const known = (where.warehouseNames || []);
+    return { verdict: 'unknown', near: false,
+      why: 'The eligibility column says "' + r.raw + '", which names a distance from a warehouse — but ' +
+        (known.length
+          ? 'no warehouse in the delivery table matches it (the table lists: ' + known.join(', ') + ').'
+          : 'the delivery table has no warehouses in it.') +
+        ' Fix the name in LocationAcceptance, not the pricing sheet.' };
+  }
+
   return { verdict: 'unknown', near: false,
     why: r.raw
       ? 'The eligibility column says "' + r.raw + '", which this check cannot read — confirm manually.'
@@ -1478,7 +1617,17 @@ function checkOopEligibility(address, query) {
     // Warehouses are geocoded only when some picked row actually needs one, so
     // a state-only catalog never pays for a geocode round trip.
     const parsed = picked.map(function (row) { return oopEligibilityParse_(oopRowObj_(headers, row).eligibility, whNames); });
-    const needRadius = parsed.some(function (r) { return r.kind === 'radius'; });
+    // A radius nested inside a union still needs the warehouses geocoded.
+    // Testing the TOP-LEVEL kind alone would have left every combined rule
+    // measuring against an empty distance map — a silent `unknown` on the one
+    // shape this batch exists to serve.
+    const ruleNeedsRadius = function (r) {
+      if (!r) return false;
+      if (r.kind === 'radius') return true;
+      if (r.kind === 'any') return (r.rules || []).some(ruleNeedsRadius);
+      return false;
+    };
+    const needRadius = parsed.some(ruleNeedsRadius);
     const milesByName = {};
     const whOut = [];
     if (needRadius && whNames.length) {
@@ -1490,15 +1639,18 @@ function checkOopEligibility(address, query) {
         whOut.push({ name: n, miles: d });
       });
     }
-    const loc = { state: qGeo.state, miles: milesByName };
-
-    // Listed delivery cities for this address. INFORMATION ONLY — it never
-    // touches a verdict (operator decision, 2026-09-16). A verdict that
-    // depended on two tables agreeing would let a stale row in one of them make
-    // an undeliverable item read as deliverable, with nothing on screen saying
-    // which table decided. The Area Eligibility column stays the single source
-    // of the answer; this is reference material shown where it is useful.
+    // Listed delivery cities for this address, matched ONCE. They are shown as
+    // reference on every lookup, and they DECIDE only for an item whose own
+    // Area Eligibility delegates to them (`cities` / `any` — operator decision,
+    // 2026-09-22). The 2026-09-16 rule still holds and is why this is one
+    // match, not two: city rows are never an independent overlay that could
+    // contradict the column, so nothing can be eligible by this list alone
+    // unless the column said to ask it.
     const cityHits = locCityMatches_(loc0.cities, qGeo.city, qGeo.state);
+
+    const loc = { state: qGeo.state, miles: milesByName,
+      city: qGeo.city, cityMatches: cityHits, hasCityRows: loc0.cities.length > 0,
+      warehouseNames: whNames };
 
     const items = picked.map(function (row, i) {
       const o = oopRowObj_(headers, row);
@@ -1532,6 +1684,16 @@ function checkOopEligibility(address, query) {
       // rep needs to know the difference between "we do not deliver there" and
       // "nobody has set up the delivery table".
       locationError: loc0.error || '',
+      // Per-ROW registry problems, which until now reached only
+      // getOopPricingDiagnostics — an endpoint with no caller anywhere in the
+      // client, so in practice they reached nobody. A warehouse row that was
+      // dropped is the difference between "we do not deliver there" and
+      // "that warehouse never made it into the table".
+      locationWarnings: (loc0.unreadable || []).map(function (u) {
+        return (u.name ? '"' + u.name + '": ' : '') + u.reason;
+      }).concat((loc0.noAddress || []).map(function (n) {
+        return '"' + n + '" has no address, so no distance can be measured from it.';
+      })),
       cap: OOP_ELIG_MAX_ITEMS, truncated: total > OOP_ELIG_MAX_ITEMS };
   } catch (err) { return { error: 'Eligibility check failed: ' + err.message }; }
 }
@@ -1584,15 +1746,22 @@ function getOopPricingDiagnostics() {
     const loc = getLocationAcceptance_();
     const wh = loc.warehouses;
     const whNames = Object.keys(wh);
-    const elig = { open: 0, states: 0, radius: 0, unknown: [] };
+    // Counted BY KIND, and the unknown total is counted rather than derived by
+    // subtraction. The old shape enumerated exactly open/states/radius and
+    // inferred the rest, so adding a kind made one counter NaN and silently
+    // mis-stated the other — an enumerated set that drifts from what the parser
+    // can actually return is the failure this project keeps meeting (g137).
+    const elig = { open: 0, states: 0, radius: 0, cities: 0, any: 0, unknown: [] };
+    let unknownCount = 0;
     if (rows) {
       const all = sh.getRange(2, 1, rows, width).getDisplayValues();
       all.forEach(function (row) {
         const o = oopRowObj_(headers, row);
         const r = oopEligibilityParse_(o.eligibility, whNames);
         if (r.kind === 'unknown') {
+          unknownCount++;
           if (elig.unknown.length < 12) elig.unknown.push({ item: o.name || o.code || '', value: r.raw });
-        } else { elig[r.kind]++; }
+        } else { elig[r.kind] = (elig[r.kind] || 0) + 1; }
       });
     }
     return { tab: sh.getName(), rows: rows, cols: cols, missing: missing,
@@ -1609,7 +1778,8 @@ function getOopPricingDiagnostics() {
       locUnreadable: loc.unreadable,
       locNoAddress: loc.noAddress,
       eligibility: { open: elig.open, states: elig.states, radius: elig.radius,
-        unknownCount: rows - elig.open - elig.states - elig.radius, unknown: elig.unknown },
+        cities: elig.cities, any: elig.any,
+        unknownCount: unknownCount, unknown: elig.unknown },
       sample: rows ? sh.getRange(2, 1, Math.min(3, rows), width).getDisplayValues() : [] };
   } catch (err) { return { error: String(err.message || err) }; }
 }
