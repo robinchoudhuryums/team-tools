@@ -601,6 +601,17 @@
     "oopEligibilityParse_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-22",
+   "why": "T7b: a radius over ANY warehouse; an unplaceable warehouse makes an over-limit answer unknown",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "oopEligibilityCheck_",
+    "oopEligibilityParse_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5713,7 +5724,7 @@
   "oopEligibilityCheck_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "2cc24a3cdec8f6a8"
+   "sha": "6ed4993d242bb04d"
   },
   "oopEligibilityForPayment_": {
    "file": "70_kb.js",
@@ -5723,7 +5734,7 @@
   "oopEligibilityParse_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "1943ff54dd93ae7c"
+   "sha": "2e56d7cbb44e4270"
   },
   "oopHeaderRole_": {
    "file": "70_kb.js",

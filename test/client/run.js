@@ -21441,6 +21441,75 @@ test('T7-1: a CITY clause parses, COMBINES with the clause beside it, and an unr
     'a value with no city clause parses exactly as it did before T7');
 });
 
+test('T7b: "any warehouse" is a rule about the NETWORK — it resolves against the registry at CHECK time, and an unplaceable warehouse makes an over-limit answer UNKNOWN rather than NO', () => {
+  const WH = ['Dallas', 'San Antonio', 'Phoenix', 'Tampa'];
+  const P = (t) => JSON.parse(vm.runInContext(
+    'JSON.stringify(oopEligibilityParse_(' + JSON.stringify(t) + ',' + JSON.stringify(WH) + '))', _vmCtx));
+
+  // The operator's real case (2026-09-22): MOST items reach 100 miles from any
+  // warehouse; the ones naming Dallas/San Antonio are the technician-built
+  // exceptions. The rule names no place, so it carries no warehouse list.
+  ['100 miles of any warehouse', '100 miles of any of our warehouses',
+   '100 miles of all warehouses', 'within 100 miles of a warehouse'].forEach((t) => {
+    assert.deepStrictEqual(P(t), { kind: 'radius', miles: 100, warehouses: [], anyWarehouse: true }, t);
+  });
+
+  // A NAMED radius is untouched — this is the non-vacuity that the broadening
+  // defect cannot satisfy, because it is true only if the two forms are told
+  // apart (g116's seventh direction).
+  assert.deepStrictEqual(P('100 miles of Dallas warehouse'),
+    { kind: 'radius', miles: 100, warehouses: ['Dallas'] }, 'a named rule stays narrow');
+  assert.deepStrictEqual(P('100 miles of Dallas or San Antonio warehouse').warehouses,
+    ['Dallas', 'San Antonio'], 'and a two-name rule keeps both');
+
+  // A registry NAME ending in "a" sits immediately before the word
+  // "warehouse", which is exactly where an "a warehouse" pattern could
+  // over-match and silently widen a narrow rule.
+  [['Tampa', '100 miles of Tampa warehouse'], ['Santa Ana', '100 miles of Santa Ana warehouse']].forEach(([n, t]) => {
+    const r = JSON.parse(vm.runInContext('JSON.stringify(oopEligibilityParse_(' +
+      JSON.stringify(t) + ',' + JSON.stringify([n]) + '))', _vmCtx));
+    assert.strictEqual(r.anyWarehouse, undefined, n + ' must not read as "a warehouse"');
+    assert.deepStrictEqual(r.warehouses, [n], 'it is a NAMED rule: ' + t);
+  });
+
+  // It combines with the city clause like any other rule.
+  const both = P('100 miles of any warehouse, or listed cities');
+  assert.strictEqual(both.kind, 'any');
+  assert.strictEqual(both.rules[0].anyWarehouse, true);
+
+  // ── The verdict resolves against the registry AS IT IS ──
+  const V = (rule, loc) => JSON.parse(vm.runInContext('JSON.stringify(oopEligibilityCheck_(' +
+    JSON.stringify(rule) + ',' + JSON.stringify(loc) + '))', _vmCtx));
+  const anyRule = P('100 miles of any warehouse');
+  const base = { state: 'FL', warehouseNames: WH };
+
+  // A warehouse the RULE never names still carries it — that is the point.
+  const nearTampa = V(anyRule, Object.assign({}, base, { miles: { Dallas: 900, Tampa: 12 } }));
+  assert.strictEqual(nearTampa.verdict, 'yes');
+  assert.match(nearTampa.why, /12 mi from Tampa/);
+
+  // Over the limit with every warehouse PLACED is a firm NO.
+  const farAll = V(anyRule, Object.assign({}, base, {
+    miles: { Dallas: 1400, 'San Antonio': 1500, Phoenix: 1000, Tampa: 2200 } }));
+  assert.strictEqual(farAll.verdict, 'no');
+
+  // …but an UNPLACEABLE warehouse might be nearer, so the same distances with
+  // one missing are UNKNOWN. This used to answer NO with the caveat appended,
+  // which reads as a decision with a footnote; an any-warehouse rule spans the
+  // whole registry and makes it far likelier (INV-187).
+  const farUnplaced = V(anyRule, Object.assign({}, base, {
+    miles: { Dallas: 1400, 'San Antonio': 1500, Tampa: 2200 } }));
+  assert.strictEqual(farUnplaced.verdict, 'unknown', 'an unplaced warehouse is not a NO');
+  assert.strictEqual(farUnplaced.verdict === 'no', false);
+  assert.match(farUnplaced.why, /might be nearer/);
+  assert.match(farUnplaced.why, /LocationAcceptance/, 'and it names the table to fix');
+
+  // An empty registry never reads as "not eligible".
+  const none = V(anyRule, { state: 'FL', warehouseNames: [], miles: {} });
+  assert.strictEqual(none.verdict, 'unknown');
+  assert.match(none.why, /no warehouses in it/);
+});
+
 test('T7-2: EITHER branch of a union qualifies, an UNKNOWN branch outranks a NO branch, and a city limit does not lift out of pocket', () => {
   const WH = ['Dallas', 'San Antonio'];
   const rule = JSON.parse(vm.runInContext('JSON.stringify(oopEligibilityParse_(' +

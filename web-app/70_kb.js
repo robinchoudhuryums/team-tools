@@ -1254,6 +1254,7 @@ function locCityMatches_(cities, city, state) {
  *    { kind: 'open'   }
  *    { kind: 'states', states: ['TX', …] }
  *    { kind: 'radius', miles: 100, warehouses: ['Dallas', …] }
+ *    { kind: 'radius', miles: 100, warehouses: [], anyWarehouse: true }
  *    { kind: 'cities' }                       — the LocationAcceptance city rows
  *    { kind: 'any',    rules: [<rule>, …] }   — any ONE of them qualifies
  *    { kind: 'unknown', raw: '<the cell, verbatim>'[, noWarehouse: true] }
@@ -1328,12 +1329,29 @@ function oopEligibilityParse_(text, warehouseNames) {
   const m = lc.match(/(\d{1,4})\s*(?:miles|mile|mi)\b/);
   if (m) {
     const miles = parseInt(m[1], 10);
+    // ── ANY warehouse ──────────────────────────────────────────────────────
+    // "100 miles of any warehouse" is a rule about the NETWORK, not about a
+    // place, and the operator confirmed on 2026-09-22 that it is the common
+    // case: most items reach 100 miles from ANY warehouse, and the ones naming
+    // Dallas or San Antonio are the exceptions a technician has to build.
+    // It resolves against whatever the registry holds AT CHECK TIME, so opening
+    // a warehouse extends every item carrying it with no edit to the pricing
+    // sheet — the same delegation the city rule uses, for the same reason.
+    //
+    // Tested BEFORE the name match, and deliberately so: a short registry name
+    // can appear as a substring of the phrase itself ("Ware" inside
+    // "warehouse"), and a name match here would silently narrow a rule the
+    // operator wrote to be broad.
+    const anyRe = /\b(?:any|all|our|each|every|a)\s+(?:of\s+)?(?:our\s+|the\s+)?warehouses?\b/i;
+    const anyWh = anyRe.test(raw);
     const hits = [];
-    (warehouseNames || []).forEach(function (n) {
-      const name = String(n || '').trim();
-      if (name && lc.indexOf(name.toLowerCase()) >= 0 && hits.indexOf(name) < 0) hits.push(name);
-    });
-    if (miles > 0 && hits.length) {
+    if (!anyWh) {
+      (warehouseNames || []).forEach(function (n) {
+        const name = String(n || '').trim();
+        if (name && lc.indexOf(name.toLowerCase()) >= 0 && hits.indexOf(name) < 0) hits.push(name);
+      });
+    }
+    if (miles > 0 && (anyWh || hits.length)) {
       // F-23 (2026-09-18): a value that ALSO names a state — "TX, 100 miles
       // of Dallas" — is two rules in one cell, and reading it as the radius
       // alone silently dropped the state. Strip the distance and the matched
@@ -1342,6 +1360,7 @@ function oopEligibilityParse_(text, warehouseNames) {
       // Uppercase only: the operator's prose ("100 miles of Dallas or San
       // Antonio") carries "or", and OR is Oregon.
       let rest = raw.replace(m[0], ' ');
+      if (anyWh) rest = rest.replace(anyRe, ' ');
       // A warehouse name followed by its own state ("Dallas TX", "Dallas, TX")
       // is the warehouse's ADDRESS, not a second rule — strip the pair.
       hits.forEach(function (n) {
@@ -1359,7 +1378,9 @@ function oopEligibilityParse_(text, warehouseNames) {
         return u.length === 2 && u === u.toUpperCase() && US_STATE_CODES.indexOf(u) >= 0;
       });
       if (stateLeft) return wrap({ kind: 'unknown', raw: raw });
-      return wrap({ kind: 'radius', miles: miles, warehouses: hits });
+      return wrap(anyWh
+        ? { kind: 'radius', miles: miles, warehouses: [], anyWarehouse: true }
+        : { kind: 'radius', miles: miles, warehouses: hits });
     }
     // A DISTANCE with no registry name is a different failure from a value we
     // cannot parse at all, and conflating them is what sent the operator to
@@ -1470,16 +1491,25 @@ function oopEligibilityCheck_(rule, loc) {
 
   if (r.kind === 'radius') {
     const miles = Number(r.miles) || 0;
+    // An ANY-warehouse rule names no places, so it resolves against the
+    // registry AS IT IS AT CHECK TIME. That is the point of it: a warehouse
+    // opened next month extends every item carrying this rule with no edit to
+    // the pricing sheet.
+    const names = r.anyWarehouse ? (where.warehouseNames || []) : (r.warehouses || []);
+    if (r.anyWarehouse && !names.length) {
+      return { verdict: 'unknown', near: false,
+        why: 'This item reaches ' + miles + ' miles from any warehouse, but the delivery table has no warehouses in it.' };
+    }
     let best = null, bestName = '';
     let anyUnplaced = false;
-    (r.warehouses || []).forEach(function (n) {
+    names.forEach(function (n) {
       const d = (where.miles || {})[n];
       if (d == null || !isFinite(d)) { anyUnplaced = true; return; }
       if (best === null || d < best) { best = d; bestName = n; }
     });
     if (best === null) {
       return { verdict: 'unknown', near: false,
-        why: 'Could not measure the distance to ' + (r.warehouses || []).join(' or ') + '.' };
+        why: 'Could not measure the distance to ' + names.join(' or ') + '.' };
     }
     const shown = Math.round(best * 10) / 10;
     if (best <= miles) {
@@ -1489,10 +1519,19 @@ function oopEligibilityCheck_(rule, loc) {
           (near ? ' — close to the boundary, and this is straight-line distance; the drive is longer. Check before committing.' : '.') +
           (anyUnplaced ? ' One warehouse could not be placed.' : '') };
     }
-    // Straight-line already exceeds the limit, so the drive does too.
+    // Straight-line already exceeds the limit, so the drive does too — but
+    // only for the warehouses we could PLACE. An unplaced one might be nearer,
+    // and answering NO on that would be a verdict drawn from incomplete data on
+    // a surface where it becomes a commitment (INV-187). It used to say NO with
+    // the caveat appended, which reads as a decision with a footnote; an
+    // ANY-warehouse rule spans the whole registry and makes it far likelier.
+    if (anyUnplaced) {
+      return { verdict: 'unknown', near: false,
+        why: shown + ' mi from ' + bestName + ', over the ' + miles + ' mi limit — but a warehouse could not be ' +
+          'placed and might be nearer. Fix its address in LocationAcceptance to get a firm answer.' };
+    }
     return { verdict: 'no', near: false,
-      why: shown + ' mi from ' + bestName + ', over the ' + miles + ' mi limit (straight-line — the drive is longer still).' +
-        (anyUnplaced ? ' One warehouse could not be placed.' : '') };
+      why: shown + ' mi from ' + bestName + ', over the ' + miles + ' mi limit (straight-line — the drive is longer still).' };
   }
 
   if (r.kind === 'cities') {
