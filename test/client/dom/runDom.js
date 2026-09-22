@@ -3194,16 +3194,20 @@ test('ELIG DOM: both verdicts render, labelled, on both hosts — a near-boundar
   assert.ok(/incomplete/.test(unplacedStrip.textContent), 'and what it means for the answer is stated');
   assert.ok(!/Phoenix/.test(distStrip.textContent), 'and it is not quietly listed among the measured ones');
 
-  // LISTED DELIVERY CITIES are INFORMATION, never a verdict (operator decision,
-  // 2026-09-16). The load-bearing assertions are the negative ones: it must sit
-  // OUTSIDE every item's answer, and it must say so, or a rep reads "Austin
-  // delivers POV" next to a No and takes it as the answer.
+  // LISTED DELIVERY CITIES decide ONLY for an item whose own Area Eligibility
+  // delegates to them (operator decision, 2026-09-22 — T7). The 2026-09-16 rule
+  // underneath is intact and is what these assertions still guard: the list is
+  // never an independent overlay, so it must sit OUTSIDE every item's answer
+  // and must say what it applies to, or a rep reads "Austin delivers POV" next
+  // to a No and takes it as the answer for an item that never asked about
+  // cities. The note's WORDING changed with T7 because "Reference only" stopped
+  // being true; what it has to convey did not.
   const cityLine = host.querySelector('.kb-elig-city');
   assert.ok(cityLine, 'a listed delivery city is surfaced');
   assert.ok(/Austin, TX/.test(cityLine.textContent) && /delivers POV, scooter/.test(cityLine.textContent),
     'naming the city and what goes there');
-  assert.ok(/Reference only/.test(cityLine.textContent) && /Area Eligibility/.test(cityLine.textContent),
-    'and saying plainly that it is NOT the answer');
+  assert.ok(/Applies only to items whose Area Eligibility/.test(cityLine.textContent),
+    'and scoping itself to the items that asked — it is not the answer on its own');
   assert.strictEqual(cityLine.closest('.kb-ins-row'), null,
     'it sits outside every item row — inside one it would read as that item\u2019s verdict');
   assert.strictEqual(cityLine.querySelector('.kb-elig-v'), null, 'and carries no verdict of its own');
@@ -3872,6 +3876,80 @@ test('T4 DOM: the arrows walk the results and Escape comes back, without the mou
   rows[1].focus();
   assert.ok(!t3Key(h, rows[1], 'Enter').defaultPrevented,
     'a row with no primary control does not eat the key');
+});
+
+test('T7 DOM: a delivery table that dropped rows SAYS so on the rep surface, and a city-delegated verdict names the city that decided', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  h.run.respond('checkOopEligibility', () => ({
+    success: true, formatted: '500 Main St, Austin, TX 78701, USA', state: 'TX', city: 'Austin', total: 2,
+    warehouses: [{ name: 'Dallas', miles: 182.4 }],
+    deliveryCities: [{ name: 'Austin', state: 'TX', accepts: 'K0800-K0803 scooters', notes: '' }],
+    // The registry could not place one row and dropped another for want of a
+    // name. Until T7 these reached ONLY getOopPricingDiagnostics, which has no
+    // caller anywhere in the client — so in practice they reached nobody, and
+    // a warehouse missing from the table looked exactly like an address we do
+    // not serve.
+    locationWarnings: ['"San Antonio" has no address, so no distance can be measured from it.'],
+    items: [
+      // The operator's scooter rule: a union, decided by the CITY branch.
+      { name: 'Scooter K0800', price: '$1,200.00', eligibility: '100 miles of Dallas warehouse, or listed cities', rule: 'any',
+        insurance: { verdict: 'yes', near: false, why: 'Austin is a listed service city. (Either the distance rule or the city list qualifies this item.)' },
+        oop:       { verdict: 'yes', near: false, why: 'Austin is a listed service city. (Either the distance rule or the city list qualifies this item.)' } },
+      // A radius naming a warehouse the registry does not hold. The message
+      // must send the operator to the delivery table, not the pricing sheet —
+      // getting this wrong on 2026-09-22 cost them real eligibility data.
+      { name: 'Lost Warehouse Item', price: '$40.00', eligibility: '100 miles of Houston warehouse', rule: 'unknown',
+        insurance: { verdict: 'unknown', near: false, why: 'The eligibility column says "100 miles of Houston warehouse", which names a distance from a warehouse — but no warehouse in the delivery table matches it (the table lists: Dallas). Fix the name in LocationAcceptance, not the pricing sheet.' },
+        oop:       { verdict: 'unknown', near: false, why: 'The eligibility column says "100 miles of Houston warehouse", which names a distance from a warehouse — but no warehouse in the delivery table matches it (the table lists: Dallas). Fix the name in LocationAcceptance, not the pricing sheet.' } },
+    ],
+  }));
+  h.run.respond('getReferenceTree', () => ({ items: [], isAdmin: true, isManager: true, departments: [] }));
+  h.window.enterTool('reference', 'reference');
+  h.flushTimers();
+
+  const addr = h.$('#kb-oop-addr');
+  addr.value = '500 Main St, Austin TX';
+  h.read('oopLookupInput_')(addr);
+  h.flushTimers();
+  await tick(); await tick();
+
+  const host = h.$('#kb-oop-results');
+  const txt = host.textContent;
+
+  // The dropped row is ON SCREEN, in warn tone, naming the row.
+  assert.ok(/Delivery table:/.test(txt), 'the dropped registry rows are surfaced to the rep');
+  assert.ok(/San Antonio/.test(txt) && /no address/.test(txt), 'naming the row and why it was dropped');
+
+  // A city-delegated YES names the city, so the rep can see WHICH rule decided.
+  const rows = host.querySelectorAll('.kb-ins-row');
+  assert.ok(/listed service city/.test(rows[0].textContent), 'the verdict names the city that carried it');
+  assert.ok(rows[0].querySelector('.kb-elig-v.yes'), 'and is toned as a yes');
+
+  // The misdirected message is gone: the unknown row points at the delivery
+  // table BY NAME and explicitly not at the pricing sheet.
+  assert.ok(rows[1].querySelector('.kb-elig-v.unknown'), 'an unresolvable warehouse is unknown, never no');
+  assert.strictEqual(rows[1].querySelector('.kb-elig-v.no'), null, 'and is never painted as a no');
+  assert.ok(/LocationAcceptance/.test(rows[1].textContent), 'it names the table to fix');
+  assert.ok(/not the pricing sheet/.test(rows[1].textContent), 'and says which one NOT to edit');
+
+  // Non-vacuity: drive it the other way. With no warnings the line must be
+  // absent entirely — an always-present banner is the diagnostic that can
+  // never be clean (g02), which is what this batch is fixing, not repeating.
+  h.run.respond('checkOopEligibility', () => ({
+    success: true, formatted: '500 Main St, Austin, TX 78701, USA', state: 'TX', city: 'Austin', total: 0,
+    warehouses: [{ name: 'Dallas', miles: 182.4 }], deliveryCities: [], locationWarnings: [],
+    items: [{ name: 'Open Item', price: '$10.00', eligibility: 'Open', rule: 'open',
+      insurance: { verdict: 'yes', near: false, why: 'Available anywhere in the US.' },
+      oop: { verdict: 'yes', near: false, why: 'Available anywhere in the US.' } }],
+  }));
+  addr.value = '900 Congress Ave, Austin TX';
+  h.read('oopLookupInput_')(addr);
+  h.flushTimers();
+  await tick(); await tick();
+  assert.ok(!/Delivery table:/.test(h.$('#kb-oop-results').textContent),
+    'a clean delivery table shows NO warning line at all');
 });
 
 test('T4 DOM: copy yields the parked FIGURE, and a blocked clipboard SAYS so instead of claiming success', async () => {
