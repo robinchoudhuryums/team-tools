@@ -2819,6 +2819,30 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   produces confident, wrong findings; this one did, and the implementation block
   carries the correction.
 
+  **A SEVENTH direction (T6, 2026-09-21): a non-vacuity check that the DEFECT
+  also satisfies is not a non-vacuity check.** The unstyled-class pin derived
+  three sets and guarded itself with "the hook extractor works: is `modal` a
+  hook?" It was — but because the extractor was harvesting every `class="a b"`
+  attribute as though it were a selector, which is the precise failure the guard
+  existed to rule out. The pin passed its first run while checking almost
+  nothing, and `.mono` — fifteen elements with no CSS rule — sailed through it.
+
+  A bite-check found it: deleting the `.mono` rule left the pin GREEN. Nothing
+  else would have. The guard had been written by asking *"what would be true if
+  the extractor worked?"* — and the answer was also true when it did not.
+
+  **Ask the other question instead: what is true ONLY if it works?** The
+  replacement DRIVES the extractor over a synthetic snippet whose only content
+  is a class attribute, and asserts nothing is harvested from it. That statement
+  is false under the defect and true under the fix, which is what a guard has to
+  be. Pair it with a band check (`hooks.size < defined.size`) so a future
+  over-capture has somewhere to fail.
+
+  The shape to watch for: a self-check whose assertion is a MEMBERSHIP or an
+  existence test (`X is in the set`, `the set is non-empty`) over a set the bug
+  makes LARGER. Over-capture satisfies both. Under-capture is what such a check
+  catches, and under-capture is usually the less likely failure.
+
 
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
