@@ -1529,15 +1529,8 @@ entry says which it is.
   a warehouse the registry does not hold says to fix THIS tab and not the
   pricing sheet — while a clean table shows no banner at all.
 
-  **For the full picture, `getOopPricingDiagnostics`** (admin-gated).
-  ⚠️ **It has no button in the app** — there is no Manage → Admin panel for it
-  yet (that is T8). Run it from the Apps Script editor, and note it RETURNS its
-  report rather than logging one, so a bare call leaves the execution log empty
-  and looks like it did nothing. Wrap it:
-
-  ```js
-  function showOopDiag() { Logger.log(JSON.stringify(getOopPricingDiagnostics(), null, 2)); }
-  ```
+  **For the full picture: Manage → Admin → System → "Reference lookups ·
+  pricing + delivery reach"** (T8, 2026-09-22). It loads with the tab.
 
   It reports the tab it read, every
   header and the role it assigned, any role it could not find, the warehouse
