@@ -1452,9 +1452,19 @@ entry says which it is.
     into a rule and answered twice — once for an order through insurance and
     once for one paid out of pocket. The grammar and what each value means is
     INV-209; the short version is `Open` / a list of two-letter state codes /
-    `N miles of <warehouse name>` / `listed cities`, and **anything else reads
-    "cannot tell"**, never "eligible". The warehouse NAME has to be one that
-    appears in `LocationAcceptance`.
+    `N miles of any warehouse` / `N miles of <warehouse name>` / `listed
+    cities`, and **anything else reads "cannot tell"**, never "eligible".
+  - **`N miles of any warehouse` is the usual form** and is a rule about the
+    NETWORK: it measures from whichever warehouse is nearest, resolved against
+    `LocationAcceptance` at the moment of the check. Opening a warehouse
+    extends every item written this way with no edit to this sheet. `any of our
+    warehouses`, `all warehouses` and `a warehouse` all read the same.
+  - `N miles of <warehouse name>` is the NARROW form, for items only certain
+    sites can fulfil — e.g. the ones a technician has to build. Name one or
+    several (`100 miles of Dallas warehouse, 100 miles of San Antonio
+    warehouse`). Each NAME has to appear in `LocationAcceptance`, and it is
+    matched as a WHOLE WORD, so a site named `Ware` is not found inside the
+    word "warehouse".
   - **Two rules can share one cell, joined by `or`** (T7, 2026-09-22):
     `100 miles of Dallas warehouse, or listed cities` means EITHER qualifies,
     which is how the scooter rule is written. `listed cities` (also `exact

@@ -879,7 +879,7 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 10 | `TRIGGER_GROUPS` |
 | localStorage keys | 18 | `ums…` literals in `web-app/` |
-| Invariant library entries | 231 | `.cycle/config.md` |
+| Invariant library entries | 232 | `.cycle/config.md` |
 | Regression scenarios (S*) | 108 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
