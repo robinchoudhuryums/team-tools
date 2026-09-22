@@ -3927,8 +3927,14 @@ test('T8 DOM: the OOP pricing diagnostics have a HOME — the Admin System tab r
 
   // A FAILED read renders the warn card, never an empty panel — a diagnostic
   // that fails silently is the defect this whole panel exists to fix (INV-175).
-  h.window.document.getElementById('cn-admin-oop').innerHTML =
-    h.read('cnRenderOopDiagPanel_')({ error: 'Admin access required.' });
+  // Driven through the LOADER, not by calling the renderer: a pin that injects
+  // the error markup itself proves only that the renderer can draw it, and
+  // stays green when the loader's failure branch is deleted (g138 — a NO BITE
+  // caught exactly that here).
+  h.run.respond('getOopPricingDiagnostics', () => { throw new Error('Admin access required.'); });
+  h.read('cnLoadOopDiagPanel_')();
+  h.flushTimers();
+  await tick(); await tick();
   const failTxt = h.window.document.getElementById('cn-sys-sec-oop').textContent;
   assert.ok(/unavailable/i.test(failTxt), 'a failed read says so');
   assert.ok(/Admin access required/.test(failTxt), 'carrying the reason');
