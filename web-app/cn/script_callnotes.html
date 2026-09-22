@@ -9024,6 +9024,7 @@ function enterCallNotesAdminView(area) {
     '<div class="cn-admin-pane" data-pane="system" style="' + paneStyle('system') + '">' +
       '<div id="cn-sys-findings">' + loSweep() + '</div>' +
       '<div id="cn-admin-storage"></div>' +
+      '<div id="cn-admin-oop"></div>' +
       '<div id="cn-admin-health"></div>' +
     '</div>' +
     '<div class="cn-admin-pane" data-pane="tags" style="' + paneStyle('tags') + '">' +
@@ -9073,6 +9074,11 @@ function enterCallNotesAdminView(area) {
   // #1 — Storage Health: one pane over every spreadsheet (configured /
   // reachable / tz-vs-CONFIG). Independent load; failure stays contained.
   cnLoadStoragePanel_();
+  // T8 — the OOP pricing + delivery-reach reader. Independent load; failure
+  // stays contained. It sits beside Storage Health deliberately: both answer
+  // "what did the app actually read", and this one had no home at all until
+  // an operator lost sheet data for want of it (g142).
+  cnLoadOopDiagPanel_();
   // Pre-pilot observability — feature-usage aggregate (independent load;
   // failure stays contained to its own slot).
   cnLoadUsagePanel_();
@@ -10046,6 +10052,100 @@ function cnRenderSheetView_(res) {
     legend;
   var trunc = res.truncated ? '<div style="font-size:11px;color:var(--warning-deep);margin-top:8px">Showing the most recent ' + rows.length + ' rows — older history is in the sheet (Open in Sheets ↗).</div>' : '';
   return '<div>' + head + table + trunc + '</div>';
+}
+
+/** T8 (2026-09-22) — the OOP pricing + delivery-reach reader, given a home.
+ *
+ *  `getOopPricingDiagnostics` has existed since 2026-09-16 and had **no caller
+ *  anywhere in the client**: admin-gated, reachable only from the Apps Script
+ *  editor, where it RETURNS its report rather than logging one — so a bare call
+ *  leaves the execution log empty and looks like it did nothing. On 2026-09-22
+ *  it held every fact needed to explain why the Reference lookups had gone
+ *  quiet, and reached nobody; the operator rewrote correct pricing cells
+ *  instead (g142). A diagnostic nobody can open is not a diagnostic.
+ *
+ *  It reports FACTS, not verdicts: which tab was read, the role assigned to
+ *  every header, the roles it could not find, the warehouse registry, and how
+ *  every Area Eligibility value parses — with the unreadable ones named. The
+ *  judgement stays in the findings list above, the same split the storage
+ *  inventory uses. */
+function cnRenderOopDiagPanel_(res) {
+  var wrap = function (inner) {
+    return '<div class="panel" id="cn-sys-sec-oop" style="margin-bottom:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('search', 14) +
+        ' Reference lookups · pricing + delivery reach</div>' + inner + '</div>';
+  };
+  if (!res || res.error) return wrap(errorStateHtml_('Pricing diagnostics unavailable: ' + esc((res && res.error) || 'load failed')));
+
+  var warn = function (t) { return '<div style="font-size:12px;color:var(--warning-deep);margin-top:6px">' + t + '</div>'; };
+  var muted = function (t) { return '<span style="color:var(--muted)">' + t + '</span>'; };
+
+  // ── The pricing tab ──
+  var cols = (res.cols || []).map(function (c) {
+    return '<span style="display:inline-block;margin:0 10px 4px 0;font-size:11px">' +
+      '<b>' + esc(c.header || '(blank)') + '</b> ' + muted('→ ' + esc(c.role)) + '</span>';
+  }).join('');
+  var html = '<div style="font-size:12px;margin-bottom:6px">Reading <b>' + esc(res.tab) + '</b> · ' +
+    esc(String(res.rows)) + ' row' + (res.rows === 1 ? '' : 's') + ' · searched column: <b>' +
+    esc(res.nameCol) + '</b>' + (res.nameByHeader ? '' : ' ' + muted('(fallback — no item-ish header found, so items are findable by code only)')) + '</div>' +
+    '<div style="margin-bottom:6px">' + cols + '</div>' +
+    (res.missing && res.missing.length ? warn('No column matched: <b>' + esc(res.missing.join(', ')) + '</b> — those fields render blank for every item.') : '') +
+    (res.truncated ? warn('The sheet is longer than the scan limit; rows past it are never searched.') : '');
+
+  // ── The delivery registry, in the SAME breath: a radius rule is written in
+  //    one tab and resolved in the other, and an operator who spelled a
+  //    warehouse differently in the two sees it here rather than from a rep.
+  var wh = (res.warehouses || []).map(function (w) {
+    return '<div style="font-size:11px;padding:2px 0">' + esc(w.name) + ' ' + muted(esc(w.address)) + '</div>';
+  }).join('');
+  html += '<div class="day-section-label" style="margin:14px 0 6px">' + esc(res.locationTab) + '</div>' +
+    (res.locationError ? warn(esc(res.locationError)) : '') +
+    (wh || muted('<div style="font-size:11px">No warehouses — every "N miles of…" rule reads "cannot tell".</div>')) +
+    '<div style="font-size:11px;margin-top:4px">' + muted(esc(String(res.cities)) + ' city row' + (res.cities === 1 ? '' : 's')) + '</div>' +
+    ((res.locNoAddress || []).length ? warn('No address, so no distance can be measured from: <b>' + esc(res.locNoAddress.join(', ')) + '</b>') : '') +
+    ((res.locUnreadable || []).length ? warn('Rows that could not be classified: ' +
+      esc(res.locUnreadable.map(function (u) { return (u.name || '(unnamed)') + ' — ' + u.reason; }).join(' · ')) + '') : '');
+
+  // ── How every Area Eligibility value actually parses. The COUNTS are
+  //    derived per kind; `unknownCount` is counted, never inferred, so a kind
+  //    added to the grammar cannot silently land in the wrong bucket.
+  var e = res.eligibility || {};
+  var kinds = [['open', 'Open'], ['states', 'State list'], ['radius', 'Distance'],
+    ['cities', 'Listed cities'], ['any', 'Combined']];
+  html += '<div class="day-section-label" style="margin:14px 0 6px">Area Eligibility, as parsed</div>' +
+    '<div style="font-size:11px;margin-bottom:4px">' + kinds.map(function (k) {
+      return esc(k[1]) + ' <b>' + esc(String(e[k[0]] || 0)) + '</b>';
+    }).join(' · ') + ' · Cannot read <b>' + esc(String(e.unknownCount || 0)) + '</b></div>';
+  if ((e.unknown || []).length) {
+    html += warn('These read "cannot tell" for every rep, on every address:') +
+      (e.unknown || []).map(function (u) {
+        return '<div style="font-size:11px;padding:1px 0">' + esc(u.item || '(unnamed)') + ' ' +
+          muted('→ "' + esc(u.value || '(blank)') + '"') + '</div>';
+      }).join('');
+  }
+  return wrap(html);
+}
+
+function cnLoadOopDiagPanel_() {
+  var slot = document.getElementById('cn-admin-oop');
+  if (!slot) return;
+  slot.innerHTML = '<div style="padding:10px 0">' + loSweep() + '</div>';
+  var requestedView = currentView;
+  // A failed read renders the warn card rather than an empty panel (INV-175):
+  // a diagnostic that fails silently is the defect this panel exists to fix.
+  var fail = function (msg) {
+    if (currentView !== requestedView) return;
+    var live = document.getElementById('cn-admin-oop');
+    if (live) live.innerHTML = cnRenderOopDiagPanel_({ error: msg });
+  };
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requestedView) return;
+      var live = document.getElementById('cn-admin-oop');
+      if (live) live.innerHTML = cnRenderOopDiagPanel_(res);
+    })
+    .withFailureHandler(function (err) { fail((err && err.message) || 'load failed'); })
+    .getOopPricingDiagnostics();
 }
 
 function cnLoadStoragePanel_() {

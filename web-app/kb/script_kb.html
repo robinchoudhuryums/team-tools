@@ -2988,12 +2988,13 @@ function oopEligHeaderHtml_(addr, res) {
       return esc(w.name) + ' ' + esc(String(w.miles)) + ' mi';
     }).join(' · ') + ' (straight-line)</div>';
   }
-  // LISTED DELIVERY CITIES. Information, never a verdict (operator decision,
-  // 2026-09-16) — so it renders as its own line ABOVE the items rather than
-  // inside any item's answer. A rep must never be able to read this as "and
-  // therefore it is eligible": the Area Eligibility column is the only thing
-  // that decides, and two tables that could disagree would leave nobody able
-  // to see which one did.
+  // LISTED DELIVERY CITIES, still ABOVE the items rather than inside any one
+  // answer. Since 2026-09-22 this list CAN decide — but only for an item whose
+  // own Area Eligibility delegates to it, so the note says that rather than
+  // claiming the list is reference only, which stopped being true. The
+  // 2026-09-16 rule it used to state is intact underneath: nothing here is an
+  // independent overlay, so a rep still cannot read a listed city as "and
+  // therefore eligible" for an item that never asked about cities.
   var dc = res.deliveryCities || [];
   if (dc.length) {
     html += '<div class="kb-elig-city">' + icon('checkCircle', 12) + ' ' +
@@ -3001,7 +3002,7 @@ function oopEligHeaderHtml_(addr, res) {
         return esc(c.name) + (c.state ? ', ' + esc(c.state) : '') +
           (c.accepts ? ' — delivers ' + esc(c.accepts) : ' — listed delivery city');
       }).join(' · ') +
-      '<span class="kb-elig-city-note">Reference only — the verdicts below come from the item’s Area Eligibility.</span>' +
+      '<span class="kb-elig-city-note">Applies only to items whose Area Eligibility names the city list — each verdict below says so.</span>' +
     '</div>';
   }
   // A delivery table that could not be READ is surfaced. Without this, every
@@ -3010,6 +3011,12 @@ function oopEligHeaderHtml_(addr, res) {
   if (res.locationError) {
     html += '<div class="kb-ins-more" style="color:var(--warning-deep)">' + esc(res.locationError) + '</div>';
   }
+  // Rows the delivery table dropped. These used to reach only an admin endpoint
+  // with no caller, so a warehouse missing from the registry looked exactly
+  // like an address nobody serves.
+  (res.locationWarnings || []).forEach(function (w) {
+    html += '<div class="kb-ins-more" style="color:var(--warning-deep)">Delivery table: ' + esc(w) + '</div>';
+  });
   var unplaced = (res.warehouses || []).filter(function (w) { return w.miles == null; });
   if (unplaced.length) {
     html += '<div class="kb-ins-more" style="color:var(--warning-deep)">Could not place: ' +

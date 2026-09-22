@@ -586,6 +586,42 @@
     "searchInsurancePayors"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-22",
+   "why": "T7: exact-city eligibility rule, rules that combine, and the two silences that misdirected the operator",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "checkOopEligibility",
+    "getLocationAcceptance_",
+    "getOopPricingDiagnostics",
+    "oopEligibilityCheck_",
+    "oopEligibilityForPayment_",
+    "oopEligibilityParse_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-22",
+   "why": "T7b: a radius over ANY warehouse; an unplaceable warehouse makes an over-limit answer unknown",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "oopEligibilityCheck_",
+    "oopEligibilityParse_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-22",
+   "why": "T7b: warehouse names match on a WORD BOUNDARY, never a bare substring",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "oopEligibilityParse_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3038,7 +3074,7 @@
   "checkOopEligibility": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "480f1e1e18f31763"
+   "sha": "a59fee8580583d3e"
   },
   "checkOpenPunches": {
    "file": "20_timeclock.js",
@@ -4208,7 +4244,7 @@
   "getLocationAcceptance_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "c776b191e3452a64"
+   "sha": "dba6b9da3a3a9d66"
   },
   "getManagerDashboard": {
    "file": "20_timeclock.js",
@@ -4353,7 +4389,7 @@
   "getOopPricingDiagnostics": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "426bb560239e940e"
+   "sha": "e709f79e443155c4"
   },
   "getOrCreateAuditSheet_": {
    "file": "10_core.js",
@@ -5698,17 +5734,17 @@
   "oopEligibilityCheck_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "464322af0dcf2755"
+   "sha": "6ed4993d242bb04d"
   },
   "oopEligibilityForPayment_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "5062d0794c6c7cbc"
+   "sha": "0a79805bbb740391"
   },
   "oopEligibilityParse_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "ea861f28a5e6e9e9"
+   "sha": "3c5dfe752d2b4fef"
   },
   "oopHeaderRole_": {
    "file": "70_kb.js",

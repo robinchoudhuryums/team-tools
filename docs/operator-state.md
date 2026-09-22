@@ -1452,12 +1452,38 @@ entry says which it is.
     into a rule and answered twice — once for an order through insurance and
     once for one paid out of pocket. The grammar and what each value means is
     INV-209; the short version is `Open` / a list of two-letter state codes /
-    `N miles of <warehouse name>`, and **anything else reads "cannot tell"**,
-    never "eligible". The warehouse NAME has to be one that appears in
-    `LocationAcceptance`.
+    `N miles of any warehouse` / `N miles of <warehouse name>` / `listed
+    cities`, and **anything else reads "cannot tell"**, never "eligible".
+  - **`N miles of any warehouse` is the usual form** and is a rule about the
+    NETWORK: it measures from whichever warehouse is nearest, resolved against
+    `LocationAcceptance` at the moment of the check. Opening a warehouse
+    extends every item written this way with no edit to this sheet. `any of our
+    warehouses`, `all warehouses` and `a warehouse` all read the same.
+  - `N miles of <warehouse name>` is the NARROW form, for items only certain
+    sites can fulfil — e.g. the ones a technician has to build. Name one or
+    several (`100 miles of Dallas warehouse, 100 miles of San Antonio
+    warehouse`). Each NAME has to appear in `LocationAcceptance`, and it is
+    matched as a WHOLE WORD, so a site named `Ware` is not found inside the
+    word "warehouse".
+  - **Two rules can share one cell, joined by `or`** (T7, 2026-09-22):
+    `100 miles of Dallas warehouse, or listed cities` means EITHER qualifies,
+    which is how the scooter rule is written. `listed cities` (also `exact
+    city`, `service cities`) delegates to the city rows in
+    `LocationAcceptance`, so the list is maintained in ONE place and adding a
+    city needs no edit here. **If either half is unreadable the WHOLE cell
+    reads "cannot tell"** — the readable half never becomes the answer on its
+    own, because an item you restricted by a rule we could not parse would
+    otherwise go eligible everywhere the other half allows.
+  - A **city** limit does NOT lift when the customer pays out of pocket — it is
+    about how the item physically gets there, not who is billing. A **state**
+    limit still does.
 
   ### `LocationAcceptance`
-  Columns, also by header stem: `Type`, `Name`, `Address`, `State`, `Accepts`,
+  **The headers must be in ROW 1**, with data from row 2 down. A title row above
+  them makes every column unreadable, every row read as blank, and the registry
+  come back empty — which used to be silent and is now reported by name (T7).
+
+  Columns, by header stem: `Type`, `Name`, `Address`, `State`, `Accepts`,
   `Notes`. Two row kinds under `Type`:
 
   | Type | Name | Address | State | Accepts |
@@ -1473,10 +1499,16 @@ entry says which it is.
     near-boundary radius answer wrong by up to twenty miles.
   - A warehouse row with **no address is dropped and reported** — its name would
     become vocabulary the grammar matches and can never measure.
-  - A **city** row lists somewhere POVs/scooters can be delivered. It is shown
-    to the rep when they check an address in that city and **never changes a
-    verdict** — the Area Eligibility column is the only thing that decides. Two
-    tables that could disagree would leave nobody able to see which one decided.
+  - A **city** row lists somewhere POVs/scooters can be delivered. **A `Name`
+    is required** — a row with only a `State` is dropped. Without a `Type` of
+    `city` a row with no address cannot be classified at all and is dropped
+    too, since a blank `Type` is only ever read as a warehouse.
+  - A city row is shown to the rep whenever they check an address in that city.
+    Since T7 (2026-09-22) it **also decides, but only for an item whose own Area
+    Eligibility names the city list** — never on its own. The column is still
+    the only thing that chooses the rule; the city rows supply its parameter,
+    exactly as they already supplied the warehouse address for a radius. An
+    item that never mentions cities is unaffected by anything in this list.
   - `Type` matches by prefix, so `warehouse (north dock)` works. A `Type` the
     reader does not recognise makes the row unreadable and it is REPORTED, not
     guessed at. A blank `Type` is classified by shape: an address makes it a
@@ -1491,8 +1523,16 @@ entry says which it is.
   a drifted tz shifts it. File → Settings → Time zone; Storage Health shows the
   mismatch on the Knowledge Base row.
 
-  **Check both with Manage → Admin → the OOP pricing diagnostics**
-  (`getOopPricingDiagnostics`, admin-gated). It reports the tab it read, every
+  **Most problems now announce themselves on the rep's own eligibility panel**
+  (T7): a tab that yields nothing usable says which of its three reasons
+  applies, a dropped or addressless row is named on screen, and a radius naming
+  a warehouse the registry does not hold says to fix THIS tab and not the
+  pricing sheet — while a clean table shows no banner at all.
+
+  **For the full picture: Manage → Admin → System → "Reference lookups ·
+  pricing + delivery reach"** (T8, 2026-09-22). It loads with the tab.
+
+  It reports the tab it read, every
   header and the role it assigned, any role it could not find, the warehouse
   registry, the city count, every addressless warehouse row — and **how every
   Area Eligibility value in the sheet parses, with the unreadable ones listed by

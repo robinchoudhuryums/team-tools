@@ -234,6 +234,7 @@ The recurring shape: a `catch` that returns 0, or a plausible substitute for a m
 - **A CONFIG seed that is a PLAUSIBLE substitute for real config is worse than no seed — the warehouse registry's bare city names geocoded to city CENTRES (ELIG, shipped and removed 2026-09-16).** Fires when you seed a default — ask what it produces when nobody replaces it. Verify: the NO-seed pin. [Detail](docs/gotchas.md#g122-a-config-seed-that-is-a)
 - **"Not found" and "could not look up" are DIFFERENT answers — the geocoder's quota, denial and throw all collapsed to null, and every caller told the rep the ADDRESS was wrong (Batch 2, 2026-09-17).** Fires when a lookup's miss and its failure share one return value. Verify: the F-15 geocoder pin. [Detail](docs/gotchas.md#g128-not-found-and-could-not-look-up)
 - **A job that CLOSES a period must RECONCILE it afterwards — the data it read was not final (operator 2026-09-15).** Fires when a job stamps a period as done and never looks again. Verify: the R reconcile pin + the editor suite's 2026-08 replay. [Detail](docs/gotchas.md#g115-a-job-that-closes-a-period-must)
+- **A diagnostic that names the WRONG source is worse than a vague one — it is actionable, and the action is destructive: an empty delivery registry reported nothing, so every radius rule said "the eligibility column cannot be read", and the operator rewrote correct pricing cells to match (2026-09-22).** Fires when a read fails and you write the message — ask what the reader will CHANGE if they believe it literally. Verify: T7-3 + the T7 DOM pin (rendered, and absent on a clean table) + INV-238. [Detail](docs/gotchas.md#g142-a-diagnostic-that-names-the-wrong-source)
 - **A RECOVERY is not a PREVENTION, and shipping one can make the other feel done (operator 2026-09-15).** Fires when you fix a "the data arrived too late" bug — ask separately what made it late. Verify: the T open-punch pin. [Detail](docs/gotchas.md#g117-a-recovery-is-not-a-prevention)
 
 ### Punch, PTO & roster semantics
@@ -868,8 +869,8 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 927 | `node test/client/run.js` |
-| DOM harness tests | 143 | `node test/client/dom/runDom.js` |
+| Pure harness tests | 931 | `node test/client/run.js` |
+| DOM harness tests | 145 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 114 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 337 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 51 | `'Admin access required.'` in the server source |
@@ -878,7 +879,7 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 10 | `TRIGGER_GROUPS` |
 | localStorage keys | 18 | `ums…` literals in `web-app/` |
-| Invariant library entries | 228 | `.cycle/config.md` |
+| Invariant library entries | 232 | `.cycle/config.md` |
 | Regression scenarios (S*) | 108 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second

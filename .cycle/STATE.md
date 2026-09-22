@@ -4,7 +4,7 @@
 Cycle: 21 — CLOSED 2026-09-21 (batch R deployed and operator-confirmed; batch S
 needed no deploy; reflected net +1; the whole block is in `.cycle/HISTORY.md`).
 **No cycle is open.** The next `/audit` or `/broad-scan` opens cycle 22.
-Phase: implement (between-cycles operator work — T1–T6 COMPLETE, undeployed)
+Phase: implement (between-cycles operator work — T1–T6 DEPLOYED; T7/T7b/T8 undeployed)
 Scope: —
 Test Command: manual
 Estimates: T1 (landing re-render + pill + meta chips): S (~2 h) · T2 (legend
@@ -16,7 +16,13 @@ M (~3 h)** — written BEFORE the first edit, as it stood in the plan;
 actual ~3 h. **T5 (one honest copy helper, SEVEN call sites): M (~4 h)** —
 written BEFORE the first edit; actual ~3.5 h. **T6 (the unstyled-class ratchet
 + the real defects it found): M (~3 h)** — written BEFORE the first edit;
-actual ~3 h.
+actual ~3 h. **T7 (the exact-city eligibility rule, rules that COMBINE, and
+the silences that cost the operator real sheet data): L (~7 h)** — written
+BEFORE the first edit; actual ~5 h. **T7b (a radius over ANY warehouse, the
+rule being about the NETWORK rather than a place): S (~2 h)** — written
+BEFORE the first edit. **T8 (an Admin home for the OOP
+pricing diagnostics, which had none): S (~2 h)** — written BEFORE the
+first edit.
 Between-cycles operator work, the 19pre pattern.
 Subsystem cycles since last Seams audit: 0 — reset by the 2026-09-18 audit,
 whose findings shipped as batch S. The cadence is every 4; next due at cycle 25.
@@ -26,11 +32,12 @@ Updated: 2026-09-22
 - Nothing is in flight against an OPEN cycle. **PR #264 MERGED 2026-09-21**
   (`2487fd1`) — the three pre-existing Reference-lookup defects the cycle-21
   deploy exposed, the cycle-21 close-out, and T1 + T2. The branch was restarted
-  from `main` afterwards, per the merged-PR rule. **Still needs one
-  `clasp push -f` + New-version deploy**, then S64 and S112.
+  from `main` afterwards, per the merged-PR rule. **PR #265 and #266 have since
+  merged too, and T1–T6 are deployed and operator-confirmed (2026-09-22).**
 - A four-batch plan (T1–T4) for the Reference lookups was agreed with the
-  operator on 2026-09-21; T5 followed from a T4 follow-on and T6 from a T5 one.
-  **All six are DONE and pushed.** Nothing is deployed yet — ONE push.
+  operator on 2026-09-21; T5 followed from a T4 follow-on, T6 from a T5 one,
+  and T7 from the operator's 2026-09-22 deploy round. **All seven are DONE and
+  pushed. T1–T6 are DEPLOYED and confirmed; T7 needs one push.**
 
 ## Completed this cycle
 - (Cycle 21's record is in `.cycle/HISTORY.md` and the three blocks
@@ -38,8 +45,11 @@ Updated: 2026-09-22
   and `21-a-reflect.md`. Nothing has been completed against a NEW cycle.)
 
 ## Pending / not yet done
-- **The deploy** — ONE `clasp push -f` + New-version covers T1 through T6;
-  then walk S64 (six T3 steps + four T4 steps), S112 and S73.
+- **The deploy** — T1–T6 are DEPLOYED and operator-confirmed (2026-09-22;
+  `runAllTests` read 336 passed / 1 skipped, which matches the derived 337).
+  **T7, T7b and T8 are NOT deployed** — one `clasp push -f` + New-version covers all three; then
+  walk S64 (six T3 + four T4 + six T7 + two T7b + one T8 step), S18's
+  clipboard step, S112, S73.
 - ~~T1~~ and ~~T2~~ are DONE — block `21post-T1-T2-broad-implement.md`, net
   2 − 0. The tone/explanation guarantee is held by a PIN rather
   than by one shared matcher: `insToneCls_` was left alone deliberately, since
@@ -88,6 +98,35 @@ Updated: 2026-09-22
   its hook extractor harvested every `class="a b"` because this app builds
   markup in JS, and its non-vacuity check passed BECAUSE of that. Found by a
   bite-check that should have gone red. Six bites, all BITE now.
+- ~~T7~~ is DONE — block `21post-T7-broad-implement.md`, net **3 − 0** (1
+  capability + 3 production fixes, one of them HIGH). **The operator could not
+  express their own rule:** scooters are eligible in a list of named service
+  cities, and `Area Eligibility` had no way to say so. `cities` DELEGATES to
+  the `LocationAcceptance` city rows (the column states the RULE, the registry
+  supplies its PARAMETER — the shape radius already had, which is why it does
+  not reopen the 2026-09-16 decision), and rules now COMBINE because either
+  the distance or the city qualifies. **INV-236/237/238 + g142 written.**
+  Thirteen bite-checks, all BITE.
+  **The receipt this batch exists for:** their `LocationAcceptance` tab had
+  headers in row 2 and no Name column, the registry came back empty with NO
+  error, every radius rule fell to unknown, and the message blamed the pricing
+  sheet — so they rewrote correct cells in it to `Local` and lost the distances
+  and warehouse names. A diagnostic that names the wrong file is worse than a
+  vague one, because it is actionable and the action is destructive.
+- ~~T7b~~ and ~~T8~~ are DONE — block `21post-T7b-T8-broad-implement.md`, net
+  **2 − 0** (2 production fixes + 2 capabilities). **T7b:** the operator's
+  COMMON case was inexpressible — most items reach 100 miles from ANY
+  warehouse, and the Dallas/San Antonio ones are the technician-built
+  exceptions. An any-warehouse rule names nothing and resolves against the
+  registry at CHECK time. Two real defects fell out: the name match was a bare
+  SUBSTRING (a site called `Ware` matched inside "warehouse"), which broadened
+  narrow rules; and an over-limit distance with an UNPLACEABLE warehouse
+  answered NO with a footnote rather than UNKNOWN. **T8:** the OOP diagnostics
+  finally have a home (Manage → Admin → System), closing g142's third failure.
+  **INV-239 written.** Eleven bite-checks; **TWO NO BITEs, both real and both
+  fixed** — a comment claiming a guarantee the code did not make, and a pin
+  that injected its own error markup instead of driving the loader (g138
+  twice). Chasing the first found the substring defect.
 - **`.modal-head` and `.modal-x` had NO CSS rule** (invented by T2, merged
   that way). Fixed here because the failover modal needed them; it also fixes
   the term popover. Now g140.
@@ -138,8 +177,20 @@ Updated: 2026-09-22
   against invariants nobody verifies puts unverified claims in the one file
   whose value is that its claims are true.
 
+- **OPERATOR ACTIONS OWED BEFORE T7 DOES ANYTHING** (none block the deploy):
+the `Type` column is DONE (operator, 2026-09-22). STILL OWED: restore
+  `OopPricing` col I on the affected items — and note T7b changed what to
+  write. The COMMON case is now `100 miles of any warehouse` (scooters:
+  `100 miles of any warehouse, or listed cities`); the NAMED form
+  (`100 miles of Dallas warehouse, 100 miles of San Antonio warehouse`) is
+  reserved for the technician-built exceptions. Optionally rename col D
+  `Rule` → `Accepts` so the per-city item list is read.
+- **An intermittent DOM pin**, untouched by T7: `the resume request states the
+  unpaid gap before it is filed` (runDom.js:1702) failed once, then passed 3/3.
+  Flagged, not dismissed.
+
 ## Where I left off
-**T1 through T6 are all done and pushed.** PR #264 merged 2026-09-21
+**T1–T6 are DEPLOYED and confirmed; T7, T7b and T8 are done, pushed and UNDEPLOYED.** PR #264 merged 2026-09-21
 (`2487fd1`); the branch was restarted from `main` and carries T3, T4 and T5. Every
 harness is green, the counts block agrees, and the shots were READ — the
 drawer shot shows an agreeing verdict above a disagreeing one, which is the

@@ -1859,6 +1859,34 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   straight line is never longer than the drive, so over-the-limit is over either
   way, and a close YES says so rather than implying precision. INV-209.
 
+  **AMENDED 2026-09-22 (T7): the fourth value arrived, and the rule answered
+  it.** The operator's scooters are eligible in a list of named service cities.
+  Asked whether that lifts out of pocket, the generalisation above settles it
+  without a new table row: a city service list is HOW IT PHYSICALLY GETS THERE,
+  so it does NOT lift — a scooter outside a listed city is unavailable either
+  way. That is the test the 2026-09-16 decision was written to survive, and it
+  did.
+
+  Two things came with it. **`cities` DELEGATES rather than enumerating:** the
+  column says "listed cities" and the engine reads the city rows in
+  `LocationAcceptance`, so a new service city is one row in one place instead of
+  an edit to every scooter row in the pricing sheet. This is not a reversal of
+  the rule that kept city rows out of verdicts — that ruled out city rows as an
+  INDEPENDENT overlay that could silently contradict the column, and a value
+  that explicitly hands the question to the list is the opposite of a second
+  opinion. It is also the shape the radius rule already had: the column states
+  the RULE, the registry supplies its PARAMETER, exactly as it already supplied
+  the warehouse address.
+
+  **And rules now COMBINE**, because the operator's answer was that either the
+  distance or the city qualifies. In a union any branch's YES is a YES; a solid
+  YES outranks a near-boundary one, so nobody is warned about a boundary another
+  rule already cleared; every branch speaks in the explanation, so a rep can see
+  both were checked; and an UNMEASURABLE branch beside a plain NO is UNKNOWN,
+  never NO — the one fold that would quietly turn "we could not tell" into "not
+  eligible". An unreadable clause takes the whole cell down with it, for the
+  same reason UNKNOWN never lifts. INV-236, INV-237.
+
   **Batch 2 of the 2026-09-17 /broad-scan (F-15):** the geocoder's SERVICE
   failure (quota, denial, throw) is its own return shape and reaches the rep as
   "the address service could not be reached (<status>) — not a problem with
