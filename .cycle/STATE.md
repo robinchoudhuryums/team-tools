@@ -20,7 +20,7 @@ actual ~3 h.
 Between-cycles operator work, the 19pre pattern.
 Subsystem cycles since last Seams audit: 0 — reset by the 2026-09-18 audit,
 whose findings shipped as batch S. The cadence is every 4; next due at cycle 25.
-Updated: 2026-09-21
+Updated: 2026-09-22
 
 ## In progress (facts to carry forward — NOT judgments)
 - Nothing is in flight against an OPEN cycle. **PR #264 MERGED 2026-09-21**
@@ -73,13 +73,6 @@ Updated: 2026-09-21
   which is what the decision actually forbade. Thirteen bite-checks, all BITE,
   after THREE NO BITEs that were each a real gap (agreement ignoring `why`;
   the scalar price fallback never driven; a dead `idx == null` guard, removed).
-- ~~T6~~ is DONE — block `21post-T6-broad-implement.md`, net **2 − 0** (both
-  Low: `.mono`, fifteen elements asking for monospace with no rule; and
-  `.m-vol-note`, a `role="alert"` degraded-read warning rendering as plain
-  body text). **The pin passed its first run while checking almost nothing** —
-  its hook extractor harvested every `class="a b"` because this app builds
-  markup in JS, and its non-vacuity check passed BECAUSE of that. Found by a
-  bite-check that should have gone red. Six bites, all BITE now.
 - ~~T5~~ is DONE — block `21post-T5-broad-implement.md`, net **1 − 0** (one
   HIGH production fix: SEVEN copy sites reported success they had not
   achieved, including the Call Notes save path whose clipboard the rep pastes
@@ -88,6 +81,13 @@ Updated: 2026-09-21
   success branch, so a call site cannot claim a copy it did not make. The pin
   DERIVES the ban rather than listing callers — the survey said five and a grep
   found seven. Eight bite-checks, all BITE.
+- ~~T6~~ is DONE — block `21post-T6-broad-implement.md`, net **2 − 0** (both
+  Low: `.mono`, fifteen elements asking for monospace with no rule; and
+  `.m-vol-note`, a `role="alert"` degraded-read warning rendering as plain
+  body text). **The pin passed its first run while checking almost nothing** —
+  its hook extractor harvested every `class="a b"` because this app builds
+  markup in JS, and its non-vacuity check passed BECAUSE of that. Found by a
+  bite-check that should have gone red. Six bites, all BITE now.
 - **`.modal-head` and `.modal-x` had NO CSS rule** (invented by T2, merged
   that way). Fixed here because the failover modal needed them; it also fixes
   the term popover. Now g140.
