@@ -3759,3 +3759,56 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   literally the same object after a re-render, not merely that its value
   matches.
 
+
+<a id="g142-a-diagnostic-that-names-the-wrong-source"></a>
+### g142 — A diagnostic that names the WRONG source is worse than a vague one, because it is actionable and the action is destructive
+
+**Rule:** when a read fails, say which INPUT failed. A message that confidently
+names the wrong file gets acted on.
+
+**The incident (operator, 2026-09-22).** The operator's `LocationAcceptance`
+tab had its headers in row 2 and no `Name` column. The reader takes headers
+from row 1, so no column got a role, every row read as blank, and
+`getLocationAcceptance_` returned an empty warehouse registry **with `error`
+left empty**. An empty registry makes every `100 miles of <warehouse>` rule
+parse as `unknown`, and the rep-facing message for an unknown rule said:
+
+> The eligibility column says "100 miles of Dallas warehouse, 100 miles of San
+> Antonio warehouse", which this check cannot read — confirm manually.
+
+Every word of that is about the pricing sheet, and the pricing sheet was
+correct. The operator did the only thing the message suggested: they rewrote
+those cells to a shorter value (`Local`) that they hoped the app would
+understand. It did not — `Local` is also `unknown` — so the symptom did not
+move, and the distances and warehouse names were now gone from the sheet.
+
+**Three separate failures stacked, and all three are the same shape.**
+
+1. **The degraded read was silent.** A tab that exists and yields zero
+   warehouses and zero cities is a finding, not an empty registry. It now
+   states which of three reasons applies (no `Name` column · no rows with a
+   name or address · rows present but none classifiable).
+2. **Two distinguishable failures shared one message.** "I cannot parse this
+   value" and "I parsed a 100-mile rule naming a warehouse I do not have" are
+   different problems in different files. The parse now flags the second
+   (`noWarehouse`), and the verdict names the warehouses the registry *does*
+   hold and says *fix `LocationAcceptance`, not the pricing sheet*.
+3. **The diagnostic that had the answer was unreachable.**
+   `getOopPricingDiagnostics` reported the registry, the dropped rows and every
+   eligibility value grouped by how it parsed — and had **no caller anywhere in
+   the client**, so in practice it reached nobody. Per-row drops now render on
+   the rep's own panel.
+
+**The generalisation.** Ask of every failure message: *if the reader believes
+this literally and acts on it, what do they change?* If the answer is a file
+that might be fine, the message needs the cause, not more hedging. This is
+g02's family — a diagnostic that can never be clean — pointed the other way:
+one that is always clean about the thing that is actually broken.
+
+**The corollary that keeps the fix honest:** the new warning line must be
+ABSENT when the delivery table is clean. A banner that is always there is the
+g02 defect again, so the pin drives a clean table and asserts no line at all.
+
+Verify: T7-3 and the T7 DOM pin (both directions — the warnings rendered, and
+absent on a clean table), plus INV-238. Bite-checked five ways, including
+restoring the silence and restoring the misdirected message.
