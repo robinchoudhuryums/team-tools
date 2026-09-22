@@ -385,9 +385,14 @@ not restate it. Server endpoints live in the fourteen server files
      rewritten to share code with the tooltip: it colours a compliance-adjacent
      field, and trading a real guarantee for a tidy one is a bad trade — the
      agreement between tone and explanation is held by a pin instead.
-     **FOUR toned values still have no operator definition** (`OON`,
-     `Plan Specific`, `OUT-OF-NETWORK`, `MDX Hawaii`); the pin names them
-     rather than skipping them, and the fix is operator text.
+     **One toned value still has no operator definition** (`MDX Hawaii`); the
+     pin names it rather than skipping it, and the fix is operator text. T9
+     (2026-09-22) defined the other five from the operator's answers — and
+     found that bare `OON` had been amber by substring while bare
+     `OUT-OF-NETWORK` was red, one fact in two colours. Both are now the red
+     refusal, while the QUALIFIED `OON w/ PA` and `Out-of-Network Benefits`
+     stay amber with their own explanations, which is the split the original
+     tone pin had already drawn deliberately.
 
      **The payor × item JOIN (T3, 2026-09-21).** The payor sheet's per-code
      columns are HCPCS codes (`K0800`, `K0801`) and the pricing tab's code cell
@@ -396,10 +401,14 @@ not restate it. Server endpoints live in the fourteen server files
      stops being a rule about an item the rep cannot identify. ONE tokenizer
      (`hcpcsParse_`, server-side) parses it, and it fills `tokens` **only on
      the certain path**, so no consumer can assert coverage from an uncertain
-     parse — there is nothing there to assert from. That matters for the
-     shorthand the operator really writes: `K0821/23/16` refuses as a whole
-     string rather than yielding the readable leading code, because keeping it
-     would answer a question about three items with one, silently. Ambiguity
+     parse — there is nothing there to assert from. The shorthand the
+     operator really writes, `K0821/23/16`, refused as a whole string until T9
+     (2026-09-22), when the operator confirmed its rule (each digit fragment
+     replaces that many trailing digits of the code before it); it now reads
+     as K0821/K0823/K0816, in exactly that confirmed shape. Every other
+     shorthand — a range, a fragment beside two whole codes — still refuses
+     whole rather than yielding the readable part, because keeping it would
+     answer a question about several items with one, silently. Ambiguity
      refuses the same way on both sides: a code two rows carry names NEITHER
      and says how many; a code the pricing tab simply lacks is left unannotated,
      because that is a fact about the pricing tab, not a failure. The client
