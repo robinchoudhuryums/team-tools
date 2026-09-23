@@ -159,6 +159,7 @@ to resolve to an anchor that exists, and every anchor there to be indexed here.
 
 Read a cell the wrong way and it does not throw — it silently lies. This family has cost more cycles than any other.
 
+- **A string written to a cell is parsed AS IF TYPED — `=…`, and `+`/`-`/`@` before a non-number, becomes a live formula; every server write goes through `sheetSafe_` (or `sheetText_` into a re-asserted `@` cell), "Copy table" through its client twin `tsvCell_`, and formulas stored before cycle 22 are found by Admin → System → Stored formulas (S2 + F2/F3, 2026-09-23).** Fires when you add a sheet write, a TSV/CSV export, or a plain-text column. Verify: the SHEET-SAFE lint rule + the S2/F2/F3 pins. [Detail](docs/gotchas.md#g144-a-string-written-to-a-cell-is-parsed)
 - **Sheets coerces `'TRUE'`/`'FALSE'` strings to native booleans.** Fires when you read a TRUE/FALSE column. [Detail](docs/gotchas.md#g09-sheets-coerces-true-false-strings-to-native)
 - **Sheets auto-coerces `HH:mm:ss` strings to Date objects.** Fires when you read a `HH:mm:ss` column. [Detail](docs/gotchas.md#g10-sheets-auto-coerces-hh-mm-ss-strings)
 - **AuditLog timestamp cells coerce to Dates too — read via `normalizeAuditTs_()`; and until 2026-09-18 the tripwire covered the OTHER three coerced columns but not `AUDIT.TS` itself.** Fires when you read any AuditLog cell. Verify: the Batch-3 global scan (now incl. `TS`) + the F1 derived half. [Detail](docs/gotchas.md#g11-auditlog-timestamp-cells-coerce-to-dates-too)
@@ -181,9 +182,11 @@ Three distinct concepts (storage tz, manager anchor, the rep’s roster frame) t
 
 What a caller may reach, and what may be written where everyone can read it.
 
+- **A LEADING underscore is not private — `google.script.run` reaches every function whose name does not END in `_`, in every pushed file, `Tests.js` and `DevTools.js` included; the whole editor suite was callable by any rep until cycle 22 (S1 + X2, 2026-09-23).** Fires when you add a top-level function anywhere in `web-app/`, or trust a gate net that reads `serverSource()`. Verify: the PUBLIC-GATE pins. [Detail](docs/gotchas.md#g143-a-leading-underscore-is-not-private)
+- **A failure message that echoes what the rep TYPED must not ride the error beacon — `errorStateHtml_` reports to the shared ClientErrors tab, and a failed search's query is usually a patient (S3, 2026-09-23).** Fires when an error state interpolates rep input. Verify: the S3 pins. [Detail](docs/gotchas.md#g146-a-failure-message-that-echoes-typed-input)
 - **`_TEST_OVERRIDE_EMAIL` only intercepts `getActiveUserEmail_()`.** Fires when a code path calls `Session.getActiveUser()` directly. [Detail](docs/gotchas.md#g23-test-override-email-only-intercepts-getactiveuseremail)
 - **Manager-only operations check `callerEmp.isManager`.** Fires when you add ANY manager-gated endpoint. [Detail](docs/gotchas.md#g25-manager-only-operations-check-calleremp-ismanager)
-- **Trigger-handler endpoints are reachable via `google.script.run`.** Fires when you add a public function that walks the roster or sends mail. [Detail](docs/gotchas.md#g26-trigger-handler-endpoints-are-reachable-via-google)
+- **Trigger-handler endpoints are reachable via `google.script.run` — and so were the editor-suite runners, which gate on the OWNER, not a manager (cycle 22 S1).** Fires when you add a public function that walks the roster or sends mail. [Detail](docs/gotchas.md#g26-trigger-handler-endpoints-are-reachable-via-google)
 - **`getTeammateStatus` is the low-privilege view.** Fires when you add a field to the teammate-status response. [Detail](docs/gotchas.md#g33-getteammatestatus-is-the-low-privilege-view)
 - **CallNoteEmail audit row is deliberately PHI-free.** Fires when you are tempted to add the subject or recipients to the audit row. [Detail](docs/gotchas.md#g35-callnoteemail-audit-row-is-deliberately-phi-free)
 - **ExternalEmailSent audit row logs only the recipient domain.** Fires when you log an external recipient anywhere shared. [Detail](docs/gotchas.md#g36-externalemailsent-audit-row-logs-only-the-recipient)
@@ -210,6 +213,7 @@ Every one of these guards an `innerHTML` sink or a template injection.
 Who waits for whom, and what goes stale.
 
 - **ScriptLock around every mutating op.** Fires when you add a server function that writes to a sheet. [Detail](docs/gotchas.md#g17-scriptlock-around-every-mutating-op)
+- **A positional write at `getLastRow() + 1` THROWS once the tab outgrows its 1000-row grid (`appendRow` would have grown it), and a purge that empties a tab throws on its LAST delete — use `appendRowsSafe_` / `appendRowsTextSafe_` (C1, C5, F4, 2026-09-23).** Fires when you write a block at the next free row, or delete rows in bulk. Verify: the F4 derived net + the C1/C5 pins. [Detail](docs/gotchas.md#g145-a-positional-write-at-getlastrow-1)
 - **Roster cache invalidation + key bump.** Fires when you edit an Employees column, or change the `EMP` enum shape. [Detail](docs/gotchas.md#g19-roster-cache-invalidation-key-bump)
 - **`timeToMins_` returns `null`, never `NaN` — and an ARITHMETIC caller must guard EXPLICITLY (A3, cycle-13 — FIXED).** Fires when you do arithmetic on `timeToMins_` output. Verify: the A3 behavioural + caller-shape tripwires and the `timeToMins_nullOnUnparseable` smoke test. [Detail](docs/gotchas.md#g55-timetomins-returns-null-never-nan-and-an)
 - **A per-rep result cache on a surface that lists TASKS owes an invalidation from every flow that COMPLETES one (F4, cycle 19).** Fires when a flow COMPLETES a task that a cached list names. [Detail](docs/gotchas.md#g67-a-per-rep-result-cache-on-a)
@@ -217,6 +221,7 @@ Who waits for whom, and what goes stale.
 - **Tag admin operations hold the global ScriptLock across all enrolled rep Sheets.** Fires when you add reps in volume, or add a cross-rep tag transform. [Detail](docs/gotchas.md#g90-tag-admin-operations-hold-the-global-scriptlock)
 - **Clock view coverage strip is SWR-cached per day (cycle-9 M-6).** Fires when you cache the Clock coverage strip. [Detail](docs/gotchas.md#g104-clock-view-coverage-strip-is-swr-cached)
 - **`getMyMetrics` is ALSO server-result-cached (L-1).** Fires when you wonder why a Metrics re-enter costs nothing. [Detail](docs/gotchas.md#g105-getmymetrics-is-also-server-result-cached-l)
+- **A repaint cache keyed per HOST dies with the host — a rebuilt panel forgets it, and a response for a panel no longer mounted is dropped; the Reference drawer painted the PREVIOUS caller's verdicts under the next caller's empty inputs (K2, 2026-09-23).** Fires when you cache anything per host or panel, or paint an async response by looking its target up by id after the wait. Verify: the K6 + K2 DOM pin. [Detail](docs/gotchas.md#g147-a-repaint-cache-keyed-per-host-dies)
 - **Never cache a FAILURE as a value — a truthy empty stub satisfies every later `if (cached)` guard, so one transient RPC failure left the composer with no departments for the whole session (Batch 2, 2026-09-17).** Fires when a failure handler assigns a default into a cache slot. Verify: the F-06 DOM pin. [Detail](docs/gotchas.md#g129-never-cache-a-failure-as-a-value)
 
 ### Honest failure — a degraded read must never read as data
@@ -243,7 +248,7 @@ The payroll-facing rules. Getting one wrong costs money or a balance.
 
 - **Roster INCLUSION goes through `empRosterEmail_(row)` — the one predicate (cycle-15 F3).** Fires when you read the roster email column to decide who counts as a person. [Detail](docs/gotchas.md#g03-roster-inclusion-goes-through-emprosteremail-row-the)
 - **Timesheet rows are in APPEND order, not time order.** Fires when you consume same-day punch rows. Verify: `test_getTodayPunches_sortsOutOfOrderBackfill`. [Detail](docs/gotchas.md#g14-timesheet-rows-are-in-append-order-not)
-- **The live punch path enforces the client's own state machine; Day Edit reconciles duplicates (cycle-10 M-1).** Fires when you add a punch path, or reconcile a day. [Detail](docs/gotchas.md#g15-the-live-punch-path-enforces-the-client)
+- **The live punch path enforces the client's own state machine; Day Edit reconciles duplicates (cycle-10 M-1) — and the reconcile is only as lossless as its input: the day ships the OPEN break and every STRAY stamp, or a save deletes them (cycle 22 T1 + F5).** Fires when you add a punch path, reconcile a day, or change what the Day Edit prefill carries. Verify: the T1/F5 pins. [Detail](docs/gotchas.md#g15-the-live-punch-path-enforces-the-client)
 - **`calcHours_` wraps `out < in` as overnight; an EQUAL minute pair is ZERO hours — `timeToMins_` drops seconds, so a same-minute in/out compared equal and paid a 24-hour day (Batch 1, 2026-09-17).** Fires when you compare two clock stamps at minute granularity, or add a clock writer. Verify: the A1 equal-minute cases, the `managerClockOrderError_` pin, `calcHours_equalMinuteIsZeroNotADay`. [Detail](docs/gotchas.md#g127-calchours-wraps-out-in-as-overnight)
 - **`PtoEnabled` defaults to TRUE.** Fires when you touch PTO display OR the deduction. [Detail](docs/gotchas.md#g20-ptoenabled-defaults-to-true)
 - **Sick leave is UI-removed but backend-dormant (deferred #2 / C1).** Fires when you are tempted to re-add `Sick Leave` to `TIME_OFF_TYPES`. [Detail](docs/gotchas.md#g21-sick-leave-is-ui-removed-but-backend)
@@ -299,13 +304,13 @@ The hot path: the form, the cards, the composer, the per-rep store.
 - **`SubformData` (column P) is a generic per-note metadata JSON blob.** Fires when you add per-note metadata, or append to a `subformData` array. [Detail](docs/gotchas.md#g80-subformdata-column-p-is-a-generic-per)
 - **`cnRenderSubforms_` is shape-keyed via `host.dataset.shapeKey`.** Fires when a subform re-render could wipe in-progress values. [Detail](docs/gotchas.md#g82-cnrendersubforms-is-shape-keyed-via-host-dataset)
 - **`cnToggleComposerDept_` updates the modal in place, no full re-render.** Fires when you add dept-dependent UI to the composer. [Detail](docs/gotchas.md#g83-cntogglecomposerdept-updates-the-modal-in-place-no)
-- **Optimistic UI for submit / flag / resolve on Call Notes.** Fires when you add an optimistic action to a note card. [Detail](docs/gotchas.md#g84-optimistic-ui-for-submit-flag-resolve-on)
+- **Optimistic UI for submit / flag / resolve on Call Notes — and the live refresh must keep a note CONFIRMED after its request, not just the `_pending` ones (C10, 2026-09-23).** Fires when you add an optimistic action to a note card, or touch `cnRefreshRollingStack_`. Verify: the C10 DOM pin. [Detail](docs/gotchas.md#g84-optimistic-ui-for-submit-flag-resolve-on)
 - **Form-completion timer is persisted to localStorage.** Fires when you add a form-clearing path. [Detail](docs/gotchas.md#g85-form-completion-timer-is-persisted-to-localstorage)
-- **Sticky form draft is auto-saved on every input.** Fires when you add a form-clearing path (the draft is separate from the timer). [Detail](docs/gotchas.md#g86-sticky-form-draft-is-auto-saved-on)
+- **Sticky form draft is auto-saved on every input — every Save & Compose COMPLETION clears it through `cnCompleteComposeFlow_`, the External send included, and a clear first ends any running dictation (C4 + C11, 2026-09-23).** Fires when you add a form-clearing or note-completing path (the draft is separate from the timer). Verify: the C4 and C11 DOM pins. [Detail](docs/gotchas.md#g86-sticky-form-draft-is-auto-saved-on)
 - **CN card buttons use `data-cn-action` delegation, not inline onclick.** Fires when you add a card button or a keyboard handler to a CN view. [Detail](docs/gotchas.md#g91-cn-card-buttons-use-data-cn-action)
 - **An `onclick` LITERAL cannot carry a name: `esc()` has already encoded the apostrophe, so the `.replace(/'/g, "\\'")` beside it is a no-op and the button throws on click (Batch 5, 2026-09-18).** Fires when you build a handler call by string concatenation. Verify: the F-17 pin. [Detail](docs/gotchas.md#g133-an-onclick-literal-cannot-carry-a-name)
 - **`setCallNoteFlag` accepts an optional `trainingQuestion`.** Fires when you flag an existing note as training from a card. [Detail](docs/gotchas.md#g93-setcallnoteflag-accepts-an-optional-trainingquestion)
-- **`getMyCallNotesRange` caps at 90 days.** Fires when you widen a History range. [Detail](docs/gotchas.md#g94-getmycallnotesrange-caps-at-90-days)
+- **`getMyCallNotesRange` caps at 90 days — mirrored client-side and pinned against the server literal, and History notes render only under the range they were loaded for (C3, 2026-09-23).** Fires when you widen a History range, or touch the History loader. Verify: the C3 Node + DOM pins. [Detail](docs/gotchas.md#g94-getmycallnotesrange-caps-at-90-days)
 - **Call-note delete window.** Fires when a rep asks why they cannot delete an older note. [Detail](docs/gotchas.md#g95-call-note-delete-window)
 - **Call Notes ambient polling stops on tool switch.** Fires when you navigate between tools with a CN poller running. [Detail](docs/gotchas.md#g97-call-notes-ambient-polling-stops-on-tool)
 - **The Log rolling stack live-refreshes (#3).** Fires when a note is logged in another window. [Detail](docs/gotchas.md#g98-the-log-rolling-stack-live-refreshes-3)
@@ -317,7 +322,7 @@ The iframe sandbox, the overlay lifecycle, and what persists per browser.
 
 - **An `outerHTML` patch replaces ONE element, so that element must contain everything its renderer emits (operator 2026-08-31).** Fires when a renderer grows a new sibling and something patches it by id. Verify: the BIZ-3 wrapper-shape assertion. [Detail](docs/gotchas.md#g66-an-outerhtml-patch-replaces-one-element-so)
 - **An ASYNC prefill must fill only the fields the user has not typed into, and a FAILED prefill must not leave a saveable blank form (operator 2026-09-03).** Fires when a modal prefills asynchronously. Verify: the Day Edit DOM test. [Detail](docs/gotchas.md#g68-an-async-prefill-must-fill-only-the)
-- **An ASYNC loader that re-renders a view DESTROYS what the user has typed into it, and restoring the VALUES is not enough — focus and the caret go with the nodes (T1, 2026-09-21).** Fires when a background loader re-renders a view that contains an input. Verify: the T1 input-survival pin, which asserts the element is literally the same object. [Detail](docs/gotchas.md#g141-an-async-loader-that-re-renders-a-view)
+- **An ASYNC loader that re-renders a view DESTROYS what the user has typed into it, and restoring the VALUES is not enough — focus and the caret go with the nodes (T1, 2026-09-21); three more instances in cycle 22 Batch 3 (the Reference drawer, Employee Docs, Coaching replies), and a TARGETED patch beats a skip-while-dirty guard when the re-render carries the result of the user's own action.** Fires when a background loader, or the reload after an action, re-renders a view that contains an input. Verify: the T1 input-survival pin + the K6/D6/D7 DOM pins. [Detail](docs/gotchas.md#g141-an-async-loader-that-re-renders-a-view)
 - **`location.reload()` reloads the IFRAME, not the app — and that URL is session-bound (operator 2026-09-01; the rule is a TRIPWIRE since Batch 6, 2026-09-18 — `reloadApp_`'s two fallbacks are the only ones allowed, across script_core and eight partials).** Fires when client code navigates or reloads the app. Verify: BCN-3 + the F-14 budget pin. [Detail](docs/gotchas.md#g69-location-reload-reloads-the-iframe-not-the)
 - **A class-wide attribute write assumes every member of the class is yours (operator 2026-08-11).** Fires when a writer selects by a class that something else borrows for its looks. [Detail](docs/gotchas.md#g70-a-class-wide-attribute-write-assumes-every)
 - **`showToast(msg, type)` normalizes the variant — pass either form.** Fires when you call `showToast`. [Detail](docs/gotchas.md#g77-showtoast-msg-type-normalizes-the-variant-pass)
@@ -359,7 +364,7 @@ Ways the suite can be green and wrong, and ways a tool can eat your work.
 - **A test fixture that writes DIRECTLY to a store behind a RESULT CACHE owes the production writer's invalidation (operator run, 2026-08-19) — and the other direction (Batch 7, 2026-09-18): a test-override cache bypass must cover BOTH ends, and a fixture that clears a DERIVED cache key must build that key exactly as production does.** Fires when you add a result cache, a fixture writes straight to a cached store, or a fixture clears a cache key by hand. Verify: an ordering assert + the F-31 pin. [Detail](docs/gotchas.md#g22-a-test-fixture-that-writes-directly-to)
 - **A test that asserts on an aggregate computed from an APPEND-ONLY log inherits every SIBLING test's rows — the accrual reconcile read a high-water mark that an earlier test had already raised, and reported nothing topped up against correct code (operator's first full editor run, 2026-09-18).** Fires when you assert on any running total, high-water mark, count or "latest N" drawn from the AuditLog; `_clearTestState(empId)` is the baseline. Verify: the reconcile-baseline pin, bite-checked for absence and for wrong ordering. [Detail](docs/gotchas.md#g139-a-test-that-asserts-on-an-aggregate)
 - **`TEST_` prefix is the cleanup key.** Fires when you name a production employee id, or hand-offboard a TEST row. Verify: the re-onboard/re-offboard Node pin. [Detail](docs/gotchas.md#g24-test-prefix-is-the-cleanup-key)
-- **A test that APPENDS to a gate property or a LIVE tab owes `cleanupTestData` a by-key backstop — its own `finally` never runs on a killed execution, and a positional delete on a live tab removes whatever landed there meanwhile (Batch 4, 2026-09-18).** Fires when a test writes outside the TEST_ rows' own tabs, or restores a Script Property in `finally`. Verify: the F-21/F-22 pin. [Detail](docs/gotchas.md#g132-a-test-that-appends-to-a-gate)
+- **A test that APPENDS to a gate property or a LIVE tab owes `cleanupTestData` a by-key backstop — its own `finally` never runs on a killed execution, and a positional delete on a live tab removes whatever landed there meanwhile (Batch 4, 2026-09-18); since cycle 22 F1 every live-tab delete in the suite goes through the locked `_deleteRowsWhereLocked_`.** Fires when a test writes outside the TEST_ rows' own tabs, or restores a Script Property in `finally`. Verify: the F-21/F-22 pin. [Detail](docs/gotchas.md#g132-a-test-that-appends-to-a-gate)
 - **Read the server through `serverSource()` — never by FILENAME, and never by POSITION (Batch F2, 2026-09-14).** Fires when a pin reaches for server source: `'Code.js'` is an ALIAS for the fourteen files, and two declarations that were adjacent in one file no longer are. Verify: the F1a filename ban + F2c/F2d. [Detail](docs/gotchas.md#g113-read-the-server-through-serversource-never-by)
 - **A bite-check ends in `git checkout`, so never run one against a file with uncommitted edits (cycle-18 batch 5B; `scripts/bite.sh` REFUSES a dirty file since Batch F2 — it fired a fourth time first). SCOPE every mutation with `--fn <function>` (2026-09-18): unscoped, it edits the first match anywhere in the file, and a NO BITE now prints the diff so you can see what it really hit.** Fires when you bite-check a pin. Verify: the F1-followon guard-ordering pin, extended to the span guard. [Detail](docs/gotchas.md#g65-a-bite-check-ends-in-git-checkout)
 - **Your test TOOLING lies in both directions — a green pin is not a checked one (operator 2026-09-15; a FOURTH direction 2026-09-18: an un-anchored bite mutation can hit a DIFFERENT function with the same shape and report NO BITE about the wrong code — fired TWICE, and is now the tool's job via `bite.sh --fn`; a FIFTH the same day, see g138: the mutation lands, the pin stays green, and the CLAIM is the thing that is not observable; a SIXTH 2026-09-18: a pin's hand-list is only as good as its INTENT, and measuring the list against the real caller set over-reports — a seams audit flagged six drifted lists and five were correct as written; a SEVENTH 2026-09-21: **a non-vacuity check that the DEFECT also satisfies is not one** — the T6 pin asked "is `modal` a hook?" and it was, because the extractor was harvesting every `class="a b"`, which is exactly what the guard existed to rule out. Ask what is true ONLY if it works, and DRIVE that).** Fires when you write a structural assertion, compare a value returned from the vm sandbox, or read a bite-check's verdict. [Detail](docs/gotchas.md#g116-your-test-tooling-lies-in-both)
@@ -389,7 +394,7 @@ for the reasoning, which is usually the part that matters.
 - [The accrual credit is idempotent on HOURS PAID, not on months processed — and the ledger is the audit row (operator 2026-09-15)](docs/design-decisions.md#the-accrual-credit-is-idempotent-on-hours-paid-not-on-months)
 - [The accrual dry run shares the ONE resolver and writes nothing (`previewPtoAccruals`, operator 2026-09-14)](docs/design-decisions.md#the-accrual-dry-run-shares-the-one-resolver-and-writes-nothin)
 - [Self-undo vs. Adjust split](docs/design-decisions.md#self-undo-vs-adjust-split)
-- [Resuming a closed day CONVERTS the clock-out into a break — it never deletes it (B3, operator 2026-09-01)](docs/design-decisions.md#resuming-a-closed-day-converts-the-clock-out-into-a-break-it)
+- [Resuming a closed day CONVERTS the clock-out into a break — it never deletes it (B3, operator 2026-09-01; the finish rides the request since cycle 22 T3)](docs/design-decisions.md#resuming-a-closed-day-converts-the-clock-out-into-a-break-it)
 - [Punch-adjustment requests are a TimeOffRequests-style queue (#4a)](docs/design-decisions.md#punch-adjustment-requests-are-a-timeoffrequests-style-queue)
 - [`normalizeTime_` as the universal read shim](docs/design-decisions.md#normalizetime-as-the-universal-read-shim)
 - [Timezone display split](docs/design-decisions.md#timezone-display-split)
@@ -453,7 +458,7 @@ for the reasoning, which is usually the part that matters.
 - [Interactive fillable web forms via token-gated public route](docs/design-decisions.md#interactive-fillable-web-forms-via-token-gated-public-route)
 - [In-app form-submission viewer](docs/design-decisions.md#in-app-form-submission-viewer)
 - [Sent Forms tab (rep-facing, read-only)](docs/design-decisions.md#sent-forms-tab-rep-facing-read-only)
-- [Intake Sent tab (rep-facing, read-only) — same model for intake submissions](docs/design-decisions.md#intake-sent-tab-rep-facing-read-only-same-model-for-intake-s)
+- [Intake Sent tab (rep-facing, read-only) — same model for intake submissions; an amendment REPLACES the form since cycle 22 I1](docs/design-decisions.md#intake-sent-tab-rep-facing-read-only-same-model-for-intake-s)
 - [Form-submission notification renders the completed form](docs/design-decisions.md#form-submission-notification-renders-the-completed-form)
 - [Cross-rep manager aggregates are cached](docs/design-decisions.md#cross-rep-manager-aggregates-are-cached)
 - [Paired-timezone chip + signal chip vocabulary](docs/design-decisions.md#paired-timezone-chip-signal-chip-vocabulary)
@@ -524,6 +529,7 @@ for the reasoning, which is usually the part that matters.
 - [A sparkline day has THREE states, and the unknown one is drawn (Batch 7, 2026-09-18)](docs/design-decisions.md#a-sparkline-day-has-three-states-and-the-unknown-one)
 - [ONE voicemail fold serves the Spanish list and the Spanish stats card (Batch 7, 2026-09-18)](docs/design-decisions.md#one-voicemail-fold-serves-the-spanish-list-and-the)
 - [A gate CLAIM is derived from the refusal, never written by hand (Batch 7, 2026-09-18)](docs/design-decisions.md#a-gate-claim-is-derived-from-the-refusal)
+- [Every sheet write crosses ONE boundary, and plain-text cells are the one exception (cycle 22 S2, 2026-09-23)](docs/design-decisions.md#every-sheet-write-crosses-one-boundary-and-plain-text)
 
 ## Operator State Checklist
 
@@ -672,6 +678,8 @@ the dated round entries that used to sit here moved to
 - [`FormTokens` and `FormSubmissions` sheet tabs](docs/operator-state.md#operator-formtokens-and-formsubmissions-sheet-tabs)
 - [`PunchAdjustRequests` sheet tab (#4a)](docs/operator-state.md#operator-punchadjustrequests-sheet-tab-4a)
 - [Form catalog](docs/operator-state.md#operator-form-catalog)
+- [The editor suite is OWNER-only (cycle 22 S1)](docs/operator-state.md#operator-the-editor-suite-is-owner-only-cycle-22)
+- [Stored formulas — a one-time clean-up (cycle 22 S2 + F3)](docs/operator-state.md#operator-stored-formulas-one-time-clean-up-cycle-22)
 
 Documented ONLY in the operator log, because the round that introduced them is
 the only place they are explained — all three are operator-settable, so they are
@@ -869,18 +877,18 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 931 | `node test/client/run.js` |
-| DOM harness tests | 145 | `node test/client/dom/runDom.js` |
+| Pure harness tests | 956 | `node test/client/run.js` |
+| DOM harness tests | 156 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 114 | `shoot.mjs`'s `SCENARIOS` |
-| Editor suite registrations | 337 | `Tests.js`; a run prints its own `Expected:` line |
-| Admin-tier endpoints (INV-136) | 51 | `'Admin access required.'` in the server source |
+| Editor suite registrations | 339 | `Tests.js`; a run prints its own `Expected:` line |
+| Admin-tier endpoints (INV-136) | 52 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 95 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
 | QA-gated endpoints (`canSeeQa_`) | 17 | `'QA access required.'` in the server source |
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 10 | `TRIGGER_GROUPS` |
 | localStorage keys | 18 | `ums…` literals in `web-app/` |
-| Invariant library entries | 232 | `.cycle/config.md` |
-| Regression scenarios (S*) | 108 | `.cycle/config.md` |
+| Invariant library entries | 240 | `.cycle/config.md` |
+| Regression scenarios (S*) | 110 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

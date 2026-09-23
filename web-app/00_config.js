@@ -1408,8 +1408,13 @@ let _personalSsCache = Object.create(null);
 // 'set', the ordinary "write this punch" request. The only other value is
 // 'resume' (reopen a clocked-out day). Back-compat like every other trailing
 // column here (CN_HEADERS, FS_HEADERS, AmendsId).
-const PAR = { REQ_ID:0, EMP_ID:1, EMP_NAME:2, DATE:3, PUNCH_TYPE:4, REQ_TIME:5, REASON:6, STATUS:7, SUBMITTED_AT:8, ACTION:9 };
-const PAR_HEADERS = ['ReqId','EmpId','EmpName','Date','PunchType','RequestedTime','Reason','Status','SubmittedAt','Action'];
+// T3 (cycle 22): END_TIME is a second trailing add — a RESUME request's
+// finish time. A resume reopens a day, and the rep cannot clock out of it live
+// once that day has ended, so the finish rides the request: filed with Adjust →
+// Clock Out while the resume is pending, written as the day's Clock Out when the
+// resume is approved. HH:mm, a coerced column (g10) — read via normalizeTime_.
+const PAR = { REQ_ID:0, EMP_ID:1, EMP_NAME:2, DATE:3, PUNCH_TYPE:4, REQ_TIME:5, REASON:6, STATUS:7, SUBMITTED_AT:8, ACTION:9, END_TIME:10 };
+const PAR_HEADERS = ['ReqId','EmpId','EmpName','Date','PunchType','RequestedTime','Reason','Status','SubmittedAt','Action','EndTime'];
 const PUNCH_ADJUST_BULK_MAX = 50;
 // Cycle-11 L-11 — time-off date sanity horizon (see the submit paths).
 const TIMEOFF_MAX_DAYS_AHEAD = 370;   // ~a year of planned leave + slop
@@ -2189,6 +2194,11 @@ const QA_RECORDINGS_TAB = 'QaRecordings';
 // ONLY when that name is unique on the roster. Header self-heals (PR 5).
 const QA_RECORDINGS_HEADERS = ['FileId', 'Name', 'SizeBytes', 'MimeType', 'DriveCreatedMs', 'AddedMs', 'Status', 'Assignee', 'StatusMs', 'Url', 'Agent', 'SharedMs', 'DurationSec', 'SkipReason', 'AgentId'];
 const QAR = { FILE_ID: 0, NAME: 1, SIZE: 2, MIME: 3, CREATED_MS: 4, ADDED_MS: 5, STATUS: 6, ASSIGNEE: 7, STATUS_MS: 8, URL: 9, AGENT: 10, SHARED_MS: 11, DURATION_SEC: 12, SKIP_REASON: 13, AGENT_ID: 14 };
+// The PLAIN-TEXT ('@') columns of each QA tab — ONE list per tab, read both by
+// getOrCreateQaSheet_ (which formats them) and by every writer into them
+// (cycle 22 S2: a '@' cell takes its value literally, so those writers skip
+// sheetSafe_'s apostrophe and re-assert the format instead).
+const QA_RECORDINGS_TEXT_IDX = [QAR.FILE_ID, QAR.NAME, QAR.AGENT, QAR.SKIP_REASON, QAR.AGENT_ID];
 const QA_SKIP_REASON_MAX = 500;
 const QA_DURATION_MAX_SEC = 86400;
 // Q4 — audit-period exemptions (operator decision 6): a manager grants an
@@ -2196,6 +2206,7 @@ const QA_DURATION_MAX_SEC = 86400;
 const QA_EXEMPTIONS_TAB = 'QaExemptions';
 const QA_EXEMPTIONS_HEADERS = ['EmpName', 'Period', 'GrantedBy', 'GrantedMs', 'Active'];
 const QAE = { EMP_NAME: 0, PERIOD: 1, GRANTED_BY: 2, GRANTED_MS: 3, ACTIVE: 4 };
+const QA_EXEMPTIONS_TEXT_IDX = [QAE.EMP_NAME, QAE.PERIOD, QAE.GRANTED_BY];
 const QA_EXEMPTIONS_SCAN = 2000;
 const QA_EXEMPT_AVG_MIN = 4.5;        // eligibility: avg ≥ 4.5 this period AND last
 const QA_EXEMPT_CRIT_MIN = 4;         // eligibility: no criterion under 4 in either period
@@ -2203,12 +2214,14 @@ const QA_MY_REVIEWS_CAP = 50;         // agent-facing list cap (newest shared fi
 const QA_COMMENTS_TAB = 'QaComments';
 const QA_COMMENTS_HEADERS = ['CommentId', 'FileId', 'EmpId', 'EmpName', 'AtSec', 'Text', 'CreatedMs', 'Status'];
 const QAC = { ID: 0, FILE_ID: 1, EMP_ID: 2, EMP_NAME: 3, AT_SEC: 4, TEXT: 5, CREATED_MS: 6, STATUS: 7 };
+const QA_COMMENTS_TEXT_IDX = [QAC.TEXT];
 // Phase 2 — structured scorecards (append-only; a re-score by the same
 // reviewer appends a NEW row and the latest per (recording, reviewer) wins,
 // so a mis-entry is corrected by re-scoring, never by editing a review row).
 const QA_SCORECARDS_TAB = 'QaScorecards';
 const QA_SCORECARDS_HEADERS = ['ScorecardId', 'FileId', 'ReviewerEmpId', 'ReviewerName', 'RatingsJson', 'Notes', 'CreatedMs'];
 const QSC = { ID: 0, FILE_ID: 1, EMP_ID: 2, EMP_NAME: 3, RATINGS: 4, NOTES: 5, CREATED_MS: 6 };
+const QA_SCORECARDS_TEXT_IDX = [QSC.NOTES];
 const QA_SCORECARDS_SCAN = 4000;      // bounded tail over QaScorecards
 const QA_SCORECARD_NOTES_MAX = 2000;
 // Rubric criterion TYPES (operator 2026-09-04 — the QA Log round). `scale` is

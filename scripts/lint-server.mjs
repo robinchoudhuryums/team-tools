@@ -98,24 +98,57 @@ for (const f of files) {
 const globals = {};
 for (const g of APPS_SCRIPT_GLOBALS) globals[g] = 'readonly';
 
+/* SHEET-SAFE (cycle 22 S2). Sheets parses a string written by setValue /
+ * setValues / appendRow as if a person typed it, so `=…` (and `+…`/`-…` that is
+ * not a number) becomes a FORMULA whose computed result getValues() hands back
+ * — a rep's time-off note could read the whole Employees tab, pay rates
+ * included, into their own calendar. Every server write therefore passes its
+ * value through the matching helper in 10_core.js, and this rule refuses one
+ * that does not, by AST, in every pushed file except the Tests.js fixtures.
+ * The formula-writing APIs are banned outright: the app never writes one. */
+// A plain-text ('@') cell is the one exception: it never evaluates, but it
+// stores sheetSafe_'s apostrophe literally, so a writer into '@' cells uses the
+// sheetText_ / sheetTextRows_ pass-throughs — and run.js's SHEET-SAFE pin holds
+// that each such use sits after a setNumberFormat('@') in the same function.
+const SHEET_SAFE = [
+  ['appendRow', 'sheetSafeRow_'], ['setValue', 'sheetSafe_|sheetText_'], ['setValues', 'sheetSafeRows_|sheetTextRows_'],
+].map(([m, h]) => ({
+  selector: "CallExpression[callee.type='MemberExpression'][callee.property.name='" + m + "']" +
+    ":not([arguments.length=1][arguments.0.type='CallExpression'][arguments.0.callee.name=/^(" + h + ")$/])",
+  message: 'SHEET-SAFE: .' + m + '(…) must write ' + h.split('|').join('(…) or ') + '(…) — an unwrapped string starting with = + - is stored as a formula',
+})).concat([{
+  selector: "CallExpression[callee.property.name=/^(setFormula|setFormulas|setFormulaR1C1|setFormulasR1C1|setRichTextValue|setRichTextValues)$/]",
+  message: 'SHEET-SAFE: the app never writes a formula or rich text — this API bypasses the sheet-safe boundary',
+}]);
+const SHEET_SAFE_EXEMPT_FILES = ['Tests.js'];   // fixture writes of constant TEST_ data
+
 const messages = new Linter().verify(combined, {
   languageOptions: { ecmaVersion: 2020, sourceType: 'script', globals },
-  rules: { 'no-undef': 'error' },
-});
+  rules: { 'no-undef': 'error', 'no-restricted-syntax': ['error'].concat(SHEET_SAFE) },
+}).filter((m) => !(m.ruleId === 'no-restricted-syntax' &&
+  SHEET_SAFE_EXEMPT_FILES.indexOf(locateFile(m.line)) >= 0));
 
-function locate(ln) {
+
+function locateHit(ln) {
   let hit = offsets[0];
   for (const o of offsets) if (o.start <= ln) hit = o; else break;
+  return hit;
+}
+function locateFile(ln) { return locateHit(ln).file; }
+function locate(ln) {
+  const hit = locateHit(ln);
   return hit.file + ':' + (ln - hit.start + 1);
 }
 
 if (messages.length === 0) {
-  console.log('lint-server: no undeclared identifiers across ' + files.length + ' server files.');
+  console.log('lint-server: no undeclared identifiers and no unwrapped sheet write across ' + files.length + ' server files.');
   process.exit(0);
 }
-console.error('lint-server: ' + messages.length + ' undeclared identifier(s) —');
+console.error('lint-server: ' + messages.length + ' problem(s) —');
 for (const m of messages) console.error('  ' + locate(m.line) + '  ' + m.message);
-console.error('\nEvery name above resolves to nothing at runtime: the line throws ReferenceError\n' +
+console.error('\nA SHEET-SAFE line writes a value Sheets may store as a FORMULA: wrap it in the\n' +
+  'helper the message names (10_core.js). Any other line is an undeclared name.\n' +
+  'Every such name resolves to nothing at runtime: the line throws ReferenceError\n' +
   'when reached. If the name IS real, it is either an Apps Script platform global\n' +
   '(add it to APPS_SCRIPT_GLOBALS in this file) or a declaration that belongs in a\n' +
   'web-app/*.js file.');

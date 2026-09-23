@@ -602,7 +602,7 @@ function getOrCreateSpanishResolvedSheet_() {
   let sh = ss.getSheetByName(SPANISH_RESOLVED_TAB);
   if (!sh) {
     sh = ss.insertSheet(SPANISH_RESOLVED_TAB);
-    sh.appendRow([`Timestamp (${tzAbbr_(CONFIG.TIMEZONE)})`, 'ThreadId', 'ResolvedBy', 'ResolvedAtMs']);
+    sh.appendRow(sheetSafeRow_([`Timestamp (${tzAbbr_(CONFIG.TIMEZONE)})`, 'ThreadId', 'ResolvedBy', 'ResolvedAtMs']));
     sh.setFrozenRows(1);
   }
   return sh;
@@ -652,9 +652,9 @@ function resolveSpanishThread(threadId) {
     lock.waitLock(15000);
     try {
       if (spanishManualResolvedMap_()[tid]) return { success: true, already: true };
-      getOrCreateSpanishResolvedSheet_().appendRow([
+      getOrCreateSpanishResolvedSheet_().appendRow(sheetSafeRow_([
         fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), tid, emp.email, Date.now(),
-      ]);
+      ]));
     } finally { lock.releaseLock(); }
     writeAuditLog_(emp, 'SpanishInboxResolve', '', '', false, 0, 'threadId=' + tid);
     return { success: true };
@@ -665,7 +665,7 @@ function getOrCreateSpanishClaimsSheet_() {
   let sh = ss.getSheetByName(SPANISH_CLAIMS_TAB);
   if (!sh) {
     sh = ss.insertSheet(SPANISH_CLAIMS_TAB);
-    sh.appendRow([`Timestamp (${tzAbbr_(CONFIG.TIMEZONE)})`, 'ThreadId', 'Action', 'Claimant', 'Actor', 'AtMs']);
+    sh.appendRow(sheetSafeRow_([`Timestamp (${tzAbbr_(CONFIG.TIMEZONE)})`, 'ThreadId', 'Action', 'Claimant', 'Actor', 'AtMs']));
     sh.setFrozenRows(1);
   }
   return sh;
@@ -743,9 +743,9 @@ function claimSpanishThread(threadId, assigneeEmail) {
       if (cur && cur.by !== claimant && !emp.isManager) {
         return { error: 'Already claimed by ' + cur.by + ' — ask them (or a manager) to release it first.' };
       }
-      getOrCreateSpanishClaimsSheet_().appendRow([
+      getOrCreateSpanishClaimsSheet_().appendRow(sheetSafeRow_([
         fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), tid, 'claim', claimant, self, Date.now(),
-      ]);
+      ]));
     } finally { lock.releaseLock(); }
     writeAuditLog_(emp, 'SpanishInboxClaim', '', '', false, 0,
       'threadId=' + tid + '; claim=' + claimant + (claimant !== self ? '; assigned' : ''));
@@ -771,9 +771,9 @@ function releaseSpanishThread(threadId) {
       if (cur.by !== self && !emp.isManager) {
         return { error: 'Only the claimant or a manager can release this claim.' };
       }
-      getOrCreateSpanishClaimsSheet_().appendRow([
+      getOrCreateSpanishClaimsSheet_().appendRow(sheetSafeRow_([
         fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), tid, 'release', cur.by, self, Date.now(),
-      ]);
+      ]));
     } finally { lock.releaseLock(); }
     writeAuditLog_(emp, 'SpanishInboxClaim', '', '', false, 0, 'threadId=' + tid + '; release');
     return { success: true };
@@ -840,8 +840,10 @@ function spanishAutoAssignCore_(emp, days) {
     picks = spanishAutoAssignPick_(stillUnclaimed, members, load);
     if (picks.length) {
       const rows = picks.map(function (pk) { return [stamp, pk.threadId, 'claim', pk.by, self, nowMs]; });
-      const sh = getOrCreateSpanishClaimsSheet_();
-      sh.getRange(sh.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+      // appendRowsSafe_ grows the grid first: a positional write past the last
+      // grid row throws, so once SpanishClaims outgrew its 1000-row default
+      // every auto-assign run would have failed (the cycle-22 C1 class).
+      appendRowsSafe_(getOrCreateSpanishClaimsSheet_(), rows);
     }
   } finally { lock.releaseLock(); }
   writeAuditLog_(emp, 'SpanishInboxAutoAssign', '', '', false, 0,

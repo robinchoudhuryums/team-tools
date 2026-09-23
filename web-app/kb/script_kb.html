@@ -2732,11 +2732,11 @@ function oopLookupInput_(inp) {
     if (!wantElig) {
       google.script.run
         .withSuccessHandler(function (res) {
-          if (mySeq !== KB_OOP.seq) return;
+          if (mySeq !== KB_OOP.seq || !kbLookupHostLive_(host)) return;
           oopRenderResults_(suffix, { item: item, addr: '', elig: false }, res);
         })
         .withFailureHandler(function (err) {
-          if (mySeq !== KB_OOP.seq) return;
+          if (mySeq !== KB_OOP.seq || !kbLookupHostLive_(host)) return;
           var h = document.getElementById('kb-oop-results' + suffix);
           if (h) h.innerHTML = errorStateHtml_((err && err.message) || 'Lookup failed.');
         })
@@ -2745,12 +2745,12 @@ function oopLookupInput_(inp) {
     }
     google.script.run
       .withSuccessHandler(function (res) {
-        if (mySeq !== KB_OOP.seq) return;
+        if (mySeq !== KB_OOP.seq || !kbLookupHostLive_(host)) return;
         if (res && res.error && item.length >= 2) { oopDegraded_(suffix, mySeq, item, res.error); return; }
         oopRenderResults_(suffix, { item: item, addr: addr, elig: true }, res);
       })
       .withFailureHandler(function (err) {
-        if (mySeq !== KB_OOP.seq) return;
+        if (mySeq !== KB_OOP.seq || !kbLookupHostLive_(host)) return;
         var msg = (err && err.message) || 'Eligibility check failed.';
         if (item.length >= 2) { oopDegraded_(suffix, mySeq, item, msg); return; }
         var h = document.getElementById('kb-oop-results' + suffix);
@@ -2778,13 +2778,14 @@ function oopLookupInput_(inp) {
  *  `mySeq` is carried in rather than re-minted: this is the SAME keystroke
  *  still being answered, so a newer one must still win. */
 function oopDegraded_(suffix, mySeq, item, why) {
+  var host = document.getElementById('kb-oop-results' + suffix);   // K2 — this host, not a rebuilt one
   google.script.run
     .withSuccessHandler(function (res) {
-      if (mySeq !== KB_OOP.seq) return;
+      if (mySeq !== KB_OOP.seq || !kbLookupHostLive_(host)) return;
       oopRenderResults_(suffix, { item: item, addr: '', elig: false, degraded: why }, res);
     })
     .withFailureHandler(function () {
-      if (mySeq !== KB_OOP.seq) return;
+      if (mySeq !== KB_OOP.seq || !kbLookupHostLive_(host)) return;
       var h = document.getElementById('kb-oop-results' + suffix);
       if (h) h.innerHTML = errorStateHtml_(why);
     })
@@ -3262,6 +3263,18 @@ function oopCopyPrice_(btn) {
  *  an empty stand-in, so a stale cross-reference cannot outlive the result it
  *  came from (g129: never cache a failure as a value). */
 var KB_INS = { seq: 0, timer: null, last: {} };
+/** K2 (cycle 22): a lookup host built FRESH starts with no results, so its
+ *  repaint cache goes too. `last` survived every rebuild, and the next payor
+ *  lookup's cross-reference repaint drew the PREVIOUS caller's item and
+ *  delivery verdicts back under two empty inputs. */
+function kbLookupsForget_(suffix) {
+  KB_OOP.last[suffix || ''] = null;
+  KB_INS.last[suffix || ''] = null;
+}
+/** K2: a response lands only in the results host it was requested for. A host
+ *  rebuilt since (the drawer reopened for the next caller) is a different node,
+ *  and the old one is no longer in the document. */
+function kbLookupHostLive_(host) { return !!(host && host.isConnected); }
 function insLastMatches_(suffix) {
   var r = KB_INS.last[suffix || ''];
   return (r && r.matches) || [];
@@ -3409,11 +3422,11 @@ function insLookupInput_(inp) {
     if (host) host.innerHTML = '<div class="kb-ins-more">Searching…</div>';
     google.script.run
       .withSuccessHandler(function (res) {
-        if (mySeq !== KB_INS.seq) return;
+        if (mySeq !== KB_INS.seq || !kbLookupHostLive_(host)) return;
         insRenderResults_(suffix, q, res);
       })
       .withFailureHandler(function (err) {
-        if (mySeq !== KB_INS.seq) return;
+        if (mySeq !== KB_INS.seq || !kbLookupHostLive_(host)) return;
         // Through the renderer, not straight at the host: a thrown RPC must
         // clear the stash and drop the cross-reference exactly as a returned
         // {error} does. Painting the error by hand here is how the two paths
@@ -3700,6 +3713,7 @@ function kbRenderLanding_() {
     blocks.innerHTML = kbLandingBlocksHtml_();   // the band, and anything typed into it, is untouched
     return;
   }
+  kbLookupsForget_('');
   main.innerHTML = '<div class="kb-land">' + kbLandingBandHtml_() +
     '<div id="kb-land-blocks">' + kbLandingBlocksHtml_() + '</div></div>';
 }
@@ -5078,7 +5092,7 @@ function kbDrawerOpen_() {
       .getReferenceTree();
   }
   KB_DRAWER.view = 'home';
-  kbDrawerRenderHome_();
+  kbDrawerRenderHome_({ fresh: true });
   var q = document.getElementById('kbd-q');
   if (q) { q.value = KB_DRAWER.lastQuery || ''; setTimeout(function () { q.focus(); }, 230); }
   if (KB_DRAWER.lastQuery) kbDrawerSearch_(KB_DRAWER.lastQuery);
@@ -5116,10 +5130,24 @@ function kbDrawerItemBtnHtml_(it, snippet) {
     (snippet ? '<span class="kb-snip">' + esc(snippet) + '</span>' : '') + '</button>';
 }
 
-function kbDrawerRenderHome_() {
+/** The drawer's home. The two lookup sections are built ONCE per home mount and
+ *  then left alone (K6, cycle 22 — the g141 / T1 landing pattern): the tree
+ *  response and every other re-render while home is showing patch only the
+ *  blocks around them, because rebuilding `#kbd-body` wiped a payor, item or
+ *  address the rep was typing mid-call, and focus and the caret went with the
+ *  nodes. `opts.fresh` (the drawer OPEN) builds them new — that is the next
+ *  caller — and a fresh build forgets the previous host's results (K2). */
+function kbDrawerRenderHome_(opts) {
   KB_DRAWER.view = 'home';
   var body = document.getElementById('kbd-body'); if (!body) return;
-  var prefs = kbPanelPrefs_();
+  var blocks = body.querySelector('#kbd-home-blocks');
+  if (!(opts && opts.fresh) && blocks && body.querySelector('#kb-ins-input-d')) {
+    blocks.innerHTML = kbDrawerHomeBlocksHtml_();   // the lookups, and anything typed into them, are untouched
+    kbDrawerRenderGuidance_();
+    kbDrawerRenderSuggest_();
+    return;
+  }
+  kbLookupsForget_('-d');
   var html = '<div id="kbd-guidance"></div><div id="kbd-suggest"></div>';
   // Insurance lookup (operator 2026-08-25) — same shared section, drawer host.
   // `.kbd-sec` is a HEADING BAR — mono, 10px, uppercase, `display: flex` — built
@@ -5132,6 +5160,15 @@ function kbDrawerRenderHome_() {
   // pins only asserted the section MOUNTS — which it did, inside a heading bar.
   html += '<div class="kbd-lookup">' + insLookupSecHtml_('-d') + '</div>';
   html += '<div class="kbd-lookup">' + oopLookupSecHtml_('-d') + '</div>';
+  html += '<div id="kbd-home-blocks">' + kbDrawerHomeBlocksHtml_() + '</div>';
+  body.innerHTML = html;
+  kbDrawerRenderGuidance_();
+  kbDrawerRenderSuggest_();
+}
+/** The drawer home's input-free blocks: bookmarks, recents, the empty hint. */
+function kbDrawerHomeBlocksHtml_() {
+  var prefs = kbPanelPrefs_();
+  var html = '';
   var bookmarks = prefs.bookmarks || [];   // #5
   if (bookmarks.length) {
     html += '<div class="kbd-sec">Bookmarks</div>';
@@ -5147,9 +5184,7 @@ function kbDrawerRenderHome_() {
     });
   }
   if (!recents.length && !bookmarks.length) html += '<div class="kbd-empty">Type 2+ characters to search the knowledge base.</div>';
-  body.innerHTML = html;
-  kbDrawerRenderGuidance_();
-  kbDrawerRenderSuggest_();
+  return html;
 }
 
 // ── AI guidance card (Phase A) ──────────────────────────────────────────────

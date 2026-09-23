@@ -2421,6 +2421,8 @@ const CN_STATE = {
   historyDate: null,         // selected date in History view (yyyy-MM-dd) — also serves as start date for range queries
   historyEndDate: null,      // end date for History range queries; when null or === historyDate, single-date mode
   historyNotes: [],
+  historyNotesKey: '',       // C3 — the 'start:end' range historyNotes was loaded for
+  historyRangeRefused: '',   // C3 — set when the selected span exceeds the server's cap
   pinLimit: 3,               // server-authoritative cap from getMyPinnedCallNotes
   searchQuery: '',
   searchField: 'all',
@@ -2724,9 +2726,25 @@ function cnLoadToday_(then) {
     .getMyCallNotes({ filter: 'all' });
 }
 
+/** C3 (cycle 22) — the MIRROR of getMyCallNotesRange's cap (g94): the server
+ *  refuses a span whose end − start exceeds 90 days. Refused here first, with
+ *  the reason, so an over-long range is never a round trip that fails; a pin
+ *  reads the server's literal, so the two cannot drift. */
+var CN_HISTORY_MAX_SPAN_DAYS = 90;
+function cnHistorySpanDays_(startDate, endDate) {
+  return Math.round((new Date(endDate + 'T00:00:00Z') - new Date(startDate + 'T00:00:00Z')) / 86400000);
+}
+
 function cnLoadDateRange_(startDate, endDate, then) {
   const requestedView = currentView;
   const isSingleDate = startDate === endDate;
+  CN_STATE.historyRangeRefused = '';
+  if (cnHistorySpanDays_(startDate, endDate) > CN_HISTORY_MAX_SPAN_DAYS) {
+    CN_STATE.historyRangeRefused = 'History shows up to ' + CN_HISTORY_MAX_SPAN_DAYS +
+      ' days at a time — narrow the range.';
+    if (then) then();
+    return;
+  }
   var rpc;
   if (isSingleDate) {
     rpc = function (ok, fail) {
@@ -2755,6 +2773,7 @@ function cnLoadDateRange_(startDate, endDate, then) {
         if (/not configured/i.test(res.error)) {
           CN_STATE.enrolled = false;
           CN_STATE.historyNotes = [];
+          CN_STATE.historyNotesKey = startDate + ':' + endDate;
         } else {
           // C17-5 — same preserve-last-good + mark-failed as cnLoadToday_.
           if (currentView === requestedView) showToast(res.error, 'toast-error');
@@ -2765,6 +2784,11 @@ function cnLoadDateRange_(startDate, endDate, then) {
         CN_STATE.enrolled = true;
         CN_STATE.historyLoadFailed = false;
         CN_STATE.historyNotes = res.notes || [];
+        // C3 (cycle 22): the notes carry the RANGE they describe. The label is
+        // drawn from the current selection, so without this a failed load for
+        // a NEW range left the previous range's notes on screen under the new
+        // range's label — "Sep 1 – Sep 20 · 12 notes" that were Sep 14–20's.
+        CN_STATE.historyNotesKey = startDate + ':' + endDate;
         // Stamp freshness + the exact range for History's instant-paint fast path.
         CN_STATE.historyEntry = { at: Date.now(), key: startDate + ':' + endDate };
       }
@@ -3459,6 +3483,7 @@ function cnRestoreFromSnapshot_(snap) {
 }
 
 function cnClearActiveForm_(opts) {
+  cnVoiceStopAll_();   // C11 — before anything is cleared, so no late result lands in the empty form
   const fields = ['callback','caller','relationship','patient','issue','transferred','resolution'];
   const skipSnap = opts && opts.skipSnapshot;
   const form0 = document.getElementById('cn-active-form');
@@ -3931,6 +3956,23 @@ function cnVoiceMicMarkup_(targetFieldId) {
                    onclick="cnVoiceStart_(this)" title="Dictate (beta — audio routed to your browser's speech service)">${icon('mic', 12)}</button>`;
 }
 
+/** C11 (cycle 22): end every running dictation WITHOUT letting it write. Each
+ *  session captured the field's text when it started and rewrites
+ *  `before + transcript` on every result and again on end — so a session still
+ *  running when the form was cleared (a submit, Clear, a completed Save &
+ *  Compose) wrote the previous note back into the next call's empty form. The
+ *  handlers are detached BEFORE abort(), because abort() still fires onend. */
+function cnVoiceStopAll_() {
+  document.querySelectorAll('.cn-voice-mic').forEach(function (btn) {
+    var r = btn._recog;
+    if (!r) return;
+    r.onresult = null; r.onend = null; r.onerror = null;
+    try { r.abort(); } catch (e) {}
+    btn._recog = null;
+    btn.classList.remove('listening');
+  });
+}
+
 /** Start (or stop, if already listening) voice recognition for the field
  *  identified by data-target. Click while listening to stop early. Browser
  *  prompts for mic permission on first use per origin. */
@@ -4171,6 +4213,11 @@ function cnSubmitActiveForm_(opts) {
         cnRevertPendingSubmit_(pendingId, restoreSnapshot, res.error || 'Save failed');
         return;
       }
+      // C10 (cycle 22): stamp the ORDER it was confirmed in (a client-transient
+      // `_` key, so the live-refresh signature ignores it) — a poll requested
+      // before this confirm cannot know the note, and must not drop it. A
+      // counter, not a clock: two events in one millisecond must still order.
+      if (res.note) res.note._confirmSeq = (CN_STATE._confirmSeq = (CN_STATE._confirmSeq || 0) + 1);
       const idx = CN_STATE.rollingNotes.findIndex(function (n) { return n.noteId === pendingId; });
       if (idx >= 0) {
         CN_STATE.rollingNotes[idx] = res.note;
@@ -5047,7 +5094,12 @@ function cnSchedStatus_(btn, id, status) {
 // close (the INV-148 teardown-safe persister pattern). Last write wins across
 // windows — stated in the modal copy. A failed autosave is VISIBLE in the
 // status line (INV-187 — never silently dropped) and retried on next edit.
-var CN_SCRATCH = { dirty: false, timer: null, saving: false, queued: false };
+// C6 (cycle 22): `latest` is the text the rep last typed, held in STATE so a
+// save that has to wait (one already in flight) or that runs after the modal
+// is gone still has something to send. Before it, a close during an in-flight
+// save queued a drain that found no field and saved nothing, and a success
+// marked the pad clean even when the rep had typed more while it ran.
+var CN_SCRATCH = { dirty: false, timer: null, saving: false, queued: false, latest: null };
 
 function cnOpenScratchpadModal_() {
   var overlay = ensureOverlay('cn-scratch-overlay', { label: 'Scratchpad', onClose: cnCloseScratchpadModal_ });
@@ -5064,7 +5116,10 @@ function cnOpenScratchpadModal_() {
         '<button type="button" class="cn-act-btn" style="width:auto;padding:6px 14px" onclick="closeOverlay(document.getElementById(\'cn-scratch-overlay\'))">Close</button>' +
       '</div>' +
     '</div>';
-  CN_SCRATCH.dirty = false; CN_SCRATCH.saving = false; CN_SCRATCH.queued = false;
+  // C6: text a previous close could not save (its save failed, or is still in
+  // flight) is carried into this open rather than replaced by the server copy.
+  var carry = CN_SCRATCH.dirty && CN_SCRATCH.latest != null;
+  if (!carry) { CN_SCRATCH.dirty = false; CN_SCRATCH.latest = null; }
   clearTimeout(CN_SCRATCH.timer);
   google.script.run
     .withSuccessHandler(function (res) {
@@ -5080,9 +5135,11 @@ function cnOpenScratchpadModal_() {
         return;
       }
       ta.disabled = false; ta.placeholder = 'Anything you want to keep at hand…';
-      ta.value = res.content || '';
+      var stillUnsaved = CN_SCRATCH.dirty && CN_SCRATCH.latest != null;   // re-read: a carried save may have landed meanwhile
+      ta.value = stillUnsaved ? CN_SCRATCH.latest : (res.content || '');
       ta.addEventListener('input', cnScratchInput_);
-      cnScratchStatus_(res.updatedAtMs ? 'Saved · ' + cnSchedFmt_(res.updatedAtMs) : '', false);
+      if (stillUnsaved) { cnScratchStatus_('Unsaved changes from last time — saving…', false); cnScratchSave_(true); }
+      else cnScratchStatus_(res.updatedAtMs ? 'Saved · ' + cnSchedFmt_(res.updatedAtMs) : '', false);
       ta.focus();
     })
     .withFailureHandler(function (err) {
@@ -5099,7 +5156,12 @@ function cnOpenScratchpadModal_() {
 /** onClose — flush a pending debounce so typed text never dies with the
  *  modal (the INV-148 rule). Idempotent (safe when already closed). */
 function cnCloseScratchpadModal_() {
-  if (CN_SCRATCH.dirty) cnScratchSave_(true);   // reads the field synchronously, BEFORE the DOM goes
+  clearTimeout(CN_SCRATCH.timer);
+  if (CN_SCRATCH.dirty) {
+    var ta = document.getElementById('cn-scratch-text');
+    if (ta && !ta.disabled) CN_SCRATCH.latest = ta.value;   // read synchronously, BEFORE the DOM goes
+    cnScratchSave_(true);   // runs now, or queues behind an in-flight save and drains from `latest`
+  }
   // The hook OWNS the close (closeOverlay delegates to it) — remove the
   // overlay, or Close / Escape / backdrop do nothing (fixed 2026-09-17).
   var o = document.getElementById('cn-scratch-overlay');
@@ -5115,6 +5177,8 @@ function cnScratchStatus_(msg, warn) {
 
 function cnScratchInput_() {
   CN_SCRATCH.dirty = true;
+  var ta = document.getElementById('cn-scratch-text');
+  if (ta) CN_SCRATCH.latest = ta.value;
   cnScratchStatus_('Unsaved changes…', false);
   clearTimeout(CN_SCRATCH.timer);
   CN_SCRATCH.timer = setTimeout(function () { cnScratchSave_(false); }, 800);
@@ -5122,31 +5186,41 @@ function cnScratchInput_() {
 
 function cnScratchSave_(force) {
   var ta = document.getElementById('cn-scratch-text');
-  // The flush-on-close path reads the field BEFORE the DOM goes away; a later
-  // fire with no field is a no-op (root-guard, the INV-148 pattern).
-  if (!ta && !force) return;
-  if (CN_SCRATCH.saving) { CN_SCRATCH.queued = true; return; }   // serialize; latest text re-reads at fire time
-  if (!ta) return;
-  var text = ta.value;
+  // The text to save: the live field while the modal is open, else what the
+  // close captured (C6). With neither — or nothing unsaved and no field — there
+  // is nothing to do (the INV-148 root-guard).
+  if (ta && !ta.disabled) CN_SCRATCH.latest = ta.value;
+  else if (!CN_SCRATCH.dirty) return;
+  var text = CN_SCRATCH.latest;
+  if (text == null) return;
+  if (CN_SCRATCH.saving) { CN_SCRATCH.queued = true; return; }   // serialize; the drain sends `latest` as it is THEN
   CN_SCRATCH.saving = true;
   clearTimeout(CN_SCRATCH.timer);
   cnScratchStatus_('Saving…', false);
+  var failed = function (msg) {
+    CN_SCRATCH.saving = false;
+    // Keep dirty so the next edit (or Save now, or the next open) retries —
+    // visible, never silent. With the modal gone the status line is gone too,
+    // so the failure is a toast instead.
+    if (document.getElementById('cn-scratch-text')) cnScratchStatus_(msg, true);
+    else showToast('Scratchpad not saved: ' + msg + ' — reopen it to retry', 'toast-error');
+  };
   google.script.run
     .withSuccessHandler(function (r) {
+      if (!r || r.error || !r.success) { failed((r && r.error) || 'Save failed — edit or press Save now to retry'); return; }
       CN_SCRATCH.saving = false;
-      if (!r || r.error || !r.success) {
-        // Keep dirty so the next edit (or Save now) retries — visible, never silent.
-        cnScratchStatus_((r && r.error) || 'Save failed — edit or press Save now to retry', true);
-        return;
+      // Clean only if nothing was typed while this save ran (C6).
+      if (CN_SCRATCH.latest === text) CN_SCRATCH.dirty = false;
+      cnScratchStatus_(CN_SCRATCH.dirty ? 'Unsaved changes…' : 'Saved · ' + cnSchedFmt_(r.updatedAtMs), false);
+      // Drain a save that waited on this one (a close, a Save now, a debounce
+      // fire). With the modal still open and nothing waiting, newer typing is
+      // left to its own debounce.
+      if (CN_SCRATCH.queued || (CN_SCRATCH.dirty && !document.getElementById('cn-scratch-text'))) {
+        CN_SCRATCH.queued = false;
+        if (CN_SCRATCH.dirty) cnScratchSave_(true);
       }
-      CN_SCRATCH.dirty = false;
-      cnScratchStatus_('Saved · ' + cnSchedFmt_(r.updatedAtMs), false);
-      if (CN_SCRATCH.queued) { CN_SCRATCH.queued = false; cnScratchSave_(false); }
     })
-    .withFailureHandler(function (e) {
-      CN_SCRATCH.saving = false;
-      cnScratchStatus_((e && e.message) || 'Save failed — edit or press Save now to retry', true);
-    })
+    .withFailureHandler(function (e) { failed((e && e.message) || 'Save failed — edit or press Save now to retry'); })
     .saveMyScratchpad(text);
 }
 
@@ -5933,17 +6007,24 @@ function cnSwitchComposerTab_(target) {
       showToast('Save the note first to send a department email', 'toast-warn');
       return;
     }
-    // Mount dept first (synchronous), then remove ext in the same tick.
+    // Mount dept first (synchronous), then remove ext in the same tick. The
+    // Save & Compose transaction (if any) moves with the rep BEFORE the ext
+    // teardown, so that close is not read as a cancel (C4).
+    if (CN_STATE.composeFlow) CN_STATE.composeFlow.owner = 'dept';
     cnOpenEmailComposer_(noteId);
     cnCloseExternalEmailModal_();
   } else if (target === 'external') {
     // Mount ext (may be async on first open), removing dept only once ext is
     // actually in the DOM — never an empty-backdrop frame.
     // Tab-switch is NOT a cancel: the rep is continuing the email in the
-    // External composer. Detach the Save&Compose transaction first (note
-    // stays saved, form keeps its text) so the dept-composer teardown
-    // below doesn't roll the save back (r3).
-    CN_STATE.composeFlow = null;
+    // External composer, so the Save&Compose transaction MOVES with them
+    // (owner 'ext') rather than being dropped. The dept-composer teardown
+    // below then does not roll the save back (r3), and the transaction still
+    // completes on the external SEND (form, timer and draft cleared) or rolls
+    // back on an external CANCEL. C4 (cycle 22): it used to be set to null
+    // here, so nothing ever cleared the form — the next Save wrote a duplicate
+    // note, and untouched fields carried into the next patient's note.
+    if (CN_STATE.composeFlow) CN_STATE.composeFlow.owner = 'ext';
     cnOpenExternalEmailModal_(noteId || null, cnCloseComposerModal_);
   }
 }
@@ -6029,7 +6110,7 @@ function cnCloseComposerModal_() {
   // still in the DOM, and stay quiet on the Save&Compose rollback path below
   // (that note is being deleted; a "discarded" toast would be noise), and
   // while a save is in flight (the fields still read dirty until it lands).
-  if (CN_STATE.composer && !CN_STATE.composer.savingNote && !CN_STATE.composeFlow) {
+  if (CN_STATE.composer && !CN_STATE.composer.savingNote && !cnComposeFlowOwnedBy_('dept')) {
     const unsaved = cnComposerNoteDirtyFields_();
     if (unsaved.length) showToast('Note edits discarded (' + unsaved.length + ' field' + (unsaved.length === 1 ? '' : 's') + ')', 'toast-warn');
   }
@@ -6040,16 +6121,40 @@ function cnCloseComposerModal_() {
   // composer WITHOUT sending rolls the whole action back — the just-saved
   // note is deleted (server 5-min window covers it) and the text is still
   // sitting in the form. Send success clears composeFlow BEFORE closing,
-  // so this only fires on a genuine cancel/Esc.
+  // so this only fires on a genuine cancel/Esc — and only for a flow THIS
+  // composer owns (a tab switch hands it to the other one first, C4).
+  if (cnComposeFlowOwnedBy_('dept')) cnRollbackComposeFlow_();
+}
+
+/** C4 — which composer the Save & Compose transaction currently rides. A flow
+ *  starts in the department composer (no owner = 'dept'); a tab switch moves
+ *  it. Each composer's close rolls back only a flow it owns. */
+function cnComposeFlowOwnedBy_(owner) {
+  var fl = CN_STATE.composeFlow;
+  return !!fl && (fl.owner || 'dept') === owner;
+}
+/** Roll the Save & Compose transaction back: the just-saved note is deleted
+ *  (or marked for deletion when its save confirms) and the form keeps its text. */
+function cnRollbackComposeFlow_() {
   const fl = CN_STATE.composeFlow;
-  if (fl) {
-    CN_STATE.composeFlow = null;
-    if (fl.note._pending) {
-      fl.note._deleteOnConfirm = true;   // finish the rollback when the save confirms
-      showToast('Compose cancelled — undoing the save…', 'toast-warn');
-    } else if (cnFindNoteAnywhere_(fl.note.noteId)) {
-      cnDoDeleteNote_(fl.note.noteId, { toast: 'Compose cancelled — save undone, your text is still in the form' });
-    }
+  if (!fl) return;
+  CN_STATE.composeFlow = null;
+  if (fl.note._pending) {
+    fl.note._deleteOnConfirm = true;   // finish the rollback when the save confirms
+    showToast('Compose cancelled — undoing the save…', 'toast-warn');
+  } else if (cnFindNoteAnywhere_(fl.note.noteId)) {
+    cnDoDeleteNote_(fl.note.noteId, { toast: 'Compose cancelled — save undone, your text is still in the form' });
+  }
+}
+/** Complete the Save & Compose transaction on a SEND: the note stays, and the
+ *  form (kept populated while composing — r3), its timer and the sticky draft
+ *  are cleared for the next call. */
+function cnCompleteComposeFlow_() {
+  CN_STATE.composeFlow = null;
+  if (document.getElementById('cn-active-form')) {
+    cnClearActiveForm_({ skipSnapshot: true });
+    cnFormTimerReset_();
+    cnClearStickyFormDraft_();
   }
 }
 
@@ -6933,12 +7038,7 @@ function cnComposerSend_() {
       // (it was kept populated while composing — r3), then close.
       if (CN_STATE.composeFlow && CN_STATE.composeFlow.note &&
           CN_STATE.composeFlow.note.noteId === c.noteId) {
-        CN_STATE.composeFlow = null;
-        if (document.getElementById('cn-active-form')) {
-          cnClearActiveForm_({ skipSnapshot: true });
-          cnFormTimerReset_();
-          cnClearStickyFormDraft_();
-        }
+        cnCompleteComposeFlow_();
       }
       cnCloseComposerModal_();
       cnReRenderActiveView_();
@@ -7138,7 +7238,11 @@ function cnRenderHistoryStack_() {
   const stack = document.getElementById('cn-history-stack');
   if (!stack) return;
   const summary = document.getElementById('cn-history-summary');
-  const allNotes = CN_STATE.historyNotes || [];
+  // C3: only notes loaded FOR the selected range are drawn under its label. A
+  // failed refresh of the SAME range keeps last-good (C17-5); a failed load of a
+  // DIFFERENT range has nothing of its own to show, so it shows the failure.
+  const curKey = CN_STATE.historyDate + ':' + (CN_STATE.historyEndDate || CN_STATE.historyDate);
+  const allNotes = (CN_STATE.historyNotesKey === curKey) ? (CN_STATE.historyNotes || []) : [];
   // F(cycle-8 M-10): History now honors CN_STATE.filter — the Log quick-chips
   // ("Jump to history: Unresolved · 4") set it and navigated here, but nothing
   // consumed it (the chips were a silent no-op; the rep hunted manually). The
@@ -7160,6 +7264,10 @@ function cnRenderHistoryStack_() {
 
   if (notes.length === 0) {
     if (summary) summary.innerHTML = fltPill;
+    if (CN_STATE.historyRangeRefused && allNotes.length === 0) {
+      stack.innerHTML = errorStateHtml_(CN_STATE.historyRangeRefused);
+      return;
+    }
     // C17-5 — same failed-load-vs-empty split as cnRenderStack_.
     if (CN_STATE.historyLoadFailed && allNotes.length === 0) {
       stack.innerHTML = errorStateHtml_('These notes could not be loaded — this is a load failure, not an empty range. Change the date range to retry.');
@@ -7453,7 +7561,8 @@ function cnFireSearch_() {
         // labeled with a query that never ran (the stale-label class).
         CN_STATE.searchResults = [];
         var eh = document.getElementById('cn-search-results');
-        if (eh) eh.innerHTML = errorStateHtml_('Search failed for "' + esc(requestedQuery) + '" - ' + res.error);
+        if (eh) eh.innerHTML = errorStateHtml_('Search failed for "' + requestedQuery + '" - ' + res.error,
+          'Search failed - ' + res.error);   // S3: the query is shown, never beaconed
         return;
       }
       CN_STATE.searchResults = res.results || [];
@@ -7464,7 +7573,8 @@ function cnFireSearch_() {
       if (String(CN_STATE.searchQuery || '').trim() !== requestedQuery) return;
       CN_STATE.searchResults = [];
       var fh = document.getElementById('cn-search-results');
-      if (fh) fh.innerHTML = errorStateHtml_('Search failed for "' + esc(requestedQuery) + '" - ' + err.message);
+      if (fh) fh.innerHTML = errorStateHtml_('Search failed for "' + requestedQuery + '" - ' + err.message,
+          'Search failed - ' + err.message);   // S3: the query is shown, never beaconed
     })
     .searchMyCallNotes(q, CN_STATE.searchField,
       (CN_STATE.searchFrom && CN_STATE.searchTo) ? { start: CN_STATE.searchFrom, end: CN_STATE.searchTo } : null,
@@ -8272,7 +8382,8 @@ function cnMgrFireSearch_() {
       if (res.error) {
         CN_STATE.mgrSearchResults = [];
         var eh = document.getElementById('cn-mgr-search-results');
-        if (eh) eh.innerHTML = errorStateHtml_('Search failed for "' + esc(requestedQuery) + '" - ' + res.error);
+        if (eh) eh.innerHTML = errorStateHtml_('Search failed for "' + requestedQuery + '" - ' + res.error,
+          'Search failed - ' + res.error);   // S3: the query is shown, never beaconed
         return;
       }
       CN_STATE.mgrSearchResults = res.results || [];
@@ -8284,7 +8395,8 @@ function cnMgrFireSearch_() {
       if (String(CN_STATE.mgrSearchQuery || '').trim() !== requestedQuery) return;
       CN_STATE.mgrSearchResults = [];
       var fh = document.getElementById('cn-mgr-search-results');
-      if (fh) fh.innerHTML = errorStateHtml_('Search failed for "' + esc(requestedQuery) + '" - ' + err.message);
+      if (fh) fh.innerHTML = errorStateHtml_('Search failed for "' + requestedQuery + '" - ' + err.message,
+          'Search failed - ' + err.message);   // S3: the query is shown, never beaconed
     })
     .managerSearchCallNotes(q, CN_STATE.mgrSearchField, null,
       (CN_STATE.mgrSearchFrom && CN_STATE.mgrSearchTo) ? { start: CN_STATE.mgrSearchFrom, end: CN_STATE.mgrSearchTo } : null,
@@ -8353,6 +8465,7 @@ function cnRefreshRollingStack_(then) {
   if (currentView !== 'callNotes' || !CN_STATE.enrolled) { done(); return; }
   if (CN_STATE.editingNoteId) { done(); return; }   // don't clobber an open inline edit
   const requestedView = currentView;
+  const requestedSeq = CN_STATE._confirmSeq || 0;
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res || res.error || res.enrolled === false) { done(); return; }
@@ -8361,8 +8474,12 @@ function cnRefreshRollingStack_(then) {
       const serverIds = {};
       server.forEach(function (n) { serverIds[n.noteId] = true; });
       const local = CN_STATE.rollingNotes || [];
+      // Kept on top: optimistic notes not yet on the server, AND (C10, cycle
+      // 22) notes CONFIRMED after this poll was requested — the server list
+      // predates them. Before this, a poll in flight while a save confirmed
+      // dropped the just-saved note from the stack for up to a minute.
       const pending = local.filter(function (n) {
-        return n._pending && !serverIds[n.noteId];
+        return !serverIds[n.noteId] && (n._pending || (n._confirmSeq && n._confirmSeq > requestedSeq));
       });
       // F(cycle-8, INV-56): a confirmed note with a flag/resolve/pin RPC in
       // flight must keep its LOCAL object — replacing it with the server's
@@ -9025,6 +9142,7 @@ function enterCallNotesAdminView(area) {
       '<div id="cn-sys-findings">' + loSweep() + '</div>' +
       '<div id="cn-admin-storage"></div>' +
       '<div id="cn-admin-oop"></div>' +
+      '<div id="cn-admin-formulas">' + cnRenderFormulaScanPanel_(null) + '</div>' +
       '<div id="cn-admin-health"></div>' +
     '</div>' +
     '<div class="cn-admin-pane" data-pane="tags" style="' + paneStyle('tags') + '">' +
@@ -10124,6 +10242,65 @@ function cnRenderOopDiagPanel_(res) {
       }).join('');
   }
   return wrap(html);
+}
+
+/** Cycle 22 S2 follow-on — "Stored formulas". The write boundary (sheetSafe_)
+ *  stops NEW text becoming a formula; this finds the ones already stored,
+ *  typed before it shipped. ON DEMAND (it opens every store, and every
+ *  enrolled rep's Sheet), so the panel starts idle with a button.
+ *  `res`: null = idle · { loading: true } · { error } · the scan result. An
+ *  empty hit list reads as clean ONLY when no store failed and none went
+ *  unscanned — otherwise the panel says which were not checked (g53). */
+function cnRenderFormulaScanPanel_(res) {
+  var muted = function (t) { return '<span style="color:var(--muted)">' + t + '</span>'; };
+  var warn = function (t) { return '<div style="font-size:12px;color:var(--warning-deep);margin-top:6px">' + t + '</div>'; };
+  var btn = '<button type="button" class="btn-modal-ok" id="cn-formula-scan-btn" style="margin:6px 0 0"' +
+    (res && res.loading ? ' disabled' : '') + ' onclick="cnRunFormulaScan_()">' +
+    (res && !res.loading ? 'Scan again' : 'Scan stores') + '</button>';
+  var intro = '<div style="font-size:12px">Text typed as <b>=…</b> (or <b>+</b>, <b>-</b>, <b>@</b> before a word) before cycle 22 was ' +
+    'stored as a live spreadsheet formula. New writes are stored as text; this finds the old ones. Read-only — fix a hit by ' +
+    'opening the cell and putting an apostrophe in front.</div>';
+  var body = '';
+  if (res && res.loading) body = '<div style="padding:10px 0">' + loSweep() + '</div>';
+  else if (res && res.error) body = errorStateHtml_('Formula scan unavailable: ' + esc(res.error));
+  else if (res) {
+    var stores = res.stores || [];
+    var failed = stores.filter(function (s) { return s.error; });
+    var unscanned = res.unscanned || [];
+    var checked = stores.filter(function (s) { return !s.error && !s.sameAs; }).length;
+    var hits = res.hits || [];
+    body += '<div style="font-size:12px;margin-top:8px">' + esc(String(checked)) + ' store' + (checked === 1 ? '' : 's') +
+      ' scanned · <b>' + esc(String(res.total || 0)) + '</b> formula cell' + (res.total === 1 ? '' : 's') + ' found</div>';
+    if (failed.length) body += warn('Could not open: <b>' + esc(failed.map(function (s) { return s.label + ' (' + s.error + ')'; }).join(' · ')) + '</b>');
+    if (unscanned.length) body += warn('Not reached before the time limit — NOT checked: <b>' + esc(unscanned.join(', ')) + '</b>. Run the scan again to continue.');
+    if (res.capped) body += warn('Showing the first ' + esc(String(hits.length)) + ' of ' + esc(String(res.total)) + '.');
+    if (!hits.length && !failed.length && !unscanned.length) {
+      body += '<div style="font-size:12px;margin-top:6px;color:var(--success-deep)">No stored formulas in any store the app writes.</div>';
+    }
+    body += hits.map(function (h) {
+      return '<div style="font-size:11px;padding:2px 0">' + esc(h.store) + ' › <b>' + esc(h.tab) + '</b> ' + esc(h.cell) + ' ' +
+        muted('<code>' + esc(h.formula) + '</code>') +
+        (h.operatorTab ? ' ' + muted('(a tab you edit by hand — this may be yours on purpose)') : '') + '</div>';
+    }).join('');
+  }
+  return '<div class="panel" id="cn-sys-sec-formulas" style="margin-bottom:20px">' +
+    '<div class="day-section-label" style="margin-bottom:10px">' + icon('search', 14) + ' Stored formulas</div>' +
+    intro + btn + body + '</div>';
+}
+function cnRunFormulaScan_() {
+  var slot = document.getElementById('cn-admin-formulas');
+  if (!slot) return;
+  slot.innerHTML = cnRenderFormulaScanPanel_({ loading: true });
+  var requestedView = currentView;
+  var paint = function (res) {
+    if (currentView !== requestedView) return;
+    var live = document.getElementById('cn-admin-formulas');
+    if (live) live.innerHTML = cnRenderFormulaScanPanel_(res);
+  };
+  google.script.run
+    .withSuccessHandler(function (res) { paint(res || { error: 'no response' }); })
+    .withFailureHandler(function (err) { paint({ error: (err && err.message) || 'scan failed' }); })
+    .adminScanStoredFormulas();
 }
 
 function cnLoadOopDiagPanel_() {
@@ -13227,6 +13404,10 @@ function cnCloseExternalEmailModal_() {
   CN_STATE.extComposer = null;
   var overlay = document.getElementById('cn-ext-overlay');
   if (overlay) overlay.remove();
+  // C4: an external composer the Save & Compose flow moved into is the
+  // transaction now — closing it without sending is the same cancel the
+  // department composer's close is. (A send completes the flow first.)
+  if (cnComposeFlowOwnedBy_('ext')) cnRollbackComposeFlow_();
 }
 
 function cnRenderExternalEmailModal_() {
@@ -14011,6 +14192,10 @@ function cnSendExternalEmail_() {
         showToast(res.error || 'Send failed', 'toast-error');
         return;
       }
+      // C4: a Save & Compose flow that moved into this composer COMPLETES on
+      // the send — before the close below, which would otherwise read it as a
+      // cancel and roll the save back.
+      if (CN_STATE.extComposer === c && cnComposeFlowOwnedBy_('ext')) cnCompleteComposeFlow_();
       // F(cycle-8 M-4) defense-in-depth: only close the composer THIS send
       // belongs to. With the close-guard above the mid-send-close/reopen race
       // shouldn't occur, but a late handler must never tear down a composer

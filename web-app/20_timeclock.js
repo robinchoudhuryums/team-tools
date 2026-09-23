@@ -830,7 +830,7 @@ function creditMonthlyPtoAccruals() {
         if (repCredited) credited++; else zeroHourReps++;
       }
       if (p.stamp !== p.plan.newStamp) {
-        sheet.getRange(p.rowIndex + 1, EMP.ACCRUED_THROUGH + 1).setValue(p.plan.newStamp);
+        sheet.getRange(p.rowIndex + 1, EMP.ACCRUED_THROUGH + 1).setValue(sheetSafe_(p.plan.newStamp));
         if (p.plan.seeded) seeded++;
       }
     });
@@ -1349,8 +1349,8 @@ function recordPunchCore_(punchType, custom) {
     if (isAdj) {
       const existing = findExistingPunch_(emp.id, date, punchType);
       if (existing) {
-        existing.sheet.getRange(existing.rowIndex, ADP.TIME + 1).setValue(time);
-        existing.sheet.getRange(existing.rowIndex, ADP.COMMENTS + 1).setValue(commentLabel);
+        existing.sheet.getRange(existing.rowIndex, ADP.TIME + 1).setValue(sheetSafe_(time));
+        existing.sheet.getRange(existing.rowIndex, ADP.COMMENTS + 1).setValue(sheetSafe_(commentLabel));
       } else {
         appendToAdpSheet_(emp, date, time, dir, commentLabel);
       }
@@ -1535,7 +1535,7 @@ function submitTimeOffRequest(date, type, notes) {
     if (hasActiveTimeOffOnDate_(toSheet, emp.id, date))
       return { success: false, error: 'You already have a pending or approved time-off request for that date.' };
     const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
-    toSheet.appendRow([emp.id, emp.name, date, type, notes || '', 'Pending', submittedAt]);
+    toSheet.appendRow(sheetSafeRow_([emp.id, emp.name, date, type, notes || '', 'Pending', submittedAt]));
     writeAuditLog_(emp, 'TimeOffRequest', date, '', false, 0, type + (notes ? ' — ' + notes : ''));
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
@@ -1579,7 +1579,7 @@ function submitTimeOffRange(startDate, endDate, type, notes) {
       return { success: false, error: 'You already have a pending or approved request on: ' + conflicts.join(', ') + '. Cancel it or adjust the range.' };
     const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
     days.forEach(d => {
-      toSheet.appendRow([emp.id, emp.name, d, type, notes || '', 'Pending', submittedAt]);
+      toSheet.appendRow(sheetSafeRow_([emp.id, emp.name, d, type, notes || '', 'Pending', submittedAt]));
       writeAuditLog_(emp, 'TimeOffRequest', d, '', false, 0,
         type + ' (range ' + startDate + '..' + endDate + ')' + (notes ? ' — ' + notes : ''));
     });
@@ -2268,7 +2268,7 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
             'Deny or cancel the other request first.' };
         }
 
-        sheet.getRange(i + 1, TO.STATUS + 1).setValue(newStatus);
+        sheet.getRange(i + 1, TO.STATUS + 1).setValue(sheetSafe_(newStatus));
 
         // Apply leave-balance change if state transition crosses the Approved boundary.
         // F(cycle-8): if the balance write THROWS, revert the just-written Status
@@ -2290,7 +2290,7 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
                 newBalance = adjustLeaveBalance_(empId, dedu.bucket, dedu.days);
               }
             } catch (balErr) {
-              try { sheet.getRange(i + 1, TO.STATUS + 1).setValue(oldStatusRaw); } catch (revertErr) {
+              try { sheet.getRange(i + 1, TO.STATUS + 1).setValue(sheetSafe_(oldStatusRaw)); } catch (revertErr) {
                 Logger.log('updateTimeOffStatus: status revert after balance failure ALSO failed (' +
                   revertErr.message + ') — row ' + (i + 1) + ' may need a manual status fix.');
               }
@@ -2361,7 +2361,7 @@ function managerSubmitTimeOff(empId, date, type, notes, autoApprove) {
     const status = autoApprove ? 'Approved' : 'Pending';
     const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
     toSheet
-      .appendRow([targetEmp.id, targetEmp.name, date, type, notes || '', status, submittedAt]);
+      .appendRow(sheetSafeRow_([targetEmp.id, targetEmp.name, date, type, notes || '', status, submittedAt]));
 
     // Apply leave deduction immediately if auto-approving
     let newBalance = null;
@@ -2571,7 +2571,7 @@ function fixPtoReconciliation(empId) {
     [{ bucket: 'annual', rows: reconRows.annual, credit: creditAnnual },
      { bucket: 'sick',   rows: reconRows.sick,   credit: creditSick }].forEach(function (u) {
       if (u.rows.length === 0) return;
-      u.rows.forEach(function (ri) { sheet.getRange(ri, TO.STATUS + 1).setValue('Reconciled'); });
+      u.rows.forEach(function (ri) { sheet.getRange(ri, TO.STATUS + 1).setValue(sheetSafe_('Reconciled')); });
       try {
         const nb = (u.credit > 0) ? adjustLeaveBalance_(empId, u.bucket, u.credit) : null;
         if (u.bucket === 'annual') { newAnnual = nb; doneAnnual = u.credit; }
@@ -2579,7 +2579,7 @@ function fixPtoReconciliation(empId) {
         rowsDone += u.rows.length;
       } catch (balErr) {
         u.rows.forEach(function (ri) {
-          try { sheet.getRange(ri, TO.STATUS + 1).setValue('Approved'); } catch (revertErr) {
+          try { sheet.getRange(ri, TO.STATUS + 1).setValue(sheetSafe_('Approved')); } catch (revertErr) {
             Logger.log('fixPtoReconciliation: row revert after credit failure ALSO failed (' +
               revertErr.message + ') — row ' + ri + ' may need a manual status fix.');
           }
@@ -2630,7 +2630,22 @@ function tsDoctorLegitBreaks_(days, empId, date, type) {
   // deleted a real one. Those days are REPORTED instead (getTimesheetDoctor's
   // `unpaired` list — Day Edit is the fix); a day with at most one stamp of
   // the other type keeps the classic double-punch semantics (last row wins).
-  return d.lo.length > 1 && d.li.length > 1;
+  if (d.lo.length > 1 && d.li.length > 1) return true;
+  // T6 (cycle 22): a rep who took a morning break and is ON LUNCH
+  // right now has leaves [10:30, 12:30] and returns [10:45]: one leave more
+  // than returns, and the extra one is the OPEN break — the latest leave, after
+  // every return (breakOpenLeave_, the ONE rule Day Edit also uses). That is
+  // not a double-punch, and the collapse's "keep the last row" would delete
+  // the 10:30 morning leave, so the returned 10:45 pairs with nothing and the
+  // morning break becomes paid time. A double-punched leave is still damage:
+  // with a return AFTER both leaves ([12:00, 12:01] / [12:30]) the latest leave
+  // is not open, and with no return at all ([12:00, 12:01] / []) the counts
+  // differ by two, so the rule never applies.
+  if (d.lo.length === d.li.length + 1) {
+    const anchor = (d.in && d.in.length) ? timeToMins_(d.in[0]) : null;
+    return !!breakOpenLeave_(d.lo, d.li, anchor);
+  }
+  return false;
 }
 /** Shared scan. Returns { byKey: { 'empId|date|type': {rows:[rowIdx…], times:[…]} },
  *  days: { 'empId|date': { in:[times], out:[times], name } } } over the window. */
@@ -3111,10 +3126,20 @@ function repairTimesheetTimezone(opts) {
   lock.waitLock(15000);
   let moved = 0;
   try {
+    // T2: the plan was read before the lock — refuse if any row has moved.
+    const drift = [];
+    tabs.forEach((tabName) => {
+      const mine = changes.filter((c) => c.tab === tabName)
+        .map((c) => ({ row: c.row, empId: c.empId, date: c.oldDate, type: c.type, time: c.oldTime }));
+      if (mine.length) Array.prototype.push.apply(drift, repairRowsMoved_(ss.getSheetByName(tabName).getDataRange().getValues(), mine));
+    });
+    if (drift.length) {
+      throw new Error('Refusing: ' + drift.length + ' planned row(s) changed between the plan and the lock — nothing was written; re-run to plan afresh. ' + drift.slice(0, 5).join('; '));
+    }
     changes.forEach((c) => {
       const sh = ss.getSheetByName(c.tab);
-      sh.getRange(c.row, ADP.DATE + 1).setValue(c.newDate);
-      sh.getRange(c.row, ADP.TIME + 1).setValue(c.newTime);
+      sh.getRange(c.row, ADP.DATE + 1).setValue(sheetSafe_(c.newDate));
+      sh.getRange(c.row, ADP.TIME + 1).setValue(sheetSafe_(c.newTime));
       moved++;
       const emp = targets[c.empId];
       if (emp && emp.sheetId && c.tab === CONFIG.ADP_TAB && PUNCH_LABELS_.indexOf(c.type) >= 0) {
@@ -3167,6 +3192,28 @@ function splitDayRepairPlan_(punches, from, to) {
   });
   deletes.sort((a, b) => b.row - a.row);                       // bottom-up: a delete never shifts a later planned row
   return { deletes: deletes, kept: kept, otherDuplicates: otherDuplicates };
+}
+/** T2 (cycle 22) — the two editor-run Timesheet repair tools PLAN from a read
+ *  taken before the ScriptLock and then write BY ROW INDEX. Any locked writer
+ *  that deletes a row above a planned one in between (a rep's self-undo, a
+ *  manager's Day Edit delete, the cold archive — every one takes the lock, so
+ *  the window is the tool's own waitLock of up to 15 s) shifts the rows, and
+ *  the apply then rewrites or DELETES a different employee's punch. Rather
+ *  than re-plan, the apply re-reads INSIDE the lock and refuses unless every
+ *  planned row still holds exactly the punch the plan read (optimistic
+ *  concurrency: nothing is written on a mismatch; a re-run plans afresh).
+ *  Pure over the values array; `expected` = [{row (1-based), empId, date,
+ *  type, time?}]. Returns the mismatches, [] when the plan still holds. */
+function repairRowsMoved_(rows, expected) {
+  const out = [];
+  (expected || []).forEach(function (x) {
+    const r = rows[x.row - 1];
+    const now = r ? (String(r[ADP.EMP_ID] || '').trim() + '|' + normalizeDate_(r[ADP.DATE]) + '|' +
+      normalizeType_(String(r[ADP.COMMENTS])) + (x.time !== undefined ? '|' + normalizeTime_(r[ADP.TIME]) : '')) : '(no row)';
+    const want = x.empId + '|' + x.date + '|' + x.type + (x.time !== undefined ? '|' + x.time : '');
+    if (now !== want) out.push('row ' + x.row + ': planned ' + want + ', now ' + now);
+  });
+  return out;
 }
 function repairSplitDayPunches(opts) {
   assertManagerCaller_('repairSplitDayPunches');
@@ -3232,6 +3279,14 @@ function repairSplitDayPunches(opts) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
+    // T2: the plan (row indices for the deletes AND for each add's existing
+    // row) was read before the lock — refuse if any of them has moved.
+    const expected = plan.deletes.map((d) => ({ row: d.row, empId: d.empId, date: d.date, type: 'ClockIn', time: d.time }))
+      .concat(adds.filter((a) => a.existingRow).map((a) => ({ row: a.existingRow, empId: a.empId, date: a.date, type: a.type })));
+    const drift = repairRowsMoved_(sheet.getDataRange().getValues(), expected);
+    if (drift.length) {
+      throw new Error('Refusing: ' + drift.length + ' planned row(s) changed between the plan and the lock — nothing was written; re-run to plan afresh. ' + drift.slice(0, 5).join('; '));
+    }
     // Adds first: an update touches its own row and an append lands BELOW
     // every planned delete, so the delete indices read above stay valid.
     adds.forEach((a) => {
@@ -3804,8 +3859,8 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
     // Apply: updates by row index first (nothing has shifted yet).
     updates.forEach(u => {
       const timeFull = u.time + ':00';
-      sheet.getRange(u.rowIndex, ADP.TIME + 1).setValue(timeFull);
-      sheet.getRange(u.rowIndex, ADP.COMMENTS + 1).setValue(`ADJ-${u.type}`);
+      sheet.getRange(u.rowIndex, ADP.TIME + 1).setValue(sheetSafe_(timeFull));
+      sheet.getRange(u.rowIndex, ADP.COMMENTS + 1).setValue(sheetSafe_(`ADJ-${u.type}`));
       if (targetEmp.sheetId) {
         try {
           const dir = ['ClockIn', 'LunchIn'].indexOf(u.type) >= 0 ? 'IN' : 'OUT';
@@ -4075,7 +4130,7 @@ function addEmployee(payload) {
         hasBiweeklyAnchor: hasBiweeklyAnchor,
       });
       if (!check.ok) return { error: check.error };
-      sheet.appendRow(check.row);
+      sheet.appendRow(sheetSafeRow_(check.row));
       appended = true;
       // Post-append bookkeeping is best-effort INDIVIDUALLY: neither of these
       // may turn a completed add into a reported failure.
@@ -4141,7 +4196,7 @@ function offboardEmployee(repEmpId) {
       if (repEmail.toLowerCase() === String(callerEmp.email).toLowerCase()) {
         return { error: 'You cannot offboard yourself — another admin has to do that.' };
       }
-      sheet.getRange(targetRow + 1, EMP.EMAIL + 1).setValue('');
+      sheet.getRange(targetRow + 1, EMP.EMAIL + 1).setValue(sheetSafe_(''));
       invalidateRosterCache_();
       writeAuditLog_(callerEmp, 'EmployeeOffboard', repEmpId, '', false, 0,
         'id=' + repEmpId + '; name=' + repName, callerEmp.email);
@@ -4326,7 +4381,7 @@ function getOrCreateTimesheetArchiveTab_(ss, liveSheet) {
   if (!sheet) {
     sheet = ss.insertSheet(TIMESHEET_ARCHIVE_TAB);
     const width = Math.max(liveSheet.getLastColumn(), 9);
-    sheet.getRange(1, 1, 2, width).setValues(liveSheet.getRange(1, 1, 2, width).getValues());
+    sheet.getRange(1, 1, 2, width).setValues(sheetSafeRows_(liveSheet.getRange(1, 1, 2, width).getValues()));
     sheet.getRange(1, 1, 1, width).setFontWeight('bold');
     sheet.setFrozenRows(2);
   }
@@ -4853,8 +4908,8 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
   const newSs = createPinnedSpreadsheet_(name);
   const sh = newSs.getActiveSheet();
   sh.setName('Timesheet');
-  sh.getRange(1, 1, 2, 9).setValues([rows[0].slice(0, 9), rows[1].slice(0, 9)]);
-  sh.getRange(3, 1, matched.length, 9).setValues(matched);
+  sh.getRange(1, 1, 2, 9).setValues(sheetSafeRows_([rows[0].slice(0, 9), rows[1].slice(0, 9)]));
+  sh.getRange(3, 1, matched.length, 9).setValues(sheetSafeRows_(matched));
   sh.getRange(1, 1, 1, 9).setFontWeight('bold');
   sh.setFrozenRows(2);
   SpreadsheetApp.flush();
@@ -4944,6 +4999,12 @@ function buildTimesheetForEmployee_(emp, startDate, endDate) {
       // the two scalars above still carry the first stamp for older clients.
       breaks: breakPairs_(pm.LunchOut, pm.LunchIn, timeToMins_(pm.ClockIn))
         .map(b => ({ out: b.out, in: b.in })),
+      // T1 (cycle 22): the leave with no return yet — Day Edit renders it as
+      // a half row so a save round-trips it instead of deleting it.
+      openBreak: breakOpenLeave_(pm.LunchOut, pm.LunchIn, timeToMins_(pm.ClockIn)),
+      // Follow-on to T1: every OTHER unpaired stamp (damage). Day Edit shows
+      // each as a half row the save refuses, so none is deleted unseen.
+      strayBreaks: breakStrays_(pm.LunchOut, pm.LunchIn, timeToMins_(pm.ClockIn)),
       clockOut: pm.ClockOut || null,  adjClockOut: !!adjMap.ClockOut,
       hoursWorked, isIncomplete, inProgress,
     });
@@ -5156,6 +5217,7 @@ function empPendingAdjustments_(empId, dateIso) {
         // that is the punch it converts, not the one it adds. An older client
         // ignores the field and renders as before.
         action: String(rows[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set',
+        endTime: parEndTime_(rows[i]),   // T3
       });
     }
     return out;
@@ -5213,7 +5275,7 @@ function adjustLeaveBalance_(empId, bucket, delta) {
     const col = bucket === 'sick' ? EMP.SICK_LEAVE : EMP.ANNUAL_LEAVE;
     const current = parseFloat(rows[i][col]) || 0;
     const next = +(current + delta).toFixed(2);
-    sheet.getRange(i + 1, col + 1).setValue(next);
+    sheet.getRange(i + 1, col + 1).setValue(sheetSafe_(next));
     invalidateRosterCache_();
     return next;
   }
@@ -6263,7 +6325,7 @@ function getNextActions_(punches) {
 }
 function appendToAdpSheet_(emp, date, time, dir, commentValue) {
   getAdpSS_().getSheetByName(CONFIG.ADP_TAB)
-    .appendRow([emp.id, emp.name, date, time, dir, 'None', 'Missing punch', 'SUBMIT', commentValue]);
+    .appendRow(sheetSafeRow_([emp.id, emp.name, date, time, dir, 'None', 'Missing punch', 'SUBMIT', commentValue]));
 }
 function openPersonalSs_(sheetId) {
   if (!_personalSsCache[sheetId]) _personalSsCache[sheetId] = SpreadsheetApp.openById(sheetId);
@@ -6282,7 +6344,7 @@ function writeToEmployeeSheet_(emp, date, time, dir, punchType) {
     const data   = sheet.getDataRange().getValues();
     const rowIdx = data.findIndex(r => String(r[0]).trim() === ROW_LABEL_MAP[punchType]);
     const colIdx = data[0].findIndex(h => Number(h) === dayNum);
-    if (rowIdx !== -1 && colIdx !== -1) sheet.getRange(rowIdx + 1, colIdx + 1).setValue(time);
+    if (rowIdx !== -1 && colIdx !== -1) sheet.getRange(rowIdx + 1, colIdx + 1).setValue(sheetSafe_(time));
   } catch (e) {
     console.warn('writeToEmployeeSheet_ skipped: ' + e.message);
     try { writeAuditLog_(emp, 'PersonalSheetSyncFail', date, time, false, 0,
@@ -6303,7 +6365,7 @@ function clearFromEmployeeSheet_(emp, date, punchType) {
     const data   = sheet.getDataRange().getValues();
     const rowIdx = data.findIndex(r => String(r[0]).trim() === ROW_LABEL_MAP[punchType]);
     const colIdx = data[0].findIndex(h => Number(h) === dayNum);
-    if (rowIdx !== -1 && colIdx !== -1) sheet.getRange(rowIdx + 1, colIdx + 1).setValue('');
+    if (rowIdx !== -1 && colIdx !== -1) sheet.getRange(rowIdx + 1, colIdx + 1).setValue(sheetSafe_(''));
   } catch (e) {
     console.warn('clearFromEmployeeSheet_ skipped: ' + e.message);
     try { writeAuditLog_(emp, 'PersonalSheetSyncFail', date, '', false, 0,
@@ -6315,7 +6377,7 @@ function getOrCreateTimeOffSheet_() {
   let sheet = ss.getSheetByName(CONFIG.TIMEOFF_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(CONFIG.TIMEOFF_TAB);
-    sheet.appendRow(['EmployeeId','EmployeeName','Date','Type','Notes','Status','SubmittedAt']);
+    sheet.appendRow(sheetSafeRow_(['EmployeeId','EmployeeName','Date','Type','Notes','Status','SubmittedAt']));
     sheet.setFrozenRows(1);
   }
   return sheet;
@@ -6325,7 +6387,7 @@ function getOrCreatePunchAdjustSheet_() {
   let sheet = ss.getSheetByName(CONFIG.PUNCH_ADJUST_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(CONFIG.PUNCH_ADJUST_TAB);
-    sheet.appendRow(PAR_HEADERS);
+    sheet.appendRow(sheetSafeRow_(PAR_HEADERS));
     sheet.setFrozenRows(1);
     return sheet;
   }
@@ -6333,7 +6395,7 @@ function getOrCreatePunchAdjustSheet_() {
   // an existing tab predates the trailing Action column.
   try {
     if (sheet.getLastColumn() < PAR_HEADERS.length) {
-      sheet.getRange(1, 1, 1, PAR_HEADERS.length).setValues([PAR_HEADERS]);
+      sheet.getRange(1, 1, 1, PAR_HEADERS.length).setValues(sheetSafeRows_([PAR_HEADERS]));
     }
   } catch (e) { /* best-effort — a read still works, ACTION just reads '' */ }
   return sheet;
@@ -6420,26 +6482,50 @@ function submitPunchAdjustRequests(requests) {
     }
     const sheet = getOrCreatePunchAdjustSheet_();
     const existing = sheet.getDataRange().getValues();
+    // T3 (cycle 22): a Clock Out for a day whose RESUME is still pending is the
+    // rep's FINISH time for that resumed day — the one thing they cannot punch
+    // live once the day has ended, and the dup guard below used to refuse it,
+    // so an approval that landed the next day left the day with no Clock Out
+    // at all (INCOMPLETE, 0 h). It is attached to the resume request instead of
+    // queued beside it: two requests could be approved in either order, and a
+    // Clock Out approved first would move the stamp the resume converts.
+    const attach = {};   // clean index -> sheet row (1-based) of the pending resume
     for (let i = 1; i < existing.length; i++) {
       if (String(existing[i][PAR.EMP_ID]).trim() !== emp.id) continue;
       if (String(existing[i][PAR.STATUS]).trim().toLowerCase() !== 'pending') continue;
       const key = normalizeDate_(existing[i][PAR.DATE]) + '|' + String(existing[i][PAR.PUNCH_TYPE]).trim();
       if (batchSeen[key]) {
+        const isResume = String(existing[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume';
+        const ci = clean.findIndex(function (c) { return c.date + '|' + c.punchType === key; });
+        if (isResume && ci >= 0 && clean[ci].action === 'set' && clean[ci].punchType === 'ClockOut') {
+          const backAt = normalizeTime_(existing[i][PAR.REQ_TIME]).trim().substring(0, 5);
+          if (!(clean[ci].time > backAt)) {
+            return { success: false, error: 'Your finish time must be after the time you resumed (' + backAt + ').' };
+          }
+          attach[ci] = i + 1;
+          continue;
+        }
         return { success: false, error: 'You already have a pending ' +
           String(existing[i][PAR.PUNCH_TYPE]).trim() + ' adjustment for ' +
           normalizeDate_(existing[i][PAR.DATE]) + ' awaiting approval.' };
       }
     }
     const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
-    clean.forEach(function (c) {
-      sheet.appendRow([Utilities.getUuid(), emp.id, emp.name, c.date, c.punchType, c.time, c.reason, 'Pending', submittedAt, c.action]);
+    let attached = 0;
+    clean.forEach(function (c, ci) {
+      if (attach[ci]) {
+        sheet.getRange(attach[ci], PAR.END_TIME + 1).setValue(sheetSafe_(c.time));
+        attached++;
+        return;
+      }
+      sheet.appendRow(sheetSafeRow_([Utilities.getUuid(), emp.id, emp.name, c.date, c.punchType, c.time, c.reason, 'Pending', submittedAt, c.action, '']));
     });
     writeAuditLog_(emp, 'PunchAdjustRequest', clean[0].date, '', false, 0,
       'requested ' + clean.length + ' punch adjustment(s) pending approval');
     // B2: tell the managers. Deferred past releaseLock (M-7) — a MailApp send
     // inside the ONE project lock stalls every rep's punch.
     notifyAfter = function () { notifyManagersOfAdjustRequests_(emp, clean); };
-    return { success: true, count: clean.length };
+    return { success: true, count: clean.length, attachedToResume: attached };
   } catch (err) { return { success: false, error: err.message }; }
   finally {
     lock.releaseLock();
@@ -6493,6 +6579,9 @@ function managerGetPendingAdjustments() {
         // converts an existing clock-out and leaves an unpaid gap, which is a
         // materially different decision from adding a missed punch.
         action: String(rows[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set',
+        // T3: a resume's filed finish ('' when none) — the manager sees whether
+        // approving closes the day or leaves it for the rep to clock out.
+        endTime: parEndTime_(rows[i]),
         submittedAt: normalizeAuditTs_(rows[i][PAR.SUBMITTED_AT]),
       });
     }
@@ -6578,8 +6667,9 @@ function punchAdjustDecideAll_(reqIds, newStatus) {
             '-day adjust window — deny it (the rep can re-submit if still needed).');
           return;
         }
+        const endTime = parEndTime_(rows[i]);   // T3 — '' when none was filed
         if (action === 'resume') {
-          const res = resumeShiftForEmployee_(targetEmp, date, reqTime, callerEmp.email, reason);
+          const res = resumeShiftForEmployee_(targetEmp, date, reqTime, callerEmp.email, reason, endTime);
           if (res && res.error) { fail(id, res.error); return; }
           // F6: a resume writes OUTSIDE the ctx — it retypes the ClockOut row
           // to ADJ-LunchOut and appends an ADJ-LunchIn — so this employee's
@@ -6596,7 +6686,7 @@ function punchAdjustDecideAll_(reqIds, newStatus) {
         }
         // M-7: the decision email is DEFERRED to the post-lock finally — a
         // MailApp send inside the ONE project lock stalls every rep's punch.
-        notifyAfter = function () { notifyEmployeeOfAdjustDecision_(targetEmp, date, punchType, reqTime, reason, 'Approved', action); };
+        notifyAfter = function () { notifyEmployeeOfAdjustDecision_(targetEmp, date, punchType, reqTime, reason, 'Approved', action, endTime); };
         later.push(notifyAfter);
       } else {
         const targetForAudit = lookupEmployeeById_(empId) || { id: empId, name: empName, email: '' };
@@ -6605,7 +6695,7 @@ function punchAdjustDecideAll_(reqIds, newStatus) {
         notifyAfter = function () { notifyEmployeeOfAdjustDecision_(targetForAudit, date, punchType, reqTime, reason, 'Denied', action); };
         later.push(notifyAfter);
       }
-      sheet.getRange(i + 1, PAR.STATUS + 1).setValue(newStatus);
+      sheet.getRange(i + 1, PAR.STATUS + 1).setValue(sheetSafe_(newStatus));
       results.push({ reqId: id, success: true });
     });
     const failed = results.filter((r) => !r.success).length;
@@ -6663,7 +6753,7 @@ function notifyManagersOfAdjustRequests_(emp, entries) {
  *  adjustments were the one request type with no notification at all.
  *  Best-effort (INV-14) — a failed send never affects the approval, which is
  *  already committed — and PHI-free (a punch time is not clinical data). */
-function notifyEmployeeOfAdjustDecision_(emp, date, punchType, reqTime, reason, newStatus, action) {
+function notifyEmployeeOfAdjustDecision_(emp, date, punchType, reqTime, reason, newStatus, action, endTime) {
   if (!emp || !emp.email) return;
   try {
     const approved = newStatus === 'Approved';
@@ -6682,9 +6772,14 @@ function notifyEmployeeOfAdjustDecision_(emp, date, punchType, reqTime, reason, 
                `Time:    ${reqTime}\n`;
     if (hasReason) body += `Reason:  ${reason}\n`;
     body += `Status:  ${newStatus}\n\n`;
+    // T3: "clock out as usual" is only true while the day is still today and
+    // no finish was filed — the live path cannot clock out of an ended day.
     const approvedLine = resume
-      ? `Your shift is open again. Your earlier clock-out is now a break, so the time ` +
-        `you were away is unpaid — clock out as usual when you finish.`
+      ? (endTime
+          ? `Your shift was reopened. Your earlier clock-out is now a break, so the time ` +
+            `you were away is unpaid, and your ${endTime} finish is recorded as your clock-out.`
+          : `Your shift is open again. Your earlier clock-out is now a break, so the time ` +
+            `you were away is unpaid — clock out as usual when you finish.`)
       : `The punch has been added to your timesheet.`;
     const deniedLine = `No change was made to your timesheet. Contact your manager if you still need this fixed.`;
     body += (approved ? approvedLine : deniedLine) + `\n\n`;
@@ -6730,7 +6825,17 @@ function notifyEmployeeOfAdjustDecision_(emp, date, punchType, reqTime, reason, 
  *  Returns {} on success or {error} — the caller surfaces it to the manager
  *  rather than marking the request approved.
  */
-function resumeShiftForEmployee_(targetEmp, date, resumeTime, actorEmail, reason) {
+/** T3 — a PunchAdjustRequests row's filed finish (HH:mm), or ''. The column is
+ *  a trailing add: a row read from a tab whose header has not self-healed yet
+ *  is SHORT, and normalizeTime_(undefined) is the string "undefined" — which
+ *  would read as a finish time. Absent and blank are both "none". */
+function parEndTime_(row) {
+  const v = row ? row[PAR.END_TIME] : null;
+  if (v === undefined || v === null || v === '') return '';
+  const hm = normalizeTime_(v).trim().substring(0, 5);
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(hm) ? hm : '';
+}
+function resumeShiftForEmployee_(targetEmp, date, resumeTime, actorEmail, reason, endTime) {
   // Re-validate at APPROVAL time: the day can be edited while the request
   // waits, and converting a ClockOut that is no longer there would leave the
   // rep with a LunchIn and no matching leave (an unpaired half, which
@@ -6744,10 +6849,25 @@ function resumeShiftForEmployee_(targetEmp, date, resumeTime, actorEmail, reason
   if (!(resumeTime > coHm)) {
     return { error: 'The resume time (' + resumeTime + ') is not after the Clock Out (' + coHm + ').' };
   }
+  // T3 (cycle 22): a resume approved after its day has ENDED must carry the
+  // finish. Converting the Clock Out without one leaves the day with a break and
+  // no Clock Out — INCOMPLETE, 0 hours, in the timesheet, the pay statement and
+  // the accrual — and the rep cannot clock out of a past day live. Refuse with
+  // the way out instead; the whole check runs BEFORE any write.
+  const end = String(endTime || '').trim().substring(0, 5);
+  const dayOver = date < fmtDateTz_(new Date(), empTz_(targetEmp));
+  if (end && !(end > resumeTime)) {
+    return { error: 'The finish time (' + end + ') is not after the resume time (' + resumeTime + ').' };
+  }
+  if (dayOver && !end) {
+    return { error: 'The day this resume reopens (' + date + ') has ended and no finish time was filed, ' +
+      'so approving it would leave the day with no Clock Out. Ask the rep to add their finish with ' +
+      'Adjust → Clock Out (it attaches to this request), then approve.' };
+  }
   const outFull = coHm + ':00';
   const inFull = resumeTime + ':00';
   // Convert in place — the row keeps its TIME and changes only what it means.
-  co.sheet.getRange(co.rowIndex, ADP.COMMENTS + 1).setValue('ADJ-LunchOut');
+  co.sheet.getRange(co.rowIndex, ADP.COMMENTS + 1).setValue(sheetSafe_('ADJ-LunchOut'));
   appendToAdpSheet_(targetEmp, date, inFull, 'IN', 'ADJ-LunchIn');
   if (targetEmp.sheetId) {
     // Best-effort mirror (INV-59): drop the stale Clock Out, write the pair.
@@ -6760,6 +6880,12 @@ function resumeShiftForEmployee_(targetEmp, date, resumeTime, actorEmail, reason
     resumeTime + ' (unpaid gap)' + (reason ? ' — ' + reason : '');
   writeAuditLog_(targetEmp, 'LunchOut', date, outFull, true, daysBack, note, actorEmail);
   writeAuditLog_(targetEmp, 'LunchIn', date, inFull, true, daysBack, note, actorEmail);
+  // The filed finish becomes the day's Clock Out. The old one was just
+  // converted, so this APPENDS (writeAdjustPunchForEmployee_ finds no ClockOut).
+  if (end) {
+    writeAdjustPunchForEmployee_(targetEmp, date, 'ClockOut', end, actorEmail,
+      'finish of a resumed shift' + (reason ? ' — ' + reason : ''));
+  }
   return {};
 }
 /** Writes a single ADJ-{punchType} punch for a TARGET employee (the approve
@@ -6780,8 +6906,8 @@ function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEma
     ? (ctx.idx[date + '|' + punchType] ? { sheet: ctx.sheet, rowIndex: ctx.idx[date + '|' + punchType] } : null)
     : findExistingPunch_(targetEmp.id, date, punchType);
   if (existing) {
-    existing.sheet.getRange(existing.rowIndex, ADP.TIME + 1).setValue(timeFull);
-    existing.sheet.getRange(existing.rowIndex, ADP.COMMENTS + 1).setValue(commentLabel);
+    existing.sheet.getRange(existing.rowIndex, ADP.TIME + 1).setValue(sheetSafe_(timeFull));
+    existing.sheet.getRange(existing.rowIndex, ADP.COMMENTS + 1).setValue(sheetSafe_(commentLabel));
   } else {
     appendToAdpSheet_(targetEmp, date, timeFull, dir, commentLabel);
   }
@@ -7106,6 +7232,56 @@ function breakPairs_(lunchOut, lunchIn, clockInMins) {
     j++;
   }
   return pairs;
+}
+/** The OPEN break of a day, if it has one: the latest leave (LunchOut) that
+ *  comes after every return (LunchIn) — the rep is out right now, or forgot to
+ *  punch back. Returns that leave's raw stamp, or null. Pure; the same
+ *  clock-in anchor as breakPairs_, so an overnight shift orders the same way.
+ *
+ *  WHY it exists (cycle 22 T1): breakPairs_ ships PAIRS only, which is right
+ *  for the hours — an open leave deducts nothing yet — but Day Edit prefilled
+ *  its break list from those pairs alone. A manager opening the day of a rep
+ *  who was on lunch saw no break, and saving (to fix a mistyped clock-in, say)
+ *  submitted an empty list, which DELETES the lone LunchOut: the rep flipped
+ *  back to "clocked in", the state machine then refused their LunchIn, and the
+ *  lunch was paid. The server already accepts a trailing half row for exactly
+ *  this case; the client simply never received one to send back. */
+function breakOpenLeave_(lunchOut, lunchIn, clockInMins) {
+  const anchor = (typeof clockInMins === 'number') ? clockInMins : null;
+  const keyed = (v) => (Array.isArray(v) ? v : (v === null || v === undefined || v === '' ? [] : [v]))
+    .map((t) => ({ raw: t, mins: breakSortKey_(t, anchor) }))
+    .filter((x) => x.mins !== null);
+  const outs = keyed(lunchOut).sort((a, b) => a.mins - b.mins);
+  if (!outs.length) return null;
+  const last = outs[outs.length - 1];
+  const lastIn = keyed(lunchIn).reduce((m, x) => Math.max(m, x.mins), -Infinity);
+  return last.mins > lastIn ? last.raw : null;
+}
+/** The day's STRAY break stamps: every leave and return that neither pairs
+ *  (breakPairs_) nor is the open leave (breakOpenLeave_). The punch flow cannot
+ *  make one — the state machine alternates leave/return — so a stray is damage:
+ *  a hand-edited sheet, a double punch the debounce missed, a return typed on
+ *  the wrong row. Pure; `{ outs: [raw], ins: [raw] }`, each in time order.
+ *
+ *  WHY it ships (cycle 22 follow-on to T1): Day Edit prefills from the pairs
+ *  and the open leave, so a stray was never shown — and the save, which
+ *  reconciles the sheet to the submitted list, silently DELETED it. Shipped,
+ *  it renders as a half row the parser refuses mid-list, so the manager must
+ *  complete it or remove it on purpose before the day will save. */
+function breakStrays_(lunchOut, lunchIn, clockInMins) {
+  const anchor = (typeof clockInMins === 'number') ? clockInMins : null;
+  const keyed = (v) => (Array.isArray(v) ? v : (v === null || v === undefined || v === '' ? [] : [v]))
+    .map((t) => ({ raw: t, mins: breakSortKey_(t, anchor) }))
+    .filter((x) => x.mins !== null)
+    .sort((a, b) => a.mins - b.mins);
+  const outs = keyed(lunchOut), ins = keyed(lunchIn);
+  // Consume by VALUE, once each, so two identical stamps (a double punch)
+  // leave the second behind as the stray it is.
+  const take = (list, raw) => { const k = list.findIndex((x) => x.raw === raw); if (k >= 0) list.splice(k, 1); };
+  breakPairs_(lunchOut, lunchIn, clockInMins).forEach((p) => { take(outs, p.out); take(ins, p.in); });
+  const open = breakOpenLeave_(lunchOut, lunchIn, clockInMins);
+  if (open !== null) take(outs, open);
+  return { outs: outs.map((x) => x.raw), ins: ins.map((x) => x.raw) };
 }
 function calcHours_(clockIn, clockOut, lunchOut, lunchIn) {
   let inMins = timeToMins_(clockIn), outMins = timeToMins_(clockOut);

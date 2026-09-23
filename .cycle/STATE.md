@@ -1,27 +1,69 @@
 # Cycle State
 
 ## Current
-Cycle: 21 — CLOSED 2026-09-21, and its between-cycles follow-on **21post
-(T1–T10) CLOSED 2026-09-23**; both blocks are in `.cycle/HISTORY.md`.
-**No cycle is open.** The next `/audit` or `/broad-scan` opens cycle 22.
-Phase: idle
-Scope: —
+Cycle: 22 — opened 2026-09-23 by a `/broad-scan` (99 findings: 0 Critical /
+3 High; nine-batch implementation plan). Cycle 21 + 21post are in HISTORY.md.
+Phase: implement
+Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9) + S2 DONE + Batch 2 DONE (T1, T3, T2, T6, C1, C5) + follow-ons F1–F5 DONE + Batch 3 DONE (I1, C4, K2, K6, C3, D6, D7, C6, C10, C11)
 Test Command: manual
-Estimates: — (nothing open; record S/M/L + hours per batch BEFORE the first edit)
+Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent) · S2 (phased, blanket): L (~9 h) — helper+pin 1h · wrap every write site ~180 + pin repairs 6h · derived pin + bite-checks 2h | S2 Actual: ~5 h · Batch 2: M (~11.5 h) — T1 M 3h · T3 M 3h · T2 S 1.5h · T6 S 1.5h · C1 S 1.5h · C5 S 1h | Batch 2 Actual: ~4.5 h · Follow-ons F1–F5: M (~7 h) — F1 cleanup lock S 1h · F2 TSV twin S 1h · F3 stored-formula scan M 2h · F4 Spanish grid + grow-first net S 1h · F5 Day Edit stray leaves M 2h | Follow-ons Actual: ~3.5 h · Batch 3: L (~12 h) — I1 M 2.5h · C4 S 1.5h · K2 S 1.5h · K6 S 1h · C3 S 1h · D6 S 1.5h · D7 S 1h · C6 S 1h · C10 S 1h · C11 S 0.5h | Batch 3 Actual: ~5 h
 Subsystem cycles since last Seams audit: 1 — reset to 0 by the 2026-09-18 audit
 (batch S), +1 for the 21post reflection. The cadence is every 4.
 Updated: 2026-09-23
 
 ## In progress (facts to carry forward — NOT judgments)
-- Nothing is in flight. T1–T10 are all MERGED. T1–T9 are DEPLOYED
-  (2026-09-22/23). **T10 (`Hawaii only`, `MDX Hawaii`) is merged but NOT
-  deployed.**
+- Batch 1, S2, Batch 2 and the follow-ons are committed on
+  `claude/optimistic-newton-gkdb3v`; NOT deployed. Blocks: `.cycle/blocks/22-{B1,S2,B2,FO}-broad-implement.md`.
+- The broad-scan's nine-batch plan is in the session report (not on disk —
+  `/broad-scan` writes no block). Batches 2–9 remain; the finding IDs (S*, T*,
+  M*, C*, K*, I*, D*, A*, U*, X*) are the scan's.
 
 ## Completed this cycle
-- (No cycle is open. 21post's record is in HISTORY.md, the ten
-  `.cycle/blocks/21post-*-broad-implement.md` blocks and `21post-a-reflect.md`.)
+- S1 | Tests.js, 10_core.js | the editor suite is owner-only (_assertSuiteCaller_ first in every non-pure public Tests.js function; runSingleTest takes test_ names only)
+- X2 | run.js, harness.js | PUBLIC-GATE: every public function in every PUSHED file (the directory) carries a gate, a reasoned allow entry, or a gated delegate
+- S3 | script_core.html, cn/script_callnotes.html | errorStateHtml_ beaconMsg override; search failures no longer ship the typed query to ClientErrors
+- S4 | 61_forms.js | FormTokenCreated logs tokenRef=<8 chars>…, not the live token
+- S9 | 61_forms.js | public submit validates the token shape + existence before the global lock; lock timeout is a polite retry
+- T1 | 20_timeclock.js, tc/script_manager.html | Day Edit ships + renders the OPEN break (openBreak); a save no longer deletes it
+- T3 | 00_config.js, 20_timeclock.js, tc/*.html | a Clock Out filed while a resume is pending ATTACHES as its finish (PAR EndTime); a past-day resume needs one; approval writes it
+- T2 | 20_timeclock.js | repairRowsMoved_: both repair tools re-verify inside the lock and refuse on drift
+- T6 | 20_timeclock.js | the doctor treats a finished break + one in progress as legal (breakOpenLeave_)
+- C1 | 30_callnotes.js | the archive mover grows the grid's rows before its positional write (both tiers)
+- C5 | 10_core.js | the purge keeps a spare row (never empties the grid)
+  Block: `.cycle/blocks/22-B2-broad-implement.md`
+- I1 | intake/script_intake.html | a cross-language amend holds only the amendment's answers (no snapshot restored over it, no draft in its gaps)
+- C4 | cn/script_callnotes.html | the Save & Compose transaction follows the rep into External: its send completes it, its cancel rolls back
+- K2 + K6 | kb/script_kb.html | the drawer home keeps the lookups being typed in; a fresh build forgets the last caller, stale responses dropped
+- C3 | cn/script_callnotes.html | History notes render only under the range they were loaded for; the 90-day cap refused client-side
+- D6 | train/script_empdocs.html | manager actions patch around the half-written document
+- D7 | train/script_coaching.html | a coaching reply survives re-renders
+- C6 | cn/script_callnotes.html | the Scratchpad saves text typed during an in-flight save, even after close
+- C10 | cn/script_callnotes.html | a live refresh keeps a note confirmed after its request
+- C11 | cn/script_callnotes.html | clearing the form ends running dictation first
+  Block: `.cycle/blocks/22-B3-broad-implement.md`
+- F1 | Tests.js | every live-tab positional delete in the suite goes through _deleteRowsWhereLocked_ (ScriptLock from snapshot to last delete)
+- F2 | script_core.html, metrics/script_metrics.html | tsvCell_/tsvRow_ — the client twin of sheetSafe_ on every "Copy table" line
+- F3 | 10_core.js, cn/script_callnotes.html | adminScanStoredFormulas + Admin → System → Stored formulas (read-only, on demand)
+- F4 | 10_core.js, 51_spanish.js | appendRowsSafe_ grows the grid first; the Spanish auto-assign batch rides it; derived grow-first net
+- F5 | 20_timeclock.js, tc/script_manager.html | breakStrays_ → strayBreaks; Day Edit flags each stray and refuses the save until resolved
+  Block: `.cycle/blocks/22-FO-broad-implement.md`
+- S2 | 14 server files + DevTools.js, lint-server.mjs, run.js | every sheet write goes through sheetSafe_/Row_/Rows_ (183 sites, AST-wrapped); '@' writers use sheetText_/sheetTextRows_/appendRowsTextSafe_ after re-asserting '@'; SHEET-SAFE lint rule + derived pins. Block: `.cycle/blocks/22-S2-broad-implement.md`
 
 ## Pending / not yet done
+- **Deploy Batch 2** with Batch 1 + S2, and its walk (block): Day Edit on a rep
+  on lunch keeps the leave; a resume + a filed finish closes the day; the
+  editor's new `managerSaveDay_openBreakRoundTrips` + rewritten resume test.
+- **Deploy S2** with Batch 1 + S2's walk (its block): `=1+1` time-off note reads
+  back as text; a `+1 555…` callback and a `- …` issue read back exactly; the
+  scratchpad and a QA comment starting `- ` come back with no apostrophe.
+- **Deploy the follow-ons** (F1–F5) with the rest, and their walk (block):
+  Stored formulas scan + hand-fix each non-operator hit; Copy table pastes as
+  text; Day Edit refuses a day with an unmatched break punch until resolved;
+  editor `managerSaveDay_strayBreakRefused`.
+- **Deploy Batch 1** + its walk (block's OPERATOR ACTIONS): editor
+  runSmokeTests green; a non-owner's google.script.run.runSmokeTests() refused;
+  a failed search's ClientErrors row carries no query; FormTokenCreated shows
+  tokenRef=; a public form still submits.
 - **Deploy T10** — `cd web-app && clasp push -f`, then New version.
 - **The walk — NOTHING in T1–T10 has been walked**; its whole regression
   record is the harnesses. S64 (six T3 + four T4 + six T7 + two T7b + one T8 +
@@ -44,11 +86,43 @@ Updated: 2026-09-23
   g123's federal fail-open, or match the Department Dashboard's no-fallback.
 
 ## Open follow-on items
+- **Batch 1 follow-ons:** assertNotProdInstance_ still permits when
+  INSTANCE_IS_PROD is unset (decision tied to the DEV instance); pre-deploy
+  ClientErrors/AuditLog rows may hold typed queries / tokens (optional
+  redaction). (The cleanup lock is DONE — F1.)
+- **Batch 2 follow-ons:** the brief does not flag "resume waiting for a
+  finish" (not implemented — the Manage card + rep chip say it). (Spanish grid
+  growth and Day Edit strays are DONE — F4, F5.)
+- **Docs synced 2026-09-23 (`/sync-docs`)** for Batch 1, S2, Batch 2 and the
+  follow-ons: gotchas g143–g146 + g15/g26/g132 amended; INV-243..248; walk
+  steps on S1/S7/S23/S42/S61/S96/S105 + new S114; the one-boundary decision +
+  the resume amendment; operator-state (owner-only suite, stored-formula
+  clean-up, PAR EndTime, repair refusal); modules, both logs, the test README.
+- **Deploy Batch 3** with the rest, and its walk (22-B3 block): cross-language
+  and same-language Intake amend; Save & Compose → External send/cancel; the
+  drawer typed before the tree loads + reopen; History failure / over-cap;
+  Employee Docs release beside a half-written doc; a coaching reply across a
+  filter chip; the Scratchpad Save-now-type-close race.
+- **Batch 3 follow-ons (22-B3 block):** a drawer search back to home still
+  rebuilds the lookups; C4 changed when the "Note edits discarded" toast fires
+  on a switch (confirm on the walk); Training's dirty guard could adopt D6's
+  targeted patch. Docs SYNCED 2026-09-23: g141/g84/g85/g86/g94/g98
+  amended, new g147, INV-249/250, walk steps on S34/S59/S64/S69/S99/S113 +
+  new S115, the Save & Compose and Intake-amend decision amendments, module
+  notes, both logs.
+- **Follow-on follow-ons (22-FO block):** the stored-formula scan is on demand
+  only (no findings-list entry, no resume past the budget); the mock lacks
+  `adminScanStoredFormulas` (add with X1's Admin fixtures); the sheet doctor
+  does not share `breakStrays_`.
+- **S2 follow-ons:** (client TSV twin and the stored-formula scanner are DONE —
+  F2, F3.) Platform assumption to confirm on the walk: a '@' cell stores a leading
+  apostrophe literally (the reason for the plain-text path).
 - **Invariant numbers — do not reuse any:** INV-225..227 RESERVED (cycle 20);
   INV-229..232 + an INV-213 amendment PROPOSED (cycle 21); INV-240..242
   PROPOSED (21post: fixtures the server can still produce · tone/explanation
   agree both ways · doc UI paths resolve against `TOOLS` labels). None is in
-  the library yet. **Next free is INV-243.**
+  the library yet. INV-243..250 were WRITTEN by cycle 22's /sync-docs passes.
+  **Next free is INV-251.**
 - **An intermittent DOM pin**: `the resume request states the unpaid gap
   before it is filed` (runDom.js) failed once during T7 and has passed every
   run since. Flagged, not dismissed — a flake is not a root cause.
@@ -64,6 +138,21 @@ Updated: 2026-09-23
   decided by which items carry `listed cities` in col I.
 
 ## Decisions made (so the next session doesn't re-litigate)
+- **S2 deferred out of Batch 1** (operator, 2026-09-23) — then implemented in
+  its most complete form on the operator's request: a BLANKET boundary over
+  every write (not a per-field judgement of which text is user-supplied).
+- **T3: the finish RIDES the resume request** (one request, attach on submit)
+  rather than a second ClockOut request — two requests' approval order would
+  matter. A past-day resume with no finish is refused, not guessed.
+- **T2: verify-then-refuse inside the lock**, not re-plan — nothing is written
+  on drift; the operator re-runs.
+- **'@' cells write raw after re-asserting '@'** rather than through
+  sheetSafe_: a plain-text cell would store the apostrophe literally.
+- **The suite guard is "active === effective"**, not a MANAGER_EMAILS check:
+  the editor and owner-installed triggers pass, every web visitor is refused;
+  it reads Session directly so _TEST_OVERRIDE_EMAIL cannot satisfy it.
+- **Test functions keep their names**; a first-statement guard (pinned) was
+  chosen over renaming 337+ functions and their doc references.
 - Price and area eligibility are ONE panel; the address UPGRADES the answer
   rather than gating it.
 - The lookup band lives in the LANDING HOST, never the shared section renderer,
@@ -82,7 +171,9 @@ Updated: 2026-09-23
   amber** with their own explanations (operator, 2026-09-22).
 
 ## Where I left off
-Cycle 21 and its 21post follow-on are closed and archived; nothing is in
-flight. The operator's next steps are the T10 deploy and the S64 walk. The next
-session's is either a fresh `/broad-scan` (opens cycle 22) or the DEV instance
-— the one debt both recent reflections named as the weakest axis.
+Batch 1, S2, Batch 2, follow-ons F1–F5 and Batch 3 of cycle 22 are committed
+and pushed; none is deployed. Docs are synced through Batch 3. Next: deploy +
+the walks (S1, S7, S23, S34, S42, S59, S61, S64, S69, S96, S99, S105, S113,
+S114, S115 carry the cycle-22 steps); or
+`/broad-implement Batch 4` (Metrics and manager verdicts — M4, M1, X3, M2, M3,
+M7, M8, M9, D1, D2).

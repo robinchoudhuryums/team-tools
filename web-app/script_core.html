@@ -554,8 +554,17 @@ function propBudgetHtml_(b, extraStyle) {
     (pct >= 80 ? ' \u00b7 ' + pct + '%' : '') + '</div>';
 }
 
-function errorStateHtml_(msg) {
-  try { if (typeof errBeaconSend_ === 'function') errBeaconSend_(String(msg || ''), '', 'errorState'); } catch (e) {}
+// `beaconMsg` (cycle 22 S3): what the ClientErrors beacon records, when the
+// on-screen message carries something the rep TYPED. The beacon lands in the
+// ClientErrors tab of the ADP/payroll sheet — labelled PHI-free, kept forever,
+// and read into the manager spike-alert mail — and a Call Notes search query is
+// a patient name, a phone number or a TRX. Show the query to the rep; never
+// ship it. A caller interpolating user input MUST pass this (the S3 pin
+// derives the call sites). The display string is escaped HERE, once, so a
+// caller passes it RAW — pre-escaping showed O'Brien as O&#39;Brien.
+function errorStateHtml_(msg, beaconMsg) {
+  var beacon = (typeof beaconMsg === 'string') ? beaconMsg : String(msg || '');
+  try { if (typeof errBeaconSend_ === 'function') errBeaconSend_(beacon, '', 'errorState'); } catch (e) {}
   return '<div class="error-state" role="alert">' + icon('warning', 16) +
     '<span>' + esc(String(msg || 'Something went wrong.')) + '</span></div>';
 }
@@ -1628,6 +1637,30 @@ function manualCopyModal_(text, what) {
   field.scrollLeft = 0;
   field.scrollTop = 0;
   return overlay;
+}
+
+/** ONE cell of a TSV the rep pastes into a spreadsheet — the CLIENT twin of the
+ *  server's `sheetSafe_` (10_core.js, cycle 22 S2). The server boundary stops a
+ *  formula reaching the stores, but "Copy table" hands the same text to the
+ *  manager's clipboard, and a Sheets PASTE parses a cell exactly as setValue
+ *  does: `=…`, and `+`/`-`/`@` before anything that is not a number, becomes a
+ *  formula in THEIR sheet. A leading apostrophe makes the cell literal text on
+ *  paste and is not kept in its value. A tab or line break inside a value would
+ *  split the row, so it becomes a space. The rule is a MIRROR of sheetSafe_, and
+ *  a Node pin drives both over one grid, so a drift fails CI (g120). */
+function tsvCell_(v) {
+  if (v == null) return '';
+  if (typeof v !== 'string') return String(v);
+  var s = v.replace(/[\t\r\n]+/g, ' ');
+  var t = s.replace(/^\s+/, '');
+  var c = t.charAt(0);
+  if (c === '=') return "'" + s;
+  if ((c === '+' || c === '-' || c === '@') && !/^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(t.replace(/\s+$/, ''))) return "'" + s;
+  return s;
+}
+/** One TSV line — every cell through tsvCell_. The only `join('\t')` in the client. */
+function tsvRow_(cells) {
+  return cells.map(tsvCell_).join('\t');
 }
 
 /** Copy, and give the rep the RIGHT feedback for the outcome.

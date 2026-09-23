@@ -57,9 +57,9 @@ function devScrubRoster_(keeperEmail) {
       cnCol[i][0] = '';          // never point a dev rep at a real per-rep PHI Sheet
       anonymized++;
     }
-    sheet.getRange(2, EMP.EMAIL + 1, n, 1).setValues(emailCol);
-    sheet.getRange(2, EMP.IS_MANAGER + 1, n, 1).setValues(mgrCol);
-    sheet.getRange(2, EMP.CALL_NOTES_SHEET_ID + 1, n, 1).setValues(cnCol);
+    sheet.getRange(2, EMP.EMAIL + 1, n, 1).setValues(sheetSafeRows_(emailCol));
+    sheet.getRange(2, EMP.IS_MANAGER + 1, n, 1).setValues(sheetSafeRows_(mgrCol));
+    sheet.getRange(2, EMP.CALL_NOTES_SHEET_ID + 1, n, 1).setValues(sheetSafeRows_(cnCol));
     invalidateRosterCache_();
     Logger.log('devScrubRoster_: anonymized ' + anonymized + ' email(s), kept ' + keeperRows +
       ' keeper row(s) for ' + keep + '. PHI stores untouched (they start empty on dev).');

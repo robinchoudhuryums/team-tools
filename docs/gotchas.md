@@ -367,6 +367,21 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   one direction without an operator decision. Pinned by
   `test_recordPunch_liveSequenceGuard` +
   `test_managerSaveDay_collapsesDuplicateRows` + the M-1 Node pins.
+  **AMENDED (cycle 22 T1 + follow-on F5, 2026-09-23): the reconcile is only
+  as lossless as its INPUT, and the break list must carry every break stamp
+  on the day.** The save treats the submitted list AS the day, so a stamp
+  the prefill never showed was deleted. Two shapes were missing. The OPEN
+  break: a rep on lunch has a LunchOut with no return, and `breaks` shipped
+  pairs only. A manager fixing a mistyped clock-in therefore deleted the
+  leave, the rep flipped to "clocked in", their LunchIn was refused, and the
+  lunch was paid. The day now ships `openBreak` (`breakOpenLeave_`), rendered
+  as the trailing half row the parser accepts. The STRAYS: unpaired stamps
+  that are not the open break, which is damage the punch flow cannot make.
+  The day now ships `strayBreaks` (`breakStrays_`). Day Edit renders each as
+  a FLAGGED half row placed before the open break, and the save refuses until
+  the manager completes the row or removes it on purpose. Verify: the T1 and
+  F5 Node/DOM pins, `test_managerSaveDay_openBreakRoundTrips` and
+  `test_managerSaveDay_strayBreakRefused`.
 
 <a id="g16-cn-date-local-is-a-sheets-coerced"></a>
 
@@ -649,7 +664,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   narrowed `ADMIN_EMAILS` or a non-roster installer (the `reconcileCallNotes`
   F1/F2 cycle-6 regression — INV-109/INV-136). `removeAutomationTriggers` also uses this
   gate — without it, a non-manager rep could silently disable all
-  automation triggers.
+  automation triggers. **AMENDED (cycle 22 S1): the editor-suite runners are
+  the same exposure and a DIFFERENT gate.** `runAllTests`, `runSmokeTests`,
+  `setupTestEnvironment`, `cleanupTestData` and every `test_*` were public
+  too (see g143). They gate on the OWNER (`_assertSuiteCaller_`), not
+  `assertManagerCaller_`, because a manager is exactly who must not be able to
+  seed or sweep TEST_ rows on a live store from a browser.
+  `runNightlySelfTest` keeps the trigger gate, since it runs as the
+  installer.
 
 <a id="g27-pto-balance-transitions"></a>
 
@@ -2052,6 +2074,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   on flag / resolve / pin toggles — the second click is silently
   ignored while the first RPC is in flight. Edits and emails remain
   pessimistic — they require a server-issued noteId.
+  **AMENDED (cycle 22 C10, 2026-09-23): the optimistic contract has to
+  survive the live refresh too.** `cnRefreshRollingStack_` (g98) replaces the
+  stack with the server's list, so a poll requested BEFORE a save confirmed
+  carried a list without that note, and the just-saved note vanished for up to
+  a minute. Each confirm now stamps a monotonic `_confirmSeq` (a
+  client-transient key the render signature ignores). A refresh keeps every
+  confirmed note newer than its own request, alongside the `_pending` ones. It
+  is a counter, not a clock: a confirm and a poll can share a millisecond.
+  Verify: the C10 DOM pin, both ways (kept against an older poll, dropped by a
+  newer one).
 
 <a id="g85-form-completion-timer-is-persisted-to-localstorage"></a>
 
@@ -2065,7 +2097,11 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   payload as `subformData.completionSeconds`; the manager Stats tab
   medians over notes that captured one. Any new form-clearing path
   must call `cnFormTimerReset_` or the next note will inherit the
-  prior session's elapsed time.
+  prior session's elapsed time. **AMENDED (cycle 22 C4):** "a form-clearing
+  path" includes every way a Save & Compose transaction COMPLETES, and there
+  are two: the department send and, since C4, the External send the flow
+  follows the rep into. Both go through `cnCompleteComposeFlow_` (form, timer,
+  draft), so a third completion path should call it rather than clear by hand.
 
 <a id="g86-sticky-form-draft-is-auto-saved-on"></a>
 
@@ -2077,7 +2113,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   successful-submit path and the explicit Clear Note button call
   `cnClearStickyFormDraft_`. **If you add a new form-clearing code
   path, call it there too** or the draft will resurrect on next load
-  even though the rep meant to start fresh.
+  even though the rep meant to start fresh. **AMENDED (cycle 22 C4 + C11):**
+  the External send was such a path and did not clear. The Save & Compose flow
+  was dropped on the tab switch, so the next Save wrote a DUPLICATE note and
+  untouched fields carried into the next patient's. Every completion now goes
+  through `cnCompleteComposeFlow_`. And a clear is only a clear if nothing is
+  still writing: `cnClearActiveForm_` first ends any running dictation
+  (`cnVoiceStopAll_`, handlers detached BEFORE `abort()`), because a session
+  captured the field's text when it started and wrote it back on its next
+  result. Verify: the C4 and C11 DOM pins.
 
 <a id="g87-voice-dictation-routes-audio-outside-the-baa"></a>
 
@@ -2183,7 +2227,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   endpoint validates both dates and rejects spans > 90 days. The
   client presets (Last 7, Last 30) stay within this cap; custom
   ranges could hit it. Returns notes sorted newest-first with the
-  same response shape as `getMyCallNotes`.
+  same response shape as `getMyCallNotes`. **AMENDED (cycle 22 C3):** the cap
+  is MIRRORED client-side (`CN_HISTORY_MAX_SPAN_DAYS`, the same span
+  arithmetic), so an over-long range is refused with its reason and never
+  round-trips. A Node pin reads the server's literal, so the two cannot drift.
+  The same batch made the loaded notes carry the range they describe
+  (`historyNotesKey`): a failed load for a NEW range used to leave the previous
+  range's notes under the new range's label.
 
 <a id="g95-call-note-delete-window"></a>
 
@@ -2229,7 +2279,10 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `#cn-stack` + the filter bar, not the form/modals. (NOTE: nav-back already
   re-fetched; this closes the cross-window staleness gap. The whole-stack
   re-render could diff-before-render to avoid a scroll jump — accepted as-is
-  since the stack is small.)
+  since the stack is small.) **AMENDED (cycle 22 C10):** "preserves `_pending`
+  notes" was not enough. A note that CONFIRMED while the poll was in flight is
+  no longer `_pending`, and the poll's list predates it. See g84's amendment:
+  confirmed notes newer than the request are kept too.
 
 <a id="g99-sidebar-badge-selectors-use-data-tool-not"></a>
 
@@ -3434,12 +3487,20 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   MANAGER_EMAILS both, now); (2) every live tab a test writes to is swept by
   `cleanupTestData` by its TEST_ KEY (`_cleanupRowsByPrefix`) through
   `getSheetByName` — never provisioning the tab; (3) a test's own tidy-up
-  deletes by the same key, never by row position. `TEST_` is the cleanup key
+  deletes by the same key, never by row position; (4) (cycle 22 follow-on
+  F1) a delete by KEY still happens BY POSITION, snapshot then `deleteRow(i)`,
+  so it is only correct while nothing else deletes between the read and the
+  last delete. Every live-tab delete in the suite therefore goes through
+  `_deleteRowsWhereLocked_`, which holds the ScriptLock from the snapshot to
+  the last delete (production writers hold it too, g17). It is the suite's
+  ONLY lock, so there is no re-entrancy. `TEST_` is the cleanup key
   on properties and tabs alike (g24). Fires when a test writes outside the
   TEST_ rows' own tabs, or restores a Script Property in `finally`. Verify:
   the F-21/F-22 pin — the strip form is the only cleanup write to
   MANAGER_EMAILS, both sweeps by key on the right store, no positional delete
-  survives in `Tests.js`, every DeptRequests probe row is `TEST_DR_`-keyed.
+  survives in `Tests.js`, every DeptRequests probe row is `TEST_DR_`-keyed —
+  plus the F1 pins (the helper driven; a ratchet naming the only other
+  deletes, all over TEST-only fixture stores).
 
 <a id="g133-an-onclick-literal-cannot-carry-a-name"></a>
 
@@ -3759,6 +3820,36 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   literally the same object after a re-render, not merely that its value
   matches.
 
+  **AMENDED (cycle 22 Batch 3, 2026-09-23): three more instances, and the
+  rule for choosing a fix.**
+  - **The Reference DRAWER (K6)** had the landing's bug in its own renderer:
+    the tree response rebuilt `#kbd-body` and wiped a payor, item or address
+    typed mid-call. It was visible in the matrix shots for a cycle (typed
+    inputs, photographed as placeholders). The home re-render now patches only
+    the blocks around the lookups; the drawer OPEN still builds fresh, because
+    that is the next caller.
+  - **Employee Docs (D6)**: release, void and template save or delete each
+    re-fetched and rebuilt the whole manager page, wiping a half-written
+    review.
+  - **Coaching (D7)**: a filter chip, the search box or the reload after
+    acknowledging another item wiped the reply the rep was typing.
+
+  **A targeted patch beats a skip-while-dirty guard when the re-render
+  carries the result of the user's own action.** Training's Team Training
+  guard skips the refresh render while its form is dirty, which is right for a
+  background refresh. It is wrong for Employee Docs, where the refresh shows
+  the draft the manager just released, so skipping it would hide the action's
+  result. There the form is built once and patched around: the dependent
+  pickers re-sync their options in place keeping the selection, and a failed
+  refresh lands BESIDE the form, never over it. The one action that resets the
+  form is the one that consumed it (a successful issue). Where the input is
+  small and keyed (a reply per coaching item), holding the draft in state and
+  re-rendering it is enough, plus restoring focus and caret.
+
+  Verify: the K6 + K2, D6 and D7 DOM pins. D6's reset is driven through the
+  real `edSubmitIssue_`, after a first draft that set the flag by hand passed
+  with the reset deleted (a NO BITE, g138).
+
 
 <a id="g142-a-diagnostic-that-names-the-wrong-source"></a>
 ### g142 — A diagnostic that names the WRONG source is worse than a vague one, because it is actionable and the action is destructive
@@ -3815,3 +3906,124 @@ g02 defect again, so the pin drives a clean table and asserts no line at all.
 Verify: T7-3 and the T7 DOM pin (both directions — the warnings rendered, and
 absent on a clean table), plus INV-238. Bite-checked five ways, including
 restoring the silence and restoring the misdirected message.
+
+<a id="g143-a-leading-underscore-is-not-private"></a>
+
+- **A LEADING underscore is not private — `google.script.run` reaches every
+  top-level function whose name does not END in `_`, in EVERY file clasp
+  pushes, `Tests.js` and `DevTools.js` included (cycle 22 S1 + X2,
+  2026-09-23).** The web app executes as the deployer, so a reachable
+  function runs with the owner's access to every store. Two blind spots
+  combined. First, the suite's helpers were named `_clearTestState`,
+  `_clearPunchesForDay`, `_appendTestPunch`, which LOOKS private and is not:
+  Apps Script hides only a TRAILING underscore. Second, every gate net read the
+  server through `serverSource()`, which is built from `filePushOrder`, and
+  that list omits `Tests.js` and `DevTools.js`. The pushed set is the whole
+  directory; `filePushOrder` sets load ORDER, not membership. So the whole
+  editor suite (runners, setup/cleanup, 337 `test_*` functions, and
+  positional-delete helpers over live payroll tabs) was callable by any
+  signed-in rep from the browser console. RULES: (1) every public function in
+  every pushed `.js` file carries a gate token in its OWN body, or is a named,
+  reasoned `ALLOW` / `DELEGATE` entry whose callee gates; (2) in `Tests.js`
+  the gate is `_assertSuiteCaller_()` as the FIRST statement. That is an owner
+  check, `Session.getActiveUser()` equal to `Session.getEffectiveUser()`, and
+  it reads Session directly, so `_TEST_OVERRIDE_EMAIL` cannot satisfy it (g23);
+  (3) `runSingleTest` resolves `test_…` names only, never an arbitrary global.
+  Fires when you add a top-level function to any file in `web-app/`, name a
+  helper with a leading underscore, or trust a gate net that reads
+  `serverSource()`. Verify: the PUBLIC-GATE pins (a directory scan that
+  refuses a `.claspignore` it cannot honour, plus the owner-predicate pin),
+  bite-checked.
+
+<a id="g144-a-string-written-to-a-cell-is-parsed"></a>
+
+- **A string written to a cell is parsed AS IF TYPED: `=…`, and `+`/`-`/`@`
+  before anything that is not a number, becomes a live formula, and the
+  failure is silent (cycle 22 S2, 2026-09-23).** `setValue`, `setValues` and
+  `appendRow` do not store text; they store what a person typing that text
+  would have produced. A callback note starting `- call back after 3` came
+  back as `#ERROR!`. A time-off note typed as `=HYPERLINK(…)` became a live
+  link in the payroll sheet. Any rep-typed field was a formula an operator
+  would later open. RULES: (1) every server write goes through the boundary:
+  `sheetSafe_` / `sheetSafeRow_` / `sheetSafeRows_` add a leading apostrophe,
+  which Sheets treats as a literal marker and does not keep in the value;
+  (2) a plain-text (`@`) cell is the ONE exception, because it takes input
+  literally and would keep the apostrophe. Those writers re-assert `@` and
+  then write raw through `sheetText_` / `sheetTextRows_` /
+  `appendRowsTextSafe_`; (3) the boundary is BLANKET rather than per-field,
+  because judging "which text is user-supplied" was the failure mode (see the
+  design decision); (4) the CLIENT twin is `tsvCell_`: "Copy table" hands the
+  same text to a manager's clipboard, and a Sheets PASTE parses it the same
+  way; (5) S2 closes the door, not the room. Formulas already stored before
+  it shipped are found by Admin → System → Stored formulas
+  (`adminScanStoredFormulas`, read-only), and each hit is fixed by hand.
+  Fires when you add a sheet write, a TSV/CSV export, or a plain-text column.
+  Verify: the SHEET-SAFE rule in `npm run lint:server` (Tests.js exempt:
+  fixtures write raw by design), the S2 pins, the F2 mirror pin (`tsvCell_`
+  driven against `sheetSafe_` over one grid) and the F3 scan pins.
+
+<a id="g145-a-positional-write-at-getlastrow-1"></a>
+
+- **A positional write at `getLastRow() + 1` THROWS once the tab outgrows its
+  grid — `appendRow` would have extended it, `getRange` does not (cycle 22 C1
+  + follow-on F4, 2026-09-23).** A new tab has a 1000-row grid. The
+  call-notes/Timesheet archive mover wrote its block at `getLastRow() + 1` and
+  grew only the COLUMNS. The first run with 1000+ eligible rows therefore
+  threw before any write, and the per-rep catch skipped that rep every night
+  while the audit row just read smaller. The Spanish auto-assign claim batch
+  had the same shape, and would have failed every run, button and hourly
+  trigger alike, once `SpanishClaims` passed 1000 rows. The mirror hazard
+  sits on the delete side: Sheets refuses to delete EVERY non-frozen row, so
+  a purge that empties a tab threw on its LAST delete, after N-1 PHI rows
+  were already gone (C5; `purgeSheetRowsOlderThan_` now keeps a spare row).
+  RULE: a multi-row append goes through `appendRowsSafe_` (or
+  `appendRowsTextSafe_` for `@` columns), which grows the grid first, writes
+  once and expects the caller to hold the ScriptLock. A hand-rolled mover
+  grows ROWS as well as columns before its write. Fires when you write a
+  block at the next free row, or delete rows in bulk. Verify: the F4 pins
+  (driven against a full grid that throws past its edge, plus a DERIVED net:
+  every server function that writes at `getLastRow() + 1` calls
+  `insertRowsAfter(` before its `setValues(`), the C1 pin's small-grid fake,
+  and the C5 spare-row pin.
+
+<a id="g146-a-failure-message-that-echoes-typed-input"></a>
+
+- **A failure message that echoes what the rep TYPED must not ride the error
+  beacon — `errorStateHtml_` reports its message to ClientErrors, a shared
+  tab (cycle 22 S3, 2026-09-23).** The Call Notes search error state showed
+  "No results for <query>" and beaconed the same string. The query is a
+  patient name or TRX number more often than not, so every failed search
+  wrote PHI into a PHI-free diagnostics tab that every admin reads. RULE:
+  `errorStateHtml_(msg, beaconMsg)`. When `msg` carries rep input, pass a
+  `beaconMsg` that does not. The rep still sees what they typed; the beacon
+  gets the shape of the failure only. The ClientErrors / AuditLog rows
+  written before the fix may still hold typed queries, and redacting them is
+  an optional operator task. Fires when an error state interpolates anything
+  the rep typed. Verify: the S3 pins (the override is what reaches the
+  beacon, the markup escapes once, and a derived scan of every partial finds
+  every interpolating call site passing a beacon-safe message).
+
+<a id="g147-a-repaint-cache-keyed-per-host-dies"></a>
+
+- **A repaint cache keyed per HOST dies with the host: a rebuilt host
+  forgets it, and a response for a host no longer mounted is dropped (cycle 22
+  K2, 2026-09-23).** The Reference lookups keep the last result each panel
+  PAINTED (`KB_OOP.last` / `KB_INS.last`, keyed `''` for the landing and `-d`
+  for the drawer), so the payor panel and the item panel can cross-reference
+  each other whichever the rep searches first. The cache is a repaint aid, not
+  a result cache, but it outlived every rebuild. So when the drawer was reopened
+  for the NEXT caller, that caller's first payor lookup repainted the item panel
+  from the PREVIOUS caller's verdicts, under two empty inputs. The matrix
+  photographed exactly that for a cycle: empty inputs over full results. The
+  seq token (INV-156) did not help, because it orders keystrokes; it cannot
+  tell that the panel a response was meant for no longer exists. RULES: (1) a
+  host built FRESH clears its own repaint cache (`kbLookupsForget_(suffix)`, on
+  the drawer open and the landing band's first render); (2) a response lands
+  only in the results node it was requested for, checked by node identity
+  (`kbLookupHostLive_(host)` is `host.isConnected`). A rebuilt panel is a
+  different node, so a late answer for the last caller paints nothing. Fires
+  when you cache anything per host or panel, or paint an async response by
+  looking its target up by id AFTER the wait. Verify: the K6 + K2 DOM pin (a
+  fresh open forgets both caches, and a late payor answer paints nothing) and
+  the `reference-drawer-xref-light-wide` shot, which now shows its typed inputs
+  above its results.

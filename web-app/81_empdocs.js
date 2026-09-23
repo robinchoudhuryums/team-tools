@@ -21,7 +21,7 @@ function getOrCreateEmpDocSheet_(tabName, headers) {
   let sheet = ss.getSheetByName(tabName);
   if (!sheet) {
     sheet = ss.insertSheet(tabName);
-    sheet.appendRow(headers);
+    sheet.appendRow(sheetSafeRow_(headers));
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
     return sheet;
@@ -36,7 +36,7 @@ function getOrCreateEmpDocSheet_(tabName, headers) {
   let missing = false;
   for (let i = 0; i < headers.length; i++) { if (String(hdr[i] || '').trim() !== headers[i]) { missing = true; break; } }
   if (missing) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
+    sheet.getRange(1, 1, 1, headers.length).setValues(sheetSafeRows_([headers])).setFontWeight('bold');
   }
   return sheet;
 }
@@ -169,7 +169,7 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
     const sheet = getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS);
     // Persist responses first (so a signed doc's responses are what was attested).
-    if (hasFields) sheet.getRange(found.rowIdx, ED.RESPONSES + 1).setValue(responsesRaw);
+    if (hasFields) sheet.getRange(found.rowIdx, ED.RESPONSES + 1).setValue(sheetSafe_(responsesRaw));
     if (d.requiresSignature) {
       const sigHash = empDocSignatureHash_(d.contentHash || expect, d.empId, d.docId, sig, EMPDOC_ACK_VERSION, responsesRaw);
       const cert = JSON.stringify({
@@ -177,9 +177,9 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
         alg: 'SHA-256', covers: 'contentHash|empId|docId|signature|ackVersion' + (responsesRaw ? '|responses' : ''),
       });
       getOrCreateEmpDocSheet_(EMPDOC_SIG_TAB, EMPDOC_SIG_HEADERS)
-        .appendRow([d.docId, d.empId, ts, sig, EMPDOC_ACK_VERSION, sigHash, cert]);
-      sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue('signed');
-      sheet.getRange(found.rowIdx, ED.SIGNED_AT + 1).setValue(ts);
+        .appendRow(sheetSafeRow_([d.docId, d.empId, ts, sig, EMPDOC_ACK_VERSION, sigHash, cert]));
+      sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue(sheetSafe_('signed'));
+      sheet.getRange(found.rowIdx, ED.SIGNED_AT + 1).setValue(sheetSafe_(ts));
       writeWitnessAuditLog_(emp, 'EmpDocSigned', fmtDate_(now), '', false, 0,
         'docId=' + d.docId + '; hash=' + sigHash + '; signedAt=' + ts);
     } else {
@@ -200,9 +200,9 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
         alg: 'SHA-256', covers: 'contentHash|empId|docId|(no signature)|ackVersion' + (responsesRaw ? '|responses' : ''),
       });
       getOrCreateEmpDocSheet_(EMPDOC_SIG_TAB, EMPDOC_SIG_HEADERS)
-        .appendRow([d.docId, d.empId, ts, '', EMPDOC_ACK_VERSION, compHash, compCert]);
-      sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue('completed');
-      sheet.getRange(found.rowIdx, ED.SIGNED_AT + 1).setValue(ts);
+        .appendRow(sheetSafeRow_([d.docId, d.empId, ts, '', EMPDOC_ACK_VERSION, compHash, compCert]));
+      sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue(sheetSafe_('completed'));
+      sheet.getRange(found.rowIdx, ED.SIGNED_AT + 1).setValue(sheetSafe_(ts));
       writeWitnessAuditLog_(emp, 'EmpDocCompleted', fmtDate_(now), '', false, 0,
         'docId=' + d.docId + '; hash=' + compHash + '; completedAt=' + ts);
     }
@@ -238,11 +238,11 @@ function issueDoc(payload) {
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
     const fieldsRaw = v.doc.fields.length ? JSON.stringify(v.doc.fields) : '';
     const contentHash = empDocContentHash_(v.doc.bodyMd, v.doc.title, v.doc.docType, v.doc.empId, fieldsRaw);
-    getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS).appendRow([
+    getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS).appendRow(sheetSafeRow_([
       docId, v.doc.empId, v.doc.docType, v.doc.title, v.doc.bodyMd, contentHash,
       v.doc.requiresSignature ? 'TRUE' : 'FALSE', v.doc.status,
       String(callerEmp.email).toLowerCase().trim(), ts, v.doc.dueAt, '', '', fieldsRaw, '',
-    ]);
+    ]));
     writeAuditLog_(callerEmp, 'EmpDocIssue', fmtDate_(now), '', false, 0,
       'docId=' + docId + '; empId=' + v.doc.empId + '; type=' + v.doc.docType + '; status=' + v.doc.status, callerEmp.email);
     // Only a RELEASED (issued) doc is visible to the employee — drafts stay silent.
@@ -269,7 +269,7 @@ function releaseDoc(docId) {
     if (!found || !empDocCanManagerSee_(callerEmp, found.doc)) return { success: false, error: 'Document not found.' };
     if (found.doc.status !== 'draft') return { success: false, error: 'Only a draft can be released.' };
     const sheet = getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS);
-    sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue('issued');
+    sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue(sheetSafe_('issued'));
     const now = new Date();
     writeAuditLog_(callerEmp, 'EmpDocRelease', fmtDate_(now), '', false, 0,
       'docId=' + found.doc.docId + '; empId=' + found.doc.empId, callerEmp.email);
@@ -329,8 +329,8 @@ function voidDoc(docId, reason) {
     if (!found || !empDocCanManagerSee_(callerEmp, found.doc)) return { success: false, error: 'Document not found.' };
     if (found.doc.status === 'void') return { success: true, alreadyVoid: true };
     const sheet = getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS);
-    sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue('void');
-    sheet.getRange(found.rowIdx, ED.VOID_REASON + 1).setValue(String(reason || '').substring(0, 500));
+    sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue(sheetSafe_('void'));
+    sheet.getRange(found.rowIdx, ED.VOID_REASON + 1).setValue(sheetSafe_(String(reason || '').substring(0, 500)));
     const now = new Date();
     writeAuditLog_(callerEmp, 'EmpDocVoid', fmtDate_(now), '', false, 0,
       'docId=' + found.doc.docId, callerEmp.email);
@@ -462,16 +462,16 @@ function saveEmpDocTemplate(payload) {
     if (existing) {
       templateId = existing.tpl.templateId;
       const r = existing.rowIdx;
-      sheet.getRange(r, EDT.NAME + 1).setValue(v.tpl.name);
-      sheet.getRange(r, EDT.DOC_TYPE + 1).setValue(v.tpl.docType);
-      sheet.getRange(r, EDT.BODY_MD + 1).setValue(v.tpl.bodyMd);
-      sheet.getRange(r, EDT.FIELDS + 1).setValue(fieldsRaw);
-      sheet.getRange(r, EDT.REQUIRES_SIG + 1).setValue(v.tpl.requiresSignature ? 'TRUE' : 'FALSE');
+      sheet.getRange(r, EDT.NAME + 1).setValue(sheetSafe_(v.tpl.name));
+      sheet.getRange(r, EDT.DOC_TYPE + 1).setValue(sheetSafe_(v.tpl.docType));
+      sheet.getRange(r, EDT.BODY_MD + 1).setValue(sheetSafe_(v.tpl.bodyMd));
+      sheet.getRange(r, EDT.FIELDS + 1).setValue(sheetSafe_(fieldsRaw));
+      sheet.getRange(r, EDT.REQUIRES_SIG + 1).setValue(sheetSafe_(v.tpl.requiresSignature ? 'TRUE' : 'FALSE'));
     } else {
       templateId = Utilities.getUuid();
       const now = new Date();
-      sheet.appendRow([templateId, v.tpl.name, v.tpl.docType, v.tpl.bodyMd, fieldsRaw,
-        v.tpl.requiresSignature ? 'TRUE' : 'FALSE', callerEmp.email, fmtDate_(now) + ' ' + fmtTime_(now)]);
+      sheet.appendRow(sheetSafeRow_([templateId, v.tpl.name, v.tpl.docType, v.tpl.bodyMd, fieldsRaw,
+        v.tpl.requiresSignature ? 'TRUE' : 'FALSE', callerEmp.email, fmtDate_(now) + ' ' + fmtTime_(now)]));
     }
     writeAuditLog_(callerEmp, 'EmpDocTemplateSave', '', '', false, 0,
       'templateId=' + templateId + '; name=' + v.tpl.name, callerEmp.email);

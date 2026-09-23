@@ -16,11 +16,16 @@
 // gates on @umsupply.com domain check via Session.getActiveUser().getEmail() —
 // with executeAs: "USER_DEPLOYING", this returns the visitor's email when
 // they're in the same Workspace domain as the deployer, or empty string for
-// external users. All google.script.run endpoints independently require
-// getEmployeeInfo_() which returns null for non-employees, so even if an
-// external user somehow loads the internal HTML, no server calls will work.
-// The only public-facing endpoints are getFormByToken and submitFormByToken,
-// which validate via token (no employee auth).
+// external users. EVERY function without a trailing underscore, in EVERY .js
+// file clasp pushes (the whole of web-app/, not only filePushOrder — Tests.js
+// and DevTools.js ship too), is a google.script.run endpoint, and each must
+// gate its caller: an app endpoint through getEmployeeInfo_() (null for
+// non-employees) or a manager/admin/QA check, a trigger handler through
+// assertManagerCaller_, and the test suite through _assertSuiteCaller_ (the
+// script owner only — cycle 22 S1: until then any signed-in user could run it).
+// The only endpoints with no identity gate are getFormByToken and
+// submitFormByToken, which validate via token. The PUBLIC-GATE pin in
+// test/client/run.js enumerates every pushed file to hold this.
 function doGet(e) {
   // ── Public form route ──────────────────────────────────────────────
   // External recipients reach ?form=<token> to fill out interactive forms.
@@ -630,10 +635,10 @@ function getOrCreateClientErrorsSheet_() {
   let sheet = ss.getSheetByName(CLIENT_ERRORS_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(CLIENT_ERRORS_TAB);
-    sheet.appendRow([
+    sheet.appendRow(sheetSafeRow_([
       `Timestamp (${tzAbbr_(CONFIG.TIMEZONE)})`,
       'EmployeeId', 'View', 'Source', 'Message', 'Stack',
-    ]);
+    ]));
     sheet.setFrozenRows(1);
   }
   return sheet;
@@ -674,10 +679,10 @@ function recordClientError(payload) {
     const lock = LockService.getUserLock();
     lock.waitLock(15000);
     try {
-      getOrCreateClientErrorsSheet_().appendRow([
+      getOrCreateClientErrorsSheet_().appendRow(sheetSafeRow_([
         fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
         emp.id, view, source, message, stack,
-      ]);
+      ]));
     } finally { lock.releaseLock(); }
     // Post-lock (the M-7 no-mail-in-lock rule): the spike alert may send an
     // email, so it runs only after the user lock is released. Best-effort —
@@ -749,15 +754,15 @@ function getOrCreateViewUsageSheet_() {
   let sheet = ss.getSheetByName(VIEW_USAGE_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(VIEW_USAGE_TAB);
-    sheet.appendRow([
+    sheet.appendRow(sheetSafeRow_([
       `Timestamp (${tzAbbr_(CONFIG.TIMEZONE)})`,
       'EmployeeId', 'View', 'Mode', 'BootTiming',
-    ]);
+    ]));
     sheet.setFrozenRows(1);
   } else if (sheet.getLastColumn() < VIEW_USAGE_WIDTH) {
     // Trailing column added 2026-09-04 (boot timing) — the header self-heals
     // like CN_HEADERS; pre-existing rows read a blank cell (no timing).
-    sheet.getRange(1, VIEW_USAGE_WIDTH).setValue('BootTiming');
+    sheet.getRange(1, VIEW_USAGE_WIDTH).setValue(sheetSafe_('BootTiming'));
   }
   return sheet;
 }
@@ -808,10 +813,10 @@ function recordViewEnter(viewKey, mode, timing) {
     const lock = LockService.getUserLock();
     lock.waitLock(15000);
     try {
-      getOrCreateViewUsageSheet_().appendRow([
+      getOrCreateViewUsageSheet_().appendRow(sheetSafeRow_([
         fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
         emp.id, v, m, viewUsageTimingCell_(timing),
-      ]);
+      ]));
     } finally { lock.releaseLock(); }
     return { success: true };
   } catch (e) {
@@ -2038,6 +2043,120 @@ function getStorageHealth(opts) {
   } catch (err) { return { error: err.message }; }
 }
 
+// ── Stored-formula scan (cycle 22 S2 follow-on) ────────────────────────────
+// S2 made every app write land as LITERAL text, but it cannot reach back: a
+// note, a label or a reason typed as `=…` (or `+`/`-`/`@` before a non-number)
+// BEFORE the boundary shipped was stored as a live formula, and still is. The
+// app never writes a formula, so every hit on an app-written tab is text that
+// Sheets evaluated. This walks every store the app writes — the same resolvers
+// the writers use, so it scans exactly where they wrote — and reports each
+// formula cell by store, tab and A1. READ-ONLY: it changes nothing, and fixing
+// a hit is a hand edit (prefix the cell with an apostrophe).
+//
+// Honest failure (g48/g53): a store that could not be opened, and every store
+// the time budget did not reach, is NAMED in the result — an empty hit list is
+// a clean bill only when `unscanned` and every `error` are empty too.
+const FORMULA_SCAN_MAX_HITS = 200;
+const FORMULA_SCAN_EXCERPT = 60;
+const FORMULA_SCAN_BUDGET_MS = 240000;
+// Tabs an operator maintains by hand: a formula there may be theirs on purpose,
+// so a hit is labelled rather than presumed to be typed text.
+const FORMULA_SCAN_OPERATOR_TABS = ['Employees', 'InsurancePayors', 'OopPricing', 'LocationAcceptance', 'Offerings'];
+
+/** A1 column letters for a 0-based index (A … Z, AA …) — sheetColLetter_ stops at Z. */
+function formulaScanCol_(i) {
+  let n = i + 1, s = '';
+  while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+/** PURE — the formula cells of one tab's getFormulas() grid, as
+ *  `{ cell, formula }` (the formula cut to an excerpt), up to `room` of them;
+ *  `count` is the true total so a capped list still says how many there were. */
+function formulaHitsFromGrid_(grid, room) {
+  const hits = [];
+  let count = 0;
+  (grid || []).forEach(function (row, r) {
+    (row || []).forEach(function (f, c) {
+      if (!f) return;
+      count++;
+      if (hits.length < room) {
+        const s = String(f);
+        hits.push({ cell: formulaScanCol_(c) + (r + 1),
+          formula: s.length > FORMULA_SCAN_EXCERPT ? s.slice(0, FORMULA_SCAN_EXCERPT) + '…' : s });
+      }
+    });
+  });
+  return { hits: hits, count: count };
+}
+/** The walk, over `targets` = [{ label, open: fn → Spreadsheet }]. A store is
+ *  scanned once however many labels resolve to it (Forms and Dept Requests
+ *  fall back onto the ADP sheet). `now` is injectable for the budget pin. */
+function scanStoredFormulas_(targets, deadline, now) {
+  const clock = now || function () { return Date.now(); };
+  const out = { stores: [], hits: [], total: 0, capped: false, unscanned: [] };
+  const seen = {};
+  for (let t = 0; t < targets.length; t++) {
+    const tg = targets[t];
+    if (clock() > deadline) { out.unscanned.push(tg.label); continue; }
+    let ss;
+    try { ss = tg.open(); } catch (e) { out.stores.push({ label: tg.label, error: e.message }); continue; }
+    if (!ss) { out.stores.push({ label: tg.label, error: 'not configured' }); continue; }
+    let id = '';
+    try { id = ss.getId(); } catch (e) { id = ''; }
+    if (id && seen[id]) { out.stores.push({ label: tg.label, sameAs: seen[id] }); continue; }
+    if (id) seen[id] = tg.label;
+    const row = { label: tg.label, tabs: 0, count: 0 };
+    try {
+      const sheets = ss.getSheets();
+      for (let k = 0; k < sheets.length; k++) {
+        const sh = sheets[k];
+        const name = sh.getName();
+        if (sh.getLastRow() < 1 || sh.getLastColumn() < 1) { row.tabs++; continue; }
+        const found = formulaHitsFromGrid_(sh.getDataRange().getFormulas(), FORMULA_SCAN_MAX_HITS - out.hits.length);
+        row.tabs++;
+        row.count += found.count;
+        found.hits.forEach(function (h) {
+          out.hits.push({ store: tg.label, tab: name, cell: h.cell, formula: h.formula,
+            operatorTab: FORMULA_SCAN_OPERATOR_TABS.indexOf(name) >= 0 });
+        });
+      }
+    } catch (e) { row.error = e.message; }
+    out.total += row.count;
+    out.stores.push(row);
+  }
+  out.capped = out.total > out.hits.length;
+  return out;
+}
+/** Admin → System → "Scan for stored formulas". ADMIN-gated (the stores it
+ *  reads include PHI); read-only; returns cell references and a short formula
+ *  excerpt, never a row. The CDR Report is not scanned — another repo owns it,
+ *  and its formulas are its own. */
+function adminScanStoredFormulas() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
+    const targets = [
+      { label: 'Time Clock / ADP', open: getAdpSS_ },
+      { label: 'Forms (PHI)', open: getFormsSS_ },
+      { label: 'Dept Requests', open: getDeptRequestsSS_ },
+      { label: 'Intake (PHI)', open: getIntakeSS_ },
+      { label: 'Knowledge Base + Training', open: getKbSS_ },
+      { label: 'Employee Docs (HR)', open: getHrDocsSS_ },
+      { label: 'QA (recordings)', open: getQaSS_ },
+    ];
+    const roster = getEmployeeRosterRows_();
+    for (let i = 1; i < roster.length; i++) {
+      const sid = cnEnrolledSheetId_(roster[i]);
+      if (!sid) continue;
+      const nm = String(roster[i][EMP.NAME] || '').trim() || sid;
+      targets.push({ label: 'Call Notes — ' + nm, open: function () { return SpreadsheetApp.openById(sid); } });
+    }
+    const res = scanStoredFormulas_(targets, Date.now() + FORMULA_SCAN_BUDGET_MS);
+    res.maxHits = FORMULA_SCAN_MAX_HITS;
+    return res;
+  } catch (err) { return { error: err.message }; }
+}
+
 /** F-08 — the Dashboard Standards verdict as the Storage Health row carries
  *  it: {dept, target, band, source, error}. Same reader as Metrics
  *  (getCdrDashboardStandard_, so its 1h cache applies — the detail says so). */
@@ -2766,6 +2885,18 @@ function purgeSheetRowsOlderThan_(sheet, dateColIdx, cutoffMs) {
   for (let i = 1; i < rows.length; i++) {
     const ms = parseRetentionDateMs_(rows[i][dateColIdx]);
     if (ms !== null && ms < cutoffMs) toDelete.push(i + 1);  // 1-based sheet row
+  }
+  // C5 (cycle 22): Sheets REFUSES to delete every non-frozen row of a grid
+  // ("not possible to delete all non-frozen rows"). A purge whose cutoff covers
+  // the whole tab on a grid with no spare rows — a departed rep's notes all
+  // past retention on a full 1000-row grid — threw on the LAST delete, after
+  // N-1 PHI rows were already gone irreversibly; the per-rep catch then
+  // skipped the count, so the purge audit row under-reported the deletions and
+  // that last row survived forever. Keep one spare row, as the archive mover
+  // does (archiveSheetRowsOlderThan_, 2026-09-04), so the final delete never
+  // empties the grid.
+  if (toDelete.length && toDelete.length >= sheet.getMaxRows() - 1) {
+    sheet.insertRowAfter(sheet.getMaxRows());
   }
   for (let j = toDelete.length - 1; j >= 0; j--) {
     sheet.deleteRow(toDelete[j]);
@@ -3976,16 +4107,109 @@ function getActiveUserEmail_() {
   }
   return Session.getActiveUser().getEmail().toLowerCase();
 }
+// ── Sheet write boundary (cycle 22 S2) ─────────────────────────────────────
+// Range.setValue / setValues / Sheet.appendRow parse a STRING the way a person
+// typing into the cell would: a leading `=` makes a FORMULA, and so does a
+// leading `+` or `-` in front of anything that is not a number. getValues()
+// then returns the COMPUTED result. The app never writes a formula on purpose,
+// but it writes a great deal of text a rep or an anonymous form recipient
+// typed: a time-off note of `=TEXTJOIN(",",TRUE,Employees!A2:P80)` became a
+// live formula in the ADP/payroll spreadsheet and read every colleague's pay
+// rate back into the author's own calendar; a callback typed `+1 555-0100`
+// stored #ERROR! in place of the number; a KB comment or a note starting `-`
+// did the same.
+//
+// EVERY write in the server goes through these three helpers — the SHEET-SAFE
+// pin refuses an unwrapped appendRow/setValue/setValues anywhere in a pushed
+// server file, so the rule does not depend on anyone judging which text is
+// "user-supplied". A leading apostrophe is Sheets' own literal-text marker: it
+// is NOT part of the stored value (getValue/getDisplayValue return the text
+// without it), so the neutralised string reads back byte-identical. Only
+// strings change; numbers, booleans and Dates pass through, and so does a
+// string that IS a plain number ("-1.5", "+2") — Sheets reads that as the
+// number it always did, which is what the existing numeric columns rely on.
+function sheetSafe_(v) {
+  if (typeof v !== 'string' || !v) return v;
+  const t = v.replace(/^\s+/, '');
+  const c = t.charAt(0);
+  if (c === '=') return "'" + v;
+  if ((c === '+' || c === '-' || c === '@') && !/^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(t.replace(/\s+$/, ''))) return "'" + v;
+  return v;
+}
+/** One ROW (an array of cells) for appendRow / a single setValues row. */
+function sheetSafeRow_(row) {
+  return Array.isArray(row) ? row.map(sheetSafe_) : row;
+}
+/** A 2-D block for Range.setValues. */
+function sheetSafeRows_(rows) {
+  return Array.isArray(rows) ? rows.map(sheetSafeRow_) : rows;
+}
+// PLAIN-TEXT cells are the one exception, and the reason is the apostrophe. A
+// cell formatted '@' never evaluates a formula — that format IS the
+// neutraliser — but it also takes its input LITERALLY, so the apostrophe
+// sheetSafe_ adds would be stored and read back ("- call back" returning as
+// "'- call back"). The scratchpad, the KB data-table import and the QA text
+// columns write into '@' cells, so they write the raw value — and because a
+// format that was lost, never applied, or not inherited by an appended row
+// would silently turn that raw value back into a formula, the '@' is
+// RE-ASSERTED on the exact target cells by the same statement that writes them
+// (the SHEET-SAFE pin requires a setNumberFormat('@') before every use).
+/** A value for a cell the CALLER has just formatted '@' (plain text). */
+function sheetText_(v) { return v; }
+/** A block whose columns in `textIdx` (0-based; null = every column) land in
+ *  cells the caller has just formatted '@'; every other cell is sheetSafe_'d. */
+function sheetTextRows_(rows, textIdx) {
+  if (!Array.isArray(rows)) return rows;
+  const all = textIdx == null;
+  return rows.map(function (r) {
+    return Array.isArray(r) ? r.map(function (v, i) {
+      return (all || textIdx.indexOf(i) >= 0) ? v : sheetSafe_(v);
+    }) : r;
+  });
+}
+/** appendRow for rows with plain-text columns: formats those cells '@' on the
+ *  NEW rows, then writes them — raw where '@', sheet-safe everywhere else. The
+ *  caller MUST hold the ScriptLock: `getLastRow() + 1` is only the next free
+ *  row while no other writer can append. Grows the grid first, because
+ *  getRange past the last grid row THROWS where appendRow would have extended
+ *  it. Returns the first row written. */
+function appendRowsTextSafe_(sheet, rows, textIdx) {
+  if (!rows || !rows.length) return 0;
+  const width = rows[0].length;
+  const r = sheet.getLastRow() + 1;
+  const need = r + rows.length - 1;
+  if (need > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), need - sheet.getMaxRows());
+  (textIdx || []).forEach(function (i) { sheet.getRange(r, i + 1, rows.length, 1).setNumberFormat('@'); });
+  sheet.getRange(r, 1, rows.length, width).setValues(sheetTextRows_(rows, textIdx || []));
+  return r;
+}
+/** A multi-row appendRow: ONE positional write of sheet-safe rows at the next
+ *  free row. The caller MUST hold the ScriptLock (the appendRowsTextSafe_
+ *  contract). Grows the grid first — the cycle-22 C1 class: getRange past the
+ *  last grid row THROWS where appendRow would have extended it, so a tab that
+ *  outgrows its 1000-row default fails every run from then on. Returns the
+ *  first row written. */
+function appendRowsSafe_(sheet, rows) {
+  if (!rows || !rows.length) return 0;
+  const r = sheet.getLastRow() + 1;
+  const need = r + rows.length - 1;
+  if (need > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), need - sheet.getMaxRows());
+  sheet.getRange(r, 1, rows.length, rows[0].length).setValues(sheetSafeRows_(rows));
+  return r;
+}
+/** Column LETTER for a 0-based index (A..Z — every '@' column in this app is
+ *  inside the first 26). One source for the '@' columns: the index list. */
+function sheetColLetter_(i) { return String.fromCharCode(65 + i); }
 function getOrCreateAuditSheet_() {
   const ss = getAdpSS_();
   let sheet = ss.getSheetByName(CONFIG.AUDIT_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(CONFIG.AUDIT_TAB);
-    sheet.appendRow([
+    sheet.appendRow(sheetSafeRow_([
       `Timestamp (${tzAbbr_(CONFIG.TIMEZONE)})`,
       'EmployeeId','EmployeeName','UserEmail',
       'Action','PunchDate','PunchTime','IsAdjustment','DaysBack','Notes',
-    ]);
+    ]));
     sheet.setFrozenRows(1);
   }
   return sheet;
@@ -4000,11 +4224,11 @@ function writeAuditLog_(targetEmp, action, punchDate, punchTime, isAdjustment, d
   try {
     const now = new Date();
     const ts  = fmtDate_(now) + ' ' + fmtTime_(now);
-    getOrCreateAuditSheet_().appendRow([
+    getOrCreateAuditSheet_().appendRow(sheetSafeRow_([
       ts, targetEmp.id, targetEmp.name, actorEmail || targetEmp.email, action,
       punchDate, punchTime || '',
       isAdjustment ? 'TRUE' : 'FALSE', daysBack || 0, notes || '',
-    ]);
+    ]));
     return true;   // C4 (cycle 10) — witness-class callers need the outcome
   } catch (e) { console.warn('writeAuditLog_ failed: ' + e.message); return false; }
 }

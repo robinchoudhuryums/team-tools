@@ -10,6 +10,42 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-23 — Cycle 22: the suite is owner-only, every write is literal text, Day Edit keeps every break (Batch 1, S2, Batch 2, follow-ons)
+
+**Adds NO required operator state.** No Script Property, no tab, no
+permission. `PunchAdjustRequests` gains a trailing `EndTime` column that adds
+itself. NOT yet deployed: ship on the ordinary `clasp push -f` + New-version,
+then the four blocks' walks.
+
+**What changes for the operator.**
+- **The editor suite runs only for the script owner.** Nothing changes in the
+  editor; from the web app it now refuses everyone (g143, the owner-only
+  entry).
+- **Every write is stored as typed text.** A note starting `-`, `+`, `=` or
+  `@` reads back exactly as written (g144). One OPTIONAL clean-up: Manage →
+  Admin → System → **Stored formulas** → Scan stores, then put an apostrophe in
+  front of each hit on a tab the app writes (the clean-up entry).
+- **Day Edit shows every break.** The break a rep is on right now appears as
+  an open row, and a damaged day's stray punches appear flagged. Save refuses
+  until each stray is completed or removed.
+- **A resume approved the next day needs the rep's finish.** The rep files it
+  with Adjust → Clock Out, and it attaches to the pending resume. Without one,
+  approval refuses and names why: ask for the finish, or deny.
+- **The two Timesheet repair tools refuse when rows moved** mid-run. Re-run
+  the dry run, then the apply.
+- **Search failures no longer write the typed query to ClientErrors.** Rows
+  from before this deploy may still hold one; redacting them is optional.
+- **Batch 3 — nothing a rep or manager types is lost to a refresh any more.**
+  An Intake Amend opens holding only the original's answers (never the rep's
+  current draft). Save & Compose → External → Send clears the form for the
+  next call. The Reference drawer keeps what is typed while it loads and
+  forgets the last caller on reopen. History never shows one range's notes
+  under another's dates. A half-written Employee Doc survives release, void
+  and template changes, and a coaching reply survives filters. The Scratchpad
+  keeps text typed during a save. No operator action; one visible change: a
+  Save & Compose that switched to External and is then CANCELLED now undoes
+  the save, like the department composer.
+
 ## 2026-09-23 — Area eligibility: city rules, any-warehouse, the diagnostics panel, the vocabulary (T7–T9)
 
 **Adds operator state in ONE tab, and it is already done.** `LocationAcceptance`

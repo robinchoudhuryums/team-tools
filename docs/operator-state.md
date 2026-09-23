@@ -157,6 +157,14 @@ entry says which it is.
   tools cannot resolve a name differently. Pinned by TZR-3 (planner) + TZR-4
   (contract; the add guards asserted LIVE, not just worded — a `if (false)`
   beside the message passed the first draft).
+  **Both tools now REFUSE on drift (cycle 22 T2, 2026-09-23).** The plan is
+  made from one read, but a live punch or a Day Edit landing between that read
+  and the write used to shift the planned rows, so the tool could overwrite or
+  delete a neighbour. Inside the lock, both re-read and verify every planned
+  row (and each add's existing row) still holds exactly the planned punch.
+  If any does not, they throw `Refusing: N planned row(s) changed…` and write
+  NOTHING. That is not an error to work around: re-run the dry run, then the
+  apply, ideally off-shift. Pinned by the T2 pins.
 <a id="operator-the-qa-module-phase-1-operator-2026-08-27-needs-three-script"></a>
 - **The QA module Phase 1 (operator 2026-08-27) needs THREE Script Properties
   and one Drive folder before it does anything.** Setup: (1) create a FRESH
@@ -2059,7 +2067,13 @@ entry says which it is.
   spreadsheet on first adjustment request (`getOrCreatePunchAdjustSheet_`).
   Tracks employee-requested punch corrections (ReqId, EmpId, EmpName, Date,
   PunchType, RequestedTime, Reason, Status, SubmittedAt) pending manager
-  approval. No manual setup needed.
+  approval. No manual setup needed. Two TRAILING columns self-heal onto an
+  existing tab: `Action` (B3 — `resume` marks a resume-shift request) and
+  **`EndTime` (cycle 22 T3, 2026-09-23)** — the rep's filed FINISH for a
+  pending resume, attached when they file an Adjust → Clock Out for that day.
+  Leave both alone. A blank `EndTime` on a resume for a day that has already
+  ended is why approval refuses it: ask the rep to file their finish, or deny
+  the request.
 <a id="operator-form-catalog"></a>
 - **Form catalog** is configured in
   `CONFIG.CALL_NOTES.FORM_CATALOG` — each entry maps an ID to a
@@ -2069,3 +2083,32 @@ entry says which it is.
   via `UrlFetchApp` from the raw GitHub URL
   (`CONFIG.CALL_NOTES.FORM_BASE_URL`). Interactive (fillable) forms
   must also have a rendering function in `form_public.html`.
+<a id="operator-the-editor-suite-is-owner-only-cycle-22"></a>
+- **The editor suite is OWNER-only (cycle 22 S1, 2026-09-23).** Every runner
+  (`runAllTests`, `runAllTestsPartA`/`PartB`, `runSmokeTests`,
+  `runSingleTest`), `setupTestEnvironment`, `cleanupTestData` and every
+  `test_*` refuses unless the caller IS the script owner:
+  `Session.getActiveUser()` must equal `Session.getEffectiveUser()`, both
+  non-empty. From the Apps Script editor that is always true, so nothing
+  changes for the operator. From the web app it is never true, since the app
+  runs as the deployer and every visitor differs, so a rep, manager or admin
+  can no longer fire the suite or its helpers from a browser console (they
+  could until cycle 22 — see g143). The nightly self-test keeps its
+  MANAGER_EMAILS trigger gate and runs as the installer. `INSTANCE_IS_PROD`
+  is unchanged: unset still PERMITS the full suite. Treating unset as prod
+  waits on standing up the DEV instance, and is still an operator decision.
+<a id="operator-stored-formulas-one-time-clean-up-cycle-22"></a>
+- **Stored formulas — a one-time clean-up (cycle 22 S2 + F3, 2026-09-23).**
+  From this deploy every app write is stored as literal text (g144). Text a
+  rep typed BEFORE it, starting `=`, or `+`/`-`/`@` before a word, may be
+  sitting in a store as a live formula. **Manage → Admin → System → Stored
+  formulas → Scan stores** (`adminScanStoredFormulas`, admin-only, READ-ONLY)
+  walks every store the app writes plus every enrolled rep's Call Notes
+  Sheet, and lists each formula cell by store, tab and cell. For each hit on
+  a tab the app writes, open the cell and put an apostrophe in front of the
+  text. A hit on a tab you maintain by hand (Employees, InsurancePayors,
+  OopPricing, LocationAcceptance, Offerings) is labelled and may be yours on
+  purpose. The CDR Report is not scanned. The result is clean only when it
+  says "No stored formulas". A store it could not open, or one it did not
+  reach in its four-minute budget, is NAMED; re-run to cover it. Optional,
+  never blocking; once the list is empty it never needs running again.

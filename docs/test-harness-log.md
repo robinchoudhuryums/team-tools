@@ -1967,3 +1967,57 @@ remote branch had been deleted on merge and the local tracking ref still named
 its merged head. `git fetch --prune`, confirm the remote ref is gone and that
 nothing on it was unmerged, then push without force.
 
+## Cycle 22 — Batch 1, S2, Batch 2 and the follow-ons (2026-09-23)
+
+Four blocks (`.cycle/blocks/22-{B1,S2,B2,FO}-broad-implement.md`) carry the
+per-finding detail. What each added to each harness, by delta:
+
+- **Batch 1:** the PUBLIC-GATE pins (a directory scan of every pushed `.js`,
+  the owner predicate driven, `runSingleTest`'s name guard) and the S3/S4/S9
+  pins. The Tests.js gate is a FIRST-STATEMENT `_assertSuiteCaller_()` in every
+  non-pure public function (337 tests plus 18 helpers), chosen over renaming
+  337 functions and every doc that cites them.
+- **S2:** the SHEET-SAFE lint rule (`npm run lint:server`) and the S2 pins; 183
+  write sites wrapped by an AST pass, not by hand. A hand tokenizer misread
+  regex literals, and the first AST script matched `Object.prototype` method
+  names through a bare `WRAP[name]` lookup. Both were reverted before anything
+  shipped.
+- **Batch 2:** Node +4 (T1, T3, T2, T6, C1, C5), DOM +1, editor +1
+  (`managerSaveDay_openBreakRoundTrips`), plus the resume editor test
+  rewritten. Two OLD pins had encoded the defect as correct: the A3 pin's E2
+  case (an open break read as a double punch) and the resume editor test (it
+  asserted the INCOMPLETE day). Both were rewritten to the right reading
+  (Category A: the rule changed deliberately).
+- **Follow-ons:** Node +10 (F1–F5), DOM +1 (F5), editor +1
+  (`managerSaveDay_strayBreakRefused`) and one omnibus admin-gate entry. The
+  F1 ratchet found nine live-tab positional deletes where the plan named four.
+- **Batch 3:** Node +1 (the C3 cap mirror, which reads the server literal),
+  DOM +9 (I1, C4, K6 + K2, C3, C6, C10, C11, D6, D7), and three pins updated
+  to the new shapes (the amend order pin, CMP-4's close toast, R3 #5's
+  flush-on-close). Every fix was driven in jsdom against the real partial.
+  One NO BITE: D6's first pin set `ED_STATE.mgrFresh` by hand, so deleting the
+  flag from the submit left it green. It now issues through `edSubmitIssue_`
+  with a stubbed `uiConfirm` (g138). C10's first draft ordered confirms by
+  `Date.now()`, which a confirm and a poll can share; a monotonic counter
+  replaced it before any pin could flake on it.
+
+**Two NO BITEs, both acted on (g138).** T2's first wiring pin asserted the
+refusal message existed, and an `if (false)` beside it stayed green. The pin
+now asserts the throw is guarded by `drift.length`. T6 carried a
+`li.length >= 1` guard no input could reach, and the guard was deleted rather
+than pinned.
+
+**The fake is the pin (C1, C5, F4).** A grid-growth pin over a fake sheet
+whose `getRange` never throws proves nothing. Each of these fakes is a real
+small GRID that throws past its edge the way Sheets does ("outside the
+dimensions"), or that refuses the final delete of every non-frozen row. Only
+against that grid does a missing `insertRowsAfter` fail.
+
+**`scripts/bite.sh` refuses a mutation containing a double quote** (it is
+passed through the shell); spell quotes as `chr(34)` / `chr(39)`. A refused
+mutation prints the usage line, not NO BITE, so read the verdict line, not
+the exit code.
+
+**`counts.mjs --block` refuses while the harness is red**, which is right,
+because a red tree has no honest counts. Mid-batch, update the one row by hand
+and let `--check` confirm it once the tree is green.

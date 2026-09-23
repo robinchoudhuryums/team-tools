@@ -503,6 +503,196 @@ test('Save & Compose: cancelling the composer while the save is in flight rolls 
   assert.strictEqual(h.read('CN_STATE.rollingNotes.length'), 0, 'rolled-back note removed from the stack');
 });
 
+test('C4 (cycle 22): a Save & Compose that switches to External COMPLETES on the external send, and rolls back on its cancel', () => {
+  // Before C4 the tab switch set composeFlow = null, so the external send
+  // never cleared the form, timer or draft, the re-entry guard was off while
+  // the external composer was open, and the next Save wrote a DUPLICATE note.
+  const arm = () => {
+    const h = bootLog();
+    h.read('CN_STATE.formCatalog = []');   // the external composer mounts synchronously
+    h.setField('cn-fld-issue', 'Patient A issue');
+    h.window.cnSubmitActiveForm_({ keepForm: true });
+    h.run.flushSuccess({ success: true, note: noteFixture({ noteId: 'real-a', issue: 'Patient A issue', _pending: false }) }, 'submitCallNote');
+    h.read("CN_STATE.composer = { noteId: 'real-a', step: 'form', selections: {} }");
+    h.window.cnSwitchComposerTab_('external');
+    return h;
+  };
+  // (1) Switch, then send.
+  let h = arm();
+  assert.strictEqual(h.read('CN_STATE.composeFlow && CN_STATE.composeFlow.owner'), 'ext', 'the transaction MOVED with the rep');
+  assert.strictEqual(h.run.pending('deleteCallNote').length, 0, 'the dept teardown on switch is NOT a cancel');
+  h.window.cnSubmitActiveForm_();
+  assert.strictEqual(h.run.pending('submitCallNote').length, 0, 'a second Save while composing is refused — no duplicate row');
+  h.$('#cnX-email').value = 'pat@example.invalid';
+  h.$('#cnX-subject').value = 'Your order';
+  h.window.cnSendExternalEmail_();
+  h.run.flushSuccess({ success: true, recipientEmail: 'pat@example.invalid', formsAttached: [], formLinks: [], sentAt: 'now' }, 'sendExternalEmail');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), '', 'THE REGRESSION: the send clears the form for the next call');
+  assert.strictEqual(h.read('CN_STATE.composeFlow'), null, 'the transaction is complete');
+  assert.strictEqual(h.run.pending('deleteCallNote').length, 0, 'the send never rolls the save back');
+  assert.ok(!h.$('#cn-ext-overlay'), 'the external composer closed');
+  h.setField('cn-fld-issue', 'Patient B issue');
+  h.window.cnSubmitActiveForm_();
+  assert.strictEqual(h.run.pending('submitCallNote').length, 1, 'the next call saves normally');
+  // (2) Switch, then cancel the external composer.
+  h = arm();
+  h.window.cnCloseExternalEmailModal_();
+  assert.strictEqual(h.run.pending('deleteCallNote').length, 1, 'an external CANCEL rolls the save back, as a department cancel does');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), 'Patient A issue', 'and the text stays in the form');
+  assert.strictEqual(h.read('CN_STATE.composeFlow'), null);
+});
+
+test('C3 (cycle 22): a failed load for a NEW History range never shows the previous range\'s notes under its label; an over-cap range is refused before the RPC', () => {
+  const h = bootLog();
+  h.read("CN_STATE.historyDate = '2026-09-14'; CN_STATE.historyEndDate = '2026-09-20'");
+  h.window.showView('callNotesHistory');
+  h.run.flushSuccess({ notes: [noteFixture({ noteId: 'old1', issue: 'from the old range', dateLocal: '2026-09-15' })] }, 'getMyCallNotesRange');
+  assert.ok(/from the old range/.test(h.$('#cn-history-stack').textContent), 'the first range renders');
+  // The rep picks a different range, and its load fails.
+  h.read("CN_STATE.historyDate = '2026-09-01'; CN_STATE.historyEndDate = '2026-09-10'");
+  h.window.cnHistoryRangeChanged_();
+  h.run.flushFailure(new Error('Sheets timed out'), 'getMyCallNotesRange');
+  const txt = h.$('#cn-history-stack').textContent;
+  assert.ok(!/from the old range/.test(txt), 'THE REGRESSION: the old range\'s notes are NOT shown under the new range');
+  assert.ok(/could not be loaded/.test(txt), 'the failure is stated as a failure, not an empty range');
+  // A failed REFRESH of the same range keeps last-good (C17-5 unchanged).
+  h.read("CN_STATE.historyDate = '2026-09-14'; CN_STATE.historyEndDate = '2026-09-20'");
+  h.window.cnHistoryRangeChanged_();
+  h.run.flushSuccess({ notes: [noteFixture({ noteId: 'n2', issue: 'week two', dateLocal: '2026-09-16' })] }, 'getMyCallNotesRange');
+  h.window.cnHistoryRangeChanged_();
+  h.run.flushFailure(new Error('blip'), 'getMyCallNotesRange');
+  assert.ok(/week two/.test(h.$('#cn-history-stack').textContent), 'same range: last-good is kept');
+  // Over the server's cap: refused here, with the reason, and no RPC.
+  h.read("CN_STATE.historyDate = '2026-01-01'; CN_STATE.historyEndDate = '2026-09-20'");
+  h.window.cnHistoryRangeChanged_();
+  assert.strictEqual(h.run.pending('getMyCallNotesRange').length, 0, 'no round trip for a range the server refuses');
+  assert.ok(/up to 90 days/.test(h.$('#cn-history-stack').textContent), 'the refusal names the cap');
+  assert.ok(!/week two/.test(h.$('#cn-history-stack').textContent), 'and draws no other range\'s notes');
+});
+
+test('C10 (cycle 22): a live refresh requested BEFORE a save confirmed does not drop the just-confirmed note', () => {
+  const h = bootLog([noteFixture({ noteId: 'n1', issue: 'earlier call' })]);
+  h.window.cnRefreshRollingStack_();                       // the 60s poll / a window wake — in flight
+  h.setField('cn-fld-issue', 'just saved');
+  h.window.cnSubmitActiveForm_();
+  h.run.flushSuccess({ success: true, note: noteFixture({ noteId: 'n2', issue: 'just saved', _pending: false }) }, 'submitCallNote');
+  // The poll's server list was read before n2 existed.
+  h.run.flushSuccess({ notes: [noteFixture({ noteId: 'n1', issue: 'earlier call' })], autoCopyFormat: '' }, 'getMyCallNotes');
+  const ids = h.read('CN_STATE.rollingNotes.map(function (n) { return n.noteId; }).join()');
+  assert.strictEqual(ids, 'n2,n1', 'THE REGRESSION: the confirmed note stays, on top');
+  assert.ok(/just saved/.test(h.$('#cn-stack').textContent), 'and is still on screen');
+  // A poll requested AFTER the confirm is authoritative: a note it does not
+  // carry (deleted elsewhere) is dropped as before.
+  h.window.cnRefreshRollingStack_();
+  h.run.flushSuccess({ notes: [noteFixture({ noteId: 'n1', issue: 'earlier call' })], autoCopyFormat: '' }, 'getMyCallNotes');
+  assert.strictEqual(h.read('CN_STATE.rollingNotes.map(function (n) { return n.noteId; }).join()'), 'n1',
+    'a later poll that omits it is believed');
+});
+
+test('C11 (cycle 22): a dictation still running when the form is cleared cannot write the previous note back into it', () => {
+  const h = bootLog();
+  let last = null;
+  h.window.webkitSpeechRecognition = function () { last = this; this.aborted = false; };
+  h.window.webkitSpeechRecognition.prototype.start = function () {};
+  h.window.webkitSpeechRecognition.prototype.stop = function () {};
+  h.window.webkitSpeechRecognition.prototype.abort = function () { this.aborted = true; if (this.onend) this.onend(); };
+  // The mic is flag-gated at render; mount one by hand beside the Issue field.
+  const btn = h.window.document.createElement('button');
+  btn.className = 'cn-voice-mic'; btn.dataset.target = 'cn-fld-issue';
+  h.$('#cn-active-form').appendChild(btn);
+  h.setField('cn-fld-issue', 'Patient A said');
+  h.window.cnVoiceStart_(btn);
+  const recog = last;
+  assert.ok(recog && btn.classList.contains('listening'), 'dictation is running');
+  h.setField('cn-fld-issue', 'Patient A said the chair broke');
+  h.window.cnSubmitActiveForm_();            // saves and CLEARS for the next call
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), '', 'cleared');
+  assert.ok(recog.aborted, 'the running session was aborted');
+  assert.ok(!btn.classList.contains('listening') && !btn._recog, 'and the mic reset');
+  // A result or end that the engine delivers late has nowhere to go.
+  if (recog.onresult) recog.onresult({ results: [Object.assign([{ transcript: ' the chair broke' }], { isFinal: true })] });
+  if (recog.onend) recog.onend();
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), '',
+    'THE REGRESSION: the previous note is NOT written back into the next call');
+});
+
+test('D6 (cycle 22): an Employee Docs manager action refreshes the list around a half-written document, never over it', async () => {
+  const h = boot(); mount_(h, 'view-area');
+  const doc = h.window.document;
+  let dash = { docs: [{ docId: 'd1', empId: 'e1', empName: 'Nina Patel', docType: 'review', title: 'Q3 review',
+    status: 'draft', requiresSignature: true, dueAt: '', signedAt: '' }] };
+  let tpls = { templates: [{ templateId: 't1', name: 'Annual review', docType: 'review', fields: [] },
+                           { templateId: 't2', name: 'PIP', docType: 'pip', fields: [] }] };
+  h.run.respond('getDocsDashboard', () => dash);
+  h.run.respond('getEmployeesList', () => ({ employees: [{ id: 'e1', name: 'Nina Patel' }, { id: 'e2', name: 'Leo Kim' }] }));
+  h.run.respond('getEmpDocTemplates', () => tpls);
+  h.read("currentView = 'docsManage'");
+  h.window.enterDocsManageView();
+  const body = doc.getElementById('ed-is-body');
+  assert.ok(body, 'the issue form rendered');
+  body.value = 'Half-written performance review…';
+  doc.getElementById('ed-is-title').value = '2026 review — Leo';
+  doc.getElementById('ed-is-emp').value = 'e2';
+  doc.getElementById('ed-tpl-pick').value = 't2';
+  // The manager releases the draft in the list below: the view reloads.
+  dash = { docs: [Object.assign({}, dash.docs[0], { status: 'released' })] };
+  tpls = { templates: [tpls.templates[1]] };   // …and a template was deleted meanwhile
+  h.window.edLoadMgr_();
+  assert.strictEqual(doc.getElementById('ed-is-body'), body, 'THE REGRESSION: the form is the same node');
+  assert.strictEqual(body.value, 'Half-written performance review…', 'and keeps the half-written body');
+  assert.strictEqual(doc.getElementById('ed-is-title').value, '2026 review — Leo');
+  assert.strictEqual(doc.getElementById('ed-is-emp').value, 'e2', 'the picked employee survives the option refresh');
+  assert.strictEqual(doc.getElementById('ed-tpl-pick').value, 't2', 'a still-existing template stays picked');
+  assert.strictEqual(doc.getElementById('ed-tpl-pick').options.length, 2, 'the deleted template is gone from the picker');
+  assert.ok(!h.$('[data-ed-release="d1"]'), 'the list below DID refresh (the released draft has no Release button)');
+  // A failed refresh lands beside the form, not over it.
+  h.run.respond('getDocsDashboard', () => { throw new Error('quota'); });
+  h.window.edLoadMgr_();
+  assert.strictEqual(doc.getElementById('ed-is-body'), body, 'a failed refresh does not wipe the form');
+  assert.ok(/Could not load/.test(doc.getElementById('ed-mgr-rest').textContent), 'and says it failed');
+  // A successful issue is the one action that RESETS the form — driven
+  // through the real submit, not by setting the flag (g138).
+  h.run.respond('getDocsDashboard', () => dash);
+  h.run.respond('issueDoc', () => ({ success: true, status: 'released', docId: 'd2' }));
+  h.window.__stubConfirm = () => Promise.resolve(true);
+  h.read('uiConfirm = window.__stubConfirm');
+  h.window.edSubmitIssue_(true);
+  await tick();
+  assert.notStrictEqual(doc.getElementById('ed-is-body'), body, 'after an issue the form is rebuilt');
+  assert.strictEqual(doc.getElementById('ed-is-body').value, '', 'empty for the next document');
+});
+
+test('D7 (cycle 22): a coaching reply the rep is typing survives every re-render of the list, and is dropped once it is sent', () => {
+  const h = boot(); const area = mount_(h, 'view-area');
+  const doc = h.window.document;
+  area.innerHTML = '<div id="coach-content"></div>';
+  const item = (id, extra) => Object.assign({ coachId: id, status: 'open', severity: 'minor', createdAt: '2026-09-20T10:00:00Z',
+    whatHappened: 'x', whatShould: 'y', ageDays: 1 }, extra || {});
+  let my = { items: [item('c1'), item('c2')] };
+  h.run.respond('getMyCoaching', () => my);
+  h.run.respond('acknowledgeCoaching', () => ({ success: true }));
+  h.read("COACH_MODE = 'mine'; COACH_STATE.my = null; COACH_STATE.replyDrafts = {}");
+  h.read("currentView = 'coaching'");
+  h.window.coachLoadMy_();
+  let ta = doc.getElementById('coach-reply-c1');
+  ta.focus();
+  ta.value = 'I will confirm the address <next time> & say so';
+  ta.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  // A filter/search re-render.
+  h.window.coachRenderMy_();
+  ta = doc.getElementById('coach-reply-c1');
+  assert.strictEqual(ta.value, 'I will confirm the address <next time> & say so', 'THE REGRESSION: the reply survives a re-render, escaped round-trip');
+  assert.strictEqual(doc.activeElement, ta, 'and keeps focus');
+  // Acknowledging ANOTHER item reloads the list.
+  my = { items: [item('c1'), item('c2', { status: 'acknowledged', acknowledgedAt: '2026-09-21T09:00:00Z' })] };
+  h.window.coachAck_('c2');
+  assert.strictEqual(doc.getElementById('coach-reply-c1').value, 'I will confirm the address <next time> & say so',
+    'the reload after acknowledging another item keeps it too');
+  // Sent with its own acknowledgement → dropped.
+  h.window.coachAck_('c1');
+  assert.strictEqual(h.read("COACH_STATE.replyDrafts['c1']"), undefined, 'the draft is dropped once sent');
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 // STEP 1 — Log persistence on nav-away/return (diagnose the operator report
 // "short-term notes reset when navigating back"). The Log is a today-only view
@@ -788,6 +978,54 @@ test('F3: intakeClearForm_ nulls INTAKE_STATE.preview (drops cached patient PHI)
   h.window.INTAKE_STATE.preview = { formType: 'PPD', payload: { patientInfo: 'Jane PHI', answers: { 38: '250' } }, bodyHash: 'abc' };
   h.window.intakeClearForm_('ppd');
   assert.strictEqual(h.window.INTAKE_STATE.preview, null, 'cached preview (patient answers) cleared on form clear');
+});
+
+test('I1 (cycle 22): an amend lands on a BLANK form in the original language — the rep\'s draft never survives into it', () => {
+  // The rep has another patient's PPD in progress (a stored draft). They open a
+  // Spanish submission for patient A and press Amend. Before I1 the language
+  // flip snapshotted the form BEFORE re-entering and restored it AFTER the
+  // amendment applied, so the form held patient B's draft while amendOf stayed
+  // set, and the send went out as "AMENDED" for patient A. And even in the
+  // same language, any answer the original left blank kept the draft's value.
+  const run = (lang) => {
+    const h = boot(); mount_(h, 'view-area');
+    h.window.localStorage.setItem('umsIntakeDrafts', JSON.stringify(
+      { ppd: { answers: { '38': '300', '43': 'MS' }, patientInfo: 'Patient B — TRX 2', at: Date.now() } }));
+    h.window.INTAKE_STATE.ppd.lang = 'EN';
+    h.window.INTAKE_AMEND_PREFILL = { form: 'ppd', submissionId: 'SUB-A', timestamp: '2026-09-20 10:00',
+      patientInfo: 'Patient A — TRX 1', dob: '', answers: { '38': '250' }, language: lang };
+    h.window.enterIntakePpdView();
+    const root = h.document.getElementById('intk-ppd-form');
+    return {
+      patient: h.document.getElementById('intk-ppd-patient').value,
+      q38: h.window.intakePpdGetVal_(root, '38'),
+      q43: h.window.intakePpdGetVal_(root, '43'),
+      lang: h.window.INTAKE_STATE.ppd.lang,
+      amendOf: h.window.INTAKE_STATE.ppd.amendOf && h.window.INTAKE_STATE.ppd.amendOf.submissionId,
+      parked: h.window.INTAKE_AMEND_PREFILL,
+      bar: !!h.document.querySelector('.intk-amend-bar'),
+    };
+  };
+  const es = run('ES');
+  assert.strictEqual(es.lang, 'ES', 'the form flipped to the original\'s language');
+  assert.strictEqual(es.patient, 'Patient A — TRX 1', 'THE REGRESSION: the amended patient, not the draft\'s');
+  assert.strictEqual(es.q38, '250', 'the amendment\'s own answer');
+  assert.strictEqual(es.q43, '', 'an answer the original left blank is BLANK, not the draft\'s');
+  assert.strictEqual(es.amendOf, 'SUB-A');
+  assert.strictEqual(es.parked, null, 'the prefill is consumed exactly once');
+  assert.ok(es.bar, 'the amend banner is shown');
+  const en = run('EN');
+  assert.strictEqual(en.patient, 'Patient A — TRX 1');
+  assert.strictEqual(en.q38, '250');
+  assert.strictEqual(en.q43, '', 'same language: the draft does not fill the gaps either');
+  // An ordinary language flip still carries what the rep typed.
+  const h = boot(); mount_(h, 'view-area');
+  h.window.localStorage.removeItem('umsIntakeDrafts');
+  h.window.INTAKE_STATE.ppd.lang = 'EN';
+  h.window.enterIntakePpdView();
+  h.document.getElementById('intk-ppd-patient').value = 'Typed Patient';
+  h.window.intakeSetLang_('ppd', 'ES');
+  assert.strictEqual(h.document.getElementById('intk-ppd-patient').value, 'Typed Patient', 'a user flip keeps the typed answers');
 });
 
 test('intakeRenderSentList_: hostile patientInfo renders escaped (INV-89/116)', () => {
@@ -1675,6 +1913,13 @@ test('a pending resume reads as a resume, not as the punch it consumes', () => {
     'it describes what was asked for');
   assert.ok(!/Clock Out/.test(resumeChip),
     'and NOT "Clock Out 19:00" — that is the punch it converts, and the rep has already made it');
+  // T3 (cycle 22): the resumed day's finish rides the request — say how to
+  // file it until one is filed, then say what was filed. Neither names the
+  // consumed Clock Out.
+  assert.ok(/when you finish, add your finish time with Adjust/.test(resumeChip), 'no finish filed yet: the way to add one');
+  const filed = html([{ punchType: 'ClockOut', time: '19:00', action: 'resume', endTime: '21:15' }]);
+  assert.ok(/back at 19:00 · finished 21:15/.test(filed) && !/add your finish/.test(filed) && !/Clock Out/.test(filed),
+    'a filed finish is stated, and the hint goes away');
   // An ordinary adjustment is unchanged.
   assert.ok(/Clock In/.test(html([{ punchType: 'ClockIn', time: '08:00', action: 'set' }])),
     'a normal request still names its punch');
@@ -1751,6 +1996,58 @@ test('a day with two breaks round-trips through the modal unchanged', () => {
   assert.strictEqual(h.read('deReadBreaks_')().map((b) => b.out + '-' + b.in).join('|'),
     '12:00-12:30|17:00-19:00', 'and both read back for the submit');
   assert.ok(/Break 2/.test(deRows(h)[1].label), 'rows are numbered for the reader');
+});
+
+test('T1 (cycle 22): a break the rep is ON right now prefills as a trailing half row and reads back for the save', () => {
+  const h = boot();
+  // A finished morning break, then out at lunch now: `breaks` carries the pair,
+  // `openBreak` the leave with no return. Before T1 the modal rendered only the
+  // pair, and a save deleted the 12:30 LunchOut.
+  h.read('deSetBreaksFromDay_')({
+    clockIn: '08:00:00', lunchOut: '10:30:00', lunchIn: '10:45:00',
+    breaks: [{ out: '10:30:00', in: '10:45:00' }], openBreak: '12:30:40',
+  });
+  assert.strictEqual(deRows(h).map((r) => r.out + '-' + r.in).join('|'), '10:30-10:45|12:30-',
+    'the open leave renders LAST with a blank return');
+  assert.strictEqual(h.read('deReadBreaks_')().map((b) => b.out + '-' + b.in).join('|'), '10:30-10:45|12:30-',
+    'and reads back for the submit, so the server keeps the row');
+  // On lunch with no earlier break: the list is not "empty".
+  h.read('deSetBreaksFromDay_')({ clockIn: '08:00:00', breaks: [], openBreak: '12:30:00' });
+  assert.strictEqual(h.read('deReadBreaks_')().map((b) => b.out + '-' + b.in).join('|'), '12:30-');
+  assert.ok(!h.document.querySelector('#de-breaks .de-breaks-empty'), 'the empty state is NOT shown for a rep on lunch');
+  // A closed day ships openBreak: null — nothing extra.
+  h.read('deSetBreaksFromDay_')({ breaks: [{ out: '12:00:00', in: '12:30:00' }], openBreak: null });
+  assert.strictEqual(h.read('deReadBreaks_')().length, 1);
+});
+
+test('F5 (cycle 22 follow-on): a STRAY break stamp renders as a flagged half row, survives add/remove, and Save refuses it before any RPC', () => {
+  const h = boot();
+  h.read('openDayEditModal')('E-1077', 'Nina Patel');
+  const date = h.read('_deDate');
+  // Damage the punch flow cannot make: a leave at 10:05 inside the 10:00–10:30
+  // break, plus the rep out at lunch now. Before F5 the 10:05 never rendered,
+  // and ANY save of this day (say, fixing the clock-in) deleted it unseen.
+  h.run.flushSuccess({ days: [{ date, clockIn: '08:00:00', breaks: [{ out: '10:00:00', in: '10:30:00' }],
+    strayBreaks: { outs: ['10:05:00'], ins: [] }, openBreak: '13:00:00' }] }, 'getEmployeeTimesheetForManager');
+  assert.strictEqual(deRows(h).map((r) => r.out + '-' + r.in).join('|'), '10:00-10:30|10:05-|13:00-',
+    'the stray renders BEFORE the open break, so it is never the trailing half the server accepts as open');
+  const hints = () => h.$$('#de-breaks [data-de-stray-hint]');
+  assert.strictEqual(hints().length, 1, 'and it is flagged');
+  assert.match(hints()[0].textContent, /Break 2 is an unmatched punch/);
+  // Adding a row re-renders from the read-back: the flag rides the read.
+  h.document.getElementById('de-break-add').click();
+  assert.strictEqual(hints().length, 1, 'the flag survives a re-render');
+  // Save with the stray unresolved: refused, nothing sent.
+  const ci = h.document.getElementById('de-clockin');
+  ci.value = '08:05'; ci.dispatchEvent(new h.window.Event('input'));
+  h.document.getElementById('de-save').click();
+  assert.strictEqual(h.run.pending('managerSaveDay').length, 0, 'NO save RPC while a stray is half');
+  assert.match(h.$('#toast-stack .toast').textContent, /unmatched punch from the sheet/, 'and the refusal says what the row is');
+  // Removing it is a deliberate deletion: the save goes through.
+  h.$$('#de-breaks [data-de-break-rm]')[1].click();
+  assert.strictEqual(hints().length, 0);
+  h.document.getElementById('de-save').click();
+  assert.strictEqual(h.run.pending('managerSaveDay').length, 1, 'resolved, the day saves');
 });
 
 test('an older server (scalars only) still prefills its one pair', () => {
@@ -2893,6 +3190,35 @@ test('F-02 DOM (2026-09-17): the Scheduled-reminders and Scratchpad modals CLOSE
   });
 });
 
+test('C6 (cycle 22): Scratchpad text typed during an in-flight save, then closed, is still SAVED; a failure after close is stated and carried into the next open', () => {
+  const h = bootLog();
+  const doc = h.window.document;
+  const sent = () => h.run.pending('saveMyScratchpad').map((c) => c.args[0]);
+  h.read('cnOpenScratchpadModal_')();
+  h.run.flushSuccess({ success: true, content: 'v0', updatedAtMs: Date.now() }, 'getMyScratchpad');
+  let ta = doc.getElementById('cn-scratch-text');
+  ta.value = 'v1'; ta.dispatchEvent(new h.window.Event('input'));
+  h.read('cnScratchSave_')(true);                         // "Save now" — in flight
+  assert.deepStrictEqual(sent(), ['v1']);
+  ta.value = 'v1 and more'; ta.dispatchEvent(new h.window.Event('input'));
+  h.window.closeOverlay(doc.getElementById('cn-scratch-overlay'));   // close while v1 is in flight
+  assert.ok(!doc.getElementById('cn-scratch-text'), 'the modal is gone');
+  h.run.flushSuccess({ success: true, updatedAtMs: Date.now() }, 'saveMyScratchpad');
+  assert.deepStrictEqual(sent(), ['v1 and more'], 'THE REGRESSION: the text typed during the save is sent after the modal closed');
+  assert.strictEqual(h.read('CN_SCRATCH.dirty'), true, 'the first save did NOT mark newer text clean');
+  // That save fails — with no status line left, the failure is a toast…
+  h.run.flushFailure(new Error('quota'), 'saveMyScratchpad');
+  assert.ok(/Scratchpad not saved/.test(h.$('#toast-stack').textContent), 'a failure after close is stated');
+  // …and the next open carries the unsaved text instead of the server copy, and retries.
+  h.read('cnOpenScratchpadModal_')();
+  h.run.flushSuccess({ success: true, content: 'v1', updatedAtMs: Date.now() }, 'getMyScratchpad');
+  ta = doc.getElementById('cn-scratch-text');
+  assert.strictEqual(ta.value, 'v1 and more', 'the unsaved text comes back');
+  assert.deepStrictEqual(sent(), ['v1 and more'], 'and is saved again');
+  h.run.flushSuccess({ success: true, updatedAtMs: Date.now() }, 'saveMyScratchpad');
+  assert.strictEqual(h.read('CN_SCRATCH.dirty'), false, 'clean once the latest text lands');
+});
+
 test('F-06 DOM (2026-09-17): a failed department-config fetch is NOT cached as an empty config — the next open re-asks, and a structured {error} is a failure too', () => {
   const h = boot();
   let ran = 0;
@@ -3582,6 +3908,40 @@ test('R DOM: the drawer mounts each lookup in its own container, NOT inside the 
     assert.strictEqual(sec.querySelector('input'), null,
       '.kbd-sec carries a label, never a control — found one inside: ' + sec.textContent.slice(0, 40));
   });
+});
+
+test('K6 + K2 (cycle 22): the drawer home re-render keeps the lookups the rep is typing in, and a FRESH build forgets the previous caller', () => {
+  const h = boot();
+  bootLookups(h);
+  const kbdBody = h.window.document.createElement('div');
+  kbdBody.id = 'kbd-body';
+  h.window.document.body.appendChild(kbdBody);
+  h.read('kbDrawerRenderHome_')({ fresh: true });
+  const inp = kbdBody.querySelector('#kb-oop-addr-d');
+  inp.value = '75038'; inp.focus();
+  const payor = kbdBody.querySelector('#kb-ins-input-d');
+  payor.value = 'aetna';
+  // K6 — the tree response (and any other re-render while home is showing).
+  h.window.localStorage.setItem(h.read('KB_PANEL_LS_KEY'), JSON.stringify({ recents: [{ id: 'r1', title: 'A recent' }] }));
+  h.read('kbDrawerRenderHome_')();
+  assert.strictEqual(kbdBody.querySelector('#kb-oop-addr-d'), inp, 'THE REGRESSION: the lookup input is literally the same node (g141)');
+  assert.strictEqual(inp.value, '75038', 'and keeps what was typed');
+  assert.strictEqual(kbdBody.querySelector('#kb-ins-input-d').value, 'aetna');
+  assert.strictEqual(h.window.document.activeElement, inp, 'focus survives with it');
+  assert.ok(/A recent/.test(kbdBody.querySelector('#kbd-home-blocks').textContent), 'the blocks around it DID refresh');
+  // K2 — a payor lookup in flight when the drawer reopens for the next caller.
+  h.window.insLookupInput_(payor);
+  h.flushTimers();
+  assert.strictEqual(h.run.pending('searchInsurancePayors').length, 1, 'the lookup is in flight');
+  h.read("KB_OOP.last['-d'] = { ctx: { item: 'scout', addr: '75038', elig: true }, res: { items: [{ name: 'Scout' }] } }");
+  h.read('kbDrawerRenderHome_')({ fresh: true });   // the drawer OPEN
+  assert.strictEqual(kbdBody.querySelector('#kb-ins-input-d').value, '', 'an open builds fresh inputs for the next caller');
+  assert.strictEqual(h.read("KB_OOP.last['-d']"), null, 'and forgets the previous caller\'s item verdicts');
+  assert.strictEqual(h.read("KB_INS.last['-d']"), null, 'and payor results');
+  h.run.flushSuccess({ total: 1, cap: 8, matches: [{ name: 'AETNA GOLD', networkStatus: 'IN-NETWORK', details: [] }] }, 'searchInsurancePayors');
+  assert.strictEqual(kbdBody.querySelector('#kb-ins-results-d').innerHTML, '',
+    'the previous caller\'s late payor answer does NOT paint under the new, empty input');
+  assert.strictEqual(kbdBody.querySelector('#kb-oop-results-d').innerHTML, '', 'nor does a stale item verdict');
 });
 
 /** The payor payload the join pins share: one code that names an item, one the

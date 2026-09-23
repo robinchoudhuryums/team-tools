@@ -107,7 +107,7 @@ function submitCallNote(payload) {
     row[CN.EMAIL_DEPARTMENTS] = '';
     row[CN.SUBFORM]         = subform;
     row[CN.SUBFORM_DATA]    = subformDataJson;
-    sheet.appendRow(row);
+    sheet.appendRow(sheetSafeRow_(row));
 
     writeAuditLog_(emp, 'CallNoteCreate', dateLocal, '', false, 0,
       `noteId=${noteId}${flagType ? ', flag=' + flagType : ''}`);
@@ -152,13 +152,13 @@ function updateCallNote(noteId, payload) {
     // multi-flag toolbar, never the inline text editor. If a future caller
     // passes flags/tags to updateCallNote expecting them to persist, surface a
     // dedicated endpoint instead of silently widening this write.
-    sheet.getRange(located.rowIndex, CN.CALLBACK + 1).setValue(cleaned.callback);
-    sheet.getRange(located.rowIndex, CN.CALLER + 1).setValue(cleaned.caller);
-    sheet.getRange(located.rowIndex, CN.RELATIONSHIP + 1).setValue(cleaned.relationship);
-    sheet.getRange(located.rowIndex, CN.PATIENT_TRX + 1).setValue(cleaned.patientAndTrx);
-    sheet.getRange(located.rowIndex, CN.ISSUE + 1).setValue(cleaned.issue);
-    sheet.getRange(located.rowIndex, CN.TRANSFERRED_TO + 1).setValue(cleaned.transferredTo);
-    sheet.getRange(located.rowIndex, CN.RESOLUTION + 1).setValue(cleaned.resolution);
+    sheet.getRange(located.rowIndex, CN.CALLBACK + 1).setValue(sheetSafe_(cleaned.callback));
+    sheet.getRange(located.rowIndex, CN.CALLER + 1).setValue(sheetSafe_(cleaned.caller));
+    sheet.getRange(located.rowIndex, CN.RELATIONSHIP + 1).setValue(sheetSafe_(cleaned.relationship));
+    sheet.getRange(located.rowIndex, CN.PATIENT_TRX + 1).setValue(sheetSafe_(cleaned.patientAndTrx));
+    sheet.getRange(located.rowIndex, CN.ISSUE + 1).setValue(sheetSafe_(cleaned.issue));
+    sheet.getRange(located.rowIndex, CN.TRANSFERRED_TO + 1).setValue(sheetSafe_(cleaned.transferredTo));
+    sheet.getRange(located.rowIndex, CN.RESOLUTION + 1).setValue(sheetSafe_(cleaned.resolution));
 
     const diffs = [];
     [['callback', CN.CALLBACK], ['caller', CN.CALLER], ['relationship', CN.RELATIONSHIP],
@@ -212,7 +212,7 @@ function setCallNoteFlag(noteId, flagType, trainingQuestion, reviewComment) {
       if (idx >= 0) cur.splice(idx, 1);
       else cur.push('urgent');
       subformData.flags = cur;
-      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(subformData)));
       const dateLocal = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
       writeAuditLog_(emp, 'CallNoteFlag', dateLocal, '', false, 0,
         `noteId=${noteId}; urgent=${idx >= 0 ? 'off' : 'on'}`);
@@ -222,21 +222,21 @@ function setCallNoteFlag(noteId, flagType, trainingQuestion, reviewComment) {
 
     // Standard FlagType (action/training/review/'') path
     const oldFlag = String(located.row[CN.FLAG_TYPE] || '').trim().toLowerCase();
-    sheet.getRange(located.rowIndex, CN.FLAG_TYPE + 1).setValue(t);
-    if (oldFlag !== t) sheet.getRange(located.rowIndex, CN.RESOLVED + 1).setValue('FALSE');
+    sheet.getRange(located.rowIndex, CN.FLAG_TYPE + 1).setValue(sheetSafe_(t));
+    if (oldFlag !== t) sheet.getRange(located.rowIndex, CN.RESOLVED + 1).setValue(sheetSafe_('FALSE'));
 
     if (t === 'training' && trainingQuestion) {
       // F(cycle-8): same 2000-char cap as the submit path (sanitizeCallNotePayload_,
       // M-15) — an uncapped write can push the SubformData cell toward the ~50k
       // Sheets limit, after which EVERY later metadata write to the note throws.
       subformData.trainingQuestion = String(trainingQuestion).trim().slice(0, 2000);
-      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(subformData)));
     }
     if (t === 'review' && reviewComment) {
       // Round-1 pilot #1 — optional review comment from the card toggle; the
       // trainingQuestion write above, mirrored (same trim + cell-size cap).
       subformData.reviewComment = String(reviewComment).trim().slice(0, 2000);
-      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(subformData)));
     }
     // Mirror the primary flag into subformData.flags so the form toolbar
     // + tag taxonomy stay in sync with the FlagType column.
@@ -248,11 +248,11 @@ function setCallNoteFlag(noteId, flagType, trainingQuestion, reviewComment) {
       });
       if (pruned.indexOf(t) < 0) pruned.push(t);
       subformData.flags = pruned;
-      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(subformData)));
     } else if (Array.isArray(subformData.flags) && subformData.flags.length > 0) {
       // Cleared primary — drop CN_FLAG_TYPES entries (keep urgent)
       subformData.flags = subformData.flags.filter(function (f) { return CN_FLAG_TYPES.indexOf(f) < 0; });
-      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(subformData)));
     }
 
     const dateLocal = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
@@ -280,7 +280,7 @@ function setCallNoteResolved(noteId, resolved) {
       return { success: false, error: 'Only action-flagged notes can be resolved.' };
     }
     const val = resolved ? 'TRUE' : 'FALSE';
-    sheet.getRange(located.rowIndex, CN.RESOLVED + 1).setValue(val);
+    sheet.getRange(located.rowIndex, CN.RESOLVED + 1).setValue(sheetSafe_(val));
 
     const dateLocal = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
     writeAuditLog_(emp, 'CallNoteResolve', dateLocal, '', false, 0,
@@ -420,7 +420,7 @@ function setCallNotePinned(noteId, pinned) {
       delete subformData.pinned;
       delete subformData.pinnedAt;
     }
-    sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+    sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(subformData)));
 
     const dateLocal = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
     writeAuditLog_(emp, 'CallNotePin', dateLocal, '', false, 0,
@@ -982,12 +982,12 @@ function provisionCallNotesSheet(repEmpId) {
     // rather than insert a second one, so there's no stray "Sheet1").
     const notes = ss.getSheets()[0];
     notes.setName(CONFIG.CALL_NOTES.NOTES_TAB);
-    notes.appendRow(CN_HEADERS);
+    notes.appendRow(sheetSafeRow_(CN_HEADERS));
     notes.setFrozenRows(1);
     notes.getRange(1, 1, 1, CN_HEADERS.length).setFontWeight('bold');
     const sheetId = ss.getId();
     // Write the ID into column L of the rep's Employees row + invalidate cache.
-    sheet.getRange(targetRow + 1, EMP.CALL_NOTES_SHEET_ID + 1).setValue(sheetId);
+    sheet.getRange(targetRow + 1, EMP.CALL_NOTES_SHEET_ID + 1).setValue(sheetSafe_(sheetId));
     invalidateRosterCache_();
     writeAuditLog_(callerEmp, 'CallNotesProvision', repEmpId, '', false, 0,
       'sheetId=' + sheetId, callerEmp.email);
@@ -1336,7 +1336,7 @@ function applyTagTransformAcrossReps_(oldTag, transform) {
         const next = transform(sub.tags.slice());
         if (!arraysEqual_(next, sub.tags)) {
           sub.tags = next;
-          sheet.getRange(j + 1, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(sub));
+          sheet.getRange(j + 1, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(sub)));
           notesUpdated++;
           repHadUpdate = true;
         }
@@ -1868,8 +1868,8 @@ function exportCallNotesRange(startDate, endDate) {
         n.emailedAt, n.emailDepartments,
       ];
     });
-    sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
-    sh.getRange(2, 1, data.length, headers.length).setValues(data);
+    sh.getRange(1, 1, 1, headers.length).setValues(sheetSafeRows_([headers])).setFontWeight('bold');
+    sh.getRange(2, 1, data.length, headers.length).setValues(sheetSafeRows_(data));
     sh.setFrozenRows(1);
     SpreadsheetApp.flush();
 
@@ -1940,7 +1940,7 @@ function setCallNoteManagerComment(repEmpId, noteId, message) {
       by: callerEmp.email,
     }, CN_FEEDBACK_MAX_ENTRIES, 'feedback');   // F11
     if (fbErr) return { success: false, error: fbErr };
-    sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+    sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(subformData)));
 
     const dateLocal = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
     writeAuditLog_(target, 'CallNoteManagerComment', dateLocal, '', false, 0,
@@ -1994,7 +1994,7 @@ function appendCallNoteFeedback(noteId, message, kind) {
       kind: kindV,
     }, CN_FEEDBACK_MAX_ENTRIES, 'feedback');   // F11
     if (fbErr) return { success: false, error: fbErr };
-    sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+    sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(subformData)));
 
     const dateLocal = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
     writeAuditLog_(emp, 'CallNoteFeedback', dateLocal, '', false, 0,
@@ -2465,7 +2465,7 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
       : selections.departments.join(', ');
     try {
       sheet.getRange(located.rowIndex, CN.EMAILED_AT + 1, 1, 2)
-        .setValues([[emailedAt, deptLabel]]);
+        .setValues(sheetSafeRows_([[emailedAt, deptLabel]]));
       // Persist subform selection back to the row so the rolling card can
       // re-open the composer with prior settings if the rep needs to re-send.
       // MERGE into the existing subformData blob — a straight overwrite would
@@ -2478,10 +2478,10 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
         const existingSub = (note.subformData && typeof note.subformData === 'object')
           ? note.subformData : {};
         const mergedSub = Object.assign({}, existingSub, selections);
-        sheet.getRange(located.rowIndex, CN.SUBFORM + 1, 1, 2).setValues([[
+        sheet.getRange(located.rowIndex, CN.SUBFORM + 1, 1, 2).setValues(sheetSafeRows_([[
           updateInfoToSubformKey_(selections.updateInfo),
           JSON.stringify(mergedSub),
-        ]]);
+        ]]));
       }
     } catch (stampErr) {
       console.warn('emailFromCallNote: stamp failed after successful send (noteId=' +
@@ -2509,7 +2509,7 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     // Metrics → Dept Requests with elapsed/resolution-time tracking.
     try {
       if (drTrackable && !drExistingId) {   // F(M-16): 'Other'-only sends are never tracked
-        getOrCreateDeptRequestsSheet_().appendRow([
+        getOrCreateDeptRequestsSheet_().appendRow(sheetSafeRow_([
           drId, emp.id, emp.name, emp.email || getActiveUserEmail_() || '',
           deptLabel, drRecipientDomains_(recipientList.to), drNowTs_(), 'open', '', '',
           // F(L-11): the label is free-typed (datalist-SUGGESTED) — cap it so
@@ -2518,7 +2518,7 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
           String(selections.updateInfo || 'Call note email').slice(0, 80), noteId,
           '',   // ResolvedVia — written by the resolver
           String(note.patientAndTrx || '').slice(0, DR_PATIENT_TRX_MAX),
-        ]);
+        ]));
         drBumpCacheGen_();   // a new open request must reach the next list read
       }
       if (drTrackable) writeAuditLog_(emp, 'DeptRequestSent', note.dateLocal, '', false, 0,
@@ -3218,7 +3218,7 @@ function sendExternalEmail(payload) {
         if (stampErrMsg) {
           console.warn('sendExternalEmail: stamp skipped (noteId=' + noteId + '): ' + stampErrMsg);
         } else {
-          sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+          sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(subformData)));
         }
       }
     } catch (stampErr) {
@@ -3502,7 +3502,7 @@ function getOrCreateNotesArchiveTab_(ss) {
   let sheet = ss.getSheetByName(name);
   if (!sheet) {
     sheet = ss.insertSheet(name);
-    sheet.appendRow(CN_HEADERS);
+    sheet.appendRow(sheetSafeRow_(CN_HEADERS));
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, CN_HEADERS.length).setFontWeight('bold');
   }
@@ -3564,7 +3564,18 @@ function archiveSheetRowsOlderThan_(srcSheet, archiveSheet, dateColIdx, cutoffMs
   if (archiveSheet.getMaxColumns() < width) {
     archiveSheet.insertColumnsAfter(archiveSheet.getMaxColumns(), width - archiveSheet.getMaxColumns());
   }
-  archiveSheet.getRange(archiveSheet.getLastRow() + 1, 1, block.length, width).setValues(block);
+  // C1 (cycle 22): grow the ROWS too. getRange past the last grid row THROWS
+  // ("outside the dimensions of the sheet") — appendRow would have extended
+  // the grid, a positional write does not. A new archive tab has the default
+  // 1000-row grid, so the first run with 1000+ eligible rows (a first enable on
+  // a busy rep, or any archive near 1000 rows) threw here, before any write:
+  // nothing was lost, but the per-rep catch skipped that rep every night and
+  // the audit row just read smaller. The Timesheet tier shares this mover.
+  const needRows = archiveSheet.getLastRow() + block.length;
+  if (archiveSheet.getMaxRows() < needRows) {
+    archiveSheet.insertRowsAfter(archiveSheet.getMaxRows(), needRows - archiveSheet.getMaxRows());
+  }
+  archiveSheet.getRange(archiveSheet.getLastRow() + 1, 1, block.length, width).setValues(sheetSafeRows_(block));
   SpreadsheetApp.flush();   // ensure the archive write lands before we delete the source
   // Sheets REFUSES to delete every non-frozen row of a grid ("not possible to
   // delete all non-frozen rows" — the _clearTestCallNotes lesson). A run whose
@@ -3796,9 +3807,9 @@ function reconcileCallNotes() {
           if (!dateLocal && timestamp) dateLocal = timestamp.substring(0, 10);
           if (!dateLocal) dateLocal = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
           if (!timestamp) timestamp = dateLocal + 'T12:00:00';
-          sheet.getRange(rowIndex, CN.NOTE_ID + 1).setValue(Utilities.getUuid());
-          if (!tsHadValue) sheet.getRange(rowIndex, CN.TIMESTAMP + 1).setValue(timestamp);
-          if (!cnDateLocalString_(row[CN.DATE_LOCAL])) sheet.getRange(rowIndex, CN.DATE_LOCAL + 1).setValue(dateLocal);
+          sheet.getRange(rowIndex, CN.NOTE_ID + 1).setValue(sheetSafe_(Utilities.getUuid()));
+          if (!tsHadValue) sheet.getRange(rowIndex, CN.TIMESTAMP + 1).setValue(sheetSafe_(timestamp));
+          if (!cnDateLocalString_(row[CN.DATE_LOCAL])) sheet.getRange(rowIndex, CN.DATE_LOCAL + 1).setValue(sheetSafe_(dateLocal));
           repBackfilled++;
         }
         if (repBackfilled > 0) { rowsBackfilled += repBackfilled; repsTouched++; }
@@ -4119,7 +4130,7 @@ function getOrCreateScheduledCallsSheet_() {
   let sh = ss.getSheetByName(SCHED_CALLS_TAB);
   if (!sh) {
     sh = ss.insertSheet(SCHED_CALLS_TAB);
-    sh.appendRow(['Id', 'EmpId', 'WhenMs', 'LeadMin', 'Label', 'Status', 'CreatedAtMs']);
+    sh.appendRow(sheetSafeRow_(['Id', 'EmpId', 'WhenMs', 'LeadMin', 'Label', 'Status', 'CreatedAtMs']));
     sh.setFrozenRows(1);
   }
   return sh;
@@ -4186,7 +4197,7 @@ function createScheduledCall(payload) {
       return { error: 'You already have ' + SCHED_ACTIVE_CAP + ' active reminders — mark some done or cancel them first.' };
     }
     const id = Utilities.getUuid();
-    sh.appendRow([id, emp.id, whenMs, v.leadMin, v.label, 'active', now]);
+    sh.appendRow(sheetSafeRow_([id, emp.id, whenMs, v.leadMin, v.label, 'active', now]));
     writeAuditLog_(emp, 'ScheduledCallCreate', '', '', false, 0, 'id=' + id);
     return { success: true, call: { id: id, whenMs: whenMs, leadMin: v.leadMin, label: v.label, status: 'active' } };
   } catch (err) { return { error: err.message }; }
@@ -4222,7 +4233,7 @@ function setScheduledCallStatus(id, status) {
     const wanted = String(id || '').trim();
     const hit = schedReadMine_(sh, emp.id).filter(function (c) { return c.id === wanted; })[0];
     if (!hit) return { error: 'Reminder not found.' };
-    sh.getRange(hit.rowIndex, SC.STATUS + 1).setValue(st);
+    sh.getRange(hit.rowIndex, SC.STATUS + 1).setValue(sheetSafe_(st));
     writeAuditLog_(emp, 'ScheduledCallStatus', '', '', false, 0, 'id=' + hit.id + '; ' + st);
     pendingTasksBust_(emp.id);                                   // F4
     return { success: true };
@@ -4282,8 +4293,8 @@ function saveMyScratchpad(content) {
     }
     const sh = scratchpadSheet_(emp, true);
     const now = Date.now();
-    sh.getRange('A1').setValue(text);
-    sh.getRange('B1').setValue(now);   // epoch-ms NUMBER cell — coercion-immune
+    sh.getRange('A1').setNumberFormat('@').setValue(sheetText_(text));   // S2: the '@' cell, re-asserted — raw, never an apostrophe
+    sh.getRange('B1').setValue(sheetSafe_(now));   // epoch-ms NUMBER cell — coercion-immune
     return { success: true, updatedAtMs: now };
   } catch (err) { return { error: err.message }; }
   finally { lock.releaseLock(); }
@@ -4365,7 +4376,7 @@ function getCallNotesSheet_(emp) {
   let sheet = ss.getSheetByName(CONFIG.CALL_NOTES.NOTES_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(CONFIG.CALL_NOTES.NOTES_TAB);
-    sheet.appendRow(CN_HEADERS);
+    sheet.appendRow(sheetSafeRow_(CN_HEADERS));
     sheet.setFrozenRows(1);
     // Make timestamp + date columns left-aligned for legibility
     sheet.getRange(1, 1, 1, CN_HEADERS.length).setFontWeight('bold');

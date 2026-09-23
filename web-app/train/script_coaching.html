@@ -11,7 +11,12 @@
 //  docs/design_handoff_five_surfaces/IMPLEMENTATION_PLAN.md §2.K.
 // ════════════════════════════════════════════════════════════════════════════
 var COACH_STATE = { my: null, dash: null, emps: null, filter: 'all', search: '', empFilter: '',
-  myFilter: 'all', mySearch: '', boardSort: { key: 'score', dir: 'desc' } };
+  myFilter: 'all', mySearch: '', boardSort: { key: 'score', dir: 'desc' },
+  // D7 (cycle 22): the acknowledgement reply a rep is typing, per coachId. The
+  // reply lived only in the DOM, and every re-render of the list (a filter
+  // chip, the search box, the reload after acknowledging ANOTHER item) rebuilt
+  // it empty. Dropped once that item's acknowledgement lands.
+  replyDrafts: {} };
 var COACH_DRAWER = null;   // the open composer's state (kind / severity / prefill) — null when closed
 
 // Merged Coaching tab: one tab for everyone. Reps always see "Mine" (their
@@ -186,6 +191,11 @@ function coachMatches_(it, q) {
 function coachRenderMy_() {
   var el = document.getElementById('coach-content');
   if (!el) return;
+  // D7: a reply box that had focus gets it back, caret and all — the draft
+  // itself is re-rendered from COACH_STATE.replyDrafts.
+  var ae = document.activeElement;
+  var keepId = (ae && ae.id && ae.id.indexOf('coach-reply-') === 0) ? ae.id : '';
+  var keepPos = keepId ? ae.selectionStart : null;
   var data = COACH_STATE.my || {};
   if (data.error) { el.innerHTML = errorStateHtml_(data.error); return; }   // A12
   var all = data.items || [];
@@ -232,6 +242,10 @@ function coachRenderMy_() {
     h += coachMonthGroups_(shown, function (it) { return coachCardMy_(it, nowMs); });
   }
   el.innerHTML = h;
+  if (keepId) {
+    var back = document.getElementById(keepId);
+    if (back) { back.focus(); try { if (keepPos != null) back.setSelectionRange(keepPos, keepPos); } catch (err) {} }
+  }
 }
 
 /** Newest-first cards grouped under a mono-uppercase MONTH divider. */
@@ -273,7 +287,8 @@ function coachCardMy_(it, nowMs) {
     // 4d — acknowledge with an OPTIONAL reply (a real <label for>).
     var rid = 'coach-reply-' + it.coachId;
     foot = '<div class="coach-replybox"><label for="' + esc(rid) + '" class="coach-nar-lbl">Reply · optional</label>' +
-      '<textarea id="' + esc(rid) + '" maxlength="2000" rows="2" placeholder="What you’ll do differently, or a question for your manager."></textarea>' +
+      '<textarea id="' + esc(rid) + '" maxlength="2000" rows="2" placeholder="What you’ll do differently, or a question for your manager.">' +
+        esc(COACH_STATE.replyDrafts[it.coachId] || '') + '</textarea>' +
       '<div class="coach-replybox-foot"><span class="coach-feed-note">Acknowledging confirms you’ve read it — a reply is optional.</span>' +
       '<button type="button" class="tr-complete-btn" data-coach-ack="' + esc(it.coachId) + '">' + icon('check', 13) + ' Acknowledge</button></div></div>';
   }
@@ -309,6 +324,7 @@ function coachAck_(coachId) {
     .withSuccessHandler(function (r) {
       settle();
       if (r && r.success) {
+        delete COACH_STATE.replyDrafts[coachId];   // D7 — sent with the acknowledgement
         if (typeof showToast === 'function') showToast('Acknowledged', 'toast-success');
         coachLoadMy_();
       } else if (typeof showToast === 'function') {
@@ -811,6 +827,7 @@ document.addEventListener('input', function (e) {
   if (!t || !t.id) return;
   if (t.id === 'coach-search') { COACH_STATE.search = t.value; coachRenderMgrKeepFocus_(); }
   else if (t.id === 'coach-my-search') { COACH_STATE.mySearch = t.value; coachRenderMy_(); }
+  else if (t.id.indexOf('coach-reply-') === 0) COACH_STATE.replyDrafts[t.id.slice('coach-reply-'.length)] = t.value;   // D7
 });
 document.addEventListener('change', function (e) {
   var t = e.target;

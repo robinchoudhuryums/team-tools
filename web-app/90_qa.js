@@ -103,12 +103,13 @@ function getQaSS_() {
   if (!id) throw new Error('QA is not configured — set Script Property QA_SS_ID to a dedicated spreadsheet.');
   return SpreadsheetApp.openById(id);
 }
-function getOrCreateQaSheet_(tabName, headers, textCols) {
+function getOrCreateQaSheet_(tabName, headers, textIdx) {
+  const textCols = (textIdx || []).map(sheetColLetter_);
   const ss = getQaSS_();
   let sheet = ss.getSheetByName(tabName);
   if (!sheet) {
     sheet = ss.insertSheet(tabName);
-    sheet.appendRow(headers);
+    sheet.appendRow(sheetSafeRow_(headers));
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
     // Pin the free-text columns to PLAIN TEXT for all future rows — a file
@@ -120,17 +121,17 @@ function getOrCreateQaSheet_(tabName, headers, textCols) {
     // Header self-heal (the KB/EmpDocs pattern): a tab provisioned before a
     // trailing column shipped gets the missing headers appended in place.
     const have = sheet.getLastColumn();
-    sheet.getRange(1, have + 1, 1, headers.length - have).setValues([headers.slice(have)]).setFontWeight('bold');
+    sheet.getRange(1, have + 1, 1, headers.length - have).setValues(sheetSafeRows_([headers.slice(have)])).setFontWeight('bold');
     (textCols || []).forEach(function (col) {
       if (col.charCodeAt(0) - 64 > have) sheet.getRange(col + '2:' + col).setNumberFormat('@');
     });
   }
   return sheet;
 }
-function getOrCreateQaRecordingsSheet_() { return getOrCreateQaSheet_(QA_RECORDINGS_TAB, QA_RECORDINGS_HEADERS, ['A', 'B', 'K', 'N', 'O']); }
-function getOrCreateQaExemptionsSheet_() { return getOrCreateQaSheet_(QA_EXEMPTIONS_TAB, QA_EXEMPTIONS_HEADERS, ['A', 'B', 'C']); }
-function getOrCreateQaCommentsSheet_()   { return getOrCreateQaSheet_(QA_COMMENTS_TAB, QA_COMMENTS_HEADERS, ['F']); }
-function getOrCreateQaScorecardsSheet_() { return getOrCreateQaSheet_(QA_SCORECARDS_TAB, QA_SCORECARDS_HEADERS, ['F']); }
+function getOrCreateQaRecordingsSheet_() { return getOrCreateQaSheet_(QA_RECORDINGS_TAB, QA_RECORDINGS_HEADERS, QA_RECORDINGS_TEXT_IDX); }
+function getOrCreateQaExemptionsSheet_() { return getOrCreateQaSheet_(QA_EXEMPTIONS_TAB, QA_EXEMPTIONS_HEADERS, QA_EXEMPTIONS_TEXT_IDX); }
+function getOrCreateQaCommentsSheet_()   { return getOrCreateQaSheet_(QA_COMMENTS_TAB, QA_COMMENTS_HEADERS, QA_COMMENTS_TEXT_IDX); }
+function getOrCreateQaScorecardsSheet_() { return getOrCreateQaSheet_(QA_SCORECARDS_TAB, QA_SCORECARDS_HEADERS, QA_SCORECARDS_TEXT_IDX); }
 /** PURE: byte range of chunk `idx` of a `size`-byte file cut into
  *  `chunkBytes` slices. null when the file is empty or idx is out of range —
  *  the caller answers "Invalid chunk", never serves bytes it did not mean to. */
@@ -289,7 +290,7 @@ function qaSyncRecordings() {
       added++;
     }
     if (rows.length) {
-      sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, QA_RECORDINGS_HEADERS.length).setValues(rows);
+      appendRowsTextSafe_(sheet, rows, QA_RECORDINGS_TEXT_IDX);   // S2: raw into the '@' columns, sheet-safe elsewhere
     }
     writeAuditLog_(emp, 'QaSync', '', '', false, 0,
       'scanned=' + scanned + '; added=' + added + '; nonAudio=' + nonAudio + '; truncated=' + truncated, emp.email);
@@ -330,9 +331,9 @@ function qaSetRecordingStatus(fileId, status, reason) {
     // Q2 — a skip carries its reason (free text, bounded, QA-store only —
     // it may name the caller). Any other status CLEARS a stale reason.
     const why = st === 'skipped' ? String(reason || '').trim().substring(0, QA_SKIP_REASON_MAX) : '';
-    sheet.getRange(found.rowIdx, QAR.STATUS + 1).setValue(st);
-    sheet.getRange(found.rowIdx, QAR.STATUS_MS + 1).setValue(Date.now());
-    sheet.getRange(found.rowIdx, QAR.SKIP_REASON + 1).setValue(why);
+    sheet.getRange(found.rowIdx, QAR.STATUS + 1).setValue(sheetSafe_(st));
+    sheet.getRange(found.rowIdx, QAR.STATUS_MS + 1).setValue(sheetSafe_(Date.now()));
+    sheet.getRange(found.rowIdx, QAR.SKIP_REASON + 1).setNumberFormat('@').setValue(sheetText_(why));   // S2: a '@' column
     writeAuditLog_(emp, 'QaStatusChange', '', '', false, 0, 'fileId=' + fid + '; status=' + st, emp.email);
     return { success: true, status: st, skipReason: why };
   } catch (err) { return { success: false, error: err.message }; }
@@ -359,7 +360,7 @@ function qaAssignRecording(fileId, assigneeEmail) {
       if (current && current !== self && !emp.isManager) {
         return { success: false, error: 'Only the assignee or a manager can release this recording.' };
       }
-      if (current) sheet.getRange(found.rowIdx, QAR.ASSIGNEE + 1).setValue('');
+      if (current) sheet.getRange(found.rowIdx, QAR.ASSIGNEE + 1).setValue(sheetSafe_(''));
       writeAuditLog_(emp, 'QaAssign', '', '', false, 0, 'fileId=' + fid + '; released', emp.email);
       return { success: true, assignee: '' };
     }
@@ -378,7 +379,7 @@ function qaAssignRecording(fileId, assigneeEmail) {
     if (current && current !== self && !emp.isManager) {
       return { success: false, error: 'This recording is already assigned — a manager can reassign it.' };
     }
-    sheet.getRange(found.rowIdx, QAR.ASSIGNEE + 1).setValue(target);
+    sheet.getRange(found.rowIdx, QAR.ASSIGNEE + 1).setValue(sheetSafe_(target));
     writeAuditLog_(emp, 'QaAssign', '', '', false, 0, 'fileId=' + fid + '; assigned', emp.email);
     return { success: true, assignee: target };
   } catch (err) { return { success: false, error: err.message }; }
@@ -519,9 +520,9 @@ function qaAddComment(fileId, atSec, text) {
     const recSheet = getOrCreateQaRecordingsSheet_();
     if (!qaFindRecordingRow_(recSheet, fid)) return { success: false, error: 'Recording not found.' };
     const commentId = Utilities.getUuid();
-    getOrCreateQaCommentsSheet_().appendRow([
+    appendRowsTextSafe_(getOrCreateQaCommentsSheet_(), [[
       commentId, fid, emp.id, emp.name, at, t, Date.now(), 'active',   // AtSec/CreatedMs: NUMBER cells
-    ]);
+    ]], QA_COMMENTS_TEXT_IDX);   // S2: Text is a '@' column — raw there, sheet-safe elsewhere
     writeAuditLog_(emp, 'QaCommentAdd', '', '', false, 0, 'fileId=' + fid + '; commentId=' + commentId, emp.email);
     return { success: true, commentId: commentId, atSec: at };
   } catch (err) { return { success: false, error: err.message }; }
@@ -550,7 +551,7 @@ function qaDeleteComment(commentId) {
       if (String(row[QAC.EMP_ID] || '') !== String(emp.id) && !emp.isManager) {
         return { success: false, error: 'Only the comment\'s author or a manager can remove it.' };
       }
-      sheet.getRange(rowIdx, QAC.STATUS + 1).setValue('deleted');
+      sheet.getRange(rowIdx, QAC.STATUS + 1).setValue(sheetSafe_('deleted'));
       writeAuditLog_(emp, 'QaCommentDelete', '', '', false, 0, 'commentId=' + wanted, emp.email);
       return { success: true };
     }
@@ -818,8 +819,8 @@ function qaSetRecordingAgent(fileId, agentName) {
     // blank, off-roster, or shared by two roster rows — an ambiguous name
     // releases to nobody rather than to both).
     const agentId = qaRosterIdByName_(name);
-    sheet.getRange(found.rowIdx, QAR.AGENT + 1, 1, 1).setValue(name);
-    sheet.getRange(found.rowIdx, QAR.AGENT_ID + 1, 1, 1).setValue(agentId);
+    sheet.getRange(found.rowIdx, QAR.AGENT + 1, 1, 1).setNumberFormat('@').setValue(sheetText_(name));   // S2: a '@' column
+    sheet.getRange(found.rowIdx, QAR.AGENT_ID + 1, 1, 1).setNumberFormat('@').setValue(sheetText_(agentId));
     writeAuditLog_(emp, 'QaAgentSet', '', '', false, 0, 'fileId=' + fid + (name ? '' : '; cleared'), emp.email);
     // Q7 — the roster id the coaching hand-off keys off (the name itself
     // never leaves the QA store's return; the id is what the composer needs).
@@ -868,9 +869,9 @@ function qaSaveScorecard(fileId, ratings, notes) {
     const recSheet = getOrCreateQaRecordingsSheet_();
     if (!qaFindRecordingRow_(recSheet, fid)) return { success: false, error: 'Recording not found.' };
     const scorecardId = Utilities.getUuid();
-    getOrCreateQaScorecardsSheet_().appendRow([
+    appendRowsTextSafe_(getOrCreateQaScorecardsSheet_(), [[
       scorecardId, fid, emp.id, emp.name, JSON.stringify(clean), t, Date.now(),
-    ]);
+    ]], QA_SCORECARDS_TEXT_IDX);   // S2: Notes is a '@' column
     writeAuditLog_(emp, 'QaScorecardSave', '', '', false, 0, 'fileId=' + fid + '; scorecardId=' + scorecardId, emp.email);
     return { success: true, scorecardId: scorecardId };
   } catch (err) { return { success: false, error: err.message }; }
@@ -1059,9 +1060,9 @@ function qaCreateManualRecording(agentName, label) {
     const agent = String(agentName || '').trim().substring(0, 80);
     const fid = QA_MANUAL_ID_PREFIX + Utilities.getUuid();
     const now = Date.now();
-    getOrCreateQaRecordingsSheet_().appendRow([
+    appendRowsTextSafe_(getOrCreateQaRecordingsSheet_(), [[
       fid, name, 0, 'manual', now, now, 'in_review', String(emp.email || '').trim().toLowerCase(), now, '', agent, 0, 0, '',
-    ]);
+    ]], QA_RECORDINGS_TEXT_IDX);   // S2: FileId/Name/Agent are '@' columns
     writeAuditLog_(emp, 'QaManualRecording', '', '', false, 0, 'fileId=' + fid, emp.email);
     return { success: true, fileId: fid };
   } catch (err) { return { success: false, error: err.message }; }
@@ -1252,7 +1253,7 @@ function qaSetRecordingShared(fileId, shared) {
       return { success: false, error: 'Attribute this recording to its agent first — sharing releases the review to that agent\'s My Reviews tab.' };
     }
     const ms = on ? Date.now() : 0;
-    sheet.getRange(found.rowIdx, QAR.SHARED_MS + 1).setValue(ms);
+    sheet.getRange(found.rowIdx, QAR.SHARED_MS + 1).setValue(sheetSafe_(ms));
     writeAuditLog_(emp, 'QaShare', '', '', false, 0, 'fileId=' + fid + '; shared=' + on, emp.email);
     return { success: true, sharedMs: ms };
   } catch (err) { return { success: false, error: err.message }; }
@@ -1427,7 +1428,7 @@ function qaSampleRecordings(count, period) {
     if (!candidates.length) return { success: false, error: 'Nothing to sample — every new recording is already assigned.' };
     const picked = qaSamplePick_(candidates, n, reviewedByAgent, null, targets);
     if (!picked.length) return { success: false, error: 'Nothing to sample — every unassigned recording belongs to an agent already at target this period.' };
-    picked.forEach(function (c) { sheet.getRange(c.rowIdx, QAR.ASSIGNEE + 1).setValue(self); });
+    picked.forEach(function (c) { sheet.getRange(c.rowIdx, QAR.ASSIGNEE + 1).setValue(sheetSafe_(self)); });
     writeAuditLog_(emp, 'QaSample', '', '', false, 0,
       'requested=' + n + '; assigned=' + picked.length, emp.email);
     return { success: true, assigned: picked.length,
@@ -1690,7 +1691,7 @@ function qaSetExemption(empName, period, on) {
     if (!qaPeriodValid_(per)) return { success: false, error: 'Unknown audit period.' };
     const sheet = getOrCreateQaExemptionsSheet_();
     const active = !!on;
-    sheet.appendRow([name, per, String(emp.email || ''), Date.now(), active ? 'TRUE' : 'FALSE']);
+    appendRowsTextSafe_(sheet, [[name, per, String(emp.email || ''), Date.now(), active ? 'TRUE' : 'FALSE']], QA_EXEMPTIONS_TEXT_IDX);
     writeAuditLog_(emp, 'QaExemption', '', '', false, 0, 'period=' + per + '; active=' + active, emp.email);
     return { success: true, active: active, period: per };
   } catch (err) { return { success: false, error: err.message }; }
@@ -1714,7 +1715,7 @@ function qaSetRecordingDuration(fileId, sec) {
     if (!found) return { success: false, error: 'Recording not found.' };
     const have = Number(found.row[QAR.DURATION_SEC]) || 0;
     if (have > 0) return { success: true, durationSec: have, written: false };
-    sheet.getRange(found.rowIdx, QAR.DURATION_SEC + 1).setValue(n);
+    sheet.getRange(found.rowIdx, QAR.DURATION_SEC + 1).setValue(sheetSafe_(n));
     return { success: true, durationSec: n, written: true };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }

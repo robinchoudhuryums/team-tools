@@ -48,12 +48,12 @@ function getDeptRequestsSS_() {
 function getOrCreateDeptRequestsSheet_() {
   const ss = getDeptRequestsSS_();
   let sh = ss.getSheetByName('DeptRequests');
-  if (!sh) { sh = ss.insertSheet('DeptRequests'); sh.appendRow(DR_HEADERS); }
+  if (!sh) { sh = ss.insertSheet('DeptRequests'); sh.appendRow(sheetSafeRow_(DR_HEADERS)); }
   else if (sh.getLastColumn() < DR_HEADERS.length) {
     // The trailing ResolvedVia + PatientTrx columns (operator 2026-09-10) —
     // self-heal the header once (the INV-126/135 pattern); legacy rows read
     // the cells blank.
-    sh.getRange(1, 1, 1, DR_HEADERS.length).setValues([DR_HEADERS]);
+    sh.getRange(1, 1, 1, DR_HEADERS.length).setValues(sheetSafeRows_([DR_HEADERS]));
   }
   return sh;
 }
@@ -220,10 +220,10 @@ function markDeptRequestResolved_(token, byEmail, via) {
                resolvedAt: formTokenIsoString_(row[DR.RESOLVED_AT]),   // L-5 — coercion-safe for the resolve page
                resolvedBy: String(row[DR.RESOLVED_BY] || '') };
     }
-    sh.getRange(rowIndex, DR.STATUS + 1).setValue('resolved');
-    sh.getRange(rowIndex, DR.RESOLVED_AT + 1).setValue(drNowTs_());
-    sh.getRange(rowIndex, DR.RESOLVED_BY + 1).setValue(byEmail || 'unknown');
-    sh.getRange(rowIndex, DR.RESOLVED_VIA + 1).setValue(viaClean);
+    sh.getRange(rowIndex, DR.STATUS + 1).setValue(sheetSafe_('resolved'));
+    sh.getRange(rowIndex, DR.RESOLVED_AT + 1).setValue(sheetSafe_(drNowTs_()));
+    sh.getRange(rowIndex, DR.RESOLVED_BY + 1).setValue(sheetSafe_(byEmail || 'unknown'));
+    sh.getRange(rowIndex, DR.RESOLVED_VIA + 1).setValue(sheetSafe_(viaClean));
     drBumpCacheGen_();   // both resolve paths route here — the cached lists must not show it open
     pendingTasksBust_(row[DR.BY_ID]);   // F4 — and neither must the SENDER's Needs-you list
     try { writeAuditLog_({ id: row[DR.BY_ID], name: row[DR.BY_NAME] }, 'DeptRequestResolved',

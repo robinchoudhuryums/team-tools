@@ -80,6 +80,21 @@ not restate it. Server endpoints live in the fourteen server files
      renders instead of collapsing to nothing (F-48, g136, the sparkline
      decision).
 
+     **Cycle 22 (2026-09-23):** Day Edit no longer loses a break stamp it was
+     never shown. A rep who is ON a break right now has their open leave
+     prefilled as a trailing half row (T1 — a save used to delete it, flip the
+     rep back to "clocked in" and pay the lunch), and a damaged day's STRAY
+     stamps (a double-punched leave, a return with no leave) render as flagged
+     half rows the save refuses until the manager completes or removes them
+     (F5). A resume approved after its day has ended now closes the day with
+     the finish the rep filed: an Adjust → Clock Out for a day with a pending
+     resume ATTACHES to it as its finish, the manager card reads "finished
+     HH:mm" or "no finish filed yet", and a past-day resume with no finish is
+     refused rather than left open (T3, the resume decision). The two editor
+     repair tools re-verify their planned rows inside the lock and refuse on
+     drift (T2), and the sheet doctor accepts a finished break plus one in
+     progress as legal data (T6).
+
 ## Call Notes
 
    - **Call Notes** — rolling-note panel for CSR call logging. Each
@@ -106,6 +121,30 @@ not restate it. Server endpoints live in the fourteen server files
      (`cnStripFmt_`); the email applies the server twin `cnFmtEmailHtml_`
      post-`esc_` (free-text Resolution branch only — the server-generated
      OOP resolution is never marker-processed) — see the formatting gotcha.
+
+     **Cycle 22 (2026-09-23):** a failed Search keeps showing the rep what they
+     typed but reports only the shape of the failure to ClientErrors, since the
+     query is usually a patient (S3, g146). Manage → Admin → System gains a
+     **Stored formulas** panel: an on-demand, read-only scan of every store the
+     app writes plus every enrolled rep Sheet for formula cells stored before
+     the cycle-22 write boundary (F3, g144, the operator-state clean-up entry).
+     It mounts idle, since the scan opens every store, and it reads "No stored
+     formulas" only when no store failed and none went unscanned. The
+     scratchpad and every other write now store exactly what was typed: a
+     note starting `- ` or `=` reads back as text (S2).
+
+     **Cycle 22 Batch 3 (2026-09-23):** the Save & Compose transaction now
+     FOLLOWS the rep into the External tab (C4). The external send completes it
+     (form, timer and draft cleared, where before the next Save wrote a
+     duplicate note), and cancelling External rolls the save back, the same as
+     cancelling the department composer. History draws notes only under the
+     range they were loaded for, and refuses a range over the server's 90-day
+     cap before asking (C3). The Scratchpad saves what was typed during an
+     in-flight save even after the modal closes, says so when a save after
+     close fails, and brings the unsaved text back on the next open (C6). The
+     live refresh keeps a note that confirmed while it was in flight (C10), and
+     clearing the form ends any running dictation first (C11, latent while
+     voice input is off).
 
 
 <a id="metrics"></a>
@@ -216,6 +255,13 @@ not restate it. Server endpoints live in the fourteen server files
      INV-223, the one-fold decision).
      Backs the CDR Report spreadsheet (`CONFIG.CDR_SS_ID`).
 
+     **Cycle 22 (2026-09-23):** Team Metrics → Copy table neutralises a cell
+     that would paste as a formula (the client twin of the server's write
+     boundary, `tsvCell_`), and a tab inside a value no longer splits the row
+     (F2). The Spanish auto-assign claim batch grows its tab's grid before
+     writing, so it keeps working once `SpanishClaims` passes 1000 rows (F4,
+     g145).
+
 
 <a id="intake"></a>
      **Batch 5 (2026-09-18):** `QaRecordings` carries a trailing `AgentId`
@@ -310,6 +356,12 @@ not restate it. Server endpoints live in the fourteen server files
      2026-09-04, fired live — see the Common Gotcha).** Backs the Intake spreadsheet
      (`CONFIG.INTAKE.SS_ID` / Script Property `INTAKE_SS_ID`).
 
+
+     **Cycle 22 Batch 3 (2026-09-23):** an Amend lands on a BLANK form in the
+     original's language (I1). A cross-language amend used to restore the rep's
+     current draft over the amendment, and in either language the draft filled
+     every answer the original had left blank, all sent as "AMENDED" for the
+     original patient. See the Intake Sent tab decision's amendment.
 
 <a id="reference"></a>
      **Batch 5 (2026-09-18):** the email's question LABELS come from
@@ -573,6 +625,13 @@ not restate it. Server endpoints live in the fourteen server files
      says out loud.
 
 
+     **Cycle 22 Batch 3 (2026-09-23):** the Ctrl/⌘+K drawer keeps what the rep
+     is typing into its lookups when its tree finishes loading, since the home
+     re-render patches around the lookup sections (K6, g141). Reopening the
+     drawer builds them fresh and forgets the previous caller's payor and item
+     verdicts, and a lookup answer arriving for a panel that has since been
+     rebuilt paints nothing (K2, g147).
+
 <a id="training-employee-docs"></a>
      **Batch 6 (2026-09-18):** the drawer is `role="dialog"` named by its own
      heading and hands focus back to whatever opened it — open it with
@@ -684,6 +743,14 @@ not restate it. Server endpoints live in the fourteen server files
      hidden from reps (decision 9) and agents do NOT see their own QA reviews
      (decision 13). See INV-134.
 
+
+     **Cycle 22 Batch 3 (2026-09-23):** Issue Docs builds its "Create a
+     document" form once per visit and refreshes the list around it (D6).
+     Releasing, voiding or deleting a template no longer wipes a half-written
+     document, the employee and template pickers keep their selection through
+     the refresh, and only a successful issue or draft save resets the form.
+     A coaching reply being typed survives filter changes, search and the
+     reload after acknowledging another item (D7).
 
 <a id="qa"></a>
 ## QA

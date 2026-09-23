@@ -417,6 +417,11 @@ const sb = buildSandbox([
   'script_core.html',
   'metrics/script_metrics.html',
 ]);
+// Cycle 22 S2: every server write wraps its value in the sheet-safe helpers, so
+// a server writer driven in this sandbox needs them — the REAL ones, never a
+// pass-through stub, or the pins would drive code that no longer ships.
+['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_'].forEach((f) =>
+  vm.runInContext(extractRawFunction('Code.js', f), sb, { filename: 'Code.js#' + f }));
 // cnExtEmailPillHtml_ is extracted standalone rather than loading the whole
 // 6500-line Call Notes partial — it only needs esc (core) + icon (icons).
 const cnExtEmailPillHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtEmailPillHtml_');
@@ -1336,6 +1341,328 @@ test('TRIPWIRE: destructive test writers + dev tools carry the right instance gu
     'devScrubRoster_ MUTATES the roster — must be dev-only (bulletproof guard)');
   assert.ok(/assertDevInstance_\(/.test(extractRawFunction('DevTools.js', 'devShowConfig_')),
     'devShowConfig_ must be dev-only');
+});
+
+// ── PUBLIC-GATE (cycle 22 S1 + X2) ─────────────────────────────────────────
+// google.script.run can call EVERY top-level function whose name does not END
+// in an underscore — a LEADING underscore is not private — in EVERY .js/.gs
+// file clasp pushes. That is the whole of web-app/ (filePushOrder sets load
+// ORDER, not membership — lint-server.mjs says so), which is why this pin reads
+// the DIRECTORY rather than serverSource(): serverSource() is built from
+// filePushOrder, so Tests.js and DevTools.js were outside every gate net by
+// construction, and the whole editor suite — runners, setup/cleanup, 337
+// test_* functions and helpers like _clearPunchesForDay(empId, date) — was
+// callable by any signed-in user. Every public function must now carry a gate
+// token in its OWN body, or be a named, reasoned delegate whose callee does.
+console.log('\nPUBLIC-GATE — every google.script.run-reachable function in every pushed file gates its caller');
+test('PUBLIC-GATE: every public function in every pushed .js file gates its caller (derived from the directory)', () => {
+  const WEB = path.join(__dirname, '../../web-app');
+  assert.ok(!fs.existsSync(path.join(WEB, '.claspignore')),
+    'a .claspignore now narrows what clasp pushes — teach this pin to honour it before trusting it');
+  const pushed = fs.readdirSync(WEB).filter((f) => /\.(js|gs)$/i.test(f)).sort();
+  serverFiles().forEach((f) => assert.ok(pushed.indexOf(f) >= 0, 'filePushOrder names ' + f + ' but it is not in web-app/'));
+  assert.ok(pushed.indexOf('Tests.js') >= 0 && pushed.indexOf('DevTools.js') >= 0,
+    'sanity: the directory scan sees the two files filePushOrder omits');
+
+  const bodyOf = (src, idx) => {
+    const s = src.indexOf('{', idx); let d = 0, k = s;
+    for (; k < src.length; k++) { if (src[k] === '{') d++; else if (src[k] === '}' && --d === 0) break; }
+    return src.slice(s, k + 1);
+  };
+  const APP_GATES = [/\bgetEmployeeInfo_\(/, /\bassertManagerCaller_\(/, /'Manager access required\.'/,
+    /'Admin access required\.'/, /'QA access required\.'/, /getManagerEmails_\(\)/];
+  // Reachable, and deliberately without an identity gate of their own. Each
+  // entry says why; a DELEGATE names the callee, and the callee must gate.
+  const ALLOW = {
+    'doGet': 'the web-app entry — routes by query and domain; not a google.script.run target',
+    'include': 'returns a bundled HTML partial by name — the same source every page already serves',
+    'cnPing': 'a no-op latency probe: { ok, t } and nothing else',
+    'getFormByToken': 'public form route — the token IS the credential (g101)',
+    'submitFormByToken': 'public form route — the token IS the credential (g101)',
+  };
+  const DELEGATE = {
+    recordPunch: 'recordPunchCore_',
+    updatePunchAdjustStatus: 'punchAdjustDecideAll_',
+    updatePunchAdjustStatusBulk: 'punchAdjustDecideAll_',
+    managerGetReviewCandidates: 'managerAggregateFlagged_',
+    managerGetTrainingQueue: 'managerAggregateFlagged_',
+    intakePreviewPMD: 'intakePreviewAcct_', intakePreviewPAP: 'intakePreviewAcct_',
+    intakeSendPMD: 'intakeSendAcct_', intakeSendPAP: 'intakeSendAcct_',
+  };
+  // Tests.js helpers that touch no store and read nothing: assertions and the
+  // registrar plumbing. A function argument cannot cross google.script.run, so
+  // _test/_assertThrows invoked remotely only throw.
+  const SUITE_PURE = ['_resetState', '_test', '_skipTest', '_smokeTest', '_integrationTest', '_assertEq',
+    '_assertEqClose', '_assertTrue', '_assertFalse', '_assertNull', '_assertNotNull', '_assertContains',
+    '_assertSuccess', '_assertFailure', '_assertThrows', '_printSummary', '_cnTestPayload'];
+
+  const all = {};
+  pushed.forEach((f) => { all[f] = fs.readFileSync(path.join(WEB, f), 'utf8'); });
+  const bad = [], seenSuite = [];
+  let count = 0;
+  pushed.forEach((f) => {
+    const src = all[f];
+    const re = /^function ([A-Za-z0-9_]*[A-Za-z0-9])\s*\(/gm; let m;
+    while ((m = re.exec(src)) !== null) {
+      const name = m[1]; count++;
+      const body = stripJsComments_(bodyOf(src, m.index));
+      if (f === 'Tests.js') {
+        if (SUITE_PURE.indexOf(name) >= 0) { assert.ok(!/getAdpSS_|getRange|appendRow|deleteRow|setValue|PropertiesService|MailApp/.test(body),
+          name + ' is listed as a pure suite helper but touches a store'); continue; }
+        seenSuite.push(name);
+        // The guard is the FIRST statement: nothing — not a sheet open, not a
+        // setup call — may run before the owner check.
+        if (!/^\{\s*_assertSuiteCaller_\(/.test(body)) bad.push(f + ' ' + name + ' — first statement must be _assertSuiteCaller_()');
+        continue;
+      }
+      if (ALLOW[name]) continue;
+      if (DELEGATE[name]) {
+        const callee = DELEGATE[name];
+        if (body.indexOf(callee + '(') < 0) { bad.push(f + ' ' + name + ' — no longer calls its listed gate ' + callee); continue; }
+        const host = pushed.find((g) => all[g].indexOf('function ' + callee + '(') >= 0);
+        const cb = host ? stripJsComments_(extractRawFunction(host, callee)) : '';
+        if (!APP_GATES.some((t) => t.test(cb))) bad.push(f + ' ' + name + ' — delegate ' + callee + ' carries no gate');
+        continue;
+      }
+      if (!APP_GATES.some((t) => t.test(body))) bad.push(f + ' ' + name);
+    }
+  });
+  assert.ok(count > 500, 'sanity: the scan found the public surface (' + count + ')');
+  ['runAllTests', 'runAllTestsPartA', 'runAllTestsPartB', 'runSmokeTests', 'runSingleTest',
+   'setupTestEnvironment', 'cleanupTestData', '_runAllTests', '_clearPunchesForDay', '_appendTestPunch']
+    .forEach((n) => assert.ok(seenSuite.indexOf(n) >= 0, 'sanity: the Tests.js scan reached ' + n));
+  assert.deepStrictEqual(bad, [], 'public functions with no gate of their own:\n  ' + bad.join('\n  '));
+});
+test('PUBLIC-GATE: _suiteCallerAllowed_ admits only the script owner (active === effective, both known)', () => {
+  const ctx = { String };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Tests.js', '_suiteCallerAllowed_'), ctx);
+  const ok = (a, e) => ctx._suiteCallerAllowed_(a, e);
+  assert.strictEqual(ok('owner@umsupply.com', 'owner@umsupply.com'), true, 'the editor / an owner trigger');
+  assert.strictEqual(ok('Owner@UMSupply.com ', 'owner@umsupply.com'), true, 'case and whitespace do not matter');
+  assert.strictEqual(ok('rep@umsupply.com', 'owner@umsupply.com'), false, 'a web visitor on the execute-as-deployer app');
+  assert.strictEqual(ok('', 'owner@umsupply.com'), false, 'an anonymous / cross-domain visitor');
+  assert.strictEqual(ok('', ''), false, 'two unknowns are not a match');
+  assert.strictEqual(ok(null, undefined), false, 'nothing is not a match');
+  // The guard reads Session DIRECTLY: _TEST_OVERRIDE_EMAIL impersonation must
+  // never satisfy it (g23), so getActiveUserEmail_ must not appear.
+  const g = stripJsComments_(extractRawFunction('Tests.js', '_assertSuiteCaller_'));
+  assert.ok(/Session\.getActiveUser\(\)/.test(g) && /Session\.getEffectiveUser\(\)/.test(g) && !/getActiveUserEmail_/.test(g),
+    'the owner check reads the real Session identities, never the test-override hook');
+  assert.ok(/throw new Error/.test(g) && /_suiteCallerAllowed_\(active, effective\)/.test(g), 'a refused caller throws');
+  // runSingleTest resolves a TEST NAME only — never an arbitrary global.
+  const rs = stripJsComments_(extractRawFunction('Tests.js', 'runSingleTest'));
+  assert.ok(/\^test_\[A-Za-z0-9_\]\+\$/.test(rs) && rs.indexOf('/^test_') < rs.indexOf('globalThis[name]'),
+    'runSingleTest refuses a non-test name before it looks the name up');
+});
+
+// ── F1 (cycle 22 follow-on) — the suite's live-tab deletes hold the ScriptLock ──
+// Snapshot-then-delete-by-POSITION removes a REAL row if a production delete
+// lands between the read and the last delete (a rep's self-undo shifts every
+// row below it). Every production writer holds the ScriptLock (g17), so the
+// suite's sweeps go through ONE helper that holds it too.
+console.log('\nTests.js — F1: every live-tab delete goes through _deleteRowsWhereLocked_');
+test('F1: _deleteRowsWhereLocked_ locks BEFORE the snapshot, releases after the last delete, and on a throw', () => {
+  const log = [];
+  const mk = (rows, throwAt) => ({
+    getDataRange: () => ({ getValues: () => { log.push('read'); return rows.map((r) => r.slice()); } }),
+    deleteRow: (n) => { log.push('del ' + n); if (n === throwAt) throw new Error('boom'); },
+  });
+  const ctx = {
+    String,
+    LockService: { getScriptLock: () => ({ waitLock: (ms) => log.push('lock ' + ms), releaseLock: () => log.push('release') }) },
+    SpreadsheetApp: { flush: () => log.push('flush') },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Tests.js', '_deleteRowsWhereLocked_'), ctx);
+  const rows = [['h'], ['h2'], ['TEST_a'], ['real'], ['TEST_b'], ['TEST_c']];
+  const pred = (r) => String(r[0]).indexOf('TEST_') === 0;
+  assert.strictEqual(ctx._deleteRowsWhereLocked_(mk(rows), 3, pred), 3);
+  assert.deepStrictEqual(log, ['lock 30000', 'read', 'del 6', 'del 5', 'del 3', 'flush', 'release'],
+    'lock → snapshot → bottom-up deletes → flush → release; the header rows are never tested');
+  log.length = 0;
+  assert.strictEqual(ctx._deleteRowsWhereLocked_(mk(rows), 3, pred, 1), 1, 'max caps the deletions');
+  assert.deepStrictEqual(log.filter((l) => l.indexOf('del') === 0), ['del 6'], 'max takes the bottom-most match');
+  log.length = 0;
+  assert.throws(() => ctx._deleteRowsWhereLocked_(mk(rows, 5), 3, pred), /boom/);
+  assert.strictEqual(log[log.length - 1], 'release', 'a failed delete still releases the lock');
+  log.length = 0;
+  assert.strictEqual(ctx._deleteRowsWhereLocked_(null, 2, pred), 0);
+  assert.deepStrictEqual(log, [], 'a missing tab takes no lock');
+});
+test('F1: no other function in Tests.js deletes a row, except named ones over a TEST-ONLY store (ratchet)', () => {
+  const src = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8'));
+  // Each runs inside a fixture wrapper whose store is the suite's own, so no
+  // production writer shares the tab. The list only shrinks.
+  const TEST_STORE = {
+    test_reconcileCallNotes_backfillsHandEntered: 'the TEST rep\'s own Notes tab; deletes the one row it appended',
+    _test_cn_getFormSubmission_callerScoped_body_: '_withTestForms_ fixture',
+    _test_publicForm_tokenLifecycle_body_: '_withTestForms_ fixture',
+    _test_publicForm_blankExpiryFailsClosed_body_: '_withTestForms_ fixture',
+    _test_cn_managerGetFormSubmission_gatedAndScoped_body_: '_withTestForms_ fixture',
+    _cleanupTrainingRowsForItem_: 'called inside _withTestKb_',
+    _cleanupEmpDocRows_: 'called inside _withTestHrDocs_',
+    _cleanupCoachingRows_: 'called inside _withTestHrDocs_',
+    test_intake_sentViewer_callerScopedAndManager: '_withTestIntake_ fixture',
+  };
+  const hosts = [];
+  const re = /\.deleteRows?\(/g; let m;
+  while ((m = re.exec(src)) !== null) {
+    const fns = [...src.slice(0, m.index).matchAll(/^function ([A-Za-z0-9_$]+)/gm)];
+    hosts.push(fns[fns.length - 1][1]);
+  }
+  const stray = hosts.filter((h) => h !== '_deleteRowsWhereLocked_' && !TEST_STORE[h]);
+  assert.deepStrictEqual(stray, [], 'a positional delete outside the locked helper:\n  ' + stray.join('\n  '));
+  Object.keys(TEST_STORE).forEach((k) => assert.ok(hosts.indexOf(k) >= 0, k + ' no longer deletes — drop it from the list'));
+  // The live-tab sweeps are the helper's callers, and none of them may snapshot on its own.
+  ['_cleanupRowsByPrefix', '_clearRowsByEmp', '_clearPunchesForDay', '_deleteFormWitnessAuditRow_'].forEach((n) => {
+    assert.ok(/_deleteRowsWhereLocked_\(/.test(stripJsComments_(extractRawFunction('Tests.js', n))), n + ' routes through the locked helper');
+  });
+  assert.ok(!/getScriptLock/.test(src.replace(extractRawFunction('Tests.js', '_deleteRowsWhereLocked_'), '')),
+    'the helper is the ONLY lock the suite takes — a second one would make its waitLock re-entrant');
+});
+
+// ── F3 (cycle 22 S2 follow-on) — the stored-formula scan ───────────────────
+console.log('\n10_core.js — F3: the stored-formula scan finds what S2 could not reach back to');
+const f3Ctx = () => {
+  const ctx = { String, Math, Date, Object };
+  vm.createContext(ctx);
+  vm.runInContext('const FORMULA_SCAN_MAX_HITS = 200; const FORMULA_SCAN_EXCERPT = 60;' +
+    "const FORMULA_SCAN_OPERATOR_TABS = ['Employees', 'InsurancePayors', 'OopPricing', 'LocationAcceptance', 'Offerings'];", ctx);
+  ['formulaScanCol_', 'formulaHitsFromGrid_', 'scanStoredFormulas_'].forEach((n) => vm.runInContext(extractRawFunction('10_core.js', n), ctx));
+  return ctx;
+};
+test('F3: formulaHitsFromGrid_ names every formula cell in A1, cuts the excerpt, and counts past the cap', () => {
+  const ctx = f3Ctx();
+  const grid = [['', '=1+1', ''], ['', '', ''], ['=' + 'X'.repeat(80), '', '']];
+  grid[1][27] = '=HYPERLINK("a")';
+  const r = ctx.formulaHitsFromGrid_(grid, 10);
+  assert.strictEqual(r.count, 3);
+  assert.deepStrictEqual(Array.from(r.hits, (h) => h.cell), ['B1', 'AB2', 'A3'], 'A1 references, past Z included');
+  assert.ok(r.hits[2].formula.length === 61 && /…$/.test(r.hits[2].formula), 'a long formula is an excerpt');
+  const capped = ctx.formulaHitsFromGrid_(grid, 1);
+  assert.strictEqual(capped.hits.length, 1);
+  assert.strictEqual(capped.count, 3, 'the true total survives the cap');
+  assert.strictEqual(ctx.formulaScanCol_(25), 'Z');
+  assert.strictEqual(ctx.formulaScanCol_(26), 'AA');
+  assert.strictEqual(ctx.formulaScanCol_(701), 'ZZ');
+  assert.strictEqual(ctx.formulaScanCol_(702), 'AAA');
+});
+test('F3: scanStoredFormulas_ scans a shared store ONCE, names a failed or unreached store, and flags operator tabs', () => {
+  const ctx = f3Ctx();
+  const tab = (name, grid) => ({ getName: () => name, getLastRow: () => grid.length, getLastColumn: () => (grid[0] || []).length,
+    getDataRange: () => ({ getFormulas: () => grid }) });
+  const adp = { getId: () => 'adp', getSheets: () => [tab('Timesheet', [['', '=A1']]), tab('Employees', [['=B2']]), tab('Empty', [])] };
+  const kb = { getId: () => 'kb', getSheets: () => [tab('KB', [['']])] };   // getFormulas reads '' for a plain value
+  let t = 0;
+  const targets = [
+    { label: 'ADP', open: () => adp },
+    { label: 'Forms', open: () => adp },
+    { label: 'HR', open: () => { throw new Error('not configured'); } },
+    { label: 'KB', open: () => kb },
+    { label: 'Rep A', open: () => kb },
+  ];
+  const res = ctx.scanStoredFormulas_(targets, 3, () => t++);
+  assert.strictEqual(res.total, 2);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(res.hits)), [
+    { store: 'ADP', tab: 'Timesheet', cell: 'B1', formula: '=A1', operatorTab: false },
+    { store: 'ADP', tab: 'Employees', cell: 'A1', formula: '=B2', operatorTab: true },
+  ]);
+  assert.strictEqual(res.stores[1].sameAs, 'ADP', 'the ADP fallback is not scanned twice');
+  assert.strictEqual(res.stores[2].error, 'not configured', 'a store that cannot open is named, not skipped');
+  assert.strictEqual(res.stores[0].tabs, 3, 'an empty tab still counts as checked');
+  assert.deepStrictEqual(Array.from(res.unscanned), ['Rep A'], 'past the budget, the rest are NAMED as unscanned');
+  assert.strictEqual(res.capped, false);
+});
+test('F3: the scan covers EVERY store resolver the writers use, except the CDR Report (derived)', () => {
+  const src = serverSource();
+  const resolvers = [...src.matchAll(/^function (get[A-Za-z]+SS_)\(/gm)].map((m) => m[1]).filter((n) => n !== 'getCdrSS_');
+  assert.ok(resolvers.length >= 7, 'sanity: the resolvers were found (' + resolvers.join(', ') + ')');
+  const ep = stripJsComments_(extractRawFunction('10_core.js', 'adminScanStoredFormulas'));
+  resolvers.forEach((r) => assert.ok(new RegExp('open: ' + r + '\\b').test(ep), 'adminScanStoredFormulas does not scan ' + r));
+  assert.ok(!/getCdrSS_/.test(ep), 'the CDR Report is another repo\'s — not scanned');
+  assert.ok(/cnEnrolledSheetId_\(roster\[i\]\)/.test(ep), 'every enrolled rep Sheet is a target');
+  assert.ok(/!callerEmp\.isAdmin\) return \{ error: 'Admin access required\.' \}/.test(ep), 'ADMIN-gated');
+  assert.ok(!/setValue|setValues|appendRow|deleteRow|clear\(|setFormula/.test(ep + extractRawFunction('10_core.js', 'scanStoredFormulas_')),
+    'the scan is READ-ONLY');
+});
+test('F3: the Stored formulas panel starts idle, and an empty hit list reads clean ONLY when nothing failed or went unscanned', () => {
+  const ctx = { String, esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+    loSweep: () => '<i>sweep</i>', icon: () => '', errorStateHtml_: (m) => '<div class="err">' + m + '</div>' };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('cn/script_callnotes.html', 'cnRenderFormulaScanPanel_'), ctx);
+  const r = ctx.cnRenderFormulaScanPanel_;
+  const idle = r(null);
+  assert.ok(/onclick="cnRunFormulaScan_\(\)"/.test(idle) && />Scan stores</.test(idle) && !/No stored formulas/.test(idle), 'idle: a button, no verdict');
+  assert.ok(/ disabled/.test(r({ loading: true })) && /sweep/.test(r({ loading: true })));
+  assert.ok(/class="err">Formula scan unavailable: nope/.test(r({ error: 'nope' })));
+  const clean = r({ stores: [{ label: 'ADP', tabs: 3, count: 0 }], hits: [], total: 0, unscanned: [] });
+  assert.ok(/No stored formulas/.test(clean), 'a genuinely clean scan says so');
+  const partial = r({ stores: [{ label: 'ADP', tabs: 3, count: 0 }, { label: 'HR', error: 'not configured' }], hits: [], total: 0, unscanned: ['Rep B'] });
+  assert.ok(!/No stored formulas/.test(partial), 'a failed or unreached store is never a clean bill (g53)');
+  assert.ok(/Could not open: <b>HR \(not configured\)/.test(partial) && /NOT checked: <b>Rep B/.test(partial));
+  const hit = r({ stores: [{ label: 'ADP', tabs: 1, count: 1 }], hits: [{ store: 'ADP', tab: 'Employees', cell: 'A1',
+    formula: '=IMAGE("<x>")', operatorTab: true }], total: 1, unscanned: [], capped: false });
+  assert.ok(/&lt;x&gt;/.test(hit) && !/<x>/.test(hit), 'the formula excerpt is escaped');
+  assert.ok(/may be yours on purpose/.test(hit), 'an operator tab is labelled, not presumed injected');
+  const markup = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/'<div id="cn-admin-formulas">' \+ cnRenderFormulaScanPanel_\(null\) \+ '<\/div>'/.test(markup),
+    'the System pane mounts the panel IDLE — the scan never runs on enter');
+});
+
+// ── F4 (cycle 22 follow-on) — a positional append grows the grid first ─────
+console.log('\n10_core.js — F4: every positional append at getLastRow() + 1 grows the grid first');
+test('F4: appendRowsSafe_ grows a FULL grid before its one write, and sheet-safes every cell', () => {
+  const ctx = { String, Array };
+  vm.createContext(ctx);
+  ['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_', 'appendRowsSafe_'].forEach((n) => vm.runInContext(extractRawFunction('10_core.js', n), ctx));
+  const log = [];
+  let maxRows = 4, lastRow = 4;   // a full grid: the next row is PAST the edge
+  const sh = {
+    getLastRow: () => lastRow, getMaxRows: () => maxRows,
+    insertRowsAfter: (after, n) => { log.push('grow ' + after + '+' + n); maxRows += n; },
+    getRange: (r, c, n, w) => {
+      if (r + n - 1 > maxRows) throw new Error('outside the dimensions of the sheet');
+      return { setValues: (v) => { log.push('write ' + r + 'x' + n); log.push(JSON.stringify(v)); lastRow += n; } };
+    },
+  };
+  assert.strictEqual(ctx.appendRowsSafe_(sh, [['a', '=1'], ['b', '-x']]), 5);
+  assert.deepStrictEqual(log, ['grow 4+2', 'write 5x2', JSON.stringify([['a', "'=1"], ['b', "'-x"]])]);
+  log.length = 0;
+  maxRows = 100;
+  ctx.appendRowsSafe_(sh, [['c', 1]]);
+  assert.deepStrictEqual(log.slice(0, 1), ['write 7x1'], 'room in the grid → no growth');
+  assert.strictEqual(ctx.appendRowsSafe_(sh, []), 0, 'nothing to write → nothing touched');
+});
+test('F4: every server function that writes at getLastRow() + 1 grows the rows first (derived)', () => {
+  const src = stripJsComments_(serverSource());
+  const hosts = new Set();
+  const re = /getLastRow\(\)\s*\+\s*1/g; let m;
+  while ((m = re.exec(src)) !== null) {
+    const fns = [...src.slice(0, m.index).matchAll(/^function ([A-Za-z0-9_$]+)/gm)];
+    hosts.add(fns[fns.length - 1][1]);
+  }
+  assert.ok(hosts.size >= 3, 'sanity: the positional appenders were found (' + [...hosts].join(', ') + ')');
+  const bad = [];
+  hosts.forEach((h) => {
+    const body = stripJsComments_(extractRawFunction('10_core.js', h));
+    const grow = body.indexOf('insertRowsAfter(');
+    const write = body.search(/\.setValues\(/);
+    if (grow < 0 || write < 0 || grow > write) bad.push(h);
+  });
+  assert.deepStrictEqual(bad, [], 'a positional append with no row growth before its write:\n  ' + bad.join('\n  '));
+});
+
+test('C3 (cycle 22): the client History cap MIRRORS getMyCallNotesRange (the server literal, read)', () => {
+  const srv = stripJsComments_(extractRawFunction('Code.js', 'getMyCallNotesRange'));
+  const m = srv.match(/if \(daySpan > (\d+)\) return \{ error:/);
+  assert.ok(m, 'the server cap is found');
+  const cli = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const c = cli.match(/var CN_HISTORY_MAX_SPAN_DAYS = (\d+);/);
+  assert.ok(c && c[1] === m[1], 'client cap ' + (c && c[1]) + ' === server cap ' + m[1]);
+  assert.ok(/Math\.round\(\s*\(new Date\(endDate \+ 'T00:00:00Z'\) - new Date\(startDate \+ 'T00:00:00Z'\)\) \/ 86400000\s*\)/.test(srv) &&
+    /Math\.round\(\(new Date\(endDate \+ 'T00:00:00Z'\) - new Date\(startDate \+ 'T00:00:00Z'\)\) \/ 86400000\)/.test(cli),
+    'and both measure the span the same way');
 });
 
 console.log('\nCode.js — PTO reconciliation half-day-pair exemption (cycle 7 · L-4)');
@@ -5556,7 +5883,7 @@ test('F11: the two growing SubformData arrays are bounded (count + serialized si
   const stampRegion = ext.slice(ext.indexOf('cnAppendBounded_'));
   assert.ok(/console\.warn/.test(stampRegion.slice(0, 500)),
     'a rejected stamp logs (INV-42: never fail an already-sent email)');
-  assert.ok(/\} else \{[\s\S]{0,200}setValue\(JSON\.stringify\(subformData\)\)/.test(stampRegion),
+  assert.ok(/\} else \{[\s\S]{0,200}setValue\(sheetSafe_\(JSON\.stringify\(subformData\)\)\)/.test(stampRegion),
     'the cell is written ONLY when the append was accepted');
 
   // The non-growing writes (flag / resolve / pin) must stay unguarded so an
@@ -7080,7 +7407,7 @@ test('C17-2: updateTimeOffStatus reads TO.STATUS once and compares lowercase', (
   assert.ok(/oldStatus === 'reconciled'/.test(body), 'the S1.3 terminal guard compares lowercase');
   assert.ok(!/oldStatus\s*(?:!==|===)\s*'(?:Approved|Reconciled|Pending|Denied)'/.test(body),
     'a capitalized comparison against the normalized local remains — the pre-C17-2 shape');
-  assert.ok(/setValue\(oldStatusRaw\)/.test(body), 'the compensating revert writes the RAW cell back');
+  assert.ok(/setValue\(sheetSafe_\(oldStatusRaw\)\)/.test(body), 'the compensating revert writes the RAW cell back');
   assert.ok(/oldStatus !== newStatus\.toLowerCase\(\)/.test(body),
     'the notify no-op check compares both sides normalized');
 });
@@ -7789,6 +8116,8 @@ test('#9: rep drill-through is a real button riding data-* attributes', () => {
 
 test('#10: TSV builder — plain values, scope-aware, unknown is not 0 (behavioral)', () => {
   loadFunction(sb, 'metrics/script_metrics.html', 'mSortReps_');   // dependency
+  loadFunction(sb, 'script_core.html', 'tsvCell_');                // F2 — every line goes through tsvRow_
+  loadFunction(sb, 'script_core.html', 'tsvRow_');
   const mTeamTableTsv_ = loadFunction(sb, 'metrics/script_metrics.html', 'mTeamTableTsv_');
   const data = {
     reps: [
@@ -7818,6 +8147,40 @@ test('#10: TSV builder — plain values, scope-aware, unknown is not 0 (behavior
   // No Transfers column when the range produced no queue rows.
   const noQ = mTeamTableTsv_({ reps: data.reps, queueRows: [] }, 'combined', null);
   assert.ok(noQ.split('\n')[0].indexOf('Transfers') === -1, 'Transfers column only when transfer data exists');
+  // F2 (cycle 22 follow-on): a name that starts like a formula pastes as TEXT,
+  // and a tab inside a value cannot split the row.
+  const hostile = mTeamTableTsv_({ reps: [{ repName: '=HYPERLINK("x")', totalRung: 1, totalAnswered: 1, totalMissed: 0,
+    pctAnswered: 100, attFormatted: '0:01:00', noteCount: 1, intakeNotes: 0, noteCoverage: 100 }],
+    queueRows: [{ queue: 'A\tB', transferred: 1, reps: 1 }] }, 'combined', null);
+  const hRow = hostile.split('\n')[1].split('\t');
+  assert.strictEqual(hRow[0], '\'=HYPERLINK("x")', 'a formula-shaped rep name is neutralised');
+  assert.strictEqual(hRow.length, 10, 'the row keeps its column count');
+  assert.strictEqual(mTeamTableTsv_({ queueRows: [{ queue: 'A\tB', transferred: 1, reps: 1 }] }, 'queue', null).split('\n')[1],
+    'A B\t1\t1', 'a tab inside a value becomes a space, not a new column');
+});
+test('F2: tsvCell_ is sheetSafe_\'s MIRROR — one grid, both functions, same verdict (g120)', () => {
+  const ctx = { String, Array };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('10_core.js', 'sheetSafe_'), ctx);
+  const tsvCell_ = loadFunction(sb, 'script_core.html', 'tsvCell_');
+  const grid = ['=1+1', ' =SUM(A1)', '+1', '-1', '-1.5', '+.5', '- call back', '+ note', '@mention', '@', '-',
+    '1-2', 'Nina', '', ' plain', '-3 ', '=', "'already"];
+  grid.forEach((g) => assert.strictEqual(tsvCell_(g), ctx.sheetSafe_(g), 'mirror drift on ' + JSON.stringify(g)));
+  assert.strictEqual(tsvCell_(null), '', 'null exports blank, as join() did');
+  assert.strictEqual(tsvCell_(undefined), '');
+  assert.strictEqual(tsvCell_(0), '0', 'a zero is a zero');
+  assert.strictEqual(tsvCell_('a\r\nb'), 'a b', 'a line break cannot open a new row');
+  // The one TSV line builder: no client partial joins cells with a tab by hand.
+  const WEB = path.join(__dirname, '../../web-app');
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? walk(path.join(d, e.name)) : (/\.html$/.test(e.name) ? [path.join(d, e.name)] : []));
+  const hand = [];
+  walk(WEB).forEach((f) => {
+    let src = fs.readFileSync(f, 'utf8');
+    if (/script_core\.html$/.test(f)) src = src.replace(extractRawFunction('script_core.html', 'tsvRow_'), '');
+    if (/\.join\((['"])\\t\1\)/.test(src)) hand.push(path.relative(WEB, f));
+  });
+  assert.deepStrictEqual(hand, [], 'a hand-built TSV line bypasses tsvCell_');
 });
 
 // ── Operator follow-ups (2026-08-06, round 2) ───────────────────────────────
@@ -7969,7 +8332,7 @@ test('addEmployee / offboardEmployee / getOnboardingPanel — gate, lock, and co
   // one cell write, aimed at column A — never a row delete, never the name.
   const writes = off.match(/setValue\(/g) || [];
   assert.strictEqual(writes.length, 1, 'offboard writes exactly ONE cell');
-  assert.ok(/EMP\.EMAIL \+ 1\)\.setValue\(''\)/.test(off), 'the one write clears the EMAIL cell');
+  assert.ok(/EMP\.EMAIL \+ 1\)\.setValue\(sheetSafe_\(''\)\)/.test(off), 'the one write clears the EMAIL cell');
   assert.ok(!/deleteRow/.test(off), 'the row is never deleted — history keeps reading');
   assert.ok(/cannot offboard yourself/.test(off), 'self-offboard is rejected (would lock the caller out mid-session)');
   const panel = strip(extractRawFunction('Code.js', 'getOnboardingPanel'));
@@ -10123,7 +10486,10 @@ test('errorStateHtml_ beacons handled failures; both normalizers accept errorSta
   // The ONE choke point where a HANDLED failure becomes visible to a rep
   // (every A12/INV-175 call site) — without this, only unhandled exceptions
   // reached the ClientErrors tab.
-  assert.ok(/try \{ if \(typeof errBeaconSend_ === 'function'\) errBeaconSend_\(String\(msg \|\| ''\), '', 'errorState'\); \} catch \(e\) \{\}/.test(f),
+  // Cycle 22 S3: the beacon sends `beacon` — the caller's beacon-safe override
+  // when one is given, else the message — so a typed query is shown, not shipped.
+  assert.ok(/var beacon = \(typeof beaconMsg === 'string'\) \? beaconMsg : String\(msg \|\| ''\);/.test(f) &&
+            /try \{ if \(typeof errBeaconSend_ === 'function'\) errBeaconSend_\(beacon, '', 'errorState'\); \} catch \(e\) \{\}/.test(f),
     'fires the beacon, guarded so jsdom/boot order can never break the render');
   assert.ok(/role="alert"/.test(f), 'the returned markup is unchanged');
   const pay = nc(extractFunction('script_core.html', 'errBeaconPayload_'));
@@ -10226,7 +10592,7 @@ test('BOOT-2: the boot send is DEFERRED to the landing view\'s first paint (or a
   assert.ok(/function recordViewEnter\(viewKey, mode, timing\)/.test(srv), 'timing is the 3rd arg');
   assert.ok(/emp\.id, v, m, viewUsageTimingCell_\(timing\),/.test(srv), 'sanitized into the trailing cell of the same row');
   const sheet = nc(extractRawFunction('Code.js', 'getOrCreateViewUsageSheet_'));
-  assert.ok(/getLastColumn\(\) < VIEW_USAGE_WIDTH/.test(sheet) && /setValue\('BootTiming'\)/.test(sheet), 'the header self-heals (CN_HEADERS posture)');
+  assert.ok(/getLastColumn\(\) < VIEW_USAGE_WIDTH/.test(sheet) && /setValue\(sheetSafe_\('BootTiming'\)\)/.test(sheet), 'the header self-heals (CN_HEADERS posture)');
   const stats = nc(extractRawFunction('Code.js', 'getViewUsageStats'));
   assert.ok(/VIEW_USAGE_WIDTH\)\.getValues\(\)/.test(stats) && /timing: viewUsageTimingParse_\(data\[i\]\[4\]\)/.test(stats), 'the reader parses the trailing cell');
   // Client: ordering + deferral.
@@ -11147,7 +11513,7 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
     'credits go through THE balance mutator (per-row gate + cache invalidation ride along) — per MONTH since F-19');
   // The forward-stamp NO-OP above is only a no-op because the caller's write is
   // CONDITIONAL on the stamp actually changing. Both halves or neither.
-  assert.ok(/if \(p\.stamp !== p\.plan\.newStamp\) \{[\s\S]{0,200}?EMP\.ACCRUED_THROUGH \+ 1\)\.setValue\(p\.plan\.newStamp\)/.test(h[0]),
+  assert.ok(/if \(p\.stamp !== p\.plan\.newStamp\) \{[\s\S]{0,200}?EMP\.ACCRUED_THROUGH \+ 1\)\.setValue\(sheetSafe_\(p\.plan\.newStamp\)\)/.test(h[0]),
     'the stamp cell is written ONLY when the plan changes it (so a forward stamp is left alone)');
   assert.ok(h[0].indexOf('adjustLeaveBalance_') < h[0].indexOf('EMP.ACCRUED_THROUGH + 1'),
     'credit + audit land BEFORE the stamp advances — a mid-run failure fails toward a VISIBLE re-credit');
@@ -12823,7 +13189,7 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
     const sheet = strip(extractRawFunction('Code.js', 'scratchpadSheet_'));
     assert.ok(/setNumberFormat\('@'\)/.test(sheet), 'A1 pinned to PLAIN TEXT at provision — the coercion class dodged at write time');
     assert.ok(/callNotesSheetId/.test(sheet) && /not configured/.test(sheet), 'gated on the caller\'s own enrollment (per-rep isolation by construction)');
-    assert.ok(/setValue\(now\)/.test(save) && /const now = Date\.now\(\)/.test(save), 'updatedAt is an epoch-ms NUMBER cell');
+    assert.ok(/setValue\(sheetSafe_\(now\)\)/.test(save) && /const now = Date\.now\(\)/.test(save), 'updatedAt is an epoch-ms NUMBER cell');
     assert.ok(!/writeAuditLog_/.test(save), 'no audit row per save (high-frequency own-store write — the kbRecordView posture, documented)');
     // Editor coverage registered + fixture-tab cleanup in the test itself.
     assert.ok(/_integrationTest\('scratchpad_saveReadRoundTrip'/.test(tests), 'editor round-trip test registered');
@@ -12834,7 +13200,7 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
       'A14-named dialog with a close hook');
     assert.ok(/aria-label="Scratchpad contents"/.test(cn), 'the textarea is named (INV-195)');
     const close = strip(extractFunction('cn/script_callnotes.html', 'cnCloseScratchpadModal_'));
-    assert.ok(/if \(CN_SCRATCH\.dirty\) cnScratchSave_\(true\)/.test(close),
+    assert.ok(/if \(CN_SCRATCH\.dirty\) \{[\s\S]*cnScratchSave_\(true\)/.test(close),   // C6: captures `latest` first
       'a pending debounce FLUSHES on close (INV-148 — typed text never dies with the modal)');
     const saveFn = strip(extractFunction('cn/script_callnotes.html', 'cnScratchSave_'));
     // A failed save is VISIBLE and retryable: the error branch keeps dirty
@@ -12875,7 +13241,7 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
     // literal, so using it here would demand a gate test that cannot pass).
     assert.ok(/your own comments/.test(del), 'ownership refusal message');
     assert.ok(!/Manager access required/.test(add + get + del), 'never the gate literal');
-    assert.ok(/setValue\('deleted'\)/.test(del) && !/deleteRow/.test(del), 'moderation is SOFT-delete (append-only posture)');
+    assert.ok(/setValue\(sheetSafe_\('deleted'\)\)/.test(del) && !/deleteRow/.test(del), 'moderation is SOFT-delete (append-only posture)');
     [get, del].forEach((f) => assert.ok(/KB_COMMENTS_SCAN/.test(f), 'bounded tail reads'));
     assert.ok(/total: all\.length, cap: KB_COMMENTS_LIST_CAP/.test(get), 'pre-slice total + cap ride the payload (INV-169)');
     // INV-32: the audit notes are built from IDS ONLY — the comment text
@@ -15254,7 +15620,7 @@ test('wiring: validate-before-send, post-hash marking, owner-only source, append
     const hashAt = f.indexOf('!== expectedBodyHash');
     const amendAt = f.indexOf("'AMENDED: '");
     assert.ok(hashAt >= 0 && amendAt > hashAt, fn + ': marking applied post-hash (INV-41 untouched)');
-    assert.ok(/amendId,\n\s*\]\);/.test(f) || /imgCount, amendId,/.test(f), fn + ' persists AmendsId on the NEW row (append-only chain)');
+    assert.ok(/amendId,\n\s*\]\)\);/.test(f) || /imgCount, amendId,/.test(f), fn + ' persists AmendsId on the NEW row (append-only chain)');
     assert.ok(/amends=/.test(f), fn + ' audit row carries amends= (id only — PHI-free, INV-32)');
   });
   // Schema: trailing AmendsId on BOTH header constants + the one-shot self-heal.
@@ -15267,6 +15633,14 @@ test('wiring: validate-before-send, post-hash marking, owner-only source, append
   assert.ok(/INTAKE_STATE\[form\]\.amendOf = null;\s*\n/.test(ic), 'clear/send-success detaches the amend');
   [/intakeRestoreDraft_\('ppd'\)[\s\S]{0,300}intakeConsumeAmendPrefill_\('ppd'\)/, /intakeRestoreDraft_\(form\)[\s\S]{0,300}intakeConsumeAmendPrefill_\(form\)/].forEach((re, i) =>
     assert.ok(re.test(ic), ['ppd', 'acct'][i] + ' enter consumes the amend prefill AFTER the draft restore (the snapshot must win)'));
+  // I1 (cycle 22): …and the draft restore is SKIPPED while a prefill is parked
+  // (the amendment is the whole form), and the cross-language re-enter never
+  // goes through intakeSetLang_'s snapshot/restore. The DOM pin drives both.
+  assert.strictEqual((ic.match(/if \(!intakeAmendPending_\((?:'ppd'|form)\)\) intakeRestoreDraft_\(/g) || []).length, 2,
+    'both enters skip the draft restore while an amend is parked');
+  const consume = extractFunction('intake/script_intake.html', 'intakeConsumeAmendPrefill_');
+  assert.ok(!/intakeSetLang_\(/.test(consume) && /intakeReenterForm_\(form\)/.test(consume),
+    'the cross-language path re-enters directly — no snapshot restored over the amendment');
   // Detail: the button is gated OWN + not-superseded; both chain banners render.
   const det = extractFunction('intake/script_intake.html', 'intakeRenderSentDetail_');
   assert.ok(/d\.isOwn && !d\.supersededBy/.test(det), 'Amend button: owner-only and never on a superseded row');
@@ -15563,7 +15937,7 @@ test('CMP-4: Preview COMMITS pending note edits first — the bodyHash is built 
   // Uncommitted edits are DISCARDED on close — say so rather than lose them.
   const close = nc(extractFunction('cn/script_callnotes.html', 'cnCloseComposerModal_'));
   assert.ok(/Note edits discarded/.test(close), 'closing with unsaved edits toasts instead of silently dropping them');
-  assert.ok(/!CN_STATE\.composer\.savingNote && !CN_STATE\.composeFlow/.test(close),
+  assert.ok(/!CN_STATE\.composer\.savingNote && !cnComposeFlowOwnedBy_\('dept'\)/.test(close),   // C4: owner-scoped since cycle 22
     'and stays quiet mid-save and on the Save&Compose rollback path (that note is being deleted)');
 });
 
@@ -15628,7 +16002,7 @@ test('DT-3: the import is allowlisted, dry by default, admin-gated, plain-text-f
   assert.ok(/Unknown data table/.test(f), 'and an unlisted tab is refused by name');
   assert.ok(/dryRun = o\.dryRun !== false/.test(f), 'dryRun defaults TRUE — a bare call can never write');
   const gate = f.indexOf("'Admin access required.'");
-  const write = f.indexOf('range.setValues(grid)');
+  const write = f.indexOf('range.setValues(sheetTextRows_(grid, null))');
   assert.ok(gate > -1 && write > -1 && gate < write, 'the admin gate fires before any write (INV-136)');
   assert.ok(/setNumberFormat\('@'\)/.test(f) && f.indexOf("setNumberFormat('@')") < write,
     'the range is pinned to plain text BEFORE the write — a payor named "Aetna 5-2024" must not coerce to a date');
@@ -16115,7 +16489,7 @@ test('QA-3: qaSyncRecordings — gated, idempotent before any write, bounded + t
   // a bare indexOf('known[id]') also matches the `known[id] = true` builder,
   // so deleting the skip passed the first form of this pin (bite-caught).
   const knownIdx = f.indexOf('if (known[id]) continue;');
-  const writeIdx = f.indexOf('setValues');
+  const writeIdx = f.indexOf('appendRowsTextSafe_(sheet, rows');   // S2: the one write (raw into '@' columns)
   assert.ok(knownIdx > -1 && writeIdx > knownIdx, 'existing FileIds are skipped BEFORE any write — a re-run is a no-op (idempotent)');
   assert.ok(/QA_SYNC_MAX_FILES/.test(f) && /truncated = true/.test(f) && /truncated: truncated/.test(f),
     'bounded per run with the truncation REPORTED (INV-169)');
@@ -16141,7 +16515,7 @@ test('QA-4: QA comments — QA-gated, target-must-exist, bounded anchor, refuse-
   assert.ok(/fileId=' \+ fid \+ '; commentId=' \+ commentId/.test(add),
     'the audit row is id-only — comment text may name a patient, so it stays in the QA store');
   const del = nc(extractRawFunction('Code.js', 'qaDeleteComment'));
-  assert.ok(/setValue\('deleted'\)/.test(del) && !/deleteRow/.test(del), 'soft-delete — rows are never removed (the kbDeleteComment shape)');
+  assert.ok(/setValue\(sheetSafe_\('deleted'\)\)/.test(del) && !/deleteRow/.test(del), 'soft-delete — rows are never removed (the kbDeleteComment shape)');
   assert.ok(/!== String\(emp\.id\) && !emp\.isManager/.test(del), 'author-or-manager moderation');
   const list = nc(extractRawFunction('Code.js', 'qaListComments'));
   assert.ok(/QA_COMMENTS_SCAN/.test(list), 'bounded tail read');
@@ -16755,7 +17129,7 @@ test('QA-9: scorecard save contract — criteria sanitize, reject-unknown-key, t
     'rating bounds enforced — per TYPE, through the one normalizer (QA Log round, 2026-09-04)');
   assert.ok(save.indexOf('Notes are capped at') >= 0, 'over-cap notes REFUSE with the count (INV-96)');
   const existsIdx = save.indexOf('qaFindRecordingRow_(recSheet, fid)');
-  const appendIdx = save.indexOf('.appendRow([');
+  const appendIdx = save.indexOf('appendRowsTextSafe_(getOrCreateQaScorecardsSheet_()');
   assert.ok(existsIdx >= 0 && appendIdx > existsIdx,
     'target-must-exist BEFORE the append — a junk fileId cannot seed rows (the qaAddComment posture)');
   // Id-only audit, matched to the CALL TAIL (the notes string carries no
@@ -16783,7 +17157,10 @@ test('QA-10: Phase 2 wiring — agent boundary, headers, stats gate, waveform fa
   const mk = nc(extractRawFunction('Code.js', 'getOrCreateQaSheet_'));
   assert.ok(/sheet\.getLastColumn\(\) < headers\.length/.test(mk) && /headers\.slice\(have\)/.test(mk),
     'a short header self-heals in place (a QaRecordings tab provisioned before PR 5 gains the two columns)');
-  assert.ok(/QA_RECORDINGS_HEADERS, \['A', 'B', 'K', 'N', 'O'\]/.test(stripped), 'SkipReason (col N) and AgentId (col O) are plain-text-pinned like the other free-text columns');
+  // S2: the '@' columns are ONE index list per tab (the letters derive from it).
+  assert.ok(/QA_RECORDINGS_HEADERS, QA_RECORDINGS_TEXT_IDX\)/.test(stripped) &&
+    /const QA_RECORDINGS_TEXT_IDX = \[QAR\.FILE_ID, QAR\.NAME, QAR\.AGENT, QAR\.SKIP_REASON, QAR\.AGENT_ID\];/.test(serverSource()),
+    'SkipReason (col N) and AgentId (col O) are plain-text-pinned like the other free-text columns');
   const setAgent = nc(extractRawFunction('Code.js', 'qaSetRecordingAgent'));
   assert.ok(/'QA access required\.'/.test(setAgent) && /substring\(0, 80\)/.test(setAgent),
     'agent set is QA-gated and bounded');
@@ -16877,7 +17254,7 @@ test('QA-11: qaSamplePick_ coverage-fair behavioral + sample endpoint assigns to
   assert.ok(/qaStatus_\(rows\[i\]\[QAR\.STATUS\]\) !== 'new'\) continue;/.test(src) &&
             /String\(rows\[i\]\[QAR\.ASSIGNEE\] \|\| ''\)\.trim\(\)\) continue;/.test(src),
     'candidates are status-new AND unassigned only');
-  assert.ok(/picked\.forEach\(function \(c\) \{ sheet\.getRange\(c\.rowIdx, QAR\.ASSIGNEE \+ 1\)\.setValue\(self\); \}\);/.test(src),
+  assert.ok(/picked\.forEach\(function \(c\) \{ sheet\.getRange\(c\.rowIdx, QAR\.ASSIGNEE \+ 1\)\.setValue\(sheetSafe_\(self\)\); \}\);/.test(src),
     'assignment writes SELF (the caller email) — no third-party target exists on this endpoint');
   assert.ok(/function qaSampleRecordings\(count, period\)/.test(src), 'the signature takes a count + the audit period — no assignee param');
   // PR 5 (Q4): load is counted ONLY for done reviews inside the period, the
@@ -16900,7 +17277,7 @@ test('QA-12: share requires attribution; getMyQaReviews is employee-gated, doubl
   // review with no attribution would share it to NOBODY while the queue pill
   // claims it is shared — refuse with the reason instead.
   const agentGuardIdx = share.indexOf("if (on && !String(found.row[QAR.AGENT] || '').trim())");
-  const writeIdx = share.indexOf('QAR.SHARED_MS + 1).setValue(ms)');
+  const writeIdx = share.indexOf('QAR.SHARED_MS + 1).setValue(sheetSafe_(ms))');
   assert.ok(agentGuardIdx >= 0 && writeIdx > agentGuardIdx,
     'sharing REFUSES until the recording is attributed to its agent, before any write');
   assert.ok(/writeAuditLog_\(emp, 'QaShare', '', '', false, 0, 'fileId=' \+ fid \+ '; shared=' \+ on, emp\.email\);/.test(share),
@@ -18086,19 +18463,29 @@ test('A2: all five hours builders accumulate breaks through ONE helper', () => {
 });
 
 test('A3: the sheet doctor stops calling a matched break pair damage', () => {
-  const ctx = vm.createContext({});
-  vm.runInContext(extractRawFunction('Code.js', 'tsDoctorLegitBreaks_'), ctx,
-    { filename: 'Code.js#tsDoctorLegitBreaks_' });
+  const ctx = vm.createContext({ Math, String, Array });
+  ['timeToMins_', 'breakSortKey_', 'breakOpenLeave_', 'tsDoctorLegitBreaks_'].forEach((f) =>
+    vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: 'Code.js#' + f }));
   const legit = ctx.tsDoctorLegitBreaks_;
   const days = {
     'E1|2026-09-01': { lo: ['12:00:00', '17:00:00'], li: ['12:30:00', '19:00:00'] },  // two real breaks
-    'E2|2026-09-01': { lo: ['12:00:00', '17:00:00'], li: ['12:30:00'] },              // a stray leave
+    'E2|2026-09-01': { lo: ['12:00:00', '17:00:00'], li: ['12:30:00'] },              // a break, then ON a second one now (T6)
+    'E6|2026-09-01': { lo: ['12:00:00', '12:01:00'], li: ['12:30:00'] },              // a double-punched leave, then back
+    'E7|2026-09-01': { lo: ['12:00:00', '12:01:00'], li: [] },                        // a double-punched leave, no return yet
     'E3|2026-09-01': { lo: ['12:00:00'], li: ['12:30:00'] },                          // ordinary day
   };
   assert.strictEqual(legit(days, 'E1', '2026-09-01', 'LunchOut'), true, 'matched pairs are legal data');
   assert.strictEqual(legit(days, 'E1', '2026-09-01', 'LunchIn'), true, 'both break types');
-  assert.strictEqual(legit(days, 'E2', '2026-09-01', 'LunchOut'), false,
-    'a lone extra LEAVE beside one return is still damage — the classic double-punch, last row wins');
+  // T6 (cycle 22): until then E2 read as "a lone extra leave = damage", and
+  // the collapse kept the LAST leave — deleting the 12:00 one, so the 12:30
+  // return paired with nothing and the finished break was PAID. The extra
+  // leave is the OPEN break (breakOpenLeave_, the rule Day Edit shares).
+  assert.strictEqual(legit(days, 'E2', '2026-09-01', 'LunchOut'), true,
+    'a finished break plus one IN PROGRESS is legal data, not a duplicate');
+  assert.strictEqual(legit(days, 'E6', '2026-09-01', 'LunchOut'), false,
+    'a double-punched leave with a return AFTER both is still damage — the classic double-punch, last row wins');
+  assert.strictEqual(legit(days, 'E7', '2026-09-01', 'LunchOut'), false,
+    'and so is a double-punched leave with no return at all');
   // Cycle-19 follow-on (BP): the guard is "two-plus stamps of BOTH types", not
   // "equal counts". E4 has equal counts but pairs into one 7-hour "break"
   // (12:00→19:00, dropping 17:00 and 11:00) — protected from the collapse AND
@@ -18242,6 +18629,224 @@ test('A4-1: managerParseBreakSlots_ accepts the list, keeps the legacy pair, ref
   // The cap is stated, not silently truncated (INV-169 direction).
   const many = []; for (let i = 0; i < 13; i++) many.push({ out: '01:00', in: '01:05' });
   assert.match(err({ breaks: many }), /Too many breaks \(13\); at most 12/);
+});
+
+test('C5 (cycle 22): the retention purge never asks Sheets to delete every non-frozen row — a full grid purged whole loses nothing it did not count (driven)', () => {
+  const ctx = vm.createContext({ Date, Math, String, Number, isNaN, parseInt, CONFIG: { TIMEZONE: 'America/Chicago' },
+    Utilities: { parseDate: () => { throw new Error('use Date.parse'); } } });
+  ['parseRetentionDateMs_', 'purgeSheetRowsOlderThan_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  // A GRID with no spare rows: 1 frozen header + N data rows, maxRows = 1 + N.
+  // Like Sheets, it refuses the delete that would leave no non-frozen row.
+  const mk = (n, oldCount) => {
+    const rows = [['Date']];
+    for (let i = 0; i < n; i++) rows.push([i < oldCount ? '2025-01-0' + ((i % 9) + 1) : '2026-09-2' + (i % 9)]);
+    let maxRows = rows.length;
+    return { rows, spare: 0,
+      getLastRow: () => rows.length, getMaxRows: () => maxRows,
+      getDataRange: () => ({ getValues: () => rows.map((r) => r.slice()) }),
+      insertRowAfter: () => { maxRows++; },
+      deleteRow: (r) => { if (maxRows - 1 <= 1) throw new Error('Sorry, it is not possible to delete all non-frozen rows.'); rows.splice(r - 1, 1); maxRows--; } };
+  };
+  const CUT = Date.parse('2026-01-01T00:00:00Z');
+  const full = mk(6, 6);
+  assert.strictEqual(ctx.purgeSheetRowsOlderThan_(full, 0, CUT), 6, 'every expired row is purged and COUNTED (it threw on the last one)');
+  assert.strictEqual(full.rows.length, 1, 'only the header remains');
+  const partial = mk(6, 2);
+  assert.strictEqual(ctx.purgeSheetRowsOlderThan_(partial, 0, CUT), 2, 'a partial purge is unchanged');
+  assert.strictEqual(partial.getMaxRows(), 5, 'and grows nothing it does not need');
+  assert.strictEqual(ctx.purgeSheetRowsOlderThan_(mk(3, 0), 0, CUT), 0, 'nothing expired, nothing touched');
+});
+
+test('T2 (cycle 22): both Timesheet repair tools re-verify their planned rows INSIDE the lock and write nothing if one has moved (driven + wiring)', () => {
+  const ctx = vm.createContext({ String, Array,
+    ADP: { EMP_ID: 0, DATE: 1, TIME: 2, COMMENTS: 3 },
+    normalizeDate_: (v) => String(v), normalizeTime_: (v) => String(v),
+    normalizeType_: (v) => String(v).replace(/^ADJ-/, '') });
+  vm.runInContext(extractRawFunction('Code.js', 'repairRowsMoved_'), ctx);
+  const rows = [['h'], ['h2'], ['E-1', '2026-09-01', '08:00:00', 'ClockIn'], ['E-2', '2026-09-01', '12:00:00', 'ADJ-ClockIn']];
+  const moved = (exp) => JSON.parse(JSON.stringify(ctx.repairRowsMoved_(rows, exp)));
+  assert.deepStrictEqual(moved([{ row: 3, empId: 'E-1', date: '2026-09-01', type: 'ClockIn', time: '08:00:00' },
+                                { row: 4, empId: 'E-2', date: '2026-09-01', type: 'ClockIn' }]), [], 'an unchanged plan passes (time optional)');
+  // A row deleted above shifts E-2's punch up into row 3: the plan now points at E-1.
+  const shifted = moved([{ row: 3, empId: 'E-2', date: '2026-09-01', type: 'ClockIn', time: '12:00:00' }]);
+  assert.strictEqual(shifted.length, 1, 'a shifted row is caught');
+  assert.ok(/planned E-2\|2026-09-01\|ClockIn\|12:00:00, now E-1/.test(shifted[0]), 'and named: ' + shifted[0]);
+  assert.strictEqual(moved([{ row: 9, empId: 'E-1', date: '2026-09-01', type: 'ClockIn' }])[0], 'row 9: planned E-1|2026-09-01|ClockIn, now (no row)', 'a row that is gone is caught');
+  // Wiring: in BOTH tools the check runs after waitLock and before the first write.
+  const tz = stripJsComments_(extractRawFunction('Code.js', 'repairTimesheetTimezone'));
+  const sd = stripJsComments_(extractRawFunction('Code.js', 'repairSplitDayPunches'));
+  [[tz, '.setValue('], [sd, 'writeAdjustPunchForEmployee_(']].forEach(([src, firstWrite], n) => {
+    const lockAt = src.indexOf('lock.waitLock(15000)'), chkAt = src.indexOf('repairRowsMoved_('), throwAt = src.indexOf("throw new Error('Refusing: ' + drift.length");
+    const writeAt = src.indexOf(firstWrite, chkAt);
+    assert.ok(lockAt > 0 && chkAt > lockAt && throwAt > chkAt && writeAt > throwAt, (n ? 'repairSplitDayPunches' : 'repairTimesheetTimezone') + ': lock → verify → refuse → write');
+    assert.ok(/if \(drift\.length\) \{\s*throw new Error\('Refusing: ' \+ drift\.length/.test(src),
+      (n ? 'repairSplitDayPunches' : 'repairTimesheetTimezone') + ': ANY drift refuses — the throw is guarded by the verification result, nothing else');
+  });
+  assert.ok(sd.indexOf('sheet.deleteRow(d.row)') > sd.indexOf('repairRowsMoved_('), 'the split repair deletes only after the verification');
+});
+
+test('T3 (cycle 22): a resume approved after its day has ended needs the filed finish, writes it as the Clock Out, and refuses before any write (driven)', () => {
+  const writes = [];
+  let co = null;
+  const ctx = vm.createContext({ String, Math, Date, Array,
+    PAR: { END_TIME: 10 }, ADP: { COMMENTS: 4 },
+    normalizeTime_: (v) => String(v).trim(),
+    findExistingPunch_: () => co,
+    appendToAdpSheet_: (e, d, t, dir, c) => writes.push('append:' + c + '@' + t),
+    writeAdjustPunchForEmployee_: (e, d, type, t) => writes.push('adjust:' + type + '@' + t),
+    clearFromEmployeeSheet_: () => {}, writeToEmployeeSheet_: () => {},
+    writeAuditLog_: () => {}, sheetSafe_: (v) => v,
+    fmtDateTz_: () => '2026-09-23', empTz_: () => 'Asia/Manila',
+    daysBetween_: () => 1 });
+  ['parEndTime_', 'resumeShiftForEmployee_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  const sheet = { getRange: () => ({ setValue: (v) => writes.push('convert:' + v) }) };
+  const run = (date, back, end) => { writes.length = 0; co = { sheet, rowIndex: 7, time: '17:00:00' };
+    return JSON.parse(JSON.stringify(ctx.resumeShiftForEmployee_({ id: 'E-1' }, date, back, 'mgr@x', '', end))); };
+
+  const refused = run('2026-09-22', '19:00', '');
+  assert.ok(/has ended and no finish time was filed/.test(refused.error || ''), 'a past day with no finish is REFUSED: ' + refused.error);
+  assert.deepStrictEqual(writes, [], 'and nothing was written — the check runs before the conversion');
+
+  const closed = run('2026-09-22', '19:00', '21:00');
+  assert.ok(!closed.error, 'a past day WITH a finish is approved');
+  assert.deepStrictEqual(writes, ['convert:ADJ-LunchOut', 'append:ADJ-LunchIn@19:00:00', 'adjust:ClockOut@21:00'],
+    'the clock-out becomes a break, the resume closes it, and the finish is the new Clock Out');
+
+  const backwards = run('2026-09-22', '19:00', '18:30');
+  assert.ok(/not after the resume time/.test(backwards.error || '') && writes.length === 0, 'a finish before the resume time is refused, unwritten');
+
+  const today = run('2026-09-23', '19:00', '');
+  assert.ok(!today.error && writes.join() === 'convert:ADJ-LunchOut,append:ADJ-LunchIn@19:00:00',
+    'TODAY with no finish is still fine — the rep clocks out live');
+
+  // The filed finish reads '' for absent, blank, a short legacy row, or junk —
+  // normalizeTime_(undefined) is the STRING "undefined", which must not read as a time.
+  assert.strictEqual(ctx.parEndTime_([]), '', 'a short (pre-heal) row has no finish');
+  assert.strictEqual(ctx.parEndTime_({ 10: '' }), '');
+  assert.strictEqual(ctx.parEndTime_({ 10: '21:15:00' }), '21:15');
+  assert.strictEqual(ctx.parEndTime_({ 10: 'undefined' }), '', 'junk is not a time');
+
+  // Submit: a Clock Out for a day with a pending RESUME attaches to it (it was
+  // refused as a duplicate), and every queue read ships the finish.
+  const sub = stripJsComments_(extractRawFunction('Code.js', 'submitPunchAdjustRequests'));
+  assert.ok(/isResume && ci >= 0 && clean\[ci\]\.action === 'set' && clean\[ci\]\.punchType === 'ClockOut'/.test(sub) &&
+    /attach\[ci\] = i \+ 1;/.test(sub) && /PAR\.END_TIME \+ 1\)\.setValue\(sheetSafe_\(c\.time\)\)/.test(sub),
+    'the finish is written onto the pending resume row');
+  assert.ok(/must be after the time you resumed/.test(sub), 'a finish before the resume is refused at submit too');
+  ['empPendingAdjustments_', 'managerGetPendingAdjustments'].forEach((f) =>
+    assert.ok(/endTime: parEndTime_\(rows\[i\]\)/.test(extractRawFunction('Code.js', f)), f + ' ships endTime'));
+  const dec = stripJsComments_(extractRawFunction('Code.js', 'punchAdjustDecideAll_'));
+  assert.ok(/resumeShiftForEmployee_\(targetEmp, date, reqTime, callerEmp\.email, reason, endTime\)/.test(dec), 'approval passes the finish');
+});
+
+test('T1 (cycle 22): a break IN PROGRESS round-trips through Day Edit instead of being deleted — the server\'s own day shape, the client\'s prefill rule, the parser and the plan, driven end to end', () => {
+  const ctx = vm.createContext({ Math, String, Array });
+  ['timeToMins_', 'breakSortKey_', 'breakPairs_', 'breakOpenLeave_', 'managerParseBreakSlots_', 'managerPlanDay_'].forEach((fn) =>
+    vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+  vm.runInContext('var MANAGER_DAY_MAX_BREAKS = 12;', ctx);
+  // The server half: what buildTimesheetForEmployee_ ships for the day.
+  const ship = (lo, li, ci) => ({
+    breaks: JSON.parse(JSON.stringify(ctx.breakPairs_(lo, li, ctx.timeToMins_(ci)))).map((b) => ({ out: b.out, in: b.in })),
+    openBreak: ctx.breakOpenLeave_(lo, li, ctx.timeToMins_(ci)),
+  });
+  // The client half — deSetBreaksFromDay_'s rule, pairs then the open leave
+  // as a trailing half row (its DOM pin drives the real function).
+  const prefill = (d) => d.breaks.map((b) => ({ out: b.out.substring(0, 5), in: b.in.substring(0, 5) }))
+    .concat(d.openBreak ? [{ out: String(d.openBreak).substring(0, 5), in: '' }] : []);
+  const save = (rows, d) => {
+    const parsed = JSON.parse(JSON.stringify(ctx.managerParseBreakSlots_({ breaks: prefill(d) })));
+    assert.ok(!parsed.error, 'the prefilled list parses: ' + parsed.error);
+    const p = ctx.managerPlanDay_(rows, { ClockIn: '08:05', ClockOut: '' }, parsed.breaks);   // the manager fixes a typo'd clock-in
+    return { del: p.deletions.map((x) => x.type + '@' + x.oldTime).join('|'), add: p.additions.map((x) => x.type + '@' + x.time).join('|') };
+  };
+
+  // On lunch right now: one leave, no return.
+  const d1 = ship(['12:30:15'], [], '08:00:00');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(d1)), { breaks: [], openBreak: '12:30:15' }, 'the open leave is SHIPPED, apart from the pairs');
+  const r1 = save({ ClockIn: [{ rowIndex: 2, time: '08:00:00' }], LunchOut: [{ rowIndex: 3, time: '12:30:15' }] }, d1);
+  assert.strictEqual(r1.del, '', 'THE REGRESSION: the LunchOut is NOT deleted (it was, and the lunch was paid)');
+  assert.strictEqual(r1.add, '', 'and nothing is re-added for an untouched leave');
+
+  // A finished morning break, then out at lunch now.
+  const d2 = ship(['10:30:00', '12:30:00'], ['10:45:00'], '08:00:00');
+  assert.strictEqual(d2.openBreak, '12:30:00', 'the open leave is the one after every return');
+  assert.strictEqual(d2.breaks.map((b) => b.out + '-' + b.in).join(), '10:30:00-10:45:00');
+  const r2 = save({ ClockIn: [{ rowIndex: 2, time: '08:00:00' }],
+    LunchOut: [{ rowIndex: 3, time: '10:30:00' }, { rowIndex: 5, time: '12:30:00' }], LunchIn: [{ rowIndex: 4, time: '10:45:00' }] }, d2);
+  assert.strictEqual(r2.del + r2.add, '', 'both the finished pair and the open leave survive the save');
+
+  // Closed days have no open break; an overnight shift orders by the clock-in anchor.
+  assert.strictEqual(ship(['12:00:00'], ['12:30:00'], '08:00:00').openBreak, null, 'a returned break is not open');
+  assert.strictEqual(ship([], [], '08:00:00').openBreak, null, 'no break, no open break');
+  assert.strictEqual(ship(['01:30:00'], ['23:10:00'], '22:00:00').openBreak, '01:30:00',
+    'overnight: 01:30 comes AFTER a 23:10 return on a 22:00 shift');
+  assert.strictEqual(ship(['23:30:00'], ['00:15:00'], '22:00:00').openBreak, null, 'overnight: 00:15 closes 23:30');
+
+  // The wiring: the server ships the field, the client renders it.
+  const build = stripJsComments_(extractRawFunction('Code.js', 'buildTimesheetForEmployee_'));
+  assert.ok(/openBreak: breakOpenLeave_\(pm\.LunchOut, pm\.LunchIn, timeToMins_\(pm\.ClockIn\)\)/.test(build), 'the day shape carries openBreak');
+});
+
+test('F5 (cycle 22 follow-on): a STRAY break stamp is shown and blocks the save — never deleted unseen (server shape, client rule, guard, parser, driven)', () => {
+  const ctx = vm.createContext({ Math, String, Array });
+  ['timeToMins_', 'breakSortKey_', 'breakPairs_', 'breakOpenLeave_', 'breakStrays_', 'managerParseBreakSlots_'].forEach((fn) =>
+    vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+  vm.runInContext('var MANAGER_DAY_MAX_BREAKS = 12;', ctx);
+  vm.runInContext(extractRawFunction('tc/script_manager.html', 'deStrayUnresolved_'), ctx);
+  const strays = (lo, li, ci) => JSON.parse(JSON.stringify(ctx.breakStrays_(lo, li, ctx.timeToMins_(ci))));
+
+  // The damage shapes. None is producible by the punch flow.
+  assert.deepStrictEqual(strays(['10:30:00', '12:30:00'], ['12:45:00'], '08:00:00'), { outs: ['12:30:00'], ins: [] },
+    'a leave with a LATER return that an earlier leave already took');
+  assert.deepStrictEqual(strays(['12:00:00', '12:00:00'], ['12:30:00'], '08:00:00'), { outs: ['12:00:00'], ins: [] },
+    'a double-punched leave: the second copy is the stray');
+  assert.deepStrictEqual(strays(['12:00:00'], ['11:00:00', '12:30:00'], '08:00:00'), { outs: [], ins: ['11:00:00'] },
+    'a return with no leave before it');
+  // The legitimate shapes carry none.
+  assert.deepStrictEqual(strays(['10:30:00', '12:30:00'], ['10:45:00'], '08:00:00'), { outs: [], ins: [] },
+    'the OPEN break is not a stray (T1 owns it)');
+  assert.deepStrictEqual(strays(['12:00:00', '15:00:00'], ['12:30:00', '15:10:00'], '08:00:00'), { outs: [], ins: [] });
+  assert.deepStrictEqual(strays(['23:30:00', '02:00:00'], ['00:15:00'], '22:00:00'), { outs: [], ins: [] },
+    'overnight: 23:30–00:15 pairs and 02:00 is open, on the clock-in anchor');
+  assert.deepStrictEqual(strays([], [], '08:00:00'), { outs: [], ins: [] });
+
+  // The client rule (deSetBreaksFromDay_ — its DOM pin drives the real one):
+  // pairs, then the strays as FLAGGED half rows, then the open leave last.
+  const prefill = (lo, li, ci) => {
+    const m = ctx.timeToMins_(ci);
+    const rows = JSON.parse(JSON.stringify(ctx.breakPairs_(lo, li, m))).map((b) => ({ out: b.out.substring(0, 5), in: b.in.substring(0, 5) }));
+    const s = strays(lo, li, ci);
+    s.outs.forEach((t) => rows.push({ out: t.substring(0, 5), in: '', stray: true }));
+    s.ins.forEach((t) => rows.push({ out: '', in: t.substring(0, 5), stray: true }));
+    const open = ctx.breakOpenLeave_(lo, li, m);
+    if (open) rows.push({ out: String(open).substring(0, 5), in: '' });
+    return rows;
+  };
+  const cases = [
+    [['10:30:00', '12:30:00'], ['12:45:00'], '08:00:00'],
+    [['12:00:00'], ['11:00:00', '12:30:00'], '08:00:00'],
+    [['10:00:00', '10:05:00', '13:00:00'], ['10:30:00'], '08:00:00'],   // a stray leave AND an open break
+  ];
+  cases.forEach(([lo, li, ci]) => {
+    const rows = prefill(lo, li, ci);
+    assert.ok(/unmatched punch from the sheet/.test(ctx.deStrayUnresolved_(rows)), 'the client refuses before the round trip: ' + JSON.stringify(rows));
+    const parsed = JSON.parse(JSON.stringify(ctx.managerParseBreakSlots_({ breaks: rows, ClockIn: ci.substring(0, 5), ClockOut: '' })));
+    assert.ok(parsed.error, 'and the SERVER refuses it too, whatever a client sends: ' + JSON.stringify(rows));
+  });
+  // Resolved — completed or removed — the day saves.
+  assert.strictEqual(ctx.deStrayUnresolved_([{ out: '10:30', in: '12:45' }, { out: '12:50', in: '13:00', stray: true }]), '',
+    'a stray the manager completed is a pair');
+  assert.strictEqual(ctx.deStrayUnresolved_([{ out: '10:30', in: '12:45' }]), '', 'a removed stray is a deliberate deletion');
+  assert.strictEqual(ctx.deStrayUnresolved_([{ out: '12:30', in: '' }]), '', 'the open break is NOT a stray');
+
+  // The wiring: the server ships the field, the save consults the guard first.
+  const build = stripJsComments_(extractRawFunction('Code.js', 'buildTimesheetForEmployee_'));
+  assert.ok(/strayBreaks: breakStrays_\(pm\.LunchOut, pm\.LunchIn, timeToMins_\(pm\.ClockIn\)\)/.test(build), 'the day shape carries strayBreaks');
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  const saveAt = mgr.indexOf("getElementById('de-save').addEventListener");
+  const saveBody = mgr.slice(saveAt, mgr.indexOf('google.script.run', saveAt));
+  assert.ok(/deStrayUnresolved_\(slots\.breaks\)/.test(saveBody) && /if \(strayMsg\) \{ showToast\(strayMsg, 'toast-error'\); return; \}/.test(saveBody),
+    'the save refuses an unresolved stray BEFORE any RPC');
 });
 
 test('A4-2: the day reconcile treats the submitted break list AS the day', () => {
@@ -18607,7 +19212,7 @@ test('B3: a resume CONVERTS the clock-out into a break — it never just deletes
   // silently PAYS the gap between clocking out and coming back. The clock-out
   // becomes a BREAK instead, so the gap is unpaid — which needs no new
   // arithmetic, because calcHours_ deducts every break pair (INV-176).
-  assert.ok(/setValue\('ADJ-LunchOut'\)/.test(stripped),
+  assert.ok(/setValue\(sheetSafe_\('ADJ-LunchOut'\)\)/.test(stripped),
     'the existing row is CONVERTED in place');
   assert.ok(/appendToAdpSheet_\(targetEmp, date, inFull, 'IN', 'ADJ-LunchIn'\)/.test(stripped),
     'and the resume time closes the break');
@@ -18669,8 +19274,8 @@ test('B3: a resume CONVERTS the clock-out into a break — it never just deletes
     'a resume cannot target another punch type');
   assert.ok(/there is no Clock Out on/.test(sub), 'submit refuses without one');
   assert.ok(/the resume time must be after the Clock Out/.test(sub), 'and refuses a backwards one');
-  assert.ok(/c\.action\]\);/.test(sub) || /, c\.action\]/.test(sub),
-    'the action is persisted');
+  assert.ok(/, c\.action, ''\]\)\);/.test(sub),
+    'the action is persisted (and a new row\'s trailing EndTime starts blank — T3)');
 
   // Back-compat: PAR.ACTION is TRAILING and a legacy row reads as 'set'.
   assert.ok(/SUBMITTED_AT:8, ACTION:9/.test(code), 'ACTION is the trailing column');
@@ -19232,7 +19837,7 @@ test('PR4-1: server contract — 19 trailing-column headers ↔ CO indices, vali
   const rowObj = stripJsComments_(extractRawFunction('Code.js', 'coachRowToObj_'));
   ['CO.REP_RESPONSE', 'CO.FOLLOW_UP_AT', 'CO.NUDGED_AT', 'CO.NOTE_DATE', 'CO.QA_FILE_ID'].forEach((k) => assert.ok(rowObj.indexOf(k) > -1, 'coachRowToObj_ reads ' + k));
   const create = stripJsComments_(extractRawFunction('Code.js', 'createCoaching'));
-  const appendLit = /appendRow\(\[([\s\S]*?)\]\)/.exec(create)[1];
+  const appendLit = /appendRow\(sheetSafeRow_\(\[([\s\S]*?)\]\)\)/.exec(create)[1];
   assert.strictEqual(appendLit.split(',').filter((x) => x.trim()).length, headers.length, 'createCoaching appends a full-width row (a short row would leave FollowUpAt/NoteDate/QaFileId in the wrong cells)');
   assert.ok(/v\.item\.followUpAt, '', v\.item\.noteDate, v\.item\.qaFileId/.test(appendLit), 'followUpAt / noteDate / qaFileId land in their own trailing cells (NudgedAt starts blank)');
   // Validate: the three new fields are optional, normalized, and bounded.
@@ -19246,7 +19851,7 @@ test('PR4-1: server contract — 19 trailing-column headers ↔ CO indices, vali
   const ack = stripJsComments_(extractRawFunction('Code.js', 'acknowledgeCoaching'));
   const iAlready = ack.indexOf("found.item.status === 'acknowledged') return { success: true, alreadyAcknowledged: true");
   const iVoid = ack.indexOf("found.item.status === 'void') return { success: false");
-  const iReply = ack.indexOf('CO.REP_RESPONSE + 1).setValue(reply)');
+  const iReply = ack.indexOf('CO.REP_RESPONSE + 1).setValue(sheetSafe_(reply))');
   assert.ok(iAlready > -1 && iVoid > -1 && iReply > -1 && iAlready < iReply && iVoid < iReply, 'reply write sits after both terminal-state guards');
   assert.ok(/reply\.length > COACH_RESPONSE_MAX\) return \{ success: false/.test(ack), 'the reply is bounded by name');
   assert.ok(/notifyAfter = function \(\) \{ notifyManagerOfCoachingAck_\(found\.item, emp, !!reply\); \}/.test(ack), 'the manager ack mail is deferred past the lock and says whether a reply exists (M-7)');
@@ -19604,7 +20209,7 @@ test('QA-21: audit periods, eligibility, exemption + duration + skip contracts',
   assert.ok(/'Manager access required\.'/.test(ex) && !/canSeeQa_/.test(ex), 'exemptions are a manager decision');
   assert.ok(ex.indexOf("'Manager access required.'") < ex.indexOf('getOrCreateQaExemptionsSheet_'), 'gate before the store');
   assert.ok(/qaPeriodValid_\(per\)/.test(ex), 'the period is validated');
-  assert.ok(/sheet\.appendRow\(\[name, per, String\(emp\.email \|\| ''\), Date\.now\(\), active \? 'TRUE' : 'FALSE'\]\);/.test(ex), 'append-only ledger row');
+  assert.ok(/appendRowsTextSafe_\(sheet, \[\[name, per, String\(emp\.email \|\| ''\), Date\.now\(\), active \? 'TRUE' : 'FALSE'\]\], QA_EXEMPTIONS_TEXT_IDX\);/.test(ex), 'append-only ledger row');
   assert.ok(/writeAuditLog_\(emp, 'QaExemption', '', '', false, 0, 'period=' \+ per \+ '; active=' \+ active, emp\.email\);/.test(ex),
     'the audit row never carries the employee name');
   assert.ok(/waitLock\(15000\)/.test(ex) && /finally \{ lock\.releaseLock\(\); \}/.test(ex), 'locked (INV-01)');
@@ -19623,7 +20228,7 @@ test('QA-21: audit periods, eligibility, exemption + duration + skip contracts',
   const st = nc(extractRawFunction('Code.js', 'qaSetRecordingStatus'));
   assert.ok(/function qaSetRecordingStatus\(fileId, status, reason\)/.test(st));
   assert.ok(/const why = st === 'skipped' \? String\(reason \|\| ''\)\.trim\(\)\.substring\(0, QA_SKIP_REASON_MAX\) : '';/.test(st), 'reason bounded; cleared off a non-skip');
-  assert.ok(/sheet\.getRange\(found\.rowIdx, QAR\.SKIP_REASON \+ 1\)\.setValue\(why\);/.test(st));
+  assert.ok(/sheet\.getRange\(found\.rowIdx, QAR\.SKIP_REASON \+ 1\)\.setNumberFormat\('@'\)\.setValue\(sheetText_\(why\)\);/.test(st));
   assert.ok(/'fileId=' \+ fid \+ '; status=' \+ st, emp\.email\);/.test(st) && !/why, emp\.email/.test(st), 'the reason (free text, may name the caller) never reaches the shared AuditLog');
   // getQaQueue — the coverage join is best-effort WITH its outcome carried (INV-187).
   const q = nc(extractRawFunction('Code.js', 'getQaQueue'));
@@ -20109,7 +20714,7 @@ test('TZR-2: repairTimesheetTimezone is gated, dry-run by default, bounded, lock
   assert.ok(dryIdx > 0 && lockIdx > dryIdx, 'lock acquired only on apply, after the dry-run return');
   assert.ok(/finally \{\s*lock\.releaseLock\(\);\s*\}/.test(stripped), 'finally-releases (INV-01)');
   // In place: ONLY the DATE and TIME cells are written; a punch is never appended or deleted.
-  assert.ok(/getRange\(c\.row, ADP\.DATE \+ 1\)\.setValue\(c\.newDate\)/.test(stripped) && /getRange\(c\.row, ADP\.TIME \+ 1\)\.setValue\(c\.newTime\)/.test(stripped), 'writes DATE + TIME in place');
+  assert.ok(/getRange\(c\.row, ADP\.DATE \+ 1\)\.setValue\(sheetSafe_\(c\.newDate\)\)/.test(stripped) && /getRange\(c\.row, ADP\.TIME \+ 1\)\.setValue\(sheetSafe_\(c\.newTime\)\)/.test(stripped), 'writes DATE + TIME in place');
   assert.strictEqual((stripped.match(/\.setValue\(/g) || []).length, 2, 'exactly two cell writes per row — COMMENTS (the ADJ- marker) untouched');
   ['appendRow', 'deleteRow', 'insertSheet', 'getOrCreate'].forEach((w) => assert.ok(!stripped.includes(w), 'never ' + w));
   assert.ok(/writeAuditLog_\(targets\[id\], 'TimesheetTzRepair'/.test(stripped), 'one counts-only audit row per employee (INV-08)');
@@ -20172,7 +20777,11 @@ test('TZR-4: repairSplitDayPunches is gated, dry-run by default, one-read, adds-
   assert.ok(/const dryRun = opts\.dryRun !== false;/.test(stripped), 'a bare call NEVER writes');
   assert.ok(/const targets = tzRepairResolveTargets_\(wanted\);/.test(stripped), 'targets resolve through the SAME helper as the tz repair');
   assert.ok(/daysBetween_\(from, to\) > SPLIT_REPAIR_MAX_SPAN_DAYS/.test(stripped), 'the window is bounded');
-  assert.strictEqual((stripped.match(/getDataRange\(\)\.getValues\(\)/g) || []).length, 1, 'ONE Timesheet read — every row index comes from it');
+  // T2 (cycle 22): every row index still comes from ONE plan read; the only
+  // other read is the in-lock VERIFICATION, which feeds repairRowsMoved_ and
+  // supplies no index.
+  assert.strictEqual((stripped.match(/getDataRange\(\)\.getValues\(\)/g) || []).length, 2, 'the plan read + the in-lock verification read');
+  assert.ok(/repairRowsMoved_\(sheet\.getDataRange\(\)\.getValues\(\), expected\)/.test(stripped), 'the second read is the verification — ONE Timesheet read supplies every row index');
   assert.ok(!/TIMESHEET_ARCHIVE_TAB/.test(stripped), 'live tab only — the artifact is in the current period (stated in the doc)');
   assert.ok(/splitDayRepairPlan_\(punches, from, to\)/.test(stripped), 'the decision is the pure planner');
   // Every add is validated BEFORE the dry-run return, so a bad add fails the dry run too (atomic, like the tz repair).
@@ -20232,7 +20841,7 @@ test('OPS-2: the multi-select adjust approve is ONE lock + ONE read, per-id outc
   assert.ok(/buildAdjustPunchIndex_\(empId, datesByEmp\[empId\] \|\| \{\}\)/.test(body) && /writeAdjustPunchForEmployee_\(targetEmp, date, punchType, reqTime, callerEmp\.email, reason, ctxFor\(empId\)\)/.test(body),
     'the adjust writer gets ONE Timesheet index per employee (C17-9) instead of a full read per request');
   assert.ok(/results\.push\(\{ reqId: id, success: true \}\)/.test(body) && /const fail = \(id, error\) =>/.test(body), 'per-id outcomes');
-  assert.ok(/sheet\.getRange\(i \+ 1, PAR\.STATUS \+ 1\)\.setValue\(newStatus\)/.test(body), 'the status cell flips per row');
+  assert.ok(/sheet\.getRange\(i \+ 1, PAR\.STATUS \+ 1\)\.setValue\(sheetSafe_\(newStatus\)\)/.test(body), 'the status cell flips per row');
   // Tests.js covers the new public entry on the manager tier (F9 derives the rest).
   const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
   assert.ok(/\['updatePunchAdjustStatusBulk', function \(\) \{ return updatePunchAdjustStatusBulk\(\['nonexistent'\], 'Denied'\); \}\]/.test(tests), 'omnibus gate case');
@@ -20462,7 +21071,7 @@ test('QA-26: getQaLog + qaCreateManualRecording contracts — gate shape, self-s
   assert.ok(/lock\.waitLock\(15000\)/.test(man) && /finally \{ lock\.releaseLock\(\); \}/.test(man), 'locked (INV-01)');
   assert.ok(/Give the audit a label/.test(man) && /Label is capped at/.test(man), 'label required + capped, by name');
   assert.ok(/const fid = QA_MANUAL_ID_PREFIX \+ Utilities\.getUuid\(\);/.test(man), 'the id is minted here — never a Drive id');
-  assert.ok(/appendRow\(\[\s*fid, name, 0, 'manual', now, now, 'in_review', String\(emp\.email \|\| ''\)\.trim\(\)\.toLowerCase\(\), now, '', agent, 0, 0, '',\s*\]\)/.test(man),
+  assert.ok(/appendRowsTextSafe_\(getOrCreateQaRecordingsSheet_\(\), \[\[\s*fid, name, 0, 'manual', now, now, 'in_review', String\(emp\.email \|\| ''\)\.trim\(\)\.toLowerCase\(\), now, '', agent, 0, 0, '',\s*\]\], QA_RECORDINGS_TEXT_IDX\)/.test(man),
     'the row is a FULL-WIDTH QaRecordings row: in_review, assigned to the CALLER, agent attributed, unshared, no duration/skip');
   assert.ok(/writeAuditLog_\(emp, 'QaManualRecording', '', '', false, 0, 'fileId=' \+ fid, emp\.email\);/.test(man), 'audit row is id-only — the label may name a caller (INV-32/196)');
   assert.ok(!/name/.test(man.slice(man.indexOf("writeAuditLog_"), man.indexOf("writeAuditLog_") + 120)), 'the label never reaches the audit note');
@@ -21393,7 +22002,7 @@ test('F-16: the agent-facing QA reads scope by ROSTER ID — the id written at a
   const byName = foNc(extractRawFunction('Code.js', 'qaRosterIdByName_'));
   assert.ok(/return ids\.length === 1 \? ids\[0\] : '';/.test(byName), 'the write-time resolver returns NOTHING for an ambiguous name (never the first row)');
   const setAgent = foNc(extractRawFunction('Code.js', 'qaSetRecordingAgent'));
-  assert.ok(/const agentId = qaRosterIdByName_\(name\);/.test(setAgent) && /QAR\.AGENT_ID \+ 1, 1, 1\)\.setValue\(agentId\)/.test(setAgent), 'attribution writes the resolved id beside the name');
+  assert.ok(/const agentId = qaRosterIdByName_\(name\);/.test(setAgent) && /QAR\.AGENT_ID \+ 1, 1, 1\)\.setNumberFormat\('@'\)\.setValue\(sheetText_\(agentId\)\)/.test(setAgent), 'attribution writes the resolved id beside the name');
   ['getMyQaReviews', 'getMyQaReviewAudioChunk'].forEach((n) => {
     const src = foNc(extractRawFunction('Code.js', n));
     assert.ok(/qaRowIsMine_\(/.test(src) && !/toLowerCase\(\) !== myName/.test(src), n + ' scopes through qaRowIsMine_ — no bare name compare survives');
@@ -21412,6 +22021,7 @@ test('F-10: a cross-rep tag transform REPORTS the rep Sheets it could not read �
                getRange: () => ({ setValue() {} }) };
     } };
   vm.createContext(ctx);
+  ['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
   vm.runInContext(extractRawFunction('Code.js', 'applyTagTransformAcrossReps_'), ctx);
   const r = JSON.parse(JSON.stringify(ctx.applyTagTransformAcrossReps_('old', (tags) => tags.map((t) => (t === 'old' ? 'new' : t)))));
   assert.strictEqual(r.repsTouched, 1); assert.strictEqual(r.notesUpdated, 1);
@@ -22494,7 +23104,7 @@ test('N3-DR: an in-app "Mark resolved" is recorded (ResolvedVia) and leaves ever
   assert.ok(/RESOLVED_VIA:12, PATIENT_TRX:13 \}/.test(code), 'DR.RESOLVED_VIA is slot 12 (PatientTrx trails it since note 6)');
   assert.ok(/'NoteId','ResolvedVia','PatientTrx'\]/.test(code), 'DR_HEADERS carries ResolvedVia then PatientTrx');
   const mk = nc(extractRawFunction('Code.js', 'getOrCreateDeptRequestsSheet_'));
-  assert.ok(/getLastColumn\(\) < DR_HEADERS\.length/.test(mk) && /setValues\(\[DR_HEADERS\]\)/.test(mk),
+  assert.ok(/getLastColumn\(\) < DR_HEADERS\.length/.test(mk) && /setValues\(sheetSafeRows_\(\[DR_HEADERS\]\)\)/.test(mk),
     'a short header self-heals — a tab provisioned before the column gains it in place');
   // (b) ONE reader (the drStatus_/INV-183 discipline), driven: only the two
   //     known values survive; anything else reads as untracked.
@@ -22516,7 +23126,7 @@ test('N3-DR: an in-app "Mark resolved" is recorded (ResolvedVia) and leaves ever
   assert.ok(/function markDeptRequestResolved_\(token, byEmail, via\)/.test(w), 'the writer takes the path');
   assert.ok(/DR_RESOLVED_VIA_VALUES\.indexOf\(String\(via \|\| ''\)\.trim\(\)\.toLowerCase\(\)\) >= 0/.test(w),
     'the path is validated against the shared list before the write');
-  assert.ok(/getRange\(rowIndex, DR\.RESOLVED_VIA \+ 1\)\.setValue\(viaClean\)/.test(w), 'the cell is written (Q5 — at the row the bounded lookup located)');
+  assert.ok(/getRange\(rowIndex, DR\.RESOLVED_VIA \+ 1\)\.setValue\(sheetSafe_\(viaClean\)\)/.test(w), 'the cell is written (Q5 — at the row the bounded lookup located)');
   assert.ok(/via=/.test(w), 'the audit note names the path (PHI-free either way)');
   assert.ok(/markDeptRequestResolved_\(requestId,[^;]*'app'\)/.test(nc(extractRawFunction('Code.js', 'resolveDeptRequest'))),
     "the in-app button resolves as 'app'");
@@ -22635,7 +23245,9 @@ test('C-N4: Spanish auto-assign — least-loaded pick (pure), manager gate BEFOR
   const lockAt = core.indexOf('waitLock(15000)');
   assert.ok(lockAt > 0 && core.indexOf('spanishClaimsMap_()') > lockAt, 'the load + still-unclaimed set are re-derived from the LIVE map INSIDE the lock');
   assert.ok(core.indexOf('spanishAutoAssignPick_(') > lockAt, 'the pick runs inside the lock too');
-  assert.ok(/\.setValues\(rows\)/.test(core) && !/appendRow\(/.test(core), 'ONE batched setValues, never a per-row appendRow loop');
+  // F4 (cycle 22 follow-on): the batch rides appendRowsSafe_ — still ONE write,
+  // now through the helper that grows the grid first (the C1 class).
+  assert.ok(/appendRowsSafe_\(getOrCreateSpanishClaimsSheet_\(\), rows\)/.test(core) && !/appendRow\(/.test(core), 'ONE batched write through appendRowsSafe_, never a per-row appendRow loop');
   assert.ok(/'claim', pk\.by, self, nowMs\]/.test(core), 'each row is a claim by the pick, assigned by the caller (the row shape spanishClaimsFold_ reads)');
   const auditIdx = core.indexOf("writeAuditLog_(emp, 'SpanishInboxAutoAssign'");
   assert.ok(auditIdx > core.indexOf('lock.releaseLock()'), 'the audit row lands after the lock releases');
@@ -22676,7 +23288,7 @@ test('C-N6: Dept Requests — PatientTrx stored + on the card subject, ONE owner
   assert.ok(/'NoteId','ResolvedVia','PatientTrx'\]/.test(code), 'DR_HEADERS ends with PatientTrx');
   assert.ok(/const DR_PATIENT_TRX_MAX = 120;/.test(code), 'capped');
   const send = nc(extractRawFunction('Code.js', 'emailFromCallNote'));
-  assert.ok(/noteId,\s*'',\s*String\(note\.patientAndTrx \|\| ''\)\.slice\(0, DR_PATIENT_TRX_MAX\),\s*\]\);/.test(send),
+  assert.ok(/noteId,\s*'',\s*String\(note\.patientAndTrx \|\| ''\)\.slice\(0, DR_PATIENT_TRX_MAX\),\s*\]\)\);/.test(send),
     'the append leaves ResolvedVia blank for the resolver and writes the capped patient & TRX as the LAST cell');
   // (b) ONE ownership rule, driven.
   const sbx = vm.createContext({
@@ -25764,6 +26376,7 @@ test('F3 (rewritten BEHAVIOURAL, F-52): archiveSheetRowsOlderThan_ really stops 
   sb.Utilities = { parseDate: () => { throw new Error('use Date.parse'); } };
   let flushes = 0;
   sb.SpreadsheetApp = { flush: () => { flushes++; } };
+  ['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), sb));   // S2 — the real helpers
   vm.runInContext(extractRawFunction('Code.js', 'parseRetentionDateMs_'), sb, { filename: 'Code.js#parseRetentionDateMs_' });
   vm.runInContext(extractRawFunction('Code.js', 'archiveSheetRowsOlderThan_'), sb, { filename: 'Code.js#archiveSheetRowsOlderThan_' });
 
@@ -25783,9 +26396,14 @@ test('F3 (rewritten BEHAVIOURAL, F-52): archiveSheetRowsOlderThan_ really stops 
   };
   const mkArchive = () => {
     const written = [];
-    return {
-      written,
+    // C1 (cycle 22): a GRID, like Sheets — a small one, so these runs must
+    // grow it, and a write past it throws exactly as the real range does.
+    let maxRows = 5;
+    const arc = {
+      written, grows: 0,
       getLastRow: () => written.length,
+      getMaxRows: () => maxRows,
+      insertRowsAfter: (after, n) => { assert.strictEqual(after, maxRows, 'grows from the grid end'); maxRows += n; arc.grows++; },
       getMaxColumns: () => 2,
       insertColumnsAfter: () => {},
       // Sheets REFUSES a zero-row range ("number of rows must be at least 1"),
@@ -25795,9 +26413,11 @@ test('F3 (rewritten BEHAVIOURAL, F-52): archiveSheetRowsOlderThan_ really stops 
       // production class this harness exists to avoid (INV-185).
       getRange: (r, c, n) => {
         assert.ok(n >= 1, 'a zero-row setValues would THROW in Sheets — the mover must return before appending nothing');
+        if (r + n - 1 > maxRows) throw new Error('The coordinates of the range are outside the dimensions of the sheet.');
         return { setValues: (b) => { b.forEach((x) => written.push(x)); } };
       },
     };
+    return arc;
   };
   const CUT = Date.parse('2026-06-01T00:00:00Z');
 
@@ -25810,6 +26430,7 @@ test('F3 (rewritten BEHAVIOURAL, F-52): archiveSheetRowsOlderThan_ really stops 
   const moved = sb.archiveSheetRowsOlderThan_(src1, arc1, 0, CUT, { maxRows: 7, width: 2 });
   assert.strictEqual(moved, 7, 'exactly the bound moved');
   assert.strictEqual(arc1.written.length, 7, 'and exactly the bound landed in the archive');
+  assert.ok(arc1.grows >= 1, 'C1: a block bigger than the archive grid GROWS it first (it threw before, every night)');
   assert.strictEqual(src1.rows.length, 1 + 33 - 7, 'the source shrank by exactly the bound');
   assert.ok(flushes > 0, 'the archive write is flushed BEFORE the deletes (an unflushed append + a delete loses rows)');
   // Monotonic: a second run moves the NEXT batch, never the same one again.
@@ -26066,6 +26687,221 @@ test('a test that asserts on the reconcile OUTCOME clears its rep first', () => 
   assert.deepStrictEqual(offenders, [],
     'test(s) asserting on the reconcile outcome without clearing the rep first — ' +
     'they will measure whatever an earlier accrual test credited: ' + offenders.join(', '));
+});
+
+// ── Cycle 22 Batch 1 — the security boundary ────────────────────────────────
+console.log('\ncycle 22 Batch 1 — security boundary (S3, S4, S9)');
+
+test('S4: the FormTokenCreated audit row carries a token REFERENCE, never the live token', () => {
+  const ctx = { String };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'formTokenRef_'), ctx);
+  const tok = '3f2a9c10-5b7e-4d21-9a0c-1e2f3a4b5c6d';
+  const ref = ctx.formTokenRef_(tok);
+  assert.strictEqual(ref, '3f2a9c10…', 'eight characters and an ellipsis');
+  assert.ok(ref.indexOf(tok) < 0 && tok.indexOf(ref.slice(0, 8)) === 0, 'a prefix of the token, never the token');
+  assert.strictEqual(ctx.formTokenRef_(''), '(none)', 'no token reads as none, not as an empty reference');
+  assert.strictEqual(ctx.formTokenRef_(null), '(none)');
+  // The writer: the audit notes are built from the reference only.
+  const src = stripJsComments_(extractRawFunction('Code.js', 'createFormToken'));
+  const at = src.indexOf("'FormTokenCreated'");
+  assert.ok(at >= 0, 'createFormToken still writes the FormTokenCreated row');
+  const call = src.slice(at, src.indexOf(');', at));
+  assert.ok(/tokenRef=' \+ formTokenRef_\(token\)/.test(call), 'the row names the token by reference');
+  assert.ok(!/\+ token\b(?!\))/.test(call.replace(/formTokenRef_\(token\)/g, '')), 'the raw token is nowhere in the row');
+});
+
+console.log('\ncycle 22 S2 — SHEET-SAFE: no string reaches a sheet as a formula');
+test('S2: sheetSafe_ neutralises what Sheets would parse as a formula, and nothing else', () => {
+  const ctx = { Array, String };
+  vm.createContext(ctx);
+  ['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  const s = (v) => ctx.sheetSafe_(v);
+  // Neutralised: the apostrophe is Sheets' literal-text marker and is not part
+  // of the stored value, so each of these reads back exactly as typed.
+  [['=TEXTJOIN(",",TRUE,Employees!A2:P80)', "'=TEXTJOIN(\",\",TRUE,Employees!A2:P80)"],
+   ['=1+1', "'=1+1"], ['  =IMPORTXML("x","y")', "'  =IMPORTXML(\"x\",\"y\")"],
+   ['+1 555-0100', "'+1 555-0100"], ['-called back, no answer', "'-called back, no answer"],
+   ['- ', "'- "], ['-', "'-"], ['+', "'+"], ['@mention', "'@mention"], ['-A1', "'-A1"], ['+SUM(A:A)', "'+SUM(A:A)"],
+   ['\t=cmd', "'\t=cmd"]]
+    .forEach(([v, want]) => assert.strictEqual(s(v), want, 'neutralised: ' + JSON.stringify(v)));
+  // Untouched: every shape the app writes on purpose, and a plain number
+  // string — Sheets reads that as the number it always has.
+  ['', 'Approved', 'TRUE', 'FALSE', '2026-09-23', '08:00:00', '2026-09-23 08:00:00', '{"tags":["a"]}', '["x"]',
+   'data:image/png;base64,AA', 'ADJ-LunchOut', 'token=abc', "'=already literal", '-1.5', '+2', '-5', '0.5', '-.5', ' -3 ']
+    .forEach((v) => assert.strictEqual(s(v), v, 'unchanged: ' + JSON.stringify(v)));
+  const d = new Date(0);
+  [0, -1.5, 12, true, false, null, undefined].forEach((v) => assert.strictEqual(s(v), v, 'non-strings pass through: ' + v));
+  assert.strictEqual(s(d), d, 'a Date passes through as the same object');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.sheetSafeRow_(['a', '=b', 3, '-x']))), ['a', "'=b", 3, "'-x"], 'a row maps cell by cell');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.sheetSafeRows_([['=a', 1], ['b', '+c']]))), [["'=a", 1], ['b', "'+c"]], 'a block maps row by row');
+  assert.strictEqual(ctx.sheetSafeRow_('x'), 'x', 'a non-array row passes through (the caller’s own shape error surfaces unchanged)');
+});
+test('S2: every sheet write in every pushed server file goes through the sheet-safe helpers (derived, zero-dep; lint-server holds the exact AST rule)', () => {
+  const WEB = path.join(__dirname, '../../web-app');
+  const files = fs.readdirSync(WEB).filter((f) => /\.(js|gs)$/i.test(f) && f !== 'Tests.js');
+  assert.ok(files.indexOf('DevTools.js') >= 0 && files.length >= 15, 'sanity: the scan reads the directory, DevTools.js included');
+  const WANT = { appendRow: ['sheetSafeRow_'], setValue: ['sheetSafe_', 'sheetText_'], setValues: ['sheetSafeRows_', 'sheetTextRows_'] };
+  const bad = []; let writes = 0;
+  files.forEach((f) => {
+    const src = stripJsComments_(fs.readFileSync(path.join(WEB, f), 'utf8'));
+    const re = /\.(appendRow|setValues|setValue)\(\s*([A-Za-z_$][\w$]*)?/g; let m;
+    while ((m = re.exec(src)) !== null) {
+      writes++;
+      if (WANT[m[1]].indexOf(m[2]) < 0) bad.push(f + ': .' + m[1] + '(' + (m[2] || '…') + ' — ' + src.slice(m.index, m.index + 70).replace(/\s+/g, ' '));
+    }
+    if (/\.(setFormulas?|setFormulasR1C1|setFormulaR1C1|setRichTextValues?)\(/.test(src)) bad.push(f + ': writes a formula / rich text');
+  });
+  assert.ok(writes > 150, 'sanity: the scan found the write surface (' + writes + ')');
+  assert.deepStrictEqual(bad, [], 'unwrapped sheet writes:\n  ' + bad.join('\n  '));
+  // The exact net is the AST rule in lint-server.mjs (CI, after npm ci). Hold
+  // its shape here so it cannot be switched off or widened quietly.
+  const lint = fs.readFileSync(path.join(__dirname, '../../scripts/lint-server.mjs'), 'utf8');
+  [["'appendRow', 'sheetSafeRow_'"], ["'setValue', 'sheetSafe_|sheetText_'"], ["'setValues', 'sheetSafeRows_|sheetTextRows_'"]]
+    .forEach(([t]) => assert.ok(lint.indexOf(t) >= 0, 'lint-server pairs ' + t));
+  assert.ok(/'no-restricted-syntax': \['error'\]\.concat\(SHEET_SAFE\)/.test(lint), 'the SHEET-SAFE selectors are an ERROR-level rule');
+  assert.ok(/const SHEET_SAFE_EXEMPT_FILES = \['Tests\.js'\];/.test(lint), 'only the Tests.js fixtures are exempt');
+  assert.ok(/setFormula\|setFormulas/.test(lint), 'the formula APIs are banned by the same rule');
+});
+
+test('S2: a PLAIN-TEXT write is raw only where the cell is \'@\', formats before it writes, and grows the grid (driven)', () => {
+  const ctx = { Array, String };
+  vm.createContext(ctx);
+  ['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_', 'sheetText_', 'sheetTextRows_', 'appendRowsTextSafe_', 'sheetColLetter_']
+    .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  assert.strictEqual(ctx.sheetText_('- call back'), '- call back', 'sheetText_ is a pass-through');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.sheetTextRows_([['=a', '-b', '+c']], [1]))), [["'=a", '-b', "'+c"]],
+    'raw ONLY in the listed columns; every other cell is still neutralised');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.sheetTextRows_([['=a', '-b']], null))), [['=a', '-b']], 'null = the whole block is plain text');
+  assert.strictEqual(['A', 'B', 'K', 'N', 'O'].join(), [0, 1, 10, 13, 14].map(ctx.sheetColLetter_).join(), 'the QA letters derive from the index list');
+  // A fake sheet that records the ORDER of format and write, and throws past
+  // the grid exactly as Sheets does.
+  const log = [];
+  let lastRow = 1000, maxRows = 1000;
+  const sheet = {
+    getLastRow: () => lastRow, getMaxRows: () => maxRows,
+    insertRowsAfter: (after, n) => { log.push('grow:' + after + '+' + n); maxRows += n; },
+    getRange: (r, c, nr, nc) => {
+      if (r + (nr || 1) - 1 > maxRows) throw new Error('outside the dimensions of the sheet');
+      return {
+        setNumberFormat: (f) => { log.push('fmt:' + r + ',' + c + 'x' + (nr || 1) + '=' + f); },
+        setValues: (v) => { log.push('write:' + r + ',' + c + '=' + JSON.stringify(v)); lastRow = r + v.length - 1; },
+      };
+    },
+  };
+  const first = ctx.appendRowsTextSafe_(sheet, [['id1', '- a note', '=x', 7], ['id2', '+1 555', '-y', 8]], [1]);
+  assert.strictEqual(first, 1001, 'returns the first row written');
+  assert.deepStrictEqual(log, [
+    'grow:1000+2',
+    'fmt:1001,2x2=@',
+    'write:1001,1=' + JSON.stringify([['id1', '- a note', "'=x", 7], ['id2', '+1 555', "'-y", 8]]),
+  ], 'grow, then format the text column of the NEW rows, then one write — raw in the \'@\' column, neutralised elsewhere');
+  assert.strictEqual(ctx.appendRowsTextSafe_(sheet, [], [1]), 0, 'nothing to append writes nothing');
+});
+test('S2: every raw plain-text write sits after a setNumberFormat(\'@\') in its own function, and every appendRowsTextSafe_ caller holds the lock (derived)', () => {
+  const src = serverSource();
+  const re = /^function ([A-Za-z0-9_]+)\s*\(/gm; let m;
+  const uses = [], appenders = [], bad = [];
+  while ((m = re.exec(src)) !== null) {
+    const name = m[1];
+    if (['sheetText_', 'sheetTextRows_', 'appendRowsTextSafe_'].indexOf(name) >= 0) continue;   // the definitions
+    const s = src.indexOf('{', m.index); let d = 0, k = s;
+    for (; k < src.length; k++) { if (src[k] === '{') d++; else if (src[k] === '}' && --d === 0) break; }
+    const body = stripJsComments_(src.slice(s, k + 1));
+    const tAt = body.search(/\bsheetText(Rows)?_\(/);
+    if (tAt >= 0) {
+      uses.push(name);
+      const fAt = body.indexOf("setNumberFormat('@')");
+      if (fAt < 0 || fAt > tAt) bad.push(name + ': writes raw text with no setNumberFormat(\'@\') before it');
+    }
+    const aAt = body.indexOf('appendRowsTextSafe_(');
+    if (aAt >= 0) {
+      appenders.push(name);
+      const lAt = body.indexOf('waitLock(');
+      if (lAt < 0 || lAt > aAt) bad.push(name + ': appendRowsTextSafe_ needs the ScriptLock held (getLastRow() + 1)');
+      if (!/appendRowsTextSafe_\([^;]*?, QA_[A-Z_]+_TEXT_IDX\)/.test(body)) bad.push(name + ': pass the tab\'s ONE _TEXT_IDX list');
+    }
+  }
+  // The guarded set, named — a new raw-text writer must be added here on purpose.
+  assert.deepStrictEqual(uses.sort(), ['kbImportDataTable', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad'].sort(),
+    'the raw plain-text writers are exactly the known four');
+  assert.deepStrictEqual(appenders.sort(), ['qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings'].sort(),
+    'the plain-text appenders are exactly the five QA writers');
+  assert.deepStrictEqual(bad, [], bad.join('\n'));
+});
+
+test('S9: the public submit refuses a malformed or unknown token BEFORE the global lock, and a lock timeout is a polite retry', () => {
+  const ctx = { String };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'formTokenShapeOk_'), ctx);
+  const ok = (t) => ctx.formTokenShapeOk_(t);
+  assert.strictEqual(ok('3f2a9c10-5b7e-4d21-9a0c-1e2f3a4b5c6d'), true, 'a Utilities.getUuid() token');
+  assert.strictEqual(ok(' 3F2A9C10-5B7E-4D21-9A0C-1E2F3A4B5C6D '), true, 'case and surrounding space do not matter');
+  ['', null, 'x', 'TEST_TOKEN', '3f2a9c10-5b7e-4d21-9a0c-1e2f3a4b5c6', '3f2a9c10-5b7e-4d21-9a0c-1e2f3a4b5c6dz',
+   "' OR 1=1 --", '3f2a9c105b7e4d219a0c1e2f3a4b5c6d'].forEach((t) => assert.strictEqual(ok(t), false, 'refused: ' + t));
+  const src = stripJsComments_(extractRawFunction('Code.js', 'submitFormByToken'));
+  const lockAt = src.indexOf('LockService.getScriptLock()');
+  assert.ok(lockAt > 0, 'the submit still locks its write');
+  const pre = src.slice(0, lockAt);
+  assert.ok(/if \(!formTokenShapeOk_\(token\)\) return \{ success: false, error: 'Form not found\.' \};/.test(pre),
+    'a malformed token is refused before the lock, with the same message as an unknown one (no oracle)');
+  assert.ok(/findFormTokenRow_\(getOrCreateFormTokensSheet_\(\), token\)/.test(pre), 'an unknown token is refused on a lock-free read');
+  assert.ok(/try \{ lock\.waitLock\(15000\); \} catch \(lockErr\) \{\s*return \{ success: false, error: 'The form service is busy/.test(src),
+    'waitLock sits inside a try: a timeout reaches the recipient as a retry message, never a raw "Lock timeout"');
+  const post = src.slice(lockAt);
+  assert.ok(/findFormTokenRow_\(tokenSheet, token\)/.test(post) && /if \(status !== 'pending'\)/.test(post),
+    'the row is found AGAIN and its status trusted only inside the lock');
+});
+
+test('S3: errorStateHtml_ shows what the rep typed but beacons only the override, and escapes once', () => {
+  const sent = [];
+  const ctx = { String, errBeaconSend_: (m) => sent.push(m), icon: () => '',
+    esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;') };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('script_core.html', 'errorStateHtml_'), ctx);
+  const html = ctx.errorStateHtml_('Search failed for "O\'Brien 555-0100" - timeout', 'Search failed - timeout');
+  assert.deepStrictEqual(sent, ['Search failed - timeout'], 'the beacon carries the override, not the query');
+  assert.ok(html.indexOf('O&#39;Brien 555-0100') >= 0 && html.indexOf('&amp;#39;') < 0, 'the rep still sees the query, escaped exactly once');
+  sent.length = 0;
+  ctx.errorStateHtml_('Could not load training: boom');
+  assert.deepStrictEqual(sent, ['Could not load training: boom'], 'no override → the message itself (unchanged behaviour)');
+});
+
+test('S3: every errorStateHtml_ call that interpolates rep input passes a beacon-safe message (derived from every partial)', () => {
+  const WEB = path.join(__dirname, '../../web-app');
+  const partials = [];
+  (function walk(d) { fs.readdirSync(d).forEach((f) => { const p = path.join(d, f);
+    if (fs.statSync(p).isDirectory()) walk(p); else if (/\.html$/.test(f)) partials.push(p); }); })(WEB);
+  // What a rep TYPED: a search query, or a raw input value.
+  const TYPED = /\b(requestedQuery|searchQuery|mgrSearchQuery)\b|\.value\b/;
+  const args = (src, open) => {   // top-level comma split of the call's argument list
+    let d = 0, k = open, cur = '', out = [];
+    for (; k < src.length; k++) {
+      const c = src[k];
+      if (c === '(' || c === '[' || c === '{') { d++; if (d === 1) continue; }
+      if (c === ')' || c === ']' || c === '}') { d--; if (d === 0) { out.push(cur); break; } }
+      if (c === ',' && d === 1) { out.push(cur); cur = ''; continue; }
+      cur += c;
+    }
+    return out;
+  };
+  const bad = []; let calls = 0, typed = 0;
+  partials.forEach((p) => {
+    const src = stripJsComments_(fs.readFileSync(p, 'utf8'));
+    const re = /errorStateHtml_\(/g; let m;
+    while ((m = re.exec(src)) !== null) {
+      if (/function\s+$/.test(src.slice(Math.max(0, m.index - 10), m.index))) continue;   // the definition
+      calls++;
+      const a = args(src, m.index + m[0].length - 1);
+      if (!TYPED.test(a[0] || '')) continue;
+      typed++;
+      if (a.length < 2 || TYPED.test(a[1])) bad.push(path.relative(WEB, p) + ': ' + (a[0] || '').trim().slice(0, 80));
+      if (/esc\(\s*(requestedQuery|searchQuery|mgrSearchQuery)/.test(a[0])) bad.push(path.relative(WEB, p) + ': pre-escaped (errorStateHtml_ escapes)');
+    }
+  });
+  assert.ok(calls > 40, 'sanity: the scan found the call sites (' + calls + ')');
+  assert.ok(typed >= 4, 'sanity: the four search-failure sites are seen as carrying rep input (' + typed + ')');
+  assert.deepStrictEqual(bad, [], 'rep input reaching the ClientErrors beacon:\n  ' + bad.join('\n  '));
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
