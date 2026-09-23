@@ -930,7 +930,9 @@ function clkDashEmpty_(res) {
 /** Pure (Node-pinned) — run-rate projection of a period-to-date COUNT to the
  *  period end, from the aggregate + elapsed fraction. Returns null for the
  *  'yesterday' period, a null value, < 3 elapsed days (too early to project),
- *  or a complete period. Rates (pct) are NOT projected — only volumes. */
+ *  or a complete period. Rates (pct) are NOT projected — only volumes.
+ *  `toIso` is the payload's dataThrough (M8): the last day with call data,
+ *  so a null (no complete day yet) projects nothing. */
 function dashProjection_(value, fromIso, toIso, periodKey) {
   if ((periodKey !== 'mtd' && periodKey !== 'ytd') || value == null ||
       !/^\d{4}-\d{2}-\d{2}$/.test(String(fromIso)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(toIso))) return null;
@@ -1005,7 +1007,8 @@ function clkDashOwnCard_(res) {
     clkDashCompareNote_(res, pl) + '</div>';
   // Run-rate projection (MTD/YTD only, ≥3 days elapsed) — a client calc on the
   // aggregate. The full daily "cone" chart would need a series in the endpoint.
-  var proj = dashProjection_(o.answered, res.from, res.to, res.periodKey);
+  // M8 (cycle 22): elapsed = the days the CDR HOLDS (dataThrough), never today.
+  var proj = dashProjection_(o.answered, res.from, res.dataThrough, res.periodKey);
   var projHtml = proj ? '<div class="dash-proj mono">' + icon('chart', 11) +
     ' On pace for ~' + proj.projected + ' answered by ' + esc(proj.endLabel) + '</div>' : '';
   return kpis + foot + projHtml;
@@ -1031,7 +1034,7 @@ function clkDashTeamCard_(res) {
       { delta: dashDelta_(t.missed, pv && pv.missed, 'count'), prevLabel: pl }) +
   '</div><div class="dash-card-foot mono">' + esc(res.label) + ' · ' + (res.cohort || 0) + ' reps' +
     clkDashCompareNote_(res, pl) + '</div>';
-  var proj = dashProjection_(t.answered, res.from, res.to, res.periodKey);
+  var proj = dashProjection_(t.answered, res.from, res.dataThrough, res.periodKey);   // M8
   return kpis + (proj ? '<div class="dash-proj mono">' + icon('chart', 11) +
     ' On pace for ~' + proj.projected + ' answered by ' + esc(proj.endLabel) + '</div>' : '');
 }

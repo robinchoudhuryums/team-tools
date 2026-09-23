@@ -811,20 +811,42 @@ test('client CN_SHEET_VIEWS keys ⊆ server adminSheetViewKeys_()', () => {
 });
 
 console.log('\nCode.js — dashboard metrics pure helpers (period range + cohort-guarded team)');
-['cdrAnswerPct_', 'cdrExcludeSet_', 'dashboardPeriodRange_', 'dashboardTeamAggregate_', 'dashboardTeamTransfer_'].forEach((fn) =>
+['cdrAnswerPct_', 'cdrExcludeSet_', 'prevWorkdayIso_', 'dashboardPeriodRange_', 'dashboardTeamAggregate_', 'dashboardTeamTransfer_'].forEach((fn) =>
   vm.runInContext(extractRawFunction('Code.js', fn), sb, { filename: 'Code.js#' + fn }));
+vm.runInContext('var DASH_MONTH_ABBR = ' + JSON.stringify(['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']) + ';', sb);
 const dashboardPeriodRange_ = sb.dashboardPeriodRange_;
 const dashboardTeamAggregate_ = sb.dashboardTeamAggregate_;
 const dashboardTeamTransfer_ = sb.dashboardTeamTransfer_;
-test('dashboardPeriodRange_: yesterday/mtd/ytd resolve from today (UTC string math)', () => {
-  const y = dashboardPeriodRange_('yesterday', '2026-03-01');
-  assert.strictEqual(y.from, '2026-02-28'); assert.strictEqual(y.to, '2026-02-28'); // month + leap-safe rollback
+test('dashboardPeriodRange_: yesterday is the previous WORKDAY; mtd/ytd resolve from today and carry dataThrough (M2/M8, cycle 22)', () => {
+  const y = dashboardPeriodRange_('yesterday', '2026-03-03', {});   // a Tuesday
+  assert.strictEqual(y.from, '2026-03-02'); assert.strictEqual(y.to, '2026-03-02');
+  assert.strictEqual(y.label, 'Yesterday', 'a literal yesterday keeps the plain label');
+  const roll = dashboardPeriodRange_('yesterday', '2026-03-02', {});  // Monday 1st-of-month rollback over a weekend
+  assert.strictEqual(roll.from + '..' + roll.to, '2026-02-27..2026-02-27', 'M2 — THE REGRESSION: Monday reads FRIDAY, not the empty Sunday');
+  assert.strictEqual(roll.label, 'Fri Feb 27', 'and the label names the day rather than calling Friday "Yesterday"');
+  const hol = dashboardPeriodRange_('yesterday', '2026-11-27', { '2026-11-26': true });   // the Friday after Thanksgiving
+  assert.strictEqual(hol.from, '2026-11-25', 'a company holiday is skipped too');
   const m = dashboardPeriodRange_('mtd', '2026-06-17');
   assert.strictEqual(m.from, '2026-06-01'); assert.strictEqual(m.to, '2026-06-17');
+  assert.strictEqual(m.dataThrough, '2026-06-16', 'M8 — the CDR holds through yesterday, never today');
+  assert.strictEqual(dashboardPeriodRange_('mtd', '2026-06-01').dataThrough, null, 'the 1st has no complete day of data');
   const yt = dashboardPeriodRange_('ytd', '2026-06-17');
-  assert.strictEqual(yt.from, '2026-01-01'); assert.strictEqual(yt.to, '2026-06-17');
+  assert.strictEqual(yt.from, '2026-01-01'); assert.strictEqual(yt.to, '2026-06-17'); assert.strictEqual(yt.dataThrough, '2026-06-16');
+  assert.strictEqual(dashProjection_(160, m.from, m.dataThrough, 'mtd').projected, 300,
+    'M8 — the projection divides by 16 days of data (160/16×30), not 17 (which reads 282)');
+  assert.strictEqual(dashProjection_(5, '2026-06-01', null, 'mtd'), null, 'no data day, no projection');
   assert.strictEqual(dashboardPeriodRange_('bogus', '2026-06-17'), null);
   assert.strictEqual(dashboardPeriodRange_('mtd', 'not-a-date'), null);
+});
+test('M2/M8 (cycle 22): getDashboardMetrics ships dataThrough, the cards project from it, and a window nobody reported in is never cached', () => {
+  const dash = stripJsComments_(extractRawFunction('Code.js', 'getDashboardMetrics'));
+  assert.ok(/dataThrough: range\.dataThrough \|\| null,/.test(dash), 'the payload carries the last day with data');
+  assert.ok(/if \(useCache && !noteRes\.unavailable && !prevUnavailable && cur\.team\) \{/.test(dash),
+    'M2 — an all-empty window (the pre-import morning) is not pinned for the dashboard TTL');
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  const calls = [...clk.matchAll(/dashProjection_\(([^)]*)\)/g)].map((m) => m[1]).filter((a) => /res\./.test(a));
+  assert.strictEqual(calls.length, 2, 'both cards project');
+  calls.forEach((a) => assert.ok(/res\.from, res\.dataThrough, res\.periodKey$/.test(a), 'M8 — projected over the data days, not to today: ' + a));
 });
 test('dashboardTeamAggregate_: sums, recomputes pct, answered-weighted ATT; null below cohort', () => {
   const agents = {
@@ -8228,9 +8250,9 @@ test('Dashboard team card shows the aggregate at any cohort; the My Stats series
   // operator 2026-08-18) — a stale entry must never serve the previous
   // contract for the TTL after a deploy. The day in the key is load-bearing
   // at the longer TTL: a payload must never straddle the rep-local midnight.
-  assert.ok(/dash_metrics_v5:/.test(dash) && !/dash_metrics_v[1234]:/.test(dash),
-    'the cache key bumped with the payload semantics');
-  assert.ok(/dash_metrics_v5:' \+ emp\.id \+ ':' \+ periodKey \+ ':' \+ todayIso/.test(dash),
+  assert.ok(/dash_metrics_v6:/.test(dash) && !/dash_metrics_v[12345]:/.test(dash),
+    'the cache key bumped with the payload semantics (v6: M2 workday + M8 lag-aligned prior window)');
+  assert.ok(/dash_metrics_v6:' \+ emp\.id \+ ':' \+ periodKey \+ ':' \+ todayIso/.test(dash),
     'the v4 key carries the rep-local day');
   assert.ok(/DASHBOARD_CACHE_TTL\)/.test(dash), 'the put uses the dashboard TTL, not the 5-min CDR TTL');
   // The decision is SCOPED: the per-day anonymized series (the back-solvable
@@ -9485,17 +9507,24 @@ test('dashboardPrevRange_ — MTD compares LIKE-FOR-LIKE elapsed days, clamped d
     JSON.stringify(['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']) + ';', ctx);
   const r = ctx.dashboardPrevRange_('mtd', '2026-08-12');
   // NOT the whole prior month: 12 days against 31 would read as a collapse
-  // every month and "recover" on the 31st.
-  assert.strictEqual(r.from + '..' + r.to, '2026-07-01..2026-07-12');
-  assert.strictEqual(r.label, 'Jul 1–12', 'the label states the window it compares');
+  // every month and "recover" on the 31st. And LAG-ALIGNED (M8, cycle 22):
+  // on the 12th the CDR holds Aug 1–11, so the prior window is Jul 1–11 —
+  // Jul 1–12 handed the comparison a day the current window cannot have.
+  assert.strictEqual(r.from + '..' + r.to, '2026-07-01..2026-07-11');
+  assert.strictEqual(r.label, 'Jul 1–11', 'the label states the window it compares');
   assert.strictEqual(!!r.clamped, false);
   // Clamps DOWN into a shorter month — never up, so the comparison can only
   // under-report (the safe direction for a figure a rep is judged by).
   const feb = ctx.dashboardPrevRange_('mtd', '2026-03-31');
   assert.strictEqual(feb.from + '..' + feb.to, '2026-02-01..2026-02-28');
   assert.strictEqual(feb.clamped, true);
-  assert.strictEqual(ctx.dashboardPrevRange_('mtd', '2028-03-30').to, '2028-02-29', 'leap year');
+  const leap = ctx.dashboardPrevRange_('mtd', '2028-03-30');
+  assert.strictEqual(leap.to, '2028-02-29', 'leap year');
+  assert.strictEqual(leap.clamped, false, '29 days of data against a 29-day February is not clamped');
   assert.strictEqual(ctx.dashboardPrevRange_('mtd', '2026-01-09').from, '2025-12-01', 'January crosses the year');
+  assert.strictEqual(ctx.dashboardPrevRange_('mtd', '2026-01-09').to, '2025-12-08');
+  assert.strictEqual(ctx.dashboardPrevRange_('mtd', '2026-08-02').label, 'Jul 1', 'one day of data names one day');
+  assert.strictEqual(ctx.dashboardPrevRange_('mtd', '2026-08-01'), null, 'the 1st has no data day, so no comparison');
   // Deliberately scoped: only MTD is compared.
   ['yesterday', 'ytd', ''].forEach((k) => assert.strictEqual(ctx.dashboardPrevRange_(k, '2026-08-12'), null));
   assert.strictEqual(ctx.dashboardPrevRange_('mtd', 'nonsense'), null);

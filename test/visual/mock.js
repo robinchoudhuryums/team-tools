@@ -594,7 +594,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // Values are chosen to put a GOOD card beside a WARN/CRIT one in one shot.
     getDashboardMetrics: function (period) {
       var mtd = (period === 'mtd');
-      return { period: period, label: period === 'yesterday' ? 'Yesterday' : (mtd ? 'Month to date' : 'Year to date'),
+      return { period: period, periodKey: period, label: period === 'yesterday' ? 'Yesterday' : (mtd ? 'Month to date' : 'Year to date'),
         own: { answered: 41, missed: 5, pctAnswered: 89, attSeconds: 281, attFormatted: '4:41', noteCount: 35, noteCoverage: 85, transferPct: 8.2 },   // V-14: 35/41 = 85%
         team: { answered: 388, missed: 41, pctAnswered: 78.4, attSeconds: 252, attFormatted: '4:12', transferPct: 24.1 },
         // MTD compares against the prior month's SAME elapsed days.
@@ -602,7 +602,11 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
           own: { answered: 36, missed: 8, pctAnswered: 81.8, attSeconds: 295, transferPct: 9.4 },
           team: { answered: 402, missed: 33, pctAnswered: 82.1, attSeconds: 248, transferPct: 21.7 } } : null,
         prevUnavailable: false, alertThreshold: 85, transferTarget: 20,
-        cohort: 8, kpiMinCohort: 1, from: daysAgo(period === 'ytd' ? 200 : (mtd ? 23 : 1)), to: daysAgo(1) };   // kpiMinCohort mirrors the operator-2026-08-06 MIN_COHORT=1
+        cohort: 8, kpiMinCohort: 1, from: daysAgo(period === 'ytd' ? 200 : (mtd ? 23 : 1)),
+        // M8 (cycle 22): MTD/YTD run to TODAY and carry dataThrough (the last
+        // day the CDR holds) — the projection's denominator; yesterday is one day.
+        to: period === 'yesterday' ? daysAgo(1) : todayIso,
+        dataThrough: period === 'yesterday' ? undefined : daysAgo(1) };   // kpiMinCohort mirrors the operator-2026-08-06 MIN_COHORT=1
     },
     // activeNotIn (note 10, 2026-09-10): the server's ONE presence boolean —
     // Leo is using the app with no clock-in today, so the card shows the chip

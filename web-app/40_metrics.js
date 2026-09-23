@@ -1241,23 +1241,43 @@ function cdrQueueInventory_(from, to) {
 
 // ── Metrics public endpoints ──────────────────────────────────────────
 /** Pure (Node-pinned) — resolve a period key to {from,to,label} given today's
- *  ISO date (yyyy-MM-dd, in the caller's tz). String/UTC math only. */
-function dashboardPeriodRange_(periodKey, todayIso) {
+ *  ISO date (yyyy-MM-dd, in the caller's tz). String/UTC math only.
+ *
+ *  M2 (cycle 22): 'yesterday' is the previous WORKDAY (prevWorkdayIso_ — skips
+ *  weekends and company holidays), not the calendar day. The CDR has no rows
+ *  for a Sunday or a holiday, so the calendar form was an empty card every
+ *  Monday and every morning after a holiday. The label names the date when it
+ *  is not literally yesterday, so "Yesterday" never sits over Friday's calls.
+ *  `holidays` is an {iso:true} map (Node pins pass one); omitted, the company
+ *  calendar is consulted by prevWorkdayIso_.
+ *
+ *  M8 (cycle 22): MTD/YTD carry `dataThrough` — the last day the CDR can hold
+ *  (calendar yesterday; CDR data is never populated same-day), or null when
+ *  the period has no complete day yet. The run-rate projection divides by the
+ *  days that HAVE data, not by a today that never does. */
+function dashboardPeriodRange_(periodKey, todayIso, holidays) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(todayIso || ''))) return null;
   var y = todayIso.slice(0, 4), m = todayIso.slice(5, 7);
+  var fmt = function (x) { return x.getUTCFullYear() + '-' + String(x.getUTCMonth() + 1).padStart(2, '0') + '-' + String(x.getUTCDate()).padStart(2, '0'); };
+  var yi = new Date(Date.parse(todayIso + 'T00:00:00Z') - 86400000);
+  var calYesterday = fmt(yi);
   if (periodKey === 'yesterday') {
-    var yi = new Date(Date.parse(todayIso + 'T00:00:00Z') - 86400000);
-    var iso = yi.getUTCFullYear() + '-' + String(yi.getUTCMonth() + 1).padStart(2, '0') + '-' + String(yi.getUTCDate()).padStart(2, '0');
-    return { from: iso, to: iso, label: 'Yesterday' };
+    var iso = prevWorkdayIso_(todayIso, holidays);
+    if (!iso) return null;
+    var wd = new Date(iso + 'T12:00:00Z');
+    var label = (iso === calYesterday) ? 'Yesterday'
+      : ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][wd.getUTCDay()] + ' ' + DASH_MONTH_ABBR[wd.getUTCMonth()] + ' ' + wd.getUTCDate();
+    return { from: iso, to: iso, label: label };
   }
-  if (periodKey === 'mtd') return { from: y + '-' + m + '-01', to: todayIso, label: 'Month to date' };
-  if (periodKey === 'ytd') return { from: y + '-01-01', to: todayIso, label: 'Year to date' };
+  var through = function (from) { return calYesterday >= from ? calYesterday : null; };
+  if (periodKey === 'mtd') { var mf = y + '-' + m + '-01'; return { from: mf, to: todayIso, label: 'Month to date', dataThrough: through(mf) }; }
+  if (periodKey === 'ytd') { var yf = y + '-01-01'; return { from: yf, to: todayIso, label: 'Year to date', dataThrough: through(yf) }; }
   return null;
 }
 /** Pure (Node-pinned) — the LIKE-FOR-LIKE prior window for a period, used for
  *  the MTD deltas (operator 2026-08-12: "show the delta from last month").
  *
- *  MTD compares against the PRIOR MONTH'S SAME ELAPSED DAYS, not the whole
+ *  MTD compares against the PRIOR MONTH'S SAME ELAPSED DAYS OF DATA, not the whole
  *  prior month. That choice is load-bearing for the VOLUME metrics: on the 12th,
  *  12 days of answered calls against a full 31-day month is not a delta, it is
  *  an arithmetic artifact that would read as a collapse every month and recover
@@ -1270,13 +1290,20 @@ function dashboardPrevRange_(periodKey, todayIso) {
   var y = +todayIso.slice(0, 4), m = +todayIso.slice(5, 7), d = +todayIso.slice(8, 10);
   var py = (m === 1) ? y - 1 : y, pm = (m === 1) ? 12 : m - 1;
   var pLen = new Date(Date.UTC(py, pm, 0)).getUTCDate();
-  var pd = Math.min(d, pLen);
+  // M8 (cycle 22): LAG-ALIGNED. The current window runs to today but the CDR
+  // holds nothing for today, so it carries d-1 days of data; comparing it with
+  // days 1..d of last month gave the prior window a whole extra day (every
+  // volume delta read ~1/d low). On the 1st there is no complete day to
+  // compare, so there is no comparison.
+  var have = d - 1;
+  if (have < 1) return null;
+  var pd = Math.min(have, pLen);
   var pad = function (n) { return String(n).padStart(2, '0'); };
   return {
     from: py + '-' + pad(pm) + '-01',
     to: py + '-' + pad(pm) + '-' + pad(pd),
-    label: DASH_MONTH_ABBR[pm - 1] + ' 1–' + pd,
-    clamped: pd < d,
+    label: DASH_MONTH_ABBR[pm - 1] + (pd === 1 ? ' 1' : ' 1–' + pd),
+    clamped: pd < have,
   };
 }
 /** Pure (Node-pinned) — team CDR aggregate from getCdrAgentMetrics_'s .agents
@@ -1354,7 +1381,9 @@ function getDashboardMetrics(periodKey) {
     // standard (alertThreshold/alertBand/standardSource) rides the payload
     // from the published Dashboard Standards tab; the benchmark applies the
     // dashboard's team-avg excludes.
-    var cacheKey = 'dash_metrics_v5:' + emp.id + ':' + periodKey + ':' + todayIso;
+    // v6 (cycle 22 M2/M8): 'yesterday' is the previous workday, the MTD prior
+    // window is lag-aligned, and the payload carries dataThrough.
+    var cacheKey = 'dash_metrics_v6:' + emp.id + ':' + periodKey + ':' + todayIso;
     if (useCache) {
       try { var hit = cache.get(cacheKey); if (hit) { var co = JSON.parse(hit); co.cached = true; return co; } } catch (_) {}
     }
@@ -1445,6 +1474,7 @@ function getDashboardMetrics(periodKey) {
 
     var result = {
       periodKey: periodKey, from: from, to: to, label: range.label,
+      dataThrough: range.dataThrough || null,   // M8: the projection's denominator
       own: cur.own,
       team: cur.team,
       cohort: cur.cohort,
@@ -1468,7 +1498,11 @@ function getDashboardMetrics(periodKey) {
     // otherwise be pinned for the full TTL (the L-3 / INV-129 rule). A failed
     // COMPARISON read is the same class: caching it would pin "no deltas" for
     // the TTL after the underlying blip cleared.
-    if (useCache && !noteRes.unavailable && !prevUnavailable) {
+    // M2 (cycle 22): a window NOBODY reported in is not cached either. Before
+    // the daily CDR import lands, the previous workday is empty for everyone;
+    // cached, that empty card was pinned for the whole TTL after the import.
+    // A genuinely empty window is cheap to re-read, so the cost is nil.
+    if (useCache && !noteRes.unavailable && !prevUnavailable && cur.team) {
       try { cache.put(cacheKey, JSON.stringify(result), DASHBOARD_CACHE_TTL); } catch (_) {}
     }
     return result;
