@@ -4,9 +4,9 @@
 Cycle: 22 — opened 2026-09-23 by a `/broad-scan` (99 findings: 0 Critical /
 3 High; nine-batch implementation plan). Cycle 21 + 21post are in HISTORY.md.
 Phase: implement
-Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9) + S2 DONE + Batch 2 DONE (T1, T3, T2, T6, C1, C5) + follow-ons F1–F5 DONE
+Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9) + S2 DONE + Batch 2 DONE (T1, T3, T2, T6, C1, C5) + follow-ons F1–F5 DONE + Batch 3 DONE (I1, C4, K2, K6, C3, D6, D7, C6, C10, C11)
 Test Command: manual
-Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent) · S2 (phased, blanket): L (~9 h) — helper+pin 1h · wrap every write site ~180 + pin repairs 6h · derived pin + bite-checks 2h | S2 Actual: ~5 h · Batch 2: M (~11.5 h) — T1 M 3h · T3 M 3h · T2 S 1.5h · T6 S 1.5h · C1 S 1.5h · C5 S 1h | Batch 2 Actual: ~4.5 h · Follow-ons F1–F5: M (~7 h) — F1 cleanup lock S 1h · F2 TSV twin S 1h · F3 stored-formula scan M 2h · F4 Spanish grid + grow-first net S 1h · F5 Day Edit stray leaves M 2h | Follow-ons Actual: ~3.5 h · Batch 3: L (~12 h) — I1 M 2.5h · C4 S 1.5h · K2 S 1.5h · K6 S 1h · C3 S 1h · D6 S 1.5h · D7 S 1h · C6 S 1h · C10 S 1h · C11 S 0.5h
+Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent) · S2 (phased, blanket): L (~9 h) — helper+pin 1h · wrap every write site ~180 + pin repairs 6h · derived pin + bite-checks 2h | S2 Actual: ~5 h · Batch 2: M (~11.5 h) — T1 M 3h · T3 M 3h · T2 S 1.5h · T6 S 1.5h · C1 S 1.5h · C5 S 1h | Batch 2 Actual: ~4.5 h · Follow-ons F1–F5: M (~7 h) — F1 cleanup lock S 1h · F2 TSV twin S 1h · F3 stored-formula scan M 2h · F4 Spanish grid + grow-first net S 1h · F5 Day Edit stray leaves M 2h | Follow-ons Actual: ~3.5 h · Batch 3: L (~12 h) — I1 M 2.5h · C4 S 1.5h · K2 S 1.5h · K6 S 1h · C3 S 1h · D6 S 1.5h · D7 S 1h · C6 S 1h · C10 S 1h · C11 S 0.5h | Batch 3 Actual: ~5 h
 Subsystem cycles since last Seams audit: 1 — reset to 0 by the 2026-09-18 audit
 (batch S), +1 for the 21post reflection. The cadence is every 4.
 Updated: 2026-09-23
@@ -31,6 +31,16 @@ Updated: 2026-09-23
 - C1 | 30_callnotes.js | the archive mover grows the grid's rows before its positional write (both tiers)
 - C5 | 10_core.js | the purge keeps a spare row (never empties the grid)
   Block: `.cycle/blocks/22-B2-broad-implement.md`
+- I1 | intake/script_intake.html | a cross-language amend holds only the amendment's answers (no snapshot restored over it, no draft in its gaps)
+- C4 | cn/script_callnotes.html | the Save & Compose transaction follows the rep into External: its send completes it, its cancel rolls back
+- K2 + K6 | kb/script_kb.html | the drawer home keeps the lookups being typed in; a fresh build forgets the last caller, stale responses dropped
+- C3 | cn/script_callnotes.html | History notes render only under the range they were loaded for; the 90-day cap refused client-side
+- D6 | train/script_empdocs.html | manager actions patch around the half-written document
+- D7 | train/script_coaching.html | a coaching reply survives re-renders
+- C6 | cn/script_callnotes.html | the Scratchpad saves text typed during an in-flight save, even after close
+- C10 | cn/script_callnotes.html | a live refresh keeps a note confirmed after its request
+- C11 | cn/script_callnotes.html | clearing the form ends running dictation first
+  Block: `.cycle/blocks/22-B3-broad-implement.md`
 - F1 | Tests.js | every live-tab positional delete in the suite goes through _deleteRowsWhereLocked_ (ScriptLock from snapshot to last delete)
 - F2 | script_core.html, metrics/script_metrics.html | tsvCell_/tsvRow_ — the client twin of sheetSafe_ on every "Copy table" line
 - F3 | 10_core.js, cn/script_callnotes.html | adminScanStoredFormulas + Admin → System → Stored formulas (read-only, on demand)
@@ -88,6 +98,17 @@ Updated: 2026-09-23
   steps on S1/S7/S23/S42/S61/S96/S105 + new S114; the one-boundary decision +
   the resume amendment; operator-state (owner-only suite, stored-formula
   clean-up, PAR EndTime, repair refusal); modules, both logs, the test README.
+- **Deploy Batch 3** with the rest, and its walk (22-B3 block): cross-language
+  and same-language Intake amend; Save & Compose → External send/cancel; the
+  drawer typed before the tree loads + reopen; History failure / over-cap;
+  Employee Docs release beside a half-written doc; a coaching reply across a
+  filter chip; the Scratchpad Save-now-type-close race.
+- **Batch 3 follow-ons (22-B3 block):** a drawer search back to home still
+  rebuilds the lookups; C4 changed when the "Note edits discarded" toast fires
+  on a switch (confirm on the walk); Training's dirty guard could adopt D6's
+  targeted patch. Docs owed: g141 ×3 instances, g85/g86 (External send),
+  a per-host repaint-cache rule (K2), g84/g98 (C10), the Save & Compose and
+  amend decisions, modules notes, walk steps + two invariants.
 - **Follow-on follow-ons (22-FO block):** the stored-formula scan is on demand
   only (no findings-list entry, no resume past the budget); the mock lacks
   `adminScanStoredFormulas` (add with X1's Admin fixtures); the sheet doctor
@@ -149,7 +170,9 @@ Updated: 2026-09-23
   amber** with their own explanations (operator, 2026-09-22).
 
 ## Where I left off
-Batch 1, S2, Batch 2 and follow-ons F1–F5 of cycle 22 are committed and pushed;
-none is deployed; their docs are synced. Next: deploy + the four walks (S1,
-S7, S23, S42, S61, S96, S105, S114 carry the cycle-22 steps); or `/broad-implement Batch 3` (client state that carries PHI or loses
-work — I1 cross-language intake amend, C4, K2, K6, C3, D6, D7, C6, C10, C11).
+Batch 1, S2, Batch 2, follow-ons F1–F5 and Batch 3 of cycle 22 are committed
+and pushed; none is deployed. Docs are synced through the follow-ons; Batch 3's
+are owed (its block). Next: `/sync-docs` for Batch 3, then deploy + the walks
+(S1, S7, S23, S42, S61, S96, S105, S114 + the Batch 3 walk); or
+`/broad-implement Batch 4` (Metrics and manager verdicts — M4, M1, X3, M2, M3,
+M7, M8, M9, D1, D2).
