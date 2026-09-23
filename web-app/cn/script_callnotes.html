@@ -7453,7 +7453,8 @@ function cnFireSearch_() {
         // labeled with a query that never ran (the stale-label class).
         CN_STATE.searchResults = [];
         var eh = document.getElementById('cn-search-results');
-        if (eh) eh.innerHTML = errorStateHtml_('Search failed for "' + esc(requestedQuery) + '" - ' + res.error);
+        if (eh) eh.innerHTML = errorStateHtml_('Search failed for "' + requestedQuery + '" - ' + res.error,
+          'Search failed - ' + res.error);   // S3: the query is shown, never beaconed
         return;
       }
       CN_STATE.searchResults = res.results || [];
@@ -7464,7 +7465,8 @@ function cnFireSearch_() {
       if (String(CN_STATE.searchQuery || '').trim() !== requestedQuery) return;
       CN_STATE.searchResults = [];
       var fh = document.getElementById('cn-search-results');
-      if (fh) fh.innerHTML = errorStateHtml_('Search failed for "' + esc(requestedQuery) + '" - ' + err.message);
+      if (fh) fh.innerHTML = errorStateHtml_('Search failed for "' + requestedQuery + '" - ' + err.message,
+          'Search failed - ' + err.message);   // S3: the query is shown, never beaconed
     })
     .searchMyCallNotes(q, CN_STATE.searchField,
       (CN_STATE.searchFrom && CN_STATE.searchTo) ? { start: CN_STATE.searchFrom, end: CN_STATE.searchTo } : null,
@@ -8272,7 +8274,8 @@ function cnMgrFireSearch_() {
       if (res.error) {
         CN_STATE.mgrSearchResults = [];
         var eh = document.getElementById('cn-mgr-search-results');
-        if (eh) eh.innerHTML = errorStateHtml_('Search failed for "' + esc(requestedQuery) + '" - ' + res.error);
+        if (eh) eh.innerHTML = errorStateHtml_('Search failed for "' + requestedQuery + '" - ' + res.error,
+          'Search failed - ' + res.error);   // S3: the query is shown, never beaconed
         return;
       }
       CN_STATE.mgrSearchResults = res.results || [];
@@ -8284,7 +8287,8 @@ function cnMgrFireSearch_() {
       if (String(CN_STATE.mgrSearchQuery || '').trim() !== requestedQuery) return;
       CN_STATE.mgrSearchResults = [];
       var fh = document.getElementById('cn-mgr-search-results');
-      if (fh) fh.innerHTML = errorStateHtml_('Search failed for "' + esc(requestedQuery) + '" - ' + err.message);
+      if (fh) fh.innerHTML = errorStateHtml_('Search failed for "' + requestedQuery + '" - ' + err.message,
+          'Search failed - ' + err.message);   // S3: the query is shown, never beaconed
     })
     .managerSearchCallNotes(q, CN_STATE.mgrSearchField, null,
       (CN_STATE.mgrSearchFrom && CN_STATE.mgrSearchTo) ? { start: CN_STATE.mgrSearchFrom, end: CN_STATE.mgrSearchTo } : null,

@@ -237,13 +237,25 @@ function createFormToken(payload) {
   // Audit row logs only the recipient DOMAIN — same PII/PHI minimization as
   // the ExternalEmailSent row (a customer's personal address is PII; for a
   // patient it can be PHI-adjacent). The full recipient lives on the
-  // FormTokens row itself, reachable via the token for an investigator.
+  // FormTokens row itself, which an investigator finds by the token REFERENCE.
+  //
+  // A reference, never the token (cycle 22 S4). The token is the ONLY
+  // credential the public route checks, and for its whole 72-hour life it
+  // returns the patient prefill to whoever holds it — so writing it into the
+  // shared AuditLog on the payroll sheet handed a live bearer credential to
+  // every reader of that log, and a form opened with it left no trace.
   writeAuditLog_(emp, 'FormTokenCreated', '', '', false, 0,
-    'token=' + token + '; formType=' + formType +
+    'tokenRef=' + formTokenRef_(token) + '; formType=' + formType +
     '; toDomain=' + intakeEmailDomain_(recipientEmail) +
     (noteId ? '; noteId=' + noteId : ''));
 
   return { success: true, token: token, formUrl: formUrl };
+}
+/** Pure (Node-pinned) — is this string SHAPED like a form token? Tokens are
+ *  minted by Utilities.getUuid() (a v4 UUID), so anything else can be refused
+ *  without a sheet read or the lock (cycle 22 S9). */
+function formTokenShapeOk_(token) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(token == null ? '' : token).trim());
 }
 /** Look up a FormTokens row by token string. Returns { rowIndex, row } or null. */
 function findFormTokenRow_(sheet, token) {
@@ -355,8 +367,28 @@ function submitFormByToken(token, formData) {
   // lock. The three cap paths previously called MailApp inside the lock,
   // stalling every mutating endpoint app-wide for the mail call's duration.
   let failNotify = null;
+  // Cycle 22 S9 — validate BEFORE the lock. This endpoint has no identity gate
+  // (the token is the credential, g101), so anything that can load a page can
+  // call it; it used to take the ONE project-wide ScriptLock first and read
+  // the whole token column while holding it, for any garbage string. Every
+  // punch and note write queued behind that. A token is a v4 UUID
+  // (Utilities.getUuid), so a malformed one is refused on shape, and a
+  // well-formed one that matches no row is refused on a lock-free read (the
+  // same read getFormByToken does). The row is found AGAIN inside the lock —
+  // rows can move between the two reads, and status is only trusted there.
+  if (!formTokenShapeOk_(token)) return { success: false, error: 'Form not found.' };
+  try {
+    if (!findFormTokenRow_(getOrCreateFormTokensSheet_(), token)) return { success: false, error: 'Form not found.' };
+  } catch (preErr) {
+    console.warn('submitFormByToken pre-check failed: ' + preErr.message);
+    return { success: false, error: 'We could not submit your form. Please try again, or contact UMS if the problem persists.' };
+  }
   const lock = LockService.getScriptLock();
-  lock.waitLock(15000);
+  // A lock timeout is an ordinary busy moment, not an exception to show an
+  // external recipient raw ("Lock timeout…") — the token stays pending.
+  try { lock.waitLock(15000); } catch (lockErr) {
+    return { success: false, error: 'The form service is busy right now. Please wait a moment and submit again.' };
+  }
   try {
     const tokenSheet = getOrCreateFormTokensSheet_();
     const located = findFormTokenRow_(tokenSheet, token);
@@ -705,6 +737,14 @@ function managerGetFormSubmission(repEmpId, token) {
  *  the stored cells. submittedAt is deliberately excluded (Sheets may coerce an
  *  ISO datetime to a Date on read) — its integrity is witnessed by the
  *  append-only FormSubmissionReceived audit row instead. */
+/** Pure (Node-pinned) — an audit-safe REFERENCE to a form token: its first
+ *  eight characters, enough to find the FormTokens row by eye or filter, and
+ *  useless as a credential (the public route matches the whole token; a v4
+ *  UUID keeps ~90 random bits past this prefix). Cycle 22 S4. */
+function formTokenRef_(token) {
+  const t = String(token == null ? '' : token).trim();
+  return t ? t.substring(0, 8) + '\u2026' : '(none)';
+}
 function computeFormSubmissionHash_(dataJson, signatureData, token, consentVersion) {
   const payload = String(dataJson || '') + '\u0000' + String(signatureData || '') +
                   '\u0000' + String(token || '') + '\u0000' + String(consentVersion || '');

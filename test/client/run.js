@@ -10236,7 +10236,10 @@ test('errorStateHtml_ beacons handled failures; both normalizers accept errorSta
   // The ONE choke point where a HANDLED failure becomes visible to a rep
   // (every A12/INV-175 call site) — without this, only unhandled exceptions
   // reached the ClientErrors tab.
-  assert.ok(/try \{ if \(typeof errBeaconSend_ === 'function'\) errBeaconSend_\(String\(msg \|\| ''\), '', 'errorState'\); \} catch \(e\) \{\}/.test(f),
+  // Cycle 22 S3: the beacon sends `beacon` — the caller's beacon-safe override
+  // when one is given, else the message — so a typed query is shown, not shipped.
+  assert.ok(/var beacon = \(typeof beaconMsg === 'string'\) \? beaconMsg : String\(msg \|\| ''\);/.test(f) &&
+            /try \{ if \(typeof errBeaconSend_ === 'function'\) errBeaconSend_\(beacon, '', 'errorState'\); \} catch \(e\) \{\}/.test(f),
     'fires the beacon, guarded so jsdom/boot order can never break the render');
   assert.ok(/role="alert"/.test(f), 'the returned markup is unchanged');
   const pay = nc(extractFunction('script_core.html', 'errBeaconPayload_'));
@@ -26179,6 +26182,102 @@ test('a test that asserts on the reconcile OUTCOME clears its rep first', () => 
   assert.deepStrictEqual(offenders, [],
     'test(s) asserting on the reconcile outcome without clearing the rep first — ' +
     'they will measure whatever an earlier accrual test credited: ' + offenders.join(', '));
+});
+
+// ── Cycle 22 Batch 1 — the security boundary ────────────────────────────────
+console.log('\ncycle 22 Batch 1 — security boundary (S3, S4, S9)');
+
+test('S4: the FormTokenCreated audit row carries a token REFERENCE, never the live token', () => {
+  const ctx = { String };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'formTokenRef_'), ctx);
+  const tok = '3f2a9c10-5b7e-4d21-9a0c-1e2f3a4b5c6d';
+  const ref = ctx.formTokenRef_(tok);
+  assert.strictEqual(ref, '3f2a9c10…', 'eight characters and an ellipsis');
+  assert.ok(ref.indexOf(tok) < 0 && tok.indexOf(ref.slice(0, 8)) === 0, 'a prefix of the token, never the token');
+  assert.strictEqual(ctx.formTokenRef_(''), '(none)', 'no token reads as none, not as an empty reference');
+  assert.strictEqual(ctx.formTokenRef_(null), '(none)');
+  // The writer: the audit notes are built from the reference only.
+  const src = stripJsComments_(extractRawFunction('Code.js', 'createFormToken'));
+  const at = src.indexOf("'FormTokenCreated'");
+  assert.ok(at >= 0, 'createFormToken still writes the FormTokenCreated row');
+  const call = src.slice(at, src.indexOf(');', at));
+  assert.ok(/tokenRef=' \+ formTokenRef_\(token\)/.test(call), 'the row names the token by reference');
+  assert.ok(!/\+ token\b(?!\))/.test(call.replace(/formTokenRef_\(token\)/g, '')), 'the raw token is nowhere in the row');
+});
+
+test('S9: the public submit refuses a malformed or unknown token BEFORE the global lock, and a lock timeout is a polite retry', () => {
+  const ctx = { String };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'formTokenShapeOk_'), ctx);
+  const ok = (t) => ctx.formTokenShapeOk_(t);
+  assert.strictEqual(ok('3f2a9c10-5b7e-4d21-9a0c-1e2f3a4b5c6d'), true, 'a Utilities.getUuid() token');
+  assert.strictEqual(ok(' 3F2A9C10-5B7E-4D21-9A0C-1E2F3A4B5C6D '), true, 'case and surrounding space do not matter');
+  ['', null, 'x', 'TEST_TOKEN', '3f2a9c10-5b7e-4d21-9a0c-1e2f3a4b5c6', '3f2a9c10-5b7e-4d21-9a0c-1e2f3a4b5c6dz',
+   "' OR 1=1 --", '3f2a9c105b7e4d219a0c1e2f3a4b5c6d'].forEach((t) => assert.strictEqual(ok(t), false, 'refused: ' + t));
+  const src = stripJsComments_(extractRawFunction('Code.js', 'submitFormByToken'));
+  const lockAt = src.indexOf('LockService.getScriptLock()');
+  assert.ok(lockAt > 0, 'the submit still locks its write');
+  const pre = src.slice(0, lockAt);
+  assert.ok(/if \(!formTokenShapeOk_\(token\)\) return \{ success: false, error: 'Form not found\.' \};/.test(pre),
+    'a malformed token is refused before the lock, with the same message as an unknown one (no oracle)');
+  assert.ok(/findFormTokenRow_\(getOrCreateFormTokensSheet_\(\), token\)/.test(pre), 'an unknown token is refused on a lock-free read');
+  assert.ok(/try \{ lock\.waitLock\(15000\); \} catch \(lockErr\) \{\s*return \{ success: false, error: 'The form service is busy/.test(src),
+    'waitLock sits inside a try: a timeout reaches the recipient as a retry message, never a raw "Lock timeout"');
+  const post = src.slice(lockAt);
+  assert.ok(/findFormTokenRow_\(tokenSheet, token\)/.test(post) && /if \(status !== 'pending'\)/.test(post),
+    'the row is found AGAIN and its status trusted only inside the lock');
+});
+
+test('S3: errorStateHtml_ shows what the rep typed but beacons only the override, and escapes once', () => {
+  const sent = [];
+  const ctx = { String, errBeaconSend_: (m) => sent.push(m), icon: () => '',
+    esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;') };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('script_core.html', 'errorStateHtml_'), ctx);
+  const html = ctx.errorStateHtml_('Search failed for "O\'Brien 555-0100" - timeout', 'Search failed - timeout');
+  assert.deepStrictEqual(sent, ['Search failed - timeout'], 'the beacon carries the override, not the query');
+  assert.ok(html.indexOf('O&#39;Brien 555-0100') >= 0 && html.indexOf('&amp;#39;') < 0, 'the rep still sees the query, escaped exactly once');
+  sent.length = 0;
+  ctx.errorStateHtml_('Could not load training: boom');
+  assert.deepStrictEqual(sent, ['Could not load training: boom'], 'no override → the message itself (unchanged behaviour)');
+});
+
+test('S3: every errorStateHtml_ call that interpolates rep input passes a beacon-safe message (derived from every partial)', () => {
+  const WEB = path.join(__dirname, '../../web-app');
+  const partials = [];
+  (function walk(d) { fs.readdirSync(d).forEach((f) => { const p = path.join(d, f);
+    if (fs.statSync(p).isDirectory()) walk(p); else if (/\.html$/.test(f)) partials.push(p); }); })(WEB);
+  // What a rep TYPED: a search query, or a raw input value.
+  const TYPED = /\b(requestedQuery|searchQuery|mgrSearchQuery)\b|\.value\b/;
+  const args = (src, open) => {   // top-level comma split of the call's argument list
+    let d = 0, k = open, cur = '', out = [];
+    for (; k < src.length; k++) {
+      const c = src[k];
+      if (c === '(' || c === '[' || c === '{') { d++; if (d === 1) continue; }
+      if (c === ')' || c === ']' || c === '}') { d--; if (d === 0) { out.push(cur); break; } }
+      if (c === ',' && d === 1) { out.push(cur); cur = ''; continue; }
+      cur += c;
+    }
+    return out;
+  };
+  const bad = []; let calls = 0, typed = 0;
+  partials.forEach((p) => {
+    const src = stripJsComments_(fs.readFileSync(p, 'utf8'));
+    const re = /errorStateHtml_\(/g; let m;
+    while ((m = re.exec(src)) !== null) {
+      if (/function\s+$/.test(src.slice(Math.max(0, m.index - 10), m.index))) continue;   // the definition
+      calls++;
+      const a = args(src, m.index + m[0].length - 1);
+      if (!TYPED.test(a[0] || '')) continue;
+      typed++;
+      if (a.length < 2 || TYPED.test(a[1])) bad.push(path.relative(WEB, p) + ': ' + (a[0] || '').trim().slice(0, 80));
+      if (/esc\(\s*(requestedQuery|searchQuery|mgrSearchQuery)/.test(a[0])) bad.push(path.relative(WEB, p) + ': pre-escaped (errorStateHtml_ escapes)');
+    }
+  });
+  assert.ok(calls > 40, 'sanity: the scan found the call sites (' + calls + ')');
+  assert.ok(typed >= 4, 'sanity: the four search-failure sites are seen as carrying rep input (' + typed + ')');
+  assert.deepStrictEqual(bad, [], 'rep input reaching the ClientErrors beacon:\n  ' + bad.join('\n  '));
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

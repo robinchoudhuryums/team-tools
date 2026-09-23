@@ -632,6 +632,20 @@
     "hcpcsParse_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-23",
+   "why": "cycle 22 Batch 1: formTokenRef_ (S4) and formTokenShapeOk_ (S9) in 61_forms.js",
+   "added": [
+    "formTokenRef_",
+    "formTokenShapeOk_"
+   ],
+   "removed": [],
+   "changed": [
+    "createFormToken",
+    "submitFormByToken"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3384,7 +3398,7 @@
   "createFormToken": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "351ecf142e7e25d7"
+   "sha": "a4e9a2de87b54a5b"
   },
   "createPinnedSpreadsheet_": {
    "file": "10_core.js",
@@ -3810,6 +3824,16 @@
    "file": "61_forms.js",
    "kind": "function",
    "sha": "80fca7460a29daec"
+  },
+  "formTokenRef_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "3bccc5b5f18e8562"
+  },
+  "formTokenShapeOk_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "1afd8bb4739d6b50"
   },
   "formatFormFieldValue_": {
    "file": "61_forms.js",
@@ -6869,7 +6893,7 @@
   "submitFormByToken": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "df79cc88a0589dec"
+   "sha": "6ea5e09d3af3069b"
   },
   "submitIntakeFeedback": {
    "file": "60_intake.js",
