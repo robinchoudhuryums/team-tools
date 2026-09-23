@@ -4,23 +4,35 @@
 Cycle: 22 — opened 2026-09-23 by a `/broad-scan` (99 findings: 0 Critical /
 3 High; nine-batch implementation plan). Cycle 21 + 21post are in HISTORY.md.
 Phase: implement
-Scope: broad — Batch 1 (security boundary: S1, S2, S3, S4, S9, X2)
+Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9); S2 DEFERRED by operator
 Test Command: manual
-Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h
+Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent)
 Subsystem cycles since last Seams audit: 1 — reset to 0 by the 2026-09-18 audit
 (batch S), +1 for the 21post reflection. The cadence is every 4.
 Updated: 2026-09-23
 
 ## In progress (facts to carry forward — NOT judgments)
-- Nothing is in flight. T1–T10 are all MERGED. T1–T9 are DEPLOYED
-  (2026-09-22/23). **T10 (`Hawaii only`, `MDX Hawaii`) is merged but NOT
-  deployed.**
+- Batch 1 is implemented and committed on `claude/optimistic-newton-gkdb3v`;
+  NOT deployed. Its block: `.cycle/blocks/22-B1-broad-implement.md`.
+- The broad-scan's nine-batch plan is in the session report (not on disk —
+  `/broad-scan` writes no block). Batches 2–9 remain; the finding IDs (S*, T*,
+  M*, C*, K*, I*, D*, A*, U*, X*) are the scan's.
 
 ## Completed this cycle
-- (No cycle is open. 21post's record is in HISTORY.md, the ten
-  `.cycle/blocks/21post-*-broad-implement.md` blocks and `21post-a-reflect.md`.)
+- S1 | Tests.js, 10_core.js | the editor suite is owner-only (_assertSuiteCaller_ first in every non-pure public Tests.js function; runSingleTest takes test_ names only)
+- X2 | run.js, harness.js | PUBLIC-GATE: every public function in every PUSHED file (the directory) carries a gate, a reasoned allow entry, or a gated delegate
+- S3 | script_core.html, cn/script_callnotes.html | errorStateHtml_ beaconMsg override; search failures no longer ship the typed query to ClientErrors
+- S4 | 61_forms.js | FormTokenCreated logs tokenRef=<8 chars>…, not the live token
+- S9 | 61_forms.js | public submit validates the token shape + existence before the global lock; lock timeout is a polite retry
 
 ## Pending / not yet done
+- **S2 (formula injection) — DEFERRED by operator decision 2026-09-23**; to be
+  its own batch. No neutralising helper exists; ~45 client-text writer
+  functions. Highest-value slice: the ADP/payroll free-text writers.
+- **Deploy Batch 1** + its walk (block's OPERATOR ACTIONS): editor
+  runSmokeTests green; a non-owner's google.script.run.runSmokeTests() refused;
+  a failed search's ClientErrors row carries no query; FormTokenCreated shows
+  tokenRef=; a public form still submits.
 - **Deploy T10** — `cd web-app && clasp push -f`, then New version.
 - **The walk — NOTHING in T1–T10 has been walked**; its whole regression
   record is the harnesses. S64 (six T3 + four T4 + six T7 + two T7b + one T8 +
@@ -43,6 +55,14 @@ Updated: 2026-09-23
   g123's federal fail-open, or match the Department Dashboard's no-fallback.
 
 ## Open follow-on items
+- **Batch 1 follow-ons:** assertNotProdInstance_ still permits when
+  INSTANCE_IS_PROD is unset (decision tied to the DEV instance); cleanupTestData
+  takes no lock across its positional deletes (g132 class — needs an editor
+  check of ScriptLock re-entrancy); pre-deploy ClientErrors/AuditLog rows may
+  hold typed queries / tokens (optional redaction).
+- **Docs owed by Batch 1 (/sync-docs):** a gotcha "a LEADING underscore is not
+  private"; g26 amended for the test runners; the errorStateHtml_ beacon rule;
+  a PUBLIC-GATE invariant (INV-243); walk steps on S1/S23/S61.
 - **Invariant numbers — do not reuse any:** INV-225..227 RESERVED (cycle 20);
   INV-229..232 + an INV-213 amendment PROPOSED (cycle 21); INV-240..242
   PROPOSED (21post: fixtures the server can still produce · tone/explanation
@@ -63,6 +83,12 @@ Updated: 2026-09-23
   decided by which items carry `listed cities` in col I.
 
 ## Decisions made (so the next session doesn't re-litigate)
+- **S2 deferred out of Batch 1** (operator, 2026-09-23) — scope beyond estimate.
+- **The suite guard is "active === effective"**, not a MANAGER_EMAILS check:
+  the editor and owner-installed triggers pass, every web visitor is refused;
+  it reads Session directly so _TEST_OVERRIDE_EMAIL cannot satisfy it.
+- **Test functions keep their names**; a first-statement guard (pinned) was
+  chosen over renaming 337+ functions and their doc references.
 - Price and area eligibility are ONE panel; the address UPGRADES the answer
   rather than gating it.
 - The lookup band lives in the LANDING HOST, never the shared section renderer,
@@ -81,7 +107,7 @@ Updated: 2026-09-23
   amber** with their own explanations (operator, 2026-09-22).
 
 ## Where I left off
-Cycle 21 and its 21post follow-on are closed and archived; nothing is in
-flight. The operator's next steps are the T10 deploy and the S64 walk. The next
-session's is either a fresh `/broad-scan` (opens cycle 22) or the DEV instance
-— the one debt both recent reflections named as the weakest axis.
+Batch 1 of cycle 22 is committed (S1, X2, S3, S4, S9) and awaits deploy + its
+walk; S2 is deferred. Next: `/broad-implement Batch 2` (payroll and punch
+integrity — T1 Day Edit open break, T3, T2, T6, C1, C5), or `/sync-docs` for
+Batch 1's owed documentation first.
