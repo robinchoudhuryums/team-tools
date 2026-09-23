@@ -18368,6 +18368,32 @@ test('A4-1: managerParseBreakSlots_ accepts the list, keeps the legacy pair, ref
   assert.match(err({ breaks: many }), /Too many breaks \(13\); at most 12/);
 });
 
+test('T2 (cycle 22): both Timesheet repair tools re-verify their planned rows INSIDE the lock and write nothing if one has moved (driven + wiring)', () => {
+  const ctx = vm.createContext({ String, Array,
+    ADP: { EMP_ID: 0, DATE: 1, TIME: 2, COMMENTS: 3 },
+    normalizeDate_: (v) => String(v), normalizeTime_: (v) => String(v),
+    normalizeType_: (v) => String(v).replace(/^ADJ-/, '') });
+  vm.runInContext(extractRawFunction('Code.js', 'repairRowsMoved_'), ctx);
+  const rows = [['h'], ['h2'], ['E-1', '2026-09-01', '08:00:00', 'ClockIn'], ['E-2', '2026-09-01', '12:00:00', 'ADJ-ClockIn']];
+  const moved = (exp) => JSON.parse(JSON.stringify(ctx.repairRowsMoved_(rows, exp)));
+  assert.deepStrictEqual(moved([{ row: 3, empId: 'E-1', date: '2026-09-01', type: 'ClockIn', time: '08:00:00' },
+                                { row: 4, empId: 'E-2', date: '2026-09-01', type: 'ClockIn' }]), [], 'an unchanged plan passes (time optional)');
+  // A row deleted above shifts E-2's punch up into row 3: the plan now points at E-1.
+  const shifted = moved([{ row: 3, empId: 'E-2', date: '2026-09-01', type: 'ClockIn', time: '12:00:00' }]);
+  assert.strictEqual(shifted.length, 1, 'a shifted row is caught');
+  assert.ok(/planned E-2\|2026-09-01\|ClockIn\|12:00:00, now E-1/.test(shifted[0]), 'and named: ' + shifted[0]);
+  assert.strictEqual(moved([{ row: 9, empId: 'E-1', date: '2026-09-01', type: 'ClockIn' }])[0], 'row 9: planned E-1|2026-09-01|ClockIn, now (no row)', 'a row that is gone is caught');
+  // Wiring: in BOTH tools the check runs after waitLock and before the first write.
+  const tz = stripJsComments_(extractRawFunction('Code.js', 'repairTimesheetTimezone'));
+  const sd = stripJsComments_(extractRawFunction('Code.js', 'repairSplitDayPunches'));
+  [[tz, '.setValue('], [sd, 'writeAdjustPunchForEmployee_(']].forEach(([src, firstWrite], n) => {
+    const lockAt = src.indexOf('lock.waitLock(15000)'), chkAt = src.indexOf('repairRowsMoved_('), throwAt = src.indexOf("throw new Error('Refusing: ' + drift.length");
+    const writeAt = src.indexOf(firstWrite, chkAt);
+    assert.ok(lockAt > 0 && chkAt > lockAt && throwAt > chkAt && writeAt > throwAt, (n ? 'repairSplitDayPunches' : 'repairTimesheetTimezone') + ': lock → verify → refuse → write');
+  });
+  assert.ok(sd.indexOf('sheet.deleteRow(d.row)') > sd.indexOf('repairRowsMoved_('), 'the split repair deletes only after the verification');
+});
+
 test('T3 (cycle 22): a resume approved after its day has ended needs the filed finish, writes it as the Clock Out, and refuses before any write (driven)', () => {
   const writes = [];
   let co = null;
@@ -20398,7 +20424,11 @@ test('TZR-4: repairSplitDayPunches is gated, dry-run by default, one-read, adds-
   assert.ok(/const dryRun = opts\.dryRun !== false;/.test(stripped), 'a bare call NEVER writes');
   assert.ok(/const targets = tzRepairResolveTargets_\(wanted\);/.test(stripped), 'targets resolve through the SAME helper as the tz repair');
   assert.ok(/daysBetween_\(from, to\) > SPLIT_REPAIR_MAX_SPAN_DAYS/.test(stripped), 'the window is bounded');
-  assert.strictEqual((stripped.match(/getDataRange\(\)\.getValues\(\)/g) || []).length, 1, 'ONE Timesheet read — every row index comes from it');
+  // T2 (cycle 22): every row index still comes from ONE plan read; the only
+  // other read is the in-lock VERIFICATION, which feeds repairRowsMoved_ and
+  // supplies no index.
+  assert.strictEqual((stripped.match(/getDataRange\(\)\.getValues\(\)/g) || []).length, 2, 'the plan read + the in-lock verification read');
+  assert.ok(/repairRowsMoved_\(sheet\.getDataRange\(\)\.getValues\(\), expected\)/.test(stripped), 'the second read is the verification — ONE Timesheet read supplies every row index');
   assert.ok(!/TIMESHEET_ARCHIVE_TAB/.test(stripped), 'live tab only — the artifact is in the current period (stated in the doc)');
   assert.ok(/splitDayRepairPlan_\(punches, from, to\)/.test(stripped), 'the decision is the pure planner');
   // Every add is validated BEFORE the dry-run return, so a bad add fails the dry run too (atomic, like the tz repair).

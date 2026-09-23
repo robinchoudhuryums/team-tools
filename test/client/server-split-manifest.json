@@ -839,6 +839,19 @@
     "submitPunchAdjustRequests"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-23",
+   "why": "cycle 22 T2: repairRowsMoved_ (in-lock verification for the repair tools)",
+   "added": [
+    "repairRowsMoved_"
+   ],
+   "removed": [],
+   "changed": [
+    "repairSplitDayPunches",
+    "repairTimesheetTimezone"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -6583,15 +6596,20 @@
    "kind": "function",
    "sha": "a67c848c3cfaf634"
   },
+  "repairRowsMoved_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "db8c77de3a34c4fb"
+  },
   "repairSplitDayPunches": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "2d691a0ef3fe64c0"
+   "sha": "5285a9a33185e605"
   },
   "repairTimesheetTimezone": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "e6b5b4986bb35999"
+   "sha": "0408e89fbe5294f3"
   },
   "reportBreakPairingChanges": {
    "file": "20_timeclock.js",

@@ -869,7 +869,7 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 943 | `node test/client/run.js` |
+| Pure harness tests | 944 | `node test/client/run.js` |
 | DOM harness tests | 146 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 114 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 338 | `Tests.js`; a run prints its own `Expected:` line |

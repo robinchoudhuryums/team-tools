@@ -3111,6 +3111,16 @@ function repairTimesheetTimezone(opts) {
   lock.waitLock(15000);
   let moved = 0;
   try {
+    // T2: the plan was read before the lock — refuse if any row has moved.
+    const drift = [];
+    tabs.forEach((tabName) => {
+      const mine = changes.filter((c) => c.tab === tabName)
+        .map((c) => ({ row: c.row, empId: c.empId, date: c.oldDate, type: c.type, time: c.oldTime }));
+      if (mine.length) Array.prototype.push.apply(drift, repairRowsMoved_(ss.getSheetByName(tabName).getDataRange().getValues(), mine));
+    });
+    if (drift.length) {
+      throw new Error('Refusing: ' + drift.length + ' planned row(s) changed between the plan and the lock — nothing was written; re-run to plan afresh. ' + drift.slice(0, 5).join('; '));
+    }
     changes.forEach((c) => {
       const sh = ss.getSheetByName(c.tab);
       sh.getRange(c.row, ADP.DATE + 1).setValue(sheetSafe_(c.newDate));
@@ -3167,6 +3177,28 @@ function splitDayRepairPlan_(punches, from, to) {
   });
   deletes.sort((a, b) => b.row - a.row);                       // bottom-up: a delete never shifts a later planned row
   return { deletes: deletes, kept: kept, otherDuplicates: otherDuplicates };
+}
+/** T2 (cycle 22) — the two editor-run Timesheet repair tools PLAN from a read
+ *  taken before the ScriptLock and then write BY ROW INDEX. Any locked writer
+ *  that deletes a row above a planned one in between (a rep's self-undo, a
+ *  manager's Day Edit delete, the cold archive — every one takes the lock, so
+ *  the window is the tool's own waitLock of up to 15 s) shifts the rows, and
+ *  the apply then rewrites or DELETES a different employee's punch. Rather
+ *  than re-plan, the apply re-reads INSIDE the lock and refuses unless every
+ *  planned row still holds exactly the punch the plan read (optimistic
+ *  concurrency: nothing is written on a mismatch; a re-run plans afresh).
+ *  Pure over the values array; `expected` = [{row (1-based), empId, date,
+ *  type, time?}]. Returns the mismatches, [] when the plan still holds. */
+function repairRowsMoved_(rows, expected) {
+  const out = [];
+  (expected || []).forEach(function (x) {
+    const r = rows[x.row - 1];
+    const now = r ? (String(r[ADP.EMP_ID] || '').trim() + '|' + normalizeDate_(r[ADP.DATE]) + '|' +
+      normalizeType_(String(r[ADP.COMMENTS])) + (x.time !== undefined ? '|' + normalizeTime_(r[ADP.TIME]) : '')) : '(no row)';
+    const want = x.empId + '|' + x.date + '|' + x.type + (x.time !== undefined ? '|' + x.time : '');
+    if (now !== want) out.push('row ' + x.row + ': planned ' + want + ', now ' + now);
+  });
+  return out;
 }
 function repairSplitDayPunches(opts) {
   assertManagerCaller_('repairSplitDayPunches');
@@ -3232,6 +3264,14 @@ function repairSplitDayPunches(opts) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
+    // T2: the plan (row indices for the deletes AND for each add's existing
+    // row) was read before the lock — refuse if any of them has moved.
+    const expected = plan.deletes.map((d) => ({ row: d.row, empId: d.empId, date: d.date, type: 'ClockIn', time: d.time }))
+      .concat(adds.filter((a) => a.existingRow).map((a) => ({ row: a.existingRow, empId: a.empId, date: a.date, type: a.type })));
+    const drift = repairRowsMoved_(sheet.getDataRange().getValues(), expected);
+    if (drift.length) {
+      throw new Error('Refusing: ' + drift.length + ' planned row(s) changed between the plan and the lock — nothing was written; re-run to plan afresh. ' + drift.slice(0, 5).join('; '));
+    }
     // Adds first: an update touches its own row and an append lands BELOW
     // every planned delete, so the delete indices read above stay valid.
     adds.forEach((a) => {
