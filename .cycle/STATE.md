@@ -4,9 +4,9 @@
 Cycle: 22 — opened 2026-09-23 by a `/broad-scan` (99 findings: 0 Critical /
 3 High; nine-batch implementation plan). Cycle 21 + 21post are in HISTORY.md.
 Phase: implement
-Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9); S2 IN PROGRESS (operator: most complete version, phased)
+Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9) + S2 DONE (blanket sheet-safe boundary)
 Test Command: manual
-Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent) · S2 (phased, blanket): L (~9 h) — helper+pin 1h · wrap every write site ~180 + pin repairs 6h · derived pin + bite-checks 2h
+Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent) · S2 (phased, blanket): L (~9 h) — helper+pin 1h · wrap every write site ~180 + pin repairs 6h · derived pin + bite-checks 2h | S2 Actual: ~5 h
 Subsystem cycles since last Seams audit: 1 — reset to 0 by the 2026-09-18 audit
 (batch S), +1 for the 21post reflection. The cadence is every 4.
 Updated: 2026-09-23
@@ -24,11 +24,14 @@ Updated: 2026-09-23
 - S3 | script_core.html, cn/script_callnotes.html | errorStateHtml_ beaconMsg override; search failures no longer ship the typed query to ClientErrors
 - S4 | 61_forms.js | FormTokenCreated logs tokenRef=<8 chars>…, not the live token
 - S9 | 61_forms.js | public submit validates the token shape + existence before the global lock; lock timeout is a polite retry
+- S2 | 14 server files + DevTools.js, lint-server.mjs, run.js | every sheet write goes through sheetSafe_/Row_/Rows_ (183 sites, AST-wrapped); '@' writers use sheetText_/sheetTextRows_/appendRowsTextSafe_ after re-asserting '@'; SHEET-SAFE lint rule + derived pins. Block: `.cycle/blocks/22-S2-broad-implement.md`
 
 ## Pending / not yet done
-- **S2 (formula injection) — DEFERRED by operator decision 2026-09-23**; to be
-  its own batch. No neutralising helper exists; ~45 client-text writer
-  functions. Highest-value slice: the ADP/payroll free-text writers.
+- **Deploy S2** with Batch 1 + S2's walk (its block): `=1+1` time-off note reads
+  back as text; a `+1 555…` callback and a `- …` issue read back exactly; the
+  scratchpad and a QA comment starting `- ` come back with no apostrophe.
+- **Optional:** find formulas ALREADY stored by the old code (`getFormulas()`
+  per store) and replace them with text — S2 closes the door, not the room.
 - **Deploy Batch 1** + its walk (block's OPERATOR ACTIONS): editor
   runSmokeTests green; a non-owner's google.script.run.runSmokeTests() refused;
   a failed search's ClientErrors row carries no query; FormTokenCreated shows
@@ -60,6 +63,13 @@ Updated: 2026-09-23
   takes no lock across its positional deletes (g132 class — needs an editor
   check of ScriptLock re-entrancy); pre-deploy ClientErrors/AuditLog rows may
   hold typed queries / tokens (optional redaction).
+- **S2 follow-ons:** client "Copy table" TSV is the same class on paste (no
+  client twin of sheetSafe_ yet); no one-click stored-formula scanner.
+  Platform assumption to confirm on the walk: a '@' cell stores a leading
+  apostrophe literally (the reason for the plain-text path).
+- **Docs owed by S2 (/sync-docs):** a coercion-family gotcha (strings are parsed
+  as typed; every write through sheetSafe_), an invariant, a design decision
+  (blanket boundary, '@' exception), the stored-formula clean-up.
 - **Docs owed by Batch 1 (/sync-docs):** a gotcha "a LEADING underscore is not
   private"; g26 amended for the test runners; the errorStateHtml_ beacon rule;
   a PUBLIC-GATE invariant (INV-243); walk steps on S1/S23/S61.
@@ -83,7 +93,11 @@ Updated: 2026-09-23
   decided by which items carry `listed cities` in col I.
 
 ## Decisions made (so the next session doesn't re-litigate)
-- **S2 deferred out of Batch 1** (operator, 2026-09-23) — scope beyond estimate.
+- **S2 deferred out of Batch 1** (operator, 2026-09-23) — then implemented in
+  its most complete form on the operator's request: a BLANKET boundary over
+  every write (not a per-field judgement of which text is user-supplied).
+- **'@' cells write raw after re-asserting '@'** rather than through
+  sheetSafe_: a plain-text cell would store the apostrophe literally.
 - **The suite guard is "active === effective"**, not a MANAGER_EMAILS check:
   the editor and owner-installed triggers pass, every web visitor is refused;
   it reads Session directly so _TEST_OVERRIDE_EMAIL cannot satisfy it.
@@ -107,7 +121,7 @@ Updated: 2026-09-23
   amber** with their own explanations (operator, 2026-09-22).
 
 ## Where I left off
-Batch 1 of cycle 22 is committed (S1, X2, S3, S4, S9) and awaits deploy + its
-walk; S2 is deferred. Next: `/broad-implement Batch 2` (payroll and punch
-integrity — T1 Day Edit open break, T3, T2, T6, C1, C5), or `/sync-docs` for
-Batch 1's owed documentation first.
+Batch 1 (S1, X2, S3, S4, S9) and S2 of cycle 22 are committed and pushed;
+none is deployed. Next: `/sync-docs` for both blocks' owed documentation, then
+deploy + the two walks; or `/broad-implement Batch 2` (payroll and punch
+integrity — T1 Day Edit open break, T3, T2, T6, C1, C5).
