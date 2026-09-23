@@ -18378,6 +18378,32 @@ test('A4-1: managerParseBreakSlots_ accepts the list, keeps the legacy pair, ref
   assert.match(err({ breaks: many }), /Too many breaks \(13\); at most 12/);
 });
 
+test('C5 (cycle 22): the retention purge never asks Sheets to delete every non-frozen row — a full grid purged whole loses nothing it did not count (driven)', () => {
+  const ctx = vm.createContext({ Date, Math, String, Number, isNaN, parseInt, CONFIG: { TIMEZONE: 'America/Chicago' },
+    Utilities: { parseDate: () => { throw new Error('use Date.parse'); } } });
+  ['parseRetentionDateMs_', 'purgeSheetRowsOlderThan_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  // A GRID with no spare rows: 1 frozen header + N data rows, maxRows = 1 + N.
+  // Like Sheets, it refuses the delete that would leave no non-frozen row.
+  const mk = (n, oldCount) => {
+    const rows = [['Date']];
+    for (let i = 0; i < n; i++) rows.push([i < oldCount ? '2025-01-0' + ((i % 9) + 1) : '2026-09-2' + (i % 9)]);
+    let maxRows = rows.length;
+    return { rows, spare: 0,
+      getLastRow: () => rows.length, getMaxRows: () => maxRows,
+      getDataRange: () => ({ getValues: () => rows.map((r) => r.slice()) }),
+      insertRowAfter: () => { maxRows++; },
+      deleteRow: (r) => { if (maxRows - 1 <= 1) throw new Error('Sorry, it is not possible to delete all non-frozen rows.'); rows.splice(r - 1, 1); maxRows--; } };
+  };
+  const CUT = Date.parse('2026-01-01T00:00:00Z');
+  const full = mk(6, 6);
+  assert.strictEqual(ctx.purgeSheetRowsOlderThan_(full, 0, CUT), 6, 'every expired row is purged and COUNTED (it threw on the last one)');
+  assert.strictEqual(full.rows.length, 1, 'only the header remains');
+  const partial = mk(6, 2);
+  assert.strictEqual(ctx.purgeSheetRowsOlderThan_(partial, 0, CUT), 2, 'a partial purge is unchanged');
+  assert.strictEqual(partial.getMaxRows(), 5, 'and grows nothing it does not need');
+  assert.strictEqual(ctx.purgeSheetRowsOlderThan_(mk(3, 0), 0, CUT), 0, 'nothing expired, nothing touched');
+});
+
 test('T2 (cycle 22): both Timesheet repair tools re-verify their planned rows INSIDE the lock and write nothing if one has moved (driven + wiring)', () => {
   const ctx = vm.createContext({ String, Array,
     ADP: { EMP_ID: 0, DATE: 1, TIME: 2, COMMENTS: 3 },

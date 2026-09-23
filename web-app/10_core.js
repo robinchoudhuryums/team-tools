@@ -2772,6 +2772,18 @@ function purgeSheetRowsOlderThan_(sheet, dateColIdx, cutoffMs) {
     const ms = parseRetentionDateMs_(rows[i][dateColIdx]);
     if (ms !== null && ms < cutoffMs) toDelete.push(i + 1);  // 1-based sheet row
   }
+  // C5 (cycle 22): Sheets REFUSES to delete every non-frozen row of a grid
+  // ("not possible to delete all non-frozen rows"). A purge whose cutoff covers
+  // the whole tab on a grid with no spare rows — a departed rep's notes all
+  // past retention on a full 1000-row grid — threw on the LAST delete, after
+  // N-1 PHI rows were already gone irreversibly; the per-rep catch then
+  // skipped the count, so the purge audit row under-reported the deletions and
+  // that last row survived forever. Keep one spare row, as the archive mover
+  // does (archiveSheetRowsOlderThan_, 2026-09-04), so the final delete never
+  // empties the grid.
+  if (toDelete.length && toDelete.length >= sheet.getMaxRows() - 1) {
+    sheet.insertRowAfter(sheet.getMaxRows());
+  }
   for (let j = toDelete.length - 1; j >= 0; j--) {
     sheet.deleteRow(toDelete[j]);
   }
