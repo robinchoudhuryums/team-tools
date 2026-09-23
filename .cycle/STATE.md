@@ -27,8 +27,8 @@ shorthand as a CONFIRMED rule, OON = OUT-OF-NETWORK = red, Plan Specific
 defined): S (~2 h)** — written BEFORE the first edit; actual ~1.5 h. **T10 (the last two acceptance values: `Hawaii only`,
 `MDX Hawaii`): S (~0.5 h)** — written BEFORE the first edit; actual ~0.5 h.
 Between-cycles operator work, the 19pre pattern.
-Subsystem cycles since last Seams audit: 0 — reset by the 2026-09-18 audit,
-whose findings shipped as batch S. The cadence is every 4; next due at cycle 25.
+Subsystem cycles since last Seams audit: 1 — reset to 0 by the 2026-09-18 audit
+(batch S); incremented by the T1–T10 reflection (`21post-a-reflect.md`, 2026-09-23). The cadence is every 4; next due at cycle 25.
 Updated: 2026-09-23
 
 ## In progress (facts to carry forward — NOT judgments)
@@ -54,10 +54,11 @@ Updated: 2026-09-23
   **T7, T7b, T8 and T9 DEPLOYED 2026-09-23** (operator-confirmed). Still to
   WALK: S64 (six T3 + four T4 + six T7 + two T7b + one T8 + one T9 step),
   S18's clipboard step, S112, S73.
-- **`/reflect` is OWED for the T1–T9 series.** Nine implement blocks exist
-  (`21post-*-broad-implement.md`) with Estimate/Actual lines; no reflect block,
-  no metrics row and no estimates rows have been written for them. Reflect
-  BEFORE archiving this block to HISTORY.md — `/reflect` reads it.
+- ~~`/reflect` for the T1–T10 series~~ DONE 2026-09-23
+  (`.cycle/blocks/21post-a-reflect.md`; metrics row `21post`, net **8** after
+  three corrections to the self-reported 11; nine estimates rows, 0.73x).
+  INV-240..242 are PROPOSED there and not yet in the library. **Next: archive
+  this block to HISTORY.md and reset from the template.**
 - ~~T1~~ and ~~T2~~ are DONE — block `21post-T1-T2-broad-implement.md`, net
   2 − 0. The tone/explanation guarantee is held by a PIN rather
   than by one shared matcher: `insToneCls_` was left alone deliberately, since
