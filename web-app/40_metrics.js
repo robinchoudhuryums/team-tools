@@ -1943,7 +1943,12 @@ function getTeamMetrics(dateOrFrom, to) {
         totalRung:    cdr ? cdr.totalRung    : 0,
         totalAnswered: cdr ? cdr.totalAnswered : 0,
         totalMissed:  cdr ? cdr.totalMissed  : 0,
-        pctAnswered:  cdr ? cdr.pctAnswered  : 0,
+        // M1 (cycle 22): no call-data row is NO rate, not 0% — a rep who took
+        // no calls in the range (PTO, non-phone day, the lagged Today) rendered
+        // as a red "0%" beside colleagues who answered nine in ten. The table
+        // draws null as "—" and sorts it lowest; the H2 formula
+        // (cdrAnswerPct_) already returns null when there is no denominator.
+        pctAnswered:  cdr ? cdr.pctAnswered  : null,
         tttFormatted: cdr ? cdr.tttFormatted : '0:00:00',
         attFormatted: cdr ? cdr.attFormatted : '0:00:00',
         tttSeconds:   cdr ? cdr.tttSeconds   : 0,

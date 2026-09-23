@@ -1684,6 +1684,19 @@ test('M4 (cycle 22): Spanish auto-assign load counts claims on PENDING requests 
   assert.ok(/pendingIds\[p\.threadId\] = true/.test(core), 'from the SAME pending read that decides what is unclaimed');
 });
 
+test('M1 (cycle 22): a rep with no call data has NO answer rate — null on the row, "—" in the cell, lowest in the sort', () => {
+  const tm = stripJsComments_(extractRawFunction('Code.js', 'getTeamMetrics'));
+  assert.ok(/pctAnswered:\s*cdr \? cdr\.pctAnswered\s*: null,/.test(tm),
+    'the per-rep row ships null, never 0, when the rep has no CDR row in the range');
+  const ctx = vm.createContext({ String });
+  vm.runInContext(extractRawFunction('metrics/script_metrics.html', 'mSortReps_'), ctx);
+  const reps = [{ repName: 'Jo', pctAnswered: null }, { repName: 'Ana', pctAnswered: 0 }, { repName: 'Ben', pctAnswered: 91 }];
+  const desc = JSON.parse(JSON.stringify(ctx.mSortReps_(reps, { key: 'pctAnswered', dir: 'desc' }))).map((r) => r.repName);
+  assert.deepStrictEqual(desc, ['Ben', 'Ana', 'Jo'], 'a real 0% outranks no rate at all');
+  const asc = JSON.parse(JSON.stringify(ctx.mSortReps_(reps, { key: 'pctAnswered', dir: 'asc' }))).map((r) => r.repName);
+  assert.deepStrictEqual(asc, ['Jo', 'Ana', 'Ben'], 'and ascending puts no rate first, not tied with 0%');
+});
+
 console.log('\nCode.js — PTO reconciliation half-day-pair exemption (cycle 7 · L-4)');
 {
   vm.runInContext(extractRawFunction('Code.js', 'ptoLegitHalfDayPair_'), sb, { filename: 'Code.js#ptoLegitHalfDayPair_' });

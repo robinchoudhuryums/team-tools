@@ -106,8 +106,12 @@ const SCENARIOS = [
   // Cycle-14 Phase 2 — Team Metrics was never in the matrix, and it is now the
   // home of the sub-queue views (segmented bars are exactly what code review
   // cannot verify).
-  ['metrics-team-light-wide', { tool: 'metrics', tab: 'metricsTeam' },   WIDE, 'light', ''],
-  ['metrics-team-dark-wide',  { tool: 'metrics', tab: 'metricsTeam' },   WIDE, 'dark',  ''],
+  ['metrics-team-light-wide', { tool: 'metrics', tab: 'metricsTeam' },   WIDE, 'light', '?teamrange=7d'],
+  // X3 (cycle 22): Team Metrics' DEFAULT range is today, which the one-day-lagged
+  // call-data report never covers — every rep listed through notes, no rates
+  // (M1: "—", never a red 0%). The three shots above/below preset a past range.
+  ['metrics-team-today-light-wide', { tool: 'metrics', tab: 'metricsTeam' }, WIDE, 'light', ''],
+  ['metrics-team-dark-wide',  { tool: 'metrics', tab: 'metricsTeam' },   WIDE, 'dark',  '?teamrange=7d'],
   ['intake-light-wide',     { tool: 'intake',    tab: null },         WIDE, 'light', ''],
   ['intake-catalog-light-wide', { tool: 'intake', tab: 'intakeCatalog' }, WIDE, 'light', ''],
   // 2026-08-31 coverage pass — the matrix covered 18 of 29 registry tabs.
@@ -144,7 +148,7 @@ const SCENARIOS = [
   ['intake-light-mobile',     { tool: 'intake',    tab: null },              MOBILE,  'light', ''],
   ['intake-light-compact',    { tool: 'intake',    tab: null },              COMPACT, 'light', '?compact=1'],
   ['metrics-light-mobile',    { tool: 'metrics',   tab: null },              MOBILE,  'light', ''],
-  ['metrics-team-light-mobile', { tool: 'metrics', tab: 'metricsTeam' },     MOBILE,  'light', ''],
+  ['metrics-team-light-mobile', { tool: 'metrics', tab: 'metricsTeam' },     MOBILE,  'light', '?teamrange=7d'],
   ['training-light-mobile',   { tool: 'develop',   tab: null },              MOBILE,  'light', ''],
   // Cycle-17 Batch 7 — three coverage gaps the Visual Audit Stage had been
   // carrying as known-uncovered: (a) dark parity for Reference / Training /

@@ -483,7 +483,35 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       { month: '2026-04', ppd: 9, pmd: 8, pap: 2, total: 19 },
       { month: '2026-03', ppd: 13, pmd: 5, pap: 4, total: 22 },
     ], failedTypes: [] },
-    getTeamMetrics: (function () {
+    // X3 (cycle 22): a FUNCTION of the requested range. The call-data report
+    // is a day behind, so a range ending TODAY has no call data at all: every
+    // rep is listed only through their notes, with no rate (M1 — "—", never a
+    // red 0%). This fixture used to hand Today a full table of rates, which is
+    // why the "no call data" state was never photographed. A past range (the
+    // `?teamrange=7d` scenarios) gets the populated table, including one
+    // roster rep with no call data (Jo Tran, already in rosterWithNoCdr).
+    getTeamMetrics: function (from, to) {
+      var populated = TEAM_METRICS_POPULATED_();
+      if (String(to || '') < todayIso) return Object.assign({}, populated, { from: from || populated.from, to: to || populated.to, date: to || populated.date });
+      var noCdr = function (r) {
+        return Object.assign({}, r, { totalRung: 0, totalAnswered: 0, totalMissed: 0, pctAnswered: null,
+          tttFormatted: '0:00:00', attFormatted: '0:00:00', tttSeconds: 0, attSeconds: 0,
+          noteCoverage: null, hasCdrData: false, transferred: 0, transferPct: null,
+          queues: {}, queueTotal: 0, queueUnattributed: 0, hasTransferData: false });
+      };
+      var reps = populated.reps.map(noCdr);
+      return Object.assign({}, populated, {
+        from: todayIso, to: todayIso, date: todayIso, reps: reps,
+        teamTotals: { rung: 0, answered: 0, missed: 0, tttSeconds: 0, noteCount: populated.teamTotals.noteCount,
+          transferred: 0, queueTotal: 0, transferCalls: 0, pctAnswered: null, attFormatted: '0:00:00',
+          tttFormatted: '0:00:00', noteCoverage: null, transferPct: null },
+        unmatchedAgents: [], rosterWithNoCdr: reps.map(function (r) { return r.repName; }), likelyMismatches: [],
+        queueRows: [], groupRows: [],
+        transferMeta: { available: true, error: null, queueColumns: [] },
+      });
+    },
+    // (the populated payload the function above serves for a past range)
+    _teamMetricsPopulated: (function () {
       var mk = function (id, name, rung, ans, missed, att, notes, cov, transferred, queues) {
         var qt = 0; Object.keys(queues).forEach(function (q) { qt += queues[q]; });
         return { repId: id, repName: name, totalRung: rung, totalAnswered: ans,
@@ -500,6 +528,13 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         mk('E-1091', 'Nina Patel', 52, 44, 8, '0:03:58', 41, 93, 21, { A_Q_CSR: 12, A_Q_Legacy_Unmapped: 4 }),
         mk('E-1104', 'Leo Kim', 29, 27, 2, '0:04:20', 18, 67, 3, {}),
       ];
+      // X3 / M1: a roster rep with notes and NO call-data row in the range —
+      // the server lists them (notes > 0) with no rate. Totals skip nothing:
+      // the server sums their zeros, as below.
+      reps.push({ repId: 'E-1120', repName: 'Jo Tran', totalRung: 0, totalAnswered: 0, totalMissed: 0,
+        pctAnswered: null, tttFormatted: '0:00:00', attFormatted: '0:00:00', tttSeconds: 0, attSeconds: 0,
+        noteCount: 6, noteCoverage: null, noteCountUnavailable: false, intakeNotes: 0, hasCdrData: false,
+        transferred: 0, transferPct: null, queues: {}, queueTotal: 0, queueUnattributed: 0, hasTransferData: false });
       var tq = {};
       reps.forEach(function (r) {
         Object.keys(r.queues).forEach(function (q) {
@@ -527,7 +562,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         return { queue: q, transferred: tq[q].transferred, reps: Object.keys(tq[q].reps).length };
       }).sort(function (a, b) { return b.transferred - a.transferred; });
       return {
-        from: todayIso, to: todayIso, date: todayIso, reps: reps, teamTotals: totals,
+        from: daysAgo(7), to: daysAgo(1), date: daysAgo(1), reps: reps, teamTotals: totals,
         // Name-match diagnostics. On a shared CDR feed BOTH raw lists are
         // normally non-empty (other departments; non-phone staff / PTO), so an
         // all-empty fixture would never show the states a real manager sees.
@@ -1791,6 +1826,21 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
   // reviewer one (both delegate to qaAudioChunkFor_ server-side — INV-185),
   // so the fixture is an alias of the real WAV chunk above.
   FIXTURES.getMyQaReviewAudioChunk = FIXTURES.qaGetAudioChunk;
+  // X3 — the populated Team Metrics payload lives beside FIXTURES, not in it
+  // (it is not an RPC); getTeamMetrics serves a copy of it for a past range.
+  var TEAM_METRICS_POP_ = FIXTURES._teamMetricsPopulated;
+  delete FIXTURES._teamMetricsPopulated;
+  function TEAM_METRICS_POPULATED_() { return JSON.parse(JSON.stringify(TEAM_METRICS_POP_)); }
+  // `?teamrange=7d` (X3) — preset Team Metrics to the last seven COMPLETE days,
+  // the range the call-data report actually covers, so the populated table
+  // (rates, the queue split) stays on camera now that Today has no call data.
+  try {
+    if (/[?&]teamrange=7d\b/.test(window.location.search)) {
+      window.addEventListener('load', function () {
+        if (window.M_STATE) { window.M_STATE.teamFrom = daysAgo(7); window.M_STATE.teamTo = daysAgo(1); }
+      });
+    }
+  } catch (e) {}
 
   // `?pendingadj=1` — seeds a pending punch-adjustment request so the Clock
   // view's awaiting-approval chip renders on camera (the state the operator
