@@ -509,6 +509,31 @@ not restate it. Server endpoints live in the fourteen server files
      single row is labelled "Through insurance or out of pocket"), and a
      disagreement still renders as two labelled rows — so the disagreement is
      now the one that catches the eye, which is the case the pair exists for.
+     **2026-09-22 (T7–T9 — the eligibility rules, after the T1–T6 deploy
+     exposed an unreadable delivery table).** Area Eligibility could only name
+     PLACES, so two of the operator's real rules were unsayable. **`N miles of
+     any warehouse`** (T7b) is a rule about the NETWORK: it names nothing and
+     resolves against `LocationAcceptance` at check time, so opening a
+     warehouse extends every item written that way; the named form is the
+     narrow one, for technician-built items, and its names now match as WHOLE
+     WORDS (a bare substring had let a site called `Ware` match inside
+     "warehouse", widening narrow rules). **`listed cities`** (T7) DELEGATES
+     to the city rows — the column states the rule and the registry supplies
+     its parameter, the shape radius already had — and does not lift out of
+     pocket. Rules **combine** with `or`: either qualifies; an unmeasurable
+     branch beside a plain no is UNKNOWN, never no; an unreadable clause takes
+     the whole cell down. The failure that started it (g142): a tab with its
+     headers in row 2 produced an empty registry and NO error, and the verdict
+     blamed the pricing sheet, whose correct cells were then rewritten. A tab
+     that yields nothing usable now says which of three reasons applies, a
+     radius naming an unknown warehouse says to fix `LocationAcceptance`, and
+     dropped rows render on the rep's panel. **T8** gave
+     `getOopPricingDiagnostics` — which had no caller anywhere in the client —
+     a home at Manage → Admin → System. **T9** applied the operator's answers:
+     `K0821/23/16` reads as K0821/K0823/K0816 in exactly that confirmed shape,
+     and bare `OON` (which had been amber by substring while bare
+     `OUT-OF-NETWORK` was red) is the red refusal, with the QUALIFIED values
+     amber and explained.
      **File ingest (operator 2026-08-25) — two paths, because they answer
      different questions.** (a) **Editor file-drop** (`kbIngestFile`, admin-gated,
      READ-ONLY w.r.t. the KB sheet, review-before-save like the converters):

@@ -4,7 +4,7 @@
 Cycle: 21 — CLOSED 2026-09-21 (batch R deployed and operator-confirmed; batch S
 needed no deploy; reflected net +1; the whole block is in `.cycle/HISTORY.md`).
 **No cycle is open.** The next `/audit` or `/broad-scan` opens cycle 22.
-Phase: implement (between-cycles operator work — T1–T6 DEPLOYED; T7/T7b/T8/T9 undeployed)
+Phase: idle (between-cycles operator work T1–T9 — ALL DEPLOYED; awaiting the S64 walk and a /reflect)
 Scope: —
 Test Command: manual
 Estimates: T1 (landing re-render + pill + meta chips): S (~2 h) · T2 (legend
@@ -20,15 +20,15 @@ actual ~3 h. **T7 (the exact-city eligibility rule, rules that COMBINE, and
 the silences that cost the operator real sheet data): L (~7 h)** — written
 BEFORE the first edit; actual ~5 h. **T7b (a radius over ANY warehouse, the
 rule being about the NETWORK rather than a place): S (~2 h)** — written
-BEFORE the first edit. **T8 (an Admin home for the OOP
+BEFORE the first edit; actual ~3 h with T8. **T8 (an Admin home for the OOP
 pricing diagnostics, which had none): S (~2 h)** — written BEFORE the
-first edit. **T9 (the operator's answers: the code
+first edit; actual shared with T7b above. **T9 (the operator's answers: the code
 shorthand as a CONFIRMED rule, OON = OUT-OF-NETWORK = red, Plan Specific
 defined): S (~2 h)** — written BEFORE the first edit; actual ~1.5 h.
 Between-cycles operator work, the 19pre pattern.
 Subsystem cycles since last Seams audit: 0 — reset by the 2026-09-18 audit,
 whose findings shipped as batch S. The cadence is every 4; next due at cycle 25.
-Updated: 2026-09-22
+Updated: 2026-09-23
 
 ## In progress (facts to carry forward — NOT judgments)
 - Nothing is in flight against an OPEN cycle. **PR #264 MERGED 2026-09-21**
@@ -38,8 +38,9 @@ Updated: 2026-09-22
   merged too, and T1–T6 are deployed and operator-confirmed (2026-09-22).**
 - A four-batch plan (T1–T4) for the Reference lookups was agreed with the
   operator on 2026-09-21; T5 followed from a T4 follow-on, T6 from a T5 one,
-  and T7 from the operator's 2026-09-22 deploy round. **All seven are DONE and
-  pushed. T1–T6 are DEPLOYED and confirmed; T7 needs one push.**
+  and T7–T9 from the operator's 2026-09-22 deploy round. **All are DONE,
+  MERGED (#264–#268) and DEPLOYED** — T1–T6 on 2026-09-22, T7–T9 on
+  2026-09-23. Nothing is in flight.
 
 ## Completed this cycle
 - (Cycle 21's record is in `.cycle/HISTORY.md` and the three blocks
@@ -49,17 +50,21 @@ Updated: 2026-09-22
 ## Pending / not yet done
 - **The deploy** — T1–T6 are DEPLOYED and operator-confirmed (2026-09-22;
   `runAllTests` read 336 passed / 1 skipped, which matches the derived 337).
-  **T7, T7b, T8 and T9 are NOT deployed** — one `clasp push -f` + New-version covers all four; then
-  walk S64 (six T3 + four T4 + six T7 + two T7b + one T8 step), S18's
-  clipboard step, S112, S73.
+  **T7, T7b, T8 and T9 DEPLOYED 2026-09-23** (operator-confirmed). Still to
+  WALK: S64 (six T3 + four T4 + six T7 + two T7b + one T8 + one T9 step),
+  S18's clipboard step, S112, S73.
+- **`/reflect` is OWED for the T1–T9 series.** Nine implement blocks exist
+  (`21post-*-broad-implement.md`) with Estimate/Actual lines; no reflect block,
+  no metrics row and no estimates rows have been written for them. Reflect
+  BEFORE archiving this block to HISTORY.md — `/reflect` reads it.
 - ~~T1~~ and ~~T2~~ are DONE — block `21post-T1-T2-broad-implement.md`, net
   2 − 0. The tone/explanation guarantee is held by a PIN rather
   than by one shared matcher: `insToneCls_` was left alone deliberately, since
   rewriting a classifier that colours a compliance-adjacent field to share code
   with a tooltip trades a real guarantee for a tidy one.
 - ~~T3~~ is DONE — block `21post-T3-broad-implement.md`, net 0 − 0 (1
-  capability, 2 defensive; nothing here was broken). **Not deployed** — T1, T2
-  and T3 ship together. **INV-233 written**
+  capability, 2 defensive; nothing here was broken). Deployed 2026-09-22 with
+  T1–T6. **INV-233 written** (AMENDED by T9)
   (ambiguity refused as a SHAPE: `hcpcsParse_` fills `tokens` only on the
   certain path, so no consumer can assert from an uncertain parse). Eleven
   bite-checks, all BITE, and `scripts/bite.sh --dom` now drives the DOM harness
@@ -201,24 +206,24 @@ the `Type` column is DONE (operator, 2026-09-22). STILL OWED: restore
   Flagged, not dismissed.
 
 ## Where I left off
-**T1–T6 are DEPLOYED and confirmed; T7, T7b, T8 and T9 are done, pushed and UNDEPLOYED. PR #267 MERGED T7–T8 (`ac8f0ae`); T9 is on the restarted branch.** PR #264 merged 2026-09-21
-(`2487fd1`); the branch was restarted from `main` and carries T3, T4 and T5. Every
-harness is green, the counts block agrees, and the shots were READ — the
-drawer shot shows an agreeing verdict above a disagreeing one, which is the
-evidence the T4 amendment turns on.
+**T1–T9 are ALL DEPLOYED (T1–T6 on 2026-09-22, T7–T9 on 2026-09-23) and every
+PR is merged (#264–#268).** Every harness is green, the counts block agrees,
+and a `/sync-docs` pass ran after the last deploy.
 
-**Next: ONE deploy** (`clasp push -f` + New-version) covering all six, then
-walk S64 (SIX T3 steps + FOUR T4 steps, including renaming the `OopPricing`
-tab to see the degraded-join banner), S18's new denied-clipboard step, and
-S112. Note S112 was
-deliberately NOT widened for T4: T4 adds a second way to get a price onto the
-clipboard and explicitly not a second way to get one into an email.
+**First, in a fresh session: `/reflect` for the T1–T9 series.** Nine implement
+blocks (`.cycle/blocks/21post-*-broad-implement.md`) carry Estimate/Actual
+lines and have never been tallied — no reflect block, no `metrics.csv` row, no
+`estimates.csv` rows. Then archive this whole block to `.cycle/HISTORY.md`
+(newest first) and reset STATE.md from the template, carrying the standing
+debts below across.
 
-**`/sync-docs` is DONE** — it shipped with T5 and covered all four checks.
+**The operator's walk:** S64 (six T3 + four T4 + six T7 + two T7b + one T8 +
+one T9 step), S18's denied-clipboard step, S112 and S73.
 
-**Both operator questions are ANSWERED and shipped as T9** (2026-09-22). One
-small one remains, blocking nothing: what `MDX Hawaii` (and `Hawaii only`)
-mean.
-
-The docs are current. The honest next step is the DEPLOY — one push covers
-T7, T7b, T8 and T9 — then the S64 walk. Nothing else is in flight.
+**Standing debts that must survive the reset:** cycle 19 step 8 (the DEV
+instance with `INSTANCE_IS_PROD=true` — the weakest axis in cycle 21's
+reflection); F-09's holiday-fallback decision; INV-225–227 RESERVED and
+INV-229–232 + an INV-213 amendment PROPOSED (next free is INV-240);
+`MDX Hawaii` and `Hawaii only` undefined; the intermittent DOM pin (`the
+resume request states the unpaid gap before it is filed`); `intakeCopyImage_`
+not checking a blocked popup (g135); `Accepts` display-only on city rows.

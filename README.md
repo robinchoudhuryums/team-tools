@@ -86,7 +86,8 @@ Script project synced via [clasp](https://github.com/google/clasp).
     price lookup, and an area-eligibility check that takes an address
     and answers twice per item — once through insurance, once paying
     out of pocket, because a state limit lifts when nobody is billing
-    insurance and a delivery radius does not. PHI-free by policy.
+    insurance and a delivery radius or a service-city list does not.
+    PHI-free by policy.
   - **Training & Employee Docs** — manager-assigned training built on
     the Reference content layer: assign any KB article/embed to
     employees (or everyone) with an optional due date; reps work a

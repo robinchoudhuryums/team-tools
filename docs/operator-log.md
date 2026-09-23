@@ -10,6 +10,57 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-23 — Area eligibility: city rules, any-warehouse, the diagnostics panel, the vocabulary (T7–T9)
+
+**Adds operator state in ONE tab, and it is already done.** `LocationAcceptance`
+must have its headers in **row 1** and a **`Type`** column (`warehouse` /
+`city`); the operator restructured it on 2026-09-22. No Script Property, no
+permission, no migration. Deployed 2026-09-23 on the ordinary `clasp push -f` +
+New-version.
+
+**Why it came up.** The first T1–T6 deploy exposed a tab the reader could not
+read (headers in row 2, no `Name` column). The registry came back empty with no
+error, every radius rule read "cannot tell", and the message blamed the PRICING
+sheet — so correct Area Eligibility cells were rewritten to `Local` to match.
+That message was the defect (g142), not the sheet.
+
+**What the operator can now write in Area Eligibility.**
+- `100 miles of any warehouse` — the usual form; measured from whichever
+  warehouse is nearest, so opening a warehouse needs no edit here.
+- `100 miles of Dallas warehouse, 100 miles of San Antonio warehouse` — the
+  NARROW form, for the technician-built items only those sites fulfil. Names
+  match as WHOLE WORDS.
+- `listed cities` — the `LocationAcceptance` city rows decide, for the items
+  that say so (scooters). A city limit does NOT lift out of pocket.
+- Two rules joined by `or`: either qualifies. If one half is unreadable the
+  whole cell reads "cannot tell".
+
+**What the operator sees.** Manage → Admin → System gained **"Reference lookups
+· pricing + delivery reach"** — what the reader actually matched in both tabs,
+with every unreadable eligibility value named beside its cell. The rep's own
+eligibility panel now names a tab it could not read, and any dropped warehouse
+row, and a warehouse the table cannot place makes an over-limit answer "cannot
+tell" rather than "no".
+
+**The vocabulary (T9).** `OON` and `OUT-OF-NETWORK` are the same red refusal;
+`OON w/ PA` and `Out-of-Network Benefits` are amber with their own
+explanations; `Plan Specific` is defined. `K0821/23/16` now reads as
+K0821/K0823/K0816 — other shorthands (a range, a fragment beside two codes)
+still show as "not matched". **Still undefined: `MDX Hawaii` and `Hawaii
+only`.**
+
+## 2026-09-22 — the Reference legibility round (T1–T6)
+
+**Adds NO operator state.** Deployed 2026-09-22; `runAllTests` came back green
+with one skip, matching the registration count the run derives. The lookup band no longer
+loses what a rep is typing when the landing refreshes; the acceptance legend is
+a popover and each value explains itself; a payor's code columns are named from
+the pricing tab (the payor × item join); the lookups are keyboard-walkable and
+a price can be copied; an agreeing verdict pair collapses to one row. **Every
+copy button in the app now says so when the clipboard is blocked** (T5) —
+previously seven of them reported success they had not achieved, including the
+Call Notes save path, whose clipboard a rep pastes into the patient record.
+
 ## 2026-09-18 (R) — Reference: the price and eligibility lookups became one panel
 
 **Adds NO operator state.** No Script Property, no sheet, no tab, no new

@@ -414,7 +414,7 @@ entry says which it is.
   privacy boundary (whitelisted enum facets + own KB excerpts only).
 <a id="operator-script-properties-kb-ai-daily-cap-kb-ai-model"></a>
 - **Script Properties `KB_AI_DAILY_CAP` / `KB_AI_MODEL`** (Admin-managed).
-  Written by the Call Notes → Admin → "AI Guidance (Reference)" section
+  Written by the Manage → Admin → "AI Guidance (Reference)" section
   (`saveKbAiSettings`, manager-gated). Defaults when unset: $3/day org-wide,
   `claude-haiku-4-5`. The model must be a `KB_AI_MODEL_PRICES` key (Code.js)
   so spend accounting always has real rates — adding a new model option means
@@ -1303,7 +1303,7 @@ entry says which it is.
   rollover so it can't grow unbounded in a long-lived pinned pop-out — F6).
 <a id="operator-employees-sheet-column-l-callnotessheetid"></a>
 - **`Employees` sheet column L = `CallNotesSheetId`** — per-rep
-  call-notes Spreadsheet ID. Easiest path: **Call Notes → Admin →
+  call-notes Spreadsheet ID. Easiest path: **Manage → Admin →
   Call Notes Enrollment → Provision Sheet** (one click — creates the
   Sheet in the deployer's Drive and fills column L; INV-110). The
   manual path still works (copy the template Sheet, rename it for the
@@ -1796,7 +1796,7 @@ entry says which it is.
 <a id="operator-script-property-cn-email-templates"></a>
 - **Script Property `CN_EMAIL_TEMPLATES`** (auto-managed). JSON array
   of `{name, recipientType, body}` external-email message templates,
-  written by `saveEmailTemplates` from the Call Notes → Admin tab's
+  written by `saveEmailTemplates` from the Manage → Admin tab's
   "Email Templates" section. Created on first save; read by
   `getEmailTemplates_()` (falls back to `CONFIG.CALL_NOTES.EMAIL_TEMPLATES`,
   default `[]`). No manual setup needed — documented here so it's
@@ -1821,7 +1821,7 @@ entry says which it is.
 <a id="operator-script-property-cn-feature-flags"></a>
 - **Script Property `CN_FEATURE_FLAGS`** (auto-managed). JSON object
   `{ flagKey: bool }` of manager-set feature-toggle overrides, written by
-  `saveFeatureFlags` from the Call Notes → Admin tab's "Feature Toggles"
+  `saveFeatureFlags` from the Manage → Admin tab's "Feature Toggles"
   section. Created on first save; read by `getFlag_()` /
   `getFeatureFlagsResolved_()`, which fall back to the `FEATURE_FLAGS`
   registry defaults (each mirroring its legacy CONFIG constant) when a key
