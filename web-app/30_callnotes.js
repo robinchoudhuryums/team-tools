@@ -3564,6 +3564,17 @@ function archiveSheetRowsOlderThan_(srcSheet, archiveSheet, dateColIdx, cutoffMs
   if (archiveSheet.getMaxColumns() < width) {
     archiveSheet.insertColumnsAfter(archiveSheet.getMaxColumns(), width - archiveSheet.getMaxColumns());
   }
+  // C1 (cycle 22): grow the ROWS too. getRange past the last grid row THROWS
+  // ("outside the dimensions of the sheet") — appendRow would have extended
+  // the grid, a positional write does not. A new archive tab has the default
+  // 1000-row grid, so the first run with 1000+ eligible rows (a first enable on
+  // a busy rep, or any archive near 1000 rows) threw here, before any write:
+  // nothing was lost, but the per-rep catch skipped that rep every night and
+  // the audit row just read smaller. The Timesheet tier shares this mover.
+  const needRows = archiveSheet.getLastRow() + block.length;
+  if (archiveSheet.getMaxRows() < needRows) {
+    archiveSheet.insertRowsAfter(archiveSheet.getMaxRows(), needRows - archiveSheet.getMaxRows());
+  }
   archiveSheet.getRange(archiveSheet.getLastRow() + 1, 1, block.length, width).setValues(sheetSafeRows_(block));
   SpreadsheetApp.flush();   // ensure the archive write lands before we delete the source
   // Sheets REFUSES to delete every non-frozen row of a grid ("not possible to

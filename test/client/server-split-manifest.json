@@ -872,6 +872,16 @@
     "tsDoctorLegitBreaks_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-23",
+   "why": "cycle 22 C1: archive mover grows the archive grid's rows",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "archiveSheetRowsOlderThan_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3004,7 +3014,7 @@
   "archiveSheetRowsOlderThan_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "b91c5c32507e33fb"
+   "sha": "0b9a6810d91f5457"
   },
   "arraysEqual_": {
    "file": "10_core.js",

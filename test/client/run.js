@@ -26053,9 +26053,14 @@ test('F3 (rewritten BEHAVIOURAL, F-52): archiveSheetRowsOlderThan_ really stops 
   };
   const mkArchive = () => {
     const written = [];
-    return {
-      written,
+    // C1 (cycle 22): a GRID, like Sheets — a small one, so these runs must
+    // grow it, and a write past it throws exactly as the real range does.
+    let maxRows = 5;
+    const arc = {
+      written, grows: 0,
       getLastRow: () => written.length,
+      getMaxRows: () => maxRows,
+      insertRowsAfter: (after, n) => { assert.strictEqual(after, maxRows, 'grows from the grid end'); maxRows += n; arc.grows++; },
       getMaxColumns: () => 2,
       insertColumnsAfter: () => {},
       // Sheets REFUSES a zero-row range ("number of rows must be at least 1"),
@@ -26065,9 +26070,11 @@ test('F3 (rewritten BEHAVIOURAL, F-52): archiveSheetRowsOlderThan_ really stops 
       // production class this harness exists to avoid (INV-185).
       getRange: (r, c, n) => {
         assert.ok(n >= 1, 'a zero-row setValues would THROW in Sheets — the mover must return before appending nothing');
+        if (r + n - 1 > maxRows) throw new Error('The coordinates of the range are outside the dimensions of the sheet.');
         return { setValues: (b) => { b.forEach((x) => written.push(x)); } };
       },
     };
+    return arc;
   };
   const CUT = Date.parse('2026-06-01T00:00:00Z');
 
@@ -26080,6 +26087,7 @@ test('F3 (rewritten BEHAVIOURAL, F-52): archiveSheetRowsOlderThan_ really stops 
   const moved = sb.archiveSheetRowsOlderThan_(src1, arc1, 0, CUT, { maxRows: 7, width: 2 });
   assert.strictEqual(moved, 7, 'exactly the bound moved');
   assert.strictEqual(arc1.written.length, 7, 'and exactly the bound landed in the archive');
+  assert.ok(arc1.grows >= 1, 'C1: a block bigger than the archive grid GROWS it first (it threw before, every night)');
   assert.strictEqual(src1.rows.length, 1 + 33 - 7, 'the source shrank by exactly the bound');
   assert.ok(flushes > 0, 'the archive write is flushed BEFORE the deletes (an unflushed append + a delete loses rows)');
   // Monotonic: a second run moves the NEXT batch, never the same one again.
