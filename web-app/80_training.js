@@ -107,7 +107,7 @@ function setCallNoteTrainingReply(repEmpId, noteId, reply) {
       delete subformData.trainingReplyBy;
       delete subformData.trainingReplyAt;
     }
-    sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+    sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(subformData)));
 
     const dateLocal = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
     writeAuditLog_(target, 'CallNoteTrainingReply', dateLocal, '', false, 0,
@@ -302,7 +302,7 @@ function getOrCreateTrainSheet_(tabName, headers) {
   let sheet = ss.getSheetByName(tabName);
   if (!sheet) {
     sheet = ss.insertSheet(tabName);
-    sheet.appendRow(headers);
+    sheet.appendRow(sheetSafeRow_(headers));
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
   }
@@ -484,7 +484,7 @@ function markTrainingComplete(itemId) {
     const now = new Date();
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
     getOrCreateTrainSheet_(TRAIN_COMPLETE_TAB, TRAIN_COMPLETE_HEADERS)
-      .appendRow([emp.id, 'kb', itemId, ts, 'read', '']);
+      .appendRow(sheetSafeRow_([emp.id, 'kb', itemId, ts, 'read', '']));
     writeAuditLog_(emp, 'TrainingComplete', fmtDate_(now), '', false, 0,
       'itemId=' + itemId + '; via=read');
     pendingTasksBust_(emp.id);                                   // F4
@@ -637,7 +637,7 @@ function saveTrainingAssignment(payload) {
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
     const writeIds = allMode ? ['*'] : targets;
     writeIds.forEach(function (empId) {
-      sheet.appendRow([Utilities.getUuid(), itemType, itemId, empId, callerEmp.email, ts, dueDate, '']);
+      sheet.appendRow(sheetSafeRow_([Utilities.getUuid(), itemType, itemId, empId, callerEmp.email, ts, dueDate, '']));
     });
     writeAuditLog_(callerEmp, 'TrainingAssign', fmtDate_(now), '', false, 0,
       'itemType=' + itemType + '; itemId=' + itemId + '; targets=' + (allMode ? 'all' : targets.length) + (dueDate ? '; due=' + dueDate : ''),
@@ -681,7 +681,7 @@ function revokeTrainingAssignment(assignId) {
       const ssTz = getKbSS_().getSpreadsheetTimeZone();
       if (trainCellTs_(revokedCell.getValue(), ssTz)) return { success: true, alreadyRevoked: true };
       const now = new Date();
-      revokedCell.setValue(fmtDate_(now) + ' ' + fmtTime_(now));
+      revokedCell.setValue(sheetSafe_(fmtDate_(now) + ' ' + fmtTime_(now)));
       writeAuditLog_(callerEmp, 'TrainingRevoke', fmtDate_(now), '', false, 0,
         'assignId=' + assignId, callerEmp.email);
       return { success: true };
@@ -884,10 +884,10 @@ function submitQuizAttempt(quizId, answers) {
     const now = new Date();
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
     const attemptId = Utilities.getUuid();
-    getOrCreateTrainSheet_(TRAIN_ATTEMPT_TAB, TRAIN_ATTEMPT_HEADERS).appendRow([
+    getOrCreateTrainSheet_(TRAIN_ATTEMPT_TAB, TRAIN_ATTEMPT_HEADERS).appendRow(sheetSafeRow_([
       attemptId, quizId, emp.id, ts, graded.scorePct, passed ? 'TRUE' : 'FALSE',
       JSON.stringify(graded.perQuestion),
-    ]);
+    ]));
     const stats = trainAttemptStats_(trainReadAttempts_(emp.id), quizId, a.assignedAt);
     // Completion: only on a pass, and only once per assignment round.
     let alreadyComplete = false;
@@ -899,7 +899,7 @@ function submitQuizAttempt(quizId, answers) {
       }
       if (!alreadyComplete) {
         getOrCreateTrainSheet_(TRAIN_COMPLETE_TAB, TRAIN_COMPLETE_HEADERS)
-          .appendRow([emp.id, 'quiz', quizId, ts, 'quiz', attemptId]);
+          .appendRow(sheetSafeRow_([emp.id, 'quiz', quizId, ts, 'quiz', attemptId]));
       }
     }
     writeAuditLog_(emp, 'QuizAttempt', fmtDate_(now), '', false, 0,
@@ -955,8 +955,8 @@ function saveQuiz(def) {
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
     const rowVals = [quizId, v.quiz.title, v.quiz.kbItemId, v.quiz.passPct, qJson, callerEmp.email, ts];
     const existing = trainReadQuizzes_()[quizId];
-    if (existing) sheet.getRange(existing.rowIdx, 1, 1, TRAIN_QUIZ_HEADERS.length).setValues([rowVals]);
-    else sheet.appendRow(rowVals);
+    if (existing) sheet.getRange(existing.rowIdx, 1, 1, TRAIN_QUIZ_HEADERS.length).setValues(sheetSafeRows_([rowVals]));
+    else sheet.appendRow(sheetSafeRow_(rowVals));
     writeAuditLog_(callerEmp, 'QuizSave', fmtDate_(now), '', false, 0,
       'quizId=' + quizId + '; questions=' + v.quiz.questions.length + '; passPct=' + v.quiz.passPct, callerEmp.email);
     return { success: true, quizId: quizId };

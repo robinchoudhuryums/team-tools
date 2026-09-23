@@ -59,7 +59,7 @@ function getOrCreateKbSheet_() {
   let sheet = ss.getSheetByName(CONFIG.KB.TAB);
   if (!sheet) {
     sheet = ss.insertSheet(CONFIG.KB.TAB);
-    sheet.appendRow(KB_HEADERS);
+    sheet.appendRow(sheetSafeRow_(KB_HEADERS));
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, KB_HEADERS.length).setFontWeight('bold');
   } else {
@@ -71,7 +71,7 @@ function getOrCreateKbSheet_() {
     // getCallNotesSheet_.
     const hdr = sheet.getRange(1, 1, 1, KB_HEADERS.length).getValues()[0];
     if (String(hdr[KB_HEADERS.length - 1]) !== KB_HEADERS[KB_HEADERS.length - 1]) {
-      sheet.getRange(1, 1, 1, KB_HEADERS.length).setValues([KB_HEADERS]).setFontWeight('bold');
+      sheet.getRange(1, 1, 1, KB_HEADERS.length).setValues(sheetSafeRows_([KB_HEADERS])).setFontWeight('bold');
     }
   }
   return sheet;
@@ -464,7 +464,7 @@ function getOrCreateKbViewsSheet_() {
   let sheet = ss.getSheetByName(KB_VIEWS_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(KB_VIEWS_TAB);
-    sheet.appendRow(KB_VIEWS_HEADERS);
+    sheet.appendRow(sheetSafeRow_(KB_VIEWS_HEADERS));
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, KB_VIEWS_HEADERS.length).setFontWeight('bold');
   }
@@ -486,9 +486,9 @@ function kbRecordView(itemId, context) {
     const id = String(itemId || '').trim().substring(0, 100);
     if (!id) return { success: false, error: 'Missing item id.' };
     const ctx = String(context || '').replace(/[^a-zA-Z0-9:_-]/g, '').substring(0, 40);
-    getOrCreateKbViewsSheet_().appendRow([
+    getOrCreateKbViewsSheet_().appendRow(sheetSafeRow_([
       fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), id, emp.id, ctx,
-    ]);
+    ]));
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
@@ -2030,7 +2030,7 @@ function kbImportDataTable(tabKey, csvBase64, opts) {
     // what the operator's file says (INV-64 — a foreign-authored sheet is
     // never reinterpreted; here we are the one authoring it, so we pin it).
     range.setNumberFormat('@');
-    range.setValues(grid);
+    range.setValues(sheetTextRows_(grid, null));   // S2: the whole block was just formatted '@' — raw, no apostrophe
     sh.setFrozenRows(1);
     SpreadsheetApp.flush();
 
@@ -2157,7 +2157,7 @@ function kbMarkReviewed(id) {
     }
     if (found < 0) return { success: false, error: 'Item not found.' };
     const now = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
-    sheet.getRange(found, KB.REVIEWED_AT + 1, 1, 2).setValues([[now, emp.email]]);
+    sheet.getRange(found, KB.REVIEWED_AT + 1, 1, 2).setValues(sheetSafeRows_([[now, emp.email]]));
     writeAuditLog_(emp, 'KbItemReviewed', '', '', false, 0, 'id=' + id, emp.email);
     return { success: true, reviewedAt: now };
   } catch (err) { return { success: false, error: err.message }; }
@@ -2248,7 +2248,7 @@ function getOrCreateKbFeedbackSheet_() {
   let sheet = ss.getSheetByName(KB_FEEDBACK_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(KB_FEEDBACK_TAB);
-    sheet.appendRow(KB_FEEDBACK_HEADERS);
+    sheet.appendRow(sheetSafeRow_(KB_FEEDBACK_HEADERS));
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, KB_FEEDBACK_HEADERS.length).setFontWeight('bold');
   }
@@ -2259,7 +2259,7 @@ function getOrCreateKbRequestsSheet_() {
   let sheet = ss.getSheetByName(KB_REQUESTS_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(KB_REQUESTS_TAB);
-    sheet.appendRow(KB_REQUESTS_HEADERS);
+    sheet.appendRow(sheetSafeRow_(KB_REQUESTS_HEADERS));
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, KB_REQUESTS_HEADERS.length).setFontWeight('bold');
   }
@@ -2407,9 +2407,9 @@ function kbFlagItem(itemId, kind, note) {
     const k = String(kind || '').trim();
     if (!KB_FEEDBACK_KINDS[k]) return { success: false, error: 'Unknown feedback kind.' };
     const n = (k === 'stale') ? String(note || '').trim().substring(0, KB_FEEDBACK_NOTE_MAX) : '';
-    getOrCreateKbFeedbackSheet_().appendRow([
+    getOrCreateKbFeedbackSheet_().appendRow(sheetSafeRow_([
       fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), id, emp.id, emp.name, k, n,
-    ]);
+    ]));
     if (k === 'stale') writeAuditLog_(emp, 'KbItemFlagged', '', '', false, 0, 'id=' + id, emp.email);
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
@@ -2420,7 +2420,7 @@ function getOrCreateKbCommentsSheet_() {
   let sheet = ss.getSheetByName(KB_COMMENTS_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(KB_COMMENTS_TAB);
-    sheet.appendRow(KB_COMMENTS_HEADERS);
+    sheet.appendRow(sheetSafeRow_(KB_COMMENTS_HEADERS));
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, KB_COMMENTS_HEADERS.length).setFontWeight('bold');
   }
@@ -2461,9 +2461,9 @@ function kbAddComment(itemId, text) {
     }
     if (!kbCommentTargetOk_(emp, id)) return { success: false, error: 'Not found.' };
     const commentId = Utilities.getUuid();
-    getOrCreateKbCommentsSheet_().appendRow([
+    getOrCreateKbCommentsSheet_().appendRow(sheetSafeRow_([
       commentId, id, emp.id, emp.name, t, Date.now(), 'active',   // AtMs: NUMBER cell — coercion-immune
-    ]);
+    ]));
     writeAuditLog_(emp, 'KbCommentAdd', '', '', false, 0, 'id=' + id + '; commentId=' + commentId, emp.email);
     return { success: true, commentId: commentId };
   } catch (err) { return { success: false, error: err.message }; }
@@ -2525,7 +2525,7 @@ function kbDeleteComment(commentId) {
       if (String(row[KBC.EMP_ID] || '') !== String(emp.id) && !emp.isManager) {
         return { success: false, error: 'You can only remove your own comments.' };
       }
-      sheet.getRange(rowIdx, KBC.STATUS + 1).setValue('deleted');
+      sheet.getRange(rowIdx, KBC.STATUS + 1).setValue(sheetSafe_('deleted'));
       writeAuditLog_(emp, 'KbCommentDelete', '', '', false, 0, 'commentId=' + wanted, emp.email);
       return { success: true };
     }
@@ -2569,7 +2569,7 @@ function kbEditComment(commentId, text) {
       if (String(row[KBC.EMP_ID] || '') !== String(emp.id)) {
         return { success: false, error: 'You can only edit your own comments.' };
       }
-      sheet.getRange(rowIdx, KBC.TEXT + 1).setValue(t);
+      sheet.getRange(rowIdx, KBC.TEXT + 1).setValue(sheetSafe_(t));
       writeAuditLog_(emp, 'KbCommentEdit', '', '', false, 0, 'commentId=' + wanted, emp.email);
       return { success: true };
     }
@@ -2594,9 +2594,9 @@ function kbRequestArticle(topic, note, query) {
     const n = String(note || '').trim().substring(0, KB_REQUEST_NOTE_MAX);
     const q = String(query || '').trim().substring(0, KB_REQUEST_TOPIC_MAX);
     const reqId = Utilities.getUuid();
-    getOrCreateKbRequestsSheet_().appendRow([
+    getOrCreateKbRequestsSheet_().appendRow(sheetSafeRow_([
       fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), reqId, emp.id, emp.name, t, n, q, 'open', '', '',
-    ]);
+    ]));
     writeAuditLog_(emp, 'KbContentRequest', '', '', false, 0, 'reqId=' + reqId, emp.email);
     return { success: true, reqId: reqId };
   } catch (err) { return { success: false, error: err.message }; }
@@ -2658,8 +2658,8 @@ function kbResolveContentRequest(reqId, action) {
     for (let i = 0; i < ids.length; i++) { if (String(ids[i][0]).trim() === reqId) { found = i + 2; break; } }
     if (found < 0) return { success: false, error: 'Request not found.' };
     const now = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
-    sheet.getRange(found, KBR.STATUS + 1, 1, 1).setValue(act);
-    sheet.getRange(found, KBR.RESOLVED_AT + 1, 1, 2).setValues([[now, emp.email]]);
+    sheet.getRange(found, KBR.STATUS + 1, 1, 1).setValue(sheetSafe_(act));
+    sheet.getRange(found, KBR.RESOLVED_AT + 1, 1, 2).setValues(sheetSafeRows_([[now, emp.email]]));
     writeAuditLog_(emp, 'KbContentRequestResolve', '', '', false, 0, 'reqId=' + reqId + '; action=' + act, emp.email);
     return { success: true, action: act };
   } catch (err) { return { success: false, error: err.message }; }
@@ -2725,9 +2725,9 @@ function kbSaveItem(payload) {
       if (found > 0) {
         // #4 — snapshot the PRIOR content to the revision log before overwriting.
         kbAppendRevision_(prior, emp.email, 'edit');
-        sheet.getRange(found, 1, 1, KB_HEADERS.length).setValues([rowVals]);
+        sheet.getRange(found, 1, 1, KB_HEADERS.length).setValues(sheetSafeRows_([rowVals]));
       } else {
-        sheet.appendRow(rowVals);
+        sheet.appendRow(sheetSafeRow_(rowVals));
       }
       invalidateKbCache_();
       writeAuditLog_(emp, 'KbItemSave', '', '', false, 0,
@@ -2780,7 +2780,7 @@ function getOrCreateKbRevisionsSheet_() {
   let sheet = ss.getSheetByName(KB_REVISIONS_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(KB_REVISIONS_TAB);
-    sheet.appendRow(KB_REVISIONS_HEADERS);
+    sheet.appendRow(sheetSafeRow_(KB_REVISIONS_HEADERS));
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, KB_REVISIONS_HEADERS.length).setFontWeight('bold');
   }
@@ -2794,7 +2794,7 @@ function kbAppendRevision_(prior, replacedBy, action) {
     if (!prior) return;
     const sheet = getOrCreateKbRevisionsSheet_();
     const ssTz = sheet.getParent().getSpreadsheetTimeZone();
-    sheet.appendRow([
+    sheet.appendRow(sheetSafeRow_([
       fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
       Utilities.getUuid(),
       String(prior[KB.ID] || ''),
@@ -2807,7 +2807,7 @@ function kbAppendRevision_(prior, replacedBy, action) {
       String(prior[KB.UPDATED_BY] || ''),
       replacedBy,
       action,
-    ]);
+    ]));
   } catch (e) { /* best-effort */ }
 }
 /** #4 — admin-gated, read-only. The revision history for one item, newest-first,
@@ -2896,7 +2896,7 @@ function kbRevertItem(id, revId) {
       now, emp.email, now, emp.email,
       kbRowStatus_(cur[KB.STATUS]),
     ];
-    kbSheet.getRange(found, 1, 1, KB_HEADERS.length).setValues([restored]);
+    kbSheet.getRange(found, 1, 1, KB_HEADERS.length).setValues(sheetSafeRows_([restored]));
     invalidateKbCache_();
     writeAuditLog_(emp, 'KbItemRevert', '', '', false, 0, 'id=' + id + '; revId=' + revId, emp.email);
     return { success: true, id: id };
@@ -2921,7 +2921,7 @@ function kbPublishItem(id) {
       for (let i = 0; i < ids.length; i++) { if (String(ids[i][0]) === id) { found = i + 2; break; } }
     }
     if (found < 0) return { success: false, error: 'Item not found.' };
-    sheet.getRange(found, KB.STATUS + 1, 1, 1).setValue(KB_STATUS_PUBLISHED);
+    sheet.getRange(found, KB.STATUS + 1, 1, 1).setValue(sheetSafe_(KB_STATUS_PUBLISHED));
     invalidateKbCache_();
     writeAuditLog_(emp, 'KbItemPublish', '', '', false, 0, 'id=' + id, emp.email);
     return { success: true, id: id };

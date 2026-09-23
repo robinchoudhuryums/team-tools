@@ -239,11 +239,11 @@ function createCoaching(payload) {
     const coachId = Utilities.getUuid();
     const now = new Date();
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
-    getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS).appendRow([
+    getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS).appendRow(sheetSafeRow_([
       coachId, target.id, target.name, v.item.patientTRX, v.item.severity,
       v.item.whatHappened, v.item.whatShould, v.item.noteId, 'open',
       callerEmp.email, ts, '', '', '', '', v.item.followUpAt, '', v.item.noteDate, v.item.qaFileId,
-    ]);
+    ]));
     writeAuditLog_(callerEmp, 'CoachingCreate', fmtDate_(now), '', false, 0,
       'coachId=' + coachId + '; empId=' + target.id + '; severity=' + v.item.severity, callerEmp.email);
     result = { success: true, coachId: coachId };
@@ -325,10 +325,10 @@ function acknowledgeCoaching(coachId, response) {
     const now = new Date();
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
     const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
-    sheet.getRange(found.rowIdx, CO.STATUS + 1).setValue('acknowledged');
-    sheet.getRange(found.rowIdx, CO.ACK_AT + 1).setValue(ts);
-    sheet.getRange(found.rowIdx, CO.ACK_BY + 1).setValue(emp.email);
-    if (reply) sheet.getRange(found.rowIdx, CO.REP_RESPONSE + 1).setValue(reply);
+    sheet.getRange(found.rowIdx, CO.STATUS + 1).setValue(sheetSafe_('acknowledged'));
+    sheet.getRange(found.rowIdx, CO.ACK_AT + 1).setValue(sheetSafe_(ts));
+    sheet.getRange(found.rowIdx, CO.ACK_BY + 1).setValue(sheetSafe_(emp.email));
+    if (reply) sheet.getRange(found.rowIdx, CO.REP_RESPONSE + 1).setValue(sheetSafe_(reply));
     writeAuditLog_(emp, 'CoachingAck', fmtDate_(now), '', false, 0,
       'coachId=' + found.item.coachId + '; ackAt=' + ts);
     notifyAfter = function () { notifyManagerOfCoachingAck_(found.item, emp, !!reply); };   // M-7: post-lock
@@ -409,13 +409,13 @@ function voidCoaching(coachId, reason) {
     if (!found) return { success: false, error: 'Coaching item not found.' };
     if (!coachCanManagerSee_(callerEmp, found.item)) return { success: false, error: 'Coaching item not found.' };
     const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
-    sheet.getRange(found.rowIdx, CO.STATUS + 1).setValue('void');
+    sheet.getRange(found.rowIdx, CO.STATUS + 1).setValue(sheetSafe_('void'));
     // F(cycle-8 M-6): the reason (free text plausibly naming a patient/TRX —
     // "logged against wrong patient, TRX 4482…") persists in the team-scoped
     // HR store's VoidReason column, NEVER in the shared PHI-free AuditLog
     // (INV-134/INV-32 — the row previously carried `reason=` and surfaced in
     // the compliance panel + admin sheet viewer). Mirrors voidDoc.
-    if (reason) sheet.getRange(found.rowIdx, CO.VOID_REASON + 1).setValue(String(reason).slice(0, 500));
+    if (reason) sheet.getRange(found.rowIdx, CO.VOID_REASON + 1).setValue(sheetSafe_(String(reason).slice(0, 500)));
     writeAuditLog_(callerEmp, 'CoachingVoid', '', '', false, 0,
       'coachId=' + found.item.coachId, callerEmp.email);
     if (found.item.severity === 'critical' && found.item.status !== 'void') {
@@ -444,7 +444,7 @@ function setCoachingFollowUp(coachId, dateOrNull) {
     if (!found || !coachCanManagerSee_(callerEmp, found.item)) return { success: false, error: 'Coaching item not found.' };
     if (found.item.status === 'void') return { success: false, error: 'This item is no longer active.' };
     const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
-    sheet.getRange(found.rowIdx, CO.FOLLOW_UP_AT + 1).setValue(iso);
+    sheet.getRange(found.rowIdx, CO.FOLLOW_UP_AT + 1).setValue(sheetSafe_(iso));
     writeAuditLog_(callerEmp, 'CoachingFollowUp', '', '', false, 0,
       'coachId=' + found.item.coachId + '; set=' + (iso ? 'yes' : 'cleared'), callerEmp.email);
     return { success: true, followUpAt: iso };
@@ -490,7 +490,7 @@ function nudgeCoaching(coachId) {
     const now = new Date();
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
     const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
-    sheet.getRange(found.rowIdx, CO.NUDGED_AT + 1).setValue(ts);
+    sheet.getRange(found.rowIdx, CO.NUDGED_AT + 1).setValue(sheetSafe_(ts));
     writeAuditLog_(callerEmp, 'CoachingNudge', fmtDate_(now), '', false, 0,
       'coachId=' + found.item.coachId, callerEmp.email);
     result = { success: true, nudgedAt: ts, mailed: false };

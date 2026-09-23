@@ -417,6 +417,11 @@ const sb = buildSandbox([
   'script_core.html',
   'metrics/script_metrics.html',
 ]);
+// Cycle 22 S2: every server write wraps its value in the sheet-safe helpers, so
+// a server writer driven in this sandbox needs them — the REAL ones, never a
+// pass-through stub, or the pins would drive code that no longer ships.
+['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_'].forEach((f) =>
+  vm.runInContext(extractRawFunction('Code.js', f), sb, { filename: 'Code.js#' + f }));
 // cnExtEmailPillHtml_ is extracted standalone rather than loading the whole
 // 6500-line Call Notes partial — it only needs esc (core) + icon (icons).
 const cnExtEmailPillHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtEmailPillHtml_');
@@ -5669,7 +5674,7 @@ test('F11: the two growing SubformData arrays are bounded (count + serialized si
   const stampRegion = ext.slice(ext.indexOf('cnAppendBounded_'));
   assert.ok(/console\.warn/.test(stampRegion.slice(0, 500)),
     'a rejected stamp logs (INV-42: never fail an already-sent email)');
-  assert.ok(/\} else \{[\s\S]{0,200}setValue\(JSON\.stringify\(subformData\)\)/.test(stampRegion),
+  assert.ok(/\} else \{[\s\S]{0,200}setValue\(sheetSafe_\(JSON\.stringify\(subformData\)\)\)/.test(stampRegion),
     'the cell is written ONLY when the append was accepted');
 
   // The non-growing writes (flag / resolve / pin) must stay unguarded so an
@@ -7193,7 +7198,7 @@ test('C17-2: updateTimeOffStatus reads TO.STATUS once and compares lowercase', (
   assert.ok(/oldStatus === 'reconciled'/.test(body), 'the S1.3 terminal guard compares lowercase');
   assert.ok(!/oldStatus\s*(?:!==|===)\s*'(?:Approved|Reconciled|Pending|Denied)'/.test(body),
     'a capitalized comparison against the normalized local remains — the pre-C17-2 shape');
-  assert.ok(/setValue\(oldStatusRaw\)/.test(body), 'the compensating revert writes the RAW cell back');
+  assert.ok(/setValue\(sheetSafe_\(oldStatusRaw\)\)/.test(body), 'the compensating revert writes the RAW cell back');
   assert.ok(/oldStatus !== newStatus\.toLowerCase\(\)/.test(body),
     'the notify no-op check compares both sides normalized');
 });
@@ -8082,7 +8087,7 @@ test('addEmployee / offboardEmployee / getOnboardingPanel — gate, lock, and co
   // one cell write, aimed at column A — never a row delete, never the name.
   const writes = off.match(/setValue\(/g) || [];
   assert.strictEqual(writes.length, 1, 'offboard writes exactly ONE cell');
-  assert.ok(/EMP\.EMAIL \+ 1\)\.setValue\(''\)/.test(off), 'the one write clears the EMAIL cell');
+  assert.ok(/EMP\.EMAIL \+ 1\)\.setValue\(sheetSafe_\(''\)\)/.test(off), 'the one write clears the EMAIL cell');
   assert.ok(!/deleteRow/.test(off), 'the row is never deleted — history keeps reading');
   assert.ok(/cannot offboard yourself/.test(off), 'self-offboard is rejected (would lock the caller out mid-session)');
   const panel = strip(extractRawFunction('Code.js', 'getOnboardingPanel'));
@@ -10342,7 +10347,7 @@ test('BOOT-2: the boot send is DEFERRED to the landing view\'s first paint (or a
   assert.ok(/function recordViewEnter\(viewKey, mode, timing\)/.test(srv), 'timing is the 3rd arg');
   assert.ok(/emp\.id, v, m, viewUsageTimingCell_\(timing\),/.test(srv), 'sanitized into the trailing cell of the same row');
   const sheet = nc(extractRawFunction('Code.js', 'getOrCreateViewUsageSheet_'));
-  assert.ok(/getLastColumn\(\) < VIEW_USAGE_WIDTH/.test(sheet) && /setValue\('BootTiming'\)/.test(sheet), 'the header self-heals (CN_HEADERS posture)');
+  assert.ok(/getLastColumn\(\) < VIEW_USAGE_WIDTH/.test(sheet) && /setValue\(sheetSafe_\('BootTiming'\)\)/.test(sheet), 'the header self-heals (CN_HEADERS posture)');
   const stats = nc(extractRawFunction('Code.js', 'getViewUsageStats'));
   assert.ok(/VIEW_USAGE_WIDTH\)\.getValues\(\)/.test(stats) && /timing: viewUsageTimingParse_\(data\[i\]\[4\]\)/.test(stats), 'the reader parses the trailing cell');
   // Client: ordering + deferral.
@@ -11263,7 +11268,7 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
     'credits go through THE balance mutator (per-row gate + cache invalidation ride along) — per MONTH since F-19');
   // The forward-stamp NO-OP above is only a no-op because the caller's write is
   // CONDITIONAL on the stamp actually changing. Both halves or neither.
-  assert.ok(/if \(p\.stamp !== p\.plan\.newStamp\) \{[\s\S]{0,200}?EMP\.ACCRUED_THROUGH \+ 1\)\.setValue\(p\.plan\.newStamp\)/.test(h[0]),
+  assert.ok(/if \(p\.stamp !== p\.plan\.newStamp\) \{[\s\S]{0,200}?EMP\.ACCRUED_THROUGH \+ 1\)\.setValue\(sheetSafe_\(p\.plan\.newStamp\)\)/.test(h[0]),
     'the stamp cell is written ONLY when the plan changes it (so a forward stamp is left alone)');
   assert.ok(h[0].indexOf('adjustLeaveBalance_') < h[0].indexOf('EMP.ACCRUED_THROUGH + 1'),
     'credit + audit land BEFORE the stamp advances — a mid-run failure fails toward a VISIBLE re-credit');
@@ -12939,7 +12944,7 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
     const sheet = strip(extractRawFunction('Code.js', 'scratchpadSheet_'));
     assert.ok(/setNumberFormat\('@'\)/.test(sheet), 'A1 pinned to PLAIN TEXT at provision — the coercion class dodged at write time');
     assert.ok(/callNotesSheetId/.test(sheet) && /not configured/.test(sheet), 'gated on the caller\'s own enrollment (per-rep isolation by construction)');
-    assert.ok(/setValue\(now\)/.test(save) && /const now = Date\.now\(\)/.test(save), 'updatedAt is an epoch-ms NUMBER cell');
+    assert.ok(/setValue\(sheetSafe_\(now\)\)/.test(save) && /const now = Date\.now\(\)/.test(save), 'updatedAt is an epoch-ms NUMBER cell');
     assert.ok(!/writeAuditLog_/.test(save), 'no audit row per save (high-frequency own-store write — the kbRecordView posture, documented)');
     // Editor coverage registered + fixture-tab cleanup in the test itself.
     assert.ok(/_integrationTest\('scratchpad_saveReadRoundTrip'/.test(tests), 'editor round-trip test registered');
@@ -12991,7 +12996,7 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
     // literal, so using it here would demand a gate test that cannot pass).
     assert.ok(/your own comments/.test(del), 'ownership refusal message');
     assert.ok(!/Manager access required/.test(add + get + del), 'never the gate literal');
-    assert.ok(/setValue\('deleted'\)/.test(del) && !/deleteRow/.test(del), 'moderation is SOFT-delete (append-only posture)');
+    assert.ok(/setValue\(sheetSafe_\('deleted'\)\)/.test(del) && !/deleteRow/.test(del), 'moderation is SOFT-delete (append-only posture)');
     [get, del].forEach((f) => assert.ok(/KB_COMMENTS_SCAN/.test(f), 'bounded tail reads'));
     assert.ok(/total: all\.length, cap: KB_COMMENTS_LIST_CAP/.test(get), 'pre-slice total + cap ride the payload (INV-169)');
     // INV-32: the audit notes are built from IDS ONLY — the comment text
@@ -15370,7 +15375,7 @@ test('wiring: validate-before-send, post-hash marking, owner-only source, append
     const hashAt = f.indexOf('!== expectedBodyHash');
     const amendAt = f.indexOf("'AMENDED: '");
     assert.ok(hashAt >= 0 && amendAt > hashAt, fn + ': marking applied post-hash (INV-41 untouched)');
-    assert.ok(/amendId,\n\s*\]\);/.test(f) || /imgCount, amendId,/.test(f), fn + ' persists AmendsId on the NEW row (append-only chain)');
+    assert.ok(/amendId,\n\s*\]\)\);/.test(f) || /imgCount, amendId,/.test(f), fn + ' persists AmendsId on the NEW row (append-only chain)');
     assert.ok(/amends=/.test(f), fn + ' audit row carries amends= (id only — PHI-free, INV-32)');
   });
   // Schema: trailing AmendsId on BOTH header constants + the one-shot self-heal.
@@ -15744,7 +15749,7 @@ test('DT-3: the import is allowlisted, dry by default, admin-gated, plain-text-f
   assert.ok(/Unknown data table/.test(f), 'and an unlisted tab is refused by name');
   assert.ok(/dryRun = o\.dryRun !== false/.test(f), 'dryRun defaults TRUE — a bare call can never write');
   const gate = f.indexOf("'Admin access required.'");
-  const write = f.indexOf('range.setValues(grid)');
+  const write = f.indexOf('range.setValues(sheetTextRows_(grid, null))');
   assert.ok(gate > -1 && write > -1 && gate < write, 'the admin gate fires before any write (INV-136)');
   assert.ok(/setNumberFormat\('@'\)/.test(f) && f.indexOf("setNumberFormat('@')") < write,
     'the range is pinned to plain text BEFORE the write — a payor named "Aetna 5-2024" must not coerce to a date');
@@ -16231,7 +16236,7 @@ test('QA-3: qaSyncRecordings — gated, idempotent before any write, bounded + t
   // a bare indexOf('known[id]') also matches the `known[id] = true` builder,
   // so deleting the skip passed the first form of this pin (bite-caught).
   const knownIdx = f.indexOf('if (known[id]) continue;');
-  const writeIdx = f.indexOf('setValues');
+  const writeIdx = f.indexOf('appendRowsTextSafe_(sheet, rows');   // S2: the one write (raw into '@' columns)
   assert.ok(knownIdx > -1 && writeIdx > knownIdx, 'existing FileIds are skipped BEFORE any write — a re-run is a no-op (idempotent)');
   assert.ok(/QA_SYNC_MAX_FILES/.test(f) && /truncated = true/.test(f) && /truncated: truncated/.test(f),
     'bounded per run with the truncation REPORTED (INV-169)');
@@ -16257,7 +16262,7 @@ test('QA-4: QA comments — QA-gated, target-must-exist, bounded anchor, refuse-
   assert.ok(/fileId=' \+ fid \+ '; commentId=' \+ commentId/.test(add),
     'the audit row is id-only — comment text may name a patient, so it stays in the QA store');
   const del = nc(extractRawFunction('Code.js', 'qaDeleteComment'));
-  assert.ok(/setValue\('deleted'\)/.test(del) && !/deleteRow/.test(del), 'soft-delete — rows are never removed (the kbDeleteComment shape)');
+  assert.ok(/setValue\(sheetSafe_\('deleted'\)\)/.test(del) && !/deleteRow/.test(del), 'soft-delete — rows are never removed (the kbDeleteComment shape)');
   assert.ok(/!== String\(emp\.id\) && !emp\.isManager/.test(del), 'author-or-manager moderation');
   const list = nc(extractRawFunction('Code.js', 'qaListComments'));
   assert.ok(/QA_COMMENTS_SCAN/.test(list), 'bounded tail read');
@@ -16871,7 +16876,7 @@ test('QA-9: scorecard save contract — criteria sanitize, reject-unknown-key, t
     'rating bounds enforced — per TYPE, through the one normalizer (QA Log round, 2026-09-04)');
   assert.ok(save.indexOf('Notes are capped at') >= 0, 'over-cap notes REFUSE with the count (INV-96)');
   const existsIdx = save.indexOf('qaFindRecordingRow_(recSheet, fid)');
-  const appendIdx = save.indexOf('.appendRow([');
+  const appendIdx = save.indexOf('appendRowsTextSafe_(getOrCreateQaScorecardsSheet_()');
   assert.ok(existsIdx >= 0 && appendIdx > existsIdx,
     'target-must-exist BEFORE the append — a junk fileId cannot seed rows (the qaAddComment posture)');
   // Id-only audit, matched to the CALL TAIL (the notes string carries no
@@ -16899,7 +16904,10 @@ test('QA-10: Phase 2 wiring — agent boundary, headers, stats gate, waveform fa
   const mk = nc(extractRawFunction('Code.js', 'getOrCreateQaSheet_'));
   assert.ok(/sheet\.getLastColumn\(\) < headers\.length/.test(mk) && /headers\.slice\(have\)/.test(mk),
     'a short header self-heals in place (a QaRecordings tab provisioned before PR 5 gains the two columns)');
-  assert.ok(/QA_RECORDINGS_HEADERS, \['A', 'B', 'K', 'N', 'O'\]/.test(stripped), 'SkipReason (col N) and AgentId (col O) are plain-text-pinned like the other free-text columns');
+  // S2: the '@' columns are ONE index list per tab (the letters derive from it).
+  assert.ok(/QA_RECORDINGS_HEADERS, QA_RECORDINGS_TEXT_IDX\)/.test(stripped) &&
+    /const QA_RECORDINGS_TEXT_IDX = \[QAR\.FILE_ID, QAR\.NAME, QAR\.AGENT, QAR\.SKIP_REASON, QAR\.AGENT_ID\];/.test(serverSource()),
+    'SkipReason (col N) and AgentId (col O) are plain-text-pinned like the other free-text columns');
   const setAgent = nc(extractRawFunction('Code.js', 'qaSetRecordingAgent'));
   assert.ok(/'QA access required\.'/.test(setAgent) && /substring\(0, 80\)/.test(setAgent),
     'agent set is QA-gated and bounded');
@@ -16993,7 +17001,7 @@ test('QA-11: qaSamplePick_ coverage-fair behavioral + sample endpoint assigns to
   assert.ok(/qaStatus_\(rows\[i\]\[QAR\.STATUS\]\) !== 'new'\) continue;/.test(src) &&
             /String\(rows\[i\]\[QAR\.ASSIGNEE\] \|\| ''\)\.trim\(\)\) continue;/.test(src),
     'candidates are status-new AND unassigned only');
-  assert.ok(/picked\.forEach\(function \(c\) \{ sheet\.getRange\(c\.rowIdx, QAR\.ASSIGNEE \+ 1\)\.setValue\(self\); \}\);/.test(src),
+  assert.ok(/picked\.forEach\(function \(c\) \{ sheet\.getRange\(c\.rowIdx, QAR\.ASSIGNEE \+ 1\)\.setValue\(sheetSafe_\(self\)\); \}\);/.test(src),
     'assignment writes SELF (the caller email) — no third-party target exists on this endpoint');
   assert.ok(/function qaSampleRecordings\(count, period\)/.test(src), 'the signature takes a count + the audit period — no assignee param');
   // PR 5 (Q4): load is counted ONLY for done reviews inside the period, the
@@ -17016,7 +17024,7 @@ test('QA-12: share requires attribution; getMyQaReviews is employee-gated, doubl
   // review with no attribution would share it to NOBODY while the queue pill
   // claims it is shared — refuse with the reason instead.
   const agentGuardIdx = share.indexOf("if (on && !String(found.row[QAR.AGENT] || '').trim())");
-  const writeIdx = share.indexOf('QAR.SHARED_MS + 1).setValue(ms)');
+  const writeIdx = share.indexOf('QAR.SHARED_MS + 1).setValue(sheetSafe_(ms))');
   assert.ok(agentGuardIdx >= 0 && writeIdx > agentGuardIdx,
     'sharing REFUSES until the recording is attributed to its agent, before any write');
   assert.ok(/writeAuditLog_\(emp, 'QaShare', '', '', false, 0, 'fileId=' \+ fid \+ '; shared=' \+ on, emp\.email\);/.test(share),
@@ -18723,7 +18731,7 @@ test('B3: a resume CONVERTS the clock-out into a break — it never just deletes
   // silently PAYS the gap between clocking out and coming back. The clock-out
   // becomes a BREAK instead, so the gap is unpaid — which needs no new
   // arithmetic, because calcHours_ deducts every break pair (INV-176).
-  assert.ok(/setValue\('ADJ-LunchOut'\)/.test(stripped),
+  assert.ok(/setValue\(sheetSafe_\('ADJ-LunchOut'\)\)/.test(stripped),
     'the existing row is CONVERTED in place');
   assert.ok(/appendToAdpSheet_\(targetEmp, date, inFull, 'IN', 'ADJ-LunchIn'\)/.test(stripped),
     'and the resume time closes the break');
@@ -19348,7 +19356,7 @@ test('PR4-1: server contract — 19 trailing-column headers ↔ CO indices, vali
   const rowObj = stripJsComments_(extractRawFunction('Code.js', 'coachRowToObj_'));
   ['CO.REP_RESPONSE', 'CO.FOLLOW_UP_AT', 'CO.NUDGED_AT', 'CO.NOTE_DATE', 'CO.QA_FILE_ID'].forEach((k) => assert.ok(rowObj.indexOf(k) > -1, 'coachRowToObj_ reads ' + k));
   const create = stripJsComments_(extractRawFunction('Code.js', 'createCoaching'));
-  const appendLit = /appendRow\(\[([\s\S]*?)\]\)/.exec(create)[1];
+  const appendLit = /appendRow\(sheetSafeRow_\(\[([\s\S]*?)\]\)\)/.exec(create)[1];
   assert.strictEqual(appendLit.split(',').filter((x) => x.trim()).length, headers.length, 'createCoaching appends a full-width row (a short row would leave FollowUpAt/NoteDate/QaFileId in the wrong cells)');
   assert.ok(/v\.item\.followUpAt, '', v\.item\.noteDate, v\.item\.qaFileId/.test(appendLit), 'followUpAt / noteDate / qaFileId land in their own trailing cells (NudgedAt starts blank)');
   // Validate: the three new fields are optional, normalized, and bounded.
@@ -19362,7 +19370,7 @@ test('PR4-1: server contract — 19 trailing-column headers ↔ CO indices, vali
   const ack = stripJsComments_(extractRawFunction('Code.js', 'acknowledgeCoaching'));
   const iAlready = ack.indexOf("found.item.status === 'acknowledged') return { success: true, alreadyAcknowledged: true");
   const iVoid = ack.indexOf("found.item.status === 'void') return { success: false");
-  const iReply = ack.indexOf('CO.REP_RESPONSE + 1).setValue(reply)');
+  const iReply = ack.indexOf('CO.REP_RESPONSE + 1).setValue(sheetSafe_(reply))');
   assert.ok(iAlready > -1 && iVoid > -1 && iReply > -1 && iAlready < iReply && iVoid < iReply, 'reply write sits after both terminal-state guards');
   assert.ok(/reply\.length > COACH_RESPONSE_MAX\) return \{ success: false/.test(ack), 'the reply is bounded by name');
   assert.ok(/notifyAfter = function \(\) \{ notifyManagerOfCoachingAck_\(found\.item, emp, !!reply\); \}/.test(ack), 'the manager ack mail is deferred past the lock and says whether a reply exists (M-7)');
@@ -19720,7 +19728,7 @@ test('QA-21: audit periods, eligibility, exemption + duration + skip contracts',
   assert.ok(/'Manager access required\.'/.test(ex) && !/canSeeQa_/.test(ex), 'exemptions are a manager decision');
   assert.ok(ex.indexOf("'Manager access required.'") < ex.indexOf('getOrCreateQaExemptionsSheet_'), 'gate before the store');
   assert.ok(/qaPeriodValid_\(per\)/.test(ex), 'the period is validated');
-  assert.ok(/sheet\.appendRow\(\[name, per, String\(emp\.email \|\| ''\), Date\.now\(\), active \? 'TRUE' : 'FALSE'\]\);/.test(ex), 'append-only ledger row');
+  assert.ok(/appendRowsTextSafe_\(sheet, \[\[name, per, String\(emp\.email \|\| ''\), Date\.now\(\), active \? 'TRUE' : 'FALSE'\]\], QA_EXEMPTIONS_TEXT_IDX\);/.test(ex), 'append-only ledger row');
   assert.ok(/writeAuditLog_\(emp, 'QaExemption', '', '', false, 0, 'period=' \+ per \+ '; active=' \+ active, emp\.email\);/.test(ex),
     'the audit row never carries the employee name');
   assert.ok(/waitLock\(15000\)/.test(ex) && /finally \{ lock\.releaseLock\(\); \}/.test(ex), 'locked (INV-01)');
@@ -19739,7 +19747,7 @@ test('QA-21: audit periods, eligibility, exemption + duration + skip contracts',
   const st = nc(extractRawFunction('Code.js', 'qaSetRecordingStatus'));
   assert.ok(/function qaSetRecordingStatus\(fileId, status, reason\)/.test(st));
   assert.ok(/const why = st === 'skipped' \? String\(reason \|\| ''\)\.trim\(\)\.substring\(0, QA_SKIP_REASON_MAX\) : '';/.test(st), 'reason bounded; cleared off a non-skip');
-  assert.ok(/sheet\.getRange\(found\.rowIdx, QAR\.SKIP_REASON \+ 1\)\.setValue\(why\);/.test(st));
+  assert.ok(/sheet\.getRange\(found\.rowIdx, QAR\.SKIP_REASON \+ 1\)\.setNumberFormat\('@'\)\.setValue\(sheetText_\(why\)\);/.test(st));
   assert.ok(/'fileId=' \+ fid \+ '; status=' \+ st, emp\.email\);/.test(st) && !/why, emp\.email/.test(st), 'the reason (free text, may name the caller) never reaches the shared AuditLog');
   // getQaQueue — the coverage join is best-effort WITH its outcome carried (INV-187).
   const q = nc(extractRawFunction('Code.js', 'getQaQueue'));
@@ -20225,7 +20233,7 @@ test('TZR-2: repairTimesheetTimezone is gated, dry-run by default, bounded, lock
   assert.ok(dryIdx > 0 && lockIdx > dryIdx, 'lock acquired only on apply, after the dry-run return');
   assert.ok(/finally \{\s*lock\.releaseLock\(\);\s*\}/.test(stripped), 'finally-releases (INV-01)');
   // In place: ONLY the DATE and TIME cells are written; a punch is never appended or deleted.
-  assert.ok(/getRange\(c\.row, ADP\.DATE \+ 1\)\.setValue\(c\.newDate\)/.test(stripped) && /getRange\(c\.row, ADP\.TIME \+ 1\)\.setValue\(c\.newTime\)/.test(stripped), 'writes DATE + TIME in place');
+  assert.ok(/getRange\(c\.row, ADP\.DATE \+ 1\)\.setValue\(sheetSafe_\(c\.newDate\)\)/.test(stripped) && /getRange\(c\.row, ADP\.TIME \+ 1\)\.setValue\(sheetSafe_\(c\.newTime\)\)/.test(stripped), 'writes DATE + TIME in place');
   assert.strictEqual((stripped.match(/\.setValue\(/g) || []).length, 2, 'exactly two cell writes per row — COMMENTS (the ADJ- marker) untouched');
   ['appendRow', 'deleteRow', 'insertSheet', 'getOrCreate'].forEach((w) => assert.ok(!stripped.includes(w), 'never ' + w));
   assert.ok(/writeAuditLog_\(targets\[id\], 'TimesheetTzRepair'/.test(stripped), 'one counts-only audit row per employee (INV-08)');
@@ -20348,7 +20356,7 @@ test('OPS-2: the multi-select adjust approve is ONE lock + ONE read, per-id outc
   assert.ok(/buildAdjustPunchIndex_\(empId, datesByEmp\[empId\] \|\| \{\}\)/.test(body) && /writeAdjustPunchForEmployee_\(targetEmp, date, punchType, reqTime, callerEmp\.email, reason, ctxFor\(empId\)\)/.test(body),
     'the adjust writer gets ONE Timesheet index per employee (C17-9) instead of a full read per request');
   assert.ok(/results\.push\(\{ reqId: id, success: true \}\)/.test(body) && /const fail = \(id, error\) =>/.test(body), 'per-id outcomes');
-  assert.ok(/sheet\.getRange\(i \+ 1, PAR\.STATUS \+ 1\)\.setValue\(newStatus\)/.test(body), 'the status cell flips per row');
+  assert.ok(/sheet\.getRange\(i \+ 1, PAR\.STATUS \+ 1\)\.setValue\(sheetSafe_\(newStatus\)\)/.test(body), 'the status cell flips per row');
   // Tests.js covers the new public entry on the manager tier (F9 derives the rest).
   const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
   assert.ok(/\['updatePunchAdjustStatusBulk', function \(\) \{ return updatePunchAdjustStatusBulk\(\['nonexistent'\], 'Denied'\); \}\]/.test(tests), 'omnibus gate case');
@@ -20578,7 +20586,7 @@ test('QA-26: getQaLog + qaCreateManualRecording contracts — gate shape, self-s
   assert.ok(/lock\.waitLock\(15000\)/.test(man) && /finally \{ lock\.releaseLock\(\); \}/.test(man), 'locked (INV-01)');
   assert.ok(/Give the audit a label/.test(man) && /Label is capped at/.test(man), 'label required + capped, by name');
   assert.ok(/const fid = QA_MANUAL_ID_PREFIX \+ Utilities\.getUuid\(\);/.test(man), 'the id is minted here — never a Drive id');
-  assert.ok(/appendRow\(\[\s*fid, name, 0, 'manual', now, now, 'in_review', String\(emp\.email \|\| ''\)\.trim\(\)\.toLowerCase\(\), now, '', agent, 0, 0, '',\s*\]\)/.test(man),
+  assert.ok(/appendRowsTextSafe_\(getOrCreateQaRecordingsSheet_\(\), \[\[\s*fid, name, 0, 'manual', now, now, 'in_review', String\(emp\.email \|\| ''\)\.trim\(\)\.toLowerCase\(\), now, '', agent, 0, 0, '',\s*\]\], QA_RECORDINGS_TEXT_IDX\)/.test(man),
     'the row is a FULL-WIDTH QaRecordings row: in_review, assigned to the CALLER, agent attributed, unshared, no duration/skip');
   assert.ok(/writeAuditLog_\(emp, 'QaManualRecording', '', '', false, 0, 'fileId=' \+ fid, emp\.email\);/.test(man), 'audit row is id-only — the label may name a caller (INV-32/196)');
   assert.ok(!/name/.test(man.slice(man.indexOf("writeAuditLog_"), man.indexOf("writeAuditLog_") + 120)), 'the label never reaches the audit note');
@@ -21509,7 +21517,7 @@ test('F-16: the agent-facing QA reads scope by ROSTER ID — the id written at a
   const byName = foNc(extractRawFunction('Code.js', 'qaRosterIdByName_'));
   assert.ok(/return ids\.length === 1 \? ids\[0\] : '';/.test(byName), 'the write-time resolver returns NOTHING for an ambiguous name (never the first row)');
   const setAgent = foNc(extractRawFunction('Code.js', 'qaSetRecordingAgent'));
-  assert.ok(/const agentId = qaRosterIdByName_\(name\);/.test(setAgent) && /QAR\.AGENT_ID \+ 1, 1, 1\)\.setValue\(agentId\)/.test(setAgent), 'attribution writes the resolved id beside the name');
+  assert.ok(/const agentId = qaRosterIdByName_\(name\);/.test(setAgent) && /QAR\.AGENT_ID \+ 1, 1, 1\)\.setNumberFormat\('@'\)\.setValue\(sheetText_\(agentId\)\)/.test(setAgent), 'attribution writes the resolved id beside the name');
   ['getMyQaReviews', 'getMyQaReviewAudioChunk'].forEach((n) => {
     const src = foNc(extractRawFunction('Code.js', n));
     assert.ok(/qaRowIsMine_\(/.test(src) && !/toLowerCase\(\) !== myName/.test(src), n + ' scopes through qaRowIsMine_ — no bare name compare survives');
@@ -21528,6 +21536,7 @@ test('F-10: a cross-rep tag transform REPORTS the rep Sheets it could not read �
                getRange: () => ({ setValue() {} }) };
     } };
   vm.createContext(ctx);
+  ['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
   vm.runInContext(extractRawFunction('Code.js', 'applyTagTransformAcrossReps_'), ctx);
   const r = JSON.parse(JSON.stringify(ctx.applyTagTransformAcrossReps_('old', (tags) => tags.map((t) => (t === 'old' ? 'new' : t)))));
   assert.strictEqual(r.repsTouched, 1); assert.strictEqual(r.notesUpdated, 1);
@@ -22610,7 +22619,7 @@ test('N3-DR: an in-app "Mark resolved" is recorded (ResolvedVia) and leaves ever
   assert.ok(/RESOLVED_VIA:12, PATIENT_TRX:13 \}/.test(code), 'DR.RESOLVED_VIA is slot 12 (PatientTrx trails it since note 6)');
   assert.ok(/'NoteId','ResolvedVia','PatientTrx'\]/.test(code), 'DR_HEADERS carries ResolvedVia then PatientTrx');
   const mk = nc(extractRawFunction('Code.js', 'getOrCreateDeptRequestsSheet_'));
-  assert.ok(/getLastColumn\(\) < DR_HEADERS\.length/.test(mk) && /setValues\(\[DR_HEADERS\]\)/.test(mk),
+  assert.ok(/getLastColumn\(\) < DR_HEADERS\.length/.test(mk) && /setValues\(sheetSafeRows_\(\[DR_HEADERS\]\)\)/.test(mk),
     'a short header self-heals — a tab provisioned before the column gains it in place');
   // (b) ONE reader (the drStatus_/INV-183 discipline), driven: only the two
   //     known values survive; anything else reads as untracked.
@@ -22632,7 +22641,7 @@ test('N3-DR: an in-app "Mark resolved" is recorded (ResolvedVia) and leaves ever
   assert.ok(/function markDeptRequestResolved_\(token, byEmail, via\)/.test(w), 'the writer takes the path');
   assert.ok(/DR_RESOLVED_VIA_VALUES\.indexOf\(String\(via \|\| ''\)\.trim\(\)\.toLowerCase\(\)\) >= 0/.test(w),
     'the path is validated against the shared list before the write');
-  assert.ok(/getRange\(rowIndex, DR\.RESOLVED_VIA \+ 1\)\.setValue\(viaClean\)/.test(w), 'the cell is written (Q5 — at the row the bounded lookup located)');
+  assert.ok(/getRange\(rowIndex, DR\.RESOLVED_VIA \+ 1\)\.setValue\(sheetSafe_\(viaClean\)\)/.test(w), 'the cell is written (Q5 — at the row the bounded lookup located)');
   assert.ok(/via=/.test(w), 'the audit note names the path (PHI-free either way)');
   assert.ok(/markDeptRequestResolved_\(requestId,[^;]*'app'\)/.test(nc(extractRawFunction('Code.js', 'resolveDeptRequest'))),
     "the in-app button resolves as 'app'");
@@ -22751,7 +22760,7 @@ test('C-N4: Spanish auto-assign — least-loaded pick (pure), manager gate BEFOR
   const lockAt = core.indexOf('waitLock(15000)');
   assert.ok(lockAt > 0 && core.indexOf('spanishClaimsMap_()') > lockAt, 'the load + still-unclaimed set are re-derived from the LIVE map INSIDE the lock');
   assert.ok(core.indexOf('spanishAutoAssignPick_(') > lockAt, 'the pick runs inside the lock too');
-  assert.ok(/\.setValues\(rows\)/.test(core) && !/appendRow\(/.test(core), 'ONE batched setValues, never a per-row appendRow loop');
+  assert.ok(/\.setValues\(sheetSafeRows_\(rows\)\)/.test(core) && !/appendRow\(/.test(core), 'ONE batched setValues, never a per-row appendRow loop');
   assert.ok(/'claim', pk\.by, self, nowMs\]/.test(core), 'each row is a claim by the pick, assigned by the caller (the row shape spanishClaimsFold_ reads)');
   const auditIdx = core.indexOf("writeAuditLog_(emp, 'SpanishInboxAutoAssign'");
   assert.ok(auditIdx > core.indexOf('lock.releaseLock()'), 'the audit row lands after the lock releases');
@@ -22792,7 +22801,7 @@ test('C-N6: Dept Requests — PatientTrx stored + on the card subject, ONE owner
   assert.ok(/'NoteId','ResolvedVia','PatientTrx'\]/.test(code), 'DR_HEADERS ends with PatientTrx');
   assert.ok(/const DR_PATIENT_TRX_MAX = 120;/.test(code), 'capped');
   const send = nc(extractRawFunction('Code.js', 'emailFromCallNote'));
-  assert.ok(/noteId,\s*'',\s*String\(note\.patientAndTrx \|\| ''\)\.slice\(0, DR_PATIENT_TRX_MAX\),\s*\]\);/.test(send),
+  assert.ok(/noteId,\s*'',\s*String\(note\.patientAndTrx \|\| ''\)\.slice\(0, DR_PATIENT_TRX_MAX\),\s*\]\)\);/.test(send),
     'the append leaves ResolvedVia blank for the resolver and writes the capped patient & TRX as the LAST cell');
   // (b) ONE ownership rule, driven.
   const sbx = vm.createContext({
@@ -25880,6 +25889,7 @@ test('F3 (rewritten BEHAVIOURAL, F-52): archiveSheetRowsOlderThan_ really stops 
   sb.Utilities = { parseDate: () => { throw new Error('use Date.parse'); } };
   let flushes = 0;
   sb.SpreadsheetApp = { flush: () => { flushes++; } };
+  ['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), sb));   // S2 — the real helpers
   vm.runInContext(extractRawFunction('Code.js', 'parseRetentionDateMs_'), sb, { filename: 'Code.js#parseRetentionDateMs_' });
   vm.runInContext(extractRawFunction('Code.js', 'archiveSheetRowsOlderThan_'), sb, { filename: 'Code.js#archiveSheetRowsOlderThan_' });
 
@@ -26204,6 +26214,125 @@ test('S4: the FormTokenCreated audit row carries a token REFERENCE, never the li
   const call = src.slice(at, src.indexOf(');', at));
   assert.ok(/tokenRef=' \+ formTokenRef_\(token\)/.test(call), 'the row names the token by reference');
   assert.ok(!/\+ token\b(?!\))/.test(call.replace(/formTokenRef_\(token\)/g, '')), 'the raw token is nowhere in the row');
+});
+
+console.log('\ncycle 22 S2 — SHEET-SAFE: no string reaches a sheet as a formula');
+test('S2: sheetSafe_ neutralises what Sheets would parse as a formula, and nothing else', () => {
+  const ctx = { Array, String };
+  vm.createContext(ctx);
+  ['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  const s = (v) => ctx.sheetSafe_(v);
+  // Neutralised: the apostrophe is Sheets' literal-text marker and is not part
+  // of the stored value, so each of these reads back exactly as typed.
+  [['=TEXTJOIN(",",TRUE,Employees!A2:P80)', "'=TEXTJOIN(\",\",TRUE,Employees!A2:P80)"],
+   ['=1+1', "'=1+1"], ['  =IMPORTXML("x","y")', "'  =IMPORTXML(\"x\",\"y\")"],
+   ['+1 555-0100', "'+1 555-0100"], ['-called back, no answer', "'-called back, no answer"],
+   ['- ', "'- "], ['-', "'-"], ['+', "'+"], ['@mention', "'@mention"], ['-A1', "'-A1"], ['+SUM(A:A)', "'+SUM(A:A)"],
+   ['\t=cmd', "'\t=cmd"]]
+    .forEach(([v, want]) => assert.strictEqual(s(v), want, 'neutralised: ' + JSON.stringify(v)));
+  // Untouched: every shape the app writes on purpose, and a plain number
+  // string — Sheets reads that as the number it always has.
+  ['', 'Approved', 'TRUE', 'FALSE', '2026-09-23', '08:00:00', '2026-09-23 08:00:00', '{"tags":["a"]}', '["x"]',
+   'data:image/png;base64,AA', 'ADJ-LunchOut', 'token=abc', "'=already literal", '-1.5', '+2', '-5', '0.5', '-.5', ' -3 ']
+    .forEach((v) => assert.strictEqual(s(v), v, 'unchanged: ' + JSON.stringify(v)));
+  const d = new Date(0);
+  [0, -1.5, 12, true, false, null, undefined].forEach((v) => assert.strictEqual(s(v), v, 'non-strings pass through: ' + v));
+  assert.strictEqual(s(d), d, 'a Date passes through as the same object');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.sheetSafeRow_(['a', '=b', 3, '-x']))), ['a', "'=b", 3, "'-x"], 'a row maps cell by cell');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.sheetSafeRows_([['=a', 1], ['b', '+c']]))), [["'=a", 1], ['b', "'+c"]], 'a block maps row by row');
+  assert.strictEqual(ctx.sheetSafeRow_('x'), 'x', 'a non-array row passes through (the caller’s own shape error surfaces unchanged)');
+});
+test('S2: every sheet write in every pushed server file goes through the sheet-safe helpers (derived, zero-dep; lint-server holds the exact AST rule)', () => {
+  const WEB = path.join(__dirname, '../../web-app');
+  const files = fs.readdirSync(WEB).filter((f) => /\.(js|gs)$/i.test(f) && f !== 'Tests.js');
+  assert.ok(files.indexOf('DevTools.js') >= 0 && files.length >= 15, 'sanity: the scan reads the directory, DevTools.js included');
+  const WANT = { appendRow: ['sheetSafeRow_'], setValue: ['sheetSafe_', 'sheetText_'], setValues: ['sheetSafeRows_', 'sheetTextRows_'] };
+  const bad = []; let writes = 0;
+  files.forEach((f) => {
+    const src = stripJsComments_(fs.readFileSync(path.join(WEB, f), 'utf8'));
+    const re = /\.(appendRow|setValues|setValue)\(\s*([A-Za-z_$][\w$]*)?/g; let m;
+    while ((m = re.exec(src)) !== null) {
+      writes++;
+      if (WANT[m[1]].indexOf(m[2]) < 0) bad.push(f + ': .' + m[1] + '(' + (m[2] || '…') + ' — ' + src.slice(m.index, m.index + 70).replace(/\s+/g, ' '));
+    }
+    if (/\.(setFormulas?|setFormulasR1C1|setFormulaR1C1|setRichTextValues?)\(/.test(src)) bad.push(f + ': writes a formula / rich text');
+  });
+  assert.ok(writes > 150, 'sanity: the scan found the write surface (' + writes + ')');
+  assert.deepStrictEqual(bad, [], 'unwrapped sheet writes:\n  ' + bad.join('\n  '));
+  // The exact net is the AST rule in lint-server.mjs (CI, after npm ci). Hold
+  // its shape here so it cannot be switched off or widened quietly.
+  const lint = fs.readFileSync(path.join(__dirname, '../../scripts/lint-server.mjs'), 'utf8');
+  [["'appendRow', 'sheetSafeRow_'"], ["'setValue', 'sheetSafe_|sheetText_'"], ["'setValues', 'sheetSafeRows_|sheetTextRows_'"]]
+    .forEach(([t]) => assert.ok(lint.indexOf(t) >= 0, 'lint-server pairs ' + t));
+  assert.ok(/'no-restricted-syntax': \['error'\]\.concat\(SHEET_SAFE\)/.test(lint), 'the SHEET-SAFE selectors are an ERROR-level rule');
+  assert.ok(/const SHEET_SAFE_EXEMPT_FILES = \['Tests\.js'\];/.test(lint), 'only the Tests.js fixtures are exempt');
+  assert.ok(/setFormula\|setFormulas/.test(lint), 'the formula APIs are banned by the same rule');
+});
+
+test('S2: a PLAIN-TEXT write is raw only where the cell is \'@\', formats before it writes, and grows the grid (driven)', () => {
+  const ctx = { Array, String };
+  vm.createContext(ctx);
+  ['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_', 'sheetText_', 'sheetTextRows_', 'appendRowsTextSafe_', 'sheetColLetter_']
+    .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  assert.strictEqual(ctx.sheetText_('- call back'), '- call back', 'sheetText_ is a pass-through');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.sheetTextRows_([['=a', '-b', '+c']], [1]))), [["'=a", '-b', "'+c"]],
+    'raw ONLY in the listed columns; every other cell is still neutralised');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.sheetTextRows_([['=a', '-b']], null))), [['=a', '-b']], 'null = the whole block is plain text');
+  assert.strictEqual(['A', 'B', 'K', 'N', 'O'].join(), [0, 1, 10, 13, 14].map(ctx.sheetColLetter_).join(), 'the QA letters derive from the index list');
+  // A fake sheet that records the ORDER of format and write, and throws past
+  // the grid exactly as Sheets does.
+  const log = [];
+  let lastRow = 1000, maxRows = 1000;
+  const sheet = {
+    getLastRow: () => lastRow, getMaxRows: () => maxRows,
+    insertRowsAfter: (after, n) => { log.push('grow:' + after + '+' + n); maxRows += n; },
+    getRange: (r, c, nr, nc) => {
+      if (r + (nr || 1) - 1 > maxRows) throw new Error('outside the dimensions of the sheet');
+      return {
+        setNumberFormat: (f) => { log.push('fmt:' + r + ',' + c + 'x' + (nr || 1) + '=' + f); },
+        setValues: (v) => { log.push('write:' + r + ',' + c + '=' + JSON.stringify(v)); lastRow = r + v.length - 1; },
+      };
+    },
+  };
+  const first = ctx.appendRowsTextSafe_(sheet, [['id1', '- a note', '=x', 7], ['id2', '+1 555', '-y', 8]], [1]);
+  assert.strictEqual(first, 1001, 'returns the first row written');
+  assert.deepStrictEqual(log, [
+    'grow:1000+2',
+    'fmt:1001,2x2=@',
+    'write:1001,1=' + JSON.stringify([['id1', '- a note', "'=x", 7], ['id2', '+1 555', "'-y", 8]]),
+  ], 'grow, then format the text column of the NEW rows, then one write — raw in the \'@\' column, neutralised elsewhere');
+  assert.strictEqual(ctx.appendRowsTextSafe_(sheet, [], [1]), 0, 'nothing to append writes nothing');
+});
+test('S2: every raw plain-text write sits after a setNumberFormat(\'@\') in its own function, and every appendRowsTextSafe_ caller holds the lock (derived)', () => {
+  const src = serverSource();
+  const re = /^function ([A-Za-z0-9_]+)\s*\(/gm; let m;
+  const uses = [], appenders = [], bad = [];
+  while ((m = re.exec(src)) !== null) {
+    const name = m[1];
+    if (['sheetText_', 'sheetTextRows_', 'appendRowsTextSafe_'].indexOf(name) >= 0) continue;   // the definitions
+    const s = src.indexOf('{', m.index); let d = 0, k = s;
+    for (; k < src.length; k++) { if (src[k] === '{') d++; else if (src[k] === '}' && --d === 0) break; }
+    const body = stripJsComments_(src.slice(s, k + 1));
+    const tAt = body.search(/\bsheetText(Rows)?_\(/);
+    if (tAt >= 0) {
+      uses.push(name);
+      const fAt = body.indexOf("setNumberFormat('@')");
+      if (fAt < 0 || fAt > tAt) bad.push(name + ': writes raw text with no setNumberFormat(\'@\') before it');
+    }
+    const aAt = body.indexOf('appendRowsTextSafe_(');
+    if (aAt >= 0) {
+      appenders.push(name);
+      const lAt = body.indexOf('waitLock(');
+      if (lAt < 0 || lAt > aAt) bad.push(name + ': appendRowsTextSafe_ needs the ScriptLock held (getLastRow() + 1)');
+      if (!/appendRowsTextSafe_\([^;]*?, QA_[A-Z_]+_TEXT_IDX\)/.test(body)) bad.push(name + ': pass the tab\'s ONE _TEXT_IDX list');
+    }
+  }
+  // The guarded set, named — a new raw-text writer must be added here on purpose.
+  assert.deepStrictEqual(uses.sort(), ['kbImportDataTable', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad'].sort(),
+    'the raw plain-text writers are exactly the known four');
+  assert.deepStrictEqual(appenders.sort(), ['qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings'].sort(),
+    'the plain-text appenders are exactly the five QA writers');
+  assert.deepStrictEqual(bad, [], bad.join('\n'));
 });
 
 test('S9: the public submit refuses a malformed or unknown token BEFORE the global lock, and a lock timeout is a polite retry', () => {

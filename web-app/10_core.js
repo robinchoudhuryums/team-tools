@@ -635,10 +635,10 @@ function getOrCreateClientErrorsSheet_() {
   let sheet = ss.getSheetByName(CLIENT_ERRORS_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(CLIENT_ERRORS_TAB);
-    sheet.appendRow([
+    sheet.appendRow(sheetSafeRow_([
       `Timestamp (${tzAbbr_(CONFIG.TIMEZONE)})`,
       'EmployeeId', 'View', 'Source', 'Message', 'Stack',
-    ]);
+    ]));
     sheet.setFrozenRows(1);
   }
   return sheet;
@@ -679,10 +679,10 @@ function recordClientError(payload) {
     const lock = LockService.getUserLock();
     lock.waitLock(15000);
     try {
-      getOrCreateClientErrorsSheet_().appendRow([
+      getOrCreateClientErrorsSheet_().appendRow(sheetSafeRow_([
         fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
         emp.id, view, source, message, stack,
-      ]);
+      ]));
     } finally { lock.releaseLock(); }
     // Post-lock (the M-7 no-mail-in-lock rule): the spike alert may send an
     // email, so it runs only after the user lock is released. Best-effort —
@@ -754,15 +754,15 @@ function getOrCreateViewUsageSheet_() {
   let sheet = ss.getSheetByName(VIEW_USAGE_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(VIEW_USAGE_TAB);
-    sheet.appendRow([
+    sheet.appendRow(sheetSafeRow_([
       `Timestamp (${tzAbbr_(CONFIG.TIMEZONE)})`,
       'EmployeeId', 'View', 'Mode', 'BootTiming',
-    ]);
+    ]));
     sheet.setFrozenRows(1);
   } else if (sheet.getLastColumn() < VIEW_USAGE_WIDTH) {
     // Trailing column added 2026-09-04 (boot timing) — the header self-heals
     // like CN_HEADERS; pre-existing rows read a blank cell (no timing).
-    sheet.getRange(1, VIEW_USAGE_WIDTH).setValue('BootTiming');
+    sheet.getRange(1, VIEW_USAGE_WIDTH).setValue(sheetSafe_('BootTiming'));
   }
   return sheet;
 }
@@ -813,10 +813,10 @@ function recordViewEnter(viewKey, mode, timing) {
     const lock = LockService.getUserLock();
     lock.waitLock(15000);
     try {
-      getOrCreateViewUsageSheet_().appendRow([
+      getOrCreateViewUsageSheet_().appendRow(sheetSafeRow_([
         fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
         emp.id, v, m, viewUsageTimingCell_(timing),
-      ]);
+      ]));
     } finally { lock.releaseLock(); }
     return { success: true };
   } catch (e) {
@@ -3981,16 +3981,95 @@ function getActiveUserEmail_() {
   }
   return Session.getActiveUser().getEmail().toLowerCase();
 }
+// ── Sheet write boundary (cycle 22 S2) ─────────────────────────────────────
+// Range.setValue / setValues / Sheet.appendRow parse a STRING the way a person
+// typing into the cell would: a leading `=` makes a FORMULA, and so does a
+// leading `+` or `-` in front of anything that is not a number. getValues()
+// then returns the COMPUTED result. The app never writes a formula on purpose,
+// but it writes a great deal of text a rep or an anonymous form recipient
+// typed: a time-off note of `=TEXTJOIN(",",TRUE,Employees!A2:P80)` became a
+// live formula in the ADP/payroll spreadsheet and read every colleague's pay
+// rate back into the author's own calendar; a callback typed `+1 555-0100`
+// stored #ERROR! in place of the number; a KB comment or a note starting `-`
+// did the same.
+//
+// EVERY write in the server goes through these three helpers — the SHEET-SAFE
+// pin refuses an unwrapped appendRow/setValue/setValues anywhere in a pushed
+// server file, so the rule does not depend on anyone judging which text is
+// "user-supplied". A leading apostrophe is Sheets' own literal-text marker: it
+// is NOT part of the stored value (getValue/getDisplayValue return the text
+// without it), so the neutralised string reads back byte-identical. Only
+// strings change; numbers, booleans and Dates pass through, and so does a
+// string that IS a plain number ("-1.5", "+2") — Sheets reads that as the
+// number it always did, which is what the existing numeric columns rely on.
+function sheetSafe_(v) {
+  if (typeof v !== 'string' || !v) return v;
+  const t = v.replace(/^\s+/, '');
+  const c = t.charAt(0);
+  if (c === '=') return "'" + v;
+  if ((c === '+' || c === '-' || c === '@') && !/^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(t.replace(/\s+$/, ''))) return "'" + v;
+  return v;
+}
+/** One ROW (an array of cells) for appendRow / a single setValues row. */
+function sheetSafeRow_(row) {
+  return Array.isArray(row) ? row.map(sheetSafe_) : row;
+}
+/** A 2-D block for Range.setValues. */
+function sheetSafeRows_(rows) {
+  return Array.isArray(rows) ? rows.map(sheetSafeRow_) : rows;
+}
+// PLAIN-TEXT cells are the one exception, and the reason is the apostrophe. A
+// cell formatted '@' never evaluates a formula — that format IS the
+// neutraliser — but it also takes its input LITERALLY, so the apostrophe
+// sheetSafe_ adds would be stored and read back ("- call back" returning as
+// "'- call back"). The scratchpad, the KB data-table import and the QA text
+// columns write into '@' cells, so they write the raw value — and because a
+// format that was lost, never applied, or not inherited by an appended row
+// would silently turn that raw value back into a formula, the '@' is
+// RE-ASSERTED on the exact target cells by the same statement that writes them
+// (the SHEET-SAFE pin requires a setNumberFormat('@') before every use).
+/** A value for a cell the CALLER has just formatted '@' (plain text). */
+function sheetText_(v) { return v; }
+/** A block whose columns in `textIdx` (0-based; null = every column) land in
+ *  cells the caller has just formatted '@'; every other cell is sheetSafe_'d. */
+function sheetTextRows_(rows, textIdx) {
+  if (!Array.isArray(rows)) return rows;
+  const all = textIdx == null;
+  return rows.map(function (r) {
+    return Array.isArray(r) ? r.map(function (v, i) {
+      return (all || textIdx.indexOf(i) >= 0) ? v : sheetSafe_(v);
+    }) : r;
+  });
+}
+/** appendRow for rows with plain-text columns: formats those cells '@' on the
+ *  NEW rows, then writes them — raw where '@', sheet-safe everywhere else. The
+ *  caller MUST hold the ScriptLock: `getLastRow() + 1` is only the next free
+ *  row while no other writer can append. Grows the grid first, because
+ *  getRange past the last grid row THROWS where appendRow would have extended
+ *  it. Returns the first row written. */
+function appendRowsTextSafe_(sheet, rows, textIdx) {
+  if (!rows || !rows.length) return 0;
+  const width = rows[0].length;
+  const r = sheet.getLastRow() + 1;
+  const need = r + rows.length - 1;
+  if (need > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), need - sheet.getMaxRows());
+  (textIdx || []).forEach(function (i) { sheet.getRange(r, i + 1, rows.length, 1).setNumberFormat('@'); });
+  sheet.getRange(r, 1, rows.length, width).setValues(sheetTextRows_(rows, textIdx || []));
+  return r;
+}
+/** Column LETTER for a 0-based index (A..Z — every '@' column in this app is
+ *  inside the first 26). One source for the '@' columns: the index list. */
+function sheetColLetter_(i) { return String.fromCharCode(65 + i); }
 function getOrCreateAuditSheet_() {
   const ss = getAdpSS_();
   let sheet = ss.getSheetByName(CONFIG.AUDIT_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(CONFIG.AUDIT_TAB);
-    sheet.appendRow([
+    sheet.appendRow(sheetSafeRow_([
       `Timestamp (${tzAbbr_(CONFIG.TIMEZONE)})`,
       'EmployeeId','EmployeeName','UserEmail',
       'Action','PunchDate','PunchTime','IsAdjustment','DaysBack','Notes',
-    ]);
+    ]));
     sheet.setFrozenRows(1);
   }
   return sheet;
@@ -4005,11 +4084,11 @@ function writeAuditLog_(targetEmp, action, punchDate, punchTime, isAdjustment, d
   try {
     const now = new Date();
     const ts  = fmtDate_(now) + ' ' + fmtTime_(now);
-    getOrCreateAuditSheet_().appendRow([
+    getOrCreateAuditSheet_().appendRow(sheetSafeRow_([
       ts, targetEmp.id, targetEmp.name, actorEmail || targetEmp.email, action,
       punchDate, punchTime || '',
       isAdjustment ? 'TRUE' : 'FALSE', daysBack || 0, notes || '',
-    ]);
+    ]));
     return true;   // C4 (cycle 10) — witness-class callers need the outcome
   } catch (e) { console.warn('writeAuditLog_ failed: ' + e.message); return false; }
 }

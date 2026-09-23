@@ -830,7 +830,7 @@ function creditMonthlyPtoAccruals() {
         if (repCredited) credited++; else zeroHourReps++;
       }
       if (p.stamp !== p.plan.newStamp) {
-        sheet.getRange(p.rowIndex + 1, EMP.ACCRUED_THROUGH + 1).setValue(p.plan.newStamp);
+        sheet.getRange(p.rowIndex + 1, EMP.ACCRUED_THROUGH + 1).setValue(sheetSafe_(p.plan.newStamp));
         if (p.plan.seeded) seeded++;
       }
     });
@@ -1349,8 +1349,8 @@ function recordPunchCore_(punchType, custom) {
     if (isAdj) {
       const existing = findExistingPunch_(emp.id, date, punchType);
       if (existing) {
-        existing.sheet.getRange(existing.rowIndex, ADP.TIME + 1).setValue(time);
-        existing.sheet.getRange(existing.rowIndex, ADP.COMMENTS + 1).setValue(commentLabel);
+        existing.sheet.getRange(existing.rowIndex, ADP.TIME + 1).setValue(sheetSafe_(time));
+        existing.sheet.getRange(existing.rowIndex, ADP.COMMENTS + 1).setValue(sheetSafe_(commentLabel));
       } else {
         appendToAdpSheet_(emp, date, time, dir, commentLabel);
       }
@@ -1535,7 +1535,7 @@ function submitTimeOffRequest(date, type, notes) {
     if (hasActiveTimeOffOnDate_(toSheet, emp.id, date))
       return { success: false, error: 'You already have a pending or approved time-off request for that date.' };
     const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
-    toSheet.appendRow([emp.id, emp.name, date, type, notes || '', 'Pending', submittedAt]);
+    toSheet.appendRow(sheetSafeRow_([emp.id, emp.name, date, type, notes || '', 'Pending', submittedAt]));
     writeAuditLog_(emp, 'TimeOffRequest', date, '', false, 0, type + (notes ? ' — ' + notes : ''));
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
@@ -1579,7 +1579,7 @@ function submitTimeOffRange(startDate, endDate, type, notes) {
       return { success: false, error: 'You already have a pending or approved request on: ' + conflicts.join(', ') + '. Cancel it or adjust the range.' };
     const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
     days.forEach(d => {
-      toSheet.appendRow([emp.id, emp.name, d, type, notes || '', 'Pending', submittedAt]);
+      toSheet.appendRow(sheetSafeRow_([emp.id, emp.name, d, type, notes || '', 'Pending', submittedAt]));
       writeAuditLog_(emp, 'TimeOffRequest', d, '', false, 0,
         type + ' (range ' + startDate + '..' + endDate + ')' + (notes ? ' — ' + notes : ''));
     });
@@ -2268,7 +2268,7 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
             'Deny or cancel the other request first.' };
         }
 
-        sheet.getRange(i + 1, TO.STATUS + 1).setValue(newStatus);
+        sheet.getRange(i + 1, TO.STATUS + 1).setValue(sheetSafe_(newStatus));
 
         // Apply leave-balance change if state transition crosses the Approved boundary.
         // F(cycle-8): if the balance write THROWS, revert the just-written Status
@@ -2290,7 +2290,7 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
                 newBalance = adjustLeaveBalance_(empId, dedu.bucket, dedu.days);
               }
             } catch (balErr) {
-              try { sheet.getRange(i + 1, TO.STATUS + 1).setValue(oldStatusRaw); } catch (revertErr) {
+              try { sheet.getRange(i + 1, TO.STATUS + 1).setValue(sheetSafe_(oldStatusRaw)); } catch (revertErr) {
                 Logger.log('updateTimeOffStatus: status revert after balance failure ALSO failed (' +
                   revertErr.message + ') — row ' + (i + 1) + ' may need a manual status fix.');
               }
@@ -2361,7 +2361,7 @@ function managerSubmitTimeOff(empId, date, type, notes, autoApprove) {
     const status = autoApprove ? 'Approved' : 'Pending';
     const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
     toSheet
-      .appendRow([targetEmp.id, targetEmp.name, date, type, notes || '', status, submittedAt]);
+      .appendRow(sheetSafeRow_([targetEmp.id, targetEmp.name, date, type, notes || '', status, submittedAt]));
 
     // Apply leave deduction immediately if auto-approving
     let newBalance = null;
@@ -2571,7 +2571,7 @@ function fixPtoReconciliation(empId) {
     [{ bucket: 'annual', rows: reconRows.annual, credit: creditAnnual },
      { bucket: 'sick',   rows: reconRows.sick,   credit: creditSick }].forEach(function (u) {
       if (u.rows.length === 0) return;
-      u.rows.forEach(function (ri) { sheet.getRange(ri, TO.STATUS + 1).setValue('Reconciled'); });
+      u.rows.forEach(function (ri) { sheet.getRange(ri, TO.STATUS + 1).setValue(sheetSafe_('Reconciled')); });
       try {
         const nb = (u.credit > 0) ? adjustLeaveBalance_(empId, u.bucket, u.credit) : null;
         if (u.bucket === 'annual') { newAnnual = nb; doneAnnual = u.credit; }
@@ -2579,7 +2579,7 @@ function fixPtoReconciliation(empId) {
         rowsDone += u.rows.length;
       } catch (balErr) {
         u.rows.forEach(function (ri) {
-          try { sheet.getRange(ri, TO.STATUS + 1).setValue('Approved'); } catch (revertErr) {
+          try { sheet.getRange(ri, TO.STATUS + 1).setValue(sheetSafe_('Approved')); } catch (revertErr) {
             Logger.log('fixPtoReconciliation: row revert after credit failure ALSO failed (' +
               revertErr.message + ') — row ' + ri + ' may need a manual status fix.');
           }
@@ -3113,8 +3113,8 @@ function repairTimesheetTimezone(opts) {
   try {
     changes.forEach((c) => {
       const sh = ss.getSheetByName(c.tab);
-      sh.getRange(c.row, ADP.DATE + 1).setValue(c.newDate);
-      sh.getRange(c.row, ADP.TIME + 1).setValue(c.newTime);
+      sh.getRange(c.row, ADP.DATE + 1).setValue(sheetSafe_(c.newDate));
+      sh.getRange(c.row, ADP.TIME + 1).setValue(sheetSafe_(c.newTime));
       moved++;
       const emp = targets[c.empId];
       if (emp && emp.sheetId && c.tab === CONFIG.ADP_TAB && PUNCH_LABELS_.indexOf(c.type) >= 0) {
@@ -3804,8 +3804,8 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
     // Apply: updates by row index first (nothing has shifted yet).
     updates.forEach(u => {
       const timeFull = u.time + ':00';
-      sheet.getRange(u.rowIndex, ADP.TIME + 1).setValue(timeFull);
-      sheet.getRange(u.rowIndex, ADP.COMMENTS + 1).setValue(`ADJ-${u.type}`);
+      sheet.getRange(u.rowIndex, ADP.TIME + 1).setValue(sheetSafe_(timeFull));
+      sheet.getRange(u.rowIndex, ADP.COMMENTS + 1).setValue(sheetSafe_(`ADJ-${u.type}`));
       if (targetEmp.sheetId) {
         try {
           const dir = ['ClockIn', 'LunchIn'].indexOf(u.type) >= 0 ? 'IN' : 'OUT';
@@ -4075,7 +4075,7 @@ function addEmployee(payload) {
         hasBiweeklyAnchor: hasBiweeklyAnchor,
       });
       if (!check.ok) return { error: check.error };
-      sheet.appendRow(check.row);
+      sheet.appendRow(sheetSafeRow_(check.row));
       appended = true;
       // Post-append bookkeeping is best-effort INDIVIDUALLY: neither of these
       // may turn a completed add into a reported failure.
@@ -4141,7 +4141,7 @@ function offboardEmployee(repEmpId) {
       if (repEmail.toLowerCase() === String(callerEmp.email).toLowerCase()) {
         return { error: 'You cannot offboard yourself — another admin has to do that.' };
       }
-      sheet.getRange(targetRow + 1, EMP.EMAIL + 1).setValue('');
+      sheet.getRange(targetRow + 1, EMP.EMAIL + 1).setValue(sheetSafe_(''));
       invalidateRosterCache_();
       writeAuditLog_(callerEmp, 'EmployeeOffboard', repEmpId, '', false, 0,
         'id=' + repEmpId + '; name=' + repName, callerEmp.email);
@@ -4326,7 +4326,7 @@ function getOrCreateTimesheetArchiveTab_(ss, liveSheet) {
   if (!sheet) {
     sheet = ss.insertSheet(TIMESHEET_ARCHIVE_TAB);
     const width = Math.max(liveSheet.getLastColumn(), 9);
-    sheet.getRange(1, 1, 2, width).setValues(liveSheet.getRange(1, 1, 2, width).getValues());
+    sheet.getRange(1, 1, 2, width).setValues(sheetSafeRows_(liveSheet.getRange(1, 1, 2, width).getValues()));
     sheet.getRange(1, 1, 1, width).setFontWeight('bold');
     sheet.setFrozenRows(2);
   }
@@ -4853,8 +4853,8 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
   const newSs = createPinnedSpreadsheet_(name);
   const sh = newSs.getActiveSheet();
   sh.setName('Timesheet');
-  sh.getRange(1, 1, 2, 9).setValues([rows[0].slice(0, 9), rows[1].slice(0, 9)]);
-  sh.getRange(3, 1, matched.length, 9).setValues(matched);
+  sh.getRange(1, 1, 2, 9).setValues(sheetSafeRows_([rows[0].slice(0, 9), rows[1].slice(0, 9)]));
+  sh.getRange(3, 1, matched.length, 9).setValues(sheetSafeRows_(matched));
   sh.getRange(1, 1, 1, 9).setFontWeight('bold');
   sh.setFrozenRows(2);
   SpreadsheetApp.flush();
@@ -5213,7 +5213,7 @@ function adjustLeaveBalance_(empId, bucket, delta) {
     const col = bucket === 'sick' ? EMP.SICK_LEAVE : EMP.ANNUAL_LEAVE;
     const current = parseFloat(rows[i][col]) || 0;
     const next = +(current + delta).toFixed(2);
-    sheet.getRange(i + 1, col + 1).setValue(next);
+    sheet.getRange(i + 1, col + 1).setValue(sheetSafe_(next));
     invalidateRosterCache_();
     return next;
   }
@@ -6263,7 +6263,7 @@ function getNextActions_(punches) {
 }
 function appendToAdpSheet_(emp, date, time, dir, commentValue) {
   getAdpSS_().getSheetByName(CONFIG.ADP_TAB)
-    .appendRow([emp.id, emp.name, date, time, dir, 'None', 'Missing punch', 'SUBMIT', commentValue]);
+    .appendRow(sheetSafeRow_([emp.id, emp.name, date, time, dir, 'None', 'Missing punch', 'SUBMIT', commentValue]));
 }
 function openPersonalSs_(sheetId) {
   if (!_personalSsCache[sheetId]) _personalSsCache[sheetId] = SpreadsheetApp.openById(sheetId);
@@ -6282,7 +6282,7 @@ function writeToEmployeeSheet_(emp, date, time, dir, punchType) {
     const data   = sheet.getDataRange().getValues();
     const rowIdx = data.findIndex(r => String(r[0]).trim() === ROW_LABEL_MAP[punchType]);
     const colIdx = data[0].findIndex(h => Number(h) === dayNum);
-    if (rowIdx !== -1 && colIdx !== -1) sheet.getRange(rowIdx + 1, colIdx + 1).setValue(time);
+    if (rowIdx !== -1 && colIdx !== -1) sheet.getRange(rowIdx + 1, colIdx + 1).setValue(sheetSafe_(time));
   } catch (e) {
     console.warn('writeToEmployeeSheet_ skipped: ' + e.message);
     try { writeAuditLog_(emp, 'PersonalSheetSyncFail', date, time, false, 0,
@@ -6303,7 +6303,7 @@ function clearFromEmployeeSheet_(emp, date, punchType) {
     const data   = sheet.getDataRange().getValues();
     const rowIdx = data.findIndex(r => String(r[0]).trim() === ROW_LABEL_MAP[punchType]);
     const colIdx = data[0].findIndex(h => Number(h) === dayNum);
-    if (rowIdx !== -1 && colIdx !== -1) sheet.getRange(rowIdx + 1, colIdx + 1).setValue('');
+    if (rowIdx !== -1 && colIdx !== -1) sheet.getRange(rowIdx + 1, colIdx + 1).setValue(sheetSafe_(''));
   } catch (e) {
     console.warn('clearFromEmployeeSheet_ skipped: ' + e.message);
     try { writeAuditLog_(emp, 'PersonalSheetSyncFail', date, '', false, 0,
@@ -6315,7 +6315,7 @@ function getOrCreateTimeOffSheet_() {
   let sheet = ss.getSheetByName(CONFIG.TIMEOFF_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(CONFIG.TIMEOFF_TAB);
-    sheet.appendRow(['EmployeeId','EmployeeName','Date','Type','Notes','Status','SubmittedAt']);
+    sheet.appendRow(sheetSafeRow_(['EmployeeId','EmployeeName','Date','Type','Notes','Status','SubmittedAt']));
     sheet.setFrozenRows(1);
   }
   return sheet;
@@ -6325,7 +6325,7 @@ function getOrCreatePunchAdjustSheet_() {
   let sheet = ss.getSheetByName(CONFIG.PUNCH_ADJUST_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(CONFIG.PUNCH_ADJUST_TAB);
-    sheet.appendRow(PAR_HEADERS);
+    sheet.appendRow(sheetSafeRow_(PAR_HEADERS));
     sheet.setFrozenRows(1);
     return sheet;
   }
@@ -6333,7 +6333,7 @@ function getOrCreatePunchAdjustSheet_() {
   // an existing tab predates the trailing Action column.
   try {
     if (sheet.getLastColumn() < PAR_HEADERS.length) {
-      sheet.getRange(1, 1, 1, PAR_HEADERS.length).setValues([PAR_HEADERS]);
+      sheet.getRange(1, 1, 1, PAR_HEADERS.length).setValues(sheetSafeRows_([PAR_HEADERS]));
     }
   } catch (e) { /* best-effort — a read still works, ACTION just reads '' */ }
   return sheet;
@@ -6432,7 +6432,7 @@ function submitPunchAdjustRequests(requests) {
     }
     const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
     clean.forEach(function (c) {
-      sheet.appendRow([Utilities.getUuid(), emp.id, emp.name, c.date, c.punchType, c.time, c.reason, 'Pending', submittedAt, c.action]);
+      sheet.appendRow(sheetSafeRow_([Utilities.getUuid(), emp.id, emp.name, c.date, c.punchType, c.time, c.reason, 'Pending', submittedAt, c.action]));
     });
     writeAuditLog_(emp, 'PunchAdjustRequest', clean[0].date, '', false, 0,
       'requested ' + clean.length + ' punch adjustment(s) pending approval');
@@ -6605,7 +6605,7 @@ function punchAdjustDecideAll_(reqIds, newStatus) {
         notifyAfter = function () { notifyEmployeeOfAdjustDecision_(targetForAudit, date, punchType, reqTime, reason, 'Denied', action); };
         later.push(notifyAfter);
       }
-      sheet.getRange(i + 1, PAR.STATUS + 1).setValue(newStatus);
+      sheet.getRange(i + 1, PAR.STATUS + 1).setValue(sheetSafe_(newStatus));
       results.push({ reqId: id, success: true });
     });
     const failed = results.filter((r) => !r.success).length;
@@ -6747,7 +6747,7 @@ function resumeShiftForEmployee_(targetEmp, date, resumeTime, actorEmail, reason
   const outFull = coHm + ':00';
   const inFull = resumeTime + ':00';
   // Convert in place — the row keeps its TIME and changes only what it means.
-  co.sheet.getRange(co.rowIndex, ADP.COMMENTS + 1).setValue('ADJ-LunchOut');
+  co.sheet.getRange(co.rowIndex, ADP.COMMENTS + 1).setValue(sheetSafe_('ADJ-LunchOut'));
   appendToAdpSheet_(targetEmp, date, inFull, 'IN', 'ADJ-LunchIn');
   if (targetEmp.sheetId) {
     // Best-effort mirror (INV-59): drop the stale Clock Out, write the pair.
@@ -6780,8 +6780,8 @@ function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEma
     ? (ctx.idx[date + '|' + punchType] ? { sheet: ctx.sheet, rowIndex: ctx.idx[date + '|' + punchType] } : null)
     : findExistingPunch_(targetEmp.id, date, punchType);
   if (existing) {
-    existing.sheet.getRange(existing.rowIndex, ADP.TIME + 1).setValue(timeFull);
-    existing.sheet.getRange(existing.rowIndex, ADP.COMMENTS + 1).setValue(commentLabel);
+    existing.sheet.getRange(existing.rowIndex, ADP.TIME + 1).setValue(sheetSafe_(timeFull));
+    existing.sheet.getRange(existing.rowIndex, ADP.COMMENTS + 1).setValue(sheetSafe_(commentLabel));
   } else {
     appendToAdpSheet_(targetEmp, date, timeFull, dir, commentLabel);
   }

@@ -270,14 +270,14 @@ function getIntakeSubmissionSheet_(formType) {
   let sheet = ss.getSheetByName(tab);
   if (!sheet) {
     sheet = ss.insertSheet(tab);
-    sheet.appendRow(headers);
+    sheet.appendRow(sheetSafeRow_(headers));
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
   } else if (sheet.getLastColumn() < headers.length) {
     // Amend-&-re-send (operator 2026-08-25) added the trailing AmendsId
     // column — self-heal the header once (the INV-126/135 pattern; legacy
     // rows read the cell as blank = not an amendment).
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
+    sheet.getRange(1, 1, 1, headers.length).setValues(sheetSafeRows_([headers])).setFontWeight('bold');
   }
   return sheet;
 }
@@ -286,7 +286,7 @@ function getIntakeFeedbackSheet_() {
   let sheet = ss.getSheetByName(CONFIG.INTAKE.FEEDBACK_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(CONFIG.INTAKE.FEEDBACK_TAB);
-    sheet.appendRow(INTAKE_FEEDBACK_HEADERS);
+    sheet.appendRow(sheetSafeRow_(INTAKE_FEEDBACK_HEADERS));
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, INTAKE_FEEDBACK_HEADERS.length).setFontWeight('bold');
   }
@@ -386,9 +386,9 @@ function submitIntakeFeedback(submissionId, formType, text) {
       }
     }
     if (!found) return { success: false, error: 'Submission not found — the link may be stale.' };
-    getIntakeFeedbackSheet_().appendRow([
+    getIntakeFeedbackSheet_().appendRow(sheetSafeRow_([
       fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), id, ft, emp.email, emp.name, body,
-    ]);
+    ]));
     writeAuditLog_(emp, 'IntakeFeedback', fmtDate_(new Date()), '', false, 0,
       'type=' + ft + '; submissionId=' + id, emp.email);
     return { success: true };
@@ -1278,11 +1278,11 @@ function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
 
     let storeWarning = null;
     try {
-      getIntakeSubmissionSheet_('PPD').appendRow([
+      getIntakeSubmissionSheet_('PPD').appendRow(sheetSafeRow_([
         submissionId, fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), emp.id, emp.name,
         patientInfo, String(payload.language || 'EN'),
         answersJson, recJson, selJson, recipient, amendId,
-      ]);
+      ]));
     } catch (e) { storeWarning = intakeStoreFailWarn_(emp, 'PPD', submissionId, e); }
 
     writeAuditLog_(emp, 'IntakeSent', fmtDate_(new Date()), '', false, 0,
@@ -1371,11 +1371,11 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
 
   let storeWarning = null;
   try {
-    getIntakeSubmissionSheet_(formType).appendRow([
+    getIntakeSubmissionSheet_(formType).appendRow(sheetSafeRow_([
       submissionId, fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), emp.id, emp.name,
       patientInfo, dob, String(payload.language || 'EN'),
       answersJson, recipient, imgCount, amendId,
-    ]);
+    ]));
   } catch (e) { storeWarning = intakeStoreFailWarn_(emp, formType, submissionId, e); }
 
   writeAuditLog_(emp, 'IntakeSent', fmtDate_(new Date()), '', false, 0,

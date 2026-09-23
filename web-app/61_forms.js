@@ -106,7 +106,7 @@ function getOrCreateFormTokensSheet_() {
   let sheet = ss.getSheetByName(CONFIG.FORM_TOKENS_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(CONFIG.FORM_TOKENS_TAB);
-    sheet.appendRow(FT_HEADERS);
+    sheet.appendRow(sheetSafeRow_(FT_HEADERS));
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, FT_HEADERS.length).setFontWeight('bold');
   }
@@ -118,7 +118,7 @@ function getOrCreateFormSubmissionsSheet_() {
   let sheet = ss.getSheetByName(CONFIG.FORM_SUBMISSIONS_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(CONFIG.FORM_SUBMISSIONS_TAB);
-    sheet.appendRow(FS_HEADERS);
+    sheet.appendRow(sheetSafeRow_(FS_HEADERS));
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, FS_HEADERS.length).setFontWeight('bold');
   }
@@ -222,12 +222,12 @@ function createFormToken(payload) {
   lock.waitLock(15000);
   try {
     const sheet = getOrCreateFormTokensSheet_();
-    sheet.appendRow([
+    sheet.appendRow(sheetSafeRow_([
       token, formType, recipientEmail, recipientName,
       createdAt, expiresAt, 'pending',
       JSON.stringify(prefillData),
       emp.email, noteId || '',
-    ]);
+    ]));
   } finally {
     lock.releaseLock();
   }
@@ -319,7 +319,7 @@ function getFormByToken(token) {
         if (xlock.tryLock(2000)) {
           try {
             const fresh = findFormTokenRow_(sheet, token);
-            if (fresh) sheet.getRange(fresh.rowIndex, FT.STATUS + 1).setValue('expired');
+            if (fresh) sheet.getRange(fresh.rowIndex, FT.STATUS + 1).setValue(sheetSafe_('expired'));
           } finally { try { xlock.releaseLock(); } catch (_) {} }
         }
       } catch (_) {}
@@ -411,7 +411,7 @@ function submitFormByToken(token, formData) {
     // anonymous PHI submission against a token with no expiry (blank = only
     // corruption / migration; ExpiresAt is written atomically at creation).
     if (!expSF.present || expSF.ms == null || Date.now() > expSF.ms) {
-      tokenSheet.getRange(located.rowIndex, FT.STATUS + 1).setValue('expired');
+      tokenSheet.getRange(located.rowIndex, FT.STATUS + 1).setValue(sheetSafe_('expired'));
       return { success: false, error: 'This form link has expired.' };
     }
 
@@ -505,15 +505,15 @@ function submitFormByToken(token, formData) {
       submissionHash: submissionHash,
     });
     const submissionsSheet = getOrCreateFormSubmissionsSheet_();
-    submissionsSheet.appendRow([
+    submissionsSheet.appendRow(sheetSafeRow_([
       token, formType, recipientEmail, submittedAt,
       dataJson,
       signatureData,
       submissionHash, consentVersion, consentAt, openedAt, certificate,
-    ]);
+    ]));
 
     // Mark token as submitted
-    tokenSheet.getRange(located.rowIndex, FT.STATUS + 1).setValue('submitted');
+    tokenSheet.getRange(located.rowIndex, FT.STATUS + 1).setValue(sheetSafe_('submitted'));
 
     // Stamp linked note (best-effort)
     if (noteId) {
@@ -543,7 +543,7 @@ function submitFormByToken(token, formData) {
               token: token, formType: formType, submittedAt: submittedAt,
               recipientEmail: recipientEmail,
             };
-            cnSheet.getRange(noteLocated.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+            cnSheet.getRange(noteLocated.rowIndex, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(subformData)));
           }
         }
       } catch (stampErr) {
