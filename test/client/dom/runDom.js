@@ -790,6 +790,54 @@ test('F3: intakeClearForm_ nulls INTAKE_STATE.preview (drops cached patient PHI)
   assert.strictEqual(h.window.INTAKE_STATE.preview, null, 'cached preview (patient answers) cleared on form clear');
 });
 
+test('I1 (cycle 22): an amend lands on a BLANK form in the original language — the rep\'s draft never survives into it', () => {
+  // The rep has another patient's PPD in progress (a stored draft). They open a
+  // Spanish submission for patient A and press Amend. Before I1 the language
+  // flip snapshotted the form BEFORE re-entering and restored it AFTER the
+  // amendment applied, so the form held patient B's draft while amendOf stayed
+  // set, and the send went out as "AMENDED" for patient A. And even in the
+  // same language, any answer the original left blank kept the draft's value.
+  const run = (lang) => {
+    const h = boot(); mount_(h, 'view-area');
+    h.window.localStorage.setItem('umsIntakeDrafts', JSON.stringify(
+      { ppd: { answers: { '38': '300', '43': 'MS' }, patientInfo: 'Patient B — TRX 2', at: Date.now() } }));
+    h.window.INTAKE_STATE.ppd.lang = 'EN';
+    h.window.INTAKE_AMEND_PREFILL = { form: 'ppd', submissionId: 'SUB-A', timestamp: '2026-09-20 10:00',
+      patientInfo: 'Patient A — TRX 1', dob: '', answers: { '38': '250' }, language: lang };
+    h.window.enterIntakePpdView();
+    const root = h.document.getElementById('intk-ppd-form');
+    return {
+      patient: h.document.getElementById('intk-ppd-patient').value,
+      q38: h.window.intakePpdGetVal_(root, '38'),
+      q43: h.window.intakePpdGetVal_(root, '43'),
+      lang: h.window.INTAKE_STATE.ppd.lang,
+      amendOf: h.window.INTAKE_STATE.ppd.amendOf && h.window.INTAKE_STATE.ppd.amendOf.submissionId,
+      parked: h.window.INTAKE_AMEND_PREFILL,
+      bar: !!h.document.querySelector('.intk-amend-bar'),
+    };
+  };
+  const es = run('ES');
+  assert.strictEqual(es.lang, 'ES', 'the form flipped to the original\'s language');
+  assert.strictEqual(es.patient, 'Patient A — TRX 1', 'THE REGRESSION: the amended patient, not the draft\'s');
+  assert.strictEqual(es.q38, '250', 'the amendment\'s own answer');
+  assert.strictEqual(es.q43, '', 'an answer the original left blank is BLANK, not the draft\'s');
+  assert.strictEqual(es.amendOf, 'SUB-A');
+  assert.strictEqual(es.parked, null, 'the prefill is consumed exactly once');
+  assert.ok(es.bar, 'the amend banner is shown');
+  const en = run('EN');
+  assert.strictEqual(en.patient, 'Patient A — TRX 1');
+  assert.strictEqual(en.q38, '250');
+  assert.strictEqual(en.q43, '', 'same language: the draft does not fill the gaps either');
+  // An ordinary language flip still carries what the rep typed.
+  const h = boot(); mount_(h, 'view-area');
+  h.window.localStorage.removeItem('umsIntakeDrafts');
+  h.window.INTAKE_STATE.ppd.lang = 'EN';
+  h.window.enterIntakePpdView();
+  h.document.getElementById('intk-ppd-patient').value = 'Typed Patient';
+  h.window.intakeSetLang_('ppd', 'ES');
+  assert.strictEqual(h.document.getElementById('intk-ppd-patient').value, 'Typed Patient', 'a user flip keeps the typed answers');
+});
+
 test('intakeRenderSentList_: hostile patientInfo renders escaped (INV-89/116)', () => {
   const h = boot(); const area = mount_(h, 'view-area');
   area.innerHTML = h.window.intakeRenderSentList_(

@@ -728,7 +728,10 @@ function enterIntakePpdView(area) {
   }
   var pat = document.getElementById('intk-ppd-patient');
   if (pat) pat.addEventListener('input', intakePpdAfterChange_);
-  intakeRestoreDraft_('ppd');
+  // I1 (cycle 22): an amendment REPLACES the form, so a pending one skips the
+  // draft restore — the draft is another call's work, and any answer the
+  // original left blank would otherwise keep that call's value.
+  if (!intakeAmendPending_('ppd')) intakeRestoreDraft_('ppd');
   intakePpdApplyReveals_(form);   // hide Q33a etc. per restored parent answers
   intakePpdUpdateProgress_();
   intakeConsumeNavHint_();
@@ -1972,7 +1975,7 @@ function intakeEnterAcct_(form, title, area) {
     f.addEventListener('click', function (e) { if (e.target.closest('.intk-yn-btn')) intakeAcctUpdateProgress_(form); });
     f.addEventListener('keydown', intakeArrowNav_);   // pilot round 3 #7
   }
-  intakeRestoreDraft_(form);
+  if (!intakeAmendPending_(form)) intakeRestoreDraft_(form);   // I1 — see enterIntakePpdView
   intakeAcctUpdateProgress_(form);
   intakeConsumeNavHint_();
   intakeConsumeAmendPrefill_(form);   // amend snapshot AFTER the draft restore
@@ -2769,8 +2772,8 @@ function intakeRenderSentDetail_(d) {
 
 /** Begin the amend flow from the open Sent detail: park the prefill, navigate
  *  to the form tab, and let the enter consume it (the COACH_PREFILL /
- *  CLK_NAV_HINT handoff pattern — the enter's own draft restore runs first,
- *  then the amendment snapshot overwrites it). */
+ *  CLK_NAV_HINT handoff pattern). The enter SKIPS its draft restore while a
+ *  prefill is parked (I1), so the amendment lands on a blank form. */
 function intakeBeginAmend_() {
   var d = INTAKE_STATE.sentDetail;
   if (!d) return;
@@ -2789,19 +2792,33 @@ function intakeBeginAmend_() {
   enterTool('intake', tab);
 }
 
-/** Consume a parked amendment prefill at the END of a form view enter (after
- *  the draft restore, so the amendment snapshot wins). Also re-renders the
- *  amend banner when amendOf survives an internal nav. */
+/** Is an amendment prefill parked for THIS form? The enters skip their draft
+ *  restore when it is (I1): the amendment is the whole form, not an overlay. */
+function intakeAmendPending_(form) {
+  var p = window.INTAKE_AMEND_PREFILL;
+  return !!(p && p.form === form);
+}
+
+/** Consume a parked amendment prefill at the END of a form view enter. The
+ *  enter skipped its draft restore (intakeAmendPending_), so the amendment is
+ *  applied to a BLANK form. Also re-renders the amend banner when amendOf
+ *  survives an internal nav. */
 function intakeConsumeAmendPrefill_(form) {
   var p = window.INTAKE_AMEND_PREFILL;
   if (p && p.form === form) {
     window.INTAKE_AMEND_PREFILL = null;
     if ((p.language === 'ES') !== (INTAKE_STATE[form].lang === 'ES')) {
       // Match the original's language BEFORE applying answers (a re-render
-      // would wipe them). intakeSetLang_ re-enters the view, so re-park the
-      // prefill and let the fresh enter consume it.
+      // would wipe them): re-park the prefill, flip the language and re-enter,
+      // and the fresh enter consumes it. NOT through intakeSetLang_ (I1,
+      // cycle 22): that SNAPSHOTS the form before the re-enter and restores the
+      // snapshot after it — i.e. AFTER this prefill had applied — so a
+      // cross-language amend held the rep's current draft (another patient) or
+      // blanks while amendOf stayed set, and the send went out as "AMENDED"
+      // for the original patient.
       window.INTAKE_AMEND_PREFILL = p;
-      intakeSetLang_(form, p.language === 'ES' ? 'ES' : 'EN');
+      INTAKE_STATE[form].lang = p.language === 'ES' ? 'ES' : 'EN';
+      intakeReenterForm_(form);
       return;
     }
     INTAKE_STATE[form].amendOf = { submissionId: p.submissionId, timestamp: p.timestamp };
@@ -2848,8 +2865,12 @@ function intakeSetLang_(form, lang) {
   // preserve in-progress answers across the language flip (keys are qNum/qIndex)
   var snapshot = (form === 'ppd') ? intakeCollectPpd_() : intakeCollectAcct_(form);
   INTAKE_STATE[form].lang = lang;
-  if (form === 'ppd') enterIntakePpdView(); else intakeEnterAcct_(form, form === 'pap' ? 'PAP Account' : 'PMD Account');
+  intakeReenterForm_(form);
   intakeRestoreAnswers_(form, snapshot);
+}
+/** Re-render a form view in place (its own enter). */
+function intakeReenterForm_(form) {
+  if (form === 'ppd') enterIntakePpdView(); else intakeEnterAcct_(form, form === 'pap' ? 'PAP Account' : 'PMD Account');
 }
 
 function intakeRestoreAnswers_(form, snapshot) {

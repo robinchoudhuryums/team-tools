@@ -15621,6 +15621,14 @@ test('wiring: validate-before-send, post-hash marking, owner-only source, append
   assert.ok(/INTAKE_STATE\[form\]\.amendOf = null;\s*\n/.test(ic), 'clear/send-success detaches the amend');
   [/intakeRestoreDraft_\('ppd'\)[\s\S]{0,300}intakeConsumeAmendPrefill_\('ppd'\)/, /intakeRestoreDraft_\(form\)[\s\S]{0,300}intakeConsumeAmendPrefill_\(form\)/].forEach((re, i) =>
     assert.ok(re.test(ic), ['ppd', 'acct'][i] + ' enter consumes the amend prefill AFTER the draft restore (the snapshot must win)'));
+  // I1 (cycle 22): …and the draft restore is SKIPPED while a prefill is parked
+  // (the amendment is the whole form), and the cross-language re-enter never
+  // goes through intakeSetLang_'s snapshot/restore. The DOM pin drives both.
+  assert.strictEqual((ic.match(/if \(!intakeAmendPending_\((?:'ppd'|form)\)\) intakeRestoreDraft_\(/g) || []).length, 2,
+    'both enters skip the draft restore while an amend is parked');
+  const consume = extractFunction('intake/script_intake.html', 'intakeConsumeAmendPrefill_');
+  assert.ok(!/intakeSetLang_\(/.test(consume) && /intakeReenterForm_\(form\)/.test(consume),
+    'the cross-language path re-enters directly — no snapshot restored over the amendment');
   // Detail: the button is gated OWN + not-superseded; both chain banners render.
   const det = extractFunction('intake/script_intake.html', 'intakeRenderSentDetail_');
   assert.ok(/d\.isOwn && !d\.supersededBy/.test(det), 'Amend button: owner-only and never on a superseded row');
