@@ -1653,6 +1653,18 @@ test('F4: every server function that writes at getLastRow() + 1 grows the rows f
   assert.deepStrictEqual(bad, [], 'a positional append with no row growth before its write:\n  ' + bad.join('\n  '));
 });
 
+test('C3 (cycle 22): the client History cap MIRRORS getMyCallNotesRange (the server literal, read)', () => {
+  const srv = stripJsComments_(extractRawFunction('Code.js', 'getMyCallNotesRange'));
+  const m = srv.match(/if \(daySpan > (\d+)\) return \{ error:/);
+  assert.ok(m, 'the server cap is found');
+  const cli = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const c = cli.match(/var CN_HISTORY_MAX_SPAN_DAYS = (\d+);/);
+  assert.ok(c && c[1] === m[1], 'client cap ' + (c && c[1]) + ' === server cap ' + m[1]);
+  assert.ok(/Math\.round\(\s*\(new Date\(endDate \+ 'T00:00:00Z'\) - new Date\(startDate \+ 'T00:00:00Z'\)\) \/ 86400000\s*\)/.test(srv) &&
+    /Math\.round\(\(new Date\(endDate \+ 'T00:00:00Z'\) - new Date\(startDate \+ 'T00:00:00Z'\)\) \/ 86400000\)/.test(cli),
+    'and both measure the span the same way');
+});
+
 console.log('\nCode.js — PTO reconciliation half-day-pair exemption (cycle 7 · L-4)');
 {
   vm.runInContext(extractRawFunction('Code.js', 'ptoLegitHalfDayPair_'), sb, { filename: 'Code.js#ptoLegitHalfDayPair_' });

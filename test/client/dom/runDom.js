@@ -542,6 +542,34 @@ test('C4 (cycle 22): a Save & Compose that switches to External COMPLETES on the
   assert.strictEqual(h.read('CN_STATE.composeFlow'), null);
 });
 
+test('C3 (cycle 22): a failed load for a NEW History range never shows the previous range\'s notes under its label; an over-cap range is refused before the RPC', () => {
+  const h = bootLog();
+  h.read("CN_STATE.historyDate = '2026-09-14'; CN_STATE.historyEndDate = '2026-09-20'");
+  h.window.showView('callNotesHistory');
+  h.run.flushSuccess({ notes: [noteFixture({ noteId: 'old1', issue: 'from the old range', dateLocal: '2026-09-15' })] }, 'getMyCallNotesRange');
+  assert.ok(/from the old range/.test(h.$('#cn-history-stack').textContent), 'the first range renders');
+  // The rep picks a different range, and its load fails.
+  h.read("CN_STATE.historyDate = '2026-09-01'; CN_STATE.historyEndDate = '2026-09-10'");
+  h.window.cnHistoryRangeChanged_();
+  h.run.flushFailure(new Error('Sheets timed out'), 'getMyCallNotesRange');
+  const txt = h.$('#cn-history-stack').textContent;
+  assert.ok(!/from the old range/.test(txt), 'THE REGRESSION: the old range\'s notes are NOT shown under the new range');
+  assert.ok(/could not be loaded/.test(txt), 'the failure is stated as a failure, not an empty range');
+  // A failed REFRESH of the same range keeps last-good (C17-5 unchanged).
+  h.read("CN_STATE.historyDate = '2026-09-14'; CN_STATE.historyEndDate = '2026-09-20'");
+  h.window.cnHistoryRangeChanged_();
+  h.run.flushSuccess({ notes: [noteFixture({ noteId: 'n2', issue: 'week two', dateLocal: '2026-09-16' })] }, 'getMyCallNotesRange');
+  h.window.cnHistoryRangeChanged_();
+  h.run.flushFailure(new Error('blip'), 'getMyCallNotesRange');
+  assert.ok(/week two/.test(h.$('#cn-history-stack').textContent), 'same range: last-good is kept');
+  // Over the server's cap: refused here, with the reason, and no RPC.
+  h.read("CN_STATE.historyDate = '2026-01-01'; CN_STATE.historyEndDate = '2026-09-20'");
+  h.window.cnHistoryRangeChanged_();
+  assert.strictEqual(h.run.pending('getMyCallNotesRange').length, 0, 'no round trip for a range the server refuses');
+  assert.ok(/up to 90 days/.test(h.$('#cn-history-stack').textContent), 'the refusal names the cap');
+  assert.ok(!/week two/.test(h.$('#cn-history-stack').textContent), 'and draws no other range\'s notes');
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 // STEP 1 — Log persistence on nav-away/return (diagnose the operator report
 // "short-term notes reset when navigating back"). The Log is a today-only view

@@ -2421,6 +2421,8 @@ const CN_STATE = {
   historyDate: null,         // selected date in History view (yyyy-MM-dd) — also serves as start date for range queries
   historyEndDate: null,      // end date for History range queries; when null or === historyDate, single-date mode
   historyNotes: [],
+  historyNotesKey: '',       // C3 — the 'start:end' range historyNotes was loaded for
+  historyRangeRefused: '',   // C3 — set when the selected span exceeds the server's cap
   pinLimit: 3,               // server-authoritative cap from getMyPinnedCallNotes
   searchQuery: '',
   searchField: 'all',
@@ -2724,9 +2726,25 @@ function cnLoadToday_(then) {
     .getMyCallNotes({ filter: 'all' });
 }
 
+/** C3 (cycle 22) — the MIRROR of getMyCallNotesRange's cap (g94): the server
+ *  refuses a span whose end − start exceeds 90 days. Refused here first, with
+ *  the reason, so an over-long range is never a round trip that fails; a pin
+ *  reads the server's literal, so the two cannot drift. */
+var CN_HISTORY_MAX_SPAN_DAYS = 90;
+function cnHistorySpanDays_(startDate, endDate) {
+  return Math.round((new Date(endDate + 'T00:00:00Z') - new Date(startDate + 'T00:00:00Z')) / 86400000);
+}
+
 function cnLoadDateRange_(startDate, endDate, then) {
   const requestedView = currentView;
   const isSingleDate = startDate === endDate;
+  CN_STATE.historyRangeRefused = '';
+  if (cnHistorySpanDays_(startDate, endDate) > CN_HISTORY_MAX_SPAN_DAYS) {
+    CN_STATE.historyRangeRefused = 'History shows up to ' + CN_HISTORY_MAX_SPAN_DAYS +
+      ' days at a time — narrow the range.';
+    if (then) then();
+    return;
+  }
   var rpc;
   if (isSingleDate) {
     rpc = function (ok, fail) {
@@ -2755,6 +2773,7 @@ function cnLoadDateRange_(startDate, endDate, then) {
         if (/not configured/i.test(res.error)) {
           CN_STATE.enrolled = false;
           CN_STATE.historyNotes = [];
+          CN_STATE.historyNotesKey = startDate + ':' + endDate;
         } else {
           // C17-5 — same preserve-last-good + mark-failed as cnLoadToday_.
           if (currentView === requestedView) showToast(res.error, 'toast-error');
@@ -2765,6 +2784,11 @@ function cnLoadDateRange_(startDate, endDate, then) {
         CN_STATE.enrolled = true;
         CN_STATE.historyLoadFailed = false;
         CN_STATE.historyNotes = res.notes || [];
+        // C3 (cycle 22): the notes carry the RANGE they describe. The label is
+        // drawn from the current selection, so without this a failed load for
+        // a NEW range left the previous range's notes on screen under the new
+        // range's label — "Sep 1 – Sep 20 · 12 notes" that were Sep 14–20's.
+        CN_STATE.historyNotesKey = startDate + ':' + endDate;
         // Stamp freshness + the exact range for History's instant-paint fast path.
         CN_STATE.historyEntry = { at: Date.now(), key: startDate + ':' + endDate };
       }
@@ -7164,7 +7188,11 @@ function cnRenderHistoryStack_() {
   const stack = document.getElementById('cn-history-stack');
   if (!stack) return;
   const summary = document.getElementById('cn-history-summary');
-  const allNotes = CN_STATE.historyNotes || [];
+  // C3: only notes loaded FOR the selected range are drawn under its label. A
+  // failed refresh of the SAME range keeps last-good (C17-5); a failed load of a
+  // DIFFERENT range has nothing of its own to show, so it shows the failure.
+  const curKey = CN_STATE.historyDate + ':' + (CN_STATE.historyEndDate || CN_STATE.historyDate);
+  const allNotes = (CN_STATE.historyNotesKey === curKey) ? (CN_STATE.historyNotes || []) : [];
   // F(cycle-8 M-10): History now honors CN_STATE.filter — the Log quick-chips
   // ("Jump to history: Unresolved · 4") set it and navigated here, but nothing
   // consumed it (the chips were a silent no-op; the rep hunted manually). The
@@ -7186,6 +7214,10 @@ function cnRenderHistoryStack_() {
 
   if (notes.length === 0) {
     if (summary) summary.innerHTML = fltPill;
+    if (CN_STATE.historyRangeRefused && allNotes.length === 0) {
+      stack.innerHTML = errorStateHtml_(CN_STATE.historyRangeRefused);
+      return;
+    }
     // C17-5 — same failed-load-vs-empty split as cnRenderStack_.
     if (CN_STATE.historyLoadFailed && allNotes.length === 0) {
       stack.innerHTML = errorStateHtml_('These notes could not be loaded — this is a load failure, not an empty range. Change the date range to retry.');
