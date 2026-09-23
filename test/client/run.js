@@ -1456,6 +1456,72 @@ test('PUBLIC-GATE: _suiteCallerAllowed_ admits only the script owner (active ===
     'runSingleTest refuses a non-test name before it looks the name up');
 });
 
+// ── F1 (cycle 22 follow-on) — the suite's live-tab deletes hold the ScriptLock ──
+// Snapshot-then-delete-by-POSITION removes a REAL row if a production delete
+// lands between the read and the last delete (a rep's self-undo shifts every
+// row below it). Every production writer holds the ScriptLock (g17), so the
+// suite's sweeps go through ONE helper that holds it too.
+console.log('\nTests.js — F1: every live-tab delete goes through _deleteRowsWhereLocked_');
+test('F1: _deleteRowsWhereLocked_ locks BEFORE the snapshot, releases after the last delete, and on a throw', () => {
+  const log = [];
+  const mk = (rows, throwAt) => ({
+    getDataRange: () => ({ getValues: () => { log.push('read'); return rows.map((r) => r.slice()); } }),
+    deleteRow: (n) => { log.push('del ' + n); if (n === throwAt) throw new Error('boom'); },
+  });
+  const ctx = {
+    String,
+    LockService: { getScriptLock: () => ({ waitLock: (ms) => log.push('lock ' + ms), releaseLock: () => log.push('release') }) },
+    SpreadsheetApp: { flush: () => log.push('flush') },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Tests.js', '_deleteRowsWhereLocked_'), ctx);
+  const rows = [['h'], ['h2'], ['TEST_a'], ['real'], ['TEST_b'], ['TEST_c']];
+  const pred = (r) => String(r[0]).indexOf('TEST_') === 0;
+  assert.strictEqual(ctx._deleteRowsWhereLocked_(mk(rows), 3, pred), 3);
+  assert.deepStrictEqual(log, ['lock 30000', 'read', 'del 6', 'del 5', 'del 3', 'flush', 'release'],
+    'lock → snapshot → bottom-up deletes → flush → release; the header rows are never tested');
+  log.length = 0;
+  assert.strictEqual(ctx._deleteRowsWhereLocked_(mk(rows), 3, pred, 1), 1, 'max caps the deletions');
+  assert.deepStrictEqual(log.filter((l) => l.indexOf('del') === 0), ['del 6'], 'max takes the bottom-most match');
+  log.length = 0;
+  assert.throws(() => ctx._deleteRowsWhereLocked_(mk(rows, 5), 3, pred), /boom/);
+  assert.strictEqual(log[log.length - 1], 'release', 'a failed delete still releases the lock');
+  log.length = 0;
+  assert.strictEqual(ctx._deleteRowsWhereLocked_(null, 2, pred), 0);
+  assert.deepStrictEqual(log, [], 'a missing tab takes no lock');
+});
+test('F1: no other function in Tests.js deletes a row, except named ones over a TEST-ONLY store (ratchet)', () => {
+  const src = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8'));
+  // Each runs inside a fixture wrapper whose store is the suite's own, so no
+  // production writer shares the tab. The list only shrinks.
+  const TEST_STORE = {
+    test_reconcileCallNotes_backfillsHandEntered: 'the TEST rep\'s own Notes tab; deletes the one row it appended',
+    _test_cn_getFormSubmission_callerScoped_body_: '_withTestForms_ fixture',
+    _test_publicForm_tokenLifecycle_body_: '_withTestForms_ fixture',
+    _test_publicForm_blankExpiryFailsClosed_body_: '_withTestForms_ fixture',
+    _test_cn_managerGetFormSubmission_gatedAndScoped_body_: '_withTestForms_ fixture',
+    _cleanupTrainingRowsForItem_: 'called inside _withTestKb_',
+    _cleanupEmpDocRows_: 'called inside _withTestHrDocs_',
+    _cleanupCoachingRows_: 'called inside _withTestHrDocs_',
+    test_intake_sentViewer_callerScopedAndManager: '_withTestIntake_ fixture',
+  };
+  const hosts = [];
+  const re = /\.deleteRows?\(/g; let m;
+  while ((m = re.exec(src)) !== null) {
+    const fns = [...src.slice(0, m.index).matchAll(/^function ([A-Za-z0-9_$]+)/gm)];
+    hosts.push(fns[fns.length - 1][1]);
+  }
+  const stray = hosts.filter((h) => h !== '_deleteRowsWhereLocked_' && !TEST_STORE[h]);
+  assert.deepStrictEqual(stray, [], 'a positional delete outside the locked helper:\n  ' + stray.join('\n  '));
+  Object.keys(TEST_STORE).forEach((k) => assert.ok(hosts.indexOf(k) >= 0, k + ' no longer deletes — drop it from the list'));
+  // The live-tab sweeps are the helper's callers, and none of them may snapshot on its own.
+  ['_cleanupRowsByPrefix', '_clearRowsByEmp', '_clearPunchesForDay', '_deleteFormWitnessAuditRow_'].forEach((n) => {
+    assert.ok(/_deleteRowsWhereLocked_\(/.test(stripJsComments_(extractRawFunction('Tests.js', n))), n + ' routes through the locked helper');
+  });
+  assert.ok(!/getScriptLock/.test(src.replace(extractRawFunction('Tests.js', '_deleteRowsWhereLocked_'), '')),
+    'the helper is the ONLY lock the suite takes — a second one would make its waitLock re-entrant');
+});
+
 console.log('\nCode.js — PTO reconciliation half-day-pair exemption (cycle 7 · L-4)');
 {
   vm.runInContext(extractRawFunction('Code.js', 'ptoLegitHalfDayPair_'), sb, { filename: 'Code.js#ptoLegitHalfDayPair_' });

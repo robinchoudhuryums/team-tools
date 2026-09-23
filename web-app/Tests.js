@@ -823,16 +823,10 @@ function cleanupTestData() {
   // manager compliance panel. The test recipient domain 'example.invalid'
   // (a reserved TLD — impossible for a real recipient) is the sweep key.
   try {
-    const auditSheet = ss.getSheetByName(CONFIG.AUDIT_TAB);
-    if (auditSheet && auditSheet.getLastRow() >= 2) {
-      const aData = auditSheet.getDataRange().getValues();
-      for (let i = aData.length - 1; i >= 1; i--) {
-        if (String(aData[i][AUDIT.ACTION]) === 'FormSubmissionReceived'
-            && String(aData[i][AUDIT.NOTES]).indexOf('example.invalid') >= 0) {
-          auditSheet.deleteRow(i + 1);
-        }
-      }
-    }
+    _deleteRowsWhereLocked_(ss.getSheetByName(CONFIG.AUDIT_TAB), 2, function (r) {
+      return String(r[AUDIT.ACTION]) === 'FormSubmissionReceived'
+        && String(r[AUDIT.NOTES]).indexOf('example.invalid') >= 0;
+    });
   } catch (e) { Logger.log('cleanupTestData: form-witness sweep skipped: ' + e.message); }
   // M-2 hard-kill backstop for the LIVE forms store: FormTokens /
   // FormSubmissions rows whose per-test finally never ran (Apps Script's
@@ -841,27 +835,16 @@ function cleanupTestData() {
   // provisioned as a side effect of cleanup.
   try {
     const formsSs = getFormsSS_();
-    const ftSheet = formsSs.getSheetByName(CONFIG.FORM_TOKENS_TAB);
     const orphanTokens = {};
-    if (ftSheet && ftSheet.getLastRow() >= 2) {
-      const fData = ftSheet.getDataRange().getValues();
-      for (let i = fData.length - 1; i >= 1; i--) {
-        if (String(fData[i][FT.RECIPIENT_EMAIL]).toLowerCase().indexOf('@example.invalid') >= 0) {
-          orphanTokens[String(fData[i][FT.TOKEN])] = true;
-          ftSheet.deleteRow(i + 1);
-        }
-      }
-    }
-    const fsSheet = formsSs.getSheetByName(CONFIG.FORM_SUBMISSIONS_TAB);
-    if (fsSheet && fsSheet.getLastRow() >= 2) {
-      const sData = fsSheet.getDataRange().getValues();
-      for (let i = sData.length - 1; i >= 1; i--) {
-        if (orphanTokens[String(sData[i][FS.TOKEN])]
-            || String(sData[i][FS.RECIPIENT_EMAIL]).toLowerCase().indexOf('@example.invalid') >= 0) {
-          fsSheet.deleteRow(i + 1);
-        }
-      }
-    }
+    _deleteRowsWhereLocked_(formsSs.getSheetByName(CONFIG.FORM_TOKENS_TAB), 2, function (r) {
+      if (String(r[FT.RECIPIENT_EMAIL]).toLowerCase().indexOf('@example.invalid') < 0) return false;
+      orphanTokens[String(r[FT.TOKEN])] = true;
+      return true;
+    });
+    _deleteRowsWhereLocked_(formsSs.getSheetByName(CONFIG.FORM_SUBMISSIONS_TAB), 2, function (r) {
+      return !!orphanTokens[String(r[FS.TOKEN])]
+        || String(r[FS.RECIPIENT_EMAIL]).toLowerCase().indexOf('@example.invalid') >= 0;
+    });
   } catch (e) { Logger.log('cleanupTestData: forms-store backstop skipped: ' + e.message); }
   // Pilot round 2 — ScheduledCalls (same forms store): rows are keyed by
   // EmpId, so the standard TEST_-prefix sweep applies. getSheetByName only
@@ -1055,13 +1038,9 @@ function _testAdminEmailsSplit_(raw) {
 
 function _cleanupRowsByPrefix(sheet, prefix, colIdx, firstDataRow) {
   _assertSuiteCaller_();
-  if (!sheet) return;
-  const rows = sheet.getDataRange().getValues();
-  // Walk bottom-up so deleteRow indices stay valid
-  for (let i = rows.length - 1; i >= firstDataRow - 1; i--) {
-    const v = String(rows[i][colIdx] || '');
-    if (v.indexOf(prefix) === 0) sheet.deleteRow(i + 1);
-  }
+  _deleteRowsWhereLocked_(sheet, firstDataRow, function (r) {
+    return String(r[colIdx] || '').indexOf(prefix) === 0;
+  });
 }
 
 /**
@@ -1094,10 +1073,36 @@ function _clearTestState(empId) {
 
 function _clearRowsByEmp(sheet, empId, colIdx, firstDataRow) {
   _assertSuiteCaller_();
-  if (!sheet) return;
-  const rows = sheet.getDataRange().getValues();
-  for (let i = rows.length - 1; i >= firstDataRow - 1; i--) {
-    if (String(rows[i][colIdx] || '').trim() === empId) sheet.deleteRow(i + 1);
+  _deleteRowsWhereLocked_(sheet, firstDataRow, function (r) {
+    return String(r[colIdx] || '').trim() === empId;
+  });
+}
+
+/** F1 (cycle 22 follow-on) — the ONE way Tests.js deletes rows from a tab the
+ *  app ALSO writes. A snapshot-then-delete-by-POSITION sweep is correct only
+ *  while nothing else deletes a row between the read and the last delete: a
+ *  rep's self-undo or a manager's Day Edit landing mid-sweep shifts every row
+ *  below it up by one, and the sweep then removes a REAL row (g132's positional
+ *  hazard). Every production writer holds the ScriptLock across its own
+ *  read-then-write (g17), so the sweep holds it too. Tests.js takes no other
+ *  lock, so there is no re-entrancy — never call this from inside a locked
+ *  section. `pred(row)` returns true to delete; `max` (optional) caps the
+ *  deletions, bottom-up. Returns how many rows were deleted. */
+function _deleteRowsWhereLocked_(sheet, firstDataRow, pred, max) {
+  if (!sheet) return 0;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const rows = sheet.getDataRange().getValues();
+    let n = 0;
+    for (let i = rows.length - 1; i >= firstDataRow - 1; i--) {
+      if (max && n >= max) break;
+      if (pred(rows[i])) { sheet.deleteRow(i + 1); n++; }
+    }
+    SpreadsheetApp.flush();
+    return n;
+  } finally {
+    lock.releaseLock();
   }
 }
 
@@ -3873,14 +3878,9 @@ function test_ptoEnabled_blankDefaultsTrue() {
 // depends on the snapshot of "current state for this employee/date".
 function _clearPunchesForDay(empId, date) {
   _assertSuiteCaller_();
-  const sheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
-  const rows = sheet.getDataRange().getValues();
-  for (let i = rows.length - 1; i >= 2; i--) {
-    if (String(rows[i][ADP.EMP_ID]).trim() === empId &&
-        normalizeDate_(rows[i][ADP.DATE]) === date) {
-      sheet.deleteRow(i + 1);
-    }
-  }
+  _deleteRowsWhereLocked_(getAdpSS_().getSheetByName(CONFIG.ADP_TAB), 3, function (r) {
+    return String(r[ADP.EMP_ID]).trim() === empId && normalizeDate_(r[ADP.DATE]) === date;
+  });
 }
 
 // Helper: count audit rows matching (empId, action) — used by managerSaveDay
@@ -5374,11 +5374,10 @@ function test_creditPtoAccrual_seedCreditIdempotent() {
     // it was written.
     const monthRows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
     if (monthRows) {
-      const all = monthRows.getDataRange().getValues();
-      for (let i = all.length - 1; i >= 2; i--) {
-        if (String(all[i][ADP.EMP_ID] || '').trim() !== _TEST_INDIA_ID) continue;
-        if (String(normalizeDate_(all[i][ADP.DATE]) || '').indexOf(lastYm) === 0) monthRows.deleteRow(i + 1);
-      }
+      _deleteRowsWhereLocked_(monthRows, 3, function (r) {
+        return String(r[ADP.EMP_ID] || '').trim() === _TEST_INDIA_ID
+          && String(normalizeDate_(r[ADP.DATE]) || '').indexOf(lastYm) === 0;
+      });
     }
     const d1 = lastYm + '-05', d2 = lastYm + '-06';
     _appendTestPunch(_TEST_INDIA_ID, 'Test India User', d1, '09:00:00', 'IN',  'ClockIn');
@@ -5461,11 +5460,10 @@ function test_previewPtoAccrual_predictsTheCredit() {
       : lp[0] + '-' + String(parseInt(lp[1], 10) - 1).padStart(2, '0');
     const ts = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
     if (ts) {
-      const all = ts.getDataRange().getValues();
-      for (let i = all.length - 1; i >= 2; i--) {
-        if (String(all[i][ADP.EMP_ID] || '').trim() !== _TEST_INDIA_ID) continue;
-        if (String(normalizeDate_(all[i][ADP.DATE]) || '').indexOf(lastYm) === 0) ts.deleteRow(i + 1);
-      }
+      _deleteRowsWhereLocked_(ts, 3, function (r) {
+        return String(r[ADP.EMP_ID] || '').trim() === _TEST_INDIA_ID
+          && String(normalizeDate_(r[ADP.DATE]) || '').indexOf(lastYm) === 0;
+      });
     }
     const d1 = lastYm + '-05', d2 = lastYm + '-06';
     _appendTestPunch(_TEST_INDIA_ID, 'Test India User', d1, '09:00:00', 'IN',  'ClockIn');
@@ -5610,11 +5608,10 @@ function test_accrualReconcile_topsUpLateData() {
       : lp[0] + '-' + String(parseInt(lp[1], 10) - 1).padStart(2, '0');
     const ts = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
     if (ts) {
-      const all = ts.getDataRange().getValues();
-      for (let i = all.length - 1; i >= 2; i--) {
-        if (String(all[i][ADP.EMP_ID] || '').trim() !== _TEST_INDIA_ID) continue;
-        if (String(normalizeDate_(all[i][ADP.DATE]) || '').indexOf(lastYm) === 0) ts.deleteRow(i + 1);
-      }
+      _deleteRowsWhereLocked_(ts, 3, function (r) {
+        return String(r[ADP.EMP_ID] || '').trim() === _TEST_INDIA_ID
+          && String(normalizeDate_(r[ADP.DATE]) || '').indexOf(lastYm) === 0;
+      });
     }
     const RATE = 3.08;
     const basis = CONFIG.PTO_ACCRUAL_BASIS_HOURS, perDay = CONFIG.PTO_HOURS_PER_DAY;
@@ -5661,12 +5658,11 @@ function test_accrualReconcile_topsUpLateData() {
     // ── 5. A SHORTFALL is reported, never clawed back. Delete the clock-out
     //      and the month now reads fewer hours than were credited.
     const ts2 = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
-    const all2 = ts2.getDataRange().getValues();
-    for (let i = all2.length - 1; i >= 2; i--) {
-      if (String(all2[i][ADP.EMP_ID] || '').trim() !== _TEST_INDIA_ID) continue;
-      if (String(normalizeDate_(all2[i][ADP.DATE]) || '') === d1 &&
-          normalizeType_(String(all2[i][ADP.COMMENTS])) === 'ClockOut') { ts2.deleteRow(i + 1); break; }
-    }
+    _deleteRowsWhereLocked_(ts2, 3, function (r) {
+      return String(r[ADP.EMP_ID] || '').trim() === _TEST_INDIA_ID
+        && String(normalizeDate_(r[ADP.DATE]) || '') === d1
+        && normalizeType_(String(r[ADP.COMMENTS])) === 'ClockOut';
+    }, 1);
     invalidateRosterCache_();
     _asUser(_TEST_MGR_EMAIL, function () { res = creditMonthlyPtoAccruals(); });
     _assertSuccess(res);
@@ -6270,15 +6266,10 @@ function _test_publicForm_tokenLifecycle_body_() {
 function _deleteFormWitnessAuditRow_(token) {
   if (!token) return;
   try {
-    const sheet = getAdpSS_().getSheetByName(CONFIG.AUDIT_TAB);
-    if (!sheet || sheet.getLastRow() < 2) return;
-    const data = sheet.getDataRange().getValues();
-    for (let i = data.length - 1; i >= 1; i--) {
-      if (String(data[i][AUDIT.ACTION]) === 'FormSubmissionReceived'
-          && String(data[i][AUDIT.NOTES]).indexOf('token=' + token) >= 0) {
-        sheet.deleteRow(i + 1);
-      }
-    }
+    _deleteRowsWhereLocked_(getAdpSS_().getSheetByName(CONFIG.AUDIT_TAB), 2, function (r) {
+      return String(r[AUDIT.ACTION]) === 'FormSubmissionReceived'
+        && String(r[AUDIT.NOTES]).indexOf('token=' + token) >= 0;
+    });
   } catch (e) { Logger.log('_deleteFormWitnessAuditRow_ skipped: ' + e.message); }
 }
 
@@ -9323,9 +9314,6 @@ function test_deptRequest_resolveLinkIdempotent() {
     _assertEq(_countAuditRows(_TEST_INDIA_ID, 'DeptRequestResolved'), before + 1,
       'exactly one DeptRequestResolved audit row (the already-branch writes none)');
   } finally {
-    const rows = sh.getDataRange().getValues();
-    for (let i = rows.length - 1; i >= 1; i--) {
-      if (String(rows[i][DR.REQ_ID]) === token) { sh.deleteRow(i + 1); break; }
-    }
+    _deleteRowsWhereLocked_(sh, 2, function (r) { return String(r[DR.REQ_ID]) === token; }, 1);
   }
 }
