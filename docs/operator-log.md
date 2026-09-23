@@ -46,8 +46,10 @@ tell" rather than "no".
 `OON w/ PA` and `Out-of-Network Benefits` are amber with their own
 explanations; `Plan Specific` is defined. `K0821/23/16` now reads as
 K0821/K0823/K0816 — other shorthands (a range, a fragment beside two codes)
-still show as "not matched". **Still undefined: `MDX Hawaii` and `Hawaii
-only`.**
+still show as "not matched". **`Hawaii only`** (the item can only be provided
+in Hawaii with that plan) and **`MDX Hawaii`** (an HMO/IPA in Hawaii
+coordinating care for Medicare Advantage members) were defined the same day
+(T10), so every toned value in the live sheet now explains itself.
 
 ## 2026-09-22 — the Reference legibility round (T1–T6)
 

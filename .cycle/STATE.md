@@ -25,7 +25,7 @@ pricing diagnostics, which had none): S (~2 h)** — written BEFORE the
 first edit; actual shared with T7b above. **T9 (the operator's answers: the code
 shorthand as a CONFIRMED rule, OON = OUT-OF-NETWORK = red, Plan Specific
 defined): S (~2 h)** — written BEFORE the first edit; actual ~1.5 h. **T10 (the last two acceptance values: `Hawaii only`,
-`MDX Hawaii`): S (~0.5 h)** — written BEFORE the first edit.
+`MDX Hawaii`): S (~0.5 h)** — written BEFORE the first edit; actual ~0.5 h.
 Between-cycles operator work, the 19pre pattern.
 Subsystem cycles since last Seams audit: 0 — reset by the 2026-09-18 audit,
 whose findings shipped as batch S. The cadence is every 4; next due at cycle 25.
@@ -73,8 +73,8 @@ Updated: 2026-09-23
 - **Operator question raised by T2 — ANSWERED 2026-09-22, shipped as T9.**
   `OON` = `OUT-OF-NETWORK` = don't accept (red); `OON w/ PA` and
   `Out-of-Network Benefits` stay amber with their own definitions; `Plan
-  Specific` defined. **`MDX Hawaii` is the one value still undefined** (and
-  `Hawaii only`, toned blue, is in the same position).
+  Specific` defined. **`Hawaii only` and `MDX Hawaii` defined 2026-09-23
+  (T10)** — every toned value in the live sheet now explains itself.
 - **T3 was estimated L (~8 h) and took ~4 h.** For the record, the original
   scope note: the payor × item JOIN. Payor `details` are keyed by the
   sheet's column headers, which are HCPCS codes; OOP rows carry `code`. NOTE

@@ -1391,7 +1391,8 @@ entry says which it is.
   - **The ACCEPTANCE VALUES are a vocabulary, and the app tones and explains
     them** (`INS_TERMS`): Not Accepted / NO, Out-of-network / OON, OON w/ PA,
     Out-of-Network Benefits, Plan Specific, Location-based, Location-based
-    (285–325 lb), SI/PR, PR, TRY, A & B (combined), Accepted / X. A value the
+    (285–325 lb), SI/PR, PR, TRY, Hawaii only, MDX Hawaii, A & B (combined),
+    Accepted / X. A value the
     vocabulary knows becomes a clickable term with the operator's own
     definition behind it; a value it does not know renders VERBATIM in the
     neutral tone and says there is no definition on file — it is never a
@@ -1403,9 +1404,13 @@ entry says which it is.
     Benefits` is AMBER: members may use out-of-network suppliers, usually at a
     higher co-insurance rate. Anything written beside `OON` other than PA or
     benefits reads as unexplained amber, never as the red refusal.
-  - **One value in the live sheet is still toned but undefined: `MDX Hawaii`.**
-    A rep sees a coloured pill and cannot learn why. One sentence is operator
-    text, not a code change.
+  - **Every toned value in the live sheet now explains itself** (T10,
+    2026-09-23). `Hawaii only` and `MDX Hawaii` are blue: the first is a rule
+    (the item can only be provided in Hawaii with that plan), the second names
+    the plan (an HMO/IPA coordinating Medicare Advantage care). A bare `Hawaii`
+    matches neither and reads as unexplained. **If you add a new acceptance
+    value, it renders neutral with "no definition on file" until someone
+    supplies one sentence for it** — operator text, not a code change.
   - A payor the sheet does not list renders the operator's own
     plan-not-listed → **TRY** guidance rather than an empty result.
 

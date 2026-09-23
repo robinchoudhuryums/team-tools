@@ -385,9 +385,10 @@ not restate it. Server endpoints live in the fourteen server files
      rewritten to share code with the tooltip: it colours a compliance-adjacent
      field, and trading a real guarantee for a tidy one is a bad trade — the
      agreement between tone and explanation is held by a pin instead.
-     **One toned value still has no operator definition** (`MDX Hawaii`); the
-     pin names it rather than skipping it, and the fix is operator text. T9
-     (2026-09-22) defined the other five from the operator's answers — and
+     **Every toned value in the live sheet now has an operator definition**
+     (since T10, 2026-09-23 — `Hawaii only` is an item rule, `MDX Hawaii`
+     names the plan); the pin's known-gap list is empty and stays as the place
+     a new undefined value goes. T9 (2026-09-22) defined five of them — and
      found that bare `OON` had been amber by substring while bare
      `OUT-OF-NETWORK` was red, one fact in two colours. Both are now the red
      refusal, while the QUALIFIED `OON w/ PA` and `Out-of-Network Benefits`
