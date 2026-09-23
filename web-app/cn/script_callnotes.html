@@ -4195,6 +4195,11 @@ function cnSubmitActiveForm_(opts) {
         cnRevertPendingSubmit_(pendingId, restoreSnapshot, res.error || 'Save failed');
         return;
       }
+      // C10 (cycle 22): stamp the ORDER it was confirmed in (a client-transient
+      // `_` key, so the live-refresh signature ignores it) — a poll requested
+      // before this confirm cannot know the note, and must not drop it. A
+      // counter, not a clock: two events in one millisecond must still order.
+      if (res.note) res.note._confirmSeq = (CN_STATE._confirmSeq = (CN_STATE._confirmSeq || 0) + 1);
       const idx = CN_STATE.rollingNotes.findIndex(function (n) { return n.noteId === pendingId; });
       if (idx >= 0) {
         CN_STATE.rollingNotes[idx] = res.note;
@@ -8442,6 +8447,7 @@ function cnRefreshRollingStack_(then) {
   if (currentView !== 'callNotes' || !CN_STATE.enrolled) { done(); return; }
   if (CN_STATE.editingNoteId) { done(); return; }   // don't clobber an open inline edit
   const requestedView = currentView;
+  const requestedSeq = CN_STATE._confirmSeq || 0;
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res || res.error || res.enrolled === false) { done(); return; }
@@ -8450,8 +8456,12 @@ function cnRefreshRollingStack_(then) {
       const serverIds = {};
       server.forEach(function (n) { serverIds[n.noteId] = true; });
       const local = CN_STATE.rollingNotes || [];
+      // Kept on top: optimistic notes not yet on the server, AND (C10, cycle
+      // 22) notes CONFIRMED after this poll was requested — the server list
+      // predates them. Before this, a poll in flight while a save confirmed
+      // dropped the just-saved note from the stack for up to a minute.
       const pending = local.filter(function (n) {
-        return n._pending && !serverIds[n.noteId];
+        return !serverIds[n.noteId] && (n._pending || (n._confirmSeq && n._confirmSeq > requestedSeq));
       });
       // F(cycle-8, INV-56): a confirmed note with a flag/resolve/pin RPC in
       // flight must keep its LOCAL object — replacing it with the server's

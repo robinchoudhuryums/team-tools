@@ -570,6 +570,25 @@ test('C3 (cycle 22): a failed load for a NEW History range never shows the previ
   assert.ok(!/week two/.test(h.$('#cn-history-stack').textContent), 'and draws no other range\'s notes');
 });
 
+test('C10 (cycle 22): a live refresh requested BEFORE a save confirmed does not drop the just-confirmed note', () => {
+  const h = bootLog([noteFixture({ noteId: 'n1', issue: 'earlier call' })]);
+  h.window.cnRefreshRollingStack_();                       // the 60s poll / a window wake — in flight
+  h.setField('cn-fld-issue', 'just saved');
+  h.window.cnSubmitActiveForm_();
+  h.run.flushSuccess({ success: true, note: noteFixture({ noteId: 'n2', issue: 'just saved', _pending: false }) }, 'submitCallNote');
+  // The poll's server list was read before n2 existed.
+  h.run.flushSuccess({ notes: [noteFixture({ noteId: 'n1', issue: 'earlier call' })], autoCopyFormat: '' }, 'getMyCallNotes');
+  const ids = h.read('CN_STATE.rollingNotes.map(function (n) { return n.noteId; }).join()');
+  assert.strictEqual(ids, 'n2,n1', 'THE REGRESSION: the confirmed note stays, on top');
+  assert.ok(/just saved/.test(h.$('#cn-stack').textContent), 'and is still on screen');
+  // A poll requested AFTER the confirm is authoritative: a note it does not
+  // carry (deleted elsewhere) is dropped as before.
+  h.window.cnRefreshRollingStack_();
+  h.run.flushSuccess({ notes: [noteFixture({ noteId: 'n1', issue: 'earlier call' })], autoCopyFormat: '' }, 'getMyCallNotes');
+  assert.strictEqual(h.read('CN_STATE.rollingNotes.map(function (n) { return n.noteId; }).join()'), 'n1',
+    'a later poll that omits it is believed');
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 // STEP 1 — Log persistence on nav-away/return (diagnose the operator report
 // "short-term notes reset when navigating back"). The Log is a today-only view
