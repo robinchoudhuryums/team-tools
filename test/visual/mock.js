@@ -1406,9 +1406,9 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       analytics: { total: 4, acknowledged: 1, ackRatePct: 33, medianDaysToAck: 1.6, overdueUnacked: 1,
         bySeverity: { praise: 1, minor: 1, major: 1, critical: 1 },
         perRep: [
-          { empId: 'E-1088', empName: 'Sam Ortiz', total: 2, acknowledged: 0, overdue: 1, ackRatePct: 0, medianDaysToAck: 0 },
+          { empId: 'E-1088', empName: 'Sam Ortiz', total: 2, acknowledged: 0, overdue: 1, ackRatePct: 0, medianDaysToAck: null },   // D2: nothing acked → no median
           { empId: 'E-1042', empName: 'Avery Blake', total: 1, acknowledged: 1, overdue: 0, ackRatePct: 100, medianDaysToAck: 1.6 },
-          { empId: 'E-1090', empName: 'Leo Kim', total: 1, acknowledged: 0, overdue: 0, ackRatePct: 0, medianDaysToAck: 0 }] } },
+          { empId: 'E-1090', empName: 'Leo Kim', total: 1, acknowledged: 0, overdue: 0, ackRatePct: 0, medianDaysToAck: null }] } },
     getMyCoaching: { items: [
       { coachId: 'm1', empId: 'E-1042', empName: 'Avery Blake', patientTRX: 'TRX-508', severity: 'major', status: 'open',
         whatHappened: 'Quoted a delivery date the warehouse could not meet.', whatShould: 'Check the carrier ETA in the CRM before committing to a date.',
@@ -1933,7 +1933,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // PR 4 (Coaching): both coaching payloads in their genuinely-empty shape.
     getCoachingDashboard: { items: [], voided: [], voidedTotal: 0, counts: { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 },
       reminderDays: 7, businessDayMinutes: 540, todayIso: todayIso,
-      analytics: { total: 0, acknowledged: 0, ackRatePct: 0, medianDaysToAck: 0, overdueUnacked: 0, bySeverity: { praise: 0, minor: 0, major: 0, critical: 0 }, perRep: [] } },
+      analytics: { total: 0, acknowledged: 0, ackRatePct: 0, medianDaysToAck: null, overdueUnacked: 0, bySeverity: { praise: 0, minor: 0, major: 0, critical: 0 }, perRep: [] } },
     getMyCoaching: { items: [], businessDayMinutes: 540 },
     // PR 6 (Time Clock): a CLEAN, empty round — the block renders NOTHING
     // (the design's "render nothing when the list is empty"), which is what

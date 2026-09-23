@@ -933,8 +933,10 @@ vm.runInContext(extractRawFunction('Code.js', 'coachParseTs_'), sb, { filename: 
 vm.runInContext(extractRawFunction('Code.js', 'coachMedian_'), sb, { filename: 'Code.js#coachMedian_' });
 vm.runInContext(extractRawFunction('Code.js', 'coachAnalytics_'), sb, { filename: 'Code.js#coachAnalytics_' });
 const coachAnalytics_ = sb.coachAnalytics_;
-test('coachMedian_ handles even/odd/empty', () => {
-  assert.strictEqual(sb.coachMedian_([]), 0);
+test('coachMedian_ handles even/odd/empty — an empty set has NO median (D2, cycle 22)', () => {
+  assert.strictEqual(sb.coachMedian_([]), null, 'nothing acknowledged is not "0 days to ack"');
+  assert.strictEqual(sb.coachMedian_(null), null);
+  assert.strictEqual(sb.coachMedian_([NaN]), null, 'an unparseable day is not a data point');
   assert.strictEqual(sb.coachMedian_([3]), 3);
   assert.strictEqual(sb.coachMedian_([1, 3]), 2);
   assert.strictEqual(sb.coachMedian_([5, 1, 3]), 3);
@@ -972,6 +974,7 @@ test('coachAnalytics_ aggregates severity / ack-rate / median-days / per-rep', (
 test('coachAnalytics_ empty input → zeroed shape', () => {
   const a = coachAnalytics_([], Date.now(), 7);
   assert.strictEqual(a.total, 0);
+  assert.strictEqual(a.medianDaysToAck, null, 'D2: no acks, no median');
   assert.strictEqual(a.ackRatePct, 0);
   assert.strictEqual(a.perRep.length, 0);
 });
@@ -984,6 +987,45 @@ test('coachParseTs_ parses BOTH stamp forms (space + T) and NaNs garbage', () =>
   assert.strictEqual(ms, Date.UTC(2026, 0, 1, 9, 0, 0), 'space form parses');
   assert.strictEqual(sb.coachParseTs_('2026-01-01T09:00:00'), ms, 'T form parses identically');
   assert.ok(isNaN(sb.coachParseTs_('garbage')), 'garbage → NaN (falsy for the overdue guards)');
+});
+// D1 (cycle 22): an Intl-backed stand-in for Apps Script's Utilities.parseDate
+// (wall-clock in a named zone → instant), so the pin drives the real tz read.
+function d1ParseDateStub_(str, tz) {
+  const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(str);
+  if (!m) throw new Error('Unparseable: ' + str);
+  const wall = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const off = (ms) => { const q = {}; fmt.formatToParts(new Date(ms)).forEach((x) => { q[x.type] = +x.value; }); return Date.UTC(q.year, q.month - 1, q.day, q.hour, q.minute, q.second) - ms; };
+  let ms = wall - off(wall); ms = wall - off(ms);
+  return new Date(ms);
+}
+test('D1 (cycle 22): coaching stamps are CONFIG.TIMEZONE wall-clock — an age against the real clock is right to the minute', () => {
+  const ctx = vm.createContext({ CONFIG: { TIMEZONE: 'Asia/Kolkata' }, Utilities: { parseDate: d1ParseDateStub_ }, Math, String, Object, isNaN, Date });
+  ['coachAgeDays_', 'coachParseTs_', 'coachMedian_', 'coachAnalytics_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  assert.strictEqual(ctx.coachParseTs_('2026-01-10 09:00:00'), Date.UTC(2026, 0, 10, 3, 30, 0), '09:00 IST is 03:30 UTC');
+  assert.strictEqual(ctx.coachParseTs_('2026-01-10T09:00:00'), Date.UTC(2026, 0, 10, 3, 30, 0), 'both stamp forms');
+  assert.ok(isNaN(ctx.coachParseTs_('garbage')), 'garbage stays NaN');
+  // Exactly seven days after an IST stamp, measured on the REAL clock.
+  const now = Date.UTC(2026, 0, 17, 3, 30, 0);
+  const a = ctx.coachAnalytics_([{ empId: 'B', empName: 'Bo', severity: 'major', status: 'open', createdAt: '2026-01-10 09:00:00' }], now, 7);
+  assert.strictEqual(a.overdueUnacked, 1, 'THE REGRESSION: read as UTC the item was 6.8 days old and not yet overdue');
+  // Differences are unchanged by the zone, as before.
+  const b = ctx.coachAnalytics_([{ empId: 'A', empName: 'Ana', severity: 'minor', status: 'acknowledged', createdAt: '2026-01-01 09:00:00', acknowledgedAt: '2026-01-04 09:00:00' }], now, 7);
+  assert.strictEqual(b.medianDaysToAck, 3);
+  // A stamp from a DST zone resolves through the zone's own offset (the stub is not a fixed +5:30).
+  ctx.CONFIG.TIMEZONE = 'America/Chicago';
+  assert.strictEqual(ctx.coachParseTs_('2026-07-01 09:00:00'), Date.UTC(2026, 6, 1, 14, 0, 0), 'CDT is UTC-5');
+});
+test('D2 (cycle 22): the coaching KPI says "nothing acknowledged yet" for a null median, never "median 0 business days"', () => {
+  const co = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8');
+  const ctx = vm.createContext({ isNaN });
+  vm.runInContext(extractRawFunction('train/script_coaching.html', 'coachMedianAckText_'), ctx);
+  assert.strictEqual(ctx.coachMedianAckText_(null), 'nothing acknowledged yet');
+  assert.strictEqual(ctx.coachMedianAckText_(1), 'median 1 business day to ack');
+  assert.strictEqual(ctx.coachMedianAckText_(1.6), 'median 1.6 business days to ack');
+  assert.strictEqual(ctx.coachMedianAckText_(0), 'median 0 business days to ack', 'a REAL same-day median still reads as one');
+  assert.ok(/coachKpi_\('Awaiting ack', coachNum_\(counts\.open\), '', coachMedianAckText_\(a\.medianDaysToAck\)\)/.test(stripJsComments_(co)),
+    'the Awaiting-ack card renders through it, not through coachNum_ (which maps null to 0)');
 });
 // Cycle 9 · M-11 — the INV-134 fail-closed team-scoping boundary
 // (coachCanManagerSee_) had ZERO tests at any layer while its structurally

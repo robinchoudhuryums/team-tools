@@ -522,6 +522,13 @@ function coachKpi_(label, val, tone, sub) {
 /** Null-guard for analytics numbers concatenated into markup — a partial or
     legacy server shape must render 0, never the literal "undefined". */
 function coachNum_(v) { return (v == null || isNaN(v)) ? 0 : v; }
+/** D2 (cycle 22): the median days-to-ack sub-line. A null median means
+ *  nothing has been acknowledged — it is not "0 days", which reads as the
+ *  fastest possible answer (coachNum_ would have made it exactly that). */
+function coachMedianAckText_(m) {
+  if (m == null || isNaN(m)) return 'nothing acknowledged yet';
+  return 'median ' + m + ' business day' + (m === 1 ? '' : 's') + ' to ack';
+}
 
 /** Surnames of the reps with overdue items, capped at two + "+N" (2b). */
 function coachOverdueNames_(items) {
@@ -564,7 +571,7 @@ function coachAnalyticsHtml_(a, counts, items, nowMs, dash) {
   var praiseShare = a.total ? Math.round((coachNum_(a.bySeverity && a.bySeverity.praise) / a.total) * 100) : 0;
   return '<div class="coach-kpis">' +
     coachKpi_('Logged · 30d', last30, '', spark + ' ' + esc(deltaTxt)) +
-    coachKpi_('Awaiting ack', coachNum_(counts.open), '', 'median ' + coachNum_(a.medianDaysToAck) + ' business day' + (coachNum_(a.medianDaysToAck) === 1 ? '' : 's') + ' to ack') +
+    coachKpi_('Awaiting ack', coachNum_(counts.open), '', coachMedianAckText_(a.medianDaysToAck)) +
     coachKpi_('Overdue > ' + coachNum_(dash && dash.reminderDays || 7) + 'd', coachNum_(counts.overdueUnacked), counts.overdueUnacked ? 'crit' : '', overdueNames || 'nobody') +
     coachKpi_('Recognition', coachNum_(a.bySeverity && a.bySeverity.praise), '', praiseShare + '% of items') +
     '</div>' + note;

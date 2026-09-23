@@ -986,6 +986,17 @@
     "getTeamMetrics"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-23",
+   "why": "cycle 22 B4 D1/D2: coaching stamps parsed in CONFIG.TIMEZONE; an empty median is null",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "coachMedian_",
+    "coachParseTs_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3688,7 +3699,7 @@
   "coachMedian_": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "0e08d8644b81fabe"
+   "sha": "5e629d485c5e1bc9"
   },
   "coachNudgeMailHtml_": {
    "file": "82_coaching.js",
@@ -3698,7 +3709,7 @@
   "coachParseTs_": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "2db4345dddcb6348"
+   "sha": "71e8f5c4a8cca10a"
   },
   "coachRecapBuckets_": {
    "file": "82_coaching.js",
