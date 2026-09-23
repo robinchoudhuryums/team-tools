@@ -13200,7 +13200,7 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
       'A14-named dialog with a close hook');
     assert.ok(/aria-label="Scratchpad contents"/.test(cn), 'the textarea is named (INV-195)');
     const close = strip(extractFunction('cn/script_callnotes.html', 'cnCloseScratchpadModal_'));
-    assert.ok(/if \(CN_SCRATCH\.dirty\) cnScratchSave_\(true\)/.test(close),
+    assert.ok(/if \(CN_SCRATCH\.dirty\) \{[\s\S]*cnScratchSave_\(true\)/.test(close),   // C6: captures `latest` first
       'a pending debounce FLUSHES on close (INV-148 — typed text never dies with the modal)');
     const saveFn = strip(extractFunction('cn/script_callnotes.html', 'cnScratchSave_'));
     // A failed save is VISIBLE and retryable: the error branch keeps dirty

@@ -3067,6 +3067,35 @@ test('F-02 DOM (2026-09-17): the Scheduled-reminders and Scratchpad modals CLOSE
   });
 });
 
+test('C6 (cycle 22): Scratchpad text typed during an in-flight save, then closed, is still SAVED; a failure after close is stated and carried into the next open', () => {
+  const h = bootLog();
+  const doc = h.window.document;
+  const sent = () => h.run.pending('saveMyScratchpad').map((c) => c.args[0]);
+  h.read('cnOpenScratchpadModal_')();
+  h.run.flushSuccess({ success: true, content: 'v0', updatedAtMs: Date.now() }, 'getMyScratchpad');
+  let ta = doc.getElementById('cn-scratch-text');
+  ta.value = 'v1'; ta.dispatchEvent(new h.window.Event('input'));
+  h.read('cnScratchSave_')(true);                         // "Save now" — in flight
+  assert.deepStrictEqual(sent(), ['v1']);
+  ta.value = 'v1 and more'; ta.dispatchEvent(new h.window.Event('input'));
+  h.window.closeOverlay(doc.getElementById('cn-scratch-overlay'));   // close while v1 is in flight
+  assert.ok(!doc.getElementById('cn-scratch-text'), 'the modal is gone');
+  h.run.flushSuccess({ success: true, updatedAtMs: Date.now() }, 'saveMyScratchpad');
+  assert.deepStrictEqual(sent(), ['v1 and more'], 'THE REGRESSION: the text typed during the save is sent after the modal closed');
+  assert.strictEqual(h.read('CN_SCRATCH.dirty'), true, 'the first save did NOT mark newer text clean');
+  // That save fails — with no status line left, the failure is a toast…
+  h.run.flushFailure(new Error('quota'), 'saveMyScratchpad');
+  assert.ok(/Scratchpad not saved/.test(h.$('#toast-stack').textContent), 'a failure after close is stated');
+  // …and the next open carries the unsaved text instead of the server copy, and retries.
+  h.read('cnOpenScratchpadModal_')();
+  h.run.flushSuccess({ success: true, content: 'v1', updatedAtMs: Date.now() }, 'getMyScratchpad');
+  ta = doc.getElementById('cn-scratch-text');
+  assert.strictEqual(ta.value, 'v1 and more', 'the unsaved text comes back');
+  assert.deepStrictEqual(sent(), ['v1 and more'], 'and is saved again');
+  h.run.flushSuccess({ success: true, updatedAtMs: Date.now() }, 'saveMyScratchpad');
+  assert.strictEqual(h.read('CN_SCRATCH.dirty'), false, 'clean once the latest text lands');
+});
+
 test('F-06 DOM (2026-09-17): a failed department-config fetch is NOT cached as an empty config — the next open re-asks, and a structured {error} is a failure too', () => {
   const h = boot();
   let ran = 0;

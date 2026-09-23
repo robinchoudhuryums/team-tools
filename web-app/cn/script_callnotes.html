@@ -5071,7 +5071,12 @@ function cnSchedStatus_(btn, id, status) {
 // close (the INV-148 teardown-safe persister pattern). Last write wins across
 // windows — stated in the modal copy. A failed autosave is VISIBLE in the
 // status line (INV-187 — never silently dropped) and retried on next edit.
-var CN_SCRATCH = { dirty: false, timer: null, saving: false, queued: false };
+// C6 (cycle 22): `latest` is the text the rep last typed, held in STATE so a
+// save that has to wait (one already in flight) or that runs after the modal
+// is gone still has something to send. Before it, a close during an in-flight
+// save queued a drain that found no field and saved nothing, and a success
+// marked the pad clean even when the rep had typed more while it ran.
+var CN_SCRATCH = { dirty: false, timer: null, saving: false, queued: false, latest: null };
 
 function cnOpenScratchpadModal_() {
   var overlay = ensureOverlay('cn-scratch-overlay', { label: 'Scratchpad', onClose: cnCloseScratchpadModal_ });
@@ -5088,7 +5093,10 @@ function cnOpenScratchpadModal_() {
         '<button type="button" class="cn-act-btn" style="width:auto;padding:6px 14px" onclick="closeOverlay(document.getElementById(\'cn-scratch-overlay\'))">Close</button>' +
       '</div>' +
     '</div>';
-  CN_SCRATCH.dirty = false; CN_SCRATCH.saving = false; CN_SCRATCH.queued = false;
+  // C6: text a previous close could not save (its save failed, or is still in
+  // flight) is carried into this open rather than replaced by the server copy.
+  var carry = CN_SCRATCH.dirty && CN_SCRATCH.latest != null;
+  if (!carry) { CN_SCRATCH.dirty = false; CN_SCRATCH.latest = null; }
   clearTimeout(CN_SCRATCH.timer);
   google.script.run
     .withSuccessHandler(function (res) {
@@ -5104,9 +5112,11 @@ function cnOpenScratchpadModal_() {
         return;
       }
       ta.disabled = false; ta.placeholder = 'Anything you want to keep at hand…';
-      ta.value = res.content || '';
+      var stillUnsaved = CN_SCRATCH.dirty && CN_SCRATCH.latest != null;   // re-read: a carried save may have landed meanwhile
+      ta.value = stillUnsaved ? CN_SCRATCH.latest : (res.content || '');
       ta.addEventListener('input', cnScratchInput_);
-      cnScratchStatus_(res.updatedAtMs ? 'Saved · ' + cnSchedFmt_(res.updatedAtMs) : '', false);
+      if (stillUnsaved) { cnScratchStatus_('Unsaved changes from last time — saving…', false); cnScratchSave_(true); }
+      else cnScratchStatus_(res.updatedAtMs ? 'Saved · ' + cnSchedFmt_(res.updatedAtMs) : '', false);
       ta.focus();
     })
     .withFailureHandler(function (err) {
@@ -5123,7 +5133,12 @@ function cnOpenScratchpadModal_() {
 /** onClose — flush a pending debounce so typed text never dies with the
  *  modal (the INV-148 rule). Idempotent (safe when already closed). */
 function cnCloseScratchpadModal_() {
-  if (CN_SCRATCH.dirty) cnScratchSave_(true);   // reads the field synchronously, BEFORE the DOM goes
+  clearTimeout(CN_SCRATCH.timer);
+  if (CN_SCRATCH.dirty) {
+    var ta = document.getElementById('cn-scratch-text');
+    if (ta && !ta.disabled) CN_SCRATCH.latest = ta.value;   // read synchronously, BEFORE the DOM goes
+    cnScratchSave_(true);   // runs now, or queues behind an in-flight save and drains from `latest`
+  }
   // The hook OWNS the close (closeOverlay delegates to it) — remove the
   // overlay, or Close / Escape / backdrop do nothing (fixed 2026-09-17).
   var o = document.getElementById('cn-scratch-overlay');
@@ -5139,6 +5154,8 @@ function cnScratchStatus_(msg, warn) {
 
 function cnScratchInput_() {
   CN_SCRATCH.dirty = true;
+  var ta = document.getElementById('cn-scratch-text');
+  if (ta) CN_SCRATCH.latest = ta.value;
   cnScratchStatus_('Unsaved changes…', false);
   clearTimeout(CN_SCRATCH.timer);
   CN_SCRATCH.timer = setTimeout(function () { cnScratchSave_(false); }, 800);
@@ -5146,31 +5163,41 @@ function cnScratchInput_() {
 
 function cnScratchSave_(force) {
   var ta = document.getElementById('cn-scratch-text');
-  // The flush-on-close path reads the field BEFORE the DOM goes away; a later
-  // fire with no field is a no-op (root-guard, the INV-148 pattern).
-  if (!ta && !force) return;
-  if (CN_SCRATCH.saving) { CN_SCRATCH.queued = true; return; }   // serialize; latest text re-reads at fire time
-  if (!ta) return;
-  var text = ta.value;
+  // The text to save: the live field while the modal is open, else what the
+  // close captured (C6). With neither — or nothing unsaved and no field — there
+  // is nothing to do (the INV-148 root-guard).
+  if (ta && !ta.disabled) CN_SCRATCH.latest = ta.value;
+  else if (!CN_SCRATCH.dirty) return;
+  var text = CN_SCRATCH.latest;
+  if (text == null) return;
+  if (CN_SCRATCH.saving) { CN_SCRATCH.queued = true; return; }   // serialize; the drain sends `latest` as it is THEN
   CN_SCRATCH.saving = true;
   clearTimeout(CN_SCRATCH.timer);
   cnScratchStatus_('Saving…', false);
+  var failed = function (msg) {
+    CN_SCRATCH.saving = false;
+    // Keep dirty so the next edit (or Save now, or the next open) retries —
+    // visible, never silent. With the modal gone the status line is gone too,
+    // so the failure is a toast instead.
+    if (document.getElementById('cn-scratch-text')) cnScratchStatus_(msg, true);
+    else showToast('Scratchpad not saved: ' + msg + ' — reopen it to retry', 'toast-error');
+  };
   google.script.run
     .withSuccessHandler(function (r) {
+      if (!r || r.error || !r.success) { failed((r && r.error) || 'Save failed — edit or press Save now to retry'); return; }
       CN_SCRATCH.saving = false;
-      if (!r || r.error || !r.success) {
-        // Keep dirty so the next edit (or Save now) retries — visible, never silent.
-        cnScratchStatus_((r && r.error) || 'Save failed — edit or press Save now to retry', true);
-        return;
+      // Clean only if nothing was typed while this save ran (C6).
+      if (CN_SCRATCH.latest === text) CN_SCRATCH.dirty = false;
+      cnScratchStatus_(CN_SCRATCH.dirty ? 'Unsaved changes…' : 'Saved · ' + cnSchedFmt_(r.updatedAtMs), false);
+      // Drain a save that waited on this one (a close, a Save now, a debounce
+      // fire). With the modal still open and nothing waiting, newer typing is
+      // left to its own debounce.
+      if (CN_SCRATCH.queued || (CN_SCRATCH.dirty && !document.getElementById('cn-scratch-text'))) {
+        CN_SCRATCH.queued = false;
+        if (CN_SCRATCH.dirty) cnScratchSave_(true);
       }
-      CN_SCRATCH.dirty = false;
-      cnScratchStatus_('Saved · ' + cnSchedFmt_(r.updatedAtMs), false);
-      if (CN_SCRATCH.queued) { CN_SCRATCH.queued = false; cnScratchSave_(false); }
     })
-    .withFailureHandler(function (e) {
-      CN_SCRATCH.saving = false;
-      cnScratchStatus_((e && e.message) || 'Save failed — edit or press Save now to retry', true);
-    })
+    .withFailureHandler(function (e) { failed((e && e.message) || 'Save failed — edit or press Save now to retry'); })
     .saveMyScratchpad(text);
 }
 
