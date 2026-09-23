@@ -933,6 +933,18 @@
     "buildTimesheetForEmployee_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-23",
+   "why": "M4 (cycle 22 Batch 4): spanishOpenLoad_",
+   "added": [
+    "spanishOpenLoad_"
+   ],
+   "removed": [],
+   "changed": [
+    "spanishAutoAssignCore_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -7185,7 +7197,7 @@
   "spanishAutoAssignCore_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "5d015eca67409c41"
+   "sha": "809e1411e0150ddb"
   },
   "spanishAutoAssignPick_": {
    "file": "51_spanish.js",
@@ -7211,6 +7223,11 @@
    "file": "51_spanish.js",
    "kind": "function",
    "sha": "21e02b7b0560f0f7"
+  },
+  "spanishOpenLoad_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "43e8c1966ac00725"
   },
   "spanishSearchQuery_": {
    "file": "51_spanish.js",

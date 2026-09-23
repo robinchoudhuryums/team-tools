@@ -1665,6 +1665,25 @@ test('C3 (cycle 22): the client History cap MIRRORS getMyCallNotesRange (the ser
     'and both measure the span the same way');
 });
 
+test('M4 (cycle 22): Spanish auto-assign load counts claims on PENDING requests only — a resolved request is history, not load', () => {
+  const ctx = vm.createContext({ Object, Number, String });
+  ['spanishOpenLoad_', 'spanishAutoAssignPick_'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx));
+  // Ana has worked 40 requests (all resolved) and holds 1 open; Ben is new.
+  const live = {};
+  for (let i = 0; i < 40; i++) live['old' + i] = { by: 'ana@x' };
+  live.open1 = { by: 'ana@x' };
+  const pending = { open1: true, n1: true, n2: true, n3: true };
+  const load = JSON.parse(JSON.stringify(ctx.spanishOpenLoad_(live, pending)));
+  assert.deepStrictEqual(load, { 'ana@x': 1 }, 'only the open claim counts');
+  const picks = JSON.parse(JSON.stringify(ctx.spanishAutoAssignPick_([{ threadId: 'n1' }, { threadId: 'n2' }, { threadId: 'n3' }], ['ana@x', 'ben@x'], load)));
+  assert.deepStrictEqual(picks.map((p) => p.by), ['ben@x', 'ana@x', 'ben@x'],
+    'THE REGRESSION: the new member does not receive every request (the old load gave all three to Ben)');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.spanishOpenLoad_(live, {}))), {}, 'nothing pending, no load');
+  const core = stripJsComments_(extractRawFunction('Code.js', 'spanishAutoAssignCore_'));
+  assert.ok(/const load = spanishOpenLoad_\(live, pendingIds\)/.test(core), 'the core derives load through the helper, inside the lock');
+  assert.ok(/pendingIds\[p\.threadId\] = true/.test(core), 'from the SAME pending read that decides what is unclaimed');
+});
+
 console.log('\nCode.js — PTO reconciliation half-day-pair exemption (cycle 7 · L-4)');
 {
   vm.runInContext(extractRawFunction('Code.js', 'ptoLegitHalfDayPair_'), sb, { filename: 'Code.js#ptoLegitHalfDayPair_' });

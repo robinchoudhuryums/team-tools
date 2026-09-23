@@ -787,8 +787,9 @@ function releaseSpanishThread(threadId) {
 // every UNCLAIMED pending request (voicemails included — they are worked the
 // same way) goes to the configured member with the fewest live claims,
 // oldest request first, alphabetical tie-break so two runs over the same
-// state pick the same member. Existing claims are RESPECTED as load and never
-// reassigned (a manager's deliberate Assign is not undone by a button).
+// state pick the same member. Existing claims on still-PENDING requests are
+// RESPECTED as load (M4 — a claim on a resolved request is history, not load)
+// and never reassigned (a manager's deliberate Assign is not undone by a button).
 // Writes are ONE lock + ONE batched setValues over the claims tab; the audit
 // row is counts-only (thread ids and emails are internal, but the row need
 // carry neither).
@@ -813,6 +814,23 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
   });
   return out;
 }
+/** PURE (Node-pinned) — M4 (cycle 22): the LOAD a member carries is their
+ *  claims on requests that are still PENDING. A claim is never released when
+ *  its request is resolved (resolve writes its own tab; the claim row stays),
+ *  so counting every claim in the map counted a member's whole history. The
+ *  member who had worked the most requests looked the busiest for ever, and a
+ *  new member received nearly every assignment until their total caught up.
+ *  liveMap: spanishClaimsMap_() ({threadId: {by, …}}); pendingIds: {threadId:
+ *  true} for every request still pending. Returns {email: count}. */
+function spanishOpenLoad_(liveMap, pendingIds) {
+  const load = {};
+  Object.keys(liveMap || {}).forEach(function (tid) {
+    if (!(pendingIds || {})[tid]) return;
+    const by = liveMap[tid] && liveMap[tid].by;
+    if (by) load[by] = (load[by] || 0) + 1;
+  });
+  return load;
+}
 /** The reusable body — takes the ALREADY-GATED caller so a scheduled trigger
  *  (INV-44 gate) and the button (manager gate) share one implementation.
  *  Returns { success, unclaimed, assigned: [{threadId, claim}] }. */
@@ -822,6 +840,8 @@ function spanishAutoAssignCore_(emp, days) {
   const pendingRes = getSpanishInboxPending(days);
   if (!pendingRes || pendingRes.error) return { success: false, error: (pendingRes && pendingRes.error) || 'Pending read failed.' };
   const unclaimed = (pendingRes.pending || []).filter(function (p) { return !(p && p.claim && p.claim.by); });
+  const pendingIds = {};
+  (pendingRes.pending || []).forEach(function (p) { if (p && p.threadId) pendingIds[p.threadId] = true; });
   if (!unclaimed.length) return { success: true, unclaimed: 0, assigned: [] };
   const self = String(emp.email || '').trim().toLowerCase();
   const nowMs = Date.now();
@@ -834,8 +854,7 @@ function spanishAutoAssignCore_(emp, days) {
     // the lock, so a claim that landed between the read and the lock is
     // respected rather than overwritten.
     const live = spanishClaimsMap_();
-    const load = {};
-    Object.keys(live).forEach(function (tid) { const by = live[tid].by; if (by) load[by] = (load[by] || 0) + 1; });
+    const load = spanishOpenLoad_(live, pendingIds);   // M4 — open requests only, never the history
     const stillUnclaimed = unclaimed.filter(function (p) { return !live[p.threadId]; });
     picks = spanishAutoAssignPick_(stillUnclaimed, members, load);
     if (picks.length) {
