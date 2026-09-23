@@ -2596,6 +2596,15 @@ var INS_TERMS = [
     match: function (v) { return /(^|[^a-z])pr([^a-z]|$)/.test(v) && v.indexOf('si/pr') < 0; } },
   { term: 'TRY', why: 'Submit to test authorization \u2014 credentialing then decides whether this payor stays accepted.',
     match: function (v) { return v.indexOf('try') >= 0; } },
+  // The two Hawaii values, both blue (operator, 2026-09-23). The first is a
+  // RULE about where the item can go; the second DESCRIBES who the plan is.
+  // Specific matchers on purpose: a bare "Hawaii" is not either of these by
+  // any definition on file, so it stays toned-but-unexplained rather than
+  // borrowing one.
+  { term: 'Hawaii only', why: 'This item can only be provided in Hawaii with this insurance plan.',
+    match: function (v) { return /hawaii\s*only|only\s*(in\s*)?hawaii/.test(v); } },
+  { term: 'MDX Hawaii', why: 'An HMO and IPA (independent physician association) in Hawaii that coordinates medical care for Medicare Advantage plan members.',
+    match: function (v) { return /(^|[^a-z])mdx([^a-z]|$)/.test(v); } },
   { term: 'Accepted / X', why: 'We can accept orders for patients with this plan.',
     match: function (v) { return v.indexOf('in-network') >= 0 || v.indexOf('accepted') >= 0 || v === 'x' || v === 'yes'; } },
   // Legend-only: this one is the rule for a plan the sheet does not carry, so

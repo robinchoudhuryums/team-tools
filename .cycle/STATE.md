@@ -24,7 +24,8 @@ BEFORE the first edit; actual ~3 h with T8. **T8 (an Admin home for the OOP
 pricing diagnostics, which had none): S (~2 h)** — written BEFORE the
 first edit; actual shared with T7b above. **T9 (the operator's answers: the code
 shorthand as a CONFIRMED rule, OON = OUT-OF-NETWORK = red, Plan Specific
-defined): S (~2 h)** — written BEFORE the first edit; actual ~1.5 h.
+defined): S (~2 h)** — written BEFORE the first edit; actual ~1.5 h. **T10 (the last two acceptance values: `Hawaii only`,
+`MDX Hawaii`): S (~0.5 h)** — written BEFORE the first edit.
 Between-cycles operator work, the 19pre pattern.
 Subsystem cycles since last Seams audit: 0 — reset by the 2026-09-18 audit,
 whose findings shipped as batch S. The cadence is every 4; next due at cycle 25.

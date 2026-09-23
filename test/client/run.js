@@ -14309,12 +14309,16 @@ test('T2: a value the panel COLOURS is a value it can EXPLAIN — the tone and t
     'Location-based ( Up To 285) & SI/PR', 'Location-based ( 285-325 lb) SI/PR',
     'Location-based', 'SI/PR', 'PR', 'TRY', 'A & B',
     // Defined by the operator on 2026-09-22 — moved here from the gap list below.
-    'OON', 'OUT-OF-NETWORK', 'Plan Specific', 'OON W/ PA', 'Out-of-Network Benefits'];
+    'OON', 'OUT-OF-NETWORK', 'Plan Specific', 'OON W/ PA', 'Out-of-Network Benefits',
+    // …and the last two, 2026-09-23.
+    'MDX Hawaii', 'Hawaii only'];
   // Toned, but the vocabulary has no definition for them. NAMED, not skipped:
   // each is an amber or blue pill a rep cannot learn the meaning of, and the
   // fix is operator text, not code. Dropping them from the table silently
-  // would hide that.
-  const UNDEFINED_BY_OPERATOR = ['MDX Hawaii'];
+  // would hide that. EMPTY since 2026-09-23 — every toned value in the live
+  // sheet now explains itself. A new one belongs HERE until the operator
+  // defines it, never quietly left out of both lists.
+  const UNDEFINED_BY_OPERATOR = [];
 
   REAL.forEach((v) => {
     const tone = sb.insToneCls_(v);
@@ -14380,6 +14384,19 @@ test('T2: a value the panel COLOURS is a value it can EXPLAIN — the tone and t
 
   // A word that merely CONTAINS the letters is not out-of-network.
   assert.notStrictEqual(sb.insToneCls_('Accepted soon'), 'bad', '"soon" is not OON');
+
+  // ── T10: the Hawaii pair (operator, 2026-09-23) — both blue, each explained
+  // by its OWN term, and neither borrowed by a value that is not it.
+  assert.strictEqual(sb.insToneCls_('Hawaii only'), 'info');
+  assert.strictEqual(sb.insTermsIn_('Hawaii only')[0].term, 'Hawaii only');
+  assert.match(sb.insTermsIn_('Hawaii only')[0].why, /only be provided in Hawaii/);
+  assert.strictEqual(sb.insToneCls_('MDX Hawaii'), 'info');
+  assert.strictEqual(sb.insTermsIn_('MDX Hawaii')[0].term, 'MDX Hawaii',
+    'MDX Hawaii names the plan, and is not explained as a Hawaii-only item rule');
+  assert.ok(!sb.insTermsIn_('MDX Hawaii').some((t) => t.term === 'Hawaii only'),
+    'the item rule is not attached to a value that only names the plan');
+  assert.strictEqual(sb.insTermsIn_('Hawaii').length, 0,
+    'a bare "Hawaii" matches NEITHER definition — it stays unexplained rather than borrowing one');
 
   // Plan Specific explains itself, and is still amber.
   assert.strictEqual(sb.insToneCls_('Plan Specific'), 'warn');
