@@ -18210,19 +18210,29 @@ test('A2: all five hours builders accumulate breaks through ONE helper', () => {
 });
 
 test('A3: the sheet doctor stops calling a matched break pair damage', () => {
-  const ctx = vm.createContext({});
-  vm.runInContext(extractRawFunction('Code.js', 'tsDoctorLegitBreaks_'), ctx,
-    { filename: 'Code.js#tsDoctorLegitBreaks_' });
+  const ctx = vm.createContext({ Math, String, Array });
+  ['timeToMins_', 'breakSortKey_', 'breakOpenLeave_', 'tsDoctorLegitBreaks_'].forEach((f) =>
+    vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: 'Code.js#' + f }));
   const legit = ctx.tsDoctorLegitBreaks_;
   const days = {
     'E1|2026-09-01': { lo: ['12:00:00', '17:00:00'], li: ['12:30:00', '19:00:00'] },  // two real breaks
-    'E2|2026-09-01': { lo: ['12:00:00', '17:00:00'], li: ['12:30:00'] },              // a stray leave
+    'E2|2026-09-01': { lo: ['12:00:00', '17:00:00'], li: ['12:30:00'] },              // a break, then ON a second one now (T6)
+    'E6|2026-09-01': { lo: ['12:00:00', '12:01:00'], li: ['12:30:00'] },              // a double-punched leave, then back
+    'E7|2026-09-01': { lo: ['12:00:00', '12:01:00'], li: [] },                        // a double-punched leave, no return yet
     'E3|2026-09-01': { lo: ['12:00:00'], li: ['12:30:00'] },                          // ordinary day
   };
   assert.strictEqual(legit(days, 'E1', '2026-09-01', 'LunchOut'), true, 'matched pairs are legal data');
   assert.strictEqual(legit(days, 'E1', '2026-09-01', 'LunchIn'), true, 'both break types');
-  assert.strictEqual(legit(days, 'E2', '2026-09-01', 'LunchOut'), false,
-    'a lone extra LEAVE beside one return is still damage — the classic double-punch, last row wins');
+  // T6 (cycle 22): until then E2 read as "a lone extra leave = damage", and
+  // the collapse kept the LAST leave — deleting the 12:00 one, so the 12:30
+  // return paired with nothing and the finished break was PAID. The extra
+  // leave is the OPEN break (breakOpenLeave_, the rule Day Edit shares).
+  assert.strictEqual(legit(days, 'E2', '2026-09-01', 'LunchOut'), true,
+    'a finished break plus one IN PROGRESS is legal data, not a duplicate');
+  assert.strictEqual(legit(days, 'E6', '2026-09-01', 'LunchOut'), false,
+    'a double-punched leave with a return AFTER both is still damage — the classic double-punch, last row wins');
+  assert.strictEqual(legit(days, 'E7', '2026-09-01', 'LunchOut'), false,
+    'and so is a double-punched leave with no return at all');
   // Cycle-19 follow-on (BP): the guard is "two-plus stamps of BOTH types", not
   // "equal counts". E4 has equal counts but pairs into one 7-hour "break"
   // (12:00→19:00, dropping 17:00 and 11:00) — protected from the collapse AND

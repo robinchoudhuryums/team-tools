@@ -2630,7 +2630,22 @@ function tsDoctorLegitBreaks_(days, empId, date, type) {
   // deleted a real one. Those days are REPORTED instead (getTimesheetDoctor's
   // `unpaired` list — Day Edit is the fix); a day with at most one stamp of
   // the other type keeps the classic double-punch semantics (last row wins).
-  return d.lo.length > 1 && d.li.length > 1;
+  if (d.lo.length > 1 && d.li.length > 1) return true;
+  // T6 (cycle 22): a rep who took a morning break and is ON LUNCH
+  // right now has leaves [10:30, 12:30] and returns [10:45]: one leave more
+  // than returns, and the extra one is the OPEN break — the latest leave, after
+  // every return (breakOpenLeave_, the ONE rule Day Edit also uses). That is
+  // not a double-punch, and the collapse's "keep the last row" would delete
+  // the 10:30 morning leave, so the returned 10:45 pairs with nothing and the
+  // morning break becomes paid time. A double-punched leave is still damage:
+  // with a return AFTER both leaves ([12:00, 12:01] / [12:30]) the latest leave
+  // is not open, and with no return at all ([12:00, 12:01] / []) the extra
+  // leave has nothing to have been a break from.
+  if (d.lo.length === d.li.length + 1 && d.li.length >= 1) {
+    const anchor = (d.in && d.in.length) ? timeToMins_(d.in[0]) : null;
+    return !!breakOpenLeave_(d.lo, d.li, anchor);
+  }
+  return false;
 }
 /** Shared scan. Returns { byKey: { 'empId|date|type': {rows:[rowIdx…], times:[…]} },
  *  days: { 'empId|date': { in:[times], out:[times], name } } } over the window. */

@@ -852,6 +852,16 @@
     "repairTimesheetTimezone"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-23",
+   "why": "cycle 22 T6: tsDoctorLegitBreaks_ treats a finished break + one in progress as legal",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "tsDoctorLegitBreaks_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -7304,7 +7314,7 @@
   "tsDoctorLegitBreaks_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "00b836bdf80d4f07"
+   "sha": "193d997f83339985"
   },
   "tsDoctorScan_": {
    "file": "20_timeclock.js",
