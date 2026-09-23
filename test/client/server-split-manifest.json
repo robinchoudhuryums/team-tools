@@ -921,6 +921,18 @@
     "spanishAutoAssignCore_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-23",
+   "why": "F5 (cycle 22 follow-on): breakStrays_ — Day Edit shows unmatched break stamps",
+   "added": [
+    "breakStrays_"
+   ],
+   "removed": [],
+   "changed": [
+    "buildTimesheetForEmployee_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3210,6 +3222,11 @@
    "kind": "function",
    "sha": "8dccbd814efcb683"
   },
+  "breakStrays_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "75e7196617e7a519"
+  },
   "buildAdjustPunchIndex_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -3308,7 +3325,7 @@
   "buildTimesheetForEmployee_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "4fec326f3e4a1f48"
+   "sha": "c6273c947751d233"
   },
   "businessHours_": {
    "file": "10_core.js",

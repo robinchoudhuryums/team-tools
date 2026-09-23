@@ -1649,6 +1649,8 @@ function deReadBreaks_() {
     out.push({
       out: (rows[i].querySelector('.de-brk-out') || {}).value || '',
       in:  (rows[i].querySelector('.de-brk-in')  || {}).value || '',
+      // A stray survives an add/remove re-render, so its warning does too.
+      stray: rows[i].hasAttribute('data-de-stray'),
     });
   }
   return out;
@@ -1667,18 +1669,33 @@ function deRenderBreaks_(pairs) {
     var html = '';
     for (var i = 0; i < list.length; i++) {
       var n = i + 1;
-      html += '<div class="de-break-row" data-de-break>' +
+      html += '<div class="de-break-row" data-de-break' + (list[i].stray ? ' data-de-stray' : '') + '>' +
         '<div class="field"><label for="de-brk-out-' + i + '">Break ' + n + ' · leave</label>' +
         '<input type="time" id="de-brk-out-' + i + '" class="de-brk-out" value="' + esc(list[i].out || '') + '"></div>' +
         '<div class="field"><label for="de-brk-in-' + i + '">Break ' + n + ' · return</label>' +
         '<input type="time" id="de-brk-in-' + i + '" class="de-brk-in" value="' + esc(list[i].in || '') + '"></div>' +
         '<button type="button" class="de-break-rm" data-de-break-rm="' + i + '" ' +
         'aria-label="Remove break ' + n + '" title="Remove break ' + n + '">' + icon('trash', 15) + '</button>' +
-      '</div>';
+      '</div>' +
+      (list[i].stray ? '<div class="de-breaks-note is-warn" data-de-stray-hint>Break ' + n +
+        ' is an unmatched punch in the sheet — add its other half, or remove the row to delete it.</div>' : '');
     }
     host.innerHTML = html;
   }
   deSyncRangeMode_();
+}
+
+/** The refusal for a stray still left half — or '' when there is none. Pure.
+ *  The server refuses a mid-list half row too, but by position ("Break 2 needs
+ *  BOTH…"); this names what the row IS, before any round trip. */
+function deStrayUnresolved_(pairs) {
+  for (var i = 0; i < (pairs || []).length; i++) {
+    var p = pairs[i];
+    if (p && p.stray && (!p.out || !p.in)) {
+      return 'Break ' + (i + 1) + ' is an unmatched punch from the sheet — add its other half or remove it before saving.';
+    }
+  }
+  return '';
 }
 
 /** Set the list from the server's day shape. Prefers the A4 `breaks` array;
@@ -1704,6 +1721,13 @@ function deSetBreaksFromDay_(day) {
   // save DELETED the LunchOut. It renders LAST, with a blank return: the
   // server accepts exactly that shape as a trailing open break and leaves the
   // existing row alone.
+  // Follow-on to T1: the unmatched stamps (damage — the punch flow cannot make
+  // one). Each renders as a flagged half row BEFORE the open break, so it is
+  // never the trailing row the server accepts as open: the save refuses until
+  // the manager completes it or removes it. Unshown, a save deleted it.
+  var strays = (day && day.strayBreaks) || {};
+  (strays.outs || []).forEach(function (t) { pairs.push({ out: String(t).substring(0, 5), in: '', stray: true }); });
+  (strays.ins || []).forEach(function (t) { pairs.push({ out: '', in: String(t).substring(0, 5), stray: true }); });
   if (day && day.openBreak) {
     pairs.push({ out: String(day.openBreak).substring(0, 5), in: '' });
   }
@@ -1931,6 +1955,8 @@ document.getElementById('de-save').addEventListener('click', function () {
     ClockOut: document.getElementById('de-clockout').value || '',
     breaks:   deReadBreaks_(),
   };
+  var strayMsg = deStrayUnresolved_(slots.breaks);
+  if (strayMsg) { showToast(strayMsg, 'toast-error'); return; }
   var reason = document.getElementById('de-reason').value.trim();
   var toDate = (document.getElementById('de-date-to') || {}).value || '';
   // F(cycle-8 M-2): a filled "To" on/before the edit date used to silently

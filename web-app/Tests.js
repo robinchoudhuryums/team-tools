@@ -1543,6 +1543,7 @@ function _registerIntegrationA_() {
   _integrationTest('managerSaveDay_deleteOnly',                test_managerSaveDay_deleteOnly);
   _integrationTest('managerSaveDay_mixedChanges',              test_managerSaveDay_mixedChanges);
   _integrationTest('managerSaveDay_openBreakRoundTrips',       test_managerSaveDay_openBreakRoundTrips);
+  _integrationTest('managerSaveDay_strayBreakRefused',         test_managerSaveDay_strayBreakRefused);
   _integrationTest('managerSaveDay_multipleBreaks',            test_managerSaveDay_multipleBreaks);
   _integrationTest('managerSaveDay_noChangesIsNoOp',           test_managerSaveDay_noChangesIsNoOp);
   _integrationTest('managerSaveDay_nonManagerRejected',        test_managerSaveDay_nonManagerRejected);
@@ -4116,6 +4117,36 @@ function test_managerSaveDay_openBreakRoundTrips() {
   });
   _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchOut'), 2, 'BOTH leaves survive — the open one was deleted before T1');
   _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchIn'), 1, 'the return is untouched');
+}
+
+// F5 (cycle 22 follow-on): a stray break stamp — here a second leave inside a
+// finished break, which the punch flow cannot make — ships as strayBreaks, and
+// the list Day Edit builds from the day (pairs, the flagged stray, the open
+// leave) is REFUSED by the server rather than silently deleting the stray.
+function test_managerSaveDay_strayBreakRefused() {
+  _assertSuiteCaller_();
+  _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '08:00:00', 'IN',  'ADJ-ClockIn');
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '10:00:00', 'OUT', 'ADJ-LunchOut');
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '10:05:00', 'OUT', 'ADJ-LunchOut');
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '10:30:00', 'IN',  'ADJ-LunchIn');
+  let day = null;
+  _asUser(_TEST_MGR_EMAIL, () => {
+    const ts = getEmployeeTimesheetForManager(_TEST_PH_ID, _TEST_DATE_OLD, _TEST_DATE_OLD);
+    day = ((ts && ts.days) || []).filter((d) => d.date === _TEST_DATE_OLD)[0] || null;
+  });
+  _assertNotNull(day, 'the day is read back');
+  const strays = (day.strayBreaks && day.strayBreaks.outs) || [];
+  _assertEq(strays.length, 1, 'one stray leave is shipped');
+  _assertEq(String(strays[0]).substring(0, 5), '10:05', 'and it is the 10:05 inside the 10:00–10:30 break');
+  _assertNull(day.openBreak, 'a stray is not an open break');
+  // Exactly what deSetBreaksFromDay_ builds: the pairs, then the stray half row.
+  const breaks = (day.breaks || []).map((b) => ({ out: String(b.out).substring(0, 5), in: String(b.in).substring(0, 5) }))
+    .concat(strays.map((t) => ({ out: String(t).substring(0, 5), in: '', stray: true })));
+  _asUser(_TEST_MGR_EMAIL, () => {
+    _assertFailure(managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD, { ClockIn: '08:05', ClockOut: '', breaks: breaks }, 'fix a mistyped clock-in'));
+  });
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchOut'), 2, 'BOTH leaves are still in the sheet — nothing deleted unseen');
 }
 
 function test_managerSaveDay_noChangesIsNoOp() {

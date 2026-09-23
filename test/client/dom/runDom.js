@@ -1782,6 +1782,36 @@ test('T1 (cycle 22): a break the rep is ON right now prefills as a trailing half
   assert.strictEqual(h.read('deReadBreaks_')().length, 1);
 });
 
+test('F5 (cycle 22 follow-on): a STRAY break stamp renders as a flagged half row, survives add/remove, and Save refuses it before any RPC', () => {
+  const h = boot();
+  h.read('openDayEditModal')('E-1077', 'Nina Patel');
+  const date = h.read('_deDate');
+  // Damage the punch flow cannot make: a leave at 10:05 inside the 10:00–10:30
+  // break, plus the rep out at lunch now. Before F5 the 10:05 never rendered,
+  // and ANY save of this day (say, fixing the clock-in) deleted it unseen.
+  h.run.flushSuccess({ days: [{ date, clockIn: '08:00:00', breaks: [{ out: '10:00:00', in: '10:30:00' }],
+    strayBreaks: { outs: ['10:05:00'], ins: [] }, openBreak: '13:00:00' }] }, 'getEmployeeTimesheetForManager');
+  assert.strictEqual(deRows(h).map((r) => r.out + '-' + r.in).join('|'), '10:00-10:30|10:05-|13:00-',
+    'the stray renders BEFORE the open break, so it is never the trailing half the server accepts as open');
+  const hints = () => h.$$('#de-breaks [data-de-stray-hint]');
+  assert.strictEqual(hints().length, 1, 'and it is flagged');
+  assert.match(hints()[0].textContent, /Break 2 is an unmatched punch/);
+  // Adding a row re-renders from the read-back: the flag rides the read.
+  h.document.getElementById('de-break-add').click();
+  assert.strictEqual(hints().length, 1, 'the flag survives a re-render');
+  // Save with the stray unresolved: refused, nothing sent.
+  const ci = h.document.getElementById('de-clockin');
+  ci.value = '08:05'; ci.dispatchEvent(new h.window.Event('input'));
+  h.document.getElementById('de-save').click();
+  assert.strictEqual(h.run.pending('managerSaveDay').length, 0, 'NO save RPC while a stray is half');
+  assert.match(h.$('#toast-stack .toast').textContent, /unmatched punch from the sheet/, 'and the refusal says what the row is');
+  // Removing it is a deliberate deletion: the save goes through.
+  h.$$('#de-breaks [data-de-break-rm]')[1].click();
+  assert.strictEqual(hints().length, 0);
+  h.document.getElementById('de-save').click();
+  assert.strictEqual(h.run.pending('managerSaveDay').length, 1, 'resolved, the day saves');
+});
+
 test('an older server (scalars only) still prefills its one pair', () => {
   const h = boot();
   h.read('deSetBreaksFromDay_')({ lunchOut: '12:00:00', lunchIn: '12:30:00' });

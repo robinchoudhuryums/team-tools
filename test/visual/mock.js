@@ -1186,6 +1186,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
           lunchOut: '12:00:00', lunchIn: '12:30:00',
           breaks: [{ out: '12:00:00', in: '12:30:00' }, { out: '17:00:00', in: '19:00:00' }],
           openBreak: null,   // T1: a closed day — the leave-with-no-return field is null
+          strayBreaks: { outs: [], ins: [] },   // F5: no damaged break stamps
           hours: 11.5, incomplete: false, isAdjustment: false, timeOff: null,
         }],
         totalHours: 11.5, daysWorked: 1,

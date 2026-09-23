@@ -5002,6 +5002,9 @@ function buildTimesheetForEmployee_(emp, startDate, endDate) {
       // T1 (cycle 22): the leave with no return yet — Day Edit renders it as
       // a half row so a save round-trips it instead of deleting it.
       openBreak: breakOpenLeave_(pm.LunchOut, pm.LunchIn, timeToMins_(pm.ClockIn)),
+      // Follow-on to T1: every OTHER unpaired stamp (damage). Day Edit shows
+      // each as a half row the save refuses, so none is deleted unseen.
+      strayBreaks: breakStrays_(pm.LunchOut, pm.LunchIn, timeToMins_(pm.ClockIn)),
       clockOut: pm.ClockOut || null,  adjClockOut: !!adjMap.ClockOut,
       hoursWorked, isIncomplete, inProgress,
     });
@@ -7253,6 +7256,32 @@ function breakOpenLeave_(lunchOut, lunchIn, clockInMins) {
   const last = outs[outs.length - 1];
   const lastIn = keyed(lunchIn).reduce((m, x) => Math.max(m, x.mins), -Infinity);
   return last.mins > lastIn ? last.raw : null;
+}
+/** The day's STRAY break stamps: every leave and return that neither pairs
+ *  (breakPairs_) nor is the open leave (breakOpenLeave_). The punch flow cannot
+ *  make one — the state machine alternates leave/return — so a stray is damage:
+ *  a hand-edited sheet, a double punch the debounce missed, a return typed on
+ *  the wrong row. Pure; `{ outs: [raw], ins: [raw] }`, each in time order.
+ *
+ *  WHY it ships (cycle 22 follow-on to T1): Day Edit prefills from the pairs
+ *  and the open leave, so a stray was never shown — and the save, which
+ *  reconciles the sheet to the submitted list, silently DELETED it. Shipped,
+ *  it renders as a half row the parser refuses mid-list, so the manager must
+ *  complete it or remove it on purpose before the day will save. */
+function breakStrays_(lunchOut, lunchIn, clockInMins) {
+  const anchor = (typeof clockInMins === 'number') ? clockInMins : null;
+  const keyed = (v) => (Array.isArray(v) ? v : (v === null || v === undefined || v === '' ? [] : [v]))
+    .map((t) => ({ raw: t, mins: breakSortKey_(t, anchor) }))
+    .filter((x) => x.mins !== null)
+    .sort((a, b) => a.mins - b.mins);
+  const outs = keyed(lunchOut), ins = keyed(lunchIn);
+  // Consume by VALUE, once each, so two identical stamps (a double punch)
+  // leave the second behind as the stray it is.
+  const take = (list, raw) => { const k = list.findIndex((x) => x.raw === raw); if (k >= 0) list.splice(k, 1); };
+  breakPairs_(lunchOut, lunchIn, clockInMins).forEach((p) => { take(outs, p.out); take(ins, p.in); });
+  const open = breakOpenLeave_(lunchOut, lunchIn, clockInMins);
+  if (open !== null) take(outs, open);
+  return { outs: outs.map((x) => x.raw), ins: ins.map((x) => x.raw) };
 }
 function calcHours_(clockIn, clockOut, lunchOut, lunchIn) {
   let inMins = timeToMins_(clockIn), outMins = timeToMins_(clockOut);

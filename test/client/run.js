@@ -18767,6 +18767,68 @@ test('T1 (cycle 22): a break IN PROGRESS round-trips through Day Edit instead of
   assert.ok(/openBreak: breakOpenLeave_\(pm\.LunchOut, pm\.LunchIn, timeToMins_\(pm\.ClockIn\)\)/.test(build), 'the day shape carries openBreak');
 });
 
+test('F5 (cycle 22 follow-on): a STRAY break stamp is shown and blocks the save — never deleted unseen (server shape, client rule, guard, parser, driven)', () => {
+  const ctx = vm.createContext({ Math, String, Array });
+  ['timeToMins_', 'breakSortKey_', 'breakPairs_', 'breakOpenLeave_', 'breakStrays_', 'managerParseBreakSlots_'].forEach((fn) =>
+    vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+  vm.runInContext('var MANAGER_DAY_MAX_BREAKS = 12;', ctx);
+  vm.runInContext(extractRawFunction('tc/script_manager.html', 'deStrayUnresolved_'), ctx);
+  const strays = (lo, li, ci) => JSON.parse(JSON.stringify(ctx.breakStrays_(lo, li, ctx.timeToMins_(ci))));
+
+  // The damage shapes. None is producible by the punch flow.
+  assert.deepStrictEqual(strays(['10:30:00', '12:30:00'], ['12:45:00'], '08:00:00'), { outs: ['12:30:00'], ins: [] },
+    'a leave with a LATER return that an earlier leave already took');
+  assert.deepStrictEqual(strays(['12:00:00', '12:00:00'], ['12:30:00'], '08:00:00'), { outs: ['12:00:00'], ins: [] },
+    'a double-punched leave: the second copy is the stray');
+  assert.deepStrictEqual(strays(['12:00:00'], ['11:00:00', '12:30:00'], '08:00:00'), { outs: [], ins: ['11:00:00'] },
+    'a return with no leave before it');
+  // The legitimate shapes carry none.
+  assert.deepStrictEqual(strays(['10:30:00', '12:30:00'], ['10:45:00'], '08:00:00'), { outs: [], ins: [] },
+    'the OPEN break is not a stray (T1 owns it)');
+  assert.deepStrictEqual(strays(['12:00:00', '15:00:00'], ['12:30:00', '15:10:00'], '08:00:00'), { outs: [], ins: [] });
+  assert.deepStrictEqual(strays(['23:30:00', '02:00:00'], ['00:15:00'], '22:00:00'), { outs: [], ins: [] },
+    'overnight: 23:30–00:15 pairs and 02:00 is open, on the clock-in anchor');
+  assert.deepStrictEqual(strays([], [], '08:00:00'), { outs: [], ins: [] });
+
+  // The client rule (deSetBreaksFromDay_ — its DOM pin drives the real one):
+  // pairs, then the strays as FLAGGED half rows, then the open leave last.
+  const prefill = (lo, li, ci) => {
+    const m = ctx.timeToMins_(ci);
+    const rows = JSON.parse(JSON.stringify(ctx.breakPairs_(lo, li, m))).map((b) => ({ out: b.out.substring(0, 5), in: b.in.substring(0, 5) }));
+    const s = strays(lo, li, ci);
+    s.outs.forEach((t) => rows.push({ out: t.substring(0, 5), in: '', stray: true }));
+    s.ins.forEach((t) => rows.push({ out: '', in: t.substring(0, 5), stray: true }));
+    const open = ctx.breakOpenLeave_(lo, li, m);
+    if (open) rows.push({ out: String(open).substring(0, 5), in: '' });
+    return rows;
+  };
+  const cases = [
+    [['10:30:00', '12:30:00'], ['12:45:00'], '08:00:00'],
+    [['12:00:00'], ['11:00:00', '12:30:00'], '08:00:00'],
+    [['10:00:00', '10:05:00', '13:00:00'], ['10:30:00'], '08:00:00'],   // a stray leave AND an open break
+  ];
+  cases.forEach(([lo, li, ci]) => {
+    const rows = prefill(lo, li, ci);
+    assert.ok(/unmatched punch from the sheet/.test(ctx.deStrayUnresolved_(rows)), 'the client refuses before the round trip: ' + JSON.stringify(rows));
+    const parsed = JSON.parse(JSON.stringify(ctx.managerParseBreakSlots_({ breaks: rows, ClockIn: ci.substring(0, 5), ClockOut: '' })));
+    assert.ok(parsed.error, 'and the SERVER refuses it too, whatever a client sends: ' + JSON.stringify(rows));
+  });
+  // Resolved — completed or removed — the day saves.
+  assert.strictEqual(ctx.deStrayUnresolved_([{ out: '10:30', in: '12:45' }, { out: '12:50', in: '13:00', stray: true }]), '',
+    'a stray the manager completed is a pair');
+  assert.strictEqual(ctx.deStrayUnresolved_([{ out: '10:30', in: '12:45' }]), '', 'a removed stray is a deliberate deletion');
+  assert.strictEqual(ctx.deStrayUnresolved_([{ out: '12:30', in: '' }]), '', 'the open break is NOT a stray');
+
+  // The wiring: the server ships the field, the save consults the guard first.
+  const build = stripJsComments_(extractRawFunction('Code.js', 'buildTimesheetForEmployee_'));
+  assert.ok(/strayBreaks: breakStrays_\(pm\.LunchOut, pm\.LunchIn, timeToMins_\(pm\.ClockIn\)\)/.test(build), 'the day shape carries strayBreaks');
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  const saveAt = mgr.indexOf("getElementById('de-save').addEventListener");
+  const saveBody = mgr.slice(saveAt, mgr.indexOf('google.script.run', saveAt));
+  assert.ok(/deStrayUnresolved_\(slots\.breaks\)/.test(saveBody) && /if \(strayMsg\) \{ showToast\(strayMsg, 'toast-error'\); return; \}/.test(saveBody),
+    'the save refuses an unresolved stray BEFORE any RPC');
+});
+
 test('A4-2: the day reconcile treats the submitted break list AS the day', () => {
   const ctx = vm.createContext({});
   ['timeToMins_', 'breakSortKey_', 'managerPlanDay_'].forEach((fn) =>
