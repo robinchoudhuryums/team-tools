@@ -662,6 +662,37 @@ test('D6 (cycle 22): an Employee Docs manager action refreshes the list around a
   assert.strictEqual(doc.getElementById('ed-is-body').value, '', 'empty for the next document');
 });
 
+test('D7 (cycle 22): a coaching reply the rep is typing survives every re-render of the list, and is dropped once it is sent', () => {
+  const h = boot(); const area = mount_(h, 'view-area');
+  const doc = h.window.document;
+  area.innerHTML = '<div id="coach-content"></div>';
+  const item = (id, extra) => Object.assign({ coachId: id, status: 'open', severity: 'minor', createdAt: '2026-09-20T10:00:00Z',
+    whatHappened: 'x', whatShould: 'y', ageDays: 1 }, extra || {});
+  let my = { items: [item('c1'), item('c2')] };
+  h.run.respond('getMyCoaching', () => my);
+  h.run.respond('acknowledgeCoaching', () => ({ success: true }));
+  h.read("COACH_MODE = 'mine'; COACH_STATE.my = null; COACH_STATE.replyDrafts = {}");
+  h.read("currentView = 'coaching'");
+  h.window.coachLoadMy_();
+  let ta = doc.getElementById('coach-reply-c1');
+  ta.focus();
+  ta.value = 'I will confirm the address <next time> & say so';
+  ta.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  // A filter/search re-render.
+  h.window.coachRenderMy_();
+  ta = doc.getElementById('coach-reply-c1');
+  assert.strictEqual(ta.value, 'I will confirm the address <next time> & say so', 'THE REGRESSION: the reply survives a re-render, escaped round-trip');
+  assert.strictEqual(doc.activeElement, ta, 'and keeps focus');
+  // Acknowledging ANOTHER item reloads the list.
+  my = { items: [item('c1'), item('c2', { status: 'acknowledged', acknowledgedAt: '2026-09-21T09:00:00Z' })] };
+  h.window.coachAck_('c2');
+  assert.strictEqual(doc.getElementById('coach-reply-c1').value, 'I will confirm the address <next time> & say so',
+    'the reload after acknowledging another item keeps it too');
+  // Sent with its own acknowledgement → dropped.
+  h.window.coachAck_('c1');
+  assert.strictEqual(h.read("COACH_STATE.replyDrafts['c1']"), undefined, 'the draft is dropped once sent');
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 // STEP 1 — Log persistence on nav-away/return (diagnose the operator report
 // "short-term notes reset when navigating back"). The Log is a today-only view
