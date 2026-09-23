@@ -1610,6 +1610,49 @@ test('F3: the Stored formulas panel starts idle, and an empty hit list reads cle
     'the System pane mounts the panel IDLE — the scan never runs on enter');
 });
 
+// ── F4 (cycle 22 follow-on) — a positional append grows the grid first ─────
+console.log('\n10_core.js — F4: every positional append at getLastRow() + 1 grows the grid first');
+test('F4: appendRowsSafe_ grows a FULL grid before its one write, and sheet-safes every cell', () => {
+  const ctx = { String, Array };
+  vm.createContext(ctx);
+  ['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_', 'appendRowsSafe_'].forEach((n) => vm.runInContext(extractRawFunction('10_core.js', n), ctx));
+  const log = [];
+  let maxRows = 4, lastRow = 4;   // a full grid: the next row is PAST the edge
+  const sh = {
+    getLastRow: () => lastRow, getMaxRows: () => maxRows,
+    insertRowsAfter: (after, n) => { log.push('grow ' + after + '+' + n); maxRows += n; },
+    getRange: (r, c, n, w) => {
+      if (r + n - 1 > maxRows) throw new Error('outside the dimensions of the sheet');
+      return { setValues: (v) => { log.push('write ' + r + 'x' + n); log.push(JSON.stringify(v)); lastRow += n; } };
+    },
+  };
+  assert.strictEqual(ctx.appendRowsSafe_(sh, [['a', '=1'], ['b', '-x']]), 5);
+  assert.deepStrictEqual(log, ['grow 4+2', 'write 5x2', JSON.stringify([['a', "'=1"], ['b', "'-x"]])]);
+  log.length = 0;
+  maxRows = 100;
+  ctx.appendRowsSafe_(sh, [['c', 1]]);
+  assert.deepStrictEqual(log.slice(0, 1), ['write 7x1'], 'room in the grid → no growth');
+  assert.strictEqual(ctx.appendRowsSafe_(sh, []), 0, 'nothing to write → nothing touched');
+});
+test('F4: every server function that writes at getLastRow() + 1 grows the rows first (derived)', () => {
+  const src = stripJsComments_(serverSource());
+  const hosts = new Set();
+  const re = /getLastRow\(\)\s*\+\s*1/g; let m;
+  while ((m = re.exec(src)) !== null) {
+    const fns = [...src.slice(0, m.index).matchAll(/^function ([A-Za-z0-9_$]+)/gm)];
+    hosts.add(fns[fns.length - 1][1]);
+  }
+  assert.ok(hosts.size >= 3, 'sanity: the positional appenders were found (' + [...hosts].join(', ') + ')');
+  const bad = [];
+  hosts.forEach((h) => {
+    const body = stripJsComments_(extractRawFunction('10_core.js', h));
+    const grow = body.indexOf('insertRowsAfter(');
+    const write = body.search(/\.setValues\(/);
+    if (grow < 0 || write < 0 || grow > write) bad.push(h);
+  });
+  assert.deepStrictEqual(bad, [], 'a positional append with no row growth before its write:\n  ' + bad.join('\n  '));
+});
+
 console.log('\nCode.js — PTO reconciliation half-day-pair exemption (cycle 7 · L-4)');
 {
   vm.runInContext(extractRawFunction('Code.js', 'ptoLegitHalfDayPair_'), sb, { filename: 'Code.js#ptoLegitHalfDayPair_' });
@@ -23120,7 +23163,9 @@ test('C-N4: Spanish auto-assign — least-loaded pick (pure), manager gate BEFOR
   const lockAt = core.indexOf('waitLock(15000)');
   assert.ok(lockAt > 0 && core.indexOf('spanishClaimsMap_()') > lockAt, 'the load + still-unclaimed set are re-derived from the LIVE map INSIDE the lock');
   assert.ok(core.indexOf('spanishAutoAssignPick_(') > lockAt, 'the pick runs inside the lock too');
-  assert.ok(/\.setValues\(sheetSafeRows_\(rows\)\)/.test(core) && !/appendRow\(/.test(core), 'ONE batched setValues, never a per-row appendRow loop');
+  // F4 (cycle 22 follow-on): the batch rides appendRowsSafe_ — still ONE write,
+  // now through the helper that grows the grid first (the C1 class).
+  assert.ok(/appendRowsSafe_\(getOrCreateSpanishClaimsSheet_\(\), rows\)/.test(core) && !/appendRow\(/.test(core), 'ONE batched write through appendRowsSafe_, never a per-row appendRow loop');
   assert.ok(/'claim', pk\.by, self, nowMs\]/.test(core), 'each row is a claim by the pick, assigned by the caller (the row shape spanishClaimsFold_ reads)');
   const auditIdx = core.indexOf("writeAuditLog_(emp, 'SpanishInboxAutoAssign'");
   assert.ok(auditIdx > core.indexOf('lock.releaseLock()'), 'the audit row lands after the lock releases');

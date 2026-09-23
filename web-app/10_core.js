@@ -4183,6 +4183,20 @@ function appendRowsTextSafe_(sheet, rows, textIdx) {
   sheet.getRange(r, 1, rows.length, width).setValues(sheetTextRows_(rows, textIdx || []));
   return r;
 }
+/** A multi-row appendRow: ONE positional write of sheet-safe rows at the next
+ *  free row. The caller MUST hold the ScriptLock (the appendRowsTextSafe_
+ *  contract). Grows the grid first — the cycle-22 C1 class: getRange past the
+ *  last grid row THROWS where appendRow would have extended it, so a tab that
+ *  outgrows its 1000-row default fails every run from then on. Returns the
+ *  first row written. */
+function appendRowsSafe_(sheet, rows) {
+  if (!rows || !rows.length) return 0;
+  const r = sheet.getLastRow() + 1;
+  const need = r + rows.length - 1;
+  if (need > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), need - sheet.getMaxRows());
+  sheet.getRange(r, 1, rows.length, rows[0].length).setValues(sheetSafeRows_(rows));
+  return r;
+}
 /** Column LETTER for a 0-based index (A..Z — every '@' column in this app is
  *  inside the first 26). One source for the '@' columns: the index list. */
 function sheetColLetter_(i) { return String.fromCharCode(65 + i); }

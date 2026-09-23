@@ -909,6 +909,18 @@
    "removed": [],
    "changed": [],
    "moved": []
+  },
+  {
+   "date": "2026-09-23",
+   "why": "F4 (cycle 22 follow-on): appendRowsSafe_, the grid-growing multi-row append",
+   "added": [
+    "appendRowsSafe_"
+   ],
+   "removed": [],
+   "changed": [
+    "spanishAutoAssignCore_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3032,6 +3044,11 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "a5b57bf3450b6128"
+  },
+  "appendRowsSafe_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "d15e7c848f42c0f4"
   },
   "appendRowsTextSafe_": {
    "file": "10_core.js",
@@ -7151,7 +7168,7 @@
   "spanishAutoAssignCore_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "d9408296a508c8ff"
+   "sha": "5d015eca67409c41"
   },
   "spanishAutoAssignPick_": {
    "file": "51_spanish.js",

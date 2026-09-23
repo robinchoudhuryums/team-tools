@@ -840,8 +840,10 @@ function spanishAutoAssignCore_(emp, days) {
     picks = spanishAutoAssignPick_(stillUnclaimed, members, load);
     if (picks.length) {
       const rows = picks.map(function (pk) { return [stamp, pk.threadId, 'claim', pk.by, self, nowMs]; });
-      const sh = getOrCreateSpanishClaimsSheet_();
-      sh.getRange(sh.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(sheetSafeRows_(rows));
+      // appendRowsSafe_ grows the grid first: a positional write past the last
+      // grid row throws, so once SpanishClaims outgrew its 1000-row default
+      // every auto-assign run would have failed (the cycle-22 C1 class).
+      appendRowsSafe_(getOrCreateSpanishClaimsSheet_(), rows);
     }
   } finally { lock.releaseLock(); }
   writeAuditLog_(emp, 'SpanishInboxAutoAssign', '', '', false, 0,
