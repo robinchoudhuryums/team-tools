@@ -4,9 +4,9 @@
 Cycle: 22 — opened 2026-09-23 by a `/broad-scan` (99 findings: 0 Critical /
 3 High; nine-batch implementation plan). Cycle 21 + 21post are in HISTORY.md.
 Phase: implement
-Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9) + S2 DONE; Batch 2 IN PROGRESS (T1, T3, T2, T6, C1, C5)
+Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9) + S2 DONE + Batch 2 DONE (T1, T3, T2, T6, C1, C5)
 Test Command: manual
-Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent) · S2 (phased, blanket): L (~9 h) — helper+pin 1h · wrap every write site ~180 + pin repairs 6h · derived pin + bite-checks 2h | S2 Actual: ~5 h · Batch 2: M (~11.5 h) — T1 M 3h · T3 M 3h · T2 S 1.5h · T6 S 1.5h · C1 S 1.5h · C5 S 1h
+Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent) · S2 (phased, blanket): L (~9 h) — helper+pin 1h · wrap every write site ~180 + pin repairs 6h · derived pin + bite-checks 2h | S2 Actual: ~5 h · Batch 2: M (~11.5 h) — T1 M 3h · T3 M 3h · T2 S 1.5h · T6 S 1.5h · C1 S 1.5h · C5 S 1h | Batch 2 Actual: ~4.5 h
 Subsystem cycles since last Seams audit: 1 — reset to 0 by the 2026-09-18 audit
 (batch S), +1 for the 21post reflection. The cadence is every 4.
 Updated: 2026-09-23
@@ -24,9 +24,19 @@ Updated: 2026-09-23
 - S3 | script_core.html, cn/script_callnotes.html | errorStateHtml_ beaconMsg override; search failures no longer ship the typed query to ClientErrors
 - S4 | 61_forms.js | FormTokenCreated logs tokenRef=<8 chars>…, not the live token
 - S9 | 61_forms.js | public submit validates the token shape + existence before the global lock; lock timeout is a polite retry
+- T1 | 20_timeclock.js, tc/script_manager.html | Day Edit ships + renders the OPEN break (openBreak); a save no longer deletes it
+- T3 | 00_config.js, 20_timeclock.js, tc/*.html | a Clock Out filed while a resume is pending ATTACHES as its finish (PAR EndTime); a past-day resume needs one; approval writes it
+- T2 | 20_timeclock.js | repairRowsMoved_: both repair tools re-verify inside the lock and refuse on drift
+- T6 | 20_timeclock.js | the doctor treats a finished break + one in progress as legal (breakOpenLeave_)
+- C1 | 30_callnotes.js | the archive mover grows the grid's rows before its positional write (both tiers)
+- C5 | 10_core.js | the purge keeps a spare row (never empties the grid)
+  Block: `.cycle/blocks/22-B2-broad-implement.md`
 - S2 | 14 server files + DevTools.js, lint-server.mjs, run.js | every sheet write goes through sheetSafe_/Row_/Rows_ (183 sites, AST-wrapped); '@' writers use sheetText_/sheetTextRows_/appendRowsTextSafe_ after re-asserting '@'; SHEET-SAFE lint rule + derived pins. Block: `.cycle/blocks/22-S2-broad-implement.md`
 
 ## Pending / not yet done
+- **Deploy Batch 2** with Batch 1 + S2, and its walk (block): Day Edit on a rep
+  on lunch keeps the leave; a resume + a filed finish closes the day; the
+  editor's new `managerSaveDay_openBreakRoundTrips` + rewritten resume test.
 - **Deploy S2** with Batch 1 + S2's walk (its block): `=1+1` time-off note reads
   back as text; a `+1 555…` callback and a `- …` issue read back exactly; the
   scratchpad and a QA comment starting `- ` come back with no apostrophe.
@@ -63,6 +73,14 @@ Updated: 2026-09-23
   takes no lock across its positional deletes (g132 class — needs an editor
   check of ScriptLock re-entrancy); pre-deploy ClientErrors/AuditLog rows may
   hold typed queries / tokens (optional redaction).
+- **Batch 2 follow-ons:** `51_spanish.js` auto-assign writes at
+  getLastRow()+1 without growing the grid (the C1 class — throws once
+  SpanishClaims passes 1000 rows); Day Edit still drops a NON-trailing
+  unpaired leave; the brief does not flag "resume waiting for a finish".
+- **Docs owed by Batch 2 (/sync-docs):** g15 amended (the open break), a
+  grow-the-grid gotcha, the B3 resume decision amended (finish rides the
+  request), PAR EndTime in operator-state, walk steps on S7 + the resume
+  scenario.
 - **S2 follow-ons:** client "Copy table" TSV is the same class on paste (no
   client twin of sheetSafe_ yet); no one-click stored-formula scanner.
   Platform assumption to confirm on the walk: a '@' cell stores a leading
@@ -96,6 +114,11 @@ Updated: 2026-09-23
 - **S2 deferred out of Batch 1** (operator, 2026-09-23) — then implemented in
   its most complete form on the operator's request: a BLANKET boundary over
   every write (not a per-field judgement of which text is user-supplied).
+- **T3: the finish RIDES the resume request** (one request, attach on submit)
+  rather than a second ClockOut request — two requests' approval order would
+  matter. A past-day resume with no finish is refused, not guessed.
+- **T2: verify-then-refuse inside the lock**, not re-plan — nothing is written
+  on drift; the operator re-runs.
 - **'@' cells write raw after re-asserting '@'** rather than through
   sheetSafe_: a plain-text cell would store the apostrophe literally.
 - **The suite guard is "active === effective"**, not a MANAGER_EMAILS check:
@@ -121,7 +144,7 @@ Updated: 2026-09-23
   amber** with their own explanations (operator, 2026-09-22).
 
 ## Where I left off
-Batch 1 (S1, X2, S3, S4, S9) and S2 of cycle 22 are committed and pushed;
-none is deployed. Next: `/sync-docs` for both blocks' owed documentation, then
-deploy + the two walks; or `/broad-implement Batch 2` (payroll and punch
-integrity — T1 Day Edit open break, T3, T2, T6, C1, C5).
+Batch 1, S2 and Batch 2 of cycle 22 are committed and pushed; none is
+deployed. Next: `/sync-docs` (three blocks' owed docs), then deploy + the three
+walks; or `/broad-implement Batch 3` (client state that carries PHI or loses
+work — I1 cross-language intake amend, C4, K2, K6, C3, D6, D7, C6, C10, C11).
