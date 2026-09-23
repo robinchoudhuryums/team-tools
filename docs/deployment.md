@@ -206,6 +206,12 @@ zero behavior change**, so prod is unaffected until you set them.
   destructive `TEST_`-row writers (`runAllTests` / `setupTestEnvironment`) **refuse**
   to run, so you can never seed test rows into live payroll/PHI. (`runSmokeTests`,
   pure logic, still runs anywhere.)
+- **The suite is also OWNER-only, on every instance (cycle 22 S1).** Every runner,
+  `setupTestEnvironment`, `cleanupTestData` and every `test_*` refuses a caller who
+  is not the script owner (`Session.getActiveUser()` must equal
+  `Session.getEffectiveUser()`). That is always true in the editor and never true
+  from the web app. This is separate from `INSTANCE_IS_PROD`: the owner check says
+  WHO may run the suite, and the prod flag says WHERE the destructive half may run.
 - **Dev-only tooling** (`devScrubRoster_`, `devShowConfig_` in `DevTools.js`) is
   guarded by `assertDevInstance_` — it runs ONLY when `INSTANCE_LABEL` is set and
   `INSTANCE_IS_PROD` is not — so a mutating dev helper can never touch the live

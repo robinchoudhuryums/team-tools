@@ -139,6 +139,27 @@ const fn = extractRawFunction('Code.js', 'foo_');  // resolves through serverSou
 - `Tests.js` and `DevTools.js` are NOT server source. They share the Apps Script
   global scope but are not what the pins mean by "the server", and a pin asserts
   they stay out of `filePushOrder`.
+- **…but they ARE pushed, so a GATE net must not read `serverSource()` (cycle 22
+  X2).** `filePushOrder` sets load ORDER, not membership: clasp pushes every
+  `.js` in `web-app/`, and `google.script.run` reaches every top-level function
+  in all of them whose name does not end in `_` (g143). The PUBLIC-GATE pin
+  therefore reads the DIRECTORY, and refuses to trust itself if a `.claspignore`
+  appears. Any net that asks "what can a browser call?" reads the directory too.
+
+## Static nets: `npm run lint:server`
+
+`scripts/lint-server.mjs` runs ESLint over the ONE global scope with two rules
+CI enforces alongside the harnesses:
+
+- **`no-undef`** — a structural pin cannot see a ReferenceError (g118); the
+  globals list is DERIVED from the manifest's enabled services (g137).
+- **SHEET-SAFE (cycle 22 S2)** — a `no-restricted-syntax` rule: every
+  `appendRow` argument is `sheetSafeRow_(…)`, every `setValue` argument
+  `sheetSafe_(…)` / `sheetText_(…)`, every `setValues` argument
+  `sheetSafeRows_(…)` / `sheetTextRows_(…)`, and the formula / rich-text write
+  APIs are banned outright (g144). `Tests.js` is exempt (fixtures write raw by
+  design). A hit names the file and line; the fix is the wrapper, never an
+  exemption.
 
 ---
 

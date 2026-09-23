@@ -80,6 +80,21 @@ not restate it. Server endpoints live in the fourteen server files
      renders instead of collapsing to nothing (F-48, g136, the sparkline
      decision).
 
+     **Cycle 22 (2026-09-23):** Day Edit no longer loses a break stamp it was
+     never shown. A rep who is ON a break right now has their open leave
+     prefilled as a trailing half row (T1 — a save used to delete it, flip the
+     rep back to "clocked in" and pay the lunch), and a damaged day's STRAY
+     stamps (a double-punched leave, a return with no leave) render as flagged
+     half rows the save refuses until the manager completes or removes them
+     (F5). A resume approved after its day has ended now closes the day with
+     the finish the rep filed: an Adjust → Clock Out for a day with a pending
+     resume ATTACHES to it as its finish, the manager card reads "finished
+     HH:mm" or "no finish filed yet", and a past-day resume with no finish is
+     refused rather than left open (T3, the resume decision). The two editor
+     repair tools re-verify their planned rows inside the lock and refuse on
+     drift (T2), and the sheet doctor accepts a finished break plus one in
+     progress as legal data (T6).
+
 ## Call Notes
 
    - **Call Notes** — rolling-note panel for CSR call logging. Each
@@ -106,6 +121,17 @@ not restate it. Server endpoints live in the fourteen server files
      (`cnStripFmt_`); the email applies the server twin `cnFmtEmailHtml_`
      post-`esc_` (free-text Resolution branch only — the server-generated
      OOP resolution is never marker-processed) — see the formatting gotcha.
+
+     **Cycle 22 (2026-09-23):** a failed Search keeps showing the rep what they
+     typed but reports only the shape of the failure to ClientErrors, since the
+     query is usually a patient (S3, g146). Manage → Admin → System gains a
+     **Stored formulas** panel: an on-demand, read-only scan of every store the
+     app writes plus every enrolled rep Sheet for formula cells stored before
+     the cycle-22 write boundary (F3, g144, the operator-state clean-up entry).
+     It mounts idle, since the scan opens every store, and it reads "No stored
+     formulas" only when no store failed and none went unscanned. The
+     scratchpad and every other write now store exactly what was typed: a
+     note starting `- ` or `=` reads back as text (S2).
 
 
 <a id="metrics"></a>
@@ -215,6 +241,13 @@ not restate it. Server endpoints live in the fourteen server files
      cached thread-only aggregate cannot keep serving for the TTL (F-34,
      INV-223, the one-fold decision).
      Backs the CDR Report spreadsheet (`CONFIG.CDR_SS_ID`).
+
+     **Cycle 22 (2026-09-23):** Team Metrics → Copy table neutralises a cell
+     that would paste as a formula (the client twin of the server's write
+     boundary, `tsvCell_`), and a tab inside a value no longer splits the row
+     (F2). The Spanish auto-assign claim batch grows its tab's grid before
+     writing, so it keeps working once `SpanishClaims` passes 1000 rows (F4,
+     g145).
 
 
 <a id="intake"></a>

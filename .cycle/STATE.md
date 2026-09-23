@@ -83,28 +83,24 @@ Updated: 2026-09-23
 - **Batch 2 follow-ons:** the brief does not flag "resume waiting for a
   finish" (not implemented — the Manage card + rep chip say it). (Spanish grid
   growth and Day Edit strays are DONE — F4, F5.)
+- **Docs synced 2026-09-23 (`/sync-docs`)** for Batch 1, S2, Batch 2 and the
+  follow-ons: gotchas g143–g146 + g15/g26/g132 amended; INV-243..248; walk
+  steps on S1/S7/S23/S42/S61/S96/S105 + new S114; the one-boundary decision +
+  the resume amendment; operator-state (owner-only suite, stored-formula
+  clean-up, PAR EndTime, repair refusal); modules, both logs, the test README.
 - **Follow-on follow-ons (22-FO block):** the stored-formula scan is on demand
   only (no findings-list entry, no resume past the budget); the mock lacks
   `adminScanStoredFormulas` (add with X1's Admin fixtures); the sheet doctor
   does not share `breakStrays_`.
-- **Docs owed by Batch 2 (/sync-docs):** g15 amended (the open break), a
-  grow-the-grid gotcha, the B3 resume decision amended (finish rides the
-  request), PAR EndTime in operator-state, walk steps on S7 + the resume
-  scenario.
 - **S2 follow-ons:** (client TSV twin and the stored-formula scanner are DONE —
   F2, F3.) Platform assumption to confirm on the walk: a '@' cell stores a leading
   apostrophe literally (the reason for the plain-text path).
-- **Docs owed by S2 (/sync-docs):** a coercion-family gotcha (strings are parsed
-  as typed; every write through sheetSafe_), an invariant, a design decision
-  (blanket boundary, '@' exception), the stored-formula clean-up.
-- **Docs owed by Batch 1 (/sync-docs):** a gotcha "a LEADING underscore is not
-  private"; g26 amended for the test runners; the errorStateHtml_ beacon rule;
-  a PUBLIC-GATE invariant (INV-243); walk steps on S1/S23/S61.
 - **Invariant numbers — do not reuse any:** INV-225..227 RESERVED (cycle 20);
   INV-229..232 + an INV-213 amendment PROPOSED (cycle 21); INV-240..242
   PROPOSED (21post: fixtures the server can still produce · tone/explanation
   agree both ways · doc UI paths resolve against `TOOLS` labels). None is in
-  the library yet. **Next free is INV-243.**
+  the library yet. INV-243..248 were WRITTEN by cycle 22's /sync-docs.
+  **Next free is INV-249.**
 - **An intermittent DOM pin**: `the resume request states the unpaid gap
   before it is filed` (runDom.js) failed once during T7 and has passed every
   run since. Flagged, not dismissed — a flake is not a root cause.
@@ -154,6 +150,6 @@ Updated: 2026-09-23
 
 ## Where I left off
 Batch 1, S2, Batch 2 and follow-ons F1–F5 of cycle 22 are committed and pushed;
-none is deployed. Next: `/sync-docs` (four blocks' owed docs), then deploy + the
-four walks; or `/broad-implement Batch 3` (client state that carries PHI or loses
+none is deployed; their docs are synced. Next: deploy + the four walks (S1,
+S7, S23, S42, S61, S96, S105, S114 carry the cycle-22 steps); or `/broad-implement Batch 3` (client state that carries PHI or loses
 work — I1 cross-language intake amend, C4, K2, K6, C3, D6, D7, C6, C10, C11).
