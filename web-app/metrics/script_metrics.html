@@ -1813,24 +1813,25 @@ function mRepDrill_(btn) {
 
 /** #10 — TSV of the currently displayed team table, scope-aware. Pure
  *  (Node-pinned): plain values only, never HTML; an unavailable note read
- *  exports as '' — unknown is not 0 (INV-187). */
+ *  exports as '' — unknown is not 0 (INV-187). Every line goes through
+ *  tsvRow_, so a rep or queue name that starts like a formula pastes as text. */
 function mTeamTableTsv_(data, scope, sort) {
   var out = [];
   if (scope === 'queue') {
-    out.push(['Queue', 'Transferred', 'Reps'].join('\t'));
+    out.push(tsvRow_(['Queue', 'Transferred', 'Reps']));
     (data.queueRows || []).forEach(function (q) {
-      out.push([q.queue, q.transferred, q.reps].join('\t'));
+      out.push(tsvRow_([q.queue, q.transferred, q.reps]));
     });
   } else if (scope === 'dept') {
-    out.push(['Department', 'Transferred', 'Queues', 'Reps (min)'].join('\t'));
+    out.push(tsvRow_(['Department', 'Transferred', 'Queues', 'Reps (min)']));
     (data.groupRows || []).forEach(function (g) {
-      out.push([g.group, g.transferred, (g.queues || []).length, g.reps].join('\t'));
+      out.push(tsvRow_([g.group, g.transferred, (g.queues || []).length, g.reps]));
     });
   } else {
     var hasTr = !!(data.queueRows && data.queueRows.length);
     var head = ['Rep', 'Rung', 'Answered', 'Missed', '% Ans', 'ATT', 'Notes', 'Intake', 'Coverage'];
     if (hasTr) head.push('Transfers');
-    out.push(head.join('\t'));
+    out.push(tsvRow_(head));
     var reps = mSortReps_(data.reps || [], sort || { key: 'pctAnswered', dir: 'desc' });
     reps.forEach(function (r) {
       var row = [r.repName, r.totalRung, r.totalAnswered, r.totalMissed,
@@ -1840,7 +1841,7 @@ function mTeamTableTsv_(data, scope, sort) {
         (r.intakeNotes == null ? '' : r.intakeNotes),   // batch 6 — an unavailable count exports BLANK, never 0
         (r.noteCoverage != null ? r.noteCoverage + '%' : '')];
       if (hasTr) row.push(r.transferred);
-      out.push(row.join('\t'));
+      out.push(tsvRow_(row));
     });
   }
   return out.join('\n');

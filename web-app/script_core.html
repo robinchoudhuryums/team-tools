@@ -1639,6 +1639,30 @@ function manualCopyModal_(text, what) {
   return overlay;
 }
 
+/** ONE cell of a TSV the rep pastes into a spreadsheet — the CLIENT twin of the
+ *  server's `sheetSafe_` (10_core.js, cycle 22 S2). The server boundary stops a
+ *  formula reaching the stores, but "Copy table" hands the same text to the
+ *  manager's clipboard, and a Sheets PASTE parses a cell exactly as setValue
+ *  does: `=…`, and `+`/`-`/`@` before anything that is not a number, becomes a
+ *  formula in THEIR sheet. A leading apostrophe makes the cell literal text on
+ *  paste and is not kept in its value. A tab or line break inside a value would
+ *  split the row, so it becomes a space. The rule is a MIRROR of sheetSafe_, and
+ *  a Node pin drives both over one grid, so a drift fails CI (g120). */
+function tsvCell_(v) {
+  if (v == null) return '';
+  if (typeof v !== 'string') return String(v);
+  var s = v.replace(/[\t\r\n]+/g, ' ');
+  var t = s.replace(/^\s+/, '');
+  var c = t.charAt(0);
+  if (c === '=') return "'" + s;
+  if ((c === '+' || c === '-' || c === '@') && !/^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(t.replace(/\s+$/, ''))) return "'" + s;
+  return s;
+}
+/** One TSV line — every cell through tsvCell_. The only `join('\t')` in the client. */
+function tsvRow_(cells) {
+  return cells.map(tsvCell_).join('\t');
+}
+
 /** Copy, and give the rep the RIGHT feedback for the outcome.
  *
  *  Every call site in this app goes through here rather than through

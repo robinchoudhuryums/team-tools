@@ -7973,6 +7973,8 @@ test('#9: rep drill-through is a real button riding data-* attributes', () => {
 
 test('#10: TSV builder — plain values, scope-aware, unknown is not 0 (behavioral)', () => {
   loadFunction(sb, 'metrics/script_metrics.html', 'mSortReps_');   // dependency
+  loadFunction(sb, 'script_core.html', 'tsvCell_');                // F2 — every line goes through tsvRow_
+  loadFunction(sb, 'script_core.html', 'tsvRow_');
   const mTeamTableTsv_ = loadFunction(sb, 'metrics/script_metrics.html', 'mTeamTableTsv_');
   const data = {
     reps: [
@@ -8002,6 +8004,40 @@ test('#10: TSV builder — plain values, scope-aware, unknown is not 0 (behavior
   // No Transfers column when the range produced no queue rows.
   const noQ = mTeamTableTsv_({ reps: data.reps, queueRows: [] }, 'combined', null);
   assert.ok(noQ.split('\n')[0].indexOf('Transfers') === -1, 'Transfers column only when transfer data exists');
+  // F2 (cycle 22 follow-on): a name that starts like a formula pastes as TEXT,
+  // and a tab inside a value cannot split the row.
+  const hostile = mTeamTableTsv_({ reps: [{ repName: '=HYPERLINK("x")', totalRung: 1, totalAnswered: 1, totalMissed: 0,
+    pctAnswered: 100, attFormatted: '0:01:00', noteCount: 1, intakeNotes: 0, noteCoverage: 100 }],
+    queueRows: [{ queue: 'A\tB', transferred: 1, reps: 1 }] }, 'combined', null);
+  const hRow = hostile.split('\n')[1].split('\t');
+  assert.strictEqual(hRow[0], '\'=HYPERLINK("x")', 'a formula-shaped rep name is neutralised');
+  assert.strictEqual(hRow.length, 10, 'the row keeps its column count');
+  assert.strictEqual(mTeamTableTsv_({ queueRows: [{ queue: 'A\tB', transferred: 1, reps: 1 }] }, 'queue', null).split('\n')[1],
+    'A B\t1\t1', 'a tab inside a value becomes a space, not a new column');
+});
+test('F2: tsvCell_ is sheetSafe_\'s MIRROR — one grid, both functions, same verdict (g120)', () => {
+  const ctx = { String, Array };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('10_core.js', 'sheetSafe_'), ctx);
+  const tsvCell_ = loadFunction(sb, 'script_core.html', 'tsvCell_');
+  const grid = ['=1+1', ' =SUM(A1)', '+1', '-1', '-1.5', '+.5', '- call back', '+ note', '@mention', '@', '-',
+    '1-2', 'Nina', '', ' plain', '-3 ', '=', "'already"];
+  grid.forEach((g) => assert.strictEqual(tsvCell_(g), ctx.sheetSafe_(g), 'mirror drift on ' + JSON.stringify(g)));
+  assert.strictEqual(tsvCell_(null), '', 'null exports blank, as join() did');
+  assert.strictEqual(tsvCell_(undefined), '');
+  assert.strictEqual(tsvCell_(0), '0', 'a zero is a zero');
+  assert.strictEqual(tsvCell_('a\r\nb'), 'a b', 'a line break cannot open a new row');
+  // The one TSV line builder: no client partial joins cells with a tab by hand.
+  const WEB = path.join(__dirname, '../../web-app');
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? walk(path.join(d, e.name)) : (/\.html$/.test(e.name) ? [path.join(d, e.name)] : []));
+  const hand = [];
+  walk(WEB).forEach((f) => {
+    let src = fs.readFileSync(f, 'utf8');
+    if (/script_core\.html$/.test(f)) src = src.replace(extractRawFunction('script_core.html', 'tsvRow_'), '');
+    if (/\.join\((['"])\\t\1\)/.test(src)) hand.push(path.relative(WEB, f));
+  });
+  assert.deepStrictEqual(hand, [], 'a hand-built TSV line bypasses tsvCell_');
 });
 
 // ── Operator follow-ups (2026-08-06, round 2) ───────────────────────────────
