@@ -106,9 +106,10 @@ Updated: 2026-09-23
 - **Batch 3 follow-ons (22-B3 block):** a drawer search back to home still
   rebuilds the lookups; C4 changed when the "Note edits discarded" toast fires
   on a switch (confirm on the walk); Training's dirty guard could adopt D6's
-  targeted patch. Docs owed: g141 ×3 instances, g85/g86 (External send),
-  a per-host repaint-cache rule (K2), g84/g98 (C10), the Save & Compose and
-  amend decisions, modules notes, walk steps + two invariants.
+  targeted patch. Docs SYNCED 2026-09-23: g141/g84/g85/g86/g94/g98
+  amended, new g147, INV-249/250, walk steps on S34/S59/S64/S69/S99/S113 +
+  new S115, the Save & Compose and Intake-amend decision amendments, module
+  notes, both logs.
 - **Follow-on follow-ons (22-FO block):** the stored-formula scan is on demand
   only (no findings-list entry, no resume past the budget); the mock lacks
   `adminScanStoredFormulas` (add with X1's Admin fixtures); the sheet doctor
@@ -120,8 +121,8 @@ Updated: 2026-09-23
   INV-229..232 + an INV-213 amendment PROPOSED (cycle 21); INV-240..242
   PROPOSED (21post: fixtures the server can still produce · tone/explanation
   agree both ways · doc UI paths resolve against `TOOLS` labels). None is in
-  the library yet. INV-243..248 were WRITTEN by cycle 22's /sync-docs.
-  **Next free is INV-249.**
+  the library yet. INV-243..250 were WRITTEN by cycle 22's /sync-docs passes.
+  **Next free is INV-251.**
 - **An intermittent DOM pin**: `the resume request states the unpaid gap
   before it is filed` (runDom.js) failed once during T7 and has passed every
   run since. Flagged, not dismissed — a flake is not a root cause.
@@ -171,8 +172,8 @@ Updated: 2026-09-23
 
 ## Where I left off
 Batch 1, S2, Batch 2, follow-ons F1–F5 and Batch 3 of cycle 22 are committed
-and pushed; none is deployed. Docs are synced through the follow-ons; Batch 3's
-are owed (its block). Next: `/sync-docs` for Batch 3, then deploy + the walks
-(S1, S7, S23, S42, S61, S96, S105, S114 + the Batch 3 walk); or
+and pushed; none is deployed. Docs are synced through Batch 3. Next: deploy +
+the walks (S1, S7, S23, S34, S42, S59, S61, S64, S69, S96, S99, S105, S113,
+S114, S115 carry the cycle-22 steps); or
 `/broad-implement Batch 4` (Metrics and manager verdicts — M4, M1, X3, M2, M3,
 M7, M8, M9, D1, D2).

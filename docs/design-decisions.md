@@ -2077,6 +2077,20 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   accept/undecided/reject selections. Read-only throughout — the submission
   tabs stay append-only (same §164.312(c) discipline as Sent Forms). See
   INV-116.
+  **AMENDED (cycle 22 I1, 2026-09-23): an amendment REPLACES the form; it is
+  not an overlay on it.** The Amend flow parks the source's answers
+  (`INTAKE_AMEND_PREFILL`) for the form view's enter to consume. Two paths
+  leaked the rep's in-progress draft, which is another call's work and another
+  patient, into a send marked AMENDED for the original patient. (1) A
+  cross-language amend flipped the language through `intakeSetLang_`, which
+  snapshots the form before re-entering and restores it after, i.e. after the
+  amendment applied. (2) In either language, the enter restored the stored
+  draft before consuming the amendment, so every answer the original left
+  blank kept the draft's value. A parked amendment now skips the draft restore
+  (`intakeAmendPending_`), and the language flip re-enters directly
+  (`intakeReenterForm_`). The draft in storage is overwritten on the next
+  keystroke, as it always was: an amend was never a merge. Verify: the I1 DOM
+  pin (ES and EN) and the extended amend order pin.
 - <a id="form-submission-notification-renders-the-completed-form"></a>**Form-submission notification renders the completed form.** When a
   recipient submits a fillable form, `submitFormByToken` calls
   `notifyRepOfFormSubmission_` (best-effort, try/catch — never blocks the
@@ -4068,7 +4082,18 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   window — with the text still in the form; a cancel while the save is
   in flight sets `_deleteOnConfirm`, honored when the server confirms;
   the Department→External tab-switch detaches the flow first — it is
-  NOT a cancel). The confirm handler also RE-POINTS held references
+  NOT a cancel). **AMENDED (cycle 22 C4, 2026-09-23): the tab switch no
+  longer DETACHES the flow — it MOVES it.** Detaching left nothing to finish
+  the transaction. The external send never cleared the form, timer or draft,
+  the re-entry guard ("Still saving…") was off while the external composer
+  was open, and the next Save wrote a duplicate note with untouched fields
+  carried into the next patient's. `composeFlow` now carries an `owner`
+  (`'dept'` by default, `'ext'` after a switch, back again on the reverse
+  switch). Each composer's close rolls back only a flow it owns
+  (`cnRollbackComposeFlow_`), and either composer's SEND completes it
+  (`cnCompleteComposeFlow_`). So a switch is still not a cancel, but cancelling
+  the External composer the flow moved into IS one: the save is undone and
+  the text stays, the department composer's contract. The confirm handler also RE-POINTS held references
   (`lastSaveUndo.note` / `composeFlow.note`) at the server's confirmed
   note object — the array slot is REPLACED on confirm, so the prior
   round's undo-save held a stale pending object and reported "still

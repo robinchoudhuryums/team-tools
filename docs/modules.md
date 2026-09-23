@@ -133,6 +133,19 @@ not restate it. Server endpoints live in the fourteen server files
      scratchpad and every other write now store exactly what was typed: a
      note starting `- ` or `=` reads back as text (S2).
 
+     **Cycle 22 Batch 3 (2026-09-23):** the Save & Compose transaction now
+     FOLLOWS the rep into the External tab (C4). The external send completes it
+     (form, timer and draft cleared, where before the next Save wrote a
+     duplicate note), and cancelling External rolls the save back, the same as
+     cancelling the department composer. History draws notes only under the
+     range they were loaded for, and refuses a range over the server's 90-day
+     cap before asking (C3). The Scratchpad saves what was typed during an
+     in-flight save even after the modal closes, says so when a save after
+     close fails, and brings the unsaved text back on the next open (C6). The
+     live refresh keeps a note that confirmed while it was in flight (C10), and
+     clearing the form ends any running dictation first (C11, latent while
+     voice input is off).
+
 
 <a id="metrics"></a>
      **Batch 6 (2026-09-18):** the Admin Overview KPI strip reports TEAM
@@ -343,6 +356,12 @@ not restate it. Server endpoints live in the fourteen server files
      2026-09-04, fired live — see the Common Gotcha).** Backs the Intake spreadsheet
      (`CONFIG.INTAKE.SS_ID` / Script Property `INTAKE_SS_ID`).
 
+
+     **Cycle 22 Batch 3 (2026-09-23):** an Amend lands on a BLANK form in the
+     original's language (I1). A cross-language amend used to restore the rep's
+     current draft over the amendment, and in either language the draft filled
+     every answer the original had left blank, all sent as "AMENDED" for the
+     original patient. See the Intake Sent tab decision's amendment.
 
 <a id="reference"></a>
      **Batch 5 (2026-09-18):** the email's question LABELS come from
@@ -606,6 +625,13 @@ not restate it. Server endpoints live in the fourteen server files
      says out loud.
 
 
+     **Cycle 22 Batch 3 (2026-09-23):** the Ctrl/⌘+K drawer keeps what the rep
+     is typing into its lookups when its tree finishes loading, since the home
+     re-render patches around the lookup sections (K6, g141). Reopening the
+     drawer builds them fresh and forgets the previous caller's payor and item
+     verdicts, and a lookup answer arriving for a panel that has since been
+     rebuilt paints nothing (K2, g147).
+
 <a id="training-employee-docs"></a>
      **Batch 6 (2026-09-18):** the drawer is `role="dialog"` named by its own
      heading and hands focus back to whatever opened it — open it with
@@ -717,6 +743,14 @@ not restate it. Server endpoints live in the fourteen server files
      hidden from reps (decision 9) and agents do NOT see their own QA reviews
      (decision 13). See INV-134.
 
+
+     **Cycle 22 Batch 3 (2026-09-23):** Issue Docs builds its "Create a
+     document" form once per visit and refreshes the list around it (D6).
+     Releasing, voiding or deleting a template no longer wipes a half-written
+     document, the employee and template pickers keep their selection through
+     the refresh, and only a successful issue or draft save resets the form.
+     A coaching reply being typed survives filter changes, search and the
+     reload after acknowledging another item (D7).
 
 <a id="qa"></a>
 ## QA

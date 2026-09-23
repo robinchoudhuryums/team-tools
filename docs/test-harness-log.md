@@ -1991,6 +1991,15 @@ per-finding detail. What each added to each harness, by delta:
 - **Follow-ons:** Node +10 (F1–F5), DOM +1 (F5), editor +1
   (`managerSaveDay_strayBreakRefused`) and one omnibus admin-gate entry. The
   F1 ratchet found nine live-tab positional deletes where the plan named four.
+- **Batch 3:** Node +1 (the C3 cap mirror, which reads the server literal),
+  DOM +9 (I1, C4, K6 + K2, C3, C6, C10, C11, D6, D7), and three pins updated
+  to the new shapes (the amend order pin, CMP-4's close toast, R3 #5's
+  flush-on-close). Every fix was driven in jsdom against the real partial.
+  One NO BITE: D6's first pin set `ED_STATE.mgrFresh` by hand, so deleting the
+  flag from the submit left it green. It now issues through `edSubmitIssue_`
+  with a stubbed `uiConfirm` (g138). C10's first draft ordered confirms by
+  `Date.now()`, which a confirm and a poll can share; a monotonic counter
+  replaced it before any pin could flake on it.
 
 **Two NO BITEs, both acted on (g138).** T2's first wiring pin asserted the
 refusal message existed, and an `if (false)` beside it stayed green. The pin

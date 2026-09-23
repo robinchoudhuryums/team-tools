@@ -35,6 +35,16 @@ then the four blocks' walks.
   the dry run, then the apply.
 - **Search failures no longer write the typed query to ClientErrors.** Rows
   from before this deploy may still hold one; redacting them is optional.
+- **Batch 3 — nothing a rep or manager types is lost to a refresh any more.**
+  An Intake Amend opens holding only the original's answers (never the rep's
+  current draft). Save & Compose → External → Send clears the form for the
+  next call. The Reference drawer keeps what is typed while it loads and
+  forgets the last caller on reopen. History never shows one range's notes
+  under another's dates. A half-written Employee Doc survives release, void
+  and template changes, and a coaching reply survives filters. The Scratchpad
+  keeps text typed during a save. No operator action; one visible change: a
+  Save & Compose that switched to External and is then CANCELLED now undoes
+  the save, like the department composer.
 
 ## 2026-09-23 — Area eligibility: city rules, any-warehouse, the diagnostics panel, the vocabulary (T7–T9)
 

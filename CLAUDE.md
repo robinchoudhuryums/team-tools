@@ -221,6 +221,7 @@ Who waits for whom, and what goes stale.
 - **Tag admin operations hold the global ScriptLock across all enrolled rep Sheets.** Fires when you add reps in volume, or add a cross-rep tag transform. [Detail](docs/gotchas.md#g90-tag-admin-operations-hold-the-global-scriptlock)
 - **Clock view coverage strip is SWR-cached per day (cycle-9 M-6).** Fires when you cache the Clock coverage strip. [Detail](docs/gotchas.md#g104-clock-view-coverage-strip-is-swr-cached)
 - **`getMyMetrics` is ALSO server-result-cached (L-1).** Fires when you wonder why a Metrics re-enter costs nothing. [Detail](docs/gotchas.md#g105-getmymetrics-is-also-server-result-cached-l)
+- **A repaint cache keyed per HOST dies with the host — a rebuilt panel forgets it, and a response for a panel no longer mounted is dropped; the Reference drawer painted the PREVIOUS caller's verdicts under the next caller's empty inputs (K2, 2026-09-23).** Fires when you cache anything per host or panel, or paint an async response by looking its target up by id after the wait. Verify: the K6 + K2 DOM pin. [Detail](docs/gotchas.md#g147-a-repaint-cache-keyed-per-host-dies)
 - **Never cache a FAILURE as a value — a truthy empty stub satisfies every later `if (cached)` guard, so one transient RPC failure left the composer with no departments for the whole session (Batch 2, 2026-09-17).** Fires when a failure handler assigns a default into a cache slot. Verify: the F-06 DOM pin. [Detail](docs/gotchas.md#g129-never-cache-a-failure-as-a-value)
 
 ### Honest failure — a degraded read must never read as data
@@ -303,13 +304,13 @@ The hot path: the form, the cards, the composer, the per-rep store.
 - **`SubformData` (column P) is a generic per-note metadata JSON blob.** Fires when you add per-note metadata, or append to a `subformData` array. [Detail](docs/gotchas.md#g80-subformdata-column-p-is-a-generic-per)
 - **`cnRenderSubforms_` is shape-keyed via `host.dataset.shapeKey`.** Fires when a subform re-render could wipe in-progress values. [Detail](docs/gotchas.md#g82-cnrendersubforms-is-shape-keyed-via-host-dataset)
 - **`cnToggleComposerDept_` updates the modal in place, no full re-render.** Fires when you add dept-dependent UI to the composer. [Detail](docs/gotchas.md#g83-cntogglecomposerdept-updates-the-modal-in-place-no)
-- **Optimistic UI for submit / flag / resolve on Call Notes.** Fires when you add an optimistic action to a note card. [Detail](docs/gotchas.md#g84-optimistic-ui-for-submit-flag-resolve-on)
+- **Optimistic UI for submit / flag / resolve on Call Notes — and the live refresh must keep a note CONFIRMED after its request, not just the `_pending` ones (C10, 2026-09-23).** Fires when you add an optimistic action to a note card, or touch `cnRefreshRollingStack_`. Verify: the C10 DOM pin. [Detail](docs/gotchas.md#g84-optimistic-ui-for-submit-flag-resolve-on)
 - **Form-completion timer is persisted to localStorage.** Fires when you add a form-clearing path. [Detail](docs/gotchas.md#g85-form-completion-timer-is-persisted-to-localstorage)
-- **Sticky form draft is auto-saved on every input.** Fires when you add a form-clearing path (the draft is separate from the timer). [Detail](docs/gotchas.md#g86-sticky-form-draft-is-auto-saved-on)
+- **Sticky form draft is auto-saved on every input — every Save & Compose COMPLETION clears it through `cnCompleteComposeFlow_`, the External send included, and a clear first ends any running dictation (C4 + C11, 2026-09-23).** Fires when you add a form-clearing or note-completing path (the draft is separate from the timer). Verify: the C4 and C11 DOM pins. [Detail](docs/gotchas.md#g86-sticky-form-draft-is-auto-saved-on)
 - **CN card buttons use `data-cn-action` delegation, not inline onclick.** Fires when you add a card button or a keyboard handler to a CN view. [Detail](docs/gotchas.md#g91-cn-card-buttons-use-data-cn-action)
 - **An `onclick` LITERAL cannot carry a name: `esc()` has already encoded the apostrophe, so the `.replace(/'/g, "\\'")` beside it is a no-op and the button throws on click (Batch 5, 2026-09-18).** Fires when you build a handler call by string concatenation. Verify: the F-17 pin. [Detail](docs/gotchas.md#g133-an-onclick-literal-cannot-carry-a-name)
 - **`setCallNoteFlag` accepts an optional `trainingQuestion`.** Fires when you flag an existing note as training from a card. [Detail](docs/gotchas.md#g93-setcallnoteflag-accepts-an-optional-trainingquestion)
-- **`getMyCallNotesRange` caps at 90 days.** Fires when you widen a History range. [Detail](docs/gotchas.md#g94-getmycallnotesrange-caps-at-90-days)
+- **`getMyCallNotesRange` caps at 90 days — mirrored client-side and pinned against the server literal, and History notes render only under the range they were loaded for (C3, 2026-09-23).** Fires when you widen a History range, or touch the History loader. Verify: the C3 Node + DOM pins. [Detail](docs/gotchas.md#g94-getmycallnotesrange-caps-at-90-days)
 - **Call-note delete window.** Fires when a rep asks why they cannot delete an older note. [Detail](docs/gotchas.md#g95-call-note-delete-window)
 - **Call Notes ambient polling stops on tool switch.** Fires when you navigate between tools with a CN poller running. [Detail](docs/gotchas.md#g97-call-notes-ambient-polling-stops-on-tool)
 - **The Log rolling stack live-refreshes (#3).** Fires when a note is logged in another window. [Detail](docs/gotchas.md#g98-the-log-rolling-stack-live-refreshes-3)
@@ -321,7 +322,7 @@ The iframe sandbox, the overlay lifecycle, and what persists per browser.
 
 - **An `outerHTML` patch replaces ONE element, so that element must contain everything its renderer emits (operator 2026-08-31).** Fires when a renderer grows a new sibling and something patches it by id. Verify: the BIZ-3 wrapper-shape assertion. [Detail](docs/gotchas.md#g66-an-outerhtml-patch-replaces-one-element-so)
 - **An ASYNC prefill must fill only the fields the user has not typed into, and a FAILED prefill must not leave a saveable blank form (operator 2026-09-03).** Fires when a modal prefills asynchronously. Verify: the Day Edit DOM test. [Detail](docs/gotchas.md#g68-an-async-prefill-must-fill-only-the)
-- **An ASYNC loader that re-renders a view DESTROYS what the user has typed into it, and restoring the VALUES is not enough — focus and the caret go with the nodes (T1, 2026-09-21).** Fires when a background loader re-renders a view that contains an input. Verify: the T1 input-survival pin, which asserts the element is literally the same object. [Detail](docs/gotchas.md#g141-an-async-loader-that-re-renders-a-view)
+- **An ASYNC loader that re-renders a view DESTROYS what the user has typed into it, and restoring the VALUES is not enough — focus and the caret go with the nodes (T1, 2026-09-21); three more instances in cycle 22 Batch 3 (the Reference drawer, Employee Docs, Coaching replies), and a TARGETED patch beats a skip-while-dirty guard when the re-render carries the result of the user's own action.** Fires when a background loader, or the reload after an action, re-renders a view that contains an input. Verify: the T1 input-survival pin + the K6/D6/D7 DOM pins. [Detail](docs/gotchas.md#g141-an-async-loader-that-re-renders-a-view)
 - **`location.reload()` reloads the IFRAME, not the app — and that URL is session-bound (operator 2026-09-01; the rule is a TRIPWIRE since Batch 6, 2026-09-18 — `reloadApp_`'s two fallbacks are the only ones allowed, across script_core and eight partials).** Fires when client code navigates or reloads the app. Verify: BCN-3 + the F-14 budget pin. [Detail](docs/gotchas.md#g69-location-reload-reloads-the-iframe-not-the)
 - **A class-wide attribute write assumes every member of the class is yours (operator 2026-08-11).** Fires when a writer selects by a class that something else borrows for its looks. [Detail](docs/gotchas.md#g70-a-class-wide-attribute-write-assumes-every)
 - **`showToast(msg, type)` normalizes the variant — pass either form.** Fires when you call `showToast`. [Detail](docs/gotchas.md#g77-showtoast-msg-type-normalizes-the-variant-pass)
@@ -457,7 +458,7 @@ for the reasoning, which is usually the part that matters.
 - [Interactive fillable web forms via token-gated public route](docs/design-decisions.md#interactive-fillable-web-forms-via-token-gated-public-route)
 - [In-app form-submission viewer](docs/design-decisions.md#in-app-form-submission-viewer)
 - [Sent Forms tab (rep-facing, read-only)](docs/design-decisions.md#sent-forms-tab-rep-facing-read-only)
-- [Intake Sent tab (rep-facing, read-only) — same model for intake submissions](docs/design-decisions.md#intake-sent-tab-rep-facing-read-only-same-model-for-intake-s)
+- [Intake Sent tab (rep-facing, read-only) — same model for intake submissions; an amendment REPLACES the form since cycle 22 I1](docs/design-decisions.md#intake-sent-tab-rep-facing-read-only-same-model-for-intake-s)
 - [Form-submission notification renders the completed form](docs/design-decisions.md#form-submission-notification-renders-the-completed-form)
 - [Cross-rep manager aggregates are cached](docs/design-decisions.md#cross-rep-manager-aggregates-are-cached)
 - [Paired-timezone chip + signal chip vocabulary](docs/design-decisions.md#paired-timezone-chip-signal-chip-vocabulary)
@@ -886,8 +887,8 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 10 | `TRIGGER_GROUPS` |
 | localStorage keys | 18 | `ums…` literals in `web-app/` |
-| Invariant library entries | 238 | `.cycle/config.md` |
-| Regression scenarios (S*) | 109 | `.cycle/config.md` |
+| Invariant library entries | 240 | `.cycle/config.md` |
+| Regression scenarios (S*) | 110 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least
