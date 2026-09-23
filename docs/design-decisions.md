@@ -1887,6 +1887,18 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   eligible". An unreadable clause takes the whole cell down with it, for the
   same reason UNKNOWN never lifts. INV-236, INV-237.
 
+  **And a radius can be about the NETWORK (T7b, the same day).** Most items
+  reach 100 miles from ANY warehouse; the ones naming Dallas or San Antonio are
+  the technician-built exceptions. `N miles of any warehouse` names nothing and
+  resolves against the registry at CHECK time — the same delegation, so opening
+  a warehouse extends every item written that way with no edit to the pricing
+  sheet. Two consequences are part of the decision rather than details of it:
+  the NAMED form matches whole words only, because a substring hit silently
+  widens a narrow rule; and an over-limit distance with any warehouse
+  UNPLACEABLE is UNKNOWN, not NO, because the unplaced one might be nearer — a
+  rule spanning the whole registry makes that common rather than rare.
+  INV-239.
+
   **Batch 2 of the 2026-09-17 /broad-scan (F-15):** the geocoder's SERVICE
   failure (quota, denial, throw) is its own return shape and reaches the rep as
   "the address service could not be reached (<status>) — not a problem with

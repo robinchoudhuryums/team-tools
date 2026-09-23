@@ -1931,3 +1931,39 @@ recorded so the next reader does not mistake them for coverage: an EMPTY rule
 satisfies the pin (deleting a rule's declarations does not bite; renaming its
 selector does), and a class defined only as a descendant (`.kb-ins-cell .v`)
 counts as globally defined.
+
+## T7–T9 — the eligibility rules and the operator's answers (2026-09-22)
+
+**Two NO BITEs, both real, both mine.** Each was a claim the code did not make.
+- A comment said the any-warehouse test ran *first* to stop a name match
+  "silently narrowing a broad rule". Mutating the order left the pin green —
+  because the returns key off the flag, so order never mattered (g138). The
+  comment was rewritten to say what is true, and chasing it found the real
+  defect underneath: the warehouse-name match was a bare SUBSTRING, so a site
+  called `Ware` matched inside the word "warehouse".
+- The T8 panel pin called the RENDERER with an error and asserted the markup.
+  Deleting the LOADER's failure branch left it green: it proved the renderer can
+  draw an error, not that a failed read produces one. It now makes the RPC throw
+  (a responder that throws routes to the failure handler in `boot.js`) and
+  drives the real path.
+
+**A fixture the server can no longer produce tests nothing.** T9 made
+`hcpcsParse_` read `K0821/23/16`. Three pure pins and two DOM fixtures had used
+exactly that string as their canonical UNCERTAIN code — so after T9 they stubbed
+a payload the server would never send. Each now uses a range (`K0800-K0803`),
+which the server still refuses, so the refusal path is still driven. Category A
+(the rule changed deliberately); no assertion was weakened.
+
+**Driving the new engine before pinning it paid for itself.** A scratch vm
+harness over the real `oopEligibilityParse_` / `oopEligibilityCheck_` showed the
+operator's `100 miles of any warehouse` reading `unknown` under the old grammar
+BEFORE T7b was built — which is how the advice to write `…of Dallas warehouse,
+or listed cities` for scooters was caught as wrong for the operator's actual
+rule. A scratch harness needs the constants the real one supplies
+(`OOP_ELIG_NEAR_BAND`); a ReferenceError there is the harness, not the code.
+
+**`--force-with-lease` refused a push as "stale info" after a merge** — the
+remote branch had been deleted on merge and the local tracking ref still named
+its merged head. `git fetch --prune`, confirm the remote ref is gone and that
+nothing on it was unmerged, then push without force.
+

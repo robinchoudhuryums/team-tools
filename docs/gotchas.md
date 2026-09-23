@@ -3797,7 +3797,10 @@ move, and the distances and warehouse names were now gone from the sheet.
    `getOopPricingDiagnostics` reported the registry, the dropped rows and every
    eligibility value grouped by how it parsed — and had **no caller anywhere in
    the client**, so in practice it reached nobody. Per-row drops now render on
-   the rep's own panel.
+   the rep's own panel, and since T8 (the next day) the full report has a home
+   at Manage → Admin → System — its DOM pin fails the RPC and drives the
+   loader, because a first draft that called the renderer directly stayed green
+   with the loader's failure branch deleted.
 
 **The generalisation.** Ask of every failure message: *if the reader believes
 this literally and acts on it, what do they change?* If the answer is a file
