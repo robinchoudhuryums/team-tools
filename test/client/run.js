@@ -1719,6 +1719,95 @@ test('M1 (cycle 22): a rep with no call data has NO answer rate — null on the 
   assert.deepStrictEqual(asc, ['Jo', 'Ana', 'Ben'], 'and ascending puts no rate first, not tied with 0%');
 });
 
+// Shared stub harness for the two DQE readers (the H3-3 shape).
+function m3CdrCtx_(rows, noSheet) {
+  const sheet = {
+    getLastRow: () => rows.length,
+    getRange: (r, c, n, w) => {
+      const slice = rows.slice(r - 1, r - 1 + n).map((row) => row.slice(c - 1, c - 1 + w));
+      return { getValues: () => slice, getDisplayValues: () => slice.map((row) => row.map(String)) };
+    },
+  };
+  const ctx = {
+    CONFIG: { CDR_CACHE_KEY: 'k', CDR_CACHE_TTL: 1 },
+    CDR: { DATE: 2, AGENT: 3, QUEUE_EXT: 4, TOTAL_UNIQUE: 5, TOTAL_RUNG: 6, TOTAL_MISSED: 7, TOTAL_ANSWERED: 8, TTT: 9, ATT: 10 },
+    CacheService: { getScriptCache: () => ({ get: () => null, put: () => {} }) },
+    getCdrSS_: () => ({ getSheetByName: () => (noSheet ? null : sheet), getSpreadsheetTimeZone: () => 'UTC' }),
+    validateCdrColumns_: () => null, getCdrNameMap_: () => ({}), cdrRosterHash_: () => 'h',
+    cdrParseHms_: (x) => { const q = String(x || '').split(':').map(Number); return q.length === 3 ? q[0] * 3600 + q[1] * 60 + q[2] : 0; },
+    cdrFmtHms_: (n) => String(n),
+    Utilities: { formatDate: () => '' }, console: { warn() {} }, JSON: JSON, Error: Error,
+  };
+  vm.createContext(ctx);
+  vm.runInContext(['cdrRowDateIso_', 'cdrDqeWindowSpan_', 'cdrAnswerPct_', 'isCdrQueueSentinel_', 'getCdrAgentMetrics_',
+    'getCdrDailyBreakdown_', 'cdrAgentsOrThrow_'].map((f) => extractRawFunction('Code.js', f)).join('\n'), ctx);
+  return ctx;
+}
+test('M3 (cycle 22): a range ATT is the ANSWERED-WEIGHTED mean of the daily averages, in both DQE readers', () => {
+  const H = ['Queue', 'Date', 'Agent', 'Ext', 'Unique', 'Rung', 'Missed', 'Answered', 'TTT', 'ATT'];
+  const R = (date, agent, rung, missed, ans, ttt, att) => ['q', date, agent, '', 1, rung, missed, ans, ttt, att];
+  const rows = [H,
+    R('2026-05-04', 'Ann', 2, 0, 2, '0:20:00', '0:10:00'),     // a 2-call day at 10 min
+    R('2026-05-05', 'Ann', 60, 0, 60, '2:00:00', '0:02:00'),   // a 60-call day at 2 min
+    R('2026-05-06', 'Ann', 3, 3, 0, '0:00:00', '0:05:00'),     // an ATT beside NO answered calls carries no weight
+  ];
+  const ctx = m3CdrCtx_(rows);
+  // (2×600 + 60×120) / 62 = 135.5 → 135. The plain mean of the days read 360 (or 300 with the stray row).
+  assert.strictEqual(ctx.getCdrAgentMetrics_('2026-05-04', '2026-05-06', ['Ann']).agents.Ann.attSeconds, 135,
+    'THE REGRESSION: a 2-call day no longer outvotes a 60-call day');
+  const bd = ctx.getCdrDailyBreakdown_('2026-05-04', '2026-05-06', ['Ann']);
+  assert.strictEqual(bd.agents.Ann.attSeconds, 135, 'the breakdown reader agrees with the aggregate reader');
+  assert.strictEqual(bd.perRepDaily['2026-05-05'].Ann.attSeconds, 120, 'a single day is its own ATT');
+  assert.strictEqual(bd.perRepDaily['2026-05-06'].Ann.attSeconds, null, 'an answered-nothing day still has NO average (C17-4)');
+  const cfg = fs.readFileSync(path.join(__dirname, '../../web-app/00_config.js'), 'utf8');
+  assert.ok(/CDR_CACHE_KEY:\s*'cdr_metrics_v5'/.test(cfg), 'the reader cache key bumped with the ATT semantics (INV-85)');
+});
+test('M7 (cycle 22): a missing DQE tab is an ERROR at every caller, never "no calls" — and never cached', () => {
+  const ctx = m3CdrCtx_([], true);
+  const res = ctx.getCdrAgentMetrics_('2026-05-04', '2026-05-06', ['Ann']);
+  assert.ok(res.meta && res.meta.error, 'sanity: the reader names the failure');
+  assert.throws(() => ctx.cdrAgentsOrThrow_(res), /Call data unavailable: DQE Historical Data sheet not found/);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.cdrAgentsOrThrow_({ agents: { A: 1 }, meta: {} }))), { A: 1 }, 'a clean read passes its map through');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.cdrAgentsOrThrow_({ meta: {} }))), {}, 'an absent map is empty, not a throw');
+  // Driven: the onboarding readiness panel reads every rep as UNKNOWN (ok:false), never as "missing from the CDR".
+  const oc = {
+    getEmployeeInfo_: () => ({ isAdmin: true }),
+    getEmployeeRosterRows_: () => [['h'], ['Ann']], EMP: { NAME: 0 }, empRosterEmail_: () => 'a@x',
+    Utilities: { formatDate: () => '2026-05-10' }, CONFIG: { MANAGER_TIMEZONE: 'UTC' },
+    isoFromUtc_: () => '2026-05-04', Date: Date,
+    getCdrAgentMetrics_: () => ({ agents: {}, meta: { error: 'DQE Historical Data sheet not found' } }),
+    cdrLikelyNameMismatches_: () => [], cdrAgentsOrThrow_: ctx.cdrAgentsOrThrow_,
+  };
+  vm.createContext(oc);
+  vm.runInContext(extractRawFunction('Code.js', 'getOnboardingCdrReadiness'), oc);
+  const ready = oc.getOnboardingCdrReadiness();
+  assert.strictEqual(ready.ok, false, 'THE REGRESSION: the old read returned ok:true with Ann unseen, i.e. "not in the CDR"');
+  // The other two callers: the throw lands in each endpoint's own catch, which returns {error} and skips the put.
+  const dash = stripJsComments_(extractRawFunction('Code.js', 'getDashboardMetrics'));
+  assert.ok(/var dqMap = cdrAgentsOrThrow_\(getCdrAgentMetrics_\(wFrom, wTo, allNames\)\);/.test(dash), 'the Dashboard (6-hour cache) refuses the empty map');
+  const team = stripJsComments_(extractRawFunction('Code.js', 'getTeamMetrics'));
+  assert.ok(/var cdrResult = getCdrAgentMetrics_\(from, toDate, rosterNames\);\s*cdrAgentsOrThrow_\(cdrResult\);/.test(team), 'Team Metrics refuses it before any row is built');
+  ['getOnboardingCdrReadiness', 'getDashboardMetrics', 'getTeamMetrics'].forEach((fn) => {
+    const b = stripJsComments_(extractRawFunction('Code.js', fn));
+    assert.ok(!/getCdrAgentMetrics_\([^;]*\)\.agents/.test(b) && !/agg\.agents \|\| \{\}/.test(b), fn + ': no bare .agents read of the reader survives');
+  });
+});
+test('M9 (cycle 22): every CDR trend builder ships a no-data workday as NULL, never 0 (g136)', () => {
+  let nulls = 0;
+  ['getMyMetrics', 'getMyMetricsRange', 'getTeamMetrics'].forEach((fn) => {
+    const b = stripJsComments_(extractRawFunction('Code.js', fn));
+    const zero = b.match(/\b(rung|answered|missed): (own|day|rDay) \? \2\.\1 : 0\b/g) || [];
+    assert.deepStrictEqual(zero, [], fn + ': a missing day defaulted to 0');
+    nulls += (b.match(/\b(rung|answered|missed): (own|day|rDay) \? \2\.\1 : null\b/g) || []).length;
+  });
+  assert.strictEqual(nulls, 11, 'non-vacuity: all four builders were found (My Stats 3 + range 2 + the two Team trends 3 + 3)');
+  // And the consumers skip a null rather than drawing it as 0.
+  const ctx = vm.createContext({ Math, isNaN });
+  vm.runInContext(extractRawFunction('metrics/script_metrics.html', 'mMiniSparkSvg_'), ctx);
+  const svg = ctx.mMiniSparkSvg_([10, null, 20]);
+  assert.strictEqual((svg.match(/points="([^"]*)"/)[1].trim().split(' ')).length, 2, 'the null day is a gap, not a point at 0');
+});
+
 console.log('\nCode.js — PTO reconciliation half-day-pair exemption (cycle 7 · L-4)');
 {
   vm.runInContext(extractRawFunction('Code.js', 'ptoLegitHalfDayPair_'), sb, { filename: 'Code.js#ptoLegitHalfDayPair_' });

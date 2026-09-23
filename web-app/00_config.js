@@ -217,7 +217,7 @@ const CONFIG = {
   // Entry queues that count as THIS team's demand (the export covers the whole
   // phone system). Empty = every non-internal inbound call.
   BREAK_COVERAGE_VOLUME_QUEUES: ['A_Q_CSR', 'A_Q_Intake', 'Backup CSR', 'A_Q_Spanish'],
-  CDR_CACHE_KEY:     'cdr_metrics_v4',   // v4 — H2: pctAnswered = answered/(answered+missed) (INV-85: bump on shape change)
+  CDR_CACHE_KEY:     'cdr_metrics_v5',   // v5 — cycle 22 M3: range ATT is answered-weighted. v4 — H2: pctAnswered = answered/(answered+missed) (INV-85: bump on shape change)
   // H2 (2026-09-17): the answer STANDARD is the Department Dashboard's, read
   // from the CDR Report workbook's `Dashboard Standards` tab (call-data-
   // reporting's setup() creates and republishes it: one row per dashboard

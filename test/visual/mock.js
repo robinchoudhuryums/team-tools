@@ -293,6 +293,11 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
   function trend30(own) {
     var out = [];
     for (var i = 29; i >= 0; i--) { if (isWeekendIso(daysAgo(i))) continue; out.push({ date: daysAgo(i), pctAnswered: 80 + (i * 7) % 15, answered: 30 + (i * 3) % 12, missed: (i * 2) % 5, own: 80 + (i * 7) % 15, team: 84 + (i * 5) % 9, cohort: 6 }); }
+    // M9 (cycle 22): the server ships a workday with no CDR row as NULLS (a
+    // PTO day), never zeros — the fixture carries one so the sparklines are
+    // photographed skipping it rather than diving to 0 (g136).
+    var gap = out[out.length - 8];
+    if (gap) { gap.pctAnswered = null; gap.answered = null; gap.missed = null; gap.own = null; }
     return out;
   }
   function kpiSeries() {

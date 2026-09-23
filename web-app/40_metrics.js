@@ -30,7 +30,7 @@ function getOnboardingCdrReadiness() {
     var fromD = new Date(Date.parse(to + 'T12:00:00Z') - 6 * 86400000);
     var from = isoFromUtc_(fromD);
     var agg = getCdrAgentMetrics_(from, to, names);
-    var seenSet = agg.agents || {};
+    var seenSet = cdrAgentsOrThrow_(agg);   // M7: an unread DQE tab reads unknown, never missing
     var noCdr = names.filter(function (n) { return !seenSet[n]; });
     var likely = cdrLikelyNameMismatches_(noCdr, (agg.meta && agg.meta.offRosterAgents) || []);
     var seen = {}, alias = {};
@@ -527,6 +527,15 @@ function cdrRosterHash_(rosterNames) {
     return (b < 0 ? b + 256 : b).toString(16).padStart(2, '0');
   }).join('');
 }
+/** M7 (cycle 22): the agents map of a getCdrAgentMetrics_ result, or a THROW
+ *  when the reader NAMED a failure (meta.error — the DQE tab missing or
+ *  renamed). The reader returns agents:{} beside that error, and a caller that
+ *  read only .agents drew — and cached — "nobody took a call". A throw lands in
+ *  each caller's existing failure path, none of which caches. */
+function cdrAgentsOrThrow_(res) {
+  if (res && res.meta && res.meta.error) throw new Error('Call data unavailable: ' + res.meta.error);
+  return (res && res.agents) || {};
+}
 /**
  * Core CDR data reader. Fetches per-agent DQE metrics for a date range,
  * filtered to the `rosterNames` passed in (pass null/[] for an unfiltered
@@ -608,10 +617,15 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
     a.totalUnique  += Number(values[i][CDR.TOTAL_UNIQUE - 1]) || 0;
     a.totalRung    += Number(values[i][CDR.TOTAL_RUNG - 1]) || 0;
     a.totalMissed  += Number(values[i][CDR.TOTAL_MISSED - 1]) || 0;
-    a.totalAnswered += Number(values[i][CDR.TOTAL_ANSWERED - 1]) || 0;
+    var ansRow = Number(values[i][CDR.TOTAL_ANSWERED - 1]) || 0;
+    a.totalAnswered += ansRow;
     a.tttSeconds   += cdrParseHms_(displays[i][CDR.TTT - 1]);
     var att = cdrParseHms_(displays[i][CDR.ATT - 1]);
-    if (att > 0) { a.attSum += att; a.attCount++; }
+    // M3 (cycle 22): each DQE row is ONE DAY's average, so a range's ATT is
+    // the ANSWERED-WEIGHTED mean of them. The plain mean gave a 2-call day the
+    // same vote as a 60-call day (and disagreed with the team aggregate,
+    // which was already answered-weighted).
+    if (att > 0 && ansRow > 0) { a.attSum += att * ansRow; a.attCount += ansRow; }
     if (!a._dates[dateIso]) { a._dates[dateIso] = true; a.daysActive++; }
   }
 
@@ -711,7 +725,7 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
     var a = agents[agent];
     a.totalRung += rung; a.totalAnswered += ans; a.totalMissed += missed;
     a.tttSeconds += cdrParseHms_(displays[i][CDR.TTT - 1]);
-    if (attSec > 0) { a.attSum += attSec; a.attCount++; }
+    if (attSec > 0 && ans > 0) { a.attSum += attSec * ans; a.attCount += ans; }   // M3: answered-weighted
     if (!a._dates[dateIso]) { a._dates[dateIso] = true; a.daysActive++; }
 
     // T4 #5/#6 — per-rep-per-day matrix for the anonymized team-avg + own
@@ -720,7 +734,7 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
     var prd = perRepDaily[dateIso][agent] ||
       (perRepDaily[dateIso][agent] = { rung: 0, answered: 0, missed: 0, _attSum: 0, _attCount: 0 });
     prd.rung += rung; prd.answered += ans; prd.missed += missed;
-    if (attSec > 0) { prd._attSum += attSec; prd._attCount++; }
+    if (attSec > 0 && ans > 0) { prd._attSum += attSec * ans; prd._attCount += ans; }   // M3
   }
 
   Object.keys(daily).forEach(function (d) {
@@ -1429,7 +1443,7 @@ function getDashboardMetrics(periodKey) {
       // cost across the 3 periods (and the MTD prev window). emp.name is in
       // allNames by construction: the caller passed getEmployeeInfo_, so
       // their roster row has an email and survives the F3/F4 skip above.
-      var dqMap = getCdrAgentMetrics_(wFrom, wTo, allNames).agents || {};
+      var dqMap = cdrAgentsOrThrow_(getCdrAgentMetrics_(wFrom, wTo, allNames));   // M7: never cached as no calls
       var trMap = getCsrTransferPerRepDaily_(wFrom, wTo, allNames).agents || {};
       var dq = dqMap[emp.name] || null;
       var tr = trMap[emp.name] || null;
@@ -1583,12 +1597,15 @@ function getMyMetrics(date) {
     // sourced from the rep's own row in the all-reps perRepDaily matrix.
     var trend = dates.map(function (iso) {
       var own = dqPRD[iso] && dqPRD[iso][emp.name];
+      // M9 (cycle 22): a workday with no CDR row is NO DATA, not zero calls —
+      // the rail sparklines drew a PTO day as a dive to 0 (g136's class).
+      // Every consumer (mMiniSparkSvg_, mTrendAvg_) skips null.
       return {
         date: iso,
         pctAnswered: own ? own.pctAnswered : null,
-        rung: own ? own.rung : 0,
-        answered: own ? own.answered : 0,
-        missed: own ? own.missed : 0,
+        rung: own ? own.rung : null,
+        answered: own ? own.answered : null,
+        missed: own ? own.missed : null,
       };
     });
 
@@ -1716,8 +1733,8 @@ function getMyMetricsRange(from, to) {
         trend.push({
           date: iso,
           pctAnswered: own ? own.pctAnswered : null,
-          answered: own ? own.answered : 0,
-          missed: own ? own.missed : 0,
+          answered: own ? own.answered : null,   // M9: no row is no data
+          missed: own ? own.missed : null,
         });
       });
     } catch (e) { trend = []; trendFailed = true; }
@@ -1896,9 +1913,9 @@ function getTeamMetrics(dateOrFrom, to) {
         trendData.push({
           date: iso,
           pctAnswered: day ? day.pctAnswered : null,
-          rung: day ? day.rung : 0,
-          answered: day ? day.answered : 0,
-          missed: day ? day.missed : 0,
+          rung: day ? day.rung : null,            // M9: no row is no data
+          answered: day ? day.answered : null,
+          missed: day ? day.missed : null,
         });
       });
     } else {
@@ -1920,9 +1937,9 @@ function getTeamMetrics(dateOrFrom, to) {
             trendData.push({
               date: rIso,
               pctAnswered: rDay ? rDay.pctAnswered : null,
-              rung: rDay ? rDay.rung : 0,
-              answered: rDay ? rDay.answered : 0,
-              missed: rDay ? rDay.missed : 0,
+              rung: rDay ? rDay.rung : null,      // M9: no row is no data
+              answered: rDay ? rDay.answered : null,
+              missed: rDay ? rDay.missed : null,
             });
           });
         } catch (eRt) { trendData = null; }
@@ -1930,6 +1947,7 @@ function getTeamMetrics(dateOrFrom, to) {
     }
 
     var cdrResult = getCdrAgentMetrics_(from, toDate, rosterNames);
+    cdrAgentsOrThrow_(cdrResult);   // M7: a missing DQE tab is an error, not a team that took no calls
     // Cycle-14 Phase 2 — per-queue TRANSFER attribution. BEST-EFFORT, the same
     // posture as the CDR overlay in managerGetShiftStats (INV-67): the Transfer
     // tab is optional, and a manager's whole team table must not disappear

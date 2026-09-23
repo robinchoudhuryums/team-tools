@@ -967,6 +967,25 @@
     "getDashboardMetrics"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-23",
+   "why": "cycle 22 B4 M3/M7/M9: answered-weighted ATT, cdrAgentsOrThrow_, null trend days",
+   "added": [
+    "cdrAgentsOrThrow_"
+   ],
+   "removed": [],
+   "changed": [
+    "CONFIG",
+    "getCdrAgentMetrics_",
+    "getCdrDailyBreakdown_",
+    "getDashboardMetrics",
+    "getMyMetrics",
+    "getMyMetricsRange",
+    "getOnboardingCdrReadiness",
+    "getTeamMetrics"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -1379,7 +1398,7 @@
   "CONFIG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "8f03e2ce93293b6c"
+   "sha": "6ee45a9b1614e3bd"
   },
   "CSRT": {
    "file": "00_config.js",
@@ -3406,6 +3425,11 @@
    "kind": "function",
    "sha": "9135338f9b9ce41a"
   },
+  "cdrAgentsOrThrow_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "71ffd83191d9e9cf"
+  },
   "cdrAnswerPct_": {
    "file": "40_metrics.js",
    "kind": "function",
@@ -4374,7 +4398,7 @@
   "getCdrAgentMetrics_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "851bcb1c95a0812f"
+   "sha": "cd90e13c93deddc9"
   },
   "getCdrCompanyHolidayRanges_": {
    "file": "40_metrics.js",
@@ -4384,7 +4408,7 @@
   "getCdrDailyBreakdown_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "557c7503078b87db"
+   "sha": "7517a82b706d7469"
   },
   "getCdrDashboardStandard_": {
    "file": "40_metrics.js",
@@ -4444,7 +4468,7 @@
   "getDashboardMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "071465ab322a654e"
+   "sha": "3f8103fa49728036"
   },
   "getDepartmentEmails_": {
    "file": "10_core.js",
@@ -4724,12 +4748,12 @@
   "getMyMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "9135799b69d2756d"
+   "sha": "afaee1183eed2cf4"
   },
   "getMyMetricsRange": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "b2f540016cdfb05c"
+   "sha": "01ea4f1437b6ad26"
   },
   "getMyNoteHourBuckets": {
    "file": "30_callnotes.js",
@@ -4809,7 +4833,7 @@
   "getOnboardingCdrReadiness": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "edbc2fc187b7b420"
+   "sha": "a102e24f382cb8fb"
   },
   "getOnboardingPanel": {
    "file": "10_core.js",
@@ -5099,7 +5123,7 @@
   "getTeamMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "b6cbccac328a5e57"
+   "sha": "ab757aa073b6af20"
   },
   "getTeammateStatus": {
    "file": "20_timeclock.js",
