@@ -616,6 +616,48 @@ test('C11 (cycle 22): a dictation still running when the form is cleared cannot 
     'THE REGRESSION: the previous note is NOT written back into the next call');
 });
 
+test('D6 (cycle 22): an Employee Docs manager action refreshes the list around a half-written document, never over it', () => {
+  const h = boot(); mount_(h, 'view-area');
+  const doc = h.window.document;
+  let dash = { docs: [{ docId: 'd1', empId: 'e1', empName: 'Nina Patel', docType: 'review', title: 'Q3 review',
+    status: 'draft', requiresSignature: true, dueAt: '', signedAt: '' }] };
+  let tpls = { templates: [{ templateId: 't1', name: 'Annual review', docType: 'review', fields: [] },
+                           { templateId: 't2', name: 'PIP', docType: 'pip', fields: [] }] };
+  h.run.respond('getDocsDashboard', () => dash);
+  h.run.respond('getEmployeesList', () => ({ employees: [{ id: 'e1', name: 'Nina Patel' }, { id: 'e2', name: 'Leo Kim' }] }));
+  h.run.respond('getEmpDocTemplates', () => tpls);
+  h.read("currentView = 'docsManage'");
+  h.window.enterDocsManageView();
+  const body = doc.getElementById('ed-is-body');
+  assert.ok(body, 'the issue form rendered');
+  body.value = 'Half-written performance review…';
+  doc.getElementById('ed-is-title').value = '2026 review — Leo';
+  doc.getElementById('ed-is-emp').value = 'e2';
+  doc.getElementById('ed-tpl-pick').value = 't2';
+  // The manager releases the draft in the list below: the view reloads.
+  dash = { docs: [Object.assign({}, dash.docs[0], { status: 'released' })] };
+  tpls = { templates: [tpls.templates[1]] };   // …and a template was deleted meanwhile
+  h.window.edLoadMgr_();
+  assert.strictEqual(doc.getElementById('ed-is-body'), body, 'THE REGRESSION: the form is the same node');
+  assert.strictEqual(body.value, 'Half-written performance review…', 'and keeps the half-written body');
+  assert.strictEqual(doc.getElementById('ed-is-title').value, '2026 review — Leo');
+  assert.strictEqual(doc.getElementById('ed-is-emp').value, 'e2', 'the picked employee survives the option refresh');
+  assert.strictEqual(doc.getElementById('ed-tpl-pick').value, 't2', 'a still-existing template stays picked');
+  assert.strictEqual(doc.getElementById('ed-tpl-pick').options.length, 2, 'the deleted template is gone from the picker');
+  assert.ok(!h.$('[data-ed-release="d1"]'), 'the list below DID refresh (the released draft has no Release button)');
+  // A failed refresh lands beside the form, not over it.
+  h.run.respond('getDocsDashboard', () => { throw new Error('quota'); });
+  h.window.edLoadMgr_();
+  assert.strictEqual(doc.getElementById('ed-is-body'), body, 'a failed refresh does not wipe the form');
+  assert.ok(/Could not load/.test(doc.getElementById('ed-mgr-rest').textContent), 'and says it failed');
+  // A successful issue is the one action that RESETS the form.
+  h.run.respond('getDocsDashboard', () => dash);
+  h.read('ED_STATE.mgrFresh = true');
+  h.window.edLoadMgr_();
+  assert.notStrictEqual(doc.getElementById('ed-is-body'), body, 'after an issue the form is rebuilt');
+  assert.strictEqual(doc.getElementById('ed-is-body').value, '', 'empty for the next document');
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 // STEP 1 — Log persistence on nav-away/return (diagnose the operator report
 // "short-term notes reset when navigating back"). The Log is a today-only view
