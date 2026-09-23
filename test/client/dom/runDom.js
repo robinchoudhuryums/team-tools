@@ -616,7 +616,7 @@ test('C11 (cycle 22): a dictation still running when the form is cleared cannot 
     'THE REGRESSION: the previous note is NOT written back into the next call');
 });
 
-test('D6 (cycle 22): an Employee Docs manager action refreshes the list around a half-written document, never over it', () => {
+test('D6 (cycle 22): an Employee Docs manager action refreshes the list around a half-written document, never over it', async () => {
   const h = boot(); mount_(h, 'view-area');
   const doc = h.window.document;
   let dash = { docs: [{ docId: 'd1', empId: 'e1', empName: 'Nina Patel', docType: 'review', title: 'Q3 review',
@@ -650,10 +650,14 @@ test('D6 (cycle 22): an Employee Docs manager action refreshes the list around a
   h.window.edLoadMgr_();
   assert.strictEqual(doc.getElementById('ed-is-body'), body, 'a failed refresh does not wipe the form');
   assert.ok(/Could not load/.test(doc.getElementById('ed-mgr-rest').textContent), 'and says it failed');
-  // A successful issue is the one action that RESETS the form.
+  // A successful issue is the one action that RESETS the form — driven
+  // through the real submit, not by setting the flag (g138).
   h.run.respond('getDocsDashboard', () => dash);
-  h.read('ED_STATE.mgrFresh = true');
-  h.window.edLoadMgr_();
+  h.run.respond('issueDoc', () => ({ success: true, status: 'released', docId: 'd2' }));
+  h.window.__stubConfirm = () => Promise.resolve(true);
+  h.read('uiConfirm = window.__stubConfirm');
+  h.window.edSubmitIssue_(true);
+  await tick();
   assert.notStrictEqual(doc.getElementById('ed-is-body'), body, 'after an issue the form is rebuilt');
   assert.strictEqual(doc.getElementById('ed-is-body').value, '', 'empty for the next document');
 });
