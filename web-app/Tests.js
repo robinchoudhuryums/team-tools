@@ -1537,6 +1537,7 @@ function _registerIntegrationA_() {
   _integrationTest('managerSaveDay_updateOnly',                test_managerSaveDay_updateOnly);
   _integrationTest('managerSaveDay_deleteOnly',                test_managerSaveDay_deleteOnly);
   _integrationTest('managerSaveDay_mixedChanges',              test_managerSaveDay_mixedChanges);
+  _integrationTest('managerSaveDay_openBreakRoundTrips',       test_managerSaveDay_openBreakRoundTrips);
   _integrationTest('managerSaveDay_multipleBreaks',            test_managerSaveDay_multipleBreaks);
   _integrationTest('managerSaveDay_noChangesIsNoOp',           test_managerSaveDay_noChangesIsNoOp);
   _integrationTest('managerSaveDay_nonManagerRejected',        test_managerSaveDay_nonManagerRejected);
@@ -4060,6 +4061,37 @@ function test_managerSaveDay_mixedChanges() {
   _assertEq(_countAuditRows(_TEST_PH_ID, 'PunchEdit'),  beforeEdit + 2, 'Two edits');
   _assertEq(_countAuditRows(_TEST_PH_ID, 'PunchDelete'),beforeDel + 1,  'One delete');
   _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchIn'), 0, 'LunchIn cleared');
+}
+
+// T1 (cycle 22): a rep ON LUNCH right now. The day ships its pairs in
+// `breaks` and the leave with no return in `openBreak`; Day Edit renders the
+// latter as a trailing half row. Before, the prefill saw no break, the save
+// sent an empty list, and managerPlanDay_ DELETED the LunchOut — the rep was
+// flipped back to "clocked in" and the lunch was paid. This drives the real
+// read endpoint and the real save, as the modal does.
+function test_managerSaveDay_openBreakRoundTrips() {
+  _assertSuiteCaller_();
+  _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '08:00:00', 'IN',  'ADJ-ClockIn');
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '10:30:00', 'OUT', 'ADJ-LunchOut');
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '10:45:00', 'IN',  'ADJ-LunchIn');
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '12:30:00', 'OUT', 'ADJ-LunchOut');
+  let day = null;
+  _asUser(_TEST_MGR_EMAIL, () => {
+    const ts = getEmployeeTimesheetForManager(_TEST_PH_ID, _TEST_DATE_OLD, _TEST_DATE_OLD);
+    day = ((ts && ts.days) || []).filter((d) => d.date === _TEST_DATE_OLD)[0] || null;
+  });
+  _assertNotNull(day, 'the day is read back');
+  _assertEq(String(day.openBreak || '').substring(0, 5), '12:30', 'the open leave is shipped as openBreak');
+  _assertEq((day.breaks || []).length, 1, 'the finished morning break is the one pair');
+  // Exactly what deSetBreaksFromDay_ builds: the pairs, then the open leave.
+  const breaks = (day.breaks || []).map((b) => ({ out: String(b.out).substring(0, 5), in: String(b.in).substring(0, 5) }))
+    .concat([{ out: String(day.openBreak).substring(0, 5), in: '' }]);
+  _asUser(_TEST_MGR_EMAIL, () => {
+    _assertSuccess(managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD, { ClockIn: '08:05', ClockOut: '', breaks: breaks }, 'fix a mistyped clock-in'));
+  });
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchOut'), 2, 'BOTH leaves survive — the open one was deleted before T1');
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchIn'), 1, 'the return is untouched');
 }
 
 function test_managerSaveDay_noChangesIsNoOp() {

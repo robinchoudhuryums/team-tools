@@ -4,9 +4,9 @@
 Cycle: 22 — opened 2026-09-23 by a `/broad-scan` (99 findings: 0 Critical /
 3 High; nine-batch implementation plan). Cycle 21 + 21post are in HISTORY.md.
 Phase: implement
-Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9) + S2 DONE (blanket sheet-safe boundary)
+Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9) + S2 DONE; Batch 2 IN PROGRESS (T1, T3, T2, T6, C1, C5)
 Test Command: manual
-Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent) · S2 (phased, blanket): L (~9 h) — helper+pin 1h · wrap every write site ~180 + pin repairs 6h · derived pin + bite-checks 2h | S2 Actual: ~5 h
+Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent) · S2 (phased, blanket): L (~9 h) — helper+pin 1h · wrap every write site ~180 + pin repairs 6h · derived pin + bite-checks 2h | S2 Actual: ~5 h · Batch 2: M (~11.5 h) — T1 M 3h · T3 M 3h · T2 S 1.5h · T6 S 1.5h · C1 S 1.5h · C5 S 1h
 Subsystem cycles since last Seams audit: 1 — reset to 0 by the 2026-09-18 audit
 (batch S), +1 for the 21post reflection. The cadence is every 4.
 Updated: 2026-09-23

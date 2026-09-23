@@ -1694,6 +1694,14 @@ function deSetBreaksFromDay_(day) {
       in:  (day.lunchIn  || '').substring(0, 5),
     });
   }
+  // T1 (cycle 22): the break the rep is ON right now — a leave with no return.
+  // `breaks` carries pairs only, so without this row the list read empty and a
+  // save DELETED the LunchOut. It renders LAST, with a blank return: the
+  // server accepts exactly that shape as a trailing open break and leaves the
+  // existing row alone.
+  if (day && day.openBreak) {
+    pairs.push({ out: String(day.openBreak).substring(0, 5), in: '' });
+  }
   deRenderBreaks_(pairs);
 }
 

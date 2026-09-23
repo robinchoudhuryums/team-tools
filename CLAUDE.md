@@ -869,10 +869,10 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 941 | `node test/client/run.js` |
-| DOM harness tests | 145 | `node test/client/dom/runDom.js` |
+| Pure harness tests | 942 | `node test/client/run.js` |
+| DOM harness tests | 146 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 114 | `shoot.mjs`'s `SCENARIOS` |
-| Editor suite registrations | 337 | `Tests.js`; a run prints its own `Expected:` line |
+| Editor suite registrations | 338 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 51 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 95 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
 | QA-gated endpoints (`canSeeQa_`) | 17 | `'QA access required.'` in the server source |

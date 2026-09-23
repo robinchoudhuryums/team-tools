@@ -18368,6 +18368,54 @@ test('A4-1: managerParseBreakSlots_ accepts the list, keeps the legacy pair, ref
   assert.match(err({ breaks: many }), /Too many breaks \(13\); at most 12/);
 });
 
+test('T1 (cycle 22): a break IN PROGRESS round-trips through Day Edit instead of being deleted — the server\'s own day shape, the client\'s prefill rule, the parser and the plan, driven end to end', () => {
+  const ctx = vm.createContext({ Math, String, Array });
+  ['timeToMins_', 'breakSortKey_', 'breakPairs_', 'breakOpenLeave_', 'managerParseBreakSlots_', 'managerPlanDay_'].forEach((fn) =>
+    vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+  vm.runInContext('var MANAGER_DAY_MAX_BREAKS = 12;', ctx);
+  // The server half: what buildTimesheetForEmployee_ ships for the day.
+  const ship = (lo, li, ci) => ({
+    breaks: JSON.parse(JSON.stringify(ctx.breakPairs_(lo, li, ctx.timeToMins_(ci)))).map((b) => ({ out: b.out, in: b.in })),
+    openBreak: ctx.breakOpenLeave_(lo, li, ctx.timeToMins_(ci)),
+  });
+  // The client half — deSetBreaksFromDay_'s rule, pairs then the open leave
+  // as a trailing half row (its DOM pin drives the real function).
+  const prefill = (d) => d.breaks.map((b) => ({ out: b.out.substring(0, 5), in: b.in.substring(0, 5) }))
+    .concat(d.openBreak ? [{ out: String(d.openBreak).substring(0, 5), in: '' }] : []);
+  const save = (rows, d) => {
+    const parsed = JSON.parse(JSON.stringify(ctx.managerParseBreakSlots_({ breaks: prefill(d) })));
+    assert.ok(!parsed.error, 'the prefilled list parses: ' + parsed.error);
+    const p = ctx.managerPlanDay_(rows, { ClockIn: '08:05', ClockOut: '' }, parsed.breaks);   // the manager fixes a typo'd clock-in
+    return { del: p.deletions.map((x) => x.type + '@' + x.oldTime).join('|'), add: p.additions.map((x) => x.type + '@' + x.time).join('|') };
+  };
+
+  // On lunch right now: one leave, no return.
+  const d1 = ship(['12:30:15'], [], '08:00:00');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(d1)), { breaks: [], openBreak: '12:30:15' }, 'the open leave is SHIPPED, apart from the pairs');
+  const r1 = save({ ClockIn: [{ rowIndex: 2, time: '08:00:00' }], LunchOut: [{ rowIndex: 3, time: '12:30:15' }] }, d1);
+  assert.strictEqual(r1.del, '', 'THE REGRESSION: the LunchOut is NOT deleted (it was, and the lunch was paid)');
+  assert.strictEqual(r1.add, '', 'and nothing is re-added for an untouched leave');
+
+  // A finished morning break, then out at lunch now.
+  const d2 = ship(['10:30:00', '12:30:00'], ['10:45:00'], '08:00:00');
+  assert.strictEqual(d2.openBreak, '12:30:00', 'the open leave is the one after every return');
+  assert.strictEqual(d2.breaks.map((b) => b.out + '-' + b.in).join(), '10:30:00-10:45:00');
+  const r2 = save({ ClockIn: [{ rowIndex: 2, time: '08:00:00' }],
+    LunchOut: [{ rowIndex: 3, time: '10:30:00' }, { rowIndex: 5, time: '12:30:00' }], LunchIn: [{ rowIndex: 4, time: '10:45:00' }] }, d2);
+  assert.strictEqual(r2.del + r2.add, '', 'both the finished pair and the open leave survive the save');
+
+  // Closed days have no open break; an overnight shift orders by the clock-in anchor.
+  assert.strictEqual(ship(['12:00:00'], ['12:30:00'], '08:00:00').openBreak, null, 'a returned break is not open');
+  assert.strictEqual(ship([], [], '08:00:00').openBreak, null, 'no break, no open break');
+  assert.strictEqual(ship(['01:30:00'], ['23:10:00'], '22:00:00').openBreak, '01:30:00',
+    'overnight: 01:30 comes AFTER a 23:10 return on a 22:00 shift');
+  assert.strictEqual(ship(['23:30:00'], ['00:15:00'], '22:00:00').openBreak, null, 'overnight: 00:15 closes 23:30');
+
+  // The wiring: the server ships the field, the client renders it.
+  const build = stripJsComments_(extractRawFunction('Code.js', 'buildTimesheetForEmployee_'));
+  assert.ok(/openBreak: breakOpenLeave_\(pm\.LunchOut, pm\.LunchIn, timeToMins_\(pm\.ClockIn\)\)/.test(build), 'the day shape carries openBreak');
+});
+
 test('A4-2: the day reconcile treats the submitted break list AS the day', () => {
   const ctx = vm.createContext({});
   ['timeToMins_', 'breakSortKey_', 'managerPlanDay_'].forEach((fn) =>

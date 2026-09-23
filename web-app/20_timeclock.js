@@ -4944,6 +4944,9 @@ function buildTimesheetForEmployee_(emp, startDate, endDate) {
       // the two scalars above still carry the first stamp for older clients.
       breaks: breakPairs_(pm.LunchOut, pm.LunchIn, timeToMins_(pm.ClockIn))
         .map(b => ({ out: b.out, in: b.in })),
+      // T1 (cycle 22): the leave with no return yet — Day Edit renders it as
+      // a half row so a save round-trips it instead of deleting it.
+      openBreak: breakOpenLeave_(pm.LunchOut, pm.LunchIn, timeToMins_(pm.ClockIn)),
       clockOut: pm.ClockOut || null,  adjClockOut: !!adjMap.ClockOut,
       hoursWorked, isIncomplete, inProgress,
     });
@@ -7106,6 +7109,30 @@ function breakPairs_(lunchOut, lunchIn, clockInMins) {
     j++;
   }
   return pairs;
+}
+/** The OPEN break of a day, if it has one: the latest leave (LunchOut) that
+ *  comes after every return (LunchIn) — the rep is out right now, or forgot to
+ *  punch back. Returns that leave's raw stamp, or null. Pure; the same
+ *  clock-in anchor as breakPairs_, so an overnight shift orders the same way.
+ *
+ *  WHY it exists (cycle 22 T1): breakPairs_ ships PAIRS only, which is right
+ *  for the hours — an open leave deducts nothing yet — but Day Edit prefilled
+ *  its break list from those pairs alone. A manager opening the day of a rep
+ *  who was on lunch saw no break, and saving (to fix a mistyped clock-in, say)
+ *  submitted an empty list, which DELETES the lone LunchOut: the rep flipped
+ *  back to "clocked in", the state machine then refused their LunchIn, and the
+ *  lunch was paid. The server already accepts a trailing half row for exactly
+ *  this case; the client simply never received one to send back. */
+function breakOpenLeave_(lunchOut, lunchIn, clockInMins) {
+  const anchor = (typeof clockInMins === 'number') ? clockInMins : null;
+  const keyed = (v) => (Array.isArray(v) ? v : (v === null || v === undefined || v === '' ? [] : [v]))
+    .map((t) => ({ raw: t, mins: breakSortKey_(t, anchor) }))
+    .filter((x) => x.mins !== null);
+  const outs = keyed(lunchOut).sort((a, b) => a.mins - b.mins);
+  if (!outs.length) return null;
+  const last = outs[outs.length - 1];
+  const lastIn = keyed(lunchIn).reduce((m, x) => Math.max(m, x.mins), -Infinity);
+  return last.mins > lastIn ? last.raw : null;
 }
 function calcHours_(clockIn, clockOut, lunchOut, lunchIn) {
   let inMins = timeToMins_(clockIn), outMins = timeToMins_(clockOut);

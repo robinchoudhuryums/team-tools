@@ -1753,6 +1753,28 @@ test('a day with two breaks round-trips through the modal unchanged', () => {
   assert.ok(/Break 2/.test(deRows(h)[1].label), 'rows are numbered for the reader');
 });
 
+test('T1 (cycle 22): a break the rep is ON right now prefills as a trailing half row and reads back for the save', () => {
+  const h = boot();
+  // A finished morning break, then out at lunch now: `breaks` carries the pair,
+  // `openBreak` the leave with no return. Before T1 the modal rendered only the
+  // pair, and a save deleted the 12:30 LunchOut.
+  h.read('deSetBreaksFromDay_')({
+    clockIn: '08:00:00', lunchOut: '10:30:00', lunchIn: '10:45:00',
+    breaks: [{ out: '10:30:00', in: '10:45:00' }], openBreak: '12:30:40',
+  });
+  assert.strictEqual(deRows(h).map((r) => r.out + '-' + r.in).join('|'), '10:30-10:45|12:30-',
+    'the open leave renders LAST with a blank return');
+  assert.strictEqual(h.read('deReadBreaks_')().map((b) => b.out + '-' + b.in).join('|'), '10:30-10:45|12:30-',
+    'and reads back for the submit, so the server keeps the row');
+  // On lunch with no earlier break: the list is not "empty".
+  h.read('deSetBreaksFromDay_')({ clockIn: '08:00:00', breaks: [], openBreak: '12:30:00' });
+  assert.strictEqual(h.read('deReadBreaks_')().map((b) => b.out + '-' + b.in).join('|'), '12:30-');
+  assert.ok(!h.document.querySelector('#de-breaks .de-breaks-empty'), 'the empty state is NOT shown for a rep on lunch');
+  // A closed day ships openBreak: null — nothing extra.
+  h.read('deSetBreaksFromDay_')({ breaks: [{ out: '12:00:00', in: '12:30:00' }], openBreak: null });
+  assert.strictEqual(h.read('deReadBreaks_')().length, 1);
+});
+
 test('an older server (scalars only) still prefills its one pair', () => {
   const h = boot();
   h.read('deSetBreaksFromDay_')({ lunchOut: '12:00:00', lunchIn: '12:30:00' });
