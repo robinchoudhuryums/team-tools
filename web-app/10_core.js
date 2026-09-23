@@ -16,11 +16,16 @@
 // gates on @umsupply.com domain check via Session.getActiveUser().getEmail() —
 // with executeAs: "USER_DEPLOYING", this returns the visitor's email when
 // they're in the same Workspace domain as the deployer, or empty string for
-// external users. All google.script.run endpoints independently require
-// getEmployeeInfo_() which returns null for non-employees, so even if an
-// external user somehow loads the internal HTML, no server calls will work.
-// The only public-facing endpoints are getFormByToken and submitFormByToken,
-// which validate via token (no employee auth).
+// external users. EVERY function without a trailing underscore, in EVERY .js
+// file clasp pushes (the whole of web-app/, not only filePushOrder — Tests.js
+// and DevTools.js ship too), is a google.script.run endpoint, and each must
+// gate its caller: an app endpoint through getEmployeeInfo_() (null for
+// non-employees) or a manager/admin/QA check, a trigger handler through
+// assertManagerCaller_, and the test suite through _assertSuiteCaller_ (the
+// script owner only — cycle 22 S1: until then any signed-in user could run it).
+// The only endpoints with no identity gate are getFormByToken and
+// submitFormByToken, which validate via token. The PUBLIC-GATE pin in
+// test/client/run.js enumerates every pushed file to hold this.
 function doGet(e) {
   // ── Public form route ──────────────────────────────────────────────
   // External recipients reach ?form=<token> to fill out interactive forms.

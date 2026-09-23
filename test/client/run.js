@@ -1338,6 +1338,119 @@ test('TRIPWIRE: destructive test writers + dev tools carry the right instance gu
     'devShowConfig_ must be dev-only');
 });
 
+// ── PUBLIC-GATE (cycle 22 S1 + X2) ─────────────────────────────────────────
+// google.script.run can call EVERY top-level function whose name does not END
+// in an underscore — a LEADING underscore is not private — in EVERY .js/.gs
+// file clasp pushes. That is the whole of web-app/ (filePushOrder sets load
+// ORDER, not membership — lint-server.mjs says so), which is why this pin reads
+// the DIRECTORY rather than serverSource(): serverSource() is built from
+// filePushOrder, so Tests.js and DevTools.js were outside every gate net by
+// construction, and the whole editor suite — runners, setup/cleanup, 337
+// test_* functions and helpers like _clearPunchesForDay(empId, date) — was
+// callable by any signed-in user. Every public function must now carry a gate
+// token in its OWN body, or be a named, reasoned delegate whose callee does.
+console.log('\nPUBLIC-GATE — every google.script.run-reachable function in every pushed file gates its caller');
+test('PUBLIC-GATE: every public function in every pushed .js file gates its caller (derived from the directory)', () => {
+  const WEB = path.join(__dirname, '../../web-app');
+  assert.ok(!fs.existsSync(path.join(WEB, '.claspignore')),
+    'a .claspignore now narrows what clasp pushes — teach this pin to honour it before trusting it');
+  const pushed = fs.readdirSync(WEB).filter((f) => /\.(js|gs)$/i.test(f)).sort();
+  serverFiles().forEach((f) => assert.ok(pushed.indexOf(f) >= 0, 'filePushOrder names ' + f + ' but it is not in web-app/'));
+  assert.ok(pushed.indexOf('Tests.js') >= 0 && pushed.indexOf('DevTools.js') >= 0,
+    'sanity: the directory scan sees the two files filePushOrder omits');
+
+  const bodyOf = (src, idx) => {
+    const s = src.indexOf('{', idx); let d = 0, k = s;
+    for (; k < src.length; k++) { if (src[k] === '{') d++; else if (src[k] === '}' && --d === 0) break; }
+    return src.slice(s, k + 1);
+  };
+  const APP_GATES = [/\bgetEmployeeInfo_\(/, /\bassertManagerCaller_\(/, /'Manager access required\.'/,
+    /'Admin access required\.'/, /'QA access required\.'/, /getManagerEmails_\(\)/];
+  // Reachable, and deliberately without an identity gate of their own. Each
+  // entry says why; a DELEGATE names the callee, and the callee must gate.
+  const ALLOW = {
+    'doGet': 'the web-app entry — routes by query and domain; not a google.script.run target',
+    'include': 'returns a bundled HTML partial by name — the same source every page already serves',
+    'cnPing': 'a no-op latency probe: { ok, t } and nothing else',
+    'getFormByToken': 'public form route — the token IS the credential (g101)',
+    'submitFormByToken': 'public form route — the token IS the credential (g101)',
+  };
+  const DELEGATE = {
+    recordPunch: 'recordPunchCore_',
+    updatePunchAdjustStatus: 'punchAdjustDecideAll_',
+    updatePunchAdjustStatusBulk: 'punchAdjustDecideAll_',
+    managerGetReviewCandidates: 'managerAggregateFlagged_',
+    managerGetTrainingQueue: 'managerAggregateFlagged_',
+    intakePreviewPMD: 'intakePreviewAcct_', intakePreviewPAP: 'intakePreviewAcct_',
+    intakeSendPMD: 'intakeSendAcct_', intakeSendPAP: 'intakeSendAcct_',
+  };
+  // Tests.js helpers that touch no store and read nothing: assertions and the
+  // registrar plumbing. A function argument cannot cross google.script.run, so
+  // _test/_assertThrows invoked remotely only throw.
+  const SUITE_PURE = ['_resetState', '_test', '_skipTest', '_smokeTest', '_integrationTest', '_assertEq',
+    '_assertEqClose', '_assertTrue', '_assertFalse', '_assertNull', '_assertNotNull', '_assertContains',
+    '_assertSuccess', '_assertFailure', '_assertThrows', '_printSummary', '_cnTestPayload'];
+
+  const all = {};
+  pushed.forEach((f) => { all[f] = fs.readFileSync(path.join(WEB, f), 'utf8'); });
+  const bad = [], seenSuite = [];
+  let count = 0;
+  pushed.forEach((f) => {
+    const src = all[f];
+    const re = /^function ([A-Za-z0-9_]*[A-Za-z0-9])\s*\(/gm; let m;
+    while ((m = re.exec(src)) !== null) {
+      const name = m[1]; count++;
+      const body = stripJsComments_(bodyOf(src, m.index));
+      if (f === 'Tests.js') {
+        if (SUITE_PURE.indexOf(name) >= 0) { assert.ok(!/getAdpSS_|getRange|appendRow|deleteRow|setValue|PropertiesService|MailApp/.test(body),
+          name + ' is listed as a pure suite helper but touches a store'); continue; }
+        seenSuite.push(name);
+        // The guard is the FIRST statement: nothing — not a sheet open, not a
+        // setup call — may run before the owner check.
+        if (!/^\{\s*_assertSuiteCaller_\(/.test(body)) bad.push(f + ' ' + name + ' — first statement must be _assertSuiteCaller_()');
+        continue;
+      }
+      if (ALLOW[name]) continue;
+      if (DELEGATE[name]) {
+        const callee = DELEGATE[name];
+        if (body.indexOf(callee + '(') < 0) { bad.push(f + ' ' + name + ' — no longer calls its listed gate ' + callee); continue; }
+        const host = pushed.find((g) => all[g].indexOf('function ' + callee + '(') >= 0);
+        const cb = host ? stripJsComments_(extractRawFunction(host, callee)) : '';
+        if (!APP_GATES.some((t) => t.test(cb))) bad.push(f + ' ' + name + ' — delegate ' + callee + ' carries no gate');
+        continue;
+      }
+      if (!APP_GATES.some((t) => t.test(body))) bad.push(f + ' ' + name);
+    }
+  });
+  assert.ok(count > 500, 'sanity: the scan found the public surface (' + count + ')');
+  ['runAllTests', 'runAllTestsPartA', 'runAllTestsPartB', 'runSmokeTests', 'runSingleTest',
+   'setupTestEnvironment', 'cleanupTestData', '_runAllTests', '_clearPunchesForDay', '_appendTestPunch']
+    .forEach((n) => assert.ok(seenSuite.indexOf(n) >= 0, 'sanity: the Tests.js scan reached ' + n));
+  assert.deepStrictEqual(bad, [], 'public functions with no gate of their own:\n  ' + bad.join('\n  '));
+});
+test('PUBLIC-GATE: _suiteCallerAllowed_ admits only the script owner (active === effective, both known)', () => {
+  const ctx = { String };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Tests.js', '_suiteCallerAllowed_'), ctx);
+  const ok = (a, e) => ctx._suiteCallerAllowed_(a, e);
+  assert.strictEqual(ok('owner@umsupply.com', 'owner@umsupply.com'), true, 'the editor / an owner trigger');
+  assert.strictEqual(ok('Owner@UMSupply.com ', 'owner@umsupply.com'), true, 'case and whitespace do not matter');
+  assert.strictEqual(ok('rep@umsupply.com', 'owner@umsupply.com'), false, 'a web visitor on the execute-as-deployer app');
+  assert.strictEqual(ok('', 'owner@umsupply.com'), false, 'an anonymous / cross-domain visitor');
+  assert.strictEqual(ok('', ''), false, 'two unknowns are not a match');
+  assert.strictEqual(ok(null, undefined), false, 'nothing is not a match');
+  // The guard reads Session DIRECTLY: _TEST_OVERRIDE_EMAIL impersonation must
+  // never satisfy it (g23), so getActiveUserEmail_ must not appear.
+  const g = stripJsComments_(extractRawFunction('Tests.js', '_assertSuiteCaller_'));
+  assert.ok(/Session\.getActiveUser\(\)/.test(g) && /Session\.getEffectiveUser\(\)/.test(g) && !/getActiveUserEmail_/.test(g),
+    'the owner check reads the real Session identities, never the test-override hook');
+  assert.ok(/throw new Error/.test(g) && /_suiteCallerAllowed_\(active, effective\)/.test(g), 'a refused caller throws');
+  // runSingleTest resolves a TEST NAME only — never an arbitrary global.
+  const rs = stripJsComments_(extractRawFunction('Tests.js', 'runSingleTest'));
+  assert.ok(/\^test_\[A-Za-z0-9_\]\+\$/.test(rs) && rs.indexOf('/^test_') < rs.indexOf('globalThis[name]'),
+    'runSingleTest refuses a non-test name before it looks the name up');
+});
+
 console.log('\nCode.js — PTO reconciliation half-day-pair exemption (cycle 7 · L-4)');
 {
   vm.runInContext(extractRawFunction('Code.js', 'ptoLegitHalfDayPair_'), sb, { filename: 'Code.js#ptoLegitHalfDayPair_' });

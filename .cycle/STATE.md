@@ -1,13 +1,12 @@
 # Cycle State
 
 ## Current
-Cycle: 21 — CLOSED 2026-09-21, and its between-cycles follow-on **21post
-(T1–T10) CLOSED 2026-09-23**; both blocks are in `.cycle/HISTORY.md`.
-**No cycle is open.** The next `/audit` or `/broad-scan` opens cycle 22.
-Phase: idle
-Scope: —
+Cycle: 22 — opened 2026-09-23 by a `/broad-scan` (99 findings: 0 Critical /
+3 High; nine-batch implementation plan). Cycle 21 + 21post are in HISTORY.md.
+Phase: implement
+Scope: broad — Batch 1 (security boundary: S1, S2, S3, S4, S9, X2)
 Test Command: manual
-Estimates: — (nothing open; record S/M/L + hours per batch BEFORE the first edit)
+Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h
 Subsystem cycles since last Seams audit: 1 — reset to 0 by the 2026-09-18 audit
 (batch S), +1 for the 21post reflection. The cadence is every 4.
 Updated: 2026-09-23

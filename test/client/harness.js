@@ -68,8 +68,12 @@ function extractFunction(file, name) {
 // so splitting Code.js is a move of text between files that no pin can see.
 //
 // The file LIST is derived from `web-app/.clasp.json`'s `filePushOrder` — the
-// same declaration `clasp push` obeys — so the harness and the deployment can
-// never disagree about which files are the server, or in what order they load.
+// declaration `clasp push` obeys for LOAD ORDER — so the harness and the
+// deployment agree on which files are the APP server and in what order they
+// load. It is NOT the deployed surface: clasp pushes every .js in web-app/, so
+// Tests.js and DevTools.js ship too and are google.script.run-reachable. A pin
+// about what a caller can REACH must read the directory (PUBLIC-GATE, cycle 22
+// X2) — reading serverSource() put the whole test suite outside every gate net.
 // It is deliberately NOT a fallback-to-Code.js: an empty list means the
 // declaration was lost, and reading one file anyway would make the derivation
 // vacuous exactly when it stopped being true (INV-179, INV-202).

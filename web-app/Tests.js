@@ -11,6 +11,10 @@
 //   Helpers (call manually if needed):
 //     setupTestEnvironment() — ensures test employee rows exist
 //     cleanupTestData()      — removes all TEST_* rows
+//
+//   Every one of these, and every test_* function, is callable by the SCRIPT
+//   OWNER only (_assertSuiteCaller_ — cycle 22 S1): this file ships with the
+//   app, so without that guard each is a google.script.run endpoint.
 // ════════════════════════════════════════════════════════════════════════════
 
 
@@ -106,6 +110,42 @@ function _resetState() {
   _TEST_STATE = { results: [], pass: 0, fail: 0, skip: 0, start: new Date() };
 }
 
+// ── Who may run the suite (cycle 22 S1) ─────────────────────────────────────
+// This file is pushed with the app (clasp pushes every .js in web-app/;
+// filePushOrder only orders them), so every function here WITHOUT a trailing
+// underscore is callable from any page through google.script.run — the
+// runners, setup/cleanup and all ~340 test_* functions. Until this guard, any
+// signed-in user could run the full suite from a browser console: TEST_ rows
+// into the live payroll/PHI stores, ADMIN_EMAILS/MANAGER_EMAILS rewritten, the
+// project ScriptLock held for minutes. assertNotProdInstance_ did not help —
+// it is a no-op until INSTANCE_IS_PROD is set, and it says nothing about WHO.
+//
+// The rule is the SCRIPT OWNER only: the editor, and a trigger the owner
+// installed, run with the active user EQUAL to the effective user. A web visitor
+// on this execute-as-deployer app has active = the visitor, effective = the
+// deployer, so the two differ for everyone except the deployer themself (who
+// can run the suite from the editor anyway). Session is read DIRECTLY, never
+// through getActiveUserEmail_(): the suite sets _TEST_OVERRIDE_EMAIL, and the
+// guard must see the real caller, not the identity a test is impersonating
+// (g23). An empty email — an anonymous or cross-domain visitor — never passes.
+function _suiteCallerAllowed_(activeEmail, effectiveEmail) {
+  const a = String(activeEmail == null ? '' : activeEmail).trim().toLowerCase();
+  const e = String(effectiveEmail == null ? '' : effectiveEmail).trim().toLowerCase();
+  return !!a && !!e && a === e;
+}
+var _SUITE_CALLER_OK = false;   // per-execution memo: google.script.run starts a fresh one
+function _assertSuiteCaller_(label) {
+  if (_SUITE_CALLER_OK) return;
+  let active = '', effective = '';
+  try { active = Session.getActiveUser().getEmail(); } catch (e) { active = ''; }
+  try { effective = Session.getEffectiveUser().getEmail(); } catch (e) { effective = ''; }
+  if (!_suiteCallerAllowed_(active, effective)) {
+    throw new Error((label || 'The test suite') + ' can only be run by the script owner, from the ' +
+      'Apps Script editor or an owner-installed trigger.');
+  }
+  _SUITE_CALLER_OK = true;
+}
+
 function _test(name, fn) {
   const start = new Date();
   try {
@@ -158,6 +198,7 @@ function _integrationTest(name, fn) {
 }
 
 function _asUser(email, fn) {
+  _assertSuiteCaller_();
   _TEST_OVERRIDE_EMAIL = email;
   invalidateRosterCache_();  // force re-read so EMP.* lookups see fresh data
   try { return fn(); }
@@ -466,6 +507,7 @@ function _suiteEnvCheck_() {
 }
 
 function setupTestEnvironment() {
+  _assertSuiteCaller_('setupTestEnvironment');   // S1 — WHO, before assertNotProdInstance_'s WHERE
   try { _suiteEnvCheck_(); } catch (e) { Logger.log('_suiteEnvCheck_ skipped: ' + e.message); }
   assertNotProdInstance_('setupTestEnvironment');   // blue-green guard (see runAllTests)
   const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
@@ -761,6 +803,7 @@ function _setupTestIntakeFixture_() {
 }
 
 function cleanupTestData() {
+  _assertSuiteCaller_('cleanupTestData');
   const ss = getAdpSS_();
 
   // Timesheet (headers in rows 1-2, data from row 3)
@@ -1011,6 +1054,7 @@ function _testAdminEmailsSplit_(raw) {
 }
 
 function _cleanupRowsByPrefix(sheet, prefix, colIdx, firstDataRow) {
+  _assertSuiteCaller_();
   if (!sheet) return;
   const rows = sheet.getDataRange().getValues();
   // Walk bottom-up so deleteRow indices stay valid
@@ -1029,6 +1073,7 @@ function _cleanupRowsByPrefix(sheet, prefix, colIdx, firstDataRow) {
  * only runs at the end of the suite.
  */
 function _clearTestState(empId) {
+  _assertSuiteCaller_();
   const ss = getAdpSS_();
   _clearRowsByEmp(ss.getSheetByName(CONFIG.ADP_TAB),     empId, ADP.EMP_ID, 3);
   _clearRowsByEmp(ss.getSheetByName(CONFIG.TIMEOFF_TAB), empId, TO.EMP_ID,  2);
@@ -1048,6 +1093,7 @@ function _clearTestState(empId) {
 }
 
 function _clearRowsByEmp(sheet, empId, colIdx, firstDataRow) {
+  _assertSuiteCaller_();
   if (!sheet) return;
   const rows = sheet.getDataRange().getValues();
   for (let i = rows.length - 1; i >= firstDataRow - 1; i--) {
@@ -1071,6 +1117,7 @@ function runAllTests() {
   // 30-minute Workspace ceiling. runAllTestsPartA / runAllTestsPartB exist for
   // a mid-shift MANUAL run (the last prod run took 17 min against live lock
   // traffic) and for the day the suite outgrows one execution.
+  _assertSuiteCaller_('runAllTests');
   assertNotProdInstance_('runAllTests');
   _resetState();
   _SMOKE_ONLY = false;
@@ -1093,12 +1140,14 @@ function runAllTests() {
  *  together they are exactly `runAllTests` (the S4 pin holds the two halves
  *  disjoint and their union equal to the registration list). */
 function runAllTestsPartA() {
+  _assertSuiteCaller_('runAllTestsPartA');
   _runSuitePart_('A', ['smoke', 'A'], function () { _registerSmokeTests_(); _registerIntegrationA_(); });
 }
 
 /** Batch S (S1): the other half — integration half B alone (the smoke list
  *  rides Part A; it is cheap and pure, so it is never the reason to split). */
 function runAllTestsPartB() {
+  _assertSuiteCaller_('runAllTestsPartB');
   _runSuitePart_('B', ['B'], function () { _registerIntegrationB_(); });
 }
 
@@ -1119,6 +1168,7 @@ function _runSuitePart_(label, parts, registerFn) {
 }
 
 function runSmokeTests() {
+  _assertSuiteCaller_('runSmokeTests');
   _resetState();
   _SMOKE_ONLY = true;
   Logger.log('═══ UMS TIME CLOCK SMOKE TESTS ═══');
@@ -1130,6 +1180,11 @@ function runSmokeTests() {
 }
 
 function runSingleTest(name) {
+  _assertSuiteCaller_('runSingleTest');
+  // S1: a test NAME, never an arbitrary global. `globalThis[name]` alone would
+  // invoke any function in the project — `_`-private ones included, which
+  // google.script.run otherwise cannot reach.
+  if (!/^test_[A-Za-z0-9_]+$/.test(String(name || ''))) throw new Error('Not a test name: ' + name);
   _resetState();
   _SMOKE_ONLY = false;
   setupTestEnvironment();
@@ -1219,6 +1274,7 @@ function _printSummary(expected) {
  *  file and refuses a registration outside them, a duplicate name, or a test
  *  function defined twice). */
 function _runAllTests() {
+  _assertSuiteCaller_();
   _registerSmokeTests_();
   _registerIntegrationA_();
   _registerIntegrationB_();
@@ -1659,32 +1715,41 @@ function _registerIntegrationB_() {
 // ── PTO mapping ──
 
 function test_leaveDeduction_sick() {
+  _assertSuiteCaller_();
   _assertEq(getLeaveDeduction_('Sick Leave'), { bucket: 'sick', days: 1.0 });
 }
 function test_leaveDeduction_halfDayMorning() {
+  _assertSuiteCaller_();
   _assertEq(getLeaveDeduction_('Half Day - Morning'), { bucket: 'annual', days: 0.5 });
 }
 function test_leaveDeduction_halfDayAfternoon() {
+  _assertSuiteCaller_();
   _assertEq(getLeaveDeduction_('Half Day - Afternoon'), { bucket: 'annual', days: 0.5 });
 }
 function test_leaveDeduction_fullDay() {
+  _assertSuiteCaller_();
   _assertEq(getLeaveDeduction_('Full Day'), { bucket: 'annual', days: 1.0 });
 }
 function test_leaveDeduction_personalDay() {
+  _assertSuiteCaller_();
   _assertEq(getLeaveDeduction_('Personal Day'), { bucket: 'annual', days: 1.0 });
 }
 function test_leaveDeduction_other() {
+  _assertSuiteCaller_();
   _assertEq(getLeaveDeduction_('Other'), { bucket: 'annual', days: 1.0 });
 }
 function test_leaveDeduction_unpaid_noDeduction() {
+  _assertSuiteCaller_();
   _assertEq(getLeaveDeduction_('Unpaid Leave'), { bucket: null, days: 0 });
 }
 function test_leaveDeduction_caseInsensitive() {
+  _assertSuiteCaller_();
   _assertEq(getLeaveDeduction_('SICK LEAVE'),         { bucket: 'sick',   days: 1.0 });
   _assertEq(getLeaveDeduction_('half day - morning'), { bucket: 'annual', days: 0.5 });
   _assertEq(getLeaveDeduction_('  Sick Leave  '),     { bucket: 'sick',   days: 1.0 });
 }
 function test_leaveDeduction_unknownDefaultsAnnual() {
+  _assertSuiteCaller_();
   _assertEq(getLeaveDeduction_('Custom Holiday'), { bucket: 'annual', days: 1.0 });
   _assertEq(getLeaveDeduction_(''),               { bucket: 'annual', days: 1.0 });
 }
@@ -1692,6 +1757,7 @@ function test_leaveDeduction_unknownDefaultsAnnual() {
 // ── Timezone conversion ──
 
 function test_convertDateTime_PHT_to_CDT() {
+  _assertSuiteCaller_();
   // May 17 2026 is in CDT (US daylight). Manila 09:00 → UTC 01:00 → Chicago 20:00 prev day.
   const conv = convertDateTime_('2026-05-17', '09:00:00', 'Asia/Manila', 'America/Chicago');
   _assertEq(conv.date, '2026-05-16', 'PHT 09:00 May 17 → CDT May 16');
@@ -1699,6 +1765,7 @@ function test_convertDateTime_PHT_to_CDT() {
 }
 
 function test_convertDateTime_IST_to_CDT() {
+  _assertSuiteCaller_();
   // IST is UTC+5:30. Kolkata 14:30 → UTC 09:00 → Chicago 04:00 CDT.
   const conv = convertDateTime_('2026-05-17', '14:30:00', 'Asia/Kolkata', 'America/Chicago');
   _assertEq(conv.date, '2026-05-17');
@@ -1706,12 +1773,14 @@ function test_convertDateTime_IST_to_CDT() {
 }
 
 function test_convertDateTime_sameTz_identity() {
+  _assertSuiteCaller_();
   const conv = convertDateTime_('2026-05-17', '10:00:00', 'Asia/Kolkata', 'Asia/Kolkata');
   _assertEq(conv.date, '2026-05-17');
   _assertEq(conv.time, '10:00:00');
 }
 
 function test_convertDateTime_roundTrip() {
+  _assertSuiteCaller_();
   const orig = '15:30:00';
   const c1 = convertDateTime_('2026-05-17', orig, 'Asia/Manila', 'America/Chicago');
   const c2 = convertDateTime_(c1.date, c1.time, 'America/Chicago', 'Asia/Manila');
@@ -1720,18 +1789,21 @@ function test_convertDateTime_roundTrip() {
 }
 
 function test_convertDateTime_dateRolls() {
+  _assertSuiteCaller_();
   // Late-night PHT → previous-day CDT
   const conv = convertDateTime_('2026-05-17', '02:00:00', 'Asia/Manila', 'America/Chicago');
   _assertEq(conv.date, '2026-05-16', 'PHT 02:00 → CDT previous day');
 }
 
 function test_convertAuditTs_format() {
+  _assertSuiteCaller_();
   const result = convertAuditTs_('2026-05-17 14:30:00', 'Asia/Kolkata', 'America/Chicago');
   // 14:30 IST May 17 = 04:00 CDT May 17 → "May 17, 4:00 AM"
   _assertEq(result, 'May 17, 4:00 AM');
 }
 
 function test_tzAbbr() {
+  _assertSuiteCaller_();
   _assertEq(tzAbbr_('Asia/Kolkata'),    'IST');
   _assertEq(tzAbbr_('Asia/Manila'),     'PHT');
   _assertEq(tzAbbr_('America/Chicago'), 'CST');
@@ -1740,6 +1812,7 @@ function test_tzAbbr() {
 }
 
 function test_fmtDateTz() {
+  _assertSuiteCaller_();
   const d = new Date(Date.UTC(2026, 4, 17, 1, 0, 0));  // May 17 2026 01:00 UTC
   _assertEq(fmtDateTz_(d, 'Asia/Manila'),     '2026-05-17');  // 09:00 PHT
   _assertEq(fmtDateTz_(d, 'America/Chicago'), '2026-05-16');  // 20:00 CDT prev day
@@ -1748,32 +1821,40 @@ function test_fmtDateTz() {
 // ── State machine ──
 
 function test_getNextActions_noPunches() {
+  _assertSuiteCaller_();
   _assertEq(getNextActions_([]), ['ClockIn', 'Adjust']);
 }
 function test_getNextActions_afterClockIn() {
+  _assertSuiteCaller_();
   _assertEq(getNextActions_([{type:'ClockIn'}]), ['LunchOut','ClockOut','Adjust']);
 }
 function test_getNextActions_afterLunchOut() {
+  _assertSuiteCaller_();
   _assertEq(getNextActions_([{type:'ClockIn'},{type:'LunchOut'}]),
     ['LunchIn','ClockOut','Adjust']);
 }
 function test_getNextActions_afterLunchIn() {
+  _assertSuiteCaller_();
   _assertEq(getNextActions_([{type:'ClockIn'},{type:'LunchOut'},{type:'LunchIn'}]),
     ['LunchOut','ClockOut','Adjust']);  // same as after ClockIn
 }
 function test_getNextActions_afterClockOut() {
+  _assertSuiteCaller_();
   _assertEq(getNextActions_([{type:'ClockIn'},{type:'ClockOut'}]), ['Adjust']);
 }
 
 // ── Hours calculation ──
 
 function test_calcHours_basic() {
+  _assertSuiteCaller_();
   _assertEqClose(calcHours_('09:00:00','17:00:00',null,null), 8.0);
 }
 function test_calcHours_withLunch() {
+  _assertSuiteCaller_();
   _assertEqClose(calcHours_('09:00:00','17:00:00','12:00:00','13:00:00'), 7.0);
 }
 function test_calcHours_overnight() {
+  _assertSuiteCaller_();
   // 22:00 → 06:00 next day = 8 hours
   _assertEqClose(calcHours_('22:00:00','06:00:00',null,null), 8.0);
 }
@@ -1782,6 +1863,7 @@ function test_calcHours_overnight() {
  *  a 24-hour day. An equal minute pair is zero hours; the strict overnight
  *  wrap (22:00 → 06:00) is unchanged. */
 function test_calcHours_equalMinuteIsZeroNotADay() {
+  _assertSuiteCaller_();
   _assertEqClose(calcHours_('09:00:10','09:00:45',null,null), 0.0);
   _assertEqClose(calcHours_('09:00','09:00',null,null), 0.0);
   _assertEqClose(calcHours_('22:00:00','06:00:00',null,null), 8.0);
@@ -1793,6 +1875,7 @@ function test_calcHours_equalMinuteIsZeroNotADay() {
     'a single slot is not this rule\'s call');
 }
 function test_calcHours_overnightWithLunch() {
+  _assertSuiteCaller_();
   // 22:00 → 06:00 with 02:00-03:00 lunch = 7 hours
   _assertEqClose(calcHours_('22:00:00','06:00:00','02:00:00','03:00:00'), 7.0);
 }
@@ -1802,6 +1885,7 @@ function test_calcHours_overnightWithLunch() {
  *  operator's own case: 08:00–21:00 with a 30-minute lunch and a 2-hour
  *  evening gap is 10.5 hours, not the 11.0 the old arithmetic produced. */
 function test_calcHours_multipleBreaks() {
+  _assertSuiteCaller_();
   _assertEqClose(calcHours_('08:00:00', '21:00:00',
     ['12:00:00', '17:00:00'], ['12:30:00', '19:00:00']), 10.5);
   // Two ordinary lunches deduct BOTH, not just the second.
@@ -1821,6 +1905,7 @@ function test_calcHours_multipleBreaks() {
  *  made getPunctualityReport score such a day ON TIME and made
  *  `totalHours += calcHours_(...)` NaN out an entire timesheet total. */
 function test_timeToMins_nullOnUnparseable() {
+  _assertSuiteCaller_();
   _assertEq(timeToMins_('09:30:00'), 570, 'valid HH:mm:ss still parses');
   _assertEq(timeToMins_('9:05'), 545, 'bare H:mm still parses');
   // MUST use a strict === null check, NOT _assertEq: it compares via
@@ -1842,18 +1927,22 @@ function test_timeToMins_nullOnUnparseable() {
 // ── Date math ──
 
 function test_daysBetween_basic() {
+  _assertSuiteCaller_();
   _assertEq(daysBetween_('2026-05-10','2026-05-17'), 7);
   _assertEq(daysBetween_('2026-05-17','2026-05-17'), 0);
   _assertEq(daysBetween_('2026-05-17','2026-05-18'), 1);
 }
 function test_daysBetween_negative() {
+  _assertSuiteCaller_();
   _assertEq(daysBetween_('2026-05-17','2026-05-10'), -7);
 }
 function test_daysBetween_acrossMonth() {
+  _assertSuiteCaller_();
   _assertEq(daysBetween_('2026-04-25','2026-05-05'), 10);
 }
 
 function test_normalizeType_stripsAdj() {
+  _assertSuiteCaller_();
   _assertEq(normalizeType_('ClockIn'),       'ClockIn');
   _assertEq(normalizeType_('ADJ-ClockIn'),   'ClockIn');
   _assertEq(normalizeType_('ADJ-LunchOut'),  'LunchOut');
@@ -1866,6 +1955,7 @@ function test_normalizeType_stripsAdj() {
 // afternoon punches exist when the Timesheet is read.)
 
 function test_biweeklyPeriodMath() {
+  _assertSuiteCaller_();
   // Replicate the math in getCurrentBiweeklyRange_ to test it deterministically.
   function compute(anchor, todayStr) {
     const anchorMs = new Date(anchor + 'T00:00:00Z').getTime();
@@ -1883,6 +1973,7 @@ function test_biweeklyPeriodMath() {
 }
 
 function test_holidays_2026_dates() {
+  _assertSuiteCaller_();
   const hols = getUsHolidays_(2026);
   const byName = {};
   hols.forEach(h => { byName[h.name] = h.date; });
@@ -1903,6 +1994,7 @@ function test_holidays_2026_dates() {
  *  tab REPLACES the federal list when it holds a range; every other source
  *  shape falls back to getUsHolidays_. */
 function test_companyHolidays_tabWinsElseFederal() {
+  _assertSuiteCaller_();
   const saved = _cdrHolidaysMemo;
   try {
     _cdrHolidaysMemo = { ranges: [], source: 'no-tab' };
@@ -1918,6 +2010,7 @@ function test_companyHolidays_tabWinsElseFederal() {
 /** H1: the previous-workday walk steps over company holidays -- the
  *  morning-after-a-holiday "Yesterday" bug. */
 function test_prevWorkdayIso_stepsOverHolidays() {
+  _assertSuiteCaller_();
   _assertEq(prevWorkdayIso_('2026-09-08', { '2026-09-07': true }), '2026-09-04', 'Tue after Labor Day -> Fri');
   _assertEq(prevWorkdayIso_('2026-09-08', {}), '2026-09-07', 'empty map -> weekends only');
   _assertEq(metricsWorkdayIsos_('2026-08-31', '2026-09-06', { '2026-09-01': true }).join('|'), '2026-08-31|2026-09-02|2026-09-03|2026-09-04', 'a holiday drops out of the trend axis');
@@ -1925,6 +2018,7 @@ function test_prevWorkdayIso_stepsOverHolidays() {
 
 /** H2 (2026-09-17): Answer % is the Department Dashboard's formula. */
 function test_cdrAnswerPct_isTheDashboardFormula() {
+  _assertSuiteCaller_();
   _assertEq(cdrAnswerPct_(8, 2), 80, '8/(8+2)');
   _assertEq(cdrAnswerPct_(8, 1), 89, 'rung is NOT the denominator: 10 rung / 8 ans / 1 missed reads 89, not 80');
   _assertEq(cdrAnswerPct_(11, 1), 92, 'whole percent, like the dashboard cell (91.67 -> 92, never 91.7)');
@@ -1940,6 +2034,7 @@ function test_cdrAnswerPct_isTheDashboardFormula() {
 
 /** H2: the published Team Avg Excludes leave the BENCHMARK, never the totals. */
 function test_teamBenchmark_subtractsPublishedExcludes() {
+  _assertSuiteCaller_();
   const agents = {
     A: { totalRung: 100, totalAnswered: 90, totalMissed: 10, attSeconds: 200 },
     B: { totalRung: 100, totalAnswered: 80, totalMissed: 20, attSeconds: 100 },
@@ -1955,6 +2050,7 @@ function test_teamBenchmark_subtractsPublishedExcludes() {
  *  the TEST CDR fixture -- header-name read, own dept row, excludes parsed --
  *  and the endpoints ship it. The tab is deleted after. */
 function test_dashboardStandard_readsFixtureTab() {
+  _assertSuiteCaller_();
   _withTestCdr_(function () {
     const ss = SpreadsheetApp.openById(_TEST_CDR_SS_ID);
     let tab = ss.getSheetByName(CONFIG.CDR_STANDARDS_TAB);
@@ -1987,6 +2083,7 @@ function test_dashboardStandard_readsFixtureTab() {
  *  TEST CDR fixture -- header-name read, a coerced Date cell keyed in the
  *  spreadsheet tz, and the consumers downstream. The tab is deleted after. */
 function test_companyHolidays_readsFixtureTab() {
+  _assertSuiteCaller_();
   _withTestCdr_(function () {
     const ss = SpreadsheetApp.openById(_TEST_CDR_SS_ID);
     let tab = ss.getSheetByName(CONFIG.CDR_HOLIDAYS_TAB);
@@ -2019,6 +2116,7 @@ function test_companyHolidays_readsFixtureTab() {
 }
 
 function test_holidays_independenceDay_weekendShift() {
+  _assertSuiteCaller_();
   // Jul 4 2026 is Saturday → observed Friday Jul 3
   const hols = getUsHolidays_(2026);
   const ind = hols.find(h => h.name === 'Independence Day');
@@ -2033,11 +2131,13 @@ function test_holidays_independenceDay_weekendShift() {
 // ── Helpers used by integration tests ──
 
 function _appendTestPunch(empId, empName, date, time, dir, type) {
+  _assertSuiteCaller_();
   getAdpSS_().getSheetByName(CONFIG.ADP_TAB)
     .appendRow([empId, empName, date, time, dir, 'None', 'Missing punch', 'SUBMIT', type]);
 }
 
 function _findTimeOffRow(empId, date) {
+  _assertSuiteCaller_();
   const rows = getOrCreateTimeOffSheet_().getDataRange().getValues();
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][TO.EMP_ID]).trim() === empId
@@ -2056,6 +2156,7 @@ function _findTimeOffRow(empId, date) {
 }
 
 function _countTimesheetRows(empId, date, type) {
+  _assertSuiteCaller_();
   const rows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
   let count = 0;
   for (let i = 2; i < rows.length; i++) {
@@ -2068,6 +2169,7 @@ function _countTimesheetRows(empId, date, type) {
 }
 
 function _getBalance(empId, bucket) {
+  _assertSuiteCaller_();
   const rows = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB).getDataRange().getValues();
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][EMP.ID]).trim() === empId) {
@@ -2081,6 +2183,7 @@ function _getBalance(empId, bucket) {
 // ── findExistingPunch_ ──
 
 function test_findExistingPunch_match() {
+  _assertSuiteCaller_();
   _appendTestPunch(_TEST_INDIA_ID, 'Test India User', _TEST_DATE_RECENT, '09:00:00', 'IN', 'ClockIn');
   const result = findExistingPunch_(_TEST_INDIA_ID, _TEST_DATE_RECENT, 'ClockIn');
   _assertNotNull(result);
@@ -2088,6 +2191,7 @@ function test_findExistingPunch_match() {
 }
 
 function test_findExistingPunch_noMatch() {
+  _assertSuiteCaller_();
   _assertNull(findExistingPunch_(_TEST_INDIA_ID, '2099-12-31', 'ClockIn'));
   _appendTestPunch(_TEST_INDIA_ID, 'Test India User', _TEST_DATE_RECENT, '09:00:00', 'IN', 'ClockIn');
   _assertNull(findExistingPunch_(_TEST_INDIA_ID, _TEST_DATE_RECENT, 'ClockOut'));
@@ -2097,6 +2201,7 @@ function test_findExistingPunch_noMatch() {
 // ── getTodayPunches_ — same-day back-fill ordering ──
 
 function test_getTodayPunches_sortsOutOfOrderBackfill() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_INDIA_ID);
   const today = fmtDateTz_(new Date(), 'Asia/Kolkata');
   // Simulate live punches followed by a same-day back-fill: the lunch
@@ -2118,6 +2223,7 @@ function test_getTodayPunches_sortsOutOfOrderBackfill() {
 // ── adjustLeaveBalance_ ──
 
 function test_adjustLeaveBalance_deduct() {
+  _assertSuiteCaller_();
   const before = _getBalance(_TEST_INDIA_ID, 'sick');
   const after = adjustLeaveBalance_(_TEST_INDIA_ID, 'sick', -1);
   _assertEqClose(after, before - 1);
@@ -2125,6 +2231,7 @@ function test_adjustLeaveBalance_deduct() {
 }
 
 function test_adjustLeaveBalance_restore() {
+  _assertSuiteCaller_();
   const before = _getBalance(_TEST_INDIA_ID, 'annual');
   adjustLeaveBalance_(_TEST_INDIA_ID, 'annual', -0.5);
   const restored = adjustLeaveBalance_(_TEST_INDIA_ID, 'annual', 0.5);
@@ -2132,6 +2239,7 @@ function test_adjustLeaveBalance_restore() {
 }
 
 function test_adjustLeaveBalance_invalidatesCache() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_INDIA_ID);
   // Read once to populate cache
   _asUser(_TEST_INDIA_EMAIL, () => {
@@ -2148,6 +2256,7 @@ function test_adjustLeaveBalance_invalidatesCache() {
 }
 
 function test_adjustLeaveBalance_disabledNoOp() {
+  _assertSuiteCaller_();
   // enablePtoTracking is read via getFlag_ since the feature-flag migration —
   // mutating CONFIG.ENABLE_PTO_TRACKING at runtime no longer disables it
   // (the registry default snapshots CONFIG at load). Override via the
@@ -2168,6 +2277,7 @@ function test_adjustLeaveBalance_disabledNoOp() {
 // ptoEnabled tests only checked that the UI flag is hidden, never the
 // deduction, which is how this lived undetected (audit finding N-1).
 function test_adjustLeaveBalance_perEmpDisabledNoOp() {
+  _assertSuiteCaller_();
   const original = _setEmpPtoEnabled(_TEST_INDIA_ID, 'FALSE');
   try {
     const before = _getBalance(_TEST_INDIA_ID, 'annual');
@@ -2183,6 +2293,7 @@ function test_adjustLeaveBalance_perEmpDisabledNoOp() {
 // ── recordPunch ──
 
 function test_recordPunch_basic() {
+  _assertSuiteCaller_();
   // M-1 (cycle 10): start from a clean day — the sort test above leaves
   // today-dated rows ending in ClockOut, which the live sequence guard now
   // correctly rejects a fresh ClockIn against.
@@ -2196,6 +2307,7 @@ function test_recordPunch_basic() {
 }
 
 function test_recordPunch_liveSequenceGuard() {
+  _assertSuiteCaller_();
   // M-1 (cycle 10): the live path enforces the same getNextActions_ state
   // machine the client renders its buttons from — a stale window (second
   // browser / pinned pop-out) or direct RPC can no longer append a duplicate
@@ -2220,6 +2332,7 @@ function test_recordPunch_liveSequenceGuard() {
 }
 
 function test_recordPunch_adjustDedup() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_INDIA_ID);
   // Pre-existing ClockIn for the test user
   _appendTestPunch(_TEST_INDIA_ID, 'Test India User', _TEST_DATE_RECENT, '09:00:00', 'IN', 'ClockIn');
@@ -2238,6 +2351,7 @@ function test_recordPunch_adjustDedup() {
 }
 
 function test_recordPunch_rejectsBadTimeFormat() {
+  _assertSuiteCaller_();
   _asUser(_TEST_INDIA_EMAIL, () => {
     _assertFailure(
       recordPunch('ClockIn', { date: _TEST_DATE_RECENT, time: '9:00', reason: '' }),
@@ -2255,6 +2369,7 @@ function test_recordPunch_rejectsBadTimeFormat() {
 }
 
 function test_recordPunch_rejectsBadDateFormat() {
+  _assertSuiteCaller_();
   _asUser(_TEST_INDIA_EMAIL, () => {
     _assertFailure(
       recordPunch('ClockIn', { date: '05/17/2026', time: '09:00', reason: '' }),
@@ -2268,6 +2383,7 @@ function test_recordPunch_rejectsBadDateFormat() {
 }
 
 function test_recordPunch_rejectsFutureDate() {
+  _assertSuiteCaller_();
   _asUser(_TEST_INDIA_EMAIL, () => {
     _assertFailure(
       recordPunch('ClockIn', { date: _TEST_DATE_FUTURE, time: '09:00', reason: 'future' }),
@@ -2277,6 +2393,7 @@ function test_recordPunch_rejectsFutureDate() {
 }
 
 function test_recordPunch_rejectsBeyondWindow() {
+  _assertSuiteCaller_();
   // Date 60 days back, beyond the 30-day window. Flag enabled so the window
   // check (not the #4a immediate-adjust gate) is what rejects.
   const d = new Date(); d.setDate(d.getDate() - 60);
@@ -2292,12 +2409,14 @@ function test_recordPunch_rejectsBeyondWindow() {
 }
 
 function test_recordPunch_rejectsUnknownType() {
+  _assertSuiteCaller_();
   _asUser(_TEST_INDIA_EMAIL, () => {
     _assertFailure(recordPunch('Nope', null), 'Unknown punch type');
   });
 }
 
 function test_recordPunch_reasonRequiredOldAdj() {
+  _assertSuiteCaller_();
   _withFeatureFlags_({ employeeImmediateAdjust: true }, () => {
     _asUser(_TEST_INDIA_EMAIL, () => {
       // 14 days back, no reason → rejected
@@ -2312,6 +2431,7 @@ function test_recordPunch_reasonRequiredOldAdj() {
 // #4a — submit a request (no punch written), manager approves → ADJ punch
 // appears, and a re-approve is rejected (transition guard).
 function test_punchAdjust_submitApproveWritesPunch() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);
   let sub;
   _asUser(_TEST_PH_EMAIL, () => {
@@ -2337,6 +2457,7 @@ function test_punchAdjust_submitApproveWritesPunch() {
 }
 
 function test_punchAdjust_batchInvalidRejected() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);
   _asUser(_TEST_PH_EMAIL, () => {
     const r = submitPunchAdjustRequests([
@@ -2351,6 +2472,7 @@ function test_punchAdjust_batchInvalidRejected() {
 }
 
 function test_punchAdjust_nonManagerRejected() {
+  _assertSuiteCaller_();
   _asUser(_TEST_PH_EMAIL, () => {
     const r = updatePunchAdjustStatus('nonexistent', 'Approved');
     _assertEq(r.success, false, 'non-manager cannot approve');
@@ -2362,6 +2484,7 @@ function test_punchAdjust_nonManagerRejected() {
 
 // P11 — duplicate guards (INV-94 family) on the adjustment queue.
 function test_punchAdjust_duplicatePendingRejected() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_INDIA_ID);
   _asUser(_TEST_INDIA_EMAIL, () => {
     // (a) duplicate (date, punchType) within ONE batch
@@ -2395,6 +2518,7 @@ function test_punchAdjust_duplicatePendingRejected() {
  *  Walks the contract against the real sheet: refuse without a clock-out,
  *  refuse a backwards resume time, then approve and assert the conversion. */
 function test_punchAdjust_resumeConvertsClockOut() {
+  _assertSuiteCaller_();
   const date = _TEST_DATE_OLD;
   const clearRequests = () => _clearRowsByEmp(
     getAdpSS_().getSheetByName(CONFIG.PUNCH_ADJUST_TAB), _TEST_PH_ID, PAR.EMP_ID, 2);
@@ -2459,6 +2583,7 @@ function test_punchAdjust_resumeConvertsClockOut() {
 }
 
 function test_punchAdjust_approveAgedPastWindowRejected() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_INDIA_ID);
   const sheet = getOrCreatePunchAdjustSheet_();
   const d = new Date();
@@ -2481,6 +2606,7 @@ function test_punchAdjust_approveAgedPastWindowRejected() {
 
 // Toggle — employee immediate adjust is server-gated by employeeImmediateAdjust.
 function test_recordPunch_immediateAdjustGatedByFlag() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);
   const props = PropertiesService.getScriptProperties();
   const saved = props.getProperty('CN_FEATURE_FLAGS');
@@ -2503,6 +2629,7 @@ function test_recordPunch_immediateAdjustGatedByFlag() {
 // #4b — manager multi-day adjust applies the slot times additively across the
 // whole range (one punch per day here).
 function test_managerSaveDayRange_appliesAcrossDays() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);
   const isoCt = function (offsetDays) {
     return Utilities.formatDate(new Date(Date.now() + offsetDays * 86400000), CONFIG.TIMEZONE, 'yyyy-MM-dd');
@@ -2534,6 +2661,7 @@ function test_managerSaveDayRange_appliesAcrossDays() {
  *  the future time FROM the target's own clock; honestly SKIPs near midnight
  *  there (cycle-8 M-14: a skip is recorded as SKIP, never as a pass). */
 function test_managerSaveDayRange_rejectsFutureTimeToday() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);
   const emp = lookupEmployeeById_(_TEST_PH_ID);
   if (!emp) { _skipTest('PH test employee not provisioned'); }
@@ -2559,6 +2687,7 @@ function test_managerSaveDayRange_rejectsFutureTimeToday() {
 }
 
 function test_managerSaveDayRange_nonManagerRejected() {
+  _assertSuiteCaller_();
   _asUser(_TEST_PH_EMAIL, () => {
     const r = managerSaveDayRange(_TEST_PH_ID, '2099-01-01', '2099-01-02', { ClockIn: '09:00' }, '');
     _assertEq(r.success, false, 'non-manager rejected');
@@ -2569,6 +2698,7 @@ function test_managerSaveDayRange_nonManagerRejected() {
 // #8 — reconcile pass: manager-gated; backfills a hand-entered row (content
 // but no noteId) with a UUID + dates, idempotent, content untouched.
 function test_reconcileCallNotes_nonManagerRejected() {
+  _assertSuiteCaller_();
   // F1/F2 — reconcile is a trigger handler, so its gate is the MANAGER_EMAILS
   // assertManagerCaller_ (throws), matching the other trigger-gate tests, NOT
   // the emp.isAdmin return-{error} gate it briefly carried under #102/INV-136.
@@ -2578,6 +2708,7 @@ function test_reconcileCallNotes_nonManagerRejected() {
 }
 
 function test_reconcileCallNotes_backfillsHandEntered() {
+  _assertSuiteCaller_();
   const emp = lookupEmployeeById_(_TEST_INDIA_ID);
   if (!emp || !emp.callNotesSheetId) { _skipTest('India call-notes Sheet not provisioned'); }
   const sheet = getCallNotesSheet_(emp);
@@ -2616,6 +2747,7 @@ function test_reconcileCallNotes_backfillsHandEntered() {
 
 // Auto-provision (INV-110): non-manager is rejected before any Drive write.
 function test_provisionCallNotesSheet_nonManagerRejected() {
+  _assertSuiteCaller_();
   _asUser(_TEST_INDIA_EMAIL, function () {
     const r = provisionCallNotesSheet(_TEST_INDIA_ID);
     _assertNotNull(r.error, 'non-manager rejected');
@@ -2628,6 +2760,7 @@ function test_provisionCallNotesSheet_nonManagerRejected() {
 // The India test employee is enrolled by setupTestEnvironment, so this exercises
 // the no-clobber branch without littering Drive with a fresh Sheet.
 function test_provisionCallNotesSheet_idempotentNoClobber() {
+  _assertSuiteCaller_();
   const emp = lookupEmployeeById_(_TEST_INDIA_ID);
   if (!emp || !emp.callNotesSheetId) { _skipTest('India call-notes Sheet not provisioned'); }
   const before = emp.callNotesSheetId;
@@ -2642,6 +2775,7 @@ function test_provisionCallNotesSheet_idempotentNoClobber() {
 }
 
 function test_recordPunch_reasonAcceptedOldAdj() {
+  _assertSuiteCaller_();
   _withFeatureFlags_({ employeeImmediateAdjust: true }, () => {
     _asUser(_TEST_INDIA_EMAIL, () => {
       // 14 days back, WITH reason → accepted
@@ -2656,6 +2790,7 @@ function test_recordPunch_reasonAcceptedOldAdj() {
 // ── submitTimeOffRequest ──
 
 function test_submitTimeOff_createsRow() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_INDIA_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   _asUser(_TEST_INDIA_EMAIL, () => {
     const r = submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', 'doctor visit');
@@ -2668,6 +2803,7 @@ function test_submitTimeOff_createsRow() {
 }
 
 function test_submitTimeOff_rejectsBadDate() {
+  _assertSuiteCaller_();
   _asUser(_TEST_INDIA_EMAIL, () => {
     _assertFailure(submitTimeOffRequest('05/17/2026', 'Full Day', ''), 'Invalid date');
     // Cycle-11 L-11 — sanity horizon: a typo'd far-future year / deep-past
@@ -2680,6 +2816,7 @@ function test_submitTimeOff_rejectsBadDate() {
 // H1 — a second request for a date that already has a Pending (or Approved)
 // row is rejected, so dual approval can't double-deduct the balance.
 function test_submitTimeOff_duplicateDateRejected() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_INDIA_ID);
   _asUser(_TEST_INDIA_EMAIL, () => {
     _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', 'first'));
@@ -2700,6 +2837,7 @@ function test_submitTimeOff_duplicateDateRejected() {
 // M1 — an unrecognized leave type is rejected rather than silently defaulting
 // to annual/1.0 in getLeaveDeduction_.
 function test_submitTimeOff_invalidTypeRejected() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_INDIA_ID);
   _asUser(_TEST_INDIA_EMAIL, () => {
     _assertFailure(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Half Day', ''), 'Invalid leave type');
@@ -2711,6 +2849,7 @@ function test_submitTimeOff_invalidTypeRejected() {
 // Weekend skip + ATOMIC INV-94 dup rejection + span/order/type guards. One
 // Pending row per WEEKDAY in the range; a conflict on ANY day writes NOTHING.
 function test_submitTimeOffRange_weekendSkipAtomicCaps() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_INDIA_ID);
   // A future Monday ≥14 days out — stable whatever day the suite runs. ONE
   // TIMEZONE FRAME throughout (the cycle-14 lesson, properly this time): the
@@ -2755,6 +2894,7 @@ function test_submitTimeOffRange_weekendSkipAtomicCaps() {
 // ── cancelTimeOffRequest ──
 
 function test_cancelTimeOff_pendingDeletes() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   // Submit
   _asUser(_TEST_PH_EMAIL, () => {
@@ -2771,6 +2911,7 @@ function test_cancelTimeOff_pendingDeletes() {
 }
 
 function test_cancelTimeOff_approvedRejected() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   _asUser(_TEST_PH_EMAIL, () => {
     _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', ''));
@@ -2787,6 +2928,7 @@ function test_cancelTimeOff_approvedRejected() {
 // ── updateTimeOffStatus (PTO math heart) ──
 
 function test_updateTimeOff_approveDeductsAnnual() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);
   _asUser(_TEST_PH_EMAIL, () => {
     _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', ''));
@@ -2806,6 +2948,7 @@ function test_updateTimeOff_approveDeductsAnnual() {
 // date must be rejected (it was the last creator of the double-deduct
 // signature getPtoReconciliation detects after the fact).
 function test_updateTimeOff_dupApproveRejected() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);
   // Row A: submit + deny.
   _asUser(_TEST_PH_EMAIL, () => {
@@ -2844,6 +2987,7 @@ function test_updateTimeOff_dupApproveRejected() {
 }
 
 function test_updateTimeOff_approveDeductsSick() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);
   // Sick Leave is no longer creatable via the submit whitelist (INV-95), but the
   // sick BUCKET machinery is intentionally kept for legacy rows (INV-17). Write a
@@ -2862,6 +3006,7 @@ function test_updateTimeOff_approveDeductsSick() {
 }
 
 function test_updateTimeOff_revertRestores() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);
   _asUser(_TEST_PH_EMAIL, () => {
     _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', ''));
@@ -2879,6 +3024,7 @@ function test_updateTimeOff_revertRestores() {
 }
 
 function test_updateTimeOff_pendingToDenied_noChange() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);
   _asUser(_TEST_PH_EMAIL, () => {
     _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', ''));
@@ -2893,6 +3039,7 @@ function test_updateTimeOff_pendingToDenied_noChange() {
 }
 
 function test_updateTimeOff_halfDay_deductsHalf() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);
   _asUser(_TEST_PH_EMAIL, () => {
     _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Half Day - Morning', ''));
@@ -2906,6 +3053,7 @@ function test_updateTimeOff_halfDay_deductsHalf() {
 }
 
 function test_updateTimeOff_nonManagerRejected() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);
   _asUser(_TEST_PH_EMAIL, () => {
     _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', ''));
@@ -2926,6 +3074,7 @@ function test_updateTimeOff_nonManagerRejected() {
 // ── deletePunch ──
 
 function test_deletePunch_withinWindow() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_INDIA_ID);
   _appendTestPunch(_TEST_INDIA_ID, 'Test India User', _TEST_DATE_RECENT, '09:00:00', 'IN', 'ClockIn');
   _assertEq(_countTimesheetRows(_TEST_INDIA_ID, _TEST_DATE_RECENT, 'ClockIn'), 1);
@@ -2936,6 +3085,7 @@ function test_deletePunch_withinWindow() {
 }
 
 function test_deletePunch_beyondWindowRejected() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_INDIA_ID);
   const d = new Date(); d.setDate(d.getDate() - 20);
   const oldDate = Utilities.formatDate(d, CONFIG.TIMEZONE, 'yyyy-MM-dd');
@@ -2951,6 +3101,7 @@ function test_deletePunch_beyondWindowRejected() {
 }
 
 function test_deletePunch_notFound() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_INDIA_ID);
   _asUser(_TEST_MGR_EMAIL, () => {
     _assertFailure(
@@ -2961,6 +3112,7 @@ function test_deletePunch_notFound() {
 }
 
 function test_deletePunch_nonManagerRejected() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_INDIA_ID);
   _appendTestPunch(_TEST_INDIA_ID, 'Test India User', _TEST_DATE_RECENT, '09:00:00', 'IN', 'ClockIn');
   _asUser(_TEST_INDIA_EMAIL, () => {
@@ -2975,6 +3127,7 @@ function test_deletePunch_nonManagerRejected() {
 // ── getManagerDashboard shape ──
 
 function test_managerDashboard_returnsExpectedShape() {
+  _assertSuiteCaller_();
   _asUser(_TEST_MGR_EMAIL, () => {
     const r = getManagerDashboard();
     _assertTrue(!r.error, 'No error: ' + r.error);
@@ -2994,6 +3147,7 @@ function test_managerDashboard_returnsExpectedShape() {
 // ── Bounded audit read (Bug 3 regression) ──
 
 function test_boundedAuditRead() {
+  _assertSuiteCaller_();
   // Generate 25 test audit entries
   const testEmp = { id: _TEST_INDIA_ID, name: 'Test India User', email: _TEST_INDIA_EMAIL };
   for (let i = 0; i < 25; i++) {
@@ -3009,6 +3163,7 @@ function test_boundedAuditRead() {
 // ── Timezone fallback ──
 
 function test_emptyTimezone_fallsBackToConfig() {
+  _assertSuiteCaller_();
   // Temporarily blank out the timezone column for TEST_IN_001
   const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
   const rows = sheet.getDataRange().getValues();
@@ -3032,6 +3187,7 @@ function test_emptyTimezone_fallsBackToConfig() {
 }
 
 function test_emptyLeaveBalance_treatedAsZero() {
+  _assertSuiteCaller_();
   const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
   const rows = sheet.getDataRange().getValues();
   let targetRow = -1;
@@ -3059,6 +3215,7 @@ function test_emptyLeaveBalance_treatedAsZero() {
 // ── installAutomationTriggers auth gate (Bug 6) ──
 
 function test_installAutomationTriggers_nonManagerThrows() {
+  _assertSuiteCaller_();
   _asUser(_TEST_INDIA_EMAIL, () => {
     _assertThrows(() => installAutomationTriggers(), 'managers');
   });
@@ -3072,30 +3229,35 @@ function test_installAutomationTriggers_nonManagerThrows() {
 // ── Pure-logic helpers: timeDiffSeconds_ + normalizeTime_ (smoke) ──
 
 function test_timeDiffSeconds_positive() {
+  _assertSuiteCaller_();
   _assertEq(timeDiffSeconds_('09:00:00', '09:00:30'), 30);
   _assertEq(timeDiffSeconds_('09:00:00', '09:01:00'), 60);
   _assertEq(timeDiffSeconds_('09:00:00', '10:00:00'), 3600);
 }
 
 function test_timeDiffSeconds_negative() {
+  _assertSuiteCaller_();
   // Earlier > later signals "skip the window check" (treated as different day).
   _assertTrue(timeDiffSeconds_('09:00:30', '09:00:00') < 0,
     'later before earlier yields negative');
 }
 
 function test_timeDiffSeconds_HHmmFormat() {
+  _assertSuiteCaller_();
   // Accepts strings without seconds.
   _assertEq(timeDiffSeconds_('09:00', '09:01'), 60);
   _assertEq(timeDiffSeconds_('09:00:00', '09:01'), 60);
 }
 
 function test_timeDiffSeconds_invalidInput() {
+  _assertSuiteCaller_();
   // Returns -1 (caller treats as "skip the window check") for non-time inputs.
   _assertEq(timeDiffSeconds_('abc', '09:00:00'), -1);
   _assertEq(timeDiffSeconds_('', ''), -1);
 }
 
 function test_normalizeTime_passthroughString() {
+  _assertSuiteCaller_();
   _assertEq(normalizeTime_('09:00:00'), '09:00:00');
   _assertEq(normalizeTime_('14:30:00'), '14:30:00');
   _assertEq(normalizeTime_('  09:00:00  '), '09:00:00', 'Whitespace trimmed');
@@ -3103,6 +3265,7 @@ function test_normalizeTime_passthroughString() {
 }
 
 function test_normalizeTime_DateObject() {
+  _assertSuiteCaller_();
   // Construct a Date and verify it formats to HH:mm:ss. Exact value depends on
   // the spreadsheet's timezone, so we assert format and idempotence only.
   const d = new Date(2026, 4, 17, 9, 30, 0);
@@ -3116,13 +3279,16 @@ function test_normalizeTime_DateObject() {
 // ── Helpers shared by new integration tests ──
 
 function _empTzToday(empTz) {
+  _assertSuiteCaller_();
   return Utilities.formatDate(new Date(), empTz, 'yyyy-MM-dd');
 }
 function _empTzNow(empTz) {
+  _assertSuiteCaller_();
   return Utilities.formatDate(new Date(), empTz, 'HH:mm:ss');
 }
 
 function _findLatestAuditNote(empId, action) {
+  _assertSuiteCaller_();
   // Walks audit log bottom-up; returns the notes column for the most-recent
   // matching (empId, action) row, or null if none. Audit columns are:
   // 0=timestamp, 1=empId, 2=empName, 3=empEmail, 4=action,
@@ -3138,6 +3304,7 @@ function _findLatestAuditNote(empId, action) {
 }
 
 function _setEmpPtoEnabled(empId, value) {
+  _assertSuiteCaller_();
   // Sets column K (EMP.PTO_ENABLED) and returns the original value so callers
   // can restore in finally. Invalidates the roster cache on each write.
   const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
@@ -3156,6 +3323,7 @@ function _setEmpPtoEnabled(empId, value) {
 
 
 function _setEmpSchedule(empId, value) {
+  _assertSuiteCaller_();
   // Sets column O (EMP.SCHEDULE — Turn D per-rep shift override) and returns
   // the original so callers restore in finally. Mirrors _setEmpPtoEnabled.
   const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
@@ -3177,6 +3345,7 @@ function _setEmpSchedule(empId, value) {
 // punctuality; a garbage cell falls back to the per-tz CONFIG.SHIFT_SCHEDULE
 // (fail-safe); breaks always come from the per-tz schedule.
 function test_perRepSchedule_overrideAndFallback() {
+  _assertSuiteCaller_();
   const original = _setEmpSchedule(_TEST_INDIA_ID, '9:15-17:45');
   try {
     let emp = lookupEmployeeById_(_TEST_INDIA_ID);
@@ -3207,6 +3376,7 @@ function test_perRepSchedule_overrideAndFallback() {
 // ── recordPunch min-interval debounce (INV-22) ──
 
 function test_recordPunch_minIntervalRejectsRapidLive() {
+  _assertSuiteCaller_();
   // Two back-to-back live punches: the second should be rejected. Uses _TEST_PH
   // because prior tests don't punch them live, so we know the only "previous
   // punch today" is the one this test just wrote.
@@ -3219,6 +3389,7 @@ function test_recordPunch_minIntervalRejectsRapidLive() {
 }
 
 function test_recordPunch_minIntervalAllowsAdjustment() {
+  _assertSuiteCaller_();
   // Adjustments bypass the debounce check (isAdj branch is excluded). Even with
   // a fresh live punch in the recent history, an adjustment for a past date
   // should succeed. (Flag-gated since #4a — enabled for the duration.)
@@ -3237,6 +3408,7 @@ function test_recordPunch_minIntervalAllowsAdjustment() {
 // ── selfDeletePunch (INV-23) ──
 
 function test_selfDeletePunch_withinWindow() {
+  _assertSuiteCaller_();
   // Pre-position a punch at "now" for the manager test user, then self-undo it.
   // Operator 2026-09-04: this test used to rely on "no prior test targets
   // _TEST_MGR" for its clean state — a killed twin run left one stray ClockIn
@@ -3259,6 +3431,7 @@ function test_selfDeletePunch_withinWindow() {
 }
 
 function test_selfDeletePunch_beyondWindow() {
+  _assertSuiteCaller_();
   // The time-window check fires before any row scan — no need to pre-position.
   const empTz = 'America/Chicago';
   const today = _empTzToday(empTz);
@@ -3272,6 +3445,7 @@ function test_selfDeletePunch_beyondWindow() {
 }
 
 function test_selfDeletePunch_rejectsAdjustment() {
+  _assertSuiteCaller_();
   // Insert an adjustment punch (ADJ-ClockIn in COMMENTS). Self-undo must reject
   // even though date+time+type match — leaving adjustments to go through Adjust
   // preserves the audit trail.
@@ -3291,6 +3465,7 @@ function test_selfDeletePunch_rejectsAdjustment() {
 }
 
 function test_selfDeletePunch_rejectsOtherDay() {
+  _assertSuiteCaller_();
   // Date check fires before any row scan — no need to pre-position a row.
   _asUser(_TEST_MGR_EMAIL, () => {
     _assertFailure(
@@ -3301,6 +3476,7 @@ function test_selfDeletePunch_rejectsOtherDay() {
 }
 
 function test_selfDeletePunch_unknownType() {
+  _assertSuiteCaller_();
   // Punch-type validation fires before date/time/scan logic.
   _asUser(_TEST_MGR_EMAIL, () => {
     _assertFailure(selfDeletePunch('2026-05-19', '09:00:00', 'Nope'),
@@ -3312,6 +3488,7 @@ function test_selfDeletePunch_unknownType() {
 // ── managerSubmitTimeOff (INV-25) ──
 
 function test_managerSubmitTimeOff_pendingFlow() {
+  _assertSuiteCaller_();
   // Submit without auto-approve. Verify return + balance untouched.
   _clearTestState(_TEST_INDIA_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   const before = _getBalance(_TEST_INDIA_ID, 'annual');
@@ -3328,6 +3505,7 @@ function test_managerSubmitTimeOff_pendingFlow() {
 }
 
 function test_managerSubmitTimeOff_autoApproveDeducts() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   const before = _getBalance(_TEST_PH_ID, 'annual');
   _asUser(_TEST_MGR_EMAIL, () => {
@@ -3343,6 +3521,7 @@ function test_managerSubmitTimeOff_autoApproveDeducts() {
 }
 
 function test_managerSubmitTimeOff_autoApproveHalfDay() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   const before = _getBalance(_TEST_PH_ID, 'annual');
   _asUser(_TEST_MGR_EMAIL, () => {
@@ -3356,6 +3535,7 @@ function test_managerSubmitTimeOff_autoApproveHalfDay() {
 }
 
 function test_managerSubmitTimeOff_nonManagerRejected() {
+  _assertSuiteCaller_();
   // Even though _TEST_INDIA is the target, calling as them must be rejected.
   _asUser(_TEST_INDIA_EMAIL, () => {
     _assertFailure(
@@ -3366,6 +3546,7 @@ function test_managerSubmitTimeOff_nonManagerRejected() {
 }
 
 function test_managerSubmitTimeOff_badDateRejected() {
+  _assertSuiteCaller_();
   _asUser(_TEST_MGR_EMAIL, () => {
     _assertFailure(
       managerSubmitTimeOff(_TEST_PH_ID, '05/17/2026', 'Full Day', '', false),
@@ -3375,6 +3556,7 @@ function test_managerSubmitTimeOff_badDateRejected() {
 }
 
 function test_managerSubmitTimeOff_employeeNotFound() {
+  _assertSuiteCaller_();
   _asUser(_TEST_MGR_EMAIL, () => {
     _assertFailure(
       managerSubmitTimeOff('TEST_NOPE_999', _TEST_DATE_FUTURE, 'Full Day', '', false),
@@ -3386,6 +3568,7 @@ function test_managerSubmitTimeOff_employeeNotFound() {
 // H1 — the manager-filed path is guarded too: it can't stack a second
 // active request on a date the employee already has Pending/Approved.
 function test_managerSubmitTimeOff_duplicateDateRejected() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);
   _asUser(_TEST_MGR_EMAIL, () => {
     _assertSuccess(managerSubmitTimeOff(_TEST_PH_ID, _TEST_DATE_FUTURE, 'Full Day', '', false));
@@ -3400,6 +3583,7 @@ function test_managerSubmitTimeOff_duplicateDateRejected() {
 // (the H1 double-deduct signature) and quantifies the over-charge. The submit
 // endpoints now block duplicates (INV-94), so the rows are appended directly.
 function test_getPtoReconciliation_detectsDoubleDeduct() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);
   const sheet = getOrCreateTimeOffSheet_();
   const sa = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
@@ -3415,6 +3599,7 @@ function test_getPtoReconciliation_detectsDoubleDeduct() {
 }
 
 function test_getPtoReconciliation_nonManagerRejected() {
+  _assertSuiteCaller_();
   _asUser(_TEST_PH_EMAIL, () => {
     const r = getPtoReconciliation();
     _assertNotNull(r.error, 'non-manager gets an error');
@@ -3427,6 +3612,7 @@ function test_getPtoReconciliation_nonManagerRejected() {
 // Pending rows (appended directly since submit blocks dups now), both Approved
 // via updateTimeOffStatus → double-deduct, then reconcile.
 function test_fixPtoReconciliation_creditsAndIdempotent() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);
   const sheet = getOrCreateTimeOffSheet_();
   // CYCLE 11 M-1 / INV-94 — the dup-date guard runs on the →Approved transition
@@ -3487,6 +3673,7 @@ function test_fixPtoReconciliation_creditsAndIdempotent() {
 }
 
 function test_fixPtoReconciliation_nonManagerRejected() {
+  _assertSuiteCaller_();
   _asUser(_TEST_PH_EMAIL, () => {
     const r = fixPtoReconciliation(_TEST_PH_ID);
     _assertEq(r.success, false, 'non-manager rejected');
@@ -3502,6 +3689,7 @@ function test_fixPtoReconciliation_nonManagerRejected() {
 // Rows use a PAST date (in the 92-day window) so today's live-state tests
 // (sequence guard, dashboards) are untouched.
 function test_sheetDoctor_detectsAndCollapsesDuplicates() {
+  _assertSuiteCaller_();
   const d = new Date(); d.setDate(d.getDate() - 10);
   const date = fmtDateTz_(d, CONFIG.MANAGER_TIMEZONE);
   const emp = { id: _TEST_INDIA_ID, name: 'Test India User' };
@@ -3553,6 +3741,7 @@ function test_sheetDoctor_detectsAndCollapsesDuplicates() {
 }
 
 function test_managerSubmitTimeOff_writesAudit() {
+  _assertSuiteCaller_();
   // Auto-approve marks "filed by manager, auto-approved" in the notes column.
   _clearTestState(_TEST_INDIA_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   _asUser(_TEST_MGR_EMAIL, () => {
@@ -3570,6 +3759,7 @@ function test_managerSubmitTimeOff_writesAudit() {
 // ── getTeammateStatus (INV-24) ──
 
 function test_getTeammateStatus_shapeRestricted() {
+  _assertSuiteCaller_();
   // Critical privacy check: response must NOT carry email, ID, last-punch time,
   // or timezone for non-managers. Only { name, status, isSelf, activeNotIn }
   // per row — the fourth is the note-10 presence BOOLEAN (INV-24 amendment,
@@ -3601,6 +3791,7 @@ function test_getTeammateStatus_shapeRestricted() {
 }
 
 function test_getTeammateStatus_disabledFlag() {
+  _assertSuiteCaller_();
   // showTeammateStatus is read via getFlag_ since the feature-flag migration —
   // a runtime CONFIG.SHOW_TEAMMATE_STATUS mutation no longer disables it.
   _withFeatureFlags_({ showTeammateStatus: false }, () => {
@@ -3616,6 +3807,7 @@ function test_getTeammateStatus_disabledFlag() {
 // ── Per-employee PTO toggle (INV-27) ──
 
 function test_ptoEnabled_falseHidesFromState() {
+  _assertSuiteCaller_();
   const original = _setEmpPtoEnabled(_TEST_PH_ID, 'FALSE');
   try {
     _asUser(_TEST_PH_EMAIL, () => {
@@ -3632,6 +3824,7 @@ function test_ptoEnabled_falseHidesFromState() {
 }
 
 function test_ptoEnabled_blankDefaultsTrue() {
+  _assertSuiteCaller_();
   // setupTestEnvironment writes only 10 columns, so column K starts blank
   // for test employees. Verify back-compat: blank → enabled.
   const original = _setEmpPtoEnabled(_TEST_PH_ID, '');
@@ -3654,6 +3847,7 @@ function test_ptoEnabled_blankDefaultsTrue() {
 // a clean slate before each managerSaveDay test, since the function's behavior
 // depends on the snapshot of "current state for this employee/date".
 function _clearPunchesForDay(empId, date) {
+  _assertSuiteCaller_();
   const sheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
   const rows = sheet.getDataRange().getValues();
   for (let i = rows.length - 1; i >= 2; i--) {
@@ -3668,6 +3862,7 @@ function _clearPunchesForDay(empId, date) {
 // tests to verify that the F4 vocabulary (PunchEdit / PunchAdd / PunchDelete)
 // was emitted the expected number of times.
 function _countAuditRows(empId, action) {
+  _assertSuiteCaller_();
   const rows = getOrCreateAuditSheet_().getDataRange().getValues();
   let n = 0;
   for (let i = 1; i < rows.length; i++) {
@@ -3678,6 +3873,7 @@ function _countAuditRows(empId, action) {
 }
 
 function test_managerSaveDay_collapsesDuplicateRows() {
+  _assertSuiteCaller_();
   // M-1 (cycle 10): duplicate same-(emp, date, type) rows reconcile to the
   // single displayed state — a kept slot collapses extras to the LAST row
   // (the one the modal showed), a blank slot deletes EVERY row of the type
@@ -3713,6 +3909,7 @@ function test_managerSaveDay_collapsesDuplicateRows() {
  *  unchanged (nothing written), drop one (only that pair's rows go), and
  *  submit an empty list (every break row goes, clock punches untouched). */
 function test_managerSaveDay_multipleBreaks() {
+  _assertSuiteCaller_();
   _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
   const base = { ClockIn: '08:00', ClockOut: '21:00' };
   const two = {
@@ -3781,6 +3978,7 @@ function test_managerSaveDay_multipleBreaks() {
 }
 
 function test_managerSaveDay_addOnly() {
+  _assertSuiteCaller_();
   _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
   const slots = { ClockIn:'09:00', LunchOut:'12:00', LunchIn:'13:00', ClockOut:'17:00' };
   const before = _countAuditRows(_TEST_PH_ID, 'PunchAdd');
@@ -3800,6 +3998,7 @@ function test_managerSaveDay_addOnly() {
 }
 
 function test_managerSaveDay_updateOnly() {
+  _assertSuiteCaller_();
   _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
   // Pre-position a full day's punches as adjustments (ADJ-* in COMMENTS)
   _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '09:00:00', 'IN',  'ADJ-ClockIn');
@@ -3821,6 +4020,7 @@ function test_managerSaveDay_updateOnly() {
 }
 
 function test_managerSaveDay_deleteOnly() {
+  _assertSuiteCaller_();
   _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
   _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '09:00:00', 'IN',  'ADJ-ClockIn');
   _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '12:00:00', 'OUT', 'ADJ-LunchOut');
@@ -3840,6 +4040,7 @@ function test_managerSaveDay_deleteOnly() {
 }
 
 function test_managerSaveDay_mixedChanges() {
+  _assertSuiteCaller_();
   _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
   // Start with all four punches
   _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '09:00:00', 'IN',  'ADJ-ClockIn');
@@ -3862,6 +4063,7 @@ function test_managerSaveDay_mixedChanges() {
 }
 
 function test_managerSaveDay_noChangesIsNoOp() {
+  _assertSuiteCaller_();
   _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
   // Cycle-9 M-1 regression pin: the ClockIn is a LIVE punch with REAL seconds
   // (recordPunch writes fmtTimeTz_ 'HH:mm:ss') — the Day Edit client prefills
@@ -3888,6 +4090,7 @@ function test_managerSaveDay_noChangesIsNoOp() {
 }
 
 function test_managerSaveDay_nonManagerRejected() {
+  _assertSuiteCaller_();
   _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
   _asUser(_TEST_INDIA_EMAIL, () => {
     _assertFailure(
@@ -3901,6 +4104,7 @@ function test_managerSaveDay_nonManagerRejected() {
 }
 
 function test_managerSaveDay_reasonRequiredBeyondWindow() {
+  _assertSuiteCaller_();
   _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_VERY_OLD);
   _asUser(_TEST_MGR_EMAIL, () => {
     // 20 days back, no reason → rejected
@@ -3919,6 +4123,7 @@ function test_managerSaveDay_reasonRequiredBeyondWindow() {
 }
 
 function test_managerSaveDay_invalidTimeFormatRejected() {
+  _assertSuiteCaller_();
   _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
   _asUser(_TEST_MGR_EMAIL, () => {
     _assertFailure(
@@ -3958,6 +4163,7 @@ function test_managerSaveDay_invalidTimeFormatRejected() {
  *  per-rep catch, and silently DROP the rep from the aggregate — while the
  *  rep's own panel (a trimmed reader) correctly showed the enrollment splash. */
 function test_cn_enrolledSheetId_trimsAndNullGuards() {
+  _assertSuiteCaller_();
   const row = [];
   row[EMP.CALL_NOTES_SHEET_ID] = '   ';
   _assertEq(cnEnrolledSheetId_(row), '', 'whitespace-only column L is NOT enrolled');
@@ -3976,6 +4182,7 @@ function test_cn_enrolledSheetId_trimsAndNullGuards() {
  *  object untouched, so an oversized attempt cannot half-mutate the record or
  *  write a cell that bricks every later write on the note. */
 function test_cn_appendBounded_capsAndRollsBack() {
+  _assertSuiteCaller_();
   // Accept path — no error, entry landed.
   let sd = { feedback: [] };
   _assertEq(cnAppendBounded_(sd, sd.feedback, { m: 'hi' }, CN_FEEDBACK_MAX_ENTRIES, 'feedback'), '',
@@ -4002,21 +4209,25 @@ function test_cn_appendBounded_capsAndRollsBack() {
 // ── sanitizeFlagType_ ──
 
 function test_cn_sanitizeFlagType_valid() {
+  _assertSuiteCaller_();
   _assertEq(sanitizeFlagType_('action'),   'action');
   _assertEq(sanitizeFlagType_('training'), 'training');
   _assertEq(sanitizeFlagType_('review'),   'review');
 }
 function test_cn_sanitizeFlagType_invalidCoerces() {
+  _assertSuiteCaller_();
   _assertEq(sanitizeFlagType_('escalation'), '', 'unknown coerces to empty');
   _assertEq(sanitizeFlagType_('foo'),        '');
   _assertEq(sanitizeFlagType_('action!'),    '', 'punctuation breaks match');
 }
 function test_cn_sanitizeFlagType_caseInsensitive() {
+  _assertSuiteCaller_();
   _assertEq(sanitizeFlagType_('ACTION'),    'action');
   _assertEq(sanitizeFlagType_(' Training '),'training');
   _assertEq(sanitizeFlagType_('ReVieW'),    'review');
 }
 function test_cn_sanitizeFlagType_nullish() {
+  _assertSuiteCaller_();
   _assertEq(sanitizeFlagType_(''),         '');
   _assertEq(sanitizeFlagType_(null),       '');
   _assertEq(sanitizeFlagType_(undefined),  '');
@@ -4025,6 +4236,7 @@ function test_cn_sanitizeFlagType_nullish() {
 // ── sanitizeCallNotePayload_ ──
 
 function test_cn_sanitizePayload_trims() {
+  _assertSuiteCaller_();
   const out = sanitizeCallNotePayload_({
     callback: '  (555) 123-4567  ',
     caller:   '  Jane Smith  ',
@@ -4037,6 +4249,7 @@ function test_cn_sanitizePayload_trims() {
   _assertEq(out.flagType, 'action', 'flagType lowercased + trimmed');
 }
 function test_cn_sanitizePayload_nullishToEmpty() {
+  _assertSuiteCaller_();
   const out = sanitizeCallNotePayload_({});
   _assertEq(out.callback,       '');
   _assertEq(out.caller,         '');
@@ -4050,6 +4263,7 @@ function test_cn_sanitizePayload_nullishToEmpty() {
   _assertNull(out.subformData);
 }
 function test_cn_sanitizePayload_acceptsCamelAlias() {
+  _assertSuiteCaller_();
   // The client-side helper sends `patientAndTRX` (uppercase TRX) too; the
   // server should accept either spelling so a client refactor doesn't
   // silently drop the field.
@@ -4060,11 +4274,13 @@ function test_cn_sanitizePayload_acceptsCamelAlias() {
 // ── validateCallNotePayload_ ──
 
 function test_cn_validatePayload_rejectsEmpty() {
+  _assertSuiteCaller_();
   const result = validateCallNotePayload_(sanitizeCallNotePayload_({}));
   _assertNotNull(result.error);
   _assertContains(result.error, 'empty', 'Error message mentions empty');
 }
 function test_cn_validatePayload_acceptsAnyField() {
+  _assertSuiteCaller_();
   ['callback','caller','patientAndTrx','issue','resolution'].forEach(field => {
     const payload = {}; payload[field] = 'something';
     const result = validateCallNotePayload_(sanitizeCallNotePayload_(payload));
@@ -4072,6 +4288,7 @@ function test_cn_validatePayload_acceptsAnyField() {
   });
 }
 function test_cn_validatePayload_rejectsBadFlag() {
+  _assertSuiteCaller_();
   // Bypass sanitize so we can inject a deliberately bad flag into a
   // payload that otherwise looks valid.
   const cleaned = sanitizeCallNotePayload_({ caller: 'Jane' });
@@ -4084,11 +4301,13 @@ function test_cn_validatePayload_rejectsBadFlag() {
 // ── callNoteMatchesFilter_ ──
 
 function test_cn_matchesFilter_all() {
+  _assertSuiteCaller_();
   _assertTrue(callNoteMatchesFilter_({ flagType: 'action', resolved: false }, 'all'));
   _assertTrue(callNoteMatchesFilter_({ flagType: '',       resolved: true  }, 'all'));
   _assertTrue(callNoteMatchesFilter_({ flagType: 'review', resolved: false }, 'all'));
 }
 function test_cn_matchesFilter_actionTrainingReview() {
+  _assertSuiteCaller_();
   _assertTrue (callNoteMatchesFilter_({ flagType: 'action'   }, 'action'));
   _assertFalse(callNoteMatchesFilter_({ flagType: 'training' }, 'action'));
   _assertTrue (callNoteMatchesFilter_({ flagType: 'training' }, 'training'));
@@ -4097,6 +4316,7 @@ function test_cn_matchesFilter_actionTrainingReview() {
   _assertFalse(callNoteMatchesFilter_({ flagType: 'action'   }, 'review'));
 }
 function test_cn_matchesFilter_unresolved() {
+  _assertSuiteCaller_();
   _assertTrue (callNoteMatchesFilter_({ flagType: 'action',   resolved: false }, 'unresolved'));
   _assertFalse(callNoteMatchesFilter_({ flagType: 'action',   resolved: true  }, 'unresolved'),
     'resolved action notes do not match unresolved filter');
@@ -4105,6 +4325,7 @@ function test_cn_matchesFilter_unresolved() {
   _assertFalse(callNoteMatchesFilter_({ flagType: '',         resolved: false }, 'unresolved'));
 }
 function test_cn_matchesFilter_unsent() {
+  _assertSuiteCaller_();
   _assertTrue (callNoteMatchesFilter_({ emailedAt: '' },                          'unsent'));
   _assertFalse(callNoteMatchesFilter_({ emailedAt: '2026-05-17T09:30:00' },       'unsent'));
 }
@@ -4112,6 +4333,7 @@ function test_cn_matchesFilter_unsent() {
 // ── updateInfoToSubformKey_ ──
 
 function test_cn_updateInfoToSubformKey() {
+  _assertSuiteCaller_();
   _assertEq(updateInfoToSubformKey_('Close Order'),       'close');
   _assertEq(updateInfoToSubformKey_('CLOSE ORDER'),       'close');
   _assertEq(updateInfoToSubformKey_('Verified Shipping'), 'shipping');
@@ -4125,29 +4347,35 @@ function test_cn_updateInfoToSubformKey() {
 // ── formatPhoneNumber_ / formatProviderPhone_ ──
 
 function test_cn_formatPhoneNumber_basic() {
+  _assertSuiteCaller_();
   _assertEq(formatPhoneNumber_('5551234567'),  '(555) 123-4567');
   _assertEq(formatPhoneNumber_('555-123-4567'),'(555) 123-4567');
   _assertEq(formatPhoneNumber_('(555) 123 4567'), '(555) 123-4567');
 }
 function test_cn_formatPhoneNumber_extension() {
+  _assertSuiteCaller_();
   _assertEq(formatPhoneNumber_('5551234567 x123'), '(555) 123-4567 x123');
   _assertEq(formatPhoneNumber_('5551234567x12345'),'(555) 123-4567 x12345');
 }
 function test_cn_formatPhoneNumber_passthroughShort() {
+  _assertSuiteCaller_();
   // Sub-10-digit strings are left alone (no good formatting heuristic).
   _assertEq(formatPhoneNumber_('555-1234'), '555-1234');
 }
 function test_cn_formatPhoneNumber_empty() {
+  _assertSuiteCaller_();
   _assertEq(formatPhoneNumber_(''),        '');
   _assertEq(formatPhoneNumber_(null),      '');
   _assertEq(formatPhoneNumber_(undefined), '');
 }
 function test_cn_formatProviderPhone_basic() {
+  _assertSuiteCaller_();
   _assertEq(formatProviderPhone_('5551234567'),   '555-123-4567');
   _assertEq(formatProviderPhone_('555-123-4567'), '555-123-4567');
   _assertEq(formatProviderPhone_('5551234567 x12'), '555-123-4567 x12');
 }
 function test_cn_formatProviderPhone_countryCode() {
+  _assertSuiteCaller_();
   // 11-digit numbers starting with 1 get a leading "1 " prefix
   _assertEq(formatProviderPhone_('15551234567'),  '1 555-123-4567');
   _assertEq(formatProviderPhone_('1-555-123-4567'),'1 555-123-4567');
@@ -4156,12 +4384,14 @@ function test_cn_formatProviderPhone_countryCode() {
 // ── buildEmailSubject_ ──
 
 function test_cn_buildEmailSubject_basicUpdate() {
+  _assertSuiteCaller_();
   _assertEq(
     buildEmailSubject_({ updateInfo: 'Status Check' }, 'Jane Smith TRX123'),
     'Status Check: Jane Smith TRX123'
   );
 }
 function test_cn_buildEmailSubject_titlecasesCanon() {
+  _assertSuiteCaller_();
   _assertEq(
     buildEmailSubject_({ updateInfo: 'close order' },       'Patient X'),
     'Close Order: Patient X'
@@ -4176,6 +4406,7 @@ function test_cn_buildEmailSubject_titlecasesCanon() {
   );
 }
 function test_cn_buildEmailSubject_repeatResupplyEnriched() {
+  _assertSuiteCaller_();
   const selections = {
     updateInfo: 'Repeat Resupply',
     resupplyDetails: { itemCategory: 'CPAP', resupplyMonth: 'July', dob: '01/15/1970' },
@@ -4186,6 +4417,7 @@ function test_cn_buildEmailSubject_repeatResupplyEnriched() {
   );
 }
 function test_cn_buildEmailSubject_repeatResupplyOtherCategory() {
+  _assertSuiteCaller_();
   // When itemCategory is 'Other', the category prefix is dropped.
   const selections = {
     updateInfo: 'Repeat Resupply',
@@ -4200,6 +4432,7 @@ function test_cn_buildEmailSubject_repeatResupplyOtherCategory() {
 // ── generateOOPResolutionText_ ──
 
 function test_cn_generateOOPResolutionText_collected() {
+  _assertSuiteCaller_();
   const sel = {
     oopDetails:      { baseCost: '100.00', taxAmt: '6.25', shippingCost: '14.99', totalCost: '121.24' },
     shippingDetails: { patResp: 'Collected', verifiedAddr: true, verifiedAddrText: '1 Main St',
@@ -4213,6 +4446,7 @@ function test_cn_generateOOPResolutionText_collected() {
   _assertContains(text, 'Docs: Email (x@y.com)');
 }
 function test_cn_generateOOPResolutionText_needCollect() {
+  _assertSuiteCaller_();
   const sel = {
     oopDetails:      { baseCost: '50.00', taxAmt: '$2.50', shippingCost: '0.00', totalCost: '52.50' },
     shippingDetails: { patResp: 'Need to Collect', verifiedAddr: false, verifiedAddrText: '',
@@ -4227,6 +4461,7 @@ function test_cn_generateOOPResolutionText_needCollect() {
 // ── resolveEmailRecipients_ ──
 
 function test_cn_resolveRecipients_simpleDept() {
+  _assertSuiteCaller_();
   // 'Sales' resolves via CONFIG.CALL_NOTES.DEPARTMENT_EMAILS. We just
   // assert it produces a `to:` string containing an @-address — the
   // exact email is config-driven so testing the value would couple
@@ -4237,10 +4472,12 @@ function test_cn_resolveRecipients_simpleDept() {
   _assertContains(res.to, '@');
 }
 function test_cn_resolveRecipients_otherUsesIndividual() {
+  _assertSuiteCaller_();
   const res = resolveEmailRecipients_({ departments: ['Other'], individualEmail: 'manual@example.com' });
   _assertEq(res.to, 'manual@example.com');
 }
 function test_cn_resolveRecipients_unknownDeptErrors() {
+  _assertSuiteCaller_();
   const res = resolveEmailRecipients_({ departments: ['NotARealDept'] });
   _assertNotNull(res.error);
   _assertContains(res.error, 'Unknown department');
@@ -4249,11 +4486,13 @@ function test_cn_resolveRecipients_unknownDeptErrors() {
 // ── validateEmailSelections_ ──
 
 function test_cn_validateEmailSelections_requiresDept() {
+  _assertSuiteCaller_();
   const r = validateEmailSelections_({ departments: [], individualEmail: '', updateInfo: 'Status Check' });
   _assertNotNull(r.error);
   _assertContains(r.error, 'recipient');
 }
 function test_cn_validateEmailSelections_otherRequiresEmail() {
+  _assertSuiteCaller_();
   let r = validateEmailSelections_({ departments: ['Other'], individualEmail: '', updateInfo: 'Status Check' });
   _assertNotNull(r.error);
   r = validateEmailSelections_({ departments: ['Other'], individualEmail: 'not-an-email', updateInfo: 'X' });
@@ -4263,6 +4502,7 @@ function test_cn_validateEmailSelections_otherRequiresEmail() {
   _assertTrue(r.ok);
 }
 function test_cn_validateEmailSelections_requiresUpdateInfo() {
+  _assertSuiteCaller_();
   const r = validateEmailSelections_({ departments: ['Sales'], individualEmail: '', updateInfo: '' });
   _assertNotNull(r.error);
   _assertContains(r.error, 'Update');
@@ -4271,6 +4511,7 @@ function test_cn_validateEmailSelections_requiresUpdateInfo() {
 // ── callDataFromNote_ — smart "self relationship + only-TRX" prepend ──
 
 function test_cn_callDataFromNote_selfNumberPrepended() {
+  _assertSuiteCaller_();
   const out = callDataFromNote_({
     callback: '5551234567', caller: 'Jane Doe', relationship: 'self',
     patientAndTrx: '99999', issue: 'X', transferredTo: '', resolution: '',
@@ -4278,6 +4519,7 @@ function test_cn_callDataFromNote_selfNumberPrepended() {
   _assertEq(out.patientAndTrx, 'Jane Doe 99999');
 }
 function test_cn_callDataFromNote_selfNamedNoPrepend() {
+  _assertSuiteCaller_();
   // patientAndTrx already includes a non-numeric word — no prepend
   const out = callDataFromNote_({
     callback: '5551234567', caller: 'Jane Doe', relationship: 'self',
@@ -4286,6 +4528,7 @@ function test_cn_callDataFromNote_selfNamedNoPrepend() {
   _assertEq(out.patientAndTrx, 'Jane Doe 99999');
 }
 function test_cn_callDataFromNote_nonSelfPassthrough() {
+  _assertSuiteCaller_();
   // Different relationship — no prepend regardless of whether TRX is number-only
   const out = callDataFromNote_({
     callback: '5551234567', caller: 'Mom', relationship: 'parent',
@@ -4300,6 +4543,7 @@ function test_cn_callDataFromNote_nonSelfPassthrough() {
 // pins that invariant — if a future field is added without esc_, it fails.
 
 function test_cn_buildEmailHtml_escapesUserFields() {
+  _assertSuiteCaller_();
   const callData = {
     callBackNumber: '(555) 123-4567',
     callerName:     '<script>alert(1)</script>',
@@ -4317,6 +4561,7 @@ function test_cn_buildEmailHtml_escapesUserFields() {
 }
 
 function test_cn_formSubmissionCard_escapes() {
+  _assertSuiteCaller_();
   // C4 — the in-app submission viewer injects buildFormSubmissionCardHtml_ via
   // innerHTML (INV-89 class). Pin that recipient-supplied values are esc_'d.
   const data = {
@@ -4336,6 +4581,7 @@ function test_cn_formSubmissionCard_escapes() {
 // surfaced it). Read-only (cnTimestampString_ opens the ADP sheet for its tz,
 // same class as the tz tripwire below).
 function test_automationDetectorLiveness() {
+  _assertSuiteCaller_();
   const checks = automationDetectorChecks_();
   _assertTrue(checks.length >= 5, 'all five pure detector checks ran (' + checks.length + ')');
   checks.forEach(function (c) {
@@ -4344,6 +4590,7 @@ function test_automationDetectorLiveness() {
 }
 
 function test_config_adpSheetTzMatchesConfig() {
+  _assertSuiteCaller_();
   // S1.1 — the AuditLog / TO.SUBMITTED_AT coercion round-trip relies on the ADP
   // spreadsheet's tz matching CONFIG.TIMEZONE: writes use CONFIG.TIMEZONE
   // (fmtDate_/fmtTime_) while normalizeAuditTs_/normalizeDate_ recover coerced
@@ -4376,6 +4623,7 @@ function test_config_adpSheetTzMatchesConfig() {
 // the same call `include()` uses — so this is pure-logic, safe on prod.
 
 function test_tpl_formToken_usesUnescapedScriptlet() {
+  _assertSuiteCaller_();
   const src = HtmlService.createHtmlOutputFromFile('form_public').getContent();
   _assertContains(src, 'var FORM_TOKEN =', 'form_public.html still declares FORM_TOKEN');
   // The token line must use the unescaped print scriptlet, not the escaping one.
@@ -4386,6 +4634,7 @@ function test_tpl_formToken_usesUnescapedScriptlet() {
 }
 
 function test_tpl_noEscapedJsonInjection() {
+  _assertSuiteCaller_();
   // Across every HTML template, a `<?= ... JSON ... ?>` (escaping) print is the
   // token-mangling foot-gun. JSON values must go through `<?!=` instead.
   const files = ['form_public', 'index'];
@@ -4399,6 +4648,7 @@ function test_tpl_noEscapedJsonInjection() {
 }
 
 function test_tpl_formPublic_evaluatesWithoutError() {
+  _assertSuiteCaller_();
   // The two tests above only string-match the RAW template file — they cannot
   // catch a scriptlet delimiter (or a closing script tag) accidentally written
   // inside a JS comment, which fails only at .evaluate() time. That was the
@@ -4423,6 +4673,7 @@ function test_tpl_formPublic_evaluatesWithoutError() {
 // ── esc_ — HTML entity escape ──
 
 function test_cn_esc_basic() {
+  _assertSuiteCaller_();
   _assertEq(esc_('A & B'),             'A &amp; B');
   _assertEq(esc_('<script>'),          '&lt;script&gt;');
   _assertEq(esc_(`"quoted" 'single'`), '&quot;quoted&quot; &#39;single&#39;');
@@ -4434,11 +4685,13 @@ function test_cn_esc_basic() {
 // (getCallNotesAuditLog / getCallNoteAuditHistory) depend on. A regression
 // here silently empties the per-note history drill-down (#3).
 function test_cn_extractAuditNoteId_parses() {
+  _assertSuiteCaller_();
   _assertEq(cnExtractAuditNoteId_('noteId=3f2504e0-4f89-41d3-9a0c-0305e82c3301; urgent=on'),
             '3f2504e0-4f89-41d3-9a0c-0305e82c3301');
   _assertEq(cnExtractAuditNoteId_('noteId=abc12345; depts=Shipping'), 'abc12345');
 }
 function test_cn_extractAuditNoteId_noMatch() {
+  _assertSuiteCaller_();
   _assertEq(cnExtractAuditNoteId_('Updated department emails (3 depts)'), '');
   _assertEq(cnExtractAuditNoteId_(''),        '');
   _assertEq(cnExtractAuditNoteId_(null),      '');
@@ -4465,6 +4718,7 @@ function test_cn_extractAuditNoteId_noMatch() {
  *  empty rather than assuming deleteRows took. */
 const _TEST_CN_MIN_GRID_ROWS = 50;   // spare rows the CN fixture tab is topped up to after each clear
 function _clearTestCallNotes() {
+  _assertSuiteCaller_();
   if (!_TEST_CN_SS_ID) {
     throw new Error('_clearTestCallNotes: _TEST_CN_SS_ID is not set — run setupTestEnvironment first.');
   }
@@ -4526,6 +4780,7 @@ function _cnTestPayload(overrides) {
 // (patientAndTrx-only) search scopes. Two notes, each matching ONE scope on a
 // unique token, must not cross-surface in the other scope.
 function test_cn_search_phoneTrxFieldScopes() {
+  _assertSuiteCaller_();
   _clearTestCallNotes();
   _asUser(_TEST_INDIA_EMAIL, function () {
     submitCallNote(_cnTestPayload({ callback: '5550009999', caller: 'Alpha Caller', patientAndTrx: 'Patient AAA' }));
@@ -4543,6 +4798,7 @@ function test_cn_search_phoneTrxFieldScopes() {
 }
 
 function test_cn_submitCallNote_basic() {
+  _assertSuiteCaller_();
   _clearTestCallNotes();
   const r = _asUser(_TEST_INDIA_EMAIL, function () {
     return submitCallNote(_cnTestPayload());
@@ -4556,6 +4812,7 @@ function test_cn_submitCallNote_basic() {
 }
 
 function test_cn_submitCallNote_withFlag() {
+  _assertSuiteCaller_();
   _clearTestCallNotes();
   const r = _asUser(_TEST_INDIA_EMAIL, function () {
     return submitCallNote(_cnTestPayload({ flagType: 'training' }));
@@ -4565,6 +4822,7 @@ function test_cn_submitCallNote_withFlag() {
 }
 
 function test_cn_submitCallNote_unenrolledRepFails() {
+  _assertSuiteCaller_();
   const r = _asUser(_TEST_PH_EMAIL, function () {
     return submitCallNote(_cnTestPayload());
   });
@@ -4574,6 +4832,7 @@ function test_cn_submitCallNote_unenrolledRepFails() {
 // ── setCallNoteFlag ──
 
 function test_cn_setCallNoteFlag_toggleAction() {
+  _assertSuiteCaller_();
   _clearTestCallNotes();
   var noteId;
   _asUser(_TEST_INDIA_EMAIL, function () {
@@ -4593,6 +4852,7 @@ function test_cn_setCallNoteFlag_toggleAction() {
 }
 
 function test_cn_setCallNoteFlag_transitionClearsResolved() {
+  _assertSuiteCaller_();
   _clearTestCallNotes();
   var noteId;
   _asUser(_TEST_INDIA_EMAIL, function () {
@@ -4611,6 +4871,7 @@ function test_cn_setCallNoteFlag_transitionClearsResolved() {
 // ── setCallNoteResolved ──
 
 function test_cn_setCallNoteResolved_actionOnly() {
+  _assertSuiteCaller_();
   _clearTestCallNotes();
   var noteId;
   _asUser(_TEST_INDIA_EMAIL, function () {
@@ -4630,6 +4891,7 @@ function test_cn_setCallNoteResolved_actionOnly() {
 }
 
 function test_cn_setCallNoteResolved_rejectsNonAction() {
+  _assertSuiteCaller_();
   _clearTestCallNotes();
   var noteId;
   _asUser(_TEST_INDIA_EMAIL, function () {
@@ -4644,6 +4906,7 @@ function test_cn_setCallNoteResolved_rejectsNonAction() {
 // ── deleteCallNote ──
 
 function test_cn_deleteCallNote_basic() {
+  _assertSuiteCaller_();
   _clearTestCallNotes();
   var noteId;
   _asUser(_TEST_INDIA_EMAIL, function () {
@@ -4663,6 +4926,7 @@ function test_cn_deleteCallNote_basic() {
 // ── setCallNotePinned (cap enforcement) ──
 
 function test_cn_setCallNotePinned_capAt3() {
+  _assertSuiteCaller_();
   _clearTestCallNotes();
   var ids = [];
   _asUser(_TEST_INDIA_EMAIL, function () {
@@ -4690,6 +4954,7 @@ function test_cn_setCallNotePinned_capAt3() {
 // ── updateCallNote ──
 
 function test_cn_updateCallNote_basic() {
+  _assertSuiteCaller_();
   _clearTestCallNotes();
   var noteId;
   _asUser(_TEST_INDIA_EMAIL, function () {
@@ -4706,6 +4971,7 @@ function test_cn_updateCallNote_basic() {
 // ── manager gate on managerGetCallNotes ──
 
 function test_cn_managerGetCallNotes_nonManagerRejected() {
+  _assertSuiteCaller_();
   var r = _asUser(_TEST_INDIA_EMAIL, function () {
     return managerGetCallNotes(_TEST_INDIA_ID, fmtDate_(new Date()));
   });
@@ -4719,6 +4985,7 @@ function test_cn_managerGetCallNotes_nonManagerRejected() {
 // ════════════════════════════════════════════════════════════════════════════
 
 function test_normalizeTime_1899DateCoercion() {
+  _assertSuiteCaller_();
   // Sheets coerces "09:30:00" into a Date with base date 1899-12-30T09:30:00.
   // normalizeTime_ must detect the Date and re-format to HH:mm:ss.
   const d = new Date(1899, 11, 30, 9, 30, 0);
@@ -4729,11 +4996,13 @@ function test_normalizeTime_1899DateCoercion() {
 }
 
 function test_safeTimezone_validPassthrough() {
+  _assertSuiteCaller_();
   _assertEq(safeTimezone_('Asia/Kolkata'), 'Asia/Kolkata');
   _assertEq(safeTimezone_('America/Chicago'), 'America/Chicago');
 }
 
 function test_safeTimezone_invalidFallback() {
+  _assertSuiteCaller_();
   _assertEq(safeTimezone_('NotATimezone'), CONFIG.TIMEZONE, 'Invalid tz falls back to CONFIG');
   _assertEq(safeTimezone_(''), CONFIG.TIMEZONE, 'Empty string falls back');
   _assertEq(safeTimezone_(null), CONFIG.TIMEZONE, 'Null falls back');
@@ -4745,6 +5014,7 @@ function test_safeTimezone_invalidFallback() {
 // ════════════════════════════════════════════════════════════════════════════
 
 function test_triggerGate_eodDigest_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { sendCallNotesEodDigest(); });
   }, 'manager access required', 'Non-manager should be rejected');
@@ -4753,6 +5023,7 @@ function test_triggerGate_eodDigest_nonManagerThrows() {
 // Item 7 — the note-retention purge is destructive + reachable via
 // google.script.run, so it must reject non-managers like the other purges.
 function test_triggerGate_purgeOldCallNotes_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { purgeOldCallNotes(); });
   }, 'manager access required', 'Non-manager should not be able to purge notes');
@@ -4762,6 +5033,7 @@ function test_triggerGate_purgeOldCallNotes_nonManagerThrows() {
 // that moves (deletes-from-live) per-rep Notes rows, so it carries the same
 // assertManagerCaller_ gate as the purge (INV-44 family).
 function test_triggerGate_archiveOldCallNotes_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { archiveOldCallNotes(); });
   }, 'manager access required', 'Non-manager should not be able to archive notes');
@@ -4771,6 +5043,7 @@ function test_triggerGate_archiveOldCallNotes_nonManagerThrows() {
 // archived (NotesArchive) rows; same INV-44 gate as the other destructive
 // trigger handlers.
 function test_triggerGate_purgeArchivedCallNotes_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { purgeArchivedCallNotes(); });
   }, 'manager access required', 'Non-manager should not be able to purge the cold archive');
@@ -4779,6 +5052,7 @@ function test_triggerGate_purgeArchivedCallNotes_nonManagerThrows() {
 // M10 — the FormSubmissions/FormTokens PHI purge is the most destructive
 // trigger handler of all; its gate was the only one of the seven untested.
 function test_triggerGate_purgeExpiredFormData_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { purgeExpiredFormData(); });
   }, 'manager access required', 'Non-manager should not be able to fire the PHI purge');
@@ -4788,6 +5062,7 @@ function test_triggerGate_purgeExpiredFormData_nonManagerThrows() {
 // automation trigger (INV-61). The gate throws BEFORE any trigger is touched,
 // so this is safe to run against production.
 function test_triggerGate_removeAutomationTriggers_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { removeAutomationTriggers(); });
   }, 'manager access required', 'Non-manager must not be able to disable automation');
@@ -4795,6 +5070,7 @@ function test_triggerGate_removeAutomationTriggers_nonManagerThrows() {
 
 // Item 9 — manager comments on any note are manager-gated.
 function test_setCallNoteManagerComment_nonManagerRejected() {
+  _assertSuiteCaller_();
   _asUser(_TEST_INDIA_EMAIL, function () {
     const r = setCallNoteManagerComment(_TEST_PH_ID, 'nonexistent-note', 'nice work');
     _assertEq(r.success, false, 'non-manager rejected');
@@ -4803,24 +5079,28 @@ function test_setCallNoteManagerComment_nonManagerRejected() {
 }
 
 function test_triggerGate_weeklyDigests_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { sendCallNotesWeeklyDigests(); });
   }, 'manager access required');
 }
 
 function test_triggerGate_missedPunch_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { sendDailyMissedPunchAlerts(); });
   }, 'manager access required');
 }
 
 function test_triggerGate_urgentDigest_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { sendCallNotesUrgentDigest(); });
   }, 'manager access required');
 }
 
 function test_triggerGate_trainingOverdue_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { sendTrainingOverdueDigest(); });
   }, 'manager access required');
@@ -4830,6 +5110,7 @@ function test_triggerGate_trainingOverdue_nonManagerThrows() {
 // google.script.run, so it carries the MANAGER_EMAILS assertManagerCaller_ gate
 // (INV-44 family), NOT emp.isAdmin (it runs as the installer in a trigger).
 function test_triggerGate_automationHealthDigest_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { sendAutomationHealthDigest(); });
   }, 'manager access required');
@@ -4838,6 +5119,7 @@ function test_triggerGate_automationHealthDigest_nonManagerThrows() {
 // DeptRequests v2 — the SLA reminder digest is a trigger handler, so it carries
 // the MANAGER_EMAILS assertManagerCaller_ gate (INV-44 family).
 function test_triggerGate_deptReqReminder_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { sendDeptRequestReminderDigest(); });
   }, 'manager access required');
@@ -4846,6 +5128,7 @@ function test_triggerGate_deptReqReminder_nonManagerThrows() {
 // The consolidated daily brief (#2, INV-151) is a trigger handler, so it
 // carries the MANAGER_EMAILS assertManagerCaller_ gate (INV-44 family).
 function test_triggerGate_managerDailyBrief_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { sendManagerDailyBrief(); });
   }, 'manager access required');
@@ -4856,12 +5139,14 @@ function test_triggerGate_managerDailyBrief_nonManagerThrows() {
 // (INV-44 family). Disabled by default, so the manager-context trigger run is
 // a no-op — this test only exercises the gate.
 function test_triggerGate_timesheetArchive_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { archiveOldTimesheetRows(); });
   }, 'manager access required');
 }
 
 function test_triggerGate_selfTest_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { runNightlySelfTest(); });
   }, 'manager access required');
@@ -4869,6 +5154,7 @@ function test_triggerGate_selfTest_nonManagerThrows() {
 
 // ── creditMonthlyPtoAccruals (operator 2026-08-18, automated accrual) ──
 function test_triggerGate_ptoAccrual_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { creditMonthlyPtoAccruals(); });
   }, 'manager access required');
@@ -4878,6 +5164,7 @@ function test_triggerGate_ptoAccrual_nonManagerThrows() {
 // google.script.run — read-only does not mean ungated: the report names every
 // accruing rep, their rate and their worked hours.
 function test_triggerGate_previewPtoAccruals_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { previewPtoAccruals(); });
   }, 'manager access required');
@@ -4887,6 +5174,7 @@ function test_triggerGate_previewPtoAccruals_nonManagerThrows() {
 // it is reachable via google.script.run and carries its own gate rather than
 // inheriting previewPtoAccruals' — the refusal must name what was invoked.
 function test_triggerGate_previewPtoAccrualsLastMonth_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { previewPtoAccrualsLastMonth(); });
   }, 'manager access required');
@@ -4896,11 +5184,13 @@ function test_triggerGate_previewPtoAccrualsLastMonth_nonManagerThrows() {
 // dispatcher, so BOTH are top-level and reachable via google.script.run and
 // both carry their own gate — the dispatcher's does not stand in for the job's.
 function test_triggerGate_checkOpenPunches_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { checkOpenPunches(); });
   }, 'manager access required');
 }
 function test_triggerGate_runDailyChecks_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { runDailyChecks(); });
   }, 'manager access required');
@@ -4910,6 +5200,7 @@ function test_triggerGate_runDailyChecks_nonManagerThrows() {
 // trigger handler → INV-44 gate. Destructive when enabled, so the gate is
 // load-bearing; with the default window 0 a gated caller still can't reach it.
 function test_triggerGate_qaReviewPurge_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { purgeOldQaReviews(); });
   }, 'manager access required');
@@ -4918,6 +5209,7 @@ function test_triggerGate_qaReviewPurge_nonManagerThrows() {
 // Design handoff PR 4 (K8) — the weekly agent recap is a trigger handler
 // reachable via google.script.run, so it carries the MANAGER_EMAILS gate.
 function test_triggerGate_coachingRecap_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { sendCoachingRecapDigest(); });
   }, 'manager access required');
@@ -4929,6 +5221,7 @@ function test_triggerGate_coachingRecap_nonManagerThrows() {
 // gate (INV-44). The gate fires before the flag check and before any Gmail
 // read, so this rejection is observable with the flag off and no members.
 function test_triggerGate_spanishAutoAssign_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { autoAssignSpanishThreadsScheduled(); });
   }, 'manager access required');
@@ -4939,6 +5232,7 @@ function test_triggerGate_spanishAutoAssign_nonManagerThrows() {
 // google.script.run, so it carries the MANAGER_EMAILS gate (INV-44). A
 // non-manager must throw BEFORE any window read or sheet touch.
 function test_triggerGate_diagnosticsPurge_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { purgeOldDiagnostics(); });
   }, 'manager access required');
@@ -4952,6 +5246,7 @@ function test_triggerGate_diagnosticsPurge_nonManagerThrows() {
 // the MANAGER_EMAILS gate (INV-44) BEFORE it runs a single job — a
 // non-manager must throw here, never reach the jobs' own gates.
 function test_triggerGate_hourlyJobs_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { runHourlyJobs(); });
   }, 'manager access required');
@@ -4962,11 +5257,13 @@ function test_triggerGate_hourlyJobs_nonManagerThrows() {
 // this body and the digest's own gate went unverified while the count read
 // 315. The S4 pin now fails CI on a test function defined twice.
 function test_triggerGate_runWeeklyDigests_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { runWeeklyDigests(); });
   }, 'manager access required');
 }
 function test_triggerGate_nightlyPurges_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { runNightlyPurges(); });
   }, 'manager access required');
@@ -4983,6 +5280,7 @@ function test_triggerGate_nightlyPurges_nonManagerThrows() {
 // Balance restored ABSOLUTELY in finally (never a relative un-credit — a
 // partial failure before the credit would otherwise corrupt the fixture).
 function test_creditPtoAccrual_seedCreditIdempotent() {
+  _assertSuiteCaller_();
   const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
   const rows = sheet.getDataRange().getValues();
   let rowIdx = -1;
@@ -5082,6 +5380,7 @@ function test_creditPtoAccrual_seedCreditIdempotent() {
 // complete day and declines to count one incomplete one is the case the audit
 // row used to leave silent, so the preview is asserted on BOTH halves.
 function test_previewPtoAccrual_predictsTheCredit() {
+  _assertSuiteCaller_();
   const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
   const rows = sheet.getDataRange().getValues();
   let rowIdx = -1;
@@ -5217,6 +5516,7 @@ function test_previewPtoAccrual_predictsTheCredit() {
 // this test ever goes red, late payroll data is being lost behind the stamp
 // again — which is silent in production, by construction.
 function test_accrualReconcile_topsUpLateData() {
+  _assertSuiteCaller_();
   const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
   const rows = sheet.getDataRange().getValues();
   let rowIdx = -1;
@@ -5333,6 +5633,7 @@ function test_accrualReconcile_topsUpLateData() {
 // strip active-payroll-window rows out of the live tab); garbage disables.
 // Writes only the Script Property (restored in finally) — no sheet touch.
 function test_timesheetArchive_windowFloorAndDefault() {
+  _assertSuiteCaller_();
   const props = PropertiesService.getScriptProperties();
   const prev = props.getProperty('TIMESHEET_ARCHIVE_DAYS');
   try {
@@ -5357,6 +5658,7 @@ function test_timesheetArchive_windowFloorAndDefault() {
 // mutates the payroll tab nightly and was pinned only by source tripwires.
 // Uses two throwaway TEST_ tabs in the ADP spreadsheet, removed in finally.
 function test_archiveSheetRowsOlderThan_behavioral() {
+  _assertSuiteCaller_();
   const ss = getAdpSS_();
   const SRC = 'TEST_ArchSrc', DST = 'TEST_ArchDst';
   let src = null, dst = null;
@@ -5443,6 +5745,7 @@ function test_archiveSheetRowsOlderThan_behavioral() {
 // the row lands in the ClientErrors tab. Cleans up its own rows (they carry
 // the TEST_ empId but ClientErrors isn't in cleanupTestData's sweep).
 function test_recordClientError_authBoundsAndAppend() {
+  _assertSuiteCaller_();
   // Reset the per-rep hourly rate cap so repeated suite runs can't starve it.
   try { CacheService.getScriptCache().remove('client_err_rate:' + _TEST_INDIA_ID); } catch (e) {}
   const nobody = _asUser('do-not-send-nobody@example.invalid', function () {
@@ -5481,6 +5784,7 @@ function test_recordClientError_authBoundsAndAppend() {
 // invisible to everyone (broadcast surface — INV-140/147); publishing it
 // makes the body + edit stamp flow to reps.
 function test_whatsNew_propertyGateAndDraftHidden() {
+  _assertSuiteCaller_();
   // M-9 (cycle 10): runs against the KB FIXTURE, not the live store.
   return _withTestKb_(function () { _test_whatsNew_propertyGateAndDraftHidden_(); });
 }
@@ -5522,6 +5826,7 @@ function _test_whatsNew_propertyGateAndDraftHidden_() {
 // Aggregation behind the urgent digest — finds urgent-flagged notes (urgent
 // lives in subformData.flags[], NOT the FlagType column). Read-only, no email.
 function test_cn_managerAggregateUrgent_findsUrgentNotOthers() {
+  _assertSuiteCaller_();
   _clearTestCallNotes();
   var urgentNote, plainNote;
   _asUser(_TEST_INDIA_EMAIL, function () {
@@ -5543,6 +5848,7 @@ function test_cn_managerAggregateUrgent_findsUrgentNotOthers() {
 }
 
 function test_triggerGate_dailyExport_nonManagerThrows() {
+  _assertSuiteCaller_();
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { runDailyExportCheck(); });
   }, 'manager access required');
@@ -5554,6 +5860,7 @@ function test_triggerGate_dailyExport_nonManagerThrows() {
 // ════════════════════════════════════════════════════════════════════════════
 
 function _findAuditRow(empId, actionType) {
+  _assertSuiteCaller_();
   const sheet = getAdpSS_().getSheetByName(CONFIG.AUDIT_TAB);
   if (!sheet) return null;
   const rows = sheet.getDataRange().getValues();
@@ -5567,6 +5874,7 @@ function _findAuditRow(empId, actionType) {
 }
 
 function test_auditRow_recordPunchAdjustment() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_INDIA_ID);
   _withFeatureFlags_({ employeeImmediateAdjust: true }, function () {
     _asUser(_TEST_INDIA_EMAIL, function () {
@@ -5578,6 +5886,7 @@ function test_auditRow_recordPunchAdjustment() {
 }
 
 function test_auditRow_deletePunch_hasActorEmail() {
+  _assertSuiteCaller_();
   _clearTestState(_TEST_INDIA_ID);
   _withFeatureFlags_({ employeeImmediateAdjust: true }, function () {
     _asUser(_TEST_INDIA_EMAIL, function () {
@@ -5614,15 +5923,18 @@ function test_auditRow_deletePunch_hasActorEmail() {
 // ── cnNoteCoverage_ (S1 shared helper) ──
 
 function test_metrics_cnNoteCoverage_basic() {
+  _assertSuiteCaller_();
   _assertEq(cnNoteCoverage_(5, 10), 50, '5/10 → 50%');
   _assertEq(cnNoteCoverage_(3, 4),  75, '3/4 → 75%');
   _assertEq(cnNoteCoverage_(7, 7),  100, '7/7 → 100%');
   _assertEq(cnNoteCoverage_(1, 3),  33, '1/3 rounds to 33%');
 }
 function test_metrics_cnNoteCoverage_zeroNotes() {
+  _assertSuiteCaller_();
   _assertEq(cnNoteCoverage_(0, 10), 0, '0 notes over answered calls → 0%, not null');
 }
 function test_metrics_cnNoteCoverage_noDenominator() {
+  _assertSuiteCaller_();
   _assertNull(cnNoteCoverage_(5, 0),    'No answered calls → null');
   _assertNull(cnNoteCoverage_(5, null), 'Null denominator → null');
   _assertNull(cnNoteCoverage_(0, 0),    'Zero over zero → null');
@@ -5631,18 +5943,22 @@ function test_metrics_cnNoteCoverage_noDenominator() {
 // ── cdrParseHms_ / cdrFmtHms_ (duration parsing — INV-64) ──
 
 function test_metrics_cdrParseHms_hms() {
+  _assertSuiteCaller_();
   _assertEq(cdrParseHms_('1:30:00'), 5400, 'H:MM:SS → seconds');
   _assertEq(cdrParseHms_('0:01:05'), 65,   'small H:MM:SS');
 }
 function test_metrics_cdrParseHms_mmAndBare() {
+  _assertSuiteCaller_();
   _assertEq(cdrParseHms_('2:00'), 120, 'MM:SS → seconds');
   _assertEq(cdrParseHms_('45'),   45,  'bare number passes through');
 }
 function test_metrics_cdrParseHms_emptyAndNull() {
+  _assertSuiteCaller_();
   _assertEq(cdrParseHms_(''),    0, 'empty → 0');
   _assertEq(cdrParseHms_(null),  0, 'null → 0');
 }
 function test_metrics_cdrFmtHms_roundTrip() {
+  _assertSuiteCaller_();
   _assertEq(cdrFmtHms_(5400), '1:30:00', 'seconds → H:MM:SS');
   _assertEq(cdrFmtHms_(65),   '0:01:05', 'pads minutes + seconds');
   _assertEq(cdrFmtHms_(0),    '0:00:00', 'zero → 0:00:00');
@@ -5651,16 +5967,19 @@ function test_metrics_cdrFmtHms_roundTrip() {
 // ── cdrRowDateIso_ (date normalization for CDR rows) ──
 
 function test_metrics_cdrRowDateIso_isoString() {
+  _assertSuiteCaller_();
   _assertEq(cdrRowDateIso_('2026-05-28', CONFIG.TIMEZONE), '2026-05-28', 'ISO passthrough');
   _assertEq(cdrRowDateIso_('2026-05-28T10:00:00', CONFIG.TIMEZONE), '2026-05-28', 'ISO datetime → date');
 }
 function test_metrics_cdrRowDateIso_usFormat() {
+  _assertSuiteCaller_();
   _assertEq(cdrRowDateIso_('5/28/26', CONFIG.TIMEZONE),   '2026-05-28', 'M/D/YY → ISO');
   _assertEq(cdrRowDateIso_('12/3/2026', CONFIG.TIMEZONE), '2026-12-03', 'M/D/YYYY → ISO, zero-padded');
 }
 // H3: a Sheets serial (a date cell under a NUMBER format) is a date, not a
 // dropped row -- and it is formatted in UTC, so the sheet tz cannot shift it.
 function test_metrics_cdrRowDateIso_serial() {
+  _assertSuiteCaller_();
   _assertEq(cdrRowDateIso_(46000, 'America/Mexico_City'), '2025-12-09', 'serial 46000 -> 2025-12-09 whatever tz the sheet is on');
   _assertEq(cdrRowDateIso_(45726, 'America/Mexico_City'), '2025-03-10', 'serial 45726 -> 2025-03-10');
   _assertEq(cdrRowDateIso_(12, CONFIG.TIMEZONE), '', 'a small integer is not a date');
@@ -5669,6 +5988,7 @@ function test_metrics_cdrRowDateIso_serial() {
 // ── isCdrQueueSentinel_ (queue rows excluded from agent stats) ──
 
 function test_metrics_isCdrQueueSentinel() {
+  _assertSuiteCaller_();
   _assertTrue(isCdrQueueSentinel_('A_Q_Sales'),  'A_Q_ prefix is a queue sentinel');
   _assertTrue(isCdrQueueSentinel_('Backup CSR'), 'Backup CSR is a sentinel');
   _assertFalse(isCdrQueueSentinel_('Jane Doe'),  'A real agent name is not a sentinel');
@@ -5677,16 +5997,19 @@ function test_metrics_isCdrQueueSentinel() {
 // ── cdrRosterHash_ (cache-key roster fingerprint — INV-85) ──
 
 function test_metrics_cdrRosterHash_orderInsensitive() {
+  _assertSuiteCaller_();
   var a = cdrRosterHash_(['Alice', 'Bob', 'Carol']);
   var b = cdrRosterHash_(['Carol', 'Alice', 'Bob']);
   _assertEq(a, b, 'Hash is order-insensitive (sorts before hashing)');
 }
 function test_metrics_cdrRosterHash_distinctSetsDiffer() {
+  _assertSuiteCaller_();
   var a = cdrRosterHash_(['Alice', 'Bob']);
   var c = cdrRosterHash_(['Alice', 'Carol']);
   _assertTrue(a !== c, 'Different roster sets produce different hashes');
 }
 function test_metrics_cdrRosterHash_emptyIsAll() {
+  _assertSuiteCaller_();
   _assertEq(cdrRosterHash_([]),   'all', 'empty roster → "all"');
   _assertEq(cdrRosterHash_(null), 'all', 'null roster → "all"');
 }
@@ -5700,6 +6023,7 @@ function test_metrics_cdrRosterHash_emptyIsAll() {
 // count helper left.
 
 function test_metrics_cnCountNotesResult_noSheetReturnsZero() {
+  _assertSuiteCaller_();
   // Cycle-12 F5 — an UNENROLLED rep is not a failed read (INV-35), but an
   // unreadable Sheet id must report unavailable so no coverage surface renders
   // a confident 0% / "File N missing".
@@ -5718,6 +6042,7 @@ function test_metrics_cnCountNotesResult_noSheetReturnsZero() {
 // ── cnCountNotesResult_ (integration) — guards the F1 regression class ──
 
 function test_metrics_cnCountNotesResult_countsToday() {
+  _assertSuiteCaller_();
   _clearTestCallNotes();
   const ctx = _asUser(_TEST_INDIA_EMAIL, function () {
     const emp = getEmployeeInfo_();
@@ -5756,7 +6081,7 @@ function test_metrics_cnCountNotesResult_countsToday() {
 // Runs against the FORMS FIXTURE (_withTestForms_) since 2026-09-16 — the rep-facing submission read
 // writes rows to the forms (PHI) store, which falls back to the ADP/payroll
 // spreadsheet when FORMS_SS_ID is unset.
-function test_cn_getFormSubmission_callerScoped() { return _withTestForms_(_test_cn_getFormSubmission_callerScoped_body_); }
+function test_cn_getFormSubmission_callerScoped() { _assertSuiteCaller_(); return _withTestForms_(_test_cn_getFormSubmission_callerScoped_body_); }
 
 function _test_cn_getFormSubmission_callerScoped_body_() {
   // India (enrolled) creates a fillable-form token.
@@ -5801,7 +6126,7 @@ function _test_cn_getFormSubmission_callerScoped_body_() {
 // Runs against the FORMS FIXTURE (_withTestForms_) since 2026-09-16 — the full token → submit → read lifecycle
 // writes rows to the forms (PHI) store, which falls back to the ADP/payroll
 // spreadsheet when FORMS_SS_ID is unset.
-function test_publicForm_tokenLifecycle() { return _withTestForms_(_test_publicForm_tokenLifecycle_body_); }
+function test_publicForm_tokenLifecycle() { _assertSuiteCaller_(); return _withTestForms_(_test_publicForm_tokenLifecycle_body_); }
 
 function _test_publicForm_tokenLifecycle_body_() {
   const token = _asUser(_TEST_INDIA_EMAIL, function () {
@@ -5910,7 +6235,7 @@ function _deleteFormWitnessAuditRow_(token) {
 // Runs against the FORMS FIXTURE (_withTestForms_) since 2026-09-16 — the blank-expiry fail-closed path
 // writes rows to the forms (PHI) store, which falls back to the ADP/payroll
 // spreadsheet when FORMS_SS_ID is unset.
-function test_publicForm_blankExpiryFailsClosed() { return _withTestForms_(_test_publicForm_blankExpiryFailsClosed_body_); }
+function test_publicForm_blankExpiryFailsClosed() { _assertSuiteCaller_(); return _withTestForms_(_test_publicForm_blankExpiryFailsClosed_body_); }
 
 function _test_publicForm_blankExpiryFailsClosed_body_() {
   const token = _asUser(_TEST_INDIA_EMAIL, function () {
@@ -5957,7 +6282,7 @@ function _test_publicForm_blankExpiryFailsClosed_body_() {
 // Runs against the FORMS FIXTURE (_withTestForms_) since 2026-09-16 — the manager-scoped submission read
 // writes rows to the forms (PHI) store, which falls back to the ADP/payroll
 // spreadsheet when FORMS_SS_ID is unset.
-function test_cn_managerGetFormSubmission_gatedAndScoped() { return _withTestForms_(_test_cn_managerGetFormSubmission_gatedAndScoped_body_); }
+function test_cn_managerGetFormSubmission_gatedAndScoped() { _assertSuiteCaller_(); return _withTestForms_(_test_cn_managerGetFormSubmission_gatedAndScoped_body_); }
 
 function _test_cn_managerGetFormSubmission_gatedAndScoped_body_() {
   const token = _asUser(_TEST_INDIA_EMAIL, function () {
@@ -6015,6 +6340,7 @@ const _CN_EMAIL_SELECTIONS = {
 };
 
 function test_cn_previewCallNoteEmail_returnsHashAndSubject() {
+  _assertSuiteCaller_();
   _clearTestCallNotes();
   let noteId;
   _asUser(_TEST_INDIA_EMAIL, function () {
@@ -6031,6 +6357,7 @@ function test_cn_previewCallNoteEmail_returnsHashAndSubject() {
 }
 
 function test_cn_previewCallNoteEmail_requiresDepartment() {
+  _assertSuiteCaller_();
   _clearTestCallNotes();
   let noteId;
   _asUser(_TEST_INDIA_EMAIL, function () {
@@ -6044,6 +6371,7 @@ function test_cn_previewCallNoteEmail_requiresDepartment() {
 }
 
 function test_cn_emailFromCallNote_rejectsMissingHash() {
+  _assertSuiteCaller_();
   _clearTestCallNotes();
   let noteId;
   _asUser(_TEST_INDIA_EMAIL, function () {
@@ -6057,6 +6385,7 @@ function test_cn_emailFromCallNote_rejectsMissingHash() {
 }
 
 function test_cn_emailFromCallNote_rejectsStaleHash() {
+  _assertSuiteCaller_();
   _clearTestCallNotes();
   let noteId;
   _asUser(_TEST_INDIA_EMAIL, function () {
@@ -6070,6 +6399,7 @@ function test_cn_emailFromCallNote_rejectsStaleHash() {
 }
 
 function test_cn_submitCallNote_doesNotStampEmailedAt() {
+  _assertSuiteCaller_();
   _clearTestCallNotes();
   const r = _asUser(_TEST_INDIA_EMAIL, function () {
     return submitCallNote(_cnTestPayload());
@@ -6081,6 +6411,7 @@ function test_cn_submitCallNote_doesNotStampEmailedAt() {
 // ── F4: Tag-taxonomy admin endpoints (rename / merge / archive, INV-82) ─────
 
 function test_cn_normalizeTagForAdmin_rules() {
+  _assertSuiteCaller_();
   _assertEq(normalizeTagForAdmin_('Foo Bar'),       'foo-bar',   'spaces→hyphen + lowercase');
   _assertEq(normalizeTagForAdmin_('  Good-Tag  '),  'good-tag',  'trim + lowercase');
   _assertEq(normalizeTagForAdmin_('--lead-trail--'),'lead-trail','strip leading/trailing hyphens');
@@ -6090,6 +6421,7 @@ function test_cn_normalizeTagForAdmin_rules() {
 }
 
 function test_cn_tagAdmin_nonManagerRejected() {
+  _assertSuiteCaller_();
   const rn = _asUser(_TEST_INDIA_EMAIL, function () { return renameCallNoteTag('src-tag', 'dst-tag'); });
   _assertFailure(rn, 'Admin access', 'renameCallNoteTag is admin-gated');
   const mg = _asUser(_TEST_INDIA_EMAIL, function () { return mergeCallNoteTags('src-tag', 'dst-tag'); });
@@ -6099,6 +6431,7 @@ function test_cn_tagAdmin_nonManagerRejected() {
 }
 
 function test_cn_renameCallNoteTag_managerRewritesTag() {
+  _assertSuiteCaller_();
   _clearTestCallNotes();
   // Globally-unique test tags so the cross-rep scan can't collide with any
   // real production note (rename only mutates notes that contain the source).
@@ -6128,6 +6461,7 @@ function test_cn_renameCallNoteTag_managerRewritesTag() {
 }
 
 function test_cn_archiveCallNoteTag_roundTrip() {
+  _assertSuiteCaller_();
   const tag = 'testtag-archive-zzz';
   // try/finally (T4): a mid-test assertion failure used to leave the test tag
   // archived in the production CN_ARCHIVED_TAGS property (cosmetic — it showed
@@ -6154,6 +6488,7 @@ function test_cn_archiveCallNoteTag_roundTrip() {
 // non-manager does no Sheet work / sends no mail / creates no export — safe to
 // run on prod. Parameterized so a newly-added manager endpoint is cheap to pin.
 function test_managerGates_rejectNonManager() {
+  _assertSuiteCaller_();
   const D = _TEST_CDR_DATE; // a valid yyyy-MM-dd for the date-validating endpoints
   const cases = [
     ['managerSearchCallNotes',         function () { return managerSearchCallNotes('x', 'all', null, null); }],
@@ -6383,6 +6718,7 @@ function test_managerGates_rejectNonManager() {
 // FOLDER_ID being configured — and, because the fixture replaces the store
 // outright, without QA_SS_ID being set either.
 function test_qa_reviewFlowOnFixture() {
+  _assertSuiteCaller_();
   _withTestQa_(function () {
     const fixtureId = PropertiesService.getScriptProperties().getProperty('TEST_QA_SS_ID');
     _assertTrue(!!fixtureId, 'the QA fixture provisioned a spreadsheet');
@@ -6443,6 +6779,7 @@ function test_qa_reviewFlowOnFixture() {
 }
 
 function test_qa_gates_rejectNonMember() {
+  _assertSuiteCaller_();
   [['getQaQueue', function () { return getQaQueue(); }],
    ['qaSyncRecordings', function () { return qaSyncRecordings(); }],
    ['qaSetRecordingStatus', function () { return qaSetRecordingStatus('x', 'done'); }],
@@ -6491,6 +6828,7 @@ function test_qa_gates_rejectNonMember() {
 // removed a real request that landed mid-test; cleanupTestData backstops the
 // sweep). The probe ids and noteId are TEST_-prefixed for identifiability.
 function test_deptReq_resendDedupLookup() {
+  _assertSuiteCaller_();
   const sh = getOrCreateDeptRequestsSheet_();
   const nid = 'TEST_DR_NOTE_A5';
   try {
@@ -6517,6 +6855,7 @@ function test_deptReq_resendDedupLookup() {
 // open request in-app (not just the sender/manager). Temporarily makes the India
 // test emp a member of a real department (roster column N), then restores it.
 function test_deptReq_incomingAndMemberResolve() {
+  _assertSuiteCaller_();
   const deptKeys = Object.keys(getDepartmentEmails_() || {});
   if (!deptKeys.length) { _skipTest('no departments configured'); }
   const dept = deptKeys[0];
@@ -6563,6 +6902,7 @@ function test_deptReq_incomingAndMemberResolve() {
 // a NAMED reason rather than an empty note (INV-187). Same fixture shape as
 // the incoming test above, plus the two trailing columns.
 function test_deptReq_detailScoped() {
+  _assertSuiteCaller_();
   const deptKeys = Object.keys(getDepartmentEmails_() || {});
   if (!deptKeys.length) { _skipTest('no departments configured'); }
   const dept = deptKeys[0];
@@ -6607,6 +6947,7 @@ function test_deptReq_detailScoped() {
 // (INV-24 amendment); self is never flagged; a working state (clocked in / on
 // lunch) is never flagged even when present.
 function test_presence_stampAndFlag() {
+  _assertSuiteCaller_();
   const nobody = _asUser('do-not-send-nobody@example.invalid', function () { return recordPresence(); });
   _assertEq(nobody.success, false, 'an unregistered caller writes no stamp');
   const cache = CacheService.getScriptCache();
@@ -6649,7 +6990,7 @@ function test_presence_stampAndFlag() {
 // Runs against the FORMS FIXTURE (_withTestForms_) since 2026-09-16 — the ScheduledCalls reminder flow
 // writes rows to the forms (PHI) store, which falls back to the ADP/payroll
 // spreadsheet when FORMS_SS_ID is unset.
-function test_scheduledCalls_flow() { return _withTestForms_(_test_scheduledCalls_flow_body_); }
+function test_scheduledCalls_flow() { _assertSuiteCaller_(); return _withTestForms_(_test_scheduledCalls_flow_body_); }
 
 function _test_scheduledCalls_flow_body_() {
   let createdId = null;
@@ -6742,6 +7083,7 @@ function _test_scheduledCalls_flow_body_() {
 // callNotesSheetId), so the cross-rep case here is the UNENROLLED PH rep —
 // whose save must surface the enrollment error, never write anywhere.
 function test_scratchpad_saveReadRoundTrip() {
+  _assertSuiteCaller_();
   const marker = 'TEST_SCRATCH 5/12 0123 — starts with a coercible-looking token';
   try {
     let save, read;
@@ -6784,6 +7126,7 @@ function test_scratchpad_saveReadRoundTrip() {
 // over-cap refusal → PHI-free audit (the comment TEXT never reaches the
 // shared AuditLog — the round-2 id-only discipline).
 function test_kb_comments_flow() {
+  _assertSuiteCaller_();
   return _withTestKb_(function () { _test_kb_comments_flow_(); });
 }
 function _test_kb_comments_flow_() {
@@ -6862,6 +7205,7 @@ function _test_kb_comments_flow_() {
 // rejected BEFORE any Drive write (no folder is provisioned, no file created),
 // so this is safe to run against production as the test manager.
 function test_kb_uploadImage_rejectsInvalidPayloads() {
+  _assertSuiteCaller_();
   _asUser(_TEST_MGR_EMAIL, function () {
     const r1 = kbUploadImage('not a data url');
     _assertEq(r1.success, false, 'non-data-URL rejected');
@@ -6884,6 +7228,7 @@ function test_kb_uploadImage_rejectsInvalidPayloads() {
 // snapshots a revision and a revert restores content (and is itself
 // snapshotted, so reverts are reversible).
 function test_kb_draftLifecycleAndRevisions() {
+  _assertSuiteCaller_();
   // M-9 (cycle 10): runs against the KB FIXTURE, not the live store — the
   // create→edit→revert→delete flow appends PERMANENT KbRevisions rows.
   return _withTestKb_(function () { _test_kb_draftLifecycleAndRevisions_(); });
@@ -6971,6 +7316,7 @@ function _test_kb_draftLifecycleAndRevisions_() {
 // A non-manager listed in ADMIN_EMAILS must NOT gain admin access, and a
 // manager NOT in a set ADMIN_EMAILS loses it (the property NARROWS).
 function test_adminEmails_subsetOfManagersEnforced() {
+  _assertSuiteCaller_();
   const props = PropertiesService.getScriptProperties();
   const prev = props.getProperty('ADMIN_EMAILS');
   try {
@@ -7006,6 +7352,7 @@ function test_adminEmails_subsetOfManagersEnforced() {
  *  endpoint's catch turns the throw into {success:false,error} the editor shows.
  *  Verified against the live store, then restored. */
 function test_adminConfig_propertySizeGuardRefusesOversize() {
+  _assertSuiteCaller_();
   const props = PropertiesService.getScriptProperties();
   const prev = props.getProperty('CN_EMAIL_TEMPLATES');
   try {
@@ -7053,6 +7400,7 @@ function _repeatStr_(ch, n) {
  *  unavailable[] (an ARRAY of source KINDS, never a boolean) / todayIso. Every
  *  item names a registered route, and the sort puts overdue first. */
 function test_pendingTasks_requiresEmployeeAndShape() {
+  _assertSuiteCaller_();
   const rejected = _asUser('not-a-registered-user@example.invalid', function () {
     return getMyPendingTasks();
   });
@@ -7073,6 +7421,7 @@ function test_pendingTasks_requiresEmployeeAndShape() {
 }
 
 function test_insurance_search_requiresEmployee() {
+  _assertSuiteCaller_();
   const r = _asUser('not-a-registered-user@example.invalid', function () {
     return searchInsurancePayors('aetna');
   });
@@ -7088,6 +7437,7 @@ function test_insurance_search_requiresEmployee() {
 }
 
 function test_deployStamp_requiresEmployeeAndHashes() {
+  _assertSuiteCaller_();
   const r = _asUser('not-a-registered-user@example.invalid', function () {
     return getDeployStamp();
   });
@@ -7105,6 +7455,7 @@ function test_deployStamp_requiresEmployeeAndHashes() {
 }
 
 function test_kb_recordView_requiresEmployee() {
+  _assertSuiteCaller_();
   const r = _asUser('not-a-registered-user@example.invalid', function () {
     return kbRecordView('some-item', 'drawer:callNotes');
   });
@@ -7117,6 +7468,7 @@ function test_kb_recordView_requiresEmployee() {
 // test_managerGates_rejectNonManager; the full backfill flow is exercised manually
 // (no KB fixture in the automated suite).
 function test_kb_feedbackAndRequests_requireEmployee() {
+  _assertSuiteCaller_();
   const r1 = _asUser('not-a-registered-user@example.invalid', function () {
     return kbFlagItem('some-item', 'stale', 'note');
   });
@@ -7140,6 +7492,7 @@ function test_kb_feedbackAndRequests_requireEmployee() {
 // validation. No vendor key is configured in tests, and the flag is forced
 // OFF for the gate case, so no UrlFetchApp call can ever fire from here.
 function test_kbAi_gatesAndSettingsValidation() {
+  _assertSuiteCaller_();
   // Unregistered caller → hard auth error (before any flag/vocab work).
   const rAuth = _asUser('not-a-registered-user@example.invalid', function () {
     return kbGetFacetGuidance({ flagType: 'action' });
@@ -7207,6 +7560,7 @@ function _cleanupTrainingRowsForItem_(itemId) {
 }
 
 function test_training_assignCompleteFlow() {
+  _assertSuiteCaller_();
   // M-9 (cycle 10): the fixture KB article + the TrainingAssignments/
   // TrainingCompletions rows land in the KB FIXTURE, not the live store.
   return _withTestKb_(function () { _test_training_assignCompleteFlow_(); });
@@ -7301,7 +7655,7 @@ function _test_training_assignCompleteFlow_() {
 // author/take/grade flow previously wrote TEST_TRAINING_QUIZ to the LIVE
 // Quizzes tab, where a timeout-killed run (finally skipped) orphaned it into
 // the real manager quiz list. cleanupTestData also gained a Quizzes sweep.
-function test_training_quizFlow() { _withTestKb_(_trainingQuizFlowBody_); }
+function test_training_quizFlow() { _assertSuiteCaller_(); _withTestKb_(_trainingQuizFlowBody_); }
 function _trainingQuizFlowBody_() {
   let quizId = null;
   try {
@@ -7518,6 +7872,7 @@ function _withTestOop_(fn) {
 // not the string the pure pin assumed — all of those live here.
 
 function test_oop_search_findsSeededItemAtSheetPrice() {
+  _assertSuiteCaller_();
   _withTestOop_(function () {
     const res = searchOopPricing('TEST_OOP Widget');
     _assertTrue(!res.error, 'lookup errored: ' + res.error);
@@ -7563,6 +7918,7 @@ function test_oop_search_findsSeededItemAtSheetPrice() {
 }
 
 function test_oop_pricingTab_isNAMEDnotTheFirstSheet() {
+  _assertSuiteCaller_();
   // The move into the KB store (2026-09-16) is exactly where "the first sheet"
   // would have failed SILENTLY: the KB tab is sheet 0, and because columns are
   // discovered by header the old reader would have matched no `price` and
@@ -7589,6 +7945,7 @@ function test_oop_pricingTab_isNAMEDnotTheFirstSheet() {
 }
 
 function test_oop_locationAcceptance_readsBothRowKinds() {
+  _assertSuiteCaller_();
   _withTestOop_(function () {
     const loc = getLocationAcceptance_();
     _assertEq(loc.error, '', 'the seeded tab read cleanly: ' + loc.error);
@@ -7621,6 +7978,7 @@ function test_oop_locationAcceptance_readsBothRowKinds() {
 }
 
 function test_oop_verifyQuotes_currentStaleAndDeleted() {
+  _assertSuiteCaller_();
   _withTestOop_(function () {
     const line = oopQuoteLine_('TEST_OOP Widget', '$129.00', '2026-09-01');
     _assertTrue(!!line, 'the canonical line was built');
@@ -7653,6 +8011,7 @@ function test_oop_verifyQuotes_currentStaleAndDeleted() {
 }
 
 function test_oop_diagnostics_reportsRolesAndEligibilityGrouping() {
+  _assertSuiteCaller_();
   _withTestOop_(function () {
     const d = getOopPricingDiagnostics();
     _assertTrue(!d.error, 'diagnostics errored: ' + d.error);
@@ -7688,6 +8047,7 @@ function test_oop_diagnostics_reportsRolesAndEligibilityGrouping() {
 }
 
 function test_oop_eligibility_boundsTheAddressBeforeAnyRead() {
+  _assertSuiteCaller_();
   // The bound has to come FIRST: a geocode is a paid-for round trip and a sheet
   // read is not free either, and neither is worth spending on a two-character
   // address. Asserted without the fixture deliberately — if the bound were
@@ -7732,6 +8092,7 @@ function _cleanupEmpDocRows_(docId) {
 // directly against empDocCanManagerSee_ (the test roster has no second
 // manager to impersonate).
 function test_empdocs_issueSignVerifyFlow() {
+  _assertSuiteCaller_();
   _withTestHrDocs_(function () {
     let docId = null;
     try {
@@ -7817,6 +8178,7 @@ function test_empdocs_issueSignVerifyFlow() {
  *  DocSignatures row whose hash attests the responses. Verify must confirm a
  *  clean completion and detect an out-of-band ResponsesJson rewrite. */
 function test_empdocs_fieldsOnlyCompletionHash() {
+  _assertSuiteCaller_();
   _withTestHrDocs_(function () {
     let docId = null;
     try {
@@ -7861,6 +8223,7 @@ function test_empdocs_fieldsOnlyCompletionHash() {
  *  must still verify as intact AND still be signable; genuine tamper must
  *  still be detected. */
 function test_empdocs_legacyHashDualVerify() {
+  _assertSuiteCaller_();
   _withTestHrDocs_(function () {
     let docId = null;
     try {
@@ -7900,6 +8263,7 @@ function test_empdocs_legacyHashDualVerify() {
  *  INV-134 fail-closed team scoping (the empDocCanManagerSee_ twin had a full
  *  flow test; coachCanManagerSee_ had ZERO coverage at any layer). */
 function test_coaching_createAckVoidFlowAndScoping() {
+  _assertSuiteCaller_();
   _withTestHrDocs_(function () {
     let coachId = null;
     try {
@@ -7999,6 +8363,7 @@ function test_coaching_createAckVoidFlowAndScoping() {
 // voiding a critical item sends a retraction; the mail carries NO narrative,
 // TRX or note id. Uses the _TEST_OVERRIDE_COACH_MAIL seam (no real send).
 function test_coaching_criticalMailOnlyAndMailedFalse() {
+  _assertSuiteCaller_();
   _withTestHrDocs_(function () {
     const sent = [];
     let throwNext = false;
@@ -8063,6 +8428,7 @@ function _cleanupCoachingRows_(coachId) {
 // ════════════════════════════════════════════════════════════════════════════
 
 function test_auditPanel_searchAndHistory() {
+  _assertSuiteCaller_();
   _clearTestCallNotes();
   var noteId = null;
   _asUser(_TEST_INDIA_EMAIL, function () {
@@ -8126,6 +8492,7 @@ function test_auditPanel_searchAndHistory() {
 // ════════════════════════════════════════════════════════════════════════════
 
 function test_metrics_getMyMetrics_cdrIntegration() {
+  _assertSuiteCaller_();
   if (!_TEST_CDR_SS_ID) { _skipTest('CDR fixture unavailable'); }
   const r = _withTestCdr_(function () {
     return _asUser(_TEST_INDIA_EMAIL, function () { return getMyMetrics(_TEST_CDR_DATE); });
@@ -8145,6 +8512,7 @@ function test_metrics_getMyMetrics_cdrIntegration() {
 }
 
 function test_metrics_cdrFixture_durationsUseDisplayValues() {
+  _assertSuiteCaller_();
   // F9: prove the fixture stores TTT/ATT as coerced TIME VALUES so the INV-64
   // getDisplayValues() discipline is load-bearing. If the cells were plain text
   // (as before), getValues()==getDisplayValues() and a getValues() regression
@@ -8164,6 +8532,7 @@ function test_metrics_cdrFixture_durationsUseDisplayValues() {
 }
 
 function test_metrics_csrTransferFixture_parsesDateAndPercent() {
+  _assertSuiteCaller_();
   // T4 #6: the Transfer reader parses the M/D/YYYY Date + "%"-string columns
   // (the real sheet shapes) and honors the roster filter.
   if (!_TEST_CDR_SS_ID) { _skipTest('CDR fixture unavailable'); }
@@ -8183,6 +8552,7 @@ function test_metrics_csrTransferFixture_parsesDateAndPercent() {
  *  OPT-IN and additive. Phase 0 proved DQE cannot be split by queue; the
  *  Transfer tab can, because it is keyed by rep. */
 function test_metrics_csrTransferQueues_optInAndTransparent() {
+  _assertSuiteCaller_();
   if (!_TEST_CDR_SS_ID) { _skipTest('CDR fixture unavailable'); }
   _withTestCdr_(function () {
     const names = [_TEST_INDIA_NAME, _TEST_PH_NAME];
@@ -8222,6 +8592,7 @@ function test_metrics_csrTransferQueues_optInAndTransparent() {
  *  Billing 3 = 9 attributed, 5 not), PH 2 transferred (Spanish 2, fully
  *  attributed). */
 function test_metrics_getTeamMetrics_queueBreakdown() {
+  _assertSuiteCaller_();
   if (!_TEST_CDR_SS_ID) { _skipTest('CDR fixture unavailable'); }
   const r = _withTestCdr_(function () {
     return _asUser(_TEST_MGR_EMAIL, function () { return getTeamMetrics(_TEST_CDR_DATE); });
@@ -8256,6 +8627,7 @@ function test_metrics_getTeamMetrics_queueBreakdown() {
  *  A_Q_Billing, A_Q_Spanish) are not all in the shipped CONFIG map, so this
  *  also exercises the Ungrouped bucket. */
 function test_metrics_getTeamMetrics_queueGrouping() {
+  _assertSuiteCaller_();
   if (!_TEST_CDR_SS_ID) { _skipTest('CDR fixture unavailable'); }
   const r = _withTestCdr_(function () {
     return _asUser(_TEST_MGR_EMAIL, function () { return getTeamMetrics(_TEST_CDR_DATE); });
@@ -8297,6 +8669,7 @@ function test_metrics_getTeamMetrics_queueGrouping() {
 }
 
 function test_metrics_getTeamMetrics_cdrIntegration() {
+  _assertSuiteCaller_();
   if (!_TEST_CDR_SS_ID) { _skipTest('CDR fixture unavailable'); }
   const r = _withTestCdr_(function () {
     return _asUser(_TEST_MGR_EMAIL, function () { return getTeamMetrics(_TEST_CDR_DATE); });
@@ -8315,6 +8688,7 @@ function test_metrics_getTeamMetrics_cdrIntegration() {
 }
 
 function test_metrics_getTeamMetrics_nonManagerRejected() {
+  _assertSuiteCaller_();
   // Operator 2026-08-18: a non-manager is no longer REJECTED — they get the
   // whitelist-built TEAM AGGREGATE (teamMetricsRepView_). The boundary this
   // test guards moved from the gate to the SHAPE: the rep payload must carry
@@ -8338,6 +8712,7 @@ function test_metrics_getTeamMetrics_nonManagerRejected() {
 }
 
 function test_metrics_getMyMetrics_cdrUnavailableErrors() {
+  _assertSuiteCaller_();
   // Point the reader at a bogus spreadsheet id → getCdrSS_ openById throws →
   // getMyMetrics returns an {error} the client renders as "No call data".
   const prev = _TEST_OVERRIDE_CDR_SS_ID;
@@ -8365,6 +8740,7 @@ var _INTAKE_TEST_CAT = [
 ];
 
 function test_intake_engine_standardOnly() {
+  _assertSuiteCaller_();
   var r = intakeFilterRecommendations_({ '38': '250 lbs' }, _INTAKE_TEST_CAT);
   _assertEq(r.standard.map(function (p) { return p.hcpcs; }).join(','), 'K0823');
   _assertEq(r.complex.length, 0, 'group-3/SPO/MPO require eligibility');
@@ -8374,6 +8750,7 @@ function test_intake_engine_standardOnly() {
 // (a neuro patient still gets only K0821). ≥285 / House / no answer → standard
 // logic. Mirrors the Node engine-contract tests.
 function test_intake_engine_mobileHomeRestriction() {
+  _assertSuiteCaller_();
   var cat = [['Std Captain 300', 'K0821', '300', 'C', 'pdf-821', 'img-821']].concat(_INTAKE_TEST_CAT);
   var r = intakeFilterRecommendations_({ '38': '250', '39a': 'Mobile Home' }, cat);
   _assertEq(r.standard.map(function (p) { return p.hcpcs; }).join(','), 'K0821', 'K0821 is the sole recommendation');
@@ -8388,32 +8765,38 @@ function test_intake_engine_mobileHomeRestriction() {
   _assertEq(legacy.standard.length, 2, 'no 39a answer (legacy submission) → unrestricted');
 }
 function test_intake_engine_neuroUpgradeAndSubs() {
+  _assertSuiteCaller_();
   var r = intakeFilterRecommendations_({ '38': '250', '43': 'multiple sclerosis' }, _INTAKE_TEST_CAT);
   _assertEq(r.standard.length, 0, 'captain chair fails solid-seat requirement under neuro');
   _assertEq(r.complex.map(function (p) { return p.hcpcs; }).join(','), 'K0862,K0861', 'K0856→K0861, K0843→K0862, sorted desc');
 }
 function test_intake_engine_weightCap() {
+  _assertSuiteCaller_();
   var r = intakeFilterRecommendations_({ '38': '500 lbs', '43': 'ALS' }, _INTAKE_TEST_CAT);
   var all = r.complex.concat(r.standard).map(function (p) { return p.hcpcs; });
   _assertTrue(all.indexOf('K0862') >= 0, '600-cap chair survives at 500 lbs');
   _assertTrue(all.indexOf('K0861') < 0, '350-cap chair excluded at 500 lbs');
 }
 function test_intake_engine_oxygenExcludesK0837() {
+  _assertSuiteCaller_();
   var cat = [['SPO', 'K0837', '350', 'S', 'p', 'i']];
   var onOxy = intakeFilterRecommendations_({ '38': '250', '32': 'yes', '44': 'yes' }, cat);
   _assertEq(onOxy.complex.concat(onOxy.standard).length, 0, 'K0837 dropped when on oxygen');
 }
 function test_intake_engine_emptySafe() {
+  _assertSuiteCaller_();
   var e = intakeFilterRecommendations_({}, []);
   _assertEq(e.standard.length + e.complex.length, 0);
 }
 function test_intake_buildPpdBody_escapesAnswers() {
+  _assertSuiteCaller_();
   var rows = [{ qNum: '41', label: 'Diagnoses', value: '<img src=x onerror=alert(1)>' }];
   var html = intakeBuildPpdBodyHtml_('Jane <b>Doe</b>', rows, { standard: [], complex: [] }, null);
   _assertFalse(html.indexOf('<img src=x onerror') >= 0, 'raw answer markup must be escaped');
   _assertTrue(html.indexOf('&lt;img src=x') >= 0, 'answer is HTML-escaped');
 }
 function test_intake_buildAcctBody_escapesAnswers() {
+  _assertSuiteCaller_();
   // The PPD builder has had this pin since INV-89; the PMD/PAP builder — which
   // renders the SAME class of patient field into the same innerHTML preview
   // modal and the same sent email — had none. Both layouts are exercised
@@ -8440,11 +8823,13 @@ function test_intake_buildAcctBody_escapesAnswers() {
 }
 
 function test_intake_emailDomain_extracted() {
+  _assertSuiteCaller_();
   _assertEq(intakeEmailDomain_('agent@umsupply.com'), 'umsupply.com');
   _assertEq(intakeEmailDomain_('garbage'), '(none)');
 }
 
 function test_intake_resolveRecipient_customValidation() {
+  _assertSuiteCaller_();
   // Pure branches — no roster read on the custom / missing paths.
   _assertThrows(function () { intakeResolveRecipient_('PMD', { kind: 'custom', email: 'not-an-email' }); },
     'Invalid recipient email', 'custom recipient must be a valid email');
@@ -8458,6 +8843,7 @@ function test_intake_resolveRecipient_customValidation() {
 // ════════════════════════════════════════════════════════════════════════════
 
 function test_intake_previewPPD_returnsHashAndRecs() {
+  _assertSuiteCaller_();
   if (!_TEST_INTAKE_SS_ID) { _skipTest('Intake fixture unavailable'); }
   const r = _withTestIntake_(function () {
     return _asUser(_TEST_INDIA_EMAIL, function () {
@@ -8477,6 +8863,7 @@ function test_intake_previewPPD_returnsHashAndRecs() {
 }
 
 function test_intake_sendPPD_staleHashRejected() {
+  _assertSuiteCaller_();
   if (!_TEST_INTAKE_SS_ID) { _skipTest('Intake fixture unavailable'); }
   // The hash check fires BEFORE recipient resolution / MailApp, so a stale
   // hash sends nothing and stores nothing (INV-111 / INV-41 pattern).
@@ -8493,6 +8880,7 @@ function test_intake_sendPPD_staleHashRejected() {
 }
 
 function test_smallEndpoints_gatesAndNoLeak() {
+  _assertSuiteCaller_();
   // Five public endpoints had ZERO coverage of any kind (measured
   // 2026-08-31). Four are cheap reads whose value is entirely in what they
   // REFUSE and what they DON'T return; the fifth throws before it touches
@@ -8541,6 +8929,7 @@ function test_smallEndpoints_gatesAndNoLeak() {
 }
 
 function test_getMyCallNotesRange_validatesAndCaps() {
+  _assertSuiteCaller_();
   // Every rejection below precedes the Sheet open, so an unenrolled or
   // enrolled caller alike gets the same validation answers with no read.
   const call = function (a, b) {
@@ -8567,6 +8956,7 @@ function test_getMyCallNotesRange_validatesAndCaps() {
 }
 
 function test_intake_previewAcct_bothFormsHashDistinctly() {
+  _assertSuiteCaller_();
   // PMD/PAP preview needs NO Offerings fixture — the account forms run no
   // recommendation engine, so this exercises the real endpoints directly.
   const mk = function (fn) {
@@ -8597,6 +8987,7 @@ function test_intake_previewAcct_bothFormsHashDistinctly() {
 }
 
 function test_intake_sendAcct_hashGateBothForms() {
+  _assertSuiteCaller_();
   // Every rejection below fires BEFORE recipient resolution and before MailApp,
   // so nothing is sent and nothing is stored — the same posture as the PPD
   // sibling, which is why these are safe to run against the live project.
@@ -8632,6 +9023,7 @@ function test_intake_sendAcct_hashGateBothForms() {
 }
 
 function test_intake_previewAcct_requiresPatientAndAuth() {
+  _assertSuiteCaller_();
   // Preview is a READ endpoint, so its rejection is a BARE {error} — asserting
   // it with _assertFailure (which requires success===false) would fail against
   // a CORRECT refusal. This is the GATE-SHAPE trap the derived tripwire exists
@@ -8662,6 +9054,7 @@ function test_intake_previewAcct_requiresPatientAndAuth() {
 }
 
 function test_intake_send_unauthorizedRejected() {
+  _assertSuiteCaller_();
   // Auth check precedes the Offerings read, so no fixture is needed.
   const r = _asUser('not-a-registered-user@example.invalid', function () {
     return intakeSendPPD({ patientInfo: 'X' }, { kind: 'custom', email: 'x@example.invalid' }, '');
@@ -8670,6 +9063,7 @@ function test_intake_send_unauthorizedRejected() {
 }
 
 function test_intake_sentViewer_callerScopedAndManager() {
+  _assertSuiteCaller_();
   if (!_TEST_INTAKE_SS_ID) { _skipTest('Intake fixture unavailable'); }
   _withTestIntake_(function () {
     // PPD submission row layout: [id, ts, repId, repName, patientInfo,
@@ -8718,6 +9112,7 @@ function test_intake_sentViewer_callerScopedAndManager() {
 //  it lives here rather than the Node harness)
 // ════════════════════════════════════════════════════════════════════════════
 function test_form_submissionHash_deterministicAndTamperEvident() {
+  _assertSuiteCaller_();
   var dataJson = JSON.stringify({ firstName: 'Jane', householdSize: '3' });
   var sig = 'data:image/png;base64,AAAA';
   var h1 = computeFormSubmissionHash_(dataJson, sig, 'tok-1', 'forms-consent-2026-06');
@@ -8736,6 +9131,7 @@ function test_form_submissionHash_deterministicAndTamperEvident() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function test_getMyMetricsRange_validationAndShape() {
+  _assertSuiteCaller_();
   // M-11 (cycle 10) — INV-129 had zero coverage: date validation, the 92-day
   // cap, and the own-only contract (NO anonymized team series — that is
   // INV-124's single-day surface). The cache is bypassed under the CDR test
@@ -8759,6 +9155,7 @@ function test_getMyMetricsRange_validationAndShape() {
 }
 
 function test_appendCallNoteFeedback_contract() {
+  _assertSuiteCaller_();
   // M-11 (cycle 10) — INV-76 had zero coverage anywhere: kind validation, the
   // training-or-thread gate, ack/clarification shapes, the CallNoteFeedback
   // audit row.
@@ -8796,6 +9193,7 @@ function test_appendCallNoteFeedback_contract() {
 }
 
 function test_getMyNoteHourBuckets_contract() {
+  _assertSuiteCaller_();
   // M-11 (cycle 10) — INV-130 had only its INV-142 boundary membership pinned;
   // this pins the behavior: 24 rep-local-hour buckets, the just-filed note
   // counted at the rep's local hour, malformed dates rejected, and the
@@ -8821,6 +9219,7 @@ function test_getMyNoteHourBuckets_contract() {
 }
 
 function test_getPatientTimeline_contract() {
+  _assertSuiteCaller_();
   // M-11 (cycle 10) — the endpoint had zero coverage (only the pure merge
   // helper buildPatientTimeline_ is Node-pinned): caller-scoping via the
   // rep's own note stream, empty-TRX rejection, and the L-8 partial contract
@@ -8839,6 +9238,7 @@ function test_getPatientTimeline_contract() {
 }
 
 function test_deptRequest_resolveLinkIdempotent() {
+  _assertSuiteCaller_();
   // M-11 (cycle 10) — the ?resolve= email-link path (markDeptRequestResolved_)
   // had zero coverage: first-resolve marks the row, a second click is a
   // friendly idempotent "already" (with a coercion-safe resolvedAt), an
