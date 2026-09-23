@@ -2556,14 +2556,37 @@ function test_punchAdjust_resumeConvertsClockOut() {
     const mine = (q.requests || []).filter(r => r.empId === _TEST_PH_ID && r.date === date);
     _assertEq(mine.length, 1, 'one pending resume');
     _assertEq(mine[0].action, 'resume', 'the queue row knows it is a resume');
+    _assertEq(mine[0].endTime, '', 'no finish filed yet');
     reqId = mine[0].reqId;
+    // T3 (cycle 22): this day has ENDED, and no finish was filed — approving
+    // would convert the clock-out and leave the day with none (INCOMPLETE, 0 h;
+    // the rep cannot clock out of a past day live). Refused before any write.
+    _assertFailure(updatePunchAdjustStatus(reqId, 'Approved'), 'no finish time was filed');
+  });
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, date, 'ClockOut'), 1, 'the refused approval wrote nothing');
+
+  // The rep files their finish the ordinary way — Adjust → Clock Out. It
+  // ATTACHES to the pending resume (it used to be refused as a duplicate), and
+  // a finish before the resume time is refused by name.
+  _asUser(emp.email, () => {
+    _assertFailure(submitPunchAdjustRequests([
+      { date: date, time: '18:30', punchType: 'ClockOut', action: 'set', reason: 'finished' }]), 'must be after the time you resumed');
+    const r = submitPunchAdjustRequests([{ date: date, time: '21:00', punchType: 'ClockOut', action: 'set', reason: 'finished' }]);
+    _assertSuccess(r);
+    _assertEq(r.attachedToResume, 1, 'the finish rode the resume request, not a second one');
+  });
+  _asUser(_TEST_MGR_EMAIL, () => {
+    const mine = (managerGetPendingAdjustments().requests || []).filter(r => r.empId === _TEST_PH_ID && r.date === date);
+    _assertEq(mine.length, 1, 'still ONE pending request');
+    _assertEq(mine[0].endTime, '21:00', 'carrying the filed finish');
     _assertSuccess(updatePunchAdjustStatus(reqId, 'Approved'));
   });
 
   // THE ASSERTION THIS EXISTS FOR: the clock-out is GONE as a clock-out and
-  // present as a break at the SAME time, with the resume time closing it.
-  _assertEq(_countTimesheetRows(_TEST_PH_ID, date, 'ClockOut'), 0,
-    'the clock-out was converted, not left behind');
+  // present as a break at the SAME time, with the resume time closing it — and
+  // (T3) the filed finish is the day's ONE clock-out.
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, date, 'ClockOut'), 1,
+    'the 17:00 clock-out was converted; the one left is the 21:00 finish');
   _assertEq(_countTimesheetRows(_TEST_PH_ID, date, 'LunchOut'), 1,
     'it became a break leave');
   _assertEq(_countTimesheetRows(_TEST_PH_ID, date, 'LunchIn'), 1,
@@ -2571,13 +2594,14 @@ function test_punchAdjust_resumeConvertsClockOut() {
   _assertEq(_countTimesheetRows(_TEST_PH_ID, date, 'ClockIn'), 1,
     'the original clock-in is untouched');
 
-  // The hours reflect the unpaid gap: 08:00–17:00 worked, away 17:00–19:00.
-  // The day is now OPEN (no clock-out), so calcHours_ reports it incomplete
-  // rather than inventing an end — which is exactly the state the rep is in.
+  // The hours reflect the unpaid gap: 08:00–17:00 worked, away 17:00–19:00,
+  // back 19:00–21:00 — 11 hours, and a COMPLETE day. Before T3 a past-day
+  // approval left it open, INCOMPLETE and paying 0 h.
   const ts = _asUser(_TEST_MGR_EMAIL, () => getEmployeeTimesheetForManager(_TEST_PH_ID, date, date));
   const day = (ts.days || []).find(d => d.date === date);
   _assertTrue(!!day, 'the day is readable');
-  _assertTrue(day.isIncomplete === true, 'an open day is INCOMPLETE, never silently zero (INV-176)');
+  _assertTrue(day.isIncomplete !== true, 'the resumed day is closed by the filed finish');
+  _assertEqClose(Number(day.hoursWorked), 11, 0.01, '9 h + 2 h — the 2 h away is unpaid');
 
   clearRequests();
   _clearPunchesForDay(_TEST_PH_ID, date);

@@ -820,6 +820,25 @@
     "buildTimesheetForEmployee_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-23",
+   "why": "cycle 22 T3: parEndTime_ (a resume request's filed finish)",
+   "added": [
+    "parEndTime_"
+   ],
+   "removed": [],
+   "changed": [
+    "PAR",
+    "PAR_HEADERS",
+    "empPendingAdjustments_",
+    "managerGetPendingAdjustments",
+    "notifyEmployeeOfAdjustDecision_",
+    "punchAdjustDecideAll_",
+    "resumeShiftForEmployee_",
+    "submitPunchAdjustRequests"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2052,12 +2071,12 @@
   "PAR": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "6208e63d6c8209f2"
+   "sha": "dc1a38332fcc798f"
   },
   "PAR_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "a8a333248b6f187d"
+   "sha": "1509cb65519903a3"
   },
   "PENDING_TASKS_CACHE_PREFIX": {
    "file": "00_config.js",
@@ -3902,7 +3921,7 @@
   "empPendingAdjustments_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "473ffd802e704b74"
+   "sha": "7049ac955de057ec"
   },
   "empPtoAccrual_": {
    "file": "20_timeclock.js",
@@ -5747,7 +5766,7 @@
   "managerGetPendingAdjustments": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "d230c2298ac0f0c7"
+   "sha": "37a25f55e22f62c3"
   },
   "managerGetReviewCandidates": {
    "file": "30_callnotes.js",
@@ -5892,7 +5911,7 @@
   "notifyEmployeeOfAdjustDecision_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "364fa3654b1f5721"
+   "sha": "cb72586f76e6b411"
   },
   "notifyEmployeeOfDecision_": {
    "file": "20_timeclock.js",
@@ -6029,6 +6048,11 @@
    "kind": "function",
    "sha": "d55b74af94f02808"
   },
+  "parEndTime_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "d17a58318472f8df"
+  },
   "parseAccrualLedger_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -6142,7 +6166,7 @@
   "punchAdjustDecideAll_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "f370ee3dadf1a0a5"
+   "sha": "3a73b3b25f590f4d"
   },
   "punchDayAdd_": {
    "file": "20_timeclock.js",
@@ -6597,7 +6621,7 @@
   "resumeShiftForEmployee_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "643c048e32df3c56"
+   "sha": "4d461c3bf00c4d81"
   },
   "retentionWarnings_": {
    "file": "10_core.js",
@@ -7137,7 +7161,7 @@
   "submitPunchAdjustRequests": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "16e206d497d91bdb"
+   "sha": "a39fe84eeee393bf"
   },
   "submitQuizAttempt": {
    "file": "80_training.js",

@@ -18368,6 +18368,60 @@ test('A4-1: managerParseBreakSlots_ accepts the list, keeps the legacy pair, ref
   assert.match(err({ breaks: many }), /Too many breaks \(13\); at most 12/);
 });
 
+test('T3 (cycle 22): a resume approved after its day has ended needs the filed finish, writes it as the Clock Out, and refuses before any write (driven)', () => {
+  const writes = [];
+  let co = null;
+  const ctx = vm.createContext({ String, Math, Date, Array,
+    PAR: { END_TIME: 10 }, ADP: { COMMENTS: 4 },
+    normalizeTime_: (v) => String(v).trim(),
+    findExistingPunch_: () => co,
+    appendToAdpSheet_: (e, d, t, dir, c) => writes.push('append:' + c + '@' + t),
+    writeAdjustPunchForEmployee_: (e, d, type, t) => writes.push('adjust:' + type + '@' + t),
+    clearFromEmployeeSheet_: () => {}, writeToEmployeeSheet_: () => {},
+    writeAuditLog_: () => {}, sheetSafe_: (v) => v,
+    fmtDateTz_: () => '2026-09-23', empTz_: () => 'Asia/Manila',
+    daysBetween_: () => 1 });
+  ['parEndTime_', 'resumeShiftForEmployee_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  const sheet = { getRange: () => ({ setValue: (v) => writes.push('convert:' + v) }) };
+  const run = (date, back, end) => { writes.length = 0; co = { sheet, rowIndex: 7, time: '17:00:00' };
+    return JSON.parse(JSON.stringify(ctx.resumeShiftForEmployee_({ id: 'E-1' }, date, back, 'mgr@x', '', end))); };
+
+  const refused = run('2026-09-22', '19:00', '');
+  assert.ok(/has ended and no finish time was filed/.test(refused.error || ''), 'a past day with no finish is REFUSED: ' + refused.error);
+  assert.deepStrictEqual(writes, [], 'and nothing was written — the check runs before the conversion');
+
+  const closed = run('2026-09-22', '19:00', '21:00');
+  assert.ok(!closed.error, 'a past day WITH a finish is approved');
+  assert.deepStrictEqual(writes, ['convert:ADJ-LunchOut', 'append:ADJ-LunchIn@19:00:00', 'adjust:ClockOut@21:00'],
+    'the clock-out becomes a break, the resume closes it, and the finish is the new Clock Out');
+
+  const backwards = run('2026-09-22', '19:00', '18:30');
+  assert.ok(/not after the resume time/.test(backwards.error || '') && writes.length === 0, 'a finish before the resume time is refused, unwritten');
+
+  const today = run('2026-09-23', '19:00', '');
+  assert.ok(!today.error && writes.join() === 'convert:ADJ-LunchOut,append:ADJ-LunchIn@19:00:00',
+    'TODAY with no finish is still fine — the rep clocks out live');
+
+  // The filed finish reads '' for absent, blank, a short legacy row, or junk —
+  // normalizeTime_(undefined) is the STRING "undefined", which must not read as a time.
+  assert.strictEqual(ctx.parEndTime_([]), '', 'a short (pre-heal) row has no finish');
+  assert.strictEqual(ctx.parEndTime_({ 10: '' }), '');
+  assert.strictEqual(ctx.parEndTime_({ 10: '21:15:00' }), '21:15');
+  assert.strictEqual(ctx.parEndTime_({ 10: 'undefined' }), '', 'junk is not a time');
+
+  // Submit: a Clock Out for a day with a pending RESUME attaches to it (it was
+  // refused as a duplicate), and every queue read ships the finish.
+  const sub = stripJsComments_(extractRawFunction('Code.js', 'submitPunchAdjustRequests'));
+  assert.ok(/isResume && ci >= 0 && clean\[ci\]\.action === 'set' && clean\[ci\]\.punchType === 'ClockOut'/.test(sub) &&
+    /attach\[ci\] = i \+ 1;/.test(sub) && /PAR\.END_TIME \+ 1\)\.setValue\(sheetSafe_\(c\.time\)\)/.test(sub),
+    'the finish is written onto the pending resume row');
+  assert.ok(/must be after the time you resumed/.test(sub), 'a finish before the resume is refused at submit too');
+  ['empPendingAdjustments_', 'managerGetPendingAdjustments'].forEach((f) =>
+    assert.ok(/endTime: parEndTime_\(rows\[i\]\)/.test(extractRawFunction('Code.js', f)), f + ' ships endTime'));
+  const dec = stripJsComments_(extractRawFunction('Code.js', 'punchAdjustDecideAll_'));
+  assert.ok(/resumeShiftForEmployee_\(targetEmp, date, reqTime, callerEmp\.email, reason, endTime\)/.test(dec), 'approval passes the finish');
+});
+
 test('T1 (cycle 22): a break IN PROGRESS round-trips through Day Edit instead of being deleted — the server\'s own day shape, the client\'s prefill rule, the parser and the plan, driven end to end', () => {
   const ctx = vm.createContext({ Math, String, Array });
   ['timeToMins_', 'breakSortKey_', 'breakPairs_', 'breakOpenLeave_', 'managerParseBreakSlots_', 'managerPlanDay_'].forEach((fn) =>
@@ -18841,8 +18895,8 @@ test('B3: a resume CONVERTS the clock-out into a break — it never just deletes
     'a resume cannot target another punch type');
   assert.ok(/there is no Clock Out on/.test(sub), 'submit refuses without one');
   assert.ok(/the resume time must be after the Clock Out/.test(sub), 'and refuses a backwards one');
-  assert.ok(/c\.action\]\);/.test(sub) || /, c\.action\]/.test(sub),
-    'the action is persisted');
+  assert.ok(/, c\.action, ''\]\)\);/.test(sub),
+    'the action is persisted (and a new row\'s trailing EndTime starts blank — T3)');
 
   // Back-compat: PAR.ACTION is TRAILING and a legacy row reads as 'set'.
   assert.ok(/SUBMITTED_AT:8, ACTION:9/.test(code), 'ACTION is the trailing column');

@@ -1822,7 +1822,10 @@ function clkPendingAdjustHtml_(s) {
     // B3: a resume converts the clock-out rather than adding a punch, so
     // rendering it as "Clock Out 19:30" would name the wrong thing entirely.
     if (a.action === 'resume') {
-      return '<span class="aj-item">' + esc('Resume shift · back at ' + (a.time || '')) + '</span>';
+      // T3 (cycle 22): the resumed day's FINISH rides this request. Until one is
+      // filed, say how — the live Clock Out cannot close a day that has ended.
+      return '<span class="aj-item">' + esc('Resume shift · back at ' + (a.time || '') +
+        (a.endTime ? ' · finished ' + a.endTime : ' · when you finish, add your finish time with Adjust')) + '</span>';
     }
     var label = (PUNCH_META[a.punchType] && PUNCH_META[a.punchType].label) || a.punchType || '';
     return '<span class="aj-item">' + esc(label) + ' ' + esc(a.time || '') + '</span>';
@@ -2730,7 +2733,12 @@ document.getElementById('adj-submit').addEventListener('click', () => {
       if (!res || !res.success) { showToast((res && res.error) || 'Submit failed', 'toast-error'); return; }
       closeOverlay(document.getElementById('adjust-overlay'));
       ADJ_BATCH = [];
-      showToast(res.count + ' adjustment request(s) submitted for approval', 'toast-success');
+      // T3: a Clock Out for a day whose resume is pending ATTACHES to that
+      // request as its finish rather than queuing a second one — say so.
+      showToast(res.attachedToResume
+        ? 'Finish time added to your pending resume request'
+          + (res.count > res.attachedToResume ? ' · ' + (res.count - res.attachedToResume) + ' other request(s) submitted' : '')
+        : res.count + ' adjustment request(s) submitted for approval', 'toast-success');
     })
     .withFailureHandler(function (err) { btn.disabled = false; showToast((err && err.message) || 'Submit failed', 'toast-error'); })
     .submitPunchAdjustRequests(ADJ_BATCH);

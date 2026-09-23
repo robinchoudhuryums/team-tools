@@ -1675,6 +1675,13 @@ test('a pending resume reads as a resume, not as the punch it consumes', () => {
     'it describes what was asked for');
   assert.ok(!/Clock Out/.test(resumeChip),
     'and NOT "Clock Out 19:00" — that is the punch it converts, and the rep has already made it');
+  // T3 (cycle 22): the resumed day's finish rides the request — say how to
+  // file it until one is filed, then say what was filed. Neither names the
+  // consumed Clock Out.
+  assert.ok(/when you finish, add your finish time with Adjust/.test(resumeChip), 'no finish filed yet: the way to add one');
+  const filed = html([{ punchType: 'ClockOut', time: '19:00', action: 'resume', endTime: '21:15' }]);
+  assert.ok(/back at 19:00 · finished 21:15/.test(filed) && !/add your finish/.test(filed) && !/Clock Out/.test(filed),
+    'a filed finish is stated, and the hint goes away');
   // An ordinary adjustment is unchanged.
   assert.ok(/Clock In/.test(html([{ punchType: 'ClockIn', time: '08:00', action: 'set' }])),
     'a normal request still names its punch');

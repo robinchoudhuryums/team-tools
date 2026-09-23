@@ -5159,6 +5159,7 @@ function empPendingAdjustments_(empId, dateIso) {
         // that is the punch it converts, not the one it adds. An older client
         // ignores the field and renders as before.
         action: String(rows[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set',
+        endTime: parEndTime_(rows[i]),   // T3
       });
     }
     return out;
@@ -6423,26 +6424,50 @@ function submitPunchAdjustRequests(requests) {
     }
     const sheet = getOrCreatePunchAdjustSheet_();
     const existing = sheet.getDataRange().getValues();
+    // T3 (cycle 22): a Clock Out for a day whose RESUME is still pending is the
+    // rep's FINISH time for that resumed day — the one thing they cannot punch
+    // live once the day has ended, and the dup guard below used to refuse it,
+    // so an approval that landed the next day left the day with no Clock Out
+    // at all (INCOMPLETE, 0 h). It is attached to the resume request instead of
+    // queued beside it: two requests could be approved in either order, and a
+    // Clock Out approved first would move the stamp the resume converts.
+    const attach = {};   // clean index -> sheet row (1-based) of the pending resume
     for (let i = 1; i < existing.length; i++) {
       if (String(existing[i][PAR.EMP_ID]).trim() !== emp.id) continue;
       if (String(existing[i][PAR.STATUS]).trim().toLowerCase() !== 'pending') continue;
       const key = normalizeDate_(existing[i][PAR.DATE]) + '|' + String(existing[i][PAR.PUNCH_TYPE]).trim();
       if (batchSeen[key]) {
+        const isResume = String(existing[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume';
+        const ci = clean.findIndex(function (c) { return c.date + '|' + c.punchType === key; });
+        if (isResume && ci >= 0 && clean[ci].action === 'set' && clean[ci].punchType === 'ClockOut') {
+          const backAt = normalizeTime_(existing[i][PAR.REQ_TIME]).trim().substring(0, 5);
+          if (!(clean[ci].time > backAt)) {
+            return { success: false, error: 'Your finish time must be after the time you resumed (' + backAt + ').' };
+          }
+          attach[ci] = i + 1;
+          continue;
+        }
         return { success: false, error: 'You already have a pending ' +
           String(existing[i][PAR.PUNCH_TYPE]).trim() + ' adjustment for ' +
           normalizeDate_(existing[i][PAR.DATE]) + ' awaiting approval.' };
       }
     }
     const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
-    clean.forEach(function (c) {
-      sheet.appendRow(sheetSafeRow_([Utilities.getUuid(), emp.id, emp.name, c.date, c.punchType, c.time, c.reason, 'Pending', submittedAt, c.action]));
+    let attached = 0;
+    clean.forEach(function (c, ci) {
+      if (attach[ci]) {
+        sheet.getRange(attach[ci], PAR.END_TIME + 1).setValue(sheetSafe_(c.time));
+        attached++;
+        return;
+      }
+      sheet.appendRow(sheetSafeRow_([Utilities.getUuid(), emp.id, emp.name, c.date, c.punchType, c.time, c.reason, 'Pending', submittedAt, c.action, '']));
     });
     writeAuditLog_(emp, 'PunchAdjustRequest', clean[0].date, '', false, 0,
       'requested ' + clean.length + ' punch adjustment(s) pending approval');
     // B2: tell the managers. Deferred past releaseLock (M-7) — a MailApp send
     // inside the ONE project lock stalls every rep's punch.
     notifyAfter = function () { notifyManagersOfAdjustRequests_(emp, clean); };
-    return { success: true, count: clean.length };
+    return { success: true, count: clean.length, attachedToResume: attached };
   } catch (err) { return { success: false, error: err.message }; }
   finally {
     lock.releaseLock();
@@ -6496,6 +6521,9 @@ function managerGetPendingAdjustments() {
         // converts an existing clock-out and leaves an unpaid gap, which is a
         // materially different decision from adding a missed punch.
         action: String(rows[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set',
+        // T3: a resume's filed finish ('' when none) — the manager sees whether
+        // approving closes the day or leaves it for the rep to clock out.
+        endTime: parEndTime_(rows[i]),
         submittedAt: normalizeAuditTs_(rows[i][PAR.SUBMITTED_AT]),
       });
     }
@@ -6581,8 +6609,9 @@ function punchAdjustDecideAll_(reqIds, newStatus) {
             '-day adjust window — deny it (the rep can re-submit if still needed).');
           return;
         }
+        const endTime = parEndTime_(rows[i]);   // T3 — '' when none was filed
         if (action === 'resume') {
-          const res = resumeShiftForEmployee_(targetEmp, date, reqTime, callerEmp.email, reason);
+          const res = resumeShiftForEmployee_(targetEmp, date, reqTime, callerEmp.email, reason, endTime);
           if (res && res.error) { fail(id, res.error); return; }
           // F6: a resume writes OUTSIDE the ctx — it retypes the ClockOut row
           // to ADJ-LunchOut and appends an ADJ-LunchIn — so this employee's
@@ -6599,7 +6628,7 @@ function punchAdjustDecideAll_(reqIds, newStatus) {
         }
         // M-7: the decision email is DEFERRED to the post-lock finally — a
         // MailApp send inside the ONE project lock stalls every rep's punch.
-        notifyAfter = function () { notifyEmployeeOfAdjustDecision_(targetEmp, date, punchType, reqTime, reason, 'Approved', action); };
+        notifyAfter = function () { notifyEmployeeOfAdjustDecision_(targetEmp, date, punchType, reqTime, reason, 'Approved', action, endTime); };
         later.push(notifyAfter);
       } else {
         const targetForAudit = lookupEmployeeById_(empId) || { id: empId, name: empName, email: '' };
@@ -6666,7 +6695,7 @@ function notifyManagersOfAdjustRequests_(emp, entries) {
  *  adjustments were the one request type with no notification at all.
  *  Best-effort (INV-14) — a failed send never affects the approval, which is
  *  already committed — and PHI-free (a punch time is not clinical data). */
-function notifyEmployeeOfAdjustDecision_(emp, date, punchType, reqTime, reason, newStatus, action) {
+function notifyEmployeeOfAdjustDecision_(emp, date, punchType, reqTime, reason, newStatus, action, endTime) {
   if (!emp || !emp.email) return;
   try {
     const approved = newStatus === 'Approved';
@@ -6685,9 +6714,14 @@ function notifyEmployeeOfAdjustDecision_(emp, date, punchType, reqTime, reason, 
                `Time:    ${reqTime}\n`;
     if (hasReason) body += `Reason:  ${reason}\n`;
     body += `Status:  ${newStatus}\n\n`;
+    // T3: "clock out as usual" is only true while the day is still today and
+    // no finish was filed — the live path cannot clock out of an ended day.
     const approvedLine = resume
-      ? `Your shift is open again. Your earlier clock-out is now a break, so the time ` +
-        `you were away is unpaid — clock out as usual when you finish.`
+      ? (endTime
+          ? `Your shift was reopened. Your earlier clock-out is now a break, so the time ` +
+            `you were away is unpaid, and your ${endTime} finish is recorded as your clock-out.`
+          : `Your shift is open again. Your earlier clock-out is now a break, so the time ` +
+            `you were away is unpaid — clock out as usual when you finish.`)
       : `The punch has been added to your timesheet.`;
     const deniedLine = `No change was made to your timesheet. Contact your manager if you still need this fixed.`;
     body += (approved ? approvedLine : deniedLine) + `\n\n`;
@@ -6733,7 +6767,17 @@ function notifyEmployeeOfAdjustDecision_(emp, date, punchType, reqTime, reason, 
  *  Returns {} on success or {error} — the caller surfaces it to the manager
  *  rather than marking the request approved.
  */
-function resumeShiftForEmployee_(targetEmp, date, resumeTime, actorEmail, reason) {
+/** T3 — a PunchAdjustRequests row's filed finish (HH:mm), or ''. The column is
+ *  a trailing add: a row read from a tab whose header has not self-healed yet
+ *  is SHORT, and normalizeTime_(undefined) is the string "undefined" — which
+ *  would read as a finish time. Absent and blank are both "none". */
+function parEndTime_(row) {
+  const v = row ? row[PAR.END_TIME] : null;
+  if (v === undefined || v === null || v === '') return '';
+  const hm = normalizeTime_(v).trim().substring(0, 5);
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(hm) ? hm : '';
+}
+function resumeShiftForEmployee_(targetEmp, date, resumeTime, actorEmail, reason, endTime) {
   // Re-validate at APPROVAL time: the day can be edited while the request
   // waits, and converting a ClockOut that is no longer there would leave the
   // rep with a LunchIn and no matching leave (an unpaired half, which
@@ -6746,6 +6790,21 @@ function resumeShiftForEmployee_(targetEmp, date, resumeTime, actorEmail, reason
   const coHm = String(co.time || '').substring(0, 5);
   if (!(resumeTime > coHm)) {
     return { error: 'The resume time (' + resumeTime + ') is not after the Clock Out (' + coHm + ').' };
+  }
+  // T3 (cycle 22): a resume approved after its day has ENDED must carry the
+  // finish. Converting the Clock Out without one leaves the day with a break and
+  // no Clock Out — INCOMPLETE, 0 hours, in the timesheet, the pay statement and
+  // the accrual — and the rep cannot clock out of a past day live. Refuse with
+  // the way out instead; the whole check runs BEFORE any write.
+  const end = String(endTime || '').trim().substring(0, 5);
+  const dayOver = date < fmtDateTz_(new Date(), empTz_(targetEmp));
+  if (end && !(end > resumeTime)) {
+    return { error: 'The finish time (' + end + ') is not after the resume time (' + resumeTime + ').' };
+  }
+  if (dayOver && !end) {
+    return { error: 'The day this resume reopens (' + date + ') has ended and no finish time was filed, ' +
+      'so approving it would leave the day with no Clock Out. Ask the rep to add their finish with ' +
+      'Adjust → Clock Out (it attaches to this request), then approve.' };
   }
   const outFull = coHm + ':00';
   const inFull = resumeTime + ':00';
@@ -6763,6 +6822,12 @@ function resumeShiftForEmployee_(targetEmp, date, resumeTime, actorEmail, reason
     resumeTime + ' (unpaid gap)' + (reason ? ' — ' + reason : '');
   writeAuditLog_(targetEmp, 'LunchOut', date, outFull, true, daysBack, note, actorEmail);
   writeAuditLog_(targetEmp, 'LunchIn', date, inFull, true, daysBack, note, actorEmail);
+  // The filed finish becomes the day's Clock Out. The old one was just
+  // converted, so this APPENDS (writeAdjustPunchForEmployee_ finds no ClockOut).
+  if (end) {
+    writeAdjustPunchForEmployee_(targetEmp, date, 'ClockOut', end, actorEmail,
+      'finish of a resumed shift' + (reason ? ' — ' + reason : ''));
+  }
   return {};
 }
 /** Writes a single ADJ-{punchType} punch for a TARGET employee (the approve

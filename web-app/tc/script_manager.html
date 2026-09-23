@@ -537,8 +537,13 @@ function renderAdjustQueueCard_(requests) {
     // unpaid. Saying "ClockOut 19:30" would describe the punch it consumes, not
     // what approving does. State the effect.
     const isResume = r.action === 'resume';
+    // T3 (cycle 22): say whether approving CLOSES the day. With a filed finish
+    // the approval writes it as the Clock Out; without one the rep must clock
+    // out live — which only works while the day is still today, and the server
+    // refuses a past-day resume that has none.
     const detail = isResume
       ? 'Resume shift · ' + r.date + ' · back at ' + r.time +
+        (r.endTime ? ' · finished ' + r.endTime : ' · no finish filed yet') +
         ' (clock-out becomes a break — the gap is unpaid)'
       : r.punchType + ' · ' + r.date + ' · ' + r.time;
     return '<div class="mgr-adj-row" data-req-row="' + esc(r.reqId) + '">' +

@@ -1195,8 +1195,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // Manage shots carry two rows (keys mirror managerGetPendingAdjustments'
     // own push literal — INV-185).
     managerGetPendingAdjustments: { requests: [
-      { reqId: 'req-1', empId: 'E-1090', empName: 'Leo Kim', date: daysAgo(2), punchType: 'ClockOut', time: '17:02', reason: 'Forgot to clock out', action: 'set', submittedAt: daysAgo(1) + ' 08:10:00' },
-      { reqId: 'req-2', empId: 'E-1088', empName: 'Sam Ortiz', date: daysAgo(1), punchType: 'ClockOut', time: '19:00', reason: '', action: 'resume', submittedAt: daysAgo(1) + ' 17:40:00' },
+      { reqId: 'req-1', empId: 'E-1090', empName: 'Leo Kim', date: daysAgo(2), punchType: 'ClockOut', time: '17:02', reason: 'Forgot to clock out', action: 'set', endTime: '', submittedAt: daysAgo(1) + ' 08:10:00' },
+      { reqId: 'req-2', empId: 'E-1088', empName: 'Sam Ortiz', date: daysAgo(1), punchType: 'ClockOut', time: '19:00', reason: '', action: 'resume', endTime: '21:15', submittedAt: daysAgo(1) + ' 17:40:00' },   // T3: a filed finish
     ] },
     // Team punches calendar (operator 2026-08-31). A FUNCTION of the month
     // argument (the F14 rule — the client asks for whatever month is on

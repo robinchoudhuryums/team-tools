@@ -1408,8 +1408,13 @@ let _personalSsCache = Object.create(null);
 // 'set', the ordinary "write this punch" request. The only other value is
 // 'resume' (reopen a clocked-out day). Back-compat like every other trailing
 // column here (CN_HEADERS, FS_HEADERS, AmendsId).
-const PAR = { REQ_ID:0, EMP_ID:1, EMP_NAME:2, DATE:3, PUNCH_TYPE:4, REQ_TIME:5, REASON:6, STATUS:7, SUBMITTED_AT:8, ACTION:9 };
-const PAR_HEADERS = ['ReqId','EmpId','EmpName','Date','PunchType','RequestedTime','Reason','Status','SubmittedAt','Action'];
+// T3 (cycle 22): END_TIME is a second trailing add — a RESUME request's
+// finish time. A resume reopens a day, and the rep cannot clock out of it live
+// once that day has ended, so the finish rides the request: filed with Adjust →
+// Clock Out while the resume is pending, written as the day's Clock Out when the
+// resume is approved. HH:mm, a coerced column (g10) — read via normalizeTime_.
+const PAR = { REQ_ID:0, EMP_ID:1, EMP_NAME:2, DATE:3, PUNCH_TYPE:4, REQ_TIME:5, REASON:6, STATUS:7, SUBMITTED_AT:8, ACTION:9, END_TIME:10 };
+const PAR_HEADERS = ['ReqId','EmpId','EmpName','Date','PunchType','RequestedTime','Reason','Status','SubmittedAt','Action','EndTime'];
 const PUNCH_ADJUST_BULK_MAX = 50;
 // Cycle-11 L-11 — time-off date sanity horizon (see the submit paths).
 const TIMEOFF_MAX_DAYS_AHEAD = 370;   // ~a year of planned leave + slop
