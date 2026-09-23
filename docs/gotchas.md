@@ -2739,6 +2739,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   The family this belongs to is the one above it: a degraded or ambiguous read
   must never render as data.
 
+  **AMENDED (cycle 22 D2, 2026-09-23): an EMPTY set has no median.**
+  `coachMedian_([])` returned 0, so the coaching board read "median 0 business
+  days to ack" (the best possible score) for a team that had acknowledged
+  nothing. It returns null, and the card reads "nothing acknowledged yet"
+  through `coachMedianAckText_`. The server fix alone was not enough: the card
+  rendered through `coachNum_`, which maps null to 0. Verify: the
+  `coachMedian_` pin (empty is null) and the D2 client pin.
+
 <a id="g115-a-job-that-closes-a-period-must"></a>
 - **A job that CLOSES a period must RECONCILE it afterwards — the data it read
   was not final (operator 2026-09-15).** `creditMonthlyPtoAccruals` ran on the
@@ -3196,6 +3204,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the F-35 vm-driven `getMetricsAmbient` pin; the dashboard side is pinned in
   call-data-reporting's `util.test.js` / `setup.test.js`.
 
+  **AMENDED (cycle 22 M2, 2026-09-23): the Dashboard's Yesterday card was a
+  third reader of calendar-yesterday.** `dashboardPeriodRange_('yesterday')`
+  subtracted one day, so every Monday the card asked the CDR about Sunday and
+  read "No call data", and the morning after a holiday it asked about the
+  holiday. That empty answer was then cached for the dashboard's 6-hour TTL.
+  It now resolves through `prevWorkdayIso_` (the company calendar), labels a
+  day that is not literally yesterday by its date ("Fri Sep 18"), and a window
+  nobody reported in is never cached. Verify: the rewritten
+  `dashboardPeriodRange_` pin (weekend, holiday, literal yesterday) and the
+  M2/M8 endpoint pin.
+
 <a id="g124-answer-is-the-dashboard-s-formula-and"></a>
 
 - **Answer % is the Department Dashboard's formula (`answered / (answered +
@@ -3260,6 +3279,18 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `test_dashboardStandard_readsFixtureTab`; the dashboard side is pinned in
   call-data-reporting's `answer-targets.test.js` / `setup.test.js` /
   `system-health.test.js`.
+
+  **AMENDED (cycle 22 M1, 2026-09-23): the null rate reached the Team
+  Metrics ROW late.** The formula returned null when there was nothing to
+  divide, but `getTeamMetrics` built each rep's row with
+  `cdr ? cdr.pctAnswered : 0`. So a rep with no CDR row in the range read as a
+  red 0% beside colleagues answering nine in ten: a rep on PTO, and EVERY rep
+  on the Today default, since the CDR is never populated same-day. The row
+  ships null; the cell already drew null as "—"; `mSortReps_` sorts it below a
+  real 0%. The fixture never showed it because it put call data on Today (X3).
+  A range ending today now returns the no-call-data payload, photographed by
+  `metrics-team-today-light-wide`. Verify: the M1 pin (the server literal and
+  the driven sort).
 
 <a id="g125-a-dqe-read-is-bounded-by-a-span"></a>
 
@@ -3397,6 +3428,21 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   handler renders the success path's empty state. Verify: the F-15 geocoder pin
   (a stubbed Maps through OK / ZERO_RESULTS / OVER_QUERY_LIMIT / REQUEST_DENIED
   / throw; the cache; both callers' branch order) and the Batch 2 DOM pins.
+
+  **AMENDED (cycle 22 M7, 2026-09-23): a reader that NAMES its failure beside
+  an empty result has only moved the problem to its callers.**
+  `getCdrAgentMetrics_` returns `{agents: {}, meta: {error}}` when the DQE tab
+  is missing, and three callers read only `.agents`. The onboarding readiness
+  panel reported every rep as absent from the phone system, the Dashboard drew
+  (and cached for 6 hours) "No call data", and Team Metrics drew a team that
+  took no calls. `cdrAgentsOrThrow_(res)` turns the named error into a throw
+  that each caller's existing catch handles, none of which caches. RULE: when a
+  reader returns an error field BESIDE a plausible empty value, give its callers
+  one helper that refuses the empty value, rather than trusting each to check.
+  Still open: `getMetricsAmbient`, `managerGetShiftStats`' enrichment, and
+  `getCdrDailyBreakdown_`, which returns no error field at all. Verify: the M7
+  pin (the helper both ways, the onboarding endpoint driven, and a ban on a
+  bare `.agents` read in all three).
 
 <a id="g129-never-cache-a-failure-as-a-value"></a>
 
@@ -3603,6 +3649,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   drive (bar classes, tooltips, the unmeasurable count, the all-unknown week),
   and the visual fixture's own null day — INV-185, because a fixture that never
   produces null can never photograph the difference.
+
+  **AMENDED (cycle 22 M9, 2026-09-23): a second instance, in the Metrics
+  trends.** The four CDR trend builders (My Stats, the range self-view and
+  both Team trends) filled a workday with no CDR row as
+  `rung/answered/missed: 0` while its rate was already null, so the rail
+  sparklines drew a PTO day as a dive to zero calls. They ship null, which
+  every consumer already skipped. The visual fixture carries one null day.
+  Verify: the M9 sweep (no `: 0` default across the three endpoints, all eleven
+  null fields found) and the sparkline gap, driven.
 
 <a id="g137-a-static-net-that-pre-declares-names"></a>
 
@@ -4027,3 +4082,44 @@ restoring the silence and restoring the misdirected message.
   fresh open forgets both caches, and a late payor answer paints nothing) and
   the `reference-drawer-xref-light-wide` shot, which now shows its typed inputs
   above its results.
+
+<a id="g148-a-lagged-source-s-windows-count-days"></a>
+
+- **A period-to-date window over a LAGGED source counts days of DATA, not
+  days of calendar, in the comparison and the projection both (cycle 22 M8,
+  2026-09-23).** The CDR Report is never populated same-day, so Month to date
+  (the 1st → today) holds d-1 days of calls. `dashboardPrevRange_` compared it
+  with days 1..d of last month, handing the prior window a day the current one
+  could not have. Every volume delta therefore read about 1/d low, every day.
+  The run-rate projection made the same mistake the other way: it divided by d
+  elapsed days and under-projected. RULES: (1) the comparison covers the same
+  number of days WITH DATA (1..d-1, clamped down into a shorter month; none on
+  the 1st, when there is no complete day); (2) the payload says which days hold
+  data (`dataThrough`), and anything that divides by elapsed time uses it. The
+  endpoint owns the lag, not the client. Still open: the MTD note coverage
+  counts today's notes against calls through yesterday. Fires when you compare
+  a to-date window with an earlier one, or project one forward, over a source
+  that lags. Verify: the `dashboardPrevRange_` pin (1..d-1, the clamp, the 1st,
+  a one-day window), the `dashboardPeriodRange_` pin's `dataThrough` and
+  projection assertions, and the M2/M8 endpoint pin (both cards project from
+  `res.dataThrough`).
+
+<a id="g149-a-stamp-parser-documented-as-differences-only"></a>
+
+- **A timestamp parser documented as "only used for differences" is a claim
+  that a later caller cannot see (cycle 22 D1, 2026-09-23).** `coachParseTs_`
+  read the coaching stamps (CONFIG.TIMEZONE wall-clock, written by `fmtDate_` +
+  `fmtTime_`) as UTC. Its comment said the zone cancelled out because only
+  ack − created was ever computed. By the time of the audit five callers
+  compared its output with the real clock: the overdue ages, the weekly recap
+  window, and the injected business-minute counter, which needs the true
+  instant to know which hours were working ones. On an Asia/Kolkata deployment
+  every item turned overdue 5.5 hours late. It now parses through
+  `Utilities.parseDate` in CONFIG.TIMEZONE; loaded without an Apps Script
+  runtime (the Node pins) it keeps the wall-clock-as-UTC reading. RULE: a
+  parser returns an INSTANT, read in the zone the writer used. Still open: the
+  client twin `coachTsMs_` reads the same stamps as UTC for the board's 30-day
+  and quarter windows. Fires when you parse a stored wall-clock stamp, or
+  compare a parsed stamp with now. Verify: the D1 pin (an Intl-backed
+  `parseDate`: 09:00 IST is 03:30 UTC, an item exactly seven days old on the
+  real clock is overdue at 7, and a DST zone resolves through its own offset).

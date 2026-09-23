@@ -2338,6 +2338,15 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   `clock-needsyou-empty-light-wide` (`?fixture=empty`) and
   `clock-needsyou-error-light-wide` (`?failrpc=`), `fold-measure.mjs`, and
   `test_pendingTasks_requiresEmployeeAndShape`.
+  **AMENDED (cycle 22 M2 + M8, 2026-09-23):** "Yesterday" is the previous
+  WORKDAY (`prevWorkdayIso_`: weekends and the company calendar), labelled by
+  its date when it is not literally yesterday, and a window nobody reported in
+  is not cached. The MTD comparison is LAG-ALIGNED: the CDR holds nothing for
+  today, so the prior window is the same days OF DATA (1..d-1, so "vs Jul 1–11"
+  on the 12th, and no comparison on the 1st). The run-rate projection divides by
+  the payload's `dataThrough` (the last day with data) rather than by a today
+  that never has any (g148). The cache key is now `dash_metrics_v6` (v5 was
+  H2's formula).
 - <a id="clock-view-hero-shift-strip-ledger-architecture"></a>**Clock view: hero + shift-strip + ledger architecture.** The
   Clock tab's `renderClockView` emits, in order: a `.hero` block
   (greet kicker + name + live status sentence on the left, live
@@ -4565,3 +4574,15 @@ pick them up without re-deriving the context.
   (Admin → System → Stored formulas, read-only) and fixed by hand, never
   rewritten by code. Verify: `npm run lint:server` (SHEET-SAFE), the S2 pins
   and the F2 mirror pin.
+- <a id="a-range-s-average-talk-time-is-weighted-by-the-calls"></a>**A range's average talk time is weighted by the calls behind each day (cycle 22 M3, 2026-09-23).**
+  The DQE tab holds ONE row per agent per day, and its ATT column is that day's
+  average. Over a range, both readers (`getCdrAgentMetrics_`,
+  `getCdrDailyBreakdown_`) averaged the daily averages with equal weight, so one
+  2-call day at 10 minutes pulled a week of 60-call days at 2 minutes up
+  sharply. Each day now counts by its answered calls, and a row with an ATT but
+  nothing answered carries no weight. That is what the team aggregate
+  (`dashboardTeamAggregate_`) already did, so a rep's own figure and the team
+  figure beside it now share one definition. Single-day figures are unchanged.
+  `CDR_CACHE_KEY` is now `cdr_metrics_v5` (INV-85). Verify: the M3 pin, driven
+  through both readers (a 2-call 10-minute day and a 60-call 2-minute day read
+  135 s, not 360).

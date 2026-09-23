@@ -39,6 +39,11 @@ not restate it. Server endpoints live in the fourteen server files
      pto-disabled rep (INV-27).
      Backs a shared Google Sheet (`CONFIG.ADP_SS_ID` in `web-app/00_config.js`).
 
+     **Cycle 22 Batch 4 (2026-09-23):** the Dashboard's "Yesterday" card
+     shows the last workday (Friday on a Monday, the day before a holiday),
+     labelled by its date, and an empty pre-import card is no longer cached for
+     six hours (M2). Month to date compares against last month's same days OF
+     DATA, and "On pace for" divides by the days that have data (M8, g148).
 
 <a id="call-notes"></a>
      **2026-09-17 (the /broad-scan's Batches 1 + 2):** an EQUAL Clock In /
@@ -262,6 +267,14 @@ not restate it. Server endpoints live in the fourteen server files
      writing, so it keeps working once `SpanishClaims` passes 1000 rows (F4,
      g145).
 
+     **Cycle 22 Batch 4 (2026-09-23):** a rep with no calls in the range has
+     NO answer rate on Team Metrics ("—", sorted last), never a red 0% (M1). A
+     range's average talk time is weighted by answered calls (M3, the
+     weighted-ATT decision). A day with no call data is a gap in every trend,
+     not a zero (M9). A missing DQE tab is an error on the Dashboard, Team
+     Metrics and the onboarding panel, never "no calls" (M7). Spanish
+     auto-assign balances on the claims each member holds on OPEN requests, so a
+     new member no longer receives every request (M4).
 
 <a id="intake"></a>
      **Batch 5 (2026-09-18):** `QaRecordings` carries a trailing `AgentId`
@@ -751,6 +764,11 @@ not restate it. Server endpoints live in the fourteen server files
      the refresh, and only a successful issue or draft save resets the form.
      A coaching reply being typed survives filter changes, search and the
      reload after acknowledging another item (D7).
+
+     **Cycle 22 Batch 4 (2026-09-23):** coaching ages are measured from the
+     stamp's true instant (CONFIG.TIMEZONE, not UTC), so an item turns overdue
+     on time (D1, g149). A team with nothing acknowledged reads "nothing
+     acknowledged yet" rather than "median 0 business days" (D2).
 
 <a id="qa"></a>
 ## QA

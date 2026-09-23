@@ -684,7 +684,7 @@ entry says which it is.
   **Auto-assign (operator testing note 4, 2026-09-10):** a MANAGER-only
   "Auto-assign N unclaimed" button beside the filter strip hands every
   unclaimed pending request (voicemails included) to the least-loaded configured
-  member through `autoAssignSpanishThreads` — see INV-31 (iii) for the gate
+  member (load = claims on requests still PENDING, since cycle 22 M4) through `autoAssignSpanishThreads` — see INV-31 (iii) for the gate
   (MANAGER, not `canSeeSpanishInbox_`), the pure picker and the in-lock
   re-derivation. The button is disabled WITH ITS REASON while the list loads,
   when no members are configured, or when everything is already claimed; a

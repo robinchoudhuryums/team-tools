@@ -130,7 +130,11 @@ Updated: 2026-09-23
   managerGetShiftStats' enrichment and getCdrDailyBreakdown_ (no error field
   at all); Dashboard MTD note coverage counts today's notes against calls
   through yesterday; the dashboard fixture's prior label is static; D2's
-  sub-line is not photographed. Docs NOT yet synced for Batch 4.
+  sub-line is not photographed. Docs SYNCED 2026-09-23: g114/g123/g124/g128/g136
+  amended, new g148 (lagged windows) + g149 (a "differences only" parser),
+  INV-251..256, walk steps on S41/S42/S43/S99/S105/S110 + new S116, the
+  Dashboard decision amended + a new weighted-ATT decision, module notes, both
+  logs, the auto-assign operator-state line.
 - **Follow-on follow-ons (22-FO block):** the stored-formula scan is on demand
   only (no findings-list entry, no resume past the budget); the mock lacks
   `adminScanStoredFormulas` (add with X1's Admin fixtures); the sheet doctor
@@ -142,8 +146,8 @@ Updated: 2026-09-23
   INV-229..232 + an INV-213 amendment PROPOSED (cycle 21); INV-240..242
   PROPOSED (21post: fixtures the server can still produce · tone/explanation
   agree both ways · doc UI paths resolve against `TOOLS` labels). None is in
-  the library yet. INV-243..250 were WRITTEN by cycle 22's /sync-docs passes.
-  **Next free is INV-251.**
+  the library yet. INV-243..256 were WRITTEN by cycle 22's /sync-docs passes.
+  **Next free is INV-257; next gotcha g150; next scenario S117.**
 - **An intermittent DOM pin**: `the resume request states the unpaid gap
   before it is filed` (runDom.js) failed once during T7 and has passed every
   run since. Flagged, not dismissed — a flake is not a root cause.
@@ -193,6 +197,5 @@ Updated: 2026-09-23
 
 ## Where I left off
 Batch 1, S2, Batch 2, follow-ons F1–F5, Batch 3 and Batch 4 of cycle 22 are
-committed and pushed; none is deployed. Docs are synced through Batch 3 —
-run `/sync-docs` for Batch 4 (its block's DOCUMENTATION UPDATES NEEDED).
+committed and pushed; none is deployed. Docs are synced through Batch 4.
 Next: deploy + the walks; or `/broad-implement Batch 5` from the scan's plan.

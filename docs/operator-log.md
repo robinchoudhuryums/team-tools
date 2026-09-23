@@ -45,6 +45,16 @@ then the four blocks' walks.
   keeps text typed during a save. No operator action; one visible change: a
   Save & Compose that switched to External and is then CANCELLED now undoes
   the save, like the department composer.
+- **Batch 4 — Metrics and coaching verdicts read the calendar correctly.**
+  The Dashboard's Yesterday card shows the last workday (Friday on a Monday),
+  labelled by its date. Month to date compares against last month's same days
+  of data and projects from them. Team Metrics shows "—", not a red 0%, for a
+  rep with no calls (every rep on Today). Multi-day average talk time is
+  weighted by calls, so every such figure moves. A day with no call data is a
+  gap in the trends. A missing DQE tab reads as an error, never "no calls".
+  Coaching items turn overdue on time, and a team with nothing acknowledged
+  says so. Spanish auto-assign spreads requests by open claims. No operator
+  action.
 
 ## 2026-09-23 — Area eligibility: city rules, any-warehouse, the diagnostics panel, the vocabulary (T7–T9)
 

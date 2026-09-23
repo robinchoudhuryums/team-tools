@@ -2000,6 +2000,16 @@ per-finding detail. What each added to each harness, by delta:
   with a stubbed `uiConfirm` (g138). C10's first draft ordered confirms by
   `Date.now()`, which a confirm and a poll can share; a monotonic counter
   replaced it before any pin could flake on it.
+- **Batch 4:** Node +8 (M4, M1, the M2/M8 endpoint, M3, M7, M9, D1, the D2
+  client), 5 updated. The `dashboardPeriodRange_` pin had asserted the
+  calendar-day defect as correct (Category A: the rule changed deliberately),
+  and the prior-window, cache-key, median and empty-analytics pins moved to the
+  new shapes. Two driven harnesses are new: `m3CdrCtx_` (both DQE readers over a
+  stubbed sheet, the H3-3 shape) and `d1ParseDateStub_` (an Intl-backed
+  `Utilities.parseDate`, so the coaching tz read is driven rather than
+  asserted). The visual mock's `getTeamMetrics` became a function of the range
+  (X3), and the dashboard fixture began shipping `periodKey`, so the run-rate
+  line is photographed for the first time. 16 bite-checks, all BITE.
 
 **Two NO BITEs, both acted on (g138).** T2's first wiring pin asserted the
 refusal message existed, and an `if (false)` beside it stayed green. The pin
