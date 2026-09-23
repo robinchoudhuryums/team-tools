@@ -9029,6 +9029,7 @@ function enterCallNotesAdminView(area) {
       '<div id="cn-sys-findings">' + loSweep() + '</div>' +
       '<div id="cn-admin-storage"></div>' +
       '<div id="cn-admin-oop"></div>' +
+      '<div id="cn-admin-formulas">' + cnRenderFormulaScanPanel_(null) + '</div>' +
       '<div id="cn-admin-health"></div>' +
     '</div>' +
     '<div class="cn-admin-pane" data-pane="tags" style="' + paneStyle('tags') + '">' +
@@ -10128,6 +10129,65 @@ function cnRenderOopDiagPanel_(res) {
       }).join('');
   }
   return wrap(html);
+}
+
+/** Cycle 22 S2 follow-on — "Stored formulas". The write boundary (sheetSafe_)
+ *  stops NEW text becoming a formula; this finds the ones already stored,
+ *  typed before it shipped. ON DEMAND (it opens every store, and every
+ *  enrolled rep's Sheet), so the panel starts idle with a button.
+ *  `res`: null = idle · { loading: true } · { error } · the scan result. An
+ *  empty hit list reads as clean ONLY when no store failed and none went
+ *  unscanned — otherwise the panel says which were not checked (g53). */
+function cnRenderFormulaScanPanel_(res) {
+  var muted = function (t) { return '<span style="color:var(--muted)">' + t + '</span>'; };
+  var warn = function (t) { return '<div style="font-size:12px;color:var(--warning-deep);margin-top:6px">' + t + '</div>'; };
+  var btn = '<button type="button" class="btn-modal-ok" id="cn-formula-scan-btn" style="margin:6px 0 0"' +
+    (res && res.loading ? ' disabled' : '') + ' onclick="cnRunFormulaScan_()">' +
+    (res && !res.loading ? 'Scan again' : 'Scan stores') + '</button>';
+  var intro = '<div style="font-size:12px">Text typed as <b>=…</b> (or <b>+</b>, <b>-</b>, <b>@</b> before a word) before cycle 22 was ' +
+    'stored as a live spreadsheet formula. New writes are stored as text; this finds the old ones. Read-only — fix a hit by ' +
+    'opening the cell and putting an apostrophe in front.</div>';
+  var body = '';
+  if (res && res.loading) body = '<div style="padding:10px 0">' + loSweep() + '</div>';
+  else if (res && res.error) body = errorStateHtml_('Formula scan unavailable: ' + esc(res.error));
+  else if (res) {
+    var stores = res.stores || [];
+    var failed = stores.filter(function (s) { return s.error; });
+    var unscanned = res.unscanned || [];
+    var checked = stores.filter(function (s) { return !s.error && !s.sameAs; }).length;
+    var hits = res.hits || [];
+    body += '<div style="font-size:12px;margin-top:8px">' + esc(String(checked)) + ' store' + (checked === 1 ? '' : 's') +
+      ' scanned · <b>' + esc(String(res.total || 0)) + '</b> formula cell' + (res.total === 1 ? '' : 's') + ' found</div>';
+    if (failed.length) body += warn('Could not open: <b>' + esc(failed.map(function (s) { return s.label + ' (' + s.error + ')'; }).join(' · ')) + '</b>');
+    if (unscanned.length) body += warn('Not reached before the time limit — NOT checked: <b>' + esc(unscanned.join(', ')) + '</b>. Run the scan again to continue.');
+    if (res.capped) body += warn('Showing the first ' + esc(String(hits.length)) + ' of ' + esc(String(res.total)) + '.');
+    if (!hits.length && !failed.length && !unscanned.length) {
+      body += '<div style="font-size:12px;margin-top:6px;color:var(--success-deep)">No stored formulas in any store the app writes.</div>';
+    }
+    body += hits.map(function (h) {
+      return '<div style="font-size:11px;padding:2px 0">' + esc(h.store) + ' › <b>' + esc(h.tab) + '</b> ' + esc(h.cell) + ' ' +
+        muted('<code>' + esc(h.formula) + '</code>') +
+        (h.operatorTab ? ' ' + muted('(a tab you edit by hand — this may be yours on purpose)') : '') + '</div>';
+    }).join('');
+  }
+  return '<div class="panel" id="cn-sys-sec-formulas" style="margin-bottom:20px">' +
+    '<div class="day-section-label" style="margin-bottom:10px">' + icon('search', 14) + ' Stored formulas</div>' +
+    intro + btn + body + '</div>';
+}
+function cnRunFormulaScan_() {
+  var slot = document.getElementById('cn-admin-formulas');
+  if (!slot) return;
+  slot.innerHTML = cnRenderFormulaScanPanel_({ loading: true });
+  var requestedView = currentView;
+  var paint = function (res) {
+    if (currentView !== requestedView) return;
+    var live = document.getElementById('cn-admin-formulas');
+    if (live) live.innerHTML = cnRenderFormulaScanPanel_(res);
+  };
+  google.script.run
+    .withSuccessHandler(function (res) { paint(res || { error: 'no response' }); })
+    .withFailureHandler(function (err) { paint({ error: (err && err.message) || 'scan failed' }); })
+    .adminScanStoredFormulas();
 }
 
 function cnLoadOopDiagPanel_() {

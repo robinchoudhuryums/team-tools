@@ -2043,6 +2043,120 @@ function getStorageHealth(opts) {
   } catch (err) { return { error: err.message }; }
 }
 
+// ── Stored-formula scan (cycle 22 S2 follow-on) ────────────────────────────
+// S2 made every app write land as LITERAL text, but it cannot reach back: a
+// note, a label or a reason typed as `=…` (or `+`/`-`/`@` before a non-number)
+// BEFORE the boundary shipped was stored as a live formula, and still is. The
+// app never writes a formula, so every hit on an app-written tab is text that
+// Sheets evaluated. This walks every store the app writes — the same resolvers
+// the writers use, so it scans exactly where they wrote — and reports each
+// formula cell by store, tab and A1. READ-ONLY: it changes nothing, and fixing
+// a hit is a hand edit (prefix the cell with an apostrophe).
+//
+// Honest failure (g48/g53): a store that could not be opened, and every store
+// the time budget did not reach, is NAMED in the result — an empty hit list is
+// a clean bill only when `unscanned` and every `error` are empty too.
+const FORMULA_SCAN_MAX_HITS = 200;
+const FORMULA_SCAN_EXCERPT = 60;
+const FORMULA_SCAN_BUDGET_MS = 240000;
+// Tabs an operator maintains by hand: a formula there may be theirs on purpose,
+// so a hit is labelled rather than presumed to be typed text.
+const FORMULA_SCAN_OPERATOR_TABS = ['Employees', 'InsurancePayors', 'OopPricing', 'LocationAcceptance', 'Offerings'];
+
+/** A1 column letters for a 0-based index (A … Z, AA …) — sheetColLetter_ stops at Z. */
+function formulaScanCol_(i) {
+  let n = i + 1, s = '';
+  while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+/** PURE — the formula cells of one tab's getFormulas() grid, as
+ *  `{ cell, formula }` (the formula cut to an excerpt), up to `room` of them;
+ *  `count` is the true total so a capped list still says how many there were. */
+function formulaHitsFromGrid_(grid, room) {
+  const hits = [];
+  let count = 0;
+  (grid || []).forEach(function (row, r) {
+    (row || []).forEach(function (f, c) {
+      if (!f) return;
+      count++;
+      if (hits.length < room) {
+        const s = String(f);
+        hits.push({ cell: formulaScanCol_(c) + (r + 1),
+          formula: s.length > FORMULA_SCAN_EXCERPT ? s.slice(0, FORMULA_SCAN_EXCERPT) + '…' : s });
+      }
+    });
+  });
+  return { hits: hits, count: count };
+}
+/** The walk, over `targets` = [{ label, open: fn → Spreadsheet }]. A store is
+ *  scanned once however many labels resolve to it (Forms and Dept Requests
+ *  fall back onto the ADP sheet). `now` is injectable for the budget pin. */
+function scanStoredFormulas_(targets, deadline, now) {
+  const clock = now || function () { return Date.now(); };
+  const out = { stores: [], hits: [], total: 0, capped: false, unscanned: [] };
+  const seen = {};
+  for (let t = 0; t < targets.length; t++) {
+    const tg = targets[t];
+    if (clock() > deadline) { out.unscanned.push(tg.label); continue; }
+    let ss;
+    try { ss = tg.open(); } catch (e) { out.stores.push({ label: tg.label, error: e.message }); continue; }
+    if (!ss) { out.stores.push({ label: tg.label, error: 'not configured' }); continue; }
+    let id = '';
+    try { id = ss.getId(); } catch (e) { id = ''; }
+    if (id && seen[id]) { out.stores.push({ label: tg.label, sameAs: seen[id] }); continue; }
+    if (id) seen[id] = tg.label;
+    const row = { label: tg.label, tabs: 0, count: 0 };
+    try {
+      const sheets = ss.getSheets();
+      for (let k = 0; k < sheets.length; k++) {
+        const sh = sheets[k];
+        const name = sh.getName();
+        if (sh.getLastRow() < 1 || sh.getLastColumn() < 1) { row.tabs++; continue; }
+        const found = formulaHitsFromGrid_(sh.getDataRange().getFormulas(), FORMULA_SCAN_MAX_HITS - out.hits.length);
+        row.tabs++;
+        row.count += found.count;
+        found.hits.forEach(function (h) {
+          out.hits.push({ store: tg.label, tab: name, cell: h.cell, formula: h.formula,
+            operatorTab: FORMULA_SCAN_OPERATOR_TABS.indexOf(name) >= 0 });
+        });
+      }
+    } catch (e) { row.error = e.message; }
+    out.total += row.count;
+    out.stores.push(row);
+  }
+  out.capped = out.total > out.hits.length;
+  return out;
+}
+/** Admin → System → "Scan for stored formulas". ADMIN-gated (the stores it
+ *  reads include PHI); read-only; returns cell references and a short formula
+ *  excerpt, never a row. The CDR Report is not scanned — another repo owns it,
+ *  and its formulas are its own. */
+function adminScanStoredFormulas() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
+    const targets = [
+      { label: 'Time Clock / ADP', open: getAdpSS_ },
+      { label: 'Forms (PHI)', open: getFormsSS_ },
+      { label: 'Dept Requests', open: getDeptRequestsSS_ },
+      { label: 'Intake (PHI)', open: getIntakeSS_ },
+      { label: 'Knowledge Base + Training', open: getKbSS_ },
+      { label: 'Employee Docs (HR)', open: getHrDocsSS_ },
+      { label: 'QA (recordings)', open: getQaSS_ },
+    ];
+    const roster = getEmployeeRosterRows_();
+    for (let i = 1; i < roster.length; i++) {
+      const sid = cnEnrolledSheetId_(roster[i]);
+      if (!sid) continue;
+      const nm = String(roster[i][EMP.NAME] || '').trim() || sid;
+      targets.push({ label: 'Call Notes — ' + nm, open: function () { return SpreadsheetApp.openById(sid); } });
+    }
+    const res = scanStoredFormulas_(targets, Date.now() + FORMULA_SCAN_BUDGET_MS);
+    res.maxHits = FORMULA_SCAN_MAX_HITS;
+    return res;
+  } catch (err) { return { error: err.message }; }
+}
+
 /** F-08 — the Dashboard Standards verdict as the Storage Health row carries
  *  it: {dept, target, band, source, error}. Same reader as Metrics
  *  (getCdrDashboardStandard_, so its 1h cache applies — the detail says so). */

@@ -1522,6 +1522,94 @@ test('F1: no other function in Tests.js deletes a row, except named ones over a 
     'the helper is the ONLY lock the suite takes — a second one would make its waitLock re-entrant');
 });
 
+// ── F3 (cycle 22 S2 follow-on) — the stored-formula scan ───────────────────
+console.log('\n10_core.js — F3: the stored-formula scan finds what S2 could not reach back to');
+const f3Ctx = () => {
+  const ctx = { String, Math, Date, Object };
+  vm.createContext(ctx);
+  vm.runInContext('const FORMULA_SCAN_MAX_HITS = 200; const FORMULA_SCAN_EXCERPT = 60;' +
+    "const FORMULA_SCAN_OPERATOR_TABS = ['Employees', 'InsurancePayors', 'OopPricing', 'LocationAcceptance', 'Offerings'];", ctx);
+  ['formulaScanCol_', 'formulaHitsFromGrid_', 'scanStoredFormulas_'].forEach((n) => vm.runInContext(extractRawFunction('10_core.js', n), ctx));
+  return ctx;
+};
+test('F3: formulaHitsFromGrid_ names every formula cell in A1, cuts the excerpt, and counts past the cap', () => {
+  const ctx = f3Ctx();
+  const grid = [['', '=1+1', ''], ['', '', ''], ['=' + 'X'.repeat(80), '', '']];
+  grid[1][27] = '=HYPERLINK("a")';
+  const r = ctx.formulaHitsFromGrid_(grid, 10);
+  assert.strictEqual(r.count, 3);
+  assert.deepStrictEqual(Array.from(r.hits, (h) => h.cell), ['B1', 'AB2', 'A3'], 'A1 references, past Z included');
+  assert.ok(r.hits[2].formula.length === 61 && /…$/.test(r.hits[2].formula), 'a long formula is an excerpt');
+  const capped = ctx.formulaHitsFromGrid_(grid, 1);
+  assert.strictEqual(capped.hits.length, 1);
+  assert.strictEqual(capped.count, 3, 'the true total survives the cap');
+  assert.strictEqual(ctx.formulaScanCol_(25), 'Z');
+  assert.strictEqual(ctx.formulaScanCol_(26), 'AA');
+  assert.strictEqual(ctx.formulaScanCol_(701), 'ZZ');
+  assert.strictEqual(ctx.formulaScanCol_(702), 'AAA');
+});
+test('F3: scanStoredFormulas_ scans a shared store ONCE, names a failed or unreached store, and flags operator tabs', () => {
+  const ctx = f3Ctx();
+  const tab = (name, grid) => ({ getName: () => name, getLastRow: () => grid.length, getLastColumn: () => (grid[0] || []).length,
+    getDataRange: () => ({ getFormulas: () => grid }) });
+  const adp = { getId: () => 'adp', getSheets: () => [tab('Timesheet', [['', '=A1']]), tab('Employees', [['=B2']]), tab('Empty', [])] };
+  const kb = { getId: () => 'kb', getSheets: () => [tab('KB', [['']])] };   // getFormulas reads '' for a plain value
+  let t = 0;
+  const targets = [
+    { label: 'ADP', open: () => adp },
+    { label: 'Forms', open: () => adp },
+    { label: 'HR', open: () => { throw new Error('not configured'); } },
+    { label: 'KB', open: () => kb },
+    { label: 'Rep A', open: () => kb },
+  ];
+  const res = ctx.scanStoredFormulas_(targets, 3, () => t++);
+  assert.strictEqual(res.total, 2);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(res.hits)), [
+    { store: 'ADP', tab: 'Timesheet', cell: 'B1', formula: '=A1', operatorTab: false },
+    { store: 'ADP', tab: 'Employees', cell: 'A1', formula: '=B2', operatorTab: true },
+  ]);
+  assert.strictEqual(res.stores[1].sameAs, 'ADP', 'the ADP fallback is not scanned twice');
+  assert.strictEqual(res.stores[2].error, 'not configured', 'a store that cannot open is named, not skipped');
+  assert.strictEqual(res.stores[0].tabs, 3, 'an empty tab still counts as checked');
+  assert.deepStrictEqual(Array.from(res.unscanned), ['Rep A'], 'past the budget, the rest are NAMED as unscanned');
+  assert.strictEqual(res.capped, false);
+});
+test('F3: the scan covers EVERY store resolver the writers use, except the CDR Report (derived)', () => {
+  const src = serverSource();
+  const resolvers = [...src.matchAll(/^function (get[A-Za-z]+SS_)\(/gm)].map((m) => m[1]).filter((n) => n !== 'getCdrSS_');
+  assert.ok(resolvers.length >= 7, 'sanity: the resolvers were found (' + resolvers.join(', ') + ')');
+  const ep = stripJsComments_(extractRawFunction('10_core.js', 'adminScanStoredFormulas'));
+  resolvers.forEach((r) => assert.ok(new RegExp('open: ' + r + '\\b').test(ep), 'adminScanStoredFormulas does not scan ' + r));
+  assert.ok(!/getCdrSS_/.test(ep), 'the CDR Report is another repo\'s — not scanned');
+  assert.ok(/cnEnrolledSheetId_\(roster\[i\]\)/.test(ep), 'every enrolled rep Sheet is a target');
+  assert.ok(/!callerEmp\.isAdmin\) return \{ error: 'Admin access required\.' \}/.test(ep), 'ADMIN-gated');
+  assert.ok(!/setValue|setValues|appendRow|deleteRow|clear\(|setFormula/.test(ep + extractRawFunction('10_core.js', 'scanStoredFormulas_')),
+    'the scan is READ-ONLY');
+});
+test('F3: the Stored formulas panel starts idle, and an empty hit list reads clean ONLY when nothing failed or went unscanned', () => {
+  const ctx = { String, esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+    loSweep: () => '<i>sweep</i>', icon: () => '', errorStateHtml_: (m) => '<div class="err">' + m + '</div>' };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('cn/script_callnotes.html', 'cnRenderFormulaScanPanel_'), ctx);
+  const r = ctx.cnRenderFormulaScanPanel_;
+  const idle = r(null);
+  assert.ok(/onclick="cnRunFormulaScan_\(\)"/.test(idle) && />Scan stores</.test(idle) && !/No stored formulas/.test(idle), 'idle: a button, no verdict');
+  assert.ok(/ disabled/.test(r({ loading: true })) && /sweep/.test(r({ loading: true })));
+  assert.ok(/class="err">Formula scan unavailable: nope/.test(r({ error: 'nope' })));
+  const clean = r({ stores: [{ label: 'ADP', tabs: 3, count: 0 }], hits: [], total: 0, unscanned: [] });
+  assert.ok(/No stored formulas/.test(clean), 'a genuinely clean scan says so');
+  const partial = r({ stores: [{ label: 'ADP', tabs: 3, count: 0 }, { label: 'HR', error: 'not configured' }], hits: [], total: 0, unscanned: ['Rep B'] });
+  assert.ok(!/No stored formulas/.test(partial), 'a failed or unreached store is never a clean bill (g53)');
+  assert.ok(/Could not open: <b>HR \(not configured\)/.test(partial) && /NOT checked: <b>Rep B/.test(partial));
+  const hit = r({ stores: [{ label: 'ADP', tabs: 1, count: 1 }], hits: [{ store: 'ADP', tab: 'Employees', cell: 'A1',
+    formula: '=IMAGE("<x>")', operatorTab: true }], total: 1, unscanned: [], capped: false });
+  assert.ok(/&lt;x&gt;/.test(hit) && !/<x>/.test(hit), 'the formula excerpt is escaped');
+  assert.ok(/may be yours on purpose/.test(hit), 'an operator tab is labelled, not presumed injected');
+  const markup = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/'<div id="cn-admin-formulas">' \+ cnRenderFormulaScanPanel_\(null\) \+ '<\/div>'/.test(markup),
+    'the System pane mounts the panel IDLE — the scan never runs on enter');
+});
+
 console.log('\nCode.js — PTO reconciliation half-day-pair exemption (cycle 7 · L-4)');
 {
   vm.runInContext(extractRawFunction('Code.js', 'ptoLegitHalfDayPair_'), sb, { filename: 'Code.js#ptoLegitHalfDayPair_' });

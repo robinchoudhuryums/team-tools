@@ -892,6 +892,23 @@
     "purgeSheetRowsOlderThan_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-23",
+   "why": "F3 (cycle 22 S2 follow-on): the read-only stored-formula scan",
+   "added": [
+    "FORMULA_SCAN_BUDGET_MS",
+    "FORMULA_SCAN_EXCERPT",
+    "FORMULA_SCAN_MAX_HITS",
+    "FORMULA_SCAN_OPERATOR_TABS",
+    "adminScanStoredFormulas",
+    "formulaHitsFromGrid_",
+    "formulaScanCol_",
+    "scanStoredFormulas_"
+   ],
+   "removed": [],
+   "changed": [],
+   "moved": []
   }
  ],
  "order": [
@@ -1535,6 +1552,26 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "0ef3d2a18a1ad98b"
+  },
+  "FORMULA_SCAN_BUDGET_MS": {
+   "file": "10_core.js",
+   "kind": "const",
+   "sha": "06f6896585680a3d"
+  },
+  "FORMULA_SCAN_EXCERPT": {
+   "file": "10_core.js",
+   "kind": "const",
+   "sha": "099320ed43e28cef"
+  },
+  "FORMULA_SCAN_MAX_HITS": {
+   "file": "10_core.js",
+   "kind": "const",
+   "sha": "25e19de390c2aca2"
+  },
+  "FORMULA_SCAN_OPERATOR_TABS": {
+   "file": "10_core.js",
+   "kind": "const",
+   "sha": "1d78835b3f35bf5d"
   },
   "FS": {
    "file": "00_config.js",
@@ -2946,6 +2983,11 @@
    "kind": "function",
    "sha": "394f966c61de3ee4"
   },
+  "adminScanStoredFormulas": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "9fa7a2957a0e1c73"
+  },
   "adminSheetViewBuild_": {
    "file": "10_core.js",
    "kind": "function",
@@ -4130,6 +4172,16 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "ea01b5766f99bdff"
+  },
+  "formulaHitsFromGrid_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "70a25758b71f5878"
+  },
+  "formulaScanCol_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "2008740a675de95d"
   },
   "generateExportSheet_": {
    "file": "20_timeclock.js",
@@ -6860,6 +6912,11 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "a4e68a1bbaf9a166"
+  },
+  "scanStoredFormulas_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "370684c90f2a67a8"
   },
   "schedReadMine_": {
    "file": "30_callnotes.js",
