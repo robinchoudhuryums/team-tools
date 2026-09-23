@@ -503,6 +503,45 @@ test('Save & Compose: cancelling the composer while the save is in flight rolls 
   assert.strictEqual(h.read('CN_STATE.rollingNotes.length'), 0, 'rolled-back note removed from the stack');
 });
 
+test('C4 (cycle 22): a Save & Compose that switches to External COMPLETES on the external send, and rolls back on its cancel', () => {
+  // Before C4 the tab switch set composeFlow = null, so the external send
+  // never cleared the form, timer or draft, the re-entry guard was off while
+  // the external composer was open, and the next Save wrote a DUPLICATE note.
+  const arm = () => {
+    const h = bootLog();
+    h.read('CN_STATE.formCatalog = []');   // the external composer mounts synchronously
+    h.setField('cn-fld-issue', 'Patient A issue');
+    h.window.cnSubmitActiveForm_({ keepForm: true });
+    h.run.flushSuccess({ success: true, note: noteFixture({ noteId: 'real-a', issue: 'Patient A issue', _pending: false }) }, 'submitCallNote');
+    h.read("CN_STATE.composer = { noteId: 'real-a', step: 'form', selections: {} }");
+    h.window.cnSwitchComposerTab_('external');
+    return h;
+  };
+  // (1) Switch, then send.
+  let h = arm();
+  assert.strictEqual(h.read('CN_STATE.composeFlow && CN_STATE.composeFlow.owner'), 'ext', 'the transaction MOVED with the rep');
+  assert.strictEqual(h.run.pending('deleteCallNote').length, 0, 'the dept teardown on switch is NOT a cancel');
+  h.window.cnSubmitActiveForm_();
+  assert.strictEqual(h.run.pending('submitCallNote').length, 0, 'a second Save while composing is refused — no duplicate row');
+  h.$('#cnX-email').value = 'pat@example.invalid';
+  h.$('#cnX-subject').value = 'Your order';
+  h.window.cnSendExternalEmail_();
+  h.run.flushSuccess({ success: true, recipientEmail: 'pat@example.invalid', formsAttached: [], formLinks: [], sentAt: 'now' }, 'sendExternalEmail');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), '', 'THE REGRESSION: the send clears the form for the next call');
+  assert.strictEqual(h.read('CN_STATE.composeFlow'), null, 'the transaction is complete');
+  assert.strictEqual(h.run.pending('deleteCallNote').length, 0, 'the send never rolls the save back');
+  assert.ok(!h.$('#cn-ext-overlay'), 'the external composer closed');
+  h.setField('cn-fld-issue', 'Patient B issue');
+  h.window.cnSubmitActiveForm_();
+  assert.strictEqual(h.run.pending('submitCallNote').length, 1, 'the next call saves normally');
+  // (2) Switch, then cancel the external composer.
+  h = arm();
+  h.window.cnCloseExternalEmailModal_();
+  assert.strictEqual(h.run.pending('deleteCallNote').length, 1, 'an external CANCEL rolls the save back, as a department cancel does');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), 'Patient A issue', 'and the text stays in the form');
+  assert.strictEqual(h.read('CN_STATE.composeFlow'), null);
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 // STEP 1 — Log persistence on nav-away/return (diagnose the operator report
 // "short-term notes reset when navigating back"). The Log is a today-only view

@@ -5933,17 +5933,24 @@ function cnSwitchComposerTab_(target) {
       showToast('Save the note first to send a department email', 'toast-warn');
       return;
     }
-    // Mount dept first (synchronous), then remove ext in the same tick.
+    // Mount dept first (synchronous), then remove ext in the same tick. The
+    // Save & Compose transaction (if any) moves with the rep BEFORE the ext
+    // teardown, so that close is not read as a cancel (C4).
+    if (CN_STATE.composeFlow) CN_STATE.composeFlow.owner = 'dept';
     cnOpenEmailComposer_(noteId);
     cnCloseExternalEmailModal_();
   } else if (target === 'external') {
     // Mount ext (may be async on first open), removing dept only once ext is
     // actually in the DOM — never an empty-backdrop frame.
     // Tab-switch is NOT a cancel: the rep is continuing the email in the
-    // External composer. Detach the Save&Compose transaction first (note
-    // stays saved, form keeps its text) so the dept-composer teardown
-    // below doesn't roll the save back (r3).
-    CN_STATE.composeFlow = null;
+    // External composer, so the Save&Compose transaction MOVES with them
+    // (owner 'ext') rather than being dropped. The dept-composer teardown
+    // below then does not roll the save back (r3), and the transaction still
+    // completes on the external SEND (form, timer and draft cleared) or rolls
+    // back on an external CANCEL. C4 (cycle 22): it used to be set to null
+    // here, so nothing ever cleared the form — the next Save wrote a duplicate
+    // note, and untouched fields carried into the next patient's note.
+    if (CN_STATE.composeFlow) CN_STATE.composeFlow.owner = 'ext';
     cnOpenExternalEmailModal_(noteId || null, cnCloseComposerModal_);
   }
 }
@@ -6029,7 +6036,7 @@ function cnCloseComposerModal_() {
   // still in the DOM, and stay quiet on the Save&Compose rollback path below
   // (that note is being deleted; a "discarded" toast would be noise), and
   // while a save is in flight (the fields still read dirty until it lands).
-  if (CN_STATE.composer && !CN_STATE.composer.savingNote && !CN_STATE.composeFlow) {
+  if (CN_STATE.composer && !CN_STATE.composer.savingNote && !cnComposeFlowOwnedBy_('dept')) {
     const unsaved = cnComposerNoteDirtyFields_();
     if (unsaved.length) showToast('Note edits discarded (' + unsaved.length + ' field' + (unsaved.length === 1 ? '' : 's') + ')', 'toast-warn');
   }
@@ -6040,16 +6047,40 @@ function cnCloseComposerModal_() {
   // composer WITHOUT sending rolls the whole action back — the just-saved
   // note is deleted (server 5-min window covers it) and the text is still
   // sitting in the form. Send success clears composeFlow BEFORE closing,
-  // so this only fires on a genuine cancel/Esc.
+  // so this only fires on a genuine cancel/Esc — and only for a flow THIS
+  // composer owns (a tab switch hands it to the other one first, C4).
+  if (cnComposeFlowOwnedBy_('dept')) cnRollbackComposeFlow_();
+}
+
+/** C4 — which composer the Save & Compose transaction currently rides. A flow
+ *  starts in the department composer (no owner = 'dept'); a tab switch moves
+ *  it. Each composer's close rolls back only a flow it owns. */
+function cnComposeFlowOwnedBy_(owner) {
+  var fl = CN_STATE.composeFlow;
+  return !!fl && (fl.owner || 'dept') === owner;
+}
+/** Roll the Save & Compose transaction back: the just-saved note is deleted
+ *  (or marked for deletion when its save confirms) and the form keeps its text. */
+function cnRollbackComposeFlow_() {
   const fl = CN_STATE.composeFlow;
-  if (fl) {
-    CN_STATE.composeFlow = null;
-    if (fl.note._pending) {
-      fl.note._deleteOnConfirm = true;   // finish the rollback when the save confirms
-      showToast('Compose cancelled — undoing the save…', 'toast-warn');
-    } else if (cnFindNoteAnywhere_(fl.note.noteId)) {
-      cnDoDeleteNote_(fl.note.noteId, { toast: 'Compose cancelled — save undone, your text is still in the form' });
-    }
+  if (!fl) return;
+  CN_STATE.composeFlow = null;
+  if (fl.note._pending) {
+    fl.note._deleteOnConfirm = true;   // finish the rollback when the save confirms
+    showToast('Compose cancelled — undoing the save…', 'toast-warn');
+  } else if (cnFindNoteAnywhere_(fl.note.noteId)) {
+    cnDoDeleteNote_(fl.note.noteId, { toast: 'Compose cancelled — save undone, your text is still in the form' });
+  }
+}
+/** Complete the Save & Compose transaction on a SEND: the note stays, and the
+ *  form (kept populated while composing — r3), its timer and the sticky draft
+ *  are cleared for the next call. */
+function cnCompleteComposeFlow_() {
+  CN_STATE.composeFlow = null;
+  if (document.getElementById('cn-active-form')) {
+    cnClearActiveForm_({ skipSnapshot: true });
+    cnFormTimerReset_();
+    cnClearStickyFormDraft_();
   }
 }
 
@@ -6933,12 +6964,7 @@ function cnComposerSend_() {
       // (it was kept populated while composing — r3), then close.
       if (CN_STATE.composeFlow && CN_STATE.composeFlow.note &&
           CN_STATE.composeFlow.note.noteId === c.noteId) {
-        CN_STATE.composeFlow = null;
-        if (document.getElementById('cn-active-form')) {
-          cnClearActiveForm_({ skipSnapshot: true });
-          cnFormTimerReset_();
-          cnClearStickyFormDraft_();
-        }
+        cnCompleteComposeFlow_();
       }
       cnCloseComposerModal_();
       cnReRenderActiveView_();
@@ -13291,6 +13317,10 @@ function cnCloseExternalEmailModal_() {
   CN_STATE.extComposer = null;
   var overlay = document.getElementById('cn-ext-overlay');
   if (overlay) overlay.remove();
+  // C4: an external composer the Save & Compose flow moved into is the
+  // transaction now — closing it without sending is the same cancel the
+  // department composer's close is. (A send completes the flow first.)
+  if (cnComposeFlowOwnedBy_('ext')) cnRollbackComposeFlow_();
 }
 
 function cnRenderExternalEmailModal_() {
@@ -14075,6 +14105,10 @@ function cnSendExternalEmail_() {
         showToast(res.error || 'Send failed', 'toast-error');
         return;
       }
+      // C4: a Save & Compose flow that moved into this composer COMPLETES on
+      // the send — before the close below, which would otherwise read it as a
+      // cancel and roll the save back.
+      if (CN_STATE.extComposer === c && cnComposeFlowOwnedBy_('ext')) cnCompleteComposeFlow_();
       // F(cycle-8 M-4) defense-in-depth: only close the composer THIS send
       // belongs to. With the close-guard above the mid-send-close/reopen race
       // shouldn't occur, but a late handler must never tear down a composer

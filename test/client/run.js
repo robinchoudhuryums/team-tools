@@ -15925,7 +15925,7 @@ test('CMP-4: Preview COMMITS pending note edits first — the bodyHash is built 
   // Uncommitted edits are DISCARDED on close — say so rather than lose them.
   const close = nc(extractFunction('cn/script_callnotes.html', 'cnCloseComposerModal_'));
   assert.ok(/Note edits discarded/.test(close), 'closing with unsaved edits toasts instead of silently dropping them');
-  assert.ok(/!CN_STATE\.composer\.savingNote && !CN_STATE\.composeFlow/.test(close),
+  assert.ok(/!CN_STATE\.composer\.savingNote && !cnComposeFlowOwnedBy_\('dept'\)/.test(close),   // C4: owner-scoped since cycle 22
     'and stays quiet mid-save and on the Save&Compose rollback path (that note is being deleted)');
 });
 
