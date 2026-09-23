@@ -4,16 +4,16 @@
 Cycle: 22 — opened 2026-09-23 by a `/broad-scan` (99 findings: 0 Critical /
 3 High; nine-batch implementation plan). Cycle 21 + 21post are in HISTORY.md.
 Phase: implement
-Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9) + S2 DONE + Batch 2 DONE (T1, T3, T2, T6, C1, C5)
+Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9) + S2 DONE + Batch 2 DONE (T1, T3, T2, T6, C1, C5) + follow-ons F1–F5 DONE
 Test Command: manual
-Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent) · S2 (phased, blanket): L (~9 h) — helper+pin 1h · wrap every write site ~180 + pin repairs 6h · derived pin + bite-checks 2h | S2 Actual: ~5 h · Batch 2: M (~11.5 h) — T1 M 3h · T3 M 3h · T2 S 1.5h · T6 S 1.5h · C1 S 1.5h · C5 S 1h | Batch 2 Actual: ~4.5 h · Follow-ons F1–F5: M (~7 h) — F1 cleanup lock S 1h · F2 TSV twin S 1h · F3 stored-formula scan M 2h · F4 Spanish grid + grow-first net S 1h · F5 Day Edit stray leaves M 2h
+Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent) · S2 (phased, blanket): L (~9 h) — helper+pin 1h · wrap every write site ~180 + pin repairs 6h · derived pin + bite-checks 2h | S2 Actual: ~5 h · Batch 2: M (~11.5 h) — T1 M 3h · T3 M 3h · T2 S 1.5h · T6 S 1.5h · C1 S 1.5h · C5 S 1h | Batch 2 Actual: ~4.5 h · Follow-ons F1–F5: M (~7 h) — F1 cleanup lock S 1h · F2 TSV twin S 1h · F3 stored-formula scan M 2h · F4 Spanish grid + grow-first net S 1h · F5 Day Edit stray leaves M 2h | Follow-ons Actual: ~3.5 h
 Subsystem cycles since last Seams audit: 1 — reset to 0 by the 2026-09-18 audit
 (batch S), +1 for the 21post reflection. The cadence is every 4.
 Updated: 2026-09-23
 
 ## In progress (facts to carry forward — NOT judgments)
-- Batch 1 is implemented and committed on `claude/optimistic-newton-gkdb3v`;
-  NOT deployed. Its block: `.cycle/blocks/22-B1-broad-implement.md`.
+- Batch 1, S2, Batch 2 and the follow-ons are committed on
+  `claude/optimistic-newton-gkdb3v`; NOT deployed. Blocks: `.cycle/blocks/22-{B1,S2,B2,FO}-broad-implement.md`.
 - The broad-scan's nine-batch plan is in the session report (not on disk —
   `/broad-scan` writes no block). Batches 2–9 remain; the finding IDs (S*, T*,
   M*, C*, K*, I*, D*, A*, U*, X*) are the scan's.
@@ -31,6 +31,12 @@ Updated: 2026-09-23
 - C1 | 30_callnotes.js | the archive mover grows the grid's rows before its positional write (both tiers)
 - C5 | 10_core.js | the purge keeps a spare row (never empties the grid)
   Block: `.cycle/blocks/22-B2-broad-implement.md`
+- F1 | Tests.js | every live-tab positional delete in the suite goes through _deleteRowsWhereLocked_ (ScriptLock from snapshot to last delete)
+- F2 | script_core.html, metrics/script_metrics.html | tsvCell_/tsvRow_ — the client twin of sheetSafe_ on every "Copy table" line
+- F3 | 10_core.js, cn/script_callnotes.html | adminScanStoredFormulas + Admin → System → Stored formulas (read-only, on demand)
+- F4 | 10_core.js, 51_spanish.js | appendRowsSafe_ grows the grid first; the Spanish auto-assign batch rides it; derived grow-first net
+- F5 | 20_timeclock.js, tc/script_manager.html | breakStrays_ → strayBreaks; Day Edit flags each stray and refuses the save until resolved
+  Block: `.cycle/blocks/22-FO-broad-implement.md`
 - S2 | 14 server files + DevTools.js, lint-server.mjs, run.js | every sheet write goes through sheetSafe_/Row_/Rows_ (183 sites, AST-wrapped); '@' writers use sheetText_/sheetTextRows_/appendRowsTextSafe_ after re-asserting '@'; SHEET-SAFE lint rule + derived pins. Block: `.cycle/blocks/22-S2-broad-implement.md`
 
 ## Pending / not yet done
@@ -40,8 +46,10 @@ Updated: 2026-09-23
 - **Deploy S2** with Batch 1 + S2's walk (its block): `=1+1` time-off note reads
   back as text; a `+1 555…` callback and a `- …` issue read back exactly; the
   scratchpad and a QA comment starting `- ` come back with no apostrophe.
-- **Optional:** find formulas ALREADY stored by the old code (`getFormulas()`
-  per store) and replace them with text — S2 closes the door, not the room.
+- **Deploy the follow-ons** (F1–F5) with the rest, and their walk (block):
+  Stored formulas scan + hand-fix each non-operator hit; Copy table pastes as
+  text; Day Edit refuses a day with an unmatched break punch until resolved;
+  editor `managerSaveDay_strayBreakRefused`.
 - **Deploy Batch 1** + its walk (block's OPERATOR ACTIONS): editor
   runSmokeTests green; a non-owner's google.script.run.runSmokeTests() refused;
   a failed search's ClientErrors row carries no query; FormTokenCreated shows
@@ -69,21 +77,22 @@ Updated: 2026-09-23
 
 ## Open follow-on items
 - **Batch 1 follow-ons:** assertNotProdInstance_ still permits when
-  INSTANCE_IS_PROD is unset (decision tied to the DEV instance); cleanupTestData
-  takes no lock across its positional deletes (g132 class — needs an editor
-  check of ScriptLock re-entrancy); pre-deploy ClientErrors/AuditLog rows may
-  hold typed queries / tokens (optional redaction).
-- **Batch 2 follow-ons:** `51_spanish.js` auto-assign writes at
-  getLastRow()+1 without growing the grid (the C1 class — throws once
-  SpanishClaims passes 1000 rows); Day Edit still drops a NON-trailing
-  unpaired leave; the brief does not flag "resume waiting for a finish".
+  INSTANCE_IS_PROD is unset (decision tied to the DEV instance); pre-deploy
+  ClientErrors/AuditLog rows may hold typed queries / tokens (optional
+  redaction). (The cleanup lock is DONE — F1.)
+- **Batch 2 follow-ons:** the brief does not flag "resume waiting for a
+  finish" (not implemented — the Manage card + rep chip say it). (Spanish grid
+  growth and Day Edit strays are DONE — F4, F5.)
+- **Follow-on follow-ons (22-FO block):** the stored-formula scan is on demand
+  only (no findings-list entry, no resume past the budget); the mock lacks
+  `adminScanStoredFormulas` (add with X1's Admin fixtures); the sheet doctor
+  does not share `breakStrays_`.
 - **Docs owed by Batch 2 (/sync-docs):** g15 amended (the open break), a
   grow-the-grid gotcha, the B3 resume decision amended (finish rides the
   request), PAR EndTime in operator-state, walk steps on S7 + the resume
   scenario.
-- **S2 follow-ons:** client "Copy table" TSV is the same class on paste (no
-  client twin of sheetSafe_ yet); no one-click stored-formula scanner.
-  Platform assumption to confirm on the walk: a '@' cell stores a leading
+- **S2 follow-ons:** (client TSV twin and the stored-formula scanner are DONE —
+  F2, F3.) Platform assumption to confirm on the walk: a '@' cell stores a leading
   apostrophe literally (the reason for the plain-text path).
 - **Docs owed by S2 (/sync-docs):** a coercion-family gotcha (strings are parsed
   as typed; every write through sheetSafe_), an invariant, a design decision
@@ -144,7 +153,7 @@ Updated: 2026-09-23
   amber** with their own explanations (operator, 2026-09-22).
 
 ## Where I left off
-Batch 1, S2 and Batch 2 of cycle 22 are committed and pushed; none is
-deployed. Next: `/sync-docs` (three blocks' owed docs), then deploy + the three
-walks; or `/broad-implement Batch 3` (client state that carries PHI or loses
+Batch 1, S2, Batch 2 and follow-ons F1–F5 of cycle 22 are committed and pushed;
+none is deployed. Next: `/sync-docs` (four blocks' owed docs), then deploy + the
+four walks; or `/broad-implement Batch 3` (client state that carries PHI or loses
 work — I1 cross-language intake amend, C4, K2, K6, C3, D6, D7, C6, C10, C11).
