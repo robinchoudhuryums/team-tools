@@ -3730,6 +3730,40 @@ test('R DOM: the drawer mounts each lookup in its own container, NOT inside the 
   });
 });
 
+test('K6 + K2 (cycle 22): the drawer home re-render keeps the lookups the rep is typing in, and a FRESH build forgets the previous caller', () => {
+  const h = boot();
+  bootLookups(h);
+  const kbdBody = h.window.document.createElement('div');
+  kbdBody.id = 'kbd-body';
+  h.window.document.body.appendChild(kbdBody);
+  h.read('kbDrawerRenderHome_')({ fresh: true });
+  const inp = kbdBody.querySelector('#kb-oop-addr-d');
+  inp.value = '75038'; inp.focus();
+  const payor = kbdBody.querySelector('#kb-ins-input-d');
+  payor.value = 'aetna';
+  // K6 — the tree response (and any other re-render while home is showing).
+  h.window.localStorage.setItem(h.read('KB_PANEL_LS_KEY'), JSON.stringify({ recents: [{ id: 'r1', title: 'A recent' }] }));
+  h.read('kbDrawerRenderHome_')();
+  assert.strictEqual(kbdBody.querySelector('#kb-oop-addr-d'), inp, 'THE REGRESSION: the lookup input is literally the same node (g141)');
+  assert.strictEqual(inp.value, '75038', 'and keeps what was typed');
+  assert.strictEqual(kbdBody.querySelector('#kb-ins-input-d').value, 'aetna');
+  assert.strictEqual(h.window.document.activeElement, inp, 'focus survives with it');
+  assert.ok(/A recent/.test(kbdBody.querySelector('#kbd-home-blocks').textContent), 'the blocks around it DID refresh');
+  // K2 — a payor lookup in flight when the drawer reopens for the next caller.
+  h.window.insLookupInput_(payor);
+  h.flushTimers();
+  assert.strictEqual(h.run.pending('searchInsurancePayors').length, 1, 'the lookup is in flight');
+  h.read("KB_OOP.last['-d'] = { ctx: { item: 'scout', addr: '75038', elig: true }, res: { items: [{ name: 'Scout' }] } }");
+  h.read('kbDrawerRenderHome_')({ fresh: true });   // the drawer OPEN
+  assert.strictEqual(kbdBody.querySelector('#kb-ins-input-d').value, '', 'an open builds fresh inputs for the next caller');
+  assert.strictEqual(h.read("KB_OOP.last['-d']"), null, 'and forgets the previous caller\'s item verdicts');
+  assert.strictEqual(h.read("KB_INS.last['-d']"), null, 'and payor results');
+  h.run.flushSuccess({ total: 1, cap: 8, matches: [{ name: 'AETNA GOLD', networkStatus: 'IN-NETWORK', details: [] }] }, 'searchInsurancePayors');
+  assert.strictEqual(kbdBody.querySelector('#kb-ins-results-d').innerHTML, '',
+    'the previous caller\'s late payor answer does NOT paint under the new, empty input');
+  assert.strictEqual(kbdBody.querySelector('#kb-oop-results-d').innerHTML, '', 'nor does a stale item verdict');
+});
+
 /** The payor payload the join pins share: one code that names an item, one the
  *  pricing tab does not carry, one that two rows carry, the SHORTHAND, and a
  *  column that is not a code at all. Every branch of insCodeItemHtml_ in one
