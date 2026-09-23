@@ -18390,6 +18390,8 @@ test('T2 (cycle 22): both Timesheet repair tools re-verify their planned rows IN
     const lockAt = src.indexOf('lock.waitLock(15000)'), chkAt = src.indexOf('repairRowsMoved_('), throwAt = src.indexOf("throw new Error('Refusing: ' + drift.length");
     const writeAt = src.indexOf(firstWrite, chkAt);
     assert.ok(lockAt > 0 && chkAt > lockAt && throwAt > chkAt && writeAt > throwAt, (n ? 'repairSplitDayPunches' : 'repairTimesheetTimezone') + ': lock → verify → refuse → write');
+    assert.ok(/if \(drift\.length\) \{\s*throw new Error\('Refusing: ' \+ drift\.length/.test(src),
+      (n ? 'repairSplitDayPunches' : 'repairTimesheetTimezone') + ': ANY drift refuses — the throw is guarded by the verification result, nothing else');
   });
   assert.ok(sd.indexOf('sheet.deleteRow(d.row)') > sd.indexOf('repairRowsMoved_('), 'the split repair deletes only after the verification');
 });
