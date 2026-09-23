@@ -589,6 +589,33 @@ test('C10 (cycle 22): a live refresh requested BEFORE a save confirmed does not 
     'a later poll that omits it is believed');
 });
 
+test('C11 (cycle 22): a dictation still running when the form is cleared cannot write the previous note back into it', () => {
+  const h = bootLog();
+  let last = null;
+  h.window.webkitSpeechRecognition = function () { last = this; this.aborted = false; };
+  h.window.webkitSpeechRecognition.prototype.start = function () {};
+  h.window.webkitSpeechRecognition.prototype.stop = function () {};
+  h.window.webkitSpeechRecognition.prototype.abort = function () { this.aborted = true; if (this.onend) this.onend(); };
+  // The mic is flag-gated at render; mount one by hand beside the Issue field.
+  const btn = h.window.document.createElement('button');
+  btn.className = 'cn-voice-mic'; btn.dataset.target = 'cn-fld-issue';
+  h.$('#cn-active-form').appendChild(btn);
+  h.setField('cn-fld-issue', 'Patient A said');
+  h.window.cnVoiceStart_(btn);
+  const recog = last;
+  assert.ok(recog && btn.classList.contains('listening'), 'dictation is running');
+  h.setField('cn-fld-issue', 'Patient A said the chair broke');
+  h.window.cnSubmitActiveForm_();            // saves and CLEARS for the next call
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), '', 'cleared');
+  assert.ok(recog.aborted, 'the running session was aborted');
+  assert.ok(!btn.classList.contains('listening') && !btn._recog, 'and the mic reset');
+  // A result or end that the engine delivers late has nowhere to go.
+  if (recog.onresult) recog.onresult({ results: [Object.assign([{ transcript: ' the chair broke' }], { isFinal: true })] });
+  if (recog.onend) recog.onend();
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), '',
+    'THE REGRESSION: the previous note is NOT written back into the next call');
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 // STEP 1 — Log persistence on nav-away/return (diagnose the operator report
 // "short-term notes reset when navigating back"). The Log is a today-only view

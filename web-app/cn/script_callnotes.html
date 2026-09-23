@@ -3483,6 +3483,7 @@ function cnRestoreFromSnapshot_(snap) {
 }
 
 function cnClearActiveForm_(opts) {
+  cnVoiceStopAll_();   // C11 — before anything is cleared, so no late result lands in the empty form
   const fields = ['callback','caller','relationship','patient','issue','transferred','resolution'];
   const skipSnap = opts && opts.skipSnapshot;
   const form0 = document.getElementById('cn-active-form');
@@ -3953,6 +3954,23 @@ function cnVoiceMicMarkup_(targetFieldId) {
   if (typeof window === 'undefined' || !('webkitSpeechRecognition' in window)) return '';
   return ` <button type="button" class="cn-voice-mic" data-target="${esc(targetFieldId)}"
                    onclick="cnVoiceStart_(this)" title="Dictate (beta — audio routed to your browser's speech service)">${icon('mic', 12)}</button>`;
+}
+
+/** C11 (cycle 22): end every running dictation WITHOUT letting it write. Each
+ *  session captured the field's text when it started and rewrites
+ *  `before + transcript` on every result and again on end — so a session still
+ *  running when the form was cleared (a submit, Clear, a completed Save &
+ *  Compose) wrote the previous note back into the next call's empty form. The
+ *  handlers are detached BEFORE abort(), because abort() still fires onend. */
+function cnVoiceStopAll_() {
+  document.querySelectorAll('.cn-voice-mic').forEach(function (btn) {
+    var r = btn._recog;
+    if (!r) return;
+    r.onresult = null; r.onend = null; r.onerror = null;
+    try { r.abort(); } catch (e) {}
+    btn._recog = null;
+    btn.classList.remove('listening');
+  });
 }
 
 /** Start (or stop, if already listening) voice recognition for the field
