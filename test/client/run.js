@@ -13452,7 +13452,7 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
     const render = strip(extractFunction('kb/script_kb.html', 'kbRenderComments_'));
     assert.ok(/esc\(c\.name\)/.test(render) && /esc\(c\.text\)/.test(render) && /esc\(c\.commentId\)/.test(render),
       'every server string + attribute value is esc()\'d');
-    assert.ok(/showing ' \+ list\.length \+ ' of ' \+ res\.total/.test(render), 'the cap note renders "showing N of M" (INV-169)');
+    assert.ok(/showing the newest ' \+ list\.length \+ ' of ' \+ res\.total/.test(render), 'the cap note renders "showing the newest N of M" (INV-169; K13 — the server keeps the newest)');
     assert.ok(/PHI-free by policy/.test(render), 'the add form carries the PHI reminder (the kbRequestArticle posture)');
     // Phase B made the renderer DUAL-HOST (tab + drawer can show the SAME
     // article), so the add-form id is suffixed per host and the label-for
@@ -14439,6 +14439,11 @@ test('T3-4: the join is built ONLY when a result has code columns, and its failu
 vm.runInContext('var US_STATE_CODES = ' + JSON.stringify(
   (serverSource().match(/const US_STATE_CODES = \[([\s\S]*?)\];/) || [, ''])[1]
     .split(/[,\s]+/).map((t) => t.replace(/'/g, '')).filter(Boolean)) + ';', _vmCtx);
+// Cycle 22 Batch 5: the parser's helpers (K1/K3 clause parser, the word-bounded
+// registry matcher) and the K4 state/city normalisers ride the same sandbox.
+vm.runInContext((serverSource().match(/const US_STATE_NAMES = \{[\s\S]*?\};/) || [''])[0].replace(/^const /, 'var '), _vmCtx);
+['oopRegistryNamesIn_', 'oopRadiusClause_', 'locStateCode_', 'locCityNorm_', 'locCityUnreadable_'].forEach((f) =>
+  vm.runInContext(extractRawFunction('Code.js', f), _vmCtx, { filename: f }));
 vm.runInContext(extractRawFunction('Code.js', 'oopEligibilityParse_'), _vmCtx, { filename: 'oopEligibilityParse_' });
 vm.runInContext(extractRawFunction('Code.js', 'oopEligibilityForPayment_'), _vmCtx, { filename: 'oopEligibilityForPayment_' });
 vm.runInContext('var OOP_ELIG_NEAR_BAND = ' +
@@ -14858,6 +14863,8 @@ test('T2: a value the panel COLOURS is a value it can EXPLAIN — the tone and t
   const sb = { String: String, RegExp: RegExp, Array: Array };
   vm.createContext(sb);
   const cli = extractScript('kb/script_kb.html');
+  // K11: the shared word-bounded predicates both lists are built on.
+  vm.runInContext(extractFunction('kb/script_kb.html', 'insWord_') + '\n' + cli.match(/var INS_IS = \{[\s\S]*?\n\};/)[0], sb, { filename: 'INS_IS' });
   vm.runInContext(cli.match(/var INS_TERMS = \[[\s\S]*?\n\];/)[0], sb, { filename: 'INS_TERMS' });
   vm.runInContext(extractFunction('kb/script_kb.html', 'insTermsIn_'), sb, { filename: 'insTermsIn_' });
   vm.runInContext(extractFunction('kb/script_kb.html', 'insToneCls_'), sb, { filename: 'insToneCls_' });
@@ -14970,6 +14977,169 @@ test('T2: a value the panel COLOURS is a value it can EXPLAIN — the tone and t
   assert.ok(!/var INS_LEGEND = \[/.test(cli), 'and no literal legend array survives');
 });
 
+// X1 (cycle 22): every RPC the client calls either has a visual-mock fixture
+// or is NAMED here. T8 shipped getOopPricingDiagnostics with no fixture, and
+// all 16 Admin scenarios logged it missing for a cycle; the matrix is not in
+// CI, so nothing failed. The derivation reads every `google.script.run` chain
+// in every partial, and the check DRIVES the real mock dispatcher rather than
+// reading its fixture keys. RATCHET (the T6 / INV-235 shape): a new client RPC
+// with no fixture fails, and a listed one that gains a fixture — or stops
+// being called — must leave the list. The list only shrinks.
+const X1_NO_FIXTURE_READS = [   // reads no scenario photographs yet — each is owed a fixture when one does
+    'adminScanStoredFormulas', 'exportAdpRange', 'exportCallNotesRange', 'getCallNoteAuditHistory', 'getDeployStamp', 'getDocsDashboard',
+    'getEmpDocTemplates', 'getFormByToken', 'getFormCatalog', 'getFormSubmission', 'getIntakeAgents',
+    'getMyCallNotesRange', 'getMyDoc', 'getMyDocs', 'getMyPunchAdjustRequests', 'getMySentForms', 'getQuiz',
+    'getQuizAnalytics', 'getQuizzes', 'getTrainingDashboard', 'intakeGetSubmission', 'intakeListMySubmissions',
+    'intakePreviewPPD', 'kbGetImageData', 'kbMapDistances', 'managerGetFormSubmission', 'managerGetShiftStats',
+    'managerSearchCallNotes', 'searchMyCallNotes', 'searchReference', 'verifyDocSignature',
+];
+const X1_NO_FIXTURE_WRITES = [  // writes: no scenario performs them, and a fixture would only fake a success
+    'acknowledgeCoaching', 'acknowledgeDoc', 'addEmployee', 'appendCallNoteFeedback',
+    'archiveCallNoteTag', 'cancelTimeOffRequest', 'claimSpanishThread', 'createCoaching', 'createScheduledCall',
+    'deleteCallNote', 'deleteEmpDocTemplate', 'deletePunch', 'deleteQuiz', 'emailFromCallNote',
+    'fixPtoReconciliation', 'fixTimesheetDuplicates', 'importQuizFromForm', 'intakeSendPPD', 'issueDoc',
+    'kbConvertDriveDoc', 'kbDeleteItem', 'kbFlagItem', 'kbMarkReviewed', 'kbPublishItem', 'kbRequestArticle',
+    'kbResolveContentRequest', 'kbRevertItem', 'kbSaveItem', 'kbSaveSearchConfig', 'kbUploadImage',
+    'managerDeleteCallNote', 'managerSaveDay', 'managerSaveDayRange', 'managerSubmitTimeOff', 'markTrainingComplete',
+    'mergeCallNoteTags', 'nudgeCoaching', 'offboardEmployee', 'provisionCallNotesSheet', 'qaAddComment',
+    'qaAssignRecording', 'qaDeleteComment', 'qaSampleRecordings', 'qaSaveScorecard', 'qaSetExemption',
+    'qaSetRecordingAgent', 'qaSetRecordingDuration', 'qaSetRecordingShared', 'qaSetRecordingStatus',
+    'qaSyncRecordings', 'reconcileCallNotes', 'recordPunch', 'releaseDoc', 'releaseSpanishThread',
+    'renameCallNoteTag', 'resolveSpanishThread', 'revokeTrainingAssignment', 'saveAutoTagRules', 'saveBreakSchedules',
+    'saveDepartmentEmails', 'saveDeptRequestSla', 'saveEmailTemplates', 'saveEmpDocTemplate', 'saveExternalLinks',
+    'saveFeatureFlags', 'saveKbAiSettings', 'saveMyScratchpad', 'saveQaMembers', 'saveQaScorecardCriteria',
+    'saveQuiz', 'saveRetentionConfig', 'saveSpanishInboxMembers', 'saveStateTaxRates', 'saveTrainingAssignment',
+    'saveUpdateSuggestions', 'selfDeletePunch', 'sendExternalEmail', 'setCallNoteFlag', 'setCallNoteManagerComment',
+    'setCallNotePinned', 'setCallNoteResolved', 'setCallNoteTrainingReply', 'setCoachingFollowUp',
+    'setScheduledCallStatus', 'submitCallNote', 'submitFormByToken', 'submitPunchAdjustRequests', 'submitQuizAttempt',
+    'updatePunchAdjustStatus', 'updatePunchAdjustStatusBulk', 'updateTimeOffStatus', 'voidCoaching', 'voidDoc',
+];
+function x1ClientRpcNames_() {
+  const dir = path.join(__dirname, '../../web-app');
+  const files = [];
+  (function walk(d) { fs.readdirSync(d).forEach((f) => { const p = path.join(d, f); if (fs.statSync(p).isDirectory()) walk(p); else if (/\.html$/.test(f)) files.push(p); }); })(dir);
+  const out = new Set();
+  const KEY = 'google.script.run';
+  files.forEach((file) => {
+    const src = fs.readFileSync(file, 'utf8');
+    let i = 0;
+    while ((i = src.indexOf(KEY, i)) >= 0) {
+      let j = i + KEY.length;
+      for (;;) {
+        while (/\s/.test(src[j])) j++;
+        if (src[j] !== '.') break;
+        j++;
+        const m = /^[A-Za-z_$][\w$]*/.exec(src.slice(j));
+        if (!m) break;
+        j += m[0].length;
+        while (/\s/.test(src[j])) j++;
+        if (src[j] !== '(') break;
+        if (!/^with/.test(m[0])) { out.add(m[0]); break; }
+        // skip the handler's balanced parens, stepping over strings and comments
+        let depth = 0;
+        for (; j < src.length; j++) {
+          const c = src[j];
+          if (c === '"' || c === "'" || c === '`') { const q = c; j++; while (j < src.length && src[j] !== q) { if (src[j] === '\\') j++; j++; } continue; }
+          if (c === '/' && src[j + 1] === '/') { while (j < src.length && src[j] !== '\n') j++; continue; }
+          if (c === '/' && src[j + 1] === '*') { j = src.indexOf('*/', j + 2) + 1; continue; }
+          if (c === '(') depth++;
+          else if (c === ')') { depth--; if (depth === 0) { j++; break; } }
+        }
+      }
+      i += KEY.length;
+    }
+  });
+  return out;
+}
+function x1MockWindow_() {
+  const win = { __RPC_LOG__: [], __MISSING__: [], addEventListener() {}, location: { search: '' } };
+  const ctx = { window: win, setTimeout: (f) => f(), console, Proxy, JSON, Object, Array, String, Math, Date, Number, Error,
+    location: win.location, document: { addEventListener() {}, getElementById() { return null; } }, URLSearchParams };
+  vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8'), ctx, { filename: 'mock.js' });
+  return win;
+}
+test('X1 (cycle 22): every RPC the client calls has a visual-mock fixture, or is NAMED in the shrink-only list', () => {
+  const names = x1ClientRpcNames_();
+  assert.ok(names.size > 150 && names.has('getOopPricingDiagnostics') && names.has('checkOopEligibility'),
+    'non-vacuity: the derivation found the real call sites (' + names.size + ')');
+  const win = x1MockWindow_();
+  const missing = [];
+  [...names].sort().forEach((n) => {
+    const before = win.__MISSING__.length;
+    win.google.script.run.withFailureHandler(() => {})[n]();
+    if (win.__MISSING__.length > before) missing.push(n);
+  });
+  const allowed = X1_NO_FIXTURE_READS.concat(X1_NO_FIXTURE_WRITES);
+  assert.deepStrictEqual(missing.filter((n) => allowed.indexOf(n) < 0), [],
+    'a client RPC with NO fixture — add one to test/visual/mock.js (a write no scenario performs may be listed instead)');
+  assert.deepStrictEqual(allowed.filter((n) => missing.indexOf(n) < 0), [],
+    'listed, but it now HAS a fixture or is no longer called — remove it; the list only shrinks');
+  assert.strictEqual(new Set(allowed).size, allowed.length, 'no name is listed twice');
+});
+test('X1 (cycle 22): the diagnostics fixture mirrors the server — every header role is the one the REAL resolvers give it (INV-185)', () => {
+  const win = x1MockWindow_();
+  let got = null;
+  win.google.script.run.withSuccessHandler((r) => { got = r; }).getOopPricingDiagnostics();
+  assert.ok(got && got.cols && got.locCols, 'THE REGRESSION: getOopPricingDiagnostics resolves with a payload, not "no fixture"');
+  const ctx = vm.createContext({ String: String });
+  ['oopHeaderRole_', 'locHeaderRole_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  got.cols.filter((c) => !/searched column/.test(c.role)).forEach((c) =>
+    assert.strictEqual(c.role, ctx.oopHeaderRole_(c.header) || '—', 'pricing header "' + c.header + '"'));
+  got.locCols.forEach((c) => assert.strictEqual(c.role, ctx.locHeaderRole_(c.header) || '—', 'delivery header "' + c.header + '"'));
+  assert.ok(got.eligibility.unknown.length && got.locUnreadable.length, 'and it carries a finding of each kind, so the warn lines are photographed');
+});
+test('K5 (cycle 22): the client geocodes an address only when it is READY — a complete ZIP, or what the rep confirmed with Enter or by leaving the field', () => {
+  const ctx = vm.createContext({ String: String });
+  vm.runInContext(extractFunction('kb/script_kb.html', 'oopAddrReady_'), ctx);
+  [['75201', '', true], ['75201-1234', '', true], ['7520', '', false], ['500 Main St, Irving TX 750', '', false],
+    ['500 Main St, Irving TX 75038', '500 Main St, Irving TX 75038', true], ['500 Main St', '500 Main', false], ['ab', 'ab', false]]
+    .forEach(([a, ok, want]) => assert.strictEqual(ctx.oopAddrReady_(a, ok), want, JSON.stringify([a, ok])));
+  const sec = extractFunction('kb/script_kb.html', 'oopLookupSecHtml_');
+  assert.ok(/onkeydown="oopAddrKey_\(event, this\)" onchange="oopAddrConfirm_\(this\)"/.test(sec), 'Enter and leaving the field confirm the address');
+  const inp = stripJsComments_(extractFunction('kb/script_kb.html', 'oopLookupInput_'));
+  assert.ok(/var wantElig = oopAddrReady_\(addr, KB_OOP\.addrOk\[suffix\]\);/.test(inp) && !/addr\.length >= 4/.test(inp),
+    'THE REGRESSION: the four-character debounce is gone');
+  assert.ok(/KB_OOP\.addrOk\[suffix \|\| ''\] = '';/.test(extractFunction('kb/script_kb.html', 'kbLookupsForget_')),
+    'a fresh host forgets the last caller’s confirmed address (K2’s reset)');
+});
+test('K11 (cycle 22): acceptance tone and its explanation read WORDS — "No longer accepted" is a refusal, "Entry" is not TRY, "Soon" is not OON', () => {
+  const sb = { String: String, RegExp: RegExp, Array: Array };
+  vm.createContext(sb);
+  const cli = extractScript('kb/script_kb.html');
+  vm.runInContext(extractFunction('kb/script_kb.html', 'insWord_') + '\n' + cli.match(/var INS_IS = \{[\s\S]*?\n\};/)[0], sb);
+  vm.runInContext(cli.match(/var INS_TERMS = \[[\s\S]*?\n\];/)[0], sb);
+  vm.runInContext(extractFunction('kb/script_kb.html', 'insTermsIn_'), sb);
+  vm.runInContext(extractFunction('kb/script_kb.html', 'insToneCls_'), sb);
+  const first = (v) => { const t = sb.insTermsIn_(v); return t.length ? t[0].term : ''; };
+  [['No longer accepted', 'bad', 'Not Accepted / NO'], ['Never accepted', 'bad', 'Not Accepted / NO'], ['Unaccepted', 'bad', 'Not Accepted / NO'],
+    ['Do not accept', 'bad', 'Not Accepted / NO'], ['Accepted', 'good', 'Accepted / X'], ['X', 'good', 'Accepted / X']].forEach(([v, tone, term]) => {
+    assert.strictEqual(sb.insToneCls_(v), tone, v + ' tone (THE REGRESSION for the negated ones: "accepted" inside them toned GOOD)');
+    assert.strictEqual(first(v), term, v + ' is explained by the term that decided its colour');
+  });
+  ['Entry', 'Country', 'Soon', 'Noon', 'Allocation-free'].forEach((v) => {
+    assert.strictEqual(sb.insToneCls_(v), '', v + ' is a word nobody defined — neutral, not a verdict borrowed from a substring');
+    assert.strictEqual(sb.insTermsIn_(v).length, 0, v + ' has no explanation either');
+  });
+  assert.strictEqual(sb.insToneCls_('TRY'), 'info'); assert.strictEqual(sb.insToneCls_('OON W/ PA'), 'warn');
+  assert.strictEqual(sb.insToneCls_('Location-based ( Up To 285) & SI/PR'), 'warn');
+  // ONE set of predicates: the tone reads INS_IS, never its own substring test.
+  const tone = stripJsComments_(extractFunction('kb/script_kb.html', 'insToneCls_'));
+  assert.ok(!/indexOf\(/.test(tone), 'insToneCls_ has no private substring tests left — it reads the shared predicates');
+});
+test('K10 (cycle 22): errorStateHtml_ escapes its own message, so no caller in any partial passes it an esc()’d string (derived)', () => {
+  const dir = path.join(__dirname, '../../web-app');
+  const files = [];
+  (function walk(d) { fs.readdirSync(d).forEach((f) => { const p = path.join(d, f); if (fs.statSync(p).isDirectory()) walk(p); else if (/\.html$/.test(f)) files.push(p); }); })(dir);
+  let calls = 0; const bad = [];
+  files.forEach((p) => {
+    const src = fs.readFileSync(p, 'utf8');
+    const re = /errorStateHtml_\(([^;\n]*)/g; let m;
+    while ((m = re.exec(src)) !== null) { calls++; if (/\besc\(/.test(m[1].split(/\)\s*[;:,]/)[0])) bad.push(path.relative(dir, p) + ': ' + m[0].slice(0, 90)); }
+  });
+  assert.ok(calls > 20, 'non-vacuity: the derivation found the real call sites (' + calls + ')');
+  assert.deepStrictEqual(bad, [], 'a double-escaped error message renders "&#39;" on screen');
+});
 test('T2: the legend is a TETHERED popover through the overlay hooks, and the per-code disclosure stays inline', () => {
   const cli = extractScript('kb/script_kb.html');
   const sec = extractFunction('kb/script_kb.html', 'insLookupSecHtml_');
@@ -15187,7 +15357,7 @@ test('R-5: both fields in the merged panel carry a VISIBLE label bound to their 
   const sec = extractFunction('kb/script_kb.html', 'oopLookupSecHtml_');
   const ids = (sec.match(/id="([a-z-]+)' \+ suffix \+ '"/g) || [])
     .map((s) => /id="([a-z-]+)'/.exec(s)[1]);
-  const inputs = ids.filter((i) => i !== 'kb-oop-results');
+  const inputs = ids.filter((i) => i !== 'kb-oop-results' && !/-hint$/.test(i));   // K5's hint is not an input
   assert.deepStrictEqual(inputs.sort(), ['kb-oop-addr', 'kb-oop-item'],
     'the panel has exactly the two inputs — found: ' + JSON.stringify(inputs));
   inputs.forEach((id) => {
@@ -15435,6 +15605,28 @@ test('OOP-B: the client picker line is a CHARACTER-FOR-CHARACTER mirror of the s
     assert.ok(!overtyped.error, 'a hand-typed number is out of reach of this check, by construction');
     assert.deepStrictEqual(overtyped.quoted, [], 'and is audited as what it is: NOT a picker quote');
   });
+
+  test('K7 (cycle 22): a quote from a DUPLICATE-name row verifies against its own row — by code, or by whichever row still produces the line', () => {
+    const DUP = [
+      ['HCPCS', 'Category', 'Item', 'Price', 'EffectiveDate'],
+      ['W-100', 'Widgets', 'Widget', '$129.00', '2026-09-01'],
+      ['W-101', 'Widgets', 'Widget', '$139.00', '2026-09-01'],
+    ];
+    install(DUP, false);
+    const l139 = line('Widget', '$139.00', '2026-09-01');
+    const byCode = JSON.parse(V([{ name: 'Widget', code: 'W-101', price: '$139.00', effective: '2026-09-01' }], 'Hi\n' + l139));
+    assert.ok(!byCode.error, 'THE REGRESSION: the second Widget row verifies (it was compared with the first and refused as changed): ' + byCode.error);
+    assert.strictEqual(byCode.quoted[0].price, '$139.00');
+    const noCode = JSON.parse(V([{ name: 'Widget', price: '$139.00', effective: '2026-09-01' }], l139));
+    assert.ok(!noCode.error && noCode.quoted.length === 1, 'an older quote with no code still verifies against whichever row produced its line');
+    const wrongCode = JSON.parse(V([{ name: 'Widget', code: 'Z-9', price: '$139.00' }], l139));
+    assert.ok(/no longer lists "Widget" \(Z-9\)/.test(wrongCode.error), 'a code no row carries is named: ' + wrongCode.error);
+    install([DUP[0], DUP[1], ['W-101', 'Widgets', 'Widget', '$149.00', '2026-09-01']], false);
+    const changed = JSON.parse(V([{ name: 'Widget', code: 'W-101', price: '$139.00', effective: '2026-09-01' }], l139));
+    assert.ok(/changed since you looked it up \(\$139\.00 → \$149\.00\)/.test(changed.error),
+      'a changed price on THAT row is still refused, and against that row’s figure: ' + changed.error);
+    install(GRID, false);
+  });
 }
 
 test('OOP-B: sendExternalEmail verifies quotes BEFORE anything irreversible, and the audit row carries item + exact price with the recipient DOMAIN only', () => {
@@ -15659,6 +15851,8 @@ console.log('\nCode.js — insurance payor lookup (operator batch 3)');
 const _insCtx = vm.createContext({});
 vm.runInContext(extractRawFunction('Code.js', 'insPayorScore_'), _insCtx, { filename: 'insPayorScore_' });
 vm.runInContext(extractRawFunction('Code.js', 'insPayorRowObj_'), _insCtx, { filename: 'insPayorRowObj_' });
+vm.runInContext(extractFunction('kb/script_kb.html', 'insWord_') + '\n' +
+  extractScript('kb/script_kb.html').match(/var INS_IS = \{[\s\S]*?\n\};/)[0], _insCtx, { filename: 'INS_IS' });   // K11
 vm.runInContext(extractFunction('kb/script_kb.html', 'insToneCls_'), _insCtx, { filename: 'insToneCls_' });
 
 test('insPayorScore_ — substring dominates, all-tokens bonus, zero on no hit', () => {
@@ -22453,6 +22647,128 @@ test('T7-2: EITHER branch of a union qualifies, an UNKNOWN branch outranks a NO 
   assert.strictEqual(st.kind, 'open', 'a STATE branch lifting to open absorbs the union — nothing is more permissive');
 });
 
+// ── Cycle 22 Batch 5 — the Reference eligibility engine ─────────────────────
+const B5P = (t, wh) => JSON.parse(vm.runInContext('JSON.stringify(oopEligibilityParse_(' + JSON.stringify(t) + ',' +
+  JSON.stringify(wh === undefined ? ['Dallas', 'San Antonio'] : wh) + '))', _vmCtx));
+const B5V = (rule, loc) => JSON.parse(vm.runInContext('JSON.stringify(oopEligibilityCheck_(' + JSON.stringify(rule) + ',' + JSON.stringify(loc) + '))', _vmCtx));
+test('K1 (cycle 22): every distance in an Area Eligibility cell governs the names after it — "100 mi of Dallas, 50 mi of San Antonio" is not 100 miles from San Antonio', () => {
+  const WH = ['Dallas', 'San Antonio'];
+  const r = B5P('100 mi of Dallas, 50 mi of San Antonio');
+  assert.strictEqual(r.kind, 'any', 'two distances are two rules');
+  assert.deepStrictEqual(r.rules.map((x) => [x.miles, x.warehouses]), [[100, ['Dallas']], [50, ['San Antonio']]]);
+  assert.strictEqual(B5V(r, { miles: { Dallas: 250, 'San Antonio': 80 }, warehouseNames: WH }).verdict, 'no',
+    'THE REGRESSION: 80 mi from San Antonio is over ITS 50 (the first distance used to apply to every name)');
+  const yes = B5V(r, { miles: { Dallas: 20, 'San Antonio': 300 }, warehouseNames: WH });
+  assert.strictEqual(yes.verdict, 'yes');
+  assert.ok(/Any one of the listed distances/.test(yes.why) && !/city list/.test(yes.why), 'and no city list is claimed: ' + yes.why);
+  assert.deepStrictEqual(B5P('100 miles of Dallas warehouse, 100 miles of San Antonio warehouse'),
+    { kind: 'radius', miles: 100, warehouses: ['Dallas', 'San Antonio'] }, 'the operator’s live shape merges back into ONE radius');
+  assert.strictEqual(B5P('Dallas 100 miles, San Antonio 50 miles').kind, 'unknown',
+    'a name before the first of two distances cannot be assigned to either — not guessed');
+  const half = B5P('100 mi of Dallas, 50 mi of Houston');
+  assert.strictEqual(half.kind, 'unknown', 'an unreadable clause takes the whole value down (g41)');
+  assert.strictEqual(half.noWarehouse, true, 'and it is the delivery table that is blamed (g142)');
+  const withCity = B5P('100 mi of Dallas, 50 mi of San Antonio, or listed cities');
+  assert.deepStrictEqual(withCity.rules.map((x) => x.kind), ['radius', 'radius', 'cities'], 'the city clause joins the union FLAT');
+});
+test('K3 (cycle 22): restriction text is READ — an "except" in an Open parenthetical, or any word a distance rule is not written with, makes the value unknown', () => {
+  ['Open (except Hawaii and Alaska)', 'Open (not available in PR)', 'Open (continental US only)'].forEach((t) =>
+    assert.strictEqual(B5P(t).kind, 'unknown', 'THE REGRESSION (' + t + '): the parenthetical was stripped and the value read Open'));
+  ['Open (anywhere in the US including Hawaii)', 'Open (no restrictions)', 'Open'].forEach((t) =>
+    assert.strictEqual(B5P(t).kind, 'open', t + ' elaborates, it does not restrict'));
+  ['100 miles of Dallas except Oklahoma', '100 miles of Dallas, weekdays only', '100 miles of Dallas (technician setup required)'].forEach((t) =>
+    assert.strictEqual(B5P(t).kind, 'unknown', 'THE REGRESSION (' + t + '): the leftover words were dropped and the radius read clean'));
+  ['within 100mi of Dallas', '100 mi (Dallas)', 'Dallas/San Antonio — 100 miles', '100 miles of the Dallas TX warehouse',
+    '100 miles of any warehouse', '100 miles from our Dallas location', '100 MILES OF DALLAS'].forEach((t) =>
+    assert.strictEqual(B5P(t).kind, 'radius', t + ' is still a radius'));
+  const F = (rule, oop) => JSON.parse(vm.runInContext('JSON.stringify(oopEligibilityForPayment_(' + JSON.stringify(rule) + ',' + oop + '))', _vmCtx));
+  assert.strictEqual(F(B5P('Open (except Hawaii and Alaska)'), true).kind, 'unknown', 'and an unread restriction never lifts out of pocket');
+});
+test('K4 (cycle 22): the city list reads "Texas" as TX and "Ft. Worth" as Fort Worth; a State cell nobody can read is "cannot tell", never a confident no', () => {
+  const C = (expr) => JSON.parse(vm.runInContext('JSON.stringify(' + expr + ')', _vmCtx));
+  assert.deepStrictEqual(['Texas', 'tx', 'T.X.', '', 'Texs', 'district of columbia', 'New  York'].map((x) => C('locStateCode_(' + JSON.stringify(x) + ')')),
+    ['TX', 'TX', 'TX', '', null, 'DC', 'NY']);
+  [['Ft. Worth', 'Fort Worth'], ['St. Louis', 'Saint Louis'], ['N Richland Hills', 'North Richland Hills'], ['Mt Pleasant', 'Mount Pleasant'],
+    ['WINSTON-SALEM', 'Winston Salem'], ["Coeur d'Alene", 'Coeur dAlene']].forEach(([a, b]) =>
+    assert.strictEqual(C('locCityNorm_(' + JSON.stringify(a) + ')'), C('locCityNorm_(' + JSON.stringify(b) + ')'), a + ' = ' + b));
+  assert.strictEqual(C('locCityNorm_("Stephenville")'), 'stephenville', 'an abbreviation expands only as a whole word');
+  assert.strictEqual(C('locCityNorm_("S")'), 's', 'and a lone letter is not a direction');
+  assert.strictEqual(C('locCityMatches_([{name:"Fort Worth",state:"TX"}], "Ft. Worth", "TX")').length, 1,
+    'THE REGRESSION: an abbreviated spelling matched nothing and read NO');
+  assert.strictEqual(C('locCityMatches_([{name:"Dallas",state:"TX"}], "Dallas", "Texas")').length, 1, 'a state NAME on either side is its code');
+  const bad = [{ name: 'Dallas', state: '', stateRaw: 'Texs', stateBad: true }];
+  assert.strictEqual(C('locCityMatches_(' + JSON.stringify(bad) + ', "Dallas", "TX")').length, 0, 'an unreadable State never matches…');
+  const unread = C('locCityUnreadable_(' + JSON.stringify(bad) + ', "Dallas")');
+  assert.strictEqual(unread.length, 1, '…and is reported, so the verdict can say so');
+  const v = B5V({ kind: 'cities' }, { hasCityRows: true, city: 'Dallas', cityMatches: [], cityUnreadable: unread });
+  assert.strictEqual(v.verdict, 'unknown', 'THE REGRESSION: "Texas"-style cells were a confident NO');
+  assert.ok(/Texs/.test(v.why) && /LocationAcceptance/.test(v.why), 'naming the cell and the tab to fix: ' + v.why);
+  assert.strictEqual(B5V({ kind: 'cities' }, { hasCityRows: true, city: 'Waco', cityMatches: [], cityUnreadable: [] }).verdict, 'no',
+    'a city genuinely not listed is still a firm no');
+  const loader = stripJsComments_(extractRawFunction('Code.js', 'getLocationAcceptance_'));
+  assert.ok(/const stCode = locStateCode_\(stRaw\);/.test(loader) && /stateBad: stCode === null/.test(loader),
+    'the loader reads every State cell through the one normaliser and flags the unreadable');
+  assert.ok(/cityUnreadable: locCityUnreadable_\(loc0\.cities, qGeo\.city\)/.test(stripJsComments_(extractRawFunction('Code.js', 'checkOopEligibility'))),
+    'and the endpoint hands the check the unreadable rows');
+});
+test('K5 (cycle 22): a PARTIAL geocode is not a location — its own shape, its own message, never a distance and never cached', () => {
+  const ctx = vm.createContext({ String: String, Number: Number, Math: Math, JSON: JSON, Object: Object, Array: Array, isFinite: isFinite,
+    PropertiesService: { getScriptProperties: () => ({ getProperty: () => null, setProperty: () => {} }) },
+    Utilities: { base64Encode: (x) => String(x), computeDigest: (a, t) => t, DigestAlgorithm: { MD5: 1 } },
+    KB_MAP_GEOCODE_CACHE_PROP: 'x', KB_MAP_GEOCODE_CACHE_MAX: 200, propSetBounded_: () => {} });
+  ['kbGeocodeOne_', 'kbGeocodePartialMsg_', 'kbGeocodeCached_', 'kbMapCacheKey_'].forEach((f) =>
+    vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: f }));
+  ctx.Maps = { newGeocoder: () => ({ setRegion: function () { return this; },
+    geocode: () => ({ status: 'OK', results: [{ partial_match: true, geometry: { location: { lat: 1, lng: 2 } }, formatted_address: 'Irving, TX, USA', address_components: [] }] }) }) };
+  const g = JSON.parse(JSON.stringify(ctx.kbGeocodeOne_('500 Main St, Irving TX 750')));
+  assert.deepStrictEqual(g, { partial: true, formatted: 'Irving, TX, USA' }, 'THE REGRESSION: the first result was taken even when partial');
+  assert.ok(/only partly matched/.test(ctx.kbGeocodePartialMsg_(g)) && /Irving, TX, USA/.test(ctx.kbGeocodePartialMsg_(g)), 'the message shows the guess');
+  let writes = 0; ctx.propSetBounded_ = () => { writes++; };
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.kbGeocodeCached_(['somewhere']))), [null], 'a warehouse the geocoder only guessed at is NOT placed');
+  assert.strictEqual(writes, 0, 'and nothing is cached from it');
+  [['checkOopEligibility', 'addr'], ['kbMapDistances', 'query']].forEach(([fn]) => {
+    const f = stripJsComments_(extractRawFunction('Code.js', fn));
+    const i = f.indexOf('qGeo.partial) return { error: kbGeocodePartialMsg_(qGeo) }');
+    assert.ok(i > 0 && i < f.indexOf('Could not find that location'), fn + ' refuses a partial geocode before any distance is measured');
+  });
+});
+test('K9 (cycle 22): a blank OopPricing row is neither an item nor "Cannot read"', () => {
+  const ctx = vm.createContext({ String: String });
+  vm.runInContext(extractRawFunction('Code.js', 'oopRowIsBlank_'), ctx);
+  assert.strictEqual(ctx.oopRowIsBlank_(['', ' ', null]), true);
+  assert.strictEqual(ctx.oopRowIsBlank_(['', 'x', '']), false);
+  assert.strictEqual(ctx.oopRowIsBlank_([]), true);
+  assert.ok(/getDisplayValues\(\)\.filter\(function \(r\) \{ return !oopRowIsBlank_\(r\); \}\)/.test(stripJsComments_(extractRawFunction('Code.js', 'checkOopEligibility'))),
+    'THE REGRESSION: the address-only check listed every empty row as a nameless item');
+  assert.ok(/if \(oopRowIsBlank_\(row\)\) return;/.test(stripJsComments_(extractRawFunction('Code.js', 'getOopPricingDiagnostics'))),
+    'and the diagnostics no longer count a gap between sections as "Cannot read"');
+});
+test('K12 (cycle 22): the diagnostics show the ROLE read into every LocationAcceptance header, and the parser’s docs no longer claim substring matching', () => {
+  const ctx = vm.createContext({ String: String });
+  vm.runInContext(extractRawFunction('Code.js', 'locHeaderRole_'), ctx);
+  assert.strictEqual(ctx.locHeaderRole_('Delivery City'), 'accepts', 'the surprise this panel exists to show');
+  const diag = stripJsComments_(extractRawFunction('Code.js', 'getOopPricingDiagnostics'));
+  assert.ok(/locCols: loc\.headers \? loc\.headers\.map\(function \(h\) \{ return \{ header: String\(h \|\| ''\), role: locHeaderRole_\(h\) \|\| '—' \}; \}\) : \[\]/.test(diag),
+    'every header, with the role the ONE resolver gives it');
+  assert.ok(/out\.headers = headers;/.test(extractRawFunction('Code.js', 'getLocationAcceptance_')), 'the loader keeps the headers it read');
+  assert.ok(!/matched as SUBSTRINGS/.test(extractRawFunction('Code.js', 'oopEligibilityParse_')), 'the docstring states the word-bounded rule');
+  const doc = fs.readFileSync(path.join(__dirname, '../../docs/operator-state.md'), 'utf8');
+  assert.ok(/matched as a WHOLE WORD/.test(doc) && !/matched as a SUBSTRING/i.test(doc), 'and so does the operator doc (a first draft of this check matched nothing and passed vacuously)');
+});
+test('K13 (cycle 22): past the comment cap the NEWEST are shown, still oldest-first', () => {
+  const rows = [1, 2, 3].map((n) => ['c' + n, 'item', 'e' + n, 'N' + n, 'text ' + n, n, 'active']);
+  const ctx = vm.createContext({ String: String, Number: Number, Math: Math,
+    getEmployeeInfo_: () => ({ id: 'e9', isManager: false }), kbCommentTargetOk_: () => true,
+    KB_COMMENTS_TAB: 'C', KB_COMMENTS_SCAN: 50, KB_COMMENTS_LIST_CAP: 2,
+    KB_COMMENTS_HEADERS: [1, 2, 3, 4, 5, 6, 7], KBC: { ID: 0, ITEM_ID: 1, EMP_ID: 2, EMP_NAME: 3, TEXT: 4, AT_MS: 5, STATUS: 6 },
+    getKbSS_: () => ({ getSheetByName: () => ({ getLastRow: () => rows.length + 1,
+      getRange: (r, c, n) => ({ getValues: () => rows.slice(r - 2, r - 2 + n) }) }) }) });
+  vm.runInContext(extractRawFunction('Code.js', 'kbGetComments'), ctx);
+  const res = JSON.parse(JSON.stringify(ctx.kbGetComments('item')));
+  assert.deepStrictEqual(res.comments.map((c) => c.commentId), ['c2', 'c3'], 'THE REGRESSION: the slice kept c1, c2 and hid the newest');
+  assert.strictEqual(res.total, 3, 'the pre-slice total still rides, so the client can say what it hid');
+});
+
 test('T7-3: a delivery table that yields NOTHING says so, and a radius naming an unknown warehouse blames the delivery table rather than the pricing sheet', () => {
   const src = serverSource();
 
@@ -22472,7 +22788,10 @@ test('T7-3: a delivery table that yields NOTHING says so, and a radius naming an
 
   // ── The message that named the wrong file ──
   const parse = extractRawFunction('Code.js', 'oopEligibilityParse_');
-  assert.match(parse, /noWarehouse: true/, 'a distance with no registry match is flagged distinctly');
+  // Since cycle 22 K1 the distance clause is parsed by oopRadiusClause_, and
+  // the parser carries the flag through when every unreadable clause has it.
+  assert.match(extractRawFunction('Code.js', 'oopRadiusClause_'), /noWarehouse: true/, 'a distance with no registry match is flagged distinctly');
+  assert.match(parse, /u\.noWarehouse = true/, 'and the parser carries that flag to the verdict');
   const check = extractRawFunction('Code.js', 'oopEligibilityCheck_');
   assert.match(check, /Fix the name in LocationAcceptance, not the pricing sheet/,
     'and the verdict points the operator at the table that is actually wrong');

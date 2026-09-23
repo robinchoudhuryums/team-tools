@@ -1702,6 +1702,27 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       summary: { ok: 4, warn: 3, fail: 0 },
       configTimezone: 'Asia/Kolkata',
     },
+    // X1 (cycle 22): the Reference-lookups diagnostics (T8). It had NO fixture,
+    // so all 16 Admin scenarios logged it missing and the panel was only ever
+    // photographed as "no fixture". The shape is getOopPricingDiagnostics'
+    // own: the operator's real column order (HCPCS in A, the item in C), a
+    // delivery table with its header ROLES (K12 — "Delivery City" reads as the
+    // accepts column, which is the surprise the panel exists to show), and one
+    // Area Eligibility value the grammar cannot read, so the warn renders.
+    getOopPricingDiagnostics: {
+      tab: 'OopPricing', rows: 42, nameCol: 'Item', nameByHeader: true, truncated: false, missing: [],
+      cols: [{ header: 'HCPCS', role: 'code' }, { header: 'Category', role: '\u2014' }, { header: 'Item', role: 'name (the searched column)' },
+        { header: 'Pick-Up Price', role: 'price' }, { header: 'W/ Shipping Cost', role: 'price' }, { header: 'Area Eligibility', role: 'eligibility' },
+        { header: 'Effective', role: 'effective' }],
+      warehouses: [{ name: 'Dallas', address: '2150 Irving Blvd, Dallas, TX 75207' }, { name: 'San Antonio', address: '8910 Broadway, San Antonio, TX 78217' }],
+      locationTab: 'LocationAcceptance', locationError: '',
+      locCols: [{ header: 'Type', role: 'type' }, { header: 'Name', role: 'name' }, { header: 'Address', role: 'address' },
+        { header: 'State', role: 'state' }, { header: 'Delivery City', role: 'accepts' }],
+      cities: 6, locNoAddress: [], locUnreadable: [{ name: 'Waco', reason: 'its State "Texs" is not a US state or code' }],
+      eligibility: { open: 18, states: 9, radius: 11, cities: 1, any: 2, unknownCount: 1,
+        unknown: [{ item: 'Drive Scout 4', value: '100 miles of Dallas except weekends' }] },
+      sample: [],
+    },
     getAutomationHealth: {
       syncFails: { count: 0, recent: [], windowDays: 30 },
       automationLastRuns: [

@@ -997,6 +997,45 @@
     "coachParseTs_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-23",
+   "why": "cycle 22 B5: eligibility clause parser, state/city normalisers, blank-row helper, partial-geocode message",
+   "added": [
+    "US_STATE_NAMES",
+    "kbGeocodePartialMsg_",
+    "locCityNorm_",
+    "locCityUnreadable_",
+    "locStateCode_",
+    "oopRadiusClause_",
+    "oopRegistryNamesIn_",
+    "oopRowIsBlank_"
+   ],
+   "removed": [],
+   "changed": [
+    "checkOopEligibility",
+    "getLocationAcceptance_",
+    "getOopPricingDiagnostics",
+    "kbGeocodeCached_",
+    "kbGeocodeOne_",
+    "kbGetComments",
+    "kbMapDistances",
+    "locCityMatches_",
+    "oopEligibilityCheck_",
+    "oopEligibilityParse_",
+    "oopVerifyQuotes_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-23",
+   "why": "cycle 22 B5: eligibility clause parser (K1/K3), state/city normalisers (K4), partial geocode (K5), duplicate-name verify (K7), blank rows (K9), header roles (K12), newest comments (K13)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "oopEligibilityParse_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2831,6 +2870,11 @@
    "kind": "const",
    "sha": "1d243440aa8829d3"
   },
+  "US_STATE_NAMES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3dd5a2f4f6d33482"
+  },
   "VIEW_USAGE_RATE_MAX_PER_HOUR": {
    "file": "00_config.js",
    "kind": "const",
@@ -3519,7 +3563,7 @@
   "checkOopEligibility": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "a59fee8580583d3e"
+   "sha": "ebccb65c131ec75a"
   },
   "checkOpenPunches": {
    "file": "20_timeclock.js",
@@ -4709,7 +4753,7 @@
   "getLocationAcceptance_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "dba6b9da3a3a9d66"
+   "sha": "4ffb92dba92f2a04"
   },
   "getManagerDashboard": {
    "file": "20_timeclock.js",
@@ -4854,7 +4898,7 @@
   "getOopPricingDiagnostics": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "e709f79e443155c4"
+   "sha": "1cb5745f8a672e88"
   },
   "getOrCreateAuditSheet_": {
    "file": "10_core.js",
@@ -5674,12 +5718,17 @@
   "kbGeocodeCached_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "517d54a4b040f7db"
+   "sha": "9a4d6649184ad664"
   },
   "kbGeocodeOne_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "ab94e31f05ba6f33"
+   "sha": "24dd8cbf383d3741"
+  },
+  "kbGeocodePartialMsg_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "985f2b18edd53c8e"
   },
   "kbGeocodeUnavailableMsg_": {
    "file": "70_kb.js",
@@ -5689,7 +5738,7 @@
   "kbGetComments": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "2e47703a547f7268"
+   "sha": "923142621969d317"
   },
   "kbGetContentRequests": {
    "file": "70_kb.js",
@@ -5759,7 +5808,7 @@
   "kbMapDistances": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "ab82046c1571f55b"
+   "sha": "676508c52e7082ca"
   },
   "kbMarkReviewed": {
    "file": "70_kb.js",
@@ -5899,7 +5948,17 @@
   "locCityMatches_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "dd2a7a6154decfbe"
+   "sha": "3bdbb937f062d423"
+  },
+  "locCityNorm_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "6b99210008d0a41b"
+  },
+  "locCityUnreadable_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "47f6a50ea5a45477"
   },
   "locHeaderRole_": {
    "file": "70_kb.js",
@@ -5910,6 +5969,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "819bf64dfc7e05ed"
+  },
+  "locStateCode_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "fbe31492361e0bff"
   },
   "lookupEmployeeById_": {
    "file": "20_timeclock.js",
@@ -6199,7 +6263,7 @@
   "oopEligibilityCheck_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "6ed4993d242bb04d"
+   "sha": "90ee8b7183f9dacf"
   },
   "oopEligibilityForPayment_": {
    "file": "70_kb.js",
@@ -6209,7 +6273,7 @@
   "oopEligibilityParse_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "3c5dfe752d2b4fef"
+   "sha": "e0d38bbc2d380a48"
   },
   "oopHeaderRole_": {
    "file": "70_kb.js",
@@ -6236,6 +6300,21 @@
    "kind": "function",
    "sha": "599578bb22445077"
   },
+  "oopRadiusClause_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "51a7c144d398ef1b"
+  },
+  "oopRegistryNamesIn_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "185d342a7347e7cc"
+  },
+  "oopRowIsBlank_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "f4e368281b288abd"
+  },
   "oopRowObj_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -6249,7 +6328,7 @@
   "oopVerifyQuotes_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "a81afbf4017efda9"
+   "sha": "5e583401ee7f5d96"
   },
   "openPersonalSs_": {
    "file": "20_timeclock.js",

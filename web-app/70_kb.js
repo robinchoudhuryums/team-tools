@@ -1055,10 +1055,16 @@ function oopVerifyQuotes_(quotes, message) {
   // shipped), but the feature was dead. Two readers of one operator sheet
   // share ONE column resolver: oopNameCol_.
   const nameCol = oopNameCol_(headers);
+  // K7 (cycle 22): EVERY row carrying a name, not the first. Two rows can
+  // share an item name (the same product under two HCPCS codes, or a pick-up
+  // and a delivered SKU), and keying on the first meant a price the picker
+  // offered from the second could never be sent: the send compared it with the
+  // wrong row and refused it as "changed". The quote now names its code, and
+  // a line is verified if ANY row that could have produced it still does.
   const byName = {};
   for (let i = 0; i < rows.length; i++) {
     const key = String(rows[i][nameCol] == null ? '' : rows[i][nameCol]).trim().toLowerCase();
-    if (key && !byName[key]) byName[key] = rows[i];
+    if (key) (byName[key] = byName[key] || []).push(rows[i]);
   }
 
   const out = [];
@@ -1066,11 +1072,18 @@ function oopVerifyQuotes_(quotes, message) {
     const q = list[i] || {};
     const name = String(q.name == null ? '' : q.name).trim();
     if (!name) continue;
-    const row = byName[name.toLowerCase()];
-    if (!row) {
-      return { error: 'The pricing sheet no longer lists "' + name + '". Re-check the price before sending.' };
+    let cands = (byName[name.toLowerCase()] || []).map(function (r) { return oopRowObj_(headers, r); });
+    const code = String(q.code == null ? '' : q.code).trim().toLowerCase();
+    if (code && cands.length) {
+      cands = cands.filter(function (o) {
+        const codes = [String(o.code || '')].concat(o.codes || []).map(function (c) { return String(c || '').trim().toLowerCase(); });
+        return codes.indexOf(code) >= 0;
+      });
     }
-    const live = oopRowObj_(headers, row);
+    if (!cands.length) {
+      return { error: 'The pricing sheet no longer lists "' + name + '"' + (code ? ' (' + q.code + ')' : '') +
+        '. Re-check the price before sending.' };
+    }
     // Resolve the price BY THE LABEL the quote names, not by whichever column is
     // leftmost today. A sheet with pick-up / shipped / tech-delivery totals has
     // several right answers per item, and comparing the wrong one refuses in
@@ -1078,19 +1091,28 @@ function oopVerifyQuotes_(quotes, message) {
     // through, while an edit to a column nobody quoted would block an honest
     // send.
     const label = String(q.label == null ? '' : q.label).trim();
-    const entry = oopPriceByLabel_(live.prices, label);
-    if (!entry || !entry.value) {
+    const claimed = String(q.price == null ? '' : q.price).trim();
+    const resolved = cands.map(function (o) {
+      const e = oopPriceByLabel_(o.prices, label);
+      return { live: o, entry: e, line: (e && e.value) ? oopQuoteLine_(o.name, e.value, o.effective, label) : '' };
+    });
+    const hit = resolved.filter(function (x) { return x.line && body.indexOf(x.line) >= 0; })[0];
+    if (hit) {
+      out.push({ name: hit.live.name, price: hit.entry.value, effective: hit.live.effective, label: label, line: hit.line });
+      continue;
+    }
+    // No row still produces a line the message carries. Explain against the
+    // row the claim most plausibly came from: one whose price still equals the
+    // claim, else the first.
+    const priced = resolved.filter(function (x) { return x.entry && x.entry.value; });
+    if (!priced.length) {
       return label
         ? { error: 'The pricing sheet no longer has a "' + label + '" for "' + name + '". Remove the line and re-insert it.' }
         : { error: 'The pricing sheet has no price on file for "' + name + '" any more. Remove the line or check with a manager.' };
     }
-    const line = oopQuoteLine_(live.name, entry.value, live.effective, label);
-    if (body.indexOf(line) >= 0) {
-      out.push({ name: live.name, price: entry.value, effective: live.effective, label: label, line: line });
-      continue;
-    }
+    const best = priced.filter(function (x) { return x.entry.value === claimed; })[0] || priced[0];
+    const entry = best.entry;
     // Not present as the sheet now renders it. Say WHICH of the two reasons.
-    const claimed = String(q.price == null ? '' : q.price).trim();
     if (claimed && claimed !== entry.value) {
       return { error: 'The price for "' + name + '"' + (label ? ' (' + label + ')' : '') +
         ' changed since you looked it up (' + claimed +
@@ -1187,6 +1209,7 @@ function getLocationAcceptance_() {
   if (last < 2) { out.error = 'The "' + LOCATION_ACCEPTANCE_TAB + '" tab is empty.'; return out; }
   const width = sh.getLastColumn();
   const headers = sh.getRange(1, 1, 1, width).getDisplayValues()[0];
+  out.headers = headers;                              // K12: the diagnostics show each header's role
   const col = {};
   for (let c = 0; c < width; c++) {
     const role = locHeaderRole_(headers[c]);
@@ -1211,7 +1234,14 @@ function getLocationAcceptance_() {
     }
     if (kind === 'city') {
       if (!name) { out.unreadable.push({ name: '', reason: 'a city row with no name' }); return; }
-      out.cities.push({ name: name, state: at(row, 'state').toUpperCase(),
+      // K4: the State cell as a CODE, whichever way the operator wrote it. One
+      // that is neither a code nor a state name keeps its row (the city is
+      // still listed) but is flagged, so the matcher can say "cannot tell"
+      // rather than a confident no, and the diagnostics can name it.
+      const stRaw = at(row, 'state');
+      const stCode = locStateCode_(stRaw);
+      if (stCode === null) out.unreadable.push({ name: name, reason: 'its State "' + stRaw + '" is not a US state or code' });
+      out.cities.push({ name: name, state: stCode || '', stateRaw: stRaw, stateBad: stCode === null,
         accepts: at(row, 'accepts'), notes: at(row, 'notes') });
       return;
     }
@@ -1258,14 +1288,146 @@ function getLocationAcceptance_() {
  *  The STATE is required to match when the row carries one — there is a
  *  Springfield in most of them. */
 function locCityMatches_(cities, city, state) {
-  const c = String(city || '').trim().toLowerCase();
+  const c = locCityNorm_(city);
   if (!c) return [];
-  const st = String(state || '').trim().toUpperCase();
+  const st = locStateCode_(state) || '';
   return (cities || []).filter(function (r) {
-    if (String(r.name || '').trim().toLowerCase() !== c) return false;
+    if (locCityNorm_(r.name) !== c) return false;
+    // K4: a row whose State cell could not be read never matches — and never
+    // counts as a mismatch either (`locCityUnreadable_` reports it).
+    if (r.stateBad) return false;
     if (r.state && st && r.state !== st) return false;
     return true;
   });
+}
+
+/** PURE (Node-pinned) — K4 (cycle 22): the listed rows that NAME this city but
+ *  whose State cell could not be read. A city list that says "Dallas, Texs"
+ *  has not said Dallas is NOT served; the verdict for it is "cannot tell". */
+function locCityUnreadable_(cities, city) {
+  const c = locCityNorm_(city);
+  if (!c) return [];
+  return (cities || []).filter(function (r) { return r.stateBad && locCityNorm_(r.name) === c; });
+}
+
+/** PURE (Node-pinned) — K4 (cycle 22): a US state as its two-letter code, from
+ *  a code ("TX", "tx", "T.X.") or a full name ("Texas"). '' for a blank cell,
+ *  NULL for a value that is neither — the caller reads null as UNREADABLE, never
+ *  as "a different state". */
+function locStateCode_(s) {
+  const raw = String(s == null ? '' : s).trim();
+  if (!raw) return '';
+  const code = raw.replace(/[.\s]/g, '').toUpperCase();
+  if (code.length === 2 && US_STATE_CODES.indexOf(code) >= 0) return code;
+  const name = raw.toLowerCase().replace(/[.,]/g, '').replace(/\s+/g, ' ').trim();
+  return Object.prototype.hasOwnProperty.call(US_STATE_NAMES, name) ? US_STATE_NAMES[name] : null;
+}
+
+/** PURE (Node-pinned) — K4 (cycle 22): one spelling for a city name, applied
+ *  to BOTH the listed row and the geocoded address. Case, punctuation and
+ *  spacing are dropped, and the common abbreviations expand (Ft → Fort,
+ *  St → Saint, Mt → Mount; a leading N/S/E/W → North/South/East/West), so
+ *  "Ft. Worth" and "Fort Worth" are one city. An exact compare turned every such
+ *  pair into a confident NO. */
+function locCityNorm_(s) {
+  const t = String(s == null ? '' : s).toLowerCase()
+    .replace(/['\u2019.,]/g, '').replace(/[-\u2013\u2014]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!t) return '';
+  const ABBR = { ft: 'fort', st: 'saint', ste: 'sainte', mt: 'mount' };
+  const DIR = { n: 'north', s: 'south', e: 'east', w: 'west' };
+  const toks = t.split(' ');
+  return toks.map(function (w, i) {
+    if (ABBR[w]) return ABBR[w];
+    if (i === 0 && toks.length > 1 && DIR[w]) return DIR[w];
+    return w;
+  }).join(' ');
+}
+
+/** PURE (Node-pinned) — the registry names (warehouses) named in `text`,
+ *  WORD-BOUNDED, never as bare substrings: a short name is otherwise found
+ *  inside the prose of the rule itself — a warehouse called "Ware" inside
+ *  "warehouse", one called "Mi" inside "miles" — and every spurious hit
+ *  BROADENS the rule to measure from a site it never named (g41). */
+function oopRegistryNamesIn_(text, warehouseNames) {
+  const hits = [];
+  (warehouseNames || []).forEach(function (n) {
+    const name = String(n || '').trim();
+    if (!name || hits.indexOf(name) >= 0) return;
+    const re = new RegExp('\\b' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
+    if (re.test(String(text || ''))) hits.push(name);
+  });
+  return hits;
+}
+
+/** PURE (Node-pinned) — ONE distance clause of an Area Eligibility value
+ *  ("100 miles of Dallas or San Antonio warehouse"). Returns a radius rule, or
+ *  `{ kind: 'unknown', raw[, noWarehouse] }`.
+ *
+ *  K3 (cycle 22): NOTHING in the clause is thrown away. Once the distance, the
+ *  warehouse names (with their own state code) and the connective words are
+ *  removed, any word left over is a restriction this grammar cannot evaluate —
+ *  "100 miles of Dallas except Oklahoma", "…, weekdays only after 3pm" — and the
+ *  clause is unknown. Before, only an uppercase state code left over was
+ *  noticed; every other word was silently dropped, and a dropped restriction
+ *  reads as a broader yes (g41). */
+function oopRadiusClause_(text, warehouseNames) {
+  const raw = String(text == null ? '' : text).trim();
+  const lc = raw.toLowerCase();
+  const m = lc.match(/(\d{1,4})\s*(?:miles|mile|mi)\b/);
+  if (!m) return { kind: 'unknown', raw: raw };
+  const miles = parseInt(m[1], 10);
+  // ── ANY warehouse ──────────────────────────────────────────────────────
+  // "100 miles of any warehouse" is a rule about the NETWORK, not about a
+  // place, and the operator confirmed on 2026-09-22 that it is the common
+  // case: most items reach 100 miles from ANY warehouse, and the ones naming
+  // Dallas or San Antonio are the exceptions a technician has to build. It
+  // resolves against whatever the registry holds AT CHECK TIME, so opening a
+  // warehouse extends every item carrying it with no edit to the pricing sheet.
+  const anyRe = /\b(?:any|all|our|each|every|a)\s+(?:of\s+)?(?:our\s+|the\s+)?warehouses?\b/i;
+  const anyWh = anyRe.test(raw);
+  const hits = anyWh ? [] : oopRegistryNamesIn_(raw, warehouseNames);
+  if (!(miles > 0) || !(anyWh || hits.length)) {
+    // A DISTANCE with no registry name is a different failure from a value we
+    // cannot parse at all, and conflating them is what sent the operator to
+    // edit good pricing data on 2026-09-22: the message named the eligibility
+    // column when the delivery table was the thing that was empty. Flag it so
+    // the verdict can name the right file (g02 / g142).
+    return { kind: 'unknown', raw: raw, noWarehouse: true };
+  }
+  // Strip what was understood. The distance goes by POSITION (the match was on
+  // the lower-cased text; the raw text may say "MILES").
+  let rest = raw.slice(0, m.index) + ' ' + raw.slice(m.index + m[0].length);
+  if (anyWh) rest = rest.replace(anyRe, ' ');
+  // A warehouse name followed by its own state ("Dallas TX", "Dallas, TX") is
+  // the warehouse's ADDRESS, not a second rule — strip the pair.
+  hits.forEach(function (n) {
+    const nameRe = new RegExp('(' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')(\\s*,?\\s*)([A-Za-z]{2})?\\b', 'ig');
+    rest = rest.replace(nameRe, function (all, nm, gap, st) {
+      // The adjacent token is the warehouse's state only when it is an
+      // UPPERCASE state code (the name match itself is case-insensitive).
+      const own = st && st === st.toUpperCase() && US_STATE_CODES.indexOf(st) >= 0;
+      return own ? ' ' : (' ' + (gap || '') + (st || ''));
+    });
+  });
+  const leftover = rest.split(/[\s,;/|&+()\u2013\u2014-]+/).filter(function (t) { return !!t; });
+  // F-23 (2026-09-18): a value that ALSO names a state — "TX, 100 miles of
+  // Dallas" — is two rules in one cell. Uppercase only: the operator's prose
+  // carries "or", and OR is Oregon.
+  const stateLeft = leftover.some(function (t) {
+    const u = t.replace(/[^A-Za-z]/g, '');
+    return u.length === 2 && u === u.toUpperCase() && US_STATE_CODES.indexOf(u) >= 0;
+  });
+  if (stateLeft) return { kind: 'unknown', raw: raw };
+  // K3: the words a distance rule is written WITH. Anything else is content.
+  const FILLER = ['of', 'from', 'the', 'a', 'an', 'our', 'or', 'and', 'plus', 'within', 'radius', 'around',
+    'near', 'to', 'in', 'at', 'up', 'only', 'warehouse', 'warehouses', 'location', 'locations', 'site', 'sites',
+    'facility', 'facilities', 'branch', 'branches', 'delivery', 'deliver', 'mi', 'mile', 'miles'];
+  const unconsumed = leftover.map(function (t) { return t.replace(/[^A-Za-z0-9]/g, '').toLowerCase(); })
+    .filter(function (t) { return t && FILLER.indexOf(t) < 0; });
+  if (unconsumed.length) return { kind: 'unknown', raw: raw };
+  return anyWh
+    ? { kind: 'radius', miles: miles, warehouses: [], anyWarehouse: true }
+    : { kind: 'radius', miles: miles, warehouses: hits };
 }
 
 /** PURE (Node-pinned): parse one Area Eligibility cell into a RULE.
@@ -1298,8 +1460,9 @@ function locCityMatches_(cities, city, state) {
  *  as a state rule — confidently wrong, in the far more permissive direction.
  *  The order costs nothing and makes that edit safe.
  *
- *  Warehouse names are matched as SUBSTRINGS against the registry rather than
- *  parsed out of English. The operator writes "100 miles of Dallas or San
+ *  Warehouse names are matched against the registry WORD-BOUNDED
+ *  (`oopRegistryNamesIn_` — never as bare substrings) rather than parsed out of
+ *  English. The operator writes "100 miles of Dallas or San
  *  Antonio warehouse"; a grammar that had to understand "or", "warehouse" and
  *  the word order would break on the next phrasing. The registry IS the
  *  vocabulary, so a name it does not contain is not recognised — which is the
@@ -1340,89 +1503,66 @@ function oopEligibilityParse_(text, warehouseNames) {
     if (!hasCity) return r;
     if (r.kind === 'unknown') return { kind: 'unknown', raw: raw0, noWarehouse: !!r.noWarehouse };
     if (r.kind === 'open') return r;
-    return { kind: 'any', rules: [r, { kind: 'cities' }], raw: raw0 };
+    // A multi-distance union (K1) takes the city clause as one more branch.
+    const branches = r.kind === 'any' ? (r.rules || []).slice() : [r];
+    return { kind: 'any', rules: branches.concat([{ kind: 'cities' }]), raw: raw0 };
   };
 
   const lc = raw.toLowerCase();
 
   // 1. RADIUS — a distance and at least one registry name.
-  const m = lc.match(/(\d{1,4})\s*(?:miles|mile|mi)\b/);
-  if (m) {
-    const miles = parseInt(m[1], 10);
-    // ── ANY warehouse ──────────────────────────────────────────────────────
-    // "100 miles of any warehouse" is a rule about the NETWORK, not about a
-    // place, and the operator confirmed on 2026-09-22 that it is the common
-    // case: most items reach 100 miles from ANY warehouse, and the ones naming
-    // Dallas or San Antonio are the exceptions a technician has to build.
-    // It resolves against whatever the registry holds AT CHECK TIME, so opening
-    // a warehouse extends every item carrying it with no edit to the pricing
-    // sheet — the same delegation the city rule uses, for the same reason.
-    //
-    // Tested before the name match only so we do not collect names we would
-    // then discard — the returns below key off `anyWh`, so the ORDER is not
-    // what keeps the two forms apart. What keeps them apart is the word
-    // boundary on the name match, immediately below.
-    const anyRe = /\b(?:any|all|our|each|every|a)\s+(?:of\s+)?(?:our\s+|the\s+)?warehouses?\b/i;
-    const anyWh = anyRe.test(raw);
-    const hits = [];
-    if (!anyWh) {
-      (warehouseNames || []).forEach(function (n) {
-        const name = String(n || '').trim();
-        if (!name || hits.indexOf(name) >= 0) return;
-        // WORD-BOUNDED, never a bare substring. A short registry name is
-        // otherwise found inside the ordinary prose of the rule itself —
-        // a warehouse called "Ware" matched inside "warehouse", one called
-        // "Mi" inside "miles" — and every spurious hit BROADENS the rule to
-        // measure from a site it never named. On a surface where a yes is a
-        // commitment, more permissive is the wrong way to be wrong (g41).
-        const re = new RegExp('\\b' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
-        if (re.test(raw)) hits.push(name);
-      });
+  //
+  // K1 (cycle 22): EVERY distance in the cell, each governing the names that
+  // follow it. The first "N miles" used to apply to every name in the cell, so
+  // "100 mi of Dallas, 50 mi of San Antonio" answered YES at 80 miles from San
+  // Antonio. Each clause is now parsed on its own (`oopRadiusClause_`); equal
+  // distances merge into one radius, and different ones become a union.
+  const distRe = /(\d{1,4})\s*(?:miles|mile|mi)\b/g;
+  const dists = [];
+  let dm;
+  while ((dm = distRe.exec(lc)) !== null) dists.push(dm.index);
+  if (dists.length) {
+    const clauses = dists.map(function (at, i) {
+      return raw.slice(i === 0 ? 0 : at, i + 1 < dists.length ? dists[i + 1] : raw.length);
+    });
+    // With two or more distances, a place named BEFORE the first one cannot be
+    // assigned to either ("Dallas 100 miles, San Antonio 50 miles"). Guessing
+    // would broaden one rule or the other, so the value is unknown (g41).
+    if (dists.length > 1 && oopRegistryNamesIn_(raw.slice(0, dists[0]), warehouseNames).length) {
+      return wrap({ kind: 'unknown', raw: raw });
     }
-    if (miles > 0 && (anyWh || hits.length)) {
-      // F-23 (2026-09-18): a value that ALSO names a state — "TX, 100 miles
-      // of Dallas" — is two rules in one cell, and reading it as the radius
-      // alone silently dropped the state. Strip the distance and the matched
-      // warehouse names, and if an UPPERCASE state code is left standing the
-      // value is UNKNOWN (g41: fail closed on operator data we cannot read).
-      // Uppercase only: the operator's prose ("100 miles of Dallas or San
-      // Antonio") carries "or", and OR is Oregon.
-      let rest = raw.replace(m[0], ' ');
-      if (anyWh) rest = rest.replace(anyRe, ' ');
-      // A warehouse name followed by its own state ("Dallas TX", "Dallas, TX")
-      // is the warehouse's ADDRESS, not a second rule — strip the pair.
-      hits.forEach(function (n) {
-        const nameRe = new RegExp('(' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')(\\s*,?\\s*)([A-Za-z]{2})?\\b', 'ig');
-        rest = rest.replace(nameRe, function (all, nm, gap, st) {
-          // The adjacent token is the warehouse's state only when it is an
-          // UPPERCASE state code (the name match itself is case-insensitive).
-          const own = st && st === st.toUpperCase() && US_STATE_CODES.indexOf(st) >= 0;
-          return own ? ' ' : (' ' + (gap || '') + (st || ''));
-        });
-      });
-      const leftover = rest.split(/[\s,;/|&+()]+/).filter(function (t) { return !!t; });
-      const stateLeft = leftover.some(function (t) {
-        const u = t.replace(/[^A-Za-z]/g, '');
-        return u.length === 2 && u === u.toUpperCase() && US_STATE_CODES.indexOf(u) >= 0;
-      });
-      if (stateLeft) return wrap({ kind: 'unknown', raw: raw });
-      return wrap(anyWh
-        ? { kind: 'radius', miles: miles, warehouses: [], anyWarehouse: true }
-        : { kind: 'radius', miles: miles, warehouses: hits });
+    const parts = clauses.map(function (c) { return oopRadiusClause_(c, warehouseNames); });
+    const bad = parts.filter(function (x) { return x.kind === 'unknown'; });
+    if (bad.length) {
+      const u = { kind: 'unknown', raw: raw };
+      if (bad.every(function (x) { return !!x.noWarehouse; })) u.noWarehouse = true;
+      return wrap(u);
     }
-    // A DISTANCE with no registry name is a different failure from a value we
-    // cannot parse at all, and conflating them is what sent the operator to
-    // edit good pricing data on 2026-09-22: the message named the eligibility
-    // column when the delivery table was the thing that was empty. Flag it so
-    // the verdict can name the right file (g02 — a diagnostic that points at
-    // the wrong source is worse than a vague one).
-    return wrap({ kind: 'unknown', raw: raw, noWarehouse: true });
+    // Merge clauses that share a distance and a form; one left is the old shape.
+    const merged = [];
+    parts.forEach(function (x) {
+      const same = merged.filter(function (y) { return y.miles === x.miles && !!y.anyWarehouse === !!x.anyWarehouse; })[0];
+      if (!same) { merged.push(x); return; }
+      (x.warehouses || []).forEach(function (n) { if (same.warehouses.indexOf(n) < 0) same.warehouses.push(n); });
+    });
+    return wrap(merged.length === 1 ? merged[0] : { kind: 'any', rules: merged, raw: raw });
   }
 
   // 2. OPEN — the keyword, optionally followed by the operator's own
   //    parenthetical ("Open (anywhere in the US including Hawaii)").
   const bare = raw.replace(/\([^)]*\)/g, ' ').replace(/[.\s]+/g, ' ').trim();
-  if (/^(open|all|us|usa|nationwide|anywhere|any|everywhere)$/i.test(bare)) return wrap({ kind: 'open' });
+  if (/^(open|all|us|usa|nationwide|anywhere|any|everywhere)$/i.test(bare)) {
+    // K3 (cycle 22): the parenthetical is READ, not stripped. "Open (except
+    // Hawaii and Alaska)" used to answer yes for Hawaii. One that restricts is
+    // a rule this grammar cannot evaluate, so the value is unknown; one that
+    // only elaborates ("including Hawaii", "no restrictions") stays open.
+    const notes = (raw.match(/\(([^)]*)\)/g) || []).join(' ').toLowerCase()
+      .replace(/\bno\s+(?:restrictions?|limits?|limitations?)\b/g, ' ');
+    if (/\b(except|excluding|excludes?|excl|not|no|only|but|without|outside|other\s+than|minus|limited|restricted|restriction)\b/.test(notes)) {
+      return wrap({ kind: 'unknown', raw: raw });
+    }
+    return wrap({ kind: 'open' });
+  }
 
   // 3. STATES — the WHOLE value must be state codes. A value that is partly
   //    codes and partly prose is not a state rule; it is a value we cannot read.
@@ -1579,6 +1719,13 @@ function oopEligibilityCheck_(rule, loc) {
     if ((where.cityMatches || []).length) {
       return { verdict: 'yes', near: false, why: city + ' is a listed service city.' };
     }
+    // K4: listed, but under a State cell nobody can read — not a no.
+    const bad = where.cityUnreadable || [];
+    if (bad.length) {
+      return { verdict: 'unknown', near: false,
+        why: city + ' is listed, but its State cell ("' + (bad[0].stateRaw || '') + '") could not be read. ' +
+          'Fix it in LocationAcceptance to get a firm answer.' };
+    }
     return { verdict: 'no', near: false, why: city + ' is not one of the listed service cities.' };
   }
 
@@ -1592,8 +1739,11 @@ function oopEligibilityCheck_(rule, loc) {
       // rep would be warned about a boundary another rule already cleared.
       const solid = yes.filter(function (s) { return !s.near; });
       const pick = solid.length ? solid[0] : yes[0];
+      const withCities = (r.rules || []).some(function (x) { return x && x.kind === 'cities'; });
       return { verdict: 'yes', near: pick.near,
-        why: pick.why + ' (Either the distance rule or the city list qualifies this item.)' };
+        why: pick.why + (withCities
+          ? ' (Either the distance rule or the city list qualifies this item.)'
+          : ' (Any one of the listed distances qualifies this item.)') };
     }
     // An UNKNOWN branch outranks a NO branch: one rule said no and another
     // could not be evaluated, so the item is not established as ineligible.
@@ -1655,7 +1805,9 @@ function checkOopEligibility(address, query) {
       const last = Math.min(sh.getLastRow(), OOP_MAX_ROWS + 1);
       if (last < 2) return { error: 'The OOP pricing sheet is empty.' };
       headers = sh.getRange(1, 1, 1, width).getDisplayValues()[0];
-      rows = sh.getRange(2, 1, last - 1, width).getDisplayValues();
+      // K9 (cycle 22): a blank row is not an item. Unfiltered (the address-only
+      // check), every empty row in the sheet came back as a nameless item.
+      rows = sh.getRange(2, 1, last - 1, width).getDisplayValues().filter(function (r) { return !oopRowIsBlank_(r); });
     } catch (err) {
       return { error: 'OOP pricing could not be read: ' + err.message };
     }
@@ -1679,6 +1831,7 @@ function checkOopEligibility(address, query) {
     // never cached, the kbMapDistances rule. Only the WAREHOUSES are cached.
     const qGeo = kbGeocodeOne_(addr);
     if (qGeo && qGeo.unavailable) return { error: kbGeocodeUnavailableMsg_(qGeo) };   // F-15: the service, not the address
+    if (qGeo && qGeo.partial) return { error: kbGeocodePartialMsg_(qGeo) };            // K5: a guess is not a location
     if (!qGeo) return { error: 'Could not find that location — try a 5-digit ZIP code.' };
 
     // Warehouses are geocoded only when some picked row actually needs one, so
@@ -1717,6 +1870,7 @@ function checkOopEligibility(address, query) {
 
     const loc = { state: qGeo.state, miles: milesByName,
       city: qGeo.city, cityMatches: cityHits, hasCityRows: loc0.cities.length > 0,
+      cityUnreadable: locCityUnreadable_(loc0.cities, qGeo.city),
       warehouseNames: whNames };
 
     const items = picked.map(function (row, i) {
@@ -1763,6 +1917,13 @@ function checkOopEligibility(address, query) {
       })),
       cap: OOP_ELIG_MAX_ITEMS, truncated: total > OOP_ELIG_MAX_ITEMS };
   } catch (err) { return { error: 'Eligibility check failed: ' + err.message }; }
+}
+
+/** PURE (Node-pinned) — K9 (cycle 22): a row with nothing in any cell. It is
+ *  not an item and not an unreadable one — it is the gap an operator leaves
+ *  between sections. */
+function oopRowIsBlank_(row) {
+  return !(row || []).some(function (c) { return String(c == null ? '' : c).trim() !== ''; });
 }
 
 /** Admin-gated: what the reader actually MATCHED in the operator's sheet.
@@ -1823,6 +1984,7 @@ function getOopPricingDiagnostics() {
     if (rows) {
       const all = sh.getRange(2, 1, rows, width).getDisplayValues();
       all.forEach(function (row) {
+        if (oopRowIsBlank_(row)) return;             // K9: a gap between sections is not "Cannot read"
         const o = oopRowObj_(headers, row);
         const r = oopEligibilityParse_(o.eligibility, whNames);
         if (r.kind === 'unknown') {
@@ -1841,6 +2003,12 @@ function getOopPricingDiagnostics() {
       // than finding out from a rep reading "cannot tell".
       locationTab: LOCATION_ACCEPTANCE_TAB,
       locationError: loc.error || '',
+      // K12 (cycle 22): the ROLE read into every LocationAcceptance header, the
+      // pricing tab's `cols` treatment. Header-stem discovery is invisible until
+      // it goes wrong: "Delivery City" reads as the ACCEPTS column (it contains
+      // "deliver"), and without this the operator could not see why their city
+      // names were never matched.
+      locCols: loc.headers ? loc.headers.map(function (h) { return { header: String(h || ''), role: locHeaderRole_(h) || '—' }; }) : [],
       cities: loc.cities.length,
       locUnreadable: loc.unreadable,
       locNoAddress: loc.noAddress,
@@ -2469,9 +2637,10 @@ function kbAddComment(itemId, text) {
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
-/** The item's ACTIVE comments, oldest-first. Rep-callable, read-only, bounded
- *  tail; payload-capped with the pre-slice total (INV-169 — the client says
- *  "showing N of M"). Draft targets read as empty for non-admins (no leak). */
+/** The item's ACTIVE comments, oldest-first — the NEWEST `KB_COMMENTS_LIST_CAP`
+ *  of them past the cap (K13). Rep-callable, read-only, bounded tail;
+ *  payload-capped with the pre-slice total (INV-169 — the client says "showing
+ *  the newest N of M"). Draft targets read as empty for non-admins (no leak). */
 function kbGetComments(itemId) {
   try {
     const emp = getEmployeeInfo_();
@@ -2496,7 +2665,10 @@ function kbGetComments(itemId) {
         mine: String(rows[i][KBC.EMP_ID] || '') === String(emp.id),
       });
     }
-    return { comments: all.slice(0, KB_COMMENTS_LIST_CAP), total: all.length, cap: KB_COMMENTS_LIST_CAP, canModerate: !!emp.isManager };
+    // K13 (cycle 22): past the cap, keep the NEWEST, still oldest-first. The
+    // slice from the front hid every new comment once an article passed the
+    // cap, so a reply posted today never appeared.
+    return { comments: all.slice(-KB_COMMENTS_LIST_CAP), total: all.length, cap: KB_COMMENTS_LIST_CAP, canModerate: !!emp.isManager };
   } catch (err) { return { error: err.message }; }
 }
 /** Remove (soft-delete) a comment — its AUTHOR or a manager (moderation).
@@ -3166,8 +3338,10 @@ function kbHaversineMiles_(lat1, lon1, lat2, lon2) {
     Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
   return 2 * R * Math.asin(Math.sqrt(Math.min(1, a)));
 }
-/** One geocode through the free built-in service. null on anything but a
- *  clean single-result hit — the caller treats null as "unavailable".
+/** One geocode through the free built-in service. null when nothing matched;
+ *  `{ unavailable }` when the SERVICE failed (F-15); `{ partial, formatted }`
+ *  when the only match is partial (K5 — the geocoder guessed); otherwise the
+ *  place.
  *
  *  ELIG added `state`, and WHERE it comes from is the point: the geocoder's
  *  own `administrative_area_level_1` short name, never a string-parse of
@@ -3190,6 +3364,12 @@ function kbGeocodeOne_(addr) {
     if (status !== 'OK' || !res.results || !res.results.length) return null;
     const r = res.results[0];
     if (!r.geometry || !r.geometry.location) return null;
+    // K5 (cycle 22): a PARTIAL match is the geocoder guessing. "500 Main St,
+    // Irving TX 750" resolves to SOMEWHERE — often the city centre — and a
+    // distance measured from there answers a different question than the one
+    // asked. Not found and partly found are different answers (g128), so it
+    // comes back as its own shape and the caller asks for a fuller address.
+    if (r.partial_match) return { partial: true, formatted: String(r.formatted_address || '') };
     let state = '', city = '';
     const comps = r.address_components || [];
     for (let i = 0; i < comps.length; i++) {
@@ -3208,6 +3388,12 @@ function kbGeocodeOne_(addr) {
     return { lat: r.geometry.location.lat, lng: r.geometry.location.lng,
       formatted: String(r.formatted_address || ''), state: state, city: city };
   } catch (e) { return { unavailable: true, status: 'ERROR', message: String((e && e.message) || e) }; }
+}
+/** K5 (cycle 22) — the ONE message for a partial geocode: the address only
+ *  partly matched, so no distance is measured from Google's guess. */
+function kbGeocodePartialMsg_(g) {
+  return 'That address only partly matched' + (g && g.formatted ? ' (the closest place found was "' + g.formatted + '")' : '') +
+    ' — add the street number and city, or use a 5-digit ZIP code.';
 }
 /** F-15 — the ONE message for a geocoder service failure, shared by every
  *  caller so "the service is down" never reads as "your address is wrong". */
@@ -3241,6 +3427,7 @@ function kbGeocodeCached_(addrs) {
     if (hit && isFinite(hit.lat) && isFinite(hit.lng)) return hit;
     const geo = kbGeocodeOne_(a);
     if (geo && geo.unavailable) return null;   // F-15: a service failure is "not placed", never cached, never a coordinate
+    if (geo && geo.partial) return null;       // K5: a warehouse the geocoder could only GUESS at is not placed either
     if (geo) { cache[key] = fresh[key] = { lat: geo.lat, lng: geo.lng }; dirty = true; }
     return geo;
   });
@@ -3282,6 +3469,7 @@ function kbMapDistances(query, addresses) {
     // The QUERY geocode: computed, used, returned — deliberately never stored.
     const qGeo = kbGeocodeOne_(query);
     if (qGeo && qGeo.unavailable) return { error: kbGeocodeUnavailableMsg_(qGeo) };   // F-15: the service, not the address
+    if (qGeo && qGeo.partial) return { error: kbGeocodePartialMsg_(qGeo) };            // K5
     if (!qGeo) return { error: 'Could not find that location — try a 5-digit ZIP code.' };
     const results = whGeo.map(function (g, i) {
       if (!g) return { i: i, miles: null };

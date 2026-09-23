@@ -10193,7 +10193,9 @@ function cnRenderOopDiagPanel_(res) {
       '<div class="day-section-label" style="margin-bottom:10px">' + icon('search', 14) +
         ' Reference lookups · pricing + delivery reach</div>' + inner + '</div>';
   };
-  if (!res || res.error) return wrap(errorStateHtml_('Pricing diagnostics unavailable: ' + esc((res && res.error) || 'load failed')));
+  // K10 (cycle 22): errorStateHtml_ escapes its message itself; an esc() here
+  // double-escaped it, so an apostrophe in the error read "&#39;" on screen.
+  if (!res || res.error) return wrap(errorStateHtml_('Pricing diagnostics unavailable: ' + String((res && res.error) || 'load failed')));
 
   var warn = function (t) { return '<div style="font-size:12px;color:var(--warning-deep);margin-top:6px">' + t + '</div>'; };
   var muted = function (t) { return '<span style="color:var(--muted)">' + t + '</span>'; };
@@ -10216,12 +10218,20 @@ function cnRenderOopDiagPanel_(res) {
   var wh = (res.warehouses || []).map(function (w) {
     return '<div style="font-size:11px;padding:2px 0">' + esc(w.name) + ' ' + muted(esc(w.address)) + '</div>';
   }).join('');
+  // K12 (cycle 22): the role read into every LocationAcceptance header, the
+  // pricing tab's treatment. "Delivery City" reads as the ACCEPTS column, and
+  // without this the operator could not see why their city names never matched.
+  var locCols = (res.locCols || []).map(function (c) {
+    return '<span style="display:inline-block;margin:0 10px 4px 0;font-size:11px">' +
+      '<b>' + esc(c.header || '(blank)') + '</b> ' + muted('\u2192 ' + esc(c.role)) + '</span>';
+  }).join('');
   html += '<div class="day-section-label" style="margin:14px 0 6px">' + esc(res.locationTab) + '</div>' +
+    (locCols ? '<div style="margin-bottom:6px">' + locCols + '</div>' : '') +
     (res.locationError ? warn(esc(res.locationError)) : '') +
     (wh || muted('<div style="font-size:11px">No warehouses — every "N miles of…" rule reads "cannot tell".</div>')) +
     '<div style="font-size:11px;margin-top:4px">' + muted(esc(String(res.cities)) + ' city row' + (res.cities === 1 ? '' : 's')) + '</div>' +
     ((res.locNoAddress || []).length ? warn('No address, so no distance can be measured from: <b>' + esc(res.locNoAddress.join(', ')) + '</b>') : '') +
-    ((res.locUnreadable || []).length ? warn('Rows that could not be classified: ' +
+    ((res.locUnreadable || []).length ? warn('Rows that could not be read in full: ' +
       esc(res.locUnreadable.map(function (u) { return (u.name || '(unnamed)') + ' — ' + u.reason; }).join(' · ')) + '') : '');
 
   // ── How every Area Eligibility value actually parses. The COUNTS are
@@ -10262,7 +10272,7 @@ function cnRenderFormulaScanPanel_(res) {
     'opening the cell and putting an apostrophe in front.</div>';
   var body = '';
   if (res && res.loading) body = '<div style="padding:10px 0">' + loSweep() + '</div>';
-  else if (res && res.error) body = errorStateHtml_('Formula scan unavailable: ' + esc(res.error));
+  else if (res && res.error) body = errorStateHtml_('Formula scan unavailable: ' + String(res.error));   // K10: no second esc()
   else if (res) {
     var stores = res.stores || [];
     var failed = stores.filter(function (s) { return s.error; });
@@ -13713,8 +13723,9 @@ function cnExtOopInsert_(m, priceIdx) {
   for (var i = 0; i < qs.length; i++) {
     // Keyed on item AND label: quoting both the pick-up and the shipped price
     // for one item is a legitimate thing to do on a call, and refusing the
-    // second as a duplicate would be wrong.
-    if (qs[i].name === m.name && String(qs[i].label || '') === label) {
+    // second as a duplicate would be wrong. K7: and on the CODE, since two rows
+    // can share a name.
+    if (qs[i].name === m.name && String(qs[i].code || '') === String(m.code || '').trim() && String(qs[i].label || '') === label) {
       showToast('That price is already in the email.', 'toast-info'); return;
     }
   }
@@ -13723,7 +13734,8 @@ function cnExtOopInsert_(m, priceIdx) {
   var next = cur ? (cur.replace(/\s+$/, '') + '\n' + line) : line;
   if (ta) { ta.value = next; }
   c.message = next;
-  qs.push({ name: m.name, price: String(pr.value || '').trim(),
+  // K7: the CODE rides too, so the send can tell two rows that share a name.
+  qs.push({ name: m.name, code: String(m.code || '').trim(), price: String(pr.value || '').trim(),
     effective: String(m.effective || '').trim(), label: label, line: line });
   var chips = document.getElementById('cnX-oop-chips');
   if (chips) chips.innerHTML = cnExtOopChipsHtml_();
@@ -14178,7 +14190,7 @@ function cnSendExternalEmail_() {
     // number. The server re-derives each line from the live sheet and refuses
     // the send if the message no longer carries it.
     quotedOop: cnExtOopQuotes_().map(function (q) {
-      return { name: q.name, price: q.price, effective: q.effective, label: q.label };
+      return { name: q.name, code: q.code || '', price: q.price, effective: q.effective, label: q.label };   // K7
     }),
     noteId: noteRef || null,
   };

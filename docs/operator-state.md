@@ -1516,11 +1516,15 @@ entry says which it is.
   | Type | Name | Address | State | Accepts |
   |---|---|---|---|---|
   | `warehouse` | the word you write in Area Eligibility | **full street address** | | |
-  | `city` | the city | *(blank)* | two-letter code | e.g. `POV, scooter` |
+  | `city` | the city | *(blank)* | two-letter code or full state name | e.g. `POV, scooter` |
 
-  - A **warehouse** row's `Name` is matched as a SUBSTRING of the Area
-    Eligibility text, so "100 miles of Dallas or San Antonio warehouse" resolves
-    when both names are listed. Its `Address` is what gets geocoded — **use a
+  - A **warehouse** row's `Name` is matched as a WHOLE WORD in the Area
+    Eligibility text (never as a substring — a warehouse called "Ware" does not
+    match inside "warehouse"), so "100 miles of Dallas or San Antonio warehouse"
+    resolves when both names are listed. Since cycle 22 (K1) each distance
+    governs the names that follow it, so "100 mi of Dallas, 50 mi of San
+    Antonio" is two limits; and any other word left in a distance rule makes it
+    "cannot tell" (K3) rather than being ignored. Its `Address` is what gets geocoded — **use a
     real street address, not just the city.** A bare city name geocodes to the
     city centre, and a warehouse twenty miles out of town then makes every
     near-boundary radius answer wrong by up to twenty miles.
