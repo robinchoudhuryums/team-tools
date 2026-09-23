@@ -2639,9 +2639,9 @@ function tsDoctorLegitBreaks_(days, empId, date, type) {
   // the 10:30 morning leave, so the returned 10:45 pairs with nothing and the
   // morning break becomes paid time. A double-punched leave is still damage:
   // with a return AFTER both leaves ([12:00, 12:01] / [12:30]) the latest leave
-  // is not open, and with no return at all ([12:00, 12:01] / []) the extra
-  // leave has nothing to have been a break from.
-  if (d.lo.length === d.li.length + 1 && d.li.length >= 1) {
+  // is not open, and with no return at all ([12:00, 12:01] / []) the counts
+  // differ by two, so the rule never applies.
+  if (d.lo.length === d.li.length + 1) {
     const anchor = (d.in && d.in.length) ? timeToMins_(d.in[0]) : null;
     return !!breakOpenLeave_(d.lo, d.li, anchor);
   }

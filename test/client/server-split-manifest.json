@@ -862,6 +862,16 @@
     "tsDoctorLegitBreaks_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-23",
+   "why": "cycle 22 T6: drop an unreachable guard (NO BITE)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "tsDoctorLegitBreaks_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -7314,7 +7324,7 @@
   "tsDoctorLegitBreaks_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "193d997f83339985"
+   "sha": "23f099b41829c2ca"
   },
   "tsDoctorScan_": {
    "file": "20_timeclock.js",
