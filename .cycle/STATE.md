@@ -157,8 +157,19 @@ Updated: 2026-09-25
   rep's pending-tasks cache; a repeat-voicemail card's expanded body is the
   thread's first message and `vmPending` is not rendered; punctuality's previous
   range ignores half days; client invalidation is per-window; M5 still depends on
-  unverified 8x8 threading. OPERATOR QUESTION: is a half day "the afternoon
-  starts at mid-shift"? T5 assumes so.
+  unverified 8x8 threading.
+- **T5 half-day policy (operator answer, 2026-09-25) — REWORK OWED:** a half day
+  has NO fixed start or end; it may start and end at any time, as long as at
+  least half the typical hours are worked (at least 4 hours). T5 as shipped
+  assumes a morning half day starts at mid-shift (`punctExpectedStartMin_`) and
+  narrows the reminder window to one half (`remindWorkWindow_`) — both encode the
+  wrong rule. The rework: a half day is not graded for start lateness at all
+  (nor lunch); it is graded on HOURS WORKED ≥ half the typical day (4 h, i.e.
+  `CONFIG.PTO_HOURS_PER_DAY / 2`), with a day under that flagged. The reminder
+  ticker on a half day should not assume which half: no break reminders, no
+  inferred clock-out time, and the not-clocked-in nudge only if nothing has been
+  worked by the point where 4 hours can no longer fit before shift end. Pins
+  to change: the T5 pin's mid-shift and window cases.
 - **Batch 6 follow-ons (22-B6 block):** the urgent digest reads
   managerAggregateUrgent_'s {error} as empty (C2's shape); clientErrors.error
   is not on the dot; a daily job with no run on record stays silent; offboarding
@@ -209,6 +220,7 @@ Updated: 2026-09-25
   decided by which items carry `listed cities` in col I.
 
 ## Decisions made (so the next session doesn't re-litigate)
+- A half day is "at least half the typical hours (4 h), at any time of day" — never "the other half of the shift" (operator, 2026-09-25; T5 rework owed, see follow-ons).
 - **S2 deferred out of Batch 1** (operator, 2026-09-23) — then implemented in
   its most complete form on the operator's request: a BLANKET boundary over
   every write (not a per-field judgement of which text is user-supplied).
