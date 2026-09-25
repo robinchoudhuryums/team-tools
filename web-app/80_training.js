@@ -947,7 +947,14 @@ function submitQuizAttempt(quizId, answers) {
     return {
       success: true, scorePct: graded.scorePct, passed: passed,
       right: graded.right, total: graded.total,
-      perQuestion: graded.perQuestion, attempt: stats.count, passPct: quiz.passPct,
+      // S10 (cycle 22; operator 2026-09-25): per-question marks only once the
+      // attempt PASSES. With unlimited retries, right/wrong on a failed attempt
+      // was an answer key — change one answer, read its mark, repeat. A failed
+      // attempt now reports the score alone. (The attempt row still records
+      // perQuestion for managers; the score delta can still be probed one
+      // question per attempt — slower, not impossible; the attempt count on
+      // the manager matrix is what shows it.)
+      perQuestion: passed ? graded.perQuestion : null, attempt: stats.count, passPct: quiz.passPct,
     };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }

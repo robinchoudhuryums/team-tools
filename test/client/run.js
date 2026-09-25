@@ -4768,7 +4768,7 @@ test('drSlaStatus_ bands ontime / atrisk(≥75%) / overdue(≥100%) wall-clock',
 // of behaving as an unknown pseudo-department. Own context: getDeptRequestSla_
 // reads CONFIG, and the shared sb must not inherit the stub.
 console.log('\nCode.js — DeptRequests multi-dept split (drSplitDepts_ / drSlaForToDept_, cycle-8 M-5)');
-const drSb = vm.createContext({ CONFIG: { CALL_NOTES: { DR_SLA_DEFAULT_HOURS: 48 } } });
+const drSb = vm.createContext({ CONFIG: { CALL_NOTES: { DR_SLA_DEFAULT_DAYS: 2 } } });   // M6: working days
 ['drSplitDepts_', 'drSlaForToDept_', 'getDeptRequestSla_'].forEach((fn) =>
   vm.runInContext(extractRawFunction('Code.js', fn), drSb, { filename: 'Code.js#' + fn }));
 test('drSplitDepts_ splits a joined multi-dept label and drops Other', () => {
@@ -4780,13 +4780,13 @@ test('drSplitDepts_ splits a joined multi-dept label and drops Other', () => {
   assert.doesNotThrow(() => drSb.drSplitDepts_(null));
 });
 test('drSlaForToDept_ takes the strictest component SLA; single-dept unchanged', () => {
-  const cfg = { Billing: 24, Shipping: 72 };
-  assert.strictEqual(drSb.drSlaForToDept_('Billing', cfg), 24, 'single dept = its own SLA');
-  assert.strictEqual(drSb.drSlaForToDept_('Shipping', cfg), 72);
-  assert.strictEqual(drSb.drSlaForToDept_('Billing, Shipping', cfg), 24, 'multi-dept → strictest (min hours)');
-  assert.strictEqual(drSb.drSlaForToDept_('Authorizations', cfg), 48, 'unlisted dept → default');
-  assert.strictEqual(drSb.drSlaForToDept_('Shipping, Other', cfg), 72, "Other never drags in the default's 48");
-  assert.strictEqual(drSb.drSlaForToDept_('Other', cfg), 48, 'Other-only falls back to the raw lookup → default');
+  const cfg = { Billing: 1, Shipping: 3 };   // M6: working days
+  assert.strictEqual(drSb.drSlaForToDept_('Billing', cfg), 1, 'single dept = its own SLA');
+  assert.strictEqual(drSb.drSlaForToDept_('Shipping', cfg), 3);
+  assert.strictEqual(drSb.drSlaForToDept_('Billing, Shipping', cfg), 1, 'multi-dept → strictest (min days)');
+  assert.strictEqual(drSb.drSlaForToDept_('Authorizations', cfg), 2, 'unlisted dept → default');
+  assert.strictEqual(drSb.drSlaForToDept_('Shipping, Other', cfg), 3, "Other never drags in the default's 2");
+  assert.strictEqual(drSb.drSlaForToDept_('Other', cfg), 2, 'Other-only falls back to the raw lookup → default');
 });
 
 // F(cycle-8): Spanish-inbox scope guard — exact address match, not substring.
@@ -23577,7 +23577,7 @@ console.log('\nOperator notes 2026-09-10 — Batch B (N2 business-hours fold, N3
 
 test('N2: drDeptStats_ is a PURE fold over business minutes — email resolves only, counts reported', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
-  const sbx = vm.createContext({ CONFIG: { CALL_NOTES: { DR_SLA_DEFAULT_HOURS: 48 } } });
+  const sbx = vm.createContext({ CONFIG: { CALL_NOTES: { DR_SLA_DEFAULT_DAYS: 2 } } });   // M6: working days
   ['drSplitDepts_', 'getDeptRequestSla_', 'drDeptStats_'].forEach((fn) =>
     vm.runInContext(extractRawFunction('Code.js', fn), sbx, { filename: 'Code.js#' + fn }));
   // The Friday-16:00 → Monday-09:00 pair the operator asked about: 120
@@ -23596,7 +23596,7 @@ test('N2: drDeptStats_ is a PURE fold over business minutes — email resolves o
     { toDept: 'Billing, Shipping', status: 'open', slaStatus: 'ontime', elapsedMin: 30 },                          // counted under EACH dept
     { toDept: 'Shipping', status: 'resolved', resolvedVia: 'app', elapsedMin: null },
   ];
-  const out = sbx.drDeptStats_(items, { Billing: 24 });
+  const out = sbx.drDeptStats_(items, { Billing: 1 });
   const bill = out.filter((r) => r.dept === 'Billing')[0];
   const ship = out.filter((r) => r.dept === 'Shipping')[0];
   assert.ok(bill && ship, 'one row per component department');
@@ -23608,13 +23608,13 @@ test('N2: drDeptStats_ is a PURE fold over business minutes — email resolves o
   assert.strictEqual(bill.untrackedResolved, 1, 'the legacy (no ResolvedVia) row is counted, not timed');
   assert.strictEqual(bill.open, 2, 'open rows: the single-dept + the multi-dept send');
   assert.strictEqual(bill.overdueOpen, 1);
-  assert.strictEqual(bill.slaHours, 24, 'the per-dept SLA rides the row');
+  assert.strictEqual(bill.slaDays, 1, 'the per-dept SLA rides the row (working days, M6)');
   assert.strictEqual(ship.open, 1, 'the multi-dept send counts under Shipping too');
   assert.strictEqual(ship.avgMinutes, null, 'a department whose ONLY resolve was manual reads null — never 0');
   assert.strictEqual(ship.medianMinutes, null);
   assert.strictEqual(ship.manualResolved, 1);
   assert.strictEqual(ship.timed, 0);
-  assert.strictEqual(ship.slaHours, 48, 'default SLA');
+  assert.strictEqual(ship.slaDays, 2, 'default SLA');
   assert.strictEqual(out[0].dept, 'Billing', 'sorted by open count desc');
   assert.strictEqual(sbx.drDeptStats_([], {}).length, 0, 'empty in, empty out');
   // Wiring: the endpoint feeds the fold with the SAME items it ships (whose
@@ -28650,6 +28650,126 @@ test('M11: the business-hours copy names COMPANY holidays, and the Spanish stats
   assert.strictEqual(h(base), h(Object.assign({}, base)), 'same settings, same key');
   assert.ok(/spanishCacheHash_\(addr, members,\s*\{ sender: getSpanishVmSender_\(\), filter: getSpanishVmFilter_\(\), minSec: getSpanishVmMinSeconds_\(\) \}\)/.test(foNc(extractRawFunction('Code.js', 'getSpanishInboxStats'))),
     'the stats endpoint passes them');
+});
+
+// ---------------------------------------------------------------------------
+// cycle 22 deferred findings — operator decisions 2026-09-25 (S6, S8, S10, M6, C12)
+console.log('\ncycle 22 deferred findings — S6, S8, S10, M6, C12');
+const DF_WEB = path.join(__dirname, '../../web-app');
+
+test('S6: a QA reviewer cannot score, finish, share or re-attribute their OWN call — an admin can (driven)', () => {
+  const ctx = vm.createContext({ String });
+  ['qaIsOwnRecording_', 'qaSelfReviewRefusal_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const rep = { id: 'E7', name: 'Leo Kim', isAdmin: false };
+  assert.strictEqual(ctx.qaIsOwnRecording_(rep, 'Someone Else', 'E7'), true, 'the stored roster id decides when present');
+  assert.strictEqual(ctx.qaIsOwnRecording_(rep, 'Leo Kim', 'E9'), false, 'a different id is not theirs, whatever the name');
+  assert.strictEqual(ctx.qaIsOwnRecording_(rep, '  leo KIM ', ''), true, 'no id: the name, trimmed and case-insensitive');
+  assert.strictEqual(ctx.qaIsOwnRecording_(rep, '', ''), false, 'an unattributed recording is nobody\'s');
+  assert.ok(/your own call/.test(ctx.qaSelfReviewRefusal_(rep, [{ name: 'Leo Kim', id: '' }])));
+  assert.strictEqual(ctx.qaSelfReviewRefusal_(Object.assign({}, rep, { isAdmin: true }), [{ name: 'Leo Kim', id: '' }]), '', 'the admin exception');
+  assert.ok(/your own call/.test(ctx.qaSelfReviewRefusal_(rep, [{ name: 'Ann B', id: 'E1' }, { name: 'Leo Kim', id: 'E7' }])), 'any touched attribution counts (re-attribution checks old AND new)');
+  // Driven through one endpoint: the refusal lands before the write.
+  const writes = [];
+  const row = []; row[10] = 'Leo Kim'; row[14] = 'E7'; row[11] = 0;
+  const sctx = vm.createContext({ String, Date, Number, QAR: { AGENT: 10, SHARED_MS: 11, AGENT_ID: 14 },
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    getEmployeeInfo_: () => rep, canSeeQa_: () => true, sheetSafe_: (v) => v, writeAuditLog_() {},
+    getOrCreateQaRecordingsSheet_: () => ({ getRange: () => ({ setValue: (v) => writes.push(v) }) }),
+    qaFindRecordingRow_: () => ({ rowIdx: 5, row: row }) });
+  ['qaIsOwnRecording_', 'qaSelfReviewRefusal_', 'qaSetRecordingShared'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), sctx));
+  const r = JSON.parse(JSON.stringify(sctx.qaSetRecordingShared('F1', true)));
+  assert.deepStrictEqual([r.success, writes.length], [false, 0], 'refused, nothing written');
+  rep.isAdmin = true;
+  assert.strictEqual(sctx.qaSetRecordingShared('F1', true).success, true, 'an admin may share their own review');
+  // Every one of the four writers asks the guard BEFORE its write.
+  [['qaSetRecordingStatus', "setValue(sheetSafe_(st))"], ['qaSetRecordingAgent', 'setValue(sheetText_(name))'],
+   ['qaSaveScorecard', 'appendRowsTextSafe_('], ['qaSetRecordingShared', 'setValue(sheetSafe_(ms))']].forEach(([fn, write]) => {
+    const src = stripJsComments_(extractRawFunction('Code.js', fn));
+    const g = src.indexOf('qaSelfReviewRefusal_('), w = src.indexOf(write);
+    assert.ok(g > 0 && w > g && /if \(selfNo\) return \{ success: false, error: selfNo \};/.test(src), fn + ' refuses a self-review before writing');
+  });
+  assert.ok(/\{ name: name, id: agentId \}/.test(extractRawFunction('Code.js', 'qaSetRecordingAgent')), 'the NEW attribution is checked too');
+});
+
+test('S8: no page the app serves can be framed by another site — no ALLOWALL anywhere', () => {
+  const srv = serverSource();
+  assert.ok(!/XFrameOptionsMode\.ALLOWALL/.test(srv), 'ALLOWALL is gone from every server file');
+  const n = (srv.match(/setXFrameOptionsMode\(HtmlService\.XFrameOptionsMode\.DEFAULT\)/g) || []).length;
+  assert.strictEqual(n, 3, 'the shell, the restricted page and the public form each set DEFAULT explicitly (' + n + ')');
+  assert.ok(/XFrameOptionsMode\.DEFAULT/.test(extractRawFunction('Code.js', 'serveExternalForm_')), 'including the public form');
+});
+
+test('S10: a FAILED quiz attempt reports the score alone — per-question marks only once passed (driven client)', () => {
+  const q = stripJsComments_(extractRawFunction('Code.js', 'submitQuizAttempt'));
+  assert.ok(/perQuestion: passed \? graded\.perQuestion : null/.test(q), 'the server withholds the marks on a fail');
+  assert.ok(/JSON\.stringify\(graded\.perQuestion\)/.test(q), 'the attempt row still records them for managers');
+  const s2 = buildSandbox([]);
+  s2.icon = () => ''; s2.esc = (x) => String(x == null ? '' : x);
+  const overlay = { innerHTML: '' };
+  s2.document.getElementById = (id) => (id === 'train-quiz-overlay' ? overlay : null);
+  const render = loadFunction(s2, 'train/script_training.html', 'trainRenderQuizResult_');
+  const quiz = { questions: [{ q: 'A?', options: ['x', 'y'] }, { q: 'B?', options: ['x', 'y'] }] };
+  render(quiz, [0, 1], { passed: false, scorePct: 50, right: 1, total: 2, passPct: 100, attempt: 1, perQuestion: null });
+  assert.ok(/data-quiz-marks="withheld"/.test(overlay.innerHTML) && !/Correct|Incorrect/.test(overlay.innerHTML) && !/tr-q (right|wrong)/.test(overlay.innerHTML),
+    'no mark on any question after a fail');
+  render(quiz, [0, 1], { passed: true, scorePct: 100, right: 2, total: 2, passPct: 100, attempt: 2, perQuestion: [true, true] });
+  assert.ok(/✓ Correct/.test(overlay.innerHTML) && !/withheld/.test(overlay.innerHTML), 'the marks after a pass');
+});
+
+test('M6: Dept Request SLAs are WORKING DAYS, compared in business time; a legacy hours map is read as its calendar intent (driven)', () => {
+  const ctx = vm.createContext({ String, Number, Math, Object, JSON, CONFIG: { CALL_NOTES: { DR_SLA_DEFAULT_DAYS: 2 } } });
+  ['drSlaBizHours_', 'drSlaDaysLabel_', 'drSlaParseTargets_', 'drAgeWorkingDaysLabel_', 'drSlaStatus_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  assert.deepStrictEqual(J(ctx.drSlaParseTargets_({ Billing: 48, Shipping: 24, Resupply: 5 })), { map: { Billing: 2, Shipping: 1, Resupply: 0.5 }, legacy: true },
+    'a pre-M6 hours map: hours ÷ 24 to the half day, never below half a day, flagged legacy');
+  assert.deepStrictEqual(J(ctx.drSlaParseTargets_({ _unit: 'days', Billing: 1.5 })), { map: { Billing: 1.5 }, legacy: false }, 'the days shape as stored');
+  assert.deepStrictEqual(J(ctx.drSlaParseTargets_('junk')), { map: {}, legacy: false });
+  assert.strictEqual(ctx.drSlaBizHours_(2, 9), 18, '2 working days of a 9-hour business day = 18 business hours');
+  // The finding: 48 used to be compared as business hours — ~5.3 working days. Two working days now go overdue at 18.
+  assert.strictEqual(ctx.drSlaStatus_(18 * 60, ctx.drSlaBizHours_(2, 9)), 'overdue');
+  assert.strictEqual(ctx.drSlaStatus_(17 * 60, ctx.drSlaBizHours_(2, 9)), 'atrisk');
+  assert.strictEqual(ctx.drSlaDaysLabel_(1), '1 working day');
+  assert.strictEqual(ctx.drSlaDaysLabel_(2), '2 working days');
+  assert.strictEqual(ctx.drAgeWorkingDaysLabel_(30 * 60, 9), '3.5 working days open', 'a business age reads as working days, not "30h"');
+  // Save: working days in half days, stored with the unit.
+  let stored = null;
+  const sctx = vm.createContext({ String, Number, Math, Object, JSON, CONFIG: { CALL_NOTES: { DR_SLA_DEFAULT_DAYS: 2 } },
+    getEmployeeInfo_: () => ({ isAdmin: true, email: 'a@x' }), getDepartmentEmails_: () => ({ Billing: 'b@x', Shipping: 's@x' }),
+    propSetBounded_: (k, v) => { stored = v; }, writeAuditLog_() {} });
+  vm.runInContext(extractRawFunction('Code.js', 'saveDeptRequestSla'), sctx);
+  assert.strictEqual(sctx.saveDeptRequestSla({ Billing: 1.5, Shipping: 2 }).success, true);
+  assert.deepStrictEqual(JSON.parse(stored), { _unit: 'days', Billing: 1.5 }, 'the unit is stored; the default is omitted');
+  assert.strictEqual(sctx.saveDeptRequestSla({ Billing: 0.3 }).success, false, 'half days only');
+  assert.strictEqual(sctx.saveDeptRequestSla({ Billing: 31 }).success, false, 'at most 30');
+  // Wiring: every band converts through the one business day.
+  const dr = stripJsComments_(extractRawFunction('Code.js', 'getDeptRequests'));
+  assert.ok(/slaStatus: drSlaStatus_\(elapsedBizMin, drSlaBizHours_\(slaDays, dayHours\)\)/.test(dr), 'the tracker');
+  assert.ok(/drSlaStatus_\(ageMin, drSlaBizHours_\(slaDays, dayHours\)\)/.test(stripJsComments_(extractRawFunction('Code.js', 'deptRequestsOverdueOpen_'))), 'and the digest');
+  assert.ok(!/DR_SLA_DEFAULT_HOURS|slaHours/.test(serverSource().replace(/function drSlaStatus_[\s\S]*?\n\}/, '')), 'no hours unit left outside drSlaStatus_ (which takes the converted figure)');
+  const trk = fs.readFileSync(path.join(DF_WEB, 'metrics/script_deptrequests.html'), 'utf8');
+  assert.ok(!/h SLA'/.test(trk) && /drSlaDaysLabelClient_\(item\.slaDays\)/.test(trk), 'the tracker labels read working days');
+  const cn = fs.readFileSync(path.join(DF_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.ok(/min="0\.5" max="30" step="0\.5" class="cn-admin-sla-days"/.test(cn) && /cnDeptSlaLegacyNoteHtml_\(cfg\.deptSla\)/.test(cn), 'the editor edits working days and flags a legacy map');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(!/slaHours|defaultHours/.test(mock) && /slaDays: /.test(mock), 'the fixtures carry the new unit (INV-185)');
+});
+
+test('C12: a History, per-rep or export range that reaches the archive window SAYS so — never a bare "no notes" (driven)', () => {
+  const ctx = vm.createContext({ String, Number, Date });
+  vm.runInContext(extractRawFunction('Code.js', 'cnArchivedBefore_'), ctx);
+  assert.strictEqual(ctx.cnArchivedBefore_('2026-01-01', 0, '2026-09-25'), '', 'archiving off (the default) says nothing');
+  assert.strictEqual(ctx.cnArchivedBefore_('2026-06-01', 90, '2026-09-25'), '2026-06-27', 'a range before the cutoff names it');
+  assert.strictEqual(ctx.cnArchivedBefore_('2026-07-01', 90, '2026-09-25'), '', 'a range inside the live window says nothing');
+  ['getMyCallNotes', 'getMyCallNotesRange', 'managerGetCallNotes', 'exportCallNotesRange'].forEach((fn) =>
+    assert.ok(/cnArchivedBeforeNow_\(/.test(extractRawFunction('Code.js', fn)), fn + ' reports it'));
+  const s2 = buildSandbox([]);
+  s2.esc = (x) => String(x == null ? '' : x);
+  const note = loadFunction(s2, 'cn/script_callnotes.html', 'cnArchiveNoteHtml_');
+  assert.strictEqual(note(''), '');
+  assert.ok(/Notes dated before 2026-06-27 may have moved to the cold archive/.test(note('2026-06-27')) && /Include archive/.test(note('2026-06-27')));
+  const cn = fs.readFileSync(path.join(DF_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.ok(/cnArchiveNoteHtml_\(CN_STATE\.historyArchivedBefore\)/.test(cn) && /cnArchiveNoteHtml_\(res\.archivedBefore\)/.test(cn), 'History and the per-rep view render it');
+  assert.ok(/\.cn-archive-note \{/.test(cn), 'with a rule (the T6 ratchet)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

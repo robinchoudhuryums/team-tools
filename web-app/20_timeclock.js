@@ -7656,14 +7656,14 @@ function getMyPendingTasks() {
         if (r.status === 'resolved') return;
         items.push({
           kind: 'requests', title: 'Request to ' + String(r.toDept || '—') + (r.label ? ' · ' + r.label : ''),
-          detail: 'Sent ' + pushDate(r.createdAt) + (r.slaStatus === 'overdue' ? ' · past its ' + r.slaHours + 'h SLA' : ''),
+          detail: 'Sent ' + pushDate(r.createdAt) + (r.slaStatus === 'overdue' ? ' · past its ' + drSlaDaysLabel_(r.slaDays) + ' SLA' : ''),
           dueIso: '', overdue: r.slaStatus === 'overdue', action: 'Open', route: reqRoute,
         });
       });
       (dr.incoming || []).forEach(function (r) {
         items.push({
           kind: 'requests', title: 'Incoming from ' + String(r.byName || 'a teammate') + (r.label ? ' · ' + r.label : ''),
-          detail: 'For ' + String(r.toDept || '—') + ' · sent ' + pushDate(r.createdAt) + (r.slaStatus === 'overdue' ? ' · past its ' + r.slaHours + 'h SLA' : ''),
+          detail: 'For ' + String(r.toDept || '—') + ' · sent ' + pushDate(r.createdAt) + (r.slaStatus === 'overdue' ? ' · past its ' + drSlaDaysLabel_(r.slaDays) + ' SLA' : ''),
           dueIso: '', overdue: r.slaStatus === 'overdue', action: 'Open', route: reqRoute,
         });
       });

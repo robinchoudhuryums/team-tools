@@ -506,6 +506,7 @@ function getMyCallNotes(options) {
       notes,
       autoCopyFormat: CONFIG.CALL_NOTES.AUTO_COPY_FORMAT,
       timezone: empTz,
+      archivedBefore: cnArchivedBeforeNow_(date, empTz),   // C12
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -580,6 +581,7 @@ function getMyCallNotesRange(startDate, endDate) {
       notes,
       autoCopyFormat: CONFIG.CALL_NOTES.AUTO_COPY_FORMAT,
       timezone: empTz,
+      archivedBefore: cnArchivedBeforeNow_(startDate, empTz),   // C12
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -1490,7 +1492,8 @@ function managerGetCallNotes(repEmpId, date, filter) {
       notes.push(note);
     }
     notes.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-    return { date: dateStr, filter: flt, notes, repName: target.name, repId: target.id, timezone: empTz };
+    return { date: dateStr, filter: flt, notes, repName: target.name, repId: target.id, timezone: empTz,
+             archivedBefore: cnArchivedBeforeNow_(dateStr, empTz) };   // C12
   } catch (err) { return { error: err.message }; }
 }
 /** Manager search across all enrolled reps' call-notes Sheets. */
@@ -1840,7 +1843,10 @@ function exportCallNotesRange(startDate, endDate) {
           skippedReps.map(function (s) { return s.repName; }).join(', ') +
           ') and found no other notes between ' + startDate + ' and ' + endDate + '.' };
       }
-      return { error: `No notes found between ${startDate} and ${endDate}.` };
+      // C12: a range the archive may have emptied is not "no notes".
+      const archCut = cnArchivedBeforeNow_(startDate, CONFIG.TIMEZONE);
+      return { error: `No notes found between ${startDate} and ${endDate}.` +
+        (archCut ? ' Notes dated before ' + archCut + ' may be in the cold archive, which the export does not read — use Search with "Include archive".' : '') };
     }
     allNotes.sort((a, b) => {
       if (a.note.dateLocal !== b.note.dateLocal) return a.note.dateLocal.localeCompare(b.note.dateLocal);
@@ -1895,6 +1901,7 @@ function exportCallNotesRange(startDate, endDate) {
       fileName: name,
       noteCount: allNotes.length,
       skippedReps: skippedReps.map(function (s) { return s.repName; }),
+      archivedBefore: cnArchivedBeforeNow_(startDate, CONFIG.TIMEZONE),   // C12: the export does not read the archive
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -3489,6 +3496,25 @@ function purgeOldCallNotes() {
   } catch (err) {
     Logger.log('purgeOldCallNotes failed: ' + err.message);
   }
+}
+/** PURE (C12, cycle 22) — when a read's range reaches notes the cold archive
+ *  may have MOVED (older than the archive window), the date before which they
+ *  can be: '' while archiving is off (the default) or the range is newer. The
+ *  History, per-rep and export reads never open NotesArchive (a full
+ *  archive-aware read is the deferred feature), so an archived range must not
+ *  read as "no notes" — the caller says where they are instead. */
+function cnArchivedBefore_(startIso, archiveDays, todayIso) {
+  const d = Number(archiveDays);
+  if (!(d > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(String(startIso)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(todayIso))) return '';
+  const t = new Date(todayIso + 'T12:00:00Z');
+  t.setUTCDate(t.getUTCDate() - d);
+  const cutoff = t.toISOString().slice(0, 10);
+  return startIso < cutoff ? cutoff : '';
+}
+/** The same, read from the live archive window, in `tz`'s today. */
+function cnArchivedBeforeNow_(startIso, tz) {
+  try { return cnArchivedBefore_(startIso, getNoteArchiveDays_(), Utilities.formatDate(new Date(), tz || CONFIG.TIMEZONE, 'yyyy-MM-dd')); }
+  catch (e) { return ''; }
 }
 /** Cold-archive window: days from CN_NOTE_ARCHIVE_DAYS Script Property first,
  *  else CONFIG.CALL_NOTES.NOTE_ARCHIVE_DAYS. 0/neg/unparseable → 0 (disabled).

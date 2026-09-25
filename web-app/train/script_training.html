@@ -521,13 +521,27 @@ function trainRenderQuizResult_(quiz, answers, res) {
       '<div class="big">' + res.scorePct + '%</div>' +
       '<div class="sub">' + (res.passed ? 'Passed' : 'Not passed') + ' · ' + res.right + '/' + res.total + ' correct · pass ≥' + res.passPct + '% · attempt ' + res.attempt + '</div>' +
     '</div>';
+  // S10 (cycle 22): a failed attempt carries no per-question marks (the
+  // server sends perQuestion: null) — the rep reviews the material and
+  // retakes; which answers were wrong is shown once they pass.
+  var marks = Array.isArray(res.perQuestion) ? res.perQuestion : null;
+  if (!marks) {
+    h += '<div class="tr-meta" data-quiz-marks="withheld">Which questions you missed is shown once you pass — review the material and retake.</div>';
+  }
   quiz.questions.forEach(function (q, qi) {
-    var ok = !!res.perQuestion[qi];
     var your = answers[qi] >= 0 ? q.options[answers[qi]] : '(no answer)';
+    if (!marks) {
+      h += '<div class="tr-q">' +
+        '<div class="tr-q-text">' + (qi + 1) + '. ' + esc(q.q) + '</div>' +
+        '<div class="tr-meta">Your answer: ' + esc(your) + '</div>' +
+        '</div>';
+      return;
+    }
+    var ok = !!marks[qi];
     h += '<div class="tr-q ' + (ok ? 'right' : 'wrong') + '">' +
       '<div class="tr-q-text">' + (qi + 1) + '. ' + esc(q.q) + '</div>' +
       '<div class="tr-meta">Your answer: ' + esc(your) + '</div>' +
-      '<div class="tr-q-verdict">' + (ok ? '✓ Correct' : '✗ Incorrect — review the material and retake') + '</div>' +
+      '<div class="tr-q-verdict">' + (ok ? '✓ Correct' : '✗ Incorrect') + '</div>' +
       '</div>';
   });
   h += '</div><div class="foot">' +

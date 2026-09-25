@@ -363,6 +363,25 @@ function qaFindRecordingRow_(sheet, fileId) {
   }
   return null;
 }
+/** PURE (S6, cycle 22; operator 2026-09-25) — is this recording the caller's
+ *  OWN call? By the roster id stored at attribution when there is one, else by
+ *  the attributed name (trimmed, case-insensitive) against the caller's roster
+ *  name — the same match the agent-facing My Reviews read uses. */
+function qaIsOwnRecording_(emp, agentName, agentId) {
+  if (!emp) return false;
+  const id = String(agentId || '').trim();
+  if (id) return id === String(emp.id || '').trim();
+  const a = String(agentName || '').trim().toLowerCase();
+  return !!a && a === String(emp.name || '').trim().toLowerCase();
+}
+/** S6 — the operator's rule: a QA reviewer may not review their own calls;
+ *  an ADMIN may. '' when allowed, else the refusal. `names` are the agent
+ *  attributions the action touches (re-attribution checks the old AND the new). */
+function qaSelfReviewRefusal_(emp, names) {
+  if (!emp || emp.isAdmin) return '';
+  const own = (names || []).some(function (n) { return n && qaIsOwnRecording_(emp, n.name, n.id); });
+  return own ? 'This is your own call — another reviewer (or an admin) has to review it.' : '';
+}
 /** Set a recording's review status. QA-gated, locked; status is enum-bounded
  *  so a crafted call can never write garbage into the column (INV-37 spirit).
  *  Audit row is id + status only (the status is an enum, never free text). */
@@ -378,6 +397,8 @@ function qaSetRecordingStatus(fileId, status, reason) {
     const sheet = getOrCreateQaRecordingsSheet_();
     const found = qaFindRecordingRow_(sheet, fid);
     if (!found) return { success: false, error: 'Recording not found.' };
+    const selfNo = qaSelfReviewRefusal_(emp, [{ name: found.row[QAR.AGENT], id: found.row[QAR.AGENT_ID] }]);   // S6
+    if (selfNo) return { success: false, error: selfNo };
     // Q2 — a skip carries its reason (free text, bounded, QA-store only —
     // it may name the caller). Any other status CLEARS a stale reason.
     const why = st === 'skipped' ? String(reason || '').trim().substring(0, QA_SKIP_REASON_MAX) : '';
@@ -894,6 +915,11 @@ function qaSetRecordingAgent(fileId, agentName) {
     // blank, off-roster, or shared by two roster rows — an ambiguous name
     // releases to nobody rather than to both).
     const agentId = qaRosterIdByName_(name);
+    // S6: neither the recording's CURRENT agent nor the NEW one may be the
+    // caller — moving your own call to someone else, or claiming another's
+    // as yours, is reviewing your own record by another route.
+    const selfNo = qaSelfReviewRefusal_(emp, [{ name: found.row[QAR.AGENT], id: found.row[QAR.AGENT_ID] }, { name: name, id: agentId }]);
+    if (selfNo) return { success: false, error: selfNo };
     // S5 (cycle 22): a share is a release TO an agent. Re-attributing a shared
     // review used to hand it to the NEW agent, and clearing the agent left it
     // "shared with nobody" — a state qaSetRecordingShared itself refuses to
@@ -956,7 +982,10 @@ function qaSaveScorecard(fileId, ratings, notes) {
       return { success: false, error: 'Notes are capped at ' + QA_SCORECARD_NOTES_MAX + ' characters (' + t.length + ') — trim them and save again.' };
     }
     const recSheet = getOrCreateQaRecordingsSheet_();
-    if (!qaFindRecordingRow_(recSheet, fid)) return { success: false, error: 'Recording not found.' };
+    const rec = qaFindRecordingRow_(recSheet, fid);
+    if (!rec) return { success: false, error: 'Recording not found.' };
+    const selfNo = qaSelfReviewRefusal_(emp, [{ name: rec.row[QAR.AGENT], id: rec.row[QAR.AGENT_ID] }]);   // S6
+    if (selfNo) return { success: false, error: selfNo };
     const scorecardId = Utilities.getUuid();
     appendRowsTextSafe_(getOrCreateQaScorecardsSheet_(), [[
       scorecardId, fid, emp.id, emp.name, JSON.stringify(clean), t, Date.now(),
@@ -1337,6 +1366,8 @@ function qaSetRecordingShared(fileId, shared) {
     const sheet = getOrCreateQaRecordingsSheet_();
     const found = qaFindRecordingRow_(sheet, fid);
     if (!found) return { success: false, error: 'Recording not found.' };
+    const selfNo = qaSelfReviewRefusal_(emp, [{ name: found.row[QAR.AGENT], id: found.row[QAR.AGENT_ID] }]);   // S6
+    if (selfNo) return { success: false, error: selfNo };
     const on = !!shared;
     if (on && !String(found.row[QAR.AGENT] || '').trim()) {
       return { success: false, error: 'Attribute this recording to its agent first — sharing releases the review to that agent\'s My Reviews tab.' };

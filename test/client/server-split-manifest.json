@@ -1292,6 +1292,50 @@
     "spanishCacheHash_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "Deferred DF: S6 qaIsOwnRecording_/qaSelfReviewRefusal_; M6 DR SLA working days (DR_SLA_DEFAULT_DAYS, drBusinessDayHours_, drSlaBizHours_, drSlaDaysLabel_, drSlaParseTargets_, getDeptRequestSlaConfigFull_, drSlaAdminView_, drAgeWorkingDaysLabel_); C12 cnArchivedBefore_/cnArchivedBeforeNow_",
+   "added": [
+    "cnArchivedBeforeNow_",
+    "cnArchivedBefore_",
+    "drAgeWorkingDaysLabel_",
+    "drBusinessDayHours_",
+    "drSlaAdminView_",
+    "drSlaBizHours_",
+    "drSlaDaysLabel_",
+    "drSlaParseTargets_",
+    "getDeptRequestSlaConfigFull_",
+    "qaIsOwnRecording_",
+    "qaSelfReviewRefusal_"
+   ],
+   "removed": [],
+   "changed": [
+    "CONFIG",
+    "deptRequestsOverdueOpen_",
+    "doGet",
+    "drDeptStats_",
+    "exportCallNotesRange",
+    "getAdminConfig",
+    "getDeptRequestSla",
+    "getDeptRequestSlaConfig_",
+    "getDeptRequestSla_",
+    "getDeptRequests",
+    "getMyCallNotes",
+    "getMyCallNotesRange",
+    "getMyPendingTasks",
+    "managerGetCallNotes",
+    "qaSaveScorecard",
+    "qaSetRecordingAgent",
+    "qaSetRecordingShared",
+    "qaSetRecordingStatus",
+    "saveDeptRequestSla",
+    "sendDeptRequestReminderDigest",
+    "sendManagerBriefEmail_",
+    "serveExternalForm_",
+    "submitQuizAttempt"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -1704,7 +1748,7 @@
   "CONFIG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "6ee45a9b1614e3bd"
+   "sha": "004016b64ba38e63"
   },
   "CSRT": {
    "file": "00_config.js",
@@ -3916,6 +3960,16 @@
    "kind": "function",
    "sha": "de9b488c66ab22cf"
   },
+  "cnArchivedBeforeNow_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "8421ede7515b3859"
+  },
+  "cnArchivedBefore_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "211d405f4ee7f3fe"
+  },
   "cnCountIntakeNotesResult_": {
    "file": "60_intake.js",
    "kind": "function",
@@ -4249,7 +4303,7 @@
   "deptRequestsOverdueOpen_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "d97642463d68763c"
+   "sha": "1a56b9ec00400002"
   },
   "deriveFlagType_": {
    "file": "30_callnotes.js",
@@ -4274,12 +4328,22 @@
   "doGet": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "ab3c64006eba6c71"
+   "sha": "7b2e34a713ff7b3d"
+  },
+  "drAgeWorkingDaysLabel_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "3415a7b9d04f9555"
   },
   "drBumpCacheGen_": {
    "file": "50_deptrequests.js",
    "kind": "function",
    "sha": "78fd9ff26cbf641c"
+  },
+  "drBusinessDayHours_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "9a513f63f90d143d"
   },
   "drCacheGen_": {
    "file": "50_deptrequests.js",
@@ -4294,7 +4358,7 @@
   "drDeptStats_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "49a1b038a609e719"
+   "sha": "1b65989af6a2643f"
   },
   "drFindOpenRequest_": {
    "file": "50_deptrequests.js",
@@ -4331,10 +4395,30 @@
    "kind": "function",
    "sha": "eb9c7ae4eb1943d5"
   },
+  "drSlaAdminView_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "00cd035c2d0e7c8c"
+  },
+  "drSlaBizHours_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "8891694944c47c6c"
+  },
+  "drSlaDaysLabel_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "b9041cc3159d9774"
+  },
   "drSlaForToDept_": {
    "file": "50_deptrequests.js",
    "kind": "function",
    "sha": "92d00b7b09c6bb70"
+  },
+  "drSlaParseTargets_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "9aa4607d775ef431"
   },
   "drSlaStatus_": {
    "file": "50_deptrequests.js",
@@ -4514,7 +4598,7 @@
   "exportCallNotesRange": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "d3e0aa7fd3c6deb1"
+   "sha": "b73757eda7387d39"
   },
   "featureFlagDef_": {
    "file": "10_core.js",
@@ -4679,7 +4763,7 @@
   "getAdminConfig": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "5766ec0f100c6c7e"
+   "sha": "f2ba9bf5605f1a48"
   },
   "getAdminSheetView": {
    "file": "10_core.js",
@@ -4874,22 +4958,27 @@
   "getDeptRequestSla": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "45efb783caeeba9b"
+   "sha": "95f35959a670ae40"
+  },
+  "getDeptRequestSlaConfigFull_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "bd52d387788aeb13"
   },
   "getDeptRequestSlaConfig_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "0f79c1225961e43a"
+   "sha": "49357c02127c6ba8"
   },
   "getDeptRequestSla_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "2f6936a3e6030910"
+   "sha": "db9f4d9cd61fe38d"
   },
   "getDeptRequests": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "814e199159d8e39e"
+   "sha": "46ada078cb82ea1a"
   },
   "getDeptRequestsSS_": {
    "file": "50_deptrequests.js",
@@ -5104,12 +5193,12 @@
   "getMyCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "27e0862c9ef14d07"
+   "sha": "a66f762dca42944f"
   },
   "getMyCallNotesRange": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "4e2125f94635f60c"
+   "sha": "9bddfa6fa3803cb8"
   },
   "getMyCoaching": {
    "file": "82_coaching.js",
@@ -5149,7 +5238,7 @@
   "getMyPendingTasks": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "0537ccebb02f63c6"
+   "sha": "10d412f08142f4b1"
   },
   "getMyPinnedCallNotes": {
    "file": "30_callnotes.js",
@@ -6369,7 +6458,7 @@
   "managerGetCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "891bbed80f3ae419"
+   "sha": "94bfdba1c729f2c4"
   },
   "managerGetFormSubmission": {
    "file": "61_forms.js",
@@ -6971,6 +7060,11 @@
    "kind": "function",
    "sha": "7ee099321f1d6eec"
   },
+  "qaIsOwnRecording_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "1b2b300582c8ffb9"
+  },
   "qaKnownFileIds_": {
    "file": "90_qa.js",
    "kind": "function",
@@ -7104,7 +7198,12 @@
   "qaSaveScorecard": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "3da13a84c31ecd78"
+   "sha": "059eb0a4cd11a49e"
+  },
+  "qaSelfReviewRefusal_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "c29bf4b0277cb59e"
   },
   "qaSetExemption": {
    "file": "90_qa.js",
@@ -7114,7 +7213,7 @@
   "qaSetRecordingAgent": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "9bd305b33fcc686e"
+   "sha": "b9546dbaba4ea4c6"
   },
   "qaSetRecordingDuration": {
    "file": "90_qa.js",
@@ -7124,12 +7223,12 @@
   "qaSetRecordingShared": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "62677eb6615ea6a0"
+   "sha": "e633304ff7c86168"
   },
   "qaSetRecordingStatus": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "21527b41eec59e42"
+   "sha": "1ef63226a3fa5ab7"
   },
   "qaStatsAggregate_": {
    "file": "90_qa.js",
@@ -7429,7 +7528,7 @@
   "saveDeptRequestSla": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "41e5f80f97af7054"
+   "sha": "20d2f0acd1553cc8"
   },
   "saveEmailTemplates": {
    "file": "10_core.js",
@@ -7594,7 +7693,7 @@
   "sendDeptRequestReminderDigest": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "0ff947e6edec66c7"
+   "sha": "7be6136685355196"
   },
   "sendEmployeeOverdueDocsEmail_": {
    "file": "20_timeclock.js",
@@ -7609,7 +7708,7 @@
   "sendManagerBriefEmail_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "7c17429f29d3250d"
+   "sha": "6bfb34f9b80479a0"
   },
   "sendManagerDailyBrief": {
    "file": "10_core.js",
@@ -7644,7 +7743,7 @@
   "serveExternalForm_": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "204ae43b25dcc8ec"
+   "sha": "531f325125028d8f"
   },
   "serveIntakeFeedbackPage_": {
    "file": "60_intake.js",
@@ -7894,7 +7993,7 @@
   "submitQuizAttempt": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "de5541ccf3d35359"
+   "sha": "d40c0f209739ef3d"
   },
   "submitTimeOffRange": {
    "file": "20_timeclock.js",

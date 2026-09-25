@@ -121,8 +121,15 @@ function drDeptMatch_(item) {
 /** Row tone from status + the existing per-dept SLA machinery (operator
  *  feedback 2026-08-06): green resolved; amber open on-time; deeper amber
  *  at-risk (>=75% of SLA); destructive overdue (past SLA — the per-dept
- *  DR_SLA_TARGETS / 48h default the Admin editor already tunes, so "red after
+ *  DR_SLA_TARGETS / 2-working-day default the Admin editor already tunes, so "red after
  *  X days" is per-department config, not a new constant). */
+/** PURE (M6, cycle 22) — the client twin of drSlaDaysLabel_: SLA targets are
+ *  working days ("2 working days"), measured in business time. */
+function drSlaDaysLabelClient_(days) {
+  var d = Number(days);
+  if (!(d > 0)) return '';
+  return d + (d === 1 ? ' working day' : ' working days');
+}
 function drRowToneCls_(item) {
   if (item.status === 'resolved') return 'st-resolved';
   if (item.slaStatus === 'overdue') return 'st-overdue';
@@ -309,7 +316,7 @@ function drCardStatusHtml_(item) {
       esc(via) + '</span>';
   }
   const elapsed = item.elapsedMin != null ? drFmtMin_(item.elapsedMin) + ' ago' : '';
-  const sla = item.slaHours ? ' · ' + item.slaHours + 'h SLA' : '';
+  const sla = item.slaDays ? ' · ' + drSlaDaysLabelClient_(item.slaDays) + ' SLA' : '';   // M6: working days
   if (item.slaStatus === 'overdue') {
     return '<span class="sp-task-age" style="color:var(--danger-deep)"' + ttl + '>' + esc('Overdue' + sla) + '</span>';
   }
@@ -458,7 +465,7 @@ function drManagerSectionHtml_(data) {
       ? '<td class="dr-num" style="color:var(--danger-deep);font-weight:700">' + s.overdueOpen + '</td>'
       : '<td class="dr-num">0</td>';
     return '<tr>' +
-      '<td>' + esc(s.dept) + (s.slaHours ? ' <span class="dr-tag">' + esc(s.slaHours + 'h SLA') + '</span>' : '') + '</td>' +
+      '<td>' + esc(s.dept) + (s.slaDays ? ' <span class="dr-tag">' + esc(drSlaDaysLabelClient_(s.slaDays) + ' SLA') + '</span>' : '') + '</td>' +
       '<td class="dr-num">' + s.open + '</td>' +
       overdueCell +
       '<td class="dr-num">' + s.resolved + '</td>' +

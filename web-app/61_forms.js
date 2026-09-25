@@ -642,7 +642,9 @@ function serveExternalForm_(token) {
   tpl.formToken = String(token || '');
   return tpl.evaluate()
     .setTitle('UMS — Complete Your Form')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    // S8: not frameable by other sites either — a framed form is a
+    // clickjacking surface over a consent + signature submit.
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT)
     .setSandboxMode(HtmlService.SandboxMode.IFRAME);
 }
 /** G3: returns a completed fillable-form submission for in-app display, so the

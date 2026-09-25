@@ -74,7 +74,7 @@ function doGet(e) {
       '<p>This tool is available only to UniversalMed Supply team members. ' +
       'If you believe you should have access, contact your manager.</p></div></body></html>')
       .setTitle('UMS Team Tools — Access Restricted')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);   // S8 — see the shell below
   }
   // The HTML shell otherwise loads; every google.script.run endpoint still
   // independently requires getEmployeeInfo_() (returns null for non-employees).
@@ -98,7 +98,12 @@ function doGet(e) {
   return tpl
     .evaluate()
     .setTitle('UMS Team Tools')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    // S8 (cycle 22; operator 2026-09-25: nothing embeds the app). ALLOWALL let
+    // ANY website frame the logged-in shell — a clickjacking surface over a
+    // session that can send email, approve time off and read PHI. DEFAULT sends
+    // X-Frame-Options: SAMEORIGIN; Google's own wrapper page is unaffected.
+    // If the app is ever embedded (a Google Site), revisit this deliberately.
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
 }
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
@@ -313,9 +318,7 @@ function getAdminConfig() {
       qaMembers: Object.keys(getQaMembers_()).sort(),   // operator testing note 8 — the QA reviewers editor
       breakSchedules: breakSchedulesAdminView_(),
       qaCriteria: { live: getQaScorecardCriteria_(), seed: QA_SCORECARD_CRITERIA },
-      deptSla: { defaultHours: CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS || 48,
-                 targets: getDeptRequestSlaConfig_(),
-                 departments: Object.keys(getDepartmentEmails_() || {}) },
+      deptSla: drSlaAdminView_(),   // M6: working days, one builder
       featureFlags: { registry: FEATURE_FLAGS, values: getFeatureFlagsResolved_() },
       propBudget: propBudgetsFor_(ADMIN_PROP_KEYS_),   // Q2 — "N of 9,000 bytes" per editor, from the STORED value
       propValueMax: PROP_VALUE_MAX,
@@ -3650,10 +3653,10 @@ function sendManagerBriefEmail_(toEmail, sections, d, todayIso) {
     } else if (s.key === 'deptOverdue') {
       html += table(d.deptOverdue.map(function (o) {
         return row2('<strong>' + esc_(o.dept) + '</strong> · ' + esc_(o.label || 'request') + ' — ' + esc_(o.byName || 'unknown'),
-          o.ageHours + 'h open');
+          o.ageDaysLabel);
       }).join(''));
       text += d.deptOverdue.map(function (o) {
-        return '  ' + o.dept + ' · ' + (o.label || 'request') + ' — ' + (o.byName || 'unknown') + ' · ' + o.ageHours + 'h open';
+        return '  ' + o.dept + ' · ' + (o.label || 'request') + ' — ' + (o.byName || 'unknown') + ' · ' + o.ageDaysLabel;
       }).join('\n');
     }
   });

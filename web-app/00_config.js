@@ -332,7 +332,7 @@ const CONFIG = {
     // DEAD — retained deliberately, read NOWHERE. The EOD gate is local-hour
     // EQUALITY against EOD_WARNING_HOUR (an hourly trigger), not a ± window.
     EOD_WARNING_WINDOW_MINUTES: 30,
-    DR_SLA_DEFAULT_HOURS: 48,            // DeptRequests v2 — default resolution SLA (per-dept overrides via DR_SLA_TARGETS)
+    DR_SLA_DEFAULT_DAYS: 2,              // DeptRequests — default resolution SLA in WORKING DAYS (M6, cycle 22: elapsed time is business time since 2026-08-31, so an hours figure silently meant ~2.5x longer); per-dept overrides via DR_SLA_TARGETS
     DEPARTMENT_EMAILS: {
       'Sales':            'sales@universalmedsupply.com',
       'Eligibility MM&R': 'eligibility@universalmedsupply.com',
