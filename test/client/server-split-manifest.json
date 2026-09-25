@@ -1266,6 +1266,16 @@
     "sendExternalEmail"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "T5 rework: a half day today or later reads hours-not-known, never short",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "getPunctualityReport"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5358,7 +5368,7 @@
   "getPunctualityReport": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "b1800e9145a042c7"
+   "sha": "e39b60c0c02a8015"
   },
   "getQaLog": {
    "file": "90_qa.js",

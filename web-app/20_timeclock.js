@@ -6050,9 +6050,15 @@ function getPunctualityReport(fromDate, toDate) {
       const minHalfHours = CONFIG.PTO_HOURS_PER_DAY / 2;
       const halfVerdict = {};
       let halfShort = 0;
+      // A half day that is TODAY (or later, in the rep's own frame) is not over:
+      // the hours may still be worked, so "short" would be a false flag on the
+      // outlier list. It reads as hours-not-known until the day has passed.
+      const repToday = fmtDateTz_(new Date(), r.tz);
       halfDates.forEach(function (d) {
-        halfVerdict[d] = punctHalfDayVerdict_(r.days[d] && r.days[d].pm, minHalfHours);
-        if (halfVerdict[d].state === 'halfshort') halfShort++;
+        let v = punctHalfDayVerdict_(r.days[d] && r.days[d].pm, minHalfHours);
+        if (v.state === 'halfshort' && d >= repToday) v = { state: 'halfopen', workedHours: v.workedHours };
+        halfVerdict[d] = v;
+        if (v.state === 'halfshort') halfShort++;
       });
       // The previous equivalent range — same grading, no day detail. The PTO
       // overlay now covers it too, so its half days are excluded the same way.

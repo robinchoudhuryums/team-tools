@@ -27803,10 +27803,11 @@ test('T5 (rework): a HALF day has no fixed start — graded on HOURS WORKED (>= 
     getAdpSS_: () => ({ getSheetByName: () => ({ getDataRange: () => ({ getValues: () => ts }) }) }),
     getOrCreateTimeOffSheet_: () => ({ getDataRange: () => ({ getValues: () => to }) }),
     getCompanyHolidays_: () => [], normalizeDate_: (x) => x, normalizeTime_: (x) => x,
-    Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) } });
+    Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) }, fmtDateTz_: () => rTodayIso });
   ['daysBetween_', 'addDaysIso_', 'normalizeType_', 'timeToMins_', 'timeOffDayKind_', 'calcHours_', 'breakPairs_', 'breakSortKey_',
    'punchDayAdd_', 'punctIsHalfDay_', 'punctHalfDayVerdict_', 'punctLunchNearest_', 'punctDayState_', 'punctWeeklyBuckets_',
    'getPunctualityReport'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), rctx));
+  let rTodayIso = '2026-09-26';   // the range is in the past
   const rep = JSON.parse(JSON.stringify(rctx.getPunctualityReport('2026-09-21', '2026-09-25')));
   assert.ok(!rep.error, rep.error);
   const e1 = rep.reps.find((r) => r.id === 'E1');
@@ -27819,6 +27820,11 @@ test('T5 (rework): a HALF day has no fixed start — graded on HOURS WORKED (>= 
     'only the full day is start-graded; the half days are counted apart');
   assert.strictEqual(e1.lunchOnTimePct, null, 'a half day\'s break is not a lunch to grade');
   assert.deepStrictEqual([e1.prevDays, e1.prevOnTime], [1, 1], 'the PTO overlay covers the previous range, so its half day is excluded too');
+  // A half day that is TODAY is not over — nothing worked yet is "not known", never "short" (no false outlier).
+  rTodayIso = '2026-09-24';
+  const live = JSON.parse(JSON.stringify(rctx.getPunctualityReport('2026-09-21', '2026-09-25'))).reps.find((r) => r.id === 'E1');
+  assert.deepStrictEqual(live.dayDetail.map((d) => d.state), ['ontime', 'half', 'halfshort', 'halfopen', 'halfopen'], 'today and later read as hours not known');
+  assert.strictEqual(live.halfShort, 1, 'only the PAST short half day counts');
   const e2 = rep.reps.find((r) => r.id === 'E2');
   assert.ok(e2, 'a rep with only a half day in range is still listed');
   assert.deepStrictEqual([e2.days, e2.onTimePct, e2.halfDays, e2.halfShort], [0, null, 1, 0], 'no graded day is no on-time figure, never 0% or 100%');

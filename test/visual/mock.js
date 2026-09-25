@@ -974,7 +974,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       avgBusinessMinutes: 52, medianBusinessMinutes: 31, businessCount: 11, manualCount: 1,
       businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true },
       membersConfigured: 3, threadsScanned: 15, truncated: false,
-      vmOn: true, vmCounted: 1, vmSuppressed: 2, vmUnparsed: 0, vmMinSeconds: 5 },
+      vmOn: true, vmCounted: 2, vmSuppressed: 2, vmUnparsed: 0, vmMinSeconds: 5 },
     getPatientTimeline: { events: [], partial: false, failedSources: [] },
     cnPing: { ok: true },
     getCalendarData: function (year, month) {
