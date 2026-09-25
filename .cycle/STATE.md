@@ -4,9 +4,9 @@
 Cycle: 22 — opened 2026-09-23 by a `/broad-scan` (99 findings: 0 Critical /
 3 High; nine-batch implementation plan). Cycle 21 + 21post are in HISTORY.md.
 Phase: implement
-Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9) + S2 DONE + Batch 2 DONE (T1, T3, T2, T6, C1, C5) + follow-ons F1–F5 DONE + Batch 3 DONE (I1, C4, K2, K6, C3, D6, D7, C6, C10, C11) + Batch 4 DONE (M4, M1, X3, M2, M8, M3, M7, M9, D1, D2) + Batch 5 DONE (K3, K1, K4, K5, X1, K7, K9, K12, K11, K13, K10) + Batch 6 DONE (A1, A2, C2, A3, S7, A4, A5, A6, A8) + Batch 7 DONE (T5, T4, T7, T8, T9, T10, T11, D3, D5, M10, M5)
+Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9) + S2 DONE + Batch 2 DONE (T1, T3, T2, T6, C1, C5) + follow-ons F1–F5 DONE + Batch 3 DONE (I1, C4, K2, K6, C3, D6, D7, C6, C10, C11) + Batch 4 DONE (M4, M1, X3, M2, M8, M3, M7, M9, D1, D2) + Batch 5 DONE (K3, K1, K4, K5, X1, K7, K9, K12, K11, K13, K10) + Batch 6 DONE (A1, A2, C2, A3, S7, A4, A5, A6, A8) + Batch 7 DONE (T5, T4, T7, T8, T9, T10, T11, D3, D5, M10, M5) + Batch 8 DONE (I2, I3, S5, D8, D4, C7, C8, C9, I4, I5, I6, I7, D9, I8)
 Test Command: manual
-Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent) · S2 (phased, blanket): L (~9 h) — helper+pin 1h · wrap every write site ~180 + pin repairs 6h · derived pin + bite-checks 2h | S2 Actual: ~5 h · Batch 2: M (~11.5 h) — T1 M 3h · T3 M 3h · T2 S 1.5h · T6 S 1.5h · C1 S 1.5h · C5 S 1h | Batch 2 Actual: ~4.5 h · Follow-ons F1–F5: M (~7 h) — F1 cleanup lock S 1h · F2 TSV twin S 1h · F3 stored-formula scan M 2h · F4 Spanish grid + grow-first net S 1h · F5 Day Edit stray leaves M 2h | Follow-ons Actual: ~3.5 h · Batch 3: L (~12 h) — I1 M 2.5h · C4 S 1.5h · K2 S 1.5h · K6 S 1h · C3 S 1h · D6 S 1.5h · D7 S 1h · C6 S 1h · C10 S 1h · C11 S 0.5h | Batch 3 Actual: ~5 h · Batch 4: L (~11 h) — M4 S 1.5h · M1 S 1h · X3 S 0.5h · M2 S 1h · M3 S 1.5h · M7 S 1.5h · M8 S 1h · M9 S 1h · D1 S 1.5h · D2 S 0.5h | Batch 4 Actual: ~3.5 h · Batch 5: L (~12 h) — K3 M 2.5h · K1 S 1.5h · K4 M 2h · K5 S 1.5h · X1 S 1h · K7 S 1h · K9 S 0.5h · K12 S 1h · K11 S 0.5h · K13 S 0.5h · K10 S 0.25h | Batch 5 Actual: ~3 h · Batch 6: L (~12 h) — A1 M 3h · A2 M 3h · C2 S 1h · A3 S 1h · S7 S 1.5h · A4 S 1h · A5 S 0.5h · A6 S 0.5h · A8 S 0.5h | Batch 6 Actual: ~3.5 h · Batch 7: L (~13 h) — T5 M 2h · T4 S 1.5h · T7 S 1.5h · T8 S 1h · T9 S 0.5h · T10 S 0.5h · T11 S 0.5h · D3 M 2h · D5 S 1h · M10 S 1h · M5 S 1.5h | Batch 7 Actual: ~4 h · Batch 8: L (~12 h) — I2 S 1.5h · I3 S 1h · S5 S 1h · D8 S 1.5h · D4 S 1h · C7 S 1.5h · C8 S 1h · C9 S 1h · I4 S 0.5h · I5 S 1h · I6 S 0.5h · I7 S 0.5h · D9 S 0.5h · I8 S 0.25h
+Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent) · S2 (phased, blanket): L (~9 h) — helper+pin 1h · wrap every write site ~180 + pin repairs 6h · derived pin + bite-checks 2h | S2 Actual: ~5 h · Batch 2: M (~11.5 h) — T1 M 3h · T3 M 3h · T2 S 1.5h · T6 S 1.5h · C1 S 1.5h · C5 S 1h | Batch 2 Actual: ~4.5 h · Follow-ons F1–F5: M (~7 h) — F1 cleanup lock S 1h · F2 TSV twin S 1h · F3 stored-formula scan M 2h · F4 Spanish grid + grow-first net S 1h · F5 Day Edit stray leaves M 2h | Follow-ons Actual: ~3.5 h · Batch 3: L (~12 h) — I1 M 2.5h · C4 S 1.5h · K2 S 1.5h · K6 S 1h · C3 S 1h · D6 S 1.5h · D7 S 1h · C6 S 1h · C10 S 1h · C11 S 0.5h | Batch 3 Actual: ~5 h · Batch 4: L (~11 h) — M4 S 1.5h · M1 S 1h · X3 S 0.5h · M2 S 1h · M3 S 1.5h · M7 S 1.5h · M8 S 1h · M9 S 1h · D1 S 1.5h · D2 S 0.5h | Batch 4 Actual: ~3.5 h · Batch 5: L (~12 h) — K3 M 2.5h · K1 S 1.5h · K4 M 2h · K5 S 1.5h · X1 S 1h · K7 S 1h · K9 S 0.5h · K12 S 1h · K11 S 0.5h · K13 S 0.5h · K10 S 0.25h | Batch 5 Actual: ~3 h · Batch 6: L (~12 h) — A1 M 3h · A2 M 3h · C2 S 1h · A3 S 1h · S7 S 1.5h · A4 S 1h · A5 S 0.5h · A6 S 0.5h · A8 S 0.5h | Batch 6 Actual: ~3.5 h · Batch 7: L (~13 h) — T5 M 2h · T4 S 1.5h · T7 S 1.5h · T8 S 1h · T9 S 0.5h · T10 S 0.5h · T11 S 0.5h · D3 M 2h · D5 S 1h · M10 S 1h · M5 S 1.5h | Batch 7 Actual: ~4 h · Batch 8: L (~12 h) — I2 S 1.5h · I3 S 1h · S5 S 1h · D8 S 1.5h · D4 S 1h · C7 S 1.5h · C8 S 1h · C9 S 1h · I4 S 0.5h · I5 S 1h · I6 S 0.5h · I7 S 0.5h · D9 S 0.5h · I8 S 0.25h | Batch 8 Actual: ~3.5 h
 Subsystem cycles since last Seams audit: 1 — reset to 0 by the 2026-09-18 audit
 (batch S), +1 for the 21post reflection. The cadence is every 4.
 Updated: 2026-09-25
@@ -73,6 +73,12 @@ Updated: 2026-09-25
 - D3, D5 | 90_qa.js, qa/script_qa.html | resumable QA sync (continuation token) with the Drive walk outside the lock; ranged per-chunk audio reads with the old read as fallback
 - M10, M5 | 40_metrics.js, 51_spanish.js | transfer tab span-bound + result-cached; every voicemail in a thread is its own request
   Block: `.cycle/blocks/22-B7-broad-implement.md`
+- I2, I3, I4, I5, I6, I8 | 60_intake.js, intake/script_intake.html | seat cells read word by word (engine, validator, catalog filter); first-number weight, unreadable named; Sent tab names failed form types; tri-state account Yes/No; solid-by-code never a seat error; 0-based secondary rows
+- C7, I7 | 30_callnotes.js, 61_forms.js | PDFs fetched before tokens, tokens voided on a failed send; retention floored at token expiry + 1 day
+- C8, C9 | 80_training.js, cn/script_callnotes.html | Clear reply clears the thread; templates keep inserted price lines
+- S5, D9 | 90_qa.js, qa/script_qa.html | a changed agent withdraws the share; a late comment post acts only on the recording still open
+- D8, D4 | train/script_training.html, train/script_empdocs.html | Team Training names failed sources and keeps a quiz's link; Verify for every issued doc
+  Block: `.cycle/blocks/22-B8-broad-implement.md`
 - F1 | Tests.js | every live-tab positional delete in the suite goes through _deleteRowsWhereLocked_ (ScriptLock from snapshot to last delete)
 - F2 | script_core.html, metrics/script_metrics.html | tsvCell_/tsvRow_ — the client twin of sheetSafe_ on every "Copy table" line
 - F3 | 10_core.js, cn/script_callnotes.html | adminScanStoredFormulas + Admin → System → Stored formulas (read-only, on demand)
@@ -153,6 +159,10 @@ Updated: 2026-09-25
   quote sent; 100+ comments show the newest. After deploy read Admin → System
   → Reference lookups: the "Cannot read" list (K3 may have added cells with
   harmless extra words) and the delivery header roles.
+- **Batch 8 follow-ons (22-B8 block):** no automatic content-hash check on
+  Employee Doc reads; the unreadable-weight factor is not warned inline on the
+  recommendation screen; a voided form token has no void audit row. OPERATOR:
+  after deploy, fix any Offerings seat cell the catalog card calls unreadable.
 - **Batch 7 follow-ons (22-B7 block):** task-CREATING flows do not bust the
   rep's pending-tasks cache; a repeat-voicemail card's expanded body is the
   thread's first message and `vmPending` is not rendered; punctuality's previous
@@ -254,8 +264,8 @@ Updated: 2026-09-25
   amber** with their own explanations (operator, 2026-09-22).
 
 ## Where I left off
-Batches 1–7, S2 and follow-ons F1–F5 of cycle 22 are committed and pushed;
-none is deployed. Docs are synced through Batch 6; Batch 7 (working-day
-semantics, scheduling, QA ingest) is implemented — block
-`.cycle/blocks/22-B7-broad-implement.md`. Next: `/sync-docs` for Batch 7, then
-deploy + the walks, or `/broad-implement Batch 8`.
+Batches 1–8, S2 and follow-ons F1–F5 of cycle 22 are committed and pushed;
+none is deployed. Docs are synced through Batch 6; Batches 7 and 8 are
+implemented (blocks 22-B7 / 22-B8). The T5 half-day rework (≥ 4 hours at any
+time) is owed. Next: `/sync-docs` for Batches 7 + 8, then `/broad-implement
+Batch 9`, the T5 rework, or deploy + the walks.
