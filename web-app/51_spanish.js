@@ -599,6 +599,21 @@ function getSpanishInboxResolved(days) {
       truncated: threads.length >= SPANISH_THREAD_SCAN_MAX };
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
+/** PURE (M5 follow-up) — which message a thread's body is read from: on a
+ *  voicemail thread (its FIRST message is an 8x8 notification) the NEWEST
+ *  voicemail message, with the count of voicemails; otherwise the first
+ *  message (the request), vmCount 0. */
+function spanishThreadBodyMessage_(msgs, vmSender, vmFilter) {
+  const first = msgs[0];
+  if (!spanishVmMatch_(first.getFrom(), first.getSubject(), vmSender, vmFilter)) return { msg: first, vmCount: 0 };
+  let newest = first, n = 0;
+  msgs.forEach(function (m, k) {
+    if (k > 0 && !spanishVmMatch_(m.getFrom(), m.getSubject(), vmSender, vmFilter)) return;
+    n++;
+    newest = m;   // thread order is time order
+  });
+  return { msg: newest, vmCount: n };
+}
 /** Full body of one Spanish-inbox request thread (canSeeSpanishInbox_-gated, on-demand
  *  expand). Scope-guarded: only returns the body if the thread is actually
  *  addressed to the configured inbox, so a manager can't pull arbitrary thread
@@ -621,10 +636,17 @@ function getSpanishInboxThreadBody(threadId) {
     // — operator 2026-08-25); exact address match per F(cycle-8).
     if (!spanishThreadInScope_(first, addr))
       return { error: 'Not a Spanish-inbox thread.' };
+    // M5 follow-up (cycle 22): a repeat caller's voicemails share a thread,
+    // and the pending card shows the NEWEST one — the first message is the
+    // oldest, so Expand showed a different voicemail from the snippet above
+    // it. On a voicemail thread the body is the newest voicemail (the one a
+    // pending card names: a reply after it would have resolved every one).
+    const pick = spanishThreadBodyMessage_(msgs, getSpanishVmSender_(), getSpanishVmFilter_());
     return {
       threadId: String(threadId),
-      subject: first.getSubject() || '(no subject)',
-      body: String(first.getPlainBody() || '').trim().slice(0, 8000),
+      subject: pick.msg.getSubject() || '(no subject)',
+      body: String(pick.msg.getPlainBody() || '').trim().slice(0, 8000),
+      vmCount: pick.vmCount,   // additive; 0 for an email request thread
       permalink: th.getPermalink(),
     };
   } catch (err) { return { error: 'Read failed: ' + err.message }; }

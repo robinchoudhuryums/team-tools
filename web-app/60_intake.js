@@ -1246,7 +1246,12 @@ function intakePreviewPPD(payload) {
     const subject = 'PPD for ' + patientInfo;
     const body = intakeBuildPpdBodyHtml_(patientInfo, intakePpdRowsEn_(payload.answers), recData, null);   // F-27: labels from the bank, never the client
     const html = intakeEmailShell_(subject, body, 'Intake · PPD');
-    return { success: true, html: html, subject: subject, recommendations: recData, bodyHash: intakeBodyHash_(body, subject) };
+    // I3 follow-up (cycle 22): an answer with no number in it ran NO weight-
+    // capacity check — said in the explain factors, now also on the screen the
+    // rep reads before sending (additive; the engine is unchanged).
+    const weightUnreadable = !!intakeDeriveClinicalFactors_(payload.answers || {}).patient.weightUnreadable;
+    return { success: true, html: html, subject: subject, recommendations: recData, bodyHash: intakeBodyHash_(body, subject),
+             weightUnreadable: weightUnreadable };
   } catch (err) { return { error: err.message }; }
 }
 function intakeStoreOversizeError_(cellStrings) {

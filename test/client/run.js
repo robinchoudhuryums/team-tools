@@ -15851,7 +15851,7 @@ test('wiring: the fold rides both lists, first-message re-check, one predicate a
   const mf = extractScript('metrics/script_metrics.html');
   assert.ok(/spanishVmPillHtml_\(t\)/.test(mf.slice(mf.indexOf('function spanishResolvedCard_'))), 'resolved card carries the pill');
   const pillFn = extractFunction('metrics/script_metrics.html', 'spanishVmPillHtml_');
-  assert.ok(/kind === 'voicemail'/.test(pillFn), 'pill renders only for kind voicemail');
+  assert.ok(/kind !== 'voicemail'\) return ''/.test(pillFn), 'pill renders only for kind voicemail');
 });
 
 
@@ -28214,17 +28214,22 @@ test('C7: form tokens are created only after the PDFs are in hand, and voided if
   const src = stripJsComments_(extractRawFunction('Code.js', 'sendExternalEmail'));
   const fetchAt = src.indexOf('UrlFetchApp.fetch(url'), tokenAt = src.indexOf('createFormToken(');
   assert.ok(fetchAt > 0 && tokenAt > fetchAt, 'the PDF fetch runs BEFORE any token is written');
-  assert.ok(/catch \(sendErr\) \{\s*formTokensVoid_\(formLinks\.map\(function \(l\) \{ return l\.token; \}\)\);\s*return \{ success: false/.test(src),
+  assert.ok(/catch \(sendErr\) \{\s*formTokensVoid_\(formLinks\.map\(function \(l\) \{ return l\.token; \}\), emp\);\s*return \{ success: false/.test(src),
     'a failed send withdraws the tokens it created');
   const rows = { t1: { rowIndex: 5 }, t2: { rowIndex: 9 } };
-  const writes = [];
+  const writes = [], audits = [];
   const ctx = vm.createContext({ Logger: { log() {} }, FT: { STATUS: 6 }, sheetSafe_: (v) => v,
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     getOrCreateFormTokensSheet_: () => ({ getRange: (r, c) => ({ setValue: (v) => writes.push(r + ':' + c + ':' + v) }) }),
-    findFormTokenRow_: (sh, t) => rows[t] || null });
+    findFormTokenRow_: (sh, t) => rows[t] || null, formTokenRef_: (t) => 'ref(' + t + ')',
+    writeAuditLog_: (emp, action, d, t, adj, back, notes) => audits.push(emp.id + '|' + action + '|' + notes) });
   vm.runInContext(extractRawFunction('Code.js', 'formTokensVoid_'), ctx);
-  assert.strictEqual(ctx.formTokensVoid_(['t1', 'gone', 't2']), 2);
+  assert.strictEqual(ctx.formTokensVoid_(['t1', 'gone', 't2'], { id: 'E1' }), 2);
   assert.deepStrictEqual(writes, ['5:7:voided', '9:7:voided'], 'each created token is marked voided');
+  // Follow-up (cycle 22): the withdrawal is in the trail too — by REFERENCE, never the live token (S4).
+  assert.deepStrictEqual(audits.map((a) => a.split('; ')[0]), ['E1|FormTokenVoided|tokenRef=ref(t1)', 'E1|FormTokenVoided|tokenRef=ref(t2)'],
+    'one FormTokenVoided row per withdrawn token; none for a token that was not found');
+  assert.ok(audits.every((x) => !/tokenRef=t\d/.test(x)), 'the live token never reaches the audit row');
   const pub = stripJsComments_(extractRawFunction('Code.js', 'getFormByToken'));
   assert.ok(/if \(status === 'voided'\) return \{ error: 'This form link was withdrawn/.test(pub), 'the public route refuses a withdrawn link');
   const sent = stripJsComments_(extractRawFunction('Code.js', 'getMySentForms'));
@@ -28399,6 +28404,97 @@ test('FU-B6e: the trigger installer is recorded, and offboarding them is named b
   assert.ok(/add\('triggerOwner'/.test(det) && /triggerOwnerOffboarded_\(owner, emails, readOffboardedEmails_\(\)\)/.test(det), 'the detector reads it');
   const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
   assert.ok(/key: 'triggerOwner'/.test(mock), 'the health fixture carries the detector (INV-185)');
+});
+
+test('FU-B7a: the flows that CREATE a task bust the target rep\'s Needs-you cache — an assignment, an issued document, a coaching item', () => {
+  const tr = stripJsComments_(extractRawFunction('Code.js', 'saveTrainingAssignment'));
+  assert.ok(/if \(allMode\) pendingTasksBustAll_\(\); else targets\.forEach\(function \(id\) \{ pendingTasksBust_\(id\); \}\);/.test(tr), 'an assignment busts every target (or everyone)');
+  assert.ok(tr.indexOf("'TrainingAssign'") < tr.indexOf('pendingTasksBustAll_()'), 'after the write lands');
+  const doc = stripJsComments_(extractRawFunction('Code.js', 'issueDoc'));
+  assert.ok(/if \(v\.doc\.status !== 'draft'\) pendingTasksBust_\(v\.doc\.empId\);/.test(doc), 'an issued (non-draft) document busts the rep; a draft busts at release');
+  const co = stripJsComments_(extractRawFunction('Code.js', 'createCoaching'));
+  assert.ok(/pendingTasksBust_\(target\.id\);/.test(co) && co.indexOf("'CoachingCreate'") < co.indexOf('pendingTasksBust_(target.id)'), 'a coaching item busts the rep');
+});
+
+test('FU-B7b: a repeat caller\'s voicemail thread expands to the NEWEST voicemail — the one the card names — and the pill says how many wait (driven)', () => {
+  const ctx = vm.createContext({ String });
+  vm.runInContext(extractRawFunction('Code.js', 'emailAddrOnly_'), ctx);
+  ['spanishVmMatch_', 'spanishThreadBodyMessage_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const m = (from, subject, id) => ({ id, getFrom: () => from, getSubject: () => subject });
+  const vm1 = m('vm@8x8.com', 'New voicemail from Ana via A_Q_Spanish', 'vm1'), reply = m('rep@ums.com', 'Re: New voicemail', 'r'),
+        vm2 = m('vm@8x8.com', 'New voicemail from Ana via A_Q_Spanish', 'vm2');
+  const pick = ctx.spanishThreadBodyMessage_([vm1, reply, vm2], 'vm@8x8.com', 'A_Q_Spanish');
+  assert.deepStrictEqual([pick.msg.id, pick.vmCount], ['vm2', 2], 'the newest voicemail, never the reply, and the count');
+  const req = m('pat@x.com', 'Ayuda', 'q'), staff = m('rep@ums.com', 'Re: Ayuda', 's');
+  const p2 = ctx.spanishThreadBodyMessage_([req, staff], 'vm@8x8.com', 'A_Q_Spanish');
+  assert.deepStrictEqual([p2.msg.id, p2.vmCount], ['q', 0], 'an email request still reads its first message');
+  const body = stripJsComments_(extractRawFunction('Code.js', 'getSpanishInboxThreadBody'));
+  assert.ok(/const pick = spanishThreadBodyMessage_\(msgs, getSpanishVmSender_\(\), getSpanishVmFilter_\(\)\)/.test(body) &&
+    /body: String\(pick\.msg\.getPlainBody\(\)/.test(body) && body.indexOf('spanishThreadInScope_(first, addr)') < body.indexOf('spanishThreadBodyMessage_'),
+    'the scope guard still runs on the FIRST message, before the pick');
+  const s2 = buildSandbox([]);
+  s2.icon = () => '';
+  const pill = loadFunction(s2, 'metrics/script_metrics.html', 'spanishVmPillHtml_');
+  assert.ok(/ 2 voicemails</.test(pill({ kind: 'voicemail', vmPending: 2 })), 'two waiting');
+  assert.ok(/ voicemail</.test(pill({ kind: 'voicemail', vmPending: 1 })) && / voicemail</.test(pill({ kind: 'voicemail' })), 'one (or an older server) reads as before');
+  assert.strictEqual(pill({ kind: 'email', vmPending: 3 }), '', 'an email thread gets no pill');
+  assert.ok(/vmPending: 2 \}/.test(fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8')), 'the fixture puts a repeat caller on camera');
+});
+
+test('FU-B7c: finishing a task in ONE window invalidates the Needs-you list in the others — BroadcastChannel, nothing persisted (driven)', () => {
+  const s2 = buildSandbox([]);
+  const posted = [];
+  let chan = null;
+  s2.BroadcastChannel = function (name) { this.name = name; this.postMessage = (msg) => posted.push(name + ':' + msg); chan = this; };
+  s2.CLK_NEEDS = { at: 99 };
+  s2.CLK_NEEDS_CHANNEL = null;
+  loadFunction(s2, 'tc/script_clock.html', 'clkNeedsYouChannel_');
+  const inv = loadFunction(s2, 'tc/script_clock.html', 'clkNeedsYouInvalidate_');
+  inv();
+  assert.strictEqual(s2.CLK_NEEDS.at, 0, 'this window refetches');
+  assert.deepStrictEqual(posted, ['team-tools-needs-you:invalidate'], 'and tells the others');
+  s2.CLK_NEEDS.at = 42;
+  chan.onmessage({ data: 'invalidate' });
+  assert.strictEqual(s2.CLK_NEEDS.at, 0, 'a peer\'s message invalidates here');
+  assert.strictEqual(posted.length, 1, 'without echoing it back (no broadcast storm)');
+  s2.BroadcastChannel = undefined; s2.CLK_NEEDS_CHANNEL = null; s2.CLK_NEEDS.at = 7;
+  inv();
+  assert.strictEqual(s2.CLK_NEEDS.at, 0, 'a browser without BroadcastChannel keeps the per-window behaviour');
+  assert.ok(!/'ums[A-Za-z0-9]+'/.test(extractFunction('tc/script_clock.html', 'clkNeedsYouChannel_')), 'the channel name is not a localStorage-key literal');
+});
+
+test('FU-B8a: every Employee Doc read checks the content hash — an altered document says so to whoever reads it; a legacy row is not "altered" (driven)', () => {
+  const ctx = vm.createContext({ String, empDocContentHashMatches_: (h, body) => h === 'H' && body === 'orig' });
+  vm.runInContext(extractRawFunction('Code.js', 'empDocReadIntegrity_'), ctx);
+  assert.strictEqual(ctx.empDocReadIntegrity_({ contentHash: 'H', bodyMd: 'orig' }), 'ok');
+  assert.strictEqual(ctx.empDocReadIntegrity_({ contentHash: 'H', bodyMd: 'edited' }), 'altered');
+  assert.strictEqual(ctx.empDocReadIntegrity_({ contentHash: '', bodyMd: 'x' }), 'unverifiable', 'no hash is unverifiable, never altered (F-24)');
+  assert.ok(/integrity: empDocReadIntegrity_\(d\)/.test(stripJsComments_(extractRawFunction('Code.js', 'getMyDoc'))), 'getMyDoc ships it');
+  const s2 = buildSandbox([]);
+  s2.icon = () => '';
+  const note = loadFunction(s2, 'train/script_empdocs.html', 'edIntegrityNoteHtml_');
+  assert.ok(/data-integrity="altered"/.test(note({ integrity: 'altered', isOwner: true })) && /ask your manager/.test(note({ integrity: 'altered', isOwner: true })), 'the owner is told');
+  assert.ok(/Use Verify/.test(note({ integrity: 'altered', isOwner: false })), 'a manager is pointed at Verify');
+  assert.strictEqual(note({ integrity: 'unverifiable', isOwner: true }), '', 'a rep is not shown a legacy-row note they can do nothing about');
+  assert.ok(/data-integrity="unverifiable"/.test(note({ integrity: 'unverifiable', isOwner: false })), 'a manager is');
+  assert.strictEqual(note({ integrity: 'ok' }), '');
+  assert.ok(/body \+= edIntegrityNoteHtml_\(doc\);/.test(extractFunction('train/script_empdocs.html', 'edRenderDoc_')), 'the reader renders it');
+  assert.ok(/\.ed-integrity-note \{/.test(fs.readFileSync(path.join(FU_WEB, 'train/script_empdocs.html'), 'utf8')), 'with a rule of its own (the T6 ratchet)');
+});
+
+test('FU-B8b: an unreadable weight answer is said ON the recommendation screen — no weight-capacity check ran (driven)', () => {
+  const s2 = buildSandbox([]);
+  s2.icon = () => '';
+  const w = loadFunction(s2, 'intake/script_intake.html', 'intakeWeightWarnHtml_');
+  assert.ok(/no weight-capacity check/.test(w({ weightUnreadable: true })) && /role="alert"/.test(w({ weightUnreadable: true })));
+  assert.strictEqual(w({ weightUnreadable: false }), '');
+  assert.strictEqual(w(null), '');
+  const prev = stripJsComments_(extractRawFunction('Code.js', 'intakePreviewPPD'));
+  assert.ok(/intakeDeriveClinicalFactors_\(payload\.answers \|\| \{\}\)\.patient\.weightUnreadable/.test(prev) && /weightUnreadable: weightUnreadable/.test(prev),
+    'the preview ships the SAME derivation the engine and the explain factors read');
+  const intk = fs.readFileSync(path.join(FU_WEB, 'intake/script_intake.html'), 'utf8');
+  assert.ok(/weightUnreadable: !!res\.weightUnreadable/.test(intk) && /intakeWeightWarnHtml_\(INTAKE_STATE\.preview\)/.test(intk), 'the modal renders it');
+  assert.ok(/\.intk-weight-warn \{/.test(intk), 'with a rule (the T6 ratchet)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

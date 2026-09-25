@@ -2556,9 +2556,12 @@ function spanishNavTo_(btn) {
  *  tells "call this person back" from "answer this email". Info-toned — a
  *  voicemail is a channel, not a verdict. */
 function spanishVmPillHtml_(t) {
-  return (t && t.kind === 'voicemail')
-    ? '<span class="sp-vm-pill">' + icon('mail', 10) + ' voicemail</span>'
-    : '';
+  if (!t || t.kind !== 'voicemail') return '';
+  // M5 follow-up (cycle 22): a repeat caller's voicemails share ONE thread
+  // and one card; the card shows the newest, the pill says how many wait.
+  var n = Number(t.vmPending) || 1;
+  return '<span class="sp-vm-pill"' + (n > 1 ? ' title="' + n + ' voicemails from this caller are waiting — the card shows the newest"' : '') + '>' +
+    icon('mail', 10) + (n > 1 ? ' ' + n + ' voicemails' : ' voicemail') + '</span>';
 }
 
 /** PURE (Node-pinned) — the claim pill for the card head. "you" for the

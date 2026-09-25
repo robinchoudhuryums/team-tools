@@ -176,7 +176,7 @@ function normalizeWebAppExecUrl_(url) {
  *  'voided', refused by the public route and hidden from Sent Forms. Locked
  *  (the tokens tab is appended under the same lock); best-effort — the send
  *  already failed and says so, and an unvoided token still expires. */
-function formTokensVoid_(tokens) {
+function formTokensVoid_(tokens, emp) {
   const list = (tokens || []).filter(Boolean);
   if (!list.length) return 0;
   const lock = LockService.getScriptLock();
@@ -186,7 +186,14 @@ function formTokensVoid_(tokens) {
     const sheet = getOrCreateFormTokensSheet_();
     list.forEach(function (t) {
       const located = findFormTokenRow_(sheet, t);
-      if (located) { sheet.getRange(located.rowIndex, FT.STATUS + 1).setValue(sheetSafe_('voided')); n++; }
+      if (!located) return;
+      sheet.getRange(located.rowIndex, FT.STATUS + 1).setValue(sheetSafe_('voided'));
+      n++;
+      // Follow-up to C7 (cycle 22): the FormTokenCreated row said a link was
+      // made; without this nothing in the trail said it was withdrawn. The
+      // same REFERENCE, never the live token (S4).
+      writeAuditLog_(emp || { id: '', name: '', email: '' }, 'FormTokenVoided', '', '', false, 0,
+        'tokenRef=' + formTokenRef_(t) + '; reason=the email carrying it failed to send');
     });
   } catch (e) { Logger.log('formTokensVoid_ failed: ' + e.message); }
   finally { try { lock.releaseLock(); } catch (_) {} }

@@ -214,6 +214,8 @@
   .intk-cat-card .cat-img { width: 100%; height: 110px; object-fit: contain; background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--radius-sm); }
   .intk-cat-card .cat-noimg { width: 100%; height: 110px; display: flex; align-items: center; justify-content: center; font-size: .72rem; color: var(--muted); border: 1px dashed var(--line); border-radius: var(--radius-sm); }
   .intk-cat-card .cat-code { font-weight: 700; font-size: 1rem; }
+  /* I3 follow-up — an unreadable weight answer on the recommendation screen. */
+  .intk-weight-warn { border-left: 3px solid var(--warning-deep); background: var(--warn-soft); padding: 8px 12px; border-radius: 0 8px 8px 0; font-size: .8rem; margin-bottom: 10px; }
   /* The recommendation cards' brochure-link treatment is scoped to .intk-rec,
      so without this the catalog's HCPCS link fell back to the UA default
      (blue + underline) — the app has ONE link vocabulary. */
@@ -1737,7 +1739,8 @@ function intakePpdPreviewGo_(payload) {
     .withSuccessHandler(function (res) {
       if (currentView !== requested) return;
       if (!res || res.error) { showToast((res && res.error) || 'Preview failed.', 'toast-error'); return; }
-      INTAKE_STATE.preview = { formType: 'PPD', bodyHash: res.bodyHash, subject: res.subject, recommendations: res.recommendations, payload: payload };
+      INTAKE_STATE.preview = { formType: 'PPD', bodyHash: res.bodyHash, subject: res.subject, recommendations: res.recommendations, payload: payload,
+        weightUnreadable: !!res.weightUnreadable };
       if (payload.amendsSubmissionId) showToast('Amending — the sent email will carry the AMENDED banner + subject prefix.', 'toast-info');
       intakeOpenPpdPreviewModal_(res.html, res.recommendations);
     })
@@ -1766,6 +1769,15 @@ function intakeOpenPpdPreviewModal_(html, recs) {
   }
 }
 
+/** I3 follow-up (cycle 22) — the weight answer had no number in it, so the
+ *  engine applied NO weight-capacity check: every chair below may be over the
+ *  patient's weight. Said on the screen the rep acts on, before sending. */
+function intakeWeightWarnHtml_(preview) {
+  if (!preview || !preview.weightUnreadable) return '';
+  return '<div class="intk-weight-warn" role="alert">' + icon('warning', 12) +
+    ' The weight answer (Q38) has no number in it, so <strong>no weight-capacity check</strong> was applied — ' +
+    'these chairs are not filtered by weight. Re-enter the weight in lbs and preview again.</div>';
+}
 function intakeBuildPpdModal_(html, recs) {
   var items = [].concat((recs && recs.complex) || [], (recs && recs.standard) || []);
   var panel = items.length
@@ -1817,6 +1829,7 @@ function intakeBuildPpdModal_(html, recs) {
   // text, code to open the brochure), email-body preview below.
   var body =
     '<div class="intk-recpanel"><h4 style="margin:0 0 8px;">Qualifying Power Mobility Devices</h4>' +
+      intakeWeightWarnHtml_(INTAKE_STATE.preview) +
       '<div style="font-size:.78rem;color:var(--muted);margin-bottom:8px;">Click an image to open it (copy/save to text the patient); click the code to open the brochure. Star + Accepted/Rejected ride into the email.</div>' +
       panel + '</div>' +
     '<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:.82rem;color:var(--muted);">Preview the email body</summary><div class="intk-prev" style="margin-top:8px;">' + html + '</div></details>' +

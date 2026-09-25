@@ -3179,7 +3179,7 @@ function sendExternalEmail(payload) {
   } catch (sendErr) {
     // C7 (cycle 22): the link never reached anyone — withdraw it, so it is
     // neither a live credential nor an "Awaiting" row in Sent Forms.
-    formTokensVoid_(formLinks.map(function (l) { return l.token; }));
+    formTokensVoid_(formLinks.map(function (l) { return l.token; }), emp);
     return { success: false, error: 'Email send failed: ' + sendErr.message };
   }
 

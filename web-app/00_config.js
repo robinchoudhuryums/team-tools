@@ -538,7 +538,7 @@ const CN_AUDIT_ACTIONS = [
   'CallNoteDelete', 'CallNoteEmail', 'CallNoteTrainingReply', 'CallNotePin',
   'CallNoteFeedback', 'CallNoteManagerComment', 'CallNoteTagAdmin',
   'CallNotesExport', 'ExternalEmailSent',
-  'FormTokenCreated', 'FormSubmissionReceived',
+  'FormTokenCreated', 'FormTokenVoided', 'FormSubmissionReceived',
 ];
 // Bounded read: the audit search scans at most this many of the most-recent
 // AuditLog rows (append-only/chronological), then filters in memory. Keeps the

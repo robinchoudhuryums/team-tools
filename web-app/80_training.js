@@ -674,6 +674,9 @@ function saveTrainingAssignment(payload) {
     writeAuditLog_(callerEmp, 'TrainingAssign', fmtDate_(now), '', false, 0,
       'itemType=' + itemType + '; itemId=' + itemId + '; targets=' + (allMode ? 'all' : targets.length) + (dueDate ? '; due=' + dueDate : ''),
       callerEmp.email);
+    // Follow-up to T10 (cycle 22): a NEW assignment is a new task on each
+    // target's Needs-you list — it used to wait out the cache's TTL.
+    if (allMode) pendingTasksBustAll_(); else targets.forEach(function (id) { pendingTasksBust_(id); });
     // Cycle-9 M-7: the notification loop fires AFTER the lock releases (in
     // the finally) — an '*' assignment walks the WHOLE roster sending one
     // MailApp email per employee (~0.3–0.5s each), and holding the global

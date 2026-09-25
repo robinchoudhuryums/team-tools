@@ -263,6 +263,7 @@ function createCoaching(payload) {
     ]));
     writeAuditLog_(callerEmp, 'CoachingCreate', fmtDate_(now), '', false, 0,
       'coachId=' + coachId + '; empId=' + target.id + '; severity=' + v.item.severity, callerEmp.email);
+    pendingTasksBust_(target.id);   // follow-up to T10 (cycle 22): a new item to acknowledge
     result = { success: true, coachId: coachId };
     if (v.item.severity === 'critical') {
       result.mailed = false;
