@@ -1207,10 +1207,13 @@ function getEmployeeState() {
       // OFF, not just what the shift shape is. Approved PTO only; a pending
       // request is not yet a day off.
       // T5 (cycle 22): a HALF day is not a day off. It used to set offToday
-      // and silence every inferred reminder for the half the rep works; the
-      // ticker now narrows the shift window to the working half instead.
+      // and silence every inferred reminder for the hours the rep works. A
+      // half day has no fixed start or end (the T5 rework, operator
+      // 2026-09-25) — only a minimum of hours, shipped here so the ticker
+      // carries no literal of it (the g131 rule).
       offToday: offKind === 'full',
       halfDayOff: (offKind === 'morning' || offKind === 'afternoon') ? offKind : null,
+      halfDayMinHours: CONFIG.PTO_HOURS_PER_DAY / 2,
       // Operator 2026-08-31: today's PENDING adjustment requests, so the Clock
       // view can say a fix is in flight instead of showing a bare punch button
       // to a rep who has already asked for one. Additive + client-guarded —
@@ -5857,14 +5860,25 @@ function getCoveragePlan(fromDate, toDate) {
  *  `off`, a weekday reads `nopunch` (an absent weekday drawn as a GAP would
  *  read as an untracked absence — the doc's own rule, INV-187), and a weekend
  *  is not a day in the record at all (`null` — the roster works no Sat/Sun). */
-/** PURE (T5, cycle 22) — the start a day is graded against: the shift start,
- *  or mid-shift on a MORNING half day (the rep works the afternoon). An
- *  afternoon half day and a full day keep the shift start. */
-function punctExpectedStartMin_(startMin, lengthMin, ptoType) {
-  if (ptoType && timeOffDayKind_(ptoType) === 'morning' && lengthMin > 0) {
-    return startMin + Math.round(lengthMin / 2);
-  }
-  return startMin;
+/** PURE (T5 rework, cycle 22 follow-ups) — the verdict on a HALF day. A half
+ *  day has NO fixed start or end (operator 2026-09-25): the rep may work any
+ *  stretch of the shift, as long as they work at least half the typical day.
+ *  So it is never graded on start lateness or lunch — only on HOURS WORKED,
+ *  from the day's own punches (`pm` = the punchDayAdd_ shape) through the one
+ *  hours rule, calcHours_. `half` = met, `halfshort` = under (a day with no
+ *  clock-in at all is 0 hours worked, so it is short), `halfopen` = the hours
+ *  cannot be known (no clock-out, or an unparseable stamp) — an UNKNOWN
+ *  duration is never an elapsed one (INV-176's rule), so it is not graded. */
+function punctIsHalfDay_(ptoType) {
+  return !!ptoType && timeOffDayKind_(ptoType) !== 'full';
+}
+function punctHalfDayVerdict_(pm, minHours) {
+  if (!pm || !pm.ClockIn) return { state: 'halfshort', workedHours: 0 };
+  if (!pm.ClockOut) return { state: 'halfopen', workedHours: null };
+  const h = calcHours_(pm.ClockIn, pm.ClockOut, pm.LunchOut || null, pm.LunchIn || null);
+  if (h === null) return { state: 'halfopen', workedHours: null };
+  const worked = Math.round(h * 100) / 100;
+  return { state: worked >= minHours ? 'half' : 'halfshort', workedHours: worked };
 }
 /** PURE (T4, cycle 22) — of a day's LunchOut minutes, the one nearest the
  *  scheduled lunch (ties to the earlier); null with no schedule or no punch. */
@@ -5946,6 +5960,28 @@ function getPunctualityReport(fromDate, toDate) {
       repMap[id] = { id: id, name: name, tz: tz, startMin: sched.startMin, lengthMin: sched.lengthMin, lunchMin: lunchMin, days: {}, prevDays: {} };
     }
 
+    // Approved PTO in range (the `off` state) — read FIRST (T5 rework), and over
+    // the PREVIOUS range too, so the timesheet walk below knows which dates are
+    // half days and the previous-range comparison excludes them as well.
+    // BEST-EFFORT, and the outcome is REPORTED (the cycle-16 F4 rule): with the overlay missing an absent
+    // day would read `nopunch`, which is the less reassuring direction, but
+    // the client still needs to say the record is incomplete.
+    const ptoMap = {};
+    let ptoUnavailable = false;
+    try {
+      const trows = getOrCreateTimeOffSheet_().getDataRange().getValues();
+      for (let i = 1; i < trows.length; i++) {
+        const eid = String(trows[i][TO.EMP_ID]).trim();
+        const dt = normalizeDate_(trows[i][TO.DATE]);
+        if (!eid || !dt || dt < prevFrom || dt > toDate) continue;
+        if (String(trows[i][TO.STATUS] || '').trim().toLowerCase() !== 'approved') continue;
+        if (!ptoMap[eid]) ptoMap[eid] = {};
+        ptoMap[eid][dt] = String(trows[i][TO.TYPE] || 'Time off').trim() || 'Time off';
+      }
+    } catch (e) {
+      ptoUnavailable = true;
+      console.warn('getPunctualityReport: PTO overlay unavailable — ' + e.message);
+    }
     const rows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
     for (let i = 2; i < rows.length; i++) {
       const id = String(rows[i][ADP.EMP_ID]).trim();
@@ -5954,6 +5990,13 @@ function getPunctualityReport(fromDate, toDate) {
       if (!d || d < prevFrom || d > toDate) continue;
       const bucket = (d < fromDate) ? r.prevDays : r.days;
       const type = normalizeType_(String(rows[i][ADP.COMMENTS]));
+      // T5 rework: a half day keeps ALL FOUR punch types as raw stamps — it
+      // is graded on hours worked, through calcHours_, never on its start.
+      if (punctIsHalfDay_(ptoMap[id] && ptoMap[id][d]) &&
+          (type === 'ClockIn' || type === 'ClockOut' || type === 'LunchOut' || type === 'LunchIn')) {
+        if (!bucket[d]) bucket[d] = {};
+        punchDayAdd_(bucket[d].pm = bucket[d].pm || {}, type, normalizeTime_(rows[i][ADP.TIME]));
+      }
       if (type !== 'ClockIn' && type !== 'LunchOut') continue;
       const mins = timeToMins_(normalizeTime_(rows[i][ADP.TIME]));
       // A3 (cycle 13): SKIP an unparseable time outright. It used to be NaN,
@@ -5967,26 +6010,6 @@ function getPunctualityReport(fromDate, toDate) {
       else (bucket[d].lunches = bucket[d].lunches || []).push(mins);   // T4: every LunchOut; graded below
     }
 
-    // Approved PTO in range (the `off` state) — BEST-EFFORT, and the outcome
-    // is REPORTED (the cycle-16 F4 rule): with the overlay missing an absent
-    // day would read `nopunch`, which is the less reassuring direction, but
-    // the client still needs to say the record is incomplete.
-    const ptoMap = {};
-    let ptoUnavailable = false;
-    try {
-      const trows = getOrCreateTimeOffSheet_().getDataRange().getValues();
-      for (let i = 1; i < trows.length; i++) {
-        const eid = String(trows[i][TO.EMP_ID]).trim();
-        const dt = normalizeDate_(trows[i][TO.DATE]);
-        if (!eid || !dt || dt < fromDate || dt > toDate) continue;
-        if (String(trows[i][TO.STATUS] || '').trim().toLowerCase() !== 'approved') continue;
-        if (!ptoMap[eid]) ptoMap[eid] = {};
-        ptoMap[eid][dt] = String(trows[i][TO.TYPE] || 'Time off').trim() || 'Time off';
-      }
-    } catch (e) {
-      ptoUnavailable = true;
-      console.warn('getPunctualityReport: PTO overlay unavailable — ' + e.message);
-    }
     // Holidays from the SAME source the Coverage grid reads.
     const holMap = {};
     const yrs = {}; yrs[fromDate.substring(0, 4)] = true; yrs[toDate.substring(0, 4)] = true;
@@ -5998,33 +6021,44 @@ function getPunctualityReport(fromDate, toDate) {
     const reps = [];
     Object.keys(repMap).forEach(function (id) {
       const r = repMap[id];
-      const dates = Object.keys(r.days).filter(function (d) { return r.days[d].in != null; });
-      if (!dates.length) return;
-      let onTime = 0, late = 0, totLate = 0, worst = 0, worstDate = null, lunchDays = 0, lunchOnTime = 0;
-      // T5 (cycle 22): the day's EXPECTED start. A morning half day starts at
-      // mid-shift, so it used to grade as ~half a shift late.
       const dayPto = function (d) { return (ptoMap[id] && ptoMap[id][d]) || null; };
-      const expStart = function (d) { return punctExpectedStartMin_(r.startMin, r.lengthMin, dayPto(d)); };
+      // T5 rework (cycle 22 follow-ups): a HALF day is not a graded day. It
+      // has no fixed start, so it is neither start- nor lunch-graded; it is
+      // judged on hours worked (punctHalfDayVerdict_) and reported apart.
+      const isHalf = function (d) { return punctIsHalfDay_(dayPto(d)); };
+      const dates = Object.keys(r.days).filter(function (d) { return r.days[d].in != null && !isHalf(d); });
+      const halfDates = Object.keys(ptoMap[id] || {}).filter(function (d) {
+        if (d < fromDate || d > toDate || !isHalf(d)) return false;
+        const dow = new Date(d + 'T12:00:00Z').getUTCDay();
+        return dow !== 0 && dow !== 6 && !(holMap[d] && !(r.days[d] && r.days[d].in != null));
+      });
+      if (!dates.length && !halfDates.length) return;
+      let onTime = 0, late = 0, totLate = 0, worst = 0, worstDate = null, lunchDays = 0, lunchOnTime = 0;
       dates.forEach(function (d) {
-        const lateMin = r.days[d].in - expStart(d);
+        const lateMin = r.days[d].in - r.startMin;
         if (lateMin > grace) { late++; totLate += lateMin; if (lateMin > worst) { worst = lateMin; worstDate = d; } }
         else onTime++;
         // T4 (cycle 22): the LUNCH is the LunchOut nearest the scheduled lunch
         // — it used to be the day's EARLIEST, so a morning break scored every
-        // day on time. A half day is not lunch-graded (no lunch is expected).
+        // day on time.
         const lunch = punctLunchNearest_(r.days[d].lunches, r.lunchMin);
-        const halfDay = !!dayPto(d) && timeOffDayKind_(dayPto(d)) !== 'full';
-        if (lunch != null && !halfDay) {
+        if (lunch != null) {
           lunchDays++;
           if (lunch <= r.lunchMin + grace) lunchOnTime++;   // early/within-grace lunch is fine
         }
       });
-      // The previous equivalent range — same grading, no day detail. (The PTO
-      // overlay covers the report range only, so a half day in the previous
-      // range still grades against the full start — documented, not guessed.)
+      const minHalfHours = CONFIG.PTO_HOURS_PER_DAY / 2;
+      const halfVerdict = {};
+      let halfShort = 0;
+      halfDates.forEach(function (d) {
+        halfVerdict[d] = punctHalfDayVerdict_(r.days[d] && r.days[d].pm, minHalfHours);
+        if (halfVerdict[d].state === 'halfshort') halfShort++;
+      });
+      // The previous equivalent range — same grading, no day detail. The PTO
+      // overlay now covers it too, so its half days are excluded the same way.
       let prevOn = 0, prevN = 0;
       Object.keys(r.prevDays).forEach(function (d) {
-        if (r.prevDays[d].in == null) return;
+        if (r.prevDays[d].in == null || isHalf(d)) return;
         prevN++;
         if ((r.prevDays[d].in - r.startMin) <= grace) prevOn++;
       });
@@ -6035,18 +6069,26 @@ function getPunctualityReport(fromDate, toDate) {
         const dIso = addDaysIso_(fromDate, k);
         const dow = new Date(dIso + 'T12:00:00Z').getUTCDay();
         const hasIn = !!(r.days[dIso] && r.days[dIso].in != null);
-        const ptoType = (ptoMap[id] && ptoMap[id][dIso]) || null;
-        const lateMin = hasIn ? (r.days[dIso].in - expStart(dIso)) : null;
+        const ptoType = dayPto(dIso);
+        if (halfVerdict[dIso]) {
+          dayDetail.push({ date: dIso, schedStartMin: null, actualMin: null, lateMin: null,
+            state: halfVerdict[dIso].state, workedHours: halfVerdict[dIso].workedHours, minHours: minHalfHours,
+            ptoType: ptoType, holidayName: holMap[dIso] || null });
+          continue;
+        }
+        const lateMin = hasIn ? (r.days[dIso].in - r.startMin) : null;
         const state = punctDayState_(hasIn, lateMin, grace, holMap[dIso] || null, ptoType, dow === 0 || dow === 6);
         if (!state) continue;
-        dayDetail.push({ date: dIso, schedStartMin: expStart(dIso), actualMin: hasIn ? r.days[dIso].in : null,
+        dayDetail.push({ date: dIso, schedStartMin: r.startMin, actualMin: hasIn ? r.days[dIso].in : null,
           lateMin: (hasIn && lateMin > grace) ? lateMin : (hasIn ? 0 : null), state: state,
           ptoType: ptoType, holidayName: holMap[dIso] || null });
       }
       reps.push({
         id: r.id, name: r.name, tz: r.tz, startMin: r.startMin,
         days: dates.length, onTime: onTime, late: late,
-        onTimePct: Math.round((onTime / dates.length) * 100),
+        // null when every clock-in day in range was a half day (none graded)
+        onTimePct: dates.length ? Math.round((onTime / dates.length) * 100) : null,
+        halfDays: halfDates.length, halfShort: halfShort,
         avgLate: late ? Math.round(totLate / late) : 0,
         worst: worst,
         lunchOnTimePct: lunchDays ? Math.round((lunchOnTime / lunchDays) * 100) : null,

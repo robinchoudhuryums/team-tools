@@ -1209,6 +1209,22 @@
     "setCallNoteTrainingReply"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "T5 rework: punctExpectedStartMin_ removed (a half day has no fixed start); punctIsHalfDay_ + punctHalfDayVerdict_ added",
+   "added": [
+    "punctHalfDayVerdict_",
+    "punctIsHalfDay_"
+   ],
+   "removed": [
+    "punctExpectedStartMin_"
+   ],
+   "changed": [
+    "getEmployeeState",
+    "getPunctualityReport"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4836,7 +4852,7 @@
   "getEmployeeState": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "854b6495ddfd3eb6"
+   "sha": "4630edfd34f08426"
   },
   "getEmployeeTimesheetForManager": {
    "file": "20_timeclock.js",
@@ -5286,7 +5302,7 @@
   "getPunctualityReport": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "f73e17d3b6ce044c"
+   "sha": "b1800e9145a042c7"
   },
   "getQaLog": {
    "file": "90_qa.js",
@@ -6733,10 +6749,15 @@
    "kind": "function",
    "sha": "697306332bd17fad"
   },
-  "punctExpectedStartMin_": {
+  "punctHalfDayVerdict_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "aae981e1b651c58a"
+   "sha": "94538e94d511f15a"
+  },
+  "punctIsHalfDay_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "1d288d5fa6f32c30"
   },
   "punctLunchNearest_": {
    "file": "20_timeclock.js",

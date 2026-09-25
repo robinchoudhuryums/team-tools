@@ -319,7 +319,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // F2 (cycle 18) — the reminder ticker's day-off gate. Mirrors the server
       // field (INV-185); false = a normal working day, the scenario's intent.
       offToday: false,
-      halfDayOff: null,   // T5 (cycle 22) — a half day narrows the reminder window instead of silencing it
+      halfDayOff: null,   // T5 (cycle 22) — a half day is not a day off; the reminder plan changes instead
+      halfDayMinHours: 4, // T5 rework — CONFIG.PTO_HOURS_PER_DAY / 2
       // Operator 2026-08-31 — today's PENDING punch-adjustment requests. EMPTY
       // is the common case (and what every existing scenario should show); the
       // `?pendingadj=1` hook below seeds one so the Clock chip is shootable
@@ -1120,10 +1121,21 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       var addIso = function (iso, n) { var d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
       var span = Math.round((Date.UTC(+to.slice(0, 4), +to.slice(5, 7) - 1, +to.slice(8, 10)) - Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, +from.slice(8, 10))) / 86400000) + 1;
       var grace = 5;
-      var mk = function (id, name, tz, startMin, lateEvery, lateMins, lunch, offOn, holOn) {
-        var dd = [], days = 0, on = 0, late = 0, tot = 0, worst = 0, worstDate = null;
+      // T5 rework: `half` = { k, hours } puts a HALF day on camera — graded on
+      // hours worked against the server's minimum (4 = PTO_HOURS_PER_DAY / 2),
+      // never on a start. The first weekday at or after k carries it.
+      var mk = function (id, name, tz, startMin, lateEvery, lateMins, lunch, offOn, holOn, half) {
+        var dd = [], days = 0, on = 0, late = 0, tot = 0, worst = 0, worstDate = null, halfDays = 0, halfShort = 0, halfK = null;
+        if (half) { for (var hk = half.k; hk < span; hk++) { var hd = new Date(addIso(from, hk) + 'T12:00:00Z').getUTCDay(); if (hd !== 0 && hd !== 6 && hk !== holOn && hk !== offOn) { halfK = hk; break; } } }
         for (var k = 0; k < span; k++) {
           var iso = addIso(from, k), dow = new Date(iso + 'T12:00:00Z').getUTCDay();
+          if (k === halfK) {
+            var hst = half.hours == null ? 'halfopen' : (half.hours >= 4 ? 'half' : 'halfshort');
+            halfDays++; if (hst === 'halfshort') halfShort++;
+            dd.push({ date: iso, schedStartMin: null, actualMin: null, lateMin: null, state: hst, workedHours: half.hours, minHours: 4,
+              ptoType: 'Half Day - Morning', holidayName: null });
+            continue;
+          }
           var isHol = holOn != null && k === holOn, pto = (offOn != null && k === offOn) ? 'Full Day' : null;
           var hasIn = !(dow === 0 || dow === 6) && !isHol && !pto;
           var lateMin = hasIn ? ((k % lateEvery === 0) ? lateMins[(k / lateEvery) % lateMins.length] : 2) : null;
@@ -1137,11 +1149,12 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         return { id: id, name: name, tz: tz, startMin: startMin, days: days, onTime: on, late: late, onTimePct: pct,
           avgLate: late ? Math.round(tot / late) : 0, worst: worst, lunchOnTimePct: lunch, worstDate: worstDate,
           prevDays: days, prevOnTime: Math.max(0, on - 2), prevOnTimePct: days ? Math.round((Math.max(0, on - 2) / days) * 100) : null,
+          halfDays: halfDays, halfShort: halfShort,
           weekly: punctWeeklyBuckets_(dd, from, to, addIso), dayDetail: dd };
       };
       var reps = [
-        mk('E-1090', 'Leo Kim',     'America/Chicago', 480, 3, [41, 18, 9], 88, 4, 6),
-        mk('E-1088', 'Sam Ortiz',   'Asia/Manila',     510, 7, [12, 8],     95, null, 6),
+        mk('E-1090', 'Leo Kim',     'America/Chicago', 480, 3, [41, 18, 9], 88, 4, 6, { k: 1, hours: 3.25 }),
+        mk('E-1088', 'Sam Ortiz',   'Asia/Manila',     510, 7, [12, 8],     95, null, 6, { k: 2, hours: 4.5 }),
         mk('E-1042', 'Avery Blake', 'Asia/Kolkata',    480, 15, [4],        null, null, 6),
         mk('E-1077', 'Nina Patel',  'America/Chicago', 480, 99, [0],        100, null, 6),
       ].sort(function (a, b) { return a.onTimePct - b.onTimePct || b.late - a.late; });

@@ -2514,13 +2514,14 @@ function remindersTick_() {
     // is most likely.
     var dayOff = remindIsDayOff_(tz);
     var nowMin = remindNowMin_(tz);
-    var win = remindWorkWindow_(sched.startMin, sched.lengthMin, empState && empState.halfDayOff);
+    var plan = remindDayPlan_(sched.startMin, sched.lengthMin, empState && empState.halfDayOff,
+      empState && empState.halfDayMinHours);
 
     // (a) Upcoming break — the lead time is the rep's own breakReminderMin.
     var lead = sched.breakReminderMin || 10;
-    var breaks = dayOff ? [] : (Array.isArray(sched.breaks) ? sched.breaks : []).filter(function (b) {
-      return b && b.startMin >= win.startMin && b.startMin < win.endMin;   // T5: only the half being worked
-    });
+    // T5 rework: none on a half day — its hours are the rep's to place, so a
+    // scheduled break is not a break they are due.
+    var breaks = dayOff ? [] : ((plan.breaks && Array.isArray(sched.breaks)) ? sched.breaks : []).filter(function (b) { return !!b; });
     for (var i = 0; i < breaks.length; i++) {
       var b = breaks[i];
       var until = b.startMin - nowMin;
@@ -2534,8 +2535,9 @@ function remindersTick_() {
     // which the boot snapshot goes stale on, so it refreshes — but only inside
     // the end-of-shift window and at most every 10 minutes. Outside that
     // window the ticker makes ZERO server calls.
-    var endMin = win.endMin;   // T5: an afternoon half day ends at mid-shift
-    if (nowMin >= endMin + 5 && nowMin <= endMin + 120) {
+    var endMin = plan.endMin;
+    // T5 rework: a half day has no inferred clock-out time, so (b) is off.
+    if (plan.outAt != null && nowMin >= endMin + 5 && nowMin <= endMin + 120) {
       if (remindPunchState_() === 'in') {
         remindOnce_(today + ':out', 'Your shift ended at ' + remindFmtMin_(endMin) +
           ' and you are still clocked in — clock out so your timesheet is right.', 'toast-warn');
@@ -2559,8 +2561,13 @@ function remindersTick_() {
     //     next tick — state re-confirmed, still out — nags. Unknown never
     //     nags (the (b) posture); the daily missed-punch email stays the
     //     backstop for a closed browser.
-    var startMin = win.startMin;   // T5: a morning half day starts at mid-shift
-    if (!dayOff && nowMin >= startMin + REMIND_CLOCKIN_GRACE_MIN && nowMin < endMin &&
+    // T5 rework: on a half day the nudge waits until the minimum hours can no
+    // longer fit before shift end (plan.inFrom), and only if NOTHING has been
+    // worked today — a rep who did their hours in the morning and clocked out
+    // is 'out' too, and is not late for anything. The start grace applies to
+    // both: a rep opening the app at that moment is likely about to clock in.
+    var startMin = plan.inFrom;
+    if (!dayOff && nowMin >= startMin + REMIND_CLOCKIN_GRACE_MIN && nowMin < endMin && !(plan.half && remindWorkedToday_()) &&
         Date.now() - _remindLastActivityAt < REMIND_ACTIVITY_WINDOW_MS &&
         remindPunchState_() === 'out' && !_remindFired[today + ':in']) {
       if (Date.now() - _remindStateOkAt < REMIND_STATE_CONFIRM_MS) {
@@ -2679,17 +2686,30 @@ function remindIsDayOff_(tz) {
     return hol.indexOf(iso) >= 0;
   } catch (e) { return false; }
 }
-/** T5 (cycle 22) — the part of the shift the rep WORKS today. A half day
- *  used to arrive as `offToday` and silence every inferred reminder for the
- *  half the rep is on the clock; now it narrows the window instead: a
- *  morning half day works from mid-shift, an afternoon one until mid-shift.
- *  Pure over its arguments (Node-pinned). */
-function remindWorkWindow_(startMin, lengthMin, halfDayOff) {
+/** T5 rework (cycle 22 follow-ups; operator 2026-09-25) — what the ticker may
+ *  infer about today. A HALF day has NO fixed start or end: the rep may work
+ *  any stretch of the shift, as long as they work at least half the typical
+ *  day (`minHours`, shipped by getEmployeeState). So on a half day there are
+ *  no break reminders, no inferred clock-out time (`outAt: null`), and the
+ *  not-clocked-in nudge opens only at `inFrom` = shift end − minHours, the
+ *  last moment the hours still fit. (The first version split the shift at
+ *  mid-point and assumed which half was worked — wrong.) A full day keeps
+ *  the whole window. Pure over its arguments (Node-pinned). */
+function remindDayPlan_(startMin, lengthMin, halfDayOff, minHours) {
   var s = startMin || 0, e = s + (lengthMin || 0);
-  var mid = s + Math.round((lengthMin || 0) / 2);
-  if (halfDayOff === 'morning') return { startMin: mid, endMin: e };
-  if (halfDayOff === 'afternoon') return { startMin: s, endMin: mid };
-  return { startMin: s, endMin: e };
+  if (halfDayOff === 'morning' || halfDayOff === 'afternoon') {
+    var need = Math.round((Number(minHours) > 0 ? Number(minHours) : 0) * 60);
+    return { half: true, breaks: false, outAt: null, inFrom: Math.max(s, e - need), endMin: e };
+  }
+  return { half: false, breaks: true, outAt: e, inFrom: s, endMin: e };
+}
+/** Has the rep clocked in at all today? The half-day nudge's guard — read
+ *  off the same snapshot remindPunchState_ reads, refreshed on the same
+ *  schedule, so the two cannot disagree. */
+function remindWorkedToday_() {
+  var p = (empState && empState.punches) || [];
+  for (var i = 0; i < p.length; i++) if (p[i] && p[i].type === 'ClockIn') return true;
+  return false;
 }
 
 function remindPunchState_() {

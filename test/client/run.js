@@ -18835,8 +18835,10 @@ test('A2: all five hours builders accumulate breaks through ONE helper', () => {
   // 1 definition + the 5 hours builders + the shared tsPunchDaysWithArchive_
   // reader behind BOTH operator reports (A5 / BP), which must build the same
   // shape or their impact figures would not match production.
-  assert.strictEqual((stripped.match(/punchDayAdd_\(/g) || []).length, 7,
-    'punchDayAdd_ is defined once and called by the five builders plus the shared report reader');
+  // + getPunctualityReport's half-day hours (the T5 rework, cycle 22), which
+  // grades a half day on hours worked through the same shape and calcHours_.
+  assert.strictEqual((stripped.match(/punchDayAdd_\(/g) || []).length, 8,
+    'punchDayAdd_ is defined once and called by the five builders, the shared report reader and the half-day grader');
   ['workedHoursByEmpForRange_', 'getManagerDashboard', 'getTeamCalendar',
    'buildTimesheetForEmployee_', 'buildCalendarForEmployee_'].forEach((fn) => {
     const body = extractRawFunction('Code.js', fn).replace(/^\s*\/\/.*$/gm, '');
@@ -27752,9 +27754,9 @@ test('T4: the lunch graded is the LunchOut NEAREST the scheduled lunch — a mor
     'the report grades the nearest one');
 });
 
-test('T5: a HALF day is half a day — graded from mid-shift on a morning off, not lunch-graded, and never a whole day off for the reminders', () => {
+test('T5 (rework): a HALF day has no fixed start — graded on HOURS WORKED (>= half the typical day), never on its start or lunch; the ticker assumes no half (driven)', () => {
   const ctx = vm.createContext({ Math, String });
-  ['timeOffDayKind_', 'timeOffKindsCombine_', 'punctExpectedStartMin_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  ['timeOffDayKind_', 'timeOffKindsCombine_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   assert.strictEqual(ctx.timeOffDayKind_('Half Day - Morning'), 'morning');
   assert.strictEqual(ctx.timeOffDayKind_('  half day -  afternoon '), 'afternoon', 'normalised like the rest of the type reads');
   assert.strictEqual(ctx.timeOffDayKind_('Full Day'), 'full');
@@ -27762,16 +27764,59 @@ test('T5: a HALF day is half a day — graded from mid-shift on a morning off, n
   assert.strictEqual(ctx.timeOffKindsCombine_([]), null);
   assert.strictEqual(ctx.timeOffKindsCombine_(['morning']), 'morning');
   assert.strictEqual(ctx.timeOffKindsCombine_(['morning', 'afternoon']), 'full', 'both halves are a full day');
-  // 08:00 start, 9-hour shift: a morning half day is expected at 12:30, so a 12:32 clock-in is on time, not 272 min late.
-  assert.strictEqual(ctx.punctExpectedStartMin_(480, 540, 'Half Day - Morning'), 750);
-  assert.strictEqual(ctx.punctExpectedStartMin_(480, 540, 'Half Day - Afternoon'), 480, 'an afternoon half day starts on time as usual');
-  assert.strictEqual(ctx.punctExpectedStartMin_(480, 540, null), 480);
+  assert.ok(!/function punctExpectedStartMin_/.test(serverSource()), 'the mid-shift expected start (the wrong rule) is gone');
+
+  // The whole report, driven over fake tabs. Mon 2026-09-21 .. Fri 09-25, 08:00 start, 9 h, 12:00 lunch.
+  const ts = [['h'], ['h'],
+    ['E1', '2026-09-21', '08:02:00', 'ClockIn'], ['E1', '2026-09-21', '17:00:00', 'ClockOut'],
+    // Morning half day: 12:40 in (10 min past the old mid-shift start — no longer "late"), a 15-min break, out 17:00 → 4.08 h, met.
+    ['E1', '2026-09-22', '12:40:00', 'ClockIn'], ['E1', '2026-09-22', '14:00:00', 'LunchOut'], ['E1', '2026-09-22', '14:15:00', 'LunchIn'], ['E1', '2026-09-22', '17:00:00', 'ClockOut'],
+    // Afternoon half day worked 09:30-12:00 → 2.5 h, short (90 min "late" under the full start, and graded on neither).
+    ['E1', '2026-09-23', '12:00:00', 'ClockOut'], ['E1', '2026-09-23', '09:30:00', 'ClockIn'],
+    // 09-24: a half day with no punches at all → 0 h, short. 09-25: in, never out → hours unknown.
+    ['E1', '2026-09-25', '13:00:00', 'ClockIn'],
+    // Previous range: a full on-time day and a half day that must NOT be graded against the 08:00 start.
+    ['E1', '2026-09-17', '08:00:00', 'ClockIn'], ['E1', '2026-09-18', '13:00:00', 'ClockIn'],
+    // E2 works only a half day in range — still listed, with no on-time figure rather than a fake one.
+    ['E2', '2026-09-22', '08:00:00', 'ClockIn'], ['E2', '2026-09-22', '12:30:00', 'ClockOut']];
+  const to = [['h'],
+    ['E1', 'A', '2026-09-22', 'Half Day - Morning', '', 'Approved', 't'], ['E1', 'A', '2026-09-23', 'Half Day - Afternoon', '', 'Approved', 't'],
+    ['E1', 'A', '2026-09-24', 'Half Day - Morning', '', 'Approved', 't'], ['E1', 'A', '2026-09-25', 'Half Day - Afternoon', '', 'Approved', 't'],
+    ['E1', 'A', '2026-09-18', 'Half Day - Morning', '', 'Approved', 't'], ['E2', 'B', '2026-09-22', 'Half Day - Afternoon', '', 'Approved', 't']];
+  const rctx = vm.createContext({ String, Math, Date, Object, Number, JSON, console: { warn() {} },
+    CONFIG: { PUNCT_MAX_RANGE_DAYS: 92, PUNCTUALITY_GRACE_MIN: 5, ADP_TAB: 'Timesheet', PTO_HOURS_PER_DAY: 8, TIMEZONE: 'America/Chicago' },
+    EMP: { ID: 0, NAME: 1, TIMEZONE: 2, SCHEDULE: 3 }, ADP: { EMP_ID: 0, DATE: 1, TIME: 2, COMMENTS: 3 },
+    TO: { EMP_ID: 0, NAME: 1, DATE: 2, TYPE: 3, NOTES: 4, STATUS: 5, SUBMITTED_AT: 6 },
+    getEmployeeInfo_: () => ({ isManager: true }),
+    getEmployeeRosterRows_: () => [['h'], ['E1', 'Ann', 'America/Chicago', ''], ['E2', 'Bo', 'America/Chicago', '']],
+    empRosterEmail_: () => 'x@y', safeTimezone_: (t) => t,
+    empShiftSchedule_: () => ({ startMin: 480, lengthMin: 540, breaks: [{ label: 'Lunch', startMin: 720, lenMin: 30 }] }),
+    getAdpSS_: () => ({ getSheetByName: () => ({ getDataRange: () => ({ getValues: () => ts }) }) }),
+    getOrCreateTimeOffSheet_: () => ({ getDataRange: () => ({ getValues: () => to }) }),
+    getCompanyHolidays_: () => [], normalizeDate_: (x) => x, normalizeTime_: (x) => x,
+    Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) } });
+  ['daysBetween_', 'addDaysIso_', 'normalizeType_', 'timeToMins_', 'timeOffDayKind_', 'calcHours_', 'breakPairs_', 'breakSortKey_',
+   'punchDayAdd_', 'punctIsHalfDay_', 'punctHalfDayVerdict_', 'punctLunchNearest_', 'punctDayState_', 'punctWeeklyBuckets_',
+   'getPunctualityReport'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), rctx));
+  const rep = JSON.parse(JSON.stringify(rctx.getPunctualityReport('2026-09-21', '2026-09-25')));
+  assert.ok(!rep.error, rep.error);
+  const e1 = rep.reps.find((r) => r.id === 'E1');
+  assert.deepStrictEqual(e1.dayDetail.map((d) => d.state), ['ontime', 'half', 'halfshort', 'halfshort', 'halfopen'],
+    'met, under (worked 2.5 h), under (worked nothing), unknown (no clock-out) — none of them start-graded');
+  assert.deepStrictEqual(e1.dayDetail.map((d) => d.workedHours === undefined ? 'n/a' : d.workedHours), ['n/a', 4.08, 2.5, 0, null]);
+  assert.strictEqual(e1.dayDetail[1].minHours, 4, 'the minimum is half the typical day (PTO_HOURS_PER_DAY / 2), shipped with the day');
+  assert.strictEqual(e1.dayDetail[1].schedStartMin, null, 'a half day shows no start it was graded against — it has none');
+  assert.deepStrictEqual([e1.days, e1.onTime, e1.late, e1.onTimePct, e1.halfDays, e1.halfShort], [1, 1, 0, 100, 4, 2],
+    'only the full day is start-graded; the half days are counted apart');
+  assert.strictEqual(e1.lunchOnTimePct, null, 'a half day\'s break is not a lunch to grade');
+  assert.deepStrictEqual([e1.prevDays, e1.prevOnTime], [1, 1], 'the PTO overlay covers the previous range, so its half day is excluded too');
+  const e2 = rep.reps.find((r) => r.id === 'E2');
+  assert.ok(e2, 'a rep with only a half day in range is still listed');
+  assert.deepStrictEqual([e2.days, e2.onTimePct, e2.halfDays, e2.halfShort], [0, null, 1, 0], 'no graded day is no on-time figure, never 0% or 100%');
   const src = stripJsComments_(extractRawFunction('Code.js', 'getPunctualityReport'));
-  assert.ok(/const lateMin = r\.days\[d\]\.in - expStart\(d\)/.test(src) && /const lateMin = hasIn \? \(r\.days\[dIso\]\.in - expStart\(dIso\)\) : null/.test(src),
-    'both the summary and the per-day record grade against the expected start');
-  assert.ok(/schedStartMin: expStart\(dIso\)/.test(src), 'and the day record shows the start it was graded against');
-  assert.ok(/const halfDay = !!dayPto\(d\) && timeOffDayKind_\(dayPto\(d\)\) !== 'full';\s*if \(lunch != null && !halfDay\)/.test(src), 'a half day is not lunch-graded');
-  // Server: the state endpoint ships the part of the day; driven over a fake tab.
+  assert.ok(src.indexOf('getOrCreateTimeOffSheet_()') < src.indexOf('getAdpSS_()'), 'the PTO overlay is read BEFORE the timesheet walk that needs it');
+
+  // Server: the state endpoint ships the kind of day and the minimum; driven over a fake tab.
   const rows = [['E1', 'Ann', '2026-09-24', 'Half Day - Morning', '', 'Approved', 't']];
   const sctx = vm.createContext({ String, Math, Logger: { log() {} }, TO: { EMP_ID: 0, NAME: 1, DATE: 2, TYPE: 3, NOTES: 4, STATUS: 5, SUBMITTED_AT: 6 },
     normalizeDate_: (x) => x, getOrCreateTimeOffSheet_: () => ({ getLastRow: () => rows.length + 1, getRange: () => ({ getValues: () => rows }) }) });
@@ -27781,18 +27826,48 @@ test('T5: a HALF day is half a day — graded from mid-shift on a morning off, n
   assert.strictEqual(sctx.empTimeOffToday_('E1', '2026-09-24'), null, 'pending is not off');
   const st = stripJsComments_(extractRawFunction('Code.js', 'getEmployeeState'));
   assert.ok(/halfDayOff: \(offKind === 'morning' \|\| offKind === 'afternoon'\) \? offKind : null/.test(st), 'getEmployeeState ships halfDayOff');
-  // Client: the ticker narrows the window to the half being worked.
+  assert.ok(/halfDayMinHours: CONFIG\.PTO_HOURS_PER_DAY \/ 2/.test(st), 'and the minimum, so the client carries no literal of it (g131)');
+
+  // Client: the ticker's plan for the day — driven.
   const s2 = buildSandbox([]);
-  const win = loadFunction(s2, 'script_core.html', 'remindWorkWindow_');
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(win(480, 540, 'morning'))), { startMin: 750, endMin: 1020 });
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(win(480, 540, 'afternoon'))), { startMin: 480, endMin: 750 });
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(win(480, 540, null))), { startMin: 480, endMin: 1020 });
+  const plan = loadFunction(s2, 'script_core.html', 'remindDayPlan_');
+  const P = (...a) => JSON.parse(JSON.stringify(plan(...a)));
+  assert.deepStrictEqual(P(480, 540, 'morning', 4), { half: true, breaks: false, outAt: null, inFrom: 780, endMin: 1020 },
+    'no break reminders, no inferred clock-out, and the nudge waits until 4 h can no longer fit before 17:00');
+  assert.deepStrictEqual(P(480, 540, 'afternoon', 4), P(480, 540, 'morning', 4), 'the ticker never assumes WHICH half is worked');
+  assert.deepStrictEqual(P(480, 540, null, 4), { half: false, breaks: true, outAt: 1020, inFrom: 480, endMin: 1020 }, 'a full day is unchanged');
+  assert.strictEqual(P(480, 180, 'morning', 4).inFrom, 480, 'a shift shorter than the minimum opens the nudge at its start, never before it');
+  const worked = loadFunction(s2, 'script_core.html', 'remindWorkedToday_');
+  s2.empState = { punches: [{ type: 'ClockIn' }, { type: 'ClockOut' }] };
+  assert.strictEqual(worked(), true, 'a rep who worked the morning and clocked out has worked today');
+  s2.empState = { punches: [] };
+  assert.strictEqual(worked(), false);
   const tick = stripJsComments_(extractFunction('script_core.html', 'remindersTick_'));
-  assert.ok(/var win = remindWorkWindow_\(sched\.startMin, sched\.lengthMin, empState && empState\.halfDayOff\)/.test(tick) &&
-    /var endMin = win\.endMin;/.test(tick) && /var startMin = win\.startMin;/.test(tick) && /b\.startMin >= win\.startMin && b\.startMin < win\.endMin/.test(tick),
-    'the not-clocked-in, clock-out and break reminders all read the working half');
+  assert.ok(/var plan = remindDayPlan_\(sched\.startMin, sched\.lengthMin, empState && empState\.halfDayOff,\s*empState && empState\.halfDayMinHours\)/.test(tick),
+    'the ticker reads the plan');
+  assert.ok(/plan\.breaks && Array\.isArray\(sched\.breaks\)/.test(tick) && /plan\.outAt != null && nowMin >= endMin \+ 5/.test(tick) &&
+    /var startMin = plan\.inFrom;/.test(tick) && /!\(plan\.half && remindWorkedToday_\(\)\)/.test(tick),
+    'breaks, the clock-out nudge and the not-clocked-in nudge all obey it');
+  assert.ok(!/remindWorkWindow_/.test(fs.readFileSync(path.join(B7_WEB, 'script_core.html'), 'utf8')), 'the mid-shift split is gone');
   const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
-  assert.ok(/halfDayOff: null/.test(mock), 'the state fixture mirrors the new field (INV-185)');
+  assert.ok(/halfDayOff: null/.test(mock) && /halfDayMinHours: 4/.test(mock), 'the state fixture mirrors the fields (INV-185)');
+  assert.ok(/state: hst, workedHours: half\.hours, minHours: 4/.test(mock), 'and the punctuality fixture puts half days on camera');
+});
+
+test('T5 (rework): the day strip draws a half day by its HOURS and the table never prints a fake on-time figure', () => {
+  const s = buildSandbox([]);
+  const title = loadFunction(s, 'tc/script_manager.html', 'punctHalfDayTitle_');
+  assert.strictEqual(title({ state: 'half', workedHours: 4.5, minHours: 4, ptoType: 'Half Day - Morning' }), 'half day (Half Day - Morning) — 4.5h worked, meets 4h');
+  assert.strictEqual(title({ state: 'halfshort', workedHours: 0, minHours: 4 }), 'half day — 0h worked, under 4h');
+  assert.ok(/hours not known/.test(title({ state: 'halfopen', workedHours: null, minHours: 4 })), 'an unknown duration says so, never "0h"');
+  const out = loadFunction(s, 'tc/script_manager.html', 'punctOutliers_');
+  s.punctTrend_ = () => ({ word: 'Flat', delta: null });
+  const o = JSON.parse(JSON.stringify(out([{ id: 'a', onTimePct: 100, late: 0, avgLate: 0, halfShort: 1, weekly: [] }, { id: 'b', onTimePct: 100, late: 0, avgLate: 0, halfShort: 0, weekly: [] }])));
+  assert.deepStrictEqual(o.map((x) => [x.id, x.halfShort]), [['a', 1]], 'a short half day is worth a conversation');
+  const mgr = fs.readFileSync(path.join(B7_WEB, 'tc/script_manager.html'), 'utf8');
+  ['half', 'halfshort', 'halfopen'].forEach((st) => assert.ok(new RegExp('\\.pt-day\\.' + st + '\\s*\\{').test(mgr), st + ' has a rule (the T6 ratchet)'));
+  assert.ok(/if \(r\.onTimePct == null\) return '<span class="pt-na"/.test(mgr), 'the On-time cell renders a dash, not "null%"');
+  assert.ok(/o\.onTimePct != null \? '<span class="'/.test(mgr), 'and so does the outlier line');
 });
 
 test('T7: a time-off RANGE skips company holidays on the server and in the preview — approving it no longer charges a closed day (driven)', () => {
