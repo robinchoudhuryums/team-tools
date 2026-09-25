@@ -141,8 +141,10 @@ Updated: 2026-09-23
 - **Batch 5 follow-ons (22-B5 block):** X1 names 31 reads owed a fixture; K3's
   connective list may need the operator's real words; K4 maps no city aliases
   beyond the abbreviations; the address hint is not photographed. STILL OPEN:
-  what the city row's Accepts column decides (operator). Docs NOT yet synced
-  for Batch 5.
+  what the city row's Accepts column decides (operator). Docs SYNCED
+  2026-09-25: g41/g116/g126/g128 amended, new g150 (a client RPC with no mock
+  fixture), INV-257..262, walk steps on S62/S64/S97/S112, the OOP-B and ELIG
+  decisions amended, module notes, both logs.
 - **Batch 4 follow-ons (22-B4 block):** the client twin coachTsMs_ still reads
   coaching stamps as UTC; M7's class survives in getMetricsAmbient,
   managerGetShiftStats' enrichment and getCdrDailyBreakdown_ (no error field
@@ -164,8 +166,8 @@ Updated: 2026-09-23
   INV-229..232 + an INV-213 amendment PROPOSED (cycle 21); INV-240..242
   PROPOSED (21post: fixtures the server can still produce · tone/explanation
   agree both ways · doc UI paths resolve against `TOOLS` labels). None is in
-  the library yet. INV-243..256 were WRITTEN by cycle 22's /sync-docs passes.
-  **Next free is INV-257; next gotcha g150; next scenario S117.**
+  the library yet. INV-243..262 were WRITTEN by cycle 22's /sync-docs passes.
+  **Next free is INV-263; next gotcha g151; next scenario S117.**
 - **An intermittent DOM pin**: `the resume request states the unpaid gap
   before it is filed` (runDom.js) failed once during T7 and has passed every
   run since. Flagged, not dismissed — a flake is not a root cause.
@@ -216,6 +218,6 @@ Updated: 2026-09-23
 ## Where I left off
 Batch 1, S2, Batch 2, follow-ons F1–F5, Batch 3 and Batch 4 of cycle 22 are
 committed and pushed (Batch 5 on top of the Batch 4 docs sync); none is
-deployed. Docs are synced through Batch 4 — run `/sync-docs` for Batch 5 (its
-block's DOCUMENTATION UPDATES NEEDED). Next: deploy + the walks; or
+deployed. Docs are synced through Batch 5 (PR opened and merged 2026-09-25).
+Next: deploy + the walks; or
 `/broad-implement Batch 6` (automation health honesty) from the scan's plan.

@@ -1836,6 +1836,11 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   keys `byName` on `oopNameCol_(headers)`; INV-213 makes "one resolver per
   operator tab" the rule and the OOP-B fixture carries the operator's shape.
 
+  **AMENDED (cycle 22 K7, 2026-09-23):** a quote carries the item's CODE as
+  well as its name, and the send verifies it against every row with that name,
+  narrowed by the code. A line verifies if ANY candidate row still produces it,
+  so a price picked from the second of two same-named rows can be sent; a
+  changed price on that row is still refused, with that row's figure.
 - <a id="which-eligibility-restrictions-lift-out-of-pocket-is-a-rule"></a>**Which eligibility restrictions LIFT out of pocket is a RULE, not a
   table (ELIG, operator 2026-09-16).** The OOP sheet's `Area Eligibility` column
   states the rule for an order going THROUGH INSURANCE. Paying out of pocket
@@ -1929,6 +1934,16 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   lookup uses (name OR code), so a by-name query no longer reports "No item
   matched" for a listed item (INV-213).
 
+  **AMENDED (cycle 22 K1 + K3 + K4, 2026-09-23):** the grammar reads EVERY
+  distance clause: each distance governs the names after it (equal distances
+  merge; different ones are a union), and a name before the first of two
+  distances cannot be assigned, so the value is unknown. Nothing the operator
+  wrote is dropped: a restricting Open parenthetical, or any word left in a
+  distance clause beyond its connectives, makes the value unknown, and unknown
+  still never lifts. The city list reads a State cell as a code or a full name
+  and normalises city spellings (Ft/St/Mt, punctuation); a listed city whose
+  State cannot be read answers "cannot tell". The Accepts column stays
+  display-only — what it should decide is still the operator's call.
 - <a id="price-and-area-eligibility-are-one-panel-because-they-are"></a>**Price and area eligibility are ONE panel, because they are one
   question asked of one table (operator 2026-09-18).** They shipped as two
   cards two days apart and the split was an artefact of that order, not a

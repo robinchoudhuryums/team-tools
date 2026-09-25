@@ -55,6 +55,17 @@ then the four blocks' walks.
   Coaching items turn overdue on time, and a team with nothing acknowledged
   says so. Spanish auto-assign spreads requests by open claims. No operator
   action.
+- **Batch 5 — the Reference eligibility lookup reads everything the operator
+  wrote.** A cell with two distances is two limits; a cell with words the check
+  cannot read, or an "except" in an Open note, now says "cannot tell" instead of
+  answering yes. The city list accepts full state names and Ft./St./Mt.
+  spellings. A street address is checked on Enter (a ZIP by itself), and a
+  half-matched address is refused. A quoted price from a duplicate item row can
+  be sent. **One operator check after deploy:** Manage → Admin → System →
+  Reference lookups — read the "Cannot read" list (cells with extra words now
+  land there; reword them) and the delivery-table header roles (e.g. a
+  "Delivery City" header reads as the accepts column; rename it if that is
+  wrong).
 
 ## 2026-09-23 — Area eligibility: city rules, any-warehouse, the diagnostics panel, the vocabulary (T7–T9)
 

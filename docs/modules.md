@@ -644,6 +644,19 @@ not restate it. Server endpoints live in the fourteen server files
      drawer builds them fresh and forgets the previous caller's payor and item
      verdicts, and a lookup answer arriving for a panel that has since been
      rebuilt paints nothing (K2, g147).
+     **Cycle 22 Batch 5 (2026-09-23):** the OOP price and area-eligibility
+     lookup reads everything the operator wrote. Each distance in an Area
+     Eligibility cell applies to the warehouses after it, and any word it cannot
+     read — or an "except" in an Open note — makes the item "cannot tell"
+     rather than being ignored (K1, K3). The city list matches "Texas" to TX and
+     "Ft. Worth" to Fort Worth, and a misspelled State is "cannot tell" (K4). A
+     street address is looked up on Enter or when the rep leaves the field (a
+     ZIP by itself), and an address Google only partly matched is refused with
+     its guess shown (K5). Blank pricing rows no longer appear as nameless
+     items (K9). The acceptance colours read whole words, so "No longer
+     accepted" is red (K11). Past 100 comments, the newest show (K13). The
+     Admin Reference-lookups panel shows the role of every delivery-table
+     header (K12).
 
 <a id="training-employee-docs"></a>
      **Batch 6 (2026-09-18):** the drawer is `role="dialog"` named by its own

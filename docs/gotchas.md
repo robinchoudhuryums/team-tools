@@ -971,6 +971,22 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   on that path anyway). **Known limit: the detector requires a manager to OPEN
   the panel — it is not pushed.**
 
+  **AMENDED (cycle 22 K1 + K3, 2026-09-23): a parser that REMOVES what it
+  understood must fail on what is LEFT, never drop it.** The Area Eligibility
+  grammar stripped the parenthetical from "Open (except Hawaii and Alaska)" and
+  answered yes for Hawaii. Its radius branch removed the distance and the
+  warehouse names and then looked only for a leftover uppercase state code, so
+  "100 miles of Dallas except Oklahoma" read as a clean radius. And it read the
+  FIRST distance in a cell and applied it to every name, so "100 mi of Dallas,
+  50 mi of San Antonio" answered yes at 80 miles from San Antonio. Every one of
+  those drops broadened a yes on a surface where a yes is a commitment. The
+  distance clause is now its own unit (`oopRadiusClause_`): each distance
+  governs the names after it, and any word left over beyond the connectives
+  makes the clause unknown. A restricting Open parenthetical is unknown too.
+  The operator's "Cannot read" list in Admin → System is where such cells
+  surface. Verify: the K1 and K3 pins (the live phrasings still parse; the
+  restricting ones do not).
+
 <a id="g42-intake-ppd-controls-are-engine-safe-via"></a>
 
 - **Intake PPD controls are engine-safe via CANONICAL-ENGLISH VALUES, not
@@ -2905,6 +2921,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   catches, and under-capture is usually the less likely failure.
 
 
+  **AN EIGHTH direction (cycle 22 Batch 5, 2026-09-23): a check whose
+  PATTERN never matched the text it guards.** K12's doc check asserted that
+  operator-state.md no longer said warehouse names match "as substrings", with
+  a regex that did not match the sentence actually there ("is matched as a
+  SUBSTRING of the Area Eligibility text"). It passed before the doc was fixed.
+  A negative assertion (`!/…/.test(doc)`) is vacuous until something shows its
+  pattern CAN match; the rewritten check requires the new sentence as well as
+  banning the old one.
+
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
   done (operator 2026-09-15).** The reconcile pass (g115) makes late punch data
@@ -3377,6 +3402,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the map to `[prices[0]]`, the exact defect, and R-2 now says so in place
   (g138).
 
+  **AMENDED (cycle 22 K7, 2026-09-23): the verifier keyed on the FIRST row
+  with a name.** Two rows can share an item name (one product under two codes),
+  and the picker offers a price from either; the send compared the second row's
+  quote with the first row's price and refused it as "changed". Keying ONE row
+  per name is this gotcha again, inside one reader: the verifier now indexes
+  every row per name, the quote carries its code to narrow them, and a line
+  verifies if any candidate still produces it. Verify: the K7 pin (by code,
+  without a code, an unknown code named, a changed price still refused) and the
+  OOP-B DOM payload assertion.
+
 <a id="g127-calchours-wraps-out-in-as-overnight"></a>
 
 - **`calcHours_` wraps `out < in` as overnight; an EQUAL minute pair is ZERO
@@ -3443,6 +3478,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `getCdrDailyBreakdown_`, which returns no error field at all. Verify: the M7
   pin (the helper both ways, the onboarding endpoint driven, and a ban on a
   bare `.agents` read in all three).
+
+  **AMENDED (cycle 22 K5, 2026-09-23): "partly found" is a THIRD answer.**
+  The geocoder took its first result even when Google flagged it
+  `partial_match`, so "500 Main St, Irving TX 750" resolved to somewhere near
+  the city centre and a distance was measured from the guess. The client made
+  it likely: it geocoded whatever was typed after a 700 ms pause from the
+  fourth character. `kbGeocodeOne_` now returns `{partial, formatted}`, which
+  every caller refuses with the guess shown (and the warehouse cache treats as
+  not placed), and the client geocodes a street address only on Enter or blur;
+  a complete ZIP still checks by itself. Verify: the K5 pins, server and
+  client, and the ELIG DOM pin (no request before Enter).
 
 <a id="g129-never-cache-a-failure-as-a-value"></a>
 
@@ -4123,3 +4169,22 @@ restoring the silence and restoring the misdirected message.
   compare a parsed stamp with now. Verify: the D1 pin (an Intl-backed
   `parseDate`: 09:00 IST is 03:30 UTC, an item exactly seven days old on the
   real clock is overdue at 7, and a DST zone resolves through its own offset).
+
+<a id="g150-a-client-rpc-with-no-mock-fixture"></a>
+
+- **A client RPC with no mock fixture is invisible to the visual matrix, and
+  the matrix is not in CI (cycle 22 X1, 2026-09-23).** T8 added
+  `getOopPricingDiagnostics` and the panel that calls it without a fixture.
+  The mock routes an unknown endpoint to the failure handler and logs it to
+  `window.__MISSING__`, so all 16 Admin scenarios reported it missing for a
+  cycle and the panel was only ever photographed as "no fixture". Nothing
+  failed, because the matrix runs by hand. The guard is a Node net: it derives
+  every RPC name from every `google.script.run` chain in every partial, DRIVES
+  each through the real mock dispatcher, and holds the missing set to two named
+  lists (reads not yet photographed, writes no scenario performs). A new RPC
+  without a fixture fails; a listed one that gains a fixture or stops being
+  called must leave the list, so the list only shrinks. A fixture must mirror
+  the server (INV-185): the diagnostics fixture's header roles are pinned to
+  the real resolvers. Fires when you add a `google.script.run` call, or a
+  fixture. Verify: the two X1 pins (bite-checked with a removed fixture and a
+  renamed RPC).
