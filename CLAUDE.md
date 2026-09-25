@@ -177,6 +177,7 @@ Three distinct concepts (storage tz, manager anchor, the rep’s roster frame) t
 - **A "same day" compare between a CONFIG.TIMEZONE stamp and a MANAGER-tz "today" must CONVERT the stamp first (post-deploy `runAllTests`, 2026-09-02).** Fires when you compare a `fmtDate_` stamp against a manager-tz "today". [Detail](docs/gotchas.md#g51-a-same-day-compare-between-a-config)
 - **The TEST roster rows keep their FIXTURE timezones, and setup restores them (operator 2026-09-02).** Fires when you are tempted to normalise the TEST roster rows to CST. [Detail](docs/gotchas.md#g52-the-test-roster-rows-keep-their-fixture)
 - **`safeTimezone_` validates roster timezone strings.** Fires when you read a roster timezone in an automation context. [Detail](docs/gotchas.md#g88-safetimezone-validates-roster-timezone-strings)
+- **A stored threshold changes meaning when what it is compared against changes — Dept Request SLAs stayed "48 hours" when age became BUSINESS time, so every deadline ran ~2.5x loose for a month; targets are now working days with the unit stored (cycle 22 M6, 2026-09-25).** Fires when you change how a measured quantity is computed and a stored value is compared against it. Verify: the M6 pins. [Detail](docs/gotchas.md#g158-a-threshold-changes-meaning-with-its-basis)
 - **A timestamp parser documented as "only used for differences" is a claim a later caller cannot see — `coachParseTs_` read CONFIG.TIMEZONE stamps as UTC while five callers compared it with the real clock, so coaching items turned overdue 5.5 hours late (cycle 22 D1, 2026-09-23).** Fires when you parse a stored wall-clock stamp, or compare a parsed stamp with now. Verify: the D1 pin. [Detail](docs/gotchas.md#g149-a-stamp-parser-documented-as-differences-only)
 
 ### Gates, auth & the PHI boundary
@@ -224,6 +225,7 @@ Who waits for whom, and what goes stale.
 - **Clock view coverage strip is SWR-cached per day (cycle-9 M-6).** Fires when you cache the Clock coverage strip. [Detail](docs/gotchas.md#g104-clock-view-coverage-strip-is-swr-cached)
 - **`getMyMetrics` is ALSO server-result-cached (L-1).** Fires when you wonder why a Metrics re-enter costs nothing. [Detail](docs/gotchas.md#g105-getmymetrics-is-also-server-result-cached-l)
 - **A repaint cache keyed per HOST dies with the host — a rebuilt panel forgets it, and a response for a panel no longer mounted is dropped; the Reference drawer painted the PREVIOUS caller's verdicts under the next caller's empty inputs (K2, 2026-09-23).** Fires when you cache anything per host or panel, or paint an async response by looking its target up by id after the wait. Verify: the K6 + K2 DOM pin. [Detail](docs/gotchas.md#g147-a-repaint-cache-keyed-per-host-dies)
+- **A ScriptCache entry is shared by HEAD and every versioned deployment — never cache a value that depends on the code version; the deploy beacon's cached build hash let a `/dev` visit prompt prod clients to reload (cycle 22 U4, 2026-09-25).** Fires when you cache a value derived from the code, or from anything a deployment changes. Verify: BCN-1/BCN-1b. [Detail](docs/gotchas.md#g157-scriptcache-is-shared-by-every-deployment)
 - **Never cache a FAILURE as a value — a truthy empty stub satisfies every later `if (cached)` guard, so one transient RPC failure left the composer with no departments for the whole session (Batch 2, 2026-09-17).** Fires when a failure handler assigns a default into a cache slot. Verify: the F-06 DOM pin. [Detail](docs/gotchas.md#g129-never-cache-a-failure-as-a-value)
 
 ### Honest failure — a degraded read must never read as data
@@ -335,9 +337,9 @@ The iframe sandbox, the overlay lifecycle, and what persists per browser.
 - **A class-wide attribute write assumes every member of the class is yours (operator 2026-08-11).** Fires when a writer selects by a class that something else borrows for its looks. [Detail](docs/gotchas.md#g70-a-class-wide-attribute-write-assumes-every)
 - **`showToast(msg, type)` normalizes the variant — pass either form.** Fires when you call `showToast`. [Detail](docs/gotchas.md#g77-showtoast-msg-type-normalizes-the-variant-pass)
 - **Sidebar badge selectors use `data-tool`, not `data-view`.** Fires when a badge poller queries the sidebar. [Detail](docs/gotchas.md#g99-sidebar-badge-selectors-use-data-tool-not)
-- **Modals close on Escape THROUGH their close hook — and EVERY overlay, static ones included, opens via `ensureOverlay` and closes via `closeOverlay` (Batch 6, 2026-09-18: five static modals plus the shortcuts overlay had been opening and closing by `classList`, so they never stashed or restored focus).** Fires when you create an overlay dynamically, or open/close one by hand. Verify: the F-40/F-30 pin. [Detail](docs/gotchas.md#g100-modals-close-on-escape-through-their-close)
+- **Modals close on Escape THROUGH their close hook — and EVERY overlay, static ones included, opens via `ensureOverlay` and closes via `closeOverlay` (Batch 6, 2026-09-18: five static modals plus the shortcuts overlay had been opening and closing by `classList`, so they never stashed or restored focus).** Fires when you create an overlay dynamically, or open/close one by hand. Verify: the F-40/F-30 pin + the derived overlay net (cycle 22 U1/U2: the hand list had missed the CN export dialog and the shell's shortcut keys). [Detail](docs/gotchas.md#g100-modals-close-on-escape-through-their-close)
 - **`ensureOverlay` REWRITES `className`, so a second class on an overlay is lost unless it rides `extraClass` — the day popover's `hover-mode` (Batch 6, 2026-09-18).** Fires when you route an overlay that carries any class beyond `overlay` through `ensureOverlay`. Verify: the F-40 hover-mode carry. [Detail](docs/gotchas.md#g134-ensureoverlay-rewrites-classname-so-a-second)
-- **A blocked `window.open` returns NULL — it does not throw, so a `catch` around it can never see the block (Batch 6, 2026-09-18).** Fires when you open a window or tab, especially after an async RPC (outside the user gesture, where blockers fire). Verify: the F-37 return check + the F-36 link-first order. [Detail](docs/gotchas.md#g135-a-blocked-window-open-returns-null)
+- **A blocked `window.open` returns NULL — it does not throw, so a `catch` around it can never see the block (Batch 6, 2026-09-18).** Fires when you open a window or tab, especially after an async RPC (outside the user gesture, where blockers fire). Verify: the F-37 return check + the F-36 link-first order + the U1/U3 pins (the CN export and the intake copy-image fallback, cycle 22). [Detail](docs/gotchas.md#g135-a-blocked-window-open-returns-null)
 - **A registered `onClose` hook OWNS the close, removal included — `closeOverlay` delegates to it entirely (INV-145 lets a hook refuse), so a hook that clears state and returns leaves the modal open under Close, Escape and the backdrop (Batch 1, 2026-09-17).** Fires when you register an `onClose` hook, or add a dynamic overlay. Verify: the F-02 DOM close-path pin, which sweeps every registered hook. [Detail](docs/gotchas.md#g130-a-registered-onclose-hook-owns-the-close)
 - **Apps Script's HtmlService iframe sandboxes `window.location.search`.** Fires when client code reads the URL or the app’s own address. Verify: a Node tripwire. [Detail](docs/gotchas.md#g107-apps-script-s-htmlservice-iframe-sandboxes-window)
 - **`form_public.html`'s signature canvas must be resized when its section becomes visible.** Fires when a hidden section containing a canvas becomes visible. [Detail](docs/gotchas.md#g109-form-public-html-s-signature-canvas-must)
@@ -542,6 +544,7 @@ for the reasoning, which is usually the part that matters.
 - [A range's average talk time is weighted by the calls behind each day (cycle 22 M3, 2026-09-23)](docs/design-decisions.md#a-range-s-average-talk-time-is-weighted-by-the-calls)
 - [Automation health has ONE problem list, and liveness reads a run ledger rather than the AuditLog tail (cycle 22 A1 + A2, 2026-09-25)](docs/design-decisions.md#automation-health-has-one-problem-list-and-liveness-reads)
 - [A half day is graded on the hours worked, not on a start it does not have (cycle 22 T5 rework, operator 2026-09-25)](docs/design-decisions.md#a-half-day-is-graded-on-the-hours-worked)
+- [Dept Request SLA targets are WORKING DAYS, and the stored map carries its unit (cycle 22 M6, operator 2026-09-25)](docs/design-decisions.md#dept-request-sla-targets-are-working-days)
 
 ## Operator State Checklist
 
@@ -901,7 +904,7 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 10 | `TRIGGER_GROUPS` |
 | localStorage keys | 18 | `ums…` literals in `web-app/` |
-| Invariant library entries | 278 | `.cycle/config.md` |
+| Invariant library entries | 290 | `.cycle/config.md` |
 | Regression scenarios (S*) | 113 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second

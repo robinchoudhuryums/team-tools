@@ -2415,6 +2415,18 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   opens by hand — the known exception until it is fixed. RULE: no overlay,
   static or dynamic, is opened or closed by `classList` any more.
 
+  **Cycle 22 U1 + U2 (2026-09-25): the exception closed, and the list became a
+  derivation.** `cn-export-overlay` now opens through `ensureOverlay` and closes
+  through `closeOverlay` on Cancel, the backdrop and Escape. The shell's
+  Ctrl/⌘+/ and `?` handlers were a SECOND path to the shortcuts overlay that
+  the F-40 list never named; they call `cnOpenShortcutsOverlay_` now. A hand
+  list is what missed both, so the pin no longer carries one. It finds every
+  static overlay id in the markup (`class="overlay"` with an id, in any
+  partial or `modals.html`) and fails on a `classList.add/remove('open')`
+  against it in any file, the variable-bound form included
+  (`const el = $('x'); … el.classList.add('open')`). Verify: the derived
+  overlay net.
+
 <a id="g101-public-form-endpoints-have-no-employee-auth"></a>
 
 - **Public form endpoints have no employee auth — token is the
@@ -3748,6 +3760,18 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   Fires when you open a window or tab, especially after an async RPC.
   Verify: the F-37 return check and the F-36 link-before-open ordering.
 
+  **Two more instances (cycle 22 U1 + U3, 2026-09-25).** The Call Notes export
+  opened its generated sheet from the RPC success handler with the return
+  unchecked and the dialog already closed: the ADP export's exact shape, one
+  module over, carrying a PHI export URL. It now renders an "Open the export
+  sheet" link into `#cn-exp-result`, keeps the dialog open to hold it, only
+  then tries `window.open`, and toasts which of the two happened. The Intake
+  "Copy image" fallback toasted "Opened image" whatever `window.open`
+  returned, and passed `noopener` in the feature string, which makes the
+  return null in some browsers even when the tab opens. It now sets
+  `opener = null` on the returned window and says which failure it was
+  (`intakeCopyImageFallbackMsg_`). Verify: the U1 and U3 pins.
+
 <a id="g136-a-per-day-series-must-tell-no-data"></a>
 
 - **A per-day series must tell "no data" apart from a real zero — the manager
@@ -4420,3 +4444,50 @@ failed (…). This says nothing about …". Verify: the A5 pin, driven over
   and, since the follow-ups, the recommendation screen itself say that NO
   weight-capacity check ran (`intakeWeightWarnHtml_`). Fires when you parse free
   text an engine then acts on. Verify: the I2/I3 pins and FU-B8b.
+
+<a id="g157-scriptcache-is-shared-by-every-deployment"></a>
+
+- **A ScriptCache entry is shared by HEAD and every versioned deployment, so
+  it must never hold a value that depends on the code version (cycle 22 U4,
+  2026-09-25).** The deploy beacon's `clientBuildHash_` fingerprints the
+  client a page was served with, and it kept that fingerprint in ScriptCache
+  under one fixed key for five minutes. ScriptCache belongs to the SCRIPT, not
+  to a deployment: the project's `/dev` test URL (HEAD code) and every
+  versioned `/exec` deployment read and write the same entries. So a `/dev`
+  visit stored HEAD's hash, and for up to five minutes the prod clients'
+  `getDeployStamp` polls read a hash that matched nothing they had booted
+  with, and prompted a pointless reload. The reverse happened too, and after
+  a real deploy a cached old hash could hold the prompt back for the TTL.
+  The fix keeps the per-execution memo and drops the cache;
+  `BUILD_HASH_CACHE_KEY` and its TTL went with it (the g04 rule: no declared
+  but unread key). The cost is a second pass over the partials per boot, with
+  no quota behind it. RULE: before caching in CacheService or writing a Script
+  Property, ask whether the value would differ between two deployments of the
+  same script. If it would, key it by something only that deployment knows,
+  or do not share it. Fires when you cache a value derived from the code, or
+  from anything a deployment changes. Verify: BCN-1 and BCN-1b (a hash another
+  deployment left in the cache is never served, and nothing is written there).
+
+<a id="g158-a-threshold-changes-meaning-with-its-basis"></a>
+
+- **A stored threshold silently changes meaning when what it is compared
+  against changes (cycle 22 M6, 2026-09-25).** Dept Request SLA targets were
+  set in HOURS while a request's age was wall-clock time, so the default 48
+  meant "two days". On 2026-08-31 the age became business minutes (a weekend
+  stopped counting), which was right, but the targets were compared unchanged.
+  Against a 9-hour business day, 48 business hours is about 5.3 working days.
+  Nothing threw, and the label "48h SLA" still read as true, so every deadline
+  on the tracker and in the manager digest ran about 2.5x loose for a month.
+  The fix names the unit in the value. Targets are WORKING DAYS (default 2),
+  stored as `{_unit: 'days', …}` and converted to business hours through the
+  one business window (`drSlaBizHours_`, `drBusinessDayHours_`). A stored map
+  without `_unit` is the pre-M6 hours map. It is read at the calendar intent
+  it was set with (hours ÷ 24, to the half day, never below half a day), and
+  the Admin editor flags it until an admin reviews and saves. RULE: when you
+  change the basis a quantity is measured in (wall time to business time, UTC
+  to local, gross to net), every stored threshold in the old basis changes
+  meaning with it. Find them, convert or relabel them, and store the unit
+  beside the value so the next basis change is visible. Fires when you change
+  how a measured quantity is computed and anything stored is compared against
+  it. Verify: the M6 pins (the legacy blob read raw, wall-clock hours, the unit
+  not stored).

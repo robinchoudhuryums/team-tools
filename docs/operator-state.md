@@ -210,6 +210,16 @@ entry says which it is.
   the toast says "sync again to continue" and the next Sync picks up there. A
   completed walk clears it; a token for another folder, or an expired one,
   restarts from the top. Delete the property to force a restart.
+  **A reviewer cannot review their own call (cycle 22 S6, operator
+  2026-09-25).** A QA member is refused on a recording attributed to THEM when
+  they score it, change its status, share it or re-attribute it (moving your
+  own call to someone else, or claiming another's as yours, is refused too).
+  The recording's stored roster `AgentId` decides; a legacy row without one
+  matches on the name, trimmed and case-insensitive. An **admin** is exempt, so
+  a reviewer's own calls go to another reviewer or to an admin. The refusal is
+  server-side only: the detail still shows the controls and refuses on use.
+  Claiming and commenting are not restricted. Nothing to set up; tell the QA
+  reviewers.
 <a id="operator-set-script-property-adp-ss-id"></a>
 - **Set Script Property `ADP_SS_ID`** to the real spreadsheet ID in
   Apps Script editor → Project Settings → Script Properties. Without
@@ -894,8 +904,8 @@ entry says which it is.
   request's `toDept`). **v2 (shipped, INV-138):** roster **column N
   `Departments`** unblocks a true per-department **Incoming inbox**
   (`getDeptRequests` → `myDepts`+`incoming`, scoped by `empDepartments_`),
-  **per-dept SLA targets** (Script Property `DR_SLA_TARGETS` + the 48h
-  `DR_SLA_DEFAULT_HOURS` → `slaStatus` ontime/at-risk/overdue on the tracker + an
+  **per-dept SLA targets** (Script Property `DR_SLA_TARGETS` + the 2-working-day
+  `DR_SLA_DEFAULT_DAYS` — hours until cycle 22 M6 → `slaStatus` ontime/at-risk/overdue on the tracker + an
   Admin **Dept-Request SLA targets** editor), and a daily manager
   **SLA-reminder digest** (`sendDeptRequestReminderDigest` — PHI-free summary of
   overdue-open requests, the operator chose a manager summary over per-dept member
@@ -1672,12 +1682,22 @@ entry says which it is.
   property in Apps Script editor → Project Settings, or the CONFIG seed.
 <a id="operator-script-property-dr-sla-targets"></a>
 - **Script Property `DR_SLA_TARGETS`** (optional, auto-managed) — JSON
-  `{deptName: hours}` per-dept resolution-SLA overrides for DeptRequests, written
-  by the Admin → Config **Dept-Request SLA targets** editor (`saveDeptRequestSla`,
-  admin-gated, 1–720h, entries equal to the default are dropped). Unset/blank for
-  a dept → the `CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS` default (**48h**). A
-  request past its SLA shows "Overdue" on the tracker + rides the daily
-  `sendDeptRequestReminderDigest` manager summary. No manual setup needed.
+  per-dept resolution-SLA overrides for DeptRequests, in **WORKING DAYS** since
+  cycle 22 M6 (2026-09-25): `{"_unit": "days", "<deptName>": 1.5, …}`. It is
+  written by the Admin → Config **Dept-Request SLA targets** editor
+  (`saveDeptRequestSla`, admin-gated, 0.5–30 in half days; entries equal to the
+  default are dropped). Unset or blank for a dept → the
+  `CONFIG.CALL_NOTES.DR_SLA_DEFAULT_DAYS` default (**2 working days**). A working
+  day is one span of the business window (8:00–17:00 today), so a 2-day target
+  is 18 business hours of age. A request past its SLA shows "Overdue" on the
+  tracker and rides the daily `sendDeptRequestReminderDigest` manager summary.
+  **One-time step after the M6 deploy:** a value saved before it has no `_unit`
+  and is the old HOURS map. It is read at the calendar intent it was set with
+  (hours ÷ 24, to the half day, never below half a day), and the editor shows
+  "set in hours — shown converted, review and save". Check each department's
+  converted value (a target set after 2026-08-31 by someone who meant BUSINESS
+  hours, e.g. 9 for one business day, now reads as half a day) and Save, which
+  stores the new unit. Nothing else to set up.
 <a id="operator-set-script-property-hr-docs-ss-id"></a>
 - **Set Script Property `HR_DOCS_SS_ID`** to a DEDICATED spreadsheet for
   Employee Docs (create an empty one; tabs `EmpDocs` + `DocSignatures`
@@ -1844,6 +1864,10 @@ entry says which it is.
   changes). Similarly, `CN_UPDATE_SUGGESTIONS` stores the
   per-department update-type datalist suggestions as JSON; editable
   via the Admin tab or Script Properties directly.
+  **Since cycle 22 A9 (2026-09-25)** Save Departments refuses while any row has
+  a name without an email or an email without a name, marks the empty field and
+  names the row. It used to drop the row and say "saved". Two rows with the
+  same name still save, and the later one wins.
 <a id="operator-script-property-cn-archived-tags"></a>
 - **Script Property `CN_ARCHIVED_TAGS`** (auto-managed). JSON array
   of lowercase tag strings marked as archived via the Call Notes →

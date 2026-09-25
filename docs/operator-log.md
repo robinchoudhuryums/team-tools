@@ -10,6 +10,41 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-25 — Cycle 22: interface polish and the five deferred findings (Batch 9, S6, S8, S10, M6, C12)
+
+**Adds no new Script Property. One CHANGES shape:** `DR_SLA_TARGETS` is now
+working days with a `_unit: 'days'` marker (`CONFIG.CALL_NOTES.DR_SLA_DEFAULT_DAYS`
+2 replaces `DR_SLA_DEFAULT_HOURS` 48). `BUILD_HASH_CACHE_KEY` /
+`BUILD_HASH_CACHE_TTL_SEC` left CONFIG, and nothing reads the old ScriptCache
+entry. NOT yet deployed: ship with the rest of cycle 22 on the ordinary
+`clasp push -f` + New version.
+
+**One-time operator steps after deploy (none blocks it).**
+- Open Manage → Admin → Config → Dept-Request SLA targets. If it says the
+  targets were set in hours, check each department's converted working-day
+  value (hours ÷ 24, to the half day) and Save, which stores the new unit.
+- Tell managers the Dept Request deadlines are now **2 working days** by
+  default. Since 2026-08-31 they had effectively been about 5, so requests
+  turn at-risk and overdue sooner the day this ships.
+- Tell QA reviewers they can no longer score, finish, share or re-attribute
+  their own calls; an admin can.
+
+**What changes for the operator.**
+- **Batch 9 — interface.** The Call Notes export keeps its link on screen when
+  the browser blocks the new tab; the shell's shortcut keys open a proper
+  dialog; Intake's copy-image fallback says what really happened; the QA
+  player's keys yield to dialogs and focused buttons; Intake's reveal questions
+  take arrow keys and click-again-to-clear, and Clear confirms on a filled
+  form; auto-tag and department saves report what the server stored or
+  refused; the reload prompt no longer fires because someone opened `/dev`.
+- **S6** a reviewer cannot review their own call (admin exception). **S8** no
+  page can be framed by another site (nothing embeds the app today). **S10** a
+  failed quiz attempt shows the score only; per-question marks once it
+  passes. **M6** SLA targets in working days. **C12** with archiving ON, a
+  History, per-rep or export range that reaches the archive window says older
+  notes may be in the cold archive (archiving is off by default, so nothing
+  shows today).
+
 ## 2026-09-25 — Cycle 22: half days, the Needs-you list, the intake engine's reads (Batch 7, Batch 8, follow-ups)
 
 **Adds two Script Properties, both auto-managed:** `QA_SYNC_CONTINUATION`

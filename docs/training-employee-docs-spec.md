@@ -80,7 +80,8 @@ state. Tabs auto-provision on first use (the `getOrCreate*` pattern):
 - **`QuizAttempts`** — append-only:
   `attemptId (uuid), quizId, empId, submittedAt, scorePct, passed,
   perQuestionJson` (per-question right/wrong booleans only — never the
-  rep's raw answers paired with the key).
+  rep's raw answers paired with the key). The row records them on EVERY
+  attempt, for managers; the rep sees them only on a passing one (§9.4).
 
 **Completion semantics:** an item counts complete for a rep iff the
 latest non-revoked assignment row for (item, emp-or-*) has
@@ -198,7 +199,8 @@ change (INV-08/32), best-effort email (INV-14).
 - `submitQuizAttempt(quizId, answers[])` — locked. Grades server-side
   against `questionsJson`; appends `QuizAttempts`; on `scorePct >=
   passPct` also appends a `TrainingCompletions` row (`via='quiz'`).
-  Returns score + per-question right/wrong booleans ONLY — correct
+  Returns the score, and per-question right/wrong booleans ONLY on a
+  PASSING attempt (`perQuestion: null` on a fail, cycle 22 S10) — correct
   options are NEVER revealed, pass or fail (§9.4). Unlimited retries;
   attempt counts are tracked per (quiz, emp) and surfaced on both the
   rep's checklist ("passed on attempt 3") and the manager matrix.
@@ -326,7 +328,10 @@ One operator prerequisite for T3: fill the new Employees column M
    (`EMP.MANAGER_EMAIL`), visibility = owner + issuer + listed
    manager, fail-closed on blank. `ROSTER_CACHE_KEY` bumps v5 → v6.
 4. **Quiz policy — unlimited retries; NEVER reveal correct answers**
-   (pass or fail — only per-question right/wrong is shown); attempt
-   counts tracked and surfaced to rep + manager.
+   (pass or fail). A FAILED attempt shows the score only; per-question
+   right/wrong is shown once the attempt passes (cycle 22 S10, operator
+   2026-09-25 — per-question marks on a fail let a rep find the key by
+   flipping one answer per retry). Attempt counts tracked and surfaced to
+   rep + manager.
 5. **Naming — "Training & Employee Docs"** (tool label). `docType`
    vocabulary stays `'review' | 'pip' | 'policy' | 'other'`.

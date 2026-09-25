@@ -658,6 +658,13 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   regardless of whether they reach the shell. The only public
   endpoints are `getFormByToken` and `submitFormByToken`, which
   validate via UUID token.
+  **No page may be framed by another site (cycle 22 S8, operator
+  2026-09-25).** Nothing embeds the app, so `doGet` (the shell and the
+  restricted page) and `serveExternalForm_` set `XFrameOptionsMode.DEFAULT`
+  (`X-Frame-Options: SAMEORIGIN`) instead of `ALLOWALL`. The public form needs
+  it most: a page that takes a consent and a signature must not be framable
+  by another site (clickjacking). Embedding the app somewhere later means
+  changing these three calls on purpose, not working around them.
 - <a id="design-tokens-are-the-single-source-of-truth-for-color-typog"></a>**Design tokens are the single source of truth for color,
   typography, radii, shadows, and motion.** All declared in
   `web-app/styles_design_tokens.html` and consumed via CSS
@@ -1047,8 +1054,9 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   morning. `clientBuildHash_()` fingerprints the served client (MD5 over
   `index.html`'s RAW template content plus every `include('...')` target
   DERIVED from it — INV-179: no version constant to forget to bump, and a new
-  partial is covered the day it ships; memoized per execution + CacheService
-  `client_build_hash_v1`, 5-min TTL). `doGet` stamps the page
+  partial is covered the day it ships; memoized per execution ONLY since cycle 22 U4 — the CacheService copy was
+  removed because ScriptCache is shared by HEAD and every versioned
+  deployment, g157). `doGet` stamps the page
   (`window.SERVER_BUILD_STAMP`, the INV-78 unescaped-`<?!=` pattern; catch →
   `''` so a hash failure can never break boot), and the shell's
   `buildStampTick_` — riding the 60s reminders ticker per INV-190's cost rule,
@@ -1072,7 +1080,7 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   un-framed page (local dev, the visual harness) or a missing base reloads
   normally. A COMPACT reload carries `?compact=1&tool=<currentView>`, because
   `umsLastView` is deliberately not written in the pop-out (D8) and the pinned
-  window must come back as the pop-out. Net prompt lag ≤ poll 15 min + cache TTL 5 min. Correctness property
+  window must come back as the pop-out. Net prompt lag ≤ the 15-min poll (the 5-min cache TTL that used to add to it went with U4). Correctness property
   worth knowing: `google.script.run` executes the DEPLOYED version's code, so
   a bare `clasp push` with no New version changes neither the served files nor
   the hash — no false prompt; the hash moves exactly when a New version is
@@ -4645,3 +4653,23 @@ pick them up without re-deriving the context.
   hours can no longer fit. The first version (mid-shift start) was replaced
   rather than kept as a default, because a default that encodes the wrong rule
   would grade every morning half day. Verify: the T5 (rework) pins (g154).
+- <a id="dept-request-sla-targets-are-working-days"></a>**Dept Request SLA targets
+  are WORKING DAYS, and the stored map carries its unit (cycle 22 M6, operator
+  2026-09-25).** The tracker has measured a request's age in BUSINESS time
+  since 2026-08-31, so a target in hours had to mean business hours, and
+  nobody sets a deadline as "18 business hours". The operator chose working
+  days. `CONFIG.CALL_NOTES.DR_SLA_DEFAULT_DAYS` is 2, and the Admin editor
+  takes 0.5 to 30 in half days. A working day is one span of the business
+  window (`businessHours_`, so `drBusinessDayHours_` is 9 today), and the band
+  rule is unchanged: `drSlaStatus_` still compares business minutes with
+  at-risk from 75%. Only the target is converted (`drSlaBizHours_`). The
+  property keeps its name, `DR_SLA_TARGETS`, and the value now carries
+  `_unit: 'days'`. A value without it is read as the old hours map at the
+  calendar intent it was set with (÷ 24, to the half day), not at its
+  business-hours reading, because the targets were chosen when age was
+  wall-clock. The editor says so ("set in hours — shown converted, review and
+  save") until someone saves. Every label reads "N working days": the
+  tracker, the stats, the digest, the daily brief and the pending-task
+  detail. Rejected: relabelling the hours as "business hours" (the numbers
+  stay wrong), and converting at the business-hours reading (48 would become
+  5.3 days, the loose value this fixes). See g158.

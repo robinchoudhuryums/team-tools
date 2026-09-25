@@ -190,6 +190,22 @@ not restate it. Server endpoints live in the fourteen server files
      "cannot confirm" explanation is said once under the job list (g152, g153);
      the urgent-notes digest and the daily brief say when they could not read.
 
+     **Cycle 22 Batch 9 + the deferred findings (2026-09-25).** The export
+     dialog shows its "Open the export sheet" link before it tries to open a
+     tab, and stays open to hold it, so a blocked pop-up no longer loses the
+     link (U1, g135). The shell's `?` and Ctrl/⌘+/ keys open the shortcuts
+     overlay as a named dialog that returns focus when closed (U2, g100).
+     After an admin saves auto-tag rules, their session uses the rules the
+     server stored (A7). Save Departments refuses a half-filled row instead of
+     dropping it (A9). When archiving is on and a History range, the per-rep
+     view or an export reaches the archive window, the empty state and the
+     export say that older notes may be in the cold archive, which these views
+     do not read, and point to Search with "Include archive" (C12;
+     `cnArchivedBefore_`). With archiving off, as it is today, nothing shows.
+     The open-client reload prompt reads the build fingerprint once per
+     request rather than from ScriptCache, so a `/dev` visit no longer prompts
+     prod tabs to reload (U4, g157).
+
 <a id="metrics"></a>
      **Batch 6 (2026-09-18):** the Admin Overview KPI strip reports TEAM
      numbers — notes across every enrolled rep (all-time) and the cross-rep
@@ -320,6 +336,14 @@ not restate it. Server endpoints live in the fourteen server files
      the card shows the newest, its pill says how many are waiting, and Expand
      shows that newest voicemail (M5, g155).
 
+     **Cycle 22 Batch 9 + M6 (2026-09-25):** the business-hours notes on the
+     Dept Requests tracker and the Spanish inbox say "company holidays", the
+     calendar they actually use (M11, g123), and the Spanish stats cache key
+     includes the voicemail settings, so changing them refreshes the card.
+     Dept Request SLA targets are WORKING DAYS (default 2) and every tracker,
+     stats, digest and brief label says so. The old hours targets had quietly
+     become business hours on 2026-08-31, about 2.5x looser (M6, g158).
+
 <a id="intake"></a>
      **Batch 5 (2026-09-18):** `QaRecordings` carries a trailing `AgentId`
      written from the roster when a reviewer attributes a recording, and the
@@ -428,6 +452,13 @@ not restate it. Server endpoints live in the fourteen server files
      list (I6). The Sent tab names a submission tab it could not read (I4). The
      account emails show an unanswered Yes/No as "Not answered", not "No" (I5),
      and secondary rows are indented correctly (I8).
+
+     **Cycle 22 Batch 9 (2026-09-25):** every "reveal" single-select (Q39 and
+     its kind) moves with the arrow keys, and clicking the selected option
+     clears it. Clear on a filled form asks first, naming how many answers it
+     will wipe (`intakeConfirmClear_`). The "Copy image" fallback says whether
+     the image opened in a new tab or the browser blocked that too, instead of
+     always "Opened image" (U3, g135).
 
 <a id="reference"></a>
      **Batch 5 (2026-09-18):** the email's question LABELS come from
@@ -846,6 +877,13 @@ not restate it. Server endpoints live in the fourteen server files
      update the rep's Needs-you list, and so do assigning, issuing and creating a
      coaching item (T10, g67).
 
+     **Cycle 22 S10 (operator 2026-09-25):** a failed quiz attempt shows the
+     score and the rep's answers, but not which questions were wrong ("Which
+     questions you missed is shown once you pass"). A passing attempt shows
+     the per-question marks as before, and the correct option is never shown
+     (spec §9.4). The QuizAttempts row records the marks on every attempt, for
+     managers.
+
 <a id="qa"></a>
 ## QA
 
@@ -1019,3 +1057,11 @@ not restate it. Server endpoints live in the fourteen server files
      it — the old agent's review is never shown to the new one (S5) — and a
      comment posted just before switching recordings no longer touches the
      newly opened one (D9).
+
+     **Cycle 22 Batch 9 + S6 (2026-09-25):** the player's Space and arrow
+     shortcuts yield to an open dialog and to a focused control
+     (`qaPlayerOwnsKey_`), so Space on a focused button presses that button
+     (U5). A reviewer cannot score, change the status of, share or
+     re-attribute a recording of their OWN call; an admin can
+     (`qaSelfReviewRefusal_`, S6). The check is on the server; the detail
+     still offers the controls.

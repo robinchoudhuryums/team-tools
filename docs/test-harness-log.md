@@ -2051,6 +2051,20 @@ per-finding detail. What each added to each harness, by delta:
   Fixtures: `halfDayMinHours`, a met and a short half day on the punctuality
   reps, `vmPending: 2` with the stats counting both, `auditWindow.startMs`, the
   `triggerOwner` detector. 21 bite-checks, all BITE.
+- **Batch 9:** Node +9 (U1, U3, U4 via BCN-1/1b, U5, U6, A7, A9, M11 and a
+  DERIVED overlay net). The net finds every static overlay id in the markup
+  and checks every file for a direct or variable-bound `classList` open/close
+  against it; the F-40 hand list had missed `cn-export-overlay`. BCN-1 and
+  BCN-1b were rewritten for the removed cache (Category A), and the
+  business-hours copy pin moved to "company holidays". 13 bite-checks, all
+  BITE (one malformed M11 mutation re-run).
+- **Deferred findings (S6, S8, S10, M6, C12):** Node +5, and two assertions
+  added to the editor suite's existing quiz test (no new registration). The
+  `drSlaForToDept_` and N2 `drDeptStats_` pins moved from hours to working
+  days (Category A). Fixtures: `slaDays` on the tracker items and stats, and
+  `defaultDays` on the admin SLA view. 11 bite-checks, all BITE. The sandboxes
+  for the S10/C12 client pins needed an `esc` stub; a `var(--text-xs, 12px)`
+  fallback was caught by the g57 pin and removed.
 
 **Two NO BITEs, both acted on (g138).** T2's first wiring pin asserted the
 refusal message existed, and an `if (false)` beside it stayed green. The pin

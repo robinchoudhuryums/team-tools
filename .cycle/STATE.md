@@ -270,5 +270,6 @@ Updated: 2026-09-25
 ## Where I left off
 All nine batches, S2, F1–F5, the follow-ups and the five deferred findings of
 cycle 22 are committed and pushed; none is deployed. Docs are synced through the
-follow-ups; Batch 9 and the deferred findings (22-DF) are owed, including the
-§9.4 spec change. Next: `/sync-docs`, then deploy + the walks, then `/reflect`.
+deferred findings (2026-09-25: g157, g158, INV-289..300, the §9.4 spec change,
+the SLA working-days decision, the operator-log entry) and the branch goes to a
+PR. Next: deploy + the walks (incl. the SLA review-and-save), then `/reflect`.
