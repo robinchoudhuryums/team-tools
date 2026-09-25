@@ -1036,6 +1036,38 @@
     "oopEligibilityParse_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "cycle 22 Batch 6 A1: the automation run ledger (per-job Script Property heartbeat) + the audit-window coverage helper",
+   "added": [
+    "AUTOMATION_RUN_PROP_PREFIX",
+    "auditWindowCoversMonth_",
+    "automationRunKey_",
+    "readAutomationRunLedger_",
+    "stampAutomationRun_"
+   ],
+   "removed": [],
+   "changed": [
+    "automationJobProblems_",
+    "automationProblems_",
+    "computeAutomationHealth_",
+    "getAutomationHealth",
+    "writeAuditLog_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "cycle 22 Batch 6 A1: the automation run ledger (per-job Script Property heartbeat), its merge, and the audit-window coverage helper",
+   "added": [
+    "automationLastRunMerge_"
+   ],
+   "removed": [],
+   "changed": [
+    "computeAutomationHealth_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -1094,6 +1126,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "80e1aaed6249b137"
+  },
+  "AUTOMATION_RUN_PROP_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8aa67bf5b762459e"
   },
   "AUTOMATION_SYNCFAIL_WINDOW_DAYS": {
    "file": "00_config.js",
@@ -3230,6 +3267,11 @@
    "kind": "function",
    "sha": "6d5ec89cc32717f4"
   },
+  "auditWindowCoversMonth_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "6a3c17d0c9cb1975"
+  },
   "authorizeGmailScope": {
    "file": "10_core.js",
    "kind": "function",
@@ -3253,12 +3295,22 @@
   "automationJobProblems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "c4b47a7535c3d4c9"
+   "sha": "9279f78e88cd480c"
+  },
+  "automationLastRunMerge_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "ccdc354f044ad4a0"
   },
   "automationProblems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "cb9c92f72c2e9e3f"
+   "sha": "13d4853cd9175a48"
+  },
+  "automationRunKey_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "7d755636e574b28a"
   },
   "bizMinutesLocal_": {
    "file": "10_core.js",
@@ -3813,7 +3865,7 @@
   "computeAutomationHealth_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "f14872f711b7df24"
+   "sha": "305be77b6eea04bd"
   },
   "computeCnEmailHash_": {
    "file": "30_callnotes.js",
@@ -4383,7 +4435,7 @@
   "getAutomationHealth": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "9f97025facaba800"
+   "sha": "582c0ee39a0c1518"
   },
   "getAutomationHealthBadge": {
    "file": "10_core.js",
@@ -6785,6 +6837,11 @@
    "kind": "function",
    "sha": "856e5e11ddbd0a16"
   },
+  "readAutomationRunLedger_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "5afecaac60eb73d9"
+  },
   "readCallNoteRowsInRange_": {
    "file": "30_callnotes.js",
    "kind": "function",
@@ -7425,6 +7482,11 @@
    "kind": "function",
    "sha": "6296753cac3f335e"
   },
+  "stampAutomationRun_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "a36bfaf04f1ba7c5"
+  },
   "stampDigestLastRun_": {
    "file": "10_core.js",
    "kind": "function",
@@ -7738,7 +7800,7 @@
   "writeAuditLog_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "c3a2e47e54708372"
+   "sha": "97fcd00283f917eb"
   },
   "writeToEmployeeSheet_": {
    "file": "20_timeclock.js",

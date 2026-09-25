@@ -1106,6 +1106,55 @@ function clearAutomationError_(job) {
     propSetBounded_(AUTOMATION_ERROR_PROP, JSON.stringify(map), { mode: 'degrade', shrink: propShrinkDropOldest_ });
   } catch (e) { /* best-effort */ }
 }
+/** A1 (cycle 22) — the run ledger: one Script Property per automation action
+ *  (AUTOMATION_RUN_<action>), stamped beside the action's audit row. Its own
+ *  key, so no read-modify-write and no lock; best-effort, like every stamp. */
+function automationRunKey_(action) { return AUTOMATION_RUN_PROP_PREFIX + String(action || ''); }
+function stampAutomationRun_(action, ts, notes) {
+  try {
+    propSetBounded_(automationRunKey_(action),
+      JSON.stringify({ ts: String(ts || ''), notes: String(notes || '').slice(0, 300) }),
+      { mode: 'degrade', shrink: propShrinkStripFields_(['notes']) });
+  } catch (e) { /* best-effort — the audit row itself already landed */ }
+}
+/** {action: {ts, notes}} for every action that has stamped the ledger. A job
+ *  missing here has not run since the ledger shipped (the tail scan covers it). */
+function readAutomationRunLedger_() {
+  const out = {};
+  let props;
+  try { props = PropertiesService.getScriptProperties(); } catch (e) { return out; }
+  AUTOMATION_AUDIT_ACTIONS.forEach(function (a) {
+    try {
+      const v = JSON.parse(props.getProperty(automationRunKey_(a)) || 'null');
+      if (v && typeof v === 'object' && v.ts) out[a] = { ts: String(v.ts), notes: String(v.notes || '') };
+    } catch (_) { /* an unreadable stamp is a missing stamp */ }
+  });
+  return out;
+}
+/** PURE-ish (the two converters are passed) — folds the run ledger into the
+ *  tail scan's {action: last} map IN PLACE. The NEWER run wins, so a ledger
+ *  stamp never hides a later tail row and vice versa; an unparseable ledger
+ *  stamp never displaces a tail row that parsed. */
+function automationLastRunMerge_(byAction, ledger, parseMs, toMgr) {
+  Object.keys(ledger || {}).forEach(function (a) {
+    let ms = null;
+    try { ms = parseMs(ledger[a].ts); } catch (_) { ms = null; }
+    if (!isFinite(ms)) ms = null;
+    const tail = byAction[a];
+    if (tail && (!ms || (tail.ms && tail.ms >= ms))) return;
+    byAction[a] = { timestampMgr: toMgr(ledger[a].ts), ms: ms, notes: ledger[a].notes, source: 'ledger' };
+  });
+  return byAction;
+}
+/** PURE — does the AuditLog window that was actually read reach back to the
+ *  start of `monthPrefix` ('yyyy-MM', manager tz)? A complete scan always
+ *  does; a truncated one does only when its OLDEST row predates the 1st. When
+ *  it does not, "no row this month" is UNKNOWN, not "did not run" (A1). */
+function auditWindowCoversMonth_(win, monthPrefix) {
+  if (!win || win.complete) return true;
+  const start = String(win.startMgr || '');
+  return !!start && start < String(monthPrefix || '') + '-01';
+}
 function readAutomationErrors_() {
   try {
     const map = JSON.parse(PropertiesService.getScriptProperties()
@@ -1116,8 +1165,11 @@ function readAutomationErrors_() {
 /** PURE-ish: the per-job problem lines for `automationLastRuns`, given the
  *  table above. `nowMs`/`todayDom`/`thisMonth` are passed so the decision is
  *  testable without a clock. */
-function automationJobProblems_(lastRuns, errors, nowMs, todayDom, thisMonthPrefix) {
+function automationJobProblems_(lastRuns, errors, nowMs, todayDom, thisMonthPrefix, auditWindow, opts) {
+  // A2 (cycle 22): each line carries its KIND and job, so the Admin System tab
+  // can render the SAME list the health dot and the digest count ({items:true}).
   const out = [];
+  const push = function (kind, key, text) { out.push({ kind: kind, key: key, text: text }); };
   const byAction = {};
   (lastRuns || []).forEach(function (a) { if (a && a.action) byAction[a.action] = a.last || null; });
   AUTOMATION_JOB_CHECKS.forEach(function (job) {
@@ -1131,20 +1183,25 @@ function automationJobProblems_(lastRuns, errors, nowMs, todayDom, thisMonthPref
       if (todayDom < (job.graceDays || 3)) return;
       const ranThisMonth = !!(last && last.timestampMgr &&
         String(last.timestampMgr).indexOf(thisMonthPrefix) === 0);
-      if (!ranThisMonth) {
-        out.push('The ' + job.label + ' has not run this month (expected on the 1st) — ' +
+      // A1 (cycle 22): with NO run on record, absence is only evidence when the
+      // AuditLog window read reaches back past the 1st. A truncated window that
+      // starts mid-month cannot tell "did not run" from "scrolled out" — that is
+      // UNKNOWN, rendered as such on the panel row, never a false alarm. A run
+      // on record from an EARLIER month is real evidence either way.
+      if (!ranThisMonth && (last || auditWindowCoversMonth_(auditWindow, thisMonthPrefix))) {
+        push('job', job.action, 'The ' + job.label + ' has not run this month (expected on the 1st) — ' +
           'the trigger may be missing. Re-run installAutomationTriggers().');
       }
     } else if (last && last.ms && (nowMs - last.ms) > job.staleHours * 3600000) {
-      out.push('The ' + job.label + ' last ran ' + last.timestampMgr +
+      push('job', job.action, 'The ' + job.label + ' last ran ' + last.timestampMgr +
         ' (over ' + job.staleHours + 'h ago) — the trigger may be disabled.');
     }
     const err = errors && errors[job.action];
     if (err) {
-      out.push('The ' + job.label + ' FAILED on ' + err.at + ': ' + err.message);
+      push('jobError', job.action, 'The ' + job.label + ' FAILED on ' + err.at + ': ' + err.message);
     }
   });
-  return out;
+  return (opts && opts.items) ? out : out.map(function (i) { return i.text; });
 }
 /** ADMIN-gated (`callerEmp.isAdmin` — F-26), read-only. One bounded AuditLog
  *  tail scan (CN_AUDIT_MAX_SCAN
@@ -1163,7 +1220,11 @@ function getAutomationHealth(opts) {
     // F9 (cycle 16) — the Offerings catalog check rides the SAME opt-in gate as
     // the queue scan, for the same reason: it opens the Intake spreadsheet, and
     // the badge/digest callers must not pay for a diagnostic.
-    return computeAutomationHealth_({ scanQueues: scanQueues, scanCatalog: scanQueues });
+    const report = computeAutomationHealth_({ scanQueues: scanQueues, scanCatalog: scanQueues });
+    // A2 (cycle 22) — the exact list behind the health dot and the digest, so
+    // the System tab can never read clean while the dot is red.
+    report.problems = automationProblems_(report, { items: true });
+    return report;
   } catch (err) { return { error: err.message }; }
 }
 /** Internal, UN-GATED automation-health report — the body of getAutomationHealth,
@@ -1307,10 +1368,16 @@ function computeAutomationHealth_(opts) {
     let auditLogUrl = '';
     try { auditLogUrl = auditSheet.getParent().getUrl() + '#gid=' + auditSheet.getSheetId(); } catch (e) {}
     const lastRow = auditSheet.getLastRow();
+    // A1 (cycle 22): the window that was actually read — a truncated scan names
+    // its OLDEST row, so "no row in the window" can be weighed against it.
+    let auditWindowStartMgr = '';
     if (lastRow > 1) {
       const startRow = Math.max(2, lastRow - CN_AUDIT_MAX_SCAN + 1);
       scannedAll = startRow === 2;
       const data = auditSheet.getRange(startRow, 1, lastRow - startRow + 1, 10).getValues();
+      if (!scannedAll && data.length) {
+        auditWindowStartMgr = convertAuditTs_(normalizeAuditTs_(data[0][AUDIT.TS]), CONFIG.TIMEZONE, mgrTz);
+      }
       // Day-string comparison against IST-written timestamps — same accepted
       // boundary fuzz as getCallNotesAuditLog's date filter.
       const cutD = new Date();
@@ -1346,6 +1413,12 @@ function computeAutomationHealth_(opts) {
         }
       }
     }
+    // A1 (cycle 22): the run ledger is the primary source; the tail scan fills
+    // a job that has not stamped it yet (every job, the day this ships). The
+    // NEWER of the two wins, so neither can mask the other's later run.
+    automationLastRunMerge_(lastRunByAction, readAutomationRunLedger_(),
+      function (ts) { return Utilities.parseDate(ts, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime(); },
+      function (ts) { return convertAuditTs_(ts, CONFIG.TIMEZONE, mgrTz); });
     const automationLastRuns = AUTOMATION_AUDIT_ACTIONS.map(function (a) {
       return { action: a, last: lastRunByAction[a] || null };
     });
@@ -1508,6 +1581,10 @@ function computeAutomationHealth_(opts) {
       // badge/digest path), so the client can tell "not checked" from "clean".
       intakeCatalog: scanCatalog ? getIntakeCatalogHealth_() : null,
       auditScanComplete: scannedAll,
+      // A1 (cycle 22) — what "no audit row" is measured against. Read by
+      // automationProblems_ (a monthly job's absence is only evidence when the
+      // window reaches the 1st) and by the panel's "last seen" rows.
+      auditWindow: { complete: scannedAll, startMgr: auditWindowStartMgr, rows: CN_AUDIT_MAX_SCAN },
       managerTzAbbr: tzAbbr_(mgrTz),
       auditLogUrl: auditLogUrl,
     };
@@ -1531,11 +1608,18 @@ function computeAutomationHealth_(opts) {
  *  detectors (Turn C — "the job ran" ≠ "the job's detector works"). CDR
  *  reachability is deliberately EXCLUDED (not a trigger; an unset CDR_SS_ID
  *  would false-nag a non-CDR deployment — the panels surface it). */
-function automationProblems_(report) {
-  const problems = [];
-  if (!report) return problems;
+function automationProblems_(report, opts) {
+  // A2 (cycle 22): ONE list, three readers. The digest and the dot take the
+  // text; the Admin System tab takes {items:true} — {kind, key, text} — so it
+  // renders every line the dot counted instead of deriving its own subset
+  // (it omitted job staleness, open punches and accrual shortfalls, and read
+  // "Nothing needs attention" under a red dot).
+  const items = [];
+  const add = function (kind, key, text) { items.push({ kind: kind, key: String(key || ''), text: text }); };
+  const done = function () { return (opts && opts.items) ? items : items.map(function (i) { return i.text; }); };
+  if (!report) return done();
   (report.digests || []).forEach(function (d) {
-    if (d && d.stale) problems.push('The "' + d.key + '" digest last ran ' + (d.last || 'too long ago') + ' — the trigger may be disabled.');
+    if (d && d.stale) add('digest', d.key, 'The "' + d.key + '" digest last ran ' + (d.last || 'too long ago') + ' — the trigger may be disabled.');
   });
   // Per-JOB liveness + last-error, DERIVED from AUTOMATION_JOB_CHECKS rather
   // than hand-listed here (Gap4). This block used to check exactly one job
@@ -1548,8 +1632,10 @@ function automationProblems_(report) {
     report.automationErrors,
     Date.now(),
     parseInt(Utilities.formatDate(nowD, mgrTzNow, 'd'), 10),
-    Utilities.formatDate(nowD, mgrTzNow, 'yyyy-MM')
-  ).forEach(function (m) { problems.push(m); });
+    Utilities.formatDate(nowD, mgrTzNow, 'yyyy-MM'),
+    report.auditWindow,
+    { items: true }
+  ).forEach(function (m) { add(m.kind, m.key, m.text); });
   // F-20 (2026-09-18): a failure stamped under a key OUTSIDE the JOB_CHECKS
   // table — the heartbeat-only jobs (MissedPunchAlerts, DailyExportCheck) and
   // this digest's own AutomationHealthDigest — reaches the digest too. The
@@ -1559,7 +1645,7 @@ function automationProblems_(report) {
   Object.keys(report.automationErrors || {}).forEach(function (k) {
     if (tabledActions[k]) return;
     const e = report.automationErrors[k] || {};
-    problems.push('The ' + k + ' job FAILED on ' + (e.at || '?') + ': ' + (e.message || 'unknown error'));
+    add('jobError', k, 'The ' + k + ' job FAILED on ' + (e.at || '?') + ': ' + (e.message || 'unknown error'));
   });
   // PTO accrual reconciliation (operator 2026-09-15). The top-up heals late
   // data on its own, so a top-up is NOT a problem — it is the system working.
@@ -1573,18 +1659,18 @@ function automationProblems_(report) {
   const op = report.openPunches;
   if (op) {
     if (op.error) {
-      problems.push('Open-punch check: the scan could not run (' + op.error +
+      add('openPunch', 'scan', 'Open-punch check: the scan could not run (' + op.error +
         ') — an empty open-punch list below is NOT a clean board.');
     } else if (op.days > 0) {
       const who = (op.detail || []).map(function (d) {
         return d.name + ' (' + d.count + ')';
       }).join(', ');
-      problems.push('Open punches: ' + op.days + ' day(s) across ' + op.reps +
+      add('openPunch', 'days', 'Open punches: ' + op.days + ' day(s) across ' + op.reps +
         ' rep(s) have no usable clock-in/clock-out pair — ' + who +
         '. Those days earn no hours and no PTO until they are fixed' +
         (op.window ? ' (checked ' + op.window.start + '…' + op.window.end + ')' : '') + '.');
       if (op.expiring > 0) {
-        problems.push('Open punches: ' + op.expiring + ' of them fall out of the ' +
+        add('openPunch', 'expiring', 'Open punches: ' + op.expiring + ' of them fall out of the ' +
           ((op.window && op.window.adjustWindowDays) || CONFIG.ADJUST_WINDOW_DAYS) +
           '-day adjust window within a week — after that the in-app fix is gone and only a hand-edit will do.');
       }
@@ -1593,36 +1679,36 @@ function automationProblems_(report) {
   const ar = report.accrualReconcile;
   if (ar) {
     (ar.shortfalls || []).forEach(function (sf) {
-      problems.push('PTO accrual: ' + sf.id + ' was credited for ' + sf.was + ' h in ' + sf.months +
+      add('accrual', sf.id, 'PTO accrual: ' + sf.id + ' was credited for ' + sf.was + ' h in ' + sf.months +
         ' but the Timesheet now reads ' + sf.now + ' h — the balance was NOT reduced; check for a deleted punch.');
     });
     (ar.skipped || []).forEach(function (sk) {
-      problems.push('PTO accrual: ' + sk.id + '\'s ' + sk.months + ' could not be reconciled (' + sk.why + ').');
+      add('accrual', sk.id, 'PTO accrual: ' + sk.id + '\'s ' + sk.months + ' could not be reconciled (' + sk.why + ').');
     });
     if (ar.truncated) {
-      problems.push('PTO accrual: the reconcile ledger read hit its row cap, so an older month may not have been ' +
+      add('accrual', 'truncated', 'PTO accrual: the reconcile ledger read hit its row cap, so an older month may not have been ' +
         'checked. Nothing was credited from a partial read.');
     }
     (ar.incomplete || []).forEach(function (ic) {
-      problems.push('PTO accrual: ' + ic.id + ' has ' + ic.days + ' day(s) in ' + ic.months +
+      add('accrual', ic.id, 'PTO accrual: ' + ic.id + ' has ' + ic.days + ' day(s) in ' + ic.months +
         ' with no usable clock-in/clock-out pair — those hours are earning no PTO until the punches are fixed.');
     });
   }
   if (report.syncFails && report.syncFails.count > 0) {
-    problems.push(report.syncFails.count + ' personal-sheet sync failure(s) in the last ' + report.syncFails.windowDays + ' day(s).');
+    add('syncFails', '', report.syncFails.count + ' personal-sheet sync failure(s) in the last ' + report.syncFails.windowDays + ' day(s).');
   }
   if (report.witnessFails && report.witnessFails.recent) {
-    problems.push('A tamper-witness audit row was LOST in the last 48h (' +
+    add('witness', '', 'A tamper-witness audit row was LOST in the last 48h (' +
       report.witnessFails.lastAction + '; ' + report.witnessFails.count +
       ' total) — a signed/submitted record has no independent audit witness. See INV-113/122.');
   }
   (report.detectors || []).forEach(function (c) {
-    if (c && c.ok === false) problems.push('Detector dead: ' + c.label + ' — ' + c.detail);
+    if (c && c.ok === false) add('detector', c.key, 'Detector dead: ' + c.label + ' — ' + c.detail);
   });
   // (e) K-A alternative — the last nightly self-test reported failures (or
   // crashed). null = never ran, NOT a problem (fresh-deploy posture).
   if (report.selfTest && report.selfTest.fail > 0) {
-    problems.push('The nightly self-test (' + (report.selfTest.mode || '?') + ') reported ' +
+    add('selfTest', 'fail', 'The nightly self-test (' + (report.selfTest.mode || '?') + ') reported ' +
       report.selfTest.fail + ' failing test(s) on ' + (report.selfTest.date || '?') +
       (report.selfTest.error ? ' — ' + report.selfTest.error : '') + '.');
   }
@@ -1632,7 +1718,7 @@ function automationProblems_(report) {
   // preserved by the floor, not abandoned; a burst this size means reps are
   // hitting real breakage.
   if (report.clientErrors && report.clientErrors.last24h >= CLIENT_ERR_PROBLEM_MIN) {
-    problems.push(report.clientErrors.last24h + ' client error(s) in the last 24h — reps are hitting ' +
+    add('clientErrors', '', report.clientErrors.last24h + ' client error(s) in the last 24h — reps are hitting ' +
       'real breakage. See Admin → Automation Health → Client errors.');
   }
   // (f) F15 — the self-test STARTED and never finished (a stuck {running:true}
@@ -1641,12 +1727,12 @@ function automationProblems_(report) {
   // timing-out suite reported green beside a fresh heartbeat. A run in flight
   // right now is NOT a problem; only a stale sentinel is.
   if (report.selfTest && report.selfTest.stuck) {
-    problems.push('The nightly self-test (' + (report.selfTest.mode || '?') +
+    add('selfTest', 'stuck', 'The nightly self-test (' + (report.selfTest.mode || '?') +
       ') started on ' + (report.selfTest.date || '?') +
       ' and never finished — it was almost certainly killed by the 6-minute execution limit, ' +
       'so its last reported result is stale. Run it from the editor to see where it stalls.');
   }
-  return problems;
+  return done();
 }
 /** Batch K (E) — lightweight manager health badge behind the shell's Manage
  *  health dot. MANAGER-gated (the failure digest's audience — the Admin-gated
@@ -4229,6 +4315,9 @@ function writeAuditLog_(targetEmp, action, punchDate, punchTime, isAdjustment, d
       punchDate, punchTime || '',
       isAdjustment ? 'TRUE' : 'FALSE', daysBack || 0, notes || '',
     ]));
+    // A1 (cycle 22) — an automation job's row also stamps the run ledger, so
+    // its liveness never depends on the row staying inside the tail scan.
+    if (AUTOMATION_AUDIT_ACTIONS.indexOf(action) >= 0) stampAutomationRun_(action, ts, notes);
     return true;   // C4 (cycle 10) — witness-class callers need the outcome
   } catch (e) { console.warn('writeAuditLog_ failed: ' + e.message); return false; }
 }

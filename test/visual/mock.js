@@ -1792,6 +1792,10 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       selfTest: { date: daysAgo(0), mode: 'smoke', pass: 74, fail: 0, skip: 0, error: '', note: '', running: false, startedAt: null, stuck: false },
       intakeCatalog: { ok: true, totalRows: 22, errors: [], warnings: [] },
       auditScanComplete: true,
+      // A1 (cycle 22) — the window "no audit row" is measured against.
+      auditWindow: { complete: true, startMgr: '', rows: 4000 },
+      // A2 (cycle 22) — getAutomationHealth attaches the dot's own list. Clean.
+      problems: [],
       managerTzAbbr: 'CST',
       auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',
     },
@@ -2009,7 +2013,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         window: { start: '2026-08-16', end: '2026-09-13', adjustWindowDays: 30 } },
       selfTest: { date: daysAgo(0), mode: 'smoke', pass: 74, fail: 0, skip: 0, error: '', note: '', running: false, startedAt: null, stuck: false },
       intakeCatalog: { ok: true, totalRows: 22, errors: [], warnings: [] },
-      auditScanComplete: true, managerTzAbbr: 'CST', auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',
+      auditScanComplete: true, auditWindow: { complete: true, startMgr: '', rows: 4000 }, problems: [],
+      managerTzAbbr: 'CST', auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',
     },
     getStorageHealth: {
       configTimezone: 'Asia/Kolkata', adpLocale: 'en_US',

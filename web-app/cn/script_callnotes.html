@@ -10823,6 +10823,18 @@ function cnHealthFindings_(health, storage) {
         add('intakeCatalog', 'automation', 'ok', 'Offerings catalog', cat.totalRows + ' rows, all well-formed');
       }
     }
+    // A2 (cycle 22) — the SERVER's problem list, the one the health dot counts
+    // and the daily digest emails. The kinds above are rendered by their own
+    // branches (richer copy, stable ids); every OTHER kind — job staleness,
+    // open punches, accrual shortfalls, and any kind added later — renders
+    // here, so this tab can no longer say "Nothing needs attention" under a
+    // red dot. Absent on a pre-A2 server: nothing extra renders.
+    (health.problems || []).forEach(function (p, i) {
+      if (!p || CN_SYS_CLIENT_KINDS_[p.kind]) return;
+      var meta = CN_SYS_PROBLEM_KINDS_[p.kind] || { title: 'Automation', fix: 'See Automation detail below.' };
+      add('problem:' + p.kind + ':' + (p.key || i), 'automation', 'warn', p.text, '', meta.fix,
+        meta.auditLink ? health.auditLogUrl : '');
+    });
     // (b) CDR data feed
     var cdr = health.cdr || { ok: false };
     if (!cdr.ok) {
@@ -11006,6 +11018,15 @@ var CN_DIGEST_LABELS_ = {
   exportCheck: 'Daily ADP export check',
   automationHealth: 'Automation-health failure digest',
   spanishAutoAssign: 'Spanish Inbox auto-assign',
+};
+// A2 (cycle 22) — the automationProblems_ kinds cnHealthFindings_ renders with
+// a branch of its own. Every other kind the server ships renders from
+// CN_SYS_PROBLEM_KINDS_ (or a generic line), never not at all.
+var CN_SYS_CLIENT_KINDS_ = { digest: 1, jobError: 1, syncFails: 1, witness: 1, detector: 1, selfTest: 1, clientErrors: 1 };
+var CN_SYS_PROBLEM_KINDS_ = {
+  job: { fix: 'The trigger may be missing or disabled — re-run installAutomationTriggers(), then check the job under Automation detail.', auditLink: true },
+  openPunch: { fix: 'Fix each day in Manage → Manage Time (Day Edit) before it leaves the adjust window.' },
+  accrual: { fix: 'The balance was NOT changed automatically — compare the PtoAccrualCredit audit rows with the Timesheet.', auditLink: true },
 };
 var CN_SYS_AREAS_ = [['automation', 'Automation'], ['cdr', 'CDR'], ['storage', 'Storage']];
 
@@ -11345,7 +11366,7 @@ function cnRenderHealthPanel_(res) {
     var when = r.last
       ? '<span class="tabular" style="font-family:var(--mono)">' + esc(r.last.timestampMgr) + (tz ? ' ' + esc(tz) : '') + '</span>' +
         (r.last.notes ? ' <span style="color:var(--muted)">· ' + esc(r.last.notes) + '</span>' : '')
-      : '<span style="color:var(--muted)">no audit row in the scan window</span>';
+      : cnRunNeverText_(res.auditWindow);
     return '<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:4px 0;border-bottom:1px dashed var(--line);font-size:12px">' +
       '<span style="flex:0 0 200px;font-weight:600">' + esc(meta.label) + '</span>' +
       '<span style="flex:1;min-width:200px">' + when + '</span>' +
@@ -11367,6 +11388,19 @@ function cnRenderHealthPanel_(res) {
     (res.intakeCatalog ? secLabel('Intake Offerings catalog') + cnIntakeCatalogHtml_(res.intakeCatalog) : '') +
     secLabel('Nightly self-test') + cnSelfTestHtml_(res.selfTest) +
   '</div>';
+}
+
+/** A1 (cycle 22) — what a job with NO run on record means depends on how far
+ *  back the evidence reaches. The run ledger stamps every run since it shipped;
+ *  before a job's first ledger stamp only the AuditLog tail can see it, and a
+ *  TRUNCATED tail cannot tell "never ran" from "scrolled out" — so it says so. */
+function cnRunNeverText_(win) {
+  if (win && win.complete === false) {
+    return '<span style="color:var(--warning-deep)">' + icon('warning', 11) + ' cannot confirm — not in the run ledger yet, and no row in the last ' +
+      esc(win.rows || '') + ' AuditLog rows' + (win.startMgr ? ' (back to ' + esc(win.startMgr) + ')' : '') +
+      '. The ledger records its next run.</span>';
+  }
+  return '<span style="color:var(--muted)">no run on record</span>';
 }
 
 /** F9 (cycle 16) — Offerings catalog shape. The PPD recommendation engine's

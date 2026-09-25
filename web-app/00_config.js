@@ -942,6 +942,15 @@ const AUTOMATION_AUDIT_ACTIONS = [
   'PtoAccrualCredit', 'QaReviewPurge', 'DiagnosticsPurge',
 ];
 const AUTOMATION_SYNCFAIL_WINDOW_DAYS = 30;
+// A1 (cycle 22) — the per-job RUN LEDGER. Liveness used to read only the last
+// CN_AUDIT_MAX_SCAN AuditLog rows, so the monthly accrual row scrolled out of
+// that window within days of the 1st (a daily false "has not run this month")
+// and a dead daily job went SILENT the moment its last row scrolled out.
+// writeAuditLog_ now stamps one Script Property per automation action —
+// AUTOMATION_RUN_<action> = {ts, notes} — on every automation audit row. One key
+// per job, so two jobs finishing together never race a shared read-modify-write.
+// Auto-managed; delete a key to forget that job's last run.
+const AUTOMATION_RUN_PROP_PREFIX = 'AUTOMATION_RUN_';
 // ── Per-JOB liveness, derived rather than accumulated (Gap4 / INV-186) ───────
 // automationProblems_ grew one hand-written check per SIGNAL, so a job added
 // later got an audit row and no alarm: only CallNotesReconcile was ever checked

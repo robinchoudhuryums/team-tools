@@ -11809,7 +11809,7 @@ test('T: the open-punch check is PREVENTION — read-only, bounded to what can s
   const groups = code.match(/const TRIGGER_GROUPS = \{([\s\S]*?)\n\};/)[1];
   assert.ok(/runDailyChecks:\s*\[[^\]]*'checkOpenPunches'/.test(groups),
     'it rides the daily-checks dispatcher rather than owning a trigger (the quota bit this deployment once)');
-  const probs = code.match(/function automationProblems_\(report\) \{[\s\S]*?\n\}/)[0];
+  const probs = code.match(/function automationProblems_\(report[^)]*\) \{[\s\S]*?\n\}/)[0];
   assert.ok(/report\.openPunches/.test(probs), 'and automationProblems_ surfaces it');
   assert.ok(/op\.error[\s\S]{0,220}NOT a clean board/.test(probs),
     'a failed scan says so in the panel, instead of showing an empty list that reads as all-clear');
@@ -27413,6 +27413,152 @@ test('S3: every errorStateHtml_ call that interpolates rep input passes a beacon
   assert.ok(calls > 40, 'sanity: the scan found the call sites (' + calls + ')');
   assert.ok(typed >= 4, 'sanity: the four search-failure sites are seen as carrying rep input (' + typed + ')');
   assert.deepStrictEqual(bad, [], 'rep input reaching the ClientErrors beacon:\n  ' + bad.join('\n  '));
+});
+
+
+// ---------------------------------------------------------------------------
+// cycle 22 Batch 6 — automation health honesty (A1, A2, C2, A3, S7, A4, A5, A6, A8)
+console.log('\ncycle 22 Batch 6 — automation health honesty');
+const B6_WEB = path.join(__dirname, '../../web-app');
+
+function b6JobCtx_() {
+  const ctx = vm.createContext({ console, isFinite, String, Object, JSON });
+  ['auditWindowCoversMonth_', 'automationJobProblems_', 'automationLastRunMerge_']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  vm.runInContext(`var AUTOMATION_JOB_CHECKS=[
+    {action:'CallNotesReconcile',label:'nightly Sheets reconcile',cadence:'daily',staleHours:30,enabled:()=>true},
+    {action:'PtoAccrualCredit',label:'monthly PTO accrual credit',cadence:'monthly',graceDays:3,enabled:()=>true}];`, ctx);
+  return ctx;
+}
+
+test('A1: a monthly job with NO run on record is "not run" only when the AuditLog window read reaches the 1st — a truncated mid-month window is UNKNOWN, never a false alarm', () => {
+  const ctx = b6JobCtx_();
+  const f = ctx.automationJobProblems_;
+  const NOW = Date.parse('2026-09-20T09:00:00Z');
+  const none = [{ action: 'PtoAccrualCredit', last: null }];
+  const NOT_RUN = /accrual credit has not run this month/;
+  // The live defect: 4,000 rows reach back only to the 14th, the credit ran on
+  // the 1st and scrolled out. It used to read "has not run" every day to month end.
+  const midMonth = { complete: false, startMgr: '2026-09-14 08:12:00', rows: 4000 };
+  assert.strictEqual(f(none, {}, NOW, 20, '2026-09', midMonth).filter((m) => NOT_RUN.test(m)).length, 0,
+    'a window that starts mid-month cannot see the 1st — no claim either way');
+  assert.ok(f(none, {}, NOW, 20, '2026-09', { complete: false, startMgr: '2026-08-29 23:00:00', rows: 4000 }).some((m) => NOT_RUN.test(m)),
+    'a window that reaches back past the 1st and holds no row IS evidence');
+  assert.ok(f(none, {}, NOW, 20, '2026-09', { complete: true, startMgr: '', rows: 4000 }).some((m) => NOT_RUN.test(m)),
+    'a complete scan is evidence');
+  assert.ok(f(none, {}, NOW, 20, '2026-09', undefined).some((m) => NOT_RUN.test(m)),
+    'no window reported (a pre-A1 report) keeps the old reading');
+  // A run ON RECORD from an earlier month (the ledger keeps it for ever) is
+  // evidence whatever the window — that is what makes the ledger a fix.
+  const lastMonth = [{ action: 'PtoAccrualCredit', last: { timestampMgr: '2026-08-01 06:00:03', ms: NOW - 20 * 86400000 } }];
+  assert.ok(f(lastMonth, {}, NOW, 20, '2026-09', midMonth).some((m) => NOT_RUN.test(m)),
+    'a recorded run last month means this month\'s is missing');
+  const thisMonth = [{ action: 'PtoAccrualCredit', last: { timestampMgr: '2026-09-01 06:00:03', ms: NOW - 19 * 86400000 } }];
+  assert.strictEqual(f(thisMonth, {}, NOW, 20, '2026-09', midMonth).length, 0, 'the ledger\'s run on the 1st is seen from the 20th');
+  assert.strictEqual(ctx.auditWindowCoversMonth_({ complete: false, startMgr: '' }, '2026-09'), false,
+    'a truncated window with no readable start covers nothing');
+});
+
+test('A1: the run ledger — writeAuditLog_ stamps AUTOMATION_RUN_<action> for an automation row only, and the merge keeps the NEWER run', () => {
+  const props = {};
+  const ctx = vm.createContext({ console, String, JSON, Date, isFinite,
+    AUTOMATION_AUDIT_ACTIONS: ['CallNotesReconcile', 'PtoAccrualCredit'], AUTOMATION_RUN_PROP_PREFIX: 'AUTOMATION_RUN_',
+    fmtDate_: () => '2026-09-20', fmtTime_: () => '06:00:03', sheetSafeRow_: (r) => r,
+    getOrCreateAuditSheet_: () => ({ appendRow() {} }),
+    propSetBounded_: (k, v) => { props[k] = v; },
+    propShrinkStripFields_: () => () => null,
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null) }) } });
+  ['writeAuditLog_', 'automationRunKey_', 'stampAutomationRun_', 'readAutomationRunLedger_', 'automationLastRunMerge_']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const sys = { id: 'SYSTEM', name: 'System', email: '' };
+  ctx.writeAuditLog_(sys, 'PtoAccrualCredit', '2026-09-20', '', false, 0, 'credited=2');
+  ctx.writeAuditLog_(sys, 'PunchIn', '2026-09-20', '09:00', false, 0, '');
+  assert.deepStrictEqual(Object.keys(props), ['AUTOMATION_RUN_PtoAccrualCredit'], 'one key per job, and only automation actions stamp');
+  const led = JSON.parse(JSON.stringify(ctx.readAutomationRunLedger_()));
+  assert.deepStrictEqual(led, { PtoAccrualCredit: { ts: '2026-09-20 06:00:03', notes: 'credited=2' } }, 'the ledger reads back what was stamped');
+  // Merge: the newer run wins in either direction; an unparseable stamp never displaces a real row.
+  const parse = (ts) => Date.parse(ts.replace(' ', 'T') + 'Z');
+  const id = (ts) => ts;
+  const m1 = ctx.automationLastRunMerge_({}, led, parse, id);
+  assert.strictEqual(m1.PtoAccrualCredit.source, 'ledger', 'the tail had nothing — the ledger supplies the run');
+  const newerTail = { PtoAccrualCredit: { timestampMgr: '2026-09-21 06:00:00', ms: parse('2026-09-21 06:00:00'), notes: 't' } };
+  assert.strictEqual(ctx.automationLastRunMerge_(newerTail, led, parse, id).PtoAccrualCredit.notes, 't', 'a later tail row is not hidden by an older stamp');
+  const olderTail = () => ({ PtoAccrualCredit: { timestampMgr: '2026-09-01 06:00:00', ms: parse('2026-09-01 06:00:00'), notes: 't' } });
+  assert.strictEqual(ctx.automationLastRunMerge_(olderTail(), led, parse, id).PtoAccrualCredit.source, 'ledger', 'a later stamp replaces an older row');
+  const bad = { PtoAccrualCredit: { ts: 'garbage', notes: '' } };
+  assert.strictEqual(ctx.automationLastRunMerge_(olderTail(), bad, () => NaN, id).PtoAccrualCredit.notes, 't', 'an unparseable stamp never displaces a parsed row');
+  // And the report path reads it, and reports the window it measured against.
+  const comp = stripJsComments_(extractRawFunction('Code.js', 'computeAutomationHealth_'));
+  assert.ok(/automationLastRunMerge_\(lastRunByAction,\s*readAutomationRunLedger_\(\)/.test(comp), 'computeAutomationHealth_ folds the ledger in');
+  assert.ok(/auditWindow:\s*\{\s*complete:\s*scannedAll/.test(comp), 'and ships the window');
+  const probs = stripJsComments_(extractRawFunction('Code.js', 'automationProblems_'));
+  assert.ok(/report\.auditWindow/.test(probs), 'automationProblems_ hands the window to the job derivation');
+});
+
+test('A1: the panel row for a job with no run on record says "cannot confirm" under a truncated window, not "no audit row" (DOM-free render)', () => {
+  const s2 = buildSandbox([]);
+  s2.icon = () => ''; s2.esc = (x) => String(x == null ? '' : x);
+  const fn = loadFunction(s2, 'cn/script_callnotes.html', 'cnRunNeverText_');
+  assert.ok(/cannot confirm/.test(fn({ complete: false, startMgr: '2026-09-14 08:12:00', rows: 4000 })) &&
+    /2026-09-14 08:12:00/.test(fn({ complete: false, startMgr: '2026-09-14 08:12:00', rows: 4000 })), 'names the window it could not see past');
+  assert.ok(!/cannot confirm/.test(fn({ complete: true })) && /no run on record/.test(fn({ complete: true })), 'a complete scan is a plain fact');
+  assert.ok(!/no audit row in the scan window/.test(fs.readFileSync(path.join(B6_WEB, 'cn/script_callnotes.html'), 'utf8')), 'the old unconditional caption is gone');
+});
+
+test('A2: the System tab renders EVERY line the health dot counts — driven: the server\'s own list, every kind firing, fed to cnHealthFindings_', () => {
+  const ctx = vm.createContext({ console, String, Object, Date, Number, parseInt, JSON, isFinite,
+    CONFIG: { TIMEZONE: 'Asia/Kolkata', ADJUST_WINDOW_DAYS: 30 }, CLIENT_ERR_PROBLEM_MIN: 10,
+    Utilities: { formatDate: (d, tz, f) => (f === 'd' ? '20' : '2026-09') },
+    AUTOMATION_JOB_CHECKS: [
+      { action: 'CallNotesReconcile', label: 'nightly Sheets reconcile', cadence: 'daily', staleHours: 30, enabled: () => true },
+      { action: 'PtoAccrualCredit', label: 'monthly PTO accrual credit', cadence: 'monthly', graceDays: 3, enabled: () => true }] });
+  ['auditWindowCoversMonth_', 'automationJobProblems_', 'automationProblems_']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const report = {
+    digests: [{ key: 'eod', last: '2026-09-18 17:00:00', stale: true }],
+    automationLastRuns: [{ action: 'CallNotesReconcile', last: { timestampMgr: '2026-09-18 05:00:00', ms: Date.now() - 50 * 3600000 } },
+                         { action: 'PtoAccrualCredit', last: null }],
+    auditWindow: { complete: true, startMgr: '', rows: 4000 },
+    automationErrors: { CallNotesReconcile: { at: 't', message: 'tabled' }, DailyExportCheck: { at: 't', message: 'untabled' } },
+    openPunches: { reps: 2, days: 3, expiring: 1, detail: [{ name: 'A', count: 2 }, { name: 'B', count: 1 }], window: { start: 's', end: 'e', adjustWindowDays: 30 } },
+    accrualReconcile: { shortfalls: [{ id: 'E1', was: 8, now: 6, months: '2026-08' }], skipped: [{ id: 'E2', months: '2026-08', why: 'x' }],
+      truncated: true, incomplete: [{ id: 'E3', days: 1, months: '2026-08' }] },
+    syncFails: { count: 2, windowDays: 30 },
+    witnessFails: { count: 1, recent: true, lastAction: 'EmpDocSigned' },
+    detectors: [{ key: 'coachOverdue', label: 'Coaching', ok: false, detail: 'dead' }],
+    selfTest: { mode: 'smoke', fail: 2, pass: 70, skip: 0, date: 'd', stuck: false },
+    clientErrors: { count: 30, last24h: 12, windowDays: 7 },
+  };
+  const items = JSON.parse(JSON.stringify(ctx.automationProblems_(report, { items: true })));
+  const texts = JSON.parse(JSON.stringify(ctx.automationProblems_(report)));
+  assert.deepStrictEqual(items.map((i) => i.text), texts, 'the digest/dot strings ARE the items\' text — one list, not two');
+  // Non-vacuity: the fixture fires EVERY kind the server can emit (derived from its source).
+  const src = stripJsComments_(extractRawFunction('Code.js', 'automationProblems_') + extractRawFunction('Code.js', 'automationJobProblems_'));
+  const kinds = Array.from(new Set((src.match(/\b(?:add|push)\('([a-zA-Z]+)'/g) || []).map((m) => m.replace(/^.*\('/, '').replace(/'$/, ''))));
+  assert.ok(kinds.length >= 9, 'derived the kind set (' + kinds.join(',') + ')');
+  kinds.forEach((k) => assert.ok(items.some((i) => i.kind === k), 'the fixture fires kind ' + k));
+  // Client: every item is represented among the non-ok automation findings.
+  const s2 = buildSandbox([]);
+  s2.CN_DIGEST_LABELS_ = { eod: 'EOD' };
+  vm.runInContext(fs.readFileSync(path.join(B6_WEB, 'cn/script_callnotes.html'), 'utf8').match(/var CN_SYS_CLIENT_KINDS_ = [\s\S]*?\n\};/)[0]
+    .replace(/var /g, 'this.'), s2);
+  const fn = loadFunction(s2, 'cn/script_callnotes.html', 'cnHealthFindings_');
+  const out = fn(Object.assign({}, report, { problems: items }), null).items.filter((f) => f.area === 'automation' && f.severity !== 'ok');
+  const ids = out.map((f) => f.id);
+  const has = (re) => ids.some((i) => re.test(i));
+  const BRANCH = { digest: (i) => new RegExp('^digest:' + i.key + '$'), jobError: (i) => new RegExp('^automationError:' + i.key + '$'),
+    syncFails: () => /^syncFails$/, witness: () => /^witnessFails$/, detector: (i) => new RegExp('^detector:' + i.key + '$'),
+    selfTest: () => /^selfTest$/, clientErrors: () => /^clientErrors$/ };
+  items.forEach((i) => {
+    const re = s2.CN_SYS_CLIENT_KINDS_[i.kind] ? BRANCH[i.kind](i) : new RegExp('^problem:' + i.kind + ':');
+    assert.ok(re && has(re), 'the dot counted "' + i.text.slice(0, 60) + '…" (' + i.kind + ') and the tab shows it');
+  });
+  Object.keys(s2.CN_SYS_CLIENT_KINDS_).forEach((k) => assert.ok(BRANCH[k] && kinds.indexOf(k) >= 0,
+    k + ': a kind the client claims to render must be one the server emits, with a branch this pin checks'));
+  ['job', 'openPunch', 'accrual'].forEach((k) => assert.ok(ids.some((i) => i.indexOf('problem:' + k + ':') === 0), k + ' reaches the tab (it did not before A2)'));
+  // The panel path attaches the list; the dot and digest keep reading the same function.
+  const gah = stripJsComments_(extractRawFunction('Code.js', 'getAutomationHealth'));
+  assert.ok(/report\.problems = automationProblems_\(report, \{ items: true \}\)/.test(gah), 'getAutomationHealth ships the dot\'s list');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
