@@ -204,6 +204,12 @@ entry says which it is.
   `runAllTests()`** — it adds the new `qa_gates_rejectNonMember`
   case — then drop one recording in the folder, Sync, play it, and leave a
   comment at a timestamp.
+  **A large first sync resumes (cycle 22 D3, 2026-09-25):** the Drive walk runs
+  outside the project lock, and a walk that hits its cap saves its place in the
+  auto-managed Script Property `QA_SYNC_CONTINUATION` (`{folderId, token}`);
+  the toast says "sync again to continue" and the next Sync picks up there. A
+  completed walk clears it; a token for another folder, or an expired one,
+  restarts from the top. Delete the property to force a restart.
 <a id="operator-set-script-property-adp-ss-id"></a>
 - **Set Script Property `ADP_SS_ID`** to the real spreadsheet ID in
   Apps Script editor → Project Settings → Script Properties. Without
@@ -313,6 +319,14 @@ entry says which it is.
   exactly this: one `E1161` row, capacity blank, that the operator did not
   consider a product.) The `PPDSubmissions` / `PMDSubmissions` / `PAPSubmissions`
   PHI tabs auto-provision on first send (`getIntakeSubmissionSheet_`).
+  **The Offerings seat-type cell is read WORD by word (cycle 22 I2, 2026-09-25):**
+  use `S` / `Solid`, `C` / `Captain` (`Captain's` is fine), separated by `and`
+  / `or` / `/` or spaces; the word `seat` is ignored. Any other word makes the
+  cell UNREADABLE — that chair is not recommended and the catalog card names the
+  row. **After deploy, open Admin → System → Intake Offerings catalog and fix
+  any seat cell it calls unreadable.** The inherently-solid codes (solid whatever
+  the cell says) are one list in code, `intakeInherentlySolidCodes_`; an
+  unreadable word on one of those is only a warning.
 <a id="operator-intake-recipient-addresses-are-script-property-backed"></a>
 - **Intake recipient addresses are Script-Property-backed.**
   `INTAKE_SALES_EMAIL` (PMD default), `INTAKE_SLEEP_EMAIL` (PAP default),
@@ -561,6 +575,14 @@ entry says which it is.
   textarea prefills from it). The tri-tone band is `mtPctTone_(p, 90, 75)`.
   The handoff's Export button in the app-bar was NOT built (not in the plan's
   M1–M8) — a logged follow-on.
+  **Half days (cycle 22 T5 rework, operator rule 2026-09-25).** A day with an
+  approved Half Day PTO is NOT start- or lunch-graded: it is graded on HOURS
+  WORKED — at least half the typical day (`CONFIG.PTO_HOURS_PER_DAY / 2` = 4 h).
+  The day strip draws it as met, under, or "hours not known" (no clock-out yet,
+  an unreadable punch, or the day is not over); half days stay out of the
+  on-time %, and a rep with a short half day appears under "Worth a
+  conversation". Nothing to configure; if the PTO overlay cannot be read, half
+  days grade as full days and the page says the overlay is missing.
 <a id="operator-coverage-planner-is-business-hours-weekday-scoped"></a>
 - **Coverage planner is business-hours/weekday scoped.** `getCoveragePlan` now
   returns a per-day `closed` flag plus `businessStartHour` / `businessEndHour` /
@@ -1022,6 +1044,15 @@ entry says which it is.
   are invisible to a fresh run. If a different account ever
   installed these triggers before, have that account run
   `removeAutomationTriggers()` first.
+  **The installer is recorded (cycle 22 follow-ups, 2026-09-25).** Each run
+  stores who ran it in the auto-managed Script Property
+  `AUTOMATION_TRIGGER_OWNER` (`{email, at}`). Installable triggers run AS that
+  account, so if that person is offboarded (the account disabled) every job
+  stops; the Automation Health detector "The automation triggers' installer is
+  still on the team" then reads DEAD. **After this deploy, re-run
+  `installAutomationTriggers()` once from an active manager account** so the
+  record exists — until then the detector has nothing to check and stays
+  silent. When it reads DEAD, re-run the installer from an active account.
 <a id="operator-call-notes-retention-is-off-by-default"></a>
 - **Call-notes retention is OFF by default.** `purgeOldCallNotes`
   (daily manager-tz 4am trigger) deletes per-rep `Notes` rows whose
@@ -1114,6 +1145,10 @@ entry says which it is.
   a 90-day window** — set Script Property `FORM_DATA_RETENTION_DAYS=90` (the
   committed CONFIG stays `0` so a fork/fresh deploy never auto-deletes) and
   ensure the `purgeExpiredFormData` trigger is installed.
+  **A retention floor (cycle 22 I7, 2026-09-25):** a positive window shorter
+  than a form link's life is raised to the link expiry + 1 day (72 h → 4 days,
+  `formRetentionEffectiveDays_`), so the purge can never delete a submission's
+  token row while its link is still live. 0 (disabled) stays disabled.
 <a id="operator-forms-phi-store-set-forms-ss-id-to-segregate-forms-hardening"></a>
 - **Forms PHI store — set `FORMS_SS_ID` to segregate (forms-hardening).** By
   default `getFormsSS_()` falls back to the ADP/payroll spreadsheet (back-compat),

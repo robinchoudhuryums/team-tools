@@ -163,7 +163,7 @@ Updated: 2026-09-25
   quote sent; 100+ comments show the newest. After deploy read Admin → System
   → Reference lookups: the "Cannot read" list (K3 may have added cells with
   harmless extra words) and the delivery header roles.
-- **Follow-ups FU follow-ons (22-FU block)** — the Batch 6, 7 and 8 follow-ons
+- **Follow-ups FU follow-ons (22-FU block; docs SYNCED 2026-09-25 with Batches 7 + 8)** — the Batch 6, 7 and 8 follow-ons
   and the T5 half-day rework are DONE. Left: the half-day grade reads one
   ClockIn/ClockOut pair (multi-stint half days under-count); the daily no-run
   check cannot tell "just enabled" from "missing" (the FU new failure mode);
@@ -254,6 +254,7 @@ Updated: 2026-09-25
 ## Where I left off
 Batches 1–8, S2, follow-ons F1–F5 and the follow-ups FU (the T5 half-day
 rework + the Batch 6–8 follow-ons) of cycle 22 are committed and pushed; none
-is deployed. Docs are synced through Batch 6; Batches 7, 8 and FU are owed.
-Next: `/sync-docs` (Batches 7 + 8 + FU), then `/broad-implement Batch 9`, or
-deploy + the walks.
+is deployed. Docs are synced through the follow-ups (2026-09-25: g154–g156
+new, ten gotchas amended, INV-269..288, S118 + walk steps on 13 scenarios, the
+half-day design decision, operator-state/modules/logs). Next: `/broad-implement
+Batch 9`, or deploy + the walks (S118 included).

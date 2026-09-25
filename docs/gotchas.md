@@ -996,6 +996,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   The operator's "Cannot read" list in Admin → System is where such cells
   surface. Verify: the K1 and K3 pins (the live phrasings still parse; the
   restricting ones do not).
+  **The seat cell, read by WORD (cycle 22 I2 + I6, 2026-09-25).** The
+  catalog's seat-type cell was read with a letter test (`includes('s')`), so
+  "Captain's seat" read as solid AND captain. `intakeSeatKinds_` (and its client
+  twin, held equal by a grid pin) reads word by word — s / solid, c / captain /
+  captain's, filler words ignored — and an unknown word matches NOTHING and is
+  named on the catalog card: the fail direction is chosen (exclude and say so).
+  The codes that are solid whatever the cell says live in ONE list,
+  `intakeInherentlySolidCodes_`, read by the engine and the validator alike.
+  Verify: the I2 and I6 pins.
+
 
 <a id="g42-intake-ppd-controls-are-engine-safe-via"></a>
 
@@ -1396,6 +1406,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   zero count, and the System finding and the detail panel say "could not be
   read". Verify: the A4 and A6 pins, and the `admin-tags-fail-light-mobile`
   scenario.
+  **Two more (cycle 22 I4 + D8, 2026-09-25):** the intake Sent tab skipped a
+  submission tab it could not read and showed the rest (or "No matching intake
+  submissions") as complete; Team Training dropped a failed source and read
+  "no assignments". Both now name what could not be read — the Sent tab via
+  `failedTypes`, the dashboard via `trainMgrSourceWarnHtml_` ("incomplete, not
+  empty") — and the quiz editor keeps the current Reference link as its own
+  option while the article tree is unavailable, so saving cannot unlink it.
+  **And the health dot itself (follow-ups, 2026-09-25):** an unreadable
+  ClientErrors tab was named on the panel but counted as zero errors on the dot
+  and in the digest; `automationProblems_` now emits it as a problem.
 
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
@@ -1745,6 +1765,19 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   action to a task list, find the actions that already exist and route through
   whatever they route through** — a new one that touches the DOM directly is
   not a simpler version of them, it is a missing invalidation.
+  **Every flow that CREATES, withdraws or completes a task, and every window
+  (cycle 22 T9 + T10 + follow-ups, 2026-09-25).** Completing was only one
+  direction. A released or voided document, a voided coaching item and a revoked
+  assignment (for an everyone-assignment, every rep, through
+  `pendingTasksBustAll_`) left the list naming a task that was gone; and an
+  assignment, an issued document or a new coaching item did not appear until
+  the cache aged out. All of them now bust. The CLIENT has a copy of the list
+  too: `clkNeedsYouInvalidate_()` marks it stale, called on a Needs-you click
+  and by every completing partial, and it broadcasts on a `BroadcastChannel`
+  (no persisted key) so a task finished in the pinned pop-out refreshes the
+  main window's list as well. Verify: the T9/T10 pins and FU-B7a/FU-B7c.
+
+
 <a id="g68-an-async-prefill-must-fill-only-the"></a>
 
 - **An ASYNC prefill must fill only the fields the user has not typed into,
@@ -2069,6 +2102,12 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   failed load with NO last-good renders `errorStateHtml_` in the stack,
   never the empty-day state (the skip-render/INV-187 variant the A12
   tripwire cannot see). Pinned by the C17-5 pin.
+  **The same shape outside Call Notes (cycle 22 D9, 2026-09-25):** a QA comment
+  post whose success arrived after the reviewer had opened a DIFFERENT
+  recording cleared that recording's composer and pin and resumed its player.
+  The handler now returns (with a toast) unless the same recording is still
+  open. A late handler must check the ITEM it acted on, not just the view.
+
 
 <a id="g82-cnrendersubforms-is-shape-keyed-via-host-dataset"></a>
 
@@ -3268,6 +3307,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   nobody reported in is never cached. Verify: the rewritten
   `dashboardPeriodRange_` pin (weekend, holiday, literal yesterday) and the
   M2/M8 endpoint pin.
+  **Two more readers joined the one calendar (cycle 22 T7 + T8, 2026-09-25).**
+  A multi-day time-off range charged a company holiday as a PTO day (the
+  server now skips `companyHolidayMap_` days and returns `skippedHolidayDays`;
+  the balance preview skips `SERVER_COMPANY_HOLIDAYS`), and the reminder ticker
+  nagged "not clocked in" on Labor Day (`remindIsDayOff_` reads the same list).
+  Verify: the T7 and T8 pins.
+
 
 <a id="g124-answer-is-the-dashboard-s-formula-and"></a>
 
@@ -3375,6 +3421,12 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   behavioural, the real reader over an out-of-order fixture equal to the old
   full scan, both readers routed with the filter kept) and
   `test_metrics_cdrRowDateIso_serial`.
+  **The transfer tab joins the rule (cycle 22 M10, 2026-09-25).** The per-rep
+  CSR transfer read took the whole `CSR Transfer Historical Data` tab on every
+  call, uncached. It now reads only its Date-column span (`cdrDqeWindowSpan_`
+  takes the date column) behind a result cache in the DQE key family, and never
+  caches an error. Verify: the M10 pin.
+
 
 <a id="g126-two-readers-of-one-operator-sheet"></a>
 
@@ -3440,6 +3492,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   verifies if any candidate still produces it. Verify: the K7 pin (by code,
   without a code, an unknown code named, a changed price still refused) and the
   OOP-B DOM payload assertion.
+  **A THIRD writer of the verified text (cycle 22 C9, 2026-09-25).** The
+  composer inserts a price line that the send re-verifies; the template picker
+  and the win-back nudge then REPLACED the message body, deleting the line, so
+  the send refused a quote the rep never touched. `cnExtBodyWithQuotes_`
+  re-appends every inserted line, in order and never twice. Anything that
+  rewrites a body carrying verified text must carry that text through.
+
 
 <a id="g127-calchours-wraps-out-in-as-overnight"></a>
 
@@ -4267,6 +4326,15 @@ failed (…). This says nothing about …". Verify: the A5 pin, driven over
   bounded tail and treats "not found" as "did not happen". Verify: the A1 pins
   (window cases driven; the ledger stamped by `writeAuditLog_` for automation
   rows only; the merge in both directions).
+  **The daily half (follow-ups, 2026-09-25).** A DAILY job with no run on
+  record was never flagged — the stale check ages a last run, and there was
+  none. The report now ships the oldest row's instant (`auditWindow.startMs`),
+  and `auditWindowProvesAbsence_` treats "no run on record" as evidence only
+  when the window read reaches back past the job's stale hours; a fresh AuditLog
+  or an unparseable oldest row proves nothing. Known gap: a job whose flag was
+  switched on moments ago reads "no run on record" until its first run. Verify:
+  FU-B6d.
+
 
 <a id="g153-clearing-the-roster-email-does-not-reach-the-gate-lists"></a>
 
@@ -4287,3 +4355,68 @@ failed (…). This says nothing about …". Verify: the A5 pin, driven over
   only offboarding writes the record). Re-onboarding does NOT restore list
   membership; that is re-granted by hand. Fires when you remove a person, or
   add a gate that reads a Script Property list. Verify: the S7 driven pin.
+  **The trigger INSTALLER is a person too (follow-ups, 2026-09-25).**
+  Installable triggers run as the account that installed them, so offboarding
+  that manager (the account is then disabled) stops every job at once, and each
+  surfaced only as a stale heartbeat, one by one, with nothing naming the cause.
+  `installAutomationTriggers` records `{email, at}` in
+  `AUTOMATION_TRIGGER_OWNER`, and the `triggerOwner` detector names an
+  installer who is on the offboarded record and not back on the roster.
+  `QA_MEMBERS` / `SPANISH_INBOX_MEMBERS` need no edit: both gates require a
+  roster employee, so an offboarded member has no access. Verify: FU-B6e.
+
+<a id="g154-a-half-day-has-no-fixed-start"></a>
+
+- **A half day is neither a day off nor a normal day, and it has NO fixed start
+  (cycle 22 T5 + the follow-up rework, operator rule 2026-09-25).** The shell's
+  day-off check read any approved PTO as a whole day off, so a rep on a half day
+  got no reminders at all for the half they worked; Punctuality graded that same
+  day against the full shift start, so a morning half day read as half a shift
+  late. The first fix assumed a morning half day starts at mid-shift — which is
+  also wrong: the operator's rule is that a half day may start and end at ANY
+  time, as long as at least half the typical hours are worked
+  (`CONFIG.PTO_HOURS_PER_DAY / 2`). So a half day is graded on HOURS WORKED
+  (`punctHalfDayVerdict_`, through `calcHours_`): `half` met, `halfshort` under
+  (no clock-in at all is 0 hours), `halfopen` not known — no clock-out, an
+  unparseable stamp, or a day that is not over yet (never "short" before the day
+  has passed, or it is a false entry on "Worth a conversation"). It is never
+  start- or lunch-graded, and the previous-range comparison excludes half days
+  too, because the PTO overlay is now read over both ranges BEFORE the timesheet
+  walk. The reminder ticker (`remindDayPlan_`) assumes no half: no break
+  reminders, no inferred clock-out, and the not-clocked-in nudge only once the
+  minimum can no longer fit before shift end and nothing has been worked.
+  `timeOffDayKind_` is the one reader of the kind ('full' / 'morning' /
+  'afternoon'); the minimum ships as `halfDayMinHours` so the client carries no
+  literal. Fires when you read approved time off, grade or remind against a
+  schedule, or treat PTO as a yes/no. Verify: the T5 (rework) pins, both driven.
+
+<a id="g155-the-first-message-is-not-the-thread"></a>
+
+- **The first message of a thread is not the thread (cycle 22 M5 + follow-up,
+  2026-09-25).** Gmail threads same-subject mail, so a caller's repeat 8x8
+  voicemails can land in one conversation. The Spanish voicemail fold read only
+  the FIRST message: once it was answered or marked resolved, every later
+  voicemail in the thread vanished from the pending list. Each voicemail message
+  is now a request of its own, resolved only by a member reply AFTER it or a
+  manual resolve stamped at or after it (`spanishVmResolution_`; a legacy
+  unstamped manual row still resolves all). The card stays one per thread and
+  shows the newest pending voicemail with `vmPending` ("2 voicemails"), and
+  Expand reads the newest voicemail (`spanishThreadBodyMessage_`), not the
+  first message, so the body matches the snippet above it. The scope guard
+  still runs on the first message. Whether 8x8 really threads is UNVERIFIED on
+  the live inbox; a single-voicemail thread reads exactly as before. Fires when
+  you read a mail thread as one request. Verify: the M5 pins and FU-B7b.
+
+<a id="g156-read-a-word-or-a-number-by-token"></a>
+
+- **Read an operator's word or a rep's number by TOKEN, never by character
+  (cycle 22 I2 + I3, 2026-09-25).** Two intake reads went wrong the same way.
+  The seat-type cell was tested for letters, so "Captain's" matched both seat
+  kinds (see g41 for the word read). The weight answer had every non-digit
+  stripped, so "250 lbs (was 265)" read as 250265 lbs and failed every capacity
+  check, and "about two-fifty" read as nothing at all with no one told.
+  `intakeParseWeight_` now takes the FIRST number (a thousands comma tolerated)
+  and reports `unreadable` when the answer has no number; the explain factors
+  and, since the follow-ups, the recommendation screen itself say that NO
+  weight-capacity check ran (`intakeWeightWarnHtml_`). Fires when you parse free
+  text an engine then acts on. Verify: the I2/I3 pins and FU-B8b.

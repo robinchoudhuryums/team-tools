@@ -45,6 +45,18 @@ not restate it. Server endpoints live in the fourteen server files
      six hours (M2). Month to date compares against last month's same days OF
      DATA, and "On pace for" divides by the days that have data (M8, g148).
 
+     **Cycle 22 Batch 7 + follow-ups (2026-09-25) — working days.** A HALF day
+     of approved PTO is neither a day off nor a normal day (g154): Punctuality
+     grades it on hours worked (at least half the typical day), never on its
+     start or lunch, and the reminder ticker gives no break or clock-out
+     reminders that day and nudges "not clocked in" only once the hours can no
+     longer fit. The graded lunch is the LunchOut nearest the scheduled lunch,
+     not the day's first break (T4). A time-off range skips company holidays,
+     in the preview and on the server (T7), and the reminders treat a company
+     holiday as a day off (T8). The Dashboard's Needs-you list refreshes as
+     soon as a task is done, created or withdrawn — in this window and in the
+     pop-out (T9, T10, g67).
+
 <a id="call-notes"></a>
      **2026-09-17 (the /broad-scan's Batches 1 + 2):** an EQUAL Clock In /
      Clock Out is zero hours, not the 24-hour day the `<=` overnight wrap paid
@@ -165,6 +177,18 @@ not restate it. Server endpoints live in the fourteen server files
      reporting itself healthy (C2); a set-but-broken Dept Requests store refuses
      rather than writing to the payroll sheet (A3).
 
+     **Cycle 22 Batch 8 + follow-ups (2026-09-25) — Call Notes and Manage.** A
+     form link whose email failed to send is withdrawn (the PDFs are fetched
+     before any link is made; a failed send voids the tokens and writes a
+     `FormTokenVoided` audit row), so it neither works nor shows as "Awaiting"
+     in Sent Forms (C7). A template or the win-back text keeps every inserted
+     price line, so the send is no longer refused for text the rep never
+     touched (C9, g126). "Clear reply" on a training note clears the reply the
+     thread shows (C8). In Manage → Admin → System, an unreadable ClientErrors
+     tab, a daily job with no run on record (once the AuditLog read proves it)
+     and an offboarded trigger installer all reach the health dot, and the
+     "cannot confirm" explanation is said once under the job list (g152, g153);
+     the urgent-notes digest and the daily brief say when they could not read.
 
 <a id="metrics"></a>
      **Batch 6 (2026-09-18):** the Admin Overview KPI strip reports TEAM
@@ -290,6 +314,12 @@ not restate it. Server endpoints live in the fourteen server files
      auto-assign balances on the claims each member holds on OPEN requests, so a
      new member no longer receives every request (M4).
 
+     **Cycle 22 Batch 7 + follow-ups (2026-09-25):** the per-rep transfer read
+     takes only its date span and is cached (M10, g125). In the Spanish inbox a
+     caller's repeat voicemails in one thread each stay pending until answered;
+     the card shows the newest, its pill says how many are waiting, and Expand
+     shows that newest voicemail (M5, g155).
+
 <a id="intake"></a>
      **Batch 5 (2026-09-18):** `QaRecordings` carries a trailing `AgentId`
      written from the roster when a reviewer attributes a recording, and the
@@ -389,6 +419,15 @@ not restate it. Server endpoints live in the fourteen server files
      current draft over the amendment, and in either language the draft filled
      every answer the original had left blank, all sent as "AMENDED" for the
      original patient. See the Intake Sent tab decision's amendment.
+
+     **Cycle 22 Batch 8 + follow-ups (2026-09-25):** the engine reads the
+     Offerings seat cell word by word and the weight answer's FIRST number
+     (g156); an unreadable seat word excludes the chair and is named on the
+     catalog card, and an unreadable weight is warned on the recommendation
+     screen — no capacity check ran (I2, I3). The inherently-solid codes are one
+     list (I6). The Sent tab names a submission tab it could not read (I4). The
+     account emails show an unanswered Yes/No as "Not answered", not "No" (I5),
+     and secondary rows are indented correctly (I8).
 
 <a id="reference"></a>
      **Batch 5 (2026-09-18):** the email's question LABELS come from
@@ -797,6 +836,16 @@ not restate it. Server endpoints live in the fourteen server files
      on time (D1, g149). A team with nothing acknowledged reads "nothing
      acknowledged yet" rather than "median 0 business days" (D2).
 
+     **Cycle 22 Batch 7/8 + follow-ups (2026-09-25):** every training
+     surface uses one "today" (the manager-tz work anchor, T11). Team Training
+     names a source it could not read instead of reading it as empty, and the
+     quiz editor keeps a quiz's Reference link while the article list is
+     unavailable (D8). Verify is offered for every issued document (D4), and
+     every read of a document checks its content hash: an altered document says
+     so to whoever opens it (the follow-ups). Revoking, releasing and voiding
+     update the rep's Needs-you list, and so do assigning, issuing and creating a
+     coaching item (T10, g67).
+
 <a id="qa"></a>
 ## QA
 
@@ -962,3 +1011,11 @@ not restate it. Server endpoints live in the fourteen server files
      case), the client skips the player and pills it "no recording", and its
      audit row (`QaManualRecording`) is id-only. The Log's "Log an audit" dialog
      offers the caller's open assignments first and the manual entry LAST.
+
+     **Cycle 22 Batch 7/8 (2026-09-25):** the Drive sync walks the folder
+     outside the project lock and resumes a capped walk where it stopped
+     (`QA_SYNC_CONTINUATION`, D3); playback reads just the chunk's byte range
+     from Drive (D5). Changing or clearing a shared recording's agent unshares
+     it — the old agent's review is never shown to the new one (S5) — and a
+     comment posted just before switching recordings no longer touches the
+     newly opened one (D9).

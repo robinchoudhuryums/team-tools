@@ -185,7 +185,7 @@ What a caller may reach, and what may be written where everyone can read it.
 
 - **A LEADING underscore is not private — `google.script.run` reaches every function whose name does not END in `_`, in every pushed file, `Tests.js` and `DevTools.js` included; the whole editor suite was callable by any rep until cycle 22 (S1 + X2, 2026-09-23).** Fires when you add a top-level function anywhere in `web-app/`, or trust a gate net that reads `serverSource()`. Verify: the PUBLIC-GATE pins. [Detail](docs/gotchas.md#g143-a-leading-underscore-is-not-private)
 - **A failure message that echoes what the rep TYPED must not ride the error beacon — `errorStateHtml_` reports to the shared ClientErrors tab, and a failed search's query is usually a patient (S3, 2026-09-23).** Fires when an error state interpolates rep input. Verify: the S3 pins. [Detail](docs/gotchas.md#g146-a-failure-message-that-echoes-typed-input)
-- **Clearing the roster email revokes every IN-APP gate, but not the Script Property gate lists — an offboarded manager kept `MANAGER_EMAILS` (the daily brief, every trigger gate) and the drift detector, keyed on the roster email, could not see it (cycle 22 S7, 2026-09-25).** Fires when you remove a person, or add a gate that reads a Script Property list. Verify: the S7 driven pin. [Detail](docs/gotchas.md#g153-clearing-the-roster-email-does-not-reach-the-gate-lists)
+- **Clearing the roster email revokes every IN-APP gate, but not the Script Property gate lists — an offboarded manager kept `MANAGER_EMAILS` (the daily brief, every trigger gate) and the drift detector, keyed on the roster email, could not see it (cycle 22 S7, 2026-09-25).** Fires when you remove a person, or add a gate that reads a Script Property list. The trigger INSTALLER is recorded and detected too (`AUTOMATION_TRIGGER_OWNER`, follow-ups). Verify: the S7 driven pin + FU-B6e. [Detail](docs/gotchas.md#g153-clearing-the-roster-email-does-not-reach-the-gate-lists)
 - **`_TEST_OVERRIDE_EMAIL` only intercepts `getActiveUserEmail_()`.** Fires when a code path calls `Session.getActiveUser()` directly. [Detail](docs/gotchas.md#g23-test-override-email-only-intercepts-getactiveuseremail)
 - **Manager-only operations check `callerEmp.isManager`.** Fires when you add ANY manager-gated endpoint. [Detail](docs/gotchas.md#g25-manager-only-operations-check-calleremp-ismanager)
 - **Trigger-handler endpoints are reachable via `google.script.run` — and so were the editor-suite runners, which gate on the OWNER, not a manager (cycle 22 S1).** Fires when you add a public function that walks the roster or sends mail. [Detail](docs/gotchas.md#g26-trigger-handler-endpoints-are-reachable-via-google)
@@ -218,7 +218,7 @@ Who waits for whom, and what goes stale.
 - **A positional write at `getLastRow() + 1` THROWS once the tab outgrows its 1000-row grid (`appendRow` would have grown it), and a purge that empties a tab throws on its LAST delete — use `appendRowsSafe_` / `appendRowsTextSafe_` (C1, C5, F4, 2026-09-23).** Fires when you write a block at the next free row, or delete rows in bulk. Verify: the F4 derived net + the C1/C5 pins. [Detail](docs/gotchas.md#g145-a-positional-write-at-getlastrow-1)
 - **Roster cache invalidation + key bump.** Fires when you edit an Employees column, or change the `EMP` enum shape. [Detail](docs/gotchas.md#g19-roster-cache-invalidation-key-bump)
 - **`timeToMins_` returns `null`, never `NaN` — and an ARITHMETIC caller must guard EXPLICITLY (A3, cycle-13 — FIXED).** Fires when you do arithmetic on `timeToMins_` output. Verify: the A3 behavioural + caller-shape tripwires and the `timeToMins_nullOnUnparseable` smoke test. [Detail](docs/gotchas.md#g55-timetomins-returns-null-never-nan-and-an)
-- **A per-rep result cache on a surface that lists TASKS owes an invalidation from every flow that COMPLETES one (F4, cycle 19).** Fires when a flow COMPLETES a task that a cached list names. [Detail](docs/gotchas.md#g67-a-per-rep-result-cache-on-a)
+- **A per-rep result cache on a surface that lists TASKS owes an invalidation from every flow that COMPLETES one (F4, cycle 19) — and from every flow that CREATES or withdraws one, in every window: the client list is broadcast-invalidated (cycle 22 T9/T10 + follow-ups).** Fires when a flow creates, withdraws or completes a task that a cached list names. [Detail](docs/gotchas.md#g67-a-per-rep-result-cache-on-a)
 - **Late `google.script.run` successHandlers in Call Notes loaders guard on `currentView`.** Fires when you add a Call Notes loader, or handle a structured `{error}`. Verify: the C17-5 pin. [Detail](docs/gotchas.md#g81-late-google-script-run-successhandlers-in-call)
 - **Tag admin operations hold the global ScriptLock across all enrolled rep Sheets.** Fires when you add reps in volume, or add a cross-rep tag transform. [Detail](docs/gotchas.md#g90-tag-admin-operations-hold-the-global-scriptlock)
 - **Clock view coverage strip is SWR-cached per day (cycle-9 M-6).** Fires when you cache the Clock coverage strip. [Detail](docs/gotchas.md#g104-clock-view-coverage-strip-is-swr-cached)
@@ -243,7 +243,7 @@ The recurring shape: a `catch` that returns 0, or a plausible substitute for a m
 - **A job that CLOSES a period must RECONCILE it afterwards — the data it read was not final (operator 2026-09-15).** Fires when a job stamps a period as done and never looks again. Verify: the R reconcile pin + the editor suite's 2026-08 replay. [Detail](docs/gotchas.md#g115-a-job-that-closes-a-period-must)
 - **A diagnostic that names the WRONG source is worse than a vague one — it is actionable, and the action is destructive: an empty delivery registry reported nothing, so every radius rule said "the eligibility column cannot be read", and the operator rewrote correct pricing cells to match (2026-09-22).** Fires when a read fails and you write the message — ask what the reader will CHANGE if they believe it literally. Deploy readiness did it too: a failed health read told the operator to reinstall triggers (cycle 22 A5). Verify: T7-3 + the T7 DOM pin (rendered, and absent on a clean table) + INV-238 + the A5 pin. [Detail](docs/gotchas.md#g142-a-diagnostic-that-names-the-wrong-source)
 - **A health surface that derives its OWN subset of the list the dot counts can read clean under a red dot — the Admin System tab omitted job staleness, open punches and accrual shortfalls, and read "Nothing needs attention" while the dot was red (cycle 22 A2, 2026-09-25).** Fires when two surfaces report the same health, or you add a problem kind. Verify: the A2 driven pin (every server kind, derived, must reach the tab). [Detail](docs/gotchas.md#g151-a-health-surface-that-derives-its-own-subset)
-- **A bounded tail scan's ABSENCE is evidence only inside the window it read — the monthly accrual row scrolled out of the 4,000-row AuditLog window within days, so "has not run this month" alarmed daily, and a dead daily job went silent (cycle 22 A1, 2026-09-25).** Fires when a check reads a bounded tail and treats "not found" as "did not happen". Verify: the A1 pins (the run ledger + `auditWindowCoversMonth_`). [Detail](docs/gotchas.md#g152-a-bounded-tail-scans-absence-is-evidence)
+- **A bounded tail scan's ABSENCE is evidence only inside the window it read — the monthly accrual row scrolled out of the 4,000-row AuditLog window within days, so "has not run this month" alarmed daily, and a dead daily job went silent (cycle 22 A1, 2026-09-25).** Fires when a check reads a bounded tail and treats "not found" as "did not happen". A daily job's missing run is evidence only past its stale window (`auditWindowProvesAbsence_`, follow-ups). Verify: the A1 pins (the run ledger + `auditWindowCoversMonth_`) + FU-B6d. [Detail](docs/gotchas.md#g152-a-bounded-tail-scans-absence-is-evidence)
 - **A RECOVERY is not a PREVENTION, and shipping one can make the other feel done (operator 2026-09-15).** Fires when you fix a "the data arrived too late" bug — ask separately what made it late. Verify: the T open-punch pin. [Detail](docs/gotchas.md#g117-a-recovery-is-not-a-prevention)
 
 ### Punch, PTO & roster semantics
@@ -264,6 +264,7 @@ The payroll-facing rules. Getting one wrong costs money or a balance.
 - **Self-undo is narrow on purpose.** Fires when you widen what a rep may delete themselves. [Detail](docs/gotchas.md#g32-self-undo-is-narrow-on-purpose)
 - **The Coverage planner counted a rep on lunch as PRESENT until 2026-09-03 — a schedule consumer that reads `breaks` must SUBTRACT them, and a DRAFT preview must go through the ONE resolver.** Fires when a schedule consumer reads `sched.breaks`, or previews an unsaved draft. Verify: BCV-1. [Detail](docs/gotchas.md#g59-the-coverage-planner-counted-a-rep-on)
 - **`LEAVE_DEDUCTION_CLIENT` mirrors the server's `getLeaveDeduction_` exactly.** Fires when you add a leave type. [Detail](docs/gotchas.md#g103-leave-deduction-client-mirrors-the-server-s)
+- **A half day is neither a day off nor a normal day, and it has NO fixed start — it is graded on HOURS WORKED (at least `PTO_HOURS_PER_DAY / 2`), never on its start or lunch, and the reminder ticker assumes no half (cycle 22 T5 + rework, operator 2026-09-25).** Fires when you read approved time off, or grade or remind against a schedule. Verify: the T5 (rework) pins. [Detail](docs/gotchas.md#g154-a-half-day-has-no-fixed-start)
 
 ### Email, audit rows & digests
 
@@ -274,6 +275,7 @@ What leaves the building, who it looks like it is from, and what the shared log 
 - **EOD digest runs hourly and matches each rep's local EOD hour.** Fires when you change the EOD hour or its trigger. [Detail](docs/gotchas.md#g79-eod-digest-runs-hourly-and-matches-each)
 - **Personal-sheet sync failures log to the audit trail.** Fires when a rep’s personal Sheet drifts from the ADP source of truth. [Detail](docs/gotchas.md#g89-personal-sheet-sync-failures-log-to-the)
 - **Training questions email managers immediately.** Fires when a note is flagged `training` with a question. [Detail](docs/gotchas.md#g92-training-questions-email-managers-immediately)
+- **The first message of a thread is not the thread — a caller's repeat voicemails share one Gmail conversation, and reading only the first hid every later one (cycle 22 M5 + follow-up).** Fires when you read a mail thread as one request. Verify: the M5 pins + FU-B7b. [Detail](docs/gotchas.md#g155-the-first-message-is-not-the-thread)
 
 ### CDR / Metrics contract
 
@@ -297,6 +299,7 @@ A clinical recommendation engine reads these values. Changing one changes what i
 - **The intake email's LABELS come from the SERVER's English bank, never the payload — the email is English whatever language the form was completed in, and whatever a client sends (operator 2026-09-04, FIRED LIVE: a testing agent sent a PPD to the Power dept with Spanish labels; enforcement moved server-side in Batch 5, 2026-09-18).** Fires when you touch either intake collector, the ES bank, or a question bank on either side. Verify: INTK-EN + INTK-EN-DOM + the F-27 mirror/walk pin. [Detail](docs/gotchas.md#g43-the-intake-payload-s-labels-are-always)
 - **Intake PMD/PAP layout is duplicated client↔server — keep them equal.** Fires when you add or remove a PMD/PAP question. [Detail](docs/gotchas.md#g45-intake-pmd-pap-layout-is-duplicated-client)
 - **Intake account Yes/No toggles read/write through `.intk-yn` groups (deferred #10).** Fires when you add an account Yes/No field. [Detail](docs/gotchas.md#g46-intake-account-yes-no-toggles-read-write)
+- **Read an operator's word or a rep's number by TOKEN, never by character — a letter test made "Captain's" both seat kinds, and a digit strip read "250 lbs (was 265)" as 250265 (cycle 22 I2 + I3).** Fires when you parse free text an engine acts on. Verify: the I2/I3 pins + FU-B8b. [Detail](docs/gotchas.md#g156-read-a-word-or-a-number-by-token)
 
 ### Call Notes contracts
 
@@ -538,6 +541,7 @@ for the reasoning, which is usually the part that matters.
 - [Every sheet write crosses ONE boundary, and plain-text cells are the one exception (cycle 22 S2, 2026-09-23)](docs/design-decisions.md#every-sheet-write-crosses-one-boundary-and-plain-text)
 - [A range's average talk time is weighted by the calls behind each day (cycle 22 M3, 2026-09-23)](docs/design-decisions.md#a-range-s-average-talk-time-is-weighted-by-the-calls)
 - [Automation health has ONE problem list, and liveness reads a run ledger rather than the AuditLog tail (cycle 22 A1 + A2, 2026-09-25)](docs/design-decisions.md#automation-health-has-one-problem-list-and-liveness-reads)
+- [A half day is graded on the hours worked, not on a start it does not have (cycle 22 T5 rework, operator 2026-09-25)](docs/design-decisions.md#a-half-day-is-graded-on-the-hours-worked)
 
 ## Operator State Checklist
 
@@ -593,7 +597,7 @@ property to clear a stale flag) `OPEN_PUNCH_CHECK`
 `{at, error}`, the last daily open-punch scan, stamped by `checkOpenPunches`
 at 8am and read by `automationProblems_` an hour later so the 9am health digest
 emails it. A FAILED scan stamps the error, so an empty finding list is never a
-clean board. Auto-managed — delete to clear) `AUTOMATION_RUN_<action>` (cycle 22 A1 — one per automation job, `{ts, notes}`, stamped by `writeAuditLog_` beside the job's audit row so liveness never depends on the row staying inside the AuditLog tail; delete one to forget that job's last run) `OFFBOARDED_EMAILS` (cycle 22 S7 — the lowercased addresses `offboardEmployee` removed, capped 100, read by the managerSource detector; auto-managed) and `SELF_TEST_LAST_RESULT` (INV-162 — the nightly self-test outcome
+clean board. Auto-managed — delete to clear) `AUTOMATION_RUN_<action>` (cycle 22 A1 — one per automation job, `{ts, notes}`, stamped by `writeAuditLog_` beside the job's audit row so liveness never depends on the row staying inside the AuditLog tail; delete one to forget that job's last run) `OFFBOARDED_EMAILS` (cycle 22 S7 — the lowercased addresses `offboardEmployee` removed, capped 100, read by the managerSource detector; auto-managed) `AUTOMATION_TRIGGER_OWNER` (cycle 22 follow-ups — `{email, at}` of whoever last ran `installAutomationTriggers`, read by the triggerOwner detector; auto-managed) `QA_SYNC_CONTINUATION` (cycle 22 D3 — `{folderId, token}`, the resume point of a capped QA Drive sync; cleared by a completed walk; delete to restart from the top) and `SELF_TEST_LAST_RESULT` (INV-162 — the nightly self-test outcome
 `{date, mode, pass, fail, skip[, error]}`; delete to clear a stale failure
 flag after fixing).
 
@@ -897,8 +901,8 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 10 | `TRIGGER_GROUPS` |
 | localStorage keys | 18 | `ums…` literals in `web-app/` |
-| Invariant library entries | 258 | `.cycle/config.md` |
-| Regression scenarios (S*) | 112 | `.cycle/config.md` |
+| Invariant library entries | 278 | `.cycle/config.md` |
+| Regression scenarios (S*) | 113 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

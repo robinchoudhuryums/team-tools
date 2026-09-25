@@ -10,6 +10,51 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-25 — Cycle 22: half days, the Needs-you list, the intake engine's reads (Batch 7, Batch 8, follow-ups)
+
+**Adds two Script Properties, both auto-managed:** `QA_SYNC_CONTINUATION`
+(the resume point of a capped QA sync) and `AUTOMATION_TRIGGER_OWNER` (who last
+ran `installAutomationTriggers`). The compliance audit search also covers a new
+`FormTokenVoided` row (code, nothing to set). NOT yet
+deployed: ship with Batches 1–6 on the ordinary `clasp push -f` + New version.
+
+**One-time operator steps after deploy (none blocks it).**
+- Re-run `installAutomationTriggers()` once from an active manager account so
+  the installer is recorded (the triggerOwner detector is silent until then).
+- Open Admin → System → Intake Offerings catalog and fix any seat-type cell it
+  calls unreadable (use `S`, `C`, `Solid`, `Captain`) — until then that chair is
+  not recommended.
+- Check on a real repeat caller that 8x8 voicemails thread in Gmail (the
+  voicemail count and the newest-voicemail body assume it; a single voicemail
+  reads as before either way).
+- Tell managers the Punctuality page now grades a half day on HOURS WORKED.
+
+**What changes for the operator.**
+- **Batch 7 — working days.** Half-day PTO is no longer a whole day off for the
+  reminders; the lunch graded is the one nearest the scheduled lunch; a
+  time-off range skips company holidays and the reminders treat them as days
+  off; one "today" for training; the Needs-you list refreshes after finishing,
+  voiding, releasing or revoking a task. The QA sync resumes a large first walk;
+  playback reads only the chunk it needs; the transfer figures read only their
+  date span; a repeat caller's voicemails each stay pending until answered.
+- **Batch 8 — the intake engine and the forms.** The seat cell and the weight
+  answer are read by word and by first number; the Sent tab names an unreadable
+  submission tab; account emails show "Not answered" apart from "No". A form
+  link whose email failed is withdrawn; a positive form-retention window is at
+  least the link's life + 1 day; a template keeps inserted price lines; clearing
+  a training reply clears the one shown; re-attributing a shared QA recording
+  unshares it; Team Training names a source it could not read.
+- **Follow-ups — the half-day RULE (operator, 2026-09-25).** A half day may
+  start and end at any time as long as at least 4 hours are worked: Punctuality
+  grades it on hours (met / under / not known) and never on its start or lunch;
+  the reminders give no break or clock-out reminders that day and nudge only
+  once 4 hours can no longer fit. Also: new tasks reach the Needs-you list at
+  once and in every window; the voicemail card says "2 voicemails" and expands
+  to the newest; an altered Employee Doc says so when opened; an unreadable
+  weight is warned on the recommendation screen; the urgent digest, the daily
+  brief, an unreadable ClientErrors tab, a daily job with no run on record and
+  an offboarded trigger installer all reach the health dot.
+
 ## 2026-09-23 — Cycle 22: the suite is owner-only, every write is literal text, Day Edit keeps every break (Batch 1, S2, Batch 2, follow-ons)
 
 **Adds NO required operator state.** No Script Property, no tab, no

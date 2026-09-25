@@ -4623,6 +4623,25 @@ pick them up without re-deriving the context.
   bootstrap source and for the per-job notes. Where neither can see a run, the
   report says how far back it looked (`auditWindow`) and a monthly job is
   "not run" only if that reaches the 1st; otherwise the panel says it cannot
-  confirm. A daily job with no run on record stays silent, the fresh-deploy
-  posture, now bounded to jobs that have not run since the ledger shipped.
-  Verify: the A1 and A2 pins.
+  confirm. A daily job with no run on record is flagged only once the window
+  read reaches back past its stale hours (`auditWindowProvesAbsence_`, the
+  follow-ups) — a fresh AuditLog proves nothing, so the fresh-deploy posture
+  holds. Verify: the A1 and A2 pins, and FU-B6d.
+- <a id="a-half-day-is-graded-on-the-hours-worked"></a>**A half day is graded on the hours worked, not on a start it does not have (cycle 22 T5 rework, operator 2026-09-25).**
+  The operator's rule: a half day "could really start and end at any time, as
+  long as at least half the typical hours are worked (at least 4 hours)". So
+  there is no expected start to be late against, and no scheduled lunch to be
+  late for. Punctuality therefore splits a rep's days in two: FULL days keep the
+  start-time grade (on time / late, lunch, the weekly bars, the previous range);
+  HALF days get an hours verdict of their own — met, under, or not known — and
+  never enter the on-time percentage. The minimum is `CONFIG.PTO_HOURS_PER_DAY /
+  2`, the same basis PTO is charged on, rather than half of each rep's own
+  shift length: the rule is about the hours a half day of PTO leaves owed, and
+  one number keeps the page, the reminders and the policy saying the same
+  thing. A day that is not over is "not known", never "short", because the
+  outlier list is a list of people to talk to. The reminder ticker follows the
+  same rule: it cannot know which hours the rep will choose, so it infers
+  nothing it cannot know (breaks, a clock-out time) and nudges only when the
+  hours can no longer fit. The first version (mid-shift start) was replaced
+  rather than kept as a default, because a default that encodes the wrong rule
+  would grade every morning half day. Verify: the T5 (rework) pins (g154).
