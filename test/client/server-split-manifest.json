@@ -1036,6 +1036,306 @@
     "oopEligibilityParse_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "cycle 22 Batch 6 A1: the automation run ledger (per-job Script Property heartbeat) + the audit-window coverage helper",
+   "added": [
+    "AUTOMATION_RUN_PROP_PREFIX",
+    "auditWindowCoversMonth_",
+    "automationRunKey_",
+    "readAutomationRunLedger_",
+    "stampAutomationRun_"
+   ],
+   "removed": [],
+   "changed": [
+    "automationJobProblems_",
+    "automationProblems_",
+    "computeAutomationHealth_",
+    "getAutomationHealth",
+    "writeAuditLog_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "cycle 22 Batch 6 A1: the automation run ledger (per-job Script Property heartbeat), its merge, and the audit-window coverage helper",
+   "added": [
+    "automationLastRunMerge_"
+   ],
+   "removed": [],
+   "changed": [
+    "computeAutomationHealth_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "cycle 22 Batch 6: S7 gate-list removal on offboard + detector keyed on the list; A8 automation-error lock",
+   "added": [
+    "OFFBOARDED_EMAILS_MAX",
+    "OFFBOARDED_EMAILS_PROP",
+    "OFFBOARD_GATE_LISTS",
+    "clearAutomationErrorUnlocked_",
+    "gateListWithout_",
+    "offboardFromGateLists_",
+    "readOffboardedEmails_",
+    "stampAutomationErrorUnlocked_",
+    "withAutomationErrorLock_"
+   ],
+   "removed": [],
+   "changed": [
+    "automationDetectorChecks_",
+    "clearAutomationError_",
+    "clientErrorsSummary_",
+    "deployReadinessItems_",
+    "getDeployReadiness",
+    "getDeptRequestsSS_",
+    "managerSourceDrift_",
+    "offboardEmployee",
+    "sendCallNotesWeeklyDigests",
+    "stampAutomationError_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "cycle 22 Batch 7: T5 empTimeOffToday_ + timeOffDayKind_/timeOffKindsCombine_ + punctExpectedStartMin_; T4 punctLunchNearest_; T11 trainTodayIso_",
+   "added": [
+    "empTimeOffToday_",
+    "punctExpectedStartMin_",
+    "punctLunchNearest_",
+    "timeOffDayKind_",
+    "timeOffKindsCombine_",
+    "trainTodayIso_"
+   ],
+   "removed": [
+    "empIsOffToday_"
+   ],
+   "changed": [
+    "getEmployeeState",
+    "getMyTraining",
+    "getPunctualityReport",
+    "getTrainingDashboard",
+    "sendTrainingOverdueDigest",
+    "submitTimeOffRange"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "cycle 22 Batch 7: T10 pendingTasksBustAll_",
+   "added": [
+    "pendingTasksBustAll_"
+   ],
+   "removed": [],
+   "changed": [
+    "releaseDoc",
+    "revokeTrainingAssignment",
+    "voidCoaching",
+    "voidDoc"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "cycle 22 Batch 7: D3 qaKnownFileIds_/qaSyncToken*, D5 qaRangeHeader_/qaReadChunkBytes_, M10 csrTransferReadUncached_, M5 spanishVmResolution_",
+   "added": [
+    "QA_SYNC_TOKEN_PROP",
+    "csrTransferReadUncached_",
+    "qaKnownFileIds_",
+    "qaRangeHeader_",
+    "qaReadChunkBytes_",
+    "qaSyncTokenRead_",
+    "qaSyncTokenWrite_",
+    "spanishVmResolution_"
+   ],
+   "removed": [],
+   "changed": [
+    "cdrDqeWindowSpan_",
+    "getCsrTransferPerRepDaily_",
+    "getSpanishInboxPending",
+    "qaAudioChunkFor_",
+    "qaSyncRecordings",
+    "spanishVmFold_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "cycle 22 Batch 8: I2 intakeSeatKinds_, I6 intakeInherentlySolidCodes_, I3 intakeParseWeight_",
+   "added": [
+    "intakeInherentlySolidCodes_",
+    "intakeParseWeight_",
+    "intakeSeatKinds_"
+   ],
+   "removed": [],
+   "changed": [
+    "intakeAcctRowsEn_",
+    "intakeBuildAcctBodyHtml_",
+    "intakeCatalogIssues_",
+    "intakeDeriveClinicalFactors_",
+    "intakeExplainFactors_",
+    "intakeFilterRecommendations_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "cycle 22 Batch 8: I4 intakeListMySubmissions names failed form types",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "intakeListMySubmissions"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "cycle 22 Batch 8: C7 formTokensVoid_, C8 trainingReplyClear_, I7 formRetentionEffectiveDays_, S5 qaAgentChangeUnshares_",
+   "added": [
+    "formRetentionEffectiveDays_",
+    "formTokensVoid_",
+    "qaAgentChangeUnshares_",
+    "trainingReplyClear_"
+   ],
+   "removed": [],
+   "changed": [
+    "getFormByToken",
+    "getFormRetentionDays_",
+    "getMySentForms",
+    "qaSetRecordingAgent",
+    "sendExternalEmail",
+    "setCallNoteTrainingReply"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "T5 rework: punctExpectedStartMin_ removed (a half day has no fixed start); punctIsHalfDay_ + punctHalfDayVerdict_ added",
+   "added": [
+    "punctHalfDayVerdict_",
+    "punctIsHalfDay_"
+   ],
+   "removed": [
+    "punctExpectedStartMin_"
+   ],
+   "changed": [
+    "getEmployeeState",
+    "getPunctualityReport"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "Follow-ups B6: auditWindowProvesAbsence_ (daily no-run evidence), triggerOwnerOffboarded_ + AUTOMATION_TRIGGER_OWNER_PROP (installer record)",
+   "added": [
+    "AUTOMATION_TRIGGER_OWNER_PROP",
+    "auditWindowProvesAbsence_",
+    "triggerOwnerOffboarded_"
+   ],
+   "removed": [],
+   "changed": [
+    "automationDetectorChecks_",
+    "automationJobProblems_",
+    "automationProblems_",
+    "computeAutomationHealth_",
+    "installAutomationTriggers",
+    "sendCallNotesUrgentDigest",
+    "sendManagerDailyBrief"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "Follow-ups B7/B8: spanishThreadBodyMessage_ (newest voicemail body), empDocReadIntegrity_ (read-time content check)",
+   "added": [
+    "empDocReadIntegrity_",
+    "spanishThreadBodyMessage_"
+   ],
+   "removed": [],
+   "changed": [
+    "CN_AUDIT_ACTIONS",
+    "createCoaching",
+    "formTokensVoid_",
+    "getMyDoc",
+    "getSpanishInboxThreadBody",
+    "intakePreviewPPD",
+    "issueDoc",
+    "saveTrainingAssignment",
+    "sendExternalEmail"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "T5 rework: a half day today or later reads hours-not-known, never short",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "getPunctualityReport"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "Batch 9: BUILD_HASH_CACHE_KEY/TTL removed (U4, per-execution memo); saveAutoTagRules returns rules (A7); spanishCacheHash_ takes the voicemail settings (M11)",
+   "added": [],
+   "removed": [
+    "BUILD_HASH_CACHE_KEY",
+    "BUILD_HASH_CACHE_TTL_SEC"
+   ],
+   "changed": [
+    "clientBuildHash_",
+    "getSpanishInboxStats",
+    "saveAutoTagRules",
+    "spanishCacheHash_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "Deferred DF: S6 qaIsOwnRecording_/qaSelfReviewRefusal_; M6 DR SLA working days (DR_SLA_DEFAULT_DAYS, drBusinessDayHours_, drSlaBizHours_, drSlaDaysLabel_, drSlaParseTargets_, getDeptRequestSlaConfigFull_, drSlaAdminView_, drAgeWorkingDaysLabel_); C12 cnArchivedBefore_/cnArchivedBeforeNow_",
+   "added": [
+    "cnArchivedBeforeNow_",
+    "cnArchivedBefore_",
+    "drAgeWorkingDaysLabel_",
+    "drBusinessDayHours_",
+    "drSlaAdminView_",
+    "drSlaBizHours_",
+    "drSlaDaysLabel_",
+    "drSlaParseTargets_",
+    "getDeptRequestSlaConfigFull_",
+    "qaIsOwnRecording_",
+    "qaSelfReviewRefusal_"
+   ],
+   "removed": [],
+   "changed": [
+    "CONFIG",
+    "deptRequestsOverdueOpen_",
+    "doGet",
+    "drDeptStats_",
+    "exportCallNotesRange",
+    "getAdminConfig",
+    "getDeptRequestSla",
+    "getDeptRequestSlaConfig_",
+    "getDeptRequestSla_",
+    "getDeptRequests",
+    "getMyCallNotes",
+    "getMyCallNotesRange",
+    "getMyPendingTasks",
+    "managerGetCallNotes",
+    "qaSaveScorecard",
+    "qaSetRecordingAgent",
+    "qaSetRecordingShared",
+    "qaSetRecordingStatus",
+    "saveDeptRequestSla",
+    "sendDeptRequestReminderDigest",
+    "sendManagerBriefEmail_",
+    "serveExternalForm_",
+    "submitQuizAttempt"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -1095,10 +1395,20 @@
    "kind": "const",
    "sha": "80e1aaed6249b137"
   },
+  "AUTOMATION_RUN_PROP_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8aa67bf5b762459e"
+  },
   "AUTOMATION_SYNCFAIL_WINDOW_DAYS": {
    "file": "00_config.js",
    "kind": "const",
    "sha": "22b4293f1160bb18"
+  },
+  "AUTOMATION_TRIGGER_OWNER_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "843e8da98cc1be9c"
   },
   "AUTOMATION_TRIGGER_QUOTA": {
    "file": "00_config.js",
@@ -1119,16 +1429,6 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "f02bc00c5785274b"
-  },
-  "BUILD_HASH_CACHE_KEY": {
-   "file": "00_config.js",
-   "kind": "const",
-   "sha": "4787349895dd3ddc"
-  },
-  "BUILD_HASH_CACHE_TTL_SEC": {
-   "file": "00_config.js",
-   "kind": "const",
-   "sha": "14498b47c67aa0a5"
   },
   "CDR": {
    "file": "00_config.js",
@@ -1258,7 +1558,7 @@
   "CN_AUDIT_ACTIONS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "81840f2b45f75077"
+   "sha": "49e7d06eae237040"
   },
   "CN_AUDIT_DEFAULT_DAYS": {
    "file": "00_config.js",
@@ -1448,7 +1748,7 @@
   "CONFIG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "6ee45a9b1614e3bd"
+   "sha": "004016b64ba38e63"
   },
   "CSRT": {
    "file": "00_config.js",
@@ -2245,6 +2545,21 @@
    "kind": "const",
    "sha": "7a0dc3c58da6b826"
   },
+  "OFFBOARDED_EMAILS_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "73c811c3431cc9c4"
+  },
+  "OFFBOARDED_EMAILS_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6368d71c852dd19f"
+  },
+  "OFFBOARD_GATE_LISTS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e56df5966a5e911f"
+  },
   "OOP_ELIG_MAX_ITEMS": {
    "file": "00_config.js",
    "kind": "const",
@@ -2584,6 +2899,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "aeef593799128025"
+  },
+  "QA_SYNC_TOKEN_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7a176d8ad2599363"
   },
   "QSC": {
    "file": "00_config.js",
@@ -3230,6 +3550,16 @@
    "kind": "function",
    "sha": "6d5ec89cc32717f4"
   },
+  "auditWindowCoversMonth_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "6a3c17d0c9cb1975"
+  },
+  "auditWindowProvesAbsence_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "8045bdebd297957d"
+  },
   "authorizeGmailScope": {
    "file": "10_core.js",
    "kind": "function",
@@ -3248,17 +3578,27 @@
   "automationDetectorChecks_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "9e3ce057e4050391"
+   "sha": "ec4d89fa27ad1fc1"
   },
   "automationJobProblems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "c4b47a7535c3d4c9"
+   "sha": "4ccd80cd4b110e06"
+  },
+  "automationLastRunMerge_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "ccdc354f044ad4a0"
   },
   "automationProblems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "cb9c92f72c2e9e3f"
+   "sha": "e3fd06b9228bd54a"
+  },
+  "automationRunKey_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "7d755636e574b28a"
   },
   "bizMinutesLocal_": {
    "file": "10_core.js",
@@ -3498,7 +3838,7 @@
   "cdrDqeWindowSpan_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "2a9e28d294038ef3"
+   "sha": "e156543b35bc3378"
   },
   "cdrExcludeSet_": {
    "file": "40_metrics.js",
@@ -3575,10 +3915,15 @@
    "kind": "function",
    "sha": "40e1f07db7f4b0e0"
   },
+  "clearAutomationErrorUnlocked_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "d6f4aca6aeb90162"
+  },
   "clearAutomationError_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "c6ecadb2f803c15a"
+   "sha": "a0ed0fca8de8462d"
   },
   "clearCaches_": {
    "file": "10_core.js",
@@ -3593,7 +3938,7 @@
   "clientBuildHash_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "11f5e7420e3f140c"
+   "sha": "7cfb9d8f9ecd7956"
   },
   "clientErrRetentionDays_": {
    "file": "10_core.js",
@@ -3608,12 +3953,22 @@
   "clientErrorsSummary_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "94487ec6f246da5f"
+   "sha": "0c904f2c38a4ce12"
   },
   "cnAppendBounded_": {
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "de9b488c66ab22cf"
+  },
+  "cnArchivedBeforeNow_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "8421ede7515b3859"
+  },
+  "cnArchivedBefore_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "211d405f4ee7f3fe"
   },
   "cnCountIntakeNotesResult_": {
    "file": "60_intake.js",
@@ -3813,7 +4168,7 @@
   "computeAutomationHealth_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "f14872f711b7df24"
+   "sha": "f650bb64cb736e60"
   },
   "computeCnEmailHash_": {
    "file": "30_callnotes.js",
@@ -3858,7 +4213,7 @@
   "createCoaching": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "5ed7c3485d4da3b5"
+   "sha": "ef6aaf06bbf04cf6"
   },
   "createFormToken": {
    "file": "61_forms.js",
@@ -3889,6 +4244,11 @@
    "file": "40_metrics.js",
    "kind": "function",
    "sha": "1d8028a86d2b519b"
+  },
+  "csrTransferReadUncached_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "b786d7e17afd4d0e"
   },
   "dashboardPeriodRange_": {
    "file": "40_metrics.js",
@@ -3938,12 +4298,12 @@
   "deployReadinessItems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "820c1dc763c26abb"
+   "sha": "28c90621c1bd6221"
   },
   "deptRequestsOverdueOpen_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "d97642463d68763c"
+   "sha": "1a56b9ec00400002"
   },
   "deriveFlagType_": {
    "file": "30_callnotes.js",
@@ -3968,12 +4328,22 @@
   "doGet": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "ab3c64006eba6c71"
+   "sha": "7b2e34a713ff7b3d"
+  },
+  "drAgeWorkingDaysLabel_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "3415a7b9d04f9555"
   },
   "drBumpCacheGen_": {
    "file": "50_deptrequests.js",
    "kind": "function",
    "sha": "78fd9ff26cbf641c"
+  },
+  "drBusinessDayHours_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "9a513f63f90d143d"
   },
   "drCacheGen_": {
    "file": "50_deptrequests.js",
@@ -3988,7 +4358,7 @@
   "drDeptStats_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "49a1b038a609e719"
+   "sha": "1b65989af6a2643f"
   },
   "drFindOpenRequest_": {
    "file": "50_deptrequests.js",
@@ -4025,10 +4395,30 @@
    "kind": "function",
    "sha": "eb9c7ae4eb1943d5"
   },
+  "drSlaAdminView_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "00cd035c2d0e7c8c"
+  },
+  "drSlaBizHours_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "8891694944c47c6c"
+  },
+  "drSlaDaysLabel_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "b9041cc3159d9774"
+  },
   "drSlaForToDept_": {
    "file": "50_deptrequests.js",
    "kind": "function",
    "sha": "92d00b7b09c6bb70"
+  },
+  "drSlaParseTargets_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "9aa4607d775ef431"
   },
   "drSlaStatus_": {
    "file": "50_deptrequests.js",
@@ -4095,6 +4485,11 @@
    "kind": "function",
    "sha": "a5b30e8e33172812"
   },
+  "empDocReadIntegrity_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "60f4303d64c665f8"
+  },
   "empDocRowToObj_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -4145,11 +4540,6 @@
    "kind": "function",
    "sha": "5b397d49bc497141"
   },
-  "empIsOffToday_": {
-   "file": "20_timeclock.js",
-   "kind": "function",
-   "sha": "702594402ed851a8"
-  },
   "empPayRateById_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -4180,6 +4570,11 @@
    "kind": "function",
    "sha": "50fa665047a2ab0f"
   },
+  "empTimeOffToday_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "8608540a3bf99793"
+  },
   "empTz_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -4203,7 +4598,7 @@
   "exportCallNotesRange": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "d3e0aa7fd3c6deb1"
+   "sha": "b73757eda7387d39"
   },
   "featureFlagDef_": {
    "file": "10_core.js",
@@ -4280,6 +4675,11 @@
    "kind": "function",
    "sha": "2dc8cc4784db820e"
   },
+  "formRetentionEffectiveDays_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "9f58e6f4ad89606f"
+  },
   "formTokenCellMs_": {
    "file": "61_forms.js",
    "kind": "function",
@@ -4299,6 +4699,11 @@
    "file": "61_forms.js",
    "kind": "function",
    "sha": "1afd8bb4739d6b50"
+  },
+  "formTokensVoid_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "6d9bd2454ac82faa"
   },
   "formatFormFieldValue_": {
    "file": "61_forms.js",
@@ -4330,6 +4735,11 @@
    "kind": "function",
    "sha": "2008740a675de95d"
   },
+  "gateListWithout_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "e8ea21798cdd3650"
+  },
   "generateExportSheet_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -4353,7 +4763,7 @@
   "getAdminConfig": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "5766ec0f100c6c7e"
+   "sha": "f2ba9bf5605f1a48"
   },
   "getAdminSheetView": {
    "file": "10_core.js",
@@ -4383,7 +4793,7 @@
   "getAutomationHealth": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "9f97025facaba800"
+   "sha": "582c0ee39a0c1518"
   },
   "getAutomationHealthBadge": {
    "file": "10_core.js",
@@ -4513,7 +4923,7 @@
   "getCsrTransferPerRepDaily_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "80af50d651b3cd37"
+   "sha": "74d4f959133ad330"
   },
   "getCurrentBiweeklyRange_": {
    "file": "20_timeclock.js",
@@ -4533,7 +4943,7 @@
   "getDeployReadiness": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "e033723cdb50fc4d"
+   "sha": "7393a0f913471041"
   },
   "getDeployStamp": {
    "file": "10_core.js",
@@ -4548,27 +4958,32 @@
   "getDeptRequestSla": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "45efb783caeeba9b"
+   "sha": "95f35959a670ae40"
+  },
+  "getDeptRequestSlaConfigFull_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "bd52d387788aeb13"
   },
   "getDeptRequestSlaConfig_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "0f79c1225961e43a"
+   "sha": "49357c02127c6ba8"
   },
   "getDeptRequestSla_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "2f6936a3e6030910"
+   "sha": "db9f4d9cd61fe38d"
   },
   "getDeptRequests": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "814e199159d8e39e"
+   "sha": "46ada078cb82ea1a"
   },
   "getDeptRequestsSS_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "9a41dfa05e295456"
+   "sha": "6773bf29b37274e7"
   },
   "getDocsDashboard": {
    "file": "81_empdocs.js",
@@ -4598,7 +5013,7 @@
   "getEmployeeState": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "cb12e25aba87621d"
+   "sha": "4630edfd34f08426"
   },
   "getEmployeeTimesheetForManager": {
    "file": "20_timeclock.js",
@@ -4643,7 +5058,7 @@
   "getFormByToken": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "c67d7850204aeebc"
+   "sha": "5b9484ec4f8d2fc2"
   },
   "getFormCatalog": {
    "file": "61_forms.js",
@@ -4653,7 +5068,7 @@
   "getFormRetentionDays_": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "54292c17cf3c12a7"
+   "sha": "5596fe632998764a"
   },
   "getFormSubmission": {
    "file": "61_forms.js",
@@ -4778,12 +5193,12 @@
   "getMyCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "27e0862c9ef14d07"
+   "sha": "a66f762dca42944f"
   },
   "getMyCallNotesRange": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "4e2125f94635f60c"
+   "sha": "9bddfa6fa3803cb8"
   },
   "getMyCoaching": {
    "file": "82_coaching.js",
@@ -4793,7 +5208,7 @@
   "getMyDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "0b71301350b75d91"
+   "sha": "0971c5592dddc6e0"
   },
   "getMyDocs": {
    "file": "81_empdocs.js",
@@ -4823,7 +5238,7 @@
   "getMyPendingTasks": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "0537ccebb02f63c6"
+   "sha": "10d412f08142f4b1"
   },
   "getMyPinnedCallNotes": {
    "file": "30_callnotes.js",
@@ -4858,12 +5273,12 @@
   "getMySentForms": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "8883e950fbb8349f"
+   "sha": "4bcb4b9ba8731339"
   },
   "getMyTraining": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "b74d8469f6d8234a"
+   "sha": "fc323124f6714ecf"
   },
   "getMyTrainingQA": {
    "file": "80_training.js",
@@ -5048,7 +5463,7 @@
   "getPunctualityReport": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "d9466d2a0e1def75"
+   "sha": "e39b60c0c02a8015"
   },
   "getQaLog": {
    "file": "90_qa.js",
@@ -5128,7 +5543,7 @@
   "getSpanishInboxPending": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "48fb1b14328aa6ab"
+   "sha": "651ae7a864768e23"
   },
   "getSpanishInboxResolved": {
    "file": "51_spanish.js",
@@ -5138,12 +5553,12 @@
   "getSpanishInboxStats": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "84c0b761e2b99ed7"
+   "sha": "4bd69e7d9e736923"
   },
   "getSpanishInboxThreadBody": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "0350d21954b6138b"
+   "sha": "1769897ac1e84177"
   },
   "getSpanishVmFilter_": {
    "file": "51_spanish.js",
@@ -5208,7 +5623,7 @@
   "getTrainingDashboard": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "ab78dbb4c28bceec"
+   "sha": "1e648f5646fd1a7a"
   },
   "getUpdateSuggestions_": {
    "file": "10_core.js",
@@ -5288,7 +5703,7 @@
   "installAutomationTriggers": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "a19c093beb0bc8f6"
+   "sha": "d7cd4df35c93f0f1"
   },
   "instanceLabel_": {
    "file": "10_core.js",
@@ -5298,7 +5713,7 @@
   "intakeAcctRowsEn_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "dc1c961fb964857d"
+   "sha": "63c60babe95c2d87"
   },
   "intakeAmendBannerHtml_": {
    "file": "60_intake.js",
@@ -5323,7 +5738,7 @@
   "intakeBuildAcctBodyHtml_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "5c4dc28829246513"
+   "sha": "1cbf55204f99bf14"
   },
   "intakeBuildPpdBodyHtml_": {
    "file": "60_intake.js",
@@ -5333,7 +5748,7 @@
   "intakeCatalogIssues_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "a13c299690f56168"
+   "sha": "56ea331167b9849b"
   },
   "intakeDecodeImages_": {
    "file": "60_intake.js",
@@ -5343,7 +5758,7 @@
   "intakeDeriveClinicalFactors_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "8e32917d17d05fa0"
+   "sha": "0acbf1256fccfc72"
   },
   "intakeEmailDomain_": {
    "file": "60_intake.js",
@@ -5358,7 +5773,7 @@
   "intakeExplainFactors_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "89bda29295fd6315"
+   "sha": "f8fdda0677917eba"
   },
   "intakeFeedbackCtaHtml_": {
    "file": "60_intake.js",
@@ -5383,7 +5798,7 @@
   "intakeFilterRecommendations_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "d25640bc35055f68"
+   "sha": "51eebd1a32438cc7"
   },
   "intakeGetSubmission": {
    "file": "60_intake.js",
@@ -5395,15 +5810,25 @@
    "kind": "function",
    "sha": "605984d43b79ce61"
   },
+  "intakeInherentlySolidCodes_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "a6069cf3c832f400"
+  },
   "intakeListMySubmissions": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "6d5af121c1dba995"
+   "sha": "fea829e71d20ec1e"
   },
   "intakeListOfferings": {
    "file": "60_intake.js",
    "kind": "function",
    "sha": "5e430c7bb6c98d4b"
+  },
+  "intakeParseWeight_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "a89897bd2b71f478"
   },
   "intakePpdAnswerStyles_": {
    "file": "60_intake.js",
@@ -5438,7 +5863,7 @@
   "intakePreviewPPD": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "106afc2c4eea0f26"
+   "sha": "0c8e7afe7630cce1"
   },
   "intakeRecListHtml_": {
    "file": "60_intake.js",
@@ -5449,6 +5874,11 @@
    "file": "60_intake.js",
    "kind": "function",
    "sha": "525049c88d6602b8"
+  },
+  "intakeSeatKinds_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "f22354d1a3dff5a2"
   },
   "intakeSectionRowHtml_": {
    "file": "60_intake.js",
@@ -5553,7 +5983,7 @@
   "issueDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "c95aec5e15fde134"
+   "sha": "5d0100563436b4e3"
   },
   "kbAddComment": {
    "file": "70_kb.js",
@@ -6028,7 +6458,7 @@
   "managerGetCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "891bbed80f3ae419"
+   "sha": "94bfdba1c729f2c4"
   },
   "managerGetFormSubmission": {
    "file": "61_forms.js",
@@ -6088,7 +6518,7 @@
   "managerSourceDrift_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "c3ef16b811cfb3a5"
+   "sha": "ccc6f14bc03e3c64"
   },
   "managerSubmitTimeOff": {
    "file": "20_timeclock.js",
@@ -6253,7 +6683,12 @@
   "offboardEmployee": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "3b91eef65a2909a6"
+   "sha": "f9f59d6715daf80a"
+  },
+  "offboardFromGateLists_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "a45b4c990befc84d"
   },
   "oopCodeIndex_": {
    "file": "70_kb.js",
@@ -6365,6 +6800,11 @@
    "kind": "function",
    "sha": "00e75f71a7c3946c"
   },
+  "pendingTasksBustAll_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "a864d3536d6944db"
+  },
   "pendingTasksBust_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -6470,6 +6910,21 @@
    "kind": "function",
    "sha": "697306332bd17fad"
   },
+  "punctHalfDayVerdict_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "94538e94d511f15a"
+  },
+  "punctIsHalfDay_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "1d288d5fa6f32c30"
+  },
+  "punctLunchNearest_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "92cc1fac1b16ce59"
+  },
   "punctWeeklyBuckets_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -6510,6 +6965,11 @@
    "kind": "function",
    "sha": "12060df3b137d4fa"
   },
+  "qaAgentChangeUnshares_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "23f02840b2f502dc"
+  },
   "qaAssignRecording": {
    "file": "90_qa.js",
    "kind": "function",
@@ -6518,7 +6978,7 @@
   "qaAudioChunkFor_": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "b0fdbe157f3de3d1"
+   "sha": "d9d8ba331ca5fa86"
   },
   "qaAuditTarget_": {
    "file": "90_qa.js",
@@ -6600,6 +7060,16 @@
    "kind": "function",
    "sha": "7ee099321f1d6eec"
   },
+  "qaIsOwnRecording_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "1b2b300582c8ffb9"
+  },
+  "qaKnownFileIds_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "546562e352262bbe"
+  },
   "qaLatestScorecards_": {
    "file": "90_qa.js",
    "kind": "function",
@@ -6670,10 +7140,20 @@
    "kind": "function",
    "sha": "28d62b80697cd097"
   },
+  "qaRangeHeader_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "e8ccb37f22c83c3b"
+  },
   "qaRatingNormalize_": {
    "file": "90_qa.js",
    "kind": "function",
    "sha": "42b7fb1189aa6964"
+  },
+  "qaReadChunkBytes_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "15f701c1563dc020"
   },
   "qaReadExemptions_": {
    "file": "90_qa.js",
@@ -6718,7 +7198,12 @@
   "qaSaveScorecard": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "3da13a84c31ecd78"
+   "sha": "059eb0a4cd11a49e"
+  },
+  "qaSelfReviewRefusal_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "c29bf4b0277cb59e"
   },
   "qaSetExemption": {
    "file": "90_qa.js",
@@ -6728,7 +7213,7 @@
   "qaSetRecordingAgent": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "09af8705f72c16c3"
+   "sha": "b9546dbaba4ea4c6"
   },
   "qaSetRecordingDuration": {
    "file": "90_qa.js",
@@ -6738,12 +7223,12 @@
   "qaSetRecordingShared": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "62677eb6615ea6a0"
+   "sha": "e633304ff7c86168"
   },
   "qaSetRecordingStatus": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "21527b41eec59e42"
+   "sha": "1ef63226a3fa5ab7"
   },
   "qaStatsAggregate_": {
    "file": "90_qa.js",
@@ -6763,7 +7248,17 @@
   "qaSyncRecordings": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "0bf29ec17edab24a"
+   "sha": "fbd4f972e798bf93"
+  },
+  "qaSyncTokenRead_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "87c5c616bda6a19f"
+  },
+  "qaSyncTokenWrite_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "32c51bb108ef696a"
   },
   "qaYmdMs_": {
    "file": "90_qa.js",
@@ -6785,10 +7280,20 @@
    "kind": "function",
    "sha": "856e5e11ddbd0a16"
   },
+  "readAutomationRunLedger_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "5afecaac60eb73d9"
+  },
   "readCallNoteRowsInRange_": {
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "2e4229518eb270ba"
+  },
+  "readOffboardedEmails_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "bc77dbd291566774"
   },
   "readOpenPunchCheck_": {
    "file": "20_timeclock.js",
@@ -6828,7 +7333,7 @@
   "releaseDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "1e64087e217c309e"
+   "sha": "51d95a9d3b283d83"
   },
   "releaseSpanishThread": {
    "file": "51_spanish.js",
@@ -6928,7 +7433,7 @@
   "revokeTrainingAssignment": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "0a86affc23145278"
+   "sha": "26a6d8013be2d7b6"
   },
   "rosterHasAccruingRep_": {
    "file": "20_timeclock.js",
@@ -7008,7 +7513,7 @@
   "saveAutoTagRules": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "b94b3f5517b4f6d6"
+   "sha": "0c7a0dbf1629d22d"
   },
   "saveBreakSchedules": {
    "file": "20_timeclock.js",
@@ -7023,7 +7528,7 @@
   "saveDeptRequestSla": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "41e5f80f97af7054"
+   "sha": "20d2f0acd1553cc8"
   },
   "saveEmailTemplates": {
    "file": "10_core.js",
@@ -7088,7 +7593,7 @@
   "saveTrainingAssignment": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "f21f9cbf4173825b"
+   "sha": "4c9b8b624673c09d"
   },
   "saveUpdateSuggestions": {
    "file": "10_core.js",
@@ -7168,12 +7673,12 @@
   "sendCallNotesUrgentDigest": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "982af328548794cc"
+   "sha": "7cbd33a1de6edfc9"
   },
   "sendCallNotesWeeklyDigests": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "3e3a95de54fd53ee"
+   "sha": "735d7bda4f3a9301"
   },
   "sendCoachingRecapDigest": {
    "file": "82_coaching.js",
@@ -7188,7 +7693,7 @@
   "sendDeptRequestReminderDigest": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "0ff947e6edec66c7"
+   "sha": "7be6136685355196"
   },
   "sendEmployeeOverdueDocsEmail_": {
    "file": "20_timeclock.js",
@@ -7198,17 +7703,17 @@
   "sendExternalEmail": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "5ede9e9e59f91440"
+   "sha": "15be5b4a40c01a99"
   },
   "sendManagerBriefEmail_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "7c17429f29d3250d"
+   "sha": "6bfb34f9b80479a0"
   },
   "sendManagerDailyBrief": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "a98e591a34516a93"
+   "sha": "fbfebbab10165aaf"
   },
   "sendManagerFlagDigest_": {
    "file": "30_callnotes.js",
@@ -7228,7 +7733,7 @@
   "sendTrainingOverdueDigest": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "9dc160b72d8b30e1"
+   "sha": "bbc80bf1a1e7c178"
   },
   "sendTrainingOverdueEmail_": {
    "file": "80_training.js",
@@ -7238,7 +7743,7 @@
   "serveExternalForm_": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "204ae43b25dcc8ec"
+   "sha": "531f325125028d8f"
   },
   "serveIntakeFeedbackPage_": {
    "file": "60_intake.js",
@@ -7278,7 +7783,7 @@
   "setCallNoteTrainingReply": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "d51777355e81f65a"
+   "sha": "d4ccc3af5a081a63"
   },
   "setCoachingFollowUp": {
    "file": "82_coaching.js",
@@ -7343,7 +7848,7 @@
   "spanishCacheHash_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "6f6ff9469b02b288"
+   "sha": "fec60cd31ee0e935"
   },
   "spanishClaimsFold_": {
    "file": "51_spanish.js",
@@ -7370,6 +7875,11 @@
    "kind": "function",
    "sha": "7f80063af231a396"
   },
+  "spanishThreadBodyMessage_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "c5ad538c1f072e5c"
+  },
   "spanishThreadInScope_": {
    "file": "51_spanish.js",
    "kind": "function",
@@ -7388,7 +7898,7 @@
   "spanishVmFold_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "97e2f7334aff9094"
+   "sha": "6467c1fa65020762"
   },
   "spanishVmMatch_": {
    "file": "51_spanish.js",
@@ -7399,6 +7909,11 @@
    "file": "51_spanish.js",
    "kind": "function",
    "sha": "6ab826efc77ef200"
+  },
+  "spanishVmResolution_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "2cff7b92dae851c0"
   },
   "spanishVmTooShort_": {
    "file": "51_spanish.js",
@@ -7420,10 +7935,20 @@
    "kind": "function",
    "sha": "b018c4656be3d973"
   },
+  "stampAutomationErrorUnlocked_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "89d25d96b3fd76df"
+  },
   "stampAutomationError_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "6296753cac3f335e"
+   "sha": "e231fd582b7a189d"
+  },
+  "stampAutomationRun_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "a36bfaf04f1ba7c5"
   },
   "stampDigestLastRun_": {
    "file": "10_core.js",
@@ -7468,12 +7993,12 @@
   "submitQuizAttempt": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "de5541ccf3d35359"
+   "sha": "d40c0f209739ef3d"
   },
   "submitTimeOffRange": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "e4f77d19d71d29e2"
+   "sha": "c6c3667fcc33f439"
   },
   "submitTimeOffRequest": {
    "file": "20_timeclock.js",
@@ -7494,6 +8019,16 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "3425cc78d8750744"
+  },
+  "timeOffDayKind_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "b36f1a4f7da40ac3"
+  },
+  "timeOffKindsCombine_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "285ead59d9c0fb7d"
   },
   "timeToMins_": {
    "file": "20_timeclock.js",
@@ -7580,10 +8115,25 @@
    "kind": "function",
    "sha": "6abf5564f6bca552"
   },
+  "trainTodayIso_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "b5ea1f01fa756ee8"
+  },
   "trainValidateQuizDef_": {
    "file": "80_training.js",
    "kind": "function",
    "sha": "345d9423410c3cb3"
+  },
+  "trainingReplyClear_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "bd15e765590fc43c"
+  },
+  "triggerOwnerOffboarded_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "0d792a5ca5b6311b"
   },
   "tsDoctorLegitBreaks_": {
    "file": "20_timeclock.js",
@@ -7708,12 +8258,17 @@
   "voidCoaching": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "498b642a3695e47e"
+   "sha": "a20ae1e43159c66f"
   },
   "voidDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "95ef18c81a3a0d64"
+   "sha": "d9b6b12a27d2ecb7"
+  },
+  "withAutomationErrorLock_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "6fb369fc4c66a34d"
   },
   "withBreakSchedulesProp_": {
    "file": "20_timeclock.js",
@@ -7738,7 +8293,7 @@
   "writeAuditLog_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "c3a2e47e54708372"
+   "sha": "97fcd00283f917eb"
   },
   "writeToEmployeeSheet_": {
    "file": "20_timeclock.js",

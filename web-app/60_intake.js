@@ -175,6 +175,46 @@ function getIntakeOfferings_() {
  *  Row numbers are 1-based SHEET rows (the A2:F read starts at row 2) so the
  *  operator can jump straight to the cell. PHI-free by construction — the
  *  Offerings catalog is product data. */
+/** PURE (I2, cycle 22) — what a catalog seat-type cell OFFERS, read WORD BY
+ *  WORD. The engine used to test for the LETTER 's' anywhere in the cell, so
+ *  "Captain Seat" (it contains an s) read as a solid seat and passed the
+ *  clinical solid-seat gate. A word is solid ('s', 'solid'), captain ('c',
+ *  'captain', "captain's"), or filler ('seat', 'seats', 'and', 'or'); anything
+ *  else is UNKNOWN and named by the catalog validator. The client's catalog
+ *  browse filter is the twin `intakeSeatKindsClient_` (pinned to agree). */
+function intakeSeatKinds_(cell) {
+  const words = String(cell == null ? '' : cell).toLowerCase().replace(/['\u2019]/g, '').split(/[^a-z]+/).filter(Boolean);
+  const out = { solid: false, captain: false, unknown: [] };
+  words.forEach(function (w) {
+    if (w === 's' || w === 'solid') out.solid = true;
+    else if (w === 'c' || w === 'captain' || w === 'captains') out.captain = true;
+    else if (w === 'seat' || w === 'seats' || w === 'and' || w === 'or') return;
+    else out.unknown.push(w);
+  });
+  return out;
+}
+/** The HCPCS codes the engine treats as solid-seat whatever the seat cell says
+ *  — ONE list, read by the engine and the catalog validator (I6). */
+function intakeInherentlySolidCodes_() {
+  return [
+    'K0822', 'K0824', 'K0826', 'K0828',
+    'K0835', 'K0837', 'K0839',
+    'K0840', 'K0841', 'K0843',
+    'K0848', 'K0849', 'K0850', 'K0851',
+    'K0856', 'K0857', 'K0858', 'K0859',
+    'K0861', 'K0862', 'K0863', 'K0864',
+  ];
+}
+/** PURE (I3, cycle 22) — the patient weight from a free-text answer: the FIRST
+ *  number in it. The old read stripped every non-digit, so "250-260" became
+ *  250260 lbs and no chair matched. `unreadable` = the rep typed something
+ *  but it holds no number — reported as a decision factor, never silent. */
+function intakeParseWeight_(text) {
+  const t = String(text == null ? '' : text).trim();
+  const m = /\d+(?:\.\d+)?/.exec(t.replace(/,(?=\d{3}\b)/g, ''));
+  const lbs = m ? parseFloat(m[0]) : 0;
+  return { lbs: (isFinite(lbs) && lbs > 0) ? lbs : 0, unreadable: !!t && !m, raw: t };
+}
 function intakeCatalogIssues_(rows) {
   const out = [];
   (rows || []).forEach(function (r, i) {
@@ -212,12 +252,20 @@ function intakeCatalogIssues_(rows) {
     // Seat type drives the solid-vs-captain gate. A blank cell is not fatal for
     // an inherently-solid HCPCS (the engine has its own code list) but for
     // anything else it means the row can never satisfy either branch.
+    // I6 (cycle 22): an inherently-solid code is solid whatever this cell says
+    // (the engine's own list), so it is never an ERROR for it — it used to be.
+    const knownSolid = intakeInherentlySolidCodes_().indexOf(hcpcs) >= 0;
+    const kinds = intakeSeatKinds_(seat);   // I2: read word by word, like the engine
     if (!seat) {
-      out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'warn', field: 'seat type',
-        detail: 'blank — only recognised as solid-seat if ' + hcpcs + ' is on the engine\'s inherently-solid list' });
-    } else if (seat.indexOf('s') < 0 && seat.indexOf('c') < 0) {
+      if (!knownSolid) out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'warn', field: 'seat type',
+        detail: 'blank — ' + hcpcs + ' is not on the engine\'s inherently-solid list, so the row matches no seat branch' });
+    } else if (kinds.unknown.length) {
+      out.push({ row: sheetRow, hcpcs: hcpcs, severity: knownSolid ? 'warn' : 'error', field: 'seat type',
+        detail: '"' + cell(3) + '" has word(s) the engine cannot read (' + kinds.unknown.join(', ') + ') — use S, C, Solid or Captain' +
+          (knownSolid ? '; ' + hcpcs + ' is solid by code, so it still recommends' : ' — the row matches no seat branch') });
+    } else if (!kinds.solid && !kinds.captain && !knownSolid) {
       out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'error', field: 'seat type',
-        detail: '"' + cell(3) + '" contains neither "s" (solid) nor "c" (captain) — the row matches no seat branch' });
+        detail: '"' + cell(3) + '" names neither a solid nor a captain seat — the row matches no seat branch' });
     }
     // E/F drive the result card's brochure link + device image. Documented as
     // operator-required in the Operator State Checklist; blank means the agent
@@ -460,7 +508,8 @@ function intakeDeriveClinicalFactors_(answers) {
     // F(cycle-8): keep the decimal point — the old \D strip turned "250.5"
     // into 2505 lbs, failing every weight-cap filter AND reading as ≥285 for
     // the Q39a mobile-home rule. Units/commas still drop.
-    weight: parseFloat(getAnswerText('38').replace(/[^\d.]/g, '')) || 0,
+    weight: intakeParseWeight_(getAnswerText('38')).lbs,   // I3: the first number, not every digit
+    weightUnreadable: intakeParseWeight_(getAnswerText('38')).unreadable,
     neuroCondition: getAnswerText('43'),
     numbnessAnswer: getAnswerText('25'),
     amputationStatus: getAnswerText('34'),
@@ -539,7 +588,9 @@ function intakeExplainFactors_(answers) {
   const p = F.patient;
   const yn = (b) => b ? 'Yes' : 'No';
   const rows = [];
-  rows.push({ label: 'Weight', value: p.weight ? (p.weight + ' lbs') : 'not provided' });
+  rows.push({ label: 'Weight', value: p.weight ? (p.weight + ' lbs')
+    : (p.weightUnreadable ? 'UNREADABLE — no number in the answer, so NO weight-capacity check was applied; re-enter it as lbs'
+      : 'not provided') });
   rows.push({ label: 'Dwelling (Q39a)', value: p.dwelling || 'not provided' });
   if (p.livesInMobileHome) {
     rows.push({ label: 'Mobile-home restriction', value: (p.weight > 0 && p.weight < 285)
@@ -609,14 +660,7 @@ function intakeFilterRecommendations_(answers, allProducts) {
     };
   }
 
-  const inherentlySolidCodes = [
-    'K0822', 'K0824', 'K0826', 'K0828',
-    'K0835', 'K0837', 'K0839',
-    'K0840', 'K0841', 'K0843',
-    'K0848', 'K0849', 'K0850', 'K0851',
-    'K0856', 'K0857', 'K0858', 'K0859',
-    'K0861', 'K0862', 'K0863', 'K0864',
-  ];
+  const inherentlySolidCodes = intakeInherentlySolidCodes_();   // I6: the ONE list
 
   const eligibleProducts = allProducts
     .map(productRow => {
@@ -628,11 +672,11 @@ function intakeFilterRecommendations_(answers, allProducts) {
       const hcpcsNum = parseInt(hcpcs.replace(/\D/g, ''), 10) || 0;
       if (hcpcsNum === 0) return false;
 
-      const seatCode = product.seatType.toLowerCase().trim();
+      const seatKinds = intakeSeatKinds_(product.seatType);   // I2: word by word, never a letter
       const isKnownSolid = inherentlySolidCodes.includes(hcpcs);
-      const sheetSaysSolid = seatCode.includes('s');
+      const sheetSaysSolid = seatKinds.solid;
       const offersSolid = isKnownSolid || sheetSaysSolid;
-      const offersCaptain = seatCode.includes('c') && !isKnownSolid && !sheetSaysSolid;
+      const offersCaptain = seatKinds.captain && !isKnownSolid && !sheetSaysSolid;
 
       // ── Weight capacity (F9, cycle 16 — FAIL CLOSED) ────────────────────
       // `parseInt('')` is NaN and EVERY comparison against NaN is false, so a
@@ -735,10 +779,10 @@ function intakeFilterRecommendations_(answers, allProducts) {
     const isSPO = (hcpcsNum >= 835 && hcpcsNum <= 839) || (hcpcsNum >= 856 && hcpcsNum <= 859);
 
     const isKnownSolid = inherentlySolidCodes.includes(p.hcpcs);
-    const seatCode = p.seatType.toLowerCase();
-    const sheetSaysSolid = seatCode.includes('s');
+    const seatKinds = intakeSeatKinds_(p.seatType);   // I2
+    const sheetSaysSolid = seatKinds.solid;
     const offersSolid = isKnownSolid || sheetSaysSolid;
-    const isCaptainOnly = seatCode.includes('c') && !offersSolid;
+    const isCaptainOnly = seatKinds.captain && !offersSolid;
 
     let displayHcpcs = p.hcpcs;
     let justification = 'Eligible option';
@@ -910,7 +954,9 @@ function intakeAcctRowsEn_(formType, answers) {
     if (layout.HEADER_ROWS.indexOf(i + 1) >= 0) { rows.push({ qIndex: i, label: label, isHeader: true }); continue; }
     const v = a[i] != null ? a[i] : a[String(i)];
     rows.push({ qIndex: i, label: label, value: (v == null ? '' : String(v)),
-                isSecondary: layout.SECONDARY_QUESTION_ROWS.indexOf(i + 1) >= 0 });
+                // I8 (cycle 22): SECONDARY_QUESTION_ROWS is 0-based, as the body
+                // builder reads it (only HEADER_ROWS is 1-based).
+                isSecondary: layout.SECONDARY_QUESTION_ROWS.indexOf(i) >= 0 });
   }
   return rows;
 }
@@ -1069,9 +1115,14 @@ function intakeBuildAcctBodyHtml_(rows, layout) {
       displayAnswer = '<div style="background-color:' + rule.bg + ';color:' + rule.fg + ';border:1px solid ' + rule.bg + ';border-radius:4px;padding:5px 8px;font-weight:bold;display:inline-block;">' + esc_(answerRaw) + '</div>';
     } else if (layout.CHECKBOX_ROWS.indexOf(i) >= 0) {
       const checkColor = layout.CHECKBOX_WARN_ROWS.indexOf(i) >= 0 ? P.warn : P.accent;
+      // I5 (cycle 22): THREE states. An unanswered toggle ('') used to draw the
+      // same empty box as a deliberate "No" ('FALSE'), so the department read a
+      // skipped question as an answer. The client already sends them apart.
       displayAnswer = (answerRaw === 'TRUE')
         ? '<div style="width:16px;height:16px;border:1px solid ' + P.muted2 + ';background-color:' + P.paperCard + ';text-align:center;line-height:16px;font-weight:bold;color:' + checkColor + ';display:inline-block;">&#10003;</div>'
-        : '<div style="width:16px;height:16px;border:1px solid ' + P.line + ';background-color:' + P.paper + ';display:inline-block;"></div>';
+        : (answerRaw === 'FALSE'
+          ? '<div style="width:16px;height:16px;border:1px solid ' + P.line + ';background-color:' + P.paper + ';display:inline-block;vertical-align:middle;"></div> <span style="color:' + P.muted2 + ';">No</span>'
+          : '<span style="color:' + P.muted3 + ';font-style:italic;">Not answered</span>');
     } else {
       displayAnswer = !answerRaw ? '<span style="color:' + P.muted3 + ';font-style:italic;">N/A</span>' : esc_(answerRaw);
     }
@@ -1195,7 +1246,12 @@ function intakePreviewPPD(payload) {
     const subject = 'PPD for ' + patientInfo;
     const body = intakeBuildPpdBodyHtml_(patientInfo, intakePpdRowsEn_(payload.answers), recData, null);   // F-27: labels from the bank, never the client
     const html = intakeEmailShell_(subject, body, 'Intake · PPD');
-    return { success: true, html: html, subject: subject, recommendations: recData, bodyHash: intakeBodyHash_(body, subject) };
+    // I3 follow-up (cycle 22): an answer with no number in it ran NO weight-
+    // capacity check — said in the explain factors, now also on the screen the
+    // rep reads before sending (additive; the engine is unchanged).
+    const weightUnreadable = !!intakeDeriveClinicalFactors_(payload.answers || {}).patient.weightUnreadable;
+    return { success: true, html: html, subject: subject, recommendations: recData, bodyHash: intakeBodyHash_(body, subject),
+             weightUnreadable: weightUnreadable };
   } catch (err) { return { error: err.message }; }
 }
 function intakeStoreOversizeError_(cellStrings) {
@@ -1422,9 +1478,13 @@ function intakeListMySubmissions() {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Not authorized.' };
     const out = [];
+    // I4 (cycle 22): a form type whose tab could not be read is NAMED. It used
+    // to be skipped silently, so an unreachable Intake store rendered "No
+    // matching intake submissions" — which invites a PHI re-send.
+    const failedTypes = [];
     INTAKE_FORM_TYPES_.forEach(function (ft) {
       let sheet;
-      try { sheet = getIntakeSubmissionSheet_(ft); } catch (e) { return; }
+      try { sheet = getIntakeSubmissionSheet_(ft); } catch (e) { failedTypes.push(ft); return; }
       const last = sheet.getLastRow();
       if (last < 2) return;
       const isPpd = ft === 'PPD';
@@ -1475,7 +1535,7 @@ function intakeListMySubmissions() {
     // silent 100-cap read as "exactly 100 submissions exist".
     const total = out.length;
     if (out.length > INTAKE_LIST_CAP_) out.length = INTAKE_LIST_CAP_;
-    return { submissions: out, isManager: !!emp.isManager, total: total, cap: INTAKE_LIST_CAP_ };
+    return { submissions: out, isManager: !!emp.isManager, total: total, cap: INTAKE_LIST_CAP_, failedTypes: failedTypes };
   } catch (err) { return { error: err.message }; }
 }
 /** Full detail for one submission — same scoping as the list (owner or

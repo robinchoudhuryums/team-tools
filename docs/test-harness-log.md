@@ -2020,6 +2020,51 @@ per-finding detail. What each added to each harness, by delta:
   net drives the dispatcher rather than reading fixture keys). One vacuous
   check caught: K12's doc regex never matched the sentence it banned (g116,
   the eighth direction). 19 bite-checks, all BITE.
+- **Batch 6:** Node +11 (A1 ×3 — the window cases, the ledger + merge, the
+  "cannot confirm" caption; A2 — the server's list driven into the client
+  findings, with the fixture required to fire every kind DERIVED from the
+  server source; C2, A3, S7, A4, A5, A6, A8, each driven), 1 updated (the
+  open-punch pin's `automationProblems_` regex takes the new `opts` argument).
+  Visual +1 scenario (`admin-tags-fail-light-mobile`); the populated
+  `getAutomationHealth` fixture now carries one open-punch item and a
+  TRUNCATED audit window, so the Admin scenarios photograph the new paths.
+  14 bite-checks, all BITE.
+- **Batch 7:** Node +11 (T4 nearest lunch; T5 half-day kinds + the state
+  endpoint + the ticker; T7 the range server + preview; T8 the reminder
+  holiday; T9 the client invalidation wiring across five partials; T10 the
+  void / release / revoke busts incl. the everyone bust; T11 one training
+  today; D3 resume + walk outside the lock; D5 the ranged chunk read; M10 the
+  transfer span + cache; M5 per-message voicemail resolution). 6 pins updated
+  for deliberate rule changes. Fixture: `halfDayOff`. 23 bite-checks, all BITE
+  (one first aimed at a pin that does not assert the line, re-aimed).
+- **Batch 8:** Node +12 (I2 word-level seat read + the client twin grid; I3
+  first number; I4 named failed tabs; I5 three-state Yes/No; I6 solid-by-code;
+  I8 0-based secondary rows; C7 tokens after the PDFs + void; C8 clear-reply;
+  C9 quotes survive a template; I7 the retention floor; S5 unshare on
+  re-attribution; D8/D4/D9). 4 pins corrected that asserted the defect (F9 seat
+  row, F-27 `isSecondary`) or an old shape. 20 bite-checks, all BITE.
+- **Follow-ups:** Node +11 net (the T5 pin rewritten as two DRIVEN pins —
+  `getPunctualityReport` over fake tabs incl. the not-over-yet day, and the
+  client strip / outliers; FU-B6a–e, FU-B7a–c, FU-B8a–b). Updated: A2's
+  `punchDayAdd_` call count (7 → 8), the A1 caption pin, C7 (void audits), the
+  voicemail pill wiring, three sandboxes that load `automationJobProblems_`.
+  Fixtures: `halfDayMinHours`, a met and a short half day on the punctuality
+  reps, `vmPending: 2` with the stats counting both, `auditWindow.startMs`, the
+  `triggerOwner` detector. 21 bite-checks, all BITE.
+- **Batch 9:** Node +9 (U1, U3, U4 via BCN-1/1b, U5, U6, A7, A9, M11 and a
+  DERIVED overlay net). The net finds every static overlay id in the markup
+  and checks every file for a direct or variable-bound `classList` open/close
+  against it; the F-40 hand list had missed `cn-export-overlay`. BCN-1 and
+  BCN-1b were rewritten for the removed cache (Category A), and the
+  business-hours copy pin moved to "company holidays". 13 bite-checks, all
+  BITE (one malformed M11 mutation re-run).
+- **Deferred findings (S6, S8, S10, M6, C12):** Node +5, and two assertions
+  added to the editor suite's existing quiz test (no new registration). The
+  `drSlaForToDept_` and N2 `drDeptStats_` pins moved from hours to working
+  days (Category A). Fixtures: `slaDays` on the tracker items and stats, and
+  `defaultDays` on the admin SLA view. 11 bite-checks, all BITE. The sandboxes
+  for the S10/C12 client pins needed an `esc` stub; a `var(--text-xs, 12px)`
+  fallback was caught by the g57 pin and removed.
 
 **Two NO BITEs, both acted on (g138).** T2's first wiring pin asserted the
 refusal message existed, and an `if (false)` beside it stayed green. The pin

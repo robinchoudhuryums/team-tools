@@ -314,6 +314,8 @@ const SCENARIOS = [
   // scenario per pane rather than one for the tab strip.
   ['admin-light-mobile',            { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', ''],
   ['admin-tags-light-mobile',       { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '', "cnAdminTab_('tags')"],
+  // A4 (cycle 22) — a failed taxonomy load is a named failure, not "No tags in use yet".
+  ['admin-tags-fail-light-mobile',  { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '?failrpc=getCallNotesTagTaxonomy', "cnAdminTab_('tags')"],
   ['admin-compliance-light-mobile', { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '', "cnAdminTab_('compliance')"],
   ['admin-config-light-mobile',     { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '', "cnAdminTab_('config')"],
   ['admin-sheets-light-mobile',     { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '', "cnAdminTab_('sheets')"],

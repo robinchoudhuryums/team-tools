@@ -1168,6 +1168,7 @@ function getEmployeeState() {
     if (!emp) return { error: 'Your account is not registered. Contact your manager.' };
     const empTz = empTz_(emp);
     const { today, punches } = getTodayPunches_(emp.id, empTz);
+    const offKind = empTimeOffToday_(emp.id, today);
     return {
       name: emp.name, id: emp.id, today, punches,
       nextActions: getNextActions_(punches),
@@ -1205,7 +1206,14 @@ function getEmployeeState() {
       // F2 (cycle 18) — the shell reminder ticker needs to know this is a day
       // OFF, not just what the shift shape is. Approved PTO only; a pending
       // request is not yet a day off.
-      offToday: empIsOffToday_(emp.id, today),
+      // T5 (cycle 22): a HALF day is not a day off. It used to set offToday
+      // and silence every inferred reminder for the hours the rep works. A
+      // half day has no fixed start or end (the T5 rework, operator
+      // 2026-09-25) — only a minimum of hours, shipped here so the ticker
+      // carries no literal of it (the g131 rule).
+      offToday: offKind === 'full',
+      halfDayOff: (offKind === 'morning' || offKind === 'afternoon') ? offKind : null,
+      halfDayMinHours: CONFIG.PTO_HOURS_PER_DAY / 2,
       // Operator 2026-08-31: today's PENDING adjustment requests, so the Clock
       // view can say a fix is in flight instead of showing a bare punch button
       // to a rep who has already asked for one. Additive + client-guarded —
@@ -1565,14 +1573,21 @@ function submitTimeOffRange(startDate, endDate, type, notes) {
     if (!isValidTimeOffType_(type))
       return { success: false, error: 'Invalid leave type.' };
     const span = daysBetween_(startDate, endDate);
+    // T7 (cycle 22): a company holiday is skipped like a weekend. It used to
+    // file a request for the closed day, and approving the range deducted PTO
+    // for it. The calendar is getCompanyHolidays_ (the ONE accessor, g123).
+    const hol = companyHolidayMap_(startDate, endDate);
     const days = [];
+    let skippedHolidays = 0;
     for (let i = 0; i <= span; i++) {
       const d = addDaysIso_(startDate, i);
       const dow = new Date(d + 'T00:00:00Z').getUTCDay();
-      if (dow !== 0 && dow !== 6) days.push(d);
+      if (dow === 0 || dow === 6) continue;
+      if (hol[d]) { skippedHolidays++; continue; }
+      days.push(d);
     }
     if (days.length === 0)
-      return { success: false, error: 'That range contains only weekend days.' };
+      return { success: false, error: 'That range contains only weekend days and company holidays.' };
     const toSheet = getOrCreateTimeOffSheet_();
     const conflicts = days.filter(d => hasActiveTimeOffOnDate_(toSheet, emp.id, d));
     if (conflicts.length > 0)
@@ -1583,7 +1598,8 @@ function submitTimeOffRange(startDate, endDate, type, notes) {
       writeAuditLog_(emp, 'TimeOffRequest', d, '', false, 0,
         type + ' (range ' + startDate + '..' + endDate + ')' + (notes ? ' — ' + notes : ''));
     });
-    return { success: true, count: days.length, skippedWeekendDays: (span + 1) - days.length };
+    return { success: true, count: days.length, skippedWeekendDays: (span + 1) - days.length - skippedHolidays,
+             skippedHolidayDays: skippedHolidays };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
@@ -4172,6 +4188,53 @@ function addEmployee(payload) {
  *  while every inclusion walk stops counting the row. Never deletes the row,
  *  never touches the per-rep Sheets. Self-offboarding is rejected (it would
  *  lock the caller out of the app mid-session). */
+/** PURE (Node-pinned) — a comma-separated gate list without `email`
+ *  (case-insensitive). `wouldEmpty` = the address is the list's only entry, in
+ *  which case `next` is null and the caller must NOT write (see
+ *  OFFBOARD_GATE_LISTS for why an empty list is worse than a stale one). */
+function gateListWithout_(raw, email) {
+  const target = String(email || '').toLowerCase().trim();
+  const all = String(raw || '').split(',').map(function (x) { return x.trim(); }).filter(function (x) { return x; });
+  const rest = all.filter(function (x) { return x.toLowerCase() !== target; });
+  const listed = !!target && rest.length < all.length;
+  return { listed: listed, wouldEmpty: listed && rest.length === 0, next: (listed && rest.length) ? rest.join(',') : null };
+}
+/** S7 (cycle 22) — removes an offboarded address from both gate lists and
+ *  records it in OFFBOARDED_EMAILS. Runs inside offboardEmployee's lock.
+ *  Returns { removed: [prop], kept: [{prop, why}] }; never throws — the roster
+ *  change already landed, so a property failure is reported, not fatal. */
+function offboardFromGateLists_(email) {
+  const out = { removed: [], kept: [] };
+  const e = String(email || '').toLowerCase().trim();
+  if (!e) return out;
+  let props;
+  try { props = PropertiesService.getScriptProperties(); }
+  catch (err) { OFFBOARD_GATE_LISTS.forEach(function (p) { out.kept.push({ prop: p, why: 'Script Properties unreadable: ' + err.message }); }); return out; }
+  OFFBOARD_GATE_LISTS.forEach(function (prop) {
+    try {
+      const r = gateListWithout_(props.getProperty(prop), e);
+      if (!r.listed) return;
+      if (r.wouldEmpty) {
+        out.kept.push({ prop: prop, why: 'they are its only entry — removing it would ' +
+          (prop === 'ADMIN_EMAILS' ? 'make every manager an admin' : 'stop every automation trigger') +
+          '; add a replacement, then remove them by hand' });
+        return;
+      }
+      propSetBounded_(prop, r.next);
+      out.removed.push(prop);
+    } catch (err) { out.kept.push({ prop: prop, why: err.message }); }
+  });
+  try {
+    let list = [];
+    try { list = JSON.parse(props.getProperty(OFFBOARDED_EMAILS_PROP) || '[]'); } catch (_) { list = []; }
+    if (!Array.isArray(list)) list = [];
+    list = list.filter(function (x) { return String(x).toLowerCase() !== e; });
+    list.push(e);
+    propSetBounded_(OFFBOARDED_EMAILS_PROP, JSON.stringify(list.slice(-OFFBOARDED_EMAILS_MAX)), { mode: 'degrade',
+      shrink: function (str) { try { const a = JSON.parse(str); a.shift(); return a.length ? JSON.stringify(a) : null; } catch (_) { return null; } } });
+  } catch (_) { /* best-effort — the lists above are the prevention; this feeds the detector */ }
+  return out;
+}
 function offboardEmployee(repEmpId) {
   try {
     var callerEmp = getEmployeeInfo_();
@@ -4198,9 +4261,15 @@ function offboardEmployee(repEmpId) {
       }
       sheet.getRange(targetRow + 1, EMP.EMAIL + 1).setValue(sheetSafe_(''));
       invalidateRosterCache_();
+      // S7 (cycle 22): clearing the roster email revoked every IN-APP gate, but
+      // MANAGER_EMAILS / ADMIN_EMAILS are Script Properties — an offboarded
+      // manager kept the daily brief (PHI) and every assertManagerCaller_ gate.
+      const lists = offboardFromGateLists_(repEmail);
       writeAuditLog_(callerEmp, 'EmployeeOffboard', repEmpId, '', false, 0,
-        'id=' + repEmpId + '; name=' + repName, callerEmp.email);
-      return { success: true, id: repEmpId, name: repName };
+        'id=' + repEmpId + '; name=' + repName +
+        (lists.removed.length ? '; removedFrom=' + lists.removed.join('+') : '') +
+        (lists.kept.length ? '; keptIn=' + lists.kept.map(function (k) { return k.prop; }).join('+') : ''), callerEmp.email);
+      return { success: true, id: repEmpId, name: repName, removedFrom: lists.removed, keptIn: lists.kept };
     } finally {
       lock.releaseLock();
     }
@@ -5147,7 +5216,9 @@ function isValidTimeOffType_(type) {
  *  one day would each deduct on approval and double-charge the balance (H1).
  *  Denied/cancelled rows never deducted, so they don't block a re-request. */
 /**
- * Is this rep on APPROVED time off on `dateIso`? (cycle-18 F2.)
+ * Is this rep on APPROVED time off on `dateIso`, and for which part of the
+ * day? (cycle-18 F2; the part since cycle 22 T5.) Returns 'full' / 'morning' /
+ * 'afternoon' / null.
  *
  * BOUNDED on purpose: `getEmployeeState` is the app's hottest endpoint (boot,
  * every punch via the recordPunch wrapper, the reminder ticker's <=1/10min
@@ -5161,24 +5232,42 @@ function isValidTimeOffType_(type) {
  * pre-fix behaviour), while a false POSITIVE would silence a real reminder for
  * a rep who IS working.
  */
-function empIsOffToday_(empId, dateIso) {
+function empTimeOffToday_(empId, dateIso) {
   try {
     const sheet = getOrCreateTimeOffSheet_();
     const lastRow = sheet.getLastRow();
-    if (lastRow < 2) return false;
-    const width = Math.max(TO.DATE, TO.STATUS, TO.EMP_ID) + 1;
+    if (lastRow < 2) return null;
+    const width = Math.max(TO.DATE, TO.STATUS, TO.EMP_ID, TO.TYPE) + 1;
     const rows = sheet.getRange(2, 1, lastRow - 1, width).getValues();
     const id = String(empId).trim();
+    const kinds = [];
     for (let i = 0; i < rows.length; i++) {
       if (String(rows[i][TO.EMP_ID]).trim() !== id) continue;
       if (normalizeDate_(rows[i][TO.DATE]) !== dateIso) continue;
-      if (String(rows[i][TO.STATUS] || '').trim().toLowerCase() === 'approved') return true;
+      if (String(rows[i][TO.STATUS] || '').trim().toLowerCase() === 'approved') kinds.push(timeOffDayKind_(rows[i][TO.TYPE]));
     }
-    return false;
+    return timeOffKindsCombine_(kinds);
   } catch (e) {
-    Logger.log('empIsOffToday_ failed: ' + e.message);
-    return false;
+    Logger.log('empTimeOffToday_ failed: ' + e.message);
+    return null;
   }
+}
+/** PURE (T5, cycle 22) — which part of the day an approved time-off TYPE
+ *  covers: 'morning' / 'afternoon' for the two half-day types, otherwise
+ *  'full'. A half day used to count as a whole day off everywhere it was read. */
+function timeOffDayKind_(type) {
+  const t = String(type || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (/^half day ?- ?morning$/.test(t)) return 'morning';
+  if (/^half day ?- ?afternoon$/.test(t)) return 'afternoon';
+  return 'full';
+}
+/** PURE — one day's approved kinds, combined: any 'full', or both halves,
+ *  is a full day; a single half stays that half; none is null. */
+function timeOffKindsCombine_(kinds) {
+  const k = kinds || [];
+  if (!k.length) return null;
+  if (k.indexOf('full') >= 0 || (k.indexOf('morning') >= 0 && k.indexOf('afternoon') >= 0)) return 'full';
+  return k[0];
 }
 /** Today's PENDING punch-adjustment requests for one rep (operator
  *  2026-08-31). Until this shipped a submitted request was visible ONLY inside
@@ -5190,7 +5279,7 @@ function empIsOffToday_(empId, dateIso) {
  *
  *  Scoped to TODAY because the chip lives beside today's punch buttons; the
  *  Adjust modal still lists every pending request. READ-ONLY and bounded (the
- *  empIsOffToday_ precedent — a projected range, never getDataRange), and it
+ *  empTimeOffToday_ precedent — a projected range, never getDataRange), and it
  *  NEVER provisions the tab: a deployment with no adjustment requests yet must
  *  not have getEmployeeState create a sheet. Best-effort — a failed read
  *  yields [], which is exactly the pre-fix behaviour, never worse. */
@@ -5771,6 +5860,37 @@ function getCoveragePlan(fromDate, toDate) {
  *  `off`, a weekday reads `nopunch` (an absent weekday drawn as a GAP would
  *  read as an untracked absence — the doc's own rule, INV-187), and a weekend
  *  is not a day in the record at all (`null` — the roster works no Sat/Sun). */
+/** PURE (T5 rework, cycle 22 follow-ups) — the verdict on a HALF day. A half
+ *  day has NO fixed start or end (operator 2026-09-25): the rep may work any
+ *  stretch of the shift, as long as they work at least half the typical day.
+ *  So it is never graded on start lateness or lunch — only on HOURS WORKED,
+ *  from the day's own punches (`pm` = the punchDayAdd_ shape) through the one
+ *  hours rule, calcHours_. `half` = met, `halfshort` = under (a day with no
+ *  clock-in at all is 0 hours worked, so it is short), `halfopen` = the hours
+ *  cannot be known (no clock-out, or an unparseable stamp) — an UNKNOWN
+ *  duration is never an elapsed one (INV-176's rule), so it is not graded. */
+function punctIsHalfDay_(ptoType) {
+  return !!ptoType && timeOffDayKind_(ptoType) !== 'full';
+}
+function punctHalfDayVerdict_(pm, minHours) {
+  if (!pm || !pm.ClockIn) return { state: 'halfshort', workedHours: 0 };
+  if (!pm.ClockOut) return { state: 'halfopen', workedHours: null };
+  const h = calcHours_(pm.ClockIn, pm.ClockOut, pm.LunchOut || null, pm.LunchIn || null);
+  if (h === null) return { state: 'halfopen', workedHours: null };
+  const worked = Math.round(h * 100) / 100;
+  return { state: worked >= minHours ? 'half' : 'halfshort', workedHours: worked };
+}
+/** PURE (T4, cycle 22) — of a day's LunchOut minutes, the one nearest the
+ *  scheduled lunch (ties to the earlier); null with no schedule or no punch. */
+function punctLunchNearest_(lunches, lunchMin) {
+  if (lunchMin == null || !lunches || !lunches.length) return null;
+  let best = null;
+  lunches.forEach(function (m) {
+    if (best === null || Math.abs(m - lunchMin) < Math.abs(best - lunchMin) ||
+        (Math.abs(m - lunchMin) === Math.abs(best - lunchMin) && m < best)) best = m;
+  });
+  return best;
+}
 function punctDayState_(hasIn, lateMin, grace, holidayName, ptoType, isWeekend) {
   if (hasIn) return (lateMin > grace) ? 'late' : 'ontime';
   if (holidayName) return 'holiday';
@@ -5837,9 +5957,31 @@ function getPunctualityReport(fromDate, toDate) {
         let longest = -1;
         (sched.breaks || []).forEach(function (b) { if (b.lenMin > longest) { longest = b.lenMin; lunchMin = b.startMin; } });
       }
-      repMap[id] = { id: id, name: name, tz: tz, startMin: sched.startMin, lunchMin: lunchMin, days: {}, prevDays: {} };
+      repMap[id] = { id: id, name: name, tz: tz, startMin: sched.startMin, lengthMin: sched.lengthMin, lunchMin: lunchMin, days: {}, prevDays: {} };
     }
 
+    // Approved PTO in range (the `off` state) — read FIRST (T5 rework), and over
+    // the PREVIOUS range too, so the timesheet walk below knows which dates are
+    // half days and the previous-range comparison excludes them as well.
+    // BEST-EFFORT, and the outcome is REPORTED (the cycle-16 F4 rule): with the overlay missing an absent
+    // day would read `nopunch`, which is the less reassuring direction, but
+    // the client still needs to say the record is incomplete.
+    const ptoMap = {};
+    let ptoUnavailable = false;
+    try {
+      const trows = getOrCreateTimeOffSheet_().getDataRange().getValues();
+      for (let i = 1; i < trows.length; i++) {
+        const eid = String(trows[i][TO.EMP_ID]).trim();
+        const dt = normalizeDate_(trows[i][TO.DATE]);
+        if (!eid || !dt || dt < prevFrom || dt > toDate) continue;
+        if (String(trows[i][TO.STATUS] || '').trim().toLowerCase() !== 'approved') continue;
+        if (!ptoMap[eid]) ptoMap[eid] = {};
+        ptoMap[eid][dt] = String(trows[i][TO.TYPE] || 'Time off').trim() || 'Time off';
+      }
+    } catch (e) {
+      ptoUnavailable = true;
+      console.warn('getPunctualityReport: PTO overlay unavailable — ' + e.message);
+    }
     const rows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
     for (let i = 2; i < rows.length; i++) {
       const id = String(rows[i][ADP.EMP_ID]).trim();
@@ -5848,6 +5990,13 @@ function getPunctualityReport(fromDate, toDate) {
       if (!d || d < prevFrom || d > toDate) continue;
       const bucket = (d < fromDate) ? r.prevDays : r.days;
       const type = normalizeType_(String(rows[i][ADP.COMMENTS]));
+      // T5 rework: a half day keeps ALL FOUR punch types as raw stamps — it
+      // is graded on hours worked, through calcHours_, never on its start.
+      if (punctIsHalfDay_(ptoMap[id] && ptoMap[id][d]) &&
+          (type === 'ClockIn' || type === 'ClockOut' || type === 'LunchOut' || type === 'LunchIn')) {
+        if (!bucket[d]) bucket[d] = {};
+        punchDayAdd_(bucket[d].pm = bucket[d].pm || {}, type, normalizeTime_(rows[i][ADP.TIME]));
+      }
       if (type !== 'ClockIn' && type !== 'LunchOut') continue;
       const mins = timeToMins_(normalizeTime_(rows[i][ADP.TIME]));
       // A3 (cycle 13): SKIP an unparseable time outright. It used to be NaN,
@@ -5858,29 +6007,9 @@ function getPunctualityReport(fromDate, toDate) {
       if (mins === null) continue;
       if (!bucket[d]) bucket[d] = {};
       if (type === 'ClockIn') { if (bucket[d].in == null || mins < bucket[d].in) bucket[d].in = mins; }
-      else { if (bucket[d].lunch == null || mins < bucket[d].lunch) bucket[d].lunch = mins; }
+      else (bucket[d].lunches = bucket[d].lunches || []).push(mins);   // T4: every LunchOut; graded below
     }
 
-    // Approved PTO in range (the `off` state) — BEST-EFFORT, and the outcome
-    // is REPORTED (the cycle-16 F4 rule): with the overlay missing an absent
-    // day would read `nopunch`, which is the less reassuring direction, but
-    // the client still needs to say the record is incomplete.
-    const ptoMap = {};
-    let ptoUnavailable = false;
-    try {
-      const trows = getOrCreateTimeOffSheet_().getDataRange().getValues();
-      for (let i = 1; i < trows.length; i++) {
-        const eid = String(trows[i][TO.EMP_ID]).trim();
-        const dt = normalizeDate_(trows[i][TO.DATE]);
-        if (!eid || !dt || dt < fromDate || dt > toDate) continue;
-        if (String(trows[i][TO.STATUS] || '').trim().toLowerCase() !== 'approved') continue;
-        if (!ptoMap[eid]) ptoMap[eid] = {};
-        ptoMap[eid][dt] = String(trows[i][TO.TYPE] || 'Time off').trim() || 'Time off';
-      }
-    } catch (e) {
-      ptoUnavailable = true;
-      console.warn('getPunctualityReport: PTO overlay unavailable — ' + e.message);
-    }
     // Holidays from the SAME source the Coverage grid reads.
     const holMap = {};
     const yrs = {}; yrs[fromDate.substring(0, 4)] = true; yrs[toDate.substring(0, 4)] = true;
@@ -5892,22 +6021,50 @@ function getPunctualityReport(fromDate, toDate) {
     const reps = [];
     Object.keys(repMap).forEach(function (id) {
       const r = repMap[id];
-      const dates = Object.keys(r.days).filter(function (d) { return r.days[d].in != null; });
-      if (!dates.length) return;
+      const dayPto = function (d) { return (ptoMap[id] && ptoMap[id][d]) || null; };
+      // T5 rework (cycle 22 follow-ups): a HALF day is not a graded day. It
+      // has no fixed start, so it is neither start- nor lunch-graded; it is
+      // judged on hours worked (punctHalfDayVerdict_) and reported apart.
+      const isHalf = function (d) { return punctIsHalfDay_(dayPto(d)); };
+      const dates = Object.keys(r.days).filter(function (d) { return r.days[d].in != null && !isHalf(d); });
+      const halfDates = Object.keys(ptoMap[id] || {}).filter(function (d) {
+        if (d < fromDate || d > toDate || !isHalf(d)) return false;
+        const dow = new Date(d + 'T12:00:00Z').getUTCDay();
+        return dow !== 0 && dow !== 6 && !(holMap[d] && !(r.days[d] && r.days[d].in != null));
+      });
+      if (!dates.length && !halfDates.length) return;
       let onTime = 0, late = 0, totLate = 0, worst = 0, worstDate = null, lunchDays = 0, lunchOnTime = 0;
       dates.forEach(function (d) {
         const lateMin = r.days[d].in - r.startMin;
         if (lateMin > grace) { late++; totLate += lateMin; if (lateMin > worst) { worst = lateMin; worstDate = d; } }
         else onTime++;
-        if (r.lunchMin != null && r.days[d].lunch != null) {
+        // T4 (cycle 22): the LUNCH is the LunchOut nearest the scheduled lunch
+        // — it used to be the day's EARLIEST, so a morning break scored every
+        // day on time.
+        const lunch = punctLunchNearest_(r.days[d].lunches, r.lunchMin);
+        if (lunch != null) {
           lunchDays++;
-          if (r.days[d].lunch <= r.lunchMin + grace) lunchOnTime++;   // early/within-grace lunch is fine
+          if (lunch <= r.lunchMin + grace) lunchOnTime++;   // early/within-grace lunch is fine
         }
       });
-      // The previous equivalent range — same grading, no day detail.
+      const minHalfHours = CONFIG.PTO_HOURS_PER_DAY / 2;
+      const halfVerdict = {};
+      let halfShort = 0;
+      // A half day that is TODAY (or later, in the rep's own frame) is not over:
+      // the hours may still be worked, so "short" would be a false flag on the
+      // outlier list. It reads as hours-not-known until the day has passed.
+      const repToday = fmtDateTz_(new Date(), r.tz);
+      halfDates.forEach(function (d) {
+        let v = punctHalfDayVerdict_(r.days[d] && r.days[d].pm, minHalfHours);
+        if (v.state === 'halfshort' && d >= repToday) v = { state: 'halfopen', workedHours: v.workedHours };
+        halfVerdict[d] = v;
+        if (v.state === 'halfshort') halfShort++;
+      });
+      // The previous equivalent range — same grading, no day detail. The PTO
+      // overlay now covers it too, so its half days are excluded the same way.
       let prevOn = 0, prevN = 0;
       Object.keys(r.prevDays).forEach(function (d) {
-        if (r.prevDays[d].in == null) return;
+        if (r.prevDays[d].in == null || isHalf(d)) return;
         prevN++;
         if ((r.prevDays[d].in - r.startMin) <= grace) prevOn++;
       });
@@ -5918,8 +6075,14 @@ function getPunctualityReport(fromDate, toDate) {
         const dIso = addDaysIso_(fromDate, k);
         const dow = new Date(dIso + 'T12:00:00Z').getUTCDay();
         const hasIn = !!(r.days[dIso] && r.days[dIso].in != null);
+        const ptoType = dayPto(dIso);
+        if (halfVerdict[dIso]) {
+          dayDetail.push({ date: dIso, schedStartMin: null, actualMin: null, lateMin: null,
+            state: halfVerdict[dIso].state, workedHours: halfVerdict[dIso].workedHours, minHours: minHalfHours,
+            ptoType: ptoType, holidayName: holMap[dIso] || null });
+          continue;
+        }
         const lateMin = hasIn ? (r.days[dIso].in - r.startMin) : null;
-        const ptoType = (ptoMap[id] && ptoMap[id][dIso]) || null;
         const state = punctDayState_(hasIn, lateMin, grace, holMap[dIso] || null, ptoType, dow === 0 || dow === 6);
         if (!state) continue;
         dayDetail.push({ date: dIso, schedStartMin: r.startMin, actualMin: hasIn ? r.days[dIso].in : null,
@@ -5929,7 +6092,9 @@ function getPunctualityReport(fromDate, toDate) {
       reps.push({
         id: r.id, name: r.name, tz: r.tz, startMin: r.startMin,
         days: dates.length, onTime: onTime, late: late,
-        onTimePct: Math.round((onTime / dates.length) * 100),
+        // null when every clock-in day in range was a half day (none graded)
+        onTimePct: dates.length ? Math.round((onTime / dates.length) * 100) : null,
+        halfDays: halfDates.length, halfShort: halfShort,
         avgLate: late ? Math.round(totLate / late) : 0,
         worst: worst,
         lunchOnTimePct: lunchDays ? Math.round((lunchOnTime / lunchDays) * 100) : null,
@@ -7366,6 +7531,20 @@ function pendingTasksBust_(empId) {
     if (id) CacheService.getScriptCache().remove(PENDING_TASKS_CACHE_PREFIX + id);
   } catch (e) {}
 }
+/** T10 (cycle 22) — drop EVERY rep's cached Needs-you list, for a change
+ *  that reaches the whole team (revoking an everyone-assignment). One
+ *  removeAll over the roster's keys; best-effort like the single bust. */
+function pendingTasksBustAll_() {
+  try {
+    var roster = getEmployeeRosterRows_();
+    var keys = [];
+    for (var i = 1; i < roster.length; i++) {
+      var id = String(roster[i][EMP.ID] || '').trim();
+      if (id) keys.push(PENDING_TASKS_CACHE_PREFIX + id);
+    }
+    if (keys.length) CacheService.getScriptCache().removeAll(keys);
+  } catch (e) {}
+}
 /** Pure sort: overdue first, then by due date (blank due LAST), then title. */
 function pendingTasksSort_(items) {
   return (items || []).slice().sort(function (a, b) {
@@ -7477,14 +7656,14 @@ function getMyPendingTasks() {
         if (r.status === 'resolved') return;
         items.push({
           kind: 'requests', title: 'Request to ' + String(r.toDept || '—') + (r.label ? ' · ' + r.label : ''),
-          detail: 'Sent ' + pushDate(r.createdAt) + (r.slaStatus === 'overdue' ? ' · past its ' + r.slaHours + 'h SLA' : ''),
+          detail: 'Sent ' + pushDate(r.createdAt) + (r.slaStatus === 'overdue' ? ' · past its ' + drSlaDaysLabel_(r.slaDays) + ' SLA' : ''),
           dueIso: '', overdue: r.slaStatus === 'overdue', action: 'Open', route: reqRoute,
         });
       });
       (dr.incoming || []).forEach(function (r) {
         items.push({
           kind: 'requests', title: 'Incoming from ' + String(r.byName || 'a teammate') + (r.label ? ' · ' + r.label : ''),
-          detail: 'For ' + String(r.toDept || '—') + ' · sent ' + pushDate(r.createdAt) + (r.slaStatus === 'overdue' ? ' · past its ' + r.slaHours + 'h SLA' : ''),
+          detail: 'For ' + String(r.toDept || '—') + ' · sent ' + pushDate(r.createdAt) + (r.slaStatus === 'overdue' ? ' · past its ' + drSlaDaysLabel_(r.slaDays) + ' SLA' : ''),
           dueIso: '', overdue: r.slaStatus === 'overdue', action: 'Open', route: reqRoute,
         });
       });

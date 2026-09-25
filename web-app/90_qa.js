@@ -251,12 +251,22 @@ function qaStatus_(cell) {
   return QA_STATUSES.indexOf(s) >= 0 ? s : 'new';
 }
 /** Index NEW audio files from the QA recordings Drive folder. QA-gated,
- *  locked, IDEMPOTENT (known FileIds are skipped), bounded per run with the
+ *  IDEMPOTENT (known FileIds are skipped), bounded per run with the
  *  truncation REPORTED (INV-169). Non-audio files are counted, never indexed.
- *  The audit row carries COUNTS ONLY — file names stay in the QA store. */
+ *  The audit row carries COUNTS ONLY — file names stay in the QA store.
+ *
+ *  D3 (cycle 22) — RESUMABLE, and the Drive walk runs OUTSIDE the lock.
+ *  The budget used to count already-indexed files, and every run restarted
+ *  the folder from the top, so a folder past QA_SYNC_MAX_FILES files could
+ *  never be fully indexed and "sync again for the rest" was false. A capped
+ *  run now saves the iterator's continuation token (QA_SYNC_TOKEN_PROP, keyed
+ *  to the folder id) and the next run resumes there; a completed walk clears
+ *  it, so the run after that starts fresh and sees files added meanwhile.
+ *  The walk also held the ONE ScriptLock for its whole Drive traversal,
+ *  queueing every punch and note behind it; only the append is locked now,
+ *  and the known set is RE-READ under the lock so two overlapping syncs can
+ *  never index a file twice. */
 function qaSyncRecordings() {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(15000);
   try {
     const emp = getEmployeeInfo_();
     if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
@@ -266,37 +276,77 @@ function qaSyncRecordings() {
     try { folder = DriveApp.getFolderById(folderId); }
     catch (e) { return { success: false, error: 'The QA recordings folder could not be opened — check QA_RECORDINGS_FOLDER_ID and the deploying account\'s access to it.' }; }
     const sheet = getOrCreateQaRecordingsSheet_();
-    const known = {};
-    const last = sheet.getLastRow();
-    if (last >= 2) {
-      sheet.getRange(2, QAR.FILE_ID + 1, last - 1, 1).getValues()
-        .forEach(function (r) { const id = String(r[0] || '').trim(); if (id) known[id] = true; });
+    let known = qaKnownFileIds_(sheet);
+    // Resume where the last capped run stopped — only for THIS folder.
+    let files = null, resumed = false;
+    const saved = qaSyncTokenRead_();
+    if (saved && saved.folderId === folderId && saved.token) {
+      try { files = DriveApp.continueFileIterator(saved.token); resumed = true; }
+      catch (e) { files = null; }   // an expired token restarts the walk
     }
-    const files = folder.getFiles();
-    let scanned = 0, added = 0, nonAudio = 0, truncated = false;
-    const rows = [];
+    if (!files) files = folder.getFiles();
+    let scanned = 0, nonAudio = 0, truncated = false, nextToken = '';
+    const candidates = [];
     while (files.hasNext()) {
-      if (scanned >= QA_SYNC_MAX_FILES) { truncated = true; break; }
+      if (scanned >= QA_SYNC_MAX_FILES) {
+        truncated = true;
+        try { nextToken = files.getContinuationToken(); } catch (e) { nextToken = ''; }
+        break;
+      }
       const f = files.next(); scanned++;
       const id = f.getId();
       if (known[id]) continue;
       const mime = String(f.getMimeType() || '').toLowerCase();
       if (mime.indexOf('audio/') !== 0) { nonAudio++; continue; }
-      rows.push([
+      candidates.push([
         id, String(f.getName() || ''), f.getSize(), mime,
         f.getDateCreated().getTime(), Date.now(),   // NUMBER cells — coercion-immune
         'new', '', 0, String(f.getUrl() || ''), '', 0, '', '', '',   // Agent + SharedMs + DurationSec + SkipReason + AgentId set later in the detail
       ]);
-      added++;
     }
-    if (rows.length) {
-      appendRowsTextSafe_(sheet, rows, QA_RECORDINGS_TEXT_IDX);   // S2: raw into the '@' columns, sheet-safe elsewhere
-    }
-    writeAuditLog_(emp, 'QaSync', '', '', false, 0,
-      'scanned=' + scanned + '; added=' + added + '; nonAudio=' + nonAudio + '; truncated=' + truncated, emp.email);
-    return { success: true, scanned: scanned, added: added, nonAudio: nonAudio, truncated: truncated };
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    let added = 0;
+    try {
+      known = qaKnownFileIds_(sheet);   // a sync that finished while we walked
+      const rows = candidates.filter(function (r) { if (known[r[0]]) return false; known[r[0]] = true; return true; });
+      added = rows.length;
+      if (rows.length) {
+        appendRowsTextSafe_(sheet, rows, QA_RECORDINGS_TEXT_IDX);   // S2: raw into the '@' columns, sheet-safe elsewhere
+      }
+      qaSyncTokenWrite_(truncated && nextToken ? { folderId: folderId, token: nextToken } : null);
+      writeAuditLog_(emp, 'QaSync', '', '', false, 0,
+        'scanned=' + scanned + '; added=' + added + '; nonAudio=' + nonAudio + '; truncated=' + truncated + '; resumed=' + resumed, emp.email);
+    } finally { lock.releaseLock(); }
+    // `resumable` says whether "sync again for the rest" is TRUE: a capped run
+    // with no token (the iterator could not give one) restarts from the top.
+    return { success: true, scanned: scanned, added: added, nonAudio: nonAudio, truncated: truncated,
+             resumed: resumed, resumable: !!(truncated && nextToken) };
   } catch (err) { return { success: false, error: err.message }; }
-  finally { lock.releaseLock(); }
+}
+/** {fileId: true} for every indexed recording (the FileId column only). */
+function qaKnownFileIds_(sheet) {
+  const known = {};
+  const last = sheet.getLastRow();
+  if (last >= 2) {
+    sheet.getRange(2, QAR.FILE_ID + 1, last - 1, 1).getValues()
+      .forEach(function (r) { const id = String(r[0] || '').trim(); if (id) known[id] = true; });
+  }
+  return known;
+}
+function qaSyncTokenRead_() {
+  try {
+    const v = JSON.parse(PropertiesService.getScriptProperties().getProperty(QA_SYNC_TOKEN_PROP) || 'null');
+    return (v && typeof v === 'object') ? v : null;
+  } catch (e) { return null; }
+}
+/** Save (or, with null, clear) the resume point. Best-effort: a lost token
+ *  only means the next run restarts from the top — slower, never wrong. */
+function qaSyncTokenWrite_(val) {
+  try {
+    if (!val) { PropertiesService.getScriptProperties().deleteProperty(QA_SYNC_TOKEN_PROP); return; }
+    propSetBounded_(QA_SYNC_TOKEN_PROP, JSON.stringify(val), { mode: 'degrade', shrink: function () { return null; } });
+  } catch (e) { /* best-effort */ }
 }
 /** Locate a recording's sheet row by FileId (bounded tail; LAST match wins —
  *  the findExistingPunch_ agreement, though sync idempotence means duplicates
@@ -313,6 +363,25 @@ function qaFindRecordingRow_(sheet, fileId) {
   }
   return null;
 }
+/** PURE (S6, cycle 22; operator 2026-09-25) — is this recording the caller's
+ *  OWN call? By the roster id stored at attribution when there is one, else by
+ *  the attributed name (trimmed, case-insensitive) against the caller's roster
+ *  name — the same match the agent-facing My Reviews read uses. */
+function qaIsOwnRecording_(emp, agentName, agentId) {
+  if (!emp) return false;
+  const id = String(agentId || '').trim();
+  if (id) return id === String(emp.id || '').trim();
+  const a = String(agentName || '').trim().toLowerCase();
+  return !!a && a === String(emp.name || '').trim().toLowerCase();
+}
+/** S6 — the operator's rule: a QA reviewer may not review their own calls;
+ *  an ADMIN may. '' when allowed, else the refusal. `names` are the agent
+ *  attributions the action touches (re-attribution checks the old AND the new). */
+function qaSelfReviewRefusal_(emp, names) {
+  if (!emp || emp.isAdmin) return '';
+  const own = (names || []).some(function (n) { return n && qaIsOwnRecording_(emp, n.name, n.id); });
+  return own ? 'This is your own call — another reviewer (or an admin) has to review it.' : '';
+}
 /** Set a recording's review status. QA-gated, locked; status is enum-bounded
  *  so a crafted call can never write garbage into the column (INV-37 spirit).
  *  Audit row is id + status only (the status is an enum, never free text). */
@@ -328,6 +397,8 @@ function qaSetRecordingStatus(fileId, status, reason) {
     const sheet = getOrCreateQaRecordingsSheet_();
     const found = qaFindRecordingRow_(sheet, fid);
     if (!found) return { success: false, error: 'Recording not found.' };
+    const selfNo = qaSelfReviewRefusal_(emp, [{ name: found.row[QAR.AGENT], id: found.row[QAR.AGENT_ID] }]);   // S6
+    if (selfNo) return { success: false, error: selfNo };
     // Q2 — a skip carries its reason (free text, bounded, QA-store only —
     // it may name the caller). Any other status CLEARS a stale reason.
     const why = st === 'skipped' ? String(reason || '').trim().substring(0, QA_SKIP_REASON_MAX) : '';
@@ -430,14 +501,39 @@ function qaAudioChunkFor_(fid, chunkIndex) {
     if (mime.indexOf('audio/') !== 0) return { error: 'Not an audio file.' };
     const range = qaChunkRange_(size, chunkIndex, QA_AUDIO_CHUNK_BYTES);
     if (!range) return { error: 'Invalid chunk.' };
-    const bytes = file.getBlob().getBytes();
+    const bytes = qaReadChunkBytes_(file, fid, size, range);
     return {
       success: true,
-      b64: Utilities.base64Encode(bytes.slice(range.start, range.end)),
+      b64: Utilities.base64Encode(bytes),
       chunkIndex: Math.floor(Number(chunkIndex)), chunks: range.chunks,
       size: size, mime: mime,
     };
   } catch (err) { return { error: err.message }; }
+}
+/** PURE (D5, cycle 22) — the HTTP Range header for one chunk (end-inclusive). */
+function qaRangeHeader_(range) {
+  return 'bytes=' + range.start + '-' + (range.end - 1);
+}
+/** D5 (cycle 22) — the bytes of ONE chunk. Every chunk request used to read
+ *  the WHOLE recording (`getBlob().getBytes()`) and slice it, so a 40 MB file
+ *  played in 3 MB chunks downloaded ~560 MB. It asks Drive for the range
+ *  (alt=media + a Range header, the same bearer-token pattern the KB image
+ *  upload uses) and accepts only an answer of exactly the right length — a
+ *  206 of the range, or a 200 of the whole file, which it slices. Anything
+ *  else falls back to the old whole-blob read: slower, never wrong, and the
+ *  folder-parentage boundary above has already run either way. */
+function qaReadChunkBytes_(file, fid, size, range) {
+  try {
+    const resp = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(fid) + '?alt=media&supportsAllDrives=true', {
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken(), Range: qaRangeHeader_(range) },
+      muteHttpExceptions: true,
+    });
+    const code = resp.getResponseCode();
+    const got = resp.getContent();
+    if (code === 206 && got.length === range.end - range.start) return got;
+    if (code === 200 && got.length === size) return got.slice(range.start, range.end);
+  } catch (e) { /* fall through to the whole-blob read */ }
+  return file.getBlob().getBytes().slice(range.start, range.end);
 }
 /** Agent playback of a SHARED review (Phase-3 follow-on, 2026-08-28) — the
  *  audio path getMyQaReviews deliberately omitted, now with the SAME double
@@ -819,14 +915,33 @@ function qaSetRecordingAgent(fileId, agentName) {
     // blank, off-roster, or shared by two roster rows — an ambiguous name
     // releases to nobody rather than to both).
     const agentId = qaRosterIdByName_(name);
+    // S6: neither the recording's CURRENT agent nor the NEW one may be the
+    // caller — moving your own call to someone else, or claiming another's
+    // as yours, is reviewing your own record by another route.
+    const selfNo = qaSelfReviewRefusal_(emp, [{ name: found.row[QAR.AGENT], id: found.row[QAR.AGENT_ID] }, { name: name, id: agentId }]);
+    if (selfNo) return { success: false, error: selfNo };
+    // S5 (cycle 22): a share is a release TO an agent. Re-attributing a shared
+    // review used to hand it to the NEW agent, and clearing the agent left it
+    // "shared with nobody" — a state qaSetRecordingShared itself refuses to
+    // create. A changed agent withdraws the share; re-sharing is deliberate.
+    const prevAgent = String(found.row[QAR.AGENT] || '').trim();
+    const unshare = qaAgentChangeUnshares_(prevAgent, name, found.row[QAR.SHARED_MS]);
     sheet.getRange(found.rowIdx, QAR.AGENT + 1, 1, 1).setNumberFormat('@').setValue(sheetText_(name));   // S2: a '@' column
     sheet.getRange(found.rowIdx, QAR.AGENT_ID + 1, 1, 1).setNumberFormat('@').setValue(sheetText_(agentId));
-    writeAuditLog_(emp, 'QaAgentSet', '', '', false, 0, 'fileId=' + fid + (name ? '' : '; cleared'), emp.email);
+    if (unshare) sheet.getRange(found.rowIdx, QAR.SHARED_MS + 1).setValue(sheetSafe_(0));
+    writeAuditLog_(emp, 'QaAgentSet', '', '', false, 0, 'fileId=' + fid + (name ? '' : '; cleared') + (unshare ? '; unshared' : ''), emp.email);
     // Q7 — the roster id the coaching hand-off keys off (the name itself
     // never leaves the QA store's return; the id is what the composer needs).
-    return { success: true, agent: name, agentEmpId: agentId };
+    return { success: true, agent: name, agentEmpId: agentId, unshared: unshare };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
+}
+/** PURE (S5, cycle 22) — does setting the agent from `prev` to `next`
+ *  withdraw a live share? Only when the recording IS shared and the agent
+ *  actually changes (case-insensitive) — re-saving the same name keeps it. */
+function qaAgentChangeUnshares_(prev, next, sharedMs) {
+  if (!(Number(sharedMs) > 0)) return false;
+  return String(prev || '').trim().toLowerCase() !== String(next || '').trim().toLowerCase();
 }
 /** Save a structured scorecard for a recording. QA-gated, locked,
  *  target-must-exist (the qaAddComment posture). Ratings are validated
@@ -867,7 +982,10 @@ function qaSaveScorecard(fileId, ratings, notes) {
       return { success: false, error: 'Notes are capped at ' + QA_SCORECARD_NOTES_MAX + ' characters (' + t.length + ') — trim them and save again.' };
     }
     const recSheet = getOrCreateQaRecordingsSheet_();
-    if (!qaFindRecordingRow_(recSheet, fid)) return { success: false, error: 'Recording not found.' };
+    const rec = qaFindRecordingRow_(recSheet, fid);
+    if (!rec) return { success: false, error: 'Recording not found.' };
+    const selfNo = qaSelfReviewRefusal_(emp, [{ name: rec.row[QAR.AGENT], id: rec.row[QAR.AGENT_ID] }]);   // S6
+    if (selfNo) return { success: false, error: selfNo };
     const scorecardId = Utilities.getUuid();
     appendRowsTextSafe_(getOrCreateQaScorecardsSheet_(), [[
       scorecardId, fid, emp.id, emp.name, JSON.stringify(clean), t, Date.now(),
@@ -1248,6 +1366,8 @@ function qaSetRecordingShared(fileId, shared) {
     const sheet = getOrCreateQaRecordingsSheet_();
     const found = qaFindRecordingRow_(sheet, fid);
     if (!found) return { success: false, error: 'Recording not found.' };
+    const selfNo = qaSelfReviewRefusal_(emp, [{ name: found.row[QAR.AGENT], id: found.row[QAR.AGENT_ID] }]);   // S6
+    if (selfNo) return { success: false, error: selfNo };
     const on = !!shared;
     if (on && !String(found.row[QAR.AGENT] || '').trim()) {
       return { success: false, error: 'Attribute this recording to its agent first — sharing releases the review to that agent\'s My Reviews tab.' };

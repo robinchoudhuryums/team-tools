@@ -91,6 +91,12 @@ function getMyDocs() {
     return { docs: docs };
   } catch (err) { return { error: err.message }; }
 }
+/** PURE-ish (the dual-verify matcher is the one acknowledgeDoc and
+ *  verifyDocSignature use) — the read-time content check for getMyDoc. */
+function empDocReadIntegrity_(d) {
+  if (!d || !d.contentHash) return 'unverifiable';
+  return empDocContentHashMatches_(d.contentHash, d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw) ? 'ok' : 'altered';
+}
 /** Owner-or-AUTHORIZED-manager scoped (§3b) — the full doc incl. the frozen
  *  body. Includes the ack text/version when a signature is still needed. */
 function getMyDoc(docId) {
@@ -110,6 +116,13 @@ function getMyDoc(docId) {
       issuedAt: d.issuedAt, dueAt: d.dueAt, signedAt: d.signedAt,
       voidReason: d.voidReason, isOwner: isOwner,
       fields: d.fields || [], responses: d.responses || {},
+      // Follow-up to D4 (cycle 22): the content hash is checked on EVERY read,
+      // not only when a manager thinks to press Verify — an out-of-band edit
+      // to the frozen body is visible to the person reading it. 'ok' |
+      // 'altered' | 'unverifiable' (no hash on record: legacy or hand-entered —
+      // never reported as altered, the F-24 rule). The signature half stays
+      // behind Verify (it reads a second tab).
+      integrity: empDocReadIntegrity_(d),
     };
     // The owner gets the completion affordance while the doc is still issued
     // (signature ack text when it requires a signature, regardless for fields).
@@ -247,6 +260,9 @@ function issueDoc(payload) {
       'docId=' + docId + '; empId=' + v.doc.empId + '; type=' + v.doc.docType + '; status=' + v.doc.status, callerEmp.email);
     // Only a RELEASED (issued) doc is visible to the employee — drafts stay silent.
     if (v.doc.status === 'issued') notifyAfter = function () { notifyEmpDocIssued_(target, v.doc); };   // M-7: post-lock
+    // Follow-up to T10 (cycle 22): an issued (non-draft) document is a task the
+    // rep must sign — a draft reaches their list only at release, which busts.
+    if (v.doc.status !== 'draft') pendingTasksBust_(v.doc.empId);
     return { success: true, docId: docId, status: v.doc.status };
   } catch (err) { return { success: false, error: err.message }; }
   finally {
@@ -273,6 +289,7 @@ function releaseDoc(docId) {
     const now = new Date();
     writeAuditLog_(callerEmp, 'EmpDocRelease', fmtDate_(now), '', false, 0,
       'docId=' + found.doc.docId + '; empId=' + found.doc.empId, callerEmp.email);
+    pendingTasksBust_(found.doc.empId);   // T10 (cycle 22): the rep now has a document to sign
     const target = lookupEmployeeById_(found.doc.empId);
     if (target) notifyAfter = function () { notifyEmpDocIssued_(target, found.doc); };   // M-7: post-lock
     return { success: true };
@@ -334,6 +351,7 @@ function voidDoc(docId, reason) {
     const now = new Date();
     writeAuditLog_(callerEmp, 'EmpDocVoid', fmtDate_(now), '', false, 0,
       'docId=' + found.doc.docId, callerEmp.email);
+    pendingTasksBust_(found.doc.empId);   // T10 (cycle 22): a voided doc is no longer the rep's task
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }

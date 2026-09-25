@@ -332,7 +332,7 @@ const CONFIG = {
     // DEAD — retained deliberately, read NOWHERE. The EOD gate is local-hour
     // EQUALITY against EOD_WARNING_HOUR (an hourly trigger), not a ± window.
     EOD_WARNING_WINDOW_MINUTES: 30,
-    DR_SLA_DEFAULT_HOURS: 48,            // DeptRequests v2 — default resolution SLA (per-dept overrides via DR_SLA_TARGETS)
+    DR_SLA_DEFAULT_DAYS: 2,              // DeptRequests — default resolution SLA in WORKING DAYS (M6, cycle 22: elapsed time is business time since 2026-08-31, so an hours figure silently meant ~2.5x longer); per-dept overrides via DR_SLA_TARGETS
     DEPARTMENT_EMAILS: {
       'Sales':            'sales@universalmedsupply.com',
       'Eligibility MM&R': 'eligibility@universalmedsupply.com',
@@ -538,7 +538,7 @@ const CN_AUDIT_ACTIONS = [
   'CallNoteDelete', 'CallNoteEmail', 'CallNoteTrainingReply', 'CallNotePin',
   'CallNoteFeedback', 'CallNoteManagerComment', 'CallNoteTagAdmin',
   'CallNotesExport', 'ExternalEmailSent',
-  'FormTokenCreated', 'FormSubmissionReceived',
+  'FormTokenCreated', 'FormTokenVoided', 'FormSubmissionReceived',
 ];
 // Bounded read: the audit search scans at most this many of the most-recent
 // AuditLog rows (append-only/chronological), then filters in memory. Keeps the
@@ -718,11 +718,10 @@ const MANAGER_DAY_MAX_BREAKS = 12;
 // forget to bump. Reads go through the same channels production serves —
 // getRawContent() for index (createHtmlOutputFromFile would choke nothing,
 // but raw keeps the scriptlets in the hash) and include()'s own read for
-// partials. Cached 5 min in CacheService (the cache SURVIVES a deploy, so a
-// fresh version can serve the stale hash for up to TTL — that only delays
-// detection, never falsifies it; total prompt lag ≤ poll 15 min + TTL 5 min).
-const BUILD_HASH_CACHE_KEY = 'client_build_hash_v1';
-const BUILD_HASH_CACHE_TTL_SEC = 300;
+// partials. Memoised per EXECUTION only (U4, cycle 22): a ScriptCache entry is
+// shared by HEAD and every versioned deployment, so it could serve another
+// version's hash — a false "updated" prompt, or a masked real one. Prompt lag is
+// now the client poll alone (≤ 15 min).
 let _clientBuildHashMemo = null;
 /** Multi-day time-off request (operator 2026-08-18). ONE row per WEEKDAY in
  *  [startDate, endDate] — the store's one-row-per-date model is unchanged, so
@@ -942,6 +941,33 @@ const AUTOMATION_AUDIT_ACTIONS = [
   'PtoAccrualCredit', 'QaReviewPurge', 'DiagnosticsPurge',
 ];
 const AUTOMATION_SYNCFAIL_WINDOW_DAYS = 30;
+// A1 (cycle 22) — the per-job RUN LEDGER. Liveness used to read only the last
+// CN_AUDIT_MAX_SCAN AuditLog rows, so the monthly accrual row scrolled out of
+// that window within days of the 1st (a daily false "has not run this month")
+// and a dead daily job went SILENT the moment its last row scrolled out.
+// writeAuditLog_ now stamps one Script Property per automation action —
+// AUTOMATION_RUN_<action> = {ts, notes} — on every automation audit row. One key
+// per job, so two jobs finishing together never race a shared read-modify-write.
+// Auto-managed; delete a key to forget that job's last run.
+const AUTOMATION_RUN_PROP_PREFIX = 'AUTOMATION_RUN_';
+// S7 (cycle 22) — who has been offboarded, lowercased, newest last. Offboarding
+// clears the roster EMAIL cell, so afterwards nothing on the roster can say an
+// address in MANAGER_EMAILS / ADMIN_EMAILS belongs to someone who left; the
+// managerSource detector keys on this list instead. Auto-managed (capped at
+// OFFBOARDED_EMAILS_MAX, oldest dropped first); re-onboarding the same address
+// clears the flag by itself (the detector ignores an address back on the roster).
+const OFFBOARDED_EMAILS_PROP = 'OFFBOARDED_EMAILS';
+const OFFBOARDED_EMAILS_MAX = 100;
+// Follow-up to S7 (cycle 22): who last ran installAutomationTriggers, and when
+// ({email, at}). Installable triggers run AS their installer and stop when that
+// account is disabled, so offboarding the installer silently stops every job.
+// Stamped by the installer; read by the triggerOwner detector. Auto-managed.
+const AUTOMATION_TRIGGER_OWNER_PROP = 'AUTOMATION_TRIGGER_OWNER';
+// The two gate lists offboarding edits. An address is REMOVED from each, except
+// when it is the list's LAST entry: an empty ADMIN_EMAILS makes EVERY manager an
+// admin (empIsAdmin_), and an empty MANAGER_EMAILS stops every trigger handler
+// (assertManagerCaller_) — so the removal is refused and named instead.
+const OFFBOARD_GATE_LISTS = ['MANAGER_EMAILS', 'ADMIN_EMAILS'];
 // ── Per-JOB liveness, derived rather than accumulated (Gap4 / INV-186) ───────
 // automationProblems_ grew one hand-written check per SIGNAL, so a job added
 // later got an audit row and no alarm: only CallNotesReconcile was ever checked
@@ -2285,6 +2311,9 @@ const QA_COMMENTS_SCAN = 4000;        // bounded tail over QaComments
 const QA_COMMENT_MAX_CHARS = 2000;
 const QA_COMMENT_MAX_AT_SEC = 86400;  // sanity bound on the timestamp anchor
 const QA_SYNC_MAX_FILES = 500;        // folder files SCANNED per sync run; truncated reported
+// D3 (cycle 22) — the resume point of a capped sync: {folderId, token}. Auto-managed;
+// cleared by a completed walk. Delete it to make the next sync start from the top.
+const QA_SYNC_TOKEN_PROP = 'QA_SYNC_CONTINUATION';
 // 3 MB raw per chunk (~4 MB base64 on the wire) — a 15-min ~64kbps MP3 is
 // 2-3 chunks. DriveApp has no ranged reads, so each chunk call re-reads the
 // blob; the size cap bounds that.

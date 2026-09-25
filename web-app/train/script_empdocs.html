@@ -18,6 +18,8 @@
   }
   .ed-sig-ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: .82rem; pointer-events: none; }
   .ed-sig-row { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
+  .ed-integrity-note { border-left: 3px solid var(--warning-deep); background: var(--warn-soft); padding: 8px 12px; border-radius: 0 8px 8px 0; font-size: .84rem; margin-bottom: 12px; }
+  .ed-integrity-note[data-integrity="unverifiable"] { border-left-color: var(--muted-3); background: var(--paper-3); color: var(--muted); }
   .ed-void-note { border-left: 3px solid var(--danger-deep); background: var(--destructive-soft); padding: 8px 12px; border-radius: 0 8px 8px 0; font-size: .84rem; margin-bottom: 12px; }
   .ed-issue { border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); padding: 14px 16px; margin-bottom: 18px; max-width: 860px; }
   .ed-issue h3 { margin: 0 0 10px; font-size: .95rem; }
@@ -252,6 +254,19 @@ function edOpenDoc_(docId) {
     .getMyDoc(docId);
 }
 
+/** Follow-up to D4 (cycle 22) — the read-time integrity verdict. An ALTERED
+ *  document says so to whoever reads it (the owner cannot sign it: the sign
+ *  path refuses a mismatched hash). 'unverifiable' is said to a manager only
+ *  — it is a legacy row, not a fault, and the rep can do nothing about it. */
+function edIntegrityNoteHtml_(doc) {
+  if (!doc || doc.integrity === 'ok' || doc.integrity == null) return '';
+  if (doc.integrity === 'altered') {
+    return '<div class="ed-integrity-note" data-integrity="altered">' + icon('warning', 12) +
+      ' This document\'s text no longer matches what was issued — it was changed outside the app. ' +
+      (doc.isOwner ? 'Do not rely on it; ask your manager to re-issue it.' : 'Use Verify for the detail, and re-issue it if the change was not intended.') + '</div>';
+  }
+  return doc.isOwner ? '' : '<div class="ed-integrity-note" data-integrity="unverifiable">No content hash on record — this document\'s integrity cannot be checked (a legacy or hand-entered row).</div>';
+}
 function edRenderDoc_(doc) {
   var overlay = document.getElementById('ed-reader-overlay');
   if (!overlay) return;
@@ -263,6 +278,7 @@ function edRenderDoc_(doc) {
   if (doc.status === 'void') {
     body += '<div class="ed-void-note">This document was voided' + (doc.voidReason ? ': ' + esc(doc.voidReason) : '.') + '</div>';
   }
+  body += edIntegrityNoteHtml_(doc);
   body += '<div class="kb-article"><h1>' + esc(doc.title) + '</h1>' + kbMd_(doc.bodyMd || '') + '</div>';
 
   // Fillable fields: editable for the owner while issued; read-only (showing
@@ -379,6 +395,7 @@ function edSubmitSignature_(docId, btn, needsSig) {
         return;
       }
       showToast(needsSig ? 'Document signed.' : 'Document completed.', 'success');
+      if (typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // T9: the Dashboard's Needs-you list refetches
       var docs = (ED_STATE.my && ED_STATE.my.docs) || [];
       for (var i = 0; i < docs.length; i++) {
         if (docs[i].docId === docId) { docs[i].status = needsSig ? 'signed' : 'completed'; docs[i].signedAt = res.signedAt; docs[i].needsAction = false; }
@@ -540,7 +557,7 @@ function edRenderMgr_() {
           '<td>' + esc(d.signedAt ? String(d.signedAt).substring(0, 10) : '—') + '</td>' +
           '<td>' +
             (d.status === 'draft' ? '<button class="tr-complete-btn" data-ed-release="' + esc(d.docId) + '">Release</button> ' : '') +
-            (d.requiresSignature && d.status !== 'draft' ? '<button class="kb-btn" data-ed-verify="' + esc(d.docId) + '">Verify</button> ' : '') +
+            (d.status !== 'draft' ? '<button class="kb-btn" data-ed-verify="' + esc(d.docId) + '">Verify</button> ' : '') +
             (d.status !== 'void' ? '<button class="tr-revoke-btn" data-ed-void="' + esc(d.docId) + '">Void</button>' : '') +
           '</td></tr>';
       });

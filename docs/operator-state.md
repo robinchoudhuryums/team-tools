@@ -204,6 +204,22 @@ entry says which it is.
   `runAllTests()`** — it adds the new `qa_gates_rejectNonMember`
   case — then drop one recording in the folder, Sync, play it, and leave a
   comment at a timestamp.
+  **A large first sync resumes (cycle 22 D3, 2026-09-25):** the Drive walk runs
+  outside the project lock, and a walk that hits its cap saves its place in the
+  auto-managed Script Property `QA_SYNC_CONTINUATION` (`{folderId, token}`);
+  the toast says "sync again to continue" and the next Sync picks up there. A
+  completed walk clears it; a token for another folder, or an expired one,
+  restarts from the top. Delete the property to force a restart.
+  **A reviewer cannot review their own call (cycle 22 S6, operator
+  2026-09-25).** A QA member is refused on a recording attributed to THEM when
+  they score it, change its status, share it or re-attribute it (moving your
+  own call to someone else, or claiming another's as yours, is refused too).
+  The recording's stored roster `AgentId` decides; a legacy row without one
+  matches on the name, trimmed and case-insensitive. An **admin** is exempt, so
+  a reviewer's own calls go to another reviewer or to an admin. The refusal is
+  server-side only: the detail still shows the controls and refuses on use.
+  Claiming and commenting are not restricted. Nothing to set up; tell the QA
+  reviewers.
 <a id="operator-set-script-property-adp-ss-id"></a>
 - **Set Script Property `ADP_SS_ID`** to the real spreadsheet ID in
   Apps Script editor → Project Settings → Script Properties. Without
@@ -313,6 +329,14 @@ entry says which it is.
   exactly this: one `E1161` row, capacity blank, that the operator did not
   consider a product.) The `PPDSubmissions` / `PMDSubmissions` / `PAPSubmissions`
   PHI tabs auto-provision on first send (`getIntakeSubmissionSheet_`).
+  **The Offerings seat-type cell is read WORD by word (cycle 22 I2, 2026-09-25):**
+  use `S` / `Solid`, `C` / `Captain` (`Captain's` is fine), separated by `and`
+  / `or` / `/` or spaces; the word `seat` is ignored. Any other word makes the
+  cell UNREADABLE — that chair is not recommended and the catalog card names the
+  row. **After deploy, open Admin → System → Intake Offerings catalog and fix
+  any seat cell it calls unreadable.** The inherently-solid codes (solid whatever
+  the cell says) are one list in code, `intakeInherentlySolidCodes_`; an
+  unreadable word on one of those is only a warning.
 <a id="operator-intake-recipient-addresses-are-script-property-backed"></a>
 - **Intake recipient addresses are Script-Property-backed.**
   `INTAKE_SALES_EMAIL` (PMD default), `INTAKE_SLEEP_EMAIL` (PAP default),
@@ -493,6 +517,8 @@ entry says which it is.
   (e.g. `alice@umsupply.com,bob@umsupply.com`). `getManagerEmails_()`
   reads this before CONFIG; without it, no one passes the
   `isManager` check and manager features stay locked out.
+  **Since cycle 22 S7 (2026-09-25) offboarding a person REMOVES their address
+  from this list** (unless it is the last entry) — see the offboarding entry.
 <a id="operator-script-property-admin-emails"></a>
 - **Script Property `ADMIN_EMAILS`** (optional) — comma-separated list of the
   above-manager **admin tier** (the Manage module's Admin tab). `getAdminEmails_()`
@@ -517,6 +543,9 @@ entry says which it is.
   run, with no commit on any failing path — because the suite silently ASSUMED
   the property unset while this very entry invited setting it. A real address
   is never removed by the suite; you do NOT unset the property to run it.
+  **Since cycle 22 S7 (2026-09-25) offboarding a person removes them from this
+  list too — but never its LAST entry**, because an empty list would make every
+  manager an admin; see the offboarding entry.
 <a id="operator-punctuality-tracking-manage-module-tab"></a>
 - **Punctuality tracking (Manage module tab).** `getPunctualityReport(from,
   to)` (manager-gated, read-only, PHI-free) backs the managerOnly **Manage →
@@ -556,6 +585,14 @@ entry says which it is.
   textarea prefills from it). The tri-tone band is `mtPctTone_(p, 90, 75)`.
   The handoff's Export button in the app-bar was NOT built (not in the plan's
   M1–M8) — a logged follow-on.
+  **Half days (cycle 22 T5 rework, operator rule 2026-09-25).** A day with an
+  approved Half Day PTO is NOT start- or lunch-graded: it is graded on HOURS
+  WORKED — at least half the typical day (`CONFIG.PTO_HOURS_PER_DAY / 2` = 4 h).
+  The day strip draws it as met, under, or "hours not known" (no clock-out yet,
+  an unreadable punch, or the day is not over); half days stay out of the
+  on-time %, and a rep with a short half day appears under "Worth a
+  conversation". Nothing to configure; if the PTO overlay cannot be read, half
+  days grade as full days and the page says the overlay is missing.
 <a id="operator-coverage-planner-is-business-hours-weekday-scoped"></a>
 - **Coverage planner is business-hours/weekday scoped.** `getCoveragePlan` now
   returns a per-day `closed` flag plus `businessStartHour` / `businessEndHour` /
@@ -826,7 +863,10 @@ entry says which it is.
   `sendDeptRequest` composer endpoint was REMOVED — it had no caller; auto-tracking
   replaced the manual compose tab.) **Store:**
   optional Script Property **`DEPT_REQUESTS_SS_ID`** (a dedicated sheet); falls
-  back to the ADP sheet — **recommended: set it to the Intake spreadsheet (the
+  back to the ADP sheet while it is UNSET — **and only then: since cycle 22 A3
+  (2026-09-25) a set id that cannot be opened THROWS by name** (the auto-log is
+  skipped, the tracker and Storage Health say why) instead of quietly reading
+  and writing the payroll sheet — **recommended: set it to the Intake spreadsheet (the
   PHI store), the `FORMS_SS_ID` recommendation, because the row names a
   patient (below); Manage → Admin → System's Storage inventory carries a
   "Dept Requests (PHI-adjacent)" row since Batch 5 (2026-09-18) that warns
@@ -864,8 +904,8 @@ entry says which it is.
   request's `toDept`). **v2 (shipped, INV-138):** roster **column N
   `Departments`** unblocks a true per-department **Incoming inbox**
   (`getDeptRequests` → `myDepts`+`incoming`, scoped by `empDepartments_`),
-  **per-dept SLA targets** (Script Property `DR_SLA_TARGETS` + the 48h
-  `DR_SLA_DEFAULT_HOURS` → `slaStatus` ontime/at-risk/overdue on the tracker + an
+  **per-dept SLA targets** (Script Property `DR_SLA_TARGETS` + the 2-working-day
+  `DR_SLA_DEFAULT_DAYS` — hours until cycle 22 M6 → `slaStatus` ontime/at-risk/overdue on the tracker + an
   Admin **Dept-Request SLA targets** editor), and a daily manager
   **SLA-reminder digest** (`sendDeptRequestReminderDigest` — PHI-free summary of
   overdue-open requests, the operator chose a manager summary over per-dept member
@@ -1014,6 +1054,15 @@ entry says which it is.
   are invisible to a fresh run. If a different account ever
   installed these triggers before, have that account run
   `removeAutomationTriggers()` first.
+  **The installer is recorded (cycle 22 follow-ups, 2026-09-25).** Each run
+  stores who ran it in the auto-managed Script Property
+  `AUTOMATION_TRIGGER_OWNER` (`{email, at}`). Installable triggers run AS that
+  account, so if that person is offboarded (the account disabled) every job
+  stops; the Automation Health detector "The automation triggers' installer is
+  still on the team" then reads DEAD. **After this deploy, re-run
+  `installAutomationTriggers()` once from an active manager account** so the
+  record exists — until then the detector has nothing to check and stays
+  silent. When it reads DEAD, re-run the installer from an active account.
 <a id="operator-call-notes-retention-is-off-by-default"></a>
 - **Call-notes retention is OFF by default.** `purgeOldCallNotes`
   (daily manager-tz 4am trigger) deletes per-rep `Notes` rows whose
@@ -1106,6 +1155,10 @@ entry says which it is.
   a 90-day window** — set Script Property `FORM_DATA_RETENTION_DAYS=90` (the
   committed CONFIG stays `0` so a fork/fresh deploy never auto-deletes) and
   ensure the `purgeExpiredFormData` trigger is installed.
+  **A retention floor (cycle 22 I7, 2026-09-25):** a positive window shorter
+  than a form link's life is raised to the link expiry + 1 day (72 h → 4 days,
+  `formRetentionEffectiveDays_`), so the purge can never delete a submission's
+  token row while its link is still live. 0 (disabled) stays disabled.
 <a id="operator-forms-phi-store-set-forms-ss-id-to-segregate-forms-hardening"></a>
 - **Forms PHI store — set `FORMS_SS_ID` to segregate (forms-hardening).** By
   default `getFormsSS_()` falls back to the ADP/payroll spreadsheet (back-compat),
@@ -1629,12 +1682,22 @@ entry says which it is.
   property in Apps Script editor → Project Settings, or the CONFIG seed.
 <a id="operator-script-property-dr-sla-targets"></a>
 - **Script Property `DR_SLA_TARGETS`** (optional, auto-managed) — JSON
-  `{deptName: hours}` per-dept resolution-SLA overrides for DeptRequests, written
-  by the Admin → Config **Dept-Request SLA targets** editor (`saveDeptRequestSla`,
-  admin-gated, 1–720h, entries equal to the default are dropped). Unset/blank for
-  a dept → the `CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS` default (**48h**). A
-  request past its SLA shows "Overdue" on the tracker + rides the daily
-  `sendDeptRequestReminderDigest` manager summary. No manual setup needed.
+  per-dept resolution-SLA overrides for DeptRequests, in **WORKING DAYS** since
+  cycle 22 M6 (2026-09-25): `{"_unit": "days", "<deptName>": 1.5, …}`. It is
+  written by the Admin → Config **Dept-Request SLA targets** editor
+  (`saveDeptRequestSla`, admin-gated, 0.5–30 in half days; entries equal to the
+  default are dropped). Unset or blank for a dept → the
+  `CONFIG.CALL_NOTES.DR_SLA_DEFAULT_DAYS` default (**2 working days**). A working
+  day is one span of the business window (8:00–17:00 today), so a 2-day target
+  is 18 business hours of age. A request past its SLA shows "Overdue" on the
+  tracker and rides the daily `sendDeptRequestReminderDigest` manager summary.
+  **One-time step after the M6 deploy:** a value saved before it has no `_unit`
+  and is the old HOURS map. It is read at the calendar intent it was set with
+  (hours ÷ 24, to the half day, never below half a day), and the editor shows
+  "set in hours — shown converted, review and save". Check each department's
+  converted value (a target set after 2026-08-31 by someone who meant BUSINESS
+  hours, e.g. 9 for one business day, now reads as half a day) and Save, which
+  stores the new unit. Nothing else to set up.
 <a id="operator-set-script-property-hr-docs-ss-id"></a>
 - **Set Script Property `HR_DOCS_SS_ID`** to a DEDICATED spreadsheet for
   Employee Docs (create an empty one; tabs `EmpDocs` + `DocSignatures`
@@ -1801,6 +1864,10 @@ entry says which it is.
   changes). Similarly, `CN_UPDATE_SUGGESTIONS` stores the
   per-department update-type datalist suggestions as JSON; editable
   via the Admin tab or Script Properties directly.
+  **Since cycle 22 A9 (2026-09-25)** Save Departments refuses while any row has
+  a name without an email or an email without a name, marks the empty field and
+  names the row. It used to drop the row and say "saved". Two rows with the
+  same name still save, and the later one wins.
 <a id="operator-script-property-cn-archived-tags"></a>
 - **Script Property `CN_ARCHIVED_TAGS`** (auto-managed). JSON array
   of lowercase tag strings marked as archived via the Call Notes →
@@ -2116,3 +2183,34 @@ entry says which it is.
   says "No stored formulas". A store it could not open, or one it did not
   reach in its four-minute budget, is NAMED; re-run to cover it. Optional,
   never blocking; once the list is empty it never needs running again.
+<a id="operator-the-automation-run-ledger-cycle-22"></a>
+- **The automation run ledger — `AUTOMATION_RUN_<action>` (cycle 22 A1,
+  2026-09-25).** Auto-managed; nothing to set. Each automation job's audit row
+  (`CallNotesReconcile`, `AdpExportAuto`, the purges and archives,
+  `PtoAccrualCredit`, `DiagnosticsPurge`) also stamps one Script Property named
+  `AUTOMATION_RUN_<action>` with `{ts, notes}` (CONFIG.TIMEZONE wall time). The
+  Automation Health panel, the health dot and the failure digest read it before
+  the AuditLog tail, so a job's last run no longer disappears when its row
+  scrolls out of the 4,000-row scan. **After deploy every job has an empty
+  ledger until it next runs**: the Admin "Automation last seen" rows then say
+  "no run on record — cannot confirm" when the AuditLog window read does not
+  reach far enough, and a monthly job is not called "not run this month" unless
+  the window reaches back past the 1st. That is expected, not a fault; it clears
+  on each job's next run. Delete one key to forget that job's last run.
+<a id="operator-offboarding-edits-the-gate-lists-cycle-22"></a>
+- **Offboarding edits `MANAGER_EMAILS` / `ADMIN_EMAILS` — and records
+  `OFFBOARDED_EMAILS` (cycle 22 S7, 2026-09-25).** Manage → Admin → Config →
+  Team Members → **Offboard** still clears the roster email (history kept),
+  and now also removes the address from `MANAGER_EMAILS` and `ADMIN_EMAILS`.
+  **It never removes a list's LAST entry**: an empty `ADMIN_EMAILS` would make
+  every manager an admin and an empty `MANAGER_EMAILS` would stop every
+  trigger. In that case the toast reads "offboarded, but still in … (why)" and
+  the `EmployeeOffboard` audit row carries `keptIn=`; add a replacement to the
+  list, then remove the person by hand. The address is recorded in the
+  auto-managed `OFFBOARDED_EMAILS` (a JSON array, capped 100), which the
+  managerSource detector reads: a listed address that was offboarded and is not
+  back on the roster shows as a dead detector on the System tab and in the
+  daily digest. **Re-onboarding does NOT put anyone back on either list** — add
+  them by hand. **One-time check after deploy:** the record starts empty, so
+  review both lists for anyone offboarded BEFORE this deploy.
+

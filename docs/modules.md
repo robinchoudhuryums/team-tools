@@ -45,6 +45,18 @@ not restate it. Server endpoints live in the fourteen server files
      six hours (M2). Month to date compares against last month's same days OF
      DATA, and "On pace for" divides by the days that have data (M8, g148).
 
+     **Cycle 22 Batch 7 + follow-ups (2026-09-25) — working days.** A HALF day
+     of approved PTO is neither a day off nor a normal day (g154): Punctuality
+     grades it on hours worked (at least half the typical day), never on its
+     start or lunch, and the reminder ticker gives no break or clock-out
+     reminders that day and nudges "not clocked in" only once the hours can no
+     longer fit. The graded lunch is the LunchOut nearest the scheduled lunch,
+     not the day's first break (T4). A time-off range skips company holidays,
+     in the preview and on the server (T7), and the reminders treat a company
+     holiday as a day off (T8). The Dashboard's Needs-you list refreshes as
+     soon as a task is done, created or withdrawn — in this window and in the
+     pop-out (T9, T10, g67).
+
 <a id="call-notes"></a>
      **2026-09-17 (the /broad-scan's Batches 1 + 2):** an EQUAL Clock In /
      Clock Out is zero hours, not the 24-hour day the `<=` overnight wrap paid
@@ -151,6 +163,48 @@ not restate it. Server endpoints live in the fourteen server files
      clearing the form ends any running dictation first (C11, latent while
      voice input is off).
 
+     **Cycle 22 Batch 6 (2026-09-25) — Manage → Admin tells the truth about
+     automation.** The System tab renders the health dot's own problem list, so
+     job staleness, open punches and PTO accrual shortfalls reach "Needs
+     attention" (A2, g151). "Automation last seen" reads a per-job run ledger
+     first and says "cannot confirm" when the AuditLog window read is too short
+     to know (A1, g152). A failed tag-taxonomy load, ClientErrors read or
+     health read is named as a failure on the Tags tab, the System tab and the
+     Overview readiness checklist rather than read as empty or blamed on the
+     triggers (A4, A6, A5). Offboarding removes the person from `MANAGER_EMAILS`
+     / `ADMIN_EMAILS` and names any list it had to leave them in (S7, g153). The
+     weekly training/review digest records a queue it could not read and stops
+     reporting itself healthy (C2); a set-but-broken Dept Requests store refuses
+     rather than writing to the payroll sheet (A3).
+
+     **Cycle 22 Batch 8 + follow-ups (2026-09-25) — Call Notes and Manage.** A
+     form link whose email failed to send is withdrawn (the PDFs are fetched
+     before any link is made; a failed send voids the tokens and writes a
+     `FormTokenVoided` audit row), so it neither works nor shows as "Awaiting"
+     in Sent Forms (C7). A template or the win-back text keeps every inserted
+     price line, so the send is no longer refused for text the rep never
+     touched (C9, g126). "Clear reply" on a training note clears the reply the
+     thread shows (C8). In Manage → Admin → System, an unreadable ClientErrors
+     tab, a daily job with no run on record (once the AuditLog read proves it)
+     and an offboarded trigger installer all reach the health dot, and the
+     "cannot confirm" explanation is said once under the job list (g152, g153);
+     the urgent-notes digest and the daily brief say when they could not read.
+
+     **Cycle 22 Batch 9 + the deferred findings (2026-09-25).** The export
+     dialog shows its "Open the export sheet" link before it tries to open a
+     tab, and stays open to hold it, so a blocked pop-up no longer loses the
+     link (U1, g135). The shell's `?` and Ctrl/⌘+/ keys open the shortcuts
+     overlay as a named dialog that returns focus when closed (U2, g100).
+     After an admin saves auto-tag rules, their session uses the rules the
+     server stored (A7). Save Departments refuses a half-filled row instead of
+     dropping it (A9). When archiving is on and a History range, the per-rep
+     view or an export reaches the archive window, the empty state and the
+     export say that older notes may be in the cold archive, which these views
+     do not read, and point to Search with "Include archive" (C12;
+     `cnArchivedBefore_`). With archiving off, as it is today, nothing shows.
+     The open-client reload prompt reads the build fingerprint once per
+     request rather than from ScriptCache, so a `/dev` visit no longer prompts
+     prod tabs to reload (U4, g157).
 
 <a id="metrics"></a>
      **Batch 6 (2026-09-18):** the Admin Overview KPI strip reports TEAM
@@ -276,6 +330,20 @@ not restate it. Server endpoints live in the fourteen server files
      auto-assign balances on the claims each member holds on OPEN requests, so a
      new member no longer receives every request (M4).
 
+     **Cycle 22 Batch 7 + follow-ups (2026-09-25):** the per-rep transfer read
+     takes only its date span and is cached (M10, g125). In the Spanish inbox a
+     caller's repeat voicemails in one thread each stay pending until answered;
+     the card shows the newest, its pill says how many are waiting, and Expand
+     shows that newest voicemail (M5, g155).
+
+     **Cycle 22 Batch 9 + M6 (2026-09-25):** the business-hours notes on the
+     Dept Requests tracker and the Spanish inbox say "company holidays", the
+     calendar they actually use (M11, g123), and the Spanish stats cache key
+     includes the voicemail settings, so changing them refreshes the card.
+     Dept Request SLA targets are WORKING DAYS (default 2) and every tracker,
+     stats, digest and brief label says so. The old hours targets had quietly
+     become business hours on 2026-08-31, about 2.5x looser (M6, g158).
+
 <a id="intake"></a>
      **Batch 5 (2026-09-18):** `QaRecordings` carries a trailing `AgentId`
      written from the roster when a reviewer attributes a recording, and the
@@ -375,6 +443,22 @@ not restate it. Server endpoints live in the fourteen server files
      current draft over the amendment, and in either language the draft filled
      every answer the original had left blank, all sent as "AMENDED" for the
      original patient. See the Intake Sent tab decision's amendment.
+
+     **Cycle 22 Batch 8 + follow-ups (2026-09-25):** the engine reads the
+     Offerings seat cell word by word and the weight answer's FIRST number
+     (g156); an unreadable seat word excludes the chair and is named on the
+     catalog card, and an unreadable weight is warned on the recommendation
+     screen — no capacity check ran (I2, I3). The inherently-solid codes are one
+     list (I6). The Sent tab names a submission tab it could not read (I4). The
+     account emails show an unanswered Yes/No as "Not answered", not "No" (I5),
+     and secondary rows are indented correctly (I8).
+
+     **Cycle 22 Batch 9 (2026-09-25):** every "reveal" single-select (Q39 and
+     its kind) moves with the arrow keys, and clicking the selected option
+     clears it. Clear on a filled form asks first, naming how many answers it
+     will wipe (`intakeConfirmClear_`). The "Copy image" fallback says whether
+     the image opened in a new tab or the browser blocked that too, instead of
+     always "Opened image" (U3, g135).
 
 <a id="reference"></a>
      **Batch 5 (2026-09-18):** the email's question LABELS come from
@@ -783,6 +867,23 @@ not restate it. Server endpoints live in the fourteen server files
      on time (D1, g149). A team with nothing acknowledged reads "nothing
      acknowledged yet" rather than "median 0 business days" (D2).
 
+     **Cycle 22 Batch 7/8 + follow-ups (2026-09-25):** every training
+     surface uses one "today" (the manager-tz work anchor, T11). Team Training
+     names a source it could not read instead of reading it as empty, and the
+     quiz editor keeps a quiz's Reference link while the article list is
+     unavailable (D8). Verify is offered for every issued document (D4), and
+     every read of a document checks its content hash: an altered document says
+     so to whoever opens it (the follow-ups). Revoking, releasing and voiding
+     update the rep's Needs-you list, and so do assigning, issuing and creating a
+     coaching item (T10, g67).
+
+     **Cycle 22 S10 (operator 2026-09-25):** a failed quiz attempt shows the
+     score and the rep's answers, but not which questions were wrong ("Which
+     questions you missed is shown once you pass"). A passing attempt shows
+     the per-question marks as before, and the correct option is never shown
+     (spec §9.4). The QuizAttempts row records the marks on every attempt, for
+     managers.
+
 <a id="qa"></a>
 ## QA
 
@@ -948,3 +1049,19 @@ not restate it. Server endpoints live in the fourteen server files
      case), the client skips the player and pills it "no recording", and its
      audit row (`QaManualRecording`) is id-only. The Log's "Log an audit" dialog
      offers the caller's open assignments first and the manual entry LAST.
+
+     **Cycle 22 Batch 7/8 (2026-09-25):** the Drive sync walks the folder
+     outside the project lock and resumes a capped walk where it stopped
+     (`QA_SYNC_CONTINUATION`, D3); playback reads just the chunk's byte range
+     from Drive (D5). Changing or clearing a shared recording's agent unshares
+     it — the old agent's review is never shown to the new one (S5) — and a
+     comment posted just before switching recordings no longer touches the
+     newly opened one (D9).
+
+     **Cycle 22 Batch 9 + S6 (2026-09-25):** the player's Space and arrow
+     shortcuts yield to an open dialog and to a focused control
+     (`qaPlayerOwnsKey_`), so Space on a focused button presses that button
+     (U5). A reviewer cannot score, change the status of, share or
+     re-attribute a recording of their OWN call; an admin can
+     (`qaSelfReviewRefusal_`, S6). The check is on the server; the detail
+     still offers the controls.

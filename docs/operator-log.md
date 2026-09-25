@@ -10,6 +10,86 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-25 — Cycle 22: interface polish and the five deferred findings (Batch 9, S6, S8, S10, M6, C12)
+
+**Adds no new Script Property. One CHANGES shape:** `DR_SLA_TARGETS` is now
+working days with a `_unit: 'days'` marker (`CONFIG.CALL_NOTES.DR_SLA_DEFAULT_DAYS`
+2 replaces `DR_SLA_DEFAULT_HOURS` 48). `BUILD_HASH_CACHE_KEY` /
+`BUILD_HASH_CACHE_TTL_SEC` left CONFIG, and nothing reads the old ScriptCache
+entry. NOT yet deployed: ship with the rest of cycle 22 on the ordinary
+`clasp push -f` + New version.
+
+**One-time operator steps after deploy (none blocks it).**
+- Open Manage → Admin → Config → Dept-Request SLA targets. If it says the
+  targets were set in hours, check each department's converted working-day
+  value (hours ÷ 24, to the half day) and Save, which stores the new unit.
+- Tell managers the Dept Request deadlines are now **2 working days** by
+  default. Since 2026-08-31 they had effectively been about 5, so requests
+  turn at-risk and overdue sooner the day this ships.
+- Tell QA reviewers they can no longer score, finish, share or re-attribute
+  their own calls; an admin can.
+
+**What changes for the operator.**
+- **Batch 9 — interface.** The Call Notes export keeps its link on screen when
+  the browser blocks the new tab; the shell's shortcut keys open a proper
+  dialog; Intake's copy-image fallback says what really happened; the QA
+  player's keys yield to dialogs and focused buttons; Intake's reveal questions
+  take arrow keys and click-again-to-clear, and Clear confirms on a filled
+  form; auto-tag and department saves report what the server stored or
+  refused; the reload prompt no longer fires because someone opened `/dev`.
+- **S6** a reviewer cannot review their own call (admin exception). **S8** no
+  page can be framed by another site (nothing embeds the app today). **S10** a
+  failed quiz attempt shows the score only; per-question marks once it
+  passes. **M6** SLA targets in working days. **C12** with archiving ON, a
+  History, per-rep or export range that reaches the archive window says older
+  notes may be in the cold archive (archiving is off by default, so nothing
+  shows today).
+
+## 2026-09-25 — Cycle 22: half days, the Needs-you list, the intake engine's reads (Batch 7, Batch 8, follow-ups)
+
+**Adds two Script Properties, both auto-managed:** `QA_SYNC_CONTINUATION`
+(the resume point of a capped QA sync) and `AUTOMATION_TRIGGER_OWNER` (who last
+ran `installAutomationTriggers`). The compliance audit search also covers a new
+`FormTokenVoided` row (code, nothing to set). NOT yet
+deployed: ship with Batches 1–6 on the ordinary `clasp push -f` + New version.
+
+**One-time operator steps after deploy (none blocks it).**
+- Re-run `installAutomationTriggers()` once from an active manager account so
+  the installer is recorded (the triggerOwner detector is silent until then).
+- Open Admin → System → Intake Offerings catalog and fix any seat-type cell it
+  calls unreadable (use `S`, `C`, `Solid`, `Captain`) — until then that chair is
+  not recommended.
+- Check on a real repeat caller that 8x8 voicemails thread in Gmail (the
+  voicemail count and the newest-voicemail body assume it; a single voicemail
+  reads as before either way).
+- Tell managers the Punctuality page now grades a half day on HOURS WORKED.
+
+**What changes for the operator.**
+- **Batch 7 — working days.** Half-day PTO is no longer a whole day off for the
+  reminders; the lunch graded is the one nearest the scheduled lunch; a
+  time-off range skips company holidays and the reminders treat them as days
+  off; one "today" for training; the Needs-you list refreshes after finishing,
+  voiding, releasing or revoking a task. The QA sync resumes a large first walk;
+  playback reads only the chunk it needs; the transfer figures read only their
+  date span; a repeat caller's voicemails each stay pending until answered.
+- **Batch 8 — the intake engine and the forms.** The seat cell and the weight
+  answer are read by word and by first number; the Sent tab names an unreadable
+  submission tab; account emails show "Not answered" apart from "No". A form
+  link whose email failed is withdrawn; a positive form-retention window is at
+  least the link's life + 1 day; a template keeps inserted price lines; clearing
+  a training reply clears the one shown; re-attributing a shared QA recording
+  unshares it; Team Training names a source it could not read.
+- **Follow-ups — the half-day RULE (operator, 2026-09-25).** A half day may
+  start and end at any time as long as at least 4 hours are worked: Punctuality
+  grades it on hours (met / under / not known) and never on its start or lunch;
+  the reminders give no break or clock-out reminders that day and nudge only
+  once 4 hours can no longer fit. Also: new tasks reach the Needs-you list at
+  once and in every window; the voicemail card says "2 voicemails" and expands
+  to the newest; an altered Employee Doc says so when opened; an unreadable
+  weight is warned on the recommendation screen; the urgent digest, the daily
+  brief, an unreadable ClientErrors tab, a daily job with no run on record and
+  an offboarded trigger installer all reach the health dot.
+
 ## 2026-09-23 — Cycle 22: the suite is owner-only, every write is literal text, Day Edit keeps every break (Batch 1, S2, Batch 2, follow-ons)
 
 **Adds NO required operator state.** No Script Property, no tab, no
@@ -66,6 +146,19 @@ then the four blocks' walks.
   land there; reword them) and the delivery-table header roles (e.g. a
   "Delivery City" header reads as the accepts column; rename it if that is
   wrong).
+- **Batch 6 — automation health stops contradicting itself.** Manage → Admin
+  → System now lists everything the health dot counts (open punches and job
+  staleness included), so a red dot always has an item behind it. Job
+  liveness reads a per-job run ledger (`AUTOMATION_RUN_<action>`,
+  auto-managed): until each job next runs, its "last seen" row may say
+  "cannot confirm", and the monthly accrual credit no longer false-alarms
+  "has not run this month". **Offboarding now removes the person from
+  `MANAGER_EMAILS` / `ADMIN_EMAILS`** (never a list's last entry — the toast
+  says when it kept one) and records them in `OFFBOARDED_EMAILS`.
+  **One-time operator check after deploy:** review both lists for anyone
+  offboarded before it. A set-but-unopenable `DEPT_REQUESTS_SS_ID` now
+  refuses instead of writing to the payroll sheet. Failed reads (the tag list,
+  ClientErrors, the readiness checklist's health read) say "could not read".
 
 ## 2026-09-23 — Area eligibility: city rules, any-warehouse, the diagnostics panel, the vocabulary (T7–T9)
 

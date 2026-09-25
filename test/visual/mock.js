@@ -319,6 +319,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // F2 (cycle 18) — the reminder ticker's day-off gate. Mirrors the server
       // field (INV-185); false = a normal working day, the scenario's intent.
       offToday: false,
+      halfDayOff: null,   // T5 (cycle 22) — a half day is not a day off; the reminder plan changes instead
+      halfDayMinHours: 4, // T5 rework — CONFIG.PTO_HOURS_PER_DAY / 2
       // Operator 2026-08-31 — today's PENDING punch-adjustment requests. EMPTY
       // is the common case (and what every existing scenario should show); the
       // `?pendingadj=1` hook below seeds one so the Clock chip is shootable
@@ -658,21 +660,21 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     },
     getDeptRequests: { isManager: true, myDepts: ['Billing'],
       mine: [
-        { requestId: 'r1', toDept: 'Shipping', label: 'Verified Shipping', patientTrx: 'Maria Delgado · TRX 48211', createdAt: daysAgo(0) + ' 09:12', byName: 'Avery Blake', status: 'open', elapsedMin: 72, elapsedWallMin: 190, slaBusiness: true, slaStatus: 'ontime', slaHours: 48 },
-        { requestId: 'r2', toDept: 'Billing', label: 'Close Order', patientTrx: 'J. Rivera · TRX 47790', createdAt: daysAgo(2) + ' 10:40', byName: 'Avery Blake', status: 'open', elapsedMin: 1102, elapsedWallMin: 2900, slaBusiness: true, slaStatus: 'overdue', slaHours: 24 },
-        { requestId: 'r3', toDept: 'Resupply', label: 'Repeat Resupply', patientTrx: 'K. Osei · TRX 48044', createdAt: daysAgo(1) + ' 14:05', byName: 'Avery Blake', status: 'open', elapsedMin: 551, elapsedWallMin: 1450, slaBusiness: true, slaStatus: 'atrisk', slaHours: 48 },
+        { requestId: 'r1', toDept: 'Shipping', label: 'Verified Shipping', patientTrx: 'Maria Delgado · TRX 48211', createdAt: daysAgo(0) + ' 09:12', byName: 'Avery Blake', status: 'open', elapsedMin: 72, elapsedWallMin: 190, slaBusiness: true, slaStatus: 'ontime', slaDays: 2 },
+        { requestId: 'r2', toDept: 'Billing', label: 'Close Order', patientTrx: 'J. Rivera · TRX 47790', createdAt: daysAgo(2) + ' 10:40', byName: 'Avery Blake', status: 'open', elapsedMin: 1102, elapsedWallMin: 2900, slaBusiness: true, slaStatus: 'overdue', slaDays: 1 },
+        { requestId: 'r3', toDept: 'Resupply', label: 'Repeat Resupply', patientTrx: 'K. Osei · TRX 48044', createdAt: daysAgo(1) + ' 14:05', byName: 'Avery Blake', status: 'open', elapsedMin: 551, elapsedWallMin: 1450, slaBusiness: true, slaStatus: 'atrisk', slaDays: 2 },
         { requestId: 'r4', toDept: 'Billing', label: 'OOP Order', patientTrx: 'L. Chen · TRX 47502', createdAt: daysAgo(3) + ' 11:20', byName: 'Avery Blake', status: 'resolved', elapsedMin: 84, elapsedWallMin: 220, slaBusiness: true, resolvedBy: 'sam@umsupply.com', resolvedVia: 'email' },
         // Note #3 (2026-09-10): an in-app "Mark resolved" is NOT a timed reply —
         // the server ships null minutes + resolvedVia:'app' so the card reads
         // "marked in app" and the KPI median skips it. On camera in deptreq-*.
         { requestId: 'r7', toDept: 'Shipping', label: 'Verified Shipping', patientTrx: 'P. Nguyen · TRX 47311', createdAt: daysAgo(5) + ' 15:02', byName: 'Avery Blake', status: 'resolved', elapsedMin: null, elapsedWallMin: null, slaBusiness: true, resolvedBy: 'avery@umsupply.com', resolvedVia: 'app' }],
       incoming: [
-        { requestId: 'r5', toDept: 'Billing', label: 'Close Order', patientTrx: 'S. Alvarez · TRX 48230', createdAt: daysAgo(0) + ' 08:30', byName: 'Nina Patel', status: 'open', elapsedMin: 122, elapsedWallMin: 320, slaBusiness: true, slaStatus: 'ontime', slaHours: 24 }],
+        { requestId: 'r5', toDept: 'Billing', label: 'Close Order', patientTrx: 'S. Alvarez · TRX 48230', createdAt: daysAgo(0) + ' 08:30', byName: 'Nina Patel', status: 'open', elapsedMin: 122, elapsedWallMin: 320, slaBusiness: true, slaStatus: 'ontime', slaDays: 1 }],
       allOpen: [
         // r6 is a LEGACY row (no patientTrx) — the subject renders the label alone.
-        { requestId: 'r6', toDept: 'Resupply', label: 'Repeat Resupply', createdAt: daysAgo(4) + ' 09:00', byName: 'Leo Kim', status: 'open', elapsedMin: 2204, elapsedWallMin: 5800, slaBusiness: true, slaStatus: 'overdue', slaHours: 48 }],
+        { requestId: 'r6', toDept: 'Resupply', label: 'Repeat Resupply', createdAt: daysAgo(4) + ' 09:00', byName: 'Leo Kim', status: 'open', elapsedMin: 2204, elapsedWallMin: 5800, slaBusiness: true, slaStatus: 'overdue', slaDays: 2 }],
       truncated: false, mineTotal: 5, incomingTotal: 1, allOpenTotal: 1, listCap: 100,
-      deptStats: [{ dept: 'Billing', open: 2, resolved: 14, overdueOpen: 1, slaHours: 24, avgMinutes: 340, medianMinutes: 220, manualResolved: 3, untrackedResolved: 2, timed: 9 }] },
+      deptStats: [{ dept: 'Billing', open: 2, resolved: 14, overdueOpen: 1, slaDays: 1, avgMinutes: 340, medianMinutes: 220, manualResolved: 3, untrackedResolved: 2, timed: 9 }] },
     getMyTraining: { items: [
       { itemId: 'kb-1', title: 'HIPAA refresher', type: 'article', itemType: 'kb', status: 'pending', dueDate: daysAgo(-6), assignedAt: ts(daysAgo(3), '09:00:00'), attempts: 0 },
       { itemId: 'quiz-1', title: 'CPAP resupply quiz', type: 'quiz', itemType: 'quiz', status: 'done', quiz: { questionCount: 5, passPct: 80 }, attempts: 2, completedAt: ts(daysAgo(1), '11:00:00') }] },
@@ -898,7 +900,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       { threadId: 't5', requester: 'lchen@umsupply.com', ageHours: 1.1, subject: 'Verificación de seguro', snippet: 'El paciente quiere verificar la cobertura antes de la cita…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t5', claim: { by: 'avery@umsupply.com', atMs: Date.now() - 600000 } },
       // Operator 2026-08-25: an 8x8 voicemail item (kind:'voicemail' — the
       // sender+subject fold) so the VM pill is on camera.
-      { threadId: 't7', kind: 'voicemail', requester: 'David Dhruv Mishra', ageHours: 0.6, subject: 'New voicemail from David Dhruv Mishra via A_Q_Spanish', snippet: 'You have a new voicemail. Duration: 1:42…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t7', claim: null }],
+      { threadId: 't7', kind: 'voicemail', requester: 'David Dhruv Mishra', ageHours: 0.6, subject: 'New voicemail from David Dhruv Mishra via A_Q_Spanish', snippet: 'You have a new voicemail. Duration: 1:42…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t7', claim: null, vmPending: 2 }],   // M5 follow-up — a repeat caller's two waiting voicemails
       medianMinutes: 45, truncated: false,
       members: ['avery@umsupply.com', 'sam@umsupply.com', 'ines@umsupply.com'],
       self: 'avery@umsupply.com' },
@@ -972,7 +974,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       avgBusinessMinutes: 52, medianBusinessMinutes: 31, businessCount: 11, manualCount: 1,
       businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true },
       membersConfigured: 3, threadsScanned: 15, truncated: false,
-      vmOn: true, vmCounted: 1, vmSuppressed: 2, vmUnparsed: 0, vmMinSeconds: 5 },
+      vmOn: true, vmCounted: 2, vmSuppressed: 2, vmUnparsed: 0, vmMinSeconds: 5 },
     getPatientTimeline: { events: [], partial: false, failedSources: [] },
     cnPing: { ok: true },
     getCalendarData: function (year, month) {
@@ -1119,10 +1121,21 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       var addIso = function (iso, n) { var d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
       var span = Math.round((Date.UTC(+to.slice(0, 4), +to.slice(5, 7) - 1, +to.slice(8, 10)) - Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, +from.slice(8, 10))) / 86400000) + 1;
       var grace = 5;
-      var mk = function (id, name, tz, startMin, lateEvery, lateMins, lunch, offOn, holOn) {
-        var dd = [], days = 0, on = 0, late = 0, tot = 0, worst = 0, worstDate = null;
+      // T5 rework: `half` = { k, hours } puts a HALF day on camera — graded on
+      // hours worked against the server's minimum (4 = PTO_HOURS_PER_DAY / 2),
+      // never on a start. The first weekday at or after k carries it.
+      var mk = function (id, name, tz, startMin, lateEvery, lateMins, lunch, offOn, holOn, half) {
+        var dd = [], days = 0, on = 0, late = 0, tot = 0, worst = 0, worstDate = null, halfDays = 0, halfShort = 0, halfK = null;
+        if (half) { for (var hk = half.k; hk < span; hk++) { var hd = new Date(addIso(from, hk) + 'T12:00:00Z').getUTCDay(); if (hd !== 0 && hd !== 6 && hk !== holOn && hk !== offOn) { halfK = hk; break; } } }
         for (var k = 0; k < span; k++) {
           var iso = addIso(from, k), dow = new Date(iso + 'T12:00:00Z').getUTCDay();
+          if (k === halfK) {
+            var hst = half.hours == null ? 'halfopen' : (half.hours >= 4 ? 'half' : 'halfshort');
+            halfDays++; if (hst === 'halfshort') halfShort++;
+            dd.push({ date: iso, schedStartMin: null, actualMin: null, lateMin: null, state: hst, workedHours: half.hours, minHours: 4,
+              ptoType: 'Half Day - Morning', holidayName: null });
+            continue;
+          }
           var isHol = holOn != null && k === holOn, pto = (offOn != null && k === offOn) ? 'Full Day' : null;
           var hasIn = !(dow === 0 || dow === 6) && !isHol && !pto;
           var lateMin = hasIn ? ((k % lateEvery === 0) ? lateMins[(k / lateEvery) % lateMins.length] : 2) : null;
@@ -1136,11 +1149,12 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         return { id: id, name: name, tz: tz, startMin: startMin, days: days, onTime: on, late: late, onTimePct: pct,
           avgLate: late ? Math.round(tot / late) : 0, worst: worst, lunchOnTimePct: lunch, worstDate: worstDate,
           prevDays: days, prevOnTime: Math.max(0, on - 2), prevOnTimePct: days ? Math.round((Math.max(0, on - 2) / days) * 100) : null,
+          halfDays: halfDays, halfShort: halfShort,
           weekly: punctWeeklyBuckets_(dd, from, to, addIso), dayDetail: dd };
       };
       var reps = [
-        mk('E-1090', 'Leo Kim',     'America/Chicago', 480, 3, [41, 18, 9], 88, 4, 6),
-        mk('E-1088', 'Sam Ortiz',   'Asia/Manila',     510, 7, [12, 8],     95, null, 6),
+        mk('E-1090', 'Leo Kim',     'America/Chicago', 480, 3, [41, 18, 9], 88, 4, 6, { k: 1, hours: 3.25 }),
+        mk('E-1088', 'Sam Ortiz',   'Asia/Manila',     510, 7, [12, 8],     95, null, 6, { k: 2, hours: 4.5 }),
         mk('E-1042', 'Avery Blake', 'Asia/Kolkata',    480, 15, [4],        null, null, 6),
         mk('E-1077', 'Nina Patel',  'America/Chicago', 480, 99, [0],        100, null, 6),
       ].sort(function (a, b) { return a.onTimePct - b.onTimePct || b.late - a.late; });
@@ -1437,7 +1451,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       defaultSuggestions: ['Close Order', 'Verified Shipping', 'Repeat Resupply'],
       emailTemplates: [{ name: 'Win-Back Survey', recipientType: 'customer', body: 'Hi {name}, we would love your feedback.' }],
       externalLinks: [{ label: 'Google review', url: 'https://g.page/r/example', category: 'review' }],
-      deptSla: { defaultHours: 48, targets: { Billing: 24 }, departments: ['Billing', 'Shipping', 'Resupply'] },
+      deptSla: { defaultDays: 2, targets: { Billing: 1 }, legacy: false, businessDayHours: 9, departments: ['Billing', 'Shipping', 'Resupply'] },   // M6: working days
       // Batch Q — propBudgetsFor_(ADMIN_PROP_KEYS_)'s shape (INV-185): every
       // editor shows the STORED value's size. One key deliberately past 80%
       // so the warn tone is on camera, the rest comfortable.
@@ -1775,6 +1789,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         { key: 'formTokenCells', label: 'Form-token cell shapes', ok: true, detail: '' },
         { key: 'briefConfig', label: 'Manager-brief config coherence', ok: true, detail: '' },
         { key: 'managerSource', label: 'MANAGER_EMAILS ↔ roster drift', ok: true, detail: '' },
+        { key: 'triggerOwner', label: 'The automation triggers\' installer is still on the team', ok: true, detail: '' },
         { key: 'cdrOffRoster', label: 'CDR off-roster diagnostic channel present', ok: true, detail: '' }],
       clientErrors: { count: 0, last24h: 0, recent: [], windowDays: 7, url: '' },
       witnessFails: { count: 0, lastAt: null, lastAction: '', recent: false },
@@ -1787,11 +1802,20 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // The last open-punch scan (operator 2026-09-15). A CLEAN board: zero
       // days, so automationProblems_ emits nothing — but every shape it reads
       // is present, which is what INV-185 is checking.
-      openPunches: { at: Date.now(), reps: 0, days: 0, expiring: 0, detail: [],
+      // A2 (cycle 22): the populated fixture carries ONE open-punch finding —
+      // a kind the System tab only renders because it now reads the dot's own
+      // list — so the Admin scenarios photograph it. `problems` below is what
+      // automationProblems_ emits for exactly this openPunches shape.
+      openPunches: { at: Date.now(), reps: 1, days: 2, expiring: 0, detail: [{ name: 'Jordan Reyes', count: 2 }],
         window: { start: '2026-08-16', end: '2026-09-13', adjustWindowDays: 30 } },
       selfTest: { date: daysAgo(0), mode: 'smoke', pass: 74, fail: 0, skip: 0, error: '', note: '', running: false, startedAt: null, stuck: false },
       intakeCatalog: { ok: true, totalRows: 22, errors: [], warnings: [] },
-      auditScanComplete: true,
+      auditScanComplete: false,
+      // A1 (cycle 22) — the window "no audit row" is measured against. A
+      // TRUNCATED window, as on a busy production AuditLog, so the "last seen"
+      // rows with no run on record say they cannot confirm.
+      auditWindow: { complete: false, startMgr: daysAgo(9) + ' 08:12:40', startMs: Date.now() - 9 * 86400000, rows: 4000 },
+      problems: [{ kind: 'openPunch', key: 'days', text: 'Open punches: 2 day(s) across 1 rep(s) have no usable clock-in/clock-out pair — Jordan Reyes (2). Those days earn no hours and no PTO until they are fixed (checked 2026-08-16…2026-09-13).' }],
       managerTzAbbr: 'CST',
       auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',
     },
@@ -2009,7 +2033,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         window: { start: '2026-08-16', end: '2026-09-13', adjustWindowDays: 30 } },
       selfTest: { date: daysAgo(0), mode: 'smoke', pass: 74, fail: 0, skip: 0, error: '', note: '', running: false, startedAt: null, stuck: false },
       intakeCatalog: { ok: true, totalRows: 22, errors: [], warnings: [] },
-      auditScanComplete: true, managerTzAbbr: 'CST', auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',
+      auditScanComplete: true, auditWindow: { complete: true, startMgr: '', startMs: null, rows: 4000 }, problems: [],
+      managerTzAbbr: 'CST', auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',
     },
     getStorageHealth: {
       configTimezone: 'Asia/Kolkata', adpLocale: 'en_US',

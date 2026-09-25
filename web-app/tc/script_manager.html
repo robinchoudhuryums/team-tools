@@ -91,6 +91,9 @@
   .pt-day.off     { background: var(--paper-3); border: 1px dashed var(--muted-3); box-sizing: border-box; }
   .pt-day.holiday { background: var(--info-soft); }
   .pt-day.nopunch { background: var(--paper-card); border: 1px solid var(--line); box-sizing: border-box; }
+  .pt-day.half      { background: var(--accent); opacity: .55; }
+  .pt-day.halfshort { background: var(--destructive); opacity: .55; }
+  .pt-day.halfopen  { background: var(--paper-3); border: 1px solid var(--muted-3); box-sizing: border-box; }
   .pt-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--muted); margin-top: 6px; }
   .pt-legend .pt-day { vertical-align: -2px; margin-right: 4px; }
   .pt-late { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -2475,9 +2478,9 @@ function punctLoad_() {
  *  verdict beyond the bands the table already paints. Pure, Node-pinned. */
 function punctOutliers_(reps) {
   return (reps || []).filter(function (r) {
-    return (r.onTimePct != null && r.onTimePct < 75) || (r.late > 0 && r.avgLate > 15);
+    return (r.onTimePct != null && r.onTimePct < 75) || (r.late > 0 && r.avgLate > 15) || r.halfShort > 0;
   }).map(function (r) {
-    return { id: r.id, name: r.name, onTimePct: r.onTimePct, late: r.late, avgLate: r.avgLate,
+    return { id: r.id, name: r.name, onTimePct: r.onTimePct, late: r.late, avgLate: r.avgLate, halfShort: r.halfShort || 0,
       worst: r.worst, worstDate: r.worstDate || null, trend: punctTrend_(r.weekly) };
   });
 }
@@ -2502,8 +2505,10 @@ function punctCoach_(btn) {
   var r = null; reps.forEach(function (x) { if (x.id === id) r = x; });
   if (!r) return;
   var days = PUNCT_STATE.data.from && PUNCT_STATE.data.to ? punctDaysBetween_(PUNCT_STATE.data.from, PUNCT_STATE.data.to) + 1 : 0;
-  var what = r.onTimePct + '% on-time over ' + (days || r.days) + ' days; ' + r.late + ' late day' + (r.late === 1 ? '' : 's') +
-    (r.worst ? ', worst ' + r.worst + 'm' + (r.worstDate ? ' on ' + punctFmtDate_(r.worstDate) : '') : '') + '.';
+  var what = (r.onTimePct != null ? r.onTimePct + '% on-time over ' + (days || r.days) + ' days; ' : 'No full days graded; ') +
+    r.late + ' late day' + (r.late === 1 ? '' : 's') +
+    (r.worst ? ', worst ' + r.worst + 'm' + (r.worstDate ? ' on ' + punctFmtDate_(r.worstDate) : '') : '') +
+    (r.halfShort ? '; ' + r.halfShort + ' half day' + (r.halfShort === 1 ? '' : 's') + ' under the minimum hours' : '') + '.';
   window.COACH_PREFILL = { empId: id, patientTRX: '', noteId: '', what: what };
   if (typeof enterTool === 'function') enterTool('develop', 'coaching');
 }
@@ -2522,26 +2527,42 @@ function punctSort_(key) {
 /** The expanded row (M2d): the record on the left (day strip + late-day
  *  chips), the diagnosis on the right (scheduled-vs-actual timeline + weekly
  *  bars), then the actions. Everything draws from dayDetail. */
+/** T5 rework (cycle 22 follow-ups) — a half day has no fixed start, so it is
+ *  graded on hours worked against the server's minimum (half the typical day),
+ *  never on a start time. Pure, Node-pinned. */
+function punctHalfDayTitle_(d) {
+  var min = d.minHours != null ? d.minHours + 'h' : 'the minimum';
+  var type = d.ptoType ? ' (' + d.ptoType + ')' : '';
+  if (d.state === 'halfopen') return 'half day' + type + ' — hours not known (no clock-out, or an unreadable punch)';
+  var worked = (d.workedHours != null ? d.workedHours : 0) + 'h worked';
+  return 'half day' + type + ' — ' + worked + (d.state === 'half' ? ', meets ' : ', under ') + min;
+}
 function punctDetailHtml_(r, grace) {
   var dd = r.dayDetail || [];
   if (!dd.length) return '';
-  var n = { ontime: 0, late: 0, late15: 0, off: 0, holiday: 0, nopunch: 0 };
+  var n = { ontime: 0, late: 0, late15: 0, off: 0, holiday: 0, nopunch: 0, half: 0, halfshort: 0, halfopen: 0 };
   dd.forEach(function (d) {
     if (d.state === 'late') { n.late++; if (d.lateMin > 15) n.late15++; }
     else if (n[d.state] !== undefined) n[d.state]++;
   });
   var stripLabel = dd.length + ' days: ' + n.ontime + ' on time, ' + n.late + ' late, ' + n.late15 +
     ' late over 15 minutes, ' + n.off + ' time off, ' + n.holiday + ' holiday' + (n.holiday === 1 ? '' : 's') +
-    (n.nopunch ? ', ' + n.nopunch + ' with no clock-in' : '');
+    (n.nopunch ? ', ' + n.nopunch + ' with no clock-in' : '') +
+    (n.half + n.halfshort + n.halfopen ? ', ' + (n.half + n.halfshort + n.halfopen) + ' half day' + (n.half + n.halfshort + n.halfopen === 1 ? '' : 's') +
+      (n.halfshort ? ' (' + n.halfshort + ' under the minimum hours)' : '') : '');
   var strip = '<div class="pt-strip" role="img" aria-label="' + esc(stripLabel) + '">' + dd.map(function (d) {
     var cls = d.state === 'late' ? (d.lateMin > 15 ? 'late15' : 'late') : d.state;
     var t = punctFmtDate_(d.date) + ' — ' + (d.state === 'ontime' ? 'on time' : d.state === 'late' ? d.lateMin + 'm late'
-      : d.state === 'off' ? 'time off (' + (d.ptoType || '') + ')' : d.state === 'holiday' ? (d.holidayName || 'holiday') : 'no clock-in');
+      : d.state === 'off' ? 'time off (' + (d.ptoType || '') + ')' : d.state === 'holiday' ? (d.holidayName || 'holiday')
+      : (d.state === 'half' || d.state === 'halfshort' || d.state === 'halfopen') ? punctHalfDayTitle_(d) : 'no clock-in');
     return '<i class="pt-day ' + cls + '" title="' + esc(t) + '"></i>';
   }).join('') + '</div>';
   var legend = '<div class="pt-legend"><span><i class="pt-day ontime"></i>on time</span><span><i class="pt-day late"></i>late ≤15m</span>' +
     '<span><i class="pt-day late15"></i>late &gt;15m</span><span><i class="pt-day off"></i>time off</span><span><i class="pt-day holiday"></i>holiday</span>' +
-    (n.nopunch ? '<span><i class="pt-day nopunch"></i>no clock-in</span>' : '') + '</div>';
+    (n.nopunch ? '<span><i class="pt-day nopunch"></i>no clock-in</span>' : '') +
+    (n.half ? '<span><i class="pt-day half"></i>half day, hours met</span>' : '') +
+    (n.halfshort ? '<span><i class="pt-day halfshort"></i>half day, under the hours</span>' : '') +
+    (n.halfopen ? '<span><i class="pt-day halfopen"></i>half day, hours not known</span>' : '') + '</div>';
   var lateDays = dd.filter(function (d) { return d.state === 'late'; }).sort(function (a, b) { return b.lateMin - a.lateMin; });
   var LATE_CAP = 8;
   var chips = lateDays.length
@@ -2604,7 +2625,7 @@ function punctRender_(data) {
   var deltaTxt = prevPct == null ? 'no previous range to compare'
     : ((teamPct - prevPct > 0 ? '+' : '') + (teamPct - prevPct) + 'pt vs ' + esc(punctFmtDate_(data.prevFrom)) + '–' + esc(punctFmtDate_(data.prevTo)));
   var note = '<div style="font-size:12px;color:var(--muted);margin-bottom:14px">On-time = clock-in within ' + esc(String(data.grace)) +
-    ' min of the scheduled start. Only days with a clock-in are graded; time off and holidays are drawn in the day-by-day record but never counted against a rep.' +
+    ' min of the scheduled start. Only days with a clock-in are graded; time off and holidays are drawn in the day-by-day record but never counted against a rep. A half day has no fixed start, so it is graded on hours worked instead (at least half the typical day), never on its start or lunch.' +
     (data.ptoUnavailable ? ' <span style="color:var(--warning-deep)">' + icon('warning', 11) + ' Time-off data could not be read — approved PTO days show as no clock-in.</span>' : '') + '</div>';
   var summary = '<div class="telemetry" style="margin-bottom:16px">' +
     '<div class="tel-cell"><div class="tel-label">Team on-time</div><div class="tel-value ' + teamCls + '">' + teamPct + '%</div><div class="tel-sub">' + totOn + ' / ' + totDays + ' days · ' + deltaTxt + '</div></div>' +
@@ -2619,9 +2640,10 @@ function punctRender_(data) {
     ? '<div class="panel pt-outliers" data-tone="destructive"><h2 class="card-label"><span>Worth a conversation</span><span class="count-pill danger">' + outliers.length + '</span></h2>' +
       '<div class="pt-out-list">' + outliers.map(function (o) {
         return '<div class="pt-out"><div class="pt-out-main"><span class="pt-out-name">' + esc(o.name) + '</span> ' +
-          '<span class="' + mtPctTone_(o.onTimePct, 90, 75) + '">' + o.onTimePct + '%</span> ' + punctTrendChip_(o.trend) +
+          (o.onTimePct != null ? '<span class="' + mtPctTone_(o.onTimePct, 90, 75) + '">' + o.onTimePct + '%</span> ' : '') + punctTrendChip_(o.trend) +
           '<span class="pt-out-sub">' + o.late + ' late day' + (o.late === 1 ? '' : 's') + (o.late ? ' · avg ' + o.avgLate + 'm' : '') +
-          (o.worst ? ' · worst ' + o.worst + 'm' + (o.worstDate ? ' on ' + esc(punctFmtDate_(o.worstDate)) : '') : '') + '</span></div>' +
+          (o.worst ? ' · worst ' + o.worst + 'm' + (o.worstDate ? ' on ' + esc(punctFmtDate_(o.worstDate)) : '') : '') +
+          (o.halfShort ? ' · ' + o.halfShort + ' short half day' + (o.halfShort === 1 ? '' : 's') : '') + '</span></div>' +
           '<button type="button" class="pending-btn pb-approve" data-emp-id="' + esc(o.id) + '" onclick="punctCoach_(this)">' + icon('bulb', 13) + 'Log coaching</button></div>';
       }).join('') + '</div></div>'
     : '';
@@ -2645,6 +2667,7 @@ function punctRender_(data) {
     { key: 'startMin', label: 'Shift start', numeric: true, sortable: true, cell: function (r) { return esc(punctFmtMin_(r.startMin)); } },
     { key: 'days', label: 'Days', numeric: true, sortable: true, cell: function (r) { return String(r.days); } },
     { key: 'onTimePct', label: 'On-time', numeric: true, sortable: true, cell: function (r) {
+        if (r.onTimePct == null) return '<span class="pt-na" title="Every clock-in day in range was a half day, which is graded on hours worked, not on its start">—</span>';
         var cls = mtPctTone_(r.onTimePct, 90, 75);
         return '<span class="' + cls + '">' + r.onTimePct + '%</span><div class="pt-bar"><i class="' + cls + '" style="width:' + r.onTimePct + '%"></i></div>';
       } },

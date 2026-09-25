@@ -2805,6 +2805,10 @@ const engineCtx = vm.createContext({});
 // The engine now derives its clinical factors via the shared
 // intakeDeriveClinicalFactors_ helper (so the engine + the explainability
 // surface can't drift) — load it into the ctx first or the engine's call throws.
+// Batch 8 (cycle 22): the engine reads three shared helpers — the seat words
+// (I2), the inherently-solid code list (I6) and the weight parse (I3).
+['intakeSeatKinds_', 'intakeInherentlySolidCodes_', 'intakeParseWeight_'].forEach((n) =>
+  vm.runInContext(extractRawFunction('Code.js', n), engineCtx, { filename: 'Code.js#' + n }));
 vm.runInContext(extractRawFunction('Code.js', 'intakeDeriveClinicalFactors_'), engineCtx,
   { filename: 'Code.js#intakeDeriveClinicalFactors_' });
 vm.runInContext(extractRawFunction('Code.js', 'intakeExplainFactors_'), engineCtx,
@@ -4764,7 +4768,7 @@ test('drSlaStatus_ bands ontime / atrisk(≥75%) / overdue(≥100%) wall-clock',
 // of behaving as an unknown pseudo-department. Own context: getDeptRequestSla_
 // reads CONFIG, and the shared sb must not inherit the stub.
 console.log('\nCode.js — DeptRequests multi-dept split (drSplitDepts_ / drSlaForToDept_, cycle-8 M-5)');
-const drSb = vm.createContext({ CONFIG: { CALL_NOTES: { DR_SLA_DEFAULT_HOURS: 48 } } });
+const drSb = vm.createContext({ CONFIG: { CALL_NOTES: { DR_SLA_DEFAULT_DAYS: 2 } } });   // M6: working days
 ['drSplitDepts_', 'drSlaForToDept_', 'getDeptRequestSla_'].forEach((fn) =>
   vm.runInContext(extractRawFunction('Code.js', fn), drSb, { filename: 'Code.js#' + fn }));
 test('drSplitDepts_ splits a joined multi-dept label and drops Other', () => {
@@ -4776,13 +4780,13 @@ test('drSplitDepts_ splits a joined multi-dept label and drops Other', () => {
   assert.doesNotThrow(() => drSb.drSplitDepts_(null));
 });
 test('drSlaForToDept_ takes the strictest component SLA; single-dept unchanged', () => {
-  const cfg = { Billing: 24, Shipping: 72 };
-  assert.strictEqual(drSb.drSlaForToDept_('Billing', cfg), 24, 'single dept = its own SLA');
-  assert.strictEqual(drSb.drSlaForToDept_('Shipping', cfg), 72);
-  assert.strictEqual(drSb.drSlaForToDept_('Billing, Shipping', cfg), 24, 'multi-dept → strictest (min hours)');
-  assert.strictEqual(drSb.drSlaForToDept_('Authorizations', cfg), 48, 'unlisted dept → default');
-  assert.strictEqual(drSb.drSlaForToDept_('Shipping, Other', cfg), 72, "Other never drags in the default's 48");
-  assert.strictEqual(drSb.drSlaForToDept_('Other', cfg), 48, 'Other-only falls back to the raw lookup → default');
+  const cfg = { Billing: 1, Shipping: 3 };   // M6: working days
+  assert.strictEqual(drSb.drSlaForToDept_('Billing', cfg), 1, 'single dept = its own SLA');
+  assert.strictEqual(drSb.drSlaForToDept_('Shipping', cfg), 3);
+  assert.strictEqual(drSb.drSlaForToDept_('Billing, Shipping', cfg), 1, 'multi-dept → strictest (min days)');
+  assert.strictEqual(drSb.drSlaForToDept_('Authorizations', cfg), 2, 'unlisted dept → default');
+  assert.strictEqual(drSb.drSlaForToDept_('Shipping, Other', cfg), 3, "Other never drags in the default's 2");
+  assert.strictEqual(drSb.drSlaForToDept_('Other', cfg), 2, 'Other-only falls back to the raw lookup → default');
 });
 
 // F(cycle-8): Spanish-inbox scope guard — exact address match, not substring.
@@ -5789,6 +5793,7 @@ test('F9: well-formed capacities are completely unchanged', () => {
 // the schemeless class the new warning names.)
 const intakeCatalogIssues_ = new Function(
   extractRawFunction('Code.js', 'intakeHttpOnly_') + ';' +
+  extractRawFunction('Code.js', 'intakeSeatKinds_') + ';' + extractRawFunction('Code.js', 'intakeInherentlySolidCodes_') + ';' +
   extractRawFunction('Code.js', 'intakeCatalogIssues_') + '; return intakeCatalogIssues_;')();
 
 test('F9: the catalog validator names the rows the engine cannot recommend', () => {
@@ -5799,7 +5804,7 @@ test('F9: the catalog validator names the rows the engine cannot recommend', () 
     ['bad',     'K0825', 'n/a',     'S', P, I],   // error: non-numeric
     ['halfrng', 'K0826', '300-',    'S', P, I],   // error: unreadable range
     ['inv',     'K0827', '450-300', 'S', P, I],   // error: inverted range
-    ['seat',    'K0828', '350',     'x', P, I],   // error: no s/c
+    ['seat',    'K0831', '350',     'x', P, I],   // error: an unreadable seat word (I6: K0828, the old fixture, is solid by code — never an error)
     ['endash',  'K0829', '300–450', 'S', P, I], // warn: non-ASCII dash
     ['noimg',   'K0830', '350',     'S', P, ''],  // warn: no image
     ['',        '',      '',        '',  '', ''], // trailing blank row — ignored
@@ -5812,6 +5817,11 @@ test('F9: the catalog validator names the rows the engine cannot recommend', () 
   assert.deepStrictEqual([...new Set(errRows)], [3, 4, 5, 6, 7],
     'every unrecommendable row is named by its SHEET row (A2:F ⇒ index 0 is row 2)');
   assert.ok(!issues.some((x) => x.hcpcs === 'K0823'), 'a clean row raises nothing');
+  // I6 (cycle 22): an inherently-solid code with an unreadable seat cell still
+  // recommends as solid — a WARNING naming the word, never an error.
+  const solidX = intakeCatalogIssues_([['s', 'K0828', '350', 'x', P, I]]);
+  assert.ok(solidX.length === 1 && solidX[0].severity === 'warn' && /solid by code/.test(solidX[0].detail), 'K0828 with "x" warns, it does not error');
+  assert.deepStrictEqual(intakeCatalogIssues_([['s', 'K0828', '350', '', P, I]]), [], 'and a BLANK seat on a solid-by-code row is clean');
   assert.ok(!issues.some((x) => x.row === 10), 'a trailing blank row is not an error');
   assert.ok(warns.some((x) => x.hcpcs === 'K0829' && /dash/.test(x.detail)),
     'an EN dash reads as a flat cap, not a range — worth a warning');
@@ -6806,7 +6816,8 @@ test('Phase 1: per-queue reading is opt-in; the three existing callers pass 3 ar
 // sheet routes some transfers to destinations with no A_Q_ column. Deriving the
 // total by summing queues would silently under-report.
 test('Phase 1: the attributed subtotal is reported alongside the total, never instead of it', () => {
-  const fn = extractRawFunction('Code.js', 'getCsrTransferPerRepDaily_');
+  // M10 (cycle 22) moved the read behind a result cache; the body is csrTransferReadUncached_.
+  const fn = extractRawFunction('Code.js', 'csrTransferReadUncached_');
   assert.ok(/a\.queueTotal = qt;/.test(fn), 'queueTotal is the summed attribution');
   assert.ok(/a\.queueUnattributed = Math\.max\(0, a\.transferred - qt\);/.test(fn),
     'the remainder is reported, so a partial breakdown cannot read as complete');
@@ -11533,7 +11544,8 @@ test('Time-off RANGE + accrual PTO tile (operator 2026-08-18)', () => {
             b.indexOf('if (conflicts.length > 0)') < b.indexOf('appendRow'),
     'conflicts reject the WHOLE batch before any row is written (atomic)');
   assert.ok(/conflicts\.join\(', '\)/.test(b), 'the rejection NAMES the conflicting dates');
-  assert.ok(/dow !== 0 && dow !== 6/.test(b), 'weekends inside the range are skipped');
+  assert.ok(/if \(dow === 0 \|\| dow === 6\) continue;/.test(b), 'weekends inside the range are skipped');
+  assert.ok(/if \(hol\[d\]\) \{ skippedHolidays\+\+; continue; \}/.test(b), 'and company holidays (T7, cycle 22)');
   assert.ok(/notes = String\(notes \|\| ''\)\.slice\(0, 1000\)/.test(b), 'notes carry the 1000-char bound');
   assert.ok(/TIMEOFF_RANGE_MAX_DAYS/.test(b) && /const TIMEOFF_RANGE_MAX_DAYS = 31/.test(code), 'span-capped');
   assert.ok(/daysBetween_\(todayRep, endDate\) > TIMEOFF_MAX_DAYS_AHEAD/.test(b) &&
@@ -11809,7 +11821,7 @@ test('T: the open-punch check is PREVENTION — read-only, bounded to what can s
   const groups = code.match(/const TRIGGER_GROUPS = \{([\s\S]*?)\n\};/)[1];
   assert.ok(/runDailyChecks:\s*\[[^\]]*'checkOpenPunches'/.test(groups),
     'it rides the daily-checks dispatcher rather than owning a trigger (the quota bit this deployment once)');
-  const probs = code.match(/function automationProblems_\(report\) \{[\s\S]*?\n\}/)[0];
+  const probs = code.match(/function automationProblems_\(report[^)]*\) \{[\s\S]*?\n\}/)[0];
   assert.ok(/report\.openPunches/.test(probs), 'and automationProblems_ surfaces it');
   assert.ok(/op\.error[\s\S]{0,220}NOT a clean board/.test(probs),
     'a failed scan says so in the panel, instead of showing an empty list that reads as all-clear');
@@ -12159,8 +12171,9 @@ test('previewPtoAccruals is a READ-ONLY dry run that shares the ONE accrual reso
 // ── Gap4 / F4 — per-job automation liveness, derived not accumulated ─────────
 console.log('\nCode.js — automation job liveness (Gap4 / F4)');
 {
-  const jobCtx = vm.createContext({ console });
+  const jobCtx = vm.createContext({ console, isFinite });
   vm.runInContext(extractRawFunction('Code.js', 'automationJobProblems_'), jobCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'auditWindowProvesAbsence_'), jobCtx);   // the no-run-on-record branch (follow-up to A1)
   // A STUB table, so these cases test the decision rather than today's job list
   // (the real table's coverage is asserted separately below).
   vm.runInContext(`var ACC=true, ARCH=false; var AUTOMATION_JOB_CHECKS=[
@@ -12518,17 +12531,20 @@ test('F2: the day-off predicate uses the REP tz and the server PTO flag', () => 
   assert.strictEqual(ctx.remindIsDayOff_('Asia/Kolkata'), false, 'a missing flag is not "off"');
 });
 
-test('F2: empIsOffToday_ is bounded, approved-only, and fails toward "working"', () => {
-  const body = extractRawFunction('Code.js', 'empIsOffToday_');
+test('F2: empTimeOffToday_ is bounded, approved-only, and fails toward "working"', () => {
+  // T5 (cycle 22) renamed it from empIsOffToday_: it now says WHICH part of the
+  // day (full / morning / afternoon), and only a FULL day sets offToday.
+  const body = extractRawFunction('Code.js', 'empTimeOffToday_');
   assert.ok(!/getDataRange\(\)/.test(body), 'it does not read the full sheet (INV-46)');
   assert.ok(/getRange\(2, 1, lastRow - 1, width\)/.test(body), 'it reads a bounded column window');
   assert.ok(/normalizeDate_/.test(body), 'the date cell is coercion-recovered (INV-29)');
   assert.ok(/\.trim\(\)\.toLowerCase\(\) === 'approved'/.test(body),
     "only APPROVED counts — a pending request is not yet a day off (normalized, INV-183)");
-  assert.ok(/catch \(e\)[\s\S]*return false/.test(body),
-    'a failed read returns false — the safe direction (a missed reminder, never a silenced one)');
+  assert.ok(/catch \(e\)[\s\S]*return null/.test(body),
+    'a failed read returns null — the safe direction (a missed reminder, never a silenced one)');
   const state = extractRawFunction('Code.js', 'getEmployeeState');
-  assert.ok(/offToday: empIsOffToday_\(/.test(state), 'getEmployeeState ships it');
+  assert.ok(/const offKind = empTimeOffToday_\(emp\.id, today\)/.test(state) && /offToday: offKind === 'full'/.test(state),
+    'getEmployeeState ships it — a FULL day only');
 });
 
 test('F7: the accrual tile footer is terse AND keeps the planned line', () => {
@@ -12608,6 +12624,7 @@ test('B8: the catalog browse view is named, filtered purely, and error-vs-empty 
 test('B8: the catalog seat filter mirrors the engine letter test', () => {
   const ctx = { esc: (x) => String(x) };
   vm.createContext(ctx);
+  vm.runInContext(extractFunction('intake/script_intake.html', 'intakeSeatKindsClient_'), ctx);   // I2
   vm.runInContext(extractFunction('intake/script_intake.html', 'intakeFilterCatalog_'), ctx);
   const rows = [
     { hcpcs: 'K0821', features: 'captain seat', seatType: 'Captain' },
@@ -15834,7 +15851,7 @@ test('wiring: the fold rides both lists, first-message re-check, one predicate a
   const mf = extractScript('metrics/script_metrics.html');
   assert.ok(/spanishVmPillHtml_\(t\)/.test(mf.slice(mf.indexOf('function spanishResolvedCard_'))), 'resolved card carries the pill');
   const pillFn = extractFunction('metrics/script_metrics.html', 'spanishVmPillHtml_');
-  assert.ok(/kind === 'voicemail'/.test(pillFn), 'pill renders only for kind voicemail');
+  assert.ok(/kind !== 'voicemail'\) return ''/.test(pillFn), 'pill renders only for kind voicemail');
 });
 
 
@@ -16588,7 +16605,7 @@ test('GATE-TIER: the omnibus ADMIN_GATED bucket matches the tier each endpoint a
   assert.ok(checked > 60, 'the case→tier link actually resolved (checked ' + checked + ')');
 });
 
-test('BCN-1: the deploy-version beacon server half — derived hash, cached, boot-safe, read-gated', () => {
+test('BCN-1: the deploy-version beacon server half — derived hash, per-execution memo only, boot-safe, read-gated', () => {
   const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   const hash = nc(extractRawFunction('Code.js', 'clientBuildHash_'));
   // DERIVED (INV-179): the file set comes from index.html's own include()
@@ -16598,10 +16615,10 @@ test('BCN-1: the deploy-version beacon server half — derived hash, cached, boo
     'index is read RAW (its scriptlets are part of the fingerprint)');
   assert.ok(hash.indexOf("include\\('([^']+)'\\)") >= 0, "the partial set is derived from index's include() calls");
   assert.ok(/include\(m\[1\]\)/.test(hash), "and each partial is read through include()'s own channel — the bytes production serves");
-  assert.ok(/cache\.put\(BUILD_HASH_CACHE_KEY, hex, BUILD_HASH_CACHE_TTL_SEC\)/.test(hash),
-    'cached with a FINITE TTL (CacheService survives a deploy — an eternal entry would never notice one)');
-  const ttl = codeSrc.match(/BUILD_HASH_CACHE_TTL_SEC = (\d+)/);
-  assert.ok(ttl && Number(ttl[1]) <= 600, 'the TTL bounds post-deploy detection lag (≤10 min)');
+  // U4 (cycle 22): NO cross-execution cache — ScriptCache is shared by HEAD and
+  // every versioned deployment, so a /dev visit could hand prod another
+  // version's hash. The per-execution memo is the only reuse (driven in BCN-1b).
+  assert.ok(!/CacheService/.test(hash), 'no ScriptCache — it is shared across deployments (U4)');
   const stamp = nc(extractRawFunction('Code.js', 'getDeployStamp'));
   assert.ok(/if \(!emp\) return \{ error: 'Not authorized\.' \};/.test(stamp),
     'getDeployStamp is rep-gated with the bare-{error} READ shape (GATE-SHAPE)');
@@ -16853,7 +16870,7 @@ test('QA-2: the audio Drive boundary — gate first, folder parentage BEFORE byt
   assert.ok(!/DriveApp/.test(wrap), 'no Drive access outside the shared boundary helper');
   const f = nc(extractRawFunction('Code.js', 'qaAudioChunkFor_'));
   const parentsIdx = f.indexOf('getParents()');
-  const blobIdx = f.indexOf('getBlob()');
+  const blobIdx = f.indexOf('qaReadChunkBytes_(');   // D5 (cycle 22): the byte read is a ranged helper now
   assert.ok(parentsIdx > -1 && blobIdx > parentsIdx,
     'the folder-parentage check runs BEFORE the blob read — the app runs as the deployer, so without it any ' +
     'caller could read ANY Drive file the deployer can open, by id (the kbGetImageData boundary)');
@@ -17550,7 +17567,7 @@ test('QA-10: Phase 2 wiring — agent boundary, headers, stats gate, waveform fa
   const setAgent = nc(extractRawFunction('Code.js', 'qaSetRecordingAgent'));
   assert.ok(/'QA access required\.'/.test(setAgent) && /substring\(0, 80\)/.test(setAgent),
     'agent set is QA-gated and bounded');
-  assert.ok(/writeAuditLog_\(emp, 'QaAgentSet', '', '', false, 0, 'fileId=' \+ fid \+ \(name \? '' : '; cleared'\), emp\.email\);/.test(setAgent),
+  assert.ok(/writeAuditLog_\(emp, 'QaAgentSet', '', '', false, 0, 'fileId=' \+ fid \+ \(name \? '' : '; cleared'\) \+ \(unshare \? '; unshared' : ''\), emp\.email\);/.test(setAgent),
     'the audit row NEVER carries the agent name — names stay in the QA store (INV-32/196)');
   // Stats: gate before any store access; truncation reported (INV-169).
   const stats = nc(extractRawFunction('Code.js', 'getQaStats'));
@@ -18583,7 +18600,7 @@ test('BIZ-3: the clients lead with business time, keep wall clock, and say which
     'business mode is detected from the payload — an OLDER server keeps wall clock as the headline');
   assert.ok(/bizOn \? bizMin : wallMin/.test(head), 'business is the headline when present');
   assert.ok(/wall clock /.test(head), 'the wall-clock figure is the secondary line, not deleted');
-  assert.ok(/weekends and US holidays excluded/.test(head),
+  assert.ok(/weekends and company holidays excluded/.test(head),
     'the strip SAYS what it is measuring — an unexplained drop from 3d to 2h reads as a bug');
   assert.ok(/if \(bizOn\) \{/.test(head), 'the note renders only in business mode');
 
@@ -18819,8 +18836,10 @@ test('A2: all five hours builders accumulate breaks through ONE helper', () => {
   // 1 definition + the 5 hours builders + the shared tsPunchDaysWithArchive_
   // reader behind BOTH operator reports (A5 / BP), which must build the same
   // shape or their impact figures would not match production.
-  assert.strictEqual((stripped.match(/punchDayAdd_\(/g) || []).length, 7,
-    'punchDayAdd_ is defined once and called by the five builders plus the shared report reader');
+  // + getPunctualityReport's half-day hours (the T5 rework, cycle 22), which
+  // grades a half day on hours worked through the same shape and calcHours_.
+  assert.strictEqual((stripped.match(/punchDayAdd_\(/g) || []).length, 8,
+    'punchDayAdd_ is defined once and called by the five builders, the shared report reader and the half-day grader');
   ['workedHoursByEmpForRange_', 'getManagerDashboard', 'getTeamCalendar',
    'buildTimesheetForEmployee_', 'buildCalendarForEmployee_'].forEach((fn) => {
     const body = extractRawFunction('Code.js', fn).replace(/^\s*\/\/.*$/gm, '');
@@ -22010,7 +22029,7 @@ test('H3-4: both DQE readers go through cdrDqeWindowSpan_ and KEEP their per-row
     assert.ok(/if \(!dateIso \|\| dateIso < from \|\| dateIso > to\) continue;/.test(body), name + ' keeps the per-row date filter -- the span bounds the read, it never replaces the filter');
   });
   const helper = foNc(extractRawFunction('Code.js', 'cdrDqeWindowSpan_'));
-  assert.ok(/getRange\(2, CDR\.DATE, lastRow - 1, 1\)/.test(helper), 'the helper reads the DATE column by the enum, width 1');
+  assert.ok(/getRange\(2, dateCol \|\| CDR\.DATE, lastRow - 1, 1\)/.test(helper), 'the helper reads the DATE column by the enum, width 1 (M10: or the caller\'s date column)');
   assert.ok(/cdrRowDateIso_\(dates\[i\]\[0\], tz\)/.test(helper), 'and resolves every cell through the one date reader (so a serial is a date here too)');
 });
 
@@ -22243,7 +22262,7 @@ test('F-20: the three heartbeat-only daily jobs stamp a heartbeat and their own 
     Utilities: { formatDate: (d, tz, f) => (f === 'd' ? '15' : '2026-09') },
     AUTOMATION_JOB_CHECKS: [{ action: 'CallNotesReconcile', label: 'nightly Sheets reconcile', cadence: 'daily', staleHours: 30, enabled: () => true }] };
   vm.createContext(ctx);
-  ['automationJobProblems_', 'automationProblems_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  ['automationJobProblems_', 'auditWindowProvesAbsence_', 'automationProblems_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   const lines = ctx.automationProblems_({ automationLastRuns: [], digests: [],
     automationErrors: { DailyExportCheck: { at: '2026-09-18 12:00:01', message: 'boom' }, CallNotesReconcile: { at: 't', message: 'tabled' } } });
   assert.strictEqual(lines.filter((l) => /DailyExportCheck/.test(l)).length, 1, 'the untabled stamp reaches the digest once');
@@ -22858,7 +22877,10 @@ test('F-27: the intake email rows come from the SERVER\'s English bank and the c
   assert.strictEqual(acct[0].label, 'Demographics'); assert.strictEqual(acct[0].isHeader, true);
   assert.strictEqual(acct[1].label, 'Patient Full Name'); assert.strictEqual(acct[1].value, 'Pat');
   assert.strictEqual(acct[5].value, '1950-01-01', 'numeric and string keys both resolve');
-  assert.strictEqual(acct[1].isSecondary, true, 'SECONDARY_QUESTION_ROWS is 1-based (row 2 = index 1)');
+  // I8 (cycle 22): this pin asserted the defect. SECONDARY_QUESTION_ROWS is
+  // 0-based — the email body builder and the client both read it that way.
+  assert.strictEqual(acct[2].isSecondary, true, 'SECONDARY_QUESTION_ROWS is 0-based (PMD index 2 is secondary)');
+  assert.strictEqual(acct[1].isSecondary, false, 'and index 1 (the patient name) is not');
   const pap = JSON.parse(JSON.stringify(ctx.intakeAcctRowsEn_('PAP', {})));
   assert.strictEqual(pap.length, ctx.INTAKE_PAP_Q_EN.length); assert.strictEqual(pap[18].isHeader, true, 'PAP Details is a header (row 19)');
   // No send or preview path reads a client label any more.
@@ -23555,7 +23577,7 @@ console.log('\nOperator notes 2026-09-10 — Batch B (N2 business-hours fold, N3
 
 test('N2: drDeptStats_ is a PURE fold over business minutes — email resolves only, counts reported', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
-  const sbx = vm.createContext({ CONFIG: { CALL_NOTES: { DR_SLA_DEFAULT_HOURS: 48 } } });
+  const sbx = vm.createContext({ CONFIG: { CALL_NOTES: { DR_SLA_DEFAULT_DAYS: 2 } } });   // M6: working days
   ['drSplitDepts_', 'getDeptRequestSla_', 'drDeptStats_'].forEach((fn) =>
     vm.runInContext(extractRawFunction('Code.js', fn), sbx, { filename: 'Code.js#' + fn }));
   // The Friday-16:00 → Monday-09:00 pair the operator asked about: 120
@@ -23574,7 +23596,7 @@ test('N2: drDeptStats_ is a PURE fold over business minutes — email resolves o
     { toDept: 'Billing, Shipping', status: 'open', slaStatus: 'ontime', elapsedMin: 30 },                          // counted under EACH dept
     { toDept: 'Shipping', status: 'resolved', resolvedVia: 'app', elapsedMin: null },
   ];
-  const out = sbx.drDeptStats_(items, { Billing: 24 });
+  const out = sbx.drDeptStats_(items, { Billing: 1 });
   const bill = out.filter((r) => r.dept === 'Billing')[0];
   const ship = out.filter((r) => r.dept === 'Shipping')[0];
   assert.ok(bill && ship, 'one row per component department');
@@ -23586,13 +23608,13 @@ test('N2: drDeptStats_ is a PURE fold over business minutes — email resolves o
   assert.strictEqual(bill.untrackedResolved, 1, 'the legacy (no ResolvedVia) row is counted, not timed');
   assert.strictEqual(bill.open, 2, 'open rows: the single-dept + the multi-dept send');
   assert.strictEqual(bill.overdueOpen, 1);
-  assert.strictEqual(bill.slaHours, 24, 'the per-dept SLA rides the row');
+  assert.strictEqual(bill.slaDays, 1, 'the per-dept SLA rides the row (working days, M6)');
   assert.strictEqual(ship.open, 1, 'the multi-dept send counts under Shipping too');
   assert.strictEqual(ship.avgMinutes, null, 'a department whose ONLY resolve was manual reads null — never 0');
   assert.strictEqual(ship.medianMinutes, null);
   assert.strictEqual(ship.manualResolved, 1);
   assert.strictEqual(ship.timed, 0);
-  assert.strictEqual(ship.slaHours, 48, 'default SLA');
+  assert.strictEqual(ship.slaDays, 2, 'default SLA');
   assert.strictEqual(out[0].dept, 'Billing', 'sorted by open count desc');
   assert.strictEqual(sbx.drDeptStats_([], {}).length, 0, 'empty in, empty out');
   // Wiring: the endpoint feeds the fold with the SAME items it ships (whose
@@ -26666,6 +26688,7 @@ test('F-34: ONE voicemail fold — the stats card counts the voicemails the list
   sb.spanishVmTooShort_ = (sec, min) => (sec == null ? 'unparsed' : (sec < min ? 'short' : 'show'));
   sb.emailAddrOnly_ = (s) => String(s).replace(/^.*</, '').replace(/>.*$/, '').trim().toLowerCase();
   vm.runInContext(extractRawFunction('Code.js', 'spanishVmFold_'), sb, { filename: 'Code.js#spanishVmFold_' });
+  vm.runInContext(extractRawFunction('Code.js', 'spanishVmResolution_'), sb);   // M5: per-message resolution
 
   const th = (id, msgs) => ({ getId: () => id, getMessages: () => msgs, getPermalink: () => 'link/' + id });
   const msg = (from, subj, body, ms) => ({
@@ -27038,8 +27061,6 @@ test('BCN-1b (BEHAVIOURAL, F-52): the build hash really CHANGES when a partial c
   // whole failure mode it exists to prevent (a version constant nobody bumps,
   // one level down).
   const sb = buildSandbox([]);
-  sb.BUILD_HASH_CACHE_KEY = 'bh';
-  sb.BUILD_HASH_CACHE_TTL_SEC = 300;
   const crypto = require('crypto');
   sb.Utilities = {
     DigestAlgorithm: { MD5: 'MD5' }, Charset: { UTF_8: 'UTF-8' },
@@ -27058,7 +27079,7 @@ test('BCN-1b (BEHAVIOURAL, F-52): the build hash really CHANGES when a partial c
   sb.include = (f) => { if (!(f in partials)) throw new Error('no such file'); return partials[f]; };
   sb._clientBuildHashMemo = null;
   vm.runInContext(extractRawFunction('Code.js', 'clientBuildHash_'), sb, { filename: 'Code.js#clientBuildHash_' });
-  const H = () => { sb._clientBuildHashMemo = null; delete cacheStore.bh; return sb.clientBuildHash_(); };
+  const H = () => { sb._clientBuildHashMemo = null; return sb.clientBuildHash_(); };
 
   const base = H();
   assert.ok(/^[0-9a-f]{32}$/.test(base), 'the hash is a 32-char lowercase MD5 hex (signed bytes and all)');
@@ -27104,24 +27125,23 @@ test('BCN-1b (BEHAVIOURAL, F-52): the build hash really CHANGES when a partial c
   partials['cn/script_callnotes.html'] = keepCn;
   assert.notStrictEqual(lostCore, lostCn, 'losing a different partial is a different build');
 
-  // The cache is a CACHE, not the answer: a hit is served, and a put happens
-  // exactly once per cold compute (an eternal entry would never notice a
-  // deploy — the TTL half stays pinned below).
+  // U4 (cycle 22): nothing from ScriptCache is ever served. A value another
+  // deployment (HEAD, via /dev) left in the shared cache must NOT become this
+  // execution's hash; only the per-execution memo is reused.
   indexRaw = "<?!= include('script_core.html') ?>";
-  delete cacheStore.bh; sb._clientBuildHashMemo = null;
-  const cold = sb.clientBuildHash_();
-  const putsAfterCold = puts;
   sb._clientBuildHashMemo = null;
-  assert.strictEqual(sb.clientBuildHash_(), cold, 'a warm cache serves the same hash');
-  assert.strictEqual(puts, putsAfterCold, 'and does not re-put');
+  const own = sb.clientBuildHash_();
   cacheStore.bh = 'deadbeef';
   sb._clientBuildHashMemo = null;
-  assert.strictEqual(sb.clientBuildHash_(), 'deadbeef', 'the cached value WINS — the read is real, not decorative');
+  assert.strictEqual(sb.clientBuildHash_(), own, 'a hash another deployment left in ScriptCache is never served (U4)');
+  assert.strictEqual(puts, 0, 'and nothing is written there for another deployment to read');
+  partials['script_core.html'] = 'CORE-V9';
+  assert.strictEqual(sb.clientBuildHash_(), own, 'within ONE execution the memo is reused (the code cannot change mid-execution)');
 
-  // The TTL, the boot-safety and the injection form are claims about SHAPE,
-  // not about this function's output, so they stay structural.
-  const ttl = serverSource().match(/BUILD_HASH_CACHE_TTL_SEC = (\d+)/);
-  assert.ok(ttl && Number(ttl[1]) <= 600, 'the TTL bounds post-deploy detection lag (≤10 min)');
+  // The boot-safety and the injection form are claims about SHAPE, not about
+  // this function's output, so they stay structural (BCN-1). The TTL is gone
+  // with the cache (U4).
+  assert.ok(!/BUILD_HASH_CACHE_/.test(serverSource()), 'no build-hash cache key or TTL is declared (U4)');
 });
 
 test('Punctuality + Admin fill the view width (F-52: the one claim here that CANNOT be driven)', () => {
@@ -27413,6 +27433,1343 @@ test('S3: every errorStateHtml_ call that interpolates rep input passes a beacon
   assert.ok(calls > 40, 'sanity: the scan found the call sites (' + calls + ')');
   assert.ok(typed >= 4, 'sanity: the four search-failure sites are seen as carrying rep input (' + typed + ')');
   assert.deepStrictEqual(bad, [], 'rep input reaching the ClientErrors beacon:\n  ' + bad.join('\n  '));
+});
+
+
+// ---------------------------------------------------------------------------
+// cycle 22 Batch 6 — automation health honesty (A1, A2, C2, A3, S7, A4, A5, A6, A8)
+console.log('\ncycle 22 Batch 6 — automation health honesty');
+const B6_WEB = path.join(__dirname, '../../web-app');
+
+function b6JobCtx_() {
+  const ctx = vm.createContext({ console, isFinite, String, Object, JSON });
+  ['auditWindowCoversMonth_', 'auditWindowProvesAbsence_', 'automationJobProblems_', 'automationLastRunMerge_']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  vm.runInContext(`var AUTOMATION_JOB_CHECKS=[
+    {action:'CallNotesReconcile',label:'nightly Sheets reconcile',cadence:'daily',staleHours:30,enabled:()=>true},
+    {action:'PtoAccrualCredit',label:'monthly PTO accrual credit',cadence:'monthly',graceDays:3,enabled:()=>true}];`, ctx);
+  return ctx;
+}
+
+test('A1: a monthly job with NO run on record is "not run" only when the AuditLog window read reaches the 1st — a truncated mid-month window is UNKNOWN, never a false alarm', () => {
+  const ctx = b6JobCtx_();
+  const f = ctx.automationJobProblems_;
+  const NOW = Date.parse('2026-09-20T09:00:00Z');
+  const none = [{ action: 'PtoAccrualCredit', last: null }];
+  const NOT_RUN = /accrual credit has not run this month/;
+  // The live defect: 4,000 rows reach back only to the 14th, the credit ran on
+  // the 1st and scrolled out. It used to read "has not run" every day to month end.
+  const midMonth = { complete: false, startMgr: '2026-09-14 08:12:00', rows: 4000 };
+  assert.strictEqual(f(none, {}, NOW, 20, '2026-09', midMonth).filter((m) => NOT_RUN.test(m)).length, 0,
+    'a window that starts mid-month cannot see the 1st — no claim either way');
+  assert.ok(f(none, {}, NOW, 20, '2026-09', { complete: false, startMgr: '2026-08-29 23:00:00', rows: 4000 }).some((m) => NOT_RUN.test(m)),
+    'a window that reaches back past the 1st and holds no row IS evidence');
+  assert.ok(f(none, {}, NOW, 20, '2026-09', { complete: true, startMgr: '', rows: 4000 }).some((m) => NOT_RUN.test(m)),
+    'a complete scan is evidence');
+  assert.ok(f(none, {}, NOW, 20, '2026-09', undefined).some((m) => NOT_RUN.test(m)),
+    'no window reported (a pre-A1 report) keeps the old reading');
+  // A run ON RECORD from an earlier month (the ledger keeps it for ever) is
+  // evidence whatever the window — that is what makes the ledger a fix.
+  const lastMonth = [{ action: 'PtoAccrualCredit', last: { timestampMgr: '2026-08-01 06:00:03', ms: NOW - 20 * 86400000 } }];
+  assert.ok(f(lastMonth, {}, NOW, 20, '2026-09', midMonth).some((m) => NOT_RUN.test(m)),
+    'a recorded run last month means this month\'s is missing');
+  const thisMonth = [{ action: 'PtoAccrualCredit', last: { timestampMgr: '2026-09-01 06:00:03', ms: NOW - 19 * 86400000 } }];
+  assert.strictEqual(f(thisMonth, {}, NOW, 20, '2026-09', midMonth).length, 0, 'the ledger\'s run on the 1st is seen from the 20th');
+  assert.strictEqual(ctx.auditWindowCoversMonth_({ complete: false, startMgr: '' }, '2026-09'), false,
+    'a truncated window with no readable start covers nothing');
+});
+
+test('A1: the run ledger — writeAuditLog_ stamps AUTOMATION_RUN_<action> for an automation row only, and the merge keeps the NEWER run', () => {
+  const props = {};
+  const ctx = vm.createContext({ console, String, JSON, Date, isFinite,
+    AUTOMATION_AUDIT_ACTIONS: ['CallNotesReconcile', 'PtoAccrualCredit'], AUTOMATION_RUN_PROP_PREFIX: 'AUTOMATION_RUN_',
+    fmtDate_: () => '2026-09-20', fmtTime_: () => '06:00:03', sheetSafeRow_: (r) => r,
+    getOrCreateAuditSheet_: () => ({ appendRow() {} }),
+    propSetBounded_: (k, v) => { props[k] = v; },
+    propShrinkStripFields_: () => () => null,
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null) }) } });
+  ['writeAuditLog_', 'automationRunKey_', 'stampAutomationRun_', 'readAutomationRunLedger_', 'automationLastRunMerge_']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const sys = { id: 'SYSTEM', name: 'System', email: '' };
+  ctx.writeAuditLog_(sys, 'PtoAccrualCredit', '2026-09-20', '', false, 0, 'credited=2');
+  ctx.writeAuditLog_(sys, 'PunchIn', '2026-09-20', '09:00', false, 0, '');
+  assert.deepStrictEqual(Object.keys(props), ['AUTOMATION_RUN_PtoAccrualCredit'], 'one key per job, and only automation actions stamp');
+  const led = JSON.parse(JSON.stringify(ctx.readAutomationRunLedger_()));
+  assert.deepStrictEqual(led, { PtoAccrualCredit: { ts: '2026-09-20 06:00:03', notes: 'credited=2' } }, 'the ledger reads back what was stamped');
+  // Merge: the newer run wins in either direction; an unparseable stamp never displaces a real row.
+  const parse = (ts) => Date.parse(ts.replace(' ', 'T') + 'Z');
+  const id = (ts) => ts;
+  const m1 = ctx.automationLastRunMerge_({}, led, parse, id);
+  assert.strictEqual(m1.PtoAccrualCredit.source, 'ledger', 'the tail had nothing — the ledger supplies the run');
+  const newerTail = { PtoAccrualCredit: { timestampMgr: '2026-09-21 06:00:00', ms: parse('2026-09-21 06:00:00'), notes: 't' } };
+  assert.strictEqual(ctx.automationLastRunMerge_(newerTail, led, parse, id).PtoAccrualCredit.notes, 't', 'a later tail row is not hidden by an older stamp');
+  const olderTail = () => ({ PtoAccrualCredit: { timestampMgr: '2026-09-01 06:00:00', ms: parse('2026-09-01 06:00:00'), notes: 't' } });
+  assert.strictEqual(ctx.automationLastRunMerge_(olderTail(), led, parse, id).PtoAccrualCredit.source, 'ledger', 'a later stamp replaces an older row');
+  const bad = { PtoAccrualCredit: { ts: 'garbage', notes: '' } };
+  assert.strictEqual(ctx.automationLastRunMerge_(olderTail(), bad, () => NaN, id).PtoAccrualCredit.notes, 't', 'an unparseable stamp never displaces a parsed row');
+  // And the report path reads it, and reports the window it measured against.
+  const comp = stripJsComments_(extractRawFunction('Code.js', 'computeAutomationHealth_'));
+  assert.ok(/automationLastRunMerge_\(lastRunByAction,\s*readAutomationRunLedger_\(\)/.test(comp), 'computeAutomationHealth_ folds the ledger in');
+  assert.ok(/auditWindow:\s*\{\s*complete:\s*scannedAll/.test(comp), 'and ships the window');
+  const probs = stripJsComments_(extractRawFunction('Code.js', 'automationProblems_'));
+  assert.ok(/report\.auditWindow/.test(probs), 'automationProblems_ hands the window to the job derivation');
+});
+
+test('A1: the panel row for a job with no run on record says "cannot confirm" under a truncated window, not "no audit row" (DOM-free render)', () => {
+  const s2 = buildSandbox([]);
+  s2.icon = () => ''; s2.esc = (x) => String(x == null ? '' : x);
+  const fn = loadFunction(s2, 'cn/script_callnotes.html', 'cnRunNeverText_');
+  const cap = loadFunction(s2, 'cn/script_callnotes.html', 'cnRunNeverCaption_');
+  const trunc = { complete: false, startMgr: '2026-09-14 08:12:00', rows: 4000 };
+  assert.ok(/cannot confirm/.test(fn(trunc)), 'the row says it cannot confirm');
+  // Follow-up (cycle 22): the reason is said ONCE, under the section, not on every row.
+  assert.ok(!/2026-09-14/.test(fn(trunc)) && /2026-09-14 08:12:00/.test(cap(trunc, [{ action: 'A', last: null }, { action: 'B', last: null }])),
+    'the caption names the window it could not see past; the row does not repeat it');
+  assert.strictEqual(cap(trunc, [{ action: 'A', last: { ms: 1 } }]), '', 'no caption when every job has a run');
+  assert.strictEqual(cap({ complete: true }, [{ action: 'A', last: null }]), '', 'no caption under a complete scan');
+  const cnSrc = fs.readFileSync(path.join(B6_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.ok(/\}\)\.join\(''\) \+ cnRunNeverCaption_\(res\.auditWindow, res\.automationLastRuns\)/.test(cnSrc), 'appended once after the rows');
+  assert.ok(!/cannot confirm/.test(fn({ complete: true })) && /no run on record/.test(fn({ complete: true })), 'a complete scan is a plain fact');
+  assert.ok(!/no audit row in the scan window/.test(fs.readFileSync(path.join(B6_WEB, 'cn/script_callnotes.html'), 'utf8')), 'the old unconditional caption is gone');
+});
+
+test('A2: the System tab renders EVERY line the health dot counts — driven: the server\'s own list, every kind firing, fed to cnHealthFindings_', () => {
+  const ctx = vm.createContext({ console, String, Object, Date, Number, parseInt, JSON, isFinite,
+    CONFIG: { TIMEZONE: 'Asia/Kolkata', ADJUST_WINDOW_DAYS: 30 }, CLIENT_ERR_PROBLEM_MIN: 10,
+    Utilities: { formatDate: (d, tz, f) => (f === 'd' ? '20' : '2026-09') },
+    AUTOMATION_JOB_CHECKS: [
+      { action: 'CallNotesReconcile', label: 'nightly Sheets reconcile', cadence: 'daily', staleHours: 30, enabled: () => true },
+      { action: 'PtoAccrualCredit', label: 'monthly PTO accrual credit', cadence: 'monthly', graceDays: 3, enabled: () => true }] });
+  ['auditWindowCoversMonth_', 'auditWindowProvesAbsence_', 'automationJobProblems_', 'automationProblems_']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const report = {
+    digests: [{ key: 'eod', last: '2026-09-18 17:00:00', stale: true }],
+    automationLastRuns: [{ action: 'CallNotesReconcile', last: { timestampMgr: '2026-09-18 05:00:00', ms: Date.now() - 50 * 3600000 } },
+                         { action: 'PtoAccrualCredit', last: null }],
+    auditWindow: { complete: true, startMgr: '', rows: 4000 },
+    automationErrors: { CallNotesReconcile: { at: 't', message: 'tabled' }, DailyExportCheck: { at: 't', message: 'untabled' } },
+    openPunches: { reps: 2, days: 3, expiring: 1, detail: [{ name: 'A', count: 2 }, { name: 'B', count: 1 }], window: { start: 's', end: 'e', adjustWindowDays: 30 } },
+    accrualReconcile: { shortfalls: [{ id: 'E1', was: 8, now: 6, months: '2026-08' }], skipped: [{ id: 'E2', months: '2026-08', why: 'x' }],
+      truncated: true, incomplete: [{ id: 'E3', days: 1, months: '2026-08' }] },
+    syncFails: { count: 2, windowDays: 30 },
+    witnessFails: { count: 1, recent: true, lastAction: 'EmpDocSigned' },
+    detectors: [{ key: 'coachOverdue', label: 'Coaching', ok: false, detail: 'dead' }],
+    selfTest: { mode: 'smoke', fail: 2, pass: 70, skip: 0, date: 'd', stuck: false },
+    clientErrors: { count: 30, last24h: 12, windowDays: 7 },
+  };
+  const items = JSON.parse(JSON.stringify(ctx.automationProblems_(report, { items: true })));
+  const texts = JSON.parse(JSON.stringify(ctx.automationProblems_(report)));
+  assert.deepStrictEqual(items.map((i) => i.text), texts, 'the digest/dot strings ARE the items\' text — one list, not two');
+  // Non-vacuity: the fixture fires EVERY kind the server can emit (derived from its source).
+  const src = stripJsComments_(extractRawFunction('Code.js', 'automationProblems_') + extractRawFunction('Code.js', 'automationJobProblems_'));
+  const kinds = Array.from(new Set((src.match(/\b(?:add|push)\('([a-zA-Z]+)'/g) || []).map((m) => m.replace(/^.*\('/, '').replace(/'$/, ''))));
+  assert.ok(kinds.length >= 9, 'derived the kind set (' + kinds.join(',') + ')');
+  kinds.forEach((k) => assert.ok(items.some((i) => i.kind === k), 'the fixture fires kind ' + k));
+  // Client: every item is represented among the non-ok automation findings.
+  const s2 = buildSandbox([]);
+  s2.CN_DIGEST_LABELS_ = { eod: 'EOD' };
+  vm.runInContext(fs.readFileSync(path.join(B6_WEB, 'cn/script_callnotes.html'), 'utf8').match(/var CN_SYS_CLIENT_KINDS_ = [\s\S]*?\n\};/)[0]
+    .replace(/var /g, 'this.'), s2);
+  const fn = loadFunction(s2, 'cn/script_callnotes.html', 'cnHealthFindings_');
+  const out = fn(Object.assign({}, report, { problems: items }), null).items.filter((f) => f.area === 'automation' && f.severity !== 'ok');
+  const ids = out.map((f) => f.id);
+  const has = (re) => ids.some((i) => re.test(i));
+  const BRANCH = { digest: (i) => new RegExp('^digest:' + i.key + '$'), jobError: (i) => new RegExp('^automationError:' + i.key + '$'),
+    syncFails: () => /^syncFails$/, witness: () => /^witnessFails$/, detector: (i) => new RegExp('^detector:' + i.key + '$'),
+    selfTest: () => /^selfTest$/, clientErrors: () => /^clientErrors$/ };
+  items.forEach((i) => {
+    const re = s2.CN_SYS_CLIENT_KINDS_[i.kind] ? BRANCH[i.kind](i) : new RegExp('^problem:' + i.kind + ':');
+    assert.ok(re && has(re), 'the dot counted "' + i.text.slice(0, 60) + '…" (' + i.kind + ') and the tab shows it');
+  });
+  Object.keys(s2.CN_SYS_CLIENT_KINDS_).forEach((k) => assert.ok(BRANCH[k] && kinds.indexOf(k) >= 0,
+    k + ': a kind the client claims to render must be one the server emits, with a branch this pin checks'));
+  ['job', 'openPunch', 'accrual'].forEach((k) => assert.ok(ids.some((i) => i.indexOf('problem:' + k + ':') === 0), k + ' reaches the tab (it did not before A2)'));
+  // The panel path attaches the list; the dot and digest keep reading the same function.
+  const gah = stripJsComments_(extractRawFunction('Code.js', 'getAutomationHealth'));
+  assert.ok(/report\.problems = automationProblems_\(report, \{ items: true \}\)/.test(gah), 'getAutomationHealth ships the dot\'s list');
+});
+
+
+test('C2: the weekly digest treats a queue {error} as a FAILURE — stamped, no healthy heartbeat — and still sends the queue it could read (driven)', () => {
+  const drive = (training, review) => {
+    const log = { sent: [], err: [], clr: [], hb: [] };
+    const ctx = vm.createContext({ console, Date, String, JSON,
+      CONFIG: { TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago' },
+      Utilities: { formatDate: () => '2026-09-20' }, Logger: { log() {} },
+      assertManagerCaller_() {}, getManagerEmails_: () => ['m@x.com'],
+      managerAggregateFlagged_: (t) => (t === 'training' ? training : review),
+      sendManagerFlagDigest_: (to, label) => log.sent.push(label),
+      stampAutomationError_: (k, m) => log.err.push(k + ':' + m), clearAutomationError_: (k) => log.clr.push(k),
+      stampDigestLastRun_: (k) => log.hb.push(k) });
+    vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesWeeklyDigests'), ctx);
+    ctx.sendCallNotesWeeklyDigests();
+    return log;
+  };
+  const bad = drive({ error: 'Manager access required.' }, { results: [{ id: 1 }], skippedReps: [] });
+  assert.deepStrictEqual(bad.sent, ['Review Candidates'], 'the readable queue still went out');
+  assert.strictEqual(bad.hb.length, 0, 'NO heartbeat — the weekly row must go stale, not read healthy (INV-109)');
+  assert.ok(bad.err.length === 1 && /^CallNotesWeeklyDigests:training queue: Manager access required\./.test(bad.err[0]),
+    'the failure is stamped where the dot and the digest read it: ' + bad.err.join('|'));
+  const ok = drive({ results: [], skippedReps: [] }, { results: [], skippedReps: [] });
+  assert.deepStrictEqual(ok.hb, ['weekly'], 'a clean empty week heartbeats');
+  assert.deepStrictEqual(ok.clr, ['CallNotesWeeklyDigests'], 'and clears a previous failure');
+  assert.strictEqual(ok.sent.length + ok.err.length, 0, 'and sends nothing (S24)');
+});
+
+test('A3: a CONFIGURED Dept Requests store that will not open THROWS by name — it never falls back to the ADP sheet (driven)', () => {
+  const drive = (propVal, openThrows) => {
+    const log = { adp: 0 };
+    const ctx = vm.createContext({ String, Error,
+      PropertiesService: { getScriptProperties: () => ({ getProperty: () => propVal }) },
+      SpreadsheetApp: { openById: (id) => { if (openThrows) throw new Error('Requested entity was not found.'); return { id }; } },
+      getAdpSS_: () => { log.adp++; return { id: 'ADP' }; } });
+    vm.runInContext(extractRawFunction('Code.js', 'getDeptRequestsSS_'), ctx);
+    let out = null, err = null;
+    try { out = ctx.getDeptRequestsSS_(); } catch (e) { err = e; }
+    return { out, err, adp: log.adp };
+  };
+  const broken = drive(' 1AbC ', true);
+  assert.ok(broken.err && /DEPT_REQUESTS_SS_ID is set but the spreadsheet could not be opened/.test(broken.err.message) &&
+    /Requested entity was not found/.test(broken.err.message), 'the outage is named, with the cause');
+  assert.strictEqual(broken.adp, 0, 'and the payroll sheet is never touched instead');
+  assert.strictEqual(drive(' 1AbC ', false).out.id, '1AbC', 'a configured store opens by its trimmed id');
+  const unset = drive(null, false);
+  assert.ok(unset.out.id === 'ADP' && unset.adp === 1, 'the back-compat fallback still applies while the property is UNSET');
+});
+
+test('S7: offboarding removes the person from MANAGER_EMAILS / ADMIN_EMAILS — never emptying a list — and the drift detector keys on the list (driven)', () => {
+  const props = { MANAGER_EMAILS: 'Boss@x.com, gone@x.com,  other@x.com', ADMIN_EMAILS: 'gone@x.com' };
+  const ctx = vm.createContext({ String, JSON, Array,
+    OFFBOARD_GATE_LISTS: ['MANAGER_EMAILS', 'ADMIN_EMAILS'], OFFBOARDED_EMAILS_PROP: 'OFFBOARDED_EMAILS', OFFBOARDED_EMAILS_MAX: 100,
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null) }) },
+    propSetBounded_: (k, v) => { props[k] = v; } });
+  ['gateListWithout_', 'offboardFromGateLists_', 'managerSourceDrift_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const r = JSON.parse(JSON.stringify(ctx.offboardFromGateLists_('GONE@x.com')));
+  assert.deepStrictEqual(r.removed, ['MANAGER_EMAILS'], 'removed from the manager list (case-insensitive)');
+  assert.strictEqual(props.MANAGER_EMAILS, 'Boss@x.com,other@x.com', 'and only that address');
+  assert.strictEqual(props.ADMIN_EMAILS, 'gone@x.com', 'the LAST admin entry is kept — an empty ADMIN_EMAILS makes every manager an admin');
+  assert.ok(r.kept.length === 1 && r.kept[0].prop === 'ADMIN_EMAILS' && /every manager an admin/.test(r.kept[0].why), 'and the refusal is NAMED');
+  assert.deepStrictEqual(JSON.parse(props.OFFBOARDED_EMAILS), ['gone@x.com'], 'the address is recorded for the detector');
+  // Detector: roster email was CLEARED by offboarding, so only the record can see it.
+  const pairs = [{ email: 'boss@x.com', isManager: true }, { email: '', isManager: true }];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.managerSourceDrift_(['gone@x.com', 'boss@x.com'], pairs, []))), [],
+    'keyed on the roster alone it is blind — the pre-S7 shape');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.managerSourceDrift_(['gone@x.com', 'boss@x.com'], pairs, ['gone@x.com']))), ['gone@x.com'],
+    'keyed on the list + the offboarded record, it sees them');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.managerSourceDrift_(['gone@x.com'], [{ email: 'gone@x.com', isManager: true }], ['gone@x.com']))), [],
+    'a re-onboarded manager (back on the roster) is not drift');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.managerSourceDrift_(['svc@x.com'], [], []))), [],
+    'a non-roster service address is still never flagged (false-positive-free)');
+  assert.strictEqual(ctx.gateListWithout_('a@x.com', 'b@x.com').listed, false, 'an unlisted address writes nothing');
+  // Wiring: the endpoint calls it inside its lock, after the roster clear, and the client names a kept list.
+  const off = stripJsComments_(extractRawFunction('Code.js', 'offboardEmployee'));
+  const clr = off.indexOf("EMP.EMAIL + 1).setValue"), call = off.indexOf('offboardFromGateLists_(repEmail)'), rel = off.indexOf('lock.releaseLock()');
+  assert.ok(clr > 0 && call > clr && call < rel, 'offboardEmployee edits the lists after the roster clear, under its lock');
+  assert.ok(/keptIn: lists\.kept/.test(off), 'and ships what it could not remove');
+  const det = stripJsComments_(extractRawFunction('Code.js', 'automationDetectorChecks_'));
+  assert.ok(/managerSourceDrift_\(getManagerEmails_\(\), pairs, offboarded\)/.test(det) && /ADMIN_EMAILS still lists offboarded/.test(det),
+    'the managerSource detector reads the record, for both lists');
+  const cn = fs.readFileSync(path.join(B6_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.ok(/res\.keptIn \|\| \[\]/.test(cn) && /still in ' \+ kept\.map/.test(cn), 'the offboard toast names a list the person is still in');
+});
+
+test('A4: a failed tag-taxonomy load renders a named failure, never "No tags in use yet" or a blank pane', () => {
+  const s2 = buildSandbox([]);
+  s2.icon = () => ''; s2.esc = (x) => String(x == null ? '' : x);
+  s2.cnSkippedRepsNoteHtml_ = () => ''; s2.cnRenderTagRow_ = () => '<div class="row"></div>';
+  const fn = loadFunction(s2, 'cn/script_callnotes.html', 'cnRenderAdminAugmentHtml_');
+  const nul = fn(null, null, null, null).taxHtml;
+  const err = fn(null, { error: 'Manager access required.' }, null, null).taxHtml;
+  const empty = fn(null, { tags: [], archivedOnlyTags: [], totalNotes: 0, repsScanned: 3 }, null, null).taxHtml;
+  assert.ok(/could not be loaded/.test(nul) && !/No tags in use yet/.test(nul), 'no response is a failure, not a blank pane');
+  assert.ok(/could not be loaded: Manager access required\./.test(err) && !/No tags in use yet/.test(err), 'an {error} names itself');
+  assert.ok(/No tags in use yet/.test(empty) && !/could not be loaded/.test(empty), 'a real empty taxonomy still reads as empty');
+  const load = stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnLoadAdminAugment_'));
+  assert.ok(/withFailureHandler\(function \(err\) \{ tax = \{ error:/.test(load), 'the transport failure lands as an {error}, not as null');
+});
+
+test('A5: deploy readiness names a failed automation READ — it no longer blames the triggers and the CDR store for it', () => {
+  const ctx = vm.createContext({ String, Object });
+  vm.runInContext(extractRawFunction('Code.js', 'deployReadinessItems_'), ctx);
+  const store = { configTimezone: 'X', stores: [] };
+  [{ error: 'Admin access required.' }, { readFailed: 'boom' }, null].forEach((auto) => {
+    const byKey = {};
+    ctx.deployReadinessItems_(store, auto, 2).items.forEach((it) => { byKey[it.key] = it; });
+    ['triggers', 'cdr'].forEach((k) => {
+      assert.ok(byKey[k] && /Could not check — the automation health read failed/.test(byKey[k].detail), k + ' names the read failure (' + JSON.stringify(auto) + ')');
+      assert.ok(!/installAutomationTriggers|CDR unreachable/.test(byKey[k].detail), k + ' blames nothing it did not see');
+    });
+  });
+  const gdr = stripJsComments_(extractRawFunction('Code.js', 'getDeployReadiness'));
+  assert.ok(/catch \(e\) \{ automation = \{ readFailed: e\.message \}; \}/.test(gdr), 'a throw arrives as readFailed, not as an empty report');
+});
+
+test('A6: a ClientErrors read that FAILED carries an error — the panel and the finding say "could not read", not "no client errors" (driven)', () => {
+  const ctx = vm.createContext({ String, Date, Logger: { log() {} }, CLIENT_ERR_WINDOW_DAYS: 7,
+    getAdpSS_: () => { throw new Error('Service Spreadsheets timed out'); } });
+  vm.runInContext(extractRawFunction('Code.js', 'clientErrorsSummary_'), ctx);
+  const out = ctx.clientErrorsSummary_('America/Chicago');
+  assert.ok(out.count === 0 && /timed out/.test(out.error), 'nothing invented, and the failure rides the summary');
+  sb.CN_DIGEST_LABELS_ = { eod: 'EOD' };
+  const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
+  const f = fn({ clientErrors: { count: 0, last24h: 0, windowDays: 7, error: 'Service Spreadsheets timed out' } }, null).items.find((x) => x.id === 'clientErrors');
+  assert.ok(f && f.severity === 'warn' && /could not be read/.test(f.title), 'the finding is a warning, not the all-clear');
+  const cn = fs.readFileSync(path.join(B6_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.ok(/if \(ce\.error\) \{\s*ceHtml = warnBox\(/.test(cn) && /this is NOT an all-clear/.test(cn), 'the detail panel says so too');
+});
+
+test('A8: the automation-error stamp and clear serialise on the USER lock and release it — never the script lock a failing job still holds (driven)', () => {
+  const props = {}; const log = [];
+  const lock = { tryLock: () => { log.push('try'); return true; }, releaseLock: () => log.push('release') };
+  const ctx = vm.createContext({ String, JSON, Array, Date,
+    LockService: { getUserLock: () => { log.push('user'); return lock; }, getScriptLock: () => { log.push('SCRIPT'); return lock; } },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null) }) },
+    AUTOMATION_ERROR_PROP: 'AUTOMATION_LAST_ERRORS', fmtDate_: () => 'd', fmtTime_: () => 't',
+    propSetBounded_: (k, v) => { log.push('write'); props[k] = v; }, propShrinkDropOldest_: () => null });
+  ['withAutomationErrorLock_', 'stampAutomationError_', 'stampAutomationErrorUnlocked_', 'clearAutomationError_', 'clearAutomationErrorUnlocked_']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  ctx.stampAutomationError_('JobA', 'boom');
+  ctx.clearAutomationError_('JobA');
+  assert.deepStrictEqual(log, ['user', 'try', 'write', 'release', 'user', 'try', 'write', 'release'], 'each read-modify-write runs inside the user lock: ' + log.join(','));
+  assert.strictEqual(log.indexOf('SCRIPT'), -1, 'the script lock is never touched');
+  // Fail-open: contention still writes.
+  log.length = 0; lock.tryLock = () => { log.push('try'); return false; };
+  ctx.stampAutomationError_('JobB', 'x');
+  assert.deepStrictEqual(log, ['user', 'try', 'write'], 'a contended lock still writes the stamp, and releases nothing it did not take');
+});
+
+
+// ---------------------------------------------------------------------------
+// cycle 22 Batch 7 — working-day semantics, scheduling, QA ingest
+console.log('\ncycle 22 Batch 7 — working-day semantics, scheduling, QA ingest');
+const B7_WEB = path.join(__dirname, '../../web-app');
+
+test('T4: the lunch graded is the LunchOut NEAREST the scheduled lunch — a morning break no longer scores every day on time', () => {
+  const ctx = vm.createContext({ Math });
+  vm.runInContext(extractRawFunction('Code.js', 'punctLunchNearest_'), ctx);
+  const f = ctx.punctLunchNearest_;
+  // 12:30 lunch scheduled; a 10:15 break and a 12:50 lunch. The earliest (the old read) is the break.
+  assert.strictEqual(f([615, 770], 750), 770, 'the lunch, not the morning break');
+  assert.strictEqual(f([770, 615], 750), 770, 'order-independent (append order is not time order, g14)');
+  assert.strictEqual(f([740, 760], 750), 740, 'a tie goes to the earlier punch');
+  assert.strictEqual(f([], 750), null, 'no punch — not graded');
+  assert.strictEqual(f([700], null), null, 'no scheduled lunch — not graded');
+  const src = stripJsComments_(extractRawFunction('Code.js', 'getPunctualityReport'));
+  assert.ok(/\(bucket\[d\]\.lunches = bucket\[d\]\.lunches \|\| \[\]\)\.push\(mins\)/.test(src), 'every LunchOut is kept, not just the earliest');
+  assert.ok(/const lunch = punctLunchNearest_\(r\.days\[d\]\.lunches, r\.lunchMin\)/.test(src) && /if \(lunch <= r\.lunchMin \+ grace\)/.test(src),
+    'the report grades the nearest one');
+});
+
+test('T5 (rework): a HALF day has no fixed start — graded on HOURS WORKED (>= half the typical day), never on its start or lunch; the ticker assumes no half (driven)', () => {
+  const ctx = vm.createContext({ Math, String });
+  ['timeOffDayKind_', 'timeOffKindsCombine_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  assert.strictEqual(ctx.timeOffDayKind_('Half Day - Morning'), 'morning');
+  assert.strictEqual(ctx.timeOffDayKind_('  half day -  afternoon '), 'afternoon', 'normalised like the rest of the type reads');
+  assert.strictEqual(ctx.timeOffDayKind_('Full Day'), 'full');
+  assert.strictEqual(ctx.timeOffDayKind_('Personal Day'), 'full');
+  assert.strictEqual(ctx.timeOffKindsCombine_([]), null);
+  assert.strictEqual(ctx.timeOffKindsCombine_(['morning']), 'morning');
+  assert.strictEqual(ctx.timeOffKindsCombine_(['morning', 'afternoon']), 'full', 'both halves are a full day');
+  assert.ok(!/function punctExpectedStartMin_/.test(serverSource()), 'the mid-shift expected start (the wrong rule) is gone');
+
+  // The whole report, driven over fake tabs. Mon 2026-09-21 .. Fri 09-25, 08:00 start, 9 h, 12:00 lunch.
+  const ts = [['h'], ['h'],
+    ['E1', '2026-09-21', '08:02:00', 'ClockIn'], ['E1', '2026-09-21', '17:00:00', 'ClockOut'],
+    // Morning half day: 12:40 in (10 min past the old mid-shift start — no longer "late"), a 15-min break, out 17:00 → 4.08 h, met.
+    ['E1', '2026-09-22', '12:40:00', 'ClockIn'], ['E1', '2026-09-22', '14:00:00', 'LunchOut'], ['E1', '2026-09-22', '14:15:00', 'LunchIn'], ['E1', '2026-09-22', '17:00:00', 'ClockOut'],
+    // Afternoon half day worked 09:30-12:00 → 2.5 h, short (90 min "late" under the full start, and graded on neither).
+    ['E1', '2026-09-23', '12:00:00', 'ClockOut'], ['E1', '2026-09-23', '09:30:00', 'ClockIn'],
+    // 09-24: a half day with no punches at all → 0 h, short. 09-25: in, never out → hours unknown.
+    ['E1', '2026-09-25', '13:00:00', 'ClockIn'],
+    // Previous range: a full on-time day and a half day that must NOT be graded against the 08:00 start.
+    ['E1', '2026-09-17', '08:00:00', 'ClockIn'], ['E1', '2026-09-18', '13:00:00', 'ClockIn'],
+    // E2 works only a half day in range — still listed, with no on-time figure rather than a fake one.
+    ['E2', '2026-09-22', '08:00:00', 'ClockIn'], ['E2', '2026-09-22', '12:30:00', 'ClockOut']];
+  const to = [['h'],
+    ['E1', 'A', '2026-09-22', 'Half Day - Morning', '', 'Approved', 't'], ['E1', 'A', '2026-09-23', 'Half Day - Afternoon', '', 'Approved', 't'],
+    ['E1', 'A', '2026-09-24', 'Half Day - Morning', '', 'Approved', 't'], ['E1', 'A', '2026-09-25', 'Half Day - Afternoon', '', 'Approved', 't'],
+    ['E1', 'A', '2026-09-18', 'Half Day - Morning', '', 'Approved', 't'], ['E2', 'B', '2026-09-22', 'Half Day - Afternoon', '', 'Approved', 't']];
+  const rctx = vm.createContext({ String, Math, Date, Object, Number, JSON, console: { warn() {} },
+    CONFIG: { PUNCT_MAX_RANGE_DAYS: 92, PUNCTUALITY_GRACE_MIN: 5, ADP_TAB: 'Timesheet', PTO_HOURS_PER_DAY: 8, TIMEZONE: 'America/Chicago' },
+    EMP: { ID: 0, NAME: 1, TIMEZONE: 2, SCHEDULE: 3 }, ADP: { EMP_ID: 0, DATE: 1, TIME: 2, COMMENTS: 3 },
+    TO: { EMP_ID: 0, NAME: 1, DATE: 2, TYPE: 3, NOTES: 4, STATUS: 5, SUBMITTED_AT: 6 },
+    getEmployeeInfo_: () => ({ isManager: true }),
+    getEmployeeRosterRows_: () => [['h'], ['E1', 'Ann', 'America/Chicago', ''], ['E2', 'Bo', 'America/Chicago', '']],
+    empRosterEmail_: () => 'x@y', safeTimezone_: (t) => t,
+    empShiftSchedule_: () => ({ startMin: 480, lengthMin: 540, breaks: [{ label: 'Lunch', startMin: 720, lenMin: 30 }] }),
+    getAdpSS_: () => ({ getSheetByName: () => ({ getDataRange: () => ({ getValues: () => ts }) }) }),
+    getOrCreateTimeOffSheet_: () => ({ getDataRange: () => ({ getValues: () => to }) }),
+    getCompanyHolidays_: () => [], normalizeDate_: (x) => x, normalizeTime_: (x) => x,
+    Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) }, fmtDateTz_: () => rTodayIso });
+  ['daysBetween_', 'addDaysIso_', 'normalizeType_', 'timeToMins_', 'timeOffDayKind_', 'calcHours_', 'breakPairs_', 'breakSortKey_',
+   'punchDayAdd_', 'punctIsHalfDay_', 'punctHalfDayVerdict_', 'punctLunchNearest_', 'punctDayState_', 'punctWeeklyBuckets_',
+   'getPunctualityReport'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), rctx));
+  let rTodayIso = '2026-09-26';   // the range is in the past
+  const rep = JSON.parse(JSON.stringify(rctx.getPunctualityReport('2026-09-21', '2026-09-25')));
+  assert.ok(!rep.error, rep.error);
+  const e1 = rep.reps.find((r) => r.id === 'E1');
+  assert.deepStrictEqual(e1.dayDetail.map((d) => d.state), ['ontime', 'half', 'halfshort', 'halfshort', 'halfopen'],
+    'met, under (worked 2.5 h), under (worked nothing), unknown (no clock-out) — none of them start-graded');
+  assert.deepStrictEqual(e1.dayDetail.map((d) => d.workedHours === undefined ? 'n/a' : d.workedHours), ['n/a', 4.08, 2.5, 0, null]);
+  assert.strictEqual(e1.dayDetail[1].minHours, 4, 'the minimum is half the typical day (PTO_HOURS_PER_DAY / 2), shipped with the day');
+  assert.strictEqual(e1.dayDetail[1].schedStartMin, null, 'a half day shows no start it was graded against — it has none');
+  assert.deepStrictEqual([e1.days, e1.onTime, e1.late, e1.onTimePct, e1.halfDays, e1.halfShort], [1, 1, 0, 100, 4, 2],
+    'only the full day is start-graded; the half days are counted apart');
+  assert.strictEqual(e1.lunchOnTimePct, null, 'a half day\'s break is not a lunch to grade');
+  assert.deepStrictEqual([e1.prevDays, e1.prevOnTime], [1, 1], 'the PTO overlay covers the previous range, so its half day is excluded too');
+  // A half day that is TODAY is not over — nothing worked yet is "not known", never "short" (no false outlier).
+  rTodayIso = '2026-09-24';
+  const live = JSON.parse(JSON.stringify(rctx.getPunctualityReport('2026-09-21', '2026-09-25'))).reps.find((r) => r.id === 'E1');
+  assert.deepStrictEqual(live.dayDetail.map((d) => d.state), ['ontime', 'half', 'halfshort', 'halfopen', 'halfopen'], 'today and later read as hours not known');
+  assert.strictEqual(live.halfShort, 1, 'only the PAST short half day counts');
+  const e2 = rep.reps.find((r) => r.id === 'E2');
+  assert.ok(e2, 'a rep with only a half day in range is still listed');
+  assert.deepStrictEqual([e2.days, e2.onTimePct, e2.halfDays, e2.halfShort], [0, null, 1, 0], 'no graded day is no on-time figure, never 0% or 100%');
+  const src = stripJsComments_(extractRawFunction('Code.js', 'getPunctualityReport'));
+  assert.ok(src.indexOf('getOrCreateTimeOffSheet_()') < src.indexOf('getAdpSS_()'), 'the PTO overlay is read BEFORE the timesheet walk that needs it');
+
+  // Server: the state endpoint ships the kind of day and the minimum; driven over a fake tab.
+  const rows = [['E1', 'Ann', '2026-09-24', 'Half Day - Morning', '', 'Approved', 't']];
+  const sctx = vm.createContext({ String, Math, Logger: { log() {} }, TO: { EMP_ID: 0, NAME: 1, DATE: 2, TYPE: 3, NOTES: 4, STATUS: 5, SUBMITTED_AT: 6 },
+    normalizeDate_: (x) => x, getOrCreateTimeOffSheet_: () => ({ getLastRow: () => rows.length + 1, getRange: () => ({ getValues: () => rows }) }) });
+  ['timeOffDayKind_', 'timeOffKindsCombine_', 'empTimeOffToday_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), sctx));
+  assert.strictEqual(sctx.empTimeOffToday_('E1', '2026-09-24'), 'morning', 'an approved morning half day');
+  rows[0][5] = 'Pending';
+  assert.strictEqual(sctx.empTimeOffToday_('E1', '2026-09-24'), null, 'pending is not off');
+  const st = stripJsComments_(extractRawFunction('Code.js', 'getEmployeeState'));
+  assert.ok(/halfDayOff: \(offKind === 'morning' \|\| offKind === 'afternoon'\) \? offKind : null/.test(st), 'getEmployeeState ships halfDayOff');
+  assert.ok(/halfDayMinHours: CONFIG\.PTO_HOURS_PER_DAY \/ 2/.test(st), 'and the minimum, so the client carries no literal of it (g131)');
+
+  // Client: the ticker's plan for the day — driven.
+  const s2 = buildSandbox([]);
+  const plan = loadFunction(s2, 'script_core.html', 'remindDayPlan_');
+  const P = (...a) => JSON.parse(JSON.stringify(plan(...a)));
+  assert.deepStrictEqual(P(480, 540, 'morning', 4), { half: true, breaks: false, outAt: null, inFrom: 780, endMin: 1020 },
+    'no break reminders, no inferred clock-out, and the nudge waits until 4 h can no longer fit before 17:00');
+  assert.deepStrictEqual(P(480, 540, 'afternoon', 4), P(480, 540, 'morning', 4), 'the ticker never assumes WHICH half is worked');
+  assert.deepStrictEqual(P(480, 540, null, 4), { half: false, breaks: true, outAt: 1020, inFrom: 480, endMin: 1020 }, 'a full day is unchanged');
+  assert.strictEqual(P(480, 180, 'morning', 4).inFrom, 480, 'a shift shorter than the minimum opens the nudge at its start, never before it');
+  const worked = loadFunction(s2, 'script_core.html', 'remindWorkedToday_');
+  s2.empState = { punches: [{ type: 'ClockIn' }, { type: 'ClockOut' }] };
+  assert.strictEqual(worked(), true, 'a rep who worked the morning and clocked out has worked today');
+  s2.empState = { punches: [] };
+  assert.strictEqual(worked(), false);
+  const tick = stripJsComments_(extractFunction('script_core.html', 'remindersTick_'));
+  assert.ok(/var plan = remindDayPlan_\(sched\.startMin, sched\.lengthMin, empState && empState\.halfDayOff,\s*empState && empState\.halfDayMinHours\)/.test(tick),
+    'the ticker reads the plan');
+  assert.ok(/plan\.breaks && Array\.isArray\(sched\.breaks\)/.test(tick) && /plan\.outAt != null && nowMin >= endMin \+ 5/.test(tick) &&
+    /var startMin = plan\.inFrom;/.test(tick) && /!\(plan\.half && remindWorkedToday_\(\)\)/.test(tick),
+    'breaks, the clock-out nudge and the not-clocked-in nudge all obey it');
+  assert.ok(!/remindWorkWindow_/.test(fs.readFileSync(path.join(B7_WEB, 'script_core.html'), 'utf8')), 'the mid-shift split is gone');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/halfDayOff: null/.test(mock) && /halfDayMinHours: 4/.test(mock), 'the state fixture mirrors the fields (INV-185)');
+  assert.ok(/state: hst, workedHours: half\.hours, minHours: 4/.test(mock), 'and the punctuality fixture puts half days on camera');
+});
+
+test('T5 (rework): the day strip draws a half day by its HOURS and the table never prints a fake on-time figure', () => {
+  const s = buildSandbox([]);
+  const title = loadFunction(s, 'tc/script_manager.html', 'punctHalfDayTitle_');
+  assert.strictEqual(title({ state: 'half', workedHours: 4.5, minHours: 4, ptoType: 'Half Day - Morning' }), 'half day (Half Day - Morning) — 4.5h worked, meets 4h');
+  assert.strictEqual(title({ state: 'halfshort', workedHours: 0, minHours: 4 }), 'half day — 0h worked, under 4h');
+  assert.ok(/hours not known/.test(title({ state: 'halfopen', workedHours: null, minHours: 4 })), 'an unknown duration says so, never "0h"');
+  const out = loadFunction(s, 'tc/script_manager.html', 'punctOutliers_');
+  s.punctTrend_ = () => ({ word: 'Flat', delta: null });
+  const o = JSON.parse(JSON.stringify(out([{ id: 'a', onTimePct: 100, late: 0, avgLate: 0, halfShort: 1, weekly: [] }, { id: 'b', onTimePct: 100, late: 0, avgLate: 0, halfShort: 0, weekly: [] }])));
+  assert.deepStrictEqual(o.map((x) => [x.id, x.halfShort]), [['a', 1]], 'a short half day is worth a conversation');
+  const mgr = fs.readFileSync(path.join(B7_WEB, 'tc/script_manager.html'), 'utf8');
+  ['half', 'halfshort', 'halfopen'].forEach((st) => assert.ok(new RegExp('\\.pt-day\\.' + st + '\\s*\\{').test(mgr), st + ' has a rule (the T6 ratchet)'));
+  assert.ok(/if \(r\.onTimePct == null\) return '<span class="pt-na"/.test(mgr), 'the On-time cell renders a dash, not "null%"');
+  assert.ok(/o\.onTimePct != null \? '<span class="'/.test(mgr), 'and so does the outlier line');
+});
+
+test('T7: a time-off RANGE skips company holidays on the server and in the preview — approving it no longer charges a closed day (driven)', () => {
+  const written = [];
+  const ctx = vm.createContext({ String, Date, Math, JSON,
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    getEmployeeInfo_: () => ({ id: 'E1', name: 'Ann' }), empTz_: () => 'America/Chicago',
+    fmtDateTz_: () => '2026-08-30', TIMEOFF_RANGE_MAX_DAYS: 60, TIMEOFF_MAX_DAYS_AHEAD: 400, TIMEOFF_MAX_DAYS_BACK: 30,
+    isValidTimeOffType_: () => true, companyHolidayMap_: () => ({ '2026-09-07': true }),
+    getOrCreateTimeOffSheet_: () => ({ appendRow: (r) => written.push(r) }), hasActiveTimeOffOnDate_: () => false,
+    sheetSafeRow_: (r) => r, fmtDate_: () => 'd', fmtTime_: () => 't', writeAuditLog_() {},
+    Utilities: { formatDate: (d) => d.toISOString().substring(0, 10) } });
+  ['daysBetween_', 'addDaysIso_', 'submitTimeOffRange'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  // Fri 4 Sep .. Tue 8 Sep 2026, Labor Day on Mon 7 Sep.
+  const r = JSON.parse(JSON.stringify(ctx.submitTimeOffRange('2026-09-04', '2026-09-08', 'Full Day', '')));
+  assert.strictEqual(r.success, true, JSON.stringify(r));
+  assert.deepStrictEqual(written.map((w) => w[2]), ['2026-09-04', '2026-09-08'], 'Friday and Tuesday only — Labor Day is not requested');
+  assert.strictEqual(r.skippedWeekendDays, 2); assert.strictEqual(r.skippedHolidayDays, 1);
+  written.length = 0;
+  const only = JSON.parse(JSON.stringify(ctx.submitTimeOffRange('2026-09-05', '2026-09-07', 'Full Day', '')));
+  assert.ok(!only.success && /weekend days and company holidays/.test(only.error), 'a range of nothing but closed days is refused by name');
+  // Client preview counts the same days.
+  const s2 = buildSandbox([]);
+  s2.SERVER_COMPANY_HOLIDAYS = ['2026-09-07'];
+  const cw = loadFunction(s2, 'tc/script_timeoff.html', 'countWeekdaysIso_');
+  assert.strictEqual(cw('2026-09-04', '2026-09-08'), 2, 'the preview charges two days, as the server writes');
+  s2.SERVER_COMPANY_HOLIDAYS = [];
+  assert.strictEqual(cw('2026-09-04', '2026-09-08'), 3, 'with no calendar it is weekends only');
+  const to = fs.readFileSync(path.join(B7_WEB, 'tc/script_timeoff.html'), 'utf8');
+  assert.ok(/result\.skippedHolidayDays \? ' — ' \+ result\.skippedHolidayDays \+ ' company holiday\(s\) skipped'/.test(to), 'the toast names the skipped holidays');
+});
+
+test('T8: a company holiday is a day off for the reminder ticker — no chimed "not clocked in" on Labor Day (driven)', () => {
+  const s2 = buildSandbox([]);
+  s2.isoDateTz = () => '2026-09-07';   // Monday, Labor Day
+  s2.empState = { offToday: false };
+  const f = loadFunction(s2, 'script_core.html', 'remindIsDayOff_');
+  s2.SERVER_COMPANY_HOLIDAYS = ['2026-09-07'];
+  assert.strictEqual(f('America/Chicago'), true, 'the calendar says closed');
+  s2.SERVER_COMPANY_HOLIDAYS = [];
+  assert.strictEqual(f('America/Chicago'), false, 'an ordinary Monday is a working day');
+  s2.isoDateTz = () => '2026-09-06';
+  assert.strictEqual(f('America/Chicago'), true, 'Sunday stays off');
+});
+
+test('T11: every training "overdue" is judged against ONE today — the manager-tz work day', () => {
+  const src = stripJsComments_(serverSource());
+  const my = stripJsComments_(extractRawFunction('Code.js', 'getMyTraining'));
+  assert.ok(/const todayIso = trainTodayIso_\(\)/.test(my) && !/safeTimezone_\(emp\.timezone\)/.test(my), 'the rep checklist no longer uses the rep timezone');
+  const dig = stripJsComments_(extractRawFunction('Code.js', 'sendTrainingOverdueDigest'));
+  assert.ok(/const todayIso = trainTodayIso_\(\)/.test(dig), 'the digest reads the same today');
+  const helper = extractRawFunction('Code.js', 'trainTodayIso_');
+  assert.ok(/CONFIG\.MANAGER_TIMEZONE \|\| CONFIG\.TIMEZONE/.test(helper), 'the work anchor');
+  // No training reader computes its own today any more.
+  const trainFile = fs.readFileSync(path.join(B7_WEB, '80_training.js'), 'utf8');
+  const own = (stripJsComments_(trainFile).match(/const todayIso = Utilities\.formatDate/g) || []).length;
+  assert.strictEqual(own, 0, 'no training reader formats its own today');
+  assert.ok((src.match(/trainTodayIso_\(\)/g) || []).length >= 3, 'the three readers share it');
+});
+
+
+test('T9: the Needs-you list is invalidated on click and by every completing flow in every partial (derived from the server bust list)', () => {
+  const s2 = buildSandbox([]);
+  s2.CLK_NEEDS = { data: { items: [{ kind: 'training', route: { tool: 'develop', tab: 'trainingHome' } }] }, at: Date.now() };
+  let entered = null; s2.enterTool = (t, tab) => { entered = t + '/' + tab; };
+  loadFunction(s2, 'tc/script_clock.html', 'clkNeedsYouInvalidate_');
+  const go = loadFunction(s2, 'tc/script_clock.html', 'clkNeedsYouGo_');
+  go(0);
+  assert.strictEqual(s2.CLK_NEEDS.at, 0, 'a click marks the list stale, so the Dashboard re-reads it on return');
+  assert.strictEqual(entered, 'develop/trainingHome', 'and still navigates');
+  // Every server flow that busts the server cache on completion has a client
+  // caller that invalidates the client copy — derived, so a new completing
+  // flow must be wired on both sides.
+  const src = stripJsComments_(serverSource());
+  const busting = [];
+  src.replace(/function ([A-Za-z0-9_]+)\([^)]*\) \{/g, (all, name, at) => {
+    if (/_$/.test(name)) return all;
+    const body = extractRawFunction('Code.js', name);
+    if (/pendingTasksBust_\(emp\.id\)/.test(body)) busting.push(name);
+    return all;
+  });
+  assert.ok(busting.length >= 6, 'the rep-completion flows are found (' + busting.join(',') + ')');
+  const partials = [];
+  const walk = (d) => fs.readdirSync(d).forEach((f) => { const p = path.join(d, f); if (fs.statSync(p).isDirectory()) walk(p); else if (/\.html$/.test(f)) partials.push(p); });
+  walk(B7_WEB);
+  busting.forEach((rpc) => {
+    let wired = false, called = false;
+    partials.forEach((p) => {
+      const t = fs.readFileSync(p, 'utf8');
+      const re = new RegExp('\\.' + rpc + '\\(', 'g'); let m;
+      while ((m = re.exec(t)) !== null) {
+        called = true;
+        const chainStart = t.lastIndexOf('google.script.run', m.index);
+        if (chainStart >= 0 && /clkNeedsYouInvalidate_\(\)/.test(t.slice(chainStart, m.index))) wired = true;
+      }
+    });
+    assert.ok(!called || wired, rpc + ': completes a task on the server but its client caller never invalidates the Dashboard list');
+  });
+});
+
+test('T10: voiding, releasing and revoking change the REP\'s Needs-you list now — each busts that rep\'s cache (driven revoke, including an everyone assignment)', () => {
+  ['voidDoc', 'releaseDoc'].forEach((fn) => assert.ok(/pendingTasksBust_\(found\.doc\.empId\)/.test(extractRawFunction('Code.js', fn)), fn + ' busts the doc\'s rep'));
+  assert.ok(/pendingTasksBust_\(found\.item\.empId\)/.test(extractRawFunction('Code.js', 'voidCoaching')), 'voidCoaching busts the coached rep');
+  const drive = (empCell) => {
+    const log = [];
+    const cells = { revoked: '', emp: empCell };
+    const sheet = { getLastRow: () => 2, getRange: (r, c, n) => (n ? { getValues: () => [['A1']] }
+      : (c === 8 ? { getValue: () => cells.revoked, setValue: (v) => { cells.revoked = v; } } : { getValue: () => cells.emp })) };
+    const ctx = vm.createContext({ String, Date,
+      LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      getEmployeeInfo_: () => ({ isManager: true, email: 'm@x' }), getOrCreateTrainSheet_: () => sheet,
+      TRAIN_ASSIGN_TAB: 'T', TRAIN_ASSIGN_HEADERS: [], TA: { ASSIGN_ID: 0, EMP_ID: 3, REVOKED_AT: 7 },
+      getKbSS_: () => ({ getSpreadsheetTimeZone: () => 'UTC' }), trainCellTs_: (v) => v || null,
+      sheetSafe_: (v) => v, fmtDate_: () => 'd', fmtTime_: () => 't', writeAuditLog_() {},
+      pendingTasksBust_: (id) => log.push('one:' + id), pendingTasksBustAll_: () => log.push('all') });
+    vm.runInContext(extractRawFunction('Code.js', 'revokeTrainingAssignment'), ctx);
+    const r = ctx.revokeTrainingAssignment('A1');
+    return { r, log };
+  };
+  const one = drive('E7');
+  assert.ok(one.r.success, JSON.stringify(one.r));
+  assert.deepStrictEqual(one.log, ['one:E7'], 'a single-rep assignment busts that rep');
+  assert.deepStrictEqual(drive('*').log, ['all'], 'an everyone assignment busts every rep');
+  // The all-bust removes every roster key in one call.
+  let removed = null;
+  const ctx = vm.createContext({ String, EMP: { ID: 1 }, PENDING_TASKS_CACHE_PREFIX: 'pt:',
+    getEmployeeRosterRows_: () => [['h', 'h'], ['a', 'E1'], ['b', ''], ['c', 'E2']],
+    CacheService: { getScriptCache: () => ({ removeAll: (k) => { removed = k; } }) } });
+  vm.runInContext(extractRawFunction('Code.js', 'pendingTasksBustAll_'), ctx);
+  ctx.pendingTasksBustAll_();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(removed)), ['pt:E1', 'pt:E2'], 'one removeAll over the roster ids');
+});
+
+
+test('D3: QA sync RESUMES a capped walk from its continuation token and walks Drive OUTSIDE the lock — a folder past the budget is indexed in full (driven)', () => {
+  const ids = ['k1', 'k2', 'n1', 'n2', 'n3', 'n4', 'n5'];   // two already indexed
+  const props = {};
+  const log = { appended: [], locks: [], nexts: 0 };
+  const sheetIds = [['k1'], ['k2']];
+  const mkIter = (pos) => ({
+    hasNext: () => pos < ids.length,
+    next: () => { const id = ids[pos++]; log.nexts++; return { getId: () => id, getMimeType: () => 'audio/mpeg', getName: () => id,
+      getSize: () => 1, getDateCreated: () => ({ getTime: () => 1 }), getUrl: () => 'u/' + id }; },
+    getContinuationToken: () => 'pos:' + pos,
+  });
+  const ctx = vm.createContext({ String, JSON, Date, Object,
+    getEmployeeInfo_: () => ({ email: 'q@x' }), canSeeQa_: () => true, qaFolderId_: () => 'F1',
+    DriveApp: { getFolderById: () => ({ getFiles: () => mkIter(0) }), continueFileIterator: (t) => mkIter(Number(String(t).split(':')[1])) },
+    getOrCreateQaRecordingsSheet_: () => ({ getLastRow: () => sheetIds.length + 1, getRange: () => ({ getValues: () => sheetIds.slice() }) }),
+    QAR: { FILE_ID: 0 }, QA_SYNC_MAX_FILES: 3, QA_RECORDINGS_TEXT_IDX: [], QA_SYNC_TOKEN_PROP: 'QA_SYNC_CONTINUATION',
+    LockService: { getScriptLock: () => ({ waitLock: () => log.locks.push(log.nexts), releaseLock() {} }) },
+    appendRowsTextSafe_: (sh, rows) => { rows.forEach((r) => { log.appended.push(r[0]); sheetIds.push([r[0]]); }); },
+    writeAuditLog_() {},
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null), deleteProperty: (k) => { delete props[k]; } }) },
+    propSetBounded_: (k, v) => { props[k] = v; } });
+  ['qaKnownFileIds_', 'qaSyncTokenRead_', 'qaSyncTokenWrite_', 'qaSyncRecordings'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const r1 = JSON.parse(JSON.stringify(ctx.qaSyncRecordings()));
+  assert.ok(r1.success && r1.truncated && r1.resumable && !r1.resumed, JSON.stringify(r1));
+  assert.deepStrictEqual(log.appended, ['n1'], 'run 1 indexes what its three-file budget reached');
+  assert.ok(JSON.parse(props.QA_SYNC_CONTINUATION).token === 'pos:3', 'and saves where it stopped, keyed to the folder');
+  assert.strictEqual(log.locks[0], 3, 'the lock is taken only AFTER the Drive walk (three files read first)');
+  const r2 = JSON.parse(JSON.stringify(ctx.qaSyncRecordings()));
+  assert.ok(r2.resumed && r2.truncated, 'run 2 RESUMES — it used to restart from the top and never get past the first 500');
+  assert.deepStrictEqual(log.appended, ['n1', 'n2', 'n3', 'n4'], 'and reaches the next three');
+  const r3 = JSON.parse(JSON.stringify(ctx.qaSyncRecordings()));
+  assert.ok(r3.resumed && !r3.truncated && !r3.resumable, 'run 3 finishes the folder');
+  assert.deepStrictEqual(log.appended, ['n1', 'n2', 'n3', 'n4', 'n5'], 'every new file is indexed, once');
+  assert.ok(!('QA_SYNC_CONTINUATION' in props), 'a completed walk clears the token, so the next sync starts fresh');
+  // A token for ANOTHER folder is ignored (a changed QA_RECORDINGS_FOLDER_ID).
+  props.QA_SYNC_CONTINUATION = JSON.stringify({ folderId: 'OTHER', token: 'pos:6' });
+  const r4 = JSON.parse(JSON.stringify(ctx.qaSyncRecordings()));
+  assert.ok(!r4.resumed, 'a token from another folder is never followed');
+  const qa = fs.readFileSync(path.join(B7_WEB, 'qa/script_qa.html'), 'utf8');
+  assert.ok(/r\.resumable === false \? 'the next sync restarts from the top' : 'sync again to continue where this one stopped'/.test(qa),
+    'the toast only promises "sync again" when the next run really continues');
+});
+
+test('D5: an audio chunk is a RANGED Drive read of that chunk — never the whole recording — with the old read as the fallback (driven)', () => {
+  const run = (resp, throws) => {
+    let blobReads = 0, sentRange = null;
+    const ctx = vm.createContext({ String, encodeURIComponent,
+      ScriptApp: { getOAuthToken: () => 'tok' },
+      UrlFetchApp: { fetch: (u, o) => { sentRange = o.headers.Range; if (throws) throw new Error('net'); return { getResponseCode: () => resp.code, getContent: () => resp.bytes }; } } });
+    ['qaRangeHeader_', 'qaReadChunkBytes_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+    const whole = Array.from({ length: 10 }, (_, i) => i);
+    const file = { getBlob: () => ({ getBytes: () => { blobReads++; return whole; } }) };
+    const out = Array.from(ctx.qaReadChunkBytes_(file, 'FID1234567890', 10, { start: 4, end: 7 }));
+    return { out, blobReads, sentRange };
+  };
+  const ranged = run({ code: 206, bytes: [4, 5, 6] });
+  assert.deepStrictEqual(ranged.out, [4, 5, 6]); assert.strictEqual(ranged.blobReads, 0, 'a 206 of the range is used as-is — no whole-file read');
+  assert.strictEqual(ranged.sentRange, 'bytes=4-6', 'the Range header is end-inclusive');
+  const full = run({ code: 200, bytes: Array.from({ length: 10 }, (_, i) => i) });
+  assert.deepStrictEqual(full.out, [4, 5, 6], 'a 200 of the whole file is sliced'); assert.strictEqual(full.blobReads, 0);
+  assert.strictEqual(run({ code: 206, bytes: [4, 5] }).blobReads, 1, 'a short answer is not trusted — the old read runs');
+  assert.strictEqual(run({ code: 403, bytes: [] }).blobReads, 1, 'a refusal falls back');
+  assert.deepStrictEqual(run(null, true).out, [4, 5, 6], 'a throw falls back and still serves the right bytes');
+  // The ranged reader sits INSIDE the folder boundary: only qaAudioChunkFor_ calls it.
+  const src = stripJsComments_(serverSource());
+  const callers = [];
+  src.replace(/function ([A-Za-z0-9_]+)\(/g, (all, n) => { if (n !== 'qaReadChunkBytes_' && /qaReadChunkBytes_\(/.test(extractRawFunction('Code.js', n))) callers.push(n); return all; });
+  assert.deepStrictEqual(callers, ['qaAudioChunkFor_'], 'bytes leave only through the parentage-checked helper');
+});
+
+test('M10: the CSR Transfer read is span-bounded and result-cached like the DQE reader — a cold Dashboard no longer reads the whole tab four times (driven cache)', () => {
+  let reads = 0, store = {};
+  const ctx = vm.createContext({ JSON, CONFIG: { CDR_CACHE_KEY: 'cdr_v5', CDR_CACHE_TTL: 300 },
+    cdrRosterHash_: () => 'h', csrTransferReadUncached_: (f, t, r, q) => { reads++; return ctx._next; },
+    CacheService: { getScriptCache: () => ({ get: (k) => store[k] || null, put: (k, v) => { store[k] = v; } }) } });
+  vm.runInContext(extractRawFunction('Code.js', 'getCsrTransferPerRepDaily_'), ctx);
+  ctx._next = { perRepDaily: {}, agents: { A: { transferred: 3 } }, meta: {} };
+  ctx.getCsrTransferPerRepDaily_('2026-09-01', '2026-09-20', ['A']);
+  const again = ctx.getCsrTransferPerRepDaily_('2026-09-01', '2026-09-20', ['A']);
+  assert.strictEqual(reads, 1, 'the second call is served from the cache');
+  assert.strictEqual(again.agents.A.transferred, 3);
+  ctx.getCsrTransferPerRepDaily_('2026-09-01', '2026-09-20', ['A'], { withQueues: true });
+  assert.strictEqual(reads, 2, 'the per-queue shape has its own key — never served the plain payload');
+  store = {}; reads = 0;
+  ctx._next = { perRepDaily: {}, agents: {}, meta: { error: 'CSR Transfer Historical Data sheet not found' } };
+  ctx.getCsrTransferPerRepDaily_('2026-09-01', '2026-09-02', null);
+  ctx.getCsrTransferPerRepDaily_('2026-09-01', '2026-09-02', null);
+  assert.strictEqual(reads, 2, 'a failed read is NOT cached (g129)');
+  ctx._TEST_OVERRIDE_CDR_SS_ID = 'fixture'; reads = 0; store = {};
+  ctx._next = { perRepDaily: {}, agents: {}, meta: {} };
+  ctx.getCsrTransferPerRepDaily_('a', 'b', null); ctx.getCsrTransferPerRepDaily_('a', 'b', null);
+  assert.strictEqual(reads, 2, 'a fixture read bypasses the cache both ways (F-31)');
+  const body = stripJsComments_(extractRawFunction('Code.js', 'csrTransferReadUncached_'));
+  assert.ok(/cdrDqeWindowSpan_\(sheet, lastRow, from, to, tz, CSRT\.DATE \+ 1\)/.test(body), 'span-bounded by the Date column (the H3 rule)');
+  assert.ok(!/getRange\(2, 1, lastRow - 1/.test(body), 'no whole-tab read survives');
+  assert.ok(/if \(!dateIso \|\| dateIso < from \|\| dateIso > to\) continue;/.test(body), 'and the per-row date filter stays');
+});
+
+test('M5: every voicemail in a thread is its own request — a repeat voicemail no longer vanishes when the first is answered (driven)', () => {
+  const ctx = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'spanishVmResolution_'), ctx);
+  const R = (idx, ms, replies, man) => JSON.parse(JSON.stringify(ctx.spanishVmResolution_(idx, ms, replies, man)));
+  assert.deepStrictEqual(R(0, 100, [{ idx: 1, ms: 130 }], null), { resolveMs: 130, wasManual: false }, 'the reply after it resolves it');
+  assert.deepStrictEqual(R(2, 200, [{ idx: 1, ms: 130 }], null), { resolveMs: null, wasManual: false }, 'a reply BEFORE a later voicemail does not');
+  assert.deepStrictEqual(R(2, 200, [], { ms: 150 }), { resolveMs: null, wasManual: false }, 'nor does a manual resolve stamped before it');
+  assert.deepStrictEqual(R(2, 200, [], { ms: 250 }), { resolveMs: 250, wasManual: true }, 'a manual resolve at or after it does');
+  assert.deepStrictEqual(R(2, 200, [], { ms: 0 }), { resolveMs: 200, wasManual: true }, 'a legacy unstamped manual row resolves every voicemail, as before');
+  // Through the fold: [vm 9:00, reply 9:30, vm 11:00] → the second voicemail is pending.
+  const sb = buildSandbox([]);
+  sb.GmailApp = { search: () => sb._threads };
+  Object.assign(sb, { SPANISH_THREAD_SCAN_MAX: 200, getSpanishVmMinSeconds_: () => 5, getSpanishVmSender_: () => 'no-reply@8x8.com',
+    getSpanishVmFilter_: () => 'A_Q_Spanish', spanishVmQuery_: () => 'q',
+    spanishVmMatch_: (from, subj, s, f) => String(from).indexOf(s) >= 0 && String(subj).indexOf(f) >= 0,
+    spanishVmDurationSec_: () => 60, spanishVmTooShort_: () => 'show',
+    emailAddrOnly_: (x) => String(x).replace(/^.*</, '').replace(/>.*$/, '').trim().toLowerCase() });
+  ['spanishVmResolution_', 'spanishVmFold_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), sb));
+  const m = (from, subj, ms) => ({ getFrom: () => from, getSubject: () => subj, getPlainBody: () => 'Duration: 01:00', getDate: () => ({ getTime: () => ms }) });
+  sb._threads = [{ getId: () => 't1', getMessages: () => [m('no-reply@8x8.com', 'VM A_Q_Spanish', 900), m('Ana <ana@x>', 're', 930), m('no-reply@8x8.com', 'VM A_Q_Spanish', 1100)] }];
+  const rows = JSON.parse(JSON.stringify(sb.spanishVmFold_(30, {}, {}, false, {}).rows.map((r) => ({ i: r.msgIndex, res: r.resolveMs }))));
+  assert.deepStrictEqual(rows, [{ i: 0, res: 930 }, { i: 2, res: null }], 'the first is answered, the repeat is still waiting');
+  const list = stripJsComments_(extractRawFunction('Code.js', 'getSpanishInboxPending'));
+  assert.ok(/vmPendingByThread/.test(list) && /vmPending: vmPendingByThread\[tid\]\.n/.test(list),
+    'the list shows ONE card per thread (resolve and claim act on the thread) and says how many are waiting');
+});
+
+
+// ---------------------------------------------------------------------------
+// cycle 22 Batch 8 — Intake, Forms, QA and Training correctness
+console.log('\ncycle 22 Batch 8 — Intake, Forms, QA and Training correctness');
+const B8_WEB = path.join(__dirname, '../../web-app');
+
+test('I2: a seat cell is read WORD BY WORD — "Captain Seat" is a captain seat, not a solid one — and the browse filter agrees with the engine', () => {
+  const ctx = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'intakeSeatKinds_'), ctx);
+  const s2 = buildSandbox([]);
+  const client = loadFunction(s2, 'intake/script_intake.html', 'intakeSeatKindsClient_');
+  const grid = ['S', 'C', 'S/C', 'Solid', 'Captain', 'Captain Seat', "Captain's", 'Solid seat', 'solid or captain', 'x', 'Sling', '', 'Captain / Solid'];
+  const expect = {
+    'S': [true, false], 'C': [false, true], 'S/C': [true, true], 'Solid': [true, false], 'Captain': [false, true],
+    'Captain Seat': [false, true], "Captain's": [false, true], 'Solid seat': [true, false], 'solid or captain': [true, true],
+    'x': [false, false], 'Sling': [false, false], '': [false, false], 'Captain / Solid': [true, true] };
+  grid.forEach((g) => {
+    const sv = JSON.parse(JSON.stringify(ctx.intakeSeatKinds_(g)));
+    const cv = JSON.parse(JSON.stringify(client(g)));
+    assert.deepStrictEqual(cv, sv, 'client and server agree on "' + g + '"');
+    assert.deepStrictEqual([sv.solid, sv.captain], expect[g], '"' + g + '"');
+  });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.intakeSeatKinds_('Sling').unknown)), ['sling'], 'an unreadable word is kept for the validator to name');
+  // Engine: a patient who needs a solid seat is NOT offered a "Captain Seat" chair.
+  const cat = [['Cap', 'K0823', '350', 'Captain Seat', 'https://p', 'https://i'], ['Sol', 'K0825', '350', 'Solid', 'https://p', 'https://i']];
+  const res = intakeFilterRecommendations_({ '43': 'multiple sclerosis', '38': '200' }, cat);
+  const codes = JSON.stringify(res);
+  assert.ok(!/K0823/.test(codes), 'the captain-seat chair fails the solid-seat gate (it used to pass on its letter s)');
+  assert.ok(/K0825/.test(codes), 'while the solid chair is still recommended (non-vacuous)');
+  const src = stripJsComments_(extractRawFunction('Code.js', 'intakeFilterRecommendations_'));
+  assert.ok(!/seatCode\.includes\(/.test(src), 'no letter test survives in the engine');
+});
+
+test('I3: the patient weight is the FIRST number in the answer — "250-260" is 250 lbs, and an answer with no number is a named decision factor', () => {
+  const ctx = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'intakeParseWeight_'), ctx);
+  const W = (t) => JSON.parse(JSON.stringify(ctx.intakeParseWeight_(t)));
+  assert.strictEqual(W('250-260').lbs, 250, 'a range reads its first number (it read 250260)');
+  assert.strictEqual(W('250.5 lbs').lbs, 250.5, 'the decimal survives (the cycle-8 fix)');
+  assert.strictEqual(W('about 1,250 lbs').lbs, 1250, 'a thousands comma is not a separator');
+  assert.deepStrictEqual([W('n/a').lbs, W('n/a').unreadable], [0, true], 'no number → 0 and UNREADABLE');
+  assert.deepStrictEqual([W('').lbs, W('').unreadable], [0, false], 'blank is simply not provided');
+  const rows = intakeExplainFactors_({ '38': 'heavy' });
+  const w = rows.find((r) => r.label === 'Weight');
+  assert.ok(/UNREADABLE/.test(w.value) && /NO weight-capacity check/.test(w.value), 'the rep is told the weight was not read and what that did');
+});
+
+test('I4: an unreadable submissions tab is NAMED on the Sent tab — never "No matching intake submissions" (driven render)', () => {
+  const src = stripJsComments_(extractRawFunction('Code.js', 'intakeListMySubmissions'));
+  assert.ok(/catch \(e\) \{ failedTypes\.push\(ft\); return; \}/.test(src) && /failedTypes: failedTypes/.test(src), 'the server ships which form types failed');
+  const s2 = buildSandbox([]);
+  s2.icon = () => ''; s2.esc = (x) => String(x == null ? '' : x);
+  loadFunction(s2, 'intake/script_intake.html', 'intakeFormPill_');
+  const r = loadFunction(s2, 'intake/script_intake.html', 'intakeRenderSentList_');
+  const none = r([], false, ['PPD', 'PMD', 'PAP']);
+  assert.ok(/Could not read the PPD \/ PMD \/ PAP submissions/.test(none) && !/No matching intake submissions/.test(none), 'nothing readable is a failure, not an empty list');
+  const some = r([{ formType: 'PMD', patientInfo: 'Pat', timestamp: 't', recipient: 'x' }], false, ['PPD']);
+  assert.ok(/Could not read the PPD submissions/.test(some) && /Pat/.test(some), 'a partial list says it is partial');
+  assert.ok(/No matching intake submissions/.test(r([], false, [])), 'a real empty list still reads as empty');
+});
+
+test('I5: an unanswered account Yes/No reads "Not answered" in the email — never the same box as a deliberate No (driven)', () => {
+  const ctx = vm.createContext({ String, Number, esc_: (x) => String(x),
+    CN_EMAIL_PALETTE: { muted2: '#m2', muted3: '#m3', paperCard: '#pc', paper: '#p', line: '#l', ink: '#i', warn: '#w', accent: '#a' },
+    intakeSectionRowHtml_: (l) => '<h>' + l + '</h>' });
+  vm.runInContext(extractRawFunction('Code.js', 'intakeBuildAcctBodyHtml_'), ctx);
+  const layout = { HEADER_ROWS: [], CHECKBOX_ROWS: [3], CHECKBOX_WARN_ROWS: [], SECONDARY_QUESTION_ROWS: [], CONDITIONAL_FORMATTING_ROWS: {} };
+  const html = (v) => ctx.intakeBuildAcctBodyHtml_([{ qIndex: 3, label: 'Q', value: v }], layout);
+  assert.ok(/&#10003;/.test(html('TRUE')), 'yes is the check');
+  assert.ok(/>No</.test(html('FALSE')) && !/Not answered/.test(html('FALSE')), 'a deliberate No says No');
+  assert.ok(/Not answered/.test(html('')) && !/>No</.test(html('')), 'an untouched toggle says Not answered');
+});
+
+
+test('C7: form tokens are created only after the PDFs are in hand, and voided if the send fails — no phantom "Awaiting" forms (driven void)', () => {
+  const src = stripJsComments_(extractRawFunction('Code.js', 'sendExternalEmail'));
+  const fetchAt = src.indexOf('UrlFetchApp.fetch(url'), tokenAt = src.indexOf('createFormToken(');
+  assert.ok(fetchAt > 0 && tokenAt > fetchAt, 'the PDF fetch runs BEFORE any token is written');
+  assert.ok(/catch \(sendErr\) \{\s*formTokensVoid_\(formLinks\.map\(function \(l\) \{ return l\.token; \}\), emp\);\s*return \{ success: false/.test(src),
+    'a failed send withdraws the tokens it created');
+  const rows = { t1: { rowIndex: 5 }, t2: { rowIndex: 9 } };
+  const writes = [], audits = [];
+  const ctx = vm.createContext({ Logger: { log() {} }, FT: { STATUS: 6 }, sheetSafe_: (v) => v,
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    getOrCreateFormTokensSheet_: () => ({ getRange: (r, c) => ({ setValue: (v) => writes.push(r + ':' + c + ':' + v) }) }),
+    findFormTokenRow_: (sh, t) => rows[t] || null, formTokenRef_: (t) => 'ref(' + t + ')',
+    writeAuditLog_: (emp, action, d, t, adj, back, notes) => audits.push(emp.id + '|' + action + '|' + notes) });
+  vm.runInContext(extractRawFunction('Code.js', 'formTokensVoid_'), ctx);
+  assert.strictEqual(ctx.formTokensVoid_(['t1', 'gone', 't2'], { id: 'E1' }), 2);
+  assert.deepStrictEqual(writes, ['5:7:voided', '9:7:voided'], 'each created token is marked voided');
+  // Follow-up (cycle 22): the withdrawal is in the trail too — by REFERENCE, never the live token (S4).
+  assert.deepStrictEqual(audits.map((a) => a.split('; ')[0]), ['E1|FormTokenVoided|tokenRef=ref(t1)', 'E1|FormTokenVoided|tokenRef=ref(t2)'],
+    'one FormTokenVoided row per withdrawn token; none for a token that was not found');
+  assert.ok(audits.every((x) => !/tokenRef=t\d/.test(x)), 'the live token never reaches the audit row');
+  const pub = stripJsComments_(extractRawFunction('Code.js', 'getFormByToken'));
+  assert.ok(/if \(status === 'voided'\) return \{ error: 'This form link was withdrawn/.test(pub), 'the public route refuses a withdrawn link');
+  const sent = stripJsComments_(extractRawFunction('Code.js', 'getMySentForms'));
+  assert.ok(/if \(status === 'voided'\) continue;/.test(sent), 'and Sent Forms does not list it as awaiting');
+});
+
+test('C8: "Clear reply" clears what the THREAD shows — the latest manager reply leaves feedback[], and the legacy keys follow (driven)', () => {
+  const ctx = vm.createContext({ String, Array });
+  vm.runInContext(extractRawFunction('Code.js', 'trainingReplyClear_'), ctx);
+  const sfd = { trainingQuestion: 'q', trainingReply: 'second', trainingReplyBy: 'm2', trainingReplyAt: 't2', feedback: [
+    { role: 'rep', message: 'q', kind: 'question' }, { role: 'manager', message: 'first', by: 'm1', at: 't1', kind: 'reply' },
+    { role: 'rep', message: 'thanks', kind: 'followup' }, { role: 'manager', message: 'second', by: 'm2', at: 't2', kind: 'reply' }] };
+  const out = JSON.parse(JSON.stringify(ctx.trainingReplyClear_(sfd)));
+  assert.deepStrictEqual(out.feedback.map((f) => f.message), ['q', 'first', 'thanks'], 'the latest manager reply is gone from the thread');
+  assert.strictEqual(out.trainingReply, 'first', 'the legacy keys now mirror the reply that remains');
+  const out2 = JSON.parse(JSON.stringify(ctx.trainingReplyClear_(out)));
+  assert.ok(!('trainingReply' in out2) && out2.feedback.every((f) => f.role !== 'manager'), 'clearing the last reply drops the keys too');
+  assert.strictEqual(out2.trainingQuestion, 'q', 'the question is never touched');
+  assert.ok(/trainingReplyClear_\(subformData\)/.test(extractRawFunction('Code.js', 'setCallNoteTrainingReply')), 'the endpoint clears through it');
+});
+
+test('C9: a template or the win-back text keeps every inserted price line — the send is no longer refused for text the rep never touched (driven)', () => {
+  const s2 = buildSandbox([]);
+  const f = loadFunction(s2, 'cn/script_callnotes.html', 'cnExtBodyWithQuotes_');
+  const q = [{ line: 'Walker — $99.00' }, { line: 'Cane — $25.00 (price effective 2026-09-01)' }];
+  assert.strictEqual(f('Hi {name},\nThanks!\n', q), 'Hi {name},\nThanks!\nWalker — $99.00\nCane — $25.00 (price effective 2026-09-01)', 'the lines follow the template, in order');
+  assert.strictEqual(f('Walker — $99.00\nHello', q), 'Walker — $99.00\nHello\nCane — $25.00 (price effective 2026-09-01)', 'a line already present is not duplicated');
+  assert.strictEqual(f('Hello', []), 'Hello', 'no quotes, no change');
+  assert.strictEqual(f('', q), 'Walker — $99.00\nCane — $25.00 (price effective 2026-09-01)', 'an empty template keeps just the lines');
+  const cn = stripJsComments_(fs.readFileSync(path.join(B8_WEB, 'cn/script_callnotes.html'), 'utf8'));
+  assert.strictEqual((cn.match(/body = cnExtBodyWithQuotes_\(body, cnExtOopQuotes_\(\)\);/g) || []).length, 2, 'both the template picker and the win-back nudge keep the quotes');
+});
+
+test('I7: form retention is floored at the token expiry plus a day — a 1-day setting can no longer delete links still valid for 72 hours', () => {
+  const ctx = vm.createContext({ Math, Number, isNaN });
+  vm.runInContext(extractRawFunction('Code.js', 'formRetentionEffectiveDays_'), ctx);
+  const f = ctx.formRetentionEffectiveDays_;
+  assert.strictEqual(f(1, 72), 4, '1 day becomes 4 (72 h + a day)'); assert.strictEqual(f(2, 72), 4);
+  assert.strictEqual(f(90, 72), 90, 'a long window is untouched'); assert.strictEqual(f(0, 72), 0, 'disabled stays disabled');
+  assert.strictEqual(f(-3, 72), 0); assert.strictEqual(f(NaN, 72), 0); assert.strictEqual(f(1, 25), 3, 'a 25-hour expiry floors at 3 days');
+  assert.ok(/formRetentionEffectiveDays_\(v, CONFIG\.FORM_TOKEN_EXPIRY_HOURS \|\| 72\)/.test(extractRawFunction('Code.js', 'getFormRetentionDays_')), 'the purge reads the floored value');
+});
+
+test('S5: re-attributing or clearing the agent WITHDRAWS a live share — a review is never released to the wrong agent, or to nobody', () => {
+  const ctx = vm.createContext({ String, Number });
+  vm.runInContext(extractRawFunction('Code.js', 'qaAgentChangeUnshares_'), ctx);
+  const f = ctx.qaAgentChangeUnshares_;
+  assert.strictEqual(f('Ana Diaz', 'Bo Chen', 1700000000000), true, 'a different agent unshares');
+  assert.strictEqual(f('Ana Diaz', '', 1700000000000), true, 'clearing the agent unshares (no "shared with nobody")');
+  assert.strictEqual(f('Ana Diaz', ' ana diaz ', 1700000000000), false, 're-saving the same agent keeps the share');
+  assert.strictEqual(f('Ana Diaz', 'Bo Chen', 0), false, 'an unshared review has nothing to withdraw');
+  const src = stripJsComments_(extractRawFunction('Code.js', 'qaSetRecordingAgent'));
+  assert.ok(/if \(unshare\) sheet\.getRange\(found\.rowIdx, QAR\.SHARED_MS \+ 1\)\.setValue\(sheetSafe_\(0\)\);/.test(src) && /unshared: unshare/.test(src), 'the endpoint clears SharedMs and says so');
+  const qa = fs.readFileSync(path.join(B8_WEB, 'qa/script_qa.html'), 'utf8');
+  assert.ok(/if \(res\.unshared\) r\.sharedMs = 0;/.test(qa), 'the client redraws the share state');
+});
+
+test('D8: a failed Team Training source is NAMED, never read as empty — and a failed Reference list cannot unlink a quiz on save (driven)', () => {
+  const s2 = buildSandbox([]);
+  s2.icon = () => ''; s2.esc = (x) => String(x == null ? '' : x);
+  s2.TRAIN_STATE = { kbTree: { error: 'KB unreachable' }, emps: { employees: [] }, quizzes: { quizzes: [] } };
+  loadFunction(s2, 'train/script_training.html', 'trainMgrSourceFailures_');
+  const warn = loadFunction(s2, 'train/script_training.html', 'trainMgrSourceWarnHtml_');
+  assert.ok(/Could not load Reference items/.test(warn()) && /incomplete, not empty/.test(warn()), 'the failed source is named');
+  s2.TRAIN_STATE.kbTree = { items: [] };
+  assert.strictEqual(warn(), '', 'all sources read → no banner (INV-186)');
+  // Quiz editor with the tree failed: the current link survives as a selected option.
+  s2.TRAIN_STATE.kbTree = { error: 'x' };
+  s2.TRAIN_STATE.qed = { quizId: 'Q1', title: 'T', kbItemId: 'KB9', passPct: 80, questions: [] };
+  s2.trainQedQuestionHtml_ = () => '';
+  ['trainImportQuizFromForm_', 'trainSaveQuizFromEditor_', 'trainQedSnapshot_', 'trainCloseQuizEditor_'].forEach((n) => { s2[n] = () => {}; });
+  const overlay = { innerHTML: '', addEventListener() {}, querySelectorAll: () => [], querySelector: () => null };
+  loadFunction(s2, 'train/script_training.html', 'trainRenderQuizEditor_')(overlay);
+  assert.ok(/<option value="KB9" selected>\(keep the current link/.test(overlay.innerHTML), 'the link is kept, so saving does not unlink it');
+  s2.TRAIN_STATE.kbTree = { items: [{ id: 'KB9', title: 'Walkers' }] };
+  loadFunction(s2, 'train/script_training.html', 'trainRenderQuizEditor_')(overlay);
+  assert.ok(!/keep the current link/.test(overlay.innerHTML) && /<option value="KB9" selected>Walkers/.test(overlay.innerHTML), 'with the list loaded it is the ordinary option');
+  assert.ok(/trainMgrSourceWarnHtml_\(\) \+ statStrip/.test(extractFunction('train/script_training.html', 'trainRenderMgr_')), 'the dashboard renders the banner');
+});
+
+test('D4: Verify is offered for every issued document — a completed fields-only document can be integrity-checked too', () => {
+  const ed = stripJsComments_(fs.readFileSync(path.join(B8_WEB, 'train/script_empdocs.html'), 'utf8'));
+  assert.ok(/\(d\.status !== 'draft' \? '<button class="kb-btn" data-ed-verify=/.test(ed), 'the button no longer requires a signature');
+  assert.ok(!/d\.requiresSignature && d\.status !== 'draft' \? '<button class="kb-btn" data-ed-verify=/.test(ed), 'the signature-only gate is gone');
+});
+
+test('D9: a late comment-post success touches the composer, pin and player only if the SAME recording is still open', () => {
+  const f = stripJsComments_(extractFunction('qa/script_qa.html', 'qaSubmitComment_'));
+  const guard = f.indexOf('if (!QA_STATE.det || QA_STATE.det.fileId !== r.fileId)');
+  const clear = f.indexOf('QA_STATE.pin = null;'), play = f.indexOf('audio.play()');
+  assert.ok(guard > 0 && clear > guard && play > guard, 'the recording check runs BEFORE the pin is cleared and playback resumes');
+});
+
+// ---------------------------------------------------------------------------
+// cycle 22 follow-ups — the Batch 6-8 follow-on items
+console.log('\ncycle 22 follow-ups — Batch 6-8 follow-on items');
+const FU_WEB = path.join(__dirname, '../../web-app');
+
+test('FU-B6a: the urgent digest STAMPS a failed read (heartbeat withheld) and clears it on a clean run — a thrown aggregate is not an empty queue (driven)', () => {
+  const calls = [];
+  const mk = (agg) => {
+    const ctx = vm.createContext({ String, Date, JSON, Logger: { log() {} }, CONFIG: { TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago' },
+      Utilities: { formatDate: () => '2026-09-25' }, assertManagerCaller_() {}, managerBriefSuppressionActive_: () => false,
+      getManagerEmails_: () => ['m@x'], managerAggregateUrgent_: agg, sendManagerFlagDigest_: () => calls.push('send'),
+      stampAutomationError_: (k, m) => calls.push('err:' + k + ':' + m), clearAutomationError_: (k) => calls.push('clear:' + k),
+      stampDigestLastRun_: (k) => calls.push('beat:' + k) });
+    vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesUrgentDigest'), ctx);
+    return ctx.sendCallNotesUrgentDigest;
+  };
+  mk(() => { throw new Error('roster unreadable'); })();
+  assert.deepStrictEqual(calls.splice(0), ['err:CallNotesUrgentDigest:roster unreadable'], 'stamped, and NO heartbeat');
+  mk(() => ({ results: [], skippedReps: [] }))();
+  assert.deepStrictEqual(calls.splice(0), ['clear:CallNotesUrgentDigest', 'beat:urgent'], 'a clean empty run clears the flag and beats');
+});
+
+test('FU-B6b: the daily brief names urgent-note rep Sheets it could not read, instead of reading only `.results` (driven)', () => {
+  const stamped = [];
+  let sentD = null;
+  const ctx = vm.createContext({ String, Date, JSON, Array, console: { warn() {} }, Logger: { log() {} },
+    CONFIG: { TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago' }, Utilities: { formatDate: () => '2026-09-25' },
+    assertManagerCaller_() {}, stampDigestLastRun_() {}, getFlag_: () => true, getManagerEmails_: () => ['m@x'],
+    computeMissedClockOuts_: () => [], managerAggregateUrgent_: () => ({ results: [{ id: 'n1' }], skippedReps: ['Ann', 'Bo'] }),
+    trainOverdueForRoster_: () => [], empDocsOverdueAll_: () => [], coachUnackedAll_: () => [], deptRequestsOverdueOpen_: () => [],
+    stampAutomationError_: (k, m) => stamped.push(k + ':' + m), clearAutomationError_() {},
+    empDocCanManagerSee_: () => true, coachCanManagerSee_: () => true, managerBriefSections_: (d) => (d.urgent.length ? ['u'] : []),
+    sendManagerBriefEmail_: (e, secs, d) => { sentD = d; } });
+  vm.runInContext(extractRawFunction('Code.js', 'sendManagerDailyBrief'), ctx);
+  ctx.sendManagerDailyBrief();
+  assert.strictEqual(sentD.urgent.length, 1, 'the readable urgent notes still ride the brief');
+  assert.ok(sentD.failedSources.some((f) => /urgent notes \(2 rep Sheet\(s\) unreadable\)/.test(f)), 'and the unreadable Sheets are named in it');
+  assert.ok(stamped.some((m) => /^ManagerDailyBrief:.*urgent notes \(2 rep/.test(m)), 'and on the health dot');
+});
+
+test('FU-B6c: an unreadable ClientErrors tab reaches the health dot and the digest — the panel said so, the dot counted 0 (driven)', () => {
+  const ctx = vm.createContext({ console, String, Object, Date, Number, parseInt, JSON, isFinite,
+    CONFIG: { TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago' }, CLIENT_ERR_PROBLEM_MIN: 10,
+    AUTOMATION_JOB_CHECKS: [], Utilities: { formatDate: () => '1' }, automationJobProblems_: () => [] });
+  vm.runInContext(extractRawFunction('Code.js', 'automationProblems_'), ctx);
+  const items = JSON.parse(JSON.stringify(ctx.automationProblems_({ clientErrors: { count: 0, last24h: 0, error: 'quota' } }, { items: true })));
+  assert.deepStrictEqual(items.map((i) => [i.kind, i.key]), [['clientErrors', 'read']]);
+  assert.ok(/could not be read \(quota\)/.test(items[0].text));
+  assert.strictEqual(ctx.automationProblems_({ clientErrors: { count: 0, last24h: 0 } }).length, 0, 'a readable quiet tab is still quiet');
+});
+
+test('FU-B6d: a daily job with NO run on record is flagged once the AuditLog read reaches back past its stale window — and never on a fresh log (driven)', () => {
+  const ctx = b6JobCtx_();
+  const f = ctx.automationJobProblems_;
+  const NOW = Date.parse('2026-09-20T09:00:00Z');
+  const none = [{ action: 'CallNotesReconcile', last: null }];
+  const MISSING = /nightly Sheets reconcile has no run on record in the last 30h/;
+  assert.ok(f(none, {}, NOW, 20, '2026-09', { complete: true, startMgr: '', startMs: NOW - 9 * 86400000 }).some((m) => MISSING.test(m)),
+    'nine days of rows and not one run — the trigger may be missing');
+  assert.ok(!f(none, {}, NOW, 20, '2026-09', { complete: true, startMgr: '', startMs: NOW - 2 * 3600000 }).some((m) => MISSING.test(m)),
+    'a two-hour-old AuditLog proves nothing yet (a fresh deploy)');
+  assert.ok(!f(none, {}, NOW, 20, '2026-09', { complete: true, startMgr: '', startMs: null }).some((m) => MISSING.test(m)),
+    'an unparseable or empty window proves nothing');
+  const comp = stripJsComments_(extractRawFunction('Code.js', 'computeAutomationHealth_'));
+  assert.ok(/startMs: auditWindowStartMs/.test(comp), 'the report ships the window\'s start instant');
+});
+
+test('FU-B6e: the trigger installer is recorded, and offboarding them is named by a detector — the account every job runs as (driven)', () => {
+  const ctx = vm.createContext({ String });
+  vm.runInContext(extractRawFunction('Code.js', 'triggerOwnerOffboarded_'), ctx);
+  const f = ctx.triggerOwnerOffboarded_;
+  assert.strictEqual(f({ email: 'Lee@X.com' }, ['a@x.com'], ['lee@x.com']), 'lee@x.com', 'offboarded, not back on the roster');
+  assert.strictEqual(f({ email: 'lee@x.com' }, ['LEE@x.com'], ['lee@x.com']), '', 're-onboarded — back on the roster');
+  assert.strictEqual(f({ email: 'svc@x.com' }, [], []), '', 'a deployer with no roster row is NOT flagged (only offboardEmployee writes the record)');
+  assert.strictEqual(f(null, [], ['lee@x.com']), '', 'no record (installed before it existed) says nothing');
+  const inst = stripJsComments_(extractRawFunction('Code.js', 'installAutomationTriggers'));
+  assert.ok(/propSetBounded_\(AUTOMATION_TRIGGER_OWNER_PROP, JSON\.stringify\(\{ email: userEmail/.test(inst), 'the installer stamps who ran it');
+  const det = stripJsComments_(extractRawFunction('Code.js', 'automationDetectorChecks_'));
+  assert.ok(/add\('triggerOwner'/.test(det) && /triggerOwnerOffboarded_\(owner, emails, readOffboardedEmails_\(\)\)/.test(det), 'the detector reads it');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/key: 'triggerOwner'/.test(mock), 'the health fixture carries the detector (INV-185)');
+});
+
+test('FU-B7a: the flows that CREATE a task bust the target rep\'s Needs-you cache — an assignment, an issued document, a coaching item', () => {
+  const tr = stripJsComments_(extractRawFunction('Code.js', 'saveTrainingAssignment'));
+  assert.ok(/if \(allMode\) pendingTasksBustAll_\(\); else targets\.forEach\(function \(id\) \{ pendingTasksBust_\(id\); \}\);/.test(tr), 'an assignment busts every target (or everyone)');
+  assert.ok(tr.indexOf("'TrainingAssign'") < tr.indexOf('pendingTasksBustAll_()'), 'after the write lands');
+  const doc = stripJsComments_(extractRawFunction('Code.js', 'issueDoc'));
+  assert.ok(/if \(v\.doc\.status !== 'draft'\) pendingTasksBust_\(v\.doc\.empId\);/.test(doc), 'an issued (non-draft) document busts the rep; a draft busts at release');
+  const co = stripJsComments_(extractRawFunction('Code.js', 'createCoaching'));
+  assert.ok(/pendingTasksBust_\(target\.id\);/.test(co) && co.indexOf("'CoachingCreate'") < co.indexOf('pendingTasksBust_(target.id)'), 'a coaching item busts the rep');
+});
+
+test('FU-B7b: a repeat caller\'s voicemail thread expands to the NEWEST voicemail — the one the card names — and the pill says how many wait (driven)', () => {
+  const ctx = vm.createContext({ String });
+  vm.runInContext(extractRawFunction('Code.js', 'emailAddrOnly_'), ctx);
+  ['spanishVmMatch_', 'spanishThreadBodyMessage_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const m = (from, subject, id) => ({ id, getFrom: () => from, getSubject: () => subject });
+  const vm1 = m('vm@8x8.com', 'New voicemail from Ana via A_Q_Spanish', 'vm1'), reply = m('rep@ums.com', 'Re: New voicemail', 'r'),
+        vm2 = m('vm@8x8.com', 'New voicemail from Ana via A_Q_Spanish', 'vm2');
+  const pick = ctx.spanishThreadBodyMessage_([vm1, reply, vm2], 'vm@8x8.com', 'A_Q_Spanish');
+  assert.deepStrictEqual([pick.msg.id, pick.vmCount], ['vm2', 2], 'the newest voicemail, never the reply, and the count');
+  const req = m('pat@x.com', 'Ayuda', 'q'), staff = m('rep@ums.com', 'Re: Ayuda', 's');
+  const p2 = ctx.spanishThreadBodyMessage_([req, staff], 'vm@8x8.com', 'A_Q_Spanish');
+  assert.deepStrictEqual([p2.msg.id, p2.vmCount], ['q', 0], 'an email request still reads its first message');
+  const body = stripJsComments_(extractRawFunction('Code.js', 'getSpanishInboxThreadBody'));
+  assert.ok(/const pick = spanishThreadBodyMessage_\(msgs, getSpanishVmSender_\(\), getSpanishVmFilter_\(\)\)/.test(body) &&
+    /body: String\(pick\.msg\.getPlainBody\(\)/.test(body) && body.indexOf('spanishThreadInScope_(first, addr)') < body.indexOf('spanishThreadBodyMessage_'),
+    'the scope guard still runs on the FIRST message, before the pick');
+  const s2 = buildSandbox([]);
+  s2.icon = () => '';
+  const pill = loadFunction(s2, 'metrics/script_metrics.html', 'spanishVmPillHtml_');
+  assert.ok(/ 2 voicemails</.test(pill({ kind: 'voicemail', vmPending: 2 })), 'two waiting');
+  assert.ok(/ voicemail</.test(pill({ kind: 'voicemail', vmPending: 1 })) && / voicemail</.test(pill({ kind: 'voicemail' })), 'one (or an older server) reads as before');
+  assert.strictEqual(pill({ kind: 'email', vmPending: 3 }), '', 'an email thread gets no pill');
+  assert.ok(/vmPending: 2 \}/.test(fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8')), 'the fixture puts a repeat caller on camera');
+});
+
+test('FU-B7c: finishing a task in ONE window invalidates the Needs-you list in the others — BroadcastChannel, nothing persisted (driven)', () => {
+  const s2 = buildSandbox([]);
+  const posted = [];
+  let chan = null;
+  s2.BroadcastChannel = function (name) { this.name = name; this.postMessage = (msg) => posted.push(name + ':' + msg); chan = this; };
+  s2.CLK_NEEDS = { at: 99 };
+  s2.CLK_NEEDS_CHANNEL = null;
+  loadFunction(s2, 'tc/script_clock.html', 'clkNeedsYouChannel_');
+  const inv = loadFunction(s2, 'tc/script_clock.html', 'clkNeedsYouInvalidate_');
+  inv();
+  assert.strictEqual(s2.CLK_NEEDS.at, 0, 'this window refetches');
+  assert.deepStrictEqual(posted, ['team-tools-needs-you:invalidate'], 'and tells the others');
+  s2.CLK_NEEDS.at = 42;
+  chan.onmessage({ data: 'invalidate' });
+  assert.strictEqual(s2.CLK_NEEDS.at, 0, 'a peer\'s message invalidates here');
+  assert.strictEqual(posted.length, 1, 'without echoing it back (no broadcast storm)');
+  s2.BroadcastChannel = undefined; s2.CLK_NEEDS_CHANNEL = null; s2.CLK_NEEDS.at = 7;
+  inv();
+  assert.strictEqual(s2.CLK_NEEDS.at, 0, 'a browser without BroadcastChannel keeps the per-window behaviour');
+  assert.ok(!/'ums[A-Za-z0-9]+'/.test(extractFunction('tc/script_clock.html', 'clkNeedsYouChannel_')), 'the channel name is not a localStorage-key literal');
+});
+
+test('FU-B8a: every Employee Doc read checks the content hash — an altered document says so to whoever reads it; a legacy row is not "altered" (driven)', () => {
+  const ctx = vm.createContext({ String, empDocContentHashMatches_: (h, body) => h === 'H' && body === 'orig' });
+  vm.runInContext(extractRawFunction('Code.js', 'empDocReadIntegrity_'), ctx);
+  assert.strictEqual(ctx.empDocReadIntegrity_({ contentHash: 'H', bodyMd: 'orig' }), 'ok');
+  assert.strictEqual(ctx.empDocReadIntegrity_({ contentHash: 'H', bodyMd: 'edited' }), 'altered');
+  assert.strictEqual(ctx.empDocReadIntegrity_({ contentHash: '', bodyMd: 'x' }), 'unverifiable', 'no hash is unverifiable, never altered (F-24)');
+  assert.ok(/integrity: empDocReadIntegrity_\(d\)/.test(stripJsComments_(extractRawFunction('Code.js', 'getMyDoc'))), 'getMyDoc ships it');
+  const s2 = buildSandbox([]);
+  s2.icon = () => '';
+  const note = loadFunction(s2, 'train/script_empdocs.html', 'edIntegrityNoteHtml_');
+  assert.ok(/data-integrity="altered"/.test(note({ integrity: 'altered', isOwner: true })) && /ask your manager/.test(note({ integrity: 'altered', isOwner: true })), 'the owner is told');
+  assert.ok(/Use Verify/.test(note({ integrity: 'altered', isOwner: false })), 'a manager is pointed at Verify');
+  assert.strictEqual(note({ integrity: 'unverifiable', isOwner: true }), '', 'a rep is not shown a legacy-row note they can do nothing about');
+  assert.ok(/data-integrity="unverifiable"/.test(note({ integrity: 'unverifiable', isOwner: false })), 'a manager is');
+  assert.strictEqual(note({ integrity: 'ok' }), '');
+  assert.ok(/body \+= edIntegrityNoteHtml_\(doc\);/.test(extractFunction('train/script_empdocs.html', 'edRenderDoc_')), 'the reader renders it');
+  assert.ok(/\.ed-integrity-note \{/.test(fs.readFileSync(path.join(FU_WEB, 'train/script_empdocs.html'), 'utf8')), 'with a rule of its own (the T6 ratchet)');
+});
+
+test('FU-B8b: an unreadable weight answer is said ON the recommendation screen — no weight-capacity check ran (driven)', () => {
+  const s2 = buildSandbox([]);
+  s2.icon = () => '';
+  const w = loadFunction(s2, 'intake/script_intake.html', 'intakeWeightWarnHtml_');
+  assert.ok(/no weight-capacity check/.test(w({ weightUnreadable: true })) && /role="alert"/.test(w({ weightUnreadable: true })));
+  assert.strictEqual(w({ weightUnreadable: false }), '');
+  assert.strictEqual(w(null), '');
+  const prev = stripJsComments_(extractRawFunction('Code.js', 'intakePreviewPPD'));
+  assert.ok(/intakeDeriveClinicalFactors_\(payload\.answers \|\| \{\}\)\.patient\.weightUnreadable/.test(prev) && /weightUnreadable: weightUnreadable/.test(prev),
+    'the preview ships the SAME derivation the engine and the explain factors read');
+  const intk = fs.readFileSync(path.join(FU_WEB, 'intake/script_intake.html'), 'utf8');
+  assert.ok(/weightUnreadable: !!res\.weightUnreadable/.test(intk) && /intakeWeightWarnHtml_\(INTAKE_STATE\.preview\)/.test(intk), 'the modal renders it');
+  assert.ok(/\.intk-weight-warn \{/.test(intk), 'with a rule (the T6 ratchet)');
+});
+
+// ---------------------------------------------------------------------------
+// cycle 22 Batch 9 — interface, accessibility and admin polish
+console.log('\ncycle 22 Batch 9 — interface, accessibility and admin polish');
+const B9_WEB = path.join(__dirname, '../../web-app');
+function b9Files_() {
+  const out = [];
+  (function walk(d) {
+    fs.readdirSync(d, { withFileTypes: true }).forEach((e) => {
+      const f = path.join(d, e.name);
+      if (e.isDirectory()) walk(f); else if (/\.html$/.test(e.name)) out.push(f);
+    });
+  })(B9_WEB);
+  return out;
+}
+
+test('U1/U2 (DERIVED): no static overlay is opened or closed by classList — every one found in the markup goes through ensureOverlay / closeOverlay (g100)', () => {
+  const files = b9Files_().map((f) => ({ f: path.relative(B9_WEB, f), src: foNc(fs.readFileSync(f, 'utf8')) }));
+  const ids = new Set();
+  files.forEach(({ src }) => {
+    for (const m of src.matchAll(/<div[^>]*\bclass="overlay"[^>]*\bid="([\w-]+)"|<div[^>]*\bid="([\w-]+)"[^>]*\bclass="overlay"/g)) ids.add(m[1] || m[2]);
+  });
+  assert.ok(ids.has('cn-export-overlay') && ids.has('cn-shortcuts-overlay') && ids.has('export-overlay'),
+    'the derivation finds the static overlays (non-vacuous: ' + [...ids].join(', ') + ')');
+  const bad = [];
+  files.forEach(({ f, src }) => {
+    ids.forEach((id) => {
+      const q = id.replace(/-/g, '\\-');
+      if (new RegExp("getElementById\\('" + q + "'\\)\\.classList\\.(add|remove)\\('open'\\)").test(src)) bad.push(f + ': ' + id + ' (direct)');
+      // …and through a variable bound to it: `var so = getElementById(id); so.classList.add('open')`.
+      for (const v of src.matchAll(new RegExp("(?:var|let|const)\\s+(\\w+)\\s*=\\s*document\\.getElementById\\('" + q + "'\\)", 'g'))) {
+        if (new RegExp('\\b' + v[1] + "\\.classList\\.(add|remove)\\('open'\\)").test(src)) bad.push(f + ': ' + id + ' via ' + v[1]);
+      }
+    });
+  });
+  assert.deepStrictEqual(bad, [], 'hand-rolled open/close (no focus stash/restore, no name): ' + bad.join('; '));
+});
+
+test('U1: the Call Notes export renders its link FIRST, checks window.open, and keeps the dialog open when the tab was blocked (g135)', () => {
+  const cn = foNc(fs.readFileSync(path.join(B9_WEB, 'cn/script_callnotes.html'), 'utf8'));
+  assert.ok(/ensureOverlay\('cn-export-overlay'\)/.test(extractFunction('cn/script_callnotes.html', 'cnOpenExportModal_')), 'opens through ensureOverlay');
+  const i = cn.indexOf("getElementById('cn-exp-result')", cn.indexOf('.exportCallNotesRange') - 3000);
+  const link = cn.indexOf('exp-result-link', i), open = cn.indexOf("window.open(res.url, '_blank')", i);
+  assert.ok(i > 0 && link > i && open > link, 'the link is rendered before the open is attempted');
+  assert.ok(/try \{ exWin = window\.open\(res\.url, '_blank'\); \} catch \(_\) \{ exWin = null; \}/.test(cn) &&
+    /exWin \? ' — opening sheet' : ' — use the link in the dialog \(your browser blocked the new tab\)'/.test(cn), 'the return is checked and the toast says which happened');
+  const succ = cn.slice(i, cn.indexOf('.withFailureHandler', i));
+  assert.ok(!/closeOverlay\(overlay\)|classList\.remove\('open'\)/.test(succ), 'the success path leaves the dialog open, holding the link');
+  assert.ok(/<div id="cn-exp-result"><\/div>/.test(fs.readFileSync(path.join(B9_WEB, 'modals.html'), 'utf8')), 'the dialog has the slot');
+});
+
+test('U3: the copy-image fallback says the copy FAILED, and whether the tab opened — never a false "Opened image" (driven)', () => {
+  const s2 = buildSandbox([]);
+  const msg = loadFunction(s2, 'intake/script_intake.html', 'intakeCopyImageFallbackMsg_');
+  assert.ok(/Could not copy the image — it opened in a new tab/.test(msg(true).text));
+  assert.ok(/blocked the new tab — click the image on the card/.test(msg(false).text), 'a blocked tab points at the link already on the card');
+  const toasts = [];
+  s2.showToast = (t, ty) => toasts.push(ty + ':' + t);
+  s2.navigator = {};
+  s2.window.open = () => null;   // blocked
+  loadFunction(s2, 'intake/script_intake.html', 'intakeCopyImage_')({ getAttribute: () => 'https://x/img.png' });
+  assert.deepStrictEqual(toasts.length, 1);
+  assert.ok(/^toast-warn:Could not copy the image, and your browser blocked/.test(toasts[0]), 'no clipboard + a blocked tab reads as what it is: ' + toasts[0]);
+});
+
+test('U5: the QA player shortcut never takes a key a dialog or a focused control owns (driven)', () => {
+  const s2 = buildSandbox([]);
+  const f = loadFunction(s2, 'qa/script_qa.html', 'qaPlayerOwnsKey_');
+  const el = (tag, role) => ({ tagName: tag, isContentEditable: false, getAttribute: (k) => (k === 'role' ? (role || null) : null) });
+  assert.strictEqual(f(el('DIV'), ' ', false), true, 'Space on the page plays/pauses');
+  assert.strictEqual(f(el('BUTTON'), ' ', false), false, 'Space on a focused button presses the button');
+  assert.strictEqual(f(el('DIV', 'button'), ' ', false), false, 'a role=button too');
+  assert.strictEqual(f(el('DIV'), ' ', true), false, 'an open dialog (the confirm with Remove) owns the keyboard');
+  assert.strictEqual(f(el('DIV', 'radio'), 'ArrowRight', false), false, 'arrows move a radio group');
+  assert.strictEqual(f(el('BUTTON'), 'ArrowRight', false), true, 'but a button does not use arrows — seek still works');
+  assert.strictEqual(f(el('TEXTAREA'), 'ArrowLeft', false), false, 'never while typing');
+  const h = foNc(extractFunction('qa/script_qa.html', 'qaEnsureKeysBound_'));
+  assert.ok(/if \(!qaPlayerOwnsKey_\(document\.activeElement, e\.key, !!openOv\)\) return;/.test(h) && /topOpenOverlay_\(\)/.test(h), 'the handler asks it first');
+});
+
+test('U6: Q39 has arrow keys and click-again-to-clear, and Clear asks before wiping a filled form (driven)', () => {
+  const s2 = buildSandbox([]);
+  const cnt = loadFunction(s2, 'intake/script_intake.html', 'intakeFilledCount_');
+  assert.strictEqual(cnt({ answers: { '1': 'Yes', '2': '', '3': '  ' }, patientInfo: 'Pat 123' }, [1]), 3, 'answered questions + the patient line + images');
+  assert.strictEqual(cnt({ answers: {}, patientInfo: '' }, []), 0);
+  let cleared = 0, asked = null;
+  s2.INTAKE_STATE = { ppd: { images: [] } };
+  s2.intakeClearForm_ = () => { cleared++; };
+  s2.uiConfirm = (o) => { asked = o; return { then: (fn) => fn(true) }; };
+  s2.intakeCollectPpd_ = () => ({ answers: {}, patientInfo: '' });
+  const conf = loadFunction(s2, 'intake/script_intake.html', 'intakeConfirmClear_');
+  conf('ppd');
+  assert.deepStrictEqual([cleared, asked], [1, null], 'an empty form clears without a question');
+  s2.intakeCollectPpd_ = () => ({ answers: { '12': 'Yes', '38': '250' }, patientInfo: 'Pat' });
+  conf('ppd');
+  assert.ok(asked && asked.tone === 'danger' && /3 answers \(and the saved draft\) will be erased/.test(asked.message), 'a filled form asks, naming what goes');
+  assert.strictEqual(cleared, 2, 'and clears only on yes');
+  const intk = fs.readFileSync(path.join(B9_WEB, 'intake/script_intake.html'), 'utf8');
+  assert.strictEqual((intk.match(/onclick="intakeClearForm_\(/g) || []).length, 0, 'no Clear button calls the wipe directly');
+  assert.ok(/role="radiogroup" aria-label="' \+ esc\(ariaLabel\) \+ '" onkeydown="intakeRevealKey_\(event\)">/.test(intk), 'the reveal group binds arrow keys');
+  const pick = foNc(extractFunction('intake/script_intake.html', 'intakeRevealPick_'));
+  assert.ok(/if \(btn\.classList\.contains\('on'\)\) \{/.test(pick) && /ta0\.value = ''/.test(pick), 'clicking the selected option clears it (and its text)');
+  const key = foNc(extractFunction('intake/script_intake.html', 'intakeRevealKey_'));
+  assert.ok(/if \(e\.target && e\.target\.tagName === 'INPUT'\) return;/.test(key), 'arrows typed in the reveal text box stay there');
+});
+
+test('U4: the deploy beacon never serves another deployment\'s hash — no ScriptCache', () => {
+  const h = foNc(extractRawFunction('Code.js', 'clientBuildHash_'));
+  assert.ok(!/CacheService|cache\.(get|put)/.test(h), 'memoised per execution only (the driven half is BCN-1b)');
+});
+
+test('A7: after saving auto-tag rules the admin\'s browser runs the rules as STORED (driven)', () => {
+  let stored = null;
+  const ctx = vm.createContext({ String, Array, JSON, CN_AUTO_TAG_RULE_LIMIT: 50,
+    getEmployeeInfo_: () => ({ isAdmin: true, email: 'a@x' }), propSetBounded_: (k, v) => { stored = v; }, writeAuditLog_() {} });
+  vm.runInContext(extractRawFunction('Code.js', 'saveAutoTagRules'), ctx);
+  const res = JSON.parse(JSON.stringify(ctx.saveAutoTagRules([{ tag: 'Wheel Chair', keywords: ['  Power CHAIR ', ''] }])));
+  assert.deepStrictEqual(res.rules, [{ tag: 'wheel-chair', keywords: ['power chair'] }], 'the normalised rules come back');
+  assert.strictEqual(JSON.stringify(res.rules), stored, 'exactly what was stored');
+  const cn = foNc(fs.readFileSync(path.join(B9_WEB, 'cn/script_callnotes.html'), 'utf8'));
+  assert.ok(/CN_STATE\.deptConfig\.autoTagRules = res\.rules;/.test(cn) && !/autoTagRules = out;/.test(cn), 'the client adopts them, not its raw text');
+});
+
+test('A9: a half-filled department row is refused and named, never dropped under "saved" (driven)', () => {
+  const s2 = buildSandbox([]);
+  const f = loadFunction(s2, 'cn/script_callnotes.html', 'cnDeptRowsCollect_');
+  const r = JSON.parse(JSON.stringify(f([{ name: 'Billing', email: 'b@x' }, { name: 'Power', email: ' ' }, { name: '', email: '' }, { name: '', email: 'o@x' }])));
+  assert.deepStrictEqual(r, { map: { Billing: 'b@x' }, half: [1, 3] }, 'both half rows are listed; the blank row is simply removed');
+  const cn = foNc(fs.readFileSync(path.join(B9_WEB, 'cn/script_callnotes.html'), 'utf8'));
+  const at = cn.indexOf("getElementById('cn-admin-save-depts').addEventListener");
+  const h = cn.slice(at, cn.indexOf('.saveDepartmentEmails(map)', at));
+  assert.ok(/if \(col\.half\.length\) \{/.test(h) && /Nothing was saved\./.test(h) && h.indexOf('col.half.length') < h.indexOf('google.script.run'), 'refused before any save');
+  assert.ok(/setAttribute\('aria-invalid'/.test(h), 'and the empty field is marked');
+});
+
+test('M11: the business-hours copy names COMPANY holidays, and the Spanish stats key moves with the voicemail settings (driven)', () => {
+  ['metrics/script_deptrequests.html', 'metrics/script_metrics.html'].forEach((f) => {
+    const src = fs.readFileSync(path.join(B9_WEB, f), 'utf8');
+    assert.ok(!/US holidays excluded/.test(src) && /weekends and company holidays excluded/.test(src), f + ' names the calendar it uses (g123)');
+  });
+  const crypto = require('crypto');
+  const ctx = vm.createContext({ String, Object, Utilities: { DigestAlgorithm: { MD5: 1 },
+    computeDigest: (a, s) => Array.from(crypto.createHash('md5').update(String(s)).digest()) } });
+  vm.runInContext(extractRawFunction('Code.js', 'spanishCacheHash_'), ctx);
+  const base = { sender: 'vm@8x8.com', filter: 'A_Q_Spanish', minSec: 5 };
+  const h = (vmS) => ctx.spanishCacheHash_('in@x', { 'a@x': 1 }, vmS);
+  assert.notStrictEqual(h(base), h(Object.assign({}, base, { minSec: 10 })), 'a new short-voicemail threshold is a new key');
+  assert.notStrictEqual(h(base), h(Object.assign({}, base, { filter: 'Other' })), 'so is a new subject filter');
+  assert.strictEqual(h(base), h(Object.assign({}, base)), 'same settings, same key');
+  assert.ok(/spanishCacheHash_\(addr, members,\s*\{ sender: getSpanishVmSender_\(\), filter: getSpanishVmFilter_\(\), minSec: getSpanishVmMinSeconds_\(\) \}\)/.test(foNc(extractRawFunction('Code.js', 'getSpanishInboxStats'))),
+    'the stats endpoint passes them');
+});
+
+// ---------------------------------------------------------------------------
+// cycle 22 deferred findings — operator decisions 2026-09-25 (S6, S8, S10, M6, C12)
+console.log('\ncycle 22 deferred findings — S6, S8, S10, M6, C12');
+const DF_WEB = path.join(__dirname, '../../web-app');
+
+test('S6: a QA reviewer cannot score, finish, share or re-attribute their OWN call — an admin can (driven)', () => {
+  const ctx = vm.createContext({ String });
+  ['qaIsOwnRecording_', 'qaSelfReviewRefusal_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const rep = { id: 'E7', name: 'Leo Kim', isAdmin: false };
+  assert.strictEqual(ctx.qaIsOwnRecording_(rep, 'Someone Else', 'E7'), true, 'the stored roster id decides when present');
+  assert.strictEqual(ctx.qaIsOwnRecording_(rep, 'Leo Kim', 'E9'), false, 'a different id is not theirs, whatever the name');
+  assert.strictEqual(ctx.qaIsOwnRecording_(rep, '  leo KIM ', ''), true, 'no id: the name, trimmed and case-insensitive');
+  assert.strictEqual(ctx.qaIsOwnRecording_(rep, '', ''), false, 'an unattributed recording is nobody\'s');
+  assert.ok(/your own call/.test(ctx.qaSelfReviewRefusal_(rep, [{ name: 'Leo Kim', id: '' }])));
+  assert.strictEqual(ctx.qaSelfReviewRefusal_(Object.assign({}, rep, { isAdmin: true }), [{ name: 'Leo Kim', id: '' }]), '', 'the admin exception');
+  assert.ok(/your own call/.test(ctx.qaSelfReviewRefusal_(rep, [{ name: 'Ann B', id: 'E1' }, { name: 'Leo Kim', id: 'E7' }])), 'any touched attribution counts (re-attribution checks old AND new)');
+  // Driven through one endpoint: the refusal lands before the write.
+  const writes = [];
+  const row = []; row[10] = 'Leo Kim'; row[14] = 'E7'; row[11] = 0;
+  const sctx = vm.createContext({ String, Date, Number, QAR: { AGENT: 10, SHARED_MS: 11, AGENT_ID: 14 },
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    getEmployeeInfo_: () => rep, canSeeQa_: () => true, sheetSafe_: (v) => v, writeAuditLog_() {},
+    getOrCreateQaRecordingsSheet_: () => ({ getRange: () => ({ setValue: (v) => writes.push(v) }) }),
+    qaFindRecordingRow_: () => ({ rowIdx: 5, row: row }) });
+  ['qaIsOwnRecording_', 'qaSelfReviewRefusal_', 'qaSetRecordingShared'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), sctx));
+  const r = JSON.parse(JSON.stringify(sctx.qaSetRecordingShared('F1', true)));
+  assert.deepStrictEqual([r.success, writes.length], [false, 0], 'refused, nothing written');
+  rep.isAdmin = true;
+  assert.strictEqual(sctx.qaSetRecordingShared('F1', true).success, true, 'an admin may share their own review');
+  // Every one of the four writers asks the guard BEFORE its write.
+  [['qaSetRecordingStatus', "setValue(sheetSafe_(st))"], ['qaSetRecordingAgent', 'setValue(sheetText_(name))'],
+   ['qaSaveScorecard', 'appendRowsTextSafe_('], ['qaSetRecordingShared', 'setValue(sheetSafe_(ms))']].forEach(([fn, write]) => {
+    const src = stripJsComments_(extractRawFunction('Code.js', fn));
+    const g = src.indexOf('qaSelfReviewRefusal_('), w = src.indexOf(write);
+    assert.ok(g > 0 && w > g && /if \(selfNo\) return \{ success: false, error: selfNo \};/.test(src), fn + ' refuses a self-review before writing');
+  });
+  assert.ok(/\{ name: name, id: agentId \}/.test(extractRawFunction('Code.js', 'qaSetRecordingAgent')), 'the NEW attribution is checked too');
+});
+
+test('S8: no page the app serves can be framed by another site — no ALLOWALL anywhere', () => {
+  const srv = serverSource();
+  assert.ok(!/XFrameOptionsMode\.ALLOWALL/.test(srv), 'ALLOWALL is gone from every server file');
+  const n = (srv.match(/setXFrameOptionsMode\(HtmlService\.XFrameOptionsMode\.DEFAULT\)/g) || []).length;
+  assert.strictEqual(n, 3, 'the shell, the restricted page and the public form each set DEFAULT explicitly (' + n + ')');
+  assert.ok(/XFrameOptionsMode\.DEFAULT/.test(extractRawFunction('Code.js', 'serveExternalForm_')), 'including the public form');
+});
+
+test('S10: a FAILED quiz attempt reports the score alone — per-question marks only once passed (driven client)', () => {
+  const q = stripJsComments_(extractRawFunction('Code.js', 'submitQuizAttempt'));
+  assert.ok(/perQuestion: passed \? graded\.perQuestion : null/.test(q), 'the server withholds the marks on a fail');
+  assert.ok(/JSON\.stringify\(graded\.perQuestion\)/.test(q), 'the attempt row still records them for managers');
+  const s2 = buildSandbox([]);
+  s2.icon = () => ''; s2.esc = (x) => String(x == null ? '' : x);
+  const overlay = { innerHTML: '' };
+  s2.document.getElementById = (id) => (id === 'train-quiz-overlay' ? overlay : null);
+  const render = loadFunction(s2, 'train/script_training.html', 'trainRenderQuizResult_');
+  const quiz = { questions: [{ q: 'A?', options: ['x', 'y'] }, { q: 'B?', options: ['x', 'y'] }] };
+  render(quiz, [0, 1], { passed: false, scorePct: 50, right: 1, total: 2, passPct: 100, attempt: 1, perQuestion: null });
+  assert.ok(/data-quiz-marks="withheld"/.test(overlay.innerHTML) && !/Correct|Incorrect/.test(overlay.innerHTML) && !/tr-q (right|wrong)/.test(overlay.innerHTML),
+    'no mark on any question after a fail');
+  render(quiz, [0, 1], { passed: true, scorePct: 100, right: 2, total: 2, passPct: 100, attempt: 2, perQuestion: [true, true] });
+  assert.ok(/✓ Correct/.test(overlay.innerHTML) && !/withheld/.test(overlay.innerHTML), 'the marks after a pass');
+});
+
+test('M6: Dept Request SLAs are WORKING DAYS, compared in business time; a legacy hours map is read as its calendar intent (driven)', () => {
+  const ctx = vm.createContext({ String, Number, Math, Object, JSON, CONFIG: { CALL_NOTES: { DR_SLA_DEFAULT_DAYS: 2 } } });
+  ['drSlaBizHours_', 'drSlaDaysLabel_', 'drSlaParseTargets_', 'drAgeWorkingDaysLabel_', 'drSlaStatus_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  assert.deepStrictEqual(J(ctx.drSlaParseTargets_({ Billing: 48, Shipping: 24, Resupply: 5 })), { map: { Billing: 2, Shipping: 1, Resupply: 0.5 }, legacy: true },
+    'a pre-M6 hours map: hours ÷ 24 to the half day, never below half a day, flagged legacy');
+  assert.deepStrictEqual(J(ctx.drSlaParseTargets_({ _unit: 'days', Billing: 1.5 })), { map: { Billing: 1.5 }, legacy: false }, 'the days shape as stored');
+  assert.deepStrictEqual(J(ctx.drSlaParseTargets_('junk')), { map: {}, legacy: false });
+  assert.strictEqual(ctx.drSlaBizHours_(2, 9), 18, '2 working days of a 9-hour business day = 18 business hours');
+  // The finding: 48 used to be compared as business hours — ~5.3 working days. Two working days now go overdue at 18.
+  assert.strictEqual(ctx.drSlaStatus_(18 * 60, ctx.drSlaBizHours_(2, 9)), 'overdue');
+  assert.strictEqual(ctx.drSlaStatus_(17 * 60, ctx.drSlaBizHours_(2, 9)), 'atrisk');
+  assert.strictEqual(ctx.drSlaDaysLabel_(1), '1 working day');
+  assert.strictEqual(ctx.drSlaDaysLabel_(2), '2 working days');
+  assert.strictEqual(ctx.drAgeWorkingDaysLabel_(30 * 60, 9), '3.5 working days open', 'a business age reads as working days, not "30h"');
+  // Save: working days in half days, stored with the unit.
+  let stored = null;
+  const sctx = vm.createContext({ String, Number, Math, Object, JSON, CONFIG: { CALL_NOTES: { DR_SLA_DEFAULT_DAYS: 2 } },
+    getEmployeeInfo_: () => ({ isAdmin: true, email: 'a@x' }), getDepartmentEmails_: () => ({ Billing: 'b@x', Shipping: 's@x' }),
+    propSetBounded_: (k, v) => { stored = v; }, writeAuditLog_() {} });
+  vm.runInContext(extractRawFunction('Code.js', 'saveDeptRequestSla'), sctx);
+  assert.strictEqual(sctx.saveDeptRequestSla({ Billing: 1.5, Shipping: 2 }).success, true);
+  assert.deepStrictEqual(JSON.parse(stored), { _unit: 'days', Billing: 1.5 }, 'the unit is stored; the default is omitted');
+  assert.strictEqual(sctx.saveDeptRequestSla({ Billing: 0.3 }).success, false, 'half days only');
+  assert.strictEqual(sctx.saveDeptRequestSla({ Billing: 31 }).success, false, 'at most 30');
+  // Wiring: every band converts through the one business day.
+  const dr = stripJsComments_(extractRawFunction('Code.js', 'getDeptRequests'));
+  assert.ok(/slaStatus: drSlaStatus_\(elapsedBizMin, drSlaBizHours_\(slaDays, dayHours\)\)/.test(dr), 'the tracker');
+  assert.ok(/drSlaStatus_\(ageMin, drSlaBizHours_\(slaDays, dayHours\)\)/.test(stripJsComments_(extractRawFunction('Code.js', 'deptRequestsOverdueOpen_'))), 'and the digest');
+  assert.ok(!/DR_SLA_DEFAULT_HOURS|slaHours/.test(serverSource().replace(/function drSlaStatus_[\s\S]*?\n\}/, '')), 'no hours unit left outside drSlaStatus_ (which takes the converted figure)');
+  const trk = fs.readFileSync(path.join(DF_WEB, 'metrics/script_deptrequests.html'), 'utf8');
+  assert.ok(!/h SLA'/.test(trk) && /drSlaDaysLabelClient_\(item\.slaDays\)/.test(trk), 'the tracker labels read working days');
+  const cn = fs.readFileSync(path.join(DF_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.ok(/min="0\.5" max="30" step="0\.5" class="cn-admin-sla-days"/.test(cn) && /cnDeptSlaLegacyNoteHtml_\(cfg\.deptSla\)/.test(cn), 'the editor edits working days and flags a legacy map');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(!/slaHours|defaultHours/.test(mock) && /slaDays: /.test(mock), 'the fixtures carry the new unit (INV-185)');
+});
+
+test('C12: a History, per-rep or export range that reaches the archive window SAYS so — never a bare "no notes" (driven)', () => {
+  const ctx = vm.createContext({ String, Number, Date });
+  vm.runInContext(extractRawFunction('Code.js', 'cnArchivedBefore_'), ctx);
+  assert.strictEqual(ctx.cnArchivedBefore_('2026-01-01', 0, '2026-09-25'), '', 'archiving off (the default) says nothing');
+  assert.strictEqual(ctx.cnArchivedBefore_('2026-06-01', 90, '2026-09-25'), '2026-06-27', 'a range before the cutoff names it');
+  assert.strictEqual(ctx.cnArchivedBefore_('2026-07-01', 90, '2026-09-25'), '', 'a range inside the live window says nothing');
+  ['getMyCallNotes', 'getMyCallNotesRange', 'managerGetCallNotes', 'exportCallNotesRange'].forEach((fn) =>
+    assert.ok(/cnArchivedBeforeNow_\(/.test(extractRawFunction('Code.js', fn)), fn + ' reports it'));
+  const s2 = buildSandbox([]);
+  s2.esc = (x) => String(x == null ? '' : x);
+  const note = loadFunction(s2, 'cn/script_callnotes.html', 'cnArchiveNoteHtml_');
+  assert.strictEqual(note(''), '');
+  assert.ok(/Notes dated before 2026-06-27 may have moved to the cold archive/.test(note('2026-06-27')) && /Include archive/.test(note('2026-06-27')));
+  const cn = fs.readFileSync(path.join(DF_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.ok(/cnArchiveNoteHtml_\(CN_STATE\.historyArchivedBefore\)/.test(cn) && /cnArchiveNoteHtml_\(res\.archivedBefore\)/.test(cn), 'History and the per-rep view render it');
+  assert.ok(/\.cn-archive-note \{/.test(cn), 'with a rule (the T6 ratchet)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

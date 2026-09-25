@@ -853,16 +853,22 @@ function getLeaveDeductionClient_(type) {
   return { bucket: 'annual', days: 1.0 };
 }
 
-/** Count WEEKDAYS in [fromIso, toIso] inclusive (pure UTC math — mirrors the
- *  server's weekday enumeration in submitTimeOffRange, so the balance preview
- *  multiplies by the same day count the server will write). */
+/** Count WORKING days in [fromIso, toIso] inclusive (pure UTC math — mirrors
+ *  the server's enumeration in submitTimeOffRange, so the balance preview
+ *  multiplies by the same day count the server will write). Weekends are
+ *  skipped, and since T7 (cycle 22) so are company holidays, read from the
+ *  server-injected window.SERVER_COMPANY_HOLIDAYS (the mPrevWorkdayIso_
+ *  source) — the preview used to charge a closed day the server now skips. */
 function countWeekdaysIso_(fromIso, toIso) {
   let n = 0;
+  let hol = [];
+  try { hol = (typeof window !== 'undefined' && window.SERVER_COMPANY_HOLIDAYS) || []; } catch (e) { hol = []; }
   const d = new Date(fromIso + 'T00:00:00Z');
   const end = new Date(toIso + 'T00:00:00Z');
   while (d <= end) {
     const dow = d.getUTCDay();
-    if (dow !== 0 && dow !== 6) n++;
+    const iso = d.toISOString().substring(0, 10);
+    if (dow !== 0 && dow !== 6 && hol.indexOf(iso) < 0) n++;
     d.setUTCDate(d.getUTCDate() + 1);
   }
   return n;
@@ -1158,7 +1164,7 @@ document.getElementById('day-submit').addEventListener('click', () => {
   const through = thrEl ? thrEl.value : '';
   const isRange = !!(through && /^\d{4}-\d{2}-\d{2}$/.test(through) && through > dayModalDate);
   if (isRange && countWeekdaysIso_(dayModalDate, through) === 0) {
-    showToast('That range contains only weekend days', 'toast-warn'); return;
+    showToast('That range contains only weekend days and company holidays', 'toast-warn'); return;
   }
   btn.disabled = true;
   const runner = google.script.run
@@ -1177,7 +1183,9 @@ document.getElementById('day-submit').addEventListener('click', () => {
       // (Round 2 · 8c) was dead until an Esc or cell click.
       dayPopoverPinned = false;
       showToast(isRange
-        ? (result.count + ' request(s) submitted' + (result.skippedWeekendDays ? ' — ' + result.skippedWeekendDays + ' weekend day(s) skipped' : ''))
+        ? (result.count + ' request(s) submitted' +
+            (result.skippedWeekendDays ? ' — ' + result.skippedWeekendDays + ' weekend day(s) skipped' : '') +
+            (result.skippedHolidayDays ? ' — ' + result.skippedHolidayDays + ' company holiday(s) skipped' : ''))
         : 'Time off request submitted', 'toast-success');
       CAL_CACHE = {};   // a PTO change invalidates every cached month
       refreshViewIfCurrent('timeoff', 'Loading calendar…', function () { loadCalendar(calYear, calMonth); });

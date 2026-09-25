@@ -1310,6 +1310,8 @@
     font-family: var(--ui);
     border: 1.5px dashed var(--line-2); border-radius: var(--radius-md);
   }
+  /* C12 (cycle 22) — where notes older than the archive window are. */
+  .cn-archive-note { margin-top: 8px; font-size: var(--text-xs); color: var(--warning-deep); }
   .cn-card {
     background: var(--paper-card);
     border: 1px solid var(--line);
@@ -2784,6 +2786,7 @@ function cnLoadDateRange_(startDate, endDate, then) {
         CN_STATE.enrolled = true;
         CN_STATE.historyLoadFailed = false;
         CN_STATE.historyNotes = res.notes || [];
+        CN_STATE.historyArchivedBefore = res.archivedBefore || '';   // C12
         // C3 (cycle 22): the notes carry the RANGE they describe. The label is
         // drawn from the current selection, so without this a failed load for
         // a NEW range left the previous range's notes on screen under the new
@@ -5081,6 +5084,7 @@ function cnSchedStatus_(btn, id, status) {
       }
       cnSchedRenderList_();
       showToast(status === 'done' ? 'Marked done' : 'Reminder cancelled', 'toast-success');
+      if (typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // T9: the Dashboard's Needs-you list refetches
     })
     .withFailureHandler(function (e) { btn.disabled = false; showToast((e && e.message) || 'Update failed', 'toast-error'); })
     .setScheduledCallStatus(id, status);
@@ -7107,6 +7111,7 @@ function cnMaybeWinbackNudge_(noteId, callerName) {
       if (!c) return;
       c.recipientType = 'customer';
       var body = String(tmpl.body || '').replace(/\{name\}/g, String(callerName || '').trim() || 'there');
+      body = cnExtBodyWithQuotes_(body, cnExtOopQuotes_());   // C9
       c.message = body;
       if (callerName) c.recipientName = String(callerName).trim();
       var msgEl = document.getElementById('cnX-message'); if (msgEl) msgEl.value = body;
@@ -7274,7 +7279,7 @@ function cnRenderHistoryStack_() {
       return;
     }
     stack.innerHTML = '<div class="cn-stack-empty">No ' + (flt === 'all' ? '' : esc(flt) + '-filtered ') +
-      'notes for ' + (isRange ? 'this range' : 'this date') + '.</div>';
+      'notes for ' + (isRange ? 'this range' : 'this date') + '.' + cnArchiveNoteHtml_(CN_STATE.historyArchivedBefore) + '</div>';
     return;
   }
 
@@ -7685,7 +7690,9 @@ function cnOpenExportModal_() {
   const start = new Date(today); start.setDate(today.getDate() - 6);
   document.getElementById('cn-exp-start').value = isoDate(start);
   document.getElementById('cn-exp-end').value = todayIso;
-  document.getElementById('cn-export-overlay').classList.add('open');
+  var expRes = document.getElementById('cn-exp-result');
+  if (expRes) expRes.innerHTML = '';   // U1: the last run's link never carries into a new one
+  ensureOverlay('cn-export-overlay');   // U1 (cycle 22): the focus stash/restore lifecycle (g100)
 }
 
 // C17 batch-2 (INV-187) - shared warn line for cross-rep aggregates whose
@@ -7862,7 +7869,7 @@ function cnMgrLoadRepNotes_() {
       if (!liveStack) return;
       if (res.error) { liveStack.innerHTML = errorStateHtml_(res.error); return; }
       if (!res.notes || res.notes.length === 0) {
-        liveStack.innerHTML = `<div class="cn-stack-empty">No notes for ${esc(res.repName || '')} on ${esc(res.date || '')}.</div>`;
+        liveStack.innerHTML = `<div class="cn-stack-empty">No notes for ${esc(res.repName || '')} on ${esc(res.date || '')}.${cnArchiveNoteHtml_(res.archivedBefore)}</div>`;
         return;
       }
       liveStack.innerHTML = res.notes.map(cnMgrRenderReadonlyCard_).join('');
@@ -8968,9 +8975,32 @@ function cnReplaceNoteInState_(updated) {
   });
 }
 
+/** PURE (C12, cycle 22) — where notes older than the archive window are. The
+ *  History, per-rep and export reads do not open the cold archive, so a range
+ *  reaching past it says so instead of reading as empty or complete. '' while
+ *  archiving is off (the server sends no date). */
+function cnArchiveNoteHtml_(archivedBefore) {
+  if (!archivedBefore) return '';
+  return '<div class="cn-archive-note" data-archived-before="' + esc(archivedBefore) + '">Notes dated before ' + esc(archivedBefore) +
+    ' may have moved to the cold archive, which this view does not read — use Search with “Include archive” to find them.</div>';
+}
+/** PURE (A9, cycle 22) — the department editor's rows → {map, half}. A row
+ *  with both fields blank is removed; a row with exactly one is HALF-filled and
+ *  listed by 0-based index, never silently dropped. */
+function cnDeptRowsCollect_(pairs) {
+  var map = {}, half = [];
+  (pairs || []).forEach(function (p, i) {
+    var n = String((p && p.name) || '').trim(), e = String((p && p.email) || '').trim();
+    if (!n && !e) return;
+    if (!n || !e) { half.push(i); return; }
+    map[n] = e;
+  });
+  return { map: map, half: half };
+}
+
 // ── Bulk Export modal wiring ───────────────────────────────────────────
 // Bound once at module load. The modal's DOM lives in modals.html and is
-// reused across opens (cnOpenExportModal_ just toggles the .open class).
+// reused across opens (cnOpenExportModal_ opens it through ensureOverlay).
 // Uses cn-exp-preset-btn instead of preset-btn to avoid the time-clock
 // export modal's preset-btn listeners stomping on these clicks.
 
@@ -8980,10 +9010,10 @@ function cnReplaceNoteInState_(updated) {
 
   const cancelBtn = document.getElementById('cn-exp-cancel');
   if (cancelBtn) cancelBtn.addEventListener('click', function () {
-    overlay.classList.remove('open');
+    closeOverlay(overlay);   // U1: through closeOverlay, so focus returns to the trigger
   });
   overlay.addEventListener('click', function (e) {
-    if (e.target === overlay) overlay.classList.remove('open');
+    if (e.target === overlay) closeOverlay(overlay);
   });
 
   // Preset buttons set the start/end date inputs based on the manager's tz
@@ -9037,17 +9067,31 @@ function cnReplaceNoteInState_(updated) {
           showToast((res && res.error) || 'Export failed', 'toast-error');
           return;
         }
-        overlay.classList.remove('open');
+        // U1 (cycle 22): the F-36 shape. window.open after an async RPC is
+        // outside the user gesture, so a pop-up blocker returns NULL (g135)
+        // and the export's URL — a sheet of every rep's notes, PHI — was lost
+        // with the dialog already closed. The link renders FIRST, the dialog
+        // stays open to hold it, and the toast says which happened.
+        var resSlot = document.getElementById('cn-exp-result');
+        if (resSlot) {
+          resSlot.innerHTML = '<a class="exp-result-link" href="' + esc(res.url) + '" target="_blank" rel="noopener">' +
+            icon('popOut', 13) + 'Open the export sheet — ' + esc(String(res.noteCount)) + ' notes</a>';
+        }
+        if (res.archivedBefore && resSlot) {
+          resSlot.innerHTML += cnArchiveNoteHtml_(res.archivedBefore);   // C12: the export does not read the archive
+        }
+        var exWin = null;
+        try { exWin = window.open(res.url, '_blank'); } catch (_) { exWin = null; }
+        var opened = exWin ? ' — opening sheet' : ' — use the link in the dialog (your browser blocked the new tab)';
         // C17-6 — an export missing reps must never read as complete: the
         // server now reports Sheets it could not read (additive field — an
         // older server simply never sets it).
         if (res.skippedReps && res.skippedReps.length > 0) {
           showToast('Exported ' + res.noteCount + ' notes — INCOMPLETE: could not read ' +
-            res.skippedReps.length + ' rep Sheet(s): ' + res.skippedReps.join(', '), 'toast-warn');
+            res.skippedReps.length + ' rep Sheet(s): ' + res.skippedReps.join(', ') + opened, 'toast-warn');
         } else {
-          showToast(`Exported ${res.noteCount} notes — opening sheet`, 'toast-success');
+          showToast('Exported ' + res.noteCount + ' notes' + opened, exWin ? 'toast-success' : 'toast-warn');
         }
-        window.open(res.url, '_blank');
       })
       .withFailureHandler(function (err) {
         submitBtn.disabled = false;
@@ -9564,7 +9608,9 @@ function cnLoadAdminAugment_() {
     .getCallNotesAmbient();
   google.script.run
     .withSuccessHandler(function (r) { tax = r || null; done++; maybeRender(); })
-    .withFailureHandler(function () { done++; maybeRender(); })
+    // A4 (cycle 22): a failed load is a STATE the Tags pane names — it used to
+    // leave `tax` null and the pane blank.
+    .withFailureHandler(function (err) { tax = { error: (err && err.message) || 'the request failed' }; done++; maybeRender(); })
     .getCallNotesTagTaxonomy();
   google.script.run
     .withSuccessHandler(function (r) { trends = r || null; done++; maybeRender(); })
@@ -9617,9 +9663,20 @@ function cnRenderAdminAugmentHtml_(kpi, tax, trends, unres) {
   });
 
   let taxHtml = '';
+  // A4 (cycle 22): an unreadable taxonomy is not an empty one. An {error}
+  // payload fell through to "No tags in use yet", and a transport failure (or
+  // no response) rendered nothing at all — both read as "reps use no tags".
+  const taxFailed = !tax || !!tax.error;
   const inUse = (tax && Array.isArray(tax.tags)) ? tax.tags : [];
   const archivedOnly = (tax && Array.isArray(tax.archivedOnlyTags)) ? tax.archivedOnlyTags : [];
-  if (tax && (inUse.length > 0 || archivedOnly.length > 0)) {
+  if (taxFailed) {
+    taxHtml =
+      '<div data-tax-state="failed" style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">'
+        + '<div class="day-section-label" style="margin-bottom:10px">' + icon('list', 14) + ' Tag Taxonomy</div>'
+        + '<div role="alert" style="font-size:12px;color:var(--warning-deep)">' + icon('warning', 11) + ' The tag taxonomy could not be loaded'
+        + (tax && tax.error ? ': ' + esc(String(tax.error)) : '') + ' — this is not an empty list. Reload the Admin tab to retry.</div>'
+      + '</div>';
+  } else if (inUse.length > 0 || archivedOnly.length > 0) {
     const max = inUse.length > 0 ? Math.max.apply(null, inUse.map(function (t) { return t.count || 0; })) : 0;
     const inUseRowsHtml = inUse.slice(0, 50).map(function (t) {
       return cnRenderTagRow_(t, max, trendMap, maxTrend);
@@ -9643,7 +9700,7 @@ function cnRenderAdminAugmentHtml_(kpi, tax, trends, unres) {
             : '<div style="font-size:12px;color:var(--muted)">No tags in active use.</div>')
         + archivedSection
       + '</div>';
-  } else if (tax) {
+  } else {
     taxHtml =
       '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">'
         + '<div class="day-section-label" style="margin-bottom:10px">' + icon('list', 14) + ' Tag Taxonomy</div>'
@@ -10782,7 +10839,11 @@ function cnHealthFindings_(health, storage) {
     if (!dead.length && dets.length) add('detectors', 'automation', 'ok', 'Detector liveness', plural(dets.length, 'check') + ' ok');
     // (INV-150) Client errors — thresholded like the digest (≥10 in 24h).
     var ce = health.clientErrors || { count: 0 };
-    if ((ce.last24h || 0) >= 10) {
+    if (ce.error) {
+      // A6 (cycle 22) — the burst detector is blind, not quiet.
+      add('clientErrors', 'automation', 'warn', 'Client errors could not be read', ce.error + ' — a burst of rep-side failures would not show here or on the health dot',
+        'Check the ClientErrors tab on the ADP sheet is reachable; the next health read retries.', ce.url);
+    } else if ((ce.last24h || 0) >= 10) {
       add('clientErrors', 'automation', 'warn', ce.last24h + ' client-side errors in the last 24h',
         ce.count + ' in the last ' + (ce.windowDays || 7) + ' days — reps are hitting JS failures the server never sees',
         'Open the ClientErrors tab for the messages.', ce.url);
@@ -10823,6 +10884,18 @@ function cnHealthFindings_(health, storage) {
         add('intakeCatalog', 'automation', 'ok', 'Offerings catalog', cat.totalRows + ' rows, all well-formed');
       }
     }
+    // A2 (cycle 22) — the SERVER's problem list, the one the health dot counts
+    // and the daily digest emails. The kinds above are rendered by their own
+    // branches (richer copy, stable ids); every OTHER kind — job staleness,
+    // open punches, accrual shortfalls, and any kind added later — renders
+    // here, so this tab can no longer say "Nothing needs attention" under a
+    // red dot. Absent on a pre-A2 server: nothing extra renders.
+    (health.problems || []).forEach(function (p, i) {
+      if (!p || CN_SYS_CLIENT_KINDS_[p.kind]) return;
+      var meta = CN_SYS_PROBLEM_KINDS_[p.kind] || { title: 'Automation', fix: 'See Automation detail below.' };
+      add('problem:' + p.kind + ':' + (p.key || i), 'automation', 'warn', p.text, '', meta.fix,
+        meta.auditLink ? health.auditLogUrl : '');
+    });
     // (b) CDR data feed
     var cdr = health.cdr || { ok: false };
     if (!cdr.ok) {
@@ -11006,6 +11079,15 @@ var CN_DIGEST_LABELS_ = {
   exportCheck: 'Daily ADP export check',
   automationHealth: 'Automation-health failure digest',
   spanishAutoAssign: 'Spanish Inbox auto-assign',
+};
+// A2 (cycle 22) — the automationProblems_ kinds cnHealthFindings_ renders with
+// a branch of its own. Every other kind the server ships renders from
+// CN_SYS_PROBLEM_KINDS_ (or a generic line), never not at all.
+var CN_SYS_CLIENT_KINDS_ = { digest: 1, jobError: 1, syncFails: 1, witness: 1, detector: 1, selfTest: 1, clientErrors: 1 };
+var CN_SYS_PROBLEM_KINDS_ = {
+  job: { fix: 'The trigger may be missing or disabled — re-run installAutomationTriggers(), then check the job under Automation detail.', auditLink: true },
+  openPunch: { fix: 'Fix each day in Manage → Manage Time (Day Edit) before it leaves the adjust window.' },
+  accrual: { fix: 'The balance was NOT changed automatically — compare the PtoAccrualCredit audit rows with the Timesheet.', auditLink: true },
 };
 var CN_SYS_AREAS_ = [['automation', 'Automation'], ['cdr', 'CDR'], ['storage', 'Storage']];
 
@@ -11228,7 +11310,10 @@ function cnRenderHealthPanel_(res) {
   // server payload without the field renders the same all-clear.
   var ce = res.clientErrors || { count: 0, recent: [], windowDays: 7 };
   var ceHtml;
-  if (ce.count > 0) {
+  if (ce.error) {
+    ceHtml = warnBox(icon('warning', 11) + ' The ClientErrors tab could not be read: ' + esc(ce.error) +
+      ' — this is NOT an all-clear.');
+  } else if (ce.count > 0) {
     var ceRows = (ce.recent || []).map(function (r) {
       return '<div style="font-size:11px;padding:2px 0">' +
         '<span class="tabular" style="font-family:var(--mono);color:var(--warning-deep)">' + esc(r.timestampMgr) + (tz ? ' ' + esc(tz) : '') + '</span>' +
@@ -11345,13 +11430,13 @@ function cnRenderHealthPanel_(res) {
     var when = r.last
       ? '<span class="tabular" style="font-family:var(--mono)">' + esc(r.last.timestampMgr) + (tz ? ' ' + esc(tz) : '') + '</span>' +
         (r.last.notes ? ' <span style="color:var(--muted)">· ' + esc(r.last.notes) + '</span>' : '')
-      : '<span style="color:var(--muted)">no audit row in the scan window</span>';
+      : cnRunNeverText_(res.auditWindow);
     return '<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:4px 0;border-bottom:1px dashed var(--line);font-size:12px">' +
       '<span style="flex:0 0 200px;font-weight:600">' + esc(meta.label) + '</span>' +
       '<span style="flex:1;min-width:200px">' + when + '</span>' +
       '<span style="color:var(--muted);font-size:11px">' + esc(meta.expect) + '</span>' +
     '</div>';
-  }).join('');
+  }).join('') + cnRunNeverCaption_(res.auditWindow, res.automationLastRuns);
 
   return '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">' +
     '<div class="day-section-label" style="margin-bottom:10px">' + icon('refresh', 14) + ' Automation detail' +
@@ -11367,6 +11452,31 @@ function cnRenderHealthPanel_(res) {
     (res.intakeCatalog ? secLabel('Intake Offerings catalog') + cnIntakeCatalogHtml_(res.intakeCatalog) : '') +
     secLabel('Nightly self-test') + cnSelfTestHtml_(res.selfTest) +
   '</div>';
+}
+
+/** A1 (cycle 22) — what a job with NO run on record means depends on how far
+ *  back the evidence reaches. The run ledger stamps every run since it shipped;
+ *  before a job's first ledger stamp only the AuditLog tail can see it, and a
+ *  TRUNCATED tail cannot tell "never ran" from "scrolled out" — so it says so. */
+function cnRunNeverText_(win) {
+  if (win && win.complete === false) {
+    // Muted, not amber: this row is reference detail for EVERY job, including
+    // the ones not expected to run; the findings above carry the verdicts.
+    // Follow-up: the row is short; the WHY is said once, under the section
+    // (cnRunNeverCaption_), instead of repeated on every job that lacks a run.
+    return '<span style="color:var(--muted)">no run on record — cannot confirm</span>';
+  }
+  return '<span style="color:var(--muted)">no run on record</span>';
+}
+/** The one caption under "Automation last seen" when any row reads "cannot
+ *  confirm" — '' otherwise, so a complete scan adds nothing. */
+function cnRunNeverCaption_(win, runs) {
+  if (!win || win.complete !== false) return '';
+  var any = (runs || []).some(function (r) { return r && !r.last; });
+  if (!any) return '';
+  return '<div data-run-caption="cannot-confirm" style="font-size:11px;color:var(--muted);margin-top:6px">Cannot confirm = nothing in the run ledger yet, and no row in the last ' +
+    esc(win.rows || '') + ' AuditLog rows' + (win.startMgr ? ' (back to ' + esc(win.startMgr) + ')' : '') +
+    '. The ledger records each job\'s next run.</div>';
 }
 
 /** F9 (cycle 16) — Offerings catalog shape. The PPD recommendation engine's
@@ -11943,7 +12053,16 @@ function cnOnboardOffboard_(empId, empName, btn) {
           showToast((res && res.error) || 'Offboard failed', 'toast-error');
           return;
         }
-        showToast((res.name || empName) + ' offboarded (history kept)', 'toast-success');
+        // S7 (cycle 22) — a gate list the server could not edit is named, not
+        // buried: the person still holds that access until someone acts.
+        var kept = res.keptIn || [];
+        if (kept.length) {
+          showToast((res.name || empName) + ' offboarded, but still in ' + kept.map(function (k) {
+            return k.prop + ' (' + k.why + ')'; }).join('; ') + '.', 'toast-warn');
+        } else {
+          showToast((res.name || empName) + ' offboarded (history kept)' +
+            ((res.removedFrom || []).length ? ' — removed from ' + res.removedFrom.join(' and ') : ''), 'toast-success');
+        }
         cnAdminLoadOnboarding_();
         cnAdminLoadEnrollment_();
       })
@@ -12150,11 +12269,13 @@ function cnRenderAdminBody_(cfg) {
       '</div>' +
     '</div>' +
 
-    // DeptRequests v2 — per-department resolution SLA targets (hours)
+    // DeptRequests v2 — per-department resolution SLA targets (WORKING DAYS since M6, cycle 22)
     '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
       '<div class="day-section-label" style="margin-bottom:10px">' + icon('outbox', 14) + ' Dept-Request SLA targets</div>' +
-      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Resolution-time target (hours) per department for the Dept Requests tracker. Blank = the default (' +
-        esc(String((cfg.deptSla && cfg.deptSla.defaultHours) || 48)) + 'h). A request past its SLA shows “Overdue” on the tracker and is counted in the daily manager digest.</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Resolution-time target in <strong>working days</strong> per department for the Dept Requests tracker — business time only (one working day = ' +
+        esc(String((cfg.deptSla && cfg.deptSla.businessDayHours) || 9)) + ' business hours; weekends and company holidays excluded). Blank = the default (' +
+        esc(drSlaDaysLabelAdmin_((cfg.deptSla && cfg.deptSla.defaultDays) || 2)) + '). A request past its SLA shows “Overdue” on the tracker and is counted in the daily manager digest.</div>' +
+      cnDeptSlaLegacyNoteHtml_(cfg.deptSla) +
       '<div id="cn-admin-sla-list">' + cnRenderDeptSlaRows_(cfg.deptSla || {}) + '</div>' +
       cnPropBudgetHtml_(cfg, 'DR_SLA_TARGETS') +
       '<button class="btn-modal-ok" id="cn-admin-save-sla" style="margin:0;margin-top:10px">Save SLA targets</button>' +
@@ -12369,12 +12490,24 @@ function cnRenderAdminBody_(cfg) {
     var btn = this;
     var names = document.querySelectorAll('.cn-admin-dept-name');
     var emails = document.querySelectorAll('.cn-admin-dept-email');
-    var map = {};
-    for (var i = 0; i < names.length; i++) {
-      var n = names[i].value.trim(), e = emails[i].value.trim();
-      if (!n || !e) continue;
-      map[n] = e;
+    var pairs = [];
+    for (var i = 0; i < names.length; i++) pairs.push({ name: names[i].value, email: emails[i].value });
+    // A9 (cycle 22): a row with a name but no email (or the reverse) used to be
+    // dropped in silence and the save still said "saved" — so the department
+    // vanished from the composer. It is refused and marked instead.
+    var col = cnDeptRowsCollect_(pairs);
+    for (var j = 0; j < names.length; j++) {
+      var bad = col.half.indexOf(j) >= 0;
+      names[j].setAttribute('aria-invalid', bad && !pairs[j].name.trim() ? 'true' : 'false');
+      emails[j].setAttribute('aria-invalid', bad && !pairs[j].email.trim() ? 'true' : 'false');
     }
+    if (col.half.length) {
+      showToast('Row ' + col.half.map(function (k) { return k + 1; }).join(', ') +
+        (col.half.length === 1 ? ' has' : ' have') + ' a name or an email but not both — complete ' +
+        (col.half.length === 1 ? 'it' : 'them') + ', or clear both fields to remove the row. Nothing was saved.', 'toast-error');
+      return;
+    }
+    var map = col.map;
     if (Object.keys(map).length === 0) { showToast('Add at least one department', 'toast-warn'); return; }
     btn.disabled = true; btn.textContent = 'Saving…';
     google.script.run
@@ -12542,8 +12675,11 @@ function cnRenderAdminBody_(cfg) {
         if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); return; }
         showToast('Auto-tag rules saved', 'toast-success');
         // Reps pick the change up on their next config fetch; THIS browser's
-        // matcher updates immediately.
-        if (CN_STATE.deptConfig) CN_STATE.deptConfig.autoTagRules = out;
+        // matcher updates immediately — with the rules as the server STORED
+        // them (A7, cycle 22): "Wheel Chair" is saved as tag `wheel-chair`
+        // with lowercased keywords, and the admin's own session used to run
+        // the raw text, so its auto-tags differed from every rep's.
+        if (CN_STATE.deptConfig && Array.isArray(res.rules)) CN_STATE.deptConfig.autoTagRules = res.rules;
       })
       .withFailureHandler(function (err) {
         btn.disabled = false; btn.textContent = 'Save Rules';
@@ -12830,19 +12966,21 @@ function cnRenderAdminBody_(cfg) {
   var slaSaveBtn = document.getElementById('cn-admin-save-sla');
   if (slaSaveBtn) slaSaveBtn.addEventListener('click', function () {
     var btn = this;
-    var rows = document.querySelectorAll('#cn-admin-sla-list .cn-admin-sla-hours');
+    var rows = document.querySelectorAll('#cn-admin-sla-list .cn-admin-sla-days');
     var map = {};
     for (var i = 0; i < rows.length; i++) {
       var dept = rows[i].getAttribute('data-dept');
       var v = (rows[i].value || '').trim();
-      if (dept && v) map[dept] = parseInt(v, 10);   // blank → server falls back to the default
+      if (dept && v) map[dept] = Number(v);   // working days (M6); blank → server falls back to the default
     }
     btn.disabled = true; btn.textContent = 'Saving…';
     google.script.run
       .withSuccessHandler(function (res) {
         btn.disabled = false; btn.textContent = 'Save SLA targets';
         if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); return; }
-        showToast('SLA targets saved', 'toast-success');
+        showToast('SLA targets saved (working days)', 'toast-success');
+        var legacyNote = document.querySelector('[data-sla-legacy]');
+        if (legacyNote) legacyNote.remove();   // the save stored the days shape
       })
       .withFailureHandler(function (err) {
         btn.disabled = false; btn.textContent = 'Save SLA targets';
@@ -12852,11 +12990,24 @@ function cnRenderAdminBody_(cfg) {
   });
 }
 
-/** Render the per-department SLA editor rows (one numeric hours input each). */
+/** PURE (M6) — "2 working days" for the editor copy. */
+function drSlaDaysLabelAdmin_(days) {
+  var d = Number(days);
+  return (d > 0) ? d + (d === 1 ? ' working day' : ' working days') : '';
+}
+/** M6 — the stored targets are still the pre-M6 HOURS map: say how they were
+ *  read (hours ÷ 24 → days, the calendar intent they were set with) and ask
+ *  for a review-and-save. Nothing renders once the days shape is stored. */
+function cnDeptSlaLegacyNoteHtml_(deptSla) {
+  if (!deptSla || !deptSla.legacy) return '';
+  return '<div data-sla-legacy="1" style="font-size:12px;color:var(--warning-deep);margin-bottom:10px">' + icon('warning', 11) +
+    ' These targets were set in hours before elapsed time became business time. They are shown converted to working days (hours ÷ 24) — review each one and save to confirm.</div>';
+}
+/** Render the per-department SLA editor rows (one working-days input each). */
 function cnRenderDeptSlaRows_(deptSla) {
   deptSla = deptSla || {};
   var depts = deptSla.departments || [];
-  var def = deptSla.defaultHours || 48;
+  var def = deptSla.defaultDays || 2;
   var tlc = {};
   Object.keys(deptSla.targets || {}).forEach(function (k) { tlc[String(k).toLowerCase()] = deptSla.targets[k]; });
   if (!depts.length) return '<div style="font-size:12px;color:var(--muted)">No departments configured yet.</div>';
@@ -12864,7 +13015,7 @@ function cnRenderDeptSlaRows_(deptSla) {
     var cur = tlc[String(d).toLowerCase()];
     return '<div class="field-row cn-admin-sla-row" style="gap:8px;align-items:center;margin-bottom:6px">' +
       '<div class="field" style="flex:1"><label>' + esc(d) + '</label></div>' +
-      '<div class="field" style="width:130px"><input type="number" min="1" max="720" class="cn-admin-sla-hours" aria-label="' + esc(d) + ' SLA hours" data-dept="' +
+      '<div class="field" style="width:150px"><input type="number" min="0.5" max="30" step="0.5" class="cn-admin-sla-days" aria-label="' + esc(d) + ' SLA in working days" data-dept="' +
         esc(d) + '" value="' + (cur != null ? esc(String(cur)) : '') + '" placeholder="' + esc(String(def)) + ' (default)"></div>' +
     '</div>';
   }).join('');
@@ -13571,6 +13722,17 @@ function cnOopQuoteLine_(name, price, effective, label) {
     (e ? ' (price effective ' + e + ')' : '');
 }
 
+/** C9 (cycle 22) — a template (or the win-back text) REPLACES the message,
+ *  but every price line the picker inserted is re-appended, in order. The
+ *  quotes live in state and the send verifies each line is in the message, so
+ *  a template that wiped them made every such send refuse with "the inserted
+ *  line was edited" for text the rep never touched. Pure. */
+function cnExtBodyWithQuotes_(body, quotes) {
+  var b = String(body == null ? '' : body);
+  var lines = (quotes || []).map(function (q) { return q && q.line; }).filter(function (ln) { return ln && b.split('\n').indexOf(ln) < 0; });
+  if (!lines.length) return b;
+  return (b.replace(/\s+$/, '') ? b.replace(/\s+$/, '') + '\n' : '') + lines.join('\n');
+}
 function cnExtOopQuotes_() {
   var c = CN_STATE.extComposer;
   if (!c) return [];
@@ -13932,6 +14094,7 @@ function cnWireExternalEmailModal_() {
       tmplSel.value = '';
       if (!t) return;
       var body = String(t.body || '').replace(/\{name\}/g, (c.recipientName || '').trim() || 'there');
+      body = cnExtBodyWithQuotes_(body, cnExtOopQuotes_());   // C9: the inserted price lines survive
       var ta = document.getElementById('cnX-message');
       if (ta) { ta.value = body; c.message = body; }
     });

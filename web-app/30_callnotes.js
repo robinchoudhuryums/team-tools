@@ -506,6 +506,7 @@ function getMyCallNotes(options) {
       notes,
       autoCopyFormat: CONFIG.CALL_NOTES.AUTO_COPY_FORMAT,
       timezone: empTz,
+      archivedBefore: cnArchivedBeforeNow_(date, empTz),   // C12
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -580,6 +581,7 @@ function getMyCallNotesRange(startDate, endDate) {
       notes,
       autoCopyFormat: CONFIG.CALL_NOTES.AUTO_COPY_FORMAT,
       timezone: empTz,
+      archivedBefore: cnArchivedBeforeNow_(startDate, empTz),   // C12
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -1490,7 +1492,8 @@ function managerGetCallNotes(repEmpId, date, filter) {
       notes.push(note);
     }
     notes.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-    return { date: dateStr, filter: flt, notes, repName: target.name, repId: target.id, timezone: empTz };
+    return { date: dateStr, filter: flt, notes, repName: target.name, repId: target.id, timezone: empTz,
+             archivedBefore: cnArchivedBeforeNow_(dateStr, empTz) };   // C12
   } catch (err) { return { error: err.message }; }
 }
 /** Manager search across all enrolled reps' call-notes Sheets. */
@@ -1840,7 +1843,10 @@ function exportCallNotesRange(startDate, endDate) {
           skippedReps.map(function (s) { return s.repName; }).join(', ') +
           ') and found no other notes between ' + startDate + ' and ' + endDate + '.' };
       }
-      return { error: `No notes found between ${startDate} and ${endDate}.` };
+      // C12: a range the archive may have emptied is not "no notes".
+      const archCut = cnArchivedBeforeNow_(startDate, CONFIG.TIMEZONE);
+      return { error: `No notes found between ${startDate} and ${endDate}.` +
+        (archCut ? ' Notes dated before ' + archCut + ' may be in the cold archive, which the export does not read — use Search with "Include archive".' : '') };
     }
     allNotes.sort((a, b) => {
       if (a.note.dateLocal !== b.note.dateLocal) return a.note.dateLocal.localeCompare(b.note.dateLocal);
@@ -1895,6 +1901,7 @@ function exportCallNotesRange(startDate, endDate) {
       fileName: name,
       noteCount: allNotes.length,
       skippedReps: skippedReps.map(function (s) { return s.repName; }),
+      archivedBefore: cnArchivedBeforeNow_(startDate, CONFIG.TIMEZONE),   // C12: the export does not read the archive
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -3114,6 +3121,26 @@ function sendExternalEmail(payload) {
     }
   }
 
+  // ── Fetch PDF blobs from GitHub raw URLs ──────────────────────────
+  // C7 (cycle 22): BEFORE any token exists. A failed fetch used to return
+  // after the tokens were written, leaving the rep's Sent Forms showing an
+  // "Awaiting" form for an email that never went.
+  const attachments = [];
+  const baseUrl = CONFIG.CALL_NOTES.FORM_BASE_URL || '';
+  for (let i = 0; i < selectedForms.length; i++) {
+    const form = selectedForms[i];
+    const url = baseUrl + encodeURIComponent(form.fileName);
+    try {
+      const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+      if (resp.getResponseCode() !== 200) {
+        return { success: false, error: 'Failed to fetch form "' + form.name + '" (HTTP ' + resp.getResponseCode() + ').' };
+      }
+      attachments.push(resp.getBlob().setName(form.fileName));
+    } catch (fetchErr) {
+      return { success: false, error: 'Failed to download form "' + form.name + '": ' + fetchErr.message };
+    }
+  }
+
   // ── Create tokens for interactive forms ───────────────────────────
   const formLinks = []; // { name, url, formType }
   for (let i = 0; i < interactiveForms.length; i++) {
@@ -3137,23 +3164,6 @@ function sendExternalEmail(payload) {
     });
   }
 
-  // ── Fetch PDF blobs from GitHub raw URLs ──────────────────────────
-  const attachments = [];
-  const baseUrl = CONFIG.CALL_NOTES.FORM_BASE_URL || '';
-  for (let i = 0; i < selectedForms.length; i++) {
-    const form = selectedForms[i];
-    const url = baseUrl + encodeURIComponent(form.fileName);
-    try {
-      const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-      if (resp.getResponseCode() !== 200) {
-        return { success: false, error: 'Failed to fetch form "' + form.name + '" (HTTP ' + resp.getResponseCode() + ').' };
-      }
-      attachments.push(resp.getBlob().setName(form.fileName));
-    } catch (fetchErr) {
-      return { success: false, error: 'Failed to download form "' + form.name + '": ' + fetchErr.message };
-    }
-  }
-
   // ── Build email body ──────────────────────────────────────────────
   const formNames = selectedForms.map(function (f) { return f.name; });
   const htmlBody = recipientType === 'customer'
@@ -3174,6 +3184,9 @@ function sendExternalEmail(payload) {
     if (attachments.length > 0) emailOpts.attachments = attachments;
     sendRepEmail_(emp, emailOpts);   // Round-1 #8 — agent identity (+ neutral alias when configured)
   } catch (sendErr) {
+    // C7 (cycle 22): the link never reached anyone — withdraw it, so it is
+    // neither a live credential nor an "Awaiting" row in Sent Forms.
+    formTokensVoid_(formLinks.map(function (l) { return l.token; }), emp);
     return { success: false, error: 'Email send failed: ' + sendErr.message };
   }
 
@@ -3483,6 +3496,25 @@ function purgeOldCallNotes() {
   } catch (err) {
     Logger.log('purgeOldCallNotes failed: ' + err.message);
   }
+}
+/** PURE (C12, cycle 22) — when a read's range reaches notes the cold archive
+ *  may have MOVED (older than the archive window), the date before which they
+ *  can be: '' while archiving is off (the default) or the range is newer. The
+ *  History, per-rep and export reads never open NotesArchive (a full
+ *  archive-aware read is the deferred feature), so an archived range must not
+ *  read as "no notes" — the caller says where they are instead. */
+function cnArchivedBefore_(startIso, archiveDays, todayIso) {
+  const d = Number(archiveDays);
+  if (!(d > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(String(startIso)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(todayIso))) return '';
+  const t = new Date(todayIso + 'T12:00:00Z');
+  t.setUTCDate(t.getUTCDate() - d);
+  const cutoff = t.toISOString().slice(0, 10);
+  return startIso < cutoff ? cutoff : '';
+}
+/** The same, read from the live archive window, in `tz`'s today. */
+function cnArchivedBeforeNow_(startIso, tz) {
+  try { return cnArchivedBefore_(startIso, getNoteArchiveDays_(), Utilities.formatDate(new Date(), tz || CONFIG.TIMEZONE, 'yyyy-MM-dd')); }
+  catch (e) { return ''; }
 }
 /** Cold-archive window: days from CN_NOTE_ARCHIVE_DAYS Script Property first,
  *  else CONFIG.CALL_NOTES.NOTE_ARCHIVE_DAYS. 0/neg/unparseable → 0 (disabled).
@@ -3963,9 +3995,22 @@ function sendCallNotesWeeklyDigests() {
     if ((review.results && review.results.length > 0) || (review.skippedReps || []).length > 0) {
       sendManagerFlagDigest_(mgrEmails, 'Review Candidates', review.results || [], dateRange, review.skippedReps);
     }
+    // C2 (cycle 22): an {error} is not an empty queue. It used to read as one —
+    // nothing sent, and a HEALTHY heartbeat stamped (INV-109's failure mode).
+    // Stamp the failure where the digest and the dot read it, and withhold the
+    // heartbeat so the weekly row goes stale too. The readable queue still sent.
+    const failed = [['training', training], ['review', review]].filter(function (q) { return q[1] && q[1].error; });
+    if (failed.length) {
+      const why = failed.map(function (q) { return q[0] + ' queue: ' + q[1].error; }).join('; ');
+      stampAutomationError_('CallNotesWeeklyDigests', why);
+      Logger.log('sendCallNotesWeeklyDigests: could not read ' + why + ' — no heartbeat.');
+      return;
+    }
+    clearAutomationError_('CallNotesWeeklyDigests');
     stampDigestLastRun_('weekly');
     Logger.log(`sendCallNotesWeeklyDigests: training=${(training.results || []).length}, review=${(review.results || []).length}`);
   } catch (err) {
+    stampAutomationError_('CallNotesWeeklyDigests', err.message);
     Logger.log('sendCallNotesWeeklyDigests failed: ' + err.message);
   }
 }
@@ -4006,9 +4051,15 @@ function sendCallNotesUrgentDigest() {
     if ((urgent.results && urgent.results.length > 0) || (urgent.skippedReps || []).length > 0) {
       sendManagerFlagDigest_(mgrEmails, 'Urgent', urgent.results || [], dateRange, urgent.skippedReps);
     }
+    clearAutomationError_('CallNotesUrgentDigest');
     stampDigestLastRun_('urgent');
     Logger.log(`sendCallNotesUrgentDigest: urgent=${(urgent.results || []).length}`);
   } catch (err) {
+    // Follow-up to C2 (cycle 22): a failed read is not an empty queue. The
+    // catch used to log and return — nothing sent, nothing stamped, so the
+    // only trace was an ageing heartbeat. Stamp the failure where the health
+    // dot and the failure digest read it (the heartbeat stays withheld).
+    stampAutomationError_('CallNotesUrgentDigest', err.message);
     Logger.log('sendCallNotesUrgentDigest failed: ' + err.message);
   }
 }

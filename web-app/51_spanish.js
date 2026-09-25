@@ -167,8 +167,13 @@ function canSeeSpanishInbox_(emp) {
 /** Stable short hash of the inbox address + member set, used to scope the stats
  *  cache key so editing SPANISH_INBOX_ADDRESS / SPANISH_INBOX_MEMBERS isn't masked
  *  by a stale (wrong-resolution) aggregate for up to the 5-min TTL. Mirrors cdrRosterHash_. */
-function spanishCacheHash_(addr, members) {
-  const basis = String(addr || '') + '|' + Object.keys(members || {}).sort().join(',');
+function spanishCacheHash_(addr, members, vm) {
+  // M11 (cycle 22): the voicemail settings decide what the aggregate COUNTS
+  // (the fold's sender + subject filter, the short-voicemail threshold), so
+  // they scope the key too — editing SPANISH_VM_MIN_SECONDS used to keep
+  // serving the old counts for the TTL.
+  const basis = String(addr || '') + '|' + Object.keys(members || {}).sort().join(',') +
+    (vm ? '|vm:' + String(vm.sender || '') + '|' + String(vm.filter || '') + '|' + String(vm.minSec == null ? '' : vm.minSec) : '');
   return Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, basis)
     .map(function (b) { return (b < 0 ? b + 256 : b).toString(16).padStart(2, '0'); }).join('');
 }
@@ -212,7 +217,8 @@ function getSpanishInboxStats(days) {
     // Cache key is scoped by address + member set (not just `days`) so an operator
     // editing SPANISH_INBOX_ADDRESS / SPANISH_INBOX_MEMBERS isn't served a stale
     // aggregate computed under the old config for the TTL.
-    const ckey = 'spanish_inbox_v3:' + d + ':' + spanishCacheHash_(addr, members);   // v2: manual resolves left the duration series (2026-09-10); v3: voicemails joined the counts (F-34, cycle 20) — INV-85, a cached v2 aggregate must not keep serving the thread-only numbers for the TTL
+    const ckey = 'spanish_inbox_v3:' + d + ':' + spanishCacheHash_(addr, members,
+      { sender: getSpanishVmSender_(), filter: getSpanishVmFilter_(), minSec: getSpanishVmMinSeconds_() });   // v2: manual resolves left the duration series (2026-09-10); v3: voicemails joined the counts (F-34, cycle 20) — INV-85, a cached v2 aggregate must not keep serving the thread-only numbers for the TTL
     const hit = cache.get(ckey);
     if (hit) { try { return JSON.parse(hit); } catch (e) {} }
 
@@ -373,25 +379,46 @@ function spanishVmFold_(days, manual, members, haveMembers, seen) {
     // The query matches subject across the THREAD; re-check the first
     // message so a stray reply-match can't smuggle a foreign thread in.
     if (!spanishVmMatch_(req.getFrom(), req.getSubject(), vmSender, vmFilter)) return;
-    // ONE getPlainBody(): the gate and the transcript read the same string.
-    const body = String(req.getPlainBody() || '');
-    const verdict = spanishVmTooShort_(spanishVmDurationSec_(body), out.minSeconds);
-    if (verdict === 'short') { out.suppressed++; return; }
-    if (verdict === 'unparsed') out.unparsed++;
-    const reqMs = req.getDate().getTime();
-    let resolveMs = null, wasManual = false;
+    // M5 (cycle 22): EVERY voicemail message in the thread is a request of its
+    // own. Gmail threads same-subject mail, so a caller's repeat voicemails can
+    // land in one conversation; only the FIRST was read, so once it was
+    // answered (or marked resolved) every later voicemail vanished. Each is now
+    // resolved only by a member reply AFTER it, or a manual resolve stamped at
+    // or after it. A thread with one voicemail reads exactly as before.
+    const replies = [];   // {idx, ms} of member replies, in thread order
     for (let i = 1; i < msgs.length; i++) {
+      if (spanishVmMatch_(msgs[i].getFrom(), msgs[i].getSubject(), vmSender, vmFilter)) continue;
       const from = emailAddrOnly_(msgs[i].getFrom());
-      if (haveMembers ? !!members[from] : !!from) { resolveMs = msgs[i].getDate().getTime(); break; }
+      if (haveMembers ? !!members[from] : !!from) replies.push({ idx: i, ms: msgs[i].getDate().getTime() });
     }
-    if (resolveMs == null && manual && manual[id]) {
-      resolveMs = Math.max(reqMs, manual[id].ms || reqMs);
-      wasManual = true;
+    for (let k = 0; k < msgs.length; k++) {
+      const m = msgs[k];
+      if (k > 0 && !spanishVmMatch_(m.getFrom(), m.getSubject(), vmSender, vmFilter)) continue;
+      // ONE getPlainBody(): the gate and the transcript read the same string.
+      const body = String(m.getPlainBody() || '');
+      const verdict = spanishVmTooShort_(spanishVmDurationSec_(body), out.minSeconds);
+      if (verdict === 'short') { out.suppressed++; continue; }
+      if (verdict === 'unparsed') out.unparsed++;
+      const reqMs = m.getDate().getTime();
+      const vm = spanishVmResolution_(k, reqMs, replies, manual && manual[id]);
+      out.rows.push({ threadId: id, thread: th, from: m.getFrom(), subject: m.getSubject(), msgIndex: k,
+                      reqMs: reqMs, resolveMs: vm.resolveMs, wasManual: vm.wasManual, body: body });
     }
-    out.rows.push({ threadId: id, thread: th, from: req.getFrom(), subject: req.getSubject(),
-                    reqMs: reqMs, resolveMs: resolveMs, wasManual: wasManual, body: body });
   });
   return out;
+}
+/** PURE (M5, cycle 22) — how voicemail message `idx` (received `reqMs`) was
+ *  resolved: by the first member reply AFTER it, else by a manual resolve
+ *  stamped at or after it. A manual row with no stamp (legacy, ms 0) resolves
+ *  every voicemail in the thread, as it always did — nothing says when. */
+function spanishVmResolution_(idx, reqMs, replies, manualRec) {
+  for (let i = 0; i < (replies || []).length; i++) {
+    if (replies[i].idx > idx) return { resolveMs: replies[i].ms, wasManual: false };
+  }
+  if (manualRec && (!manualRec.ms || manualRec.ms >= reqMs)) {
+    return { resolveMs: Math.max(reqMs, manualRec.ms || reqMs), wasManual: true };
+  }
+  return { resolveMs: null, wasManual: false };
 }
 /** Pending (unresolved) Spanish-inbox requests as task cards — canSeeSpanishInbox_-gated (INV-31 amendment),
  *  live-read (NOT cached/stored, since it carries request content). Returns
@@ -445,8 +472,18 @@ function getSpanishInboxPending(days) {
     const vmTruncated = vmFold.truncated;
     const vmSuppressed = vmFold.suppressed, vmUnparsed = vmFold.unparsed;
     const vmMinSec = vmFold.minSeconds;
+    // M5: a thread can now carry several pending voicemails. The card list is
+    // keyed by THREAD (resolve / claim / body all act on the thread), so one
+    // card per thread: its NEWEST pending voicemail, with `vmPending` saying
+    // how many are waiting. The stats card counts each one.
+    const vmPendingByThread = {};
     vmFold.rows.forEach(function (r) {
-      if (r.resolveMs != null) return;   // only pending
+      if (r.resolveMs != null) return;
+      const cur = vmPendingByThread[r.threadId];
+      vmPendingByThread[r.threadId] = { row: (!cur || r.reqMs > cur.row.reqMs) ? r : cur.row, n: (cur ? cur.n : 0) + 1 };
+    });
+    Object.keys(vmPendingByThread).forEach(function (tid) {
+      const r = vmPendingByThread[tid].row;
       // SP5 — the transcript is what the rep needs; the 8x8 chrome ahead of
       // it ate almost the whole 240-char snippet. No transcript (not every
       // voicemail is transcribed) falls back to the whole-body snippet, so
@@ -462,6 +499,7 @@ function getSpanishInboxPending(days) {
         hasMore: vmText.length > 240,
         permalink: r.thread.getPermalink(),
         claim: claims[r.threadId] || null,
+        vmPending: vmPendingByThread[tid].n,   // M5 — additive; 1 for an unthreaded voicemail
       });
     });
     out.sort(function (a, b) { return b.ageHours - a.ageHours; });
@@ -567,6 +605,21 @@ function getSpanishInboxResolved(days) {
       truncated: threads.length >= SPANISH_THREAD_SCAN_MAX };
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
+/** PURE (M5 follow-up) — which message a thread's body is read from: on a
+ *  voicemail thread (its FIRST message is an 8x8 notification) the NEWEST
+ *  voicemail message, with the count of voicemails; otherwise the first
+ *  message (the request), vmCount 0. */
+function spanishThreadBodyMessage_(msgs, vmSender, vmFilter) {
+  const first = msgs[0];
+  if (!spanishVmMatch_(first.getFrom(), first.getSubject(), vmSender, vmFilter)) return { msg: first, vmCount: 0 };
+  let newest = first, n = 0;
+  msgs.forEach(function (m, k) {
+    if (k > 0 && !spanishVmMatch_(m.getFrom(), m.getSubject(), vmSender, vmFilter)) return;
+    n++;
+    newest = m;   // thread order is time order
+  });
+  return { msg: newest, vmCount: n };
+}
 /** Full body of one Spanish-inbox request thread (canSeeSpanishInbox_-gated, on-demand
  *  expand). Scope-guarded: only returns the body if the thread is actually
  *  addressed to the configured inbox, so a manager can't pull arbitrary thread
@@ -589,10 +642,17 @@ function getSpanishInboxThreadBody(threadId) {
     // — operator 2026-08-25); exact address match per F(cycle-8).
     if (!spanishThreadInScope_(first, addr))
       return { error: 'Not a Spanish-inbox thread.' };
+    // M5 follow-up (cycle 22): a repeat caller's voicemails share a thread,
+    // and the pending card shows the NEWEST one — the first message is the
+    // oldest, so Expand showed a different voicemail from the snippet above
+    // it. On a voicemail thread the body is the newest voicemail (the one a
+    // pending card names: a reply after it would have resolved every one).
+    const pick = spanishThreadBodyMessage_(msgs, getSpanishVmSender_(), getSpanishVmFilter_());
     return {
       threadId: String(threadId),
-      subject: first.getSubject() || '(no subject)',
-      body: String(first.getPlainBody() || '').trim().slice(0, 8000),
+      subject: pick.msg.getSubject() || '(no subject)',
+      body: String(pick.msg.getPlainBody() || '').trim().slice(0, 8000),
+      vmCount: pick.vmCount,   // additive; 0 for an email request thread
       permalink: th.getPermalink(),
     };
   } catch (err) { return { error: 'Read failed: ' + err.message }; }

@@ -172,6 +172,33 @@ function normalizeWebAppExecUrl_(url) {
 }
 /** Creates a form token. Called by the external email flow when "fillable"
  *  is selected for a form. Requires a registered employee. */
+/** C7 (cycle 22) — withdraw tokens whose email never went out: status
+ *  'voided', refused by the public route and hidden from Sent Forms. Locked
+ *  (the tokens tab is appended under the same lock); best-effort — the send
+ *  already failed and says so, and an unvoided token still expires. */
+function formTokensVoid_(tokens, emp) {
+  const list = (tokens || []).filter(Boolean);
+  if (!list.length) return 0;
+  const lock = LockService.getScriptLock();
+  let n = 0;
+  try {
+    lock.waitLock(15000);
+    const sheet = getOrCreateFormTokensSheet_();
+    list.forEach(function (t) {
+      const located = findFormTokenRow_(sheet, t);
+      if (!located) return;
+      sheet.getRange(located.rowIndex, FT.STATUS + 1).setValue(sheetSafe_('voided'));
+      n++;
+      // Follow-up to C7 (cycle 22): the FormTokenCreated row said a link was
+      // made; without this nothing in the trail said it was withdrawn. The
+      // same REFERENCE, never the live token (S4).
+      writeAuditLog_(emp || { id: '', name: '', email: '' }, 'FormTokenVoided', '', '', false, 0,
+        'tokenRef=' + formTokenRef_(t) + '; reason=the email carrying it failed to send');
+    });
+  } catch (e) { Logger.log('formTokensVoid_ failed: ' + e.message); }
+  finally { try { lock.releaseLock(); } catch (_) {} }
+  return n;
+}
 function createFormToken(payload) {
   const emp = getEmployeeInfo_();
   if (!emp) return { success: false, error: 'Employee not found.' };
@@ -293,6 +320,8 @@ function getFormByToken(token) {
     if (status === 'submitted') {
       return { error: 'This form has already been submitted. Thank you!' };
     }
+    // C7 (cycle 22): a token whose email never sent is withdrawn.
+    if (status === 'voided') return { error: 'This form link was withdrawn. Please contact us for a new one.' };
 
     // Check expiration — ExpiresAt is written in CONFIG.TIMEZONE (L-13: the
     // creating-rep's-tz form skewed expiry), but the sheet may COERCE the ISO-T
@@ -613,7 +642,9 @@ function serveExternalForm_(token) {
   tpl.formToken = String(token || '');
   return tpl.evaluate()
     .setTitle('UMS — Complete Your Form')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    // S8: not frameable by other sites either — a framed form is a
+    // clickjacking surface over a consent + signature submit.
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT)
     .setSandboxMode(HtmlService.SandboxMode.IFRAME);
 }
 /** G3: returns a completed fillable-form submission for in-app display, so the
@@ -676,6 +707,7 @@ function getMySentForms() {
       if (String(rows[i][FT.CREATED_BY] || '').toLowerCase().trim() !== myEmail) continue;
       const formType = String(rows[i][FT.FORM_TYPE] || '').trim();
       let status = String(rows[i][FT.STATUS] || '').trim().toLowerCase();
+      if (status === 'voided') continue;   // C7: its email never sent — not a form the rep is waiting on
       // Coercion-safe (formTokenCellMs_): a pending token reads as expired only
       // when its expiry is genuinely past OR unparseable (tamper).
       if (status === 'pending') {
@@ -1090,7 +1122,16 @@ function getFormRetentionDays_() {
   const prop = PropertiesService.getScriptProperties().getProperty('FORM_DATA_RETENTION_DAYS');
   const raw = (prop != null && prop !== '') ? prop : (CONFIG.FORM_DATA_RETENTION_DAYS || 0);
   const v = parseInt(raw, 10);
-  return (isNaN(v) || v < 0) ? 0 : v;
+  return formRetentionEffectiveDays_(v, CONFIG.FORM_TOKEN_EXPIRY_HOURS || 72);
+}
+/** PURE (I7, cycle 22) — the retention a purge may actually use. 0 / negative
+ *  / unparseable stays 0 (disabled). A positive window is FLOORED at the token
+ *  expiry plus one day: a 1–2 day setting deleted tokens that were still valid
+ *  under their 72-hour life, so a customer's form link died mid-window. */
+function formRetentionEffectiveDays_(days, expiryHours) {
+  if (isNaN(days) || days <= 0) return 0;
+  const floor = Math.ceil((Number(expiryHours) || 72) / 24) + 1;
+  return Math.max(days, floor);
 }
 /** Parses a retention date cell ("yyyy-MM-dd'T'HH:mm:ss" in CONFIG.TIMEZONE, or
  *  a coerced Date) to epoch ms. Returns null on blank/unparseable input so such

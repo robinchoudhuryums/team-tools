@@ -103,9 +103,7 @@ function setCallNoteTrainingReply(repEmpId, noteId, reply) {
       }, CN_FEEDBACK_MAX_ENTRIES, 'feedback');   // F11
       if (fbErr) return { success: false, error: fbErr };
     } else {
-      delete subformData.trainingReply;
-      delete subformData.trainingReplyBy;
-      delete subformData.trainingReplyAt;
+      trainingReplyClear_(subformData);   // C8: clear what the THREAD shows, not only the legacy keys
     }
     sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(subformData)));
 
@@ -118,6 +116,33 @@ function setCallNoteTrainingReply(repEmpId, noteId, reply) {
     return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
+}
+/** PURE (C8, cycle 22) — "Clear reply", with the semantics of the thread the
+ *  rep and the manager both read. The thread renders `feedback[]`, but clear
+ *  only deleted the legacy trainingReply* keys, so the reply stayed on screen
+ *  and "Clear reply" visibly did nothing. It now removes the LATEST manager
+ *  reply from `feedback[]` and re-points the legacy keys at the manager reply
+ *  before it (older clients read those), or drops them when none is left. */
+function trainingReplyClear_(sfd) {
+  const fb = Array.isArray(sfd.feedback) ? sfd.feedback : [];
+  for (let i = fb.length - 1; i >= 0; i--) {
+    if (fb[i] && fb[i].role === 'manager' && fb[i].kind === 'reply') { fb.splice(i, 1); break; }
+  }
+  let prev = null;
+  for (let j = fb.length - 1; j >= 0; j--) {
+    if (fb[j] && fb[j].role === 'manager' && fb[j].kind === 'reply') { prev = fb[j]; break; }
+  }
+  if (prev) {
+    sfd.trainingReply = String(prev.message || '');
+    sfd.trainingReplyBy = String(prev.by || '');
+    sfd.trainingReplyAt = String(prev.at || '');
+  } else {
+    delete sfd.trainingReply;
+    delete sfd.trainingReplyBy;
+    delete sfd.trainingReplyAt;
+  }
+  if (Array.isArray(sfd.feedback)) sfd.feedback = fb;
+  return sfd;
 }
 /** Manager aggregated training-queue across all enrolled reps. */
 function managerGetTrainingQueue(dateRange) {
@@ -178,8 +203,7 @@ function sendTrainingOverdueDigest() {
   try {
     const mgrEmails = getManagerEmails_();
     if (mgrEmails.length === 0) { Logger.log('No manager emails — skipping training overdue digest.'); return; }
-    const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
-    const todayIso = Utilities.formatDate(new Date(), mgrTz, 'yyyy-MM-dd');
+    const todayIso = trainTodayIso_();
     const overdueTraining = trainOverdueForRoster_(todayIso);   // org-wide
     const overdueDocs = empDocsOverdueAll_(todayIso);           // scope per manager below
     const overdueCoaching = coachUnackedAll_(Date.now());       // scope per manager below
@@ -325,6 +349,14 @@ function trainCellDate_(v, ssTz) {
 }
 /** Pure status derivation — shared by getMyTraining + getTrainingDashboard
  *  and pinned by a Node test. */
+/** T11 (cycle 22) — the ONE "today" a training due date is judged against:
+ *  the manager-tz work day (the ALL-CST work anchor, `workAnchorTz`). The rep's
+ *  checklist used the REP's timezone while the team matrix and the overdue
+ *  digest used the manager's, so for a PH rep the same item read "due" on one
+ *  surface and "overdue" on the other for most of a day. */
+function trainTodayIso_() {
+  return Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd');
+}
 function trainDeriveStatus_(completed, dueDate, todayIso) {
   if (completed) return 'done';
   if (dueDate && todayIso > dueDate) return 'overdue';
@@ -406,7 +438,7 @@ function getMyTraining() {
     const titles = trainKbTitles_();
     const quizzes = trainReadQuizzes_();
     let attempts = null;   // lazy — only read when a quiz item is assigned
-    const todayIso = Utilities.formatDate(new Date(), safeTimezone_(emp.timezone), 'yyyy-MM-dd');
+    const todayIso = trainTodayIso_();   // T11: the frame every "overdue" reader shares
     const items = [];
     keys.forEach(function (key) {
       const a = eff[key];
@@ -525,7 +557,7 @@ function getTrainingDashboard() {
       emps.push({ id: String(rows[i][EMP.ID]).trim(), name: String(rows[i][EMP.NAME]).trim() });
     }
     emps.sort(function (a, b) { return a.name.localeCompare(b.name); });
-    const todayIso = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd');
+    const todayIso = trainTodayIso_();
     // Items = distinct itemKeys across live assignments that still exist in the KB.
     const itemMap = {};
     const reps = [];
@@ -642,6 +674,9 @@ function saveTrainingAssignment(payload) {
     writeAuditLog_(callerEmp, 'TrainingAssign', fmtDate_(now), '', false, 0,
       'itemType=' + itemType + '; itemId=' + itemId + '; targets=' + (allMode ? 'all' : targets.length) + (dueDate ? '; due=' + dueDate : ''),
       callerEmp.email);
+    // Follow-up to T10 (cycle 22): a NEW assignment is a new task on each
+    // target's Needs-you list — it used to wait out the cache's TTL.
+    if (allMode) pendingTasksBustAll_(); else targets.forEach(function (id) { pendingTasksBust_(id); });
     // Cycle-9 M-7: the notification loop fires AFTER the lock releases (in
     // the finally) — an '*' assignment walks the WHOLE roster sending one
     // MailApp email per employee (~0.3–0.5s each), and holding the global
@@ -684,6 +719,10 @@ function revokeTrainingAssignment(assignId) {
       revokedCell.setValue(sheetSafe_(fmtDate_(now) + ' ' + fmtTime_(now)));
       writeAuditLog_(callerEmp, 'TrainingRevoke', fmtDate_(now), '', false, 0,
         'assignId=' + assignId, callerEmp.email);
+      // T10 (cycle 22): the revoked item leaves the rep's Needs-you list now,
+      // not when the 2-minute cache runs out — every rep's, for an everyone ('*') assignment.
+      const target = String(sheet.getRange(rowIdx, TA.EMP_ID + 1).getValue() || '').trim();
+      if (target === '*') pendingTasksBustAll_(); else pendingTasksBust_(target);
       return { success: true };
     }
     return { success: false, error: 'Assignment not found.' };
@@ -908,7 +947,14 @@ function submitQuizAttempt(quizId, answers) {
     return {
       success: true, scorePct: graded.scorePct, passed: passed,
       right: graded.right, total: graded.total,
-      perQuestion: graded.perQuestion, attempt: stats.count, passPct: quiz.passPct,
+      // S10 (cycle 22; operator 2026-09-25): per-question marks only once the
+      // attempt PASSES. With unlimited retries, right/wrong on a failed attempt
+      // was an answer key — change one answer, read its mark, repeat. A failed
+      // attempt now reports the score alone. (The attempt row still records
+      // perQuestion for managers; the score delta can still be probed one
+      // question per attempt — slower, not impossible; the attempt count on
+      // the manager matrix is what shows it.)
+      perQuestion: passed ? graded.perQuestion : null, attempt: stats.count, passPct: quiz.passPct,
     };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }

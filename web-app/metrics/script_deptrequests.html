@@ -121,8 +121,15 @@ function drDeptMatch_(item) {
 /** Row tone from status + the existing per-dept SLA machinery (operator
  *  feedback 2026-08-06): green resolved; amber open on-time; deeper amber
  *  at-risk (>=75% of SLA); destructive overdue (past SLA — the per-dept
- *  DR_SLA_TARGETS / 48h default the Admin editor already tunes, so "red after
+ *  DR_SLA_TARGETS / 2-working-day default the Admin editor already tunes, so "red after
  *  X days" is per-department config, not a new constant). */
+/** PURE (M6, cycle 22) — the client twin of drSlaDaysLabel_: SLA targets are
+ *  working days ("2 working days"), measured in business time. */
+function drSlaDaysLabelClient_(days) {
+  var d = Number(days);
+  if (!(d > 0)) return '';
+  return d + (d === 1 ? ' working day' : ' working days');
+}
 function drRowToneCls_(item) {
   if (item.status === 'resolved') return 'st-resolved';
   if (item.slaStatus === 'overdue') return 'st-overdue';
@@ -163,7 +170,7 @@ function drKpiStripHtml_(data) {
 }
 
 /** Operator 2026-08-31 — elapsed time and the SLA bands count BUSINESS hours
- *  (weekends, US holidays and after-hours excluded), so a Friday-afternoon
+ *  (weekends, company holidays and after-hours excluded), so a Friday-afternoon
  *  request answered Monday morning is no longer "3 days old". Rendered only
  *  when the server says so (`slaBusiness` on any item), so an older server
  *  keeps its wall-clock figures with no note claiming otherwise. */
@@ -172,7 +179,7 @@ function drBusinessNoteHtml_(data) {
   const on = rows.some(function (r) { return r && r.slaBusiness; });
   if (!on) return '';
   return '<div style="font-size:11px;color:var(--muted-2);margin:-8px 0 14px">' +
-    'Elapsed time and SLA bands count business hours only — weekends and US holidays excluded' +
+    'Elapsed time and SLA bands count business hours only — weekends and company holidays excluded' +   // M11: the one calendar (g123), not a federal list
     '</div>';
 }
 
@@ -309,7 +316,7 @@ function drCardStatusHtml_(item) {
       esc(via) + '</span>';
   }
   const elapsed = item.elapsedMin != null ? drFmtMin_(item.elapsedMin) + ' ago' : '';
-  const sla = item.slaHours ? ' · ' + item.slaHours + 'h SLA' : '';
+  const sla = item.slaDays ? ' · ' + drSlaDaysLabelClient_(item.slaDays) + ' SLA' : '';   // M6: working days
   if (item.slaStatus === 'overdue') {
     return '<span class="sp-task-age" style="color:var(--danger-deep)"' + ttl + '>' + esc('Overdue' + sla) + '</span>';
   }
@@ -458,7 +465,7 @@ function drManagerSectionHtml_(data) {
       ? '<td class="dr-num" style="color:var(--danger-deep);font-weight:700">' + s.overdueOpen + '</td>'
       : '<td class="dr-num">0</td>';
     return '<tr>' +
-      '<td>' + esc(s.dept) + (s.slaHours ? ' <span class="dr-tag">' + esc(s.slaHours + 'h SLA') + '</span>' : '') + '</td>' +
+      '<td>' + esc(s.dept) + (s.slaDays ? ' <span class="dr-tag">' + esc(drSlaDaysLabelClient_(s.slaDays) + ' SLA') + '</span>' : '') + '</td>' +
       '<td class="dr-num">' + s.open + '</td>' +
       overdueCell +
       '<td class="dr-num">' + s.resolved + '</td>' +
@@ -616,6 +623,7 @@ function drResolveClick_(btn) {
     .withSuccessHandler(function (res) {
       if (res && res.success) {
         showToast(res.already ? 'Already resolved.' : 'Marked resolved.', 'toast-success');
+        if (typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // T9: the Dashboard's Needs-you list refetches
         drApplyResolved_(id);          // cache first — the DOM is rendered FROM it
         // The stamp is busted even on success: the patch is an approximation
         // (resolvedBy, deptStats, the server's own list membership), so the

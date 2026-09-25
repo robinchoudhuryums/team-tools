@@ -214,6 +214,8 @@
   .intk-cat-card .cat-img { width: 100%; height: 110px; object-fit: contain; background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--radius-sm); }
   .intk-cat-card .cat-noimg { width: 100%; height: 110px; display: flex; align-items: center; justify-content: center; font-size: .72rem; color: var(--muted); border: 1px dashed var(--line); border-radius: var(--radius-sm); }
   .intk-cat-card .cat-code { font-weight: 700; font-size: 1rem; }
+  /* I3 follow-up — an unreadable weight answer on the recommendation screen. */
+  .intk-weight-warn { border-left: 3px solid var(--warning-deep); background: var(--warn-soft); padding: 8px 12px; border-radius: 0 8px 8px 0; font-size: .8rem; margin-bottom: 10px; }
   /* The recommendation cards' brochure-link treatment is scoped to .intk-rec,
      so without this the catalog's HCPCS link fell back to the UA default
      (blue + underline) — the app has ONE link vocabulary. */
@@ -710,7 +712,7 @@ function enterIntakePpdView(area) {
 
         intakePpdStepperHtml_(lang) +
         '<button class="intk-btn primary" onclick="intakePpdPreview_()">' + icon('send', 14) + ' Preview &amp; Recommend</button>' +
-        '<button class="intk-btn" onclick="intakeClearForm_(\'ppd\')">Clear</button>' +
+        '<button class="intk-btn" onclick="intakeConfirmClear_(\'ppd\')">Clear</button>' +
       '</div></aside>' +
     '</div>';
 
@@ -1157,7 +1159,7 @@ function intakeRevealControlHtml_(ctrl, qNum, ariaLabel) {
   var btns = (ctrl.options || []).map(function (o) {
     return '<button type="button" class="intk-choice-btn" data-set="' + esc(o.v) + '" role="radio" aria-checked="false" onclick="intakeRevealPick_(this)">' + esc(o.l || o.v) + '</button>';
   }).join('');
-  return '<div class="intk-reveal" data-qnum="' + esc(qNum) + '" data-reveal-on="' + esc(ctrl.revealOn || '') + '" role="radiogroup" aria-label="' + esc(ariaLabel) + '">' +
+  return '<div class="intk-reveal" data-qnum="' + esc(qNum) + '" data-reveal-on="' + esc(ctrl.revealOn || '') + '" role="radiogroup" aria-label="' + esc(ariaLabel) + '" onkeydown="intakeRevealKey_(event)">' +
     '<div class="intk-reveal-opts">' + btns + '</div>' +
     '<input type="text" class="intk-reveal-text" style="display:none" autocomplete="off" aria-label="' + esc(ariaLabel || 'Details') + '" placeholder="' + esc(ctrl.placeholder || '') + '" oninput="intakePpdAfterChange_()"></div>';
 }
@@ -1165,6 +1167,16 @@ function intakeRevealPick_(btn) {
   var grp = btn.closest('.intk-reveal'); if (!grp) return;
   var val = btn.getAttribute('data-set');
   var revealOn = grp.getAttribute('data-reveal-on') || '';
+  // U6 (cycle 22): clicking the selected option clears the question — the
+  // operator's 2026-08-25 rule every other single-select already follows
+  // (intakePick_); Q39 was the one an accidental click could not undo.
+  if (btn.classList.contains('on')) {
+    grp.querySelectorAll('.intk-choice-btn').forEach(function (b) { b.classList.remove('on'); b.setAttribute('aria-checked', 'false'); });
+    var ta0 = grp.querySelector('.intk-reveal-text');
+    if (ta0) { ta0.value = ''; ta0.style.display = 'none'; }
+    intakePpdAfterChange_();
+    return;
+  }
   grp.querySelectorAll('.intk-choice-btn').forEach(function (b) {
     var on = (b === btn);
     b.classList.toggle('on', on);
@@ -1174,6 +1186,21 @@ function intakeRevealPick_(btn) {
   var ta = grp.querySelector('.intk-reveal-text');
   if (ta) ta.style.display = (val === revealOn) ? '' : 'none';
   intakePpdAfterChange_();
+}
+/** U6 (cycle 22): arrow keys move the selection, like every sibling
+ *  radiogroup — but never while typing in the reveal's own text box. */
+function intakeRevealKey_(e) {
+  if (e.target && e.target.tagName === 'INPUT') return;
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+  var btns = Array.prototype.slice.call(e.currentTarget.querySelectorAll('.intk-choice-btn'));
+  if (!btns.length) return;
+  var cur = btns.findIndex(function (b) { return b.classList.contains('on'); });
+  var next = (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
+    ? (cur <= 0 ? btns.length - 1 : cur - 1)
+    : (cur < 0 || cur >= btns.length - 1 ? 0 : cur + 1);
+  e.preventDefault();
+  btns[next].focus();
+  if (next !== cur) intakeRevealPick_(btns[next]);
 }
 function intakeRevealGet_(grp) {
   var revealOn = grp.getAttribute('data-reveal-on') || '';
@@ -1737,7 +1764,8 @@ function intakePpdPreviewGo_(payload) {
     .withSuccessHandler(function (res) {
       if (currentView !== requested) return;
       if (!res || res.error) { showToast((res && res.error) || 'Preview failed.', 'toast-error'); return; }
-      INTAKE_STATE.preview = { formType: 'PPD', bodyHash: res.bodyHash, subject: res.subject, recommendations: res.recommendations, payload: payload };
+      INTAKE_STATE.preview = { formType: 'PPD', bodyHash: res.bodyHash, subject: res.subject, recommendations: res.recommendations, payload: payload,
+        weightUnreadable: !!res.weightUnreadable };
       if (payload.amendsSubmissionId) showToast('Amending — the sent email will carry the AMENDED banner + subject prefix.', 'toast-info');
       intakeOpenPpdPreviewModal_(res.html, res.recommendations);
     })
@@ -1766,6 +1794,15 @@ function intakeOpenPpdPreviewModal_(html, recs) {
   }
 }
 
+/** I3 follow-up (cycle 22) — the weight answer had no number in it, so the
+ *  engine applied NO weight-capacity check: every chair below may be over the
+ *  patient's weight. Said on the screen the rep acts on, before sending. */
+function intakeWeightWarnHtml_(preview) {
+  if (!preview || !preview.weightUnreadable) return '';
+  return '<div class="intk-weight-warn" role="alert">' + icon('warning', 12) +
+    ' The weight answer (Q38) has no number in it, so <strong>no weight-capacity check</strong> was applied — ' +
+    'these chairs are not filtered by weight. Re-enter the weight in lbs and preview again.</div>';
+}
 function intakeBuildPpdModal_(html, recs) {
   var items = [].concat((recs && recs.complex) || [], (recs && recs.standard) || []);
   var panel = items.length
@@ -1817,6 +1854,7 @@ function intakeBuildPpdModal_(html, recs) {
   // text, code to open the brochure), email-body preview below.
   var body =
     '<div class="intk-recpanel"><h4 style="margin:0 0 8px;">Qualifying Power Mobility Devices</h4>' +
+      intakeWeightWarnHtml_(INTAKE_STATE.preview) +
       '<div style="font-size:.78rem;color:var(--muted);margin-bottom:8px;">Click an image to open it (copy/save to text the patient); click the code to open the brochure. Star + Accepted/Rejected ride into the email.</div>' +
       panel + '</div>' +
     '<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:.82rem;color:var(--muted);">Preview the email body</summary><div class="intk-prev" style="margin-top:8px;">' + html + '</div></details>' +
@@ -1878,10 +1916,26 @@ function intakeCopyLink_(btn) {
 // straight into a text). Clipboard image-write is unreliable in the iframe and
 // needs permissive CORS on the image host, so it falls back to opening the
 // image in a new tab for a native right-click copy/save.
+/** PURE (U3) — what the copy-image fallback tells the rep. */
+function intakeCopyImageFallbackMsg_(opened) {
+  return opened
+    ? { text: 'Could not copy the image — it opened in a new tab; right-click it to copy or save', type: 'toast-warn' }
+    : { text: 'Could not copy the image, and your browser blocked the new tab — click the image on the card (or Image link) to open it', type: 'toast-warn' };
+}
 function intakeCopyImage_(btn) {
   var url = btn.getAttribute('data-img');
   if (!url) return;
-  function openIt() { window.open(url, '_blank', 'noopener'); showToast('Opened image — right-click to copy/save', ''); }
+  // U3 (cycle 22): the fallback runs AFTER an async fetch, outside the click,
+  // so a pop-up blocker returns NULL (g135) — and it always said "Opened
+  // image". It now says the copy failed, and whether the tab opened; when it
+  // did not, the image on the card IS a link (link-first), so it says to use it.
+  function openIt() {
+    var w = null;
+    try { w = window.open(url, '_blank'); } catch (_) { w = null; }
+    if (w) { try { w.opener = null; } catch (_) {} }
+    var m = intakeCopyImageFallbackMsg_(!!w);
+    showToast(m.text, m.type);
+  }
   try {
     if (navigator.clipboard && window.ClipboardItem && window.fetch) {
       fetch(url).then(function (r) { return r.blob(); }).then(function (blob) {
@@ -1965,7 +2019,7 @@ function intakeEnterAcct_(form, title, area) {
         intakeRingHtml_(form) +
         '<span class="intk-rail-count" id="intk-' + form + '-count">0 / 0</span>' +
         '<button class="intk-btn primary" onclick="intakeAcctPreview_(\'' + form + '\')">' + icon('send', 14) + ' Preview &amp; Send</button>' +
-        '<button class="intk-btn" onclick="intakeClearForm_(\'' + form + '\')">Clear</button>' +
+        '<button class="intk-btn" onclick="intakeConfirmClear_(\'' + form + '\')">Clear</button>' +
       '</div></aside>' +
     '</div>';
   var f = document.getElementById('intk-' + form + '-form');
@@ -2403,6 +2457,7 @@ function enterIntakeSentView(area) {
       // total so the render can say "showing N of M" (absent on an older
       // server -> renders nothing, as before).
       INTAKE_STATE.sentTotal = (typeof res.total === 'number') ? res.total : null;
+      INTAKE_STATE.sentFailed = Array.isArray(res.failedTypes) ? res.failedTypes : [];   // I4
       INTAKE_STATE.sentEntry = { at: Date.now() };
       intakeRenderSentHost_();
       done();
@@ -2487,19 +2542,33 @@ function intakeCatalogSearch_(q) {
   intakeRenderCatalogHost_();
 }
 
+/** I2 (cycle 22) — the client twin of the server's intakeSeatKinds_: a seat
+ *  cell read WORD BY WORD (s / solid, c / captain / captain's; seat, and, or
+ *  are filler). Pinned to agree with the server on a grid. */
+function intakeSeatKindsClient_(cell) {
+  var words = String(cell == null ? '' : cell).toLowerCase().replace(/['\u2019]/g, '').split(/[^a-z]+/).filter(Boolean);
+  var out = { solid: false, captain: false, unknown: [] };
+  words.forEach(function (w) {
+    if (w === 's' || w === 'solid') out.solid = true;
+    else if (w === 'c' || w === 'captain' || w === 'captains') out.captain = true;
+    else if (w === 'seat' || w === 'seats' || w === 'and' || w === 'or') return;
+    else out.unknown.push(w);
+  });
+  return out;
+}
 /** PURE filter over the catalog rows. Seat matching mirrors the ENGINE's own
- *  rule — it tests for the LETTER 's' / 'c' anywhere in the cell rather than
- *  an exact word, because that is what intakeFilterRecommendations_ does, and
- *  a browse view that disagrees with the engine about which chairs are
- *  captain-seat would be worse than no filter at all. */
+ *  rule (the word-by-word intakeSeatKinds_ since I2 — it was a letter test on
+ *  both sides, and "Captain Seat" read as solid), because a browse view that
+ *  disagrees with the engine about which chairs are captain-seat would be
+ *  worse than no filter at all. */
 function intakeFilterCatalog_(rows, filter) {
   var q = String((filter && filter.q) || '').toLowerCase().trim();
   var seat = String((filter && filter.seat) || 'ALL').toUpperCase();
   return (rows || []).filter(function (r) {
     if (seat !== 'ALL') {
-      var st = String(r.seatType || '').toLowerCase();
-      if (seat === 'S' && st.indexOf('s') < 0) return false;
-      if (seat === 'C' && st.indexOf('c') < 0) return false;
+      var k = intakeSeatKindsClient_(r.seatType);
+      if (seat === 'S' && !k.solid) return false;
+      if (seat === 'C' && !k.captain) return false;
     }
     if (q) {
       var hay = (String(r.hcpcs || '') + ' ' + String(r.features || '')).toLowerCase();
@@ -2590,7 +2659,7 @@ function intakeFilterSent_(subs) {
 function intakeRenderSentHost_() {
   var host = document.getElementById('intk-sent-list');
   if (!host) return;
-  host.innerHTML = intakeRenderSentList_(intakeFilterSent_(INTAKE_STATE.sent), !!INTAKE_STATE.sentIsManager);
+  host.innerHTML = intakeRenderSentList_(intakeFilterSent_(INTAKE_STATE.sent), !!INTAKE_STATE.sentIsManager, INTAKE_STATE.sentFailed);
 }
 
 // Form-type pill tones (kicker-pill vocabulary).
@@ -2600,12 +2669,21 @@ function intakeFormPill_(formType) {
   return '<span class="kicker-pill"' + (tone ? ' data-tone="' + tone + '"' : '') + '>' + esc(t || '—') + '</span>';
 }
 
-function intakeRenderSentList_(subs, isManager) {
+function intakeRenderSentList_(subs, isManager, failedTypes) {
+  // I4 (cycle 22): a form type the server could not read is named above the
+  // list — and with nothing readable the list says so rather than "none sent",
+  // because an empty Sent tab is exactly what prompts a rep to send again.
+  var failed = (failedTypes || []).filter(Boolean);
+  var failedNote = failed.length
+    ? '<div data-intk-state="sent-failed" role="alert" style="color:var(--warning-deep);font-size:.85rem;margin-bottom:8px">' + icon('warning', 12) +
+      ' Could not read the ' + esc(failed.join(' / ')) + ' submissions — this list is incomplete. Check before re-sending anything.</div>'
+    : '';
   if (!subs || subs.length === 0) {
+    if (failed.length) return failedNote;
     return '<div class="no-data" style="padding:20px 0">No matching intake submissions' +
       (isManager ? '.' : ' — your sent PPD / PMD / PAP forms will appear here.') + '</div>';
   }
-  return '<div class="intk-grid">' +
+  return failedNote + '<div class="intk-grid">' +
     // C17 batch-5 (INV-169): "showing N of M" when the server capped the list
     // — a silent cap read as "exactly 100 submissions exist". Older servers
     // send no total -> the parenthetical simply doesn't render.
@@ -2920,6 +2998,27 @@ function intakeApplyAcctAnswers_(form, answers) {
   });
 }
 
+/** PURE (U6, cycle 22) — how much a Clear would erase: the answered
+ *  questions, the patient line (PPD) and any attached images. */
+function intakeFilledCount_(snap, images) {
+  var n = 0;
+  var a = (snap && snap.answers) || {};
+  Object.keys(a).forEach(function (k) { if (String(a[k] == null ? '' : a[k]).trim()) n++; });
+  if (snap && String(snap.patientInfo || '').trim()) n++;
+  return n + ((images && images.length) || 0);
+}
+/** U6 (cycle 22): the Clear button. One click used to wipe a 46-question PPD
+ *  (and its draft — the only other copy) with no confirm and no undo. An empty
+ *  form clears at once; anything filled asks first, naming what will go. */
+function intakeConfirmClear_(form) {
+  var snap = null;
+  try { snap = (form === 'ppd') ? intakeCollectPpd_() : intakeCollectAcct_(form); } catch (e) { snap = null; }
+  var n = intakeFilledCount_(snap, INTAKE_STATE[form] && INTAKE_STATE[form].images);
+  if (!n) { intakeClearForm_(form); return; }
+  uiConfirm({ title: 'Clear this form?', tone: 'danger', confirmLabel: 'Clear form', cancelLabel: 'Keep it',
+    message: n + ' answer' + (n === 1 ? '' : 's') + ' (and the saved draft) will be erased. This cannot be undone.' })
+    .then(function (ok) { if (ok) intakeClearForm_(form); });
+}
 function intakeClearForm_(form) {
   INTAKE_STATE[form].images = [];
   INTAKE_STATE[form].amendOf = null;   // an amend never survives a clear/send

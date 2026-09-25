@@ -1227,12 +1227,45 @@ function clkLoadNeedsYou_() {
     .getMyPendingTasks();
 }
 
+/** T9 (cycle 22) — the ONE client-side invalidation of the Needs-you list:
+ *  the next Dashboard enter refetches instead of painting it as fresh. Every
+ *  completing flow in another partial calls it (typeof-guarded); the server
+ *  busts its own cache in the same flows (pendingTasksBust_), so the refetch
+ *  is the truth. Painting the last-good list meanwhile is unchanged. */
+function clkNeedsYouInvalidate_(fromPeer) {
+  CLK_NEEDS.at = 0;
+  // Follow-up to T9 (cycle 22): the task may have been done in the POP-OUT
+  // (or another tab), whose flag is its own. Tell the other windows too —
+  // BroadcastChannel, same origin, nothing persisted (no new localStorage
+  // key); a browser without it keeps the per-window behaviour.
+  if (fromPeer) return;
+  try { var ch = clkNeedsYouChannel_(); if (ch) ch.postMessage('invalidate'); } catch (e) {}
+}
+var CLK_NEEDS_CHANNEL = null;
+/** The one channel, opened lazily and at load (so a window can HEAR a peer's
+ *  invalidation before it has sent one). A message only clears the fresh
+ *  flag — the next Dashboard enter refetches; nothing repaints mid-view. */
+function clkNeedsYouChannel_() {
+  if (CLK_NEEDS_CHANNEL) return CLK_NEEDS_CHANNEL;
+  try {
+    if (typeof BroadcastChannel !== 'function') return null;
+    CLK_NEEDS_CHANNEL = new BroadcastChannel('team-tools-needs-you');
+    CLK_NEEDS_CHANNEL.onmessage = function () { clkNeedsYouInvalidate_(true); };
+  } catch (e) { CLK_NEEDS_CHANNEL = null; }
+  return CLK_NEEDS_CHANNEL;
+}
+try { clkNeedsYouChannel_(); } catch (e) {}
+
 /** Row click: the notes route rides the SAME CLK_NAV_HINT hand-off the
  *  coverage strip's "File N missing" uses; everything else is a plain
  *  enterTool(tool, tab) to the server-named registry tab (C8). */
 function clkNeedsYouGo_(idx) {
   var it = (CLK_NEEDS.data && Array.isArray(CLK_NEEDS.data.items)) ? CLK_NEEDS.data.items[idx] : null;
   if (!it || !it.route) return;
+  // T9 (cycle 22): the rep is going to DO this task, so the list they come
+  // back to must be re-read — it used to stay fresh for CLK_DASH_FRESH_MS and
+  // show the item they had just finished (g67, on the client side).
+  clkNeedsYouInvalidate_();
   var r = it.route;
   if (it.kind === 'notes' && r.hint) { fileMissingCalls_(r.hint.date, r.hint.missingCount); return; }
   if (typeof enterTool === 'function') enterTool(r.tool, r.tab);

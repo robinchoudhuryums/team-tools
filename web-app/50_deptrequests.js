@@ -34,11 +34,20 @@ function drStatus_(row) {
 }
 // ── Inter-department request tracking (Part B) ──────────────────────────────
 function getDeptRequestsSS_() {
-  try {
-    const id = PropertiesService.getScriptProperties().getProperty('DEPT_REQUESTS_SS_ID');
-    if (id && id.trim()) return SpreadsheetApp.openById(id.trim());
-  } catch (e) {}
-  // Back-compat fallback. NOT PHI-free since operator testing note 6
+  const id = String(PropertiesService.getScriptProperties().getProperty('DEPT_REQUESTS_SS_ID') || '').trim();
+  if (id) {
+    // A3 (cycle 22): a CONFIGURED store that will not open is an outage, not
+    // a reason to use the payroll sheet. The bare catch used to fall through to
+    // getAdpSS_() — reads came back empty from a tab that was never the store,
+    // writes created a second DeptRequests tab there (patient TRX beside
+    // payroll), and Storage Health probed the fallback and read "reachable".
+    try { return SpreadsheetApp.openById(id); }
+    catch (e) {
+      throw new Error('DEPT_REQUESTS_SS_ID is set but the spreadsheet could not be opened (' + e.message +
+        ') — check the id and that the deploying account can edit it. Nothing was read from or written to the ADP sheet instead.');
+    }
+  }
+  // Back-compat fallback — ONLY while the property is unset. NOT PHI-free since operator testing note 6
   // (2026-09-10): the trailing PatientTrx column names a patient, so this
   // co-locates patient-identifying rows with the payroll sheet (F-11) —
   // Storage Health warns while DEPT_REQUESTS_SS_ID is unset; set it to the
@@ -82,7 +91,7 @@ function drParseDepartments_(raw, validKeys) {
   return out;
 }
 /** Pure (Node-pinned) — SLA status from elapsed minutes vs an SLA in hours
- *  (wall-clock): `ontime` / `atrisk` (≥75% of SLA) / `overdue` (≥100%). A null
+ *  (M6: BUSINESS hours — callers pass drSlaBizHours_(days)): `ontime` / `atrisk` (≥75% of SLA) / `overdue` (≥100%). A null
  *  age or non-positive SLA → null (no badge). DeptRequests v2 (INV-138). */
 function drSlaStatus_(ageMin, slaHours) {
   if (ageMin == null || !(slaHours > 0)) return null;
@@ -91,25 +100,68 @@ function drSlaStatus_(ageMin, slaHours) {
   if (frac >= 0.75) return 'atrisk';
   return 'ontime';
 }
-/** Per-department SLA target map ({dept: hours}) from Script Property
- *  DR_SLA_TARGETS, sanitized on read (bad blob → {}). */
+/** M6 (cycle 22; operator 2026-09-25) — SLA targets are WORKING DAYS. The
+ *  tracker has measured BUSINESS time since 2026-08-31, but the targets stayed
+ *  "48 hours", which as business hours is ~5 working days — every deadline had
+ *  quietly loosened about 2.5x. A working day is one span of the business
+ *  window (businessHours_), so the band still compares business minutes. */
+function drBusinessDayHours_() {
+  const w = businessHours_();
+  return Math.max(1, (w.endMin - w.startMin) / 60);
+}
+/** PURE — working days → the business hours drSlaStatus_ compares against. */
+function drSlaBizHours_(days, dayHours) {
+  const d = Number(days);
+  return (d > 0) ? d * (Number(dayHours) > 0 ? Number(dayHours) : 9) : 0;
+}
+/** PURE — "2 working days" / "1 working day" / "0.5 working days". */
+function drSlaDaysLabel_(days) {
+  const d = Number(days);
+  if (!(d > 0)) return '';
+  return d + (d === 1 ? ' working day' : ' working days');
+}
+/** PURE (M6) — the stored DR_SLA_TARGETS blob → {map: {dept: days}, legacy}.
+ *  The new shape carries `_unit: 'days'`. A blob WITHOUT it is the pre-M6 map
+ *  of HOURS, set when the tracker counted wall-clock time — so each is read as
+ *  the calendar intent it was set with (hours ÷ 24, to the nearest half day,
+ *  never below half a day): 48 h stays "2 days", 24 h "1 day". `legacy` tells
+ *  the Admin editor to ask for a review-and-save. A bad blob → {} (not legacy). */
+function drSlaParseTargets_(obj) {
+  const out = {};
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return { map: out, legacy: false };
+  const legacy = obj._unit !== 'days';
+  let any = false;
+  Object.keys(obj).forEach(function (k) {
+    if (k === '_unit') return;
+    const n = Number(obj[k]);
+    if (!(n > 0)) return;
+    any = true;
+    out[k] = legacy ? Math.max(0.5, Math.round(n / 12) / 2) : n;
+  });
+  return { map: out, legacy: legacy && any };
+}
+/** Per-department SLA target map ({dept: WORKING DAYS}) from Script Property
+ *  DR_SLA_TARGETS, sanitized on read (bad blob → {}); a legacy hours map is
+ *  converted (drSlaParseTargets_). */
 function getDeptRequestSlaConfig_() {
+  return getDeptRequestSlaConfigFull_().map;
+}
+function getDeptRequestSlaConfigFull_() {
   try {
     const raw = PropertiesService.getScriptProperties().getProperty('DR_SLA_TARGETS');
-    if (!raw) return {};
-    const obj = JSON.parse(raw);
-    return (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
-  } catch (_) { return {}; }
+    if (!raw) return { map: {}, legacy: false };
+    return drSlaParseTargets_(JSON.parse(raw));
+  } catch (_) { return { map: {}, legacy: false }; }
 }
-/** SLA (hours) for a department — per-dept override (case-insensitive) from the
- *  config map, else CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS. Pass an already-read
- *  `map` to avoid a Script-Property read per row in a loop. */
+/** SLA (WORKING DAYS) for a department — per-dept override (case-insensitive)
+ *  from the config map, else CONFIG.CALL_NOTES.DR_SLA_DEFAULT_DAYS. Pass an
+ *  already-read `map` to avoid a Script-Property read per row in a loop. */
 function getDeptRequestSla_(dept, map) {
-  const def = CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS || 48;
+  const def = CONFIG.CALL_NOTES.DR_SLA_DEFAULT_DAYS || 2;
   const cfg = map || getDeptRequestSlaConfig_();
   const want = String(dept || '').toLowerCase().trim();
   for (const k in cfg) {
-    if (String(k).toLowerCase().trim() === want) { const h = parseInt(cfg[k], 10); return (h > 0) ? h : def; }
+    if (String(k).toLowerCase().trim() === want) { const d = Number(cfg[k]); return (d > 0) ? d : def; }
   }
   return def;
 }
@@ -127,7 +179,7 @@ function drSplitDepts_(toDept) {
     .map(function (s) { return s.trim(); })
     .filter(function (s) { return s && s.toLowerCase() !== 'other'; });
 }
-/** Strictest (minimum-hours) SLA across a request's component departments —
+/** Strictest (minimum-days) SLA across a request's component departments —
  *  every listed department is expected to respond, so the tightest target
  *  governs a multi-dept request. Single-dept values behave exactly as before
  *  (the split is the identity); empty splits fall back to the raw lookup. */
@@ -389,7 +441,7 @@ function drDeptStats_(items, slaCfg) {
     const med = b.durations.length ? b.durations[Math.floor(b.durations.length / 2)] : null;
     return { dept: b.dept, open: b.open, resolved: b.resolved, overdueOpen: b.overdueOpen,
              manualResolved: b.manualResolved, untrackedResolved: b.untrackedResolved, timed: b.durations.length,
-             slaHours: getDeptRequestSla_(b.dept, slaCfg), avgMinutes: avg, medianMinutes: med };
+             slaDays: getDeptRequestSla_(b.dept, slaCfg), avgMinutes: avg, medianMinutes: med };   // M6: working days
   }).sort(function (a, b) { return b.open - a.open; });
 }
 function getDeptRequests() {
@@ -421,10 +473,12 @@ function getDeptRequests() {
     const fmtTs = function (ms) {
       return ms ? Utilities.formatDate(new Date(ms), CONFIG.TIMEZONE, 'MMM d, yyyy h:mm a') : '';
     };
-    // SLA config read ONCE (not per row); each item carries slaHours + slaStatus
+    // SLA config read ONCE (not per row); each item carries slaDays + slaStatus
     // (ontime/atrisk/overdue) — for open rows it's current age, for resolved rows
-    // whether resolution beat the SLA (v2 phase 3).
+    // whether resolution beat the SLA (v2 phase 3). M6: the days become business
+    // hours through the one business window (drSlaBizHours_).
     const slaCfg = getDeptRequestSlaConfig_();
+    const dayHours = drBusinessDayHours_();
     for (let i = 0; i < rows.length; i++) {   // i=0: tail slice has no header row
       const r = rows[i];
       if (!r[DR.REQ_ID]) continue;
@@ -460,7 +514,7 @@ function getDeptRequests() {
       const elapsedBizMin = isResolved
         ? ((resolvedMs && createdMs) ? businessMinutesBetween_(createdMs, resolvedMs) : null)
         : (createdMs ? businessMinutesBetween_(createdMs, Date.now()) : null);
-      const slaHours = drSlaForToDept_(String(r[DR.TO_DEPT] || ''), slaCfg);   // F(cycle-8 M-5): strictest across a multi-dept send
+      const slaDays = drSlaForToDept_(String(r[DR.TO_DEPT] || ''), slaCfg);   // F(cycle-8 M-5): strictest across a multi-dept send; M6: working days
       // Operator 2026-09-10: only an EMAIL-link resolution is a RESPONSE time.
       // A tracker "Mark resolved" ('app') is a manual clear, and a row resolved
       // before the source was recorded ('') cannot be told apart from one —
@@ -487,7 +541,7 @@ function getDeptRequests() {
         resolvedVia: resolvedVia,
         elapsedMin: (timed && elapsedBizMin != null) ? elapsedBizMin : null,
         elapsedWallMin: timed ? elapsedMin : null,
-        slaHours: slaHours, slaStatus: drSlaStatus_(elapsedBizMin, slaHours),
+        slaDays: slaDays, slaStatus: drSlaStatus_(elapsedBizMin, drSlaBizHours_(slaDays, dayHours)),
         slaBusiness: true,
       };
       all.push(item);
@@ -544,17 +598,22 @@ function getDeptRequestSla() {
   try {
     const emp = getEmployeeInfo_();
     if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
-    return {
-      defaultHours: CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS || 48,
-      targets: getDeptRequestSlaConfig_(),
-      departments: Object.keys(getDepartmentEmails_() || {}),
-    };
+    return drSlaAdminView_();
   } catch (err) { return { error: err.message }; }
 }
+/** The Admin editor's view of the SLA config — ONE builder for getAdminConfig
+ *  and getDeptRequestSla (M6): working days, the business-day length they
+ *  convert through, and whether the stored map is still the pre-M6 hours map. */
+function drSlaAdminView_() {
+  const full = getDeptRequestSlaConfigFull_();
+  return { defaultDays: CONFIG.CALL_NOTES.DR_SLA_DEFAULT_DAYS || 2, targets: full.map, legacy: full.legacy,
+           businessDayHours: drBusinessDayHours_(), departments: Object.keys(getDepartmentEmails_() || {}) };
+}
 /** Admin-gated (INV-136 / INV-57 family): persist the per-dept SLA target map to
- *  Script Property DR_SLA_TARGETS. Each value is whole hours 1–720; unknown depts
- *  and entries equal to the default are dropped (keeps the map lean). Writes an
- *  AdminConfigChange audit row. */
+ *  Script Property DR_SLA_TARGETS. Each value is WORKING DAYS 0.5–30 in half
+ *  days (M6); unknown depts and entries equal to the default are dropped (keeps
+ *  the map lean). Stored with `_unit: 'days'`, which retires a legacy hours map.
+ *  Writes an AdminConfigChange audit row. */
 function saveDeptRequestSla(map) {
   try {
     const emp = getEmployeeInfo_();
@@ -562,18 +621,18 @@ function saveDeptRequestSla(map) {
     if (map == null || typeof map !== 'object' || Array.isArray(map)) return { success: false, error: 'Invalid SLA map.' };
     const validDepts = {};
     Object.keys(getDepartmentEmails_() || {}).forEach(function (d) { validDepts[String(d).toLowerCase().trim()] = d; });
-    const def = CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS || 48;
+    const def = CONFIG.CALL_NOTES.DR_SLA_DEFAULT_DAYS || 2;
     const clean = {};
     for (const k in map) {
       const canon = validDepts[String(k).toLowerCase().trim()];
       if (!canon) continue;                          // drop unknown departments
-      const h = parseInt(map[k], 10);
-      if (!(h > 0)) continue;                         // blank/0 → fall back to default (omit)
-      if (h > 720) return { success: false, error: 'SLA for "' + canon + '" must be 1–720 hours.' };
-      if (h === def) continue;                        // equals default → omit (lean map)
-      clean[canon] = h;
+      const d = Number(map[k]);
+      if (!(d > 0)) continue;                         // blank/0 → fall back to default (omit)
+      if (d > 30 || Math.round(d * 2) !== d * 2) return { success: false, error: 'SLA for "' + canon + '" must be 0.5–30 working days, in half days.' };
+      if (d === def) continue;                        // equals default → omit (lean map)
+      clean[canon] = d;
     }
-    propSetBounded_('DR_SLA_TARGETS', JSON.stringify(clean), { hint: 'remove an override' });
+    propSetBounded_('DR_SLA_TARGETS', JSON.stringify(Object.assign({ _unit: 'days' }, clean)), { hint: 'remove an override' });
     writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
       'Updated Dept-Request SLA targets (' + Object.keys(clean).length + ' override(s))', emp.email);
     return { success: true, targets: clean };
@@ -595,6 +654,7 @@ function deptRequestsOverdueOpen_() {
   const numRows = lastRow - firstData + 1;
   const rows = numRows > 0 ? sh.getRange(firstData, 1, numRows, DR_HEADERS.length).getValues() : [];
   const slaCfg = getDeptRequestSlaConfig_();
+  const dayHours = drBusinessDayHours_();
   const overdue = [];
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
@@ -611,11 +671,20 @@ function deptRequestsOverdueOpen_() {
     const ageMin = businessMinutesBetween_(createdMs, Date.now());
     if (ageMin == null) continue;
     const dept = String(r[DR.TO_DEPT] || '');
-    if (drSlaStatus_(ageMin, drSlaForToDept_(dept, slaCfg)) !== 'overdue') continue;   // F(cycle-8 M-5)
+    const slaDays = drSlaForToDept_(dept, slaCfg);   // F(cycle-8 M-5)
+    if (drSlaStatus_(ageMin, drSlaBizHours_(slaDays, dayHours)) !== 'overdue') continue;
+    // M6: the age is BUSINESS time, so it is reported as working days open —
+    // "30h open" read as a day and a quarter when it was over three working days.
     overdue.push({ dept: dept || '—', byName: String(r[DR.BY_NAME] || ''),
-                   label: String(r[DR.LABEL] || ''), ageHours: Math.round(ageMin / 60) });
+                   label: String(r[DR.LABEL] || ''), ageHours: Math.round(ageMin / 60),
+                   ageDaysLabel: drAgeWorkingDaysLabel_(ageMin, dayHours), slaDays: slaDays });
   }
   return overdue;
+}
+/** PURE (M6) — business minutes → "3.5 working days open" (to the half day). */
+function drAgeWorkingDaysLabel_(bizMin, dayHours) {
+  const d = Math.round((Number(bizMin) / 60) / (Number(dayHours) > 0 ? Number(dayHours) : 9) * 2) / 2;
+  return d + (d === 1 ? ' working day' : ' working days') + ' open';
 }
 function sendDeptRequestReminderDigest() {
   assertManagerCaller_('sendDeptRequestReminderDigest');
@@ -643,13 +712,13 @@ function sendDeptRequestReminderDigest() {
     depts.forEach(function (dept) {
       bodyHtml += '<div style="margin:10px 0 4px;font-weight:700;">' + esc_(dept) + ' (' + byDept[dept].length + ')</div><ul style="margin:0;padding-left:18px;">';
       byDept[dept].slice(0, 25).forEach(function (o) {
-        bodyHtml += '<li style="margin:3px 0;">' + esc_(o.label || 'request') + ' — ' + esc_(o.byName || 'unknown') + ' · ' + o.ageHours + 'h open</li>';
+        bodyHtml += '<li style="margin:3px 0;">' + esc_(o.label || 'request') + ' — ' + esc_(o.byName || 'unknown') + ' · ' + esc_(o.ageDaysLabel) + '</li>';
       });
       bodyHtml += '</ul>';
     });
     const textBody = overdue.length + ' overdue department request(s):\n\n' + depts.map(function (dept) {
       return dept + ' (' + byDept[dept].length + '):\n' + byDept[dept].slice(0, 25).map(function (o) {
-        return '  • ' + (o.label || 'request') + ' — ' + (o.byName || 'unknown') + ' · ' + o.ageHours + 'h open';
+        return '  • ' + (o.label || 'request') + ' — ' + (o.byName || 'unknown') + ' · ' + o.ageDaysLabel;
       }).join('\n');
     }).join('\n\n') + '\n\nOpen Metrics → Dept Requests for the full list.';
     try {
