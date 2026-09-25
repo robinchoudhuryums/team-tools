@@ -11394,7 +11394,7 @@ function cnRenderHealthPanel_(res) {
       '<span style="flex:1;min-width:200px">' + when + '</span>' +
       '<span style="color:var(--muted);font-size:11px">' + esc(meta.expect) + '</span>' +
     '</div>';
-  }).join('');
+  }).join('') + cnRunNeverCaption_(res.auditWindow, res.automationLastRuns);
 
   return '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">' +
     '<div class="day-section-label" style="margin-bottom:10px">' + icon('refresh', 14) + ' Automation detail' +
@@ -11420,11 +11420,21 @@ function cnRunNeverText_(win) {
   if (win && win.complete === false) {
     // Muted, not amber: this row is reference detail for EVERY job, including
     // the ones not expected to run; the findings above carry the verdicts.
-    return '<span style="color:var(--muted)">no run on record — cannot confirm: nothing in the run ledger yet, and no row in the last ' +
-      esc(win.rows || '') + ' AuditLog rows' + (win.startMgr ? ' (back to ' + esc(win.startMgr) + ')' : '') +
-      '. The ledger records its next run.</span>';
+    // Follow-up: the row is short; the WHY is said once, under the section
+    // (cnRunNeverCaption_), instead of repeated on every job that lacks a run.
+    return '<span style="color:var(--muted)">no run on record — cannot confirm</span>';
   }
   return '<span style="color:var(--muted)">no run on record</span>';
+}
+/** The one caption under "Automation last seen" when any row reads "cannot
+ *  confirm" — '' otherwise, so a complete scan adds nothing. */
+function cnRunNeverCaption_(win, runs) {
+  if (!win || win.complete !== false) return '';
+  var any = (runs || []).some(function (r) { return r && !r.last; });
+  if (!any) return '';
+  return '<div data-run-caption="cannot-confirm" style="font-size:11px;color:var(--muted);margin-top:6px">Cannot confirm = nothing in the run ledger yet, and no row in the last ' +
+    esc(win.rows || '') + ' AuditLog rows' + (win.startMgr ? ' (back to ' + esc(win.startMgr) + ')' : '') +
+    '. The ledger records each job\'s next run.</div>';
 }
 
 /** F9 (cycle 16) — Offerings catalog shape. The PPD recommendation engine's

@@ -959,6 +959,11 @@ const AUTOMATION_RUN_PROP_PREFIX = 'AUTOMATION_RUN_';
 // clears the flag by itself (the detector ignores an address back on the roster).
 const OFFBOARDED_EMAILS_PROP = 'OFFBOARDED_EMAILS';
 const OFFBOARDED_EMAILS_MAX = 100;
+// Follow-up to S7 (cycle 22): who last ran installAutomationTriggers, and when
+// ({email, at}). Installable triggers run AS their installer and stop when that
+// account is disabled, so offboarding the installer silently stops every job.
+// Stamped by the installer; read by the triggerOwner detector. Auto-managed.
+const AUTOMATION_TRIGGER_OWNER_PROP = 'AUTOMATION_TRIGGER_OWNER';
 // The two gate lists offboarding edits. An address is REMOVED from each, except
 // when it is the list's LAST entry: an empty ADMIN_EMAILS makes EVERY manager an
 // admin (empIsAdmin_), and an empty MANAGER_EMAILS stops every trigger handler

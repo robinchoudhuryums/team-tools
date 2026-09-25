@@ -1181,6 +1181,14 @@ function auditWindowCoversMonth_(win, monthPrefix) {
   const start = String(win.startMgr || '');
   return !!start && start < String(monthPrefix || '') + '-01';
 }
+/** PURE — does the AuditLog window read reach back more than `staleHours`
+ *  before `nowMs`? Only then is a daily job's missing row evidence that it did
+ *  not run (the monthly twin is auditWindowCoversMonth_). */
+function auditWindowProvesAbsence_(win, nowMs, staleHours) {
+  const start = win && Number(win.startMs);
+  if (!start || !isFinite(start) || !(staleHours > 0)) return false;
+  return (nowMs - start) > staleHours * 3600000;
+}
 function readAutomationErrors_() {
   try {
     const map = JSON.parse(PropertiesService.getScriptProperties()
@@ -1221,6 +1229,13 @@ function automationJobProblems_(lastRuns, errors, nowMs, todayDom, thisMonthPref
     } else if (last && last.ms && (nowMs - last.ms) > job.staleHours * 3600000) {
       push('job', job.action, 'The ' + job.label + ' last ran ' + last.timestampMgr +
         ' (over ' + job.staleHours + 'h ago) — the trigger may be disabled.');
+    } else if (!last && auditWindowProvesAbsence_(auditWindow, nowMs, job.staleHours)) {
+      // Follow-up to A1 (cycle 22): a daily job with NO run on record used to
+      // be silent for ever — the stale check needs a last run to age. Absence
+      // is evidence only when the rows read reach back past the stale window
+      // (a fresh AuditLog, or an unparseable oldest row, proves nothing).
+      push('job', job.action, 'The ' + job.label + ' has no run on record in the last ' + job.staleHours +
+        'h, and the AuditLog read reaches back further — the trigger may be missing. Re-run installAutomationTriggers().');
     }
     const err = errors && errors[job.action];
     if (err) {
@@ -1313,6 +1328,18 @@ function managerSourceDrift_(propEmails, rosterPairs, offboarded) {
   });
   return out;
 }
+/** PURE — the trigger installer, if offboarding has removed them: their
+ *  address is on the app's own offboarded record and NOT back on the roster
+ *  (a re-onboard clears it). Returns the lowercased email, or ''. Only
+ *  offboardEmployee writes the record, so this cannot fire on a deployer or
+ *  service account that simply has no roster row. */
+function triggerOwnerOffboarded_(owner, rosterEmails, offboarded) {
+  const email = String((owner && owner.email) || '').toLowerCase().trim();
+  if (!email) return '';
+  const onRoster = (rosterEmails || []).some(function (e) { return String(e || '').toLowerCase().trim() === email; });
+  const gone = (offboarded || []).some(function (e) { return String(e || '').toLowerCase().trim() === email; });
+  return (gone && !onRoster) ? email : '';
+}
 function readOffboardedEmails_() {
   try {
     const a = JSON.parse(PropertiesService.getScriptProperties().getProperty(OFFBOARDED_EMAILS_PROP) || '[]');
@@ -1399,6 +1426,24 @@ function automationDetectorChecks_() {
         ' — remove them (offboarding keeps a list\'s LAST entry rather than empty it; add a replacement first).');
     }
   });
+  // Follow-up to S7 (cycle 22): installable triggers run AS the account that
+  // installed them. Offboarding that person disables the account and every
+  // job stops at once — each would then only surface as a stale heartbeat,
+  // one by one, with nothing naming the cause.
+  add('triggerOwner', 'The automation triggers\' installer is still on the team', function () {
+    let owner = null;
+    try { owner = JSON.parse(PropertiesService.getScriptProperties().getProperty(AUTOMATION_TRIGGER_OWNER_PROP) || 'null'); } catch (_) { owner = null; }
+    if (!owner) return;   // installed before the record existed — nothing to say
+    const roster = getEmployeeRosterRows_();
+    const emails = [];
+    for (let i = 1; i < roster.length; i++) emails.push(String(roster[i][EMP.EMAIL] || ''));
+    const gone = triggerOwnerOffboarded_(owner, emails, readOffboardedEmails_());
+    if (gone) {
+      throw new Error('The automation triggers were installed by ' + gone + ' (' + (owner.at || 'date unknown') +
+        '), who has been offboarded. Installable triggers run as their installer and stop when that account is ' +
+        'disabled — re-run installAutomationTriggers() from an active manager account.');
+    }
+  });
   return checks;
 }
 function computeAutomationHealth_(opts) {
@@ -1425,12 +1470,19 @@ function computeAutomationHealth_(opts) {
     // A1 (cycle 22): the window that was actually read — a truncated scan names
     // its OLDEST row, so "no row in the window" can be weighed against it.
     let auditWindowStartMgr = '';
+    // Follow-up to A1: the instant of the OLDEST row read, complete scan or
+    // not — how far back "no row on record" is evidence for a daily job.
+    let auditWindowStartMs = null;
     if (lastRow > 1) {
       const startRow = Math.max(2, lastRow - CN_AUDIT_MAX_SCAN + 1);
       scannedAll = startRow === 2;
       const data = auditSheet.getRange(startRow, 1, lastRow - startRow + 1, 10).getValues();
       if (!scannedAll && data.length) {
         auditWindowStartMgr = convertAuditTs_(normalizeAuditTs_(data[0][AUDIT.TS]), CONFIG.TIMEZONE, mgrTz);
+      }
+      if (data.length) {
+        try { auditWindowStartMs = Utilities.parseDate(normalizeAuditTs_(data[0][AUDIT.TS]), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime(); }
+        catch (_) { auditWindowStartMs = null; }   // unparseable = no evidence, never a false alarm
       }
       // Day-string comparison against IST-written timestamps — same accepted
       // boundary fuzz as getCallNotesAuditLog's date filter.
@@ -1638,7 +1690,7 @@ function computeAutomationHealth_(opts) {
       // A1 (cycle 22) — what "no audit row" is measured against. Read by
       // automationProblems_ (a monthly job's absence is only evidence when the
       // window reaches the 1st) and by the panel's "last seen" rows.
-      auditWindow: { complete: scannedAll, startMgr: auditWindowStartMgr, rows: CN_AUDIT_MAX_SCAN },
+      auditWindow: { complete: scannedAll, startMgr: auditWindowStartMgr, startMs: auditWindowStartMs, rows: CN_AUDIT_MAX_SCAN },
       managerTzAbbr: tzAbbr_(mgrTz),
       auditLogUrl: auditLogUrl,
     };
@@ -1771,7 +1823,12 @@ function automationProblems_(report, opts) {
   // INV-150's "a single benign browser quirk must not nag daily" rationale is
   // preserved by the floor, not abandoned; a burst this size means reps are
   // hitting real breakage.
-  if (report.clientErrors && report.clientErrors.last24h >= CLIENT_ERR_PROBLEM_MIN) {
+  if (report.clientErrors && report.clientErrors.error) {
+    // Follow-up to A6 (cycle 22): the panel named an unreadable beacon, but
+    // the dot and the digest counted 0 errors — a burst would read as quiet.
+    add('clientErrors', 'read', 'Client errors could not be read (' + report.clientErrors.error +
+      ') — a burst of rep-side failures would not show here. See Admin → Automation Health → Client errors.');
+  } else if (report.clientErrors && report.clientErrors.last24h >= CLIENT_ERR_PROBLEM_MIN) {
     add('clientErrors', '', report.clientErrors.last24h + ' client error(s) in the last 24h — reps are hitting ' +
       'real breakage. See Admin → Automation Health → Client errors.');
   }
@@ -3321,6 +3378,11 @@ function installAutomationTriggers() {
   }
   Logger.log('Automation triggers installed by ' + userEmail + ' (' + TARGETS.length + ' of the ' +
              AUTOMATION_TRIGGER_QUOTA + ' Apps Script allows).');
+  // Follow-up to S7 (cycle 22): record the installer, so offboarding them —
+  // which disables the account every trigger runs as — is named, not silent.
+  try {
+    propSetBounded_(AUTOMATION_TRIGGER_OWNER_PROP, JSON.stringify({ email: userEmail, at: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()) }));
+  } catch (e) { Logger.log('installAutomationTriggers: could not record the installer — ' + e.message); }
 
   // Trigger-ownership warning: Apps Script time-triggers are owned by the
   // installing user, and ScriptApp.getProjectTriggers() only returns triggers
@@ -3638,7 +3700,14 @@ function sendManagerDailyBrief() {
       }
     };
     const missed      = src('missed punches', function () { return computeMissedClockOuts_(); });
-    const urgent      = src('urgent notes', function () { return managerAggregateUrgent_(dateRange).results; });
+    // Follow-up to C2 (cycle 22): the aggregate names the rep Sheets it could
+    // not read, and reading only `.results` dropped them — a partly-read urgent
+    // list rode the brief as if complete. Name the gap with the other sources.
+    const urgentAgg   = src('urgent notes', function () { return managerAggregateUrgent_(dateRange); });
+    const urgent      = Array.isArray(urgentAgg) ? urgentAgg : (urgentAgg.results || []);
+    if (!Array.isArray(urgentAgg) && (urgentAgg.skippedReps || []).length) {
+      failedSources.push('urgent notes (' + urgentAgg.skippedReps.length + ' rep Sheet(s) unreadable)');
+    }
     const training    = src('overdue training', function () { return trainOverdueForRoster_(todayIso); });
     const docs        = src('unsigned documents', function () { return empDocsOverdueAll_(todayIso); });
     const coaching    = src('un-acknowledged coaching', function () { return coachUnackedAll_(Date.now()); });

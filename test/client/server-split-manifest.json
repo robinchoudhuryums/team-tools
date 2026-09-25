@@ -1225,6 +1225,26 @@
     "getPunctualityReport"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "Follow-ups B6: auditWindowProvesAbsence_ (daily no-run evidence), triggerOwnerOffboarded_ + AUTOMATION_TRIGGER_OWNER_PROP (installer record)",
+   "added": [
+    "AUTOMATION_TRIGGER_OWNER_PROP",
+    "auditWindowProvesAbsence_",
+    "triggerOwnerOffboarded_"
+   ],
+   "removed": [],
+   "changed": [
+    "automationDetectorChecks_",
+    "automationJobProblems_",
+    "automationProblems_",
+    "computeAutomationHealth_",
+    "installAutomationTriggers",
+    "sendCallNotesUrgentDigest",
+    "sendManagerDailyBrief"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -1293,6 +1313,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "22b4293f1160bb18"
+  },
+  "AUTOMATION_TRIGGER_OWNER_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "843e8da98cc1be9c"
   },
   "AUTOMATION_TRIGGER_QUOTA": {
    "file": "00_config.js",
@@ -3449,6 +3474,11 @@
    "kind": "function",
    "sha": "6a3c17d0c9cb1975"
   },
+  "auditWindowProvesAbsence_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "8045bdebd297957d"
+  },
   "authorizeGmailScope": {
    "file": "10_core.js",
    "kind": "function",
@@ -3467,12 +3497,12 @@
   "automationDetectorChecks_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "8e2d778713c5401e"
+   "sha": "ec4d89fa27ad1fc1"
   },
   "automationJobProblems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "9279f78e88cd480c"
+   "sha": "4ccd80cd4b110e06"
   },
   "automationLastRunMerge_": {
    "file": "10_core.js",
@@ -3482,7 +3512,7 @@
   "automationProblems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "13d4853cd9175a48"
+   "sha": "e3fd06b9228bd54a"
   },
   "automationRunKey_": {
    "file": "10_core.js",
@@ -4047,7 +4077,7 @@
   "computeAutomationHealth_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "305be77b6eea04bd"
+   "sha": "f650bb64cb736e60"
   },
   "computeCnEmailHash_": {
    "file": "30_callnotes.js",
@@ -5542,7 +5572,7 @@
   "installAutomationTriggers": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "a19c093beb0bc8f6"
+   "sha": "d7cd4df35c93f0f1"
   },
   "instanceLabel_": {
    "file": "10_core.js",
@@ -7502,7 +7532,7 @@
   "sendCallNotesUrgentDigest": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "982af328548794cc"
+   "sha": "7cbd33a1de6edfc9"
   },
   "sendCallNotesWeeklyDigests": {
    "file": "30_callnotes.js",
@@ -7542,7 +7572,7 @@
   "sendManagerDailyBrief": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "a98e591a34516a93"
+   "sha": "fbfebbab10165aaf"
   },
   "sendManagerFlagDigest_": {
    "file": "30_callnotes.js",
@@ -7953,6 +7983,11 @@
    "file": "80_training.js",
    "kind": "function",
    "sha": "bd15e765590fc43c"
+  },
+  "triggerOwnerOffboarded_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "0d792a5ca5b6311b"
   },
   "tsDoctorLegitBreaks_": {
    "file": "20_timeclock.js",

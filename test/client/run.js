@@ -12171,8 +12171,9 @@ test('previewPtoAccruals is a READ-ONLY dry run that shares the ONE accrual reso
 // ── Gap4 / F4 — per-job automation liveness, derived not accumulated ─────────
 console.log('\nCode.js — automation job liveness (Gap4 / F4)');
 {
-  const jobCtx = vm.createContext({ console });
+  const jobCtx = vm.createContext({ console, isFinite });
   vm.runInContext(extractRawFunction('Code.js', 'automationJobProblems_'), jobCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'auditWindowProvesAbsence_'), jobCtx);   // the no-run-on-record branch (follow-up to A1)
   // A STUB table, so these cases test the decision rather than today's job list
   // (the real table's coverage is asserted separately below).
   vm.runInContext(`var ACC=true, ARCH=false; var AUTOMATION_JOB_CHECKS=[
@@ -22261,7 +22262,7 @@ test('F-20: the three heartbeat-only daily jobs stamp a heartbeat and their own 
     Utilities: { formatDate: (d, tz, f) => (f === 'd' ? '15' : '2026-09') },
     AUTOMATION_JOB_CHECKS: [{ action: 'CallNotesReconcile', label: 'nightly Sheets reconcile', cadence: 'daily', staleHours: 30, enabled: () => true }] };
   vm.createContext(ctx);
-  ['automationJobProblems_', 'automationProblems_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  ['automationJobProblems_', 'auditWindowProvesAbsence_', 'automationProblems_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   const lines = ctx.automationProblems_({ automationLastRuns: [], digests: [],
     automationErrors: { DailyExportCheck: { at: '2026-09-18 12:00:01', message: 'boom' }, CallNotesReconcile: { at: 't', message: 'tabled' } } });
   assert.strictEqual(lines.filter((l) => /DailyExportCheck/.test(l)).length, 1, 'the untabled stamp reaches the digest once');
@@ -27445,7 +27446,7 @@ const B6_WEB = path.join(__dirname, '../../web-app');
 
 function b6JobCtx_() {
   const ctx = vm.createContext({ console, isFinite, String, Object, JSON });
-  ['auditWindowCoversMonth_', 'automationJobProblems_', 'automationLastRunMerge_']
+  ['auditWindowCoversMonth_', 'auditWindowProvesAbsence_', 'automationJobProblems_', 'automationLastRunMerge_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   vm.runInContext(`var AUTOMATION_JOB_CHECKS=[
     {action:'CallNotesReconcile',label:'nightly Sheets reconcile',cadence:'daily',staleHours:30,enabled:()=>true},
@@ -27521,8 +27522,16 @@ test('A1: the panel row for a job with no run on record says "cannot confirm" un
   const s2 = buildSandbox([]);
   s2.icon = () => ''; s2.esc = (x) => String(x == null ? '' : x);
   const fn = loadFunction(s2, 'cn/script_callnotes.html', 'cnRunNeverText_');
-  assert.ok(/cannot confirm/.test(fn({ complete: false, startMgr: '2026-09-14 08:12:00', rows: 4000 })) &&
-    /2026-09-14 08:12:00/.test(fn({ complete: false, startMgr: '2026-09-14 08:12:00', rows: 4000 })), 'names the window it could not see past');
+  const cap = loadFunction(s2, 'cn/script_callnotes.html', 'cnRunNeverCaption_');
+  const trunc = { complete: false, startMgr: '2026-09-14 08:12:00', rows: 4000 };
+  assert.ok(/cannot confirm/.test(fn(trunc)), 'the row says it cannot confirm');
+  // Follow-up (cycle 22): the reason is said ONCE, under the section, not on every row.
+  assert.ok(!/2026-09-14/.test(fn(trunc)) && /2026-09-14 08:12:00/.test(cap(trunc, [{ action: 'A', last: null }, { action: 'B', last: null }])),
+    'the caption names the window it could not see past; the row does not repeat it');
+  assert.strictEqual(cap(trunc, [{ action: 'A', last: { ms: 1 } }]), '', 'no caption when every job has a run');
+  assert.strictEqual(cap({ complete: true }, [{ action: 'A', last: null }]), '', 'no caption under a complete scan');
+  const cnSrc = fs.readFileSync(path.join(B6_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.ok(/\}\)\.join\(''\) \+ cnRunNeverCaption_\(res\.auditWindow, res\.automationLastRuns\)/.test(cnSrc), 'appended once after the rows');
   assert.ok(!/cannot confirm/.test(fn({ complete: true })) && /no run on record/.test(fn({ complete: true })), 'a complete scan is a plain fact');
   assert.ok(!/no audit row in the scan window/.test(fs.readFileSync(path.join(B6_WEB, 'cn/script_callnotes.html'), 'utf8')), 'the old unconditional caption is gone');
 });
@@ -27534,7 +27543,7 @@ test('A2: the System tab renders EVERY line the health dot counts — driven: th
     AUTOMATION_JOB_CHECKS: [
       { action: 'CallNotesReconcile', label: 'nightly Sheets reconcile', cadence: 'daily', staleHours: 30, enabled: () => true },
       { action: 'PtoAccrualCredit', label: 'monthly PTO accrual credit', cadence: 'monthly', graceDays: 3, enabled: () => true }] });
-  ['auditWindowCoversMonth_', 'automationJobProblems_', 'automationProblems_']
+  ['auditWindowCoversMonth_', 'auditWindowProvesAbsence_', 'automationJobProblems_', 'automationProblems_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   const report = {
     digests: [{ key: 'eod', last: '2026-09-18 17:00:00', stale: true }],
@@ -28307,6 +28316,89 @@ test('D9: a late comment-post success touches the composer, pin and player only 
   const guard = f.indexOf('if (!QA_STATE.det || QA_STATE.det.fileId !== r.fileId)');
   const clear = f.indexOf('QA_STATE.pin = null;'), play = f.indexOf('audio.play()');
   assert.ok(guard > 0 && clear > guard && play > guard, 'the recording check runs BEFORE the pin is cleared and playback resumes');
+});
+
+// ---------------------------------------------------------------------------
+// cycle 22 follow-ups — the Batch 6-8 follow-on items
+console.log('\ncycle 22 follow-ups — Batch 6-8 follow-on items');
+const FU_WEB = path.join(__dirname, '../../web-app');
+
+test('FU-B6a: the urgent digest STAMPS a failed read (heartbeat withheld) and clears it on a clean run — a thrown aggregate is not an empty queue (driven)', () => {
+  const calls = [];
+  const mk = (agg) => {
+    const ctx = vm.createContext({ String, Date, JSON, Logger: { log() {} }, CONFIG: { TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago' },
+      Utilities: { formatDate: () => '2026-09-25' }, assertManagerCaller_() {}, managerBriefSuppressionActive_: () => false,
+      getManagerEmails_: () => ['m@x'], managerAggregateUrgent_: agg, sendManagerFlagDigest_: () => calls.push('send'),
+      stampAutomationError_: (k, m) => calls.push('err:' + k + ':' + m), clearAutomationError_: (k) => calls.push('clear:' + k),
+      stampDigestLastRun_: (k) => calls.push('beat:' + k) });
+    vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesUrgentDigest'), ctx);
+    return ctx.sendCallNotesUrgentDigest;
+  };
+  mk(() => { throw new Error('roster unreadable'); })();
+  assert.deepStrictEqual(calls.splice(0), ['err:CallNotesUrgentDigest:roster unreadable'], 'stamped, and NO heartbeat');
+  mk(() => ({ results: [], skippedReps: [] }))();
+  assert.deepStrictEqual(calls.splice(0), ['clear:CallNotesUrgentDigest', 'beat:urgent'], 'a clean empty run clears the flag and beats');
+});
+
+test('FU-B6b: the daily brief names urgent-note rep Sheets it could not read, instead of reading only `.results` (driven)', () => {
+  const stamped = [];
+  let sentD = null;
+  const ctx = vm.createContext({ String, Date, JSON, Array, console: { warn() {} }, Logger: { log() {} },
+    CONFIG: { TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago' }, Utilities: { formatDate: () => '2026-09-25' },
+    assertManagerCaller_() {}, stampDigestLastRun_() {}, getFlag_: () => true, getManagerEmails_: () => ['m@x'],
+    computeMissedClockOuts_: () => [], managerAggregateUrgent_: () => ({ results: [{ id: 'n1' }], skippedReps: ['Ann', 'Bo'] }),
+    trainOverdueForRoster_: () => [], empDocsOverdueAll_: () => [], coachUnackedAll_: () => [], deptRequestsOverdueOpen_: () => [],
+    stampAutomationError_: (k, m) => stamped.push(k + ':' + m), clearAutomationError_() {},
+    empDocCanManagerSee_: () => true, coachCanManagerSee_: () => true, managerBriefSections_: (d) => (d.urgent.length ? ['u'] : []),
+    sendManagerBriefEmail_: (e, secs, d) => { sentD = d; } });
+  vm.runInContext(extractRawFunction('Code.js', 'sendManagerDailyBrief'), ctx);
+  ctx.sendManagerDailyBrief();
+  assert.strictEqual(sentD.urgent.length, 1, 'the readable urgent notes still ride the brief');
+  assert.ok(sentD.failedSources.some((f) => /urgent notes \(2 rep Sheet\(s\) unreadable\)/.test(f)), 'and the unreadable Sheets are named in it');
+  assert.ok(stamped.some((m) => /^ManagerDailyBrief:.*urgent notes \(2 rep/.test(m)), 'and on the health dot');
+});
+
+test('FU-B6c: an unreadable ClientErrors tab reaches the health dot and the digest — the panel said so, the dot counted 0 (driven)', () => {
+  const ctx = vm.createContext({ console, String, Object, Date, Number, parseInt, JSON, isFinite,
+    CONFIG: { TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago' }, CLIENT_ERR_PROBLEM_MIN: 10,
+    AUTOMATION_JOB_CHECKS: [], Utilities: { formatDate: () => '1' }, automationJobProblems_: () => [] });
+  vm.runInContext(extractRawFunction('Code.js', 'automationProblems_'), ctx);
+  const items = JSON.parse(JSON.stringify(ctx.automationProblems_({ clientErrors: { count: 0, last24h: 0, error: 'quota' } }, { items: true })));
+  assert.deepStrictEqual(items.map((i) => [i.kind, i.key]), [['clientErrors', 'read']]);
+  assert.ok(/could not be read \(quota\)/.test(items[0].text));
+  assert.strictEqual(ctx.automationProblems_({ clientErrors: { count: 0, last24h: 0 } }).length, 0, 'a readable quiet tab is still quiet');
+});
+
+test('FU-B6d: a daily job with NO run on record is flagged once the AuditLog read reaches back past its stale window — and never on a fresh log (driven)', () => {
+  const ctx = b6JobCtx_();
+  const f = ctx.automationJobProblems_;
+  const NOW = Date.parse('2026-09-20T09:00:00Z');
+  const none = [{ action: 'CallNotesReconcile', last: null }];
+  const MISSING = /nightly Sheets reconcile has no run on record in the last 30h/;
+  assert.ok(f(none, {}, NOW, 20, '2026-09', { complete: true, startMgr: '', startMs: NOW - 9 * 86400000 }).some((m) => MISSING.test(m)),
+    'nine days of rows and not one run — the trigger may be missing');
+  assert.ok(!f(none, {}, NOW, 20, '2026-09', { complete: true, startMgr: '', startMs: NOW - 2 * 3600000 }).some((m) => MISSING.test(m)),
+    'a two-hour-old AuditLog proves nothing yet (a fresh deploy)');
+  assert.ok(!f(none, {}, NOW, 20, '2026-09', { complete: true, startMgr: '', startMs: null }).some((m) => MISSING.test(m)),
+    'an unparseable or empty window proves nothing');
+  const comp = stripJsComments_(extractRawFunction('Code.js', 'computeAutomationHealth_'));
+  assert.ok(/startMs: auditWindowStartMs/.test(comp), 'the report ships the window\'s start instant');
+});
+
+test('FU-B6e: the trigger installer is recorded, and offboarding them is named by a detector — the account every job runs as (driven)', () => {
+  const ctx = vm.createContext({ String });
+  vm.runInContext(extractRawFunction('Code.js', 'triggerOwnerOffboarded_'), ctx);
+  const f = ctx.triggerOwnerOffboarded_;
+  assert.strictEqual(f({ email: 'Lee@X.com' }, ['a@x.com'], ['lee@x.com']), 'lee@x.com', 'offboarded, not back on the roster');
+  assert.strictEqual(f({ email: 'lee@x.com' }, ['LEE@x.com'], ['lee@x.com']), '', 're-onboarded — back on the roster');
+  assert.strictEqual(f({ email: 'svc@x.com' }, [], []), '', 'a deployer with no roster row is NOT flagged (only offboardEmployee writes the record)');
+  assert.strictEqual(f(null, [], ['lee@x.com']), '', 'no record (installed before it existed) says nothing');
+  const inst = stripJsComments_(extractRawFunction('Code.js', 'installAutomationTriggers'));
+  assert.ok(/propSetBounded_\(AUTOMATION_TRIGGER_OWNER_PROP, JSON\.stringify\(\{ email: userEmail/.test(inst), 'the installer stamps who ran it');
+  const det = stripJsComments_(extractRawFunction('Code.js', 'automationDetectorChecks_'));
+  assert.ok(/add\('triggerOwner'/.test(det) && /triggerOwnerOffboarded_\(owner, emails, readOffboardedEmails_\(\)\)/.test(det), 'the detector reads it');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/key: 'triggerOwner'/.test(mock), 'the health fixture carries the detector (INV-185)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -4025,9 +4025,15 @@ function sendCallNotesUrgentDigest() {
     if ((urgent.results && urgent.results.length > 0) || (urgent.skippedReps || []).length > 0) {
       sendManagerFlagDigest_(mgrEmails, 'Urgent', urgent.results || [], dateRange, urgent.skippedReps);
     }
+    clearAutomationError_('CallNotesUrgentDigest');
     stampDigestLastRun_('urgent');
     Logger.log(`sendCallNotesUrgentDigest: urgent=${(urgent.results || []).length}`);
   } catch (err) {
+    // Follow-up to C2 (cycle 22): a failed read is not an empty queue. The
+    // catch used to log and return — nothing sent, nothing stamped, so the
+    // only trace was an ageing heartbeat. Stamp the failure where the health
+    // dot and the failure digest read it (the heartbeat stays withheld).
+    stampAutomationError_('CallNotesUrgentDigest', err.message);
     Logger.log('sendCallNotesUrgentDigest failed: ' + err.message);
   }
 }
