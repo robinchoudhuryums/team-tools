@@ -2403,6 +2403,7 @@ function enterIntakeSentView(area) {
       // total so the render can say "showing N of M" (absent on an older
       // server -> renders nothing, as before).
       INTAKE_STATE.sentTotal = (typeof res.total === 'number') ? res.total : null;
+      INTAKE_STATE.sentFailed = Array.isArray(res.failedTypes) ? res.failedTypes : [];   // I4
       INTAKE_STATE.sentEntry = { at: Date.now() };
       intakeRenderSentHost_();
       done();
@@ -2487,19 +2488,33 @@ function intakeCatalogSearch_(q) {
   intakeRenderCatalogHost_();
 }
 
+/** I2 (cycle 22) — the client twin of the server's intakeSeatKinds_: a seat
+ *  cell read WORD BY WORD (s / solid, c / captain / captain's; seat, and, or
+ *  are filler). Pinned to agree with the server on a grid. */
+function intakeSeatKindsClient_(cell) {
+  var words = String(cell == null ? '' : cell).toLowerCase().replace(/['\u2019]/g, '').split(/[^a-z]+/).filter(Boolean);
+  var out = { solid: false, captain: false, unknown: [] };
+  words.forEach(function (w) {
+    if (w === 's' || w === 'solid') out.solid = true;
+    else if (w === 'c' || w === 'captain' || w === 'captains') out.captain = true;
+    else if (w === 'seat' || w === 'seats' || w === 'and' || w === 'or') return;
+    else out.unknown.push(w);
+  });
+  return out;
+}
 /** PURE filter over the catalog rows. Seat matching mirrors the ENGINE's own
- *  rule — it tests for the LETTER 's' / 'c' anywhere in the cell rather than
- *  an exact word, because that is what intakeFilterRecommendations_ does, and
- *  a browse view that disagrees with the engine about which chairs are
- *  captain-seat would be worse than no filter at all. */
+ *  rule (the word-by-word intakeSeatKinds_ since I2 — it was a letter test on
+ *  both sides, and "Captain Seat" read as solid), because a browse view that
+ *  disagrees with the engine about which chairs are captain-seat would be
+ *  worse than no filter at all. */
 function intakeFilterCatalog_(rows, filter) {
   var q = String((filter && filter.q) || '').toLowerCase().trim();
   var seat = String((filter && filter.seat) || 'ALL').toUpperCase();
   return (rows || []).filter(function (r) {
     if (seat !== 'ALL') {
-      var st = String(r.seatType || '').toLowerCase();
-      if (seat === 'S' && st.indexOf('s') < 0) return false;
-      if (seat === 'C' && st.indexOf('c') < 0) return false;
+      var k = intakeSeatKindsClient_(r.seatType);
+      if (seat === 'S' && !k.solid) return false;
+      if (seat === 'C' && !k.captain) return false;
     }
     if (q) {
       var hay = (String(r.hcpcs || '') + ' ' + String(r.features || '')).toLowerCase();
@@ -2590,7 +2605,7 @@ function intakeFilterSent_(subs) {
 function intakeRenderSentHost_() {
   var host = document.getElementById('intk-sent-list');
   if (!host) return;
-  host.innerHTML = intakeRenderSentList_(intakeFilterSent_(INTAKE_STATE.sent), !!INTAKE_STATE.sentIsManager);
+  host.innerHTML = intakeRenderSentList_(intakeFilterSent_(INTAKE_STATE.sent), !!INTAKE_STATE.sentIsManager, INTAKE_STATE.sentFailed);
 }
 
 // Form-type pill tones (kicker-pill vocabulary).
@@ -2600,12 +2615,21 @@ function intakeFormPill_(formType) {
   return '<span class="kicker-pill"' + (tone ? ' data-tone="' + tone + '"' : '') + '>' + esc(t || '—') + '</span>';
 }
 
-function intakeRenderSentList_(subs, isManager) {
+function intakeRenderSentList_(subs, isManager, failedTypes) {
+  // I4 (cycle 22): a form type the server could not read is named above the
+  // list — and with nothing readable the list says so rather than "none sent",
+  // because an empty Sent tab is exactly what prompts a rep to send again.
+  var failed = (failedTypes || []).filter(Boolean);
+  var failedNote = failed.length
+    ? '<div data-intk-state="sent-failed" role="alert" style="color:var(--warning-deep);font-size:.85rem;margin-bottom:8px">' + icon('warning', 12) +
+      ' Could not read the ' + esc(failed.join(' / ')) + ' submissions — this list is incomplete. Check before re-sending anything.</div>'
+    : '';
   if (!subs || subs.length === 0) {
+    if (failed.length) return failedNote;
     return '<div class="no-data" style="padding:20px 0">No matching intake submissions' +
       (isManager ? '.' : ' — your sent PPD / PMD / PAP forms will appear here.') + '</div>';
   }
-  return '<div class="intk-grid">' +
+  return failedNote + '<div class="intk-grid">' +
     // C17 batch-5 (INV-169): "showing N of M" when the server capped the list
     // — a silent cap read as "exactly 100 submissions exist". Older servers
     // send no total -> the parenthetical simply doesn't render.

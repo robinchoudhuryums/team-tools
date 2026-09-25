@@ -2805,6 +2805,10 @@ const engineCtx = vm.createContext({});
 // The engine now derives its clinical factors via the shared
 // intakeDeriveClinicalFactors_ helper (so the engine + the explainability
 // surface can't drift) — load it into the ctx first or the engine's call throws.
+// Batch 8 (cycle 22): the engine reads three shared helpers — the seat words
+// (I2), the inherently-solid code list (I6) and the weight parse (I3).
+['intakeSeatKinds_', 'intakeInherentlySolidCodes_', 'intakeParseWeight_'].forEach((n) =>
+  vm.runInContext(extractRawFunction('Code.js', n), engineCtx, { filename: 'Code.js#' + n }));
 vm.runInContext(extractRawFunction('Code.js', 'intakeDeriveClinicalFactors_'), engineCtx,
   { filename: 'Code.js#intakeDeriveClinicalFactors_' });
 vm.runInContext(extractRawFunction('Code.js', 'intakeExplainFactors_'), engineCtx,
@@ -5789,6 +5793,7 @@ test('F9: well-formed capacities are completely unchanged', () => {
 // the schemeless class the new warning names.)
 const intakeCatalogIssues_ = new Function(
   extractRawFunction('Code.js', 'intakeHttpOnly_') + ';' +
+  extractRawFunction('Code.js', 'intakeSeatKinds_') + ';' + extractRawFunction('Code.js', 'intakeInherentlySolidCodes_') + ';' +
   extractRawFunction('Code.js', 'intakeCatalogIssues_') + '; return intakeCatalogIssues_;')();
 
 test('F9: the catalog validator names the rows the engine cannot recommend', () => {
@@ -5799,7 +5804,7 @@ test('F9: the catalog validator names the rows the engine cannot recommend', () 
     ['bad',     'K0825', 'n/a',     'S', P, I],   // error: non-numeric
     ['halfrng', 'K0826', '300-',    'S', P, I],   // error: unreadable range
     ['inv',     'K0827', '450-300', 'S', P, I],   // error: inverted range
-    ['seat',    'K0828', '350',     'x', P, I],   // error: no s/c
+    ['seat',    'K0831', '350',     'x', P, I],   // error: an unreadable seat word (I6: K0828, the old fixture, is solid by code — never an error)
     ['endash',  'K0829', '300–450', 'S', P, I], // warn: non-ASCII dash
     ['noimg',   'K0830', '350',     'S', P, ''],  // warn: no image
     ['',        '',      '',        '',  '', ''], // trailing blank row — ignored
@@ -5812,6 +5817,11 @@ test('F9: the catalog validator names the rows the engine cannot recommend', () 
   assert.deepStrictEqual([...new Set(errRows)], [3, 4, 5, 6, 7],
     'every unrecommendable row is named by its SHEET row (A2:F ⇒ index 0 is row 2)');
   assert.ok(!issues.some((x) => x.hcpcs === 'K0823'), 'a clean row raises nothing');
+  // I6 (cycle 22): an inherently-solid code with an unreadable seat cell still
+  // recommends as solid — a WARNING naming the word, never an error.
+  const solidX = intakeCatalogIssues_([['s', 'K0828', '350', 'x', P, I]]);
+  assert.ok(solidX.length === 1 && solidX[0].severity === 'warn' && /solid by code/.test(solidX[0].detail), 'K0828 with "x" warns, it does not error');
+  assert.deepStrictEqual(intakeCatalogIssues_([['s', 'K0828', '350', '', P, I]]), [], 'and a BLANK seat on a solid-by-code row is clean');
   assert.ok(!issues.some((x) => x.row === 10), 'a trailing blank row is not an error');
   assert.ok(warns.some((x) => x.hcpcs === 'K0829' && /dash/.test(x.detail)),
     'an EN dash reads as a flat cap, not a range — worth a warning');
@@ -12613,6 +12623,7 @@ test('B8: the catalog browse view is named, filtered purely, and error-vs-empty 
 test('B8: the catalog seat filter mirrors the engine letter test', () => {
   const ctx = { esc: (x) => String(x) };
   vm.createContext(ctx);
+  vm.runInContext(extractFunction('intake/script_intake.html', 'intakeSeatKindsClient_'), ctx);   // I2
   vm.runInContext(extractFunction('intake/script_intake.html', 'intakeFilterCatalog_'), ctx);
   const rows = [
     { hcpcs: 'K0821', features: 'captain seat', seatType: 'Captain' },
@@ -22863,7 +22874,10 @@ test('F-27: the intake email rows come from the SERVER\'s English bank and the c
   assert.strictEqual(acct[0].label, 'Demographics'); assert.strictEqual(acct[0].isHeader, true);
   assert.strictEqual(acct[1].label, 'Patient Full Name'); assert.strictEqual(acct[1].value, 'Pat');
   assert.strictEqual(acct[5].value, '1950-01-01', 'numeric and string keys both resolve');
-  assert.strictEqual(acct[1].isSecondary, true, 'SECONDARY_QUESTION_ROWS is 1-based (row 2 = index 1)');
+  // I8 (cycle 22): this pin asserted the defect. SECONDARY_QUESTION_ROWS is
+  // 0-based — the email body builder and the client both read it that way.
+  assert.strictEqual(acct[2].isSecondary, true, 'SECONDARY_QUESTION_ROWS is 0-based (PMD index 2 is secondary)');
+  assert.strictEqual(acct[1].isSecondary, false, 'and index 1 (the patient name) is not');
   const pap = JSON.parse(JSON.stringify(ctx.intakeAcctRowsEn_('PAP', {})));
   assert.strictEqual(pap.length, ctx.INTAKE_PAP_Q_EN.length); assert.strictEqual(pap[18].isHeader, true, 'PAP Details is a header (row 19)');
   // No send or preview path reads a client label any more.
@@ -28036,6 +28050,79 @@ test('M5: every voicemail in a thread is its own request — a repeat voicemail 
   const list = stripJsComments_(extractRawFunction('Code.js', 'getSpanishInboxPending'));
   assert.ok(/vmPendingByThread/.test(list) && /vmPending: vmPendingByThread\[tid\]\.n/.test(list),
     'the list shows ONE card per thread (resolve and claim act on the thread) and says how many are waiting');
+});
+
+
+// ---------------------------------------------------------------------------
+// cycle 22 Batch 8 — Intake, Forms, QA and Training correctness
+console.log('\ncycle 22 Batch 8 — Intake, Forms, QA and Training correctness');
+const B8_WEB = path.join(__dirname, '../../web-app');
+
+test('I2: a seat cell is read WORD BY WORD — "Captain Seat" is a captain seat, not a solid one — and the browse filter agrees with the engine', () => {
+  const ctx = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'intakeSeatKinds_'), ctx);
+  const s2 = buildSandbox([]);
+  const client = loadFunction(s2, 'intake/script_intake.html', 'intakeSeatKindsClient_');
+  const grid = ['S', 'C', 'S/C', 'Solid', 'Captain', 'Captain Seat', "Captain's", 'Solid seat', 'solid or captain', 'x', 'Sling', '', 'Captain / Solid'];
+  const expect = {
+    'S': [true, false], 'C': [false, true], 'S/C': [true, true], 'Solid': [true, false], 'Captain': [false, true],
+    'Captain Seat': [false, true], "Captain's": [false, true], 'Solid seat': [true, false], 'solid or captain': [true, true],
+    'x': [false, false], 'Sling': [false, false], '': [false, false], 'Captain / Solid': [true, true] };
+  grid.forEach((g) => {
+    const sv = JSON.parse(JSON.stringify(ctx.intakeSeatKinds_(g)));
+    const cv = JSON.parse(JSON.stringify(client(g)));
+    assert.deepStrictEqual(cv, sv, 'client and server agree on "' + g + '"');
+    assert.deepStrictEqual([sv.solid, sv.captain], expect[g], '"' + g + '"');
+  });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.intakeSeatKinds_('Sling').unknown)), ['sling'], 'an unreadable word is kept for the validator to name');
+  // Engine: a patient who needs a solid seat is NOT offered a "Captain Seat" chair.
+  const cat = [['Cap', 'K0823', '350', 'Captain Seat', 'https://p', 'https://i'], ['Sol', 'K0825', '350', 'Solid', 'https://p', 'https://i']];
+  const res = intakeFilterRecommendations_({ '43': 'multiple sclerosis', '38': '200' }, cat);
+  const codes = JSON.stringify(res);
+  assert.ok(!/K0823/.test(codes), 'the captain-seat chair fails the solid-seat gate (it used to pass on its letter s)');
+  assert.ok(/K0825/.test(codes), 'while the solid chair is still recommended (non-vacuous)');
+  const src = stripJsComments_(extractRawFunction('Code.js', 'intakeFilterRecommendations_'));
+  assert.ok(!/seatCode\.includes\(/.test(src), 'no letter test survives in the engine');
+});
+
+test('I3: the patient weight is the FIRST number in the answer — "250-260" is 250 lbs, and an answer with no number is a named decision factor', () => {
+  const ctx = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'intakeParseWeight_'), ctx);
+  const W = (t) => JSON.parse(JSON.stringify(ctx.intakeParseWeight_(t)));
+  assert.strictEqual(W('250-260').lbs, 250, 'a range reads its first number (it read 250260)');
+  assert.strictEqual(W('250.5 lbs').lbs, 250.5, 'the decimal survives (the cycle-8 fix)');
+  assert.strictEqual(W('about 1,250 lbs').lbs, 1250, 'a thousands comma is not a separator');
+  assert.deepStrictEqual([W('n/a').lbs, W('n/a').unreadable], [0, true], 'no number → 0 and UNREADABLE');
+  assert.deepStrictEqual([W('').lbs, W('').unreadable], [0, false], 'blank is simply not provided');
+  const rows = intakeExplainFactors_({ '38': 'heavy' });
+  const w = rows.find((r) => r.label === 'Weight');
+  assert.ok(/UNREADABLE/.test(w.value) && /NO weight-capacity check/.test(w.value), 'the rep is told the weight was not read and what that did');
+});
+
+test('I4: an unreadable submissions tab is NAMED on the Sent tab — never "No matching intake submissions" (driven render)', () => {
+  const src = stripJsComments_(extractRawFunction('Code.js', 'intakeListMySubmissions'));
+  assert.ok(/catch \(e\) \{ failedTypes\.push\(ft\); return; \}/.test(src) && /failedTypes: failedTypes/.test(src), 'the server ships which form types failed');
+  const s2 = buildSandbox([]);
+  s2.icon = () => ''; s2.esc = (x) => String(x == null ? '' : x);
+  loadFunction(s2, 'intake/script_intake.html', 'intakeFormPill_');
+  const r = loadFunction(s2, 'intake/script_intake.html', 'intakeRenderSentList_');
+  const none = r([], false, ['PPD', 'PMD', 'PAP']);
+  assert.ok(/Could not read the PPD \/ PMD \/ PAP submissions/.test(none) && !/No matching intake submissions/.test(none), 'nothing readable is a failure, not an empty list');
+  const some = r([{ formType: 'PMD', patientInfo: 'Pat', timestamp: 't', recipient: 'x' }], false, ['PPD']);
+  assert.ok(/Could not read the PPD submissions/.test(some) && /Pat/.test(some), 'a partial list says it is partial');
+  assert.ok(/No matching intake submissions/.test(r([], false, [])), 'a real empty list still reads as empty');
+});
+
+test('I5: an unanswered account Yes/No reads "Not answered" in the email — never the same box as a deliberate No (driven)', () => {
+  const ctx = vm.createContext({ String, Number, esc_: (x) => String(x),
+    CN_EMAIL_PALETTE: { muted2: '#m2', muted3: '#m3', paperCard: '#pc', paper: '#p', line: '#l', ink: '#i', warn: '#w', accent: '#a' },
+    intakeSectionRowHtml_: (l) => '<h>' + l + '</h>' });
+  vm.runInContext(extractRawFunction('Code.js', 'intakeBuildAcctBodyHtml_'), ctx);
+  const layout = { HEADER_ROWS: [], CHECKBOX_ROWS: [3], CHECKBOX_WARN_ROWS: [], SECONDARY_QUESTION_ROWS: [], CONDITIONAL_FORMATTING_ROWS: {} };
+  const html = (v) => ctx.intakeBuildAcctBodyHtml_([{ qIndex: 3, label: 'Q', value: v }], layout);
+  assert.ok(/&#10003;/.test(html('TRUE')), 'yes is the check');
+  assert.ok(/>No</.test(html('FALSE')) && !/Not answered/.test(html('FALSE')), 'a deliberate No says No');
+  assert.ok(/Not answered/.test(html('')) && !/>No</.test(html('')), 'an untouched toggle says Not answered');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

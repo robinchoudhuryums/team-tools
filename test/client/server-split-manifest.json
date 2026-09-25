@@ -1160,6 +1160,35 @@
     "spanishVmFold_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "cycle 22 Batch 8: I2 intakeSeatKinds_, I6 intakeInherentlySolidCodes_, I3 intakeParseWeight_",
+   "added": [
+    "intakeInherentlySolidCodes_",
+    "intakeParseWeight_",
+    "intakeSeatKinds_"
+   ],
+   "removed": [],
+   "changed": [
+    "intakeAcctRowsEn_",
+    "intakeBuildAcctBodyHtml_",
+    "intakeCatalogIssues_",
+    "intakeDeriveClinicalFactors_",
+    "intakeExplainFactors_",
+    "intakeFilterRecommendations_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "cycle 22 Batch 8: I4 intakeListMySubmissions names failed form types",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "intakeListMySubmissions"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5477,7 +5506,7 @@
   "intakeAcctRowsEn_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "dc1c961fb964857d"
+   "sha": "63c60babe95c2d87"
   },
   "intakeAmendBannerHtml_": {
    "file": "60_intake.js",
@@ -5502,7 +5531,7 @@
   "intakeBuildAcctBodyHtml_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "5c4dc28829246513"
+   "sha": "1cbf55204f99bf14"
   },
   "intakeBuildPpdBodyHtml_": {
    "file": "60_intake.js",
@@ -5512,7 +5541,7 @@
   "intakeCatalogIssues_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "a13c299690f56168"
+   "sha": "56ea331167b9849b"
   },
   "intakeDecodeImages_": {
    "file": "60_intake.js",
@@ -5522,7 +5551,7 @@
   "intakeDeriveClinicalFactors_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "8e32917d17d05fa0"
+   "sha": "0acbf1256fccfc72"
   },
   "intakeEmailDomain_": {
    "file": "60_intake.js",
@@ -5537,7 +5566,7 @@
   "intakeExplainFactors_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "89bda29295fd6315"
+   "sha": "f8fdda0677917eba"
   },
   "intakeFeedbackCtaHtml_": {
    "file": "60_intake.js",
@@ -5562,7 +5591,7 @@
   "intakeFilterRecommendations_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "d25640bc35055f68"
+   "sha": "51eebd1a32438cc7"
   },
   "intakeGetSubmission": {
    "file": "60_intake.js",
@@ -5574,15 +5603,25 @@
    "kind": "function",
    "sha": "605984d43b79ce61"
   },
+  "intakeInherentlySolidCodes_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "a6069cf3c832f400"
+  },
   "intakeListMySubmissions": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "6d5af121c1dba995"
+   "sha": "fea829e71d20ec1e"
   },
   "intakeListOfferings": {
    "file": "60_intake.js",
    "kind": "function",
    "sha": "5e430c7bb6c98d4b"
+  },
+  "intakeParseWeight_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "a89897bd2b71f478"
   },
   "intakePpdAnswerStyles_": {
    "file": "60_intake.js",
@@ -5628,6 +5667,11 @@
    "file": "60_intake.js",
    "kind": "function",
    "sha": "525049c88d6602b8"
+  },
+  "intakeSeatKinds_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "f22354d1a3dff5a2"
   },
   "intakeSectionRowHtml_": {
    "file": "60_intake.js",
