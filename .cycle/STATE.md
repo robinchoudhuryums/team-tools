@@ -4,9 +4,9 @@
 Cycle: 22 — opened 2026-09-23 by a `/broad-scan` (99 findings: 0 Critical /
 3 High; nine-batch implementation plan). Cycle 21 + 21post are in HISTORY.md.
 Phase: implement
-Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9) + S2 DONE + Batch 2 DONE (T1, T3, T2, T6, C1, C5) + follow-ons F1–F5 DONE + Batch 3 DONE (I1, C4, K2, K6, C3, D6, D7, C6, C10, C11) + Batch 4 DONE (M4, M1, X3, M2, M8, M3, M7, M9, D1, D2) + Batch 5 DONE (K3, K1, K4, K5, X1, K7, K9, K12, K11, K13, K10) + Batch 6 DONE (A1, A2, C2, A3, S7, A4, A5, A6, A8) + Batch 7 DONE (T5, T4, T7, T8, T9, T10, T11, D3, D5, M10, M5) + Batch 8 DONE (I2, I3, S5, D8, D4, C7, C8, C9, I4, I5, I6, I7, D9, I8) + follow-ups FU DONE (the T5 half-day rework + the Batch 6–8 follow-ons) + Batch 9 DONE (U1, U5, U6, U2, U3, U4, A7, A9, M11) — the nine-batch plan is complete
+Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9) + S2 DONE + Batch 2 DONE (T1, T3, T2, T6, C1, C5) + follow-ons F1–F5 DONE + Batch 3 DONE (I1, C4, K2, K6, C3, D6, D7, C6, C10, C11) + Batch 4 DONE (M4, M1, X3, M2, M8, M3, M7, M9, D1, D2) + Batch 5 DONE (K3, K1, K4, K5, X1, K7, K9, K12, K11, K13, K10) + Batch 6 DONE (A1, A2, C2, A3, S7, A4, A5, A6, A8) + Batch 7 DONE (T5, T4, T7, T8, T9, T10, T11, D3, D5, M10, M5) + Batch 8 DONE (I2, I3, S5, D8, D4, C7, C8, C9, I4, I5, I6, I7, D9, I8) + follow-ups FU DONE (the T5 half-day rework + the Batch 6–8 follow-ons) + Batch 9 DONE (U1, U5, U6, U2, U3, U4, A7, A9, M11) — the nine-batch plan is complete + the five DEFERRED findings DONE per the operator's 2026-09-25 decisions (S6, S8, S10, M6, C12)
 Test Command: manual
-Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent) · S2 (phased, blanket): L (~9 h) — helper+pin 1h · wrap every write site ~180 + pin repairs 6h · derived pin + bite-checks 2h | S2 Actual: ~5 h · Batch 2: M (~11.5 h) — T1 M 3h · T3 M 3h · T2 S 1.5h · T6 S 1.5h · C1 S 1.5h · C5 S 1h | Batch 2 Actual: ~4.5 h · Follow-ons F1–F5: M (~7 h) — F1 cleanup lock S 1h · F2 TSV twin S 1h · F3 stored-formula scan M 2h · F4 Spanish grid + grow-first net S 1h · F5 Day Edit stray leaves M 2h | Follow-ons Actual: ~3.5 h · Batch 3: L (~12 h) — I1 M 2.5h · C4 S 1.5h · K2 S 1.5h · K6 S 1h · C3 S 1h · D6 S 1.5h · D7 S 1h · C6 S 1h · C10 S 1h · C11 S 0.5h | Batch 3 Actual: ~5 h · Batch 4: L (~11 h) — M4 S 1.5h · M1 S 1h · X3 S 0.5h · M2 S 1h · M3 S 1.5h · M7 S 1.5h · M8 S 1h · M9 S 1h · D1 S 1.5h · D2 S 0.5h | Batch 4 Actual: ~3.5 h · Batch 5: L (~12 h) — K3 M 2.5h · K1 S 1.5h · K4 M 2h · K5 S 1.5h · X1 S 1h · K7 S 1h · K9 S 0.5h · K12 S 1h · K11 S 0.5h · K13 S 0.5h · K10 S 0.25h | Batch 5 Actual: ~3 h · Batch 6: L (~12 h) — A1 M 3h · A2 M 3h · C2 S 1h · A3 S 1h · S7 S 1.5h · A4 S 1h · A5 S 0.5h · A6 S 0.5h · A8 S 0.5h | Batch 6 Actual: ~3.5 h · Batch 7: L (~13 h) — T5 M 2h · T4 S 1.5h · T7 S 1.5h · T8 S 1h · T9 S 0.5h · T10 S 0.5h · T11 S 0.5h · D3 M 2h · D5 S 1h · M10 S 1h · M5 S 1.5h | Batch 7 Actual: ~4 h · Batch 8: L (~12 h) — I2 S 1.5h · I3 S 1h · S5 S 1h · D8 S 1.5h · D4 S 1h · C7 S 1.5h · C8 S 1h · C9 S 1h · I4 S 0.5h · I5 S 1h · I6 S 0.5h · I7 S 0.5h · D9 S 0.5h · I8 S 0.25h | Batch 8 Actual: ~3.5 h · Follow-ups FU (B6–B8 + T5 rework): L (~10 h) — T5 rework M 2h · urgent-digest error S 0.5h · clientErrors on the dot S 0.25h · daily job no-run evidence S 1h · trigger-installer offboard S 1h · QA/Spanish lists S 0.5h · one cannot-confirm caption S 0.25h · creating flows bust S 0.5h · voicemail body + count S 1h · cross-window invalidation S 0.5h · doc integrity on read S 1h · inline weight warning S 0.5h · void audit row S 0.25h | FU Actual: ~4 h · Batch 9: M (~7.5 h) — U1 S 1h · U5 S 1h · U6 S 1.5h · U2 S 0.5h · U3 S 0.5h · U4 S 1h · A7 S 0.5h · A9 S 0.5h · M11 S 0.5h | Batch 9 Actual: ~2.5 h · Deferred DF (S6, S8, S10, M6, C12): M (~6 h) — S6 S 1.5h · S8 S 0.5h · S10 S 1h · M6 M 2h · C12 S 1h
+Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent) · S2 (phased, blanket): L (~9 h) — helper+pin 1h · wrap every write site ~180 + pin repairs 6h · derived pin + bite-checks 2h | S2 Actual: ~5 h · Batch 2: M (~11.5 h) — T1 M 3h · T3 M 3h · T2 S 1.5h · T6 S 1.5h · C1 S 1.5h · C5 S 1h | Batch 2 Actual: ~4.5 h · Follow-ons F1–F5: M (~7 h) — F1 cleanup lock S 1h · F2 TSV twin S 1h · F3 stored-formula scan M 2h · F4 Spanish grid + grow-first net S 1h · F5 Day Edit stray leaves M 2h | Follow-ons Actual: ~3.5 h · Batch 3: L (~12 h) — I1 M 2.5h · C4 S 1.5h · K2 S 1.5h · K6 S 1h · C3 S 1h · D6 S 1.5h · D7 S 1h · C6 S 1h · C10 S 1h · C11 S 0.5h | Batch 3 Actual: ~5 h · Batch 4: L (~11 h) — M4 S 1.5h · M1 S 1h · X3 S 0.5h · M2 S 1h · M3 S 1.5h · M7 S 1.5h · M8 S 1h · M9 S 1h · D1 S 1.5h · D2 S 0.5h | Batch 4 Actual: ~3.5 h · Batch 5: L (~12 h) — K3 M 2.5h · K1 S 1.5h · K4 M 2h · K5 S 1.5h · X1 S 1h · K7 S 1h · K9 S 0.5h · K12 S 1h · K11 S 0.5h · K13 S 0.5h · K10 S 0.25h | Batch 5 Actual: ~3 h · Batch 6: L (~12 h) — A1 M 3h · A2 M 3h · C2 S 1h · A3 S 1h · S7 S 1.5h · A4 S 1h · A5 S 0.5h · A6 S 0.5h · A8 S 0.5h | Batch 6 Actual: ~3.5 h · Batch 7: L (~13 h) — T5 M 2h · T4 S 1.5h · T7 S 1.5h · T8 S 1h · T9 S 0.5h · T10 S 0.5h · T11 S 0.5h · D3 M 2h · D5 S 1h · M10 S 1h · M5 S 1.5h | Batch 7 Actual: ~4 h · Batch 8: L (~12 h) — I2 S 1.5h · I3 S 1h · S5 S 1h · D8 S 1.5h · D4 S 1h · C7 S 1.5h · C8 S 1h · C9 S 1h · I4 S 0.5h · I5 S 1h · I6 S 0.5h · I7 S 0.5h · D9 S 0.5h · I8 S 0.25h | Batch 8 Actual: ~3.5 h · Follow-ups FU (B6–B8 + T5 rework): L (~10 h) — T5 rework M 2h · urgent-digest error S 0.5h · clientErrors on the dot S 0.25h · daily job no-run evidence S 1h · trigger-installer offboard S 1h · QA/Spanish lists S 0.5h · one cannot-confirm caption S 0.25h · creating flows bust S 0.5h · voicemail body + count S 1h · cross-window invalidation S 0.5h · doc integrity on read S 1h · inline weight warning S 0.5h · void audit row S 0.25h | FU Actual: ~4 h · Batch 9: M (~7.5 h) — U1 S 1h · U5 S 1h · U6 S 1.5h · U2 S 0.5h · U3 S 0.5h · U4 S 1h · A7 S 0.5h · A9 S 0.5h · M11 S 0.5h | Batch 9 Actual: ~2.5 h · Deferred DF (S6, S8, S10, M6, C12): M (~6 h) — S6 S 1.5h · S8 S 0.5h · S10 S 1h · M6 M 2h · C12 S 1h | DF Actual: ~2.5 h
 Subsystem cycles since last Seams audit: 1 — reset to 0 by the 2026-09-18 audit
 (batch S), +1 for the 21post reflection. The cadence is every 4.
 Updated: 2026-09-25
@@ -85,6 +85,8 @@ Updated: 2026-09-25
   Block: `.cycle/blocks/22-FU-broad-implement.md`
 - U1–U6, A7, A9, M11 | cn, intake, qa, script_core, modals, 10_core, 51_spanish, metrics | Batch 9: CN export link-first + ensureOverlay; shell shortcut keys through the opener; honest copy-image fallback; per-execution build hash; QA keys yield to dialogs/controls; reveal arrows + clear, Clear confirms; stored auto-tag rules; half-filled departments refused; company-holiday copy + voicemail settings in the Spanish key. New DERIVED overlay net.
   Block: `.cycle/blocks/22-B9-broad-implement.md`
+- S6, S8, S10, M6, C12 | 90_qa, 10_core, 61_forms, 80_training, 50_deptrequests, 30_callnotes + clients | The deferred findings: no QA self-review (admin exception); no cross-site framing; score-only on a failed quiz attempt; Dept Request SLAs in working days (legacy hours map read as calendar intent, flagged); archived ranges say so.
+  Block: `.cycle/blocks/22-DF-broad-implement.md`
 - F1 | Tests.js | every live-tab positional delete in the suite goes through _deleteRowsWhereLocked_ (ScriptLock from snapshot to last delete)
 - F2 | script_core.html, metrics/script_metrics.html | tsvCell_/tsvRow_ — the client twin of sheetSafe_ on every "Copy table" line
 - F3 | 10_core.js, cn/script_callnotes.html | adminScanStoredFormulas + Admin → System → Stored formulas (read-only, on demand)
@@ -168,10 +170,12 @@ Updated: 2026-09-25
 - **Batch 9 follow-ons (22-B9 block):** the coaching business-days note and
   the Spanish auto-assign flag description still say "US holidays"; Save
   Departments lets two rows share a name; no scenario photographs the CN export
-  dialog, the shell-opened shortcuts overlay or the Clear confirm. The scan's
-  DEFERRED items need operator decisions: S6 (QA self-review), S8 (framing),
-  S10 (quiz feedback/retries vs spec §9.4), M6 (SLA business-hours re-basing),
-  C12 (archive-aware reads).
+  dialog, the shell-opened shortcuts overlay or the Clear confirm.
+- **Deferred-findings follow-ons (22-DF block):** S6 is server-only (the QA
+  detail still offers the controls on one's own recording); S6 does not cover
+  self-assign or comments; C12's full archive-aware reads wait for archiving.
+  OPERATOR after deploy: review the Dept-Request SLA targets if the legacy note
+  shows, and save.
 - **Follow-ups FU follow-ons (22-FU block; docs SYNCED 2026-09-25 with Batches 7 + 8)** — the Batch 6, 7 and 8 follow-ons
   and the T5 half-day rework are DONE. Left: the half-day grade reads one
   ClockIn/ClockOut pair (multi-stint half days under-count); the daily no-run
@@ -227,8 +231,9 @@ Updated: 2026-09-25
   decided by which items carry `listed cities` in col I.
 
 ## Decisions made (so the next session doesn't re-litigate)
-- **S6 (operator, 2026-09-25):** a QA reviewer may NOT review their own calls — except a user with the admin role. Not yet implemented (score / finish / share / re-attribute of a recording whose agent is the caller must refuse unless `isAdmin`).
-- **S8 (operator, 2026-09-25):** nothing embeds the app today, so framing may be restricted (ALLOWALL → default SAMEORIGIN on the internal shell; the public form route to be checked separately). Not yet implemented.
+- **S6 (operator, 2026-09-25):** a QA reviewer may NOT review their own calls — except a user with the admin role. IMPLEMENTED (22-DF).
+- **S8 (operator, 2026-09-25):** nothing embeds the app, so framing is restricted everywhere (DEFAULT). IMPLEMENTED (22-DF).
+- **S10 / M6 / C12 (operator, 2026-09-25, "per your recommendation"):** score-only on a failed quiz attempt; SLA targets in working days (default 2); C12 = the honest archive label now, the full archive-aware reads only when archiving is turned on. IMPLEMENTED (22-DF).
 - A half day is "at least half the typical hours (4 h), at any time of day" — never "the other half of the shift" (operator, 2026-09-25; T5 rework owed, see follow-ons).
 - **S2 deferred out of Batch 1** (operator, 2026-09-23) — then implemented in
   its most complete form on the operator's request: a BLANKET boundary over
@@ -263,8 +268,7 @@ Updated: 2026-09-25
   amber** with their own explanations (operator, 2026-09-22).
 
 ## Where I left off
-All nine batches of cycle 22's broad-scan plan, S2, follow-ons F1–F5 and the
-follow-ups are committed and pushed; none is deployed. Docs are synced through
-the follow-ups; Batch 9's are owed. Next: `/sync-docs` (Batch 9), then deploy +
-the walks (S118 and the batch blocks' steps), then `/reflect` to close the cycle;
-the five deferred findings wait on operator decisions.
+All nine batches, S2, F1–F5, the follow-ups and the five deferred findings of
+cycle 22 are committed and pushed; none is deployed. Docs are synced through the
+follow-ups; Batch 9 and the deferred findings (22-DF) are owed, including the
+§9.4 spec change. Next: `/sync-docs`, then deploy + the walks, then `/reflect`.
