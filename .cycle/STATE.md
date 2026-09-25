@@ -4,12 +4,12 @@
 Cycle: 22 — opened 2026-09-23 by a `/broad-scan` (99 findings: 0 Critical /
 3 High; nine-batch implementation plan). Cycle 21 + 21post are in HISTORY.md.
 Phase: implement
-Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9) + S2 DONE + Batch 2 DONE (T1, T3, T2, T6, C1, C5) + follow-ons F1–F5 DONE + Batch 3 DONE (I1, C4, K2, K6, C3, D6, D7, C6, C10, C11) + Batch 4 DONE (M4, M1, X3, M2, M8, M3, M7, M9, D1, D2) + Batch 5 DONE (K3, K1, K4, K5, X1, K7, K9, K12, K11, K13, K10)
+Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9) + S2 DONE + Batch 2 DONE (T1, T3, T2, T6, C1, C5) + follow-ons F1–F5 DONE + Batch 3 DONE (I1, C4, K2, K6, C3, D6, D7, C6, C10, C11) + Batch 4 DONE (M4, M1, X3, M2, M8, M3, M7, M9, D1, D2) + Batch 5 DONE (K3, K1, K4, K5, X1, K7, K9, K12, K11, K13, K10) + Batch 6 DONE (A1, A2, C2, A3, S7, A4, A5, A6, A8)
 Test Command: manual
-Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent) · S2 (phased, blanket): L (~9 h) — helper+pin 1h · wrap every write site ~180 + pin repairs 6h · derived pin + bite-checks 2h | S2 Actual: ~5 h · Batch 2: M (~11.5 h) — T1 M 3h · T3 M 3h · T2 S 1.5h · T6 S 1.5h · C1 S 1.5h · C5 S 1h | Batch 2 Actual: ~4.5 h · Follow-ons F1–F5: M (~7 h) — F1 cleanup lock S 1h · F2 TSV twin S 1h · F3 stored-formula scan M 2h · F4 Spanish grid + grow-first net S 1h · F5 Day Edit stray leaves M 2h | Follow-ons Actual: ~3.5 h · Batch 3: L (~12 h) — I1 M 2.5h · C4 S 1.5h · K2 S 1.5h · K6 S 1h · C3 S 1h · D6 S 1.5h · D7 S 1h · C6 S 1h · C10 S 1h · C11 S 0.5h | Batch 3 Actual: ~5 h · Batch 4: L (~11 h) — M4 S 1.5h · M1 S 1h · X3 S 0.5h · M2 S 1h · M3 S 1.5h · M7 S 1.5h · M8 S 1h · M9 S 1h · D1 S 1.5h · D2 S 0.5h | Batch 4 Actual: ~3.5 h · Batch 5: L (~12 h) — K3 M 2.5h · K1 S 1.5h · K4 M 2h · K5 S 1.5h · X1 S 1h · K7 S 1h · K9 S 0.5h · K12 S 1h · K11 S 0.5h · K13 S 0.5h · K10 S 0.25h | Batch 5 Actual: ~3 h · Batch 6: L (~12 h) — A1 M 3h · A2 M 3h · C2 S 1h · A3 S 1h · S7 S 1.5h · A4 S 1h · A5 S 0.5h · A6 S 0.5h · A8 S 0.5h
+Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent) · S2 (phased, blanket): L (~9 h) — helper+pin 1h · wrap every write site ~180 + pin repairs 6h · derived pin + bite-checks 2h | S2 Actual: ~5 h · Batch 2: M (~11.5 h) — T1 M 3h · T3 M 3h · T2 S 1.5h · T6 S 1.5h · C1 S 1.5h · C5 S 1h | Batch 2 Actual: ~4.5 h · Follow-ons F1–F5: M (~7 h) — F1 cleanup lock S 1h · F2 TSV twin S 1h · F3 stored-formula scan M 2h · F4 Spanish grid + grow-first net S 1h · F5 Day Edit stray leaves M 2h | Follow-ons Actual: ~3.5 h · Batch 3: L (~12 h) — I1 M 2.5h · C4 S 1.5h · K2 S 1.5h · K6 S 1h · C3 S 1h · D6 S 1.5h · D7 S 1h · C6 S 1h · C10 S 1h · C11 S 0.5h | Batch 3 Actual: ~5 h · Batch 4: L (~11 h) — M4 S 1.5h · M1 S 1h · X3 S 0.5h · M2 S 1h · M3 S 1.5h · M7 S 1.5h · M8 S 1h · M9 S 1h · D1 S 1.5h · D2 S 0.5h | Batch 4 Actual: ~3.5 h · Batch 5: L (~12 h) — K3 M 2.5h · K1 S 1.5h · K4 M 2h · K5 S 1.5h · X1 S 1h · K7 S 1h · K9 S 0.5h · K12 S 1h · K11 S 0.5h · K13 S 0.5h · K10 S 0.25h | Batch 5 Actual: ~3 h · Batch 6: L (~12 h) — A1 M 3h · A2 M 3h · C2 S 1h · A3 S 1h · S7 S 1.5h · A4 S 1h · A5 S 0.5h · A6 S 0.5h · A8 S 0.5h | Batch 6 Actual: ~3.5 h
 Subsystem cycles since last Seams audit: 1 — reset to 0 by the 2026-09-18 audit
 (batch S), +1 for the 21post reflection. The cadence is every 4.
-Updated: 2026-09-23
+Updated: 2026-09-25
 
 ## In progress (facts to carry forward — NOT judgments)
 - Batch 1, S2, Batch 2, the follow-ons, Batch 3 and Batch 4 are committed on
@@ -58,6 +58,14 @@ Updated: 2026-09-23
 - K9 · K12 · K13 · K11 · K10 | 70_kb.js, kb, cn | blank rows skipped; header roles shown + docs; newest comments; word-bounded tone; no double escape
 - X1 | test/visual/mock.js, run.js | the diagnostics fixture (pinned to the real resolvers) + the shrink-only "every client RPC has a fixture or is named" net
   Block: `.cycle/blocks/22-B5-broad-implement.md`
+- A1 | 00_config.js, 10_core.js, cn/script_callnotes.html | per-job run ledger (AUTOMATION_RUN_<action>, stamped by writeAuditLog_); the audit window is reported and a monthly "not run" needs the window to reach the 1st
+- A2 | 10_core.js, cn/script_callnotes.html | automationProblems_ {items:true}; getAutomationHealth ships the dot's list and the System tab renders every kind it has no branch for
+- C2 | 30_callnotes.js | the weekly digest stamps a queue {error} and withholds the heartbeat
+- A3 | 50_deptrequests.js | a configured Dept Requests store that will not open throws by name — no ADP fallback
+- S7 | 20_timeclock.js, 10_core.js, cn/script_callnotes.html | offboarding removes the address from MANAGER_EMAILS / ADMIN_EMAILS (keeps a last entry, named), records OFFBOARDED_EMAILS; the drift detector keys on the list
+- A4, A5, A6 | cn/script_callnotes.html, 10_core.js | named read failures: tag taxonomy, deploy readiness, ClientErrors
+- A8 | 10_core.js | the automation-error map RMW serialised on the user lock (fail-open)
+  Block: `.cycle/blocks/22-B6-broad-implement.md`
 - F1 | Tests.js | every live-tab positional delete in the suite goes through _deleteRowsWhereLocked_ (ScriptLock from snapshot to last delete)
 - F2 | script_core.html, metrics/script_metrics.html | tsvCell_/tsvRow_ — the client twin of sheetSafe_ on every "Copy table" line
 - F3 | 10_core.js, cn/script_callnotes.html | adminScanStoredFormulas + Admin → System → Stored formulas (read-only, on demand)
@@ -138,6 +146,11 @@ Updated: 2026-09-23
   quote sent; 100+ comments show the newest. After deploy read Admin → System
   → Reference lookups: the "Cannot read" list (K3 may have added cells with
   harmless extra words) and the delivery header roles.
+- **Batch 6 follow-ons (22-B6 block):** the urgent digest reads
+  managerAggregateUrgent_'s {error} as empty (C2's shape); clientErrors.error
+  is not on the dot; a daily job with no run on record stays silent; offboarding
+  the trigger installer is undetected; QA_MEMBERS / SPANISH_INBOX_MEMBERS not
+  edited by offboarding; one caption for the "cannot confirm" rows.
 - **Batch 5 follow-ons (22-B5 block):** X1 names 31 reads owed a fixture; K3's
   connective list may need the operator's real words; K4 maps no city aliases
   beyond the abbreviations; the address hint is not photographed. STILL OPEN:
@@ -216,8 +229,9 @@ Updated: 2026-09-23
   amber** with their own explanations (operator, 2026-09-22).
 
 ## Where I left off
-Batch 1, S2, Batch 2, follow-ons F1–F5, Batch 3 and Batch 4 of cycle 22 are
-committed and pushed (Batch 5 on top of the Batch 4 docs sync); none is
-deployed. Docs are synced through Batch 5 (PR opened and merged 2026-09-25).
-Next: deploy + the walks; or
-`/broad-implement Batch 6` (automation health honesty) from the scan's plan.
+Batches 1–6, S2 and follow-ons F1–F5 of cycle 22 are committed and pushed;
+none is deployed. Docs are synced through Batch 5; Batch 6 (automation health
+honesty) is implemented — block `.cycle/blocks/22-B6-broad-implement.md`.
+Next: `/sync-docs` for Batch 6 (g151, INV-263+, S117, operator-state entries
+for AUTOMATION_RUN_* and OFFBOARDED_EMAILS), then deploy + the walks, or
+`/broad-implement Batch 7`.

@@ -1787,15 +1787,20 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // The last open-punch scan (operator 2026-09-15). A CLEAN board: zero
       // days, so automationProblems_ emits nothing — but every shape it reads
       // is present, which is what INV-185 is checking.
-      openPunches: { at: Date.now(), reps: 0, days: 0, expiring: 0, detail: [],
+      // A2 (cycle 22): the populated fixture carries ONE open-punch finding —
+      // a kind the System tab only renders because it now reads the dot's own
+      // list — so the Admin scenarios photograph it. `problems` below is what
+      // automationProblems_ emits for exactly this openPunches shape.
+      openPunches: { at: Date.now(), reps: 1, days: 2, expiring: 0, detail: [{ name: 'Jordan Reyes', count: 2 }],
         window: { start: '2026-08-16', end: '2026-09-13', adjustWindowDays: 30 } },
       selfTest: { date: daysAgo(0), mode: 'smoke', pass: 74, fail: 0, skip: 0, error: '', note: '', running: false, startedAt: null, stuck: false },
       intakeCatalog: { ok: true, totalRows: 22, errors: [], warnings: [] },
-      auditScanComplete: true,
-      // A1 (cycle 22) — the window "no audit row" is measured against.
-      auditWindow: { complete: true, startMgr: '', rows: 4000 },
-      // A2 (cycle 22) — getAutomationHealth attaches the dot's own list. Clean.
-      problems: [],
+      auditScanComplete: false,
+      // A1 (cycle 22) — the window "no audit row" is measured against. A
+      // TRUNCATED window, as on a busy production AuditLog, so the "last seen"
+      // rows with no run on record say they cannot confirm.
+      auditWindow: { complete: false, startMgr: daysAgo(9) + ' 08:12:40', rows: 4000 },
+      problems: [{ kind: 'openPunch', key: 'days', text: 'Open punches: 2 day(s) across 1 rep(s) have no usable clock-in/clock-out pair — Jordan Reyes (2). Those days earn no hours and no PTO until they are fixed (checked 2026-08-16…2026-09-13).' }],
       managerTzAbbr: 'CST',
       auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',
     },

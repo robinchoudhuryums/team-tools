@@ -11416,7 +11416,9 @@ function cnRenderHealthPanel_(res) {
  *  TRUNCATED tail cannot tell "never ran" from "scrolled out" — so it says so. */
 function cnRunNeverText_(win) {
   if (win && win.complete === false) {
-    return '<span style="color:var(--warning-deep)">' + icon('warning', 11) + ' cannot confirm — not in the run ledger yet, and no row in the last ' +
+    // Muted, not amber: this row is reference detail for EVERY job, including
+    // the ones not expected to run; the findings above carry the verdicts.
+    return '<span style="color:var(--muted)">no run on record — cannot confirm: nothing in the run ledger yet, and no row in the last ' +
       esc(win.rows || '') + ' AuditLog rows' + (win.startMgr ? ' (back to ' + esc(win.startMgr) + ')' : '') +
       '. The ledger records its next run.</span>';
   }
