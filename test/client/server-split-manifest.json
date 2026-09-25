@@ -1068,6 +1068,35 @@
     "computeAutomationHealth_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "cycle 22 Batch 6: S7 gate-list removal on offboard + detector keyed on the list; A8 automation-error lock",
+   "added": [
+    "OFFBOARDED_EMAILS_MAX",
+    "OFFBOARDED_EMAILS_PROP",
+    "OFFBOARD_GATE_LISTS",
+    "clearAutomationErrorUnlocked_",
+    "gateListWithout_",
+    "offboardFromGateLists_",
+    "readOffboardedEmails_",
+    "stampAutomationErrorUnlocked_",
+    "withAutomationErrorLock_"
+   ],
+   "removed": [],
+   "changed": [
+    "automationDetectorChecks_",
+    "clearAutomationError_",
+    "clientErrorsSummary_",
+    "deployReadinessItems_",
+    "getDeployReadiness",
+    "getDeptRequestsSS_",
+    "managerSourceDrift_",
+    "offboardEmployee",
+    "sendCallNotesWeeklyDigests",
+    "stampAutomationError_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2282,6 +2311,21 @@
    "kind": "const",
    "sha": "7a0dc3c58da6b826"
   },
+  "OFFBOARDED_EMAILS_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "73c811c3431cc9c4"
+  },
+  "OFFBOARDED_EMAILS_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6368d71c852dd19f"
+  },
+  "OFFBOARD_GATE_LISTS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e56df5966a5e911f"
+  },
   "OOP_ELIG_MAX_ITEMS": {
    "file": "00_config.js",
    "kind": "const",
@@ -3290,7 +3334,7 @@
   "automationDetectorChecks_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "9e3ce057e4050391"
+   "sha": "8e2d778713c5401e"
   },
   "automationJobProblems_": {
    "file": "10_core.js",
@@ -3627,10 +3671,15 @@
    "kind": "function",
    "sha": "40e1f07db7f4b0e0"
   },
+  "clearAutomationErrorUnlocked_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "d6f4aca6aeb90162"
+  },
   "clearAutomationError_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "c6ecadb2f803c15a"
+   "sha": "a0ed0fca8de8462d"
   },
   "clearCaches_": {
    "file": "10_core.js",
@@ -3660,7 +3709,7 @@
   "clientErrorsSummary_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "94487ec6f246da5f"
+   "sha": "0c904f2c38a4ce12"
   },
   "cnAppendBounded_": {
    "file": "30_callnotes.js",
@@ -3990,7 +4039,7 @@
   "deployReadinessItems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "820c1dc763c26abb"
+   "sha": "28c90621c1bd6221"
   },
   "deptRequestsOverdueOpen_": {
    "file": "50_deptrequests.js",
@@ -4382,6 +4431,11 @@
    "kind": "function",
    "sha": "2008740a675de95d"
   },
+  "gateListWithout_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "e8ea21798cdd3650"
+  },
   "generateExportSheet_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -4585,7 +4639,7 @@
   "getDeployReadiness": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "e033723cdb50fc4d"
+   "sha": "7393a0f913471041"
   },
   "getDeployStamp": {
    "file": "10_core.js",
@@ -4620,7 +4674,7 @@
   "getDeptRequestsSS_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "9a41dfa05e295456"
+   "sha": "6773bf29b37274e7"
   },
   "getDocsDashboard": {
    "file": "81_empdocs.js",
@@ -6140,7 +6194,7 @@
   "managerSourceDrift_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "c3ef16b811cfb3a5"
+   "sha": "ccc6f14bc03e3c64"
   },
   "managerSubmitTimeOff": {
    "file": "20_timeclock.js",
@@ -6305,7 +6359,12 @@
   "offboardEmployee": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "3b91eef65a2909a6"
+   "sha": "f9f59d6715daf80a"
+  },
+  "offboardFromGateLists_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "a45b4c990befc84d"
   },
   "oopCodeIndex_": {
    "file": "70_kb.js",
@@ -6847,6 +6906,11 @@
    "kind": "function",
    "sha": "2e4229518eb270ba"
   },
+  "readOffboardedEmails_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "bc77dbd291566774"
+  },
   "readOpenPunchCheck_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -7230,7 +7294,7 @@
   "sendCallNotesWeeklyDigests": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "3e3a95de54fd53ee"
+   "sha": "735d7bda4f3a9301"
   },
   "sendCoachingRecapDigest": {
    "file": "82_coaching.js",
@@ -7477,10 +7541,15 @@
    "kind": "function",
    "sha": "b018c4656be3d973"
   },
+  "stampAutomationErrorUnlocked_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "89d25d96b3fd76df"
+  },
   "stampAutomationError_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "6296753cac3f335e"
+   "sha": "e231fd582b7a189d"
   },
   "stampAutomationRun_": {
    "file": "10_core.js",
@@ -7776,6 +7845,11 @@
    "file": "81_empdocs.js",
    "kind": "function",
    "sha": "95ef18c81a3a0d64"
+  },
+  "withAutomationErrorLock_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "6fb369fc4c66a34d"
   },
   "withBreakSchedulesProp_": {
    "file": "20_timeclock.js",

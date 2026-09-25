@@ -27561,6 +27561,155 @@ test('A2: the System tab renders EVERY line the health dot counts — driven: th
   assert.ok(/report\.problems = automationProblems_\(report, \{ items: true \}\)/.test(gah), 'getAutomationHealth ships the dot\'s list');
 });
 
+
+test('C2: the weekly digest treats a queue {error} as a FAILURE — stamped, no healthy heartbeat — and still sends the queue it could read (driven)', () => {
+  const drive = (training, review) => {
+    const log = { sent: [], err: [], clr: [], hb: [] };
+    const ctx = vm.createContext({ console, Date, String, JSON,
+      CONFIG: { TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago' },
+      Utilities: { formatDate: () => '2026-09-20' }, Logger: { log() {} },
+      assertManagerCaller_() {}, getManagerEmails_: () => ['m@x.com'],
+      managerAggregateFlagged_: (t) => (t === 'training' ? training : review),
+      sendManagerFlagDigest_: (to, label) => log.sent.push(label),
+      stampAutomationError_: (k, m) => log.err.push(k + ':' + m), clearAutomationError_: (k) => log.clr.push(k),
+      stampDigestLastRun_: (k) => log.hb.push(k) });
+    vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesWeeklyDigests'), ctx);
+    ctx.sendCallNotesWeeklyDigests();
+    return log;
+  };
+  const bad = drive({ error: 'Manager access required.' }, { results: [{ id: 1 }], skippedReps: [] });
+  assert.deepStrictEqual(bad.sent, ['Review Candidates'], 'the readable queue still went out');
+  assert.strictEqual(bad.hb.length, 0, 'NO heartbeat — the weekly row must go stale, not read healthy (INV-109)');
+  assert.ok(bad.err.length === 1 && /^CallNotesWeeklyDigests:training queue: Manager access required\./.test(bad.err[0]),
+    'the failure is stamped where the dot and the digest read it: ' + bad.err.join('|'));
+  const ok = drive({ results: [], skippedReps: [] }, { results: [], skippedReps: [] });
+  assert.deepStrictEqual(ok.hb, ['weekly'], 'a clean empty week heartbeats');
+  assert.deepStrictEqual(ok.clr, ['CallNotesWeeklyDigests'], 'and clears a previous failure');
+  assert.strictEqual(ok.sent.length + ok.err.length, 0, 'and sends nothing (S24)');
+});
+
+test('A3: a CONFIGURED Dept Requests store that will not open THROWS by name — it never falls back to the ADP sheet (driven)', () => {
+  const drive = (propVal, openThrows) => {
+    const log = { adp: 0 };
+    const ctx = vm.createContext({ String, Error,
+      PropertiesService: { getScriptProperties: () => ({ getProperty: () => propVal }) },
+      SpreadsheetApp: { openById: (id) => { if (openThrows) throw new Error('Requested entity was not found.'); return { id }; } },
+      getAdpSS_: () => { log.adp++; return { id: 'ADP' }; } });
+    vm.runInContext(extractRawFunction('Code.js', 'getDeptRequestsSS_'), ctx);
+    let out = null, err = null;
+    try { out = ctx.getDeptRequestsSS_(); } catch (e) { err = e; }
+    return { out, err, adp: log.adp };
+  };
+  const broken = drive(' 1AbC ', true);
+  assert.ok(broken.err && /DEPT_REQUESTS_SS_ID is set but the spreadsheet could not be opened/.test(broken.err.message) &&
+    /Requested entity was not found/.test(broken.err.message), 'the outage is named, with the cause');
+  assert.strictEqual(broken.adp, 0, 'and the payroll sheet is never touched instead');
+  assert.strictEqual(drive(' 1AbC ', false).out.id, '1AbC', 'a configured store opens by its trimmed id');
+  const unset = drive(null, false);
+  assert.ok(unset.out.id === 'ADP' && unset.adp === 1, 'the back-compat fallback still applies while the property is UNSET');
+});
+
+test('S7: offboarding removes the person from MANAGER_EMAILS / ADMIN_EMAILS — never emptying a list — and the drift detector keys on the list (driven)', () => {
+  const props = { MANAGER_EMAILS: 'Boss@x.com, gone@x.com,  other@x.com', ADMIN_EMAILS: 'gone@x.com' };
+  const ctx = vm.createContext({ String, JSON, Array,
+    OFFBOARD_GATE_LISTS: ['MANAGER_EMAILS', 'ADMIN_EMAILS'], OFFBOARDED_EMAILS_PROP: 'OFFBOARDED_EMAILS', OFFBOARDED_EMAILS_MAX: 100,
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null) }) },
+    propSetBounded_: (k, v) => { props[k] = v; } });
+  ['gateListWithout_', 'offboardFromGateLists_', 'managerSourceDrift_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const r = JSON.parse(JSON.stringify(ctx.offboardFromGateLists_('GONE@x.com')));
+  assert.deepStrictEqual(r.removed, ['MANAGER_EMAILS'], 'removed from the manager list (case-insensitive)');
+  assert.strictEqual(props.MANAGER_EMAILS, 'Boss@x.com,other@x.com', 'and only that address');
+  assert.strictEqual(props.ADMIN_EMAILS, 'gone@x.com', 'the LAST admin entry is kept — an empty ADMIN_EMAILS makes every manager an admin');
+  assert.ok(r.kept.length === 1 && r.kept[0].prop === 'ADMIN_EMAILS' && /every manager an admin/.test(r.kept[0].why), 'and the refusal is NAMED');
+  assert.deepStrictEqual(JSON.parse(props.OFFBOARDED_EMAILS), ['gone@x.com'], 'the address is recorded for the detector');
+  // Detector: roster email was CLEARED by offboarding, so only the record can see it.
+  const pairs = [{ email: 'boss@x.com', isManager: true }, { email: '', isManager: true }];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.managerSourceDrift_(['gone@x.com', 'boss@x.com'], pairs, []))), [],
+    'keyed on the roster alone it is blind — the pre-S7 shape');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.managerSourceDrift_(['gone@x.com', 'boss@x.com'], pairs, ['gone@x.com']))), ['gone@x.com'],
+    'keyed on the list + the offboarded record, it sees them');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.managerSourceDrift_(['gone@x.com'], [{ email: 'gone@x.com', isManager: true }], ['gone@x.com']))), [],
+    'a re-onboarded manager (back on the roster) is not drift');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.managerSourceDrift_(['svc@x.com'], [], []))), [],
+    'a non-roster service address is still never flagged (false-positive-free)');
+  assert.strictEqual(ctx.gateListWithout_('a@x.com', 'b@x.com').listed, false, 'an unlisted address writes nothing');
+  // Wiring: the endpoint calls it inside its lock, after the roster clear, and the client names a kept list.
+  const off = stripJsComments_(extractRawFunction('Code.js', 'offboardEmployee'));
+  const clr = off.indexOf("EMP.EMAIL + 1).setValue"), call = off.indexOf('offboardFromGateLists_(repEmail)'), rel = off.indexOf('lock.releaseLock()');
+  assert.ok(clr > 0 && call > clr && call < rel, 'offboardEmployee edits the lists after the roster clear, under its lock');
+  assert.ok(/keptIn: lists\.kept/.test(off), 'and ships what it could not remove');
+  const det = stripJsComments_(extractRawFunction('Code.js', 'automationDetectorChecks_'));
+  assert.ok(/managerSourceDrift_\(getManagerEmails_\(\), pairs, offboarded\)/.test(det) && /ADMIN_EMAILS still lists offboarded/.test(det),
+    'the managerSource detector reads the record, for both lists');
+  const cn = fs.readFileSync(path.join(B6_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.ok(/res\.keptIn \|\| \[\]/.test(cn) && /still in ' \+ kept\.map/.test(cn), 'the offboard toast names a list the person is still in');
+});
+
+test('A4: a failed tag-taxonomy load renders a named failure, never "No tags in use yet" or a blank pane', () => {
+  const s2 = buildSandbox([]);
+  s2.icon = () => ''; s2.esc = (x) => String(x == null ? '' : x);
+  s2.cnSkippedRepsNoteHtml_ = () => ''; s2.cnRenderTagRow_ = () => '<div class="row"></div>';
+  const fn = loadFunction(s2, 'cn/script_callnotes.html', 'cnRenderAdminAugmentHtml_');
+  const nul = fn(null, null, null, null).taxHtml;
+  const err = fn(null, { error: 'Manager access required.' }, null, null).taxHtml;
+  const empty = fn(null, { tags: [], archivedOnlyTags: [], totalNotes: 0, repsScanned: 3 }, null, null).taxHtml;
+  assert.ok(/could not be loaded/.test(nul) && !/No tags in use yet/.test(nul), 'no response is a failure, not a blank pane');
+  assert.ok(/could not be loaded: Manager access required\./.test(err) && !/No tags in use yet/.test(err), 'an {error} names itself');
+  assert.ok(/No tags in use yet/.test(empty) && !/could not be loaded/.test(empty), 'a real empty taxonomy still reads as empty');
+  const load = stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnLoadAdminAugment_'));
+  assert.ok(/withFailureHandler\(function \(err\) \{ tax = \{ error:/.test(load), 'the transport failure lands as an {error}, not as null');
+});
+
+test('A5: deploy readiness names a failed automation READ — it no longer blames the triggers and the CDR store for it', () => {
+  const ctx = vm.createContext({ String, Object });
+  vm.runInContext(extractRawFunction('Code.js', 'deployReadinessItems_'), ctx);
+  const store = { configTimezone: 'X', stores: [] };
+  [{ error: 'Admin access required.' }, { readFailed: 'boom' }, null].forEach((auto) => {
+    const byKey = {};
+    ctx.deployReadinessItems_(store, auto, 2).items.forEach((it) => { byKey[it.key] = it; });
+    ['triggers', 'cdr'].forEach((k) => {
+      assert.ok(byKey[k] && /Could not check — the automation health read failed/.test(byKey[k].detail), k + ' names the read failure (' + JSON.stringify(auto) + ')');
+      assert.ok(!/installAutomationTriggers|CDR unreachable/.test(byKey[k].detail), k + ' blames nothing it did not see');
+    });
+  });
+  const gdr = stripJsComments_(extractRawFunction('Code.js', 'getDeployReadiness'));
+  assert.ok(/catch \(e\) \{ automation = \{ readFailed: e\.message \}; \}/.test(gdr), 'a throw arrives as readFailed, not as an empty report');
+});
+
+test('A6: a ClientErrors read that FAILED carries an error — the panel and the finding say "could not read", not "no client errors" (driven)', () => {
+  const ctx = vm.createContext({ String, Date, Logger: { log() {} }, CLIENT_ERR_WINDOW_DAYS: 7,
+    getAdpSS_: () => { throw new Error('Service Spreadsheets timed out'); } });
+  vm.runInContext(extractRawFunction('Code.js', 'clientErrorsSummary_'), ctx);
+  const out = ctx.clientErrorsSummary_('America/Chicago');
+  assert.ok(out.count === 0 && /timed out/.test(out.error), 'nothing invented, and the failure rides the summary');
+  sb.CN_DIGEST_LABELS_ = { eod: 'EOD' };
+  const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
+  const f = fn({ clientErrors: { count: 0, last24h: 0, windowDays: 7, error: 'Service Spreadsheets timed out' } }, null).items.find((x) => x.id === 'clientErrors');
+  assert.ok(f && f.severity === 'warn' && /could not be read/.test(f.title), 'the finding is a warning, not the all-clear');
+  const cn = fs.readFileSync(path.join(B6_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.ok(/if \(ce\.error\) \{\s*ceHtml = warnBox\(/.test(cn) && /this is NOT an all-clear/.test(cn), 'the detail panel says so too');
+});
+
+test('A8: the automation-error stamp and clear serialise on the USER lock and release it — never the script lock a failing job still holds (driven)', () => {
+  const props = {}; const log = [];
+  const lock = { tryLock: () => { log.push('try'); return true; }, releaseLock: () => log.push('release') };
+  const ctx = vm.createContext({ String, JSON, Array, Date,
+    LockService: { getUserLock: () => { log.push('user'); return lock; }, getScriptLock: () => { log.push('SCRIPT'); return lock; } },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null) }) },
+    AUTOMATION_ERROR_PROP: 'AUTOMATION_LAST_ERRORS', fmtDate_: () => 'd', fmtTime_: () => 't',
+    propSetBounded_: (k, v) => { log.push('write'); props[k] = v; }, propShrinkDropOldest_: () => null });
+  ['withAutomationErrorLock_', 'stampAutomationError_', 'stampAutomationErrorUnlocked_', 'clearAutomationError_', 'clearAutomationErrorUnlocked_']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  ctx.stampAutomationError_('JobA', 'boom');
+  ctx.clearAutomationError_('JobA');
+  assert.deepStrictEqual(log, ['user', 'try', 'write', 'release', 'user', 'try', 'write', 'release'], 'each read-modify-write runs inside the user lock: ' + log.join(','));
+  assert.strictEqual(log.indexOf('SCRIPT'), -1, 'the script lock is never touched');
+  // Fail-open: contention still writes.
+  log.length = 0; lock.tryLock = () => { log.push('try'); return false; };
+  ctx.stampAutomationError_('JobB', 'x');
+  assert.deepStrictEqual(log, ['user', 'try', 'write'], 'a contended lock still writes the stamp, and releases nothing it did not take');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

@@ -34,11 +34,20 @@ function drStatus_(row) {
 }
 // ── Inter-department request tracking (Part B) ──────────────────────────────
 function getDeptRequestsSS_() {
-  try {
-    const id = PropertiesService.getScriptProperties().getProperty('DEPT_REQUESTS_SS_ID');
-    if (id && id.trim()) return SpreadsheetApp.openById(id.trim());
-  } catch (e) {}
-  // Back-compat fallback. NOT PHI-free since operator testing note 6
+  const id = String(PropertiesService.getScriptProperties().getProperty('DEPT_REQUESTS_SS_ID') || '').trim();
+  if (id) {
+    // A3 (cycle 22): a CONFIGURED store that will not open is an outage, not
+    // a reason to use the payroll sheet. The bare catch used to fall through to
+    // getAdpSS_() — reads came back empty from a tab that was never the store,
+    // writes created a second DeptRequests tab there (patient TRX beside
+    // payroll), and Storage Health probed the fallback and read "reachable".
+    try { return SpreadsheetApp.openById(id); }
+    catch (e) {
+      throw new Error('DEPT_REQUESTS_SS_ID is set but the spreadsheet could not be opened (' + e.message +
+        ') — check the id and that the deploying account can edit it. Nothing was read from or written to the ADP sheet instead.');
+    }
+  }
+  // Back-compat fallback — ONLY while the property is unset. NOT PHI-free since operator testing note 6
   // (2026-09-10): the trailing PatientTrx column names a patient, so this
   // co-locates patient-identifying rows with the payroll sheet (F-11) —
   // Storage Health warns while DEPT_REQUESTS_SS_ID is unset; set it to the

@@ -3963,9 +3963,22 @@ function sendCallNotesWeeklyDigests() {
     if ((review.results && review.results.length > 0) || (review.skippedReps || []).length > 0) {
       sendManagerFlagDigest_(mgrEmails, 'Review Candidates', review.results || [], dateRange, review.skippedReps);
     }
+    // C2 (cycle 22): an {error} is not an empty queue. It used to read as one —
+    // nothing sent, and a HEALTHY heartbeat stamped (INV-109's failure mode).
+    // Stamp the failure where the digest and the dot read it, and withhold the
+    // heartbeat so the weekly row goes stale too. The readable queue still sent.
+    const failed = [['training', training], ['review', review]].filter(function (q) { return q[1] && q[1].error; });
+    if (failed.length) {
+      const why = failed.map(function (q) { return q[0] + ' queue: ' + q[1].error; }).join('; ');
+      stampAutomationError_('CallNotesWeeklyDigests', why);
+      Logger.log('sendCallNotesWeeklyDigests: could not read ' + why + ' — no heartbeat.');
+      return;
+    }
+    clearAutomationError_('CallNotesWeeklyDigests');
     stampDigestLastRun_('weekly');
     Logger.log(`sendCallNotesWeeklyDigests: training=${(training.results || []).length}, review=${(review.results || []).length}`);
   } catch (err) {
+    stampAutomationError_('CallNotesWeeklyDigests', err.message);
     Logger.log('sendCallNotesWeeklyDigests failed: ' + err.message);
   }
 }

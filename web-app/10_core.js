@@ -957,7 +957,13 @@ function clientErrorsSummary_(mgrTz) {
         });
       }
     }
-  } catch (e) { Logger.log('clientErrorsSummary_ skipped: ' + e.message); }
+  } catch (e) {
+    // A6 (cycle 22): a read that failed is not a quiet tab. The count stays 0
+    // (nothing is invented) but `error` rides it, so the panel says "could not
+    // read" instead of "no client-side errors reported".
+    out.error = String(e.message || e);
+    Logger.log('clientErrorsSummary_ skipped: ' + e.message);
+  }
   return out;
 }
 /** Shared window resolver: Script Property first (non-empty wins), else the
@@ -1085,7 +1091,24 @@ function purgeOldDiagnostics() {
 // drift / roster↔agent name mismatches, and (c) the last-seen audit row per
 // automation job — so a missing trigger or a drifting external sheet shows up
 // in the Admin tab instead of only in Logger / the raw AuditLog.
+/** A8 (cycle 22) — the AUTOMATION_LAST_ERRORS map is a read-modify-write, and
+ *  two jobs failing together (the 8am group) could drop each other's stamp — a
+ *  lost failure report, the F4 silence again. Serialised on the USER lock, not
+ *  the script lock: every caller is a trigger handler, often in a catch block
+ *  that still HOLDS the script lock, and re-acquiring then releasing that lock
+ *  here would release the job's own lock early. Every stamping handler runs as
+ *  the one installer, so the user lock serialises them all. Fail-OPEN on
+ *  contention: a stamp written without the lock beats a stamp never written. */
+function withAutomationErrorLock_(fn) {
+  let lock = null, locked = false;
+  try { lock = LockService.getUserLock(); locked = lock.tryLock(3000); } catch (_) {}
+  try { return fn(); }
+  finally { if (locked) { try { lock.releaseLock(); } catch (_) {} } }
+}
 function stampAutomationError_(job, message) {
+  withAutomationErrorLock_(function () { stampAutomationErrorUnlocked_(job, message); });
+}
+function stampAutomationErrorUnlocked_(job, message) {
   try {
     const props = PropertiesService.getScriptProperties();
     let map = {};
@@ -1097,6 +1120,9 @@ function stampAutomationError_(job, message) {
   } catch (e) { /* best-effort — never break the job's own error path */ }
 }
 function clearAutomationError_(job) {
+  withAutomationErrorLock_(function () { clearAutomationErrorUnlocked_(job); });
+}
+function clearAutomationErrorUnlocked_(job) {
   try {
     const props = PropertiesService.getScriptProperties();
     let map = {};
@@ -1260,20 +1286,38 @@ function getAutomationHealth(opts) {
  *  deployer / service account in MANAGER_EMAILS is normal — so the check is
  *  false-positive-free (it never nags the daily failure digest or the smoke
  *  suite on a well-maintained deployment). */
-function managerSourceDrift_(propEmails, rosterPairs) {
+function managerSourceDrift_(propEmails, rosterPairs, offboarded) {
   const props = {};
   (propEmails || []).forEach(function (e) {
     const k = String(e || '').toLowerCase().trim();
     if (k) props[k] = true;
   });
-  const out = [], seen = {};
+  const out = [], seen = {}, onRoster = {};
   (rosterPairs || []).forEach(function (r) {
     const email = String((r && r.email) || '').toLowerCase().trim();
+    if (email) onRoster[email] = true;
     if (!email || !props[email] || (r && r.isManager) || seen[email]) return;
     seen[email] = true;
     out.push(email);
   });
+  // S7 (cycle 22) — keyed on the LIST: offboarding CLEARS the roster email, so
+  // the loop above can never see an offboarded manager. An address the app
+  // itself recorded as offboarded, still listed, and not back on the roster
+  // (a re-onboard clears it) is drift — still false-positive-free, because
+  // only offboardEmployee writes that record.
+  (offboarded || []).forEach(function (e) {
+    const k = String(e || '').toLowerCase().trim();
+    if (!k || !props[k] || onRoster[k] || seen[k]) return;
+    seen[k] = true;
+    out.push(k);
+  });
   return out;
+}
+function readOffboardedEmails_() {
+  try {
+    const a = JSON.parse(PropertiesService.getScriptProperties().getProperty(OFFBOARDED_EMAILS_PROP) || '[]');
+    return Array.isArray(a) ? a.map(String) : [];
+  } catch (e) { return []; }
 }
 function automationDetectorChecks_() {
   const checks = [];
@@ -1337,12 +1381,22 @@ function automationDetectorChecks_() {
         isManager: (mgrRaw === 'true' || mgrRaw === 'yes' || mgrRaw === 'y' || mgrRaw === '1'),
       });
     }
-    const drift = managerSourceDrift_(getManagerEmails_(), pairs);
+    const offboarded = readOffboardedEmails_();
+    const drift = managerSourceDrift_(getManagerEmails_(), pairs, offboarded);
     if (drift.length) {
-      throw new Error('MANAGER_EMAILS still grants trigger/purge power to roster row(s) marked NOT a manager: ' +
-        drift.join(', ') + ' — remove them from the MANAGER_EMAILS Script Property. They were likely ' +
-        'off-boarded/demoted: in-app manager access is already revoked, but assertManagerCaller_-gated ' +
-        'trigger endpoints (installs, purges, digests) still accept them (F9).');
+      throw new Error('MANAGER_EMAILS still grants trigger/purge power (and the daily brief) to ' +
+        drift.join(', ') + ' — marked NOT a manager on the roster, or offboarded. Remove them from the ' +
+        'MANAGER_EMAILS Script Property: in-app manager access is already revoked, but assertManagerCaller_-gated ' +
+        'trigger endpoints (installs, purges, digests) still accept them (F9, S7).');
+    }
+    // S7 (cycle 22): ADMIN_EMAILS carries no power without the roster manager
+    // bit (empIsAdmin_ is a subset check), but an offboarded address left there
+    // is re-armed by a re-onboard as manager — name it.
+    const adminRaw = String(PropertiesService.getScriptProperties().getProperty('ADMIN_EMAILS') || '');
+    const adminDrift = managerSourceDrift_(adminRaw.split(','), [], offboarded);
+    if (adminDrift.length) {
+      throw new Error('ADMIN_EMAILS still lists offboarded ' + adminDrift.join(', ') +
+        ' — remove them (offboarding keeps a list\'s LAST entry rather than empty it; add a replacement first).');
     }
   });
   return checks;
@@ -2535,16 +2589,28 @@ function deployReadinessItems_(storage, automation, managerCount) {
     push('store_' + (prop || s.label), s.label, status, detail);
   });
 
+  // A5 (cycle 22): an automation report that could not be READ says so on
+  // both rows. It used to arrive as {} or {error}, and both rows then blamed
+  // the deployment — "run installAutomationTriggers()" and "CDR unreachable" —
+  // for what was a failed health read.
+  var autoErr = !automation ? 'no automation report came back'
+    : (automation.error ? String(automation.error) : (automation.readFailed ? String(automation.readFailed) : ''));
+  if (autoErr) {
+    push('triggers', 'Automation triggers (digest heartbeats)', 'warn',
+      'Could not check — the automation health read failed (' + autoErr + '). This says nothing about the triggers; reload to retry.');
+    push('cdr', 'CDR reachability (Metrics)', 'warn',
+      'Could not check — the automation health read failed (' + autoErr + '). This says nothing about the CDR store; reload to retry.');
+  }
   var digests = (automation && automation.digests) || [];
   var anyHeartbeat = digests.some(function (d) { return !!d.last; });
   var anyStale = digests.some(function (d) { return !!d.stale; });
-  push('triggers', 'Automation triggers (digest heartbeats)',
+  if (!autoErr) push('triggers', 'Automation triggers (digest heartbeats)',
     !anyHeartbeat ? 'warn' : (anyStale ? 'warn' : 'ok'),
     !anyHeartbeat ? 'No digest has run yet — run installAutomationTriggers() (expected on a fresh deploy).'
       : (anyStale ? 'A digest looks stale — check the cross-account trigger-ownership trap.' : 'Heartbeats fresh.'));
 
   var cdrOk = !!(automation && automation.cdr && automation.cdr.ok);
-  push('cdr', 'CDR reachability (Metrics)',
+  if (!autoErr) push('cdr', 'CDR reachability (Metrics)',
     cdrOk ? 'ok' : 'warn',
     cdrOk ? 'Reachable.' : 'CDR unreachable/unset — Metrics + the shift-stats overlay degrade gracefully (optional).');
 
@@ -2565,7 +2631,8 @@ function getDeployReadiness() {
     const storage = getStorageHealth({ scanEmbeds: false, checkDrive: false });   // #3 — deploy-readiness bands store config only; no Drive scan, no network probe
     if (storage && storage.error) return { error: storage.error };
     let automation = {};
-    try { automation = getAutomationHealth({ scanQueues: false }) || {}; } catch (e) { automation = {}; }
+    try { automation = getAutomationHealth({ scanQueues: false }) || { readFailed: 'no report' }; }
+    catch (e) { automation = { readFailed: e.message }; }
     const managerCount = getManagerEmails_().length;
     const res = deployReadinessItems_(storage, automation, managerCount);
     return {

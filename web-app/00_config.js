@@ -951,6 +951,19 @@ const AUTOMATION_SYNCFAIL_WINDOW_DAYS = 30;
 // per job, so two jobs finishing together never race a shared read-modify-write.
 // Auto-managed; delete a key to forget that job's last run.
 const AUTOMATION_RUN_PROP_PREFIX = 'AUTOMATION_RUN_';
+// S7 (cycle 22) — who has been offboarded, lowercased, newest last. Offboarding
+// clears the roster EMAIL cell, so afterwards nothing on the roster can say an
+// address in MANAGER_EMAILS / ADMIN_EMAILS belongs to someone who left; the
+// managerSource detector keys on this list instead. Auto-managed (capped at
+// OFFBOARDED_EMAILS_MAX, oldest dropped first); re-onboarding the same address
+// clears the flag by itself (the detector ignores an address back on the roster).
+const OFFBOARDED_EMAILS_PROP = 'OFFBOARDED_EMAILS';
+const OFFBOARDED_EMAILS_MAX = 100;
+// The two gate lists offboarding edits. An address is REMOVED from each, except
+// when it is the list's LAST entry: an empty ADMIN_EMAILS makes EVERY manager an
+// admin (empIsAdmin_), and an empty MANAGER_EMAILS stops every trigger handler
+// (assertManagerCaller_) — so the removal is refused and named instead.
+const OFFBOARD_GATE_LISTS = ['MANAGER_EMAILS', 'ADMIN_EMAILS'];
 // ── Per-JOB liveness, derived rather than accumulated (Gap4 / INV-186) ───────
 // automationProblems_ grew one hand-written check per SIGNAL, so a job added
 // later got an audit row and no alarm: only CallNotesReconcile was ever checked

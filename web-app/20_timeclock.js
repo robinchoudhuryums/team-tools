@@ -4172,6 +4172,53 @@ function addEmployee(payload) {
  *  while every inclusion walk stops counting the row. Never deletes the row,
  *  never touches the per-rep Sheets. Self-offboarding is rejected (it would
  *  lock the caller out of the app mid-session). */
+/** PURE (Node-pinned) — a comma-separated gate list without `email`
+ *  (case-insensitive). `wouldEmpty` = the address is the list's only entry, in
+ *  which case `next` is null and the caller must NOT write (see
+ *  OFFBOARD_GATE_LISTS for why an empty list is worse than a stale one). */
+function gateListWithout_(raw, email) {
+  const target = String(email || '').toLowerCase().trim();
+  const all = String(raw || '').split(',').map(function (x) { return x.trim(); }).filter(function (x) { return x; });
+  const rest = all.filter(function (x) { return x.toLowerCase() !== target; });
+  const listed = !!target && rest.length < all.length;
+  return { listed: listed, wouldEmpty: listed && rest.length === 0, next: (listed && rest.length) ? rest.join(',') : null };
+}
+/** S7 (cycle 22) — removes an offboarded address from both gate lists and
+ *  records it in OFFBOARDED_EMAILS. Runs inside offboardEmployee's lock.
+ *  Returns { removed: [prop], kept: [{prop, why}] }; never throws — the roster
+ *  change already landed, so a property failure is reported, not fatal. */
+function offboardFromGateLists_(email) {
+  const out = { removed: [], kept: [] };
+  const e = String(email || '').toLowerCase().trim();
+  if (!e) return out;
+  let props;
+  try { props = PropertiesService.getScriptProperties(); }
+  catch (err) { OFFBOARD_GATE_LISTS.forEach(function (p) { out.kept.push({ prop: p, why: 'Script Properties unreadable: ' + err.message }); }); return out; }
+  OFFBOARD_GATE_LISTS.forEach(function (prop) {
+    try {
+      const r = gateListWithout_(props.getProperty(prop), e);
+      if (!r.listed) return;
+      if (r.wouldEmpty) {
+        out.kept.push({ prop: prop, why: 'they are its only entry — removing it would ' +
+          (prop === 'ADMIN_EMAILS' ? 'make every manager an admin' : 'stop every automation trigger') +
+          '; add a replacement, then remove them by hand' });
+        return;
+      }
+      propSetBounded_(prop, r.next);
+      out.removed.push(prop);
+    } catch (err) { out.kept.push({ prop: prop, why: err.message }); }
+  });
+  try {
+    let list = [];
+    try { list = JSON.parse(props.getProperty(OFFBOARDED_EMAILS_PROP) || '[]'); } catch (_) { list = []; }
+    if (!Array.isArray(list)) list = [];
+    list = list.filter(function (x) { return String(x).toLowerCase() !== e; });
+    list.push(e);
+    propSetBounded_(OFFBOARDED_EMAILS_PROP, JSON.stringify(list.slice(-OFFBOARDED_EMAILS_MAX)), { mode: 'degrade',
+      shrink: function (str) { try { const a = JSON.parse(str); a.shift(); return a.length ? JSON.stringify(a) : null; } catch (_) { return null; } } });
+  } catch (_) { /* best-effort — the lists above are the prevention; this feeds the detector */ }
+  return out;
+}
 function offboardEmployee(repEmpId) {
   try {
     var callerEmp = getEmployeeInfo_();
@@ -4198,9 +4245,15 @@ function offboardEmployee(repEmpId) {
       }
       sheet.getRange(targetRow + 1, EMP.EMAIL + 1).setValue(sheetSafe_(''));
       invalidateRosterCache_();
+      // S7 (cycle 22): clearing the roster email revoked every IN-APP gate, but
+      // MANAGER_EMAILS / ADMIN_EMAILS are Script Properties — an offboarded
+      // manager kept the daily brief (PHI) and every assertManagerCaller_ gate.
+      const lists = offboardFromGateLists_(repEmail);
       writeAuditLog_(callerEmp, 'EmployeeOffboard', repEmpId, '', false, 0,
-        'id=' + repEmpId + '; name=' + repName, callerEmp.email);
-      return { success: true, id: repEmpId, name: repName };
+        'id=' + repEmpId + '; name=' + repName +
+        (lists.removed.length ? '; removedFrom=' + lists.removed.join('+') : '') +
+        (lists.kept.length ? '; keptIn=' + lists.kept.map(function (k) { return k.prop; }).join('+') : ''), callerEmp.email);
+      return { success: true, id: repEmpId, name: repName, removedFrom: lists.removed, keptIn: lists.kept };
     } finally {
       lock.releaseLock();
     }
