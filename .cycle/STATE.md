@@ -227,6 +227,8 @@ Updated: 2026-09-25
   decided by which items carry `listed cities` in col I.
 
 ## Decisions made (so the next session doesn't re-litigate)
+- **S6 (operator, 2026-09-25):** a QA reviewer may NOT review their own calls — except a user with the admin role. Not yet implemented (score / finish / share / re-attribute of a recording whose agent is the caller must refuse unless `isAdmin`).
+- **S8 (operator, 2026-09-25):** nothing embeds the app today, so framing may be restricted (ALLOWALL → default SAMEORIGIN on the internal shell; the public form route to be checked separately). Not yet implemented.
 - A half day is "at least half the typical hours (4 h), at any time of day" — never "the other half of the shift" (operator, 2026-09-25; T5 rework owed, see follow-ons).
 - **S2 deferred out of Batch 1** (operator, 2026-09-23) — then implemented in
   its most complete form on the operator's request: a BLANKET boundary over
