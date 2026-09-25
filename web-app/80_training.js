@@ -178,8 +178,7 @@ function sendTrainingOverdueDigest() {
   try {
     const mgrEmails = getManagerEmails_();
     if (mgrEmails.length === 0) { Logger.log('No manager emails — skipping training overdue digest.'); return; }
-    const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
-    const todayIso = Utilities.formatDate(new Date(), mgrTz, 'yyyy-MM-dd');
+    const todayIso = trainTodayIso_();
     const overdueTraining = trainOverdueForRoster_(todayIso);   // org-wide
     const overdueDocs = empDocsOverdueAll_(todayIso);           // scope per manager below
     const overdueCoaching = coachUnackedAll_(Date.now());       // scope per manager below
@@ -325,6 +324,14 @@ function trainCellDate_(v, ssTz) {
 }
 /** Pure status derivation — shared by getMyTraining + getTrainingDashboard
  *  and pinned by a Node test. */
+/** T11 (cycle 22) — the ONE "today" a training due date is judged against:
+ *  the manager-tz work day (the ALL-CST work anchor, `workAnchorTz`). The rep's
+ *  checklist used the REP's timezone while the team matrix and the overdue
+ *  digest used the manager's, so for a PH rep the same item read "due" on one
+ *  surface and "overdue" on the other for most of a day. */
+function trainTodayIso_() {
+  return Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd');
+}
 function trainDeriveStatus_(completed, dueDate, todayIso) {
   if (completed) return 'done';
   if (dueDate && todayIso > dueDate) return 'overdue';
@@ -406,7 +413,7 @@ function getMyTraining() {
     const titles = trainKbTitles_();
     const quizzes = trainReadQuizzes_();
     let attempts = null;   // lazy — only read when a quiz item is assigned
-    const todayIso = Utilities.formatDate(new Date(), safeTimezone_(emp.timezone), 'yyyy-MM-dd');
+    const todayIso = trainTodayIso_();   // T11: the frame every "overdue" reader shares
     const items = [];
     keys.forEach(function (key) {
       const a = eff[key];
@@ -525,7 +532,7 @@ function getTrainingDashboard() {
       emps.push({ id: String(rows[i][EMP.ID]).trim(), name: String(rows[i][EMP.NAME]).trim() });
     }
     emps.sort(function (a, b) { return a.name.localeCompare(b.name); });
-    const todayIso = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd');
+    const todayIso = trainTodayIso_();
     // Items = distinct itemKeys across live assignments that still exist in the KB.
     const itemMap = {};
     const reps = [];

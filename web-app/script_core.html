@@ -2514,10 +2514,13 @@ function remindersTick_() {
     // is most likely.
     var dayOff = remindIsDayOff_(tz);
     var nowMin = remindNowMin_(tz);
+    var win = remindWorkWindow_(sched.startMin, sched.lengthMin, empState && empState.halfDayOff);
 
     // (a) Upcoming break — the lead time is the rep's own breakReminderMin.
     var lead = sched.breakReminderMin || 10;
-    var breaks = dayOff ? [] : (Array.isArray(sched.breaks) ? sched.breaks : []);
+    var breaks = dayOff ? [] : (Array.isArray(sched.breaks) ? sched.breaks : []).filter(function (b) {
+      return b && b.startMin >= win.startMin && b.startMin < win.endMin;   // T5: only the half being worked
+    });
     for (var i = 0; i < breaks.length; i++) {
       var b = breaks[i];
       var until = b.startMin - nowMin;
@@ -2531,7 +2534,7 @@ function remindersTick_() {
     // which the boot snapshot goes stale on, so it refreshes — but only inside
     // the end-of-shift window and at most every 10 minutes. Outside that
     // window the ticker makes ZERO server calls.
-    var endMin = (sched.startMin || 0) + (sched.lengthMin || 0);
+    var endMin = win.endMin;   // T5: an afternoon half day ends at mid-shift
     if (nowMin >= endMin + 5 && nowMin <= endMin + 120) {
       if (remindPunchState_() === 'in') {
         remindOnce_(today + ':out', 'Your shift ended at ' + remindFmtMin_(endMin) +
@@ -2556,7 +2559,7 @@ function remindersTick_() {
     //     next tick — state re-confirmed, still out — nags. Unknown never
     //     nags (the (b) posture); the daily missed-punch email stays the
     //     backstop for a closed browser.
-    var startMin = sched.startMin || 0;
+    var startMin = win.startMin;   // T5: a morning half day starts at mid-shift
     if (!dayOff && nowMin >= startMin + REMIND_CLOCKIN_GRACE_MIN && nowMin < endMin &&
         Date.now() - _remindLastActivityAt < REMIND_ACTIVITY_WINDOW_MS &&
         remindPunchState_() === 'out' && !_remindFired[today + ':in']) {
@@ -2658,7 +2661,7 @@ function schedFetch_(force) {
  *  Weekday-ness is computed in the REP's timezone via isoDateTz — never
  *  browser-local time, which is a different DAY for an offshore rep near
  *  midnight (the F6 discipline). `offToday` is server-computed approved PTO
- *  (empIsOffToday_); an older server that does not send it simply yields the
+ *  (empTimeOffToday_ — a FULL day only since T5); an older server that does not send it simply yields the
  *  weekend-only guard, which is the additive-field posture. */
 function remindIsDayOff_(tz) {
   if (empState && empState.offToday) return true;
@@ -2667,8 +2670,26 @@ function remindIsDayOff_(tz) {
     // weekday is read off those digits and not shifted again by the browser.
     var iso = isoDateTz(tz);
     var dow = new Date(iso + 'T00:00:00Z').getUTCDay();
-    return dow === 0 || dow === 6;
+    if (dow === 0 || dow === 6) return true;
+    // T8 (cycle 22): a COMPANY HOLIDAY is a day off too — on Labor Day a rep
+    // who opened the app got the chimed "not clocked in" nag. The list is the
+    // server's getCompanyHolidays_ calendar (index.html injects it; the same
+    // one mPrevWorkdayIso_ walks), so no second calendar exists client-side.
+    var hol = (typeof window !== 'undefined' && window.SERVER_COMPANY_HOLIDAYS) || [];
+    return hol.indexOf(iso) >= 0;
   } catch (e) { return false; }
+}
+/** T5 (cycle 22) — the part of the shift the rep WORKS today. A half day
+ *  used to arrive as `offToday` and silence every inferred reminder for the
+ *  half the rep is on the clock; now it narrows the window instead: a
+ *  morning half day works from mid-shift, an afternoon one until mid-shift.
+ *  Pure over its arguments (Node-pinned). */
+function remindWorkWindow_(startMin, lengthMin, halfDayOff) {
+  var s = startMin || 0, e = s + (lengthMin || 0);
+  var mid = s + Math.round((lengthMin || 0) / 2);
+  if (halfDayOff === 'morning') return { startMin: mid, endMin: e };
+  if (halfDayOff === 'afternoon') return { startMin: s, endMin: mid };
+  return { startMin: s, endMin: e };
 }
 
 function remindPunchState_() {

@@ -1097,6 +1097,30 @@
     "stampAutomationError_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "cycle 22 Batch 7: T5 empTimeOffToday_ + timeOffDayKind_/timeOffKindsCombine_ + punctExpectedStartMin_; T4 punctLunchNearest_; T11 trainTodayIso_",
+   "added": [
+    "empTimeOffToday_",
+    "punctExpectedStartMin_",
+    "punctLunchNearest_",
+    "timeOffDayKind_",
+    "timeOffKindsCombine_",
+    "trainTodayIso_"
+   ],
+   "removed": [
+    "empIsOffToday_"
+   ],
+   "changed": [
+    "getEmployeeState",
+    "getMyTraining",
+    "getPunctualityReport",
+    "getTrainingDashboard",
+    "sendTrainingOverdueDigest",
+    "submitTimeOffRange"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4246,11 +4270,6 @@
    "kind": "function",
    "sha": "5b397d49bc497141"
   },
-  "empIsOffToday_": {
-   "file": "20_timeclock.js",
-   "kind": "function",
-   "sha": "702594402ed851a8"
-  },
   "empPayRateById_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -4280,6 +4299,11 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "50fa665047a2ab0f"
+  },
+  "empTimeOffToday_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "8608540a3bf99793"
   },
   "empTz_": {
    "file": "20_timeclock.js",
@@ -4704,7 +4728,7 @@
   "getEmployeeState": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "cb12e25aba87621d"
+   "sha": "854b6495ddfd3eb6"
   },
   "getEmployeeTimesheetForManager": {
    "file": "20_timeclock.js",
@@ -4969,7 +4993,7 @@
   "getMyTraining": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "b74d8469f6d8234a"
+   "sha": "fc323124f6714ecf"
   },
   "getMyTrainingQA": {
    "file": "80_training.js",
@@ -5154,7 +5178,7 @@
   "getPunctualityReport": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "d9466d2a0e1def75"
+   "sha": "f73e17d3b6ce044c"
   },
   "getQaLog": {
    "file": "90_qa.js",
@@ -5314,7 +5338,7 @@
   "getTrainingDashboard": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "ab78dbb4c28bceec"
+   "sha": "1e648f5646fd1a7a"
   },
   "getUpdateSuggestions_": {
    "file": "10_core.js",
@@ -6581,6 +6605,16 @@
    "kind": "function",
    "sha": "697306332bd17fad"
   },
+  "punctExpectedStartMin_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "aae981e1b651c58a"
+  },
+  "punctLunchNearest_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "92cc1fac1b16ce59"
+  },
   "punctWeeklyBuckets_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -7349,7 +7383,7 @@
   "sendTrainingOverdueDigest": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "9dc160b72d8b30e1"
+   "sha": "bbc80bf1a1e7c178"
   },
   "sendTrainingOverdueEmail_": {
    "file": "80_training.js",
@@ -7604,7 +7638,7 @@
   "submitTimeOffRange": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "e4f77d19d71d29e2"
+   "sha": "c6c3667fcc33f439"
   },
   "submitTimeOffRequest": {
    "file": "20_timeclock.js",
@@ -7625,6 +7659,16 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "3425cc78d8750744"
+  },
+  "timeOffDayKind_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "b36f1a4f7da40ac3"
+  },
+  "timeOffKindsCombine_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "285ead59d9c0fb7d"
   },
   "timeToMins_": {
    "file": "20_timeclock.js",
@@ -7710,6 +7754,11 @@
    "file": "80_training.js",
    "kind": "function",
    "sha": "6abf5564f6bca552"
+  },
+  "trainTodayIso_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "b5ea1f01fa756ee8"
   },
   "trainValidateQuizDef_": {
    "file": "80_training.js",

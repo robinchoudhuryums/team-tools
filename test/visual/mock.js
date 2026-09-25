@@ -319,6 +319,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // F2 (cycle 18) — the reminder ticker's day-off gate. Mirrors the server
       // field (INV-185); false = a normal working day, the scenario's intent.
       offToday: false,
+      halfDayOff: null,   // T5 (cycle 22) — a half day narrows the reminder window instead of silencing it
       // Operator 2026-08-31 — today's PENDING punch-adjustment requests. EMPTY
       // is the common case (and what every existing scenario should show); the
       // `?pendingadj=1` hook below seeds one so the Clock chip is shootable

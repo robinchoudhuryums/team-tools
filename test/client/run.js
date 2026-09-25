@@ -11533,7 +11533,8 @@ test('Time-off RANGE + accrual PTO tile (operator 2026-08-18)', () => {
             b.indexOf('if (conflicts.length > 0)') < b.indexOf('appendRow'),
     'conflicts reject the WHOLE batch before any row is written (atomic)');
   assert.ok(/conflicts\.join\(', '\)/.test(b), 'the rejection NAMES the conflicting dates');
-  assert.ok(/dow !== 0 && dow !== 6/.test(b), 'weekends inside the range are skipped');
+  assert.ok(/if \(dow === 0 \|\| dow === 6\) continue;/.test(b), 'weekends inside the range are skipped');
+  assert.ok(/if \(hol\[d\]\) \{ skippedHolidays\+\+; continue; \}/.test(b), 'and company holidays (T7, cycle 22)');
   assert.ok(/notes = String\(notes \|\| ''\)\.slice\(0, 1000\)/.test(b), 'notes carry the 1000-char bound');
   assert.ok(/TIMEOFF_RANGE_MAX_DAYS/.test(b) && /const TIMEOFF_RANGE_MAX_DAYS = 31/.test(code), 'span-capped');
   assert.ok(/daysBetween_\(todayRep, endDate\) > TIMEOFF_MAX_DAYS_AHEAD/.test(b) &&
@@ -12518,17 +12519,20 @@ test('F2: the day-off predicate uses the REP tz and the server PTO flag', () => 
   assert.strictEqual(ctx.remindIsDayOff_('Asia/Kolkata'), false, 'a missing flag is not "off"');
 });
 
-test('F2: empIsOffToday_ is bounded, approved-only, and fails toward "working"', () => {
-  const body = extractRawFunction('Code.js', 'empIsOffToday_');
+test('F2: empTimeOffToday_ is bounded, approved-only, and fails toward "working"', () => {
+  // T5 (cycle 22) renamed it from empIsOffToday_: it now says WHICH part of the
+  // day (full / morning / afternoon), and only a FULL day sets offToday.
+  const body = extractRawFunction('Code.js', 'empTimeOffToday_');
   assert.ok(!/getDataRange\(\)/.test(body), 'it does not read the full sheet (INV-46)');
   assert.ok(/getRange\(2, 1, lastRow - 1, width\)/.test(body), 'it reads a bounded column window');
   assert.ok(/normalizeDate_/.test(body), 'the date cell is coercion-recovered (INV-29)');
   assert.ok(/\.trim\(\)\.toLowerCase\(\) === 'approved'/.test(body),
     "only APPROVED counts — a pending request is not yet a day off (normalized, INV-183)");
-  assert.ok(/catch \(e\)[\s\S]*return false/.test(body),
-    'a failed read returns false — the safe direction (a missed reminder, never a silenced one)');
+  assert.ok(/catch \(e\)[\s\S]*return null/.test(body),
+    'a failed read returns null — the safe direction (a missed reminder, never a silenced one)');
   const state = extractRawFunction('Code.js', 'getEmployeeState');
-  assert.ok(/offToday: empIsOffToday_\(/.test(state), 'getEmployeeState ships it');
+  assert.ok(/const offKind = empTimeOffToday_\(emp\.id, today\)/.test(state) && /offToday: offKind === 'full'/.test(state),
+    'getEmployeeState ships it — a FULL day only');
 });
 
 test('F7: the accrual tile footer is terse AND keeps the planned line', () => {
@@ -27708,6 +27712,129 @@ test('A8: the automation-error stamp and clear serialise on the USER lock and re
   log.length = 0; lock.tryLock = () => { log.push('try'); return false; };
   ctx.stampAutomationError_('JobB', 'x');
   assert.deepStrictEqual(log, ['user', 'try', 'write'], 'a contended lock still writes the stamp, and releases nothing it did not take');
+});
+
+
+// ---------------------------------------------------------------------------
+// cycle 22 Batch 7 — working-day semantics, scheduling, QA ingest
+console.log('\ncycle 22 Batch 7 — working-day semantics, scheduling, QA ingest');
+const B7_WEB = path.join(__dirname, '../../web-app');
+
+test('T4: the lunch graded is the LunchOut NEAREST the scheduled lunch — a morning break no longer scores every day on time', () => {
+  const ctx = vm.createContext({ Math });
+  vm.runInContext(extractRawFunction('Code.js', 'punctLunchNearest_'), ctx);
+  const f = ctx.punctLunchNearest_;
+  // 12:30 lunch scheduled; a 10:15 break and a 12:50 lunch. The earliest (the old read) is the break.
+  assert.strictEqual(f([615, 770], 750), 770, 'the lunch, not the morning break');
+  assert.strictEqual(f([770, 615], 750), 770, 'order-independent (append order is not time order, g14)');
+  assert.strictEqual(f([740, 760], 750), 740, 'a tie goes to the earlier punch');
+  assert.strictEqual(f([], 750), null, 'no punch — not graded');
+  assert.strictEqual(f([700], null), null, 'no scheduled lunch — not graded');
+  const src = stripJsComments_(extractRawFunction('Code.js', 'getPunctualityReport'));
+  assert.ok(/\(bucket\[d\]\.lunches = bucket\[d\]\.lunches \|\| \[\]\)\.push\(mins\)/.test(src), 'every LunchOut is kept, not just the earliest');
+  assert.ok(/const lunch = punctLunchNearest_\(r\.days\[d\]\.lunches, r\.lunchMin\)/.test(src) && /if \(lunch <= r\.lunchMin \+ grace\)/.test(src),
+    'the report grades the nearest one');
+});
+
+test('T5: a HALF day is half a day — graded from mid-shift on a morning off, not lunch-graded, and never a whole day off for the reminders', () => {
+  const ctx = vm.createContext({ Math, String });
+  ['timeOffDayKind_', 'timeOffKindsCombine_', 'punctExpectedStartMin_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  assert.strictEqual(ctx.timeOffDayKind_('Half Day - Morning'), 'morning');
+  assert.strictEqual(ctx.timeOffDayKind_('  half day -  afternoon '), 'afternoon', 'normalised like the rest of the type reads');
+  assert.strictEqual(ctx.timeOffDayKind_('Full Day'), 'full');
+  assert.strictEqual(ctx.timeOffDayKind_('Personal Day'), 'full');
+  assert.strictEqual(ctx.timeOffKindsCombine_([]), null);
+  assert.strictEqual(ctx.timeOffKindsCombine_(['morning']), 'morning');
+  assert.strictEqual(ctx.timeOffKindsCombine_(['morning', 'afternoon']), 'full', 'both halves are a full day');
+  // 08:00 start, 9-hour shift: a morning half day is expected at 12:30, so a 12:32 clock-in is on time, not 272 min late.
+  assert.strictEqual(ctx.punctExpectedStartMin_(480, 540, 'Half Day - Morning'), 750);
+  assert.strictEqual(ctx.punctExpectedStartMin_(480, 540, 'Half Day - Afternoon'), 480, 'an afternoon half day starts on time as usual');
+  assert.strictEqual(ctx.punctExpectedStartMin_(480, 540, null), 480);
+  const src = stripJsComments_(extractRawFunction('Code.js', 'getPunctualityReport'));
+  assert.ok(/const lateMin = r\.days\[d\]\.in - expStart\(d\)/.test(src) && /const lateMin = hasIn \? \(r\.days\[dIso\]\.in - expStart\(dIso\)\) : null/.test(src),
+    'both the summary and the per-day record grade against the expected start');
+  assert.ok(/schedStartMin: expStart\(dIso\)/.test(src), 'and the day record shows the start it was graded against');
+  assert.ok(/const halfDay = !!dayPto\(d\) && timeOffDayKind_\(dayPto\(d\)\) !== 'full';\s*if \(lunch != null && !halfDay\)/.test(src), 'a half day is not lunch-graded');
+  // Server: the state endpoint ships the part of the day; driven over a fake tab.
+  const rows = [['E1', 'Ann', '2026-09-24', 'Half Day - Morning', '', 'Approved', 't']];
+  const sctx = vm.createContext({ String, Math, Logger: { log() {} }, TO: { EMP_ID: 0, NAME: 1, DATE: 2, TYPE: 3, NOTES: 4, STATUS: 5, SUBMITTED_AT: 6 },
+    normalizeDate_: (x) => x, getOrCreateTimeOffSheet_: () => ({ getLastRow: () => rows.length + 1, getRange: () => ({ getValues: () => rows }) }) });
+  ['timeOffDayKind_', 'timeOffKindsCombine_', 'empTimeOffToday_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), sctx));
+  assert.strictEqual(sctx.empTimeOffToday_('E1', '2026-09-24'), 'morning', 'an approved morning half day');
+  rows[0][5] = 'Pending';
+  assert.strictEqual(sctx.empTimeOffToday_('E1', '2026-09-24'), null, 'pending is not off');
+  const st = stripJsComments_(extractRawFunction('Code.js', 'getEmployeeState'));
+  assert.ok(/halfDayOff: \(offKind === 'morning' \|\| offKind === 'afternoon'\) \? offKind : null/.test(st), 'getEmployeeState ships halfDayOff');
+  // Client: the ticker narrows the window to the half being worked.
+  const s2 = buildSandbox([]);
+  const win = loadFunction(s2, 'script_core.html', 'remindWorkWindow_');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(win(480, 540, 'morning'))), { startMin: 750, endMin: 1020 });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(win(480, 540, 'afternoon'))), { startMin: 480, endMin: 750 });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(win(480, 540, null))), { startMin: 480, endMin: 1020 });
+  const tick = stripJsComments_(extractFunction('script_core.html', 'remindersTick_'));
+  assert.ok(/var win = remindWorkWindow_\(sched\.startMin, sched\.lengthMin, empState && empState\.halfDayOff\)/.test(tick) &&
+    /var endMin = win\.endMin;/.test(tick) && /var startMin = win\.startMin;/.test(tick) && /b\.startMin >= win\.startMin && b\.startMin < win\.endMin/.test(tick),
+    'the not-clocked-in, clock-out and break reminders all read the working half');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/halfDayOff: null/.test(mock), 'the state fixture mirrors the new field (INV-185)');
+});
+
+test('T7: a time-off RANGE skips company holidays on the server and in the preview — approving it no longer charges a closed day (driven)', () => {
+  const written = [];
+  const ctx = vm.createContext({ String, Date, Math, JSON,
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    getEmployeeInfo_: () => ({ id: 'E1', name: 'Ann' }), empTz_: () => 'America/Chicago',
+    fmtDateTz_: () => '2026-08-30', TIMEOFF_RANGE_MAX_DAYS: 60, TIMEOFF_MAX_DAYS_AHEAD: 400, TIMEOFF_MAX_DAYS_BACK: 30,
+    isValidTimeOffType_: () => true, companyHolidayMap_: () => ({ '2026-09-07': true }),
+    getOrCreateTimeOffSheet_: () => ({ appendRow: (r) => written.push(r) }), hasActiveTimeOffOnDate_: () => false,
+    sheetSafeRow_: (r) => r, fmtDate_: () => 'd', fmtTime_: () => 't', writeAuditLog_() {},
+    Utilities: { formatDate: (d) => d.toISOString().substring(0, 10) } });
+  ['daysBetween_', 'addDaysIso_', 'submitTimeOffRange'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  // Fri 4 Sep .. Tue 8 Sep 2026, Labor Day on Mon 7 Sep.
+  const r = JSON.parse(JSON.stringify(ctx.submitTimeOffRange('2026-09-04', '2026-09-08', 'Full Day', '')));
+  assert.strictEqual(r.success, true, JSON.stringify(r));
+  assert.deepStrictEqual(written.map((w) => w[2]), ['2026-09-04', '2026-09-08'], 'Friday and Tuesday only — Labor Day is not requested');
+  assert.strictEqual(r.skippedWeekendDays, 2); assert.strictEqual(r.skippedHolidayDays, 1);
+  written.length = 0;
+  const only = JSON.parse(JSON.stringify(ctx.submitTimeOffRange('2026-09-05', '2026-09-07', 'Full Day', '')));
+  assert.ok(!only.success && /weekend days and company holidays/.test(only.error), 'a range of nothing but closed days is refused by name');
+  // Client preview counts the same days.
+  const s2 = buildSandbox([]);
+  s2.SERVER_COMPANY_HOLIDAYS = ['2026-09-07'];
+  const cw = loadFunction(s2, 'tc/script_timeoff.html', 'countWeekdaysIso_');
+  assert.strictEqual(cw('2026-09-04', '2026-09-08'), 2, 'the preview charges two days, as the server writes');
+  s2.SERVER_COMPANY_HOLIDAYS = [];
+  assert.strictEqual(cw('2026-09-04', '2026-09-08'), 3, 'with no calendar it is weekends only');
+  const to = fs.readFileSync(path.join(B7_WEB, 'tc/script_timeoff.html'), 'utf8');
+  assert.ok(/result\.skippedHolidayDays \? ' — ' \+ result\.skippedHolidayDays \+ ' company holiday\(s\) skipped'/.test(to), 'the toast names the skipped holidays');
+});
+
+test('T8: a company holiday is a day off for the reminder ticker — no chimed "not clocked in" on Labor Day (driven)', () => {
+  const s2 = buildSandbox([]);
+  s2.isoDateTz = () => '2026-09-07';   // Monday, Labor Day
+  s2.empState = { offToday: false };
+  const f = loadFunction(s2, 'script_core.html', 'remindIsDayOff_');
+  s2.SERVER_COMPANY_HOLIDAYS = ['2026-09-07'];
+  assert.strictEqual(f('America/Chicago'), true, 'the calendar says closed');
+  s2.SERVER_COMPANY_HOLIDAYS = [];
+  assert.strictEqual(f('America/Chicago'), false, 'an ordinary Monday is a working day');
+  s2.isoDateTz = () => '2026-09-06';
+  assert.strictEqual(f('America/Chicago'), true, 'Sunday stays off');
+});
+
+test('T11: every training "overdue" is judged against ONE today — the manager-tz work day', () => {
+  const src = stripJsComments_(serverSource());
+  const my = stripJsComments_(extractRawFunction('Code.js', 'getMyTraining'));
+  assert.ok(/const todayIso = trainTodayIso_\(\)/.test(my) && !/safeTimezone_\(emp\.timezone\)/.test(my), 'the rep checklist no longer uses the rep timezone');
+  const dig = stripJsComments_(extractRawFunction('Code.js', 'sendTrainingOverdueDigest'));
+  assert.ok(/const todayIso = trainTodayIso_\(\)/.test(dig), 'the digest reads the same today');
+  const helper = extractRawFunction('Code.js', 'trainTodayIso_');
+  assert.ok(/CONFIG\.MANAGER_TIMEZONE \|\| CONFIG\.TIMEZONE/.test(helper), 'the work anchor');
+  // No training reader computes its own today any more.
+  const trainFile = fs.readFileSync(path.join(B7_WEB, '80_training.js'), 'utf8');
+  const own = (stripJsComments_(trainFile).match(/const todayIso = Utilities\.formatDate/g) || []).length;
+  assert.strictEqual(own, 0, 'no training reader formats its own today');
+  assert.ok((src.match(/trainTodayIso_\(\)/g) || []).length >= 3, 'the three readers share it');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

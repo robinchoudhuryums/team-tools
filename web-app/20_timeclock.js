@@ -1168,6 +1168,7 @@ function getEmployeeState() {
     if (!emp) return { error: 'Your account is not registered. Contact your manager.' };
     const empTz = empTz_(emp);
     const { today, punches } = getTodayPunches_(emp.id, empTz);
+    const offKind = empTimeOffToday_(emp.id, today);
     return {
       name: emp.name, id: emp.id, today, punches,
       nextActions: getNextActions_(punches),
@@ -1205,7 +1206,11 @@ function getEmployeeState() {
       // F2 (cycle 18) — the shell reminder ticker needs to know this is a day
       // OFF, not just what the shift shape is. Approved PTO only; a pending
       // request is not yet a day off.
-      offToday: empIsOffToday_(emp.id, today),
+      // T5 (cycle 22): a HALF day is not a day off. It used to set offToday
+      // and silence every inferred reminder for the half the rep works; the
+      // ticker now narrows the shift window to the working half instead.
+      offToday: offKind === 'full',
+      halfDayOff: (offKind === 'morning' || offKind === 'afternoon') ? offKind : null,
       // Operator 2026-08-31: today's PENDING adjustment requests, so the Clock
       // view can say a fix is in flight instead of showing a bare punch button
       // to a rep who has already asked for one. Additive + client-guarded —
@@ -1565,14 +1570,21 @@ function submitTimeOffRange(startDate, endDate, type, notes) {
     if (!isValidTimeOffType_(type))
       return { success: false, error: 'Invalid leave type.' };
     const span = daysBetween_(startDate, endDate);
+    // T7 (cycle 22): a company holiday is skipped like a weekend. It used to
+    // file a request for the closed day, and approving the range deducted PTO
+    // for it. The calendar is getCompanyHolidays_ (the ONE accessor, g123).
+    const hol = companyHolidayMap_(startDate, endDate);
     const days = [];
+    let skippedHolidays = 0;
     for (let i = 0; i <= span; i++) {
       const d = addDaysIso_(startDate, i);
       const dow = new Date(d + 'T00:00:00Z').getUTCDay();
-      if (dow !== 0 && dow !== 6) days.push(d);
+      if (dow === 0 || dow === 6) continue;
+      if (hol[d]) { skippedHolidays++; continue; }
+      days.push(d);
     }
     if (days.length === 0)
-      return { success: false, error: 'That range contains only weekend days.' };
+      return { success: false, error: 'That range contains only weekend days and company holidays.' };
     const toSheet = getOrCreateTimeOffSheet_();
     const conflicts = days.filter(d => hasActiveTimeOffOnDate_(toSheet, emp.id, d));
     if (conflicts.length > 0)
@@ -1583,7 +1595,8 @@ function submitTimeOffRange(startDate, endDate, type, notes) {
       writeAuditLog_(emp, 'TimeOffRequest', d, '', false, 0,
         type + ' (range ' + startDate + '..' + endDate + ')' + (notes ? ' — ' + notes : ''));
     });
-    return { success: true, count: days.length, skippedWeekendDays: (span + 1) - days.length };
+    return { success: true, count: days.length, skippedWeekendDays: (span + 1) - days.length - skippedHolidays,
+             skippedHolidayDays: skippedHolidays };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
@@ -5200,7 +5213,9 @@ function isValidTimeOffType_(type) {
  *  one day would each deduct on approval and double-charge the balance (H1).
  *  Denied/cancelled rows never deducted, so they don't block a re-request. */
 /**
- * Is this rep on APPROVED time off on `dateIso`? (cycle-18 F2.)
+ * Is this rep on APPROVED time off on `dateIso`, and for which part of the
+ * day? (cycle-18 F2; the part since cycle 22 T5.) Returns 'full' / 'morning' /
+ * 'afternoon' / null.
  *
  * BOUNDED on purpose: `getEmployeeState` is the app's hottest endpoint (boot,
  * every punch via the recordPunch wrapper, the reminder ticker's <=1/10min
@@ -5214,24 +5229,42 @@ function isValidTimeOffType_(type) {
  * pre-fix behaviour), while a false POSITIVE would silence a real reminder for
  * a rep who IS working.
  */
-function empIsOffToday_(empId, dateIso) {
+function empTimeOffToday_(empId, dateIso) {
   try {
     const sheet = getOrCreateTimeOffSheet_();
     const lastRow = sheet.getLastRow();
-    if (lastRow < 2) return false;
-    const width = Math.max(TO.DATE, TO.STATUS, TO.EMP_ID) + 1;
+    if (lastRow < 2) return null;
+    const width = Math.max(TO.DATE, TO.STATUS, TO.EMP_ID, TO.TYPE) + 1;
     const rows = sheet.getRange(2, 1, lastRow - 1, width).getValues();
     const id = String(empId).trim();
+    const kinds = [];
     for (let i = 0; i < rows.length; i++) {
       if (String(rows[i][TO.EMP_ID]).trim() !== id) continue;
       if (normalizeDate_(rows[i][TO.DATE]) !== dateIso) continue;
-      if (String(rows[i][TO.STATUS] || '').trim().toLowerCase() === 'approved') return true;
+      if (String(rows[i][TO.STATUS] || '').trim().toLowerCase() === 'approved') kinds.push(timeOffDayKind_(rows[i][TO.TYPE]));
     }
-    return false;
+    return timeOffKindsCombine_(kinds);
   } catch (e) {
-    Logger.log('empIsOffToday_ failed: ' + e.message);
-    return false;
+    Logger.log('empTimeOffToday_ failed: ' + e.message);
+    return null;
   }
+}
+/** PURE (T5, cycle 22) — which part of the day an approved time-off TYPE
+ *  covers: 'morning' / 'afternoon' for the two half-day types, otherwise
+ *  'full'. A half day used to count as a whole day off everywhere it was read. */
+function timeOffDayKind_(type) {
+  const t = String(type || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (/^half day ?- ?morning$/.test(t)) return 'morning';
+  if (/^half day ?- ?afternoon$/.test(t)) return 'afternoon';
+  return 'full';
+}
+/** PURE — one day's approved kinds, combined: any 'full', or both halves,
+ *  is a full day; a single half stays that half; none is null. */
+function timeOffKindsCombine_(kinds) {
+  const k = kinds || [];
+  if (!k.length) return null;
+  if (k.indexOf('full') >= 0 || (k.indexOf('morning') >= 0 && k.indexOf('afternoon') >= 0)) return 'full';
+  return k[0];
 }
 /** Today's PENDING punch-adjustment requests for one rep (operator
  *  2026-08-31). Until this shipped a submitted request was visible ONLY inside
@@ -5243,7 +5276,7 @@ function empIsOffToday_(empId, dateIso) {
  *
  *  Scoped to TODAY because the chip lives beside today's punch buttons; the
  *  Adjust modal still lists every pending request. READ-ONLY and bounded (the
- *  empIsOffToday_ precedent — a projected range, never getDataRange), and it
+ *  empTimeOffToday_ precedent — a projected range, never getDataRange), and it
  *  NEVER provisions the tab: a deployment with no adjustment requests yet must
  *  not have getEmployeeState create a sheet. Best-effort — a failed read
  *  yields [], which is exactly the pre-fix behaviour, never worse. */
@@ -5824,6 +5857,26 @@ function getCoveragePlan(fromDate, toDate) {
  *  `off`, a weekday reads `nopunch` (an absent weekday drawn as a GAP would
  *  read as an untracked absence — the doc's own rule, INV-187), and a weekend
  *  is not a day in the record at all (`null` — the roster works no Sat/Sun). */
+/** PURE (T5, cycle 22) — the start a day is graded against: the shift start,
+ *  or mid-shift on a MORNING half day (the rep works the afternoon). An
+ *  afternoon half day and a full day keep the shift start. */
+function punctExpectedStartMin_(startMin, lengthMin, ptoType) {
+  if (ptoType && timeOffDayKind_(ptoType) === 'morning' && lengthMin > 0) {
+    return startMin + Math.round(lengthMin / 2);
+  }
+  return startMin;
+}
+/** PURE (T4, cycle 22) — of a day's LunchOut minutes, the one nearest the
+ *  scheduled lunch (ties to the earlier); null with no schedule or no punch. */
+function punctLunchNearest_(lunches, lunchMin) {
+  if (lunchMin == null || !lunches || !lunches.length) return null;
+  let best = null;
+  lunches.forEach(function (m) {
+    if (best === null || Math.abs(m - lunchMin) < Math.abs(best - lunchMin) ||
+        (Math.abs(m - lunchMin) === Math.abs(best - lunchMin) && m < best)) best = m;
+  });
+  return best;
+}
 function punctDayState_(hasIn, lateMin, grace, holidayName, ptoType, isWeekend) {
   if (hasIn) return (lateMin > grace) ? 'late' : 'ontime';
   if (holidayName) return 'holiday';
@@ -5890,7 +5943,7 @@ function getPunctualityReport(fromDate, toDate) {
         let longest = -1;
         (sched.breaks || []).forEach(function (b) { if (b.lenMin > longest) { longest = b.lenMin; lunchMin = b.startMin; } });
       }
-      repMap[id] = { id: id, name: name, tz: tz, startMin: sched.startMin, lunchMin: lunchMin, days: {}, prevDays: {} };
+      repMap[id] = { id: id, name: name, tz: tz, startMin: sched.startMin, lengthMin: sched.lengthMin, lunchMin: lunchMin, days: {}, prevDays: {} };
     }
 
     const rows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
@@ -5911,7 +5964,7 @@ function getPunctualityReport(fromDate, toDate) {
       if (mins === null) continue;
       if (!bucket[d]) bucket[d] = {};
       if (type === 'ClockIn') { if (bucket[d].in == null || mins < bucket[d].in) bucket[d].in = mins; }
-      else { if (bucket[d].lunch == null || mins < bucket[d].lunch) bucket[d].lunch = mins; }
+      else (bucket[d].lunches = bucket[d].lunches || []).push(mins);   // T4: every LunchOut; graded below
     }
 
     // Approved PTO in range (the `off` state) — BEST-EFFORT, and the outcome
@@ -5948,16 +6001,27 @@ function getPunctualityReport(fromDate, toDate) {
       const dates = Object.keys(r.days).filter(function (d) { return r.days[d].in != null; });
       if (!dates.length) return;
       let onTime = 0, late = 0, totLate = 0, worst = 0, worstDate = null, lunchDays = 0, lunchOnTime = 0;
+      // T5 (cycle 22): the day's EXPECTED start. A morning half day starts at
+      // mid-shift, so it used to grade as ~half a shift late.
+      const dayPto = function (d) { return (ptoMap[id] && ptoMap[id][d]) || null; };
+      const expStart = function (d) { return punctExpectedStartMin_(r.startMin, r.lengthMin, dayPto(d)); };
       dates.forEach(function (d) {
-        const lateMin = r.days[d].in - r.startMin;
+        const lateMin = r.days[d].in - expStart(d);
         if (lateMin > grace) { late++; totLate += lateMin; if (lateMin > worst) { worst = lateMin; worstDate = d; } }
         else onTime++;
-        if (r.lunchMin != null && r.days[d].lunch != null) {
+        // T4 (cycle 22): the LUNCH is the LunchOut nearest the scheduled lunch
+        // — it used to be the day's EARLIEST, so a morning break scored every
+        // day on time. A half day is not lunch-graded (no lunch is expected).
+        const lunch = punctLunchNearest_(r.days[d].lunches, r.lunchMin);
+        const halfDay = !!dayPto(d) && timeOffDayKind_(dayPto(d)) !== 'full';
+        if (lunch != null && !halfDay) {
           lunchDays++;
-          if (r.days[d].lunch <= r.lunchMin + grace) lunchOnTime++;   // early/within-grace lunch is fine
+          if (lunch <= r.lunchMin + grace) lunchOnTime++;   // early/within-grace lunch is fine
         }
       });
-      // The previous equivalent range — same grading, no day detail.
+      // The previous equivalent range — same grading, no day detail. (The PTO
+      // overlay covers the report range only, so a half day in the previous
+      // range still grades against the full start — documented, not guessed.)
       let prevOn = 0, prevN = 0;
       Object.keys(r.prevDays).forEach(function (d) {
         if (r.prevDays[d].in == null) return;
@@ -5971,11 +6035,11 @@ function getPunctualityReport(fromDate, toDate) {
         const dIso = addDaysIso_(fromDate, k);
         const dow = new Date(dIso + 'T12:00:00Z').getUTCDay();
         const hasIn = !!(r.days[dIso] && r.days[dIso].in != null);
-        const lateMin = hasIn ? (r.days[dIso].in - r.startMin) : null;
         const ptoType = (ptoMap[id] && ptoMap[id][dIso]) || null;
+        const lateMin = hasIn ? (r.days[dIso].in - expStart(dIso)) : null;
         const state = punctDayState_(hasIn, lateMin, grace, holMap[dIso] || null, ptoType, dow === 0 || dow === 6);
         if (!state) continue;
-        dayDetail.push({ date: dIso, schedStartMin: r.startMin, actualMin: hasIn ? r.days[dIso].in : null,
+        dayDetail.push({ date: dIso, schedStartMin: expStart(dIso), actualMin: hasIn ? r.days[dIso].in : null,
           lateMin: (hasIn && lateMin > grace) ? lateMin : (hasIn ? 0 : null), state: state,
           ptoType: ptoType, holidayName: holMap[dIso] || null });
       }
