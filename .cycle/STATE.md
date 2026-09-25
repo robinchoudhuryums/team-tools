@@ -4,9 +4,9 @@
 Cycle: 22 — opened 2026-09-23 by a `/broad-scan` (99 findings: 0 Critical /
 3 High; nine-batch implementation plan). Cycle 21 + 21post are in HISTORY.md.
 Phase: implement
-Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9) + S2 DONE + Batch 2 DONE (T1, T3, T2, T6, C1, C5) + follow-ons F1–F5 DONE + Batch 3 DONE (I1, C4, K2, K6, C3, D6, D7, C6, C10, C11) + Batch 4 DONE (M4, M1, X3, M2, M8, M3, M7, M9, D1, D2) + Batch 5 DONE (K3, K1, K4, K5, X1, K7, K9, K12, K11, K13, K10) + Batch 6 DONE (A1, A2, C2, A3, S7, A4, A5, A6, A8) + Batch 7 DONE (T5, T4, T7, T8, T9, T10, T11, D3, D5, M10, M5) + Batch 8 DONE (I2, I3, S5, D8, D4, C7, C8, C9, I4, I5, I6, I7, D9, I8)
+Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9) + S2 DONE + Batch 2 DONE (T1, T3, T2, T6, C1, C5) + follow-ons F1–F5 DONE + Batch 3 DONE (I1, C4, K2, K6, C3, D6, D7, C6, C10, C11) + Batch 4 DONE (M4, M1, X3, M2, M8, M3, M7, M9, D1, D2) + Batch 5 DONE (K3, K1, K4, K5, X1, K7, K9, K12, K11, K13, K10) + Batch 6 DONE (A1, A2, C2, A3, S7, A4, A5, A6, A8) + Batch 7 DONE (T5, T4, T7, T8, T9, T10, T11, D3, D5, M10, M5) + Batch 8 DONE (I2, I3, S5, D8, D4, C7, C8, C9, I4, I5, I6, I7, D9, I8) + follow-ups FU DONE (the T5 half-day rework + the Batch 6–8 follow-ons)
 Test Command: manual
-Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent) · S2 (phased, blanket): L (~9 h) — helper+pin 1h · wrap every write site ~180 + pin repairs 6h · derived pin + bite-checks 2h | S2 Actual: ~5 h · Batch 2: M (~11.5 h) — T1 M 3h · T3 M 3h · T2 S 1.5h · T6 S 1.5h · C1 S 1.5h · C5 S 1h | Batch 2 Actual: ~4.5 h · Follow-ons F1–F5: M (~7 h) — F1 cleanup lock S 1h · F2 TSV twin S 1h · F3 stored-formula scan M 2h · F4 Spanish grid + grow-first net S 1h · F5 Day Edit stray leaves M 2h | Follow-ons Actual: ~3.5 h · Batch 3: L (~12 h) — I1 M 2.5h · C4 S 1.5h · K2 S 1.5h · K6 S 1h · C3 S 1h · D6 S 1.5h · D7 S 1h · C6 S 1h · C10 S 1h · C11 S 0.5h | Batch 3 Actual: ~5 h · Batch 4: L (~11 h) — M4 S 1.5h · M1 S 1h · X3 S 0.5h · M2 S 1h · M3 S 1.5h · M7 S 1.5h · M8 S 1h · M9 S 1h · D1 S 1.5h · D2 S 0.5h | Batch 4 Actual: ~3.5 h · Batch 5: L (~12 h) — K3 M 2.5h · K1 S 1.5h · K4 M 2h · K5 S 1.5h · X1 S 1h · K7 S 1h · K9 S 0.5h · K12 S 1h · K11 S 0.5h · K13 S 0.5h · K10 S 0.25h | Batch 5 Actual: ~3 h · Batch 6: L (~12 h) — A1 M 3h · A2 M 3h · C2 S 1h · A3 S 1h · S7 S 1.5h · A4 S 1h · A5 S 0.5h · A6 S 0.5h · A8 S 0.5h | Batch 6 Actual: ~3.5 h · Batch 7: L (~13 h) — T5 M 2h · T4 S 1.5h · T7 S 1.5h · T8 S 1h · T9 S 0.5h · T10 S 0.5h · T11 S 0.5h · D3 M 2h · D5 S 1h · M10 S 1h · M5 S 1.5h | Batch 7 Actual: ~4 h · Batch 8: L (~12 h) — I2 S 1.5h · I3 S 1h · S5 S 1h · D8 S 1.5h · D4 S 1h · C7 S 1.5h · C8 S 1h · C9 S 1h · I4 S 0.5h · I5 S 1h · I6 S 0.5h · I7 S 0.5h · D9 S 0.5h · I8 S 0.25h | Batch 8 Actual: ~3.5 h · Follow-ups FU (B6–B8 + T5 rework): L (~10 h) — T5 rework M 2h · urgent-digest error S 0.5h · clientErrors on the dot S 0.25h · daily job no-run evidence S 1h · trigger-installer offboard S 1h · QA/Spanish lists S 0.5h · one cannot-confirm caption S 0.25h · creating flows bust S 0.5h · voicemail body + count S 1h · cross-window invalidation S 0.5h · doc integrity on read S 1h · inline weight warning S 0.5h · void audit row S 0.25h
+Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent) · S2 (phased, blanket): L (~9 h) — helper+pin 1h · wrap every write site ~180 + pin repairs 6h · derived pin + bite-checks 2h | S2 Actual: ~5 h · Batch 2: M (~11.5 h) — T1 M 3h · T3 M 3h · T2 S 1.5h · T6 S 1.5h · C1 S 1.5h · C5 S 1h | Batch 2 Actual: ~4.5 h · Follow-ons F1–F5: M (~7 h) — F1 cleanup lock S 1h · F2 TSV twin S 1h · F3 stored-formula scan M 2h · F4 Spanish grid + grow-first net S 1h · F5 Day Edit stray leaves M 2h | Follow-ons Actual: ~3.5 h · Batch 3: L (~12 h) — I1 M 2.5h · C4 S 1.5h · K2 S 1.5h · K6 S 1h · C3 S 1h · D6 S 1.5h · D7 S 1h · C6 S 1h · C10 S 1h · C11 S 0.5h | Batch 3 Actual: ~5 h · Batch 4: L (~11 h) — M4 S 1.5h · M1 S 1h · X3 S 0.5h · M2 S 1h · M3 S 1.5h · M7 S 1.5h · M8 S 1h · M9 S 1h · D1 S 1.5h · D2 S 0.5h | Batch 4 Actual: ~3.5 h · Batch 5: L (~12 h) — K3 M 2.5h · K1 S 1.5h · K4 M 2h · K5 S 1.5h · X1 S 1h · K7 S 1h · K9 S 0.5h · K12 S 1h · K11 S 0.5h · K13 S 0.5h · K10 S 0.25h | Batch 5 Actual: ~3 h · Batch 6: L (~12 h) — A1 M 3h · A2 M 3h · C2 S 1h · A3 S 1h · S7 S 1.5h · A4 S 1h · A5 S 0.5h · A6 S 0.5h · A8 S 0.5h | Batch 6 Actual: ~3.5 h · Batch 7: L (~13 h) — T5 M 2h · T4 S 1.5h · T7 S 1.5h · T8 S 1h · T9 S 0.5h · T10 S 0.5h · T11 S 0.5h · D3 M 2h · D5 S 1h · M10 S 1h · M5 S 1.5h | Batch 7 Actual: ~4 h · Batch 8: L (~12 h) — I2 S 1.5h · I3 S 1h · S5 S 1h · D8 S 1.5h · D4 S 1h · C7 S 1.5h · C8 S 1h · C9 S 1h · I4 S 0.5h · I5 S 1h · I6 S 0.5h · I7 S 0.5h · D9 S 0.5h · I8 S 0.25h | Batch 8 Actual: ~3.5 h · Follow-ups FU (B6–B8 + T5 rework): L (~10 h) — T5 rework M 2h · urgent-digest error S 0.5h · clientErrors on the dot S 0.25h · daily job no-run evidence S 1h · trigger-installer offboard S 1h · QA/Spanish lists S 0.5h · one cannot-confirm caption S 0.25h · creating flows bust S 0.5h · voicemail body + count S 1h · cross-window invalidation S 0.5h · doc integrity on read S 1h · inline weight warning S 0.5h · void audit row S 0.25h | FU Actual: ~4 h
 Subsystem cycles since last Seams audit: 1 — reset to 0 by the 2026-09-18 audit
 (batch S), +1 for the 21post reflection. The cadence is every 4.
 Updated: 2026-09-25
@@ -79,6 +79,10 @@ Updated: 2026-09-25
 - S5, D9 | 90_qa.js, qa/script_qa.html | a changed agent withdraws the share; a late comment post acts only on the recording still open
 - D8, D4 | train/script_training.html, train/script_empdocs.html | Team Training names failed sources and keeps a quiz's link; Verify for every issued doc
   Block: `.cycle/blocks/22-B8-broad-implement.md`
+- FU | 20_timeclock.js, tc/script_manager.html, script_core.html | T5 REWORK: a half day is graded on hours worked (>= PTO_HOURS_PER_DAY / 2) — half / halfshort / halfopen (unknown, or not over yet) — never on its start or lunch; previous range excludes half days; the ticker's remindDayPlan_ assumes no half (no breaks, no inferred clock-out, nudge only once the hours can no longer fit and nothing is worked)
+- FU | 10_core.js, 30_callnotes.js, cn/script_callnotes.html, 00_config.js | B6 follow-ons: urgent digest stamps a failed read; brief names unread urgent Sheets; unreadable ClientErrors on the dot; daily no-run evidence (auditWindowProvesAbsence_); trigger installer recorded + triggerOwner detector; one cannot-confirm caption. QA/Spanish lists: no edit (gates need a roster employee)
+- FU | 80/81/82, 51_spanish.js, metrics, tc/script_clock.html, 60_intake.js, intake, train/script_empdocs.html, 61_forms.js | B7/B8 follow-ons: creating flows bust Needs-you; newest voicemail body + "N voicemails" pill; BroadcastChannel cross-window invalidation; read-time Employee Doc integrity; weight warning on the recommendation screen; FormTokenVoided audit row
+  Block: `.cycle/blocks/22-FU-broad-implement.md`
 - F1 | Tests.js | every live-tab positional delete in the suite goes through _deleteRowsWhereLocked_ (ScriptLock from snapshot to last delete)
 - F2 | script_core.html, metrics/script_metrics.html | tsvCell_/tsvRow_ — the client twin of sheetSafe_ on every "Copy table" line
 - F3 | 10_core.js, cn/script_callnotes.html | adminScanStoredFormulas + Admin → System → Stored formulas (read-only, on demand)
@@ -159,32 +163,16 @@ Updated: 2026-09-25
   quote sent; 100+ comments show the newest. After deploy read Admin → System
   → Reference lookups: the "Cannot read" list (K3 may have added cells with
   harmless extra words) and the delivery header roles.
-- **Batch 8 follow-ons (22-B8 block):** no automatic content-hash check on
-  Employee Doc reads; the unreadable-weight factor is not warned inline on the
-  recommendation screen; a voided form token has no void audit row. OPERATOR:
-  after deploy, fix any Offerings seat cell the catalog card calls unreadable.
-- **Batch 7 follow-ons (22-B7 block):** task-CREATING flows do not bust the
-  rep's pending-tasks cache; a repeat-voicemail card's expanded body is the
-  thread's first message and `vmPending` is not rendered; punctuality's previous
-  range ignores half days; client invalidation is per-window; M5 still depends on
-  unverified 8x8 threading.
-- **T5 half-day policy (operator answer, 2026-09-25) — REWORK OWED:** a half day
-  has NO fixed start or end; it may start and end at any time, as long as at
-  least half the typical hours are worked (at least 4 hours). T5 as shipped
-  assumes a morning half day starts at mid-shift (`punctExpectedStartMin_`) and
-  narrows the reminder window to one half (`remindWorkWindow_`) — both encode the
-  wrong rule. The rework: a half day is not graded for start lateness at all
-  (nor lunch); it is graded on HOURS WORKED ≥ half the typical day (4 h, i.e.
-  `CONFIG.PTO_HOURS_PER_DAY / 2`), with a day under that flagged. The reminder
-  ticker on a half day should not assume which half: no break reminders, no
-  inferred clock-out time, and the not-clocked-in nudge only if nothing has been
-  worked by the point where 4 hours can no longer fit before shift end. Pins
-  to change: the T5 pin's mid-shift and window cases.
-- **Batch 6 follow-ons (22-B6 block):** the urgent digest reads
-  managerAggregateUrgent_'s {error} as empty (C2's shape); clientErrors.error
-  is not on the dot; a daily job with no run on record stays silent; offboarding
-  the trigger installer is undetected; QA_MEMBERS / SPANISH_INBOX_MEMBERS not
-  edited by offboarding; one caption for the "cannot confirm" rows.
+- **Follow-ups FU follow-ons (22-FU block)** — the Batch 6, 7 and 8 follow-ons
+  and the T5 half-day rework are DONE. Left: the half-day grade reads one
+  ClockIn/ClockOut pair (multi-stint half days under-count); the daily no-run
+  check cannot tell "just enabled" from "missing" (the FU new failure mode);
+  a half day under an unreadable PTO overlay grades as a full day; the expanded
+  voicemail shows only the newest; the new half-day states, integrity note,
+  weight warning and caption have no dedicated visual scenario. OPERATOR, after
+  deploy: re-run installAutomationTriggers() once so the installer record exists;
+  verify 8x8 threading on a real repeat caller (M5's premise); fix any Offerings
+  seat cell the catalog card calls unreadable (Batch 8).
 - **Batch 5 follow-ons (22-B5 block):** X1 names 31 reads owed a fixture; K3's
   connective list may need the operator's real words; K4 maps no city aliases
   beyond the abbreviations; the address hint is not photographed. STILL OPEN:
@@ -264,8 +252,8 @@ Updated: 2026-09-25
   amber** with their own explanations (operator, 2026-09-22).
 
 ## Where I left off
-Batches 1–8, S2 and follow-ons F1–F5 of cycle 22 are committed and pushed;
-none is deployed. Docs are synced through Batch 6; Batches 7 and 8 are
-implemented (blocks 22-B7 / 22-B8). The T5 half-day rework (≥ 4 hours at any
-time) is owed. Next: `/sync-docs` for Batches 7 + 8, then `/broad-implement
-Batch 9`, the T5 rework, or deploy + the walks.
+Batches 1–8, S2, follow-ons F1–F5 and the follow-ups FU (the T5 half-day
+rework + the Batch 6–8 follow-ons) of cycle 22 are committed and pushed; none
+is deployed. Docs are synced through Batch 6; Batches 7, 8 and FU are owed.
+Next: `/sync-docs` (Batches 7 + 8 + FU), then `/broad-implement Batch 9`, or
+deploy + the walks.
