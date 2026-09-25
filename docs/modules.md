@@ -151,6 +151,20 @@ not restate it. Server endpoints live in the fourteen server files
      clearing the form ends any running dictation first (C11, latent while
      voice input is off).
 
+     **Cycle 22 Batch 6 (2026-09-25) — Manage → Admin tells the truth about
+     automation.** The System tab renders the health dot's own problem list, so
+     job staleness, open punches and PTO accrual shortfalls reach "Needs
+     attention" (A2, g151). "Automation last seen" reads a per-job run ledger
+     first and says "cannot confirm" when the AuditLog window read is too short
+     to know (A1, g152). A failed tag-taxonomy load, ClientErrors read or
+     health read is named as a failure on the Tags tab, the System tab and the
+     Overview readiness checklist rather than read as empty or blamed on the
+     triggers (A4, A6, A5). Offboarding removes the person from `MANAGER_EMAILS`
+     / `ADMIN_EMAILS` and names any list it had to leave them in (S7, g153). The
+     weekly training/review digest records a queue it could not read and stops
+     reporting itself healthy (C2); a set-but-broken Dept Requests store refuses
+     rather than writing to the payroll sheet (A3).
+
 
 <a id="metrics"></a>
      **Batch 6 (2026-09-18):** the Admin Overview KPI strip reports TEAM

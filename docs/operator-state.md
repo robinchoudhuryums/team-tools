@@ -493,6 +493,8 @@ entry says which it is.
   (e.g. `alice@umsupply.com,bob@umsupply.com`). `getManagerEmails_()`
   reads this before CONFIG; without it, no one passes the
   `isManager` check and manager features stay locked out.
+  **Since cycle 22 S7 (2026-09-25) offboarding a person REMOVES their address
+  from this list** (unless it is the last entry) — see the offboarding entry.
 <a id="operator-script-property-admin-emails"></a>
 - **Script Property `ADMIN_EMAILS`** (optional) — comma-separated list of the
   above-manager **admin tier** (the Manage module's Admin tab). `getAdminEmails_()`
@@ -517,6 +519,9 @@ entry says which it is.
   run, with no commit on any failing path — because the suite silently ASSUMED
   the property unset while this very entry invited setting it. A real address
   is never removed by the suite; you do NOT unset the property to run it.
+  **Since cycle 22 S7 (2026-09-25) offboarding a person removes them from this
+  list too — but never its LAST entry**, because an empty list would make every
+  manager an admin; see the offboarding entry.
 <a id="operator-punctuality-tracking-manage-module-tab"></a>
 - **Punctuality tracking (Manage module tab).** `getPunctualityReport(from,
   to)` (manager-gated, read-only, PHI-free) backs the managerOnly **Manage →
@@ -826,7 +831,10 @@ entry says which it is.
   `sendDeptRequest` composer endpoint was REMOVED — it had no caller; auto-tracking
   replaced the manual compose tab.) **Store:**
   optional Script Property **`DEPT_REQUESTS_SS_ID`** (a dedicated sheet); falls
-  back to the ADP sheet — **recommended: set it to the Intake spreadsheet (the
+  back to the ADP sheet while it is UNSET — **and only then: since cycle 22 A3
+  (2026-09-25) a set id that cannot be opened THROWS by name** (the auto-log is
+  skipped, the tracker and Storage Health say why) instead of quietly reading
+  and writing the payroll sheet — **recommended: set it to the Intake spreadsheet (the
   PHI store), the `FORMS_SS_ID` recommendation, because the row names a
   patient (below); Manage → Admin → System's Storage inventory carries a
   "Dept Requests (PHI-adjacent)" row since Batch 5 (2026-09-18) that warns
@@ -2116,3 +2124,34 @@ entry says which it is.
   says "No stored formulas". A store it could not open, or one it did not
   reach in its four-minute budget, is NAMED; re-run to cover it. Optional,
   never blocking; once the list is empty it never needs running again.
+<a id="operator-the-automation-run-ledger-cycle-22"></a>
+- **The automation run ledger — `AUTOMATION_RUN_<action>` (cycle 22 A1,
+  2026-09-25).** Auto-managed; nothing to set. Each automation job's audit row
+  (`CallNotesReconcile`, `AdpExportAuto`, the purges and archives,
+  `PtoAccrualCredit`, `DiagnosticsPurge`) also stamps one Script Property named
+  `AUTOMATION_RUN_<action>` with `{ts, notes}` (CONFIG.TIMEZONE wall time). The
+  Automation Health panel, the health dot and the failure digest read it before
+  the AuditLog tail, so a job's last run no longer disappears when its row
+  scrolls out of the 4,000-row scan. **After deploy every job has an empty
+  ledger until it next runs**: the Admin "Automation last seen" rows then say
+  "no run on record — cannot confirm" when the AuditLog window read does not
+  reach far enough, and a monthly job is not called "not run this month" unless
+  the window reaches back past the 1st. That is expected, not a fault; it clears
+  on each job's next run. Delete one key to forget that job's last run.
+<a id="operator-offboarding-edits-the-gate-lists-cycle-22"></a>
+- **Offboarding edits `MANAGER_EMAILS` / `ADMIN_EMAILS` — and records
+  `OFFBOARDED_EMAILS` (cycle 22 S7, 2026-09-25).** Manage → Admin → Config →
+  Team Members → **Offboard** still clears the roster email (history kept),
+  and now also removes the address from `MANAGER_EMAILS` and `ADMIN_EMAILS`.
+  **It never removes a list's LAST entry**: an empty `ADMIN_EMAILS` would make
+  every manager an admin and an empty `MANAGER_EMAILS` would stop every
+  trigger. In that case the toast reads "offboarded, but still in … (why)" and
+  the `EmployeeOffboard` audit row carries `keptIn=`; add a replacement to the
+  list, then remove the person by hand. The address is recorded in the
+  auto-managed `OFFBOARDED_EMAILS` (a JSON array, capped 100), which the
+  managerSource detector reads: a listed address that was offboarded and is not
+  back on the roster shows as a dead detector on the System tab and in the
+  daily digest. **Re-onboarding does NOT put anyone back on either list** — add
+  them by hand. **One-time check after deploy:** the record starts empty, so
+  review both lists for anyone offboarded BEFORE this deploy.
+

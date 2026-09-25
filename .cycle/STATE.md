@@ -180,7 +180,7 @@ Updated: 2026-09-25
   PROPOSED (21post: fixtures the server can still produce · tone/explanation
   agree both ways · doc UI paths resolve against `TOOLS` labels). None is in
   the library yet. INV-243..262 were WRITTEN by cycle 22's /sync-docs passes.
-  **Next free is INV-263; next gotcha g151; next scenario S117.**
+  **Next free is INV-269; next gotcha g154; next scenario S118.**
 - **An intermittent DOM pin**: `the resume request states the unpaid gap
   before it is filed` (runDom.js) failed once during T7 and has passed every
   run since. Flagged, not dismissed — a flake is not a root cause.
@@ -230,8 +230,6 @@ Updated: 2026-09-25
 
 ## Where I left off
 Batches 1–6, S2 and follow-ons F1–F5 of cycle 22 are committed and pushed;
-none is deployed. Docs are synced through Batch 5; Batch 6 (automation health
-honesty) is implemented — block `.cycle/blocks/22-B6-broad-implement.md`.
-Next: `/sync-docs` for Batch 6 (g151, INV-263+, S117, operator-state entries
-for AUTOMATION_RUN_* and OFFBOARDED_EMAILS), then deploy + the walks, or
-`/broad-implement Batch 7`.
+none is deployed. Docs are synced through Batch 6 (2026-09-25: g151–g153,
+INV-263..268, S117, the run-ledger and offboarding operator-state entries).
+Next: deploy + the walks (S117 is Batch 6's), or `/broad-implement Batch 7`.

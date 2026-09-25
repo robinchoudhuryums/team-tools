@@ -832,7 +832,9 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   row, invalidates the roster cache, audits `EmployeeAdd`, and optionally
   auto-provisions the Call Notes Sheet via `provisionCallNotesSheet` AFTER
   the lock releases (sequential re-acquire, never nested));
-  **`offboardEmployee(repEmpId)`** (locked; clears ONLY the EMAIL cell — the
+  **`offboardEmployee(repEmpId)`** (locked; since cycle 22 S7 it also removes the
+  address from `MANAGER_EMAILS` / `ADMIN_EMAILS`, never a list's last entry, and
+  records it in `OFFBOARDED_EMAILS` — g153; on the roster it clears ONLY the EMAIL cell — the
   INV-183 roster convention, name + history kept; self-offboard rejected;
   audits `EmployeeOffboard`); **`getOnboardingPanel()`** (read-only — per-rep
   readiness: enrolled / manager set+known / tz shape / CDR seen-in-7d with an
@@ -4601,3 +4603,26 @@ pick them up without re-deriving the context.
   `CDR_CACHE_KEY` is now `cdr_metrics_v5` (INV-85). Verify: the M3 pin, driven
   through both readers (a 2-call 10-minute day and a 60-call 2-minute day read
   135 s, not 360).
+- <a id="automation-health-has-one-problem-list-and-liveness-reads"></a>**Automation health has ONE problem list, and liveness reads a run ledger rather than the AuditLog tail (cycle 22 A1 + A2, 2026-09-25).**
+  Three surfaces report automation health: the shell's health dot
+  (`getAutomationHealthBadge`), the 9am failure digest and the Admin System tab.
+  The first two already shared `automationProblems_`; the tab derived its own
+  findings and missed three kinds, so it read clean under a red dot (g151). Now
+  `automationProblems_(report, {items:true})` returns `{kind, key, text}` —
+  the digest's strings are the items' text — and `getAutomationHealth` ships
+  that list. The tab keeps richer branches for the kinds it renders itself
+  (stable finding ids, specific fix lines) and renders every other kind
+  generically, so the default for a new kind is "shown", not "dropped". The
+  deliberate asymmetry that remains: the tab may show MORE than the dot (the CDR
+  feed, a blind ClientErrors read), never less.
+  **Liveness** used to be one bounded AuditLog tail read. That bound is right
+  for a panel but wrong as evidence of absence (g152), so each automation audit
+  row now also stamps `AUTOMATION_RUN_<action>` — one Script Property per job,
+  so two jobs finishing together never race a shared blob and no lock is
+  needed — and the newer of ledger and tail wins. The tail stays as the
+  bootstrap source and for the per-job notes. Where neither can see a run, the
+  report says how far back it looked (`auditWindow`) and a monthly job is
+  "not run" only if that reaches the 1st; otherwise the panel says it cannot
+  confirm. A daily job with no run on record stays silent, the fresh-deploy
+  posture, now bounded to jobs that have not run since the ledger shipped.
+  Verify: the A1 and A2 pins.

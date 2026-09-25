@@ -66,6 +66,19 @@ then the four blocks' walks.
   land there; reword them) and the delivery-table header roles (e.g. a
   "Delivery City" header reads as the accepts column; rename it if that is
   wrong).
+- **Batch 6 — automation health stops contradicting itself.** Manage → Admin
+  → System now lists everything the health dot counts (open punches and job
+  staleness included), so a red dot always has an item behind it. Job
+  liveness reads a per-job run ledger (`AUTOMATION_RUN_<action>`,
+  auto-managed): until each job next runs, its "last seen" row may say
+  "cannot confirm", and the monthly accrual credit no longer false-alarms
+  "has not run this month". **Offboarding now removes the person from
+  `MANAGER_EMAILS` / `ADMIN_EMAILS`** (never a list's last entry — the toast
+  says when it kept one) and records them in `OFFBOARDED_EMAILS`.
+  **One-time operator check after deploy:** review both lists for anyone
+  offboarded before it. A set-but-unopenable `DEPT_REQUESTS_SS_ID` now
+  refuses instead of writing to the payroll sheet. Failed reads (the tag list,
+  ClientErrors, the readiness checklist's health read) say "could not read".
 
 ## 2026-09-23 — Area eligibility: city rules, any-warehouse, the diagnostics panel, the vocabulary (T7–T9)
 

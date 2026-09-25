@@ -419,6 +419,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   wraps its body in `LockService.getScriptLock().waitLock(15000)`
   and releases in `finally`. Skipping the lock causes interleaved
   approvals to double-deduct PTO balances.
+  **A second lock for a stamp nested inside a job (cycle 22 A8, 2026-09-25).**
+  A trigger handler's `catch` often runs while its own ScriptLock is still
+  held, and re-acquiring then releasing that lock from a helper would release
+  the JOB's lock early. So `stampAutomationError_` / `clearAutomationError_`
+  serialise their read-modify-write of `AUTOMATION_LAST_ERRORS` on the USER
+  lock (`withAutomationErrorLock_`, tryLock 3s, fail-open): every caller is a
+  trigger running as the one installer, so the user lock serialises them all,
+  and nothing else takes that lock inside a job. Verify: the A8 driven pin (the
+  script lock is never touched; a contended lock still writes).
+
 
 <a id="g18-normalizetype-strips-the-adj-prefix"></a>
 
@@ -1377,6 +1387,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   INV-129; the difference is that here the swallowed read feeds a *judgement*
   (a staffing band, an all-clear) rather than a number, so suppressing the
   judgement matters as much as flagging the data.
+  **Two more instances (cycle 22 A4 + A6, 2026-09-25):** a failed tag-taxonomy
+  load rendered "No tags in use yet" (an `{error}` payload) or a blank pane (a
+  transport failure left the slot `null`), and a failed ClientErrors read
+  reported "No client-side errors" — both read as the reassuring answer. The
+  taxonomy failure now lands as `{error}` and renders "could not be loaded —
+  this is not an empty list"; `clientErrorsSummary_` carries `error` beside its
+  zero count, and the System finding and the detail panel say "could not be
+  read". Verify: the A4 and A6 pins, and the `admin-tags-fail-light-mobile`
+  scenario.
+
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 
@@ -3170,6 +3190,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the defect (a property, a `CONFIG.` fallback) — a bite-check showed none of
   them would have caught a warehouse hard-coded one layer down, so it now
   asserts the registry is BUILT EMPTY.
+  **The same shape as a FALLBACK (cycle 22 A3, 2026-09-25).** `getDeptRequestsSS_`
+  wrapped `openById` in a bare `catch`, so a `DEPT_REQUESTS_SS_ID` that was set
+  but could not be opened fell through to the ADP sheet: reads came back empty
+  from a tab that was never the store, writes created a second `DeptRequests`
+  tab beside payroll (patient TRX included), and Storage Health probed the
+  fallback and read "reachable". A fallback is for an UNSET store; a configured
+  store that will not open is an outage and throws by name. Verify: the A3
+  driven pin (the ADP resolver is never called).
+
 
 <a id="g123-the-holiday-calendar-is-the-cdr-report-s"></a>
 
@@ -4007,6 +4036,15 @@ g02 defect again, so the pin drives a clean table and asserts no line at all.
 Verify: T7-3 and the T7 DOM pin (both directions — the warnings rendered, and
 absent on a clean table), plus INV-238. Bite-checked five ways, including
 restoring the silence and restoring the misdirected message.
+**Again in deploy readiness (cycle 22 A5, 2026-09-25).** When the automation
+health read failed, `getDeployReadiness` got `{}` or `{error}`, and both rows
+then blamed the deployment: "No digest has run yet — run
+installAutomationTriggers()" and "CDR unreachable/unset". Following either
+instruction changes nothing, because the triggers and the CDR store were never
+looked at. Both rows now say "Could not check — the automation health read
+failed (…). This says nothing about …". Verify: the A5 pin, driven over
+`{error}`, `{readFailed}` and no report.
+
 
 <a id="g143-a-leading-underscore-is-not-private"></a>
 
@@ -4188,3 +4226,64 @@ restoring the silence and restoring the misdirected message.
   the real resolvers. Fires when you add a `google.script.run` call, or a
   fixture. Verify: the two X1 pins (bite-checked with a removed fixture and a
   renamed RPC).
+
+<a id="g151-a-health-surface-that-derives-its-own-subset"></a>
+
+- **A health surface that derives its OWN subset of the list the dot counts can
+  read clean under a red dot (cycle 22 A2, 2026-09-25).** The shell's health
+  dot and the daily failure digest both read `automationProblems_`. The Admin
+  System tab, where the dot sends a manager, built its findings from the raw
+  report with a hand-written branch per signal, and had none for job
+  staleness, open punches or accrual shortfalls. So on any morning the
+  open-punch scan found a day, the dot was red and the page it pointed to read
+  "Nothing needs attention". The tab now receives the dot's own list
+  (`getAutomationHealth` attaches `automationProblems_(report, {items:true})`
+  — `{kind, key, text}`, the strings the digest emails being the items' text),
+  keeps its richer branches for the kinds it knows (`CN_SYS_CLIENT_KINDS_`),
+  and renders every OTHER kind from `CN_SYS_PROBLEM_KINDS_` or a generic line,
+  so a kind added later reaches the tab by default. Fires when two surfaces
+  report the same health, or you add a problem kind. Verify: the A2 driven pin
+  — its fixture must fire every kind DERIVED from the server source, and each
+  item must appear among the tab's findings; a kind the client claims must
+  have a branch the pin checks.
+
+<a id="g152-a-bounded-tail-scans-absence-is-evidence"></a>
+
+- **A bounded tail scan's ABSENCE is evidence only inside the window it read
+  (cycle 22 A1, 2026-09-25).** Job liveness read the last `CN_AUDIT_MAX_SCAN`
+  AuditLog rows. On a busy log the 1st of the month is out of that window
+  within days, so the monthly accrual credit read "has not run this month"
+  every day until month end, while a DAILY job that died went silent the
+  moment its last row scrolled out (no row = the fresh-deploy posture).
+  `auditScanComplete` was computed and never read. Two fixes, one per
+  direction: the evidence no longer scrolls — `writeAuditLog_` stamps a
+  per-job run ledger (`AUTOMATION_RUN_<action>`, one Script Property per job,
+  so no shared read-modify-write) and `automationLastRunMerge_` keeps the newer
+  of ledger and tail — and a missing row is weighed against the window
+  actually read: the report ships `auditWindow` (a truncated scan names its
+  OLDEST row), and `auditWindowCoversMonth_` lets "not run this month" stand
+  only when that window reaches back past the 1st. Otherwise the answer is
+  UNKNOWN, and the panel row says "cannot confirm". Fires when a check reads a
+  bounded tail and treats "not found" as "did not happen". Verify: the A1 pins
+  (window cases driven; the ledger stamped by `writeAuditLog_` for automation
+  rows only; the merge in both directions).
+
+<a id="g153-clearing-the-roster-email-does-not-reach-the-gate-lists"></a>
+
+- **Clearing the roster email revokes every IN-APP gate, but not the Script
+  Property gate lists (cycle 22 S7, 2026-09-25).** `offboardEmployee` cleared
+  column A and stopped: the roster `isManager` check failed from then on, but
+  `MANAGER_EMAILS` (the trigger gate `assertManagerCaller_` and the daily
+  brief's recipient list, PHI included) and `ADMIN_EMAILS` still named the
+  person. The drift detector could not see it either, because it matched list
+  entries to roster rows BY EMAIL, and offboarding had just removed the email.
+  Offboarding now removes the address from both lists (`offboardFromGateLists_`,
+  pure core `gateListWithout_`) — except a list's LAST entry, because an empty
+  `ADMIN_EMAILS` makes every manager an admin and an empty `MANAGER_EMAILS`
+  stops every trigger; that refusal is returned as `keptIn`, audited and named
+  in the toast. The address is recorded in `OFFBOARDED_EMAILS`, and
+  `managerSourceDrift_` keys on the LIST: a listed address the app recorded as
+  offboarded and not back on the roster is drift (still false-positive-free —
+  only offboarding writes the record). Re-onboarding does NOT restore list
+  membership; that is re-granted by hand. Fires when you remove a person, or
+  add a gate that reads a Script Property list. Verify: the S7 driven pin.

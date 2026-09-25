@@ -2020,6 +2020,15 @@ per-finding detail. What each added to each harness, by delta:
   net drives the dispatcher rather than reading fixture keys). One vacuous
   check caught: K12's doc regex never matched the sentence it banned (g116,
   the eighth direction). 19 bite-checks, all BITE.
+- **Batch 6:** Node +11 (A1 ×3 — the window cases, the ledger + merge, the
+  "cannot confirm" caption; A2 — the server's list driven into the client
+  findings, with the fixture required to fire every kind DERIVED from the
+  server source; C2, A3, S7, A4, A5, A6, A8, each driven), 1 updated (the
+  open-punch pin's `automationProblems_` regex takes the new `opts` argument).
+  Visual +1 scenario (`admin-tags-fail-light-mobile`); the populated
+  `getAutomationHealth` fixture now carries one open-punch item and a
+  TRUNCATED audit window, so the Admin scenarios photograph the new paths.
+  14 bite-checks, all BITE.
 
 **Two NO BITEs, both acted on (g138).** T2's first wiring pin asserted the
 refusal message existed, and an `if (false)` beside it stayed green. The pin
