@@ -1960,14 +1960,37 @@ function qaMyRevWave_(cardEl, bins, mySeq) {
 
 // Keyboard shortcuts — active only in the open detail, never while typing
 // (the isContentEditable + tagName guard the shell's ? handler documents).
+/** PURE (U5, cycle 22) — may the player's shortcut take this key? Never while
+ *  a dialog is open, never in a text control, never Space on something Space
+ *  already activates (a button, a link, a role=button/checkbox/switch/tab),
+ *  never arrows on something arrows already move (a radio, a tab, a slider,
+ *  a listbox/menu item). */
+function qaPlayerOwnsKey_(ae, key, overlayOpen) {
+  if (overlayOpen) return false;
+  if (!ae) return true;
+  var tag = String(ae.tagName || '').toUpperCase();
+  if (ae.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return false;
+  var role = String((ae.getAttribute && ae.getAttribute('role')) || '').toLowerCase();
+  if (key === ' ') {
+    if (tag === 'BUTTON' || tag === 'A' || tag === 'SUMMARY') return false;
+    if (['button', 'checkbox', 'switch', 'tab', 'radio', 'menuitem', 'option', 'link'].indexOf(role) >= 0) return false;
+  }
+  if (key === 'ArrowLeft' || key === 'ArrowRight') {
+    if (['radio', 'tab', 'slider', 'option', 'menuitem', 'spinbutton'].indexOf(role) >= 0) return false;
+  }
+  return true;
+}
 var _qaKeysBound = false;
 function qaEnsureKeysBound_() {
   if (_qaKeysBound) return;
   _qaKeysBound = true;
   document.addEventListener('keydown', function (e) {
     if (currentView !== 'qaQueue' || !QA_STATE.det) return;
-    const ae = document.activeElement;
-    if (ae && (ae.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].indexOf(ae.tagName) >= 0)) return;
+    // U5 (cycle 22): an open dialog owns the keyboard, and a focused control
+    // keeps its own keys — Space presses a button (the confirm dialog's
+    // Remove included), arrows move a radio group or tab list.
+    const openOv = (typeof topOpenOverlay_ === 'function') ? topOpenOverlay_() : null;
+    if (!qaPlayerOwnsKey_(document.activeElement, e.key, !!openOv)) return;
     const audio = document.getElementById('qa-audio');
     if (!audio) return;
     if (e.key === ' ') {

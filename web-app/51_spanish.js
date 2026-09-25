@@ -167,8 +167,13 @@ function canSeeSpanishInbox_(emp) {
 /** Stable short hash of the inbox address + member set, used to scope the stats
  *  cache key so editing SPANISH_INBOX_ADDRESS / SPANISH_INBOX_MEMBERS isn't masked
  *  by a stale (wrong-resolution) aggregate for up to the 5-min TTL. Mirrors cdrRosterHash_. */
-function spanishCacheHash_(addr, members) {
-  const basis = String(addr || '') + '|' + Object.keys(members || {}).sort().join(',');
+function spanishCacheHash_(addr, members, vm) {
+  // M11 (cycle 22): the voicemail settings decide what the aggregate COUNTS
+  // (the fold's sender + subject filter, the short-voicemail threshold), so
+  // they scope the key too — editing SPANISH_VM_MIN_SECONDS used to keep
+  // serving the old counts for the TTL.
+  const basis = String(addr || '') + '|' + Object.keys(members || {}).sort().join(',') +
+    (vm ? '|vm:' + String(vm.sender || '') + '|' + String(vm.filter || '') + '|' + String(vm.minSec == null ? '' : vm.minSec) : '');
   return Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, basis)
     .map(function (b) { return (b < 0 ? b + 256 : b).toString(16).padStart(2, '0'); }).join('');
 }
@@ -212,7 +217,8 @@ function getSpanishInboxStats(days) {
     // Cache key is scoped by address + member set (not just `days`) so an operator
     // editing SPANISH_INBOX_ADDRESS / SPANISH_INBOX_MEMBERS isn't served a stale
     // aggregate computed under the old config for the TTL.
-    const ckey = 'spanish_inbox_v3:' + d + ':' + spanishCacheHash_(addr, members);   // v2: manual resolves left the duration series (2026-09-10); v3: voicemails joined the counts (F-34, cycle 20) — INV-85, a cached v2 aggregate must not keep serving the thread-only numbers for the TTL
+    const ckey = 'spanish_inbox_v3:' + d + ':' + spanishCacheHash_(addr, members,
+      { sender: getSpanishVmSender_(), filter: getSpanishVmFilter_(), minSec: getSpanishVmMinSeconds_() });   // v2: manual resolves left the duration series (2026-09-10); v3: voicemails joined the counts (F-34, cycle 20) — INV-85, a cached v2 aggregate must not keep serving the thread-only numbers for the TTL
     const hit = cache.get(ckey);
     if (hit) { try { return JSON.parse(hit); } catch (e) {} }
 

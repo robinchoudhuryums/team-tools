@@ -712,7 +712,7 @@ function enterIntakePpdView(area) {
 
         intakePpdStepperHtml_(lang) +
         '<button class="intk-btn primary" onclick="intakePpdPreview_()">' + icon('send', 14) + ' Preview &amp; Recommend</button>' +
-        '<button class="intk-btn" onclick="intakeClearForm_(\'ppd\')">Clear</button>' +
+        '<button class="intk-btn" onclick="intakeConfirmClear_(\'ppd\')">Clear</button>' +
       '</div></aside>' +
     '</div>';
 
@@ -1159,7 +1159,7 @@ function intakeRevealControlHtml_(ctrl, qNum, ariaLabel) {
   var btns = (ctrl.options || []).map(function (o) {
     return '<button type="button" class="intk-choice-btn" data-set="' + esc(o.v) + '" role="radio" aria-checked="false" onclick="intakeRevealPick_(this)">' + esc(o.l || o.v) + '</button>';
   }).join('');
-  return '<div class="intk-reveal" data-qnum="' + esc(qNum) + '" data-reveal-on="' + esc(ctrl.revealOn || '') + '" role="radiogroup" aria-label="' + esc(ariaLabel) + '">' +
+  return '<div class="intk-reveal" data-qnum="' + esc(qNum) + '" data-reveal-on="' + esc(ctrl.revealOn || '') + '" role="radiogroup" aria-label="' + esc(ariaLabel) + '" onkeydown="intakeRevealKey_(event)">' +
     '<div class="intk-reveal-opts">' + btns + '</div>' +
     '<input type="text" class="intk-reveal-text" style="display:none" autocomplete="off" aria-label="' + esc(ariaLabel || 'Details') + '" placeholder="' + esc(ctrl.placeholder || '') + '" oninput="intakePpdAfterChange_()"></div>';
 }
@@ -1167,6 +1167,16 @@ function intakeRevealPick_(btn) {
   var grp = btn.closest('.intk-reveal'); if (!grp) return;
   var val = btn.getAttribute('data-set');
   var revealOn = grp.getAttribute('data-reveal-on') || '';
+  // U6 (cycle 22): clicking the selected option clears the question — the
+  // operator's 2026-08-25 rule every other single-select already follows
+  // (intakePick_); Q39 was the one an accidental click could not undo.
+  if (btn.classList.contains('on')) {
+    grp.querySelectorAll('.intk-choice-btn').forEach(function (b) { b.classList.remove('on'); b.setAttribute('aria-checked', 'false'); });
+    var ta0 = grp.querySelector('.intk-reveal-text');
+    if (ta0) { ta0.value = ''; ta0.style.display = 'none'; }
+    intakePpdAfterChange_();
+    return;
+  }
   grp.querySelectorAll('.intk-choice-btn').forEach(function (b) {
     var on = (b === btn);
     b.classList.toggle('on', on);
@@ -1176,6 +1186,21 @@ function intakeRevealPick_(btn) {
   var ta = grp.querySelector('.intk-reveal-text');
   if (ta) ta.style.display = (val === revealOn) ? '' : 'none';
   intakePpdAfterChange_();
+}
+/** U6 (cycle 22): arrow keys move the selection, like every sibling
+ *  radiogroup — but never while typing in the reveal's own text box. */
+function intakeRevealKey_(e) {
+  if (e.target && e.target.tagName === 'INPUT') return;
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+  var btns = Array.prototype.slice.call(e.currentTarget.querySelectorAll('.intk-choice-btn'));
+  if (!btns.length) return;
+  var cur = btns.findIndex(function (b) { return b.classList.contains('on'); });
+  var next = (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
+    ? (cur <= 0 ? btns.length - 1 : cur - 1)
+    : (cur < 0 || cur >= btns.length - 1 ? 0 : cur + 1);
+  e.preventDefault();
+  btns[next].focus();
+  if (next !== cur) intakeRevealPick_(btns[next]);
 }
 function intakeRevealGet_(grp) {
   var revealOn = grp.getAttribute('data-reveal-on') || '';
@@ -1891,10 +1916,26 @@ function intakeCopyLink_(btn) {
 // straight into a text). Clipboard image-write is unreliable in the iframe and
 // needs permissive CORS on the image host, so it falls back to opening the
 // image in a new tab for a native right-click copy/save.
+/** PURE (U3) — what the copy-image fallback tells the rep. */
+function intakeCopyImageFallbackMsg_(opened) {
+  return opened
+    ? { text: 'Could not copy the image — it opened in a new tab; right-click it to copy or save', type: 'toast-warn' }
+    : { text: 'Could not copy the image, and your browser blocked the new tab — click the image on the card (or Image link) to open it', type: 'toast-warn' };
+}
 function intakeCopyImage_(btn) {
   var url = btn.getAttribute('data-img');
   if (!url) return;
-  function openIt() { window.open(url, '_blank', 'noopener'); showToast('Opened image — right-click to copy/save', ''); }
+  // U3 (cycle 22): the fallback runs AFTER an async fetch, outside the click,
+  // so a pop-up blocker returns NULL (g135) — and it always said "Opened
+  // image". It now says the copy failed, and whether the tab opened; when it
+  // did not, the image on the card IS a link (link-first), so it says to use it.
+  function openIt() {
+    var w = null;
+    try { w = window.open(url, '_blank'); } catch (_) { w = null; }
+    if (w) { try { w.opener = null; } catch (_) {} }
+    var m = intakeCopyImageFallbackMsg_(!!w);
+    showToast(m.text, m.type);
+  }
   try {
     if (navigator.clipboard && window.ClipboardItem && window.fetch) {
       fetch(url).then(function (r) { return r.blob(); }).then(function (blob) {
@@ -1978,7 +2019,7 @@ function intakeEnterAcct_(form, title, area) {
         intakeRingHtml_(form) +
         '<span class="intk-rail-count" id="intk-' + form + '-count">0 / 0</span>' +
         '<button class="intk-btn primary" onclick="intakeAcctPreview_(\'' + form + '\')">' + icon('send', 14) + ' Preview &amp; Send</button>' +
-        '<button class="intk-btn" onclick="intakeClearForm_(\'' + form + '\')">Clear</button>' +
+        '<button class="intk-btn" onclick="intakeConfirmClear_(\'' + form + '\')">Clear</button>' +
       '</div></aside>' +
     '</div>';
   var f = document.getElementById('intk-' + form + '-form');
@@ -2957,6 +2998,27 @@ function intakeApplyAcctAnswers_(form, answers) {
   });
 }
 
+/** PURE (U6, cycle 22) — how much a Clear would erase: the answered
+ *  questions, the patient line (PPD) and any attached images. */
+function intakeFilledCount_(snap, images) {
+  var n = 0;
+  var a = (snap && snap.answers) || {};
+  Object.keys(a).forEach(function (k) { if (String(a[k] == null ? '' : a[k]).trim()) n++; });
+  if (snap && String(snap.patientInfo || '').trim()) n++;
+  return n + ((images && images.length) || 0);
+}
+/** U6 (cycle 22): the Clear button. One click used to wipe a 46-question PPD
+ *  (and its draft — the only other copy) with no confirm and no undo. An empty
+ *  form clears at once; anything filled asks first, naming what will go. */
+function intakeConfirmClear_(form) {
+  var snap = null;
+  try { snap = (form === 'ppd') ? intakeCollectPpd_() : intakeCollectAcct_(form); } catch (e) { snap = null; }
+  var n = intakeFilledCount_(snap, INTAKE_STATE[form] && INTAKE_STATE[form].images);
+  if (!n) { intakeClearForm_(form); return; }
+  uiConfirm({ title: 'Clear this form?', tone: 'danger', confirmLabel: 'Clear form', cancelLabel: 'Keep it',
+    message: n + ' answer' + (n === 1 ? '' : 's') + ' (and the saved draft) will be erased. This cannot be undone.' })
+    .then(function (ok) { if (ok) intakeClearForm_(form); });
+}
 function intakeClearForm_(form) {
   INTAKE_STATE[form].images = [];
   INTAKE_STATE[form].amendOf = null;   // an amend never survives a clear/send

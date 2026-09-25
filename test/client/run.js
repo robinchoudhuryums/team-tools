@@ -16605,7 +16605,7 @@ test('GATE-TIER: the omnibus ADMIN_GATED bucket matches the tier each endpoint a
   assert.ok(checked > 60, 'the case→tier link actually resolved (checked ' + checked + ')');
 });
 
-test('BCN-1: the deploy-version beacon server half — derived hash, cached, boot-safe, read-gated', () => {
+test('BCN-1: the deploy-version beacon server half — derived hash, per-execution memo only, boot-safe, read-gated', () => {
   const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   const hash = nc(extractRawFunction('Code.js', 'clientBuildHash_'));
   // DERIVED (INV-179): the file set comes from index.html's own include()
@@ -16615,10 +16615,10 @@ test('BCN-1: the deploy-version beacon server half — derived hash, cached, boo
     'index is read RAW (its scriptlets are part of the fingerprint)');
   assert.ok(hash.indexOf("include\\('([^']+)'\\)") >= 0, "the partial set is derived from index's include() calls");
   assert.ok(/include\(m\[1\]\)/.test(hash), "and each partial is read through include()'s own channel — the bytes production serves");
-  assert.ok(/cache\.put\(BUILD_HASH_CACHE_KEY, hex, BUILD_HASH_CACHE_TTL_SEC\)/.test(hash),
-    'cached with a FINITE TTL (CacheService survives a deploy — an eternal entry would never notice one)');
-  const ttl = codeSrc.match(/BUILD_HASH_CACHE_TTL_SEC = (\d+)/);
-  assert.ok(ttl && Number(ttl[1]) <= 600, 'the TTL bounds post-deploy detection lag (≤10 min)');
+  // U4 (cycle 22): NO cross-execution cache — ScriptCache is shared by HEAD and
+  // every versioned deployment, so a /dev visit could hand prod another
+  // version's hash. The per-execution memo is the only reuse (driven in BCN-1b).
+  assert.ok(!/CacheService/.test(hash), 'no ScriptCache — it is shared across deployments (U4)');
   const stamp = nc(extractRawFunction('Code.js', 'getDeployStamp'));
   assert.ok(/if \(!emp\) return \{ error: 'Not authorized\.' \};/.test(stamp),
     'getDeployStamp is rep-gated with the bare-{error} READ shape (GATE-SHAPE)');
@@ -18600,7 +18600,7 @@ test('BIZ-3: the clients lead with business time, keep wall clock, and say which
     'business mode is detected from the payload — an OLDER server keeps wall clock as the headline');
   assert.ok(/bizOn \? bizMin : wallMin/.test(head), 'business is the headline when present');
   assert.ok(/wall clock /.test(head), 'the wall-clock figure is the secondary line, not deleted');
-  assert.ok(/weekends and US holidays excluded/.test(head),
+  assert.ok(/weekends and company holidays excluded/.test(head),
     'the strip SAYS what it is measuring — an unexplained drop from 3d to 2h reads as a bug');
   assert.ok(/if \(bizOn\) \{/.test(head), 'the note renders only in business mode');
 
@@ -27061,8 +27061,6 @@ test('BCN-1b (BEHAVIOURAL, F-52): the build hash really CHANGES when a partial c
   // whole failure mode it exists to prevent (a version constant nobody bumps,
   // one level down).
   const sb = buildSandbox([]);
-  sb.BUILD_HASH_CACHE_KEY = 'bh';
-  sb.BUILD_HASH_CACHE_TTL_SEC = 300;
   const crypto = require('crypto');
   sb.Utilities = {
     DigestAlgorithm: { MD5: 'MD5' }, Charset: { UTF_8: 'UTF-8' },
@@ -27081,7 +27079,7 @@ test('BCN-1b (BEHAVIOURAL, F-52): the build hash really CHANGES when a partial c
   sb.include = (f) => { if (!(f in partials)) throw new Error('no such file'); return partials[f]; };
   sb._clientBuildHashMemo = null;
   vm.runInContext(extractRawFunction('Code.js', 'clientBuildHash_'), sb, { filename: 'Code.js#clientBuildHash_' });
-  const H = () => { sb._clientBuildHashMemo = null; delete cacheStore.bh; return sb.clientBuildHash_(); };
+  const H = () => { sb._clientBuildHashMemo = null; return sb.clientBuildHash_(); };
 
   const base = H();
   assert.ok(/^[0-9a-f]{32}$/.test(base), 'the hash is a 32-char lowercase MD5 hex (signed bytes and all)');
@@ -27127,24 +27125,23 @@ test('BCN-1b (BEHAVIOURAL, F-52): the build hash really CHANGES when a partial c
   partials['cn/script_callnotes.html'] = keepCn;
   assert.notStrictEqual(lostCore, lostCn, 'losing a different partial is a different build');
 
-  // The cache is a CACHE, not the answer: a hit is served, and a put happens
-  // exactly once per cold compute (an eternal entry would never notice a
-  // deploy — the TTL half stays pinned below).
+  // U4 (cycle 22): nothing from ScriptCache is ever served. A value another
+  // deployment (HEAD, via /dev) left in the shared cache must NOT become this
+  // execution's hash; only the per-execution memo is reused.
   indexRaw = "<?!= include('script_core.html') ?>";
-  delete cacheStore.bh; sb._clientBuildHashMemo = null;
-  const cold = sb.clientBuildHash_();
-  const putsAfterCold = puts;
   sb._clientBuildHashMemo = null;
-  assert.strictEqual(sb.clientBuildHash_(), cold, 'a warm cache serves the same hash');
-  assert.strictEqual(puts, putsAfterCold, 'and does not re-put');
+  const own = sb.clientBuildHash_();
   cacheStore.bh = 'deadbeef';
   sb._clientBuildHashMemo = null;
-  assert.strictEqual(sb.clientBuildHash_(), 'deadbeef', 'the cached value WINS — the read is real, not decorative');
+  assert.strictEqual(sb.clientBuildHash_(), own, 'a hash another deployment left in ScriptCache is never served (U4)');
+  assert.strictEqual(puts, 0, 'and nothing is written there for another deployment to read');
+  partials['script_core.html'] = 'CORE-V9';
+  assert.strictEqual(sb.clientBuildHash_(), own, 'within ONE execution the memo is reused (the code cannot change mid-execution)');
 
-  // The TTL, the boot-safety and the injection form are claims about SHAPE,
-  // not about this function's output, so they stay structural.
-  const ttl = serverSource().match(/BUILD_HASH_CACHE_TTL_SEC = (\d+)/);
-  assert.ok(ttl && Number(ttl[1]) <= 600, 'the TTL bounds post-deploy detection lag (≤10 min)');
+  // The boot-safety and the injection form are claims about SHAPE, not about
+  // this function's output, so they stay structural (BCN-1). The TTL is gone
+  // with the cache (U4).
+  assert.ok(!/BUILD_HASH_CACHE_/.test(serverSource()), 'no build-hash cache key or TTL is declared (U4)');
 });
 
 test('Punctuality + Admin fill the view width (F-52: the one claim here that CANNOT be driven)', () => {
@@ -28501,6 +28498,158 @@ test('FU-B8b: an unreadable weight answer is said ON the recommendation screen �
   const intk = fs.readFileSync(path.join(FU_WEB, 'intake/script_intake.html'), 'utf8');
   assert.ok(/weightUnreadable: !!res\.weightUnreadable/.test(intk) && /intakeWeightWarnHtml_\(INTAKE_STATE\.preview\)/.test(intk), 'the modal renders it');
   assert.ok(/\.intk-weight-warn \{/.test(intk), 'with a rule (the T6 ratchet)');
+});
+
+// ---------------------------------------------------------------------------
+// cycle 22 Batch 9 — interface, accessibility and admin polish
+console.log('\ncycle 22 Batch 9 — interface, accessibility and admin polish');
+const B9_WEB = path.join(__dirname, '../../web-app');
+function b9Files_() {
+  const out = [];
+  (function walk(d) {
+    fs.readdirSync(d, { withFileTypes: true }).forEach((e) => {
+      const f = path.join(d, e.name);
+      if (e.isDirectory()) walk(f); else if (/\.html$/.test(e.name)) out.push(f);
+    });
+  })(B9_WEB);
+  return out;
+}
+
+test('U1/U2 (DERIVED): no static overlay is opened or closed by classList — every one found in the markup goes through ensureOverlay / closeOverlay (g100)', () => {
+  const files = b9Files_().map((f) => ({ f: path.relative(B9_WEB, f), src: foNc(fs.readFileSync(f, 'utf8')) }));
+  const ids = new Set();
+  files.forEach(({ src }) => {
+    for (const m of src.matchAll(/<div[^>]*\bclass="overlay"[^>]*\bid="([\w-]+)"|<div[^>]*\bid="([\w-]+)"[^>]*\bclass="overlay"/g)) ids.add(m[1] || m[2]);
+  });
+  assert.ok(ids.has('cn-export-overlay') && ids.has('cn-shortcuts-overlay') && ids.has('export-overlay'),
+    'the derivation finds the static overlays (non-vacuous: ' + [...ids].join(', ') + ')');
+  const bad = [];
+  files.forEach(({ f, src }) => {
+    ids.forEach((id) => {
+      const q = id.replace(/-/g, '\\-');
+      if (new RegExp("getElementById\\('" + q + "'\\)\\.classList\\.(add|remove)\\('open'\\)").test(src)) bad.push(f + ': ' + id + ' (direct)');
+      // …and through a variable bound to it: `var so = getElementById(id); so.classList.add('open')`.
+      for (const v of src.matchAll(new RegExp("(?:var|let|const)\\s+(\\w+)\\s*=\\s*document\\.getElementById\\('" + q + "'\\)", 'g'))) {
+        if (new RegExp('\\b' + v[1] + "\\.classList\\.(add|remove)\\('open'\\)").test(src)) bad.push(f + ': ' + id + ' via ' + v[1]);
+      }
+    });
+  });
+  assert.deepStrictEqual(bad, [], 'hand-rolled open/close (no focus stash/restore, no name): ' + bad.join('; '));
+});
+
+test('U1: the Call Notes export renders its link FIRST, checks window.open, and keeps the dialog open when the tab was blocked (g135)', () => {
+  const cn = foNc(fs.readFileSync(path.join(B9_WEB, 'cn/script_callnotes.html'), 'utf8'));
+  assert.ok(/ensureOverlay\('cn-export-overlay'\)/.test(extractFunction('cn/script_callnotes.html', 'cnOpenExportModal_')), 'opens through ensureOverlay');
+  const i = cn.indexOf("getElementById('cn-exp-result')", cn.indexOf('.exportCallNotesRange') - 3000);
+  const link = cn.indexOf('exp-result-link', i), open = cn.indexOf("window.open(res.url, '_blank')", i);
+  assert.ok(i > 0 && link > i && open > link, 'the link is rendered before the open is attempted');
+  assert.ok(/try \{ exWin = window\.open\(res\.url, '_blank'\); \} catch \(_\) \{ exWin = null; \}/.test(cn) &&
+    /exWin \? ' — opening sheet' : ' — use the link in the dialog \(your browser blocked the new tab\)'/.test(cn), 'the return is checked and the toast says which happened');
+  const succ = cn.slice(i, cn.indexOf('.withFailureHandler', i));
+  assert.ok(!/closeOverlay\(overlay\)|classList\.remove\('open'\)/.test(succ), 'the success path leaves the dialog open, holding the link');
+  assert.ok(/<div id="cn-exp-result"><\/div>/.test(fs.readFileSync(path.join(B9_WEB, 'modals.html'), 'utf8')), 'the dialog has the slot');
+});
+
+test('U3: the copy-image fallback says the copy FAILED, and whether the tab opened — never a false "Opened image" (driven)', () => {
+  const s2 = buildSandbox([]);
+  const msg = loadFunction(s2, 'intake/script_intake.html', 'intakeCopyImageFallbackMsg_');
+  assert.ok(/Could not copy the image — it opened in a new tab/.test(msg(true).text));
+  assert.ok(/blocked the new tab — click the image on the card/.test(msg(false).text), 'a blocked tab points at the link already on the card');
+  const toasts = [];
+  s2.showToast = (t, ty) => toasts.push(ty + ':' + t);
+  s2.navigator = {};
+  s2.window.open = () => null;   // blocked
+  loadFunction(s2, 'intake/script_intake.html', 'intakeCopyImage_')({ getAttribute: () => 'https://x/img.png' });
+  assert.deepStrictEqual(toasts.length, 1);
+  assert.ok(/^toast-warn:Could not copy the image, and your browser blocked/.test(toasts[0]), 'no clipboard + a blocked tab reads as what it is: ' + toasts[0]);
+});
+
+test('U5: the QA player shortcut never takes a key a dialog or a focused control owns (driven)', () => {
+  const s2 = buildSandbox([]);
+  const f = loadFunction(s2, 'qa/script_qa.html', 'qaPlayerOwnsKey_');
+  const el = (tag, role) => ({ tagName: tag, isContentEditable: false, getAttribute: (k) => (k === 'role' ? (role || null) : null) });
+  assert.strictEqual(f(el('DIV'), ' ', false), true, 'Space on the page plays/pauses');
+  assert.strictEqual(f(el('BUTTON'), ' ', false), false, 'Space on a focused button presses the button');
+  assert.strictEqual(f(el('DIV', 'button'), ' ', false), false, 'a role=button too');
+  assert.strictEqual(f(el('DIV'), ' ', true), false, 'an open dialog (the confirm with Remove) owns the keyboard');
+  assert.strictEqual(f(el('DIV', 'radio'), 'ArrowRight', false), false, 'arrows move a radio group');
+  assert.strictEqual(f(el('BUTTON'), 'ArrowRight', false), true, 'but a button does not use arrows — seek still works');
+  assert.strictEqual(f(el('TEXTAREA'), 'ArrowLeft', false), false, 'never while typing');
+  const h = foNc(extractFunction('qa/script_qa.html', 'qaEnsureKeysBound_'));
+  assert.ok(/if \(!qaPlayerOwnsKey_\(document\.activeElement, e\.key, !!openOv\)\) return;/.test(h) && /topOpenOverlay_\(\)/.test(h), 'the handler asks it first');
+});
+
+test('U6: Q39 has arrow keys and click-again-to-clear, and Clear asks before wiping a filled form (driven)', () => {
+  const s2 = buildSandbox([]);
+  const cnt = loadFunction(s2, 'intake/script_intake.html', 'intakeFilledCount_');
+  assert.strictEqual(cnt({ answers: { '1': 'Yes', '2': '', '3': '  ' }, patientInfo: 'Pat 123' }, [1]), 3, 'answered questions + the patient line + images');
+  assert.strictEqual(cnt({ answers: {}, patientInfo: '' }, []), 0);
+  let cleared = 0, asked = null;
+  s2.INTAKE_STATE = { ppd: { images: [] } };
+  s2.intakeClearForm_ = () => { cleared++; };
+  s2.uiConfirm = (o) => { asked = o; return { then: (fn) => fn(true) }; };
+  s2.intakeCollectPpd_ = () => ({ answers: {}, patientInfo: '' });
+  const conf = loadFunction(s2, 'intake/script_intake.html', 'intakeConfirmClear_');
+  conf('ppd');
+  assert.deepStrictEqual([cleared, asked], [1, null], 'an empty form clears without a question');
+  s2.intakeCollectPpd_ = () => ({ answers: { '12': 'Yes', '38': '250' }, patientInfo: 'Pat' });
+  conf('ppd');
+  assert.ok(asked && asked.tone === 'danger' && /3 answers \(and the saved draft\) will be erased/.test(asked.message), 'a filled form asks, naming what goes');
+  assert.strictEqual(cleared, 2, 'and clears only on yes');
+  const intk = fs.readFileSync(path.join(B9_WEB, 'intake/script_intake.html'), 'utf8');
+  assert.strictEqual((intk.match(/onclick="intakeClearForm_\(/g) || []).length, 0, 'no Clear button calls the wipe directly');
+  assert.ok(/role="radiogroup" aria-label="' \+ esc\(ariaLabel\) \+ '" onkeydown="intakeRevealKey_\(event\)">/.test(intk), 'the reveal group binds arrow keys');
+  const pick = foNc(extractFunction('intake/script_intake.html', 'intakeRevealPick_'));
+  assert.ok(/if \(btn\.classList\.contains\('on'\)\) \{/.test(pick) && /ta0\.value = ''/.test(pick), 'clicking the selected option clears it (and its text)');
+  const key = foNc(extractFunction('intake/script_intake.html', 'intakeRevealKey_'));
+  assert.ok(/if \(e\.target && e\.target\.tagName === 'INPUT'\) return;/.test(key), 'arrows typed in the reveal text box stay there');
+});
+
+test('U4: the deploy beacon never serves another deployment\'s hash — no ScriptCache', () => {
+  const h = foNc(extractRawFunction('Code.js', 'clientBuildHash_'));
+  assert.ok(!/CacheService|cache\.(get|put)/.test(h), 'memoised per execution only (the driven half is BCN-1b)');
+});
+
+test('A7: after saving auto-tag rules the admin\'s browser runs the rules as STORED (driven)', () => {
+  let stored = null;
+  const ctx = vm.createContext({ String, Array, JSON, CN_AUTO_TAG_RULE_LIMIT: 50,
+    getEmployeeInfo_: () => ({ isAdmin: true, email: 'a@x' }), propSetBounded_: (k, v) => { stored = v; }, writeAuditLog_() {} });
+  vm.runInContext(extractRawFunction('Code.js', 'saveAutoTagRules'), ctx);
+  const res = JSON.parse(JSON.stringify(ctx.saveAutoTagRules([{ tag: 'Wheel Chair', keywords: ['  Power CHAIR ', ''] }])));
+  assert.deepStrictEqual(res.rules, [{ tag: 'wheel-chair', keywords: ['power chair'] }], 'the normalised rules come back');
+  assert.strictEqual(JSON.stringify(res.rules), stored, 'exactly what was stored');
+  const cn = foNc(fs.readFileSync(path.join(B9_WEB, 'cn/script_callnotes.html'), 'utf8'));
+  assert.ok(/CN_STATE\.deptConfig\.autoTagRules = res\.rules;/.test(cn) && !/autoTagRules = out;/.test(cn), 'the client adopts them, not its raw text');
+});
+
+test('A9: a half-filled department row is refused and named, never dropped under "saved" (driven)', () => {
+  const s2 = buildSandbox([]);
+  const f = loadFunction(s2, 'cn/script_callnotes.html', 'cnDeptRowsCollect_');
+  const r = JSON.parse(JSON.stringify(f([{ name: 'Billing', email: 'b@x' }, { name: 'Power', email: ' ' }, { name: '', email: '' }, { name: '', email: 'o@x' }])));
+  assert.deepStrictEqual(r, { map: { Billing: 'b@x' }, half: [1, 3] }, 'both half rows are listed; the blank row is simply removed');
+  const cn = foNc(fs.readFileSync(path.join(B9_WEB, 'cn/script_callnotes.html'), 'utf8'));
+  const at = cn.indexOf("getElementById('cn-admin-save-depts').addEventListener");
+  const h = cn.slice(at, cn.indexOf('.saveDepartmentEmails(map)', at));
+  assert.ok(/if \(col\.half\.length\) \{/.test(h) && /Nothing was saved\./.test(h) && h.indexOf('col.half.length') < h.indexOf('google.script.run'), 'refused before any save');
+  assert.ok(/setAttribute\('aria-invalid'/.test(h), 'and the empty field is marked');
+});
+
+test('M11: the business-hours copy names COMPANY holidays, and the Spanish stats key moves with the voicemail settings (driven)', () => {
+  ['metrics/script_deptrequests.html', 'metrics/script_metrics.html'].forEach((f) => {
+    const src = fs.readFileSync(path.join(B9_WEB, f), 'utf8');
+    assert.ok(!/US holidays excluded/.test(src) && /weekends and company holidays excluded/.test(src), f + ' names the calendar it uses (g123)');
+  });
+  const crypto = require('crypto');
+  const ctx = vm.createContext({ String, Object, Utilities: { DigestAlgorithm: { MD5: 1 },
+    computeDigest: (a, s) => Array.from(crypto.createHash('md5').update(String(s)).digest()) } });
+  vm.runInContext(extractRawFunction('Code.js', 'spanishCacheHash_'), ctx);
+  const base = { sender: 'vm@8x8.com', filter: 'A_Q_Spanish', minSec: 5 };
+  const h = (vmS) => ctx.spanishCacheHash_('in@x', { 'a@x': 1 }, vmS);
+  assert.notStrictEqual(h(base), h(Object.assign({}, base, { minSec: 10 })), 'a new short-voicemail threshold is a new key');
+  assert.notStrictEqual(h(base), h(Object.assign({}, base, { filter: 'Other' })), 'so is a new subject filter');
+  assert.strictEqual(h(base), h(Object.assign({}, base)), 'same settings, same key');
+  assert.ok(/spanishCacheHash_\(addr, members,\s*\{ sender: getSpanishVmSender_\(\), filter: getSpanishVmFilter_\(\), minSec: getSpanishVmMinSeconds_\(\) \}\)/.test(foNc(extractRawFunction('Code.js', 'getSpanishInboxStats'))),
+    'the stats endpoint passes them');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

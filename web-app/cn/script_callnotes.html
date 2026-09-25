@@ -7687,7 +7687,9 @@ function cnOpenExportModal_() {
   const start = new Date(today); start.setDate(today.getDate() - 6);
   document.getElementById('cn-exp-start').value = isoDate(start);
   document.getElementById('cn-exp-end').value = todayIso;
-  document.getElementById('cn-export-overlay').classList.add('open');
+  var expRes = document.getElementById('cn-exp-result');
+  if (expRes) expRes.innerHTML = '';   // U1: the last run's link never carries into a new one
+  ensureOverlay('cn-export-overlay');   // U1 (cycle 22): the focus stash/restore lifecycle (g100)
 }
 
 // C17 batch-2 (INV-187) - shared warn line for cross-rep aggregates whose
@@ -8970,9 +8972,23 @@ function cnReplaceNoteInState_(updated) {
   });
 }
 
+/** PURE (A9, cycle 22) — the department editor's rows → {map, half}. A row
+ *  with both fields blank is removed; a row with exactly one is HALF-filled and
+ *  listed by 0-based index, never silently dropped. */
+function cnDeptRowsCollect_(pairs) {
+  var map = {}, half = [];
+  (pairs || []).forEach(function (p, i) {
+    var n = String((p && p.name) || '').trim(), e = String((p && p.email) || '').trim();
+    if (!n && !e) return;
+    if (!n || !e) { half.push(i); return; }
+    map[n] = e;
+  });
+  return { map: map, half: half };
+}
+
 // ── Bulk Export modal wiring ───────────────────────────────────────────
 // Bound once at module load. The modal's DOM lives in modals.html and is
-// reused across opens (cnOpenExportModal_ just toggles the .open class).
+// reused across opens (cnOpenExportModal_ opens it through ensureOverlay).
 // Uses cn-exp-preset-btn instead of preset-btn to avoid the time-clock
 // export modal's preset-btn listeners stomping on these clicks.
 
@@ -8982,10 +8998,10 @@ function cnReplaceNoteInState_(updated) {
 
   const cancelBtn = document.getElementById('cn-exp-cancel');
   if (cancelBtn) cancelBtn.addEventListener('click', function () {
-    overlay.classList.remove('open');
+    closeOverlay(overlay);   // U1: through closeOverlay, so focus returns to the trigger
   });
   overlay.addEventListener('click', function (e) {
-    if (e.target === overlay) overlay.classList.remove('open');
+    if (e.target === overlay) closeOverlay(overlay);
   });
 
   // Preset buttons set the start/end date inputs based on the manager's tz
@@ -9039,17 +9055,28 @@ function cnReplaceNoteInState_(updated) {
           showToast((res && res.error) || 'Export failed', 'toast-error');
           return;
         }
-        overlay.classList.remove('open');
+        // U1 (cycle 22): the F-36 shape. window.open after an async RPC is
+        // outside the user gesture, so a pop-up blocker returns NULL (g135)
+        // and the export's URL — a sheet of every rep's notes, PHI — was lost
+        // with the dialog already closed. The link renders FIRST, the dialog
+        // stays open to hold it, and the toast says which happened.
+        var resSlot = document.getElementById('cn-exp-result');
+        if (resSlot) {
+          resSlot.innerHTML = '<a class="exp-result-link" href="' + esc(res.url) + '" target="_blank" rel="noopener">' +
+            icon('popOut', 13) + 'Open the export sheet — ' + esc(String(res.noteCount)) + ' notes</a>';
+        }
+        var exWin = null;
+        try { exWin = window.open(res.url, '_blank'); } catch (_) { exWin = null; }
+        var opened = exWin ? ' — opening sheet' : ' — use the link in the dialog (your browser blocked the new tab)';
         // C17-6 — an export missing reps must never read as complete: the
         // server now reports Sheets it could not read (additive field — an
         // older server simply never sets it).
         if (res.skippedReps && res.skippedReps.length > 0) {
           showToast('Exported ' + res.noteCount + ' notes — INCOMPLETE: could not read ' +
-            res.skippedReps.length + ' rep Sheet(s): ' + res.skippedReps.join(', '), 'toast-warn');
+            res.skippedReps.length + ' rep Sheet(s): ' + res.skippedReps.join(', ') + opened, 'toast-warn');
         } else {
-          showToast(`Exported ${res.noteCount} notes — opening sheet`, 'toast-success');
+          showToast('Exported ' + res.noteCount + ' notes' + opened, exWin ? 'toast-success' : 'toast-warn');
         }
-        window.open(res.url, '_blank');
       })
       .withFailureHandler(function (err) {
         submitBtn.disabled = false;
@@ -12446,12 +12473,24 @@ function cnRenderAdminBody_(cfg) {
     var btn = this;
     var names = document.querySelectorAll('.cn-admin-dept-name');
     var emails = document.querySelectorAll('.cn-admin-dept-email');
-    var map = {};
-    for (var i = 0; i < names.length; i++) {
-      var n = names[i].value.trim(), e = emails[i].value.trim();
-      if (!n || !e) continue;
-      map[n] = e;
+    var pairs = [];
+    for (var i = 0; i < names.length; i++) pairs.push({ name: names[i].value, email: emails[i].value });
+    // A9 (cycle 22): a row with a name but no email (or the reverse) used to be
+    // dropped in silence and the save still said "saved" — so the department
+    // vanished from the composer. It is refused and marked instead.
+    var col = cnDeptRowsCollect_(pairs);
+    for (var j = 0; j < names.length; j++) {
+      var bad = col.half.indexOf(j) >= 0;
+      names[j].setAttribute('aria-invalid', bad && !pairs[j].name.trim() ? 'true' : 'false');
+      emails[j].setAttribute('aria-invalid', bad && !pairs[j].email.trim() ? 'true' : 'false');
     }
+    if (col.half.length) {
+      showToast('Row ' + col.half.map(function (k) { return k + 1; }).join(', ') +
+        (col.half.length === 1 ? ' has' : ' have') + ' a name or an email but not both — complete ' +
+        (col.half.length === 1 ? 'it' : 'them') + ', or clear both fields to remove the row. Nothing was saved.', 'toast-error');
+      return;
+    }
+    var map = col.map;
     if (Object.keys(map).length === 0) { showToast('Add at least one department', 'toast-warn'); return; }
     btn.disabled = true; btn.textContent = 'Saving…';
     google.script.run
@@ -12619,8 +12658,11 @@ function cnRenderAdminBody_(cfg) {
         if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); return; }
         showToast('Auto-tag rules saved', 'toast-success');
         // Reps pick the change up on their next config fetch; THIS browser's
-        // matcher updates immediately.
-        if (CN_STATE.deptConfig) CN_STATE.deptConfig.autoTagRules = out;
+        // matcher updates immediately — with the rules as the server STORED
+        // them (A7, cycle 22): "Wheel Chair" is saved as tag `wheel-chair`
+        // with lowercased keywords, and the admin's own session used to run
+        // the raw text, so its auto-tags differed from every rep's.
+        if (CN_STATE.deptConfig && Array.isArray(res.rules)) CN_STATE.deptConfig.autoTagRules = res.rules;
       })
       .withFailureHandler(function (err) {
         btn.disabled = false; btn.textContent = 'Save Rules';

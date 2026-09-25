@@ -718,11 +718,10 @@ const MANAGER_DAY_MAX_BREAKS = 12;
 // forget to bump. Reads go through the same channels production serves —
 // getRawContent() for index (createHtmlOutputFromFile would choke nothing,
 // but raw keeps the scriptlets in the hash) and include()'s own read for
-// partials. Cached 5 min in CacheService (the cache SURVIVES a deploy, so a
-// fresh version can serve the stale hash for up to TTL — that only delays
-// detection, never falsifies it; total prompt lag ≤ poll 15 min + TTL 5 min).
-const BUILD_HASH_CACHE_KEY = 'client_build_hash_v1';
-const BUILD_HASH_CACHE_TTL_SEC = 300;
+// partials. Memoised per EXECUTION only (U4, cycle 22): a ScriptCache entry is
+// shared by HEAD and every versioned deployment, so it could serve another
+// version's hash — a false "updated" prompt, or a masked real one. Prompt lag is
+// now the client poll alone (≤ 15 min).
 let _clientBuildHashMemo = null;
 /** Multi-day time-off request (operator 2026-08-18). ONE row per WEEKDAY in
  *  [startDate, endDate] — the store's one-row-per-date model is unchanged, so

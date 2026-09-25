@@ -104,10 +104,14 @@ function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 function clientBuildHash_() {
+  // U4 (cycle 22): memoised per EXECUTION only. It used to be cached in
+  // ScriptCache, which HEAD (a /dev visit, an editor run) and every versioned
+  // deployment SHARE — so a /dev page load could store HEAD's hash and every
+  // prod tab would then prompt "updated" with nothing deployed (and a real
+  // deploy could be masked the same way). Apps Script exposes no deployment
+  // version to key a cache by, so the hash is computed from the code this
+  // execution is actually running: ~20 project-local file reads per call.
   if (_clientBuildHashMemo) return _clientBuildHashMemo;
-  const cache = CacheService.getScriptCache();
-  const cached = cache.get(BUILD_HASH_CACHE_KEY);
-  if (cached) { _clientBuildHashMemo = cached; return cached; }
   const idx = HtmlService.createTemplateFromFile('index').getRawContent();
   let all = idx;
   const re = /include\('([^']+)'\)/g;
@@ -121,7 +125,6 @@ function clientBuildHash_() {
     const b = buf[i] < 0 ? buf[i] + 256 : buf[i];
     hex += (b < 16 ? '0' : '') + b.toString(16);
   }
-  try { cache.put(BUILD_HASH_CACHE_KEY, hex, BUILD_HASH_CACHE_TTL_SEC); } catch (e) {}
   _clientBuildHashMemo = hex;
   return hex;
 }
@@ -584,7 +587,10 @@ function saveAutoTagRules(rules) {
     propSetBounded_('CN_AUTO_TAG_RULES', JSON.stringify(clean), { hint: 'remove a rule or some keywords' });
     writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
       'Updated auto-tag rules (' + clean.length + ')', callerEmp.email);
-    return { success: true };
+    // A7 (cycle 22): ship back what was STORED — the normalised tags and the
+    // lowercased keywords — so the saving browser runs the same rules every
+    // rep will, not the raw text it sent.
+    return { success: true, rules: clean };
   } catch (err) { return { success: false, error: err.message }; }
 }
 function saveDepartmentEmails(deptJson) {

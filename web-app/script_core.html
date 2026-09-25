@@ -3051,8 +3051,11 @@ document.addEventListener('keydown', function (e) {
   }
   // Ctrl/Cmd + / opens the Call Notes shortcuts overlay (if present)
   if ((e.metaKey || e.ctrlKey) && e.key === '/' && !e.shiftKey && !e.altKey) {
-    var so = document.getElementById('cn-shortcuts-overlay');
-    if (so) { e.preventDefault(); so.classList.add('open'); }
+    // U2 (cycle 22): through the partial's opener, so the dialog is named and
+    // focus is stashed and restored — a bare classList.add left focus on <body>.
+    if (document.getElementById('cn-shortcuts-overlay') && typeof cnOpenShortcutsOverlay_ === 'function') {
+      e.preventDefault(); cnOpenShortcutsOverlay_();
+    }
     return;
   }
   // ? key (no modifier, no editable element focused) opens the shortcuts
@@ -3064,8 +3067,9 @@ document.addEventListener('keydown', function (e) {
     var tag = ae.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
     if (ae.isContentEditable) return;
-    var so2 = document.getElementById('cn-shortcuts-overlay');
-    if (so2) { e.preventDefault(); so2.classList.add('open'); }
+    if (document.getElementById('cn-shortcuts-overlay') && typeof cnOpenShortcutsOverlay_ === 'function') {
+      e.preventDefault(); cnOpenShortcutsOverlay_();   // U2: the one opener
+    }
   }
 });
 

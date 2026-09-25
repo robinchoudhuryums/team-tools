@@ -1276,6 +1276,22 @@
     "getPunctualityReport"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "Batch 9: BUILD_HASH_CACHE_KEY/TTL removed (U4, per-execution memo); saveAutoTagRules returns rules (A7); spanishCacheHash_ takes the voicemail settings (M11)",
+   "added": [],
+   "removed": [
+    "BUILD_HASH_CACHE_KEY",
+    "BUILD_HASH_CACHE_TTL_SEC"
+   ],
+   "changed": [
+    "clientBuildHash_",
+    "getSpanishInboxStats",
+    "saveAutoTagRules",
+    "spanishCacheHash_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -1369,16 +1385,6 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "f02bc00c5785274b"
-  },
-  "BUILD_HASH_CACHE_KEY": {
-   "file": "00_config.js",
-   "kind": "const",
-   "sha": "4787349895dd3ddc"
-  },
-  "BUILD_HASH_CACHE_TTL_SEC": {
-   "file": "00_config.js",
-   "kind": "const",
-   "sha": "14498b47c67aa0a5"
   },
   "CDR": {
    "file": "00_config.js",
@@ -3888,7 +3894,7 @@
   "clientBuildHash_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "11f5e7420e3f140c"
+   "sha": "7cfb9d8f9ecd7956"
   },
   "clientErrRetentionDays_": {
    "file": "10_core.js",
@@ -5458,7 +5464,7 @@
   "getSpanishInboxStats": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "84c0b761e2b99ed7"
+   "sha": "4bd69e7d9e736923"
   },
   "getSpanishInboxThreadBody": {
    "file": "51_spanish.js",
@@ -7408,7 +7414,7 @@
   "saveAutoTagRules": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "b94b3f5517b4f6d6"
+   "sha": "0c7a0dbf1629d22d"
   },
   "saveBreakSchedules": {
    "file": "20_timeclock.js",
@@ -7743,7 +7749,7 @@
   "spanishCacheHash_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "6f6ff9469b02b288"
+   "sha": "fec60cd31ee0e935"
   },
   "spanishClaimsFold_": {
    "file": "51_spanish.js",
