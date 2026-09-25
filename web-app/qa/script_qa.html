@@ -699,7 +699,10 @@ function qaSync_() {
       }
       let msg = r.added + ' new recording' + (r.added === 1 ? '' : 's') + ' indexed';
       if (r.nonAudio) msg += ' · ' + r.nonAudio + ' non-audio file' + (r.nonAudio === 1 ? '' : 's') + ' skipped';
-      if (r.truncated) msg += ' · scan capped at ' + r.scanned + ' files — sync again for the rest';
+      // D3 (cycle 22): "sync again for the rest" is only said when it is true —
+      // the next run resumes from where this one stopped.
+      if (r.truncated) msg += ' · scan capped at ' + r.scanned + ' files — ' +
+        (r.resumable === false ? 'the next sync restarts from the top' : 'sync again to continue where this one stopped');
       showToast(msg, r.truncated ? 'toast-warn' : 'toast-success');
       if (currentView === 'qaQueue' && !QA_STATE.det) {
         renderLoading(document.getElementById('view-area'), 'Refreshing…', 'waveform');

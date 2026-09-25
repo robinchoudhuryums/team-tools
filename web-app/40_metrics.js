@@ -235,9 +235,11 @@ function cdrLikelyNameMismatches_(rosterWithNoCdr, unmatchedAgents) {
  *  getLastRow()+1 and only re-sorted after the fact, so a backfill of older
  *  dates can sit below newer rows and a tail scan stops early and silently
  *  drops them. Returns null when no row is in the window. */
-function cdrDqeWindowSpan_(sheet, lastRow, fromIso, toIso, tz) {
+function cdrDqeWindowSpan_(sheet, lastRow, fromIso, toIso, tz, dateCol) {
   if (lastRow < 2) return null;
-  var dates = sheet.getRange(2, CDR.DATE, lastRow - 1, 1).getValues();
+  // M10 (cycle 22): `dateCol` (1-based) lets the CSR Transfer tab share the
+  // span rule; omitted, it is the DQE Date column as before.
+  var dates = sheet.getRange(2, dateCol || CDR.DATE, lastRow - 1, 1).getValues();
   var first = -1, last = -1;
   for (var i = 0; i < dates.length; i++) {
     var iso = cdrRowDateIso_(dates[i][0], tz);
@@ -902,6 +904,22 @@ function csrTransferQueueColumns_(headers) {
  *  INV-85 bump needed). */
 function getCsrTransferPerRepDaily_(from, to, rosterNames, opts) {
   const withQueues = !!(opts && opts.withQueues);
+  // M10 (cycle 22): RESULT-CACHED like the DQE reader it sits beside (the same
+  // key family, TTL and fixture bypass — F-31), because a cold Dashboard load
+  // called it up to four times and each call read the whole tab.
+  const useCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
+  const cacheKey = CONFIG.CDR_CACHE_KEY + ':csrt:' + cdrRosterHash_(rosterNames) + ':' + from + ':' + to + ':' + (withQueues ? 'q' : '-');
+  if (useCache) {
+    try { const hit = CacheService.getScriptCache().get(cacheKey); if (hit) return JSON.parse(hit); } catch (_) {}
+  }
+  const out = csrTransferReadUncached_(from, to, rosterNames, withQueues);
+  // Only a CLEAN read is cached — an error must not be served for five minutes (g129).
+  if (useCache && out && out.meta && !out.meta.error) {
+    try { CacheService.getScriptCache().put(cacheKey, JSON.stringify(out), CONFIG.CDR_CACHE_TTL); } catch (_) { /* over the 100KB value cap — uncached */ }
+  }
+  return out;
+}
+function csrTransferReadUncached_(from, to, rosterNames, withQueues) {
   const ss = getCdrSS_();
   const sheet = ss.getSheetByName(CSR_TRANSFER_TAB);
   if (!sheet) return { perRepDaily: {}, agents: {}, meta: { error: 'CSR Transfer Historical Data sheet not found' } };
@@ -909,8 +927,10 @@ function getCsrTransferPerRepDaily_(from, to, rosterNames, opts) {
   const tz = ss.getSpreadsheetTimeZone();
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return { perRepDaily: {}, agents: {}, meta: { columnWarning: colWarning } };
-  const range = sheet.getRange(2, 1, lastRow - 1, CSR_TRANSFER_NUM_COLS);
-  const displays = range.getDisplayValues();
+  // M10 (cycle 22): span-bounded by the Date column (the H3 rule, g125) —
+  // the per-row date filter below still decides which rows COUNT.
+  const span = cdrDqeWindowSpan_(sheet, lastRow, from, to, tz, CSRT.DATE + 1);
+  const displays = span ? sheet.getRange(span.startRow, 1, span.numRows, CSR_TRANSFER_NUM_COLS).getDisplayValues() : [];
   // Header row is a separate 1-row read — the data range starts at row 2.
   const queueCols = withQueues
     ? csrTransferQueueColumns_(sheet.getRange(1, 1, 1, CSR_TRANSFER_NUM_COLS).getDisplayValues()[0])

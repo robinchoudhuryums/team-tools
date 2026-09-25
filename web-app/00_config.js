@@ -2307,6 +2307,9 @@ const QA_COMMENTS_SCAN = 4000;        // bounded tail over QaComments
 const QA_COMMENT_MAX_CHARS = 2000;
 const QA_COMMENT_MAX_AT_SEC = 86400;  // sanity bound on the timestamp anchor
 const QA_SYNC_MAX_FILES = 500;        // folder files SCANNED per sync run; truncated reported
+// D3 (cycle 22) — the resume point of a capped sync: {folderId, token}. Auto-managed;
+// cleared by a completed walk. Delete it to make the next sync start from the top.
+const QA_SYNC_TOKEN_PROP = 'QA_SYNC_CONTINUATION';
 // 3 MB raw per chunk (~4 MB base64 on the wire) — a 15-min ~64kbps MP3 is
 // 2-3 chunks. DriveApp has no ranged reads, so each chunk call re-reads the
 // blob; the size cap bounds that.

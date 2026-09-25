@@ -251,12 +251,22 @@ function qaStatus_(cell) {
   return QA_STATUSES.indexOf(s) >= 0 ? s : 'new';
 }
 /** Index NEW audio files from the QA recordings Drive folder. QA-gated,
- *  locked, IDEMPOTENT (known FileIds are skipped), bounded per run with the
+ *  IDEMPOTENT (known FileIds are skipped), bounded per run with the
  *  truncation REPORTED (INV-169). Non-audio files are counted, never indexed.
- *  The audit row carries COUNTS ONLY — file names stay in the QA store. */
+ *  The audit row carries COUNTS ONLY — file names stay in the QA store.
+ *
+ *  D3 (cycle 22) — RESUMABLE, and the Drive walk runs OUTSIDE the lock.
+ *  The budget used to count already-indexed files, and every run restarted
+ *  the folder from the top, so a folder past QA_SYNC_MAX_FILES files could
+ *  never be fully indexed and "sync again for the rest" was false. A capped
+ *  run now saves the iterator's continuation token (QA_SYNC_TOKEN_PROP, keyed
+ *  to the folder id) and the next run resumes there; a completed walk clears
+ *  it, so the run after that starts fresh and sees files added meanwhile.
+ *  The walk also held the ONE ScriptLock for its whole Drive traversal,
+ *  queueing every punch and note behind it; only the append is locked now,
+ *  and the known set is RE-READ under the lock so two overlapping syncs can
+ *  never index a file twice. */
 function qaSyncRecordings() {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(15000);
   try {
     const emp = getEmployeeInfo_();
     if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
@@ -266,37 +276,77 @@ function qaSyncRecordings() {
     try { folder = DriveApp.getFolderById(folderId); }
     catch (e) { return { success: false, error: 'The QA recordings folder could not be opened — check QA_RECORDINGS_FOLDER_ID and the deploying account\'s access to it.' }; }
     const sheet = getOrCreateQaRecordingsSheet_();
-    const known = {};
-    const last = sheet.getLastRow();
-    if (last >= 2) {
-      sheet.getRange(2, QAR.FILE_ID + 1, last - 1, 1).getValues()
-        .forEach(function (r) { const id = String(r[0] || '').trim(); if (id) known[id] = true; });
+    let known = qaKnownFileIds_(sheet);
+    // Resume where the last capped run stopped — only for THIS folder.
+    let files = null, resumed = false;
+    const saved = qaSyncTokenRead_();
+    if (saved && saved.folderId === folderId && saved.token) {
+      try { files = DriveApp.continueFileIterator(saved.token); resumed = true; }
+      catch (e) { files = null; }   // an expired token restarts the walk
     }
-    const files = folder.getFiles();
-    let scanned = 0, added = 0, nonAudio = 0, truncated = false;
-    const rows = [];
+    if (!files) files = folder.getFiles();
+    let scanned = 0, nonAudio = 0, truncated = false, nextToken = '';
+    const candidates = [];
     while (files.hasNext()) {
-      if (scanned >= QA_SYNC_MAX_FILES) { truncated = true; break; }
+      if (scanned >= QA_SYNC_MAX_FILES) {
+        truncated = true;
+        try { nextToken = files.getContinuationToken(); } catch (e) { nextToken = ''; }
+        break;
+      }
       const f = files.next(); scanned++;
       const id = f.getId();
       if (known[id]) continue;
       const mime = String(f.getMimeType() || '').toLowerCase();
       if (mime.indexOf('audio/') !== 0) { nonAudio++; continue; }
-      rows.push([
+      candidates.push([
         id, String(f.getName() || ''), f.getSize(), mime,
         f.getDateCreated().getTime(), Date.now(),   // NUMBER cells — coercion-immune
         'new', '', 0, String(f.getUrl() || ''), '', 0, '', '', '',   // Agent + SharedMs + DurationSec + SkipReason + AgentId set later in the detail
       ]);
-      added++;
     }
-    if (rows.length) {
-      appendRowsTextSafe_(sheet, rows, QA_RECORDINGS_TEXT_IDX);   // S2: raw into the '@' columns, sheet-safe elsewhere
-    }
-    writeAuditLog_(emp, 'QaSync', '', '', false, 0,
-      'scanned=' + scanned + '; added=' + added + '; nonAudio=' + nonAudio + '; truncated=' + truncated, emp.email);
-    return { success: true, scanned: scanned, added: added, nonAudio: nonAudio, truncated: truncated };
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    let added = 0;
+    try {
+      known = qaKnownFileIds_(sheet);   // a sync that finished while we walked
+      const rows = candidates.filter(function (r) { if (known[r[0]]) return false; known[r[0]] = true; return true; });
+      added = rows.length;
+      if (rows.length) {
+        appendRowsTextSafe_(sheet, rows, QA_RECORDINGS_TEXT_IDX);   // S2: raw into the '@' columns, sheet-safe elsewhere
+      }
+      qaSyncTokenWrite_(truncated && nextToken ? { folderId: folderId, token: nextToken } : null);
+      writeAuditLog_(emp, 'QaSync', '', '', false, 0,
+        'scanned=' + scanned + '; added=' + added + '; nonAudio=' + nonAudio + '; truncated=' + truncated + '; resumed=' + resumed, emp.email);
+    } finally { lock.releaseLock(); }
+    // `resumable` says whether "sync again for the rest" is TRUE: a capped run
+    // with no token (the iterator could not give one) restarts from the top.
+    return { success: true, scanned: scanned, added: added, nonAudio: nonAudio, truncated: truncated,
+             resumed: resumed, resumable: !!(truncated && nextToken) };
   } catch (err) { return { success: false, error: err.message }; }
-  finally { lock.releaseLock(); }
+}
+/** {fileId: true} for every indexed recording (the FileId column only). */
+function qaKnownFileIds_(sheet) {
+  const known = {};
+  const last = sheet.getLastRow();
+  if (last >= 2) {
+    sheet.getRange(2, QAR.FILE_ID + 1, last - 1, 1).getValues()
+      .forEach(function (r) { const id = String(r[0] || '').trim(); if (id) known[id] = true; });
+  }
+  return known;
+}
+function qaSyncTokenRead_() {
+  try {
+    const v = JSON.parse(PropertiesService.getScriptProperties().getProperty(QA_SYNC_TOKEN_PROP) || 'null');
+    return (v && typeof v === 'object') ? v : null;
+  } catch (e) { return null; }
+}
+/** Save (or, with null, clear) the resume point. Best-effort: a lost token
+ *  only means the next run restarts from the top — slower, never wrong. */
+function qaSyncTokenWrite_(val) {
+  try {
+    if (!val) { PropertiesService.getScriptProperties().deleteProperty(QA_SYNC_TOKEN_PROP); return; }
+    propSetBounded_(QA_SYNC_TOKEN_PROP, JSON.stringify(val), { mode: 'degrade', shrink: function () { return null; } });
+  } catch (e) { /* best-effort */ }
 }
 /** Locate a recording's sheet row by FileId (bounded tail; LAST match wins —
  *  the findExistingPunch_ agreement, though sync idempotence means duplicates
@@ -430,14 +480,39 @@ function qaAudioChunkFor_(fid, chunkIndex) {
     if (mime.indexOf('audio/') !== 0) return { error: 'Not an audio file.' };
     const range = qaChunkRange_(size, chunkIndex, QA_AUDIO_CHUNK_BYTES);
     if (!range) return { error: 'Invalid chunk.' };
-    const bytes = file.getBlob().getBytes();
+    const bytes = qaReadChunkBytes_(file, fid, size, range);
     return {
       success: true,
-      b64: Utilities.base64Encode(bytes.slice(range.start, range.end)),
+      b64: Utilities.base64Encode(bytes),
       chunkIndex: Math.floor(Number(chunkIndex)), chunks: range.chunks,
       size: size, mime: mime,
     };
   } catch (err) { return { error: err.message }; }
+}
+/** PURE (D5, cycle 22) — the HTTP Range header for one chunk (end-inclusive). */
+function qaRangeHeader_(range) {
+  return 'bytes=' + range.start + '-' + (range.end - 1);
+}
+/** D5 (cycle 22) — the bytes of ONE chunk. Every chunk request used to read
+ *  the WHOLE recording (`getBlob().getBytes()`) and slice it, so a 40 MB file
+ *  played in 3 MB chunks downloaded ~560 MB. It asks Drive for the range
+ *  (alt=media + a Range header, the same bearer-token pattern the KB image
+ *  upload uses) and accepts only an answer of exactly the right length — a
+ *  206 of the range, or a 200 of the whole file, which it slices. Anything
+ *  else falls back to the old whole-blob read: slower, never wrong, and the
+ *  folder-parentage boundary above has already run either way. */
+function qaReadChunkBytes_(file, fid, size, range) {
+  try {
+    const resp = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(fid) + '?alt=media&supportsAllDrives=true', {
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken(), Range: qaRangeHeader_(range) },
+      muteHttpExceptions: true,
+    });
+    const code = resp.getResponseCode();
+    const got = resp.getContent();
+    if (code === 206 && got.length === range.end - range.start) return got;
+    if (code === 200 && got.length === size) return got.slice(range.start, range.end);
+  } catch (e) { /* fall through to the whole-blob read */ }
+  return file.getBlob().getBytes().slice(range.start, range.end);
 }
 /** Agent playback of a SHARED review (Phase-3 follow-on, 2026-08-28) — the
  *  audio path getMyQaReviews deliberately omitted, now with the SAME double

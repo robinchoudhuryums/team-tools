@@ -6806,7 +6806,8 @@ test('Phase 1: per-queue reading is opt-in; the three existing callers pass 3 ar
 // sheet routes some transfers to destinations with no A_Q_ column. Deriving the
 // total by summing queues would silently under-report.
 test('Phase 1: the attributed subtotal is reported alongside the total, never instead of it', () => {
-  const fn = extractRawFunction('Code.js', 'getCsrTransferPerRepDaily_');
+  // M10 (cycle 22) moved the read behind a result cache; the body is csrTransferReadUncached_.
+  const fn = extractRawFunction('Code.js', 'csrTransferReadUncached_');
   assert.ok(/a\.queueTotal = qt;/.test(fn), 'queueTotal is the summed attribution');
   assert.ok(/a\.queueUnattributed = Math\.max\(0, a\.transferred - qt\);/.test(fn),
     'the remainder is reported, so a partial breakdown cannot read as complete');
@@ -16857,7 +16858,7 @@ test('QA-2: the audio Drive boundary — gate first, folder parentage BEFORE byt
   assert.ok(!/DriveApp/.test(wrap), 'no Drive access outside the shared boundary helper');
   const f = nc(extractRawFunction('Code.js', 'qaAudioChunkFor_'));
   const parentsIdx = f.indexOf('getParents()');
-  const blobIdx = f.indexOf('getBlob()');
+  const blobIdx = f.indexOf('qaReadChunkBytes_(');   // D5 (cycle 22): the byte read is a ranged helper now
   assert.ok(parentsIdx > -1 && blobIdx > parentsIdx,
     'the folder-parentage check runs BEFORE the blob read — the app runs as the deployer, so without it any ' +
     'caller could read ANY Drive file the deployer can open, by id (the kbGetImageData boundary)');
@@ -22014,7 +22015,7 @@ test('H3-4: both DQE readers go through cdrDqeWindowSpan_ and KEEP their per-row
     assert.ok(/if \(!dateIso \|\| dateIso < from \|\| dateIso > to\) continue;/.test(body), name + ' keeps the per-row date filter -- the span bounds the read, it never replaces the filter');
   });
   const helper = foNc(extractRawFunction('Code.js', 'cdrDqeWindowSpan_'));
-  assert.ok(/getRange\(2, CDR\.DATE, lastRow - 1, 1\)/.test(helper), 'the helper reads the DATE column by the enum, width 1');
+  assert.ok(/getRange\(2, dateCol \|\| CDR\.DATE, lastRow - 1, 1\)/.test(helper), 'the helper reads the DATE column by the enum, width 1 (M10: or the caller\'s date column)');
   assert.ok(/cdrRowDateIso_\(dates\[i\]\[0\], tz\)/.test(helper), 'and resolves every cell through the one date reader (so a serial is a date here too)');
 });
 
@@ -26670,6 +26671,7 @@ test('F-34: ONE voicemail fold — the stats card counts the voicemails the list
   sb.spanishVmTooShort_ = (sec, min) => (sec == null ? 'unparsed' : (sec < min ? 'short' : 'show'));
   sb.emailAddrOnly_ = (s) => String(s).replace(/^.*</, '').replace(/>.*$/, '').trim().toLowerCase();
   vm.runInContext(extractRawFunction('Code.js', 'spanishVmFold_'), sb, { filename: 'Code.js#spanishVmFold_' });
+  vm.runInContext(extractRawFunction('Code.js', 'spanishVmResolution_'), sb);   // M5: per-message resolution
 
   const th = (id, msgs) => ({ getId: () => id, getMessages: () => msgs, getPermalink: () => 'link/' + id });
   const msg = (from, subj, body, ms) => ({
@@ -27908,6 +27910,132 @@ test('T10: voiding, releasing and revoking change the REP\'s Needs-you list now 
   vm.runInContext(extractRawFunction('Code.js', 'pendingTasksBustAll_'), ctx);
   ctx.pendingTasksBustAll_();
   assert.deepStrictEqual(JSON.parse(JSON.stringify(removed)), ['pt:E1', 'pt:E2'], 'one removeAll over the roster ids');
+});
+
+
+test('D3: QA sync RESUMES a capped walk from its continuation token and walks Drive OUTSIDE the lock — a folder past the budget is indexed in full (driven)', () => {
+  const ids = ['k1', 'k2', 'n1', 'n2', 'n3', 'n4', 'n5'];   // two already indexed
+  const props = {};
+  const log = { appended: [], locks: [], nexts: 0 };
+  const sheetIds = [['k1'], ['k2']];
+  const mkIter = (pos) => ({
+    hasNext: () => pos < ids.length,
+    next: () => { const id = ids[pos++]; log.nexts++; return { getId: () => id, getMimeType: () => 'audio/mpeg', getName: () => id,
+      getSize: () => 1, getDateCreated: () => ({ getTime: () => 1 }), getUrl: () => 'u/' + id }; },
+    getContinuationToken: () => 'pos:' + pos,
+  });
+  const ctx = vm.createContext({ String, JSON, Date, Object,
+    getEmployeeInfo_: () => ({ email: 'q@x' }), canSeeQa_: () => true, qaFolderId_: () => 'F1',
+    DriveApp: { getFolderById: () => ({ getFiles: () => mkIter(0) }), continueFileIterator: (t) => mkIter(Number(String(t).split(':')[1])) },
+    getOrCreateQaRecordingsSheet_: () => ({ getLastRow: () => sheetIds.length + 1, getRange: () => ({ getValues: () => sheetIds.slice() }) }),
+    QAR: { FILE_ID: 0 }, QA_SYNC_MAX_FILES: 3, QA_RECORDINGS_TEXT_IDX: [], QA_SYNC_TOKEN_PROP: 'QA_SYNC_CONTINUATION',
+    LockService: { getScriptLock: () => ({ waitLock: () => log.locks.push(log.nexts), releaseLock() {} }) },
+    appendRowsTextSafe_: (sh, rows) => { rows.forEach((r) => { log.appended.push(r[0]); sheetIds.push([r[0]]); }); },
+    writeAuditLog_() {},
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null), deleteProperty: (k) => { delete props[k]; } }) },
+    propSetBounded_: (k, v) => { props[k] = v; } });
+  ['qaKnownFileIds_', 'qaSyncTokenRead_', 'qaSyncTokenWrite_', 'qaSyncRecordings'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const r1 = JSON.parse(JSON.stringify(ctx.qaSyncRecordings()));
+  assert.ok(r1.success && r1.truncated && r1.resumable && !r1.resumed, JSON.stringify(r1));
+  assert.deepStrictEqual(log.appended, ['n1'], 'run 1 indexes what its three-file budget reached');
+  assert.ok(JSON.parse(props.QA_SYNC_CONTINUATION).token === 'pos:3', 'and saves where it stopped, keyed to the folder');
+  assert.strictEqual(log.locks[0], 3, 'the lock is taken only AFTER the Drive walk (three files read first)');
+  const r2 = JSON.parse(JSON.stringify(ctx.qaSyncRecordings()));
+  assert.ok(r2.resumed && r2.truncated, 'run 2 RESUMES — it used to restart from the top and never get past the first 500');
+  assert.deepStrictEqual(log.appended, ['n1', 'n2', 'n3', 'n4'], 'and reaches the next three');
+  const r3 = JSON.parse(JSON.stringify(ctx.qaSyncRecordings()));
+  assert.ok(r3.resumed && !r3.truncated && !r3.resumable, 'run 3 finishes the folder');
+  assert.deepStrictEqual(log.appended, ['n1', 'n2', 'n3', 'n4', 'n5'], 'every new file is indexed, once');
+  assert.ok(!('QA_SYNC_CONTINUATION' in props), 'a completed walk clears the token, so the next sync starts fresh');
+  // A token for ANOTHER folder is ignored (a changed QA_RECORDINGS_FOLDER_ID).
+  props.QA_SYNC_CONTINUATION = JSON.stringify({ folderId: 'OTHER', token: 'pos:6' });
+  const r4 = JSON.parse(JSON.stringify(ctx.qaSyncRecordings()));
+  assert.ok(!r4.resumed, 'a token from another folder is never followed');
+  const qa = fs.readFileSync(path.join(B7_WEB, 'qa/script_qa.html'), 'utf8');
+  assert.ok(/r\.resumable === false \? 'the next sync restarts from the top' : 'sync again to continue where this one stopped'/.test(qa),
+    'the toast only promises "sync again" when the next run really continues');
+});
+
+test('D5: an audio chunk is a RANGED Drive read of that chunk — never the whole recording — with the old read as the fallback (driven)', () => {
+  const run = (resp, throws) => {
+    let blobReads = 0, sentRange = null;
+    const ctx = vm.createContext({ String, encodeURIComponent,
+      ScriptApp: { getOAuthToken: () => 'tok' },
+      UrlFetchApp: { fetch: (u, o) => { sentRange = o.headers.Range; if (throws) throw new Error('net'); return { getResponseCode: () => resp.code, getContent: () => resp.bytes }; } } });
+    ['qaRangeHeader_', 'qaReadChunkBytes_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+    const whole = Array.from({ length: 10 }, (_, i) => i);
+    const file = { getBlob: () => ({ getBytes: () => { blobReads++; return whole; } }) };
+    const out = Array.from(ctx.qaReadChunkBytes_(file, 'FID1234567890', 10, { start: 4, end: 7 }));
+    return { out, blobReads, sentRange };
+  };
+  const ranged = run({ code: 206, bytes: [4, 5, 6] });
+  assert.deepStrictEqual(ranged.out, [4, 5, 6]); assert.strictEqual(ranged.blobReads, 0, 'a 206 of the range is used as-is — no whole-file read');
+  assert.strictEqual(ranged.sentRange, 'bytes=4-6', 'the Range header is end-inclusive');
+  const full = run({ code: 200, bytes: Array.from({ length: 10 }, (_, i) => i) });
+  assert.deepStrictEqual(full.out, [4, 5, 6], 'a 200 of the whole file is sliced'); assert.strictEqual(full.blobReads, 0);
+  assert.strictEqual(run({ code: 206, bytes: [4, 5] }).blobReads, 1, 'a short answer is not trusted — the old read runs');
+  assert.strictEqual(run({ code: 403, bytes: [] }).blobReads, 1, 'a refusal falls back');
+  assert.deepStrictEqual(run(null, true).out, [4, 5, 6], 'a throw falls back and still serves the right bytes');
+  // The ranged reader sits INSIDE the folder boundary: only qaAudioChunkFor_ calls it.
+  const src = stripJsComments_(serverSource());
+  const callers = [];
+  src.replace(/function ([A-Za-z0-9_]+)\(/g, (all, n) => { if (n !== 'qaReadChunkBytes_' && /qaReadChunkBytes_\(/.test(extractRawFunction('Code.js', n))) callers.push(n); return all; });
+  assert.deepStrictEqual(callers, ['qaAudioChunkFor_'], 'bytes leave only through the parentage-checked helper');
+});
+
+test('M10: the CSR Transfer read is span-bounded and result-cached like the DQE reader — a cold Dashboard no longer reads the whole tab four times (driven cache)', () => {
+  let reads = 0, store = {};
+  const ctx = vm.createContext({ JSON, CONFIG: { CDR_CACHE_KEY: 'cdr_v5', CDR_CACHE_TTL: 300 },
+    cdrRosterHash_: () => 'h', csrTransferReadUncached_: (f, t, r, q) => { reads++; return ctx._next; },
+    CacheService: { getScriptCache: () => ({ get: (k) => store[k] || null, put: (k, v) => { store[k] = v; } }) } });
+  vm.runInContext(extractRawFunction('Code.js', 'getCsrTransferPerRepDaily_'), ctx);
+  ctx._next = { perRepDaily: {}, agents: { A: { transferred: 3 } }, meta: {} };
+  ctx.getCsrTransferPerRepDaily_('2026-09-01', '2026-09-20', ['A']);
+  const again = ctx.getCsrTransferPerRepDaily_('2026-09-01', '2026-09-20', ['A']);
+  assert.strictEqual(reads, 1, 'the second call is served from the cache');
+  assert.strictEqual(again.agents.A.transferred, 3);
+  ctx.getCsrTransferPerRepDaily_('2026-09-01', '2026-09-20', ['A'], { withQueues: true });
+  assert.strictEqual(reads, 2, 'the per-queue shape has its own key — never served the plain payload');
+  store = {}; reads = 0;
+  ctx._next = { perRepDaily: {}, agents: {}, meta: { error: 'CSR Transfer Historical Data sheet not found' } };
+  ctx.getCsrTransferPerRepDaily_('2026-09-01', '2026-09-02', null);
+  ctx.getCsrTransferPerRepDaily_('2026-09-01', '2026-09-02', null);
+  assert.strictEqual(reads, 2, 'a failed read is NOT cached (g129)');
+  ctx._TEST_OVERRIDE_CDR_SS_ID = 'fixture'; reads = 0; store = {};
+  ctx._next = { perRepDaily: {}, agents: {}, meta: {} };
+  ctx.getCsrTransferPerRepDaily_('a', 'b', null); ctx.getCsrTransferPerRepDaily_('a', 'b', null);
+  assert.strictEqual(reads, 2, 'a fixture read bypasses the cache both ways (F-31)');
+  const body = stripJsComments_(extractRawFunction('Code.js', 'csrTransferReadUncached_'));
+  assert.ok(/cdrDqeWindowSpan_\(sheet, lastRow, from, to, tz, CSRT\.DATE \+ 1\)/.test(body), 'span-bounded by the Date column (the H3 rule)');
+  assert.ok(!/getRange\(2, 1, lastRow - 1/.test(body), 'no whole-tab read survives');
+  assert.ok(/if \(!dateIso \|\| dateIso < from \|\| dateIso > to\) continue;/.test(body), 'and the per-row date filter stays');
+});
+
+test('M5: every voicemail in a thread is its own request — a repeat voicemail no longer vanishes when the first is answered (driven)', () => {
+  const ctx = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'spanishVmResolution_'), ctx);
+  const R = (idx, ms, replies, man) => JSON.parse(JSON.stringify(ctx.spanishVmResolution_(idx, ms, replies, man)));
+  assert.deepStrictEqual(R(0, 100, [{ idx: 1, ms: 130 }], null), { resolveMs: 130, wasManual: false }, 'the reply after it resolves it');
+  assert.deepStrictEqual(R(2, 200, [{ idx: 1, ms: 130 }], null), { resolveMs: null, wasManual: false }, 'a reply BEFORE a later voicemail does not');
+  assert.deepStrictEqual(R(2, 200, [], { ms: 150 }), { resolveMs: null, wasManual: false }, 'nor does a manual resolve stamped before it');
+  assert.deepStrictEqual(R(2, 200, [], { ms: 250 }), { resolveMs: 250, wasManual: true }, 'a manual resolve at or after it does');
+  assert.deepStrictEqual(R(2, 200, [], { ms: 0 }), { resolveMs: 200, wasManual: true }, 'a legacy unstamped manual row resolves every voicemail, as before');
+  // Through the fold: [vm 9:00, reply 9:30, vm 11:00] → the second voicemail is pending.
+  const sb = buildSandbox([]);
+  sb.GmailApp = { search: () => sb._threads };
+  Object.assign(sb, { SPANISH_THREAD_SCAN_MAX: 200, getSpanishVmMinSeconds_: () => 5, getSpanishVmSender_: () => 'no-reply@8x8.com',
+    getSpanishVmFilter_: () => 'A_Q_Spanish', spanishVmQuery_: () => 'q',
+    spanishVmMatch_: (from, subj, s, f) => String(from).indexOf(s) >= 0 && String(subj).indexOf(f) >= 0,
+    spanishVmDurationSec_: () => 60, spanishVmTooShort_: () => 'show',
+    emailAddrOnly_: (x) => String(x).replace(/^.*</, '').replace(/>.*$/, '').trim().toLowerCase() });
+  ['spanishVmResolution_', 'spanishVmFold_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), sb));
+  const m = (from, subj, ms) => ({ getFrom: () => from, getSubject: () => subj, getPlainBody: () => 'Duration: 01:00', getDate: () => ({ getTime: () => ms }) });
+  sb._threads = [{ getId: () => 't1', getMessages: () => [m('no-reply@8x8.com', 'VM A_Q_Spanish', 900), m('Ana <ana@x>', 're', 930), m('no-reply@8x8.com', 'VM A_Q_Spanish', 1100)] }];
+  const rows = JSON.parse(JSON.stringify(sb.spanishVmFold_(30, {}, {}, false, {}).rows.map((r) => ({ i: r.msgIndex, res: r.resolveMs }))));
+  assert.deepStrictEqual(rows, [{ i: 0, res: 930 }, { i: 2, res: null }], 'the first is answered, the repeat is still waiting');
+  const list = stripJsComments_(extractRawFunction('Code.js', 'getSpanishInboxPending'));
+  assert.ok(/vmPendingByThread/.test(list) && /vmPending: vmPendingByThread\[tid\]\.n/.test(list),
+    'the list shows ONE card per thread (resolve and claim act on the thread) and says how many are waiting');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

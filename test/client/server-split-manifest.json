@@ -1136,6 +1136,30 @@
     "voidDoc"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "cycle 22 Batch 7: D3 qaKnownFileIds_/qaSyncToken*, D5 qaRangeHeader_/qaReadChunkBytes_, M10 csrTransferReadUncached_, M5 spanishVmResolution_",
+   "added": [
+    "QA_SYNC_TOKEN_PROP",
+    "csrTransferReadUncached_",
+    "qaKnownFileIds_",
+    "qaRangeHeader_",
+    "qaReadChunkBytes_",
+    "qaSyncTokenRead_",
+    "qaSyncTokenWrite_",
+    "spanishVmResolution_"
+   ],
+   "removed": [],
+   "changed": [
+    "cdrDqeWindowSpan_",
+    "getCsrTransferPerRepDaily_",
+    "getSpanishInboxPending",
+    "qaAudioChunkFor_",
+    "qaSyncRecordings",
+    "spanishVmFold_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2705,6 +2729,11 @@
    "kind": "const",
    "sha": "aeef593799128025"
   },
+  "QA_SYNC_TOKEN_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7a176d8ad2599363"
+  },
   "QSC": {
    "file": "00_config.js",
    "kind": "const",
@@ -3633,7 +3662,7 @@
   "cdrDqeWindowSpan_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "2a9e28d294038ef3"
+   "sha": "e156543b35bc3378"
   },
   "cdrExcludeSet_": {
    "file": "40_metrics.js",
@@ -4029,6 +4058,11 @@
    "file": "40_metrics.js",
    "kind": "function",
    "sha": "1d8028a86d2b519b"
+  },
+  "csrTransferReadUncached_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "b786d7e17afd4d0e"
   },
   "dashboardPeriodRange_": {
    "file": "40_metrics.js",
@@ -4658,7 +4692,7 @@
   "getCsrTransferPerRepDaily_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "80af50d651b3cd37"
+   "sha": "74d4f959133ad330"
   },
   "getCurrentBiweeklyRange_": {
    "file": "20_timeclock.js",
@@ -5273,7 +5307,7 @@
   "getSpanishInboxPending": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "48fb1b14328aa6ab"
+   "sha": "651ae7a864768e23"
   },
   "getSpanishInboxResolved": {
    "file": "51_spanish.js",
@@ -6683,7 +6717,7 @@
   "qaAudioChunkFor_": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "b0fdbe157f3de3d1"
+   "sha": "d9d8ba331ca5fa86"
   },
   "qaAuditTarget_": {
    "file": "90_qa.js",
@@ -6765,6 +6799,11 @@
    "kind": "function",
    "sha": "7ee099321f1d6eec"
   },
+  "qaKnownFileIds_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "546562e352262bbe"
+  },
   "qaLatestScorecards_": {
    "file": "90_qa.js",
    "kind": "function",
@@ -6835,10 +6874,20 @@
    "kind": "function",
    "sha": "28d62b80697cd097"
   },
+  "qaRangeHeader_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "e8ccb37f22c83c3b"
+  },
   "qaRatingNormalize_": {
    "file": "90_qa.js",
    "kind": "function",
    "sha": "42b7fb1189aa6964"
+  },
+  "qaReadChunkBytes_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "15f701c1563dc020"
   },
   "qaReadExemptions_": {
    "file": "90_qa.js",
@@ -6928,7 +6977,17 @@
   "qaSyncRecordings": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "0bf29ec17edab24a"
+   "sha": "fbd4f972e798bf93"
+  },
+  "qaSyncTokenRead_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "87c5c616bda6a19f"
+  },
+  "qaSyncTokenWrite_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "32c51bb108ef696a"
   },
   "qaYmdMs_": {
    "file": "90_qa.js",
@@ -7563,7 +7622,7 @@
   "spanishVmFold_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "97e2f7334aff9094"
+   "sha": "6467c1fa65020762"
   },
   "spanishVmMatch_": {
    "file": "51_spanish.js",
@@ -7574,6 +7633,11 @@
    "file": "51_spanish.js",
    "kind": "function",
    "sha": "6ab826efc77ef200"
+  },
+  "spanishVmResolution_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "2cff7b92dae851c0"
   },
   "spanishVmTooShort_": {
    "file": "51_spanish.js",
