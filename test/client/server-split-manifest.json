@@ -1121,6 +1121,21 @@
     "submitTimeOffRange"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "cycle 22 Batch 7: T10 pendingTasksBustAll_",
+   "added": [
+    "pendingTasksBustAll_"
+   ],
+   "removed": [],
+   "changed": [
+    "releaseDoc",
+    "revokeTrainingAssignment",
+    "voidCoaching",
+    "voidDoc"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -6500,6 +6515,11 @@
    "kind": "function",
    "sha": "00e75f71a7c3946c"
   },
+  "pendingTasksBustAll_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "a864d3536d6944db"
+  },
   "pendingTasksBust_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -6983,7 +7003,7 @@
   "releaseDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "1e64087e217c309e"
+   "sha": "51d95a9d3b283d83"
   },
   "releaseSpanishThread": {
    "file": "51_spanish.js",
@@ -7083,7 +7103,7 @@
   "revokeTrainingAssignment": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "0a86affc23145278"
+   "sha": "26a6d8013be2d7b6"
   },
   "rosterHasAccruingRep_": {
    "file": "20_timeclock.js",
@@ -7888,12 +7908,12 @@
   "voidCoaching": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "498b642a3695e47e"
+   "sha": "a20ae1e43159c66f"
   },
   "voidDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "95ef18c81a3a0d64"
+   "sha": "d9b6b12a27d2ecb7"
   },
   "withAutomationErrorLock_": {
    "file": "10_core.js",

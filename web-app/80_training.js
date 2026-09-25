@@ -691,6 +691,10 @@ function revokeTrainingAssignment(assignId) {
       revokedCell.setValue(sheetSafe_(fmtDate_(now) + ' ' + fmtTime_(now)));
       writeAuditLog_(callerEmp, 'TrainingRevoke', fmtDate_(now), '', false, 0,
         'assignId=' + assignId, callerEmp.email);
+      // T10 (cycle 22): the revoked item leaves the rep's Needs-you list now,
+      // not when the 2-minute cache runs out — every rep's, for an everyone ('*') assignment.
+      const target = String(sheet.getRange(rowIdx, TA.EMP_ID + 1).getValue() || '').trim();
+      if (target === '*') pendingTasksBustAll_(); else pendingTasksBust_(target);
       return { success: true };
     }
     return { success: false, error: 'Assignment not found.' };

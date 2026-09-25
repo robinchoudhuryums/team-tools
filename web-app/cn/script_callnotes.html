@@ -5081,6 +5081,7 @@ function cnSchedStatus_(btn, id, status) {
       }
       cnSchedRenderList_();
       showToast(status === 'done' ? 'Marked done' : 'Reminder cancelled', 'toast-success');
+      if (typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // T9: the Dashboard's Needs-you list refetches
     })
     .withFailureHandler(function (e) { btn.disabled = false; showToast((e && e.message) || 'Update failed', 'toast-error'); })
     .setScheduledCallStatus(id, status);

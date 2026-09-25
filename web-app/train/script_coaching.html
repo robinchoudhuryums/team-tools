@@ -326,6 +326,7 @@ function coachAck_(coachId) {
       if (r && r.success) {
         delete COACH_STATE.replyDrafts[coachId];   // D7 — sent with the acknowledgement
         if (typeof showToast === 'function') showToast('Acknowledged', 'toast-success');
+        if (typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // T9: the Dashboard's Needs-you list refetches
         coachLoadMy_();
       } else if (typeof showToast === 'function') {
         showToast((r && r.error) || 'Could not acknowledge', 'toast-error');

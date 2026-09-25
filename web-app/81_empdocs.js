@@ -273,6 +273,7 @@ function releaseDoc(docId) {
     const now = new Date();
     writeAuditLog_(callerEmp, 'EmpDocRelease', fmtDate_(now), '', false, 0,
       'docId=' + found.doc.docId + '; empId=' + found.doc.empId, callerEmp.email);
+    pendingTasksBust_(found.doc.empId);   // T10 (cycle 22): the rep now has a document to sign
     const target = lookupEmployeeById_(found.doc.empId);
     if (target) notifyAfter = function () { notifyEmpDocIssued_(target, found.doc); };   // M-7: post-lock
     return { success: true };
@@ -334,6 +335,7 @@ function voidDoc(docId, reason) {
     const now = new Date();
     writeAuditLog_(callerEmp, 'EmpDocVoid', fmtDate_(now), '', false, 0,
       'docId=' + found.doc.docId, callerEmp.email);
+    pendingTasksBust_(found.doc.empId);   // T10 (cycle 22): a voided doc is no longer the rep's task
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }

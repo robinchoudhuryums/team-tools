@@ -435,6 +435,7 @@ function voidCoaching(coachId, reason) {
     if (reason) sheet.getRange(found.rowIdx, CO.VOID_REASON + 1).setValue(sheetSafe_(String(reason).slice(0, 500)));
     writeAuditLog_(callerEmp, 'CoachingVoid', '', '', false, 0,
       'coachId=' + found.item.coachId, callerEmp.email);
+    pendingTasksBust_(found.item.empId);   // T10 (cycle 22): nothing left to acknowledge
     if (found.item.severity === 'critical' && found.item.status !== 'void') {
       const item = found.item;
       notifyAfter = function () { notifyRepOfCoachingRetraction_(item, callerEmp); };   // M-7: post-lock

@@ -323,6 +323,7 @@ function trainMarkComplete_(itemId, btn) {
       var it = trainItemById_(itemId);
       if (it) { it.completed = true; it.completedAt = res.completedAt || ''; it.status = 'done'; }
       showToast('Training marked complete.', 'success');
+      if (typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // T9: the Dashboard's Needs-you list refetches
       // §6 settle — dim + strike + draw a check on the row, then let the list
       // re-render to its canonical done state once the animation has played.
       var row = null;
@@ -483,6 +484,9 @@ function trainSubmitQuiz_() {
           if (it) {
             if (it.quiz) { it.quiz.attempts = res.attempt; it.quiz.lastScorePct = res.scorePct; }
             if (res.passed) { it.completed = true; it.status = 'done'; }
+          }
+          if (res.passed) {
+            if (typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // T9: the Dashboard's Needs-you list refetches
           }
           if (currentView === 'trainingHome') trainRenderMy_();
         }

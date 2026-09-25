@@ -7483,6 +7483,20 @@ function pendingTasksBust_(empId) {
     if (id) CacheService.getScriptCache().remove(PENDING_TASKS_CACHE_PREFIX + id);
   } catch (e) {}
 }
+/** T10 (cycle 22) — drop EVERY rep's cached Needs-you list, for a change
+ *  that reaches the whole team (revoking an everyone-assignment). One
+ *  removeAll over the roster's keys; best-effort like the single bust. */
+function pendingTasksBustAll_() {
+  try {
+    var roster = getEmployeeRosterRows_();
+    var keys = [];
+    for (var i = 1; i < roster.length; i++) {
+      var id = String(roster[i][EMP.ID] || '').trim();
+      if (id) keys.push(PENDING_TASKS_CACHE_PREFIX + id);
+    }
+    if (keys.length) CacheService.getScriptCache().removeAll(keys);
+  } catch (e) {}
+}
 /** Pure sort: overdue first, then by due date (blank due LAST), then title. */
 function pendingTasksSort_(items) {
   return (items || []).slice().sort(function (a, b) {

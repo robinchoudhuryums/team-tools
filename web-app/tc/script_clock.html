@@ -1227,12 +1227,25 @@ function clkLoadNeedsYou_() {
     .getMyPendingTasks();
 }
 
+/** T9 (cycle 22) — the ONE client-side invalidation of the Needs-you list:
+ *  the next Dashboard enter refetches instead of painting it as fresh. Every
+ *  completing flow in another partial calls it (typeof-guarded); the server
+ *  busts its own cache in the same flows (pendingTasksBust_), so the refetch
+ *  is the truth. Painting the last-good list meanwhile is unchanged. */
+function clkNeedsYouInvalidate_() {
+  CLK_NEEDS.at = 0;
+}
+
 /** Row click: the notes route rides the SAME CLK_NAV_HINT hand-off the
  *  coverage strip's "File N missing" uses; everything else is a plain
  *  enterTool(tool, tab) to the server-named registry tab (C8). */
 function clkNeedsYouGo_(idx) {
   var it = (CLK_NEEDS.data && Array.isArray(CLK_NEEDS.data.items)) ? CLK_NEEDS.data.items[idx] : null;
   if (!it || !it.route) return;
+  // T9 (cycle 22): the rep is going to DO this task, so the list they come
+  // back to must be re-read — it used to stay fresh for CLK_DASH_FRESH_MS and
+  // show the item they had just finished (g67, on the client side).
+  clkNeedsYouInvalidate_();
   var r = it.route;
   if (it.kind === 'notes' && r.hint) { fileMissingCalls_(r.hint.date, r.hint.missingCount); return; }
   if (typeof enterTool === 'function') enterTool(r.tool, r.tab);

@@ -27837,6 +27837,79 @@ test('T11: every training "overdue" is judged against ONE today — the manager-
   assert.ok((src.match(/trainTodayIso_\(\)/g) || []).length >= 3, 'the three readers share it');
 });
 
+
+test('T9: the Needs-you list is invalidated on click and by every completing flow in every partial (derived from the server bust list)', () => {
+  const s2 = buildSandbox([]);
+  s2.CLK_NEEDS = { data: { items: [{ kind: 'training', route: { tool: 'develop', tab: 'trainingHome' } }] }, at: Date.now() };
+  let entered = null; s2.enterTool = (t, tab) => { entered = t + '/' + tab; };
+  loadFunction(s2, 'tc/script_clock.html', 'clkNeedsYouInvalidate_');
+  const go = loadFunction(s2, 'tc/script_clock.html', 'clkNeedsYouGo_');
+  go(0);
+  assert.strictEqual(s2.CLK_NEEDS.at, 0, 'a click marks the list stale, so the Dashboard re-reads it on return');
+  assert.strictEqual(entered, 'develop/trainingHome', 'and still navigates');
+  // Every server flow that busts the server cache on completion has a client
+  // caller that invalidates the client copy — derived, so a new completing
+  // flow must be wired on both sides.
+  const src = stripJsComments_(serverSource());
+  const busting = [];
+  src.replace(/function ([A-Za-z0-9_]+)\([^)]*\) \{/g, (all, name, at) => {
+    if (/_$/.test(name)) return all;
+    const body = extractRawFunction('Code.js', name);
+    if (/pendingTasksBust_\(emp\.id\)/.test(body)) busting.push(name);
+    return all;
+  });
+  assert.ok(busting.length >= 6, 'the rep-completion flows are found (' + busting.join(',') + ')');
+  const partials = [];
+  const walk = (d) => fs.readdirSync(d).forEach((f) => { const p = path.join(d, f); if (fs.statSync(p).isDirectory()) walk(p); else if (/\.html$/.test(f)) partials.push(p); });
+  walk(B7_WEB);
+  busting.forEach((rpc) => {
+    let wired = false, called = false;
+    partials.forEach((p) => {
+      const t = fs.readFileSync(p, 'utf8');
+      const re = new RegExp('\\.' + rpc + '\\(', 'g'); let m;
+      while ((m = re.exec(t)) !== null) {
+        called = true;
+        const chainStart = t.lastIndexOf('google.script.run', m.index);
+        if (chainStart >= 0 && /clkNeedsYouInvalidate_\(\)/.test(t.slice(chainStart, m.index))) wired = true;
+      }
+    });
+    assert.ok(!called || wired, rpc + ': completes a task on the server but its client caller never invalidates the Dashboard list');
+  });
+});
+
+test('T10: voiding, releasing and revoking change the REP\'s Needs-you list now — each busts that rep\'s cache (driven revoke, including an everyone assignment)', () => {
+  ['voidDoc', 'releaseDoc'].forEach((fn) => assert.ok(/pendingTasksBust_\(found\.doc\.empId\)/.test(extractRawFunction('Code.js', fn)), fn + ' busts the doc\'s rep'));
+  assert.ok(/pendingTasksBust_\(found\.item\.empId\)/.test(extractRawFunction('Code.js', 'voidCoaching')), 'voidCoaching busts the coached rep');
+  const drive = (empCell) => {
+    const log = [];
+    const cells = { revoked: '', emp: empCell };
+    const sheet = { getLastRow: () => 2, getRange: (r, c, n) => (n ? { getValues: () => [['A1']] }
+      : (c === 8 ? { getValue: () => cells.revoked, setValue: (v) => { cells.revoked = v; } } : { getValue: () => cells.emp })) };
+    const ctx = vm.createContext({ String, Date,
+      LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      getEmployeeInfo_: () => ({ isManager: true, email: 'm@x' }), getOrCreateTrainSheet_: () => sheet,
+      TRAIN_ASSIGN_TAB: 'T', TRAIN_ASSIGN_HEADERS: [], TA: { ASSIGN_ID: 0, EMP_ID: 3, REVOKED_AT: 7 },
+      getKbSS_: () => ({ getSpreadsheetTimeZone: () => 'UTC' }), trainCellTs_: (v) => v || null,
+      sheetSafe_: (v) => v, fmtDate_: () => 'd', fmtTime_: () => 't', writeAuditLog_() {},
+      pendingTasksBust_: (id) => log.push('one:' + id), pendingTasksBustAll_: () => log.push('all') });
+    vm.runInContext(extractRawFunction('Code.js', 'revokeTrainingAssignment'), ctx);
+    const r = ctx.revokeTrainingAssignment('A1');
+    return { r, log };
+  };
+  const one = drive('E7');
+  assert.ok(one.r.success, JSON.stringify(one.r));
+  assert.deepStrictEqual(one.log, ['one:E7'], 'a single-rep assignment busts that rep');
+  assert.deepStrictEqual(drive('*').log, ['all'], 'an everyone assignment busts every rep');
+  // The all-bust removes every roster key in one call.
+  let removed = null;
+  const ctx = vm.createContext({ String, EMP: { ID: 1 }, PENDING_TASKS_CACHE_PREFIX: 'pt:',
+    getEmployeeRosterRows_: () => [['h', 'h'], ['a', 'E1'], ['b', ''], ['c', 'E2']],
+    CacheService: { getScriptCache: () => ({ removeAll: (k) => { removed = k; } }) } });
+  vm.runInContext(extractRawFunction('Code.js', 'pendingTasksBustAll_'), ctx);
+  ctx.pendingTasksBustAll_();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(removed)), ['pt:E1', 'pt:E2'], 'one removeAll over the roster ids');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

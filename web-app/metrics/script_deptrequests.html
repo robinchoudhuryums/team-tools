@@ -616,6 +616,7 @@ function drResolveClick_(btn) {
     .withSuccessHandler(function (res) {
       if (res && res.success) {
         showToast(res.already ? 'Already resolved.' : 'Marked resolved.', 'toast-success');
+        if (typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // T9: the Dashboard's Needs-you list refetches
         drApplyResolved_(id);          // cache first — the DOM is rendered FROM it
         // The stamp is busted even on success: the patch is an approximation
         // (resolvedBy, deptStats, the server's own list membership), so the

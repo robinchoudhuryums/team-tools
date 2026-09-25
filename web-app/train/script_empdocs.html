@@ -379,6 +379,7 @@ function edSubmitSignature_(docId, btn, needsSig) {
         return;
       }
       showToast(needsSig ? 'Document signed.' : 'Document completed.', 'success');
+      if (typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // T9: the Dashboard's Needs-you list refetches
       var docs = (ED_STATE.my && ED_STATE.my.docs) || [];
       for (var i = 0; i < docs.length; i++) {
         if (docs[i].docId === docId) { docs[i].status = needsSig ? 'signed' : 'completed'; docs[i].signedAt = res.signedAt; docs[i].needsAction = false; }
