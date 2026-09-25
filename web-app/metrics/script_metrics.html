@@ -1168,7 +1168,8 @@ function mPctClass_(p, thr, band) {
 }
 
 // §6 — sortable team table. Sort keys map to rep fields; ATT sorts by the
-// numeric attSeconds (not the formatted string), coverage treats null as lowest.
+// numeric attSeconds (not the formatted string), coverage and % answered treat
+// null (no calls in the range) as lowest.
 function mSortReps_(reps, sort) {
   var key = sort.key, dir = (sort.dir === 'asc') ? 1 : -1;
   var get = function (r) {
@@ -1177,7 +1178,7 @@ function mSortReps_(reps, sort) {
       case 'totalRung': return r.totalRung || 0;
       case 'totalAnswered': return r.totalAnswered || 0;
       case 'totalMissed': return r.totalMissed || 0;
-      case 'pctAnswered': return r.pctAnswered || 0;
+      case 'pctAnswered': return (r.pctAnswered == null ? -1 : r.pctAnswered);   // M1: no rate sorts lowest, never as 0%
       case 'attSeconds': return r.attSeconds || 0;
       case 'noteCount': return r.noteCount || 0;
       case 'noteCoverage': return (r.noteCoverage == null ? -1 : r.noteCoverage);

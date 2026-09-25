@@ -4,16 +4,18 @@
 Cycle: 22 — opened 2026-09-23 by a `/broad-scan` (99 findings: 0 Critical /
 3 High; nine-batch implementation plan). Cycle 21 + 21post are in HISTORY.md.
 Phase: implement
-Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9) + S2 DONE + Batch 2 DONE (T1, T3, T2, T6, C1, C5) + follow-ons F1–F5 DONE + Batch 3 DONE (I1, C4, K2, K6, C3, D6, D7, C6, C10, C11)
+Scope: broad — Batch 1 DONE (S1, X2, S3, S4, S9) + S2 DONE + Batch 2 DONE (T1, T3, T2, T6, C1, C5) + follow-ons F1–F5 DONE + Batch 3 DONE (I1, C4, K2, K6, C3, D6, D7, C6, C10, C11) + Batch 4 DONE (M4, M1, X3, M2, M8, M3, M7, M9, D1, D2) + Batch 5 DONE (K3, K1, K4, K5, X1, K7, K9, K12, K11, K13, K10)
 Test Command: manual
-Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent) · S2 (phased, blanket): L (~9 h) — helper+pin 1h · wrap every write site ~180 + pin repairs 6h · derived pin + bite-checks 2h | S2 Actual: ~5 h · Batch 2: M (~11.5 h) — T1 M 3h · T3 M 3h · T2 S 1.5h · T6 S 1.5h · C1 S 1.5h · C5 S 1h | Batch 2 Actual: ~4.5 h · Follow-ons F1–F5: M (~7 h) — F1 cleanup lock S 1h · F2 TSV twin S 1h · F3 stored-formula scan M 2h · F4 Spanish grid + grow-first net S 1h · F5 Day Edit stray leaves M 2h | Follow-ons Actual: ~3.5 h · Batch 3: L (~12 h) — I1 M 2.5h · C4 S 1.5h · K2 S 1.5h · K6 S 1h · C3 S 1h · D6 S 1.5h · D7 S 1h · C6 S 1h · C10 S 1h · C11 S 0.5h | Batch 3 Actual: ~5 h
+Estimates: Batch 1: M (~11.5 h) — S1 M 3h · S2 M 4h · S3 S 1.5h · S4 S 0.5h · S9 S 1h · X2 S 1.5h | Actual: ~4 h for the five delivered (S2 not spent) · S2 (phased, blanket): L (~9 h) — helper+pin 1h · wrap every write site ~180 + pin repairs 6h · derived pin + bite-checks 2h | S2 Actual: ~5 h · Batch 2: M (~11.5 h) — T1 M 3h · T3 M 3h · T2 S 1.5h · T6 S 1.5h · C1 S 1.5h · C5 S 1h | Batch 2 Actual: ~4.5 h · Follow-ons F1–F5: M (~7 h) — F1 cleanup lock S 1h · F2 TSV twin S 1h · F3 stored-formula scan M 2h · F4 Spanish grid + grow-first net S 1h · F5 Day Edit stray leaves M 2h | Follow-ons Actual: ~3.5 h · Batch 3: L (~12 h) — I1 M 2.5h · C4 S 1.5h · K2 S 1.5h · K6 S 1h · C3 S 1h · D6 S 1.5h · D7 S 1h · C6 S 1h · C10 S 1h · C11 S 0.5h | Batch 3 Actual: ~5 h · Batch 4: L (~11 h) — M4 S 1.5h · M1 S 1h · X3 S 0.5h · M2 S 1h · M3 S 1.5h · M7 S 1.5h · M8 S 1h · M9 S 1h · D1 S 1.5h · D2 S 0.5h | Batch 4 Actual: ~3.5 h · Batch 5: L (~12 h) — K3 M 2.5h · K1 S 1.5h · K4 M 2h · K5 S 1.5h · X1 S 1h · K7 S 1h · K9 S 0.5h · K12 S 1h · K11 S 0.5h · K13 S 0.5h · K10 S 0.25h | Batch 5 Actual: ~3 h
 Subsystem cycles since last Seams audit: 1 — reset to 0 by the 2026-09-18 audit
 (batch S), +1 for the 21post reflection. The cadence is every 4.
 Updated: 2026-09-23
 
 ## In progress (facts to carry forward — NOT judgments)
-- Batch 1, S2, Batch 2 and the follow-ons are committed on
-  `claude/optimistic-newton-gkdb3v`; NOT deployed. Blocks: `.cycle/blocks/22-{B1,S2,B2,FO}-broad-implement.md`.
+- Batch 1, S2, Batch 2, the follow-ons, Batch 3 and Batch 4 are committed on
+  `claude/optimistic-newton-gkdb3v` (Batch 3 and earlier merged to main via
+  robinchoudhuryums/team-tools#271); NOT deployed. Blocks:
+  `.cycle/blocks/22-{B1,S2,B2,FO,B3,B4,B5}-broad-implement.md`.
 - The broad-scan's nine-batch plan is in the session report (not on disk —
   `/broad-scan` writes no block). Batches 2–9 remain; the finding IDs (S*, T*,
   M*, C*, K*, I*, D*, A*, U*, X*) are the scan's.
@@ -41,6 +43,21 @@ Updated: 2026-09-23
 - C10 | cn/script_callnotes.html | a live refresh keeps a note confirmed after its request
 - C11 | cn/script_callnotes.html | clearing the form ends running dictation first
   Block: `.cycle/blocks/22-B3-broad-implement.md`
+- M4 | 51_spanish.js | Spanish auto-assign balances on claims held on PENDING requests (spanishOpenLoad_), not history
+- M1 + X3 | 40_metrics.js, metrics/script_metrics.html, test/visual | a no-call rep has a null rate ("—", sorted lowest); the fixture's Today has no call data, new metrics-team-today-light-wide
+- M2 + M8 | 40_metrics.js, tc/script_clock.html | Dashboard Yesterday = previous workday (labelled by date), an all-empty window uncached; MTD prior window lag-aligned; projection over dataThrough; key v6
+- M3 | 40_metrics.js, 00_config.js | range ATT is answered-weighted in both DQE readers; CDR_CACHE_KEY v5
+- M7 | 40_metrics.js | cdrAgentsOrThrow_ — a missing DQE tab is an error at onboarding readiness, the Dashboard and Team Metrics
+- M9 | 40_metrics.js | trend days with no CDR row are null, never 0
+- D1 + D2 | 82_coaching.js, train/script_coaching.html | coaching stamps parsed in CONFIG.TIMEZONE; an empty median is null → "nothing acknowledged yet"
+  Block: `.cycle/blocks/22-B4-broad-implement.md`
+- K3 + K1 | 70_kb.js | distance clauses parsed one by one (oopRadiusClause_): each distance governs the names after it, and any unconsumed word — or a restricting Open parenthetical — makes the value unknown
+- K4 | 00_config.js, 70_kb.js | state names → codes, city spellings normalised (locStateCode_ / locCityNorm_); an unreadable State is "cannot tell"
+- K5 | 70_kb.js, kb/script_kb.html | a partial geocode is refused (never measured or cached); a street address geocodes on Enter/blur, a ZIP by itself
+- K7 | 70_kb.js, cn/script_callnotes.html | quotes carry the code; the send verifies against any same-named row
+- K9 · K12 · K13 · K11 · K10 | 70_kb.js, kb, cn | blank rows skipped; header roles shown + docs; newest comments; word-bounded tone; no double escape
+- X1 | test/visual/mock.js, run.js | the diagnostics fixture (pinned to the real resolvers) + the shrink-only "every client RPC has a fixture or is named" net
+  Block: `.cycle/blocks/22-B5-broad-implement.md`
 - F1 | Tests.js | every live-tab positional delete in the suite goes through _deleteRowsWhereLocked_ (ScriptLock from snapshot to last delete)
 - F2 | script_core.html, metrics/script_metrics.html | tsvCell_/tsvRow_ — the client twin of sheetSafe_ on every "Copy table" line
 - F3 | 10_core.js, cn/script_callnotes.html | adminScanStoredFormulas + Admin → System → Stored formulas (read-only, on demand)
@@ -110,6 +127,34 @@ Updated: 2026-09-23
   amended, new g147, INV-249/250, walk steps on S34/S59/S64/S69/S99/S113 +
   new S115, the Save & Compose and Intake-amend decision amendments, module
   notes, both logs.
+- **Deploy Batch 4** with the rest, and its walk (22-B4 block): Dashboard
+  Monday/holiday Yesterday + MTD "vs" window and On-pace; Team Metrics Today
+  all "—" and a no-call rep sorted last; a PTO day bridged in the trends;
+  coaching overdue at the right hour + "nothing acknowledged yet"; Spanish
+  auto-assign alternating between an old and a new member.
+- **Deploy Batch 5** with the rest, and its walk (22-B5 block): the address
+  confirm (Enter/blur, hint; a ZIP by itself); a partial address refused with
+  Google's guess; an "except" Open cell; Ft./Fort city match; a duplicate-name
+  quote sent; 100+ comments show the newest. After deploy read Admin → System
+  → Reference lookups: the "Cannot read" list (K3 may have added cells with
+  harmless extra words) and the delivery header roles.
+- **Batch 5 follow-ons (22-B5 block):** X1 names 31 reads owed a fixture; K3's
+  connective list may need the operator's real words; K4 maps no city aliases
+  beyond the abbreviations; the address hint is not photographed. STILL OPEN:
+  what the city row's Accepts column decides (operator). Docs SYNCED
+  2026-09-25: g41/g116/g126/g128 amended, new g150 (a client RPC with no mock
+  fixture), INV-257..262, walk steps on S62/S64/S97/S112, the OOP-B and ELIG
+  decisions amended, module notes, both logs.
+- **Batch 4 follow-ons (22-B4 block):** the client twin coachTsMs_ still reads
+  coaching stamps as UTC; M7's class survives in getMetricsAmbient,
+  managerGetShiftStats' enrichment and getCdrDailyBreakdown_ (no error field
+  at all); Dashboard MTD note coverage counts today's notes against calls
+  through yesterday; the dashboard fixture's prior label is static; D2's
+  sub-line is not photographed. Docs SYNCED 2026-09-23: g114/g123/g124/g128/g136
+  amended, new g148 (lagged windows) + g149 (a "differences only" parser),
+  INV-251..256, walk steps on S41/S42/S43/S99/S105/S110 + new S116, the
+  Dashboard decision amended + a new weighted-ATT decision, module notes, both
+  logs, the auto-assign operator-state line.
 - **Follow-on follow-ons (22-FO block):** the stored-formula scan is on demand
   only (no findings-list entry, no resume past the budget); the mock lacks
   `adminScanStoredFormulas` (add with X1's Admin fixtures); the sheet doctor
@@ -121,8 +166,8 @@ Updated: 2026-09-23
   INV-229..232 + an INV-213 amendment PROPOSED (cycle 21); INV-240..242
   PROPOSED (21post: fixtures the server can still produce · tone/explanation
   agree both ways · doc UI paths resolve against `TOOLS` labels). None is in
-  the library yet. INV-243..250 were WRITTEN by cycle 22's /sync-docs passes.
-  **Next free is INV-251.**
+  the library yet. INV-243..262 were WRITTEN by cycle 22's /sync-docs passes.
+  **Next free is INV-263; next gotcha g151; next scenario S117.**
 - **An intermittent DOM pin**: `the resume request states the unpaid gap
   before it is filed` (runDom.js) failed once during T7 and has passed every
   run since. Flagged, not dismissed — a flake is not a root cause.
@@ -171,9 +216,8 @@ Updated: 2026-09-23
   amber** with their own explanations (operator, 2026-09-22).
 
 ## Where I left off
-Batch 1, S2, Batch 2, follow-ons F1–F5 and Batch 3 of cycle 22 are committed
-and pushed; none is deployed. Docs are synced through Batch 3. Next: deploy +
-the walks (S1, S7, S23, S34, S42, S59, S61, S64, S69, S96, S99, S105, S113,
-S114, S115 carry the cycle-22 steps); or
-`/broad-implement Batch 4` (Metrics and manager verdicts — M4, M1, X3, M2, M3,
-M7, M8, M9, D1, D2).
+Batch 1, S2, Batch 2, follow-ons F1–F5, Batch 3 and Batch 4 of cycle 22 are
+committed and pushed (Batch 5 on top of the Batch 4 docs sync); none is
+deployed. Docs are synced through Batch 5 (PR opened and merged 2026-09-25).
+Next: deploy + the walks; or
+`/broad-implement Batch 6` (automation health honesty) from the scan's plan.

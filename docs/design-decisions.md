@@ -1836,6 +1836,11 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   keys `byName` on `oopNameCol_(headers)`; INV-213 makes "one resolver per
   operator tab" the rule and the OOP-B fixture carries the operator's shape.
 
+  **AMENDED (cycle 22 K7, 2026-09-23):** a quote carries the item's CODE as
+  well as its name, and the send verifies it against every row with that name,
+  narrowed by the code. A line verifies if ANY candidate row still produces it,
+  so a price picked from the second of two same-named rows can be sent; a
+  changed price on that row is still refused, with that row's figure.
 - <a id="which-eligibility-restrictions-lift-out-of-pocket-is-a-rule"></a>**Which eligibility restrictions LIFT out of pocket is a RULE, not a
   table (ELIG, operator 2026-09-16).** The OOP sheet's `Area Eligibility` column
   states the rule for an order going THROUGH INSURANCE. Paying out of pocket
@@ -1929,6 +1934,16 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   lookup uses (name OR code), so a by-name query no longer reports "No item
   matched" for a listed item (INV-213).
 
+  **AMENDED (cycle 22 K1 + K3 + K4, 2026-09-23):** the grammar reads EVERY
+  distance clause: each distance governs the names after it (equal distances
+  merge; different ones are a union), and a name before the first of two
+  distances cannot be assigned, so the value is unknown. Nothing the operator
+  wrote is dropped: a restricting Open parenthetical, or any word left in a
+  distance clause beyond its connectives, makes the value unknown, and unknown
+  still never lifts. The city list reads a State cell as a code or a full name
+  and normalises city spellings (Ft/St/Mt, punctuation); a listed city whose
+  State cannot be read answers "cannot tell". The Accepts column stays
+  display-only — what it should decide is still the operator's call.
 - <a id="price-and-area-eligibility-are-one-panel-because-they-are"></a>**Price and area eligibility are ONE panel, because they are one
   question asked of one table (operator 2026-09-18).** They shipped as two
   cards two days apart and the split was an artefact of that order, not a
@@ -2338,6 +2353,15 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   `clock-needsyou-empty-light-wide` (`?fixture=empty`) and
   `clock-needsyou-error-light-wide` (`?failrpc=`), `fold-measure.mjs`, and
   `test_pendingTasks_requiresEmployeeAndShape`.
+  **AMENDED (cycle 22 M2 + M8, 2026-09-23):** "Yesterday" is the previous
+  WORKDAY (`prevWorkdayIso_`: weekends and the company calendar), labelled by
+  its date when it is not literally yesterday, and a window nobody reported in
+  is not cached. The MTD comparison is LAG-ALIGNED: the CDR holds nothing for
+  today, so the prior window is the same days OF DATA (1..d-1, so "vs Jul 1–11"
+  on the 12th, and no comparison on the 1st). The run-rate projection divides by
+  the payload's `dataThrough` (the last day with data) rather than by a today
+  that never has any (g148). The cache key is now `dash_metrics_v6` (v5 was
+  H2's formula).
 - <a id="clock-view-hero-shift-strip-ledger-architecture"></a>**Clock view: hero + shift-strip + ledger architecture.** The
   Clock tab's `renderClockView` emits, in order: a `.hero` block
   (greet kicker + name + live status sentence on the left, live
@@ -4565,3 +4589,15 @@ pick them up without re-deriving the context.
   (Admin → System → Stored formulas, read-only) and fixed by hand, never
   rewritten by code. Verify: `npm run lint:server` (SHEET-SAFE), the S2 pins
   and the F2 mirror pin.
+- <a id="a-range-s-average-talk-time-is-weighted-by-the-calls"></a>**A range's average talk time is weighted by the calls behind each day (cycle 22 M3, 2026-09-23).**
+  The DQE tab holds ONE row per agent per day, and its ATT column is that day's
+  average. Over a range, both readers (`getCdrAgentMetrics_`,
+  `getCdrDailyBreakdown_`) averaged the daily averages with equal weight, so one
+  2-call day at 10 minutes pulled a week of 60-call days at 2 minutes up
+  sharply. Each day now counts by its answered calls, and a row with an ATT but
+  nothing answered carries no weight. That is what the team aggregate
+  (`dashboardTeamAggregate_`) already did, so a rep's own figure and the team
+  figure beside it now share one definition. Single-day figures are unchanged.
+  `CDR_CACHE_KEY` is now `cdr_metrics_v5` (INV-85). Verify: the M3 pin, driven
+  through both readers (a 2-call 10-minute day and a 60-call 2-minute day read
+  135 s, not 360).

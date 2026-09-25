@@ -177,6 +177,9 @@
      which is exactly when a rep looks up to check which box they are in. */
   .kb-oop-lbl { display: block; font-size: 11.5px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
   .kb-oop-lbl-opt { font-weight: 400; color: var(--muted-2); }
+  /* K5: says a typed address is waiting for Enter. No display rule on purpose —
+     it is toggled by [hidden], which loses to any class that sets display (g73). */
+  .kb-oop-hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
   /* Results scroll INSIDE their panel. Without this the two columns grow to
      wildly different heights and everything below the band jumps as each
      answer lands. The cap sits on the SCROLLING element, never on .kb-lookups
@@ -2559,43 +2562,64 @@ function kbToggleDept_(btn) {
 // ORDER MIRRORS THE TONE CASCADE, so the first term found is the one that
 // decided the colour: a value reading "Not Accepted (location-based)" is bad,
 // not warn, and must explain itself as Not Accepted.
+// K11 (cycle 22): the predicates BOTH lists use, word-bounded. The tone used
+// bare substrings, so "No longer accepted" toned GOOD (it contains
+// "accepted"), "Entry" read as TRY and "Soon" as OON — while the term list
+// had drifted to its own spellings, so a colour and its explanation could
+// disagree about one value. One predicate per idea, shared, fixes both.
+function insWord_(v, w) { return new RegExp('(^|[^a-z])' + w + '([^a-z]|$)').test(v); }
+var INS_IS = {
+  // A NEGATED acceptance is a refusal whatever follows: "not accepted",
+  // "no longer accepted", "never accepted", "non-accepted", "unaccepted".
+  notAccepted: function (v) {
+    return v === 'no' || /(^|[^a-z])(not|no\s+longer|never|non|do\s*n[o']?t|don't)[\s-]*(currently\s+|yet\s+)?accept(ed|ing)?([^a-z]|$)/.test(v) ||
+      insWord_(v, 'unaccepted');
+  },
+  oonBare: function (v) { return /^(oon|out[\s-]*of[\s-]*network)$/.test(v); },
+  oonAny: function (v) { return /(^|[^a-z])(oon|out[\s-]*of[\s-]*network)([^a-z]|$)/.test(v); },
+  planSpecific: function (v) { return /(^|[^a-z])plan[\s-]*specific([^a-z]|$)/.test(v); },
+  location: function (v) { return /(^|[^a-z])locations?([^a-z]|$)/.test(v); },
+  siPr: function (v) { return v.indexOf('si/pr') >= 0; },
+  pr: function (v) { return insWord_(v, 'pr') && v.indexOf('si/pr') < 0; },
+  both: function (v) { return v.indexOf('&') >= 0; },
+  tryIt: function (v) { return insWord_(v, 'try'); },
+  hawaii: function (v) { return insWord_(v, 'hawaii'); },
+  accepted: function (v) { return insWord_(v, 'in-network') || insWord_(v, 'accepted') || v === 'x' || v === 'yes'; },
+};
 var INS_TERMS = [
   { term: 'Not Accepted / NO', why: 'Don\u2019t accept orders for this payor.',
-    match: function (v) { return v.indexOf('not accepted') >= 0 || v === 'no'; } },
+    match: INS_IS.notAccepted },
   // Operator, 2026-09-22: OON and OUT-OF-NETWORK are the same, and mean don't
   // accept. BARE values only \u2014 the matcher is the tone rule's own regex, so a
   // qualified value toned amber ("OON W/ PA") can never be explained by a red
   // refusal sitting under it.
   { term: 'Out-of-network / OON', why: 'Out of network \u2014 we don\u2019t accept orders for this plan.',
-    match: function (v) { return /^(oon|out[\s-]*of[\s-]*network)$/.test(v); } },
+    match: INS_IS.oonBare },
   // The two QUALIFIED out-of-network values, both amber (operator, 2026-09-22).
   // They are what the bare refusal above deliberately does NOT cover: the plan
   // is out of network, and still leaves a route to an order.
   { term: 'OON w/ PA', why: 'Out of network, but the plan may approve an order through a Prior Authorization request.',
     match: function (v) {
-      return /(^|[^a-z])(oon|out[\s-]*of[\s-]*network)([^a-z]|$)/.test(v) &&
-        /(^|[^a-z])(pa|prior[\s-]*auth(orization)?)([^a-z]|$)/.test(v);
+      return INS_IS.oonAny(v) && /(^|[^a-z])(pa|prior[\s-]*auth(orization)?)([^a-z]|$)/.test(v);
     } },
   { term: 'Out-of-Network Benefits', why: 'Out of network, but the plan lets members use out-of-network suppliers \u2014 usually at a higher co-insurance rate.',
-    match: function (v) {
-      return /(^|[^a-z])(oon|out[\s-]*of[\s-]*network)([^a-z]|$)/.test(v) && v.indexOf('benefit') >= 0;
-    } },
+    match: function (v) { return INS_IS.oonAny(v) && v.indexOf('benefit') >= 0; } },
   // Operator, 2026-09-22. First of the amber terms because the tone cascade
   // tests it first.
   { term: 'Plan Specific', why: 'Can\u2019t be confirmed from the sheet \u2014 only by contacting the insurance or attempting submission.',
-    match: function (v) { return v.indexOf('plan specific') >= 0; } },
+    match: INS_IS.planSpecific },
   { term: 'Location-based (285\u2013325 lb)', why: 'The location rules below, and the patient must be 285\u2013325 lb.',
     match: function (v) { return /285\s*[-\u2013]\s*325/.test(v); } },
   { term: 'SI/PR', why: 'Accept only with secondary insurance covering any patient responsibility \u2014 or the patient is told PR may be collected up front by delivery.',
-    match: function (v) { return v.indexOf('si/pr') >= 0; } },
+    match: INS_IS.siPr },
   { term: 'Location-based', why: 'Only if the patient is in one of the big cities listed on the source sheet\u2019s "Location Based Acceptance Options" tab, or within 100 miles of a listed branch.',
-    match: function (v) { return v.indexOf('location') >= 0; } },
+    match: INS_IS.location },
   { term: 'A & B (combined)', why: 'Must meet BOTH criteria.',
-    match: function (v) { return v.indexOf('&') >= 0; } },
+    match: INS_IS.both },
   { term: 'PR', why: 'Proceed as normal, but tell the patient there may be a patient-responsibility cost before delivery; the amount is known once the device is determined.',
-    match: function (v) { return /(^|[^a-z])pr([^a-z]|$)/.test(v) && v.indexOf('si/pr') < 0; } },
+    match: INS_IS.pr },
   { term: 'TRY', why: 'Submit to test authorization \u2014 credentialing then decides whether this payor stays accepted.',
-    match: function (v) { return v.indexOf('try') >= 0; } },
+    match: INS_IS.tryIt },
   // The two Hawaii values, both blue (operator, 2026-09-23). The first is a
   // RULE about where the item can go; the second DESCRIBES who the plan is.
   // Specific matchers on purpose: a bare "Hawaii" is not either of these by
@@ -2606,7 +2630,7 @@ var INS_TERMS = [
   { term: 'MDX Hawaii', why: 'An HMO and IPA (independent physician association) in Hawaii that coordinates medical care for Medicare Advantage plan members.',
     match: function (v) { return /(^|[^a-z])mdx([^a-z]|$)/.test(v); } },
   { term: 'Accepted / X', why: 'We can accept orders for patients with this plan.',
-    match: function (v) { return v.indexOf('in-network') >= 0 || v.indexOf('accepted') >= 0 || v === 'x' || v === 'yes'; } },
+    match: function (v) { return INS_IS.accepted(v) && !INS_IS.notAccepted(v); } },
   // Legend-only: this one is the rule for a plan the sheet does not carry, so
   // no cell ever reads it and it has no matcher.
   { term: 'Plan not listed', why: 'Follow the TRY criteria.', match: null },
@@ -2632,20 +2656,18 @@ var INS_LEGEND = INS_TERMS.map(function (t) { return [t.term, t.why]; });
 function insToneCls_(value) {
   var v = String(value == null ? '' : value).trim().toLowerCase();
   if (!v) return '';
-  if (v.indexOf('not accepted') >= 0 || v === 'no') return 'bad';
+  if (INS_IS.notAccepted(v)) return 'bad';
   // BARE out-of-network, in any of its spellings, is the hard no — the operator
   // confirmed on 2026-09-22 that OON and OUT-OF-NETWORK are the same thing and
-  // that it means "don't accept". Until then `oon` fell through to the amber
-  // branch below by substring while `out-of-network` was red, so one fact
-  // rendered in two colours depending on which spelling a row used.
-  // A QUALIFIED value ("OON W/ PA", "Out-of-Network Benefits") is NOT this
-  // rule and stays amber below — that split was deliberate and is pinned.
-  if (/^(oon|out[\s-]*of[\s-]*network)$/.test(v)) return 'bad';
-  if (v.indexOf('oon') >= 0 || v.indexOf('out-of-network') >= 0 || v.indexOf('plan specific') >= 0) return 'warn';
-  if (v.indexOf('location') >= 0 || v.indexOf('si/pr') >= 0 || /(^|[^a-z])pr([^a-z]|$)/.test(v) || v.indexOf('&') >= 0) return 'warn';
-  if (v.indexOf('try') >= 0) return 'info';
-  if (v.indexOf('hawaii') >= 0) return 'info';
-  if (v.indexOf('in-network') >= 0 || v.indexOf('accepted') >= 0 || v === 'x' || v === 'yes') return 'good';
+  // that it means "don't accept". A QUALIFIED value ("OON W/ PA",
+  // "Out-of-Network Benefits") is NOT this rule and stays amber below — that
+  // split was deliberate and is pinned.
+  if (INS_IS.oonBare(v)) return 'bad';
+  if (INS_IS.oonAny(v) || INS_IS.planSpecific(v)) return 'warn';
+  if (INS_IS.location(v) || INS_IS.siPr(v) || INS_IS.pr(v) || INS_IS.both(v)) return 'warn';
+  if (INS_IS.tryIt(v)) return 'info';
+  if (INS_IS.hawaii(v)) return 'info';
+  if (INS_IS.accepted(v)) return 'good';
   return '';
 }
 
@@ -2675,7 +2697,7 @@ function insToneCls_(value) {
 //
 // The ITEM is the key; the ADDRESS is optional and UPGRADES the answer from
 // prices to prices-plus-verdicts. It never gates it — see oopDegraded_.
-var KB_OOP = { seq: 0, timer: null, last: {} };
+var KB_OOP = { seq: 0, timer: null, last: {}, addrOk: {} };   // addrOk: K5 — the address last CONFIRMED, per host
 
 /** The lookup section (shared by both hosts; suffix '' = Reference landing,
  *  '-d' = drawer).
@@ -2697,16 +2719,44 @@ function oopLookupSecHtml_(suffix) {
         '<label class="kb-oop-lbl" for="kb-oop-addr' + suffix + '">Address or ZIP ' +
           '<span class="kb-oop-lbl-opt">— optional</span></label>' +
         '<input type="text" class="kb-ins-input" id="kb-oop-addr' + suffix + '" autocomplete="off" ' +
-          'placeholder="adds delivery eligibility" oninput="oopLookupInput_(this)">' +
+          'placeholder="adds delivery eligibility" oninput="oopLookupInput_(this)" ' +
+          'onkeydown="oopAddrKey_(event, this)" onchange="oopAddrConfirm_(this)">' +
+        '<div class="kb-oop-hint" id="kb-oop-addr-hint' + suffix + '" hidden>Press Enter to check delivery to this address.</div>' +
       '</div>' +
     '</div>' +
     '<div class="kb-ins-results" id="kb-oop-results' + suffix + '"></div>';
 }
 
+/** PURE (Node-pinned) — K5 (cycle 22): is this address ready to geocode? A
+ *  complete ZIP (5 digits, or ZIP+4) is — it cannot be half-typed. Anything
+ *  else waits until the rep CONFIRMS it (Enter or leaving the field). Before,
+ *  every pause of 700 ms after the fourth character geocoded whatever was
+ *  there, so "500 Main St, Irving TX 750" spent Maps quota on a guess — and
+ *  the geocoder's guess was what got measured (K5's server half). */
+function oopAddrReady_(addr, confirmed) {
+  var a = String(addr == null ? '' : addr).trim();
+  if (/^\d{5}(-\d{4})?$/.test(a)) return true;
+  return a.length >= 3 && a === String(confirmed == null ? '' : confirmed).trim();
+}
+/** K5: Enter confirms the address. */
+function oopAddrKey_(ev, inp) {
+  if (ev && (ev.key === 'Enter' || ev.keyCode === 13)) { if (ev.preventDefault) ev.preventDefault(); oopAddrConfirm_(inp); }
+}
+/** K5: confirming (Enter, or `change` on leaving the field) runs the check at
+ *  once — the rep has said the address is finished. */
+function oopAddrConfirm_(inp) {
+  if (!inp) return;
+  var suffix = /-d$/.test(inp.id) ? '-d' : '';
+  var a = String(inp.value || '').trim();
+  if (KB_OOP.addrOk[suffix] === a && !a) return;
+  KB_OOP.addrOk[suffix] = a;
+  oopLookupInput_(inp, { now: true });
+}
+
 /** Debounced, seq-tokened, and it chooses the endpoint from what is typed —
  *  two hosts and out-of-order responses must not cross-paint (INV-156, the
  *  insLookupInput_ discipline). */
-function oopLookupInput_(inp) {
+function oopLookupInput_(inp, opts) {
   var suffix = /-d$/.test(inp.id) ? '-d' : '';
   var itemEl = document.getElementById('kb-oop-item' + suffix);
   var addrEl = document.getElementById('kb-oop-addr' + suffix);
@@ -2717,7 +2767,11 @@ function oopLookupInput_(inp) {
   // An address UPGRADES the answer; an item alone is already a whole answer.
   // Its threshold is higher than the item's because a rep types a full address
   // rather than a stem.
-  var wantElig = addr.length >= 4;
+  // K5: the address upgrades the answer only once it is READY — a complete
+  // ZIP, or what the rep confirmed with Enter / by leaving the field.
+  var wantElig = oopAddrReady_(addr, KB_OOP.addrOk[suffix]);
+  var hint = document.getElementById('kb-oop-addr-hint' + suffix);
+  if (hint) hint.hidden = !(addr && !wantElig);
   if (!wantElig && item.length < 2) {
     // Below both thresholds there is nothing to ask. Bumping the seq voids
     // whatever is in flight, so a late reply cannot paint over a cleared box.
@@ -2757,7 +2811,7 @@ function oopLookupInput_(inp) {
         if (h) h.innerHTML = errorStateHtml_(msg);
       })
       .checkOopEligibility(addr, item);
-  }, wantElig ? 700 : 350);
+  }, (opts && opts.now) ? 0 : (wantElig ? 700 : 350));
 }
 
 /** The address produced no verdict, but the ITEM still has an answer.
@@ -3269,6 +3323,7 @@ var KB_INS = { seq: 0, timer: null, last: {} };
  *  delivery verdicts back under two empty inputs. */
 function kbLookupsForget_(suffix) {
   KB_OOP.last[suffix || ''] = null;
+  KB_OOP.addrOk[suffix || ''] = '';   // K5: the next caller's address is not confirmed
   KB_INS.last[suffix || ''] = null;
 }
 /** K2: a response lands only in the results host it was requested for. A host
@@ -4179,7 +4234,8 @@ function kbRenderComments_(host, id, res) {
   // association they exist for (the kbMd_ heading-dedup lesson).
   var sfx = (host.id === 'kbd-comments') ? '-d' : '';
   var capNote = (res.total > list.length)
-    ? '<div class="kb-cmt-cap mono">showing ' + list.length + ' of ' + res.total + '</div>' : '';
+    // K13: the server keeps the NEWEST past its cap, so say which were left out.
+    ? '<div class="kb-cmt-cap mono">showing the newest ' + list.length + ' of ' + res.total + ' \u2014 earlier comments are hidden</div>' : '';
   var rows = list.map(function (c) {
     // Edit is AUTHOR-only (narrower than delete's author-or-manager — the
     // server enforces both; these buttons just match its contract).

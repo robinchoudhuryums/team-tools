@@ -3128,7 +3128,7 @@ function bootExtComposer(matches) {
   return h;
 }
 const OOP_MATCHES = [
-  { name: 'Widget', price: '$129.00', eligibility: '', effective: '2026-09-01', details: [] },
+  { name: 'Widget', code: 'W-100', price: '$129.00', eligibility: '', effective: '2026-09-01', details: [] },   // K7: searchOopPricing ships the code
   { name: 'Priceless Thing', price: '', eligibility: '', effective: '', details: [] },
 ];
 
@@ -3332,8 +3332,8 @@ test('OOP-B DOM: the picker inserts the CANONICAL line, records the quote and sh
   assert.strictEqual(sent.length, 1, 'the send fired');
   const payload = sent[0].args[0];
   assert.strictEqual(JSON.stringify(payload.quotedOop),
-    JSON.stringify([{ name: 'Widget', price: '$129.00', effective: '2026-09-01', label: '' }]),
-    'the quote rides the payload for server-side re-verification');
+    JSON.stringify([{ name: 'Widget', code: 'W-100', price: '$129.00', effective: '2026-09-01', label: '' }]),
+    'the quote rides the payload for server-side re-verification — K7: with its CODE, so two rows sharing a name are told apart');
   assert.ok(payload.message.indexOf(line) >= 0, 'and the message still carries the line the server will look for');
 });
 
@@ -3443,7 +3443,16 @@ test('ELIG DOM: both verdicts render, labelled, on both hosts — a near-boundar
   addr.value = '500 Main St, Austin TX';
   h.read('oopLookupInput_')(addr);
   h.flushTimers();
+  await tick();
+  // K5 (cycle 22): a typed street address WAITS for the rep to confirm it — a
+  // pause is not "finished", and geocoding a half-typed address measured the
+  // geocoder's guess (and spent quota on it).
+  assert.strictEqual(asked, null, 'K5 — THE REGRESSION: a pause no longer geocodes a street address');
+  assert.strictEqual(h.$('#kb-oop-addr-hint').hidden, false, 'and the field says what it is waiting for');
+  h.read('oopAddrKey_')({ key: 'Enter', preventDefault() {} }, addr);
+  h.flushTimers();
   await tick(); await tick();
+  assert.strictEqual(h.$('#kb-oop-addr-hint').hidden, true, 'Enter confirms it, and the hint goes');
   assert.strictEqual(asked.addr, '500 Main St, Austin TX', 'the address reaches the server verbatim');
   assert.strictEqual(asked.item, '', 'a blank item means "list everything"');
 
@@ -4337,7 +4346,7 @@ test('T7 DOM: a delivery table that dropped rows SAYS so on the rep surface, and
 
   const addr = h.$('#kb-oop-addr');
   addr.value = '500 Main St, Austin TX';
-  h.read('oopLookupInput_')(addr);
+  h.read('oopAddrConfirm_')(addr);                  // K5: a street address runs once CONFIRMED
   h.flushTimers();
   await tick(); await tick();
 

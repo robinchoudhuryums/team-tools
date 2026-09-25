@@ -45,6 +45,27 @@ then the four blocks' walks.
   keeps text typed during a save. No operator action; one visible change: a
   Save & Compose that switched to External and is then CANCELLED now undoes
   the save, like the department composer.
+- **Batch 4 — Metrics and coaching verdicts read the calendar correctly.**
+  The Dashboard's Yesterday card shows the last workday (Friday on a Monday),
+  labelled by its date. Month to date compares against last month's same days
+  of data and projects from them. Team Metrics shows "—", not a red 0%, for a
+  rep with no calls (every rep on Today). Multi-day average talk time is
+  weighted by calls, so every such figure moves. A day with no call data is a
+  gap in the trends. A missing DQE tab reads as an error, never "no calls".
+  Coaching items turn overdue on time, and a team with nothing acknowledged
+  says so. Spanish auto-assign spreads requests by open claims. No operator
+  action.
+- **Batch 5 — the Reference eligibility lookup reads everything the operator
+  wrote.** A cell with two distances is two limits; a cell with words the check
+  cannot read, or an "except" in an Open note, now says "cannot tell" instead of
+  answering yes. The city list accepts full state names and Ft./St./Mt.
+  spellings. A street address is checked on Enter (a ZIP by itself), and a
+  half-matched address is refused. A quoted price from a duplicate item row can
+  be sent. **One operator check after deploy:** Manage → Admin → System →
+  Reference lookups — read the "Cannot read" list (cells with extra words now
+  land there; reword them) and the delivery-table header roles (e.g. a
+  "Delivery City" header reads as the accepts column; rename it if that is
+  wrong).
 
 ## 2026-09-23 — Area eligibility: city rules, any-warehouse, the diagnostics panel, the vocabulary (T7–T9)
 

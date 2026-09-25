@@ -81,18 +81,35 @@ function coachUnackedOverdue_(items, nowMs, days, opts) {
   });
   return out;
 }
-/** Pure (Node-pinned) — parse a 'yyyy-MM-dd HH:mm:ss' (or 'T'-form) stamp to
- *  ms as UTC. Only used for DIFFERENCES (ack − created), so the fixed-UTC
- *  interpretation cancels out and tz never skews a day-count. NaN on garbage. */
+/** Parse a 'yyyy-MM-dd HH:mm:ss' (or 'T'-form) coaching stamp to epoch ms.
+ *  NaN on garbage.
+ *
+ *  D1 (cycle 22): the stamps are CONFIG.TIMEZONE wall-clock (fmtDate_ +
+ *  fmtTime_), and they are NOT only differenced — every age is `nowMs − created`
+ *  against the real clock, and the business-hours counter needs the true
+ *  instant. Read as UTC, an Asia/Kolkata stamp sat 5.5 hours in the future:
+ *  an item turned overdue half a working day late and its business minutes
+ *  were counted against the wrong hours. The Node pins that load this without
+ *  an Apps Script runtime get the old wall-clock-as-UTC reading, which is only
+ *  right for differences — the D1 pin supplies a tz-aware Utilities. */
 function coachParseTs_(s) {
   const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(String(s || ''));
   if (!m) return NaN;
-  return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+  if (typeof Utilities === 'undefined' || !Utilities.parseDate || typeof CONFIG === 'undefined') {
+    return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+  }
+  try {
+    return Utilities.parseDate(m[1] + '-' + m[2] + '-' + m[3] + ' ' + m[4] + ':' + m[5] + ':' + m[6],
+      CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime();
+  } catch (e) { return NaN; }
 }
-/** Pure — median of a numeric array (0 when empty), 1-decimal rounded. */
+/** Pure — median of a numeric array, 1-decimal rounded; NULL when empty.
+ *  D2 (cycle 22): nothing acknowledged has no median — the old 0 rendered as
+ *  "median 0 days to ack", the best possible score, for a rep who had never
+ *  answered one. */
 function coachMedian_(arr) {
   const a = (arr || []).filter(function (x) { return typeof x === 'number' && !isNaN(x); }).sort(function (x, y) { return x - y; });
-  if (!a.length) return 0;
+  if (!a.length) return null;
   const mid = Math.floor(a.length / 2);
   const v = a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2;
   return Math.round(v * 10) / 10;

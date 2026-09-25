@@ -2000,6 +2000,26 @@ per-finding detail. What each added to each harness, by delta:
   with a stubbed `uiConfirm` (g138). C10's first draft ordered confirms by
   `Date.now()`, which a confirm and a poll can share; a monotonic counter
   replaced it before any pin could flake on it.
+- **Batch 4:** Node +8 (M4, M1, the M2/M8 endpoint, M3, M7, M9, D1, the D2
+  client), 5 updated. The `dashboardPeriodRange_` pin had asserted the
+  calendar-day defect as correct (Category A: the rule changed deliberately),
+  and the prior-window, cache-key, median and empty-analytics pins moved to the
+  new shapes. Two driven harnesses are new: `m3CdrCtx_` (both DQE readers over a
+  stubbed sheet, the H3-3 shape) and `d1ParseDateStub_` (an Intl-backed
+  `Utilities.parseDate`, so the coaching tz read is driven rather than
+  asserted). The visual mock's `getTeamMetrics` became a function of the range
+  (X3), and the dashboard fixture began shipping `periodKey`, so the run-rate
+  line is photographed for the first time. 16 bite-checks, all BITE.
+- **Batch 5:** Node +13 (K1, K3, K4, K5 server + client, K7, K9, K10, K11,
+  K12, K13, X1 ×2), 5 updated (the ELIG sandbox loads the new helpers, T7-3's
+  flag check follows `oopRadiusClause_`, the two tone sandboxes load `INS_IS`,
+  R3 #6's cap note, R-5's input filter); DOM 2 updated (the ELIG DOM pin now
+  drives K5's Enter confirm; the OOP-B quote fixture carries its code). New
+  harness pieces: `x1ClientRpcNames_` (a paren-balanced walk over every
+  `google.script.run` chain) and `x1MockWindow_` (the real mock in a vm, so the
+  net drives the dispatcher rather than reading fixture keys). One vacuous
+  check caught: K12's doc regex never matched the sentence it banned (g116,
+  the eighth direction). 19 bite-checks, all BITE.
 
 **Two NO BITEs, both acted on (g138).** T2's first wiring pin asserted the
 refusal message existed, and an `if (false)` beside it stayed green. The pin

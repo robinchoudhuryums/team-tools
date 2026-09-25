@@ -30,7 +30,7 @@ function getOnboardingCdrReadiness() {
     var fromD = new Date(Date.parse(to + 'T12:00:00Z') - 6 * 86400000);
     var from = isoFromUtc_(fromD);
     var agg = getCdrAgentMetrics_(from, to, names);
-    var seenSet = agg.agents || {};
+    var seenSet = cdrAgentsOrThrow_(agg);   // M7: an unread DQE tab reads unknown, never missing
     var noCdr = names.filter(function (n) { return !seenSet[n]; });
     var likely = cdrLikelyNameMismatches_(noCdr, (agg.meta && agg.meta.offRosterAgents) || []);
     var seen = {}, alias = {};
@@ -527,6 +527,15 @@ function cdrRosterHash_(rosterNames) {
     return (b < 0 ? b + 256 : b).toString(16).padStart(2, '0');
   }).join('');
 }
+/** M7 (cycle 22): the agents map of a getCdrAgentMetrics_ result, or a THROW
+ *  when the reader NAMED a failure (meta.error — the DQE tab missing or
+ *  renamed). The reader returns agents:{} beside that error, and a caller that
+ *  read only .agents drew — and cached — "nobody took a call". A throw lands in
+ *  each caller's existing failure path, none of which caches. */
+function cdrAgentsOrThrow_(res) {
+  if (res && res.meta && res.meta.error) throw new Error('Call data unavailable: ' + res.meta.error);
+  return (res && res.agents) || {};
+}
 /**
  * Core CDR data reader. Fetches per-agent DQE metrics for a date range,
  * filtered to the `rosterNames` passed in (pass null/[] for an unfiltered
@@ -608,10 +617,15 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
     a.totalUnique  += Number(values[i][CDR.TOTAL_UNIQUE - 1]) || 0;
     a.totalRung    += Number(values[i][CDR.TOTAL_RUNG - 1]) || 0;
     a.totalMissed  += Number(values[i][CDR.TOTAL_MISSED - 1]) || 0;
-    a.totalAnswered += Number(values[i][CDR.TOTAL_ANSWERED - 1]) || 0;
+    var ansRow = Number(values[i][CDR.TOTAL_ANSWERED - 1]) || 0;
+    a.totalAnswered += ansRow;
     a.tttSeconds   += cdrParseHms_(displays[i][CDR.TTT - 1]);
     var att = cdrParseHms_(displays[i][CDR.ATT - 1]);
-    if (att > 0) { a.attSum += att; a.attCount++; }
+    // M3 (cycle 22): each DQE row is ONE DAY's average, so a range's ATT is
+    // the ANSWERED-WEIGHTED mean of them. The plain mean gave a 2-call day the
+    // same vote as a 60-call day (and disagreed with the team aggregate,
+    // which was already answered-weighted).
+    if (att > 0 && ansRow > 0) { a.attSum += att * ansRow; a.attCount += ansRow; }
     if (!a._dates[dateIso]) { a._dates[dateIso] = true; a.daysActive++; }
   }
 
@@ -711,7 +725,7 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
     var a = agents[agent];
     a.totalRung += rung; a.totalAnswered += ans; a.totalMissed += missed;
     a.tttSeconds += cdrParseHms_(displays[i][CDR.TTT - 1]);
-    if (attSec > 0) { a.attSum += attSec; a.attCount++; }
+    if (attSec > 0 && ans > 0) { a.attSum += attSec * ans; a.attCount += ans; }   // M3: answered-weighted
     if (!a._dates[dateIso]) { a._dates[dateIso] = true; a.daysActive++; }
 
     // T4 #5/#6 — per-rep-per-day matrix for the anonymized team-avg + own
@@ -720,7 +734,7 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
     var prd = perRepDaily[dateIso][agent] ||
       (perRepDaily[dateIso][agent] = { rung: 0, answered: 0, missed: 0, _attSum: 0, _attCount: 0 });
     prd.rung += rung; prd.answered += ans; prd.missed += missed;
-    if (attSec > 0) { prd._attSum += attSec; prd._attCount++; }
+    if (attSec > 0 && ans > 0) { prd._attSum += attSec * ans; prd._attCount += ans; }   // M3
   }
 
   Object.keys(daily).forEach(function (d) {
@@ -1241,23 +1255,43 @@ function cdrQueueInventory_(from, to) {
 
 // ── Metrics public endpoints ──────────────────────────────────────────
 /** Pure (Node-pinned) — resolve a period key to {from,to,label} given today's
- *  ISO date (yyyy-MM-dd, in the caller's tz). String/UTC math only. */
-function dashboardPeriodRange_(periodKey, todayIso) {
+ *  ISO date (yyyy-MM-dd, in the caller's tz). String/UTC math only.
+ *
+ *  M2 (cycle 22): 'yesterday' is the previous WORKDAY (prevWorkdayIso_ — skips
+ *  weekends and company holidays), not the calendar day. The CDR has no rows
+ *  for a Sunday or a holiday, so the calendar form was an empty card every
+ *  Monday and every morning after a holiday. The label names the date when it
+ *  is not literally yesterday, so "Yesterday" never sits over Friday's calls.
+ *  `holidays` is an {iso:true} map (Node pins pass one); omitted, the company
+ *  calendar is consulted by prevWorkdayIso_.
+ *
+ *  M8 (cycle 22): MTD/YTD carry `dataThrough` — the last day the CDR can hold
+ *  (calendar yesterday; CDR data is never populated same-day), or null when
+ *  the period has no complete day yet. The run-rate projection divides by the
+ *  days that HAVE data, not by a today that never does. */
+function dashboardPeriodRange_(periodKey, todayIso, holidays) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(todayIso || ''))) return null;
   var y = todayIso.slice(0, 4), m = todayIso.slice(5, 7);
+  var fmt = function (x) { return x.getUTCFullYear() + '-' + String(x.getUTCMonth() + 1).padStart(2, '0') + '-' + String(x.getUTCDate()).padStart(2, '0'); };
+  var yi = new Date(Date.parse(todayIso + 'T00:00:00Z') - 86400000);
+  var calYesterday = fmt(yi);
   if (periodKey === 'yesterday') {
-    var yi = new Date(Date.parse(todayIso + 'T00:00:00Z') - 86400000);
-    var iso = yi.getUTCFullYear() + '-' + String(yi.getUTCMonth() + 1).padStart(2, '0') + '-' + String(yi.getUTCDate()).padStart(2, '0');
-    return { from: iso, to: iso, label: 'Yesterday' };
+    var iso = prevWorkdayIso_(todayIso, holidays);
+    if (!iso) return null;
+    var wd = new Date(iso + 'T12:00:00Z');
+    var label = (iso === calYesterday) ? 'Yesterday'
+      : ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][wd.getUTCDay()] + ' ' + DASH_MONTH_ABBR[wd.getUTCMonth()] + ' ' + wd.getUTCDate();
+    return { from: iso, to: iso, label: label };
   }
-  if (periodKey === 'mtd') return { from: y + '-' + m + '-01', to: todayIso, label: 'Month to date' };
-  if (periodKey === 'ytd') return { from: y + '-01-01', to: todayIso, label: 'Year to date' };
+  var through = function (from) { return calYesterday >= from ? calYesterday : null; };
+  if (periodKey === 'mtd') { var mf = y + '-' + m + '-01'; return { from: mf, to: todayIso, label: 'Month to date', dataThrough: through(mf) }; }
+  if (periodKey === 'ytd') { var yf = y + '-01-01'; return { from: yf, to: todayIso, label: 'Year to date', dataThrough: through(yf) }; }
   return null;
 }
 /** Pure (Node-pinned) — the LIKE-FOR-LIKE prior window for a period, used for
  *  the MTD deltas (operator 2026-08-12: "show the delta from last month").
  *
- *  MTD compares against the PRIOR MONTH'S SAME ELAPSED DAYS, not the whole
+ *  MTD compares against the PRIOR MONTH'S SAME ELAPSED DAYS OF DATA, not the whole
  *  prior month. That choice is load-bearing for the VOLUME metrics: on the 12th,
  *  12 days of answered calls against a full 31-day month is not a delta, it is
  *  an arithmetic artifact that would read as a collapse every month and recover
@@ -1270,13 +1304,20 @@ function dashboardPrevRange_(periodKey, todayIso) {
   var y = +todayIso.slice(0, 4), m = +todayIso.slice(5, 7), d = +todayIso.slice(8, 10);
   var py = (m === 1) ? y - 1 : y, pm = (m === 1) ? 12 : m - 1;
   var pLen = new Date(Date.UTC(py, pm, 0)).getUTCDate();
-  var pd = Math.min(d, pLen);
+  // M8 (cycle 22): LAG-ALIGNED. The current window runs to today but the CDR
+  // holds nothing for today, so it carries d-1 days of data; comparing it with
+  // days 1..d of last month gave the prior window a whole extra day (every
+  // volume delta read ~1/d low). On the 1st there is no complete day to
+  // compare, so there is no comparison.
+  var have = d - 1;
+  if (have < 1) return null;
+  var pd = Math.min(have, pLen);
   var pad = function (n) { return String(n).padStart(2, '0'); };
   return {
     from: py + '-' + pad(pm) + '-01',
     to: py + '-' + pad(pm) + '-' + pad(pd),
-    label: DASH_MONTH_ABBR[pm - 1] + ' 1–' + pd,
-    clamped: pd < d,
+    label: DASH_MONTH_ABBR[pm - 1] + (pd === 1 ? ' 1' : ' 1–' + pd),
+    clamped: pd < have,
   };
 }
 /** Pure (Node-pinned) — team CDR aggregate from getCdrAgentMetrics_'s .agents
@@ -1354,7 +1395,9 @@ function getDashboardMetrics(periodKey) {
     // standard (alertThreshold/alertBand/standardSource) rides the payload
     // from the published Dashboard Standards tab; the benchmark applies the
     // dashboard's team-avg excludes.
-    var cacheKey = 'dash_metrics_v5:' + emp.id + ':' + periodKey + ':' + todayIso;
+    // v6 (cycle 22 M2/M8): 'yesterday' is the previous workday, the MTD prior
+    // window is lag-aligned, and the payload carries dataThrough.
+    var cacheKey = 'dash_metrics_v6:' + emp.id + ':' + periodKey + ':' + todayIso;
     if (useCache) {
       try { var hit = cache.get(cacheKey); if (hit) { var co = JSON.parse(hit); co.cached = true; return co; } } catch (_) {}
     }
@@ -1400,7 +1443,7 @@ function getDashboardMetrics(periodKey) {
       // cost across the 3 periods (and the MTD prev window). emp.name is in
       // allNames by construction: the caller passed getEmployeeInfo_, so
       // their roster row has an email and survives the F3/F4 skip above.
-      var dqMap = getCdrAgentMetrics_(wFrom, wTo, allNames).agents || {};
+      var dqMap = cdrAgentsOrThrow_(getCdrAgentMetrics_(wFrom, wTo, allNames));   // M7: never cached as no calls
       var trMap = getCsrTransferPerRepDaily_(wFrom, wTo, allNames).agents || {};
       var dq = dqMap[emp.name] || null;
       var tr = trMap[emp.name] || null;
@@ -1445,6 +1488,7 @@ function getDashboardMetrics(periodKey) {
 
     var result = {
       periodKey: periodKey, from: from, to: to, label: range.label,
+      dataThrough: range.dataThrough || null,   // M8: the projection's denominator
       own: cur.own,
       team: cur.team,
       cohort: cur.cohort,
@@ -1468,7 +1512,11 @@ function getDashboardMetrics(periodKey) {
     // otherwise be pinned for the full TTL (the L-3 / INV-129 rule). A failed
     // COMPARISON read is the same class: caching it would pin "no deltas" for
     // the TTL after the underlying blip cleared.
-    if (useCache && !noteRes.unavailable && !prevUnavailable) {
+    // M2 (cycle 22): a window NOBODY reported in is not cached either. Before
+    // the daily CDR import lands, the previous workday is empty for everyone;
+    // cached, that empty card was pinned for the whole TTL after the import.
+    // A genuinely empty window is cheap to re-read, so the cost is nil.
+    if (useCache && !noteRes.unavailable && !prevUnavailable && cur.team) {
       try { cache.put(cacheKey, JSON.stringify(result), DASHBOARD_CACHE_TTL); } catch (_) {}
     }
     return result;
@@ -1549,12 +1597,15 @@ function getMyMetrics(date) {
     // sourced from the rep's own row in the all-reps perRepDaily matrix.
     var trend = dates.map(function (iso) {
       var own = dqPRD[iso] && dqPRD[iso][emp.name];
+      // M9 (cycle 22): a workday with no CDR row is NO DATA, not zero calls —
+      // the rail sparklines drew a PTO day as a dive to 0 (g136's class).
+      // Every consumer (mMiniSparkSvg_, mTrendAvg_) skips null.
       return {
         date: iso,
         pctAnswered: own ? own.pctAnswered : null,
-        rung: own ? own.rung : 0,
-        answered: own ? own.answered : 0,
-        missed: own ? own.missed : 0,
+        rung: own ? own.rung : null,
+        answered: own ? own.answered : null,
+        missed: own ? own.missed : null,
       };
     });
 
@@ -1682,8 +1733,8 @@ function getMyMetricsRange(from, to) {
         trend.push({
           date: iso,
           pctAnswered: own ? own.pctAnswered : null,
-          answered: own ? own.answered : 0,
-          missed: own ? own.missed : 0,
+          answered: own ? own.answered : null,   // M9: no row is no data
+          missed: own ? own.missed : null,
         });
       });
     } catch (e) { trend = []; trendFailed = true; }
@@ -1862,9 +1913,9 @@ function getTeamMetrics(dateOrFrom, to) {
         trendData.push({
           date: iso,
           pctAnswered: day ? day.pctAnswered : null,
-          rung: day ? day.rung : 0,
-          answered: day ? day.answered : 0,
-          missed: day ? day.missed : 0,
+          rung: day ? day.rung : null,            // M9: no row is no data
+          answered: day ? day.answered : null,
+          missed: day ? day.missed : null,
         });
       });
     } else {
@@ -1886,9 +1937,9 @@ function getTeamMetrics(dateOrFrom, to) {
             trendData.push({
               date: rIso,
               pctAnswered: rDay ? rDay.pctAnswered : null,
-              rung: rDay ? rDay.rung : 0,
-              answered: rDay ? rDay.answered : 0,
-              missed: rDay ? rDay.missed : 0,
+              rung: rDay ? rDay.rung : null,      // M9: no row is no data
+              answered: rDay ? rDay.answered : null,
+              missed: rDay ? rDay.missed : null,
             });
           });
         } catch (eRt) { trendData = null; }
@@ -1896,6 +1947,7 @@ function getTeamMetrics(dateOrFrom, to) {
     }
 
     var cdrResult = getCdrAgentMetrics_(from, toDate, rosterNames);
+    cdrAgentsOrThrow_(cdrResult);   // M7: a missing DQE tab is an error, not a team that took no calls
     // Cycle-14 Phase 2 — per-queue TRANSFER attribution. BEST-EFFORT, the same
     // posture as the CDR overlay in managerGetShiftStats (INV-67): the Transfer
     // tab is optional, and a manager's whole team table must not disappear
@@ -1943,7 +1995,12 @@ function getTeamMetrics(dateOrFrom, to) {
         totalRung:    cdr ? cdr.totalRung    : 0,
         totalAnswered: cdr ? cdr.totalAnswered : 0,
         totalMissed:  cdr ? cdr.totalMissed  : 0,
-        pctAnswered:  cdr ? cdr.pctAnswered  : 0,
+        // M1 (cycle 22): no call-data row is NO rate, not 0% — a rep who took
+        // no calls in the range (PTO, non-phone day, the lagged Today) rendered
+        // as a red "0%" beside colleagues who answered nine in ten. The table
+        // draws null as "—" and sorts it lowest; the H2 formula
+        // (cdrAnswerPct_) already returns null when there is no denominator.
+        pctAnswered:  cdr ? cdr.pctAnswered  : null,
         tttFormatted: cdr ? cdr.tttFormatted : '0:00:00',
         attFormatted: cdr ? cdr.attFormatted : '0:00:00',
         tttSeconds:   cdr ? cdr.tttSeconds   : 0,

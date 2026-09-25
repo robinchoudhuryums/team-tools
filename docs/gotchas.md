@@ -971,6 +971,22 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   on that path anyway). **Known limit: the detector requires a manager to OPEN
   the panel — it is not pushed.**
 
+  **AMENDED (cycle 22 K1 + K3, 2026-09-23): a parser that REMOVES what it
+  understood must fail on what is LEFT, never drop it.** The Area Eligibility
+  grammar stripped the parenthetical from "Open (except Hawaii and Alaska)" and
+  answered yes for Hawaii. Its radius branch removed the distance and the
+  warehouse names and then looked only for a leftover uppercase state code, so
+  "100 miles of Dallas except Oklahoma" read as a clean radius. And it read the
+  FIRST distance in a cell and applied it to every name, so "100 mi of Dallas,
+  50 mi of San Antonio" answered yes at 80 miles from San Antonio. Every one of
+  those drops broadened a yes on a surface where a yes is a commitment. The
+  distance clause is now its own unit (`oopRadiusClause_`): each distance
+  governs the names after it, and any word left over beyond the connectives
+  makes the clause unknown. A restricting Open parenthetical is unknown too.
+  The operator's "Cannot read" list in Admin → System is where such cells
+  surface. Verify: the K1 and K3 pins (the live phrasings still parse; the
+  restricting ones do not).
+
 <a id="g42-intake-ppd-controls-are-engine-safe-via"></a>
 
 - **Intake PPD controls are engine-safe via CANONICAL-ENGLISH VALUES, not
@@ -2739,6 +2755,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   The family this belongs to is the one above it: a degraded or ambiguous read
   must never render as data.
 
+  **AMENDED (cycle 22 D2, 2026-09-23): an EMPTY set has no median.**
+  `coachMedian_([])` returned 0, so the coaching board read "median 0 business
+  days to ack" (the best possible score) for a team that had acknowledged
+  nothing. It returns null, and the card reads "nothing acknowledged yet"
+  through `coachMedianAckText_`. The server fix alone was not enough: the card
+  rendered through `coachNum_`, which maps null to 0. Verify: the
+  `coachMedian_` pin (empty is null) and the D2 client pin.
+
 <a id="g115-a-job-that-closes-a-period-must"></a>
 - **A job that CLOSES a period must RECONCILE it afterwards — the data it read
   was not final (operator 2026-09-15).** `creditMonthlyPtoAccruals` ran on the
@@ -2896,6 +2920,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   makes LARGER. Over-capture satisfies both. Under-capture is what such a check
   catches, and under-capture is usually the less likely failure.
 
+
+  **AN EIGHTH direction (cycle 22 Batch 5, 2026-09-23): a check whose
+  PATTERN never matched the text it guards.** K12's doc check asserted that
+  operator-state.md no longer said warehouse names match "as substrings", with
+  a regex that did not match the sentence actually there ("is matched as a
+  SUBSTRING of the Area Eligibility text"). It passed before the doc was fixed.
+  A negative assertion (`!/…/.test(doc)`) is vacuous until something shows its
+  pattern CAN match; the rewritten check requires the new sentence as well as
+  banning the old one.
 
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
@@ -3196,6 +3229,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the F-35 vm-driven `getMetricsAmbient` pin; the dashboard side is pinned in
   call-data-reporting's `util.test.js` / `setup.test.js`.
 
+  **AMENDED (cycle 22 M2, 2026-09-23): the Dashboard's Yesterday card was a
+  third reader of calendar-yesterday.** `dashboardPeriodRange_('yesterday')`
+  subtracted one day, so every Monday the card asked the CDR about Sunday and
+  read "No call data", and the morning after a holiday it asked about the
+  holiday. That empty answer was then cached for the dashboard's 6-hour TTL.
+  It now resolves through `prevWorkdayIso_` (the company calendar), labels a
+  day that is not literally yesterday by its date ("Fri Sep 18"), and a window
+  nobody reported in is never cached. Verify: the rewritten
+  `dashboardPeriodRange_` pin (weekend, holiday, literal yesterday) and the
+  M2/M8 endpoint pin.
+
 <a id="g124-answer-is-the-dashboard-s-formula-and"></a>
 
 - **Answer % is the Department Dashboard's formula (`answered / (answered +
@@ -3260,6 +3304,18 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `test_dashboardStandard_readsFixtureTab`; the dashboard side is pinned in
   call-data-reporting's `answer-targets.test.js` / `setup.test.js` /
   `system-health.test.js`.
+
+  **AMENDED (cycle 22 M1, 2026-09-23): the null rate reached the Team
+  Metrics ROW late.** The formula returned null when there was nothing to
+  divide, but `getTeamMetrics` built each rep's row with
+  `cdr ? cdr.pctAnswered : 0`. So a rep with no CDR row in the range read as a
+  red 0% beside colleagues answering nine in ten: a rep on PTO, and EVERY rep
+  on the Today default, since the CDR is never populated same-day. The row
+  ships null; the cell already drew null as "—"; `mSortReps_` sorts it below a
+  real 0%. The fixture never showed it because it put call data on Today (X3).
+  A range ending today now returns the no-call-data payload, photographed by
+  `metrics-team-today-light-wide`. Verify: the M1 pin (the server literal and
+  the driven sort).
 
 <a id="g125-a-dqe-read-is-bounded-by-a-span"></a>
 
@@ -3346,6 +3402,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the map to `[prices[0]]`, the exact defect, and R-2 now says so in place
   (g138).
 
+  **AMENDED (cycle 22 K7, 2026-09-23): the verifier keyed on the FIRST row
+  with a name.** Two rows can share an item name (one product under two codes),
+  and the picker offers a price from either; the send compared the second row's
+  quote with the first row's price and refused it as "changed". Keying ONE row
+  per name is this gotcha again, inside one reader: the verifier now indexes
+  every row per name, the quote carries its code to narrow them, and a line
+  verifies if any candidate still produces it. Verify: the K7 pin (by code,
+  without a code, an unknown code named, a changed price still refused) and the
+  OOP-B DOM payload assertion.
+
 <a id="g127-calchours-wraps-out-in-as-overnight"></a>
 
 - **`calcHours_` wraps `out < in` as overnight; an EQUAL minute pair is ZERO
@@ -3397,6 +3463,32 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   handler renders the success path's empty state. Verify: the F-15 geocoder pin
   (a stubbed Maps through OK / ZERO_RESULTS / OVER_QUERY_LIMIT / REQUEST_DENIED
   / throw; the cache; both callers' branch order) and the Batch 2 DOM pins.
+
+  **AMENDED (cycle 22 M7, 2026-09-23): a reader that NAMES its failure beside
+  an empty result has only moved the problem to its callers.**
+  `getCdrAgentMetrics_` returns `{agents: {}, meta: {error}}` when the DQE tab
+  is missing, and three callers read only `.agents`. The onboarding readiness
+  panel reported every rep as absent from the phone system, the Dashboard drew
+  (and cached for 6 hours) "No call data", and Team Metrics drew a team that
+  took no calls. `cdrAgentsOrThrow_(res)` turns the named error into a throw
+  that each caller's existing catch handles, none of which caches. RULE: when a
+  reader returns an error field BESIDE a plausible empty value, give its callers
+  one helper that refuses the empty value, rather than trusting each to check.
+  Still open: `getMetricsAmbient`, `managerGetShiftStats`' enrichment, and
+  `getCdrDailyBreakdown_`, which returns no error field at all. Verify: the M7
+  pin (the helper both ways, the onboarding endpoint driven, and a ban on a
+  bare `.agents` read in all three).
+
+  **AMENDED (cycle 22 K5, 2026-09-23): "partly found" is a THIRD answer.**
+  The geocoder took its first result even when Google flagged it
+  `partial_match`, so "500 Main St, Irving TX 750" resolved to somewhere near
+  the city centre and a distance was measured from the guess. The client made
+  it likely: it geocoded whatever was typed after a 700 ms pause from the
+  fourth character. `kbGeocodeOne_` now returns `{partial, formatted}`, which
+  every caller refuses with the guess shown (and the warehouse cache treats as
+  not placed), and the client geocodes a street address only on Enter or blur;
+  a complete ZIP still checks by itself. Verify: the K5 pins, server and
+  client, and the ELIG DOM pin (no request before Enter).
 
 <a id="g129-never-cache-a-failure-as-a-value"></a>
 
@@ -3603,6 +3695,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   drive (bar classes, tooltips, the unmeasurable count, the all-unknown week),
   and the visual fixture's own null day — INV-185, because a fixture that never
   produces null can never photograph the difference.
+
+  **AMENDED (cycle 22 M9, 2026-09-23): a second instance, in the Metrics
+  trends.** The four CDR trend builders (My Stats, the range self-view and
+  both Team trends) filled a workday with no CDR row as
+  `rung/answered/missed: 0` while its rate was already null, so the rail
+  sparklines drew a PTO day as a dive to zero calls. They ship null, which
+  every consumer already skipped. The visual fixture carries one null day.
+  Verify: the M9 sweep (no `: 0` default across the three endpoints, all eleven
+  null fields found) and the sparkline gap, driven.
 
 <a id="g137-a-static-net-that-pre-declares-names"></a>
 
@@ -4027,3 +4128,63 @@ restoring the silence and restoring the misdirected message.
   fresh open forgets both caches, and a late payor answer paints nothing) and
   the `reference-drawer-xref-light-wide` shot, which now shows its typed inputs
   above its results.
+
+<a id="g148-a-lagged-source-s-windows-count-days"></a>
+
+- **A period-to-date window over a LAGGED source counts days of DATA, not
+  days of calendar, in the comparison and the projection both (cycle 22 M8,
+  2026-09-23).** The CDR Report is never populated same-day, so Month to date
+  (the 1st → today) holds d-1 days of calls. `dashboardPrevRange_` compared it
+  with days 1..d of last month, handing the prior window a day the current one
+  could not have. Every volume delta therefore read about 1/d low, every day.
+  The run-rate projection made the same mistake the other way: it divided by d
+  elapsed days and under-projected. RULES: (1) the comparison covers the same
+  number of days WITH DATA (1..d-1, clamped down into a shorter month; none on
+  the 1st, when there is no complete day); (2) the payload says which days hold
+  data (`dataThrough`), and anything that divides by elapsed time uses it. The
+  endpoint owns the lag, not the client. Still open: the MTD note coverage
+  counts today's notes against calls through yesterday. Fires when you compare
+  a to-date window with an earlier one, or project one forward, over a source
+  that lags. Verify: the `dashboardPrevRange_` pin (1..d-1, the clamp, the 1st,
+  a one-day window), the `dashboardPeriodRange_` pin's `dataThrough` and
+  projection assertions, and the M2/M8 endpoint pin (both cards project from
+  `res.dataThrough`).
+
+<a id="g149-a-stamp-parser-documented-as-differences-only"></a>
+
+- **A timestamp parser documented as "only used for differences" is a claim
+  that a later caller cannot see (cycle 22 D1, 2026-09-23).** `coachParseTs_`
+  read the coaching stamps (CONFIG.TIMEZONE wall-clock, written by `fmtDate_` +
+  `fmtTime_`) as UTC. Its comment said the zone cancelled out because only
+  ack − created was ever computed. By the time of the audit five callers
+  compared its output with the real clock: the overdue ages, the weekly recap
+  window, and the injected business-minute counter, which needs the true
+  instant to know which hours were working ones. On an Asia/Kolkata deployment
+  every item turned overdue 5.5 hours late. It now parses through
+  `Utilities.parseDate` in CONFIG.TIMEZONE; loaded without an Apps Script
+  runtime (the Node pins) it keeps the wall-clock-as-UTC reading. RULE: a
+  parser returns an INSTANT, read in the zone the writer used. Still open: the
+  client twin `coachTsMs_` reads the same stamps as UTC for the board's 30-day
+  and quarter windows. Fires when you parse a stored wall-clock stamp, or
+  compare a parsed stamp with now. Verify: the D1 pin (an Intl-backed
+  `parseDate`: 09:00 IST is 03:30 UTC, an item exactly seven days old on the
+  real clock is overdue at 7, and a DST zone resolves through its own offset).
+
+<a id="g150-a-client-rpc-with-no-mock-fixture"></a>
+
+- **A client RPC with no mock fixture is invisible to the visual matrix, and
+  the matrix is not in CI (cycle 22 X1, 2026-09-23).** T8 added
+  `getOopPricingDiagnostics` and the panel that calls it without a fixture.
+  The mock routes an unknown endpoint to the failure handler and logs it to
+  `window.__MISSING__`, so all 16 Admin scenarios reported it missing for a
+  cycle and the panel was only ever photographed as "no fixture". Nothing
+  failed, because the matrix runs by hand. The guard is a Node net: it derives
+  every RPC name from every `google.script.run` chain in every partial, DRIVES
+  each through the real mock dispatcher, and holds the missing set to two named
+  lists (reads not yet photographed, writes no scenario performs). A new RPC
+  without a fixture fails; a listed one that gains a fixture or stops being
+  called must leave the list, so the list only shrinks. A fixture must mirror
+  the server (INV-185): the diagnostics fixture's header roles are pinned to
+  the real resolvers. Fires when you add a `google.script.run` call, or a
+  fixture. Verify: the two X1 pins (bite-checked with a removed fixture and a
+  renamed RPC).

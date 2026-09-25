@@ -293,6 +293,11 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
   function trend30(own) {
     var out = [];
     for (var i = 29; i >= 0; i--) { if (isWeekendIso(daysAgo(i))) continue; out.push({ date: daysAgo(i), pctAnswered: 80 + (i * 7) % 15, answered: 30 + (i * 3) % 12, missed: (i * 2) % 5, own: 80 + (i * 7) % 15, team: 84 + (i * 5) % 9, cohort: 6 }); }
+    // M9 (cycle 22): the server ships a workday with no CDR row as NULLS (a
+    // PTO day), never zeros — the fixture carries one so the sparklines are
+    // photographed skipping it rather than diving to 0 (g136).
+    var gap = out[out.length - 8];
+    if (gap) { gap.pctAnswered = null; gap.answered = null; gap.missed = null; gap.own = null; }
     return out;
   }
   function kpiSeries() {
@@ -483,7 +488,35 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       { month: '2026-04', ppd: 9, pmd: 8, pap: 2, total: 19 },
       { month: '2026-03', ppd: 13, pmd: 5, pap: 4, total: 22 },
     ], failedTypes: [] },
-    getTeamMetrics: (function () {
+    // X3 (cycle 22): a FUNCTION of the requested range. The call-data report
+    // is a day behind, so a range ending TODAY has no call data at all: every
+    // rep is listed only through their notes, with no rate (M1 — "—", never a
+    // red 0%). This fixture used to hand Today a full table of rates, which is
+    // why the "no call data" state was never photographed. A past range (the
+    // `?teamrange=7d` scenarios) gets the populated table, including one
+    // roster rep with no call data (Jo Tran, already in rosterWithNoCdr).
+    getTeamMetrics: function (from, to) {
+      var populated = TEAM_METRICS_POPULATED_();
+      if (String(to || '') < todayIso) return Object.assign({}, populated, { from: from || populated.from, to: to || populated.to, date: to || populated.date });
+      var noCdr = function (r) {
+        return Object.assign({}, r, { totalRung: 0, totalAnswered: 0, totalMissed: 0, pctAnswered: null,
+          tttFormatted: '0:00:00', attFormatted: '0:00:00', tttSeconds: 0, attSeconds: 0,
+          noteCoverage: null, hasCdrData: false, transferred: 0, transferPct: null,
+          queues: {}, queueTotal: 0, queueUnattributed: 0, hasTransferData: false });
+      };
+      var reps = populated.reps.map(noCdr);
+      return Object.assign({}, populated, {
+        from: todayIso, to: todayIso, date: todayIso, reps: reps,
+        teamTotals: { rung: 0, answered: 0, missed: 0, tttSeconds: 0, noteCount: populated.teamTotals.noteCount,
+          transferred: 0, queueTotal: 0, transferCalls: 0, pctAnswered: null, attFormatted: '0:00:00',
+          tttFormatted: '0:00:00', noteCoverage: null, transferPct: null },
+        unmatchedAgents: [], rosterWithNoCdr: reps.map(function (r) { return r.repName; }), likelyMismatches: [],
+        queueRows: [], groupRows: [],
+        transferMeta: { available: true, error: null, queueColumns: [] },
+      });
+    },
+    // (the populated payload the function above serves for a past range)
+    _teamMetricsPopulated: (function () {
       var mk = function (id, name, rung, ans, missed, att, notes, cov, transferred, queues) {
         var qt = 0; Object.keys(queues).forEach(function (q) { qt += queues[q]; });
         return { repId: id, repName: name, totalRung: rung, totalAnswered: ans,
@@ -500,6 +533,13 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         mk('E-1091', 'Nina Patel', 52, 44, 8, '0:03:58', 41, 93, 21, { A_Q_CSR: 12, A_Q_Legacy_Unmapped: 4 }),
         mk('E-1104', 'Leo Kim', 29, 27, 2, '0:04:20', 18, 67, 3, {}),
       ];
+      // X3 / M1: a roster rep with notes and NO call-data row in the range —
+      // the server lists them (notes > 0) with no rate. Totals skip nothing:
+      // the server sums their zeros, as below.
+      reps.push({ repId: 'E-1120', repName: 'Jo Tran', totalRung: 0, totalAnswered: 0, totalMissed: 0,
+        pctAnswered: null, tttFormatted: '0:00:00', attFormatted: '0:00:00', tttSeconds: 0, attSeconds: 0,
+        noteCount: 6, noteCoverage: null, noteCountUnavailable: false, intakeNotes: 0, hasCdrData: false,
+        transferred: 0, transferPct: null, queues: {}, queueTotal: 0, queueUnattributed: 0, hasTransferData: false });
       var tq = {};
       reps.forEach(function (r) {
         Object.keys(r.queues).forEach(function (q) {
@@ -527,7 +567,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         return { queue: q, transferred: tq[q].transferred, reps: Object.keys(tq[q].reps).length };
       }).sort(function (a, b) { return b.transferred - a.transferred; });
       return {
-        from: todayIso, to: todayIso, date: todayIso, reps: reps, teamTotals: totals,
+        from: daysAgo(7), to: daysAgo(1), date: daysAgo(1), reps: reps, teamTotals: totals,
         // Name-match diagnostics. On a shared CDR feed BOTH raw lists are
         // normally non-empty (other departments; non-phone staff / PTO), so an
         // all-empty fixture would never show the states a real manager sees.
@@ -559,7 +599,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // Values are chosen to put a GOOD card beside a WARN/CRIT one in one shot.
     getDashboardMetrics: function (period) {
       var mtd = (period === 'mtd');
-      return { period: period, label: period === 'yesterday' ? 'Yesterday' : (mtd ? 'Month to date' : 'Year to date'),
+      return { period: period, periodKey: period, label: period === 'yesterday' ? 'Yesterday' : (mtd ? 'Month to date' : 'Year to date'),
         own: { answered: 41, missed: 5, pctAnswered: 89, attSeconds: 281, attFormatted: '4:41', noteCount: 35, noteCoverage: 85, transferPct: 8.2 },   // V-14: 35/41 = 85%
         team: { answered: 388, missed: 41, pctAnswered: 78.4, attSeconds: 252, attFormatted: '4:12', transferPct: 24.1 },
         // MTD compares against the prior month's SAME elapsed days.
@@ -567,7 +607,11 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
           own: { answered: 36, missed: 8, pctAnswered: 81.8, attSeconds: 295, transferPct: 9.4 },
           team: { answered: 402, missed: 33, pctAnswered: 82.1, attSeconds: 248, transferPct: 21.7 } } : null,
         prevUnavailable: false, alertThreshold: 85, transferTarget: 20,
-        cohort: 8, kpiMinCohort: 1, from: daysAgo(period === 'ytd' ? 200 : (mtd ? 23 : 1)), to: daysAgo(1) };   // kpiMinCohort mirrors the operator-2026-08-06 MIN_COHORT=1
+        cohort: 8, kpiMinCohort: 1, from: daysAgo(period === 'ytd' ? 200 : (mtd ? 23 : 1)),
+        // M8 (cycle 22): MTD/YTD run to TODAY and carry dataThrough (the last
+        // day the CDR holds) — the projection's denominator; yesterday is one day.
+        to: period === 'yesterday' ? daysAgo(1) : todayIso,
+        dataThrough: period === 'yesterday' ? undefined : daysAgo(1) };   // kpiMinCohort mirrors the operator-2026-08-06 MIN_COHORT=1
     },
     // activeNotIn (note 10, 2026-09-10): the server's ONE presence boolean —
     // Leo is using the app with no clock-in today, so the card shows the chip
@@ -1362,9 +1406,9 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       analytics: { total: 4, acknowledged: 1, ackRatePct: 33, medianDaysToAck: 1.6, overdueUnacked: 1,
         bySeverity: { praise: 1, minor: 1, major: 1, critical: 1 },
         perRep: [
-          { empId: 'E-1088', empName: 'Sam Ortiz', total: 2, acknowledged: 0, overdue: 1, ackRatePct: 0, medianDaysToAck: 0 },
+          { empId: 'E-1088', empName: 'Sam Ortiz', total: 2, acknowledged: 0, overdue: 1, ackRatePct: 0, medianDaysToAck: null },   // D2: nothing acked → no median
           { empId: 'E-1042', empName: 'Avery Blake', total: 1, acknowledged: 1, overdue: 0, ackRatePct: 100, medianDaysToAck: 1.6 },
-          { empId: 'E-1090', empName: 'Leo Kim', total: 1, acknowledged: 0, overdue: 0, ackRatePct: 0, medianDaysToAck: 0 }] } },
+          { empId: 'E-1090', empName: 'Leo Kim', total: 1, acknowledged: 0, overdue: 0, ackRatePct: 0, medianDaysToAck: null }] } },
     getMyCoaching: { items: [
       { coachId: 'm1', empId: 'E-1042', empName: 'Avery Blake', patientTRX: 'TRX-508', severity: 'major', status: 'open',
         whatHappened: 'Quoted a delivery date the warehouse could not meet.', whatShould: 'Check the carrier ETA in the CRM before committing to a date.',
@@ -1658,6 +1702,27 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       summary: { ok: 4, warn: 3, fail: 0 },
       configTimezone: 'Asia/Kolkata',
     },
+    // X1 (cycle 22): the Reference-lookups diagnostics (T8). It had NO fixture,
+    // so all 16 Admin scenarios logged it missing and the panel was only ever
+    // photographed as "no fixture". The shape is getOopPricingDiagnostics'
+    // own: the operator's real column order (HCPCS in A, the item in C), a
+    // delivery table with its header ROLES (K12 — "Delivery City" reads as the
+    // accepts column, which is the surprise the panel exists to show), and one
+    // Area Eligibility value the grammar cannot read, so the warn renders.
+    getOopPricingDiagnostics: {
+      tab: 'OopPricing', rows: 42, nameCol: 'Item', nameByHeader: true, truncated: false, missing: [],
+      cols: [{ header: 'HCPCS', role: 'code' }, { header: 'Category', role: '\u2014' }, { header: 'Item', role: 'name (the searched column)' },
+        { header: 'Pick-Up Price', role: 'price' }, { header: 'W/ Shipping Cost', role: 'price' }, { header: 'Area Eligibility', role: 'eligibility' },
+        { header: 'Effective', role: 'effective' }],
+      warehouses: [{ name: 'Dallas', address: '2150 Irving Blvd, Dallas, TX 75207' }, { name: 'San Antonio', address: '8910 Broadway, San Antonio, TX 78217' }],
+      locationTab: 'LocationAcceptance', locationError: '',
+      locCols: [{ header: 'Type', role: 'type' }, { header: 'Name', role: 'name' }, { header: 'Address', role: 'address' },
+        { header: 'State', role: 'state' }, { header: 'Delivery City', role: 'accepts' }],
+      cities: 6, locNoAddress: [], locUnreadable: [{ name: 'Waco', reason: 'its State "Texs" is not a US state or code' }],
+      eligibility: { open: 18, states: 9, radius: 11, cities: 1, any: 2, unknownCount: 1,
+        unknown: [{ item: 'Drive Scout 4', value: '100 miles of Dallas except weekends' }] },
+      sample: [],
+    },
     getAutomationHealth: {
       syncFails: { count: 0, recent: [], windowDays: 30 },
       automationLastRuns: [
@@ -1791,6 +1856,21 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
   // reviewer one (both delegate to qaAudioChunkFor_ server-side — INV-185),
   // so the fixture is an alias of the real WAV chunk above.
   FIXTURES.getMyQaReviewAudioChunk = FIXTURES.qaGetAudioChunk;
+  // X3 — the populated Team Metrics payload lives beside FIXTURES, not in it
+  // (it is not an RPC); getTeamMetrics serves a copy of it for a past range.
+  var TEAM_METRICS_POP_ = FIXTURES._teamMetricsPopulated;
+  delete FIXTURES._teamMetricsPopulated;
+  function TEAM_METRICS_POPULATED_() { return JSON.parse(JSON.stringify(TEAM_METRICS_POP_)); }
+  // `?teamrange=7d` (X3) — preset Team Metrics to the last seven COMPLETE days,
+  // the range the call-data report actually covers, so the populated table
+  // (rates, the queue split) stays on camera now that Today has no call data.
+  try {
+    if (/[?&]teamrange=7d\b/.test(window.location.search)) {
+      window.addEventListener('load', function () {
+        if (window.M_STATE) { window.M_STATE.teamFrom = daysAgo(7); window.M_STATE.teamTo = daysAgo(1); }
+      });
+    }
+  } catch (e) {}
 
   // `?pendingadj=1` — seeds a pending punch-adjustment request so the Clock
   // view's awaiting-approval chip renders on camera (the state the operator
@@ -1874,7 +1954,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // PR 4 (Coaching): both coaching payloads in their genuinely-empty shape.
     getCoachingDashboard: { items: [], voided: [], voidedTotal: 0, counts: { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 },
       reminderDays: 7, businessDayMinutes: 540, todayIso: todayIso,
-      analytics: { total: 0, acknowledged: 0, ackRatePct: 0, medianDaysToAck: 0, overdueUnacked: 0, bySeverity: { praise: 0, minor: 0, major: 0, critical: 0 }, perRep: [] } },
+      analytics: { total: 0, acknowledged: 0, ackRatePct: 0, medianDaysToAck: null, overdueUnacked: 0, bySeverity: { praise: 0, minor: 0, major: 0, critical: 0 }, perRep: [] } },
     getMyCoaching: { items: [], businessDayMinutes: 540 },
     // PR 6 (Time Clock): a CLEAN, empty round — the block renders NOTHING
     // (the design's "render nothing when the list is empty"), which is what
