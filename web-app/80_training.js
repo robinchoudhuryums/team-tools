@@ -103,9 +103,7 @@ function setCallNoteTrainingReply(repEmpId, noteId, reply) {
       }, CN_FEEDBACK_MAX_ENTRIES, 'feedback');   // F11
       if (fbErr) return { success: false, error: fbErr };
     } else {
-      delete subformData.trainingReply;
-      delete subformData.trainingReplyBy;
-      delete subformData.trainingReplyAt;
+      trainingReplyClear_(subformData);   // C8: clear what the THREAD shows, not only the legacy keys
     }
     sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(subformData)));
 
@@ -118,6 +116,33 @@ function setCallNoteTrainingReply(repEmpId, noteId, reply) {
     return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
+}
+/** PURE (C8, cycle 22) — "Clear reply", with the semantics of the thread the
+ *  rep and the manager both read. The thread renders `feedback[]`, but clear
+ *  only deleted the legacy trainingReply* keys, so the reply stayed on screen
+ *  and "Clear reply" visibly did nothing. It now removes the LATEST manager
+ *  reply from `feedback[]` and re-points the legacy keys at the manager reply
+ *  before it (older clients read those), or drops them when none is left. */
+function trainingReplyClear_(sfd) {
+  const fb = Array.isArray(sfd.feedback) ? sfd.feedback : [];
+  for (let i = fb.length - 1; i >= 0; i--) {
+    if (fb[i] && fb[i].role === 'manager' && fb[i].kind === 'reply') { fb.splice(i, 1); break; }
+  }
+  let prev = null;
+  for (let j = fb.length - 1; j >= 0; j--) {
+    if (fb[j] && fb[j].role === 'manager' && fb[j].kind === 'reply') { prev = fb[j]; break; }
+  }
+  if (prev) {
+    sfd.trainingReply = String(prev.message || '');
+    sfd.trainingReplyBy = String(prev.by || '');
+    sfd.trainingReplyAt = String(prev.at || '');
+  } else {
+    delete sfd.trainingReply;
+    delete sfd.trainingReplyBy;
+    delete sfd.trainingReplyAt;
+  }
+  if (Array.isArray(sfd.feedback)) sfd.feedback = fb;
+  return sfd;
 }
 /** Manager aggregated training-queue across all enrolled reps. */
 function managerGetTrainingQueue(dateRange) {

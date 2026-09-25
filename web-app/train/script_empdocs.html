@@ -541,7 +541,7 @@ function edRenderMgr_() {
           '<td>' + esc(d.signedAt ? String(d.signedAt).substring(0, 10) : '—') + '</td>' +
           '<td>' +
             (d.status === 'draft' ? '<button class="tr-complete-btn" data-ed-release="' + esc(d.docId) + '">Release</button> ' : '') +
-            (d.requiresSignature && d.status !== 'draft' ? '<button class="kb-btn" data-ed-verify="' + esc(d.docId) + '">Verify</button> ' : '') +
+            (d.status !== 'draft' ? '<button class="kb-btn" data-ed-verify="' + esc(d.docId) + '">Verify</button> ' : '') +
             (d.status !== 'void' ? '<button class="tr-revoke-btn" data-ed-void="' + esc(d.docId) + '">Void</button>' : '') +
           '</td></tr>';
       });

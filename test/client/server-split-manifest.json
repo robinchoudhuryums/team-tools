@@ -1189,6 +1189,26 @@
     "intakeListMySubmissions"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-25",
+   "why": "cycle 22 Batch 8: C7 formTokensVoid_, C8 trainingReplyClear_, I7 formRetentionEffectiveDays_, S5 qaAgentChangeUnshares_",
+   "added": [
+    "formRetentionEffectiveDays_",
+    "formTokensVoid_",
+    "qaAgentChangeUnshares_",
+    "trainingReplyClear_"
+   ],
+   "removed": [],
+   "changed": [
+    "getFormByToken",
+    "getFormRetentionDays_",
+    "getMySentForms",
+    "qaSetRecordingAgent",
+    "sendExternalEmail",
+    "setCallNoteTrainingReply"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4483,6 +4503,11 @@
    "kind": "function",
    "sha": "2dc8cc4784db820e"
   },
+  "formRetentionEffectiveDays_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "9f58e6f4ad89606f"
+  },
   "formTokenCellMs_": {
    "file": "61_forms.js",
    "kind": "function",
@@ -4502,6 +4527,11 @@
    "file": "61_forms.js",
    "kind": "function",
    "sha": "1afd8bb4739d6b50"
+  },
+  "formTokensVoid_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "2602398a01b61bd3"
   },
   "formatFormFieldValue_": {
    "file": "61_forms.js",
@@ -4851,7 +4881,7 @@
   "getFormByToken": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "c67d7850204aeebc"
+   "sha": "5b9484ec4f8d2fc2"
   },
   "getFormCatalog": {
    "file": "61_forms.js",
@@ -4861,7 +4891,7 @@
   "getFormRetentionDays_": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "54292c17cf3c12a7"
+   "sha": "5596fe632998764a"
   },
   "getFormSubmission": {
    "file": "61_forms.js",
@@ -5066,7 +5096,7 @@
   "getMySentForms": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "8883e950fbb8349f"
+   "sha": "4bcb4b9ba8731339"
   },
   "getMyTraining": {
    "file": "80_training.js",
@@ -6753,6 +6783,11 @@
    "kind": "function",
    "sha": "12060df3b137d4fa"
   },
+  "qaAgentChangeUnshares_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "23f02840b2f502dc"
+  },
   "qaAssignRecording": {
    "file": "90_qa.js",
    "kind": "function",
@@ -6986,7 +7021,7 @@
   "qaSetRecordingAgent": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "09af8705f72c16c3"
+   "sha": "9bd305b33fcc686e"
   },
   "qaSetRecordingDuration": {
    "file": "90_qa.js",
@@ -7476,7 +7511,7 @@
   "sendExternalEmail": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "5ede9e9e59f91440"
+   "sha": "de2871309efa5842"
   },
   "sendManagerBriefEmail_": {
    "file": "10_core.js",
@@ -7556,7 +7591,7 @@
   "setCallNoteTrainingReply": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "d51777355e81f65a"
+   "sha": "d4ccc3af5a081a63"
   },
   "setCoachingFollowUp": {
    "file": "82_coaching.js",
@@ -7892,6 +7927,11 @@
    "file": "80_training.js",
    "kind": "function",
    "sha": "345d9423410c3cb3"
+  },
+  "trainingReplyClear_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "bd15e765590fc43c"
   },
   "tsDoctorLegitBreaks_": {
    "file": "20_timeclock.js",

@@ -7108,6 +7108,7 @@ function cnMaybeWinbackNudge_(noteId, callerName) {
       if (!c) return;
       c.recipientType = 'customer';
       var body = String(tmpl.body || '').replace(/\{name\}/g, String(callerName || '').trim() || 'there');
+      body = cnExtBodyWithQuotes_(body, cnExtOopQuotes_());   // C9
       c.message = body;
       if (callerName) c.recipientName = String(callerName).trim();
       var msgEl = document.getElementById('cnX-message'); if (msgEl) msgEl.value = body;
@@ -13637,6 +13638,17 @@ function cnOopQuoteLine_(name, price, effective, label) {
     (e ? ' (price effective ' + e + ')' : '');
 }
 
+/** C9 (cycle 22) — a template (or the win-back text) REPLACES the message,
+ *  but every price line the picker inserted is re-appended, in order. The
+ *  quotes live in state and the send verifies each line is in the message, so
+ *  a template that wiped them made every such send refuse with "the inserted
+ *  line was edited" for text the rep never touched. Pure. */
+function cnExtBodyWithQuotes_(body, quotes) {
+  var b = String(body == null ? '' : body);
+  var lines = (quotes || []).map(function (q) { return q && q.line; }).filter(function (ln) { return ln && b.split('\n').indexOf(ln) < 0; });
+  if (!lines.length) return b;
+  return (b.replace(/\s+$/, '') ? b.replace(/\s+$/, '') + '\n' : '') + lines.join('\n');
+}
 function cnExtOopQuotes_() {
   var c = CN_STATE.extComposer;
   if (!c) return [];
@@ -13998,6 +14010,7 @@ function cnWireExternalEmailModal_() {
       tmplSel.value = '';
       if (!t) return;
       var body = String(t.body || '').replace(/\{name\}/g, (c.recipientName || '').trim() || 'there');
+      body = cnExtBodyWithQuotes_(body, cnExtOopQuotes_());   // C9: the inserted price lines survive
       var ta = document.getElementById('cnX-message');
       if (ta) { ta.value = body; c.message = body; }
     });

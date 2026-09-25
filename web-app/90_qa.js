@@ -894,14 +894,28 @@ function qaSetRecordingAgent(fileId, agentName) {
     // blank, off-roster, or shared by two roster rows — an ambiguous name
     // releases to nobody rather than to both).
     const agentId = qaRosterIdByName_(name);
+    // S5 (cycle 22): a share is a release TO an agent. Re-attributing a shared
+    // review used to hand it to the NEW agent, and clearing the agent left it
+    // "shared with nobody" — a state qaSetRecordingShared itself refuses to
+    // create. A changed agent withdraws the share; re-sharing is deliberate.
+    const prevAgent = String(found.row[QAR.AGENT] || '').trim();
+    const unshare = qaAgentChangeUnshares_(prevAgent, name, found.row[QAR.SHARED_MS]);
     sheet.getRange(found.rowIdx, QAR.AGENT + 1, 1, 1).setNumberFormat('@').setValue(sheetText_(name));   // S2: a '@' column
     sheet.getRange(found.rowIdx, QAR.AGENT_ID + 1, 1, 1).setNumberFormat('@').setValue(sheetText_(agentId));
-    writeAuditLog_(emp, 'QaAgentSet', '', '', false, 0, 'fileId=' + fid + (name ? '' : '; cleared'), emp.email);
+    if (unshare) sheet.getRange(found.rowIdx, QAR.SHARED_MS + 1).setValue(sheetSafe_(0));
+    writeAuditLog_(emp, 'QaAgentSet', '', '', false, 0, 'fileId=' + fid + (name ? '' : '; cleared') + (unshare ? '; unshared' : ''), emp.email);
     // Q7 — the roster id the coaching hand-off keys off (the name itself
     // never leaves the QA store's return; the id is what the composer needs).
-    return { success: true, agent: name, agentEmpId: agentId };
+    return { success: true, agent: name, agentEmpId: agentId, unshared: unshare };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
+}
+/** PURE (S5, cycle 22) — does setting the agent from `prev` to `next`
+ *  withdraw a live share? Only when the recording IS shared and the agent
+ *  actually changes (case-insensitive) — re-saving the same name keeps it. */
+function qaAgentChangeUnshares_(prev, next, sharedMs) {
+  if (!(Number(sharedMs) > 0)) return false;
+  return String(prev || '').trim().toLowerCase() !== String(next || '').trim().toLowerCase();
 }
 /** Save a structured scorecard for a recording. QA-gated, locked,
  *  target-must-exist (the qaAddComment posture). Ratings are validated

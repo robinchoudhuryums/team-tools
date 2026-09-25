@@ -634,6 +634,26 @@ function trainLoadMgr_(painted) {
     .getQuizAnalytics();
 }
 
+/** D8 (cycle 22) — the three pick-lists Team Training builds from (Reference
+ *  items, the roster, the quizzes) each arrive as `{error}` when their read
+ *  fails, and every consumer read the missing array as EMPTY: no items to
+ *  assign, nobody to assign to, no quizzes. A failed source is named above the
+ *  form instead, so an empty list is never mistaken for an empty store. */
+function trainMgrSourceFailures_() {
+  var out = [];
+  var bad = function (x) { return !x || !!x.error; };
+  if (bad(TRAIN_STATE.kbTree)) out.push('Reference items');
+  if (bad(TRAIN_STATE.emps)) out.push('the employee list');
+  if (bad(TRAIN_STATE.quizzes)) out.push('quizzes');
+  return out;
+}
+function trainMgrSourceWarnHtml_() {
+  var f = trainMgrSourceFailures_();
+  return f.length
+    ? '<div class="tr-qed-warn" role="alert">' + icon('warning', 13) + ' Could not load ' + esc(f.join(', ')) +
+      ' — the lists below are incomplete, not empty. Reload Team Training to retry.</div>'
+    : '';
+}
 function trainRenderMgr_() {
   var el = document.getElementById('tr-mgr-content');
   if (!el) return;
@@ -691,7 +711,7 @@ function trainRenderMgr_() {
       '</div>'
     : '';
 
-  var h = statStrip +
+  var h = trainMgrSourceWarnHtml_() + statStrip +
     '<div class="tr-assign"><h3>Assign training</h3><div class="row">' +
     '<div><label>Reference item</label>' + sel + '</div>' +
     '<div><label>Employees</label>' + empBox + '</div>' +
@@ -873,6 +893,13 @@ function trainRenderQuizEditor_(overlay) {
   kbItems.forEach(function (it) {
     kbSel += '<option value="' + esc(it.id) + '"' + (it.id === st.kbItemId ? ' selected' : '') + '>' + esc(it.title) + '</option>';
   });
+  // D8 (cycle 22): with the Reference list unavailable, the quiz's CURRENT
+  // link has no option to select, so the select read "(none)" and saving the
+  // quiz silently UNLINKED its material. Keep the link as its own option.
+  var treeFailed = !TRAIN_STATE.kbTree || !!TRAIN_STATE.kbTree.error;
+  if (treeFailed && st.kbItemId && !kbItems.some(function (it) { return it.id === st.kbItemId; })) {
+    kbSel += '<option value="' + esc(st.kbItemId) + '" selected>(keep the current link — the Reference list could not be loaded)</option>';
+  }
   kbSel += '</select>';
   var warnHtml = (st._importWarnings && st._importWarnings.length)
     ? '<div class="tr-qed-warn">' + icon('warning', 13) + ' <strong>Imported with notes:</strong><ul>' +

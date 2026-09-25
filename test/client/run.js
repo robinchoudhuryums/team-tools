@@ -17566,7 +17566,7 @@ test('QA-10: Phase 2 wiring — agent boundary, headers, stats gate, waveform fa
   const setAgent = nc(extractRawFunction('Code.js', 'qaSetRecordingAgent'));
   assert.ok(/'QA access required\.'/.test(setAgent) && /substring\(0, 80\)/.test(setAgent),
     'agent set is QA-gated and bounded');
-  assert.ok(/writeAuditLog_\(emp, 'QaAgentSet', '', '', false, 0, 'fileId=' \+ fid \+ \(name \? '' : '; cleared'\), emp\.email\);/.test(setAgent),
+  assert.ok(/writeAuditLog_\(emp, 'QaAgentSet', '', '', false, 0, 'fileId=' \+ fid \+ \(name \? '' : '; cleared'\) \+ \(unshare \? '; unshared' : ''\), emp\.email\);/.test(setAgent),
     'the audit row NEVER carries the agent name — names stay in the QA store (INV-32/196)');
   // Stats: gate before any store access; truncation reported (INV-169).
   const stats = nc(extractRawFunction('Code.js', 'getQaStats'));
@@ -28123,6 +28123,115 @@ test('I5: an unanswered account Yes/No reads "Not answered" in the email — nev
   assert.ok(/&#10003;/.test(html('TRUE')), 'yes is the check');
   assert.ok(/>No</.test(html('FALSE')) && !/Not answered/.test(html('FALSE')), 'a deliberate No says No');
   assert.ok(/Not answered/.test(html('')) && !/>No</.test(html('')), 'an untouched toggle says Not answered');
+});
+
+
+test('C7: form tokens are created only after the PDFs are in hand, and voided if the send fails — no phantom "Awaiting" forms (driven void)', () => {
+  const src = stripJsComments_(extractRawFunction('Code.js', 'sendExternalEmail'));
+  const fetchAt = src.indexOf('UrlFetchApp.fetch(url'), tokenAt = src.indexOf('createFormToken(');
+  assert.ok(fetchAt > 0 && tokenAt > fetchAt, 'the PDF fetch runs BEFORE any token is written');
+  assert.ok(/catch \(sendErr\) \{\s*formTokensVoid_\(formLinks\.map\(function \(l\) \{ return l\.token; \}\)\);\s*return \{ success: false/.test(src),
+    'a failed send withdraws the tokens it created');
+  const rows = { t1: { rowIndex: 5 }, t2: { rowIndex: 9 } };
+  const writes = [];
+  const ctx = vm.createContext({ Logger: { log() {} }, FT: { STATUS: 6 }, sheetSafe_: (v) => v,
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    getOrCreateFormTokensSheet_: () => ({ getRange: (r, c) => ({ setValue: (v) => writes.push(r + ':' + c + ':' + v) }) }),
+    findFormTokenRow_: (sh, t) => rows[t] || null });
+  vm.runInContext(extractRawFunction('Code.js', 'formTokensVoid_'), ctx);
+  assert.strictEqual(ctx.formTokensVoid_(['t1', 'gone', 't2']), 2);
+  assert.deepStrictEqual(writes, ['5:7:voided', '9:7:voided'], 'each created token is marked voided');
+  const pub = stripJsComments_(extractRawFunction('Code.js', 'getFormByToken'));
+  assert.ok(/if \(status === 'voided'\) return \{ error: 'This form link was withdrawn/.test(pub), 'the public route refuses a withdrawn link');
+  const sent = stripJsComments_(extractRawFunction('Code.js', 'getMySentForms'));
+  assert.ok(/if \(status === 'voided'\) continue;/.test(sent), 'and Sent Forms does not list it as awaiting');
+});
+
+test('C8: "Clear reply" clears what the THREAD shows — the latest manager reply leaves feedback[], and the legacy keys follow (driven)', () => {
+  const ctx = vm.createContext({ String, Array });
+  vm.runInContext(extractRawFunction('Code.js', 'trainingReplyClear_'), ctx);
+  const sfd = { trainingQuestion: 'q', trainingReply: 'second', trainingReplyBy: 'm2', trainingReplyAt: 't2', feedback: [
+    { role: 'rep', message: 'q', kind: 'question' }, { role: 'manager', message: 'first', by: 'm1', at: 't1', kind: 'reply' },
+    { role: 'rep', message: 'thanks', kind: 'followup' }, { role: 'manager', message: 'second', by: 'm2', at: 't2', kind: 'reply' }] };
+  const out = JSON.parse(JSON.stringify(ctx.trainingReplyClear_(sfd)));
+  assert.deepStrictEqual(out.feedback.map((f) => f.message), ['q', 'first', 'thanks'], 'the latest manager reply is gone from the thread');
+  assert.strictEqual(out.trainingReply, 'first', 'the legacy keys now mirror the reply that remains');
+  const out2 = JSON.parse(JSON.stringify(ctx.trainingReplyClear_(out)));
+  assert.ok(!('trainingReply' in out2) && out2.feedback.every((f) => f.role !== 'manager'), 'clearing the last reply drops the keys too');
+  assert.strictEqual(out2.trainingQuestion, 'q', 'the question is never touched');
+  assert.ok(/trainingReplyClear_\(subformData\)/.test(extractRawFunction('Code.js', 'setCallNoteTrainingReply')), 'the endpoint clears through it');
+});
+
+test('C9: a template or the win-back text keeps every inserted price line — the send is no longer refused for text the rep never touched (driven)', () => {
+  const s2 = buildSandbox([]);
+  const f = loadFunction(s2, 'cn/script_callnotes.html', 'cnExtBodyWithQuotes_');
+  const q = [{ line: 'Walker — $99.00' }, { line: 'Cane — $25.00 (price effective 2026-09-01)' }];
+  assert.strictEqual(f('Hi {name},\nThanks!\n', q), 'Hi {name},\nThanks!\nWalker — $99.00\nCane — $25.00 (price effective 2026-09-01)', 'the lines follow the template, in order');
+  assert.strictEqual(f('Walker — $99.00\nHello', q), 'Walker — $99.00\nHello\nCane — $25.00 (price effective 2026-09-01)', 'a line already present is not duplicated');
+  assert.strictEqual(f('Hello', []), 'Hello', 'no quotes, no change');
+  assert.strictEqual(f('', q), 'Walker — $99.00\nCane — $25.00 (price effective 2026-09-01)', 'an empty template keeps just the lines');
+  const cn = stripJsComments_(fs.readFileSync(path.join(B8_WEB, 'cn/script_callnotes.html'), 'utf8'));
+  assert.strictEqual((cn.match(/body = cnExtBodyWithQuotes_\(body, cnExtOopQuotes_\(\)\);/g) || []).length, 2, 'both the template picker and the win-back nudge keep the quotes');
+});
+
+test('I7: form retention is floored at the token expiry plus a day — a 1-day setting can no longer delete links still valid for 72 hours', () => {
+  const ctx = vm.createContext({ Math, Number, isNaN });
+  vm.runInContext(extractRawFunction('Code.js', 'formRetentionEffectiveDays_'), ctx);
+  const f = ctx.formRetentionEffectiveDays_;
+  assert.strictEqual(f(1, 72), 4, '1 day becomes 4 (72 h + a day)'); assert.strictEqual(f(2, 72), 4);
+  assert.strictEqual(f(90, 72), 90, 'a long window is untouched'); assert.strictEqual(f(0, 72), 0, 'disabled stays disabled');
+  assert.strictEqual(f(-3, 72), 0); assert.strictEqual(f(NaN, 72), 0); assert.strictEqual(f(1, 25), 3, 'a 25-hour expiry floors at 3 days');
+  assert.ok(/formRetentionEffectiveDays_\(v, CONFIG\.FORM_TOKEN_EXPIRY_HOURS \|\| 72\)/.test(extractRawFunction('Code.js', 'getFormRetentionDays_')), 'the purge reads the floored value');
+});
+
+test('S5: re-attributing or clearing the agent WITHDRAWS a live share — a review is never released to the wrong agent, or to nobody', () => {
+  const ctx = vm.createContext({ String, Number });
+  vm.runInContext(extractRawFunction('Code.js', 'qaAgentChangeUnshares_'), ctx);
+  const f = ctx.qaAgentChangeUnshares_;
+  assert.strictEqual(f('Ana Diaz', 'Bo Chen', 1700000000000), true, 'a different agent unshares');
+  assert.strictEqual(f('Ana Diaz', '', 1700000000000), true, 'clearing the agent unshares (no "shared with nobody")');
+  assert.strictEqual(f('Ana Diaz', ' ana diaz ', 1700000000000), false, 're-saving the same agent keeps the share');
+  assert.strictEqual(f('Ana Diaz', 'Bo Chen', 0), false, 'an unshared review has nothing to withdraw');
+  const src = stripJsComments_(extractRawFunction('Code.js', 'qaSetRecordingAgent'));
+  assert.ok(/if \(unshare\) sheet\.getRange\(found\.rowIdx, QAR\.SHARED_MS \+ 1\)\.setValue\(sheetSafe_\(0\)\);/.test(src) && /unshared: unshare/.test(src), 'the endpoint clears SharedMs and says so');
+  const qa = fs.readFileSync(path.join(B8_WEB, 'qa/script_qa.html'), 'utf8');
+  assert.ok(/if \(res\.unshared\) r\.sharedMs = 0;/.test(qa), 'the client redraws the share state');
+});
+
+test('D8: a failed Team Training source is NAMED, never read as empty — and a failed Reference list cannot unlink a quiz on save (driven)', () => {
+  const s2 = buildSandbox([]);
+  s2.icon = () => ''; s2.esc = (x) => String(x == null ? '' : x);
+  s2.TRAIN_STATE = { kbTree: { error: 'KB unreachable' }, emps: { employees: [] }, quizzes: { quizzes: [] } };
+  loadFunction(s2, 'train/script_training.html', 'trainMgrSourceFailures_');
+  const warn = loadFunction(s2, 'train/script_training.html', 'trainMgrSourceWarnHtml_');
+  assert.ok(/Could not load Reference items/.test(warn()) && /incomplete, not empty/.test(warn()), 'the failed source is named');
+  s2.TRAIN_STATE.kbTree = { items: [] };
+  assert.strictEqual(warn(), '', 'all sources read → no banner (INV-186)');
+  // Quiz editor with the tree failed: the current link survives as a selected option.
+  s2.TRAIN_STATE.kbTree = { error: 'x' };
+  s2.TRAIN_STATE.qed = { quizId: 'Q1', title: 'T', kbItemId: 'KB9', passPct: 80, questions: [] };
+  s2.trainQedQuestionHtml_ = () => '';
+  ['trainImportQuizFromForm_', 'trainSaveQuizFromEditor_', 'trainQedSnapshot_', 'trainCloseQuizEditor_'].forEach((n) => { s2[n] = () => {}; });
+  const overlay = { innerHTML: '', addEventListener() {}, querySelectorAll: () => [], querySelector: () => null };
+  loadFunction(s2, 'train/script_training.html', 'trainRenderQuizEditor_')(overlay);
+  assert.ok(/<option value="KB9" selected>\(keep the current link/.test(overlay.innerHTML), 'the link is kept, so saving does not unlink it');
+  s2.TRAIN_STATE.kbTree = { items: [{ id: 'KB9', title: 'Walkers' }] };
+  loadFunction(s2, 'train/script_training.html', 'trainRenderQuizEditor_')(overlay);
+  assert.ok(!/keep the current link/.test(overlay.innerHTML) && /<option value="KB9" selected>Walkers/.test(overlay.innerHTML), 'with the list loaded it is the ordinary option');
+  assert.ok(/trainMgrSourceWarnHtml_\(\) \+ statStrip/.test(extractFunction('train/script_training.html', 'trainRenderMgr_')), 'the dashboard renders the banner');
+});
+
+test('D4: Verify is offered for every issued document — a completed fields-only document can be integrity-checked too', () => {
+  const ed = stripJsComments_(fs.readFileSync(path.join(B8_WEB, 'train/script_empdocs.html'), 'utf8'));
+  assert.ok(/\(d\.status !== 'draft' \? '<button class="kb-btn" data-ed-verify=/.test(ed), 'the button no longer requires a signature');
+  assert.ok(!/d\.requiresSignature && d\.status !== 'draft' \? '<button class="kb-btn" data-ed-verify=/.test(ed), 'the signature-only gate is gone');
+});
+
+test('D9: a late comment-post success touches the composer, pin and player only if the SAME recording is still open', () => {
+  const f = stripJsComments_(extractFunction('qa/script_qa.html', 'qaSubmitComment_'));
+  const guard = f.indexOf('if (!QA_STATE.det || QA_STATE.det.fileId !== r.fileId)');
+  const clear = f.indexOf('QA_STATE.pin = null;'), play = f.indexOf('audio.play()');
+  assert.ok(guard > 0 && clear > guard && play > guard, 'the recording check runs BEFORE the pin is cleared and playback resumes');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

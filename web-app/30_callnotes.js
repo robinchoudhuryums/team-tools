@@ -3114,6 +3114,26 @@ function sendExternalEmail(payload) {
     }
   }
 
+  // ── Fetch PDF blobs from GitHub raw URLs ──────────────────────────
+  // C7 (cycle 22): BEFORE any token exists. A failed fetch used to return
+  // after the tokens were written, leaving the rep's Sent Forms showing an
+  // "Awaiting" form for an email that never went.
+  const attachments = [];
+  const baseUrl = CONFIG.CALL_NOTES.FORM_BASE_URL || '';
+  for (let i = 0; i < selectedForms.length; i++) {
+    const form = selectedForms[i];
+    const url = baseUrl + encodeURIComponent(form.fileName);
+    try {
+      const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+      if (resp.getResponseCode() !== 200) {
+        return { success: false, error: 'Failed to fetch form "' + form.name + '" (HTTP ' + resp.getResponseCode() + ').' };
+      }
+      attachments.push(resp.getBlob().setName(form.fileName));
+    } catch (fetchErr) {
+      return { success: false, error: 'Failed to download form "' + form.name + '": ' + fetchErr.message };
+    }
+  }
+
   // ── Create tokens for interactive forms ───────────────────────────
   const formLinks = []; // { name, url, formType }
   for (let i = 0; i < interactiveForms.length; i++) {
@@ -3137,23 +3157,6 @@ function sendExternalEmail(payload) {
     });
   }
 
-  // ── Fetch PDF blobs from GitHub raw URLs ──────────────────────────
-  const attachments = [];
-  const baseUrl = CONFIG.CALL_NOTES.FORM_BASE_URL || '';
-  for (let i = 0; i < selectedForms.length; i++) {
-    const form = selectedForms[i];
-    const url = baseUrl + encodeURIComponent(form.fileName);
-    try {
-      const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-      if (resp.getResponseCode() !== 200) {
-        return { success: false, error: 'Failed to fetch form "' + form.name + '" (HTTP ' + resp.getResponseCode() + ').' };
-      }
-      attachments.push(resp.getBlob().setName(form.fileName));
-    } catch (fetchErr) {
-      return { success: false, error: 'Failed to download form "' + form.name + '": ' + fetchErr.message };
-    }
-  }
-
   // ── Build email body ──────────────────────────────────────────────
   const formNames = selectedForms.map(function (f) { return f.name; });
   const htmlBody = recipientType === 'customer'
@@ -3174,6 +3177,9 @@ function sendExternalEmail(payload) {
     if (attachments.length > 0) emailOpts.attachments = attachments;
     sendRepEmail_(emp, emailOpts);   // Round-1 #8 — agent identity (+ neutral alias when configured)
   } catch (sendErr) {
+    // C7 (cycle 22): the link never reached anyone — withdraw it, so it is
+    // neither a live credential nor an "Awaiting" row in Sent Forms.
+    formTokensVoid_(formLinks.map(function (l) { return l.token; }));
     return { success: false, error: 'Email send failed: ' + sendErr.message };
   }
 

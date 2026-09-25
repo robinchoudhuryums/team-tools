@@ -973,7 +973,10 @@ function qaSaveAgent_() {
       if (!res || !res.success) { showToast((res && res.error) || 'Save failed.', 'toast-error'); return; }
       r.agent = res.agent;
       r.agentEmpId = String(res.agentEmpId || '');   // Q7 — the server re-joins the roster id
-      showToast(res.agent ? 'Agent set' : 'Agent cleared', 'toast-success');
+      // S5 (cycle 22): a changed agent withdrew the share — say so, and redraw it.
+      if (res.unshared) r.sharedMs = 0;
+      showToast((res.agent ? 'Agent set' : 'Agent cleared') + (res.unshared ? ' — the review is no longer shared; share it again for the new agent' : ''),
+        res.unshared ? 'toast-warn' : 'toast-success');
       qaRenderAgentRow_();
       qaRenderCoachPanel_();
     })
@@ -1413,11 +1416,16 @@ function qaSubmitComment_(resume) {
       if (btn) btn.disabled = false;
       if (stay) stay.disabled = false;
       if (!res || !res.success) { showToast((res && res.error) || 'Comment failed.', 'toast-error'); return; }
+      // D9 (cycle 22): the reviewer may have opened ANOTHER recording while
+      // this post was in flight. Its composer, pin and player belong to that
+      // recording — clearing the pin and resuming playback there is acting on
+      // the wrong call. Only a still-open same recording is touched.
+      if (!QA_STATE.det || QA_STATE.det.fileId !== r.fileId) { showToast('Comment posted.', 'toast-success'); return; }
       ta.value = '';
       QA_STATE.pin = null;
       qaRenderPinRow_();
       if (resume) { const audio = document.getElementById('qa-audio'); if (audio) { try { audio.play(); } catch (e) {} } }
-      if (QA_STATE.det && QA_STATE.det.fileId === r.fileId) qaLoadComments_(r.fileId);
+      qaLoadComments_(r.fileId);
     })
     .withFailureHandler(function (err) {
       if (btn) btn.disabled = false;
