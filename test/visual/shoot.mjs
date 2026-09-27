@@ -188,6 +188,12 @@ const SCENARIOS = [
   // Operator 2026-09-10 (note 6) — a request card EXPANDED: the source note's
   // fields in the detail panel under a subject carrying patient & TRX.
   ['deptreq-expanded-light-wide', { tool: 'metrics', tab: 'metricsDeptReq' }, WIDE, 'light', '', "drExpand_(document.querySelector('.dr-expand[data-req]'))"],
+  // 22post A-7 — the manager top row (team-wide cards beside the resolution
+  // table) STACKS in the pop-out; and the sort + date controls in dark mode.
+  ['deptreq-light-compact', { tool: 'metrics', tab: 'metricsDeptReq' }, COMPACT, 'light', '?compact=1'],
+  ['deptreq-dark-wide',     { tool: 'metrics', tab: 'metricsDeptReq' }, WIDE, 'dark', ''],
+  // 22post A-2a — the Scratchpad with the standard modal buttons.
+  ['cn-scratchpad-dark-wide', { tool: 'callNotes', tab: 'callNotes' }, WIDE, 'dark', '', "cnOpenScratchpadModal_()"],
   // Operator 2026-08-17 (full-width round): the new .sp-top head+chart grid
   // stacks <1024px — shoot the stacked form so the breakpoint is on camera.
   ['spanish-light-mobile', { tool: 'metrics', tab: 'metricsSpanish' }, MOBILE, 'light', ''],

@@ -10,7 +10,7 @@ Scope: operator notes — Call Notes (Close Order, Scratchpad), Dashboard (live
 view, widgets), Dept Requests (reply-resolution, sort/filter, layout), Spanish
 Inbox (assign notifications)
 Test Command: manual
-Estimates: Batch A (1 Close reason · 2a Scratchpad fixes · 6 DR sort/filter · 7 DR manager layout): M (~6 h) — 1 S 1.5h · 2a S 1.5h · 6 S 1.5h · 7 S 1.5h — written BEFORE the first edit
+Estimates: Batch A (1 Close reason · 2a Scratchpad fixes · 6 DR sort/filter · 7 DR manager layout): M (~6 h) — 1 S 1.5h · 2a S 1.5h · 6 S 1.5h · 7 S 1.5h — written BEFORE the first edit | Batch A Actual: ~3 h
 Subsystem cycles since last Seams audit: 2 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25). The cadence is every 4.
 Updated: 2026-09-27
 
@@ -94,13 +94,17 @@ Updated: 2026-09-27
   default, so the Dashboard is never empty.
 
 ## In progress (facts to carry forward — NOT judgments)
-- Batch A starting (2026-09-27).
+- Batch A DONE and pushed (block `22post-A-broad-implement.md`); NOT deployed. Next: Batch B (Scratchpad floating panel + formatting).
 
 ## Completed this cycle
-- (none yet)
+- A-1 | 00_config.js, 30_callnotes.js, cn/script_callnotes.html | a Close Order requires a reason (preset list or Other typed); server refuses on preview + send; win-back keys on the preset
+- A-2a | cn/script_callnotes.html, script_core.html | Scratchpad: standard buttons, instant reopen from the session copy, prefetch on intent; the backdrop closes only on a press that started there
+- A-6 | 50_deptrequests.js, metrics/script_deptrequests.html | DR sort + date range over every list; the server caps the newest
+- A-7 | 50_deptrequests.js, metrics/script_deptrequests.html | managers: team-wide cards beside the resolution table, then team-wide, Incoming, My requests
 
 ## Pending / not yet done
-- Batches A–E above, in order.
+- Batches B–E above, in order. Deploy Batch A (no operator steps).
+- Docs owed for Batch A (the block's DOCUMENTATION UPDATES NEEDED) — a /sync-docs pass.
 - **Cycle 22's regression walks — NOT confirmed** (the deploy and its
   after-deploy steps were). The per-batch walks are in each `22-*` block and
   the new scenario steps in `.cycle/config.md` (S4, S25, S55, S59–S61, S68,
@@ -137,6 +141,9 @@ Carried from cycle 22 (full list in its HISTORY block, "Open follow-on items"):
 - **Numbers — do not reuse:** INV-225..227 RESERVED (cycle 20); INV-229..232,
   INV-240..242 and INV-301..303 PROPOSED (cycles 21, 21post, 22), not in the
   library. **Next free: INV-304; gotcha g159; scenario S119.**
+- **Batch A follow-ons (22post-A block):** no visual scenario opens the composer
+  on a Close Order; the team Median sub-line ellipsizes at half width; the date
+  range does not reach the server-derived table/cards.
 
 ## Decisions made (so the next session doesn't re-litigate)
 - **Close reasons (operator, 2026-09-27):** the presets include "Dissatisfied with
@@ -159,5 +166,6 @@ Carried from cycle 22 (full list in its HISTORY block, "Open follow-on items"):
   Tasks" means the Dashboard's Needs-you list.
 
 ## Where I left off
-Cycle 22 closed into HISTORY.md; the 22post plan is recorded above. Next:
-`/broad-implement Batch A` (items 1, 2a, 6, 7).
+Batch A (A-1, A-2a, A-6, A-7) is committed and pushed, not deployed. Next:
+`/broad-implement Batch B` (2b floating Scratchpad, 2c formatting) — record its
+estimate here before the first edit; /sync-docs for Batch A when convenient.
