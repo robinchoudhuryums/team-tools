@@ -4631,3 +4631,36 @@ test('22post A-2a DOM: the Scratchpad reopens INSTANTLY from the session copy, r
   assert.ok(/Could not refresh/.test(doc.getElementById('cn-scratch-status').textContent), 'and the failed refresh is stated');
   h.window.closeOverlay(doc.getElementById('cn-scratch-overlay'));
 });
+
+test('22post A-7 DOM: a manager\'s Dept Requests page leads with the team-wide cards BESIDE the resolution table, then team-wide, Incoming, My requests; a rep\'s order is unchanged; the sort re-orders every list', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  const item = (id, st, ms, extra) => Object.assign({ requestId: id, toDept: 'Billing', label: 'L-' + id, createdAt: 'x', createdMs: ms, byName: 'Me', status: st, elapsedMin: 30, slaBusiness: true, slaStatus: 'ontime', slaDays: 2 }, extra || {});
+  h.run.respond('getDeptRequests', () => ({ isManager: true, myDepts: ['Billing'], departments: ['Billing'],
+    mine: [item('m-old', 'open', 1000), item('m-new', 'open', 5000)],
+    incoming: [item('i1', 'open', 3000)], allOpen: [item('t1', 'open', 2000, { elapsedMin: 900 })],
+    truncated: false, listCap: 100, mineTotal: 2, incomingTotal: 1, allOpenTotal: 1,
+    teamKpis: { open: 4, overdue: 0, resolved: 9, total: 13, medianMin: 45, manualCount: 0 },
+    deptStats: [{ dept: 'Billing', open: 4, resolved: 9, overdueOpen: 0, slaDays: 2, avgMinutes: 50, medianMinutes: 45, manualResolved: 0, untrackedResolved: 0 }] }));
+  h.window.enterTool('metrics', 'metricsDeptReq');
+  h.flushTimers();
+  const top = h.$('.dr-top-row');
+  assert.ok(top, 'the manager top row renders');
+  assert.ok(top.querySelector('#dr-kpi') && top.querySelector('#dr-mgr-stats'), 'the cards sit BESIDE the resolution table');
+  assert.ok(/Open · team/.test(top.textContent) && /Team-wide/.test(top.textContent), 'the cards are team-wide and say so');
+  const body = h.$('#dr-body').textContent;
+  const at = (t) => body.indexOf(t);
+  assert.ok(at('Resolution time by department') < at('Oldest open (team-wide)') && at('Oldest open (team-wide)') < at('Incoming ·') && at('Incoming ·') < at('My requests'),
+    'order: resolution table, team-wide, Incoming, My requests');
+  const mineIds = () => {
+    const lbl = h.$$('.day-section-label').filter((n) => /My requests/.test(n.textContent))[0];
+    const ids = []; let n = lbl.nextElementSibling;
+    while (n) { n.querySelectorAll && n.querySelectorAll('.sp-task[data-req]').forEach((c) => ids.push(c.getAttribute('data-req'))); if (n.matches && n.matches('.sp-task[data-req]')) ids.push(n.getAttribute('data-req')); n = n.nextElementSibling; }
+    return ids;
+  };
+  assert.deepStrictEqual(mineIds(), ['m-new', 'm-old'], 'newest first by default');
+  h.window.drSetSort_('oldest');
+  assert.deepStrictEqual(mineIds(), ['m-old', 'm-new'], 'the sort control re-orders the list');
+  h.window.drSetSort_('newest');
+});

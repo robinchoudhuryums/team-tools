@@ -1350,6 +1350,19 @@
     "validateEmailSelections_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-27",
+   "why": "22post A-6/A-7: drNewestOpenFirst_, drTeamKpis_",
+   "added": [
+    "drNewestOpenFirst_",
+    "drTeamKpis_"
+   ],
+   "removed": [],
+   "changed": [
+    "getDeptRequests"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4389,6 +4402,11 @@
    "kind": "function",
    "sha": "d9b2cee2490b00a0"
   },
+  "drNewestOpenFirst_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "ff52dced4c70f2a2"
+  },
   "drNowTs_": {
    "file": "50_deptrequests.js",
    "kind": "function",
@@ -4453,6 +4471,11 @@
    "file": "50_deptrequests.js",
    "kind": "function",
    "sha": "28e21b3ea81dd078"
+  },
+  "drTeamKpis_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "0ba4cd4ff07652fa"
   },
   "driveAccessStatus_": {
    "file": "10_core.js",
@@ -4997,7 +5020,7 @@
   "getDeptRequests": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "46ada078cb82ea1a"
+   "sha": "e06f8dcfd43c157a"
   },
   "getDeptRequestsSS_": {
    "file": "50_deptrequests.js",

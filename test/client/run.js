@@ -8145,7 +8145,10 @@ test('Dept Requests: Spanish-vocabulary cards, SLA-driven tones, filter chips re
   assert.ok(/data-dr-dept/.test(d), 'the dept chips render');
   ['drDeptMatch_'].forEach(() => {});
   // Every card list consumes the filter (mine + incoming + team-wide + stats).
-  assert.ok((c17strip(d).match(/filter\(drDeptMatch_\)/g) || []).length >= 3,
+  // 22post A-6: one pipeline (drListView_ — dept chips, date range, sort) feeds
+  // every list, so the filter is asserted once there and at each list.
+  assert.ok(/\.filter\(drDeptMatch_\)/.test(c17strip(c17fnBody(d, 'drListView_'))), 'the list pipeline applies the dept filter');
+  assert.ok((c17strip(d).match(/drListView_\((mineAll|data\.incoming|openAllTeam)/g) || []).length >= 3,
     'mine, incoming, and the team-wide list all pass through the dept filter');
 });
 
@@ -11291,7 +11294,7 @@ test('load-time sweep: DR result cache + SWR enters, timeoff rides calNavTo_ (op
   // cache it). The gen salt is bumped by every mutation so a resolve/new
   // request reaches the next read; the put is success-only (INV-129).
   const dr = nc(extractRawFunction('Code.js', 'getDeptRequests'));
-  assert.ok(/dept_req_v1:' \+ emp\.id \+ ':' \+ drCacheGen_\(\)/.test(dr), 'per-caller key + generation salt');
+  assert.ok(/dept_req_v2:' \+ emp\.id \+ ':' \+ drCacheGen_\(\)/.test(dr), 'per-caller key + generation salt (v2: 22post A-6/A-7 added createdMs + teamKpis)');
   assert.ok(/payload\.length <= 90000/.test(dr), 'oversized payloads skip the put');
   const code = nc(serverSource());
   const bumps = (code.match(/drBumpCacheGen_\(\);/g) || []).length;
@@ -13600,7 +13603,7 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
       'finds cards by comparing the decoded attribute, not by building a selector from the id');
     // The KPI strip has ONE renderer, shared by the full render and the patch.
     assert.ok((dr.match(/drKpiStripHtml_\(/g) || []).length >= 3, 'the KPI strip is a shared renderer');
-    assert.ok(/id="dr-kpi"/.test(dr) && /id="dr-mgr-wrap"/.test(dr), 'both repaint anchors exist');
+    assert.ok(/id="dr-kpi"/.test(dr) && /id="dr-mgr-stats"/.test(dr) && /id="dr-mgr-team"/.test(dr), 'the repaint anchors exist (22post A-7 split the manager section in two)');
     // Managers get a quiet reconcile (deptStats is server-derived); reps do
     // not need one — every number they see is client-derived from data.mine.
     assert.ok(/isManager\) drReconcile_/.test(click), 'the reconcile is manager-only');
@@ -23689,7 +23692,7 @@ test('N3-DR: an in-app "Mark resolved" is recorded (ResolvedVia) and leaves ever
   assert.ok(/marked in app, not timed/.test(kpi), 'the strip names the excluded count');
   const apply = nc(extractFunction('metrics/script_deptrequests.html', 'drApplyResolved_'));
   assert.ok(/r\.resolvedVia = 'app';/.test(apply), "the optimistic patch stamps 'app' — exactly what the next payload says");
-  const mgr = nc(extractFunction('metrics/script_deptrequests.html', 'drManagerSectionHtml_'));
+  const mgr = nc(extractFunction('metrics/script_deptrequests.html', 'drMgrStatsHtml_'));   // 22post A-7: the table's own renderer
   assert.ok(/drStatsNotTimedCell_\(s\)/.test(mgr) && /Not timed/.test(mgr), 'the manager table carries the Not-timed column');
   const cellSb = vm.createContext({ esc: (x) => String(x) });
   vm.runInContext(extractFunction('metrics/script_deptrequests.html', 'drStatsNotTimedCell_'), cellSb, { filename: 'dr#cell' });
@@ -28823,6 +28826,63 @@ test('A-1: the composer requires a reason — preset or typed "Other" — and th
   assert.ok(/\.cn-req-mark \{/.test(cn), 'the required mark has a rule (the T6 ratchet)');
   const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
   assert.ok(/closeReasons: \['Changing suppliers'/.test(mock), 'the fixture carries the list (INV-185)');
+});
+
+test('A-6: Dept Requests sort + date range — open first, newest by default; a range keeps undated rows; the server caps the NEWEST (driven)', () => {
+  const ctx = vm.createContext({ String, Number, Math });
+  ['drNewestOpenFirst_', 'drTeamKpis_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const rows = [
+    { id: 'old-open', status: 'open', createdMs: 100, elapsedMin: 900 },
+    { id: 'new-res', status: 'resolved', createdMs: 400 },
+    { id: 'new-open', status: 'open', createdMs: 300, elapsedMin: 10 },
+    { id: 'undated', status: 'open', createdMs: null, elapsedMin: 5 },
+  ];
+  assert.deepStrictEqual(rows.slice().sort(ctx.drNewestOpenFirst_).map((r) => r.id), ['new-open', 'old-open', 'undated', 'new-res'],
+    'the server orders mine open-first then newest, so the list cap keeps the newest');
+  assert.ok(/mine\.sort\(drNewestOpenFirst_\)/.test(stripJsComments_(extractRawFunction('Code.js', 'getDeptRequests'))), 'getDeptRequests uses it before the cap');
+  const s2 = buildSandbox([]);
+  const cmp = loadFunction(s2, 'metrics/script_deptrequests.html', 'drSortCmp_');
+  const ids = (k) => rows.slice().sort(cmp(k)).map((r) => r.id);
+  assert.deepStrictEqual(ids('newest'), ['new-open', 'old-open', 'undated', 'new-res']);
+  assert.deepStrictEqual(ids('oldest'), ['old-open', 'new-open', 'undated', 'new-res'], 'oldest first, open before resolved');
+  assert.deepStrictEqual(ids('longest'), ['old-open', 'new-open', 'undated', 'new-res'], 'longest business age first');
+  const inRange = loadFunction(s2, 'metrics/script_deptrequests.html', 'drInRange_');
+  const now = Date.UTC(2026, 8, 27, 12);
+  assert.strictEqual(inRange(now - 3 * 86400000, { preset: '7' }, now), true);
+  assert.strictEqual(inRange(now - 8 * 86400000, { preset: '7' }, now), false, 'outside the last 7 days');
+  assert.strictEqual(inRange(null, { preset: '7' }, now), true, 'an undated row is kept, never dropped');
+  assert.strictEqual(inRange(now - 90 * 86400000, { preset: 'all' }, now), true);
+  const d = new Date(2026, 8, 10, 15).getTime();
+  assert.strictEqual(inRange(d, { preset: 'custom', from: '2026-09-10', to: '2026-09-10' }, now), true, 'a custom range is inclusive of whole local days');
+  assert.strictEqual(inRange(d, { preset: 'custom', from: '2026-09-11', to: '' }, now), false);
+  const dr = fs.readFileSync(path.join(PA_WEB, 'metrics/script_deptrequests.html'), 'utf8');
+  assert.ok(/mtDateRange_\(\{ scope: 'dr'/.test(dr) && /mtDateRangeRow_\('dr-range-custom'/.test(dr), 'the shared date-range control, not a new one');
+  assert.ok(/nothing sent before/.test(dr), 'a truncated window names how far back it reaches');
+});
+
+test('A-7: a manager\'s Dept Requests summary is TEAM-WIDE (timed resolves only in the median) and the optimistic resolve keeps it right (driven)', () => {
+  const ctx = vm.createContext({ String, Number, Math });
+  vm.runInContext(extractRawFunction('Code.js', 'drTeamKpis_'), ctx);
+  const k = JSON.parse(JSON.stringify(ctx.drTeamKpis_([
+    { status: 'open', slaStatus: 'overdue' }, { status: 'open', slaStatus: 'ontime' },
+    { status: 'resolved', resolvedVia: 'email', elapsedMin: 60 }, { status: 'resolved', resolvedVia: 'email', elapsedMin: 200 },
+    { status: 'resolved', resolvedVia: 'email', elapsedMin: 30 }, { status: 'resolved', resolvedVia: 'app', elapsedMin: 999 }])));
+  assert.deepStrictEqual(k, { open: 2, overdue: 1, resolved: 4, total: 6, medianMin: 60, manualCount: 1 }, 'an in-app resolve is counted but never timed');
+  assert.ok(/result\.teamKpis = drTeamKpis_\(all\)/.test(stripJsComments_(extractRawFunction('Code.js', 'getDeptRequests'))), 'managers get it');
+  const s2 = buildSandbox([]);
+  s2.DR_LAST_DATA = { teamKpis: { open: 2, overdue: 1, resolved: 4, total: 6, medianMin: 60, manualCount: 1 },
+    mine: [], incoming: [], allOpen: [{ requestId: 'x', status: 'open', slaStatus: 'overdue' }] };
+  vm.runInContext('var DR_LAST_DATA = this.DR_LAST_DATA;', s2);
+  const apply = loadFunction(s2, 'metrics/script_deptrequests.html', 'drApplyResolved_');
+  apply('x'); apply('x');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(vm.runInContext('DR_LAST_DATA.teamKpis', s2))),
+    { open: 1, overdue: 0, resolved: 5, total: 6, medianMin: 60, manualCount: 2 }, 'one resolve moves one request, once');
+  const dr = fs.readFileSync(path.join(PA_WEB, 'metrics/script_deptrequests.html'), 'utf8');
+  assert.ok(/drRepaintKpi_\(\);\s+\/\/ 22post A-7/.test(extractFnFrom(dr, 'drReconcile_')), 'the reconcile repaints the team strip');
+  assert.ok(/\.dr-top-row \{/.test(dr) && /:root\[data-compact\] \.dr-top-row/.test(dr) && /@media \(max-width: 900px\) \{ \.dr-top-row/.test(dr),
+    'the top row stacks in the pop-out AND at narrow widths (g50)');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/teamKpis: \{ open: /.test(mock) && /createdMs: new Date\(daysAgo/.test(mock), 'the fixture carries teamKpis and createdMs (INV-185)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
