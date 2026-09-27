@@ -1096,8 +1096,8 @@
     padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius);
     background: var(--paper-card); color: var(--ink); resize: vertical; min-height: 180px;
   }
-  .cn-scratch-foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
-  .cn-scratch-status { font-size: 10.5px; color: var(--muted-2); }
+  .cn-scratch-foot { margin-top: 10px; }   /* .modal-footer carries the layout (22post A-2a) */
+  .cn-scratch-status { font-size: 10.5px; color: var(--muted-2); min-height: 14px; margin-top: 6px; }
   .cn-scratch-status.warn { color: var(--warning-deep); }
 
   /* Round-1 pilot #1 — review-comment line on a saved review-flagged card
@@ -3465,6 +3465,10 @@ function cnWireActiveForm_() {
   if (schedBtn) schedBtn.addEventListener('click', function () { cnOpenSchedModal_(); });
   var scratchBtn = document.getElementById('cn-scratch-btn');
   if (scratchBtn) scratchBtn.addEventListener('click', function () { cnOpenScratchpadModal_(); });
+  if (scratchBtn) {   // 22post A-2a: warm the copy on intent
+    scratchBtn.addEventListener('pointerenter', cnScratchPrefetch_);
+    scratchBtn.addEventListener('focus', cnScratchPrefetch_);
+  }
   var extBtn = document.getElementById('cn-ext-email-btn');
   if (extBtn) extBtn.addEventListener('click', function () { cnOpenExternalEmailModal_(); });
 }
@@ -5109,7 +5113,29 @@ function cnSchedStatus_(btn, id, status) {
 // is gone still has something to send. Before it, a close during an in-flight
 // save queued a drain that found no field and saved nothing, and a success
 // marked the pad clean even when the rep had typed more while it ran.
-var CN_SCRATCH = { dirty: false, timer: null, saving: false, queued: false, latest: null };
+var CN_SCRATCH = { dirty: false, timer: null, saving: false, queued: false, latest: null,
+  // 22post A-2a: the last copy this session loaded or saved — {content,
+  // updatedAtMs} — so a reopen paints INSTANTLY and refreshes behind it.
+  cache: null, prefetching: false };
+
+/** 22post A-2a — warm the session copy on intent (pointer over / focus on the
+ *  Scratchpad button), so even the FIRST open of a session usually paints at
+ *  once. One RPC at most; a failure just leaves the open to load as before. */
+function cnScratchPrefetch_() {
+  if (CN_SCRATCH.cache || CN_SCRATCH.prefetching) return;
+  CN_SCRATCH.prefetching = true;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      CN_SCRATCH.prefetching = false;
+      if (res && !res.error && !CN_SCRATCH.cache) CN_SCRATCH.cache = { content: res.content || '', updatedAtMs: res.updatedAtMs || null };
+    })
+    .withFailureHandler(function () { CN_SCRATCH.prefetching = false; })
+    .getMyScratchpad();
+}
+
+function cnScratchCloseBtnHtml_() {
+  return '<button type="button" class="btn-modal-cancel" onclick="closeOverlay(document.getElementById(\'cn-scratch-overlay\'))">Close</button>';
+}
 
 function cnOpenScratchpadModal_() {
   var overlay = ensureOverlay('cn-scratch-overlay', { label: 'Scratchpad', onClose: cnCloseScratchpadModal_ });
@@ -5119,11 +5145,12 @@ function cnOpenScratchpadModal_() {
       '<p class="cn-sched-hint">Personal notes saved to YOUR Call Notes sheet — they follow you across ' +
       'browsers and devices. Autosaves as you type; if two windows edit, the last save wins.</p>' +
       '<textarea id="cn-scratch-text" rows="12" disabled aria-label="Scratchpad contents" placeholder="Loading…"></textarea>' +
-      '<div class="cn-scratch-foot">' +
-        '<span class="cn-scratch-status mono" id="cn-scratch-status" role="status"></span>' +
-        '<span style="flex:1"></span>' +
-        '<button type="button" class="cn-act-btn" style="width:auto;padding:6px 14px" onclick="cnScratchSave_(true)">Save now</button>' +
-        '<button type="button" class="cn-act-btn" style="width:auto;padding:6px 14px" onclick="closeOverlay(document.getElementById(\'cn-scratch-overlay\'))">Close</button>' +
+      '<div class="cn-scratch-status mono" id="cn-scratch-status" role="status"></div>' +
+      // 22post A-2a: the app's standard modal buttons (.cn-act-btn is styled
+      // only inside cards and the reminders modal, so these rendered unstyled).
+      '<div class="modal-footer cn-scratch-foot">' +
+        cnScratchCloseBtnHtml_() +
+        '<button type="button" class="btn-modal-ok" onclick="cnScratchSave_(true)">Save now</button>' +
       '</div>' +
     '</div>';
   // C6: text a previous close could not save (its save failed, or is still in
@@ -5131,34 +5158,65 @@ function cnOpenScratchpadModal_() {
   var carry = CN_SCRATCH.dirty && CN_SCRATCH.latest != null;
   if (!carry) { CN_SCRATCH.dirty = false; CN_SCRATCH.latest = null; }
   clearTimeout(CN_SCRATCH.timer);
+  var ta0 = document.getElementById('cn-scratch-text');
+  // 22post A-2a: paint at once from the unsaved carry or this session's copy;
+  // the server read below then refreshes it (unless the rep has typed since).
+  var painted = null;
+  if (carry) painted = CN_SCRATCH.latest;
+  else if (CN_SCRATCH.cache) painted = CN_SCRATCH.cache.content;
+  if (ta0 && painted != null) {
+    ta0.disabled = false; ta0.placeholder = 'Anything you want to keep at hand…';
+    ta0.value = painted;
+    ta0.addEventListener('input', cnScratchInput_);
+    ta0._listening = true;
+    cnScratchStatus_(carry ? 'Unsaved changes from last time — saving…' : 'Refreshing…', false);
+    if (carry) cnScratchSave_(true);
+    ta0.focus();
+  }
   google.script.run
     .withSuccessHandler(function (res) {
       var ta = document.getElementById('cn-scratch-text');
       if (!ta) return;   // modal closed before the load landed
       if (!res || res.error) {
+        if (painted != null) {   // keep the painted copy editable; say the refresh failed
+          cnScratchStatus_('Could not refresh — showing your copy from earlier in this session; saving still works', true);
+          return;
+        }
         // A12/INV-175 — a failed load is a warn card, never an empty pad the
         // rep would type into and lose.
         var modal = ta.closest('.cn-scratch-modal');
         if (modal) modal.innerHTML = '<h3 style="margin-top:0">Scratchpad</h3>' +
           errorStateHtml_((res && res.error) || 'Could not load your scratchpad') +
-          '<div style="text-align:right;margin-top:12px"><button type="button" class="cn-act-btn" style="width:auto;padding:6px 14px" onclick="closeOverlay(document.getElementById(\'cn-scratch-overlay\'))">Close</button></div>';
+          '<div class="modal-footer" style="margin-top:12px">' + cnScratchCloseBtnHtml_() + '</div>';
         return;
       }
+      CN_SCRATCH.cache = { content: res.content || '', updatedAtMs: res.updatedAtMs || null };
       ta.disabled = false; ta.placeholder = 'Anything you want to keep at hand…';
+      if (!ta._listening) { ta.addEventListener('input', cnScratchInput_); ta._listening = true; }
       var stillUnsaved = CN_SCRATCH.dirty && CN_SCRATCH.latest != null;   // re-read: a carried save may have landed meanwhile
-      ta.value = stillUnsaved ? CN_SCRATCH.latest : (res.content || '');
-      ta.addEventListener('input', cnScratchInput_);
-      if (stillUnsaved) { cnScratchStatus_('Unsaved changes from last time — saving…', false); cnScratchSave_(true); }
-      else cnScratchStatus_(res.updatedAtMs ? 'Saved · ' + cnSchedFmt_(res.updatedAtMs) : '', false);
-      ta.focus();
+      if (stillUnsaved) {
+        if (painted == null) {   // not painted yet: show the unsaved text and save it
+          ta.value = CN_SCRATCH.latest;
+          cnScratchStatus_('Unsaved changes from last time — saving…', false); cnScratchSave_(true);
+        }
+        // painted and typed since (or a carried save running): the rep's text wins — never overwritten
+      } else {
+        if (ta.value !== (res.content || '')) ta.value = res.content || '';
+        cnScratchStatus_(res.updatedAtMs ? 'Saved · ' + cnSchedFmt_(res.updatedAtMs) : '', false);
+      }
+      if (painted == null) ta.focus();
     })
     .withFailureHandler(function (err) {
       var ta = document.getElementById('cn-scratch-text');
       if (!ta) return;
+      if (painted != null) {
+        cnScratchStatus_('Could not refresh — showing your copy from earlier in this session; saving still works', true);
+        return;
+      }
       var modal = ta.closest('.cn-scratch-modal');
       if (modal) modal.innerHTML = '<h3 style="margin-top:0">Scratchpad</h3>' +
         errorStateHtml_((err && err.message) || 'Could not load your scratchpad') +
-        '<div style="text-align:right;margin-top:12px"><button type="button" class="cn-act-btn" style="width:auto;padding:6px 14px" onclick="closeOverlay(document.getElementById(\'cn-scratch-overlay\'))">Close</button></div>';
+        '<div class="modal-footer" style="margin-top:12px">' + cnScratchCloseBtnHtml_() + '</div>';
     })
     .getMyScratchpad();
 }
@@ -5219,6 +5277,7 @@ function cnScratchSave_(force) {
     .withSuccessHandler(function (r) {
       if (!r || r.error || !r.success) { failed((r && r.error) || 'Save failed — edit or press Save now to retry'); return; }
       CN_SCRATCH.saving = false;
+      CN_SCRATCH.cache = { content: text, updatedAtMs: r.updatedAtMs || Date.now() };   // 22post A-2a: the next open paints this
       // Clean only if nothing was typed while this save ran (C6).
       if (CN_SCRATCH.latest === text) CN_SCRATCH.dirty = false;
       cnScratchStatus_(CN_SCRATCH.dirty ? 'Unsaved changes…' : 'Saved · ' + cnSchedFmt_(r.updatedAtMs), false);

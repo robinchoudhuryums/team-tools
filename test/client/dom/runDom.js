@@ -4582,3 +4582,52 @@ test('R-6: every block on the Reference landing is a SECTION or the band — not
     'its partial-read warning is INSIDE it — loose on the landing it named no list');
   assert.ok(/queue above may be incomplete/.test(rdSec.textContent), 'and still says what it means');
 });
+
+test('22post A-2a DOM: the Scratchpad reopens INSTANTLY from the session copy, refreshes behind it without clobbering typing, and a drag-select out of it does not close it', () => {
+  const h = boot();
+  const doc = h.document;
+  // First open: no session copy — it loads as before (disabled until the read lands).
+  h.read('cnOpenScratchpadModal_')();
+  let ta = doc.getElementById('cn-scratch-text');
+  assert.strictEqual(ta.disabled, true, 'the first open waits on the read');
+  h.run.flushSuccess({ content: 'first copy', updatedAtMs: Date.now() }, 'getMyScratchpad');
+  assert.strictEqual(doc.getElementById('cn-scratch-text').value, 'first copy');
+  // The footer uses the standard modal buttons, not the card-scoped .cn-act-btn.
+  const btns = Array.from(doc.querySelectorAll('#cn-scratch-overlay button'));
+  assert.ok(btns.some((b) => b.classList.contains('btn-modal-ok') && /Save now/.test(b.textContent)), 'Save now is the primary modal button');
+  assert.ok(btns.some((b) => b.classList.contains('btn-modal-cancel') && /Close/.test(b.textContent)), 'Close is the secondary modal button');
+  assert.ok(!btns.some((b) => b.classList.contains('cn-act-btn')), 'no unstyled .cn-act-btn left');
+  // A drag that STARTS in the textarea and ends on the backdrop must not close it.
+  const ov = doc.getElementById('cn-scratch-overlay');
+  ta = doc.getElementById('cn-scratch-text');
+  ta.dispatchEvent(new h.window.Event('pointerdown', { bubbles: true }));
+  ov.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true }));
+  assert.ok(doc.getElementById('cn-scratch-overlay'), 'a selection dragged out of the pad leaves it open');
+  // A press AND release on the backdrop still closes it.
+  ov.dispatchEvent(new h.window.Event('pointerdown', { bubbles: true }));
+  ov.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true }));
+  assert.ok(!doc.getElementById('cn-scratch-overlay'), 'a real backdrop click closes it');
+  // Reopen: painted at once from the session copy, enabled, while the refresh runs.
+  h.read('cnOpenScratchpadModal_')();
+  ta = doc.getElementById('cn-scratch-text');
+  assert.strictEqual(ta.disabled, false, 'the reopen is usable at once');
+  assert.strictEqual(ta.value, 'first copy', 'painted from the session copy');
+  // The rep types before the refresh lands — the refresh must not overwrite it.
+  ta.value = 'typed while loading'; ta.dispatchEvent(new h.window.Event('input'));
+  h.run.flushSuccess({ content: 'newer server copy', updatedAtMs: Date.now() }, 'getMyScratchpad');
+  assert.strictEqual(doc.getElementById('cn-scratch-text').value, 'typed while loading', 'typing wins over a late refresh');
+  h.window.closeOverlay(doc.getElementById('cn-scratch-overlay'));
+  h.run.flushSuccess({ success: true, updatedAtMs: Date.now() }, 'saveMyScratchpad');
+  // Reopen again with no typing: a newer server copy DOES replace the painted one.
+  h.read('cnOpenScratchpadModal_')();
+  assert.strictEqual(doc.getElementById('cn-scratch-text').value, 'typed while loading', 'the saved text is the new session copy');
+  h.run.flushSuccess({ content: 'edited in another window', updatedAtMs: Date.now() }, 'getMyScratchpad');
+  assert.strictEqual(doc.getElementById('cn-scratch-text').value, 'edited in another window', 'an untouched pad takes the refresh');
+  // A failed refresh keeps the painted copy editable and says so.
+  h.window.closeOverlay(doc.getElementById('cn-scratch-overlay'));
+  h.read('cnOpenScratchpadModal_')();
+  h.run.flushSuccess({ error: 'boom' }, 'getMyScratchpad');
+  assert.strictEqual(doc.getElementById('cn-scratch-text').disabled, false, 'still editable after a failed refresh');
+  assert.ok(/Could not refresh/.test(doc.getElementById('cn-scratch-status').textContent), 'and the failed refresh is stated');
+  h.window.closeOverlay(doc.getElementById('cn-scratch-overlay'));
+});
