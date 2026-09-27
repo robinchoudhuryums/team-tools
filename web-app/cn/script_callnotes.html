@@ -1568,6 +1568,12 @@
   }
   .cn-compose-section.sf-shipping { border-left: 3px solid var(--success-deep); padding-left: 14px; }
   .cn-compose-section.sf-close    { border-left: 3px solid var(--danger-deep);  padding-left: 14px; }
+  /* Operator 2026-09-27: the Close Order reason is required — the mark, and
+     the invalid state the Preview guard sets on the empty control. */
+  .cn-req-mark { color: var(--danger); font-weight: 700; }
+  .sf-close select[aria-invalid="true"], .sf-close input[aria-invalid="true"] {
+    border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-soft);
+  }
   .cn-compose-section.sf-resupply { border-left: 3px solid var(--success-deep); padding-left: 14px; }
   .cn-compose-section.sf-oop      { border-left: 3px solid var(--intake-pmd);   padding-left: 14px; }
   .cn-compose-note-ref {
@@ -6569,16 +6575,60 @@ function cnRenderShippingSubform_() {
   `;
 }
 
+/** Operator 2026-09-27 — a Close Order REQUIRES a reason: one of the server's
+ *  CLOSE_ORDER_REASONS, or "Other" with the reason typed. The list is the
+ *  server's (getCallNotesDepartments.closeReasons), never mirrored here; with
+ *  no list only "Other" is offered, so a reason can still be typed. */
+function cnCloseReasonList_() {
+  const cfg = CN_STATE.deptConfig || {};
+  return Array.isArray(cfg.closeReasons) ? cfg.closeReasons.map(String) : [];
+}
+/** PURE — the choice a saved closeDetails re-opens on: its reasonCode, else a
+ *  reason that IS a preset, else 'Other' for a typed (or legacy free-text) one. */
+function cnCloseChoiceFor_(cd, presets) {
+  cd = cd || {};
+  if (cd.reasonCode) return String(cd.reasonCode);
+  const r = String(cd.reason || '').trim();
+  if (!r) return '';
+  return (presets || []).indexOf(r) >= 0 ? r : 'Other';
+}
 function cnRenderCloseSubform_() {
   const cd = CN_STATE.composer.selections.closeDetails || {};
+  const presets = cnCloseReasonList_();
+  const choice = cnCloseChoiceFor_(cd, presets);
+  const other = choice === 'Other';
+  const opts = '<option value="">Choose a reason…</option>' +
+    presets.map(function (p) {
+      return '<option value="' + esc(p) + '"' + (choice === p ? ' selected' : '') + '>' + esc(p) + '</option>';
+    }).join('') +
+    '<option value="Other"' + (other ? ' selected' : '') + '>Other — type it</option>';
   return `
     <div class="cn-compose-section sf-close">
-      <div class="cn-compose-section-title">Close Order — Reason</div>
+      <div class="cn-compose-section-title">Close Order — Reason <span class="cn-req-mark" aria-hidden="true">*</span></div>
       <div class="field" style="margin:0">
-        <input type="text" id="cnCD-reason" value="${esc(cd.reason || '')}" placeholder="Why are we closing it?" aria-label="Reason for closing the order">
+        <select id="cnCD-choice" aria-label="Reason for closing the order (required)" aria-required="true" onchange="cnCloseReasonChoice_(this)">${opts}</select>
+      </div>
+      <div id="cnCD-other-wrap" style="margin-top:6px;${other ? '' : 'display:none'}">
+        <input type="text" id="cnCD-reason" value="${other ? esc(cd.reason || '') : ''}" placeholder="Type the reason" aria-label="Reason for closing the order (typed)" maxlength="300">
       </div>
     </div>
   `;
+}
+function cnCloseReasonChoice_(sel) {
+  const wrap = document.getElementById('cnCD-other-wrap');
+  const other = sel && sel.value === 'Other';
+  if (wrap) wrap.style.display = other ? '' : 'none';
+  if (sel) sel.removeAttribute('aria-invalid');
+  const txt = document.getElementById('cnCD-reason');
+  if (txt) txt.removeAttribute('aria-invalid');
+  if (other && txt) txt.focus();
+}
+/** PURE — the closeDetails the composer sends from a choice + typed text. */
+function cnCloseDetailsFrom_(choice, typed) {
+  choice = String(choice || '');
+  const t = String(typed || '').trim();
+  if (choice === 'Other') return { reason: t, reasonCode: 'Other' };
+  return { reason: choice, reasonCode: choice };
 }
 
 function cnRenderResupplySubform_() {
@@ -6804,7 +6854,9 @@ function cnGatherComposerSelections_() {
     };
   } else { s.shippingDetails = null; }
   if (u === 'close order') {
-    s.closeDetails = { reason: document.getElementById('cnCD-reason').value.trim() };
+    const chEl = document.getElementById('cnCD-choice');
+    const txEl = document.getElementById('cnCD-reason');
+    s.closeDetails = cnCloseDetailsFrom_(chEl ? chEl.value : '', txEl ? txEl.value : '');
   } else { s.closeDetails = null; }
   if (u === 'repeat resupply') {
     s.resupplyDetails = {
@@ -6880,6 +6932,14 @@ function cnComposerGoToPreview_() {
   }
   if (!c.selections.updateInfo) {
     showToast('Pick or type an Update type first', 'toast-warn'); return;
+  }
+  // Operator 2026-09-27: a Close Order needs a reason (the server refuses too).
+  if (c.selections.closeDetails && !String(c.selections.closeDetails.reason || '').trim()) {
+    const other = c.selections.closeDetails.reasonCode === 'Other';
+    const bad = document.getElementById(other ? 'cnCD-reason' : 'cnCD-choice');
+    if (bad) { bad.setAttribute('aria-invalid', 'true'); try { bad.focus(); } catch (_) {} }
+    showToast(other ? 'Type the reason for closing the order' : 'Choose a reason for closing the order', 'toast-warn');
+    return;
   }
   // Operator 2026-08-27 (pilot): a dept email went out with a BLANK Patient
   // Name & TRX — user error a reminder would have caught. Warn, never block
@@ -7057,7 +7117,7 @@ function cnComposerSend_() {
       // → no nudge); guarded so it can never break the send result.
       try {
         var cd2 = c.selections && c.selections.closeDetails;
-        if (cd2 && cnIsSwitchingSuppliersReason_(cd2.reason)) {
+        if (cd2 && cnCloseIsSwitching_(cd2)) {
           cnMaybeWinbackNudge_(c.noteId, (sentNote && sentNote.caller) || '');
         }
       } catch (_) {}
@@ -7076,6 +7136,15 @@ function cnComposerSend_() {
 // feature self-gates on a manager-configured "win-back" email template existing,
 // so it stays silent until set up. Keeps PHI out: it only opens the (non-PHI)
 // external customer composer pre-filled with the win-back template body.
+/** Operator 2026-09-27 — with a reason LIST, the nudge keys on the preset
+ *  'Changing suppliers' exactly; any other preset never nudges; a typed
+ *  ("Other") or legacy free-text reason keeps the loose read below. */
+function cnCloseIsSwitching_(cd) {
+  if (!cd) return false;
+  const code = String(cd.reasonCode || '');
+  if (code && code !== 'Other') return code.toLowerCase() === 'changing suppliers';
+  return cnIsSwitchingSuppliersReason_(cd.reason);
+}
 function cnIsSwitchingSuppliersReason_(reason) {
   var r = String(reason || '').toLowerCase();
   if (!r) return false;

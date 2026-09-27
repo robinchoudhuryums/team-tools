@@ -714,6 +714,7 @@ function getCallNotesDepartments() {
       departments: Object.keys(getDepartmentEmails_()).concat(['Other']),
       suggestionsByDept: getUpdateSuggestions_(),
       defaultSuggestions: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT,
+      closeReasons: CONFIG.CALL_NOTES.CLOSE_ORDER_REASONS,
       stateTaxRates: getStateTaxRates_(),
       stateAbbrToName: CONFIG.CALL_NOTES.STATE_ABBR_TO_NAME,
       ccEmail: CONFIG.CALL_NOTES.CC_EMAIL,
@@ -2584,6 +2585,8 @@ function validateEmailSelections_(selections) {
   if (!selections.updateInfo) {
     return { error: 'Specify an Update type before sending.' };
   }
+  const closeErr = cnCloseReasonError_(selections);
+  if (closeErr) return { error: closeErr };
   // L-1 — bound the four subform detail objects (combined serialized size)
   // BEFORE anything is sent or stamped. Runs in previewCallNoteEmail too, so
   // the rep sees the rejection at Preview, not after a sent-but-unstampable
@@ -2602,6 +2605,15 @@ function validateEmailSelections_(selections) {
       ' characters combined) — shorten the free-text fields (e.g. special notes) and try again.' };
   }
   return { ok: true };
+}
+/** PURE (operator 2026-09-27) — a Close Order email needs a reason. '' when
+ *  the update type is not Close Order or a reason is present, else the refusal.
+ *  Runs inside validateEmailSelections_, so preview AND send both refuse. */
+function cnCloseReasonError_(selections) {
+  if (!selections || updateInfoToSubformKey_(selections.updateInfo) !== 'close') return '';
+  const cd = selections.closeDetails;
+  const reason = (cd && cd.reason != null) ? String(cd.reason).trim() : '';
+  return reason ? '' : 'A Close Order needs a reason — choose one (or pick Other and type it) before previewing or sending.';
 }
 function resolveEmailRecipients_(selections) {
   const map = getDepartmentEmails_();

@@ -360,6 +360,15 @@ const CONFIG = {
       'CSR':              ['General Inquiry', 'Status Check'],
       'Spanish':          ['Translator Needed'],
     },
+    // Close Order reasons (operator 2026-09-27): a Close Order email REQUIRES
+    // a reason — one of these, or "Other" with the reason typed. Shipped to the
+    // composer by getCallNotesDepartments; the server refuses a Close Order
+    // with no reason on preview AND send (cnCloseReasonError_). The win-back
+    // nudge keys on 'Changing suppliers' — keep that wording if you edit it.
+    CLOSE_ORDER_REASONS: [
+      'Changing suppliers', 'Dissatisfied with services', 'Due to cost',
+      'Patient deceased', 'Insurance change', 'No longer needed', 'Patient request',
+    ],
     // Always offered alongside dept-specific suggestions
     UPDATE_SUGGESTIONS_DEFAULT: [
       'Verified Shipping', 'Repeat Resupply', 'Close Order', 'OOP Order', 'Supervisor/Complaint',

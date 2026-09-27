@@ -357,6 +357,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       departments: ['Billing', 'Shipping', 'Resupply', 'Intake', 'Other'],
       suggestionsByDept: { Billing: ['Close Order', 'OOP Order'], Shipping: ['Verified Shipping'] },
       defaultSuggestions: ['Close Order', 'Verified Shipping', 'Repeat Resupply'],
+      closeReasons: ['Changing suppliers', 'Dissatisfied with services', 'Due to cost', 'Patient deceased', 'Insurance change', 'No longer needed', 'Patient request'],   // operator 2026-09-27
       flags: {}, emailTemplates: [], externalLinks: [], voiceInputEnabled: false,
       stateTaxRates: {}, stateAbbrToName: {}, deleteWindowSeconds: 300, autoCopyFormat: '',
     },

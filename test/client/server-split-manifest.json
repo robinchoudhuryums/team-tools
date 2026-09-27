@@ -1336,6 +1336,20 @@
     "submitQuizAttempt"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-27",
+   "why": "22post A-1: cnCloseReasonError_ (a Close Order needs a reason)",
+   "added": [
+    "cnCloseReasonError_"
+   ],
+   "removed": [],
+   "changed": [
+    "CONFIG",
+    "getCallNotesDepartments",
+    "validateEmailSelections_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -1748,7 +1762,7 @@
   "CONFIG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "004016b64ba38e63"
+   "sha": "30a9807336a402cf"
   },
   "CSRT": {
    "file": "00_config.js",
@@ -3970,6 +3984,11 @@
    "kind": "function",
    "sha": "211d405f4ee7f3fe"
   },
+  "cnCloseReasonError_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "b8c103417ad1ec24"
+  },
   "cnCountIntakeNotesResult_": {
    "file": "60_intake.js",
    "kind": "function",
@@ -4838,7 +4857,7 @@
   "getCallNotesDepartments": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "9d91d632f0d5041c"
+   "sha": "1da219a7f4f94233"
   },
   "getCallNotesEnrollment": {
    "file": "30_callnotes.js",
@@ -8223,7 +8242,7 @@
   "validateEmailSelections_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "fe918e8b88857256"
+   "sha": "378c4705dbdeb036"
   },
   "verifyDocSignature": {
    "file": "81_empdocs.js",

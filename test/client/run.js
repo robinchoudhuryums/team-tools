@@ -5446,9 +5446,12 @@ test('updateTimeOffStatus re-checks hasActiveTimeOffOnDate_ (own row excluded) o
     { filename: 'Code.js#sanitizeEmailSelections_' });
   vm.runInContext(extractRawFunction('Code.js', 'validateEmailSelections_'), sb,
     { filename: 'Code.js#validateEmailSelections_' });
+  // 22post A-1: a Close Order now needs a reason, so the base carries one.
+  ['updateInfoToSubformKey_', 'cnCloseReasonError_'].forEach((n) =>
+    vm.runInContext(extractRawFunction('Code.js', n), sb, { filename: 'Code.js#' + n }));
   const base = { departments: ['Billing'], individualEmail: '', updateInfo: 'Close Order',
     callbackNeeded: false, overwriteResolution: false,
-    shippingDetails: null, closeDetails: null, resupplyDetails: null, oopDetails: null };
+    shippingDetails: null, closeDetails: { reason: 'Due to cost', reasonCode: 'Due to cost' }, resupplyDetails: null, oopDetails: null };
   test('validateEmailSelections_ passes normal-sized subform details', () => {
     const s = Object.assign({}, base, { shippingDetails: { specialNote: 'left at the side door' } });
     assert.strictEqual(sb.validateEmailSelections_(s).ok, true);
@@ -28770,6 +28773,56 @@ test('C12: a History, per-rep or export range that reaches the archive window SA
   const cn = fs.readFileSync(path.join(DF_WEB, 'cn/script_callnotes.html'), 'utf8');
   assert.ok(/cnArchiveNoteHtml_\(CN_STATE\.historyArchivedBefore\)/.test(cn) && /cnArchiveNoteHtml_\(res\.archivedBefore\)/.test(cn), 'History and the per-rep view render it');
   assert.ok(/\.cn-archive-note \{/.test(cn), 'with a rule (the T6 ratchet)');
+});
+
+// 22post Batch A — operator testing notes (2026-09-27)
+console.log('\n22post Batch A — Close Order reason, Scratchpad, Dept Requests');
+const PA_WEB = path.join(__dirname, '../../web-app');
+
+test('A-1: a Close Order email needs a reason — the server refuses on preview AND send (driven)', () => {
+  const ctx = vm.createContext({ String });
+  ['updateInfoToSubformKey_', 'cnCloseReasonError_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  assert.ok(/needs a reason/.test(ctx.cnCloseReasonError_({ updateInfo: 'Close Order', closeDetails: { reason: '  ' } })), 'a blank reason is refused');
+  assert.ok(/needs a reason/.test(ctx.cnCloseReasonError_({ updateInfo: 'close order', closeDetails: null })), 'no details at all is refused');
+  assert.strictEqual(ctx.cnCloseReasonError_({ updateInfo: 'Close Order', closeDetails: { reason: 'Due to cost', reasonCode: 'Due to cost' } }), '');
+  assert.strictEqual(ctx.cnCloseReasonError_({ updateInfo: 'Verified Shipping', closeDetails: null }), '', 'only Close Order needs one');
+  const v = stripJsComments_(extractRawFunction('Code.js', 'validateEmailSelections_'));
+  assert.ok(/cnCloseReasonError_\(selections\)/.test(v), 'validateEmailSelections_ runs it');
+  ['previewCallNoteEmail', 'emailFromCallNote'].forEach((fn) =>
+    assert.ok(/validateEmailSelections_\(/.test(extractRawFunction('Code.js', fn)), fn + ' validates, so both refuse'));
+  const cfg = stripJsComments_(extractRawFunction('Code.js', 'getCallNotesDepartments'));
+  assert.ok(/closeReasons: CONFIG\.CALL_NOTES\.CLOSE_ORDER_REASONS/.test(cfg), 'the composer gets the server list (never mirrored)');
+  const conf = fs.readFileSync(path.join(PA_WEB, '00_config.js'), 'utf8');
+  ['Changing suppliers', 'Dissatisfied with services', 'Due to cost'].forEach((r) => assert.ok(conf.indexOf("'" + r + "'") >= 0, r + ' is a preset'));
+});
+
+test('A-1: the composer requires a reason — preset or typed "Other" — and the win-back nudge keys on the preset (driven client)', () => {
+  const s2 = buildSandbox([]);
+  s2.esc = (x) => String(x == null ? '' : x);
+  const from = loadFunction(s2, 'cn/script_callnotes.html', 'cnCloseDetailsFrom_');
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  assert.deepStrictEqual(J(from('Due to cost', 'ignored')), { reason: 'Due to cost', reasonCode: 'Due to cost' });
+  assert.deepStrictEqual(J(from('Other', '  moved away ')), { reason: 'moved away', reasonCode: 'Other' });
+  assert.deepStrictEqual(J(from('', '')), { reason: '', reasonCode: '' }, 'nothing chosen is an empty reason — the guard refuses it');
+  const choice = loadFunction(s2, 'cn/script_callnotes.html', 'cnCloseChoiceFor_');
+  const P = ['Changing suppliers', 'Due to cost'];
+  assert.strictEqual(choice({ reason: 'Due to cost' }, P), 'Due to cost', 'a saved preset reopens selected');
+  assert.strictEqual(choice({ reason: 'free text from before' }, P), 'Other', 'a legacy free-text reason reopens as Other');
+  assert.strictEqual(choice({}, P), '');
+  loadFunction(s2, 'cn/script_callnotes.html', 'cnIsSwitchingSuppliersReason_');
+  const sw = loadFunction(s2, 'cn/script_callnotes.html', 'cnCloseIsSwitching_');
+  assert.strictEqual(sw({ reason: 'Changing suppliers', reasonCode: 'Changing suppliers' }), true);
+  assert.strictEqual(sw({ reason: 'Due to cost', reasonCode: 'Due to cost' }), false, 'another preset never nudges');
+  assert.strictEqual(sw({ reason: 'going with a competitor', reasonCode: 'Other' }), true, 'typed text keeps the loose read');
+  // The preview guard refuses an empty reason before any RPC.
+  const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
+  const g = extractFnFrom(cn, 'cnComposerGoToPreview_');
+  const guard = g.indexOf('Choose a reason for closing the order'), chain = g.indexOf('cnComposerPreviewChain_()');
+  assert.ok(guard > 0 && guard < chain && /setAttribute\('aria-invalid', 'true'\)/.test(g), 'the guard marks the field and stops before the preview');
+  assert.ok(/cnCloseIsSwitching_\(cd2\)/.test(extractFnFrom(cn, 'cnComposerSend_')), 'the nudge reads the reason code');
+  assert.ok(/\.cn-req-mark \{/.test(cn), 'the required mark has a rule (the T6 ratchet)');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/closeReasons: \['Changing suppliers'/.test(mock), 'the fixture carries the list (INV-185)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
