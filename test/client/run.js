@@ -28789,8 +28789,11 @@ test('A-1: a Close Order email needs a reason — the server refuses on preview 
   assert.ok(/needs a reason/.test(ctx.cnCloseReasonError_({ updateInfo: 'close order', closeDetails: null })), 'no details at all is refused');
   assert.strictEqual(ctx.cnCloseReasonError_({ updateInfo: 'Close Order', closeDetails: { reason: 'Due to cost', reasonCode: 'Due to cost' } }), '');
   assert.strictEqual(ctx.cnCloseReasonError_({ updateInfo: 'Verified Shipping', closeDetails: null }), '', 'only Close Order needs one');
-  const v = stripJsComments_(extractRawFunction('Code.js', 'validateEmailSelections_'));
-  assert.ok(/cnCloseReasonError_\(selections\)/.test(v), 'validateEmailSelections_ runs it');
+  vm.runInContext('var CN_EMAIL_DETAILS_MAX_CHARS = 16000;', ctx);
+  ['sanitizeEmailSelections_', 'validateEmailSelections_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const sel = (cd) => ctx.sanitizeEmailSelections_({ departments: ['Billing'], updateInfo: 'Close Order', closeDetails: cd });
+  assert.ok(/needs a reason/.test(ctx.validateEmailSelections_(sel({ reason: '' })).error || ''), 'the validator REFUSES a blank reason (driven)');
+  assert.strictEqual(ctx.validateEmailSelections_(sel({ reason: 'Due to cost', reasonCode: 'Due to cost' })).ok, true, 'and passes a real one');
   ['previewCallNoteEmail', 'emailFromCallNote'].forEach((fn) =>
     assert.ok(/validateEmailSelections_\(/.test(extractRawFunction('Code.js', fn)), fn + ' validates, so both refuse'));
   const cfg = stripJsComments_(extractRawFunction('Code.js', 'getCallNotesDepartments'));
@@ -28816,8 +28819,27 @@ test('A-1: the composer requires a reason — preset or typed "Other" — and th
   const sw = loadFunction(s2, 'cn/script_callnotes.html', 'cnCloseIsSwitching_');
   assert.strictEqual(sw({ reason: 'Changing suppliers', reasonCode: 'Changing suppliers' }), true);
   assert.strictEqual(sw({ reason: 'Due to cost', reasonCode: 'Due to cost' }), false, 'another preset never nudges');
+  assert.strictEqual(sw({ reason: 'Moving to another provider', reasonCode: 'Moving to another provider' }), false,
+    'a preset is read by its code — even one whose words the loose free-text read would match');
   assert.strictEqual(sw({ reason: 'going with a competitor', reasonCode: 'Other' }), true, 'typed text keeps the loose read');
-  // The preview guard refuses an empty reason before any RPC.
+  // The preview guard refuses an empty reason before any preview (driven).
+  const toasts = [], marked = []; let chained = 0;
+  const el = (id) => ({ id, setAttribute: (k, v) => marked.push(id + ':' + k + '=' + v), focus() {}, textContent: 'Ana · TRX 1' });
+  s2.CN_STATE = { composer: { selections: { departments: ['Billing'], updateInfo: 'Close Order', closeDetails: { reason: '', reasonCode: '' } } } };
+  s2.cnGatherComposerSelections_ = () => {};
+  s2.showToast = (m) => toasts.push(m);
+  s2.cnComposerPreviewChain_ = () => { chained++; };
+  s2.document.getElementById = (id) => el(id);
+  const go = loadFunction(s2, 'cn/script_callnotes.html', 'cnComposerGoToPreview_');
+  go();
+  assert.strictEqual(chained, 0, 'no preview without a reason');
+  assert.ok(/Choose a reason/.test(toasts.join('|')) && marked.indexOf('cnCD-choice:aria-invalid=true') >= 0, 'the dropdown is marked and the rep told');
+  s2.CN_STATE.composer.selections.closeDetails = { reason: '', reasonCode: 'Other' };
+  go();
+  assert.ok(marked.indexOf('cnCD-reason:aria-invalid=true') >= 0 && chained === 0, '"Other" with nothing typed marks the text box');
+  s2.CN_STATE.composer.selections.closeDetails = { reason: 'Due to cost', reasonCode: 'Due to cost' };
+  go();
+  assert.strictEqual(chained, 1, 'a reason lets the preview through');
   const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
   const g = extractFnFrom(cn, 'cnComposerGoToPreview_');
   const guard = g.indexOf('Choose a reason for closing the order'), chain = g.indexOf('cnComposerPreviewChain_()');
