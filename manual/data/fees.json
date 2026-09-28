@@ -1,0 +1,198 @@
+[
+  {
+    "id": "bed-fully-electric-upgrade",
+    "label": "Fully-Electric hospital bed upgrade",
+    "equipment_id": "hospital-bed-fully-electric",
+    "intake_amount": 550,
+    "field_ops_amount": 850,
+    "source_sheet": "Billing & Insurance v2.0 §16 (Sept 2026)",
+    "source_date": "2026-09-14",
+    "waiver_rule_ref": "§1-16",
+    "flags": [],
+    "publish": "both columns",
+    "waiver": {
+      "qmb_only": "charged",
+      "rule_a": "charged",
+      "rule_b": "waived",
+      "rule_c": "waived"
+    }
+  },
+  {
+    "id": "bed-hi-lo-upgrade",
+    "label": "Hi-Lo hospital bed upgrade",
+    "equipment_id": "hospital-bed-hi-lo",
+    "intake_amount": 580,
+    "field_ops_amount": 880,
+    "source_sheet": "Billing & Insurance v2.0 §16 (Sept 2026)",
+    "source_date": "2026-09-14",
+    "waiver_rule_ref": "§1-16",
+    "flags": [],
+    "publish": "both columns",
+    "waiver": {
+      "qmb_only": "charged",
+      "rule_a": "charged",
+      "rule_b": "waived",
+      "rule_c": "waived"
+    }
+  },
+  {
+    "id": "rollator-standard-upgrade",
+    "label": "Basic Steel Rollator upgrade",
+    "equipment_id": "rollator-basic-steel",
+    "intake_amount": 55,
+    "field_ops_amount": 85,
+    "source_sheet": "Billing & Insurance v2.0 §16 (Sept 2026)",
+    "source_date": "2026-09-14",
+    "waiver_rule_ref": "§1-16",
+    "flags": [],
+    "publish": "both columns",
+    "waiver": {
+      "qmb_only": "waived",
+      "rule_a": "waived",
+      "rule_b": "waived",
+      "rule_c": "charged"
+    }
+  },
+  {
+    "id": "rollator-hd-upgrade",
+    "label": "Heavy Duty Steel Rollator upgrade",
+    "equipment_id": "rollator-heavy-duty-steel",
+    "intake_amount": 97,
+    "field_ops_amount": 127,
+    "source_sheet": "Billing & Insurance v2.0 §16 (Sept 2026)",
+    "source_date": "2026-09-14",
+    "waiver_rule_ref": "§1-16",
+    "flags": [],
+    "publish": "both columns",
+    "waiver": {
+      "qmb_only": "charged",
+      "rule_a": "waived",
+      "rule_b": "waived",
+      "rule_c": "charged"
+    }
+  },
+  {
+    "id": "lift-battery-upgrade",
+    "label": "Medline Battery-Powered Lift upgrade",
+    "equipment_id": "lift-medline-battery",
+    "intake_amount": 1207,
+    "field_ops_amount": 1357,
+    "source_sheet": "Billing & Insurance v2.0 §16 (Sept 2026)",
+    "source_date": "2026-09-14",
+    "waiver_rule_ref": "§1-16",
+    "flags": [],
+    "publish": "both columns",
+    "waiver": {
+      "qmb_only": "charged",
+      "rule_a": "charged",
+      "rule_b": "charged",
+      "rule_c": "charged"
+    }
+  },
+  {
+    "id": "lift-hd-battery-upgrade",
+    "label": "Heavy Duty Battery Lift upgrade",
+    "equipment_id": "lift-heavy-duty-mds700el",
+    "intake_amount": 2495,
+    "field_ops_amount": 2645,
+    "source_sheet": "Billing & Insurance v2.0 §16 (Sept 2026)",
+    "source_date": "2026-09-14",
+    "waiver_rule_ref": "§1-16",
+    "flags": [],
+    "publish": "both columns",
+    "waiver": {
+      "qmb_only": "charged",
+      "rule_a": "charged",
+      "rule_b": "charged",
+      "rule_c": "charged"
+    }
+  },
+  {
+    "id": "knee-walker-oop",
+    "label": "Knee Walker out-of-pocket",
+    "equipment_id": "knee-walker",
+    "type": "oop",
+    "amount": 200,
+    "source_sheet": "Item Master",
+    "source_date": null,
+    "flags": [
+      "verify:V13"
+    ]
+  },
+  {
+    "id": "o2-conserver-oop",
+    "label": "Sunset CHAD Oxygen Conserver out-of-pocket",
+    "equipment_id": "o2-conserver-sunset-chad",
+    "type": "oop",
+    "amount": 320,
+    "source_sheet": "Item Master",
+    "source_date": null
+  },
+  {
+    "id": "pov-oop-range",
+    "label": "POV out-of-pocket range",
+    "equipment_id": null,
+    "type": "oop-range",
+    "amount_low": 1200,
+    "amount_high": 1900,
+    "source_sheet": "PW p.18",
+    "source_date": null
+  },
+  {
+    "id": "waiver-rule-a",
+    "type": "rule",
+    "label": "Rule A",
+    "waives": [
+      "rollator-standard-upgrade",
+      "rollator-hd-upgrade"
+    ],
+    "trigger": "Any active Medicaid plan, any state, primary or secondary — regardless of whether UMS is enrolled in that state.",
+    "exception": "QMB-only (QMB status without a full Medicaid plan) receives the standard rollator waiver only; the heavy-duty rollator fee is still charged.",
+    "authority": "Billing & Insurance v2.0 §16"
+  },
+  {
+    "id": "waiver-rule-b",
+    "type": "rule",
+    "label": "Rule B",
+    "waives": [
+      "bed-fully-electric-upgrade",
+      "bed-hi-lo-upgrade"
+    ],
+    "trigger": "Full Medicaid or a Medicaid MCO in a state where UMS is enrolled. Medicaid is billed as primary for the bed.",
+    "exception": "Medicaid from a non-enrolled state and QMB-only status do not qualify. Rule B includes Rule A.",
+    "authority": "Billing & Insurance v2.0 §16",
+    "includes": [
+      "waiver-rule-a"
+    ]
+  },
+  {
+    "id": "waiver-rule-c",
+    "type": "rule",
+    "label": "Rule C",
+    "waives": [
+      "bed-fully-electric-upgrade",
+      "bed-hi-lo-upgrade"
+    ],
+    "trigger": "BCBS commercial insurance is the patient's primary.",
+    "exception": "Rule C does not waive the rollator fees.",
+    "authority": "Billing & Insurance v2.0 §16"
+  },
+  {
+    "id": "waiver-never",
+    "type": "rule",
+    "label": "Never waived",
+    "waives": [],
+    "trigger": "Patient lift upgrade fees are never waived under any rule.",
+    "authority": "Billing & Insurance v2.0 §16"
+  },
+  {
+    "id": "waiver-qmb-only",
+    "type": "rule-partial",
+    "label": "QMB only",
+    "waives": [
+      "rollator-standard-upgrade"
+    ],
+    "trigger": "QMB status without a full Medicaid plan.",
+    "authority": "Billing & Insurance v2.0 §16"
+  }
+]

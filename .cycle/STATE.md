@@ -10,7 +10,7 @@ Scope: operator notes — Call Notes (Close Order, Scratchpad), Dashboard (live
 view, widgets), Dept Requests (reply-resolution, sort/filter, layout), Spanish
 Inbox (assign notifications)
 Test Command: manual
-Estimates: Batch A (1 Close reason · 2a Scratchpad fixes · 6 DR sort/filter · 7 DR manager layout): M (~6 h) — 1 S 1.5h · 2a S 1.5h · 6 S 1.5h · 7 S 1.5h — written BEFORE the first edit | Batch A Actual: ~3 h · Batch B (2b floating Scratchpad panel · 2c formatting toolbar): M–L (~7 h) — 2b M 3h · 2c M–L 4h — written BEFORE the first edit | Batch B Actual: ~2.5 h · Batch C (8 Spanish assign → email + Needs-you · 3 presence on the live view): M (~6 h) — 8 M 3.5h · 3 M 2.5h — written BEFORE the first edit | Batch C Actual: ~3 h · Batch D (Dept Request reply = resolution): L (~8 h) — D1 Reply-To + thread id S 1.5h · D2 hourly reply scan + the four rules M 3.5h · D3 Responded / Mark unresolved server + UI M 2.5h · schema + fixtures S 0.5h — written BEFORE the first edit | Batch D Actual: ~3.5 h · Batch E (Dashboard widgets): L (~8 h) — E1 widget registry + layout resolver S–M 2.5h · E2 Customize panel (show/hide, reorder, width, reset) M 3h · E3 manager team default (server + property) S 1.5h · fixtures + visual S 1h — written BEFORE the first edit | Batch E Actual: ~3.5 h
+Estimates: Batch A (1 Close reason · 2a Scratchpad fixes · 6 DR sort/filter · 7 DR manager layout): M (~6 h) — 1 S 1.5h · 2a S 1.5h · 6 S 1.5h · 7 S 1.5h — written BEFORE the first edit | Batch A Actual: ~3 h · Batch B (2b floating Scratchpad panel · 2c formatting toolbar): M–L (~7 h) — 2b M 3h · 2c M–L 4h — written BEFORE the first edit | Batch B Actual: ~2.5 h · Batch C (8 Spanish assign → email + Needs-you · 3 presence on the live view): M (~6 h) — 8 M 3.5h · 3 M 2.5h — written BEFORE the first edit | Batch C Actual: ~3 h · Batch D (Dept Request reply = resolution): L (~8 h) — D1 Reply-To + thread id S 1.5h · D2 hourly reply scan + the four rules M 3.5h · D3 Responded / Mark unresolved server + UI M 2.5h · schema + fixtures S 0.5h — written BEFORE the first edit | Batch D Actual: ~3.5 h · Batch E (Dashboard widgets): L (~8 h) — E1 widget registry + layout resolver S–M 2.5h · E2 Customize panel (show/hide, reorder, width, reset) M 3h · E3 manager team default (server + property) S 1.5h · fixtures + visual S 1h — written BEFORE the first edit | Batch E Actual: ~3.5 h · Batch M (the CSR Procedures Manual into Reference): M0 add the source S (~1 h) · M1 drafts in Reference L (~13 h) — exporter 5h · renderer (nested lists, block callouts) 3h · importer + ledger + SortOrder/sort/review-stagger + bulk publish 4h · tests 1h · M2 links/previews/search/read-as-one L (~8 h) · M3 diagrams + images M–L (~7 h) · M4 priorities TBD — written BEFORE the first edit
 Subsystem cycles since last Seams audit: 2 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25). The cadence is every 4.
 Updated: 2026-09-28
 
@@ -92,6 +92,35 @@ Updated: 2026-09-28
   the BASE default (today's layout). A layout that would hide every widget is
   refused, and an empty or unreadable saved layout falls back to the base
   default, so the Dashboard is never empty.
+
+## Batch M — the CSR Procedures Manual v3.0 into Reference (planned 2026-09-28)
+Handoff from the operator's manual session; `manual/` lives in this repo (build-only).
+Facts established: 145 level-2 sections in Parts 0–10, plus Appendix A (glossary,
+122 terms, no aliases, 3 classes), Appendix B (2 sections), Appendix C (11 cards) =
+**159 articles**. KB_BODY_MAX is 49,000; §0-10 is 74,569 raw only because of 31
+inline base64 icons (text 10,032). The exporter reads the ASSEMBLED manual
+(`build.py` output — placeholders expanded, scaffolding stripped); md2model loses
+xref targets and figures. The build needs Python 3.12 (container default 3.11);
+the HTML step also needs markdown/bs4/playwright/Pillow and Node `docx`.
+- **M0 (S):** add `manual/` (done on this branch), Subsystems entry.
+- **M1 (L):** `manual/export_reference.py` → articles.json + image manifest in a
+  Drive bundle (ids `man-5-9`, cards `man-c-5`, glossary one article; xrefs →
+  `kb:man-5-9#5.9.2`, verified; diagrams/images as references; icons lifted out;
+  fail over 49,000). Renderer: nested lists + ordered-list start, blockquotes that
+  hold paragraphs/tables/lists (rendered recursively through the same escaping),
+  callouts styled by label. Importer (admin, 70_kb.js): reads the bundle from
+  Drive, upserts drafts by Id, `ManualImport` ledger (Id, SourceHash, BodyHash,
+  ImportedAt) — idempotent, skips + reports in-app edits; staggers ReviewedAt so
+  review dates spread across the window; bulk "publish manual articles". Fixes:
+  the editor drops SortOrder (every save writes 0); departments sort naturally.
+- **M2 (L):** `kb:` links open in place + scroll to the numbered heading; hover
+  previews (kbTetherPopover_); search: `5.9`/`5-9`/`§5-9`, plurals, a cached index
+  (every query reads the whole sheet today); the "Read as one" part view.
+- **M3 (M–L):** allowlisted, build-generated diagram partial (15 SVGs, CSS vars →
+  design tokens incl. dark, 63 section links → kb:); importer unpacks ~170 images
+  (icons, figures, equipment thumbnails) into the KB Images folder, rewrites refs.
+- **M4:** HCPCS ↔ payor/pricing, search misses → content requests, What's new from
+  changelog.json, knowledge checks, caller router in the drawer — priorities TBD.
 
 ## In progress (facts to carry forward — NOT judgments)
 - ALL FIVE batches A–E DONE and pushed (blocks `22post-{A,B,C,D,E}-broad-implement.md`); A–C merged (PR #274), D + E on the branch; none deployed. Next: /sync-docs for D + E, a PR, then deploy.
@@ -178,10 +207,15 @@ Carried from cycle 22 (full list in its HISTORY block, "Open follow-on items"):
   members may mark a request unresolved.
 - **DR defaults (operator, 2026-09-27):** sort Newest, open first; managers'
   summary cards team-wide.
+- **Manual (operator, 2026-09-28):** departments zero-padded ("Part 05 — Field
+  Operations"); the old guides are unpublished once the manual is live and vetted;
+  staff contacts are fine in git and in Reference; manual articles stay in the review
+  queue with dates spread out; import everything (appendices, glossary, cards).
+  Nested lists + block callouts move into M1 so vetted drafts render correctly.
 - **Spanish notify (operator, 2026-09-27):** BOTH email and in-app; "Pending
   Tasks" means the Dashboard's Needs-you list.
 
 ## Where I left off
-All five 22post batches (A–E) are committed and pushed (A–C merged in PR #274;
-D + E on the branch), none deployed. Docs are synced (PR from this branch);
-next the deploy of A–E; after that the next /audit or /broad-scan opens cycle 23.
+22post A–E are merged (PRs #274, #275), not deployed. Batch M is planned (above);
+M0 is committed on the branch. Next: `/broad-implement Batch M1` — the exporter,
+the renderer fixes and the importer.

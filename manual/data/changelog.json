@@ -1,0 +1,119 @@
+[
+  {
+    "date": "2026-01-12",
+    "part": "p4",
+    "section": "§4-10.1",
+    "summary": "POVs are ineligible for ROHO cushions.",
+    "authority": "Power Mobility",
+    "retraining": false,
+    "provenance": "PW p.3; body at PW p.18"
+  },
+  {
+    "date": "2025-12-09",
+    "part": "p2",
+    "section": "§2-10",
+    "summary": "For rollators, an active Medicaid plan (primary or secondary) in any state waives the $55 upgrade fee.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "PW/MM p.3; conflicts — see V1"
+  },
+  {
+    "date": "2025-10-28",
+    "part": "p3",
+    "section": "§3-1",
+    "summary": "Complex respiratory service requests route through the Service Q.",
+    "authority": "Respiratory & Resupply",
+    "retraining": false,
+    "provenance": "RR p.3; body at RR p.18"
+  },
+  {
+    "date": "2025-06-05",
+    "part": "p3",
+    "section": "§3-10.1",
+    "summary": "Verify unlocated ventilator referrals with the Respiratory & Resupply Manager before responding to the MDO.",
+    "authority": "Respiratory & Resupply",
+    "retraining": false,
+    "provenance": "RR p.3; body at RR p.19"
+  },
+  {
+    "date": "2025-02-18",
+    "part": "p9",
+    "section": "§9-6",
+    "authority": "Sales",
+    "retraining": true,
+    "summary": "If the PPD date on an order is over 1 year old, a new order is created via Sales. Under 1 year, the Power team can re-open and resume the existing order.",
+    "provenance": "Sales guide Recent Updates"
+  },
+  {
+    "date": "2025-02-06",
+    "part": "p3",
+    "section": "§3-2",
+    "summary": "Respiratory machines cannot be picked up without a discontinue prescription from the MDO.",
+    "authority": "Respiratory & Resupply",
+    "retraining": true,
+    "provenance": "RR p.3; body at RR p.19"
+  },
+  {
+    "date": "2024-12-13",
+    "part": "p2",
+    "section": "§2-10",
+    "summary": "No upgrade fee charged when Medicaid or BCBS commercial is the primary insurance.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "MM p.3; conflicts — see V1"
+  },
+  {
+    "date": "2024-12-05",
+    "part": "p4",
+    "section": "§4-10.1",
+    "summary": "The Ultra X replaced the Go-Go Traveller as the standard K0800 POV.",
+    "authority": "Power Mobility",
+    "retraining": false,
+    "provenance": "PW p.3; body at PW p.18"
+  },
+  {
+    "date": "2024-10-02",
+    "part": "p3",
+    "section": "§3-8.2",
+    "summary": "No new orders for external or Purewick catheters; intermittent only. Existing patients may continue as an exception.",
+    "authority": "Respiratory & Resupply",
+    "retraining": true,
+    "provenance": "RR p.3; body at RR p.17"
+  },
+  {
+    "date": "2024-09-13",
+    "part": "p4",
+    "section": "§4-3.1",
+    "summary": "After the PPD interview, send the AOR consent form link to the patient.",
+    "authority": "Power Mobility",
+    "retraining": true,
+    "provenance": "PW p.3 — orphaned until v3.0; now written into the body"
+  },
+  {
+    "date": "2024-08-14",
+    "part": "p9",
+    "section": "§9-5",
+    "authority": "Sales",
+    "retraining": false,
+    "summary": "When transferring a call from a lead with no order yet created, post the standard notation on the Lead Resolutions page.",
+    "provenance": "Sales guide Recent Updates"
+  },
+  {
+    "date": "2024-06-25",
+    "part": "p2",
+    "section": "§2-2.1",
+    "summary": "Walkers are no longer shipped out of state.",
+    "authority": "Operations",
+    "retraining": false,
+    "provenance": "MM p.3; body at MM p.14"
+  },
+  {
+    "date": "2024-05-17",
+    "part": "p4",
+    "section": "§4-6",
+    "summary": "ATP drive-by handling.",
+    "authority": "Power Mobility",
+    "retraining": false,
+    "provenance": "PW p.3 — orphaned until v3.0; now written into the body"
+  }
+]

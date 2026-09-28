@@ -1,0 +1,142 @@
+[
+  {
+    "file": "image18.jpg",
+    "record": "cane-aluminum-quad",
+    "description": "Aluminum quad cane",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image57.png",
+    "record": "wc-acc-anti-tipper",
+    "description": "Anti-tippers, pair",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image58.png",
+    "record": "wc-acc-oxygen-cylinder-carrier",
+    "description": "Oxygen cylinder carrier bag",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image1.jpg",
+    "record": "knee-walker",
+    "description": "Knee walker",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image2.png",
+    "record": null,
+    "description": "Pair of quick-release 24\" rear wheels",
+    "status": "ambiguous",
+    "note": "No matching record. Likely illustrates the Hybrid 2 Poly-Fly wheel removal."
+  },
+  {
+    "file": "image3.png",
+    "record": "wc-acc-detachable-adjustable-armrest",
+    "description": "Detachable/adjustable armrests, pair (Medline)",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image4.jpg",
+    "record": "nebulizer-aeromist",
+    "description": "Nebulizer compressor (Medline)",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image5.jpg",
+    "record": null,
+    "description": "Aryse knee brace — hinged, open patella, wrap-around",
+    "status": "ambiguous",
+    "note": "Ambiguous: four Aryse knee braces in the catalog."
+  },
+  {
+    "file": "image6.jpg",
+    "record": "raised-toilet-seat",
+    "description": "Raised toilet seat",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image7.jpg",
+    "record": "shower-chair-aluminum",
+    "description": "Shower chair with back",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image8.png",
+    "record": "bed-rail-half",
+    "description": "Half-length bed rails on bed frame",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image9.png",
+    "record": "bed-rail-full",
+    "description": "Semi-electric bed with full-length rails and mattress",
+    "status": "mapped",
+    "note": "Also serviceable as the bed photo — shows frame, rails and mattress together."
+  },
+  {
+    "file": "image10.jpg",
+    "record": null,
+    "description": "Aryse knee immobilizer — long, tri-panel",
+    "status": "ambiguous",
+    "note": "Ambiguous: four Aryse knee braces in the catalog."
+  },
+  {
+    "file": "image11.jpg",
+    "record": "lift-medline-hydraulic",
+    "description": "Hydraulic patient lift",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image12.jpg",
+    "record": "tub-transfer-bench",
+    "description": "Tub transfer bench",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image13.png",
+    "record": "wc-acc-pelvic-safety-belt",
+    "description": "Pelvic safety belt (Drive)",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image14.jpg",
+    "record": null,
+    "description": "Manual wheelchair (Medline, black)",
+    "status": "ambiguous",
+    "note": "Ambiguous: six manual wheelchairs in the catalog."
+  },
+  {
+    "file": "image15.jpg",
+    "record": "__diagram-standard-order",
+    "description": "Standard Order Process diagram",
+    "status": "diagram",
+    "note": "CONTAINS A NAMED INDIVIDUAL — see below."
+  },
+  {
+    "file": "image16.png",
+    "record": "wc-acc-permobil-roho-cushion",
+    "description": "ROHO cushion",
+    "status": "mapped",
+    "note": "Only 300x300 — too small for print."
+  },
+  {
+    "file": "image17.jpg",
+    "record": "walker-platform-armrest",
+    "description": "Walker platform armrest",
+    "status": "mapped",
+    "note": null
+  }
+]

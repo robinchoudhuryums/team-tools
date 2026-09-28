@@ -97,6 +97,10 @@ Client (QA views):
   web-app/qa/script_qa.html
 Client (public forms):
   web-app/form_public.html
+Manual source (build-only — never deployed; clasp pushes web-app/ only):
+  manual/ (the CSR Procedures Manual v3.0: src/*.md, data/*.json, diagrams/*.svg and the Python/Node build — see manual/README.md;
+  `./make_all.sh` builds the HTML manual, Word extracts and review packets into $MANUAL_OUT, default manual/dist, git-ignored;
+  from Batch M it also exports Reference's articles — the repo copy is the only one to edit)
 Test Suite:
   web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js, test/visual/build.mjs, test/visual/mock.js, test/visual/shoot.mjs, test/visual/a11y-names.mjs, test/visual/print-check.mjs, test/visual/a13-measure.mjs, test/visual/map-check.mjs, test/visual/settings-check.mjs, test/visual/fold-measure.mjs, test/visual/package.json, .github/workflows/client-tests.yml, scripts/cycle-context.mjs, scripts/counts.mjs, scripts/bite.sh, scripts/split-manifest.mjs, scripts/lint-server.mjs, test/client/server-split-manifest.json, package.json
 

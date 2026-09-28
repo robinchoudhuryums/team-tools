@@ -1,0 +1,142 @@
+[
+  {
+    "file": "image38.jpg",
+    "record": "trapeze-bar",
+    "description": "Trapeze bar, disassembled with mounting bracket",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image19.png",
+    "record": null,
+    "description": "Black padded vertical pouch with shoulder strap and lower loops",
+    "status": "ambiguous",
+    "note": "Best guess: a second oxygen cylinder carrier style (E-cylinder vs M6). Not confident."
+  },
+  {
+    "file": "image20.jpg",
+    "record": "mattress-low-air-loss",
+    "description": "Low air loss mattress, cover partly open showing air cells",
+    "status": "mapped",
+    "note": "Better than the existing LALM image — recommend this as primary."
+  },
+  {
+    "file": "image21.jpg",
+    "record": "rollator-basic-steel",
+    "description": "Basic rollator, light blue",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image22.jpg",
+    "record": "mattress-gel-overlay",
+    "description": "Medline Gel Overlay mattress on a bed",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image23.jpg",
+    "record": "rollator-basic-steel",
+    "description": "Basic rollator, blue (Medline)",
+    "status": "mapped",
+    "note": "Second colour variant."
+  },
+  {
+    "file": "image24.jpg",
+    "record": null,
+    "description": "Extra-wide bariatric wheelchair, chrome frame, elevating legrests",
+    "status": "ambiguous",
+    "note": "Ambiguous: Guardian Extra Wide (K0007) or Shuttle Extra-Wide Bariatric (K0007)."
+  },
+  {
+    "file": "image25.jpg",
+    "record": null,
+    "description": "Medline wheelchair, black, elevating legrests",
+    "status": "ambiguous",
+    "note": "Ambiguous: K3 Guardian or K4 High-Strength."
+  },
+  {
+    "file": "image26.jpg",
+    "record": "walker-side-step-hemi",
+    "description": "Side step hemi walker (Drive)",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image27.png",
+    "record": "wc-acc-back-cushion-standard",
+    "description": "Back cushion, front and rear views",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image28.jpg",
+    "record": null,
+    "description": "Bariatric wheelchair, black vinyl upholstery, extra wide",
+    "status": "ambiguous",
+    "note": "Ambiguous: the other of Guardian Extra Wide / Shuttle Extra-Wide."
+  },
+  {
+    "file": "image29.png",
+    "record": "medline-hybrid-2-polyfly",
+    "description": "Poly-Fly conversion kit — two 24\" wheels, two casters, hardware",
+    "status": "mapped",
+    "note": "Resolves batch 1 image2.png. Only 265x265 — too small for print."
+  },
+  {
+    "file": "image30.jpg",
+    "record": null,
+    "description": "Aryse knee brace, hinged wrap-around, worn",
+    "status": "ambiguous",
+    "note": "Third of four Aryse knee braces."
+  },
+  {
+    "file": "image31.jpg",
+    "record": "rollator-heavy-duty-steel",
+    "description": "Heavy duty rollator, burgundy, 8\" wheels",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image32.png",
+    "record": "wc-acc-heel-loops",
+    "description": "Heel loops in use on footplates",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image33.jpg",
+    "record": "lift-medline-battery",
+    "description": "Battery-powered patient lift (Medline)",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image34.jpg",
+    "record": "medline-hybrid-2-polyfly",
+    "description": "Medline Hybrid 2 / Poly-Fly wheelchair, blue",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image35.jpg",
+    "record": null,
+    "description": "Aryse back brace, worn, posture/TLSO style",
+    "status": "ambiguous",
+    "note": "Ambiguous: three Aryse back braces in the catalog."
+  },
+  {
+    "file": "image36.jpg",
+    "record": "sling-full-body",
+    "description": "Full body mesh sling",
+    "status": "mapped",
+    "note": null
+  },
+  {
+    "file": "image37.jpg",
+    "record": "commode-3in1-steel",
+    "description": "3-in-1 commode chair",
+    "status": "mapped",
+    "note": null
+  }
+]

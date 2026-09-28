@@ -1,0 +1,496 @@
+{
+  "generated": "2026-09-14",
+  "resolution_note": "Source page renders are 952x1260 (~115 DPI). Cropping from them yields 180-450px assets, below print quality. Originals must be exported from the Google Docs.",
+  "export_method": "In Google Docs: File > Download > Web Page (.html, zipped). The resulting archive contains an images/ folder with every embedded image at its original resolution. Downloading as .docx and unzipping word/media/ works equally well.",
+  "assets": [
+    {
+      "id": "flow-standard-order",
+      "kind": "diagram",
+      "source_doc": "MM",
+      "source_page": 6,
+      "target": "diagrams/standard-order-process.png",
+      "equipment_ids": [],
+      "status": "source-identified",
+      "export_required": true,
+      "note": "Six-step process flow. IDENTICAL graphic appears at RR p.4 — becomes a Part 0 asset.",
+      "unknown_equipment_ids": null
+    },
+    {
+      "id": "flow-standard-order-dup",
+      "kind": "diagram",
+      "source_doc": "RR",
+      "source_page": 4,
+      "target": "diagrams/standard-order-process.png",
+      "equipment_ids": [],
+      "status": "source-identified",
+      "export_required": true,
+      "note": "Duplicate of MM p.6. Confirms D4 visually. Only one copy is kept.",
+      "unknown_equipment_ids": null
+    },
+    {
+      "id": "flow-power-process",
+      "kind": "diagram",
+      "source_doc": "PW",
+      "source_page": 4,
+      "target": "diagrams/power-process-flow.png",
+      "equipment_ids": [],
+      "status": "source-identified",
+      "export_required": true,
+      "note": "Power-specific flow: Intake & Education → Qualification → Verification & Authorization → Delivery. Confirms C15.",
+      "unknown_equipment_ids": null
+    },
+    {
+      "id": "bed-semi-electric",
+      "kind": "product",
+      "source_doc": "MM",
+      "source_page": 7,
+      "target": "equipment/medline-mdr107002e.png",
+      "equipment_ids": [
+        "medline-mdr107002e"
+      ],
+      "status": "source-identified",
+      "export_required": true,
+      "note": null,
+      "unknown_equipment_ids": null
+    },
+    {
+      "id": "lalm",
+      "kind": "product",
+      "source_doc": "MM",
+      "source_page": 9,
+      "target": "equipment/mattress-low-air-loss.png",
+      "equipment_ids": [
+        "mattress-low-air-loss"
+      ],
+      "status": "source-identified",
+      "export_required": true,
+      "note": "Shown with control unit.",
+      "unknown_equipment_ids": null
+    },
+    {
+      "id": "lift-chair",
+      "kind": "product",
+      "source_doc": "MM",
+      "source_page": 18,
+      "target": "equipment/lift-chair.png",
+      "equipment_ids": [
+        "lift-chair"
+      ],
+      "status": "source-identified",
+      "export_required": true,
+      "note": null,
+      "unknown_equipment_ids": null
+    },
+    {
+      "id": "nebulizer",
+      "kind": "product",
+      "source_doc": "MM",
+      "source_page": 18,
+      "target": "equipment/nebulizer-aeromist.png",
+      "equipment_ids": [
+        "nebulizer-aeromist"
+      ],
+      "status": "source-identified",
+      "export_required": true,
+      "note": "Moves to Part 4 with the record if V7 confirms.",
+      "unknown_equipment_ids": null
+    },
+    {
+      "id": "pwc-jazzy-elite-es",
+      "kind": "product",
+      "source_doc": "PW",
+      "source_page": 22,
+      "target": "equipment/pwc-jazzy-elite-es-2sc.png",
+      "equipment_ids": [
+        "pwc-jazzy-elite-es-2sc"
+      ],
+      "status": "source-identified",
+      "export_required": true,
+      "note": "Manufacturer marketing render on red field. See S5.",
+      "unknown_equipment_ids": null
+    },
+    {
+      "id": "pwc-jazzy-elite-hd",
+      "kind": "product",
+      "source_doc": "PW",
+      "source_page": 23,
+      "target": "equipment/pwc-jazzy-elite-hd-2hdc.png",
+      "equipment_ids": [
+        "pwc-jazzy-elite-hd-2hdc"
+      ],
+      "status": "source-identified",
+      "export_required": true,
+      "note": "Manufacturer marketing render on red field. See S5.",
+      "unknown_equipment_ids": null
+    },
+    {
+      "id": "pwc-alltrack-hd3",
+      "kind": "product",
+      "source_doc": "PW",
+      "source_page": 29,
+      "target": "equipment/pwc-amysystems-alltrack-hd3.png",
+      "equipment_ids": [
+        "pwc-amysystems-alltrack-hd3"
+      ],
+      "status": "source-identified",
+      "export_required": true,
+      "note": "Clean product shot — matches the preferred standard.",
+      "unknown_equipment_ids": null
+    },
+    {
+      "id": "suction-su100dc",
+      "kind": "product",
+      "source_doc": "RR",
+      "source_page": 8,
+      "target": "equipment/suction-sunset-su100dc.png",
+      "equipment_ids": [
+        "suction-sunset-su100dc"
+      ],
+      "status": "source-identified",
+      "export_required": true,
+      "note": null,
+      "unknown_equipment_ids": null
+    },
+    {
+      "id": "compressor-50psi",
+      "kind": "product",
+      "source_doc": "RR",
+      "source_page": 10,
+      "target": "equipment/compressor-drive-50psi-18450.png",
+      "equipment_ids": [
+        "compressor-drive-50psi-18450"
+      ],
+      "status": "source-identified",
+      "export_required": true,
+      "note": null,
+      "unknown_equipment_ids": null
+    },
+    {
+      "id": "cpap-table-inline",
+      "kind": "product-set",
+      "source_doc": "RR",
+      "source_page": 11,
+      "target": "equipment/cpap-*.png",
+      "equipment_ids": [
+        "cpap-react-health-luna-g3",
+        "cpap-resmed-airsense-11",
+        "cpap-resmed-airsense-10"
+      ],
+      "status": "source-identified",
+      "export_required": true,
+      "note": "Three photos embedded INSIDE table cells. Must be split into individual assets.",
+      "unknown_equipment_ids": null
+    },
+    {
+      "id": "bipap-table-inline",
+      "kind": "product-set",
+      "source_doc": "RR",
+      "source_page": 12,
+      "target": "equipment/bipap-*.png",
+      "equipment_ids": [
+        "bipap-luna-g3-a25",
+        "bipap-luna-g3-30vt-st",
+        "bipap-resmed-aircurve-11",
+        "bipap-resmed-aircurve-10-st"
+      ],
+      "status": "source-identified",
+      "export_required": true,
+      "note": "Four photos embedded INSIDE table cells. Must be split into individual assets.",
+      "unknown_equipment_ids": null
+    },
+    {
+      "id": "cough-assist",
+      "kind": "product",
+      "source_doc": "RR",
+      "source_page": 18,
+      "target": "equipment/cough-assist-biwaze.png",
+      "equipment_ids": [
+        "cough-assist-biwaze"
+      ],
+      "status": "source-identified",
+      "export_required": true,
+      "note": null,
+      "unknown_equipment_ids": null
+    },
+    {
+      "id": "cough-assist-acc",
+      "kind": "product",
+      "source_doc": "RR",
+      "source_page": 18,
+      "target": "equipment/cough-assist-accessories.png",
+      "equipment_ids": [
+        "cough-assist-tubing-t70",
+        "cough-assist-interface-mask"
+      ],
+      "status": "source-identified",
+      "export_required": true,
+      "note": "Tubing and mask shown together in one image; split or caption as a pair.",
+      "unknown_equipment_ids": null
+    },
+    {
+      "id": "ventilator-trilogy",
+      "kind": "product",
+      "source_doc": "RR",
+      "source_page": 19,
+      "target": "equipment/vent-philips-trilogy-100.png",
+      "equipment_ids": [
+        "vent-philips-trilogy-100"
+      ],
+      "status": "source-identified",
+      "export_required": true,
+      "note": null,
+      "unknown_equipment_ids": null
+    },
+    {
+      "id": "ippb-bennett",
+      "kind": "product",
+      "source_doc": "RR",
+      "source_page": 20,
+      "target": "equipment/ippb-bennett-ap5.png",
+      "equipment_ids": [
+        "ippb-bennett-ap5"
+      ],
+      "status": "source-identified",
+      "export_required": true,
+      "note": "Appears to carry a visible third-party watermark/URL. Check sourcing before reuse.",
+      "unknown_equipment_ids": null
+    },
+    {
+      "id": "ippb-circuit",
+      "kind": "product",
+      "source_doc": "RR",
+      "source_page": 20,
+      "target": "equipment/ippb-breathing-circuit-hud1560.png",
+      "equipment_ids": [
+        "ippb-breathing-circuit-hud1560"
+      ],
+      "status": "source-identified",
+      "export_required": true,
+      "note": "Stock image on a teal cloud background. Inconsistent with the product-on-white standard.",
+      "unknown_equipment_ids": null
+    },
+    {
+      "id": "ss-ppd-note",
+      "kind": "screenshot",
+      "source_doc": "PW",
+      "source_page": 6,
+      "target": "screenshots/ppd-note-template.png",
+      "equipment_ids": [],
+      "status": "redaction-required",
+      "export_required": true,
+      "note": "PHI RISK — displays patient name, phone, personal email, street address, physician name.",
+      "unknown_equipment_ids": null,
+      "action": "redact PHI and re-export"
+    },
+    {
+      "id": "ss-qualifications-note",
+      "kind": "screenshot",
+      "source_doc": "PW",
+      "source_page": 7,
+      "target": "screenshots/qualifications-note.png",
+      "equipment_ids": [],
+      "status": "redaction-required",
+      "export_required": true,
+      "note": "System note screenshot. Review for PHI.",
+      "unknown_equipment_ids": null,
+      "action": "redact PHI and re-export"
+    },
+    {
+      "id": "ss-doc-request",
+      "kind": "screenshot",
+      "source_doc": "PW",
+      "source_page": 10,
+      "target": "screenshots/documentation-request.png",
+      "equipment_ids": [],
+      "status": "redaction-required",
+      "export_required": true,
+      "note": "System note screenshot. Review for PHI.",
+      "unknown_equipment_ids": null,
+      "action": "redact PHI and re-export"
+    },
+    {
+      "id": "ss-pt-concurrence",
+      "kind": "screenshot",
+      "source_doc": "PW",
+      "source_page": 12,
+      "target": "screenshots/pt-report-concurrence.png",
+      "equipment_ids": [],
+      "status": "redaction-required",
+      "export_required": true,
+      "note": "Signature form showing therapist and physician name, license and signature fields. Review for PHI/PII.",
+      "unknown_equipment_ids": null,
+      "action": "redact PHI and re-export"
+    },
+    {
+      "id": "ss-atp-note",
+      "kind": "screenshot",
+      "source_doc": "PW",
+      "source_page": 13,
+      "target": "screenshots/atp-note.png",
+      "equipment_ids": [],
+      "status": "redaction-required",
+      "export_required": true,
+      "note": "System note screenshot. Review for PHI.",
+      "unknown_equipment_ids": null,
+      "action": "redact PHI and re-export"
+    }
+  ],
+  "records_with_image": 22,
+  "records_without_image": 110,
+  "missing_by_category": {
+    "bathroom": [
+      "commode-3in1-steel",
+      "raised-toilet-seat",
+      "shower-chair-aluminum",
+      "tub-transfer-bench"
+    ],
+    "bed-accessory": [
+      "bed-extension-kit",
+      "bed-rail-full",
+      "bed-rail-half",
+      "mattress-gel-overlay",
+      "mattress-vinyl-innerspring",
+      "trapeze-bar"
+    ],
+    "brace": [
+      "brace-aryse-alphawrap-back-brace-ay-52",
+      "brace-aryse-deltalock-knee-stabilizer-ay-02",
+      "brace-aryse-metforce-back-brace-ay-37",
+      "brace-aryse-metforce-tlso-back-brace-ay-56",
+      "brace-aryse-purespeed-knee-brace-ay-20",
+      "brace-aryse-tru-range-knee-brace-ay-32",
+      "brace-metforce-oa-knee-brace-ay-43"
+    ],
+    "catheter-supply": [
+      "sup-bedside-drainage-bag-2-000ml",
+      "sup-coude-tip-urinary-catheter",
+      "sup-insertion-tray-without-bag-or-catheter",
+      "sup-intermittent-urinary-catheter-kit-without-balloo",
+      "sup-male-external-catheter",
+      "sup-straight-tip-urine-catheter-coated-uncoated",
+      "sup-urinary-leg-abdomen-bag-500ml-or-1-000ml"
+    ],
+    "general-dme": [
+      "bpm-medline-wrist"
+    ],
+    "hospital-bed": [
+      "hospital-bed-bariatric",
+      "hospital-bed-fully-electric",
+      "hospital-bed-hi-lo"
+    ],
+    "incontinence-supply": [
+      "sup-briefs-diapers",
+      "sup-disposable-liners-pads",
+      "sup-disposable-underpads",
+      "sup-pullups-underwear",
+      "sup-wipes"
+    ],
+    "manual-wheelchair": [
+      "guardian-extra-wide-hd",
+      "guardian-reclining",
+      "medline-hybrid-2-polyfly",
+      "medline-k3-guardian",
+      "medline-k4-high-strength",
+      "shuttle-extra-wide-bariatric"
+    ],
+    "mobility-aid": [
+      "cane-aluminum-quad",
+      "crutches-underarm-aluminum",
+      "knee-walker"
+    ],
+    "nebulizer-supply": [
+      "neb-administration-set",
+      "neb-aerosol-mask",
+      "neb-disposable-compressor-filter",
+      "neb-nebulizer-kit",
+      "neb-water-collection-device"
+    ],
+    "oxygen-accessory": [
+      "o2-conserver-sunset-chad"
+    ],
+    "oxygen-concentrator": [
+      "o2-drive-deco2",
+      "o2-drive-devilbiss-1025",
+      "o2-drive-devilbiss-525",
+      "o2-invacare-perfecto-2v",
+      "o2-philips-everflo"
+    ],
+    "pap-supply": [
+      "sup-chinstrap",
+      "sup-disposable-filters",
+      "sup-full-facemask-with-headgear",
+      "sup-headgear-for-pap",
+      "sup-nasal-application-device-with-headgear",
+      "sup-non-disposable-filters",
+      "sup-pap-tubing",
+      "sup-replacement-facemask-interface",
+      "sup-replacement-nasal-cushion",
+      "sup-replacement-nasal-pillows",
+      "sup-replacement-water-chamber"
+    ],
+    "patient-lift": [
+      "lift-heavy-duty-mds700el",
+      "lift-medline-battery",
+      "lift-medline-hydraulic",
+      "sling-full-body"
+    ],
+    "pov": [
+      "pov-sport-3wheel-s73",
+      "pov-sport-4wheel-s74",
+      "pov-ultra-x-3wheel-s39",
+      "pov-ultra-x-4wheel-s49"
+    ],
+    "pwc": [
+      "pwc-invacare-tdx-sp2",
+      "pwc-invacare-tdx-sp2-hd",
+      "pwc-merits-atlantis-p710",
+      "pwc-merits-vision-ultra-hd-p331",
+      "pwc-pride-go-chair-med",
+      "pwc-shoprider-xlr14-p424le"
+    ],
+    "respiratory-supply": [
+      "vent-bacterial-viral-filters",
+      "vent-breathing-circuits",
+      "vent-carrying-bag"
+    ],
+    "rollator": [
+      "rollator-basic-steel",
+      "rollator-heavy-duty-steel"
+    ],
+    "suction-supply": [
+      "sup-medline-800cc-suction-canister",
+      "sup-medline-saline-solution-addipak-5ml",
+      "sup-oropharyngeal-suction-catheter-yankauer",
+      "sup-tracheal-suction-catheter-with-gloves-tray"
+    ],
+    "trach-supply": [
+      "sup-medline-trach-care-kit",
+      "sup-trach-inner-cannula",
+      "sup-trach-mask",
+      "sup-trach-speaking-valve",
+      "sup-trach-tube-collar",
+      "sup-trach-tube-cuffed",
+      "sup-tracheal-hme-internal-filter-holder"
+    ],
+    "walker": [
+      "walker-2button-folding",
+      "walker-bariatric-aluminum",
+      "walker-platform-armrest",
+      "walker-side-step-hemi"
+    ],
+    "wheelchair-accessory": [
+      "wc-acc-anti-tipper",
+      "wc-acc-back-cushion-standard",
+      "wc-acc-detachable-adjustable-armrest",
+      "wc-acc-heel-loops",
+      "wc-acc-oxygen-cylinder-carrier",
+      "wc-acc-pelvic-safety-belt",
+      "wc-acc-permobil-roho-cushion",
+      "wc-acc-seat-cushion-standard",
+      "wc-acc-single-arm-drive-attachment",
+      "wc-acc-super-hemi-height-kit",
+      "wc-acc-transfer-device-board",
+      "wc-acc-wheel-lock-brake-extension-handle"
+    ]
+  }
+}

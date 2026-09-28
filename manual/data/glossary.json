@@ -1,0 +1,1185 @@
+[
+  {
+    "term": "ABG",
+    "definition": "Arterial Blood Gas — one of the qualifying tests for oxygen coverage",
+    "parts": [
+      "p7"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "ABN",
+    "definition": "Advance Beneficiary Notice — Original Medicare form telling the patient Medicare may not cover an item, signed before delivery. Not used for Medicare Advantage or commercial plans",
+    "parts": [
+      "p10"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "ALF",
+    "definition": "Assisted Living Facility. Generally qualifies as the patient's home, so no discharge date is required before delivery",
+    "parts": [
+      "p5"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "AOR",
+    "definition": "Appointment of Representative (form)",
+    "parts": [
+      "p10",
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "ATP",
+    "definition": "Assistive Technology Professional",
+    "parts": [
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "BCBS",
+    "definition": "Blue Cross Blue Shield",
+    "parts": [
+      "p10",
+      "p2"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "BiPAP",
+    "definition": "Bilevel Positive Airway Pressure device — delivers higher pressure on inhalation, lower on exhalation",
+    "parts": [
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "BPM",
+    "definition": "Blood Pressure Monitor",
+    "parts": [
+      "p2"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "CMN",
+    "definition": "Certificate of Medical Necessity — required by some states and insurances",
+    "parts": [
+      "p10",
+      "p4"
+    ],
+    "class": "manual",
+    "verify": "which"
+  },
+  {
+    "term": "CMS",
+    "definition": "Centers for Medicare & Medicaid Services — the federal agency that sets Medicare and Medicaid policy and publishes the annual figures",
+    "parts": [
+      "p10"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "COB",
+    "definition": "Coordination of Benefits — the process determining which insurance pays first when a patient has more than one plan",
+    "parts": [
+      "p10"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "CPAP",
+    "definition": "Continuous Positive Airway Pressure device — delivers constant pressure",
+    "parts": [
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "CST",
+    "definition": "Central Standard Time — the time zone the after-hours coverage window is stated in",
+    "parts": [
+      "p8"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "CTI",
+    "definition": "Certificate of Terminal Illness — hospice physician certification of a life expectancy of six months or less; enrolls the patient in the Medicare hospice benefit",
+    "parts": [
+      "p10"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "D/C",
+    "definition": "Discharge",
+    "parts": [
+      "p5"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "D/T",
+    "definition": "Direct Transfer",
+    "parts": [
+      "p0"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "DME",
+    "definition": "Durable Medical Equipment",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "DME MAC",
+    "definition": "Durable Medical Equipment Medicare Administrative Contractor — the regional contractor that processes DME claims",
+    "parts": [
+      "p10",
+      "p7"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "DOS",
+    "definition": "Date of Service",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "EAA",
+    "definition": "Economic Assistance Application — offered to patients requesting equipment pick-up because they cannot afford the cost",
+    "parts": [
+      "p5",
+      "p10"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "EGHP",
+    "definition": "Employer Group Health Plan — relevant to Medicare Secondary Payer rules",
+    "parts": [
+      "p10"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "EOB",
+    "definition": "Explanation of Benefits — statement from an MA or commercial plan showing billed, allowed, paid and patient-responsibility amounts. **Not a bill**",
+    "parts": [
+      "p10"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "ETA",
+    "definition": "Estimated Time of Arrival",
+    "parts": [
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "F2F",
+    "definition": "Face-to-Face Evaluation. Also called clinical notes or progress notes",
+    "parts": [
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "FE",
+    "definition": "Fully Electric — hospital bed or patient lift",
+    "parts": [
+      "p2"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "FFS",
+    "definition": "Fee-for-Service — Original Medicare, as distinct from a Medicare Advantage plan",
+    "parts": [
+      "p10",
+      "p7"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "FSS",
+    "definition": "Frequent and Substantial Servicing — Medicare payment category for continuous monthly rental items (ventilators, BiPAP E0471). Ownership never transfers",
+    "parts": [
+      "p10",
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "HCPCS",
+    "definition": "Healthcare Common Procedure Coding System — the billing code assigned to each item",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "HIPAA",
+    "definition": "Health Insurance Portability and Accountability Act — the federal law governing protected health information",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "HME",
+    "definition": "Heat and Moisture Exchanger — tracheostomy filter",
+    "parts": [
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "HST",
+    "definition": "Hawaii Standard Time",
+    "parts": [
+      "p8"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "IPPB",
+    "definition": "Intermittent Positive Pressure Breathing",
+    "parts": [
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "LALM",
+    "definition": "Low Air Loss Mattress",
+    "parts": [
+      "p2",
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "LCMP",
+    "definition": "Licensed Certified Medical Professional — signature attestation and financial disclosure form",
+    "parts": [
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "LPM",
+    "definition": "Liters Per Minute",
+    "parts": [
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "MA",
+    "definition": "Two meanings. **Medical Assistant** in PAK and provider-office context. **Medicare Advantage** in insurance context.",
+    "parts": [
+      "p10",
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "MBI",
+    "definition": "Medicare Beneficiary Identifier — the patient's Medicare number, accepted on a Standard Written Order in place of the name",
+    "parts": [
+      "p10"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "MCD",
+    "definition": "Medicaid",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3",
+      "p5",
+      "p6",
+      "p7",
+      "p8",
+      "p9",
+      "p1"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "MCO",
+    "definition": "Managed Care Organization — a private insurer (e.g. Molina) administering a state's Medicaid benefits",
+    "parts": [
+      "p10",
+      "p2",
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "MCR",
+    "definition": "Medicare",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3",
+      "p5",
+      "p6",
+      "p7",
+      "p8",
+      "p9",
+      "p1"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "MDO",
+    "definition": "Medical Doctor's Office",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "ME",
+    "definition": "Mobility Evaluation",
+    "parts": [
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "MM",
+    "definition": "Manual Mobility. Used in team names — the Eligibility MM & R team verifies Manual Mobility and Resupply orders.",
+    "parts": [
+      "p0",
+      "p2",
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "MOOP",
+    "definition": "Maximum Out-of-Pocket. Medicare Advantage plans have one; Original Medicare does not",
+    "parts": [
+      "p10"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "MRADL",
+    "definition": "Mobility Related Activities of Daily Living",
+    "parts": [
+      "p2",
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "MRX",
+    "definition": "Master Prescription",
+    "parts": [
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "MRx",
+    "definition": "Master prescription. A document UMS prepares listing the HCPCS codes, item names and quantities for an order. The provider signs and dates it, confirming they are ordering exactly those items.",
+    "parts": [
+      "p0",
+      "p2",
+      "p3",
+      "p4",
+      "p6"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "MSN",
+    "definition": "Medicare Summary Notice — Original Medicare's quarterly equivalent of an EOB. Not a bill",
+    "parts": [
+      "p10"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "MSP",
+    "definition": "Medicare Secondary Payer — the rules under which another payer is primary to Medicare",
+    "parts": [
+      "p10"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "MWC",
+    "definition": "Manual Wheelchair",
+    "parts": [
+      "p2"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "NPI",
+    "definition": "National Provider Identifier — the prescribing practitioner's identifier, required on a Standard Written Order",
+    "parts": [
+      "p10"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "O2",
+    "definition": "Oxygen",
+    "parts": [
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "OOP",
+    "definition": "Out of Pocket. Pricing is in the Item Master; add sales tax unless the item is prescription",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "OOR",
+    "definition": "Out of Range — the delivery address falls outside the delivery radius for the item ordered, so the order cannot be completed. The radius varies by item; for walkers, out of state is out of range",
+    "parts": [
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "OT",
+    "definition": "Occupational Therapist / Occupational Therapy",
+    "parts": [
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "PA",
+    "definition": "Prior Authorization — the stage. See also **PAR**",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "PAK",
+    "definition": "Pre-Appointment Kit",
+    "parts": [
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "PAP",
+    "definition": "Positive Airway Pressure — covers both CPAP and BiPAP",
+    "parts": [
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "PAR",
+    "definition": "Prior Authorization Request — the submission itself",
+    "parts": [
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "PCP",
+    "definition": "Primary Care Physician",
+    "parts": [
+      "p9",
+      "p10"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "PHI",
+    "definition": "Protected Health Information",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "PII",
+    "definition": "Personally Identifiable Information",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "PMD",
+    "definition": "Power Mobility Device — covers both PWC and POV",
+    "parts": [
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "POA",
+    "definition": "Power of Attorney",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "POC",
+    "definition": "Portable Oxygen Concentrator. We do not carry these; all concentrators are home units",
+    "parts": [
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "POD",
+    "definition": "Proof of Delivery",
+    "parts": [
+      "p10",
+      "p5"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "POV",
+    "definition": "Power Operated Vehicle — commonly called a scooter",
+    "parts": [
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "PPD",
+    "definition": "Patient Provided Data",
+    "parts": [
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "PRF",
+    "definition": "Purchase Capped Rental Form — signed at delivery, acknowledging Medicare's billing procedure for capped rental versus routinely purchased items",
+    "parts": [
+      "p10",
+      "p5"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "PSI",
+    "definition": "Pounds per Square Inch",
+    "parts": [
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "PT",
+    "definition": "Physical Therapist / Physical Therapy",
+    "parts": [
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "PT Eval",
+    "definition": "Physical Therapy Evaluation",
+    "parts": [
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "PT Rx",
+    "definition": "Prescription for a Physical Therapy Evaluation",
+    "parts": [
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "PWC",
+    "definition": "Power Wheelchair",
+    "parts": [
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "Q",
+    "definition": "Queue — a team's call routing destination, e.g. the Resupply Q",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "QA",
+    "definition": "Quality Assurance",
+    "parts": [
+      "p1"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "QL",
+    "definition": "Qualified Lead — a patient who has already completed a valid Mobility Evaluation",
+    "parts": [
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "QMB",
+    "definition": "Qualified Medicare Beneficiary",
+    "parts": [
+      "p10",
+      "p2"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "R-T-O",
+    "definition": "Rent-to-Own",
+    "parts": [
+      "p10",
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "RT",
+    "definition": "Respiratory Therapist",
+    "parts": [
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "RUL",
+    "definition": "Reasonable Useful Lifetime — 5 years for most DME. Basis for the same-or-similar rule and for the oxygen servicing period",
+    "parts": [
+      "p10",
+      "p2",
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "SE",
+    "definition": "Seating Evaluation",
+    "parts": [
+      "p4"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "SLMB / QI",
+    "definition": "Specified Low-Income Medicare Beneficiary / Qualifying Individual — Medicare Savings Programs that pay the Part B premium only. **No cost-sharing protection**",
+    "parts": [
+      "p10"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "SNF",
+    "definition": "Skilled Nursing Facility",
+    "parts": [
+      "p10"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "SOS",
+    "definition": "Same or Similar — Medicare will not pay for equipment in the same HCPCS or category received within the past 5-year RUL, from UMS or any other supplier, unless the item was lost, stolen or irreparably damaged. Commercial and Medicaid rules vary by payer",
+    "parts": [
+      "p10",
+      "p2",
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "SWO",
+    "definition": "Standard Written Order — the prescription/referral Medicare requires before DME is provided",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "TMHP",
+    "definition": "Texas Medicaid & Healthcare Partnership",
+    "parts": [
+      "p10",
+      "p4",
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "Trach",
+    "definition": "Tracheostomy",
+    "parts": [
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "TRX",
+    "definition": "Transaction — the order record and its number",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "UPG Fee",
+    "definition": "Upgrade Fee. Amounts differ between the Intake and Field Ops schedules — see [[§10-16]]",
+    "parts": [
+      "p10",
+      "p2"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "VA",
+    "definition": "Department of Veterans Affairs. An uncommon payer that may cover an item in full, including the upgrade fee.",
+    "parts": [
+      "p2",
+      "p10"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "WOPD",
+    "definition": "Written Order Prior to Delivery",
+    "parts": [
+      "p10",
+      "p7"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "BSC",
+    "definition": "Bedside Commode",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "shorthand"
+  },
+  {
+    "term": "Cath",
+    "definition": "Catheter",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "shorthand"
+  },
+  {
+    "term": "CC",
+    "definition": "Commode Chair",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "shorthand"
+  },
+  {
+    "term": "ELR",
+    "definition": "Elevated Leg Rest (manual wheelchair)",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "shorthand"
+  },
+  {
+    "term": "FWW",
+    "definition": "Front Wheeled Walker",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "shorthand"
+  },
+  {
+    "term": "GO",
+    "definition": "Gel Overlay Mattress",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "shorthand"
+  },
+  {
+    "term": "HB",
+    "definition": "Hospital Bed",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "shorthand"
+  },
+  {
+    "term": "HT",
+    "definition": "Height",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "shorthand"
+  },
+  {
+    "term": "IBC",
+    "definition": "Inbound Call",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "shorthand"
+  },
+  {
+    "term": "Incont",
+    "definition": "Incontinence",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "shorthand"
+  },
+  {
+    "term": "INN",
+    "definition": "In Network",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "shorthand"
+  },
+  {
+    "term": "LWWC",
+    "definition": "Lightweight Wheelchair",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "shorthand"
+  },
+  {
+    "term": "MID",
+    "definition": "Member ID number",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "shorthand"
+  },
+  {
+    "term": "NEB",
+    "definition": "Nebulizer",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "shorthand"
+  },
+  {
+    "term": "OBC",
+    "definition": "Outbound Call",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "shorthand"
+  },
+  {
+    "term": "OON",
+    "definition": "Out of Network",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "shorthand"
+  },
+  {
+    "term": "OOW",
+    "definition": "Out of Warranty",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "shorthand"
+  },
+  {
+    "term": "RLTR",
+    "definition": "Rollator Walker",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "shorthand"
+  },
+  {
+    "term": "RTS",
+    "definition": "Raised Toilet Seat",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "shorthand"
+  },
+  {
+    "term": "SA",
+    "definition": "Swing-Away Leg Rest (manual wheelchair)",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "shorthand"
+  },
+  {
+    "term": "WT",
+    "definition": "Weight",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "shorthand"
+  },
+  {
+    "term": "Fax History",
+    "definition": "Log of documents sent and received on a transaction. Found under Transaction → Fax History",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "system"
+  },
+  {
+    "term": "Item Master",
+    "definition": "The equipment catalog in the UMS system. Source for specifications and out-of-pocket pricing",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "system"
+  },
+  {
+    "term": "Parachute",
+    "definition": "Third-party referral and documentation platform. Requests may go out through it rather than by fax",
+    "parts": [
+      "p4",
+      "p3"
+    ],
+    "class": "system"
+  },
+  {
+    "term": "Payor/HCPCS Order Acceptance Sheet",
+    "definition": "Reference for confirming insurance eligibility by device category and region",
+    "parts": [
+      "p4"
+    ],
+    "class": "system"
+  },
+  {
+    "term": "SutureSign",
+    "definition": "Third-party documentation platform, used alongside Parachute",
+    "parts": [
+      "p4",
+      "p3"
+    ],
+    "class": "system"
+  },
+  {
+    "term": "Transaction Workflow",
+    "definition": "The order record, including the Patient, Insurance, Eligibility, Transaction and Ticket tabs",
+    "parts": [
+      "p0",
+      "p10",
+      "p2",
+      "p4",
+      "p3"
+    ],
+    "class": "system"
+  },
+  {
+    "term": "Upgrade Fee Sheet (Mobility)",
+    "definition": "Fee schedule reference",
+    "parts": [
+      "p10",
+      "p2"
+    ],
+    "class": "system"
+  },
+  {
+    "term": "VGM Homelink",
+    "definition": "A national managed care and ancillary healthcare coordination company that connects insurance payers and case managers with a network of independent healthcare providers. UMS is one of those providers, so a patient coordinated through Homelink may have coverage where the item would otherwise be out-of-pocket",
+    "parts": [
+      "p2"
+    ],
+    "class": "system"
+  },
+  {
+    "term": "Virtru",
+    "definition": "Email encryption, enabled when sending protected information to a provider's office",
+    "parts": [
+      "p4",
+      "p3"
+    ],
+    "class": "system"
+  }
+]
