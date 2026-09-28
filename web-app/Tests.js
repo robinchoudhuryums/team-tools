@@ -6703,6 +6703,7 @@ function test_managerGates_rejectNonManager() {
     // member reviews; a manager decides who may skip a period).
     ['qaSetExemption',                 function () { return qaSetExemption('A Name', '2026-09', true); }],
     ['autoAssignSpanishThreads',       function () { return autoAssignSpanishThreads(30); }],   // operator testing note 4 — MANAGER tier, not canSeeSpanishInbox_
+    ['saveTeamDashboardLayout',        function () { return saveTeamDashboardLayout(null); }],   // 22post E — a team default is a manager's to set
   ];
   // The Manage-module Admin tab's config/system endpoints are ADMIN-gated (a
   // non-admin caller — incl. this non-manager — gets 'Admin access required.').

@@ -522,7 +522,15 @@ const DR_REPLY_VERDICTS = ['resolved', 'needs-look'];
 const DR_THREAD_IDS_MAX = 3;
 const DR_REPLY_SCAN_MAX = 150;      // threads read per hourly run (Gmail read quota + the six-minute limit)
 const DR_REPLY_SCAN_DAYS = 30;      // an open request older than this is no longer scanned for replies
-const DR_REOPEN_WINDOW_DAYS = 7;    // how far back the "Recently resolved" list (and its Mark unresolved) reaches
+const DR_REOPEN_WINDOW_DAYS = 7;
+// 22post E (operator 2026-09-27) — the Dashboard's widget registry. The ids are
+// MIRRORED by the client's CLK_DASH_WIDGETS (pinned equal); the server needs
+// them only to sanitize a manager's team default. Order = the base layout.
+const DASH_WIDGET_IDS = ['needsYou', 'mine', 'team', 'spanish', 'requests', 'punches', 'teammates'];
+// {managerEmailLc: {i: ['mine:1:h', …], by, at}} — each item "id:shown:width"
+// (1/0, h/f), compact so ~40 managers fit one Script Property value (g07).
+const DASH_TEAM_LAYOUTS_PROP = 'DASH_TEAM_LAYOUTS';
+const DASH_TEAM_LAYOUTS_MAX = 40;    // how far back the "Recently resolved" list (and its Mark unresolved) reaches
 const DR_PATIENT_TRX_MAX = 120;
 // Bounded tail scan for the getDeptRequests LIST read only (rows append
 // chronologically; the sheet grows one row per dept email with no retention).

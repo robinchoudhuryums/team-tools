@@ -1472,6 +1472,26 @@
     "drReplyAsksOrHolds_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-28",
+   "why": "22post E: dashboard widget layouts (team default)",
+   "added": [
+    "DASH_TEAM_LAYOUTS_MAX",
+    "DASH_TEAM_LAYOUTS_PROP",
+    "DASH_WIDGET_IDS",
+    "dashLayoutCompact_",
+    "dashLayoutSanitize_",
+    "dashTeamLayoutFor_",
+    "dashTeamLayoutsRead_",
+    "saveTeamDashboardLayout"
+   ],
+   "removed": [],
+   "changed": [
+    "DR_REOPEN_WINDOW_DAYS",
+    "getEmployeeState"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -1931,6 +1951,21 @@
    "kind": "var",
    "sha": "931a37513e31d1a7"
   },
+  "DASH_TEAM_LAYOUTS_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2a78dd756a9457ce"
+  },
+  "DASH_TEAM_LAYOUTS_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "480a8602c100527b"
+  },
+  "DASH_WIDGET_IDS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "821dc7b744290e9a"
+  },
   "DAY_ABBR": {
    "file": "00_config.js",
    "kind": "const",
@@ -1994,7 +2029,7 @@
   "DR_REOPEN_WINDOW_DAYS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "0ceb7378ac71a1c7"
+   "sha": "7a013bff91b6ecad"
   },
   "DR_REPLY_HOLD_RE_": {
    "file": "50_deptrequests.js",
@@ -4451,6 +4486,26 @@
    "kind": "function",
    "sha": "b786d7e17afd4d0e"
   },
+  "dashLayoutCompact_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "482e05262a6944ce"
+  },
+  "dashLayoutSanitize_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "63a1b74c154ae033"
+  },
+  "dashTeamLayoutFor_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "1f5842bf5545a8c3"
+  },
+  "dashTeamLayoutsRead_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "b1e1679167bf2a99"
+  },
   "dashboardPeriodRange_": {
    "file": "40_metrics.js",
    "kind": "function",
@@ -5284,7 +5339,7 @@
   "getEmployeeState": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "4630edfd34f08426"
+   "sha": "e8c65d87f2d04b42"
   },
   "getEmployeeTimesheetForManager": {
    "file": "20_timeclock.js",
@@ -7875,6 +7930,11 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "3daceb0ac861ed5b"
+  },
+  "saveTeamDashboardLayout": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "a82e538a9515ec2d"
   },
   "saveTrainingAssignment": {
    "file": "80_training.js",

@@ -20978,7 +20978,10 @@ test('PR6-2: "Needs you" client — compact gate, leads the main column, pending
   assert.ok(/withFailureHandler\(function \(\) \{[\s\S]*?CLK_NEEDS\.at = 0;/.test(load), 'a failed refetch is never fresh');
   assert.ok(/if \(ok\) \{ CLK_NEEDS\.data = r;/.test(load) && /else if \(!hasCache\) \{ CLK_NEEDS\.data = null;/.test(load), 'keep last-good on a failed refetch; null only on a cold miss');
   const render = clk.slice(clk.indexOf('function renderClockView('), clk.indexOf('// ── Dashboard briefing carousels'));
-  assert.ok(render.indexOf('id="dash-needsyou"') > 0 && render.indexOf('id="dash-needsyou"') < render.indexOf('id="dash-cards"'), 'Needs you LEADS #dash-main, above the carousels (T6)');
+  // 22post E: the main column is a widget grid; the BASE layout still leads with Needs you, above the carousels (T6).
+  const reg = clk.slice(clk.indexOf('var CLK_DASH_WIDGETS = ['), clk.indexOf('var CLK_DASH_LAYOUT_KEY'));
+  assert.ok(reg.indexOf("id: 'needsYou'") > 0 && reg.indexOf("id: 'needsYou'") < reg.indexOf("id: 'mine'") && /id: 'needsYou',[^}]*width: 'full'/.test(reg), 'Needs you LEADS the base layout, full width, above the carousels (T6)');
+  assert.ok(/clkDashWidgetsHtml_\(clkDashCurrentLayout_\(\)\.items, s\)/.test(render), 'the main column is the resolved widget layout');
   assert.ok(/:root\[data-compact\] #dash-needsyou \{ display: none; \}/.test(raw), 'hidden in the pop-out like #dash-cards');
   const html = pr6nc(extractFunction('tc/script_clock.html', 'clkNeedsYouHtml_'));
   assert.ok(/if \(res === undefined\) return clkNeedsYouSkel_\(\);/.test(html), 'undefined → the card-shaped skeleton');
@@ -20994,10 +20997,11 @@ test('PR6-2: "Needs you" client — compact gate, leads the main column, pending
   assert.ok(/enterTool\(r\.tool, r\.tab\)/.test(go), 'everything else is enterTool(tool, tab) to the server-named tab');
   // Extras: Training folded into Needs you (the doc\'s §2); the row is [Spanish | Requests] or Requests alone.
   const extras = pr6nc(extractFunction('tc/script_clock.html', 'clkLoadDashboardExtras_'));
-  assert.ok(/var expected = canSp \? 3 : 1;/.test(extras) && !/getMyTraining/.test(extras), 'the extras round no longer fetches training');
+  assert.ok(/var expected = \(canSp \? 2 : 0\) \+ \(wantReq \? 1 : 0\);/.test(extras) && !/getMyTraining/.test(extras), 'the extras round no longer fetches training (22post E: it counts only the widgets the layout shows)');
   assert.ok(!/getMyTraining/.test(clk), 'no getMyTraining call remains in the Clock partial');
-  const rx = pr6nc(extractFunction('tc/script_clock.html', 'clkRenderDashboardExtras_'));
-  assert.ok(/dash-pair dash-pair-single/.test(rx) && /\.dash-pair\.dash-pair-single \{ grid-template-columns: minmax\(0, 1fr\); \}/.test(raw), 'a lone Requests card gets a single-column pair, not an empty second track');
+  // 22post E: a lone Requests card is FULL width through the base layout, not an empty second track.
+  const bl = pr6nc(extractFunction('tc/script_clock.html', 'clkDashBaseLayout_'));
+  assert.ok(/width: \(w\.id === 'requests' && !canSp\) \? 'full' : w\.width/.test(bl) && /\.dash-w-full \{ grid-column: 1 \/ -1; \}/.test(raw), 'a lone Requests card spans the row, not an empty second track');
   // Behavioural render through the real function.
   const ctx = { String, Number, Array, esc: (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])),
     icon: (n) => '<svg data-i="' + n + '"></svg>', errorStateHtml_: (m) => '<div role="alert">' + m + '</div>' };
@@ -29324,6 +29328,114 @@ test('D-2/D-3: the wiring — the hourly rider, its heartbeat and flag, a reply 
   const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
   assert.ok(/reopenDeptRequest: function/.test(mock) && /replyVerdict: 'needs-look'/.test(mock) && /resolvedVia: 'reply'/.test(mock) && /recentResolved: \[/.test(mock),
     'the fixture photographs every new state (INV-185)');
+});
+
+
+// 22post Batch E — Dashboard widgets
+console.log('\n22post Batch E — Dashboard widgets');
+
+test('E-1: the layout resolves own → team default → base, fits what the person can have, and can never be empty (driven)', () => {
+  const s2 = buildSandbox([]);
+  vm.runInContext(/var CLK_DASH_WIDGETS = \[[\s\S]*?\n\];/.exec(fs.readFileSync(path.join(PA_WEB, 'tc/script_clock.html'), 'utf8'))[0], s2);
+  ['clkDashWidgetDef_', 'clkDashAvailable_', 'clkDashBaseLayout_', 'clkDashNormalize_', 'clkDashResolveLayout_', 'clkDashMove_', 'clkDashToggle_', 'clkDashShownCount_']
+    .forEach((n) => loadFunction(s2, 'tc/script_clock.html', n));
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  const ids = (l) => l.items.filter((x) => x.show).map((x) => x.id + (x.width === 'full' ? '*' : '')).join(',');
+  const R = (own, team, sp) => J(s2.clkDashResolveLayout_(own, team, sp));
+  // Base = today's layout; a rep without Spanish gets a full-width Requests card.
+  assert.strictEqual(ids(R(null, null, true)), 'needsYou*,mine,team,spanish,requests,punches,teammates');
+  assert.strictEqual(ids(R(null, null, false)), 'needsYou*,mine,team,requests*,punches,teammates');
+  assert.strictEqual(R(null, null, true).source, 'base');
+  // Own wins; its order and widths are kept; a widget it never mentioned is appended, shown.
+  const own = { items: [{ id: 'punches', show: true, width: 'full' }, { id: 'needsYou', show: true, width: 'half' }, { id: 'mine', show: false, width: 'half' }] };
+  const r1 = R(own, null, false);
+  assert.strictEqual(r1.source, 'own');
+  assert.strictEqual(ids(r1), 'punches*,needsYou,team,requests*,teammates', 'order + widths kept, the hidden one stays hidden, the unmentioned are appended');
+  // Unknown, duplicate and unavailable ids drop; a bad width reads half.
+  const r2 = R({ items: [{ id: 'bogus', show: true }, { id: 'spanish', show: true }, { id: 'team', show: true, width: 'giant' }, { id: 'team', show: false }] }, null, false);
+  assert.ok(!/bogus|spanish/.test(ids(r2)) && /^team,/.test(ids(r2)), 'unknown / unavailable (no Spanish access) / duplicate dropped; width sanitized');
+  // An own layout that would show nothing falls through to the team default, then the base.
+  const allHidden = { items: s2.clkDashBaseLayout_(true).items.map((x) => ({ id: x.id, show: false, width: x.width })) };
+  const team = { items: [{ id: 'teammates', show: true, width: 'full' }] };
+  assert.strictEqual(R(allHidden, team, true).source, 'team');
+  assert.strictEqual(R(allHidden, allHidden, true).source, 'base', 'never empty');
+  assert.strictEqual(R({ items: [{ id: 'spanish', show: true }].concat(allHidden.items.filter((x) => x.id !== 'spanish')) }, null, false).source, 'base',
+    'a layout whose only shown widget is one this person lost access to falls through');
+  assert.strictEqual(R('garbage', { nope: 1 }, true).source, 'base', 'unreadable layouts fall through');
+  // The edits.
+  const base = s2.clkDashBaseLayout_(true).items;
+  assert.strictEqual(J(s2.clkDashMove_(base, 1, 1)).map((x) => x.id).slice(0, 3).join(','), 'needsYou,team,mine');
+  assert.strictEqual(J(s2.clkDashMove_(base, 0, -1)).map((x) => x.id)[0], 'needsYou', 'the first cannot move up');
+  const t = J(s2.clkDashToggle_(base, 2, 'width', 'full'));
+  assert.strictEqual(t[2].width + '/' + base[2].width, 'full/half', 'a new array; the original untouched');
+  assert.strictEqual(s2.clkDashShownCount_(J(s2.clkDashToggle_(base, 0, 'show', false))), base.length - 1);
+  // The mirror: the client registry and the server's DASH_WIDGET_IDS are the same list, in order (g120).
+  const srv = /const DASH_WIDGET_IDS = (\[[^\]]*\]);/.exec(fs.readFileSync(path.join(PA_WEB, '00_config.js'), 'utf8'))[1].replace(/'/g, '"');
+  assert.deepStrictEqual(J(vm.runInContext('CLK_DASH_WIDGETS.map(function (w) { return w.id; })', s2)), JSON.parse(srv), 'client ids == server ids');
+});
+
+test('E-3: the team default — sanitized (objects or compact strings), a manager\'s to set, stored compact under their email, clearable, refused when it shows nothing (driven)', () => {
+  const props = {}, audits = [];
+  let emp = { id: 'M1', name: 'Mo Lead', email: 'Mo@ums.com', isManager: true };
+  const ctx = vm.createContext({ String, Number, Object, JSON, Array, Date,
+    DASH_WIDGET_IDS: ['needsYou', 'mine', 'team', 'spanish', 'requests', 'punches', 'teammates'],
+    DASH_TEAM_LAYOUTS_PROP: 'DASH_TEAM_LAYOUTS', DASH_TEAM_LAYOUTS_MAX: 2,
+    getEmployeeInfo_: () => emp,
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null) }) },
+    propSetBounded_: (k, v) => { props[k] = v; return v.length; },
+    LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
+    writeAuditLog_: (e, a, d, t, adj, h, n) => audits.push(a + ':' + n) });
+  ['dashLayoutSanitize_', 'dashLayoutCompact_', 'dashTeamLayoutsRead_', 'dashTeamLayoutFor_', 'saveTeamDashboardLayout'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  assert.deepStrictEqual(J(ctx.dashLayoutSanitize_({ items: [{ id: 'mine', show: true, width: 'full' }, { id: 'x' }, { id: 'mine' }, { id: 'team', show: false }] })),
+    { items: [{ id: 'mine', show: true, width: 'full' }, { id: 'team', show: false, width: 'half' }] });
+  assert.deepStrictEqual(J(ctx.dashLayoutSanitize_({ i: ['punches:1:f', 'mine:0:h', 'bogus:1:h'] })), { items: [{ id: 'punches', show: true, width: 'full' }, { id: 'mine', show: false, width: 'half' }] }, 'the compact store form reads back');
+  assert.strictEqual(ctx.dashLayoutSanitize_({ items: [{ id: 'mine', show: false }] }), null, 'nothing shown → null');
+  assert.strictEqual(ctx.dashLayoutSanitize_('junk'), null);
+  // Save.
+  const r = ctx.saveTeamDashboardLayout({ items: [{ id: 'teammates', show: true, width: 'full' }, { id: 'mine', show: false }] });
+  assert.strictEqual(r.success, true);
+  const map = JSON.parse(props.DASH_TEAM_LAYOUTS);
+  assert.deepStrictEqual(map['mo@ums.com'].i, ['teammates:1:f', 'mine:0:h'], 'stored compact, under the lowercased email');
+  assert.strictEqual(map['mo@ums.com'].by, 'Mo Lead');
+  assert.ok(/DashboardTeamLayout:saved: teammates:1:f,mine:0:h/.test(audits[0]), 'audited');
+  // Delivered: a rep of this manager gets it as `team`; the manager sees it as `own`.
+  assert.deepStrictEqual(J(ctx.dashTeamLayoutFor_({ managerEmail: 'mo@ums.com', email: 'rep@ums.com' })).team.items[0], { id: 'teammates', show: true, width: 'full' });
+  assert.ok(J(ctx.dashTeamLayoutFor_(emp)).own && J(ctx.dashTeamLayoutFor_(emp)).teamBy === '', 'the manager sees their own as `own`');
+  // Refusals.
+  assert.strictEqual(ctx.saveTeamDashboardLayout({ items: [{ id: 'mine', show: false }] }).success, false, 'a layout that shows nothing is refused');
+  emp = { id: 'R1', email: 'r@ums.com', isManager: false };
+  assert.ok(/Manager access required/.test(ctx.saveTeamDashboardLayout({ items: [{ id: 'mine' }] }).error), 'a rep cannot set a team default');
+  // The cap.
+  emp = { id: 'M2', name: 'B', email: 'b@ums.com', isManager: true };
+  assert.strictEqual(ctx.saveTeamDashboardLayout({ items: [{ id: 'mine' }] }).success, true);
+  emp = { id: 'M3', name: 'C', email: 'c@ums.com', isManager: true };
+  assert.ok(/Too many team defaults/.test(ctx.saveTeamDashboardLayout({ items: [{ id: 'mine' }] }).error), 'capped at DASH_TEAM_LAYOUTS_MAX');
+  // Clear.
+  emp = { id: 'M1', name: 'Mo Lead', email: 'Mo@ums.com', isManager: true };
+  assert.strictEqual(ctx.saveTeamDashboardLayout(null).success, true);
+  assert.ok(!('mo@ums.com' in JSON.parse(props.DASH_TEAM_LAYOUTS)), 'null clears it');
+  // A broken property reads as no defaults (the base layout) rather than throwing.
+  props.DASH_TEAM_LAYOUTS = '{not json';
+  assert.deepStrictEqual(J(ctx.dashTeamLayoutFor_({ managerEmail: 'mo@ums.com' })), { team: null, own: null, teamBy: '' });
+});
+
+test('E-1/E-2: the wiring — the state ships the defaults, the gear opens the panel, hidden widgets cost no RPC, the key is try/catch-wrapped (source)', () => {
+  const st = stripJsComments_(extractRawFunction('Code.js', 'getEmployeeState'));
+  assert.ok(/dashLayouts: dashTeamLayoutFor_\(emp\),/.test(st), 'getEmployeeState ships the layout defaults');
+  const core = fs.readFileSync(path.join(PA_WEB, 'script_core.html'), 'utf8');
+  assert.ok(/settingsClose_\(\);if\(typeof clkDashOpenCustomize_==='function'\)clkDashOpenCustomize_\(\)/.test(core), 'the settings gear opens Customize');
+  const clk = fs.readFileSync(path.join(PA_WEB, 'tc/script_clock.html'), 'utf8');
+  const ld = stripJsComments_(extractFnFrom(clk, 'clkLoadDashboard_'));
+  assert.ok(/if \(!document\.getElementById\('dash-w-mine'\) && !document\.getElementById\('dash-w-team'\)\) \{ clkLoadDashboardExtras_\(\); return; \}/.test(ld), 'no metrics RPCs when both carousels are hidden');
+  const lx = stripJsComments_(extractFnFrom(clk, 'clkLoadDashboardExtras_'));
+  assert.ok(/if \(!wantSp && !wantReq\) return;/.test(lx) && /if \(wantReq\) google\.script\.run/.test(lx) && /canSeeSpanish\) && wantSp;/.test(lx), 'the extras fetch only what is shown');
+  assert.ok(/var CLK_DASH_LAYOUT_KEY = 'umsDashLayout';/.test(clk), 'one ums… key');
+  assert.ok(/try \{ var v = JSON\.parse\(localStorage\.getItem\(CLK_DASH_LAYOUT_KEY\)/.test(extractFnFrom(clk, 'clkDashReadOwn_')) &&
+    /try \{\s*if \(layout\) localStorage\.setItem/.test(extractFnFrom(clk, 'clkDashWriteOwn_')), 'every read and write in a try/catch (g112)');
+  const w = extractFnFrom(clk, 'clkDashWidgetsHtml_');
+  assert.ok(/\.filter\(function \(it\) \{ return it\.show; \}\)/.test(w) && /dash-w-hide-compact/.test(w), 'hidden widgets get no slot; the pop-out keeps its old gate');
+  assert.ok(/:root\[data-compact\] \.dash-w-hide-compact \{ display: none; \}/.test(clk));
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

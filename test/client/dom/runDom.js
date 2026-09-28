@@ -2477,7 +2477,7 @@ test('PR6: Needs you renders skeleton → list → error; clean-empty renders no
   // (and whose loader is in flight — reset it so the assertions below own it).
   const host = h.$('#dash-needsyou');
   assert.ok(host, 'the Dashboard rendered the Needs-you slot ABOVE the carousels');
-  assert.ok(host.compareDocumentPosition(h.$('#dash-cards')) & 4, 'and it precedes #dash-cards in the DOM');
+  assert.ok(host.compareDocumentPosition(h.$('#dash-w-mine')) & 4, 'and it precedes the first carousel slot in the DOM (22post E: the base layout)');
   const NEEDS = h.read('CLK_NEEDS');
   NEEDS.busy = false;
   const render = h.read('clkRenderNeedsYou_');
@@ -4771,4 +4771,61 @@ test('22post D DOM: a reply-resolved card says so and credits the replier, a nee
   assert.ok(reads > readsBefore, 'the view re-reads the server');
   assert.ok(card('r1') && card('r1').querySelector('.sp-resolve') && /Reopened Sep 28, 11:05 AM/.test(card('r1').textContent), 'the request is open again in Incoming');
   assert.ok(!/Recently resolved/.test(h.$('#dr-body').textContent), 'and the empty Recently resolved section is gone');
+});
+
+test('22post E DOM: Customize dashboard — hide, move (focus follows), widen, Save re-renders in that order with no slot (and no RPC) for a hidden widget; a draft showing nothing cannot be saved; Reset returns to the team default; a manager saves the team default; a corrupt saved layout falls back to the base', () => {
+  const h = boot();
+  const w = h.window, doc = h.document;
+  w.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  w.localStorage.setItem('umsDashLayout', '{corrupt');
+  h.bootShell({ isManager: true, canSeeSpanish: false, dashLayouts: { team: null, own: null, teamBy: '' } });
+  h.flushTimers();
+  const order = () => h.$$('#dash-widgets > .dash-w').map((n) => n.getAttribute('data-w') + (n.classList.contains('dash-w-full') ? '*' : ''));
+  assert.deepStrictEqual(order(), ['needsYou*', 'mine', 'team', 'requests*', 'punches', 'teammates'], 'a corrupt saved layout → the base layout (no Spanish access: no Spanish widget, Requests full)');
+  h.read('clkDashOpenCustomize_')();
+  const ov = doc.getElementById('dash-cust-overlay');
+  assert.ok(ov && ov.classList.contains('open') && ov.getAttribute('aria-labelledby') === 'dash-cust-title', 'the panel opens as a named dialog');
+  assert.ok(/standard layout/.test(ov.textContent), 'it says which layout is in use');
+  const item = (id) => ov.querySelector('.dash-cust-item[data-w="' + id + '"]');
+  const saveBtn = () => ov.querySelector('.btn-modal-ok');
+  // Hide everything → cannot save, and it says why.
+  h.read('CLK_DASH_CUST').draft.forEach((x, i) => h.read('clkDashCustSet_')(i, 'show', false));
+  assert.ok(saveBtn().disabled && /at least one widget/.test(doc.getElementById('dash-cust-err').textContent), 'a draft showing nothing cannot be saved, and says so');
+  h.read('clkDashCustSave_')();
+  assert.ok(doc.getElementById('dash-cust-overlay'), 'Save refuses — the panel stays');
+  // Show all but Requests; move Team Right Now up; widen Your numbers.
+  h.read('CLK_DASH_CUST').draft.forEach((x, i) => h.read('clkDashCustSet_')(i, 'show', x.id !== 'requests'));
+  assert.ok(!saveBtn().disabled && item('requests').classList.contains('is-off'));
+  const idxOf = (id) => h.read('CLK_DASH_CUST').draft.findIndex((x) => x.id === id);
+  h.read('clkDashCustMove_')(idxOf('teammates'), -1);
+  assert.strictEqual(doc.activeElement && doc.activeElement.closest('.dash-cust-item').getAttribute('data-w'), 'teammates', 'focus follows the moved widget');
+  h.read('clkDashCustSet_')(idxOf('mine'), 'width', 'full');
+  assert.strictEqual(item('mine').querySelector('.dash-cust-wbtn.on').textContent, 'Full');
+  const reqBefore = h.run.calls.filter((c) => c.method === 'getDeptRequests').length;
+  h.read('clkDashCustSave_')();
+  h.flushTimers();
+  assert.ok(!doc.getElementById('dash-cust-overlay'), 'Save closes the panel');
+  assert.ok(JSON.parse(w.localStorage.getItem('umsDashLayout')).items.length >= 6, 'the layout is saved in this browser');
+  assert.deepStrictEqual(order(), ['needsYou*', 'mine*', 'team', 'teammates', 'punches'], 'the Dashboard re-renders in the saved order and widths');
+  assert.ok(!doc.getElementById('dash-w-requests'), 'a hidden widget has no slot');
+  assert.strictEqual(h.run.calls.filter((c) => c.method === 'getDeptRequests').length, reqBefore, 'and its data is never fetched');
+  // A team default exists now: Reset returns to it, not to the standard layout.
+  h.read('empState').dashLayouts = { team: { items: [{ id: 'teammates', show: true, width: 'full' }, { id: 'punches', show: true, width: 'full' }] }, own: null, teamBy: 'Mo Lead' };
+  h.read('clkDashOpenCustomize_')();
+  assert.ok(/your own layout/.test(doc.getElementById('dash-cust-overlay').textContent));
+  h.read('clkDashCustReset_')();
+  h.flushTimers();
+  assert.strictEqual(w.localStorage.getItem('umsDashLayout'), null, 'Reset drops the saved layout');
+  assert.deepStrictEqual(order().slice(0, 2), ['teammates*', 'punches*'], 'and the team default applies (its missing widgets appended after)');
+  // A manager saves the team default.
+  h.read('clkDashOpenCustomize_')();
+  assert.ok(/team’s default \(set by Mo Lead\)/.test(doc.getElementById('dash-cust-overlay').textContent));
+  const teamBtn = [...doc.querySelectorAll('#dash-cust-overlay .dash-cust-team button')].filter((b) => /Save as my team/.test(b.textContent))[0];
+  assert.ok(teamBtn, 'a manager sees "Save as my team’s default"');
+  h.read('clkDashCustSaveTeam_')(false);
+  const call = h.run.pending('saveTeamDashboardLayout').slice(-1)[0];
+  assert.ok(call && Array.isArray(call.args[0].items) && call.args[0].items[0].id === 'teammates', 'the draft goes to the server');
+  h.run.flushSuccess({ success: true, layout: call.args[0] }, 'saveTeamDashboardLayout');
+  assert.ok(h.read('empState').dashLayouts.own, 'the saved default is kept for the session');
+  assert.ok(!doc.getElementById('dash-cust-overlay'), 'and the panel closes');
 });

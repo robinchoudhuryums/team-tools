@@ -314,6 +314,9 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       adjustWindowDays: 30, adjustReasonThresholdDays: 7, selfUndoWindowSeconds: 300,
       payCycle: 'biweekly', payAnchor: daysAgo(12),
       isManager: true, isAdmin: true, canSeeSpanish: true, canSeeQa: true, departments: ['Billing'],
+      // 22post E — the layout defaults (getEmployeeState.dashLayouts): none saved,
+      // so the base layout renders, as on a fresh deploy.
+      dashLayouts: { team: null, own: null, teamBy: '' },
       timezone: 'Asia/Kolkata', timezoneAbbr: 'IST',
       schedule: { startMin: 480, lengthMin: 540, breaks: [{ label: 'B1', startMin: 630, lenMin: 15 }, { label: 'Lunch', startMin: 750, lenMin: 30 }, { label: 'B2', startMin: 900, lenMin: 15 }], breakReminderMin: 5 },
       // F2 (cycle 18) — the reminder ticker's day-off gate. Mirrors the server
@@ -648,6 +651,16 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // 22post D — reopenDeptRequest's return AND its write: the row turns open,
     // leaves Recently resolved, and (addressed to a desk the fixture caller
     // staffs) rejoins Incoming, as the server's next read would say.
+    // 22post E — saveTeamDashboardLayout's return ({success, layout}): the
+    // saved (sanitized) layout, or null for a clear; the next state read
+    // carries it as dashLayouts.own, as the server's would.
+    saveTeamDashboardLayout: function (layout) {
+      const clean = layout && Array.isArray(layout.items) ? { items: layout.items.map(function (x) { return { id: x.id, show: x.show !== false, width: x.width === 'full' ? 'full' : 'half' }; }) } : null;
+      if (FIXTURES.getEmployeeState && typeof FIXTURES.getEmployeeState === 'object') {
+        FIXTURES.getEmployeeState.dashLayouts = Object.assign({}, FIXTURES.getEmployeeState.dashLayouts || {}, { own: clean });
+      }
+      return { success: true, layout: clean };
+    },
     reopenDeptRequest: function (id) {
       const dr = FIXTURES.getDeptRequests;
       let moved = null;
