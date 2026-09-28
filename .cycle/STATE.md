@@ -10,9 +10,9 @@ Scope: operator notes — Call Notes (Close Order, Scratchpad), Dashboard (live
 view, widgets), Dept Requests (reply-resolution, sort/filter, layout), Spanish
 Inbox (assign notifications)
 Test Command: manual
-Estimates: Batch A (1 Close reason · 2a Scratchpad fixes · 6 DR sort/filter · 7 DR manager layout): M (~6 h) — 1 S 1.5h · 2a S 1.5h · 6 S 1.5h · 7 S 1.5h — written BEFORE the first edit | Batch A Actual: ~3 h
+Estimates: Batch A (1 Close reason · 2a Scratchpad fixes · 6 DR sort/filter · 7 DR manager layout): M (~6 h) — 1 S 1.5h · 2a S 1.5h · 6 S 1.5h · 7 S 1.5h — written BEFORE the first edit | Batch A Actual: ~3 h · Batch B (2b floating Scratchpad panel · 2c formatting toolbar): M–L (~7 h) — 2b M 3h · 2c M–L 4h — written BEFORE the first edit
 Subsystem cycles since last Seams audit: 2 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25). The cadence is every 4.
-Updated: 2026-09-27
+Updated: 2026-09-28
 
 ## The plan (operator testing notes, agreed 2026-09-27)
 - **Batch A — quick fixes (M, ~6 h):**
