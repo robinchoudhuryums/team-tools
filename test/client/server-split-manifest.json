@@ -1378,6 +1378,32 @@
     "saveMyScratchpad"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-28",
+   "why": "22post C-8: Spanish assign notices, pending-id cache, open-claims fold",
+   "added": [
+    "SPANISH_PENDING_IDS_PREFIX",
+    "SPANISH_PENDING_IDS_TTL",
+    "spanishAssignEmail_",
+    "spanishAssignNotices_",
+    "spanishBustClaimants_",
+    "spanishMyOpenClaims_",
+    "spanishNotifyAssignees_",
+    "spanishPendingIdsGet_",
+    "spanishPendingIdsPut_"
+   ],
+   "removed": [],
+   "changed": [
+    "PENDING_TASKS_KINDS",
+    "claimSpanishThread",
+    "getMyPendingTasks",
+    "getSpanishInboxPending",
+    "releaseSpanishThread",
+    "resolveSpanishThread",
+    "spanishAutoAssignCore_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2670,7 +2696,7 @@
   "PENDING_TASKS_KINDS": {
    "file": "00_config.js",
    "kind": "var",
-   "sha": "c4ce3786a6bf8e81"
+   "sha": "3bbd9f9b97b6e532"
   },
   "PRESENCE_CACHE_PREFIX": {
    "file": "00_config.js",
@@ -3041,6 +3067,16 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "af4ddd03640b9439"
+  },
+  "SPANISH_PENDING_IDS_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "478b7bf2c97bb5f6"
+  },
+  "SPANISH_PENDING_IDS_TTL": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9261d0db984d468a"
   },
   "SPANISH_RESOLVED_SCAN": {
    "file": "00_config.js",
@@ -3965,7 +4001,7 @@
   "claimSpanishThread": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "40e1f07db7f4b0e0"
+   "sha": "b6ebee7f00a82880"
   },
   "clearAutomationErrorUnlocked_": {
    "file": "10_core.js",
@@ -5305,7 +5341,7 @@
   "getMyPendingTasks": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "10d412f08142f4b1"
+   "sha": "43fbaaf9e1dca4d8"
   },
   "getMyPinnedCallNotes": {
    "file": "30_callnotes.js",
@@ -5610,7 +5646,7 @@
   "getSpanishInboxPending": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "651ae7a864768e23"
+   "sha": "63bb8d46bae4cf3f"
   },
   "getSpanishInboxResolved": {
    "file": "51_spanish.js",
@@ -7405,7 +7441,7 @@
   "releaseSpanishThread": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "1b5e3f1b7f59f344"
+   "sha": "9fc1871bd06f74c9"
   },
   "removeAutomationTriggers": {
    "file": "10_core.js",
@@ -7480,7 +7516,7 @@
   "resolveSpanishThread": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "e30815e74f731d8c"
+   "sha": "feeb4468ba760ce7"
   },
   "resumeShiftForEmployee_": {
    "file": "20_timeclock.js",
@@ -7907,15 +7943,30 @@
    "kind": "function",
    "sha": "894c9ad3979e3cc2"
   },
+  "spanishAssignEmail_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "155aefd5ee43e4d4"
+  },
+  "spanishAssignNotices_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "921e7925e5730b59"
+  },
   "spanishAutoAssignCore_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "809e1411e0150ddb"
+   "sha": "bc675132c69a3def"
   },
   "spanishAutoAssignPick_": {
    "file": "51_spanish.js",
    "kind": "function",
    "sha": "4b8e1d00a5a74e5b"
+  },
+  "spanishBustClaimants_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "3fe17a5843603fb9"
   },
   "spanishCacheHash_": {
    "file": "51_spanish.js",
@@ -7937,10 +7988,30 @@
    "kind": "function",
    "sha": "21e02b7b0560f0f7"
   },
+  "spanishMyOpenClaims_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "f448d650c844344c"
+  },
+  "spanishNotifyAssignees_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "cdb41f24642e90e7"
+  },
   "spanishOpenLoad_": {
    "file": "51_spanish.js",
    "kind": "function",
    "sha": "43e8c1966ac00725"
+  },
+  "spanishPendingIdsGet_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "e61707264291a97b"
+  },
+  "spanishPendingIdsPut_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "de88fea4495a238d"
   },
   "spanishSearchQuery_": {
    "file": "51_spanish.js",

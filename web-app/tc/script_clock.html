@@ -1137,8 +1137,8 @@ function clkRenderDashboardExtras_() {
 // zero (INV-187). SWR like CLK_DASH: paint the cache instantly, refetch only
 // when stale, and never stamp a degraded or failed round fresh (INV-129/156).
 var CLK_NEEDS = { data: undefined, day: '', at: 0, busy: false };
-var CLK_NEEDS_ICON = { training: 'check', coaching: 'thumbsUp', notes: 'fileText', requests: 'outbox', sched: 'phone', docs: 'paperclip' };
-var CLK_NEEDS_LABEL = { training: 'training', coaching: 'coaching', notes: 'call notes', requests: 'department requests', sched: 'scheduled calls', docs: 'employee docs' };
+var CLK_NEEDS_ICON = { training: 'check', coaching: 'thumbsUp', notes: 'fileText', requests: 'outbox', sched: 'phone', docs: 'paperclip', spanish: 'mail' };
+var CLK_NEEDS_LABEL = { training: 'training', coaching: 'coaching', notes: 'call notes', requests: 'department requests', sched: 'scheduled calls', docs: 'employee docs', spanish: 'Spanish Inbox' };
 
 function clkNeedsYouSkel_() {
   var row = '<div class="ny-skel-row" aria-hidden="true"><span class="skel" style="width:28px;height:28px;border-radius:6px"></span>' +

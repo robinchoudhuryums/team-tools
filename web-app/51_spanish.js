@@ -503,6 +503,7 @@ function getSpanishInboxPending(days) {
       });
     });
     out.sort(function (a, b) { return b.ageHours - a.ageHours; });
+    spanishPendingIdsPut_(d, out.map(function (x) { return x.threadId; }));   // 22post C-8 — ids only, never content
     // Round 2 additive fields: `members` (the assign-select options — the same
     // internal team emails getSpanishInboxResolved already ships behind this
     // gate) and `self` (the caller's lowercased email, so the client can tell
@@ -717,6 +718,8 @@ function resolveSpanishThread(threadId) {
       ]));
     } finally { lock.releaseLock(); }
     writeAuditLog_(emp, 'SpanishInboxResolve', '', '', false, 0, 'threadId=' + tid);
+    // 22post C-8: a resolved request leaves its owner's Needs-you list.
+    try { const c = spanishClaimsMap_()[tid]; if (c) spanishBustClaimants_([c.by]); } catch (_) {}
     return { success: true };
   } catch (err) { return { error: 'Resolve failed: ' + err.message }; }
 }
@@ -794,9 +797,11 @@ function claimSpanishThread(threadId, assigneeEmail) {
       return { error: 'Not a Spanish-inbox thread.' };
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
+    let prev = '';
     try {
       const cur = spanishClaimsMap_()[tid];
       if (cur && cur.by === claimant) return { success: true, already: true, claim: cur };
+      prev = cur ? cur.by : '';
       // Advisory, but not a free-for-all: only a manager reassigns over
       // someone ELSE's live claim (the point of claiming is that teammates
       // back off — a silent steal defeats it).
@@ -809,7 +814,12 @@ function claimSpanishThread(threadId, assigneeEmail) {
     } finally { lock.releaseLock(); }
     writeAuditLog_(emp, 'SpanishInboxClaim', '', '', false, 0,
       'threadId=' + tid + '; claim=' + claimant + (claimant !== self ? '; assigned' : ''));
-    return { success: true, claim: { by: claimant, assignedBy: claimant !== self ? self : '', atMs: Date.now() } };
+    // 22post C-8 (operator 2026-09-27): the new owner's Needs-you list (and the
+    // previous owner's) refresh; an ASSIGNEE is told by email. After the lock,
+    // best-effort (g34) — a failed email never fails the assignment.
+    spanishBustClaimants_([claimant, prev]);
+    const notified = (claimant !== self) ? spanishNotifyAssignees_([{ by: claimant }], emp) : 0;
+    return { success: true, notified: notified, claim: { by: claimant, assignedBy: claimant !== self ? self : '', atMs: Date.now() } };
   } catch (err) { return { error: 'Claim failed: ' + err.message }; }
 }
 /** Release a claim — the claimant themself, or a manager. No Gmail scope
@@ -825,9 +835,11 @@ function releaseSpanishThread(threadId) {
     const self = String(emp.email || '').trim().toLowerCase();
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
+    let releasedFrom = '';
     try {
       const cur = spanishClaimsMap_()[tid];
       if (!cur) return { success: true, already: true };
+      releasedFrom = cur.by;
       if (cur.by !== self && !emp.isManager) {
         return { error: 'Only the claimant or a manager can release this claim.' };
       }
@@ -836,8 +848,104 @@ function releaseSpanishThread(threadId) {
       ]));
     } finally { lock.releaseLock(); }
     writeAuditLog_(emp, 'SpanishInboxClaim', '', '', false, 0, 'threadId=' + tid + '; release');
+    spanishBustClaimants_([releasedFrom]);   // 22post C-8: it leaves their Needs-you list
     return { success: true };
   } catch (err) { return { error: 'Release failed: ' + err.message }; }
+}
+
+// ── 22post C-8 (operator 2026-09-27): assignment notifications ─────────────
+// "If I assign a pending task, is that rep notified?" — they were not, by any
+// channel. Now BOTH: a PHI-free email (who assigned how many, and a link — no
+// caller, subject or body) and a `spanish` item on the Dashboard's Needs-you
+// list. A self-claim notifies nobody (the claimant knows).
+/** PURE (Node-pinned) — group assignments into one notice per assignee,
+ *  skipping the actor's own claims. picks: [{by}]. Returns [{email, count}]. */
+function spanishAssignNotices_(picks, actorEmail) {
+  const actor = String(actorEmail || '').trim().toLowerCase();
+  const counts = {}, order = [];
+  (picks || []).forEach(function (p) {
+    const to = String((p && p.by) || '').trim().toLowerCase();
+    if (!to || to === actor) return;
+    if (!counts[to]) { counts[to] = 0; order.push(to); }
+    counts[to]++;
+  });
+  return order.map(function (e) { return { email: e, count: counts[e] }; });
+}
+/** PURE (Node-pinned) — the assignment email: subject + html + text. PHI-free
+ *  by construction: it is built from a count, the assigner's name and a link. */
+function spanishAssignEmail_(count, actorName, url) {
+  const n = Number(count) || 0;
+  const what = n === 1 ? 'a Spanish Inbox request' : n + ' Spanish Inbox requests';
+  const who = String(actorName || '').trim();
+  const lead = who ? esc_(who) + ' assigned you ' + what + '.' : 'You were assigned ' + what + '.';
+  const bodyHtml = '<p style="margin:0 0 12px;">' + lead + '</p>' +
+    '<p style="margin:0;">Open the Spanish Inbox in Team Tools to see ' + (n === 1 ? 'it' : 'them') +
+    ' — ' + (n === 1 ? 'it is' : 'they are') + ' also on your Dashboard under Needs you.</p>';
+  return {
+    subject: 'Assigned to you: ' + what,
+    html: buildBrandedEmailHtml_('Assigned to you: ' + what, bodyHtml,
+      { tone: 'info', subLabel: 'Spanish Inbox', statusLabel: 'Assigned', ctaUrl: url || '', ctaLabel: 'Open the Spanish Inbox' }),
+    text: (who ? who + ' assigned you ' : 'You were assigned ') + what + '. Open the Spanish Inbox in Team Tools' +
+      (url ? ': ' + url : '.') ,
+  };
+}
+/** Send the notices. Best-effort per recipient; returns how many went out. */
+function spanishNotifyAssignees_(picks, actorEmp) {
+  let sent = 0;
+  try {
+    const notices = spanishAssignNotices_(picks, actorEmp && actorEmp.email);
+    if (!notices.length) return 0;
+    let url = '';
+    try { url = getWebAppExecUrl_() + '?tool=metricsSpanish'; } catch (_) {}
+    const actorName = (actorEmp && actorEmp !== _SYSTEM_AUDIT_EMP_ && actorEmp.name) ? actorEmp.name : '';
+    notices.forEach(function (n) {
+      try {
+        const m = spanishAssignEmail_(n.count, actorName, url);
+        appSendMail_({ to: n.email, subject: m.subject, htmlBody: m.html, body: m.text, name: 'UMS Team Tools' });
+        sent++;
+      } catch (e) { Logger.log('spanishNotifyAssignees_: ' + n.email + ' — ' + e.message); }
+    });
+  } catch (e) { Logger.log('spanishNotifyAssignees_ skipped: ' + e.message); }
+  return sent;
+}
+/** Drop the Needs-you cache of every rep behind these emails (claim owners). */
+function spanishBustClaimants_(emails) {
+  try {
+    const want = {};
+    (emails || []).forEach(function (e) { const k = String(e || '').trim().toLowerCase(); if (k) want[k] = true; });
+    if (!Object.keys(want).length) return;
+    const rows = getEmployeeRosterRows_();
+    for (let i = 1; i < rows.length; i++) {
+      if (want[empRosterEmail_(rows[i]).toLowerCase()]) pendingTasksBust_(String(rows[i][EMP.ID] || '').trim());
+    }
+  } catch (e) {}
+}
+function spanishPendingIdsPut_(days, ids) {
+  try {
+    CacheService.getScriptCache().put(SPANISH_PENDING_IDS_PREFIX + days,
+      JSON.stringify({ atMs: Date.now(), ids: ids || [] }), SPANISH_PENDING_IDS_TTL);
+  } catch (e) {}
+}
+function spanishPendingIdsGet_(days) {
+  try {
+    const hit = CacheService.getScriptCache().get(SPANISH_PENDING_IDS_PREFIX + days);
+    const v = hit ? JSON.parse(hit) : null;
+    return (v && Array.isArray(v.ids)) ? v.ids : null;
+  } catch (e) { return null; }
+}
+/** PURE (Node-pinned) — the rep's claims that are still PENDING. claims:
+ *  spanishClaimsMap_(); pendingIds: [threadId]; manual: the manual-resolve map.
+ *  Returns [{threadId, atMs, assignedBy}] oldest claim first. */
+function spanishMyOpenClaims_(claims, email, pendingIds, manual) {
+  const me = String(email || '').trim().toLowerCase();
+  const pend = {};
+  (pendingIds || []).forEach(function (t) { pend[t] = true; });
+  return Object.keys(claims || {}).filter(function (tid) {
+    const c = claims[tid];
+    return c && c.by === me && pend[tid] && !(manual || {})[tid];
+  }).map(function (tid) {
+    return { threadId: tid, atMs: Number(claims[tid].atMs) || 0, assignedBy: claims[tid].assignedBy || '' };
+  }).sort(function (a, b) { return a.atMs - b.atMs; });
 }
 
 // ── Spanish inbox — auto-assign (operator testing note 4, 2026-09-10) ───────
@@ -927,8 +1035,16 @@ function spanishAutoAssignCore_(emp, days) {
   } finally { lock.releaseLock(); }
   writeAuditLog_(emp, 'SpanishInboxAutoAssign', '', '', false, 0,
     'assigned=' + picks.length + '; members=' + members.length);
+  // 22post C-8: ONE summary email per assignee per run, never one per request;
+  // their Needs-you lists refresh. After the lock, best-effort (g34).
+  let notified = 0;
+  if (picks.length) {
+    spanishBustClaimants_(picks.map(function (pk) { return pk.by; }));
+    notified = spanishNotifyAssignees_(picks, emp);
+  }
   return {
     success: true,
+    notified: notified,
     unclaimed: unclaimed.length,
     assigned: picks.map(function (pk) { return { threadId: pk.threadId, claim: { by: pk.by, assignedBy: self, atMs: nowMs } }; }),
   };

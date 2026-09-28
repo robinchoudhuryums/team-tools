@@ -7703,6 +7703,41 @@ function getMyPendingTasks() {
       });
     } catch (e) { (hrOk ? unavailable : notConfigured).push('docs'); }
 
+    // spanish — 22post C-8: Spanish Inbox requests the rep owns (claimed, or
+    // assigned by a manager or the auto-assign) that are still PENDING. Only
+    // for a member; the claims tab is a cheap read, and pending-ness comes from
+    // the cached id set getSpanishInboxPending keeps (one live read on a miss,
+    // and only when the rep owns at least one claim).
+    if (canSeeSpanishInbox_(emp) && getSpanishInboxAddress_()) {
+      try {
+        var spClaims = spanishClaimsMap_();
+        var spManual = spanishManualResolvedMap_();
+        var me = String(emp.email || '').trim().toLowerCase();
+        var anyMine = Object.keys(spClaims).some(function (t) { return spClaims[t].by === me && !spManual[t]; });
+        if (anyMine) {
+          var spIds = spanishPendingIdsGet_(SPANISH_AUTO_ASSIGN_DAYS);
+          if (!spIds) {
+            var spRes = getSpanishInboxPending(SPANISH_AUTO_ASSIGN_DAYS);
+            if (!spRes || spRes.error) throw new Error((spRes && spRes.error) || 'unreadable');
+            spIds = (spRes.pending || []).map(function (p) { return p.threadId; });
+          }
+          var spOpen = spanishMyOpenClaims_(spClaims, me, spIds, spManual);
+          if (spOpen.length) {
+            var spOldest = spOpen[0];
+            var spAssigned = spOpen.filter(function (o) { return o.assignedBy; }).length;
+            items.push({
+              kind: 'spanish',
+              title: spOpen.length + ' Spanish Inbox request' + (spOpen.length === 1 ? '' : 's') + ' to work',
+              detail: (spAssigned ? spAssigned + ' assigned to you · ' : '') +
+                (spOldest.atMs ? 'oldest since ' + Utilities.formatDate(new Date(spOldest.atMs), tz, 'MMM d, h:mm a') : 'yours'),
+              dueIso: '', overdue: false, action: 'Open',
+              route: { tool: 'metrics', tab: 'metricsSpanish' },
+            });
+          }
+        }
+      } catch (e) { unavailable.push('spanish'); }
+    }
+
     var sorted = pendingTasksSort_(items);
     var result = {
       items: sorted.slice(0, PENDING_TASKS_CAP), total: sorted.length, cap: PENDING_TASKS_CAP,

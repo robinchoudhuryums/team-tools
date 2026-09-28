@@ -28987,6 +28987,58 @@ test('B-2b: the Scratchpad remembers where it was left, clamped to THIS window (
   assert.ok(/try \{ localStorage\.setItem/.test(save) && /try \{ g = JSON\.parse\(localStorage\.getItem/.test(apply), 'every read and write in a try/catch (g112)');
 });
 
+// 22post Batch C — Spanish assign notifications, presence on the live view
+console.log('\n22post Batch C — Spanish assign notifications, presence');
+
+test('C-8: an assignment tells the assignee — one PHI-free email per assignee per action, never the actor (driven)', () => {
+  const ctx = vm.createContext({ String, Number, Object, CN_EMAIL_PALETTE: {} });
+  ['spanishAssignNotices_', 'spanishMyOpenClaims_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  assert.deepStrictEqual(J(ctx.spanishAssignNotices_([{ by: 'Ana@x' }, { by: 'bo@x' }, { by: 'ana@x' }, { by: 'mgr@x' }], 'MGR@x')),
+    [{ email: 'ana@x', count: 2 }, { email: 'bo@x', count: 1 }], 'grouped per assignee; the actor is never emailed');
+  assert.deepStrictEqual(J(ctx.spanishAssignNotices_([{ by: 'me@x' }], 'me@x')), [], 'a self-claim notifies nobody');
+  // The email is built from a count, a name and a link — nothing else can reach it.
+  const ectx = vm.createContext({ String, Number });
+  vm.runInContext('function esc_(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;");} function buildBrandedEmailHtml_(h,b,o){return "H:"+h+"|B:"+b+"|CTA:"+o.ctaUrl;}', ectx);
+  vm.runInContext(extractRawFunction('Code.js', 'spanishAssignEmail_'), ectx);
+  const m = ectx.spanishAssignEmail_(2, 'Sam <Lead>', 'https://app/exec?tool=metricsSpanish');
+  assert.strictEqual(m.subject, 'Assigned to you: 2 Spanish Inbox requests');
+  assert.ok(/Sam &lt;Lead> assigned you 2 Spanish Inbox requests/.test(m.html), 'the assigner name is escaped');
+  assert.ok(/CTA:https:\/\/app\/exec\?tool=metricsSpanish/.test(m.html) && /tool=metricsSpanish/.test(m.text), 'a deep link to the Spanish Inbox');
+  assert.strictEqual(extractRawFunction('Code.js', 'spanishAssignEmail_').match(/function spanishAssignEmail_\(([^)]*)\)/)[1], 'count, actorName, url',
+    'the builder takes no request content — it cannot leak a subject or a body');
+  // The Needs-you fold: my claims that are still pending, not manually resolved.
+  const claims = { t1: { by: 'me@x', atMs: 20, assignedBy: 'mgr@x' }, t2: { by: 'me@x', atMs: 10, assignedBy: '' },
+    t3: { by: 'other@x', atMs: 5 }, t4: { by: 'me@x', atMs: 1 }, t5: { by: 'me@x', atMs: 2 } };
+  assert.deepStrictEqual(J(ctx.spanishMyOpenClaims_(claims, 'ME@x', ['t1', 't2', 't3', 't5'], { t5: true })).map((o) => o.threadId), ['t2', 't1'],
+    'mine, still pending (t4 is not), never manually resolved (t5), oldest first');
+});
+
+test('C-8: the notices, busts and Needs-you item are wired — after the lock, only for a member, pending-ness from the cached id set (source)', () => {
+  const claim = stripJsComments_(extractRawFunction('Code.js', 'claimSpanishThread'));
+  assert.ok(claim.indexOf('lock.releaseLock()') < claim.indexOf('spanishNotifyAssignees_('), 'the email goes out AFTER the lock (g34)');
+  assert.ok(/\(claimant !== self\) \? spanishNotifyAssignees_\(\[\{ by: claimant \}\], emp\) : 0/.test(claim), 'only an assignment notifies');
+  assert.ok(/spanishBustClaimants_\(\[claimant, prev\]\)/.test(claim), 'the new and the previous owner refresh');
+  assert.ok(/spanishBustClaimants_\(\[releasedFrom\]\)/.test(stripJsComments_(extractRawFunction('Code.js', 'releaseSpanishThread'))), 'a release refreshes');
+  assert.ok(/spanishBustClaimants_\(\[c\.by\]\)/.test(stripJsComments_(extractRawFunction('Code.js', 'resolveSpanishThread'))), 'a resolve refreshes');
+  const auto = stripJsComments_(extractRawFunction('Code.js', 'spanishAutoAssignCore_'));
+  assert.ok(auto.indexOf('lock.releaseLock()') < auto.indexOf('spanishNotifyAssignees_(picks, emp)'), 'auto-assign emails after the lock, one summary per assignee');
+  assert.ok(/spanishPendingIdsPut_\(d, out\.map\(function \(x\) \{ return x\.threadId; \}\)\)/.test(stripJsComments_(extractRawFunction('Code.js', 'getSpanishInboxPending'))),
+    'the cached set is thread ids ONLY');
+  const pt = stripJsComments_(extractRawFunction('Code.js', 'getMyPendingTasks'));
+  assert.ok(/if \(canSeeSpanishInbox_\(emp\) && getSpanishInboxAddress_\(\)\)/.test(pt), 'members only');
+  assert.ok(pt.indexOf('spanishPendingIdsGet_(') < pt.indexOf('getSpanishInboxPending(') && /if \(anyMine\)/.test(pt),
+    'the cached ids first; a live read only on a miss, and only for a rep who owns a claim');
+  assert.ok(/unavailable\.push\('spanish'\)/.test(pt), 'a failed read is "couldn\'t check", never "nothing to do"');
+  assert.ok(/route: \{ tool: 'metrics', tab: 'metricsSpanish' \}/.test(pt) && /'spanish'\]/.test(fs.readFileSync(path.join(PA_WEB, '00_config.js'), 'utf8')), 'a routed, declared kind');
+  const clk = fs.readFileSync(path.join(PA_WEB, 'tc/script_clock.html'), 'utf8');
+  assert.ok(/spanish: 'mail'/.test(clk) && /spanish: 'Spanish Inbox'/.test(clk), 'the Dashboard has its icon and label');
+  const met = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
+  assert.ok(/clkNeedsYouInvalidate_\(\);\s+\/\/ 22post C-8: a claim is a Needs-you task/.test(extractFnFrom(met, 'spanishClaimRpc_')), 'the actor\'s own list refreshes');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/kind: 'spanish'/.test(mock), 'the fixture photographs it (INV-185)');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

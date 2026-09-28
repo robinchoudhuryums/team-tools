@@ -2203,7 +2203,9 @@ function spanishAutoAssign_(btn) {
         });
         spanishRenderList_();   // ONE render — the cards' claim pills AND the button
         var k = (r.assigned || []).length;
-        showToast(k ? ('Assigned ' + k + ' request' + (k === 1 ? '' : 's') + ' across ' + members.length + ' member' + (members.length === 1 ? '' : 's'))
+        if (k && typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // 22post C-8
+        showToast(k ? ('Assigned ' + k + ' request' + (k === 1 ? '' : 's') + ' across ' + members.length + ' member' + (members.length === 1 ? '' : 's') +
+                        (r.notified != null ? ' · ' + r.notified + ' emailed' : ''))
                     : 'Nothing to assign — every pending request is already claimed', 'success');
       })
       .withFailureHandler(function (e) {
@@ -2622,11 +2624,18 @@ function spanishClaimRpc_(el, tid, assignee) {
       el.disabled = false;
       if (!r || r.error) { showToast((r && r.error) || 'Claim failed', 'error'); spanishRenderList_(); return; }
       spanishSetClaimLocal_(tid, r.claim || null);
+      if (typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // 22post C-8: a claim is a Needs-you task
       showToast(r.already ? 'Already claimed' :
-        (assignee ? 'Assigned to ' + assignee.split('@')[0] : 'Claimed — teammates will see you have it'), 'success');
+        (assignee ? 'Assigned to ' + assignee.split('@')[0] + spanishNotifiedNote_(r) : 'Claimed — teammates will see you have it'), 'success');
     })
     .withFailureHandler(function (e) { el.disabled = false; showToast((e && e.message) || 'Claim failed', 'error'); })
     .claimSpanishThread(tid, assignee);
+}
+/** 22post C-8 — say whether the assignee was emailed (the server reports how
+ *  many notices went out; an older server reports nothing and says nothing). */
+function spanishNotifiedNote_(r) {
+  if (!r || r.notified == null) return '';
+  return r.notified > 0 ? ' — emailed' : ' — the email could not be sent';
 }
 function spanishRelease_(btn) {
   var tid = btn.getAttribute('data-thread');
@@ -2637,6 +2646,7 @@ function spanishRelease_(btn) {
       btn.disabled = false;
       if (!r || r.error) { showToast((r && r.error) || 'Release failed', 'error'); return; }
       spanishSetClaimLocal_(tid, null);
+      if (typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // 22post C-8
       showToast('Claim released', 'success');
     })
     .withFailureHandler(function (e) { btn.disabled = false; showToast((e && e.message) || 'Release failed', 'error'); })
@@ -2734,6 +2744,7 @@ function spanishRemovePendingLocal_(tid) {
 var SP_LEAVE_FALLBACK_MS = 400;   // comfortably past the .22s exit
 function spanishResolveDone_(tid, card) {
   spanishRemovePendingLocal_(tid);
+  if (typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // 22post C-8
   if (!card || !card.parentNode) { spanishRenderList_(); return; }
   var done = false;
   var finish = function () { if (done) return; done = true; spanishRenderList_(); };
