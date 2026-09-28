@@ -3162,17 +3162,20 @@ test('F-02 DOM (2026-09-17): the Scheduled-reminders and Scratchpad modals CLOSE
     'the Close button routes through closeOverlay');
   h.window.closeOverlay(doc.getElementById('cn-sched-overlay'));
 
-  // Scratchpad: same contract, plus the flush-on-close it already had.
+  // Scratchpad (22post B-2b: a floating NON-modal panel, not an overlay):
+  // its Close closes it, Escape from INSIDE closes it, and the flush-on-close holds.
   h.read('cnOpenScratchpadModal_')();
-  let sp = doc.getElementById('cn-scratch-overlay');
-  assert.ok(sp && sp.classList.contains('open'), 'scratchpad opens');
+  assert.ok(doc.getElementById('cn-scratch-panel'), 'scratchpad opens');
   h.run.flushSuccess({ success: true, content: 'notes', updatedAtMs: Date.now() }, 'getMyScratchpad');
   const ta = doc.getElementById('cn-scratch-text');
-  ta.value = 'edited'; ta.dispatchEvent(new h.window.Event('input'));
-  h.window.closeOverlay(sp);
-  sp = doc.getElementById('cn-scratch-overlay');
-  assert.ok(!sp || !sp.classList.contains('open'), 'closeOverlay CLOSES the scratchpad');
+  ta.innerHTML = 'edited'; ta.dispatchEvent(new h.window.Event('input'));
+  h.read('cnCloseScratchpadModal_')();
+  assert.ok(!doc.getElementById('cn-scratch-panel'), 'Close CLOSES the scratchpad');
   assert.strictEqual(h.run.pending('saveMyScratchpad').length, 1, 'and the dirty pad was flushed on the way out (INV-148)');
+  h.run.flushSuccess({ success: true, updatedAtMs: Date.now() }, 'saveMyScratchpad');
+  h.read('cnOpenScratchpadModal_')();
+  doc.getElementById('cn-scratch-text').dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.ok(!doc.getElementById('cn-scratch-panel'), 'Escape from inside closes it');
 
   // Generic sweep: every hook registered right now closes its overlay when
   // nothing is in flight. A hook that legitimately REFUSES (the composer
@@ -3197,12 +3200,12 @@ test('C6 (cycle 22): Scratchpad text typed during an in-flight save, then closed
   h.read('cnOpenScratchpadModal_')();
   h.run.flushSuccess({ success: true, content: 'v0', updatedAtMs: Date.now() }, 'getMyScratchpad');
   let ta = doc.getElementById('cn-scratch-text');
-  ta.value = 'v1'; ta.dispatchEvent(new h.window.Event('input'));
+  ta.innerHTML = 'v1'; ta.dispatchEvent(new h.window.Event('input'));
   h.read('cnScratchSave_')(true);                         // "Save now" — in flight
   assert.deepStrictEqual(sent(), ['v1']);
-  ta.value = 'v1 and more'; ta.dispatchEvent(new h.window.Event('input'));
-  h.window.closeOverlay(doc.getElementById('cn-scratch-overlay'));   // close while v1 is in flight
-  assert.ok(!doc.getElementById('cn-scratch-text'), 'the modal is gone');
+  ta.innerHTML = 'v1 and more'; ta.dispatchEvent(new h.window.Event('input'));
+  h.read('cnCloseScratchpadModal_')();   // close while v1 is in flight
+  assert.ok(!doc.getElementById('cn-scratch-text'), 'the panel is gone');
   h.run.flushSuccess({ success: true, updatedAtMs: Date.now() }, 'saveMyScratchpad');
   assert.deepStrictEqual(sent(), ['v1 and more'], 'THE REGRESSION: the text typed during the save is sent after the modal closed');
   assert.strictEqual(h.read('CN_SCRATCH.dirty'), true, 'the first save did NOT mark newer text clean');
@@ -3213,7 +3216,7 @@ test('C6 (cycle 22): Scratchpad text typed during an in-flight save, then closed
   h.read('cnOpenScratchpadModal_')();
   h.run.flushSuccess({ success: true, content: 'v1', updatedAtMs: Date.now() }, 'getMyScratchpad');
   ta = doc.getElementById('cn-scratch-text');
-  assert.strictEqual(ta.value, 'v1 and more', 'the unsaved text comes back');
+  assert.strictEqual(ta.innerHTML, 'v1 and more', 'the unsaved text comes back');
   assert.deepStrictEqual(sent(), ['v1 and more'], 'and is saved again');
   h.run.flushSuccess({ success: true, updatedAtMs: Date.now() }, 'saveMyScratchpad');
   assert.strictEqual(h.read('CN_SCRATCH.dirty'), false, 'clean once the latest text lands');
@@ -4581,4 +4584,146 @@ test('R-6: every block on the Reference landing is a SECTION or the band — not
   assert.ok(/KbFeedback/.test(rdSec.textContent),
     'its partial-read warning is INSIDE it — loose on the landing it named no list');
   assert.ok(/queue above may be incomplete/.test(rdSec.textContent), 'and still says what it means');
+});
+
+test('22post A-2a DOM: the Scratchpad reopens INSTANTLY from the session copy, refreshes behind it without clobbering typing, and states a failed refresh', () => {
+  const h = boot();
+  const doc = h.document;
+  const ed = () => doc.getElementById('cn-scratch-text');
+  const editable = () => ed().getAttribute('contenteditable') === 'true';
+  const close = () => h.read('cnCloseScratchpadModal_')();
+  // First open: no session copy — it loads as before (not editable until the read lands).
+  h.read('cnOpenScratchpadModal_')();
+  assert.strictEqual(editable(), false, 'the first open waits on the read');
+  h.run.flushSuccess({ content: 'first copy', updatedAtMs: Date.now() }, 'getMyScratchpad');
+  assert.strictEqual(ed().innerHTML, 'first copy');
+  // The footer uses the standard modal buttons, not the card-scoped .cn-act-btn.
+  const btns = Array.from(doc.querySelectorAll('#cn-scratch-panel button'));
+  assert.ok(btns.some((b) => b.classList.contains('btn-modal-ok') && /Save now/.test(b.textContent)), 'Save now is the primary modal button');
+  assert.ok(btns.some((b) => b.classList.contains('btn-modal-cancel') && /Close/.test(b.textContent)), 'Close is the secondary modal button');
+  assert.ok(!btns.some((b) => b.classList.contains('cn-act-btn')), 'no unstyled .cn-act-btn left');
+  close();
+  // Reopen: painted at once from the session copy, editable, while the refresh runs.
+  h.read('cnOpenScratchpadModal_')();
+  assert.strictEqual(editable(), true, 'the reopen is usable at once');
+  assert.strictEqual(ed().innerHTML, 'first copy', 'painted from the session copy');
+  // The rep types before the refresh lands — the refresh must not overwrite it.
+  ed().innerHTML = 'typed while loading'; ed().dispatchEvent(new h.window.Event('input'));
+  h.run.flushSuccess({ content: 'newer server copy', updatedAtMs: Date.now() }, 'getMyScratchpad');
+  assert.strictEqual(ed().innerHTML, 'typed while loading', 'typing wins over a late refresh');
+  close();
+  h.run.flushSuccess({ success: true, updatedAtMs: Date.now() }, 'saveMyScratchpad');
+  // Reopen again with no typing: a newer server copy DOES replace the painted one.
+  h.read('cnOpenScratchpadModal_')();
+  assert.strictEqual(ed().innerHTML, 'typed while loading', 'the saved text is the new session copy');
+  h.run.flushSuccess({ content: '<b>edited</b> in another window', format: 'html', updatedAtMs: Date.now() }, 'getMyScratchpad');
+  assert.strictEqual(ed().innerHTML, '<b>edited</b> in another window', 'an untouched pad takes the refresh');
+  close();
+  // A failed refresh keeps the painted copy editable and says so.
+  h.read('cnOpenScratchpadModal_')();
+  h.run.flushSuccess({ error: 'boom' }, 'getMyScratchpad');
+  assert.strictEqual(editable(), true, 'still editable after a failed refresh');
+  assert.ok(/Could not refresh/.test(doc.getElementById('cn-scratch-status').textContent), 'and the failed refresh is stated');
+  close();
+});
+
+test('22post A-7 DOM: a manager\'s Dept Requests page leads with the team-wide cards BESIDE the resolution table, then team-wide, Incoming, My requests; a rep\'s order is unchanged; the sort re-orders every list', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  const item = (id, st, ms, extra) => Object.assign({ requestId: id, toDept: 'Billing', label: 'L-' + id, createdAt: 'x', createdMs: ms, byName: 'Me', status: st, elapsedMin: 30, slaBusiness: true, slaStatus: 'ontime', slaDays: 2 }, extra || {});
+  h.run.respond('getDeptRequests', () => ({ isManager: true, myDepts: ['Billing'], departments: ['Billing'],
+    mine: [item('m-old', 'open', 1000), item('m-new', 'open', 5000)],
+    incoming: [item('i1', 'open', 3000)], allOpen: [item('t1', 'open', 2000, { elapsedMin: 900 })],
+    truncated: false, listCap: 100, mineTotal: 2, incomingTotal: 1, allOpenTotal: 1,
+    teamKpis: { open: 4, overdue: 0, resolved: 9, total: 13, medianMin: 45, manualCount: 0 },
+    deptStats: [{ dept: 'Billing', open: 4, resolved: 9, overdueOpen: 0, slaDays: 2, avgMinutes: 50, medianMinutes: 45, manualResolved: 0, untrackedResolved: 0 }] }));
+  h.window.enterTool('metrics', 'metricsDeptReq');
+  h.flushTimers();
+  const top = h.$('.dr-top-row');
+  assert.ok(top, 'the manager top row renders');
+  assert.ok(top.querySelector('#dr-kpi') && top.querySelector('#dr-mgr-stats'), 'the cards sit BESIDE the resolution table');
+  assert.ok(/Open · team/.test(top.textContent) && /Team-wide/.test(top.textContent), 'the cards are team-wide and say so');
+  const body = h.$('#dr-body').textContent;
+  const at = (t) => body.indexOf(t);
+  assert.ok(at('Resolution time by department') < at('Oldest open (team-wide)') && at('Oldest open (team-wide)') < at('Incoming ·') && at('Incoming ·') < at('My requests'),
+    'order: resolution table, team-wide, Incoming, My requests');
+  const mineIds = () => {
+    const lbl = h.$$('.day-section-label').filter((n) => /My requests/.test(n.textContent))[0];
+    const ids = []; let n = lbl.nextElementSibling;
+    while (n) { n.querySelectorAll && n.querySelectorAll('.sp-task[data-req]').forEach((c) => ids.push(c.getAttribute('data-req'))); if (n.matches && n.matches('.sp-task[data-req]')) ids.push(n.getAttribute('data-req')); n = n.nextElementSibling; }
+    return ids;
+  };
+  assert.deepStrictEqual(mineIds(), ['m-new', 'm-old'], 'newest first by default');
+  h.window.drSetSort_('oldest');
+  assert.deepStrictEqual(mineIds(), ['m-old', 'm-new'], 'the sort control re-orders the list');
+  h.window.drSetSort_('newest');
+});
+
+test('22post B-2b/B-2c DOM: the Scratchpad is a floating NON-modal panel — no backdrop, focus not trapped under a modal, Escape inside closes only it; formatting survives the allowlist and a legacy text pad converts', () => {
+  const h = boot();
+  const doc = h.document;
+  const w = h.window;
+  // A modal is already open underneath (the reminders modal).
+  w.schedFetch_ = function () {};
+  h.read('cnOpenSchedModal_')();
+  const modal = doc.getElementById('cn-sched-overlay');
+  assert.ok(modal && modal.classList.contains('open'), 'a modal is open');
+  w.localStorage.setItem('umsScratchGeom', JSON.stringify({ x: 5000, y: 30, w: 420, h: 360 }));
+  h.read('cnOpenScratchpadModal_')();
+  const panel = doc.getElementById('cn-scratch-panel');
+  assert.ok(panel && !panel.classList.contains('overlay') && !panel.closest('.overlay'), 'the panel is not an overlay — no backdrop, no blur');
+  assert.strictEqual(panel.getAttribute('aria-modal'), 'false', 'and says it is non-modal');
+  assert.ok(parseInt(panel.style.left, 10) + 420 <= w.innerWidth && panel.style.width === '420px', 'the remembered geometry is applied, clamped on screen');
+  // A legacy plain-text pad converts: escaped, line breaks kept.
+  h.run.flushSuccess({ content: 'a <b> & c\nnext', updatedAtMs: Date.now(), maxChars: 40000, format: 'text' }, 'getMyScratchpad');
+  const ed = doc.getElementById('cn-scratch-text');
+  assert.strictEqual(ed.innerHTML, 'a &lt;b&gt; &amp; c<br>next', 'a text pad renders as its text');
+  assert.ok(/\/ 40,000/.test(doc.getElementById('cn-scratch-count').textContent), 'the size counter shows the server limit');
+  // Focus is NOT yanked back into the modal underneath.
+  ed.focus();
+  assert.strictEqual(doc.activeElement, ed, 'the editor keeps focus with a modal open');
+  // Escape from inside closes ONLY the panel.
+  ed.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.ok(!doc.getElementById('cn-scratch-panel'), 'Escape inside closed the panel');
+  assert.ok(doc.getElementById('cn-sched-overlay').classList.contains('open'), 'and left the modal underneath open');
+  w.closeOverlay(doc.getElementById('cn-sched-overlay'));
+
+  // The client sanitizer holds the same cases as the server's (run.js SCRATCH_SANITIZE_CASES).
+  const san = h.read('cnScratchSanitize_');
+  [
+    ['<b>bold</b> and <i>it</i> <u>u</u>', '<b>bold</b> and <i>it</i> <u>u</u>'],
+    ['<img src=x onerror="alert(1)">hi', 'hi'],
+    ['<script>alert(1)</script>ok', 'ok'],
+    ['<span class="cn-sp-c-red" onclick="x()">red</span>', '<span class="cn-sp-c-red">red</span>'],
+    ['<span class="evil cn-sp-s-large">big</span>', '<span class="cn-sp-s-large">big</span>'],
+    ['<span style="color:red">plain</span>', 'plain'],
+    ['<a href="javascript:alert(1)">link</a>', 'link'],
+    ['<ul><li>one</li><li>two</li></ul>', '<ul><li>one</li><li>two</li></ul>'],
+    ['<div>line<br>two</div>', '<div>line<br>two</div>'],
+    ['<b onmouseover="x()">t</b>', '<b>t</b>'],
+    ['a &amp; b &lt; c', 'a &amp; b &lt; c'],
+  ].forEach(([inp, want]) => assert.strictEqual(san(inp), want, inp));
+
+  // A colour / size command's sentinel marks become palette classes, and
+  // "default" unwraps them.
+  const root = doc.createElement('div');
+  root.innerHTML = 'x <font color="#010203">red</font> <font size="7">big</font>';
+  assert.strictEqual(h.read('cnScratchConvertMarks_')(root, 'color', 'cn-sp-c-red'), 1);
+  h.read('cnScratchConvertMarks_')(root, 'size', 'cn-sp-s-large');
+  assert.strictEqual(root.innerHTML, 'x <span class="cn-sp-c-red">red</span> <span class="cn-sp-s-large">big</span>', 'classes, never inline colours');
+  h.read('cnScratchUnwrap_')(root, 'c', null);
+  assert.strictEqual(root.innerHTML, 'x red <span class="cn-sp-s-large">big</span>', 'default colour unwraps only the colour');
+
+  // A save sends SANITIZED html, marked html.
+  h.read('cnOpenScratchpadModal_')();
+  h.run.flushSuccess({ content: '', updatedAtMs: Date.now(), maxChars: 40000, format: 'html' }, 'getMyScratchpad');
+  const ed2 = doc.getElementById('cn-scratch-text');
+  ed2.innerHTML = '<b>keep</b><img src=x onerror="alert(1)">';
+  ed2.dispatchEvent(new w.Event('input'));
+  h.read('cnScratchSave_')(true);
+  const call = h.run.pending('saveMyScratchpad').slice(-1)[0];
+  assert.deepStrictEqual(Array.from(call.args), ['<b>keep</b>', 'html'], 'the save carries clean html and says so');
+  h.run.flushSuccess({ success: true, updatedAtMs: Date.now() }, 'saveMyScratchpad');
+  h.read('cnCloseScratchpadModal_')();
 });

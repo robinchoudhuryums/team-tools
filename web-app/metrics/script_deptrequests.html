@@ -69,6 +69,119 @@ var DR_LAST_DATA = null;
 // Client-side over the cached payload, like the status chips — no refetch.
 var DR_DEPT_FILTER = [];
 
+// 22post A-6 (operator 2026-09-27): a visible SORT and a DATE filter over every
+// list on the page. Default Newest, open first (the server ships that order;
+// the client re-sorts on request). Client-side over the cached payload, like
+// the chips. The range reads each item's createdMs; an undated legacy row is
+// kept (a filter that cannot place a row does not drop it).
+var DR_SORT = 'newest';
+var DR_RANGE = { preset: 'all', from: '', to: '', customOpen: false };
+var DR_SORTS = [
+  { key: 'newest',  label: 'Newest first' },
+  { key: 'oldest',  label: 'Oldest first' },
+  { key: 'longest', label: 'Longest open' },
+];
+var DR_RANGE_PRESETS = [
+  { key: 'all', label: 'All loaded' }, { key: '7', label: '7 days' },
+  { key: '30', label: '30 days' }, { key: '90', label: '90 days' },
+];
+/** PURE — the comparator for a sort key. Every sort keeps open before
+ *  resolved; within a group: newest / oldest by createdMs, or the longest
+ *  business age first (a resolved row falls back to newest). */
+function drSortCmp_(sort) {
+  return function (a, b) {
+    if (a.status !== b.status) return a.status === 'resolved' ? 1 : -1;
+    const am = a.createdMs || 0, bm = b.createdMs || 0;
+    if (sort === 'oldest') return (am || Infinity) - (bm || Infinity);
+    if (sort === 'longest' && a.status !== 'resolved') return (b.elapsedMin || 0) - (a.elapsedMin || 0);
+    return bm - am;
+  };
+}
+/** PURE — is a created time inside the range? Presets are "the last N days";
+ *  a custom range is local calendar days, both ends inclusive. An unknown
+ *  time (null) is kept. */
+function drInRange_(ms, range, nowMs) {
+  if (ms == null || !range) return true;
+  if (range.preset && range.preset !== 'all' && range.preset !== 'custom') {
+    const days = Number(range.preset);
+    return !(days > 0) || ms >= nowMs - days * 86400000;
+  }
+  if (range.preset === 'custom') {
+    const from = range.from ? new Date(range.from + 'T00:00:00').getTime() : null;
+    const to = range.to ? new Date(range.to + 'T23:59:59.999').getTime() : null;
+    if (from != null && isFinite(from) && ms < from) return false;
+    if (to != null && isFinite(to) && ms > to) return false;
+  }
+  return true;
+}
+/** One pipeline for every list: department chips, the date range, the sort. */
+function drListView_(list) {
+  const now = Date.now();
+  return (list || []).filter(drDeptMatch_)
+    .filter(function (r) { return drInRange_(r.createdMs, DR_RANGE, now); })
+    .slice().sort(drSortCmp_(DR_SORT));
+}
+function drRangeActive_() { return DR_RANGE.preset !== 'all'; }
+function drRerender_() {
+  var area = getDeptRequestsArea_();
+  if (area && DR_LAST_DATA) {
+    drRender_(area, DR_LAST_DATA, null);
+    if (typeof animateListSwap_ === 'function') animateListSwap_(area);
+  }
+}
+function drSetSort_(key) {
+  DR_SORT = DR_SORTS.some(function (x) { return x.key === key; }) ? key : 'newest';
+  drRerender_();
+}
+function drSetRange_(key) {
+  DR_RANGE.preset = DR_RANGE_PRESETS.some(function (x) { return x.key === key; }) ? key : 'all';
+  DR_RANGE.customOpen = false;
+  drRerender_();
+}
+function drToggleRangeCustom_(scope, rowId) {
+  var open = (typeof mtDateRangeToggle_ === 'function') ? mtDateRangeToggle_(scope, rowId) : null;
+  if (open != null) DR_RANGE.customOpen = open;
+}
+function drApplyRangeCustom_() {
+  var f = document.getElementById('dr-range-from'), t = document.getElementById('dr-range-to');
+  var from = f ? f.value : '', to = t ? t.value : '';
+  if (from && to && from > to) { showToast('The start date is after the end date', 'toast-warn'); return; }
+  DR_RANGE.preset = (from || to) ? 'custom' : 'all';
+  DR_RANGE.from = from; DR_RANGE.to = to; DR_RANGE.customOpen = true;
+  drRerender_();
+}
+/** The sort + range controls. The custom row is the shared mtDateRange_ one. */
+function drControlsHtml_() {
+  var active = DR_RANGE.preset === 'custom' ? '' : DR_RANGE.preset;
+  var open = DR_RANGE.customOpen || DR_RANGE.preset === 'custom';
+  var sortSel = '<label class="dr-sort">Sort <select aria-label="Sort requests" onchange="drSetSort_(this.value)">' +
+    DR_SORTS.map(function (o) {
+      return '<option value="' + o.key + '"' + (DR_SORT === o.key ? ' selected' : '') + '>' + esc(o.label) + '</option>';
+    }).join('') + '</select></label>';
+  var range = (typeof mtDateRange_ === 'function')
+    ? mtDateRange_({ scope: 'dr', ariaLabel: 'Date sent', presets: DR_RANGE_PRESETS, active: active,
+        onPreset: 'drSetRange_', rowId: 'dr-range-custom', customOpen: open, onToggle: 'drToggleRangeCustom_' })
+    : '';
+  var row = (typeof mtDateRangeRow_ === 'function')
+    ? mtDateRangeRow_('dr-range-custom', open,
+        '<div class="field"><label for="dr-range-from">From</label><input type="date" id="dr-range-from" value="' + esc(DR_RANGE.from) + '"></div>' +
+        '<div class="field"><label for="dr-range-to">To</label><input type="date" id="dr-range-to" value="' + esc(DR_RANGE.to) + '"></div>' +
+        '<button type="button" class="refresh-btn" onclick="drApplyRangeCustom_()">Apply</button>')
+    : '';
+  return '<div class="dr-controls">' + sortSel + '<span class="dr-controls-label">Sent</span>' + range + '</div>' + row;
+}
+/** PURE — the oldest created time among the loaded rows (null if none dated):
+ *  how far back a truncated window reaches. */
+function drOldestLoadedMs_(data) {
+  var ms = null;
+  ['mine', 'incoming', 'allOpen'].forEach(function (k) {
+    ((data && data[k]) || []).forEach(function (r) {
+      if (r.createdMs && (ms == null || r.createdMs < ms)) ms = r.createdMs;
+    });
+  });
+  return ms;
+}
+
 // Operator 2026-08-17 — display cap: per-section shown counts (mine /
 // incoming / team). Reset on view enter; "Show more" bumps by SP_TASKS_PAGE.
 var DR_SHOWN = {};
@@ -142,6 +255,10 @@ function drRowToneCls_(item) {
  *  derived CLIENT-side from data.mine, which is why the optimistic patch keeps
  *  the strip exactly correct with no server round-trip. */
 function drKpiStripHtml_(data) {
+  // 22post A-7 (operator 2026-09-27): a manager's cards are TEAM-WIDE, from the
+  // server's drTeamKpis_ over the loaded window, labelled so.
+  const team = data && data.isManager && data.teamKpis;
+  if (team) return drTeamKpiStripHtml_(data, team);
   const mineAll = (data && data.mine) || [];
   const openAll = mineAll.filter(function (r) { return r.status !== 'resolved'; });
   const resolvedAll = mineAll.filter(function (r) { return r.status === 'resolved'; });
@@ -169,13 +286,27 @@ function drKpiStripHtml_(data) {
     '</div>' + drBusinessNoteHtml_(data) + '</div>';
 }
 
+/** 22post A-7 — the manager's team-wide strip: the same four cells and the
+ *  same wrapper (#dr-kpi — drRepaintKpi_ swaps it), over the server's counts. */
+function drTeamKpiStripHtml_(data, t) {
+  const median = t.medianMin != null ? drFmtMin_(t.medianMin) : '—';
+  return '<div id="dr-kpi"><div class="telemetry" style="margin-bottom:10px">' +
+    '<div class="tel-cell"><div class="tel-label">Open · team</div><div class="tel-value ' + (t.open ? 'warn' : '') + '">' + t.open + '</div><div class="tel-sub">awaiting resolution</div></div>' +
+    '<div class="tel-cell"><div class="tel-label">Overdue · team</div><div class="tel-value ' + (t.overdue ? 'crit' : '') + '">' + t.overdue + '</div><div class="tel-sub">past their SLA</div></div>' +
+    '<div class="tel-cell"><div class="tel-label">Resolved · team</div><div class="tel-value success">' + t.resolved + '</div><div class="tel-sub">of ' + t.total + '</div></div>' +
+    '<div class="tel-cell"><div class="tel-label">Median · team</div><div class="tel-value">' + esc(median) + '</div><div class="tel-sub">' +
+      esc(t.manualCount ? ('to resolve · ' + t.manualCount + ' marked in app, not timed') : 'to resolve') + '</div></div>' +
+    '</div><div class="dr-kpi-scope">Team-wide — every tracked request in the loaded window, whoever sent it.</div>' +
+    drBusinessNoteHtml_(data) + '</div>';
+}
+
 /** Operator 2026-08-31 — elapsed time and the SLA bands count BUSINESS hours
  *  (weekends, company holidays and after-hours excluded), so a Friday-afternoon
  *  request answered Monday morning is no longer "3 days old". Rendered only
  *  when the server says so (`slaBusiness` on any item), so an older server
  *  keeps its wall-clock figures with no note claiming otherwise. */
 function drBusinessNoteHtml_(data) {
-  const rows = (data && data.mine) || [];
+  const rows = [].concat((data && data.mine) || [], (data && data.incoming) || [], (data && data.allOpen) || []);
   const on = rows.some(function (r) { return r && r.slaBusiness; });
   if (!on) return '';
   return '<div style="font-size:11px;color:var(--muted-2);margin:-8px 0 14px">' +
@@ -209,9 +340,13 @@ function drRender_(area, data, errorMsg) {
 
   // The server reads only the most-recent rows (bounded tail) — be transparent
   // when older entries fall outside that window (F1/A4).
+  // 22post A-6: name HOW FAR BACK the window reaches, so a date range that
+  // starts earlier is visibly limited by the load, not by the data.
+  const oldestMs = (data && data.truncated) ? drOldestLoadedMs_(data) : null;
   const trunc = (data && data.truncated)
     ? '<div class="dr-note" style="color:var(--warning-deep)">' + icon('outbox', 13) +
-      ' Showing the most recent requests only — older entries aren’t listed.</div>'
+      ' Showing the most recent requests only — ' +
+      (oldestMs ? 'nothing sent before ' + esc(new Date(oldestMs).toLocaleDateString()) + ' is loaded, whatever the date range.' : 'older entries aren’t listed.') + '</div>'
     : '';
 
   const mineAll = (data && data.mine) || [];
@@ -238,7 +373,7 @@ function drRender_(area, data, errorMsg) {
         deptNames.map(function (dn) { return mkDeptChip(dn, esc(dn) + ' · ' + deptCounts[dn]); }).join('') +
       '</div>'
     : '';
-  const mine = mineAll.filter(drDeptMatch_).filter(function (r) {
+  const mine = drListView_(mineAll).filter(function (r) {
     if (DR_FILTER === 'open') return r.status !== 'resolved';
     if (DR_FILTER === 'resolved') return r.status === 'resolved';
     return true;
@@ -255,10 +390,10 @@ function drRender_(area, data, errorMsg) {
   const mineHtml = mine.length
     ? spCappedTasksHtml_(mine.map(drRequestCardHtml_), DR_SHOWN.mine, "drShowMore_('mine')")
     : (mineAll.length
-        ? '<div class="dr-empty">No matching requests' + (DR_DEPT_FILTER.length ? ' for the selected department(s)' : '') + ' in this list.</div>'
+        ? '<div class="dr-empty">No matching requests' + (DR_DEPT_FILTER.length ? ' for the selected department(s)' : '') + (drRangeActive_() ? ' in this date range' : '') + ' in this list.</div>'
         : '<div class="dr-empty">No tracked requests yet. Send a department email from Call Notes to start one.</div>');
-  const mineFiltered = mineAll.filter(drDeptMatch_);
-  const mineCount = DR_DEPT_FILTER.length ? (mineFiltered.length + ' of ' + mineAll.length) : String(mineAll.length);
+  const mineFiltered = drListView_(mineAll);
+  const mineCount = (DR_DEPT_FILTER.length || drRangeActive_()) ? (mineFiltered.length + ' of ' + mineAll.length) : String(mineAll.length);
   const mineSection =
     '<div class="day-section-label" style="margin:14px 0 8px">My requests · ' + mineCount +
     drCapNoteHtml_(mineAll.length, data && data.mineTotal) + '</div>' + filterBar + mineHtml;
@@ -267,7 +402,7 @@ function drRender_(area, data, errorMsg) {
   // (roster column N → data.myDepts). Members can resolve in-app here.
   let incomingSection = '';
   if (data && data.myDepts && data.myDepts.length) {
-    const inc = (data.incoming || []).filter(drDeptMatch_);
+    const inc = drListView_(data.incoming || []);
     const incHtml = inc.length
       ? spCappedTasksHtml_(inc.map(drRequestCardHtml_), DR_SHOWN.incoming, "drShowMore_('incoming')")
       : '<div class="dr-empty">No open requests to your department right now.</div>';
@@ -276,12 +411,20 @@ function drRender_(area, data, errorMsg) {
       drCapNoteHtml_(inc.length, data.incomingTotal) + '</div>' + incHtml;
   }
 
-  let mgrSection = '';
+  // 22post A-7 (operator 2026-09-27): for a manager or admin the page leads
+  // with the summary cards BESIDE "Resolution time by department", then the
+  // team-wide list, then Incoming, then My requests. A rep's order is unchanged.
+  const controls = drControlsHtml_();
+  let body;
   if (data && data.isManager) {
-    mgrSection = drManagerSectionHtml_(data);
+    body = deptBar + controls +
+      '<div class="dr-top-row"><div class="dr-top-kpi">' + strip + '</div>' +
+        '<div class="dr-top-stats">' + drMgrStatsHtml_(data) + '</div></div>' +
+      drMgrTeamHtml_(data) + incomingSection + mineSection;
+  } else {
+    body = strip + deptBar + controls + incomingSection + mineSection;
   }
-
-  area.innerHTML = '<div id="dr-body">' + head + intro + trunc + strip + deptBar + incomingSection + mineSection + mgrSection + '</div>';
+  area.innerHTML = '<div id="dr-body">' + head + intro + trunc + body + '</div>';
   if (typeof observeReveals === 'function') observeReveals(area);
 }
 
@@ -456,7 +599,9 @@ function drStatsNotTimedCell_(s) {
   return esc(String(m + u)) + ' <span class="dr-tag">' + esc(parts.join(' · ')) + '</span>';
 }
 
-function drManagerSectionHtml_(data) {
+/** 22post A-7 — the per-department resolution table (server-derived; swapped
+ *  whole by drRepaintMgr_ on reconcile). */
+function drMgrStatsHtml_(data) {
   const stats = (data.deptStats || []).filter(function (sRow) {
     return !DR_DEPT_FILTER.length || DR_DEPT_FILTER.indexOf(sRow.dept) >= 0;
   });
@@ -483,19 +628,21 @@ function drManagerSectionHtml_(data) {
         '<div style="font-size:11px;color:var(--muted-2);margin:6px 0 0">Avg and Median count email-link resolves only — a request marked resolved in the app is not a timed reply.</div>'
     : '<div class="dr-empty">No requests recorded yet.</div>';
 
+  return '<div id="dr-mgr-stats">' +
+    '<div class="day-section-label" style="margin:0 0 8px">Resolution time by department</div>' +
+    '<div class="dr-section dr-mgr">' + statTable + '</div></div>';
+}
+
+/** 22post A-7 — the team-wide oldest-open list, above Incoming and My requests. */
+function drMgrTeamHtml_(data) {
   const openAllTeam = data.allOpen || [];
-  const open = openAllTeam.filter(drDeptMatch_);
-  const openCount = DR_DEPT_FILTER.length ? (open.length + ' of ' + openAllTeam.length) : String(openAllTeam.length);
+  const open = drListView_(openAllTeam);
+  const openCount = (DR_DEPT_FILTER.length || drRangeActive_()) ? (open.length + ' of ' + openAllTeam.length) : String(openAllTeam.length);
   const openHtml = open.length
     ? spCappedTasksHtml_(open.map(drRequestCardHtml_), DR_SHOWN.team, "drShowMore_('team')")
     : '<div class="dr-empty">No ' + (DR_DEPT_FILTER.length ? 'matching ' : '') + 'open requests across the team.</div>';
 
-  // #dr-mgr-wrap is the repaint anchor: deptStats (open/resolved/avg/median
-  // per department) is SERVER-derived, so an in-place resolve cannot keep it
-  // honest and drReconcile_ swaps this block alone.
-  return '<div id="dr-mgr-wrap">' +
-    '<div class="day-section-label" style="margin:18px 0 8px">Resolution time by department</div>' +
-    '<div class="dr-section dr-mgr">' + statTable + '</div>' +
+  return '<div id="dr-mgr-team">' +
     '<div class="day-section-label" style="margin:18px 0 8px">Oldest open (team-wide) · ' + openCount +
       drCapNoteHtml_(openAllTeam.length, data.allOpenTotal) + '</div>' + openHtml +
   '</div>';
@@ -546,11 +693,21 @@ function drFindItem_(id) {
  *  it — exactly what the server's next payload will say. */
 function drApplyResolved_(id) {
   const lists = ['mine', 'incoming', 'allOpen'];
+  let was = null;
   lists.forEach(function (k) {
     ((DR_LAST_DATA && DR_LAST_DATA[k]) || []).forEach(function (r) {
-      if (String(r.requestId) === String(id)) { r.status = 'resolved'; r.resolvedVia = 'app'; }
+      if (String(r.requestId) === String(id)) {
+        if (!was && r.status !== 'resolved') was = { overdue: r.slaStatus === 'overdue' };
+        r.status = 'resolved'; r.resolvedVia = 'app';
+      }
     });
   });
+  // 22post A-7: keep a manager's team-wide strip right until the reconcile lands.
+  const t = DR_LAST_DATA && DR_LAST_DATA.teamKpis;
+  if (t && was) {
+    t.open = Math.max(0, t.open - 1); t.resolved++; t.manualCount++;
+    if (was.overdue) t.overdue = Math.max(0, t.overdue - 1);
+  }
 }
 
 function drRepaintKpi_() {
@@ -559,8 +716,11 @@ function drRepaintKpi_() {
 }
 
 function drRepaintMgr_() {
-  const host = document.getElementById('dr-mgr-wrap');
-  if (host && DR_LAST_DATA && DR_LAST_DATA.isManager) host.outerHTML = drManagerSectionHtml_(DR_LAST_DATA);
+  if (!DR_LAST_DATA || !DR_LAST_DATA.isManager) return;
+  const stats = document.getElementById('dr-mgr-stats');
+  if (stats) stats.outerHTML = drMgrStatsHtml_(DR_LAST_DATA);
+  const team = document.getElementById('dr-mgr-team');
+  if (team) team.outerHTML = drMgrTeamHtml_(DR_LAST_DATA);
 }
 
 /** Re-render ONLY this request's card(s) + the KPI strip, from the cached
@@ -596,6 +756,7 @@ function drReconcile_(requestedView, id) {
       if (!res || res.error) { DR_STATE.entry = null; return; }   // INV-129: a failed round is never stamped fresh
       DR_LAST_DATA = res; DR_STATE.data = res; DR_STATE.entry = { at: Date.now() };
       drRepaintMgr_();
+      drRepaintKpi_();   // 22post A-7: a manager's strip is server-derived too
       drRepaintRequest_(id);
     })
     .withFailureHandler(function () { DR_STATE.entry = null; })
@@ -678,6 +839,23 @@ function drFmtMin_(min) {
     font-weight: 600; color: var(--muted); background: var(--paper-2); border-radius: 999px; }
   .dr-empty { padding: 18px; text-align: center; font-size: 13px; color: var(--muted);
     background: var(--paper-card); border: 1px dashed var(--line); border-radius: var(--radius-md); }
+  /* 22post A-6/A-7 — the sort + date controls, and the manager top row: the
+     summary cards beside the resolution table, stacking narrow and in the
+     pop-out (data-compact is the POP-OUT, not a breakpoint — g50). */
+  .dr-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 12px; }
+  .dr-controls .mt-range { margin: 0; }
+  .dr-controls-label { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .dr-sort { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10px;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .dr-sort select { font: inherit; font-family: var(--ui); font-size: 12px; letter-spacing: 0; text-transform: none;
+    padding: 4px 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-card); color: var(--ink); }
+  .dr-top-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 16px; align-items: start; margin: 0 0 6px; }
+  .dr-top-row .telemetry { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dr-top-kpi, .dr-top-stats { min-width: 0; }   /* grid children: let the table scroll, never widen the row */
+  .dr-top-stats { overflow-x: auto; }
+  .dr-kpi-scope { font-size: 11px; color: var(--muted-2); margin: 0 0 8px; }
+  @media (max-width: 900px) { .dr-top-row { grid-template-columns: minmax(0, 1fr); } }
+  :root[data-compact] .dr-top-row { grid-template-columns: minmax(0, 1fr); }
   .dr-table { width: 100%; border-collapse: collapse; font-size: 12px; }
   .dr-table th { text-align: left; font-size: 10px; text-transform: uppercase;
     letter-spacing: 0.04em; color: var(--muted); font-weight: 600;

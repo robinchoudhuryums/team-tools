@@ -7034,7 +7034,11 @@ function test_presence_stampAndFlag() {
   try {
     const r = _asUser(_TEST_INDIA_EMAIL, function () { return recordPresence(); });
     _assertEq(r.success, true, 'an employee stamp is accepted');
-    _assertEq(cache.get(key), '1', 'the stamp lands under the prefixed key');
+    // 22post C-3: the stamp's value is the gesture time (ms), so the manager's
+    // view can say when the rep was last seen; the peer view still ships none.
+    const stamped = Number(cache.get(key));
+    _assertTrue(isFinite(stamped) && Math.abs(Date.now() - stamped) < 10 * 60 * 1000, 'the stamp lands under the prefixed key, valued at the gesture time');
+    _assertTrue(presenceTimes_([_TEST_INDIA_ID])[_TEST_INDIA_ID] === stamped, 'the manager view reads that time back');
     _assertTrue(!!teammateActiveNotIn_(false, true, 'not_in'), 'present + not_in → flagged');
     _assertTrue(!!teammateActiveNotIn_(false, true, 'clocked_out'), 'present + clocked_out → flagged');
     _assertEq(teammateActiveNotIn_(false, true, 'clocked_in'), false, 'a working state is never flagged');
@@ -7046,7 +7050,7 @@ function test_presence_stampAndFlag() {
     const india = view.teammates.filter(function (t) { return t.name === _TEST_INDIA_NAME; })[0];
     _assertTrue(!!india, 'the stamped rep is on the view');
     const expected = india.status === 'not_in' || india.status === 'clocked_out';
-    _assertEq(india.activeNotIn, expected, 'flag = stamped AND not working (whatever today\'s fixture punches say)');
+    _assertEq(india.activeNotIn, expected, 'flag = stamped AND not working (whatever today\'s fixture punches say) — a non-Philippines rep with no punch reads IN instead (22post C-3)');
     const self = view.teammates.filter(function (t) { return t.isSelf; })[0];
     _assertEq(self.activeNotIn, false, 'the viewer is never flagged on their own card');
     Object.keys(india).forEach(function (k) {
@@ -7174,6 +7178,7 @@ function test_scratchpad_saveReadRoundTrip() {
     _assertTrue(isFinite(save.updatedAtMs) && save.updatedAtMs > 0, 'save returns the ms stamp');
     _assertEq(read.content, marker, 'read returns the EXACT text — the @ format defeats cell coercion');
     _assertEq(read.updatedAtMs, save.updatedAtMs, 'stamp round-trips as a number');
+    _assertEq(read.format, 'text', 'a plain-text save is marked text');
     // Over-cap REFUSES (never truncates) and the stored content is untouched.
     let big, after;
     _asUser(_TEST_INDIA_EMAIL, function () {
@@ -7182,6 +7187,15 @@ function test_scratchpad_saveReadRoundTrip() {
     });
     _assertContains(big.error, 'limit', 'over-cap save refused with an actionable error');
     _assertEq(after.content, marker, 'a refused save leaves the stored content untouched');
+    // 22post B-2c: a formatted save is sanitized by the SERVER and marked html.
+    let hsave, hread;
+    _asUser(_TEST_INDIA_EMAIL, function () {
+      hsave = saveMyScratchpad('<b>TEST_SCRATCH</b><img src=x onerror=alert(1)><script>x()</script>', 'html');
+      hread = getMyScratchpad();
+    });
+    _assertEq(hsave.success, true, 'the html save succeeds');
+    _assertEq(hread.format, 'html', 'and is marked html');
+    _assertEq(hread.content, '<b>TEST_SCRATCH</b>', 'the server kept the allowlisted markup and dropped the rest');
     // Unenrolled rep: the enrollment error, nothing written.
     let ph;
     _asUser(_TEST_PH_EMAIL, function () { ph = saveMyScratchpad('x'); });

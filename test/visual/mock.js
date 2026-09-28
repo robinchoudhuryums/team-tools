@@ -347,8 +347,10 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         { kind: 'notes', title: '3 calls without a note', detail: 'Answered ' + daysAgo(1) + ' · notes at 84%', dueIso: daysAgo(1), overdue: false, action: 'File', route: { tool: 'callNotes', tab: 'callNotes', hint: { date: daysAgo(1), missingCount: 3 } } },
         { kind: 'training', title: 'HIPAA refresher', detail: 'Training module · due ' + daysAgo(-6), dueIso: daysAgo(-6), overdue: false, action: 'Start', route: { tool: 'develop', tab: 'trainingHome' } },
         { kind: 'requests', title: 'Request to Shipping · Verified Shipping', detail: 'Sent ' + daysAgo(0), dueIso: '', overdue: false, action: 'Open', route: { tool: 'metrics', tab: 'metricsDeptReq' } },
+        // 22post C-8 — the Spanish Inbox requests the rep owns (getMyPendingTasks' spanish producer shape).
+        { kind: 'spanish', title: '2 Spanish Inbox requests to work', detail: '1 assigned to you · oldest since Sep 27, 9:40 AM', dueIso: '', overdue: false, action: 'Open', route: { tool: 'metrics', tab: 'metricsSpanish' } },
       ],
-      total: 6, cap: 30, overdue: 3, unavailable: ['sched'], notConfigured: ['docs'], todayIso: todayIso, prevWorkday: daysAgo(1),
+      total: 7, cap: 30, overdue: 3, unavailable: ['sched'], notConfigured: ['docs'], todayIso: todayIso, prevWorkday: daysAgo(1),
     },
     getCallNotesAmbient: { enrolled: true, unresolvedActionCount: 1, staleActionCount: 1, todayTotal: 7, weekTotal: 32, flagCounts: { all: 7, action: 1, training: 1, review: 0, unresolved: 1, qa: 1 }, staleFlagHours: 6, flagsVersion: 'v1' },
     getMetricsAmbient: { badge: null },
@@ -357,6 +359,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       departments: ['Billing', 'Shipping', 'Resupply', 'Intake', 'Other'],
       suggestionsByDept: { Billing: ['Close Order', 'OOP Order'], Shipping: ['Verified Shipping'] },
       defaultSuggestions: ['Close Order', 'Verified Shipping', 'Repeat Resupply'],
+      closeReasons: ['Changing suppliers', 'Dissatisfied with services', 'Due to cost', 'Patient deceased', 'Insurance change', 'No longer needed', 'Patient request'],   // operator 2026-09-27
       flags: {}, emailTemplates: [], externalLinks: [], voiceInputEnabled: false,
       stateTaxRates: {}, stateAbbrToName: {}, deleteWindowSeconds: 300, autoCopyFormat: '',
     },
@@ -660,20 +663,22 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     },
     getDeptRequests: { isManager: true, myDepts: ['Billing'],
       mine: [
-        { requestId: 'r1', toDept: 'Shipping', label: 'Verified Shipping', patientTrx: 'Maria Delgado · TRX 48211', createdAt: daysAgo(0) + ' 09:12', byName: 'Avery Blake', status: 'open', elapsedMin: 72, elapsedWallMin: 190, slaBusiness: true, slaStatus: 'ontime', slaDays: 2 },
-        { requestId: 'r2', toDept: 'Billing', label: 'Close Order', patientTrx: 'J. Rivera · TRX 47790', createdAt: daysAgo(2) + ' 10:40', byName: 'Avery Blake', status: 'open', elapsedMin: 1102, elapsedWallMin: 2900, slaBusiness: true, slaStatus: 'overdue', slaDays: 1 },
-        { requestId: 'r3', toDept: 'Resupply', label: 'Repeat Resupply', patientTrx: 'K. Osei · TRX 48044', createdAt: daysAgo(1) + ' 14:05', byName: 'Avery Blake', status: 'open', elapsedMin: 551, elapsedWallMin: 1450, slaBusiness: true, slaStatus: 'atrisk', slaDays: 2 },
-        { requestId: 'r4', toDept: 'Billing', label: 'OOP Order', patientTrx: 'L. Chen · TRX 47502', createdAt: daysAgo(3) + ' 11:20', byName: 'Avery Blake', status: 'resolved', elapsedMin: 84, elapsedWallMin: 220, slaBusiness: true, resolvedBy: 'sam@umsupply.com', resolvedVia: 'email' },
+        { requestId: 'r1', toDept: 'Shipping', label: 'Verified Shipping', patientTrx: 'Maria Delgado · TRX 48211', createdAt: daysAgo(0) + ' 09:12', createdMs: new Date(daysAgo(0) + 'T09:12:00').getTime(), byName: 'Avery Blake', status: 'open', elapsedMin: 72, elapsedWallMin: 190, slaBusiness: true, slaStatus: 'ontime', slaDays: 2 },
+        { requestId: 'r2', toDept: 'Billing', label: 'Close Order', patientTrx: 'J. Rivera · TRX 47790', createdAt: daysAgo(2) + ' 10:40', createdMs: new Date(daysAgo(2) + 'T10:40:00').getTime(), byName: 'Avery Blake', status: 'open', elapsedMin: 1102, elapsedWallMin: 2900, slaBusiness: true, slaStatus: 'overdue', slaDays: 1 },
+        { requestId: 'r3', toDept: 'Resupply', label: 'Repeat Resupply', patientTrx: 'K. Osei · TRX 48044', createdAt: daysAgo(1) + ' 14:05', createdMs: new Date(daysAgo(1) + 'T14:05:00').getTime(), byName: 'Avery Blake', status: 'open', elapsedMin: 551, elapsedWallMin: 1450, slaBusiness: true, slaStatus: 'atrisk', slaDays: 2 },
+        { requestId: 'r4', toDept: 'Billing', label: 'OOP Order', patientTrx: 'L. Chen · TRX 47502', createdAt: daysAgo(3) + ' 11:20', createdMs: new Date(daysAgo(3) + 'T11:20:00').getTime(), byName: 'Avery Blake', status: 'resolved', elapsedMin: 84, elapsedWallMin: 220, slaBusiness: true, resolvedBy: 'sam@umsupply.com', resolvedVia: 'email' },
         // Note #3 (2026-09-10): an in-app "Mark resolved" is NOT a timed reply —
         // the server ships null minutes + resolvedVia:'app' so the card reads
         // "marked in app" and the KPI median skips it. On camera in deptreq-*.
-        { requestId: 'r7', toDept: 'Shipping', label: 'Verified Shipping', patientTrx: 'P. Nguyen · TRX 47311', createdAt: daysAgo(5) + ' 15:02', byName: 'Avery Blake', status: 'resolved', elapsedMin: null, elapsedWallMin: null, slaBusiness: true, resolvedBy: 'avery@umsupply.com', resolvedVia: 'app' }],
+        { requestId: 'r7', toDept: 'Shipping', label: 'Verified Shipping', patientTrx: 'P. Nguyen · TRX 47311', createdAt: daysAgo(5) + ' 15:02', createdMs: new Date(daysAgo(5) + 'T15:02:00').getTime(), byName: 'Avery Blake', status: 'resolved', elapsedMin: null, elapsedWallMin: null, slaBusiness: true, resolvedBy: 'avery@umsupply.com', resolvedVia: 'app' }],
       incoming: [
-        { requestId: 'r5', toDept: 'Billing', label: 'Close Order', patientTrx: 'S. Alvarez · TRX 48230', createdAt: daysAgo(0) + ' 08:30', byName: 'Nina Patel', status: 'open', elapsedMin: 122, elapsedWallMin: 320, slaBusiness: true, slaStatus: 'ontime', slaDays: 1 }],
+        { requestId: 'r5', toDept: 'Billing', label: 'Close Order', patientTrx: 'S. Alvarez · TRX 48230', createdAt: daysAgo(0) + ' 08:30', createdMs: new Date(daysAgo(0) + 'T08:30:00').getTime(), byName: 'Nina Patel', status: 'open', elapsedMin: 122, elapsedWallMin: 320, slaBusiness: true, slaStatus: 'ontime', slaDays: 1 }],
       allOpen: [
         // r6 is a LEGACY row (no patientTrx) — the subject renders the label alone.
-        { requestId: 'r6', toDept: 'Resupply', label: 'Repeat Resupply', createdAt: daysAgo(4) + ' 09:00', byName: 'Leo Kim', status: 'open', elapsedMin: 2204, elapsedWallMin: 5800, slaBusiness: true, slaStatus: 'overdue', slaDays: 2 }],
+        { requestId: 'r6', toDept: 'Resupply', label: 'Repeat Resupply', createdAt: daysAgo(4) + ' 09:00', createdMs: new Date(daysAgo(4) + 'T09:00:00').getTime(), byName: 'Leo Kim', status: 'open', elapsedMin: 2204, elapsedWallMin: 5800, slaBusiness: true, slaStatus: 'overdue', slaDays: 2 }],
       truncated: false, mineTotal: 5, incomingTotal: 1, allOpenTotal: 1, listCap: 100,
+      // 22post A-7: a manager's summary cards are team-wide (drTeamKpis_'s shape).
+      teamKpis: { open: 5, overdue: 2, resolved: 16, total: 21, medianMin: 220, manualCount: 3 },
       deptStats: [{ dept: 'Billing', open: 2, resolved: 14, overdueOpen: 1, slaDays: 1, avgMinutes: 340, medianMinutes: 220, manualResolved: 3, untrackedResolved: 2, timed: 9 }] },
     getMyTraining: { items: [
       { itemId: 'kb-1', title: 'HIPAA refresher', type: 'article', itemType: 'kb', status: 'pending', dueDate: daysAgo(-6), assignedAt: ts(daysAgo(3), '09:00:00'), attempts: 0 },
@@ -913,7 +918,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       { id: 'sc-1', whenMs: Date.now() + 3600000, leadMin: 5, label: 'Translated call — Maria G · TRX 12345', status: 'active' }] },
     // Pilot round 3 — scratchpad + Reference comments (shapes mirror the
     // server returns; pinned like the sched fixture above).
-    getMyScratchpad: { content: 'Ext for Dr. Alvarez: x4102\nPAR escalations → Sam\nSpanish glossary doc — bookmark', updatedAtMs: Date.now() - 5400000, maxChars: 40000 },
+    getMyScratchpad: { content: 'Ext for Dr. Alvarez: x4102\nPAR escalations → Sam\nSpanish glossary doc — bookmark', updatedAtMs: Date.now() - 5400000, maxChars: 40000, format: 'text' },
     // The reader scenario opens this article via the post hook — shape
     // mirrors getReferenceItem's article return (id/title/department/status/
     // type/bodyMd; INV-185).
@@ -1081,7 +1086,11 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // return block) — the drift made every Day-Edit button in every manager
       // screenshot render data-emp-id="undefined", and surfaced only when the
       // batch-8 pay-statement button was clicked in a real browser. INV-185.
-      function ls(name, status, t, tz, abbr) { return { id: 'E-' + name.length + '0' + t, name: name, status: status,
+      // 22post C-3: `status` is the DISPLAY status; `punchStatus` the punch-derived
+      // one; activityIn / activeNotIn / lastSeenMgr are app activity (the server's
+      // presenceDisplay_). Ravi is IN by activity (no punch); Leo is the amber flag.
+      function ls(name, status, t, tz, abbr, act) { act = act || {}; return { id: 'E-' + name.length + '0' + t, name: name, status: status,
+        punchStatus: act.punchStatus || status, activityIn: !!act.activityIn, activeNotIn: !!act.activeNotIn, lastSeenMgr: act.lastSeenMgr || null,
         lastPunchType: t, lastPunchTime: '08:0' + (name.length % 6) + ':00', lastPunchTimeMgr: '21:3' + (name.length % 6) + ':00',
         timezone: tz, tzAbbr: abbr, empTzAbbr: abbr, mgrTzAbbr: 'CST', recentHours: rh(), recentTotal: 47.75, recentDays: 6 }; }
       return {
@@ -1089,7 +1098,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         liveStatus: [ls('Avery Blake', 'clocked_in', 'LunchIn', 'Asia/Kolkata', 'IST'),
                      ls('Sam Ortiz', 'on_lunch', 'LunchOut', 'Asia/Manila', 'PHT'),
                      ls('Nina Patel', 'clocked_in', 'ClockIn', 'America/Chicago', 'CST'),
-                     ls('Leo Kim', 'not_in', 'ClockOut', 'America/Chicago', 'CST')],
+                     ls('Ravi Menon', 'clocked_in', null, 'America/Chicago', 'CST', { punchStatus: 'not_in', activityIn: true, lastSeenMgr: '9:42 AM' }),
+                     ls('Leo Kim', 'not_in', 'ClockOut', 'America/Chicago', 'CST', { activeNotIn: true, lastSeenMgr: '9:15 AM' })],
         pending: [{ empId: 'E-1088', empName: 'Sam Ortiz', name: 'Sam Ortiz', date: daysAgo(-4), type: 'Full Day', notes: 'Wedding',
                     submittedAt: daysAgo(1) + ' 10:12:00', conflictsOff: [{ name: 'Nina Patel', status: 'Approved', type: 'Full Day' }],
                     holidayName: null, balanceAfter: 7.5, ptoEnabled: true, annualLeave: 8.5, tzAbbr: 'PHT' }],

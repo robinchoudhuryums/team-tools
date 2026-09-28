@@ -449,7 +449,7 @@ function getDeptRequests() {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Your account is not registered.' };
     const drCache = CacheService.getScriptCache();
-    const drCacheKey = 'dept_req_v1:' + emp.id + ':' + drCacheGen_();
+    const drCacheKey = 'dept_req_v2:' + emp.id + ':' + drCacheGen_();
     try { const hit = drCache.get(drCacheKey); if (hit) return JSON.parse(hit); } catch (_) {}
     // Bounded tail read — never the whole sheet. Rows append chronologically, so
     // the most-recent DR_MAX_SCAN rows are the relevant ones for the list/aggregate.
@@ -526,6 +526,7 @@ function getDeptRequests() {
       const item = {
         requestId: String(r[DR.REQ_ID]), byName: String(r[DR.BY_NAME] || ''),
         toDept: String(r[DR.TO_DEPT] || ''), createdAt: fmtTs(createdMs),
+        createdMs: createdMs || null,   // 22post A-6: the client's date sort + range filter
         // F8: the NORMALIZED status, so every downstream consumer (the
         // `incoming` filter, `deptStats`, `allOpen`, the client's chips) reads
         // the same value a padded/mixed-case cell would otherwise split.
@@ -547,7 +548,9 @@ function getDeptRequests() {
       all.push(item);
       if (String(r[DR.BY_ID]).trim() === emp.id) mine.push(item);
     }
-    mine.sort(function (a, b) { return (a.status === b.status) ? 0 : (a.status === 'open' ? -1 : 1); });
+    // 22post A-6: open first, then NEWEST first — the list cap keeps the newest
+    // rather than the oldest-appended rows (the client re-sorts on request).
+    mine.sort(drNewestOpenFirst_);
     // Departments the composer can target — only those with a resolvable email.
     const deptMap = getDepartmentEmails_() || {};
     const departments = Object.keys(deptMap).filter(function (d) { return !!deptMap[d]; });
@@ -578,6 +581,7 @@ function getDeptRequests() {
                      incomingTotal: incoming.length };
     if (emp.isManager) {
       result.deptStats = drDeptStats_(all, slaCfg);
+      result.teamKpis = drTeamKpis_(all);   // 22post A-7: managers' summary cards are team-wide
       const allOpenSorted = all.filter(function (it) { return it.status === 'open'; })
         .sort(function (a, b) { return (b.elapsedMin || 0) - (a.elapsedMin || 0); });
       result.allOpen = allOpenSorted.slice(0, DR_LIST_CAP);
@@ -589,6 +593,34 @@ function getDeptRequests() {
     } catch (_) {}
     return result;
   } catch (err) { return { error: err.message }; }
+}
+/** PURE (22post A-6) — open before resolved, then newest first; an undated
+ *  row sorts after the dated ones in its group. */
+function drNewestOpenFirst_(a, b) {
+  if (a.status !== b.status) return a.status === 'open' ? -1 : 1;
+  const am = a.createdMs || 0, bm = b.createdMs || 0;
+  return bm - am;
+}
+/** PURE (22post A-7) — the team-wide summary a manager's cards show, over every
+ *  request in the scanned window. The median counts TIMED resolves only (an
+ *  email-link resolve carries a reply time; an in-app one does not — the
+ *  note #3 rule the rep's own strip applies). */
+function drTeamKpis_(items) {
+  let open = 0, overdue = 0, resolved = 0, manual = 0;
+  const mins = [];
+  (items || []).forEach(function (it) {
+    if (it.status === 'resolved') {
+      resolved++;
+      if (it.resolvedVia === 'app') manual++;
+      else if (it.elapsedMin != null) mins.push(it.elapsedMin);
+    } else {
+      open++;
+      if (it.slaStatus === 'overdue') overdue++;
+    }
+  });
+  mins.sort(function (a, b) { return a - b; });
+  return { open: open, overdue: overdue, resolved: resolved, total: (items || []).length,
+           medianMin: mins.length ? mins[Math.floor(mins.length / 2)] : null, manualCount: manual };
 }
 /** Admin-gated (INV-136): read the DeptRequests SLA config for the editor —
  *  the per-dept overrides + the default + the known departments. */

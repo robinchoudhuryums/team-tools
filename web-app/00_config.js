@@ -360,6 +360,15 @@ const CONFIG = {
       'CSR':              ['General Inquiry', 'Status Check'],
       'Spanish':          ['Translator Needed'],
     },
+    // Close Order reasons (operator 2026-09-27): a Close Order email REQUIRES
+    // a reason — one of these, or "Other" with the reason typed. Shipped to the
+    // composer by getCallNotesDepartments; the server refuses a Close Order
+    // with no reason on preview AND send (cnCloseReasonError_). The win-back
+    // nudge keys on 'Changing suppliers' — keep that wording if you edit it.
+    CLOSE_ORDER_REASONS: [
+      'Changing suppliers', 'Dissatisfied with services', 'Due to cost',
+      'Patient deceased', 'Insurance change', 'No longer needed', 'Patient request',
+    ],
     // Always offered alongside dept-specific suggestions
     UPDATE_SUGGESTIONS_DEFAULT: [
       'Verified Shipping', 'Repeat Resupply', 'Close Order', 'OOP Order', 'Supervisor/Complaint',
@@ -1360,6 +1369,12 @@ const SPANISH_CLAIMS_SCAN = 1000;   // bounded tail — the map read stays cheap
  *  counts only) is written only when something was unclaimed, so an idle
  *  hour adds nothing to the bounded AuditLog tail scans. */
 const SPANISH_AUTO_ASSIGN_DAYS = 7;   // the pending window the button uses by default
+// 22post C-8: the PHI-free set of pending THREAD IDS (no subject, no body) that
+// getSpanishInboxPending last read, per window — so the Dashboard's Needs-you
+// list can tell which of a rep's claims are still pending WITHOUT a Gmail read
+// on every dashboard paint. A miss falls back to one live read.
+const SPANISH_PENDING_IDS_PREFIX = 'spanish_pending_ids_v1:';
+const SPANISH_PENDING_IDS_TTL = 900;   // 15 min — a reply-resolved request leaves Needs-you within this
 // ── Scheduled-call reminders (pilot round 2, 2026-08-24) ────────────────────
 // Pilot ask #3: "sometimes a translated call is scheduled for a certain time"
 // — a rep schedules a reminder for a specific call and the SHELL reminder
@@ -1524,7 +1539,7 @@ var DASH_MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oc
 var PENDING_TASKS_CACHE_TTL = 120;         // seconds, per rep
 var PENDING_TASKS_CACHE_PREFIX = 'pending_tasks_v1:';
 var PENDING_TASKS_CAP = 30;                // items returned; `total` carries the pre-slice count (INV-169)
-var PENDING_TASKS_KINDS = ['training', 'coaching', 'notes', 'requests', 'sched', 'docs'];
+var PENDING_TASKS_KINDS = ['training', 'coaching', 'notes', 'requests', 'sched', 'docs', 'spanish'];   // 22post C-8: Spanish Inbox requests claimed by / assigned to the rep
 const INTAKE_PPD_SUB_HEADERS  = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','Language','AnswersJSON','Recommendations','Selections','Recipient','AmendsId'];
 const INTAKE_ACCT_SUB_HEADERS = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','DOB','Language','AnswersJSON','Recipient','ImageCount','AmendsId'];
 // ── F-27 (2026-09-18): the ENGLISH question banks, server-held ─────────────

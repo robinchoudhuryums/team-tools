@@ -761,6 +761,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   can call this. Add fields only after auditing what the Clock
   page actually needs.
 
+  **AMENDED (22post C-3, 2026-09-28): the view's `status` can now be
+  activity-derived.** A non-Philippines teammate who is active in the app with
+  no clock-in reads `clocked_in` (`presenceDisplay_`). That was chosen over a
+  new key so the view keeps exactly `{ name, status, isSelf, activeNotIn }` and
+  ships no presence time. The time, `punchStatus` and `activityIn` ride the
+  MANAGER dashboard only. The four-key pin (D-N10) and the editor test's
+  allow-list both hold it.
+
 <a id="g34-fire-and-forget-email"></a>
 
 - **Fire-and-forget email.** Decision emails
@@ -2427,6 +2435,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   (`const el = $('x'); … el.classList.add('open')`). Verify: the derived
   overlay net.
 
+  **AMENDED (22post A-2a + B, 2026-09-28): two edges of the lifecycle.**
+  (1) `ensureOverlay`'s backdrop closes only on a press that STARTED on the
+  backdrop: a text selection dragged out of the Scratchpad ended its click on
+  the backdrop and closed the modal. (2) The Scratchpad left the overlay
+  lifecycle on purpose. It is a non-modal panel (`.cn-float-panel`), so it
+  handles its own Escape (stopped at the panel, so it never closes a modal
+  underneath), and the shell's focus trap and a dialog's Enter both exempt it.
+  A future non-modal panel takes the same class rather than an overlay.
+
 <a id="g101-public-form-endpoints-have-no-employee-auth"></a>
 
 - **Public form endpoints have no employee auth — token is the
@@ -3000,6 +3017,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   A negative assertion (`!/…/.test(doc)`) is vacuous until something shows its
   pattern CAN match; the rewritten check requires the new sentence as well as
   banning the old one.
+
+  **A NINTH direction (22post C-3, 2026-09-28): a key reader that splits
+  per LINE reads two keys on one line as one.** D-N10's INV-24 check read the
+  peer view's row literal one line at a time, so a fifth key added beside
+  `activeNotIn:` on the same line was invisible to it. A bite found it, and it
+  splits on commas too now. Parse the shape the way the language does, not
+  the way the file happens to be laid out.
 
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel

@@ -10,6 +10,32 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-28 — 22post: the operator's testing notes, Batches A–C
+
+**Adds no Script Property and no one-time migration.** Three things are new
+state, all auto-managed: the Scratchpad tab's **C1** cell records the pad's
+format (`html` or `text`); the browser key `umsScratchGeom` remembers where the
+Scratchpad panel was left; and the ScriptCache entry
+`spanish_pending_ids_v1:<days>` holds the pending Spanish thread ids (no
+content, 15 minutes). NOT yet deployed: ship with the ordinary
+`clasp push -f` + New version.
+
+**One check after deploy (it does not block it).** The live-view presence rule
+reads roster column E: confirm every Philippines rep's `PayCycle` is
+`biweekly`. A blank or other value gets the non-Philippines rule (shown IN when
+active with no clock-in).
+
+**What changes for the operator.**
+- **A** — a Close Order email needs a reason (preset or typed); Scratchpad
+  buttons, instant reopen, and a drag-out selection no longer closes a modal;
+  Dept Requests gains sort + date range, and managers see team-wide cards
+  beside the resolution table, above the lists.
+- **B** — the Scratchpad is a floating panel that does not block the form,
+  with a formatting toolbar.
+- **C** — a Spanish Inbox assignment emails the assignee and lands on their
+  Needs-you list; reps active in the app without a clock-in show IN on the live
+  views (Philippines reps: the amber "active · not clocked in").
+
 ## 2026-09-25 — Cycle 22: interface polish and the five deferred findings (Batch 9, S6, S8, S10, M6, C12)
 
 **Adds no new Script Property. One CHANGES shape:** `DR_SLA_TARGETS` is now

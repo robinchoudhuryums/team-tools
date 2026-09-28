@@ -190,7 +190,7 @@ What a caller may reach, and what may be written where everyone can read it.
 - **`_TEST_OVERRIDE_EMAIL` only intercepts `getActiveUserEmail_()`.** Fires when a code path calls `Session.getActiveUser()` directly. [Detail](docs/gotchas.md#g23-test-override-email-only-intercepts-getactiveuseremail)
 - **Manager-only operations check `callerEmp.isManager`.** Fires when you add ANY manager-gated endpoint. [Detail](docs/gotchas.md#g25-manager-only-operations-check-calleremp-ismanager)
 - **Trigger-handler endpoints are reachable via `google.script.run` — and so were the editor-suite runners, which gate on the OWNER, not a manager (cycle 22 S1).** Fires when you add a public function that walks the roster or sends mail. [Detail](docs/gotchas.md#g26-trigger-handler-endpoints-are-reachable-via-google)
-- **`getTeammateStatus` is the low-privilege view.** Fires when you add a field to the teammate-status response. [Detail](docs/gotchas.md#g33-getteammatestatus-is-the-low-privilege-view)
+- **`getTeammateStatus` is the low-privilege view — four keys and no time; since 22post C-3 its `status` can be activity-derived, and the rest rides the manager view only.** Fires when you add a field to the teammate-status response. [Detail](docs/gotchas.md#g33-getteammatestatus-is-the-low-privilege-view)
 - **CallNoteEmail audit row is deliberately PHI-free.** Fires when you are tempted to add the subject or recipients to the audit row. [Detail](docs/gotchas.md#g35-callnoteemail-audit-row-is-deliberately-phi-free)
 - **ExternalEmailSent audit row logs only the recipient domain.** Fires when you log an external recipient anywhere shared. [Detail](docs/gotchas.md#g36-externalemailsent-audit-row-logs-only-the-recipient)
 - **Voice dictation routes audio outside the BAA boundary.** Fires when you consider enabling voice dictation. [Detail](docs/gotchas.md#g87-voice-dictation-routes-audio-outside-the-baa)
@@ -337,7 +337,7 @@ The iframe sandbox, the overlay lifecycle, and what persists per browser.
 - **A class-wide attribute write assumes every member of the class is yours (operator 2026-08-11).** Fires when a writer selects by a class that something else borrows for its looks. [Detail](docs/gotchas.md#g70-a-class-wide-attribute-write-assumes-every)
 - **`showToast(msg, type)` normalizes the variant — pass either form.** Fires when you call `showToast`. [Detail](docs/gotchas.md#g77-showtoast-msg-type-normalizes-the-variant-pass)
 - **Sidebar badge selectors use `data-tool`, not `data-view`.** Fires when a badge poller queries the sidebar. [Detail](docs/gotchas.md#g99-sidebar-badge-selectors-use-data-tool-not)
-- **Modals close on Escape THROUGH their close hook — and EVERY overlay, static ones included, opens via `ensureOverlay` and closes via `closeOverlay` (Batch 6, 2026-09-18: five static modals plus the shortcuts overlay had been opening and closing by `classList`, so they never stashed or restored focus).** Fires when you create an overlay dynamically, or open/close one by hand. Verify: the F-40/F-30 pin + the derived overlay net (cycle 22 U1/U2: the hand list had missed the CN export dialog and the shell's shortcut keys). [Detail](docs/gotchas.md#g100-modals-close-on-escape-through-their-close)
+- **Modals close on Escape THROUGH their close hook — and EVERY overlay, static ones included, opens via `ensureOverlay` and closes via `closeOverlay` (Batch 6, 2026-09-18: five static modals plus the shortcuts overlay had been opening and closing by `classList`, so they never stashed or restored focus).** Fires when you create an overlay dynamically, or open/close one by hand. Verify: the F-40/F-30 pin + the derived overlay net (cycle 22 U1/U2: the hand list had missed the CN export dialog and the shell's shortcut keys). A backdrop closes only on a press that STARTED on it, and the Scratchpad is a non-modal panel outside this lifecycle (22post A-2a + B). [Detail](docs/gotchas.md#g100-modals-close-on-escape-through-their-close)
 - **`ensureOverlay` REWRITES `className`, so a second class on an overlay is lost unless it rides `extraClass` — the day popover's `hover-mode` (Batch 6, 2026-09-18).** Fires when you route an overlay that carries any class beyond `overlay` through `ensureOverlay`. Verify: the F-40 hover-mode carry. [Detail](docs/gotchas.md#g134-ensureoverlay-rewrites-classname-so-a-second)
 - **A blocked `window.open` returns NULL — it does not throw, so a `catch` around it can never see the block (Batch 6, 2026-09-18).** Fires when you open a window or tab, especially after an async RPC (outside the user gesture, where blockers fire). Verify: the F-37 return check + the F-36 link-first order + the U1/U3 pins (the CN export and the intake copy-image fallback, cycle 22). [Detail](docs/gotchas.md#g135-a-blocked-window-open-returns-null)
 - **A registered `onClose` hook OWNS the close, removal included — `closeOverlay` delegates to it entirely (INV-145 lets a hook refuse), so a hook that clears state and returns leaves the modal open under Close, Escape and the backdrop (Batch 1, 2026-09-17).** Fires when you register an `onClose` hook, or add a dynamic overlay. Verify: the F-02 DOM close-path pin, which sweeps every registered hook. [Detail](docs/gotchas.md#g130-a-registered-onclose-hook-owns-the-close)
@@ -545,6 +545,10 @@ for the reasoning, which is usually the part that matters.
 - [Automation health has ONE problem list, and liveness reads a run ledger rather than the AuditLog tail (cycle 22 A1 + A2, 2026-09-25)](docs/design-decisions.md#automation-health-has-one-problem-list-and-liveness-reads)
 - [A half day is graded on the hours worked, not on a start it does not have (cycle 22 T5 rework, operator 2026-09-25)](docs/design-decisions.md#a-half-day-is-graded-on-the-hours-worked)
 - [Dept Request SLA targets are WORKING DAYS, and the stored map carries its unit (cycle 22 M6, operator 2026-09-25)](docs/design-decisions.md#dept-request-sla-targets-are-working-days)
+- [A Close Order names its reason, from a CONFIG list, and the server refuses without one (22post A-1, operator 2026-09-27)](docs/design-decisions.md#a-close-order-names-its-reason)
+- [The Scratchpad is a floating, non-modal panel, and the server sanitizes what it stores (22post B, operator 2026-09-27)](docs/design-decisions.md#the-scratchpad-is-a-floating-non-modal-panel)
+- [A Spanish assignment tells the assignee by email and on Needs you, and the email carries no request content (22post C-8, operator 2026-09-27)](docs/design-decisions.md#a-spanish-assignment-tells-the-assignee)
+- [App activity counts as IN outside the Philippines team, and it rides `status` (22post C-3, operator 2026-09-27)](docs/design-decisions.md#app-activity-counts-as-in-outside-the-philippines-team)
 
 ## Operator State Checklist
 
@@ -567,7 +571,7 @@ one-pane-of-glass for this table. Keep them in one Drive folder for sanity.
 | Knowledge Base + Training | `KB_SS_ID` (CONFIG placeholder) | KB, KbViews, KbFeedback, KbContentRequests, KbComments (per-article discussion — append-only + soft-delete moderation, pilot round 3), KbRevisions, TrainingAssignments, TrainingCompletions, Quizzes, QuizAttempts, **the THREE operator-maintained, app-never-writes lookup tables:** InsurancePayors (payor acceptance, 2026-08-25), OopPricing (out-of-pocket prices — **every column discovered BY HEADER STEM, including the item name**: a name-ish header wins and column A is only the fallback, because the operator's real sheet has `HCPCS` in A and the item in C. EVERY price-role column is kept and labelled, since one item carries pick-up / with-shipping / with-tech-delivery totals that are all correct for different fulfilments; any other column passes through verbatim. **The Area Eligibility column is READ BY AN ENGINE, not displayed** — see INV-209 — and a quoted price is re-verified against this tab at SEND time, see INV-208) and LocationAcceptance (delivery reach — headers in ROW 1; `Type` = warehouse rows with a geocoded Address, or city rows with State + Accepts; both 2026-09-16. Since T7 (2026-09-22) the city rows DECIDE for an item whose Area Eligibility says `listed cities`, and a tab that yields nothing usable is a named finding rather than an empty registry) | PHI-free by policy | kept | `getKbSS_` |
 | Employee Docs (HR) | `HR_DOCS_SS_ID` (**no fallback**) | EmpDocs, DocSignatures, EmpDocTemplates, Coaching | HR — keep-forever | **never purged** (INV-122/INV-134) | `getHrDocsSS_` |
 | QA (recordings) | `QA_SS_ID` (**no fallback**) | QaRecordings (Drive-folder index: status/assignee/agent/shared — Phase 2 added the trailing Agent column; Phase 3 the SharedMs release stamp, 0 = unshared; design handoff PR 5 added DurationSec + SkipReason, header self-heals), QaExemptions (PR 5 — the audit-period exemption ledger: EmpName/Period/GrantedBy/GrantedMs/Active, append-only, latest row per (name, period) wins; written only by the manager-gated `qaSetExemption`), QaComments (timestamped review comments — soft-delete, append-only), QaScorecards (structured review scores — append-only, latest per (recording, reviewer) wins) | QA/HR-adjacent (comments may name patients; reviews reference agents) | optional review-record purge (`QA_REVIEW_RETENTION_DAYS`, default 0 — QaComments + QaScorecards ONLY; the recordings index + Drive files are never touched) | `getQaSS_` |
-| Call Notes (per-rep) | `Employees` col L (`CallNotesSheetId`) | Notes, NotesArchive (cold tier), Scratchpad (one plain-text-pinned cell — the server-backed personal scratchpad, pilot round 3; PHI-plausible free text, so it rides the per-rep PHI store; NOT touched by the archive/purge tiers) — one Sheet **per rep** | **PHI** | optional archive + optional purge (live + cold) | `getCallNotesSheet_` |
+| Call Notes (per-rep) | `Employees` col L (`CallNotesSheetId`) | Notes, NotesArchive (cold tier), Scratchpad (A1 the pad in a plain-text-pinned cell, B1 its save time, C1 its format — `html` or `text` since 22post B — the server-backed personal scratchpad, pilot round 3; PHI-plausible free text, so it rides the per-rep PHI store; NOT touched by the archive/purge tiers) — one Sheet **per rep** | **PHI** | optional archive + optional purge (live + cold) | `getCallNotesSheet_` |
 
 **Every store's timezone MUST equal `CONFIG.TIMEZONE`** (coerced date/time reads
 drift otherwise — the S1.1 tripwire `config_adpSheetTzMatchesConfig` enforces it
@@ -644,6 +648,7 @@ the dated round entries that used to sit here moved to
 - [Inter-department request tracking (`DeptRequests` / Part B)](docs/operator-state.md#operator-inter-department-request-tracking-deptrequests-part-b)
 - [External fillable-form links must be the canonical anonymous `/exec` URL](docs/operator-state.md#operator-external-fillable-form-links-must-be-the-canonical-anonymous)
 - [External anonymous web-app access is BLOCKED by Workspace admin policy on this domain — the `?form=<token>` fillable-form route is non-functional for external recipients](docs/operator-state.md#operator-external-anonymous-web-app-access-is-blocked-by-workspace-ad)
+- [`Employees` sheet column E = `PayCycle` — also decides the live-view presence rule (22post C-3)](docs/operator-state.md#operator-employees-sheet-column-e-paycycle)
 - [`Employees` sheet column K = `PtoEnabled`](docs/operator-state.md#operator-employees-sheet-column-k-ptoenabled)
 - [Onboarding a NEW team member no longer needs a hand-edit of the Employees sheet (2026-08-07)](docs/operator-state.md#operator-onboarding-a-new-team-member-no-longer-needs-a-hand-edit-of)
 - [Daily automation triggers](docs/operator-state.md#operator-daily-automation-triggers)
@@ -894,18 +899,18 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1036 | `node test/client/run.js` |
-| DOM harness tests | 156 | `node test/client/dom/runDom.js` |
-| Visual matrix scenarios | 116 | `shoot.mjs`'s `SCENARIOS` |
+| Pure harness tests | 1047 | `node test/client/run.js` |
+| DOM harness tests | 159 | `node test/client/dom/runDom.js` |
+| Visual matrix scenarios | 120 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 339 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 52 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 95 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
 | QA-gated endpoints (`canSeeQa_`) | 17 | `'QA access required.'` in the server source |
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 10 | `TRIGGER_GROUPS` |
-| localStorage keys | 18 | `ums…` literals in `web-app/` |
-| Invariant library entries | 290 | `.cycle/config.md` |
-| Regression scenarios (S*) | 113 | `.cycle/config.md` |
+| localStorage keys | 19 | `ums…` literals in `web-app/` |
+| Invariant library entries | 297 | `.cycle/config.md` |
+| Regression scenarios (S*) | 116 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

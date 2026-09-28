@@ -5446,9 +5446,12 @@ test('updateTimeOffStatus re-checks hasActiveTimeOffOnDate_ (own row excluded) o
     { filename: 'Code.js#sanitizeEmailSelections_' });
   vm.runInContext(extractRawFunction('Code.js', 'validateEmailSelections_'), sb,
     { filename: 'Code.js#validateEmailSelections_' });
+  // 22post A-1: a Close Order now needs a reason, so the base carries one.
+  ['updateInfoToSubformKey_', 'cnCloseReasonError_'].forEach((n) =>
+    vm.runInContext(extractRawFunction('Code.js', n), sb, { filename: 'Code.js#' + n }));
   const base = { departments: ['Billing'], individualEmail: '', updateInfo: 'Close Order',
     callbackNeeded: false, overwriteResolution: false,
-    shippingDetails: null, closeDetails: null, resupplyDetails: null, oopDetails: null };
+    shippingDetails: null, closeDetails: { reason: 'Due to cost', reasonCode: 'Due to cost' }, resupplyDetails: null, oopDetails: null };
   test('validateEmailSelections_ passes normal-sized subform details', () => {
     const s = Object.assign({}, base, { shippingDetails: { specialNote: 'left at the side door' } });
     assert.strictEqual(sb.validateEmailSelections_(s).ok, true);
@@ -8142,7 +8145,10 @@ test('Dept Requests: Spanish-vocabulary cards, SLA-driven tones, filter chips re
   assert.ok(/data-dr-dept/.test(d), 'the dept chips render');
   ['drDeptMatch_'].forEach(() => {});
   // Every card list consumes the filter (mine + incoming + team-wide + stats).
-  assert.ok((c17strip(d).match(/filter\(drDeptMatch_\)/g) || []).length >= 3,
+  // 22post A-6: one pipeline (drListView_ — dept chips, date range, sort) feeds
+  // every list, so the filter is asserted once there and at each list.
+  assert.ok(/\.filter\(drDeptMatch_\)/.test(c17strip(c17fnBody(d, 'drListView_'))), 'the list pipeline applies the dept filter');
+  assert.ok((c17strip(d).match(/drListView_\((mineAll|data\.incoming|openAllTeam)/g) || []).length >= 3,
     'mine, incoming, and the team-wide list all pass through the dept filter');
 });
 
@@ -11288,7 +11294,7 @@ test('load-time sweep: DR result cache + SWR enters, timeoff rides calNavTo_ (op
   // cache it). The gen salt is bumped by every mutation so a resolve/new
   // request reaches the next read; the put is success-only (INV-129).
   const dr = nc(extractRawFunction('Code.js', 'getDeptRequests'));
-  assert.ok(/dept_req_v1:' \+ emp\.id \+ ':' \+ drCacheGen_\(\)/.test(dr), 'per-caller key + generation salt');
+  assert.ok(/dept_req_v2:' \+ emp\.id \+ ':' \+ drCacheGen_\(\)/.test(dr), 'per-caller key + generation salt (v2: 22post A-6/A-7 added createdMs + teamKpis)');
   assert.ok(/payload\.length <= 90000/.test(dr), 'oversized payloads skip the put');
   const code = nc(serverSource());
   const bumps = (code.match(/drBumpCacheGen_\(\);/g) || []).length;
@@ -12690,7 +12696,7 @@ test('B8: the manager liveStatus fixture carries the id the client reads', () =>
   assert.ok(/\bid:\s*e\.id\b/.test(ret[1]), 'the server ships `id` on a liveStatus row');
   assert.ok(!/\bempId:/.test(ret[1]), 'and NOT `empId` — which is what drifted');
   const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
-  const lsFn = /function ls\(name, status, t, tz, abbr\) \{ return \{([\s\S]*?)\}; \}/.exec(mock);
+  const lsFn = /function ls\(name, status, t, tz, abbr(?:, act)?\) \{ (?:act = act \|\| \{\}; )?return \{([\s\S]*?)\}; \}/.exec(mock);   // 22post C-3 added the activity arg
   assert.ok(lsFn, 'found the fixture row builder');
   assert.ok(/\bid:\s*'E-'/.test(lsFn[1]), 'the fixture ships `id` too');
   assert.ok(!/\bempId:/.test(lsFn[1]), 'and not the drifted `empId`');
@@ -13405,8 +13411,9 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
   });
 
   test('R3 #5: scratchpad client — named modal, flush-on-close, visible failed autosave, A12 load failure', () => {
-    assert.ok(/ensureOverlay\('cn-scratch-overlay', \{ label: 'Scratchpad', onClose: cnCloseScratchpadModal_ \}\)/.test(cn),
-      'A14-named dialog with a close hook');
+    // 22post B-2b: a NAMED, NON-modal dialog (the floating panel), not an overlay.
+    assert.ok(/setAttribute\('role', 'dialog'\)/.test(cn) && /setAttribute\('aria-modal', 'false'\)/.test(cn) &&
+      /setAttribute\('aria-labelledby', 'cn-scratch-title'\)/.test(cn), 'A14-named, non-modal dialog');
     assert.ok(/aria-label="Scratchpad contents"/.test(cn), 'the textarea is named (INV-195)');
     const close = strip(extractFunction('cn/script_callnotes.html', 'cnCloseScratchpadModal_'));
     assert.ok(/if \(CN_SCRATCH\.dirty\) \{[\s\S]*cnScratchSave_\(true\)/.test(close),   // C6: captures `latest` first
@@ -13597,7 +13604,7 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
       'finds cards by comparing the decoded attribute, not by building a selector from the id');
     // The KPI strip has ONE renderer, shared by the full render and the patch.
     assert.ok((dr.match(/drKpiStripHtml_\(/g) || []).length >= 3, 'the KPI strip is a shared renderer');
-    assert.ok(/id="dr-kpi"/.test(dr) && /id="dr-mgr-wrap"/.test(dr), 'both repaint anchors exist');
+    assert.ok(/id="dr-kpi"/.test(dr) && /id="dr-mgr-stats"/.test(dr) && /id="dr-mgr-team"/.test(dr), 'the repaint anchors exist (22post A-7 split the manager section in two)');
     // Managers get a quiet reconcile (deptStats is server-derived); reps do
     // not need one — every number they see is client-derived from data.mine.
     assert.ok(/isManager\) drReconcile_/.test(click), 'the reconcile is manager-only');
@@ -23686,7 +23693,7 @@ test('N3-DR: an in-app "Mark resolved" is recorded (ResolvedVia) and leaves ever
   assert.ok(/marked in app, not timed/.test(kpi), 'the strip names the excluded count');
   const apply = nc(extractFunction('metrics/script_deptrequests.html', 'drApplyResolved_'));
   assert.ok(/r\.resolvedVia = 'app';/.test(apply), "the optimistic patch stamps 'app' — exactly what the next payload says");
-  const mgr = nc(extractFunction('metrics/script_deptrequests.html', 'drManagerSectionHtml_'));
+  const mgr = nc(extractFunction('metrics/script_deptrequests.html', 'drMgrStatsHtml_'));   // 22post A-7: the table's own renderer
   assert.ok(/drStatsNotTimedCell_\(s\)/.test(mgr) && /Not timed/.test(mgr), 'the manager table carries the Not-timed column');
   const cellSb = vm.createContext({ esc: (x) => String(x) });
   vm.runInContext(extractFunction('metrics/script_deptrequests.html', 'drStatsNotTimedCell_'), cellSb, { filename: 'dr#cell' });
@@ -23990,7 +23997,7 @@ test('D-N10: presence — teammateActiveNotIn_ driven (self never, working state
   // (c) recordPresence: rep-gated, cache-only, never a lock / sheet / audit.
   const rp = nc(extractRawFunction('Code.js', 'recordPresence'));
   assert.ok(/getEmployeeInfo_\(\)/.test(rp) && /if \(!emp\) return \{ success: false \};/.test(rp), 'rep-gated (the recordViewEnter shape)');
-  assert.ok(/\.put\(PRESENCE_CACHE_PREFIX \+ emp\.id, '1', PRESENCE_TTL_SEC\)/.test(rp), 'ONE cache put under the prefixed key with the TTL');
+  assert.ok(/\.put\(PRESENCE_CACHE_PREFIX \+ emp\.id, String\(Date\.now\(\)\), PRESENCE_TTL_SEC\)/.test(rp), 'ONE cache put under the prefixed key with the TTL — its value the gesture time (22post C-3)');
   assert.ok(!/waitLock|appendRow|writeAuditLog_|getSheetByName|setValue/.test(rp), 'no lock, no sheet write, no audit row — a volatile signal, not a record');
   // (d) getTeammateStatus: the row literal carries EXACTLY the four keys, the flag comes from the rule, C8 holds.
   const ts = nc(extractRawFunction('Code.js', 'getTeammateStatus'));
@@ -24000,11 +24007,12 @@ test('D-N10: presence — teammateActiveNotIn_ driven (self never, working state
   // the colon-only keysOf above is blind to shorthand (its first write read
   // two keys out of four), so the row keys are read per LINE: a bare
   // identifier line is a shorthand key.
-  const rowKeys = rowLit[1].split('\n').map((l) => l.trim().replace(/,$/, ''))
+  // 22post C-3: split on commas too — two keys on ONE line read as one (a bite found it).
+  const rowKeys = rowLit[1].split(/[\n,]/).map((l) => l.trim())
     .map((l) => (/^[A-Za-z_]\w*$/.test(l) ? l : (/^([A-Za-z_]\w*):\s/.exec(l) || [])[1]))
     .filter(Boolean);
   assert.strictEqual(['name'].concat(rowKeys).sort().join('|'), 'activeNotIn|isSelf|name|status', 'INV-24: name/status/isSelf + the ONE boolean, nothing else');
-  assert.ok(/activeNotIn: teammateActiveNotIn_\(isSelf, !!present\[e\.id\], status\)/.test(ts), 'the flag is the pure rule over the stamp + status');
+  assert.ok(/const disp = presenceDisplay_\(status, !!present\[e\.id\], e\.isPh, isSelf\);/.test(ts) && /status: disp\.status,/.test(ts) && /activeNotIn: disp\.activeNotIn,?/.test(ts), 'the status + flag are the pure rule over the stamp + status + team (22post C-3)');
   assert.ok(/const present = presenceMap_\(employees\.map\(e => e\.id\)\);/.test(ts), 'ONE getAll over the roster ids');
   assert.ok(!/lastSeen|seenAt|presenceAt|sentAt/.test(ts), 'no presence TIMESTAMP anywhere on the view');
   assert.ok(ts.indexOf('getEmployeeInfo_') < ts.indexOf("getFlag_('showTeammateStatus')"), 'C8: auth still precedes the flag read');
@@ -28770,6 +28778,304 @@ test('C12: a History, per-rep or export range that reaches the archive window SA
   const cn = fs.readFileSync(path.join(DF_WEB, 'cn/script_callnotes.html'), 'utf8');
   assert.ok(/cnArchiveNoteHtml_\(CN_STATE\.historyArchivedBefore\)/.test(cn) && /cnArchiveNoteHtml_\(res\.archivedBefore\)/.test(cn), 'History and the per-rep view render it');
   assert.ok(/\.cn-archive-note \{/.test(cn), 'with a rule (the T6 ratchet)');
+});
+
+// 22post Batch A — operator testing notes (2026-09-27)
+console.log('\n22post Batch A — Close Order reason, Scratchpad, Dept Requests');
+const PA_WEB = path.join(__dirname, '../../web-app');
+
+test('A-1: a Close Order email needs a reason — the server refuses on preview AND send (driven)', () => {
+  const ctx = vm.createContext({ String });
+  ['updateInfoToSubformKey_', 'cnCloseReasonError_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  assert.ok(/needs a reason/.test(ctx.cnCloseReasonError_({ updateInfo: 'Close Order', closeDetails: { reason: '  ' } })), 'a blank reason is refused');
+  assert.ok(/needs a reason/.test(ctx.cnCloseReasonError_({ updateInfo: 'close order', closeDetails: null })), 'no details at all is refused');
+  assert.strictEqual(ctx.cnCloseReasonError_({ updateInfo: 'Close Order', closeDetails: { reason: 'Due to cost', reasonCode: 'Due to cost' } }), '');
+  assert.strictEqual(ctx.cnCloseReasonError_({ updateInfo: 'Verified Shipping', closeDetails: null }), '', 'only Close Order needs one');
+  vm.runInContext('var CN_EMAIL_DETAILS_MAX_CHARS = 16000;', ctx);
+  ['sanitizeEmailSelections_', 'validateEmailSelections_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const sel = (cd) => ctx.sanitizeEmailSelections_({ departments: ['Billing'], updateInfo: 'Close Order', closeDetails: cd });
+  assert.ok(/needs a reason/.test(ctx.validateEmailSelections_(sel({ reason: '' })).error || ''), 'the validator REFUSES a blank reason (driven)');
+  assert.strictEqual(ctx.validateEmailSelections_(sel({ reason: 'Due to cost', reasonCode: 'Due to cost' })).ok, true, 'and passes a real one');
+  ['previewCallNoteEmail', 'emailFromCallNote'].forEach((fn) =>
+    assert.ok(/validateEmailSelections_\(/.test(extractRawFunction('Code.js', fn)), fn + ' validates, so both refuse'));
+  const cfg = stripJsComments_(extractRawFunction('Code.js', 'getCallNotesDepartments'));
+  assert.ok(/closeReasons: CONFIG\.CALL_NOTES\.CLOSE_ORDER_REASONS/.test(cfg), 'the composer gets the server list (never mirrored)');
+  const conf = fs.readFileSync(path.join(PA_WEB, '00_config.js'), 'utf8');
+  ['Changing suppliers', 'Dissatisfied with services', 'Due to cost'].forEach((r) => assert.ok(conf.indexOf("'" + r + "'") >= 0, r + ' is a preset'));
+});
+
+test('A-1: the composer requires a reason — preset or typed "Other" — and the win-back nudge keys on the preset (driven client)', () => {
+  const s2 = buildSandbox([]);
+  s2.esc = (x) => String(x == null ? '' : x);
+  const from = loadFunction(s2, 'cn/script_callnotes.html', 'cnCloseDetailsFrom_');
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  assert.deepStrictEqual(J(from('Due to cost', 'ignored')), { reason: 'Due to cost', reasonCode: 'Due to cost' });
+  assert.deepStrictEqual(J(from('Other', '  moved away ')), { reason: 'moved away', reasonCode: 'Other' });
+  assert.deepStrictEqual(J(from('', '')), { reason: '', reasonCode: '' }, 'nothing chosen is an empty reason — the guard refuses it');
+  const choice = loadFunction(s2, 'cn/script_callnotes.html', 'cnCloseChoiceFor_');
+  const P = ['Changing suppliers', 'Due to cost'];
+  assert.strictEqual(choice({ reason: 'Due to cost' }, P), 'Due to cost', 'a saved preset reopens selected');
+  assert.strictEqual(choice({ reason: 'free text from before' }, P), 'Other', 'a legacy free-text reason reopens as Other');
+  assert.strictEqual(choice({}, P), '');
+  loadFunction(s2, 'cn/script_callnotes.html', 'cnIsSwitchingSuppliersReason_');
+  const sw = loadFunction(s2, 'cn/script_callnotes.html', 'cnCloseIsSwitching_');
+  assert.strictEqual(sw({ reason: 'Changing suppliers', reasonCode: 'Changing suppliers' }), true);
+  assert.strictEqual(sw({ reason: 'Due to cost', reasonCode: 'Due to cost' }), false, 'another preset never nudges');
+  assert.strictEqual(sw({ reason: 'Moving to another provider', reasonCode: 'Moving to another provider' }), false,
+    'a preset is read by its code — even one whose words the loose free-text read would match');
+  assert.strictEqual(sw({ reason: 'going with a competitor', reasonCode: 'Other' }), true, 'typed text keeps the loose read');
+  // The preview guard refuses an empty reason before any preview (driven).
+  const toasts = [], marked = []; let chained = 0;
+  const el = (id) => ({ id, setAttribute: (k, v) => marked.push(id + ':' + k + '=' + v), focus() {}, textContent: 'Ana · TRX 1' });
+  s2.CN_STATE = { composer: { selections: { departments: ['Billing'], updateInfo: 'Close Order', closeDetails: { reason: '', reasonCode: '' } } } };
+  s2.cnGatherComposerSelections_ = () => {};
+  s2.showToast = (m) => toasts.push(m);
+  s2.cnComposerPreviewChain_ = () => { chained++; };
+  s2.document.getElementById = (id) => el(id);
+  const go = loadFunction(s2, 'cn/script_callnotes.html', 'cnComposerGoToPreview_');
+  go();
+  assert.strictEqual(chained, 0, 'no preview without a reason');
+  assert.ok(/Choose a reason/.test(toasts.join('|')) && marked.indexOf('cnCD-choice:aria-invalid=true') >= 0, 'the dropdown is marked and the rep told');
+  s2.CN_STATE.composer.selections.closeDetails = { reason: '', reasonCode: 'Other' };
+  go();
+  assert.ok(marked.indexOf('cnCD-reason:aria-invalid=true') >= 0 && chained === 0, '"Other" with nothing typed marks the text box');
+  s2.CN_STATE.composer.selections.closeDetails = { reason: 'Due to cost', reasonCode: 'Due to cost' };
+  go();
+  assert.strictEqual(chained, 1, 'a reason lets the preview through');
+  const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
+  const g = extractFnFrom(cn, 'cnComposerGoToPreview_');
+  const guard = g.indexOf('Choose a reason for closing the order'), chain = g.indexOf('cnComposerPreviewChain_()');
+  assert.ok(guard > 0 && guard < chain && /setAttribute\('aria-invalid', 'true'\)/.test(g), 'the guard marks the field and stops before the preview');
+  assert.ok(/cnCloseIsSwitching_\(cd2\)/.test(extractFnFrom(cn, 'cnComposerSend_')), 'the nudge reads the reason code');
+  assert.ok(/\.cn-req-mark \{/.test(cn), 'the required mark has a rule (the T6 ratchet)');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/closeReasons: \['Changing suppliers'/.test(mock), 'the fixture carries the list (INV-185)');
+});
+
+test('A-6: Dept Requests sort + date range — open first, newest by default; a range keeps undated rows; the server caps the NEWEST (driven)', () => {
+  const ctx = vm.createContext({ String, Number, Math });
+  ['drNewestOpenFirst_', 'drTeamKpis_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const rows = [
+    { id: 'old-open', status: 'open', createdMs: 100, elapsedMin: 900 },
+    { id: 'new-res', status: 'resolved', createdMs: 400 },
+    { id: 'new-open', status: 'open', createdMs: 300, elapsedMin: 10 },
+    { id: 'undated', status: 'open', createdMs: null, elapsedMin: 5 },
+  ];
+  assert.deepStrictEqual(rows.slice().sort(ctx.drNewestOpenFirst_).map((r) => r.id), ['new-open', 'old-open', 'undated', 'new-res'],
+    'the server orders mine open-first then newest, so the list cap keeps the newest');
+  assert.ok(/mine\.sort\(drNewestOpenFirst_\)/.test(stripJsComments_(extractRawFunction('Code.js', 'getDeptRequests'))), 'getDeptRequests uses it before the cap');
+  const s2 = buildSandbox([]);
+  const cmp = loadFunction(s2, 'metrics/script_deptrequests.html', 'drSortCmp_');
+  const ids = (k) => rows.slice().sort(cmp(k)).map((r) => r.id);
+  assert.deepStrictEqual(ids('newest'), ['new-open', 'old-open', 'undated', 'new-res']);
+  assert.deepStrictEqual(ids('oldest'), ['old-open', 'new-open', 'undated', 'new-res'], 'oldest first, open before resolved');
+  assert.deepStrictEqual(ids('longest'), ['old-open', 'new-open', 'undated', 'new-res'], 'longest business age first');
+  const inRange = loadFunction(s2, 'metrics/script_deptrequests.html', 'drInRange_');
+  const now = Date.UTC(2026, 8, 27, 12);
+  assert.strictEqual(inRange(now - 3 * 86400000, { preset: '7' }, now), true);
+  assert.strictEqual(inRange(now - 8 * 86400000, { preset: '7' }, now), false, 'outside the last 7 days');
+  assert.strictEqual(inRange(null, { preset: '7' }, now), true, 'an undated row is kept, never dropped');
+  assert.strictEqual(inRange(now - 90 * 86400000, { preset: 'all' }, now), true);
+  const d = new Date(2026, 8, 10, 15).getTime();
+  assert.strictEqual(inRange(d, { preset: 'custom', from: '2026-09-10', to: '2026-09-10' }, now), true, 'a custom range is inclusive of whole local days');
+  assert.strictEqual(inRange(d, { preset: 'custom', from: '2026-09-11', to: '' }, now), false);
+  const dr = fs.readFileSync(path.join(PA_WEB, 'metrics/script_deptrequests.html'), 'utf8');
+  assert.ok(/mtDateRange_\(\{ scope: 'dr'/.test(dr) && /mtDateRangeRow_\('dr-range-custom'/.test(dr), 'the shared date-range control, not a new one');
+  assert.ok(/nothing sent before/.test(dr), 'a truncated window names how far back it reaches');
+});
+
+test('A-7: a manager\'s Dept Requests summary is TEAM-WIDE (timed resolves only in the median) and the optimistic resolve keeps it right (driven)', () => {
+  const ctx = vm.createContext({ String, Number, Math });
+  vm.runInContext(extractRawFunction('Code.js', 'drTeamKpis_'), ctx);
+  const k = JSON.parse(JSON.stringify(ctx.drTeamKpis_([
+    { status: 'open', slaStatus: 'overdue' }, { status: 'open', slaStatus: 'ontime' },
+    { status: 'resolved', resolvedVia: 'email', elapsedMin: 60 }, { status: 'resolved', resolvedVia: 'email', elapsedMin: 200 },
+    { status: 'resolved', resolvedVia: 'email', elapsedMin: 30 }, { status: 'resolved', resolvedVia: 'app', elapsedMin: 999 }])));
+  assert.deepStrictEqual(k, { open: 2, overdue: 1, resolved: 4, total: 6, medianMin: 60, manualCount: 1 }, 'an in-app resolve is counted but never timed');
+  assert.ok(/result\.teamKpis = drTeamKpis_\(all\)/.test(stripJsComments_(extractRawFunction('Code.js', 'getDeptRequests'))), 'managers get it');
+  const s2 = buildSandbox([]);
+  s2.DR_LAST_DATA = { teamKpis: { open: 2, overdue: 1, resolved: 4, total: 6, medianMin: 60, manualCount: 1 },
+    mine: [], incoming: [], allOpen: [{ requestId: 'x', status: 'open', slaStatus: 'overdue' }] };
+  vm.runInContext('var DR_LAST_DATA = this.DR_LAST_DATA;', s2);
+  const apply = loadFunction(s2, 'metrics/script_deptrequests.html', 'drApplyResolved_');
+  apply('x'); apply('x');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(vm.runInContext('DR_LAST_DATA.teamKpis', s2))),
+    { open: 1, overdue: 0, resolved: 5, total: 6, medianMin: 60, manualCount: 2 }, 'one resolve moves one request, once');
+  const dr = fs.readFileSync(path.join(PA_WEB, 'metrics/script_deptrequests.html'), 'utf8');
+  assert.ok(/drRepaintKpi_\(\);\s+\/\/ 22post A-7/.test(extractFnFrom(dr, 'drReconcile_')), 'the reconcile repaints the team strip');
+  assert.ok(/\.dr-top-row \{/.test(dr) && /:root\[data-compact\] \.dr-top-row/.test(dr) && /@media \(max-width: 900px\) \{ \.dr-top-row/.test(dr),
+    'the top row stacks in the pop-out AND at narrow widths (g50)');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/teamKpis: \{ open: /.test(mock) && /createdMs: new Date\(daysAgo/.test(mock), 'the fixture carries teamKpis and createdMs (INV-185)');
+});
+
+// 22post Batch B — the floating, formatted Scratchpad
+console.log('\n22post Batch B — floating Scratchpad, formatting');
+// The ONE case table both sanitizers are held to (the DOM harness drives the
+// client twin against the same expectations — a drift only drops formatting,
+// but it must be visible).
+const SCRATCH_SANITIZE_CASES = [
+  ['<b>bold</b> and <i>it</i> <u>u</u>', '<b>bold</b> and <i>it</i> <u>u</u>'],
+  ['<img src=x onerror="alert(1)">hi', 'hi'],
+  ['<script>alert(1)</script>ok', 'ok'],
+  ['<span class="cn-sp-c-red" onclick="x()">red</span>', '<span class="cn-sp-c-red">red</span>'],
+  ['<span class="evil cn-sp-s-large">big</span>', '<span class="cn-sp-s-large">big</span>'],
+  ['<span style="color:red">plain</span>', 'plain'],
+  ['<a href="javascript:alert(1)">link</a>', 'link'],
+  ['<ul><li>one</li><li>two</li></ul>', '<ul><li>one</li><li>two</li></ul>'],
+  ['<div>line<br>two</div>', '<div>line<br>two</div>'],
+  ['<b onmouseover="x()">t</b>', '<b>t</b>'],
+  ['a &amp; b &lt; c', 'a &amp; b &lt; c'],
+];
+
+test('B-2c: the server stores the Scratchpad through an ALLOWLIST — formatting kept, everything else dropped (driven)', () => {
+  const ctx = vm.createContext({ String });
+  const src = serverSource();
+  ['SCRATCH_ALLOWED_TAGS_', 'SCRATCH_CLASS_RE_'].forEach((n) => {
+    const m = new RegExp('const ' + n + ' = [^\\n]*;').exec(src);
+    assert.ok(m, n + ' declared');
+    vm.runInContext(m[0].replace(/^const /, 'var '), ctx);
+  });
+  vm.runInContext(extractRawFunction('Code.js', 'scratchpadSanitizeHtml_'), ctx);
+  SCRATCH_SANITIZE_CASES.forEach(([inp, want]) => assert.strictEqual(ctx.scratchpadSanitizeHtml_(inp), want, inp));
+  assert.strictEqual(ctx.scratchpadSanitizeHtml_('1 < 2 & 3 > 2'), '1 &lt; 2 &amp; 3 &gt; 2', 'bare < > & in text are escaped');
+  assert.strictEqual(ctx.scratchpadSanitizeHtml_('<span class="x">a</span></span>b'), 'ab', 'a dropped span drops its own close, never an unmatched one');
+  const save = stripJsComments_(extractRawFunction('Code.js', 'saveMyScratchpad'));
+  assert.ok(/isHtml \? scratchpadSanitizeHtml_\(content\)/.test(save), 'an html save is sanitized BY THE SERVER');
+  assert.ok(save.indexOf('scratchpadSanitizeHtml_(content)') < save.indexOf('SCRATCHPAD_MAX_CHARS'), 'and the cap counts the stored (sanitized) text');
+  assert.ok(/getRange\('C1'\)\.setValue\(sheetSafe_\(isHtml \? 'html' : 'text'\)\)/.test(save), 'the format is recorded beside it');
+  assert.ok(/format: fmt/.test(extractRawFunction('Code.js', 'getMyScratchpad')), 'and read back');
+  const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.ok(/\.saveMyScratchpad\(clean, 'html'\)/.test(extractFnFrom(cn, 'cnScratchSave_')), 'the client saves sanitized html, marked html');
+  assert.ok(/saveMyScratchpad\('<b>TEST_SCRATCH<\/b>/.test(fs.readFileSync(path.join(PA_WEB, 'Tests.js'), 'utf8')), 'the editor round-trip covers the html path');
+});
+
+test('B-2b: ONE drag helper — clamped to the viewport, pointer events, and both email composers use it (driven)', () => {
+  const s2 = buildSandbox([]);
+  const clamp = loadFunction(s2, 'script_core.html', 'dragClamp_');
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  assert.deepStrictEqual(J(clamp(-50, -20, 300, 200, 1000, 800)), { x: 0, y: 0 }, 'never off the top-left');
+  assert.deepStrictEqual(J(clamp(900, 700, 300, 200, 1000, 800)), { x: 700, y: 600 }, 'never off the bottom-right');
+  assert.deepStrictEqual(J(clamp(10, 10, 1200, 900, 1000, 800)), { x: 0, y: 0 }, 'a panel bigger than the window pins to the corner');
+  const core = fs.readFileSync(path.join(PA_WEB, 'script_core.html'), 'utf8');
+  const ds = extractFnFrom(core, 'dragStart_');
+  assert.ok(/'pointermove'/.test(ds) && /pointercancel/.test(ds) && /dragClamp_\(/.test(ds), 'pointer events, clamped');
+  assert.ok(/closest\('button, input, select, textarea, a, \[contenteditable="true"\]'\)/.test(ds), 'never starts a drag from a control in the handle');
+  const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
+  ['cnStartDragModal_', 'cnStartDragExtModal_'].forEach((fn) => {
+    const b = extractFnFrom(cn, fn);
+    assert.ok(/dragStart_\(e, document\.getElementById/.test(b) && !/mousemove/.test(b), fn + ' uses the shared helper');
+  });
+  assert.ok(!/onmousedown="cnStartDrag/.test(cn) && /onpointerdown="cnStartDragModal_\(event\)"/.test(cn), 'the handles listen for pointerdown (touch included)');
+  // The non-modal panel is exempt from the modal focus trap AND a dialog's Enter.
+  assert.ok(/closest\('\.cn-float-panel'\)\) return;/.test(core) && /closest\('#kb-drawer, \.cn-float-panel'\)\) return;/.test(core),
+    'the focus trap and the dialog Enter both let the Scratchpad keep focus');
+});
+
+test('B-2b: the Scratchpad remembers where it was left, clamped to THIS window (driven)', () => {
+  const s2 = buildSandbox([]);
+  loadFunction(s2, 'script_core.html', 'dragClamp_');
+  vm.runInContext('var CN_SCRATCH_MIN = { w: 300, h: 260 };', s2);
+  const fit = loadFunction(s2, 'cn/script_callnotes.html', 'cnScratchGeomFor_');
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  assert.deepStrictEqual(J(fit({ x: 1500, y: 40, w: 500, h: 400 }, 1024, 768)), { x: 524, y: 40, w: 500, h: 400 }, 'a pad left far right comes back on screen');
+  assert.deepStrictEqual(J(fit({ x: 0, y: 0, w: 900, h: 900 }, 480, 800)), { x: 0, y: 0, w: 464, h: 784 }, 'shrunk to fit the pop-out');
+  assert.deepStrictEqual(J(fit({ x: 0, y: 0, w: 100, h: 50 }, 1024, 768)), { x: 0, y: 0, w: 300, h: 260 }, 'never below the minimum');
+  assert.strictEqual(fit(null, 1024, 768), null, 'nothing saved = the default corner');
+  const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.ok(/var CN_SCRATCH_GEOM_KEY = 'umsScratchGeom';/.test(cn), 'one ums… key');
+  const save = extractFnFrom(cn, 'cnScratchSaveGeom_'), apply = extractFnFrom(cn, 'cnScratchApplyGeom_');
+  assert.ok(/try \{ localStorage\.setItem/.test(save) && /try \{ g = JSON\.parse\(localStorage\.getItem/.test(apply), 'every read and write in a try/catch (g112)');
+});
+
+// 22post Batch C — Spanish assign notifications, presence on the live view
+console.log('\n22post Batch C — Spanish assign notifications, presence');
+
+test('C-8: an assignment tells the assignee — one PHI-free email per assignee per action, never the actor (driven)', () => {
+  const ctx = vm.createContext({ String, Number, Object, CN_EMAIL_PALETTE: {} });
+  ['spanishAssignNotices_', 'spanishMyOpenClaims_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  assert.deepStrictEqual(J(ctx.spanishAssignNotices_([{ by: 'Ana@x' }, { by: 'bo@x' }, { by: 'ana@x' }, { by: 'mgr@x' }], 'MGR@x')),
+    [{ email: 'ana@x', count: 2 }, { email: 'bo@x', count: 1 }], 'grouped per assignee; the actor is never emailed');
+  assert.deepStrictEqual(J(ctx.spanishAssignNotices_([{ by: 'me@x' }], 'me@x')), [], 'a self-claim notifies nobody');
+  // The email is built from a count, a name and a link — nothing else can reach it.
+  const ectx = vm.createContext({ String, Number });
+  vm.runInContext('function esc_(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;");} function buildBrandedEmailHtml_(h,b,o){return "H:"+h+"|B:"+b+"|CTA:"+o.ctaUrl;}', ectx);
+  vm.runInContext(extractRawFunction('Code.js', 'spanishAssignEmail_'), ectx);
+  const m = ectx.spanishAssignEmail_(2, 'Sam <Lead>', 'https://app/exec?tool=metricsSpanish');
+  assert.strictEqual(m.subject, 'Assigned to you: 2 Spanish Inbox requests');
+  assert.ok(/Sam &lt;Lead> assigned you 2 Spanish Inbox requests/.test(m.html), 'the assigner name is escaped');
+  assert.ok(/CTA:https:\/\/app\/exec\?tool=metricsSpanish/.test(m.html) && /tool=metricsSpanish/.test(m.text), 'a deep link to the Spanish Inbox');
+  assert.strictEqual(extractRawFunction('Code.js', 'spanishAssignEmail_').match(/function spanishAssignEmail_\(([^)]*)\)/)[1], 'count, actorName, url',
+    'the builder takes no request content — it cannot leak a subject or a body');
+  // The Needs-you fold: my claims that are still pending, not manually resolved.
+  const claims = { t1: { by: 'me@x', atMs: 20, assignedBy: 'mgr@x' }, t2: { by: 'me@x', atMs: 10, assignedBy: '' },
+    t3: { by: 'other@x', atMs: 5 }, t4: { by: 'me@x', atMs: 1 }, t5: { by: 'me@x', atMs: 2 } };
+  assert.deepStrictEqual(J(ctx.spanishMyOpenClaims_(claims, 'ME@x', ['t1', 't2', 't3', 't5'], { t5: true })).map((o) => o.threadId), ['t2', 't1'],
+    'mine, still pending (t4 is not), never manually resolved (t5), oldest first');
+});
+
+test('C-8: the notices, busts and Needs-you item are wired — after the lock, only for a member, pending-ness from the cached id set (source)', () => {
+  const claim = stripJsComments_(extractRawFunction('Code.js', 'claimSpanishThread'));
+  assert.ok(claim.indexOf('lock.releaseLock()') < claim.indexOf('spanishNotifyAssignees_('), 'the email goes out AFTER the lock (g34)');
+  assert.ok(/\(claimant !== self\) \? spanishNotifyAssignees_\(\[\{ by: claimant \}\], emp\) : 0/.test(claim), 'only an assignment notifies');
+  assert.ok(/spanishBustClaimants_\(\[claimant, prev\]\)/.test(claim), 'the new and the previous owner refresh');
+  assert.ok(/spanishBustClaimants_\(\[releasedFrom\]\)/.test(stripJsComments_(extractRawFunction('Code.js', 'releaseSpanishThread'))), 'a release refreshes');
+  assert.ok(/spanishBustClaimants_\(\[c\.by\]\)/.test(stripJsComments_(extractRawFunction('Code.js', 'resolveSpanishThread'))), 'a resolve refreshes');
+  const auto = stripJsComments_(extractRawFunction('Code.js', 'spanishAutoAssignCore_'));
+  assert.ok(auto.indexOf('lock.releaseLock()') < auto.indexOf('spanishNotifyAssignees_(picks, emp)'), 'auto-assign emails after the lock, one summary per assignee');
+  assert.ok(/spanishPendingIdsPut_\(d, out\.map\(function \(x\) \{ return x\.threadId; \}\)\)/.test(stripJsComments_(extractRawFunction('Code.js', 'getSpanishInboxPending'))),
+    'the cached set is thread ids ONLY');
+  const pt = stripJsComments_(extractRawFunction('Code.js', 'getMyPendingTasks'));
+  assert.ok(/if \(canSeeSpanishInbox_\(emp\) && getSpanishInboxAddress_\(\)\)/.test(pt), 'members only');
+  assert.ok(pt.indexOf('spanishPendingIdsGet_(') < pt.indexOf('getSpanishInboxPending(') && /if \(anyMine\)/.test(pt),
+    'the cached ids first; a live read only on a miss, and only for a rep who owns a claim');
+  assert.ok(/unavailable\.push\('spanish'\)/.test(pt), 'a failed read is "couldn\'t check", never "nothing to do"');
+  assert.ok(/route: \{ tool: 'metrics', tab: 'metricsSpanish' \}/.test(pt) && /'spanish'\]/.test(fs.readFileSync(path.join(PA_WEB, '00_config.js'), 'utf8')), 'a routed, declared kind');
+  const clk = fs.readFileSync(path.join(PA_WEB, 'tc/script_clock.html'), 'utf8');
+  assert.ok(/spanish: 'mail'/.test(clk) && /spanish: 'Spanish Inbox'/.test(clk), 'the Dashboard has its icon and label');
+  const met = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
+  assert.ok(/clkNeedsYouInvalidate_\(\);\s+\/\/ 22post C-8: a claim is a Needs-you task/.test(extractFnFrom(met, 'spanishClaimRpc_')), 'the actor\'s own list refreshes');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/kind: 'spanish'/.test(mock), 'the fixture photographs it (INV-185)');
+});
+
+test('C-3: app activity reads as IN for a non-Philippines rep, "active · not clocked in" for a Philippines rep, and never re-labels self (driven)', () => {
+  const ctx = vm.createContext({ String, Number, Object, isFinite });
+  ['teammateActiveNotIn_', 'presenceDisplay_', 'empIsPhTeam_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const d = (st, pr, ph, me) => JSON.parse(JSON.stringify(ctx.presenceDisplay_(st, pr, ph, me)));
+  assert.deepStrictEqual(d('not_in', true, false, false), { status: 'clocked_in', activityIn: true, activeNotIn: false }, 'non-PH, active, not clocked in → IN by activity');
+  assert.deepStrictEqual(d('not_in', true, true, false), { status: 'not_in', activityIn: false, activeNotIn: true }, 'PH → stays not in, flagged');
+  assert.deepStrictEqual(d('not_in', true, false, true), { status: 'not_in', activityIn: false, activeNotIn: false }, 'self is never re-labelled or flagged');
+  assert.deepStrictEqual(d('clocked_out', true, false, false), { status: 'clocked_out', activityIn: false, activeNotIn: true }, 'clocked out + active → flagged for everyone, never back IN');
+  assert.deepStrictEqual(d('not_in', false, false, false), { status: 'not_in', activityIn: false, activeNotIn: false }, 'no activity → no change');
+  ['clocked_in', 'on_lunch'].forEach((st) => assert.deepStrictEqual(d(st, true, false, false), { status: st, activityIn: false, activeNotIn: false }, st + ' is untouched'));
+  // The team: PAY_CYCLE biweekly is the Philippines (every roster tz is CST).
+  vm.runInContext('var EMP = { PAY_CYCLE: 3 };', ctx);
+  assert.strictEqual(ctx.empIsPhTeam_(['', '', '', ' BiWeekly ']), true);
+  assert.strictEqual(ctx.empIsPhTeam_(['', '', '', 'monthly']), false);
+  assert.strictEqual(ctx.empIsPhTeam_(['', '', '', '']), false, 'a blank pay cycle is not the Philippines — it gets the lenient rule');
+  // presenceTimes_: ms kept, a pre-C-3 '1' stamp is present-without-a-time, a blank is absent, a throw is {}.
+  const ptSrc = "const PRESENCE_CACHE_PREFIX = 'presence_v1:';\n" + extractRawFunction('Code.js', 'presenceTimes_');
+  const c1 = vm.createContext({ Number, isFinite, CacheService: { getScriptCache: () => ({ getAll: () => ({ 'presence_v1:A': '1790000000000', 'presence_v1:B': '1', 'presence_v1:C': '' }) }) } });
+  vm.runInContext(ptSrc, c1);
+  assert.strictEqual(JSON.stringify(c1.presenceTimes_(['A', 'B', 'C', 'D'])), '{"A":1790000000000,"B":0}');
+  const c2 = vm.createContext({ Number, isFinite, CacheService: { getScriptCache: () => { throw new Error('down'); } } });
+  vm.runInContext(ptSrc, c2);
+  assert.strictEqual(JSON.stringify(c2.presenceTimes_(['A'])), '{}', 'a failed read → no activity, never a thrown dashboard');
+});
+
+test('C-3: the manager view carries the activity fields; the peer view keeps four keys and no time (source + fixture)', () => {
+  const md = stripJsComments_(extractRawFunction('Code.js', 'getManagerDashboard'));
+  assert.ok(/e\.isPh = empIsPhTeam_\(empRows\[i\]\);/.test(md) && /const seen = presenceTimes_\(employees\.map\(e => e\.id\)\);/.test(md), 'ONE getAll with times, the team per rep');
+  assert.ok(/const disp = presenceDisplay_\(status, present, e\.isPh, false\);/.test(md), 'the one rule — a manager is never "self" on this list');
+  assert.ok(/status: disp\.status,/.test(md) && /punchStatus: status,/.test(md) && /activityIn: disp\.activityIn, activeNotIn: disp\.activeNotIn,/.test(md) && /lastSeenMgr:/.test(md),
+    'display status + the punch status kept beside it + the flags + last seen');
+  const ts = stripJsComments_(extractRawFunction('Code.js', 'getTeammateStatus'));
+  assert.ok(!/presenceTimes_|lastSeen|punchStatus|activityIn/.test(ts), 'the peer view ships no time and no extra key (INV-24)');
+  const mgr = fs.readFileSync(path.join(PA_WEB, 'tc/script_manager.html'), 'utf8');
+  assert.ok(/emp-active-chip is-in/.test(mgr) && /by app activity/.test(mgr), 'an activity-IN card SAYS so — it never reads as a clock-in');
+  assert.ok(/\.emp-active-chip\.is-in \{/.test(fs.readFileSync(path.join(PA_WEB, 'styles.html'), 'utf8')), 'the chip has its rule (g140)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -1752,6 +1752,12 @@
      .dash-foot cards to 412px on a 390px phone — measured, +34px of sideways
      page scroll, invisible in the screenshot. `width: fit-content` keeps the
      pill hugging its text; `max-width: 100%` keeps it inside the card. */
+  /* 22post C-3: IN by app activity (manager view) — the success tone, so it
+     reads as working, while the words say it is not a punch. */
+  .emp-active-chip.is-in {
+    color: var(--success-deep); background: var(--good-soft);
+    border-color: color-mix(in oklab, var(--good), transparent 55%);
+  }
   .emp-active-chip {
     display: block;
     width: fit-content;

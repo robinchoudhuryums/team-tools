@@ -1680,6 +1680,7 @@ function getManagerDashboard() {
       e.ptoEnabled = !(ptoRaw === 'false' || ptoRaw === 'no' || ptoRaw === 'n' || ptoRaw === '0');
       const lb = new Date(now); lb.setDate(lb.getDate() - CONFIG.MISSED_PUNCH_LOOKBACK_DAYS);
       e.lookbackStr = fmtDateTz_(lb, tz);
+      e.isPh = empIsPhTeam_(empRows[i]);   // 22post C-3
       employees.push(e);
       empById[e.id] = e;
     }
@@ -1711,6 +1712,9 @@ function getManagerDashboard() {
     // PTO1 (operator 2026-09-16) — read the feature flag ONCE. The map below
     // runs per rep, and the balance line needs the flag on every pass.
     const ptoTracking = getFlag_('enablePtoTracking');
+    // 22post C-3 — app activity (the presence beacon: a real gesture within
+    // PRESENCE_TTL_SEC), with its time for the "last seen" line.
+    const seen = presenceTimes_(employees.map(e => e.id));
     const liveStatus = employees.map(e => {
       const punches = todayPunchesByEmp[e.id] || [];
       const last = punches.length ? punches[punches.length - 1] : null;
@@ -1725,8 +1729,13 @@ function getManagerDashboard() {
         const conv = convertDateTime_(e.todayStr, last.time, e.timezone, mgrTz);
         lastPunchTimeMgr = conv.time;
       }
+      const present = Object.prototype.hasOwnProperty.call(seen, e.id);
+      const disp = presenceDisplay_(status, present, e.isPh, false);
       return {
-        id: e.id, name: e.name, status,
+        id: e.id, name: e.name, status: disp.status,
+        punchStatus: status,   // the punch-derived status, whatever the display says
+        activityIn: disp.activityIn, activeNotIn: disp.activeNotIn,
+        lastSeenMgr: (present && seen[e.id]) ? Utilities.formatDate(new Date(seen[e.id]), mgrTz, 'h:mm a') : null,
         lastPunchType: last ? last.type : null,
         lastPunchTime: last ? last.time : null,
         lastPunchTimeMgr, empTzAbbr: e.tzAbbr, mgrTzAbbr,
@@ -3464,7 +3473,10 @@ function recordPresence() {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { success: false };
-    CacheService.getScriptCache().put(PRESENCE_CACHE_PREFIX + emp.id, '1', PRESENCE_TTL_SEC);
+    // 22post C-3: the stamp's VALUE is the gesture time (ms), so the manager's
+    // live view can say "last seen 10:42"; presenceMap_ still reads any
+    // non-blank value (an older '1' stamp included) as present.
+    CacheService.getScriptCache().put(PRESENCE_CACHE_PREFIX + emp.id, String(Date.now()), PRESENCE_TTL_SEC);
     return { success: true };
   } catch (e) {
     return { success: false };
@@ -3484,6 +3496,45 @@ function presenceMap_(empIds) {
     });
   } catch (e) { /* best-effort — no flags */ }
   return out;
+}
+/** 22post C-3 — { empId: lastSeenMs } for every id with a stamp; 0 when the
+ *  stamp carries no time (a pre-C-3 '1'). Manager view only — the peer view
+ *  never ships a presence time (INV-24). Best-effort, like presenceMap_. */
+function presenceTimes_(empIds) {
+  const out = {};
+  try {
+    const keys = (empIds || []).map(id => PRESENCE_CACHE_PREFIX + id);
+    if (!keys.length) return out;
+    const hits = CacheService.getScriptCache().getAll(keys) || {};
+    Object.keys(hits).forEach(k => {
+      if (!hits[k]) return;
+      const n = Number(hits[k]);
+      out[k.slice(PRESENCE_CACHE_PREFIX.length)] = (isFinite(n) && n > 1e12) ? n : 0;
+    });
+  } catch (e) { /* best-effort — no stamps */ }
+  return out;
+}
+/** 22post C-3 — the Philippines team, by the one roster field that still
+ *  separates the teams: PAY_CYCLE biweekly (India is monthly; every roster tz
+ *  is America/Chicago since the 2026-08-28 all-CST policy, so tz cannot). */
+function empIsPhTeam_(row) {
+  return String((row && row[EMP.PAY_CYCLE]) || '').trim().toLowerCase() === 'biweekly';
+}
+/** PURE (Node-pinned) — 22post C-3 (operator 2026-09-27): what a live view
+ *  shows for a rep given their punch status and app activity.
+ *  - Non-Philippines, active in the app, NOT clocked in → shown IN
+ *    (activityIn: true — the manager view labels it; the punch record is
+ *    untouched, activity never writes or implies a punch).
+ *  - Philippines, active, not clocked in → stays "not in" with the amber
+ *    "active · not clocked in" flag (activeNotIn).
+ *  - Clocked out and still active → the flag, for everyone (unchanged).
+ *  - Self is never re-labelled or flagged: a rep must never read "In" about a
+ *    day they have not clocked into. */
+function presenceDisplay_(status, present, isPh, isSelf) {
+  if (!isSelf && present && status === 'not_in' && !isPh) {
+    return { status: 'clocked_in', activityIn: true, activeNotIn: false };
+  }
+  return { status: status, activityIn: false, activeNotIn: teammateActiveNotIn_(isSelf, present, status) };
 }
 /** PURE (Node-pinned): the one rule behind the chip. Self is never flagged (a
  *  rep already knows they are using the app); a present rep is flagged only
@@ -3514,7 +3565,7 @@ function getTeammateStatus() {
       let tzRaw = rows[i][EMP.TIMEZONE];
       if (tzRaw === null || tzRaw === undefined) tzRaw = '';
       const tz = String(tzRaw).trim() || CONFIG.TIMEZONE;
-      employees.push({ id, name: String(rows[i][EMP.NAME]).trim(), tz });
+      employees.push({ id, name: String(rows[i][EMP.NAME]).trim(), tz, isPh: empIsPhTeam_(rows[i]) });
     }
 
     // Gather today's last punch per employee in their own tz
@@ -3544,12 +3595,15 @@ function getTeammateStatus() {
         else if (last.type === 'ClockOut') status = 'clocked_out';
       }
       const isSelf = e.id === emp.id;
+      // 22post C-3: app activity counts as IN for a non-Philippines teammate
+      // (status carries it — the view keeps its four keys, INV-24).
+      const disp = presenceDisplay_(status, !!present[e.id], e.isPh, isSelf);
       return {
         name: e.name,
-        status,
+        status: disp.status,
         isSelf,
         // INV-24: the boolean ONLY — the stamp's time never rides the row.
-        activeNotIn: teammateActiveNotIn_(isSelf, !!present[e.id], status),
+        activeNotIn: disp.activeNotIn,
       };
     });
     // Sort: active first, then on lunch, then idle, then done — and within a
@@ -7702,6 +7756,41 @@ function getMyPendingTasks() {
         });
       });
     } catch (e) { (hrOk ? unavailable : notConfigured).push('docs'); }
+
+    // spanish — 22post C-8: Spanish Inbox requests the rep owns (claimed, or
+    // assigned by a manager or the auto-assign) that are still PENDING. Only
+    // for a member; the claims tab is a cheap read, and pending-ness comes from
+    // the cached id set getSpanishInboxPending keeps (one live read on a miss,
+    // and only when the rep owns at least one claim).
+    if (canSeeSpanishInbox_(emp) && getSpanishInboxAddress_()) {
+      try {
+        var spClaims = spanishClaimsMap_();
+        var spManual = spanishManualResolvedMap_();
+        var me = String(emp.email || '').trim().toLowerCase();
+        var anyMine = Object.keys(spClaims).some(function (t) { return spClaims[t].by === me && !spManual[t]; });
+        if (anyMine) {
+          var spIds = spanishPendingIdsGet_(SPANISH_AUTO_ASSIGN_DAYS);
+          if (!spIds) {
+            var spRes = getSpanishInboxPending(SPANISH_AUTO_ASSIGN_DAYS);
+            if (!spRes || spRes.error) throw new Error((spRes && spRes.error) || 'unreadable');
+            spIds = (spRes.pending || []).map(function (p) { return p.threadId; });
+          }
+          var spOpen = spanishMyOpenClaims_(spClaims, me, spIds, spManual);
+          if (spOpen.length) {
+            var spOldest = spOpen[0];
+            var spAssigned = spOpen.filter(function (o) { return o.assignedBy; }).length;
+            items.push({
+              kind: 'spanish',
+              title: spOpen.length + ' Spanish Inbox request' + (spOpen.length === 1 ? '' : 's') + ' to work',
+              detail: (spAssigned ? spAssigned + ' assigned to you · ' : '') +
+                (spOldest.atMs ? 'oldest since ' + Utilities.formatDate(new Date(spOldest.atMs), tz, 'MMM d, h:mm a') : 'yours'),
+              dueIso: '', overdue: false, action: 'Open',
+              route: { tool: 'metrics', tab: 'metricsSpanish' },
+            });
+          }
+        }
+      } catch (e) { unavailable.push('spanish'); }
+    }
 
     var sorted = pendingTasksSort_(items);
     var result = {
