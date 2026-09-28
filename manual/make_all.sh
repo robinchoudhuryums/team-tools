@@ -21,4 +21,5 @@ for f in out/*.md; do
 done
 rm -f "$OUT"/build/*.md
 cp out/*.md "$OUT/build/"
+python3 export_reference.py   # Reference articles -> $OUT/reference (team-tools importer)
 echo "build complete -> $OUT"

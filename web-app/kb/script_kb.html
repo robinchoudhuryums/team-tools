@@ -66,6 +66,37 @@
   .kb-article pre { background: var(--paper-2); padding: 12px 14px; border-radius: var(--radius); overflow-x: auto; }
   .kb-article pre code { background: none; padding: 0; }
   .kb-article blockquote { border-left: 3px solid var(--accent); background: var(--accent-soft); margin: .8em 0; padding: 8px 14px; border-radius: 0 var(--radius) var(--radius) 0; }
+  /* Callouts (Batch M1) — a quote whose first line opens with a bold label,
+     toned by that label: Critical (patient safety / federal law), Policy,
+     Watch-out, Note. A quote holds whole blocks, so its first/last child
+     margins collapse into the callout's own padding. */
+  .kb-article blockquote > :first-child { margin-top: 0; }
+  .kb-article blockquote > :last-child { margin-bottom: 0; }
+  .kb-article blockquote.kb-callout { padding: 10px 14px; }
+  .kb-article blockquote.kb-callout-critical { border-left-color: var(--danger); background: var(--danger-soft); }
+  .kb-article blockquote.kb-callout-policy { border-left-color: var(--info); background: var(--info-soft); }
+  .kb-article blockquote.kb-callout-watch-out { border-left-color: var(--warn); background: var(--warn-soft); }
+  .kb-article blockquote.kb-callout-note { border-left-color: var(--muted-3); background: var(--paper-2); }
+  .kb-article blockquote.kb-callout-script { border-left-color: var(--accent); background: var(--accent-soft); }
+  .kb-article blockquote table { margin: .5em 0; }
+  .kb-article .kb-diagram-pending { margin: 1em 0; padding: 18px 14px; border: 1px dashed var(--muted-3);
+    border-radius: var(--radius-md); background: var(--paper-2); color: var(--muted-2); font-size: var(--text-sm); text-align: center; }
+  .kb-article .kb-diagram-pending b { color: var(--ink); font-weight: 600; }
+  /* Batch M1 — the manual import dialog */
+  .kb-man { max-width: 560px; }
+  .kb-man-note { font-size: .8rem; color: var(--muted); margin: 0 0 10px; line-height: 1.5; }
+  .kb-man-lbl { display: block; font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 6px 0 4px; }
+  .kb-man-input { width: 100%; box-sizing: border-box; font: inherit; font-size: .85rem; padding: 7px 9px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); color: var(--ink); }
+  .kb-man-go:not(:disabled) { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .kb-man-res { margin: 10px 0; padding: 10px 12px; border-radius: var(--radius); border-left: 3px solid var(--accent); background: var(--accent-soft); font-size: .84rem; }
+  .kb-man-res.warn { border-left-color: var(--warn); background: var(--warn-soft); }
+  .kb-man-res.bad { border-left-color: var(--danger); background: var(--danger-soft); }
+  .kb-man-res ul { margin: 6px 0 0; padding-left: 1.2em; max-height: 180px; overflow-y: auto; }
+  .kb-man-skiph { margin-top: 6px; font-weight: 600; }
+  .kb-man-why { color: var(--muted); }
+  .kb-man-pub { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .kb-man-pubrow { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .kb-man-pubrow select { flex: 1; min-width: 0; font: inherit; font-size: .84rem; padding: 5px 7px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); color: var(--ink); }
   .kb-article hr { border: none; border-top: 1px solid var(--line); margin: 1.2em 0; }
   .kb-article table { border-collapse: collapse; margin: 1em 0; display: block; max-width: 100%; overflow-x: auto; }
   .kb-article th { font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); text-align: left; padding: 6px 16px 6px 0; border-bottom: 1px solid var(--border-strong); }
@@ -2236,11 +2267,13 @@ function kbMd_(src) {
     var gm = info.match(/^glossary\b/i);
     var dm = info.match(/^decision\b/i);
     var mm = info.match(/^map\b/i);
+    var dg = info.match(/^diagram\b\s*(\S*)/i);
     if (sm) blocks.push({ snippet: true, label: sm[1].trim(), body: code });
     else if (rm) blocks.push({ roster: true, body: code });
     else if (gm) blocks.push({ glossary: true, body: code });
     else if (dm) blocks.push({ decision: true, body: code });
     else if (mm) blocks.push({ map: true, body: code });
+    else if (dg) blocks.push({ diagram: true, name: dg[1], body: code });
     else blocks.push({ snippet: false, body: infoLine + '\n' + code + '\n' });
     return lead + '\u0000C' + (blocks.length - 1) + '\u0000'; });
   function inline(t) {
@@ -2277,6 +2310,12 @@ function kbMd_(src) {
         return keep('<span class="kb-img-pending">' + (alt || 'Doc image') +
           ' \u2014 appears after Save (exports to Drive)</span>');
       }
+      // A manual image (Batch M1) is uploaded by the images import (Batch M3);
+      // until then its alt text shows as a chip, so the gap reads as pending.
+      if (/^manimg:/i.test(url)) {
+        return keep('<span class="kb-img-pending" title="Manual image \u2014 arrives with the images import">' +
+          (alt || 'Manual image') + '</span>');
+      }
       if (!/^https?:/i.test(url)) return alt;
       url = url.replace(/"/g, '%22').replace(/'/g, '%27');
       alt = alt.replace(/"/g, '&quot;');
@@ -2300,18 +2339,27 @@ function kbMd_(src) {
   // Split a GFM table row into cells. \| escapes a literal pipe inside a
   // cell (the Doc converter emits that); \u0001 can't appear in the escaped
   // source, so it's a safe sentinel.
+  var LIST_ITEM_RE = /^(\s*)([-*]|\d+\.)\s+(.*)$/;
+  var QUOTE_RE = /^\s*&gt; ?/;
   function tableCells(row) {
     row = row.replace(/\\\|/g, '\u0001').trim().replace(/^\|/, '').replace(/\|$/, '');
     return row.split('|').map(function (c) { return c.replace(/\u0001/g, '|').trim(); });
   }
-  var lines = src.split(/\r?\n/), html = '', i = 0;
+  // The block pass is a function of LINES so a blockquote can hand its own
+  // lines back to it (Batch M1): a callout holds paragraphs, tables and lists,
+  // and everything inside it is drawn by the same rules from the same
+  // already-escaped text — nothing is re-escaped and nothing is unescaped.
+  function blocksHtml(lines) {
+  var html = '', i = 0;
   while (i < lines.length) {
     var ln = lines[i];
     var cm = ln.trim().match(/^\u0000C(\d+)\u0000$/);
     if (cm) { var blk = blocks[+cm[1]]; if (blk && blk.roster) { html += kbRosterHtml_(blk.body); i++; continue; }
       if (blk && blk.glossary) { html += kbGlossaryHtml_(blk.body); i++; continue; }
       if (blk && blk.decision) { html += kbDecideHtml_(blk.body, []); i++; continue; }
-      if (blk && blk.map) { html += kbMapHtml_(blk.body); i++; continue; } if (blk && blk.snippet) { html += '<div class="kb-snippet"><div class="kb-snippet-head"><span class="kb-snippet-label">' + (blk.label || 'Snippet') + '</span><button type="button" class="kb-snippet-copy" onclick="kbCopySnippet_(this)">Copy</button></div><pre class="kb-snippet-body">' + blk.body + '</pre></div>'; } else { html += '<pre><code>' + (blk ? blk.body : '') + '</code></pre>'; } i++; continue; }
+      if (blk && blk.map) { html += kbMapHtml_(blk.body); i++; continue; }
+      if (blk && blk.diagram) { html += kbDiagramPendingHtml_(blk.name, blk.body); i++; continue; }
+      if (blk && blk.snippet) { html += '<div class="kb-snippet"><div class="kb-snippet-head"><span class="kb-snippet-label">' + (blk.label || 'Snippet') + '</span><button type="button" class="kb-snippet-copy" onclick="kbCopySnippet_(this)">Copy</button></div><pre class="kb-snippet-body">' + blk.body + '</pre></div>'; } else { html += '<pre><code>' + (blk ? blk.body : '') + '</code></pre>'; } i++; continue; }
     if (/^\s*$/.test(ln)) { i++; continue; }
     var h = ln.match(/^(#{1,6})\s+(.*)$/);
     if (h) {
@@ -2351,15 +2399,89 @@ function kbMd_(src) {
       html += tbl;
       continue;
     }
-    if (/^\s*[-*]\s+/.test(ln)) { html += '<ul>'; while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) { html += '<li>' + inline(lines[i].replace(/^\s*[-*]\s+/, '')) + '</li>'; i++; } html += '</ul>'; continue; }
-    if (/^\s*\d+\.\s+/.test(ln)) { html += '<ol>'; while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) { html += '<li>' + inline(lines[i].replace(/^\s*\d+\.\s+/, '')) + '</li>'; i++; } html += '</ol>'; continue; }
-    if (/^\s*>\s?/.test(ln)) { html += '<blockquote>'; while (i < lines.length && /^\s*>\s?/.test(lines[i])) { html += inline(lines[i].replace(/^\s*>\s?/, '')) + ' '; i++; } html += '</blockquote>'; continue; }
+    if (LIST_ITEM_RE.test(ln)) { var lst = listHtml(lines, i); html += lst.html; i = lst.next; continue; }
+    // Blockquote. The source was escaped before this pass, so the marker is
+    // `&gt;` — the old test looked for a literal ">" that can no longer exist,
+    // and every quote rendered as a paragraph starting "&gt;" (found by the
+    // manual import, Batch M1). A quote whose first line opens with a bold
+    // label is a CALLOUT, styled by that label.
+    if (QUOTE_RE.test(ln)) {
+      var inner = [];
+      while (i < lines.length && QUOTE_RE.test(lines[i])) { inner.push(lines[i].replace(QUOTE_RE, '')); i++; }
+      var kind = kbCalloutKind_(inner[0]);
+      html += '<blockquote' + (kind ? ' class="kb-callout kb-callout-' + kind + '"' : '') + '>' + blocksHtml(inner) + '</blockquote>';
+      continue;
+    }
     if (/^\s*(---|\*\*\*|___)\s*$/.test(ln)) { html += '<hr>'; i++; continue; }
     var para = ln; i++;
-    while (i < lines.length && !/^\s*$/.test(lines[i]) && !/^#{1,6}\s/.test(lines[i]) && !/^\s*([-*]|\d+\.)\s/.test(lines[i]) && !/^\s*>/.test(lines[i]) && !/^\s*\|/.test(lines[i]) && !/^\u0000C\d+\u0000$/.test(lines[i].trim())) { para += ' ' + lines[i]; i++; }
+    while (i < lines.length && !/^\s*$/.test(lines[i]) && !/^#{1,6}\s/.test(lines[i]) && !LIST_ITEM_RE.test(lines[i]) && !QUOTE_RE.test(lines[i]) && !/^\s*\|/.test(lines[i]) && !/^\u0000C\d+\u0000$/.test(lines[i].trim())) { para += ' ' + lines[i]; i++; }
     html += '<p>' + inline(para) + '</p>';
   }
   return html;
+  }
+  // Lists (Batch M1): an item indented deeper than the one above it opens a
+  // NESTED list inside that item; an indented line that is not an item
+  // CONTINUES the item above (the manual wraps long items that way); an
+  // ordered list keeps its first number (`3.` after a callout reads 3, not 1).
+  // A blank line, or anything else unindented, ends the list.
+  function listHtml(lines, from) {
+    var items = [], j = from;
+    while (j < lines.length) {
+      var m = lines[j].match(LIST_ITEM_RE);
+      if (m) {
+        items.push({ indent: m[1].replace(/\t/g, '    ').length, ordered: /\d/.test(m[2]), num: parseInt(m[2], 10), text: m[3] });
+        j++; continue;
+      }
+      if (items.length && /^\s{2,}\S/.test(lines[j]) && !QUOTE_RE.test(lines[j])) {
+        items[items.length - 1].text += ' ' + lines[j].trim();
+        j++; continue;
+      }
+      break;
+    }
+    var pos = 0;
+    function level(indent, ordered) {
+      var startAt = items[pos].num;
+      var out = ordered ? '<ol' + (startAt > 1 ? ' start="' + startAt + '"' : '') + '>' : '<ul>';
+      while (pos < items.length && items[pos].indent >= indent) {
+        var it = items[pos];
+        if (it.indent > indent) { out += level(it.indent, it.ordered); continue; }
+        if (it.ordered !== ordered) break;           // a marker change starts a new list
+        pos++;
+        out += '<li>' + inline(it.text);
+        if (pos < items.length && items[pos].indent > indent) out += level(items[pos].indent, items[pos].ordered);
+        out += '</li>';
+      }
+      return out + (ordered ? '</ol>' : '</ul>');
+    }
+    var html = '';
+    while (pos < items.length) {
+      var base = items[pos].indent;
+      // items shallower than the first one start their own top-level list
+      html += level(base, items[pos].ordered);
+    }
+    return { html: html, next: j };
+  }
+  return blocksHtml(src.split(/\r?\n/));
+}
+
+// A callout's kind, from the bold label its first line opens with (the
+// manual's five: Critical, Policy, Watch-out, Script, Note). Any OTHER bold
+// opener ("Short version", "Rule of thumb") reads as a Note; a quote with no
+// bold opener is a plain quote (''). Input is the escaped line.
+var KB_CALLOUT_KINDS = { critical: 'critical', policy: 'policy', 'watch-out': 'watch-out', script: 'script', note: 'note' };
+function kbCalloutKind_(line) {
+  var m = String(line || '').match(/^\s*\*\*([^*]+)\*\*/);
+  if (!m) return '';
+  var word = m[1].trim().split(/\s*[—–.:]\s*|\s+-\s+/)[0].trim().toLowerCase();
+  return KB_CALLOUT_KINDS[word] || 'note';
+}
+
+// A ```diagram fence (the manual export, Batch M1) until the diagram partial
+// draws it (Batch M3): a quiet figure naming the diagram. `body` is the
+// diagram's accessible name, already escaped by kbMd_.
+function kbDiagramPendingHtml_(name, body) {
+  return '<figure class="kb-diagram-pending"><figcaption><b>Diagram</b> — ' +
+    (String(body || '').trim() || name || 'untitled') + '</figcaption></figure>';
 }
 
 // #6 — copy a "canned response" snippet to the clipboard. Reads the sibling
@@ -2418,7 +2540,8 @@ function kbAddBtnHtml_() {
   // management). Manager analytics blocks (Most used / Review due) stay isManager.
   if (!KB_STATE.isAdmin) return '';
   return '<button class="kb-add" onclick="kbOpenEditor_()">' + icon('plus', 12) + ' Add item</button>' +
-    '<button class="kb-add kb-add-alt" onclick="kbOpenSynonyms_()" title="Search synonyms — help reps find items by alternate terms (#8)">' + icon('list', 12) + ' Synonyms</button>';
+    '<button class="kb-add kb-add-alt" onclick="kbOpenSynonyms_()" title="Search synonyms — help reps find items by alternate terms (#8)">' + icon('list', 12) + ' Synonyms</button>' +
+    '<button class="kb-add kb-add-alt" onclick="kbOpenManualImport_()" title="Import or publish the CSR Procedures Manual">' + icon('upload', 12) + ' Manual</button>';
 }
 
 // #8 — admin-only search-synonym editor (one group per line, comma-separated).
@@ -2469,6 +2592,145 @@ function kbSaveSynonyms_(btn) {
     .kbSaveSearchConfig(groups);
 }
 
+// ── Batch M1 — the procedures manual import (admin) ───────────────────────
+// The manual's build writes articles.json; the admin uploads it to Drive and
+// pastes its link here. "Check" runs the import as a dry run (kbImportManual
+// with dryRun) and shows what WOULD happen — new drafts, updates, unchanged,
+// and every article it will skip and why; "Import" does it. Publishing is a
+// separate, deliberate step, per part or all at once.
+var KB_MANUAL_SKIP_WHY = {
+  edited: 'edited in the app — not overwritten',
+  deleted: 'deleted in the app — not re-created',
+  foreign: 'a manual id the import did not write',
+};
+function kbOpenManualImport_() {
+  var ov = ensureOverlay('kb-man-overlay', { label: 'Import the procedures manual', onClose: function () { var o = document.getElementById('kb-man-overlay'); if (o) o.remove(); } });
+  var depts = kbManualDraftDepts_();
+  ov.innerHTML = '<div class="modal kb-ed kb-man"><div class="head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">' +
+      '<h3 style="margin:0">Procedures manual</h3>' +
+      '<button class="kb-btn" data-kb-manclose="1" aria-label="Close">' + icon('x', 15) + '</button></div>' +
+    '<div class="body">' +
+      '<p class="kb-man-note">Upload <code>articles.json</code> from the manual build (<code>manual/export_reference.py</code>) to Drive and paste its link. ' +
+        'Articles arrive as <b>drafts</b>; an article someone has edited here is skipped and listed, never overwritten. Import outside busy call hours — it holds the save lock while it writes.</p>' +
+      '<label class="kb-man-lbl" for="kb-man-link">Drive link to articles.json</label>' +
+      '<input id="kb-man-link" class="kb-man-input" type="text" autocomplete="off" spellcheck="false" placeholder="https://drive.google.com/file/d/…">' +
+      '<div class="kb-ed-foot">' +
+        '<button class="kb-btn" id="kb-man-check" onclick="kbManualRun_(true)">' + icon('search', 13) + ' Check</button>' +
+        '<button class="kb-btn kb-man-go" id="kb-man-import" onclick="kbManualRun_(false)" disabled>' + icon('upload', 13) + ' Import</button>' +
+      '</div>' +
+      '<div id="kb-man-result" role="status" aria-live="polite"></div>' +
+      '<div class="kb-man-pub">' +
+        '<div class="kb-man-lbl">Publish manual drafts</div>' +
+        (depts.length
+          ? '<div class="kb-man-pubrow"><select id="kb-man-dept" aria-label="Which part to publish">' +
+              '<option value="">Every part (' + depts.reduce(function (n, d) { return n + d.count; }, 0) + ' drafts)</option>' +
+              depts.map(function (d) { return '<option value="' + esc(d.name) + '">' + esc(d.name) + ' (' + d.count + ')</option>'; }).join('') +
+            '</select><button class="kb-btn" onclick="kbManualPublish_(this)">' + icon('check', 13) + ' Publish</button></div>' +
+            '<p class="kb-man-note">Review dates are spread across the review window, so the queue gains a few each day rather than every article at once.</p>'
+          : '<p class="kb-man-note">No manual drafts to publish.</p>') +
+      '</div>' +
+    '</div></div>';
+  ov.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('[data-kb-manclose]')) closeOverlay(ov); });
+  var inp = document.getElementById('kb-man-link');
+  // A changed link must be checked again before it can be imported.
+  if (inp) inp.addEventListener('input', function () { var b = document.getElementById('kb-man-import'); if (b) b.disabled = true; });
+}
+/** The manual's draft departments from the loaded tree (admins receive drafts). */
+function kbManualDraftDepts_() {
+  var by = {};
+  (KB_STATE.tree || []).forEach(function (it) {
+    if (it.status !== 'draft' || !/^man-/.test(String(it.id || ''))) return;
+    by[it.department] = (by[it.department] || 0) + 1;
+  });
+  return Object.keys(by).sort(kbNaturalCompare_).map(function (d) { return { name: d, count: by[d] }; });
+}
+/** Pure (Node-pinned) — the result block for a check or an import. */
+function kbManualResultHtml_(r, dryRun) {
+  if (!r || !r.success) {
+    var probs = (r && r.problems) || [];
+    return '<div class="kb-man-res bad"><b>' + esc((r && r.error) || 'The import failed.') + '</b>' +
+      (probs.length ? '<ul>' + probs.map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('') + '</ul>' +
+        (r.problemCount > probs.length ? '<div>… and ' + (r.problemCount - probs.length) + ' more</div>' : '') : '') + '</div>';
+  }
+  var skipped = r.skipped || [];
+  var verb = dryRun ? 'would be' : 'were';
+  var line = [
+    (r.created || 0) + ' new draft' + (r.created === 1 ? '' : 's'),
+    (r.updated || 0) + ' updated',
+    (r.unchanged || 0) + ' unchanged',
+    skipped.length + ' skipped',
+  ].join(' · ');
+  var head = dryRun
+    ? 'Checked ' + (r.total || 0) + ' articles — nothing written yet.'
+    : 'Imported ' + (r.total || 0) + ' articles.';
+  return '<div class="kb-man-res' + (skipped.length ? ' warn' : '') + '"><b>' + esc(head) + '</b><div>' + esc(line) + '</div>' +
+    (skipped.length
+      ? '<div class="kb-man-skiph">These ' + verb + ' skipped:</div><ul>' + skipped.map(function (s) {
+          return '<li>' + esc(s.title || s.id) + ' <span class="kb-man-why">— ' + esc(KB_MANUAL_SKIP_WHY[s.reason] || s.reason) + '</span></li>';
+        }).join('') + '</ul>'
+      : '') + '</div>';
+}
+function kbManualRun_(dryRun) {
+  var inp = document.getElementById('kb-man-link');
+  var link = inp ? String(inp.value || '').trim() : '';
+  var out = document.getElementById('kb-man-result');
+  var chk = document.getElementById('kb-man-check'), imp = document.getElementById('kb-man-import');
+  if (!link) { if (out) out.innerHTML = kbManualResultHtml_({ success: false, error: 'Paste the Drive link to articles.json first.' }); if (inp) inp.focus(); return; }
+  if (chk) chk.disabled = true; if (imp) imp.disabled = true;
+  if (out) out.innerHTML = loSweep();
+  google.script.run
+    .withSuccessHandler(function (r) {
+      if (chk) chk.disabled = false;
+      var box = document.getElementById('kb-man-result');
+      if (box) box.innerHTML = kbManualResultHtml_(r, dryRun);
+      // Import unlocks only after a clean check of THIS link; an import done
+      // leaves it locked (checking again shows everything unchanged).
+      if (imp) imp.disabled = !(dryRun && r && r.success && ((r.created || 0) + (r.updated || 0) > 0));
+      if (!dryRun && r && r.success) kbReloadTree_();
+    })
+    .withFailureHandler(function (e) {
+      if (chk) chk.disabled = false;
+      var box = document.getElementById('kb-man-result');
+      if (box) box.innerHTML = kbManualResultHtml_({ success: false, error: (e && e.message) || 'The import failed.' });
+    })
+    .kbImportManual(link, { dryRun: !!dryRun });
+}
+function kbManualPublish_(btn) {
+  var sel = document.getElementById('kb-man-dept');
+  var dept = sel ? sel.value : '';
+  var label = dept || 'every part of the manual';
+  uiConfirm({ title: 'Publish the manual drafts in ' + label + '?', message: 'Reps will be able to see and search them immediately.', confirmLabel: 'Publish' }).then(function (ok) {
+    if (!ok) return;
+    if (btn) btn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function (r) {
+        if (btn) btn.disabled = false;
+        if (!r || !r.success) { showToast((r && r.error) || 'Publish failed', 'toast-error'); return; }
+        showToast('Published ' + r.count + ' article' + (r.count === 1 ? '' : 's') + (r.count ? ' · review dates spread over ' + r.reviewSpreadDays + ' days' : ''), 'toast-success');
+        kbReloadTree_();
+        var o = document.getElementById('kb-man-overlay'); if (o) closeOverlay(o);
+      })
+      .withFailureHandler(function (e) { if (btn) btn.disabled = false; showToast((e && e.message) || 'Publish failed', 'toast-error'); })
+      .kbPublishManual({ department: dept });
+  });
+}
+/** Pure — natural order for department names ("Part 2" before "Part 10").
+ *  MIRRORS the server's kbNaturalCompare_ (70_kb.js); the harness drives both
+ *  over one grid. */
+function kbNaturalCompare_(a, b) {
+  var re = /(\d+)|(\D+)/g;
+  var x = String(a == null ? '' : a).toLowerCase().match(re) || [];
+  var y = String(b == null ? '' : b).toLowerCase().match(re) || [];
+  for (var i = 0; i < Math.min(x.length, y.length); i++) {
+    var p = x[i], q = y[i];
+    var pn = /^\d/.test(p), qn = /^\d/.test(q);
+    if (pn && qn) { var d = parseInt(p, 10) - parseInt(q, 10); if (d) return d < 0 ? -1 : 1; continue; }
+    if (p !== q) return p < q ? -1 : 1;
+  }
+  if (x.length !== y.length) return x.length < y.length ? -1 : 1;
+  return 0;
+}
+
 function kbItemIcon_(it) {
   if (it.type === 'embed') return it.driveKind === 'sheet' ? 'grid' : (it.driveKind === 'file' ? 'paperclip' : 'list');
   return 'fileText';
@@ -2490,7 +2752,7 @@ function kbRenderTree_() {
   var el = document.getElementById('kb-tree'); if (!el) return;
   var byDept = {};
   (KB_STATE.tree || []).forEach(function (it) { (byDept[it.department] = byDept[it.department] || []).push(it); });
-  var depts = Object.keys(byDept).sort();
+  var depts = Object.keys(byDept).sort(kbNaturalCompare_);   // Batch M1 — "Part 2" before "Part 10"
   var html = kbAddBtnHtml_();
   if (!depts.length) { html += '<div class="kb-empty">No reference items yet' + (KB_STATE.isAdmin ? ' — add one.' : '.') + '</div>'; el.innerHTML = html; return; }
   var collapsed = kbPanelPrefs_().deptCollapsed || {};

@@ -278,6 +278,14 @@ const SCENARIOS = [
   // delete cluster, add form) + the feedback bar were unshootable while the
   // matrix only walked the Reference landing.
   ['reference-reader-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', "kbOpenItem_('kb-1')"],
+  // Batch M1 — a procedures-manual article as the export writes it (label-toned
+  // callouts, a table inside a callout, a nested list, a Script snippet, a
+  // pending diagram and icon chips), and the admin Manual dialog after a Check.
+  ['reference-manual-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', "kbOpenItem_('man-0-10')"],
+  ['reference-manual-dark-wide',  { tool: 'reference', tab: null }, WIDE, 'dark',  '',
+    "kbOpenItem_('man-0-10'); setTimeout(function(){ var h=document.getElementById('kb-h-0-10-2-before-you-transfer'); if(h) h.scrollIntoView(); }, 300)"],   // the lower half: nested list, Critical, Policy, snippet
+  ['reference-manual-import-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
+    "kbOpenManualImport_(); document.getElementById('kb-man-link').value = 'https://drive.google.com/file/d/abc123/view'; kbManualRun_(true)"],
   // Cycle 21 (operator report, 2026-09-21) — the KB DRAWER had never been shot,
   // by any scenario, at any width. That is why both lookups sat inside
   // `.kbd-sec` — a mono/uppercase flex HEADING bar — for weeks: every result

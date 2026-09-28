@@ -1,0 +1,465 @@
+#!/usr/bin/env python3
+"""Export the manual as Reference articles (team-tools Batch M1).
+
+Writes, under $MANUAL_OUT/reference (default dist/reference):
+
+  articles.json  one object per level-2 section of Parts 0-10, one per quick
+                 reference card, one per Appendix B section, and ONE glossary
+                 article for Appendix A — the shape the Reference importer
+                 (`kbImportManual`, web-app/70_kb.js) reads:
+                 {Id, Department, Title, Type, BodyMd, SortOrder, SourceHash}
+  images.json    the image manifest: every `manimg:<key>` a body cites, with
+                 its alt text and data URI (the images import is Phase 3)
+
+The bodies are written in the Markdown the Reference renderer (`kbMd_`) draws:
+callouts stay `>` blocks, Script callouts become ```snippet fences, diagrams
+become ```diagram fences, images become ![alt](manimg:key), and every
+cross-reference becomes [5.9.2 Title](kb:man-5-9#5.9.2). The export FAILS —
+exit 1, nothing written — on a cross-reference or role that does not resolve,
+a body over BODY_MAX, any HTML the renderer would print literally, or a
+leftover placeholder.
+
+Runs the parts through render.py exactly as build.py does (so equipment,
+roster, fee and glossary tables are the build's own), but substitutes the
+diagram and figure placeholders first so no SVG or base64 reaches a body.
+Needs the same Python as the build (3.12). Deterministic: the same source
+gives byte-identical output, so a re-import changes nothing.
+"""
+import hashlib, json, os, re, subprocess, sys, tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+os.chdir(HERE)
+sys.path.insert(0, HERE)
+from numbering import display as dnum  # noqa: E402
+
+# Mirrors KB_BODY_MAX in web-app/00_config.js — the importer refuses a longer
+# body, so the export refuses first (pinned equal by the Node harness).
+BODY_MAX = 49000
+
+# The parts and appendices, as build.py lists them (pinned equal).
+PARTS = {
+    "p0": ("CSR Core", "src/p0.md"),
+    "p1": ("Call Handling", "src/p1.md"),
+    "p2": ("Manual Mobility & General DME", "src/p2.md"),
+    "p3": ("Respiratory & Resupply", "src/p3.md"),
+    "p4": ("Power Mobility", "src/p4.md"),
+    "p5": ("Field Operations", "src/p5.md"),
+    "p6": ("Service", "src/p6.md"),
+    "p7": ("Oxygen", "src/p7.md"),
+    "p8": ("After Hours", "src/p8.md"),
+    "p9": ("Sales", "src/p9.md"),
+    "p10": ("Billing & Insurance", "src/p10.md"),
+}
+APPX = {"a": "src/appendix_a.md", "b": "src/appendix_b.md", "c": "src/appendix_c.md"}
+
+# build.py's scaffolding strippers, copied verbatim (pinned equal): the review
+# notes are not part of the manual a CSR reads, in any artifact.
+SCAFFOLD = re.compile(
+    r"\n(?:-{3,}\s*\n+)?#{2} (?:What changed[^\n]*|Open items[^\n]*|Notes for review[^\n]*)"
+    r"\n.*?(?=\n#{1,2} (?!#)|\Z)", re.S)
+DRAFTNOTE = re.compile(r"\n> \*\*About this [^*]*\*\*.*?(?=\n#{1,3} |\n-{3,})", re.S)
+
+CALLOUTS = ("Critical", "Policy", "Watch-out", "Script", "Note")
+SEC_HEAD = re.compile(r"^(#{2,3}) (§[\w\-.]+) (.+)$", re.M)
+
+errors = []
+GLOSSARY_FOLDS = []  # case-only duplicate spellings folded into one entry
+NOT_IMPORTED = []    # references into the generated Appendices D/E, drawn as text
+IMAGES = {}          # key -> {alt, kind, source, dataUri}
+
+GLOSSARY = json.load(open("data/glossary.json", encoding="utf-8"))
+ROSTER = json.load(open("data/roster.json", encoding="utf-8"))
+ICONS = json.load(open("data/icons.json", encoding="utf-8"))
+THUMBS = json.load(open("data/thumbs.json", encoding="utf-8"))
+FIGS = json.load(open("data/figures.json", encoding="utf-8"))
+FIGB = json.load(open("data/figures_b64.json", encoding="utf-8"))
+
+
+def slug(s):
+    return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
+
+
+def md_plain(s):
+    """Markdown emphasis and inline code removed — for text drawn raw."""
+    s = re.sub(r"\*\*([^*]+)\*\*", r"\1", s)
+    s = re.sub(r"(^|[^*])\*([^*\s][^*]*)\*", r"\1\2", s)
+    return re.sub(r"`([^`]+)`", r"\1", s)
+
+
+# ---------------------------------------------------------------- images ---
+ICON_BY_B64 = {}
+for ic in ICONS:
+    ICON_BY_B64[ic["b64"]] = ic
+THUMB_BY_URI = {v: k for k, v in THUMBS.items()}
+
+
+def image_ref(alt, key, kind, source, data_uri):
+    IMAGES.setdefault(key, {"alt": alt, "kind": kind, "source": source, "dataUri": data_uri})
+    alt = alt.replace("[", "(").replace("]", ")")
+    return f"![{alt}](manimg:{key})"
+
+
+def icon_ref(alt, data_uri):
+    b64 = data_uri.split(",", 1)[-1]
+    ic = ICON_BY_B64.get(b64)
+    if ic:
+        key = "icon-" + slug(ic["group"] + " " + ic["label"])
+        src = f"icons.json:{ic['group']}/{ic['label']}"
+    else:
+        key = "icon-" + hashlib.sha256(b64.encode()).hexdigest()[:12]
+        src = "inline"
+    return image_ref(alt, key, "icon", src, data_uri)
+
+
+def thumb_ref(alt, data_uri):
+    name = THUMB_BY_URI.get(data_uri)
+    if not name:
+        errors.append(f"equipment photo for {alt!r} is not in thumbs.json")
+        return ""
+    key = "thumb-" + slug(os.path.splitext(name)[0])
+    return image_ref(alt, key, "thumb", "thumbs.json:" + name, data_uri)
+
+
+def figure_md(fid):
+    if fid not in FIGS or fid not in FIGB:
+        errors.append(f"unknown figure: {fid}")
+        return ""
+    f = FIGS[fid]
+    caption = re.sub(r"<(b|strong)>(.*?)</\1>", r"\2", f["caption"])
+    return (image_ref(f["alt"], "fig-" + slug(fid), "figure", "figures.json:" + fid, FIGB[fid])
+            + "\n\n*" + caption + "*")
+
+
+def diagram_md(name):
+    path = f"diagrams/{name}.svg"
+    if not os.path.exists(path):
+        errors.append(f"unknown diagram: {name}")
+        return ""
+    svg = open(path, encoding="utf-8").read()
+    m = re.search(r'aria-label="([^"]+)"', svg)
+    label = m.group(1) if m else name
+    # The fence body is the diagram's accessible name — what a reader sees
+    # until the diagram partial (Phase 3) draws the SVG itself.
+    return f"```diagram {name}\n{label}\n```"
+
+
+def pre_substitute(text, key):
+    """Diagram, figure and (Appendix A) glossary placeholders, before render.py."""
+    text = re.sub(r"\{\{diagram:([\w\-]+)\}\}", lambda m: diagram_md(m.group(1)), text)
+    text = re.sub(r"\{\{figure:([\w\-]+)\}\}", lambda m: figure_md(m.group(1)), text)
+    text = re.sub(r"\{\{figure-pair:([^}]+)\}\}",
+                  lambda m: "\n\n".join(figure_md(f) for f in m.group(1).split("|")), text)
+    if key == "appx_a":
+        text = re.sub(r"\{\{glossary:(\w+)[^}]*\}\}", lambda m: glossary_fence(m.group(1)), text)
+    return text
+
+
+def glossary_fence(cls):
+    rows = [g for g in GLOSSARY if g["class"] == cls]
+    if not rows:
+        errors.append(f"glossary class {cls!r} has no terms")
+    # The renderer keys a term case-insensitively and DROPS a second spelling,
+    # so "MRX" and "MRx" fold into one entry: the fuller definition wins and
+    # the other spelling becomes an alias — neither term disappears.
+    folded = {}
+    for g in rows:
+        term = g["term"].replace("|", "/").strip()
+        k = term.lower()
+        d = md_plain(g["definition"]).replace("\n", " ").strip()
+        if k not in folded:
+            folded[k] = {"term": term, "aka": list(g.get("aka") or []), "def": d}
+            continue
+        f = folded[k]
+        GLOSSARY_FOLDS.append(f"{f['term']} / {term}")
+        if len(d) > len(f["def"]):
+            f["aka"].append(f["term"])
+            f["term"], f["def"] = term, d
+        else:
+            f["aka"].append(term)
+    out = ["```glossary"]
+    for k in sorted(folded):
+        f = folded[k]
+        head = f["term"] + (f" (aka {', '.join(f['aka'])})" if f["aka"] else "")
+        out.append(f"{head}| {f['def']}")
+    out.append("```")
+    return "\n".join(out)
+
+
+# ---------------------------------------------------------------- render ---
+def render(key, src, tmp):
+    raw = open(src, encoding="utf-8").read()
+    pre = os.path.join(tmp, key + ".in.md")
+    dst = os.path.join(tmp, key + ".out.md")
+    open(pre, "w", encoding="utf-8").write(pre_substitute(raw, key))
+    r = subprocess.run([sys.executable, "render.py", pre, dst, "none"],
+                       capture_output=True, text=True)
+    if r.returncode:
+        errors.append(f"{src}: render failed — {r.stdout.strip()} {r.stderr.strip()}")
+        return ""
+    text = open(dst, encoding="utf-8").read()
+    text = SCAFFOLD.sub("", text)
+    text = DRAFTNOTE.sub("\n", text)
+    return html_to_md(text, src)
+
+
+ICON_TABLE = re.compile(r'<table class="icons">(.*?)</table>', re.S)
+
+
+def attr(tag, name):
+    m = re.search(r'\s' + name + r'="([^"]*)"', tag)
+    return m.group(1) if m else ""
+
+
+def img_md(m):
+    """Any <img> the sources carry: an equipment photo, else a dashboard icon."""
+    tag = m.group(0)
+    alt, src = attr(tag, "alt"), attr(tag, "src")
+    if attr(tag, "class") == "thumb":
+        return thumb_ref(alt, src) + " "
+    return icon_ref(alt, src)
+
+
+def inline_html(c):
+    c = re.sub(r"<(strong|b)>(.*?)</\1>", r"**\2**", c, flags=re.S)
+    return re.sub(r"<img\s[^>]*>", img_md, c)
+
+
+def cell_md(c):
+    return re.sub(r"\s+", " ", inline_html(c)).strip().replace("|", "\\|")
+
+
+def icon_table(m):
+    body = m.group(1)
+    head = [cell_md(h) for h in re.findall(r"<th(?:\s[^>]*)?>(.*?)</th>", body, re.S)]
+    rows = []
+    for tr in re.findall(r"<tr>(.*?)</tr>", body, re.S):
+        tds = re.findall(r"<td(?:\s[^>]*)?>(.*?)</td>", tr, re.S)
+        if tds:
+            rows.append([cell_md(t) for t in tds])
+    out = ["| " + " | ".join(head) + " |", "|" + "|".join("---" for _ in head) + "|"]
+    out += ["| " + " | ".join(r) + " |" for r in rows]
+    return "\n".join(out)
+
+
+def html_to_md(text, src):
+    """The handful of HTML shapes the sources carry, as Markdown kbMd_ draws."""
+    text = ICON_TABLE.sub(icon_table, text)
+    text = re.sub(r'<span class="phase"[^>]*></span>', "", text)   # a colour swatch
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+    text = inline_html(text)
+    for m in re.finditer(r"</?[a-zA-Z][^>]*>", text):
+        line = text.count("\n", 0, m.start()) + 1
+        errors.append(f"{src}: HTML the renderer would print literally at line {line}: "
+                      f"{m.group(0)[:60]}")
+    for m in re.finditer(r"\{\{[^}]*\}\}", text):
+        errors.append(f"{src}: placeholder left unexpanded: {m.group(0)[:60]}")
+    return text
+
+
+# ---------------------------------------------------------------- ids ------
+def article_id(sec):
+    """§5-9 -> man-5-9 · §C-5 -> man-c-5 · §10-B -> man-10-b · §A-* -> man-a."""
+    s = sec.lstrip("§").split(".")[0].lower()
+    if s.startswith("a-"):
+        return "man-a"
+    return "man-" + s
+
+
+def department(key):
+    if key.startswith("p"):
+        return f"Part {int(key[1:]):02d} — {PARTS[key][0]}"
+    return {"appx_a": "Appendix A — Glossary",
+            "appx_b": "Appendix B — Escalation Directory",
+            "appx_c": "Appendix C — Quick Reference Cards"}[key]
+
+
+def main():
+    with tempfile.TemporaryDirectory() as tmp:
+        bodies = {k: render(k, src, tmp) for k, (_, src) in PARTS.items()}
+        for k, src in APPX.items():
+            bodies["appx_" + k] = render("appx_" + k, src, tmp)
+
+    # Section index: every numbered heading, the article it lands in, and the
+    # heading number a kb: link's fragment names.
+    anchors = {}
+    for k, text in bodies.items():
+        for m in SEC_HEAD.finditer(text or ""):
+            sec = m.group(2)
+            if sec in anchors:
+                errors.append(f"section {sec} defined twice")
+            anchors[sec] = {"title": m.group(3).strip(), "owner": k, "level": len(m.group(1)),
+                            "id": article_id(sec)}
+
+    def ref(m):
+        sec = m.group(1)
+        a = anchors.get(sec)
+        if not a and re.match(r"§[DE]-", sec):
+            # Appendix D (changelog) and E (index) are generated per artifact by
+            # build.py and are not Reference articles; the number stays readable.
+            NOT_IMPORTED.append(sec)
+            return f"**{dnum(sec)}** (the manual's {'changelog' if sec[1] == 'D' else 'index'})"
+        if not a:
+            errors.append(f"UNRESOLVABLE REF {sec}")
+            return m.group(0)
+        n = dnum(sec)
+        title = re.sub(r"^§[\w\-.]+\s+", "", a["title"])
+        label = f"{n} {title}"
+        if a["owner"].startswith("p") and a["owner"] != ref.own:
+            label += f" ({PARTS[a['owner']][0]})"
+        whole = a["level"] == 2 and a["id"] == article_id(sec) and not sec.startswith("§A-")
+        target = a["id"] if whole else f"{a['id']}#{n}"
+        label = label.replace("[", "(").replace("]", ")")
+        return f"[{label}](kb:{target})"
+
+    def role(m):
+        want = m.group(1).strip().lower()
+        for r in ROSTER:
+            hay = (r["role"] + " " + (r.get("note") or "")).lower()
+            if want in hay or all(w in hay for w in want.split()):
+                return f"[{r['role']}](kb:man-b-1)"
+        errors.append(f"ROLE {m.group(1)!r} matches nothing in roster.json")
+        return m.group(0)
+
+    articles = [howto_article()]
+    for k, text in bodies.items():
+        if not text:
+            continue
+        ref.own = k
+        text = re.sub(r"\[\[(§[\w\-.]+)\]\]", ref, text)
+        text = re.sub(r"`?\[ROLE:\s*([^\]]+)\]`?", role, text)
+        articles += split_articles(k, text)
+
+    by_id = {}
+    for a in articles:
+        if a["Id"] in by_id:
+            errors.append(f"article id {a['Id']} produced twice")
+        by_id[a["Id"]] = a
+
+    # Every kb: link names an article this export writes, and a fragment names
+    # a numbered heading inside it.
+    heads = {a["Id"]: set(re.findall(r"^#{2,3} (\S+) ", a["BodyMd"], re.M)) for a in articles}
+    links = 0
+    for a in articles:
+        for m in re.finditer(r"\]\(kb:([\w\-]+)(?:#([^)\s]+))?\)", a["BodyMd"]):
+            links += 1
+            tid, frag = m.group(1), m.group(2)
+            if tid not in by_id:
+                errors.append(f"{a['Id']}: link to missing article {tid}")
+            elif frag and frag not in heads[tid]:
+                errors.append(f"{a['Id']}: link to {tid}#{frag} — no such heading")
+        if len(a["BodyMd"]) > BODY_MAX:
+            errors.append(f"{a['Id']}: body is {len(a['BodyMd']):,} characters "
+                          f"(the Reference limit is {BODY_MAX:,})")
+        for m in re.finditer(r"\[\[§|\[ROLE:", a["BodyMd"]):
+            errors.append(f"{a['Id']}: unresolved marker {m.group(0)}")
+
+    for a in articles:
+        a["SourceHash"] = hashlib.sha256(json.dumps(
+            [a["Department"], a["Title"], a["SortOrder"], a["BodyMd"]],
+            ensure_ascii=False).encode("utf-8")).hexdigest()
+
+    print(f"articles              : {len(articles)}")
+    print(f"cross-references      : {links} (every target verified)")
+    print(f"images referenced     : {len(IMAGES)}")
+    print(f"largest body          : {max(len(a['BodyMd']) for a in articles):,} characters")
+    if GLOSSARY_FOLDS:
+        print(f"glossary spellings    : folded {', '.join(GLOSSARY_FOLDS)}")
+    if NOT_IMPORTED:
+        print(f"generated appendices  : {len(NOT_IMPORTED)} reference(s) drawn as text "
+              f"({', '.join(sorted(set(NOT_IMPORTED)))})")
+    if errors:
+        print(f"\nERRORS ({len(errors)}) — nothing written")
+        for e in errors[:60]:
+            print("  ✗", e)
+        if len(errors) > 60:
+            print(f"  … and {len(errors) - 60} more")
+        return 1
+
+    out = os.path.join(os.environ.get("MANUAL_OUT", "dist"), "reference")
+    os.makedirs(out, exist_ok=True)
+    with open(os.path.join(out, "articles.json"), "w", encoding="utf-8") as f:
+        json.dump(articles, f, ensure_ascii=False, indent=1)
+        f.write("\n")
+    with open(os.path.join(out, "images.json"), "w", encoding="utf-8") as f:
+        json.dump({k: IMAGES[k] for k in sorted(IMAGES)}, f, ensure_ascii=False, indent=1)
+        f.write("\n")
+    print(f"\nwritten -> {out}/articles.json, images.json")
+    return 0
+
+
+def howto_article():
+    """build.py's front page ("How to use this manual") — Part 0 points at it.
+    Read from build.py's own HOWTO literal rather than copied, so it cannot drift."""
+    m = re.search(r'^HOWTO = """(.*?)"""', open("build.py", encoding="utf-8").read(), re.M | re.S)
+    if not m:
+        errors.append("build.py: the HOWTO front page was not found")
+        return make_article("man-howto", department("p0"), "How to use this manual", "", 0)
+    body = re.sub(r"^## How to use this manual\n", "", m.group(1).strip())
+    body = re.sub(r"^### ", "## ", body, flags=re.M)
+    return make_article("man-howto", department("p0"), "How to use this manual", body, 0)
+
+
+def split_articles(k, text):
+    """One article per level-2 section; Appendix A is ONE article."""
+    dept = department(k)
+    if k == "appx_a":
+        body = re.sub(r"^# [^\n]*\n", "", text, count=1)
+        return [make_article("man-a", dept, "Glossary", body, 1)]
+    parts = re.split(r"^(?=## §)", text, flags=re.M)
+    head, secs = parts[0], parts[1:]
+    lead = re.sub(r"^# [^\n]*\n", "", head.strip(), count=1)
+    lead = re.sub(r"(?m)^-{3,}\s*$", "", lead).strip()
+    if lead and k != "appx_c":        # Appendix C's lead describes extracts only
+        errors.append(f"{k}: text before the first section would be dropped: {lead[:80]!r}")
+    out = []
+    for i, s in enumerate(secs, 1):
+        m = re.match(r"## (§[\w\-.]+) (.+)\n", s)
+        sec, title = m.group(1), m.group(2).strip()
+        n = dnum(sec)
+        full = f"Card {n.split()[-1]} — {title}" if sec.startswith("§C-") else f"{n} {title}"
+        out.append(make_article(article_id(sec), dept, full, s[m.end():], i))
+    return out
+
+
+def scripts_to_snippets(body):
+    """A Script callout becomes a copyable snippet card; its label rides the fence."""
+    lines = body.split("\n")
+    out, i = [], 0
+    while i < len(lines):
+        m = re.match(r"^> \*\*Script(?:\s*[—–-]\s*([^*]*?))?\.?\*\*\s*(.*)$", lines[i])
+        if not m:
+            out.append(lines[i])
+            i += 1
+            continue
+        label = (m.group(1) or "").strip().rstrip(".")
+        chunk = [m.group(2)]
+        i += 1
+        while i < len(lines) and lines[i].startswith(">"):
+            chunk.append(re.sub(r"^> ?", "", lines[i]))
+            i += 1
+        text = md_plain("\n".join(chunk).strip())
+        text = re.sub(r"\[([^\]]+)\]\((?:kb|https?|mailto):[^)]+\)", r"\1", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        q = re.fullmatch(r'["\u201c]([^"\u201c\u201d]*)["\u201d]', text)
+        if q:                         # one quoted line: copy the words, not the quotes
+            text = q.group(1)
+        out.append("```snippet: Script" + (" — " + label if label else ""))
+        out.append(text)
+        out.append("```")
+    return "\n".join(out)
+
+
+def make_article(aid, dept, title, body, order):
+    body = re.sub(r"^### (§[\w\-.]+) ", lambda m: "## " + dnum(m.group(1)) + " ", body, flags=re.M)
+    body = re.sub(r"^## (§A-\d+) ", lambda m: "## " + dnum(m.group(1)) + " ", body, flags=re.M)
+    body = scripts_to_snippets(body)
+    body = body.strip("\n")
+    body = re.sub(r"^(?:-{3,}\s*\n+)+", "", body)
+    body = re.sub(r"(?:\n+-{3,}\s*)+$", "", body)
+    body = re.sub(r"\n{3,}", "\n\n", body).strip() + "\n"
+    return {"Id": aid, "Department": dept, "Title": title, "Type": "article",
+            "BodyMd": body, "SortOrder": order}
+
+
+if __name__ == "__main__":
+    sys.exit(main())

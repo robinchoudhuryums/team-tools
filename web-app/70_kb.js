@@ -142,7 +142,7 @@ function getReferenceTree() {
         });
       });
     }
-    items.sort(function (a, b) { return a.department.localeCompare(b.department) || (a.sortOrder - b.sortOrder) || a.title.localeCompare(b.title); });
+    items.sort(function (a, b) { return kbNaturalCompare_(a.department, b.department) || (a.sortOrder - b.sortOrder) || kbNaturalCompare_(a.title, b.title); });
     try { cache.put(KB_CACHE_KEY, JSON.stringify({ items: items }), KB_CACHE_TTL); } catch (_) {}
     return { items: filterForViewer(items), isManager: !!emp.isManager, isAdmin: !!emp.isAdmin };
   } catch (err) { return { error: err.message }; }
@@ -2868,7 +2868,10 @@ function kbSaveItem(payload) {
       }
       if (bodyMd.length > KB_BODY_MAX) return { success: false, error: 'Article is too long (max ~49,000 chars). Split it into multiple articles.' };
     }
-    const sortOrder = Number(payload.sortOrder || 0) || 0;
+    // The editor sends no sortOrder, and this used to write 0 over every
+    // edited row's order (Batch M1). An absent sortOrder now KEEPS the row's.
+    const sentOrder = (payload.sortOrder === undefined || payload.sortOrder === null || payload.sortOrder === '')
+      ? null : (Number(payload.sortOrder) || 0);
     // #4 — draft→publish. An explicit payload.status wins; on a plain re-save
     // (status absent) the existing row's status is PRESERVED (so editing a draft
     // doesn't silently publish it, and vice-versa). New items default published.
@@ -2889,6 +2892,7 @@ function kbSaveItem(payload) {
         if (found > 0) prior = sheet.getRange(found, 1, 1, KB_HEADERS.length).getValues()[0];
       }
       const status = requestedStatus || (prior ? kbRowStatus_(prior[KB.STATUS]) : KB_STATUS_PUBLISHED);
+      const sortOrder = sentOrder !== null ? sentOrder : (prior ? (Number(prior[KB.SORT_ORDER]) || 0) : 0);
       // #4 — saving an item (new or edited) counts as reviewing it: stamp
       // ReviewedAt/ReviewedBy alongside UpdatedAt/UpdatedBy so a fresh edit
       // clears the staleness clock. A no-edit "still accurate" confirmation
@@ -3097,6 +3101,302 @@ function kbPublishItem(id) {
     invalidateKbCache_();
     writeAuditLog_(emp, 'KbItemPublish', '', '', false, 0, 'id=' + id, emp.email);
     return { success: true, id: id };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+// ── Batch M1 — the CSR Procedures Manual import ────────────────────────────
+// The manual lives in `manual/` and its build writes articles.json
+// (manual/export_reference.py). An admin uploads that file to Drive and points
+// kbImportManual at it. Nothing about the import is clever, on purpose:
+//   - every article arrives as a DRAFT (admins see it; reps do not);
+//   - an article is keyed by its stable `man-…` id, so a re-import UPDATES it;
+//   - the ManualImport ledger holds, per id, the export's SourceHash and a hash
+//     of the department/title/body the import WROTE (BodyHash). Unchanged
+//     source → nothing written. A row that no longer hashes to its BodyHash was
+//     edited in the app → skipped and REPORTED, never overwritten;
+//   - a manual id with no ledger entry (typed in by hand) and a ledger entry
+//     whose row is gone (deleted in the app) are skipped and reported too;
+//   - a refused file (any article invalid) writes NOTHING.
+// Reference content is PHI-free by policy, and the manual carries none.
+
+/** Pure (Node-pinned) — natural order for department names, so "Part 2" sorts
+ *  before "Part 10" (and the zero-padded "Part 02" still sorts where it
+ *  should). Case-insensitive; digit runs compare by value. MIRRORED in
+ *  kb/script_kb.html (`kbNaturalCompare_`) — the tree is re-sorted client-side,
+ *  and the harness drives both over one grid. */
+function kbNaturalCompare_(a, b) {
+  const re = /(\d+)|(\D+)/g;
+  const x = String(a == null ? '' : a).toLowerCase().match(re) || [];
+  const y = String(b == null ? '' : b).toLowerCase().match(re) || [];
+  for (let i = 0; i < Math.min(x.length, y.length); i++) {
+    const p = x[i], q = y[i];
+    const pn = /^\d/.test(p), qn = /^\d/.test(q);
+    if (pn && qn) { const d = parseInt(p, 10) - parseInt(q, 10); if (d) return d < 0 ? -1 : 1; continue; }
+    if (p !== q) return p < q ? -1 : 1;
+  }
+  if (x.length !== y.length) return x.length < y.length ? -1 : 1;
+  return 0;
+}
+
+/** Hex SHA-256 of a string (UTF-8). */
+function kbSha256Hex_(s) {
+  const buf = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(s == null ? '' : s), Utilities.Charset.UTF_8);
+  let out = '';
+  for (let i = 0; i < buf.length; i++) {
+    const b = buf[i] < 0 ? buf[i] + 256 : buf[i];
+    out += (b < 16 ? '0' : '') + b.toString(16);
+  }
+  return out;
+}
+
+/** Pure (Node-pinned) — the text an in-app edit changes, NORMALIZED so a value
+ *  that round-tripped through a cell hashes the same as the one written: the
+ *  apostrophe sheetSafe_ puts before a leading =/+/-/@ (kept literally by a
+ *  plain-text cell), CRLF, and trailing whitespace are not edits. */
+function kbManualHashBasis_(department, title, body) {
+  const norm = function (v) {
+    return String(v == null ? '' : v).replace(/^'(?=[=+\-@])/, '').replace(/\r\n?/g, '\n').replace(/\s+$/, '');
+  };
+  return JSON.stringify([norm(department).trim(), norm(title).trim(), norm(body)]);
+}
+
+/** Pure (Node-pinned) — validate a parsed articles.json. Returns
+ *  { items, errors }; ANY error refuses the whole file (nothing is written).
+ *  Each item is normalized to { id, department, title, body, sortOrder,
+ *  sourceHash }. */
+function kbManualValidate_(data) {
+  const errors = [];
+  if (!Array.isArray(data)) return { items: [], errors: ['The file is not a list of articles — is this articles.json from the manual build?'] };
+  if (!data.length) return { items: [], errors: ['The file holds no articles.'] };
+  if (data.length > KB_MANUAL_MAX_ARTICLES) return { items: [], errors: ['The file holds ' + data.length + ' articles — more than ' + KB_MANUAL_MAX_ARTICLES + '; is this the manual?'] };
+  const seen = {};
+  const items = [];
+  data.forEach(function (a, i) {
+    const where = 'Article ' + (i + 1);
+    if (!a || typeof a !== 'object') { errors.push(where + ' is not an object.'); return; }
+    const id = String(a.Id || '').trim();
+    if (!KB_MANUAL_ID_RE.test(id)) { errors.push(where + ': id "' + id.substring(0, 40) + '" is not a manual id (man-…).'); return; }
+    if (seen[id]) { errors.push(id + ' appears twice.'); return; }
+    seen[id] = 1;
+    const department = String(a.Department || '').trim();
+    const title = String(a.Title || '').trim();
+    const body = (typeof a.BodyMd === 'string') ? a.BodyMd : null;
+    if (!department) errors.push(id + ': no department.');
+    if (!title) errors.push(id + ': no title.');
+    if (department.length > 120 || title.length > 200) errors.push(id + ': department or title is too long.');
+    if (String(a.Type || 'article') !== 'article') errors.push(id + ': type "' + String(a.Type).substring(0, 20) + '" — the manual imports articles only.');
+    if (body == null) errors.push(id + ': no body.');
+    else if (body.length > KB_BODY_MAX) errors.push(id + ': body is ' + body.length + ' characters (the limit is ' + KB_BODY_MAX + ').');
+    const sortOrder = Number(a.SortOrder);
+    if (!isFinite(sortOrder)) errors.push(id + ': SortOrder is not a number.');
+    const sourceHash = String(a.SourceHash || '').trim();
+    if (!/^[0-9a-f]{64}$/.test(sourceHash)) errors.push(id + ': SourceHash is missing or malformed.');
+    items.push({ id: id, department: department, title: title, body: body || '', sortOrder: isFinite(sortOrder) ? sortOrder : 0, sourceHash: sourceHash });
+  });
+  return { items: items, errors: errors };
+}
+
+/** Pure (Node-pinned) — decide what an import does, per article.
+ *  `rows`   : { id → { department, title, body, status } } — the live KB rows
+ *  `ledger` : { id → { sourceHash, bodyHash } }
+ *  `hashFn` : (department, title, body) → hash (kbManualHashBasis_ ∘ SHA-256)
+ *  Returns { create[], update[], unchanged[], skipped[{id,title,reason}] }.
+ *  Reasons: 'edited' (the row no longer hashes to what the import wrote),
+ *  'deleted' (the ledger knows it, the KB does not), 'foreign' (a man- id the
+ *  import never wrote). */
+function kbManualPlan_(items, rows, ledger, hashFn) {
+  const plan = { create: [], update: [], unchanged: [], skipped: [] };
+  items.forEach(function (it) {
+    const row = rows[it.id], led = ledger[it.id];
+    if (!row) {
+      if (led) plan.skipped.push({ id: it.id, title: it.title, reason: 'deleted' });
+      else plan.create.push(it);
+      return;
+    }
+    if (!led) { plan.skipped.push({ id: it.id, title: it.title, reason: 'foreign' }); return; }
+    if (hashFn(row.department, row.title, row.body) !== led.bodyHash) {
+      plan.skipped.push({ id: it.id, title: row.title || it.title, reason: 'edited' });
+      return;
+    }
+    if (led.sourceHash === it.sourceHash) plan.unchanged.push(it);
+    else plan.update.push(it);
+  });
+  return plan;
+}
+
+/** Pure (Node-pinned) — review-date stagger for n articles over a dueDays
+ *  window: day offsets 0 … dueDays-1, spread evenly in the given order, so the
+ *  review queue fills a little every day instead of all at once. */
+function kbReviewStaggerOffsets_(n, dueDays) {
+  const out = [];
+  const span = Math.max(1, Math.floor(Number(dueDays) || 1));
+  for (let i = 0; i < n; i++) out.push(n <= 1 ? 0 : Math.floor(i * span / n));
+  return out;
+}
+
+/** Drive file id from a share link or a bare id. */
+function kbManualFileId_(ref) {
+  const s = String(ref || '').trim();
+  const parsed = kbParseDriveUrl_(s);
+  if (parsed) return parsed.fileId;
+  return /^[a-zA-Z0-9_-]{20,}$/.test(s) ? s : '';
+}
+
+function getOrCreateManualImportSheet_() {
+  const ss = getKbSS_();
+  let sheet = ss.getSheetByName(KB_MANUAL_IMPORT_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(KB_MANUAL_IMPORT_TAB);
+    sheet.appendRow(sheetSafeRow_(KB_MANUAL_IMPORT_HEADERS));
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, KB_MANUAL_IMPORT_HEADERS.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+/** The ledger as { id → { sourceHash, bodyHash, row } } (row = sheet row). */
+function kbManualLedger_(sheet) {
+  const out = {};
+  const last = sheet.getLastRow();
+  if (last < 2) return out;
+  const vals = sheet.getRange(2, 1, last - 1, KB_MANUAL_IMPORT_HEADERS.length).getValues();
+  vals.forEach(function (r, i) {
+    const id = String(r[KBMI.ID] || '').trim();
+    if (id) out[id] = { sourceHash: String(r[KBMI.SOURCE_HASH] || ''), bodyHash: String(r[KBMI.BODY_HASH] || ''), row: i + 2 };
+  });
+  return out;
+}
+
+/** Admin — import (or check) the manual from its articles.json on Drive.
+ *  opts.dryRun → the plan, nothing written. The Drive read happens OUTSIDE the
+ *  lock; the plan is re-derived under it from a fresh read, so an edit made
+ *  between a check and an import is still seen. */
+function kbImportManual(fileRef, opts) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
+    opts = opts || {};
+    const fileId = kbManualFileId_(fileRef);
+    if (!fileId) return { success: false, error: 'Paste the Drive link (or file id) of articles.json.' };
+    let text;
+    try {
+      const blob = DriveApp.getFileById(fileId).getBlob();
+      if (blob.getBytes().length > KB_MANUAL_FILE_MAX) return { success: false, error: 'That file is too large to be the manual\'s articles.json.' };
+      text = blob.getDataAsString('UTF-8');
+    } catch (e) {
+      return { success: false, error: 'Could not open that Drive file (' + e.message + ') — check the link and that the app\'s account can read it.' };
+    }
+    let data;
+    try { data = JSON.parse(text); } catch (e) { return { success: false, error: 'That file is not JSON — upload articles.json from the manual build.' }; }
+    const v = kbManualValidate_(data);
+    if (v.errors.length) return { success: false, error: 'The file was refused; nothing was imported.', problems: v.errors.slice(0, 20), problemCount: v.errors.length };
+
+    const lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+    try {
+      const sheet = getOrCreateKbSheet_();
+      const ledSheet = getOrCreateManualImportSheet_();
+      const last = sheet.getLastRow();
+      const all = last >= 2 ? sheet.getRange(2, 1, last - 1, KB_HEADERS.length).getValues() : [];
+      const rows = {}, rowAt = {};
+      all.forEach(function (r, i) {
+        const id = String(r[KB.ID] || '').trim();
+        if (!KB_MANUAL_ID_RE.test(id)) return;
+        rows[id] = { department: r[KB.DEPARTMENT], title: r[KB.TITLE], body: r[KB.BODY_MD], status: kbRowStatus_(r[KB.STATUS]) };
+        rowAt[id] = { sheetRow: i + 2, values: r };
+      });
+      const ledger = kbManualLedger_(ledSheet);
+      const hashFn = function (d, t, b) { return kbSha256Hex_(kbManualHashBasis_(d, t, b)); };
+      const plan = kbManualPlan_(v.items, rows, ledger, hashFn);
+      const summary = {
+        total: v.items.length, created: plan.create.length, updated: plan.update.length,
+        unchanged: plan.unchanged.length, skipped: plan.skipped,
+      };
+      if (opts.dryRun) return Object.assign({ success: true, dryRun: true }, summary);
+
+      const now = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
+      const ledgerWrites = [];   // [id, sourceHash, bodyHash]
+      // Updates: the prior row goes to KbRevisions first (revertible), and the
+      // status is KEPT — re-importing an edited manual updates a live article
+      // in place rather than pulling it back to draft.
+      plan.update.forEach(function (it) {
+        const at = rowAt[it.id];
+        kbAppendRevision_(at.values, emp.email, 'manual-import');
+        const vals = [it.id, it.department, it.title, 'article', it.body, '', '', it.sortOrder,
+          now, emp.email, at.values[KB.REVIEWED_AT], at.values[KB.REVIEWED_BY], kbRowStatus_(at.values[KB.STATUS])];
+        sheet.getRange(at.sheetRow, 1, 1, KB_HEADERS.length).setValues(sheetSafeRows_([vals]));
+        ledgerWrites.push([it.id, it.sourceHash, hashFn(it.department, it.title, it.body)]);
+      });
+      if (plan.create.length) {
+        appendRowsSafe_(sheet, plan.create.map(function (it) {
+          return [it.id, it.department, it.title, 'article', it.body, '', '', it.sortOrder,
+            now, emp.email, now, emp.email, KB_STATUS_DRAFT];
+        }));
+        plan.create.forEach(function (it) { ledgerWrites.push([it.id, it.sourceHash, hashFn(it.department, it.title, it.body)]); });
+      }
+      // Ledger upsert: an existing id is rewritten in place, a new one appended.
+      const ledAppend = [];
+      ledgerWrites.forEach(function (w) {
+        const row = [w[0], w[1], w[2], now, emp.email];
+        if (ledger[w[0]]) ledSheet.getRange(ledger[w[0]].row, 1, 1, row.length).setValues(sheetSafeRows_([row]));
+        else ledAppend.push(row);
+      });
+      if (ledAppend.length) appendRowsSafe_(ledSheet, ledAppend);
+      if (ledgerWrites.length) invalidateKbCache_();
+      const skipBy = {};
+      plan.skipped.forEach(function (s) { skipBy[s.reason] = (skipBy[s.reason] || 0) + 1; });
+      writeAuditLog_(emp, 'KbManualImport', '', '', false, 0,
+        'total=' + summary.total + '; created=' + summary.created + '; updated=' + summary.updated +
+        '; unchanged=' + summary.unchanged + '; skipped=' + plan.skipped.length +
+        Object.keys(skipBy).sort().map(function (k) { return '; ' + k + '=' + skipBy[k]; }).join(''), emp.email);
+      return Object.assign({ success: true, dryRun: false }, summary);
+    } finally { lock.releaseLock(); }
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
+/** Admin — publish the imported manual's DRAFTS (all, or one department), and
+ *  start their review clocks STAGGERED: ReviewedAt is back-dated 0…dueDays-1
+ *  days in section order, so the review queue gains a few each day over the
+ *  window rather than every article on one date (operator 2026-09-28). Only
+ *  rows the import wrote (in the ledger) are touched; a hand-made or already
+ *  published article is left alone. opts.dryRun → the count only. */
+function kbPublishManual(opts) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
+    opts = opts || {};
+    const dept = String(opts.department || '').trim();
+    const sheet = getOrCreateKbSheet_();
+    const ledger = kbManualLedger_(getOrCreateManualImportSheet_());
+    const last = sheet.getLastRow();
+    const all = last >= 2 ? sheet.getRange(2, 1, last - 1, KB_HEADERS.length).getValues() : [];
+    const picks = [];
+    all.forEach(function (r, i) {
+      const id = String(r[KB.ID] || '').trim();
+      if (!ledger[id] || kbRowStatus_(r[KB.STATUS]) !== KB_STATUS_DRAFT) return;
+      if (dept && String(r[KB.DEPARTMENT] || '').trim() !== dept) return;
+      picks.push({ id: id, sheetRow: i + 2, department: String(r[KB.DEPARTMENT] || ''), sortOrder: Number(r[KB.SORT_ORDER] || 0) || 0 });
+    });
+    if (opts.dryRun) return { success: true, dryRun: true, count: picks.length };
+    // Section order across the parts — the first section of every part comes
+    // due first, the last ones at the end of the window.
+    picks.sort(function (a, b) { return (a.sortOrder - b.sortOrder) || kbNaturalCompare_(a.department, b.department); });
+    const dueDays = (CONFIG.KB && CONFIG.KB.REVIEW_DUE_DAYS) || 90;
+    const offsets = kbReviewStaggerOffsets_(picks.length, dueDays);
+    const today = new Date();
+    picks.forEach(function (p, i) {
+      const d = new Date(today.getTime() - offsets[i] * 86400000);
+      sheet.getRange(p.sheetRow, KB.REVIEWED_AT + 1, 1, 2)
+        .setValues(sheetSafeRows_([[fmtDate_(d) + ' ' + fmtTime_(d), emp.email]]));
+      sheet.getRange(p.sheetRow, KB.STATUS + 1, 1, 1).setValue(sheetSafe_(KB_STATUS_PUBLISHED));
+    });
+    if (picks.length) invalidateKbCache_();
+    writeAuditLog_(emp, 'KbManualPublish', '', '', false, 0,
+      'published=' + picks.length + (dept ? '; dept=' + dept : '') + '; reviewSpreadDays=' + dueDays, emp.email);
+    return { success: true, dryRun: false, count: picks.length, reviewSpreadDays: dueDays };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }

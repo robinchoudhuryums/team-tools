@@ -4845,3 +4845,87 @@ test('22post E DOM: a hidden widget costs no RPC even when its neighbour is show
   assert.strictEqual(n('getDeptRequests'), 0, 'the hidden Requests widget is never fetched');
   assert.strictEqual(n('getDashboardMetrics'), 0, 'nor the hidden carousels');
 });
+
+test('M1 DOM: the Manual dialog — Check shows the plan and every skipped article with its reason, Import unlocks only after a clean check of THIS link, a changed link locks it again, Import reloads the tree; Publish asks first and names the part; the tree sorts parts naturally', async () => {
+  const h = boot();
+  const w = h.window, doc = w.document;
+  w.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  const tree = { isAdmin: true, isManager: true, items: [
+    { id: 'man-10-1', department: 'Part 10 — Billing & Insurance', title: '10.1 How billing works', type: 'article', status: 'draft', sortOrder: 1 },
+    { id: 'man-2-1', department: 'Part 2 — Manual Mobility', title: '2.1 Intake', type: 'article', status: 'draft', sortOrder: 1 },
+    { id: 'man-2-2', department: 'Part 2 — Manual Mobility', title: '2.2 Delivery', type: 'article', status: 'published', sortOrder: 2 },
+    { id: 'kb-1', department: 'Billing', title: 'Hand-written', type: 'article', status: 'draft', sortOrder: 1 }] };
+  let treeReads = 0;
+  h.run.respond('getReferenceTree', () => { treeReads++; return tree; });
+  w.enterTool('reference', 'reference');
+  h.flushTimers();
+  assert.deepStrictEqual(h.$$('#kb-tree .kb-dept-name').map((x) => x.textContent), ['Billing', 'Part 2 — Manual Mobility', 'Part 10 — Billing & Insurance'], 'Part 2 before Part 10');
+  const btn = h.$$('#kb-tree .kb-add').filter((b) => /Manual/.test(b.textContent))[0];
+  assert.ok(btn && btn.getAttribute('onclick') === 'kbOpenManualImport_()', 'an admin sees the Manual button, wired to the dialog');
+  h.read('kbOpenManualImport_')();   // the harness does not run inline handlers — the attribute is asserted, the call made
+  const ov = doc.getElementById('kb-man-overlay');
+  assert.ok(ov && ov.getAttribute('role') === 'dialog' && ov.getAttribute('aria-label'), 'a named dialog through ensureOverlay');
+  assert.strictEqual(doc.getElementById('kb-man-check').getAttribute('onclick'), 'kbManualRun_(true)');
+  assert.strictEqual(doc.getElementById('kb-man-import').getAttribute('onclick'), 'kbManualRun_(false)');
+  const run = h.read('kbManualRun_');
+  const opts = [...ov.querySelectorAll('#kb-man-dept option')].map((o) => o.textContent);
+  assert.deepStrictEqual(opts, ['Every part (2 drafts)', 'Part 2 — Manual Mobility (1)', 'Part 10 — Billing & Insurance (1)'], 'only the manual’s DRAFTS, by part, in order — never the hand-written draft');
+  const imp = doc.getElementById('kb-man-import');
+  assert.strictEqual(imp.disabled, true, 'Import starts locked');
+  // Check with no link: said, and no RPC.
+  run(true);
+  assert.ok(/Paste the Drive link/.test(doc.getElementById('kb-man-result').textContent));
+  assert.strictEqual(h.run.pending('kbImportManual').length, 0);
+  // Check a link.
+  const link = doc.getElementById('kb-man-link');
+  link.value = 'https://drive.google.com/file/d/abc/view';
+  run(true);
+  let call = h.run.pending('kbImportManual').slice(-1)[0];
+  assert.deepStrictEqual([call.args[0], call.args[1].dryRun], ['https://drive.google.com/file/d/abc/view', true], 'a check is a dry run');
+  h.run.flushSuccess({ success: true, dryRun: true, total: 160, created: 2, updated: 1, unchanged: 155,
+    skipped: [{ id: 'man-5-9', title: '5.9 Pick-up <procedures>', reason: 'edited' }, { id: 'man-1-4', title: '1.4 Calls', reason: 'deleted' }] }, 'kbImportManual');
+  const res = doc.getElementById('kb-man-result');
+  assert.ok(/Checked 160 articles — nothing written yet/.test(res.textContent) && /2 new drafts · 1 updated · 155 unchanged · 2 skipped/.test(res.textContent));
+  assert.ok(/5\.9 Pick-up <procedures> — edited in the app — not overwritten/.test(res.textContent) && /1\.4 Calls — deleted in the app — not re-created/.test(res.textContent), 'every skipped article, named, with its reason');
+  assert.ok(!res.querySelector('procedures'), 'titles are escaped');
+  assert.strictEqual(imp.disabled, false, 'a clean check with work to do unlocks Import');
+  // Change the link: locked again.
+  link.value = 'https://drive.google.com/file/d/other/view';
+  link.dispatchEvent(new w.Event('input', { bubbles: true }));
+  assert.strictEqual(imp.disabled, true, 'a different file must be checked first');
+  link.value = 'https://drive.google.com/file/d/abc/view';
+  run(true);
+  h.run.flushSuccess({ success: true, dryRun: true, total: 3, created: 0, updated: 0, unchanged: 3, skipped: [] }, 'kbImportManual');
+  assert.strictEqual(imp.disabled, true, 'nothing to import → nothing to press');
+  run(true);
+  h.run.flushSuccess({ success: true, dryRun: true, total: 3, created: 1, updated: 0, unchanged: 2, skipped: [] }, 'kbImportManual');
+  // Import.
+  const treeBefore = treeReads;
+  run(false);
+  call = h.run.pending('kbImportManual').slice(-1)[0];
+  assert.strictEqual(call.args[1].dryRun, false, 'Import is the real thing');
+  h.run.flushSuccess({ success: true, dryRun: false, total: 3, created: 1, updated: 0, unchanged: 2, skipped: [] }, 'kbImportManual');
+  assert.ok(/Imported 3 articles/.test(doc.getElementById('kb-man-result').textContent));
+  assert.strictEqual(imp.disabled, true, 'an import done leaves Import locked');
+  assert.strictEqual(treeReads, treeBefore + 1, 'and reloads the tree');
+  // A refused file lists the problems.
+  run(true);
+  h.run.flushSuccess({ success: false, error: 'The file was refused; nothing was imported.', problems: ['man-9: no title.'], problemCount: 3 }, 'kbImportManual');
+  assert.ok(/nothing was imported/.test(res.textContent) && /man-9: no title\./.test(res.textContent) && /… and 2 more/.test(res.textContent));
+  // Publish one part: a confirm that names it, then the RPC with the department.
+  doc.getElementById('kb-man-dept').value = 'Part 10 — Billing & Insurance';
+  const pubBtn = h.$$('#kb-man-overlay .kb-man-pubrow .kb-btn')[0];
+  assert.strictEqual(pubBtn.getAttribute('onclick'), 'kbManualPublish_(this)');
+  h.read('kbManualPublish_')(pubBtn);
+  await tick();
+  const dlg = h.$('.ui-dialog');
+  assert.ok(dlg && /Part 10 — Billing & Insurance/.test(dlg.textContent), 'the confirm names the part');
+  assert.strictEqual(h.run.pending('kbPublishManual').length, 0, 'nothing is published before the confirm');
+  h.click(h.$('.ui-dialog-ok'));
+  await tick();
+  const pub = h.run.pending('kbPublishManual').slice(-1)[0];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(pub.args[0])), { department: 'Part 10 — Billing & Insurance' });
+  h.run.flushSuccess({ success: true, count: 1, reviewSpreadDays: 90 }, 'kbPublishManual');
+  assert.ok(!doc.getElementById('kb-man-overlay'), 'the dialog closes through its hook');
+});
