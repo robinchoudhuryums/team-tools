@@ -4332,8 +4332,51 @@ function getMyScratchpad() {
     // guaranteed for app-written cells, which are format-pinned).
     const content = v == null ? '' : (typeof v === 'string' ? v : String(v));
     const ms = Number(sh.getRange('B1').getValue());
-    return { content: content, updatedAtMs: isFinite(ms) && ms > 0 ? ms : null, maxChars: SCRATCHPAD_MAX_CHARS };
+    // 22post B-2c: C1 names the stored format — 'html' (the formatting editor,
+    // allowlist-sanitized on save) or blank/'text' (a pre-B pad, plain text the
+    // client converts on open).
+    const fmt = String(sh.getRange('C1').getValue() || '') === 'html' ? 'html' : 'text';
+    return { content: content, updatedAtMs: isFinite(ms) && ms > 0 ? ms : null, maxChars: SCRATCHPAD_MAX_CHARS, format: fmt };
   } catch (err) { return { error: err.message }; }
+}
+/** 22post B-2c — the Scratchpad's html allowlist, mirrored by the client's
+ *  cnScratchSanitize_ (a drift only drops formatting; the server copy is what
+ *  is stored). Keeps b/strong/i/em/u/br/div/p/ul/ol/li and a span carrying only
+ *  the palette classes; drops every attribute, comment and unknown tag (its
+ *  text kept), and the content of script/style-class elements. Text is
+ *  re-escaped: a bare < > or & becomes an entity, existing entities stand. */
+const SCRATCH_ALLOWED_TAGS_ = { b: 1, strong: 1, i: 1, em: 1, u: 1, br: 1, div: 1, p: 1, ul: 1, ol: 1, li: 1, span: 1 };
+const SCRATCH_CLASS_RE_ = /^cn-sp-(c-(red|amber|green|blue|purple)|s-(small|large))$/;
+function scratchpadSanitizeHtml_(html) {
+  let s = String(html == null ? '' : html);
+  s = s.replace(/<!--[\s\S]*?-->/g, '');
+  s = s.replace(/<(script|style|template|iframe|object|embed|noscript|svg|math|textarea|select|title|head)\b[\s\S]*?<\/\1\s*>/gi, '');
+  const text = function (t) {
+    return t.replace(/&(?!(?:[a-zA-Z][a-zA-Z0-9]*|#\d+|#x[0-9a-fA-F]+);)/g, '&amp;')
+            .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  };
+  const re = /<(\/?)([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g;
+  const out = [], spans = [];
+  let last = 0, m;
+  while ((m = re.exec(s))) {
+    out.push(text(s.slice(last, m.index)));
+    last = re.lastIndex;
+    const close = m[1] === '/', tag = m[2].toLowerCase();
+    if (!SCRATCH_ALLOWED_TAGS_[tag]) continue;
+    if (tag === 'br') { if (!close) out.push('<br>'); continue; }
+    if (tag === 'span') {
+      if (close) { if (spans.pop()) out.push('</span>'); continue; }
+      const cm = /\bclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(m[3]);
+      const cls = String(cm ? (cm[1] || cm[2] || cm[3] || '') : '').split(/\s+/)
+        .filter(function (c) { return SCRATCH_CLASS_RE_.test(c); });
+      spans.push(cls.length > 0);
+      if (cls.length) out.push('<span class="' + cls.join(' ') + '">');
+      continue;
+    }
+    out.push('<' + (close ? '/' : '') + tag + '>');
+  }
+  out.push(text(s.slice(last)));
+  return out.join('');
 }
 /** Save (whole-document replace; last write wins across windows — stated in
  *  the modal copy). USER lock, not the script lock (the kbRecordView /
@@ -4344,13 +4387,17 @@ function getMyScratchpad() {
  *  the rep's document). NO audit row per save (high-frequency, own-store,
  *  non-privileged — the kbRecordView precedent; INV-32 governs call-NOTE
  *  actions, which this is not). */
-function saveMyScratchpad(content) {
+function saveMyScratchpad(content, format) {
   const lock = LockService.getUserLock();
   lock.waitLock(15000);
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Not authorized.' };
-    const text = String(content == null ? '' : content);
+    // 22post B-2c: a formatted pad is stored as ALLOWLISTED html — the server
+    // is the authority, whatever the client sent. Plain text (an older client,
+    // or the editor suite) is stored as it came, marked 'text'.
+    const isHtml = format === 'html';
+    const text = isHtml ? scratchpadSanitizeHtml_(content) : String(content == null ? '' : content);
     if (text.length > SCRATCHPAD_MAX_CHARS) {
       return { error: 'Scratchpad is over the ' + SCRATCHPAD_MAX_CHARS + '-character limit (' + text.length + ') — trim it and save again.' };
     }
@@ -4358,6 +4405,7 @@ function saveMyScratchpad(content) {
     const now = Date.now();
     sh.getRange('A1').setNumberFormat('@').setValue(sheetText_(text));   // S2: the '@' cell, re-asserted — raw, never an apostrophe
     sh.getRange('B1').setValue(sheetSafe_(now));   // epoch-ms NUMBER cell — coercion-immune
+    sh.getRange('C1').setValue(sheetSafe_(isHtml ? 'html' : 'text'));
     return { success: true, updatedAtMs: now };
   } catch (err) { return { error: err.message }; }
   finally { lock.releaseLock(); }

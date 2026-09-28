@@ -1091,13 +1091,62 @@
   }
 
   /* Pilot round 3 #5 — scratchpad modal */
-  .cn-scratch-modal textarea {
-    width: 100%; box-sizing: border-box; font: inherit; font-size: 13px;
-    padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius);
-    background: var(--paper-card); color: var(--ink); resize: vertical; min-height: 180px;
+  /* 22post B-2b/B-2c — the floating Scratchpad: non-modal (no backdrop),
+     above the overlay layer like the KB drawer, draggable by its header,
+     resizable from its corner; a formatting toolbar over a contenteditable
+     editor whose colours and sizes are theme-token classes. */
+  .cn-float-panel {
+    position: fixed; z-index: 56; right: 16px; bottom: 16px;
+    width: 440px; height: 400px; min-width: 300px; min-height: 260px;
+    max-width: calc(100vw - 16px); max-height: calc(100vh - 16px);
+    display: flex; flex-direction: column; box-sizing: border-box;
+    background: var(--paper-card); color: var(--ink);
+    border: 1px solid var(--line); border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg); resize: both; overflow: hidden;
   }
-  .cn-scratch-foot { margin-top: 10px; }   /* .modal-footer carries the layout (22post A-2a) */
-  .cn-scratch-status { font-size: 10.5px; color: var(--muted-2); min-height: 14px; margin-top: 6px; }
+  .cn-float-panel:focus { outline: none; }
+  .cn-float-panel:focus-within { border-color: var(--accent); }
+  .cn-float-head {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+    border-bottom: 1px solid var(--line); cursor: move; user-select: none; touch-action: none;
+    background: var(--paper-2);
+  }
+  .cn-float-grip { color: var(--muted); line-height: 0; }
+  .cn-float-title { flex: 1; margin: 0; font-size: 13px; font-weight: 700; }
+  .cn-scratch-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 8px 10px 0; }
+  .cn-sp-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 0 0 6px; }
+  .cn-sp-tool, .cn-sp-swatch {
+    font: inherit; font-size: 12px; min-width: 26px; height: 26px; padding: 0 6px;
+    border: 1px solid transparent; border-radius: var(--radius-sm); background: none; color: var(--ink); cursor: pointer;
+  }
+  .cn-sp-tool:hover, .cn-sp-swatch:hover, .cn-sp-tool:focus-visible, .cn-sp-swatch:focus-visible { background: var(--paper-2); border-color: var(--line); }
+  .cn-sp-swatch { font-weight: 700; }
+  .cn-sp-swatch-plain { color: var(--ink); text-decoration: underline; }
+  .cn-sp-sep { width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
+  .cn-scratch-editor {
+    flex: 1; min-height: 0; overflow: auto; box-sizing: border-box;
+    padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--paper); color: var(--ink); font-size: 13px; line-height: 1.5; outline: none;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .cn-scratch-editor:focus-visible { border-color: var(--accent); }
+  .cn-scratch-editor[aria-disabled="true"] { opacity: .65; }
+  .cn-scratch-editor:empty::before { content: attr(data-placeholder); color: var(--muted-2); }
+  .cn-scratch-editor ul, .cn-scratch-editor ol { margin: 4px 0; padding-left: 22px; }
+  .cn-sp-c-red    { color: var(--danger); }
+  .cn-sp-c-amber  { color: var(--warning-deep); }
+  .cn-sp-c-green  { color: var(--success-deep); }
+  .cn-sp-c-blue   { color: var(--info-deep); }
+  .cn-sp-c-purple { color: var(--intake-pmd); }
+  .cn-sp-s-small  { font-size: .85em; }
+  .cn-sp-s-large  { font-size: 1.3em; }
+  .cn-scratch-hint { font-size: 10.5px; color: var(--muted-2); margin-top: 6px; }
+  .cn-scratch-foot { margin: 0; padding: 8px 10px; border-top: 1px solid var(--line); align-items: center; }
+  .cn-scratch-foot .btn-modal-cancel, .cn-scratch-foot .btn-modal-ok { flex: 0 0 auto; padding-left: 14px; padding-right: 14px; }
+  .cn-scratch-count { flex: 1; font-size: 10.5px; color: var(--muted-2); }
+  .cn-scratch-count.warn { color: var(--warning-deep); }
+  .cn-scratch-count.over { color: var(--danger); font-weight: 700; }
+  .cn-scratch-status { font-size: 10.5px; color: var(--muted-2); min-height: 14px; margin: 2px 0 6px; }
   .cn-scratch-status.warn { color: var(--warning-deep); }
 
   /* Round-1 pilot #1 — review-comment line on a saved review-flagged card
@@ -5115,8 +5164,103 @@ function cnSchedStatus_(btn, id, status) {
 // marked the pad clean even when the rep had typed more while it ran.
 var CN_SCRATCH = { dirty: false, timer: null, saving: false, queued: false, latest: null,
   // 22post A-2a: the last copy this session loaded or saved — {content,
-  // updatedAtMs} — so a reopen paints INSTANTLY and refreshes behind it.
-  cache: null, prefetching: false };
+  // updatedAtMs, format, maxChars} — so a reopen paints INSTANTLY and
+  // refreshes behind it.
+  cache: null, prefetching: false, maxChars: null, resizeObs: null, geomTimer: null };
+
+// 22post B-2b (operator 2026-09-27): the Scratchpad is a FLOATING, NON-MODAL
+// panel — no backdrop or blur, usable while filling in a note (or with the
+// composer open); draggable by its header through the shared dragStart_,
+// resizable, and it remembers where it was left (one ums… key). Escape closes
+// it only when focus is inside it.
+var CN_SCRATCH_GEOM_KEY = 'umsScratchGeom';
+var CN_SCRATCH_MIN = { w: 300, h: 260 };
+// 22post B-2c: the formatting palette. Colours and sizes are CLASSES (the
+// theme's own tokens), never inline colours, so a note coloured in light mode
+// stays readable in dark mode — and the server's allowlist can name them.
+var CN_SCRATCH_COLORS = [
+  { key: 'red', label: 'Red' }, { key: 'amber', label: 'Amber' }, { key: 'green', label: 'Green' },
+  { key: 'blue', label: 'Blue' }, { key: 'purple', label: 'Purple' },
+];
+var CN_SCRATCH_ALLOWED = { b: 1, strong: 1, i: 1, em: 1, u: 1, br: 1, div: 1, p: 1, ul: 1, ol: 1, li: 1, span: 1 };
+var CN_SCRATCH_DROP = { script: 1, style: 1, template: 1, iframe: 1, object: 1, embed: 1, noscript: 1, svg: 1, math: 1, textarea: 1, select: 1, title: 1, head: 1 };
+var CN_SCRATCH_CLASS_RE = /^cn-sp-(c-(red|amber|green|blue|purple)|s-(small|large))$/;
+
+/** 22post B-2c — the client twin of the server's scratchpadSanitizeHtml_ (the
+ *  server copy is what is stored; this one guards what is RENDERED and
+ *  PASTED). Walks a parsed fragment: allowlisted tags are rebuilt with no
+ *  attributes (a span keeps only palette classes), unknown tags are unwrapped
+ *  to their text, script/style-class elements are dropped whole. */
+function cnScratchSanitize_(html) {
+  var tpl = document.createElement('template');
+  tpl.innerHTML = String(html == null ? '' : html);
+  function walk(node) {
+    var out = '';
+    var kids = node.childNodes || [];
+    for (var i = 0; i < kids.length; i++) {
+      var k = kids[i];
+      if (k.nodeType === 3) { out += esc(k.nodeValue); continue; }
+      if (k.nodeType !== 1) continue;
+      var tag = String(k.tagName || '').toLowerCase();
+      if (CN_SCRATCH_DROP[tag]) continue;
+      if (!CN_SCRATCH_ALLOWED[tag]) { out += walk(k); continue; }
+      if (tag === 'br') { out += '<br>'; continue; }
+      if (tag === 'span') {
+        var cls = String(k.getAttribute('class') || '').split(/\s+/)
+          .filter(function (c) { return CN_SCRATCH_CLASS_RE.test(c); });
+        out += cls.length ? '<span class="' + cls.join(' ') + '">' + walk(k) + '</span>' : walk(k);
+        continue;
+      }
+      out += '<' + tag + '>' + walk(k) + '</' + tag + '>';
+    }
+    return out;
+  }
+  return walk(tpl.content || tpl);
+}
+/** PURE — a pre-B plain-text pad as editor html (escaped, line breaks kept). */
+function cnScratchTextToHtml_(text) {
+  return esc(String(text == null ? '' : text)).replace(/\r\n|\r|\n/g, '<br>');
+}
+function cnScratchEditor_() { return document.getElementById('cn-scratch-text'); }
+function cnScratchReady_(ed) { return !!ed && ed.getAttribute('contenteditable') === 'true'; }
+function cnScratchValue_() {
+  var ed = cnScratchEditor_();
+  return ed ? ed.innerHTML : null;
+}
+function cnScratchSetValue_(html) {
+  var ed = cnScratchEditor_();
+  if (ed) ed.innerHTML = cnScratchSanitize_(html);
+  cnScratchCount_();
+}
+function cnScratchEnable_(ed) {
+  if (!ed) return;
+  ed.setAttribute('contenteditable', 'true');
+  ed.removeAttribute('aria-disabled');
+  ed.setAttribute('data-placeholder', 'Anything you want to keep at hand…');
+  if (!ed._listening) {
+    ed.addEventListener('input', cnScratchInput_);
+    ed.addEventListener('paste', cnScratchPaste_);
+    ed._listening = true;
+  }
+}
+/** The loaded content as editor html, whichever format it was stored in. */
+function cnScratchLoadedHtml_(res) {
+  return (res && res.format === 'html') ? String(res.content || '') : cnScratchTextToHtml_(res && res.content);
+}
+/** 22post B-2c — the size counter: the STORED length (formatting included),
+ *  against the server's limit, which the server enforces by refusing. */
+function cnScratchCount_() {
+  var el = document.getElementById('cn-scratch-count');
+  if (!el) return;
+  var max = CN_SCRATCH.maxChars;
+  var v = cnScratchValue_();
+  if (!max || v == null) { el.textContent = ''; return; }
+  var n = v.length;
+  el.textContent = n.toLocaleString() + ' / ' + Number(max).toLocaleString();
+  el.title = 'Characters stored, formatting included';
+  el.classList.toggle('warn', n > max * 0.9);
+  el.classList.toggle('over', n > max);
+}
 
 /** 22post A-2a — warm the session copy on intent (pointer over / focus on the
  *  Scratchpad button), so even the FIRST open of a session usually paints at
@@ -5127,56 +5271,143 @@ function cnScratchPrefetch_() {
   google.script.run
     .withSuccessHandler(function (res) {
       CN_SCRATCH.prefetching = false;
-      if (res && !res.error && !CN_SCRATCH.cache) CN_SCRATCH.cache = { content: res.content || '', updatedAtMs: res.updatedAtMs || null };
+      if (res && !res.error && !CN_SCRATCH.cache) {
+        CN_SCRATCH.cache = { content: cnScratchLoadedHtml_(res), updatedAtMs: res.updatedAtMs || null };
+        if (res.maxChars) CN_SCRATCH.maxChars = res.maxChars;
+      }
     })
     .withFailureHandler(function () { CN_SCRATCH.prefetching = false; })
     .getMyScratchpad();
 }
 
 function cnScratchCloseBtnHtml_() {
-  return '<button type="button" class="btn-modal-cancel" onclick="closeOverlay(document.getElementById(\'cn-scratch-overlay\'))">Close</button>';
+  return '<button type="button" class="btn-modal-cancel" onclick="cnCloseScratchpadModal_()">Close</button>';
+}
+function cnScratchToolbarHtml_() {
+  var b = function (cmd, label, inner, extra) {
+    return '<button type="button" class="cn-sp-tool" data-sp-cmd="' + cmd + '" title="' + label + '" aria-label="' + label + '"' + (extra || '') + '>' + inner + '</button>';
+  };
+  var sw = CN_SCRATCH_COLORS.map(function (c) {
+    return '<button type="button" class="cn-sp-swatch cn-sp-c-' + c.key + '" data-sp-color="' + c.key + '" title="' + c.label + ' text" aria-label="' + c.label + ' text">A</button>';
+  }).join('');
+  return '<div class="cn-sp-tools" role="toolbar" aria-label="Formatting" aria-controls="cn-scratch-text">' +
+    b('bold', 'Bold (Ctrl+B)', '<b>B</b>') + b('italic', 'Italic (Ctrl+I)', '<i>I</i>') + b('underline', 'Underline (Ctrl+U)', '<u>U</u>') +
+    '<span class="cn-sp-sep" aria-hidden="true"></span>' +
+    b('size-small', 'Smaller text', '<span class="cn-sp-s-small">A</span>') + b('size-normal', 'Normal size', 'A') + b('size-large', 'Larger text', '<span class="cn-sp-s-large">A</span>') +
+    '<span class="cn-sp-sep" aria-hidden="true"></span>' +
+    sw + '<button type="button" class="cn-sp-swatch cn-sp-swatch-plain" data-sp-color="" title="Default colour" aria-label="Default text colour">A</button>' +
+    '<span class="cn-sp-sep" aria-hidden="true"></span>' +
+    b('insertUnorderedList', 'Bulleted list', '&bull; List') + b('insertOrderedList', 'Numbered list', '1. List') +
+    b('clear', 'Clear formatting', 'Clear') +
+  '</div>';
+}
+
+/** 22post B-2b — the saved geometry, clamped to THIS viewport (a pad left at
+ *  the right of a wide screen must not open off the pop-out). Null = default. */
+function cnScratchGeomFor_(g, vw, vh) {
+  if (!g || !isFinite(g.w) || !isFinite(g.h)) return null;
+  var w = Math.max(CN_SCRATCH_MIN.w, Math.min(Number(g.w), vw - 16));
+  var h = Math.max(CN_SCRATCH_MIN.h, Math.min(Number(g.h), vh - 16));
+  var p = dragClamp_(Number(g.x) || 0, Number(g.y) || 0, w, h, vw, vh);
+  return { x: p.x, y: p.y, w: Math.round(w), h: Math.round(h) };
+}
+function cnScratchApplyGeom_(panel) {
+  var g = null;
+  try { g = JSON.parse(localStorage.getItem(CN_SCRATCH_GEOM_KEY) || 'null'); } catch (_) { g = null; }
+  var fit = cnScratchGeomFor_(g, window.innerWidth, window.innerHeight);
+  if (!fit) return;
+  panel.style.left = fit.x + 'px'; panel.style.top = fit.y + 'px';
+  panel.style.right = 'auto'; panel.style.bottom = 'auto';
+  panel.style.width = fit.w + 'px'; panel.style.height = fit.h + 'px';
+}
+function cnScratchSaveGeom_() {
+  var panel = document.getElementById('cn-scratch-panel');
+  if (!panel || !panel.getBoundingClientRect) return;
+  var r = panel.getBoundingClientRect();
+  if (!(r.width > 0 && r.height > 0)) return;
+  try { localStorage.setItem(CN_SCRATCH_GEOM_KEY, JSON.stringify({ x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) })); } catch (_) {}
+}
+function cnScratchDragStart_(e) {
+  dragStart_(e, document.getElementById('cn-scratch-panel'), { onEnd: cnScratchSaveGeom_ });
 }
 
 function cnOpenScratchpadModal_() {
-  var overlay = ensureOverlay('cn-scratch-overlay', { label: 'Scratchpad', onClose: cnCloseScratchpadModal_ });
-  overlay.innerHTML =
-    '<div class="modal cn-scratch-modal" style="max-width:560px">' +
-      '<h3 style="margin-top:0">Scratchpad</h3>' +
-      '<p class="cn-sched-hint">Personal notes saved to YOUR Call Notes sheet — they follow you across ' +
-      'browsers and devices. Autosaves as you type; if two windows edit, the last save wins.</p>' +
-      '<textarea id="cn-scratch-text" rows="12" disabled aria-label="Scratchpad contents" placeholder="Loading…"></textarea>' +
+  var existing = document.getElementById('cn-scratch-panel');
+  if (existing) {   // already open: bring focus to it rather than rebuild (and lose the caret)
+    var edx = cnScratchEditor_();
+    try { (cnScratchReady_(edx) ? edx : existing).focus(); } catch (_) {}
+    return;
+  }
+  var panel = document.createElement('div');
+  panel.id = 'cn-scratch-panel';
+  panel.className = 'cn-float-panel';
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'false');
+  panel.setAttribute('aria-labelledby', 'cn-scratch-title');
+  panel.tabIndex = -1;
+  panel._restoreFocus = (document.activeElement && document.activeElement !== document.body) ? document.activeElement : null;
+  panel.innerHTML =
+    '<div class="cn-float-head" onpointerdown="cnScratchDragStart_(event)">' +
+      '<span class="cn-float-grip" aria-hidden="true">' + icon('fileText', 13) + '</span>' +
+      '<h3 id="cn-scratch-title" class="cn-float-title">Scratchpad</h3>' +
+      '<button type="button" class="modal-x" aria-label="Close the scratchpad" onclick="cnCloseScratchpadModal_()">' + icon('x', 14) + '</button>' +
+    '</div>' +
+    '<div class="cn-scratch-body">' +
+      cnScratchToolbarHtml_() +
+      '<div id="cn-scratch-text" class="cn-scratch-editor" role="textbox" aria-multiline="true" aria-label="Scratchpad contents"' +
+        ' contenteditable="false" aria-disabled="true" data-placeholder="Loading…"></div>' +
+      '<div class="cn-scratch-hint">Saved to your own Call Notes sheet — it follows you across devices; if two windows edit, the last save wins.</div>' +
       '<div class="cn-scratch-status mono" id="cn-scratch-status" role="status"></div>' +
-      // 22post A-2a: the app's standard modal buttons (.cn-act-btn is styled
-      // only inside cards and the reminders modal, so these rendered unstyled).
-      '<div class="modal-footer cn-scratch-foot">' +
-        cnScratchCloseBtnHtml_() +
-        '<button type="button" class="btn-modal-ok" onclick="cnScratchSave_(true)">Save now</button>' +
-      '</div>' +
+    '</div>' +
+    '<div class="modal-footer cn-scratch-foot">' +
+      '<span class="cn-scratch-count mono" id="cn-scratch-count"></span>' +
+      cnScratchCloseBtnHtml_() +
+      '<button type="button" class="btn-modal-ok" onclick="cnScratchSave_(true)">Save now</button>' +
     '</div>';
+  document.body.appendChild(panel);
+  cnScratchApplyGeom_(panel);
+  // Escape closes it only from INSIDE — and never reaches the shell's handler,
+  // which would close whatever modal sits underneath.
+  panel.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); cnCloseScratchpadModal_(); }
+  });
+  var tools = panel.querySelector('.cn-sp-tools');
+  if (tools) {
+    // Keep the editor's selection: a toolbar press must not take focus.
+    tools.addEventListener('mousedown', function (ev) { ev.preventDefault(); });
+    tools.addEventListener('click', cnScratchToolClick_);
+  }
+  if (typeof ResizeObserver === 'function') {   // remember a resize (CSS resize handle)
+    try {
+      CN_SCRATCH.resizeObs = new ResizeObserver(function () {
+        clearTimeout(CN_SCRATCH.geomTimer);
+        CN_SCRATCH.geomTimer = setTimeout(cnScratchSaveGeom_, 400);
+      });
+      CN_SCRATCH.resizeObs.observe(panel);
+    } catch (_) {}
+  }
   // C6: text a previous close could not save (its save failed, or is still in
   // flight) is carried into this open rather than replaced by the server copy.
   var carry = CN_SCRATCH.dirty && CN_SCRATCH.latest != null;
   if (!carry) { CN_SCRATCH.dirty = false; CN_SCRATCH.latest = null; }
   clearTimeout(CN_SCRATCH.timer);
-  var ta0 = document.getElementById('cn-scratch-text');
+  var ed0 = cnScratchEditor_();
   // 22post A-2a: paint at once from the unsaved carry or this session's copy;
   // the server read below then refreshes it (unless the rep has typed since).
   var painted = null;
   if (carry) painted = CN_SCRATCH.latest;
   else if (CN_SCRATCH.cache) painted = CN_SCRATCH.cache.content;
-  if (ta0 && painted != null) {
-    ta0.disabled = false; ta0.placeholder = 'Anything you want to keep at hand…';
-    ta0.value = painted;
-    ta0.addEventListener('input', cnScratchInput_);
-    ta0._listening = true;
+  if (ed0 && painted != null) {
+    cnScratchEnable_(ed0);
+    cnScratchSetValue_(painted);
     cnScratchStatus_(carry ? 'Unsaved changes from last time — saving…' : 'Refreshing…', false);
     if (carry) cnScratchSave_(true);
-    ta0.focus();
+    try { ed0.focus(); } catch (_) {}
   }
   google.script.run
     .withSuccessHandler(function (res) {
-      var ta = document.getElementById('cn-scratch-text');
-      if (!ta) return;   // modal closed before the load landed
+      var ed = cnScratchEditor_();
+      if (!ed) return;   // closed before the load landed
       if (!res || res.error) {
         if (painted != null) {   // keep the painted copy editable; say the refresh failed
           cnScratchStatus_('Could not refresh — showing your copy from earlier in this session; saving still works', true);
@@ -5184,56 +5415,60 @@ function cnOpenScratchpadModal_() {
         }
         // A12/INV-175 — a failed load is a warn card, never an empty pad the
         // rep would type into and lose.
-        var modal = ta.closest('.cn-scratch-modal');
-        if (modal) modal.innerHTML = '<h3 style="margin-top:0">Scratchpad</h3>' +
-          errorStateHtml_((res && res.error) || 'Could not load your scratchpad') +
-          '<div class="modal-footer" style="margin-top:12px">' + cnScratchCloseBtnHtml_() + '</div>';
+        var body = ed.closest('.cn-scratch-body');
+        if (body) body.innerHTML = errorStateHtml_((res && res.error) || 'Could not load your scratchpad');
         return;
       }
-      CN_SCRATCH.cache = { content: res.content || '', updatedAtMs: res.updatedAtMs || null };
-      ta.disabled = false; ta.placeholder = 'Anything you want to keep at hand…';
-      if (!ta._listening) { ta.addEventListener('input', cnScratchInput_); ta._listening = true; }
+      if (res.maxChars) CN_SCRATCH.maxChars = res.maxChars;
+      var html = cnScratchLoadedHtml_(res);
+      CN_SCRATCH.cache = { content: html, updatedAtMs: res.updatedAtMs || null };
+      cnScratchEnable_(ed);
       var stillUnsaved = CN_SCRATCH.dirty && CN_SCRATCH.latest != null;   // re-read: a carried save may have landed meanwhile
       if (stillUnsaved) {
         if (painted == null) {   // not painted yet: show the unsaved text and save it
-          ta.value = CN_SCRATCH.latest;
+          cnScratchSetValue_(CN_SCRATCH.latest);
           cnScratchStatus_('Unsaved changes from last time — saving…', false); cnScratchSave_(true);
         }
         // painted and typed since (or a carried save running): the rep's text wins — never overwritten
       } else {
-        if (ta.value !== (res.content || '')) ta.value = res.content || '';
+        if (cnScratchSanitize_(html) !== cnScratchValue_()) cnScratchSetValue_(html);
         cnScratchStatus_(res.updatedAtMs ? 'Saved · ' + cnSchedFmt_(res.updatedAtMs) : '', false);
       }
-      if (painted == null) ta.focus();
+      cnScratchCount_();
+      if (painted == null) { try { ed.focus(); } catch (_) {} }
     })
     .withFailureHandler(function (err) {
-      var ta = document.getElementById('cn-scratch-text');
-      if (!ta) return;
+      var ed = cnScratchEditor_();
+      if (!ed) return;
       if (painted != null) {
         cnScratchStatus_('Could not refresh — showing your copy from earlier in this session; saving still works', true);
         return;
       }
-      var modal = ta.closest('.cn-scratch-modal');
-      if (modal) modal.innerHTML = '<h3 style="margin-top:0">Scratchpad</h3>' +
-        errorStateHtml_((err && err.message) || 'Could not load your scratchpad') +
-        '<div class="modal-footer" style="margin-top:12px">' + cnScratchCloseBtnHtml_() + '</div>';
+      var body = ed.closest('.cn-scratch-body');
+      if (body) body.innerHTML = errorStateHtml_((err && err.message) || 'Could not load your scratchpad');
     })
     .getMyScratchpad();
 }
 
-/** onClose — flush a pending debounce so typed text never dies with the
- *  modal (the INV-148 rule). Idempotent (safe when already closed). */
+/** Close (the Close buttons, the header ×, Escape from inside) — flush a
+ *  pending debounce so typed text never dies with the panel (the INV-148
+ *  rule), remember the geometry, hand focus back. Idempotent. */
 function cnCloseScratchpadModal_() {
   clearTimeout(CN_SCRATCH.timer);
+  clearTimeout(CN_SCRATCH.geomTimer);
+  var panel = document.getElementById('cn-scratch-panel');
   if (CN_SCRATCH.dirty) {
-    var ta = document.getElementById('cn-scratch-text');
-    if (ta && !ta.disabled) CN_SCRATCH.latest = ta.value;   // read synchronously, BEFORE the DOM goes
+    var ed = cnScratchEditor_();
+    if (cnScratchReady_(ed)) CN_SCRATCH.latest = ed.innerHTML;   // read synchronously, BEFORE the DOM goes
     cnScratchSave_(true);   // runs now, or queues behind an in-flight save and drains from `latest`
   }
-  // The hook OWNS the close (closeOverlay delegates to it) — remove the
-  // overlay, or Close / Escape / backdrop do nothing (fixed 2026-09-17).
-  var o = document.getElementById('cn-scratch-overlay');
-  if (o) o.remove();
+  if (!panel) return;
+  cnScratchSaveGeom_();
+  if (CN_SCRATCH.resizeObs) { try { CN_SCRATCH.resizeObs.disconnect(); } catch (_) {} CN_SCRATCH.resizeObs = null; }
+  var hadFocus = panel.contains(document.activeElement);
+  var restore = panel._restoreFocus;
+  panel.remove();
+  if (hadFocus && restore && restore.isConnected) { try { restore.focus(); } catch (_) {} }
 }
 
 function cnScratchStatus_(msg, warn) {
@@ -5245,19 +5480,96 @@ function cnScratchStatus_(msg, warn) {
 
 function cnScratchInput_() {
   CN_SCRATCH.dirty = true;
-  var ta = document.getElementById('cn-scratch-text');
-  if (ta) CN_SCRATCH.latest = ta.value;
+  var v = cnScratchValue_();
+  if (v != null) CN_SCRATCH.latest = v;
   cnScratchStatus_('Unsaved changes…', false);
+  cnScratchCount_();
   clearTimeout(CN_SCRATCH.timer);
   CN_SCRATCH.timer = setTimeout(function () { cnScratchSave_(false); }, 800);
 }
 
+/** 22post B-2c — a paste keeps only allowlisted formatting (a page copied from
+ *  a website must not bring its markup, scripts or images in). */
+function cnScratchPaste_(e) {
+  var cd = e.clipboardData;
+  if (!cd) return;
+  var html = cd.getData('text/html'), text = cd.getData('text/plain');
+  e.preventDefault();
+  var ins = html ? cnScratchSanitize_(html) : cnScratchTextToHtml_(text);
+  try { document.execCommand('insertHTML', false, ins); } catch (_) {}
+  cnScratchInput_();
+}
+
+/** 22post B-2c — replace the marker elements a sentinel execCommand produced
+ *  (<font color="#010203"> / <font size="7">, or a styled span where the
+ *  browser prefers CSS) with a palette-class span. Exported for the pins. */
+function cnScratchConvertMarks_(root, kind, cls) {
+  if (!root) return 0;
+  var sel = kind === 'color'
+    ? 'font[color="#010203"], span[style*="rgb(1, 2, 3)"], span[style*="#010203"]'
+    : 'font[size="7"], span[style*="xxx-large"]';
+  var n = 0;
+  Array.prototype.slice.call(root.querySelectorAll(sel)).forEach(function (el) {
+    var span = document.createElement('span');
+    span.className = cls;
+    while (el.firstChild) span.appendChild(el.firstChild);
+    el.parentNode.replaceChild(span, el);
+    n++;
+  });
+  return n;
+}
+/** Unwrap palette spans of one family (colour 'c' / size 's') that the
+ *  current selection touches — the "default colour" / "normal size" / clear. */
+function cnScratchUnwrap_(root, family, range) {
+  if (!root) return;
+  Array.prototype.slice.call(root.querySelectorAll('span[class*="cn-sp-' + family + '-"]')).forEach(function (el) {
+    if (range && range.intersectsNode && !range.intersectsNode(el)) return;
+    var parent = el.parentNode;
+    while (el.firstChild) parent.insertBefore(el.firstChild, el);
+    parent.removeChild(el);
+  });
+}
+function cnScratchRange_(ed) {
+  var s = window.getSelection ? window.getSelection() : null;
+  if (!s || !s.rangeCount) return null;
+  var r = s.getRangeAt(0);
+  return ed.contains(r.commonAncestorContainer) ? r : null;
+}
+function cnScratchExec_(cmd, val) {
+  try { document.execCommand('styleWithCSS', false, false); } catch (_) {}
+  try { document.execCommand(cmd, false, val == null ? null : val); } catch (_) {}
+}
+function cnScratchToolClick_(e) {
+  var btn = e.target && e.target.closest ? e.target.closest('button') : null;
+  var ed = cnScratchEditor_();
+  if (!btn || !cnScratchReady_(ed)) return;
+  ed.focus();
+  var range = cnScratchRange_(ed);
+  var cmd = btn.getAttribute('data-sp-cmd');
+  var color = btn.getAttribute('data-sp-color');
+  if (color != null) {
+    if (!range || range.collapsed) { cnScratchStatus_('Select some text first', false); return; }
+    cnScratchUnwrap_(ed, 'c', range);
+    if (color) { cnScratchExec_('foreColor', '#010203'); cnScratchConvertMarks_(ed, 'color', 'cn-sp-c-' + color); }
+  } else if (cmd === 'size-small' || cmd === 'size-large' || cmd === 'size-normal') {
+    if (!range || range.collapsed) { cnScratchStatus_('Select some text first', false); return; }
+    cnScratchUnwrap_(ed, 's', range);
+    if (cmd !== 'size-normal') { cnScratchExec_('fontSize', '7'); cnScratchConvertMarks_(ed, 'size', cmd === 'size-small' ? 'cn-sp-s-small' : 'cn-sp-s-large'); }
+  } else if (cmd === 'clear') {
+    cnScratchExec_('removeFormat');
+    cnScratchUnwrap_(ed, 'c', range); cnScratchUnwrap_(ed, 's', range);
+  } else if (cmd) {
+    cnScratchExec_(cmd);
+  }
+  cnScratchInput_();
+}
+
 function cnScratchSave_(force) {
-  var ta = document.getElementById('cn-scratch-text');
-  // The text to save: the live field while the modal is open, else what the
-  // close captured (C6). With neither — or nothing unsaved and no field — there
+  var ed = cnScratchEditor_();
+  // The text to save: the live editor while the panel is open, else what the
+  // close captured (C6). With neither — or nothing unsaved and no editor — there
   // is nothing to do (the INV-148 root-guard).
-  if (ta && !ta.disabled) CN_SCRATCH.latest = ta.value;
+  if (cnScratchReady_(ed)) CN_SCRATCH.latest = ed.innerHTML;
   else if (!CN_SCRATCH.dirty) return;
   var text = CN_SCRATCH.latest;
   if (text == null) return;
@@ -5268,29 +5580,30 @@ function cnScratchSave_(force) {
   var failed = function (msg) {
     CN_SCRATCH.saving = false;
     // Keep dirty so the next edit (or Save now, or the next open) retries —
-    // visible, never silent. With the modal gone the status line is gone too,
+    // visible, never silent. With the panel gone the status line is gone too,
     // so the failure is a toast instead.
-    if (document.getElementById('cn-scratch-text')) cnScratchStatus_(msg, true);
+    if (cnScratchEditor_()) cnScratchStatus_(msg, true);
     else showToast('Scratchpad not saved: ' + msg + ' — reopen it to retry', 'toast-error');
   };
+  var clean = cnScratchSanitize_(text);   // 22post B-2c: the server sanitizes too — it is the authority
   google.script.run
     .withSuccessHandler(function (r) {
       if (!r || r.error || !r.success) { failed((r && r.error) || 'Save failed — edit or press Save now to retry'); return; }
       CN_SCRATCH.saving = false;
-      CN_SCRATCH.cache = { content: text, updatedAtMs: r.updatedAtMs || Date.now() };   // 22post A-2a: the next open paints this
+      CN_SCRATCH.cache = { content: clean, updatedAtMs: r.updatedAtMs || Date.now() };   // 22post A-2a: the next open paints this
       // Clean only if nothing was typed while this save ran (C6).
       if (CN_SCRATCH.latest === text) CN_SCRATCH.dirty = false;
       cnScratchStatus_(CN_SCRATCH.dirty ? 'Unsaved changes…' : 'Saved · ' + cnSchedFmt_(r.updatedAtMs), false);
       // Drain a save that waited on this one (a close, a Save now, a debounce
-      // fire). With the modal still open and nothing waiting, newer typing is
+      // fire). With the panel still open and nothing waiting, newer typing is
       // left to its own debounce.
-      if (CN_SCRATCH.queued || (CN_SCRATCH.dirty && !document.getElementById('cn-scratch-text'))) {
+      if (CN_SCRATCH.queued || (CN_SCRATCH.dirty && !cnScratchEditor_())) {
         CN_SCRATCH.queued = false;
         if (CN_SCRATCH.dirty) cnScratchSave_(true);
       }
     })
     .withFailureHandler(function (e) { failed((e && e.message) || 'Save failed — edit or press Save now to retry'); })
-    .saveMyScratchpad(text);
+    .saveMyScratchpad(clean, 'html');
 }
 
 // ── G3: read-only viewer for a submitted fillable form ──────────────────────
@@ -6271,7 +6584,7 @@ function cnRenderComposerFormStep_() {
 
   return `
     <div class="modal" style="max-width:560px;resize:both;overflow:auto" id="cnC-modal">
-      <div class="modal-title" style="cursor:move" onmousedown="cnStartDragModal_(event)">Compose email</div>
+      <div class="modal-title" style="cursor:move;touch-action:none" onpointerdown="cnStartDragModal_(event)">Compose email</div>
       ${cnRenderComposerTabStrip_('department', c.noteId)}
       <div class="modal-sub" id="cnC-sub">
         For: <strong>${esc(c.note.caller || c.note.patientAndTrx || 'this call')}</strong> · ${esc(c.note.patientAndTrx || '')}
@@ -9231,26 +9544,8 @@ function cnDeptRowsCollect_(pairs) {
 })();
 
 function cnStartDragModal_(e) {
-  var modal = document.getElementById('cnC-modal');
-  if (!modal) return;
-  var startX = e.clientX, startY = e.clientY;
-  var rect = modal.getBoundingClientRect();
-  var origLeft = rect.left, origTop = rect.top;
-  modal.style.position = 'fixed';
-  modal.style.left = origLeft + 'px';
-  modal.style.top = origTop + 'px';
-  modal.style.margin = '0';
-  function onMove(ev) {
-    modal.style.left = (origLeft + ev.clientX - startX) + 'px';
-    modal.style.top = (origTop + ev.clientY - startY) + 'px';
-  }
-  function onUp() {
-    document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup', onUp);
-  }
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup', onUp);
-  e.preventDefault();
+  // 22post B-2b: the shared helper (pointer events, kept on screen).
+  dragStart_(e, document.getElementById('cnC-modal'));
 }
 
 // ── Admin view (manager-only) ─────────────────────────────────────────
@@ -14138,7 +14433,7 @@ function cnBuildExternalEmailHtml_() {
   }
 
   return '<div class="modal" style="max-width:540px;resize:both;overflow:auto" id="cnX-modal">' +
-    '<div class="modal-title" style="cursor:move" onmousedown="cnStartDragExtModal_(event)">' +
+    '<div class="modal-title" style="cursor:move;touch-action:none" onpointerdown="cnStartDragExtModal_(event)">' +
       icon('send', 18) + ' Send External Email</div>' +
     // Round 2 follow-on (modal-tab merge) — shared tab strip; clicking
     // Department switches to the dept composer (preserving noteId).
@@ -14545,26 +14840,7 @@ function cnSendExternalEmail_() {
 }
 
 function cnStartDragExtModal_(e) {
-  var modal = document.getElementById('cnX-modal');
-  if (!modal) return;
-  var startX = e.clientX, startY = e.clientY;
-  var rect = modal.getBoundingClientRect();
-  var origLeft = rect.left, origTop = rect.top;
-  modal.style.position = 'fixed';
-  modal.style.left = origLeft + 'px';
-  modal.style.top = origTop + 'px';
-  modal.style.margin = '0';
-  function onMove(ev) {
-    modal.style.left = (origLeft + ev.clientX - startX) + 'px';
-    modal.style.top = (origTop + ev.clientY - startY) + 'px';
-  }
-  function onUp() {
-    document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup', onUp);
-  }
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup', onUp);
-  e.preventDefault();
+  dragStart_(e, document.getElementById('cnX-modal'));   // 22post B-2b: the shared helper
 }
 
 </script>

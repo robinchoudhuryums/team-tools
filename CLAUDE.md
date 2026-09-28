@@ -894,8 +894,8 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1040 | `node test/client/run.js` |
-| DOM harness tests | 158 | `node test/client/dom/runDom.js` |
+| Pure harness tests | 1043 | `node test/client/run.js` |
+| DOM harness tests | 159 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 119 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 339 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 52 | `'Admin access required.'` in the server source |
@@ -903,7 +903,7 @@ this block, or the command that prints the number.
 | QA-gated endpoints (`canSeeQa_`) | 17 | `'QA access required.'` in the server source |
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 10 | `TRIGGER_GROUPS` |
-| localStorage keys | 18 | `ums…` literals in `web-app/` |
+| localStorage keys | 19 | `ums…` literals in `web-app/` |
 | Invariant library entries | 290 | `.cycle/config.md` |
 | Regression scenarios (S*) | 113 | `.cycle/config.md` |
 

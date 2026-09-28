@@ -13411,8 +13411,9 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
   });
 
   test('R3 #5: scratchpad client — named modal, flush-on-close, visible failed autosave, A12 load failure', () => {
-    assert.ok(/ensureOverlay\('cn-scratch-overlay', \{ label: 'Scratchpad', onClose: cnCloseScratchpadModal_ \}\)/.test(cn),
-      'A14-named dialog with a close hook');
+    // 22post B-2b: a NAMED, NON-modal dialog (the floating panel), not an overlay.
+    assert.ok(/setAttribute\('role', 'dialog'\)/.test(cn) && /setAttribute\('aria-modal', 'false'\)/.test(cn) &&
+      /setAttribute\('aria-labelledby', 'cn-scratch-title'\)/.test(cn), 'A14-named, non-modal dialog');
     assert.ok(/aria-label="Scratchpad contents"/.test(cn), 'the textarea is named (INV-195)');
     const close = strip(extractFunction('cn/script_callnotes.html', 'cnCloseScratchpadModal_'));
     assert.ok(/if \(CN_SCRATCH\.dirty\) \{[\s\S]*cnScratchSave_\(true\)/.test(close),   // C6: captures `latest` first
@@ -28905,6 +28906,85 @@ test('A-7: a manager\'s Dept Requests summary is TEAM-WIDE (timed resolves only 
     'the top row stacks in the pop-out AND at narrow widths (g50)');
   const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
   assert.ok(/teamKpis: \{ open: /.test(mock) && /createdMs: new Date\(daysAgo/.test(mock), 'the fixture carries teamKpis and createdMs (INV-185)');
+});
+
+// 22post Batch B — the floating, formatted Scratchpad
+console.log('\n22post Batch B — floating Scratchpad, formatting');
+// The ONE case table both sanitizers are held to (the DOM harness drives the
+// client twin against the same expectations — a drift only drops formatting,
+// but it must be visible).
+const SCRATCH_SANITIZE_CASES = [
+  ['<b>bold</b> and <i>it</i> <u>u</u>', '<b>bold</b> and <i>it</i> <u>u</u>'],
+  ['<img src=x onerror="alert(1)">hi', 'hi'],
+  ['<script>alert(1)</script>ok', 'ok'],
+  ['<span class="cn-sp-c-red" onclick="x()">red</span>', '<span class="cn-sp-c-red">red</span>'],
+  ['<span class="evil cn-sp-s-large">big</span>', '<span class="cn-sp-s-large">big</span>'],
+  ['<span style="color:red">plain</span>', 'plain'],
+  ['<a href="javascript:alert(1)">link</a>', 'link'],
+  ['<ul><li>one</li><li>two</li></ul>', '<ul><li>one</li><li>two</li></ul>'],
+  ['<div>line<br>two</div>', '<div>line<br>two</div>'],
+  ['<b onmouseover="x()">t</b>', '<b>t</b>'],
+  ['a &amp; b &lt; c', 'a &amp; b &lt; c'],
+];
+
+test('B-2c: the server stores the Scratchpad through an ALLOWLIST — formatting kept, everything else dropped (driven)', () => {
+  const ctx = vm.createContext({ String });
+  const src = serverSource();
+  ['SCRATCH_ALLOWED_TAGS_', 'SCRATCH_CLASS_RE_'].forEach((n) => {
+    const m = new RegExp('const ' + n + ' = [^\\n]*;').exec(src);
+    assert.ok(m, n + ' declared');
+    vm.runInContext(m[0].replace(/^const /, 'var '), ctx);
+  });
+  vm.runInContext(extractRawFunction('Code.js', 'scratchpadSanitizeHtml_'), ctx);
+  SCRATCH_SANITIZE_CASES.forEach(([inp, want]) => assert.strictEqual(ctx.scratchpadSanitizeHtml_(inp), want, inp));
+  assert.strictEqual(ctx.scratchpadSanitizeHtml_('1 < 2 & 3 > 2'), '1 &lt; 2 &amp; 3 &gt; 2', 'bare < > & in text are escaped');
+  assert.strictEqual(ctx.scratchpadSanitizeHtml_('<span class="x">a</span></span>b'), 'ab', 'a dropped span drops its own close, never an unmatched one');
+  const save = stripJsComments_(extractRawFunction('Code.js', 'saveMyScratchpad'));
+  assert.ok(/isHtml \? scratchpadSanitizeHtml_\(content\)/.test(save), 'an html save is sanitized BY THE SERVER');
+  assert.ok(save.indexOf('scratchpadSanitizeHtml_(content)') < save.indexOf('SCRATCHPAD_MAX_CHARS'), 'and the cap counts the stored (sanitized) text');
+  assert.ok(/getRange\('C1'\)\.setValue\(sheetSafe_\(isHtml \? 'html' : 'text'\)\)/.test(save), 'the format is recorded beside it');
+  assert.ok(/format: fmt/.test(extractRawFunction('Code.js', 'getMyScratchpad')), 'and read back');
+  const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.ok(/\.saveMyScratchpad\(clean, 'html'\)/.test(extractFnFrom(cn, 'cnScratchSave_')), 'the client saves sanitized html, marked html');
+  assert.ok(/saveMyScratchpad\('<b>TEST_SCRATCH<\/b>/.test(fs.readFileSync(path.join(PA_WEB, 'Tests.js'), 'utf8')), 'the editor round-trip covers the html path');
+});
+
+test('B-2b: ONE drag helper — clamped to the viewport, pointer events, and both email composers use it (driven)', () => {
+  const s2 = buildSandbox([]);
+  const clamp = loadFunction(s2, 'script_core.html', 'dragClamp_');
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  assert.deepStrictEqual(J(clamp(-50, -20, 300, 200, 1000, 800)), { x: 0, y: 0 }, 'never off the top-left');
+  assert.deepStrictEqual(J(clamp(900, 700, 300, 200, 1000, 800)), { x: 700, y: 600 }, 'never off the bottom-right');
+  assert.deepStrictEqual(J(clamp(10, 10, 1200, 900, 1000, 800)), { x: 0, y: 0 }, 'a panel bigger than the window pins to the corner');
+  const core = fs.readFileSync(path.join(PA_WEB, 'script_core.html'), 'utf8');
+  const ds = extractFnFrom(core, 'dragStart_');
+  assert.ok(/'pointermove'/.test(ds) && /pointercancel/.test(ds) && /dragClamp_\(/.test(ds), 'pointer events, clamped');
+  assert.ok(/closest\('button, input, select, textarea, a, \[contenteditable="true"\]'\)/.test(ds), 'never starts a drag from a control in the handle');
+  const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
+  ['cnStartDragModal_', 'cnStartDragExtModal_'].forEach((fn) => {
+    const b = extractFnFrom(cn, fn);
+    assert.ok(/dragStart_\(e, document\.getElementById/.test(b) && !/mousemove/.test(b), fn + ' uses the shared helper');
+  });
+  assert.ok(!/onmousedown="cnStartDrag/.test(cn) && /onpointerdown="cnStartDragModal_\(event\)"/.test(cn), 'the handles listen for pointerdown (touch included)');
+  // The non-modal panel is exempt from the modal focus trap AND a dialog's Enter.
+  assert.ok(/closest\('\.cn-float-panel'\)\) return;/.test(core) && /closest\('#kb-drawer, \.cn-float-panel'\)\) return;/.test(core),
+    'the focus trap and the dialog Enter both let the Scratchpad keep focus');
+});
+
+test('B-2b: the Scratchpad remembers where it was left, clamped to THIS window (driven)', () => {
+  const s2 = buildSandbox([]);
+  loadFunction(s2, 'script_core.html', 'dragClamp_');
+  vm.runInContext('var CN_SCRATCH_MIN = { w: 300, h: 260 };', s2);
+  const fit = loadFunction(s2, 'cn/script_callnotes.html', 'cnScratchGeomFor_');
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  assert.deepStrictEqual(J(fit({ x: 1500, y: 40, w: 500, h: 400 }, 1024, 768)), { x: 524, y: 40, w: 500, h: 400 }, 'a pad left far right comes back on screen');
+  assert.deepStrictEqual(J(fit({ x: 0, y: 0, w: 900, h: 900 }, 480, 800)), { x: 0, y: 0, w: 464, h: 784 }, 'shrunk to fit the pop-out');
+  assert.deepStrictEqual(J(fit({ x: 0, y: 0, w: 100, h: 50 }, 1024, 768)), { x: 0, y: 0, w: 300, h: 260 }, 'never below the minimum');
+  assert.strictEqual(fit(null, 1024, 768), null, 'nothing saved = the default corner');
+  const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.ok(/var CN_SCRATCH_GEOM_KEY = 'umsScratchGeom';/.test(cn), 'one ums… key');
+  const save = extractFnFrom(cn, 'cnScratchSaveGeom_'), apply = extractFnFrom(cn, 'cnScratchApplyGeom_');
+  assert.ok(/try \{ localStorage\.setItem/.test(save) && /try \{ g = JSON\.parse\(localStorage\.getItem/.test(apply), 'every read and write in a try/catch (g112)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

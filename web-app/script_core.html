@@ -2822,7 +2822,7 @@ function uiConfirm(opts) {
         // is up — an Enter aimed at the drawer's search box used to confirm a
         // danger dialog (delete punch / deny PTO) from a keystroke that never
         // targeted it. Let the drawer keep its Enter.
-        if (e.target && e.target.closest && e.target.closest('#kb-drawer')) return;
+        if (e.target && e.target.closest && e.target.closest('#kb-drawer, .cn-float-panel')) return;   // 22post B-2b: the Scratchpad keeps its Enter too
         // Enter activates the FOCUSED button: a keyboard user who Tabs to
         // Cancel and presses Enter must get cancel — confirming from the
         // Cancel button fired destructive actions (delete punch, deny PTO)
@@ -3029,6 +3029,50 @@ function closeOverlay(el) {
  *  append to <body>, so DOM order is stacking order — the same rule the focus
  *  trap below uses (the two previously disagreed: Escape closed the FIRST
  *  match, i.e. a static base modal underneath a stacked dialog). */
+// ── Shared drag helper (22post B-2b) ────────────────────────────────────────
+// ONE implementation for every draggable panel: the two email composers and
+// the floating Scratchpad. Pointer events (mouse, pen AND touch — the old
+// composer handlers were mouse-only), the element kept inside the viewport,
+// and an onEnd callback so a panel can remember where it was left. Never
+// starts from a control inside the handle, so the handle's own buttons work.
+/** PURE — clamp a panel's top-left so the whole panel stays on screen (a panel
+ *  larger than the viewport pins to 0). */
+function dragClamp_(x, y, w, h, vw, vh) {
+  return {
+    x: Math.round(Math.min(Math.max(0, x), Math.max(0, vw - w))),
+    y: Math.round(Math.min(Math.max(0, y), Math.max(0, vh - h))),
+  };
+}
+function dragStart_(e, el, opts) {
+  opts = opts || {};
+  if (!e || !el) return;
+  if (e.button != null && e.button !== 0) return;
+  var t = e.target;
+  if (t && t.closest && t.closest('button, input, select, textarea, a, [contenteditable="true"]')) return;
+  var rect = el.getBoundingClientRect();
+  var sx = e.clientX, sy = e.clientY, ox = rect.left, oy = rect.top;
+  el.style.position = 'fixed';
+  el.style.left = ox + 'px'; el.style.top = oy + 'px';
+  el.style.right = 'auto'; el.style.bottom = 'auto'; el.style.margin = '0';
+  var usePointer = (typeof window.PointerEvent !== 'undefined') && e.type && e.type.indexOf('pointer') === 0;
+  var moveEv = usePointer ? 'pointermove' : 'mousemove', upEv = usePointer ? 'pointerup' : 'mouseup';
+  function onMove(ev) {
+    var p = dragClamp_(ox + ev.clientX - sx, oy + ev.clientY - sy, el.offsetWidth, el.offsetHeight,
+      window.innerWidth, window.innerHeight);
+    el.style.left = p.x + 'px'; el.style.top = p.y + 'px';
+  }
+  function onUp() {
+    document.removeEventListener(moveEv, onMove);
+    document.removeEventListener(upEv, onUp);
+    if (usePointer) document.removeEventListener('pointercancel', onUp);
+    if (typeof opts.onEnd === 'function') { try { opts.onEnd(el.getBoundingClientRect()); } catch (_) {} }
+  }
+  document.addEventListener(moveEv, onMove);
+  document.addEventListener(upEv, onUp);
+  if (usePointer) document.addEventListener('pointercancel', onUp);
+  e.preventDefault();
+}
+
 function topOpenOverlay_() {
   var opens = document.querySelectorAll('.overlay.open');
   return opens.length ? opens[opens.length - 1] : null;
@@ -3087,6 +3131,9 @@ document.addEventListener('focusin', function (e) {
   // can read reference material while composing — yanking focus out of its
   // search box would make it unusable mid-modal.
   if (e.target && e.target.closest && e.target.closest('#kb-drawer')) return;
+  // 22post B-2b: the floating Scratchpad (.cn-float-panel) is NON-modal too —
+  // it exists to be typed in while a note (or the composer) is open.
+  if (e.target && e.target.closest && e.target.closest('.cn-float-panel')) return;
   // F(cycle-8): hover-opened day popovers (.overlay.open.hover-mode — the
   // Time/PTO calendar) are NOT modal: the rep merely rested the pointer on a
   // cell, and trapping focus yanked Tab / month-nav clicks into the popover's

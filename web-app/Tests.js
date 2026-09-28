@@ -7174,6 +7174,7 @@ function test_scratchpad_saveReadRoundTrip() {
     _assertTrue(isFinite(save.updatedAtMs) && save.updatedAtMs > 0, 'save returns the ms stamp');
     _assertEq(read.content, marker, 'read returns the EXACT text — the @ format defeats cell coercion');
     _assertEq(read.updatedAtMs, save.updatedAtMs, 'stamp round-trips as a number');
+    _assertEq(read.format, 'text', 'a plain-text save is marked text');
     // Over-cap REFUSES (never truncates) and the stored content is untouched.
     let big, after;
     _asUser(_TEST_INDIA_EMAIL, function () {
@@ -7182,6 +7183,15 @@ function test_scratchpad_saveReadRoundTrip() {
     });
     _assertContains(big.error, 'limit', 'over-cap save refused with an actionable error');
     _assertEq(after.content, marker, 'a refused save leaves the stored content untouched');
+    // 22post B-2c: a formatted save is sanitized by the SERVER and marked html.
+    let hsave, hread;
+    _asUser(_TEST_INDIA_EMAIL, function () {
+      hsave = saveMyScratchpad('<b>TEST_SCRATCH</b><img src=x onerror=alert(1)><script>x()</script>', 'html');
+      hread = getMyScratchpad();
+    });
+    _assertEq(hsave.success, true, 'the html save succeeds');
+    _assertEq(hread.format, 'html', 'and is marked html');
+    _assertEq(hread.content, '<b>TEST_SCRATCH</b>', 'the server kept the allowlisted markup and dropped the rest');
     // Unenrolled rep: the enrollment error, nothing written.
     let ph;
     _asUser(_TEST_PH_EMAIL, function () { ph = saveMyScratchpad('x'); });

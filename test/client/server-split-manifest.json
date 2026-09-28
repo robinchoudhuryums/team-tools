@@ -1363,6 +1363,21 @@
     "getDeptRequests"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-28",
+   "why": "22post B-2c: scratchpadSanitizeHtml_ + its allowlist constants",
+   "added": [
+    "SCRATCH_ALLOWED_TAGS_",
+    "SCRATCH_CLASS_RE_",
+    "scratchpadSanitizeHtml_"
+   ],
+   "removed": [],
+   "changed": [
+    "getMyScratchpad",
+    "saveMyScratchpad"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2991,6 +3006,16 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "eace9878ff3dfda3"
+  },
+  "SCRATCH_ALLOWED_TAGS_": {
+   "file": "30_callnotes.js",
+   "kind": "const",
+   "sha": "fa89d942812e3b3e"
+  },
+  "SCRATCH_CLASS_RE_": {
+   "file": "30_callnotes.js",
+   "kind": "const",
+   "sha": "c79a8902c3788643"
   },
   "SELF_TEST_RESULT_PROP": {
    "file": "00_config.js",
@@ -5310,7 +5335,7 @@
   "getMyScratchpad": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "8213605b3f446654"
+   "sha": "012272addf8644f9"
   },
   "getMySentForms": {
    "file": "61_forms.js",
@@ -7600,7 +7625,7 @@
   "saveMyScratchpad": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "54366856bc895ebd"
+   "sha": "25e10831267e1b69"
   },
   "saveQaMembers": {
    "file": "90_qa.js",
@@ -7656,6 +7681,11 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "81f48d8e0cac462f"
+  },
+  "scratchpadSanitizeHtml_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "38cca7badad104d5"
   },
   "scratchpadSheet_": {
    "file": "30_callnotes.js",
