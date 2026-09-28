@@ -642,7 +642,7 @@ function drMgrStatsHtml_(data) {
         '<th class="dr-num">Avg</th><th class="dr-num">Median</th>' +
         '<th class="dr-num" title="Resolved rows that carry no reply time: marked in the app, or logged before resolution tracking recorded how">Not timed</th></tr></thead>' +
         '<tbody>' + statRows + '</tbody></table>' +
-        '<div style="font-size:11px;color:var(--muted-2);margin:6px 0 0">Avg and Median count email-link resolves only — a request marked resolved in the app is not a timed reply.</div>'
+        '<div style="font-size:11px;color:var(--muted-2);margin:6px 0 0">Avg and Median count resolves by the email link or by the department’s reply — a request marked resolved in the app is not a timed reply.</div>'
     : '<div class="dr-empty">No requests recorded yet.</div>';
 
   return '<div id="dr-mgr-stats">' +
