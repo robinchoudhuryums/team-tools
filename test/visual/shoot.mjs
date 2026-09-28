@@ -76,6 +76,11 @@ const MANUAL_COPY = "try { Object.defineProperty(navigator, 'clipboard', { value
 const SCENARIOS = [
   ['clock-light-wide',      { tool: 'timeClock', tab: 'clock' },      WIDE, 'light', ''],
   ['clock-dark-wide',       { tool: 'timeClock', tab: 'clock' },      WIDE, 'dark',  ''],
+  // 22post E — Customize dashboard: the panel open mid-edit (Spanish hidden,
+  // Your numbers widened), on desktop and phone; and a saved custom layout.
+  ['dash-customize-light-wide', { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '', "clkDashOpenCustomize_();clkDashCustSet_(3,'show',false);clkDashCustSet_(1,'width','full')"],
+  ['dash-customize-dark-mobile', { tool: 'timeClock', tab: 'clock' }, MOBILE, 'dark', '', "clkDashOpenCustomize_();clkDashCustSet_(3,'show',false)"],
+  ['dash-custom-layout-light-wide', { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '', "clkDashWriteOwn_({items:[{id:'needsYou',show:true,width:'half'},{id:'teammates',show:true,width:'half'},{id:'mine',show:true,width:'full'},{id:'requests',show:true,width:'half'},{id:'punches',show:true,width:'half'},{id:'team',show:false,width:'half'},{id:'spanish',show:false,width:'half'}]});clkDashRepaintView_()"],
   // Operator 2026-08-31 — the rep forgot to punch in and has a request
   // AWAITING approval: the chip must be visible above the punch buttons, which
   // is the whole point (it is what stops them punching again "to be safe").
