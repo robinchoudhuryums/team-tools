@@ -1133,11 +1133,11 @@
   .cn-scratch-editor[aria-disabled="true"] { opacity: .65; }
   .cn-scratch-editor:empty::before { content: attr(data-placeholder); color: var(--muted-2); }
   .cn-scratch-editor ul, .cn-scratch-editor ol { margin: 4px 0; padding-left: 22px; }
-  .cn-sp-c-red    { color: var(--danger); }
-  .cn-sp-c-amber  { color: var(--warning-deep); }
-  .cn-sp-c-green  { color: var(--success-deep); }
-  .cn-sp-c-blue   { color: var(--info-deep); }
-  .cn-sp-c-purple { color: var(--intake-pmd); }
+  .cn-sp-c-red    { color: var(--danger); }   /* each token flips with the theme */
+  .cn-sp-c-amber  { color: var(--warn); }
+  .cn-sp-c-green  { color: var(--good); }
+  .cn-sp-c-blue   { color: var(--info); }
+  .cn-sp-c-purple { color: var(--intake-pap); }
   .cn-sp-s-small  { font-size: .85em; }
   .cn-sp-s-large  { font-size: 1.3em; }
   .cn-scratch-hint { font-size: 10.5px; color: var(--muted-2); margin-top: 6px; }
