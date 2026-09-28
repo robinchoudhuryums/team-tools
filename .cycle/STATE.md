@@ -10,7 +10,7 @@ Scope: operator notes — Call Notes (Close Order, Scratchpad), Dashboard (live
 view, widgets), Dept Requests (reply-resolution, sort/filter, layout), Spanish
 Inbox (assign notifications)
 Test Command: manual
-Estimates: Batch A (1 Close reason · 2a Scratchpad fixes · 6 DR sort/filter · 7 DR manager layout): M (~6 h) — 1 S 1.5h · 2a S 1.5h · 6 S 1.5h · 7 S 1.5h — written BEFORE the first edit | Batch A Actual: ~3 h · Batch B (2b floating Scratchpad panel · 2c formatting toolbar): M–L (~7 h) — 2b M 3h · 2c M–L 4h — written BEFORE the first edit | Batch B Actual: ~2.5 h · Batch C (8 Spanish assign → email + Needs-you · 3 presence on the live view): M (~6 h) — 8 M 3.5h · 3 M 2.5h — written BEFORE the first edit | Batch C Actual: ~3 h · Batch D (Dept Request reply = resolution): L (~8 h) — D1 Reply-To + thread id S 1.5h · D2 hourly reply scan + the four rules M 3.5h · D3 Responded / Mark unresolved server + UI M 2.5h · schema + fixtures S 0.5h — written BEFORE the first edit
+Estimates: Batch A (1 Close reason · 2a Scratchpad fixes · 6 DR sort/filter · 7 DR manager layout): M (~6 h) — 1 S 1.5h · 2a S 1.5h · 6 S 1.5h · 7 S 1.5h — written BEFORE the first edit | Batch A Actual: ~3 h · Batch B (2b floating Scratchpad panel · 2c formatting toolbar): M–L (~7 h) — 2b M 3h · 2c M–L 4h — written BEFORE the first edit | Batch B Actual: ~2.5 h · Batch C (8 Spanish assign → email + Needs-you · 3 presence on the live view): M (~6 h) — 8 M 3.5h · 3 M 2.5h — written BEFORE the first edit | Batch C Actual: ~3 h · Batch D (Dept Request reply = resolution): L (~8 h) — D1 Reply-To + thread id S 1.5h · D2 hourly reply scan + the four rules M 3.5h · D3 Responded / Mark unresolved server + UI M 2.5h · schema + fixtures S 0.5h — written BEFORE the first edit | Batch D Actual: ~3.5 h
 Subsystem cycles since last Seams audit: 2 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25). The cadence is every 4.
 Updated: 2026-09-28
 
@@ -94,7 +94,7 @@ Updated: 2026-09-28
   default, so the Dashboard is never empty.
 
 ## In progress (facts to carry forward — NOT judgments)
-- Batches A, B and C DONE and pushed (blocks `22post-A-…` / `22post-B-…` / `22post-C-broad-implement.md`); NOT deployed. Next: Batch D (Dept Request reply = resolution).
+- Batches A–D DONE and pushed (blocks `22post-{A,B,C,D}-broad-implement.md`); A–C merged (PR #274), D on the branch; none deployed. Next: Batch E (Dashboard widgets).
 
 ## Completed this cycle
 - A-1 | 00_config.js, 30_callnotes.js, cn/script_callnotes.html | a Close Order requires a reason (preset list or Other typed); server refuses on preview + send; win-back keys on the preset
@@ -104,10 +104,12 @@ Updated: 2026-09-28
 - B-2b | script_core.html, cn/script_callnotes.html | the Scratchpad is a floating non-modal panel (drag, resize, remembered geometry, Escape inside only); one shared pointer drag helper, the composers use it
 - B-2c | cn/script_callnotes.html, 30_callnotes.js | formatting toolbar; allowlisted html stored (server sanitizes); legacy text converts; size counter
 - C-8 | 51_spanish.js, 20_timeclock.js, metrics/script_metrics.html, tc/script_clock.html | a Spanish assignment emails the assignee (PHI-free, one summary per assignee per action, never the actor) and puts ONE `spanish` item on their Needs-you list; claim/release/resolve/auto-assign bust it
+- D | 10_core.js, 30_callnotes.js, 50_deptrequests.js, metrics/script_deptrequests.html | a department's reply resolves its request: the send records its Gmail thread + the deployer mailbox on Reply-To; an hourly rider applies the four rules (resolve, or "Responded — needs a look"); Mark unresolved + Recently resolved; a reply is a timed response
 - C-3 | 20_timeclock.js, tc/script_manager.html, styles.html | presenceDisplay_: non-Philippines + active + not clocked in → IN (manager card: "in by app activity · no clock-in · seen"); Philippines → amber flag with last-seen; self never; the peer view keeps four keys
 
 ## Pending / not yet done
-- Batches D–E above, in order. Deploy Batches A + B + C (C: confirm the Philippines reps' PayCycle reads `biweekly` — non-blocking).
+- Batch E. Deploy Batches A–D (C: confirm the Philippines reps' PayCycle reads `biweekly`; D: tell the departments a reply now resolves — both non-blocking).
+- Docs owed for Batch D (its block's DOCUMENTATION UPDATES NEEDED) — a /sync-docs pass.
 - Docs for Batches A, B and C DONE (/sync-docs 2026-09-28: modules, design decisions ×4, gotchas g33/g100/g116 amended, operator-state column E + Close reasons + Spanish notices, operator log, harness log, INV-304..310, S119–S121 + steps on S74/S14/S10, README).
 - **Cycle 22's regression walks — NOT confirmed** (the deploy and its
   after-deploy steps were). The per-batch walks are in each `22-*` block and
@@ -150,6 +152,8 @@ Carried from cycle 22 (full list in its HISTORY block, "Open follow-on items"):
   range does not reach the server-derived table/cards.
 - **Batch B follow-ons (22post-B block):** no pressed state on the toolbar; no
   visual of formatted content; a ui-dialog can open beneath the panel (z 56).
+- **Batch D follow-ons (22post-D block):** the scan's counts are only logged; a
+  department replying from outside the domain and the roster stays unseen (by design).
 - **Batch C follow-ons (22post-C block):** no DOM harness drives renderManagerView;
   the manager fixture's Leo Kim is `not_in` with a ClockOut punch (a shape the
   server cannot produce); no toast on the assignee's open window.
@@ -175,7 +179,6 @@ Carried from cycle 22 (full list in its HISTORY block, "Open follow-on items"):
   Tasks" means the Dashboard's Needs-you list.
 
 ## Where I left off
-Batches A, B and C are committed and pushed, not deployed. Next:
-`/broad-implement Batch D` (Dept Request reply = resolution, the four rules,
-"Responded — needs a look", Mark unresolved) — record its estimate here before
-the first edit. A + B + C docs are synced (PR from this branch).
+Batches A–D are committed and pushed (A–C merged in PR #274; D on the branch),
+none deployed. Next: `/broad-implement Batch E` (Dashboard widgets) — record its
+estimate here before the first edit; /sync-docs for D when convenient.
