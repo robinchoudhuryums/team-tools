@@ -10,6 +10,29 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-28 — 22post: the operator's testing notes, Batches D–E
+
+**Adds one auto-managed Script Property and a feature toggle; no migration.**
+`DASH_TEAM_LAYOUTS` holds the managers' team-default Dashboard layouts (written
+from the Customize panel). The `deptReplyResolve` toggle (Admin → Config →
+feature toggles) is ON by default. The DeptRequests tab gains four trailing
+columns (ThreadId, ReopenedAt, RepliedAt, ReplyVerdict — the header self-heals),
+and the browser key `umsDashLayout` holds a rep's own layout. The reply scan
+rides the existing hourly dispatcher, so `installAutomationTriggers()` is not
+needed. NOT yet deployed: ship with A–C on the ordinary `clasp push -f` + New
+version.
+
+**After deploy (nothing blocks it).** Tell the departments that replying to a
+request email now resolves it unless the reply asks a question. Requests sent
+before the deploy carry no thread and are never resolved by reply.
+
+**What changes for the operator.**
+- **D** — Dept Requests: a department's reply resolves (or marks "Responded —
+  needs a look"); Mark unresolved; a Recently resolved list; a reply counts as a
+  response time; the email's Reply-To adds the deployer's mailbox.
+- **E** — the Dashboard's widgets can be shown, hidden, reordered and resized
+  per person, and a manager can set a team default.
+
 ## 2026-09-28 — 22post: the operator's testing notes, Batches A–C
 
 **Adds no Script Property and no one-time migration.** Three things are new

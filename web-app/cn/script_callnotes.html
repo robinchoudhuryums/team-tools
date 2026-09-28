@@ -11502,6 +11502,7 @@ var CN_DIGEST_LABELS_ = {
   exportCheck: 'Daily ADP export check',
   automationHealth: 'Automation-health failure digest',
   spanishAutoAssign: 'Spanish Inbox auto-assign',
+  deptReplyScan: 'Dept Request reply scan',
 };
 // A2 (cycle 22) — the automationProblems_ kinds cnHealthFindings_ renders with
 // a branch of its own. Every other kind the server ships renders from
@@ -11810,6 +11811,7 @@ function cnRenderHealthPanel_(res) {
     selfTest: { label: 'Nightly self-test', expect: 'daily 1am — smoke on prod, full suite on the dev instance' },
     coachingRecap: { label: 'Weekly coaching recap', expect: 'Friday 8am — agent-facing recap of non-critical coaching; stale past 8d' },
     spanishAutoAssign: { label: 'Spanish Inbox auto-assign', expect: 'hourly in business hours while the spanishAutoAssign toggle is on; stale past 2h' },
+    deptReplyScan: { label: 'Dept Request reply scan', expect: 'hourly — reads open requests\' threads while the deptReplyResolve toggle is on; heartbeats while off; stale past 2h' },
     // F-20 (2026-09-18) — the three heartbeat-only daily jobs (no audit row).
     missedPunch: { label: 'Daily missed-punch alerts', expect: 'daily 8am — stale past 26h; heartbeats even on a morning with no missed punch' },
     exportCheck: { label: 'Daily ADP export check', expect: 'daily 12pm — stale past 26h; the export itself lands only at a period end (AdpExportAuto)' },

@@ -4725,3 +4725,32 @@ pick them up without re-deriving the context.
   2026-08-28 policy and cannot separate the teams. Accepted cost: a
   non-Philippines rep who opens the app on a day off reads IN for up to the
   stamp's lifetime.
+- <a id="a-department-reply-resolves-by-four-rules"></a>**A department's reply resolves its request by four rules, and a question never does (22post D, operator 2026-09-27).** The operator asked that a department's reply count as a resolution, but not
+  one that asks a question, and what else could be required. The four rules are
+  one pure function (`drReplyVerdict_`): after the send and any reopen; not the
+  agent, the deployer / CC mailbox or an automatic sender; from the department
+  (a department address, a roster member of it, or its address's domain — the
+  domain clause was the operator's choice, with Mark unresolved as the
+  recovery); and new text, quoted history and signature removed, that neither
+  asks nor holds. Failing only the last rule is "Responded — needs a look", never
+  a resolve, and the question test deliberately over-matches (a line opening
+  with a question word counts), because a false "needs a look" costs a click and
+  a false resolve hides unfinished work (g159). The reply is read from the
+  mailbox the app runs as, so the send puts that mailbox on Reply-To, and it
+  records the thread id at send time through a Gmail draft (MailApp returns
+  nothing). Gmail is read outside the lock and each decision is applied under it
+  after re-reading the row. Nothing of a reply's text is stored. Rejected: a
+  per-department keyword list (operator upkeep for a small gain) and resolving on
+  any reply (the operator ruled out questions).
+- <a id="the-dashboard-is-a-widget-grid-that-is-never-empty"></a>**The Dashboard is a widget grid resolved own → team default → standard, and it is never empty (22post E, operator 2026-09-27).** The operator wanted customization with an optional manager default and a
+  base everyone falls back to. The widget ids are one registry on each side
+  (`CLK_DASH_WIDGETS`, `DASH_WIDGET_IDS`, pinned equal), and each widget keeps
+  the slot id its loader already painted into, so the change is a frame, not a
+  rewrite, and a hidden widget has no slot and makes no request. One pure
+  resolver (`clkDashResolveLayout_`) normalizes each candidate (unknown or
+  unavailable ids dropped, new widgets appended) and skips one that would show
+  nothing. A rep's layout is stored per browser, the operator's choice; a team
+  default is a compact Script Property keyed by manager email, capped and
+  written through `propSetBounded_`. Rejected: server-stored personal layouts (a
+  property per rep would not fit the store) and drag-to-reorder (up/down buttons
+  are keyboard-complete).

@@ -940,6 +940,8 @@ function renderShell(state) {
       <div class="stg-row"><span class="sb-theme-label">Theme</span>${themeToggle}</div>
       <div class="stg-row"><span class="sb-theme-label">Palette</span>${paletteToggle}</div>
       <div class="stg-row"><span class="sb-theme-label">Alerts</span>${reminderToggle}</div>
+      <div class="stg-row"><span class="sb-theme-label">Dashboard</span>
+        <div class="stg-viewas-btns"><button type="button" class="stg-va-btn" onclick="settingsClose_();if(typeof clkDashOpenCustomize_==='function')clkDashOpenCustomize_()">Customize widgets…</button></div></div>
       ${viewAsRow}
     </div>`;
   const viewAsBanner = VIEW_AS.active ? `

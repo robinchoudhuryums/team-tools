@@ -238,7 +238,47 @@
   .dash-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; margin-bottom: 16px; }
   .dash-pair .dash-card, .dash-pair .card { margin-bottom: 0; }
   .dash-foot { margin-bottom: 0; }   /* Today's Punches + teammate, moved off the left rail */
-  @media (max-width: 1100px) { .dash-pair { grid-template-columns: 1fr; } }
+  /* 22post E — the widget grid. Two columns; a full widget spans both. */
+  .dash-widgets { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+  .dash-w { min-width: 0; }
+  .dash-w-half { grid-column: auto; }
+  .dash-w-full { grid-column: 1 / -1; }
+  .dash-w .dash-card, .dash-w .card { margin-bottom: 0; margin-top: 0; }
+  :root[data-compact] .dash-widgets { grid-template-columns: minmax(0, 1fr); }
+  .dash-cust-row { display: flex; justify-content: flex-end; margin-top: 10px; }
+  /* The Customize dashboard panel. */
+  .dash-cust-modal { max-width: 640px; width: min(640px, calc(100vw - 32px)); }
+  .dash-cust-note { font-size: 12px; color: var(--muted-2); margin: 0 0 12px; line-height: 1.45; }
+  .dash-cust-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--radius-md); }
+  .dash-cust-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--line); }
+  .dash-cust-item:first-child { border-top: none; }
+  .dash-cust-item.is-off .dash-cust-name { color: var(--muted); }
+  .dash-cust-show { display: flex; align-items: flex-start; gap: 10px; flex: 1; min-width: 0; cursor: pointer; }
+  .dash-cust-show input { margin-top: 3px; }
+  .dash-cust-name { font-size: 13px; font-weight: 600; color: var(--ink); min-width: 0; }
+  .dash-cust-desc { display: block; font-size: 11.5px; font-weight: 400; color: var(--muted-2); margin-top: 2px; }
+  .dash-cust-width { display: inline-flex; background: var(--paper-2); border-radius: 8px; padding: 2px; flex: none; }
+  .dash-cust-wbtn { appearance: none; border: 0; background: transparent; cursor: pointer; font: inherit; font-family: var(--mono);
+    font-size: 10px; font-weight: 600; letter-spacing: .04em; color: var(--muted); padding: 4px 9px; border-radius: 6px; }
+  .dash-cust-wbtn.on { background: var(--accent-soft); color: var(--success-deep); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent), transparent 55%); }
+  .dash-cust-move { display: inline-flex; gap: 4px; flex: none; }
+  .dash-cust-mbtn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0;
+    border: 1px solid var(--line); border-radius: 6px; background: var(--paper-card); color: var(--ink); cursor: pointer; }
+  .dash-cust-mbtn:disabled { opacity: .35; cursor: default; }
+  .dash-cust-mbtn:not(:disabled):hover { background: var(--paper-2); }
+  .dash-cust-err { min-height: 18px; font-size: 12px; color: var(--danger-deep); margin: 8px 0 0; }
+  .dash-cust-team { margin-top: 12px; padding: 12px; border: 1px dashed var(--line); border-radius: var(--radius-md); }
+  .dash-cust-team-h { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .dash-cust-team-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+  .dash-cust-team-btns .btn-modal-cancel, .dash-cust-foot .btn-modal-cancel { flex: none; padding: 9px 14px; }
+  .dash-cust-foot .btn-modal-ok { flex: none; min-width: 120px; padding: 9px 18px; }
+  .dash-cust-foot { align-items: center; flex-wrap: wrap; }
+  .dash-cust-grow { flex: 1; }
+  @media (max-width: 560px) {
+    .dash-cust-item { flex-wrap: wrap; }
+    .dash-cust-show { flex-basis: 100%; }
+  }
+  @media (max-width: 1100px) { .dash-pair { grid-template-columns: 1fr; } .dash-widgets { grid-template-columns: minmax(0, 1fr); } }
   /* The dashboard is an app surface, not prose — let it breathe wider than the
      default --content-max so wide monitors aren't mostly empty margin. */
   .view-area:has(#dash-grid) { max-width: 1480px; }
@@ -246,7 +286,9 @@
      carousels, but KEEP the foot (Today's Punches + teammate) so the pinned
      pop-out still shows punches under the clock. */
   :root[data-compact] .dash-grid { grid-template-columns: 1fr; }
-  :root[data-compact] #dash-cards { display: none; }
+  /* 22post E: the metrics / needs-you / extras widgets hide in the pop-out,
+     as #dash-cards did; punches and Team right now stay. */
+  :root[data-compact] .dash-w-hide-compact { display: none; }
   :root[data-compact] .dash-greet-bar { display: none; }
 
   .dash-card { background: var(--paper-card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; }
@@ -539,15 +581,8 @@ function renderClockView(area) {
       </div>
 
       <div class="dash-main" id="dash-main">
-        <div id="dash-needsyou">${clkNeedsYouHtml_(CLK_NEEDS.data)}</div>
-        <div id="dash-cards">${clkDashSkeleton_()}</div>
-        <div class="dash-pair dash-foot">
-          <div class="card">
-            <h2 class="card-label">Today's Punches</h2>
-            ${renderPunchHistory(s.punches)}
-          </div>
-          <div id="teammate-card-slot"></div>
-        </div>
+        ${clkDashWidgetsHtml_(clkDashCurrentLayout_().items, s)}
+        <div class="dash-cust-row"><button type="button" class="dash-open-btn" onclick="clkDashOpenCustomize_()">${icon('settings', 11)} Customize dashboard</button></div>
       </div>
     </div>`;
   bindClockBtns();
@@ -629,6 +664,226 @@ function clkDashSkeleton_() {
   '</div>';
 }
 
+// ── Dashboard widgets (22post E, operator 2026-09-27) ────────────────────────
+// The main column is an ordered grid of WIDGETS; the clock card, punch buttons
+// and shift strip (the rail) stay fixed. Each widget keeps the slot id its
+// loader already paints into, so a hidden widget simply has no slot — and its
+// loader finds none and makes no RPC. The ids MIRROR the server's
+// DASH_WIDGET_IDS (pinned equal); the order below is the BASE layout, which is
+// today's arrangement.
+var CLK_DASH_WIDGETS = [
+  { id: 'needsYou',  label: 'Needs you',        desc: 'Tasks waiting on you, overdue first', width: 'full', compactHide: true },
+  { id: 'mine',      label: 'Your numbers',     desc: 'Your calls — yesterday, month and year to date', width: 'half', compactHide: true },
+  { id: 'team',      label: 'Team numbers',     desc: 'The team (or your department) for the same periods', width: 'half', compactHide: true },
+  { id: 'spanish',   label: 'Spanish Inbox',    desc: 'Open bilingual requests and response times', width: 'half', compactHide: true, needs: 'spanish' },
+  { id: 'requests',  label: 'Dept Requests',    desc: 'Your open and resolved department requests', width: 'half', compactHide: true },
+  { id: 'punches',   label: "Today's punches",  desc: 'Every punch you have made today', width: 'half' },
+  { id: 'teammates', label: 'Team right now',   desc: 'Who is in, on lunch or out', width: 'half' },
+];
+var CLK_DASH_LAYOUT_KEY = 'umsDashLayout';
+function clkDashWidgetDef_(id) {
+  for (var i = 0; i < CLK_DASH_WIDGETS.length; i++) if (CLK_DASH_WIDGETS[i].id === id) return CLK_DASH_WIDGETS[i];
+  return null;
+}
+/** PURE (Node-pinned) — the widget ids this person can have. */
+function clkDashAvailable_(canSp) {
+  return CLK_DASH_WIDGETS.filter(function (w) { return w.needs !== 'spanish' || canSp; }).map(function (w) { return w.id; });
+}
+/** PURE (Node-pinned) — the BASE layout: today's arrangement. A rep without
+ *  the Spanish Inbox gets a full-width Requests card, as before. */
+function clkDashBaseLayout_(canSp) {
+  var avail = clkDashAvailable_(canSp);
+  return { items: CLK_DASH_WIDGETS.filter(function (w) { return avail.indexOf(w.id) >= 0; }).map(function (w) {
+    return { id: w.id, show: true, width: (w.id === 'requests' && !canSp) ? 'full' : w.width };
+  }) };
+}
+/** PURE (Node-pinned) — a stored layout fitted to what this person can have:
+ *  unknown or unavailable ids dropped, duplicates dropped, widths sanitized,
+ *  and any available widget the layout never mentioned appended (shown) — a
+ *  widget added later is not silently missing. null when nothing would show,
+ *  so the caller falls through to the next layout. */
+function clkDashNormalize_(layout, available, base) {
+  var src = layout && Array.isArray(layout.items) ? layout.items : null;
+  if (!src) return null;
+  var seen = {}, items = [];
+  src.forEach(function (it) {
+    var id = it && String(it.id || '');
+    if (!id || available.indexOf(id) < 0 || seen[id]) return;
+    seen[id] = 1;
+    items.push({ id: id, show: it.show !== false, width: it.width === 'full' ? 'full' : 'half' });
+  });
+  ((base && base.items) || []).forEach(function (b) { if (!seen[b.id]) { seen[b.id] = 1; items.push({ id: b.id, show: true, width: b.width }); } });
+  return items.some(function (x) { return x.show; }) ? { items: items } : null;
+}
+/** PURE (Node-pinned) — THE resolution order: the rep's own layout, then their
+ *  manager's team default, then the base. Each candidate is normalized, and
+ *  one that would show nothing is skipped — the Dashboard is never empty. */
+function clkDashResolveLayout_(own, team, canSp) {
+  var avail = clkDashAvailable_(canSp), base = clkDashBaseLayout_(canSp);
+  var o = clkDashNormalize_(own, avail, base);
+  if (o) return { items: o.items, source: 'own' };
+  var t = clkDashNormalize_(team, avail, base);
+  if (t) return { items: t.items, source: 'team' };
+  return { items: base.items, source: 'base' };
+}
+function clkDashReadOwn_() {
+  try { var v = JSON.parse(localStorage.getItem(CLK_DASH_LAYOUT_KEY) || 'null'); return (v && typeof v === 'object') ? v : null; }
+  catch (e) { return null; }   // privacy mode / a corrupt blob — the next layout applies
+}
+function clkDashWriteOwn_(layout) {
+  try {
+    if (layout) localStorage.setItem(CLK_DASH_LAYOUT_KEY, JSON.stringify({ v: 1, items: layout.items }));
+    else localStorage.removeItem(CLK_DASH_LAYOUT_KEY);
+    return true;
+  } catch (e) { return false; }
+}
+function clkDashTeamDefault_() {
+  var d = (typeof empState !== 'undefined' && empState && empState.dashLayouts) || {};
+  return d.team || d.own || null;   // a manager with no manager of their own sees the default they set
+}
+function clkDashCurrentLayout_() {
+  return clkDashResolveLayout_(clkDashReadOwn_(), clkDashTeamDefault_(), !!(empState && empState.canSeeSpanish));
+}
+/** The main column: one slot per SHOWN widget, in order, half or full width. */
+function clkDashWidgetsHtml_(items, s) {
+  var slot = function (id) {
+    if (id === 'needsYou') return '<div id="dash-needsyou">' + clkNeedsYouHtml_(CLK_NEEDS.data) + '</div>';
+    if (id === 'mine' || id === 'team') return '<div id="dash-w-' + id + '">' + clkDashSkelCard_() + '</div>';
+    if (id === 'spanish' || id === 'requests') return '<div id="dash-w-' + id + '">' + clkDashSkelExtra_() + '</div>';
+    if (id === 'punches') return '<div class="card"><h2 class="card-label">Today’s Punches</h2>' + renderPunchHistory((s && s.punches) || []) + '</div>';
+    if (id === 'teammates') return '<div id="teammate-card-slot"></div>';
+    return '';
+  };
+  return '<div class="dash-widgets" id="dash-widgets">' + (items || []).filter(function (it) { return it.show; }).map(function (it) {
+    var def = clkDashWidgetDef_(it.id) || {};
+    return '<section class="dash-w dash-w-' + (it.width === 'full' ? 'full' : 'half') + (def.compactHide ? ' dash-w-hide-compact' : '') +
+      '" data-w="' + esc(it.id) + '" aria-label="' + esc(def.label || it.id) + '">' + slot(it.id) + '</section>';
+  }).join('') + '</div>';
+}
+
+// ── Customize dashboard (the panel) ─────────────────────────────────────────
+// A draft of the layout, edited in place: show/hide, move up/down, half/full.
+// Save writes the rep's own layout (this browser); Reset drops it (the team
+// default or the base applies). A manager can also save the draft as their
+// TEAM default, or clear it. A draft that shows nothing cannot be saved.
+var CLK_DASH_CUST = { draft: null };
+/** PURE (Node-pinned) — the edits. Each returns a NEW items array. */
+function clkDashMove_(items, idx, dir) {
+  var j = idx + dir;
+  if (idx < 0 || j < 0 || j >= items.length) return items.slice();
+  var out = items.slice(), t = out[idx]; out[idx] = out[j]; out[j] = t;
+  return out;
+}
+function clkDashToggle_(items, idx, key, value) {
+  return items.map(function (it, i) { if (i !== idx) return it; var c = { id: it.id, show: it.show, width: it.width }; c[key] = value; return c; });
+}
+function clkDashShownCount_(items) { return (items || []).filter(function (x) { return x.show; }).length; }
+function clkDashSourceText_(source, teamBy) {
+  if (source === 'own') return 'You are using your own layout (saved in this browser).';
+  if (source === 'team') return 'You are using your team’s default' + (teamBy ? ' (set by ' + teamBy + ')' : '') + '.';
+  return 'You are using the standard layout.';
+}
+function clkDashCustListHtml_(items) {
+  var n = items.length;
+  return items.map(function (it, i) {
+    var def = clkDashWidgetDef_(it.id) || { label: it.id, desc: '' };
+    var cid = 'dash-cust-show-' + it.id;
+    return '<li class="dash-cust-item' + (it.show ? '' : ' is-off') + '" data-w="' + esc(it.id) + '">' +
+      '<label class="dash-cust-show" for="' + cid + '"><input type="checkbox" id="' + cid + '"' + (it.show ? ' checked' : '') +
+        ' onchange="clkDashCustSet_(' + i + ',\'show\',this.checked)">' +
+        '<span class="dash-cust-name">' + esc(def.label) + '<span class="dash-cust-desc">' + esc(def.desc) + '</span></span></label>' +
+      '<div class="dash-cust-width" role="group" aria-label="' + esc(def.label) + ' width">' +
+        '<button type="button" class="dash-cust-wbtn' + (it.width === 'half' ? ' on' : '') + '" aria-pressed="' + (it.width === 'half') + '" onclick="clkDashCustSet_(' + i + ',\'width\',\'half\')">Half</button>' +
+        '<button type="button" class="dash-cust-wbtn' + (it.width === 'full' ? ' on' : '') + '" aria-pressed="' + (it.width === 'full') + '" onclick="clkDashCustSet_(' + i + ',\'width\',\'full\')">Full</button>' +
+      '</div>' +
+      '<div class="dash-cust-move">' +
+        '<button type="button" class="dash-cust-mbtn" aria-label="Move ' + esc(def.label) + ' up"' + (i === 0 ? ' disabled' : '') + ' onclick="clkDashCustMove_(' + i + ',-1)">' + icon('chevronUp', 12) + '</button>' +
+        '<button type="button" class="dash-cust-mbtn" aria-label="Move ' + esc(def.label) + ' down"' + (i === n - 1 ? ' disabled' : '') + ' onclick="clkDashCustMove_(' + i + ',1)">' + icon('chevronDown', 12) + '</button>' +
+      '</div></li>';
+  }).join('');
+}
+function clkDashCustPaint_(focusSel) {
+  var list = document.getElementById('dash-cust-list');
+  if (!list || !CLK_DASH_CUST.draft) return;
+  list.innerHTML = clkDashCustListHtml_(CLK_DASH_CUST.draft);
+  var shown = clkDashShownCount_(CLK_DASH_CUST.draft);
+  var err = document.getElementById('dash-cust-err');
+  if (err) err.textContent = shown ? '' : 'Show at least one widget — the Dashboard is never empty.';
+  document.querySelectorAll('#dash-cust-overlay [data-needs-one]').forEach(function (b) { b.disabled = !shown; });
+  if (focusSel) { var f = list.querySelector(focusSel); if (f && !f.disabled) f.focus(); }
+}
+function clkDashCustSet_(idx, key, value) {
+  CLK_DASH_CUST.draft = clkDashToggle_(CLK_DASH_CUST.draft, idx, key, value);
+  var id = CLK_DASH_CUST.draft[idx].id;
+  clkDashCustPaint_(key === 'show' ? '#dash-cust-show-' + id : '[data-w="' + id + '"] .dash-cust-wbtn.on');
+}
+function clkDashCustMove_(idx, dir) {
+  var id = CLK_DASH_CUST.draft[idx] && CLK_DASH_CUST.draft[idx].id;
+  CLK_DASH_CUST.draft = clkDashMove_(CLK_DASH_CUST.draft, idx, dir);
+  // Keep focus on the SAME widget's arrow, now one row over (g141).
+  clkDashCustPaint_('[data-w="' + id + '"] .dash-cust-mbtn:' + (dir < 0 ? 'first-child' : 'last-child'));
+}
+function clkDashRepaintView_() {
+  var area = document.getElementById('view-area');
+  if (area && typeof currentView !== 'undefined' && currentView === 'clock') { renderClockView(area); startClock(); }
+}
+function clkDashOpenCustomize_() {
+  var cur = clkDashCurrentLayout_();
+  CLK_DASH_CUST.draft = cur.items.map(function (x) { return { id: x.id, show: x.show, width: x.width }; });
+  var isMgr = !!(empState && empState.isManager);
+  var d = (empState && empState.dashLayouts) || {};
+  var teamRow = isMgr
+    ? '<div class="dash-cust-team"><div class="dash-cust-team-h">Team default</div>' +
+        '<p class="dash-cust-note">Your team sees this layout until someone saves their own. ' +
+        (d.own ? 'You have a team default saved.' : 'No team default is saved — they see the standard layout.') + '</p>' +
+        '<div class="dash-cust-team-btns"><button type="button" class="btn-modal-cancel" data-needs-one="1" onclick="clkDashCustSaveTeam_(false)">Save as my team’s default</button>' +
+        (d.own ? '<button type="button" class="btn-modal-cancel" onclick="clkDashCustSaveTeam_(true)">Clear team default</button>' : '') + '</div></div>'
+    : '';
+  var ov = ensureOverlay('dash-cust-overlay', { labelledBy: 'dash-cust-title', onClose: function () { CLK_DASH_CUST.draft = null; var o = document.getElementById('dash-cust-overlay'); if (o) o.remove(); } });
+  ov.innerHTML = '<div class="modal dash-cust-modal">' +
+    '<div class="modal-head"><h2 class="modal-title" id="dash-cust-title">Customize dashboard</h2>' +
+      '<button type="button" class="modal-x" aria-label="Close" onclick="closeOverlay(document.getElementById(\'dash-cust-overlay\'))">×</button></div>' +
+    '<p class="dash-cust-note">' + esc(clkDashSourceText_(cur.source, d.teamBy)) + ' The clock, punch buttons and shift strip always stay.</p>' +
+    '<ol class="dash-cust-list" id="dash-cust-list"></ol>' +
+    '<div class="dash-cust-err" id="dash-cust-err" role="alert"></div>' +
+    teamRow +
+    '<div class="modal-footer dash-cust-foot">' +
+      '<button type="button" class="btn-modal-cancel" onclick="clkDashCustReset_()">Reset to ' + (clkDashTeamDefault_() ? 'team default' : 'standard') + '</button>' +
+      '<span class="dash-cust-grow"></span>' +
+      '<button type="button" class="btn-modal-cancel" onclick="closeOverlay(document.getElementById(\'dash-cust-overlay\'))">Cancel</button>' +
+      '<button type="button" class="btn-modal-ok" data-needs-one="1" onclick="clkDashCustSave_()">Save</button>' +
+    '</div></div>';
+  clkDashCustPaint_('.dash-cust-show input');
+}
+function clkDashCustSave_() {
+  var draft = CLK_DASH_CUST.draft;
+  if (!draft || !clkDashShownCount_(draft)) { clkDashCustPaint_(); return; }
+  if (!clkDashWriteOwn_({ items: draft })) { showToast('This browser would not save the layout (private mode?) — nothing changed.', 'toast-error'); return; }
+  closeOverlay(document.getElementById('dash-cust-overlay'));
+  showToast('Dashboard layout saved for this browser.', 'toast-success');
+  clkDashRepaintView_();
+}
+function clkDashCustReset_() {
+  clkDashWriteOwn_(null);
+  closeOverlay(document.getElementById('dash-cust-overlay'));
+  showToast(clkDashTeamDefault_() ? 'Back to your team’s default layout.' : 'Back to the standard layout.', 'toast-success');
+  clkDashRepaintView_();
+}
+function clkDashCustSaveTeam_(clear) {
+  var draft = CLK_DASH_CUST.draft;
+  if (!clear && (!draft || !clkDashShownCount_(draft))) { clkDashCustPaint_(); return; }
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || !res.success) { showToast((res && res.error) || 'Could not save the team default.', 'toast-error'); return; }
+      if (empState) { empState.dashLayouts = empState.dashLayouts || {}; empState.dashLayouts.own = res.layout || null; }
+      showToast(clear ? 'Team default cleared — your team sees the standard layout.' : 'Saved as your team’s default.', 'toast-success');
+      closeOverlay(document.getElementById('dash-cust-overlay'));
+      clkDashRepaintView_();
+    })
+    .withFailureHandler(function (err) { showToast((err && err.message) || 'Could not save the team default.', 'toast-error'); })
+    .saveTeamDashboardLayout(clear ? null : { items: draft });
+}
+
 // ── Same-day localStorage SWR for the metric payloads (operator 2026-08-13:
 // "the metrics cards are also still taking a while") ─────────────────────────
 // The in-memory cache dies with the page, so every reload/tab-open re-paid the
@@ -667,8 +922,8 @@ function clkLoadDashboard_(isMgr) {
   // exactly the window that multiplied the waste (deployer-account quota).
   if (typeof COMPACT_MODE !== 'undefined' && COMPACT_MODE) return;
   CLK_DASH.isMgr = !!isMgr;
-  var host = document.getElementById('dash-cards');
-  if (!host) return;
+  // 22post E: no metrics RPCs when the layout hides both carousels.
+  if (!document.getElementById('dash-w-mine') && !document.getElementById('dash-w-team')) { clkLoadDashboardExtras_(); return; }
   var today = isoDateTz(empTz());
   var need = CLK_DASH_PERIODS.length;
   var seeded = false;
@@ -784,14 +1039,11 @@ function clkBindDashFit_() {
 }
 
 function clkRenderDashboard_() {
-  var host = document.getElementById('dash-cards');
-  if (!host) return;
-  host.innerHTML =
-    '<div class="dash-pair">' +
-      clkDashCarouselHtml_('mine', 'Your numbers') +
-      clkDashCarouselHtml_('team', CLK_DASH.isMgr ? 'Department' : 'Team') +
-    '</div>' +
-    '<div id="dash-extra"></div>';
+  // 22post E: each carousel paints into its own widget slot, when the layout shows it.
+  var mine = document.getElementById('dash-w-mine'), team = document.getElementById('dash-w-team');
+  if (!mine && !team) return;
+  if (mine) mine.innerHTML = clkDashCarouselHtml_('mine', 'Your numbers');
+  if (team) team.innerHTML = clkDashCarouselHtml_('team', CLK_DASH.isMgr ? 'Department' : 'Team');
   clkBindDashFit_();
   requestAnimationFrame(clkDashFitAll_);   // fit mine/team once laid out (sw fits when its extras render)
   clkLoadDashboardExtras_();   // manager Spanish↔Requests switcher / Spanish-rep card
@@ -1044,9 +1296,11 @@ function clkLoadDashboardExtras_() {
   // F(cycle-8 M-12): same compact gate as clkLoadDashboard_ — the extras row
   // is inside the hidden #dash-cards column in the pop-out.
   if (typeof COMPACT_MODE !== 'undefined' && COMPACT_MODE) return;
-  var host = document.getElementById('dash-extra');
-  if (!host) return;
-  var canSp = !!(empState && empState.canSeeSpanish);
+  // 22post E: fetch only what the layout shows.
+  var wantSp = !!document.getElementById('dash-w-spanish');
+  var wantReq = !!document.getElementById('dash-w-requests');
+  if (!wantSp && !wantReq) return;
+  var canSp = !!(empState && empState.canSeeSpanish) && wantSp;
   var today = isoDateTz(empTz());
   // SWR (same as the metrics): paint cached extras instantly, refetch only when
   // stale — so a focus-driven re-render never flashes the loader.
@@ -1080,7 +1334,7 @@ function clkLoadDashboardExtras_() {
   // failed. Same shape as the metrics loader's anyFail -> loadedAt=0.
   // PR 6: Training folded into "Needs you" (getMyPendingTasks), so a
   // non-Spanish rep's extras round is the Requests card alone.
-  var expected = canSp ? 3 : 1;
+  var expected = (canSp ? 2 : 0) + (wantReq ? 1 : 0);
   var anyFail = false;
   var settle = function () {
     if (--expected !== 0) return;
@@ -1105,7 +1359,7 @@ function clkLoadDashboardExtras_() {
   }
   // Dept Requests — everyone (a rep sees their own open/resolved; a manager the
   // team aggregate).
-  google.script.run
+  if (wantReq) google.script.run
     .withSuccessHandler(function (r) { CLK_DASH.extra.requests = r || { error: 'No data' }; fresh(); render(); })
     .withFailureHandler(function () { failSet('requests', { error: 'Dept requests unavailable' }); render(); })
     .getDeptRequests();
@@ -1115,16 +1369,15 @@ function clkLoadDashboardExtras_() {
 // Requests card alone for everyone else (PR 6 — Training folded into "Needs
 // you"; the old Training card + clkDashTrainingCard_ are retired, INV-184).
 function clkRenderDashboardExtras_() {
-  var host = document.getElementById('dash-extra');
-  if (!host) return;
+  // 22post E: the Spanish and Requests cards paint into their own widget slots.
+  var spHost = document.getElementById('dash-w-spanish'), reqHost = document.getElementById('dash-w-requests');
+  if (!spHost && !reqHost) return;
   var canSp = !!(empState && empState.canSeeSpanish), x = CLK_DASH.extra || {};
   var card = function (label, body) {
     return '<div class="dash-card"><div class="dash-card-head"><h2 class="dash-seclabel">' + esc(label) + '</h2></div>' + body + '</div>';
   };
-  var req = card('Requests', clkDashRequestsCard_(x.requests));
-  host.innerHTML = canSp
-    ? '<div class="dash-pair">' + card('Spanish Inbox', clkDashSpanishCard_(x.spanish, x.spanishPending)) + req + '</div>'
-    : '<div class="dash-pair dash-pair-single">' + req + '</div>';
+  if (reqHost) reqHost.innerHTML = card('Requests', clkDashRequestsCard_(x.requests));
+  if (spHost && canSp) spHost.innerHTML = card('Spanish Inbox', clkDashSpanishCard_(x.spanish, x.spanishPending));
 }
 
 // ── "Needs you" (design handoff PR 6, T1/T6) ────────────────────────────────

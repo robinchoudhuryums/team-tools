@@ -3025,6 +3025,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   splits on commas too now. Parse the shape the way the language does, not
   the way the file happens to be laid out.
 
+  **A TENTH direction (22post E, 2026-09-28): an EARLIER guard in the same
+  function can shield the line a pin exists for.** The "a hidden widget is not
+  fetched" check hid BOTH extras widgets, so the function's first guard ("neither
+  is shown → return") ran before the per-widget gate the pin was written for;
+  deleting that gate left the pin green. Drive the case where only the guarded
+  line decides (one neighbour shown, one hidden).
+
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
   done (operator 2026-09-15).** The reconcile pass (g115) makes late punch data
@@ -4515,3 +4522,21 @@ failed (…). This says nothing about …". Verify: the A5 pin, driven over
   how a measured quantity is computed and anything stored is compared against
   it. Verify: the M6 pins (the legacy blob read raw, wall-clock hours, the unit
   not stored).
+
+<a id="g159-a-heuristic-that-closes-work-fails-toward-a-look"></a>
+
+- **A heuristic that CLOSES work must fail toward "a person should look"
+  (22post D, 2026-09-28).** The Dept Request reply scan resolves a request when
+  the department's reply reads as done. Its first question test looked for a
+  "?" and a list of hold phrases, and a reply of "Is this the right patient"
+  (no question mark) would have RESOLVED the request. A resolve hides the work
+  from every list; a false "needs a look" costs one click. So the test
+  over-matches on purpose: a line opening with a question word counts too, an
+  empty new text (only quoted history) is "needs a look", and anything failing
+  the department or timing rules is not a reply at all. RULE: when an automatic
+  rule closes, resolves, approves or dismisses something, pick the direction of
+  its errors deliberately — the costly error is the silent close — and make the
+  ambiguous cases land on the visible side. Fires when you write a heuristic
+  that ends a task or moves it out of view. Verify: the D-2 rule grid (the
+  question-line case, the empty-text case, rule 4 alone failing is
+  'needs-look').

@@ -1162,6 +1162,87 @@ function workedHoursForEmpMonth_(idx, empId, startIso, endIso) {
 function empRosterEmail_(row) {
   return String((row && row[EMP.EMAIL]) || '').trim();
 }
+// ── 22post E — Dashboard widget layouts: the manager's optional team default ──
+// A rep's own layout lives in their browser (umsDashLayout). A manager MAY save
+// a team default here, which the rep's Dashboard uses until they save their
+// own; with neither, the base layout (today's arrangement) applies. The client
+// resolves the three (clkDashResolveLayout_), so a missing or unreadable
+// default can never leave the Dashboard empty.
+
+/** PURE (Node-pinned) — a layout from anywhere (the client's object items, or
+ *  the stored compact "id:shown:width" strings) → {items: [{id, show, width}]}
+ *  over DASH_WIDGET_IDS only, deduped, width 'half'|'full'; null when nothing
+ *  usable is left or nothing would be shown. */
+function dashLayoutSanitize_(raw) {
+  const src = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.items) ? raw.items : (raw && Array.isArray(raw.i) ? raw.i : null));
+  if (!src) return null;
+  const seen = {}, items = [];
+  src.slice(0, 40).forEach(function (it) {
+    let id, show, width;
+    if (typeof it === 'string') {
+      const p = it.split(':');
+      id = p[0]; show = p[1] !== '0'; width = p[2] === 'f' ? 'full' : 'half';
+    } else if (it && typeof it === 'object') {
+      id = it.id; show = it.show !== false; width = it.width === 'full' ? 'full' : 'half';
+    } else return;
+    id = String(id || '');
+    if (DASH_WIDGET_IDS.indexOf(id) < 0 || seen[id]) return;
+    seen[id] = 1;
+    items.push({ id: id, show: !!show, width: width });
+  });
+  if (!items.length || !items.some(function (x) { return x.show; })) return null;
+  return { items: items };
+}
+/** PURE — the stored compact form of a sanitized layout. */
+function dashLayoutCompact_(layout) {
+  return (layout.items || []).map(function (x) { return x.id + ':' + (x.show ? 1 : 0) + ':' + (x.width === 'full' ? 'f' : 'h'); });
+}
+function dashTeamLayoutsRead_() {
+  let map = {};
+  try { map = JSON.parse(PropertiesService.getScriptProperties().getProperty(DASH_TEAM_LAYOUTS_PROP) || '{}') || {}; } catch (_) { map = {}; }
+  return (map && typeof map === 'object' && !Array.isArray(map)) ? map : {};
+}
+/** The layouts that bear on this employee: `team` = their manager's saved
+ *  default (roster ManagerEmail), `own` = the default they saved as a manager.
+ *  Best-effort: an unreadable property reads as none (the base layout). */
+function dashTeamLayoutFor_(emp) {
+  const out = { team: null, own: null, teamBy: '' };
+  try {
+    const map = dashTeamLayoutsRead_();
+    const mgr = String((emp && emp.managerEmail) || '').trim().toLowerCase();
+    const me = String((emp && emp.email) || '').trim().toLowerCase();
+    if (mgr && map[mgr]) { out.team = dashLayoutSanitize_(map[mgr]); out.teamBy = String(map[mgr].by || ''); }
+    if (emp && emp.isManager && me && map[me]) out.own = dashLayoutSanitize_(map[me]);
+  } catch (_) {}
+  return out;
+}
+/** Manager-gated: save (or, with `null`, clear) the caller's team default.
+ *  Sanitized first; a layout that shows nothing is refused, never stored. */
+function saveTeamDashboardLayout(layout) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
+    const me = String(emp.email || '').trim().toLowerCase();
+    if (!me) return { success: false, error: 'Your roster row has no email.' };
+    const clean = layout === null ? null : dashLayoutSanitize_(layout);
+    if (layout !== null && !clean) return { success: false, error: 'Show at least one widget — a team default cannot leave the Dashboard empty.' };
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      const map = dashTeamLayoutsRead_();
+      if (clean) {
+        map[me] = { i: dashLayoutCompact_(clean), by: String(emp.name || ''), at: Date.now() };
+        const keys = Object.keys(map);
+        if (keys.length > DASH_TEAM_LAYOUTS_MAX) return { success: false, error: 'Too many team defaults are stored (' + DASH_TEAM_LAYOUTS_MAX + ') — clear an unused one first.' };
+      } else {
+        delete map[me];
+      }
+      propSetBounded_(DASH_TEAM_LAYOUTS_PROP, JSON.stringify(map), { hint: 'clear an unused team default' });
+    } finally { lock.releaseLock(); }
+    try { writeAuditLog_(emp, 'DashboardTeamLayout', '', '', false, 0, clean ? 'saved: ' + dashLayoutCompact_(clean).join(',') : 'cleared'); } catch (e) {}
+    return { success: true, layout: clean };
+  } catch (err) { return { success: false, error: err.message }; }
+}
 function getEmployeeState() {
   try {
     const emp = getEmployeeInfo_();
@@ -1188,6 +1269,10 @@ function getEmployeeState() {
       // gates the qaQueue tab. Agents stay outside in v1 (operator decision:
       // they do not see their reviews yet).
       canSeeQa: canSeeQa_(emp),
+      // 22post E — the Dashboard layout defaults that bear on this employee:
+      // their manager's team default, and (for a manager) the one they saved.
+      // The client resolves own → team → base, so null is always safe.
+      dashLayouts: dashTeamLayoutFor_(emp),
       // DeptRequests v2 — the rep's department memberships (canonical names);
       // gates the Dept Requests "Incoming" inbox section client-side.
       departments: empDepartments_(emp),

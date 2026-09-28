@@ -2477,7 +2477,7 @@ test('PR6: Needs you renders skeleton → list → error; clean-empty renders no
   // (and whose loader is in flight — reset it so the assertions below own it).
   const host = h.$('#dash-needsyou');
   assert.ok(host, 'the Dashboard rendered the Needs-you slot ABOVE the carousels');
-  assert.ok(host.compareDocumentPosition(h.$('#dash-cards')) & 4, 'and it precedes #dash-cards in the DOM');
+  assert.ok(host.compareDocumentPosition(h.$('#dash-w-mine')) & 4, 'and it precedes the first carousel slot in the DOM (22post E: the base layout)');
   const NEEDS = h.read('CLK_NEEDS');
   NEEDS.busy = false;
   const render = h.read('clkRenderNeedsYou_');
@@ -4726,4 +4726,122 @@ test('22post B-2b/B-2c DOM: the Scratchpad is a floating NON-modal panel — no 
   assert.deepStrictEqual(Array.from(call.args), ['<b>keep</b>', 'html'], 'the save carries clean html and says so');
   h.run.flushSuccess({ success: true, updatedAtMs: Date.now() }, 'saveMyScratchpad');
   h.read('cnCloseScratchpadModal_')();
+});
+
+test('22post D DOM: a reply-resolved card says so and credits the replier, a needs-a-look card stays open with Mark resolved, Recently resolved lists what the caller may reopen, and Mark unresolved reopens through the server and refreshes (a failure restores the button)', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  const item = (id, extra) => Object.assign({ requestId: id, toDept: 'Billing', label: 'L-' + id, createdAt: 'Sep 27', createdMs: 1000, byName: 'Me', status: 'open', elapsedMin: 30, slaBusiness: true, slaStatus: 'ontime', slaDays: 2 }, extra || {});
+  const data = { isManager: false, myDepts: ['Billing'], departments: ['Billing'],
+    mine: [item('m1', { status: 'resolved', resolvedVia: 'reply', resolvedBy: 'Dana <b>W</b>', elapsedMin: 185 })],
+    incoming: [item('i1', { replyVerdict: 'needs-look', repliedAt: 'Sep 28, 10:15 AM' })],
+    recentResolved: [item('r1', { status: 'resolved', resolvedVia: 'reply', resolvedBy: 'Priya', elapsedMin: 95, byName: 'Sam' })],
+    recentResolvedTotal: 1, reopenDays: 7, truncated: false, listCap: 100, mineTotal: 1, incomingTotal: 1 };
+  let reads = 0;
+  h.run.respond('getDeptRequests', () => { reads++; return JSON.parse(JSON.stringify(data)); });
+  h.window.enterTool('metrics', 'metricsDeptReq');
+  h.flushTimers();
+  const card = (id) => h.$$('.sp-task[data-req]').filter((n) => n.getAttribute('data-req') === id)[0];
+  assert.ok(/replied · 3h 5m/.test(card('m1').querySelector('.sp-task-age').textContent), 'a reply resolve is timed and says "replied"');
+  assert.ok(/Resolved by Dana <b>W<\/b> \(by reply\)/.test(card('m1').textContent) && !card('m1').querySelector('.sp-task-body b'), 'credited to the replier, escaped');
+  const look = card('i1').querySelector('.dr-needs-look');
+  assert.ok(look && /Responded — needs a look/.test(look.textContent), 'a question from the department reads "Responded — needs a look"');
+  assert.ok(card('i1').querySelector('.sp-resolve'), 'and it stays open with Mark resolved');
+  assert.ok(/Replied Sep 28, 10:15 AM — check the thread/.test(card('i1').textContent));
+  const body = h.$('#dr-body').textContent;
+  assert.ok(body.indexOf('Incoming ·') < body.indexOf('Recently resolved · last 7 days · 1') && body.indexOf('Recently resolved') < body.indexOf('My requests'),
+    'Recently resolved sits between Incoming and My requests');
+  const reopen = card('r1').querySelector('.dr-reopen');
+  assert.ok(reopen && card('m1').querySelector('.dr-reopen'), 'every resolved card offers Mark unresolved');
+  // Failure first: the button comes back.
+  h.read('drReopenClick_')(reopen);
+  assert.ok(reopen.disabled && /Reopening/.test(reopen.textContent), 'the button shows its own in-flight state');
+  h.run.flushFailure(new Error('Only the sender…'), 'reopenDeptRequest');
+  assert.ok(!reopen.disabled && /Mark unresolved/.test(reopen.textContent), 'a refusal restores the button');
+  // Success: the server is asked, the cache flips, the view refreshes from the server.
+  const readsBefore = reads;
+  h.read('drReopenClick_')(card('r1').querySelector('.dr-reopen'));
+  const call = h.run.pending('reopenDeptRequest').slice(-1)[0];
+  assert.deepStrictEqual(Array.from(call.args), ['r1'], 'ONE reopen call for that request');
+  data.recentResolved = []; data.recentResolvedTotal = 0;
+  data.incoming = data.incoming.concat([item('r1', { byName: 'Sam', reopenedAt: 'Sep 28, 11:05 AM' })]);
+  h.run.flushSuccess({ success: true, already: false }, 'reopenDeptRequest');
+  h.flushTimers();
+  assert.ok(reads > readsBefore, 'the view re-reads the server');
+  assert.ok(card('r1') && card('r1').querySelector('.sp-resolve') && /Reopened Sep 28, 11:05 AM/.test(card('r1').textContent), 'the request is open again in Incoming');
+  assert.ok(!/Recently resolved/.test(h.$('#dr-body').textContent), 'and the empty Recently resolved section is gone');
+});
+
+test('22post E DOM: Customize dashboard — hide, move (focus follows), widen, Save re-renders in that order with no slot (and no RPC) for a hidden widget; a draft showing nothing cannot be saved; Reset returns to the team default; a manager saves the team default; a corrupt saved layout falls back to the base', () => {
+  const h = boot();
+  const w = h.window, doc = h.document;
+  w.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  w.localStorage.setItem('umsDashLayout', '{corrupt');
+  h.bootShell({ isManager: true, canSeeSpanish: false, dashLayouts: { team: null, own: null, teamBy: '' } });
+  h.flushTimers();
+  const order = () => h.$$('#dash-widgets > .dash-w').map((n) => n.getAttribute('data-w') + (n.classList.contains('dash-w-full') ? '*' : ''));
+  assert.deepStrictEqual(order(), ['needsYou*', 'mine', 'team', 'requests*', 'punches', 'teammates'], 'a corrupt saved layout → the base layout (no Spanish access: no Spanish widget, Requests full)');
+  h.read('clkDashOpenCustomize_')();
+  const ov = doc.getElementById('dash-cust-overlay');
+  assert.ok(ov && ov.classList.contains('open') && ov.getAttribute('aria-labelledby') === 'dash-cust-title', 'the panel opens as a named dialog');
+  assert.ok(/standard layout/.test(ov.textContent), 'it says which layout is in use');
+  const item = (id) => ov.querySelector('.dash-cust-item[data-w="' + id + '"]');
+  const saveBtn = () => ov.querySelector('.btn-modal-ok');
+  // Hide everything → cannot save, and it says why.
+  h.read('CLK_DASH_CUST').draft.forEach((x, i) => h.read('clkDashCustSet_')(i, 'show', false));
+  assert.ok(saveBtn().disabled && /at least one widget/.test(doc.getElementById('dash-cust-err').textContent), 'a draft showing nothing cannot be saved, and says so');
+  h.read('clkDashCustSave_')();
+  assert.ok(doc.getElementById('dash-cust-overlay'), 'Save refuses — the panel stays');
+  // Show all but Requests; move Team Right Now up; widen Your numbers.
+  h.read('CLK_DASH_CUST').draft.forEach((x, i) => h.read('clkDashCustSet_')(i, 'show', x.id !== 'requests'));
+  assert.ok(!saveBtn().disabled && item('requests').classList.contains('is-off'));
+  const idxOf = (id) => h.read('CLK_DASH_CUST').draft.findIndex((x) => x.id === id);
+  h.read('clkDashCustMove_')(idxOf('teammates'), -1);
+  assert.strictEqual(doc.activeElement && doc.activeElement.closest('.dash-cust-item').getAttribute('data-w'), 'teammates', 'focus follows the moved widget');
+  h.read('clkDashCustSet_')(idxOf('mine'), 'width', 'full');
+  assert.strictEqual(item('mine').querySelector('.dash-cust-wbtn.on').textContent, 'Full');
+  const reqBefore = h.run.calls.filter((c) => c.method === 'getDeptRequests').length;
+  h.read('clkDashCustSave_')();
+  h.flushTimers();
+  assert.ok(!doc.getElementById('dash-cust-overlay'), 'Save closes the panel');
+  assert.ok(JSON.parse(w.localStorage.getItem('umsDashLayout')).items.length >= 6, 'the layout is saved in this browser');
+  assert.deepStrictEqual(order(), ['needsYou*', 'mine*', 'team', 'teammates', 'punches'], 'the Dashboard re-renders in the saved order and widths');
+  assert.ok(!doc.getElementById('dash-w-requests'), 'a hidden widget has no slot');
+  assert.strictEqual(h.run.calls.filter((c) => c.method === 'getDeptRequests').length, reqBefore, 'and its data is never fetched');
+  // A team default exists now: Reset returns to it, not to the standard layout.
+  h.read('empState').dashLayouts = { team: { items: [{ id: 'teammates', show: true, width: 'full' }, { id: 'punches', show: true, width: 'full' }] }, own: null, teamBy: 'Mo Lead' };
+  h.read('clkDashOpenCustomize_')();
+  assert.ok(/your own layout/.test(doc.getElementById('dash-cust-overlay').textContent));
+  h.read('clkDashCustReset_')();
+  h.flushTimers();
+  assert.strictEqual(w.localStorage.getItem('umsDashLayout'), null, 'Reset drops the saved layout');
+  assert.deepStrictEqual(order().slice(0, 2), ['teammates*', 'punches*'], 'and the team default applies (its missing widgets appended after)');
+  // A manager saves the team default.
+  h.read('clkDashOpenCustomize_')();
+  assert.ok(/team’s default \(set by Mo Lead\)/.test(doc.getElementById('dash-cust-overlay').textContent));
+  const teamBtn = [...doc.querySelectorAll('#dash-cust-overlay .dash-cust-team button')].filter((b) => /Save as my team/.test(b.textContent))[0];
+  assert.ok(teamBtn, 'a manager sees "Save as my team’s default"');
+  h.read('clkDashCustSaveTeam_')(false);
+  const call = h.run.pending('saveTeamDashboardLayout').slice(-1)[0];
+  assert.ok(call && Array.isArray(call.args[0].items) && call.args[0].items[0].id === 'teammates', 'the draft goes to the server');
+  h.run.flushSuccess({ success: true, layout: call.args[0] }, 'saveTeamDashboardLayout');
+  assert.ok(h.read('empState').dashLayouts.own, 'the saved default is kept for the session');
+  assert.ok(!doc.getElementById('dash-cust-overlay'), 'and the panel closes');
+});
+
+test('22post E DOM: a hidden widget costs no RPC even when its neighbour is shown — Spanish shown, Requests hidden: the Spanish reads go out, getDeptRequests does not', () => {
+  const h = boot();
+  const w = h.window;
+  w.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  w.localStorage.setItem('umsDashLayout', JSON.stringify({ v: 1, items: [
+    { id: 'spanish', show: true, width: 'full' }, { id: 'requests', show: false, width: 'half' }, { id: 'mine', show: false, width: 'half' },
+    { id: 'team', show: false, width: 'half' }, { id: 'needsYou', show: false, width: 'full' }, { id: 'punches', show: true, width: 'half' }, { id: 'teammates', show: false, width: 'half' }] }));
+  h.bootShell({ isManager: false, canSeeSpanish: true, dashLayouts: { team: null, own: null, teamBy: '' } });
+  h.flushTimers();
+  const n = (m) => h.run.calls.filter((c) => c.method === m).length;
+  assert.deepStrictEqual(h.$$('#dash-widgets > .dash-w').map((x) => x.getAttribute('data-w')), ['spanish', 'punches'], 'only the shown widgets have slots');
+  assert.ok(n('getSpanishInboxStats') >= 1 && n('getSpanishInboxPending') >= 1, 'the shown Spanish widget loads');
+  assert.strictEqual(n('getDeptRequests'), 0, 'the hidden Requests widget is never fetched');
+  assert.strictEqual(n('getDashboardMetrics'), 0, 'nor the hidden carousels');
 });

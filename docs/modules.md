@@ -71,6 +71,18 @@ not restate it. Server endpoints live in the fourteen server files
      column E entry). The Needs-you list gains a **Spanish Inbox** item for a
      member who holds open claims (see Metrics).
 
+     **22post Batch E (2026-09-28) — the Dashboard is widgets.** The main
+     column is an ordered grid of seven widgets: Needs you, Your numbers, Team
+     numbers, Spanish Inbox (with access), Dept Requests, Today's punches and
+     Team right now. The clock card, punch buttons and shift strip stay fixed.
+     "Customize dashboard" (the settings gear, or the link at the foot of the
+     Dashboard) shows or hides each widget, moves it up or down and sets it to
+     half or full width. The layout a person sees is their own (saved in their
+     browser), else their manager's optional team default, else the standard
+     layout (today's arrangement), and a layout that would show nothing falls
+     through, so the Dashboard is never empty. A manager saves or clears the
+     team default from the same panel. A hidden widget loads nothing.
+
 <a id="call-notes"></a>
      **2026-09-17 (the /broad-scan's Batches 1 + 2):** an EQUAL Clock In /
      Clock Out is zero hours, not the 24-hour day the `<=` overnight wrap paid
@@ -395,6 +407,22 @@ not restate it. Server endpoints live in the fourteen server files
      content. A member's open claims appear as one item on their Dashboard
      Needs-you list, refreshed by claim, release, resolve and auto-assign in
      every open window.
+
+     **22post Batch D (2026-09-28) — a department's reply resolves its
+     request.** The tracked department email records its Gmail thread and puts
+     the deployer's mailbox on Reply-To beside the agent, and an hourly job reads
+     each open request's thread. A reply resolves the request (credited to the
+     replier, at the reply's time, counted as a response time) only when it came
+     after the send and after any reopen, is not from the agent, the mailbox or
+     an automatic sender, is from the department (a department address, a roster
+     member of it, or its address's domain), and its new text neither asks a
+     question nor puts the request on hold. A reply that fails only that last
+     rule marks the request "Responded — needs a look" and leaves it open. Any
+     resolved request can be marked unresolved by its sender, a manager or the
+     department's members; the scan then ignores earlier replies. A "Recently
+     resolved" section lists the last 7 days' requests the viewer may reopen.
+     Only requests sent after the deploy carry a thread, and the
+     `deptReplyResolve` toggle turns the reading off.
 
 <a id="intake"></a>
      **Batch 5 (2026-09-18):** `QaRecordings` carries a trailing `AgentId`

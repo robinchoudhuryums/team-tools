@@ -56,7 +56,8 @@ Script project synced via [clasp](https://github.com/google/clasp).
     `SPANISH_VM_MIN_SECONDS` is a hang-up and is suppressed, with the
     hidden count reported so the filter can never fail silently), and "Dept
     Requests" (inter-department request tracking with SLA status,
-    a sort and a date range).
+    a sort and a date range; a department's reply resolves a request
+    unless it asks a question, and any request can be reopened).
     CDR metrics also enrich the Call Notes Stats tab via a
     best-effort overlay.
   - **Intake** — patient-intake forms ported from the bound
