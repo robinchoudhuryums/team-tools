@@ -38,18 +38,20 @@ Output goes to `$MANUAL_OUT` (default `./dist`). `out/` holds intermediate Markd
 ## Reference articles (team-tools)
 
 `python3 export_reference.py` (run last by `make_all.sh`, or on its own — it needs only Python 3.12)
-writes `$MANUAL_OUT/reference/articles.json` and `images.json`: one article per level-2 section, one per
-quick reference card, one per Appendix B section, one glossary article, and the front page — ids
-`man-5-9`, `man-c-5`, `man-b-1`, `man-a`, `man-howto`. Bodies are the Markdown the Reference renderer
-draws: callouts stay `>` blocks, Script callouts become copyable snippets, cross-references become
-`kb:man-5-9#5.9.2` links. **The export fails and writes nothing** on a reference or role that does not
-resolve, a body over the Reference limit (49,000 characters), HTML the renderer would print literally,
-or a placeholder left unexpanded. It is deterministic, so exporting unchanged source gives identical
-files and a re-import changes nothing.
+writes `$MANUAL_OUT/reference/manual.json` — **the one file to upload** — and `images.json` (the image
+manifest for the images import). `manual.json` carries the version and build date, the Part 1 call router,
+the dated changelog, and the articles: one per level-2 section, one per quick reference card, one per
+Appendix B section, one glossary article, and the front page — ids `man-5-9`, `man-c-5`, `man-b-1`, `man-a`,
+`man-howto`. Bodies are the Markdown the Reference renderer draws: callouts stay `>` blocks, Script callouts
+become copyable snippets, cross-references become `kb:man-5-9#5.9.2` links. **The export fails and writes
+nothing** on a reference or role that does not resolve (in a body, the router or the changelog), a body over
+the Reference limit (49,000 characters), HTML the renderer would print literally, or a placeholder left
+unexpanded. It is deterministic, so exporting unchanged source gives identical files and a re-import changes
+nothing.
 
-To load it: upload `articles.json` to Drive, then Reference → Admin → **Import manual** with the file's
-link. Articles arrive as **drafts**; an article someone has edited in the app is skipped and reported,
-never overwritten.
-
-The HTML manual is one self-contained file: search, the "What did the caller say?" router, hover previews
-of cross-references, pinned sections and the printable quick reference cards all work offline.
+To load it: upload `manual.json` to Drive, then Reference → **Manual** → paste the file's link → **Check** →
+**Import**. Articles arrive as **drafts**; sections are **read-only in the app** (this directory is the one
+source — reps send corrections with "Suggest an edit"). A section the manual no longer has is listed on the
+check and removed only if you tick the box. In Reference the manual reads as one continuous page per part,
+with working cross-references, previews, the call router in the Ctrl/⌘+K drawer, and section-number search
+(`5.9`, `5-9`, `§5-9`, `card 5`).

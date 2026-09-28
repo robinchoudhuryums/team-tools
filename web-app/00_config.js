@@ -1808,7 +1808,16 @@ const KB_MANUAL_IMPORT_TAB = 'ManualImport';
 const KB_MANUAL_IMPORT_HEADERS = ['Id', 'SourceHash', 'BodyHash', 'ImportedAt', 'ImportedBy'];
 const KBMI = { ID: 0, SOURCE_HASH: 1, BODY_HASH: 2, IMPORTED_AT: 3, IMPORTED_BY: 4 };
 const KB_MANUAL_MAX_ARTICLES = 400;   // the manual is ~160; a file far past this is not the manual
-const KB_MANUAL_FILE_MAX = 5000000;   // bytes — articles.json is ~350 KB
+const KB_MANUAL_FILE_MAX = 5000000;   // bytes — manual.json is ~370 KB
+// Batch M2 — the export is ONE file, manual.json: {format, version, built,
+// router, changelog, articles}. The meta (everything but the articles) lives in
+// the ManualMeta tab — A2 holds its JSON — and drives the Manual reader: the
+// version line, the "Updated" badges and the Ctrl+K drawer's call router.
+const KB_MANUAL_FORMAT = 'ums-manual/1';
+const KB_MANUAL_META_TAB = 'ManualMeta';
+const KB_MANUAL_META_CACHE_KEY = 'kb_manual_meta_v1';
+const KB_MANUAL_META_MAX = 45000;    // chars — one cell, under the 50k Sheets limit
+const KB_MANUAL_READONLY_MSG = 'This section comes from the procedures manual. Change it in the manual source and re-import — edits made here would be overwritten or lost.';
 // ── Insurance payor lookup (operator 2026-08-25 — batch 3) ──────────────────
 // A ~1,000-row payor/HCPCS acceptance sheet lives with another dept and was
 // too slow to reference mid-call. The operator's cleaned CSV imports into an

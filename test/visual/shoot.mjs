@@ -282,6 +282,18 @@ const SCENARIOS = [
   // callouts, a table inside a callout, a nested list, a Script snippet, a
   // pending diagram and icon chips), and the admin Manual dialog after a Check.
   ['reference-manual-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', "kbOpenItem_('man-0-10')"],
+  // Batch M2 — the part page scrolled to its second section (the "Updated"
+  // badge, the per-section feedback bar), and a cross-reference preview card.
+  ['reference-manual-part-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', "kbOpenItem_('man-0-11')"],
+  // Batch M2 — the call router in the Ctrl+K drawer, filtered; and a typed
+  // section number in Reference search (the jump row).
+  ['reference-manual-router-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
+    "kbOpenRouterFromTab_(); setTimeout(function(){ var i=document.getElementById('kbd-rt-q'); if(i){ i.value='waiting'; i.dispatchEvent(new Event('input')); } }, 500)"],
+  ['reference-manual-router-dark-wide', { tool: 'reference', tab: null }, WIDE, 'dark', '', 'kbOpenRouterFromTab_()'],
+  ['reference-manual-jump-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
+    "var s=document.getElementById('kb-search'); if(s){ s.value='0.10.2'; kbDoSearch_('0.10.2'); }"],
+  ['reference-manual-xref-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
+    "kbOpenItem_('man-0-11'); setTimeout(function(){ var a=document.querySelector('#kb-man-sec-man-0-11 a.kb-xref[data-kb-id=\"man-0-10\"]'); if(a) kbXrefShow_(a); }, 400)"],
   ['reference-manual-dark-wide',  { tool: 'reference', tab: null }, WIDE, 'dark',  '',
     "kbOpenItem_('man-0-10'); setTimeout(function(){ var h=document.getElementById('kb-h-0-10-2-before-you-transfer'); if(h) h.scrollIntoView(); }, 300)"],   // the lower half: nested list, Critical, Policy, snippet
   ['reference-manual-import-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',

@@ -305,6 +305,28 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     return { pctAnswered: mk(82), answered: mk(30), missed: mk(2), attSeconds: mk(240), transferPct: mk(9) };
   }
 
+  // Batch M1/M2 — manual sections in the Markdown manual/export_reference.py
+  // writes (label-toned callouts, a table inside a callout, a nested list, a
+  // Script snippet, a pending diagram, icon chips and kb: cross-references),
+  // shared by getReferenceItem and getManualPart so the two cannot differ.
+  function manualSection(id) {
+    if (id === 'man-0-11') {
+      return { id: 'man-0-11', title: '0.11 Notes and email conventions', bodyMd:
+        'Every call gets a note. A useful note answers three questions:\n\n1. **Who called**\n2. **What they wanted**\n3. **What you did or committed to**\n\n' +
+        '## 0.11.1 Abbreviations\n\nUse the shorthand in [A.2 Note-taking shorthand](kb:man-a#A.2); the tabs are in [0.10.2 Before you transfer](kb:man-0-10#0.10.2).\n\n' +
+        '> **Watch-out — never paste a patient\'s name into a department email subject.** Use the TRX number.\n' };
+    }
+    return { id: 'man-0-10', title: '0.10 Anatomy of a transaction', bodyMd: 'The manual refers to these tabs constantly. This is where each thing lives.\n\n' +
+            '```diagram transaction\nTransaction Workflow navigation\n```\n\n' +
+            '> **Watch-out — three that are easy to confuse.** `Eligibility` tells you which **department** has a PMD order. `Pat. Resp.` tells you what the patient **owes**. Neither gives you the delivery date — that\'s `Ticket`.\n\n' +
+            '> **Note — three things are not in the left navigation.**\n>\n> | You want | It\'s behind |\n> |---|---|\n> | **Notes** | the **Messages** button, bottom right |\n> | **Fax History** | a button inside the **Transaction** tab |\n>\n> See [0.11 Notes and email conventions](kb:man-0-11) and [0.2.2 Decision tree](kb:man-0-2#0.2.2).\n\n' +
+            '## 0.10.1 Trx Type\n\n| Icon | Name | What it means |\n|---|---|---|\n| ![New Order icon](manimg:icon-trx-type-new-order) | **New Order** | the actual order for equipment |\n| ![Service icon](manimg:icon-trx-type-service) | **Service** | a service ticket |\n\n' +
+            '## 0.10.2 Before you transfer\n\n1. Check the **Trx State**\n2. Check the **Ticket State** — the truck symbol means it has shipped, and a delivered\n   order with items missing still reads as delivered\n   - a partial delivery is noted on the ticket\n   - a split shipment carries two tracking numbers\n3. Then decide who owns the call\n\n' +
+            '> **Critical — emergencies come first.** Advise the caller to **hang up and dial 9-1-1** if the patient is in immediate physical distress.\n\n' +
+            '> **Policy — department parts can override this one.** Where a department part contradicts Part 0, the department part wins.\n\n' +
+            '```snippet: Script — caller can\'t be verified\nI want to help, but I\'m not able to go over the order without confirming a few details first.\n```\n' };
+  }
+
   var FIXTURES = {
     getEmployeeState: {
       id: 'E-1042', name: 'Avery Blake', email: 'avery@umsupply.com',
@@ -965,17 +987,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // writes: label-toned callouts (one holding a table), a nested list with
       // a wrapped item, a Script snippet, a diagram and an icon awaiting the
       // images import, and kb: cross-references (plain text until Phase 2).
-      if (id === 'man-0-10') {
-        return { id: 'man-0-10', title: '0.10 Anatomy of a transaction', department: 'Part 00 — CSR Core', status: 'draft', type: 'article',
-          bodyMd: 'The manual refers to these tabs constantly. This is where each thing lives.\n\n' +
-            '```diagram transaction\nTransaction Workflow navigation\n```\n\n' +
-            '> **Watch-out — three that are easy to confuse.** `Eligibility` tells you which **department** has a PMD order. `Pat. Resp.` tells you what the patient **owes**. Neither gives you the delivery date — that\'s `Ticket`.\n\n' +
-            '> **Note — three things are not in the left navigation.**\n>\n> | You want | It\'s behind |\n> |---|---|\n> | **Notes** | the **Messages** button, bottom right |\n> | **Fax History** | a button inside the **Transaction** tab |\n>\n> See [0.11 Notes and email conventions](kb:man-0-11) and [0.2.2 Decision tree](kb:man-0-2#0.2.2).\n\n' +
-            '## 0.10.1 Trx Type\n\n| Icon | Name | What it means |\n|---|---|---|\n| ![New Order icon](manimg:icon-trx-type-new-order) | **New Order** | the actual order for equipment |\n| ![Service icon](manimg:icon-trx-type-service) | **Service** | a service ticket |\n\n' +
-            '## 0.10.2 Before you transfer\n\n1. Check the **Trx State**\n2. Check the **Ticket State** — the truck symbol means it has shipped, and a delivered\n   order with items missing still reads as delivered\n   - a partial delivery is noted on the ticket\n   - a split shipment carries two tracking numbers\n3. Then decide who owns the call\n\n' +
-            '> **Critical — emergencies come first.** Advise the caller to **hang up and dial 9-1-1** if the patient is in immediate physical distress.\n\n' +
-            '> **Policy — department parts can override this one.** Where a department part contradicts Part 0, the department part wins.\n\n' +
-            '```snippet: Script — caller can\'t be verified\nI want to help, but I\'m not able to go over the order without confirming a few details first.\n```\n' };
+      if (id === 'man-0-10' || id === 'man-0-11') {
+        return Object.assign({ department: 'Part 00 — CSR Core', status: 'draft', type: 'article' }, manualSection(id));
       }
       return { id: 'kb-1', title: 'HIPAA refresher', department: 'Billing', status: 'published', type: 'article',
         bodyMd: '# HIPAA refresher\n\nMinimum-necessary rule: share only what the task needs.\n\n- Verify the caller before any PHI\n- Fax cover sheets on every outbound fax' };
@@ -984,6 +997,24 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // updated, unchanged, skipped:[{id,title,reason}]}) and kbPublishManual's
     // ({success, count, reviewSpreadDays}) AND its write: the drafts it names
     // turn published in the tree fixture (INV-185).
+    // Batch M2 — the Manual reader's two reads. getManualPart mirrors the
+    // server's {department, sections:[{id,title,status,sortOrder,bodyMd}]};
+    // getManualMeta its {version, built, router, changelog} (INV-185). One
+    // changelog entry is recent, so the "Updated" badge is photographed.
+    getManualPart: function (dept) {
+      if (dept !== 'Part 00 — CSR Core') return { department: dept, sections: [], isAdmin: true };
+      return { department: dept, isAdmin: true, sections: ['man-0-10', 'man-0-11'].map(function (id, i) {
+        var m = manualSection(id); return { id: id, title: m.title, status: 'draft', sortOrder: 10 + i, bodyMd: m.bodyMd };
+      }) };
+    },
+    getManualMeta: function () {
+      return { version: 'v3.0', built: '09/15/2026',
+        router: [
+          { g: 'Status and timing', q: 'Where is my equipment?', a: '0.2, then 5.2 if it\'s scheduled', t: [{ id: 'man-0-10', anchor: '' }, { id: 'man-0-11', anchor: '' }] },
+          { g: 'Status and timing', q: 'You\'re waiting on my doctor?', a: '0.10.2 — check Fax History', t: [{ id: 'man-0-10', anchor: '0.10.2' }] },
+          { g: 'Money', q: 'How much will this cost me?', a: '10.1 — the five-step estimate', t: [{ id: 'man-10-1', anchor: '' }] }],
+        changelog: [{ date: daysAgo(40), num: '0.11', id: 'man-0-11', anchor: '', summary: 'TRX number, never a name, in a department subject line.', retraining: true }] };
+    },
     kbImportManual: function (link, opts) {
       return { success: true, dryRun: !!(opts && opts.dryRun), total: 160, created: 2, updated: 3, unchanged: 153,
         skipped: [{ id: 'man-5-9', title: '5.9 Pick-up procedures', reason: 'edited' }, { id: 'man-1-4', title: '1.4 Calls you cannot take', reason: 'deleted' }] };

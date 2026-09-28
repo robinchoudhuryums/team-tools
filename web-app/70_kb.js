@@ -2843,6 +2843,8 @@ function kbSaveItem(payload) {
     const emp = getEmployeeInfo_();
     if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
     payload = payload || {};
+    // Batch M2 — manual sections are read-only here; the manual source owns them.
+    if (KB_MANUAL_ID_RE.test(String(payload.id || '').trim())) return { success: false, error: KB_MANUAL_READONLY_MSG };
     const department = String(payload.department || '').trim() || 'General';
     const title = String(payload.title || '').trim();
     const type = (payload.type === 'embed') ? 'embed' : 'article';
@@ -2922,6 +2924,7 @@ function kbDeleteItem(id) {
     const emp = getEmployeeInfo_();
     if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
     id = String(id || '').trim();
+    if (KB_MANUAL_ID_RE.test(id)) return { success: false, error: KB_MANUAL_READONLY_MSG };
     const sheet = getOrCreateKbSheet_();
     const last = sheet.getLastRow();
     if (last >= 2) {
@@ -3038,6 +3041,7 @@ function kbRevertItem(id, revId) {
     if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
     id = String(id || '').trim(); revId = String(revId || '').trim();
     if (!id || !revId) return { success: false, error: 'Missing id.' };
+    if (KB_MANUAL_ID_RE.test(id)) return { success: false, error: KB_MANUAL_READONLY_MSG };
     const ss = getKbSS_();
     const revSheet = ss.getSheetByName(KB_REVISIONS_TAB);
     if (!revSheet || revSheet.getLastRow() < 2) return { success: false, error: 'Revision not found.' };
@@ -3235,6 +3239,140 @@ function kbReviewStaggerOffsets_(n, dueDays) {
   return out;
 }
 
+
+/** Pure (Node-pinned) — the uploaded file as {articles, meta} or {error}. The
+ *  bundle is manual.json (Batch M2); a bare article list (M1's articles.json)
+ *  is still accepted, with no meta. */
+function kbManualBundle_(data) {
+  if (Array.isArray(data)) return { articles: data, meta: null };
+  if (!data || typeof data !== 'object') return { error: 'The file is not the manual export — upload manual.json from the manual build.' };
+  if (data.format !== KB_MANUAL_FORMAT) return { error: 'The file\'s format is "' + String(data.format || 'none').substring(0, 40) + '"; this app reads ' + KB_MANUAL_FORMAT + ' — rebuild with the current manual/export_reference.py.' };
+  if (!Array.isArray(data.articles)) return { error: 'The file holds no article list.' };
+  return { articles: data.articles, meta: { version: data.version, built: data.built, router: data.router, changelog: data.changelog } };
+}
+
+/** Pure (Node-pinned) — validate and normalize the bundle's meta. Every target
+ *  must name an article in THIS file; any bad entry refuses the import. */
+function kbManualMetaValidate_(meta, ids) {
+  const errors = [];
+  const known = {};
+  (ids || []).forEach(function (id) { known[id] = 1; });
+  const str = function (v, max) { return (typeof v === 'string' && v.length <= max) ? v : null; };
+  const target = function (t, where) {
+    const id = t && str(t.id, 80), anchor = t && (t.anchor === '' || str(t.anchor, 20));
+    if (!id || !known[id]) { errors.push(where + ': target "' + String(t && t.id).substring(0, 40) + '" is not an article in this file.'); return null; }
+    if (anchor === null || anchor === false || !/^[0-9A-Za-z.]*$/.test(t.anchor || '')) { errors.push(where + ': bad anchor.'); return null; }
+    return { id: id, anchor: t.anchor || '' };
+  };
+  const out = { version: str(meta.version, 40) || '', built: str(meta.built, 40) || '', router: [], changelog: [] };
+  const router = Array.isArray(meta.router) ? meta.router : [];
+  const changelog = Array.isArray(meta.changelog) ? meta.changelog : [];
+  if (router.length > 500 || changelog.length > 500) errors.push('The router or changelog is implausibly long.');
+  router.slice(0, 500).forEach(function (r, i) {
+    const where = 'Router row ' + (i + 1);
+    const g = r && str(r.g, 120), q = r && str(r.q, 300), a = r && str(r.a, 600);
+    if (g === null || !q || a === null) { errors.push(where + ': group, phrase or answer missing or too long.'); return; }
+    const t = (Array.isArray(r.t) ? r.t : []).map(function (x) { return target(x, where); }).filter(Boolean);
+    if (!t.length) { errors.push(where + ': no target.'); return; }
+    out.router.push({ g: g, q: q, a: a, t: t });
+  });
+  changelog.slice(0, 500).forEach(function (c, i) {
+    const where = 'Changelog row ' + (i + 1);
+    if (!c || !/^\d{4}-\d\d-\d\d$/.test(String(c.date || '')) || !str(c.num, 20) || !str(c.summary, 500)) { errors.push(where + ': date, number or summary missing.'); return; }
+    const t = target({ id: c.id, anchor: c.anchor || '' }, where);
+    if (t) out.changelog.push({ date: c.date, num: c.num, id: t.id, anchor: t.anchor, summary: c.summary, retraining: c.retraining === true });
+  });
+  if (!errors.length && JSON.stringify(out).length > KB_MANUAL_META_MAX) errors.push('The router and changelog together are too large to store (' + KB_MANUAL_META_MAX + ' characters).');
+  return { meta: errors.length ? null : out, errors: errors };
+}
+
+/** Pure (Node-pinned) — sections the import wrote (in the ledger, still in the
+ *  KB) that the file no longer carries. */
+function kbManualOrphans_(items, rows, ledger) {
+  const incoming = {};
+  items.forEach(function (it) { incoming[it.id] = 1; });
+  return Object.keys(ledger).filter(function (id) { return !incoming[id] && rows[id]; }).sort()
+    .map(function (id) { return { id: id, title: String(rows[id].title || id) }; });
+}
+
+/** deleteRow that never removes a tab's last non-frozen row (Sheets throws on
+ *  that — g145's purge half): a spare row is added first. */
+function kbDeleteRowSafe_(sheet, r) {
+  if (sheet.getMaxRows() <= sheet.getFrozenRows() + 1) sheet.insertRowsAfter(sheet.getMaxRows(), 1);
+  sheet.deleteRow(r);
+}
+
+function getOrCreateManualMetaSheet_() {
+  const ss = getKbSS_();
+  let sheet = ss.getSheetByName(KB_MANUAL_META_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(KB_MANUAL_META_TAB);
+    sheet.appendRow(sheetSafeRow_(['Json']));
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+/** The stored meta JSON string ('' when none). */
+function kbManualMetaRead_(sheet) {
+  if (!sheet || sheet.getLastRow() < 2) return '';
+  return String(sheet.getRange(2, 1, 1, 1).getValues()[0][0] || '');
+}
+
+/** Employee — the manual's meta for the reader: {version, built, router,
+ *  changelog}, or {none: true} before the first bundle import. Cached; the
+ *  import clears it. The router's targets are filtered client-side to the
+ *  sections the caller can see (a rep never receives drafts in the tree). */
+function getManualMeta() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const cache = CacheService.getScriptCache();
+    let raw = null;
+    try { raw = cache.get(KB_MANUAL_META_CACHE_KEY); } catch (_) {}
+    if (raw == null) {
+      const sheet = getKbSS_().getSheetByName(KB_MANUAL_META_TAB);
+      raw = kbManualMetaRead_(sheet);
+      try { cache.put(KB_MANUAL_META_CACHE_KEY, raw, KB_CACHE_TTL); } catch (_) {}
+    }
+    if (!raw) return { none: true };
+    return JSON.parse(raw);
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Employee — every manual section of one part, in order, for the reader's
+ *  continuous part view: [{id, title, status, bodyMd}]. Reads the id and
+ *  department columns, then ONE block spanning the part's rows (an import
+ *  appends a part's sections together). Drafts are admin-only, as everywhere. */
+function getManualPart(department) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    department = String(department || '').trim();
+    if (!department) return { error: 'Missing part.' };
+    const sheet = getOrCreateKbSheet_();
+    const last = sheet.getLastRow();
+    if (last < 2) return { department: department, sections: [] };
+    const keys = sheet.getRange(2, 1, last - 1, 2).getValues();
+    const hits = [];
+    keys.forEach(function (r, i) {
+      if (KB_MANUAL_ID_RE.test(String(r[KB.ID] || '').trim()) && String(r[KB.DEPARTMENT] || '').trim() === department) hits.push(i);
+    });
+    if (!hits.length) return { department: department, sections: [] };
+    const lo = hits[0], hi = hits[hits.length - 1];
+    const block = sheet.getRange(lo + 2, 1, hi - lo + 1, KB_HEADERS.length).getValues();
+    const sections = [];
+    hits.forEach(function (i) {
+      const r = block[i - lo];
+      const status = kbRowStatus_(r[KB.STATUS]);
+      if (status === KB_STATUS_DRAFT && !emp.isAdmin) return;
+      sections.push({ id: String(r[KB.ID]).trim(), title: String(r[KB.TITLE] || ''), status: status,
+        sortOrder: Number(r[KB.SORT_ORDER] || 0) || 0, bodyMd: String(r[KB.BODY_MD] || '') });
+    });
+    sections.sort(function (a, b) { return (a.sortOrder - b.sortOrder) || kbNaturalCompare_(a.title, b.title); });
+    return { department: department, sections: sections, isAdmin: !!emp.isAdmin };
+  } catch (err) { return { error: err.message }; }
+}
+
 /** Drive file id from a share link or a bare id. */
 function kbManualFileId_(ref) {
   const s = String(ref || '').trim();
@@ -3278,19 +3416,24 @@ function kbImportManual(fileRef, opts) {
     if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
     opts = opts || {};
     const fileId = kbManualFileId_(fileRef);
-    if (!fileId) return { success: false, error: 'Paste the Drive link (or file id) of articles.json.' };
+    if (!fileId) return { success: false, error: 'Paste the Drive link (or file id) of manual.json.' };
     let text;
     try {
       const blob = DriveApp.getFileById(fileId).getBlob();
-      if (blob.getBytes().length > KB_MANUAL_FILE_MAX) return { success: false, error: 'That file is too large to be the manual\'s articles.json.' };
+      if (blob.getBytes().length > KB_MANUAL_FILE_MAX) return { success: false, error: 'That file is too large to be the manual\'s manual.json.' };
       text = blob.getDataAsString('UTF-8');
     } catch (e) {
       return { success: false, error: 'Could not open that Drive file (' + e.message + ') — check the link and that the app\'s account can read it.' };
     }
     let data;
-    try { data = JSON.parse(text); } catch (e) { return { success: false, error: 'That file is not JSON — upload articles.json from the manual build.' }; }
-    const v = kbManualValidate_(data);
-    if (v.errors.length) return { success: false, error: 'The file was refused; nothing was imported.', problems: v.errors.slice(0, 20), problemCount: v.errors.length };
+    try { data = JSON.parse(text); } catch (e) { return { success: false, error: 'That file is not JSON — upload manual.json from the manual build.' }; }
+    const bundle = kbManualBundle_(data);
+    if (bundle.error) return { success: false, error: bundle.error };
+    const v = kbManualValidate_(bundle.articles);
+    const mv = bundle.meta ? kbManualMetaValidate_(bundle.meta, v.items.map(function (it) { return it.id; })) : { meta: null, errors: [] };
+    const problems = v.errors.concat(mv.errors);
+    if (problems.length) return { success: false, error: 'The file was refused; nothing was imported.', problems: problems.slice(0, 20), problemCount: problems.length };
+    const metaJson = mv.meta ? JSON.stringify(mv.meta) : '';
 
     const lock = LockService.getScriptLock();
     lock.waitLock(30000);
@@ -3309,9 +3452,16 @@ function kbImportManual(fileRef, opts) {
       const ledger = kbManualLedger_(ledSheet);
       const hashFn = function (d, t, b) { return kbSha256Hex_(kbManualHashBasis_(d, t, b)); };
       const plan = kbManualPlan_(v.items, rows, ledger, hashFn);
+      // Sections the import wrote that the manual no longer has (renumbered or
+      // removed). Reported on every run; removed only when the admin asks.
+      const orphaned = kbManualOrphans_(v.items, rows, ledger);
+      const metaSheet = metaJson ? getOrCreateManualMetaSheet_() : null;
+      const metaChanged = !!metaJson && kbManualMetaRead_(metaSheet) !== metaJson;
       const summary = {
         total: v.items.length, created: plan.create.length, updated: plan.update.length,
         unchanged: plan.unchanged.length, skipped: plan.skipped,
+        orphaned: orphaned, removed: 0, metaUpdated: metaChanged, hasMeta: !!metaJson,
+        version: mv.meta ? mv.meta.version : '',
       };
       if (opts.dryRun) return Object.assign({ success: true, dryRun: true }, summary);
 
@@ -3343,12 +3493,29 @@ function kbImportManual(fileRef, opts) {
         else ledAppend.push(row);
       });
       if (ledAppend.length) appendRowsSafe_(ledSheet, ledAppend);
-      if (ledgerWrites.length) invalidateKbCache_();
+      // Removal, bottom-up so earlier row numbers stay valid; each removed row
+      // is snapshotted to KbRevisions first (revertible by hand).
+      if (opts.removeOrphans && orphaned.length) {
+        const gone = {};
+        orphaned.forEach(function (o) { gone[o.id] = 1; });
+        orphaned.map(function (o) { return rowAt[o.id]; }).sort(function (a, b) { return b.sheetRow - a.sheetRow; })
+          .forEach(function (at) { kbAppendRevision_(at.values, emp.email, 'manual-remove'); kbDeleteRowSafe_(sheet, at.sheetRow); });
+        const ledNow = kbManualLedger_(ledSheet);
+        Object.keys(ledNow).filter(function (id) { return gone[id]; }).map(function (id) { return ledNow[id].row; })
+          .sort(function (a, b) { return b - a; }).forEach(function (r) { kbDeleteRowSafe_(ledSheet, r); });
+        summary.removed = orphaned.length;
+      }
+      if (metaChanged) {
+        metaSheet.getRange(2, 1, 1, 1).setValues(sheetSafeRows_([[metaJson]]));   // JSON of an object can never read as a formula
+        try { CacheService.getScriptCache().remove(KB_MANUAL_META_CACHE_KEY); } catch (_) {}
+      }
+      if (ledgerWrites.length || summary.removed) invalidateKbCache_();
       const skipBy = {};
       plan.skipped.forEach(function (s) { skipBy[s.reason] = (skipBy[s.reason] || 0) + 1; });
       writeAuditLog_(emp, 'KbManualImport', '', '', false, 0,
         'total=' + summary.total + '; created=' + summary.created + '; updated=' + summary.updated +
         '; unchanged=' + summary.unchanged + '; skipped=' + plan.skipped.length +
+        '; orphaned=' + orphaned.length + '; removed=' + summary.removed + '; meta=' + (metaChanged ? 'updated' : 'same') +
         Object.keys(skipBy).sort().map(function (k) { return '; ' + k + '=' + skipBy[k]; }).join(''), emp.email);
       return Object.assign({ success: true, dryRun: false }, summary);
     } finally { lock.releaseLock(); }

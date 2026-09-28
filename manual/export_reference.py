@@ -3,11 +3,15 @@
 
 Writes, under $MANUAL_OUT/reference (default dist/reference):
 
-  articles.json  one object per level-2 section of Parts 0-10, one per quick
-                 reference card, one per Appendix B section, and ONE glossary
-                 article for Appendix A — the shape the Reference importer
-                 (`kbImportManual`, web-app/70_kb.js) reads:
-                 {Id, Department, Title, Type, BodyMd, SortOrder, SourceHash}
+  manual.json    THE upload file (Batch M2): {format, version, built, router,
+                 changelog, articles}. `articles` holds one object per level-2
+                 section of Parts 0-10, one per quick reference card, one per
+                 Appendix B section, ONE glossary article for Appendix A and the
+                 front page — {Id, Department, Title, Type, BodyMd, SortOrder,
+                 SourceHash}. `router` is the Part 1 call router ("the caller
+                 says…" → sections), `changelog` the dated changes with the
+                 section each touched — what the Reference Manual reader draws
+                 as "Updated". The importer is `kbImportManual` (70_kb.js).
   images.json    the image manifest: every `manimg:<key>` a body cites, with
                  its alt text and data URI (the images import is Phase 3)
 
@@ -273,6 +277,74 @@ def department(key):
             "appx_c": "Appendix C — Quick Reference Cards"}[key]
 
 
+BUNDLE_FORMAT = "ums-manual/1"   # the importer refuses any other format (pinned)
+
+
+def build_meta():
+    """version + built date — build.py's own constants, read rather than copied."""
+    src = open("build.py", encoding="utf-8").read()
+    ver = re.search(r'^VERSION = "([^"]+)"', src, re.M)
+    blt = re.search(r'^BUILT = "([^"]+)"', src, re.M)
+    if not ver or not blt:
+        errors.append("build.py: VERSION / BUILT not found")
+        return "", ""
+    return ver.group(1), blt.group(1)
+
+
+def sec_target(sec, anchors):
+    """A section number → {id, anchor} (anchor '' for a whole article)."""
+    a = anchors.get(sec)
+    if not a:
+        errors.append(f"UNRESOLVABLE REF {sec} (router or changelog)")
+        return None
+    whole = a["level"] == 2 and not sec.startswith("§A-")
+    return {"id": a["id"], "anchor": "" if whole else dnum(sec)}
+
+
+def build_router(p1_text, anchors):
+    """The Part 1 call router: each 'The caller says…' row of §1-1, split on
+    ' / ' between quoted phrases (make_html.py's rule), with its group (the
+    §1-1.x heading) and EVERY section its answer cites, first one primary."""
+    m = re.search(r"^## §1-1 .*?(?=^## §)", p1_text, re.M | re.S)
+    if not m:
+        errors.append("p1: the §1-1 call router was not found")
+        return []
+    out, group = [], ""
+    for line in m.group(0).split("\n"):
+        h = re.match(r"^### §[\w\-.]+ (.+)$", line)
+        if h:
+            group = h.group(1).strip()
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")] if line.startswith("|") else []
+        if len(cells) != 2 or cells[0].startswith("---") or cells[0].startswith("The caller"):
+            continue
+        refs = re.findall(r"\[\[(§[\w\-.]+)\]\]", cells[1])
+        if not refs:
+            continue
+        targets = [t for t in (sec_target(r, anchors) for r in refs) if t]
+        answer = md_plain(re.sub(r"\[\[(§[\w\-.]+)\]\]", lambda x: dnum(x.group(1)), cells[1])).strip()
+        for ph in re.split(r"\s*/\s*(?=[\"\u201c])", cells[0]):
+            ph = ph.strip().strip('"\u201c\u201d').strip()
+            if len(ph) < 4:
+                continue
+            out.append({"g": group, "q": ph, "a": answer, "t": targets})
+    if not out:
+        errors.append("p1: the §1-1 call router has no rows")
+    return out
+
+
+def build_changelog(anchors):
+    out = []
+    for c in json.load(open("data/changelog.json", encoding="utf-8")):
+        t = sec_target(c["section"], anchors)
+        if not t:
+            continue
+        out.append({"date": c["date"], "num": dnum(c["section"]), "id": t["id"], "anchor": t["anchor"],
+                    "summary": c["summary"], "retraining": bool(c.get("retraining"))})
+    out.sort(key=lambda c: (c["date"], c["num"]), reverse=True)
+    return out
+
+
 def main():
     with tempfile.TemporaryDirectory() as tmp:
         bodies = {k: render(k, src, tmp) for k, (_, src) in PARTS.items()}
@@ -320,6 +392,10 @@ def main():
         errors.append(f"ROLE {m.group(1)!r} matches nothing in roster.json")
         return m.group(0)
 
+    router = build_router(bodies.get("p1") or "", anchors)
+    changelog = build_changelog(anchors)
+    version, built = build_meta()
+
     articles = [howto_article()]
     for k, text in bodies.items():
         if not text:
@@ -361,6 +437,8 @@ def main():
     print(f"articles              : {len(articles)}")
     print(f"cross-references      : {links} (every target verified)")
     print(f"images referenced     : {len(IMAGES)}")
+    print(f"call router           : {len(router)} caller phrases in {len({r['g'] for r in router})} groups")
+    print(f"changelog             : {len(changelog)} dated changes")
     print(f"largest body          : {max(len(a['BodyMd']) for a in articles):,} characters")
     if GLOSSARY_FOLDS:
         print(f"glossary spellings    : folded {', '.join(GLOSSARY_FOLDS)}")
@@ -377,13 +455,15 @@ def main():
 
     out = os.path.join(os.environ.get("MANUAL_OUT", "dist"), "reference")
     os.makedirs(out, exist_ok=True)
-    with open(os.path.join(out, "articles.json"), "w", encoding="utf-8") as f:
-        json.dump(articles, f, ensure_ascii=False, indent=1)
+    bundle = {"format": BUNDLE_FORMAT, "version": version, "built": built,
+              "router": router, "changelog": changelog, "articles": articles}
+    with open(os.path.join(out, "manual.json"), "w", encoding="utf-8") as f:
+        json.dump(bundle, f, ensure_ascii=False, indent=1)
         f.write("\n")
     with open(os.path.join(out, "images.json"), "w", encoding="utf-8") as f:
         json.dump({k: IMAGES[k] for k in sorted(IMAGES)}, f, ensure_ascii=False, indent=1)
         f.write("\n")
-    print(f"\nwritten -> {out}/articles.json, images.json")
+    print(f"\nwritten -> {out}/manual.json, images.json")
     return 0
 
 

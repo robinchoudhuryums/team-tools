@@ -1521,6 +1521,54 @@
     "kbSaveItem"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-28",
+   "why": "Batch M2: manual bundle, ManualMeta, getManualMeta/getManualPart, read-only guards",
+   "added": [
+    "KB_MANUAL_FORMAT",
+    "KB_MANUAL_META_CACHE_KEY",
+    "KB_MANUAL_META_MAX",
+    "KB_MANUAL_META_TAB",
+    "KB_MANUAL_READONLY_MSG",
+    "getManualMeta",
+    "getManualPart",
+    "getOrCreateManualMetaSheet_",
+    "kbDeleteRowSafe_",
+    "kbManualBundle_",
+    "kbManualMetaRead_",
+    "kbManualMetaValidate_",
+    "kbManualOrphans_"
+   ],
+   "removed": [],
+   "changed": [
+    "KB_MANUAL_FILE_MAX",
+    "kbDeleteItem",
+    "kbImportManual",
+    "kbRevertItem",
+    "kbSaveItem"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-28",
+   "why": "Batch M2: manual bundle, ManualMeta, getManualMeta/getManualPart, read-only guards",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "kbImportManual"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-28",
+   "why": "Batch M2: manual bundle, ManualMeta, getManualMeta/getManualPart, read-only guards",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "kbImportManual"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2603,7 +2651,12 @@
   "KB_MANUAL_FILE_MAX": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "fc1dccab8f18a472"
+   "sha": "ad5637faa2c9db38"
+  },
+  "KB_MANUAL_FORMAT": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5443f7e68d186e3b"
   },
   "KB_MANUAL_ID_RE": {
    "file": "00_config.js",
@@ -2624,6 +2677,26 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "8bc30a591cc96cc2"
+  },
+  "KB_MANUAL_META_CACHE_KEY": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ea693f46eb21c366"
+  },
+  "KB_MANUAL_META_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5c38a5fb3e408d94"
+  },
+  "KB_MANUAL_META_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "805168d9df518cb4"
+  },
+  "KB_MANUAL_READONLY_MSG": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5153cb969b4845da"
   },
   "KB_MAP_GEOCODE_CACHE_MAX": {
    "file": "00_config.js",
@@ -5565,6 +5638,16 @@
    "kind": "function",
    "sha": "73ad029c0233380a"
   },
+  "getManualMeta": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "03490a68db1a1e0d"
+  },
+  "getManualPart": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "5ddfbfc0c8baf631"
+  },
   "getMetricsAmbient": {
    "file": "40_metrics.js",
    "kind": "function",
@@ -5769,6 +5852,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "80a227452c85ae06"
+  },
+  "getOrCreateManualMetaSheet_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "343f9f1cb089ec98"
   },
   "getOrCreateNotesArchiveTab_": {
    "file": "30_callnotes.js",
@@ -6493,7 +6581,12 @@
   "kbDeleteItem": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "739bf2fe768deba1"
+   "sha": "0a54d173d1eea732"
+  },
+  "kbDeleteRowSafe_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "ffe64630e1fc4fd4"
   },
   "kbDocBodyToMarkdown_": {
    "file": "70_kb.js",
@@ -6613,7 +6706,7 @@
   "kbImportManual": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "5a37b23d3b15291a"
+   "sha": "af057700f77a66e2"
   },
   "kbIngestFile": {
    "file": "70_kb.js",
@@ -6624,6 +6717,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "78177d85b224a962"
+  },
+  "kbManualBundle_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "8f1d7cc62fcfda25"
   },
   "kbManualFileId_": {
    "file": "70_kb.js",
@@ -6639,6 +6737,21 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "6626ce9755ca712c"
+  },
+  "kbManualMetaRead_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "a8d1ca640eb4ae38"
+  },
+  "kbManualMetaValidate_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "2a534211c42dd7bc"
+  },
+  "kbManualOrphans_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "9e204cae6e23db3b"
   },
   "kbManualPlan_": {
    "file": "70_kb.js",
@@ -6728,7 +6841,7 @@
   "kbRevertItem": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "0028e2bc3cd17f90"
+   "sha": "a42e730696464cb1"
   },
   "kbReviewStaggerOffsets_": {
    "file": "70_kb.js",
@@ -6753,7 +6866,7 @@
   "kbSaveItem": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "19029dfa76ed60f7"
+   "sha": "29d844cbcf2b5fe7"
   },
   "kbSaveSearchConfig": {
    "file": "70_kb.js",

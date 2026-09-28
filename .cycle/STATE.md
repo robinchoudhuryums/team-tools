@@ -10,7 +10,7 @@ Scope: operator notes — Call Notes (Close Order, Scratchpad), Dashboard (live
 view, widgets), Dept Requests (reply-resolution, sort/filter, layout), Spanish
 Inbox (assign notifications)
 Test Command: manual
-Estimates: Batch A (1 Close reason · 2a Scratchpad fixes · 6 DR sort/filter · 7 DR manager layout): M (~6 h) — 1 S 1.5h · 2a S 1.5h · 6 S 1.5h · 7 S 1.5h — written BEFORE the first edit | Batch A Actual: ~3 h · Batch B (2b floating Scratchpad panel · 2c formatting toolbar): M–L (~7 h) — 2b M 3h · 2c M–L 4h — written BEFORE the first edit | Batch B Actual: ~2.5 h · Batch C (8 Spanish assign → email + Needs-you · 3 presence on the live view): M (~6 h) — 8 M 3.5h · 3 M 2.5h — written BEFORE the first edit | Batch C Actual: ~3 h · Batch D (Dept Request reply = resolution): L (~8 h) — D1 Reply-To + thread id S 1.5h · D2 hourly reply scan + the four rules M 3.5h · D3 Responded / Mark unresolved server + UI M 2.5h · schema + fixtures S 0.5h — written BEFORE the first edit | Batch D Actual: ~3.5 h · Batch E (Dashboard widgets): L (~8 h) — E1 widget registry + layout resolver S–M 2.5h · E2 Customize panel (show/hide, reorder, width, reset) M 3h · E3 manager team default (server + property) S 1.5h · fixtures + visual S 1h — written BEFORE the first edit | Batch E Actual: ~3.5 h · Batch M (the CSR Procedures Manual into Reference): M0 add the source S (~1 h) · M1 drafts in Reference L (~13 h) — exporter 5h · renderer (nested lists, block callouts) 3h · importer + ledger + SortOrder/sort/review-stagger + bulk publish 4h · tests 1h · M2 links/previews/search/read-as-one L (~8 h) · M3 diagrams + images M–L (~7 h) · M4 priorities TBD — written BEFORE the first edit | Batch M1 Actual: ~4.5 h
+Estimates: Batch A (1 Close reason · 2a Scratchpad fixes · 6 DR sort/filter · 7 DR manager layout): M (~6 h) — 1 S 1.5h · 2a S 1.5h · 6 S 1.5h · 7 S 1.5h — written BEFORE the first edit | Batch A Actual: ~3 h · Batch B (2b floating Scratchpad panel · 2c formatting toolbar): M–L (~7 h) — 2b M 3h · 2c M–L 4h — written BEFORE the first edit | Batch B Actual: ~2.5 h · Batch C (8 Spanish assign → email + Needs-you · 3 presence on the live view): M (~6 h) — 8 M 3.5h · 3 M 2.5h — written BEFORE the first edit | Batch C Actual: ~3 h · Batch D (Dept Request reply = resolution): L (~8 h) — D1 Reply-To + thread id S 1.5h · D2 hourly reply scan + the four rules M 3.5h · D3 Responded / Mark unresolved server + UI M 2.5h · schema + fixtures S 0.5h — written BEFORE the first edit | Batch D Actual: ~3.5 h · Batch E (Dashboard widgets): L (~8 h) — E1 widget registry + layout resolver S–M 2.5h · E2 Customize panel (show/hide, reorder, width, reset) M 3h · E3 manager team default (server + property) S 1.5h · fixtures + visual S 1h — written BEFORE the first edit | Batch E Actual: ~3.5 h · Batch M (the CSR Procedures Manual into Reference): M0 add the source S (~1 h) · M1 drafts in Reference L (~13 h) — exporter 5h · renderer (nested lists, block callouts) 3h · importer + ledger + SortOrder/sort/review-stagger + bulk publish 4h · tests 1h · M2 links/previews/search/read-as-one L (~8 h) [REVISED: M2 the Manual reader L (~12 h) — bundle export + ManualMeta import 1.5h · part reader + kb: links + tree grouping 4h · read-only + suggest-edit 1.5h · number jump + drawer router 2.5h · hover previews + Updated badges 1.5h · tests/visual 1h — written BEFORE the first edit] · M3 diagrams + images M–L (~7 h) · M4 priorities TBD — written BEFORE the first edit | Batch M1 Actual: ~4.5 h
 Subsystem cycles since last Seams audit: 2 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25). The cadence is every 4.
 Updated: 2026-09-28
 
@@ -113,9 +113,20 @@ the HTML step also needs markdown/bs4/playwright/Pillow and Node `docx`.
   ImportedAt) — idempotent, skips + reports in-app edits; staggers ReviewedAt so
   review dates spread across the window; bulk "publish manual articles". Fixes:
   the editor drops SortOrder (every save writes 0); departments sort naturally.
-- **M2 (L):** `kb:` links open in place + scroll to the numbered heading; hover
-  previews (kbTetherPopover_); search: `5.9`/`5-9`/`§5-9`, plurals, a cached index
-  (every query reads the whole sheet today); the "Read as one" part view.
+- **M2 (L, REVISED 2026-09-28 — the Manual reader):** the manual is its own surface
+  in Reference, not 160 loose articles through the generic viewer. The exporter
+  writes ONE upload file, `manual.json` = {format, version, built, router,
+  changelog, articles}; the importer stores the meta (router, changelog, version)
+  in a `ManualMeta` tab. The reader: opening any manual section renders its WHOLE
+  PART as one continuous page (the tree is the contents rail; a click inside a
+  loaded part scrolls), `kb:` cross-references are real links (open + scroll to
+  the numbered heading), hover previews, "Updated" badges from the changelog, a
+  version line. The tree groups "Procedures manual" parts above "Other
+  reference". Manual sections are READ-ONLY in the app (the server refuses an
+  edit/revert/delete; the reader offers "Suggest an edit" → the existing
+  out-of-date flag with a note). Mid-call: Reference search and the Ctrl+K drawer
+  jump on a section number (5.9, 5-9, §5-9, 5.9.2, card 5, B.1), and the drawer
+  carries the call router ("What did the caller say?").
 - **M3 (M–L):** allowlisted, build-generated diagram partial (15 SVGs, CSS vars →
   design tokens incl. dark, 63 section links → kb:); importer unpacks ~170 images
   (icons, figures, equipment thumbnails) into the KB Images folder, rewrites refs.
@@ -217,6 +228,12 @@ Carried from cycle 22 (full list in its HISTORY block, "Open follow-on items"):
   staff contacts are fine in git and in Reference; manual articles stay in the review
   queue with dates spread out; import everything (appendices, glossary, cards).
   Nested lists + block callouts move into M1 so vetted drafts render correctly.
+- **Manual reader + source of truth (operator, 2026-09-28):** the operator maintains
+  the manual long-term, in the repo only — `manual/` is the one source. Manual
+  sections are read-only in the app; the revised M2 (a dedicated Manual reader
+  modelled on the HTML manual's router / number search / previews, over the M1 KB
+  rows so usage, feedback, comments, review dates and drawer search still apply)
+  replaces the generic-article M2.
 - **Spanish notify (operator, 2026-09-27):** BOTH email and in-app; "Pending
   Tasks" means the Dashboard's Needs-you list.
 
