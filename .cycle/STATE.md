@@ -10,7 +10,7 @@ Scope: operator notes — Call Notes (Close Order, Scratchpad), Dashboard (live
 view, widgets), Dept Requests (reply-resolution, sort/filter, layout), Spanish
 Inbox (assign notifications)
 Test Command: manual
-Estimates: Batch A (1 Close reason · 2a Scratchpad fixes · 6 DR sort/filter · 7 DR manager layout): M (~6 h) — 1 S 1.5h · 2a S 1.5h · 6 S 1.5h · 7 S 1.5h — written BEFORE the first edit | Batch A Actual: ~3 h · Batch B (2b floating Scratchpad panel · 2c formatting toolbar): M–L (~7 h) — 2b M 3h · 2c M–L 4h — written BEFORE the first edit | Batch B Actual: ~2.5 h · Batch C (8 Spanish assign → email + Needs-you · 3 presence on the live view): M (~6 h) — 8 M 3.5h · 3 M 2.5h — written BEFORE the first edit
+Estimates: Batch A (1 Close reason · 2a Scratchpad fixes · 6 DR sort/filter · 7 DR manager layout): M (~6 h) — 1 S 1.5h · 2a S 1.5h · 6 S 1.5h · 7 S 1.5h — written BEFORE the first edit | Batch A Actual: ~3 h · Batch B (2b floating Scratchpad panel · 2c formatting toolbar): M–L (~7 h) — 2b M 3h · 2c M–L 4h — written BEFORE the first edit | Batch B Actual: ~2.5 h · Batch C (8 Spanish assign → email + Needs-you · 3 presence on the live view): M (~6 h) — 8 M 3.5h · 3 M 2.5h — written BEFORE the first edit | Batch C Actual: ~3 h
 Subsystem cycles since last Seams audit: 2 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25). The cadence is every 4.
 Updated: 2026-09-28
 
@@ -94,7 +94,7 @@ Updated: 2026-09-28
   default, so the Dashboard is never empty.
 
 ## In progress (facts to carry forward — NOT judgments)
-- Batches A and B DONE and pushed (blocks `22post-A-…` / `22post-B-broad-implement.md`); NOT deployed. Next: Batch C (Spanish assign notifications + presence on the live view).
+- Batches A, B and C DONE and pushed (blocks `22post-A-…` / `22post-B-…` / `22post-C-broad-implement.md`); NOT deployed. Next: Batch D (Dept Request reply = resolution).
 
 ## Completed this cycle
 - A-1 | 00_config.js, 30_callnotes.js, cn/script_callnotes.html | a Close Order requires a reason (preset list or Other typed); server refuses on preview + send; win-back keys on the preset
@@ -103,10 +103,12 @@ Updated: 2026-09-28
 - A-7 | 50_deptrequests.js, metrics/script_deptrequests.html | managers: team-wide cards beside the resolution table, then team-wide, Incoming, My requests
 - B-2b | script_core.html, cn/script_callnotes.html | the Scratchpad is a floating non-modal panel (drag, resize, remembered geometry, Escape inside only); one shared pointer drag helper, the composers use it
 - B-2c | cn/script_callnotes.html, 30_callnotes.js | formatting toolbar; allowlisted html stored (server sanitizes); legacy text converts; size counter
+- C-8 | 51_spanish.js, 20_timeclock.js, metrics/script_metrics.html, tc/script_clock.html | a Spanish assignment emails the assignee (PHI-free, one summary per assignee per action, never the actor) and puts ONE `spanish` item on their Needs-you list; claim/release/resolve/auto-assign bust it
+- C-3 | 20_timeclock.js, tc/script_manager.html, styles.html | presenceDisplay_: non-Philippines + active + not clocked in → IN (manager card: "in by app activity · no clock-in · seen"); Philippines → amber flag with last-seen; self never; the peer view keeps four keys
 
 ## Pending / not yet done
-- Batches C–E above, in order. Deploy Batches A + B (no operator steps).
-- Docs owed for Batches A and B (each block's DOCUMENTATION UPDATES NEEDED) — a /sync-docs pass.
+- Batches D–E above, in order. Deploy Batches A + B + C (C: confirm the Philippines reps' PayCycle reads `biweekly` — non-blocking).
+- Docs owed for Batches A, B and C (each block's DOCUMENTATION UPDATES NEEDED) — a /sync-docs pass.
 - **Cycle 22's regression walks — NOT confirmed** (the deploy and its
   after-deploy steps were). The per-batch walks are in each `22-*` block and
   the new scenario steps in `.cycle/config.md` (S4, S25, S55, S59–S61, S68,
@@ -148,6 +150,9 @@ Carried from cycle 22 (full list in its HISTORY block, "Open follow-on items"):
   range does not reach the server-derived table/cards.
 - **Batch B follow-ons (22post-B block):** no pressed state on the toolbar; no
   visual of formatted content; a ui-dialog can open beneath the panel (z 56).
+- **Batch C follow-ons (22post-C block):** no DOM harness drives renderManagerView;
+  the manager fixture's Leo Kim is `not_in` with a ClockOut punch (a shape the
+  server cannot produce); no toast on the assignee's open window.
 
 ## Decisions made (so the next session doesn't re-litigate)
 - **Close reasons (operator, 2026-09-27):** the presets include "Dissatisfied with
@@ -170,7 +175,7 @@ Carried from cycle 22 (full list in its HISTORY block, "Open follow-on items"):
   Tasks" means the Dashboard's Needs-you list.
 
 ## Where I left off
-Batches A and B are committed and pushed, not deployed. Next:
-`/broad-implement Batch C` (8 Spanish assign → email + Needs-you; 3 presence on
-the live view) — record its estimate here before the first edit; /sync-docs for
-A + B when convenient.
+Batches A, B and C are committed and pushed, not deployed. Next:
+`/broad-implement Batch D` (Dept Request reply = resolution, the four rules,
+"Responded — needs a look", Mark unresolved) — record its estimate here before
+the first edit; /sync-docs for A + B + C when convenient.
