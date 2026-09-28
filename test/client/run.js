@@ -24007,7 +24007,8 @@ test('D-N10: presence — teammateActiveNotIn_ driven (self never, working state
   // the colon-only keysOf above is blind to shorthand (its first write read
   // two keys out of four), so the row keys are read per LINE: a bare
   // identifier line is a shorthand key.
-  const rowKeys = rowLit[1].split('\n').map((l) => l.trim().replace(/,$/, ''))
+  // 22post C-3: split on commas too — two keys on ONE line read as one (a bite found it).
+  const rowKeys = rowLit[1].split(/[\n,]/).map((l) => l.trim())
     .map((l) => (/^[A-Za-z_]\w*$/.test(l) ? l : (/^([A-Za-z_]\w*):\s/.exec(l) || [])[1]))
     .filter(Boolean);
   assert.strictEqual(['name'].concat(rowKeys).sort().join('|'), 'activeNotIn|isSelf|name|status', 'INV-24: name/status/isSelf + the ONE boolean, nothing else');
