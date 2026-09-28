@@ -1404,6 +1404,22 @@
     "spanishAutoAssignCore_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-28",
+   "why": "22post C-3: presenceTimes_, empIsPhTeam_, presenceDisplay_",
+   "added": [
+    "empIsPhTeam_",
+    "presenceDisplay_",
+    "presenceTimes_"
+   ],
+   "removed": [],
+   "changed": [
+    "getManagerDashboard",
+    "getTeammateStatus",
+    "recordPresence"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4643,6 +4659,11 @@
    "kind": "function",
    "sha": "5b397d49bc497141"
   },
+  "empIsPhTeam_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "cb9f220f2acfed85"
+  },
   "empPayRateById_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -5276,7 +5297,7 @@
   "getManagerDashboard": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "630da8074990ff5c"
+   "sha": "78e40704cdf14cef"
   },
   "getManagerEmails_": {
    "file": "10_core.js",
@@ -5701,7 +5722,7 @@
   "getTeammateStatus": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "d93fc8b63c340b3f"
+   "sha": "959f5e6794f1aba4"
   },
   "getTimesheetArchiveDays_": {
    "file": "20_timeclock.js",
@@ -6933,10 +6954,20 @@
    "kind": "function",
    "sha": "51bf7cc942048dc0"
   },
+  "presenceDisplay_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "d287591dbfa9dea6"
+  },
   "presenceMap_": {
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "45019ef4f8c6ba9f"
+  },
+  "presenceTimes_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "ab70c3bea4d988d0"
   },
   "prevWorkdayIso_": {
    "file": "10_core.js",
@@ -7416,7 +7447,7 @@
   "recordPresence": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "69d2bc86d3bfa727"
+   "sha": "dce7dffcd27a1802"
   },
   "recordPunch": {
    "file": "20_timeclock.js",

@@ -688,6 +688,22 @@ function mgrLeaveBalanceText_(e) {
   return formatLeaveDays(e.annualLeave) + ' d';
 }
 
+/** 22post C-3 — the manager's view of app activity. IN-by-activity (a
+ *  non-Philippines rep using the app with no clock-in) and the amber
+ *  "active · not clocked in" flag (the Philippines team, and anyone active
+ *  after clocking out) both say when the rep was last seen. */
+function mgrActivityTip_(e, isIn) {
+  return (isIn
+      ? 'Shown as in because they are using the app — there is NO clock-in punch today.'
+      : (e.punchStatus === 'clocked_out' ? 'Using the app after clocking out.' : 'Using the app with no clock-in today.'))
+    + ' Shift hours and time off are not checked.';
+}
+function mgrActiveNotInChip_(e, tzAbbr) {
+  if (!e || e.activeNotIn !== true) return '';
+  const label = (e.punchStatus === 'clocked_out' ? 'active · clocked out' : 'active · not clocked in')
+    + (e.lastSeenMgr ? ' · seen ' + e.lastSeenMgr + (tzAbbr ? ' ' + tzAbbr : '') : '');
+  return ' <span class="emp-active-chip" title="' + esc(mgrActivityTip_(e, false)) + '">' + esc(label) + '</span>';
+}
 function renderManagerView(area, data) {
   const counts = { clocked_in: 0, on_lunch: 0, clocked_out: 0, not_in: 0 };
   // D3 (cycle 10): tolerate an unknown status value — `counts[e.status]++` on
@@ -697,6 +713,7 @@ function renderManagerView(area, data) {
   // row shouldn't brick the view.
   data.liveStatus.forEach(e => { if (counts[e.status] !== undefined) counts[e.status]++; else counts.not_in++; });
   const totalEmp = data.liveStatus.length;
+  const activityInCount = data.liveStatus.filter(e => e.activityIn === true).length;   // 22post C-3
   const mgrTzAbbr = data.mgrTzAbbr || '';
   const pendingCount = data.pending.length;
   const missedCount = data.missedPunches.length;
@@ -727,7 +744,7 @@ function renderManagerView(area, data) {
       <div class="tel-cell">
         <div class="tel-label">Active</div>
         <div class="tel-value ${counts.clocked_in > 0 ? 'success' : ''}">${counts.clocked_in}</div>
-        <div class="tel-sub">of ${totalEmp} team members</div>
+        <div class="tel-sub">of ${totalEmp} team members${activityInCount ? ` · ${activityInCount} by app activity` : ''}</div>
       </div>
       <div class="tel-cell">
         <div class="tel-label">On Lunch</div>
@@ -755,7 +772,10 @@ function renderManagerView(area, data) {
         const meta = MGR_STATUS[e.status] || MGR_STATUS.not_in;   // D3 — see counts above
         const initials = e.name.split(' ').map(p => p[0]).slice(0,2).join('').toUpperCase();
         let line;
-        if (e.lastPunchType) {
+        if (e.activityIn) {
+          // 22post C-3: IN by app activity, never by a punch — said on the card.
+          line = `<span class="emp-active-chip is-in" title="${esc(mgrActivityTip_(e, true))}">in by app activity · no clock-in${e.lastSeenMgr ? ' · seen ' + esc(e.lastSeenMgr) + ' ' + esc(mgrTzAbbr) : ''}</span>`;
+        } else if (e.lastPunchType) {
           const showMgr = e.lastPunchTimeMgr && e.empTzAbbr !== e.mgrTzAbbr;
           // Paired-timezone chip (V4·E5): local time emphasized, manager time
           // secondary; the second segment is omitted when both tzs match.
@@ -788,7 +808,7 @@ function renderManagerView(area, data) {
             <div class="emp-avatar ${meta.avCls}">${esc(initials)}</div>
             <div class="emp-name" title="${esc(e.name)}">${esc(e.name)}</div>
           </div>
-          <div class="emp-status-line">${line}</div>
+          <div class="emp-status-line">${line}${mgrActiveNotInChip_(e, mgrTzAbbr)}</div>
           ${ptoLine}
           ${sparkSection}
           <div class="emp-card-actions">

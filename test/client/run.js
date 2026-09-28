@@ -12696,7 +12696,7 @@ test('B8: the manager liveStatus fixture carries the id the client reads', () =>
   assert.ok(/\bid:\s*e\.id\b/.test(ret[1]), 'the server ships `id` on a liveStatus row');
   assert.ok(!/\bempId:/.test(ret[1]), 'and NOT `empId` — which is what drifted');
   const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
-  const lsFn = /function ls\(name, status, t, tz, abbr\) \{ return \{([\s\S]*?)\}; \}/.exec(mock);
+  const lsFn = /function ls\(name, status, t, tz, abbr(?:, act)?\) \{ (?:act = act \|\| \{\}; )?return \{([\s\S]*?)\}; \}/.exec(mock);   // 22post C-3 added the activity arg
   assert.ok(lsFn, 'found the fixture row builder');
   assert.ok(/\bid:\s*'E-'/.test(lsFn[1]), 'the fixture ships `id` too');
   assert.ok(!/\bempId:/.test(lsFn[1]), 'and not the drifted `empId`');
@@ -23997,7 +23997,7 @@ test('D-N10: presence — teammateActiveNotIn_ driven (self never, working state
   // (c) recordPresence: rep-gated, cache-only, never a lock / sheet / audit.
   const rp = nc(extractRawFunction('Code.js', 'recordPresence'));
   assert.ok(/getEmployeeInfo_\(\)/.test(rp) && /if \(!emp\) return \{ success: false \};/.test(rp), 'rep-gated (the recordViewEnter shape)');
-  assert.ok(/\.put\(PRESENCE_CACHE_PREFIX \+ emp\.id, '1', PRESENCE_TTL_SEC\)/.test(rp), 'ONE cache put under the prefixed key with the TTL');
+  assert.ok(/\.put\(PRESENCE_CACHE_PREFIX \+ emp\.id, String\(Date\.now\(\)\), PRESENCE_TTL_SEC\)/.test(rp), 'ONE cache put under the prefixed key with the TTL — its value the gesture time (22post C-3)');
   assert.ok(!/waitLock|appendRow|writeAuditLog_|getSheetByName|setValue/.test(rp), 'no lock, no sheet write, no audit row — a volatile signal, not a record');
   // (d) getTeammateStatus: the row literal carries EXACTLY the four keys, the flag comes from the rule, C8 holds.
   const ts = nc(extractRawFunction('Code.js', 'getTeammateStatus'));
@@ -24011,7 +24011,7 @@ test('D-N10: presence — teammateActiveNotIn_ driven (self never, working state
     .map((l) => (/^[A-Za-z_]\w*$/.test(l) ? l : (/^([A-Za-z_]\w*):\s/.exec(l) || [])[1]))
     .filter(Boolean);
   assert.strictEqual(['name'].concat(rowKeys).sort().join('|'), 'activeNotIn|isSelf|name|status', 'INV-24: name/status/isSelf + the ONE boolean, nothing else');
-  assert.ok(/activeNotIn: teammateActiveNotIn_\(isSelf, !!present\[e\.id\], status\)/.test(ts), 'the flag is the pure rule over the stamp + status');
+  assert.ok(/const disp = presenceDisplay_\(status, !!present\[e\.id\], e\.isPh, isSelf\);/.test(ts) && /status: disp\.status,/.test(ts) && /activeNotIn: disp\.activeNotIn,?/.test(ts), 'the status + flag are the pure rule over the stamp + status + team (22post C-3)');
   assert.ok(/const present = presenceMap_\(employees\.map\(e => e\.id\)\);/.test(ts), 'ONE getAll over the roster ids');
   assert.ok(!/lastSeen|seenAt|presenceAt|sentAt/.test(ts), 'no presence TIMESTAMP anywhere on the view');
   assert.ok(ts.indexOf('getEmployeeInfo_') < ts.indexOf("getFlag_('showTeammateStatus')"), 'C8: auth still precedes the flag read');
@@ -29037,6 +29037,44 @@ test('C-8: the notices, busts and Needs-you item are wired — after the lock, o
   assert.ok(/clkNeedsYouInvalidate_\(\);\s+\/\/ 22post C-8: a claim is a Needs-you task/.test(extractFnFrom(met, 'spanishClaimRpc_')), 'the actor\'s own list refreshes');
   const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
   assert.ok(/kind: 'spanish'/.test(mock), 'the fixture photographs it (INV-185)');
+});
+
+test('C-3: app activity reads as IN for a non-Philippines rep, "active · not clocked in" for a Philippines rep, and never re-labels self (driven)', () => {
+  const ctx = vm.createContext({ String, Number, Object, isFinite });
+  ['teammateActiveNotIn_', 'presenceDisplay_', 'empIsPhTeam_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const d = (st, pr, ph, me) => JSON.parse(JSON.stringify(ctx.presenceDisplay_(st, pr, ph, me)));
+  assert.deepStrictEqual(d('not_in', true, false, false), { status: 'clocked_in', activityIn: true, activeNotIn: false }, 'non-PH, active, not clocked in → IN by activity');
+  assert.deepStrictEqual(d('not_in', true, true, false), { status: 'not_in', activityIn: false, activeNotIn: true }, 'PH → stays not in, flagged');
+  assert.deepStrictEqual(d('not_in', true, false, true), { status: 'not_in', activityIn: false, activeNotIn: false }, 'self is never re-labelled or flagged');
+  assert.deepStrictEqual(d('clocked_out', true, false, false), { status: 'clocked_out', activityIn: false, activeNotIn: true }, 'clocked out + active → flagged for everyone, never back IN');
+  assert.deepStrictEqual(d('not_in', false, false, false), { status: 'not_in', activityIn: false, activeNotIn: false }, 'no activity → no change');
+  ['clocked_in', 'on_lunch'].forEach((st) => assert.deepStrictEqual(d(st, true, false, false), { status: st, activityIn: false, activeNotIn: false }, st + ' is untouched'));
+  // The team: PAY_CYCLE biweekly is the Philippines (every roster tz is CST).
+  vm.runInContext('var EMP = { PAY_CYCLE: 3 };', ctx);
+  assert.strictEqual(ctx.empIsPhTeam_(['', '', '', ' BiWeekly ']), true);
+  assert.strictEqual(ctx.empIsPhTeam_(['', '', '', 'monthly']), false);
+  assert.strictEqual(ctx.empIsPhTeam_(['', '', '', '']), false, 'a blank pay cycle is not the Philippines — it gets the lenient rule');
+  // presenceTimes_: ms kept, a pre-C-3 '1' stamp is present-without-a-time, a blank is absent, a throw is {}.
+  const ptSrc = "const PRESENCE_CACHE_PREFIX = 'presence_v1:';\n" + extractRawFunction('Code.js', 'presenceTimes_');
+  const c1 = vm.createContext({ Number, isFinite, CacheService: { getScriptCache: () => ({ getAll: () => ({ 'presence_v1:A': '1790000000000', 'presence_v1:B': '1', 'presence_v1:C': '' }) }) } });
+  vm.runInContext(ptSrc, c1);
+  assert.strictEqual(JSON.stringify(c1.presenceTimes_(['A', 'B', 'C', 'D'])), '{"A":1790000000000,"B":0}');
+  const c2 = vm.createContext({ Number, isFinite, CacheService: { getScriptCache: () => { throw new Error('down'); } } });
+  vm.runInContext(ptSrc, c2);
+  assert.strictEqual(JSON.stringify(c2.presenceTimes_(['A'])), '{}', 'a failed read → no activity, never a thrown dashboard');
+});
+
+test('C-3: the manager view carries the activity fields; the peer view keeps four keys and no time (source + fixture)', () => {
+  const md = stripJsComments_(extractRawFunction('Code.js', 'getManagerDashboard'));
+  assert.ok(/e\.isPh = empIsPhTeam_\(empRows\[i\]\);/.test(md) && /const seen = presenceTimes_\(employees\.map\(e => e\.id\)\);/.test(md), 'ONE getAll with times, the team per rep');
+  assert.ok(/const disp = presenceDisplay_\(status, present, e\.isPh, false\);/.test(md), 'the one rule — a manager is never "self" on this list');
+  assert.ok(/status: disp\.status,/.test(md) && /punchStatus: status,/.test(md) && /activityIn: disp\.activityIn, activeNotIn: disp\.activeNotIn,/.test(md) && /lastSeenMgr:/.test(md),
+    'display status + the punch status kept beside it + the flags + last seen');
+  const ts = stripJsComments_(extractRawFunction('Code.js', 'getTeammateStatus'));
+  assert.ok(!/presenceTimes_|lastSeen|punchStatus|activityIn/.test(ts), 'the peer view ships no time and no extra key (INV-24)');
+  const mgr = fs.readFileSync(path.join(PA_WEB, 'tc/script_manager.html'), 'utf8');
+  assert.ok(/emp-active-chip is-in/.test(mgr) && /by app activity/.test(mgr), 'an activity-IN card SAYS so — it never reads as a clock-in');
+  assert.ok(/\.emp-active-chip\.is-in \{/.test(fs.readFileSync(path.join(PA_WEB, 'styles.html'), 'utf8')), 'the chip has its rule (g140)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
