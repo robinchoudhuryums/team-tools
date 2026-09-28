@@ -50,11 +50,13 @@ Script project synced via [clasp](https://github.com/google/clasp).
     and diagnostics stay manager-only — date-range and preset
     chips), "Spanish Inbox" (bilingual-assistance request
     tracking with a per-member resolution-share chart, a manager
-    auto-assign of unclaimed requests, and 8x8 voicemail
+    auto-assign of unclaimed requests (the assignee is emailed and
+    the claim lands on their Dashboard Needs-you list), and 8x8 voicemail
     notifications folded in as task cards — a voicemail shorter than
     `SPANISH_VM_MIN_SECONDS` is a hang-up and is suppressed, with the
     hidden count reported so the filter can never fail silently), and "Dept
-    Requests" (inter-department request tracking with SLA status).
+    Requests" (inter-department request tracking with SLA status,
+    a sort and a date range).
     CDR metrics also enrich the Call Notes Stats tab via a
     best-effort overlay.
   - **Intake** — patient-intake forms ported from the bound

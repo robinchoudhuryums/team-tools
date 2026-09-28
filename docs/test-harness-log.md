@@ -2086,3 +2086,29 @@ the exit code.
 **`counts.mjs --block` refuses while the harness is red**, which is right,
 because a red tree has no honest counts. Mid-batch, update the one row by hand
 and let `--check` confirm it once the tree is green.
+
+## 22post — the operator's testing notes, Batches A–C (2026-09-28)
+
+Three blocks (`.cycle/blocks/22post-{A,B,C}-broad-implement.md`) carry the
+per-change detail. By delta:
+
+- **Batch A:** Node +4, DOM +2, visual +3 scenarios (`deptreq-light-compact`,
+  `deptreq-dark-wide`, `cn-scratchpad-dark-wide`). Updated for deliberate
+  changes: the L-1 validator base carries a close reason, the DR dept-filter
+  pin reads the `drListView_` pipeline, the cache-key pin reads `dept_req_v2`,
+  and two repaint pins read the split manager renderers. 19 bite-checks; two
+  NO BITEs acted on (g138): the A-1 server pin asserted only that the
+  validator CALLED the helper, and the client pin only the guard's text order.
+  Both now drive `validateEmailSelections_` / `cnComposerGoToPreview_`.
+- **Batch B:** Node +3, DOM +1, visual +1 (`cn-scratchpad-light-compact`).
+  The two Scratchpad sanitizers are held to ONE case table
+  (`SCRATCH_SANITIZE_CASES` in run.js; the same rows in the DOM pin). Four
+  pins moved because the Scratchpad left the overlay lifecycle (R3 #5, F-02
+  DOM, C6, A-2a DOM). 11 bite-checks, all BITE. The shot caught what no pin
+  could: the purple swatch rendered orange and amber brown (the wrong tokens).
+- **Batch C:** Node +4; the editor presence test now asserts a gesture-time
+  stamp (no new registration). D-N10 and B8 moved to the new shapes. 11
+  bite-checks, all BITE after one fix: a leaked fifth key on the peer view
+  first read NO BITE against D-N10, whose INV-24 row-key reader split the row
+  literal per LINE, so two keys on one line read as one. It splits on commas
+  too now (g116, the ninth direction). The new C-3 pin had caught it.

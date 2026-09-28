@@ -57,6 +57,20 @@ not restate it. Server endpoints live in the fourteen server files
      soon as a task is done, created or withdrawn — in this window and in the
      pop-out (T9, T10, g67).
 
+     **22post Batch C (operator testing notes, 2026-09-28) — app activity on
+     the live views.** A rep who is using the app but has not clocked in now
+     shows on the live team views by the operator's rule: outside the
+     Philippines team they read fully IN, and the manager's card says so ("in
+     by app activity · no clock-in · seen 9:42 AM CST", counted "· N by app
+     activity" under Active); a Philippines rep keeps the amber "active · not
+     clocked in" chip, with the time last seen on the manager's card. A rep
+     active after clocking out is flagged for everyone. A rep's own card is
+     never re-labelled, and the teammates' view still ships only name, status,
+     isSelf and the one flag (g33). Activity never writes or implies a punch.
+     The Philippines team is roster PayCycle `biweekly` (the operator-state
+     column E entry). The Needs-you list gains a **Spanish Inbox** item for a
+     member who holds open claims (see Metrics).
+
 <a id="call-notes"></a>
      **2026-09-17 (the /broad-scan's Batches 1 + 2):** an EQUAL Clock In /
      Clock Out is zero hours, not the 24-hour day the `<=` overnight wrap paid
@@ -206,6 +220,30 @@ not restate it. Server endpoints live in the fourteen server files
      request rather than from ScriptCache, so a `/dev` visit no longer prompts
      prod tabs to reload (U4, g157).
 
+     **22post Batch A (operator testing notes, 2026-09-28).** A **Close Order**
+     department email requires a reason: a preset from
+     `CONFIG.CALL_NOTES.CLOSE_ORDER_REASONS` (which includes "Dissatisfied with
+     services" and "Due to cost"), or Other with the reason typed. The composer
+     stops before the preview and marks the empty control, and the server
+     refuses the preview and the send without one. The win-back nudge now fires
+     for the "Changing suppliers" preset only (typed text keeps the old loose
+     read). The **Scratchpad** buttons are the standard modal pair, a reopen
+     paints the last copy at once (a refresh never overwrites what the rep has
+     typed), and a text selection dragged out of the pad no longer closes it:
+     every backdrop now closes only on a press that STARTED on it (g100).
+
+     **22post Batch B (2026-09-28) — the Scratchpad floats.** It is a
+     floating, NON-MODAL panel: no backdrop or blur, so the rep can keep typing
+     a note (or use the composer) with it open. It drags by its header, resizes
+     from its corner, remembers its place and size per browser (`umsScratchGeom`,
+     clamped to the current window) and closes on Escape only from inside
+     itself. A formatting toolbar adds bold, italic, underline, three sizes,
+     five theme colours, bulleted and numbered lists and clear formatting. The
+     pad is stored as allowlisted HTML, sanitized by the server on save (the
+     client sanitizes too, from the same case table); a plain-text pad from
+     before converts on open. The composers share the same pointer drag helper
+     and now stay fully on screen.
+
 <a id="metrics"></a>
      **Batch 6 (2026-09-18):** the Admin Overview KPI strip reports TEAM
      numbers — notes across every enrolled rep (all-time) and the cross-rep
@@ -343,6 +381,20 @@ not restate it. Server endpoints live in the fourteen server files
      Dept Request SLA targets are WORKING DAYS (default 2) and every tracker,
      stats, digest and brief label says so. The old hours targets had quietly
      become business hours on 2026-08-31, about 2.5x looser (M6, g158).
+
+     **22post Batches A + C (operator testing notes, 2026-09-28).** **Dept
+     Requests** has a sort (Newest, open first — the default; Oldest; Longest
+     open) and a date range (the shared range control, with Custom) over every
+     list; the server keeps the NEWEST requests when it caps a rep's list (it
+     kept the oldest). Managers now lead with team-wide summary cards beside the
+     Resolution Time by Department table, then the team-wide list, Incoming and
+     My requests; a rep's layout is unchanged. In the **Spanish Inbox**, an
+     assignment tells the assignee: a manager's claim-for, or each auto-assign
+     run (manual or scheduled), sends one email per assignee that says who
+     assigned how many and links to the Spanish Inbox. It carries no request
+     content. A member's open claims appear as one item on their Dashboard
+     Needs-you list, refreshed by claim, release, resolve and auto-assign in
+     every open window.
 
 <a id="intake"></a>
      **Batch 5 (2026-09-18):** `QaRecordings` carries a trailing `AgentId`

@@ -754,6 +754,13 @@ entry says which it is.
   guards ThreadBody/resolve/claim so a member can expand/resolve/claim a
   VM card like any request; `vmTruncated` folds into the existing
   `truncated` note.
+  **Assignment notices (22post C-8, 2026-09-28).** A manager's claim-for and
+  every auto-assign run email each assignee from the deployer's mailbox (no
+  request content), and a member's open claims appear on their Dashboard
+  Needs-you list. Nothing to set up. The pending thread ids are cached for 15
+  minutes (`spanish_pending_ids_v1:<days>`, ids only), so a request answered in
+  Gmail outside the app can stay on Needs you that long.
+
 <a id="operator-elapsed-time-is-business-hours-and-one-pure-core-computes-it"></a>
 - **Elapsed time is BUSINESS hours, and ONE pure core computes it (operator
   2026-08-31).** The operator asked whether the Spanish-inbox median counted
@@ -947,6 +954,16 @@ entry says which it is.
   manager-curated **Quick Links** picker in the external-email composer
   (`CN_EXTERNAL_LINKS`, below). Do NOT re-file the external-form block as a code
   bug — it's an environmental/admin constraint.
+<a id="operator-employees-sheet-column-e-paycycle"></a>
+- **`Employees` sheet column E = `PayCycle` also decides the live-view presence
+  rule (22post C-3, 2026-09-28).** `biweekly` is the Philippines team, and
+  `empIsPhTeam_` reads it because every roster timezone is CST and cannot
+  separate the teams. A Philippines rep who is active in the app with no
+  clock-in reads the amber "active · not clocked in"; anyone else reads IN
+  ("by app activity" on the manager's card). A blank or other value gets the
+  non-Philippines rule, so check the Philippines rows after deploy. The column
+  still drives the pay period (`PayAnchor`, the export schedule) as before.
+
 <a id="operator-employees-sheet-column-k-ptoenabled"></a>
 - **`Employees` sheet column K = `PtoEnabled`** — added in the
   current schema; existing sheets must have this column added
@@ -1868,6 +1885,12 @@ entry says which it is.
   a name without an email or an email without a name, marks the empty field and
   names the row. It used to drop the row and say "saved". Two rows with the
   same name still save, and the later one wins.
+  **Since 22post A-1 (2026-09-28)** the Close Order reasons are
+  `CONFIG.CALL_NOTES.CLOSE_ORDER_REASONS`, CONFIG-only (no Admin editor and no
+  Script Property). A Close Order email cannot be sent without one; change the
+  list by editing CONFIG and redeploying. Keep "Changing suppliers" spelled as
+  it is: the win-back nudge keys on it.
+
 <a id="operator-script-property-cn-archived-tags"></a>
 - **Script Property `CN_ARCHIVED_TAGS`** (auto-managed). JSON array
   of lowercase tag strings marked as archived via the Call Notes →

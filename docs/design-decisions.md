@@ -4673,3 +4673,55 @@ pick them up without re-deriving the context.
   detail. Rejected: relabelling the hours as "business hours" (the numbers
   stay wrong), and converting at the business-hours reading (48 would become
   5.3 days, the loose value this fixes). See g158.
+- <a id="a-close-order-names-its-reason"></a>**A Close Order names its reason, from a CONFIG list, and the server refuses without one (22post A-1, operator 2026-09-27).** The operator asked for a required reason so a closed order can be
+  understood and, for "changing suppliers", won back. The list is
+  `CONFIG.CALL_NOTES.CLOSE_ORDER_REASONS`, shipped to the composer by
+  `getCallNotesDepartments` as `closeReasons` rather than mirrored in the
+  client, so it has one home; with no list, only Other is offered. The client
+  stops before the preview, but the rule lives in `validateEmailSelections_`
+  (`cnCloseReasonError_`), so both the preview and the send refuse, whatever a
+  client sends. The subform stores `{reason, reasonCode}`: `reason` is the text
+  the email prints, and the win-back nudge keys on the code, so only the
+  "Changing suppliers" preset nudges. A saved free-text reason reopens as
+  Other. Rejected: an Admin-editable list (the operator did not ask, and CONFIG
+  is the convention for short enumerations).
+- <a id="the-scratchpad-is-a-floating-non-modal-panel"></a>**The Scratchpad is a floating, non-modal panel, and the server sanitizes what it stores (22post B, operator 2026-09-27).** The operator uses the Scratchpad while writing a note, and a modal with a
+  blurred backdrop made that impossible. So it is not an overlay at all:
+  `#cn-scratch-panel.cn-float-panel` is appended to `<body>` above the overlay
+  layer, with `aria-modal="false"`. It therefore owns its own close rules:
+  Escape is handled on the panel and stops there (it never closes a modal
+  underneath), and the shell's focus trap and a dialog's Enter handler both
+  exempt `.cn-float-panel`. Its geometry is clamped to the current window on
+  every open (`cnScratchGeomFor_` over the shared `dragClamp_`). Formatting is
+  stored as allowlisted HTML: colours and sizes are palette CLASSES
+  (`cn-sp-c-*`, `cn-sp-s-*`) over theme tokens, so they flip in dark mode,
+  never inline styles. The SERVER is the sanitizer authority
+  (`scratchpadSanitizeHtml_` runs before the size cap); the client twin
+  `cnScratchSanitize_` exists so a paste is clean before it is inserted, and
+  both are held to one case table. Rejected: Markdown markers (the operator
+  wanted visible formatting) and keeping the modal with its backdrop removed
+  (the focus trap would still have taken the rep's typing).
+- <a id="a-spanish-assignment-tells-the-assignee"></a>**A Spanish assignment tells the assignee by email and on Needs you, and the email carries no request content (22post C-8, operator 2026-09-27).** The operator asked for both. The email builder takes only a count, the
+  assigner's name and a link (`spanishAssignEmail_(count, actorName, url)`), so
+  no subject, sender, body or thread id can reach it; it is sent after the
+  lock, best-effort, one per assignee per action, and never to the person who
+  acted. The Needs-you item is one aggregate row, not one per thread, so a
+  busy member's list is not flooded. Knowing which claims are still pending
+  needs the Gmail read, so `getSpanishInboxPending` caches the pending THREAD
+  IDS only for 15 minutes and the Needs-you producer reads that set first,
+  and reads Gmail live only on a miss and only for a rep who holds a claim.
+  A failed read is "couldn't check", never "nothing to do" (g53).
+- <a id="app-activity-counts-as-in-outside-the-philippines-team"></a>**App activity counts as IN outside the Philippines team, and it rides `status` (22post C-3, operator 2026-09-27).** The operator's rule: a rep active in the app with no clock-in is IN,
+  except the Philippines team, who get the amber "active · not clocked in".
+  One pure function decides it for both views (`presenceDisplay_(status,
+  present, isPh, isSelf)`), and a rep's own card is never re-labelled, so no
+  one reads "In" about a day they have not clocked into. The teammates' view
+  carries activity-IN in `status` rather than a new key, so it keeps its four
+  keys and ships no time (INV-24); the manager's view adds `punchStatus`,
+  `activityIn` and `lastSeenMgr`, and its card says "by app activity · no
+  clock-in", so a manager can always tell. The presence stamp's value became
+  the gesture time for that "seen" line. The team is read from roster
+  PayCycle `biweekly`, because every roster timezone is CST since the
+  2026-08-28 policy and cannot separate the teams. Accepted cost: a
+  non-Philippines rep who opens the app on a day off reads IN for up to the
+  stamp's lifetime.

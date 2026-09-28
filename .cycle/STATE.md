@@ -108,7 +108,7 @@ Updated: 2026-09-28
 
 ## Pending / not yet done
 - Batches D–E above, in order. Deploy Batches A + B + C (C: confirm the Philippines reps' PayCycle reads `biweekly` — non-blocking).
-- Docs owed for Batches A, B and C (each block's DOCUMENTATION UPDATES NEEDED) — a /sync-docs pass.
+- Docs for Batches A, B and C DONE (/sync-docs 2026-09-28: modules, design decisions ×4, gotchas g33/g100/g116 amended, operator-state column E + Close reasons + Spanish notices, operator log, harness log, INV-304..310, S119–S121 + steps on S74/S14/S10, README).
 - **Cycle 22's regression walks — NOT confirmed** (the deploy and its
   after-deploy steps were). The per-batch walks are in each `22-*` block and
   the new scenario steps in `.cycle/config.md` (S4, S25, S55, S59–S61, S68,
@@ -144,7 +144,7 @@ Carried from cycle 22 (full list in its HISTORY block, "Open follow-on items"):
   DEV instance).
 - **Numbers — do not reuse:** INV-225..227 RESERVED (cycle 20); INV-229..232,
   INV-240..242 and INV-301..303 PROPOSED (cycles 21, 21post, 22), not in the
-  library. **Next free: INV-304; gotcha g159; scenario S119.**
+  library. **Next free: INV-311; gotcha g159; scenario S122.**
 - **Batch A follow-ons (22post-A block):** no visual scenario opens the composer
   on a Close Order; the team Median sub-line ellipsizes at half width; the date
   range does not reach the server-derived table/cards.
@@ -178,4 +178,4 @@ Carried from cycle 22 (full list in its HISTORY block, "Open follow-on items"):
 Batches A, B and C are committed and pushed, not deployed. Next:
 `/broad-implement Batch D` (Dept Request reply = resolution, the four rules,
 "Responded — needs a look", Mark unresolved) — record its estimate here before
-the first edit; /sync-docs for A + B + C when convenient.
+the first edit. A + B + C docs are synced (PR from this branch).
