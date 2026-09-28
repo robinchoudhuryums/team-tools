@@ -7034,7 +7034,11 @@ function test_presence_stampAndFlag() {
   try {
     const r = _asUser(_TEST_INDIA_EMAIL, function () { return recordPresence(); });
     _assertEq(r.success, true, 'an employee stamp is accepted');
-    _assertEq(cache.get(key), '1', 'the stamp lands under the prefixed key');
+    // 22post C-3: the stamp's value is the gesture time (ms), so the manager's
+    // view can say when the rep was last seen; the peer view still ships none.
+    const stamped = Number(cache.get(key));
+    _assertTrue(isFinite(stamped) && Math.abs(Date.now() - stamped) < 10 * 60 * 1000, 'the stamp lands under the prefixed key, valued at the gesture time');
+    _assertTrue(presenceTimes_([_TEST_INDIA_ID])[_TEST_INDIA_ID] === stamped, 'the manager view reads that time back');
     _assertTrue(!!teammateActiveNotIn_(false, true, 'not_in'), 'present + not_in → flagged');
     _assertTrue(!!teammateActiveNotIn_(false, true, 'clocked_out'), 'present + clocked_out → flagged');
     _assertEq(teammateActiveNotIn_(false, true, 'clocked_in'), false, 'a working state is never flagged');
@@ -7046,7 +7050,7 @@ function test_presence_stampAndFlag() {
     const india = view.teammates.filter(function (t) { return t.name === _TEST_INDIA_NAME; })[0];
     _assertTrue(!!india, 'the stamped rep is on the view');
     const expected = india.status === 'not_in' || india.status === 'clocked_out';
-    _assertEq(india.activeNotIn, expected, 'flag = stamped AND not working (whatever today\'s fixture punches say)');
+    _assertEq(india.activeNotIn, expected, 'flag = stamped AND not working (whatever today\'s fixture punches say) — a non-Philippines rep with no punch reads IN instead (22post C-3)');
     const self = view.teammates.filter(function (t) { return t.isSelf; })[0];
     _assertEq(self.activeNotIn, false, 'the viewer is never flagged on their own card');
     Object.keys(india).forEach(function (k) {
