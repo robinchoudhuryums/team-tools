@@ -4829,3 +4829,19 @@ test('22post E DOM: Customize dashboard — hide, move (focus follows), widen, S
   assert.ok(h.read('empState').dashLayouts.own, 'the saved default is kept for the session');
   assert.ok(!doc.getElementById('dash-cust-overlay'), 'and the panel closes');
 });
+
+test('22post E DOM: a hidden widget costs no RPC even when its neighbour is shown — Spanish shown, Requests hidden: the Spanish reads go out, getDeptRequests does not', () => {
+  const h = boot();
+  const w = h.window;
+  w.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  w.localStorage.setItem('umsDashLayout', JSON.stringify({ v: 1, items: [
+    { id: 'spanish', show: true, width: 'full' }, { id: 'requests', show: false, width: 'half' }, { id: 'mine', show: false, width: 'half' },
+    { id: 'team', show: false, width: 'half' }, { id: 'needsYou', show: false, width: 'full' }, { id: 'punches', show: true, width: 'half' }, { id: 'teammates', show: false, width: 'half' }] }));
+  h.bootShell({ isManager: false, canSeeSpanish: true, dashLayouts: { team: null, own: null, teamBy: '' } });
+  h.flushTimers();
+  const n = (m) => h.run.calls.filter((c) => c.method === m).length;
+  assert.deepStrictEqual(h.$$('#dash-widgets > .dash-w').map((x) => x.getAttribute('data-w')), ['spanish', 'punches'], 'only the shown widgets have slots');
+  assert.ok(n('getSpanishInboxStats') >= 1 && n('getSpanishInboxPending') >= 1, 'the shown Spanish widget loads');
+  assert.strictEqual(n('getDeptRequests'), 0, 'the hidden Requests widget is never fetched');
+  assert.strictEqual(n('getDashboardMetrics'), 0, 'nor the hidden carousels');
+});
