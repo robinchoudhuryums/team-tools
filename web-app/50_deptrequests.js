@@ -403,6 +403,303 @@ function resolveDeptRequest(requestId) {
     return { success: true, already: !!res.already };
   } catch (err) { return { success: false, error: err.message }; }
 }
+// ── 22post D — a department's reply resolves its request (operator 2026-09-27)
+// The tracked department email goes out with the deployer's mailbox on CC AND
+// Reply-To (sendRepEmail_'s alsoReplyTo), so the department's reply lands in
+// the mailbox the app runs as, in the thread whose id the send recorded
+// (DR.THREAD_ID). An hourly rider (scanDeptRequestReplies, runHourlyJobs)
+// reads each open request's thread(s) and applies FOUR rules to every message
+// (drReplyVerdict_). A reply RESOLVES only when all four hold; one that fails
+// only the fourth — it asks a question, puts the request on hold, or carries
+// no new text — marks the request "Responded — needs a look" and leaves it
+// open. Nothing of a reply's text is stored: the row keeps the reply's time,
+// the verdict, and (on a resolve) who replied.
+
+/** PURE (Node-pinned) — merge a thread id into the ThreadId cell: space-
+ *  separated, deduped, newest last, capped at DR_THREAD_IDS_MAX. */
+function drThreadIdsMerge_(cell, id) {
+  const ids = String(cell || '').split(/\s+/).filter(Boolean);
+  const add = String(id || '').trim();
+  if (add && ids.indexOf(add) < 0) ids.push(add);
+  return ids.slice(-DR_THREAD_IDS_MAX).join(' ');
+}
+/** A re-send of an OPEN request (the A5 dedupe) can open a second thread in
+ *  the deployer's mailbox; record it beside the first. Runs INSIDE
+ *  emailFromCallNote's ScriptLock, so it takes no lock of its own (g17) and
+ *  never throws into the send's bookkeeping. */
+function drAddThreadId_(reqId, threadId) {
+  try {
+    const sh = getOrCreateDeptRequestsSheet_();
+    const hit = drFindRowByReqId_(sh, reqId);
+    if (!hit) return;
+    const next = drThreadIdsMerge_(hit.row[DR.THREAD_ID], threadId);
+    if (next !== String(hit.row[DR.THREAD_ID] || '')) sh.getRange(hit.rowIndex, DR.THREAD_ID + 1).setValue(sheetSafe_(next));
+  } catch (e) { console.warn('drAddThreadId_ failed (reqId=' + reqId + '): ' + e.message); }
+}
+/** PURE — the bare, lowercased address out of a From header
+ *  ("Ana Ruiz <Ana@X.com>" → "ana@x.com"); '' when there is none. */
+function drAddrOf_(from) {
+  const s = String(from || '');
+  const m = /<([^<>\s]+@[^<>\s]+)>/.exec(s) || /([^\s<>"',;]+@[^\s<>"',;]+)/.exec(s);
+  return m ? m[1].trim().toLowerCase() : '';
+}
+/** PURE (Node-pinned) — the NEW text of a reply: quoted history and the
+ *  signature removed. Cuts at the first quote header ("On … wrote:", an
+ *  Outlook "From: … / Sent:" block, "----- Original Message -----", a row of
+ *  underscores) and at a signature marker ("-- ", "Sent from my …"), and drops
+ *  every ">"-quoted line. */
+function drReplyNewText_(body) {
+  let t = String(body || '').replace(/\r\n?/g, '\n');
+  const cuts = [
+    /^[ \t]*On [^\n]{0,300}(?:\n[^\n]{0,300})?wrote:[ \t]*$/im,
+    /^[ \t]*-{2,}\s*Original Message\s*-{2,}/im,
+    /^[ \t]*From:[^\n]*\n[ \t]*(?:Sent|Date|To):/im,
+    /^[ \t]*_{5,}[ \t]*$/m,
+    /^[ \t]*--[ \t]*$/m,
+    /^[ \t]*Sent from my /im,
+  ];
+  cuts.forEach(function (re) {
+    const m = re.exec(t);
+    if (m) t = t.slice(0, m.index);
+  });
+  return t.split('\n').filter(function (l) { return !/^[ \t]*>/.test(l); }).join('\n').trim();
+}
+/** PURE (Node-pinned) — rule 4's negative: the new text asks a question or
+ *  puts the request on hold. A "?" anywhere, or a question / hold phrase. */
+const DR_REPLY_HOLD_RE_ = /\b(can you|could you|would you|will you|do you|please (?:confirm|send|provide|advise|clarify|verify|let (?:me|us) know)|need (?:more )?(?:info|information|details)|need (?:the|a|an|your)\b|will look into|looking into|working on|in progress|pending|following up|follow up|get back to you|on hold|waiting (?:on|for))\b/i;
+const DR_REPLY_QUESTION_LINE_RE_ = /^[ \t]*(is|are|was|were|do|does|did|should|shall|may|which|what|when|where|why|how|who)\b/im;
+function drReplyAsksOrHolds_(text) {
+  const t = String(text || '');
+  // A question often arrives without its "?" — "Is this the right patient" —
+  // so a LINE that opens with a question word counts too. A false match only
+  // means "needs a look", the safe direction; a missed one resolves a request
+  // that is not done.
+  return t.indexOf('?') >= 0 || DR_REPLY_HOLD_RE_.test(t) || DR_REPLY_QUESTION_LINE_RE_.test(t);
+}
+/** PURE (Node-pinned) — rule 2's automatic-sender half: a bounce, a no-reply
+ *  sender, an auto-reply or out-of-office subject, or an Auto-Submitted /
+ *  X-Autoreply / bulk Precedence header. */
+function drReplyIsAutomatic_(m) {
+  const addr = String((m && m.fromAddr) || '');
+  if (/(^|[._+-])(mailer-daemon|postmaster|no-?reply|do-?not-?reply)([._+-]|@)/i.test(addr)) return true;
+  if (/^\s*(automatic reply|auto[- ]?reply|autoreply|out of (the )?office|undeliverable|undelivered|delivery status notification|returned mail|mail delivery failed)\b/i.test(String((m && m.subject) || ''))) return true;
+  const as = String((m && m.autoSubmitted) || '').trim().toLowerCase();
+  if (as && as !== 'no') return true;
+  if (String((m && m.xAutoreply) || '').trim()) return true;
+  return /^(auto_reply|bulk|junk|list)$/i.test(String((m && m.precedence) || '').trim());
+}
+/** PURE (Node-pinned) — THE one rule set. `m` = {fromAddr, ms, subject,
+ *  autoSubmitted, xAutoreply, precedence, body}; `ctx` = {afterMs, excluded
+ *  {addr:1}, deptAddrs {addr:1}, deptDomains {domain:1}}. Returns
+ *  'resolved' | 'needs-look' | '' (not a department reply to this request):
+ *   1. it arrived after the send, and after any reopen (ctx.afterMs);
+ *   2. it is not from the requesting agent, the deployer / CC mailbox, or an
+ *      automatic sender;
+ *   3. it is from the DEPARTMENT: a configured department address, a roster
+ *      member of the department, or the department address's domain;
+ *   4. its new text is non-empty and neither asks nor holds.
+ *  Failing only rule 4 is 'needs-look'. The verdict literals are
+ *  DR_REPLY_VERDICTS. */
+function drReplyVerdict_(m, ctx) {
+  if (!m || !ctx) return '';
+  if (!(Number(m.ms) > Number(ctx.afterMs || 0))) return '';
+  const addr = String(m.fromAddr || '').toLowerCase();
+  if (!addr || (ctx.excluded || {})[addr] || drReplyIsAutomatic_(m)) return '';
+  const dom = addr.slice(addr.indexOf('@') + 1);
+  if (!(ctx.deptAddrs || {})[addr] && !(ctx.deptDomains || {})[dom]) return '';
+  const text = drReplyNewText_(m.body);
+  return (text && !drReplyAsksOrHolds_(text)) ? DR_REPLY_VERDICTS[0] : DR_REPLY_VERDICTS[1];
+}
+/** PURE (Node-pinned) — over a request's messages (any order), the one the
+ *  scan acts on: the EARLIEST resolving reply, else the LATEST needs-look
+ *  one, else null. Returns {verdict, msg}. */
+function drReplyPick_(msgs, ctx) {
+  const sorted = (msgs || []).slice().sort(function (a, b) { return Number(a.ms) - Number(b.ms); });
+  let look = null;
+  for (let i = 0; i < sorted.length; i++) {
+    const v = drReplyVerdict_(sorted[i], ctx);
+    if (v === 'resolved') return { verdict: v, msg: sorted[i] };
+    if (v === 'needs-look') look = sorted[i];
+  }
+  return look ? { verdict: 'needs-look', msg: look } : null;
+}
+/** The department side of rule 3, per request: every address in the
+ *  department map for each component department, every roster member of it
+ *  (col N), and the domains of the department addresses. Also returns the
+ *  roster's name for each address (the resolver's display). */
+function drReplyDirectory_() {
+  const deptMap = getDepartmentEmails_() || {};
+  const keys = Object.keys(deptMap);
+  const byDept = {}, names = {};
+  keys.forEach(function (k) {
+    const addrs = String(deptMap[k] || '').split(/[,;\s]+/).map(function (a) { return a.trim().toLowerCase(); })
+      .filter(function (a) { return a.indexOf('@') > 0; });
+    byDept[k.toLowerCase()] = { addrs: addrs.slice(), domains: addrs.map(function (a) { return a.slice(a.indexOf('@') + 1); }) };
+  });
+  const rows = getEmployeeRosterRows_();
+  for (let i = 1; i < rows.length; i++) {
+    const email = empRosterEmail_(rows[i]);
+    if (!email) continue;
+    const lc = email.toLowerCase();
+    names[lc] = String(rows[i][EMP.NAME] || '').trim();
+    drParseDepartments_(String(rows[i][EMP.DEPARTMENTS] || ''), keys).forEach(function (d) {
+      const b = byDept[String(d).toLowerCase()];
+      if (b) b.addrs.push(lc);
+    });
+  }
+  return { byDept: byDept, names: names };
+}
+/** The mailbox addresses that are never the department: the deployer, the CC
+ *  mailbox and the optional sending alias. */
+function drReplyExcludedBase_() {
+  const out = {};
+  [CONFIG.CALL_NOTES.CC_EMAIL, (function () { try { return Session.getEffectiveUser().getEmail(); } catch (_) { return ''; } })(),
+   (function () { try { return repSenderFrom_(); } catch (_) { return ''; } })()]
+    .forEach(function (a) { const v = String(a || '').trim().toLowerCase(); if (v) out[v] = 1; });
+  return out;
+}
+/** Reads the candidate rows (no lock — Gmail reads are slow), decides each,
+ *  then applies the writes under the ScriptLock after re-reading every row
+ *  (a request resolved, reopened or already marked in the meantime is left
+ *  alone). Returns {candidates, scanned, resolved, needsLook, truncated,
+ *  errors}. */
+function drReplyScanCore_() {
+  const out = { candidates: 0, scanned: 0, resolved: 0, needsLook: 0, truncated: false, errors: 0 };
+  const sh = getOrCreateDeptRequestsSheet_();
+  const lastRow = sh.getLastRow();
+  const firstData = Math.max(2, lastRow - DR_MAX_SCAN + 1);
+  const numRows = lastRow - firstData + 1;
+  if (numRows <= 0) return out;
+  const rows = sh.getRange(firstData, 1, numRows, DR_HEADERS.length).getValues();
+  const parseMs = function (v) { return (v instanceof Date) ? v.getTime() : (parseTimestampMs_(String(v || ''), CONFIG.TIMEZONE) || 0); };
+  const oldest = Date.now() - DR_REPLY_SCAN_DAYS * 86400000;
+  let cands = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r[DR.REQ_ID] || drStatus_(r) !== 'open' || !String(r[DR.THREAD_ID] || '').trim()) continue;
+    const createdMs = parseMs(r[DR.CREATED_AT]);
+    if (!createdMs || createdMs < oldest) continue;
+    cands.push({ reqId: String(r[DR.REQ_ID]), row: r, createdMs: createdMs });
+  }
+  out.candidates = cands.length;
+  cands.sort(function (a, b) { return b.createdMs - a.createdMs; });
+  if (cands.length > DR_REPLY_SCAN_MAX) { out.truncated = true; cands = cands.slice(0, DR_REPLY_SCAN_MAX); }
+  if (!cands.length) return out;
+  const dir = drReplyDirectory_();
+  const baseExcl = drReplyExcludedBase_();
+  const decisions = [];
+  cands.forEach(function (c) {
+    try {
+      const r = c.row;
+      const reopenedMs = parseMs(r[DR.REOPENED_AT]);
+      const excluded = Object.assign({}, baseExcl);
+      const agent = String(r[DR.BY_EMAIL] || '').trim().toLowerCase();
+      if (agent) excluded[agent] = 1;
+      const deptAddrs = {}, deptDomains = {};
+      drSplitDepts_(String(r[DR.TO_DEPT] || '')).forEach(function (d) {
+        const b = dir.byDept[String(d).toLowerCase()];
+        if (!b) return;
+        b.addrs.forEach(function (a) { deptAddrs[a] = 1; });
+        b.domains.forEach(function (x) { deptDomains[x] = 1; });
+      });
+      const msgs = [];
+      String(r[DR.THREAD_ID] || '').split(/\s+/).filter(Boolean).forEach(function (tid) {
+        const th = GmailApp.getThreadById(tid);
+        if (!th) return;
+        th.getMessages().forEach(function (gm) {
+          msgs.push({
+            fromAddr: drAddrOf_(gm.getFrom()), ms: gm.getDate().getTime(), subject: gm.getSubject(),
+            autoSubmitted: gm.getHeader('Auto-Submitted'), xAutoreply: gm.getHeader('X-Autoreply'),
+            precedence: gm.getHeader('Precedence'), body: gm.getPlainBody(),
+          });
+        });
+      });
+      out.scanned++;
+      const pick = drReplyPick_(msgs, { afterMs: Math.max(c.createdMs, reopenedMs || 0), excluded: excluded,
+        deptAddrs: deptAddrs, deptDomains: deptDomains });
+      if (!pick) return;
+      const at = Utilities.formatDate(new Date(pick.msg.ms), CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss");
+      if (pick.verdict === 'needs-look' && String(r[DR.REPLY_VERDICT] || '') === 'needs-look' &&
+          parseMs(r[DR.REPLIED_AT]) === parseMs(at)) return;   // already recorded
+      decisions.push({ reqId: c.reqId, verdict: pick.verdict, at: at, reopened: String(r[DR.REOPENED_AT] || ''),
+        by: dir.names[pick.msg.fromAddr] || pick.msg.fromAddr, byAddr: pick.msg.fromAddr });
+    } catch (e) { out.errors++; console.warn('drReplyScanCore_: ' + c.reqId + ': ' + e.message); }
+  });
+  if (!decisions.length) return out;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  const busts = [];
+  try {
+    decisions.forEach(function (d) {
+      const hit = drFindRowByReqId_(sh, d.reqId);
+      if (!hit || drStatus_(hit.row) !== 'open' || String(hit.row[DR.REOPENED_AT] || '') !== d.reopened) return;
+      const ri = hit.rowIndex;
+      sh.getRange(ri, DR.REPLIED_AT + 1, 1, 2).setValues(sheetSafeRows_([[d.at, d.verdict]]));
+      if (d.verdict === 'resolved') {
+        sh.getRange(ri, DR.STATUS + 1).setValue(sheetSafe_('resolved'));
+        sh.getRange(ri, DR.RESOLVED_AT + 1, 1, 2).setValues(sheetSafeRows_([[d.at, d.by]]));
+        sh.getRange(ri, DR.RESOLVED_VIA + 1).setValue(sheetSafe_('reply'));
+        out.resolved++;
+        try { writeAuditLog_({ id: hit.row[DR.BY_ID], name: hit.row[DR.BY_NAME] }, 'DeptRequestResolved', '', '', false, 0,
+          'reqId=' + d.reqId + '; by=' + d.byAddr + '; via=reply', d.byAddr); } catch (e) {}
+      } else {
+        out.needsLook++;
+      }
+      busts.push(String(hit.row[DR.BY_ID] || ''));
+    });
+    if (busts.length) drBumpCacheGen_();
+  } finally { lock.releaseLock(); }
+  busts.forEach(function (id) { if (id) pendingTasksBust_(id); });
+  return out;
+}
+/** Hourly rider (TRIGGER_GROUPS.runHourlyJobs). Heartbeats before the flag
+ *  check (liveness is observable while off), and a failure is stamped. */
+function scanDeptRequestReplies() {
+  assertManagerCaller_('scanDeptRequestReplies');  // see sendDailyMissedPunchAlerts note
+  try {
+    stampDigestLastRun_('deptReplyScan');
+    if (!getFlag_('deptReplyResolve')) { Logger.log('deptReplyResolve flag is off — no replies read.'); return; }
+    const r = drReplyScanCore_();
+    if (r.errors) stampAutomationError_('DeptReplyScan', r.errors + ' request thread(s) could not be read');
+    else clearAutomationError_('DeptReplyScan');
+    Logger.log('deptReplyScan: ' + JSON.stringify(r));
+    return r;
+  } catch (err) {
+    Logger.log('scanDeptRequestReplies failed: ' + err.message);
+    stampAutomationError_('DeptReplyScan', err.message);
+  }
+}
+/** "Mark unresolved" — the sender, a manager or a member of the receiving
+ *  department (drCanAct_, the resolve rule) reopens a RESOLVED request, by any
+ *  path. The resolution cells clear, ReopenedAt is stamped, and the reply scan
+ *  then ignores every reply before it. */
+function reopenDeptRequest(requestId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Your account is not registered.' };
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    let row;
+    try {
+      const sh = getOrCreateDeptRequestsSheet_();
+      const hit = drFindRowByReqId_(sh, requestId);
+      row = hit ? hit.row : null;
+      if (!row) return { success: false, error: 'Request not found.' };
+      if (!drCanAct_(emp, row))
+        return { success: false, error: 'Only the sender, a member of the receiving department, or a manager can reopen this request.' };
+      if (drStatus_(row) !== 'resolved') return { success: true, already: true };
+      sh.getRange(hit.rowIndex, DR.STATUS + 1, 1, 3).setValues(sheetSafeRows_([['open', '', '']]));   // Status, ResolvedAt, ResolvedBy
+      sh.getRange(hit.rowIndex, DR.RESOLVED_VIA + 1).setValue(sheetSafe_(''));
+      sh.getRange(hit.rowIndex, DR.REOPENED_AT + 1, 1, 3).setValues(sheetSafeRows_([[drNowTs_(), '', '']]));
+      drBumpCacheGen_();
+    } finally { lock.releaseLock(); }
+    pendingTasksBust_(String(row[DR.BY_ID] || ''));
+    pendingTasksBust_(emp.id);
+    try { writeAuditLog_(emp, 'DeptRequestReopened', '', '', false, 0, 'reqId=' + String(requestId) +
+      '; was=' + (drResolvedVia_(row) || 'unrecorded')); } catch (e) {}
+    return { success: true, already: false };
+  } catch (err) { return { success: false, error: err.message }; }
+}
 function drCacheGen_() {
   try { return CacheService.getScriptCache().get('dr_gen_v1') || '0'; } catch (_) { return '0'; }
 }
@@ -429,7 +726,7 @@ function drDeptStats_(items, slaCfg) {
       if (it.status === 'resolved') {
         b.resolved++;
         if (it.resolvedVia === 'app') b.manualResolved++;
-        else if (it.resolvedVia !== 'email') b.untrackedResolved++;
+        else if (it.resolvedVia !== 'email' && it.resolvedVia !== 'reply') b.untrackedResolved++;   // 22post D: a reply is a response time
         else if (it.elapsedMin != null) b.durations.push(it.elapsedMin);
       } else { b.open++; if (it.slaStatus === 'overdue') b.overdueOpen++; }
     });
@@ -449,7 +746,7 @@ function getDeptRequests() {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Your account is not registered.' };
     const drCache = CacheService.getScriptCache();
-    const drCacheKey = 'dept_req_v2:' + emp.id + ':' + drCacheGen_();
+    const drCacheKey = 'dept_req_v3:' + emp.id + ':' + drCacheGen_();
     try { const hit = drCache.get(drCacheKey); if (hit) return JSON.parse(hit); } catch (_) {}
     // Bounded tail read — never the whole sheet. Rows append chronologically, so
     // the most-recent DR_MAX_SCAN rows are the relevant ones for the list/aggregate.
@@ -522,7 +819,8 @@ function getDeptRequests() {
       // fold, the client median, the card) excludes them by the same null
       // guard. `resolvedVia` rides beside it so the exclusion is visible.
       const resolvedVia = isResolved ? drResolvedVia_(r) : '';
-      const timed = !isResolved || resolvedVia === 'email';
+      const timed = !isResolved || resolvedVia === 'email' || resolvedVia === 'reply';   // 22post D: the department's reply is a response time
+      const replyVerdictRaw = String(r[DR.REPLY_VERDICT] || '').trim().toLowerCase();
       const item = {
         requestId: String(r[DR.REQ_ID]), byName: String(r[DR.BY_NAME] || ''),
         toDept: String(r[DR.TO_DEPT] || ''), createdAt: fmtTs(createdMs),
@@ -544,6 +842,15 @@ function getDeptRequests() {
         elapsedWallMin: timed ? elapsedMin : null,
         slaDays: slaDays, slaStatus: drSlaStatus_(elapsedBizMin, drSlaBizHours_(slaDays, dayHours)),
         slaBusiness: true,
+        // 22post D — reply tracking. `threadTracked`: the send recorded a
+        // thread the hourly scan can read (older rows cannot be). The verdict
+        // is the scan's last reading ('needs-look' shows on an open card);
+        // `resolvedMs` orders the Recently resolved list.
+        threadTracked: !!String(r[DR.THREAD_ID] || '').trim(),
+        replyVerdict: DR_REPLY_VERDICTS.indexOf(replyVerdictRaw) >= 0 ? replyVerdictRaw : '',
+        repliedAt: fmtTs(parseMs(r[DR.REPLIED_AT])),
+        reopenedAt: fmtTs(parseMs(r[DR.REOPENED_AT])),
+        resolvedMs: resolvedMs || null,
       };
       all.push(item);
       if (String(r[DR.BY_ID]).trim() === emp.id) mine.push(item);
@@ -579,6 +886,23 @@ function getDeptRequests() {
                      incoming: incoming.slice(0, DR_LIST_CAP), truncated: truncated,
                      listCap: DR_LIST_CAP, mineTotal: mine.length,
                      incomingTotal: incoming.length };
+    // 22post D — "Recently resolved": the requests the caller may REOPEN that
+    // are not their own (My requests already lists those): resolved within
+    // DR_REOPEN_WINDOW_DAYS and addressed to a department the caller staffs,
+    // or any department for a manager. Newest resolution first.
+    const reopenSince = Date.now() - DR_REOPEN_WINDOW_DAYS * 86400000;
+    const mineIds = {};
+    mine.forEach(function (it) { mineIds[it.requestId] = 1; });
+    const recent = all.filter(function (it) {
+      if (it.status !== 'resolved' || !it.resolvedMs || it.resolvedMs < reopenSince) return false;
+      if (mineIds[it.requestId]) return false;
+      if (emp.isManager) return true;
+      if (myDeptsLc[String(it.toDept).toLowerCase().trim()]) return true;
+      return drSplitDepts_(it.toDept).some(function (d) { return myDeptsLc[d.toLowerCase()]; });
+    }).sort(function (a, b) { return (b.resolvedMs || 0) - (a.resolvedMs || 0); });
+    result.recentResolved = recent.slice(0, DR_LIST_CAP);
+    result.recentResolvedTotal = recent.length;
+    result.reopenDays = DR_REOPEN_WINDOW_DAYS;
     if (emp.isManager) {
       result.deptStats = drDeptStats_(all, slaCfg);
       result.teamKpis = drTeamKpis_(all);   // 22post A-7: managers' summary cards are team-wide

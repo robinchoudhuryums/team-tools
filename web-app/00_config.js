@@ -483,7 +483,7 @@ const AUDIT = { TS:0, EMP_ID:1, EMP_NAME:2, ACTOR:3, ACTION:4, PUNCH_DATE:5, PUN
 // and never dedupe; new auto-logged rows carry the source noteId so a re-send of
 // the same note to the same dept reuses the open row's token instead of opening a
 // second request. Same back-compat posture as CN_HEADERS / FS_HEADERS.
-const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CREATED_AT:6, STATUS:7, RESOLVED_AT:8, RESOLVED_BY:9, LABEL:10, NOTE_ID:11, RESOLVED_VIA:12, PATIENT_TRX:13 };
+const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CREATED_AT:6, STATUS:7, RESOLVED_AT:8, RESOLVED_BY:9, LABEL:10, NOTE_ID:11, RESOLVED_VIA:12, PATIENT_TRX:13, THREAD_ID:14, REOPENED_AT:15, REPLIED_AT:16, REPLY_VERDICT:17 };
 // RESOLVED_VIA (trailing, operator 2026-09-10 — back-compat like NOTE_ID; the
 // header self-heals): HOW the row was resolved — 'email' = the recipient
 // clicked the resolve link in the department email (a real response time),
@@ -501,8 +501,28 @@ const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CR
 // the daily SLA reminder EMAIL and the shared AuditLog stay LABEL-ONLY —
 // `deptRequestsOverdueOpen_` deliberately never reads this column, and no
 // audit row carries it (INV-32's discipline for the shared trail).
-const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','ToDept','ToEmail','CreatedAt','Status','ResolvedAt','ResolvedBy','Label','NoteId','ResolvedVia','PatientTrx'];
-const DR_RESOLVED_VIA_VALUES = ['email', 'app'];
+const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','ToDept','ToEmail','CreatedAt','Status','ResolvedAt','ResolvedBy','Label','NoteId','ResolvedVia','PatientTrx','ThreadId','ReopenedAt','RepliedAt','ReplyVerdict'];
+// 22post D (operator 2026-09-27) — reply = resolution. Four trailing columns
+// (the header self-heals; a legacy row reads them blank):
+//   ThreadId     the department email's Gmail thread id(s) in the DEPLOYER's
+//                mailbox, space-separated, newest last, capped at
+//                DR_THREAD_IDS_MAX (a re-send can open a second thread).
+//                Recorded at send time; a row without one is never scanned.
+//   ReopenedAt   the last "Mark unresolved" (drNowTs_ form) — the scan ignores
+//                every reply before it.
+//   RepliedAt    the reply the scan acted on (its own timestamp).
+//   ReplyVerdict 'resolved' (the reply met all four rules) or 'needs-look'
+//                (it met all but the last: it asks a question, puts the
+//                request on hold, or has no new text) — PHI-free, never the
+//                reply's text.
+// ResolvedVia gains 'reply': resolved by the department's own reply, which IS
+// a response time (timed, like 'email').
+const DR_RESOLVED_VIA_VALUES = ['email', 'app', 'reply'];
+const DR_REPLY_VERDICTS = ['resolved', 'needs-look'];
+const DR_THREAD_IDS_MAX = 3;
+const DR_REPLY_SCAN_MAX = 150;      // threads read per hourly run (Gmail read quota + the six-minute limit)
+const DR_REPLY_SCAN_DAYS = 30;      // an open request older than this is no longer scanned for replies
+const DR_REOPEN_WINDOW_DAYS = 7;    // how far back the "Recently resolved" list (and its Mark unresolved) reaches
 const DR_PATIENT_TRX_MAX = 120;
 // Bounded tail scan for the getDeptRequests LIST read only (rows append
 // chronologically; the sheet grows one row per dept email with no retention).
@@ -1211,7 +1231,7 @@ const PTO_ACCRUAL_RECONCILE_MONTHS = 3;
 // unchanged. Order inside a group: the cheapest / bounded jobs first, the
 // cross-rep walk last, so a job that runs long cannot starve the others.
 const TRIGGER_GROUPS = {
-  runHourlyJobs:    ['sendCallNotesEodDigest', 'autoAssignSpanishThreadsScheduled'],
+  runHourlyJobs:    ['sendCallNotesEodDigest', 'scanDeptRequestReplies', 'autoAssignSpanishThreadsScheduled'],   // 22post D: the reply scan rides hourly (count-neutral)
   runWeeklyDigests: ['sendCallNotesWeeklyDigests', 'sendCoachingRecapDigest'],
   runNightlyPurges: ['purgeOldDiagnostics', 'purgeOldQaReviews', 'purgeExpiredFormData', 'purgeArchivedCallNotes'],
   // 8am manager-tz. checkOpenPunches STAMPS and sendAutomationHealthDigest
@@ -1300,6 +1320,9 @@ const FEATURE_FLAGS = [
   { key: 'spanishAutoAssign', label: 'Scheduled Spanish Inbox auto-assign',
     description: 'Every hour during business hours (weekdays inside the Coverage business window, US holidays excluded), hand every UNCLAIMED pending Spanish Inbox request — voicemails included — to the least-loaded configured bilingual member, exactly as the manager "Auto-assign N unclaimed" button does. Needs the Spanish bilingual members list; existing claims are never reassigned. Run installAutomationTriggers() once after first enabling so the hourly trigger exists; it heartbeats even while off.',
     default: false, scope: 'server' },
+  { key: 'deptReplyResolve', label: 'Dept Request reply resolves',
+    description: 'Every hour, read each open department request\'s email thread (in the mailbox the app runs as). A reply from the department that arrived after the send (or the last reopen), is not automatic, and neither asks a question nor puts the request on hold RESOLVES it, credited to the replier; a reply that asks or holds marks it "Responded — needs a look". Only requests sent after this feature shipped carry a thread to read. Off = replies are never read; the resolve link and Mark resolved still work.',
+    default: true, scope: 'server' },
   { key: 'kbAiGuidance', label: 'AI guidance (Reference drawer)',
     description: 'Show an AI-generated guidance card in the Reference drawer, built from whitelisted call facets (department / update type / tags / flag) + excerpts from your own KB articles. Configure the cap + model in the "AI Guidance" section below; set Script Property KB_AI_API_KEY first.',
     default: false, scope: 'both',

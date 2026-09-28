@@ -6140,8 +6140,8 @@ test('F18: payload-capped readers report the pre-slice total', () => {
   const noteFn = drc.slice(drc.indexOf('function drCapNoteHtml_'));
   assert.ok(/!isFinite\(t\) \|\| t <= shown\) return ''/.test(noteFn),
     'the suffix is omitted when the list is complete or the total is absent');
-  assert.strictEqual((drc.match(/drCapNoteHtml_\(/g) || []).length, 4,
-    'all three lists (mine / incoming / allOpen) call it, plus the definition');
+  assert.strictEqual((drc.match(/drCapNoteHtml_\(/g) || []).length, 5,
+    'all four lists (mine / incoming / allOpen / 22post D recentResolved) call it, plus the definition');
   const kbc = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
   assert.ok(/rdCapped \? rdTotal : rd\.length/.test(kbc),
     'the Review-due pill shows the TRUE total, not the payload length');
@@ -11294,7 +11294,7 @@ test('load-time sweep: DR result cache + SWR enters, timeoff rides calNavTo_ (op
   // cache it). The gen salt is bumped by every mutation so a resolve/new
   // request reaches the next read; the put is success-only (INV-129).
   const dr = nc(extractRawFunction('Code.js', 'getDeptRequests'));
-  assert.ok(/dept_req_v2:' \+ emp\.id \+ ':' \+ drCacheGen_\(\)/.test(dr), 'per-caller key + generation salt (v2: 22post A-6/A-7 added createdMs + teamKpis)');
+  assert.ok(/dept_req_v3:' \+ emp\.id \+ ':' \+ drCacheGen_\(\)/.test(dr), 'per-caller key + generation salt (v3: 22post D added the reply fields + recentResolved)');
   assert.ok(/payload\.length <= 90000/.test(dr), 'oversized payloads skip the put');
   const code = nc(serverSource());
   const bumps = (code.match(/drBumpCacheGen_\(\);/g) || []).length;
@@ -21310,7 +21310,7 @@ test('OPS-4: MAIL_BCC_ALL rides every send through ONE seam and never clobbers o
   assert.strictEqual((code.match(/MailApp\.sendEmail\(/g) || []).length, 2, 'exactly two direct MailApp sends: appSendMail_ and sendRepEmail_\'s MailApp branch');
   assert.ok(/function appSendMail_\(opts\) \{\s*MailApp\.sendEmail\(mailMergeBcc_\(opts\)\);/.test(code), 'the seam merges before sending');
   assert.ok((code.match(/appSendMail_\(\{/g) || []).length + (code.match(/appSendMail_\((opts|msg)\)/g) || []).length >= 20, 'every automated sender routes through it');
-  assert.ok(/const merged = mailMergeBcc_\(Object\.assign\(\{\}, opts, repSenderOpts_\(emp\)\)\);/.test(code), 'the rep-identity wrapper merges it too (both branches share `merged`)');
+  assert.ok(/const o = Object\.assign\(\{\}, opts\);/.test(code) && /const merged = mailMergeBcc_\(Object\.assign\(o, repSenderOpts_\(emp\)\)\);/.test(code), 'the rep-identity wrapper merges it too (both branches share `merged`; 22post D strips its two options from a copy first)');
 });
 
 
@@ -23641,8 +23641,8 @@ test('N3-DR: an in-app "Mark resolved" is recorded (ResolvedVia) and leaves ever
   // (a) The store: a trailing column (the CN_HEADERS back-compat posture), the
   //     enum slot, and a header that SELF-HEALS on a pre-existing tab (INV-126).
   // (Batch C, operator note 6, appended PATIENT_TRX:13 after it — rewritten in place.)
-  assert.ok(/RESOLVED_VIA:12, PATIENT_TRX:13 \}/.test(code), 'DR.RESOLVED_VIA is slot 12 (PatientTrx trails it since note 6)');
-  assert.ok(/'NoteId','ResolvedVia','PatientTrx'\]/.test(code), 'DR_HEADERS carries ResolvedVia then PatientTrx');
+  assert.ok(/RESOLVED_VIA:12, PATIENT_TRX:13, THREAD_ID:14/.test(code), 'DR.RESOLVED_VIA is slot 12 (PatientTrx follows it since note 6, the 22post D reply columns after that)');
+  assert.ok(/'NoteId','ResolvedVia','PatientTrx','ThreadId'/.test(code), 'DR_HEADERS carries ResolvedVia then PatientTrx');
   const mk = nc(extractRawFunction('Code.js', 'getOrCreateDeptRequestsSheet_'));
   assert.ok(/getLastColumn\(\) < DR_HEADERS\.length/.test(mk) && /setValues\(sheetSafeRows_\(\[DR_HEADERS\]\)\)/.test(mk),
     'a short header self-heals — a tab provisioned before the column gains it in place');
@@ -23677,7 +23677,7 @@ test('N3-DR: an in-app "Mark resolved" is recorded (ResolvedVia) and leaves ever
   const dr = nc(codeSrc.slice(codeSrc.indexOf('\nfunction getDeptRequests()'),
                               codeSrc.indexOf('\nfunction getDeptRequestSla()')));
   assert.ok(/const resolvedVia = isResolved \? drResolvedVia_\(r\) : '';/.test(dr), 'via is read through the one reader');
-  assert.ok(/const timed = !isResolved \|\| resolvedVia === 'email';/.test(dr), 'only an email-link resolve is timed');
+  assert.ok(/const timed = !isResolved \|\| resolvedVia === 'email' \|\| resolvedVia === 'reply';/.test(dr), 'only an email-link resolve (or, since 22post D, the department\'s reply) is timed');
   assert.ok(/resolvedVia: resolvedVia,/.test(dr), 'via ships on the item');
   assert.ok(/elapsedWallMin: timed \? elapsedMin : null,/.test(dr), 'the wall figure is nulled too — no unit leaks a duration');
   // (e) The client: the card SAYS how, the median skips app resolves, the
@@ -23824,12 +23824,12 @@ test('C-N6: Dept Requests — PatientTrx stored + on the card subject, ONE owner
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   const code = nc(codeSrc);
   // (a) Store.
-  assert.ok(/RESOLVED_VIA:12, PATIENT_TRX:13 \}/.test(code), 'DR.PATIENT_TRX is the trailing slot');
-  assert.ok(/'NoteId','ResolvedVia','PatientTrx'\]/.test(code), 'DR_HEADERS ends with PatientTrx');
+  assert.ok(/RESOLVED_VIA:12, PATIENT_TRX:13, THREAD_ID:14, REOPENED_AT:15, REPLIED_AT:16, REPLY_VERDICT:17 \}/.test(code), 'DR.PATIENT_TRX is slot 13; the 22post D reply columns trail it');
+  assert.ok(/'NoteId','ResolvedVia','PatientTrx','ThreadId','ReopenedAt','RepliedAt','ReplyVerdict'\]/.test(code), 'DR_HEADERS: PatientTrx, then the 22post D reply columns');
   assert.ok(/const DR_PATIENT_TRX_MAX = 120;/.test(code), 'capped');
   const send = nc(extractRawFunction('Code.js', 'emailFromCallNote'));
-  assert.ok(/noteId,\s*'',\s*String\(note\.patientAndTrx \|\| ''\)\.slice\(0, DR_PATIENT_TRX_MAX\),\s*\]\)\);/.test(send),
-    'the append leaves ResolvedVia blank for the resolver and writes the capped patient & TRX as the LAST cell');
+  assert.ok(/noteId,\s*'',\s*String\(note\.patientAndTrx \|\| ''\)\.slice\(0, DR_PATIENT_TRX_MAX\),\s*drThreadId,\s*'', '', '',\s*\]\)\);/.test(send),
+    'the append leaves ResolvedVia blank for the resolver and writes the capped patient & TRX, then the 22post D ThreadId and three blank reply cells');
   // (b) ONE ownership rule, driven.
   const sbx = vm.createContext({
     DR: { BY_ID: 1, TO_DEPT: 4 },
@@ -29076,6 +29076,254 @@ test('C-3: the manager view carries the activity fields; the peer view keeps fou
   const mgr = fs.readFileSync(path.join(PA_WEB, 'tc/script_manager.html'), 'utf8');
   assert.ok(/emp-active-chip is-in/.test(mgr) && /by app activity/.test(mgr), 'an activity-IN card SAYS so — it never reads as a clock-in');
   assert.ok(/\.emp-active-chip\.is-in \{/.test(fs.readFileSync(path.join(PA_WEB, 'styles.html'), 'utf8')), 'the chip has its rule (g140)');
+});
+
+
+// 22post Batch D — a department's reply resolves its request
+console.log('\n22post Batch D — reply = resolution');
+
+function drDCtx_(extra) {
+  const ctx = vm.createContext(Object.assign({ String, Number, Object, Math, JSON, Date, isFinite,
+    DR_REPLY_VERDICTS: ['resolved', 'needs-look'], DR_THREAD_IDS_MAX: 3 }, extra || {}));
+  [/const DR_REPLY_HOLD_RE_ = [^\n]+;/, /const DR_REPLY_QUESTION_LINE_RE_ = [^\n]+;/].forEach((re) => vm.runInContext(re.exec(codeSrc)[0].replace(/^const /, 'var '), ctx));
+  ['drThreadIdsMerge_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyPick_']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  return ctx;
+}
+
+test('D-2: the four rules — after the send/reopen, not the agent/mailbox/automatic, from the department, new text neither asks nor holds (driven grid)', () => {
+  const c = drDCtx_();
+  // New text: quoted history and signatures go; ">" lines go.
+  assert.strictEqual(c.drReplyNewText_('Done, shipped today.\n\nOn Mon, Sep 1, 2026 at 9:00 AM Ana <a@x.com> wrote:\n> Can you ship it?'), 'Done, shipped today.');
+  assert.strictEqual(c.drReplyNewText_('Taken care of.\n--\nDana | Billing'), 'Taken care of.');
+  assert.strictEqual(c.drReplyNewText_('Sorted\r\nFrom: Ana\r\nSent: Monday\r\nCan you help?'), 'Sorted');
+  assert.strictEqual(c.drReplyNewText_('Done\nSent from my iPhone'), 'Done');
+  assert.strictEqual(c.drReplyNewText_('> only quoted\n> text'), '', 'a reply with no new text reads empty');
+  assert.strictEqual(c.drReplyNewText_('Done.\nOn Tue, Sep 2, 2026 at 3:04 PM Ana Ruiz <\nana@x.com> wrote:\n> hi'), 'Done.', 'a wrapped quote header is cut too');
+  // Asks or holds.
+  ['Can you send the order number?', 'could you confirm the address', 'We will look into it', 'Still pending with the carrier', 'Please confirm the DOB', 'need more info', 'Working on it now', 'Is this the right patient'].forEach((t) =>
+    assert.strictEqual(c.drReplyAsksOrHolds_(t), true, t));
+  ['Done, shipped today.', 'Refund issued.', 'Updated the account.', 'This is done — the order shipped.'].forEach((t) => assert.strictEqual(c.drReplyAsksOrHolds_(t), false, t));
+  // Automatic senders.
+  assert.strictEqual(c.drReplyIsAutomatic_({ fromAddr: 'mailer-daemon@googlemail.com' }), true);
+  assert.strictEqual(c.drReplyIsAutomatic_({ fromAddr: 'no-reply@x.com' }), true);
+  assert.strictEqual(c.drReplyIsAutomatic_({ fromAddr: 'dana@x.com', subject: 'Automatic reply: Re: Close Order' }), true);
+  assert.strictEqual(c.drReplyIsAutomatic_({ fromAddr: 'dana@x.com', subject: 'Out of Office' }), true);
+  assert.strictEqual(c.drReplyIsAutomatic_({ fromAddr: 'dana@x.com', autoSubmitted: 'auto-replied' }), true);
+  assert.strictEqual(c.drReplyIsAutomatic_({ fromAddr: 'dana@x.com', autoSubmitted: 'no', subject: 'Re: Close Order' }), false);
+  assert.strictEqual(c.drReplyIsAutomatic_({ fromAddr: 'noreen@x.com', subject: 'Re: x' }), false, 'a name that merely starts with "no" is a person');
+  assert.strictEqual(c.drAddrOf_('Dana Whitfield <Dana@UMS.com>'), 'dana@ums.com');
+  assert.strictEqual(c.drAddrOf_('dana@ums.com'), 'dana@ums.com');
+  // The verdict grid.
+  const ctx = { afterMs: 1000, excluded: { 'agent@ums.com': 1, 'robin@ums.com': 1 }, deptAddrs: { 'billing@ums.com': 1, 'dana@ums.com': 1 }, deptDomains: { 'ums.com': 1 } };
+  const m = (o) => Object.assign({ fromAddr: 'dana@ums.com', ms: 2000, subject: 'Re: Close Order', body: 'Done.' }, o);
+  const v = (o, x) => c.drReplyVerdict_(m(o), x || ctx);
+  assert.strictEqual(v({}), 'resolved', 'all four hold');
+  assert.strictEqual(v({ ms: 900 }), '', 'rule 1: before the send (or reopen)');
+  assert.strictEqual(v({ ms: 1000 }), '', 'rule 1: strictly after');
+  assert.strictEqual(v({ fromAddr: 'agent@ums.com' }), '', 'rule 2: the requesting agent');
+  assert.strictEqual(v({ fromAddr: 'robin@ums.com' }), '', 'rule 2: the deployer / CC mailbox');
+  assert.strictEqual(v({ subject: 'Automatic reply: Re: Close Order' }), '', 'rule 2: an auto-reply');
+  assert.strictEqual(v({ fromAddr: 'someone@gmail.com' }), '', 'rule 3: not the department');
+  assert.strictEqual(v({ fromAddr: 'newhire@ums.com' }), 'resolved', 'rule 3: the department address\'s domain counts (operator-agreed)');
+  assert.strictEqual(v({ fromAddr: 'newhire@ums.com' }, Object.assign({}, ctx, { deptDomains: {} })), '', 'rule 3: without the domain, only listed addresses/members count');
+  assert.strictEqual(v({ body: 'Can you send the TRX?' }), 'needs-look', 'rule 4 alone fails: needs a look');
+  assert.strictEqual(v({ body: '> quoted only' }), 'needs-look', 'no new text: needs a look');
+  assert.strictEqual(v({ fromAddr: 'someone@gmail.com', body: 'Can you?' }), '', 'failing rule 3 AND 4 is not the department at all');
+  // The pick: the EARLIEST resolving reply wins; else the LATEST needs-look.
+  const pick = c.drReplyPick_([m({ ms: 5000, body: 'Done.' }), m({ ms: 3000, body: 'Can you send it?' }), m({ ms: 4000, body: 'Refund issued.' })], ctx);
+  assert.strictEqual(pick.verdict + '@' + pick.msg.ms, 'resolved@4000');
+  const look = c.drReplyPick_([m({ ms: 3000, body: 'Can you?' }), m({ ms: 6000, body: 'Still pending' }), m({ ms: 7000, fromAddr: 'agent@ums.com', body: 'thanks' })], ctx);
+  assert.strictEqual(look.verdict + '@' + look.msg.ms, 'needs-look@6000');
+  assert.strictEqual(c.drReplyPick_([m({ ms: 500 })], ctx), null, 'nothing after the send → no verdict');
+  // Thread ids: deduped, newest last, capped.
+  assert.strictEqual(c.drThreadIdsMerge_('a b', 'b'), 'a b');
+  assert.strictEqual(c.drThreadIdsMerge_('a b c', 'd'), 'b c d');
+  assert.strictEqual(c.drThreadIdsMerge_('', 't1'), 't1');
+});
+
+test('D-1: the tracked send records its thread (a Gmail draft send), adds the mailbox to Reply-To, and strips both options before the mail service sees them (driven)', () => {
+  const calls = [];
+  const mk = (opts) => {
+    const ctx = vm.createContext({ Object, String,
+      mailMergeBcc_: (o) => o, repSenderOpts_: () => ({ name: 'Ana', replyTo: 'ana@ums.com' }), repSenderFrom_: () => '',
+      MailApp: { sendEmail: (o) => calls.push(['mail', o]) },
+      GmailApp: {
+        sendEmail: (to, s, b, o) => calls.push(['gmail', o]),
+        createDraft: (to, s, b, o) => { calls.push(['draft', o]); return { send: () => { if (opts && opts.fail) throw new Error('quota'); return { getThread: () => ({ getId: () => 'T-42' }) }; }, deleteDraft: () => calls.push(['deleted']) }; },
+      } });
+    ['addrListMerge_', 'sendRepEmail_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+    return ctx;
+  };
+  let c = mk();
+  assert.strictEqual(c.sendRepEmail_({ email: 'ana@ums.com' }, { to: 'x@ums.com', subject: 's', body: 'b' }), '', 'an untracked send returns no thread');
+  assert.strictEqual(calls[0][0], 'mail', 'and still goes through MailApp');
+  calls.length = 0;
+  const tid = c.sendRepEmail_({ email: 'ana@ums.com' }, { to: 'x@ums.com', subject: 's', body: 'b', wantThreadId: true, alsoReplyTo: 'Robin@ums.com' });
+  assert.strictEqual(tid, 'T-42', 'the tracked send returns the thread id');
+  assert.strictEqual(calls[0][0], 'draft', 'through a Gmail draft, whose send() returns the message');
+  assert.strictEqual(calls[0][1].replyTo, 'ana@ums.com, Robin@ums.com', 'Reply-To: the agent, then the mailbox');
+  assert.ok(!('wantThreadId' in calls[0][1]) && !('alsoReplyTo' in calls[0][1]) && !('to' in calls[0][1]), 'neither option (nor the positional args) reaches the service');
+  assert.strictEqual(calls[0][1].bcc, 'ana@ums.com', 'the agent self-copy still rides');
+  calls.length = 0;
+  c = mk({ fail: true });
+  assert.throws(() => c.sendRepEmail_({ email: 'ana@ums.com' }, { to: 'x', subject: 's', wantThreadId: true }), /quota/, 'a failed send throws as before');
+  assert.deepStrictEqual(calls.map((x) => x[0]), ['draft', 'deleted'], 'and deletes the draft it made');
+  // addrListMerge_ keeps the first spelling.
+  const a = vm.createContext({ String }); vm.runInContext(extractRawFunction('Code.js', 'addrListMerge_'), a);
+  assert.strictEqual(a.addrListMerge_('ana@ums.com', 'ANA@ums.com, robin@ums.com'), 'ana@ums.com, robin@ums.com');
+  // emailFromCallNote: only the tracked copy asks; the row records it; a re-send adds it.
+  const send = stripJsComments_(extractRawFunction('Code.js', 'emailFromCallNote'));
+  assert.ok(/const drMailOpts = drTrackable \? \{ wantThreadId: true, alsoReplyTo: CONFIG\.CALL_NOTES\.CC_EMAIL \} : \{\};/.test(send), 'tracked sends only');
+  assert.strictEqual((send.match(/drThreadId = sendRepEmail_\(emp, Object\.assign\(\{/g) || []).length, 2, 'the internal copy (split) and the single send both ask');
+  assert.ok(/to: recipientList\.externalTo,[\s\S]{0,200}htmlBody: htmlBody,\s*\}\);/.test(send), 'the external copy stays a plain send (no thread, no mailbox Reply-To)');
+  assert.ok(/drAddThreadId_\(drExistingId, drThreadId\)/.test(send), 'a re-send of an open request records its thread too');
+  assert.ok(!/LockService/.test(extractRawFunction('Code.js', 'drAddThreadId_')), 'drAddThreadId_ runs under emailFromCallNote\'s lock and takes none (g17)');
+});
+
+function drDSheet_(rows) {
+  // A real little grid: row 1 is the header, data from row 2; getRange(r, c, nr, nc).
+  const grid = [new Array(18).fill('h')].concat(rows.map((r) => r.slice()));
+  const writes = [];
+  return { grid, writes,
+    getLastRow: () => grid.length,
+    getRange: (r, c, nr, nc) => ({
+      getValues: () => grid.slice(r - 1, r - 1 + (nr || 1)).map((row) => { const out = []; for (let j = 0; j < (nc || 1); j++) out.push(row[c - 1 + j] == null ? '' : row[c - 1 + j]); return out; }),
+      setValues: (v) => { v.forEach((row, i) => row.forEach((x, j) => { grid[r - 1 + i][c - 1 + j] = x; })); writes.push([r, c, JSON.stringify(v)]); },
+      setValue: (x) => { grid[r - 1][c - 1] = x; writes.push([r, c, JSON.stringify(x)]); },
+    }) };
+}
+const DR_D_ENUM = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CREATED_AT:6, STATUS:7, RESOLVED_AT:8, RESOLVED_BY:9, LABEL:10, NOTE_ID:11, RESOLVED_VIA:12, PATIENT_TRX:13, THREAD_ID:14, REOPENED_AT:15, REPLIED_AT:16, REPLY_VERDICT:17 };
+function drDRow_(o) {
+  const r = new Array(18).fill('');
+  Object.keys(o).forEach((k) => { r[DR_D_ENUM[k]] = o[k]; });
+  return r;
+}
+
+test('D-2: the hourly scan reads only open, threaded, recent requests; resolves on the department reply, marks a question for a look, credits the replier, and re-checks every row under the lock (driven over a fake sheet)', () => {
+  const now = Date.parse('2026-09-28T15:00:00Z');
+  const iso = (msAgoH) => new Date(now - msAgoH * 3600000).toISOString().slice(0, 19);
+  const sh = drDSheet_([
+    drDRow_({ REQ_ID: 'A', BY_ID: 'E1', BY_NAME: 'Ana', BY_EMAIL: 'ana@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(5), STATUS: 'open', LABEL: 'L', THREAD_ID: 'tA' }),
+    drDRow_({ REQ_ID: 'B', BY_ID: 'E2', BY_NAME: 'Bo', BY_EMAIL: 'bo@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(5), STATUS: 'open', LABEL: 'L', THREAD_ID: 'tB' }),
+    drDRow_({ REQ_ID: 'C', BY_ID: 'E1', BY_EMAIL: 'ana@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(5), STATUS: 'open', LABEL: 'L' }),              // no thread
+    drDRow_({ REQ_ID: 'D', BY_ID: 'E1', BY_EMAIL: 'ana@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(5), STATUS: 'resolved', LABEL: 'L', THREAD_ID: 'tD' }),
+    drDRow_({ REQ_ID: 'E', BY_ID: 'E1', BY_EMAIL: 'ana@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(24 * 40), STATUS: 'open', LABEL: 'L', THREAD_ID: 'tE' }),   // too old
+    drDRow_({ REQ_ID: 'F', BY_ID: 'E1', BY_EMAIL: 'ana@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(5), STATUS: 'open', LABEL: 'L', THREAD_ID: 'tF', REOPENED_AT: iso(1) }),   // reopened after the reply
+  ]);
+  const msg = (from, hAgo, body, subj) => ({ getFrom: () => from, getDate: () => new Date(now - hAgo * 3600000), getSubject: () => subj || 'Re: L',
+    getHeader: () => '', getPlainBody: () => body });
+  const threads = {
+    tA: [msg('robin@ums.com', 5, 'original'), msg('Dana <dana@ums.com>', 3, 'Done, refunded.')],
+    tB: [msg('robin@ums.com', 5, 'original'), msg('Dana <dana@ums.com>', 2, 'Can you send the TRX?')],
+    tD: [msg('dana@ums.com', 3, 'Done.')], tE: [msg('dana@ums.com', 3, 'Done.')],
+    tF: [msg('dana@ums.com', 3, 'Done.')],
+  };
+  const read = [], audits = [], busts = [];
+  const ctx = vm.createContext({ String, Number, Object, Math, JSON, Date: Object.assign(function () {}, Date, { now: () => now }), isFinite, console,
+    DR: DR_D_ENUM, DR_HEADERS: new Array(18).fill('h'), DR_MAX_SCAN: 4000, DR_REPLY_SCAN_DAYS: 30, DR_REPLY_SCAN_MAX: 150,
+    DR_REPLY_VERDICTS: ['resolved', 'needs-look'], CONFIG: { TIMEZONE: 'UTC' },
+    getOrCreateDeptRequestsSheet_: () => sh,
+    parseTimestampMs_: (s) => (s ? Date.parse(s + 'Z') : 0),
+    drReplyDirectory_: () => ({ byDept: { billing: { addrs: ['billing@ums.com', 'dana@ums.com'], domains: ['ums.com'] } }, names: { 'dana@ums.com': 'Dana Whitfield' } }),
+    drReplyExcludedBase_: () => ({ 'robin@ums.com': 1 }),
+    GmailApp: { getThreadById: (id) => { read.push(id); return threads[id] ? { getMessages: () => threads[id] } : null; } },
+    Utilities: { formatDate: (d) => new Date(d).toISOString().slice(0, 19) },
+    LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
+    sheetSafe_: (x) => x, sheetSafeRows_: (x) => x,
+    writeAuditLog_: (e, a, d, t, adj, h, notes) => audits.push(a + ':' + notes),
+    drBumpCacheGen_: () => {}, pendingTasksBust_: (id) => busts.push(id),
+  });
+  // Date must still construct real dates inside the core.
+  ctx.Date = Date; ctx.Date.now = () => now;
+  [/const DR_REPLY_HOLD_RE_ = [^\n]+;/, /const DR_REPLY_QUESTION_LINE_RE_ = [^\n]+;/].forEach((re) => vm.runInContext(re.exec(codeSrc)[0].replace(/^const /, 'var '), ctx));
+  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyPick_', 'drReplyScanCore_']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const origNow = Date.now; Date.now = () => now;
+  let r;
+  try { r = ctx.drReplyScanCore_(); } finally { Date.now = origNow; }
+  assert.deepStrictEqual(read.sort(), ['tA', 'tB', 'tF'], 'only open + threaded + recent requests are read (no thread, resolved, 40 days old are not)');
+  const row = (id) => sh.grid.filter((x) => x[0] === id)[0];
+  assert.strictEqual(row('A')[DR_D_ENUM.STATUS], 'resolved', 'A: the department\'s reply resolved it');
+  assert.strictEqual(row('A')[DR_D_ENUM.RESOLVED_VIA], 'reply');
+  assert.strictEqual(row('A')[DR_D_ENUM.RESOLVED_BY], 'Dana Whitfield', 'credited to the replier by roster name');
+  assert.strictEqual(row('A')[DR_D_ENUM.RESOLVED_AT], iso(3), 'at the reply\'s own time');
+  assert.strictEqual(row('A')[DR_D_ENUM.REPLY_VERDICT], 'resolved');
+  assert.strictEqual(row('B')[DR_D_ENUM.STATUS], 'open', 'B: a question never resolves');
+  assert.strictEqual(row('B')[DR_D_ENUM.REPLY_VERDICT], 'needs-look', 'it is marked for a look');
+  assert.strictEqual(row('B')[DR_D_ENUM.REPLIED_AT], iso(2));
+  assert.strictEqual(row('F')[DR_D_ENUM.STATUS], 'open', 'F: a reply BEFORE the reopen is ignored');
+  assert.strictEqual(r.resolved + '/' + r.needsLook + '/' + r.scanned, '1/1/3');
+  assert.ok(audits.length === 1 && /via=reply/.test(audits[0]) && !/refunded/.test(audits[0]), 'one audit row, PHI-free (no reply text)');
+  assert.deepStrictEqual(busts.sort(), ['E1', 'E2'], 'both senders\' Needs-you lists refresh');
+  // A second pass writes nothing new (the needs-look is already recorded; A is resolved).
+  const before = sh.writes.length;
+  Date.now = () => now;
+  try { ctx.drReplyScanCore_(); } finally { Date.now = origNow; }
+  assert.strictEqual(sh.writes.length, before, 'idempotent — no rewrite of a recorded verdict');
+  // The under-lock re-check: a row resolved between the read and the write is left alone.
+  const core = stripJsComments_(extractRawFunction('Code.js', 'drReplyScanCore_'));
+  assert.ok(core.indexOf('getThreadById') < core.indexOf('lock.waitLock'), 'Gmail is read BEFORE the lock');
+  assert.ok(/drStatus_\(hit\.row\) !== 'open' \|\| String\(hit\.row\[DR\.REOPENED_AT\] \|\| ''\) !== d\.reopened/.test(core), 'and every row is re-checked (still open, not reopened since) under it');
+});
+
+test('D-3: Mark unresolved — the resolve rule decides who, the resolution clears, ReopenedAt is stamped, and a request that is already open is a no-op (driven)', () => {
+  const sh = drDSheet_([
+    drDRow_({ REQ_ID: 'R', BY_ID: 'E1', BY_NAME: 'Ana', TO_DEPT: 'Billing', STATUS: 'resolved', RESOLVED_AT: '2026-09-27T10:00:00', RESOLVED_BY: 'Dana', LABEL: 'Close Order', NOTE_ID: 'n1', RESOLVED_VIA: 'reply', THREAD_ID: 't', REPLIED_AT: '2026-09-27T10:00:00', REPLY_VERDICT: 'resolved' }),
+    drDRow_({ REQ_ID: 'O', BY_ID: 'E1', STATUS: 'open', LABEL: 'x' }),
+  ]);
+  const audits = [], busts = [];
+  let allow = true, emp = { id: 'E9', email: 'm@ums.com', isManager: true };
+  const ctx = vm.createContext({ String, Number, Object,
+    DR: DR_D_ENUM, DR_HEADERS: new Array(18).fill('h'), DR_RESOLVED_VIA_VALUES: ['email', 'app', 'reply'],
+    getEmployeeInfo_: () => emp, getOrCreateDeptRequestsSheet_: () => sh, drCanAct_: () => allow,
+    LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
+    drNowTs_: () => '2026-09-28T09:00:00', sheetSafe_: (x) => x, sheetSafeRows_: (x) => x,
+    drBumpCacheGen_: () => {}, pendingTasksBust_: (id) => busts.push(id), writeAuditLog_: (e, a, d, t, adj, h, n) => audits.push(a + ':' + n) });
+  ['drStatus_', 'drFindRowByReqId_', 'drResolvedVia_', 'reopenDeptRequest'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  allow = false;
+  assert.strictEqual(ctx.reopenDeptRequest('R').success, false, 'someone the resolve rule refuses cannot reopen');
+  assert.strictEqual(sh.grid[1][DR_D_ENUM.STATUS], 'resolved', 'and nothing changed');
+  allow = true;
+  const res = ctx.reopenDeptRequest('R');
+  assert.strictEqual(res.success && !res.already, true);
+  const r = sh.grid[1];
+  assert.strictEqual(r[DR_D_ENUM.STATUS] + '|' + r[DR_D_ENUM.RESOLVED_AT] + '|' + r[DR_D_ENUM.RESOLVED_BY] + '|' + r[DR_D_ENUM.RESOLVED_VIA], 'open|||', 'the resolution clears');
+  assert.strictEqual(r[DR_D_ENUM.REOPENED_AT], '2026-09-28T09:00:00', 'ReopenedAt is stamped (the scan ignores earlier replies)');
+  assert.strictEqual(r[DR_D_ENUM.REPLIED_AT] + '|' + r[DR_D_ENUM.REPLY_VERDICT], '|', 'the old verdict clears');
+  assert.strictEqual(r[DR_D_ENUM.LABEL] + '|' + r[DR_D_ENUM.NOTE_ID] + '|' + r[DR_D_ENUM.THREAD_ID], 'Close Order|n1|t', 'the label, note link and thread are untouched');
+  assert.ok(audits.length === 1 && /DeptRequestReopened:reqId=R; was=reply/.test(audits[0]), 'audited with how it had been resolved');
+  assert.deepStrictEqual(busts.sort(), ['E1', 'E9'], 'the sender\'s and the actor\'s Needs-you lists refresh');
+  assert.strictEqual(ctx.reopenDeptRequest('O').already, true, 'an open request is a no-op');
+  assert.strictEqual(ctx.reopenDeptRequest('nope').success, false, 'an unknown id is refused');
+});
+
+test('D-2/D-3: the wiring — the hourly rider, its heartbeat and flag, a reply is a timed response, the Recently resolved list (source + driven stats)', () => {
+  const cfg = stripJsComments_(fs.readFileSync(path.join(PA_WEB, '00_config.js'), 'utf8'));
+  assert.ok(/runHourlyJobs:\s*\[[^\]]*'scanDeptRequestReplies'/.test(cfg), 'rides the hourly dispatcher (no trigger of its own)');
+  assert.ok(/key: 'deptReplyResolve'[\s\S]{0,900}?default: true, scope: 'server'/.test(cfg), 'a server flag, ON by default (the operator asked for it), off = replies never read');
+  assert.ok(/DR_RESOLVED_VIA_VALUES = \['email', 'app', 'reply'\]/.test(cfg));
+  const h = stripJsComments_(extractRawFunction('Code.js', 'scanDeptRequestReplies'));
+  assert.ok(h.indexOf("assertManagerCaller_('scanDeptRequestReplies')") < h.indexOf('stampDigestLastRun_') &&
+    h.indexOf("stampDigestLastRun_('deptReplyScan')") < h.indexOf("getFlag_('deptReplyResolve')") &&
+    h.indexOf("getFlag_('deptReplyResolve')") < h.indexOf('drReplyScanCore_('), 'gate → heartbeat → flag → core (g26, INV-151)');
+  assert.ok(/stampAutomationError_\('DeptReplyScan'/.test(h) && /clearAutomationError_\('DeptReplyScan'\)/.test(h), 'a failed thread read reaches the health dot');
+  assert.ok(/deptReplyScan: 2[,\s}]/.test(stripJsComments_(fs.readFileSync(path.join(PA_WEB, '10_core.js'), 'utf8'))), 'an hourly staleness window');
+  // A reply is a response time in the per-department fold.
+  const sctx = vm.createContext({ String, Math, Object, getDeptRequestSla_: () => 2 });
+  ['drSplitDepts_', 'drDeptStats_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), sctx));
+  const st = JSON.parse(JSON.stringify(sctx.drDeptStats_([
+    { toDept: 'Billing', status: 'resolved', resolvedVia: 'reply', elapsedMin: 60 },
+    { toDept: 'Billing', status: 'resolved', resolvedVia: 'app', elapsedMin: null },
+    { toDept: 'Billing', status: 'resolved', resolvedVia: '', elapsedMin: null }], {})))[0];
+  assert.strictEqual(st.timed + '/' + st.manualResolved + '/' + st.untrackedResolved + '/' + st.medianMinutes, '1/1/1/60', 'reply = timed; app = manual; blank = untracked');
+  const gd = stripJsComments_(extractRawFunction('Code.js', 'getDeptRequests'));
+  assert.ok(/const timed = !isResolved \|\| resolvedVia === 'email' \|\| resolvedVia === 'reply';/.test(gd));
+  assert.ok(/if \(mineIds\[it\.requestId\]\) return false;/.test(gd) && /if \(emp\.isManager\) return true;/.test(gd) && /it\.resolvedMs < reopenSince/.test(gd),
+    'Recently resolved: not the caller\'s own, a manager sees every department, a member only their desks, within the window');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/reopenDeptRequest: function/.test(mock) && /replyVerdict: 'needs-look'/.test(mock) && /resolvedVia: 'reply'/.test(mock) && /recentResolved: \[/.test(mock),
+    'the fixture photographs every new state (INV-185)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

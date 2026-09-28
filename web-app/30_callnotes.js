@@ -2416,17 +2416,23 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     // copy then fails, a rep re-send duplicates a dept email (annoying),
     // never the customer's.
     const splitCta = drTrackable && recipientList.externalTo;
+    // 22post D (operator 2026-09-27): the tracked copy asks for its Gmail
+    // thread id and adds the deployer's mailbox (CC_EMAIL — the operator's,
+    // the account the app runs as) to Reply-To, so the department's reply can
+    // be read by the hourly scan. The untracked external copy does neither.
+    const drMailOpts = drTrackable ? { wantThreadId: true, alsoReplyTo: CONFIG.CALL_NOTES.CC_EMAIL } : {};
+    let drThreadId = '';
     let internalSent = false;        // C17-11
     let externalSendFailed = null;   // C17-11
     try {
       if (splitCta) {
-        sendRepEmail_(emp, {
+        drThreadId = sendRepEmail_(emp, Object.assign({
           to: recipientList.internalTo,
           cc: CONFIG.CALL_NOTES.CC_EMAIL,
           subject,
           body: textBody + '\n\nMark this request resolved: ' + drResolveUrl,
           htmlBody: sentHtml,
-        });
+        }, drMailOpts)) || '';
         internalSent = true;
         sendRepEmail_(emp, {
           to: recipientList.externalTo,
@@ -2436,13 +2442,13 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
           htmlBody: htmlBody,   // no CTA
         });
       } else {
-        sendRepEmail_(emp, {
+        drThreadId = sendRepEmail_(emp, Object.assign({
           to: recipientList.to,
           cc: CONFIG.CALL_NOTES.CC_EMAIL,
           subject,
           body: textBody + (drTrackable ? ('\n\nMark this request resolved: ' + drResolveUrl) : ''),
           htmlBody: sentHtml,
-        });
+        }, drMailOpts)) || '';
       }
     } catch (sendErr) {
       // C17-11 (cycle 17): if the INTERNAL dept copy already went out, it is
@@ -2526,8 +2532,12 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
           String(selections.updateInfo || 'Call note email').slice(0, 80), noteId,
           '',   // ResolvedVia — written by the resolver
           String(note.patientAndTrx || '').slice(0, DR_PATIENT_TRX_MAX),
+          drThreadId,   // 22post D: ThreadId — the reply scan reads it
+          '', '', '',   // ReopenedAt, RepliedAt, ReplyVerdict
         ]));
         drBumpCacheGen_();   // a new open request must reach the next list read
+      } else if (drTrackable && drExistingId && drThreadId) {
+        drAddThreadId_(drExistingId, drThreadId);   // 22post D: a re-send may open a second thread
       }
       if (drTrackable) writeAuditLog_(emp, 'DeptRequestSent', note.dateLocal, '', false, 0,
         'reqId=' + drId + '; dept=' + (deptLabel || '(none)') + (drExistingId ? '; resend' : ''));

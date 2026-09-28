@@ -4727,3 +4727,48 @@ test('22post B-2b/B-2c DOM: the Scratchpad is a floating NON-modal panel — no 
   h.run.flushSuccess({ success: true, updatedAtMs: Date.now() }, 'saveMyScratchpad');
   h.read('cnCloseScratchpadModal_')();
 });
+
+test('22post D DOM: a reply-resolved card says so and credits the replier, a needs-a-look card stays open with Mark resolved, Recently resolved lists what the caller may reopen, and Mark unresolved reopens through the server and refreshes (a failure restores the button)', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  const item = (id, extra) => Object.assign({ requestId: id, toDept: 'Billing', label: 'L-' + id, createdAt: 'Sep 27', createdMs: 1000, byName: 'Me', status: 'open', elapsedMin: 30, slaBusiness: true, slaStatus: 'ontime', slaDays: 2 }, extra || {});
+  const data = { isManager: false, myDepts: ['Billing'], departments: ['Billing'],
+    mine: [item('m1', { status: 'resolved', resolvedVia: 'reply', resolvedBy: 'Dana <b>W</b>', elapsedMin: 185 })],
+    incoming: [item('i1', { replyVerdict: 'needs-look', repliedAt: 'Sep 28, 10:15 AM' })],
+    recentResolved: [item('r1', { status: 'resolved', resolvedVia: 'reply', resolvedBy: 'Priya', elapsedMin: 95, byName: 'Sam' })],
+    recentResolvedTotal: 1, reopenDays: 7, truncated: false, listCap: 100, mineTotal: 1, incomingTotal: 1 };
+  let reads = 0;
+  h.run.respond('getDeptRequests', () => { reads++; return JSON.parse(JSON.stringify(data)); });
+  h.window.enterTool('metrics', 'metricsDeptReq');
+  h.flushTimers();
+  const card = (id) => h.$$('.sp-task[data-req]').filter((n) => n.getAttribute('data-req') === id)[0];
+  assert.ok(/replied · 3h 5m/.test(card('m1').querySelector('.sp-task-age').textContent), 'a reply resolve is timed and says "replied"');
+  assert.ok(/Resolved by Dana <b>W<\/b> \(by reply\)/.test(card('m1').textContent) && !card('m1').querySelector('.sp-task-body b'), 'credited to the replier, escaped');
+  const look = card('i1').querySelector('.dr-needs-look');
+  assert.ok(look && /Responded — needs a look/.test(look.textContent), 'a question from the department reads "Responded — needs a look"');
+  assert.ok(card('i1').querySelector('.sp-resolve'), 'and it stays open with Mark resolved');
+  assert.ok(/Replied Sep 28, 10:15 AM — check the thread/.test(card('i1').textContent));
+  const body = h.$('#dr-body').textContent;
+  assert.ok(body.indexOf('Incoming ·') < body.indexOf('Recently resolved · last 7 days · 1') && body.indexOf('Recently resolved') < body.indexOf('My requests'),
+    'Recently resolved sits between Incoming and My requests');
+  const reopen = card('r1').querySelector('.dr-reopen');
+  assert.ok(reopen && card('m1').querySelector('.dr-reopen'), 'every resolved card offers Mark unresolved');
+  // Failure first: the button comes back.
+  h.read('drReopenClick_')(reopen);
+  assert.ok(reopen.disabled && /Reopening/.test(reopen.textContent), 'the button shows its own in-flight state');
+  h.run.flushFailure(new Error('Only the sender…'), 'reopenDeptRequest');
+  assert.ok(!reopen.disabled && /Mark unresolved/.test(reopen.textContent), 'a refusal restores the button');
+  // Success: the server is asked, the cache flips, the view refreshes from the server.
+  const readsBefore = reads;
+  h.read('drReopenClick_')(card('r1').querySelector('.dr-reopen'));
+  const call = h.run.pending('reopenDeptRequest').slice(-1)[0];
+  assert.deepStrictEqual(Array.from(call.args), ['r1'], 'ONE reopen call for that request');
+  data.recentResolved = []; data.recentResolvedTotal = 0;
+  data.incoming = data.incoming.concat([item('r1', { byName: 'Sam', reopenedAt: 'Sep 28, 11:05 AM' })]);
+  h.run.flushSuccess({ success: true, already: false }, 'reopenDeptRequest');
+  h.flushTimers();
+  assert.ok(reads > readsBefore, 'the view re-reads the server');
+  assert.ok(card('r1') && card('r1').querySelector('.sp-resolve') && /Reopened Sep 28, 11:05 AM/.test(card('r1').textContent), 'the request is open again in Incoming');
+  assert.ok(!/Recently resolved/.test(h.$('#dr-body').textContent), 'and the empty Recently resolved section is gone');
+});

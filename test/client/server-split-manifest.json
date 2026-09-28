@@ -1420,6 +1420,58 @@
     "recordPresence"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-28",
+   "why": "22post D: reply = resolution (thread id, reply scan, reopen)",
+   "added": [
+    "DR_REOPEN_WINDOW_DAYS",
+    "DR_REPLY_HOLD_RE_",
+    "DR_REPLY_SCAN_DAYS",
+    "DR_REPLY_SCAN_MAX",
+    "DR_REPLY_VERDICTS",
+    "DR_THREAD_IDS_MAX",
+    "addrListMerge_",
+    "drAddThreadId_",
+    "drAddrOf_",
+    "drReplyAsksOrHolds_",
+    "drReplyDirectory_",
+    "drReplyExcludedBase_",
+    "drReplyIsAutomatic_",
+    "drReplyNewText_",
+    "drReplyPick_",
+    "drReplyScanCore_",
+    "drReplyVerdict_",
+    "drThreadIdsMerge_",
+    "reopenDeptRequest",
+    "scanDeptRequestReplies"
+   ],
+   "removed": [],
+   "changed": [
+    "DR",
+    "DR_HEADERS",
+    "DR_RESOLVED_VIA_VALUES",
+    "FEATURE_FLAGS",
+    "TRIGGER_GROUPS",
+    "computeAutomationHealth_",
+    "drDeptStats_",
+    "emailFromCallNote",
+    "getDeptRequests",
+    "sendRepEmail_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-28",
+   "why": "22post D: reply = resolution (thread id, reply scan, reopen)",
+   "added": [
+    "DR_REPLY_QUESTION_LINE_RE_"
+   ],
+   "removed": [],
+   "changed": [
+    "drReplyAsksOrHolds_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -1897,7 +1949,7 @@
   "DR": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "c558b3fa7aeda4b7"
+   "sha": "03ed1559e2cae2f5"
   },
   "DRIVE_ACCESS_CACHE_KEY": {
    "file": "00_config.js",
@@ -1922,7 +1974,7 @@
   "DR_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "eaa5480127a0a5c5"
+   "sha": "b6f22faf8422f31a"
   },
   "DR_LIST_CAP": {
    "file": "00_config.js",
@@ -1939,15 +1991,50 @@
    "kind": "const",
    "sha": "a2f66a149b546c21"
   },
+  "DR_REOPEN_WINDOW_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "0ceb7378ac71a1c7"
+  },
+  "DR_REPLY_HOLD_RE_": {
+   "file": "50_deptrequests.js",
+   "kind": "const",
+   "sha": "df7516076ce1a399"
+  },
+  "DR_REPLY_QUESTION_LINE_RE_": {
+   "file": "50_deptrequests.js",
+   "kind": "const",
+   "sha": "10b6a075d976224e"
+  },
+  "DR_REPLY_SCAN_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "26b17d0fa474555d"
+  },
+  "DR_REPLY_SCAN_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e0f1db8a5f0cbabf"
+  },
+  "DR_REPLY_VERDICTS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "55953c85fd7cfaf1"
+  },
   "DR_RESOLVED_VIA_VALUES": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "3f01b313fd184107"
+   "sha": "186e1cd42f6fcede"
   },
   "DR_RESULT_CACHE_TTL": {
    "file": "00_config.js",
    "kind": "const",
    "sha": "ac5bb06d6b9fe632"
+  },
+  "DR_THREAD_IDS_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7107b177840b4882"
   },
   "ED": {
    "file": "00_config.js",
@@ -2062,7 +2149,7 @@
   "FEATURE_FLAGS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "0ef3d2a18a1ad98b"
+   "sha": "c50415b97f5fad3c"
   },
   "FORMULA_SCAN_BUDGET_MS": {
    "file": "10_core.js",
@@ -3257,7 +3344,7 @@
   "TRIGGER_GROUPS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "7ae79bc578ad83d0"
+   "sha": "dacdbe9c4c9b1f09"
   },
   "TS_DOCTOR_FIX_MAX_ROWS": {
    "file": "00_config.js",
@@ -3523,6 +3610,11 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "eb32fb22a792e107"
+  },
+  "addrListMerge_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "82c777e3a590ec1e"
   },
   "adjustLeaveBalance_": {
    "file": "20_timeclock.js",
@@ -4277,7 +4369,7 @@
   "computeAutomationHealth_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "f650bb64cb736e60"
+   "sha": "ad8365aef46f7e5f"
   },
   "computeCnEmailHash_": {
    "file": "30_callnotes.js",
@@ -4439,6 +4531,16 @@
    "kind": "function",
    "sha": "7b2e34a713ff7b3d"
   },
+  "drAddThreadId_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "f870fb3e41510011"
+  },
+  "drAddrOf_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "cc17373aafcc7de4"
+  },
   "drAgeWorkingDaysLabel_": {
    "file": "50_deptrequests.js",
    "kind": "function",
@@ -4467,7 +4569,7 @@
   "drDeptStats_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "1b65989af6a2643f"
+   "sha": "003ee5b3ab18c455"
   },
   "drFindOpenRequest_": {
    "file": "50_deptrequests.js",
@@ -4498,6 +4600,46 @@
    "file": "50_deptrequests.js",
    "kind": "function",
    "sha": "9a689f496667a440"
+  },
+  "drReplyAsksOrHolds_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "774c8b48341b8619"
+  },
+  "drReplyDirectory_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "fdfcdd33de2188c0"
+  },
+  "drReplyExcludedBase_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "e4147731f497b724"
+  },
+  "drReplyIsAutomatic_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "d2b4bfd1976a36f4"
+  },
+  "drReplyNewText_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "78334688aa12f3f2"
+  },
+  "drReplyPick_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "7403d7dd062adff3"
+  },
+  "drReplyScanCore_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "7c56ae4b9c98e1ef"
+  },
+  "drReplyVerdict_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "2e44bad48170cdc1"
   },
   "drResolveCtaHtml_": {
    "file": "50_deptrequests.js",
@@ -4554,6 +4696,11 @@
    "kind": "function",
    "sha": "0ba4cd4ff07652fa"
   },
+  "drThreadIdsMerge_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "ff533000e07acadb"
+  },
   "driveAccessStatus_": {
    "file": "10_core.js",
    "kind": "function",
@@ -4572,7 +4719,7 @@
   "emailFromCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "7bb07da4eff2e599"
+   "sha": "7f346b4275f5946b"
   },
   "empDepartments_": {
    "file": "20_timeclock.js",
@@ -5102,7 +5249,7 @@
   "getDeptRequests": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "e06f8dcfd43c157a"
+   "sha": "19fd15f66cfd440f"
   },
   "getDeptRequestsSS_": {
    "file": "50_deptrequests.js",
@@ -7499,6 +7646,11 @@
    "kind": "function",
    "sha": "435862b8c61f4be8"
   },
+  "reopenDeptRequest": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "5d0fc9680938a4d2"
+  },
   "repSenderFrom_": {
    "file": "10_core.js",
    "kind": "function",
@@ -7734,6 +7886,11 @@
    "kind": "function",
    "sha": "a4e68a1bbaf9a166"
   },
+  "scanDeptRequestReplies": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "628a6be88d544844"
+  },
   "scanStoredFormulas_": {
    "file": "10_core.js",
    "kind": "function",
@@ -7867,7 +8024,7 @@
   "sendRepEmail_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "fdf741f572ada34d"
+   "sha": "7ffaae34596c66e5"
   },
   "sendTrainingOverdueDigest": {
    "file": "80_training.js",

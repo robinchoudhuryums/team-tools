@@ -1612,7 +1612,7 @@ function computeAutomationHealth_(opts) {
     // F-20 (2026-09-18): the three daily jobs that write NO audit row and had
     // no heartbeat either — the missed-punch alerts, the ADP export check and
     // this failure digest itself — could die silently. Each stamps here now.
-    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26, managerBrief: 26, selfTest: 26, coachingRecap: 192, spanishAutoAssign: 2,
+    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26, managerBrief: 26, selfTest: 26, coachingRecap: 192, spanishAutoAssign: 2, deptReplyScan: 2,
                                  missedPunch: 26, exportCheck: 26, automationHealth: 26 };
     let digestMap = {};
     try {
@@ -2889,8 +2889,31 @@ function repSenderFrom_() {
  *  genuine send failure, so every caller's existing try/catch semantics are
  *  unchanged. GmailApp adds no new OAuth scope here (the Spanish-inbox
  *  feature already uses it) and shares the MailApp send quota. */
+/** PURE (Node-pinned) — 22post D: merge two comma-separated address lists,
+ *  keeping the first spelling of each address (case-insensitive) in order. */
+function addrListMerge_(a, b) {
+  const seen = {}, out = [];
+  (String(a || '') + ',' + String(b || '')).split(',').forEach(function (x) {
+    const v = x.trim();
+    if (v && !seen[v.toLowerCase()]) { seen[v.toLowerCase()] = 1; out.push(v); }
+  });
+  return out.join(', ');
+}
 function sendRepEmail_(emp, opts) {
-  const merged = mailMergeBcc_(Object.assign({}, opts, repSenderOpts_(emp)));   // MAIL_BCC_ALL rides both branches
+  // 22post D (operator 2026-09-27) — two options for the tracked department
+  // email, stripped before the send so neither reaches MailApp/GmailApp:
+  //   alsoReplyTo   an address appended to the agent's Reply-To (the
+  //                 deployer's mailbox, so a plain Reply lands where the
+  //                 reply scan can read it — reply-all already did, via CC);
+  //   wantThreadId  send through a GmailApp DRAFT, whose send() returns the
+  //                 message, and RETURN its thread id (MailApp returns
+  //                 nothing). Same quota, same scope (GmailApp is already in
+  //                 use); a failed send deletes the draft and throws as before.
+  const o = Object.assign({}, opts);
+  const alsoReplyTo = o.alsoReplyTo; delete o.alsoReplyTo;
+  const wantThreadId = !!o.wantThreadId; delete o.wantThreadId;
+  const merged = mailMergeBcc_(Object.assign(o, repSenderOpts_(emp)));   // MAIL_BCC_ALL rides both branches
+  if (alsoReplyTo) merged.replyTo = addrListMerge_(merged.replyTo, alsoReplyTo);
   // Operator ask 2026-08-27: the sending agent gets their own copy of every
   // email they send from the app. A true Sent-folder entry in the AGENT's
   // mailbox is impossible — the app sends as USER_DEPLOYING, so only the
@@ -2907,15 +2930,24 @@ function sendRepEmail_(emp, opts) {
     }
   }
   const from = repSenderFrom_();
-  if (from) {
+  if (from || wantThreadId) {
     // GmailApp's signature is positional (to, subject, body, options) — the
     // options object must NOT repeat to/subject/body.
-    const gOpts = Object.assign({}, merged, { from: from });
+    const gOpts = Object.assign({}, merged);
+    if (from) gOpts.from = from;
     delete gOpts.to; delete gOpts.subject; delete gOpts.body;
+    if (wantThreadId) {
+      const draft = GmailApp.createDraft(merged.to, merged.subject, merged.body || '', gOpts);
+      let msg;
+      try { msg = draft.send(); }
+      catch (e) { try { draft.deleteDraft(); } catch (_) {} throw e; }
+      try { return String(msg.getThread().getId() || ''); } catch (_) { return ''; }
+    }
     GmailApp.sendEmail(merged.to, merged.subject, merged.body || '', gOpts);
   } else {
     MailApp.sendEmail(merged);
   }
+  return '';
 }
 function mailBccAll_() {
   if (_mailBccAllCache !== null) return _mailBccAllCache;
@@ -3155,8 +3187,9 @@ function runTriggerGroup_(label) {
   });
   return { success: results.every(function (r) { return r.ok; }), label: label, results: results };
 }
-// Hourly: the Call Notes EOD reminder (matches each rep's local EOD hour) and
-// the flag-gated Spanish Inbox auto-assign (business hours only).
+// Hourly: the Call Notes EOD reminder (matches each rep's local EOD hour),
+// the flag-gated Spanish Inbox auto-assign (business hours only) and the
+// flag-gated Dept Request reply scan (22post D).
 function runHourlyJobs() {
   assertManagerCaller_('runHourlyJobs');
   return runTriggerGroup_('runHourlyJobs');

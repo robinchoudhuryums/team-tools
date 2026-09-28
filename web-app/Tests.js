@@ -6966,6 +6966,14 @@ function test_deptReq_incomingAndMemberResolve() {
       'the open request to my dept appears in Incoming');
     let rr; _asUser(_TEST_INDIA_EMAIL, function () { rr = resolveDeptRequest('TEST_DR_INC'); });
     _assertEq(rr.success, true, 'a receiving-dept member can resolve an incoming request');
+    // 22post D — and can mark it unresolved again (the same drCanAct_ rule):
+    // the row turns open, its resolution clears, ReopenedAt is stamped.
+    let ro; _asUser(_TEST_INDIA_EMAIL, function () { ro = reopenDeptRequest('TEST_DR_INC'); });
+    _assertEq(ro.success, true, 'a receiving-dept member can reopen it');
+    const hit = drFindRowByReqId_(sh, 'TEST_DR_INC');
+    _assertEq(drStatus_(hit.row), 'open', 'the row is open again');
+    _assertEq(String(hit.row[DR.RESOLVED_VIA] || ''), '', 'its resolution cleared');
+    _assertTrue(!!String(hit.row[DR.REOPENED_AT] || ''), 'ReopenedAt stamped (the reply scan ignores earlier replies)');
   } finally {
     ss.getRange(empRow, EMP.DEPARTMENTS + 1).setValue(prevDept);
     invalidateRosterCache_();

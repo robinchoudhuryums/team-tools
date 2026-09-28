@@ -645,12 +645,29 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       });
       return { success: true, already: false };
     },
+    // 22post D — reopenDeptRequest's return AND its write: the row turns open,
+    // leaves Recently resolved, and (addressed to a desk the fixture caller
+    // staffs) rejoins Incoming, as the server's next read would say.
+    reopenDeptRequest: function (id) {
+      const dr = FIXTURES.getDeptRequests;
+      let moved = null;
+      (dr.mine || []).forEach(function (r) {
+        if (String(r.requestId) === String(id)) { r.status = 'open'; r.resolvedVia = ''; r.resolvedBy = ''; r.reopenedAt = daysAgo(0) + ' 11:05'; }
+      });
+      dr.recentResolved = (dr.recentResolved || []).filter(function (r) {
+        if (String(r.requestId) !== String(id)) return true;
+        moved = Object.assign({}, r, { status: 'open', resolvedVia: '', resolvedBy: '', replyVerdict: '', reopenedAt: daysAgo(0) + ' 11:05', slaStatus: 'ontime' });
+        return false;
+      });
+      if (moved && (dr.myDepts || []).indexOf(moved.toDept) >= 0) dr.incoming = [moved].concat(dr.incoming || []);
+      return { success: true, already: false };
+    },
     // Operator testing note 6 (2026-09-10): the Expand detail — the SOURCE
     // NOTE's fields, keyed by the request the button names (a FUNCTION of the
     // id, the F14 rule). r6 is a LEGACY row with no NoteId, so the server
     // returns note:null + a named reason — that state is on camera too.
     getDeptRequestDetail: function (id) {
-      const rows = [].concat(FIXTURES.getDeptRequests.mine || [], FIXTURES.getDeptRequests.incoming || [], FIXTURES.getDeptRequests.allOpen || []);
+      const rows = [].concat(FIXTURES.getDeptRequests.mine || [], FIXTURES.getDeptRequests.incoming || [], FIXTURES.getDeptRequests.allOpen || [], FIXTURES.getDeptRequests.recentResolved || []);
       const r = rows.filter(function (x) { return String(x.requestId) === String(id); })[0];
       if (!r) return { error: 'Request not found.' };
       const base = { requestId: r.requestId, label: r.label, patientTrx: r.patientTrx || '', byName: r.byName, toDept: r.toDept, note: null, reason: '' };
@@ -670,13 +687,21 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         // Note #3 (2026-09-10): an in-app "Mark resolved" is NOT a timed reply —
         // the server ships null minutes + resolvedVia:'app' so the card reads
         // "marked in app" and the KPI median skips it. On camera in deptreq-*.
-        { requestId: 'r7', toDept: 'Shipping', label: 'Verified Shipping', patientTrx: 'P. Nguyen · TRX 47311', createdAt: daysAgo(5) + ' 15:02', createdMs: new Date(daysAgo(5) + 'T15:02:00').getTime(), byName: 'Avery Blake', status: 'resolved', elapsedMin: null, elapsedWallMin: null, slaBusiness: true, resolvedBy: 'avery@umsupply.com', resolvedVia: 'app' }],
+        { requestId: 'r7', toDept: 'Shipping', label: 'Verified Shipping', patientTrx: 'P. Nguyen · TRX 47311', createdAt: daysAgo(5) + ' 15:02', createdMs: new Date(daysAgo(5) + 'T15:02:00').getTime(), byName: 'Avery Blake', status: 'resolved', elapsedMin: null, elapsedWallMin: null, slaBusiness: true, resolvedBy: 'avery@umsupply.com', resolvedVia: 'app' },
+        // 22post D: resolved by the department's own REPLY — timed, credited to the replier.
+        { requestId: 'r8', toDept: 'Resupply', label: 'Repeat Resupply', patientTrx: 'D. Park · TRX 48102', createdAt: daysAgo(1) + ' 09:40', createdMs: new Date(daysAgo(1) + 'T09:40:00').getTime(), byName: 'Avery Blake', status: 'resolved', elapsedMin: 185, elapsedWallMin: 185, slaBusiness: true, resolvedBy: 'Dana Whitfield', resolvedVia: 'reply', threadTracked: true, replyVerdict: 'resolved', repliedAt: daysAgo(1) + ' 12:45', resolvedMs: new Date(daysAgo(1) + 'T12:45:00').getTime() }],
       incoming: [
-        { requestId: 'r5', toDept: 'Billing', label: 'Close Order', patientTrx: 'S. Alvarez · TRX 48230', createdAt: daysAgo(0) + ' 08:30', createdMs: new Date(daysAgo(0) + 'T08:30:00').getTime(), byName: 'Nina Patel', status: 'open', elapsedMin: 122, elapsedWallMin: 320, slaBusiness: true, slaStatus: 'ontime', slaDays: 1 }],
+        { requestId: 'r5', toDept: 'Billing', label: 'Close Order', patientTrx: 'S. Alvarez · TRX 48230', createdAt: daysAgo(0) + ' 08:30', createdMs: new Date(daysAgo(0) + 'T08:30:00').getTime(), byName: 'Nina Patel', status: 'open', elapsedMin: 122, elapsedWallMin: 320, slaBusiness: true, slaStatus: 'ontime', slaDays: 1,
+          // 22post D: the department replied with a question — still open, flagged for a look.
+          threadTracked: true, replyVerdict: 'needs-look', repliedAt: daysAgo(0) + ' 10:15' }],
+      // 22post D: requests the caller may reopen (not their own), resolved in the last reopenDays.
+      recentResolved: [
+        { requestId: 'r9', toDept: 'Billing', label: 'OOP Order', patientTrx: 'T. Okafor · TRX 48170', createdAt: daysAgo(1) + ' 13:10', createdMs: new Date(daysAgo(1) + 'T13:10:00').getTime(), byName: 'Sam Ortiz', status: 'resolved', elapsedMin: 95, elapsedWallMin: 95, slaBusiness: true, resolvedBy: 'Priya Raman', resolvedVia: 'reply', threadTracked: true, replyVerdict: 'resolved', repliedAt: daysAgo(1) + ' 14:45', resolvedMs: new Date(daysAgo(1) + 'T14:45:00').getTime(), slaDays: 1 }],
+      recentResolvedTotal: 1, reopenDays: 7,
       allOpen: [
         // r6 is a LEGACY row (no patientTrx) — the subject renders the label alone.
         { requestId: 'r6', toDept: 'Resupply', label: 'Repeat Resupply', createdAt: daysAgo(4) + ' 09:00', createdMs: new Date(daysAgo(4) + 'T09:00:00').getTime(), byName: 'Leo Kim', status: 'open', elapsedMin: 2204, elapsedWallMin: 5800, slaBusiness: true, slaStatus: 'overdue', slaDays: 2 }],
-      truncated: false, mineTotal: 5, incomingTotal: 1, allOpenTotal: 1, listCap: 100,
+      truncated: false, mineTotal: 6, incomingTotal: 1, allOpenTotal: 1, listCap: 100,
       // 22post A-7: a manager's summary cards are team-wide (drTeamKpis_'s shape).
       teamKpis: { open: 5, overdue: 2, resolved: 16, total: 21, medianMin: 220, manualCount: 3 },
       deptStats: [{ dept: 'Billing', open: 2, resolved: 14, overdueOpen: 1, slaDays: 1, avgMinutes: 340, medianMinutes: 220, manualResolved: 3, untrackedResolved: 2, timed: 9 }] },
