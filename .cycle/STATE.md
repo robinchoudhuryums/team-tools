@@ -110,7 +110,7 @@ Updated: 2026-09-28
 
 ## Pending / not yet done
 - Deploy Batches A–E (C: confirm the Philippines reps' PayCycle reads `biweekly`; D: tell the departments a reply now resolves — both non-blocking).
-- Docs owed for Batches D and E (each block's DOCUMENTATION UPDATES NEEDED) — a /sync-docs pass.
+- Docs for Batches D and E DONE (/sync-docs 2026-09-28: modules, two design decisions, gotcha g159 + g116's tenth direction, operator-state reply resolution + DASH_TEAM_LAYOUTS, operator + harness logs, INV-311..317, S122–S123 + steps on S74/S101, README, the storage map).
 - Docs for Batches A, B and C DONE (/sync-docs 2026-09-28: modules, design decisions ×4, gotchas g33/g100/g116 amended, operator-state column E + Close reasons + Spanish notices, operator log, harness log, INV-304..310, S119–S121 + steps on S74/S14/S10, README).
 - **Cycle 22's regression walks — NOT confirmed** (the deploy and its
   after-deploy steps were). The per-batch walks are in each `22-*` block and
@@ -147,7 +147,7 @@ Carried from cycle 22 (full list in its HISTORY block, "Open follow-on items"):
   DEV instance).
 - **Numbers — do not reuse:** INV-225..227 RESERVED (cycle 20); INV-229..232,
   INV-240..242 and INV-301..303 PROPOSED (cycles 21, 21post, 22), not in the
-  library. **Next free: INV-311; gotcha g159; scenario S122.**
+  library. **Next free: INV-318; gotcha g160; scenario S124.**
 - **Batch A follow-ons (22post-A block):** no visual scenario opens the composer
   on a Close Order; the team Median sub-line ellipsizes at half width; the date
   range does not reach the server-derived table/cards.
@@ -183,5 +183,5 @@ Carried from cycle 22 (full list in its HISTORY block, "Open follow-on items"):
 
 ## Where I left off
 All five 22post batches (A–E) are committed and pushed (A–C merged in PR #274;
-D + E on the branch), none deployed. Next: /sync-docs for D + E, then a PR and
-the deploy; after that the next /audit or /broad-scan opens cycle 23.
+D + E on the branch), none deployed. Docs are synced (PR from this branch);
+next the deploy of A–E; after that the next /audit or /broad-scan opens cycle 23.

@@ -2237,3 +2237,28 @@ entry says which it is.
   them by hand. **One-time check after deploy:** the record starts empty, so
   review both lists for anyone offboarded BEFORE this deploy.
 
+<a id="operator-dept-request-reply-resolution-22post-d"></a>
+- **Dept Request reply resolution (22post D, 2026-09-28).** The tracked
+  department email now carries the deployer's mailbox (`CONFIG.CALL_NOTES.CC_EMAIL`
+  — the account the app runs as) on Reply-To beside the agent, and is sent
+  through a Gmail draft so its thread id can be recorded (same quota; the Gmail
+  scope was already granted). The hourly dispatcher (`runHourlyJobs`) reads each
+  open request's thread and resolves it by the four rules or marks "Responded —
+  needs a look" — see the design decision. **Toggle:** `deptReplyResolve`
+  (Admin → Config → feature toggles), ON by default; off = no reply is read, and
+  the email link and Mark resolved keep working. **Health:** the heartbeat
+  `deptReplyScan` (stale past 2 h) and the error key `DeptReplyScan` in
+  Automation Health. **Store:** the DeptRequests tab gains ThreadId, ReopenedAt,
+  RepliedAt and ReplyVerdict (the header self-heals). Only requests sent after
+  the deploy carry a thread. **Tell the departments** that a reply now resolves
+  unless it asks a question.
+
+<a id="operator-script-property-dash-team-layouts-22post-e"></a>
+- **Script Property `DASH_TEAM_LAYOUTS` (22post E, 2026-09-28; auto-managed).**
+  The managers' team-default Dashboard layouts, written by "Save as my team's
+  default" in the Customize panel: `{managerEmailLc: {i: ['mine:1:h', …], by,
+  at}}`, capped at 40 managers. A rep whose roster ManagerEmail names a key sees
+  that layout until they save their own (which lives in their browser,
+  `umsDashLayout`). Delete one key, or use "Clear team default", to remove a
+  default; an unreadable value reads as no defaults (the standard layout). No
+  setup needed.

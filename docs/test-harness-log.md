@@ -2112,3 +2112,25 @@ per-change detail. By delta:
   first read NO BITE against D-N10, whose INV-24 row-key reader split the row
   literal per LINE, so two keys on one line read as one. It splits on commas
   too now (g116, the ninth direction). The new C-3 pin had caught it.
+
+## 22post — Batches D and E (2026-09-28)
+
+- **Batch D:** Node +5, DOM +1; one editor test extended (the member-resolve
+  test now reopens what it resolved — no new registration). Driven over a fake
+  sheet: the reply scan (only open + threaded + recent rows read, a reply before
+  a reopen ignored, idempotent on a second pass) and the reopen. The send path
+  is driven over fake MailApp / GmailApp services, so the draft-send, the
+  Reply-To merge and the option stripping are behaviour, not text. Updated for
+  the deliberate change: OPS-4, N3-DR, C-N6, the cache-key pin (v3), F18 (a
+  fourth capped list) and T6. One of my own grid cases failed first — a question
+  without a "?" would have resolved — and the question-line rule was added
+  (g159). 25 bite-checks, all BITE.
+- **Batch E:** Node +3, DOM +2, visual +3 (`dash-customize-light-wide`,
+  `dash-customize-dark-mobile`, `dash-custom-layout-light-wide`). The client
+  widget ids are pinned equal to the server's `DASH_WIDGET_IDS`. PR6-2 and the
+  PR6 DOM pin moved to the widget frame (Needs you leads the BASE layout). 21
+  bite-checks; one NO BITE acted on: the "hidden widget is not fetched" check
+  also had its neighbour hidden, so an EARLIER guard in the same function
+  returned first and shielded the line under test (g116, the tenth direction);
+  a second DOM pin with the neighbour shown now bites. The first panel shot
+  made the selected width nearly invisible; fixed before commit.

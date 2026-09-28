@@ -277,6 +277,7 @@ What leaves the building, who it looks like it is from, and what the shared log 
 - **EOD digest runs hourly and matches each rep's local EOD hour.** Fires when you change the EOD hour or its trigger. [Detail](docs/gotchas.md#g79-eod-digest-runs-hourly-and-matches-each)
 - **Personal-sheet sync failures log to the audit trail.** Fires when a rep’s personal Sheet drifts from the ADP source of truth. [Detail](docs/gotchas.md#g89-personal-sheet-sync-failures-log-to-the)
 - **Training questions email managers immediately.** Fires when a note is flagged `training` with a question. [Detail](docs/gotchas.md#g92-training-questions-email-managers-immediately)
+- **A heuristic that CLOSES work must fail toward "a person should look" — the Dept Request reply scan would have resolved on "Is this the right patient" (no "?"); a line opening with a question word counts, and empty new text is a look (22post D, 2026-09-28).** Fires when an automatic rule ends a task or moves it out of view. Verify: the D-2 rule grid. [Detail](docs/gotchas.md#g159-a-heuristic-that-closes-work-fails-toward-a-look)
 - **The first message of a thread is not the thread — a caller's repeat voicemails share one Gmail conversation, and reading only the first hid every later one (cycle 22 M5 + follow-up).** Fires when you read a mail thread as one request. Verify: the M5 pins + FU-B7b. [Detail](docs/gotchas.md#g155-the-first-message-is-not-the-thread)
 
 ### CDR / Metrics contract
@@ -549,6 +550,8 @@ for the reasoning, which is usually the part that matters.
 - [The Scratchpad is a floating, non-modal panel, and the server sanitizes what it stores (22post B, operator 2026-09-27)](docs/design-decisions.md#the-scratchpad-is-a-floating-non-modal-panel)
 - [A Spanish assignment tells the assignee by email and on Needs you, and the email carries no request content (22post C-8, operator 2026-09-27)](docs/design-decisions.md#a-spanish-assignment-tells-the-assignee)
 - [App activity counts as IN outside the Philippines team, and it rides `status` (22post C-3, operator 2026-09-27)](docs/design-decisions.md#app-activity-counts-as-in-outside-the-philippines-team)
+- [A department's reply resolves its request by four rules, and a question never does (22post D, operator 2026-09-27)](docs/design-decisions.md#a-department-reply-resolves-by-four-rules)
+- [The Dashboard is a widget grid resolved own → team default → standard, and it is never empty (22post E, operator 2026-09-27)](docs/design-decisions.md#the-dashboard-is-a-widget-grid-that-is-never-empty)
 
 ## Operator State Checklist
 
@@ -566,7 +569,7 @@ one-pane-of-glass for this table. Keep them in one Drive folder for sanity.
 | Time Clock / ADP | `ADP_SS_ID` (CONFIG placeholder) | Employees (roster), Timesheet, TimesheetArchive (cold tier, INV-153 — **read back by the ADP export**, F1), TimeOffRequests, AuditLog, PunchAdjustRequests, ClientErrors (INV-150), ViewUsage (feature-usage telemetry, 2026-08-13), SpanishManualResolved, SpanishClaims (advisory claim/assign, append-only PHI-free — pilot round 2) | Payroll + shared audit | kept (archive moves, never deletes) | `getAdpSS_` |
 | CDR Report | `CDR_SS_ID` (CONFIG placeholder) | DQE Historical Data, CSR Transfer Historical Data, Agent Alias Overrides, Inbound Calls (the break-coverage demand layer), Company Holidays (H1 — the ONE holiday calendar, `getCompanyHolidays_`; federal fallback only while the tab is absent/empty/unreadable), Dashboard Standards (H2 — the answer target / amber band / team-avg excludes this app tones and benchmarks against, `getCdrDashboardStandard_`; no tab = no standard, never a fallback number). **Since Batch 3 the Storage Health CDR row states which calendar and which standard are LIVE, with a CDR-area finding for every fallback state** | External (read-only) | owned by `call-data-reporting` | `getCdrSS_` |
 | Intake | `INTAKE_SS_ID` (CONFIG placeholder) | Offerings, PPD/PMD/PAPSubmissions | **PHI** | optional purge | `getIntakeSS_` |
-| Dept Requests | `DEPT_REQUESTS_SS_ID` (**falls back to the ADP sheet**) — only while UNSET; a set but unopenable id THROWS by name since cycle 22 A3 | DeptRequests (the inter-department request tracker — its trailing `PatientTrx` column names a patient, operator testing note 6) | **PHI-adjacent** | kept | `getDeptRequestsSS_` — Storage Health probes it since Batch 5 (2026-09-18) and warns while unset: set it to the Intake spreadsheet, the `FORMS_SS_ID` recommendation |
+| Dept Requests | `DEPT_REQUESTS_SS_ID` (**falls back to the ADP sheet**) — only while UNSET; a set but unopenable id THROWS by name since cycle 22 A3 | DeptRequests (the inter-department request tracker — its `PatientTrx` column names a patient, operator testing note 6; then ThreadId, ReopenedAt, RepliedAt, ReplyVerdict for the reply scan, 22post D — no reply text is stored) | **PHI-adjacent** | kept | `getDeptRequestsSS_` — Storage Health probes it since Batch 5 (2026-09-18) and warns while unset: set it to the Intake spreadsheet, the `FORMS_SS_ID` recommendation |
 | Forms | `FORMS_SS_ID` (**falls back to the ADP sheet**) | FormTokens, FormSubmissions, ScheduledCalls (scheduled-call reminders — labels may name a patient, so PHI-class; epoch-ms NUMBER cells; pilot round 2) | **PHI** | 90-day purge (if enabled; ScheduledCalls is NOT purged) | `getFormsSS_` |
 | Knowledge Base + Training | `KB_SS_ID` (CONFIG placeholder) | KB, KbViews, KbFeedback, KbContentRequests, KbComments (per-article discussion — append-only + soft-delete moderation, pilot round 3), KbRevisions, TrainingAssignments, TrainingCompletions, Quizzes, QuizAttempts, **the THREE operator-maintained, app-never-writes lookup tables:** InsurancePayors (payor acceptance, 2026-08-25), OopPricing (out-of-pocket prices — **every column discovered BY HEADER STEM, including the item name**: a name-ish header wins and column A is only the fallback, because the operator's real sheet has `HCPCS` in A and the item in C. EVERY price-role column is kept and labelled, since one item carries pick-up / with-shipping / with-tech-delivery totals that are all correct for different fulfilments; any other column passes through verbatim. **The Area Eligibility column is READ BY AN ENGINE, not displayed** — see INV-209 — and a quoted price is re-verified against this tab at SEND time, see INV-208) and LocationAcceptance (delivery reach — headers in ROW 1; `Type` = warehouse rows with a geocoded Address, or city rows with State + Accepts; both 2026-09-16. Since T7 (2026-09-22) the city rows DECIDE for an item whose Area Eligibility says `listed cities`, and a tab that yields nothing usable is a named finding rather than an empty registry) | PHI-free by policy | kept | `getKbSS_` |
 | Employee Docs (HR) | `HR_DOCS_SS_ID` (**no fallback**) | EmpDocs, DocSignatures, EmpDocTemplates, Coaching | HR — keep-forever | **never purged** (INV-122/INV-134) | `getHrDocsSS_` |
@@ -702,6 +705,8 @@ the dated round entries that used to sit here moved to
 - [Stored formulas — a one-time clean-up (cycle 22 S2 + F3)](docs/operator-state.md#operator-stored-formulas-one-time-clean-up-cycle-22)
 - [The automation run ledger — `AUTOMATION_RUN_<action>` (cycle 22 A1)](docs/operator-state.md#operator-the-automation-run-ledger-cycle-22)
 - [Offboarding edits `MANAGER_EMAILS` / `ADMIN_EMAILS` — and `OFFBOARDED_EMAILS` (cycle 22 S7)](docs/operator-state.md#operator-offboarding-edits-the-gate-lists-cycle-22)
+- [Dept Request reply resolution — the `deptReplyResolve` toggle, the deployer mailbox on Reply-To (22post D)](docs/operator-state.md#operator-dept-request-reply-resolution-22post-d)
+- [Script Property `DASH_TEAM_LAYOUTS` — the managers' team-default Dashboard layouts (22post E)](docs/operator-state.md#operator-script-property-dash-team-layouts-22post-e)
 
 Documented ONLY in the operator log, because the round that introduced them is
 the only place they are explained — all three are operator-settable, so they are
@@ -909,8 +914,8 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 11 | `TRIGGER_GROUPS` |
 | localStorage keys | 20 | `ums…` literals in `web-app/` |
-| Invariant library entries | 297 | `.cycle/config.md` |
-| Regression scenarios (S*) | 116 | `.cycle/config.md` |
+| Invariant library entries | 304 | `.cycle/config.md` |
+| Regression scenarios (S*) | 118 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least
