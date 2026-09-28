@@ -29796,11 +29796,14 @@ test('M2-R1: a kb: link is a real, inert cross-reference — only the id and anc
   const c = m2Kb_();
   assert.strictEqual(c.kbMd_('[**5.9** Pick-up](kb:man-5-9)'), '<p><a href="#" class="kb-xref" data-kb-id="man-5-9" data-kb-anchor=""><strong>5.9</strong> Pick-up</a></p>');
   assert.strictEqual(c.kbMd_('[A.2](kb:man-a#A.2)'), '<p><a href="#" class="kb-xref" data-kb-id="man-a" data-kb-anchor="A.2">A.2</a></p>');
-  ['kb:man-5-9"onmouseover=x', "kb:man-5-9'x", 'kb:man-5-9#5.9"x', 'kb:javascript:alert(1)', 'kb:../x', 'kb:man-5-9#a b'].forEach((u) => {
+  // Every <a> kbMd_ emits for a kb: target has EXACTLY the safe shape — so no
+  // quote, space or scheme can reach an attribute, whatever the author typed.
+  const SAFE_XREF = /^<a href="#" class="kb-xref" data-kb-id="[a-z0-9-]{1,80}" data-kb-anchor="[0-9A-Za-z.]{0,20}">$/;
+  ['kb:man-5-9"onmouseover=x', "kb:man-5-9'x", 'kb:man-5-9#5.9"x', "kb:man-5-9#5.9'onx=1", 'kb:javascript:alert(1)', 'kb:../x', 'kb:man-5-9#<b>', 'kb:man-5-9#5.9"/onmouseover="x'].forEach((u) => {
     const h = c.kbMd_('[t](' + u + ')');
-    assert.ok(!/kb-xref/.test(h) || !/["'][^"']*on|javascript/.test(h.replace(/data-kb-(id|anchor)="[a-z0-9.A-Z-]*"/g, '')), u + ' → ' + h);
-    assert.ok(!/onmouseover|javascript:/.test(h.replace(/&lt;|&gt;/g, '')) || !/<a /.test(h), 'never an attribute or scheme break-out: ' + h);
+    (h.match(/<a [^>]*>/g) || []).forEach((tag) => assert.ok(SAFE_XREF.test(tag), u + ' → ' + tag));
   });
+  assert.ok(SAFE_XREF.test(c.kbMd_('[t](kb:man-10-b#10.B)').match(/<a [^>]*>/)[0]), 'non-vacuous: a good target does produce the safe tag');
   assert.strictEqual(c.kbShiftHeadings_('<h2 id="x">A</h2><h3>B</h3><h6>C</h6><hr><header>'), '<h3 id="x">A</h3><h4>B</h4><h6>C</h6><hr><header>');
   const body = 'Intro line.\n\n## 5.9.1 One\n\nfirst\n\n### 5.9.1.1 Deep\n\ndeep text\n\n## 5.9.2 Two\n\nsecond\n\n```snippet: Script\nline a\nline b\n```\n\nafter\n\n## 5.9.3 Three\n\nthird';
   let e = c.kbManualExcerpt_(body, '5.9.1', 700);
