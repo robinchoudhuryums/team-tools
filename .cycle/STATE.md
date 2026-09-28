@@ -10,7 +10,7 @@ Scope: operator notes — Call Notes (Close Order, Scratchpad), Dashboard (live
 view, widgets), Dept Requests (reply-resolution, sort/filter, layout), Spanish
 Inbox (assign notifications)
 Test Command: manual
-Estimates: Batch A (1 Close reason · 2a Scratchpad fixes · 6 DR sort/filter · 7 DR manager layout): M (~6 h) — 1 S 1.5h · 2a S 1.5h · 6 S 1.5h · 7 S 1.5h — written BEFORE the first edit | Batch A Actual: ~3 h · Batch B (2b floating Scratchpad panel · 2c formatting toolbar): M–L (~7 h) — 2b M 3h · 2c M–L 4h — written BEFORE the first edit | Batch B Actual: ~2.5 h · Batch C (8 Spanish assign → email + Needs-you · 3 presence on the live view): M (~6 h) — 8 M 3.5h · 3 M 2.5h — written BEFORE the first edit | Batch C Actual: ~3 h · Batch D (Dept Request reply = resolution): L (~8 h) — D1 Reply-To + thread id S 1.5h · D2 hourly reply scan + the four rules M 3.5h · D3 Responded / Mark unresolved server + UI M 2.5h · schema + fixtures S 0.5h — written BEFORE the first edit | Batch D Actual: ~3.5 h · Batch E (Dashboard widgets): L (~8 h) — E1 widget registry + layout resolver S–M 2.5h · E2 Customize panel (show/hide, reorder, width, reset) M 3h · E3 manager team default (server + property) S 1.5h · fixtures + visual S 1h — written BEFORE the first edit | Batch E Actual: ~3.5 h · Batch M (the CSR Procedures Manual into Reference): M0 add the source S (~1 h) · M1 drafts in Reference L (~13 h) — exporter 5h · renderer (nested lists, block callouts) 3h · importer + ledger + SortOrder/sort/review-stagger + bulk publish 4h · tests 1h · M2 links/previews/search/read-as-one L (~8 h) · M3 diagrams + images M–L (~7 h) · M4 priorities TBD — written BEFORE the first edit
+Estimates: Batch A (1 Close reason · 2a Scratchpad fixes · 6 DR sort/filter · 7 DR manager layout): M (~6 h) — 1 S 1.5h · 2a S 1.5h · 6 S 1.5h · 7 S 1.5h — written BEFORE the first edit | Batch A Actual: ~3 h · Batch B (2b floating Scratchpad panel · 2c formatting toolbar): M–L (~7 h) — 2b M 3h · 2c M–L 4h — written BEFORE the first edit | Batch B Actual: ~2.5 h · Batch C (8 Spanish assign → email + Needs-you · 3 presence on the live view): M (~6 h) — 8 M 3.5h · 3 M 2.5h — written BEFORE the first edit | Batch C Actual: ~3 h · Batch D (Dept Request reply = resolution): L (~8 h) — D1 Reply-To + thread id S 1.5h · D2 hourly reply scan + the four rules M 3.5h · D3 Responded / Mark unresolved server + UI M 2.5h · schema + fixtures S 0.5h — written BEFORE the first edit | Batch D Actual: ~3.5 h · Batch E (Dashboard widgets): L (~8 h) — E1 widget registry + layout resolver S–M 2.5h · E2 Customize panel (show/hide, reorder, width, reset) M 3h · E3 manager team default (server + property) S 1.5h · fixtures + visual S 1h — written BEFORE the first edit | Batch E Actual: ~3.5 h · Batch M (the CSR Procedures Manual into Reference): M0 add the source S (~1 h) · M1 drafts in Reference L (~13 h) — exporter 5h · renderer (nested lists, block callouts) 3h · importer + ledger + SortOrder/sort/review-stagger + bulk publish 4h · tests 1h · M2 links/previews/search/read-as-one L (~8 h) · M3 diagrams + images M–L (~7 h) · M4 priorities TBD — written BEFORE the first edit | Batch M1 Actual: ~4.5 h
 Subsystem cycles since last Seams audit: 2 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25). The cadence is every 4.
 Updated: 2026-09-28
 
@@ -123,7 +123,8 @@ the HTML step also needs markdown/bs4/playwright/Pillow and Node `docx`.
   changelog.json, knowledge checks, caller router in the drawer — priorities TBD.
 
 ## In progress (facts to carry forward — NOT judgments)
-- ALL FIVE batches A–E DONE and pushed (blocks `22post-{A,B,C,D,E}-broad-implement.md`); A–C merged (PR #274), D + E on the branch; none deployed. Next: /sync-docs for D + E, a PR, then deploy.
+- Batches A–E merged (PRs #274, #275) and DEPLOYED (operator, 2026-09-28).
+- Batch M0 + M1 DONE and pushed on the branch (block `22post-M1-broad-implement.md`), not merged or deployed. Next: /sync-docs for M1, a PR, deploy, then the operator runs the export → Check → Import; then M2.
 
 ## Completed this cycle
 - A-1 | 00_config.js, 30_callnotes.js, cn/script_callnotes.html | a Close Order requires a reason (preset list or Other typed); server refuses on preview + send; win-back keys on the preset
@@ -136,9 +137,13 @@ the HTML step also needs markdown/bs4/playwright/Pillow and Node `docx`.
 - E | 00_config.js, 20_timeclock.js, tc/script_clock.html, script_core.html | Dashboard widgets: an ordered grid of seven widgets; Customize (show/hide, reorder, half/full, reset); own → manager's team default → base, never empty; hidden widgets fetch nothing
 - D | 10_core.js, 30_callnotes.js, 50_deptrequests.js, metrics/script_deptrequests.html | a department's reply resolves its request: the send records its Gmail thread + the deployer mailbox on Reply-To; an hourly rider applies the four rules (resolve, or "Responded — needs a look"); Mark unresolved + Recently resolved; a reply is a timed response
 - C-3 | 20_timeclock.js, tc/script_manager.html, styles.html | presenceDisplay_: non-Philippines + active + not clocked in → IN (manager card: "in by app activity · no clock-in · seen"); Philippines → amber flag with last-seen; self never; the peer view keeps four keys
+- M0 | manual/, .cycle/config.md | the CSR Procedures Manual v3.0 source joins the repo (build-only, never pushed by clasp)
+- M1 | manual/export_reference.py, web-app/kb/script_kb.html, web-app/70_kb.js, web-app/00_config.js | the export (160 articles, every cross-reference verified, fails closed); quotes render and callouts are toned by label, nested lists; kbImportManual + the ManualImport ledger (drafts, re-import writes nothing, in-app edits skipped + reported), kbPublishManual by part with staggered review dates; edits keep SortOrder; natural department sort
 
 ## Pending / not yet done
-- Deploy Batches A–E (C: confirm the Philippines reps' PayCycle reads `biweekly`; D: tell the departments a reply now resolves — both non-blocking).
+- Batch A–E operator follow-ups (non-blocking): confirm the Philippines reps' PayCycle reads `biweekly` (C); tell the departments a reply now resolves (D).
+- **Batch M1:** /sync-docs (the block's DOCUMENTATION list), PR, deploy; then export → upload → Reference → Manual → Check → Import; vet; publish by part; unpublish the old guides once vetted.
+- **Batch M2 / M3 / M4** — as planned above (M4 priorities still to confirm).
 - Docs for Batches D and E DONE (/sync-docs 2026-09-28: modules, two design decisions, gotcha g159 + g116's tenth direction, operator-state reply resolution + DASH_TEAM_LAYOUTS, operator + harness logs, INV-311..317, S122–S123 + steps on S74/S101, README, the storage map).
 - Docs for Batches A, B and C DONE (/sync-docs 2026-09-28: modules, design decisions ×4, gotchas g33/g100/g116 amended, operator-state column E + Close reasons + Spanish notices, operator log, harness log, INV-304..310, S119–S121 + steps on S74/S14/S10, README).
 - **Cycle 22's regression walks — NOT confirmed** (the deploy and its
@@ -216,6 +221,6 @@ Carried from cycle 22 (full list in its HISTORY block, "Open follow-on items"):
   Tasks" means the Dashboard's Needs-you list.
 
 ## Where I left off
-22post A–E are merged (PRs #274, #275), not deployed. Batch M is planned (above);
-M0 is committed on the branch. Next: `/broad-implement Batch M1` — the exporter,
-the renderer fixes and the importer.
+22post A–E are merged and deployed. Batch M0 + M1 are pushed on the branch
+(block `22post-M1-broad-implement.md`). Next: `/sync-docs` for M1, then a PR; after
+deploy the operator runs the import. Then `/broad-implement` Batch M2.
