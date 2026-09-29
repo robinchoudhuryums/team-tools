@@ -2071,8 +2071,8 @@ S123 | Dashboard — customize widgets, a team default, never empty (22post E) |
 
 S124 | Procedures manual — export → import → vet → publish (22post M1–M2) | Subsystem: Manual source, Server, Client (Reference views)
   Steps:
-    - In `manual/`, run `./make_all.sh` (Python 3.12) and confirm it writes `manual.json` with no error; upload it to Drive
-    - As an admin, Reference → **Manual** → paste the link → **Check**; then **Import**
+    - In `manual/`, run `./make_all.sh` (Python 3.12) and confirm it writes `manual.json` with no error
+    - As an admin, Reference → **Manual** → **Choose File** → `manual.json` → **Check**; then **Import** (M4-FU3: no Drive — the domain disables Apps Script's Drive)
     - As a rep, open Reference and search a phrase from a manual section
     - As the admin, open a few drafts, then **Publish** one part; check the Review-due queue over the next days
     - Run Check and Import again with the same file
@@ -2080,10 +2080,10 @@ S124 | Procedures manual — export → import → vet → publish (22post M1–
     - Remove a section from the source, rebuild, upload, Check; Import without ticking "Remove sections no longer in the manual", then with it ticked
     - Upload a file whose JSON is broken, and one with a router target that names no section
     - As a non-admin, call `google.script.run…kbImportManual('x')` and `…kbPublishManual({})` from the console
-    - **(22post M3)** Re-export after deploy (manual.json now carries the images) and Import; if the dialog says images are still to upload, Import again; open the KB Images folder and the `ManualImages` tab
-    - **(22post M3)** Change one image in the manual source, re-export and Import; look in Drive's trash
+    - **(22post M3, M4-FU3)** Re-export after deploy (manual.json carries the images) and Import; open the `ManualImages` tab (one row per piece of each image) and a section with images
+    - **(22post M3, M4-FU3)** Change one image in the manual source, re-export and Import; Import the same file again
     - **(22post M3)** Change one diagram in `manual/diagrams/`, re-run the export, and check `git status`
-  Expected: Check lists what would be created / updated / left alone / skipped and writes nothing; Import creates every section as a DRAFT under its part, parts in order Part 00 … Part 10, then the appendices (M3, operator 2026-09-29), and the dialog shows the manual's version. The rep sees no draft. Publish makes that part visible and its review dates are spread (a few come due each day, not all at once). The second import reports everything unchanged and writes nothing (no revision, meta not rewritten). The hand-edited section is skipped as "edited" and the deleted one as "deleted", both named, neither overwritten. The dropped section is listed after Check and removed only with the box ticked. The broken files are refused with named problems and nothing imported. The console calls return "Admin access required.". Audit rows `KbManualImport` / `KbManualPublish` carry counts only. **22post M3:** the images land in the KB Images folder as `manimg-<key>-<hash>` files, one ledger row each, and a second Import finishes any that were pending; a re-import with no image change uploads nothing. The changed image gets a NEW file, the ledger names it, and the old file is in Drive's trash (the dialog says so). The diagram change rewrites `web-app/kb/script_manual_diagrams.html` (the only way a diagram reaches the app — commit and deploy it).
+  Expected: Check lists what would be created / updated / left alone / skipped and writes nothing; Import creates every section as a DRAFT under its part, parts in order Part 00 … Part 10, then the appendices (M3, operator 2026-09-29), and the dialog shows the manual's version. The rep sees no draft. Publish makes that part visible and its review dates are spread (a few come due each day, not all at once). The second import reports everything unchanged and writes nothing (no revision, meta not rewritten). The hand-edited section is skipped as "edited" and the deleted one as "deleted", both named, neither overwritten. The dropped section is listed after Check and removed only with the box ticked. The broken files are refused with named problems and nothing imported. The console calls return "Admin access required.". Audit rows `KbManualImport` / `KbManualPublish` carry counts only. **22post M3, M4-FU3:** the images land in the `ManualImages` tab (sorted by key, one row per ≤45,000-character piece) and draw in their sections; the dialog says how many were stored. Importing the same file again stores nothing and writes nothing. After the changed image, the tab holds its new bytes and no stale row. Nothing appears in Drive. The diagram change rewrites `web-app/kb/script_manual_diagrams.html` (the only way a diagram reaches the app — commit and deploy it).
 
 S125 | Procedures manual — the reader (22post M2) | Subsystem: Client (Reference views), Server
   Steps:

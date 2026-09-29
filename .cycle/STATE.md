@@ -187,6 +187,7 @@ the HTML step also needs markdown/bs4/playwright/Pillow and Node `docx`.
 - C-3 | 20_timeclock.js, tc/script_manager.html, styles.html | presenceDisplay_: non-Philippines + active + not clocked in → IN (manager card: "in by app activity · no clock-in · seen"); Philippines → amber flag with last-seen; self never; the peer view keeps four keys
 - M0 | manual/, .cycle/config.md | the CSR Procedures Manual v3.0 source joins the repo (build-only, never pushed by clasp)
 - M1 | manual/export_reference.py, web-app/kb/script_kb.html, web-app/70_kb.js, web-app/00_config.js | the export (160 articles, every cross-reference verified, fails closed); quotes render and callouts are toned by label, nested lists; kbImportManual + the ManualImport ledger (drafts, re-import writes nothing, in-app edits skipped + reported), kbPublishManual by part with staggered review dates; edits keep SortOrder; natural department sort
+- M4-FU1..FU3 | 00_config.js, 70_kb.js, kb/script_kb.html | the manual import needs no Drive (the domain disables Apps Script's Drive): manual.json from the computer as text; images in the ManualImages tab; the locked Import button explains itself (block `22post-M4-FU3-broad-implement.md`)
 - M4 | 70_kb.js, 10_core.js, 00_config.js, script_core.html, kb/script_kb.html, styles.html, script_icons.html | recently changed (landing + What's new, one payload); HCPCS codes → drawer lookups; keyboard previews; Print one section / card
 - M2 | manual/export_reference.py, web-app/kb/script_kb.html, web-app/70_kb.js, web-app/00_config.js | the Manual reader: one manual.json upload (router, changelog, version); ManualMeta; dropped sections reported / removed on request; manual sections read-only; whole-part pages, kb: links + previews, Suggest an edit, Updated badges, grouped tree; number jump in both searches; the drawer call router; Read in context
 
@@ -242,6 +243,7 @@ Carried from cycle 22 (full list in its HISTORY block, "Open follow-on items"):
   no effect; no drag-to-reorder; the panel names a team default's source, not its diff.
 - **Batch D follow-ons (22post-D block):** the scan's counts are only logged; a
   department replying from outside the domain and the roster stays unseen (by design).
+- **M4-FU3 follow-ons:** every other Drive feature is broken by the same domain policy (converter images, paste-a-screenshot, KB Images folder + the image fallback, the embed reachability check, QA recording sync/playback) — ask IT to allow Apps Script Drive, or rework each; Admin → System's Drive row reads the SCOPE and cannot see an admin-disabled service. The ~1.6 MB single-call upload is unverified in a real runtime (fallback: chunked).
 - **Batch C follow-ons (22post-C block):** no DOM harness drives renderManagerView;
   the manager fixture's Leo Kim is `not_in` with a ClockOut punch (a shape the
   server cannot produce); no toast on the assignee's open window.
