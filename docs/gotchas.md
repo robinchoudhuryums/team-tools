@@ -3043,6 +3043,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   in server comments) and, when a body-extracting pin fails on code you did not
   touch, print the body it extracted before believing it.
 
+  **A TWELFTH direction (22post M3, 2026-09-29): a "hostile input" case that
+  fails two guards at once proves neither.** The trash step checks that a file
+  is inside the KB Images folder AND named for its key; the only foreign-file
+  case was a payroll spreadsheet in another folder, so deleting the folder check
+  left the pin green (NO BITE). A file named exactly like a manual image but
+  living elsewhere now isolates it. For each guard, drive a case that ONLY that
+  guard stops.
+
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
   done (operator 2026-09-15).** The reconcile pass (g115) makes late punch data
@@ -4567,3 +4575,20 @@ failed (…). This says nothing about …". Verify: the A5 pin, driven over
   `kbMd_`, the note-marker formatter (g38) or any other escape-then-format
   pass. Verify: M1-R1 (a callout holding a paragraph, a table and a
   list; each label's tone; HTML inside a callout still inert).
+
+<a id="g161-inline-svg-is-not-encapsulated"></a>
+
+- **Inline SVG is not encapsulated — its `<style>` styles the whole page, and a
+  component's `svg { … }` rule reaches every icon inside it (22post M3,
+  2026-09-29).** An SVG inserted into the document is ordinary DOM: a `<style>`
+  inside it is a page stylesheet, so fifteen manual diagrams each defining
+  `.dg-arr` would override each other wherever two share a page (the generator
+  scopes every selector to `.kbdg-<name>`). The other direction bit during the
+  batch: `.kb-diagram svg { min-width: 600px }` also matched the icon inside
+  the new Full size button, since `icon()` returns an `<svg>` — caught by a
+  test before it shipped; the rule is `svg.kbdg` now. RULE: scope an inline
+  SVG's styles to a class on its own root, and never write a bare `svg`
+  descendant rule in a container that can hold an icon. Fires when you insert
+  SVG markup, or style one by element name. Verify: M3-D1 (every selector
+  scoped) + M3-D3 (the sizing rule is `svg.kbdg`).
+

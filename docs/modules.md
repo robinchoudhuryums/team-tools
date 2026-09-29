@@ -860,6 +860,24 @@ not restate it. Server endpoints live in the fourteen server files
      say?", the manual's call router (phrases in groups, each naming the sections
      to open), and a drawer result offers "Read in context", which opens the
      whole part in the Reference tab.
+     **22post M3 (2026-09-29): diagrams, images, part order.** The appendices
+     now list after Part 10 (the tree, the dialog and the publish order). The
+     manual's diagrams draw inside their sections from a generated partial
+     (`web-app/kb/script_manual_diagrams.html`, written by the export), in the
+     app's colours in light and dark and in its fonts; their section numbers
+     are cross-references, a wide one scrolls inside its own box, and every
+     diagram offers **Full size** — the same drawing at its natural width in an
+     overlay, where a link opens back in the tab or drawer the diagram came
+     from. A diagram name the partial does not know stays the quiet pending
+     figure. The manual's images (icons, figures, equipment photos) ride
+     `manual.json`; the import puts each new or changed one in the KB Images
+     folder, and the reader asks `getManualImages` for a page's images in one or
+     two calls. A chip shows while one loads, and says "not imported yet" or
+     "could not load" when it cannot draw. When a re-import replaces an image,
+     the file it replaced is moved to Drive's trash once the ledger names the
+     new one. The Manual dialog reports the images too — what would upload on a
+     check; what uploaded, what is still to upload ("press Import again"), what
+     was trashed and anything left alone on an import.
 
 <a id="training-employee-docs"></a>
      **Batch 6 (2026-09-18):** the drawer is `role="dialog"` named by its own

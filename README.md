@@ -94,7 +94,9 @@ Script project synced via [clasp](https://github.com/google/clasp).
     source; read-only in the app, with "Suggest an edit"): each part
     reads as one page with cross-references and previews, a section
     number typed into search jumps to it, and the drawer carries the
-    manual's call router. PHI-free by policy.
+    manual's call router. Its diagrams draw in place (with a Full size
+    view) and its images are unpacked into Drive by the import.
+    PHI-free by policy.
   - **Training & Employee Docs** — manager-assigned training built on
     the Reference content layer: assign any KB article/embed to
     employees (or everyone) with an optional due date; reps work a

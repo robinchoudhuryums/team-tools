@@ -4788,3 +4788,36 @@ pick them up without re-deriving the context.
   from row edit dates. Rejected: a separate manual store (it would duplicate
   search and the drawer) and in-app editing with export back to the repo (two
   writers for one document).
+- <a id="the-manual-s-diagrams-are-code"></a>**The manual's diagrams are CODE — a build-generated, allowlisted partial — not data carried by the import (22post M3, 2026-09-29).** A diagram is markup the browser draws, and an SVG can carry script, event
+  handlers, external fetches and page-wide styles. Sending it through the
+  import would put markup from an admin-writable sheet into the page and need a
+  server-side SVG sanitizer. Instead the manual build writes
+  `web-app/kb/script_manual_diagrams.html`: every element and attribute from a
+  fixed list, `href` only `#`, each `<style>` scoped to its own diagram, colours
+  renamed `--dg-*` (one CSS block maps them onto the design tokens, so light,
+  dark and the palettes follow), fonts the app's, section links turned into the
+  same inert cross-reference shape `kbMd_` emits. The renderer draws a diagram
+  only when the fence names one of the partial's own keys. A harness pin re-checks
+  the committed file against an allowlist of its own and a hash of the source
+  SVGs, so an edited diagram with a stale partial fails CI. Cost accepted: a
+  diagram change is commit + deploy, not an import; and ~139 KB rides every page
+  load, chosen over an on-demand fetch so diagrams draw synchronously with no
+  server read. Full size exists because the reading column is 760px and the
+  densest diagram's labels shrink to ~6px there.
+- <a id="the-manual-s-images-ride-the-upload-into-drive"></a>**The manual's images ride the one upload into Drive, and are served by key, ledger-scoped (22post M3, 2026-09-29).** `manual.json` carries every image a section cites, so one upload still
+  carries everything. The import checks each (PNG or JPEG, its kind matching its
+  key, and every cited key present — any bad one refuses the file), then
+  uploads the new or changed ones OUTSIDE the lock, named
+  `manimg-<key>-<hash>`, so an interrupted run reuses what reached Drive and a
+  changed image gets a new file rather than overwriting the old; a four-minute
+  budget leaves the rest pending for the next Import. The `ManualImages` ledger
+  maps key → file under the lock; only after it names the new file is the old
+  one moved to Drive's trash (operator 2026-09-29), and only if it is a
+  `manimg-` file of that key inside the KB Images folder. Readers ask
+  `getManualImages` for a page's keys in batches: it reads only the files the
+  ledger names (so no caller can reach another Drive file by id), answers "not
+  imported" apart from "could not read", and caches data URLs by content hash.
+  Rejected: rewriting article bodies to Drive URLs at import (an image change
+  would not change a section's source hash, so the ledger would call it
+  unchanged and keep the stale link) and Drive thumbnail URLs (blocked on this
+  domain — every image would have gone through the per-image fallback).

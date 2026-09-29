@@ -10,6 +10,23 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-29 — 22post: the manual's diagrams and images, Batch M3
+
+**Adds one auto-created KB tab and one generated code file; no Script
+Property.** The import writes `ManualImages` (key → image file) into the KB
+spreadsheet and puts the images in the KB Images folder. The diagrams ship as
+`web-app/kb/script_manual_diagrams.html`, which the export rewrites. NOT yet
+deployed: ship on the ordinary `clasp push -f` + New version.
+
+**After deploy.** Re-run the export (`manual.json` now carries the images,
+~1.6 MB), upload it, and Check → Import. If the dialog says images are still to
+upload, press Import again. From now on a changed diagram is commit + deploy.
+
+**What changes for the operator.**
+- The appendices list after Part 10.
+- Diagrams draw in their sections, with Full size; images draw in place.
+- A replaced image's old file goes to Drive's trash (30 days to recover).
+
 ## 2026-09-28 — 22post: the CSR Procedures Manual in Reference, Batches M1–M2
 
 **Adds two auto-created KB tabs; no Script Property, no trigger.** The import
@@ -21,8 +38,8 @@ ship on the ordinary `clasp push -f` + New version.
 `manual.json` to Drive → Reference → **Manual** → paste the link → Check →
 Import (the first import holds the lock longest; after hours is fine) → vet the
 drafts → Publish by part → unpublish the old department guides the manual
-replaces. Images and diagrams are placeholders until M3. The full procedure is
-the operator-state entry.
+replaces. (Images and diagrams arrived in M3 — see its entry above.) The full
+procedure is the operator-state entry.
 
 **What changes for the operator.**
 - **M1** — the manual is imported from the repo as drafts and published in

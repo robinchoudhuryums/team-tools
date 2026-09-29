@@ -2264,8 +2264,8 @@ entry says which it is.
   setup needed.
 
 <a id="operator-the-procedures-manual-import-22post-m"></a>
-- **The procedures manual import — `ManualImport` and `ManualMeta` (22post M1–M2,
-  2026-09-28).** The manual's source is `manual/` in the repo, and the app never
+- **The procedures manual import — `ManualImport`, `ManualMeta` and `ManualImages`
+  (22post M1–M3, 2026-09-28/29).** The manual's source is `manual/` in the repo, and the app never
   edits it. **To publish a new version:** in `manual/`, run `./make_all.sh` (or
   just `python3 export_reference.py`; Python 3.12) → upload the resulting
   `manual.json` to Drive where the deployer account can read it → Reference →
@@ -2284,4 +2284,15 @@ entry says which it is.
   lock for its write (seconds for a normal re-import, longer for the first
   one), so running it after hours is fine but not required. **Once vetted:**
   unpublish the old department guides the manual replaces (Edit → Save as draft).
-  Images and diagrams show as placeholders until Batch M3.
+  **Images (M3):** `manual.json` carries them (about 1.6 MB); the import puts
+  each new or changed one in the KB Images folder (`KB_IMAGES_FOLDER_ID`,
+  created and shared automatically if unset) and records it in the
+  auto-created `ManualImages` tab (Key, Sha, FileId, Kind, ImportedAt — do not
+  hand-edit). A first import uploads every image and may stop at its four-minute
+  budget: the dialog then says how many are still to upload — press **Import**
+  again (the sections are already in). A replaced image's old file goes to
+  Drive's trash (recoverable for 30 days); a file that is not a manual image in
+  that folder is left alone and named. **Diagrams (M3) are code:** after
+  changing one in `manual/diagrams/`, re-run the export — it rewrites
+  `web-app/kb/script_manual_diagrams.html` — then commit that file and deploy.
+  The import does not carry diagrams.

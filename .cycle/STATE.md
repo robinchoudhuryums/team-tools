@@ -155,7 +155,7 @@ the HTML step also needs markdown/bs4/playwright/Pillow and Node `docx`.
 ## Pending / not yet done
 - Batch A–E operator follow-ups (non-blocking): confirm the Philippines reps' PayCycle reads `biweekly` (C); tell the departments a reply now resolves (D).
 - **Batches M1 + M2:** merged (PR #276); docs DONE (/sync-docs 2026-09-29: modules, two design decisions, gotcha g160 + g116's eleventh direction, operator-state manual import, operator + harness logs, INV-318..328, S124–S125 + steps on S62/S64, README, the KB storage-map row). Owed: deploy; then export → upload manual.json → Reference → Manual → Check → Import; vet; publish by part; unpublish the old guides once vetted.
-- **Batch M3 DONE on the branch** (block `22post-M3-broad-implement.md`; the M1–M2 docs commit rides the same branch): appendices after Part 10; diagrams from the generated partial `web-app/kb/script_manual_diagrams.html` (+ Full size); images carried in manual.json → KB Images folder → getManualImages. Owed: /sync-docs for M3 (its block's list), PR, deploy; then re-export manual.json (now ~1.6 MB with images), upload, Check → Import (press Import again if images are still to upload).
+- **Batch M3 DONE on the branch** (block `22post-M3-broad-implement.md`; the M1–M2 docs commit rides the same branch): appendices after Part 10; diagrams from the generated partial `web-app/kb/script_manual_diagrams.html` (+ Full size); images carried in manual.json → KB Images folder → getManualImages. Follow-up (operator 2026-09-29): a replaced image's old file is moved to Drive's trash. Docs DONE (/sync-docs 2026-09-29: modules, two design decisions, gotcha g161 + g116's twelfth direction, operator-state + storage map, operator + harness logs, INV-329..335, S124/S125 steps, README, Subsystems). Owed: PR, deploy; then re-export manual.json (now ~1.6 MB with images), upload, Check → Import (press Import again if images are still to upload).
 - **Batch M4** — as planned above (M4 priorities still to confirm; M2's follow-ons add manual search stemming + router aliases + a cached index, card printing, keyboard previews).
 - Docs for Batches D and E DONE (/sync-docs 2026-09-28: modules, two design decisions, gotcha g159 + g116's tenth direction, operator-state reply resolution + DASH_TEAM_LAYOUTS, operator + harness logs, INV-311..317, S122–S123 + steps on S74/S101, README, the storage map).
 - Docs for Batches A, B and C DONE (/sync-docs 2026-09-28: modules, design decisions ×4, gotchas g33/g100/g116 amended, operator-state column E + Close reasons + Spanish notices, operator log, harness log, INV-304..310, S119–S121 + steps on S74/S14/S10, README).
@@ -194,7 +194,7 @@ Carried from cycle 22 (full list in its HISTORY block, "Open follow-on items"):
   DEV instance).
 - **Numbers — do not reuse:** INV-225..227 RESERVED (cycle 20); INV-229..232,
   INV-240..242 and INV-301..303 PROPOSED (cycles 21, 21post, 22), not in the
-  library. **Next free: INV-329; gotcha g161; scenario S126.**
+  library. **Next free: INV-336; gotcha g162; scenario S126.**
 - **Batch A follow-ons (22post-A block):** no visual scenario opens the composer
   on a Close Order; the team Median sub-line ellipsizes at half width; the date
   range does not reach the server-derived table/cards.
@@ -241,5 +241,6 @@ Carried from cycle 22 (full list in its HISTORY block, "Open follow-on items"):
 
 ## Where I left off
 22post A–E are merged and deployed. Batches M0–M2 are merged (PR #276); their docs
-and Batch M3 are pushed on the branch, not merged. Next: /sync-docs for M3, a PR,
-deploy; then the operator re-exports manual.json (with images) and imports it.
+and Batch M3 (+ the trash follow-up and its docs) are pushed on the branch, not
+merged. Next: a PR, deploy; then the operator re-exports manual.json (with
+images) and imports it.
