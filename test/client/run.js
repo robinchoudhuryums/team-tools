@@ -30258,6 +30258,16 @@ test('M3-I2 (M4-FU3): the import stores the images IN the ManualImages tab — n
   const keys = book.sheets.ManualImages.grid.slice(1).filter((r) => r[0]).map((r) => r[0]);
   assert.deepStrictEqual(keys, ['fig-o2-reg', 'fig-o2-reg', 'fig-o2-reg', 'icon-delivered'], 'the dropped image is gone, no row left over');
   assert.strictEqual(m3TabB64_(book.sheets.ManualImages.grid, 'icon-delivered'), M3_PNG.replace('ggg==', 'gga==').split(',')[1], 'the changed image is the new bytes');
+  // ONLY a dropped image (nothing changed): the rewrite still happens, so the tab
+  // never keeps an image the manual stopped using (a case with no other change,
+  // or the changed image above would trigger the rewrite by itself — g116).
+  const imgs3 = { 'fig-o2-reg': imgs['fig-o2-reg'] };
+  const r3b = m3Importer_(book, m3Bundle_(Object.assign({}, imgs3, { 'icon-delivered': imgs2['icon-delivered'] }))).ctx.kbImportManual(M1_LINK, {});
+  assert.deepStrictEqual([r3b.images.stored, r3b.images.removed], [0, 0], 'same set again: nothing to do');
+  const bundleDrop = m3Bundle_(imgs3); bundleDrop.articles[0].BodyMd = '![Reg](manimg:fig-o2-reg)\n';
+  const r3c = m3Importer_(book, bundleDrop).ctx.kbImportManual(M1_LINK, {});
+  assert.deepStrictEqual([r3c.images.stored, r3c.images.removed], [0, 1]);
+  assert.deepStrictEqual(book.sheets.ManualImages.grid.slice(1).filter((r) => r[0]).map((r) => r[0]), ['fig-o2-reg', 'fig-o2-reg', 'fig-o2-reg'], 'a dropped image alone still rewrites the tab');
   // A tab in M3's Drive layout holds no bytes: it reads as empty and is migrated.
   const bookOld = m1Book_([], null);
   bookOld.sheets.ManualImages = m1Book_([], null).insertSheet('x');
@@ -30325,6 +30335,12 @@ test('M3-I3 (M4-FU3): getManualImages serves the tab\'s own bytes — rejoined i
   const svF = m3Serve_(rows, {}, undefined, { readFails: true });
   const rF = J2(svF.ctx.getManualImages(['icon-a', 'icon-never']));
   assert.deepStrictEqual([rF.failed, rF.missing], [['icon-a'], ['icon-never']]);
+  // A tab whose columns someone reordered: the header no longer matches, so it
+  // reads as NOT IMPORTED (the next import rewrites it) — never as a failed read
+  // of a "type" that is really the kind column. Only the header check can tell
+  // (the rows alone are well-formed).
+  const swapped = m3Serve_([['icon-a', 'sha-a', 'icon', 'image/png', 0, b64, 't']], {}, undefined, { header: ['Key', 'Sha', 'Kind', 'Type', 'Part', 'Data', 'ImportedAt'] });
+  assert.deepStrictEqual(J2(swapped.ctx.getManualImages(['icon-a'])), { success: true, images: {}, missing: ['icon-a'], failed: [] });
   // An old-layout tab (M3's Drive pointers): nothing imported.
   assert.deepStrictEqual(J2(m3Serve_([['icon-a', 'sha-a', 'FILEID', 'icon', 't']], {}, undefined, { header: ['Key', 'Sha', 'FileId', 'Kind', 'ImportedAt'] }).ctx.getManualImages(['icon-a'])).missing, ['icon-a']);
   const many = Array.from({ length: 60 }, (_, i) => 'icon-k' + i);
