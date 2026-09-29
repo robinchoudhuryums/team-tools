@@ -29444,7 +29444,7 @@ test('E-1/E-2: the wiring — the state ships the defaults, the gear opens the p
 console.log('\nBatch M1 — the procedures manual: renderer, importer, exporter');
 const M1_KB_SRC = fs.readFileSync(path.join(PA_WEB, 'kb/script_kb.html'), 'utf8');
 function m1Md_() {
-  const ctx = vm.createContext({ String, Object, Array, JSON, parseInt, Math,
+  const ctx = vm.createContext({ String, Object, Array, JSON, parseInt, Math, icon: (n) => '<i data-icon="' + n + '"></i>',
     kbGlossaryHtml_: (b) => '<GLOSS>' + b + '</GLOSS>', kbRosterHtml_: () => '', kbDecideHtml_: () => '', kbMapHtml_: () => '' });
   vm.runInContext(/var KB_CALLOUT_KINDS = [^\n]+/.exec(M1_KB_SRC)[0], ctx);
   ['kbSlug_', 'kbMd_', 'kbCalloutKind_', 'kbDiagramHtml_', 'kbDiagramPendingHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
@@ -30142,7 +30142,10 @@ test('M3-D3: kbMd_ draws a diagram the partial knows — by its OWN key only —
   const c = m1Md_();
   c.KB_MANUAL_DIAGRAMS = Object.freeze({ routing: '<svg class="kbdg kbdg-routing" role="img" aria-label="R"><text>R</text></svg>' });
   const out = c.kbMd_('```diagram routing\nTransfer, email or notate\n```');
-  assert.strictEqual(out, '<figure class="kb-diagram" data-kb-diagram="routing"><div class="kb-diagram-scroll" tabindex="0" aria-label="Transfer, email or notate"><svg class="kbdg kbdg-routing" role="img" aria-label="R"><text>R</text></svg></div></figure>');
+  assert.strictEqual(out, '<figure class="kb-diagram" data-kb-diagram="routing"><div class="kb-diagram-bar"><button type="button" class="kb-diagram-full" onclick="kbDiagramOpen_(this)" title="Open the diagram at full size"><i data-icon="popOut"></i> Full size</button></div>' +
+    '<div class="kb-diagram-scroll" tabindex="0" aria-label="Transfer, email or notate"><svg class="kbdg kbdg-routing" role="img" aria-label="R"><text>R</text></svg></div></figure>');
+  assert.ok(/\.kb-article \.kb-diagram svg\.kbdg \{/.test(M1_KB_SRC) && !/\.kb-diagram svg \{/.test(M1_KB_SRC), 'the sizing rule is the DIAGRAM\'s — the Full size button\'s icon is an svg too');
+  assert.ok(!/\.kb-diagram-full \{[^}]*position: absolute/.test(M1_KB_SRC), 'the button is laid out above the drawing, never on top of it');
   ['nope', '__proto__', 'constructor', 'toString', 'hasOwnProperty', 'Routing', 'rout ing'].forEach((n) => {
     const h = c.kbMd_('```diagram ' + n + '\nlabel\n```');
     assert.ok(/^<figure class="kb-diagram-pending">/.test(h) && !/<svg/.test(h), n + ' → the pending figure: ' + h);

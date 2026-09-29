@@ -5027,7 +5027,7 @@ test('M3 DOM: a manual diagram draws inside its section as real SVG — scoped, 
   h.run.flushSuccess(part, 'getManualPart');
   const fig = h.$('#kb-man-sec-man-0-10 figure.kb-diagram[data-kb-diagram="lifecycle"]');
   assert.ok(fig, 'the diagram draws in its section');
-  const svg = fig.querySelector('svg');
+  const svg = fig.querySelector('svg.kbdg');
   assert.ok(svg && svg.namespaceURI === 'http://www.w3.org/2000/svg', 'as real SVG, not text');
   assert.ok(svg.classList.contains('kbdg-lifecycle') && fig.querySelector('style').textContent.indexOf('.kbdg-lifecycle .dg-box') >= 0, 'its styles scoped to it');
   assert.ok(!/IBM Plex/.test(fig.innerHTML) && /var\(--dg-navy\)/.test(fig.innerHTML), 'the app’s fonts and the --dg-* colours');
@@ -5040,6 +5040,19 @@ test('M3 DOM: a manual diagram draws inside its section as real SVG — scoped, 
   h.click(to08);
   assert.strictEqual(h.read('KB_STATE').currentId, 'man-0-8', 'the click opens the section, through the same delegated handler as a text link');
   assert.strictEqual(h.run.calls.filter((c) => c.method === 'getManualPart').length, fetches, 'in the loaded part: a scroll, no fetch');
+  // Full size: the same diagram at its natural width, in an overlay; a link there opens where the diagram lives.
+  const fig2 = h.$('#kb-man-sec-man-0-10 figure.kb-diagram[data-kb-diagram="lifecycle"]');
+  const full = fig2.querySelector('button.kb-diagram-full');
+  assert.ok(full && full.getAttribute('onclick') === 'kbDiagramOpen_(this)');
+  h.read('kbDiagramOpen_')(full);
+  const ov = doc.getElementById('kb-diagram-overlay');
+  assert.ok(ov && ov.classList.contains('open') && ov.getAttribute('role') === 'dialog' && /Order lifecycle/.test(ov.getAttribute('aria-label')), 'a named dialog through ensureOverlay');
+  assert.ok(ov.querySelector('.kb-diagram-big svg.kbdg.kbdg-lifecycle'), 'the same diagram, big');
+  h.read('KB_STATE').currentId = 'man-0-10';
+  h.click(ov.querySelector('a.kb-xref[data-kb-id="man-0-8"]'));
+  assert.ok(!doc.getElementById('kb-diagram-overlay'), 'the overlay closes (its hook removes it)');
+  assert.strictEqual(h.read('KB_STATE').currentId, 'man-0-8', 'and the section opens in the tab, where the diagram lives');
+  assert.ok(!(doc.getElementById('kb-drawer') && doc.getElementById('kb-drawer').classList.contains('open')), 'not in the drawer');
 });
 
 test('M3 DOM: manual images arrive in ONE batched call per page and are set by property; a key not imported says so; a failed call is not cached, so the next render asks again', async () => {

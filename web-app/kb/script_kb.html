@@ -98,8 +98,20 @@
      past reading size (g71) — below ~600px of width it scrolls. */
   .kb-article .kb-diagram-scroll { overflow-x: auto; padding: 10px; border-radius: var(--radius-md); }
   .kb-article .kb-diagram-scroll:focus-visible { outline: 2px solid var(--ring-focus); outline-offset: 2px; }
-  .kb-article .kb-diagram svg { display: block; width: 100%; min-width: 600px; height: auto; }
+  .kb-article .kb-diagram svg.kbdg { display: block; width: 100%; min-width: 600px; height: auto; }
   .kb-article .kb-diagram a.kb-xref { cursor: pointer; }
+  /* The button sits in its own bar ABOVE the drawing — an absolutely placed
+     one covered the diagram's own top-right content (measured on the shots). */
+  .kb-article .kb-diagram-bar { display: flex; justify-content: flex-end; padding: 6px 8px 0; }
+  .kb-article .kb-diagram-full { display: inline-flex; align-items: center; gap: 4px;
+    font: inherit; font-size: .72rem; padding: 3px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper-card); color: var(--muted); cursor: pointer; }
+  .kb-article .kb-diagram-full:hover { color: var(--ink); border-color: var(--border-strong); }
+  .kb-diagram-modal { width: min(1240px, 96vw); max-width: none; max-height: 92vh; display: flex; flex-direction: column; }
+  .kb-diagram-mhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+  .kb-diagram-mhead h3 { margin: 0; font-size: 1rem; }
+  .kb-article.kb-diagram-big { max-width: none; overflow: auto; min-height: 0; }
+  .kb-article.kb-diagram-big .kb-diagram { margin: 0; }
+  .kb-article.kb-diagram-big .kb-diagram svg.kbdg { width: 1160px; min-width: 1160px; }
   .kb-article .kb-diagram a.kb-xref:hover text, .kb-article .kb-diagram a.kb-xref:focus text, .kb-article .kb-diagram a.kb-xref:hover { text-decoration: underline; }
   .kb-article .kb-diagram a.kb-xref:focus-visible { outline: 2px solid var(--ring-focus); }
   /* Batch M2 — the Manual reader: a part is one continuous page of sections */
@@ -2563,8 +2575,36 @@ function kbDiagramHtml_(name, body) {
     return kbDiagramPendingHtml_(name, body);
   }
   var label = String(body || '').trim() || key;
-  return '<figure class="kb-diagram" data-kb-diagram="' + key + '"><div class="kb-diagram-scroll" tabindex="0" aria-label="' +
-    label.replace(/"/g, '&quot;') + '">' + reg[key] + '</div></figure>';
+  return '<figure class="kb-diagram" data-kb-diagram="' + key + '">' +
+    '<div class="kb-diagram-bar"><button type="button" class="kb-diagram-full" onclick="kbDiagramOpen_(this)" title="Open the diagram at full size">' + icon('popOut', 12) + ' Full size</button></div>' +
+    '<div class="kb-diagram-scroll" tabindex="0" aria-label="' + label.replace(/"/g, '&quot;') + '">' + reg[key] + '</div></figure>';
+}
+/** The reading column is 760px, and a dense flow chart drawn into it puts its
+ *  smallest labels near 6px — so every diagram offers Full size: the same SVG
+ *  at its natural width in an overlay (ensureOverlay / closeOverlay, g100),
+ *  scrolling both ways. A cross-reference clicked there closes the overlay and
+ *  opens where the diagram LIVES (the tab or the drawer), not in a new place. */
+function kbDiagramOpen_(btn) {
+  var fig = btn && btn.closest ? btn.closest('figure.kb-diagram') : null;
+  var key = fig ? fig.getAttribute('data-kb-diagram') : '';
+  var reg = (typeof KB_MANUAL_DIAGRAMS === 'object' && KB_MANUAL_DIAGRAMS) ? KB_MANUAL_DIAGRAMS : null;
+  if (!reg || !/^[a-z0-9-]{1,60}$/.test(key) || !Object.prototype.hasOwnProperty.call(reg, key)) return;
+  var scroll = fig.querySelector('.kb-diagram-scroll');
+  var label = (scroll && scroll.getAttribute('aria-label')) || key;
+  var ov = ensureOverlay('kb-diagram-overlay', { label: 'Diagram — ' + label, extraClass: 'kb-diagram-ov',
+    onClose: function () { var o = document.getElementById('kb-diagram-overlay'); if (o) o.remove(); } });
+  ov.innerHTML = '<div class="modal kb-diagram-modal"><div class="kb-diagram-mhead"><h3>' + esc(label) + '</h3>' +
+    '<button type="button" class="kb-btn" onclick="closeOverlay(document.getElementById(\'kb-diagram-overlay\'))" aria-label="Close">' + icon('x', 15) + '</button></div>' +
+    '<div class="kb-article kb-diagram-big"><figure class="kb-diagram"><div class="kb-diagram-scroll" tabindex="0" aria-label="' + esc(label) + '">' + reg[key] + '</div></figure></div></div>';
+  ov._kbOrigin = fig;
+  ov.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a.kb-xref');
+    if (!a) return;
+    e.preventDefault(); e.stopPropagation();
+    var origin = ov._kbOrigin;
+    closeOverlay(ov);
+    kbXrefOpen_(a.getAttribute('data-kb-id'), a.getAttribute('data-kb-anchor') || '', origin);
+  });
 }
 // ── Batch M3 — the manual's images ──────────────────────────────────────────
 // kbMd_ leaves a keyed chip (`.kb-manimg[data-manimg]`) wherever a manual
