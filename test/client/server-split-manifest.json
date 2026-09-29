@@ -1625,6 +1625,19 @@
     "kbImportManual"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-29",
+   "why": "Pay Statement fix: empPayCycle_ shared by getEmployeeInfo_ and lookupEmployeeById_",
+   "added": [
+    "empPayCycle_"
+   ],
+   "removed": [],
+   "changed": [
+    "getEmployeeInfo_",
+    "lookupEmployeeById_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5104,6 +5117,11 @@
    "kind": "function",
    "sha": "cb9f220f2acfed85"
   },
+  "empPayCycle_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "a168a4812c3c0521"
+  },
   "empPayRateById_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -5567,7 +5585,7 @@
   "getEmployeeInfo_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "c4c691fef3738776"
+   "sha": "2a20b1e065b1baf2"
   },
   "getEmployeeRosterRows_": {
    "file": "20_timeclock.js",
@@ -7117,7 +7135,7 @@
   "lookupEmployeeById_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "400ec8230ce92c91"
+   "sha": "9ae1631385a2b1f1"
   },
   "mailBccAll_": {
    "file": "10_core.js",

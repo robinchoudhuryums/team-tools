@@ -6521,16 +6521,27 @@ function findExistingPunch_(empId, date, punchType) {
   }
   return found;
 }
+/** Roster column E (PayCycle) and F (PayAnchor) as the app uses them — the ONE
+ *  reader both employee lookups share. 'Biweekly' only for a cell that reads
+ *  `biweekly` (any case, trimmed — the same test the presence rule and the
+ *  exports use); everything else is 'Monthly'. Until 2026-09-29 only
+ *  getEmployeeInfo_ read these, and lookupEmployeeById_ returned no payCycle
+ *  at all — so a manager opening a Philippines rep's Pay Statement got the
+ *  'Monthly' default and a month-long period (operator report). */
+function empPayCycle_(row) {
+  const cycleRaw = String((row && row[EMP.PAY_CYCLE]) || '').trim();
+  const anchorRaw = row ? row[EMP.PAY_ANCHOR] : null;
+  return { payCycle: cycleRaw.toLowerCase() === 'biweekly' ? 'Biweekly' : 'Monthly',
+    payAnchor: anchorRaw ? normalizeDate_(anchorRaw) : null };
+}
 function getEmployeeInfo_() {
   const email = getActiveUserEmail_();
   if (!email) return null;
   const rows = getEmployeeRosterRows_();
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][EMP.EMAIL]).toLowerCase().trim() === email) {
-      const cycleRaw = String(rows[i][EMP.PAY_CYCLE] || '').trim();
-      const cycle = cycleRaw.toLowerCase() === 'biweekly' ? 'Biweekly' : 'Monthly';
-      const anchorRaw = rows[i][EMP.PAY_ANCHOR];
-      const anchor = anchorRaw ? normalizeDate_(anchorRaw) : null;
+      const pc = empPayCycle_(rows[i]);
+      const cycle = pc.payCycle, anchor = pc.payAnchor;
       const mgrRaw = String(rows[i][EMP.IS_MANAGER] || '').trim().toLowerCase();
       const isManager = (mgrRaw === 'true' || mgrRaw === 'yes' || mgrRaw === 'y' || mgrRaw === '1');
       let tzRaw = rows[i][EMP.TIMEZONE];
@@ -6573,9 +6584,11 @@ function lookupEmployeeById_(empId) {
     const ptoRaw = (ptoVal === null || ptoVal === undefined || ptoVal === '')
       ? '' : String(ptoVal).trim().toLowerCase();
     const ptoEnabled = !(ptoRaw === 'false' || ptoRaw === 'no' || ptoRaw === 'n' || ptoRaw === '0');
+    const pc = empPayCycle_(rows[i]);
     return {
       id: empId,
       name: String(rows[i][EMP.NAME]).trim(),
+      payCycle: pc.payCycle, payAnchor: pc.payAnchor,
       email: String(rows[i][EMP.EMAIL]).trim(),
       timezone: String(tzRaw).trim() || CONFIG.TIMEZONE,
       sheetId: rows[i][EMP.SHEET_ID] ? String(rows[i][EMP.SHEET_ID]).trim() : null,

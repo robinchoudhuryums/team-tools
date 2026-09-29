@@ -30396,6 +30396,37 @@ test('M3-I5: the Manual dialog says what happened to the images — a check coun
   assert.ok(/kbManualImagesLine_\(r\.images, dryRun\)/.test(extractFnFrom(M1_KB_SRC, 'kbManualResultHtml_')), 'the dialog draws it');
 });
 
+// ── Operator report 2026-09-29 — a manager's view of a Pay Statement ──────────
+test('PAYSTMT-1: a manager opening a biweekly rep\'s Pay Statement gets the rep\'s BIWEEKLY period — both employee lookups read PayCycle through one helper (lookupEmployeeById_ used to return no payCycle, so the manager path defaulted to a month)', () => {
+  const EMP_SRC = /const EMP = \{[\s\S]*?\n\};/.exec(codeSrc)[0].replace(/^const /, 'var ');
+  const row = (email, id, name, cycle, anchor, mgr, tz) => { const r = new Array(18).fill(''); r[0] = email; r[1] = id; r[2] = name; r[4] = cycle; r[5] = anchor; r[6] = mgr; r[7] = tz; return r; };
+  const roster = [new Array(18).fill('h'),
+    row('boss@ums.com', 'E-1', 'Boss', 'Monthly', '', 'TRUE', 'America/Chicago'),
+    row('ph@ums.com', 'PH-7', 'Ana', 'biweekly ', '2026-09-07', '', 'Asia/Manila'),
+    row('in@ums.com', 'IN-3', 'Ravi', 'Monthly', '', '', 'Asia/Kolkata')];
+  let me = 'boss@ums.com';
+  const ctx = vm.createContext({ String, Number, Object, Array, JSON, Math, Date, parseInt, parseFloat, isNaN, isFinite,
+    CONFIG: { TIMEZONE: 'America/Chicago' }, TO: { EMP_ID: 0, DATE: 1, TYPE: 2, STATUS: 3 },
+    getActiveUserEmail_: () => me, getEmployeeRosterRows_: () => roster,
+    cnEnrolledSheetId_: () => '', empPtoAccrual_: () => null, empIsAdmin_: () => false,
+    normalizeDate_: (v) => String(v).substring(0, 10), empTz_: (e) => e.timezone, fmtDateTz_: () => '2026-09-29',
+    getCurrentBiweeklyRange_: () => ({ start: '2026-09-21', end: '2026-10-04' }),
+    buildTimesheetForEmployee_: (emp, a, b) => ({ startDate: a, endDate: b, days: [], totalHours: 0, daysWorked: 0, incompleteCount: 0, timezone: emp.timezone }),
+    getOrCreateTimeOffSheet_: () => ({ getDataRange: () => ({ getValues: () => [['h']] }) }), getLeaveDeduction_: () => ({ days: 1 }),
+    empPayRateById_: () => null, getTimesheetArchiveDays_: () => 0, daysBetween_: () => 0 });
+  vm.runInContext(EMP_SRC, ctx);
+  ['empPayCycle_', 'getEmployeeInfo_', 'lookupEmployeeById_', 'payPeriodRange_', 'getMyPayStatement'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const viaManager = J2(ctx.getMyPayStatement(0, 'PH-7'));
+  assert.deepStrictEqual(viaManager.period, { start: '2026-09-21', end: '2026-10-04', cycle: 'Biweekly', offset: 0 }, 'the manager sees the rep\'s two-week period, not a month');
+  assert.deepStrictEqual(viaManager.viewingOther, { id: 'PH-7', name: 'Ana' });
+  me = 'ph@ums.com';
+  assert.deepStrictEqual(J2(ctx.getMyPayStatement(0)).period, viaManager.period, 'the rep\'s own view agrees with the manager\'s');
+  me = 'boss@ums.com';
+  assert.deepStrictEqual(J2(ctx.getMyPayStatement(0, 'IN-3')).period, { start: '2026-09-01', end: '2026-09-30', cycle: 'Monthly', offset: 0 }, 'a monthly rep still gets the calendar month');
+  assert.deepStrictEqual(J2(ctx.lookupEmployeeById_('PH-7')).payAnchor, '2026-09-07', 'the anchor rides too');
+  ['getEmployeeInfo_', 'lookupEmployeeById_'].forEach((n) => assert.ok(/empPayCycle_\(rows\[i\]\)/.test(extractRawFunction('Code.js', n)), n + ' reads PayCycle through the one helper'));
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
