@@ -5187,9 +5187,13 @@ test('M4 DOM: keyboard — focusing a cross-reference shows its preview and the 
   assert.strictEqual(h.run.pending('getReferenceItem').length, 0);
   doc.getElementById('kb-search').focus(); h.flushTimers();
   assert.ok(!shown(), 'focus moved away → hidden');
-  // A focus that passes through before the delay shows nothing.
-  x.focus(); doc.getElementById('kb-search').focus(); h.flushTimers();
+  // A focus that passes through before the delay shows nothing — observed on a
+  // link whose preview is NOT cached, because a card that showed and was then
+  // hidden again by the pending blur would end in the same final state.
+  const y = h.$('#kb-man-sec-man-0-11 a.kb-xref[data-kb-id="man-10-1"]');
+  y.focus(); doc.getElementById('kb-search').focus(); h.flushTimers();
   assert.ok(!shown(), 'tabbing THROUGH a link does not pop a card up behind you');
+  assert.strictEqual(h.run.pending('getReferenceItem').length, 0, 'its preview was never even fetched');
 });
 
 test('M4 DOM: HCPCS codes in a manual section are links (not inside code, a heading or another link); a click opens the drawer\'s lookups with the code in the ITEM box and focus in an empty payor box — a typed payor is kept, a search in flight cannot paint over it, and a hand-written article is left alone', async () => {
