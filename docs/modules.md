@@ -878,6 +878,26 @@ not restate it. Server endpoints live in the fourteen server files
      new one. The Manual dialog reports the images too — what would upload on a
      check; what uploaded, what is still to upload ("press Import again"), what
      was trashed and anything left alone on an import.
+     **22post M4 (2026-09-29): the manual in use.** *Recently changed:* the
+     manual's changelog entries from the last `KB_MANUAL_RECENT_DAYS`, for
+     published sections only, list on the Reference landing ("Manual — recently
+     changed") and in the What's new panel ("Procedures manual — recently
+     changed"). Retraining changes are marked, and each row opens its section at
+     the changed heading. Both come from ONE `getWhatsNew` payload with one
+     renderer, so they cannot disagree, and a manual change alone is enough to show
+     the What's new star and light its NEW accent. A failed read says so on the
+     landing rather than showing an empty list. *HCPCS codes:* a code in a manual
+     section (E0601, K0006…) is a link. Clicking it opens the Ctrl/⌘+K drawer's
+     lookups with the code in the OOP **Item** box, and focus waits in the empty
+     payor box: the payor lookup searches by plan name, and once the caller's plan
+     is typed the item row shows that payor's rule for the code. A payor already
+     typed is kept. Codes inside code, headings or links, and in hand-written
+     articles, are left alone. *Keyboard previews:* tabbing onto a
+     cross-reference shows the same preview as hovering, and Escape closes only
+     the preview — not the drawer or modal beneath. *Print:* every manual section
+     has **Print**, and a Quick Reference Card has **Print card**. Either prints
+     just that section through the app's one print block, without its buttons,
+     feedback bar or comments.
 
 <a id="training-employee-docs"></a>
      **Batch 6 (2026-09-18):** the drawer is `role="dialog"` named by its own

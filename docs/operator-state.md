@@ -2017,7 +2017,10 @@ entry says which it is.
   dismissible panel rendering it on next load — re-surfaced automatically
   whenever the article is EDITED (the edit timestamp is the seen-stamp).
   Unset = feature fully dormant. Drafts/embeds never show; maintain the
-  changelog like any other KB article.
+  changelog like any other KB article. **Since 22post M4** the panel also lists
+  the procedures manual's recent changes (the last `KB_MANUAL_RECENT_DAYS`,
+  published sections only), so after a manual import it can appear with this
+  property unset — no setting controls it; it follows the manual's changelog.
 <a id="operator-script-property-mail-bcc-all"></a>
 - **Script Property `MAIL_BCC_ALL`** (optional — operator 2026-09-03: "any
   email the app sends, BCC me"). A comma-separated address list appended as
@@ -2295,4 +2298,6 @@ entry says which it is.
   that folder is left alone and named. **Diagrams (M3) are code:** after
   changing one in `manual/diagrams/`, re-run the export — it rewrites
   `web-app/kb/script_manual_diagrams.html` — then commit that file and deploy.
-  The import does not carry diagrams.
+  The import does not carry diagrams. **Recently changed (M4):** the changelog's
+  recent entries show on the Reference landing and in What's new without any
+  setting; a section only appears once published.

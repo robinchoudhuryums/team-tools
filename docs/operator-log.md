@@ -10,6 +10,21 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-29 — 22post: the manual in use, Batch M4 (+ the Pay Statement fix)
+
+**Adds NO operator state.** No Script Property, tab or setting. NOT yet
+deployed: ship on the ordinary `clasp push -f` + New version.
+
+**What changes for the operator.**
+- The manual's recent changes show on the Reference landing and in What's new
+  (retraining marked). A manual change alone brings up the What's new star, and
+  every rep sees its NEW accent once after the first import with recent changes.
+- HCPCS codes in the manual open the Ctrl/⌘+K lookups with the code filled in.
+- Cross-reference previews work from the keyboard.
+- Manual sections print on their own (**Print**, **Print card**).
+- Fixed the same day: a manager opening a biweekly (Philippines) rep's Pay
+  Statement saw a month-long period; it now shows the rep's two-week period.
+
 ## 2026-09-29 — 22post: the manual's diagrams and images, Batch M3
 
 **Adds one auto-created KB tab and one generated code file; no Script
