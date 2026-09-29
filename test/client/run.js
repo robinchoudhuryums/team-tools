@@ -29610,7 +29610,9 @@ function m1Book_(kbRows, ledgerRows) {
         setValues: (v) => { v.forEach((row, i) => { if (!grid[r - 1 + i]) grid[r - 1 + i] = new Array(width).fill(''); row.forEach((x, j) => { grid[r - 1 + i][c - 1 + j] = x; }); }); writes.push([name, 'set', r]); return { setFontWeight: () => {} }; },
         setValue: (x) => { grid[r - 1][c - 1] = x; writes.push([name, 'set1', r]); },
         setFontWeight: () => {},
-      }) };
+        clearContent: () => { for (let i = 0; i < (nr || 1); i++) if (grid[r - 1 + i]) for (let j = 0; j < (nc || 1); j++) grid[r - 1 + i][c - 1 + j] = ''; writes.push([name, 'clear', r]); },
+      }),
+      getLastColumn: () => width };
   };
   const sheets = { KB: mkSheet('KB', 13, kbRows) };
   if (ledgerRows) sheets.ManualImport = mkSheet('ManualImport', 5, ledgerRows);
@@ -29627,17 +29629,14 @@ function m1Importer_(book, fileText, who, extra) {
     KBMI: { ID: 0, SOURCE_HASH: 1, BODY_HASH: 2, IMPORTED_AT: 3, IMPORTED_BY: 4 },
     KB_MANUAL_IMPORT_TAB: 'ManualImport', KB_MANUAL_IMPORT_HEADERS: ['Id', 'SourceHash', 'BodyHash', 'ImportedAt', 'ImportedBy'], KB_MANUAL_FILE_MAX: 5000000,
     KB_MANUAL_FORMAT: 'ums-manual/1', KB_MANUAL_META_TAB: 'ManualMeta', KB_MANUAL_META_CACHE_KEY: 'kb_manual_meta_v1', KB_MANUAL_META_MAX: 45000,
-    KB_MANUAL_IMAGES_TAB: 'ManualImages', KB_MANUAL_IMAGES_HEADERS: ['Key', 'Sha', 'FileId', 'Kind', 'ImportedAt'], KBMG: { KEY: 0, SHA: 1, FILE_ID: 2, KIND: 3, IMPORTED_AT: 4 },
+    KB_MANUAL_IMAGES_TAB: 'ManualImages', KB_MANUAL_IMAGES_HEADERS: ['Key', 'Sha', 'Type', 'Kind', 'Part', 'Data', 'ImportedAt'], KBMG: { KEY: 0, SHA: 1, TYPE: 2, KIND: 3, PART: 4, DATA: 5, IMPORTED_AT: 6 },
+    KB_MANUAL_IMAGE_CELL_MAX: Number(/const KB_MANUAL_IMAGE_CELL_MAX = (\d+);/.exec(codeSrc)[1]),
     KB_MANUAL_IMAGE_KEY_RE: /^(icon|thumb|fig)-[a-z0-9-]{1,80}$/, KB_MANUAL_IMAGE_TYPES: ['image/png', 'image/jpeg'], KB_MANUAL_IMAGES_MAX: 400,
-    KB_MANUAL_IMAGE_MAX_BYTES: 1048576, KB_MANUAL_IMAGE_BUDGET_MS: 240000, KB_IMAGES_FOLDER_PROP: 'KB_IMAGES_FOLDER_ID',
-    DRIVE_REAUTH_HINT: /const DRIVE_REAUTH_HINT = '([^']+)';/.exec(codeSrc)[1],
-    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k === 'KB_IMAGES_FOLDER_ID' ? 'KBFOLDER' : null) }) },
+    KB_MANUAL_IMAGE_MAX_BYTES: 1048576,
     CacheService: { getScriptCache: () => ({ remove: () => book.writes.push(['cache', 'meta']) }) },
     CONFIG: { KB: { REVIEW_DUE_DAYS: 90 } },
     getEmployeeInfo_: () => who || { email: 'admin@ums.com', isAdmin: true, isManager: true },
     getKbSS_: () => book, getOrCreateKbSheet_: () => book.sheets.KB,
-    kbParseDriveUrl_: (u) => { const m = /\/d\/([\w-]+)/.exec(u || ''); return m ? { kind: 'file', fileId: m[1] } : null; },
-    DriveApp: { getFileById: (id) => { if (id !== 'FILEID0123456789abcdefgh') throw new Error('not found'); return { getBlob: () => ({ getBytes: () => Buffer.from(fileText), getDataAsString: () => fileText }) }; } },
     Utilities: { computeDigest: (alg, s) => Array.from(crypto.createHash('sha256').update(String(s), 'utf8').digest()).map((b) => (b > 127 ? b - 256 : b)),
       DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' } },
     LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
@@ -29649,11 +29648,15 @@ function m1Importer_(book, fileText, who, extra) {
     writeAuditLog_: (e, a, d, t, adj, h, notes) => audits.push(a + ' ' + notes),
     Date, Buffer,
   }, extra || {}));
-  ['kbRowStatus_', 'kbSha256Hex_', 'kbManualFileId_', 'getOrCreateManualImportSheet_', 'kbManualLedger_', 'kbManualBundle_', 'kbManualMetaValidate_',
+  ['kbRowStatus_', 'kbSha256Hex_', 'getOrCreateManualImportSheet_', 'kbManualLedger_', 'kbManualBundle_', 'kbManualMetaValidate_',
     'kbManualOrphans_', 'kbDeleteRowSafe_', 'getOrCreateManualMetaSheet_', 'kbManualMetaRead_', 'kbImportManual', 'kbPublishManual',
-    'kbDeptRank_', 'kbDeptCompare_', 'kbParseImageDataUrl_', 'kbManualImagesValidate_', 'kbManualImagesPlan_', 'kbManualImageName_',
-    'getOrCreateManualImagesSheet_', 'kbManualImagesLedger_', 'kbManualUploadImages_', 'kbManualTrashReplaced_', 'driveScopeError_']
+    'kbDeptRank_', 'kbDeptCompare_', 'kbParseImageDataUrl_', 'kbManualImagesValidate_', 'kbManualImagesPlan_', 'kbManualImagesRows_',
+    'getOrCreateManualImagesSheet_', 'kbManualImagesHeaderOk_', 'kbManualImagesLedger_', 'kbManualImagesWrite_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  // M4-FU3: the file arrives as text. The tests keep naming it M1_LINK; the
+  // wrapper hands the importer that file's text, as the browser does.
+  const real = ctx.kbImportManual;
+  ctx.kbImportManual = (src, opts) => real(src === M1_LINK ? { text: fileText } : src, opts);
   return { ctx, audits, revisions };
 }
 const M1_LINK = 'https://drive.google.com/file/d/FILEID0123456789abcdefgh/view';
@@ -29710,8 +29713,11 @@ test('M1-S5: kbImportManual (driven over a fake book) — drafts arrive, a hand-
   assert.strictEqual(bad.success, false); assert.ok(/nothing was imported/.test(bad.error) && bad.problems.length === 1);
   assert.deepStrictEqual(book.writes, [], 'a refused file writes nothing — not even the valid article in it');
   assert.strictEqual(m1Importer_(book, 'not json').ctx.kbImportManual(M1_LINK).success, false);
-  assert.ok(/Could not open/.test(m1Importer_(book, '[]').ctx.kbImportManual('https://drive.google.com/file/d/OTHERFILE0123456789abcd/view').error));
-  assert.ok(/Paste the Drive link/.test(m1Importer_(book, '[]').ctx.kbImportManual('hello').error));
+  // M4-FU3: only the file's TEXT is accepted — a Drive link (or any string)
+  // is refused, because this domain disables Apps Script's Drive.
+  assert.ok(/Choose manual\.json/.test(m1Importer_(book, '[]').ctx.kbImportManual('https://drive.google.com/file/d/OTHERFILE0123456789abcd/view').error));
+  assert.ok(/Choose manual\.json/.test(m1Importer_(book, '[]').ctx.kbImportManual({ text: '  ' }).error));
+  assert.ok(/too large/.test(m1Importer_(book, '[]').ctx.kbImportManual({ text: 'x'.repeat(5000001) }).error));
   // Admin only.
   const rep = m1Importer_(book, JSON.stringify(arts), { email: 'mgr@ums.com', isManager: true, isAdmin: false });
   assert.strictEqual(rep.ctx.kbImportManual(M1_LINK).error, 'Admin access required.');
@@ -30199,169 +30205,134 @@ test('M3-I1: kbManualImagesValidate_ — every image a section shows must be in 
   assert.strictEqual(r.errors.length, 1, 'a missing image is reported once, not per mention');
 });
 
-function m3Drive_(opts) {
-  opts = opts || {};
-  const st = { locked: false, created: [], files: Object.assign({}, opts.existing || {}), searched: 0, n: 0, byId: {}, trashed: [] };
-  const mkFile = (id, name, parent) => { st.byId[id] = { getName: () => name, getParents: () => { let d = false; return { hasNext: () => !d, next: () => { d = true; return { getId: () => parent }; } }; },
-    setTrashed: (v) => { assert.strictEqual(st.locked, false, 'a replaced file is trashed only after the lock is released'); if (opts.trashFails) throw new Error('Drive trash refused'); st.trashed.push(id); } }; };
-  Object.keys(st.files).forEach((n) => mkFile(st.files[n], n, 'KBFOLDER'));
-  if (opts.foreign) mkFile(opts.foreign.id, opts.foreign.name, opts.foreign.parent);
-  st.mkFile = mkFile;
-  const folder = {
-    searchFiles: (q) => { st.searched++; assert.ok(/title contains 'manimg-'/.test(q)); const names = Object.keys(st.files); let i = 0; return { hasNext: () => i < names.length, next: () => { const n = names[i++]; return { getName: () => n, getId: () => st.files[n] }; } }; },
-    createFile: (blob) => {
-      assert.strictEqual(st.locked, false, 'a Drive upload never runs while the script lock is held');
-      if (opts.failOn && blob.name.indexOf(opts.failOn) >= 0) throw new Error('Drive said no');
-      const id = 'DRIVEFILE' + (++st.n) + 'xxxxxxxxxx'; st.files[blob.name] = id; st.created.push(blob.name); mkFile(id, blob.name, 'KBFOLDER'); return { getId: () => id };
-    },
-  };
-  const extra = {
-    getOrCreateKbImagesFolder_: () => { if (opts.noFolder) throw new Error('KB_IMAGES_FOLDER_ID is not set, and the folder could not be created'); return folder; },
+function m3Importer_(book, bundle, util) {
+  const st = { locked: false, lockedWrites: [] };
+  const imp = m1Importer_(book, JSON.stringify(bundle), null, {
     LockService: { getScriptLock: () => ({ waitLock: () => { st.locked = true; }, releaseLock: () => { st.locked = false; } }) },
-  };
-  return { st, extra };
-}
-function m3Importer_(book, bundle, drv, util) {
-  const imp = m1Importer_(book, JSON.stringify(bundle), null, drv.extra);
+  });
   const crypto = require('crypto');
-  const baseDrive = imp.ctx.DriveApp;
-  imp.ctx.DriveApp = { getFileById: (id) => (drv.st.byId[id] ? drv.st.byId[id] : baseDrive.getFileById(id)) };
   imp.ctx.Utilities = Object.assign({}, imp.ctx.Utilities, util || {}, {
-    base64Decode: (b) => Array.from(Buffer.from(b, 'base64')), newBlob: (bytes, type, name) => ({ bytes, type, name }),
     computeDigest: (alg, s) => Array.from(crypto.createHash('sha256').update(String(s), 'utf8').digest()).map((b) => (b > 127 ? b - 256 : b)),
   });
+  imp.st = st;
   return imp;
 }
 const m3Bundle_ = (images) => ({ format: 'ums-manual/1', version: 'v3.0', built: '09/29/2026', router: [], changelog: [],
   articles: [m1Art_({ Id: 'man-7-2', Department: 'Part 07 — Oxygen', Title: '7.2 Cylinders', BodyMd: '![Reg](manimg:fig-o2-reg) ![D](manimg:icon-delivered)\n', SortOrder: 2 })],
   images });
+/** The base64 a tab holds for a key, rejoined from its rows in part order. */
+const m3TabB64_ = (grid, key) => grid.slice(1).filter((r) => r[0] === key).sort((a, b) => a[4] - b[4]).map((r) => r[5]).join('');
 
-test('M3-I2: the import unpacks the images into the KB Images folder OUTSIDE the lock, ledgers them under it, and a re-import writes NOTHING — a changed image gets a new file, an interrupted run resumes, a Drive failure is named, a check touches no Drive', () => {
-  const imgs = { 'fig-o2-reg': { alt: 'Regulator', kind: 'figure', dataUri: M3_JPG }, 'icon-delivered': { alt: 'Delivered', kind: 'icon', dataUri: M3_PNG }, 'thumb-unused': { alt: 'U', kind: 'thumb', dataUri: M3_JPG } };
+test('M3-I2 (M4-FU3): the import stores the images IN the ManualImages tab — no Drive — split across rows under the cell limit, rewritten only when an image changed or was dropped; a re-import writes NOTHING, a failed image write is named beside the sections, a check writes nothing, a bad image refuses the file', () => {
+  assert.ok(!/DriveApp|getOrCreateKbImagesFolder_/.test(extractRawFunction('Code.js', 'kbImportManual')), 'the import never touches Drive (this domain disables it)');
+  const big = 'data:image/jpeg;base64,' + Buffer.alloc(100000, 7).toString('base64');   // ~133k chars → 3 rows
+  const imgs = { 'fig-o2-reg': { alt: 'Regulator', kind: 'figure', dataUri: big }, 'icon-delivered': { alt: 'Delivered', kind: 'icon', dataUri: M3_PNG }, 'thumb-unused': { alt: 'U', kind: 'thumb', dataUri: M3_JPG } };
   const book = m1Book_([], null);
-  let drv = m3Drive_();
-  // A check: the plan, no Drive, no tab.
-  const chk = m3Importer_(book, m3Bundle_(imgs), drv).ctx.kbImportManual(M1_LINK, { dryRun: true });
-  assert.deepStrictEqual(J2(chk.images), { total: 3, unchanged: 0, toUpload: 3 });
-  assert.deepStrictEqual([drv.st.created.length, drv.st.searched, !!book.sheets.ManualImages], [0, 0, false], 'a check neither uploads nor creates the ledger tab');
+  // A check: the plan, and no tab.
+  const chk = m3Importer_(book, m3Bundle_(imgs)).ctx.kbImportManual(M1_LINK, { dryRun: true });
+  assert.deepStrictEqual(J2(chk.images), { total: 3, unchanged: 0, toStore: 3, removed: 0 });
+  assert.ok(!book.sheets.ManualImages, 'a check does not create the tab');
   // The import.
-  let imp = m3Importer_(book, m3Bundle_(imgs), drv);
+  const imp = m3Importer_(book, m3Bundle_(imgs));
   const r1 = imp.ctx.kbImportManual(M1_LINK, {});
   assert.strictEqual(r1.success, true, r1.error);
-  assert.deepStrictEqual(J2(r1.images), { total: 3, unchanged: 0, uploaded: 3, reused: 0, pending: 0, failed: [], error: '' });
-  const jSha = m3Sha_(M3_JPG.split(',')[1]), pSha = m3Sha_(M3_PNG.split(',')[1]);
-  assert.deepStrictEqual(drv.st.created, ['manimg-fig-o2-reg-' + jSha.slice(0, 12) + '.jpg', 'manimg-icon-delivered-' + pSha.slice(0, 12) + '.png', 'manimg-thumb-unused-' + jSha.slice(0, 12) + '.jpg'], 'named by key + content hash');
-  const led = book.sheets.ManualImages.grid;
-  assert.deepStrictEqual(led[0], ['Key', 'Sha', 'FileId', 'Kind', 'ImportedAt']);
-  assert.deepStrictEqual(led.slice(1).map((r) => [r[0], r[1], r[3]]), [['fig-o2-reg', jSha, 'figure'], ['icon-delivered', pSha, 'icon'], ['thumb-unused', jSha, 'thumb']]);
-  assert.ok(/; imagesUploaded=3; imagesReused=0; imagesPending=0; imagesFailed=0; imagesReplaced=0$/.test(imp.audits[0]), imp.audits[0]);
-  assert.strictEqual(r1.images.trashed, undefined, 'a first import replaces nothing, so trashes nothing');
-  // Re-import: nothing written, nothing uploaded, not even a Drive listing.
+  assert.deepStrictEqual(J2(r1.images), { total: 3, unchanged: 0, removed: 0, stored: 3, error: '' });
+  const g = book.sheets.ManualImages.grid;
+  assert.deepStrictEqual(g[0], ['Key', 'Sha', 'Type', 'Kind', 'Part', 'Data', 'ImportedAt']);
+  const cellMax = Number(/const KB_MANUAL_IMAGE_CELL_MAX = (\d+);/.exec(codeSrc)[1]);
+  assert.ok(cellMax < 50000 && g.slice(1).every((r) => String(r[5]).length <= cellMax), 'every piece fits a cell');
+  assert.deepStrictEqual(g.slice(1).map((r) => [r[0], r[2], r[3], r[4]]), [['fig-o2-reg', 'image/jpeg', 'figure', 0], ['fig-o2-reg', 'image/jpeg', 'figure', 1], ['fig-o2-reg', 'image/jpeg', 'figure', 2],
+    ['icon-delivered', 'image/png', 'icon', 0], ['thumb-unused', 'image/jpeg', 'thumb', 0]], 'sorted by key, one row per piece, in order');
+  assert.strictEqual(m3TabB64_(g, 'fig-o2-reg'), big.split(',')[1], 'the pieces rejoin to exactly the bytes that were validated');
+  assert.strictEqual(m3TabB64_(g, 'icon-delivered'), M3_PNG.split(',')[1]);
+  assert.ok(/; imagesStored=3; imagesRemoved=0$/.test(imp.audits[0]), imp.audits[0]);
+  // Re-import of the same images: nothing written anywhere.
   book.writes.length = 0;
-  const r2 = m3Importer_(book, m3Bundle_(imgs), drv).ctx.kbImportManual(M1_LINK, {});
-  assert.deepStrictEqual(J2(r2.images), { total: 3, unchanged: 3, uploaded: 0, reused: 0, pending: 0, failed: [], error: '' });
-  assert.deepStrictEqual([book.writes, drv.st.created.length, drv.st.searched], [[], 3, 1], 'a re-import of the same images changes nothing');
-  // A changed image: a NEW file (the old one is never overwritten), its ledger row rewritten in place.
-  const imgs2 = Object.assign({}, imgs, { 'icon-delivered': { alt: 'Delivered', kind: 'icon', dataUri: M3_PNG.replace('ggg==', 'gga==') } });
-  const oldIcon = led.filter((r) => r[0] === 'icon-delivered')[0][2];
-  const imp3a = m3Importer_(book, m3Bundle_(imgs2), drv);
-  const r3 = imp3a.ctx.kbImportManual(M1_LINK, {});
-  assert.deepStrictEqual([r3.images.uploaded, r3.images.unchanged, drv.st.created.length], [1, 2, 4]);
-  assert.strictEqual(led.length, 4, 'no duplicate ledger row');
-  assert.strictEqual(led.filter((r) => r[0] === 'icon-delivered')[0][2], drv.st.files[drv.st.created[3]], 'the key now names the new file');
-  // Follow-up (operator 2026-09-29): the file it replaced goes to Drive's trash — and only that one.
-  assert.deepStrictEqual([drv.st.trashed, r3.images.trashed, J2(r3.images.trashFailed)], [[oldIcon], 1, []], 'the replaced file is trashed, nothing else');
-  assert.ok(/; imagesReplaced=1/.test(imp3a.audits[0]), imp3a.audits[0]);
-  // A ledger row naming a file that is NOT a manual image in the folder: never trashed, and said.
-  const book5 = m1Book_([], null);
-  book5.sheets.ManualImages = m1Book_([], null).insertSheet('x');
-  book5.sheets.ManualImages.grid.push(['Key', 'Sha', 'FileId', 'Kind', 'ImportedAt'], ['icon-delivered', 'oldsha', 'FOREIGNFILE0123', 'icon', 't']);
-  const drvF = m3Drive_({ foreign: { id: 'FOREIGNFILE0123', name: 'Payroll 2026.xlsx', parent: 'SOMEWHERE' } });
-  const rF = m3Importer_(book5, m3Bundle_(imgs), drvF).ctx.kbImportManual(M1_LINK, {});
-  assert.deepStrictEqual([drvF.st.trashed, rF.images.trashed], [[], 0], 'a file outside the folder, or not named for its key, is left alone');
-  assert.ok(/left alone/.test(rF.images.trashFailed[0].error) && rF.images.trashFailed[0].key === 'icon-delivered');
-  // …and a file NAMED like a manual image but living outside the KB Images folder is left alone too.
-  const book5b = m1Book_([], null);
-  book5b.sheets.ManualImages = m1Book_([], null).insertSheet('x');
-  book5b.sheets.ManualImages.grid.push(['Key', 'Sha', 'FileId', 'Kind', 'ImportedAt'], ['icon-delivered', 'oldsha', 'LOOKALIKE0123', 'icon', 't']);
-  const drvL = m3Drive_({ foreign: { id: 'LOOKALIKE0123', name: 'manimg-icon-delivered-000000000000.png', parent: 'SOMEONES-OTHER-FOLDER' } });
-  const rL = m3Importer_(book5b, m3Bundle_(imgs), drvL).ctx.kbImportManual(M1_LINK, {});
-  assert.deepStrictEqual([drvL.st.trashed, rL.images.trashed], [[], 0], 'the folder is checked, not just the name');
-  // Drive refusing the trash: named, and the import still succeeds with the new file ledgered.
-  const book6 = m1Book_([], null);
-  const drvT = m3Drive_({ trashFails: true });
-  m3Importer_(book6, m3Bundle_(imgs), drvT).ctx.kbImportManual(M1_LINK, {});
-  const rT = m3Importer_(book6, m3Bundle_(imgs2), drvT).ctx.kbImportManual(M1_LINK, {});
-  assert.ok(rT.success && rT.images.trashed === 0 && /Drive trash refused/.test(rT.images.trashFailed[0].error), JSON.stringify(rT.images));
-  assert.strictEqual(book6.sheets.ManualImages.grid.filter((r) => r[0] === 'icon-delivered')[0][2], drvT.st.files[drvT.st.created[3]], 'the new file is ledgered whatever the trash did');
-  // An interrupted first import: files that reached Drive are REUSED by name.
-  const book2 = m1Book_([], null);
-  const drv2 = m3Drive_({ existing: { ['manimg-fig-o2-reg-' + jSha.slice(0, 12) + '.jpg']: 'EARLIERFILE0123456789' } });
-  const r4 = m3Importer_(book2, m3Bundle_(imgs), drv2).ctx.kbImportManual(M1_LINK, {});
-  assert.deepStrictEqual([r4.images.uploaded, r4.images.reused], [2, 1]);
-  assert.strictEqual(book2.sheets.ManualImages.grid.filter((r) => r[0] === 'fig-o2-reg')[0][2], 'EARLIERFILE0123456789');
-  // The time budget: past it, the rest are PENDING — reported, not ledgered, done by the next Import.
-  const book3 = m1Book_([], null);
-  const drv3 = m3Drive_();
-  const imp3 = m3Importer_(book3, m3Bundle_(imgs), drv3);
-  imp3.ctx.KB_MANUAL_IMAGE_BUDGET_MS = -1;
-  const r5 = imp3.ctx.kbImportManual(M1_LINK, {});
-  assert.strictEqual(r5.success, true, 'the articles still import');
-  assert.deepStrictEqual([r5.images.pending, r5.images.uploaded, drv3.st.created.length], [3, 0, 0]);
-  assert.ok(!book3.sheets.ManualImages, 'nothing ledgered that did not reach Drive');
-  assert.ok(book3.sheets.KB.grid.some((r) => r[0] === 'man-7-2'), 'and the section itself is in');
-  // A per-image Drive failure is NAMED; the others land.
-  const book4 = m1Book_([], null);
-  const drv4 = m3Drive_({ failOn: 'icon-delivered' });
-  const r6 = m3Importer_(book4, m3Bundle_(imgs), drv4).ctx.kbImportManual(M1_LINK, {});
-  assert.deepStrictEqual(J2(r6.images.failed), [{ key: 'icon-delivered', error: 'Drive said no' }]);
-  assert.deepStrictEqual(book4.sheets.ManualImages.grid.slice(1).map((r) => r[0]), ['fig-o2-reg', 'thumb-unused']);
-  // No folder at all: every image pending, the reason carried.
-  const r7 = m3Importer_(m1Book_([], null), m3Bundle_(imgs), m3Drive_({ noFolder: true })).ctx.kbImportManual(M1_LINK, {});
-  assert.ok(r7.success && r7.images.pending === 3 && /could not be created/.test(r7.images.error), JSON.stringify(r7.images));
-  // A bad image refuses the file: no section, no upload.
-  const drv8 = m3Drive_();
+  const r2 = m3Importer_(book, m3Bundle_(imgs)).ctx.kbImportManual(M1_LINK, {});
+  assert.deepStrictEqual(J2(r2.images), { total: 3, unchanged: 3, removed: 0, stored: 0, error: '' });
+  assert.deepStrictEqual(book.writes, [], 'a re-import of the same images changes nothing');
+  // A changed image and a dropped one: the tab is rewritten to exactly the new set.
+  const imgs2 = { 'fig-o2-reg': imgs['fig-o2-reg'], 'icon-delivered': { alt: 'Delivered', kind: 'icon', dataUri: M3_PNG.replace('ggg==', 'gga==') } };
+  const r3 = m3Importer_(book, m3Bundle_(imgs2)).ctx.kbImportManual(M1_LINK, {});
+  assert.deepStrictEqual([r3.images.stored, r3.images.unchanged, r3.images.removed], [1, 1, 1]);
+  const keys = book.sheets.ManualImages.grid.slice(1).filter((r) => r[0]).map((r) => r[0]);
+  assert.deepStrictEqual(keys, ['fig-o2-reg', 'fig-o2-reg', 'fig-o2-reg', 'icon-delivered'], 'the dropped image is gone, no row left over');
+  assert.strictEqual(m3TabB64_(book.sheets.ManualImages.grid, 'icon-delivered'), M3_PNG.replace('ggg==', 'gga==').split(',')[1], 'the changed image is the new bytes');
+  // A tab in M3's Drive layout holds no bytes: it reads as empty and is migrated.
+  const bookOld = m1Book_([], null);
+  bookOld.sheets.ManualImages = m1Book_([], null).insertSheet('x');
+  bookOld.sheets.ManualImages.grid.push(['Key', 'Sha', 'FileId', 'Kind', 'ImportedAt'], ['icon-delivered', m3Sha_(M3_PNG.split(',')[1]), 'DRIVEFILE', 'icon', 't']);
+  const rOld = m3Importer_(bookOld, m3Bundle_(imgs)).ctx.kbImportManual(M1_LINK, {});
+  assert.deepStrictEqual([rOld.images.stored, rOld.images.unchanged], [3, 0], 'an old-layout row does not count as stored');
+  assert.deepStrictEqual(bookOld.sheets.ManualImages.grid[0], ['Key', 'Sha', 'Type', 'Kind', 'Part', 'Data', 'ImportedAt'], 'the header is migrated');
+  // A failed image write: named, and the sections are in.
+  const bookF = m1Book_([], null);
+  const impF = m3Importer_(bookF, m3Bundle_(imgs));
+  impF.ctx.appendRowsSafe_ = function (sh, rows) { if (sh === bookF.sheets.ManualImages) throw new Error('Service Spreadsheets failed'); rows.forEach((r) => sh.grid.push(r.slice())); };
+  const rF = impF.ctx.kbImportManual(M1_LINK, {});
+  assert.ok(rF.success && rF.images.stored === 0 && /Service Spreadsheets failed/.test(rF.images.error), JSON.stringify(rF.images));
+  assert.ok(bookF.sheets.KB.grid.some((r) => r[0] === 'man-7-2'), 'the section itself is in');
+  assert.ok(/imagesError=1/.test(impF.audits[0]), impF.audits[0]);
+  // A bad image refuses the file: no section, no tab.
   const book8 = m1Book_([], null);
-  const r8 = m3Importer_(book8, m3Bundle_(Object.assign({}, imgs, { 'icon-delivered': { kind: 'icon', dataUri: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' } })), drv8).ctx.kbImportManual(M1_LINK, {});
+  const r8 = m3Importer_(book8, m3Bundle_(Object.assign({}, imgs, { 'icon-delivered': { kind: 'icon', dataUri: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' } }))).ctx.kbImportManual(M1_LINK, {});
   assert.ok(!r8.success && r8.problems.some((p) => /not a PNG or JPEG/.test(p)));
-  assert.deepStrictEqual([drv8.st.created.length, book8.writes.length], [0, 0], 'a refused file uploads nothing and writes nothing');
+  assert.deepStrictEqual([!!book8.sheets.ManualImages, book8.writes.length], [false, 0], 'a refused file writes nothing');
 });
 
-function m3Serve_(ledgerRows, drive, who) {
+function m3Serve_(rows, cache, who, opts) {
+  opts = opts || {};
   const book = m1Book_([], null);
-  if (ledgerRows) { book.sheets.ManualImages = { getLastRow: () => ledgerRows.length + 1, getRange: (r, c, nr, nc) => ({ getValues: () => ledgerRows.slice(r - 2, r - 2 + nr).map((x) => x.slice(0, nc)) }) }; }
-  const reads = [], cache = drive.cache || {}, puts = [];
-  const ctx = m1Srv_({ KBMG: { KEY: 0, SHA: 1, FILE_ID: 2, KIND: 3, IMPORTED_AT: 4 }, KB_MANUAL_IMAGES_TAB: 'ManualImages', KB_MANUAL_IMAGES_HEADERS: ['Key', 'Sha', 'FileId', 'Kind', 'ImportedAt'],
+  const reads = [];
+  if (rows) {
+    const grid = [opts.header || ['Key', 'Sha', 'Type', 'Kind', 'Part', 'Data', 'ImportedAt']].concat(rows);
+    book.sheets.ManualImages = { getLastRow: () => grid.length,
+      getRange: (r, c, nr, nc) => ({ getValues: () => { reads.push([r, c, nr, nc]); if (opts.readFails && c === 6) throw new Error('Service Spreadsheets timed out'); return grid.slice(r - 1, r - 1 + nr).map((x) => x.slice(c - 1, c - 1 + nc)); } }) };
+  }
+  const puts = [];
+  cache = cache || {};
+  const ctx = m1Srv_({ KBMG: { KEY: 0, SHA: 1, TYPE: 2, KIND: 3, PART: 4, DATA: 5, IMPORTED_AT: 6 }, KB_MANUAL_IMAGES_TAB: 'ManualImages', KB_MANUAL_IMAGES_HEADERS: ['Key', 'Sha', 'Type', 'Kind', 'Part', 'Data', 'ImportedAt'],
     KB_MANUAL_IMAGE_KEY_RE: /^(icon|thumb|fig)-[a-z0-9-]{1,80}$/, KB_MANUAL_IMAGE_TYPES: ['image/png', 'image/jpeg'], KB_MANUAL_IMAGE_MAX_BYTES: 1048576,
     KB_MANUAL_IMAGES_BATCH: 40, KB_MANUAL_IMAGE_CACHE_PREFIX: 'kbmimg_',
     getEmployeeInfo_: () => (who === undefined ? { email: 'rep@ums.com' } : who), getKbSS_: () => book,
-    CacheService: { getScriptCache: () => ({ getAll: (ks) => { const o = {}; ks.forEach((k) => { if (cache[k]) o[k] = cache[k]; }); return o; }, putAll: (o, ttl) => puts.push([Object.keys(o), ttl]) }) },
-    DriveApp: { getFileById: (id) => { reads.push(id); const f = drive.files[id]; if (!f) throw new Error('No item with the given ID could be found'); return { getBlob: () => ({ getContentType: () => f.type, getBytes: () => f.bytes }) }; } },
-    Utilities: { base64Encode: (b) => Buffer.from(b).toString('base64') } });
-  ['kbManualImagesLedger_', 'getManualImages'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+    CacheService: { getScriptCache: () => ({ getAll: (ks) => { const o = {}; ks.forEach((k) => { if (cache[k]) o[k] = cache[k]; }); return o; }, putAll: (o, ttl) => puts.push([Object.keys(o), ttl]) }) } });
+  ['kbManualImagesHeaderOk_', 'kbManualImagesLedger_', 'getManualImages'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   return { ctx, reads, puts };
 }
 
-test('M3-I3: getManualImages reads ONLY files the ledger names — a key it does not know is "not imported" without touching Drive, a Drive failure is "could not read" (a different answer), cached by content hash, batched and gated', () => {
-  const png = Buffer.from(M3_PNG.split(',')[1], 'base64');
-  const led = [['icon-a', 'sha-a', 'FILE-A', 'icon', 't'], ['fig-b', 'sha-b', 'FILE-B', 'figure', 't'], ['thumb-c', 'sha-c', 'FILE-GONE', 'thumb', 't'], ['thumb-d', 'sha-d', 'FILE-D', 'thumb', 't']];
-  const drive = { files: { 'FILE-A': { type: 'image/png', bytes: png }, 'FILE-B': { type: 'image/png', bytes: png }, 'FILE-D': { type: 'text/html', bytes: png }, 'FILE-OTHER': { type: 'image/png', bytes: png } }, cache: { kbmimg_sha_b: 'x', 'kbmimg_sha-b': 'data:image/png;base64,CACHED' } };
-  const sv = m3Serve_(led, drive);
-  const r = J2(sv.ctx.getManualImages(['icon-a', 'fig-b', 'thumb-c', 'thumb-d', 'icon-never', 'icon-a', 'FILE-OTHER', '../x', { toString: () => 'icon-a' }]));
-  assert.deepStrictEqual(Object.keys(r.images).sort(), ['fig-b', 'icon-a']);
-  assert.strictEqual(r.images['icon-a'], M3_PNG, 'a data URL of the file\'s own bytes');
-  assert.strictEqual(r.images['fig-b'], 'data:image/png;base64,CACHED', 'served from cache by content hash');
-  assert.deepStrictEqual(r.missing, ['icon-never'], 'not in the ledger → not imported');
-  assert.deepStrictEqual(r.failed.sort(), ['thumb-c', 'thumb-d'], 'a Drive error or a non-image file → could not read');
-  assert.deepStrictEqual(sv.reads.sort(), ['FILE-A', 'FILE-D', 'FILE-GONE'], 'Drive is read ONLY at ledger file ids — never a caller-supplied id, never for a cache hit or an unknown key');
-  assert.deepStrictEqual(J2(sv.puts), [[['kbmimg_sha-a'], 21600]], 'what was read is cached, by hash');
+test('M3-I3 (M4-FU3): getManualImages serves the tab\'s own bytes — rejoined in part order, re-checked as PNG/JPEG base64, "not imported" apart from "could not read", one Data read per batch, cached by content hash, batched and gated; no Drive', () => {
+  assert.ok(!/DriveApp/.test(extractRawFunction('Code.js', 'getManualImages')), 'no Drive');
+  const b64 = M3_PNG.split(',')[1];
+  const rows = [
+    ['fig-b', 'sha-b', 'image/png', 'figure', 0, b64.slice(0, 10), 't'], ['fig-b', 'sha-b', 'image/png', 'figure', 1, b64.slice(10), 't'],
+    ['icon-a', 'sha-a', 'image/png', 'icon', 0, b64, 't'],
+    ['icon-gap', 'sha-g', 'image/png', 'icon', 1, b64, 't'],                                    // part 0 missing → incomplete
+    ['thumb-c', 'sha-c', 'text/html', 'thumb', 0, b64, 't'],                                    // not an image type
+    ['thumb-d', 'sha-d', 'image/jpeg', 'thumb', 0, '<script>x</script>', 't'],                  // not base64
+    ['icon-cached', 'sha-k', 'image/png', 'icon', 0, b64, 't']];
+  const sv = m3Serve_(rows, { 'kbmimg_sha-k': 'data:image/png;base64,CACHED' });
+  const r = J2(sv.ctx.getManualImages(['fig-b', 'icon-a', 'icon-gap', 'thumb-c', 'thumb-d', 'icon-cached', 'icon-never', 'icon-a', '../x', { toString: () => 'icon-a' }]));
+  assert.strictEqual(r.images['fig-b'], M3_PNG, 'pieces rejoin in part order');
+  assert.strictEqual(r.images['icon-a'], M3_PNG);
+  assert.strictEqual(r.images['icon-cached'], 'data:image/png;base64,CACHED', 'served from cache by content hash');
+  assert.deepStrictEqual(r.missing.sort(), ['icon-gap', 'icon-never'], 'unknown, or with a part missing → not imported (the next import rewrites it)');
+  assert.deepStrictEqual(r.failed.sort(), ['thumb-c', 'thumb-d'], 'a non-image type or non-base64 data → could not read — never passed on');
+  const dataReads = sv.reads.filter((x) => x[1] === 6);
+  assert.strictEqual(dataReads.length, 1, 'ONE read of the Data column for the batch');
+  assert.ok(sv.reads.filter((x) => x[1] === 1 && x[3] === 5).length === 1, 'the ledger reads Key..Part, never Data');
+  assert.deepStrictEqual(J2(sv.puts), [[['kbmimg_sha-b', 'kbmimg_sha-a'], 21600]], 'what was read is cached, by hash');
+  // A failed Data read: everything it needed is "could not read".
+  const svF = m3Serve_(rows, {}, undefined, { readFails: true });
+  const rF = J2(svF.ctx.getManualImages(['icon-a', 'icon-never']));
+  assert.deepStrictEqual([rF.failed, rF.missing], [['icon-a'], ['icon-never']]);
+  // An old-layout tab (M3's Drive pointers): nothing imported.
+  assert.deepStrictEqual(J2(m3Serve_([['icon-a', 'sha-a', 'FILEID', 'icon', 't']], {}, undefined, { header: ['Key', 'Sha', 'FileId', 'Kind', 'ImportedAt'] }).ctx.getManualImages(['icon-a'])).missing, ['icon-a']);
   const many = Array.from({ length: 60 }, (_, i) => 'icon-k' + i);
-  const sv2 = m3Serve_(many.map((k) => [k, 's' + k, 'F' + k, 'icon', 't']), { files: {} });
-  const r2 = J2(sv2.ctx.getManualImages(many));
+  const r2 = J2(m3Serve_([], {}).ctx.getManualImages(many));
   assert.strictEqual(r2.failed.length + r2.missing.length, 40, 'one call answers at most KB_MANUAL_IMAGES_BATCH keys');
-  assert.deepStrictEqual(J2(m3Serve_(led, drive).ctx.getManualImages('icon-a')), { success: true, images: {}, missing: [], failed: [] }, 'not an array → nothing');
-  assert.deepStrictEqual(J2(m3Serve_(null, drive).ctx.getManualImages(['icon-a'])).missing, ['icon-a'], 'no ledger tab yet → everything not imported');
-  assert.strictEqual(m3Serve_(led, drive, null).ctx.getManualImages(['icon-a']).error, 'Not authorized.', 'an enrolled employee only');
+  assert.deepStrictEqual(J2(m3Serve_(rows).ctx.getManualImages('icon-a')), { success: true, images: {}, missing: [], failed: [] }, 'not an array → nothing');
+  assert.deepStrictEqual(J2(m3Serve_(null).ctx.getManualImages(['icon-a'])).missing, ['icon-a'], 'no tab yet → everything not imported');
+  assert.strictEqual(m3Serve_(rows, {}, null).ctx.getManualImages(['icon-a']).error, 'Not authorized.', 'an enrolled employee only');
 });
 
 test('M3-I4: the reader side of the images — a chip carries only a key of the image charset, the client batch is the server\'s, and only a PNG/JPEG data URL is ever set as a source', () => {
@@ -30378,22 +30349,19 @@ test('M3-I4: the reader side of the images — a chip carries only a key of the 
   assert.ok(/if \(url\) KB_MANIMG\.cache\[k\] = url;/.test(hyd) && !/cache\[k\] = ['"](missing|failed)/.test(hyd), 'only a success is cached (g129)');
 });
 
-test('M3-I5: the Manual dialog says what happened to the images — a check counts what would upload; an import names what is still to upload (press Import again), the folder error and every failed image; an old file says it has none', () => {
+test('M3-I5 (M4-FU3): the Manual dialog says what happened to the images — a check counts what would be stored in the KB spreadsheet; an import says what was stored and removed, and a failed write is SAID with the sections safe; an old file says it has none', () => {
   const c = vm.createContext({ String, esc: (x) => String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') });
   vm.runInContext(extractFnFrom(M1_KB_SRC, 'kbManualImagesLine_'), c);
   const L = (im, d) => J2(c.kbManualImagesLine_(im, d));
   assert.deepStrictEqual(L(null, true), { html: '<div class="kb-man-meta">No images in this file — rebuild with the current export to include them.</div>', warn: false });
-  assert.ok(/160 images · 150 to upload to the KB Images folder · 10 unchanged/.test(L({ total: 160, toUpload: 150, unchanged: 10 }, true).html));
-  const clean = L({ total: 160, uploaded: 0, reused: 0, unchanged: 160, pending: 0, failed: [], error: '' }, false);
-  assert.strictEqual(clean.warn, false, 'a re-import with nothing to do is quiet');
-  const part = L({ total: 160, uploaded: 112, reused: 3, unchanged: 0, pending: 45, failed: [{ key: 'thumb-x', error: 'Drive said <no>' }], error: '' }, false);
-  assert.ok(part.warn && /112 uploaded · 3 found on Drive from an earlier run/.test(part.html) && /45 images still to upload — press Import again/.test(part.html));
-  assert.ok(/thumb-x <span class="kb-man-why">— Drive said &lt;no&gt;<\/span>/.test(part.html), 'a failure is named, escaped');
-  assert.ok(/could not be opened: nope/.test(L({ total: 3, uploaded: 0, unchanged: 0, pending: 3, failed: [], error: 'nope' }, false).html));
-  const tr = L({ total: 3, uploaded: 1, unchanged: 2, pending: 0, failed: [], error: '', trashed: 1, trashFailed: [{ key: 'icon-x', error: 'left alone — not a manual image in the KB Images folder' }] }, false);
-  assert.ok(/1 replaced image file moved to Drive’s trash \(recoverable for 30 days\)/.test(tr.html) && /left in the KB Images folder:[\s\S]*icon-x/.test(tr.html), 'the trash is reported, and a file left alone is named');
-  assert.strictEqual(tr.warn, true, 'a file left alone makes the result amber');
-  assert.strictEqual(L({ total: 3, uploaded: 1, unchanged: 2, pending: 0, failed: [], error: '', trashed: 1, trashFailed: [] }, false).warn, false, 'a clean replace stays quiet');
+  assert.ok(/160 images · 150 to store in the KB spreadsheet · 10 unchanged/.test(L({ total: 160, toStore: 150, unchanged: 10, removed: 0 }, true).html));
+  assert.ok(/· 2 no longer used \(would be removed\)/.test(L({ total: 160, toStore: 0, unchanged: 160, removed: 2 }, true).html));
+  const clean = L({ total: 160, stored: 0, unchanged: 160, removed: 0, error: '' }, false);
+  assert.ok(!clean.warn && /160 images · 0 stored · 160 unchanged/.test(clean.html), 'a re-import with nothing to do is quiet');
+  assert.ok(/1 no longer used, removed/.test(L({ total: 3, stored: 1, unchanged: 1, removed: 1, error: '' }, false).html));
+  const bad = L({ total: 3, stored: 0, unchanged: 0, removed: 0, error: 'Service <Spreadsheets> failed' }, false);
+  assert.ok(bad.warn && /could not be saved \(Service &lt;Spreadsheets&gt; failed\) — the sections are in; press Import again/.test(bad.html), 'a failed write is named, escaped, with what to do');
+  assert.ok(!/Drive/.test(extractFnFrom(M1_KB_SRC, 'kbManualImagesLine_')), 'no mention of Drive — there is none');
   assert.ok(/kbManualImagesLine_\(r\.images, dryRun\)/.test(extractFnFrom(M1_KB_SRC, 'kbManualResultHtml_')), 'the dialog draws it');
 });
 
@@ -30569,21 +30537,6 @@ test('M4-P1: printing one section rides the ONE print block — the subject and 
 });
 
 
-test('M4-FU1: a missing Drive SCOPE on the manual import names the re-authorization, never "check the link" — the runtime refused before Drive was asked, so re-sharing the file cannot help (operator 2026-09-29)', () => {
-  const hint = /const DRIVE_REAUTH_HINT = '([^']+)';/.exec(codeSrc)[1];
-  const scopeMsg = 'You do not have permission to call DriveApp.getFileById. Required permissions: (https://www.googleapis.com/auth/drive.readonly || https://www.googleapis.com/auth/drive)';
-  const mk = (msg) => {
-    const imp = m1Importer_(m1Book_([], null), '[]', null, { DriveApp: { getFileById: () => { throw new Error(msg); } } });
-    return J2(imp.ctx.kbImportManual(M1_LINK, { dryRun: true }));
-  };
-  const r = mk(scopeMsg);
-  assert.strictEqual(r.success, false);
-  assert.strictEqual(r.scopeMissing, true);
-  assert.ok(r.error.indexOf(hint) > 0 && /re-authorize/.test(r.error), 'the grant is named, with the editor step: ' + r.error);
-  assert.ok(!/check the link/.test(r.error), 'and the link is not blamed');
-  const nf = mk('No item with the given ID could be found. Access denied.');
-  assert.ok(!nf.scopeMissing && /check the link/.test(nf.error), 'a file the account cannot see still points at the link and its sharing');
-});
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 

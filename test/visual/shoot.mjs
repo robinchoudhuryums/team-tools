@@ -324,7 +324,7 @@ const SCENARIOS = [
   ['reference-manual-xref-focus-dark-wide', { tool: 'reference', tab: null }, WIDE, 'dark', '',
     "kbOpenItem_('man-0-11'); setTimeout(function(){ var a=document.querySelector('#kb-man-sec-man-0-11 a.kb-xref[data-kb-id=\"man-0-10\"]'); if(a) a.focus(); }, 500)"],
   ['reference-manual-import-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
-    "kbOpenManualImport_(); document.getElementById('kb-man-link').value = 'https://drive.google.com/file/d/abc123/view'; kbManualRun_(true)"],
+    "kbOpenManualImport_(); kbManualSetFile_({ name: 'manual.json', size: 1577555, text: 'x'.repeat(1577555) }); kbManualRun_(true)"],
   // Cycle 21 (operator report, 2026-09-21) — the KB DRAWER had never been shot,
   // by any scenario, at any width. That is why both lookups sat inside
   // `.kbd-sec` — a mono/uppercase flex HEADING bar — for weeks: every result

@@ -3311,22 +3311,32 @@ function kbManualImagesValidate_(images, articles, hashFn) {
   return { items: errors.length ? null : items, errors: errors };
 }
 
-/** Pure (Node-pinned) — which images a run uploads: a key the ledger does not
- *  know, or whose bytes changed (another hash). The rest are unchanged. */
+/** Pure (Node-pinned) — which images a run stores: a key the tab does not
+ *  hold, or whose bytes changed (another hash). The rest are unchanged. */
 function kbManualImagesPlan_(items, ledger) {
   const plan = { upload: [], unchanged: [] };
   (items || []).forEach(function (it) {
     const led = ledger[it.key];
-    if (led && led.sha === it.sha && led.fileId) plan.unchanged.push(it); else plan.upload.push(it);
+    if (led && led.sha === it.sha) plan.unchanged.push(it); else plan.upload.push(it);
   });
   return plan;
 }
 
-/** Pure (Node-pinned) — the Drive file name: key + the start of the content
- *  hash, so a re-run after an interrupted upload finds and REUSES the file,
- *  and a changed image gets a new file rather than overwriting the old. */
-function kbManualImageName_(it) {
-  return 'manimg-' + it.key + '-' + String(it.sha).substring(0, 12) + (it.contentType === 'image/png' ? '.png' : '.jpg');
+/** Pure (Node-pinned) — M4-FU3: the ManualImages rows for a set of images,
+ *  sorted by key, each image's base64 split into pieces of at most
+ *  KB_MANUAL_IMAGE_CELL_MAX characters (a Sheets cell holds 50,000):
+ *  [key, sha, type, kind, part, piece, importedAt]. The pieces rejoin to
+ *  exactly the base64 that was validated. */
+function kbManualImagesRows_(items, now) {
+  const rows = [];
+  (items || []).slice().sort(function (a, b) { return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0); }).forEach(function (it) {
+    const b64 = String(it.base64 || '');
+    const n = Math.max(1, Math.ceil(b64.length / KB_MANUAL_IMAGE_CELL_MAX));
+    for (let p = 0; p < n; p++) {
+      rows.push([it.key, it.sha, it.contentType, it.kind, p, b64.substring(p * KB_MANUAL_IMAGE_CELL_MAX, (p + 1) * KB_MANUAL_IMAGE_CELL_MAX), now]);
+    }
+  });
+  return rows;
 }
 
 function getOrCreateManualImagesSheet_() {
@@ -3340,67 +3350,59 @@ function getOrCreateManualImagesSheet_() {
   }
   return sheet;
 }
-/** The images ledger as { key → { sha, fileId, kind, importedAt, row } }; a
- *  missing tab (no image import yet) is an empty ledger. */
+/** Does the tab carry the current header? A tab from the Drive-backed layout
+ *  (M3's Key/Sha/FileId/…) holds no image bytes, so it reads as EMPTY and the
+ *  next import rewrites it. */
+function kbManualImagesHeaderOk_(sheet) {
+  if (!sheet || sheet.getLastRow() < 1) return false;
+  return sheet.getRange(1, 1, 1, KB_MANUAL_IMAGES_HEADERS.length).getValues()[0].map(String).join('|') === KB_MANUAL_IMAGES_HEADERS.join('|');
+}
+/** The images tab as { key → { sha, type, kind, rows: [sheetRow by part] } }
+ *  — read WITHOUT the Data column. A key whose parts are not exactly
+ *  0..n-1 is left out (it would rejoin to the wrong bytes), so it reads as
+ *  not imported and the next import rewrites it. A missing tab, or one in the
+ *  old layout, is an empty ledger. */
 function kbManualImagesLedger_(sheet) {
   const out = {};
-  if (!sheet) return out;
+  if (!kbManualImagesHeaderOk_(sheet)) return out;
   const last = sheet.getLastRow();
   if (last < 2) return out;
-  sheet.getRange(2, 1, last - 1, KB_MANUAL_IMAGES_HEADERS.length).getValues().forEach(function (r, i) {
+  const seen = {};
+  sheet.getRange(2, 1, last - 1, KBMG.PART + 1).getValues().forEach(function (r, i) {
     const key = String(r[KBMG.KEY] || '').trim();
-    if (KB_MANUAL_IMAGE_KEY_RE.test(key)) {
-      out[key] = { sha: String(r[KBMG.SHA] || ''), fileId: String(r[KBMG.FILE_ID] || ''), kind: String(r[KBMG.KIND] || ''),
-        importedAt: String(r[KBMG.IMPORTED_AT] || ''), row: i + 2 };
-    }
+    if (!KB_MANUAL_IMAGE_KEY_RE.test(key)) return;
+    const e = seen[key] || (seen[key] = { sha: String(r[KBMG.SHA] || ''), type: String(r[KBMG.TYPE] || ''), kind: String(r[KBMG.KIND] || ''), rows: [], bad: false });
+    const part = Number(r[KBMG.PART]);
+    if (!(part >= 0 && part === Math.floor(part)) || e.rows[part] !== undefined || String(r[KBMG.SHA] || '') !== e.sha) e.bad = true;
+    else e.rows[part] = i + 2;
+  });
+  Object.keys(seen).forEach(function (k) {
+    const e = seen[k];
+    let whole = !e.bad && e.rows.length > 0;
+    for (let p = 0; whole && p < e.rows.length; p++) if (e.rows[p] === undefined) whole = false;
+    if (whole) out[k] = { sha: e.sha, type: e.type, kind: e.kind, rows: e.rows };
   });
   return out;
 }
-
-/** The Drive half of an image import — OUTSIDE the lock (each upload takes a
- *  moment; holding the script lock through ~160 of them would stall every
- *  punch and note). Stops at `deadline` and reports the rest as PENDING, so a
- *  first import of every image can finish over two runs rather than hit the
- *  six-minute limit. A per-image Drive failure is NAMED, never a bare count. */
-function kbManualUploadImages_(upload, deadline) {
-  const out = { done: [], pending: [], failed: [], error: '' };
-  if (!upload.length) return out;
-  let folder;
-  try { folder = getOrCreateKbImagesFolder_(); }
-  catch (e) {
-    out.error = e.message;
-    out.pending = upload.map(function (it) { return it.key; });
-    return out;
-  }
-  const existing = {};
-  try {
-    const files = folder.searchFiles("title contains 'manimg-' and trashed = false");
-    while (files.hasNext()) { const f = files.next(); existing[f.getName()] = f.getId(); }
-  } catch (e) { console.warn('KB Images: could not list existing manual images (' + e.message + ') — uploading without reuse.'); }
-  for (let i = 0; i < upload.length; i++) {
-    const it = upload[i];
-    if (Date.now() > deadline) { out.pending = upload.slice(i).map(function (x) { return x.key; }); break; }
-    const name = kbManualImageName_(it);
-    try {
-      const reused = !!existing[name];
-      const id = reused ? existing[name]
-        : folder.createFile(Utilities.newBlob(Utilities.base64Decode(it.base64), it.contentType, name)).getId();
-      out.done.push({ key: it.key, sha: it.sha, fileId: id, kind: it.kind, reused: reused });
-    } catch (e) {
-      out.failed.push({ key: it.key, error: String(e.message || e).substring(0, 160) });
-    }
-  }
-  return out;
+/** Under the caller's lock: replace the tab's rows with `rows` (the header is
+ *  rewritten too, so a tab in the old layout is migrated). Returns nothing;
+ *  a failure throws to the caller, which reports it beside the sections. */
+function kbManualImagesWrite_(rows) {
+  const sheet = getOrCreateManualImagesSheet_();
+  sheet.getRange(1, 1, 1, KB_MANUAL_IMAGES_HEADERS.length).setValues(sheetSafeRows_([KB_MANUAL_IMAGES_HEADERS]));
+  const last = sheet.getLastRow();
+  if (last >= 2) sheet.getRange(2, 1, last - 1, Math.max(sheet.getLastColumn(), KB_MANUAL_IMAGES_HEADERS.length)).clearContent();
+  if (rows.length) appendRowsSafe_(sheet, rows);
 }
 
 /** Employee — the manual's images as data URLs, by key, in one call: a part
- *  page asks once for every image it shows. THE LEDGER IS THE SCOPE: only a
- *  file the import recorded for that key is ever read, so this cannot be used
- *  to read any other Drive file by id. "Not imported" (missing) and "could not
- *  read" (failed) are different answers and come back separately (g128).
- *  Served from ScriptCache by content hash when it fits — a hash names the
- *  bytes, not the code, so every deployment may share the entry (g157). No
- *  lock: read-only. */
+ *  page asks once for every image it shows. M4-FU3: the bytes come from the
+ *  ManualImages tab only (no Drive — this domain disables it), rejoined from
+ *  their pieces, and re-checked as PNG/JPEG base64 before they leave.
+ *  "Not imported" (missing) and "could not read" (failed) are different
+ *  answers and come back separately (g128). Served from ScriptCache by content
+ *  hash when it fits — a hash names the bytes, not the code, so every
+ *  deployment may share the entry (g157). No lock: read-only. */
 function getManualImages(keys) {
   try {
     const emp = getEmployeeInfo_();
@@ -3412,26 +3414,37 @@ function getManualImages(keys) {
     });
     const res = { success: true, images: {}, missing: [], failed: [] };
     if (!want.length) return res;
-    const ledger = kbManualImagesLedger_(getKbSS_().getSheetByName(KB_MANUAL_IMAGES_TAB));
+    const sheet = getKbSS_().getSheetByName(KB_MANUAL_IMAGES_TAB);
+    const ledger = kbManualImagesLedger_(sheet);
     const cache = CacheService.getScriptCache();
     let hit = {};
     try { hit = cache.getAll(want.filter(function (k) { return ledger[k]; }).map(function (k) { return KB_MANUAL_IMAGE_CACHE_PREFIX + ledger[k].sha; })) || {}; }
     catch (e) { hit = {}; }
-    const put = {};
+    const need = [];
     want.forEach(function (k) {
       const led = ledger[k];
-      if (!led || !led.fileId) { res.missing.push(k); return; }
+      if (!led) { res.missing.push(k); return; }
       const ck = KB_MANUAL_IMAGE_CACHE_PREFIX + led.sha;
-      if (hit[ck]) { res.images[k] = hit[ck]; return; }
-      try {
-        const blob = DriveApp.getFileById(led.fileId).getBlob();
-        const type = String(blob.getContentType() || '').toLowerCase();
-        const bytes = blob.getBytes();
-        if (KB_MANUAL_IMAGE_TYPES.indexOf(type) < 0 || bytes.length > KB_MANUAL_IMAGE_MAX_BYTES) { res.failed.push(k); return; }
-        const url = 'data:' + type + ';base64,' + Utilities.base64Encode(bytes);
-        res.images[k] = url;
-        if (url.length <= 95000) put[ck] = url;   // one cache value holds 100 KB
-      } catch (e) { res.failed.push(k); }
+      if (hit[ck]) res.images[k] = hit[ck]; else need.push(k);
+    });
+    if (!need.length) return res;
+    // ONE read of the Data column across the rows this batch needs.
+    let lo = Infinity, hi = 0;
+    need.forEach(function (k) { ledger[k].rows.forEach(function (r) { lo = Math.min(lo, r); hi = Math.max(hi, r); }); });
+    let data;
+    try { data = sheet.getRange(lo, KBMG.DATA + 1, hi - lo + 1, 1).getValues(); }
+    catch (e) { need.forEach(function (k) { res.failed.push(k); }); return res; }
+    const put = {};
+    need.forEach(function (k) {
+      const led = ledger[k];
+      const b64 = led.rows.map(function (r) { return String(data[r - lo][0] || ''); }).join('');
+      const type = led.type.toLowerCase();
+      if (KB_MANUAL_IMAGE_TYPES.indexOf(type) < 0 || !/^[A-Za-z0-9+\/]+={0,2}$/.test(b64) || Math.floor(b64.length * 3 / 4) > KB_MANUAL_IMAGE_MAX_BYTES) {
+        res.failed.push(k); return;
+      }
+      const url = 'data:' + type + ';base64,' + b64;
+      res.images[k] = url;
+      if (url.length <= 95000) put[KB_MANUAL_IMAGE_CACHE_PREFIX + led.sha] = url;   // one cache value holds 100 KB
     });
     if (Object.keys(put).length) { try { cache.putAll(put, 21600); } catch (e) {} }
     return res;
@@ -3620,13 +3633,6 @@ function getManualPart(department) {
   } catch (err) { return { error: err.message }; }
 }
 
-/** Drive file id from a share link or a bare id. */
-function kbManualFileId_(ref) {
-  const s = String(ref || '').trim();
-  const parsed = kbParseDriveUrl_(s);
-  if (parsed) return parsed.fileId;
-  return /^[a-zA-Z0-9_-]{20,}$/.test(s) ? s : '';
-}
 
 function getOrCreateManualImportSheet_() {
   const ss = getKbSS_();
@@ -3657,28 +3663,18 @@ function kbManualLedger_(sheet) {
  *  opts.dryRun → the plan, nothing written. The Drive read happens OUTSIDE the
  *  lock; the plan is re-derived under it from a fresh read, so an edit made
  *  between a check and an import is still seen. */
-function kbImportManual(fileRef, opts) {
-  const started = Date.now();
+function kbImportManual(source, opts) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
     opts = opts || {};
-    const fileId = kbManualFileId_(fileRef);
-    if (!fileId) return { success: false, error: 'Paste the Drive link (or file id) of manual.json.' };
-    let text;
-    try {
-      const blob = DriveApp.getFileById(fileId).getBlob();
-      if (blob.getBytes().length > KB_MANUAL_FILE_MAX) return { success: false, error: 'That file is too large to be the manual\'s manual.json.' };
-      text = blob.getDataAsString('UTF-8');
-    } catch (e) {
-      // A missing Drive SCOPE is not a sharing problem (operator 2026-09-29):
-      // "check the link" sent the operator to re-share a file the runtime had
-      // refused to even ask Drive for. Name the grant, and only then the link.
-      if (driveScopeError_(e.message)) {
-        return { success: false, scopeMissing: true, error: 'The app is not allowed to read Drive yet: ' + DRIVE_REAUTH_HINT };
-      }
-      return { success: false, error: 'Could not open that Drive file (' + e.message + ') — check the link and that the app\'s account can read it.' };
-    }
+    // M4-FU3 (operator 2026-09-29): the file arrives as TEXT from the admin's
+    // browser. It used to be read from a Drive link, and this domain's
+    // administrator has disabled Apps Script's Drive service ("The feature you
+    // are attempting to use has been disabled by your domain administrator").
+    const text = source && typeof source === 'object' && typeof source.text === 'string' ? source.text : null;
+    if (text === null || !text.trim()) return { success: false, error: 'Choose manual.json from the manual build first.' };
+    if (text.length > KB_MANUAL_FILE_MAX) return { success: false, error: 'That file is too large to be the manual\'s manual.json.' };
     let data;
     try { data = JSON.parse(text); } catch (e) { return { success: false, error: 'That file is not JSON — upload manual.json from the manual build.' }; }
     const bundle = kbManualBundle_(data);
@@ -3689,17 +3685,8 @@ function kbImportManual(fileRef, opts) {
     const problems = v.errors.concat(mv.errors, iv.errors);
     if (problems.length) return { success: false, error: 'The file was refused; nothing was imported.', problems: problems.slice(0, 20), problemCount: problems.length };
     const metaJson = mv.meta ? JSON.stringify(mv.meta) : '';
-    // Batch M3 — images: planned from a read of the ledger; uploaded to Drive
-    // HERE, outside the lock; their ledger rows written under it, below.
-    let imgPlan = null, uploaded = null;
-    if (iv.items) {
-      imgPlan = kbManualImagesPlan_(iv.items, kbManualImagesLedger_(getKbSS_().getSheetByName(KB_MANUAL_IMAGES_TAB)));
-      if (!opts.dryRun) uploaded = kbManualUploadImages_(imgPlan.upload, started + KB_MANUAL_IMAGE_BUDGET_MS);
-    }
-
     const lock = LockService.getScriptLock();
     lock.waitLock(30000);
-    const replaced = [];   // {key, fileId} — old image files the new ledger rows no longer name
     let result;
     try {
       const sheet = getOrCreateKbSheet_();
@@ -3726,13 +3713,19 @@ function kbImportManual(fileRef, opts) {
         unchanged: plan.unchanged.length, skipped: plan.skipped,
         orphaned: orphaned, removed: 0, metaUpdated: metaChanged, hasMeta: !!metaJson,
         version: mv.meta ? mv.meta.version : '',
-        images: !imgPlan ? null : (uploaded ? {
-          total: iv.items.length, unchanged: imgPlan.unchanged.length,
-          uploaded: uploaded.done.filter(function (d) { return !d.reused; }).length,
-          reused: uploaded.done.filter(function (d) { return d.reused; }).length,
-          pending: uploaded.pending.length, failed: uploaded.failed, error: uploaded.error,
-        } : { total: iv.items.length, unchanged: imgPlan.unchanged.length, toUpload: imgPlan.upload.length }),
+        images: null,
       };
+      // Images (M4-FU3): planned against the ManualImages tab, read under the
+      // lock; written below, and only when something changed.
+      let imgPlan = null, imgRemoved = 0;
+      if (iv.items) {
+        const imLed = kbManualImagesLedger_(getKbSS_().getSheetByName(KB_MANUAL_IMAGES_TAB));
+        imgPlan = kbManualImagesPlan_(iv.items, imLed);
+        const inFile = {};
+        iv.items.forEach(function (it) { inFile[it.key] = 1; });
+        imgRemoved = Object.keys(imLed).filter(function (k) { return !inFile[k]; }).length;
+        summary.images = { total: iv.items.length, unchanged: imgPlan.unchanged.length, toStore: imgPlan.upload.length, removed: imgRemoved };
+      }
       if (opts.dryRun) return Object.assign({ success: true, dryRun: true }, summary);
 
       const now = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
@@ -3779,22 +3772,21 @@ function kbImportManual(fileRef, opts) {
         metaSheet.getRange(2, 1, 1, 1).setValues(sheetSafeRows_([[metaJson]]));   // JSON of an object can never read as a formula
         try { CacheService.getScriptCache().remove(KB_MANUAL_META_CACHE_KEY); } catch (_) {}
       }
-      if (uploaded && uploaded.done.length) {
-        // Re-read under the lock: a concurrent import may have written a key.
-        const imSheet = getOrCreateManualImagesSheet_();
-        const imLed = kbManualImagesLedger_(imSheet);
-        const imAppend = [];
-        uploaded.done.forEach(function (d) {
-          const row = [d.key, d.sha, d.fileId, d.kind, now];
-          const prev = imLed[d.key];
-          if (prev) {
-            imSheet.getRange(prev.row, 1, 1, row.length).setValues(sheetSafeRows_([row]));
-            // The ledger now names the new file, so nothing refers to the old
-            // one any more — it is trashed once the lock is released (below).
-            if (prev.fileId && prev.fileId !== d.fileId) replaced.push({ key: d.key, fileId: prev.fileId });
-          } else imAppend.push(row);
-        });
-        if (imAppend.length) appendRowsSafe_(imSheet, imAppend);
+      if (imgPlan) {
+        // The whole tab is rewritten when any image changed or was dropped —
+        // one block write of every image the file carries, so the tab can never
+        // hold a mix of two exports. An unchanged set writes NOTHING. A failed
+        // write is reported beside the sections (which are already in), and
+        // the next Import retries it: the tab still says what it held.
+        const imgs = summary.images;
+        imgs.stored = 0; imgs.error = '';
+        if (imgPlan.upload.length || imgRemoved) {
+          try {
+            kbManualImagesWrite_(kbManualImagesRows_(iv.items, now));
+            imgs.stored = imgPlan.upload.length;
+          } catch (e) { imgs.error = String(e.message || e).substring(0, 200); }
+        }
+        delete imgs.toStore;
       }
       if (ledgerWrites.length || summary.removed) invalidateKbCache_();
       const skipBy = {};
@@ -3803,49 +3795,13 @@ function kbImportManual(fileRef, opts) {
         'total=' + summary.total + '; created=' + summary.created + '; updated=' + summary.updated +
         '; unchanged=' + summary.unchanged + '; skipped=' + plan.skipped.length +
         '; orphaned=' + orphaned.length + '; removed=' + summary.removed + '; meta=' + (metaChanged ? 'updated' : 'same') +
-        (summary.images ? '; imagesUploaded=' + summary.images.uploaded + '; imagesReused=' + summary.images.reused +
-          '; imagesPending=' + summary.images.pending + '; imagesFailed=' + summary.images.failed.length + '; imagesReplaced=' + replaced.length : '') +
+        (summary.images ? '; imagesStored=' + summary.images.stored + '; imagesRemoved=' + summary.images.removed +
+          (summary.images.error ? '; imagesError=1' : '') : '') +
         Object.keys(skipBy).sort().map(function (k) { return '; ' + k + '=' + skipBy[k]; }).join(''), emp.email);
       result = Object.assign({ success: true, dryRun: false }, summary);
     } finally { lock.releaseLock(); }
-    // Batch M3 follow-up (operator 2026-09-29): a replaced image's old file is
-    // moved to Drive's trash — OUTSIDE the lock, after the ledger stopped
-    // naming it, so a failure here can only leave a stray file, never a
-    // missing image. Drive keeps trash for 30 days, so it is recoverable.
-    if (result.images && replaced.length) {
-      const t = kbManualTrashReplaced_(replaced);
-      result.images.trashed = t.trashed;
-      result.images.trashFailed = t.failed;
-    }
     return result;
   } catch (err) { return { success: false, error: err.message }; }
-}
-
-/** Move the files a re-import replaced to Drive's trash. Each is checked to be
- *  a manual image (named manimg-<its key>-…) inside the KB Images folder
- *  before it is touched, so a ledger row that somehow names another file can
- *  never trash it. A failure is NAMED and left for the operator; it does not
- *  fail the import. */
-function kbManualTrashReplaced_(replaced) {
-  const out = { trashed: 0, failed: [] };
-  const folderId = String(PropertiesService.getScriptProperties().getProperty(KB_IMAGES_FOLDER_PROP) || '');
-  (replaced || []).forEach(function (r) {
-    try {
-      const f = DriveApp.getFileById(r.fileId);
-      let inFolder = false;
-      const parents = f.getParents();
-      while (parents.hasNext()) { if (parents.next().getId() === folderId) { inFolder = true; break; } }
-      if (!folderId || !inFolder || String(f.getName()).indexOf('manimg-' + r.key + '-') !== 0) {
-        out.failed.push({ key: r.key, error: 'left alone — not a manual image in the KB Images folder' });
-        return;
-      }
-      f.setTrashed(true);
-      out.trashed++;
-    } catch (e) {
-      out.failed.push({ key: r.key, error: String(e.message || e).substring(0, 160) });
-    }
-  });
-  return out;
 }
 
 /** Admin — publish the imported manual's DRAFTS (all, or one department), and

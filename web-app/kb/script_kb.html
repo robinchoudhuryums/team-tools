@@ -172,6 +172,7 @@
   .kb-man-go:not(:disabled) { background: var(--accent); color: #fff; border-color: var(--accent); }
   .kb-man-go:disabled { opacity: .5; cursor: not-allowed; }
   .kb-man-gate { margin: 4px 0 0; }
+  .kb-man-picked { margin: 4px 0 0; color: var(--ink); }
   .kb-man-res { margin: 10px 0; padding: 10px 12px; border-radius: var(--radius); border-left: 3px solid var(--accent); background: var(--accent-soft); font-size: .84rem; }
   .kb-man-res.warn { border-left-color: var(--warn); background: var(--warn-soft); }
   .kb-man-res.bad { border-left-color: var(--danger); background: var(--danger-soft); }
@@ -3432,15 +3433,16 @@ function kbOpenManualImport_() {
       '<h3 style="margin:0">Procedures manual</h3>' +
       '<button class="kb-btn" data-kb-manclose="1" aria-label="Close">' + icon('x', 15) + '</button></div>' +
     '<div class="body">' +
-      '<p class="kb-man-note">Upload <code>manual.json</code> from the manual build (<code>manual/export_reference.py</code>) to Drive and paste its link. ' +
+      '<p class="kb-man-note">Choose <code>manual.json</code> from the manual build (<code>manual/export_reference.py</code>) on this computer — it is sent straight to the app, no Drive link needed. ' +
         'Articles arrive as <b>drafts</b>; an article someone has edited here is skipped and listed, never overwritten. Import outside busy call hours — it holds the save lock while it writes.</p>' +
-      '<label class="kb-man-lbl" for="kb-man-link">Drive link to manual.json</label>' +
-      '<input id="kb-man-link" class="kb-man-input" type="text" autocomplete="off" spellcheck="false" placeholder="https://drive.google.com/file/d/…">' +
+      '<label class="kb-man-lbl" for="kb-man-file">manual.json</label>' +
+      '<input id="kb-man-file" class="kb-man-input" type="file" accept=".json,application/json">' +
+      '<div class="kb-man-note kb-man-picked" id="kb-man-picked" hidden></div>' +
       '<div class="kb-ed-foot">' +
         '<button class="kb-btn" id="kb-man-check" onclick="kbManualRun_(true)">' + icon('search', 13) + ' Check</button>' +
-        '<button class="kb-btn kb-man-go" id="kb-man-import" onclick="kbManualRun_(false)" disabled title="Run Check first — Import unlocks after a clean check of this link">' + icon('upload', 13) + ' Import</button>' +
+        '<button class="kb-btn kb-man-go" id="kb-man-import" onclick="kbManualRun_(false)" disabled title="Run Check first — Import unlocks after a clean check of this file">' + icon('upload', 13) + ' Import</button>' +
       '</div>' +
-      '<p class="kb-man-note kb-man-gate" id="kb-man-gate">Import unlocks after a clean <b>Check</b> of this link.</p>' +
+      '<p class="kb-man-note kb-man-gate" id="kb-man-gate">Import unlocks after a clean <b>Check</b> of this file.</p>' +
       '<div id="kb-man-result" role="status" aria-live="polite"></div>' +
       '<div class="kb-man-pub">' +
         '<div class="kb-man-lbl">Publish manual drafts</div>' +
@@ -3454,9 +3456,32 @@ function kbOpenManualImport_() {
       '</div>' +
     '</div></div>';
   ov.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('[data-kb-manclose]')) closeOverlay(ov); });
-  var inp = document.getElementById('kb-man-link');
-  // A changed link must be checked again before it can be imported.
-  if (inp) inp.addEventListener('input', function () { var b = document.getElementById('kb-man-import'); if (b) b.disabled = true; kbManualGate_(b); });
+  KB_MANUAL_FILE = null;
+  var inp = document.getElementById('kb-man-file');
+  // A newly chosen file must be checked before it can be imported.
+  if (inp) inp.addEventListener('change', function () {
+    var f = inp.files && inp.files[0];
+    if (!f) { kbManualSetFile_(null); return; }
+    var rd = new FileReader();
+    rd.onload = function () { kbManualSetFile_({ name: f.name, size: f.size, text: String(rd.result || '') }); };
+    rd.onerror = function () { kbManualSetFile_(null); var o = document.getElementById('kb-man-result'); if (o) o.innerHTML = kbManualResultHtml_({ success: false, error: 'Could not read that file on this computer.' }); };
+    rd.readAsText(f);
+  });
+}
+/** M4-FU3 — the chosen manual.json, held in the page until Check / Import send
+ *  it (as text: this domain disables Apps Script's Drive, so a Drive link can
+ *  never be read). Choosing another file locks Import until it is checked. */
+var KB_MANUAL_FILE = null;
+function kbManualSetFile_(file) {
+  KB_MANUAL_FILE = file && typeof file.text === 'string' ? file : null;
+  var b = document.getElementById('kb-man-import'); if (b) b.disabled = true;
+  kbManualGate_(b);
+  var picked = document.getElementById('kb-man-picked');
+  if (picked) {
+    picked.hidden = !KB_MANUAL_FILE;
+    picked.textContent = KB_MANUAL_FILE ? KB_MANUAL_FILE.name + ' · ' + (KB_MANUAL_FILE.text.length / 1048576).toFixed(1) + ' MB — press Check' : '';
+  }
+  var out = document.getElementById('kb-man-result'); if (out && KB_MANUAL_FILE) out.innerHTML = '';
 }
 /** The manual's draft departments from the loaded tree (admins receive drafts). */
 function kbManualDraftDepts_() {
@@ -3509,39 +3534,27 @@ function kbManualResultHtml_(r, dryRun) {
         : '')) +
     '</div>';
 }
-/** Pure (Node-pinned) — Batch M3: the images half of a check or an import.
- *  Anything not yet on Drive is said with what to do about it: images left by
- *  the time budget need another Import; a named Drive failure is listed. */
+/** Pure (Node-pinned) — the images half of a check or an import. M4-FU3:
+ *  the images live in the ManualImages tab of the KB spreadsheet (no Drive), so
+ *  there is nothing to finish on a second run; a failed write is SAID, with
+ *  the reassurance that the sections are in and Import will retry it. */
 function kbManualImagesLine_(im, dryRun) {
   if (!im) return { html: '<div class="kb-man-meta">No images in this file — rebuild with the current export to include them.</div>', warn: false };
   var pl = function (n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); };
+  var gone = im.removed ? ' · ' + im.removed + ' no longer used' + (dryRun ? ' (would be removed)' : ', removed') : '';
   if (dryRun) {
-    return { html: '<div class="kb-man-meta">' + esc(pl(im.total || 0, 'image') + ' · ' + (im.toUpload || 0) + ' to upload to the KB Images folder · ' + (im.unchanged || 0) + ' unchanged') + '</div>', warn: false };
+    return { html: '<div class="kb-man-meta">' + esc(pl(im.total || 0, 'image') + ' · ' + (im.toStore || 0) + ' to store in the KB spreadsheet · ' + (im.unchanged || 0) + ' unchanged' + gone) + '</div>', warn: false };
   }
-  var failed = im.failed || [];
-  var html = '<div class="kb-man-meta">' + esc(pl(im.total || 0, 'image') + ' · ' + (im.uploaded || 0) + ' uploaded' + (im.reused ? ' · ' + im.reused + ' found on Drive from an earlier run' : '') + ' · ' + (im.unchanged || 0) + ' unchanged') + '</div>';
-  if (im.error) html += '<div class="kb-man-skiph">The KB Images folder could not be opened: ' + esc(im.error) + '</div>';
-  if (im.pending) html += '<div class="kb-man-skiph">' + esc(pl(im.pending, 'image') + ' still to upload — press Import again to finish (the sections are already in).') + '</div>';
-  if (im.trashed) html += '<div class="kb-man-meta">' + esc(pl(im.trashed, 'replaced image file') + ' moved to Drive\u2019s trash (recoverable for 30 days).') + '</div>';
-  var tf = im.trashFailed || [];
-  if (tf.length) {
-    html += '<div class="kb-man-skiph">These replaced image files were left in the KB Images folder:</div><ul>' + tf.map(function (f) {
-      return '<li>' + esc(f.key) + ' <span class="kb-man-why">— ' + esc(f.error) + '</span></li>';
-    }).join('') + '</ul>';
-  }
-  if (failed.length) {
-    html += '<div class="kb-man-skiph">These images could not be uploaded:</div><ul>' + failed.map(function (f) {
-      return '<li>' + esc(f.key) + ' <span class="kb-man-why">— ' + esc(f.error) + '</span></li>';
-    }).join('') + '</ul>';
-  }
-  return { html: html, warn: !!(im.error || im.pending || failed.length || tf.length) };
+  var html = '<div class="kb-man-meta">' + esc(pl(im.total || 0, 'image') + ' · ' + (im.stored || 0) + ' stored · ' + (im.unchanged || 0) + ' unchanged' + gone) + '</div>';
+  if (im.error) html += '<div class="kb-man-skiph">The images could not be saved (' + esc(im.error) + ') — the sections are in; press Import again to retry the images.</div>';
+  return { html: html, warn: !!im.error };
 }
 function kbManualRun_(dryRun) {
-  var inp = document.getElementById('kb-man-link');
-  var link = inp ? String(inp.value || '').trim() : '';
+  var inp = document.getElementById('kb-man-file');
+  var file = KB_MANUAL_FILE;
   var out = document.getElementById('kb-man-result');
   var chk = document.getElementById('kb-man-check'), imp = document.getElementById('kb-man-import');
-  if (!link) { if (out) out.innerHTML = kbManualResultHtml_({ success: false, error: 'Paste the Drive link to manual.json first.' }); if (inp) inp.focus(); return; }
+  if (!file) { if (out) out.innerHTML = kbManualResultHtml_({ success: false, error: 'Choose manual.json from the manual build first.' }); if (inp) inp.focus(); return; }
   if (chk) chk.disabled = true; if (imp) imp.disabled = true;
   if (out) out.innerHTML = loSweep();
   google.script.run
@@ -3560,7 +3573,7 @@ function kbManualRun_(dryRun) {
       var box = document.getElementById('kb-man-result');
       if (box) box.innerHTML = kbManualResultHtml_({ success: false, error: (e && e.message) || 'The import failed.' });
     })
-    .kbImportManual(link, { dryRun: !!dryRun, removeOrphans: !dryRun && !!(document.getElementById('kb-man-remove') || {}).checked });
+    .kbImportManual({ text: file.text }, { dryRun: !!dryRun, removeOrphans: !dryRun && !!(document.getElementById('kb-man-remove') || {}).checked });
 }
 /** The line under the buttons says why Import is locked — a disabled button
  *  that looks and clicks like a live one reads as "nothing happens"
