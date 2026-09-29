@@ -29520,8 +29520,10 @@ test('M1-S1: departments sort NATURALLY on both sides — "Part 2" before "Part 
   assert.deepStrictEqual(sorted.filter((n) => /^part/i.test(n)),
     ['Part 00 — CSR Core', 'Part 1', 'Part 2 — Manual', 'part 02 — Manual', 'Part 03', 'Part 3a', 'Part 3b', 'Part 10 — Billing', 'Part 10 — Billing'], 'by number, not by character');
   names.forEach((a) => names.forEach((b) => assert.strictEqual(Math.sign(cctx.kbNaturalCompare_(a, b)), Math.sign(s.kbNaturalCompare_(a, b)), a + ' vs ' + b)));
-  assert.ok(/items\.sort\(function \(a, b\) \{ return kbNaturalCompare_\(a\.department, b\.department\)/.test(extractRawFunction('Code.js', 'getReferenceTree')), 'the server tree uses it');
-  assert.ok(/Object\.keys\(byDept\)\.sort\(kbNaturalCompare_\)/.test(extractFnFrom(M1_KB_SRC, 'kbRenderTree_')), 'and the client re-sort does too (it was a plain .sort())');
+  // Batch M3: the department sites now go through kbDeptCompare_, which ranks
+  // parts before appendices and falls back to this natural order (M3-S1).
+  assert.ok(/items\.sort\(function \(a, b\) \{ return kbDeptCompare_\(a\.department, b\.department\)/.test(extractRawFunction('Code.js', 'getReferenceTree')), 'the server tree uses it');
+  assert.ok(/Object\.keys\(byDept\)\.sort\(kbDeptCompare_\)/.test(extractFnFrom(M1_KB_SRC, 'kbRenderTree_')), 'and the client re-sort does too (it was a plain .sort())');
 });
 
 test('M1-S2: kbManualValidate_ refuses the WHOLE file on any bad article — shape, id, duplicates, type, size, sort order, hash', () => {
@@ -30013,6 +30015,32 @@ test('M2-E1: the exporter writes ONE bundle in the format the importer reads, wi
   assert.ok(/data\/changelog\.json/.test(ex) && /def sec_target/.test(ex) && /UNRESOLVABLE REF \{sec\} \(router or changelog\)/.test(ex), 'every router and changelog target is resolved or the export fails');
   const mk = fs.readFileSync(path.join(M, 'README.md'), 'utf8');
   assert.ok(/manual\.json/.test(mk) && !/articles\.json/.test(mk), 'the README names the bundle');
+});
+
+// ── Batch M3 — the manual's diagrams and images; appendices after Part 10 ──
+console.log('\nBatch M3 — the manual\'s diagrams and images; part order');
+
+test('M3-S1: departments list parts, then appendices, then everything else — the appendices follow Part 10 on BOTH sides, over one grid, at every site that orders departments', () => {
+  const s = m1Srv_();
+  vm.runInContext(extractRawFunction('Code.js', 'kbDeptRank_'), s);
+  vm.runInContext(extractRawFunction('Code.js', 'kbDeptCompare_'), s);
+  const c = vm.createContext({ String, parseInt, Math });
+  ['kbNaturalCompare_', 'kbDeptRank_', 'kbDeptCompare_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), c));
+  const names = ['Appendix C — Quick Reference Cards', 'Part 10 — Billing & Insurance', 'Billing', 'Appendix A — Glossary', 'Part 00 — CSR Core',
+    'Part 2 — Manual Mobility', 'Appendix B — Escalation Directory', 'Appendix forms', 'Parts list', 'Shipping', '', 'Appendix a — lower', 'Part 1 - hyphen'];
+  const sorted = names.slice().sort(s.kbDeptCompare_);
+  assert.deepStrictEqual(sorted, ['Part 00 — CSR Core', 'Part 2 — Manual Mobility', 'Part 10 — Billing & Insurance',
+    'Appendix A — Glossary', 'Appendix B — Escalation Directory', 'Appendix C — Quick Reference Cards',
+    '', 'Appendix a — lower', 'Appendix forms', 'Billing', 'Part 1 - hyphen', 'Parts list', 'Shipping'],
+    'the manual\'s own two shapes only (em dash, as department() writes them) — an ordinary "Appendix forms" is not pulled forward');
+  names.forEach((a) => names.forEach((b) => {
+    assert.strictEqual(Math.sign(c.kbDeptCompare_(a, b)), Math.sign(s.kbDeptCompare_(a, b)), 'client mirrors server: ' + a + ' vs ' + b);
+    names.forEach((d) => { if (s.kbDeptCompare_(a, b) < 0 && s.kbDeptCompare_(b, d) < 0) assert.ok(s.kbDeptCompare_(a, d) < 0, 'transitive: ' + [a, b, d].join(' < ')); });
+  }));
+  const ex = fs.readFileSync(path.join(__dirname, '../../manual/export_reference.py'), 'utf8');
+  assert.ok(/return f"Part \{int\(key\[1:\]\):02d\} \u2014 \{PARTS\[key\]\[0\]\}"/.test(ex) && /"appx_a": "Appendix A \u2014 Glossary"/.test(ex), 'the exporter still writes the two shapes the rank reads');
+  assert.ok(/kbDeptCompare_\(a\.department, b\.department\)/.test(extractRawFunction('Code.js', 'kbPublishManual')), 'the publish order (and so the review stagger) follows it');
+  assert.ok(/Object\.keys\(by\)\.sort\(kbDeptCompare_\)/.test(extractFnFrom(M1_KB_SRC, 'kbManualDraftDepts_')), 'and the dialog\'s part list');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

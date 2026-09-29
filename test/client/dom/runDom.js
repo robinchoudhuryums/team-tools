@@ -4855,13 +4855,14 @@ test('M1 DOM: the Manual dialog — Check shows the plan and every skipped artic
     { id: 'man-10-1', department: 'Part 10 — Billing & Insurance', title: '10.1 How billing works', type: 'article', status: 'draft', sortOrder: 1 },
     { id: 'man-2-1', department: 'Part 2 — Manual Mobility', title: '2.1 Intake', type: 'article', status: 'draft', sortOrder: 1 },
     { id: 'man-2-2', department: 'Part 2 — Manual Mobility', title: '2.2 Delivery', type: 'article', status: 'published', sortOrder: 2 },
+    { id: 'man-c-5', department: 'Appendix C — Quick Reference Cards', title: 'Card 5', type: 'article', status: 'draft', sortOrder: 5 },
     { id: 'kb-1', department: 'Billing', title: 'Hand-written', type: 'article', status: 'draft', sortOrder: 1 }] };
   let treeReads = 0;
   h.run.respond('getReferenceTree', () => { treeReads++; return tree; });
   w.enterTool('reference', 'reference');
   h.flushTimers();
   // Batch M2: the manual's parts lead the tree under their own heading.
-  assert.deepStrictEqual(h.$$('#kb-tree .kb-dept-name').map((x) => x.textContent), ['Part 2 — Manual Mobility', 'Part 10 — Billing & Insurance', 'Billing'], 'Part 2 before Part 10, the manual first');
+  assert.deepStrictEqual(h.$$('#kb-tree .kb-dept-name').map((x) => x.textContent), ['Part 2 — Manual Mobility', 'Part 10 — Billing & Insurance', 'Appendix C — Quick Reference Cards', 'Billing'], 'Part 2 before Part 10, the appendices after Part 10 (M3), the manual first');
   assert.deepStrictEqual(h.$$('#kb-tree .kb-tree-group').map((x) => x.textContent), ['Procedures manual', 'Other reference']);
   const btn = h.$$('#kb-tree .kb-add').filter((b) => /Manual/.test(b.textContent))[0];
   assert.ok(btn && btn.getAttribute('onclick') === 'kbOpenManualImport_()', 'an admin sees the Manual button, wired to the dialog');
@@ -4872,7 +4873,7 @@ test('M1 DOM: the Manual dialog — Check shows the plan and every skipped artic
   assert.strictEqual(doc.getElementById('kb-man-import').getAttribute('onclick'), 'kbManualRun_(false)');
   const run = h.read('kbManualRun_');
   const opts = [...ov.querySelectorAll('#kb-man-dept option')].map((o) => o.textContent);
-  assert.deepStrictEqual(opts, ['Every part (2 drafts)', 'Part 2 — Manual Mobility (1)', 'Part 10 — Billing & Insurance (1)'], 'only the manual’s DRAFTS, by part, in order — never the hand-written draft');
+  assert.deepStrictEqual(opts, ['Every part (3 drafts)', 'Part 2 — Manual Mobility (1)', 'Part 10 — Billing & Insurance (1)', 'Appendix C — Quick Reference Cards (1)'], 'only the manual’s DRAFTS, by part, in order — never the hand-written draft');
   const imp = doc.getElementById('kb-man-import');
   assert.strictEqual(imp.disabled, true, 'Import starts locked');
   // Check with no link: said, and no RPC.

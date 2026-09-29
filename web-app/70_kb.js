@@ -142,7 +142,7 @@ function getReferenceTree() {
         });
       });
     }
-    items.sort(function (a, b) { return kbNaturalCompare_(a.department, b.department) || (a.sortOrder - b.sortOrder) || kbNaturalCompare_(a.title, b.title); });
+    items.sort(function (a, b) { return kbDeptCompare_(a.department, b.department) || (a.sortOrder - b.sortOrder) || kbNaturalCompare_(a.title, b.title); });
     try { cache.put(KB_CACHE_KEY, JSON.stringify({ items: items }), KB_CACHE_TTL); } catch (_) {}
     return { items: filterForViewer(items), isManager: !!emp.isManager, isAdmin: !!emp.isAdmin };
   } catch (err) { return { error: err.message }; }
@@ -3143,6 +3143,25 @@ function kbNaturalCompare_(a, b) {
   return 0;
 }
 
+/** Pure (Node-pinned) — the order departments are listed in: the manual's
+ *  parts ("Part 00 — …" … "Part 10 — …"), then its appendices ("Appendix A —
+ *  …"), then every other department, natural order within each (operator
+ *  2026-09-29: the appendices belong after Part 10, where the printed manual
+ *  puts them — plain natural order put "Appendix" before "Part"). The two
+ *  shapes are exactly what manual/export_reference.py's department() writes,
+ *  so an ordinary department named "Appendix …" is not pulled forward. A RANK,
+ *  not a pairwise exception, so the order stays transitive. MIRRORED in
+ *  kb/script_kb.html; the harness drives both over one grid. */
+function kbDeptRank_(d) {
+  const s = String(d == null ? '' : d);
+  if (/^Part \d+ \u2014 /.test(s)) return 0;
+  if (/^Appendix [A-Z] \u2014 /.test(s)) return 1;
+  return 2;
+}
+function kbDeptCompare_(a, b) {
+  return (kbDeptRank_(a) - kbDeptRank_(b)) || kbNaturalCompare_(a, b);
+}
+
 /** Hex SHA-256 of a string (UTF-8). */
 function kbSha256Hex_(s) {
   const buf = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(s == null ? '' : s), Utilities.Charset.UTF_8);
@@ -3550,7 +3569,7 @@ function kbPublishManual(opts) {
     if (opts.dryRun) return { success: true, dryRun: true, count: picks.length };
     // Section order across the parts — the first section of every part comes
     // due first, the last ones at the end of the window.
-    picks.sort(function (a, b) { return (a.sortOrder - b.sortOrder) || kbNaturalCompare_(a.department, b.department); });
+    picks.sort(function (a, b) { return (a.sortOrder - b.sortOrder) || kbDeptCompare_(a.department, b.department); });
     const dueDays = (CONFIG.KB && CONFIG.KB.REVIEW_DUE_DAYS) || 90;
     const offsets = kbReviewStaggerOffsets_(picks.length, dueDays);
     const today = new Date();

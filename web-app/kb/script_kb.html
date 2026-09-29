@@ -3136,7 +3136,7 @@ function kbManualDraftDepts_() {
     if (it.status !== 'draft' || !/^man-/.test(String(it.id || ''))) return;
     by[it.department] = (by[it.department] || 0) + 1;
   });
-  return Object.keys(by).sort(kbNaturalCompare_).map(function (d) { return { name: d, count: by[d] }; });
+  return Object.keys(by).sort(kbDeptCompare_).map(function (d) { return { name: d, count: by[d] }; });
 }
 /** Pure (Node-pinned) — the result block for a check or an import. */
 function kbManualResultHtml_(r, dryRun) {
@@ -3240,6 +3240,19 @@ function kbNaturalCompare_(a, b) {
   return 0;
 }
 
+/** Pure — parts, then appendices, then everything else (operator 2026-09-29).
+ *  MIRRORS the server's kbDeptRank_ / kbDeptCompare_ (70_kb.js); the harness
+ *  drives both over one grid. */
+function kbDeptRank_(d) {
+  var s = String(d == null ? '' : d);
+  if (/^Part \d+ \u2014 /.test(s)) return 0;
+  if (/^Appendix [A-Z] \u2014 /.test(s)) return 1;
+  return 2;
+}
+function kbDeptCompare_(a, b) {
+  return (kbDeptRank_(a) - kbDeptRank_(b)) || kbNaturalCompare_(a, b);
+}
+
 function kbItemIcon_(it) {
   if (it.type === 'embed') return it.driveKind === 'sheet' ? 'grid' : (it.driveKind === 'file' ? 'paperclip' : 'list');
   return 'fileText';
@@ -3261,7 +3274,7 @@ function kbRenderTree_() {
   var el = document.getElementById('kb-tree'); if (!el) return;
   var byDept = {};
   (KB_STATE.tree || []).forEach(function (it) { (byDept[it.department] = byDept[it.department] || []).push(it); });
-  var depts = Object.keys(byDept).sort(kbNaturalCompare_);   // Batch M1 — "Part 2" before "Part 10"
+  var depts = Object.keys(byDept).sort(kbDeptCompare_);   // Batch M1 — "Part 2" before "Part 10"; M3 — appendices after Part 10
   var html = kbAddBtnHtml_();
   if (!depts.length) { html += '<div class="kb-empty">No reference items yet' + (KB_STATE.isAdmin ? ' — add one.' : '.') + '</div>'; el.innerHTML = html; return; }
   var prefs = kbPanelPrefs_();

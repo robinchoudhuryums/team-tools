@@ -1569,6 +1569,20 @@
     "kbImportManual"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-29",
+   "why": "Batch M3: kbDeptRank_/kbDeptCompare_ (appendices after Part 10)",
+   "added": [
+    "kbDeptCompare_",
+    "kbDeptRank_"
+   ],
+   "removed": [],
+   "changed": [
+    "getReferenceTree",
+    "kbPublishManual"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5996,7 +6010,7 @@
   "getReferenceTree": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "ec93f8b6285f38a6"
+   "sha": "65edcaef8cdfe16f"
   },
   "getRetentionConfig": {
    "file": "10_core.js",
@@ -6588,6 +6602,16 @@
    "kind": "function",
    "sha": "ffe64630e1fc4fd4"
   },
+  "kbDeptCompare_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "09ed310e6a32a8de"
+  },
+  "kbDeptRank_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "a7e1bec76885fc79"
+  },
   "kbDocBodyToMarkdown_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -6811,7 +6835,7 @@
   "kbPublishManual": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "8992c53833552b87"
+   "sha": "e2189b65d249282a"
   },
   "kbRecordView": {
    "file": "70_kb.js",
