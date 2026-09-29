@@ -2134,3 +2134,49 @@ per-change detail. By delta:
   returned first and shielded the line under test (g116, the tenth direction);
   a second DOM pin with the neighbour shown now bites. The first panel shot
   made the selected width nearly invisible; fixed before commit.
+
+## 22post — Batches M1 and M2, the procedures manual (2026-09-28)
+
+- **Batch M1:** Node +11, DOM +1, visual +3 (`reference-manual-light-wide`,
+  `reference-manual-dark-wide`, `reference-manual-import-light-wide`); the
+  editor gate test gained `kbImportManual` and `kbPublishManual`. The importer
+  and the publisher are driven over a fake book (a re-import writes nothing, an
+  in-app edit is skipped and reported), and M1-E1 runs the real exporter and
+  pins its mirrors of the server (the body cap, the id pattern) and of
+  `build.py` (the scaffolding strippers). Two harness facts cost time and are
+  worth knowing: **the DOM harness runs no inline `onclick`** — call the handler
+  through `h.read` — and **an auto-responded RPC is not recorded** in the call
+  log, so count calls inside the responder. The first quote pin found that no
+  blockquote had ever rendered (g160). 33 bite-checks, all BITE.
+- **Batch M2:** Node +8, DOM +2, visual +5 (`reference-manual-part-light-wide`,
+  `reference-manual-xref-light-wide`, `reference-manual-router-light-wide`,
+  `reference-manual-router-dark-wide`, `reference-manual-jump-light-wide`).
+  Updated for the deliberate change: M1-R3 (a `kb:` link is a real link now), the
+  glossary-annotator wiring count, M1-S5's audit row, the M1 DOM tree order, X1
+  and T6. A `{` in a server doc comment made the brace-counting extractor read
+  one function to the end of the file, so the M-7 mail tripwire and the
+  admin count failed against correct code (g116, the eleventh direction).
+  Cross-realm values from the vm sandbox are compared through `JSON` /
+  `Array.from`. The first M2-R1 draft's injection assertion was too loose to
+  catch a widened anchor charset; it now asserts the exact safe tag. 30
+  bite-checks, all BITE.
+
+## 22post — Batch M3, the manual's diagrams and images (2026-09-29)
+
+- Node +11, DOM +2, visual +6 (`reference-manual-diagram-light-wide`,
+  `-dark-wide`, `-light-mobile`, `reference-manual-diagram-full-dark-wide`,
+  `reference-manual-images-light-wide`, `-dark-wide`). The partial is checked
+  by an allowlist the pin writes for itself, not the generator's, plus a hash
+  of `manual/diagrams/*.svg` so a stale partial fails CI. The image import is
+  driven over a fake Drive folder whose `createFile` asserts the lock is NOT
+  held, and whose files assert the same when trashed. The visual mock serves
+  real images from the export (`test/visual/manual-images.json`, injected by
+  `build.mjs`).
+- Two failures were the tests' own: a hostile-input check matched inert caption
+  TEXT (now an attribute inside a tag), and a DOM re-render step drove a stale
+  path (now a freshly inserted chip). One real defect was caught by a test: the
+  diagram sizing rule also sized the Full size button's icon (g161).
+- 43 bite-checks. One NO BITE, acted on: the trash's folder check was shielded
+  by a foreign-file case that also failed the name check (g116, the twelfth
+  direction); a lookalike-name case now bites.
+

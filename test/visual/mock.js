@@ -314,7 +314,9 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       return { id: 'man-0-11', title: '0.11 Notes and email conventions', bodyMd:
         'Every call gets a note. A useful note answers three questions:\n\n1. **Who called**\n2. **What they wanted**\n3. **What you did or committed to**\n\n' +
         '## 0.11.1 Abbreviations\n\nUse the shorthand in [A.2 Note-taking shorthand](kb:man-a#A.2); the tabs are in [0.10.2 Before you transfer](kb:man-0-10#0.10.2).\n\n' +
-        '> **Watch-out — never paste a patient\'s name into a department email subject.** Use the TRX number.\n' };
+        '> **Watch-out — never paste a patient\'s name into a department email subject.** Use the TRX number.\n\n' +
+        '## 0.11.2 What the equipment looks like\n\n![Standard oxygen regulator on a cylinder](manimg:fig-o2-regulator)\n\n*Figure 7.1 — the regulator. The gauge reads the cylinder\'s pressure.*\n\n' +
+        '| Photo | Item |\n|---|---|\n| ![Medline MDR107002E Semi-Electric Hospital Bed](manimg:thumb-mm-image43) | Semi-electric bed |\n| ![Retired chair icon](manimg:icon-retired-chair) | an image this import has not carried yet |\n' };
     }
     return { id: 'man-0-10', title: '0.10 Anatomy of a transaction', bodyMd: 'The manual refers to these tabs constantly. This is where each thing lives.\n\n' +
             '```diagram transaction\nTransaction Workflow navigation\n```\n\n' +
@@ -1007,6 +1009,15 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         var m = manualSection(id); return { id: id, title: m.title, status: 'draft', sortOrder: 10 + i, bodyMd: m.bodyMd };
       }) };
     },
+    // Batch M3 — {images, missing, failed} like the server; the images are real
+    // ones from the manual export (manual-images.json, injected by build.mjs),
+    // and any other key is "not imported", so the missing state is shot too.
+    getManualImages: function (keys) {
+      var have = (typeof window !== 'undefined' && window.__MANUAL_IMAGES__) || {};
+      var res = { success: true, images: {}, missing: [], failed: [] };
+      (keys || []).forEach(function (k) { if (have[k]) res.images[k] = have[k]; else res.missing.push(k); });
+      return res;
+    },
     getManualMeta: function () {
       return { version: 'v3.0', built: '09/15/2026',
         router: [
@@ -1017,7 +1028,9 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     },
     kbImportManual: function (link, opts) {
       return { success: true, dryRun: !!(opts && opts.dryRun), total: 160, created: 2, updated: 3, unchanged: 153,
-        skipped: [{ id: 'man-5-9', title: '5.9 Pick-up procedures', reason: 'edited' }, { id: 'man-1-4', title: '1.4 Calls you cannot take', reason: 'deleted' }] };
+        skipped: [{ id: 'man-5-9', title: '5.9 Pick-up procedures', reason: 'edited' }, { id: 'man-1-4', title: '1.4 Calls you cannot take', reason: 'deleted' }],
+        images: (opts && opts.dryRun) ? { total: 160, unchanged: 0, toUpload: 160 }
+          : { total: 160, unchanged: 0, uploaded: 112, reused: 0, pending: 48, failed: [], error: '' } };
     },
     kbPublishManual: function (opts) {
       const dept = (opts && opts.department) || '';

@@ -82,6 +82,38 @@
   .kb-article .kb-diagram-pending { margin: 1em 0; padding: 18px 14px; border: 1px dashed var(--muted-3);
     border-radius: var(--radius-md); background: var(--paper-2); color: var(--muted-2); font-size: var(--text-sm); text-align: center; }
   .kb-article .kb-diagram-pending b { color: var(--ink); font-weight: 600; }
+  /* Batch M3 — the manual's diagrams (kb/script_manual_diagrams.html, generated
+     by manual/export_reference.py). Each diagram names its colours --dg-*; this
+     is the ONE place they meet the design tokens, so light, dark and the
+     palettes all follow. Text drawn on a --dg-navy box is --dg-bg, so the pair
+     must stay an ink/paper pair in every theme. */
+  .kb-article .kb-diagram { margin: 1.1em 0; padding: 0; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-card);
+    --dg-navy: var(--ink); --dg-ink: var(--ink); --dg-bg: var(--paper-card); --dg-panel: var(--paper-2);
+    --dg-accent: var(--info); --dg-tint: var(--info-soft); --dg-muted: var(--muted); --dg-rule: var(--line);
+    --dg-crit-bg: var(--danger-soft); --dg-crit-ink: var(--danger-deep); --dg-pol-bg: var(--info-soft); --dg-pol-ink: var(--info-deep);
+    --dg-watch-bg: var(--warn-soft); --dg-watch-ink: var(--warning-deep); --dg-scr-bg: var(--accent-soft); --dg-scr-ink: var(--success-deep);
+    --dg-p0: var(--ink); --dg-p1: var(--muted); --dg-p2: var(--good); --dg-p3: var(--danger); --dg-p4: var(--info); --dg-p5: var(--warn);
+    --dg-p6: var(--good); --dg-p7: var(--info-deep); --dg-p8: var(--intake-pap); --dg-p9: var(--intake-pmd); --dg-p10: var(--intake-pap); }
+  /* A wide flow chart scrolls inside itself rather than shrinking its text
+     past reading size (g71) — below ~600px of width it scrolls. */
+  .kb-article .kb-diagram-scroll { overflow-x: auto; padding: 10px; border-radius: var(--radius-md); }
+  .kb-article .kb-diagram-scroll:focus-visible { outline: 2px solid var(--ring-focus); outline-offset: 2px; }
+  .kb-article .kb-diagram svg.kbdg { display: block; width: 100%; min-width: 600px; height: auto; }
+  .kb-article .kb-diagram a.kb-xref { cursor: pointer; }
+  /* The button sits in its own bar ABOVE the drawing — an absolutely placed
+     one covered the diagram's own top-right content (measured on the shots). */
+  .kb-article .kb-diagram-bar { display: flex; justify-content: flex-end; padding: 6px 8px 0; }
+  .kb-article .kb-diagram-full { display: inline-flex; align-items: center; gap: 4px;
+    font: inherit; font-size: .72rem; padding: 3px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper-card); color: var(--muted); cursor: pointer; }
+  .kb-article .kb-diagram-full:hover { color: var(--ink); border-color: var(--border-strong); }
+  .kb-diagram-modal { width: min(1240px, 96vw); max-width: none; max-height: 92vh; display: flex; flex-direction: column; }
+  .kb-diagram-mhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+  .kb-diagram-mhead h3 { margin: 0; font-size: 1rem; }
+  .kb-article.kb-diagram-big { max-width: none; overflow: auto; min-height: 0; }
+  .kb-article.kb-diagram-big .kb-diagram { margin: 0; }
+  .kb-article.kb-diagram-big .kb-diagram svg.kbdg { width: 1160px; min-width: 1160px; }
+  .kb-article .kb-diagram a.kb-xref:hover text, .kb-article .kb-diagram a.kb-xref:focus text, .kb-article .kb-diagram a.kb-xref:hover { text-decoration: underline; }
+  .kb-article .kb-diagram a.kb-xref:focus-visible { outline: 2px solid var(--ring-focus); }
   /* Batch M2 — the Manual reader: a part is one continuous page of sections */
   .kb-tree-group { font-size: .64rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted-2); margin: 12px 6px 2px; padding-top: 8px; border-top: 1px solid var(--line); }
   .kb-tree-group:first-of-type { border-top: none; padding-top: 0; }
@@ -141,6 +173,16 @@
   .kb-article .kb-img-pending { display: inline-block; padding: 6px 10px; margin: 4px 0;
     border: 1px dashed var(--muted-3); border-radius: 6px; color: var(--muted-2);
     font-size: var(--text-sm); background: var(--paper-2); }
+  /* Batch M3 — a manual image while it loads, when it is not imported yet, and
+     once it arrives. Icons sit in table cells beside their name, so they are
+     inline and unframed; equipment photos are small and framed; figures are
+     the article's full width, like any article image. */
+  .kb-article .kb-manimg[data-mi="loading"] { opacity: .65; }
+  .kb-article .kb-manimg[data-mi="failed"] { border-color: var(--warn); }
+  .kb-article img.kb-manimg-img { margin: .6em 0; }
+  .kb-article img.kb-manimg-icon { display: inline-block; height: 22px; width: auto; margin: 0 6px 0 0; border: 0; border-radius: 0; box-shadow: none; vertical-align: middle; }
+  .kb-article img.kb-manimg-thumb { display: inline-block; max-height: 96px; width: auto; margin: 2px 0; vertical-align: middle; }
+  .kb-article img.kb-manimg-figure { max-width: min(100%, 720px); }
   /* §4 — collapsible department headers (chevron + count) */
   .kb-dept-toggle { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; font: inherit; background: none; border: none; cursor: pointer; padding: 8px 6px 4px; }
   .kb-dept-toggle:hover .kb-dept-name { color: var(--ink); }
@@ -2344,10 +2386,13 @@ function kbMd_(src) {
         return keep('<span class="kb-img-pending">' + (alt || 'Doc image') +
           ' \u2014 appears after Save (exports to Drive)</span>');
       }
-      // A manual image (Batch M1) is uploaded by the images import (Batch M3);
-      // until then its alt text shows as a chip, so the gap reads as pending.
+      // A manual image: its alt text as a chip, keyed so the hydrator
+      // (kbHydrateManualImages_, Batch M3) can swap in the image the import
+      // put on Drive. Only the key charset reaches the attribute; no URL is
+      // emitted here at all — the image arrives as a data URL, by property.
       if (/^manimg:/i.test(url)) {
-        return keep('<span class="kb-img-pending" title="Manual image \u2014 arrives with the images import">' +
+        var mk = url.match(/^manimg:((?:icon|thumb|fig)-[a-z0-9-]{1,80})$/);
+        return keep('<span class="kb-img-pending' + (mk ? ' kb-manimg" data-manimg="' + mk[1] : '') + '" title="Manual image">' +
           (alt || 'Manual image') + '</span>');
       }
       if (!/^https?:/i.test(url)) return alt;
@@ -2397,7 +2442,7 @@ function kbMd_(src) {
       if (blk && blk.glossary) { html += kbGlossaryHtml_(blk.body); i++; continue; }
       if (blk && blk.decision) { html += kbDecideHtml_(blk.body, []); i++; continue; }
       if (blk && blk.map) { html += kbMapHtml_(blk.body); i++; continue; }
-      if (blk && blk.diagram) { html += kbDiagramPendingHtml_(blk.name, blk.body); i++; continue; }
+      if (blk && blk.diagram) { html += kbDiagramHtml_(blk.name, blk.body); i++; continue; }
       if (blk && blk.snippet) { html += '<div class="kb-snippet"><div class="kb-snippet-head"><span class="kb-snippet-label">' + (blk.label || 'Snippet') + '</span><button type="button" class="kb-snippet-copy" onclick="kbCopySnippet_(this)">Copy</button></div><pre class="kb-snippet-body">' + blk.body + '</pre></div>'; } else { html += '<pre><code>' + (blk ? blk.body : '') + '</code></pre>'; } i++; continue; }
     if (/^\s*$/.test(ln)) { i++; continue; }
     var h = ln.match(/^(#{1,6})\s+(.*)$/);
@@ -2515,9 +2560,126 @@ function kbCalloutKind_(line) {
   return KB_CALLOUT_KINDS[word] || 'note';
 }
 
-// A ```diagram fence (the manual export, Batch M1) until the diagram partial
-// draws it (Batch M3): a quiet figure naming the diagram. `body` is the
-// diagram's accessible name, already escaped by kbMd_.
+// A ```diagram fence (the manual export). Batch M3: a name the generated
+// partial knows (KB_MANUAL_DIAGRAMS, kb/script_manual_diagrams.html) draws that
+// diagram. The partial is CODE — allowlisted and pinned at build time — so the
+// SVG is inserted as it is; the article body supplies only the NAME, which must
+// match the partial's own key charset and be one of its OWN keys (never a
+// prototype property). An unknown name — a diagram added to the manual but
+// not yet deployed — stays the quiet pending figure. `body` is the diagram's
+// accessible name, already escaped by kbMd_.
+function kbDiagramHtml_(name, body) {
+  var reg = (typeof KB_MANUAL_DIAGRAMS === 'object' && KB_MANUAL_DIAGRAMS) ? KB_MANUAL_DIAGRAMS : null;
+  var key = String(name || '');
+  if (!reg || !/^[a-z0-9-]{1,60}$/.test(key) || !Object.prototype.hasOwnProperty.call(reg, key) || typeof reg[key] !== 'string') {
+    return kbDiagramPendingHtml_(name, body);
+  }
+  var label = String(body || '').trim() || key;
+  return '<figure class="kb-diagram" data-kb-diagram="' + key + '">' +
+    '<div class="kb-diagram-bar"><button type="button" class="kb-diagram-full" onclick="kbDiagramOpen_(this)" title="Open the diagram at full size">' + icon('popOut', 12) + ' Full size</button></div>' +
+    '<div class="kb-diagram-scroll" tabindex="0" aria-label="' + label.replace(/"/g, '&quot;') + '">' + reg[key] + '</div></figure>';
+}
+/** The reading column is 760px, and a dense flow chart drawn into it puts its
+ *  smallest labels near 6px — so every diagram offers Full size: the same SVG
+ *  at its natural width in an overlay (ensureOverlay / closeOverlay, g100),
+ *  scrolling both ways. A cross-reference clicked there closes the overlay and
+ *  opens where the diagram LIVES (the tab or the drawer), not in a new place. */
+function kbDiagramOpen_(btn) {
+  var fig = btn && btn.closest ? btn.closest('figure.kb-diagram') : null;
+  var key = fig ? fig.getAttribute('data-kb-diagram') : '';
+  var reg = (typeof KB_MANUAL_DIAGRAMS === 'object' && KB_MANUAL_DIAGRAMS) ? KB_MANUAL_DIAGRAMS : null;
+  if (!reg || !/^[a-z0-9-]{1,60}$/.test(key) || !Object.prototype.hasOwnProperty.call(reg, key)) return;
+  var scroll = fig.querySelector('.kb-diagram-scroll');
+  var label = (scroll && scroll.getAttribute('aria-label')) || key;
+  var ov = ensureOverlay('kb-diagram-overlay', { label: 'Diagram — ' + label, extraClass: 'kb-diagram-ov',
+    onClose: function () { var o = document.getElementById('kb-diagram-overlay'); if (o) o.remove(); } });
+  ov.innerHTML = '<div class="modal kb-diagram-modal"><div class="kb-diagram-mhead"><h3>' + esc(label) + '</h3>' +
+    '<button type="button" class="kb-btn" onclick="closeOverlay(document.getElementById(\'kb-diagram-overlay\'))" aria-label="Close">' + icon('x', 15) + '</button></div>' +
+    '<div class="kb-article kb-diagram-big"><figure class="kb-diagram"><div class="kb-diagram-scroll" tabindex="0" aria-label="' + esc(label) + '">' + reg[key] + '</div></figure></div></div>';
+  ov._kbOrigin = fig;
+  ov.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a.kb-xref');
+    if (!a) return;
+    e.preventDefault(); e.stopPropagation();
+    var origin = ov._kbOrigin;
+    closeOverlay(ov);
+    kbXrefOpen_(a.getAttribute('data-kb-id'), a.getAttribute('data-kb-anchor') || '', origin);
+  });
+}
+// ── Batch M3 — the manual's images ──────────────────────────────────────────
+// kbMd_ leaves a keyed chip (`.kb-manimg[data-manimg]`) wherever a manual
+// section shows an image. One observer on the document notices chips as any
+// render adds them — the part page, the drawer, a preview card, a search chunk
+// — and asks getManualImages for all the missing ones in batches (a part page
+// is one or two calls, not one per image; the server reads only files its
+// ledger names). Only a SUCCESS is cached for the session: "not imported" can
+// change with the next import, and a failed call must not blank the images for
+// the rest of the session (g129). An image is set by PROPERTY from a data URL
+// the client re-checks as a PNG/JPEG one — never through markup.
+var KB_MANIMG = { cache: {}, inflight: {}, timer: null };
+var KB_MANIMG_BATCH = 40;   // = the server's KB_MANUAL_IMAGES_BATCH (pinned)
+function kbManimgKind_(key) { return /^icon-/.test(key) ? 'icon' : (/^thumb-/.test(key) ? 'thumb' : 'figure'); }
+function kbManimgApply_(key, state) {
+  var nodes = document.querySelectorAll('.kb-manimg[data-manimg="' + key + '"]');   // the key charset is [a-z0-9-]
+  for (var i = 0; i < nodes.length; i++) {
+    var n = nodes[i];
+    if (typeof state === 'string' && /^data:image\/(png|jpeg);base64,[A-Za-z0-9+\/=]+$/.test(state)) {
+      var img = document.createElement('img');
+      img.className = 'kb-manimg-img kb-manimg-' + kbManimgKind_(key);
+      img.alt = n.textContent;
+      img.src = state;
+      if (n.parentNode) n.parentNode.replaceChild(img, n);
+    } else {
+      n.setAttribute('data-mi', state === 'missing' ? 'missing' : 'failed');
+      n.title = state === 'missing' ? 'Manual image \u2014 not imported yet (Reference \u2192 Manual \u2192 Import)'
+        : 'Manual image \u2014 could not load it; reopen the section to try again';
+    }
+  }
+}
+function kbHydrateManualImages_() {
+  KB_MANIMG.timer = null;
+  var nodes = document.querySelectorAll('.kb-manimg[data-manimg]:not([data-mi])');
+  var want = [];
+  for (var i = 0; i < nodes.length; i++) {
+    var key = nodes[i].getAttribute('data-manimg');
+    if (KB_MANIMG.cache[key]) { kbManimgApply_(key, KB_MANIMG.cache[key]); continue; }
+    nodes[i].setAttribute('data-mi', 'loading');
+    if (!KB_MANIMG.inflight[key] && want.indexOf(key) < 0) want.push(key);
+  }
+  for (var b = 0; b < want.length; b += KB_MANIMG_BATCH) {
+    (function (keys) {
+      keys.forEach(function (k) { KB_MANIMG.inflight[k] = 1; });
+      var settle = function (res) {
+        keys.forEach(function (k) {
+          delete KB_MANIMG.inflight[k];
+          var url = res && res.images && res.images[k];
+          if (url) KB_MANIMG.cache[k] = url;
+          kbManimgApply_(k, url || (res && res.missing && res.missing.indexOf(k) >= 0 ? 'missing' : 'failed'));
+        });
+      };
+      try {
+        google.script.run
+          .withSuccessHandler(function (res) { settle(res && !res.error ? res : null); })
+          .withFailureHandler(function () { settle(null); })
+          .getManualImages(keys);
+      } catch (e) { settle(null); }
+    })(want.slice(b, b + KB_MANIMG_BATCH));
+  }
+}
+function kbManimgSchedule_() { if (!KB_MANIMG.timer) KB_MANIMG.timer = setTimeout(kbHydrateManualImages_, 30); }
+(function kbBindManualImages_() {
+  if (typeof MutationObserver !== 'function' || typeof document === 'undefined' || !document.body) return;
+  new MutationObserver(function (records) {
+    for (var i = 0; i < records.length; i++) {
+      var added = records[i].addedNodes;
+      for (var j = 0; j < added.length; j++) {
+        var n = added[j];
+        if (n.nodeType === 1 && ((n.classList && n.classList.contains('kb-manimg')) || (n.querySelector && n.querySelector('.kb-manimg')))) { kbManimgSchedule_(); return; }
+      }
+    }
+  }).observe(document.body, { childList: true, subtree: true });
+})();
+
 function kbDiagramPendingHtml_(name, body) {
   return '<figure class="kb-diagram-pending"><figcaption><b>Diagram</b> — ' +
     (String(body || '').trim() || name || 'untitled') + '</figcaption></figure>';
@@ -3136,7 +3298,7 @@ function kbManualDraftDepts_() {
     if (it.status !== 'draft' || !/^man-/.test(String(it.id || ''))) return;
     by[it.department] = (by[it.department] || 0) + 1;
   });
-  return Object.keys(by).sort(kbNaturalCompare_).map(function (d) { return { name: d, count: by[d] }; });
+  return Object.keys(by).sort(kbDeptCompare_).map(function (d) { return { name: d, count: by[d] }; });
 }
 /** Pure (Node-pinned) — the result block for a check or an import. */
 function kbManualResultHtml_(r, dryRun) {
@@ -3164,8 +3326,9 @@ function kbManualResultHtml_(r, dryRun) {
   var metaLine = r.hasMeta
     ? 'Version ' + (r.version || '—') + ' · call router and changelog ' + (r.metaUpdated ? (dryRun ? 'would be updated' : 'updated') : 'unchanged')
     : 'No call router or changelog in this file — rebuild with the current export to include them.';
-  return '<div class="kb-man-res' + (skipped.length || orphaned.length ? ' warn' : '') + '"><b>' + esc(head) + '</b><div>' + esc(line) + '</div>' +
-    '<div class="kb-man-meta">' + esc(metaLine) + '</div>' +
+  var im = kbManualImagesLine_(r.images, dryRun);
+  return '<div class="kb-man-res' + (skipped.length || orphaned.length || im.warn ? ' warn' : '') + '"><b>' + esc(head) + '</b><div>' + esc(line) + '</div>' +
+    '<div class="kb-man-meta">' + esc(metaLine) + '</div>' + im.html +
     (skipped.length
       ? '<div class="kb-man-skiph">These ' + verb + ' skipped:</div><ul>' + skipped.map(function (s) {
           return '<li>' + esc(s.title || s.id) + ' <span class="kb-man-why">— ' + esc(KB_MANUAL_SKIP_WHY[s.reason] || s.reason) + '</span></li>';
@@ -3178,6 +3341,33 @@ function kbManualResultHtml_(r, dryRun) {
           (dryRun ? '<label class="kb-man-chk"><input type="checkbox" id="kb-man-remove"> Remove ' + (orphaned.length === 1 ? 'it' : 'these ' + orphaned.length) + ' from Reference on Import</label>' : '')
         : '')) +
     '</div>';
+}
+/** Pure (Node-pinned) — Batch M3: the images half of a check or an import.
+ *  Anything not yet on Drive is said with what to do about it: images left by
+ *  the time budget need another Import; a named Drive failure is listed. */
+function kbManualImagesLine_(im, dryRun) {
+  if (!im) return { html: '<div class="kb-man-meta">No images in this file — rebuild with the current export to include them.</div>', warn: false };
+  var pl = function (n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); };
+  if (dryRun) {
+    return { html: '<div class="kb-man-meta">' + esc(pl(im.total || 0, 'image') + ' · ' + (im.toUpload || 0) + ' to upload to the KB Images folder · ' + (im.unchanged || 0) + ' unchanged') + '</div>', warn: false };
+  }
+  var failed = im.failed || [];
+  var html = '<div class="kb-man-meta">' + esc(pl(im.total || 0, 'image') + ' · ' + (im.uploaded || 0) + ' uploaded' + (im.reused ? ' · ' + im.reused + ' found on Drive from an earlier run' : '') + ' · ' + (im.unchanged || 0) + ' unchanged') + '</div>';
+  if (im.error) html += '<div class="kb-man-skiph">The KB Images folder could not be opened: ' + esc(im.error) + '</div>';
+  if (im.pending) html += '<div class="kb-man-skiph">' + esc(pl(im.pending, 'image') + ' still to upload — press Import again to finish (the sections are already in).') + '</div>';
+  if (im.trashed) html += '<div class="kb-man-meta">' + esc(pl(im.trashed, 'replaced image file') + ' moved to Drive\u2019s trash (recoverable for 30 days).') + '</div>';
+  var tf = im.trashFailed || [];
+  if (tf.length) {
+    html += '<div class="kb-man-skiph">These replaced image files were left in the KB Images folder:</div><ul>' + tf.map(function (f) {
+      return '<li>' + esc(f.key) + ' <span class="kb-man-why">— ' + esc(f.error) + '</span></li>';
+    }).join('') + '</ul>';
+  }
+  if (failed.length) {
+    html += '<div class="kb-man-skiph">These images could not be uploaded:</div><ul>' + failed.map(function (f) {
+      return '<li>' + esc(f.key) + ' <span class="kb-man-why">— ' + esc(f.error) + '</span></li>';
+    }).join('') + '</ul>';
+  }
+  return { html: html, warn: !!(im.error || im.pending || failed.length || tf.length) };
 }
 function kbManualRun_(dryRun) {
   var inp = document.getElementById('kb-man-link');
@@ -3240,6 +3430,19 @@ function kbNaturalCompare_(a, b) {
   return 0;
 }
 
+/** Pure — parts, then appendices, then everything else (operator 2026-09-29).
+ *  MIRRORS the server's kbDeptRank_ / kbDeptCompare_ (70_kb.js); the harness
+ *  drives both over one grid. */
+function kbDeptRank_(d) {
+  var s = String(d == null ? '' : d);
+  if (/^Part \d+ \u2014 /.test(s)) return 0;
+  if (/^Appendix [A-Z] \u2014 /.test(s)) return 1;
+  return 2;
+}
+function kbDeptCompare_(a, b) {
+  return (kbDeptRank_(a) - kbDeptRank_(b)) || kbNaturalCompare_(a, b);
+}
+
 function kbItemIcon_(it) {
   if (it.type === 'embed') return it.driveKind === 'sheet' ? 'grid' : (it.driveKind === 'file' ? 'paperclip' : 'list');
   return 'fileText';
@@ -3261,7 +3464,7 @@ function kbRenderTree_() {
   var el = document.getElementById('kb-tree'); if (!el) return;
   var byDept = {};
   (KB_STATE.tree || []).forEach(function (it) { (byDept[it.department] = byDept[it.department] || []).push(it); });
-  var depts = Object.keys(byDept).sort(kbNaturalCompare_);   // Batch M1 — "Part 2" before "Part 10"
+  var depts = Object.keys(byDept).sort(kbDeptCompare_);   // Batch M1 — "Part 2" before "Part 10"; M3 — appendices after Part 10
   var html = kbAddBtnHtml_();
   if (!depts.length) { html += '<div class="kb-empty">No reference items yet' + (KB_STATE.isAdmin ? ' — add one.' : '.') + '</div>'; el.innerHTML = html; return; }
   var prefs = kbPanelPrefs_();

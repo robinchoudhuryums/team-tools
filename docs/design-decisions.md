@@ -4754,3 +4754,70 @@ pick them up without re-deriving the context.
   written through `propSetBounded_`. Rejected: server-stored personal layouts (a
   property per rep would not fit the store) and drag-to-reorder (up/down buttons
   are keyboard-complete).
+- <a id="the-procedures-manual-is-imported-not-authored-in-the-app"></a>**The procedures manual is imported, not authored in the app — drafts by stable id, a two-hash ledger, and skip-and-report (22post M1, operator 2026-09-28).** The CSR Procedures Manual is the team's most important reference, and it
+  already had a source (`manual/`: markdown, data files, diagrams and a build
+  that prints the HTML manual and the Word packets). Retyping it into the
+  editor would give it two sources. So the build exports its sections
+  (`manual/export_reference.py`) and an admin imports the file. Each section is
+  keyed by a stable `man-…` id derived from its number, so a re-import updates
+  the same row. New sections arrive as DRAFTS, so an admin vets before reps see
+  anything; an update keeps the row's status and snapshots a `manual-import`
+  revision. The `ManualImport` ledger records per id the export's SourceHash and
+  a hash of what the import WROTE (BodyHash): an unchanged source is not written,
+  and a row that no longer hashes to its BodyHash was changed in the app, so it
+  is skipped and REPORTED, never overwritten (a hand-made `man-` row and a
+  deleted one likewise). A file with any invalid article writes nothing. Publish
+  touches only the import's drafts and staggers ReviewedAt across the review
+  window, since sections published on one day would all come due on one day. Callouts are a rendering of the escaped markdown (a bold label
+  inside a quote), never HTML carried in the file. Rejected: converting the
+  Word/HTML output with the Doc converter (lossy, and one-way) and a sync
+  that overwrites (it would silently discard an admin's fix).
+- <a id="the-procedures-manual-is-its-own-surface-and-the-repo-is-its-one-source"></a>**The procedures manual is its own surface, and the repo is its one source (22post M2, operator 2026-09-28).** The operator asked whether a different shape would make a better manual than
+  the per-department guides Reference started with, and confirmed they alone
+  maintain it. So the app is READ-ONLY for manual sections: `kbSaveItem`,
+  `kbDeleteItem` and `kbRevertItem` refuse a `man-` id, and an agent's correction
+  goes through "Suggest an edit" (the review-queue flag with a note) to the
+  source. The storage stays KB rows — search, the drawer, view counts, comments
+  and feedback work on it unchanged — but the reading is the manual's: one
+  upload (`manual.json`, format `ums-manual/1`) carries the sections, the
+  version, the call router and the changelog (the last three in the `ManualMeta`
+  tab, validated so every target is a section in the same file); a section
+  opens as its whole PART, because the manual is written to be read in
+  sequence and its cross-references are local; the call router lives in the
+  drawer, where an agent is mid-call; Updated badges come from the changelog, not
+  from row edit dates. Rejected: a separate manual store (it would duplicate
+  search and the drawer) and in-app editing with export back to the repo (two
+  writers for one document).
+- <a id="the-manual-s-diagrams-are-code"></a>**The manual's diagrams are CODE — a build-generated, allowlisted partial — not data carried by the import (22post M3, 2026-09-29).** A diagram is markup the browser draws, and an SVG can carry script, event
+  handlers, external fetches and page-wide styles. Sending it through the
+  import would put markup from an admin-writable sheet into the page and need a
+  server-side SVG sanitizer. Instead the manual build writes
+  `web-app/kb/script_manual_diagrams.html`: every element and attribute from a
+  fixed list, `href` only `#`, each `<style>` scoped to its own diagram, colours
+  renamed `--dg-*` (one CSS block maps them onto the design tokens, so light,
+  dark and the palettes follow), fonts the app's, section links turned into the
+  same inert cross-reference shape `kbMd_` emits. The renderer draws a diagram
+  only when the fence names one of the partial's own keys. A harness pin re-checks
+  the committed file against an allowlist of its own and a hash of the source
+  SVGs, so an edited diagram with a stale partial fails CI. Cost accepted: a
+  diagram change is commit + deploy, not an import; and ~139 KB rides every page
+  load, chosen over an on-demand fetch so diagrams draw synchronously with no
+  server read. Full size exists because the reading column is 760px and the
+  densest diagram's labels shrink to ~6px there.
+- <a id="the-manual-s-images-ride-the-upload-into-drive"></a>**The manual's images ride the one upload into Drive, and are served by key, ledger-scoped (22post M3, 2026-09-29).** `manual.json` carries every image a section cites, so one upload still
+  carries everything. The import checks each (PNG or JPEG, its kind matching its
+  key, and every cited key present — any bad one refuses the file), then
+  uploads the new or changed ones OUTSIDE the lock, named
+  `manimg-<key>-<hash>`, so an interrupted run reuses what reached Drive and a
+  changed image gets a new file rather than overwriting the old; a four-minute
+  budget leaves the rest pending for the next Import. The `ManualImages` ledger
+  maps key → file under the lock; only after it names the new file is the old
+  one moved to Drive's trash (operator 2026-09-29), and only if it is a
+  `manimg-` file of that key inside the KB Images folder. Readers ask
+  `getManualImages` for a page's keys in batches: it reads only the files the
+  ledger names (so no caller can reach another Drive file by id), answers "not
+  imported" apart from "could not read", and caches data URLs by content hash.
+  Rejected: rewriting article bodies to Drive URLs at import (an image change
+  would not change a section's source hash, so the ledger would call it
+  unchanged and keep the stale link) and Drive thumbnail URLs (blocked on this
+  domain — every image would have gone through the per-image fallback).

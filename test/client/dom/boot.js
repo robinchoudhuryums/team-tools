@@ -43,6 +43,7 @@ const PARTIALS = [
   'metrics/script_metrics.html',
   'metrics/script_deptrequests.html',   // cycle-9 M-10 — was outside every harness net
   'intake/script_intake.html',
+  'kb/script_manual_diagrams.html',   // Batch M3 — generated; kbMd_ draws a ```diagram from it
   'kb/script_kb.html',
   'train/script_training.html',
   'train/script_empdocs.html',

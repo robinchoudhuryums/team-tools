@@ -296,6 +296,22 @@ const SCENARIOS = [
     "kbOpenItem_('man-0-11'); setTimeout(function(){ var a=document.querySelector('#kb-man-sec-man-0-11 a.kb-xref[data-kb-id=\"man-0-10\"]'); if(a) kbXrefShow_(a); }, 400)"],
   ['reference-manual-dark-wide',  { tool: 'reference', tab: null }, WIDE, 'dark',  '',
     "kbOpenItem_('man-0-10'); setTimeout(function(){ var h=document.getElementById('kb-h-0-10-2-before-you-transfer'); if(h) h.scrollIntoView(); }, 300)"],   // the lower half: nested list, Critical, Policy, snippet
+  // Batch M3 — the manual's diagrams (the generated partial, themed through
+  // the --dg-* token map) in both themes and at phone width (it must scroll
+  // inside itself), and its images (a figure, an equipment photo, the icons,
+  // and one key the import has not carried: the "not imported" chip).
+  ['reference-manual-diagram-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
+    "kbOpenItem_('man-0-10'); setTimeout(function(){ var f=document.querySelector('figure.kb-diagram'); if(f) f.scrollIntoView(); }, 300)"],
+  ['reference-manual-diagram-dark-wide', { tool: 'reference', tab: null }, WIDE, 'dark', '',
+    "kbOpenItem_('man-0-10'); setTimeout(function(){ var f=document.querySelector('figure.kb-diagram'); if(f) f.scrollIntoView(); }, 300)"],
+  ['reference-manual-diagram-light-mobile', { tool: 'reference', tab: null }, MOBILE, 'light', '',
+    "kbOpenItem_('man-0-10'); setTimeout(function(){ var f=document.querySelector('figure.kb-diagram'); if(f) f.scrollIntoView(); }, 300)"],
+  ['reference-manual-diagram-full-dark-wide', { tool: 'reference', tab: null }, WIDE, 'dark', '',
+    "kbOpenItem_('man-0-10'); setTimeout(function(){ var b=document.querySelector('figure.kb-diagram .kb-diagram-full'); if(b) kbDiagramOpen_(b); }, 400)"],
+  ['reference-manual-images-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
+    "kbOpenItem_('man-0-11'); setTimeout(function(){ var h=document.getElementById('kb-h-0-11-2-what-the-equipment-looks-like'); if(h) h.scrollIntoView(); }, 600)"],
+  ['reference-manual-images-dark-wide', { tool: 'reference', tab: null }, WIDE, 'dark', '',
+    "kbOpenItem_('man-0-10'); setTimeout(function(){ var h=document.getElementById('kb-h-0-10-1-trx-type'); if(h) h.scrollIntoView(); }, 600)"],
   ['reference-manual-import-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
     "kbOpenManualImport_(); document.getElementById('kb-man-link').value = 'https://drive.google.com/file/d/abc123/view'; kbManualRun_(true)"],
   // Cycle 21 (operator report, 2026-09-21) — the KB DRAWER had never been shot,

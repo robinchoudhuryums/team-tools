@@ -1569,6 +1569,62 @@
     "kbImportManual"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-29",
+   "why": "Batch M3: kbDeptRank_/kbDeptCompare_ (appendices after Part 10)",
+   "added": [
+    "kbDeptCompare_",
+    "kbDeptRank_"
+   ],
+   "removed": [],
+   "changed": [
+    "getReferenceTree",
+    "kbPublishManual"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-29",
+   "why": "Batch M3: the manual's images (validate, plan, upload, ledger, getManualImages)",
+   "added": [
+    "KBMG",
+    "KB_MANUAL_IMAGES_BATCH",
+    "KB_MANUAL_IMAGES_HEADERS",
+    "KB_MANUAL_IMAGES_MAX",
+    "KB_MANUAL_IMAGES_TAB",
+    "KB_MANUAL_IMAGE_BUDGET_MS",
+    "KB_MANUAL_IMAGE_CACHE_PREFIX",
+    "KB_MANUAL_IMAGE_KEY_RE",
+    "KB_MANUAL_IMAGE_MAX_BYTES",
+    "KB_MANUAL_IMAGE_TYPES",
+    "getManualImages",
+    "getOrCreateManualImagesSheet_",
+    "kbManualImageName_",
+    "kbManualImagesLedger_",
+    "kbManualImagesPlan_",
+    "kbManualImagesValidate_",
+    "kbManualUploadImages_"
+   ],
+   "removed": [],
+   "changed": [
+    "KB_MANUAL_FILE_MAX",
+    "kbImportManual",
+    "kbManualBundle_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-29",
+   "why": "Batch M3 follow-up: kbManualTrashReplaced_ (a replaced manual image's old file goes to Drive's trash)",
+   "added": [
+    "kbManualTrashReplaced_"
+   ],
+   "removed": [],
+   "changed": [
+    "kbImportManual"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2428,6 +2484,11 @@
    "kind": "const",
    "sha": "a522c639706a62db"
   },
+  "KBMG": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9f27f8a1245e0e10"
+  },
   "KBMI": {
    "file": "00_config.js",
    "kind": "const",
@@ -2651,7 +2712,7 @@
   "KB_MANUAL_FILE_MAX": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "ad5637faa2c9db38"
+   "sha": "9651d7d24ac28e05"
   },
   "KB_MANUAL_FORMAT": {
    "file": "00_config.js",
@@ -2662,6 +2723,51 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "bf1eb8ef36b22fd4"
+  },
+  "KB_MANUAL_IMAGES_BATCH": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "250b84c539cb52d3"
+  },
+  "KB_MANUAL_IMAGES_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "c47634d77e5ea8e0"
+  },
+  "KB_MANUAL_IMAGES_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ce2c000396beeab6"
+  },
+  "KB_MANUAL_IMAGES_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "d699fec8c58067b2"
+  },
+  "KB_MANUAL_IMAGE_BUDGET_MS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7b329df848757407"
+  },
+  "KB_MANUAL_IMAGE_CACHE_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "29a25bd28a476824"
+  },
+  "KB_MANUAL_IMAGE_KEY_RE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1becbef47a1e94ae"
+  },
+  "KB_MANUAL_IMAGE_MAX_BYTES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6278f797c6a20201"
+  },
+  "KB_MANUAL_IMAGE_TYPES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "67efaa249968ae4c"
   },
   "KB_MANUAL_IMPORT_HEADERS": {
    "file": "00_config.js",
@@ -5638,6 +5744,11 @@
    "kind": "function",
    "sha": "73ad029c0233380a"
   },
+  "getManualImages": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "aab5dae057f3e950"
+  },
   "getManualMeta": {
    "file": "70_kb.js",
    "kind": "function",
@@ -5848,6 +5959,11 @@
    "kind": "function",
    "sha": "2a9adab3feee0be0"
   },
+  "getOrCreateManualImagesSheet_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "83f56179e50a4690"
+  },
   "getOrCreateManualImportSheet_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -5996,7 +6112,7 @@
   "getReferenceTree": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "ec93f8b6285f38a6"
+   "sha": "65edcaef8cdfe16f"
   },
   "getRetentionConfig": {
    "file": "10_core.js",
@@ -6588,6 +6704,16 @@
    "kind": "function",
    "sha": "ffe64630e1fc4fd4"
   },
+  "kbDeptCompare_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "09ed310e6a32a8de"
+  },
+  "kbDeptRank_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "a7e1bec76885fc79"
+  },
   "kbDocBodyToMarkdown_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -6706,7 +6832,7 @@
   "kbImportManual": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "af057700f77a66e2"
+   "sha": "b44b64b473803b84"
   },
   "kbIngestFile": {
    "file": "70_kb.js",
@@ -6721,7 +6847,7 @@
   "kbManualBundle_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "8f1d7cc62fcfda25"
+   "sha": "2085220928ec82e0"
   },
   "kbManualFileId_": {
    "file": "70_kb.js",
@@ -6732,6 +6858,26 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "abc4b5438c85f5dc"
+  },
+  "kbManualImageName_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "aa6f7a3ec58ac142"
+  },
+  "kbManualImagesLedger_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "a68b45545bc8e2bf"
+  },
+  "kbManualImagesPlan_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "0704351b2a2726de"
+  },
+  "kbManualImagesValidate_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "e99ddfb2cb6586d2"
   },
   "kbManualLedger_": {
    "file": "70_kb.js",
@@ -6757,6 +6903,16 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "64bce6a237514118"
+  },
+  "kbManualTrashReplaced_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "65dfccbbcf263a95"
+  },
+  "kbManualUploadImages_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "ed594f92e6c79fe4"
   },
   "kbManualValidate_": {
    "file": "70_kb.js",
@@ -6811,7 +6967,7 @@
   "kbPublishManual": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "8992c53833552b87"
+   "sha": "e2189b65d249282a"
   },
   "kbRecordView": {
    "file": "70_kb.js",

@@ -4855,13 +4855,14 @@ test('M1 DOM: the Manual dialog — Check shows the plan and every skipped artic
     { id: 'man-10-1', department: 'Part 10 — Billing & Insurance', title: '10.1 How billing works', type: 'article', status: 'draft', sortOrder: 1 },
     { id: 'man-2-1', department: 'Part 2 — Manual Mobility', title: '2.1 Intake', type: 'article', status: 'draft', sortOrder: 1 },
     { id: 'man-2-2', department: 'Part 2 — Manual Mobility', title: '2.2 Delivery', type: 'article', status: 'published', sortOrder: 2 },
+    { id: 'man-c-5', department: 'Appendix C — Quick Reference Cards', title: 'Card 5', type: 'article', status: 'draft', sortOrder: 5 },
     { id: 'kb-1', department: 'Billing', title: 'Hand-written', type: 'article', status: 'draft', sortOrder: 1 }] };
   let treeReads = 0;
   h.run.respond('getReferenceTree', () => { treeReads++; return tree; });
   w.enterTool('reference', 'reference');
   h.flushTimers();
   // Batch M2: the manual's parts lead the tree under their own heading.
-  assert.deepStrictEqual(h.$$('#kb-tree .kb-dept-name').map((x) => x.textContent), ['Part 2 — Manual Mobility', 'Part 10 — Billing & Insurance', 'Billing'], 'Part 2 before Part 10, the manual first');
+  assert.deepStrictEqual(h.$$('#kb-tree .kb-dept-name').map((x) => x.textContent), ['Part 2 — Manual Mobility', 'Part 10 — Billing & Insurance', 'Appendix C — Quick Reference Cards', 'Billing'], 'Part 2 before Part 10, the appendices after Part 10 (M3), the manual first');
   assert.deepStrictEqual(h.$$('#kb-tree .kb-tree-group').map((x) => x.textContent), ['Procedures manual', 'Other reference']);
   const btn = h.$$('#kb-tree .kb-add').filter((b) => /Manual/.test(b.textContent))[0];
   assert.ok(btn && btn.getAttribute('onclick') === 'kbOpenManualImport_()', 'an admin sees the Manual button, wired to the dialog');
@@ -4872,7 +4873,7 @@ test('M1 DOM: the Manual dialog — Check shows the plan and every skipped artic
   assert.strictEqual(doc.getElementById('kb-man-import').getAttribute('onclick'), 'kbManualRun_(false)');
   const run = h.read('kbManualRun_');
   const opts = [...ov.querySelectorAll('#kb-man-dept option')].map((o) => o.textContent);
-  assert.deepStrictEqual(opts, ['Every part (2 drafts)', 'Part 2 — Manual Mobility (1)', 'Part 10 — Billing & Insurance (1)'], 'only the manual’s DRAFTS, by part, in order — never the hand-written draft');
+  assert.deepStrictEqual(opts, ['Every part (3 drafts)', 'Part 2 — Manual Mobility (1)', 'Part 10 — Billing & Insurance (1)', 'Appendix C — Quick Reference Cards (1)'], 'only the manual’s DRAFTS, by part, in order — never the hand-written draft');
   const imp = doc.getElementById('kb-man-import');
   assert.strictEqual(imp.disabled, true, 'Import starts locked');
   // Check with no link: said, and no RPC.
@@ -5007,6 +5008,95 @@ test('M2 DOM: a manual section opens its WHOLE PART — one fetch per part, a cl
   h.dispatchKey('Enter', { target: input });
   await tick();
   assert.deepStrictEqual(h.run.pending('kbFlagItem').map((c) => c.args), [['man-0-11', 'stale', 'The fee is now $85']]);
+});
+
+test('M3 DOM: a manual diagram draws inside its section as real SVG — scoped, themed, with its section numbers as cross-references that open like any other', async () => {
+  const h = boot();
+  const w = h.window, doc = w.document;
+  w.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  const tree = JSON.parse(JSON.stringify(M2_TREE));
+  tree.items.push({ id: 'man-0-8', department: 'Part 00 — CSR Core', title: '0.8 Order lifecycle', type: 'article', status: 'published', sortOrder: 8 });
+  h.run.respond('getReferenceTree', () => tree);
+  w.enterTool('reference', 'reference');
+  h.flushTimers();
+  const part = JSON.parse(JSON.stringify(M2_PART0));
+  part.sections.unshift({ id: 'man-0-8', title: '0.8 Order lifecycle', status: 'published', sortOrder: 8, bodyMd: 'Stages.\n' });
+  part.sections[1].bodyMd += '\n```diagram lifecycle\nOrder lifecycle\n```\n\n```diagram not-deployed-yet\nA new one\n```\n';
+  h.read('kbOpenItem_')('man-0-10');
+  h.run.flushSuccess(part, 'getManualPart');
+  const fig = h.$('#kb-man-sec-man-0-10 figure.kb-diagram[data-kb-diagram="lifecycle"]');
+  assert.ok(fig, 'the diagram draws in its section');
+  const svg = fig.querySelector('svg.kbdg');
+  assert.ok(svg && svg.namespaceURI === 'http://www.w3.org/2000/svg', 'as real SVG, not text');
+  assert.ok(svg.classList.contains('kbdg-lifecycle') && fig.querySelector('style').textContent.indexOf('.kbdg-lifecycle .dg-box') >= 0, 'its styles scoped to it');
+  assert.ok(!/IBM Plex/.test(fig.innerHTML) && /var\(--dg-navy\)/.test(fig.innerHTML), 'the app’s fonts and the --dg-* colours');
+  assert.ok(h.$('#kb-man-sec-man-0-10 figure.kb-diagram-pending') && /A new one/.test(h.$('#kb-man-sec-man-0-10 figure.kb-diagram-pending').textContent), 'a name the partial does not know stays the quiet pending figure');
+  const links = [...fig.querySelectorAll('a.kb-xref')];
+  assert.ok(links.length >= 3, 'the section numbers are links');
+  const to08 = links.filter((a) => a.getAttribute('data-kb-id') === 'man-0-8')[0];
+  assert.ok(to08 && to08.getAttribute('href') === '#' && to08.getAttribute('data-kb-anchor') === '', 'a whole-section link: the id, no anchor');
+  const fetches = h.run.calls.filter((c) => c.method === 'getManualPart').length;
+  h.click(to08);
+  assert.strictEqual(h.read('KB_STATE').currentId, 'man-0-8', 'the click opens the section, through the same delegated handler as a text link');
+  assert.strictEqual(h.run.calls.filter((c) => c.method === 'getManualPart').length, fetches, 'in the loaded part: a scroll, no fetch');
+  // Full size: the same diagram at its natural width, in an overlay; a link there opens where the diagram lives.
+  const fig2 = h.$('#kb-man-sec-man-0-10 figure.kb-diagram[data-kb-diagram="lifecycle"]');
+  const full = fig2.querySelector('button.kb-diagram-full');
+  assert.ok(full && full.getAttribute('onclick') === 'kbDiagramOpen_(this)');
+  h.read('kbDiagramOpen_')(full);
+  const ov = doc.getElementById('kb-diagram-overlay');
+  assert.ok(ov && ov.classList.contains('open') && ov.getAttribute('role') === 'dialog' && /Order lifecycle/.test(ov.getAttribute('aria-label')), 'a named dialog through ensureOverlay');
+  assert.ok(ov.querySelector('.kb-diagram-big svg.kbdg.kbdg-lifecycle'), 'the same diagram, big');
+  h.read('KB_STATE').currentId = 'man-0-10';
+  h.click(ov.querySelector('a.kb-xref[data-kb-id="man-0-8"]'));
+  assert.ok(!doc.getElementById('kb-diagram-overlay'), 'the overlay closes (its hook removes it)');
+  assert.strictEqual(h.read('KB_STATE').currentId, 'man-0-8', 'and the section opens in the tab, where the diagram lives');
+  assert.ok(!(doc.getElementById('kb-drawer') && doc.getElementById('kb-drawer').classList.contains('open')), 'not in the drawer');
+});
+
+test('M3 DOM: manual images arrive in ONE batched call per page and are set by property; a key not imported says so; a failed call is not cached, so the next render asks again', async () => {
+  const h = boot();
+  const w = h.window, doc = w.document;
+  w.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  h.run.respond('getReferenceTree', () => M2_TREE);
+  w.enterTool('reference', 'reference');
+  h.flushTimers();
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const part = JSON.parse(JSON.stringify(M2_PART0));
+  part.sections[0].bodyMd += '\n| Icon | Name |\n|---|---|\n| ![New Order icon](manimg:icon-a) | New Order |\n| ![Gone icon](manimg:icon-gone) | Gone |\n\n![Regulator](manimg:fig-b)\n';
+  part.sections[1].bodyMd += '\n![New Order icon](manimg:icon-a)\n';
+  h.read('kbOpenItem_')('man-0-10');
+  h.run.flushSuccess(part, 'getManualPart');
+  await tick(); h.flushTimers(); await tick();
+  const calls = h.run.pending('getManualImages');
+  assert.strictEqual(calls.length, 1, 'one call for the whole part');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(calls[0].args[0])).sort(), ['fig-b', 'icon-a', 'icon-gone'], 'each key once, however often it appears');
+  assert.ok(h.$$('.kb-manimg[data-mi="loading"]').length === 4, 'the chips say they are loading meanwhile');
+  h.run.flushSuccess({ success: true, images: { 'icon-a': PNG, 'fig-b': PNG.replace('png', 'jpeg') }, missing: ['icon-gone'], failed: [] }, 'getManualImages');
+  const icons = h.$$('#kb-main img.kb-manimg-icon');
+  assert.strictEqual(icons.length, 2, 'both mentions of the icon become images');
+  assert.ok(icons.every((im) => im.getAttribute('src') === PNG && im.alt === 'New Order icon'), 'the data URL by property, the alt from the chip');
+  const fig = h.$('#kb-main img.kb-manimg-figure');
+  assert.ok(fig && fig.alt === 'Regulator', 'a figure is a figure');
+  const gone = h.$('.kb-manimg[data-manimg="icon-gone"]');
+  assert.ok(gone && gone.getAttribute('data-mi') === 'missing' && /not imported yet/.test(gone.title), '"not imported" is said, on the chip');
+  // A failed call: marked, and NOT cached — the next render asks again, while the successes are remembered.
+  h.read('kbOpenItem_')('man-10-1');
+  h.run.flushSuccess({ department: 'Part 10 — Billing & Insurance', sections: [{ id: 'man-10-1', title: '10.1 How billing works', status: 'published', bodyMd: '![Other](manimg:thumb-z) ![New Order icon](manimg:icon-a)' }] }, 'getManualPart');
+  await tick(); h.flushTimers(); await tick();
+  const c2 = h.run.pending('getManualImages');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c2[c2.length - 1].args[0])), ['thumb-z'], 'a cached image is not asked for again');
+  assert.ok(h.$('#kb-main img.kb-manimg-icon'), 'and draws at once from the cache');
+  h.run.flushFailure(new Error('network'), 'getManualImages');
+  const z = h.$('.kb-manimg[data-manimg="thumb-z"]');
+  assert.ok(z && z.getAttribute('data-mi') === 'failed' && /could not load/.test(z.title), 'a failed call is said as a failure, not as "not imported"');
+  const before = h.run.pending('getManualImages').length;
+  doc.getElementById('kb-main').insertAdjacentHTML('beforeend', '<div class="kb-article">' + h.read('kbMd_')('![Other](manimg:thumb-z)') + '</div>');
+  await tick(); h.flushTimers(); await tick();
+  const c3 = h.run.pending('getManualImages').slice(before);
+  assert.ok(c3.some((c) => JSON.stringify(c.args[0]) === '["thumb-z"]'), 'the next render asks for it again (a failure is never cached)');
 });
 
 test('M2 DOM: the drawer — a typed section number jumps (Enter opens it), the call router filters without losing the filter box, and "Read in context" carries the section to its part in the tab', async () => {

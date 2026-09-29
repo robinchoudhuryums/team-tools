@@ -1808,7 +1808,7 @@ const KB_MANUAL_IMPORT_TAB = 'ManualImport';
 const KB_MANUAL_IMPORT_HEADERS = ['Id', 'SourceHash', 'BodyHash', 'ImportedAt', 'ImportedBy'];
 const KBMI = { ID: 0, SOURCE_HASH: 1, BODY_HASH: 2, IMPORTED_AT: 3, IMPORTED_BY: 4 };
 const KB_MANUAL_MAX_ARTICLES = 400;   // the manual is ~160; a file far past this is not the manual
-const KB_MANUAL_FILE_MAX = 5000000;   // bytes — manual.json is ~370 KB
+const KB_MANUAL_FILE_MAX = 5000000;   // bytes — manual.json is ~1.6 MB with its images (M3)
 // Batch M2 — the export is ONE file, manual.json: {format, version, built,
 // router, changelog, articles}. The meta (everything but the articles) lives in
 // the ManualMeta tab — A2 holds its JSON — and drives the Manual reader: the
@@ -1818,6 +1818,22 @@ const KB_MANUAL_META_TAB = 'ManualMeta';
 const KB_MANUAL_META_CACHE_KEY = 'kb_manual_meta_v1';
 const KB_MANUAL_META_MAX = 45000;    // chars — one cell, under the 50k Sheets limit
 const KB_MANUAL_READONLY_MSG = 'This section comes from the procedures manual. Change it in the manual source and re-import — edits made here would be overwritten or lost.';
+// Batch M3 — the manual's images. manual.json carries them ({key: {alt, kind,
+// dataUri}}); the import unpacks each new or changed one into the KB Images
+// folder (named by key + content hash, so an unchanged image is never written
+// twice) OUTSIDE the lock, and records key → file in the ManualImages ledger.
+// Readers ask getManualImages for a page's images in one call; ONLY a file the
+// ledger names is ever read, so it cannot reach any other Drive file.
+const KB_MANUAL_IMAGES_TAB = 'ManualImages';
+const KB_MANUAL_IMAGES_HEADERS = ['Key', 'Sha', 'FileId', 'Kind', 'ImportedAt'];
+const KBMG = { KEY: 0, SHA: 1, FILE_ID: 2, KIND: 3, IMPORTED_AT: 4 };
+const KB_MANUAL_IMAGE_KEY_RE = /^(icon|thumb|fig)-[a-z0-9-]{1,80}$/;
+const KB_MANUAL_IMAGE_TYPES = ['image/png', 'image/jpeg'];
+const KB_MANUAL_IMAGES_MAX = 400;              // the manual cites ~160
+const KB_MANUAL_IMAGE_MAX_BYTES = 1024 * 1024; // one image; the largest figure is ~85 KB
+const KB_MANUAL_IMAGE_BUDGET_MS = 240000;      // Drive uploads per import run — the rest wait for the next Import
+const KB_MANUAL_IMAGES_BATCH = 40;             // keys per getManualImages call
+const KB_MANUAL_IMAGE_CACHE_PREFIX = 'kbmimg_'; // + content hash: names the bytes, not the code, so deployments may share it (g157)
 // ── Insurance payor lookup (operator 2026-08-25 — batch 3) ──────────────────
 // A ~1,000-row payor/HCPCS acceptance sheet lives with another dept and was
 // too slow to reference mid-call. The operator's cleaned CSV imports into an
