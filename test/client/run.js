@@ -30402,7 +30402,7 @@ test('PAYSTMT-1: a manager opening a biweekly rep\'s Pay Statement gets the rep\
   const row = (email, id, name, cycle, anchor, mgr, tz) => { const r = new Array(18).fill(''); r[0] = email; r[1] = id; r[2] = name; r[4] = cycle; r[5] = anchor; r[6] = mgr; r[7] = tz; return r; };
   const roster = [new Array(18).fill('h'),
     row('boss@ums.com', 'E-1', 'Boss', 'Monthly', '', 'TRUE', 'America/Chicago'),
-    row('ph@ums.com', 'PH-7', 'Ana', 'biweekly ', '2026-09-07', '', 'Asia/Manila'),
+    row('ph@ums.com', 'PH-7', 'Ana', 'Biweekly ', '2026-09-07', '', 'Asia/Manila'),
     row('in@ums.com', 'IN-3', 'Ravi', 'Monthly', '', '', 'Asia/Kolkata')];
   let me = 'boss@ums.com';
   const ctx = vm.createContext({ String, Number, Object, Array, JSON, Math, Date, parseInt, parseFloat, isNaN, isFinite,
