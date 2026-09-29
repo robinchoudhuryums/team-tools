@@ -1613,6 +1613,18 @@
     "kbManualBundle_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-29",
+   "why": "Batch M3 follow-up: kbManualTrashReplaced_ (a replaced manual image's old file goes to Drive's trash)",
+   "added": [
+    "kbManualTrashReplaced_"
+   ],
+   "removed": [],
+   "changed": [
+    "kbImportManual"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -6820,7 +6832,7 @@
   "kbImportManual": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "8ccb9e4ae5082d3e"
+   "sha": "b44b64b473803b84"
   },
   "kbIngestFile": {
    "file": "70_kb.js",
@@ -6891,6 +6903,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "64bce6a237514118"
+  },
+  "kbManualTrashReplaced_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "65dfccbbcf263a95"
   },
   "kbManualUploadImages_": {
    "file": "70_kb.js",

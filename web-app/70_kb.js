@@ -3633,6 +3633,8 @@ function kbImportManual(fileRef, opts) {
 
     const lock = LockService.getScriptLock();
     lock.waitLock(30000);
+    const replaced = [];   // {key, fileId} — old image files the new ledger rows no longer name
+    let result;
     try {
       const sheet = getOrCreateKbSheet_();
       const ledSheet = getOrCreateManualImportSheet_();
@@ -3718,8 +3720,13 @@ function kbImportManual(fileRef, opts) {
         const imAppend = [];
         uploaded.done.forEach(function (d) {
           const row = [d.key, d.sha, d.fileId, d.kind, now];
-          if (imLed[d.key]) imSheet.getRange(imLed[d.key].row, 1, 1, row.length).setValues(sheetSafeRows_([row]));
-          else imAppend.push(row);
+          const prev = imLed[d.key];
+          if (prev) {
+            imSheet.getRange(prev.row, 1, 1, row.length).setValues(sheetSafeRows_([row]));
+            // The ledger now names the new file, so nothing refers to the old
+            // one any more — it is trashed once the lock is released (below).
+            if (prev.fileId && prev.fileId !== d.fileId) replaced.push({ key: d.key, fileId: prev.fileId });
+          } else imAppend.push(row);
         });
         if (imAppend.length) appendRowsSafe_(imSheet, imAppend);
       }
@@ -3731,11 +3738,48 @@ function kbImportManual(fileRef, opts) {
         '; unchanged=' + summary.unchanged + '; skipped=' + plan.skipped.length +
         '; orphaned=' + orphaned.length + '; removed=' + summary.removed + '; meta=' + (metaChanged ? 'updated' : 'same') +
         (summary.images ? '; imagesUploaded=' + summary.images.uploaded + '; imagesReused=' + summary.images.reused +
-          '; imagesPending=' + summary.images.pending + '; imagesFailed=' + summary.images.failed.length : '') +
+          '; imagesPending=' + summary.images.pending + '; imagesFailed=' + summary.images.failed.length + '; imagesReplaced=' + replaced.length : '') +
         Object.keys(skipBy).sort().map(function (k) { return '; ' + k + '=' + skipBy[k]; }).join(''), emp.email);
-      return Object.assign({ success: true, dryRun: false }, summary);
+      result = Object.assign({ success: true, dryRun: false }, summary);
     } finally { lock.releaseLock(); }
+    // Batch M3 follow-up (operator 2026-09-29): a replaced image's old file is
+    // moved to Drive's trash — OUTSIDE the lock, after the ledger stopped
+    // naming it, so a failure here can only leave a stray file, never a
+    // missing image. Drive keeps trash for 30 days, so it is recoverable.
+    if (result.images && replaced.length) {
+      const t = kbManualTrashReplaced_(replaced);
+      result.images.trashed = t.trashed;
+      result.images.trashFailed = t.failed;
+    }
+    return result;
   } catch (err) { return { success: false, error: err.message }; }
+}
+
+/** Move the files a re-import replaced to Drive's trash. Each is checked to be
+ *  a manual image (named manimg-<its key>-…) inside the KB Images folder
+ *  before it is touched, so a ledger row that somehow names another file can
+ *  never trash it. A failure is NAMED and left for the operator; it does not
+ *  fail the import. */
+function kbManualTrashReplaced_(replaced) {
+  const out = { trashed: 0, failed: [] };
+  const folderId = String(PropertiesService.getScriptProperties().getProperty(KB_IMAGES_FOLDER_PROP) || '');
+  (replaced || []).forEach(function (r) {
+    try {
+      const f = DriveApp.getFileById(r.fileId);
+      let inFolder = false;
+      const parents = f.getParents();
+      while (parents.hasNext()) { if (parents.next().getId() === folderId) { inFolder = true; break; } }
+      if (!folderId || !inFolder || String(f.getName()).indexOf('manimg-' + r.key + '-') !== 0) {
+        out.failed.push({ key: r.key, error: 'left alone — not a manual image in the KB Images folder' });
+        return;
+      }
+      f.setTrashed(true);
+      out.trashed++;
+    } catch (e) {
+      out.failed.push({ key: r.key, error: String(e.message || e).substring(0, 160) });
+    }
+  });
+  return out;
 }
 
 /** Admin — publish the imported manual's DRAFTS (all, or one department), and

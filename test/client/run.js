@@ -29629,7 +29629,8 @@ function m1Importer_(book, fileText, who, extra) {
     KB_MANUAL_FORMAT: 'ums-manual/1', KB_MANUAL_META_TAB: 'ManualMeta', KB_MANUAL_META_CACHE_KEY: 'kb_manual_meta_v1', KB_MANUAL_META_MAX: 45000,
     KB_MANUAL_IMAGES_TAB: 'ManualImages', KB_MANUAL_IMAGES_HEADERS: ['Key', 'Sha', 'FileId', 'Kind', 'ImportedAt'], KBMG: { KEY: 0, SHA: 1, FILE_ID: 2, KIND: 3, IMPORTED_AT: 4 },
     KB_MANUAL_IMAGE_KEY_RE: /^(icon|thumb|fig)-[a-z0-9-]{1,80}$/, KB_MANUAL_IMAGE_TYPES: ['image/png', 'image/jpeg'], KB_MANUAL_IMAGES_MAX: 400,
-    KB_MANUAL_IMAGE_MAX_BYTES: 1048576, KB_MANUAL_IMAGE_BUDGET_MS: 240000,
+    KB_MANUAL_IMAGE_MAX_BYTES: 1048576, KB_MANUAL_IMAGE_BUDGET_MS: 240000, KB_IMAGES_FOLDER_PROP: 'KB_IMAGES_FOLDER_ID',
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k === 'KB_IMAGES_FOLDER_ID' ? 'KBFOLDER' : null) }) },
     CacheService: { getScriptCache: () => ({ remove: () => book.writes.push(['cache', 'meta']) }) },
     CONFIG: { KB: { REVIEW_DUE_DAYS: 90 } },
     getEmployeeInfo_: () => who || { email: 'admin@ums.com', isAdmin: true, isManager: true },
@@ -29650,7 +29651,7 @@ function m1Importer_(book, fileText, who, extra) {
   ['kbRowStatus_', 'kbSha256Hex_', 'kbManualFileId_', 'getOrCreateManualImportSheet_', 'kbManualLedger_', 'kbManualBundle_', 'kbManualMetaValidate_',
     'kbManualOrphans_', 'kbDeleteRowSafe_', 'getOrCreateManualMetaSheet_', 'kbManualMetaRead_', 'kbImportManual', 'kbPublishManual',
     'kbDeptRank_', 'kbDeptCompare_', 'kbParseImageDataUrl_', 'kbManualImagesValidate_', 'kbManualImagesPlan_', 'kbManualImageName_',
-    'getOrCreateManualImagesSheet_', 'kbManualImagesLedger_', 'kbManualUploadImages_']
+    'getOrCreateManualImagesSheet_', 'kbManualImagesLedger_', 'kbManualUploadImages_', 'kbManualTrashReplaced_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   return { ctx, audits, revisions };
 }
@@ -30199,13 +30200,18 @@ test('M3-I1: kbManualImagesValidate_ — every image a section shows must be in 
 
 function m3Drive_(opts) {
   opts = opts || {};
-  const st = { locked: false, created: [], files: Object.assign({}, opts.existing || {}), searched: 0, n: 0 };
+  const st = { locked: false, created: [], files: Object.assign({}, opts.existing || {}), searched: 0, n: 0, byId: {}, trashed: [] };
+  const mkFile = (id, name, parent) => { st.byId[id] = { getName: () => name, getParents: () => { let d = false; return { hasNext: () => !d, next: () => { d = true; return { getId: () => parent }; } }; },
+    setTrashed: (v) => { assert.strictEqual(st.locked, false, 'a replaced file is trashed only after the lock is released'); if (opts.trashFails) throw new Error('Drive trash refused'); st.trashed.push(id); } }; };
+  Object.keys(st.files).forEach((n) => mkFile(st.files[n], n, 'KBFOLDER'));
+  if (opts.foreign) mkFile(opts.foreign.id, opts.foreign.name, opts.foreign.parent);
+  st.mkFile = mkFile;
   const folder = {
     searchFiles: (q) => { st.searched++; assert.ok(/title contains 'manimg-'/.test(q)); const names = Object.keys(st.files); let i = 0; return { hasNext: () => i < names.length, next: () => { const n = names[i++]; return { getName: () => n, getId: () => st.files[n] }; } }; },
     createFile: (blob) => {
       assert.strictEqual(st.locked, false, 'a Drive upload never runs while the script lock is held');
       if (opts.failOn && blob.name.indexOf(opts.failOn) >= 0) throw new Error('Drive said no');
-      const id = 'DRIVEFILE' + (++st.n) + 'xxxxxxxxxx'; st.files[blob.name] = id; st.created.push(blob.name); return { getId: () => id };
+      const id = 'DRIVEFILE' + (++st.n) + 'xxxxxxxxxx'; st.files[blob.name] = id; st.created.push(blob.name); mkFile(id, blob.name, 'KBFOLDER'); return { getId: () => id };
     },
   };
   const extra = {
@@ -30217,6 +30223,8 @@ function m3Drive_(opts) {
 function m3Importer_(book, bundle, drv, util) {
   const imp = m1Importer_(book, JSON.stringify(bundle), null, drv.extra);
   const crypto = require('crypto');
+  const baseDrive = imp.ctx.DriveApp;
+  imp.ctx.DriveApp = { getFileById: (id) => (drv.st.byId[id] ? drv.st.byId[id] : baseDrive.getFileById(id)) };
   imp.ctx.Utilities = Object.assign({}, imp.ctx.Utilities, util || {}, {
     base64Decode: (b) => Array.from(Buffer.from(b, 'base64')), newBlob: (bytes, type, name) => ({ bytes, type, name }),
     computeDigest: (alg, s) => Array.from(crypto.createHash('sha256').update(String(s), 'utf8').digest()).map((b) => (b > 127 ? b - 256 : b)),
@@ -30245,7 +30253,8 @@ test('M3-I2: the import unpacks the images into the KB Images folder OUTSIDE the
   const led = book.sheets.ManualImages.grid;
   assert.deepStrictEqual(led[0], ['Key', 'Sha', 'FileId', 'Kind', 'ImportedAt']);
   assert.deepStrictEqual(led.slice(1).map((r) => [r[0], r[1], r[3]]), [['fig-o2-reg', jSha, 'figure'], ['icon-delivered', pSha, 'icon'], ['thumb-unused', jSha, 'thumb']]);
-  assert.ok(/; imagesUploaded=3; imagesReused=0; imagesPending=0; imagesFailed=0$/.test(imp.audits[0]), imp.audits[0]);
+  assert.ok(/; imagesUploaded=3; imagesReused=0; imagesPending=0; imagesFailed=0; imagesReplaced=0$/.test(imp.audits[0]), imp.audits[0]);
+  assert.strictEqual(r1.images.trashed, undefined, 'a first import replaces nothing, so trashes nothing');
   // Re-import: nothing written, nothing uploaded, not even a Drive listing.
   book.writes.length = 0;
   const r2 = m3Importer_(book, m3Bundle_(imgs), drv).ctx.kbImportManual(M1_LINK, {});
@@ -30253,10 +30262,30 @@ test('M3-I2: the import unpacks the images into the KB Images folder OUTSIDE the
   assert.deepStrictEqual([book.writes, drv.st.created.length, drv.st.searched], [[], 3, 1], 'a re-import of the same images changes nothing');
   // A changed image: a NEW file (the old one is never overwritten), its ledger row rewritten in place.
   const imgs2 = Object.assign({}, imgs, { 'icon-delivered': { alt: 'Delivered', kind: 'icon', dataUri: M3_PNG.replace('ggg==', 'gga==') } });
-  const r3 = m3Importer_(book, m3Bundle_(imgs2), drv).ctx.kbImportManual(M1_LINK, {});
+  const oldIcon = led.filter((r) => r[0] === 'icon-delivered')[0][2];
+  const imp3a = m3Importer_(book, m3Bundle_(imgs2), drv);
+  const r3 = imp3a.ctx.kbImportManual(M1_LINK, {});
   assert.deepStrictEqual([r3.images.uploaded, r3.images.unchanged, drv.st.created.length], [1, 2, 4]);
   assert.strictEqual(led.length, 4, 'no duplicate ledger row');
   assert.strictEqual(led.filter((r) => r[0] === 'icon-delivered')[0][2], drv.st.files[drv.st.created[3]], 'the key now names the new file');
+  // Follow-up (operator 2026-09-29): the file it replaced goes to Drive's trash — and only that one.
+  assert.deepStrictEqual([drv.st.trashed, r3.images.trashed, J2(r3.images.trashFailed)], [[oldIcon], 1, []], 'the replaced file is trashed, nothing else');
+  assert.ok(/; imagesReplaced=1/.test(imp3a.audits[0]), imp3a.audits[0]);
+  // A ledger row naming a file that is NOT a manual image in the folder: never trashed, and said.
+  const book5 = m1Book_([], null);
+  book5.sheets.ManualImages = m1Book_([], null).insertSheet('x');
+  book5.sheets.ManualImages.grid.push(['Key', 'Sha', 'FileId', 'Kind', 'ImportedAt'], ['icon-delivered', 'oldsha', 'FOREIGNFILE0123', 'icon', 't']);
+  const drvF = m3Drive_({ foreign: { id: 'FOREIGNFILE0123', name: 'Payroll 2026.xlsx', parent: 'SOMEWHERE' } });
+  const rF = m3Importer_(book5, m3Bundle_(imgs), drvF).ctx.kbImportManual(M1_LINK, {});
+  assert.deepStrictEqual([drvF.st.trashed, rF.images.trashed], [[], 0], 'a file outside the folder, or not named for its key, is left alone');
+  assert.ok(/left alone/.test(rF.images.trashFailed[0].error) && rF.images.trashFailed[0].key === 'icon-delivered');
+  // Drive refusing the trash: named, and the import still succeeds with the new file ledgered.
+  const book6 = m1Book_([], null);
+  const drvT = m3Drive_({ trashFails: true });
+  m3Importer_(book6, m3Bundle_(imgs), drvT).ctx.kbImportManual(M1_LINK, {});
+  const rT = m3Importer_(book6, m3Bundle_(imgs2), drvT).ctx.kbImportManual(M1_LINK, {});
+  assert.ok(rT.success && rT.images.trashed === 0 && /Drive trash refused/.test(rT.images.trashFailed[0].error), JSON.stringify(rT.images));
+  assert.strictEqual(book6.sheets.ManualImages.grid.filter((r) => r[0] === 'icon-delivered')[0][2], drvT.st.files[drvT.st.created[3]], 'the new file is ledgered whatever the trash did');
   // An interrupted first import: files that reached Drive are REUSED by name.
   const book2 = m1Book_([], null);
   const drv2 = m3Drive_({ existing: { ['manimg-fig-o2-reg-' + jSha.slice(0, 12) + '.jpg']: 'EARLIERFILE0123456789' } });
@@ -30353,6 +30382,10 @@ test('M3-I5: the Manual dialog says what happened to the images — a check coun
   assert.ok(part.warn && /112 uploaded · 3 found on Drive from an earlier run/.test(part.html) && /45 images still to upload — press Import again/.test(part.html));
   assert.ok(/thumb-x <span class="kb-man-why">— Drive said &lt;no&gt;<\/span>/.test(part.html), 'a failure is named, escaped');
   assert.ok(/could not be opened: nope/.test(L({ total: 3, uploaded: 0, unchanged: 0, pending: 3, failed: [], error: 'nope' }, false).html));
+  const tr = L({ total: 3, uploaded: 1, unchanged: 2, pending: 0, failed: [], error: '', trashed: 1, trashFailed: [{ key: 'icon-x', error: 'left alone — not a manual image in the KB Images folder' }] }, false);
+  assert.ok(/1 replaced image file moved to Drive’s trash \(recoverable for 30 days\)/.test(tr.html) && /left in the KB Images folder:[\s\S]*icon-x/.test(tr.html), 'the trash is reported, and a file left alone is named');
+  assert.strictEqual(tr.warn, true, 'a file left alone makes the result amber');
+  assert.strictEqual(L({ total: 3, uploaded: 1, unchanged: 2, pending: 0, failed: [], error: '', trashed: 1, trashFailed: [] }, false).warn, false, 'a clean replace stays quiet');
   assert.ok(/kbManualImagesLine_\(r\.images, dryRun\)/.test(extractFnFrom(M1_KB_SRC, 'kbManualResultHtml_')), 'the dialog draws it');
 });
 

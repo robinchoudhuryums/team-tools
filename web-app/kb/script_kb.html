@@ -3355,12 +3355,19 @@ function kbManualImagesLine_(im, dryRun) {
   var html = '<div class="kb-man-meta">' + esc(pl(im.total || 0, 'image') + ' · ' + (im.uploaded || 0) + ' uploaded' + (im.reused ? ' · ' + im.reused + ' found on Drive from an earlier run' : '') + ' · ' + (im.unchanged || 0) + ' unchanged') + '</div>';
   if (im.error) html += '<div class="kb-man-skiph">The KB Images folder could not be opened: ' + esc(im.error) + '</div>';
   if (im.pending) html += '<div class="kb-man-skiph">' + esc(pl(im.pending, 'image') + ' still to upload — press Import again to finish (the sections are already in).') + '</div>';
+  if (im.trashed) html += '<div class="kb-man-meta">' + esc(pl(im.trashed, 'replaced image file') + ' moved to Drive\u2019s trash (recoverable for 30 days).') + '</div>';
+  var tf = im.trashFailed || [];
+  if (tf.length) {
+    html += '<div class="kb-man-skiph">These replaced image files were left in the KB Images folder:</div><ul>' + tf.map(function (f) {
+      return '<li>' + esc(f.key) + ' <span class="kb-man-why">— ' + esc(f.error) + '</span></li>';
+    }).join('') + '</ul>';
+  }
   if (failed.length) {
     html += '<div class="kb-man-skiph">These images could not be uploaded:</div><ul>' + failed.map(function (f) {
       return '<li>' + esc(f.key) + ' <span class="kb-man-why">— ' + esc(f.error) + '</span></li>';
     }).join('') + '</ul>';
   }
-  return { html: html, warn: !!(im.error || im.pending || failed.length) };
+  return { html: html, warn: !!(im.error || im.pending || failed.length || tf.length) };
 }
 function kbManualRun_(dryRun) {
   var inp = document.getElementById('kb-man-link');
