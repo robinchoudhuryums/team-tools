@@ -30279,6 +30279,13 @@ test('M3-I2: the import unpacks the images into the KB Images folder OUTSIDE the
   const rF = m3Importer_(book5, m3Bundle_(imgs), drvF).ctx.kbImportManual(M1_LINK, {});
   assert.deepStrictEqual([drvF.st.trashed, rF.images.trashed], [[], 0], 'a file outside the folder, or not named for its key, is left alone');
   assert.ok(/left alone/.test(rF.images.trashFailed[0].error) && rF.images.trashFailed[0].key === 'icon-delivered');
+  // …and a file NAMED like a manual image but living outside the KB Images folder is left alone too.
+  const book5b = m1Book_([], null);
+  book5b.sheets.ManualImages = m1Book_([], null).insertSheet('x');
+  book5b.sheets.ManualImages.grid.push(['Key', 'Sha', 'FileId', 'Kind', 'ImportedAt'], ['icon-delivered', 'oldsha', 'LOOKALIKE0123', 'icon', 't']);
+  const drvL = m3Drive_({ foreign: { id: 'LOOKALIKE0123', name: 'manimg-icon-delivered-000000000000.png', parent: 'SOMEONES-OTHER-FOLDER' } });
+  const rL = m3Importer_(book5b, m3Bundle_(imgs), drvL).ctx.kbImportManual(M1_LINK, {});
+  assert.deepStrictEqual([drvL.st.trashed, rL.images.trashed], [[], 0], 'the folder is checked, not just the name');
   // Drive refusing the trash: named, and the import still succeeds with the new file ledgered.
   const book6 = m1Book_([], null);
   const drvT = m3Drive_({ trashFails: true });
