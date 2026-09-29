@@ -1817,6 +1817,12 @@ const KB_MANUAL_FORMAT = 'ums-manual/1';
 const KB_MANUAL_META_TAB = 'ManualMeta';
 const KB_MANUAL_META_CACHE_KEY = 'kb_manual_meta_v1';
 const KB_MANUAL_META_MAX = 45000;    // chars — one cell, under the 50k Sheets limit
+// Batch M4 — "recently changed": the changelog entries the What's new panel and
+// the Reference landing list (getWhatsNew carries them, one rule for both). The
+// badge on a section keeps the build's own 12-month window; this list is the
+// short one a rep scans.
+const KB_MANUAL_RECENT_DAYS = 90;
+const KB_MANUAL_RECENT_MAX = 8;
 const KB_MANUAL_READONLY_MSG = 'This section comes from the procedures manual. Change it in the manual source and re-import — edits made here would be overwritten or lost.';
 // Batch M3 — the manual's images. manual.json carries them ({key: {alt, kind,
 // dataUri}}); the import unpacks each new or changed one into the KB Images

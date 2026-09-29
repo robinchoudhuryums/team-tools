@@ -95,7 +95,10 @@ Script project synced via [clasp](https://github.com/google/clasp).
     reads as one page with cross-references and previews, a section
     number typed into search jumps to it, and the drawer carries the
     manual's call router. Its diagrams draw in place (with a Full size
-    view) and its images are unpacked into Drive by the import.
+    view) and its images are unpacked into Drive by the import. Its
+    recent changes show on the landing and in What's new, an HCPCS code
+    opens the drawer's lookups, previews work from the keyboard, and a
+    section or Quick Reference Card prints on its own.
     PHI-free by policy.
   - **Training & Employee Docs** — manager-assigned training built on
     the Reference content layer: assign any KB article/embed to

@@ -4821,3 +4821,21 @@ pick them up without re-deriving the context.
   would not change a section's source hash, so the ledger would call it
   unchanged and keep the stale link) and Drive thumbnail URLs (blocked on this
   domain — every image would have gone through the per-image fallback).
+- <a id="the-manual-s-recent-changes-ride-getwhatsnew"></a>**The manual's recent changes ride `getWhatsNew` — one payload, one renderer, for the panel and the landing (22post M4, operator 2026-09-29).** Two surfaces show the same
+  list: the What's new panel and the Reference landing. A second reader of the
+  changelog would have been a second rule for "recently changed" (g126), so the
+  server builds it once. `kbManualRecent_` keeps entries dated within
+  `KB_MANUAL_RECENT_DAYS`, drops a malformed date or id rather than guessing,
+  sorts newest first and caps at `KB_MANUAL_RECENT_MAX` with the uncapped total.
+  `kbManualRecentPayload_` keeps only PUBLISHED sections, because both are
+  broadcast surfaces (the getWhatsNew draft rule). `getWhatsNew` carries the list
+  beside its article. `whatsNewEnsure_` shares ONE call between the shell and
+  the landing and never caches a failure (g129). `manualRecentListHtml_`
+  renders both. A read failure is `manualError`, which the landing says out
+  loud, because an absent list reads as "nothing changed" (g53). A manual
+  change joins the seen-stamp, so it lights NEW like an article edit. The
+  status column is read only when some entry falls in the window, since this
+  runs on every page load. Rejected: a client-side filter over
+  `getManualMeta` + the tree (the tree is not loaded outside Reference, and
+  two clients would own the rule), and a separate endpoint (a second call on
+  every load for a list the What's new call can carry).

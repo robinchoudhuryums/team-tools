@@ -2180,3 +2180,22 @@ per-change detail. By delta:
   by a foreign-file case that also failed the name check (g116, the twelfth
   direction); a lookalike-name case now bites.
 
+## 22post — Batch M4, the manual in use (2026-09-29)
+
+- Node +5 (M4-S1, M4-S2, M4-C1, M4-C2, M4-P1) plus PAYSTMT-1 for the same day's
+  Pay Statement fix; DOM +5; visual +5 (`reference-landing-manual-light-wide`,
+  `reference-landing-manual-dark-mobile`, `whatsnew-manual-light-wide`,
+  `reference-manual-hcpcs-light-wide`, `reference-manual-xref-focus-dark-wide`).
+  The visual mock's `?whatsnew=manual` hook seeds a manual-only What's new
+  payload. `print-check.mjs` gained rule (4): one manual section, measured in both
+  themes.
+- Inline `onclick` handlers do not run in the DOM harness (`runScripts:
+  'outside-only'`), so the pins assert the attribute and call the named handler
+  with the element, exactly as the attribute would.
+- 33 bite-checks. One NO BITE, acted on: the tab-through case asserted the final
+  card state, which the defect also reaches (g116, the thirteenth direction). It
+  now asserts nothing was fetched. One equivalent mutant is recorded (`fresh`
+  home render inside `kbHcpcsOpen_`: the lookups exist only on the home view).
+- Reading the shots caught three layout problems, all fixed before commit. The
+  worst was a three-column row squeezing the summary to one word per line at
+  phone width.

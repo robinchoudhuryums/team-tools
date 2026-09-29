@@ -1,4 +1,5 @@
-// One-off MEASUREMENT of the batch-8 print stylesheet (styles.html @media print).
+// One-off MEASUREMENT of the print stylesheet (styles.html @media print): the
+// batch-8 overlay rules, and (Batch M4) rule (4), one manual section by its Print button.
 // A print block cannot be verified by reading it: `print-color-adjust` and
 // `:has()` interactions only exist in a real engine. Run after `node build.mjs`.
 //   node print-check.mjs
@@ -50,6 +51,36 @@ for (const mode of ['light', 'dark']) {
     };
   });
   results.push({ mode, screenInk: screen.ink, screenSidebar: screen.sidebar, print: p });
+  await page.close();
+}
+// Batch M4 — rule (4): ONE manual section printed by its Print button. The
+// marks come off after the dialog, so print() is stubbed and the page is
+// measured while they are on: only the section (and its ancestors) display,
+// at full width, and its own controls do not.
+for (const mode of ['light', 'dark']) {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await page.addInitScript((m) => { try { localStorage.clear(); localStorage.setItem('umsTimeClockMode', m); localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 })); localStorage.setItem('umsTzWarnedDay', new Date().toLocaleDateString('sv-SE')); } catch (e) {} }, mode);
+  await page.goto(PAGE);
+  await page.waitForTimeout(900);
+  await page.evaluate(() => window.enterTool('reference'));
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => window.kbOpenItem_('man-0-11'));
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => { window.print = () => {}; window.kbPrintSection_(document.querySelector('#kb-man-sec-man-0-11 .kb-man-print')); });
+  await page.emulateMedia({ media: 'print' });
+  const one = await page.evaluate(() => {
+    const vis = (s) => { const e = document.querySelector(s); return !!e && getComputedStyle(e).display !== 'none' && e.getClientRects().length > 0; };
+    const sec = document.getElementById('kb-man-sec-man-0-11');
+    return {
+      marked: document.documentElement.hasAttribute('data-print-one'),
+      section: vis('#kb-man-sec-man-0-11'), otherSection: vis('#kb-man-sec-man-0-10'),
+      sidebar: vis('.sidebar'), rail: vis('.kb-side'), title: vis('.view-title-row'),
+      sectionButtons: vis('.print-one .kb-man-sec-acts'), feedback: vis('.print-one .kb-man-fb'),
+      sectionLeft: Math.round(sec.getBoundingClientRect().left), sectionWidth: Math.round(sec.getBoundingClientRect().width),
+      ink: getComputedStyle(document.documentElement).getPropertyValue('--ink').trim(),
+    };
+  });
+  results.push({ mode, printOneSection: one });
   await page.close();
 }
 await browser.close();

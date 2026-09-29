@@ -312,6 +312,17 @@ const SCENARIOS = [
     "kbOpenItem_('man-0-11'); setTimeout(function(){ var h=document.getElementById('kb-h-0-11-2-what-the-equipment-looks-like'); if(h) h.scrollIntoView(); }, 600)"],
   ['reference-manual-images-dark-wide', { tool: 'reference', tab: null }, WIDE, 'dark', '',
     "kbOpenItem_('man-0-10'); setTimeout(function(){ var h=document.getElementById('kb-h-0-10-1-trx-type'); if(h) h.scrollIntoView(); }, 600)"],
+  // Batch M4 — the manual's recent changes on the Reference landing and in the
+  // What's new panel; a HCPCS code clicked (the drawer's lookups, the code in
+  // the item box); and a cross-reference previewed from the KEYBOARD.
+  ['reference-landing-manual-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '?whatsnew=manual', ''],
+  ['reference-landing-manual-dark-mobile', { tool: 'reference', tab: null }, MOBILE, 'dark', '?whatsnew=manual',
+    "setTimeout(function(){ var l=document.querySelector('#kb-main .mr-list'); if(l) l.scrollIntoView(); }, 400)"],
+  ['whatsnew-manual-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '?whatsnew=manual', 'whatsNewOpen_()'],
+  ['reference-manual-hcpcs-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
+    "kbOpenItem_('man-0-11'); setTimeout(function(){ var a=document.querySelector('#kb-man-sec-man-0-11 a.kb-hcpcs[data-hcpcs=\"E0601\"]'); if(a) a.click(); }, 600)"],
+  ['reference-manual-xref-focus-dark-wide', { tool: 'reference', tab: null }, WIDE, 'dark', '',
+    "kbOpenItem_('man-0-11'); setTimeout(function(){ var a=document.querySelector('#kb-man-sec-man-0-11 a.kb-xref[data-kb-id=\"man-0-10\"]'); if(a) a.focus(); }, 500)"],
   ['reference-manual-import-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
     "kbOpenManualImport_(); document.getElementById('kb-man-link').value = 'https://drive.google.com/file/d/abc123/view'; kbManualRun_(true)"],
   // Cycle 21 (operator report, 2026-09-21) — the KB DRAWER had never been shot,

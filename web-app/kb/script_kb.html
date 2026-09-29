@@ -133,6 +133,24 @@
   .kb-man-sec-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 6px 0 4px; }
   .kb-man-sec-h { font-family: var(--display); font-size: 1.3rem; font-weight: 700; letter-spacing: -.015em; margin: 0; flex: 0 1 auto; }
   .kb-man-badges:empty { display: none; }
+  /* Batch M4 — the manual's "recently changed" list (the What's new panel and
+     the Reference landing share one renderer, manualRecentListHtml_). */
+  .mr-list { display: flex; flex-direction: column; }
+  .mr-row { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 10px; row-gap: 2px; width: 100%; text-align: left; font: inherit; background: none; border: none; border-bottom: 1px solid var(--line); padding: 8px 2px; cursor: pointer; color: var(--ink); }
+  .mr-row:last-child { border-bottom: none; }
+  .mr-row:hover, .mr-row:focus-visible { background: var(--paper-2); }
+  .mr-num { font-family: var(--mono); font-size: .78rem; font-weight: 700; color: var(--info-deep); white-space: nowrap; min-width: 4.5em; }
+  .mr-sum { font-size: .86rem; flex: 1 1 16em; min-width: 0; overflow-wrap: anywhere; }   /* the date wraps under it when the row is narrow — never squeezes it to a word a line */
+  .mr-meta { font-size: .74rem; color: var(--muted); white-space: nowrap; margin-left: auto; }
+  .mr-retrain { font-size: .68rem; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--warn-soft); color: var(--warning-deep); margin-left: 4px; }
+  .mr-sec { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .mr-sec:first-child { margin-top: 0; border-top: none; padding-top: 0; }
+  .mr-sec h3 { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 4px; font-size: .95rem; }
+  .mr-sub { font-size: .74rem; font-weight: 400; color: var(--muted); }
+  .mr-err { font-size: .84rem; color: var(--muted); font-style: italic; }
+  a.kb-hcpcs { color: var(--info-deep); text-decoration: underline dotted; text-underline-offset: 2px; font-variant-numeric: tabular-nums; }
+  a.kb-hcpcs:hover, a.kb-hcpcs:focus-visible { text-decoration-style: solid; }
+  .kb-man-print { white-space: nowrap; }
   .kb-man-upd { font-size: .7rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--info-soft); color: var(--info-deep); white-space: nowrap; }
   .kb-man-sec-acts { margin-left: auto; display: inline-flex; gap: 6px; }
   .kb-man-fb { margin-top: 10px; }
@@ -2812,6 +2830,7 @@ function kbOpenManualSection_(id, anchor) {
       KB_STATE.manualPart = res;
       main.innerHTML = kbManualPartHtml_(res);
       kbGlossaryAnnotate_(main);
+      kbLinkHcpcs_(main);
       kbManualPaintMeta_();
       kbManualFocus_(id, anchor, true);
     })
@@ -2841,6 +2860,8 @@ function kbManualPartHtml_(part) {
         (draft ? '<span class="kb-draft-pill">Draft</span>' : '') +
         '<span class="kb-man-badges" data-kb-badges="' + esc(s.id) + '"></span>' +
         '<span class="kb-man-sec-acts">' + kbBookmarkBtnHtml_({ id: s.id, title: s.title }) +
+          '<button type="button" class="kb-btn kb-man-print" title="Print just this ' + (kbIsManualCard_(s.id) ? 'card' : 'section') + '" onclick="kbPrintSection_(this)">' +
+            icon('printer', 13) + ' ' + (kbIsManualCard_(s.id) ? 'Print card' : 'Print') + '</button>' +
           (admin && draft ? '<button class="kb-btn" data-kb-id="' + esc(s.id) + '" onclick="kbPublishItem_(this.getAttribute(\'data-kb-id\'))">' + icon('check', 13) + ' Publish</button>' : '') +
         '</span>' +
       '</div>' +
@@ -2850,6 +2871,115 @@ function kbManualPartHtml_(part) {
   });
   return html + '</div>';
 }
+
+// ── Batch M4 — print one section or card ─────────────────────────────────
+/** A Quick Reference Card (Appendix C) — its button says "Print card". */
+function kbIsManualCard_(id) { return /^man-c-\d+$/.test(String(id || '')); }
+/** Print ONLY this section (or card) through the app's one @media print block:
+ *  the section is marked `.print-one` and the root `data-print-one`, and the
+ *  print rules hide everything that neither holds it nor sits inside it. The
+ *  marks come off after the dialog (afterprint, with a timer behind it for a
+ *  browser whose print() returns before the dialog closes). */
+function kbPrintSection_(btn) {
+  var sec = btn && btn.closest && btn.closest('.kb-man-sec');
+  if (!sec) return;
+  kbXrefHide_(true);
+  document.querySelectorAll('.print-one').forEach(function (el) { el.classList.remove('print-one'); });
+  sec.classList.add('print-one');
+  var root = document.documentElement;
+  root.setAttribute('data-print-one', '');
+  var done = false;
+  var clear = function () {
+    if (done) return; done = true;
+    sec.classList.remove('print-one');
+    root.removeAttribute('data-print-one');
+    window.removeEventListener('afterprint', clear);
+  };
+  window.addEventListener('afterprint', clear);
+  try { window.print(); } catch (e) { clear(); return; }
+  setTimeout(clear, 1500);
+}
+
+// ── Batch M4 — HCPCS codes in the manual become lookups ──────────────────────
+/** The HCPCS Level II shape: one of the letters CMS assigns, then four digits,
+ *  as a whole word ("E0601", "K0006"; not "BE0601", not "E06011"). */
+var KB_HCPCS_RE = /\b[ABCDEGHJKLMPQRSTUV][0-9]{4}\b/g;
+/** Pure (Node-pinned) — split text into plain runs and codes:
+ *  [{code: false, v: 'Rent '}, {code: true, v: 'E0601'}, …]. */
+function kbHcpcsSplit_(text) {
+  var s = String(text == null ? '' : text), out = [], last = 0, m;
+  var re = new RegExp(KB_HCPCS_RE.source, 'g');
+  while ((m = re.exec(s))) {
+    if (m.index > last) out.push({ code: false, v: s.slice(last, m.index) });
+    out.push({ code: true, v: m[0] });
+    last = m.index + m[0].length;
+  }
+  if (last < s.length) out.push({ code: false, v: s.slice(last) });
+  return out;
+}
+/** Wrap every code in a rendered manual body in a link — TEXT NODES only
+ *  (kbHighlightTerms_' discipline: the escape boundary kbMd_ drew is never
+ *  reopened). A code already inside a link, a button, code, a heading or a
+ *  diagram is left alone. Idempotent: a wrapped code is inside a link. */
+function kbLinkHcpcs_(rootEl) {
+  try {
+    if (!rootEl) return;
+    var walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, null);
+    var targets = [], n;
+    while ((n = walker.nextNode())) {
+      var p = n.parentElement;
+      if (!p || p.closest('a, button, code, pre, h1, h2, h3, h4, h5, h6, svg, figure.kb-diagram, .kb-gloss-mark, textarea')) continue;
+      if (new RegExp(KB_HCPCS_RE.source).test(n.nodeValue)) targets.push(n);
+    }
+    targets.forEach(function (textNode) {
+      var frag = document.createDocumentFragment();
+      kbHcpcsSplit_(textNode.nodeValue).forEach(function (part) {
+        if (!part.code) { frag.appendChild(document.createTextNode(part.v)); return; }
+        var a = document.createElement('a');
+        a.href = '#';
+        a.className = 'kb-hcpcs';
+        a.setAttribute('data-hcpcs', part.v);
+        a.title = 'Look up ' + part.v + ' — its price, and a payor’s rules for it';
+        a.textContent = part.v;
+        frag.appendChild(a);
+      });
+      textNode.parentNode.replaceChild(frag, textNode);
+    });
+  } catch (_) {}
+}
+/** A code clicked: the Ctrl/⌘+K drawer's lookups, on its home view, with the
+ *  code in the ITEM box (the price search takes a code) — and focus in the
+ *  payor box when it is empty, because the payor lookup searches by plan NAME:
+ *  type the caller's plan and the item row shows that payor's rule for this
+ *  code (the T3 join). Whatever the rep already typed as the payor stays. */
+function kbHcpcsOpen_(code) {
+  code = String(code || '').trim().toUpperCase();
+  if (!/^[ABCDEGHJKLMPQRSTUV][0-9]{4}$/.test(code)) return;
+  kbXrefHide_(true);
+  if (!KB_DRAWER.open) kbDrawerOpen_();
+  // A search or a reader in the drawer gives way to home.
+  var q = document.getElementById('kbd-q');
+  if (q) q.value = '';
+  KB_DRAWER.lastQuery = '';
+  ++KB_DRAWER.searchSeq;   // a search still in flight must not paint over home
+  kbDrawerSetSearching_(false);
+  if (!(KB_DRAWER.view === 'home' && document.getElementById('kb-oop-item-d'))) kbDrawerRenderHome_();
+  var item = document.getElementById('kb-oop-item-d');
+  if (!item) return;
+  item.value = code;
+  oopLookupInput_(item, { now: true });
+  var ins = document.getElementById('kb-ins-input-d');
+  var target = (ins && !String(ins.value || '').trim()) ? ins : item;
+  setTimeout(function () { try { target.focus(); } catch (e) {} }, 260);   // after kbDrawerOpen_'s own focus move
+}
+(function kbBindHcpcs_() {
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a.kb-hcpcs');
+    if (!a) return;
+    e.preventDefault();
+    kbHcpcsOpen_(a.getAttribute('data-hcpcs'));
+  });
+})();
 
 /** Fill the version line and the "Updated" badges from the meta, when it has
  *  arrived. Idempotent — called on part render and again when the meta lands. */
@@ -2942,8 +3072,12 @@ function kbSuggestEdit_(btn) {
  *  tab. Already on Reference → open it there; else park it for the tab's
  *  arrival (enterReferenceView consumes the hint once the tree is in). */
 function kbReadInContext_(btn) {
-  var id = btn.getAttribute('data-kb-id'), anchor = btn.getAttribute('data-kb-anchor') || '';
   kbDrawerClose_();
+  kbOpenInReference_(btn.getAttribute('data-kb-id'), btn.getAttribute('data-kb-anchor') || '');
+}
+/** Open a section in the Reference tab from anywhere (the drawer's "Read in
+ *  context", a What's new row, a landing row). */
+function kbOpenInReference_(id, anchor) {
   if (typeof currentView !== 'undefined' && currentView === 'reference' && document.getElementById('kb-main') && (KB_STATE.tree || []).length) {
     kbOpenItem_(id, anchor);
     return;
@@ -2980,15 +3114,21 @@ function kbXrefEl_() {
 function kbXrefHide_(now) {
   clearTimeout(KB_XREF.timer);
   clearTimeout(KB_XREF.hideTimer);
-  var go = function () { if (KB_XREF.el) KB_XREF.el.classList.remove('show'); KB_XREF.key = ''; };
+  var go = function () {
+    if (KB_XREF.el) KB_XREF.el.classList.remove('show');
+    if (KB_XREF.origin && KB_XREF.origin.removeAttribute) KB_XREF.origin.removeAttribute('aria-describedby');
+    KB_XREF.key = '';
+  };
   if (now) go(); else KB_XREF.hideTimer = setTimeout(go, 220);
 }
 function kbXrefShow_(a) {
   var id = a.getAttribute('data-kb-id'), anchor = a.getAttribute('data-kb-anchor') || '';
   var key = id + '#' + anchor;
   if (KB_XREF.key === key && KB_XREF.el && KB_XREF.el.classList.contains('show')) return;
+  if (KB_XREF.origin && KB_XREF.origin !== a && KB_XREF.origin.removeAttribute) KB_XREF.origin.removeAttribute('aria-describedby');
   KB_XREF.key = key; KB_XREF.origin = a;
   var el = kbXrefEl_();
+  a.setAttribute('aria-describedby', 'kb-xrefcard');
   var paint = function (res) {
     if (KB_XREF.key !== key) return;
     if (!res || res.error || res.type === 'embed') {
@@ -3028,6 +3168,29 @@ function kbXrefShow_(a) {
       if (KB_XREF.el && KB_XREF.el.classList.contains('show')) kbXrefHide_();
     }
   });
+  // M4 (operator 2026-09-29): a keyboard reader gets the same preview — Tab
+  // onto a cross-reference and the card shows (the link is described by it);
+  // Tab away and it hides; Escape hides it FIRST, in the capture phase, so the
+  // one Escape that dismisses a preview does not also close the drawer or the
+  // modal underneath (the shell's Escape handler listens in the bubble phase).
+  document.addEventListener('focusin', function (e) {
+    var a = e.target.closest && e.target.closest('a.kb-xref');
+    if (!a || a.closest('#kb-xrefcard')) return;
+    clearTimeout(KB_XREF.hideTimer); clearTimeout(KB_XREF.timer);
+    KB_XREF.timer = setTimeout(function () { if (document.activeElement === a) kbXrefShow_(a); }, 350);
+  });
+  document.addEventListener('focusout', function (e) {
+    var a = e.target.closest && e.target.closest('a.kb-xref');
+    if (!a || a.closest('#kb-xrefcard')) return;
+    var to = e.relatedTarget;
+    if (to && to.closest && to.closest('#kb-xrefcard')) return;
+    if (KB_XREF.origin === a || !(KB_XREF.el && KB_XREF.el.classList.contains('show'))) kbXrefHide_();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || !(KB_XREF.el && KB_XREF.el.classList.contains('show'))) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    kbXrefHide_(true);
+  }, true);
 })();
 
 // ── Batch M2 — section numbers and the call router ──────────────────────────
@@ -3176,6 +3339,7 @@ function enterReferenceView(area) {
       var hint = window.KB_OPEN_HINT; window.KB_OPEN_HINT = null;
       if (hint && hint.id) kbOpenItem_(hint.id, hint.anchor || '');
       else if (KB_STATE.landing) kbRenderLanding_();
+      kbLoadManualRecentBlock_();
       if (KB_STATE.isManager) { kbLoadUsageBlock_(); kbLoadReviewDueBlock_(); kbLoadContentRequestsBlock_(); }
     })
     .withFailureHandler(function (err) { if (currentView === requested) { var el = document.getElementById('kb-tree'); if (el) el.innerHTML = errorStateHtml_(err.message || err); } })   // A12
@@ -4610,6 +4774,9 @@ function kbLandingBlocksHtml_() {
     });
     h += '</div>';
   }
+
+  // Batch M4 — the manual's recent changes (all users).
+  h += kbLandingManualHtml_();
 
   // Recently viewed (all users)
   h += '<div class="kb-land-sec"><div class="kb-land-h">Recently viewed</div>';
@@ -6487,6 +6654,7 @@ function kbDrawerOpenItem_(id, anchor) {
       } else {
         body.innerHTML = back + '<div class="kb-article">' + kbMd_(res.bodyMd || '') + '</div>' + kbFeedbackBarHtml_(res) + '<div id="kbd-comments"></div>';
         kbGlossaryAnnotate_(body);
+        if (kbIsManualId_(id)) kbLinkHcpcs_(body.querySelector('.kb-article'));
         if (anchor) kbScrollToAnchor_(body, anchor);
       }
       kbDrawerLoadComments_(id);   // Phase B — drawer parity (round-3 FO)
@@ -6543,6 +6711,33 @@ function kbLoadUsageBlock_() {
       if (KB_STATE.landing) kbRenderLanding_();
     })
     .kbGetUsageStats();
+}
+
+/** Batch M4 — the manual's "recently changed", for every user: the SAME
+ *  getWhatsNew payload the What's new panel shows (whatsNewEnsure_ shares the
+ *  one call), so the two lists cannot disagree. */
+function kbLoadManualRecentBlock_() {
+  var requested = currentView;
+  whatsNewEnsure_(function (res, failed) {
+    KB_STATE.manualRecent = { res: res, failed: !!failed };
+    if (currentView === requested && KB_STATE.landing) kbRenderLanding_();
+  });
+}
+/** The landing's "Manual — recently changed" block: nothing when there is no
+ *  manual or nothing changed in the window; a failure SAYS so (g53) — an absent
+ *  list would read as "nothing changed". */
+function kbLandingManualHtml_() {
+  var L = KB_STATE.manualRecent;
+  if (!L) return '';
+  var head = '<div class="kb-land-h">' + icon('fileText', 13) + ' Manual — recently changed';
+  if (L.failed || (L.res && L.res.manualError)) {
+    return '<div class="kb-land-sec">' + head + '</div>' +
+      '<div class="kb-land-none">' + icon('warning', 12) + ' Could not load the manual’s recent changes — retry by re-entering Reference.</div></div>';
+  }
+  var res = L.res, items = (res && res.manualRecent) || [];
+  if (!items.length) return '';
+  return '<div class="kb-land-sec">' + head + ' <span class="kb-land-sub">· ' + manualRecentSubHtml_(res) + '</span></div>' +
+    manualRecentListHtml_(items) + '</div>';
 }
 
 /** #4 — manager-only "Review due" → cached in KB_STATE and rendered into the

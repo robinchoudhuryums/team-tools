@@ -635,23 +635,75 @@ function whatsNewItems_(bodyMd, maxItems, maxLen) {
   return out;
 }
 
-function whatsNewInit_() {
-  if (COMPACT_MODE) return;   // never in the pop-out (the tour rule)
+/** ONE getWhatsNew per session, shared by the panel and the Reference
+ *  landing's "recently changed" (Batch M4): `cb(res, failed)`. A success is
+ *  kept; a failure is not (g129) — the next caller asks again. */
+var WHATSNEW_LOAD = { state: 'idle', res: null, waiters: [] };
+function whatsNewEnsure_(cb) {
+  if (WHATSNEW_LOAD.state === 'done') { cb(WHATSNEW_LOAD.res, false); return; }
+  WHATSNEW_LOAD.waiters.push(cb);
+  if (WHATSNEW_LOAD.state === 'loading') return;
+  WHATSNEW_LOAD.state = 'loading';
+  var settle = function (res, failed) {
+    WHATSNEW_LOAD.state = failed ? 'idle' : 'done';
+    WHATSNEW_LOAD.res = failed ? null : res;
+    var ws = WHATSNEW_LOAD.waiters; WHATSNEW_LOAD.waiters = [];
+    ws.forEach(function (w) { try { w(failed ? null : res, failed); } catch (e) {} });
+  };
   try {
     google.script.run
-      .withSuccessHandler(function (res) {
-        if (!res || res.none || !res.bodyMd) return;
-        WHATSNEW_STATE = res;
-        whatsNewRenderSidebarBtn_();
-        // Operator feedback 2026-07-09 — updates surface as rotating slides in
-        // the Dashboard greeting bar (clkGreetRot*) instead of an auto-opened
-        // panel; clicking a slide (or the sidebar star) opens the full panel,
-        // whose dismissal stamps the seen-flag (clears the NEW accent).
-        if (typeof clkGreetRotRefresh_ === 'function') clkGreetRotRefresh_();
-      })
-      .withFailureHandler(function () {})   // dormant on any failure
+      .withSuccessHandler(function (res) { settle(res || null, false); })
+      .withFailureHandler(function () { settle(null, true); })
       .getWhatsNew();
-  } catch (e) {}
+  } catch (e) { settle(null, true); }
+}
+/** Pure — does the payload have anything to show in the panel? */
+function whatsNewHasContent_(res) {
+  return !!(res && !res.none && (res.bodyMd || (res.manualRecent || []).length));
+}
+
+function whatsNewInit_() {
+  if (COMPACT_MODE) return;   // never in the pop-out (the tour rule)
+  whatsNewEnsure_(function (res) {
+    if (!whatsNewHasContent_(res)) return;   // dormant on nothing to show, or any failure
+    WHATSNEW_STATE = res;
+    whatsNewRenderSidebarBtn_();
+    // Operator feedback 2026-07-09 — updates surface as rotating slides in
+    // the Dashboard greeting bar (clkGreetRot*) instead of an auto-opened
+    // panel; clicking a slide (or the sidebar star) opens the full panel,
+    // whose dismissal stamps the seen-flag (clears the NEW accent).
+    if (typeof clkGreetRotRefresh_ === 'function') clkGreetRotRefresh_();
+  });
+}
+
+/** The manual's recently changed sections (Batch M4) — ONE renderer for the
+ *  What's new panel and the Reference landing. Each row opens its section in
+ *  Reference at the changed heading; a retraining change says so. */
+function manualRecentListHtml_(items) {
+  return '<div class="mr-list">' + (items || []).map(function (u) {
+    var p = String(u.date || '').split('-');
+    var when = p.length === 3 ? p[1] + '/' + p[2] + '/' + p[0] : String(u.date || '');
+    return '<button type="button" class="mr-row" data-kb-id="' + esc(u.id) + '" data-kb-anchor="' + esc(u.anchor || '') + '" onclick="manualRecentOpen_(this)">' +
+      '<span class="mr-num">' + esc(u.num) + '</span>' +
+      '<span class="mr-sum">' + esc(u.summary) + '</span>' +
+      '<span class="mr-meta">' + esc(when) + (u.retraining ? ' <span class="mr-retrain">Retraining</span>' : '') + '</span>' +
+    '</button>';
+  }).join('') + '</div>';
+}
+/** The heading's small print: the window, and "showing N of M" when capped
+ *  (no leading separator — the landing puts it inline, the panel on its own line). */
+function manualRecentSubHtml_(res) {
+  var n = (res.manualRecent || []).length, total = Number(res.manualRecentTotal) || n;
+  var bits = [];
+  if (res.manualRecentDays) bits.push('last ' + esc(String(res.manualRecentDays)) + ' days');
+  if (total > n) bits.push('showing ' + n + ' of ' + total);
+  return bits.join(' · ');
+}
+function manualRecentOpen_(btn) {
+  var id = btn.getAttribute('data-kb-id'), anchor = btn.getAttribute('data-kb-anchor') || '';
+  var ov = document.getElementById('whatsnew-overlay');
+  if (ov && ov.classList.contains('open')) closeOverlay(ov);
+  if (typeof kbOpenInReference_ === 'function') kbOpenInReference_(id, anchor);
 }
 
 /** Small star button in the sidebar theme row (next to the pop-out button) —
@@ -685,9 +737,15 @@ function whatsNewOpen_() {
   var res = WHATSNEW_STATE;
   if (!res) return;
   var ov = ensureOverlay('whatsnew-overlay', { label: "What's new", onClose: whatsNewClose_ });
-  var bodyHtml = (typeof kbMd_ === 'function')
+  var bodyHtml = !res.bodyMd ? '' : (typeof kbMd_ === 'function')
     ? kbMd_(res.bodyMd)
     : '<pre style="white-space:pre-wrap">' + esc(res.bodyMd) + '</pre>';
+  if ((res.manualRecent || []).length) {
+    bodyHtml += '<div class="mr-sec"><h3>' + icon('fileText', 14) + ' Procedures manual — recently changed <span class="mr-sub">' + manualRecentSubHtml_(res) + '</span></h3>' +
+      manualRecentListHtml_(res.manualRecent) + '</div>';
+  } else if (res.manualError) {
+    bodyHtml += '<p class="mr-err">' + icon('warning', 12) + ' Could not load the procedures manual’s recent changes.</p>';
+  }
   ov.innerHTML =
     '<div class="modal" style="max-width:560px" onclick="event.stopPropagation()">' +
       '<div class="modal-title">' + icon('star', 15) + ' ' + esc(res.title) + '</div>' +

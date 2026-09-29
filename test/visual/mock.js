@@ -313,6 +313,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     if (id === 'man-0-11') {
       return { id: 'man-0-11', title: '0.11 Notes and email conventions', bodyMd:
         'Every call gets a note. A useful note answers three questions:\n\n1. **Who called**\n2. **What they wanted**\n3. **What you did or committed to**\n\n' +
+        'Name the item by its code when you have it: a CPAP is **E0601**; oxygen rentals include the regulator (E1353) and the conserver (A9900).\n\n' +
         '## 0.11.1 Abbreviations\n\nUse the shorthand in [A.2 Note-taking shorthand](kb:man-a#A.2); the tabs are in [0.10.2 Before you transfer](kb:man-0-10#0.10.2).\n\n' +
         '> **Watch-out — never paste a patient\'s name into a department email subject.** Use the TRX number.\n\n' +
         '## 0.11.2 What the equipment looks like\n\n![Standard oxygen regulator on a cylinder](manimg:fig-o2-regulator)\n\n*Figure 7.1 — the regulator. The gauge reads the cylinder\'s pressure.*\n\n' +
@@ -2024,6 +2025,22 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       window.addEventListener('load', function () {
         if (window.M_STATE) { window.M_STATE.teamFrom = daysAgo(7); window.M_STATE.teamTo = daysAgo(1); }
       });
+    }
+  } catch (e) {}
+
+  // `?whatsnew=manual` (Batch M4) — getWhatsNew carrying the procedures
+  // manual's recent changes (no article), so the What's new panel's manual
+  // list and the Reference landing's "Manual — recently changed" block are
+  // shootable. Shape mirrors getWhatsNew's (INV-185): manualRecent items as
+  // kbManualRecent_ builds them, the uncapped total, the window, the version.
+  try {
+    if (/[?&]whatsnew=manual\b/.test(window.location.search)) {
+      FIXTURES.getWhatsNew = { id: '', title: "What's new", bodyMd: '', stamp: '|manual:' + daysAgo(1) + ':11',
+        manualRecentTotal: 11, manualRecentDays: 90, manualVersion: 'v3.0',
+        manualRecent: [
+          { date: daysAgo(1), num: '0.11', id: 'man-0-11', anchor: '', summary: 'TRX number, never a patient name, in a department email subject line.', retraining: true },
+          { date: daysAgo(6), num: '0.10.2', id: 'man-0-10', anchor: '0.10.2', summary: 'Check Fax History before you transfer a "waiting on my doctor" call.', retraining: false },
+          { date: daysAgo(12), num: '10.1', id: 'man-10-1', anchor: '', summary: 'The five-step estimate replaces the old rule of thumb for coinsurance.', retraining: true }] };
     }
   } catch (e) {}
 

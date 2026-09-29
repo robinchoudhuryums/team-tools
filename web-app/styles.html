@@ -2853,5 +2853,24 @@
     /* Keep rows and cards whole across a page break where we can. */
     .card, tr, .emp-card, .pay-stmt-row { break-inside: avoid; page-break-inside: avoid; }
     a[href] { text-decoration: none; color: inherit; }
+
+    /* (4) — ONE subject, marked by its Print button (Batch M4: a manual
+       section or a Quick Reference Card, kbPrintSection_). Everything that
+       neither HOLDS the subject nor sits INSIDE it is removed — by display,
+       not visibility, so the hidden page leaves no blank sheets behind — and
+       every ancestor collapses to a plain block, so a grid column (the
+       Reference rail) cannot keep its width on paper. The subject's own
+       controls go too: its buttons, feedback bar and comment thread. */
+    :root[data-print-one] body :not(:has(.print-one)):not(.print-one):not(.print-one *) { display: none !important; }
+    :root[data-print-one] :has(.print-one) {
+      display: block !important; position: static !important;
+      width: auto !important; max-width: none !important; height: auto !important; max-height: none !important;
+      margin: 0 !important; padding: 0 !important; overflow: visible !important;
+      border: none !important; box-shadow: none !important; background: none !important;
+    }
+    :root[data-print-one] .print-one { margin: 0 !important; border: none !important; box-shadow: none !important; }
+    :root[data-print-one] .print-one .kb-man-sec-acts,
+    :root[data-print-one] .print-one .kb-man-fb,
+    :root[data-print-one] .print-one #kb-comments { display: none !important; }
   }
 </style>

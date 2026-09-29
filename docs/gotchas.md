@@ -1658,6 +1658,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   checked by reading it, since `print-color-adjust` and `:has()` only exist in a
   real engine.
 
+  **Rule (4), 22post M4 (2026-09-29): ONE subject, marked by its Print button.**
+  `kbPrintSection_` marks a manual section `.print-one` and the root
+  `[data-print-one]`, prints, and clears both on `afterprint` (a timer behind
+  it). Inside the same block, everything that neither holds the subject nor sits
+  inside it is removed by DISPLAY, not visibility, so the hidden page leaves no
+  blank sheets. Every ancestor collapses to a plain block, so the Reference
+  rail's grid column cannot keep its width on paper. The subject's own buttons,
+  feedback bar and comments are dropped. `print-check.mjs` measures it in both
+  themes (the section alone, full width, dark ink). M4-P1 pins that the rules
+  live inside the one block.
+
 <a id="g113-read-the-server-through-serversource-never-by"></a>
 
 - **Read the server through `serverSource()` — never by FILENAME, and never by
@@ -3050,6 +3061,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   left the pin green (NO BITE). A file named exactly like a manual image but
   living elsewhere now isolates it. For each guard, drive a case that ONLY that
   guard stops.
+
+  **A THIRTEENTH direction (22post M4, 2026-09-29): an assertion on the FINAL
+  state cannot see a transient the code must never produce.** A keyboard preview
+  must not pop up when focus merely passes through a link. The pin focused a
+  link, moved focus away, flushed the timers and asserted the card was hidden.
+  With the "is focus still here?" guard deleted, the card showed and was then
+  hidden again by the pending blur, which ends in the same final state (NO
+  BITE). The pin now uses a link whose preview is not cached and asserts that
+  nothing was FETCHED. When the defect is "X happened and was undone", observe a
+  side effect of X, not the state after the undo.
 
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
