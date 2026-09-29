@@ -4845,3 +4845,207 @@ test('22post E DOM: a hidden widget costs no RPC even when its neighbour is show
   assert.strictEqual(n('getDeptRequests'), 0, 'the hidden Requests widget is never fetched');
   assert.strictEqual(n('getDashboardMetrics'), 0, 'nor the hidden carousels');
 });
+
+test('M1 DOM: the Manual dialog — Check shows the plan and every skipped article with its reason, Import unlocks only after a clean check of THIS link, a changed link locks it again, Import reloads the tree; Publish asks first and names the part; the tree sorts parts naturally', async () => {
+  const h = boot();
+  const w = h.window, doc = w.document;
+  w.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  const tree = { isAdmin: true, isManager: true, items: [
+    { id: 'man-10-1', department: 'Part 10 — Billing & Insurance', title: '10.1 How billing works', type: 'article', status: 'draft', sortOrder: 1 },
+    { id: 'man-2-1', department: 'Part 2 — Manual Mobility', title: '2.1 Intake', type: 'article', status: 'draft', sortOrder: 1 },
+    { id: 'man-2-2', department: 'Part 2 — Manual Mobility', title: '2.2 Delivery', type: 'article', status: 'published', sortOrder: 2 },
+    { id: 'kb-1', department: 'Billing', title: 'Hand-written', type: 'article', status: 'draft', sortOrder: 1 }] };
+  let treeReads = 0;
+  h.run.respond('getReferenceTree', () => { treeReads++; return tree; });
+  w.enterTool('reference', 'reference');
+  h.flushTimers();
+  // Batch M2: the manual's parts lead the tree under their own heading.
+  assert.deepStrictEqual(h.$$('#kb-tree .kb-dept-name').map((x) => x.textContent), ['Part 2 — Manual Mobility', 'Part 10 — Billing & Insurance', 'Billing'], 'Part 2 before Part 10, the manual first');
+  assert.deepStrictEqual(h.$$('#kb-tree .kb-tree-group').map((x) => x.textContent), ['Procedures manual', 'Other reference']);
+  const btn = h.$$('#kb-tree .kb-add').filter((b) => /Manual/.test(b.textContent))[0];
+  assert.ok(btn && btn.getAttribute('onclick') === 'kbOpenManualImport_()', 'an admin sees the Manual button, wired to the dialog');
+  h.read('kbOpenManualImport_')();   // the harness does not run inline handlers — the attribute is asserted, the call made
+  const ov = doc.getElementById('kb-man-overlay');
+  assert.ok(ov && ov.getAttribute('role') === 'dialog' && ov.getAttribute('aria-label'), 'a named dialog through ensureOverlay');
+  assert.strictEqual(doc.getElementById('kb-man-check').getAttribute('onclick'), 'kbManualRun_(true)');
+  assert.strictEqual(doc.getElementById('kb-man-import').getAttribute('onclick'), 'kbManualRun_(false)');
+  const run = h.read('kbManualRun_');
+  const opts = [...ov.querySelectorAll('#kb-man-dept option')].map((o) => o.textContent);
+  assert.deepStrictEqual(opts, ['Every part (2 drafts)', 'Part 2 — Manual Mobility (1)', 'Part 10 — Billing & Insurance (1)'], 'only the manual’s DRAFTS, by part, in order — never the hand-written draft');
+  const imp = doc.getElementById('kb-man-import');
+  assert.strictEqual(imp.disabled, true, 'Import starts locked');
+  // Check with no link: said, and no RPC.
+  run(true);
+  assert.ok(/Paste the Drive link/.test(doc.getElementById('kb-man-result').textContent));
+  assert.strictEqual(h.run.pending('kbImportManual').length, 0);
+  // Check a link.
+  const link = doc.getElementById('kb-man-link');
+  link.value = 'https://drive.google.com/file/d/abc/view';
+  run(true);
+  let call = h.run.pending('kbImportManual').slice(-1)[0];
+  assert.deepStrictEqual([call.args[0], call.args[1].dryRun], ['https://drive.google.com/file/d/abc/view', true], 'a check is a dry run');
+  h.run.flushSuccess({ success: true, dryRun: true, total: 160, created: 2, updated: 1, unchanged: 155,
+    skipped: [{ id: 'man-5-9', title: '5.9 Pick-up <procedures>', reason: 'edited' }, { id: 'man-1-4', title: '1.4 Calls', reason: 'deleted' }] }, 'kbImportManual');
+  const res = doc.getElementById('kb-man-result');
+  assert.ok(/Checked 160 articles — nothing written yet/.test(res.textContent) && /2 new drafts · 1 updated · 155 unchanged · 2 skipped/.test(res.textContent));
+  assert.ok(/5\.9 Pick-up <procedures> — edited in the app — not overwritten/.test(res.textContent) && /1\.4 Calls — deleted in the app — not re-created/.test(res.textContent), 'every skipped article, named, with its reason');
+  assert.ok(!res.querySelector('procedures'), 'titles are escaped');
+  assert.strictEqual(imp.disabled, false, 'a clean check with work to do unlocks Import');
+  // Change the link: locked again.
+  link.value = 'https://drive.google.com/file/d/other/view';
+  link.dispatchEvent(new w.Event('input', { bubbles: true }));
+  assert.strictEqual(imp.disabled, true, 'a different file must be checked first');
+  link.value = 'https://drive.google.com/file/d/abc/view';
+  run(true);
+  h.run.flushSuccess({ success: true, dryRun: true, total: 3, created: 0, updated: 0, unchanged: 3, skipped: [] }, 'kbImportManual');
+  assert.strictEqual(imp.disabled, true, 'nothing to import → nothing to press');
+  run(true);
+  h.run.flushSuccess({ success: true, dryRun: true, total: 3, created: 1, updated: 0, unchanged: 2, skipped: [] }, 'kbImportManual');
+  // Import.
+  const treeBefore = treeReads;
+  run(false);
+  call = h.run.pending('kbImportManual').slice(-1)[0];
+  assert.strictEqual(call.args[1].dryRun, false, 'Import is the real thing');
+  h.run.flushSuccess({ success: true, dryRun: false, total: 3, created: 1, updated: 0, unchanged: 2, skipped: [] }, 'kbImportManual');
+  assert.ok(/Imported 3 articles/.test(doc.getElementById('kb-man-result').textContent));
+  assert.strictEqual(imp.disabled, true, 'an import done leaves Import locked');
+  assert.strictEqual(treeReads, treeBefore + 1, 'and reloads the tree');
+  // A refused file lists the problems.
+  run(true);
+  h.run.flushSuccess({ success: false, error: 'The file was refused; nothing was imported.', problems: ['man-9: no title.'], problemCount: 3 }, 'kbImportManual');
+  assert.ok(/nothing was imported/.test(res.textContent) && /man-9: no title\./.test(res.textContent) && /… and 2 more/.test(res.textContent));
+  // Publish one part: a confirm that names it, then the RPC with the department.
+  doc.getElementById('kb-man-dept').value = 'Part 10 — Billing & Insurance';
+  const pubBtn = h.$$('#kb-man-overlay .kb-man-pubrow .kb-btn')[0];
+  assert.strictEqual(pubBtn.getAttribute('onclick'), 'kbManualPublish_(this)');
+  h.read('kbManualPublish_')(pubBtn);
+  await tick();
+  const dlg = h.$('.ui-dialog');
+  assert.ok(dlg && /Part 10 — Billing & Insurance/.test(dlg.textContent), 'the confirm names the part');
+  assert.strictEqual(h.run.pending('kbPublishManual').length, 0, 'nothing is published before the confirm');
+  h.click(h.$('.ui-dialog-ok'));
+  await tick();
+  const pub = h.run.pending('kbPublishManual').slice(-1)[0];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(pub.args[0])), { department: 'Part 10 — Billing & Insurance' });
+  h.run.flushSuccess({ success: true, count: 1, reviewSpreadDays: 90 }, 'kbPublishManual');
+  assert.ok(!doc.getElementById('kb-man-overlay'), 'the dialog closes through its hook');
+});
+
+// ── Batch M2 — the Manual reader ─────────────────────────────────────────────
+const M2_TREE = { isAdmin: true, isManager: true, items: [
+  { id: 'man-0-10', department: 'Part 00 — CSR Core', title: '0.10 Anatomy of a transaction', type: 'article', status: 'published', sortOrder: 10 },
+  { id: 'man-0-11', department: 'Part 00 — CSR Core', title: '0.11 Notes and email conventions', type: 'article', status: 'published', sortOrder: 11 },
+  { id: 'man-10-1', department: 'Part 10 — Billing & Insurance', title: '10.1 How billing works', type: 'article', status: 'published', sortOrder: 1 },
+  { id: 'kb-1', department: 'Billing', title: 'Hand-written', type: 'article', status: 'published', sortOrder: 1 }] };
+const M2_PART0 = { department: 'Part 00 — CSR Core', isAdmin: true, sections: [
+  { id: 'man-0-10', title: '0.10 Anatomy of a transaction', status: 'published', sortOrder: 10,
+    bodyMd: 'Tabs.\n\n## 0.10.1 Trx Type\n\ntypes\n\n## 0.10.2 Before you transfer\n\n1. Check it\n' },
+  { id: 'man-0-11', title: '0.11 Notes and email conventions', status: 'draft', sortOrder: 11,
+    bodyMd: 'Notes.\n\nSee [0.10.2 Before you transfer](kb:man-0-10#0.10.2) and [10.1 How billing works (Billing)](kb:man-10-1).\n\n> **Watch-out** — the TRX, never a name.\n' }] };
+
+test('M2 DOM: a manual section opens its WHOLE PART — one fetch per part, a click inside it scrolls, the comments follow the open section, cross-references open where they live, "Updated" and "Suggest an edit" are there and Edit/Delete are not', async () => {
+  const h = boot();
+  const w = h.window, doc = w.document;
+  w.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  h.run.respond('getReferenceTree', () => M2_TREE);
+  w.enterTool('reference', 'reference');
+  h.flushTimers();
+  const box = (d) => h.$$('#kb-tree .kb-dept').filter((b) => b.querySelector('.kb-dept-name').textContent === d)[0];
+  assert.ok(box('Part 00 — CSR Core').classList.contains('collapsed') && box('Part 10 — Billing & Insurance').classList.contains('collapsed'), 'the manual’s parts start collapsed');
+  assert.ok(!box('Billing').classList.contains('collapsed'), 'other reference keeps its own default');
+  assert.ok(h.$('#kb-tree .kb-router-open'), 'the tree offers the call router');
+  const parts = () => h.run.calls.filter((c) => c.method === 'getManualPart');
+  h.read('kbOpenItem_')('man-0-11');
+  assert.deepStrictEqual(parts().map((c) => c.args[0]), ['Part 00 — CSR Core'], 'ONE fetch: the section’s part');
+  assert.strictEqual(h.run.pending('getReferenceItem').length, 0, 'not the single-article read');
+  h.run.flushSuccess(M2_PART0, 'getManualPart');
+  const main = doc.getElementById('kb-main');
+  assert.deepStrictEqual(h.$$('#kb-main .kb-man-sec').map((s) => s.getAttribute('data-kb-id')), ['man-0-10', 'man-0-11'], 'every section of the part, in order');
+  assert.ok(h.$('#kb-man-sec-man-0-10 h3') && /0\.10\.1 Trx Type/.test(h.$('#kb-man-sec-man-0-10 h3').textContent), 'a section’s own ## demotes under its title');
+  assert.strictEqual(h.$$('#kb-main .kb-man-fb').length, 2, 'a feedback bar per section');
+  assert.ok(!/>\s*Edit\s*</.test(main.innerHTML) && !/kbDeleteItem_|kbOpenEditor_|kbOpenRevisions_/.test(main.innerHTML), 'no Edit, Delete or History on a manual section');
+  assert.ok(/1 of 2 sections in this part is a draft/.test(main.textContent), 'an admin is told which sections reps cannot see');
+  assert.ok(doc.getElementById('kb-man-sec-man-0-11').contains(doc.getElementById('kb-comments')), 'the comments host sits under the OPEN section');
+  assert.deepStrictEqual(h.run.pending('kbGetComments').map((c) => c.args[0]), ['man-0-11']);
+  assert.ok(!box('Part 00 — CSR Core').classList.contains('collapsed'), 'and its part opens in the rail');
+  // The meta arrives: the version line and the badge.
+  const today = new Date(); const d40 = new Date(today.getTime() - 40 * 86400000).toISOString().slice(0, 10);
+  h.run.flushSuccess({ version: 'v3.0', built: '09/15/2026', router: [], changelog: [{ date: d40, num: '0.11', id: 'man-0-11', anchor: '', summary: 'TRX, never a name.', retraining: true }] }, 'getManualMeta');
+  assert.ok(/CSR Procedures Manual v3\.0 · built 09\/15\/2026/.test(h.$('[data-kb-man-ver]').textContent));
+  const badge = h.$('[data-kb-badges="man-0-11"] .kb-man-upd');
+  assert.ok(badge && /Updated/.test(badge.textContent) && /retraining/.test(badge.textContent) && /TRX, never a name/.test(badge.getAttribute('title')));
+  assert.strictEqual(h.$('[data-kb-badges="man-0-10"]').innerHTML, '', 'no badge where nothing changed');
+  // A click on another section of the SAME part scrolls — no fetch.
+  h.read('kbOpenItem_')('man-0-10');
+  assert.strictEqual(parts().length, 1, 'no second fetch for the loaded part');
+  assert.ok(doc.getElementById('kb-man-sec-man-0-10').contains(doc.getElementById('kb-comments')), 'the comments move with the reader');
+  // Cross-references: the real <a>, opened by the delegated listener.
+  const x = h.$('#kb-man-sec-man-0-11 a.kb-xref[data-kb-id="man-0-10"]');
+  assert.ok(x && x.getAttribute('data-kb-anchor') === '0.10.2');
+  h.click(x);
+  assert.strictEqual(parts().length, 1, 'a link into the loaded part scrolls to the numbered heading');
+  assert.strictEqual(h.read('KB_STATE').currentId, 'man-0-10');
+  h.click(h.$('#kb-man-sec-man-0-11 a.kb-xref[data-kb-id="man-10-1"]'));
+  assert.deepStrictEqual(parts().map((c) => c.args[0]).slice(-1), ['Part 10 — Billing & Insurance'], 'a link into another part loads that part');
+  h.run.flushSuccess({ department: 'Part 10 — Billing & Insurance', sections: [{ id: 'man-10-1', title: '10.1 How billing works', status: 'published', bodyMd: 'x' }] }, 'getManualPart');
+  // Suggest an edit — the review-queue flag, with a required note.
+  h.read('kbOpenItem_')('man-0-11');
+  h.run.flushSuccess(M2_PART0, 'getManualPart');
+  const sug = h.$$('#kb-man-sec-man-0-11 .kb-man-fb button').filter((b) => /Suggest an edit/.test(b.textContent))[0];
+  assert.ok(sug);
+  h.read('kbSuggestEdit_')(sug);
+  await tick();
+  const input = h.$('.ui-dialog-input');
+  assert.ok(input && /0\.11 Notes and email conventions/.test(h.$('.ui-dialog').textContent), 'the prompt names the section');
+  input.value = '';
+  h.dispatchKey('Enter', { target: input });
+  await tick();
+  assert.strictEqual(h.run.pending('kbFlagItem').length, 0, 'an empty suggestion is not sent');
+  input.value = 'The fee is now $85';
+  h.dispatchKey('Enter', { target: input });
+  await tick();
+  assert.deepStrictEqual(h.run.pending('kbFlagItem').map((c) => c.args), [['man-0-11', 'stale', 'The fee is now $85']]);
+});
+
+test('M2 DOM: the drawer — a typed section number jumps (Enter opens it), the call router filters without losing the filter box, and "Read in context" carries the section to its part in the tab', async () => {
+  const h = boot();
+  const w = h.window, doc = w.document;
+  w.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  h.run.respond('getReferenceTree', () => M2_TREE);
+  h.run.respond('getManualMeta', () => ({ version: 'v3.0', built: '', changelog: [], router: [
+    { g: 'Status and timing', q: 'Where is my equipment?', a: '0.2', t: [{ id: 'man-0-10', anchor: '' }] },
+    { g: 'Status and timing', q: 'You’re waiting on my doctor?', a: '0.10.2 — check Fax History', t: [{ id: 'man-0-10', anchor: '0.10.2' }] },
+    { g: 'Money', q: 'Is this a draft only?', a: 'x', t: [{ id: 'man-9-9', anchor: '' }] }] }));
+  h.read('kbDrawerOpen_')();
+  h.flushTimers();
+  const entry = h.$('#kbd-router .kbd-router-btn');
+  assert.ok(entry && /What did the caller say\?/.test(entry.textContent), 'the router entry, once the meta and tree are in');
+  h.read('kbDrawerOpenRouter_')();
+  const q = doc.getElementById('kbd-rt-q');
+  const rows = () => h.$$('#kbd-rt-list .kbd-rt-row');
+  assert.strictEqual(rows().length, 2, 'the row whose only target is not visible is dropped');
+  q.value = 'doctor';
+  q.dispatchEvent(new w.Event('input', { bubbles: true }));
+  assert.strictEqual(rows().length, 1);
+  assert.deepStrictEqual([rows()[0].getAttribute('data-kb-id'), rows()[0].getAttribute('data-kb-anchor')], ['man-0-10', '0.10.2'], 'the row opens its section at the heading');
+  assert.strictEqual(doc.getElementById('kbd-rt-q'), q, 'the filter box is the same element');
+  assert.strictEqual(q.value, 'doctor', 'and keeps what was typed (the list repaints, the box does not — g141)');
+  // A section number in the drawer search.
+  const s = doc.getElementById('kbd-q');
+  s.value = '§0-10.2';
+  h.read('kbDrawerSearch_')(s.value);
+  assert.ok(/Go to 0\.10\.2/.test(doc.getElementById('kbd-body').textContent));
+  assert.strictEqual(h.run.pending('searchReference').length, 0, 'no text search for a number');
+  h.dispatchKey('Enter', { target: s });
+  assert.deepStrictEqual(h.run.pending('getReferenceItem').map((c) => c.args[0]), ['man-0-10'], 'Enter opens it');
+  h.run.flushSuccess({ id: 'man-0-10', title: '0.10 Anatomy of a transaction', type: 'article', status: 'published', bodyMd: '## 0.10.2 Before you transfer\n\nx' }, 'getReferenceItem');
+  const ctx = h.$$('#kbd-body .kbd-back').filter((b) => /Read in context/.test(b.textContent))[0];
+  assert.ok(ctx && ctx.getAttribute('data-kb-anchor') === '0.10.2', 'a manual section in the drawer offers its part');
+  h.read('kbReadInContext_')(ctx);
+  h.flushTimers();
+  assert.strictEqual(w.KB_OPEN_HINT, null, 'the parked hint was consumed on arrival');
+  assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Part 00 — CSR Core'], 'and the tab opened the section’s part');
+});

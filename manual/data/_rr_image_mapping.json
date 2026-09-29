@@ -1,0 +1,425 @@
+{
+  "mapping": [
+    {
+      "file": "image18.jpg",
+      "record": "__diagram-standard-order",
+      "name": "(diagram)",
+      "section": "Information on DME / OOP Purchases",
+      "primary": true
+    },
+    {
+      "file": "image52.png",
+      "record": "__diagram-standard-order-2",
+      "name": "(diagram)",
+      "section": "Information on DME / OOP Purchases",
+      "primary": true
+    },
+    {
+      "file": "image22.jpg",
+      "record": "o2-drive-devilbiss-525",
+      "name": "Drive DeVilbiss 525",
+      "section": "Oxygen Concentrators (E1390)",
+      "primary": true
+    },
+    {
+      "file": "image49.png",
+      "record": "o2-drive-deco2",
+      "name": "Drive DECO2",
+      "section": "Oxygen Concentrators (E1390)",
+      "primary": true
+    },
+    {
+      "file": "image51.jpg",
+      "record": "o2-invacare-perfecto-2v",
+      "name": "Invacare Perfecto 2V",
+      "section": "Oxygen Concentrators (E1390)",
+      "primary": true
+    },
+    {
+      "file": "image33.jpg",
+      "record": "o2-drive-devilbiss-1025",
+      "name": "Drive DeVilbiss 1025 (10 LPM)",
+      "section": "Oxygen Concentrators (E1390)",
+      "primary": true
+    },
+    {
+      "file": "image10.jpg",
+      "record": "o2-conserver-sunset-chad",
+      "name": "Sunset CHAD Oxygen Conserver RES049",
+      "section": "Oxygen Accessories",
+      "primary": true
+    },
+    {
+      "file": "image24.jpg",
+      "record": "suction-sunset-su100dc",
+      "name": "Sunset Portable Suction Machine SU100DC",
+      "section": "Suction Machine",
+      "primary": true
+    },
+    {
+      "file": "image59.jpg",
+      "record": "sup-medline-saline-solution-addipak-5ml",
+      "name": "Medline Saline Solution AddiPak 5ml",
+      "section": "Suction Supplies",
+      "primary": true
+    },
+    {
+      "file": "image6.jpg",
+      "record": "sup-medline-saline-solution-addipak-5ml",
+      "name": "Medline Saline Solution AddiPak 5ml",
+      "section": "Suction Supplies",
+      "primary": false
+    },
+    {
+      "file": "image42.jpg",
+      "record": "sup-medline-800cc-suction-canister",
+      "name": "Medline 800cc Suction Canister",
+      "section": "Suction Supplies",
+      "primary": true
+    },
+    {
+      "file": "image23.jpg",
+      "record": "sup-oropharyngeal-suction-catheter-yankauer",
+      "name": "Oropharyngeal Suction Catheter / Yankauer",
+      "section": "Suction Supplies",
+      "primary": true
+    },
+    {
+      "file": "image40.jpg",
+      "record": "sup-trach-tube-cuffed",
+      "name": "Trach Tube Cuffed",
+      "section": "Tracheostomy Supplies",
+      "primary": true
+    },
+    {
+      "file": "image46.jpg",
+      "record": "sup-medline-trach-care-kit",
+      "name": "Medline Trach Care Kit",
+      "section": "Tracheostomy Supplies",
+      "primary": true
+    },
+    {
+      "file": "image14.jpg",
+      "record": "sup-tracheal-hme-internal-filter-holder",
+      "name": "Tracheal HME (Internal Filter & Holder)",
+      "section": "Tracheostomy Supplies",
+      "primary": true
+    },
+    {
+      "file": "image15.jpg",
+      "record": "sup-tracheal-hme-internal-filter-holder",
+      "name": "Tracheal HME (Internal Filter & Holder)",
+      "section": "Tracheostomy Supplies",
+      "primary": false
+    },
+    {
+      "file": "image25.jpg",
+      "record": "sup-trach-tube-collar",
+      "name": "Trach Tube Collar",
+      "section": "Tracheostomy Supplies",
+      "primary": true
+    },
+    {
+      "file": "image16.jpg",
+      "record": "sup-trach-mask",
+      "name": "Trach Mask",
+      "section": "Tracheostomy Supplies",
+      "primary": true
+    },
+    {
+      "file": "image55.png",
+      "record": "sup-trach-inner-cannula",
+      "name": "Trach Inner Cannula",
+      "section": "Tracheostomy Supplies",
+      "primary": true
+    },
+    {
+      "file": "image4.png",
+      "record": "sup-trach-speaking-valve",
+      "name": "Trach Speaking Valve",
+      "section": "Tracheostomy Supplies",
+      "primary": true
+    },
+    {
+      "file": "image50.jpg",
+      "record": "compressor-drive-50psi-18450",
+      "name": "Drive Heavy Duty 50 PSI Compressor 18450",
+      "section": "50 PSI Compressor",
+      "primary": true
+    },
+    {
+      "file": "image36.jpg",
+      "record": "cpap-resmed-airsense-11",
+      "name": "Resmed AirSense 11 CPAP S-11 39001",
+      "section": "CPAP Machines (E0601)",
+      "primary": true
+    },
+    {
+      "file": "image12.jpg",
+      "record": "cpap-resmed-airsense-10",
+      "name": "Resmed AirSense 10 CPAP S-10 37208",
+      "section": "CPAP Machines (E0601)",
+      "primary": true
+    },
+    {
+      "file": "image13.jpg",
+      "record": "bipap-luna-g3-a25",
+      "name": "React Health Luna G3 BiPAP A25 LG3700",
+      "section": "BiPAP Machines",
+      "primary": true
+    },
+    {
+      "file": "image1.png",
+      "record": "bipap-resmed-aircurve-11",
+      "name": "ResMed AirCurve 11 BiPAP S11 39019",
+      "section": "BiPAP Machines",
+      "primary": true
+    },
+    {
+      "file": "image3.jpg",
+      "record": "bipap-resmed-aircurve-10-st",
+      "name": "ResMed AirCurve 10 ST BiPAP S10 37307",
+      "section": "BiPAP Machines",
+      "primary": true
+    },
+    {
+      "file": "image28.jpg",
+      "record": "sup-full-facemask-with-headgear",
+      "name": "Full Facemask with Headgear",
+      "section": "PAP Supplies & Covered Allowances",
+      "primary": true
+    },
+    {
+      "file": "image17.jpg",
+      "record": "sup-replacement-facemask-interface",
+      "name": "Replacement Facemask Interface",
+      "section": "PAP Supplies & Covered Allowances",
+      "primary": true
+    },
+    {
+      "file": "image37.jpg",
+      "record": "sup-replacement-nasal-cushion",
+      "name": "Replacement Nasal Cushion",
+      "section": "PAP Supplies & Covered Allowances",
+      "primary": true
+    },
+    {
+      "file": "image39.jpg",
+      "record": "sup-replacement-nasal-pillows",
+      "name": "Replacement Nasal Pillows",
+      "section": "PAP Supplies & Covered Allowances",
+      "primary": true
+    },
+    {
+      "file": "image8.jpg",
+      "record": "sup-nasal-application-device-with-headgear",
+      "name": "Nasal Application Device with Headgear",
+      "section": "PAP Supplies & Covered Allowances",
+      "primary": true
+    },
+    {
+      "file": "image38.jpg",
+      "record": "sup-headgear-for-pap",
+      "name": "Headgear for PAP",
+      "section": "PAP Supplies & Covered Allowances",
+      "primary": true
+    },
+    {
+      "file": "image43.jpg",
+      "record": "sup-chinstrap",
+      "name": "Chinstrap",
+      "section": "PAP Supplies & Covered Allowances",
+      "primary": true
+    },
+    {
+      "file": "image5.jpg",
+      "record": "sup-pap-tubing",
+      "name": "PAP Tubing",
+      "section": "PAP Supplies & Covered Allowances",
+      "primary": true
+    },
+    {
+      "file": "image57.jpg",
+      "record": "sup-disposable-filters",
+      "name": "Disposable Filters",
+      "section": "PAP Supplies & Covered Allowances",
+      "primary": true
+    },
+    {
+      "file": "image2.jpg",
+      "record": "sup-non-disposable-filters",
+      "name": "Non-Disposable Filters",
+      "section": "PAP Supplies & Covered Allowances",
+      "primary": true
+    },
+    {
+      "file": "image26.jpg",
+      "record": "sup-replacement-water-chamber",
+      "name": "Replacement Water Chamber",
+      "section": "PAP Supplies & Covered Allowances",
+      "primary": true
+    },
+    {
+      "file": "image48.jpg",
+      "record": "sup-wipes",
+      "name": "Wipes",
+      "section": "Incontinence Supplies",
+      "primary": true
+    },
+    {
+      "file": "image11.jpg",
+      "record": "sup-disposable-underpads",
+      "name": "Disposable Underpads",
+      "section": "Incontinence Supplies",
+      "primary": true
+    },
+    {
+      "file": "image7.jpg",
+      "record": "sup-briefs-diapers",
+      "name": "Briefs / Diapers",
+      "section": "Incontinence Supplies",
+      "primary": true
+    },
+    {
+      "file": "image56.jpg",
+      "record": "sup-pullups-underwear",
+      "name": "Pullups / Underwear",
+      "section": "Incontinence Supplies",
+      "primary": true
+    },
+    {
+      "file": "image47.jpg",
+      "record": "sup-disposable-liners-pads",
+      "name": "Disposable Liners / Pads",
+      "section": "Incontinence Supplies",
+      "primary": true
+    },
+    {
+      "file": "image60.jpg",
+      "record": "sup-insertion-tray-without-bag-or-catheter",
+      "name": "Insertion Tray (without bag or catheter)",
+      "section": "Catheter Supplies",
+      "primary": true
+    },
+    {
+      "file": "image34.jpg",
+      "record": "sup-male-external-catheter",
+      "name": "Male External Catheter",
+      "section": "Catheter Supplies",
+      "primary": true
+    },
+    {
+      "file": "image45.jpg",
+      "record": "sup-straight-tip-urine-catheter-coated-uncoated",
+      "name": "Straight Tip Urine Catheter (coated/uncoated)",
+      "section": "Catheter Supplies",
+      "primary": true
+    },
+    {
+      "file": "image53.jpg",
+      "record": "sup-coude-tip-urinary-catheter",
+      "name": "Coude Tip Urinary Catheter",
+      "section": "Catheter Supplies",
+      "primary": true
+    },
+    {
+      "file": "image29.jpg",
+      "record": "sup-intermittent-urinary-catheter-kit-without-balloo",
+      "name": "Intermittent Urinary Catheter Kit without Balloon",
+      "section": "Catheter Supplies",
+      "primary": true
+    },
+    {
+      "file": "image35.jpg",
+      "record": "sup-bedside-drainage-bag-2-000ml",
+      "name": "Bedside Drainage Bag 2,000ml",
+      "section": "Catheter Supplies",
+      "primary": true
+    },
+    {
+      "file": "image30.jpg",
+      "record": "sup-urinary-leg-abdomen-bag-500ml-or-1-000ml",
+      "name": "Urinary Leg / Abdomen Bag (500ml or 1,000ml)",
+      "section": "Catheter Supplies",
+      "primary": true
+    },
+    {
+      "file": "image31.jpg",
+      "record": "cough-assist-biwaze",
+      "name": "BiWaze Cough Assist Device",
+      "section": "BiWaze Cough Assist Device (E0482)",
+      "primary": true
+    },
+    {
+      "file": "image44.jpg",
+      "record": "cough-assist-tubing-t70",
+      "name": "Circuit Corrugated Tubing T70",
+      "section": "BiWaze Cough Assist Device (E0482)",
+      "primary": true
+    },
+    {
+      "file": "image41.jpg",
+      "record": "cough-assist-interface-mask",
+      "name": "Interface Mask",
+      "section": "BiWaze Cough Assist Device (E0482)",
+      "primary": true
+    },
+    {
+      "file": "image21.jpg",
+      "record": "vent-philips-trilogy-100",
+      "name": "Philips Respironics Trilogy 100",
+      "section": "Philips Respironics Trilogy 100 (E0465, E0466)",
+      "primary": true
+    },
+    {
+      "file": "image9.jpg",
+      "record": "vent-breathing-circuits",
+      "name": "Breathing Circuits",
+      "section": "Philips Respironics Trilogy 100 (E0465, E0466)",
+      "primary": true
+    },
+    {
+      "file": "image19.jpg",
+      "record": "vent-bacterial-viral-filters",
+      "name": "Bacterial Viral Filters",
+      "section": "Philips Respironics Trilogy 100 (E0465, E0466)",
+      "primary": true
+    },
+    {
+      "file": "image58.jpg",
+      "record": "vent-carrying-bag",
+      "name": "Carrying Bag",
+      "section": "Philips Respironics Trilogy 100 (E0465, E0466)",
+      "primary": true
+    },
+    {
+      "file": "image20.jpg",
+      "record": "ippb-bennett-ap5",
+      "name": "Bennett AP-5 IPPB Machine",
+      "section": "IPPB",
+      "primary": true
+    },
+    {
+      "file": "image54.jpg",
+      "record": "ippb-breathing-circuit-hud1560",
+      "name": "IPPB Medline Universal Breathing Circuit HUD 1560",
+      "section": "IPPB",
+      "primary": true
+    },
+    {
+      "file": "image32.jpg",
+      "record": "o2-philips-everflo",
+      "name": "Philips Respironics EverFlo",
+      "section": "Oxygen Concentrators (E1390)",
+      "primary": true
+    },
+    {
+      "file": "image27.png",
+      "record": "cpap-react-health-luna-g3",
+      "name": "React Health Luna G3 CPAP LG3600",
+      "section": "CPAP Machines (E0601)",
+      "primary": true
+    }
+  ],
+  "unmatched": []
+}

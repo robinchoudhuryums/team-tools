@@ -1795,6 +1795,29 @@ const KB_REVISIONS_HEADERS = ['CapturedAt', 'RevId', 'ItemId', 'Title', 'Type', 
 const KBREV = { CAPTURED_AT: 0, REV_ID: 1, ITEM_ID: 2, TITLE: 3, TYPE: 4, BODY_MD: 5, DRIVE_KIND: 6, DRIVE_FILE_ID: 7, PRIOR_UPDATED_AT: 8, PRIOR_UPDATED_BY: 9, REPLACED_BY: 10, ACTION: 11 };
 const KB_REVISIONS_MAX_SCAN = 4000;
 const KB_REVISIONS_PER_ITEM = 30;   // most-recent snapshots surfaced per item
+// Batch M1 — the CSR Procedures Manual import. The manual's build writes
+// articles.json (manual/export_reference.py); an admin points kbImportManual at
+// it on Drive. Every article id is `man-…` (the prefix is how a manual article
+// is told apart from a hand-written one). The ledger records, per article, the
+// export's SourceHash and a hash of the dept/title/body the import WROTE — so a
+// re-import of unchanged source writes nothing, and an article someone edited
+// in the app (its row no longer hashes to BodyHash) is skipped and reported,
+// never overwritten.
+const KB_MANUAL_ID_RE = /^man-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const KB_MANUAL_IMPORT_TAB = 'ManualImport';
+const KB_MANUAL_IMPORT_HEADERS = ['Id', 'SourceHash', 'BodyHash', 'ImportedAt', 'ImportedBy'];
+const KBMI = { ID: 0, SOURCE_HASH: 1, BODY_HASH: 2, IMPORTED_AT: 3, IMPORTED_BY: 4 };
+const KB_MANUAL_MAX_ARTICLES = 400;   // the manual is ~160; a file far past this is not the manual
+const KB_MANUAL_FILE_MAX = 5000000;   // bytes — manual.json is ~370 KB
+// Batch M2 — the export is ONE file, manual.json: {format, version, built,
+// router, changelog, articles}. The meta (everything but the articles) lives in
+// the ManualMeta tab — A2 holds its JSON — and drives the Manual reader: the
+// version line, the "Updated" badges and the Ctrl+K drawer's call router.
+const KB_MANUAL_FORMAT = 'ums-manual/1';
+const KB_MANUAL_META_TAB = 'ManualMeta';
+const KB_MANUAL_META_CACHE_KEY = 'kb_manual_meta_v1';
+const KB_MANUAL_META_MAX = 45000;    // chars — one cell, under the 50k Sheets limit
+const KB_MANUAL_READONLY_MSG = 'This section comes from the procedures manual. Change it in the manual source and re-import — edits made here would be overwritten or lost.';
 // ── Insurance payor lookup (operator 2026-08-25 — batch 3) ──────────────────
 // A ~1,000-row payor/HCPCS acceptance sheet lives with another dept and was
 // too slow to reference mid-call. The operator's cleaned CSV imports into an

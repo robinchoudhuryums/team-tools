@@ -1492,6 +1492,83 @@
     "getEmployeeState"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-28",
+   "why": "Batch M1: manual import (kbImportManual, kbPublishManual + pure helpers) in 70_kb.js; KB_MANUAL_* constants in 00_config.js",
+   "added": [
+    "KBMI",
+    "KB_MANUAL_FILE_MAX",
+    "KB_MANUAL_ID_RE",
+    "KB_MANUAL_IMPORT_HEADERS",
+    "KB_MANUAL_IMPORT_TAB",
+    "KB_MANUAL_MAX_ARTICLES",
+    "getOrCreateManualImportSheet_",
+    "kbImportManual",
+    "kbManualFileId_",
+    "kbManualHashBasis_",
+    "kbManualLedger_",
+    "kbManualPlan_",
+    "kbManualValidate_",
+    "kbNaturalCompare_",
+    "kbPublishManual",
+    "kbReviewStaggerOffsets_",
+    "kbSha256Hex_"
+   ],
+   "removed": [],
+   "changed": [
+    "getReferenceTree",
+    "kbSaveItem"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-28",
+   "why": "Batch M2: manual bundle, ManualMeta, getManualMeta/getManualPart, read-only guards",
+   "added": [
+    "KB_MANUAL_FORMAT",
+    "KB_MANUAL_META_CACHE_KEY",
+    "KB_MANUAL_META_MAX",
+    "KB_MANUAL_META_TAB",
+    "KB_MANUAL_READONLY_MSG",
+    "getManualMeta",
+    "getManualPart",
+    "getOrCreateManualMetaSheet_",
+    "kbDeleteRowSafe_",
+    "kbManualBundle_",
+    "kbManualMetaRead_",
+    "kbManualMetaValidate_",
+    "kbManualOrphans_"
+   ],
+   "removed": [],
+   "changed": [
+    "KB_MANUAL_FILE_MAX",
+    "kbDeleteItem",
+    "kbImportManual",
+    "kbRevertItem",
+    "kbSaveItem"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-28",
+   "why": "Batch M2: manual bundle, ManualMeta, getManualMeta/getManualPart, read-only guards",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "kbImportManual"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-28",
+   "why": "Batch M2: manual bundle, ManualMeta, getManualMeta/getManualPart, read-only guards",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "kbImportManual"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2351,6 +2428,11 @@
    "kind": "const",
    "sha": "a522c639706a62db"
   },
+  "KBMI": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8dfe5dfc24399de7"
+  },
   "KBR": {
    "file": "00_config.js",
    "kind": "const",
@@ -2565,6 +2647,56 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "7bb1ad63a645d08b"
+  },
+  "KB_MANUAL_FILE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ad5637faa2c9db38"
+  },
+  "KB_MANUAL_FORMAT": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5443f7e68d186e3b"
+  },
+  "KB_MANUAL_ID_RE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "bf1eb8ef36b22fd4"
+  },
+  "KB_MANUAL_IMPORT_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a39ea6ba5336fb02"
+  },
+  "KB_MANUAL_IMPORT_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "07d34b6e9cf7f9d5"
+  },
+  "KB_MANUAL_MAX_ARTICLES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8bc30a591cc96cc2"
+  },
+  "KB_MANUAL_META_CACHE_KEY": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ea693f46eb21c366"
+  },
+  "KB_MANUAL_META_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5c38a5fb3e408d94"
+  },
+  "KB_MANUAL_META_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "805168d9df518cb4"
+  },
+  "KB_MANUAL_READONLY_MSG": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5153cb969b4845da"
   },
   "KB_MAP_GEOCODE_CACHE_MAX": {
    "file": "00_config.js",
@@ -5506,6 +5638,16 @@
    "kind": "function",
    "sha": "73ad029c0233380a"
   },
+  "getManualMeta": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "03490a68db1a1e0d"
+  },
+  "getManualPart": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "5ddfbfc0c8baf631"
+  },
   "getMetricsAmbient": {
    "file": "40_metrics.js",
    "kind": "function",
@@ -5706,6 +5848,16 @@
    "kind": "function",
    "sha": "2a9adab3feee0be0"
   },
+  "getOrCreateManualImportSheet_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "80a227452c85ae06"
+  },
+  "getOrCreateManualMetaSheet_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "343f9f1cb089ec98"
+  },
   "getOrCreateNotesArchiveTab_": {
    "file": "30_callnotes.js",
    "kind": "function",
@@ -5844,7 +5996,7 @@
   "getReferenceTree": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "61350a471153cd48"
+   "sha": "ec93f8b6285f38a6"
   },
   "getRetentionConfig": {
    "file": "10_core.js",
@@ -6429,7 +6581,12 @@
   "kbDeleteItem": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "739bf2fe768deba1"
+   "sha": "0a54d173d1eea732"
+  },
+  "kbDeleteRowSafe_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "ffe64630e1fc4fd4"
   },
   "kbDocBodyToMarkdown_": {
    "file": "70_kb.js",
@@ -6546,6 +6703,11 @@
    "kind": "function",
    "sha": "1e3d5609a64eecdd"
   },
+  "kbImportManual": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "af057700f77a66e2"
+  },
   "kbIngestFile": {
    "file": "70_kb.js",
    "kind": "function",
@@ -6555,6 +6717,51 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "78177d85b224a962"
+  },
+  "kbManualBundle_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "8f1d7cc62fcfda25"
+  },
+  "kbManualFileId_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "cc2f96edacae05a0"
+  },
+  "kbManualHashBasis_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "abc4b5438c85f5dc"
+  },
+  "kbManualLedger_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "6626ce9755ca712c"
+  },
+  "kbManualMetaRead_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "a8d1ca640eb4ae38"
+  },
+  "kbManualMetaValidate_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "2a534211c42dd7bc"
+  },
+  "kbManualOrphans_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "9e204cae6e23db3b"
+  },
+  "kbManualPlan_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "64bce6a237514118"
+  },
+  "kbManualValidate_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "f5136fbdf9a7ef75"
   },
   "kbMapCacheKey_": {
    "file": "70_kb.js",
@@ -6570,6 +6777,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "99cc92bc5242dbc6"
+  },
+  "kbNaturalCompare_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "2f00f99226ffdf57"
   },
   "kbOpenUrl_": {
    "file": "70_kb.js",
@@ -6595,6 +6807,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "9c67e668b6571ae7"
+  },
+  "kbPublishManual": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "8992c53833552b87"
   },
   "kbRecordView": {
    "file": "70_kb.js",
@@ -6624,7 +6841,12 @@
   "kbRevertItem": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "0028e2bc3cd17f90"
+   "sha": "a42e730696464cb1"
+  },
+  "kbReviewStaggerOffsets_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "6092b04e10bc1a05"
   },
   "kbRosterFromBanded_": {
    "file": "70_kb.js",
@@ -6644,7 +6866,7 @@
   "kbSaveItem": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "5f4ab7d53bef8a45"
+   "sha": "29d844cbcf2b5fe7"
   },
   "kbSaveSearchConfig": {
    "file": "70_kb.js",
@@ -6660,6 +6882,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "6ef45df821e362c6"
+  },
+  "kbSha256Hex_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "a06c6b56b27e4940"
   },
   "kbSheetGridToMarkdown_": {
    "file": "70_kb.js",

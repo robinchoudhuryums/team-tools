@@ -1,0 +1,68 @@
+{
+  "pw-process-flow": {
+    "source": "pw/image16.jpg",
+    "alt": "Power process flow",
+    "caption": "Power process flow — Intake & Education, Qualification, Verification & Authorization, Delivery",
+    "reviewed": "2026-09-23 — checked for PHI"
+  },
+  "pw-pt-concurrence": {
+    "source": "pw/image4.png",
+    "alt": "PT Report Concurrence form",
+    "caption": "PT Report Concurrence — the provider signs at the bottom of the last page",
+    "reviewed": "2026-09-23 — checked for PHI"
+  },
+  "o2-flowchart": {
+    "source": "o2/image7.jpg",
+    "alt": "Concentrator troubleshooting flowchart",
+    "caption": "Concentrator troubleshooting flowchart — the same sequence as the table below",
+    "reviewed": "2026-09-23 — checked for PHI"
+  },
+  "o2-cyl-1": {
+    "source": "o2/image15.png",
+    "alt": "Attaching a regulator to a cylinder",
+    "caption": "Illustration 1 — attaching the regulator",
+    "reviewed": "2026-09-23 — checked for PHI"
+  },
+  "o2-cyl-2": {
+    "source": "o2/image12.png",
+    "alt": "Parts of a cylinder and regulator",
+    "caption": "Illustration 2 — parts of the cylinder and regulator",
+    "reviewed": "2026-09-23 — checked for PHI"
+  },
+  "o2-ticket-1": {
+    "source": "o2/image11.png",
+    "alt": "Actions menu, Create Order",
+    "caption": "Step 1 — Actions → Create Order",
+    "reviewed": "2026-09-23 — checked for PHI"
+  },
+  "o2-ticket-3": {
+    "source": "o2/image4.png",
+    "alt": "Transaction tab fields",
+    "caption": "Step 3 — the Transaction tab",
+    "reviewed": "2026-09-23 — checked for PHI"
+  },
+  "o2-ticket-4": {
+    "source": "o2/image5.png",
+    "alt": "Selection tab with items added",
+    "caption": "Step 4 — the Selection tab",
+    "reviewed": "2026-09-23 — checked for PHI"
+  },
+  "o2-ticket-5": {
+    "source": "o2/image6.png",
+    "alt": "Ticket tab fields",
+    "caption": "Step 5 — the Ticket tab",
+    "reviewed": "2026-09-23 — checked for PHI"
+  },
+  "o2-regulator": {
+    "source": "o2/image14.png",
+    "alt": "Standard oxygen regulator on a cylinder",
+    "caption": "<b>Standard regulator</b> · E1353 · included in the rental",
+    "reviewed": "2026-09-23"
+  },
+  "o2-conserver": {
+    "source": "o2/image9.jpg",
+    "alt": "Oxygen conserving device",
+    "caption": "<b>Conserver</b> · A9900 · included if the provider orders it — otherwise $320",
+    "reviewed": "2026-09-23"
+  }
+}

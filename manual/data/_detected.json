@@ -1,0 +1,222 @@
+[
+  {
+    "part": "p2",
+    "doc": "MM",
+    "page": 6,
+    "idx": 0,
+    "file": "img/crops/MM-p06-0.png",
+    "w": 696,
+    "h": 166,
+    "uniq": 1323
+  },
+  {
+    "part": "p2",
+    "doc": "MM",
+    "page": 7,
+    "idx": 0,
+    "file": "img/crops/MM-p07-0.png",
+    "w": 447,
+    "h": 345,
+    "uniq": 330
+  },
+  {
+    "part": "p2",
+    "doc": "MM",
+    "page": 9,
+    "idx": 1,
+    "file": "img/crops/MM-p09-1.png",
+    "w": 260,
+    "h": 184,
+    "uniq": 411
+  },
+  {
+    "part": "p2",
+    "doc": "MM",
+    "page": 18,
+    "idx": 0,
+    "file": "img/crops/MM-p18-0.png",
+    "w": 198,
+    "h": 275,
+    "uniq": 218
+  },
+  {
+    "part": "p2",
+    "doc": "MM",
+    "page": 18,
+    "idx": 2,
+    "file": "img/crops/MM-p18-2.png",
+    "w": 183,
+    "h": 183,
+    "uniq": 471
+  },
+  {
+    "part": "p3",
+    "doc": "PW",
+    "page": 4,
+    "idx": 0,
+    "file": "img/crops/PW-p04-0.png",
+    "w": 784,
+    "h": 344,
+    "uniq": 1282
+  },
+  {
+    "part": "p3",
+    "doc": "PW",
+    "page": 7,
+    "idx": 0,
+    "file": "img/crops/PW-p07-0.png",
+    "w": 730,
+    "h": 336,
+    "uniq": 988
+  },
+  {
+    "part": "p3",
+    "doc": "PW",
+    "page": 10,
+    "idx": 0,
+    "file": "img/crops/PW-p10-0.png",
+    "w": 730,
+    "h": 198,
+    "uniq": 1017
+  },
+  {
+    "part": "p3",
+    "doc": "PW",
+    "page": 12,
+    "idx": 0,
+    "file": "img/crops/PW-p12-0.png",
+    "w": 730,
+    "h": 408,
+    "uniq": 1458
+  },
+  {
+    "part": "p3",
+    "doc": "PW",
+    "page": 13,
+    "idx": 0,
+    "file": "img/crops/PW-p13-0.png",
+    "w": 730,
+    "h": 316,
+    "uniq": 908
+  },
+  {
+    "part": "p3",
+    "doc": "PW",
+    "page": 22,
+    "idx": 0,
+    "file": "img/crops/PW-p22-0.png",
+    "w": 730,
+    "h": 403,
+    "uniq": 979
+  },
+  {
+    "part": "p3",
+    "doc": "PW",
+    "page": 29,
+    "idx": 0,
+    "file": "img/crops/PW-p29-0.png",
+    "w": 730,
+    "h": 283,
+    "uniq": 1450
+  },
+  {
+    "part": "p4",
+    "doc": "RR",
+    "page": 4,
+    "idx": 0,
+    "file": "img/crops/RR-p04-0.png",
+    "w": 695,
+    "h": 169,
+    "uniq": 1321
+  },
+  {
+    "part": "p4",
+    "doc": "RR",
+    "page": 8,
+    "idx": 0,
+    "file": "img/crops/RR-p08-0.png",
+    "w": 274,
+    "h": 247,
+    "uniq": 367
+  },
+  {
+    "part": "p4",
+    "doc": "RR",
+    "page": 10,
+    "idx": 0,
+    "file": "img/crops/RR-p10-0.png",
+    "w": 253,
+    "h": 314,
+    "uniq": 264
+  },
+  {
+    "part": "p4",
+    "doc": "RR",
+    "page": 11,
+    "idx": 0,
+    "file": "img/crops/RR-p11-0.png",
+    "w": 730,
+    "h": 618,
+    "uniq": 912
+  },
+  {
+    "part": "p4",
+    "doc": "RR",
+    "page": 12,
+    "idx": 0,
+    "file": "img/crops/RR-p12-0.png",
+    "w": 730,
+    "h": 687,
+    "uniq": 912
+  },
+  {
+    "part": "p4",
+    "doc": "RR",
+    "page": 18,
+    "idx": 0,
+    "file": "img/crops/RR-p18-0.png",
+    "w": 234,
+    "h": 251,
+    "uniq": 1081
+  },
+  {
+    "part": "p4",
+    "doc": "RR",
+    "page": 18,
+    "idx": 1,
+    "file": "img/crops/RR-p18-1.png",
+    "w": 445,
+    "h": 184,
+    "uniq": 302
+  },
+  {
+    "part": "p4",
+    "doc": "RR",
+    "page": 19,
+    "idx": 1,
+    "file": "img/crops/RR-p19-1.png",
+    "w": 230,
+    "h": 215,
+    "uniq": 405
+  },
+  {
+    "part": "p4",
+    "doc": "RR",
+    "page": 20,
+    "idx": 0,
+    "file": "img/crops/RR-p20-0.png",
+    "w": 327,
+    "h": 220,
+    "uniq": 411
+  },
+  {
+    "part": "p4",
+    "doc": "RR",
+    "page": 20,
+    "idx": 1,
+    "file": "img/crops/RR-p20-1.png",
+    "w": 264,
+    "h": 122,
+    "uniq": 512
+  }
+]

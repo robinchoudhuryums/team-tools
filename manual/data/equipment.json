@@ -1,0 +1,3995 @@
+[
+  {
+    "id": "medline-mdr107002e",
+    "name": "Medline MDR107002E Semi-Electric Hospital Bed",
+    "part": "p2",
+    "category": "hospital-bed",
+    "hcpcs": [
+      "E0260",
+      "E0261"
+    ],
+    "hcpcs_note": "E0260 with mattress; E0261 without mattress",
+    "product_weight_lbs": null,
+    "capacity_lbs": 450,
+    "dimensions": "80\" L × 36\" W × 15–20\" H",
+    "seat": null,
+    "specs": [
+      {
+        "label": "Head/Foot Adjustment",
+        "value": "Remote-controlled"
+      },
+      {
+        "label": "Height Adjustment",
+        "value": "Manual crank"
+      },
+      {
+        "label": "Bed Rails",
+        "value": "Half-length (E0305) or full-length (E0310); can be swapped later"
+      },
+      {
+        "label": "Mattress",
+        "value": "Vinyl innerspring (E0271), 80\" L × 36\" W × 6\""
+      }
+    ],
+    "allowance": null,
+    "notes": "Most common semi-electric bed. Fits a twin (XL) mattress.",
+    "source": "MM p.7",
+    "images": [
+      "mm/image43.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "hospital-bed-fully-electric",
+    "name": "Fully-Electric Hospital Bed",
+    "part": "p2",
+    "category": "hospital-bed",
+    "hcpcs": [
+      "E0265"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Height adjusted electronically rather than by crank. Upgrade from semi-electric.",
+    "source": "MM p.7",
+    "images": [
+      "mm/image43.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "hospital-bed-hi-lo",
+    "name": "Hi-Lo Hospital Bed",
+    "part": "p2",
+    "category": "hospital-bed",
+    "hcpcs": [
+      "E0265"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [
+      {
+        "label": "Height Range",
+        "value": "9.5\"–22.5\""
+      }
+    ],
+    "allowance": null,
+    "notes": "Greater height range than standard. Upgrade from semi-electric.",
+    "source": "MM p.7",
+    "images": [
+      "mm/image43.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "hospital-bed-bariatric",
+    "name": "Bariatric / Heavy Duty Hospital Bed",
+    "part": "p2",
+    "category": "hospital-bed",
+    "hcpcs": [
+      "E0301"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": 600,
+    "dimensions": "42\"–54\" W",
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "No upgrade fee; requires separate medical necessity documentation. Rails cannot be changed.",
+    "source": "MM p.7, p.23",
+    "images": [],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "bed-rail-half",
+    "name": "Half-Length Bed Rail",
+    "part": "p2",
+    "category": "bed-accessory",
+    "hcpcs": [
+      "E0305"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": "36\" L × 19\" H",
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Bar gaps over 4\" for safety. Clamp-on, no tools needed.",
+    "source": "MM p.8",
+    "images": [
+      "mm/image8.png"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "bed-rail-full",
+    "name": "Full-Length Bed Rail",
+    "part": "p2",
+    "category": "bed-accessory",
+    "hcpcs": [
+      "E0310"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": "39.5\"–57.5\" L (adjustable) × 20\" H",
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Spring-loaded, tool-free install.",
+    "source": "MM p.8",
+    "images": [
+      "mm/image9.png"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "mattress-vinyl-innerspring",
+    "name": "Vinyl Innerspring Mattress",
+    "part": "p2",
+    "category": "bed-accessory",
+    "hcpcs": [
+      "E0271"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": "80\" L × 36\" W × 6\" H",
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Removable vinyl cover for cleaning.",
+    "source": "MM p.8",
+    "images": [
+      "mm/image52.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "mattress-gel-overlay",
+    "name": "Gel Overlay Mattress",
+    "part": "p2",
+    "category": "bed-accessory",
+    "hcpcs": [
+      "E0185"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": 300,
+    "dimensions": "76\" L × 34\" W × 3\" H",
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Requires medical necessity statement. No heavy-duty option.",
+    "source": "MM p.8",
+    "images": [
+      "mm/image22.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "bed-extension-kit",
+    "name": "4\" Length Extension Kit",
+    "part": "p2",
+    "category": "bed-accessory",
+    "hcpcs": [
+      "E1399"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Adds 4\" in length for taller patients. Requires referral from MDO.",
+    "source": "MM p.8",
+    "images": [
+      "mm/image38.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "trapeze-bar",
+    "name": "Trapeze Bar",
+    "part": "p2",
+    "category": "bed-accessory",
+    "hcpcs": [
+      "E0910"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": 250,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Free-standing / bariatric option available at 500 lbs capacity.",
+    "source": "MM p.9",
+    "images": [
+      "mm/image48.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "mattress-low-air-loss",
+    "name": "Low Air Loss Mattress",
+    "part": "p2",
+    "category": "bed-accessory",
+    "hcpcs": [
+      "E0277"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": 400,
+    "dimensions": "36\" W × 80\" L × 8\" H",
+    "seat": null,
+    "specs": [
+      {
+        "label": "Controls",
+        "value": "Dial to control air pressure"
+      },
+      {
+        "label": "Support Surface",
+        "value": "Group 2"
+      },
+      {
+        "label": "Documentation",
+        "value": "Specific medical necessity statement required"
+      }
+    ],
+    "allowance": null,
+    "notes": "For patients with wounds or sores where other mattress options are insufficient. Bariatric options 600–1,000 lbs.",
+    "source": "MM p.9",
+    "images": [
+      "mm/image20.jpg",
+      "mm/image49.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "compliance"
+    ],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "medline-k3-guardian",
+    "name": "Medline K3 Guardian",
+    "part": "p2",
+    "category": "manual-wheelchair",
+    "hcpcs": [
+      "K0002",
+      "K0003"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 35,
+    "capacity_lbs": 250,
+    "dimensions": null,
+    "seat": "16\"–18\"",
+    "specs": [],
+    "allowance": null,
+    "notes": "Standard lightweight. Hemi (height-adjustable). Rental with purchase accessories.",
+    "source": "MM p.10",
+    "images": [
+      "mm/image14.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "medline-hybrid-2-polyfly",
+    "name": "Medline Hybrid 2 (Poly-Fly)",
+    "part": "p2",
+    "category": "manual-wheelchair",
+    "hcpcs": [
+      "K0004"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 33,
+    "capacity_lbs": 300,
+    "dimensions": null,
+    "seat": "16\"–20\"",
+    "specs": [],
+    "allowance": null,
+    "notes": "Transport wheelchair. 24\" wheels removable to four 8\" wheels. Hybrid design.",
+    "source": "Medline product listing, 09/2026",
+    "images": [
+      "mm/image34.jpg"
+    ],
+    "verified": "2026-09-23",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "medline-k4-high-strength",
+    "name": "Medline K4 High-Strength",
+    "part": "p2",
+    "category": "manual-wheelchair",
+    "hcpcs": [
+      "K0004"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 31.5,
+    "capacity_lbs": 300,
+    "dimensions": null,
+    "seat": "16\"–20\"",
+    "specs": [],
+    "allowance": null,
+    "notes": "More durable for long-period MRADL use. Adjustable back and seat height.",
+    "source": "Medline product listing, 09/2026",
+    "images": [
+      "mm/image25.jpg"
+    ],
+    "verified": "2026-09-23",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "guardian-extra-wide-hd",
+    "name": "Guardian Extra Wide (HD)",
+    "part": "p2",
+    "category": "manual-wheelchair",
+    "hcpcs": [
+      "K0007"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 55,
+    "capacity_lbs": 500,
+    "dimensions": null,
+    "seat": "22\"–26\"",
+    "specs": [],
+    "allowance": null,
+    "notes": "K0007 — Medicare covers it for patients over 300 lbs.",
+    "source": "MM p.11",
+    "images": [
+      "mm/image28.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "shuttle-extra-wide-bariatric",
+    "name": "Shuttle Extra-Wide Bariatric",
+    "part": "p2",
+    "category": "manual-wheelchair",
+    "hcpcs": [
+      "K0007"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 85,
+    "capacity_lbs": 850,
+    "dimensions": null,
+    "seat": "28\"",
+    "specs": [],
+    "allowance": null,
+    "notes": "Largest manual wheelchair available. K0007 — Medicare covers it for patients over 300 lbs.",
+    "source": "MM p.11",
+    "images": [
+      "mm/image24.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "guardian-reclining",
+    "name": "Guardian Reclining",
+    "part": "p2",
+    "category": "manual-wheelchair",
+    "hcpcs": [
+      "K0001"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": 250,
+    "dimensions": null,
+    "seat": "16\"–20\"",
+    "specs": [],
+    "allowance": null,
+    "notes": "90–180 degree adjustable recline. Coded K0001 in the Item Master; confirmed 09/2026.",
+    "source": "MM p.11",
+    "images": [
+      "mm/image55.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "wc-acc-anti-tipper",
+    "name": "Anti-Tipper",
+    "part": "p2",
+    "category": "wheelchair-accessory",
+    "hcpcs": [
+      "E0971"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Billed as a separate purchase item with the wheelchair",
+    "source": "MM pp.12–13",
+    "images": [
+      "mm/image57.png"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "wc-acc-detachable-adjustable-armrest",
+    "name": "Detachable / Adjustable Armrest",
+    "part": "p2",
+    "category": "wheelchair-accessory",
+    "hcpcs": [
+      "E0973"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Billed as a separate purchase item with the wheelchair",
+    "source": "MM pp.12–13",
+    "images": [
+      "mm/image3.png"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "wc-acc-seat-cushion-standard",
+    "name": "Seat Cushion (Standard)",
+    "part": "p2",
+    "category": "wheelchair-accessory",
+    "hcpcs": [
+      "E2601"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Standard wheelchair size. Heavy duty: E2602",
+    "source": "MM pp.12–13",
+    "images": [
+      "mm/image53.png"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "wc-acc-back-cushion-standard",
+    "name": "Back Cushion (Standard)",
+    "part": "p2",
+    "category": "wheelchair-accessory",
+    "hcpcs": [
+      "E2611"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Standard wheelchair size. Heavy duty: E2612",
+    "source": "MM pp.12–13",
+    "images": [
+      "mm/image27.png"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "wc-acc-permobil-roho-cushion",
+    "name": "Permobil ROHO Cushion",
+    "part": "p2",
+    "category": "wheelchair-accessory",
+    "hcpcs": [
+      "E2622"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Advanced pressure redistribution. Various sizes. Machine-washable cover. Not eligible for POVs.",
+    "source": "MM pp.12–13",
+    "images": [
+      "mm/image16.png"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "wc-acc-transfer-device-board",
+    "name": "Transfer Device / Board",
+    "part": "p2",
+    "category": "wheelchair-accessory",
+    "hcpcs": [
+      "E0705"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Helps move safely between two surfaces, e.g. bed to wheelchair",
+    "source": "MM pp.12–13",
+    "images": [
+      "mm/image47.png"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "wc-acc-super-hemi-height-kit",
+    "name": "Super-Hemi Height Kit",
+    "part": "p2",
+    "category": "wheelchair-accessory",
+    "hcpcs": [
+      "A9900"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "20\" rear wheels, 6\" casters, wheel-lock pads. Lowers seat by 2\".",
+    "source": "MM pp.12–13",
+    "images": [
+      "mm/image29.png"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "wc-acc-single-arm-drive-attachment",
+    "name": "Single-Arm Drive Attachment",
+    "part": "p2",
+    "category": "wheelchair-accessory",
+    "hcpcs": [
+      "E0958"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "For K4 16\"–18\". Roll straight, turning one wheel with one hand.",
+    "source": "MM pp.12–13",
+    "images": [
+      "mm/image2.png"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "wc-acc-wheel-lock-brake-extension-handle",
+    "name": "Wheel Lock / Brake Extension Handle",
+    "part": "p2",
+    "category": "wheelchair-accessory",
+    "hcpcs": [
+      "E0961"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Easier brake manipulation",
+    "source": "MM pp.12–13",
+    "images": [
+      "mm/image51.png"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "wc-acc-pelvic-safety-belt",
+    "name": "Pelvic Safety Belt",
+    "part": "p2",
+    "category": "wheelchair-accessory",
+    "hcpcs": [
+      "E0978"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Drive STDS850. Waist sizes up to 48\".",
+    "source": "MM pp.12–13",
+    "images": [
+      "mm/image13.png"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "wc-acc-oxygen-cylinder-carrier",
+    "name": "Oxygen Cylinder Carrier",
+    "part": "p2",
+    "category": "wheelchair-accessory",
+    "hcpcs": [
+      "E1399"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "E cylinder or M6 cylinder options",
+    "source": "MM pp.12–13",
+    "images": [
+      "mm/image19.png",
+      "mm/image58.png"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "wc-acc-heel-loops",
+    "name": "Heel Loops",
+    "part": "p2",
+    "category": "wheelchair-accessory",
+    "hcpcs": [
+      "E0951"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Balances lower body during wheelchair use",
+    "source": "MM pp.12–13",
+    "images": [
+      "mm/image32.png"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "walker-2button-folding",
+    "name": "2-Button Steel Folding Walker, 5\" Wheels",
+    "part": "p2",
+    "category": "walker",
+    "hcpcs": [
+      "E0143"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 6.5,
+    "capacity_lbs": 300,
+    "dimensions": null,
+    "seat": null,
+    "specs": [
+      {
+        "label": "Height",
+        "value": "32.5\"–39.5\""
+      },
+      {
+        "label": "User Height",
+        "value": "5'5\"–6'6\""
+      },
+      {
+        "label": "Junior Version",
+        "value": "25\"–32\""
+      }
+    ],
+    "allowance": null,
+    "notes": "Shares HCPCS E0143 with the basic rollator.",
+    "source": "MM p.14",
+    "images": [
+      "mm/image39.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "walker-bariatric-aluminum",
+    "name": "Bariatric Aluminum Folding Walker",
+    "part": "p2",
+    "category": "walker",
+    "hcpcs": [
+      "E0149"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": 500,
+    "dimensions": null,
+    "seat": null,
+    "specs": [
+      {
+        "label": "Height",
+        "value": "30\"–43.5\""
+      },
+      {
+        "label": "Width",
+        "value": "20.5\""
+      }
+    ],
+    "allowance": null,
+    "notes": "Shares HCPCS E0149 with the heavy duty rollator. Coverage threshold is patient weight over 300 lbs.",
+    "source": "MM p.14, p.23",
+    "images": [],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "walker-side-step-hemi",
+    "name": "Side Step Hemi Walker",
+    "part": "p2",
+    "category": "walker",
+    "hcpcs": [
+      "E0135"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": 300,
+    "dimensions": null,
+    "seat": null,
+    "specs": [
+      {
+        "label": "Height",
+        "value": "29.5\"–37\""
+      }
+    ],
+    "allowance": null,
+    "notes": "For individuals with use of only one arm.",
+    "source": "MM p.14",
+    "images": [
+      "mm/image26.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "walker-platform-armrest",
+    "name": "Walker Platform Armrest",
+    "part": "p2",
+    "category": "walker",
+    "hcpcs": [
+      "E0154"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Attachment for users too tall or unable to straighten arms.",
+    "source": "MM p.14",
+    "images": [
+      "mm/image17.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "rollator-basic-steel",
+    "name": "Basic Steel Rollator, 6\" Wheels",
+    "part": "p2",
+    "category": "rollator",
+    "hcpcs": [
+      "E0143"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 19,
+    "capacity_lbs": 300,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Includes seat, basket, hand brakes. Colors: blue, burgundy, light blue. Shares HCPCS E0143 with the front-wheeled walker.",
+    "source": "MM p.15",
+    "images": [
+      "mm/image23.jpg",
+      "mm/image50.jpg",
+      "mm/image21.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "rollator-heavy-duty-steel",
+    "name": "Heavy Duty Steel Rollator, 8\" Wheels",
+    "part": "p2",
+    "category": "rollator",
+    "hcpcs": [
+      "E0149"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 24,
+    "capacity_lbs": 500,
+    "dimensions": null,
+    "seat": null,
+    "specs": [
+      {
+        "label": "Seat Height",
+        "value": "22\""
+      }
+    ],
+    "allowance": null,
+    "notes": "Shares HCPCS E0149 with the bariatric walker.",
+    "source": "MM p.15",
+    "images": [
+      "mm/image31.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "cane-aluminum-quad",
+    "name": "Aluminum Quad Cane",
+    "part": "p2",
+    "category": "mobility-aid",
+    "hcpcs": [
+      "E0105"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": 250,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Four feet for stability.",
+    "source": "MM p.16",
+    "images": [
+      "mm/image18.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "crutches-underarm-aluminum",
+    "name": "Standard Aluminum Underarm Crutches",
+    "part": "p2",
+    "category": "mobility-aid",
+    "hcpcs": [
+      "E0114"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [
+      {
+        "label": "User Height",
+        "value": "5'2\"–5'10\""
+      },
+      {
+        "label": "Tall",
+        "value": "5'10\"–6'6\""
+      }
+    ],
+    "allowance": null,
+    "notes": "Forearm crutches also available.",
+    "source": "MM p.16",
+    "images": [],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "knee-walker",
+    "name": "Knee Walker",
+    "part": "p2",
+    "category": "mobility-aid",
+    "hcpcs": [
+      "E0118"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Short-term use for lower leg injury recovery. Out-of-pocket only, except where the patient is covered through VGM Homelink.",
+    "source": "MM p.16",
+    "images": [
+      "mm/image1.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "lift-medline-hydraulic",
+    "name": "Medline Hydraulic Patient Lift",
+    "part": "p2",
+    "category": "patient-lift",
+    "hcpcs": [
+      "E0630"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 85,
+    "capacity_lbs": 400,
+    "dimensions": "Base 26\"–31.5\" W",
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Manual lever. Comes with slings (M–XL, commode option).",
+    "source": "MM p.17",
+    "images": [
+      "mm/image11.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "lift-medline-battery",
+    "name": "Medline Battery-Powered Lift",
+    "part": "p2",
+    "category": "patient-lift",
+    "hcpcs": [
+      "E0635"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 155,
+    "capacity_lbs": 450,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Remote-operated. Approximately 90 lifts per charge.",
+    "source": "MM p.17",
+    "images": [
+      "mm/image33.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "lift-heavy-duty-mds700el",
+    "name": "Heavy Duty Battery Lift (MDS700EL)",
+    "part": "p2",
+    "category": "patient-lift",
+    "hcpcs": [
+      "E0635"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 190,
+    "capacity_lbs": 700,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": null,
+    "source": "MM p.17",
+    "images": [],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "sling-full-body",
+    "name": "Full Body Patient Sling",
+    "part": "p2",
+    "category": "patient-lift",
+    "hcpcs": [
+      "E0621"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "For use with a patient lift. Sizes M–XL; commode-opening option available.",
+    "source": "MM p.17",
+    "images": [
+      "mm/image36.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "lift-chair",
+    "name": "Lift Chair",
+    "part": "p2",
+    "category": "general-dme",
+    "hcpcs": [
+      "E1399"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": 600,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Recliner assisting from seated to standing. Capacity 375–600 lbs depending on size. Available in TX only via the Medicaid Waiver Program.",
+    "source": "MM p.18",
+    "images": [
+      "mm/image54.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "state-restricted",
+      "no-backup-confirmed"
+    ],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "nebulizer-aeromist",
+    "name": "Aeromist Nebulizer Compressor",
+    "part": "p2",
+    "category": "nebulizer",
+    "hcpcs": [
+      "E0570"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Transmutes medication into inhalable mist.",
+    "source": "MM p.18",
+    "images": [
+      "mm/image4.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "neb-nebulizer-kit",
+    "name": "Nebulizer Kit",
+    "part": "p3",
+    "category": "nebulizer-supply",
+    "hcpcs": [
+      "A7004"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "2 per month, in addition to the administration set",
+    "notes": null,
+    "source": "MM p.18",
+    "images": [],
+    "verified": "2026-09-23",
+    "flags": [],
+    "billing_type": "purchase-resupply",
+    "allowance_authority": "Medicare LCD L33370"
+  },
+  {
+    "id": "neb-administration-set",
+    "name": "Administration Set",
+    "part": "p3",
+    "category": "nebulizer-supply",
+    "hcpcs": [
+      "A7003"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "2 per month",
+    "notes": null,
+    "source": "MM p.18",
+    "images": [],
+    "verified": "2026-09-23",
+    "flags": [],
+    "billing_type": "purchase-resupply",
+    "allowance_authority": "Medicare LCD L33370"
+  },
+  {
+    "id": "neb-disposable-compressor-filter",
+    "name": "Disposable Compressor Filter",
+    "part": "p3",
+    "category": "nebulizer-supply",
+    "hcpcs": [
+      "A7013"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "2 per month",
+    "notes": null,
+    "source": "MM p.18",
+    "images": [],
+    "verified": "2026-09-23",
+    "flags": [],
+    "billing_type": "purchase-resupply",
+    "allowance_authority": "Medicare LCD L33370"
+  },
+  {
+    "id": "neb-aerosol-mask",
+    "name": "Aerosol Mask",
+    "part": "p3",
+    "category": "nebulizer-supply",
+    "hcpcs": [
+      "A7015"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "1 per month",
+    "notes": null,
+    "source": "MM p.18",
+    "images": [],
+    "verified": "2026-09-23",
+    "flags": [],
+    "billing_type": "purchase-resupply",
+    "allowance_authority": "Medicare LCD L33370"
+  },
+  {
+    "id": "neb-water-collection-device",
+    "name": "Water Collection Device",
+    "part": "p3",
+    "category": "nebulizer-supply",
+    "hcpcs": [
+      "A7012"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "2 per month",
+    "notes": null,
+    "source": "MM p.18",
+    "images": [],
+    "verified": "2026-09-23",
+    "flags": [],
+    "billing_type": "purchase-resupply",
+    "allowance_authority": "Medicare LCD L33370"
+  },
+  {
+    "id": "shower-chair-aluminum",
+    "name": "Aluminum Shower Chair",
+    "part": "p2",
+    "category": "bathroom",
+    "hcpcs": [
+      "E0240"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": 400,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Covered by TX Medicaid only; otherwise out-of-pocket.",
+    "source": "MM p.19",
+    "images": [
+      "mm/image7.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "tx-medicaid-only"
+    ],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "commode-3in1-steel",
+    "name": "3-in-1 Steel Commode Chair",
+    "part": "p2",
+    "category": "bathroom",
+    "hcpcs": [
+      "E0163"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": 350,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Bedside commode, elevated toilet seat / safety frame, or shower chair. Can be covered by Medicare.",
+    "source": "MM p.19",
+    "images": [
+      "mm/image37.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-coverable"
+    ],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "tub-transfer-bench",
+    "name": "Tub Transfer Bench",
+    "part": "p2",
+    "category": "bathroom",
+    "hcpcs": [
+      "E0247"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": 400,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Bariatric 500 lbs. Reversible seat/back. Push-button height adjustment. Suction cup feet. Covered by TX Medicaid only; otherwise out-of-pocket.",
+    "source": "MM p.19",
+    "images": [
+      "mm/image12.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "tx-medicaid-only"
+    ],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "raised-toilet-seat",
+    "name": "Raised Toilet Seat",
+    "part": "p2",
+    "category": "bathroom",
+    "hcpcs": [
+      "E0244"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": 400,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Out-of-pocket only; not covered.",
+    "source": "MM p.19",
+    "images": [
+      "mm/image6.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "oop-only"
+    ],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "brace-metforce-oa-knee-brace-ay-43",
+    "name": "Metforce OA Knee Brace AY-43",
+    "part": "p2",
+    "category": "brace",
+    "hcpcs": [
+      "L1851"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Hinged with double uprights, adjustable ROM hinges for injury recovery",
+    "source": "MM pp.20–21",
+    "images": [
+      "mm/image41.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "brace-aryse-tru-range-knee-brace-ay-32",
+    "name": "Aryse Tru-Range Knee Brace AY-32",
+    "part": "p2",
+    "category": "brace",
+    "hcpcs": [
+      "L1833"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Multiple ROM positions for injury recovery",
+    "source": "MM pp.20–21",
+    "images": [
+      "mm/image30.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "brace-aryse-purespeed-knee-brace-ay-20",
+    "name": "Aryse Purespeed Knee Brace AY-20",
+    "part": "p2",
+    "category": "brace",
+    "hcpcs": [
+      "L1820"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Lightweight, breathable brace for injury recovery",
+    "source": "MM pp.20–21",
+    "images": [
+      "mm/image5.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "brace-aryse-deltalock-knee-stabilizer-ay-02",
+    "name": "Aryse Deltalock+ Knee Stabilizer AY-02",
+    "part": "p2",
+    "category": "brace",
+    "hcpcs": [
+      "L1830"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Restricts micro-movements, promoting stability",
+    "source": "MM pp.20–21",
+    "images": [
+      "mm/image10.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "brace-aryse-metforce-back-brace-ay-37",
+    "name": "Aryse Metforce Back Brace AY-37",
+    "part": "p2",
+    "category": "brace",
+    "hcpcs": [
+      "L0650",
+      "L0648",
+      "L0642",
+      "L0631"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Double-pull compression. Removable side/back panels",
+    "source": "MM pp.20–21",
+    "images": [
+      "mm/image42.jpg",
+      "mm/image56.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "brace-aryse-metforce-tlso-back-brace-ay-56",
+    "name": "Aryse Metforce TLSO Back Brace AY-56",
+    "part": "p2",
+    "category": "brace",
+    "hcpcs": [
+      "L0457"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Pull compression with adjustable thoracic support",
+    "source": "MM pp.20–21",
+    "images": [
+      "mm/image35.jpg",
+      "mm/image44.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "brace-aryse-alphawrap-back-brace-ay-52",
+    "name": "Aryse Alphawrap Back Brace AY-52",
+    "part": "p2",
+    "category": "brace",
+    "hcpcs": [
+      "L0641"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Lightweight, breathable compression back brace",
+    "source": "MM pp.20–21",
+    "images": [
+      "mm/image46.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "bpm-medline-wrist",
+    "name": "Medline Digital Wrist Blood Pressure Monitor",
+    "part": "p2",
+    "category": "general-dme",
+    "hcpcs": [
+      "A4670"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Auto inflate/deflate. Readings in kPa or mmHg plus pulse rate. Includes 2 AAA batteries. Only BPM option available; arm cuff not available.",
+    "source": "MM p.22",
+    "images": [
+      "mm/image40.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase"
+  },
+  {
+    "id": "pov-ultra-x-3wheel-s39",
+    "name": "Ultra X 3-Wheel (S39)",
+    "part": "p4",
+    "category": "pov",
+    "hcpcs": [
+      "K0800"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 96,
+    "capacity_lbs": 300,
+    "dimensions": "L 40\" × W 19\" × H 21–23\"",
+    "seat": "17\" × 17\", foldable",
+    "specs": [
+      {
+        "label": "Battery Weight",
+        "value": "20 lbs"
+      },
+      {
+        "label": "Turn Radius",
+        "value": "Smaller"
+      },
+      {
+        "label": "Range Per Charge",
+        "value": "Slightly less"
+      },
+      {
+        "label": "Disassembly",
+        "value": "5 pieces, heaviest 29.5 lbs"
+      }
+    ],
+    "allowance": null,
+    "notes": "Group 1 Standard POV. Replaced the Go-Go Traveller as of 12/05/24. Not eligible for ROHO cushions.",
+    "source": "PW p.18",
+    "images": [
+      "pw/image2.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "pov-ultra-x-4wheel-s49",
+    "name": "Ultra X 4-Wheel (S49)",
+    "part": "p4",
+    "category": "pov",
+    "hcpcs": [
+      "K0800"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 101,
+    "capacity_lbs": 300,
+    "dimensions": "L 40\" × W 19\" × H 21–23\"",
+    "seat": "17\" × 17\", foldable",
+    "specs": [
+      {
+        "label": "Battery Weight",
+        "value": "20 lbs"
+      },
+      {
+        "label": "Turn Radius",
+        "value": "Larger"
+      },
+      {
+        "label": "Range Per Charge",
+        "value": "Slightly more"
+      },
+      {
+        "label": "Disassembly",
+        "value": "5 pieces, heaviest 34.5 lbs"
+      }
+    ],
+    "allowance": null,
+    "notes": "Group 1 Standard POV. Not eligible for ROHO cushions.",
+    "source": "PW p.18",
+    "images": [
+      "pw/image3.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "pov-sport-3wheel-s73",
+    "name": "Sport 3-Wheel (S73)",
+    "part": "p4",
+    "category": "pov",
+    "hcpcs": [
+      "K0801"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 122,
+    "capacity_lbs": 325,
+    "dimensions": "L 42\" × W 21\" × H 20–22\"",
+    "seat": "17\" × 17\", foldable",
+    "specs": [
+      {
+        "label": "Battery Weight",
+        "value": "30 lbs"
+      },
+      {
+        "label": "Turn Radius",
+        "value": "36\""
+      },
+      {
+        "label": "Range Per Charge",
+        "value": "12.75 mi"
+      },
+      {
+        "label": "Disassembly",
+        "value": "5 pieces, heaviest 36 lbs"
+      },
+      {
+        "label": "Charger Port",
+        "value": "Under handles"
+      }
+    ],
+    "allowance": null,
+    "notes": "Group 1 Heavy Duty POV. Not eligible for ROHO cushions.",
+    "source": "PW p.19",
+    "images": [
+      "pw/image9.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "pov-sport-4wheel-s74",
+    "name": "Sport 4-Wheel (S74)",
+    "part": "p4",
+    "category": "pov",
+    "hcpcs": [
+      "K0801"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 130,
+    "capacity_lbs": 325,
+    "dimensions": "L 43\" × W 21\" × H 20–22\"",
+    "seat": "17\" × 17\", foldable",
+    "specs": [
+      {
+        "label": "Battery Weight",
+        "value": "30 lbs"
+      },
+      {
+        "label": "Turn Radius",
+        "value": "50.5\""
+      },
+      {
+        "label": "Range Per Charge",
+        "value": "12 mi"
+      },
+      {
+        "label": "Disassembly",
+        "value": "5 pieces, heaviest 44 lbs"
+      },
+      {
+        "label": "Charger Port",
+        "value": "Under handles"
+      }
+    ],
+    "allowance": null,
+    "notes": "Group 1 Heavy Duty POV. Not eligible for ROHO cushions.",
+    "source": "PW p.19",
+    "images": [
+      "pw/image1.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "pwc-pride-go-chair-med",
+    "name": "Pride Go Chair MED",
+    "part": "p4",
+    "category": "pwc",
+    "hcpcs": [
+      "K0821"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 131,
+    "capacity_lbs": 300,
+    "dimensions": null,
+    "seat": "W18\" × D17\" or W20\" × D18\"",
+    "specs": [
+      {
+        "label": "Classification",
+        "value": "Portable Group 2 Standard"
+      }
+    ],
+    "allowance": null,
+    "notes": "Foldable, swivel seat, disassembles (heaviest 36 lbs). 9.41 mi range, 25.5\" turn radius.",
+    "source": "PW p.20, pp.21–29",
+    "images": [
+      "pw/image17.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "pwc-jazzy-elite-es-2sc",
+    "name": "Pride Jazzy Elite ES 2S-C",
+    "part": "p4",
+    "category": "pwc",
+    "hcpcs": [
+      "K0822",
+      "K0823"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 231,
+    "capacity_lbs": 300,
+    "dimensions": null,
+    "seat": "W16–20\" × D16–20\"",
+    "specs": [
+      {
+        "label": "Classification",
+        "value": "Group 2 Standard"
+      }
+    ],
+    "allowance": null,
+    "notes": "Limited-recline / fold-flat seat. Adjustable armrests.",
+    "source": "PW p.20, pp.21–29",
+    "images": [
+      "pw/image11.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "pwc-jazzy-elite-hd-2hdc",
+    "name": "Jazzy Elite HD 2HD-C",
+    "part": "p4",
+    "category": "pwc",
+    "hcpcs": [
+      "K0824",
+      "K0825"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 230,
+    "capacity_lbs": 450,
+    "dimensions": null,
+    "seat": "W18–22\" × D18–22\"",
+    "specs": [
+      {
+        "label": "Classification",
+        "value": "Group 2 Heavy Duty"
+      }
+    ],
+    "allowance": null,
+    "notes": "14\" foam flat-free tires. Adjustable armrests. Product weight 225–230 lbs.",
+    "source": "PW p.20, pp.21–29",
+    "images": [
+      "pw/image7.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "pwc-merits-atlantis-p710",
+    "name": "Merits Atlantis P710",
+    "part": "p4",
+    "category": "pwc",
+    "hcpcs": [
+      "K0826",
+      "K0827"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 304,
+    "capacity_lbs": 600,
+    "dimensions": null,
+    "seat": "W24–26\" × D20–22\"",
+    "specs": [
+      {
+        "label": "Classification",
+        "value": "Group 2 Very Heavy Duty"
+      }
+    ],
+    "allowance": null,
+    "notes": "Extra-wide seat, extra-high back. Red or blue.",
+    "source": "PW p.20, pp.21–29",
+    "images": [
+      "pw/image15.png"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "pwc-shoprider-xlr14-p424le",
+    "name": "Shoprider XLR-14 P424LE",
+    "part": "p4",
+    "category": "pwc",
+    "hcpcs": [
+      "K0835",
+      "K0836"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 283,
+    "capacity_lbs": 300,
+    "dimensions": null,
+    "seat": "W18–21\" × D17.5–21\"",
+    "specs": [
+      {
+        "label": "Classification",
+        "value": "Group 2 Complex Rehab"
+      }
+    ],
+    "allowance": null,
+    "notes": "Power tilt. 16–20 mi range. Four color options.",
+    "source": "PW p.20, pp.21–29",
+    "images": [
+      "pw/image12.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "pwc-merits-vision-ultra-hd-p331",
+    "name": "Merits Vision Ultra HD P331",
+    "part": "p4",
+    "category": "pwc",
+    "hcpcs": [
+      "K0837"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 315,
+    "capacity_lbs": 450,
+    "dimensions": null,
+    "seat": "W18–24\" × D16–22\"",
+    "specs": [
+      {
+        "label": "Classification",
+        "value": "Group 2 Heavy Duty Complex Rehab"
+      }
+    ],
+    "allowance": null,
+    "notes": "Power tilt. Up to 20 mi, 5 mph max.",
+    "source": "PW p.20, pp.21–29",
+    "images": [
+      "pw/image10.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "pwc-invacare-tdx-sp2",
+    "name": "Invacare TDX-SP2",
+    "part": "p4",
+    "category": "pwc",
+    "hcpcs": [
+      "K0861"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 330,
+    "capacity_lbs": 300,
+    "dimensions": null,
+    "seat": "W16–22\" × D16–23\"",
+    "specs": [
+      {
+        "label": "Classification",
+        "value": "Group 3 Standard Multi-Power Complex Rehab"
+      }
+    ],
+    "allowance": null,
+    "notes": "Power tilt. Up to 20 mi.",
+    "source": "PW p.20, pp.21–29",
+    "images": [
+      "pw/image8.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "pwc-invacare-tdx-sp2-hd",
+    "name": "Invacare TDX-SP2 HD",
+    "part": "p4",
+    "category": "pwc",
+    "hcpcs": [
+      "K0862"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 330,
+    "capacity_lbs": 400,
+    "dimensions": null,
+    "seat": "W16–22\" × D16–23\"",
+    "specs": [
+      {
+        "label": "Classification",
+        "value": "Group 3 Heavy Duty Multi-Power Complex Rehab"
+      }
+    ],
+    "allowance": null,
+    "notes": "Power tilt. Up to 20 mi.",
+    "source": "PW p.20, pp.21–29",
+    "images": [
+      "pw/image6.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "pwc-amysystems-alltrack-hd3",
+    "name": "Amysystems ALLTRACK HD 3",
+    "part": "p4",
+    "category": "pwc",
+    "hcpcs": [
+      "K0863"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 242,
+    "capacity_lbs": 550,
+    "dimensions": null,
+    "seat": "W19–28\" × D18–24\"",
+    "specs": [
+      {
+        "label": "Classification",
+        "value": "Group 3 Very Heavy Duty Multi-Power Complex Rehab"
+      }
+    ],
+    "allowance": null,
+    "notes": "Power tilt. Up to 5.4 mph.",
+    "source": "PW p.20, pp.21–29",
+    "images": [
+      "pw/image13.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "o2-philips-everflo",
+    "name": "Philips Respironics EverFlo",
+    "part": "p7",
+    "category": "oxygen-concentrator",
+    "hcpcs": [
+      "E1390"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 31,
+    "capacity_lbs": null,
+    "dimensions": "H 23\" × W 15\" × L 9.5\"",
+    "seat": null,
+    "specs": [
+      {
+        "label": "O2 Concentration",
+        "value": "90–96%"
+      },
+      {
+        "label": "Flow Rate",
+        "value": "0.5–5 LPM"
+      }
+    ],
+    "allowance": null,
+    "notes": "Home unit. Billed as monthly rental. Prescription required even for out-of-pocket purchase.",
+    "source": "RR pp.6–7",
+    "images": [
+      "rr/image32.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "compliance",
+      "rx-required-oop",
+      "rx-required-pickup"
+    ],
+    "billing_type": "oxygen-36-month"
+  },
+  {
+    "id": "o2-drive-devilbiss-525",
+    "name": "Drive DeVilbiss 525",
+    "part": "p7",
+    "category": "oxygen-concentrator",
+    "hcpcs": [
+      "E1390"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 36,
+    "capacity_lbs": null,
+    "dimensions": "H 24.5\" × W 13.5\" × D 12\"",
+    "seat": null,
+    "specs": [
+      {
+        "label": "O2 Concentration",
+        "value": "87–96%"
+      },
+      {
+        "label": "Flow Rate",
+        "value": "1–5 LPM"
+      }
+    ],
+    "allowance": null,
+    "notes": "Home unit. Billed as monthly rental. Prescription required even for out-of-pocket purchase.",
+    "source": "RR pp.6–7",
+    "images": [
+      "rr/image22.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "compliance",
+      "rx-required-oop",
+      "rx-required-pickup"
+    ],
+    "billing_type": "oxygen-36-month"
+  },
+  {
+    "id": "o2-drive-deco2",
+    "name": "Drive DECO2",
+    "part": "p7",
+    "category": "oxygen-concentrator",
+    "hcpcs": [
+      "E1390"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 35,
+    "capacity_lbs": null,
+    "dimensions": "H 21\" × W 13\" × D 10\"",
+    "seat": null,
+    "specs": [
+      {
+        "label": "O2 Concentration",
+        "value": "87–96%"
+      },
+      {
+        "label": "Flow Rate",
+        "value": "1–5 LPM"
+      }
+    ],
+    "allowance": null,
+    "notes": "Home unit. Billed as monthly rental. Prescription required even for out-of-pocket purchase.",
+    "source": "RR pp.6–7",
+    "images": [
+      "rr/image49.png"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "compliance",
+      "rx-required-oop",
+      "rx-required-pickup"
+    ],
+    "billing_type": "oxygen-36-month"
+  },
+  {
+    "id": "o2-invacare-perfecto-2v",
+    "name": "Invacare Perfecto 2V",
+    "part": "p7",
+    "category": "oxygen-concentrator",
+    "hcpcs": [
+      "E1390"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 40,
+    "capacity_lbs": null,
+    "dimensions": "H 23\" × W 15\" × D 12\"",
+    "seat": null,
+    "specs": [
+      {
+        "label": "O2 Concentration",
+        "value": "87–96%"
+      },
+      {
+        "label": "Flow Rate",
+        "value": "0.5–5 LPM"
+      }
+    ],
+    "allowance": null,
+    "notes": "Home unit. Billed as monthly rental. Prescription required even for out-of-pocket purchase.",
+    "source": "RR pp.6–7",
+    "images": [
+      "rr/image51.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "compliance",
+      "rx-required-oop",
+      "rx-required-pickup"
+    ],
+    "billing_type": "oxygen-36-month"
+  },
+  {
+    "id": "o2-drive-devilbiss-1025",
+    "name": "Drive DeVilbiss 1025 (10 LPM)",
+    "part": "p7",
+    "category": "oxygen-concentrator",
+    "hcpcs": [
+      "E1390"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 42,
+    "capacity_lbs": null,
+    "dimensions": "H 24.5\" × W 13.5\" × D 12\"",
+    "seat": null,
+    "specs": [
+      {
+        "label": "O2 Concentration",
+        "value": "87–96%"
+      },
+      {
+        "label": "Flow Rate",
+        "value": "2–10 LPM"
+      }
+    ],
+    "allowance": null,
+    "notes": "Home unit. Billed as monthly rental. Prescription required even for out-of-pocket purchase.",
+    "source": "RR pp.6–7",
+    "images": [
+      "rr/image33.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "compliance",
+      "rx-required-oop",
+      "rx-required-pickup"
+    ],
+    "billing_type": "oxygen-36-month"
+  },
+  {
+    "id": "o2-conserver-sunset-chad",
+    "name": "Sunset CHAD Oxygen Conserver RES049",
+    "part": "p7",
+    "category": "oxygen-accessory",
+    "hcpcs": [
+      "A9900"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Essentially an advanced regulator. Releases oxygen in pulses upon inhalation rather than constant flow, extending tank life. An oxygen accessory **included in the oxygen rental** — provided at no charge if the provider orders it, never billed separately. Without an order, $320 out of pocket (Medicare patients sign an ABN first).",
+    "source": "Medicare LCD L33797 / Policy Article A52514",
+    "images": [
+      "o2/image9.jpg",
+      "rr/image10.jpg"
+    ],
+    "verified": "2026-09-25",
+    "flags": [],
+    "billing_type": "included-in-rental"
+  },
+  {
+    "id": "suction-sunset-su100dc",
+    "name": "Sunset Portable Suction Machine SU100DC",
+    "part": "p3",
+    "category": "suction",
+    "hcpcs": [
+      "E0600"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Removal of respiratory fluids with variable vacuum control. Lightweight, AC or rechargeable battery. Includes 800cc canister, AC adapter and power cord, 6 ft tubing, connectors, bacteria filter.",
+    "source": "RR p.8",
+    "images": [
+      "rr/image24.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "rx-required-pickup"
+    ],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "sup-medline-saline-solution-addipak-5ml",
+    "name": "Medline Saline Solution AddiPak 5ml",
+    "part": "p3",
+    "category": "suction-supply",
+    "hcpcs": [
+      "A4216"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [
+      {
+        "label": "Unit",
+        "value": "5 mL bullet"
+      }
+    ],
+    "allowance": "100 per month",
+    "notes": null,
+    "source": "RR p.8",
+    "images": [
+      "rr/image59.jpg",
+      "rr/image6.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "ums-published"
+    ],
+    "allowance_authority": "UMS published schedule (public tracheostomy page)",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-medline-800cc-suction-canister",
+    "name": "Medline 800cc Suction Canister",
+    "part": "p3",
+    "category": "suction-supply",
+    "hcpcs": [
+      "A7000"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "4 per month",
+    "notes": null,
+    "source": "RR p.8",
+    "images": [
+      "rr/image42.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33612",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-oropharyngeal-suction-catheter-yankauer",
+    "name": "Oropharyngeal Suction Catheter / Yankauer",
+    "part": "p3",
+    "category": "suction-supply",
+    "hcpcs": [
+      "A4628"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "12 per month",
+    "notes": null,
+    "source": "RR p.8",
+    "images": [
+      "rr/image23.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33612",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-tracheal-suction-catheter-with-gloves-tray",
+    "name": "Tracheal Suction Catheter with Gloves, Tray",
+    "part": "p3",
+    "category": "suction-supply",
+    "hcpcs": [
+      "A4624"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "90 per month",
+    "notes": null,
+    "source": "RR p.8",
+    "images": [],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33612",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-trach-tube-cuffed",
+    "name": "Trach Tube Cuffed",
+    "part": "p3",
+    "category": "trach-supply",
+    "hcpcs": [
+      "A7521"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "1 per 3 months",
+    "notes": null,
+    "source": "RR p.9",
+    "images": [
+      "rr/image40.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33832",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-medline-trach-care-kit",
+    "name": "Medline Trach Care Kit",
+    "part": "p3",
+    "category": "trach-supply",
+    "hcpcs": [
+      "A4629"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "31 per month",
+    "notes": null,
+    "source": "RR p.9",
+    "images": [
+      "rr/image46.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33832",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-tracheal-hme-internal-filter-holder",
+    "name": "Tracheal HME (Internal Filter & Holder)",
+    "part": "p3",
+    "category": "trach-supply",
+    "hcpcs": [
+      "A7507"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "62 per month",
+    "notes": null,
+    "source": "RR p.9",
+    "images": [
+      "rr/image14.jpg",
+      "rr/image15.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33832",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-trach-tube-collar",
+    "name": "Trach Tube Collar",
+    "part": "p3",
+    "category": "trach-supply",
+    "hcpcs": [
+      "A7526"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "31 per month",
+    "notes": null,
+    "source": "RR p.9",
+    "images": [
+      "rr/image25.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33832",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-trach-mask",
+    "name": "Trach Mask",
+    "part": "p3",
+    "category": "trach-supply",
+    "hcpcs": [
+      "A7525"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "1 per month",
+    "notes": null,
+    "source": "RR p.9",
+    "images": [
+      "rr/image16.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33832",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-trach-inner-cannula",
+    "name": "Trach Inner Cannula",
+    "part": "p3",
+    "category": "trach-supply",
+    "hcpcs": [
+      "A4623"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "62 per month",
+    "notes": null,
+    "source": "RR p.9",
+    "images": [
+      "rr/image55.png"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33832",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-trach-speaking-valve",
+    "name": "Trach Speaking Valve",
+    "part": "p3",
+    "category": "trach-supply",
+    "hcpcs": [
+      "L8501"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "As prescribed",
+    "notes": null,
+    "source": "RR p.9",
+    "images": [
+      "rr/image4.png"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33832",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-full-facemask-with-headgear",
+    "name": "Full Facemask with Headgear",
+    "part": "p3",
+    "category": "pap-supply",
+    "hcpcs": [
+      "A7030"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [
+      {
+        "label": "Sizing",
+        "value": "Petite, S, M, L"
+      }
+    ],
+    "allowance": "1 per 3 months",
+    "notes": null,
+    "source": "RR p.13",
+    "images": [
+      "rr/image28.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33718",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-replacement-facemask-interface",
+    "name": "Replacement Facemask Interface",
+    "part": "p3",
+    "category": "pap-supply",
+    "hcpcs": [
+      "A7031"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [
+      {
+        "label": "Sizing",
+        "value": "Petite, S, M, L"
+      }
+    ],
+    "allowance": "1 per month",
+    "notes": null,
+    "source": "RR p.13",
+    "images": [
+      "rr/image17.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33718",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-replacement-nasal-cushion",
+    "name": "Replacement Nasal Cushion",
+    "part": "p3",
+    "category": "pap-supply",
+    "hcpcs": [
+      "A7032"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "2 per month",
+    "notes": null,
+    "source": "RR p.13",
+    "images": [
+      "rr/image37.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33718",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-replacement-nasal-pillows",
+    "name": "Replacement Nasal Pillows",
+    "part": "p3",
+    "category": "pap-supply",
+    "hcpcs": [
+      "A7033"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "2 per month",
+    "notes": null,
+    "source": "RR p.13",
+    "images": [
+      "rr/image39.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33718",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-nasal-application-device-with-headgear",
+    "name": "Nasal Application Device with Headgear",
+    "part": "p3",
+    "category": "pap-supply",
+    "hcpcs": [
+      "A7034"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "1 per 3 months",
+    "notes": null,
+    "source": "RR p.13",
+    "images": [
+      "rr/image8.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33718",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-headgear-for-pap",
+    "name": "Headgear for PAP",
+    "part": "p3",
+    "category": "pap-supply",
+    "hcpcs": [
+      "A7035"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "1 per 6 months",
+    "notes": null,
+    "source": "RR p.13",
+    "images": [
+      "rr/image38.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33718",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-chinstrap",
+    "name": "Chinstrap",
+    "part": "p3",
+    "category": "pap-supply",
+    "hcpcs": [
+      "A7036"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "1 per 6 months",
+    "notes": null,
+    "source": "RR p.13",
+    "images": [
+      "rr/image43.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33718",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-pap-tubing",
+    "name": "PAP Tubing",
+    "part": "p3",
+    "category": "pap-supply",
+    "hcpcs": [
+      "A7037"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [
+      {
+        "label": "Sizing",
+        "value": "2 ft, 4 ft, 6 ft, 8 ft, 10 ft"
+      }
+    ],
+    "allowance": "1 per 3 months",
+    "notes": null,
+    "source": "RR p.14",
+    "images": [
+      "rr/image5.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33718",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-disposable-filters",
+    "name": "Disposable Filters",
+    "part": "p3",
+    "category": "pap-supply",
+    "hcpcs": [
+      "A7038"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "2 per month",
+    "notes": null,
+    "source": "RR p.14",
+    "images": [
+      "rr/image57.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33718",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-non-disposable-filters",
+    "name": "Non-Disposable Filters",
+    "part": "p3",
+    "category": "pap-supply",
+    "hcpcs": [
+      "A7039"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "1 per 6 months",
+    "notes": null,
+    "source": "RR p.14",
+    "images": [
+      "rr/image2.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33718",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-replacement-water-chamber",
+    "name": "Replacement Water Chamber",
+    "part": "p3",
+    "category": "pap-supply",
+    "hcpcs": [
+      "A7046"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "1 per 6 months",
+    "notes": null,
+    "source": "RR p.14",
+    "images": [
+      "rr/image26.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33718",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-insertion-tray-without-bag-or-catheter",
+    "name": "Insertion Tray (without bag or catheter)",
+    "part": "p3",
+    "category": "catheter-supply",
+    "hcpcs": [
+      "A4310"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "As needed",
+    "notes": null,
+    "source": "RR p.16",
+    "images": [
+      "rr/image60.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33803",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-male-external-catheter",
+    "name": "Male External Catheter",
+    "part": "p3",
+    "category": "catheter-supply",
+    "hcpcs": [
+      "A4349"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [
+      {
+        "label": "Sizing",
+        "value": "S, M, L"
+      }
+    ],
+    "allowance": "35 per month",
+    "notes": null,
+    "source": "RR p.16",
+    "images": [
+      "rr/image34.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "existing-patients-only",
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33803",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-straight-tip-urine-catheter-coated-uncoated",
+    "name": "Straight Tip Urine Catheter (coated/uncoated)",
+    "part": "p3",
+    "category": "catheter-supply",
+    "hcpcs": [
+      "A4351"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "200 per month",
+    "notes": null,
+    "source": "RR p.16",
+    "images": [
+      "rr/image45.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33803",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-coude-tip-urinary-catheter",
+    "name": "Coude Tip Urinary Catheter",
+    "part": "p3",
+    "category": "catheter-supply",
+    "hcpcs": [
+      "A4352"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "200 per month",
+    "notes": null,
+    "source": "RR p.16",
+    "images": [
+      "rr/image53.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33803",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-intermittent-urinary-catheter-kit-without-balloo",
+    "name": "Intermittent Urinary Catheter Kit without Balloon",
+    "part": "p3",
+    "category": "catheter-supply",
+    "hcpcs": [
+      "A4353"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "200 per month",
+    "notes": null,
+    "source": "RR p.16",
+    "images": [
+      "rr/image29.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33803",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-bedside-drainage-bag-2-000ml",
+    "name": "Bedside Drainage Bag 2,000ml",
+    "part": "p3",
+    "category": "catheter-supply",
+    "hcpcs": [
+      "A4357"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "2 per month",
+    "notes": null,
+    "source": "RR p.17",
+    "images": [
+      "rr/image35.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33803",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-urinary-leg-abdomen-bag-500ml-or-1-000ml",
+    "name": "Urinary Leg / Abdomen Bag (500ml or 1,000ml)",
+    "part": "p3",
+    "category": "catheter-supply",
+    "hcpcs": [
+      "A4358"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "2 per month",
+    "notes": null,
+    "source": "RR p.17",
+    "images": [
+      "rr/image30.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "medicare-verified"
+    ],
+    "allowance_authority": "Medicare LCD L33803",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-wipes",
+    "name": "Wipes",
+    "part": "p3",
+    "category": "incontinence-supply",
+    "hcpcs": [
+      "A4335"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [
+      {
+        "label": "Sizing",
+        "value": "100 wipes per package"
+      }
+    ],
+    "allowance": "2 packs per month",
+    "notes": null,
+    "source": "RR p.15",
+    "images": [
+      "rr/image48.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "tx-medicaid-only",
+      "tmhp-governed"
+    ],
+    "allowance_authority": "TX Medicaid (TMHP) — not a Medicare benefit",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-disposable-underpads",
+    "name": "Disposable Underpads",
+    "part": "p3",
+    "category": "incontinence-supply",
+    "hcpcs": [
+      "A4554"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [
+      {
+        "label": "Sizing",
+        "value": "23\"×36\", 30\"×30\", 30\"×36\", 36\"×36\". Also called chux/chucks"
+      }
+    ],
+    "allowance": "120 per month",
+    "notes": null,
+    "source": "RR p.15",
+    "images": [
+      "rr/image11.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "tx-medicaid-only",
+      "tmhp-governed"
+    ],
+    "allowance_authority": "TX Medicaid (TMHP) — not a Medicare benefit",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-briefs-diapers",
+    "name": "Briefs / Diapers",
+    "part": "p3",
+    "category": "incontinence-supply",
+    "hcpcs": [
+      "T4522"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [
+      {
+        "label": "Sizing",
+        "value": "S (22–36\"), M (32–44\"), L (45–58\"), XL (58–64\"), XXL (63–69\"). XXL is T4524"
+      }
+    ],
+    "allowance": "240 per month",
+    "notes": null,
+    "source": "RR p.15",
+    "images": [
+      "rr/image7.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "tx-medicaid-only",
+      "tmhp-governed"
+    ],
+    "allowance_authority": "TX Medicaid (TMHP) — not a Medicare benefit",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-pullups-underwear",
+    "name": "Pullups / Underwear",
+    "part": "p3",
+    "category": "incontinence-supply",
+    "hcpcs": [
+      "T4527"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [
+      {
+        "label": "Sizing",
+        "value": "Same size chart as briefs. XXL is T4544"
+      }
+    ],
+    "allowance": "240 per month",
+    "notes": null,
+    "source": "RR p.15",
+    "images": [
+      "rr/image56.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "tx-medicaid-only",
+      "tmhp-governed"
+    ],
+    "allowance_authority": "TX Medicaid (TMHP) — not a Medicare benefit",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-disposable-liners-pads",
+    "name": "Disposable Liners / Pads",
+    "part": "p3",
+    "category": "incontinence-supply",
+    "hcpcs": [
+      "T4535"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [
+      {
+        "label": "Sizing",
+        "value": "Size 5.5\" × 9\"–15\""
+      }
+    ],
+    "allowance": "240 per month",
+    "notes": null,
+    "source": "RR p.15",
+    "images": [
+      "rr/image47.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "tx-medicaid-only",
+      "tmhp-governed"
+    ],
+    "allowance_authority": "TX Medicaid (TMHP) — not a Medicare benefit",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "compressor-drive-50psi-18450",
+    "name": "Drive Heavy Duty 50 PSI Compressor 18450",
+    "part": "p3",
+    "category": "respiratory-device",
+    "hcpcs": [
+      "E0565"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [
+      {
+        "label": "Flow Rate",
+        "value": "11–41 LPM"
+      }
+    ],
+    "allowance": null,
+    "notes": "Often called a \"humidifier\" for use with a trach. Humidification and high-flow, high-pressure nebulization of viscous medications.",
+    "source": "RR p.10",
+    "images": [
+      "rr/image50.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "rx-required-pickup"
+    ],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "cpap-react-health-luna-g3",
+    "name": "React Health Luna G3 CPAP LG3600",
+    "part": "p3",
+    "category": "cpap",
+    "hcpcs": [
+      "E0601"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 3.75,
+    "capacity_lbs": null,
+    "dimensions": "L 10.4\" × W 5.7\" × H 4.5\"",
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Touchscreen interface",
+    "source": "RR p.11",
+    "images": [
+      "rr/image27.png"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "compliance",
+      "rx-required-pickup"
+    ],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "cpap-resmed-airsense-11",
+    "name": "Resmed AirSense 11 CPAP S-11 39001",
+    "part": "p3",
+    "category": "cpap",
+    "hcpcs": [
+      "E0601"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 2.5,
+    "capacity_lbs": null,
+    "dimensions": "L 9.3\" × W 3.7\" × H 5.5\"",
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Bluetooth and Wi-Fi. AutoSet for Her built in.",
+    "source": "RR p.11",
+    "images": [
+      "rr/image36.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "compliance",
+      "rx-required-pickup"
+    ],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "cpap-resmed-airsense-10",
+    "name": "Resmed AirSense 10 CPAP S-10 37208",
+    "part": "p3",
+    "category": "cpap",
+    "hcpcs": [
+      "E0601"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 2.75,
+    "capacity_lbs": null,
+    "dimensions": "L 10\" × W 4.5\" × H 6\"",
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Predecessor to the AirSense 11.",
+    "source": "RR p.11",
+    "images": [
+      "rr/image12.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "compliance",
+      "rx-required-pickup"
+    ],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "bipap-luna-g3-a25",
+    "name": "React Health Luna G3 BiPAP A25 LG3700",
+    "part": "p3",
+    "category": "bipap",
+    "hcpcs": [
+      "E0470"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 3.75,
+    "capacity_lbs": null,
+    "dimensions": "L 10.5\" × W 4.5\" × H 5.7\"",
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "E0470 does not include a back-up rate feature. See E0471 models for that capability.",
+    "source": "RR p.12",
+    "images": [
+      "rr/image13.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "compliance",
+      "rx-required-pickup"
+    ],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "bipap-luna-g3-30vt-st",
+    "name": "React Health Luna G3 BiPAP 30VT S/T LG3800",
+    "part": "p3",
+    "category": "bipap",
+    "hcpcs": [
+      "E0471"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 3.75,
+    "capacity_lbs": null,
+    "dimensions": "L 10.5\" × W 4.5\" × H 5.7\"",
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "E0471 includes a back-up rate feature: a pre-set breathing rate delivered if the user's spontaneous breaths fall below threshold. E0470 does not.",
+    "source": "RR p.12",
+    "images": [],
+    "verified": "2026-03-01",
+    "flags": [
+      "compliance",
+      "rx-required-pickup"
+    ],
+    "billing_type": "continuous-rental"
+  },
+  {
+    "id": "bipap-resmed-aircurve-11",
+    "name": "ResMed AirCurve 11 BiPAP S11 39019",
+    "part": "p3",
+    "category": "bipap",
+    "hcpcs": [
+      "E0470"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 2.7,
+    "capacity_lbs": null,
+    "dimensions": "L 10.2\" × W 3.7\" × H 5.5\"",
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "E0470 does not include a back-up rate feature. See E0471 models for that capability.",
+    "source": "RR p.12",
+    "images": [
+      "rr/image1.png"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "compliance",
+      "rx-required-pickup"
+    ],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "bipap-resmed-aircurve-10-st",
+    "name": "ResMed AirCurve 10 ST BiPAP S10 37307",
+    "part": "p3",
+    "category": "bipap",
+    "hcpcs": [
+      "E0471"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 2.7,
+    "capacity_lbs": null,
+    "dimensions": "L 10\" × W 4.5\" × H 6\"",
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "E0471 includes a back-up rate feature: a pre-set breathing rate delivered if the user's spontaneous breaths fall below threshold. E0470 does not.",
+    "source": "RR p.12",
+    "images": [
+      "rr/image3.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "compliance",
+      "rx-required-pickup"
+    ],
+    "billing_type": "continuous-rental"
+  },
+  {
+    "id": "cough-assist-biwaze",
+    "name": "BiWaze Cough Assist Device",
+    "part": "p3",
+    "category": "respiratory-device",
+    "hcpcs": [
+      "E0482"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 9,
+    "capacity_lbs": null,
+    "dimensions": "10.5\" L × 9\" W × 3.5\" H",
+    "seat": null,
+    "specs": [
+      {
+        "label": "Features",
+        "value": "Touchscreen, remote control via app, patient/provider communication via online portal"
+      }
+    ],
+    "allowance": null,
+    "notes": "Simulates a cough to clear mucus. Used by patients with neuromuscular disorders or weakened respiratory muscles. Service requests route through the Service Q.",
+    "source": "RR p.18",
+    "images": [
+      "rr/image31.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "rx-required-pickup"
+    ],
+    "billing_type": "capped-rental"
+  },
+  {
+    "id": "cough-assist-tubing-t70",
+    "name": "Circuit Corrugated Tubing T70",
+    "part": "p3",
+    "category": "respiratory-supply",
+    "hcpcs": [
+      "A7010"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Accessory for the BiWaze Cough Assist.",
+    "source": "RR p.18",
+    "images": [
+      "rr/image44.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "cough-assist-interface-mask",
+    "name": "Interface Mask",
+    "part": "p3",
+    "category": "respiratory-supply",
+    "hcpcs": [
+      "A7020"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Accessory for the BiWaze Cough Assist.",
+    "source": "RR p.18",
+    "images": [
+      "rr/image41.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "vent-philips-trilogy-100",
+    "name": "Philips Respironics Trilogy 100",
+    "part": "p3",
+    "category": "ventilator",
+    "hcpcs": [
+      "E0465",
+      "E0466"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": 11,
+    "capacity_lbs": null,
+    "dimensions": "6.5\" L × 11\" W × 9\" H",
+    "seat": null,
+    "specs": [
+      {
+        "label": "Features",
+        "value": "3-hour internal and 3-hour detachable batteries, SD card, DirectView Ventilation Management Software"
+      }
+    ],
+    "allowance": null,
+    "notes": "Highest priority equipment. Cannot be picked up without a discontinue prescription from the MDO.",
+    "source": "RR p.19",
+    "images": [
+      "rr/image21.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "critical",
+      "rx-required-pickup",
+      "compliance"
+    ],
+    "billing_type": "continuous-rental"
+  },
+  {
+    "id": "vent-breathing-circuits",
+    "name": "Breathing Circuits",
+    "part": "p3",
+    "category": "respiratory-supply",
+    "hcpcs": [
+      "A4618"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Accessory for the Trilogy 100.",
+    "source": "RR p.19",
+    "images": [
+      "rr/image9.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "vent-bacterial-viral-filters",
+    "name": "Bacterial Viral Filters",
+    "part": "p3",
+    "category": "respiratory-supply",
+    "hcpcs": [
+      "E1399"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Accessory for the Trilogy 100.",
+    "source": "RR p.19",
+    "images": [
+      "rr/image19.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "vent-carrying-bag",
+    "name": "Carrying Bag",
+    "part": "p3",
+    "category": "respiratory-supply",
+    "hcpcs": [
+      "E1399"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Accessory for the Trilogy 100.",
+    "source": "RR p.19",
+    "images": [
+      "rr/image58.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "ippb-bennett-ap5",
+    "name": "Bennett AP-5 IPPB Machine",
+    "part": "p3",
+    "category": "respiratory-device",
+    "hcpcs": [
+      "E0500"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Considered outdated. No new units provided; existing patients still serviced. Cannot be picked up without a discontinue prescription from the MDO.",
+    "source": "RR p.20",
+    "images": [
+      "rr/image20.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [
+      "rx-required-pickup",
+      "service-only"
+    ],
+    "billing_type": "continuous-rental"
+  },
+  {
+    "id": "ippb-breathing-circuit-hud1560",
+    "name": "IPPB Medline Universal Breathing Circuit HUD 1560",
+    "part": "p3",
+    "category": "respiratory-supply",
+    "hcpcs": [
+      "A4618"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Breathing circuit for the Bennett AP-5.",
+    "source": "RR p.20",
+    "images": [
+      "rr/image54.jpg"
+    ],
+    "verified": "2026-03-01",
+    "flags": [],
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-pap-heated-tubing",
+    "name": "Heated PAP Tubing",
+    "part": "p3",
+    "category": "pap-supply",
+    "hcpcs": [
+      "A4604"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [
+      {
+        "label": "Sizing",
+        "value": "Length varies by machine model"
+      }
+    ],
+    "allowance": "1 per 3 months",
+    "notes": null,
+    "source": "Billing & Insurance v2.0 §19",
+    "images": [],
+    "verified": "2026-09-15",
+    "allowance_authority": "Medicare LCD L33718",
+    "billing_type": "purchase-resupply",
+    "flags": [
+      "medicare-verified"
+    ]
+  },
+  {
+    "id": "o2-cylinder-m6",
+    "name": "M6 Oxygen Cylinder",
+    "part": "p7",
+    "category": "oxygen-cylinder",
+    "hcpcs": [
+      "E0431"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [
+      {
+        "label": "Length",
+        "value": "~12\""
+      },
+      {
+        "label": "Diameter",
+        "value": "4.38\""
+      },
+      {
+        "label": "Pressure When Full",
+        "value": "~2,000 PSI"
+      }
+    ],
+    "allowance": "Per prescription; max 10 per delivery",
+    "notes": "Highly portable, fits in a carrier bag. Travel and short outings.",
+    "source": "Oxygen guide",
+    "images": [],
+    "verified": "2026-09-15",
+    "billing_type": "capped-rental",
+    "flags": []
+  },
+  {
+    "id": "o2-cylinder-e",
+    "name": "E Oxygen Cylinder",
+    "part": "p7",
+    "category": "oxygen-cylinder",
+    "hcpcs": [
+      "E0431"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [
+      {
+        "label": "Length",
+        "value": "~25\""
+      },
+      {
+        "label": "Diameter",
+        "value": "4.38\""
+      },
+      {
+        "label": "Pressure When Full",
+        "value": "~2,000 PSI"
+      }
+    ],
+    "allowance": "Per prescription; max 10 per delivery",
+    "notes": "Larger, typically in a stand or cart. Backup at home and extended use. Patients should always keep at least one E cylinder at home for power outages.",
+    "source": "Oxygen guide",
+    "images": [],
+    "verified": "2026-09-15",
+    "billing_type": "capped-rental",
+    "flags": []
+  },
+  {
+    "id": "o2-cannula-nasal",
+    "name": "Nasal Cannula (with 7 ft tubing)",
+    "part": "p7",
+    "category": "oxygen-supply",
+    "hcpcs": [
+      "A4615"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "4 per month",
+    "notes": "Supplied in packs of 4, each including 7 ft tubing. Patients do not need to request 7 ft tubing separately. Included in the monthly oxygen rental payment during the 36-month period — no separate charge to the patient.",
+    "source": "Oxygen guide",
+    "images": [],
+    "verified": "2026-09-15",
+    "billing_type": "purchase-resupply",
+    "flags": [
+      "bundled-in-rental"
+    ],
+    "allowance_authority": "UMS published schedule"
+  },
+  {
+    "id": "o2-tubing-25ft",
+    "name": "Oxygen Tubing — 25 ft",
+    "part": "p7",
+    "category": "oxygen-supply",
+    "hcpcs": [
+      "A4616"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "2 per month",
+    "notes": "Request separately from cannulas. Can be cut to a shorter custom length on request. Included in the monthly oxygen rental payment during the 36-month period — no separate charge to the patient.",
+    "source": "Oxygen guide",
+    "images": [],
+    "verified": "2026-09-15",
+    "billing_type": "purchase-resupply",
+    "flags": [
+      "bundled-in-rental"
+    ],
+    "allowance_authority": "UMS published schedule"
+  },
+  {
+    "id": "o2-tubing-50ft",
+    "name": "Oxygen Tubing — 50 ft",
+    "part": "p7",
+    "category": "oxygen-supply",
+    "hcpcs": [
+      "A4616"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "1 per month",
+    "notes": "Maximum tubing length is 50 ft. Tubing must not be cut and spliced. Included in the monthly oxygen rental payment during the 36-month period — no separate charge to the patient.",
+    "source": "Oxygen guide",
+    "images": [],
+    "verified": "2026-09-15",
+    "billing_type": "purchase-resupply",
+    "flags": [
+      "bundled-in-rental"
+    ],
+    "allowance_authority": "UMS published schedule"
+  },
+  {
+    "id": "o2-connector-straight",
+    "name": "Straight Connector",
+    "part": "p7",
+    "category": "oxygen-supply",
+    "hcpcs": [],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "2–3 per month",
+    "notes": "Included in the monthly oxygen rental payment during the 36-month period — no separate charge to the patient.",
+    "source": "Oxygen guide",
+    "images": [],
+    "verified": "2026-09-15",
+    "billing_type": "purchase-resupply",
+    "flags": [
+      "bundled-in-rental",
+      "no-hcpcs"
+    ]
+  },
+  {
+    "id": "o2-connector-swivel",
+    "name": "Swivel Connector",
+    "part": "p7",
+    "category": "oxygen-supply",
+    "hcpcs": [],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "2 per month",
+    "notes": "Included in the monthly oxygen rental payment during the 36-month period — no separate charge to the patient.",
+    "source": "Oxygen guide",
+    "images": [],
+    "verified": "2026-09-15",
+    "billing_type": "purchase-resupply",
+    "flags": [
+      "bundled-in-rental",
+      "no-hcpcs"
+    ]
+  },
+  {
+    "id": "o2-humidifier-bottle",
+    "name": "Humidifier Bottle",
+    "part": "p7",
+    "category": "oxygen-accessory",
+    "hcpcs": [
+      "E0555"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "As needed",
+    "notes": "Always add humidifier adapter tubing to the order as well. Overfilling above the max line is the most common cause of water in the tubing. Included in the monthly oxygen rental payment during the 36-month period — no separate charge to the patient.",
+    "source": "Oxygen guide",
+    "images": [],
+    "verified": "2026-09-15",
+    "billing_type": "purchase-resupply",
+    "flags": [
+      "bundled-in-rental"
+    ]
+  },
+  {
+    "id": "o2-regulator-standard",
+    "name": "Standard Oxygen Regulator",
+    "part": "p7",
+    "category": "oxygen-accessory",
+    "hcpcs": [
+      "E1353"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Standard flow regulator supplied with a portable gaseous system. Included in the monthly oxygen rental payment during the 36-month period — no separate charge to the patient.",
+    "source": "Oxygen guide",
+    "images": [
+      "o2/image14.png"
+    ],
+    "verified": "2026-09-15",
+    "billing_type": "non-billable",
+    "flags": [
+      "bundled-in-rental"
+    ]
+  },
+  {
+    "id": "o2-stand-rack",
+    "name": "Oxygen Cylinder Stand / Rack",
+    "part": "p7",
+    "category": "oxygen-accessory",
+    "hcpcs": [
+      "E1355"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Included in the monthly oxygen rental payment during the 36-month period — no separate charge to the patient.",
+    "source": "Oxygen guide",
+    "images": [],
+    "verified": "2026-09-15",
+    "billing_type": "non-billable",
+    "flags": [
+      "bundled-in-rental"
+    ]
+  },
+  {
+    "id": "o2-cylinder-carrier-bag",
+    "name": "Oxygen Cylinder Carrier Bag",
+    "part": "p7",
+    "category": "oxygen-accessory",
+    "hcpcs": [
+      "E1399"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "E cylinder or M6 cylinder options.",
+    "source": "Oxygen guide",
+    "images": [],
+    "verified": "2026-09-15",
+    "billing_type": "purchase",
+    "flags": []
+  },
+  {
+    "id": "wc-heavy-duty-20",
+    "name": "Medline K3 Guardian 20\"",
+    "part": "p2",
+    "category": "manual-wheelchair",
+    "hcpcs": [
+      "K0006"
+    ],
+    "hcpcs_note": "May also appear as K0003 with E2201 — the add-on code for a 20–24\" seat",
+    "product_weight_lbs": null,
+    "capacity_lbs": 300,
+    "dimensions": null,
+    "seat": "20\" wide",
+    "specs": [],
+    "allowance": null,
+    "notes": "The 20\" version of the K3 Guardian. Billed as K0006 — or K0003 with E2201 — for a patient over 250 lbs who does not reach the 300 lb threshold for an extra-wide K0007 chair.",
+    "source": "Robin, 09/2026",
+    "images": [
+      "mm/image14.jpg"
+    ],
+    "verified": "2026-09-25",
+    "billing_type": "capped-rental",
+    "flags": []
+  }
+]

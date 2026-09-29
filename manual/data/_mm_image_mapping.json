@@ -1,0 +1,411 @@
+{
+  "mapping": [
+    {
+      "file": "image8.png",
+      "record": "bed-rail-half",
+      "name": "Half-Length Bed Rail",
+      "section": "Semi-Electric Hospital Bed (E0260/E0261)",
+      "primary": true
+    },
+    {
+      "file": "image9.png",
+      "record": "bed-rail-full",
+      "name": "Full-Length Bed Rail",
+      "section": "Semi-Electric Hospital Bed (E0260/E0261)",
+      "primary": true
+    },
+    {
+      "file": "image52.jpg",
+      "record": "mattress-vinyl-innerspring",
+      "name": "Vinyl Innerspring Mattress",
+      "section": "Semi-Electric Hospital Bed (E0260/E0261)",
+      "primary": true
+    },
+    {
+      "file": "image22.jpg",
+      "record": "mattress-gel-overlay",
+      "name": "Gel Overlay Mattress",
+      "section": "Semi-Electric Hospital Bed (E0260/E0261)",
+      "primary": true
+    },
+    {
+      "file": "image48.jpg",
+      "record": "trapeze-bar",
+      "name": "Trapeze Bar",
+      "section": "Semi-Electric Hospital Bed (E0260/E0261)",
+      "primary": true
+    },
+    {
+      "file": "image14.jpg",
+      "record": "medline-k3-guardian",
+      "name": "Medline K3 Guardian",
+      "section": "Wheelchair Quick Reference",
+      "primary": true
+    },
+    {
+      "file": "image34.jpg",
+      "record": "medline-hybrid-2-polyfly",
+      "name": "Medline Hybrid 2 (Poly-Fly)",
+      "section": "Wheelchair Quick Reference",
+      "primary": true
+    },
+    {
+      "file": "image25.jpg",
+      "record": "medline-k4-high-strength",
+      "name": "Medline K4 High-Strength",
+      "section": "Wheelchair Quick Reference",
+      "primary": true
+    },
+    {
+      "file": "image28.jpg",
+      "record": "guardian-extra-wide-hd",
+      "name": "Guardian Extra Wide (HD)",
+      "section": "Wheelchair Quick Reference",
+      "primary": true
+    },
+    {
+      "file": "image24.jpg",
+      "record": "shuttle-extra-wide-bariatric",
+      "name": "Shuttle Extra-Wide Bariatric",
+      "section": "Wheelchair Quick Reference",
+      "primary": true
+    },
+    {
+      "file": "image55.jpg",
+      "record": "guardian-reclining",
+      "name": "Guardian Reclining",
+      "section": "Wheelchair Quick Reference",
+      "primary": true
+    },
+    {
+      "file": "image57.png",
+      "record": "wc-acc-anti-tipper",
+      "name": "Anti-Tipper",
+      "section": "Standard Wheelchair Accessories",
+      "primary": true
+    },
+    {
+      "file": "image3.png",
+      "record": "wc-acc-detachable-adjustable-armrest",
+      "name": "Detachable / Adjustable Armrest",
+      "section": "Standard Wheelchair Accessories",
+      "primary": true
+    },
+    {
+      "file": "image53.png",
+      "record": "wc-acc-seat-cushion-standard",
+      "name": "Seat Cushion (Standard)",
+      "section": "Standard Wheelchair Accessories",
+      "primary": true
+    },
+    {
+      "file": "image27.png",
+      "record": "wc-acc-back-cushion-standard",
+      "name": "Back Cushion (Standard)",
+      "section": "Standard Wheelchair Accessories",
+      "primary": true
+    },
+    {
+      "file": "image16.png",
+      "record": "wc-acc-permobil-roho-cushion",
+      "name": "Permobil ROHO Cushion",
+      "section": "Standard Wheelchair Accessories",
+      "primary": true
+    },
+    {
+      "file": "image47.png",
+      "record": "wc-acc-transfer-device-board",
+      "name": "Transfer Device / Board",
+      "section": "Standard Wheelchair Accessories",
+      "primary": true
+    },
+    {
+      "file": "image29.png",
+      "record": "wc-acc-super-hemi-height-kit",
+      "name": "Super-Hemi Height Kit",
+      "section": "Standard Wheelchair Accessories",
+      "primary": true
+    },
+    {
+      "file": "image2.png",
+      "record": "wc-acc-single-arm-drive-attachment",
+      "name": "Single-Arm Drive Attachment",
+      "section": "Standard Wheelchair Accessories",
+      "primary": true
+    },
+    {
+      "file": "image51.png",
+      "record": "wc-acc-wheel-lock-brake-extension-handle",
+      "name": "Wheel Lock / Brake Extension Handle",
+      "section": "Standard Wheelchair Accessories",
+      "primary": true
+    },
+    {
+      "file": "image13.png",
+      "record": "wc-acc-pelvic-safety-belt",
+      "name": "Pelvic Safety Belt",
+      "section": "Standard Wheelchair Accessories",
+      "primary": true
+    },
+    {
+      "file": "image19.png",
+      "record": "wc-acc-oxygen-cylinder-carrier",
+      "name": "Oxygen Cylinder Carrier",
+      "section": "Standard Wheelchair Accessories",
+      "primary": true
+    },
+    {
+      "file": "image58.png",
+      "record": "wc-acc-oxygen-cylinder-carrier",
+      "name": "Oxygen Cylinder Carrier",
+      "section": "Standard Wheelchair Accessories",
+      "primary": false
+    },
+    {
+      "file": "image32.png",
+      "record": "wc-acc-heel-loops",
+      "name": "Heel Loops",
+      "section": "Standard Wheelchair Accessories",
+      "primary": true
+    },
+    {
+      "file": "image39.jpg",
+      "record": "walker-2button-folding",
+      "name": "2-Button Steel Folding Walker, 5\" Wheels",
+      "section": "Walker Options",
+      "primary": true
+    },
+    {
+      "file": "image26.jpg",
+      "record": "walker-side-step-hemi",
+      "name": "Side Step Hemi Walker",
+      "section": "Walker Options",
+      "primary": true
+    },
+    {
+      "file": "image17.jpg",
+      "record": "walker-platform-armrest",
+      "name": "Walker Platform Armrest",
+      "section": "Walker Options",
+      "primary": true
+    },
+    {
+      "file": "image23.jpg",
+      "record": "rollator-basic-steel",
+      "name": "Basic Steel Rollator, 6\" Wheels",
+      "section": "Rollator Options",
+      "primary": true
+    },
+    {
+      "file": "image50.jpg",
+      "record": "rollator-basic-steel",
+      "name": "Basic Steel Rollator, 6\" Wheels",
+      "section": "Rollator Options",
+      "primary": false
+    },
+    {
+      "file": "image21.jpg",
+      "record": "rollator-basic-steel",
+      "name": "Basic Steel Rollator, 6\" Wheels",
+      "section": "Rollator Options",
+      "primary": false
+    },
+    {
+      "file": "image31.jpg",
+      "record": "rollator-heavy-duty-steel",
+      "name": "Heavy Duty Steel Rollator, 8\" Wheels",
+      "section": "Rollator Options",
+      "primary": true
+    },
+    {
+      "file": "image18.jpg",
+      "record": "cane-aluminum-quad",
+      "name": "Aluminum Quad Cane",
+      "section": "Other Mobility Aids",
+      "primary": true
+    },
+    {
+      "file": "image1.jpg",
+      "record": "knee-walker",
+      "name": "Knee Walker",
+      "section": "Other Mobility Aids",
+      "primary": true
+    },
+    {
+      "file": "image11.jpg",
+      "record": "lift-medline-hydraulic",
+      "name": "Medline Hydraulic Patient Lift",
+      "section": "Patient Lift Options",
+      "primary": true
+    },
+    {
+      "file": "image33.jpg",
+      "record": "lift-medline-battery",
+      "name": "Medline Battery-Powered Lift",
+      "section": "Patient Lift Options",
+      "primary": true
+    },
+    {
+      "file": "image36.jpg",
+      "record": "sling-full-body",
+      "name": "Full Body Patient Sling",
+      "section": "Patient Lift Options",
+      "primary": true
+    },
+    {
+      "file": "image7.jpg",
+      "record": "shower-chair-aluminum",
+      "name": "Aluminum Shower Chair",
+      "section": "Bathroom Items",
+      "primary": true
+    },
+    {
+      "file": "image37.jpg",
+      "record": "commode-3in1-steel",
+      "name": "3-in-1 Steel Commode Chair",
+      "section": "Bathroom Items",
+      "primary": true
+    },
+    {
+      "file": "image12.jpg",
+      "record": "tub-transfer-bench",
+      "name": "Tub Transfer Bench",
+      "section": "Bathroom Items",
+      "primary": true
+    },
+    {
+      "file": "image6.jpg",
+      "record": "raised-toilet-seat",
+      "name": "Raised Toilet Seat",
+      "section": "Bathroom Items",
+      "primary": true
+    },
+    {
+      "file": "image41.jpg",
+      "record": "brace-metforce-oa-knee-brace-ay-43",
+      "name": "Metforce OA Knee Brace AY-43",
+      "section": "Braces",
+      "primary": true
+    },
+    {
+      "file": "image30.jpg",
+      "record": "brace-aryse-tru-range-knee-brace-ay-32",
+      "name": "Aryse Tru-Range Knee Brace AY-32",
+      "section": "Braces",
+      "primary": true
+    },
+    {
+      "file": "image5.jpg",
+      "record": "brace-aryse-purespeed-knee-brace-ay-20",
+      "name": "Aryse Purespeed Knee Brace AY-20",
+      "section": "Braces",
+      "primary": true
+    },
+    {
+      "file": "image10.jpg",
+      "record": "brace-aryse-deltalock-knee-stabilizer-ay-02",
+      "name": "Aryse Deltalock+ Knee Stabilizer AY-02",
+      "section": "Braces",
+      "primary": true
+    },
+    {
+      "file": "image42.jpg",
+      "record": "brace-aryse-metforce-back-brace-ay-37",
+      "name": "Aryse Metforce Back Brace AY-37",
+      "section": "Braces",
+      "primary": true
+    },
+    {
+      "file": "image56.jpg",
+      "record": "brace-aryse-metforce-back-brace-ay-37",
+      "name": "Aryse Metforce Back Brace AY-37",
+      "section": "Braces",
+      "primary": false
+    },
+    {
+      "file": "image35.jpg",
+      "record": "brace-aryse-metforce-tlso-back-brace-ay-56",
+      "name": "Aryse Metforce TLSO Back Brace AY-56",
+      "section": "Braces",
+      "primary": true
+    },
+    {
+      "file": "image44.jpg",
+      "record": "brace-aryse-metforce-tlso-back-brace-ay-56",
+      "name": "Aryse Metforce TLSO Back Brace AY-56",
+      "section": "Braces",
+      "primary": false
+    },
+    {
+      "file": "image46.jpg",
+      "record": "brace-aryse-alphawrap-back-brace-ay-52",
+      "name": "Aryse Alphawrap Back Brace AY-52",
+      "section": "Braces",
+      "primary": true
+    },
+    {
+      "file": "image40.jpg",
+      "record": "bpm-medline-wrist",
+      "name": "Medline Digital Wrist Blood Pressure Monitor",
+      "section": "Other General DME",
+      "primary": true
+    },
+    {
+      "file": "image15.jpg",
+      "record": "__diagram-standard-order",
+      "name": "(diagram)",
+      "section": "Standard Order Process",
+      "primary": true
+    },
+    {
+      "file": "image45.png",
+      "record": "__diagram-standard-order-2",
+      "name": "(diagram)",
+      "section": "Standard Order Process",
+      "primary": true
+    },
+    {
+      "file": "image43.jpg",
+      "record": "medline-mdr107002e",
+      "name": "Medline MDR107002E Semi-Electric Hospital Bed",
+      "section": "Semi-Electric Hospital Bed (E0260/E0261)",
+      "primary": true
+    },
+    {
+      "file": "image38.jpg",
+      "record": "bed-extension-kit",
+      "name": "4\" Length Extension Kit",
+      "section": "Semi-Electric Hospital Bed (E0260/E0261)",
+      "primary": true
+    },
+    {
+      "file": "image20.jpg",
+      "record": "mattress-low-air-loss",
+      "name": "Low Air Loss Mattress",
+      "section": "Low Air Loss Mattress (E0277)",
+      "primary": true
+    },
+    {
+      "file": "image49.jpg",
+      "record": "mattress-low-air-loss",
+      "name": "Low Air Loss Mattress",
+      "section": "Low Air Loss Mattress (E0277)",
+      "primary": false
+    },
+    {
+      "file": "image54.jpg",
+      "record": "lift-chair",
+      "name": "Lift Chair",
+      "section": "Lift Chair (E1399)",
+      "primary": true
+    },
+    {
+      "file": "image4.jpg",
+      "record": "nebulizer-aeromist",
+      "name": "Aeromist Nebulizer Compressor",
+      "section": "Nebulizer",
+      "primary": true
+    }
+  ],
+  "unmatched": []
+}

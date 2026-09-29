@@ -1,0 +1,124 @@
+{
+  "mapping": [
+    {
+      "file": "image16.jpg",
+      "record": "__diagram-power-process",
+      "name": "(figure)",
+      "section": "Power Process Overview",
+      "primary": true
+    },
+    {
+      "file": "image5.png",
+      "record": "__screenshot-qualifications-notation",
+      "name": "(figure)",
+      "section": "Handling Status Update Calls",
+      "primary": true
+    },
+    {
+      "file": "image4.png",
+      "record": "__screenshot-pt-concurrence",
+      "name": "(figure)",
+      "section": "Key PT Eval Procedures",
+      "primary": true
+    },
+    {
+      "file": "image14.png",
+      "record": "__screenshot-par-notation",
+      "name": "(figure)",
+      "section": "Prior Authorization",
+      "primary": true
+    },
+    {
+      "file": "image2.jpg",
+      "record": "pov-ultra-x-3wheel-s39",
+      "name": "Ultra X 3-Wheel (S39)",
+      "section": "POV Group 1 Standard (K0800)",
+      "primary": true
+    },
+    {
+      "file": "image3.jpg",
+      "record": "pov-ultra-x-4wheel-s49",
+      "name": "Ultra X 4-Wheel (S49)",
+      "section": "POV Group 1 Standard (K0800)",
+      "primary": true
+    },
+    {
+      "file": "image9.jpg",
+      "record": "pov-sport-3wheel-s73",
+      "name": "Sport 3-Wheel (S73)",
+      "section": "POV Group 1 HD (K0801)",
+      "primary": true
+    },
+    {
+      "file": "image1.jpg",
+      "record": "pov-sport-4wheel-s74",
+      "name": "Sport 4-Wheel (S74)",
+      "section": "POV Group 1 HD (K0801)",
+      "primary": true
+    },
+    {
+      "file": "image17.jpg",
+      "record": "pwc-pride-go-chair-med",
+      "name": "Pride Go Chair MED",
+      "section": "PWC Quick Reference",
+      "primary": true
+    },
+    {
+      "file": "image11.jpg",
+      "record": "pwc-jazzy-elite-es-2sc",
+      "name": "Pride Jazzy Elite ES 2S-C",
+      "section": "PWC Quick Reference",
+      "primary": true
+    },
+    {
+      "file": "image7.jpg",
+      "record": "pwc-jazzy-elite-hd-2hdc",
+      "name": "Jazzy Elite HD 2HD-C",
+      "section": "PWC Quick Reference",
+      "primary": true
+    },
+    {
+      "file": "image15.png",
+      "record": "pwc-merits-atlantis-p710",
+      "name": "Merits Atlantis P710",
+      "section": "PWC Quick Reference",
+      "primary": true
+    },
+    {
+      "file": "image12.jpg",
+      "record": "pwc-shoprider-xlr14-p424le",
+      "name": "Shoprider XLR-14 P424LE",
+      "section": "PWC Quick Reference",
+      "primary": true
+    },
+    {
+      "file": "image10.jpg",
+      "record": "pwc-merits-vision-ultra-hd-p331",
+      "name": "Merits Vision Ultra HD P331",
+      "section": "PWC Quick Reference",
+      "primary": true
+    },
+    {
+      "file": "image8.jpg",
+      "record": "pwc-invacare-tdx-sp2",
+      "name": "Invacare TDX-SP2",
+      "section": "PWC Quick Reference",
+      "primary": true
+    },
+    {
+      "file": "image6.jpg",
+      "record": "pwc-invacare-tdx-sp2-hd",
+      "name": "Invacare TDX-SP2 HD",
+      "section": "PWC Quick Reference",
+      "primary": true
+    },
+    {
+      "file": "image13.jpg",
+      "record": "pwc-amysystems-alltrack-hd3",
+      "name": "Amysystems ALLTRACK HD 3",
+      "section": "PWC Quick Reference",
+      "primary": true
+    }
+  ],
+  "unmatched": []
+}

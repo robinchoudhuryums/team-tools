@@ -904,11 +904,11 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1055 | `node test/client/run.js` |
-| DOM harness tests | 162 | `node test/client/dom/runDom.js` |
-| Visual matrix scenarios | 123 | `shoot.mjs`'s `SCENARIOS` |
+| Pure harness tests | 1074 | `node test/client/run.js` |
+| DOM harness tests | 165 | `node test/client/dom/runDom.js` |
+| Visual matrix scenarios | 131 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 339 | `Tests.js`; a run prints its own `Expected:` line |
-| Admin-tier endpoints (INV-136) | 52 | `'Admin access required.'` in the server source |
+| Admin-tier endpoints (INV-136) | 54 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 97 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
 | QA-gated endpoints (`canSeeQa_`) | 17 | `'QA access required.'` in the server source |
 | Installable triggers created | 16 | `installAutomationTriggers` |

@@ -8989,9 +8989,10 @@ test('the annotator marks the FIRST mention only, and never inside the glossary'
     'the definition opens on keyboard focus as well as hover');
   assert.ok(/@media \(max-width: 560px\)[\s\S]{0,200}\.kb-gloss-row \{ grid-template-columns: 1fr/.test(kb),
     'the two-column term list stacks on a phone');
-  // Both readers annotate — the tab and the mid-call drawer.
-  assert.strictEqual((kb.match(/kbGlossaryAnnotate_\((main|body)\);/g) || []).length, 2,
-    'wired into both the Reference reader and the drawer');
+  // Both readers annotate — the tab and the mid-call drawer — and, since
+  // Batch M2, the Manual reader's part page.
+  assert.strictEqual((kb.match(/kbGlossaryAnnotate_\((main|body)\);/g) || []).length, 3,
+    'wired into the Reference reader, the Manual part page and the drawer');
 });
 
 console.log('\nkb — roster Tier 1: views, person panel, tag filter, ids');
@@ -29436,6 +29437,582 @@ test('E-1/E-2: the wiring — the state ships the defaults, the gear opens the p
   const w = extractFnFrom(clk, 'clkDashWidgetsHtml_');
   assert.ok(/\.filter\(function \(it\) \{ return it\.show; \}\)/.test(w) && /dash-w-hide-compact/.test(w), 'hidden widgets get no slot; the pop-out keeps its old gate');
   assert.ok(/:root\[data-compact\] \.dash-w-hide-compact \{ display: none; \}/.test(clk));
+});
+
+// ── Batch M1 — the CSR Procedures Manual into Reference ─────────────────────
+console.log('\nBatch M1 — the procedures manual: renderer, importer, exporter');
+const M1_KB_SRC = fs.readFileSync(path.join(PA_WEB, 'kb/script_kb.html'), 'utf8');
+function m1Md_() {
+  const ctx = vm.createContext({ String, Object, Array, JSON, parseInt, Math,
+    kbGlossaryHtml_: (b) => '<GLOSS>' + b + '</GLOSS>', kbRosterHtml_: () => '', kbDecideHtml_: () => '', kbMapHtml_: () => '' });
+  vm.runInContext(/var KB_CALLOUT_KINDS = [^\n]+/.exec(M1_KB_SRC)[0], ctx);
+  ['kbSlug_', 'kbMd_', 'kbCalloutKind_', 'kbDiagramPendingHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
+  return ctx;
+}
+
+test('M1-R1: a quote RENDERS — the marker is `&gt;` after the escape, so every quote used to print as a paragraph starting "&gt;"; a bold-label quote is a callout toned by its label, and it holds whole blocks', () => {
+  const c = m1Md_();
+  const plain = c.kbMd_('> just a quote');
+  assert.strictEqual(plain, '<blockquote><p>just a quote</p></blockquote>', 'a plain quote is a blockquote, not "&gt; just a quote"');
+  assert.ok(!/&gt;/.test(c.kbMd_('> a\n> b')), 'no literal marker survives');
+  const kinds = { 'Critical — x.': 'critical', 'Policy — y.': 'policy', 'Watch-out': 'watch-out', 'Script.': 'script', 'Note — z.': 'note',
+    'Short version.': 'note', 'Rule of thumb.': 'note', 'Policy': 'policy', 'watch-out — lower case': 'watch-out' };
+  Object.keys(kinds).forEach((lab) => {
+    const h = c.kbMd_('> **' + lab + '** body');
+    assert.ok(h.indexOf('<blockquote class="kb-callout kb-callout-' + kinds[lab] + '">') === 0, lab + ' → ' + kinds[lab] + ': ' + h);
+  });
+  assert.strictEqual(c.kbCalloutKind_('plain text'), '', 'no bold opener → a plain quote');
+  const nested = c.kbMd_('> **Note — three things.**\n>\n> | You want | It is behind |\n> |---|---|\n> | **Notes** | Messages |\n>\n> - one\n> - two\n>\n> After.');
+  assert.ok(/^<blockquote class="kb-callout kb-callout-note"><p><strong>Note — three things\.<\/strong><\/p><table>/.test(nested), 'the label paragraph, then the TABLE inside the callout: ' + nested);
+  assert.ok(/<\/table><ul><li>one<\/li><li>two<\/li><\/ul><p>After\.<\/p><\/blockquote>$/.test(nested), 'a list and a closing paragraph inside the same callout');
+  // The recursion reuses the escaped text: HTML inside a callout stays inert (kbMd_'s one rule, not weakened).
+  const x = c.kbMd_('> **Policy** <img src=x onerror=alert(1)> <script>alert(1)</script>');
+  assert.ok(!/<img|<script/.test(x) && /&lt;img src=x onerror=alert\(1\)&gt;/.test(x), 'escaped once, never unescaped: ' + x);
+  assert.ok(!/&amp;lt;/.test(c.kbMd_('> a <b>')), 'and never escaped twice');
+});
+
+test('M1-R2: lists — an indented item NESTS inside the item above, an indented plain line CONTINUES it, an ordered list keeps its first number, a marker change starts a new list', () => {
+  const c = m1Md_();
+  assert.strictEqual(c.kbMd_('- a\n  - a1\n  - a2\n- b'), '<ul><li>a<ul><li>a1</li><li>a2</li></ul></li><li>b</li></ul>');
+  assert.strictEqual(c.kbMd_('1. one\n   - detail\n2. two'), '<ol><li>one<ul><li>detail</li></ul></li><li>two</li></ol>');
+  assert.strictEqual(c.kbMd_('- the caller says they need help, or describes anything\n  comparable; **or**\n- next'),
+    '<ul><li>the caller says they need help, or describes anything comparable; <strong>or</strong></li><li>next</li></ul>', 'the manual wraps a long item onto an indented line');
+  assert.strictEqual(c.kbMd_('3. three\n4. four'), '<ol start="3"><li>three</li><li>four</li></ol>', 'numbering resumes where the source says');
+  assert.strictEqual(c.kbMd_('1. one\n2. two'), '<ol><li>one</li><li>two</li></ol>', 'a list from 1 carries no start attribute');
+  assert.strictEqual(c.kbMd_('- a\n1. b'), '<ul><li>a</li></ul><ol><li>b</li></ol>');
+  assert.strictEqual(c.kbMd_('- a\n\npara'), '<ul><li>a</li></ul><p>para</p>', 'a blank line still ends a list');
+  assert.strictEqual(c.kbMd_('- a\n- b'), '<ul><li>a</li><li>b</li></ul>', 'a flat list is unchanged');
+  assert.strictEqual(c.kbMd_('  - deep first\n- shallow'), '<ul><li>deep first</li></ul><ul><li>shallow</li></ul>', 'an item shallower than the first opens its own list (no loop, nothing dropped)');
+});
+
+test('M1-R3: the manual\'s placeholders — a ```diagram fence is a named pending figure, a manimg: image a pending chip (never a URL), a kb: link plain text until Phase 2, a snippet stays a copy card', () => {
+  const c = m1Md_();
+  const d = c.kbMd_('```diagram lifecycle\nOrder lifecycle — intake to delivery\n```');
+  assert.strictEqual(d, '<figure class="kb-diagram-pending"><figcaption><b>Diagram</b> — Order lifecycle — intake to delivery</figcaption></figure>');
+  const img = c.kbMd_('| Icon | Name |\n|---|---|\n| ![New "Order" icon](manimg:icon-trx-type-new-order) | New Order |');
+  assert.ok(/<td><span class="kb-img-pending" title="[^"]+">New "Order" icon<\/span><\/td>/.test(img), 'the alt shows as a chip, in element content: ' + img);
+  assert.ok(!/manimg:|<img/.test(img), 'no src is emitted for a manual image');
+  // Batch M2: a kb: link is a real cross-reference now (M2-R1 pins it); a
+  // malformed one still degrades to its label.
+  assert.strictEqual(c.kbMd_('See [5.9.2 Pick-up](kb:man-5-9#5.9.2).'), '<p>See <a href="#" class="kb-xref" data-kb-id="man-5-9" data-kb-anchor="5.9.2">5.9.2 Pick-up</a>.</p>');
+  assert.strictEqual(c.kbMd_('See [x](kb:MAN-5).'), '<p>See x.</p>', 'a kb: target outside the id charset is plain text');
+  assert.ok(/<div class="kb-snippet">[\s\S]*kb-snippet-label">Script — caller can&#39;t be verified|kb-snippet-label">Script — caller can't be verified/.test(c.kbMd_("```snippet: Script — caller can't be verified\nI want to help.\n```")), 'the Script callout arrives as a labelled snippet');
+});
+
+// The server's pure helpers, loaded once.
+function m1Srv_(extra) {
+  const ctx = vm.createContext(Object.assign({ String, Number, Object, Array, JSON, Math, isFinite, parseInt, RegExp,
+    KB_BODY_MAX: 49000, KB_MANUAL_MAX_ARTICLES: 400 }, extra || {}));
+  vm.runInContext(/const KB_MANUAL_ID_RE = [^\n]+/.exec(codeSrc)[0].replace(/^const /, 'var '), ctx);
+  ['kbNaturalCompare_', 'kbManualHashBasis_', 'kbManualValidate_', 'kbManualPlan_', 'kbReviewStaggerOffsets_']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  return ctx;
+}
+const M1_HASH = 'a'.repeat(64);
+const m1Art_ = (o) => Object.assign({ Id: 'man-5-9', Department: 'Part 05 — Field Operations', Title: '5.9 Pick-up procedures', Type: 'article', BodyMd: 'body\n', SortOrder: 9, SourceHash: M1_HASH }, o);
+
+test('M1-S1: departments sort NATURALLY on both sides — "Part 2" before "Part 10" — and the client mirror agrees with the server over one grid', () => {
+  const s = m1Srv_();
+  const cctx = vm.createContext({ String, parseInt, Math });
+  vm.runInContext(extractFnFrom(M1_KB_SRC, 'kbNaturalCompare_'), cctx);
+  const names = ['Part 10 — Billing', 'Part 2 — Manual', 'part 02 — Manual', 'Billing', 'Appendix A — Glossary', 'Part 00 — CSR Core', 'Part 1', 'Shipping', '', 'Part 10 — Billing', 'Part 3a', 'Part 3b', 'Part 03'];
+  const sorted = names.slice().sort(s.kbNaturalCompare_);
+  assert.deepStrictEqual(sorted.filter((n) => /^part/i.test(n)),
+    ['Part 00 — CSR Core', 'Part 1', 'Part 2 — Manual', 'part 02 — Manual', 'Part 03', 'Part 3a', 'Part 3b', 'Part 10 — Billing', 'Part 10 — Billing'], 'by number, not by character');
+  names.forEach((a) => names.forEach((b) => assert.strictEqual(Math.sign(cctx.kbNaturalCompare_(a, b)), Math.sign(s.kbNaturalCompare_(a, b)), a + ' vs ' + b)));
+  assert.ok(/items\.sort\(function \(a, b\) \{ return kbNaturalCompare_\(a\.department, b\.department\)/.test(extractRawFunction('Code.js', 'getReferenceTree')), 'the server tree uses it');
+  assert.ok(/Object\.keys\(byDept\)\.sort\(kbNaturalCompare_\)/.test(extractFnFrom(M1_KB_SRC, 'kbRenderTree_')), 'and the client re-sort does too (it was a plain .sort())');
+});
+
+test('M1-S2: kbManualValidate_ refuses the WHOLE file on any bad article — shape, id, duplicates, type, size, sort order, hash', () => {
+  const s = m1Srv_();
+  const ok = s.kbManualValidate_([m1Art_(), m1Art_({ Id: 'man-c-5', Title: 'Card 5 — Field Operations', SortOrder: 6 }), m1Art_({ Id: 'man-a' }), m1Art_({ Id: 'man-howto', SortOrder: 0 })]);
+  assert.deepStrictEqual(Array.from(ok.errors), []);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ok.items[1])), { id: 'man-c-5', department: 'Part 05 — Field Operations', title: 'Card 5 — Field Operations', body: 'body\n', sortOrder: 6, sourceHash: M1_HASH });
+  const bad = (arr, re, why) => { const r = s.kbManualValidate_(arr); assert.ok(r.errors.some((e) => re.test(e)), why + ': ' + JSON.stringify(r.errors)); };
+  bad({}, /not a list/, 'an object');
+  bad([], /no articles/, 'empty');
+  bad(new Array(401).fill(0).map((_, i) => m1Art_({ Id: 'man-1-' + i })), /more than 400/, 'too many');
+  bad([m1Art_({ Id: 'kb-1' })], /not a manual id/, 'a hand-written id would overwrite a hand-written article');
+  bad([m1Art_({ Id: 'man-5-9 ' + 'x' })], /not a manual id/, 'spaces');
+  bad([m1Art_({ Id: 'MAN-5-9' })], /not a manual id/, 'case');
+  bad([m1Art_(), m1Art_()], /appears twice/, 'duplicates');
+  bad([m1Art_({ Type: 'embed' })], /articles only/, 'an embed');
+  bad([m1Art_({ BodyMd: 'x'.repeat(49001) })], /49001 characters/, 'over KB_BODY_MAX');
+  bad([m1Art_({ BodyMd: undefined })], /no body/, 'no body');
+  bad([m1Art_({ Title: '  ' })], /no title/, 'no title');
+  bad([m1Art_({ SortOrder: 'x' })], /SortOrder/, 'sort order');
+  bad([m1Art_({ SourceHash: 'abc' })], /SourceHash/, 'hash');
+});
+
+test('M1-S3: kbManualPlan_ — new → create; unchanged source → nothing; changed source → update; a row edited in the app, a deleted row, and a man- id the import never wrote are SKIPPED with their reason', () => {
+  const s = m1Srv_();
+  const h = (d, t, b) => s.kbManualHashBasis_(d, t, b);   // the basis is enough to be a hash here
+  const it = (id, src) => ({ id: id, department: 'D', title: 'T ' + id, body: 'B ' + id, sortOrder: 1, sourceHash: src });
+  const rows = {
+    'man-1': { department: 'D', title: 'T man-1', body: 'B man-1' },
+    'man-2': { department: 'D', title: 'T man-2', body: 'B man-2' },
+    'man-3': { department: 'D', title: 'T man-3', body: 'B man-3 — EDITED here' },
+    'man-5': { department: 'D', title: 'T man-5', body: 'B man-5' },
+  };
+  const ledger = {
+    'man-1': { sourceHash: 's1', bodyHash: h('D', 'T man-1', 'B man-1') },
+    'man-2': { sourceHash: 's2', bodyHash: h('D', 'T man-2', 'B man-2') },
+    'man-3': { sourceHash: 's3', bodyHash: h('D', 'T man-3', 'B man-3') },
+    'man-4': { sourceHash: 's4', bodyHash: 'x' },
+  };
+  const p = s.kbManualPlan_([it('man-1', 's1'), it('man-2', 's2-NEW'), it('man-3', 's3-NEW'), it('man-4', 's4'), it('man-5', 's5'), it('man-6', 's6')], rows, ledger, h);
+  const ids = (a) => Array.from(a, (x) => x.id);
+  assert.deepStrictEqual(ids(p.create), ['man-6']);
+  assert.deepStrictEqual(ids(p.unchanged), ['man-1'], 'the same SourceHash over an untouched row writes nothing');
+  assert.deepStrictEqual(ids(p.update), ['man-2']);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(p.skipped)).map((x) => x.id + ':' + x.reason), ['man-3:edited', 'man-4:deleted', 'man-5:foreign']);
+  // The basis ignores what a cell round-trip changes, and nothing else.
+  assert.strictEqual(h('D', 'T', "'- item\r\nnext  \n"), h('D', 'T', '- item\nnext'), 'sheetSafe_\'s apostrophe, CRLF and trailing space are not edits');
+  assert.strictEqual(h(' D ', ' T ', 'x'), h('D', 'T', 'x'));
+  assert.notStrictEqual(h('D', 'T', 'x'), h('D', 'T', 'x.'), 'a one-character edit is an edit');
+  assert.notStrictEqual(h('D', 'T', 'x'), h('D', 'T2', 'x'), 'a retitle is an edit');
+  assert.notStrictEqual(h('D', 'T', 'x'), h('D2', 'T', 'x'), 'a move is an edit');
+  assert.notStrictEqual(h('D', 'T', "'x"), h('D', 'T', 'x'), 'an apostrophe that is NOT sheetSafe_\'s stays');
+});
+
+test('M1-S4: review dates are STAGGERED — every offset inside the window, spread evenly, so the queue gains a few a day instead of all on one date', () => {
+  const s = m1Srv_();
+  const o = Array.from(s.kbReviewStaggerOffsets_(160, 90));
+  assert.strictEqual(o.length, 160);
+  assert.ok(o.every((d) => d >= 0 && d < 90), 'inside [0, 90)');
+  assert.strictEqual(new Set(o).size, 90, 'every day of the window is used');
+  const per = {}; o.forEach((d) => { per[d] = (per[d] || 0) + 1; });
+  assert.ok(Math.max.apply(null, Object.values(per)) <= 2, 'no day takes more than its share');
+  assert.deepStrictEqual(Array.from(s.kbReviewStaggerOffsets_(1, 90)), [0]);
+  assert.deepStrictEqual(Array.from(s.kbReviewStaggerOffsets_(3, 90)), [0, 30, 60]);
+  assert.deepStrictEqual(Array.from(s.kbReviewStaggerOffsets_(0, 90)), []);
+});
+
+// A fake KB spreadsheet: a KB tab and (lazily) a ManualImport tab, each a real
+// little grid with header row 1, counting every write.
+function m1Book_(kbRows, ledgerRows) {
+  const writes = [];
+  const mkSheet = (name, width, rows) => {
+    const grid = [new Array(width).fill('h')].concat(rows.map((r) => r.slice()));
+    return { name, grid,
+      getLastRow: () => grid.length, getMaxRows: () => 1000, insertRowsAfter: () => {}, getFrozenRows: () => 1,
+      deleteRow: (r) => { grid.splice(r - 1, 1); writes.push([name, 'delete', r]); },
+      appendRow: (r) => { grid.push(r.slice()); writes.push([name, 'append']); },
+      setFrozenRows: () => {},
+      getParent: () => ({ getSpreadsheetTimeZone: () => 'UTC' }),
+      getRange: (r, c, nr, nc) => ({
+        getValues: () => grid.slice(r - 1, r - 1 + (nr || 1)).map((row) => { const out = []; for (let j = 0; j < (nc || 1); j++) out.push(row[c - 1 + j] == null ? '' : row[c - 1 + j]); return out; }),
+        setValues: (v) => { v.forEach((row, i) => { if (!grid[r - 1 + i]) grid[r - 1 + i] = new Array(width).fill(''); row.forEach((x, j) => { grid[r - 1 + i][c - 1 + j] = x; }); }); writes.push([name, 'set', r]); return { setFontWeight: () => {} }; },
+        setValue: (x) => { grid[r - 1][c - 1] = x; writes.push([name, 'set1', r]); },
+        setFontWeight: () => {},
+      }) };
+  };
+  const sheets = { KB: mkSheet('KB', 13, kbRows) };
+  if (ledgerRows) sheets.ManualImport = mkSheet('ManualImport', 5, ledgerRows);
+  return { sheets, writes,
+    getSheetByName: (n) => sheets[n] || null,
+    insertSheet: (n) => { sheets[n] = mkSheet(n, 5, []); sheets[n].grid.length = 0; return sheets[n]; } };
+}
+const M1_KB_ENUM = { ID: 0, DEPARTMENT: 1, TITLE: 2, TYPE: 3, BODY_MD: 4, DRIVE_KIND: 5, DRIVE_FILE_ID: 6, SORT_ORDER: 7, UPDATED_AT: 8, UPDATED_BY: 9, REVIEWED_AT: 10, REVIEWED_BY: 11, STATUS: 12 };
+function m1Importer_(book, fileText, who) {
+  const audits = [], revisions = [];
+  const crypto = require('crypto');
+  const ctx = m1Srv_({
+    KB: M1_KB_ENUM, KB_HEADERS: new Array(13).fill('h'), KB_STATUS_DRAFT: 'draft', KB_STATUS_PUBLISHED: 'published',
+    KBMI: { ID: 0, SOURCE_HASH: 1, BODY_HASH: 2, IMPORTED_AT: 3, IMPORTED_BY: 4 },
+    KB_MANUAL_IMPORT_TAB: 'ManualImport', KB_MANUAL_IMPORT_HEADERS: ['Id', 'SourceHash', 'BodyHash', 'ImportedAt', 'ImportedBy'], KB_MANUAL_FILE_MAX: 5000000,
+    KB_MANUAL_FORMAT: 'ums-manual/1', KB_MANUAL_META_TAB: 'ManualMeta', KB_MANUAL_META_CACHE_KEY: 'kb_manual_meta_v1', KB_MANUAL_META_MAX: 45000,
+    CacheService: { getScriptCache: () => ({ remove: () => book.writes.push(['cache', 'meta']) }) },
+    CONFIG: { KB: { REVIEW_DUE_DAYS: 90 } },
+    getEmployeeInfo_: () => who || { email: 'admin@ums.com', isAdmin: true, isManager: true },
+    getKbSS_: () => book, getOrCreateKbSheet_: () => book.sheets.KB,
+    kbParseDriveUrl_: (u) => { const m = /\/d\/([\w-]+)/.exec(u || ''); return m ? { kind: 'file', fileId: m[1] } : null; },
+    DriveApp: { getFileById: (id) => { if (id !== 'FILEID0123456789abcdefgh') throw new Error('not found'); return { getBlob: () => ({ getBytes: () => Buffer.from(fileText), getDataAsString: () => fileText }) }; } },
+    Utilities: { computeDigest: (alg, s) => Array.from(crypto.createHash('sha256').update(String(s), 'utf8').digest()).map((b) => (b > 127 ? b - 256 : b)),
+      DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' } },
+    LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
+    fmtDate_: (d) => new Date(d).toISOString().slice(0, 10), fmtTime_: (d) => new Date(d).toISOString().slice(11, 19),
+    sheetSafe_: (x) => x, sheetSafeRow_: (x) => x, sheetSafeRows_: (x) => x,
+    appendRowsSafe_: (sh, rows) => { rows.forEach((r) => sh.grid.push(r.slice())); book.writes.push([sh.name, 'appendRows', rows.length]); },
+    kbAppendRevision_: (prior, by, action) => revisions.push(prior[0] + ':' + action),
+    invalidateKbCache_: () => book.writes.push(['cache', 'bust']),
+    writeAuditLog_: (e, a, d, t, adj, h, notes) => audits.push(a + ' ' + notes),
+    Date, Buffer,
+  });
+  ['kbRowStatus_', 'kbSha256Hex_', 'kbManualFileId_', 'getOrCreateManualImportSheet_', 'kbManualLedger_', 'kbManualBundle_', 'kbManualMetaValidate_',
+    'kbManualOrphans_', 'kbDeleteRowSafe_', 'getOrCreateManualMetaSheet_', 'kbManualMetaRead_', 'kbImportManual', 'kbPublishManual']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  return { ctx, audits, revisions };
+}
+const M1_LINK = 'https://drive.google.com/file/d/FILEID0123456789abcdefgh/view';
+
+test('M1-S5: kbImportManual (driven over a fake book) — drafts arrive, a hand-written article is untouched, a RE-IMPORT WRITES NOTHING, an in-app edit is skipped and reported, an update keeps the status and snapshots the prior row, a check writes nothing, a bad file writes nothing', () => {
+  const hand = ['kb-hand', 'Billing', 'Hand', 'article', 'mine', '', '', 3, 't', 'x', 't', 'x', 'published'];
+  const book = m1Book_([hand], null);
+  const arts = [m1Art_({ Id: 'man-0-1', Department: 'Part 00 — CSR Core', Title: '0.1 Start', BodyMd: '- first\n', SortOrder: 1 }),
+    m1Art_({ Id: 'man-0-2', Department: 'Part 00 — CSR Core', Title: '0.2 Status', BodyMd: 'two\n', SortOrder: 2 }),
+    m1Art_({ Id: 'man-c-0', Department: 'Appendix C — Quick Reference Cards', Title: 'Card 0 — Core', BodyMd: 'card\n', SortOrder: 1 })];
+  let imp = m1Importer_(book, JSON.stringify(arts));
+  // A check first: the plan, and not one write.
+  const chk = imp.ctx.kbImportManual(M1_LINK, { dryRun: true });
+  assert.strictEqual(chk.success, true); assert.strictEqual(chk.dryRun, true);
+  assert.deepStrictEqual([chk.created, chk.updated, chk.unchanged, chk.skipped.length], [3, 0, 0, 0]);
+  assert.deepStrictEqual(book.writes.filter((w) => w[0] === 'KB'), [], 'a check writes nothing to the KB tab');
+  // The import.
+  const r1 = imp.ctx.kbImportManual(M1_LINK, {});
+  assert.deepStrictEqual([r1.success, r1.created, r1.updated], [true, 3, 0]);
+  const kb = book.sheets.KB.grid;
+  assert.deepStrictEqual(kb[1], hand, 'the hand-written article is untouched');
+  const man = kb.filter((r) => /^man-/.test(r[0]));
+  assert.deepStrictEqual(man.map((r) => [r[0], r[3], r[7], r[12]]), [['man-0-1', 'article', 1, 'draft'], ['man-0-2', 'article', 2, 'draft'], ['man-c-0', 'article', 1, 'draft']], 'every article arrives as a DRAFT, with its sort order');
+  const led = book.sheets.ManualImport.grid;
+  assert.deepStrictEqual(led[0], ['Id', 'SourceHash', 'BodyHash', 'ImportedAt', 'ImportedBy'], 'the ledger tab is provisioned with its header');
+  assert.deepStrictEqual(led.slice(1).map((r) => r[0]), ['man-0-1', 'man-0-2', 'man-c-0']);
+  assert.ok(led.slice(1).every((r) => /^[0-9a-f]{64}$/.test(r[2]) && r[1] === M1_HASH && r[4] === 'admin@ums.com'), 'SourceHash, a SHA-256 BodyHash, who');
+  assert.ok(/^KbManualImport total=3; created=3; updated=0; unchanged=0; skipped=0; orphaned=0; removed=0; meta=same$/.test(imp.audits[0]), 'a counts-only audit row: ' + imp.audits[0]);
+  // Re-import the same file: NOTHING is written, not even the cache.
+  book.writes.length = 0;
+  const r2 = imp.ctx.kbImportManual(M1_LINK, {});
+  assert.deepStrictEqual([r2.created, r2.updated, r2.unchanged, r2.skipped.length], [0, 0, 3, 0]);
+  assert.deepStrictEqual(book.writes, [], 'a re-import of unchanged source changes nothing');
+  // Publish one (not an edit), edit another in the app, and change the third's source.
+  kb.filter((r) => r[0] === 'man-0-1')[0][12] = 'published';
+  kb.filter((r) => r[0] === 'man-0-2')[0][4] = 'two — edited by an admin\n';
+  const arts3 = arts.map((a) => (a.Id === 'man-0-1' ? Object.assign({}, a, { BodyMd: '- first, revised\n', SourceHash: 'b'.repeat(64) })
+    : (a.Id === 'man-0-2' ? Object.assign({}, a, { BodyMd: 'two, revised\n', SourceHash: 'c'.repeat(64) }) : a)));
+  imp = m1Importer_(book, JSON.stringify(arts3));
+  const r3 = imp.ctx.kbImportManual(M1_LINK, {});
+  assert.deepStrictEqual([r3.created, r3.updated, r3.unchanged], [0, 1, 1]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r3.skipped)), [{ id: 'man-0-2', title: '0.2 Status', reason: 'edited' }], 'the in-app edit is skipped and reported');
+  assert.strictEqual(kb.filter((r) => r[0] === 'man-0-2')[0][4], 'two — edited by an admin\n', 'and NOT overwritten');
+  const u = kb.filter((r) => r[0] === 'man-0-1')[0];
+  assert.deepStrictEqual([u[4], u[12]], ['- first, revised\n', 'published'], 'the update lands and a published article stays published');
+  assert.deepStrictEqual(imp.revisions, ['man-0-1:manual-import'], 'the prior content is snapshotted (revertible)');
+  assert.strictEqual(led.filter((r) => r[0] === 'man-0-1')[0][1], 'b'.repeat(64), 'the ledger row is rewritten in place');
+  assert.strictEqual(led.filter((r) => r[0] === 'man-0-2')[0][1], M1_HASH, 'the skipped article keeps its old ledger row');
+  assert.strictEqual(led.length, 4, 'no duplicate ledger rows');
+  // A bad file writes nothing.
+  book.writes.length = 0;
+  imp = m1Importer_(book, JSON.stringify([m1Art_({ Id: 'man-9-9' }), m1Art_({ Id: 'kb-hand' })]));
+  const bad = imp.ctx.kbImportManual(M1_LINK, {});
+  assert.strictEqual(bad.success, false); assert.ok(/nothing was imported/.test(bad.error) && bad.problems.length === 1);
+  assert.deepStrictEqual(book.writes, [], 'a refused file writes nothing — not even the valid article in it');
+  assert.strictEqual(m1Importer_(book, 'not json').ctx.kbImportManual(M1_LINK).success, false);
+  assert.ok(/Could not open/.test(m1Importer_(book, '[]').ctx.kbImportManual('https://drive.google.com/file/d/OTHERFILE0123456789abcd/view').error));
+  assert.ok(/Paste the Drive link/.test(m1Importer_(book, '[]').ctx.kbImportManual('hello').error));
+  // Admin only.
+  const rep = m1Importer_(book, JSON.stringify(arts), { email: 'mgr@ums.com', isManager: true, isAdmin: false });
+  assert.strictEqual(rep.ctx.kbImportManual(M1_LINK).error, 'Admin access required.');
+  assert.strictEqual(rep.ctx.kbPublishManual({}).error, 'Admin access required.');
+});
+
+test('M1-S6: kbPublishManual publishes only the IMPORTED drafts (a hand-made draft and a published article are left alone), by part when asked, and staggers their review dates across the window', () => {
+  const row = (id, dept, order, status) => [id, dept, 't', 'article', 'b', '', '', order, 'u', 'x', 'r', 'x', status];
+  const book = m1Book_([
+    row('man-0-1', 'Part 00 — CSR Core', 1, 'draft'), row('man-0-2', 'Part 00 — CSR Core', 2, 'draft'),
+    row('man-5-1', 'Part 05 — Field Operations', 1, 'draft'), row('man-5-2', 'Part 05 — Field Operations', 2, 'published'),
+    row('man-9-9', 'Part 09 — Sales', 1, 'draft'),   // a man- id the import never wrote
+    row('kb-7', 'Billing', 1, 'draft'),
+  ], ['man-0-1', 'man-0-2', 'man-5-1', 'man-5-2'].map((id) => [id, M1_HASH, 'x', 't', 'a']));
+  const imp = m1Importer_(book, '[]');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(imp.ctx.kbPublishManual({ dryRun: true }))), { success: true, dryRun: true, count: 3 });
+  assert.ok(book.writes.every((w) => w[0] !== 'KB'), 'the dry run writes nothing');
+  const one = imp.ctx.kbPublishManual({ department: 'Part 05 — Field Operations' });
+  assert.strictEqual(one.count, 1);
+  const st = () => book.sheets.KB.grid.slice(1).map((r) => r[0] + ':' + r[12]);
+  assert.deepStrictEqual(st(), ['man-0-1:draft', 'man-0-2:draft', 'man-5-1:published', 'man-5-2:published', 'man-9-9:draft', 'kb-7:draft'], 'one part');
+  const all = imp.ctx.kbPublishManual({});
+  assert.strictEqual(all.count, 2); assert.strictEqual(all.reviewSpreadDays, 90);
+  assert.deepStrictEqual(st(), ['man-0-1:published', 'man-0-2:published', 'man-5-1:published', 'man-5-2:published', 'man-9-9:draft', 'kb-7:draft'], 'never the hand-made draft or the unledgered man- row');
+  const rev = book.sheets.KB.grid.slice(1, 3).map((r) => r[10]);
+  assert.notStrictEqual(rev[0], rev[1], 'two articles published together get DIFFERENT review dates: ' + rev);
+  assert.ok(rev.every((v) => /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(v)) && book.sheets.KB.grid[1][11] === 'admin@ums.com', 'ReviewedAt/By stamped');
+  assert.ok(/^KbManualPublish published=2; reviewSpreadDays=90$/.test(imp.audits.slice(-1)[0]));
+});
+
+test('M1-S7: an edit that sends no sortOrder KEEPS the row\'s order — the editor never sends one, so every save used to write 0', () => {
+  const book = m1Book_([['kb-1', 'Billing', 'Old', 'article', 'b', '', '', 7, 'u', 'x', 'r', 'x', 'published']], null);
+  const ctx = vm.createContext({ String, Number, Object, JSON,
+    KB: M1_KB_ENUM, KB_HEADERS: new Array(13).fill('h'), KB_BODY_MAX: 49000, KB_STATUS_DRAFT: 'draft', KB_STATUS_PUBLISHED: 'published',
+    KB_MANUAL_ID_RE: /^man-[a-z0-9]+(?:-[a-z0-9]+)*$/, KB_MANUAL_READONLY_MSG: 'read-only',
+    getEmployeeInfo_: () => ({ email: 'a@ums.com', isAdmin: true }), getOrCreateKbSheet_: () => book.sheets.KB,
+    kbParseDriveUrl_: () => null, kbResolveDocImages_: (b) => ({ bodyMd: b, exported: 0, warnings: [] }),
+    kbRowStatus_: (v) => (v === 'draft' ? 'draft' : 'published'),
+    LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
+    Utilities: { getUuid: () => 'new-id' }, fmtDate_: () => 'd', fmtTime_: () => 't',
+    sheetSafeRow_: (x) => x, sheetSafeRows_: (x) => x, kbAppendRevision_: () => {}, invalidateKbCache_: () => {}, writeAuditLog_: () => {} });
+  vm.runInContext(extractRawFunction('Code.js', 'kbSaveItem'), ctx);
+  assert.strictEqual(ctx.kbSaveItem({ id: 'kb-1', title: 'New', type: 'article', body: 'b2', department: 'Billing' }).success, true);
+  assert.strictEqual(book.sheets.KB.grid[1][7], 7, 'no sortOrder sent → the row keeps 7');
+  ctx.kbSaveItem({ id: 'kb-1', title: 'New', type: 'article', body: 'b2', department: 'Billing', sortOrder: 3 });
+  assert.strictEqual(book.sheets.KB.grid[1][7], 3, 'an explicit one still applies');
+  ctx.kbSaveItem({ id: 'kb-1', title: 'New', type: 'article', body: 'b2', department: 'Billing', sortOrder: 0 });
+  assert.strictEqual(book.sheets.KB.grid[1][7], 0, 'including an explicit 0');
+  ctx.kbSaveItem({ title: 'Brand new', type: 'article', body: 'x', department: 'Billing' });
+  assert.strictEqual(book.sheets.KB.grid[2][7], 0, 'a new item without one gets 0');
+});
+
+test('M1-E1: the exporter mirrors what it must — the body cap is KB_BODY_MAX, the parts and scaffolding strippers are build.py\'s own, every id it can write is a manual id, and make_all.sh runs it AFTER the HTML manual', () => {
+  const M = path.join(__dirname, '../../manual');
+  const ex = fs.readFileSync(path.join(M, 'export_reference.py'), 'utf8');
+  const bd = fs.readFileSync(path.join(M, 'build.py'), 'utf8');
+  const cap = Number(/^BODY_MAX = (\d+)$/m.exec(ex)[1]);
+  assert.strictEqual(cap, Number(/const KB_BODY_MAX = (\d+);/.exec(codeSrc)[1]), 'the export refuses exactly what the importer would');
+  const block = (src, name) => { const m = new RegExp('^' + name + ' = [\\s\\S]*?^(?=\\S)', 'm').exec(src + '\nEND'); return m ? m[0].trim() : null; };
+  ['PARTS', 'APPX', 'SCAFFOLD', 'DRAFTNOTE'].forEach((n) => {
+    assert.ok(block(ex, n), n + ' in the exporter');
+    assert.strictEqual(block(ex, n), block(bd, n), n + ' is build.py\'s, verbatim — a part added to the build and not the export would silently drop from Reference');
+  });
+  const re = new RegExp(/const KB_MANUAL_ID_RE = \/(.+)\/;/.exec(codeSrc)[1]);
+  ['man-0-1', 'man-10-17', 'man-10-b', 'man-c-0', 'man-c-10', 'man-b-2', 'man-a', 'man-howto'].forEach((id) => assert.ok(re.test(id), id));
+  assert.ok(/return "man-" \+ s$/m.test(ex) && /s = sec\.lstrip\("§"\)\.split\("\."\)\[0\]\.lower\(\)/.test(ex), 'ids are the lowercased section number');
+  assert.ok(/"man-howto"/.test(ex) && /return "man-a"/.test(ex));
+  const mk = fs.readFileSync(path.join(M, 'make_all.sh'), 'utf8');
+  assert.ok(mk.indexOf('python3 export_reference.py') > mk.indexOf('check_svg_fit.py'), 'the export runs after the HTML manual is built and checked');
+  assert.ok(!/export_reference/.test(bd) && !/export_reference/.test(fs.readFileSync(path.join(M, 'make_html.py'), 'utf8')), 'and nothing the HTML manual is built from knows about it');
+  // The failure modes the handoff requires are wired to errors, which fail the run.
+  ['UNRESOLVABLE REF', 'HTML the renderer would print literally', 'placeholder left unexpanded', 'the Reference limit is', 'no such heading', 'link to missing article', 'matches nothing in roster.json']
+    .forEach((m) => assert.ok(ex.indexOf(m) > 0, 'reports: ' + m));
+  assert.ok(/if errors:[\s\S]{0,400}return 1/.test(ex) && /sys\.exit\(main\(\)\)/.test(ex), 'any error exits 1 with nothing written');
+});
+
+// ── Batch M2 — the Manual reader ────────────────────────────────────────────
+console.log('\nBatch M2 — the Manual reader: links, previews, numbers, router, bundle, read-only');
+function m2Kb_() {
+  const ctx = vm.createContext({ String, Object, Array, JSON, parseInt, Math, Date, isFinite,
+    esc: (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'),
+    icon: () => '', KB_STATE: {}, KB_DRAWER: {},
+    kbGlossaryHtml_: (b) => '<GLOSS>' + b + '</GLOSS>', kbRosterHtml_: () => '', kbDecideHtml_: () => '', kbMapHtml_: () => '' });
+  vm.runInContext(/var KB_CALLOUT_KINDS = [^\n]+/.exec(M1_KB_SRC)[0], ctx);
+  vm.runInContext(/var KB_MANUAL_UPDATED_DAYS = [^;]+;/.exec(M1_KB_SRC)[0], ctx);
+  ['kbSlug_', 'kbMd_', 'kbCalloutKind_', 'kbDiagramPendingHtml_', 'kbIsManualId_', 'kbShiftHeadings_', 'kbManualExcerpt_',
+    'kbManualUpdates_', 'kbManualNumberTarget_', 'kbRouterRows_', 'kbJumpRowHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
+  return ctx;
+}
+const J2 = (x) => JSON.parse(JSON.stringify(x));
+
+test('M2-R1: a kb: link is a real, inert cross-reference — only the id and anchor charsets can reach its attributes; headings demote under a section title; a preview excerpt stops at the next sibling heading and never cuts a fence', () => {
+  const c = m2Kb_();
+  assert.strictEqual(c.kbMd_('[**5.9** Pick-up](kb:man-5-9)'), '<p><a href="#" class="kb-xref" data-kb-id="man-5-9" data-kb-anchor=""><strong>5.9</strong> Pick-up</a></p>');
+  assert.strictEqual(c.kbMd_('[A.2](kb:man-a#A.2)'), '<p><a href="#" class="kb-xref" data-kb-id="man-a" data-kb-anchor="A.2">A.2</a></p>');
+  // Every <a> kbMd_ emits for a kb: target has EXACTLY the safe shape — so no
+  // quote, space or scheme can reach an attribute, whatever the author typed.
+  const SAFE_XREF = /^<a href="#" class="kb-xref" data-kb-id="[a-z0-9-]{1,80}" data-kb-anchor="[0-9A-Za-z.]{0,20}">$/;
+  ['kb:man-5-9"onmouseover=x', "kb:man-5-9'x", 'kb:man-5-9#5.9"x', "kb:man-5-9#5.9'onx=1", 'kb:javascript:alert(1)', 'kb:../x', 'kb:man-5-9#<b>', 'kb:man-5-9#5.9"/onmouseover="x'].forEach((u) => {
+    const h = c.kbMd_('[t](' + u + ')');
+    (h.match(/<a [^>]*>/g) || []).forEach((tag) => assert.ok(SAFE_XREF.test(tag), u + ' → ' + tag));
+  });
+  assert.ok(SAFE_XREF.test(c.kbMd_('[t](kb:man-10-b#10.B)').match(/<a [^>]*>/)[0]), 'non-vacuous: a good target does produce the safe tag');
+  assert.strictEqual(c.kbShiftHeadings_('<h2 id="x">A</h2><h3>B</h3><h6>C</h6><hr><header>'), '<h3 id="x">A</h3><h4>B</h4><h6>C</h6><hr><header>');
+  const body = 'Intro line.\n\n## 5.9.1 One\n\nfirst\n\n### 5.9.1.1 Deep\n\ndeep text\n\n## 5.9.2 Two\n\nsecond\n\n```snippet: Script\nline a\nline b\n```\n\nafter\n\n## 5.9.3 Three\n\nthird';
+  let e = c.kbManualExcerpt_(body, '5.9.1', 700);
+  assert.deepStrictEqual(J2(e), { md: 'first\n\n### 5.9.1.1 Deep\n\ndeep text', truncated: false, found: true }, 'the subsection, its own children, and nothing of 5.9.2');
+  e = c.kbManualExcerpt_(body, '5.9.2', 700);
+  assert.ok(/second/.test(e.md) && /```snippet/.test(e.md) && /after/.test(e.md) && !/third/.test(e.md));
+  e = c.kbManualExcerpt_(body, '5.9.2', 12);
+  assert.strictEqual(e.truncated, true);
+  assert.strictEqual((e.md.match(/```/g) || []).length, 2, 'the cut waits for the fence to close — never half a snippet: ' + e.md);
+  assert.ok(!/after/.test(e.md), 'and stops there');
+  e = c.kbManualExcerpt_('## 1.1 A\n\ntext\n\n```snippet\nnever closed', '1.1', 700);
+  assert.ok(!/```/.test(e.md) && e.truncated, 'a fence the body never closes is dropped: ' + e.md);
+  e = c.kbManualExcerpt_(body, '', 20);
+  assert.ok(/^Intro line\./.test(e.md) && e.truncated && e.found);
+  e = c.kbManualExcerpt_(body, '9.9.9', 20);
+  assert.strictEqual(e.found, false); assert.ok(/^Intro/.test(e.md), 'an anchor that is not there previews the opening, and says so');
+});
+
+test('M2-R2: a typed section number names a VISIBLE section — every form the HTML manual accepts, and nothing else', () => {
+  const c = m2Kb_();
+  const tree = [
+    { id: 'man-5-9', title: '5.9 Pick-up procedures', department: 'Part 05 — Field Operations', sortOrder: 9 },
+    { id: 'man-5-1', title: '5.1 Overview', department: 'Part 05 — Field Operations', sortOrder: 1 },
+    { id: 'man-10-b', title: '10.B Quick reference', department: 'Part 10 — Billing', sortOrder: 25 },
+    { id: 'man-10-1', title: '10.1 How billing works', department: 'Part 10 — Billing', sortOrder: 1 },
+    { id: 'man-b-1', title: 'B.1 Directory', department: 'Appendix B', sortOrder: 1 },
+    { id: 'man-a', title: 'Glossary', department: 'Appendix A — Glossary', sortOrder: 1 },
+    { id: 'man-c-5', title: 'Card 5 — Field Operations', department: 'Appendix C', sortOrder: 6 },
+    { id: 'kb-9', title: '5.9 is also a hand title', department: 'Billing' }];
+  const t = (q) => { const r = c.kbManualNumberTarget_(q, tree); return r ? r.id + '#' + r.anchor + '|' + r.num : null; };
+  const grid = {
+    '5.9': 'man-5-9#|5.9', '5-9': 'man-5-9#|5.9', '§5-9': 'man-5-9#|5.9', '§ 5-9': 'man-5-9#|5.9', ' 5.9 ': 'man-5-9#|5.9',
+    '5.9.2': 'man-5-9#5.9.2|5.9.2', '§5-9.2': 'man-5-9#5.9.2|5.9.2', '05.09': 'man-5-9#|5.9',
+    '10.B': 'man-10-b#|10.B', '10-b': 'man-10-b#|10.B', 'B.1': 'man-b-1#|B.1', '§B-1': 'man-b-1#|B.1',
+    'A.2': 'man-a#A.2|A.2', 'a-2': 'man-a#A.2|A.2', 'card 5': 'man-c-5#|CARD 5', 'Card5': 'man-c-5#|CARD 5', 'C-5': 'man-c-5#|CARD 5', 'G-5': 'man-c-5#|CARD 5', '§G-5': 'man-c-5#|CARD 5',
+    'part 5': 'man-5-1#|Part 5', 'Part 10': 'man-10-1#|Part 10',
+    '5.8': null, 'part 7': null, 'card 9': null, 'pick-up': null, '5.9 pickup': null, 'oxygen 5.9': null, '': null, '1.5 lbs': null, '555-1234': null,
+  };
+  Object.keys(grid).forEach((q) => assert.strictEqual(t(q), grid[q], JSON.stringify(q)));
+  assert.strictEqual(c.kbManualNumberTarget_('5.9', tree.filter((x) => x.id !== 'man-5-9')), null, 'a section the caller cannot see (a draft, for a rep) is never a target');
+  const row = c.kbJumpRowHtml_(c.kbManualNumberTarget_('5.9.2', tree), 'kbOpenItem_', 'kb-item');
+  assert.ok(/data-kb-id="man-5-9" data-kb-anchor="5.9.2"/.test(row) && /Go to <b>5\.9\.2<\/b>/.test(row) && /in 5\.9 Pick-up procedures/.test(row));
+  // The "Updated" badge window.
+  const cl = [{ id: 'man-5-9', date: '2026-09-01', num: '5.9.2', summary: 'a' }, { id: 'man-5-9', date: '2025-09-27', num: '5.9', summary: 'old' },
+    { id: 'man-5-9', date: '2026-03-01', num: '5.9', summary: 'b' }, { id: 'man-5-1', date: '2026-09-01', num: '5.1', summary: 'c' }];
+  assert.deepStrictEqual(J2(c.kbManualUpdates_(cl, 'man-5-9', '2026-09-28', 365)).map((u) => u.summary), ['a', 'b'], 'the last 12 months, newest first, this section only');
+  assert.deepStrictEqual(J2(c.kbManualUpdates_(null, 'man-5-9', '2026-09-28', 365)), []);
+});
+
+test('M2-R3: the call router keeps only rows with a target the caller can see, filters on phrase, answer and group, and keeps its group order', () => {
+  const c = m2Kb_();
+  const router = [
+    { g: 'Status', q: 'Where is my equipment?', a: '0.2', t: [{ id: 'man-0-2', anchor: '' }, { id: 'man-5-2', anchor: '' }] },
+    { g: 'Money', q: 'How much will this cost me?', a: '10.5.1 — the estimate', t: [{ id: 'man-10-5', anchor: '10.5.1' }] },
+    { g: 'Status', q: 'Is it on backorder?', a: '5.11', t: [{ id: 'man-5-11', anchor: '' }] }];
+  const vis = { 'man-0-2': 1, 'man-5-2': 1, 'man-10-5': 1 };
+  assert.deepStrictEqual(J2(c.kbRouterRows_(router, '', vis)).map((g) => g.g + ':' + g.rows.map((r) => r.q).join('|')), ['Status:Where is my equipment?', 'Money:How much will this cost me?'], 'the backorder row\'s only target is hidden → dropped');
+  assert.deepStrictEqual(J2(c.kbRouterRows_(router, 'ESTIMATE', vis)).map((g) => g.rows[0].q), ['How much will this cost me?'], 'matches the answer, case-insensitively');
+  assert.deepStrictEqual(J2(c.kbRouterRows_(router, 'money', vis)).length, 1, 'and the group');
+  assert.deepStrictEqual(J2(c.kbRouterRows_(router, '', { 'man-5-2': 1 }))[0].rows[0].t, [{ id: 'man-5-2', anchor: '' }], 'a hidden FIRST target falls through to the next visible one');
+});
+
+function m2Srv_(extra) {
+  const ctx = m1Srv_(Object.assign({ KB_MANUAL_FORMAT: 'ums-manual/1', KB_MANUAL_META_MAX: 45000 }, extra || {}));
+  ['kbManualBundle_', 'kbManualMetaValidate_', 'kbManualOrphans_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  return ctx;
+}
+test('M2-S1: the upload is the bundle — its format is checked, and its router and changelog are validated against the articles IN THE FILE (a bare article list is still read, with no meta)', () => {
+  const s = m2Srv_();
+  assert.deepStrictEqual(J2(s.kbManualBundle_([1])), { articles: [1], meta: null });
+  assert.ok(/format is "none"/.test(s.kbManualBundle_({ articles: [] }).error));
+  assert.ok(/format is "ums-manual\/2"/.test(s.kbManualBundle_({ format: 'ums-manual/2', articles: [] }).error));
+  assert.ok(/no article list/.test(s.kbManualBundle_({ format: 'ums-manual/1' }).error));
+  assert.ok(/not the manual export/.test(s.kbManualBundle_('x').error));
+  const ids = ['man-0-2', 'man-10-5'];
+  const good = { version: 'v3.0', built: '09/15/2026',
+    router: [{ g: 'Status', q: 'Where is it?', a: '0.2', t: [{ id: 'man-0-2', anchor: '' }, { id: 'man-10-5', anchor: '10.5.1' }] }],
+    changelog: [{ date: '2026-01-12', num: '10.5.1', id: 'man-10-5', anchor: '10.5.1', summary: 's', retraining: 'yes' }] };
+  const ok = s.kbManualMetaValidate_(good, ids);
+  assert.deepStrictEqual(J2(ok.errors), []);
+  assert.strictEqual(ok.meta.changelog[0].retraining, false, 'only a real true is retraining');
+  const bad = (m, re, why) => { const r = s.kbManualMetaValidate_(Object.assign({}, good, m), ids); assert.ok(r.meta === null && r.errors.some((e) => re.test(e)), why + ': ' + JSON.stringify(r.errors)); };
+  bad({ router: [{ g: 'S', q: 'x?', a: 'a', t: [{ id: 'man-9-9', anchor: '' }] }] }, /not an article in this file/, 'a router target the file does not carry');
+  bad({ router: [{ g: 'S', q: 'x?', a: 'a', t: [{ id: 'man-0-2', anchor: '0.2"><x' }] }] }, /anchor/, 'an anchor outside the charset');
+  bad({ router: [{ g: 'S', q: '', a: 'a', t: [{ id: 'man-0-2', anchor: '' }] }] }, /phrase/, 'no phrase');
+  bad({ changelog: [{ date: '12/01/2026', num: '1', id: 'man-0-2', summary: 's' }] }, /date/, 'a date not ISO');
+  bad({ router: new Array(501).fill(good.router[0]) }, /implausibly/, 'too many rows');
+  bad({ changelog: [{ date: '2026-01-01', num: '1', id: 'man-0-2', summary: 'x'.repeat(501) }] }, /summary/, 'an oversize summary');
+  const big = s.kbManualMetaValidate_(Object.assign({}, good, { router: new Array(300).fill({ g: 'G', q: 'x'.repeat(290), a: 'a'.repeat(100), t: [{ id: 'man-0-2', anchor: '' }] }) }), ids);
+  assert.ok(big.meta === null && /too large to store/.test(big.errors[0]), 'meta past one cell is refused, not truncated');
+  assert.deepStrictEqual(J2(s.kbManualOrphans_([{ id: 'man-1' }], { 'man-1': { title: 'a' }, 'man-2': { title: 'Two' }, 'kb-9': { title: 'x' } }, { 'man-1': {}, 'man-2': {}, 'man-3': {} })),
+    [{ id: 'man-2', title: 'Two' }], 'ledgered, still in the KB, not in the file');
+});
+
+test('M2-S2: kbImportManual with the bundle (driven) — the meta lands in ManualMeta and a re-import of the same meta writes nothing; a changed meta is rewritten and the cache cleared; a section the manual dropped is REPORTED, and removed (row, ledger row, revision) only when asked', () => {
+  const book = m1Book_([], null);
+  const arts = [m1Art_({ Id: 'man-0-1', Title: '0.1 Start', SortOrder: 1 }), m1Art_({ Id: 'man-0-2', Title: '0.2 Status', SortOrder: 2 })];
+  const meta = { version: 'v3.0', built: '09/15/2026', router: [{ g: 'S', q: 'Where is it?', a: '0.2', t: [{ id: 'man-0-2', anchor: '' }] }], changelog: [] };
+  const file = (a, m) => JSON.stringify(Object.assign({ format: 'ums-manual/1', articles: a }, m));
+  let imp = m1Importer_(book, file(arts, meta));
+  const chk = imp.ctx.kbImportManual(M1_LINK, { dryRun: true });
+  assert.deepStrictEqual([chk.hasMeta, chk.metaUpdated, chk.version], [true, true, 'v3.0']);
+  assert.ok(!book.sheets.ManualMeta || book.sheets.ManualMeta.grid.length <= 1, 'a check stores no meta');
+  imp.ctx.kbImportManual(M1_LINK, {});
+  const stored = book.sheets.ManualMeta.grid;
+  assert.deepStrictEqual(J2(stored[0]), ['Json']);
+  assert.deepStrictEqual(JSON.parse(stored[1][0]).router[0].t, [{ id: 'man-0-2', anchor: '' }], 'the validated meta is stored in A2');
+  book.writes.length = 0;
+  const again = imp.ctx.kbImportManual(M1_LINK, {});
+  assert.strictEqual(again.metaUpdated, false);
+  assert.deepStrictEqual(book.writes, [], 'the same file again writes nothing — articles or meta');
+  imp = m1Importer_(book, file(arts, Object.assign({}, meta, { version: 'v3.1' })));
+  imp.ctx.kbImportManual(M1_LINK, {});
+  assert.strictEqual(JSON.parse(stored[1][0]).version, 'v3.1');
+  assert.ok(book.writes.some((w) => w[0] === 'cache' && w[1] === 'meta'), 'the reader\'s meta cache is cleared');
+  // The manual drops 0.1.
+  imp = m1Importer_(book, file([arts[1]], meta));
+  const c2 = imp.ctx.kbImportManual(M1_LINK, { dryRun: true });
+  assert.deepStrictEqual(J2(c2.orphaned), [{ id: 'man-0-1', title: '0.1 Start' }]);
+  const kept = imp.ctx.kbImportManual(M1_LINK, {});
+  assert.deepStrictEqual([kept.removed, J2(kept.orphaned).length], [0, 1]);
+  assert.ok(book.sheets.KB.grid.some((r) => r[0] === 'man-0-1'), 'reported, not removed, unless asked');
+  const gone = imp.ctx.kbImportManual(M1_LINK, { removeOrphans: true });
+  assert.strictEqual(gone.removed, 1);
+  assert.ok(!book.sheets.KB.grid.some((r) => r[0] === 'man-0-1') && !book.sheets.ManualImport.grid.some((r) => r[0] === 'man-0-1'), 'the row and its ledger row are gone');
+  assert.ok(book.sheets.KB.grid.some((r) => r[0] === 'man-0-2'), 'the section still in the manual stays');
+  assert.ok(imp.revisions.indexOf('man-0-1:manual-remove') >= 0, 'snapshotted first');
+  assert.ok(/orphaned=1; removed=1; meta=/.test(imp.audits.slice(-1)[0]));
+  // A bundle whose router names an article it does not carry is refused whole.
+  imp = m1Importer_(book, file(arts, Object.assign({}, meta, { router: [{ g: 'S', q: 'x?', a: 'a', t: [{ id: 'man-7-7', anchor: '' }] }] })));
+  book.writes.length = 0;
+  const refused = imp.ctx.kbImportManual(M1_LINK, {});
+  assert.strictEqual(refused.success, false); assert.deepStrictEqual(book.writes, []);
+});
+
+test('M2-S3: getManualPart returns ONE part\'s manual sections in order (drafts admin-only; hand-written rows and other parts never), from one block read; getManualMeta says {none} before the first bundle and is cached', () => {
+  const row = (id, dept, order, status, title) => [id, dept, title || id, 'article', 'body ' + id, '', '', order, 'u', 'x', 'r', 'x', status];
+  const P = 'Part 05 — Field Operations';
+  const book = m1Book_([row('man-4-1', 'Part 04 — Power', 1, 'published'), row('man-5-2', P, 2, 'published', '5.2 Two'), row('kb-7', P, 1, 'published'),
+    row('man-5-1', P, 1, 'draft', '5.1 One'), row('man-5-3', P, 3, 'published', '5.3 Three'), row('man-6-1', 'Part 06 — Service', 1, 'published')], null);
+  const reads = [];
+  const mk = (who) => {
+    const puts = {};
+    const ctx = vm.createContext({ String, Number, Object, JSON,
+      KB: M1_KB_ENUM, KB_HEADERS: new Array(13).fill('h'), KB_STATUS_DRAFT: 'draft', KB_STATUS_PUBLISHED: 'published', KB_CACHE_TTL: 300,
+      KB_MANUAL_ID_RE: /^man-[a-z0-9]+(?:-[a-z0-9]+)*$/, KB_MANUAL_META_TAB: 'ManualMeta', KB_MANUAL_META_CACHE_KEY: 'k',
+      getEmployeeInfo_: () => who, getKbSS_: () => book,
+      getOrCreateKbSheet_: () => Object.assign({}, book.sheets.KB, { getRange: (r, c, nr, nc) => { reads.push([r, c, nr, nc]); return book.sheets.KB.getRange(r, c, nr, nc); } }),
+      CacheService: { getScriptCache: () => ({ get: (k) => (k in puts ? puts[k] : null), put: (k, v) => { puts[k] = v; } }) } });
+    ['kbRowStatus_', 'kbNaturalCompare_', 'kbManualMetaRead_', 'getManualPart', 'getManualMeta'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+    return ctx;
+  };
+  const admin = mk({ email: 'a@ums.com', isAdmin: true });
+  const r = admin.getManualPart(P);
+  assert.deepStrictEqual(J2(r.sections).map((x) => x.id + ':' + x.status), ['man-5-1:draft', 'man-5-2:published', 'man-5-3:published'], 'this part, manual rows only, in section order');
+  assert.strictEqual(r.sections[1].bodyMd, 'body man-5-2');
+  assert.deepStrictEqual(reads.map((x) => x[1] + ',' + x[3]), ['1,2', '1,13'], 'the id/department columns, then ONE full-width block');
+  assert.deepStrictEqual([reads[1][0], reads[1][0] + reads[1][2] - 1], [3, 6], 'the block spans the part\'s first to last row (sheet rows 3..6) — rows 2 and 7, other parts, are never read in full');
+  const rep = mk({ email: 'r@ums.com', isAdmin: false });
+  assert.deepStrictEqual(J2(rep.getManualPart(P).sections).map((x) => x.id), ['man-5-2', 'man-5-3'], 'a rep never receives a draft');
+  assert.deepStrictEqual(J2(rep.getManualPart('Part 09 — Sales').sections), []);
+  assert.strictEqual(mk(null).getManualPart(P).error, 'Not authorized.');
+  assert.deepStrictEqual(J2(rep.getManualMeta()), { none: true }, 'no ManualMeta tab yet');
+  book.sheets.ManualMeta = { getLastRow: () => 2, getRange: () => ({ getValues: () => [['{"version":"v3.0","router":[],"changelog":[]}']] }) };
+  const c = mk({ email: 'r@ums.com' });
+  assert.strictEqual(c.getManualMeta().version, 'v3.0');
+  book.sheets.ManualMeta = null;
+  assert.strictEqual(c.getManualMeta().version, 'v3.0', 'served from the cache');
+});
+
+test('M2-S4: manual sections are READ-ONLY in the app — save, delete and revert refuse a man- id and name the manual source; a hand-written item is unaffected', () => {
+  const src = (n) => stripJsComments_(extractRawFunction('Code.js', n));
+  assert.ok(/if \(KB_MANUAL_ID_RE\.test\(String\(payload\.id \|\| ''\)\.trim\(\)\)\) return \{ success: false, error: KB_MANUAL_READONLY_MSG \};/.test(src('kbSaveItem')));
+  assert.ok(/id = String\(id \|\| ''\)\.trim\(\);\s*if \(KB_MANUAL_ID_RE\.test\(id\)\) return \{ success: false, error: KB_MANUAL_READONLY_MSG \};/.test(src('kbDeleteItem')));
+  assert.ok(/if \(KB_MANUAL_ID_RE\.test\(id\)\) return \{ success: false, error: KB_MANUAL_READONLY_MSG \};/.test(src('kbRevertItem')));
+  ['kbDeleteItem', 'kbRevertItem', 'kbSaveItem'].forEach((n) => {
+    const b = src(n);
+    assert.ok(b.indexOf('KB_MANUAL_READONLY_MSG') < b.indexOf('getOrCreateKbSheet_()') || b.indexOf('getOrCreateKbSheet_()') < 0, n + ' refuses BEFORE it touches the sheet');
+  });
+  assert.ok(/manual source/.test(/const KB_MANUAL_READONLY_MSG = '([^']+)'/.exec(codeSrc)[1]));
+  // Driven: kbSaveItem refuses the man- id, keeps saving a hand-written one.
+  const book = m1Book_([['man-5-9', 'P', 'T', 'article', 'b', '', '', 9, 'u', 'x', 'r', 'x', 'published'], ['kb-1', 'B', 'T', 'article', 'b', '', '', 1, 'u', 'x', 'r', 'x', 'published']], null);
+  const ctx = vm.createContext({ String, Number, Object, JSON,
+    KB: M1_KB_ENUM, KB_HEADERS: new Array(13).fill('h'), KB_BODY_MAX: 49000, KB_STATUS_DRAFT: 'draft', KB_STATUS_PUBLISHED: 'published',
+    KB_MANUAL_ID_RE: /^man-[a-z0-9]+(?:-[a-z0-9]+)*$/, KB_MANUAL_READONLY_MSG: 'read-only',
+    getEmployeeInfo_: () => ({ email: 'a@ums.com', isAdmin: true }), getOrCreateKbSheet_: () => book.sheets.KB,
+    kbParseDriveUrl_: () => null, kbResolveDocImages_: (b) => ({ bodyMd: b, exported: 0, warnings: [] }), kbRowStatus_: () => 'published',
+    LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) }, Utilities: { getUuid: () => 'u' }, fmtDate_: () => 'd', fmtTime_: () => 't',
+    sheetSafeRow_: (x) => x, sheetSafeRows_: (x) => x, kbAppendRevision_: () => {}, invalidateKbCache_: () => {}, writeAuditLog_: () => {} });
+  vm.runInContext(extractRawFunction('Code.js', 'kbSaveItem'), ctx);
+  assert.deepStrictEqual(J2(ctx.kbSaveItem({ id: 'man-5-9', title: 'Edited', type: 'article', body: 'x' })), { success: false, error: 'read-only' });
+  assert.strictEqual(book.sheets.KB.grid[1][2], 'T', 'untouched');
+  assert.strictEqual(ctx.kbSaveItem({ id: 'kb-1', title: 'Edited', type: 'article', body: 'x' }).success, true);
+});
+
+test('M2-E1: the exporter writes ONE bundle in the format the importer reads, with the version and build date read from build.py and the router and changelog built from the manual\'s own sources', () => {
+  const M = path.join(__dirname, '../../manual');
+  const ex = fs.readFileSync(path.join(M, 'export_reference.py'), 'utf8');
+  assert.strictEqual(/^BUNDLE_FORMAT = "([^"]+)"/m.exec(ex)[1], /const KB_MANUAL_FORMAT = '([^']+)';/.exec(codeSrc)[1], 'one format string on both sides');
+  assert.ok(/"manual\.json"/.test(ex) && !/"articles\.json"/.test(ex), 'the upload is manual.json');
+  assert.ok(/bundle = \{"format": BUNDLE_FORMAT, "version": version, "built": built,\s*"router": router, "changelog": changelog, "articles": articles\}/.test(ex));
+  assert.ok(/\^VERSION = "\(\[\^"\]\+\)"/.test(ex) && /\^BUILT = "\(\[\^"\]\+\)"/.test(ex), 'VERSION / BUILT come from build.py');
+  const bd = fs.readFileSync(path.join(M, 'build.py'), 'utf8');
+  assert.ok(/^VERSION = "v[\d.]+"$/m.test(bd) && /^BUILT = "[\d/]+"$/m.test(bd), 'and build.py still declares them in that shape');
+  assert.ok(/re\.search\(r"\^## §1-1 \.\*\?\(\?=\^## §\)"/.test(ex), 'the router is §1-1');
+  assert.ok(/re\.split\(r"\\s\*\/\\s\*\(\?=\[\\"\\u201c\]\)", cells\[0\]\)/.test(ex), 'split on " / " between quoted phrases, as make_html.py does');
+  assert.ok(/data\/changelog\.json/.test(ex) && /def sec_target/.test(ex) && /UNRESOLVABLE REF \{sec\} \(router or changelog\)/.test(ex), 'every router and changelog target is resolved or the export fails');
+  const mk = fs.readFileSync(path.join(M, 'README.md'), 'utf8');
+  assert.ok(/manual\.json/.test(mk) && !/articles\.json/.test(mk), 'the README names the bundle');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
