@@ -690,11 +690,14 @@ function manualRecentListHtml_(items) {
     '</button>';
   }).join('') + '</div>';
 }
-/** The heading's small print: the window, and "showing N of M" when capped. */
+/** The heading's small print: the window, and "showing N of M" when capped
+ *  (no leading separator — the landing puts it inline, the panel on its own line). */
 function manualRecentSubHtml_(res) {
   var n = (res.manualRecent || []).length, total = Number(res.manualRecentTotal) || n;
-  return (res.manualRecentDays ? '· last ' + esc(String(res.manualRecentDays)) + ' days' : '') +
-    (total > n ? ' · showing ' + n + ' of ' + total : '');
+  var bits = [];
+  if (res.manualRecentDays) bits.push('last ' + esc(String(res.manualRecentDays)) + ' days');
+  if (total > n) bits.push('showing ' + n + ' of ' + total);
+  return bits.join(' · ');
 }
 function manualRecentOpen_(btn) {
   var id = btn.getAttribute('data-kb-id'), anchor = btn.getAttribute('data-kb-anchor') || '';

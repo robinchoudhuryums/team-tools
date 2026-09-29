@@ -136,14 +136,15 @@
   /* Batch M4 — the manual's "recently changed" list (the What's new panel and
      the Reference landing share one renderer, manualRecentListHtml_). */
   .mr-list { display: flex; flex-direction: column; }
-  .mr-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 10px; width: 100%; text-align: left; font: inherit; background: none; border: none; border-bottom: 1px solid var(--line); padding: 8px 2px; cursor: pointer; color: var(--ink); }
+  .mr-row { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 10px; row-gap: 2px; width: 100%; text-align: left; font: inherit; background: none; border: none; border-bottom: 1px solid var(--line); padding: 8px 2px; cursor: pointer; color: var(--ink); }
   .mr-row:last-child { border-bottom: none; }
   .mr-row:hover, .mr-row:focus-visible { background: var(--paper-2); }
-  .mr-num { font-family: var(--mono); font-size: .78rem; font-weight: 700; color: var(--info-deep); white-space: nowrap; }
-  .mr-sum { font-size: .86rem; min-width: 0; overflow-wrap: anywhere; }
-  .mr-meta { font-size: .74rem; color: var(--muted); white-space: nowrap; }
+  .mr-num { font-family: var(--mono); font-size: .78rem; font-weight: 700; color: var(--info-deep); white-space: nowrap; min-width: 4.5em; }
+  .mr-sum { font-size: .86rem; flex: 1 1 16em; min-width: 0; overflow-wrap: anywhere; }   /* the date wraps under it when the row is narrow — never squeezes it to a word a line */
+  .mr-meta { font-size: .74rem; color: var(--muted); white-space: nowrap; margin-left: auto; }
   .mr-retrain { font-size: .68rem; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--warn-soft); color: var(--warning-deep); margin-left: 4px; }
   .mr-sec { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .mr-sec:first-child { margin-top: 0; border-top: none; padding-top: 0; }
   .mr-sec h3 { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 4px; font-size: .95rem; }
   .mr-sub { font-size: .74rem; font-weight: 400; color: var(--muted); }
   .mr-err { font-size: .84rem; color: var(--muted); font-style: italic; }
@@ -6735,7 +6736,7 @@ function kbLandingManualHtml_() {
   }
   var res = L.res, items = (res && res.manualRecent) || [];
   if (!items.length) return '';
-  return '<div class="kb-land-sec">' + head + ' <span class="kb-land-sub">' + manualRecentSubHtml_(res) + '</span></div>' +
+  return '<div class="kb-land-sec">' + head + ' <span class="kb-land-sub">· ' + manualRecentSubHtml_(res) + '</span></div>' +
     manualRecentListHtml_(items) + '</div>';
 }
 

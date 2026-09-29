@@ -30546,7 +30546,7 @@ test('M4-C2: manualRecentListHtml_ — one renderer for What\'s new and the land
   assert.ok(/data-kb-id="man-0-11" data-kb-anchor="0\.11\.2" onclick="manualRecentOpen_\(this\)"/.test(h), 'the row opens by its attributes — no name in an onclick literal (g133)');
   assert.ok(/<span class="mr-meta">09\/28\/2026 <span class="mr-retrain">Retraining<\/span><\/span>/.test(h), 'the date, and retraining said');
   assert.strictEqual((h.match(/mr-retrain/g) || []).length, 1, 'only the retraining change is marked');
-  assert.strictEqual(ctx.manualRecentSubHtml_({ manualRecent: [1, 2], manualRecentTotal: 11, manualRecentDays: 90 }), '· last 90 days · showing 2 of 11', 'the window comes from the payload — no number hand-carried here');
+  assert.strictEqual(ctx.manualRecentSubHtml_({ manualRecent: [1, 2], manualRecentTotal: 11, manualRecentDays: 90 }), 'last 90 days · showing 2 of 11', 'the window comes from the payload — no number hand-carried here');
   assert.strictEqual(ctx.manualRecentSubHtml_({ manualRecent: [1], manualRecentTotal: 1 }), '');
   assert.strictEqual(ctx.whatsNewHasContent_({ id: '', bodyMd: '', manualRecent: [{}] }), true, 'the manual alone is enough to show the panel');
   assert.strictEqual(ctx.whatsNewHasContent_({ bodyMd: '', manualRecent: [] }), false);
