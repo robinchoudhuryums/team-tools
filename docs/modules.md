@@ -870,14 +870,15 @@ not restate it. Server endpoints live in the fourteen server files
      overlay, where a link opens back in the tab or drawer the diagram came
      from. A diagram name the partial does not know stays the quiet pending
      figure. The manual's images (icons, figures, equipment photos) ride
-     `manual.json`; the import puts each new or changed one in the KB Images
-     folder, and the reader asks `getManualImages` for a page's images in one or
-     two calls. A chip shows while one loads, and says "not imported yet" or
-     "could not load" when it cannot draw. When a re-import replaces an image,
-     the file it replaced is moved to Drive's trash once the ledger names the
-     new one. The Manual dialog reports the images too — what would upload on a
-     check; what uploaded, what is still to upload ("press Import again"), what
-     was trashed and anything left alone on an import.
+     `manual.json`; the import stores them in the `ManualImages` tab of the KB
+     spreadsheet (M4-FU3 — this domain disables Apps Script's Drive, so neither
+     the file nor the images go through Drive: the admin chooses `manual.json`
+     from their computer), and the reader asks `getManualImages` for a page's
+     images in one or two calls. A chip shows while one loads, and says "not imported yet" or
+     "could not load" when it cannot draw. A re-import rewrites the tab only
+     when an image changed or was dropped. The Manual dialog reports the images
+     too — what would be stored on a check; what was stored and removed on an
+     import, and a failed write with "press Import again".
      **22post M4 (2026-09-29): the manual in use.** *Recently changed:* the
      manual's changelog entries from the last `KB_MANUAL_RECENT_DAYS`, for
      published sections only, list on the Reference landing ("Manual — recently

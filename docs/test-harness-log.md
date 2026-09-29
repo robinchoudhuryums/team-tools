@@ -2199,3 +2199,20 @@ per-change detail. By delta:
 - Reading the shots caught three layout problems, all fixed before commit. The
   worst was a three-column row squeezing the summary to one word per line at
   phone width.
+
+## 22post — M4-FU1..FU3, the manual import without Drive (2026-09-29)
+
+- FU1 (a missing Drive scope named as re-authorization) shipped and was then
+  REMOVED with FU3: once the scope was granted, the domain's administrator
+  turned out to have disabled Apps Script's Drive, so no Drive call remains in
+  the import to classify. FU2 (the locked Import button) stayed, extended to the
+  file picker. Node net −1 (FU1 gone; M3-I2/I3/I5 rewritten in place for the
+  tab-backed images), DOM +1 (FU2/FU3, driven through a real jsdom `File` and
+  `FileReader`).
+- The importer helper wraps `kbImportManual` so the tests keep naming the file
+  `M1_LINK` while the importer receives `{text}`, as the browser sends it.
+- 14 bite-checks; two NO BITEs acted on. The only dropped-image case also
+  changed an image, which triggers the rewrite by itself; and the header check
+  was shielded by the row checks, which reject an old-layout row anyway. A
+  drop-only import and a reordered-column header now isolate each (g116, the
+  twelfth direction: a case that fails two guards proves neither).
