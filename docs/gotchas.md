@@ -3032,6 +3032,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   deleting that gate left the pin green. Drive the case where only the guarded
   line decides (one neighbour shown, one hidden).
 
+  **An ELEVENTH direction (22post M2, 2026-09-28): a brace inside a server
+  COMMENT moves where the harness thinks a function ends.** Several pins cut a
+  function's body out of `serverSource()` by counting braces, and that counter
+  does not know about comments. One unbalanced `{` in a doc comment in
+  `70_kb.js` made a function appear to run to the end of the file, so the M-7
+  no-mail-in-lock tripwire reported mail inside a lock that was not there, and
+  the admin-endpoint count moved. The code was right; the extractor was reading
+  a different function than the one named. Reword the comment (no bare braces
+  in server comments) and, when a body-extracting pin fails on code you did not
+  touch, print the body it extracted before believing it.
+
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
   done (operator 2026-09-15).** The reconcile pass (g115) makes late punch data
@@ -4540,3 +4551,19 @@ failed (…). This says nothing about …". Verify: the A5 pin, driven over
   that ends a task or moves it out of view. Verify: the D-2 rule grid (the
   question-line case, the empty-text case, rule 4 alone failing is
   'needs-look').
+
+<a id="g160-an-escape-first-renderer-must-match-escaped-markers"></a>
+
+- **An escape-first renderer must match the ESCAPED marker (22post M1,
+  2026-09-28).** `kbMd_` escapes the whole body first and then turns markdown
+  into tags, which is what keeps an article's `<script>` inert. Its blockquote
+  rule tested each line for a leading `>` — a character the escape had already
+  turned into `&gt;` — so no quote had ever rendered as one, in any article, and
+  no pin rendered a quote to notice. The manual leans on quoted callouts, which
+  is how it surfaced. RULE: in a renderer that escapes first, every marker regex
+  that involves `& < > " '` must match the escaped form (`QUOTE_RE =
+  /^\s*&gt; ?/`), and each marker needs a pin that renders it from source text,
+  not from a pre-built fragment. Fires when you add or change a markdown rule in
+  `kbMd_`, the note-marker formatter (g38) or any other escape-then-format
+  pass. Verify: M1-R1 (a callout holding a paragraph, a table and a
+  list; each label's tone; HTML inside a callout still inert).

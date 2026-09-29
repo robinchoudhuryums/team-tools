@@ -12,7 +12,7 @@ Inbox (assign notifications)
 Test Command: manual
 Estimates: Batch A (1 Close reason · 2a Scratchpad fixes · 6 DR sort/filter · 7 DR manager layout): M (~6 h) — 1 S 1.5h · 2a S 1.5h · 6 S 1.5h · 7 S 1.5h — written BEFORE the first edit | Batch A Actual: ~3 h · Batch B (2b floating Scratchpad panel · 2c formatting toolbar): M–L (~7 h) — 2b M 3h · 2c M–L 4h — written BEFORE the first edit | Batch B Actual: ~2.5 h · Batch C (8 Spanish assign → email + Needs-you · 3 presence on the live view): M (~6 h) — 8 M 3.5h · 3 M 2.5h — written BEFORE the first edit | Batch C Actual: ~3 h · Batch D (Dept Request reply = resolution): L (~8 h) — D1 Reply-To + thread id S 1.5h · D2 hourly reply scan + the four rules M 3.5h · D3 Responded / Mark unresolved server + UI M 2.5h · schema + fixtures S 0.5h — written BEFORE the first edit | Batch D Actual: ~3.5 h · Batch E (Dashboard widgets): L (~8 h) — E1 widget registry + layout resolver S–M 2.5h · E2 Customize panel (show/hide, reorder, width, reset) M 3h · E3 manager team default (server + property) S 1.5h · fixtures + visual S 1h — written BEFORE the first edit | Batch E Actual: ~3.5 h · Batch M (the CSR Procedures Manual into Reference): M0 add the source S (~1 h) · M1 drafts in Reference L (~13 h) — exporter 5h · renderer (nested lists, block callouts) 3h · importer + ledger + SortOrder/sort/review-stagger + bulk publish 4h · tests 1h · M2 links/previews/search/read-as-one L (~8 h) [REVISED: M2 the Manual reader L (~12 h) — bundle export + ManualMeta import 1.5h · part reader + kb: links + tree grouping 4h · read-only + suggest-edit 1.5h · number jump + drawer router 2.5h · hover previews + Updated badges 1.5h · tests/visual 1h — written BEFORE the first edit | Batch M2 Actual: ~5 h] · M3 diagrams + images M–L (~7 h) · M4 priorities TBD — written BEFORE the first edit | Batch M1 Actual: ~4.5 h
 Subsystem cycles since last Seams audit: 2 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25). The cadence is every 4.
-Updated: 2026-09-28
+Updated: 2026-09-29
 
 ## The plan (operator testing notes, agreed 2026-09-27)
 - **Batch A — quick fixes (M, ~6 h):**
@@ -154,7 +154,7 @@ the HTML step also needs markdown/bs4/playwright/Pillow and Node `docx`.
 
 ## Pending / not yet done
 - Batch A–E operator follow-ups (non-blocking): confirm the Philippines reps' PayCycle reads `biweekly` (C); tell the departments a reply now resolves (D).
-- **Batches M1 + M2:** /sync-docs (both blocks' DOCUMENTATION lists), PR, deploy; then export → upload manual.json → Reference → Manual → Check → Import; vet; publish by part; unpublish the old guides once vetted.
+- **Batches M1 + M2:** merged (PR #276); docs DONE (/sync-docs 2026-09-29: modules, two design decisions, gotcha g160 + g116's eleventh direction, operator-state manual import, operator + harness logs, INV-318..328, S124–S125 + steps on S62/S64, README, the KB storage-map row). Owed: deploy; then export → upload manual.json → Reference → Manual → Check → Import; vet; publish by part; unpublish the old guides once vetted.
 - **Batch M3 / M4** — as planned above (M4 priorities still to confirm; M2's follow-ons add manual search stemming + router aliases + a cached index, card printing, keyboard previews).
 - Docs for Batches D and E DONE (/sync-docs 2026-09-28: modules, two design decisions, gotcha g159 + g116's tenth direction, operator-state reply resolution + DASH_TEAM_LAYOUTS, operator + harness logs, INV-311..317, S122–S123 + steps on S74/S101, README, the storage map).
 - Docs for Batches A, B and C DONE (/sync-docs 2026-09-28: modules, design decisions ×4, gotchas g33/g100/g116 amended, operator-state column E + Close reasons + Spanish notices, operator log, harness log, INV-304..310, S119–S121 + steps on S74/S14/S10, README).
@@ -193,7 +193,7 @@ Carried from cycle 22 (full list in its HISTORY block, "Open follow-on items"):
   DEV instance).
 - **Numbers — do not reuse:** INV-225..227 RESERVED (cycle 20); INV-229..232,
   INV-240..242 and INV-301..303 PROPOSED (cycles 21, 21post, 22), not in the
-  library. **Next free: INV-318; gotcha g160; scenario S124.**
+  library. **Next free: INV-329; gotcha g161; scenario S126.**
 - **Batch A follow-ons (22post-A block):** no visual scenario opens the composer
   on a Close Order; the team Median sub-line ellipsizes at half width; the date
   range does not reach the server-derived table/cards.
@@ -239,6 +239,6 @@ Carried from cycle 22 (full list in its HISTORY block, "Open follow-on items"):
   Tasks" means the Dashboard's Needs-you list.
 
 ## Where I left off
-22post A–E are merged and deployed. Batches M0, M1 and M2 (the revised Manual
-reader) are pushed on the branch. Next: `/sync-docs` for M1 + M2, then a PR; after
-deploy the operator exports manual.json and imports it. Then Batch M3.
+22post A–E are merged and deployed. Batches M0–M2 are merged (PR #276) and their
+docs are synced (on the branch). Next: deploy M1–M2; the operator exports
+manual.json and imports it (S124, S125). Then Batch M3.

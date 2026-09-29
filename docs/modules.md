@@ -821,6 +821,45 @@ not restate it. Server endpoints live in the fourteen server files
      accepted" is red (K11). Past 100 comments, the newest show (K13). The
      Admin Reference-lookups panel shows the role of every delivery-table
      header (K12).
+     **22post M1–M2 (2026-09-28): the CSR Procedures Manual lives in
+     Reference.** The manual's one source is `manual/` in the repo; its build
+     (`manual/export_reference.py`, run last by `make_all.sh`) writes
+     `manual.json`, one article per `§` section with a stable `man-…` id (`man-5-9`,
+     `man-10-b`, `man-c-5`, `man-a` for the glossary), grouped by part ("Part 05 —
+     Field Operations", Appendix A/B/C). An admin uploads the file to Drive and
+     runs Reference → **Manual** → Check, then Import (`kbImportManual`): every
+     new section arrives as a DRAFT, a re-import updates a section in place and
+     keeps its status (with a `manual-import` revision), an unchanged section is
+     not written, and a section edited, deleted or hand-made in the app is
+     skipped and reported rather than overwritten — the `ManualImport` ledger's two
+     hashes decide. A refused file writes nothing. Sections the file no longer
+     carries are listed, and removed only when the admin ticks "Remove". Publish
+     (`kbPublishManual`, all or one part) publishes only the import's drafts and
+     spreads their review dates across `CONFIG.KB.REVIEW_DUE_DAYS`, so the
+     Review-due queue fills a little each day. The file also carries the manual's
+     version, its call router and its changelog, stored in the `ManualMeta` tab.
+     **The renderer** (`kbMd_`) gained what the manual needs, for every article:
+     nested lists with continuation lines, a numbered list that starts where the
+     source does, and blockquotes that hold paragraphs, lists and tables. A quote
+     that opens with a bold label is a callout coloured by kind (Critical, Policy,
+     Watch-out, Script; any other label is a note). Quotes had never rendered at all — the rule looked for `>`
+     after the escape had turned it into `&gt;` (g160). The editor no longer
+     drops an item's SortOrder, and departments sort naturally ("Part 2" before
+     "Part 10").
+     **The Manual reader (M2):** opening a manual section shows its whole part
+     as one page, scrolled to the section (`getManualPart`). The tree groups
+     "Procedures manual" apart from "Other reference", with parts collapsed.
+     Cross-references (`kb:` links) jump within the page or to another part, and
+     hovering or focusing one previews the target section. Manual sections are
+     read-only in the app — Edit, Delete and Revert refuse a `man-` id on the
+     server — and each carries "Suggest an edit", which flags the section for
+     review with the agent's note. A section changed in the last 12 months carries
+     an Updated badge from the changelog. Typing a section number (`5.9`, `§5-9`,
+     `10.B`, `card 5`, `part 5`) into either search box jumps to it, but only to a
+     section the caller can see. The Ctrl/⌘+K drawer adds "What did the caller
+     say?", the manual's call router (phrases in groups, each naming the sections
+     to open), and a drawer result offers "Read in context", which opens the
+     whole part in the Reference tab.
 
 <a id="training-employee-docs"></a>
      **Batch 6 (2026-09-18):** the drawer is `role="dialog"` named by its own

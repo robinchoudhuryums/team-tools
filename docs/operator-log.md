@@ -10,6 +10,30 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-28 — 22post: the CSR Procedures Manual in Reference, Batches M1–M2
+
+**Adds two auto-created KB tabs; no Script Property, no trigger.** The import
+writes `ManualImport` (its ledger) and `ManualMeta` (the manual's version, call
+router and changelog) into the KB spreadsheet on first use. Merged in PR #276;
+ship on the ordinary `clasp push -f` + New version.
+
+**After deploy.** In `manual/`, run `./make_all.sh` (Python 3.12) → upload
+`manual.json` to Drive → Reference → **Manual** → paste the link → Check →
+Import (the first import holds the lock longest; after hours is fine) → vet the
+drafts → Publish by part → unpublish the old department guides the manual
+replaces. Images and diagrams are placeholders until M3. The full procedure is
+the operator-state entry.
+
+**What changes for the operator.**
+- **M1** — the manual is imported from the repo as drafts and published in
+  bulk, with review dates spread over the review window; blockquotes and
+  callouts render in every article; nested and numbered lists render as
+  written; the editor keeps an item's order; parts sort 2 before 10.
+- **M2** — a manual section opens its whole part; cross-references jump and
+  preview; manual sections are read-only with "Suggest an edit"; Updated
+  badges; typing a section number jumps to it; the drawer's call router
+  ("What did the caller say?") and "Read in context".
+
 ## 2026-09-28 — 22post: the operator's testing notes, Batches D–E
 
 **Adds one auto-managed Script Property and a feature toggle; no migration.**
