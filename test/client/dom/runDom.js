@@ -5312,3 +5312,23 @@ test('M4 DOM: Print marks ONLY its own section for the one print block, for exac
   doc.getElementById('kb-main').innerHTML = h.read('kbManualPartHtml_')({ department: 'Appendix C — Quick Reference Cards', sections: [{ id: 'man-c-3', title: 'Card 3 — Oxygen', status: 'published', bodyMd: 'E1390' }] });
   assert.ok(/Print card/.test(h.$('#kb-man-sec-man-c-3 .kb-man-print').textContent), 'a card says Print card');
 });
+
+test('M4-FU2 DOM: the Manual dialog says why Import is locked — the line shows until a clean Check, a failed Check keeps it, and a changed link locks it again (operator 2026-09-29: "Import does nothing")', async () => {
+  const h = m4Boot_();
+  const doc = h.window.document;
+  h.read('kbOpenManualImport_')();
+  const imp = doc.getElementById('kb-man-import'), gate = doc.getElementById('kb-man-gate'), link = doc.getElementById('kb-man-link');
+  assert.ok(imp.disabled && !gate.hidden && /unlocks after a clean/.test(gate.textContent), 'locked, and the reason is on screen');
+  assert.ok(/Run Check first/.test(imp.getAttribute('title')));
+  link.value = 'https://drive.google.com/file/d/abc/view';
+  h.read('kbManualRun_')(true);
+  h.run.flushSuccess({ success: false, scopeMissing: true, error: 'The app is not allowed to read Drive yet: the DEPLOYING account must re-authorize' }, 'kbImportManual');
+  assert.ok(imp.disabled && !gate.hidden, 'a failed check keeps it locked and explained');
+  assert.ok(/re-authorize/.test(doc.getElementById('kb-man-result').textContent), 'and shows the server\'s reason');
+  h.read('kbManualRun_')(true);
+  h.run.flushSuccess({ success: true, dryRun: true, total: 160, created: 160, updated: 0, unchanged: 0, skipped: [], orphaned: [] }, 'kbImportManual');
+  assert.ok(!imp.disabled && gate.hidden, 'a clean check unlocks Import and the line goes');
+  link.value = 'https://drive.google.com/file/d/other/view';
+  link.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.ok(imp.disabled && !gate.hidden, 'a changed link locks it again, with the reason back');
+});

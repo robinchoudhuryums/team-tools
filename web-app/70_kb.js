@@ -3671,6 +3671,12 @@ function kbImportManual(fileRef, opts) {
       if (blob.getBytes().length > KB_MANUAL_FILE_MAX) return { success: false, error: 'That file is too large to be the manual\'s manual.json.' };
       text = blob.getDataAsString('UTF-8');
     } catch (e) {
+      // A missing Drive SCOPE is not a sharing problem (operator 2026-09-29):
+      // "check the link" sent the operator to re-share a file the runtime had
+      // refused to even ask Drive for. Name the grant, and only then the link.
+      if (driveScopeError_(e.message)) {
+        return { success: false, scopeMissing: true, error: 'The app is not allowed to read Drive yet: ' + DRIVE_REAUTH_HINT };
+      }
       return { success: false, error: 'Could not open that Drive file (' + e.message + ') — check the link and that the app\'s account can read it.' };
     }
     let data;

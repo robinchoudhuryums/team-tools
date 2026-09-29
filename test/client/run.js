@@ -29630,6 +29630,7 @@ function m1Importer_(book, fileText, who, extra) {
     KB_MANUAL_IMAGES_TAB: 'ManualImages', KB_MANUAL_IMAGES_HEADERS: ['Key', 'Sha', 'FileId', 'Kind', 'ImportedAt'], KBMG: { KEY: 0, SHA: 1, FILE_ID: 2, KIND: 3, IMPORTED_AT: 4 },
     KB_MANUAL_IMAGE_KEY_RE: /^(icon|thumb|fig)-[a-z0-9-]{1,80}$/, KB_MANUAL_IMAGE_TYPES: ['image/png', 'image/jpeg'], KB_MANUAL_IMAGES_MAX: 400,
     KB_MANUAL_IMAGE_MAX_BYTES: 1048576, KB_MANUAL_IMAGE_BUDGET_MS: 240000, KB_IMAGES_FOLDER_PROP: 'KB_IMAGES_FOLDER_ID',
+    DRIVE_REAUTH_HINT: /const DRIVE_REAUTH_HINT = '([^']+)';/.exec(codeSrc)[1],
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k === 'KB_IMAGES_FOLDER_ID' ? 'KBFOLDER' : null) }) },
     CacheService: { getScriptCache: () => ({ remove: () => book.writes.push(['cache', 'meta']) }) },
     CONFIG: { KB: { REVIEW_DUE_DAYS: 90 } },
@@ -29651,7 +29652,7 @@ function m1Importer_(book, fileText, who, extra) {
   ['kbRowStatus_', 'kbSha256Hex_', 'kbManualFileId_', 'getOrCreateManualImportSheet_', 'kbManualLedger_', 'kbManualBundle_', 'kbManualMetaValidate_',
     'kbManualOrphans_', 'kbDeleteRowSafe_', 'getOrCreateManualMetaSheet_', 'kbManualMetaRead_', 'kbImportManual', 'kbPublishManual',
     'kbDeptRank_', 'kbDeptCompare_', 'kbParseImageDataUrl_', 'kbManualImagesValidate_', 'kbManualImagesPlan_', 'kbManualImageName_',
-    'getOrCreateManualImagesSheet_', 'kbManualImagesLedger_', 'kbManualUploadImages_', 'kbManualTrashReplaced_']
+    'getOrCreateManualImagesSheet_', 'kbManualImagesLedger_', 'kbManualUploadImages_', 'kbManualTrashReplaced_', 'driveScopeError_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   return { ctx, audits, revisions };
 }
@@ -30565,6 +30566,23 @@ test('M4-P1: printing one section rides the ONE print block — the subject and 
   assert.ok(/:root\[data-print-one\] :has\(\.print-one\) \{[^}]*display: block !important;[^}]*max-width: none !important;/.test(block), 'the ancestors collapse to blocks, so the rail\'s grid column cannot hold its width');
   ['.kb-man-sec-acts', '.kb-man-fb', '#kb-comments'].forEach((sel) => assert.ok(block.indexOf(':root[data-print-one] .print-one ' + sel) > 0, sel + ' does not print'));
   assert.ok(!/data-print-one|print-one/.test(css.slice(0, i) + css.slice(end + 1)), 'no print-one rule outside the block');
+});
+
+
+test('M4-FU1: a missing Drive SCOPE on the manual import names the re-authorization, never "check the link" — the runtime refused before Drive was asked, so re-sharing the file cannot help (operator 2026-09-29)', () => {
+  const hint = /const DRIVE_REAUTH_HINT = '([^']+)';/.exec(codeSrc)[1];
+  const scopeMsg = 'You do not have permission to call DriveApp.getFileById. Required permissions: (https://www.googleapis.com/auth/drive.readonly || https://www.googleapis.com/auth/drive)';
+  const mk = (msg) => {
+    const imp = m1Importer_(m1Book_([], null), '[]', null, { DriveApp: { getFileById: () => { throw new Error(msg); } } });
+    return J2(imp.ctx.kbImportManual(M1_LINK, { dryRun: true }));
+  };
+  const r = mk(scopeMsg);
+  assert.strictEqual(r.success, false);
+  assert.strictEqual(r.scopeMissing, true);
+  assert.ok(r.error.indexOf(hint) > 0 && /re-authorize/.test(r.error), 'the grant is named, with the editor step: ' + r.error);
+  assert.ok(!/check the link/.test(r.error), 'and the link is not blamed');
+  const nf = mk('No item with the given ID could be found. Access denied.');
+  assert.ok(!nf.scopeMissing && /check the link/.test(nf.error), 'a file the account cannot see still points at the link and its sharing');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

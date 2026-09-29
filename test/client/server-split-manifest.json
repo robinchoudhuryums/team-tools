@@ -1655,6 +1655,16 @@
     "getWhatsNew"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-29",
+   "why": "Operator 2026-09-29: the manual import names a missing Drive scope (re-authorize) instead of blaming the link",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "kbImportManual"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -6877,7 +6887,7 @@
   "kbImportManual": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "b44b64b473803b84"
+   "sha": "c0951cfc4aafbc7e"
   },
   "kbIngestFile": {
    "file": "70_kb.js",
