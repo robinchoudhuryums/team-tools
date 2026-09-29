@@ -3513,17 +3513,77 @@ function getManualMeta() {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Not authorized.' };
-    const cache = CacheService.getScriptCache();
-    let raw = null;
-    try { raw = cache.get(KB_MANUAL_META_CACHE_KEY); } catch (_) {}
-    if (raw == null) {
-      const sheet = getKbSS_().getSheetByName(KB_MANUAL_META_TAB);
-      raw = kbManualMetaRead_(sheet);
-      try { cache.put(KB_MANUAL_META_CACHE_KEY, raw, KB_CACHE_TTL); } catch (_) {}
-    }
+    const raw = kbManualMetaCached_();
     if (!raw) return { none: true };
     return JSON.parse(raw);
   } catch (err) { return { error: err.message }; }
+}
+/** The meta JSON string through the script cache ('' when none). */
+function kbManualMetaCached_() {
+  const cache = CacheService.getScriptCache();
+  let raw = null;
+  try { raw = cache.get(KB_MANUAL_META_CACHE_KEY); } catch (_) {}
+  if (raw == null) {
+    const sheet = getKbSS_().getSheetByName(KB_MANUAL_META_TAB);
+    raw = kbManualMetaRead_(sheet);
+    try { cache.put(KB_MANUAL_META_CACHE_KEY, raw, KB_CACHE_TTL); } catch (_) {}
+  }
+  return raw;
+}
+
+/** PURE (Node-pinned) — the manual's "recently changed" list: the changelog
+ *  entries dated within `days` of `todayIso` (a date that is not YYYY-MM-DD is
+ *  dropped, never guessed), whose section is in `visible` (null = do not
+ *  filter), newest first — entries of one date keep the changelog's order —
+ *  capped at `max`. `total` is the uncapped count, so a capped list can say so. */
+function kbManualRecent_(changelog, visible, todayIso, days, max) {
+  const cutoff = Date.parse(String(todayIso) + 'T00:00:00Z') - days * 86400000;
+  const all = [];
+  (Array.isArray(changelog) ? changelog : []).forEach(function (c, i) {
+    if (!c || typeof c !== 'object') return;
+    const id = String(c.id || ''), date = String(c.date || '');
+    if (!KB_MANUAL_ID_RE.test(id) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+    const t = Date.parse(date + 'T00:00:00Z');
+    if (!isFinite(t) || t < cutoff) return;
+    if (visible && !visible[id]) return;
+    all.push({ i: i, date: date, num: String(c.num || ''), id: id, anchor: String(c.anchor || ''),
+      summary: String(c.summary || ''), retraining: c.retraining === true });
+  });
+  all.sort(function (a, b) { return a.date < b.date ? 1 : (a.date > b.date ? -1 : a.i - b.i); });
+  return { items: all.slice(0, max).map(function (x) { delete x.i; return x; }), total: all.length };
+}
+
+/** Batch M4 — the manual's recent changes for getWhatsNew (the What's new
+ *  panel AND the Reference landing read this one payload): only PUBLISHED
+ *  sections, because both are broadcast surfaces (the getWhatsNew draft rule).
+ *  null when no manual is imported or nothing changed in the window;
+ *  {error: true} when the read failed, so the caller says so instead of
+ *  showing a quiet "nothing changed" (g53). */
+function kbManualRecentPayload_() {
+  try {
+    const raw = kbManualMetaCached_();
+    if (!raw) return null;
+    const meta = JSON.parse(raw) || {};
+    const today = fmtDate_(new Date());
+    // No entry in the window → no KB read at all (this runs on every page load).
+    if (!kbManualRecent_(meta.changelog, null, today, KB_MANUAL_RECENT_DAYS, KB_MANUAL_RECENT_MAX).total) return null;
+    const sheet = getOrCreateKbSheet_();
+    const last = sheet.getLastRow();
+    const visible = {};
+    if (last >= 2) {
+      const ids = sheet.getRange(2, KB.ID + 1, last - 1, 1).getValues();
+      const sts = sheet.getRange(2, KB.STATUS + 1, last - 1, 1).getValues();
+      ids.forEach(function (r, i) {
+        const id = String(r[0] || '').trim();
+        if (KB_MANUAL_ID_RE.test(id) && kbRowStatus_(sts[i][0]) !== KB_STATUS_DRAFT) visible[id] = true;
+      });
+    }
+    const out = kbManualRecent_(meta.changelog, visible, today, KB_MANUAL_RECENT_DAYS, KB_MANUAL_RECENT_MAX);
+    if (!out.total) return null;
+    out.days = KB_MANUAL_RECENT_DAYS;
+    out.version = String(meta.version || '');
+    return out;
+  } catch (err) { return { error: true }; }
 }
 
 /** Employee — every manual section of one part, in order, for the reader's

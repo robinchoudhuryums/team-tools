@@ -4658,36 +4658,55 @@ function getWhatsNew() {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { none: true };
+    let art = null;
     const id = String(PropertiesService.getScriptProperties().getProperty('WHATSNEW_KB_ID') || '').trim();
-    if (!id) return { none: true };
-    const sheet = getOrCreateKbSheet_();
-    const last = sheet.getLastRow();
-    if (last < 2) return { none: true };
-    const ssTz = getKbSS_().getSpreadsheetTimeZone();
-    // F(cycle-8): id-COLUMN scan + one full-row fetch (the findCallNoteRow_
-    // pattern). This fires on every Dashboard load for every rep, and the old
-    // full-tab read pulled all 13 columns INCLUDING every article's BodyMd —
-    // read volume that grew with total KB body size × page loads.
-    const ids = sheet.getRange(2, KB.ID + 1, last - 1, 1).getValues();
-    for (let i = 0; i < ids.length; i++) {
-      if (String(ids[i][0]) !== id) continue;
-      const row = sheet.getRange(i + 2, 1, 1, KB_HEADERS.length).getValues()[0];
-      // A DRAFT stays invisible to EVERYONE here (INV-140/147 — this is a
-      // broadcast surface; an admin previews drafts in Reference, not here),
-      // and only native articles render (an embed has no body for kbMd_).
-      if (kbRowStatus_(row[KB.STATUS]) === KB_STATUS_DRAFT) return { none: true };
-      if (String(row[KB.TYPE] || 'article') !== 'article') return { none: true };
-      return {
-        id: id,
-        title: String(row[KB.TITLE] || 'What\'s new'),
-        bodyMd: String(row[KB.BODY_MD] || ''),
-        // The edit-time stamp drives the client seen-flag — editing the
-        // article re-surfaces the panel for everyone (datetime-granular via
-        // kbCellTs_, recovered in the KB sheet's own tz).
-        stamp: kbCellTs_(row[KB.UPDATED_AT], ssTz),
-      };
+    const sheet = id ? getOrCreateKbSheet_() : null;
+    const last = sheet ? sheet.getLastRow() : 0;
+    if (id && last >= 2) {
+      const ssTz = getKbSS_().getSpreadsheetTimeZone();
+      // F(cycle-8): id-COLUMN scan + one full-row fetch (the findCallNoteRow_
+      // pattern). This fires on every Dashboard load for every rep, and the old
+      // full-tab read pulled all 13 columns INCLUDING every article's BodyMd —
+      // read volume that grew with total KB body size × page loads.
+      const ids = sheet.getRange(2, KB.ID + 1, last - 1, 1).getValues();
+      for (let i = 0; i < ids.length; i++) {
+        if (String(ids[i][0]) !== id) continue;
+        const row = sheet.getRange(i + 2, 1, 1, KB_HEADERS.length).getValues()[0];
+        // A DRAFT stays invisible to EVERYONE here (INV-140/147 — this is a
+        // broadcast surface; an admin previews drafts in Reference, not here),
+        // and only native articles render (an embed has no body for kbMd_).
+        if (kbRowStatus_(row[KB.STATUS]) === KB_STATUS_DRAFT) break;
+        if (String(row[KB.TYPE] || 'article') !== 'article') break;
+        art = {
+          id: id,
+          title: String(row[KB.TITLE] || 'What\'s new'),
+          bodyMd: String(row[KB.BODY_MD] || ''),
+          // The edit-time stamp drives the client seen-flag — editing the
+          // article re-surfaces the panel for everyone (datetime-granular via
+          // kbCellTs_, recovered in the KB sheet's own tz).
+          stamp: kbCellTs_(row[KB.UPDATED_AT], ssTz),
+        };
+        break;
+      }
     }
-    return { none: true };
+    // Batch M4 (operator 2026-09-29): the procedures manual's recent changes
+    // ride the same panel — and the Reference landing reads them from here too,
+    // so the two cannot disagree about what "recently changed" means. A manual
+    // change joins the seen-stamp, so it lights the NEW accent like an edit.
+    const man = kbManualRecentPayload_();
+    const recent = man && man.items && man.items.length ? man : null;
+    if (!art && !recent) return man && man.error ? { none: true, manualError: true } : { none: true };
+    const out = art || { id: '', title: 'What\'s new', bodyMd: '', stamp: '' };
+    if (recent) {
+      out.manualRecent = recent.items;
+      out.manualRecentTotal = recent.total;
+      out.manualRecentDays = recent.days;
+      out.manualVersion = recent.version;
+      out.stamp = String(out.stamp || '') + '|manual:' + recent.items[0].date + ':' + recent.total;
+    } else if (man && man.error) {
+      out.manualError = true;
+    }
+    return out;
   } catch (err) { return { none: true }; }
 }
 /** PURE: is this error Apps Script's own missing-SCOPE refusal (the runtime

@@ -1638,6 +1638,23 @@
     "lookupEmployeeById_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-29",
+   "why": "Batch M4: the manual's recently-changed list (kbManualRecent_, kbManualRecentPayload_, kbManualMetaCached_) and its window constants",
+   "added": [
+    "KB_MANUAL_RECENT_DAYS",
+    "KB_MANUAL_RECENT_MAX",
+    "kbManualMetaCached_",
+    "kbManualRecentPayload_",
+    "kbManualRecent_"
+   ],
+   "removed": [],
+   "changed": [
+    "getManualMeta",
+    "getWhatsNew"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2816,6 +2833,16 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "5153cb969b4845da"
+  },
+  "KB_MANUAL_RECENT_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5238b0b698e8957d"
+  },
+  "KB_MANUAL_RECENT_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "cd5b2b17ff49b070"
   },
   "KB_MAP_GEOCODE_CACHE_MAX": {
    "file": "00_config.js",
@@ -5770,7 +5797,7 @@
   "getManualMeta": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "03490a68db1a1e0d"
+   "sha": "2fd11d1033056b6a"
   },
   "getManualPart": {
    "file": "70_kb.js",
@@ -6260,7 +6287,7 @@
   "getWhatsNew": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "a0b6880361a943af"
+   "sha": "405fedcb20107857"
   },
   "groupQueueRows_": {
    "file": "40_metrics.js",
@@ -6902,6 +6929,11 @@
    "kind": "function",
    "sha": "6626ce9755ca712c"
   },
+  "kbManualMetaCached_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "fc141b2144383058"
+  },
   "kbManualMetaRead_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -6921,6 +6953,16 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "64bce6a237514118"
+  },
+  "kbManualRecentPayload_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "d7e46d268a18b503"
+  },
+  "kbManualRecent_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "74e11c952b712e55"
   },
   "kbManualTrashReplaced_": {
    "file": "70_kb.js",

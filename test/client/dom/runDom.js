@@ -5139,3 +5139,172 @@ test('M2 DOM: the drawer — a typed section number jumps (Enter opens it), the 
   assert.strictEqual(w.KB_OPEN_HINT, null, 'the parked hint was consumed on arrival');
   assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Part 00 — CSR Core'], 'and the tab opened the section’s part');
 });
+
+// ── Batch M4 — the manual's follow-ons ──────────────────────────────────────
+section('Batch M4 — keyboard previews, HCPCS lookups, recently changed, print one section');
+
+function m4Boot_(opts) {
+  const h = boot();
+  const w = h.window;
+  w.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  if (opts && opts.whatsNew) h.run.respond('getWhatsNew', opts.whatsNew);
+  h.bootShell({ isManager: true });
+  h.run.respond('getReferenceTree', () => M2_TREE);
+  w.enterTool('reference', 'reference');
+  h.flushTimers();
+  return h;
+}
+
+test('M4 DOM: keyboard — focusing a cross-reference shows its preview and the link is described by it; Escape hides the preview ONLY (the drawer underneath stays open); moving focus away hides it; a focus that moved on before the delay shows nothing', async () => {
+  const h = m4Boot_();
+  const w = h.window, doc = w.document;
+  h.read('kbOpenItem_')('man-0-11');
+  h.run.flushSuccess(M2_PART0, 'getManualPart');
+  const x = h.$('#kb-man-sec-man-0-11 a.kb-xref[data-kb-id="man-0-10"]');
+  const shown = () => { const c = doc.getElementById('kb-xrefcard'); return !!(c && c.classList.contains('show')); };
+  x.focus();
+  assert.strictEqual(doc.activeElement, x, 'the link takes focus');
+  h.flushTimers();
+  assert.ok(shown(), 'the preview shows on focus');
+  assert.strictEqual(x.getAttribute('aria-describedby'), 'kb-xrefcard', 'and describes the link for a screen reader');
+  assert.deepStrictEqual(h.run.pending('getReferenceItem').map((c) => c.args[0]), ['man-0-10']);
+  h.run.flushSuccess({ id: 'man-0-10', title: '0.10 Anatomy of a transaction', type: 'article', status: 'published', bodyMd: '## 0.10.2 Before you transfer\n\nCheck Fax History.' }, 'getReferenceItem');
+  assert.ok(/Check Fax History/.test(doc.getElementById('kb-xrefcard').textContent), 'the excerpt at the anchor');
+  // Escape with the drawer open underneath: the preview goes, the drawer stays.
+  h.read('kbDrawerOpen_')();
+  const esc1 = h.dispatchKey('Escape', { target: x });
+  assert.ok(!shown(), 'Escape hides the preview');
+  assert.ok(esc1.defaultPrevented, 'and consumes the key');
+  assert.strictEqual(h.read('KB_DRAWER').open, true, 'the SAME Escape did not also close the drawer');
+  assert.strictEqual(x.getAttribute('aria-describedby'), null, 'the description goes with the card');
+  h.dispatchKey('Escape', { target: x });
+  assert.strictEqual(h.read('KB_DRAWER').open, false, 'with no preview up, Escape closes the drawer as before');
+  // Moving focus away hides it. (Closing the drawer handed focus back to the
+  // link — F-43 — so step off it first, then Tab back on.)
+  doc.getElementById('kb-search').focus(); h.flushTimers();
+  x.focus(); h.flushTimers();
+  assert.ok(shown(), 'shows again (from the cache — no second read)');
+  assert.strictEqual(h.run.pending('getReferenceItem').length, 0);
+  doc.getElementById('kb-search').focus(); h.flushTimers();
+  assert.ok(!shown(), 'focus moved away → hidden');
+  // A focus that passes through before the delay shows nothing.
+  x.focus(); doc.getElementById('kb-search').focus(); h.flushTimers();
+  assert.ok(!shown(), 'tabbing THROUGH a link does not pop a card up behind you');
+});
+
+test('M4 DOM: HCPCS codes in a manual section are links (not inside code, a heading or another link); a click opens the drawer\'s lookups with the code in the ITEM box and focus in an empty payor box — a typed payor is kept, a search in flight cannot paint over it, and a hand-written article is left alone', async () => {
+  const h = m4Boot_();
+  const w = h.window, doc = w.document;
+  const part = JSON.parse(JSON.stringify(M2_PART0));
+  part.sections[1].bodyMd = 'Rent **E0601** monthly; not `K0006`; see [0.10 (E0470)](kb:man-0-10); supplies A7003/A7004.\n\n## 0.11.9 Code E0471\n\nBE0601 and E06011 are not codes.\n';
+  h.read('kbOpenItem_')('man-0-11');
+  h.run.flushSuccess(part, 'getManualPart');
+  const links = h.$$('#kb-man-sec-man-0-11 a.kb-hcpcs').map((a) => a.getAttribute('data-hcpcs'));
+  assert.deepStrictEqual(links, ['E0601', 'A7003', 'A7004'], 'code in prose and in bold; never in `code`, a heading or inside the cross-reference');
+  assert.ok(/Rent E0601 monthly/.test(h.$('#kb-man-sec-man-0-11 .kb-article').textContent), 'the text reads exactly as before');
+  // Click → the drawer, home, the code in the item box, focus in the (empty) payor box.
+  h.click(h.$('#kb-man-sec-man-0-11 a.kb-hcpcs[data-hcpcs="E0601"]'));
+  assert.strictEqual(h.read('KB_DRAWER').open, true, 'the drawer opens');
+  const item = doc.getElementById('kb-oop-item-d');
+  assert.strictEqual(item.value, 'E0601', 'the code is in the item box');
+  h.flushTimers();
+  assert.deepStrictEqual(h.run.pending('searchOopPricing').map((c) => c.args[0]), ['E0601'], 'and its price is looked up');
+  assert.strictEqual(doc.activeElement, doc.getElementById('kb-ins-input-d'), 'focus waits in the payor box — the payor lookup searches by plan name');
+  // A typed payor is kept, and a search in flight in the drawer cannot paint over the lookups.
+  const ins = doc.getElementById('kb-ins-input-d');
+  ins.value = 'Aetna';
+  doc.getElementById('kbd-q').value = 'pick up';
+  h.read('kbDrawerSearch_')('pick up');
+  h.click(h.$('#kb-man-sec-man-0-11 a.kb-hcpcs[data-hcpcs="A7003"]'));
+  assert.strictEqual(doc.getElementById('kb-ins-input-d'), ins, 'the payor box is the same node');
+  assert.strictEqual(ins.value, 'Aetna', 'and keeps the payor');
+  assert.strictEqual(doc.getElementById('kb-oop-item-d').value, 'A7003');
+  assert.strictEqual(doc.getElementById('kbd-q').value, '', 'the drawer search gives way');
+  h.run.flushSuccess({ results: [{ id: 'kb-1', title: 'x', chunkMd: 'x' }] }, 'searchReference');
+  assert.ok(doc.getElementById('kb-oop-item-d'), 'the late search result did not replace the lookups');
+  h.flushTimers();
+  assert.strictEqual(doc.activeElement, doc.getElementById('kb-oop-item-d'), 'with a payor typed, focus goes to the item');
+  // The drawer's own reader: a manual section is linked, a hand-written article is not.
+  h.read('kbDrawerOpenItem_')('man-0-10');
+  h.run.flushSuccess({ id: 'man-0-10', title: '0.10', type: 'article', status: 'published', bodyMd: 'Rent E0601.' }, 'getReferenceItem');
+  assert.ok(h.$('#kbd-body a.kb-hcpcs[data-hcpcs="E0601"]'), 'a manual section in the drawer links its codes');
+  h.read('kbDrawerOpenItem_')('kb-1');
+  h.run.flushSuccess({ id: 'kb-1', title: 'Hand-written', type: 'article', status: 'published', bodyMd: 'Rent E0601.' }, 'getReferenceItem');
+  assert.ok(!h.$('#kbd-body a.kb-hcpcs'), 'a hand-written article is not the manual');
+});
+
+const M4_WN = { id: '', title: "What's new", bodyMd: '', stamp: '|manual:2026-09-28:3', manualRecentTotal: 3, manualRecentDays: 90, manualVersion: 'v3.0',
+  manualRecent: [{ date: '2026-09-28', num: '0.11', id: 'man-0-11', anchor: '', summary: 'TRX, never a name', retraining: true },
+    { date: '2026-09-20', num: '0.10.2', id: 'man-0-10', anchor: '0.10.2', summary: 'Check Fax History first', retraining: false }] };
+
+test('M4 DOM: the manual\'s recent changes — ONE getWhatsNew serves the What\'s new panel and the Reference landing; a row opens its section at the changed heading (and closes the panel); retraining is marked', async () => {
+  let n = 0;
+  const h = m4Boot_({ whatsNew: () => { n++; return M4_WN; } });
+  const doc = h.window.document;
+  const rows = () => h.$$('#kb-main .mr-row');
+  assert.strictEqual(rows().length, 2, 'the landing lists the changes');
+  assert.ok(/Manual — recently changed/.test(h.$('#kb-main').textContent) && /last 90 days · showing 2 of 3/.test(h.$('#kb-main').textContent), 'headed, with the window and the cap from the payload');
+  assert.strictEqual(h.$$('#kb-main .mr-retrain').length, 1, 'the retraining change is marked');
+  assert.strictEqual(n, 1, 'the shell\'s What\'s new load and the landing shared ONE call');
+  assert.ok(doc.getElementById('sb-whatsnew-btn'), 'a manual change alone is enough for the What\'s new star');
+  // The landing row → its section, at the heading. (Inline onclick handlers do
+  // not run in this harness — runScripts is outside-only — so the handler the
+  // attribute names is called with the row, exactly as the attribute would.)
+  assert.strictEqual(rows()[1].getAttribute('onclick'), 'manualRecentOpen_(this)');
+  h.read('manualRecentOpen_')(rows()[1]);
+  assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Part 00 — CSR Core'], 'the section\'s part opens');
+  assert.strictEqual(h.read('KB_STATE').currentId, 'man-0-10');
+  // The panel.
+  h.read('whatsNewOpen_')();
+  const ov = doc.getElementById('whatsnew-overlay');
+  assert.ok(ov.classList.contains('open') && ov.querySelectorAll('.mr-row').length === 2, 'the panel lists them too');
+  assert.ok(/Procedures manual — recently changed/.test(ov.textContent));
+  h.read('manualRecentOpen_')(ov.querySelector('.mr-row[data-kb-id="man-0-11"]'));
+  assert.ok(!ov.classList.contains('open'), 'a row closes the panel');
+  assert.ok(/manual:2026-09-28/.test(h.window.localStorage.getItem('umsWhatsNew') || ''), 'closing by a row stamps it seen, like any close');
+  assert.strictEqual(h.read('KB_STATE').currentId, 'man-0-11', 'and opens the section');
+});
+
+test('M4 DOM: a failed load of the recent changes is SAID on the landing (never an empty list that reads as "nothing changed"), and is not cached — the next visit asks again', async () => {
+  const h = boot();
+  const w = h.window;
+  w.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  h.run.flushFailure(new Error('network'), 'getWhatsNew');
+  h.run.respond('getReferenceTree', () => M2_TREE);
+  w.enterTool('reference', 'reference');
+  h.flushTimers();
+  assert.deepStrictEqual(h.run.pending('getWhatsNew').length, 1, 'the landing asked again — the shell\'s failure was not cached');
+  h.run.flushFailure(new Error('network'), 'getWhatsNew');
+  assert.ok(/Could not load the manual’s recent changes/.test(h.$('#kb-main').textContent), 'the failure is said');
+  // A server that reached the manual but could not read it says so too.
+  h.read('whatsNewEnsure_')(() => {});
+  h.run.flushSuccess({ none: true, manualError: true }, 'getWhatsNew');
+  h.read('kbLoadManualRecentBlock_')();
+  assert.ok(/Could not load the manual’s recent changes/.test(h.$('#kb-main').textContent), 'manualError is a failure, not an empty list');
+  // And a manual with nothing recent draws nothing at all.
+  const h2 = m4Boot_({ whatsNew: () => ({ none: true }) });
+  assert.ok(!/recently changed/.test(h2.$('#kb-main').textContent), 'nothing recent → no block');
+});
+
+test('M4 DOM: Print marks ONLY its own section for the one print block, for exactly as long as the dialog is up; a Quick Reference Card\'s button says "Print card"', async () => {
+  const h = m4Boot_();
+  const w = h.window, doc = w.document;
+  h.read('kbOpenItem_')('man-0-11');
+  h.run.flushSuccess(M2_PART0, 'getManualPart');
+  let during = null;
+  w.print = () => { during = { marked: h.$$('.print-one').map((s) => s.getAttribute('data-kb-id')), root: doc.documentElement.hasAttribute('data-print-one') }; };
+  const btn = h.$('#kb-man-sec-man-0-11 .kb-man-print');
+  assert.ok(btn && /^\s*Print\s*$/.test(btn.textContent), 'a section says Print');
+  doc.getElementById('kb-man-sec-man-0-10').classList.add('print-one');   // a stale mark from an earlier print
+  assert.strictEqual(btn.getAttribute('onclick'), 'kbPrintSection_(this)');
+  h.read('kbPrintSection_')(btn);
+  assert.deepStrictEqual(during, { marked: ['man-0-11'], root: true }, 'during print(): this section alone, and the root flag the print rules key on');
+  w.dispatchEvent(new w.Event('afterprint'));
+  assert.deepStrictEqual([h.$$('.print-one').length, doc.documentElement.hasAttribute('data-print-one')], [0, false], 'afterprint takes the marks off');
+  h.read('kbPrintSection_')(btn);
+  h.flushTimers();
+  assert.deepStrictEqual([h.$$('.print-one').length, doc.documentElement.hasAttribute('data-print-one')], [0, false], 'and the timer behind it does, for a browser that never fires afterprint');
+  doc.getElementById('kb-main').innerHTML = h.read('kbManualPartHtml_')({ department: 'Appendix C — Quick Reference Cards', sections: [{ id: 'man-c-3', title: 'Card 3 — Oxygen', status: 'published', bodyMd: 'E1390' }] });
+  assert.ok(/Print card/.test(h.$('#kb-man-sec-man-c-3 .kb-man-print').textContent), 'a card says Print card');
+});

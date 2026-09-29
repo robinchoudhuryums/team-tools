@@ -29963,7 +29963,7 @@ test('M2-S3: getManualPart returns ONE part\'s manual sections in order (drafts 
       getEmployeeInfo_: () => who, getKbSS_: () => book,
       getOrCreateKbSheet_: () => Object.assign({}, book.sheets.KB, { getRange: (r, c, nr, nc) => { reads.push([r, c, nr, nc]); return book.sheets.KB.getRange(r, c, nr, nc); } }),
       CacheService: { getScriptCache: () => ({ get: (k) => (k in puts ? puts[k] : null), put: (k, v) => { puts[k] = v; } }) } });
-    ['kbRowStatus_', 'kbNaturalCompare_', 'kbManualMetaRead_', 'getManualPart', 'getManualMeta'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+    ['kbRowStatus_', 'kbNaturalCompare_', 'kbManualMetaRead_', 'kbManualMetaCached_', 'getManualPart', 'getManualMeta'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
     return ctx;
   };
   const admin = mk({ email: 'a@ums.com', isAdmin: true });
@@ -30425,6 +30425,146 @@ test('PAYSTMT-1: a manager opening a biweekly rep\'s Pay Statement gets the rep\
   assert.deepStrictEqual(J2(ctx.getMyPayStatement(0, 'IN-3')).period, { start: '2026-09-01', end: '2026-09-30', cycle: 'Monthly', offset: 0 }, 'a monthly rep still gets the calendar month');
   assert.deepStrictEqual(J2(ctx.lookupEmployeeById_('PH-7')).payAnchor, '2026-09-07', 'the anchor rides too');
   ['getEmployeeInfo_', 'lookupEmployeeById_'].forEach((n) => assert.ok(/empPayCycle_\(rows\[i\]\)/.test(extractRawFunction('Code.js', n)), n + ' reads PayCycle through the one helper'));
+});
+
+
+// ── Batch M4 — the manual's follow-ons ──────────────────────────────────────
+console.log('\nBatch M4 — recently changed, HCPCS links, keyboard previews, print one section');
+function m4Recent_() {
+  const ctx = vm.createContext({ String, Number, Object, Array, JSON, Math, Date, isFinite, RegExp });
+  vm.runInContext(/const KB_MANUAL_ID_RE = [^\n]+/.exec(codeSrc)[0].replace(/^const /, 'var '), ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'kbManualRecent_'), ctx);
+  return ctx;
+}
+
+test('M4-S1: kbManualRecent_ — the window, published-only, newest first (one date keeps the changelog order), capped with the uncapped total, and a malformed entry is dropped rather than guessed', () => {
+  const c = m4Recent_();
+  const log = [
+    { date: '2026-09-20', num: '5.9', id: 'man-5-9', anchor: '5.9.2', summary: 'pick-up fee', retraining: true },
+    { date: '2026-06-01', num: '1.1', id: 'man-1-1', summary: 'old' },                       // outside 90 days
+    { date: '2026-09-28', num: '0.11', id: 'man-0-11', summary: 'TRX, never a name' },
+    { date: '2026-09-20', num: '2.4', id: 'man-2-4', summary: 'second of the day', retraining: 'yes' },
+    { date: '2026-09-25', num: '3.1', id: 'man-3-1', summary: 'a draft' },
+    { date: '09/25/2026', num: '4.1', id: 'man-4-1', summary: 'wrong date shape' },
+    { date: '2026-09-26', num: 'x', id: 'kb-1', summary: 'not a manual id' },
+    null, 'x', { date: '2026-02-30x', id: 'man-4-2' }];
+  const vis = { 'man-5-9': 1, 'man-1-1': 1, 'man-0-11': 1, 'man-2-4': 1, 'man-4-1': 1, 'kb-1': 1 };
+  const r = J2(c.kbManualRecent_(log, vis, '2026-09-29', 90, 8));
+  assert.deepStrictEqual(r.items.map((u) => u.num), ['0.11', '5.9', '2.4'], 'newest first; the two of 09-20 keep the changelog order; the draft, the old entry and the malformed ones are gone');
+  assert.strictEqual(r.total, 3);
+  assert.deepStrictEqual(r.items[1], { date: '2026-09-20', num: '5.9', id: 'man-5-9', anchor: '5.9.2', summary: 'pick-up fee', retraining: true }, 'the shape both renderers read');
+  assert.strictEqual(r.items[2].retraining, false, 'retraining is TRUE only when the changelog says true');
+  assert.strictEqual(J2(c.kbManualRecent_(log, null, '2026-09-29', 90, 8)).total, 4, 'no visibility filter → the draft counts (the cheap pre-check)');
+  const capped = J2(c.kbManualRecent_(log, vis, '2026-09-29', 90, 2));
+  assert.deepStrictEqual([capped.items.length, capped.total], [2, 3], 'capped, and the total says how many there were');
+  assert.deepStrictEqual(J2(c.kbManualRecent_(log, vis, '2026-09-29', 1, 8)).items.map((u) => u.num), ['0.11'], 'the window is days before today, inclusive of the edge');
+  assert.deepStrictEqual(J2(c.kbManualRecent_(undefined, vis, '2026-09-29', 90, 8)), { items: [], total: 0 });
+  assert.deepStrictEqual(J2(c.kbManualRecent_({ changelog: [] }, vis, '2026-09-29', 90, 8)), { items: [], total: 0 }, 'not an array → nothing');
+});
+
+function m4WhatsNew_(o) {
+  const calls = [];
+  const kbRows = o.kbRows || [];   // [id, status]
+  const kbSheet = {
+    getLastRow: () => kbRows.length + 1,
+    getRange: (r, col, nr, nc) => { calls.push([r, col, nr, nc]);
+      return { getValues: () => (nc === 1 ? kbRows.slice(r - 2, r - 2 + nr).map((x) => [col === 1 ? x[0] : x[1]])
+        : kbRows.slice(r - 2, r - 2 + nr).map((x) => [x[0], 'Dept', 'What changed', x[2] || 'article', x[3] || 'body', '', '', 0, 'TS', '', '', '', x[1]])) }; } };
+  const ctx = vm.createContext({ String, Number, Object, Array, JSON, Math, Date, isFinite, RegExp,
+    KB: { ID: 0, DEPARTMENT: 1, TITLE: 2, TYPE: 3, BODY_MD: 4, DRIVE_KIND: 5, DRIVE_FILE_ID: 6, SORT_ORDER: 7, UPDATED_AT: 8, UPDATED_BY: 9, REVIEWED_AT: 10, REVIEWED_BY: 11, STATUS: 12 },
+    KB_HEADERS: new Array(13).fill('h'), KB_STATUS_DRAFT: 'draft', KB_MANUAL_RECENT_DAYS: 90, KB_MANUAL_RECENT_MAX: 8,
+    kbRowStatus_: (v) => (String(v || '').toLowerCase() === 'draft' ? 'draft' : 'published'),
+    getEmployeeInfo_: () => (o.who === undefined ? { email: 'r@ums.com' } : o.who),
+    PropertiesService: { getScriptProperties: () => ({ getProperty: () => o.articleId || '' }) },
+    getOrCreateKbSheet_: () => kbSheet, getKbSS_: () => ({ getSpreadsheetTimeZone: () => 'America/Chicago' }),
+    kbCellTs_: () => '2026-09-01T10:00:00', fmtDate_: () => '2026-09-29',
+    kbManualMetaCached_: () => { if (o.metaThrows) throw new Error('KB store unreachable'); return o.meta == null ? '' : JSON.stringify(o.meta); } });
+  vm.runInContext(/const KB_MANUAL_ID_RE = [^\n]+/.exec(codeSrc)[0].replace(/^const /, 'var '), ctx);
+  ['kbManualRecent_', 'kbManualRecentPayload_', 'getWhatsNew'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  return { ctx, calls };
+}
+
+test('M4-S2: getWhatsNew carries the manual\'s recent changes — published sections only, a change joins the seen-stamp, the article is untouched, a manual failure is NAMED (never a quiet "nothing changed"), and an empty window costs no KB read', () => {
+  const meta = { version: 'v3.0', changelog: [
+    { date: '2026-09-28', num: '0.11', id: 'man-0-11', anchor: '', summary: 'TRX, never a name', retraining: true },
+    { date: '2026-09-27', num: '3.1', id: 'man-3-1', anchor: '', summary: 'draft only' }] };
+  const rows = [['man-0-11', 'published'], ['man-3-1', 'draft'], ['wn-1', 'published', 'article', '- New thing']];
+  // Manual only (no article configured).
+  const a = m4WhatsNew_({ meta, kbRows: rows });
+  const ra = J2(a.ctx.getWhatsNew());
+  assert.deepStrictEqual(ra.manualRecent.map((u) => u.id), ['man-0-11'], 'the draft section is invisible — a broadcast surface');
+  assert.deepStrictEqual([ra.manualRecentTotal, ra.manualRecentDays, ra.manualVersion, ra.bodyMd], [1, 90, 'v3.0', ''], 'window and version ride along; no article body');
+  assert.strictEqual(ra.stamp, '|manual:2026-09-28:1', 'the change is in the seen-stamp, so it lights NEW');
+  // Article + manual.
+  const rb = J2(m4WhatsNew_({ meta, kbRows: rows, articleId: 'wn-1' }).ctx.getWhatsNew());
+  assert.deepStrictEqual([rb.id, rb.bodyMd, rb.stamp], ['wn-1', '- New thing', '2026-09-01T10:00:00|manual:2026-09-28:1'], 'the article is served as before, the manual appended');
+  // No manual imported, no article → dormant.
+  assert.deepStrictEqual(J2(m4WhatsNew_({ meta: null, kbRows: rows }).ctx.getWhatsNew()), { none: true });
+  // Article only.
+  const rc = J2(m4WhatsNew_({ meta: null, kbRows: rows, articleId: 'wn-1' }).ctx.getWhatsNew());
+  assert.ok(rc.bodyMd === '- New thing' && !('manualRecent' in rc) && rc.stamp === '2026-09-01T10:00:00', 'no manual → exactly the old payload');
+  // A draft article is still invisible, and the manual still shows.
+  const rd = J2(m4WhatsNew_({ meta, kbRows: [['man-0-11', 'published'], ['wn-1', 'draft', 'article', 'x']], articleId: 'wn-1' }).ctx.getWhatsNew());
+  assert.ok(rd.bodyMd === '' && rd.manualRecent.length === 1, 'a draft article stays hidden (INV-140/147) without hiding the manual');
+  // The manual read fails.
+  const re = J2(m4WhatsNew_({ metaThrows: true, kbRows: rows, articleId: 'wn-1' }).ctx.getWhatsNew());
+  assert.ok(re.bodyMd === '- New thing' && re.manualError === true && !re.manualRecent, 'the article survives, and the failure is said');
+  assert.deepStrictEqual(J2(m4WhatsNew_({ metaThrows: true, kbRows: rows }).ctx.getWhatsNew()), { none: true, manualError: true }, 'even with no article, the landing can say it could not load');
+  // Nothing in the window → no status column read at all (this runs on every load).
+  const old = m4WhatsNew_({ meta: { changelog: [{ date: '2026-01-01', num: '1', id: 'man-1-1', summary: 'x' }] }, kbRows: rows });
+  assert.deepStrictEqual(J2(old.ctx.getWhatsNew()), { none: true });
+  assert.strictEqual(old.calls.length, 0, 'no KB read when no entry is recent');
+  assert.strictEqual(m4WhatsNew_({ meta, kbRows: rows, who: null }).ctx.getWhatsNew().none, true, 'an enrolled employee only');
+});
+
+test('M4-C1: kbHcpcsSplit_ finds whole HCPCS codes only — the CMS letters, four digits, a word on each side; the click path re-checks the shape before it types anything into the lookup', () => {
+  const ctx = vm.createContext({ String, RegExp });
+  vm.runInContext(/var KB_HCPCS_RE = [^\n]+/.exec(M1_KB_SRC)[0], ctx);
+  vm.runInContext(extractFnFrom(M1_KB_SRC, 'kbHcpcsSplit_'), ctx);
+  const codes = (t) => J2(ctx.kbHcpcsSplit_(t)).filter((x) => x.code).map((x) => x.v);
+  assert.deepStrictEqual(codes('BiPAP E0471: rent. K0006 over 250 lbs; (A9900) and A7003/A7004.'), ['E0471', 'K0006', 'A9900', 'A7003', 'A7004']);
+  [['BE0601', []], ['E06011', []], ['e0601', []], ['F0601 I1234 N5678 O1234 W1234 X1234 Y1234 Z1234', []], ['K000', []], ['E0601-RR', ['E0601']], ['L1832,L1833', ['L1832', 'L1833']]]
+    .forEach(([t, want]) => assert.deepStrictEqual(codes(t), want, t));
+  const parts = J2(ctx.kbHcpcsSplit_('Rent E0601 now'));
+  assert.deepStrictEqual(parts, [{ code: false, v: 'Rent ' }, { code: true, v: 'E0601' }, { code: false, v: ' now' }], 'the text around a code is kept exactly');
+  assert.strictEqual(parts.map((x) => x.v).join(''), 'Rent E0601 now');
+  assert.deepStrictEqual(J2(ctx.kbHcpcsSplit_('')), []);
+  const open = extractFnFrom(M1_KB_SRC, 'kbHcpcsOpen_');
+  assert.ok(/if \(!\/\^\[ABCDEGHJKLMPQRSTUV\]\[0-9\]\{4\}\$\/\.test\(code\)\) return;/.test(open) && open.indexOf('.test(code)') < open.indexOf('item.value = code'), 'the shape is re-checked before the code reaches an input');
+  const link = extractFnFrom(M1_KB_SRC, 'kbLinkHcpcs_');
+  assert.ok(/a\.textContent = part\.v;/.test(link) && !/innerHTML/.test(link), 'links are built as nodes, never markup (the escape boundary stays shut)');
+});
+
+test('M4-C2: manualRecentListHtml_ — one renderer for What\'s new and the landing: every field escaped, the date as MM/DD/YYYY, retraining said, and the id/anchor carried for the open', () => {
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const ctx = vm.createContext({ String, Number,
+    esc: (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;') });
+  ['manualRecentListHtml_', 'manualRecentSubHtml_', 'whatsNewHasContent_'].forEach((n) => vm.runInContext(extractFnFrom(core, n), ctx));
+  const h = ctx.manualRecentListHtml_([{ date: '2026-09-28', num: '0.11', id: 'man-0-11', anchor: '0.11.2', summary: '<img src=x onerror=alert(1)> "q"', retraining: true },
+    { date: '2026-09-20', num: '5.9', id: 'man-5-9', anchor: '', summary: 'fee', retraining: false }]);
+  assert.ok(!/<img/.test(h) && /&lt;img src=x onerror=alert\(1\)&gt; &quot;q&quot;/.test(h), 'the summary is text');
+  assert.ok(/data-kb-id="man-0-11" data-kb-anchor="0\.11\.2" onclick="manualRecentOpen_\(this\)"/.test(h), 'the row opens by its attributes — no name in an onclick literal (g133)');
+  assert.ok(/<span class="mr-meta">09\/28\/2026 <span class="mr-retrain">Retraining<\/span><\/span>/.test(h), 'the date, and retraining said');
+  assert.strictEqual((h.match(/mr-retrain/g) || []).length, 1, 'only the retraining change is marked');
+  assert.strictEqual(ctx.manualRecentSubHtml_({ manualRecent: [1, 2], manualRecentTotal: 11, manualRecentDays: 90 }), '· last 90 days · showing 2 of 11', 'the window comes from the payload — no number hand-carried here');
+  assert.strictEqual(ctx.manualRecentSubHtml_({ manualRecent: [1], manualRecentTotal: 1 }), '');
+  assert.strictEqual(ctx.whatsNewHasContent_({ id: '', bodyMd: '', manualRecent: [{}] }), true, 'the manual alone is enough to show the panel');
+  assert.strictEqual(ctx.whatsNewHasContent_({ bodyMd: '', manualRecent: [] }), false);
+  assert.strictEqual(ctx.whatsNewHasContent_({ none: true, manualError: true }), false);
+  assert.ok(!/\b90\b/.test(extractFnFrom(M1_KB_SRC, 'kbLandingManualHtml_')), 'the landing does not restate the window either');
+});
+
+test('M4-P1: printing one section rides the ONE print block — the subject and its ancestors stay, everything else is display:none (no blank sheets), and the subject\'s own controls go', () => {
+  const css = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  assert.strictEqual((css.match(/@media print\s*\{/g) || []).length, 1, 'still ONE print block (g64)');
+  const i = css.indexOf('@media print {');
+  let depth = 0, end = i;
+  for (let j = css.indexOf('{', i); j < css.length; j++) { if (css[j] === '{') depth++; else if (css[j] === '}') { depth--; if (depth === 0) { end = j; break; } } }
+  const block = css.slice(i, end + 1);
+  assert.ok(block.indexOf(':root[data-print-one] body :not(:has(.print-one)):not(.print-one):not(.print-one *) { display: none !important; }') > 0, 'the rule lives inside the one block, by display');
+  assert.ok(/:root\[data-print-one\] :has\(\.print-one\) \{[^}]*display: block !important;[^}]*max-width: none !important;/.test(block), 'the ancestors collapse to blocks, so the rail\'s grid column cannot hold its width');
+  ['.kb-man-sec-acts', '.kb-man-fb', '#kb-comments'].forEach((sel) => assert.ok(block.indexOf(':root[data-print-one] .print-one ' + sel) > 0, sel + ' does not print'));
+  assert.ok(!/data-print-one|print-one/.test(css.slice(0, i) + css.slice(end + 1)), 'no print-one rule outside the block');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
