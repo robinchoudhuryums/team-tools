@@ -4,7 +4,7 @@
 Writes, under $MANUAL_OUT/reference (default dist/reference):
 
   manual.json    THE upload file (Batch M2): {format, version, built, router,
-                 changelog, articles}. `articles` holds one object per level-2
+                 changelog, articles, images}. `articles` holds one object per level-2
                  section of Parts 0-10, one per quick reference card, one per
                  Appendix B section, ONE glossary article for Appendix A and the
                  front page — {Id, Department, Title, Type, BodyMd, SortOrder,
@@ -12,8 +12,9 @@ Writes, under $MANUAL_OUT/reference (default dist/reference):
                  says…" → sections), `changelog` the dated changes with the
                  section each touched — what the Reference Manual reader draws
                  as "Updated". The importer is `kbImportManual` (70_kb.js).
-  images.json    the image manifest: every `manimg:<key>` a body cites, with
-                 its alt text and data URI (the images import is Phase 3)
+                 `images` (Batch M3) is every `manimg:<key>` a body cites —
+                 {alt, kind, dataUri} — which the import unpacks into the KB
+                 Images folder on Drive; one upload carries everything.
 
 and, when it runs inside the team-tools repo, the diagram partial (Batch M3):
 
@@ -621,15 +622,17 @@ def main():
 
     out = os.path.join(os.environ.get("MANUAL_OUT", "dist"), "reference")
     os.makedirs(out, exist_ok=True)
+    images = {k: {"alt": IMAGES[k]["alt"], "kind": IMAGES[k]["kind"], "dataUri": IMAGES[k]["dataUri"]}
+              for k in sorted(IMAGES)}
     bundle = {"format": BUNDLE_FORMAT, "version": version, "built": built,
-              "router": router, "changelog": changelog, "articles": articles}
+              "router": router, "changelog": changelog, "articles": articles, "images": images}
     with open(os.path.join(out, "manual.json"), "w", encoding="utf-8") as f:
         json.dump(bundle, f, ensure_ascii=False, indent=1)
         f.write("\n")
-    with open(os.path.join(out, "images.json"), "w", encoding="utf-8") as f:
-        json.dump({k: IMAGES[k] for k in sorted(IMAGES)}, f, ensure_ascii=False, indent=1)
-        f.write("\n")
-    print(f"\nwritten -> {out}/manual.json, images.json")
+    stale = os.path.join(out, "images.json")   # M1/M2 wrote the images separately
+    if os.path.exists(stale):
+        os.remove(stale)
+    print(f"\nwritten -> {out}/manual.json ({os.path.getsize(os.path.join(out, 'manual.json')):,} bytes, images included)")
     if partial is not None:
         prev = open(DIAGRAM_PARTIAL, encoding="utf-8").read() if os.path.exists(DIAGRAM_PARTIAL) else None
         if prev == partial:

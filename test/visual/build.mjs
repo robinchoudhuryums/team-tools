@@ -33,7 +33,9 @@ html = html.replace(/<\?[\s\S]*?\?>/g, '');
 
 // Inject the google.script.run mock before any partial script runs.
 const mock = fs.readFileSync(path.join(HERE, 'mock.js'), 'utf8');
-html = html.replace('</head>', '<script>\n' + mock + '\n</script>\n</head>');
+// Batch M3 — real manual images (from the manual export) for getManualImages.
+const manualImages = fs.readFileSync(path.join(HERE, 'manual-images.json'), 'utf8');
+html = html.replace('</head>', '<script>\nwindow.__MANUAL_IMAGES__ = ' + manualImages + ';\n' + mock + '\n</script>\n</head>');
 
 fs.writeFileSync(path.join(HERE, 'page.html'), html);
 console.log('page.html written:', html.length, 'bytes');

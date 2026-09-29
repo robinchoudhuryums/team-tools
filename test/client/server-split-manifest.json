@@ -1583,6 +1583,36 @@
     "kbPublishManual"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-29",
+   "why": "Batch M3: the manual's images (validate, plan, upload, ledger, getManualImages)",
+   "added": [
+    "KBMG",
+    "KB_MANUAL_IMAGES_BATCH",
+    "KB_MANUAL_IMAGES_HEADERS",
+    "KB_MANUAL_IMAGES_MAX",
+    "KB_MANUAL_IMAGES_TAB",
+    "KB_MANUAL_IMAGE_BUDGET_MS",
+    "KB_MANUAL_IMAGE_CACHE_PREFIX",
+    "KB_MANUAL_IMAGE_KEY_RE",
+    "KB_MANUAL_IMAGE_MAX_BYTES",
+    "KB_MANUAL_IMAGE_TYPES",
+    "getManualImages",
+    "getOrCreateManualImagesSheet_",
+    "kbManualImageName_",
+    "kbManualImagesLedger_",
+    "kbManualImagesPlan_",
+    "kbManualImagesValidate_",
+    "kbManualUploadImages_"
+   ],
+   "removed": [],
+   "changed": [
+    "KB_MANUAL_FILE_MAX",
+    "kbImportManual",
+    "kbManualBundle_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2442,6 +2472,11 @@
    "kind": "const",
    "sha": "a522c639706a62db"
   },
+  "KBMG": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9f27f8a1245e0e10"
+  },
   "KBMI": {
    "file": "00_config.js",
    "kind": "const",
@@ -2665,7 +2700,7 @@
   "KB_MANUAL_FILE_MAX": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "ad5637faa2c9db38"
+   "sha": "9651d7d24ac28e05"
   },
   "KB_MANUAL_FORMAT": {
    "file": "00_config.js",
@@ -2676,6 +2711,51 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "bf1eb8ef36b22fd4"
+  },
+  "KB_MANUAL_IMAGES_BATCH": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "250b84c539cb52d3"
+  },
+  "KB_MANUAL_IMAGES_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "c47634d77e5ea8e0"
+  },
+  "KB_MANUAL_IMAGES_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ce2c000396beeab6"
+  },
+  "KB_MANUAL_IMAGES_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "d699fec8c58067b2"
+  },
+  "KB_MANUAL_IMAGE_BUDGET_MS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7b329df848757407"
+  },
+  "KB_MANUAL_IMAGE_CACHE_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "29a25bd28a476824"
+  },
+  "KB_MANUAL_IMAGE_KEY_RE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1becbef47a1e94ae"
+  },
+  "KB_MANUAL_IMAGE_MAX_BYTES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6278f797c6a20201"
+  },
+  "KB_MANUAL_IMAGE_TYPES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "67efaa249968ae4c"
   },
   "KB_MANUAL_IMPORT_HEADERS": {
    "file": "00_config.js",
@@ -5652,6 +5732,11 @@
    "kind": "function",
    "sha": "73ad029c0233380a"
   },
+  "getManualImages": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "aab5dae057f3e950"
+  },
   "getManualMeta": {
    "file": "70_kb.js",
    "kind": "function",
@@ -5861,6 +5946,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "2a9adab3feee0be0"
+  },
+  "getOrCreateManualImagesSheet_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "83f56179e50a4690"
   },
   "getOrCreateManualImportSheet_": {
    "file": "70_kb.js",
@@ -6730,7 +6820,7 @@
   "kbImportManual": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "af057700f77a66e2"
+   "sha": "8ccb9e4ae5082d3e"
   },
   "kbIngestFile": {
    "file": "70_kb.js",
@@ -6745,7 +6835,7 @@
   "kbManualBundle_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "8f1d7cc62fcfda25"
+   "sha": "2085220928ec82e0"
   },
   "kbManualFileId_": {
    "file": "70_kb.js",
@@ -6756,6 +6846,26 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "abc4b5438c85f5dc"
+  },
+  "kbManualImageName_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "aa6f7a3ec58ac142"
+  },
+  "kbManualImagesLedger_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "a68b45545bc8e2bf"
+  },
+  "kbManualImagesPlan_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "0704351b2a2726de"
+  },
+  "kbManualImagesValidate_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "e99ddfb2cb6586d2"
   },
   "kbManualLedger_": {
    "file": "70_kb.js",
@@ -6781,6 +6891,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "64bce6a237514118"
+  },
+  "kbManualUploadImages_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "ed594f92e6c79fe4"
   },
   "kbManualValidate_": {
    "file": "70_kb.js",

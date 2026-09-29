@@ -3267,7 +3267,175 @@ function kbManualBundle_(data) {
   if (!data || typeof data !== 'object') return { error: 'The file is not the manual export — upload manual.json from the manual build.' };
   if (data.format !== KB_MANUAL_FORMAT) return { error: 'The file\'s format is "' + String(data.format || 'none').substring(0, 40) + '"; this app reads ' + KB_MANUAL_FORMAT + ' — rebuild with the current manual/export_reference.py.' };
   if (!Array.isArray(data.articles)) return { error: 'The file holds no article list.' };
-  return { articles: data.articles, meta: { version: data.version, built: data.built, router: data.router, changelog: data.changelog } };
+  return { articles: data.articles, meta: { version: data.version, built: data.built, router: data.router, changelog: data.changelog },
+    images: data.images === undefined ? null : data.images };   // Batch M3 — an M2 file carries none
+}
+
+// ── Batch M3 — the manual's images ──────────────────────────────────────────
+/** Pure (Node-pinned) — the bundle's images, validated, each with the SHA-256
+ *  of its base64 (hashFn). `images` null (an M2 file) → items null: nothing to
+ *  import. Any bad image, and any manimg: key an article cites that the file
+ *  does not carry, refuses the WHOLE file like any other bad entry. */
+function kbManualImagesValidate_(images, articles, hashFn) {
+  if (images == null) return { items: null, errors: [] };
+  if (typeof images !== 'object' || Array.isArray(images)) return { items: null, errors: ['The file\'s images are not a key → image map.'] };
+  const errors = [], items = [], have = {};
+  const keys = Object.keys(images).sort();
+  if (keys.length > KB_MANUAL_IMAGES_MAX) errors.push('The file carries ' + keys.length + ' images; the manual has far fewer than ' + KB_MANUAL_IMAGES_MAX + '.');
+  keys.slice(0, KB_MANUAL_IMAGES_MAX).forEach(function (k) {
+    const where = 'Image "' + String(k).substring(0, 60) + '"';
+    const im = images[k];
+    if (!KB_MANUAL_IMAGE_KEY_RE.test(k)) { errors.push(where + ': not a manual image key.'); return; }
+    if (!im || typeof im !== 'object') { errors.push(where + ': not an image entry.'); return; }
+    const prefix = k.split('-')[0];
+    const kind = prefix === 'fig' ? 'figure' : prefix;
+    if (im.kind !== kind) { errors.push(where + ': its kind does not match its key.'); return; }
+    const p = kbParseImageDataUrl_(im.dataUri);
+    if (!p || KB_MANUAL_IMAGE_TYPES.indexOf(p.contentType) < 0) { errors.push(where + ': not a PNG or JPEG data URI.'); return; }
+    if (Math.floor(p.base64.length * 3 / 4) > KB_MANUAL_IMAGE_MAX_BYTES) { errors.push(where + ': larger than ' + KB_MANUAL_IMAGE_MAX_BYTES + ' bytes.'); return; }
+    items.push({ key: k, kind: kind, alt: typeof im.alt === 'string' ? im.alt.substring(0, 300) : '',
+      contentType: p.contentType, base64: p.base64, sha: hashFn(p.base64) });
+    have[k] = 1;
+  });
+  const told = {};
+  (articles || []).forEach(function (a) {
+    const re = /\]\(manimg:([^)\s]*)\)/g;
+    let m;
+    while ((m = re.exec(String((a && a.body) || ''))) !== null) {
+      if (!have[m[1]] && !told[m[1]] && !(m[1] in images)) {
+        told[m[1]] = 1;
+        errors.push('Article ' + a.id + ' shows image "' + m[1].substring(0, 60) + '", which the file does not carry.');
+      }
+    }
+  });
+  return { items: errors.length ? null : items, errors: errors };
+}
+
+/** Pure (Node-pinned) — which images a run uploads: a key the ledger does not
+ *  know, or whose bytes changed (another hash). The rest are unchanged. */
+function kbManualImagesPlan_(items, ledger) {
+  const plan = { upload: [], unchanged: [] };
+  (items || []).forEach(function (it) {
+    const led = ledger[it.key];
+    if (led && led.sha === it.sha && led.fileId) plan.unchanged.push(it); else plan.upload.push(it);
+  });
+  return plan;
+}
+
+/** Pure (Node-pinned) — the Drive file name: key + the start of the content
+ *  hash, so a re-run after an interrupted upload finds and REUSES the file,
+ *  and a changed image gets a new file rather than overwriting the old. */
+function kbManualImageName_(it) {
+  return 'manimg-' + it.key + '-' + String(it.sha).substring(0, 12) + (it.contentType === 'image/png' ? '.png' : '.jpg');
+}
+
+function getOrCreateManualImagesSheet_() {
+  const ss = getKbSS_();
+  let sheet = ss.getSheetByName(KB_MANUAL_IMAGES_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(KB_MANUAL_IMAGES_TAB);
+    sheet.appendRow(sheetSafeRow_(KB_MANUAL_IMAGES_HEADERS));
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, KB_MANUAL_IMAGES_HEADERS.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+/** The images ledger as { key → { sha, fileId, kind, importedAt, row } }; a
+ *  missing tab (no image import yet) is an empty ledger. */
+function kbManualImagesLedger_(sheet) {
+  const out = {};
+  if (!sheet) return out;
+  const last = sheet.getLastRow();
+  if (last < 2) return out;
+  sheet.getRange(2, 1, last - 1, KB_MANUAL_IMAGES_HEADERS.length).getValues().forEach(function (r, i) {
+    const key = String(r[KBMG.KEY] || '').trim();
+    if (KB_MANUAL_IMAGE_KEY_RE.test(key)) {
+      out[key] = { sha: String(r[KBMG.SHA] || ''), fileId: String(r[KBMG.FILE_ID] || ''), kind: String(r[KBMG.KIND] || ''),
+        importedAt: String(r[KBMG.IMPORTED_AT] || ''), row: i + 2 };
+    }
+  });
+  return out;
+}
+
+/** The Drive half of an image import — OUTSIDE the lock (each upload takes a
+ *  moment; holding the script lock through ~160 of them would stall every
+ *  punch and note). Stops at `deadline` and reports the rest as PENDING, so a
+ *  first import of every image can finish over two runs rather than hit the
+ *  six-minute limit. A per-image Drive failure is NAMED, never a bare count. */
+function kbManualUploadImages_(upload, deadline) {
+  const out = { done: [], pending: [], failed: [], error: '' };
+  if (!upload.length) return out;
+  let folder;
+  try { folder = getOrCreateKbImagesFolder_(); }
+  catch (e) {
+    out.error = e.message;
+    out.pending = upload.map(function (it) { return it.key; });
+    return out;
+  }
+  const existing = {};
+  try {
+    const files = folder.searchFiles("title contains 'manimg-' and trashed = false");
+    while (files.hasNext()) { const f = files.next(); existing[f.getName()] = f.getId(); }
+  } catch (e) { console.warn('KB Images: could not list existing manual images (' + e.message + ') — uploading without reuse.'); }
+  for (let i = 0; i < upload.length; i++) {
+    const it = upload[i];
+    if (Date.now() > deadline) { out.pending = upload.slice(i).map(function (x) { return x.key; }); break; }
+    const name = kbManualImageName_(it);
+    try {
+      const reused = !!existing[name];
+      const id = reused ? existing[name]
+        : folder.createFile(Utilities.newBlob(Utilities.base64Decode(it.base64), it.contentType, name)).getId();
+      out.done.push({ key: it.key, sha: it.sha, fileId: id, kind: it.kind, reused: reused });
+    } catch (e) {
+      out.failed.push({ key: it.key, error: String(e.message || e).substring(0, 160) });
+    }
+  }
+  return out;
+}
+
+/** Employee — the manual's images as data URLs, by key, in one call: a part
+ *  page asks once for every image it shows. THE LEDGER IS THE SCOPE: only a
+ *  file the import recorded for that key is ever read, so this cannot be used
+ *  to read any other Drive file by id. "Not imported" (missing) and "could not
+ *  read" (failed) are different answers and come back separately (g128).
+ *  Served from ScriptCache by content hash when it fits — a hash names the
+ *  bytes, not the code, so every deployment may share the entry (g157). No
+ *  lock: read-only. */
+function getManualImages(keys) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const want = [];
+    (Array.isArray(keys) ? keys : []).slice(0, KB_MANUAL_IMAGES_BATCH).forEach(function (k) {
+      k = String(k == null ? '' : k);
+      if (KB_MANUAL_IMAGE_KEY_RE.test(k) && want.indexOf(k) < 0) want.push(k);
+    });
+    const res = { success: true, images: {}, missing: [], failed: [] };
+    if (!want.length) return res;
+    const ledger = kbManualImagesLedger_(getKbSS_().getSheetByName(KB_MANUAL_IMAGES_TAB));
+    const cache = CacheService.getScriptCache();
+    let hit = {};
+    try { hit = cache.getAll(want.filter(function (k) { return ledger[k]; }).map(function (k) { return KB_MANUAL_IMAGE_CACHE_PREFIX + ledger[k].sha; })) || {}; }
+    catch (e) { hit = {}; }
+    const put = {};
+    want.forEach(function (k) {
+      const led = ledger[k];
+      if (!led || !led.fileId) { res.missing.push(k); return; }
+      const ck = KB_MANUAL_IMAGE_CACHE_PREFIX + led.sha;
+      if (hit[ck]) { res.images[k] = hit[ck]; return; }
+      try {
+        const blob = DriveApp.getFileById(led.fileId).getBlob();
+        const type = String(blob.getContentType() || '').toLowerCase();
+        const bytes = blob.getBytes();
+        if (KB_MANUAL_IMAGE_TYPES.indexOf(type) < 0 || bytes.length > KB_MANUAL_IMAGE_MAX_BYTES) { res.failed.push(k); return; }
+        const url = 'data:' + type + ';base64,' + Utilities.base64Encode(bytes);
+        res.images[k] = url;
+        if (url.length <= 95000) put[ck] = url;   // one cache value holds 100 KB
+      } catch (e) { res.failed.push(k); }
+    });
+    if (Object.keys(put).length) { try { cache.putAll(put, 21600); } catch (e) {} }
+    return res;
+  } catch (err) { return { error: err.message }; }
 }
 
 /** Pure (Node-pinned) — validate and normalize the bundle's meta. Every target
@@ -3430,6 +3598,7 @@ function kbManualLedger_(sheet) {
  *  lock; the plan is re-derived under it from a fresh read, so an edit made
  *  between a check and an import is still seen. */
 function kbImportManual(fileRef, opts) {
+  const started = Date.now();
   try {
     const emp = getEmployeeInfo_();
     if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
@@ -3450,9 +3619,17 @@ function kbImportManual(fileRef, opts) {
     if (bundle.error) return { success: false, error: bundle.error };
     const v = kbManualValidate_(bundle.articles);
     const mv = bundle.meta ? kbManualMetaValidate_(bundle.meta, v.items.map(function (it) { return it.id; })) : { meta: null, errors: [] };
-    const problems = v.errors.concat(mv.errors);
+    const iv = kbManualImagesValidate_(bundle.images, v.items, function (b64) { return kbSha256Hex_(b64); });
+    const problems = v.errors.concat(mv.errors, iv.errors);
     if (problems.length) return { success: false, error: 'The file was refused; nothing was imported.', problems: problems.slice(0, 20), problemCount: problems.length };
     const metaJson = mv.meta ? JSON.stringify(mv.meta) : '';
+    // Batch M3 — images: planned from a read of the ledger; uploaded to Drive
+    // HERE, outside the lock; their ledger rows written under it, below.
+    let imgPlan = null, uploaded = null;
+    if (iv.items) {
+      imgPlan = kbManualImagesPlan_(iv.items, kbManualImagesLedger_(getKbSS_().getSheetByName(KB_MANUAL_IMAGES_TAB)));
+      if (!opts.dryRun) uploaded = kbManualUploadImages_(imgPlan.upload, started + KB_MANUAL_IMAGE_BUDGET_MS);
+    }
 
     const lock = LockService.getScriptLock();
     lock.waitLock(30000);
@@ -3481,6 +3658,12 @@ function kbImportManual(fileRef, opts) {
         unchanged: plan.unchanged.length, skipped: plan.skipped,
         orphaned: orphaned, removed: 0, metaUpdated: metaChanged, hasMeta: !!metaJson,
         version: mv.meta ? mv.meta.version : '',
+        images: !imgPlan ? null : (uploaded ? {
+          total: iv.items.length, unchanged: imgPlan.unchanged.length,
+          uploaded: uploaded.done.filter(function (d) { return !d.reused; }).length,
+          reused: uploaded.done.filter(function (d) { return d.reused; }).length,
+          pending: uploaded.pending.length, failed: uploaded.failed, error: uploaded.error,
+        } : { total: iv.items.length, unchanged: imgPlan.unchanged.length, toUpload: imgPlan.upload.length }),
       };
       if (opts.dryRun) return Object.assign({ success: true, dryRun: true }, summary);
 
@@ -3528,6 +3711,18 @@ function kbImportManual(fileRef, opts) {
         metaSheet.getRange(2, 1, 1, 1).setValues(sheetSafeRows_([[metaJson]]));   // JSON of an object can never read as a formula
         try { CacheService.getScriptCache().remove(KB_MANUAL_META_CACHE_KEY); } catch (_) {}
       }
+      if (uploaded && uploaded.done.length) {
+        // Re-read under the lock: a concurrent import may have written a key.
+        const imSheet = getOrCreateManualImagesSheet_();
+        const imLed = kbManualImagesLedger_(imSheet);
+        const imAppend = [];
+        uploaded.done.forEach(function (d) {
+          const row = [d.key, d.sha, d.fileId, d.kind, now];
+          if (imLed[d.key]) imSheet.getRange(imLed[d.key].row, 1, 1, row.length).setValues(sheetSafeRows_([row]));
+          else imAppend.push(row);
+        });
+        if (imAppend.length) appendRowsSafe_(imSheet, imAppend);
+      }
       if (ledgerWrites.length || summary.removed) invalidateKbCache_();
       const skipBy = {};
       plan.skipped.forEach(function (s) { skipBy[s.reason] = (skipBy[s.reason] || 0) + 1; });
@@ -3535,6 +3730,8 @@ function kbImportManual(fileRef, opts) {
         'total=' + summary.total + '; created=' + summary.created + '; updated=' + summary.updated +
         '; unchanged=' + summary.unchanged + '; skipped=' + plan.skipped.length +
         '; orphaned=' + orphaned.length + '; removed=' + summary.removed + '; meta=' + (metaChanged ? 'updated' : 'same') +
+        (summary.images ? '; imagesUploaded=' + summary.images.uploaded + '; imagesReused=' + summary.images.reused +
+          '; imagesPending=' + summary.images.pending + '; imagesFailed=' + summary.images.failed.length : '') +
         Object.keys(skipBy).sort().map(function (k) { return '; ' + k + '=' + skipBy[k]; }).join(''), emp.email);
       return Object.assign({ success: true, dryRun: false }, summary);
     } finally { lock.releaseLock(); }

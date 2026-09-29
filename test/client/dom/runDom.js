@@ -5042,6 +5042,50 @@ test('M3 DOM: a manual diagram draws inside its section as real SVG — scoped, 
   assert.strictEqual(h.run.calls.filter((c) => c.method === 'getManualPart').length, fetches, 'in the loaded part: a scroll, no fetch');
 });
 
+test('M3 DOM: manual images arrive in ONE batched call per page and are set by property; a key not imported says so; a failed call is not cached, so the next render asks again', async () => {
+  const h = boot();
+  const w = h.window, doc = w.document;
+  w.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  h.run.respond('getReferenceTree', () => M2_TREE);
+  w.enterTool('reference', 'reference');
+  h.flushTimers();
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const part = JSON.parse(JSON.stringify(M2_PART0));
+  part.sections[0].bodyMd += '\n| Icon | Name |\n|---|---|\n| ![New Order icon](manimg:icon-a) | New Order |\n| ![Gone icon](manimg:icon-gone) | Gone |\n\n![Regulator](manimg:fig-b)\n';
+  part.sections[1].bodyMd += '\n![New Order icon](manimg:icon-a)\n';
+  h.read('kbOpenItem_')('man-0-10');
+  h.run.flushSuccess(part, 'getManualPart');
+  await tick(); h.flushTimers(); await tick();
+  const calls = h.run.pending('getManualImages');
+  assert.strictEqual(calls.length, 1, 'one call for the whole part');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(calls[0].args[0])).sort(), ['fig-b', 'icon-a', 'icon-gone'], 'each key once, however often it appears');
+  assert.ok(h.$$('.kb-manimg[data-mi="loading"]').length === 4, 'the chips say they are loading meanwhile');
+  h.run.flushSuccess({ success: true, images: { 'icon-a': PNG, 'fig-b': PNG.replace('png', 'jpeg') }, missing: ['icon-gone'], failed: [] }, 'getManualImages');
+  const icons = h.$$('#kb-main img.kb-manimg-icon');
+  assert.strictEqual(icons.length, 2, 'both mentions of the icon become images');
+  assert.ok(icons.every((im) => im.getAttribute('src') === PNG && im.alt === 'New Order icon'), 'the data URL by property, the alt from the chip');
+  const fig = h.$('#kb-main img.kb-manimg-figure');
+  assert.ok(fig && fig.alt === 'Regulator', 'a figure is a figure');
+  const gone = h.$('.kb-manimg[data-manimg="icon-gone"]');
+  assert.ok(gone && gone.getAttribute('data-mi') === 'missing' && /not imported yet/.test(gone.title), '"not imported" is said, on the chip');
+  // A failed call: marked, and NOT cached — the next render asks again, while the successes are remembered.
+  h.read('kbOpenItem_')('man-10-1');
+  h.run.flushSuccess({ department: 'Part 10 — Billing & Insurance', sections: [{ id: 'man-10-1', title: '10.1 How billing works', status: 'published', bodyMd: '![Other](manimg:thumb-z) ![New Order icon](manimg:icon-a)' }] }, 'getManualPart');
+  await tick(); h.flushTimers(); await tick();
+  const c2 = h.run.pending('getManualImages');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c2[c2.length - 1].args[0])), ['thumb-z'], 'a cached image is not asked for again');
+  assert.ok(h.$('#kb-main img.kb-manimg-icon'), 'and draws at once from the cache');
+  h.run.flushFailure(new Error('network'), 'getManualImages');
+  const z = h.$('.kb-manimg[data-manimg="thumb-z"]');
+  assert.ok(z && z.getAttribute('data-mi') === 'failed' && /could not load/.test(z.title), 'a failed call is said as a failure, not as "not imported"');
+  const before = h.run.pending('getManualImages').length;
+  doc.getElementById('kb-main').insertAdjacentHTML('beforeend', '<div class="kb-article">' + h.read('kbMd_')('![Other](manimg:thumb-z)') + '</div>');
+  await tick(); h.flushTimers(); await tick();
+  const c3 = h.run.pending('getManualImages').slice(before);
+  assert.ok(c3.some((c) => JSON.stringify(c.args[0]) === '["thumb-z"]'), 'the next render asks for it again (a failure is never cached)');
+});
+
 test('M2 DOM: the drawer — a typed section number jumps (Enter opens it), the call router filters without losing the filter box, and "Read in context" carries the section to its part in the tab', async () => {
   const h = boot();
   const w = h.window, doc = w.document;
