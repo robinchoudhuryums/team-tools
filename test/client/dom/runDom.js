@@ -5010,6 +5010,38 @@ test('M2 DOM: a manual section opens its WHOLE PART — one fetch per part, a cl
   assert.deepStrictEqual(h.run.pending('kbFlagItem').map((c) => c.args), [['man-0-11', 'stale', 'The fee is now $85']]);
 });
 
+test('M3 DOM: a manual diagram draws inside its section as real SVG — scoped, themed, with its section numbers as cross-references that open like any other', async () => {
+  const h = boot();
+  const w = h.window, doc = w.document;
+  w.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  const tree = JSON.parse(JSON.stringify(M2_TREE));
+  tree.items.push({ id: 'man-0-8', department: 'Part 00 — CSR Core', title: '0.8 Order lifecycle', type: 'article', status: 'published', sortOrder: 8 });
+  h.run.respond('getReferenceTree', () => tree);
+  w.enterTool('reference', 'reference');
+  h.flushTimers();
+  const part = JSON.parse(JSON.stringify(M2_PART0));
+  part.sections.unshift({ id: 'man-0-8', title: '0.8 Order lifecycle', status: 'published', sortOrder: 8, bodyMd: 'Stages.\n' });
+  part.sections[1].bodyMd += '\n```diagram lifecycle\nOrder lifecycle\n```\n\n```diagram not-deployed-yet\nA new one\n```\n';
+  h.read('kbOpenItem_')('man-0-10');
+  h.run.flushSuccess(part, 'getManualPart');
+  const fig = h.$('#kb-man-sec-man-0-10 figure.kb-diagram[data-kb-diagram="lifecycle"]');
+  assert.ok(fig, 'the diagram draws in its section');
+  const svg = fig.querySelector('svg');
+  assert.ok(svg && svg.namespaceURI === 'http://www.w3.org/2000/svg', 'as real SVG, not text');
+  assert.ok(svg.classList.contains('kbdg-lifecycle') && fig.querySelector('style').textContent.indexOf('.kbdg-lifecycle .dg-box') >= 0, 'its styles scoped to it');
+  assert.ok(!/IBM Plex/.test(fig.innerHTML) && /var\(--dg-navy\)/.test(fig.innerHTML), 'the app’s fonts and the --dg-* colours');
+  assert.ok(h.$('#kb-man-sec-man-0-10 figure.kb-diagram-pending') && /A new one/.test(h.$('#kb-man-sec-man-0-10 figure.kb-diagram-pending').textContent), 'a name the partial does not know stays the quiet pending figure');
+  const links = [...fig.querySelectorAll('a.kb-xref')];
+  assert.ok(links.length >= 3, 'the section numbers are links');
+  const to08 = links.filter((a) => a.getAttribute('data-kb-id') === 'man-0-8')[0];
+  assert.ok(to08 && to08.getAttribute('href') === '#' && to08.getAttribute('data-kb-anchor') === '', 'a whole-section link: the id, no anchor');
+  const fetches = h.run.calls.filter((c) => c.method === 'getManualPart').length;
+  h.click(to08);
+  assert.strictEqual(h.read('KB_STATE').currentId, 'man-0-8', 'the click opens the section, through the same delegated handler as a text link');
+  assert.strictEqual(h.run.calls.filter((c) => c.method === 'getManualPart').length, fetches, 'in the loaded part: a scroll, no fetch');
+});
+
 test('M2 DOM: the drawer — a typed section number jumps (Enter opens it), the call router filters without losing the filter box, and "Read in context" carries the section to its part in the tab', async () => {
   const h = boot();
   const w = h.window, doc = w.document;

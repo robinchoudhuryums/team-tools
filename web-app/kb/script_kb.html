@@ -82,6 +82,26 @@
   .kb-article .kb-diagram-pending { margin: 1em 0; padding: 18px 14px; border: 1px dashed var(--muted-3);
     border-radius: var(--radius-md); background: var(--paper-2); color: var(--muted-2); font-size: var(--text-sm); text-align: center; }
   .kb-article .kb-diagram-pending b { color: var(--ink); font-weight: 600; }
+  /* Batch M3 — the manual's diagrams (kb/script_manual_diagrams.html, generated
+     by manual/export_reference.py). Each diagram names its colours --dg-*; this
+     is the ONE place they meet the design tokens, so light, dark and the
+     palettes all follow. Text drawn on a --dg-navy box is --dg-bg, so the pair
+     must stay an ink/paper pair in every theme. */
+  .kb-article .kb-diagram { margin: 1.1em 0; padding: 0; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-card);
+    --dg-navy: var(--ink); --dg-ink: var(--ink); --dg-bg: var(--paper-card); --dg-panel: var(--paper-2);
+    --dg-accent: var(--info); --dg-tint: var(--info-soft); --dg-muted: var(--muted); --dg-rule: var(--line);
+    --dg-crit-bg: var(--danger-soft); --dg-crit-ink: var(--danger-deep); --dg-pol-bg: var(--info-soft); --dg-pol-ink: var(--info-deep);
+    --dg-watch-bg: var(--warn-soft); --dg-watch-ink: var(--warning-deep); --dg-scr-bg: var(--accent-soft); --dg-scr-ink: var(--success-deep);
+    --dg-p0: var(--ink); --dg-p1: var(--muted); --dg-p2: var(--good); --dg-p3: var(--danger); --dg-p4: var(--info); --dg-p5: var(--warn);
+    --dg-p6: var(--good); --dg-p7: var(--info-deep); --dg-p8: var(--intake-pap); --dg-p9: var(--intake-pmd); --dg-p10: var(--intake-pap); }
+  /* A wide flow chart scrolls inside itself rather than shrinking its text
+     past reading size (g71) — below ~600px of width it scrolls. */
+  .kb-article .kb-diagram-scroll { overflow-x: auto; padding: 10px; border-radius: var(--radius-md); }
+  .kb-article .kb-diagram-scroll:focus-visible { outline: 2px solid var(--ring-focus); outline-offset: 2px; }
+  .kb-article .kb-diagram svg { display: block; width: 100%; min-width: 600px; height: auto; }
+  .kb-article .kb-diagram a.kb-xref { cursor: pointer; }
+  .kb-article .kb-diagram a.kb-xref:hover text, .kb-article .kb-diagram a.kb-xref:focus text, .kb-article .kb-diagram a.kb-xref:hover { text-decoration: underline; }
+  .kb-article .kb-diagram a.kb-xref:focus-visible { outline: 2px solid var(--ring-focus); }
   /* Batch M2 — the Manual reader: a part is one continuous page of sections */
   .kb-tree-group { font-size: .64rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted-2); margin: 12px 6px 2px; padding-top: 8px; border-top: 1px solid var(--line); }
   .kb-tree-group:first-of-type { border-top: none; padding-top: 0; }
@@ -2397,7 +2417,7 @@ function kbMd_(src) {
       if (blk && blk.glossary) { html += kbGlossaryHtml_(blk.body); i++; continue; }
       if (blk && blk.decision) { html += kbDecideHtml_(blk.body, []); i++; continue; }
       if (blk && blk.map) { html += kbMapHtml_(blk.body); i++; continue; }
-      if (blk && blk.diagram) { html += kbDiagramPendingHtml_(blk.name, blk.body); i++; continue; }
+      if (blk && blk.diagram) { html += kbDiagramHtml_(blk.name, blk.body); i++; continue; }
       if (blk && blk.snippet) { html += '<div class="kb-snippet"><div class="kb-snippet-head"><span class="kb-snippet-label">' + (blk.label || 'Snippet') + '</span><button type="button" class="kb-snippet-copy" onclick="kbCopySnippet_(this)">Copy</button></div><pre class="kb-snippet-body">' + blk.body + '</pre></div>'; } else { html += '<pre><code>' + (blk ? blk.body : '') + '</code></pre>'; } i++; continue; }
     if (/^\s*$/.test(ln)) { i++; continue; }
     var h = ln.match(/^(#{1,6})\s+(.*)$/);
@@ -2515,9 +2535,24 @@ function kbCalloutKind_(line) {
   return KB_CALLOUT_KINDS[word] || 'note';
 }
 
-// A ```diagram fence (the manual export, Batch M1) until the diagram partial
-// draws it (Batch M3): a quiet figure naming the diagram. `body` is the
-// diagram's accessible name, already escaped by kbMd_.
+// A ```diagram fence (the manual export). Batch M3: a name the generated
+// partial knows (KB_MANUAL_DIAGRAMS, kb/script_manual_diagrams.html) draws that
+// diagram. The partial is CODE — allowlisted and pinned at build time — so the
+// SVG is inserted as it is; the article body supplies only the NAME, which must
+// match the partial's own key charset and be one of its OWN keys (never a
+// prototype property). An unknown name — a diagram added to the manual but
+// not yet deployed — stays the quiet pending figure. `body` is the diagram's
+// accessible name, already escaped by kbMd_.
+function kbDiagramHtml_(name, body) {
+  var reg = (typeof KB_MANUAL_DIAGRAMS === 'object' && KB_MANUAL_DIAGRAMS) ? KB_MANUAL_DIAGRAMS : null;
+  var key = String(name || '');
+  if (!reg || !/^[a-z0-9-]{1,60}$/.test(key) || !Object.prototype.hasOwnProperty.call(reg, key) || typeof reg[key] !== 'string') {
+    return kbDiagramPendingHtml_(name, body);
+  }
+  var label = String(body || '').trim() || key;
+  return '<figure class="kb-diagram" data-kb-diagram="' + key + '"><div class="kb-diagram-scroll" tabindex="0" aria-label="' +
+    label.replace(/"/g, '&quot;') + '">' + reg[key] + '</div></figure>';
+}
 function kbDiagramPendingHtml_(name, body) {
   return '<figure class="kb-diagram-pending"><figcaption><b>Diagram</b> — ' +
     (String(body || '').trim() || name || 'untitled') + '</figcaption></figure>';

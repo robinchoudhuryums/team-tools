@@ -15,6 +15,18 @@ Writes, under $MANUAL_OUT/reference (default dist/reference):
   images.json    the image manifest: every `manimg:<key>` a body cites, with
                  its alt text and data URI (the images import is Phase 3)
 
+and, when it runs inside the team-tools repo, the diagram partial (Batch M3):
+
+  web-app/kb/script_manual_diagrams.html
+                 every diagrams/*.svg as an allowlisted, app-themed string the
+                 Reference renderer draws for a ```diagram fence — elements and
+                 attributes from a fixed list, styles scoped to their own
+                 diagram, the manual's colours renamed to --dg-* (the app maps
+                 them onto its design tokens, so dark mode follows), fonts the
+                 app's, and each section link a kb cross-reference. It is CODE:
+                 a changed diagram reaches the app by commit + deploy, not by
+                 import. Rewritten only when its content changes.
+
 The bodies are written in the Markdown the Reference renderer (`kbMd_`) draws:
 callouts stay `>` blocks, Script callouts become ```snippet fences, diagrams
 become ```diagram fences, images become ![alt](manimg:key), and every
@@ -345,6 +357,155 @@ def build_changelog(anchors):
     return out
 
 
+# ------------------------------------------------------- diagram partial ---
+DIAGRAM_PARTIAL = os.path.join(HERE, "..", "web-app", "kb", "script_manual_diagrams.html")
+# The manual's diagram colours. Each becomes --dg-<name>, which the app's
+# stylesheet maps onto a design token (pinned: every --dg-* used is mapped).
+DG_VARS = ("navy", "accent", "tint", "ink", "muted", "rule", "bg", "panel",
+           "crit-bg", "crit-ink", "pol-bg", "pol-ink", "watch-bg", "watch-ink",
+           "scr-bg", "scr-ink") + tuple(f"p{i}" for i in range(11))
+DG_FONTS = {"'IBM Plex Sans',sans-serif": "var(--ui)", "'IBM Plex Mono',monospace": "var(--mono)"}
+# The allowlist. Anything else in a diagram fails the export (pinned against
+# the committed partial by the Node harness, independently of this code).
+DG_ELEMENTS = {"svg", "defs", "marker", "path", "rect", "text", "tspan", "line",
+               "polygon", "polyline", "circle", "ellipse", "g", "a", "style", "title", "desc"}
+DG_ATTRS = {"viewBox", "xmlns", "role", "aria-label", "id", "class", "style",
+            "refX", "refY", "markerWidth", "markerHeight", "orient", "d", "points",
+            "x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "r", "rx", "ry", "width", "height",
+            "fill", "fill-opacity", "stroke", "stroke-width", "stroke-dasharray",
+            "stroke-linecap", "stroke-linejoin", "opacity", "text-anchor",
+            "dominant-baseline", "font-weight", "font-size", "transform",
+            "href", "data-kb-id", "data-kb-anchor"}
+DG_TAG = re.compile(r"<(/?)([A-Za-z]+)((?:\s+[A-Za-z][\w:-]*=\"[^\"<>]*\")*)\s*(/?)>")
+DG_ATTR = re.compile(r"\s+([A-Za-z][\w:-]*)=\"([^\"<>]*)\"")
+
+
+def dg_css_ok(css, where, ids):
+    """Declarations may name colours, sizes and fonts — nothing that fetches or runs."""
+    if re.search(r"@|\\|expression|javascript:|behavior", css, re.I):
+        errors.append(f"diagram {where}: disallowed CSS")
+    for u in re.findall(r"url\(([^)]*)\)", css):
+        if not re.fullmatch(r"#[A-Za-z][\w-]*", u) or u[1:] not in ids:
+            errors.append(f"diagram {where}: url({u}) is not a marker in the same diagram")
+
+
+def dg_theme(text):
+    for src, dst in DG_FONTS.items():
+        text = text.replace(src, dst)
+
+    def var(m):
+        if m.group(1) in ("ui", "mono") or m.group(1).startswith("dg-"):
+            return m.group(0)   # the app's font tokens, or a colour already renamed
+        if m.group(1) not in DG_VARS:
+            errors.append(f"diagram colour --{m.group(1)} has no app mapping")
+        return f"var(--dg-{m.group(1)})"
+    return re.sub(r"var\(--([a-z0-9-]+)\)", var, text)
+
+
+def diagram_svg(name, svg, anchors, heads):
+    """One diagram, made safe to draw inside the app: allowlisted, themed,
+    scoped and cross-linked. Returns the string, or None on an error."""
+    n0 = len(errors)
+    if re.search(r"<!--|<!\[|<\?|<!DOCTYPE", svg):
+        errors.append(f"diagram {name}: comment, CDATA or processing instruction")
+    ids = set(re.findall(r'(?<![\w-])id="([^"]+)"', svg))
+    for i in ids:
+        if not re.fullmatch(r"[A-Za-z][\w-]*", i):
+            errors.append(f"diagram {name}: odd id {i!r}")
+    scope = f".kbdg-{name}"
+
+    def style_block(m):
+        css = m.group(1)
+        dg_css_ok(css, name, ids)
+        out = []
+        for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+            sels = ", ".join(f"{scope} {x.strip()}" for x in sel.split(",") if x.strip())
+            out.append(f"{sels}{{{dg_theme(body.strip())}}}")
+        if re.sub(r"([^{}]+)\{([^{}]*)\}", "", css).strip():
+            errors.append(f"diagram {name}: CSS outside a plain rule")
+        return "<style>" + "".join(out) + "</style>"
+    svg = re.sub(r"<style>(.*?)</style>", style_block, svg, flags=re.S)
+
+    def link(m):
+        sec = "§" + m.group(1).replace("_", ".")
+        a = anchors.get(sec)
+        if not a:
+            errors.append(f"diagram {name}: link to {sec}, which no section defines")
+            return m.group(0)
+        n = dnum(sec)
+        whole = a["level"] == 2 and a["id"] == article_id(sec) and not sec.startswith("§A-")
+        frag = "" if whole else n
+        if frag and frag not in heads.get(a["id"], set()):
+            errors.append(f"diagram {name}: link to {a['id']}#{frag} — no such heading")
+        return f'<a class="kb-xref" href="#" data-kb-id="{a["id"]}" data-kb-anchor="{frag}">'
+    svg = re.sub(r'<a class="xr" href="#([\w-]+)">', link, svg)
+
+    has_link = "kb-xref" in svg
+    def root(m):
+        attrs = m.group(1)
+        if 'class="' in attrs:
+            errors.append(f"diagram {name}: the root already has a class")
+        if has_link:   # a role="img" hides its links from assistive technology
+            attrs = attrs.replace('role="img"', 'role="group"')
+        return f'<svg class="kbdg {scope[1:]}"{attrs}>'
+    svg = re.sub(r"<svg((?:\s[^>]*)?)>", root, svg, count=1)
+    svg = dg_theme(svg)
+
+    for m in DG_TAG.finditer(svg):
+        tag = m.group(2)
+        if tag not in DG_ELEMENTS:
+            errors.append(f"diagram {name}: element <{tag}> is not allowlisted")
+        for an, av in DG_ATTR.findall(m.group(3)):
+            if an not in DG_ATTRS:
+                errors.append(f"diagram {name}: attribute {an} on <{tag}> is not allowlisted")
+            elif an == "href" and av != "#":
+                errors.append(f"diagram {name}: href {av!r} (only a cross-reference's '#')")
+            elif an == "style":
+                dg_css_ok(av, name, ids)
+            elif re.search(r"url\(", av):
+                dg_css_ok(av, name, ids)
+    if len(re.findall(r"<", svg)) != len(list(DG_TAG.finditer(svg))):
+        errors.append(f"diagram {name}: markup the tag reader cannot account for")
+    return None if len(errors) > n0 else svg
+
+
+def diagram_source_hash():
+    """The partial records this; the Node harness recomputes it from the same
+    files, so an edited diagram with a stale partial fails CI."""
+    h = hashlib.sha256()
+    for f in sorted(os.listdir("diagrams")):
+        if f.endswith(".svg"):
+            h.update((f + "\n" + open(os.path.join("diagrams", f), encoding="utf-8").read() + "\n").encode("utf-8"))
+    return h.hexdigest()
+
+
+def build_diagram_partial(anchors, heads):
+    out, seen_ids = {}, {}
+    for f in sorted(os.listdir("diagrams")):
+        if not f.endswith(".svg"):
+            continue
+        name = f[:-4]
+        if not re.fullmatch(r"[a-z0-9-]{1,60}", name):
+            errors.append(f"diagram file name {f!r} (lowercase letters, digits, hyphens)")
+            continue
+        svg = diagram_svg(name, open(os.path.join("diagrams", f), encoding="utf-8").read(), anchors, heads)
+        if svg is None:
+            continue
+        for i in re.findall(r'(?<![\w-])id="([^"]+)"', svg):
+            if i in seen_ids:
+                errors.append(f"diagram {name}: id {i} is also used by {seen_ids[i]} (ids share one page)")
+            seen_ids[i] = name
+        out[name] = svg
+    body = ",\n".join(json.dumps(k) + ": " + json.dumps(v).replace("</", "<\\/") for k, v in out.items())
+    return ("<!-- GENERATED by manual/export_reference.py from manual/diagrams/*.svg — do not edit by hand.\n"
+            f"     diagram-source-sha256: {diagram_source_hash()}\n"
+            "     Change a diagram in manual/diagrams/, re-run the export, commit this file and deploy. -->\n"
+            "<script>\n"
+            "// Batch M3 — the procedures manual's diagrams, keyed by the name a ```diagram fence gives.\n"
+            "var KB_MANUAL_DIAGRAMS = Object.freeze({\n" + body + "\n});\n"
+            "</script>\n"), len(out)
+
+
 def main():
     with tempfile.TemporaryDirectory() as tmp:
         bodies = {k: render(k, src, tmp) for k, (_, src) in PARTS.items()}
@@ -429,6 +590,9 @@ def main():
         for m in re.finditer(r"\[\[§|\[ROLE:", a["BodyMd"]):
             errors.append(f"{a['Id']}: unresolved marker {m.group(0)}")
 
+    in_repo = os.path.isdir(os.path.dirname(DIAGRAM_PARTIAL))
+    partial, n_diagrams = build_diagram_partial(anchors, heads) if in_repo else (None, 0)
+
     for a in articles:
         a["SourceHash"] = hashlib.sha256(json.dumps(
             [a["Department"], a["Title"], a["SortOrder"], a["BodyMd"]],
@@ -440,6 +604,8 @@ def main():
     print(f"call router           : {len(router)} caller phrases in {len({r['g'] for r in router})} groups")
     print(f"changelog             : {len(changelog)} dated changes")
     print(f"largest body          : {max(len(a['BodyMd']) for a in articles):,} characters")
+    if in_repo:
+        print(f"diagrams              : {n_diagrams} in the app partial")
     if GLOSSARY_FOLDS:
         print(f"glossary spellings    : folded {', '.join(GLOSSARY_FOLDS)}")
     if NOT_IMPORTED:
@@ -464,6 +630,15 @@ def main():
         json.dump({k: IMAGES[k] for k in sorted(IMAGES)}, f, ensure_ascii=False, indent=1)
         f.write("\n")
     print(f"\nwritten -> {out}/manual.json, images.json")
+    if partial is not None:
+        prev = open(DIAGRAM_PARTIAL, encoding="utf-8").read() if os.path.exists(DIAGRAM_PARTIAL) else None
+        if prev == partial:
+            print("diagram partial       : unchanged")
+        else:
+            with open(DIAGRAM_PARTIAL, "w", encoding="utf-8") as f:
+                f.write(partial)
+            print("diagram partial       : UPDATED web-app/kb/script_manual_diagrams.html — "
+                  "commit it and deploy; diagrams reach the app with the code, not the import")
     return 0
 
 
