@@ -323,6 +323,19 @@ const SCENARIOS = [
     "kbOpenItem_('man-0-11'); setTimeout(function(){ var a=document.querySelector('#kb-man-sec-man-0-11 a.kb-hcpcs[data-hcpcs=\"E0601\"]'); if(a) a.click(); }, 600)"],
   ['reference-manual-xref-focus-dark-wide', { tool: 'reference', tab: null }, WIDE, 'dark', '',
     "kbOpenItem_('man-0-11'); setTimeout(function(){ var a=document.querySelector('#kb-man-sec-man-0-11 a.kb-xref[data-kb-id=\"man-0-10\"]'); if(a) a.focus(); }, 500)"],
+  // Batch M5a — a preview focused on the part of its target the link is about
+  // (the fax row → 0.10's navigation callout), the click that jumped to another
+  // part (10.1, landed on the deductible row, with the "Back to 0.11" chip —
+  // wide and at phone width, where the chip's title must ellipsize), and the
+  // drawer's trail after a cross-reference ("Back to 0.11" above the reader).
+  ['reference-manual-xref-part-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
+    "kbOpenItem_('man-0-11'); setTimeout(function(){ var a=document.querySelector('#kb-man-sec-man-0-11 a.kb-xref[data-kb-id=\"man-0-10\"][data-kb-anchor=\"\"]'); if(a){ a.scrollIntoView({block:'center'}); kbXrefShow_(a); } }, 500)"],
+  ['reference-manual-backchip-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
+    "kbOpenItem_('man-0-11'); setTimeout(function(){ var a=document.querySelector('#kb-man-sec-man-0-11 a.kb-xref[data-kb-id=\"man-10-1\"]'); if(a) a.click(); }, 500)"],
+  ['reference-manual-backchip-dark-mobile', { tool: 'reference', tab: null }, MOBILE, 'dark', '',
+    "kbOpenItem_('man-0-11'); setTimeout(function(){ var a=document.querySelector('#kb-man-sec-man-0-11 a.kb-xref[data-kb-id=\"man-10-1\"]'); if(a) a.click(); setTimeout(function(){ var m=document.getElementById('kb-main'); if(m) m.scrollIntoView(); window.scrollTo(0,0); }, 600); }, 500)"],
+  ['reference-drawer-backto-dark-wide', { tool: 'reference', tab: null }, WIDE, 'dark', '',
+    "kbDrawerOpen_(); kbDrawerOpenItem_('man-0-11'); setTimeout(function(){ var a=document.querySelector('#kbd-body a.kb-xref[data-kb-id=\"man-0-10\"][data-kb-anchor=\"\"]'); if(a) a.click(); }, 600)"],
   ['reference-manual-import-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
     "kbOpenManualImport_(); kbManualSetFile_({ name: 'manual.json', size: 1577555, text: 'x'.repeat(1577555) }); kbManualRun_(true)"],
   // Cycle 21 (operator report, 2026-09-21) — the KB DRAWER had never been shot,

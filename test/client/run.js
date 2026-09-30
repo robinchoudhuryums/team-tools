@@ -30553,6 +30553,139 @@ test('M4-P1: printing one section rides the ONE print block — the subject and 
 });
 
 
+// ── Batch M5a — the reader: a preview shows the part the link is about ──────
+console.log('\nBatch M5a — context-focused previews, code links in more places, back to the section');
+
+/** The scorer's declarations and functions, out of the partial — the same
+ *  set scripts/manual-xref-report.mjs loads (the report pin below proves the
+ *  report runs on exactly these). */
+function m5aCtx_() {
+  const ctx = vm.createContext({});
+  const decl = (re) => { const m = re.exec(M1_KB_SRC); assert.ok(m, 'declared: ' + re); return m[0]; };
+  const stop = M1_KB_SRC.slice(M1_KB_SRC.indexOf('var KB_CTX_STOP'), M1_KB_SRC.indexOf('})();', M1_KB_SRC.indexOf('var KB_CTX_STOP')) + 5);
+  vm.runInContext([decl(/var KB_CTX_MARGIN = [^\n]+/), decl(/var KB_CTX_MIN_SHARED = [^\n]+/), stop,
+    ...['kbManualExcerpt_', 'kbMdPlain_', 'kbNormText_', 'kbCtxTokens_', 'kbManualBlocks_', 'kbBestBlock_', 'kbNamedRow_', 'kbXrefFocus_', 'kbMdLinkContexts_']
+      .map((n) => extractFnFrom(M1_KB_SRC, n))].join('\n'), ctx);
+  return ctx;
+}
+// The manual's own 4.11 FAQ rows and 0.7 table rows (manual.json, 2026-09-29).
+const M5A_FAQ = '| Question | Answer |\n|---|---|\n' +
+  '| Do you have cup holders? | Yes, a cup holder can be added to a PMD. If the chair is already delivered, transfer to Service |\n' +
+  '| Do you offer a truck lift for a PMD? | No. We don\'t offer vehicle attachments of any kind |\n' +
+  '| Do you sell ramps? | Yes, but out-of-pocket only. Check the Item Master for pricing |\n' +
+  '| Can I return my PWC? | PWCs are custom-built to the patient\'s measurements and generally cannot be returned. See [4.9.1 Returns](kb:man-4-9#4.9.1) |\n';
+
+test('M5a-C1: kbManualBlocks_ splits a section as kbMd_ draws it — a row WITH its header, an item with its wrapped lines (a nested item is its own block), a callout whole (its table included), a paragraph; fences are not blocks; a row is named by its first cell, the rest by the heading above', () => {
+  const k = m5aCtx_();
+  const md = 'Intro line one\ncontinues here.\n\n## 4.11.1 Questions\n\n' + M5A_FAQ.split('\n').slice(0, 4).join('\n') + '\n\n' +
+    '1. First step\n   wraps here\n   - nested point\n2. Second step\n\n' +
+    '> **Watch-out** — the TRX.\n>\n> | a | b |\n> |---|---|\n> | x | y |\n\n```snippet\nNot a block\n```\nTail paragraph.\n';
+  const b = J2(k.kbManualBlocks_(md));
+  assert.deepStrictEqual(b.map((x) => x.kind), ['para', 'row', 'row', 'item', 'item', 'item', 'callout', 'para']);
+  assert.strictEqual(b[0].label, '', 'no heading above the opening');
+  assert.strictEqual(b[1].label, 'Do you have cup holders?', 'a row is named by its first cell');
+  assert.ok(b[1].md.indexOf('| Question | Answer |\n|---|---|\n| Do you have cup holders?') === 0, 'a row renders WITH its header');
+  assert.strictEqual(b[1].own.split('\n').length, 1, 'but its own source is the row alone (where a link\'s context is read)');
+  assert.strictEqual(b[3].md, '1. First step wraps here', 'an item keeps its number and its wrapped line');
+  assert.strictEqual(b[4].md, '- nested point', 'a nested item is a block of its own');
+  assert.strictEqual(b[3].label, '4.11.1 Questions');
+  assert.ok(/Watch-out/.test(b[6].text) && /\bx\b/.test(b[6].text), 'the callout is ONE block, its table inside it');
+  assert.ok(!b.some((x) => /Not a block/.test(x.text)), 'a fence is never a block');
+  assert.ok(!/[|#>*]|\]\(/.test(b.map((x) => x.text).join(' ').replace(/\*\*/g, '')), 'text is the words a reader sees — no pipes, markers or link syntax');
+  const plain = k.kbMdPlain_('- [4.11 FAQ](kb:man-4-11) and ![alt](manimg:x) | a \\| b |');
+  assert.strictEqual(k.kbNormText_(plain), '4 11 faq and a b', 'a link reads as its text; an image drops; the marker and the pipes go');
+  assert.deepStrictEqual(J2(k.kbCtxTokens_('Do you sell RAMPS? Out-of-pocket, 4.11 — ramp')), ['sell', 'ramp', 'pocket'], 'stop words, bare numbers and a plural go; each word once');
+});
+
+test('M5a-C2: kbXrefFocus_ — the ramps row of 0.7 previews the ramps row of 4.11 FAQ (not the cup holders it opens with); a lone shared word, a tie and a one-block section are NO winner; an anchor scopes the match to its sub-section', () => {
+  const k = m5aCtx_();
+  const hit = k.kbXrefFocus_(M5A_FAQ, '', 'Ramps Out-of-pocket only');
+  assert.ok(hit, 'a clear winner');
+  assert.strictEqual(hit.block.label, 'Do you sell ramps?');
+  assert.deepStrictEqual(J2(hit.shared).sort(), ['pocket', 'ramp']);
+  assert.strictEqual(k.kbXrefFocus_(M5A_FAQ, '', 'Truck or vehicle lifts for a PMD Not offered').block.label, 'Do you offer a truck lift for a PMD?', 'another row of the same table previews ITS answer');
+  assert.strictEqual(k.kbXrefFocus_(M5A_FAQ, '', 'ramps'), null, 'ONE shared word is a coincidence, not a match (KB_CTX_MIN_SHARED)');
+  assert.strictEqual(k.kbXrefFocus_(M5A_FAQ, '', ''), null, 'no context (a link standing alone) → the opening');
+  assert.strictEqual(k.kbXrefFocus_(M5A_FAQ, '', 'weather forecast tomorrow'), null, 'nothing shared → the opening');
+  assert.strictEqual(k.kbXrefFocus_('Only one paragraph about ramps and pocket prices.\n', '', 'ramps pocket'), null, 'a one-block section IS its opening');
+  const tie = 'Alpha beta widget.\n\nAlpha beta widget again.\n';
+  assert.strictEqual(k.kbXrefFocus_(tie, '', 'alpha beta widget'), null, 'a tie is no winner — the margin (KB_CTX_MARGIN) is not optional');
+  const two = '## 4.11.1 Power\n\n' + M5A_FAQ + '\n## 4.11.2 Manual\n\n| Question | Answer |\n|---|---|\n| Do you sell ramps for manual chairs? | Yes, out-of-pocket too |\n| Do you sell cushions? | Through Resupply |\n';
+  assert.strictEqual(k.kbXrefFocus_(two, '4.11.2', 'Ramps Out-of-pocket only').block.label, 'Do you sell ramps for manual chairs?', 'the anchored sub-section is the scope');
+  assert.strictEqual(k.kbXrefFocus_(two, '4.11.2', 'truck vehicle lifts PMD'), null, 'a match OUTSIDE the anchored sub-section never wins');
+  const whole = k.kbXrefFocus_(M5A_FAQ + '\n' + 'x '.repeat(600) + '\n\n| Q | A |\n|---|---|\n| Do you deliver on Sundays? | Sunday deliveries are never scheduled |\n', '', 'Sunday deliveries scheduled');
+  assert.ok(whole && whole.block.label === 'Do you deliver on Sundays?', 'the preview\'s length cap is not the scope — a block far down the section is found');
+});
+
+test('M5a-C3: kbMdLinkContexts_ — a link\'s context is its own row / item / paragraph WITHOUT its text (the link names the target, not the part of it); the table header is not context', () => {
+  const k = m5aCtx_();
+  const md = '| Item | Coverage | See |\n|---|---|---|\n| Ramps | Out-of-pocket only | [4.11 FAQ (Power Mobility)](kb:man-4-11) |\n\n' +
+    '- Upgrade fees are in [2.10 Upgrade fees](kb:man-2-10#2.10.1).\n\nSee [A](kb:man-a) and [B.1 Directory](kb:man-b-1).\n';
+  const l = J2(k.kbMdLinkContexts_(md));
+  assert.deepStrictEqual(l.map((x) => [x.id, x.anchor]), [['man-4-11', ''], ['man-2-10', '2.10.1'], ['man-a', ''], ['man-b-1', '']]);
+  assert.deepStrictEqual(J2(k.kbCtxTokens_(l[0].ctx)), ['ramp', 'pocket'], 'the row\'s words — not "FAQ", not the header\'s "Item"/"Coverage"');
+  assert.ok(!/Upgrade fees are in 2\.10/.test(l[1].ctx) && /Upgrade fees are in/.test(l[1].ctx));
+  assert.ok(/B\.1 Directory/.test(l[2].ctx) && !/\bA\b/.test(l[2].ctx.replace('and', '')), 'each link drops only its OWN text');
+});
+
+test('M5a-C4 (follow-on): the export\'s report runs the APP\'S scorer over the bundle — focused (a named row included), opening, missing counted; the opening is BY DESIGN for an anchored link or a target with fewer than two numbered sub-sections, and only the rest WARN, each with a suggested sub-section; the export calls it and cannot be failed by it', () => {
+  const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'm5a-'));
+  const file = path.join(dir, 'manual.json');
+  const src = '| Item | Coverage | See |\n|---|---|---|\n' +
+    '| Ramps | Out-of-pocket only | [4.11 FAQ](kb:man-4-11) |\n' +
+    '| Weather | Forecast unknown | [4.11 FAQ](kb:man-4-11) |\n' +
+    '| Weather | Forecast unknown | [4.11.1 Power chairs](kb:man-4-11#4.11.1) |\n' +
+    '| Short | Nothing | [One](kb:man-one) |\n| Gone | Nowhere | [Old](kb:man-gone) |\n' +
+    '| Leads | Transfer | [Qualified Leads](kb:man-b-1) |\n| Moon | Phases | [Two](kb:man-two) |\n';
+  const faq = '## 4.11.1 Power chairs\n\n' + M5A_FAQ + '\n## 4.11.2 Weather\n\nWeather can delay a delivery.\n\nForecast calls are made the day before.\n\nUnknown dates are rescheduled.\n';
+  fs.writeFileSync(file, JSON.stringify({ articles: [
+    { Id: 'man-0-7', BodyMd: src }, { Id: 'man-4-11', BodyMd: faq }, { Id: 'man-one', BodyMd: 'One paragraph.\n' },
+    { Id: 'man-two', BodyMd: 'First paragraph.\n\nSecond paragraph.\n' },
+    { Id: 'man-b-1', BodyMd: '| Team | Line |\n|---|---|\n| PT Evaluation Team | 4410 |\n| Qualified Leads | 4420 |\n' }] }));
+  const r = JSON.parse(require('child_process').execFileSync(process.execPath, [path.join(__dirname, '../../scripts/manual-xref-report.mjs'), file, '--json'], { encoding: 'utf8' }));
+  assert.deepStrictEqual([r.links, r.focused, r.opening, r.byDesign, r.missing], [8, 2, 4, 3, 2],
+    'ramps and the named directory row focus; four show the opening, three of them by design (anchored, one block, no sub-sections); the two dangling links (man-gone, and the FAQ\'s own 4.9) are counted apart');
+  assert.deepStrictEqual(r.warnings.map((w) => [w.from, w.to, w.suggest]), [['man-0-7', 'man-4-11', '4.11.2 Weather']],
+    'ONE warning — the only link an anchor could fix — with the sub-section its words point at (a SUGGESTION: no single block had two shared words)');
+  const rep = fs.readFileSync(path.join(__dirname, '../../scripts/manual-xref-report.mjs'), 'utf8');
+  assert.ok(/fs\.readFileSync\(path\.join\(ROOT, 'web-app\/kb\/script_kb\.html'\)/.test(rep) && !/function kbBestBlock_|function kbManualBlocks_|function kbNamedRow_/.test(rep), 'the report READS the scorer out of the partial — it has no copy of its own (g126)');
+  const py = fs.readFileSync(path.join(__dirname, '../../manual/export_reference.py'), 'utf8');
+  assert.ok(/json\.dump\(bundle, f[^\n]*\n[\s\S]*?xref_report\(os\.path\.join\(out, "manual\.json"\)\)\n    return 0/.test(py), 'the export reports AFTER writing the file, and returns 0 whatever it says');
+  const fnPy = py.slice(py.indexOf('def xref_report('), py.indexOf('\ndef ', py.indexOf('def xref_report(') + 5));
+  assert.ok(/except \(OSError, subprocess\.SubprocessError\)/.test(fnPy) && !/sys\.exit|raise|errors\.append/.test(fnPy), 'a missing Node or a failed run is said, never fatal');
+});
+
+test('M5a-FU1: kbNamedRow_ — a link whose text names ONE row (Appendix B\'s contacts) focuses that row, ahead of its context; two rows of that name, a section number or no text name none', () => {
+  const k = m5aCtx_();
+  const dir = '| Team | Line |\n|---|---|\n| PT Evaluation Team | 4410 |\n| Qualified Leads | 4420 — ramps and pocket items |\n| Prior Authorization Specialist — Complex PWC / Appeals | 4430 |\n';
+  const hit = k.kbXrefFocus_(dir, '', 'A patient who has completed a valid evaluation is transferred', 'Qualified Leads');
+  assert.ok(hit && hit.block.label === 'Qualified Leads', 'the row the text names');
+  assert.strictEqual(k.kbXrefFocus_(dir, '', 'ramps pocket', 'PT Evaluation Team').block.label, 'PT Evaluation Team', 'the NAME wins over a context that matches another row');
+  assert.strictEqual(k.kbXrefFocus_(dir, '', '', 'prior authorization specialist - complex pwc/appeals').block.label.indexOf('Prior Authorization') === 0, true, 'case and punctuation do not matter');
+  const twice = dir + '| Qualified Leads | 4421 |\n';
+  assert.strictEqual(k.kbNamedRow_(k.kbManualBlocks_(twice), 'Qualified Leads'), null, 'a name two rows carry names neither');
+  assert.strictEqual(k.kbNamedRow_(k.kbManualBlocks_(dir), 'B.1 Directory'), null, 'the section\'s own name names no row');
+  assert.strictEqual(k.kbNamedRow_(k.kbManualBlocks_(dir), ''), null);
+  assert.strictEqual(k.kbNamedRow_(k.kbManualBlocks_('Intro.\n\n## Qualified Leads\n\nThey take a patient with a finished evaluation.\n'), 'Qualified Leads'), null,
+    'only a table ROW is named — a paragraph under a heading of that name carries it as its LABEL, not as its name (an anchor is how a link points at a heading)');
+});
+
+test('M5a-FU2: the "Back to" controls stay in reach — each is sticky and reaches past its OWN scroller\'s padding (derived from the scroller\'s rule), so no content shows in a gap above it', () => {
+  const rule = (sel) => { const m = new RegExp('\\n\\s*' + sel.replace(/[.#]/g, '\\$&') + ' \\{([^}]*)\\}').exec(M1_KB_SRC); assert.ok(m, sel + ' has a rule'); return m[1]; };
+  const px = (decl, prop) => { const m = new RegExp('(?:^|;)\\s*' + prop + ':\\s*([^;]+)').exec(decl); assert.ok(m, prop + ' in ' + decl); return m[1].trim(); };
+  const main = px(rule('.kb-main'), 'padding').split(/\s+/);   // 18px 22px
+  const band = rule('.kb-man-back');
+  assert.strictEqual(px(band, 'position'), 'sticky');
+  assert.strictEqual(px(band, 'top'), '-' + main[0], 'the band\'s top is minus .kb-main\'s top padding');
+  assert.deepStrictEqual(px(band, 'margin').split(/\s+/).slice(1, 2), ['-' + main[1]], 'and it spans .kb-main\'s side padding');
+  assert.ok(/var\(--paper-card\)/.test(px(band, 'background')), 'opaque — the page shows through nothing');
+  const body = px(rule('.kbd-body'), 'padding').split(/\s+/);   // 10px 14px 16px
+  const row = rule('.kbd-body .kbd-backto');
+  assert.strictEqual(px(row, 'position'), 'sticky');
+  assert.strictEqual(px(row, 'top'), '-' + body[0], 'the drawer row\'s top is minus .kbd-body\'s top padding');
+});
+
+
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 

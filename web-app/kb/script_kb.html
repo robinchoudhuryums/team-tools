@@ -163,6 +163,27 @@
   #kb-xrefcard .xc-body h3, #kb-xrefcard .xc-body h4, #kb-xrefcard .xc-body h5 { font-size: .9rem; margin: .6em 0 .3em; }
   #kb-xrefcard .xc-more, #kb-xrefcard .xc-none { color: var(--muted); }
   #kb-xrefcard .xc-row { display: flex; justify-content: flex-end; margin-top: 6px; }
+  /* Batch M5a — the card names the part of the section the link is about */
+  #kb-xrefcard .xc-focus { font-size: .72rem; color: var(--muted); margin: -2px 0 6px; }
+  #kb-xrefcard .xc-body table { margin: 0; }
+  #kb-xrefcard .xc-body mark.kb-hl { padding: 0 1px; }
+  /* The way back stays in reach while the rep reads on — the landing scrolls the reader. */
+  /* (.kbd-body-scoped: the later .kbd-item rule would clear the background) */
+  .kbd-body .kbd-backto { position: sticky; top: -10px; z-index: 3; margin-bottom: 6px; border: 1px dashed var(--line); background: var(--paper-card); box-shadow: 0 6px 8px -8px rgba(0,0,0,.35); }
+  .kbd-body .kbd-backto:hover { background: var(--paper-2); }
+  .kbd-backto b { font-family: var(--mono); color: var(--accent); }
+  .kb-man-back:empty { display: none; }
+  /* M5a follow-on: the way back stays in reach — a full-width OPAQUE band stuck
+     to the top of the reader (a bare sticky pill let the section title show
+     around it at phone width, so it read as overlapping the text). */
+  .kb-man-back { position: sticky; top: -18px; z-index: 3; margin: -4px -22px 12px; padding: 6px 22px; background: var(--paper-card); border-bottom: 1px solid var(--line); }   /* top / sides = .kb-main's own padding (18px 22px): a sticky box stops at the scroller's padding edge, so the band must reach past it to seal the gap above — as .kbd-backto does for .kbd-body */
+  .kb-man-back-btn { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; font: inherit; font-size: .78rem; padding: 4px 10px;
+    border: 1px solid var(--line); border-radius: 999px; background: var(--paper-2); color: var(--ink); cursor: pointer; }
+  /* A landed callout already has a tinted background, which outranks the flash — ring it instead. */
+  .kb-article blockquote.kb-h-flash { box-shadow: 0 0 0 2px var(--accent); }
+  .kb-man-back-btn:hover, .kb-man-back-btn:focus-visible { border-color: var(--border-strong); background: var(--paper-card); }
+  .kb-man-back-btn b { font-family: var(--mono); color: var(--accent); }
+  .kb-man-back-t { color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #kb-xrefcard .lc-btn { font: inherit; font-size: .74rem; padding: 3px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper-2); color: var(--ink); text-decoration: none; }
   /* Batch M1 — the manual import dialog */
   .kb-man { max-width: 560px; }
@@ -2765,6 +2786,240 @@ function kbManualUpdates_(changelog, id, todayIso, days) {
 }
 var KB_MANUAL_UPDATED_DAYS = 365;   // the build's own "Recent updates" window: the last 12 months
 
+// ── Batch M5a — a preview shows the part of the section the link is ABOUT ────
+// Evidence (2026-09-29): 249 of the manual's 466 cross-references carry no
+// heading anchor, so their preview showed the target's OPENING — the "Ramps"
+// row of 0.7's table links to 4.11 FAQ, whose opening row is about cup
+// holders; the ramps row is the answer. The link's own block (its table row,
+// list item, paragraph or callout, minus the link's text) is the CONTEXT; the
+// target splits into the same kinds of block, and the block sharing the
+// context's rarer words wins — but only CLEARLY (a margin over the runner-up).
+// No clear winner → the excerpt exactly as before: fail toward what exists,
+// never a guess in place of the opening. The preview, the click and the
+// card's Open all read the ONE winner from these functions, and the manual
+// export's warning report (scripts/manual-xref-report.mjs) runs these same
+// functions over the whole manual — one scorer, no mirror (g126).
+var KB_CTX_MARGIN = 1.5;
+var KB_CTX_MIN_SHARED = 2;   // one shared word ("insurance") is a coincidence, not a match — measured over the manual's 465 links
+var KB_CTX_STOP = (function () {
+  var o = {};
+  ('the and for you your are with this that from not but can will has have had was were what when who how why ' +
+   'all any see our its into they them their then than there here also only just more most some such each ' +
+   'yes may must should would could use used using does did done been being which while about after before ' +
+   'over under out get got need needs one two per via don dont isn aren ask tell').split(' ')
+    .forEach(function (w) { if (w) o[w] = 1; });
+  return o;
+})();
+
+/** Pure (Node-pinned) — Markdown → the words a reader sees, for scoring and
+ *  for finding the rendered block again: images drop, a link reads as its
+ *  text, a line's list / heading / quote marker and a table's pipes go. */
+function kbMdPlain_(md) {
+  return String(md == null ? '' : md).split('\n').map(function (ln) {
+    if (/^\s*\|?[\s:|-]+\|?\s*$/.test(ln) && /-/.test(ln) && /\|/.test(ln)) return '';   // a table separator
+    return ln.replace(/^\s*>\s?/, '').replace(/^\s*>\s?/, '')
+      .replace(/^\s*#{1,6}\s+/, '').replace(/^\s*(?:[-*+]|\d+[.)])\s+/, '');
+  }).join(' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\\\|/g, '|').replace(/\|/g, ' ');
+}
+/** Pure — lower case, every run of anything but a letter or digit one space. */
+function kbNormText_(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+/** Pure (Node-pinned) — the words that can tie a link to a block: three
+ *  letters or more, not a stop word, not a bare number (section numbers are
+ *  the link's target, not its topic), a plural folded ("ramps" = "ramp"). */
+function kbCtxTokens_(s) {
+  var seen = {}, out = [];
+  kbNormText_(s).split(' ').forEach(function (t) {
+    if (t.length < 3 || KB_CTX_STOP[t] || /^\d+$/.test(t)) return;
+    if (t.length > 4 && /s$/.test(t) && !/ss$/.test(t)) t = t.slice(0, -1);
+    if (!seen[t]) { seen[t] = 1; out.push(t); }
+  });
+  return out;
+}
+
+/** Pure (Node-pinned) — a section's Markdown as the blocks a reader sees, in
+ *  kbMd_'s own grouping: a TABLE ROW (rendered with its header), a LIST ITEM
+ *  (its continuation lines included; a nested item is its own block), a
+ *  CALLOUT (the whole quote, tables and lists inside it included) and a
+ *  PARAGRAPH. Fences (diagrams, snippets, glossary) are not blocks. Each is
+ *  { kind, own, md, text, label }: `own` its source lines (where a link's
+ *  context is read), `md` what a preview renders, `text` its plain words, and
+ *  `label` what names it — a row's first cell, else the heading above it. */
+function kbManualBlocks_(md) {
+  var lines = String(md || '').split('\n'), out = [], heading = '', i = 0;
+  var LI = /^(\s*)([-*]|\d+\.)\s+(.*)$/, Q = /^\s*>/;
+  var push = function (kind, own, render, label) {
+    var text = kbMdPlain_(own);
+    if (!kbNormText_(text)) return;
+    out.push({ kind: kind, own: own, md: render, text: text, label: label || heading });
+  };
+  while (i < lines.length) {
+    var ln = lines[i];
+    if (/^\s*```/.test(ln)) { i++; while (i < lines.length && !/^\s*```/.test(lines[i])) i++; i++; continue; }
+    if (/^\s*$/.test(ln) || /^\s*(---|\*\*\*|___)\s*$/.test(ln)) { i++; continue; }
+    var h = ln.match(/^#{1,6}\s+(.*)$/);
+    if (h) { heading = kbMdPlain_(h[1]).trim(); i++; continue; }
+    if (/^\s*\|/.test(ln) && i + 1 < lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1]) && /-/.test(lines[i + 1])) {
+      var head = ln, sep = lines[i + 1];
+      i += 2;
+      while (i < lines.length && /^\s*\|/.test(lines[i])) {
+        var row = lines[i];
+        var first = row.replace(/\\\|/g, '\u0001').trim().replace(/^\|/, '').split('|')[0].replace(/\u0001/g, '|');
+        push('row', row, head + '\n' + sep + '\n' + row, kbMdPlain_(first).replace(/\s+/g, ' ').trim());
+        i++;
+      }
+      continue;
+    }
+    if (Q.test(ln)) {
+      var q = [];
+      while (i < lines.length && Q.test(lines[i])) { q.push(lines[i]); i++; }
+      push('callout', q.join('\n'), q.join('\n'));
+      continue;
+    }
+    var m = ln.match(LI);
+    if (m) {
+      var own = [ln];
+      i++;
+      while (i < lines.length && !LI.test(lines[i]) && /^\s{2,}\S/.test(lines[i]) && !Q.test(lines[i])) { own.push(lines[i]); i++; }
+      var itemText = [m[3]].concat(own.slice(1).map(function (x) { return x.trim(); })).join(' ');
+      push('item', own.join('\n'), (/\d/.test(m[2]) ? parseInt(m[2], 10) + '. ' : '- ') + itemText);
+      continue;
+    }
+    var p = [ln];
+    i++;
+    while (i < lines.length && !/^\s*$/.test(lines[i]) && !/^#{1,6}\s/.test(lines[i]) && !LI.test(lines[i]) &&
+           !Q.test(lines[i]) && !/^\s*\|/.test(lines[i]) && !/^\s*```/.test(lines[i])) { p.push(lines[i]); i++; }
+    push('para', p.join('\n'), p.join(' '));
+  }
+  return out;
+}
+
+/** Pure (Node-pinned) — the block `tokens` point at, or null. A shared word
+ *  weighs more the fewer blocks carry it (ln(1 + N/df)); the best block must
+ *  share at least KB_CTX_MIN_SHARED words with the link and beat the runner-up
+ *  by KB_CTX_MARGIN, so a tie, a lone shared word, a word every block shares
+ *  or a one-block section is NO winner. Returns {block, index, score, shared}. */
+function kbBestBlock_(blocks, tokens) {
+  if (!blocks || blocks.length < 2 || !tokens || !tokens.length) return null;
+  var sets = blocks.map(function (b) { var s = {}; kbCtxTokens_(b.text).forEach(function (t) { s[t] = 1; }); return s; });
+  var N = blocks.length, df = {};
+  tokens.forEach(function (t) { df[t] = 0; sets.forEach(function (s) { if (s[t]) df[t]++; }); });
+  var scored = sets.map(function (s, i) {
+    var sc = 0, shared = [];
+    tokens.forEach(function (t) { if (s[t]) { sc += Math.log(1 + N / df[t]); shared.push(t); } });
+    return { i: i, score: sc, shared: shared };
+  }).sort(function (a, b) { return b.score - a.score || a.i - b.i; });
+  var best = scored[0], second = scored[1];
+  if (!(best.score > 0) || best.shared.length < KB_CTX_MIN_SHARED) return null;
+  if (second.score > 0 && best.score < KB_CTX_MARGIN * second.score) return null;
+  return { block: blocks[best.i], index: best.i, score: best.score, shared: best.shared };
+}
+
+/** Pure (Node-pinned) — M5a follow-on: the ROW a link's own text names.
+ *  Appendix B's directory is one section of rows, and the manual links a
+ *  contact by name ("[Qualified Leads](kb:man-b-1)") — the text IS the part.
+ *  Exactly one row whose first cell reads the same words, or null (a text
+ *  that names two rows names neither; a section number or the target's title
+ *  names no row). */
+function kbNamedRow_(blocks, text) {
+  var want = kbNormText_(text);
+  if (!want) return null;
+  var rows = (blocks || []).filter(function (b) { return b.kind === 'row' && kbNormText_(b.label) === want; });
+  return rows.length === 1 ? { block: rows[0], index: blocks.indexOf(rows[0]), score: Infinity, shared: kbCtxTokens_(text) } : null;
+}
+
+/** Pure (Node-pinned) — the block of `bodyMd` a link points at: the row its
+ *  own text names, else the block its context clearly matches; inside the
+ *  anchored sub-section when there is one (the whole of it — the preview's
+ *  length cap is not a scope), else the whole section. */
+function kbXrefFocus_(bodyMd, anchor, ctx, text) {
+  var blocks = kbManualBlocks_(kbManualExcerpt_(bodyMd, anchor, Infinity).md);
+  return kbNamedRow_(blocks, text) || kbBestBlock_(blocks, kbCtxTokens_(ctx));
+}
+
+/** Pure (Node-pinned) — every `kb:` link in a section's Markdown with the
+ *  context the reader reads for it (its block, minus the link) — the source
+ *  side of kbXrefContext_, for the export's report. [{id, anchor, text, ctx}] */
+function kbMdLinkContexts_(md) {
+  var out = [];
+  kbManualBlocks_(md).forEach(function (b) {
+    var re = /\[([^\]]*)\]\(kb:([a-z0-9-]+)(?:#([^)\s]+))?\)/g, m;
+    while ((m = re.exec(b.own))) {
+      out.push({ id: m[2], anchor: m[3] || '', text: m[1], ctx: kbMdPlain_(b.own.split(m[0]).join(' ')) });
+    }
+  });
+  return out;
+}
+
+/** The plain words of a rendered block — cells, items and paragraphs kept
+ *  apart by a space (textContent runs a row's cells together), and an item's
+ *  nested list left out (it is a block of its own, as kbManualBlocks_ has it). */
+function kbElText_(el) {
+  if (!el) return '';
+  var c = el.cloneNode(true);
+  if (el.tagName === 'LI') c.querySelectorAll('ul, ol').forEach(function (x) { x.parentNode.removeChild(x); });
+  c.querySelectorAll('td, th, li, p, br, tr, div, h1, h2, h3, h4, h5, h6').forEach(function (x) { x.appendChild(document.createTextNode(' ')); });
+  return c.textContent || '';
+}
+/** The rendered block a link sits in: a callout whole (as the source groups
+ *  it), else its row, item or paragraph. Null outside an article body (a
+ *  diagram's links have no block). */
+function kbXrefBlockEl_(a) {
+  if (!a || !a.closest || !a.closest('.kb-article')) return null;
+  return a.closest('blockquote') || a.closest('tr, li, p');
+}
+/** A link's context: its block's words without the link's own (the link text
+ *  names the TARGET, which says nothing about which part of it). */
+function kbXrefContext_(a) {
+  var blk = kbXrefBlockEl_(a);
+  if (!blk) return '';
+  var id = a.getAttribute('data-kb-id'), anchor = a.getAttribute('data-kb-anchor') || '';
+  var c = blk.cloneNode(true);
+  c.querySelectorAll('a.kb-xref').forEach(function (x) {
+    if (x.getAttribute('data-kb-id') === id && (x.getAttribute('data-kb-anchor') || '') === anchor) x.parentNode.removeChild(x);
+  });
+  if (blk.tagName === 'LI') c.querySelectorAll('ul, ol').forEach(function (x) { x.parentNode.removeChild(x); });
+  return kbElText_(c);
+}
+/** Where a Back lands: the block the rep left from, as kind + words. */
+function kbXrefLandOf_(a) {
+  var blk = kbXrefBlockEl_(a);
+  var kind = blk && { TR: 'row', LI: 'item', BLOCKQUOTE: 'callout', P: 'para' }[blk.tagName];
+  return kind ? { kind: kind, text: kbElText_(blk) } : null;
+}
+/** The rendered element for a block, inside `host` (after the anchored
+ *  heading `after`, when given — a sub-section's own rows first). Matched by
+ *  its words, exactly; a paragraph inside a callout, item or cell belongs to
+ *  THAT block, so it is never a paragraph candidate. */
+function kbFindBlockEl_(host, block, after) {
+  var sel = block && { row: 'tr', item: 'li', callout: 'blockquote', para: 'p' }[block.kind];
+  var want = block && kbNormText_(block.text);
+  if (!host || !sel || !want) return null;
+  var els = host.querySelectorAll(sel);
+  for (var i = 0; i < els.length; i++) {
+    var el = els[i];
+    if (after && !(after.compareDocumentPosition(el) & 4)) continue;
+    if (block.kind === 'para' && el.parentElement && el.parentElement.closest('blockquote, li, td, th')) continue;
+    if (kbNormText_(kbElText_(el)) === want) return el;
+  }
+  return null;
+}
+/** Scroll a landed block into view and flash it, as a heading landing does. */
+function kbFlashBlock_(el, instant) {
+  try { el.scrollIntoView({ block: 'center', behavior: instant ? 'auto' : 'smooth' }); } catch (e) {}
+  el.classList.add('kb-h-flash');
+  setTimeout(function () { el.classList.remove('kb-h-flash'); }, 1600);
+}
+/** The element a link with context `ctx` lands on in a rendered section, or null. */
+function kbXrefLandEl_(host, bodyMd, anchor, ctx, text) {
+  if (!host || !(ctx || text)) return null;
+  var hit = kbXrefFocus_(bodyMd, anchor, ctx, text);
+  if (!hit) return null;
+  return kbFindBlockEl_(host, hit.block, anchor ? kbFindNumberedHeading_(host, anchor) : null);
+}
+
 /** The first heading inside `host` whose text is the number, or starts with
  *  it and a space ("5.9.2 Pick-up …"). */
 function kbFindNumberedHeading_(host, num) {
@@ -2811,14 +3066,14 @@ function kbMarkTreeCurrent_(id) {
 /** Open a manual section: scroll within the loaded part, or load the part.
  *  Returns false when the section's part is unknown (the caller falls back to
  *  the generic reader). */
-function kbOpenManualSection_(id, anchor) {
+function kbOpenManualSection_(id, anchor, nav) {
   var dept = kbManualDeptOf_(id);
   if (!dept) return false;
   var main = document.getElementById('kb-main'); if (!main) return true;
   KB_STATE.currentId = id; KB_STATE.landing = false;
   kbMarkTreeCurrent_(id);
   if (KB_STATE.manualPart && KB_STATE.manualPart.department === dept && document.getElementById('kb-man-sec-' + id)) {
-    kbManualFocus_(id, anchor);
+    kbManualFocus_(id, anchor, false, nav);
     return true;
   }
   main.innerHTML = loSweep();
@@ -2835,7 +3090,7 @@ function kbOpenManualSection_(id, anchor) {
       kbGlossaryAnnotate_(main);
       kbLinkHcpcs_(main);
       kbManualPaintMeta_();
-      kbManualFocus_(id, anchor, true);
+      kbManualFocus_(id, anchor, true, nav);
     })
     .withFailureHandler(function (err) {
       if (currentView === requested && seq === KB_STATE.manualSeq && KB_STATE.currentId === id) main.innerHTML = errorStateHtml_((err && err.message) || 'Failed to load this part of the manual');
@@ -2852,6 +3107,7 @@ function kbManualPartHtml_(part) {
   var drafts = secs.filter(function (s) { return s.status === 'draft'; }).length;
   var html = '<div class="kb-item-head kb-man-head"><h2>' + esc(part.department) + '</h2></div>' +
     '<div class="kb-man-ver" data-kb-man-ver></div>' +
+    '<div class="kb-man-back" data-kb-man-back></div>' +
     (admin && drafts ? '<div class="kb-draft-banner">' + icon('warning', 13) + ' ' + drafts + ' of ' + secs.length +
       ' section' + (secs.length === 1 ? '' : 's') + ' in this part ' + (drafts === 1 ? 'is a draft' : 'are drafts') + ' — hidden from reps until published (Reference → Manual).</div>' : '') +
     '<div class="kb-man-part">';
@@ -2950,6 +3206,13 @@ function kbLinkHcpcs_(rootEl) {
     });
   } catch (_) {}
 }
+/** M5a — the codes in search-result chunks from MANUAL sections (codes stay
+ *  manual-only, operator 2026-09-29). Called BEFORE kbHighlightTerms_: a mark
+ *  may sit inside a code link, but a code split by a mark would not link. */
+function kbLinkHcpcsInResults_(rootEl) {
+  if (!rootEl) return;
+  rootEl.querySelectorAll('.kb-chunk-body[data-kb-man]').forEach(function (el) { kbLinkHcpcs_(el); });
+}
 /** A code clicked: the Ctrl/⌘+K drawer's lookups, on its home view, with the
  *  code in the ITEM box (the price search takes a code) — and focus in the
  *  payor box when it is empty, because the payor lookup searches by plan NAME:
@@ -3014,7 +3277,7 @@ function kbManualDateLabel_(iso) {
 
 /** Scroll to a section (or a numbered heading inside it), mark it current,
  *  record the open, and move the ONE comments host under it. */
-function kbManualFocus_(id, anchor, instant) {
+function kbManualFocus_(id, anchor, instant, nav) {
   var sec = document.getElementById('kb-man-sec-' + id); if (!sec) return;
   KB_STATE.currentId = id;
   kbMarkTreeCurrent_(id);
@@ -3026,10 +3289,19 @@ function kbManualFocus_(id, anchor, instant) {
       box.classList.remove('collapsed'); t.setAttribute('aria-expanded', 'true');
     }
   });
-  var target = (anchor && kbFindNumberedHeading_(sec, anchor)) || sec.querySelector('.kb-man-sec-h') || sec;
-  try { target.scrollIntoView({ block: 'start', behavior: instant ? 'auto' : 'smooth' }); } catch (e) {}
-  target.classList.add('kb-h-flash');
-  setTimeout(function () { target.classList.remove('kb-h-flash'); }, 1600);
+  // M5a: a Back lands on the block the rep left from; a cross-reference on the
+  // block its preview chose; anything else on the numbered heading or the top.
+  var block = null;
+  if (nav && nav.land) block = kbFindBlockEl_(sec, nav.land);
+  if (!block && nav && (nav.ctx || nav.text)) block = kbXrefLandEl_(sec.querySelector('.kb-article'), kbManualSectionMd_(id), anchor, nav.ctx, nav.text);
+  kbManualPaintBack_();
+  if (block) kbFlashBlock_(block, instant);
+  else {
+    var target = (anchor && kbFindNumberedHeading_(sec, anchor)) || sec.querySelector('.kb-man-sec-h') || sec;
+    try { target.scrollIntoView({ block: 'start', behavior: instant ? 'auto' : 'smooth' }); } catch (e) {}
+    target.classList.add('kb-h-flash');
+    setTimeout(function () { target.classList.remove('kb-h-flash'); }, 1600);
+  }
   var host = document.getElementById('kb-comments');
   if (!host) { host = document.createElement('div'); host.id = 'kb-comments'; }
   sec.appendChild(host);
@@ -3037,6 +3309,29 @@ function kbManualFocus_(id, anchor, instant) {
   var title = (sec.querySelector('.kb-man-sec-h') || {}).textContent || id;
   kbPanelRecordOpen_({ id: id, title: title, department: kbManualDeptOf_(id), type: 'article' }, 'reference');
   kbLoadComments_(id);
+}
+
+/** The loaded part's Markdown for one section (the landing re-reads it). */
+function kbManualSectionMd_(id) {
+  var s = ((KB_STATE.manualPart || {}).sections || []).filter(function (x) { return x.id === id; })[0];
+  return s ? (s.bodyMd || '') : '';
+}
+/** M5a — the "Back to" chip on a part page: shown after a cross-reference
+ *  jumped here from ANOTHER part (the page it came from is gone); a click
+ *  reopens that section on the block the rep left from. */
+function kbManualPaintBack_() {
+  var host = document.querySelector('#kb-main [data-kb-man-back]'); if (!host) return;
+  var b = KB_STATE.backTo;
+  var here = b && ((KB_STATE.manualPart || {}).sections || []).some(function (s) { return s.id === b.id; });
+  if (!b || here) { host.innerHTML = ''; return; }
+  var t = String(b.title || ''), num = t.split(' ')[0];
+  host.innerHTML = '<button type="button" class="kb-man-back-btn" onclick="kbManualBack_()" title="Back to ' + esc(t) + '">' +
+    icon('chevronLeft', 12) + ' Back to <b>' + esc(num) + '</b> <span class="kb-man-back-t">' + esc(t.slice(num.length).trim()) + '</span></button>';
+}
+function kbManualBack_() {
+  var b = KB_STATE.backTo; if (!b) return;
+  KB_STATE.backTo = null;
+  kbOpenItem_(b.id, '', { land: b.land });
 }
 
 /** A manual section's feedback bar: Yes / No, and "Suggest an edit" in place
@@ -3098,10 +3393,23 @@ var KB_XREF = { el: null, timer: null, hideTimer: null, cache: {}, origin: null,
 function kbXrefOpen_(id, anchor, a) {
   var ctx = (a && a.closest && a.closest('#kb-xrefcard')) ? KB_XREF.origin : a;
   kbXrefHide_(true);
-  if (ctx && ctx.closest && ctx.closest('#kb-drawer')) { kbDrawerOpenItem_(id, anchor); return; }
-  if (ctx && ctx.closest && ctx.closest('#kb-main')) { kbOpenItem_(id, anchor); return; }
+  // M5a: the click (and the card's Open) lands on the block the preview chose —
+  // the link's context rides the open, and the landing re-derives the winner.
+  var nav = { ctx: kbXrefContext_(ctx), text: ctx && ctx.textContent || '' };
+  if (ctx && ctx.closest && ctx.closest('#kb-drawer')) { kbDrawerOpenItem_(id, anchor, nav); return; }
+  if (ctx && ctx.closest && ctx.closest('#kb-main')) {
+    // M5a: a jump to ANOTHER part of the manual leaves a "Back to" chip — the
+    // part page it replaces is gone, and the rep was mid-read there.
+    var fromSec = ctx.closest('.kb-man-sec'), fromId = fromSec && fromSec.getAttribute('data-kb-id');
+    if (fromId && kbIsManualId_(id) && kbManualDeptOf_(id) && kbManualDeptOf_(id) !== kbManualDeptOf_(fromId)) {
+      var h = fromSec.querySelector('.kb-man-sec-h');
+      KB_STATE.backTo = { id: fromId, title: h ? h.textContent : fromId, land: kbXrefLandOf_(ctx) };
+    }
+    kbOpenItem_(id, anchor, nav);
+    return;
+  }
   kbDrawerOpen_();
-  kbDrawerOpenItem_(id, anchor);
+  kbDrawerOpenItem_(id, anchor, nav);
 }
 function kbXrefEl_() {
   if (KB_XREF.el) return KB_XREF.el;
@@ -3127,7 +3435,9 @@ function kbXrefHide_(now) {
 function kbXrefShow_(a) {
   var id = a.getAttribute('data-kb-id'), anchor = a.getAttribute('data-kb-anchor') || '';
   var key = id + '#' + anchor;
-  if (KB_XREF.key === key && KB_XREF.el && KB_XREF.el.classList.contains('show')) return;
+  // M5a: the card depends on the LINK (its context), not just the target — two
+  // rows of one table linking to one FAQ preview different answers.
+  if (KB_XREF.origin === a && KB_XREF.key === key && KB_XREF.el && KB_XREF.el.classList.contains('show')) return;
   if (KB_XREF.origin && KB_XREF.origin !== a && KB_XREF.origin.removeAttribute) KB_XREF.origin.removeAttribute('aria-describedby');
   KB_XREF.key = key; KB_XREF.origin = a;
   var el = kbXrefEl_();
@@ -3137,10 +3447,23 @@ function kbXrefShow_(a) {
     if (!res || res.error || res.type === 'embed') {
       el.innerHTML = '<div class="xc-h">' + esc(a.textContent || id) + '</div><div class="xc-none">No preview — open it to read.</div>';
     } else {
-      var ex = kbManualExcerpt_(res.bodyMd, anchor, 700);
-      el.innerHTML = '<div class="xc-h">' + esc(res.title) + (anchor && ex.found ? ' › ' + esc(anchor) : '') + '</div>' +
-        '<div class="kb-article xc-body">' + kbShiftHeadings_(kbShiftHeadings_(kbMd_(ex.md))) + '</div>' +
-        (ex.truncated ? '<div class="xc-more">…</div>' : '');
+      // M5a: the part of the target this link is about, when one block clearly
+      // is — else the excerpt exactly as before (never a guess in its place).
+      var manual = kbIsManualId_(id);
+      var hit = manual ? kbXrefFocus_(res.bodyMd, anchor, kbXrefContext_(a), a.textContent) : null;
+      if (hit) {
+        el.innerHTML = '<div class="xc-h">' + esc(res.title) + (hit.block.label ? ' › ' + esc(hit.block.label) : '') + '</div>' +
+          '<div class="xc-focus">The part this link is about — Open goes straight to it</div>' +
+          '<div class="kb-article xc-body">' + kbShiftHeadings_(kbShiftHeadings_(kbMd_(hit.block.md))) + '</div>';
+      } else {
+        var ex = kbManualExcerpt_(res.bodyMd, anchor, 700);
+        el.innerHTML = '<div class="xc-h">' + esc(res.title) + (anchor && ex.found ? ' › ' + esc(anchor) : '') + '</div>' +
+          '<div class="kb-article xc-body">' + kbShiftHeadings_(kbShiftHeadings_(kbMd_(ex.md))) + '</div>' +
+          (ex.truncated ? '<div class="xc-more">…</div>' : '');
+      }
+      var xb = el.querySelector('.xc-body');
+      if (manual) kbLinkHcpcs_(xb);   // M5a: codes are lookups here too — linked BEFORE the marks, so a mark never splits a code
+      if (hit) kbHighlightTerms_(xb, hit.shared.join(' '));
     }
     el.insertAdjacentHTML('beforeend', '<div class="xc-row"><a href="#" class="kb-xref lc-btn" data-kb-id="' + esc(id) + '" data-kb-anchor="' + esc(anchor) + '">Open</a></div>');
     kbTetherPopover_(el, a);
@@ -3268,9 +3591,10 @@ function kbDrawerRenderRouterEntry_() {
 }
 function kbDrawerOpenRouter_() {
   var body = document.getElementById('kbd-body'); if (!body) return;
+  kbDrawerLeave_();
   KB_DRAWER.view = 'router';
   ++KB_DRAWER.searchSeq;   // a search still in flight must not paint over the router
-  body.innerHTML = '<div class="kbd-reader-bar"><button class="kbd-back" onclick="kbDrawerRenderHome_({ fresh: true })">' + icon('chevronLeft', 12) + ' Back</button></div>' +
+  body.innerHTML = kbDrawerBackToHtml_() + '<div class="kbd-reader-bar"><button class="kbd-back" onclick="kbDrawerRenderHome_({ fresh: true })">' + icon('chevronLeft', 12) + ' Back</button></div>' +
     '<div class="kbd-sec">What did the caller say?</div>' +
     '<div class="kbd-rt-filter"><input type="search" id="kbd-rt-q" placeholder="Filter phrases…" aria-label="Filter caller phrases" autocomplete="off"></div>' +
     '<div id="kbd-rt-list"></div>';
@@ -5160,7 +5484,7 @@ function kbChunkGroupsHtml_(results, openFn) {
         '<div class="kb-chunk-h"><span>' + (c.heading ? esc(c.heading) : 'Intro') + '</span>' +
         '<button class="kb-chunk-go" data-kb-id="' + esc(c.id) + '" data-kb-anchor="' + esc(c.anchor || '') + '" ' +
         'onclick="' + openFn + '(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">Open \u00b6</button></div>' +
-        (c.chunkMd ? '<div class="kb-article kb-chunk-body">' + kbMd_(c.chunkMd) +
+        (c.chunkMd ? '<div class="kb-article kb-chunk-body"' + (kbIsManualId_(c.id) ? ' data-kb-man' : '') + '>' + kbMd_(c.chunkMd) +
           (c.truncated ? '<div class="kb-snip">\u2026 continues in the article</div>' : '') + '</div>' : '') +
         '</div>';
     });
@@ -5258,6 +5582,7 @@ function kbRenderSearchResults_() {
       kbSearchFilterBarHtml_(all) +
       (results.length ? kbChunkGroupsHtml_(results, 'kbOpenItem_')
         : (all.length ? '<div class="kb-empty">No matches with these filters.</div>' : kbNoResultsHtml_(q)));
+    kbLinkHcpcsInResults_(main);   // M5a — before the marks, so a mark never splits a code
     kbHighlightTerms_(main, q);
   }
 }
@@ -5321,9 +5646,12 @@ function kbRequestArticlePrompt_(query) {
   });
 }
 
-function kbOpenItem_(id, anchor) {
+function kbOpenItem_(id, anchor, nav) {
+  // M5a: only a cross-reference (or its Back) carries `nav`; any other open —
+  // the tree, search, a jump row — is a fresh start, so the Back chip goes.
+  if (!nav) KB_STATE.backTo = null;
   // Batch M2 — a manual section opens in its part's continuous page.
-  if (kbIsManualId_(id) && kbOpenManualSection_(id, anchor)) return;
+  if (kbIsManualId_(id) && kbOpenManualSection_(id, anchor, nav)) return;
   KB_STATE.manualPart = null;
   KB_STATE.currentId = id; KB_STATE.landing = false;
   document.querySelectorAll('.kb-item').forEach(function (b) {
@@ -6204,7 +6532,7 @@ function kbCloseModal_() {
 //  Reads reuse the three enrolled-employee KB endpoints; opens are recorded
 //  best-effort via kbRecordView (fire-and-forget, never blocks the UI).
 // ============================================================================
-var KB_DRAWER = { open: false, tree: null, view: 'home', lastQuery: '', searchSeq: 0, item: null, suggestSeq: 0, suggestCache: null, guidanceSeq: 0, guidanceCache: null, restoreFocus: null };   // F-43: restoreFocus
+var KB_DRAWER = { open: false, tree: null, view: 'home', lastQuery: '', searchSeq: 0, item: null, suggestSeq: 0, suggestCache: null, guidanceSeq: 0, guidanceCache: null, restoreFocus: null, stack: [], cur: null };   // F-43: restoreFocus · M5a: stack/cur, the back-to-section trail
 var KB_PANEL_LS_KEY = 'umsKbPanel';
 
 function kbPanelPrefs_() {
@@ -6364,6 +6692,7 @@ function kbDrawerOpen_() {
 function kbDrawerClose_() {
   var wasOpen = KB_DRAWER.open;
   KB_DRAWER.open = false;
+  KB_DRAWER.stack = []; KB_DRAWER.cur = null;   // M5a: the back-to-section trail belongs to one visit
   var d = document.getElementById('kb-drawer');
   if (d) d.classList.remove('open');
   // F-43: hand focus back to whatever opened it, exactly once.
@@ -6401,18 +6730,20 @@ function kbDrawerItemBtnHtml_(it, snippet) {
  *  nodes. `opts.fresh` (the drawer OPEN) builds them new — that is the next
  *  caller — and a fresh build forgets the previous host's results (K2). */
 function kbDrawerRenderHome_(opts) {
+  kbDrawerLeave_();
   KB_DRAWER.view = 'home';
   var body = document.getElementById('kbd-body'); if (!body) return;
   var blocks = body.querySelector('#kbd-home-blocks');
   if (!(opts && opts.fresh) && blocks && body.querySelector('#kb-ins-input-d')) {
     blocks.innerHTML = kbDrawerHomeBlocksHtml_();   // the lookups, and anything typed into them, are untouched
+    kbDrawerPaintBackTo_();
     kbDrawerRenderRouterEntry_();
     kbDrawerRenderGuidance_();
     kbDrawerRenderSuggest_();
     return;
   }
   kbLookupsForget_('-d');
-  var html = '<div id="kbd-router"></div><div id="kbd-guidance"></div><div id="kbd-suggest"></div>';
+  var html = '<div id="kbd-backto"></div><div id="kbd-router"></div><div id="kbd-guidance"></div><div id="kbd-suggest"></div>';
   // Insurance lookup (operator 2026-08-25) — same shared section, drawer host.
   // `.kbd-sec` is a HEADING BAR — mono, 10px, uppercase, `display: flex` — built
   // for the one-word labels ("Bookmarks", "Recent") that sit ABOVE a list of
@@ -6426,6 +6757,7 @@ function kbDrawerRenderHome_(opts) {
   html += '<div class="kbd-lookup">' + oopLookupSecHtml_('-d') + '</div>';
   html += '<div id="kbd-home-blocks">' + kbDrawerHomeBlocksHtml_() + '</div>';
   body.innerHTML = html;
+  kbDrawerPaintBackTo_();
   kbDrawerRenderRouterEntry_();
   kbDrawerRenderGuidance_();
   kbDrawerRenderSuggest_();
@@ -6616,8 +6948,9 @@ function kbDrawerSearch_(q) {
   if (jump) {
     ++KB_DRAWER.searchSeq;   // drop any search still in flight
     kbDrawerSetSearching_(false);
+    kbDrawerLeave_();
     KB_DRAWER.view = 'results';
-    body.innerHTML = '<div class="kbd-sec">Go to section</div>' + kbJumpRowHtml_(jump, 'kbDrawerOpenItem_', 'kbd-item') +
+    body.innerHTML = kbDrawerBackToHtml_() + '<div class="kbd-sec">Go to section</div>' + kbJumpRowHtml_(jump, 'kbDrawerOpenItem_', 'kbd-item') +
       '<div class="kbd-empty">Press Enter to open.</div>';
     return;
   }
@@ -6627,13 +6960,15 @@ function kbDrawerSearch_(q) {
     .withSuccessHandler(function (res) {
       if (seq !== KB_DRAWER.searchSeq || !KB_DRAWER.open) return;
       kbDrawerSetSearching_(false);
+      kbDrawerLeave_();
       KB_DRAWER.view = 'results';
       var results = (res && res.results) || [];
       var groups = kbGroupResults_(results);
-      var html = '<div class="kbd-sec">Results (' + groups.length + ')</div>';
+      var html = kbDrawerBackToHtml_() + '<div class="kbd-sec">Results (' + groups.length + ')</div>';
       if (!results.length) html += kbNoResultsHtml_(q);   // #1 — request-an-article CTA in the drawer too
       else html += kbChunkGroupsHtml_(results, 'kbDrawerOpenItem_');
       body.innerHTML = html;
+      kbLinkHcpcsInResults_(body);   // M5a — before the marks, so a mark never splits a code
       kbHighlightTerms_(body, q);
     })
     .withFailureHandler(function () {
@@ -6650,8 +6985,10 @@ function kbDrawerSearch_(q) {
     .searchReference(q);
 }
 
-function kbDrawerOpenItem_(id, anchor) {
+function kbDrawerOpenItem_(id, anchor, nav) {
   var body = document.getElementById('kbd-body'); if (!body) return;
+  if (!(nav && nav.back)) kbDrawerLeave_();   // M5a: a Back pops the trail — it never pushes
+  KB_DRAWER.cur = null;
   body.innerHTML = loSweep();
   KB_DRAWER.view = 'item';
   KB_DRAWER.itemId = id;   // F(L-18): latest-open wins
@@ -6667,7 +7004,9 @@ function kbDrawerOpenItem_(id, anchor) {
       var ctxBtn = kbIsManualId_(id)
         ? '<button class="kbd-back" data-kb-id="' + esc(id) + '" data-kb-anchor="' + esc(anchor || '') + '" onclick="kbReadInContext_(this)">' + icon('popOut', 12) + ' Read in context</button>'
         : '';
-      var back = '<div class="kbd-reader-bar"><button class="kbd-back" onclick="kbDrawerBack_()">' + icon('chevronLeft', 12) + ' Back</button>' + ctxBtn + kbBookmarkBtnHtml_(res, 'kbd-bm') + '</div>';   // #5
+      KB_DRAWER.cur = { id: id, anchor: anchor || '', title: res.title || id };
+      var back = kbDrawerBackToHtml_() +
+        '<div class="kbd-reader-bar"><button class="kbd-back" onclick="kbDrawerBack_()">' + icon('chevronLeft', 12) + ' Back</button>' + ctxBtn + kbBookmarkBtnHtml_(res, 'kbd-bm') + '</div>';   // #5
       if (res.type === 'embed') {
         // Drive embeds are cramped in a 400px drawer - hand off to a tab.
         body.innerHTML = back +
@@ -6678,8 +7017,15 @@ function kbDrawerOpenItem_(id, anchor) {
       } else {
         body.innerHTML = back + '<div class="kb-article">' + kbMd_(res.bodyMd || '') + '</div>' + kbFeedbackBarHtml_(res) + '<div id="kbd-comments"></div>';
         kbGlossaryAnnotate_(body);
-        if (kbIsManualId_(id)) kbLinkHcpcs_(body.querySelector('.kb-article'));
-        if (anchor) kbScrollToAnchor_(body, anchor);
+        var art = body.querySelector('.kb-article');
+        if (kbIsManualId_(id)) kbLinkHcpcs_(art);
+        // M5a: a Back restores where the rep was; a cross-reference lands on the
+        // block its preview chose; else the anchor, as before.
+        var landed = null;
+        if (nav && nav.back) body.scrollTop = nav.back.scrollTop || 0;
+        else if (nav && (nav.ctx || nav.text) && kbIsManualId_(id)) landed = kbXrefLandEl_(art, res.bodyMd || '', anchor, nav.ctx, nav.text);
+        if (landed) kbFlashBlock_(landed);
+        else if (anchor && !(nav && nav.back)) kbScrollToAnchor_(body, anchor);
       }
       kbDrawerLoadComments_(id);   // Phase B — drawer parity (round-3 FO)
     })
@@ -6694,6 +7040,39 @@ function kbDrawerOpenItem_(id, anchor) {
     })
     .getReferenceItem(id);
 }
+// ── M5a — back to the section ─────────────────────────────────────────────
+// Mid-call a rep follows a code, a cross-reference, a router row or a search
+// away from the section they were reading; the drawer keeps a short trail of
+// {id, anchor, title, scrollTop}, pushed whenever the section view is
+// replaced, and offers "Back to <section>" at the top of whatever replaced it.
+// A Back pops (it never pushes); closing the drawer forgets the trail.
+var KB_DRAWER_TRAIL_MAX = 5;
+function kbDrawerLeave_() {
+  var cur = KB_DRAWER.cur;
+  if (!cur || KB_DRAWER.view !== 'item') return;
+  var body = document.getElementById('kbd-body');
+  var st = (KB_DRAWER.stack || []).filter(function (e) { return e.id !== cur.id; });
+  st.push({ id: cur.id, anchor: cur.anchor, title: cur.title, scrollTop: body ? body.scrollTop : 0 });
+  KB_DRAWER.stack = st.slice(-KB_DRAWER_TRAIL_MAX);
+  KB_DRAWER.cur = null;
+}
+function kbDrawerBackToHtml_() {
+  var st = KB_DRAWER.stack || [], top = st[st.length - 1];
+  if (!top) return '';
+  var t = String(top.title || ''), num = t.split(' ')[0], rest = t.slice(num.length).trim();
+  return '<button type="button" class="kbd-item kbd-backto" onclick="kbDrawerBackTo_()" title="Back to ' + esc(t) + '"><span>' +
+    icon('chevronLeft', 12) + ' Back to <b>' + esc(num) + '</b>' + (rest ? ' <span class="kb-snip">' + esc(rest) + '</span>' : '') + '</span></button>';
+}
+function kbDrawerPaintBackTo_() {
+  var host = document.getElementById('kbd-backto');
+  if (host) host.innerHTML = kbDrawerBackToHtml_();
+}
+function kbDrawerBackTo_() {
+  var top = (KB_DRAWER.stack || []).pop();
+  if (!top) return;
+  kbDrawerOpenItem_(top.id, top.anchor, { back: top });
+}
+
 function kbDrawerBack_() {
   if (KB_DRAWER.lastQuery && KB_DRAWER.lastQuery.length >= 2) kbDrawerSearch_(KB_DRAWER.lastQuery);
   else kbDrawerRenderHome_();

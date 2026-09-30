@@ -2274,7 +2274,14 @@ entry says which it is.
   `python3` fails with a SyntaxError) → Reference → **Manual** (admin) →
   **Choose File** → the resulting `manual/dist/reference/manual.json` →
   **Check** (a dry run: what would be created, updated, left alone, skipped) →
-  **Import**. **No Drive (M4-FU3, 2026-09-29):** this domain's administrator has
+  **Import**. **The export's "xref previews" lines (M5a, 2026-09-30)** say how
+  many cross-references preview the part of their target they are about, how
+  many show its opening by design (anchored, or no numbered sub-section to point
+  at), and WARN about the links an anchor could fix —
+  `node scripts/manual-xref-report.mjs --list` names each with a suggested
+  sub-section to CHECK (a word match, not applied). Adding an anchor changes
+  the number the manual prints, so it is an editorial choice; the report needs
+  Node, never fails the export, and is optional. **No Drive (M4-FU3, 2026-09-29):** this domain's administrator has
   disabled Apps Script's Drive service ("The feature you are attempting to use
   has been disabled by your domain administrator"), so the file goes from your
   computer straight to the app — there is no Drive link to share. New sections are drafts

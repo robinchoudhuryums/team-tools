@@ -10,6 +10,30 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-30 — the manual reader: focused previews, back to the section (M5a)
+
+**Adds NO operator state** — no Script Property, tab or roster column. It rides
+the normal deploy (`clasp push -f` + New version); there is nothing to import.
+- A cross-reference preview now shows the part of the section the link is
+  about, when one part clearly matches, and a click lands there.
+- HCPCS codes are lookups in manual search results, the preview card and a
+  manual section opened as training.
+- The Ctrl/⌘+K drawer offers "Back to <section>" after a code, a link, a
+  search or the router took you away; the tab offers a "Back to" chip after a
+  link into another part.
+- **The export prints an "xref previews" line** (how many links focus) and a
+  WARNING count of unanchored links that still preview the opening.
+  `node scripts/manual-xref-report.mjs --list` names them — each is a link that
+  would focus if the manual source pointed it at a numbered heading. Optional;
+  it never fails the export, and without Node the export says so and goes on.
+- **Follow-ons, same day:** a link that names a directory contact previews that
+  contact's row; the tab's "Back to" chip stays at the top as you scroll; and
+  the WARNING now counts only links an anchor could fix (41 on the current
+  manual — a link into a section with no numbered sub-sections shows its
+  opening by design), with `--list` suggesting a sub-section for each. The
+  suggestion is a word match to CHECK, not applied — and adding an anchor
+  changes the number printed in the manual, so it is your call.
+
 ## 2026-09-29 — the manual import without Drive (M4-FU1..FU3)
 
 **The first real import was blocked by the domain, not the code.** Check first
