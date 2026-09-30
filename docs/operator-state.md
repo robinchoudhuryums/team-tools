@@ -411,7 +411,11 @@ entry says which it is.
   admin-gated, `AdminConfigChange` audit); created on first save, read by
   `getKbSearchSynonyms_` (sanitize-on-read → corrupt blob degrades to `[]`). No
   manual setup — unset = no expansion (today's behavior). Documented so it's
-  recognizable when inspecting Script Properties.
+  recognizable when inspecting Script Properties. **Not the manual's glossary
+  (22post M5b):** these admin groups expand word by word. The procedures
+  manual's abbreviations ("ABN" ↔ "Advance Beneficiary Notice") ride
+  `manual.json` into `ManualMeta` instead, and are matched as whole PHRASES.
+  Edit those in the manual's glossary, never here.
 <a id="operator-quiz-import-from-google-forms-requires-the-google-forms-oaut"></a>
 - **Quiz import from Google Forms requires the Google Forms OAuth scope.**
   `importQuizFromForm` (Team Training → New quiz → "Import from Google

@@ -3072,6 +3072,21 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   nothing was FETCHED. When the defect is "X happened and was undone", observe a
   side effect of X, not the state after the undo.
 
+  **A FOURTEENTH direction (22post M5a + follow-ons, 2026-09-30): a fixture the
+  code's own filter ERASES cannot tell two paths apart.** Three NO BITEs in one
+  batch had this shape. A callout's table of one-letter cells was dropped by the
+  tokenizer (words of three letters or more), so the paragraph-only context and
+  the whole-callout context scored identically. A "Back" pressed from the
+  drawer's home could not see "a Back never pushes", because leaving is already
+  a no-op there. And a list item could not test "only a table row is named",
+  because an item's label is the heading above it, never its own text. Before
+  you trust a fixture, ask what the code does to it FIRST (tokenize, filter,
+  label, early-return) and whether the difference survives that. The sibling
+  (M5b): an EQUIVALENT mutant, a check that a later `catch` re-establishes
+  (every cache piece present before the parse; a missing piece makes the JSON
+  invalid anyway), is recorded as equivalent and the check kept. It is not
+  "fixed" by weakening the code to make a test fail.
+
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
   done (operator 2026-09-15).** The reconcile pass (g115) makes late punch data
@@ -4612,4 +4627,23 @@ failed (…). This says nothing about …". Verify: the A5 pin, driven over
   descendant rule in a container that can hold an icon. Fires when you insert
   SVG markup, or style one by element name. Verify: M3-D1 (every selector
   scoped) + M3-D3 (the sizing rule is `svg.kbdg`).
+
+<a id="g162-a-sticky-element-stops-at-its-scroller-s-padding"></a>
+
+- **A sticky element stops at its scroll container's PADDING edge — the padding
+  above it stays a window that content scrolls through (22post M5a follow-on,
+  2026-09-30).** The Reference tab's "Back to" band was `position: sticky;
+  top: 0` inside `#kb-main`, which scrolls with 18px of top padding. The band
+  stuck 18px below the scroller's top, and the section title showed in the gap
+  above it. At phone width that read as the chip overlapping the text. Found
+  by PROBING the scroller in Playwright (the band's top against the scroller's
+  top and padding), not by reading. The drawer's row had the same gap against
+  `.kbd-body`'s 10px padding. The same batch also caught a second trap: a
+  later, less specific rule (`.kbd-item { background: none }`) cleared the
+  sticky row's background, so text scrolled visibly behind it. RULE: a sticky
+  bar's `top` is minus its scroller's top padding, its sides reach past the
+  side padding, and its background is opaque in a selector that outranks the
+  element's own class. Fires when you make anything sticky inside a padded
+  scroller. Verify: M5a-FU2 (derived from the scrollers' own padding rules) +
+  the `reference-manual-backchip-*` and `reference-drawer-backto-*` shots.
 

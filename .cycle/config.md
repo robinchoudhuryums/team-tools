@@ -101,7 +101,9 @@ Manual source (build-only — never deployed; clasp pushes web-app/ only):
   manual/ (the CSR Procedures Manual v3.0: src/*.md, data/*.json, diagrams/*.svg and the Python/Node build — see manual/README.md;
   `./make_all.sh` builds the HTML manual, Word extracts and review packets into $MANUAL_OUT, default manual/dist, git-ignored;
   since Batch M it also runs manual/export_reference.py, which writes manual.json — the bundle Reference imports (sections, version,
-  call router, changelog); the repo copy is the only one to edit, and the app is read-only for manual sections)
+  call router, changelog, images, and since M5b the glossary's search synonyms); the repo copy is the only one to edit, and the app is
+  read-only for manual sections),
+  scripts/manual-xref-report.mjs (M5a — the export's cross-reference report; it READS the reader's scorer out of web-app/kb/script_kb.html)
 Test Suite:
   web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js, test/visual/build.mjs, test/visual/mock.js, test/visual/manual-images.json, test/visual/shoot.mjs, test/visual/a11y-names.mjs, test/visual/print-check.mjs, test/visual/a13-measure.mjs, test/visual/map-check.mjs, test/visual/settings-check.mjs, test/visual/fold-measure.mjs, test/visual/package.json, .github/workflows/client-tests.yml, scripts/cycle-context.mjs, scripts/counts.mjs, scripts/bite.sh, scripts/split-manifest.mjs, scripts/lint-server.mjs, test/client/server-split-manifest.json, package.json
 
