@@ -30666,7 +30666,8 @@ test('M5a-FU1: kbNamedRow_ — a link whose text names ONE row (Appendix B\'s co
   assert.strictEqual(k.kbNamedRow_(k.kbManualBlocks_(twice), 'Qualified Leads'), null, 'a name two rows carry names neither');
   assert.strictEqual(k.kbNamedRow_(k.kbManualBlocks_(dir), 'B.1 Directory'), null, 'the section\'s own name names no row');
   assert.strictEqual(k.kbNamedRow_(k.kbManualBlocks_(dir), ''), null);
-  assert.strictEqual(k.kbNamedRow_(k.kbManualBlocks_('- Qualified Leads\n- PT Evaluation Team\n'), 'Qualified Leads'), null, 'only a table ROW is named — a list item is prose');
+  assert.strictEqual(k.kbNamedRow_(k.kbManualBlocks_('Intro.\n\n## Qualified Leads\n\nThey take a patient with a finished evaluation.\n'), 'Qualified Leads'), null,
+    'only a table ROW is named — a paragraph under a heading of that name carries it as its LABEL, not as its name (an anchor is how a link points at a heading)');
 });
 
 test('M5a-FU2: the "Back to" controls stay in reach — each is sticky and reaches past its OWN scroller\'s padding (derived from the scroller\'s rule), so no content shows in a gap above it', () => {
