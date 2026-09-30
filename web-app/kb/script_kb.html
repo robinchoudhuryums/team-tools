@@ -173,7 +173,10 @@
   .kbd-body .kbd-backto:hover { background: var(--paper-2); }
   .kbd-backto b { font-family: var(--mono); color: var(--accent); }
   .kb-man-back:empty { display: none; }
-  .kb-man-back { margin: -4px 0 12px; }
+  /* M5a follow-on: the way back stays in reach — a full-width OPAQUE band stuck
+     to the top of the reader (a bare sticky pill let the section title show
+     around it at phone width, so it read as overlapping the text). */
+  .kb-man-back { position: sticky; top: -18px; z-index: 3; margin: -4px -22px 12px; padding: 6px 22px; background: var(--paper-card); border-bottom: 1px solid var(--line); }   /* top / sides = .kb-main's own padding (18px 22px): a sticky box stops at the scroller's padding edge, so the band must reach past it to seal the gap above — as .kbd-backto does for .kbd-body */
   .kb-man-back-btn { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; font: inherit; font-size: .78rem; padding: 4px 10px;
     border: 1px solid var(--line); border-radius: 999px; background: var(--paper-2); color: var(--ink); cursor: pointer; }
   /* A landed callout already has a tinted background, which outranks the flash — ring it instead. */
@@ -2914,12 +2917,26 @@ function kbBestBlock_(blocks, tokens) {
   return { block: blocks[best.i], index: best.i, score: best.score, shared: best.shared };
 }
 
-/** Pure (Node-pinned) — the block of `bodyMd` a link with context `ctx`
- *  points at: inside the anchored sub-section when there is one (the whole
- *  of it — the preview's length cap is not a scope), else the whole section. */
-function kbXrefFocus_(bodyMd, anchor, ctx) {
-  var scope = kbManualExcerpt_(bodyMd, anchor, Infinity).md;
-  return kbBestBlock_(kbManualBlocks_(scope), kbCtxTokens_(ctx));
+/** Pure (Node-pinned) — M5a follow-on: the ROW a link's own text names.
+ *  Appendix B's directory is one section of rows, and the manual links a
+ *  contact by name ("[Qualified Leads](kb:man-b-1)") — the text IS the part.
+ *  Exactly one row whose first cell reads the same words, or null (a text
+ *  that names two rows names neither; a section number or the target's title
+ *  names no row). */
+function kbNamedRow_(blocks, text) {
+  var want = kbNormText_(text);
+  if (!want) return null;
+  var rows = (blocks || []).filter(function (b) { return b.kind === 'row' && kbNormText_(b.label) === want; });
+  return rows.length === 1 ? { block: rows[0], index: blocks.indexOf(rows[0]), score: Infinity, shared: kbCtxTokens_(text) } : null;
+}
+
+/** Pure (Node-pinned) — the block of `bodyMd` a link points at: the row its
+ *  own text names, else the block its context clearly matches; inside the
+ *  anchored sub-section when there is one (the whole of it — the preview's
+ *  length cap is not a scope), else the whole section. */
+function kbXrefFocus_(bodyMd, anchor, ctx, text) {
+  var blocks = kbManualBlocks_(kbManualExcerpt_(bodyMd, anchor, Infinity).md);
+  return kbNamedRow_(blocks, text) || kbBestBlock_(blocks, kbCtxTokens_(ctx));
 }
 
 /** Pure (Node-pinned) — every `kb:` link in a section's Markdown with the
@@ -2996,9 +3013,9 @@ function kbFlashBlock_(el, instant) {
   setTimeout(function () { el.classList.remove('kb-h-flash'); }, 1600);
 }
 /** The element a link with context `ctx` lands on in a rendered section, or null. */
-function kbXrefLandEl_(host, bodyMd, anchor, ctx) {
-  if (!host || !ctx) return null;
-  var hit = kbXrefFocus_(bodyMd, anchor, ctx);
+function kbXrefLandEl_(host, bodyMd, anchor, ctx, text) {
+  if (!host || !(ctx || text)) return null;
+  var hit = kbXrefFocus_(bodyMd, anchor, ctx, text);
   if (!hit) return null;
   return kbFindBlockEl_(host, hit.block, anchor ? kbFindNumberedHeading_(host, anchor) : null);
 }
@@ -3276,7 +3293,7 @@ function kbManualFocus_(id, anchor, instant, nav) {
   // block its preview chose; anything else on the numbered heading or the top.
   var block = null;
   if (nav && nav.land) block = kbFindBlockEl_(sec, nav.land);
-  if (!block && nav && nav.ctx) block = kbXrefLandEl_(sec.querySelector('.kb-article'), kbManualSectionMd_(id), anchor, nav.ctx);
+  if (!block && nav && (nav.ctx || nav.text)) block = kbXrefLandEl_(sec.querySelector('.kb-article'), kbManualSectionMd_(id), anchor, nav.ctx, nav.text);
   kbManualPaintBack_();
   if (block) kbFlashBlock_(block, instant);
   else {
@@ -3378,7 +3395,7 @@ function kbXrefOpen_(id, anchor, a) {
   kbXrefHide_(true);
   // M5a: the click (and the card's Open) lands on the block the preview chose —
   // the link's context rides the open, and the landing re-derives the winner.
-  var nav = { ctx: kbXrefContext_(ctx) };
+  var nav = { ctx: kbXrefContext_(ctx), text: ctx && ctx.textContent || '' };
   if (ctx && ctx.closest && ctx.closest('#kb-drawer')) { kbDrawerOpenItem_(id, anchor, nav); return; }
   if (ctx && ctx.closest && ctx.closest('#kb-main')) {
     // M5a: a jump to ANOTHER part of the manual leaves a "Back to" chip — the
@@ -3433,7 +3450,7 @@ function kbXrefShow_(a) {
       // M5a: the part of the target this link is about, when one block clearly
       // is — else the excerpt exactly as before (never a guess in its place).
       var manual = kbIsManualId_(id);
-      var hit = manual ? kbXrefFocus_(res.bodyMd, anchor, kbXrefContext_(a)) : null;
+      var hit = manual ? kbXrefFocus_(res.bodyMd, anchor, kbXrefContext_(a), a.textContent) : null;
       if (hit) {
         el.innerHTML = '<div class="xc-h">' + esc(res.title) + (hit.block.label ? ' › ' + esc(hit.block.label) : '') + '</div>' +
           '<div class="xc-focus">The part this link is about — Open goes straight to it</div>' +
@@ -7006,7 +7023,7 @@ function kbDrawerOpenItem_(id, anchor, nav) {
         // block its preview chose; else the anchor, as before.
         var landed = null;
         if (nav && nav.back) body.scrollTop = nav.back.scrollTop || 0;
-        else if (nav && nav.ctx && kbIsManualId_(id)) landed = kbXrefLandEl_(art, res.bodyMd || '', anchor, nav.ctx);
+        else if (nav && (nav.ctx || nav.text) && kbIsManualId_(id)) landed = kbXrefLandEl_(art, res.bodyMd || '', anchor, nav.ctx, nav.text);
         if (landed) kbFlashBlock_(landed);
         else if (anchor && !(nav && nav.back)) kbScrollToAnchor_(body, anchor);
       }

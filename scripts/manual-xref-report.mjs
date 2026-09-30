@@ -3,11 +3,16 @@
 // manual-xref-report.mjs — which manual cross-references would preview the
 // target's OPENING rather than the part the link is about (Batch M5a).
 //
-// A preview focuses on the block of the target that clearly matches the
-// link's own row / item / paragraph / callout; when no block clearly wins it
-// shows the section's opening, exactly as before M5a. This report lists the
-// links that land there WITHOUT a heading anchor — the ones worth an anchor in
-// the manual source (`[4.11 FAQ](kb:man-4-11#…)` via a numbered heading).
+// A preview focuses on the row a link's text names, or the block of the target
+// that clearly matches the link's own row / item / paragraph / callout; when
+// neither holds it shows the section's opening, exactly as before M5a. That is
+// BY DESIGN for a link with its own heading anchor (the author chose the
+// place) and for a target with fewer than two numbered sub-sections (there is
+// no heading to point at). The WARNING counts only the rest — links an anchor
+// in the manual source could focus — and `--list` names each with the
+// sub-section whose words best match the link, as a SUGGESTION to check: that
+// match is too loose to show a rep unasked (measured 2026-09-30: roughly six
+// in ten right), which is exactly why a person decides it here.
 //
 // It runs the APP'S OWN functions, read out of web-app/kb/script_kb.html — the
 // scorer the reader uses — so the report cannot disagree with the preview a
@@ -51,28 +56,47 @@ export function loadScorer(src) {
   const ctx = vm.createContext({});
   vm.runInContext([decl('KB_CTX_MARGIN'), decl('KB_CTX_MIN_SHARED'), decl('KB_CTX_STOP'),
     ...['kbManualExcerpt_', 'kbMdPlain_', 'kbNormText_', 'kbCtxTokens_', 'kbManualBlocks_',
-      'kbBestBlock_', 'kbXrefFocus_', 'kbMdLinkContexts_'].map(fn)].join('\n'), ctx);
+      'kbBestBlock_', 'kbNamedRow_', 'kbXrefFocus_', 'kbMdLinkContexts_'].map(fn)].join('\n'), ctx);
   return ctx;
+}
+
+const NUMBERED = /^(?:\d+|[A-Z])\.[0-9A-Za-z]+(?:\.\d+)*$/;
+/** Pure — a section's TOP-LEVEL numbered sub-sections, each with all of its
+ *  words (deeper sub-sections included): [{num, title, text}]. */
+export function subSections(k, md) {
+  const heads = [];
+  String(md || '').split('\n').forEach((ln) => {
+    const h = ln.match(/^(#{1,6})\s+(\S+)\s*(.*)$/);
+    if (h && NUMBERED.test(h[2])) heads.push({ lvl: h[1].length, num: h[2], title: h[3] });
+  });
+  if (!heads.length) return [];
+  const top = Math.min(...heads.map((h) => h.lvl));
+  return heads.filter((h) => h.lvl === top).map((h) => ({
+    num: h.num, title: h.title, label: h.num + ' ' + h.title,
+    text: h.title + ' ' + k.kbMdPlain_(k.kbManualExcerpt_(md, h.num, Infinity).md),
+  }));
 }
 
 /** Pure — the report over a manual bundle's articles. */
 export function report(k, articles) {
   const byId = {};
   articles.forEach((a) => { byId[a.Id || a.id] = a; });
-  const out = { links: 0, unanchored: 0, focused: 0, opening: 0, missing: 0, warnings: [] };
+  const out = { links: 0, unanchored: 0, focused: 0, opening: 0, byDesign: 0, missing: 0, warnings: [] };
   articles.forEach((a) => {
     k.kbMdLinkContexts_(a.BodyMd || a.bodyMd || '').forEach((l) => {
       out.links++;
       const t = byId[l.id];
       if (!t) { out.missing++; return; }
-      const hit = k.kbXrefFocus_(t.BodyMd || t.bodyMd || '', l.anchor, l.ctx);
-      if (hit) { out.focused++; return; }
+      const md = t.BodyMd || t.bodyMd || '';
+      if (k.kbXrefFocus_(md, l.anchor, l.ctx, l.text)) { out.focused++; return; }
       out.opening++;
-      if (l.anchor) return;
-      out.unanchored++;
-      // A one-block target IS its opening — nothing to anchor.
-      if (k.kbManualBlocks_(t.BodyMd || t.bodyMd || '').length < 2) return;
-      out.warnings.push({ from: a.Id || a.id, to: l.id, text: l.text, ctx: String(l.ctx).replace(/\s+/g, ' ').trim().slice(0, 90) });
+      if (!l.anchor) out.unanchored++;
+      const subs = subSections(k, md);
+      // By design: the author anchored it, or there is no heading to point at.
+      if (l.anchor || subs.length < 2 || k.kbManualBlocks_(md).length < 2) { out.byDesign++; return; }
+      const hit = k.kbBestBlock_(subs, k.kbCtxTokens_(l.ctx));
+      out.warnings.push({ from: a.Id || a.id, to: l.id, text: l.text, ctx: String(l.ctx).replace(/\s+/g, ' ').trim().slice(0, 90),
+        suggest: hit ? hit.block.label : '' });
     });
   });
   return out;
@@ -86,11 +110,14 @@ if (import.meta.url === 'file://' + process.argv[1] || process.argv[1] === fileU
   const r = report(k, bundle.articles || []);
   if (JSON_OUT) { console.log(JSON.stringify(r, null, 2)); process.exit(0); }
   console.log('Cross-references: ' + r.links + ' · previews focus on the linked part: ' + r.focused +
-    ' · show the opening: ' + r.opening + (r.missing ? ' · target not in the bundle: ' + r.missing : ''));
+    ' · show the opening: ' + r.opening + ' (' + r.byDesign + ' by design — anchored, or no sub-section to point at)' +
+    (r.missing ? ' · target not in the bundle: ' + r.missing : ''));
   if (r.warnings.length) {
     console.log('WARNING: ' + r.warnings.length + ' link' + (r.warnings.length === 1 ? '' : 's') +
-      ' with no heading anchor preview the opening of a multi-part section — an anchor in the source would focus them' +
-      (LIST ? ':' : ' (node scripts/manual-xref-report.mjs --list names them).'));
-    if (LIST) r.warnings.forEach((w) => console.log('  ' + w.from + ' → ' + w.to + '  “' + w.text + '”  ' + (w.ctx ? '[' + w.ctx + ']' : '[no context — the link stands alone]')));
+      ' preview the opening of a section with numbered sub-sections — pointing ' + (r.warnings.length === 1 ? 'it' : 'each') +
+      ' at one in the manual source would focus ' + (r.warnings.length === 1 ? 'it' : 'them') +
+      (LIST ? ' (the suggestion is the closest match by words — check it; it is not applied):' : ' (node scripts/manual-xref-report.mjs --list names them, each with a suggested sub-section).'));
+    if (LIST) r.warnings.forEach((w) => console.log('  ' + w.from + ' → ' + w.to + '  “' + w.text + '”  ' +
+      (w.ctx ? '[' + w.ctx + ']' : '[no context — the link stands alone]') + (w.suggest ? '  → suggest ' + w.suggest : '  → no clear sub-section')));
   }
 }

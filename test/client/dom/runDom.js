@@ -5533,3 +5533,23 @@ test('M5a DOM: the reader and the report read ONE context — every link\'s rend
     assert.strictEqual(el.tagName, { row: 'TR', item: 'LI', callout: 'BLOCKQUOTE', para: 'P' }[b.kind]);
   });
 });
+
+test('M5a-FU DOM: a link that names a directory contact previews and lands on THAT row — the name is the part, whatever the sentence around it says', async () => {
+  const h = m5aBoot_();
+  const doc = h.window.document;
+  const dirMd = '| Team | Line |\n|---|---|\n| PT Evaluation Team | 4410 |\n| Qualified Leads | 4420 |\n| Compliance Specialist | 4430 |\n';
+  const dirItem = { id: 'man-b-1', title: 'B.1 Directory', type: 'article', status: 'published', department: 'Appendix B — Directory', bodyMd: dirMd };
+  h.read('kbDrawerOpen_')();
+  h.read('kbDrawerOpenItem_')('man-0-7');
+  h.run.flushSuccess({ id: 'man-0-7', title: '0.7 Coverage basics', type: 'article', status: 'published', department: 'Part 00 — CSR Core',
+    bodyMd: 'A patient who already finished a valid evaluation goes to [Qualified Leads](kb:man-b-1) — transfer them.\n' }, 'getReferenceItem');
+  const a = h.$('#kbd-body a.kb-xref[data-kb-id="man-b-1"]');
+  h.read('kbXrefShow_')(a);
+  h.run.flushSuccess(dirItem, 'getReferenceItem');
+  const card = doc.getElementById('kb-xrefcard');
+  assert.strictEqual(card.querySelector('.xc-h').textContent, 'B.1 Directory › Qualified Leads', 'the card names the contact');
+  assert.ok(/4420/.test(card.querySelector('.xc-body').textContent) && !/4410/.test(card.querySelector('.xc-body').textContent), 'its row, not the directory\'s opening');
+  h.click(a);
+  h.run.flushSuccess(dirItem, 'getReferenceItem');
+  assert.ok(m5aRow_(doc.getElementById('kbd-body'), 'Qualified Leads').classList.contains('kb-h-flash'), 'the click lands on that row');
+});

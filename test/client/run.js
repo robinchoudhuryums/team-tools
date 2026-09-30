@@ -30564,7 +30564,7 @@ function m5aCtx_() {
   const decl = (re) => { const m = re.exec(M1_KB_SRC); assert.ok(m, 'declared: ' + re); return m[0]; };
   const stop = M1_KB_SRC.slice(M1_KB_SRC.indexOf('var KB_CTX_STOP'), M1_KB_SRC.indexOf('})();', M1_KB_SRC.indexOf('var KB_CTX_STOP')) + 5);
   vm.runInContext([decl(/var KB_CTX_MARGIN = [^\n]+/), decl(/var KB_CTX_MIN_SHARED = [^\n]+/), stop,
-    ...['kbManualExcerpt_', 'kbMdPlain_', 'kbNormText_', 'kbCtxTokens_', 'kbManualBlocks_', 'kbBestBlock_', 'kbXrefFocus_', 'kbMdLinkContexts_']
+    ...['kbManualExcerpt_', 'kbMdPlain_', 'kbNormText_', 'kbCtxTokens_', 'kbManualBlocks_', 'kbBestBlock_', 'kbNamedRow_', 'kbXrefFocus_', 'kbMdLinkContexts_']
       .map((n) => extractFnFrom(M1_KB_SRC, n))].join('\n'), ctx);
   return ctx;
 }
@@ -30628,25 +30628,60 @@ test('M5a-C3: kbMdLinkContexts_ — a link\'s context is its own row / item / pa
   assert.ok(/B\.1 Directory/.test(l[2].ctx) && !/\bA\b/.test(l[2].ctx.replace('and', '')), 'each link drops only its OWN text');
 });
 
-test('M5a-C4: the export\'s report runs the APP\'S scorer over the bundle — focused, opening, missing counted; a warning only for an UNANCHORED link into a MULTI-block section that no block clearly matches; the export calls it and cannot be failed by it', () => {
+test('M5a-C4 (follow-on): the export\'s report runs the APP\'S scorer over the bundle — focused (a named row included), opening, missing counted; the opening is BY DESIGN for an anchored link or a target with fewer than two numbered sub-sections, and only the rest WARN, each with a suggested sub-section; the export calls it and cannot be failed by it', () => {
   const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'm5a-'));
   const file = path.join(dir, 'manual.json');
   const src = '| Item | Coverage | See |\n|---|---|---|\n' +
     '| Ramps | Out-of-pocket only | [4.11 FAQ](kb:man-4-11) |\n' +
     '| Weather | Forecast unknown | [4.11 FAQ](kb:man-4-11) |\n' +
-    '| Weather | Forecast unknown | [4.11.1 Questions](kb:man-4-11#4.11.1) |\n' +
-    '| Short | Nothing | [One](kb:man-one) |\n| Gone | Nowhere | [Old](kb:man-gone) |\n';
+    '| Weather | Forecast unknown | [4.11.1 Power chairs](kb:man-4-11#4.11.1) |\n' +
+    '| Short | Nothing | [One](kb:man-one) |\n| Gone | Nowhere | [Old](kb:man-gone) |\n' +
+    '| Leads | Transfer | [Qualified Leads](kb:man-b-1) |\n| Moon | Phases | [Two](kb:man-two) |\n';
+  const faq = '## 4.11.1 Power chairs\n\n' + M5A_FAQ + '\n## 4.11.2 Weather\n\nWeather can delay a delivery.\n\nForecast calls are made the day before.\n\nUnknown dates are rescheduled.\n';
   fs.writeFileSync(file, JSON.stringify({ articles: [
-    { Id: 'man-0-7', BodyMd: src }, { Id: 'man-4-11', BodyMd: '## 4.11.1 Questions\n\n' + M5A_FAQ }, { Id: 'man-one', BodyMd: 'One paragraph.\n' }] }));
+    { Id: 'man-0-7', BodyMd: src }, { Id: 'man-4-11', BodyMd: faq }, { Id: 'man-one', BodyMd: 'One paragraph.\n' },
+    { Id: 'man-two', BodyMd: 'First paragraph.\n\nSecond paragraph.\n' },
+    { Id: 'man-b-1', BodyMd: '| Team | Line |\n|---|---|\n| PT Evaluation Team | 4410 |\n| Qualified Leads | 4420 |\n' }] }));
   const r = JSON.parse(require('child_process').execFileSync(process.execPath, [path.join(__dirname, '../../scripts/manual-xref-report.mjs'), file, '--json'], { encoding: 'utf8' }));
-  assert.deepStrictEqual([r.links, r.focused, r.opening, r.missing], [6, 1, 3, 2], 'the ramps row focuses; three show the opening; the two dangling links (man-gone, and the FAQ\'s own 4.9) are counted apart');
-  assert.deepStrictEqual(r.warnings.map((w) => [w.from, w.to]), [['man-0-7', 'man-4-11']], 'ONE warning: unanchored, multi-block, no match (an anchored link and a one-block target are not worth an anchor)');
+  assert.deepStrictEqual([r.links, r.focused, r.opening, r.byDesign, r.missing], [8, 2, 4, 3, 2],
+    'ramps and the named directory row focus; four show the opening, three of them by design (anchored, one block, no sub-sections); the two dangling links (man-gone, and the FAQ\'s own 4.9) are counted apart');
+  assert.deepStrictEqual(r.warnings.map((w) => [w.from, w.to, w.suggest]), [['man-0-7', 'man-4-11', '4.11.2 Weather']],
+    'ONE warning — the only link an anchor could fix — with the sub-section its words point at (a SUGGESTION: no single block had two shared words)');
   const rep = fs.readFileSync(path.join(__dirname, '../../scripts/manual-xref-report.mjs'), 'utf8');
-  assert.ok(/fs\.readFileSync\(path\.join\(ROOT, 'web-app\/kb\/script_kb\.html'\)/.test(rep) && !/function kbBestBlock_|function kbManualBlocks_/.test(rep), 'the report READS the scorer out of the partial — it has no copy of its own (g126)');
+  assert.ok(/fs\.readFileSync\(path\.join\(ROOT, 'web-app\/kb\/script_kb\.html'\)/.test(rep) && !/function kbBestBlock_|function kbManualBlocks_|function kbNamedRow_/.test(rep), 'the report READS the scorer out of the partial — it has no copy of its own (g126)');
   const py = fs.readFileSync(path.join(__dirname, '../../manual/export_reference.py'), 'utf8');
   assert.ok(/json\.dump\(bundle, f[^\n]*\n[\s\S]*?xref_report\(os\.path\.join\(out, "manual\.json"\)\)\n    return 0/.test(py), 'the export reports AFTER writing the file, and returns 0 whatever it says');
   const fnPy = py.slice(py.indexOf('def xref_report('), py.indexOf('\ndef ', py.indexOf('def xref_report(') + 5));
   assert.ok(/except \(OSError, subprocess\.SubprocessError\)/.test(fnPy) && !/sys\.exit|raise|errors\.append/.test(fnPy), 'a missing Node or a failed run is said, never fatal');
+});
+
+test('M5a-FU1: kbNamedRow_ — a link whose text names ONE row (Appendix B\'s contacts) focuses that row, ahead of its context; two rows of that name, a section number or no text name none', () => {
+  const k = m5aCtx_();
+  const dir = '| Team | Line |\n|---|---|\n| PT Evaluation Team | 4410 |\n| Qualified Leads | 4420 — ramps and pocket items |\n| Prior Authorization Specialist — Complex PWC / Appeals | 4430 |\n';
+  const hit = k.kbXrefFocus_(dir, '', 'A patient who has completed a valid evaluation is transferred', 'Qualified Leads');
+  assert.ok(hit && hit.block.label === 'Qualified Leads', 'the row the text names');
+  assert.strictEqual(k.kbXrefFocus_(dir, '', 'ramps pocket', 'PT Evaluation Team').block.label, 'PT Evaluation Team', 'the NAME wins over a context that matches another row');
+  assert.strictEqual(k.kbXrefFocus_(dir, '', '', 'prior authorization specialist - complex pwc/appeals').block.label.indexOf('Prior Authorization') === 0, true, 'case and punctuation do not matter');
+  const twice = dir + '| Qualified Leads | 4421 |\n';
+  assert.strictEqual(k.kbNamedRow_(k.kbManualBlocks_(twice), 'Qualified Leads'), null, 'a name two rows carry names neither');
+  assert.strictEqual(k.kbNamedRow_(k.kbManualBlocks_(dir), 'B.1 Directory'), null, 'the section\'s own name names no row');
+  assert.strictEqual(k.kbNamedRow_(k.kbManualBlocks_(dir), ''), null);
+  assert.strictEqual(k.kbNamedRow_(k.kbManualBlocks_('- Qualified Leads\n- PT Evaluation Team\n'), 'Qualified Leads'), null, 'only a table ROW is named — a list item is prose');
+});
+
+test('M5a-FU2: the "Back to" controls stay in reach — each is sticky and reaches past its OWN scroller\'s padding (derived from the scroller\'s rule), so no content shows in a gap above it', () => {
+  const rule = (sel) => { const m = new RegExp('\\n\\s*' + sel.replace(/[.#]/g, '\\$&') + ' \\{([^}]*)\\}').exec(M1_KB_SRC); assert.ok(m, sel + ' has a rule'); return m[1]; };
+  const px = (decl, prop) => { const m = new RegExp('(?:^|;)\\s*' + prop + ':\\s*([^;]+)').exec(decl); assert.ok(m, prop + ' in ' + decl); return m[1].trim(); };
+  const main = px(rule('.kb-main'), 'padding').split(/\s+/);   // 18px 22px
+  const band = rule('.kb-man-back');
+  assert.strictEqual(px(band, 'position'), 'sticky');
+  assert.strictEqual(px(band, 'top'), '-' + main[0], 'the band\'s top is minus .kb-main\'s top padding');
+  assert.deepStrictEqual(px(band, 'margin').split(/\s+/).slice(1, 2), ['-' + main[1]], 'and it spans .kb-main\'s side padding');
+  assert.ok(/var\(--paper-card\)/.test(px(band, 'background')), 'opaque — the page shows through nothing');
+  const body = px(rule('.kbd-body'), 'padding').split(/\s+/);   // 10px 14px 16px
+  const row = rule('.kbd-body .kbd-backto');
+  assert.strictEqual(px(row, 'position'), 'sticky');
+  assert.strictEqual(px(row, 'top'), '-' + body[0], 'the drawer row\'s top is minus .kbd-body\'s top padding');
 });
 
 
