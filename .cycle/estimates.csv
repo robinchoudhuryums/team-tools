@@ -126,3 +126,16 @@ date,cycle,action,estimate,estimated_hours,actual_hours,calibration_note
 2026-09-25,22,FU (T5 rework + B6-B8 follow-ups),L,10,4,0.4x.
 2026-09-25,22,B9 (U1-U6 A7 A9 M11 — interface polish),M,7.5,2.5,0.33x.
 2026-09-25,22,DF (S6 S8 S10 M6 C12 — deferred findings),M,6,2.5,0.42x. M6 was the only M item and ran to plan.
+2026-09-30,22post,"A (1 Close reason, 2a Scratchpad, 6 DR sort/filter, 7 DR manager layout)",M,6,3,0.5x.
+2026-09-30,22post,"B (2b floating Scratchpad, 2c formatting toolbar)",M-L,7,2.5,0.36x.
+2026-09-30,22post,"C (8 Spanish assign notices, 3 app-activity presence)",M,6,3,0.5x.
+2026-09-30,22post,D (Dept Request reply = resolution),L,8,3.5,0.44x.
+2026-09-30,22post,E (Dashboard widgets),L,8,3.5,0.44x.
+2026-09-30,22post,"M1 (manual drafts in Reference: exporter, renderer, importer)",L,13,4.5,0.35x. The exporter was the largest line and ran shortest.
+2026-09-30,22post,"M2 (the manual reader, links, previews, number jump)",L,12,5,0.42x.
+2026-09-30,22post,"M3 (appendix order, diagrams, images)",M-L,7,4,0.57x. Images were the one line near plan.
+2026-09-30,22post,"M4 (codes, recent changes, keyboard previews, print)",M-L,9,3.5,0.39x.
+2026-09-30,22post,M4-FU3 (import without Drive),M,4,2,0.5x.
+2026-09-30,22post,"M5a (context-focused previews, codes in more places, back to)",M-L,10,3.5,0.35x.
+2026-09-30,22post,"M5a-FU (unanchored links report, sticky Back-to)",S-M,3.5,1.5,0.43x.
+2026-09-30,22post,"M5b (stems, glossary phrases, router hits, cached index)",L,8.5,3,0.35x.
