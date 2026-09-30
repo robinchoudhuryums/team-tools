@@ -30743,7 +30743,7 @@ test('M5b-S1: kbStem_ + kbTermCount_ — a word finds its forms ("delivered" →
   assert.strictEqual(s.kbStem_('supplies'), s.kbStem_('supply'), 'supplies ~ supply');
   assert.strictEqual(s.kbStem_('denied'), s.kbStem_('denial'), 'denied ~ denial');
   assert.strictEqual(s.kbStem_('rental'), 'rent');
-  ['pap', 'cpap', 'rent', 'e0601', 'k0006', 'advance beneficiary notice', '=abn', 'oxygen'].forEach((w) => assert.strictEqual(s.kbStem_(w), w, w + ' is left alone'));
+  ['pap', 'cpap', 'rent', 'e0601', 'k0006', '1990s', 'advance beneficiary notice', '=abn', 'oxygen'].forEach((w) => assert.strictEqual(s.kbStem_(w), w, w + ' is left alone'));
   assert.strictEqual(s.kbTermCount_('delivered', 'schedule the delivery today', 4), 1, 'the stem finds the form');
   assert.strictEqual(s.kbTermCount_('rental', 'the current balance', 4), 0, 'never mid-word');
   assert.strictEqual(s.kbTermCount_('rental', 'a rented bed', 4), 1, 'at a word start');
