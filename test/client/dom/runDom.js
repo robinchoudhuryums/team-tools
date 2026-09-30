@@ -5444,6 +5444,17 @@ test('M5a DOM: the drawer keeps the trail — the preview\'s Open lands on the r
   h.run.flushSuccess(M5A_ITEM('man-4-11'), 'getReferenceItem');
   assert.ok(m5aRow_(body, 'Do you sell ramps').classList.contains('kb-h-flash'), 'Open lands on the part the card showed');
   assert.strictEqual(backText(), 'Back to 0.7 Coverage basics');
+  // Back FROM a section: 0.7 again, where it was — and nothing left to go back to (a Back never pushes).
+  st = 0;
+  h.read('kbDrawerBackTo_')();
+  h.run.flushSuccess(M5A_ITEM('man-0-7'), 'getReferenceItem');
+  assert.strictEqual(st, 120, 'the scroll 0.7 was left at');
+  assert.strictEqual(backText(), '', 'no "Back to 4.11" — the trail pops, like a browser Back');
+  // …and forward again the same way.
+  h.read('kbXrefShow_')(m5aRow_(body, 'Ramps').querySelector('a.kb-xref'));
+  h.click(doc.getElementById('kb-xrefcard').querySelector('.xc-row a.kb-xref'));
+  h.run.flushSuccess(M5A_ITEM('man-4-11'), 'getReferenceItem');
+  assert.strictEqual(backText(), 'Back to 0.7 Coverage basics');
   // Leave by a code: the lookups, with the way back above them.
   st = 300;
   h.click(h.$('#kbd-body a.kb-hcpcs[data-hcpcs="E1399"]'));
@@ -5500,7 +5511,7 @@ test('M5a DOM: the reader and the report read ONE context — every link\'s rend
   const md = 'Opening with **bold**, `Trx State` and a [plain link](https://example.com).\n\n' +
     '| Item | Coverage | See |\n|---|---|---|\n| Ramps | Out-of-pocket only | [4.11 FAQ](kb:man-4-11) |\n| Lifts \\| hoists | *Not* offered | [4.11 FAQ](kb:man-4-11) and [0.7](kb:man-0-7) |\n\n' +
     '1. Check the **Trx State** first, see [4.11 FAQ](kb:man-4-11)\n   and the ticket after\n   - a nested point about [ramps](kb:man-4-11)\n2. Then decide\n\n' +
-    '> **Watch-out — ramps are out-of-pocket.** See [4.11 FAQ](kb:man-4-11).\n>\n> | a | b |\n> |---|---|\n> | x | y |\n\n' +
+    '> **Watch-out — ramps are out-of-pocket.** See [4.11 FAQ](kb:man-4-11).\n>\n> | You want | Where |\n> |---|---|\n> | **Notes** | the Messages button |\n\n' +
     '## 0.7.1 More\n\nA closing paragraph naming E1399 and [4.11 FAQ](kb:man-4-11) together.\n';
   const part = { department: 'Part 00 — CSR Core', isAdmin: true, sections: [{ id: 'man-0-7', title: '0.7 Coverage basics', status: 'published', sortOrder: 7, bodyMd: md }] };
   h.read('kbOpenItem_')('man-0-7');
