@@ -284,6 +284,7 @@ Carried from cycle 22 (full list in its HISTORY block, "Open follow-on items"):
   Tasks" means the Dashboard's Needs-you list.
 
 ## Where I left off
-22post A–E, M0–M5a (+ follow-ons) are merged (PR #280 the last); M5b (manual search) is done on the
-branch `claude/optimistic-newton-gkdb3v` (restarted from main after PR #280), block `22post-M5b-broad-implement.md`.
-Next: PR + merge, deploy, re-export + import manual.json once (the synonyms ride it), walk S127 + S128.
+22post A–E and M0–M5b are merged (M5b = PR #281, 2026-09-30); the /sync-docs pass for M5a/M5b (README,
+g162, g116's fourteenth direction, subsystem + operator surfaces) is on `claude/optimistic-newton-gkdb3v`, one commit
+ahead of main — docs only. Owed before this stretch is truly closed: deploy M5a + M5b, re-export + import manual.json
+once (the synonyms ride it), walk S124–S128 live. Then /reflect closes 22post; the next /broad-scan opens cycle 23.
