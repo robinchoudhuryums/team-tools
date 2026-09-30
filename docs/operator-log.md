@@ -26,6 +26,13 @@ the normal deploy (`clasp push -f` + New version); there is nothing to import.
   `node scripts/manual-xref-report.mjs --list` names them — each is a link that
   would focus if the manual source pointed it at a numbered heading. Optional;
   it never fails the export, and without Node the export says so and goes on.
+- **Follow-ons, same day:** a link that names a directory contact previews that
+  contact's row; the tab's "Back to" chip stays at the top as you scroll; and
+  the WARNING now counts only links an anchor could fix (41 on the current
+  manual — a link into a section with no numbered sub-sections shows its
+  opening by design), with `--list` suggesting a sub-section for each. The
+  suggestion is a word match to CHECK, not applied — and adding an anchor
+  changes the number printed in the manual, so it is your call.
 
 ## 2026-09-29 — the manual import without Drive (M4-FU1..FU3)
 

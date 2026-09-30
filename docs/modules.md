@@ -917,7 +917,13 @@ not restate it. Server endpoints live in the fourteen server files
      chip on the new part page that returns to the row the rep left from. The
      export prints how many links focus and warns about the unanchored ones that
      cannot (`node scripts/manual-xref-report.mjs --list` names them) — the
-     report runs the app's own scorer.
+     report runs the app's own scorer. **Follow-ons (2026-09-30):** a link whose
+     text names one row of its target — Appendix B's contacts, "[Qualified
+     Leads](kb:man-b-1)" — previews and lands on that row; the tab's "Back to"
+     chip is a band that stays at the top of the reader as it scrolls; and the
+     report now WARNS only about links an anchor could fix (the target has
+     numbered sub-sections), each with a suggested sub-section to check — a
+     link into a section with none shows its opening by design.
 
 <a id="training-employee-docs"></a>
      **Batch 6 (2026-09-18):** the drawer is `role="dialog"` named by its own

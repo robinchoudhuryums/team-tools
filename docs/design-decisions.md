@@ -4879,4 +4879,17 @@ pick them up without re-deriving the context.
   embedding-style semantic matching (no model on this path, and a wrong focus
   is worse than the opening), and per-link anchors generated at export (they
   would change the manual source's links, which the operator owns).
+  **Follow-ons (2026-09-30):** a link whose TEXT names exactly one table row of
+  its target (`kbNamedRow_` — Appendix B's contacts, 13 links, every one right)
+  focuses that row ahead of the context score: the name is the part, and it is
+  an exact match, not a guess. Scoring whole numbered SUB-SECTIONS was measured
+  as a second tier and rejected for the reader — it would focus 16 more links
+  but roughly six in ten correctly ("I want to pay my bill" → "10.20.4
+  Troubleshooting") — and kept only as the report's SUGGESTION beside each
+  warning, where a person decides. The report counts an opening as by design
+  when the link is anchored or the target has fewer than two numbered
+  sub-sections, so its WARNING is the links an anchor could actually fix (41
+  on the real manual, down from a noisy 119). The tab's chip became a sticky
+  opaque band reaching past `.kb-main`'s padding (a bare sticky pill let the
+  section title show around it).
 

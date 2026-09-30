@@ -2245,3 +2245,22 @@ per-change detail. By delta:
   callout showed no flash under its own tint (now an accent ring). A sticky tab
   chip was tried and reverted: at phone width it sat over the section title.
 
+## 22post — M5a follow-ons (2026-09-30)
+
+- Node +2 (M5a-FU1 the named row, M5a-FU2 the sticky controls DERIVED from
+  their scrollers' padding) and M5a-C4 rewritten for the report's by-design
+  split and suggestions; DOM +1 (a directory contact previews and lands on its
+  row). No new visual scenario: `reference-manual-backchip-*` photograph the
+  band.
+- Measured before building: the 119 warnings were 54 targets with no
+  sub-headings (nothing to anchor), 13 directory contacts named by the link
+  (now focused) and ~50 with sub-headings; a sub-section tier was scored by eye
+  at roughly six in ten and kept out of the reader.
+- 10 bite-checks; one NO BITE acted on: the rows-only rule was tested with a
+  list item, whose label is the heading above it rather than its own text, so
+  removing the rule changed nothing observable. A heading of the same name over
+  one paragraph now carries it.
+- The sticky band was found by PROBING the scroller in Playwright: `#kb-main`
+  scrolls with 18px of top padding and a sticky box stops at that padding
+  edge, so content showed in the gap above it; the band now reaches past it.
+
