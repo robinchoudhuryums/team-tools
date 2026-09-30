@@ -642,7 +642,25 @@ def main():
                 f.write(partial)
             print("diagram partial       : UPDATED web-app/kb/script_manual_diagrams.html — "
                   "commit it and deploy; diagrams reach the app with the code, not the import")
+    xref_report(os.path.join(out, "manual.json"))
     return 0
+
+
+def xref_report(path):
+    """Batch M5a — which cross-references preview the target's OPENING (no
+    block of it clearly matches the link) and carry no heading anchor to fix
+    that. The app's own scorer does the work (scripts/manual-xref-report.mjs
+    reads it out of script_kb.html), so the report is the preview a rep sees.
+    WARNING only: a missing Node or a failed run never fails the export."""
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts", "manual-xref-report.mjs")
+    try:
+        r = subprocess.run(["node", script, path], capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"xref previews         : not checked ({e.__class__.__name__} — Node is needed for the report)")
+        return
+    lines = (r.stdout or r.stderr or "").strip().splitlines()
+    for ln in lines:
+        print(("xref previews         : " + ln) if not ln.startswith("  ") else ln)
 
 
 def howto_article():

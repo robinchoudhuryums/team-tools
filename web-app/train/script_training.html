@@ -385,6 +385,9 @@ function trainRenderReader_(item) {
       '<div class="body">' + body + '</div>' +
       '<div class="foot" id="tr-reader-foot"></div>' +
     '</div>';
+  // M5a: a manual section assigned as training keeps its codes as lookups (the
+  // drawer opens over the reader, as a cross-reference here already does).
+  if (item.type !== 'embed' && typeof kbIsManualId_ === 'function' && kbIsManualId_(item.id)) kbLinkHcpcs_(overlay.querySelector('.kb-article'));
   trainSyncReaderFoot_(item.id);
 }
 

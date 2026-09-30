@@ -5336,3 +5336,189 @@ test('M4-FU2/FU3 DOM: the Manual dialog takes manual.json from the computer (no 
   h.read('kbManualSetFile_')({ name: 'other.json', size: 2, text: '{}' });
   assert.ok(imp.disabled && !gate.hidden, 'another file locks it again, with the reason back');
 });
+
+// ── Batch M5a — the reader ──────────────────────────────────────────────────
+section('Batch M5a — context-focused previews, code links in more places, back to the section');
+
+const M5A_TREE = { isAdmin: true, isManager: true, items: [
+  { id: 'man-0-7', department: 'Part 00 — CSR Core', title: '0.7 Coverage basics', type: 'article', status: 'published', sortOrder: 7 },
+  { id: 'man-4-11', department: 'Part 04 — Power Mobility', title: '4.11 FAQ', type: 'article', status: 'published', sortOrder: 11 },
+  { id: 'kb-1', department: 'Billing', title: 'Hand-written', type: 'article', status: 'published', sortOrder: 1 }] };
+// The manual's own 4.11 FAQ rows (manual.json, 2026-09-29), one code added.
+const M5A_FAQ_MD = '| Question | Answer |\n|---|---|\n' +
+  '| Do you have cup holders? | Yes, a cup holder can be added to a PMD. If the chair is already delivered, transfer to Service |\n' +
+  '| Do you offer a truck lift for a PMD? | No. We don\'t offer vehicle attachments of any kind |\n' +
+  '| Do you sell ramps? | Yes, but out-of-pocket only. Check the Item Master for pricing (E1399) |\n';
+const M5A_07_MD = 'What is covered, and where to read more.\n\n| Item | Coverage | See |\n|---|---|---|\n' +
+  '| Ramps | Out-of-pocket only | [4.11 FAQ (Power Mobility)](kb:man-4-11) |\n' +
+  '| Truck or vehicle lifts for a PMD | Not offered | [4.11 FAQ (Power Mobility)](kb:man-4-11) |\n' +
+  '| Weather | Unknown | [4.11 FAQ (Power Mobility)](kb:man-4-11) |\n';
+const M5A_P0 = { department: 'Part 00 — CSR Core', isAdmin: true, sections: [{ id: 'man-0-7', title: '0.7 Coverage basics', status: 'published', sortOrder: 7, bodyMd: M5A_07_MD }] };
+const M5A_P4 = { department: 'Part 04 — Power Mobility', isAdmin: true, sections: [{ id: 'man-4-11', title: '4.11 FAQ', status: 'published', sortOrder: 11, bodyMd: M5A_FAQ_MD }] };
+const M5A_ITEM = (id) => id === 'man-4-11'
+  ? { id: 'man-4-11', title: '4.11 FAQ', type: 'article', status: 'published', department: 'Part 04 — Power Mobility', bodyMd: M5A_FAQ_MD }
+  : { id: 'man-0-7', title: '0.7 Coverage basics', type: 'article', status: 'published', department: 'Part 00 — CSR Core', bodyMd: M5A_07_MD };
+
+function m5aBoot_() {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  h.run.respond('getReferenceTree', () => M5A_TREE);
+  h.window.enterTool('reference', 'reference');
+  h.flushTimers();
+  return h;
+}
+const m5aRow_ = (root, words) => [...root.querySelectorAll('tr')].filter((tr) => tr.textContent.indexOf(words) >= 0)[0];
+
+test('M5a DOM: a cross-reference previews the PART of its target the link is about — the ramps row previews "Do you sell ramps?", not the cup holders the FAQ opens with; another row of the same table previews ITS answer; a row nothing matches keeps the opening', async () => {
+  const h = m5aBoot_();
+  const doc = h.window.document;
+  h.read('kbOpenItem_')('man-0-7');
+  h.run.flushSuccess(M5A_P0, 'getManualPart');
+  const sec = doc.getElementById('kb-man-sec-man-0-7');
+  const link = (w) => m5aRow_(sec, w).querySelector('a.kb-xref');
+  const card = () => doc.getElementById('kb-xrefcard');
+  h.read('kbXrefShow_')(link('Ramps'));
+  h.run.flushSuccess(M5A_ITEM('man-4-11'), 'getReferenceItem');
+  assert.strictEqual(card().querySelector('.xc-h').textContent, '4.11 FAQ › Do you sell ramps?', 'the card names the part');
+  assert.ok(card().querySelector('.xc-focus'), 'and says it is the part the link is about');
+  const rows = [...card().querySelectorAll('.xc-body tbody tr')];
+  assert.strictEqual(rows.length, 1, 'ONE row, under its header');
+  assert.ok(/Do you sell ramps/.test(rows[0].textContent) && !/cup holder/.test(card().textContent), 'the ramps answer — not the opening');
+  assert.ok(card().querySelector('.xc-body thead th') && /Question/.test(card().querySelector('.xc-body thead').textContent), 'with the table\'s header, so the row reads');
+  assert.deepStrictEqual([...card().querySelectorAll('mark.kb-hl')].map((m) => m.textContent.toLowerCase()).sort(), ['pocket', 'ramp'], 'the words it matched on are marked');
+  assert.ok(card().querySelector('.xc-body a.kb-hcpcs[data-hcpcs="E1399"]'), 'a code in the preview is a lookup too');
+  // Another row, same target: no second read, a different card (the card is per LINK, not per target).
+  h.read('kbXrefShow_')(link('Truck'));
+  assert.strictEqual(h.run.pending('getReferenceItem').length, 0, 'from the cache');
+  assert.strictEqual(card().querySelector('.xc-h').textContent, '4.11 FAQ › Do you offer a truck lift for a PMD?');
+  // A row nothing clearly matches: the excerpt exactly as before — never a guess in place of the opening.
+  h.read('kbXrefShow_')(link('Weather'));
+  assert.strictEqual(card().querySelector('.xc-h').textContent, '4.11 FAQ', 'no part named');
+  assert.ok(!card().querySelector('.xc-focus') && /cup holder/.test(card().textContent), 'the opening, as before M5a');
+});
+
+test('M5a DOM: the click lands on that part — the target part loads and the ramps ROW is the landing, not the heading; a jump to another part leaves a "Back to 0.7" chip that returns to the row the rep left from; any other open clears it', async () => {
+  const h = m5aBoot_();
+  const doc = h.window.document;
+  h.read('kbOpenItem_')('man-0-7');
+  h.run.flushSuccess(M5A_P0, 'getManualPart');
+  h.click(m5aRow_(doc.getElementById('kb-man-sec-man-0-7'), 'Ramps').querySelector('a.kb-xref'));
+  assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Part 04 — Power Mobility']);
+  h.run.flushSuccess(M5A_P4, 'getManualPart');
+  const faq = doc.getElementById('kb-man-sec-man-4-11');
+  assert.ok(m5aRow_(faq, 'Do you sell ramps').classList.contains('kb-h-flash'), 'the ramps row is where the click landed');
+  assert.ok(!faq.querySelector('.kb-man-sec-h').classList.contains('kb-h-flash') && !m5aRow_(faq, 'cup holders').classList.contains('kb-h-flash'), 'not the heading, not the opening row');
+  const chip = () => doc.querySelector('#kb-main [data-kb-man-back] button');
+  assert.ok(chip() && /Back to 0\.7/.test(chip().textContent) && /Coverage basics/.test(chip().textContent), 'the chip names where the rep came from');
+  assert.strictEqual(chip().getAttribute('onclick'), 'kbManualBack_()');
+  h.read('kbManualBack_')();
+  assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Part 00 — CSR Core'], 'the part it came from reloads');
+  h.run.flushSuccess(M5A_P0, 'getManualPart');
+  assert.ok(m5aRow_(doc.getElementById('kb-man-sec-man-0-7'), 'Ramps').classList.contains('kb-h-flash'), 'Back lands on the row the rep left from');
+  assert.ok(!chip(), 'and the chip is spent');
+  // Jump again, then open something the ordinary way: the chip goes.
+  h.click(m5aRow_(doc.getElementById('kb-man-sec-man-0-7'), 'Truck').querySelector('a.kb-xref'));
+  h.run.flushSuccess(M5A_P4, 'getManualPart');
+  assert.ok(m5aRow_(doc.getElementById('kb-man-sec-man-4-11'), 'truck lift').classList.contains('kb-h-flash'), 'the truck row lands on the truck answer');
+  assert.ok(chip(), 'a chip again');
+  h.read('kbOpenItem_')('man-4-11');
+  assert.ok(!chip(), 'an open from the tree or a search is a fresh start — no chip');
+});
+
+test('M5a DOM: the drawer keeps the trail — the preview\'s Open lands on the row; leaving a section by a code, a search or the router offers "Back to" it, which restores the scroll and pops (never pushes); closing the drawer forgets the trail', async () => {
+  const h = m5aBoot_();
+  const doc = h.window.document;
+  h.read('kbDrawerOpen_')();
+  h.read('kbDrawerOpenItem_')('man-0-7');
+  h.run.flushSuccess(M5A_ITEM('man-0-7'), 'getReferenceItem');
+  const body = doc.getElementById('kbd-body');
+  let st = 120;
+  Object.defineProperty(body, 'scrollTop', { configurable: true, get: () => st, set: (v) => { st = v; } });
+  assert.ok(!h.$('#kbd-body .kbd-backto'), 'nothing to go back to yet');
+  const backText = () => { const b = h.$('#kbd-body .kbd-backto'); return b ? b.textContent.replace(/\s+/g, ' ').trim() : ''; };
+  // The card's Open, from a link in the drawer: the drawer opens the target on the row.
+  h.read('kbXrefShow_')(m5aRow_(body, 'Ramps').querySelector('a.kb-xref'));
+  h.run.flushSuccess(M5A_ITEM('man-4-11'), 'getReferenceItem');
+  h.click(doc.getElementById('kb-xrefcard').querySelector('.xc-row a.kb-xref'));
+  h.run.flushSuccess(M5A_ITEM('man-4-11'), 'getReferenceItem');
+  assert.ok(m5aRow_(body, 'Do you sell ramps').classList.contains('kb-h-flash'), 'Open lands on the part the card showed');
+  assert.strictEqual(backText(), 'Back to 0.7 Coverage basics');
+  // Leave by a code: the lookups, with the way back above them.
+  st = 300;
+  h.click(h.$('#kbd-body a.kb-hcpcs[data-hcpcs="E1399"]'));
+  assert.ok(doc.getElementById('kb-oop-item-d') && doc.getElementById('kb-oop-item-d').value === 'E1399', 'the code went to the lookups');
+  assert.strictEqual(backText(), 'Back to 4.11 FAQ', 'home offers the section the code came from');
+  assert.strictEqual(h.$('#kbd-body .kbd-backto').getAttribute('onclick'), 'kbDrawerBackTo_()');
+  h.read('kbDrawerBackTo_')();   // inline handlers do not run in this harness
+  h.run.flushSuccess(M5A_ITEM('man-4-11'), 'getReferenceItem');
+  assert.strictEqual(st, 300, 'Back restores where the rep was reading');
+  assert.strictEqual(backText(), 'Back to 0.7 Coverage basics', 'Back POPS — the section it left is not pushed');
+  // Leave by a search: the results offer the way back.
+  h.read('kbDrawerSearch_')('ramps');
+  h.run.flushSuccess({ results: [{ id: 'man-4-11', title: '4.11 FAQ', department: 'Part 04 — Power Mobility', type: 'article', heading: '', anchor: '', chunkMd: 'Ramps: see E1399.' }] }, 'searchReference');
+  assert.strictEqual(backText(), 'Back to 4.11 FAQ', 'the search results offer it');
+  // …and the router does too.
+  h.read('kbDrawerOpenRouter_')();
+  assert.strictEqual(backText(), 'Back to 4.11 FAQ', 'so does the call router');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.read('KB_DRAWER').stack.map((e) => e.id))), ['man-0-7', 'man-4-11'], 'the trail, oldest first, each section once');
+  h.read('kbDrawerClose_')();
+  h.read('kbDrawerOpen_')();
+  assert.strictEqual(backText(), '', 'a new visit starts with no trail');
+  assert.strictEqual(h.$('#kbd-backto').innerHTML, '');
+});
+
+test('M5a DOM: codes are lookups in more places — manual search results in the tab and the drawer (a partial highlight inside the code does not unlink it), and a manual section opened as training; a hand-written article\'s code stays text', async () => {
+  const h = m5aBoot_();
+  const doc = h.window.document;
+  const results = { results: [
+    { id: 'man-4-11', title: '4.11 FAQ', department: 'Part 04 — Power Mobility', type: 'article', heading: '', anchor: '', chunkMd: 'Ramps are out-of-pocket (E1399).' },
+    { id: 'kb-1', title: 'Hand-written', department: 'Billing', type: 'article', heading: '', anchor: '', chunkMd: 'Ramps (E1399) are covered here.' }] };
+  h.read('kbDoSearch_')('E13');
+  h.run.flushSuccess(results, 'searchReference');
+  const tabLink = h.$('#kb-main .kb-chunk-body[data-kb-man] a.kb-hcpcs[data-hcpcs="E1399"]');
+  assert.ok(tabLink, 'the tab\'s manual result links its code');
+  assert.ok(tabLink.querySelector('mark.kb-hl') && tabLink.textContent === 'E1399', 'the highlight sits INSIDE the link — linked first, so the mark cannot split the code');
+  assert.strictEqual(h.$$('#kb-main .kb-chunk-body a.kb-hcpcs').length, 1, 'the hand-written result is not the manual');
+  h.read('kbDrawerOpen_')();
+  h.read('kbDrawerSearch_')('E13');
+  h.run.flushSuccess(results, 'searchReference');
+  assert.ok(h.$('#kbd-body .kb-chunk-body[data-kb-man] a.kb-hcpcs[data-hcpcs="E1399"] mark.kb-hl'), 'the drawer\'s too');
+  assert.strictEqual(h.$$('#kbd-body a.kb-hcpcs').length, 1);
+  h.read('kbDrawerClose_')();
+  // Training: a manual section assigned as training.
+  const ov = mount_(h, 'train-reader-overlay');
+  h.read('trainRenderReader_')({ id: 'man-4-11', type: 'article', title: '4.11 FAQ', bodyMd: 'Ramps: E1399.' });
+  assert.ok(ov.querySelector('.kb-article a.kb-hcpcs[data-hcpcs="E1399"]'), 'the training reader links a manual section\'s code');
+  h.read('trainRenderReader_')({ id: 'kb-1', type: 'article', title: 'Hand-written', bodyMd: 'Ramps: E1399.' });
+  assert.ok(!ov.querySelector('a.kb-hcpcs'), 'and leaves a hand-written article alone');
+});
+
+test('M5a DOM: the reader and the report read ONE context — every link\'s rendered context has the same words as its source context (kbXrefContext_ vs kbMdLinkContexts_), and every block of a rich section is found again where it rendered, so a landing cannot silently miss', async () => {
+  const h = m5aBoot_();
+  const doc = h.window.document;
+  const md = 'Opening with **bold**, `Trx State` and a [plain link](https://example.com).\n\n' +
+    '| Item | Coverage | See |\n|---|---|---|\n| Ramps | Out-of-pocket only | [4.11 FAQ](kb:man-4-11) |\n| Lifts \\| hoists | *Not* offered | [4.11 FAQ](kb:man-4-11) and [0.7](kb:man-0-7) |\n\n' +
+    '1. Check the **Trx State** first, see [4.11 FAQ](kb:man-4-11)\n   and the ticket after\n   - a nested point about [ramps](kb:man-4-11)\n2. Then decide\n\n' +
+    '> **Watch-out — ramps are out-of-pocket.** See [4.11 FAQ](kb:man-4-11).\n>\n> | a | b |\n> |---|---|\n> | x | y |\n\n' +
+    '## 0.7.1 More\n\nA closing paragraph naming E1399 and [4.11 FAQ](kb:man-4-11) together.\n';
+  const part = { department: 'Part 00 — CSR Core', isAdmin: true, sections: [{ id: 'man-0-7', title: '0.7 Coverage basics', status: 'published', sortOrder: 7, bodyMd: md }] };
+  h.read('kbOpenItem_')('man-0-7');
+  h.run.flushSuccess(part, 'getManualPart');
+  const art = doc.querySelector('#kb-man-sec-man-0-7 .kb-article');
+  const tok = h.read('kbCtxTokens_');
+  const src = h.read('kbMdLinkContexts_')(md);
+  const dom = [...art.querySelectorAll('a.kb-xref')];
+  assert.strictEqual(dom.length, src.length, 'the same links');
+  dom.forEach((a, i) => {
+    assert.strictEqual(a.getAttribute('data-kb-id'), src[i].id);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(tok(h.read('kbXrefContext_')(a)))), JSON.parse(JSON.stringify(tok(src[i].ctx))), 'link ' + i + ' (' + src[i].text + '): the rendered context is the source context');
+  });
+  const blocks = h.read('kbManualBlocks_')(md);
+  assert.ok(blocks.length >= 8);
+  blocks.forEach((b, i) => {
+    const el = h.read('kbFindBlockEl_')(art, b);
+    assert.ok(el, 'block ' + i + ' (' + b.kind + ': ' + b.text.slice(0, 30) + ') is found where it rendered');
+    assert.strictEqual(el.tagName, { row: 'TR', item: 'LI', callout: 'BLOCKQUOTE', para: 'P' }[b.kind]);
+  });
+});
