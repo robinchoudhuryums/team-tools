@@ -346,6 +346,45 @@ def build_router(p1_text, anchors):
     return out
 
 
+GLOSSARY_SMALL = {"of", "the", "and", "to", "for", "a", "an", "in", "on", "with", "or", "by", "at", "per"}
+
+
+def build_synonyms():
+    """Batch M5b — the glossary's abbreviations as search synonyms: [[term,
+    expansion], ...]. A term qualifies only when its definition SPELLS it out
+    — the initials of the definition's leading words are the term's letters
+    ("ABN" → "Advance Beneficiary Notice"; "CPAP" → "Continuous Positive
+    Airway Pressure", the trailing "device" dropped) — or when the whole
+    definition is a short name of at most three words (the note-taking
+    shorthand: "MCD" → "Medicaid", "PWC" → "Power Wheelchair"). A definition
+    that explains rather than expands ("Two meanings…", "Transaction — the
+    order record") never becomes a synonym. The app matches the expansion as a
+    PHRASE, never its words one by one."""
+    out, seen = [], set()
+    for g in GLOSSARY:
+        term = g["term"].strip()
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9&]{1,11}", term) or term.lower() in seen:
+            continue
+        d = md_plain(g["definition"]).replace("\n", " ").strip()
+        lead = re.split(r"\s+[—–-]\s+|\.\s|\.$|;|\s\(", d, maxsplit=1)[0].strip().rstrip(".")
+        spans = [m for m in re.finditer(r"[^\s\-/]+", lead)]   # each word with WHERE it ends in the lead
+        words = [m.group(0) for m in spans]
+        letters = re.sub(r"[^a-z]", "", term.lower())
+        exp = None
+        for keep_small in (False, True):
+            picked = [m for m in spans if m.group(0)[0].isalpha() and (keep_small or m.group(0).lower() not in GLOSSARY_SMALL)]
+            if len(letters) >= 2 and len(picked) >= len(letters) and "".join(m.group(0)[0].lower() for m in picked[:len(letters)]) == letters:
+                exp = lead[: picked[len(letters) - 1].end()]
+                break
+        if exp is None and len(words) <= 3 and "—" not in d and "/" not in d and not re.search(r"\bmeanings?\b", d, re.I):
+            exp = d.rstrip(".")
+        if not exp or exp.lower() == term.lower() or len(exp) > 80:
+            continue
+        seen.add(term.lower())
+        out.append([term, exp])
+    return sorted(out, key=lambda p: p[0].lower())
+
+
 def build_changelog(anchors):
     out = []
     for c in json.load(open("data/changelog.json", encoding="utf-8")):
@@ -556,6 +595,7 @@ def main():
 
     router = build_router(bodies.get("p1") or "", anchors)
     changelog = build_changelog(anchors)
+    synonyms = build_synonyms()
     version, built = build_meta()
 
     articles = [howto_article()]
@@ -604,6 +644,7 @@ def main():
     print(f"images referenced     : {len(IMAGES)}")
     print(f"call router           : {len(router)} caller phrases in {len({r['g'] for r in router})} groups")
     print(f"changelog             : {len(changelog)} dated changes")
+    print(f"search synonyms       : {len(synonyms)} glossary abbreviations, matched as phrases")
     print(f"largest body          : {max(len(a['BodyMd']) for a in articles):,} characters")
     if in_repo:
         print(f"diagrams              : {n_diagrams} in the app partial")
@@ -625,7 +666,7 @@ def main():
     images = {k: {"alt": IMAGES[k]["alt"], "kind": IMAGES[k]["kind"], "dataUri": IMAGES[k]["dataUri"]}
               for k in sorted(IMAGES)}
     bundle = {"format": BUNDLE_FORMAT, "version": version, "built": built,
-              "router": router, "changelog": changelog, "articles": articles, "images": images}
+              "router": router, "changelog": changelog, "synonyms": synonyms, "articles": articles, "images": images}
     with open(os.path.join(out, "manual.json"), "w", encoding="utf-8") as f:
         json.dump(bundle, f, ensure_ascii=False, indent=1)
         f.write("\n")

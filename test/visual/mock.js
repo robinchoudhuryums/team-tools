@@ -1035,6 +1035,20 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       (keys || []).forEach(function (k) { if (have[k]) res.images[k] = have[k]; else res.missing.push(k); });
       return res;
     },
+    // Batch M5b — searchReference: {results:[{id,title,department,type,status,
+    // heading,anchor,chunkMd,truncated,score,snippet[,router]}], sectioned,
+    // terms} like the server (INV-185) — a call-router hit first, a manual
+    // section found by a STEM, a hand-written article, and the matched terms
+    // the client marks.
+    searchReference: function (q) {
+      return { sectioned: true, terms: ['waiting', 'wait', 'fax history'], results: [
+        { id: 'man-0-10', title: '0.10 Anatomy of a transaction', department: 'Part 00 — CSR Core', type: 'article', status: 'draft', router: true,
+          heading: 'The caller said \u201cYou\'re waiting on my doctor?\u201d', anchor: '0.10.2', chunkMd: '0.10.2 \u2014 check Fax History', truncated: false, score: 20, snippet: '' },
+        { id: 'man-0-10', title: '0.10 Anatomy of a transaction', department: 'Part 00 — CSR Core', type: 'article', status: 'draft',
+          heading: '0.10.2 Before you transfer', anchor: '0-10-2-before-you-transfer', chunkMd: '1. Check the **Trx State**\n2. If the order is waiting on paperwork, open **Fax History** first', truncated: true, score: 12, snippet: '' },
+        { id: 'kb-1', title: 'HIPAA refresher', department: 'Billing', type: 'article', status: 'published',
+          heading: '', anchor: '', chunkMd: 'Wait for the caller to verify before any PHI.', truncated: false, score: 4, snippet: '' }] };
+    },
     getManualMeta: function () {
       return { version: 'v3.0', built: '09/15/2026',
         router: [

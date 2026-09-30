@@ -336,6 +336,13 @@ const SCENARIOS = [
     "kbOpenItem_('man-0-11'); setTimeout(function(){ var a=document.querySelector('#kb-man-sec-man-0-11 a.kb-xref[data-kb-id=\"man-10-1\"]'); if(a) a.click(); setTimeout(function(){ var m=document.getElementById('kb-main'); if(m) m.scrollIntoView(); window.scrollTo(0,0); }, 600); }, 500)"],
   ['reference-drawer-backto-dark-wide', { tool: 'reference', tab: null }, WIDE, 'dark', '',
     "kbDrawerOpen_(); kbDrawerOpenItem_('man-0-11'); setTimeout(function(){ var a=document.querySelector('#kbd-body a.kb-xref[data-kb-id=\"man-0-10\"][data-kb-anchor=\"\"]'); if(a) a.click(); }, 600)"],
+  // Batch M5b — Reference search: a call-router hit ("The caller said …", the
+  // phone mark) above a section, the matched terms marked (a stem, a phrase),
+  // in the tab and in the drawer.
+  ['reference-search-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
+    "var s=document.getElementById('kb-search'); if(s){ s.value='waiting on doctor'; kbDoSearch_('waiting on doctor'); }"],
+  ['reference-search-drawer-dark-wide', { tool: 'reference', tab: null }, WIDE, 'dark', '',
+    "kbDrawerOpen_(); setTimeout(function(){ var q=document.getElementById('kbd-q'); if(q){ q.value='waiting on doctor'; kbDrawerSearch_('waiting on doctor'); } }, 300)"],
   ['reference-manual-import-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
     "kbOpenManualImport_(); kbManualSetFile_({ name: 'manual.json', size: 1577555, text: 'x'.repeat(1577555) }); kbManualRun_(true)"],
   // Cycle 21 (operator report, 2026-09-21) — the KB DRAWER had never been shot,

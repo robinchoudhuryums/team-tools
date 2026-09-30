@@ -457,7 +457,12 @@ entry says which it is.
   `invalidateKbCache_`) and the `{date, usd, calls}` daily spend counter.
   No manual setup — documented so they're recognizable when inspecting
   Script Properties. Delete `KB_AI_SPEND` to reset today's budget; bump
-  `KB_AI_GENERATION` to force-invalidate all cached guidance.
+  `KB_AI_GENERATION` to force-invalidate all cached guidance. **Since 22post
+  M5b it is the KB GENERATION for search too:** the cached section index is
+  keyed by it, so every save, delete, revert, publish and manual import is
+  seen by the next search at once; bumping it rebuilds the index as well. An
+  edit made BY HAND in the KB tab bumps nothing and shows up within
+  `KB_INDEX_TTL` (five minutes).
 <a id="operator-script-property-kb-map-geocode-cache"></a>
 - **Script Property `KB_MAP_GEOCODE_CACHE`** (auto-managed — the ` ```map `
   warehouse block, operator 2026-08-13). JSON map of warehouse coordinates
@@ -2274,7 +2279,11 @@ entry says which it is.
   `python3` fails with a SyntaxError) → Reference → **Manual** (admin) →
   **Choose File** → the resulting `manual/dist/reference/manual.json` →
   **Check** (a dry run: what would be created, updated, left alone, skipped) →
-  **Import**. **The export's "xref previews" lines (M5a, 2026-09-30)** say how
+  **Import**. **Search synonyms (M5b, 2026-09-30):** the export also sends the
+  glossary's abbreviations ("ABN" → "Advance Beneficiary Notice") as search
+  synonyms, stored with the router and changelog in `ManualMeta`; a file from
+  before M5b imports with none, so **re-export and import once** to turn them
+  on. **The export's "xref previews" lines (M5a, 2026-09-30)** say how
   many cross-references preview the part of their target they are about, how
   many show its opening by design (anchored, or no numbered sub-section to point
   at), and WARN about the links an anchor could fix —

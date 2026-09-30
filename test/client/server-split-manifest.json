@@ -1692,6 +1692,39 @@
     "kbManualImagesPlan_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-30",
+   "why": "M5b: manual search — stemmer, glossary phrase synonyms, the call router in search, the cached section index",
+   "added": [
+    "KB_INDEX_CACHE_PREFIX",
+    "KB_INDEX_CHUNK",
+    "KB_INDEX_MAX_CHUNKS",
+    "KB_INDEX_TTL",
+    "KB_MANUAL_SYNONYMS_MAX",
+    "KB_ROUTER_BONUS",
+    "KB_ROUTER_MATCH_SHARE",
+    "KB_STEM_SUFFIXES",
+    "kbBuildSearchIndex_",
+    "kbExpandGlossaryTokens_",
+    "kbGeneration_",
+    "kbHashStr_",
+    "kbManualMetaObj_",
+    "kbRouterSearchHits_",
+    "kbSearchIndexKey_",
+    "kbSearchIndex_",
+    "kbSearchTerms_",
+    "kbStem_",
+    "kbTermCount_"
+   ],
+   "removed": [],
+   "changed": [
+    "kbManualBundle_",
+    "kbManualMetaValidate_",
+    "kbSearchScore_",
+    "searchReference"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2756,6 +2789,26 @@
    "kind": "const",
    "sha": "69338a530f1701f7"
   },
+  "KB_INDEX_CACHE_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "03e664b23ef2f5d1"
+  },
+  "KB_INDEX_CHUNK": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "d307e65d507702ac"
+  },
+  "KB_INDEX_MAX_CHUNKS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7f796edb19071bc3"
+  },
+  "KB_INDEX_TTL": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2c942f4a3308e17b"
+  },
   "KB_INGEST_CONVERT": {
    "file": "00_config.js",
    "kind": "const",
@@ -2881,6 +2934,11 @@
    "kind": "const",
    "sha": "cd5b2b17ff49b070"
   },
+  "KB_MANUAL_SYNONYMS_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2c95f4d0933b5d70"
+  },
   "KB_MAP_GEOCODE_CACHE_MAX": {
    "file": "00_config.js",
    "kind": "const",
@@ -2966,6 +3024,16 @@
    "kind": "const",
    "sha": "d2a7ee3133c2d409"
   },
+  "KB_ROUTER_BONUS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "cfe13fe2b037c508"
+  },
+  "KB_ROUTER_MATCH_SHARE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "c75111354dadebfd"
+  },
   "KB_SEARCH_MAX_PER_ITEM": {
    "file": "00_config.js",
    "kind": "const",
@@ -3000,6 +3068,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "0a159da8fc6c48ce"
+  },
+  "KB_STEM_SUFFIXES": {
+   "file": "70_kb.js",
+   "kind": "const",
+   "sha": "1e78847f6099fe6e"
   },
   "KB_SYNONYMS_PROP": {
    "file": "00_config.js",
@@ -6721,6 +6794,11 @@
    "kind": "function",
    "sha": "44f06ed4f8ada4d4"
   },
+  "kbBuildSearchIndex_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "1036daed37631d73"
+  },
   "kbCellDateIso_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -6816,6 +6894,11 @@
    "kind": "function",
    "sha": "7f799dae8bd11769"
   },
+  "kbExpandGlossaryTokens_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "b418bae2fb23b4d9"
+  },
   "kbExpandSynonymTokens_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -6835,6 +6918,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "c5f1649fe0c49e4e"
+  },
+  "kbGeneration_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "3bda224c775aa78a"
   },
   "kbGeocodeCached_": {
    "file": "70_kb.js",
@@ -6901,6 +6989,11 @@
    "kind": "function",
    "sha": "a3195057a272f5ec"
   },
+  "kbHashStr_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "ba718a31fdf319b8"
+  },
   "kbHaversineMiles_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -6929,7 +7022,7 @@
   "kbManualBundle_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "2085220928ec82e0"
+   "sha": "6c8812e6fb1ad227"
   },
   "kbManualHashBasis_": {
    "file": "70_kb.js",
@@ -6976,6 +7069,11 @@
    "kind": "function",
    "sha": "fc141b2144383058"
   },
+  "kbManualMetaObj_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "f985dc75e2cb5320"
+  },
   "kbManualMetaRead_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -6984,7 +7082,7 @@
   "kbManualMetaValidate_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "2a534211c42dd7bc"
+   "sha": "76fd3ad66b7ac9c7"
   },
   "kbManualOrphans_": {
    "file": "70_kb.js",
@@ -7101,6 +7199,11 @@
    "kind": "function",
    "sha": "34d239c82292c840"
   },
+  "kbRouterSearchHits_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "a01b3890ea41da33"
+  },
   "kbRowStatus_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -7126,10 +7229,25 @@
    "kind": "function",
    "sha": "c16d7c2610255755"
   },
+  "kbSearchIndexKey_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "4b4b2b342557be83"
+  },
+  "kbSearchIndex_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "bf129387f5fabb03"
+  },
   "kbSearchScore_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "6ef45df821e362c6"
+   "sha": "5f66a9516c2f5df7"
+  },
+  "kbSearchTerms_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "fa33cebe3d982e0c"
   },
   "kbSha256Hex_": {
    "file": "70_kb.js",
@@ -7155,6 +7273,16 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "fff640f948304ee2"
+  },
+  "kbStem_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "ebe6b72c67b694b1"
+  },
+  "kbTermCount_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "d148712cec28ffcc"
   },
   "kbTextToRuns_": {
    "file": "70_kb.js",
@@ -8474,7 +8602,7 @@
   "searchReference": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "6814815a3349fdfa"
+   "sha": "15d6c03b2c8bb11b"
   },
   "selfDeletePunch": {
    "file": "20_timeclock.js",

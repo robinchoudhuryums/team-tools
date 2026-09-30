@@ -560,6 +560,7 @@ for the reasoning, which is usually the part that matters.
 - [The manual's images ride the one upload — into the ManualImages tab since M4-FU3 (the domain disables Apps Script's Drive), not a Drive folder (22post M3, 2026-09-29)](docs/design-decisions.md#the-manual-s-images-ride-the-upload-into-drive)
 - [The manual's recent changes ride `getWhatsNew` — one payload, one renderer, for the panel and the landing (22post M4, 2026-09-29)](docs/design-decisions.md#the-manual-s-recent-changes-ride-getwhatsnew)
 - [A preview shows the part of a section its link is about — one scorer, and no clear winner means the opening (22post M5a, 2026-09-30)](docs/design-decisions.md#a-preview-shows-the-part-a-link-is-about)
+- [Manual search finds a word's forms, the glossary's phrases and the caller's words — and reads a cached index keyed by the code and the KB generation (22post M5b, 2026-09-30)](docs/design-decisions.md#manual-search-finds-forms-phrases-and-the-caller-s-words)
 
 ## Operator State Checklist
 
@@ -913,9 +914,9 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1097 | `node test/client/run.js` |
-| DOM harness tests | 179 | `node test/client/dom/runDom.js` |
-| Visual matrix scenarios | 146 | `shoot.mjs`'s `SCENARIOS` |
+| Pure harness tests | 1103 | `node test/client/run.js` |
+| DOM harness tests | 180 | `node test/client/dom/runDom.js` |
+| Visual matrix scenarios | 148 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 339 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 54 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 97 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
@@ -923,8 +924,8 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 11 | `TRIGGER_GROUPS` |
 | localStorage keys | 20 | `ums…` literals in `web-app/` |
-| Invariant library entries | 332 | `.cycle/config.md` |
-| Regression scenarios (S*) | 122 | `.cycle/config.md` |
+| Invariant library entries | 336 | `.cycle/config.md` |
+| Regression scenarios (S*) | 123 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

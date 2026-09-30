@@ -10,6 +10,18 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-30 — manual search: word forms, glossary phrases, the call router (M5b)
+
+**Adds NO operator state.** Deploy as usual (`clasp push -f` + New version).
+- **Re-export and import `manual.json` once** to turn on the glossary synonyms
+  ("ABN" ↔ "Advance Beneficiary Notice"): they ride the file into
+  `ManualMeta`, and a file from before M5b carries none. The export prints
+  "search synonyms: N glossary abbreviations".
+- Search now finds a word's forms ("delivered" → "delivery"), and a caller's
+  phrase ("where is my equipment") brings up the call router's answer first.
+- Search reads a cached index. Anything changed in the app is seen at once; an
+  edit typed straight into the KB tab shows up within five minutes.
+
 ## 2026-09-30 — the manual reader: focused previews, back to the section (M5a)
 
 **Adds NO operator state** — no Script Property, tab or roster column. It rides

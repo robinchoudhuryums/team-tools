@@ -3472,7 +3472,10 @@ const _kbSearchCtx = vm.createContext({});
   assert.ok(m, k + ' is declared in Code.js');
   vm.runInContext('const ' + k + ' = ' + m[1] + ';', _kbSearchCtx);
 });
-['kbSlug_', 'kbSplitSections_', 'kbChunkTruncate_', 'kbSearchScore_'].forEach((fn) => {
+// M5b: the score counts through kbTermCount_ (a stem at a word start when the
+// word itself is absent), so its helpers load with it.
+vm.runInContext(/const KB_STEM_SUFFIXES = [^\n]+/.exec(serverSource())[0], _kbSearchCtx);
+['kbSlug_', 'kbSplitSections_', 'kbChunkTruncate_', 'kbStem_', 'kbTermCount_', 'kbSearchScore_'].forEach((fn) => {
   vm.runInContext(extractRawFunction('Code.js', fn), _kbSearchCtx, { filename: 'Code.js#' + fn });
 });
 const srvKbSlug_ = _kbSearchCtx.kbSlug_;
@@ -15017,7 +15020,7 @@ const X1_NO_FIXTURE_READS = [   // reads no scenario photographs yet — each is
     'getMyCallNotesRange', 'getMyDoc', 'getMyDocs', 'getMyPunchAdjustRequests', 'getMySentForms', 'getQuiz',
     'getQuizAnalytics', 'getQuizzes', 'getTrainingDashboard', 'intakeGetSubmission', 'intakeListMySubmissions',
     'intakePreviewPPD', 'kbGetImageData', 'kbMapDistances', 'managerGetFormSubmission', 'managerGetShiftStats',
-    'managerSearchCallNotes', 'searchMyCallNotes', 'searchReference', 'verifyDocSignature',
+    'managerSearchCallNotes', 'searchMyCallNotes', 'verifyDocSignature',
 ];
 const X1_NO_FIXTURE_WRITES = [  // writes: no scenario performs them, and a fixture would only fake a success
     'acknowledgeCoaching', 'acknowledgeDoc', 'addEmployee', 'appendCallNoteFeedback',
@@ -29629,6 +29632,7 @@ function m1Importer_(book, fileText, who, extra) {
     KBMI: { ID: 0, SOURCE_HASH: 1, BODY_HASH: 2, IMPORTED_AT: 3, IMPORTED_BY: 4 },
     KB_MANUAL_IMPORT_TAB: 'ManualImport', KB_MANUAL_IMPORT_HEADERS: ['Id', 'SourceHash', 'BodyHash', 'ImportedAt', 'ImportedBy'], KB_MANUAL_FILE_MAX: 5000000,
     KB_MANUAL_FORMAT: 'ums-manual/1', KB_MANUAL_META_TAB: 'ManualMeta', KB_MANUAL_META_CACHE_KEY: 'kb_manual_meta_v1', KB_MANUAL_META_MAX: 45000,
+    KB_MANUAL_SYNONYMS_MAX: Number(/const KB_MANUAL_SYNONYMS_MAX = (\d+);/.exec(codeSrc)[1]),
     KB_MANUAL_IMAGES_TAB: 'ManualImages', KB_MANUAL_IMAGES_HEADERS: ['Key', 'Sha', 'Type', 'Kind', 'Part', 'Data', 'ImportedAt'], KBMG: { KEY: 0, SHA: 1, TYPE: 2, KIND: 3, PART: 4, DATA: 5, IMPORTED_AT: 6 },
     KB_MANUAL_IMAGE_CELL_MAX: Number(/const KB_MANUAL_IMAGE_CELL_MAX = (\d+);/.exec(codeSrc)[1]),
     KB_MANUAL_IMAGE_KEY_RE: /^(icon|thumb|fig)-[a-z0-9-]{1,80}$/, KB_MANUAL_IMAGE_TYPES: ['image/png', 'image/jpeg'], KB_MANUAL_IMAGES_MAX: 400,
@@ -29884,7 +29888,8 @@ test('M2-R3: the call router keeps only rows with a target the caller can see, f
 });
 
 function m2Srv_(extra) {
-  const ctx = m1Srv_(Object.assign({ KB_MANUAL_FORMAT: 'ums-manual/1', KB_MANUAL_META_MAX: 45000 }, extra || {}));
+  const ctx = m1Srv_(Object.assign({ KB_MANUAL_FORMAT: 'ums-manual/1', KB_MANUAL_META_MAX: 45000,
+    KB_MANUAL_SYNONYMS_MAX: Number(/const KB_MANUAL_SYNONYMS_MAX = (\d+);/.exec(codeSrc)[1]) }, extra || {}));
   ['kbManualBundle_', 'kbManualMetaValidate_', 'kbManualOrphans_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   return ctx;
 }
@@ -30022,7 +30027,8 @@ test('M2-E1: the exporter writes ONE bundle in the format the importer reads, wi
   assert.strictEqual(/^BUNDLE_FORMAT = "([^"]+)"/m.exec(ex)[1], /const KB_MANUAL_FORMAT = '([^']+)';/.exec(codeSrc)[1], 'one format string on both sides');
   assert.ok(/"manual\.json"/.test(ex) && !/"articles\.json"/.test(ex), 'the upload is manual.json');
   // Batch M3: the images ride the same file (the importer unpacks them).
-  assert.ok(/bundle = \{"format": BUNDLE_FORMAT, "version": version, "built": built,\s*"router": router, "changelog": changelog, "articles": articles, "images": images\}/.test(ex));
+  // Batch M5b: and the glossary's abbreviations, as search synonyms.
+  assert.ok(/bundle = \{"format": BUNDLE_FORMAT, "version": version, "built": built,\s*"router": router, "changelog": changelog, "synonyms": synonyms, "articles": articles, "images": images\}/.test(ex));
   assert.ok(/\^VERSION = "\(\[\^"\]\+\)"/.test(ex) && /\^BUILT = "\(\[\^"\]\+\)"/.test(ex), 'VERSION / BUILT come from build.py');
   const bd = fs.readFileSync(path.join(M, 'build.py'), 'utf8');
   assert.ok(/^VERSION = "v[\d.]+"$/m.test(bd) && /^BUILT = "[\d/]+"$/m.test(bd), 'and build.py still declares them in that shape');
@@ -30683,6 +30689,192 @@ test('M5a-FU2: the "Back to" controls stay in reach — each is sticky and reach
   const row = rule('.kbd-body .kbd-backto');
   assert.strictEqual(px(row, 'position'), 'sticky');
   assert.strictEqual(px(row, 'top'), '-' + body[0], 'the drawer row\'s top is minus .kbd-body\'s top padding');
+});
+
+
+// ── Batch M5b — manual search ───────────────────────────────────────────────
+console.log('\nBatch M5b — stems, glossary phrases, the call router in search, the cached section index');
+
+const m5bConst_ = (name) => { const m = new RegExp('const ' + name + ' = ([^;]+);').exec(codeSrc); assert.ok(m, name + ' is declared'); return vm.runInNewContext(m[1]); };
+/** searchReference over a fake KB tab, a fake script cache and fake Script
+ *  Properties — every read of the tab and every cache call counted. */
+function m5bSearch_(kbRows, meta, opts) {
+  opts = opts || {};
+  const book = m1Book_(kbRows, null);
+  let rangeReads = 0;
+  const realGetRange = book.sheets.KB.getRange;
+  book.sheets.KB.getRange = function (r, c, nr, nc) { if (r === 2) rangeReads++; return realGetRange(r, c, nr, nc); };
+  const store = new Map();
+  const cacheLog = [];
+  const cache = {
+    get: (k) => { cacheLog.push(['get', k]); return store.has(k) ? store.get(k) : null; },
+    getAll: (ks) => { cacheLog.push(['getAll', ks.length]); const o = {}; ks.forEach((k) => { if (store.has(k)) o[k] = store.get(k); }); return o; },
+    put: (k, v) => store.set(k, v), putAll: (o) => { cacheLog.push(['putAll', Object.keys(o).length]); Object.keys(o).forEach((k) => store.set(k, o[k])); },
+    remove: (k) => store.delete(k),
+  };
+  const props = new Map(Object.entries(opts.props || {}));
+  if (meta) store.set('kb_manual_meta_v1', JSON.stringify(meta));
+  const ctx = vm.createContext({ String, Number, Object, Array, JSON, Math, isFinite, parseInt, RegExp, Date,
+    KB: M1_KB_ENUM, KB_HEADERS: new Array(13).fill('h'), KB_STATUS_DRAFT: 'draft', KB_STATUS_PUBLISHED: 'published',
+    KB_CHUNK_MAX_CHARS: m5bConst_('KB_CHUNK_MAX_CHARS'), KB_CHUNK_FENCE_OVERAGE: m5bConst_('KB_CHUNK_FENCE_OVERAGE'),
+    KB_SEARCH_MAX_PER_ITEM: m5bConst_('KB_SEARCH_MAX_PER_ITEM'), KB_SEARCH_MAX_RESULTS: m5bConst_('KB_SEARCH_MAX_RESULTS'),
+    KB_SEARCH_TOKENS_MAX: m5bConst_('KB_SEARCH_TOKENS_MAX'), KB_ROUTER_MATCH_SHARE: m5bConst_('KB_ROUTER_MATCH_SHARE'), KB_ROUTER_BONUS: m5bConst_('KB_ROUTER_BONUS'),
+    KB_INDEX_CACHE_PREFIX: m5bConst_('KB_INDEX_CACHE_PREFIX'), KB_INDEX_CHUNK: opts.chunk || m5bConst_('KB_INDEX_CHUNK'),
+    KB_INDEX_MAX_CHUNKS: m5bConst_('KB_INDEX_MAX_CHUNKS'), KB_INDEX_TTL: m5bConst_('KB_INDEX_TTL'),
+    KB_SYNONYMS_PROP: 'KB_SEARCH_SYNONYMS', KB_MANUAL_META_TAB: 'ManualMeta', KB_MANUAL_META_CACHE_KEY: 'kb_manual_meta_v1', KB_CACHE_TTL: 300,
+    KB_AI_GEN_PROP: 'KB_AI_GENERATION', KB_CACHE_KEY: 'kb_tree_v2',
+    CacheService: { getScriptCache: () => cache },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (props.has(k) ? props.get(k) : null), setProperty: (k, v) => props.set(k, String(v)) }) },
+    getEmployeeInfo_: () => opts.who || { email: 'rep@ums.com', isAdmin: false },
+    getKbSS_: () => book, getOrCreateKbSheet_: () => book.sheets.KB,
+  });
+  vm.runInContext(/const KB_STEM_SUFFIXES = [^\n]+/.exec(codeSrc)[0], ctx);
+  ['kbRowStatus_', 'kbSlug_', 'kbSplitSections_', 'kbChunkTruncate_', 'kbStem_', 'kbTermCount_', 'kbSearchTerms_', 'kbSearchScore_',
+    'getKbSearchSynonyms_', 'kbExpandSynonymTokens_', 'kbExpandGlossaryTokens_', 'kbRouterSearchHits_', 'kbManualMetaRead_', 'kbManualMetaCached_',
+    'kbManualMetaObj_', 'kbGeneration_', 'kbBuildSearchIndex_', 'kbHashStr_', 'kbSearchIndexKey_', 'kbSearchIndex_', 'invalidateKbCache_', 'searchReference']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  return { ctx, book, store, cacheLog, props, reads: () => rangeReads };
+}
+const m5bRow_ = (id, title, body, status, dept) => [id, dept || 'Part 00 — CSR Core', title, 'article', body, '', '', 1, 't', 'x', 't', 'x', status || 'published'];
+
+test('M5b-S1: kbStem_ + kbTermCount_ — a word finds its forms ("delivered" → "delivery"), a stem counts only at a WORD START ("rental" never finds "current"), the substring match is untouched ("pap" still finds "cpap"), codes and phrases are never stemmed, and a whole-word term never matches inside a word', () => {
+  const s = m5bSearch_([], null).ctx;
+  ['delivered', 'delivery', 'deliveries', 'delivering', 'deliverer'].forEach((w) => assert.strictEqual(s.kbStem_(w), 'deliver', w));
+  assert.strictEqual(s.kbStem_('supplies'), s.kbStem_('supply'), 'supplies ~ supply');
+  assert.strictEqual(s.kbStem_('denied'), s.kbStem_('denial'), 'denied ~ denial');
+  assert.strictEqual(s.kbStem_('rental'), 'rent');
+  ['pap', 'cpap', 'rent', 'e0601', 'k0006', '1990s', 'advance beneficiary notice', '=abn', 'oxygen'].forEach((w) => assert.strictEqual(s.kbStem_(w), w, w + ' is left alone'));
+  assert.strictEqual(s.kbTermCount_('delivered', 'schedule the delivery today', 4), 1, 'the stem finds the form');
+  assert.strictEqual(s.kbTermCount_('rental', 'the current balance', 4), 0, 'never mid-word');
+  assert.strictEqual(s.kbTermCount_('rental', 'a rented bed', 4), 1, 'at a word start');
+  assert.strictEqual(s.kbTermCount_('pap', 'a cpap machine', 4), 1, 'the substring match is as before');
+  assert.strictEqual(s.kbTermCount_('delivered', 'delivered and delivery', 4), 1, 'the word itself present → only it is counted');
+  assert.strictEqual(s.kbTermCount_('=par', 'the part number', 4), 0, 'a whole-word term never inside a word');
+  assert.strictEqual(s.kbTermCount_('=par', 'send the par, then par again', 4), 2);
+  assert.deepStrictEqual(J2(s.kbSearchTerms_(['delivered', '=abn', 'advance beneficiary notice'])), ['delivered', 'deliver', 'abn', 'advance beneficiary notice'], 'the terms the client marks');
+});
+
+test('M5b-S2: kbExpandGlossaryTokens_ — an abbreviation brings its expansion as ONE phrase; the expansion typed brings the abbreviation as a WHOLE word (3+ letters); a two-letter all-letter term counts only in its own capitals; a code-like term ("O2") in any case; capped', () => {
+  const s = m5bSearch_([], null).ctx;
+  const pairs = [['ABN', 'Advance Beneficiary Notice'], ['ME', 'Mobility Evaluation'], ['O2', 'Oxygen'], ['PA', 'Prior Authorization'], ['PAR', 'Prior Authorization Request'], ['bad'], null];
+  const x = (q, toks, max) => J2(s.kbExpandGlossaryTokens_(toks || (q.toLowerCase().match(/[a-z0-9]{2,}/g) || []), q, pairs, max || 40));
+  assert.deepStrictEqual(x('abn form'), ['abn', 'form', 'advance beneficiary notice'], 'the phrase whole — never "notice" alone');
+  assert.deepStrictEqual(x('advance beneficiary notice'), ['advance', 'beneficiary', 'notice', '=abn'], 'the abbreviation as a whole word');
+  assert.deepStrictEqual(x('call me back'), ['call', 'me', 'back'], 'lower-case "me" is a word, not an acronym');
+  assert.deepStrictEqual(x('book the ME'), ['book', 'the', 'me', 'mobility evaluation'], '"ME" typed in capitals is');
+  assert.deepStrictEqual(x('o2 tank'), ['o2', 'tank', 'oxygen'], 'a term with a digit is no ordinary word');
+  assert.deepStrictEqual(x('prior authorization'), ['prior', 'authorization'], 'a two-letter abbreviation is never added back — "pa" is a fragment of too many words');
+  assert.deepStrictEqual(x('prior authorization request'), ['prior', 'authorization', 'request', '=par']);
+  assert.deepStrictEqual(x('abn', ['abn'], 1), ['abn'], 'the cap holds');
+  assert.deepStrictEqual(J2(s.kbExpandGlossaryTokens_(['abn'], 'abn', undefined, 40)), ['abn'], 'no synonyms (an old import) → nothing');
+});
+
+test('M5b-S3: searchReference (driven) — "ABN" finds the phrase and never a bare "notice"; the phrase finds "ABN" as a word; "delivered" finds "delivery"; the call router joins search on its caller phrase, landing on its anchor, never on a section the caller cannot see; the matched terms ride back', () => {
+  const rows = [
+    m5bRow_('man-10-5', '10.5 Waivers', 'Have the patient sign the ABN before delivery.\n'),
+    m5bRow_('man-10-6', '10.6 Notices', 'An Advance Beneficiary Notice is required.\n'),
+    m5bRow_('man-9-1', '9.1 Mail', 'Every notice we mail goes out on Tuesday.\n'),
+    m5bRow_('man-0-2', '0.2 Status update', '## 0.2.1 Where it is\n\nOpen the Ticket tab.\n'),
+    m5bRow_('man-5-2', '5.2 Field Ops', 'Draft text about equipment.\n', 'draft', 'Part 05 — Field Operations'),
+  ];
+  const meta = { synonyms: [['ABN', 'Advance Beneficiary Notice']],
+    router: [{ g: 'Status', q: 'Where is my equipment?', a: '0.2, then 5.2 if it is scheduled', t: [{ id: 'man-0-2', anchor: '0.2.1' }, { id: 'man-5-2', anchor: '' }] }] };
+  const h = m5bSearch_(rows, meta);
+  const ids = (r) => Array.from(new Set(r.results.map((x) => x.id)));
+  const abn = h.ctx.searchReference('ABN');
+  assert.deepStrictEqual(ids(abn).sort(), ['man-10-5', 'man-10-6'], 'the abbreviation, and its expansion as a phrase — the mail notice is not about an ABN');
+  const phrase = h.ctx.searchReference('advance beneficiary notice');
+  assert.ok(ids(phrase).indexOf('man-10-5') >= 0, 'the phrase typed finds the section that only says "ABN"');
+  const dl = h.ctx.searchReference('delivered');
+  assert.deepStrictEqual(ids(dl), ['man-10-5'], '"delivered" finds "delivery"');
+  assert.ok(J2(dl.terms).indexOf('deliver') >= 0, 'and says it matched on the stem');
+  const rt = h.ctx.searchReference('where is my equipment');
+  const r0 = rt.results.filter((x) => x.router);
+  assert.deepStrictEqual(J2(r0.map((x) => [x.id, x.anchor, x.heading])), [['man-0-2', '0.2.1', 'The caller said “Where is my equipment?”']], 'the router row, on its visible target, at its anchor');
+  assert.strictEqual(rt.results[0].router, true, 'a curated caller phrase ranks first');
+  assert.ok(!rt.results.some((x) => x.id === 'man-5-2'), 'a rep never gets a draft target');
+  const admin = m5bSearch_(rows, meta, { who: { email: 'a@ums.com', isAdmin: true } }).ctx.searchReference('where is my equipment');
+  assert.deepStrictEqual(J2(admin.results.filter((x) => x.router).map((x) => x.id)), ['man-0-2', 'man-5-2'], 'an admin, who sees drafts, gets both');
+  assert.strictEqual(h.ctx.searchReference('billing equipment').results.filter((x) => x.router).length, 0, 'one typed word of two is not the caller\'s phrase');
+  assert.strictEqual(h.ctx.searchReference('scheduled').results.filter((x) => x.router).length, 0, 'a word only in the ANSWER is not the caller\'s phrase');
+  assert.deepStrictEqual(ids(m5bSearch_(rows, null).ctx.searchReference('ABN')), ['man-10-5'], 'with no manual meta, search runs as before');
+});
+
+test('M5b-S4: the section index is CACHED — a second search reads no sheet; any KB write (invalidateKbCache_) moves the generation and the next search rebuilds; the index rides in pieces and a missing piece is a rebuild, never a partial read; the key carries the builder\'s own source, so a deployment with other code can never read it', () => {
+  const rows = [m5bRow_('man-10-5', '10.5 Waivers', 'Have the patient sign the ABN before delivery.\n' + 'Long text. '.repeat(40)), m5bRow_('kb-1', 'Hand-written', 'ABN notes.\n')];
+  const h = m5bSearch_(rows, null, { chunk: 200 });
+  const r1 = h.ctx.searchReference('abn');
+  assert.strictEqual(h.reads(), 1, 'the first search reads the tab');
+  const pieces = [...h.store.keys()].filter((k) => /^kbidx:/.test(k) && !/:n$/.test(k));
+  assert.ok(pieces.length > 1, 'the index is stored in pieces (' + pieces.length + ')');
+  const r2 = h.ctx.searchReference('abn');
+  assert.strictEqual(h.reads(), 1, 'the second reads NO sheet');
+  assert.deepStrictEqual(J2(r2.results), J2(r1.results), 'and answers the same');
+  h.book.sheets.KB.grid[1][4] = 'Have the patient sign the waiver.\n';   // an edit through the app…
+  h.ctx.invalidateKbCache_();                                            // …which every writer follows with this
+  const r3 = h.ctx.searchReference('abn');
+  assert.strictEqual(h.reads(), 2, 'a write moves the generation: the next search rebuilds');
+  assert.deepStrictEqual(J2(r3.results.map((x) => x.id)), ['kb-1'], 'and sees the edit');
+  const key = h.ctx.kbSearchIndexKey_();
+  h.store.delete(key + '1');
+  h.ctx.searchReference('abn');
+  assert.strictEqual(h.reads(), 3, 'a missing piece rebuilds — never a partial parse');
+  vm.runInContext('function kbSplitSections_(md) { return [{ heading: "", anchor: "", md: String(md) }]; }', h.ctx);
+  assert.notStrictEqual(h.ctx.kbSearchIndexKey_(), key, 'other code, other key (the script cache is shared by every deployment — g157)');
+  const ttl = m5bConst_('KB_INDEX_TTL');
+  assert.ok(ttl > 0 && ttl <= 600, 'a short TTL bounds a by-hand sheet edit (' + ttl + 's)');
+  assert.ok(/cache\.putAll\(put, KB_INDEX_TTL\)/.test(extractRawFunction('Code.js', 'kbSearchIndex_')), 'the pieces are put with it');
+  const big = m5bSearch_(rows, null, { chunk: 1 });
+  big.ctx.searchReference('abn');
+  assert.ok(![...big.store.keys()].some((k) => /^kbidx:/.test(k)), 'an index past KB_INDEX_MAX_CHUNKS pieces is not cached at all');
+});
+
+test('M5b-I2: every writer of the KB tab moves the KB generation — derived from the server source: a function that takes the KB tab and writes to it calls invalidateKbCache_(), and the named exceptions (each with its reason) are exact', () => {
+  const src = serverSource();
+  const re = /\nfunction ([A-Za-z0-9_]+)\(/g; const at = []; let m;
+  while ((m = re.exec(src))) at.push([m[1], m.index]);
+  const WRITE = /\.(setValues?|appendRow|deleteRows?|insertRows?\w*|clearContent|setFormula)\(|appendRowsSafe_|appendRowsTextSafe_|kbDeleteRowSafe_/;
+  const EXEMPT = {
+    getOrCreateKbSheet_: 'creates the EMPTY tab with its header — there is no content to index yet',
+    kbMarkReviewed: 'writes ReviewedAt / ReviewedBy only — search and the AI guidance read neither, and a bump would discard paid-for guidance',
+  };
+  const writers = [], missing = [];
+  at.forEach(([n, i], k) => {
+    const body = src.slice(i, k + 1 < at.length ? at[k + 1][1] : src.length);
+    if (!/getOrCreateKbSheet_\(\)|getSheetByName\(KB_TAB\)/.test(body) || !WRITE.test(body) || n === 'invalidateKbCache_') return;
+    writers.push(n);
+    if (!/invalidateKbCache_\(\)/.test(body) && !EXEMPT[n]) missing.push(n);
+  });
+  assert.ok(writers.length >= 7, 'the net finds the writers (' + writers.join(', ') + ')');
+  assert.deepStrictEqual(missing, [], 'a KB-tab writer that does not move the generation leaves search on a stale index');
+  Object.keys(EXEMPT).forEach((n) => {
+    assert.ok(writers.indexOf(n) >= 0, n + ' is exempt — but no longer writes the KB tab: remove the exemption');
+    const body = src.slice(src.indexOf('\nfunction ' + n + '('));
+    assert.ok(!/invalidateKbCache_\(\)/.test(body.slice(0, body.indexOf('\nfunction ', 5))), n + ' now invalidates: remove the exemption');
+  });
+  assert.ok(/p\.setProperty\(KB_AI_GEN_PROP, String\(g \+ 1\)\)/.test(extractRawFunction('Code.js', 'invalidateKbCache_')), 'invalidateKbCache_ moves the generation');
+  assert.ok(/kbGeneration_\(\)/.test(extractRawFunction('Code.js', 'kbSearchIndexKey_')), 'and the index key reads it');
+});
+
+test('M5b-E1: the export sends the glossary\'s abbreviations as synonyms, and the import validates them into ManualMeta — an old file (none) is fine, a bad pair refuses the file', () => {
+  const ex = fs.readFileSync(path.join(__dirname, '../../manual/export_reference.py'), 'utf8');
+  const fn = ex.slice(ex.indexOf('def build_synonyms('), ex.indexOf('\ndef ', ex.indexOf('def build_synonyms(') + 5));
+  assert.ok(/for keep_small in \(False, True\)/.test(fn) && /picked\[len\(letters\) - 1\]\.end\(\)/.test(fn), 'the initials of the leading words spell the term, and the expansion ends at the last of them');
+  assert.ok(/len\(words\) <= 3 and "—" not in d/.test(fn) && /meanings\?/.test(fn), 'or the definition is a short name — never an explanation');
+  assert.ok(/synonyms = build_synonyms\(\)/.test(ex), 'the export builds them');
+  const s = m2Srv_();
+  const ids = ['man-0-2'];
+  const base = { version: 'v3', built: 'x', router: [], changelog: [] };
+  assert.deepStrictEqual(J2(s.kbManualMetaValidate_(base, ids).meta.synonyms), [], 'a file from before M5b: none');
+  assert.deepStrictEqual(J2(s.kbManualMetaValidate_(Object.assign({ synonyms: [['ABN', ' Advance Beneficiary Notice '], ['O2', 'Oxygen']] }, base), ids).meta.synonyms),
+    [['ABN', 'Advance Beneficiary Notice'], ['O2', 'Oxygen']]);
+  const bad = (syn, why) => { const r = s.kbManualMetaValidate_(Object.assign({ synonyms: syn }, base), ids); assert.ok(r.meta === null && r.errors.some((e) => /synonym/i.test(e)), why); };
+  bad('ABN', 'not a list');
+  bad([['A B N', 'x']], 'a term with a space');
+  bad([['ABN', '']], 'no expansion');
+  bad([['ABN', 'x'.repeat(81)]], 'an expansion past 80');
+  bad(new Array(m5bConst_('KB_MANUAL_SYNONYMS_MAX') + 1).fill(['ABN', 'x']), 'too many');
+  assert.deepStrictEqual(J2(s.kbManualBundle_({ format: 'ums-manual/1', articles: [], synonyms: [['A', 'b']] }).meta.synonyms), [['A', 'b']], 'the bundle carries them to the validator');
 });
 
 

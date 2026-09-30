@@ -295,9 +295,9 @@ function kbSearchScore_(tokens, q, titleLc, headLc, bodyLc) {
   let matched = 0;
   tokens.forEach(function (t) {
     // Bounded occurrence count in the body (cap 4 — density tops out below).
-    let cnt = 0, at = bodyLc.indexOf(t);
-    while (at >= 0 && cnt < 4) { cnt++; at = bodyLc.indexOf(t, at + t.length); }
-    const headHit = headLc.indexOf(t) >= 0;
+    // M5b: through kbTermCount_, so a stem counts when the word itself is absent.
+    const cnt = kbTermCount_(t, bodyLc, 4);
+    const headHit = kbTermCount_(t, headLc, 1) > 0;
     if (headHit) { score += 2; matched++; }
     else if (cnt > 0) { score += 1; matched++; }
     else return;
@@ -308,11 +308,193 @@ function kbSearchScore_(tokens, q, titleLc, headLc, bodyLc) {
   if (!matched) return 0;
   score += (matched - 1) * 3;
   let title = 0;
-  tokens.forEach(function (t) { if (titleLc.indexOf(t) >= 0) title += 3; });
+  tokens.forEach(function (t) { if (kbTermCount_(t, titleLc, 1) > 0) title += 3; });
   score += Math.min(title, 4);
   if (q.length >= 4 && (headLc.indexOf(q) >= 0 || bodyLc.indexOf(q) >= 0)) score += 3;
   return score;
 }
+// ── Batch M5b — search that finds the words a rep actually types ────────────
+// A query word still matches as a SUBSTRING (so "pap" finds "cpap", as it
+// always has). When the word itself is absent, its STEM matches too — but only
+// at the START of a word, so "rental" finds "rented" and never "current".
+// The stemmer is deliberately light: it strips one common ending, never below
+// four letters, and leaves anything with a digit (codes) or a space (glossary
+// phrases) alone.
+const KB_STEM_SUFFIXES = ['ations', 'ation', 'ings', 'ing', 'ies', 'ied', 'ers', 'er', 'ed', 'es', 'al', 'y', 's', 'e'];   // no '-ly': it read "supply" as "supp"
+/** PURE (Node-pinned) — the stem a word shares with its forms: "delivered",
+ *  "delivery", "deliveries" → "deliver"; "denied", "denial" → "deni". */
+function kbStem_(t) {
+  t = String(t || '');
+  if (t.length <= 4 || /[^a-z]/.test(t)) return t;
+  for (let i = 0; i < KB_STEM_SUFFIXES.length; i++) {
+    const x = KB_STEM_SUFFIXES[i];
+    if (t.length - x.length >= 4 && t.slice(-x.length) === x) return t.slice(0, -x.length);
+  }
+  return t;
+}
+/** PURE (Node-pinned) — how often a query term occurs in (lower-cased) text,
+ *  capped: the term as a substring, or — only when that finds nothing — its
+ *  stem at a word start. */
+function kbTermCount_(t, text, cap) {
+  let cnt = 0;
+  // A WHOLE-WORD term ('=' + word — a glossary abbreviation the query's phrase
+  // brought in): "par" for "prior authorization request" must not match "part".
+  if (t.charAt(0) === '=') {
+    const w = new RegExp('(?:^|[^a-z0-9])' + t.slice(1).replace(/[^a-z0-9]/g, '') + '(?![a-z0-9])', 'g');
+    while (cnt < cap && w.exec(text)) cnt++;
+    return cnt;
+  }
+  let at = text.indexOf(t);
+  while (at >= 0 && cnt < cap) { cnt++; at = text.indexOf(t, at + t.length); }
+  if (cnt) return cnt;
+  const st = kbStem_(t);
+  if (st === t) return 0;
+  const re = new RegExp('(?:^|[^a-z0-9])' + st, 'g');
+  while (cnt < cap && re.exec(text)) cnt++;
+  return cnt;
+}
+/** PURE — the terms a result set was matched on, for the client's marks:
+ *  every token (synonyms and phrases included) and each differing stem. */
+function kbSearchTerms_(tokens) {
+  const out = [];
+  tokens.forEach(function (t) {
+    t = t.charAt(0) === '=' ? t.slice(1) : t;
+    if (out.indexOf(t) < 0) out.push(t);
+    const st = kbStem_(t);
+    if (st !== t && out.indexOf(st) < 0) out.push(st);
+  });
+  return out;
+}
+
+/** PURE (Node-pinned) — M5b: the glossary's abbreviations, matched as PHRASES.
+ *  An abbreviation in the query brings in its expansion as ONE phrase token
+ *  ("ABN" → "advance beneficiary notice" — never "notice" on its own); the
+ *  expansion typed in the query brings in the abbreviation as a WHOLE WORD
+ *  (three letters or more — a two-letter one is too common a fragment). A
+ *  two-letter all-letter term ("ME", "PA") counts only when typed in its own
+ *  capitals, so "call me back" is not about a Mobility Evaluation — the rule
+ *  kbGlossaryAnnotate_ applies to acronyms. Capped at `max` tokens. */
+function kbExpandGlossaryTokens_(tokens, rawQuery, pairs, max) {
+  const raw = String(rawQuery || ''), q = raw.toLowerCase();
+  (Array.isArray(pairs) ? pairs : []).forEach(function (p) {
+    if (tokens.length >= max || !Array.isArray(p)) return;
+    const term = String(p[0] || ''), t = term.toLowerCase(), exp = String(p[1] || '').toLowerCase().trim();
+    if (!t || !exp) return;
+    const typed = (term.length <= 2 && /^[A-Za-z]+$/.test(term))
+      ? new RegExp('(?:^|[^A-Za-z0-9])' + term + '(?![A-Za-z0-9])').test(raw)
+      : tokens.indexOf(t) >= 0;
+    if (typed) { if (tokens.indexOf(exp) < 0) tokens.push(exp); return; }
+    if (t.length >= 3 && q.indexOf(exp) >= 0 && tokens.indexOf(t) < 0 && tokens.indexOf('=' + t) < 0) tokens.push('=' + t);
+  });
+  return tokens;
+}
+/** PURE (Node-pinned) — M5b: the call router joins search. A router row
+ *  whose CALLER PHRASE matches the query ("where is my equipment" → "Where is
+ *  my equipment?") becomes a hit on each of its targets the caller can see
+ *  (`visible` — id → {title, department, status}; a rep never gets a draft),
+ *  headed "The caller said “…”", its answer as the chunk, landing on the
+ *  target's anchor. A row counts only when most of the typed words
+ *  (KB_ROUTER_MATCH_SHARE of `baseTokens`, the query before any synonym) are
+ *  in its phrase or answer AND at least one is in the phrase itself — the
+ *  router is curated for exactly this question, so a match ranks it
+ *  KB_ROUTER_BONUS above the same words in an article. */
+function kbRouterSearchHits_(router, tokens, baseTokens, q, visible) {
+  const out = [];
+  (Array.isArray(router) ? router : []).forEach(function (r) {
+    if (!r || !Array.isArray(r.t)) return;
+    const phrase = String(r.q || '').toLowerCase(), answer = String(r.a || '').toLowerCase();
+    if (!phrase) return;
+    let inPhrase = 0, inEither = 0;
+    baseTokens.forEach(function (t) {
+      const p = kbTermCount_(t, phrase, 1) > 0;
+      if (p) inPhrase++;
+      if (p || kbTermCount_(t, answer, 1) > 0) inEither++;
+    });
+    if (!inPhrase || inEither < Math.ceil(baseTokens.length * KB_ROUTER_MATCH_SHARE)) return;
+    const score = kbSearchScore_(tokens, q, '', phrase, answer) + KB_ROUTER_BONUS;
+    r.t.forEach(function (t) {
+      const v = t && visible[t.id];
+      if (!v) return;
+      out.push({ id: t.id, title: v.title, department: v.department, type: 'article', status: v.status,
+        heading: 'The caller said \u201c' + String(r.q) + '\u201d', anchor: String(t.anchor || ''),
+        chunkMd: String(r.a || ''), truncated: false, score: score, snippet: String(r.a || '').substring(0, 120), router: true });
+    });
+  });
+  return out;
+}
+
+// ── Batch M5b — the section index, cached ───────────────────────────────────
+// Every search used to read the WHOLE KB tab (every body) and split every
+// article into sections again. The index — each row's id, title, part, type,
+// status and sections — is built once and cached in CacheService, in pieces
+// (one cache value holds 100 KB), under a key made of:
+//   · the KB GENERATION (KB_AI_GEN_PROP), which invalidateKbCache_ bumps and
+//     EVERY writer of the KB tab calls — a derived net (M5b-I2) finds each
+//     writer in the server source and fails the build on one that does not;
+//   · a hash of the index builder's and splitter's own SOURCE, because the
+//     script cache is shared by every deployment (g157): a deployment whose
+//     code builds a different index can never read another's;
+//   · and a short TTL (KB_INDEX_TTL), for an edit made by hand in the sheet,
+//     which no writer sees.
+// Drafts are in the index; the caller's visibility is applied per search.
+/** The KB generation — bumped by invalidateKbCache_ on every KB-tab write. */
+function kbGeneration_() {
+  try { return String(PropertiesService.getScriptProperties().getProperty(KB_AI_GEN_PROP) || '0'); } catch (e) { return '0'; }
+}
+/** PURE (Node-pinned) — the KB rows as search reads them. */
+function kbBuildSearchIndex_(rows) {
+  const out = [];
+  (rows || []).forEach(function (r) {
+    if (!r[KB.ID]) return;
+    const type = String(r[KB.TYPE] || 'article');
+    out.push({ id: String(r[KB.ID]), title: String(r[KB.TITLE] || ''), department: String(r[KB.DEPARTMENT] || ''), type: type,
+      status: kbRowStatus_(r[KB.STATUS]), sections: type === 'embed' ? [] : kbSplitSections_(String(r[KB.BODY_MD] || '')) });
+  });
+  return out;
+}
+/** PURE (Node-pinned) — a short, stable hash of a string (FNV-1a, hex). */
+function kbHashStr_(s) {
+  let h = 0x811c9dc5;
+  s = String(s);
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return ('0000000' + h.toString(16)).slice(-8);
+}
+/** The cache key prefix: the code that shapes the index, and the generation. */
+function kbSearchIndexKey_() {
+  return KB_INDEX_CACHE_PREFIX + kbHashStr_(String(kbBuildSearchIndex_) + String(kbSplitSections_) + String(kbRowStatus_)) + ':' + kbGeneration_() + ':';
+}
+/** The section index: from the cache when every piece is there, else built
+ *  from the KB tab and cached. A cache failure only costs a sheet read. */
+function kbSearchIndex_() {
+  const cache = CacheService.getScriptCache();
+  const base = kbSearchIndexKey_();
+  try {
+    const n = parseInt(cache.get(base + 'n') || '', 10);
+    if (n > 0) {
+      const keys = [];
+      for (let i = 0; i < n; i++) keys.push(base + i);
+      const got = cache.getAll(keys);
+      if (keys.every(function (k) { return typeof got[k] === 'string'; })) return JSON.parse(keys.map(function (k) { return got[k]; }).join(''));
+    }
+  } catch (e) {}
+  const sheet = getOrCreateKbSheet_();
+  const last = sheet.getLastRow();
+  const index = last < 2 ? [] : kbBuildSearchIndex_(sheet.getRange(2, 1, last - 1, KB_HEADERS.length).getValues());
+  try {
+    const json = JSON.stringify(index), put = {};
+    let n = 0;
+    for (let at = 0; at < json.length; at += KB_INDEX_CHUNK) put[base + (n++)] = json.substring(at, at + KB_INDEX_CHUNK);
+    if (n <= KB_INDEX_MAX_CHUNKS) { put[base + 'n'] = String(n); cache.putAll(put, KB_INDEX_TTL); }
+  } catch (e) {}
+  return index;
+}
+
+/** The manual's meta, parsed ({} when there is none or it will not parse —
+ *  search then simply runs without the manual's synonyms and router). */
+function kbManualMetaObj_() {
+  try { const raw = kbManualMetaCached_(); return raw ? (JSON.parse(raw) || {}) : {}; } catch (e) { return {}; }
+}
+
 function searchReference(query, opts) {
   try {
     const emp = getEmployeeInfo_();
@@ -328,32 +510,35 @@ function searchReference(query, opts) {
     const tokens = [];
     (q.match(/[a-z0-9]{2,}/g) || []).forEach(function (t) { if (tokens.indexOf(t) < 0) tokens.push(t); });
     if (!tokens.length) return { results: [] };
+    const baseTokens = tokens.slice();   // M5b — the words typed, before any synonym (the router's match share)
     kbExpandSynonymTokens_(tokens);   // #8 — pull in synonym-group siblings
-    const sheet = getOrCreateKbSheet_();
-    const last = sheet.getLastRow();
-    if (last < 2) return { results: [] };
-    const rows = sheet.getRange(2, 1, last - 1, KB_HEADERS.length).getValues();
+    const manualMeta = kbManualMetaObj_();
+    kbExpandGlossaryTokens_(tokens, query, manualMeta.synonyms, KB_SEARCH_TOKENS_MAX);   // M5b — the glossary, as phrases
+    const index = kbSearchIndex_();   // M5b — cached; built from the KB tab when it is not
+    if (!index.length) return { results: [] };
     const hits = [];
+    const visible = {};   // M5b — id → what the router's hits need, for rows this caller may see
     const snippetOf = function (md) {
       return md.replace(/[#*`>|\[\]()!]/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 120);
     };
-    for (let i = 0; i < rows.length; i++) {
-      if (!rows[i][KB.ID]) continue;
+    for (let i = 0; i < index.length; i++) {
+      const row = index[i];
       // #4 — drafts never surface in search to non-admins (nor to ANY caller
       // when publishedOnly is forced — the org-wide-cached AI retrieval path).
       // C17 batch-5: hits now CARRY the status — an admin's search showed a
       // draft chunk identically to a published one, inviting share/assign of
       // unpublished content believed live (rep responses only ever contain
       // 'published', so the field leaks nothing).
-      const status = kbRowStatus_(rows[i][KB.STATUS]);
+      const status = row.status;
       if (status === KB_STATUS_DRAFT && (publishedOnly || !emp.isAdmin)) continue;
-      const id = String(rows[i][KB.ID]);
-      const title = String(rows[i][KB.TITLE] || '');
-      const dept = String(rows[i][KB.DEPARTMENT] || '');
-      const type = String(rows[i][KB.TYPE] || 'article');
+      const id = row.id;
+      const title = row.title;
+      const dept = row.department;
+      const type = row.type;
       const titleLc = title.toLowerCase();
+      visible[id] = { title: title, department: dept, status: status };
       let titleScore = 0;
-      tokens.forEach(function (t) { if (titleLc.indexOf(t) >= 0) titleScore += 3; });
+      tokens.forEach(function (t) { if (kbTermCount_(t, titleLc, 1) > 0) titleScore += 3; });
       if (type === 'embed') {
         // No stored content to chunk — title-only hit.
         if (titleScore > 0) {
@@ -362,7 +547,7 @@ function searchReference(query, opts) {
         }
         continue;
       }
-      const sections = kbSplitSections_(String(rows[i][KB.BODY_MD] || ''));
+      const sections = row.sections;
       const secHits = [];
       sections.forEach(function (s) {
         const score = kbSearchScore_(tokens, q, titleLc, s.heading.toLowerCase(), s.md.toLowerCase());
@@ -384,9 +569,10 @@ function searchReference(query, opts) {
           snippet: snippetOf(cut.md) });
       });
     }
+    Array.prototype.push.apply(hits, kbRouterSearchHits_(manualMeta.router, tokens, baseTokens, q, visible));   // M5b
     hits.sort(function (a, b) { return b.score - a.score; });
     if (hits.length > KB_SEARCH_MAX_RESULTS) hits.length = KB_SEARCH_MAX_RESULTS;
-    return { results: hits, sectioned: true };
+    return { results: hits, sectioned: true, terms: kbSearchTerms_(tokens) };
   } catch (err) { return { error: err.message }; }
 }
 // #8 — search synonym groups. Read the Script Property, sanitize to an array of
@@ -3267,7 +3453,7 @@ function kbManualBundle_(data) {
   if (!data || typeof data !== 'object') return { error: 'The file is not the manual export — upload manual.json from the manual build.' };
   if (data.format !== KB_MANUAL_FORMAT) return { error: 'The file\'s format is "' + String(data.format || 'none').substring(0, 40) + '"; this app reads ' + KB_MANUAL_FORMAT + ' — rebuild with the current manual/export_reference.py.' };
   if (!Array.isArray(data.articles)) return { error: 'The file holds no article list.' };
-  return { articles: data.articles, meta: { version: data.version, built: data.built, router: data.router, changelog: data.changelog },
+  return { articles: data.articles, meta: { version: data.version, built: data.built, router: data.router, changelog: data.changelog, synonyms: data.synonyms },
     images: data.images === undefined ? null : data.images };   // Batch M3 — an M2 file carries none
 }
 
@@ -3464,7 +3650,7 @@ function kbManualMetaValidate_(meta, ids) {
     if (anchor === null || anchor === false || !/^[0-9A-Za-z.]*$/.test(t.anchor || '')) { errors.push(where + ': bad anchor.'); return null; }
     return { id: id, anchor: t.anchor || '' };
   };
-  const out = { version: str(meta.version, 40) || '', built: str(meta.built, 40) || '', router: [], changelog: [] };
+  const out = { version: str(meta.version, 40) || '', built: str(meta.built, 40) || '', router: [], changelog: [], synonyms: [] };
   const router = Array.isArray(meta.router) ? meta.router : [];
   const changelog = Array.isArray(meta.changelog) ? meta.changelog : [];
   if (router.length > 500 || changelog.length > 500) errors.push('The router or changelog is implausibly long.');
@@ -3482,7 +3668,16 @@ function kbManualMetaValidate_(meta, ids) {
     const t = target({ id: c.id, anchor: c.anchor || '' }, where);
     if (t) out.changelog.push({ date: c.date, num: c.num, id: t.id, anchor: t.anchor, summary: c.summary, retraining: c.retraining === true });
   });
-  if (!errors.length && JSON.stringify(out).length > KB_MANUAL_META_MAX) errors.push('The router and changelog together are too large to store (' + KB_MANUAL_META_MAX + ' characters).');
+  // Batch M5b — the glossary's abbreviations, [[term, expansion], ...]; a file
+  // from before M5b carries none (an empty list, not an error).
+  const synonyms = meta.synonyms === undefined ? [] : meta.synonyms;
+  if (!Array.isArray(synonyms) || synonyms.length > KB_MANUAL_SYNONYMS_MAX) errors.push('The glossary synonyms are not a list of at most ' + KB_MANUAL_SYNONYMS_MAX + '.');
+  else synonyms.forEach(function (p, i) {
+    const term = Array.isArray(p) && str(p[0], 12), exp = Array.isArray(p) && str(p[1], 80);
+    if (!term || !/^[A-Za-z][A-Za-z0-9&]{1,11}$/.test(term) || !exp || !exp.trim()) { errors.push('Glossary synonym ' + (i + 1) + ': a term (letters and digits) and its expansion (80 characters at most).'); return; }
+    out.synonyms.push([term, exp.trim()]);
+  });
+  if (!errors.length && JSON.stringify(out).length > KB_MANUAL_META_MAX) errors.push('The router, changelog and synonyms together are too large to store (' + KB_MANUAL_META_MAX + ' characters).');
   return { meta: errors.length ? null : out, errors: errors };
 }
 
