@@ -2264,3 +2264,25 @@ per-change detail. By delta:
   scrolls with 18px of top padding and a sticky box stops at that padding
   edge, so content showed in the gap above it; the band now reaches past it.
 
+## 22post — Batch M5b, manual search (2026-09-30)
+
+- Node +6 (M5b-S1 stems, M5b-S2 glossary phrases, M5b-S3 `searchReference`
+  DRIVEN over a fake KB tab, cache and properties, M5b-S4 the cached index —
+  pieces, generation, a missing piece, the source-hash key, the chunk cap —
+  M5b-I2 the derived writer net, M5b-E1 export + import of the synonyms); the
+  old `kbSearchScore_` loader now loads `kbStem_` / `kbTermCount_`, and the M2
+  doubles gained `KB_MANUAL_SYNONYMS_MAX` and the bundle's `synonyms`. DOM +1
+  (server terms marked; a router hit escaped, with its mark and anchor).
+  Visual +2 (`reference-search-light-wide`, `reference-search-drawer-dark-wide`)
+  — `searchReference` finally has a mock fixture, and left X1's owed list.
+- Before any pin: the real `manual.json` was searched through the real server
+  code (six queries, 6–40 ms each; the index is ~350K characters in 12 pieces),
+  which is where `-ly` was caught ("supply" → "supp").
+- 24 bite-checks. One NO BITE acted on (no fixture had a digit-bearing word
+  with an ending, so the digit guard was unobserved — "1990s" now is). One
+  EQUIVALENT mutant recorded: dropping the every-piece check before the parse
+  — a missing piece makes the joined JSON invalid, the parse throws and the
+  catch rebuilds; the check stays so correctness does not rest on that.
+- Reading the drawer shot caught the chunk's **Open ¶** wrapping beside a long
+  router heading; the button no longer shrinks.
+

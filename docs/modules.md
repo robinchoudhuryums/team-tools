@@ -924,6 +924,20 @@ not restate it. Server endpoints live in the fourteen server files
      report now WARNS only about links an anchor could fix (the target has
      numbered sub-sections), each with a suggested sub-section to check — a
      link into a section with none shows its opening by design.
+     **22post M5b (2026-09-30): search.** A query word still matches as a
+     substring ("pap" finds "cpap"); when the word itself is absent its STEM
+     matches at the start of a word, so "delivered" finds "delivery" and
+     "denied" finds "denial", while "rental" never finds "current". The
+     glossary's abbreviations ride `manual.json` into `ManualMeta` and are
+     matched as PHRASES: "ABN" also finds "Advance Beneficiary Notice" (never a
+     bare "notice"), and the phrase typed finds "ABN" as a whole word; a
+     two-letter term ("ME") counts only typed in capitals. The call router
+     joins search: a query that is mostly a caller's phrase ("where is my
+     equipment") returns "The caller said …" at the top, with the phone mark,
+     landing on the router's target. Results mark what the server matched on
+     (a stem, a phrase), in the tab and the drawer. Search reads a CACHED
+     section index instead of the whole KB tab — every change made in the app
+     is seen at once, a by-hand edit to the sheet within five minutes.
 
 <a id="training-employee-docs"></a>
      **Batch 6 (2026-09-18):** the drawer is `role="dialog"` named by its own

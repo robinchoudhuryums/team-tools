@@ -15020,7 +15020,7 @@ const X1_NO_FIXTURE_READS = [   // reads no scenario photographs yet — each is
     'getMyCallNotesRange', 'getMyDoc', 'getMyDocs', 'getMyPunchAdjustRequests', 'getMySentForms', 'getQuiz',
     'getQuizAnalytics', 'getQuizzes', 'getTrainingDashboard', 'intakeGetSubmission', 'intakeListMySubmissions',
     'intakePreviewPPD', 'kbGetImageData', 'kbMapDistances', 'managerGetFormSubmission', 'managerGetShiftStats',
-    'managerSearchCallNotes', 'searchMyCallNotes', 'searchReference', 'verifyDocSignature',
+    'managerSearchCallNotes', 'searchMyCallNotes', 'verifyDocSignature',
 ];
 const X1_NO_FIXTURE_WRITES = [  // writes: no scenario performs them, and a fixture would only fake a success
     'acknowledgeCoaching', 'acknowledgeDoc', 'addEmployee', 'appendCallNoteFeedback',

@@ -4892,4 +4892,33 @@ pick them up without re-deriving the context.
   on the real manual, down from a noisy 119). The tab's chip became a sticky
   opaque band reaching past `.kb-main`'s padding (a bare sticky pill let the
   section title show around it).
+- <a id="manual-search-finds-forms-phrases-and-the-caller-s-words"></a>**Manual search finds a word's forms, the glossary's phrases and the caller's words — and reads a cached index keyed by the code and the KB generation (22post M5b, operator 2026-09-29).** Four
+  changes to `searchReference`, each ADDED beside what was there so nothing
+  that matched before stops matching. (1) A light stemmer (`kbStem_`: one
+  common ending, never below four letters, never a word with a digit or a
+  space) counts only when the word itself is absent, and only at a WORD START
+  (`kbTermCount_`) — substring stems would have made "rental" match
+  "current"; `-ly` was measured out ("supply" became "supp"). (2) The
+  glossary's abbreviations are built by the export (`build_synonyms`: the
+  initials of the definition's leading words spell the term, or the whole
+  definition is a short name; 97 on the current manual) and matched as
+  PHRASE tokens — the old synonym groups split a multi-word term into words,
+  which would have made "ABN" match every "notice". The reverse direction adds
+  the abbreviation as a WHOLE-WORD token (`=abn`), only for three letters or
+  more, and a two-letter all-letter term only when typed in capitals (the
+  `kbGlossaryAnnotate_` acronym rule). (3) The call router joins search
+  (`kbRouterSearchHits_`) when most of the typed words are in a row's phrase
+  or answer and one is in the phrase itself; its targets are filtered by the
+  same visibility as every other hit. (4) The section index is cached in
+  pieces under a key made of the KB generation — `invalidateKbCache_`, which
+  every KB-tab writer calls, bumps it; a derived net (M5b-I2) finds the
+  writers in the server source, with `kbMarkReviewed` a named exception
+  because a bump would discard paid-for AI guidance for a column search never
+  reads — and a hash of the index builder's own SOURCE, because the script
+  cache is shared by every deployment (g157). A short TTL bounds a by-hand
+  sheet edit. The response carries the matched `terms`, so the client marks a
+  stem or a phrase instead of mirroring the stemmer (g120). Rejected: a
+  Porter stemmer (too aggressive for a small medical vocabulary, and a wrong
+  match costs more here than a miss), and caching per query (the query space
+  is open; the index is what repeats).
 
