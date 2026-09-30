@@ -317,7 +317,18 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         '## 0.11.1 Abbreviations\n\nUse the shorthand in [A.2 Note-taking shorthand](kb:man-a#A.2); the tabs are in [0.10.2 Before you transfer](kb:man-0-10#0.10.2).\n\n' +
         '> **Watch-out — never paste a patient\'s name into a department email subject.** Use the TRX number.\n\n' +
         '## 0.11.2 What the equipment looks like\n\n![Standard oxygen regulator on a cylinder](manimg:fig-o2-regulator)\n\n*Figure 7.1 — the regulator. The gauge reads the cylinder\'s pressure.*\n\n' +
-        '| Photo | Item |\n|---|---|\n| ![Medline MDR107002E Semi-Electric Hospital Bed](manimg:thumb-mm-image43) | Semi-electric bed |\n| ![Retired chair icon](manimg:icon-retired-chair) | an image this import has not carried yet |\n' };
+        '| Photo | Item |\n|---|---|\n| ![Medline MDR107002E Semi-Electric Hospital Bed](manimg:thumb-mm-image43) | Semi-electric bed |\n| ![Retired chair icon](manimg:icon-retired-chair) | an image this import has not carried yet |\n\n' +
+        // Batch M5a — links whose ROW says which part of the target they are
+        // about: the fax row previews 0.10's "not in the left navigation"
+        // callout, the deductible row 10.1's deductible answer (another part:
+        // the click leaves the "Back to 0.11" chip).
+        '## 0.11.3 Where to look\n\n| Caller asks | See |\n|---|---|\n| Where is the fax history? | [0.10 Anatomy of a transaction](kb:man-0-10) |\n| Why do I owe a deductible first? | [10.1 How billing works](kb:man-10-1) |\n' };
+    }
+    if (id === 'man-10-1') {
+      return { id: 'man-10-1', title: '10.1 How billing works', bodyMd: 'Every estimate follows the same five steps.\n\n' +
+        '| Question | Answer |\n|---|---|\n| What is coinsurance? | The patient\'s share after the plan pays — usually 20% for Medicare Part B |\n' +
+        '| Do I owe the deductible first? | Yes — the annual deductible applies before coinsurance starts |\n| Can I pay monthly? | Yes, see the payment plan options |\n\n' +
+        '> **Policy — never quote a final amount.** An estimate is not a bill.\n' };
     }
     return { id: 'man-0-10', title: '0.10 Anatomy of a transaction', bodyMd: 'The manual refers to these tabs constantly. This is where each thing lives.\n\n' +
             '```diagram transaction\nTransaction Workflow navigation\n```\n\n' +
@@ -993,6 +1004,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       if (id === 'man-0-10' || id === 'man-0-11') {
         return Object.assign({ department: 'Part 00 — CSR Core', status: 'draft', type: 'article' }, manualSection(id));
       }
+      if (id === 'man-10-1') return Object.assign({ department: 'Part 10 — Billing & Insurance', status: 'draft', type: 'article' }, manualSection(id));
       return { id: 'kb-1', title: 'HIPAA refresher', department: 'Billing', status: 'published', type: 'article',
         bodyMd: '# HIPAA refresher\n\nMinimum-necessary rule: share only what the task needs.\n\n- Verify the caller before any PHI\n- Fax cover sheets on every outbound fax' };
     },
@@ -1005,6 +1017,10 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // getManualMeta its {version, built, router, changelog} (INV-185). One
     // changelog entry is recent, so the "Updated" badge is photographed.
     getManualPart: function (dept) {
+      if (dept === 'Part 10 — Billing & Insurance') {   // M5a — a second part, so the cross-part jump and its chip are shootable
+        var b = manualSection('man-10-1');
+        return { department: dept, isAdmin: true, sections: [{ id: 'man-10-1', title: b.title, status: 'draft', sortOrder: 1, bodyMd: b.bodyMd }] };
+      }
       if (dept !== 'Part 00 — CSR Core') return { department: dept, sections: [], isAdmin: true };
       return { department: dept, isAdmin: true, sections: ['man-0-10', 'man-0-11'].map(function (id, i) {
         var m = manualSection(id); return { id: id, title: m.title, status: 'draft', sortOrder: 10 + i, bodyMd: m.bodyMd };

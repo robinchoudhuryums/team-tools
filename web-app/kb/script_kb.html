@@ -167,12 +167,17 @@
   #kb-xrefcard .xc-focus { font-size: .72rem; color: var(--muted); margin: -2px 0 6px; }
   #kb-xrefcard .xc-body table { margin: 0; }
   #kb-xrefcard .xc-body mark.kb-hl { padding: 0 1px; }
-  .kbd-backto { margin-bottom: 6px; border: 1px dashed var(--line); }
+  /* The way back stays in reach while the rep reads on — the landing scrolls the reader. */
+  /* (.kbd-body-scoped: the later .kbd-item rule would clear the background) */
+  .kbd-body .kbd-backto { position: sticky; top: -10px; z-index: 3; margin-bottom: 6px; border: 1px dashed var(--line); background: var(--paper-card); box-shadow: 0 6px 8px -8px rgba(0,0,0,.35); }
+  .kbd-body .kbd-backto:hover { background: var(--paper-2); }
   .kbd-backto b { font-family: var(--mono); color: var(--accent); }
   .kb-man-back:empty { display: none; }
   .kb-man-back { margin: -4px 0 12px; }
   .kb-man-back-btn { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; font: inherit; font-size: .78rem; padding: 4px 10px;
     border: 1px solid var(--line); border-radius: 999px; background: var(--paper-2); color: var(--ink); cursor: pointer; }
+  /* A landed callout already has a tinted background, which outranks the flash — ring it instead. */
+  .kb-article blockquote.kb-h-flash { box-shadow: 0 0 0 2px var(--accent); }
   .kb-man-back-btn:hover, .kb-man-back-btn:focus-visible { border-color: var(--border-strong); background: var(--paper-card); }
   .kb-man-back-btn b { font-family: var(--mono); color: var(--accent); }
   .kb-man-back-t { color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

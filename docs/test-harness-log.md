@@ -2216,3 +2216,32 @@ per-change detail. By delta:
   was shielded by the row checks, which reject an old-layout row anyway. A
   drop-only import and a reordered-column header now isolate each (g116, the
   twelfth direction: a case that fails two guards proves neither).
+
+## 22post — Batch M5a, the manual reader (2026-09-30)
+
+- Node +4 (M5a-C1 blocks, M5a-C2 the scorer on the manual's own 4.11 FAQ rows,
+  M5a-C3 source contexts, M5a-C4 the export's report run end-to-end through
+  `scripts/manual-xref-report.mjs --json` plus the export hook); DOM +5 (the
+  focused card, the landing + tab chip, the drawer trail, codes in more places,
+  and the one-context pin: every rendered link context equals its source
+  context, and every block of a rich section is found where it rendered);
+  visual +4 (`reference-manual-xref-part-light-wide`,
+  `reference-manual-backchip-light-wide`, `reference-manual-backchip-dark-mobile`,
+  `reference-drawer-backto-dark-wide`). The mock gained a Part 10 section so a
+  cross-part jump is shootable.
+- The scorer was CALIBRATED on the real `manual.json` before any pin was
+  written: a 14% sample of the focused links was read by eye, and one shared
+  word ("insurance", "quantities") picked wrong blocks — hence
+  `KB_CTX_MIN_SHARED`.
+- 22 bite-checks. Two NO BITEs acted on: a Back pressed from the drawer's HOME
+  (where leaving is already a no-op) could not see "a Back never pushes" — a
+  Back from a section now asserts it; and a callout's table of one-letter cells
+  (dropped by the tokenizer) made the paragraph-only context indistinguishable
+  from the whole callout — the fixture now carries real words. Both are g116's
+  vacuous-fixture shape: the mutation changes nothing the fixture can observe.
+- Reading the shots caught two display problems, fixed before commit: the
+  drawer's "Back to" row scrolled away with the landing (now sticky, with an
+  opaque background — the later `.kbd-item` rule had cleared it), and a landed
+  callout showed no flash under its own tint (now an accent ring). A sticky tab
+  chip was tried and reverted: at phone width it sat over the section title.
+

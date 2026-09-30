@@ -899,6 +899,25 @@ not restate it. Server endpoints live in the fourteen server files
      has **Print**, and a Quick Reference Card has **Print card**. Either prints
      just that section through the app's one print block, without its buttons,
      feedback bar or comments.
+     **22post M5a (2026-09-30): the reader.** *Focused previews:* a
+     cross-reference's preview shows the PART of its target the link is about —
+     the "Ramps" row of 0.7's table previews 4.11 FAQ's "Do you sell ramps?" row
+     (with the table's header), not the cup holders the FAQ opens with — with the
+     matched words marked. The link's own row, list item, paragraph or callout
+     (minus the link's text) is matched against the target's blocks; only a clear
+     winner is shown, and anything less previews the section's opening exactly as
+     before. A click, and the card's **Open**, land on that block (scrolled to and
+     flashed) in the tab or the drawer. *Codes in more places:* HCPCS codes are
+     lookups in manual search results (the tab and the drawer), in the preview
+     card, and in a manual section opened as training. *Back to the section:* the
+     drawer keeps a short trail — leaving a section by a code, a cross-reference, a
+     search or the router offers "Back to 0.11 …" above whatever replaced it,
+     which reopens it where the rep was reading; closing the drawer forgets the
+     trail. In the tab, a cross-reference into ANOTHER part leaves a "Back to 0.7"
+     chip on the new part page that returns to the row the rep left from. The
+     export prints how many links focus and warns about the unanchored ones that
+     cannot (`node scripts/manual-xref-report.mjs --list` names them) — the
+     report runs the app's own scorer.
 
 <a id="training-employee-docs"></a>
      **Batch 6 (2026-09-18):** the drawer is `role="dialog"` named by its own

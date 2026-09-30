@@ -4854,3 +4854,29 @@ pick them up without re-deriving the context.
   `getManualMeta` + the tree (the tree is not loaded outside Reference, and
   two clients would own the rule), and a separate endpoint (a second call on
   every load for a list the What's new call can carry).
+- <a id="a-preview-shows-the-part-a-link-is-about"></a>**A preview shows the part of a section its link is about — one scorer, and no clear winner means the opening (22post M5a, operator 2026-09-29).** 249 of the manual's 466 cross-references
+  carry no heading anchor, so their preview was the target's opening — the
+  ramps row of 0.7 previewed 4.11 FAQ's cup-holder row. The link's CONTEXT is
+  its own block (row / item / paragraph, a callout whole) minus the link's text;
+  `kbManualBlocks_` splits the target (or its anchored sub-section, in full) into
+  the same kinds of block in `kbMd_`'s own grouping; `kbBestBlock_` weighs each
+  shared word by its rarity inside the target (ln(1 + N/df)) and accepts a
+  winner only with at least `KB_CTX_MIN_SHARED` shared words AND a
+  `KB_CTX_MARGIN` lead over the runner-up. No winner → the excerpt exactly as
+  before: fail toward what exists, never a guess dressed as the answer. The
+  preview, the click and the card's Open all re-derive the ONE winner from the
+  same inputs, and `scripts/manual-xref-report.mjs` — run by the export — reads
+  those functions out of `script_kb.html` rather than carrying a Python copy
+  (g126), so its warning list is exactly the links a rep sees open on the
+  opening. Measured on the real manual: 242 of 465 links focus; the two-word
+  minimum was added after a sample showed one shared word ("insurance") picking
+  wrong blocks. The rendered context (`kbXrefContext_`) and the source context
+  (`kbMdLinkContexts_`) are pinned equal, and every block is pinned findable
+  where it rendered, so a landing cannot silently miss. Back to the section:
+  the drawer's trail is pushed whenever its section view is replaced and popped
+  by Back (a browser Back — it never pushes); the tab's chip exists only for a
+  jump to ANOTHER part, because within a part the page is still there. Rejected:
+  embedding-style semantic matching (no model on this path, and a wrong focus
+  is worse than the opening), and per-link anchors generated at export (they
+  would change the manual source's links, which the operator owns).
+
