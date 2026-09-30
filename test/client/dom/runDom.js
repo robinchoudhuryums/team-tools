@@ -5553,3 +5553,36 @@ test('M5a-FU DOM: a link that names a directory contact previews and lands on TH
   h.run.flushSuccess(dirItem, 'getReferenceItem');
   assert.ok(m5aRow_(doc.getElementById('kbd-body'), 'Qualified Leads').classList.contains('kb-h-flash'), 'the click lands on that row');
 });
+
+// ── Batch M5b — manual search ───────────────────────────────────────────────
+section('Batch M5b — stems and phrases marked, the call router in results');
+
+test('M5b DOM: results mark what the SERVER matched on (a stem, a glossary phrase), in the tab and the drawer; a call-router hit carries its phone mark, its heading escaped, and opens at its anchor', async () => {
+  const h = m5aBoot_();
+  const doc = h.window.document;
+  const res = { results: [
+    { id: 'man-10-5', title: '10.5 Waivers', department: 'Part 10 — Billing & Insurance', type: 'article', heading: '', anchor: '', chunkMd: 'Schedule the delivery once the Advance Beneficiary Notice is signed.' },
+    { id: 'man-0-2', title: '0.2 Status update', department: 'Part 00 — CSR Core', type: 'article', router: true,
+      heading: 'The caller said “<img src=x onerror=alert(1)>Where is my equipment?”', anchor: '0.2.1', chunkMd: '0.2, then 5.2' }],
+    terms: ['delivered', 'deliver', 'advance beneficiary notice'] };
+  h.read('kbDoSearch_')('delivered');
+  h.run.flushSuccess(res, 'searchReference');
+  const marks = h.$$('#kb-main mark.kb-hl').map((m) => m.textContent.toLowerCase());
+  assert.ok(marks.indexOf('deliver') >= 0, 'the stem the server matched is marked inside "delivery"');
+  assert.ok(marks.indexOf('advance beneficiary notice') >= 0, 'a glossary phrase is marked WHOLE (longest first)');
+  const rh = h.$('#kb-main .kb-chunk-h.kb-chunk-router');
+  assert.ok(rh && rh.querySelector('svg'), 'a router hit carries the phone mark');
+  assert.ok(/The caller said/.test(rh.textContent) && !h.$('#kb-main .kb-chunk-h img'), 'its heading is text — escaped, never markup');
+  const go = rh.querySelector('.kb-chunk-go');
+  assert.strictEqual(go.getAttribute('data-kb-anchor'), '0.2.1', 'Open lands on the router\'s anchor');
+  // The drawer marks the same terms.
+  h.read('kbDrawerOpen_')();
+  h.read('kbDrawerSearch_')('delivered');
+  h.run.flushSuccess(res, 'searchReference');
+  assert.ok(h.$$('#kbd-body mark.kb-hl').some((m) => m.textContent.toLowerCase() === 'deliver'), 'the drawer marks the stem too');
+  // A result set without terms (an older server) marks only the query, as before.
+  h.read('kbDrawerClose_')();
+  h.read('kbDoSearch_')('delivered');
+  h.run.flushSuccess({ results: [res.results[0]] }, 'searchReference');
+  assert.ok(!h.$$('#kb-main mark.kb-hl').some((m) => m.textContent.toLowerCase() === 'deliver'), 'no terms → no stem marks');
+});

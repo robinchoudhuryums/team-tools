@@ -165,6 +165,7 @@
   #kb-xrefcard .xc-row { display: flex; justify-content: flex-end; margin-top: 6px; }
   /* Batch M5a — the card names the part of the section the link is about */
   #kb-xrefcard .xc-focus { font-size: .72rem; color: var(--muted); margin: -2px 0 6px; }
+  .kb-chunk-h.kb-chunk-router span { color: var(--accent); font-weight: 600; }
   #kb-xrefcard .xc-body table { margin: 0; }
   #kb-xrefcard .xc-body mark.kb-hl { padding: 0 1px; }
   /* The way back stays in reach while the rep reads on — the landing scrolls the reader. */
@@ -5427,17 +5428,22 @@ function kbImgFallback_(img) {
   }, true);   // capture — error events don't bubble
 })();
 
-function kbHlRegex_(q) {
+function kbHlRegex_(q, terms) {
   var toks = String(q || '').toLowerCase().split(/\s+/)
     .map(function (t) { return t.trim(); })
     .filter(function (t) { return t.length >= 2; });
+  // M5b: the terms the SERVER matched on (stems, glossary phrases, synonyms) —
+  // a result found by "deliver" for "delivered" shows why. Longest first, so a
+  // phrase is marked whole before its words.
+  (terms || []).forEach(function (t) { t = String(t || '').toLowerCase(); if (t.length >= 2 && toks.indexOf(t) < 0) toks.push(t); });
+  toks.sort(function (a, b) { return b.length - a.length; });
   if (!toks.length) return null;
   var escd = toks.map(function (t) { return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); });
   return new RegExp('(' + escd.join('|') + ')', 'gi');
 }
-function kbHighlightTerms_(rootEl, query) {
+function kbHighlightTerms_(rootEl, query, terms) {
   try {
-    var re = kbHlRegex_(query);
+    var re = kbHlRegex_(query, terms);
     if (!re || !rootEl) return;
     var walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, null);
     var targets = [];
@@ -5481,7 +5487,8 @@ function kbChunkGroupsHtml_(results, openFn) {
       '<span class="kb-snip">' + esc(g.department) + (g.type === 'embed' ? ' \u00b7 Drive' : '') + '</span></button>';
     g.chunks.forEach(function (c) {
       html += '<div class="kb-chunk">' +
-        '<div class="kb-chunk-h"><span>' + (c.heading ? esc(c.heading) : 'Intro') + '</span>' +
+        // M5b — a call-router row ("The caller said …") carries the router's phone mark.
+        '<div class="kb-chunk-h' + (c.router ? ' kb-chunk-router' : '') + '"><span>' + (c.router ? icon('phone', 12) + ' ' : '') + (c.heading ? esc(c.heading) : 'Intro') + '</span>' +
         '<button class="kb-chunk-go" data-kb-id="' + esc(c.id) + '" data-kb-anchor="' + esc(c.anchor || '') + '" ' +
         'onclick="' + openFn + '(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">Open \u00b6</button></div>' +
         (c.chunkMd ? '<div class="kb-article kb-chunk-body"' + (kbIsManualId_(c.id) ? ' data-kb-man' : '') + '>' + kbMd_(c.chunkMd) +
@@ -5534,6 +5541,7 @@ function kbDoSearch_(q) {
       // #8 — cache the full result set so the type/department filters re-render
       // client-side without re-querying.
       KB_STATE.searchResults = (res && res.results) || [];
+      KB_STATE.searchTerms = (res && res.terms) || [];   // M5b — what the server matched on, for the marks
       KB_STATE.searchQuery = q;
       KB_STATE.searchFilterType = 'all';
       KB_STATE.searchFilterDept = '';
@@ -5583,7 +5591,7 @@ function kbRenderSearchResults_() {
       (results.length ? kbChunkGroupsHtml_(results, 'kbOpenItem_')
         : (all.length ? '<div class="kb-empty">No matches with these filters.</div>' : kbNoResultsHtml_(q)));
     kbLinkHcpcsInResults_(main);   // M5a — before the marks, so a mark never splits a code
-    kbHighlightTerms_(main, q);
+    kbHighlightTerms_(main, q, KB_STATE.searchTerms);
   }
 }
 
@@ -6969,7 +6977,7 @@ function kbDrawerSearch_(q) {
       else html += kbChunkGroupsHtml_(results, 'kbDrawerOpenItem_');
       body.innerHTML = html;
       kbLinkHcpcsInResults_(body);   // M5a — before the marks, so a mark never splits a code
-      kbHighlightTerms_(body, q);
+      kbHighlightTerms_(body, q, res && res.terms);
     })
     .withFailureHandler(function () {
       // Cycle-9 L-25: parity with the Reference-tab twin's cycle-8 fix — the

@@ -1753,6 +1753,17 @@ const KB_SYNONYM_GROUPS_MAX = 100;
 const KB_SYNONYM_TERMS_MAX = 20;      // per group
 const KB_SYNONYM_TERM_MAXLEN = 40;
 const KB_SEARCH_TOKENS_MAX = 40;      // cap after synonym expansion
+const KB_ROUTER_MATCH_SHARE = 0.6;   // M5b — share of the typed words a call-router row must carry to join search
+const KB_ROUTER_BONUS = 3;           // M5b — a curated caller phrase outranks the same words in an article
+// M5b — the cached section index (kbSearchIndex_): pieces of at most
+// KB_INDEX_CHUNK characters (a cache value holds 100 KB; a UTF-8 dash is 3
+// bytes), at most KB_INDEX_MAX_CHUNKS of them (else it is not cached), for
+// KB_INDEX_TTL seconds — the bound on how long a by-hand edit to the sheet can
+// go unseen; every edit made through the app is seen at once (the generation).
+const KB_INDEX_CACHE_PREFIX = 'kbidx:';
+const KB_INDEX_CHUNK = 30000;
+const KB_INDEX_MAX_CHUNKS = 150;
+const KB_INDEX_TTL = 300;
 // #7 — "See also" from KbViews co-occurrence (no AI, just counting): items a rep
 // opened in the same (rep, day) session as the current one, ranked by co-views.
 const KB_RELATED_MIN_COVIEWS = 2;     // silent below this — thin data shows nothing
@@ -1817,6 +1828,7 @@ const KB_MANUAL_FORMAT = 'ums-manual/1';
 const KB_MANUAL_META_TAB = 'ManualMeta';
 const KB_MANUAL_META_CACHE_KEY = 'kb_manual_meta_v1';
 const KB_MANUAL_META_MAX = 45000;    // chars — one cell, under the 50k Sheets limit
+const KB_MANUAL_SYNONYMS_MAX = 300;  // glossary abbreviations the export may send as search synonyms (M5b; the manual has ~100)
 // Batch M4 — "recently changed": the changelog entries the What's new panel and
 // the Reference landing list (getWhatsNew carries them, one rule for both). The
 // badge on a section keeps the build's own 12-month window; this list is the
