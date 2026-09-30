@@ -10,6 +10,28 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-09-29 — the manual import without Drive (M4-FU1..FU3)
+
+**The first real import was blocked by the domain, not the code.** Check first
+failed with Apps Script's missing-Drive-scope refusal; after removing the app's
+access and re-consenting with every box ticked, it failed with **"The feature
+you are attempting to use has been disabled by your domain administrator"** —
+Apps Script's Drive service is switched off for this Workspace. So:
+- **The Manual dialog now takes `manual.json` from your computer** (Choose File
+  → Check → Import). There is no Drive link.
+- **The manual's images are stored in the `ManualImages` tab** of the KB
+  spreadsheet, not a Drive folder. The tab is rewritten only when an image
+  changed. An existing `ManualImages` tab from the Drive design is migrated by
+  the next import.
+- A locked **Import** button now looks locked and says why (Import unlocks after
+  a clean Check of the chosen file).
+- **Other features that need Drive stay unavailable on this domain** (they fail
+  the same way): the Doc/Sheet → article converter's images, paste-a-screenshot
+  into an article, the KB Images folder, the embed reachability check, and QA
+  recording sync/playback from a Drive folder.
+
+**Adds NO operator state.** Ship on the ordinary `clasp push -f` + New version.
+
 ## 2026-09-29 — 22post: the manual in use, Batch M4 (+ the Pay Statement fix)
 
 **Adds NO operator state.** No Script Property, tab or setting. NOT yet

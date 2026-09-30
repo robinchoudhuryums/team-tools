@@ -4846,7 +4846,7 @@ test('22post E DOM: a hidden widget costs no RPC even when its neighbour is show
   assert.strictEqual(n('getDashboardMetrics'), 0, 'nor the hidden carousels');
 });
 
-test('M1 DOM: the Manual dialog — Check shows the plan and every skipped article with its reason, Import unlocks only after a clean check of THIS link, a changed link locks it again, Import reloads the tree; Publish asks first and names the part; the tree sorts parts naturally', async () => {
+test('M1 DOM: the Manual dialog — Check shows the plan and every skipped article with its reason, Import unlocks only after a clean check of THIS file, another file locks it again, Import reloads the tree; Publish asks first and names the part; the tree sorts parts naturally', async () => {
   const h = boot();
   const w = h.window, doc = w.document;
   w.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
@@ -4876,16 +4876,17 @@ test('M1 DOM: the Manual dialog — Check shows the plan and every skipped artic
   assert.deepStrictEqual(opts, ['Every part (3 drafts)', 'Part 2 — Manual Mobility (1)', 'Part 10 — Billing & Insurance (1)', 'Appendix C — Quick Reference Cards (1)'], 'only the manual’s DRAFTS, by part, in order — never the hand-written draft');
   const imp = doc.getElementById('kb-man-import');
   assert.strictEqual(imp.disabled, true, 'Import starts locked');
-  // Check with no link: said, and no RPC.
+  // Check with no file chosen: said, and no RPC.
   run(true);
-  assert.ok(/Paste the Drive link/.test(doc.getElementById('kb-man-result').textContent));
+  assert.ok(/Choose manual\.json/.test(doc.getElementById('kb-man-result').textContent));
   assert.strictEqual(h.run.pending('kbImportManual').length, 0);
-  // Check a link.
-  const link = doc.getElementById('kb-man-link');
-  link.value = 'https://drive.google.com/file/d/abc/view';
+  // Choose a file (M4-FU3: its TEXT is sent — no Drive link), then Check.
+  const pick = (text) => h.read('kbManualSetFile_')({ name: 'manual.json', size: text.length, text: text });
+  pick('{"format":"ums-manual/1"}');
+  assert.ok(/manual\.json · 0\.0 MB — press Check/.test(doc.getElementById('kb-man-picked').textContent), 'the chosen file is named');
   run(true);
   let call = h.run.pending('kbImportManual').slice(-1)[0];
-  assert.deepStrictEqual([call.args[0], call.args[1].dryRun], ['https://drive.google.com/file/d/abc/view', true], 'a check is a dry run');
+  assert.deepStrictEqual([JSON.parse(JSON.stringify(call.args[0])), call.args[1].dryRun], [{ text: '{"format":"ums-manual/1"}' }, true], 'a check is a dry run of the file\'s text');
   h.run.flushSuccess({ success: true, dryRun: true, total: 160, created: 2, updated: 1, unchanged: 155,
     skipped: [{ id: 'man-5-9', title: '5.9 Pick-up <procedures>', reason: 'edited' }, { id: 'man-1-4', title: '1.4 Calls', reason: 'deleted' }] }, 'kbImportManual');
   const res = doc.getElementById('kb-man-result');
@@ -4893,11 +4894,9 @@ test('M1 DOM: the Manual dialog — Check shows the plan and every skipped artic
   assert.ok(/5\.9 Pick-up <procedures> — edited in the app — not overwritten/.test(res.textContent) && /1\.4 Calls — deleted in the app — not re-created/.test(res.textContent), 'every skipped article, named, with its reason');
   assert.ok(!res.querySelector('procedures'), 'titles are escaped');
   assert.strictEqual(imp.disabled, false, 'a clean check with work to do unlocks Import');
-  // Change the link: locked again.
-  link.value = 'https://drive.google.com/file/d/other/view';
-  link.dispatchEvent(new w.Event('input', { bubbles: true }));
+  // Choose another file: locked again.
+  pick('{"other":1}');
   assert.strictEqual(imp.disabled, true, 'a different file must be checked first');
-  link.value = 'https://drive.google.com/file/d/abc/view';
   run(true);
   h.run.flushSuccess({ success: true, dryRun: true, total: 3, created: 0, updated: 0, unchanged: 3, skipped: [] }, 'kbImportManual');
   assert.strictEqual(imp.disabled, true, 'nothing to import → nothing to press');
@@ -5311,4 +5310,29 @@ test('M4 DOM: Print marks ONLY its own section for the one print block, for exac
   assert.deepStrictEqual([h.$$('.print-one').length, doc.documentElement.hasAttribute('data-print-one')], [0, false], 'and the timer behind it does, for a browser that never fires afterprint');
   doc.getElementById('kb-main').innerHTML = h.read('kbManualPartHtml_')({ department: 'Appendix C — Quick Reference Cards', sections: [{ id: 'man-c-3', title: 'Card 3 — Oxygen', status: 'published', bodyMd: 'E1390' }] });
   assert.ok(/Print card/.test(h.$('#kb-man-sec-man-c-3 .kb-man-print').textContent), 'a card says Print card');
+});
+
+test('M4-FU2/FU3 DOM: the Manual dialog takes manual.json from the computer (no Drive — the domain disables it), and says why Import is locked — the line shows until a clean Check, a failed Check keeps it, and another file locks it again (operator 2026-09-29)', async () => {
+  const h = m4Boot_();
+  const doc = h.window.document;
+  h.read('kbOpenManualImport_')();
+  const imp = doc.getElementById('kb-man-import'), gate = doc.getElementById('kb-man-gate'), input = doc.getElementById('kb-man-file');
+  assert.ok(imp.disabled && !gate.hidden && /unlocks after a clean/.test(gate.textContent), 'locked, and the reason is on screen');
+  assert.ok(/Run Check first/.test(imp.getAttribute('title')));
+  assert.ok(input && input.type === 'file' && !doc.getElementById('kb-man-link'), 'a file picker — no Drive link box (M4-FU3)');
+  // The REAL picker path: a File in the input, read by FileReader.
+  const file = new h.window.File(['{"format":"ums-manual/1","articles":[]}'], 'manual.json', { type: 'application/json' });
+  Object.defineProperty(input, 'files', { value: [file], configurable: true });
+  input.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  for (let i = 0; i < 20 && !h.read('KB_MANUAL_FILE'); i++) await new Promise((r) => setImmediate(r));
+  assert.strictEqual(h.read('KB_MANUAL_FILE').text, '{"format":"ums-manual/1","articles":[]}', 'the chosen file is read as text');
+  h.read('kbManualRun_')(true);
+  assert.strictEqual(JSON.parse(JSON.stringify(h.run.pending('kbImportManual').slice(-1)[0].args[0])).text, '{"format":"ums-manual/1","articles":[]}', 'and that text is what Check sends');
+  h.run.flushSuccess({ success: false, error: 'The file was refused; nothing was imported.', problems: ['x'], problemCount: 1 }, 'kbImportManual');
+  assert.ok(imp.disabled && !gate.hidden, 'a failed check keeps it locked and explained');
+  h.read('kbManualRun_')(true);
+  h.run.flushSuccess({ success: true, dryRun: true, total: 160, created: 160, updated: 0, unchanged: 0, skipped: [], orphaned: [] }, 'kbImportManual');
+  assert.ok(!imp.disabled && gate.hidden, 'a clean check unlocks Import and the line goes');
+  h.read('kbManualSetFile_')({ name: 'other.json', size: 2, text: '{}' });
+  assert.ok(imp.disabled && !gate.hidden, 'another file locks it again, with the reason back');
 });

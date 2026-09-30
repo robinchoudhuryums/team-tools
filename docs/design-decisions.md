@@ -4821,6 +4821,21 @@ pick them up without re-deriving the context.
   would not change a section's source hash, so the ledger would call it
   unchanged and keep the stale link) and Drive thumbnail URLs (blocked on this
   domain — every image would have gone through the per-image fallback).
+  **Superseded in part by M4-FU3 (operator 2026-09-29): the domain's
+  administrator has DISABLED Apps Script's Drive service** — the first real
+  import failed with "The feature you are attempting to use has been disabled
+  by your domain administrator" once the scope was granted. So the one upload
+  now arrives as TEXT from the admin's browser (a file picker, no Drive link),
+  and the images are stored IN the `ManualImages` tab: each image's base64
+  split into rows of at most `KB_MANUAL_IMAGE_CELL_MAX` characters (a cell holds
+  50,000), keyed by key + content hash, the whole tab rewritten under the lock
+  only when an image changed or was dropped. `getManualImages` reads that tab
+  (never the Data column for the ledger; one Data read per batch) and
+  re-checks the bytes before they leave. Kept: one upload, a re-import writes
+  nothing, "not imported" apart from "could not read", the content-hash cache.
+  Rejected: chunking the upload through CacheService (the file is ~1.6 MB,
+  well within one call) and storing images in Script Properties (~9KB a
+  value).
 - <a id="the-manual-s-recent-changes-ride-getwhatsnew"></a>**The manual's recent changes ride `getWhatsNew` — one payload, one renderer, for the panel and the landing (22post M4, operator 2026-09-29).** Two surfaces show the same
   list: the What's new panel and the Reference landing. A second reader of the
   changelog would have been a second rule for "recently changed" (g126), so the

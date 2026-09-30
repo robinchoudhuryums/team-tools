@@ -1655,6 +1655,43 @@
     "getWhatsNew"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-09-29",
+   "why": "Operator 2026-09-29: the manual import names a missing Drive scope (re-authorize) instead of blaming the link",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "kbImportManual"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-09-29",
+   "why": "M4-FU3: the manual import takes the file as text and stores images in the ManualImages tab — this domain disables Apps Script Drive",
+   "added": [
+    "KB_MANUAL_IMAGE_CELL_MAX",
+    "kbManualImagesHeaderOk_",
+    "kbManualImagesRows_",
+    "kbManualImagesWrite_"
+   ],
+   "removed": [
+    "KB_MANUAL_IMAGE_BUDGET_MS",
+    "kbManualFileId_",
+    "kbManualImageName_",
+    "kbManualTrashReplaced_",
+    "kbManualUploadImages_"
+   ],
+   "changed": [
+    "KBMG",
+    "KB_MANUAL_FILE_MAX",
+    "KB_MANUAL_IMAGES_HEADERS",
+    "getManualImages",
+    "kbImportManual",
+    "kbManualImagesLedger_",
+    "kbManualImagesPlan_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2517,7 +2554,7 @@
   "KBMG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "9f27f8a1245e0e10"
+   "sha": "0402395ed8877ec7"
   },
   "KBMI": {
    "file": "00_config.js",
@@ -2742,7 +2779,7 @@
   "KB_MANUAL_FILE_MAX": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "9651d7d24ac28e05"
+   "sha": "c892cc7ba4fbc9d8"
   },
   "KB_MANUAL_FORMAT": {
    "file": "00_config.js",
@@ -2762,7 +2799,7 @@
   "KB_MANUAL_IMAGES_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "c47634d77e5ea8e0"
+   "sha": "2232efef13d24874"
   },
   "KB_MANUAL_IMAGES_MAX": {
    "file": "00_config.js",
@@ -2774,15 +2811,15 @@
    "kind": "const",
    "sha": "d699fec8c58067b2"
   },
-  "KB_MANUAL_IMAGE_BUDGET_MS": {
-   "file": "00_config.js",
-   "kind": "const",
-   "sha": "7b329df848757407"
-  },
   "KB_MANUAL_IMAGE_CACHE_PREFIX": {
    "file": "00_config.js",
    "kind": "const",
    "sha": "29a25bd28a476824"
+  },
+  "KB_MANUAL_IMAGE_CELL_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9a01b28814fe50ee"
   },
   "KB_MANUAL_IMAGE_KEY_RE": {
    "file": "00_config.js",
@@ -5792,7 +5829,7 @@
   "getManualImages": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "aab5dae057f3e950"
+   "sha": "019471d36417026f"
   },
   "getManualMeta": {
    "file": "70_kb.js",
@@ -6877,7 +6914,7 @@
   "kbImportManual": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "b44b64b473803b84"
+   "sha": "a9e741c78be52dc9"
   },
   "kbIngestFile": {
    "file": "70_kb.js",
@@ -6894,35 +6931,40 @@
    "kind": "function",
    "sha": "2085220928ec82e0"
   },
-  "kbManualFileId_": {
-   "file": "70_kb.js",
-   "kind": "function",
-   "sha": "cc2f96edacae05a0"
-  },
   "kbManualHashBasis_": {
    "file": "70_kb.js",
    "kind": "function",
    "sha": "abc4b5438c85f5dc"
   },
-  "kbManualImageName_": {
+  "kbManualImagesHeaderOk_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "aa6f7a3ec58ac142"
+   "sha": "61a029f27515c270"
   },
   "kbManualImagesLedger_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "a68b45545bc8e2bf"
+   "sha": "91ea76504bafaa72"
   },
   "kbManualImagesPlan_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "0704351b2a2726de"
+   "sha": "423e5b902b8a8c38"
+  },
+  "kbManualImagesRows_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "eed5ef8a3786d694"
   },
   "kbManualImagesValidate_": {
    "file": "70_kb.js",
    "kind": "function",
    "sha": "e99ddfb2cb6586d2"
+  },
+  "kbManualImagesWrite_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "6ba26c9703e93c89"
   },
   "kbManualLedger_": {
    "file": "70_kb.js",
@@ -6963,16 +7005,6 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "74e11c952b712e55"
-  },
-  "kbManualTrashReplaced_": {
-   "file": "70_kb.js",
-   "kind": "function",
-   "sha": "65dfccbbcf263a95"
-  },
-  "kbManualUploadImages_": {
-   "file": "70_kb.js",
-   "kind": "function",
-   "sha": "ed594f92e6c79fe4"
   },
   "kbManualValidate_": {
    "file": "70_kb.js",

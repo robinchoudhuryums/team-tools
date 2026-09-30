@@ -2270,10 +2270,14 @@ entry says which it is.
 - **The procedures manual import — `ManualImport`, `ManualMeta` and `ManualImages`
   (22post M1–M3, 2026-09-28/29).** The manual's source is `manual/` in the repo, and the app never
   edits it. **To publish a new version:** in `manual/`, run `./make_all.sh` (or
-  just `python3 export_reference.py`; Python 3.12) → upload the resulting
-  `manual.json` to Drive where the deployer account can read it → Reference →
-  **Manual** (admin) → paste the link → **Check** (a dry run: what would be
-  created, updated, left alone, skipped) → **Import**. New sections are drafts
+  just `python3.12 export_reference.py`; Python 3.12 or newer — an older
+  `python3` fails with a SyntaxError) → Reference → **Manual** (admin) →
+  **Choose File** → the resulting `manual/dist/reference/manual.json` →
+  **Check** (a dry run: what would be created, updated, left alone, skipped) →
+  **Import**. **No Drive (M4-FU3, 2026-09-29):** this domain's administrator has
+  disabled Apps Script's Drive service ("The feature you are attempting to use
+  has been disabled by your domain administrator"), so the file goes from your
+  computer straight to the app — there is no Drive link to share. New sections are drafts
   only admins see; vet them, then **Publish** all or one part. Sections the file
   no longer carries are listed after a check and removed only when "Remove
   sections no longer in the manual" is ticked. A skipped section (edited,
@@ -2287,15 +2291,15 @@ entry says which it is.
   lock for its write (seconds for a normal re-import, longer for the first
   one), so running it after hours is fine but not required. **Once vetted:**
   unpublish the old department guides the manual replaces (Edit → Save as draft).
-  **Images (M3):** `manual.json` carries them (about 1.6 MB); the import puts
-  each new or changed one in the KB Images folder (`KB_IMAGES_FOLDER_ID`,
-  created and shared automatically if unset) and records it in the
-  auto-created `ManualImages` tab (Key, Sha, FileId, Kind, ImportedAt — do not
-  hand-edit). A first import uploads every image and may stop at its four-minute
-  budget: the dialog then says how many are still to upload — press **Import**
-  again (the sections are already in). A replaced image's old file goes to
-  Drive's trash (recoverable for 30 days); a file that is not a manual image in
-  that folder is left alone and named. **Diagrams (M3) are code:** after
+  **Images (M3; stored in the spreadsheet since M4-FU3):** `manual.json`
+  carries them (about 1.6 MB); the import stores them IN the auto-created
+  `ManualImages` tab of the KB spreadsheet (Key, Sha, Type, Kind, Part, Data,
+  ImportedAt — one row per ≤45,000-character piece of an image's base64; do not
+  hand-edit). The tab is rewritten only when an image changed or the manual
+  stopped using one, so a re-import of the same file writes nothing. If the
+  image write fails, the dialog says so and the sections are already in — press
+  **Import** again. No Drive folder is involved (`KB_IMAGES_FOLDER_ID` is not
+  used by the manual). **Diagrams (M3) are code:** after
   changing one in `manual/diagrams/`, re-run the export — it rewrites
   `web-app/kb/script_manual_diagrams.html` — then commit that file and deploy.
   The import does not carry diagrams. **Recently changed (M4):** the changelog's

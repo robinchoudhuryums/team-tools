@@ -1027,11 +1027,11 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
           { g: 'Money', q: 'How much will this cost me?', a: '10.1 — the five-step estimate', t: [{ id: 'man-10-1', anchor: '' }] }],
         changelog: [{ date: daysAgo(40), num: '0.11', id: 'man-0-11', anchor: '', summary: 'TRX number, never a name, in a department subject line.', retraining: true }] };
     },
-    kbImportManual: function (link, opts) {
+    kbImportManual: function (source, opts) {   // M4-FU3: source is {text} — the file, not a Drive link
       return { success: true, dryRun: !!(opts && opts.dryRun), total: 160, created: 2, updated: 3, unchanged: 153,
         skipped: [{ id: 'man-5-9', title: '5.9 Pick-up procedures', reason: 'edited' }, { id: 'man-1-4', title: '1.4 Calls you cannot take', reason: 'deleted' }],
-        images: (opts && opts.dryRun) ? { total: 160, unchanged: 0, toUpload: 160 }
-          : { total: 160, unchanged: 0, uploaded: 112, reused: 0, pending: 48, failed: [], error: '' } };
+        images: (opts && opts.dryRun) ? { total: 160, unchanged: 0, toStore: 160, removed: 0 }
+          : { total: 160, unchanged: 0, stored: 160, removed: 0, error: '' } };
     },
     kbPublishManual: function (opts) {
       const dept = (opts && opts.department) || '';
