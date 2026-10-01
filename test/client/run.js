@@ -14698,8 +14698,13 @@ test('ELIG: locCityMatches_ requires the STATE when the row carries one, and an 
   assert.strictEqual(M(CITIES, 'Springfield', 'IL')[0].accepts, 'scooter');
   assert.strictEqual(M(CITIES, 'springfield', 'tx').length, 1, 'case-insensitive both sides');
 
-  // A row with no state matches any state — the operator left it open.
-  assert.strictEqual(M(CITIES, 'Loose City', 'NV').length, 1);
+  // A row with no state USED to match any state ("the operator left it open").
+  // That was safe while city rows only SHOWED; since T7 they DECIDE, and a
+  // blank State said yes to a same-named city in every state. KB2-5 (cycle 23):
+  // it matches nothing, and locCityUnreadable_ reports it — "cannot tell".
+  assert.strictEqual(M(CITIES, 'Loose City', 'NV').length, 0, 'a row with no State never matches');
+  assert.strictEqual(JSON.parse(vm.runInContext('JSON.stringify(locCityUnreadable_(' + JSON.stringify(CITIES) + ', "Loose City"))', _vmCtx)).length, 1,
+    'it is reported as unreadable instead, so the verdict there is "cannot tell"');
 
   // THE ONE THAT MATTERS. A rural address can geocode with no `locality`, and
   // '' must mean "could not determine", never "match everything" — a blank
@@ -15493,6 +15498,7 @@ test('OOP-B: the client picker line is a CHARACTER-FOR-CHARACTER mirror of the s
   vm.runInContext(extractRawFunction('Code.js', 'oopRowObj_'), vCtx, { filename: 'oopRowObj_' });
   vm.runInContext(extractRawFunction('Code.js', 'oopHeaderRole_'), vCtx, { filename: 'oopHeaderRole_' });
   vm.runInContext(extractRawFunction('Code.js', 'oopQuoteLine_'), vCtx, { filename: 'oopQuoteLine_' });
+  vm.runInContext(extractRawFunction('Code.js', 'oopBodyHasLine_'), vCtx, { filename: 'oopBodyHasLine_' });   // KB2-7
   vm.runInContext(extractRawFunction('Code.js', 'oopVerifyQuotes_'), vCtx, { filename: 'oopVerifyQuotes_' });
 
   // THE OPERATOR'S SHAPE: the code in column A, the item in column C (the
@@ -22741,8 +22747,9 @@ test('K4 (cycle 22): the city list reads "Texas" as TX and "Ft. Worth" as Fort W
   assert.strictEqual(B5V({ kind: 'cities' }, { hasCityRows: true, city: 'Waco', cityMatches: [], cityUnreadable: [] }).verdict, 'no',
     'a city genuinely not listed is still a firm no');
   const loader = stripJsComments_(extractRawFunction('Code.js', 'getLocationAcceptance_'));
-  assert.ok(/const stCode = locStateCode_\(stRaw\);/.test(loader) && /stateBad: stCode === null/.test(loader),
-    'the loader reads every State cell through the one normaliser and flags the unreadable');
+  assert.ok(/const stCode = locStateCode_\(stRaw\);/.test(loader) && /stateBad: !stCode/.test(loader),
+    'the loader reads every State cell through the one normaliser and flags the unreadable — and, since KB2-5, the BLANK');
+  assert.ok(/else if \(stCode === ''\) out\.unreadable\.push\(/.test(loader), 'a blank State is named in the diagnostics too');
   assert.ok(/cityUnreadable: locCityUnreadable_\(loc0\.cities, qGeo\.city\)/.test(stripJsComments_(extractRawFunction('Code.js', 'checkOopEligibility'))),
     'and the endpoint hands the check the unreadable rows');
 });
@@ -30993,6 +31000,154 @@ test('ADM-05 (cycle 23): kbImportDataTable grows the grid and captures the previ
   assert.ok(prevAt > 0 && growAt > prevAt && clearAt > growAt, 'capture → grow → clear, in that order');
   const cellAt = f.indexOf('KB_DATA_TABLE_MAX_CELL_CHARS'), dryAt = f.indexOf('if (dryRun)');
   assert.ok(cellAt > 0 && cellAt < dryAt, 'the per-cell ceiling is checked before the dry-run return, so the preview reports it');
+});
+
+
+// ── Cycle 23 Batch 2 — the eligibility engine fails toward "cannot tell" ────
+console.log('\nCycle 23 Batch 2 — the eligibility engine: connectives, qualifiers, parentheticals, borders, names, quotes');
+const c23Elig_ = (() => {
+  const ctx = vm.createContext({ String, Number, Math, JSON, Object, Array, isFinite, parseInt, RegExp,
+    US_STATE_CODES: vm.runInNewContext(/const US_STATE_CODES = (\[[\s\S]*?\]);/.exec(codeSrc)[1]),
+    US_STATE_NAMES: vm.runInNewContext('(' + /const US_STATE_NAMES = (\{[\s\S]*?\});/.exec(codeSrc)[1] + ')'),
+    KB_GEO_US_COUNTRIES: m5bConst_('KB_GEO_US_COUNTRIES') });
+  ['oopRegistryNamesIn_', 'oopRadiusClause_', 'oopEligibilityParse_', 'oopEligibilityForPayment_', 'locStateCode_',
+    'locCityNorm_', 'locCityMatches_', 'locCityUnreadable_', 'oopBodyHasLine_', 'kbGeoOutsideUs_', 'kbGeoOutsideUsMsg_',
+    'locHeaderRole_', 'locRowKind_', 'getLocationAcceptance_', 'kbGeocodeOne_']
+    .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: 'c23#' + f }));
+  const J = (expr) => JSON.parse(vm.runInContext('JSON.stringify(' + expr + ')', ctx));
+  const P = (t, wh) => J('oopEligibilityParse_(' + JSON.stringify(t) + ',' + JSON.stringify(wh || ['Dallas', 'San Antonio']) + ')');
+  const OOP = (t, wh) => J('oopEligibilityForPayment_(oopEligibilityParse_(' + JSON.stringify(t) + ',' + JSON.stringify(wh || ['Dallas', 'San Antonio']) + '), true)');
+  return { ctx, J, P, OOP };
+})();
+
+test('KB-1 (cycle 23): the operator\'s connectives are not state codes — "TX or OK" is Texas and Oklahoma, never Oregon; "in" is never Indiana', () => {
+  const { P } = c23Elig_;
+  assert.deepStrictEqual(P('TX or OK').states, ['TX', 'OK'], 'THE REGRESSION: "or" upper-cased to OR, Oregon');
+  assert.deepStrictEqual(P('TX and NM').states, ['TX', 'NM'], '"and" is a connective too');
+  assert.deepStrictEqual(P('TX OR OK').states, ['TX', 'OR', 'OK'], 'an UPPERCASE OR is still Oregon');
+  assert.strictEqual(P('TX in OK').kind, 'unknown', 'a lowercase "in" is not Indiana — the value cannot be read');
+  assert.strictEqual(P('me and TX').kind, 'unknown', 'nor "me" Maine');
+  assert.deepStrictEqual(P('tx/TX').states, ['TX'], 'a lowercase code that is no English word is still a code (unchanged)');
+  assert.deepStrictEqual(P('IN, OH').states, ['IN', 'OH'], 'and uppercase IN / OH are Indiana and Ohio');
+});
+
+test('KB2-1 (cycle 23): a state that QUALIFIES the city list is unreadable — only an explicit "or" makes it T7\'s either-one union, so out of pocket never opens a city-limited item nationwide', () => {
+  const { P, OOP } = c23Elig_;
+  ['listed cities, TX', 'listed cities (TX)', 'listed cities in TX', 'TX listed cities', 'listed cities (TX or OK)'].forEach((t) => {
+    assert.strictEqual(P(t).kind, 'unknown', t + ' → unknown');
+    assert.strictEqual(OOP(t).kind, 'unknown', t + ' → and it does NOT lift to open out of pocket (THE REGRESSION: it answered "anywhere in the US")');
+  });
+  assert.deepStrictEqual(P('TX or listed cities').rules.map((r) => r.kind), ['states', 'cities'], 'T7\'s shape, with its "or", is unchanged');
+  assert.deepStrictEqual(P('listed cities or TX').rules.map((r) => r.kind), ['states', 'cities'], 'either order');
+  assert.strictEqual(OOP('TX or listed cities').kind, 'open', 'and still lifts as T7 decided');
+  assert.deepStrictEqual(P('100 miles of Dallas, listed cities').rules.map((r) => r.kind), ['radius', 'cities'],
+    'a RADIUS beside the city list is untouched — a radius never lifts, so the union cannot open nationwide');
+});
+
+test('KB2-2 (cycle 23): an Open parenthetical is read by an ALLOW-list — anything but "anywhere in the US" wording is a rule we cannot evaluate', () => {
+  const { P, OOP } = c23Elig_;
+  ['Open (lower 48)', 'Open (continental US)', 'Nationwide (mainland)', 'US (48 states)', 'open (HI and AK extra charge)',
+    'Open (call to confirm)', 'Open (HI and AK)', 'Open (Texas warehouse ships)'].forEach((t) => {
+    assert.strictEqual(P(t).kind, 'unknown', t + ' → unknown (each read as a plain YES for Hawaii before)');
+    assert.strictEqual(OOP(t).kind, 'unknown', t + ' → never lifts');
+  });
+  ['Open', 'Open (anywhere in the US including Hawaii)', 'Open (no restrictions)', 'Nationwide (all 50 states)',
+    'Open (including HI and AK)', 'US (anywhere in the United States)'].forEach((t) =>
+    assert.strictEqual(P(t).kind, 'open', t + ' → open (an elaboration stays open)'));
+});
+
+test('KB2-3 (cycle 23): an address outside the US is refused, never "available anywhere in the US" — the geocoder\'s COUNTRY is read, and the endpoint checks it before any rule', () => {
+  const { ctx, J } = c23Elig_;
+  const out = (c) => vm.runInContext('kbGeoOutsideUs_(' + JSON.stringify({ country: c }) + ')', ctx);
+  assert.strictEqual(out('CA'), true, 'Canada is outside');
+  assert.strictEqual(out('MX'), true, 'Mexico is outside');
+  assert.strictEqual(out('US'), false);
+  assert.strictEqual(out('PR'), false, 'a territory the state list carries is not');
+  assert.strictEqual(out(''), false, 'NO country component is not evidence of foreign');
+  ctx.Maps = { newGeocoder: () => ({ setRegion: function () { return this; }, geocode: () => ({ status: 'OK', results: [{
+    geometry: { location: { lat: 31.7, lng: -106.4 } }, formatted_address: 'Ciudad Juárez, Chih., Mexico',
+    address_components: [{ types: ['locality'], long_name: 'Ciudad Juárez' }, { types: ['administrative_area_level_1'], short_name: 'Chih.' }, { types: ['country'], short_name: 'MX' }] }] }) }) };
+  const g = J('kbGeocodeOne_("Av. Juarez 100, Ciudad Juarez")');
+  assert.strictEqual(g.country, 'MX', 'the geocode carries its country');
+  assert.strictEqual(g.lat, 31.7, 'and is otherwise unchanged (the map block reads lat/lng)');
+  const msg = vm.runInContext('kbGeoOutsideUsMsg_()', ctx);
+  assert.ok(/outside the US/.test(msg) && !/Juar/i.test(msg), 'the message names no part of the address (it can reach the error beacon, g146)');
+  const ep = stripJsComments_(extractRawFunction('Code.js', 'checkOopEligibility'));
+  const at = ep.indexOf('if (kbGeoOutsideUs_(qGeo)) return { error: kbGeoOutsideUsMsg_() };');
+  assert.ok(at > 0 && at < ep.indexOf('oopEligibilityParse_('), 'the endpoint refuses BEFORE any rule is read');
+});
+
+test('KB2-4 (cycle 23): overlapping warehouse names — "Dallas North" names ONE warehouse whatever the registry\'s order', () => {
+  const { J, P } = c23Elig_;
+  const N = (t, wh) => J('oopRegistryNamesIn_(' + JSON.stringify(t) + ',' + JSON.stringify(wh) + ')');
+  assert.deepStrictEqual(N('100 miles of Dallas North', ['Dallas North', 'Dallas']), ['Dallas North'], 'THE REGRESSION: Dallas matched inside Dallas North');
+  assert.deepStrictEqual(N('100 miles of Dallas North', ['Dallas', 'Dallas North']), ['Dallas North'], 'and the order no longer decides it');
+  assert.deepStrictEqual(N('Dallas North or Dallas', ['Dallas', 'Dallas North']), ['Dallas', 'Dallas North'], 'both, when both are written (registry order kept)');
+  assert.deepStrictEqual(N('San Antonio', ['Antonio', 'San Antonio']), ['San Antonio']);
+  assert.deepStrictEqual(P('100 miles of Dallas North', ['Dallas', 'Dallas North']), { kind: 'radius', miles: 100, warehouses: ['Dallas North'] });
+  assert.deepStrictEqual(P('100 miles of Dallas North', ['Dallas North', 'Dallas']), { kind: 'radius', miles: 100, warehouses: ['Dallas North'] },
+    'the same rule either way (it was unknown one way and two warehouses the other)');
+  assert.deepStrictEqual(P('100 miles of Dallas or Dallas North warehouse', ['Dallas', 'Dallas North']).warehouses, ['Dallas', 'Dallas North'],
+    'stripping goes longest-first too, so no stray "North" makes a readable rule unknown');
+});
+
+test('KB2-5 + KB2-10 (cycle 23): the delivery table names a city row with no State, and a second warehouse row with the same name (driven over a fake tab)', () => {
+  const { ctx, J } = c23Elig_;
+  const grid = [['Type', 'Name', 'Address', 'State', 'Accepts'],
+    ['warehouse', 'Dallas', '2150 Irving Blvd, Dallas, TX 75207', '', ''],
+    ['warehouse', 'Dallas', '900 Other St, Dallas, TX 75201', '', ''],
+    ['city', 'Austin', '', 'TX', 'POV'],
+    ['city', 'Waco', '', '', 'POV'],
+    ['city', 'Plano', '', 'Texs', 'POV']];
+  ctx.LOCATION_ACCEPTANCE_TAB = 'LocationAcceptance'; ctx.LOC_MAX_ROWS = 2000;
+  ctx.getKbSS_ = () => ({ getSheetByName: () => ({ getLastRow: () => grid.length, getLastColumn: () => 5,
+    getRange: (r, c, n, w) => ({ getDisplayValues: () => grid.slice(r - 1, r - 1 + n).map((x) => x.slice(c - 1, c - 1 + w)) }) }) });
+  const loc = J('getLocationAcceptance_()');
+  assert.strictEqual(loc.warehouses.Dallas, '2150 Irving Blvd, Dallas, TX 75207', 'the first row still wins');
+  assert.ok(loc.unreadable.some((u) => u.name === 'Dallas' && /second warehouse row/.test(u.reason)), 'and the second is NAMED, not dropped in silence');
+  assert.ok(loc.unreadable.some((u) => u.name === 'Waco' && /no State/.test(u.reason)), 'a city with no State is named');
+  assert.ok(loc.unreadable.some((u) => u.name === 'Plano' && /Texs/.test(u.reason)), 'as an unreadable one already was (K4)');
+  const waco = loc.cities.filter((c) => c.name === 'Waco')[0];
+  assert.strictEqual(waco.stateBad, true, 'and it is flagged on the row');
+  assert.strictEqual(J('locCityMatches_(' + JSON.stringify(loc.cities) + ', "Waco", "GA")').length, 0, 'THE REGRESSION: "Waco" with no State said yes in Georgia');
+  assert.strictEqual(J('locCityUnreadable_(' + JSON.stringify(loc.cities) + ', "Waco")').length, 1, 'it is "cannot tell" instead');
+  assert.strictEqual(J('locCityMatches_(' + JSON.stringify(loc.cities) + ', "Austin", "TX")').length, 1, 'a stated row still matches');
+});
+
+test('KB2-7 (cycle 23): a quote line is found WHOLE in the message — "$100" never verifies inside "$1000"', () => {
+  const { ctx } = c23Elig_;
+  const H = (body, line) => vm.runInContext('oopBodyHasLine_(' + JSON.stringify(body) + ',' + JSON.stringify(line) + ')', ctx);
+  const L = 'Scooter — $100';
+  assert.strictEqual(H('Hi,\nScooter — $100\nThanks', L), true);
+  assert.strictEqual(H('Scooter — $100', L), true, 'at the very end');
+  assert.strictEqual(H('Scooter — $100.', L), true, 'a full stop after it ends the line');
+  assert.strictEqual(H('Scooter — $100, delivered', L), true);
+  assert.strictEqual(H('Scooter — $1000', L), false, 'THE REGRESSION: a tenfold price verified');
+  assert.strictEqual(H('Scooter — $100.50', L), false, 'more of the number');
+  assert.strictEqual(H('Scooter — $100,000', L), false);
+  assert.strictEqual(H('XScooter — $100', L), false, 'not from the middle of a word');
+  assert.strictEqual(H('Scooter — $1000 and Scooter — $100 total', L), true, 'a later whole occurrence still counts');
+  assert.strictEqual(H('anything', ''), false);
+  assert.ok(/oopBodyHasLine_\(body, x\.line\)/.test(stripJsComments_(extractRawFunction('Code.js', 'oopVerifyQuotes_'))) &&
+    !/body\.indexOf\(x\.line\)/.test(extractRawFunction('Code.js', 'oopVerifyQuotes_')), 'the verifier uses it, not indexOf');
+});
+
+test('KB2-10 (cycle 23): a revert is not a review (the review clock is kept), and Save refuses while a pasted image is still uploading (driven)', () => {
+  const rv = stripJsComments_(extractRawFunction('Code.js', 'kbRevertItem'));
+  assert.ok(/now, emp\.email, cur\[KB\.REVIEWED_AT\], cur\[KB\.REVIEWED_BY\]/.test(rv), 'revert keeps ReviewedAt/By from the row');
+  assert.ok(!/now, emp\.email, now, emp\.email/.test(rv), 'THE REGRESSION: it stamped "reviewed now" on restored old text');
+  const calls = [], toasts = [];
+  const ctx = vm.createContext({ String, KB_EDIT: null, kbSnapshotEditor_: () => {}, kbBtnBusy_: () => {}, kbBtnIdle_: () => {},
+    showToast: (m) => toasts.push(m),
+    google: { script: { run: { withSuccessHandler() { return this; }, withFailureHandler() { return this; }, kbSaveItem: (p) => calls.push(p) } } } });
+  vm.runInContext(extractFunction('kb/script_kb.html', 'kbSaveFromEditor_'), ctx);
+  ctx.KB_EDIT = { id: 'a1', title: 'T', type: 'article', body: 'Intro\n![uploading-1…](kbpaste:pending)\nmore', status: 'published' };
+  ctx.kbSaveFromEditor_(null);
+  assert.strictEqual(calls.length, 0, 'no save while the placeholder is in the body');
+  assert.ok(toasts.some((t) => /still uploading/.test(t)), 'and the admin is told why');
+  ctx.KB_EDIT.body = 'Intro\n![Screenshot](https://x/y)\nmore';
+  ctx.kbSaveFromEditor_(null);
+  assert.strictEqual(calls.length, 1, 'once the upload has landed, Save goes through');
 });
 
 

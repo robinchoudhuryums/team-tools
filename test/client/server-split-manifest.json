@@ -1739,6 +1739,41 @@
     "kbImportDataTable"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-01",
+   "why": "cycle 23 Batch 2: eligibility engine — connectives (KB-1), qualifying state (KB2-1), Open parenthetical allow-list (KB2-2), country check (KB2-3, kbGeoOutsideUs_/kbGeoOutsideUsMsg_), longest-first names (KB2-4), blank-State city rows (KB2-5), whole-line quote match (KB2-7, oopBodyHasLine_), revert keeps the review clock + duplicate-warehouse finding (KB2-10)",
+   "added": [
+    "kbGeoOutsideUsMsg_",
+    "kbGeoOutsideUs_",
+    "oopBodyHasLine_"
+   ],
+   "removed": [],
+   "changed": [
+    "checkOopEligibility",
+    "getLocationAcceptance_",
+    "kbGeocodeOne_",
+    "kbRevertItem",
+    "locCityMatches_",
+    "locCityUnreadable_",
+    "oopEligibilityParse_",
+    "oopRadiusClause_",
+    "oopRegistryNamesIn_",
+    "oopVerifyQuotes_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-01",
+   "why": "cycle 23 Batch 2: KB_GEO_US_COUNTRIES — the US/territory list named explicitly (Canada's ISO code CA is California in US_STATE_CODES)",
+   "added": [
+    "KB_GEO_US_COUNTRIES"
+   ],
+   "removed": [],
+   "changed": [
+    "kbGeoOutsideUs_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2782,6 +2817,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "3dc0af3719c0ae6a"
+  },
+  "KB_GEO_US_COUNTRIES": {
+   "file": "70_kb.js",
+   "kind": "const",
+   "sha": "7d93f95db63bca83"
   },
   "KB_HEADERS": {
    "file": "00_config.js",
@@ -4541,7 +4581,7 @@
   "checkOopEligibility": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "ebccb65c131ec75a"
+   "sha": "83b877e3d614b728"
   },
   "checkOpenPunches": {
    "file": "20_timeclock.js",
@@ -5906,7 +5946,7 @@
   "getLocationAcceptance_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "4ffb92dba92f2a04"
+   "sha": "0d0b52362a933171"
   },
   "getManagerDashboard": {
    "file": "20_timeclock.js",
@@ -6948,6 +6988,16 @@
    "kind": "function",
    "sha": "3bda224c775aa78a"
   },
+  "kbGeoOutsideUsMsg_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "7970862518f75804"
+  },
+  "kbGeoOutsideUs_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "7ace3703ac9cd2be"
+  },
   "kbGeocodeCached_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -6956,7 +7006,7 @@
   "kbGeocodeOne_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "24dd8cbf383d3741"
+   "sha": "914bafe75f05ca61"
   },
   "kbGeocodePartialMsg_": {
    "file": "70_kb.js",
@@ -7211,7 +7261,7 @@
   "kbRevertItem": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "a42e730696464cb1"
+   "sha": "f60a348004df9c61"
   },
   "kbReviewStaggerOffsets_": {
    "file": "70_kb.js",
@@ -7331,7 +7381,7 @@
   "locCityMatches_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "3bdbb937f062d423"
+   "sha": "5c9422f6c4d1f7d0"
   },
   "locCityNorm_": {
    "file": "70_kb.js",
@@ -7341,7 +7391,7 @@
   "locCityUnreadable_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "47f6a50ea5a45477"
+   "sha": "24b47f8ab728913e"
   },
   "locHeaderRole_": {
    "file": "70_kb.js",
@@ -7643,6 +7693,11 @@
    "kind": "function",
    "sha": "a45b4c990befc84d"
   },
+  "oopBodyHasLine_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "b3300698ebde1275"
+  },
   "oopCodeIndex_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -7661,7 +7716,7 @@
   "oopEligibilityParse_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "e0d38bbc2d380a48"
+   "sha": "940df1b89a428175"
   },
   "oopHeaderRole_": {
    "file": "70_kb.js",
@@ -7691,12 +7746,12 @@
   "oopRadiusClause_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "51a7c144d398ef1b"
+   "sha": "641a2e4176bf4707"
   },
   "oopRegistryNamesIn_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "185d342a7347e7cc"
+   "sha": "69638e8b0321d862"
   },
   "oopRowIsBlank_": {
    "file": "70_kb.js",
@@ -7716,7 +7771,7 @@
   "oopVerifyQuotes_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "5e583401ee7f5d96"
+   "sha": "0a61c7430386d94e"
   },
   "openPersonalSs_": {
    "file": "20_timeclock.js",

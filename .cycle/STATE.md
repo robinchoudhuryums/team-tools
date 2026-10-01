@@ -3,9 +3,9 @@
 ## Current
 Cycle: 23 — opened by the 2026-10-01 `/broad-scan` (0 Critical / 5 High; plan of 13 batches + 8 deferred, in chat). Cycle 22 and 22post are in `.cycle/HISTORY.md`.
 Phase: implement
-Scope: broad — Batch 1 (TC-01, ADM-05, SH-01, CNUI-07, TC-02, CNUI-01)
+Scope: broad — Batch 2 (KB2-1, KB-1, KB2-2, KB2-3, KB2-4, KB2-5, KB2-7, KB2-10); Batch 1 done except TC-02
 Test Command: manual
-Estimates: Batch 1: M (~9 h) — written before the first edit
+Estimates: Batch 1: M (~9 h) · Batch 2: M (~11 h) — each written before its first edit
 Subsystem cycles since last Seams audit: 3 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25) and 22post's /reflect (2026-09-30). The cadence is every 4, so the next reflection reaches it.
 Updated: 2026-10-01 (cycle 23 Batch 1)
 

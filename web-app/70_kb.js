@@ -1210,6 +1210,25 @@ function oopQuoteLine_(name, price, effective, label) {
  *  A quote whose line is NO LONGER IN THE MESSAGE at all and whose price is
  *  unchanged is not an error: the rep inserted it, thought better of it and
  *  deleted it. It is dropped from the audit, because nothing was quoted. */
+/** PURE (Node-pinned) — KB2-7 (cycle 23): does `body` carry `line` as a WHOLE
+ *  quote line? A bare substring test let "Scooter — $100" verify inside
+ *  "Scooter — $1000", so the send went out and the audit row recorded "$100
+ *  verified" while the customer was quoted ten times that. The line must not
+ *  run on into more of a number (a digit, or "."/"," followed by a digit) and
+ *  must not start in the middle of a word. */
+function oopBodyHasLine_(body, line) {
+  const b = String(body == null ? '' : body), l = String(line == null ? '' : line);
+  if (!l) return false;
+  for (let at = b.indexOf(l); at >= 0; at = b.indexOf(l, at + 1)) {
+    const before = at > 0 ? b.charAt(at - 1) : '';
+    const after = b.charAt(at + l.length), after2 = b.charAt(at + l.length + 1);
+    if (before && /[A-Za-z0-9]/.test(before)) continue;
+    if (/[0-9]/.test(after)) continue;
+    if ((after === '.' || after === ',') && /[0-9]/.test(after2)) continue;
+    return true;
+  }
+  return false;
+}
 function oopVerifyQuotes_(quotes, message) {
   const list = Array.isArray(quotes) ? quotes : [];
   if (!list.length) return { quoted: [] };
@@ -1282,7 +1301,7 @@ function oopVerifyQuotes_(quotes, message) {
       const e = oopPriceByLabel_(o.prices, label);
       return { live: o, entry: e, line: (e && e.value) ? oopQuoteLine_(o.name, e.value, o.effective, label) : '' };
     });
-    const hit = resolved.filter(function (x) { return x.line && body.indexOf(x.line) >= 0; })[0];
+    const hit = resolved.filter(function (x) { return x.line && oopBodyHasLine_(body, x.line); })[0];
     if (hit) {
       out.push({ name: hit.live.name, price: hit.entry.value, effective: hit.live.effective, label: label, line: hit.line });
       continue;
@@ -1416,6 +1435,10 @@ function getLocationAcceptance_() {
       if (!address) { out.noAddress.push(name); return; }
       if (name && !out.warehouses[name]) out.warehouses[name] = address;
       else if (!name) out.unreadable.push({ name: '', reason: 'a warehouse row with no name' });
+      // KB2-10 (cycle 23): a second row with the SAME name was dropped in
+      // silence, and the first row's address won. Say so — the two rows may
+      // disagree about where the warehouse is.
+      else if (out.warehouses[name] !== address) out.unreadable.push({ name: name, reason: 'a second warehouse row with this name — only the first row\'s address is used' });
       return;
     }
     if (kind === 'city') {
@@ -1427,7 +1450,13 @@ function getLocationAcceptance_() {
       const stRaw = at(row, 'state');
       const stCode = locStateCode_(stRaw);
       if (stCode === null) out.unreadable.push({ name: name, reason: 'its State "' + stRaw + '" is not a US state or code' });
-      out.cities.push({ name: name, state: stCode || '', stateRaw: stRaw, stateBad: stCode === null,
+      // KB2-5 (cycle 23): a BLANK State is unreadable too. Since T7 a city row
+      // DECIDES for an item whose Area Eligibility names the city list, and a
+      // nameless state matched that city name in EVERY state — a "Dallas" row
+      // with no State said yes to Dallas, Georgia. The city stays listed, the
+      // row is named in the diagnostics, and the verdict there is "cannot tell".
+      else if (stCode === '') out.unreadable.push({ name: name, reason: 'it has no State — a city name alone matches that name in every state' });
+      out.cities.push({ name: name, state: stCode || '', stateRaw: stRaw, stateBad: !stCode,
         accepts: at(row, 'accepts'), notes: at(row, 'notes') });
       return;
     }
@@ -1471,8 +1500,9 @@ function getLocationAcceptance_() {
  *  reference material `InsurancePayors` is, surfaced at the moment it is
  *  useful.
  *
- *  The STATE is required to match when the row carries one — there is a
- *  Springfield in most of them. */
+ *  The STATE is required — there is a Springfield in most of them. A row with
+ *  no State (or one that could not be read) never matches; since KB2-5 (cycle
+ *  23) it is reported by `locCityUnreadable_` as "cannot tell" instead. */
 function locCityMatches_(cities, city, state) {
   const c = locCityNorm_(city);
   if (!c) return [];
@@ -1481,8 +1511,8 @@ function locCityMatches_(cities, city, state) {
     if (locCityNorm_(r.name) !== c) return false;
     // K4: a row whose State cell could not be read never matches — and never
     // counts as a mismatch either (`locCityUnreadable_` reports it).
-    if (r.stateBad) return false;
-    if (r.state && st && r.state !== st) return false;
+    if (r.stateBad || !r.state) return false;
+    if (st && r.state !== st) return false;
     return true;
   });
 }
@@ -1493,7 +1523,7 @@ function locCityMatches_(cities, city, state) {
 function locCityUnreadable_(cities, city) {
   const c = locCityNorm_(city);
   if (!c) return [];
-  return (cities || []).filter(function (r) { return r.stateBad && locCityNorm_(r.name) === c; });
+  return (cities || []).filter(function (r) { return (r.stateBad || !r.state) && locCityNorm_(r.name) === c; });
 }
 
 /** PURE (Node-pinned) — K4 (cycle 22): a US state as its two-letter code, from
@@ -1535,14 +1565,27 @@ function locCityNorm_(s) {
  *  "warehouse", one called "Mi" inside "miles" — and every spurious hit
  *  BROADENS the rule to measure from a site it never named (g41). */
 function oopRegistryNamesIn_(text, warehouseNames) {
-  const hits = [];
+  // KB2-4 (cycle 23): LONGEST name first, and a matched span is CONSUMED. With
+  // both "Dallas North" and "Dallas" registered, "100 miles of Dallas North"
+  // used to hit both — the word-bounded "Dallas" sits inside "Dallas North" —
+  // so the radius was also measured from Dallas, and which answer you got
+  // depended on the registry's row order. Each place in the text now names
+  // ONE warehouse; the hits keep the registry's order.
+  const names = [];
   (warehouseNames || []).forEach(function (n) {
     const name = String(n || '').trim();
-    if (!name || hits.indexOf(name) >= 0) return;
-    const re = new RegExp('\\b' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
-    if (re.test(String(text || ''))) hits.push(name);
+    if (name && names.indexOf(name) < 0) names.push(name);
   });
-  return hits;
+  let rest = String(text || '');
+  const found = {};
+  names.slice().sort(function (a, b) { return b.length - a.length; }).forEach(function (name) {
+    const re = new RegExp('\\b' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'ig');
+    if (re.test(rest)) {
+      found[name] = true;
+      rest = rest.replace(re, function (m) { return new Array(m.length + 1).join(' '); });
+    }
+  });
+  return names.filter(function (n) { return found[n]; });
 }
 
 /** PURE (Node-pinned) — ONE distance clause of an Area Eligibility value
@@ -1585,8 +1628,10 @@ function oopRadiusClause_(text, warehouseNames) {
   let rest = raw.slice(0, m.index) + ' ' + raw.slice(m.index + m[0].length);
   if (anyWh) rest = rest.replace(anyRe, ' ');
   // A warehouse name followed by its own state ("Dallas TX", "Dallas, TX") is
-  // the warehouse's ADDRESS, not a second rule — strip the pair.
-  hits.forEach(function (n) {
+  // the warehouse's ADDRESS, not a second rule — strip the pair. Longest name
+  // FIRST (KB2-4): stripping "Dallas" before "Dallas North" would leave a
+  // stray "North" and turn a readable rule unknown.
+  hits.slice().sort(function (a, b) { return b.length - a.length; }).forEach(function (n) {
     const nameRe = new RegExp('(' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')(\\s*,?\\s*)([A-Za-z]{2})?\\b', 'ig');
     rest = rest.replace(nameRe, function (all, nm, gap, st) {
       // The adjacent token is the warehouse's state only when it is an
@@ -1689,6 +1734,17 @@ function oopEligibilityParse_(text, warehouseNames) {
     if (!hasCity) return r;
     if (r.kind === 'unknown') return { kind: 'unknown', raw: raw0, noWarehouse: !!r.noWarehouse };
     if (r.kind === 'open') return r;
+    // KB2-1 (cycle 23): a STATE beside the city clause is a union only when the
+    // operator wrote the "or" ("TX or listed cities" — T7's shape, either one
+    // qualifies). Without it — "listed cities, TX", "listed cities (TX)",
+    // "listed cities in TX" — the state most plausibly QUALIFIES the list. Read
+    // as a union, the state branch lifts to `open` out of pocket and takes the
+    // whole union with it, so a scooter that reaches only listed Texas cities
+    // answered "available anywhere in the US". Two readings that far apart are
+    // a value we cannot read (g41).
+    if (r.kind === 'states' && (!/(^|[^A-Za-z])or([^A-Za-z]|$)/.test(raw0) || /[()]/.test(raw0))) {
+      return { kind: 'unknown', raw: raw0 };
+    }
     // A multi-distance union (K1) takes the city clause as one more branch.
     const branches = r.kind === 'any' ? (r.rules || []).slice() : [r];
     return { kind: 'any', rules: branches.concat([{ kind: 'cities' }]), raw: raw0 };
@@ -1747,16 +1803,48 @@ function oopEligibilityParse_(text, warehouseNames) {
     if (/\b(except|excluding|excludes?|excl|not|no|only|but|without|outside|other\s+than|minus|limited|restricted|restriction)\b/.test(notes)) {
       return wrap({ kind: 'unknown', raw: raw });
     }
+    // KB2-2 (cycle 23): the deny-list above cannot be finished — "Open (lower
+    // 48)", "(continental US)", "(mainland)", "(HI and AK extra charge)",
+    // "(call to confirm)" all restrict without one of its words, and each read
+    // as a plain YES for Hawaii. So the parenthetical is now read the other way
+    // round too: every word must be one that only ELABORATES "anywhere in the
+    // US", and naming Hawaii / Alaska / Puerto Rico counts as an elaboration
+    // only beside an including-word ("including Hawaii"), never alone ("HI and
+    // AK" may mean only those). Anything else is a rule this grammar cannot
+    // evaluate (g41).
+    const OPEN_NOTE_WORDS = ['anywhere', 'everywhere', 'nationwide', 'in', 'within', 'the', 'us', 'usa', 'u', 's',
+      'united', 'states', 'state', 'all', '50', 'fifty', 'country', 'whole', 'entire', 'and', 'also',
+      'including', 'includes', 'include', 'incl', 'inc', 'plus', 'hawaii', 'alaska', 'puerto', 'rico', 'hi', 'ak', 'pr'];
+    const OPEN_NOTE_PLACES = ['hawaii', 'alaska', 'puerto', 'rico', 'hi', 'ak', 'pr'];
+    const OPEN_NOTE_INCL = ['including', 'includes', 'include', 'incl', 'inc', 'also', 'plus', 'all', '50', 'fifty'];
+    const noteWords = notes.split(/[^a-z0-9]+/).filter(function (w) { return !!w; });
+    const elaborates = noteWords.every(function (w) { return OPEN_NOTE_WORDS.indexOf(w) >= 0; }) &&
+      (!noteWords.some(function (w) { return OPEN_NOTE_PLACES.indexOf(w) >= 0; }) ||
+        noteWords.some(function (w) { return OPEN_NOTE_INCL.indexOf(w) >= 0; }));
+    if (!elaborates) return wrap({ kind: 'unknown', raw: raw });
     return wrap({ kind: 'open' });
   }
 
   // 3. STATES — the WHOLE value must be state codes. A value that is partly
   //    codes and partly prose is not a state rule; it is a value we cannot read.
-  const toks = raw.split(/[\s,;/|&+]+/).filter(function (t) { return !!t; });
+  // KB-1 (cycle 23): the operator's prose CONNECTIVES are not codes. Every
+  // token used to be upper-cased first, so "TX or OK" read as TX, OREGON and
+  // OK, and "TX in OK" added Indiana — an insurance order to Portland got a
+  // YES. A lowercase "or"/"and" is the connective and is skipped; any OTHER
+  // lowercase token that is also an everyday English word ("in", "me", "hi",
+  // "ok" …) is not trusted as a code, so the value cannot be read (g156 — a
+  // word, by token). A lowercase code that is no English word ("tx") is still a
+  // code; an UPPERCASE "OR" is still Oregon.
+  const STATE_CONNECTIVES = ['or', 'and'];
+  const STATE_WORDS = ['in', 'me', 'hi', 'ok', 'oh', 'de', 'la', 'pa', 'co', 'al', 'id', 'ma', 'ne', 'or', 'mo', 'wa'];
+  const toks = raw.split(/[\s,;/|&+]+/).filter(function (t) { return !!t; })
+    .filter(function (t) { return STATE_CONNECTIVES.indexOf(t) < 0; });
   if (toks.length) {
     const codes = [];
     let allCodes = true;
     for (let i = 0; i < toks.length; i++) {
+      const lower = toks[i].replace(/[^A-Za-z]/g, '');
+      if (lower && lower === lower.toLowerCase() && STATE_WORDS.indexOf(lower) >= 0) { allCodes = false; break; }
       const t = toks[i].toUpperCase().replace(/[^A-Z]/g, '');
       if (t.length !== 2 || US_STATE_CODES.indexOf(t) < 0) { allCodes = false; break; }
       if (codes.indexOf(t) < 0) codes.push(t);
@@ -2019,6 +2107,11 @@ function checkOopEligibility(address, query) {
     if (qGeo && qGeo.unavailable) return { error: kbGeocodeUnavailableMsg_(qGeo) };   // F-15: the service, not the address
     if (qGeo && qGeo.partial) return { error: kbGeocodePartialMsg_(qGeo) };            // K5: a guess is not a location
     if (!qGeo) return { error: 'Could not find that location — try a 5-digit ZIP code.' };
+    // KB2-3 (cycle 23): every rule here is a US rule. An `open` cell (and every
+    // state rule, lifted out of pocket) answered "available anywhere in the US"
+    // for a Canadian or Mexican address, and a radius said yes across the
+    // border. Outside the US is not a verdict this table can give.
+    if (kbGeoOutsideUs_(qGeo)) return { error: kbGeoOutsideUsMsg_() };
 
     // Warehouses are geocoded only when some picked row actually needs one, so
     // a state-only catalog never pays for a geocode round trip.
@@ -3308,7 +3401,13 @@ function kbRevertItem(id, revId) {
       String(snap[KBREV.DRIVE_KIND] || ''),
       String(snap[KBREV.DRIVE_FILE_ID] || ''),
       Number(cur[KB.SORT_ORDER] || 0) || 0,
-      now, emp.email, now, emp.email,
+      // KB2-10 (cycle 23): a revert is NOT a review. It used to stamp
+      // ReviewedAt = now, so putting back OLD content cleared the article from
+      // the review-due queue at the very moment it most needed a look. Updated
+      // is now; the review clock keeps whatever it had (a save still counts as
+      // a review — that is an edit someone read; a revert restores text nobody
+      // re-checked).
+      now, emp.email, cur[KB.REVIEWED_AT], cur[KB.REVIEWED_BY],
       kbRowStatus_(cur[KB.STATUS]),
     ];
     kbSheet.getRange(found, 1, 1, KB_HEADERS.length).setValues(sheetSafeRows_([restored]));
@@ -4363,10 +4462,13 @@ function kbGeocodeOne_(addr) {
     // asked. Not found and partly found are different answers (g128), so it
     // comes back as its own shape and the caller asks for a fuller address.
     if (r.partial_match) return { partial: true, formatted: String(r.formatted_address || '') };
-    let state = '', city = '';
+    let state = '', city = '', country = '';
     const comps = r.address_components || [];
     for (let i = 0; i < comps.length; i++) {
       const types = comps[i].types || [];
+      // KB2-3 (cycle 23): the COUNTRY, read rather than assumed — `setRegion('us')`
+      // only BIASES the search. Additive: the map block's callers read lat/lng.
+      if (!country && types.indexOf('country') >= 0) country = String(comps[i].short_name || '').trim().toUpperCase();
       if (!state && types.indexOf('administrative_area_level_1') >= 0) {
         state = String(comps[i].short_name || '').trim().toUpperCase();
       }
@@ -4379,8 +4481,24 @@ function kbGeocodeOne_(addr) {
       }
     }
     return { lat: r.geometry.location.lat, lng: r.geometry.location.lng,
-      formatted: String(r.formatted_address || ''), state: state, city: city };
+      formatted: String(r.formatted_address || ''), state: state, city: city, country: country };
   } catch (e) { return { unavailable: true, status: 'ERROR', message: String((e && e.message) || e) }; }
+}
+/** PURE (Node-pinned) — KB2-3 (cycle 23): a geocode whose COUNTRY is known and
+ *  is neither the US nor Puerto Rico (the one territory US_STATE_CODES carries,
+ *  which the geocoder reports as its own country). Named EXPLICITLY, never by
+ *  looking the country up in US_STATE_CODES: Canada's ISO code is "CA", which
+ *  is California there. A geocode with no country component is not called
+ *  foreign — that is not evidence. */
+const KB_GEO_US_COUNTRIES = ['US', 'PR'];
+function kbGeoOutsideUs_(g) {
+  const c = String((g && g.country) || '').trim().toUpperCase();
+  return !!c && KB_GEO_US_COUNTRIES.indexOf(c) < 0;
+}
+/** KB2-3 — the ONE message for an address outside the US. It names no part of
+ *  the address: this text can reach the shared error beacon (g146). */
+function kbGeoOutsideUsMsg_() {
+  return 'That address is outside the US — the delivery and pricing rules cover US addresses only. Check the address, or ask a manager.';
 }
 /** K5 (cycle 22) — the ONE message for a partial geocode: the address only
  *  partly matched, so no distance is measured from Google's guess. */

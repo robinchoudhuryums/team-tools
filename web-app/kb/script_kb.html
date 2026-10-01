@@ -6494,6 +6494,13 @@ function kbSaveFromEditor_(btn) {
   if (!String(e.title).trim()) { showToast('Title is required.', 'toast-warn'); return; }
   if (e.type === 'embed' && !String(e.driveUrl).trim()) { showToast('Paste a Drive share URL.', 'toast-warn'); return; }
   if (e.type !== 'embed' && !String(e.body).trim()) { showToast('Add some article text.', 'toast-warn'); return; }
+  // KB2-10 (cycle 23): a pasted screenshot is a placeholder until its upload
+  // returns. A Save in that window stored "![uploading-N…](kbpaste:pending)"
+  // for good — the upload's own replacement then found no editor to land in.
+  if (e.type !== 'embed' && String(e.body || '').indexOf('(kbpaste:pending)') >= 0) {
+    showToast('A pasted image is still uploading — wait for it to finish, then Save.', 'toast-warn');
+    return;
+  }
   // L13 — dedupe: double-clicking Save on a NEW item fired two kbSaveItem
   // calls and created duplicate rows (the server lock serializes inserts but
   // can't dedupe them). Disable for the round trip; re-enable on failure.
