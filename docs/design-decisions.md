@@ -3441,6 +3441,14 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
         catch (e) { Logger.log('DriveApp FAILED: ' + e.message); }
         Logger.log('probe: ' + JSON.stringify(driveAccessStatus_()));
       }
+  **AMENDED (cycle 23 DRV-1, 2026-10-01): a FIFTH outcome — the scope is
+  granted and the SERVICE is disabled.** Since M4-FU3 (2026-09-29) this domain
+  refuses every `DriveApp` call with "The feature you are attempting to use has
+  been disabled by your domain administrator." That is neither a missing scope
+  (the token carries `/auth/drive`) nor a consent-screen block: re-authorizing
+  changes nothing, and no folder id or share can fix it. Only IT allowing Drive
+  for Apps Script does. The app now tells it apart (`driveDisabledError_`) and
+  says so with one message, `DRIVE_DISABLED_MSG`.
 - <a id="sheet-article-conversion-operator-2026-08-11"></a>**Sheet→article conversion (operator 2026-08-11).** A Drive SHEET embed is
   the WEAKEST item type in the KB, and the reason is structural, not cosmetic:
   `searchReference` treats every embed as a **title-only hit** ("No stored
@@ -3781,6 +3789,18 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   as an **ok FACT** while the store is comfortable, warning only past
   `PROP_WARN_PCT` (80%) of either cap or on an unreadable read, so the System tab
   still reaches "Nothing needs attention" on a healthy deployment (INV-186).
+  **AMENDED (cycle 23 DRV-1 + QA-1, 2026-10-01): the line EXERCISES the
+  service, and probes the QA folder too.** Introspecting the token answered
+  "is the permission granted", which on this domain is yes while the service is
+  disabled — so the line read green over a dead QA module. `driveAccessStatus_`
+  now makes one side-effect-free call (`DriveApp.getRootFolder().getId()`) and
+  ships `service` (ok / disabled / error); a disabled service is a BLOCKING
+  finding naming every Drive surface, an unexplained failure is a warn
+  (unknown, INV-187), and neither is cached (INV-129). Folders are not probed
+  while the service is off, because each would "fail" and be blamed. The QA
+  recordings folder (`QA_FOLDER_PROP`) is probed beside the KB Images folder
+  and has its own `driveQaFolder` finding. The KB folder advice never says
+  "clear the property" unless Drive says the folder is gone (g142).
 - <a id="storage-health-panel-admin-tab-1"></a>**Storage Health panel (Admin tab, #1).** Manager-only, read-only
   one-pane-of-glass over every spreadsheet the app uses (`getStorageHealth`,
   rendered by `cnLoadStoragePanel_`). Since design handoff PR 2 (2026-09-02) it

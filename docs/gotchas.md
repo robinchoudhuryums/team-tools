@@ -4281,6 +4281,28 @@ instruction changes nothing, because the triggers and the CDR store were never
 looked at. Both rows now say "Could not check — the automation health read
 failed (…). This says nothing about …". Verify: the A5 pin, driven over
 `{error}`, `{readFailed}` and no report.
+**AMENDED (cycle 23 DRV-1 + QA-1 + DRV-2 + DRV-4, 2026-10-01): a check of the
+PERMISSION cannot see the SERVICE.** This domain disables Apps Script's Drive
+(M4-FU3). The token still carries `/auth/drive` — the scope is auto-detected
+from the code — so the Admin → System Drive line, which only introspected the
+token, read **Drive access granted** while every `DriveApp` call threw "disabled
+by your domain administrator". Each surface behind it then named the wrong
+cause, and each named cause was actionable: QA Sync said *check
+`QA_RECORDINGS_FOLDER_ID`* (a correct id), playback said *Recording not found*
+(about every recording), the embed scan listed every embed as *deleted/moved or
+the deployer lost access*, the folder line's advice was *clear the property*,
+and `getOrCreateKbImagesFolder_` treated ANY open failure as a dead folder and
+created a replacement, which would re-point the property away from every image
+already exported (the reader's fallback reads only the folder the property
+names). The fix is the rule above applied to each: `driveAccessStatus_` makes
+one side-effect-free call (`DriveApp.getRootFolder().getId()`) and reports
+`service` ok / disabled / error; folders are not probed while the service is
+off; one message (`DRIVE_DISABLED_MSG`) is used wherever the disabled rule
+(`driveDisabledError_`) matches; and the folder is replaced only on Drive's own
+"No item with the given ID" (`driveItemGoneError_`). **The question to ask of a
+capability check: does it exercise the thing, or only the precondition for it?**
+Verify: the cycle-23 DRV-1 / QA-1 / DRV-2 / DRV-4 / DRV-5 drives and the
+`admin-system-drivedisabled-*` shots.
 
 
 <a id="g143-a-leading-underscore-is-not-private"></a>

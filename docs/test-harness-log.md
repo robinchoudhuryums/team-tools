@@ -2329,3 +2329,25 @@ per-change detail. By delta:
   code's own path erases cannot tell the guard apart).
 - The KB2-3 pin caught a defect in the FIX before commit: looking the country
   up in `US_STATE_CODES` read Canada's ISO "CA" as California.
+
+## Cycle 23 — Batch 3, a disabled Drive is named, never blamed on a folder or a file (2026-10-01)
+
+- Node +8 (DRV-1 the two pure rules; DRV-1 + QA-1 `driveAccessStatus_` driven
+  over a granted-but-disabled service, an unexplained service error, a clean
+  round and a dead QA folder; DRV-1 + QA-1 the System line and findings; the
+  `?drive=disabled` mock hook and scenarios; DRV-4 the folder helper; DRV-5 the
+  kept tokens; DRV-2 the embed scan, panel and finding; QA-1 playback driven
+  and the sync catch's wiring). Older doubles changed with the behaviour:
+  DRV-2(d) now replaces on Drive's own "No item with the given ID" instead of a
+  bare 'gone'; the `drvCtx` const loader matches a multi-line `const` (for
+  `DRIVE_DISABLED_MSG`) and loads the two new rules; DRV-3's `DriveApp` stub
+  gained `getRootFolder`; the DRV-4 and storage-panel sandboxes load
+  `cnDriveSurfaces_` / `cnDriveFolderAdvice_`.
+- Visual +2: `admin-system-drivedisabled-light-{wide,mobile}` via a
+  `?drive=disabled` hook (service disabled, folders unprobed, the embed scan
+  unavailable). Both mock `getStorageHealth` fixtures carry `service` and the
+  QA folder probe.
+- 16 bite-checks, all BITE (the service probe, folders probed while disabled,
+  the disabled rule, the line and finding branches, the destructive folder
+  advice, the QA folder probe and finding, QA playback and sync, the embed
+  scan, panel and finding, DRV-4 twice, DRV-5).

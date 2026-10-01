@@ -13,10 +13,11 @@ Updated: 2026-10-01 (cycle 23 Batch 3)
 - Cycle 23 opened 2026-10-01 with a `/broad-scan` (0 Critical / 5 High / ~110 findings; the full report and 13-batch plan are in that session's chat — the batch→ID list is copied under Pending below).
 - Batch 1 implemented on branch `claude/blissful-johnson-cottl5` (block: `.cycle/blocks/23-batch1-broad-implement.md`); NOT yet deployed. TC-02 held back on a decision.
 - Batch 2 implemented on the same branch (block: `.cycle/blocks/23-batch2-broad-implement.md`); NOT yet deployed. /sync-docs for Batch 2 done.
-- Batch 3 implemented on the same branch (block: `.cycle/blocks/23-batch3-broad-implement.md`); NOT yet deployed; /sync-docs for Batch 3 NOT yet run.
+- Batch 3 implemented on the same branch (block: `.cycle/blocks/23-batch3-broad-implement.md`); NOT yet deployed. /sync-docs for Batch 3 done.
 - Everything through 22post is merged (PRs #274–#282) and deployed (2026-09-30). The operator was finishing two 22post steps at close: the manual.json re-export + import, and the S124–S128 walks.
 
 ## Completed this cycle
+- /sync-docs (Batch 3) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g142 extended (a permission check cannot see a disabled service); the missing-SCOPE + Storage Health decisions amended; KB_IMAGES_FOLDER_ID + QA operator notes; INV-197, S104, S90 amended
 - DRV-1 | 00_config.js, 10_core.js, cn/script_callnotes.html | the Drive line exercises the SERVICE (getRootFolder); a disabled service is a FAIL naming every surface; folder advice never says clear the property
 - QA-1 | 10_core.js, 90_qa.js, cn/script_callnotes.html | QA folder probed (QA_FOLDER_PROP); sync + playback name a disabled Drive by DRIVE_DISABLED_MSG
 - DRV-2 | 70_kb.js, cn/script_callnotes.html | embed scan stops on a disabled service (driveUnavailable), never lists every embed broken
@@ -82,4 +83,4 @@ Updated: 2026-10-01 (cycle 23 Batch 3)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 23 Batches 1–3 are committed and pushed on `claude/blissful-johnson-cottl5` (Batch 1: 5 of 6, TC-02 awaits the operator's choice; Batches 2 and 3 complete). Next: `/sync-docs` for Batch 3, then deploy all three and walk S8/S18/S112/S65/S104/S90 + read the Reference-lookups diagnostics; then `/broad-implement Batch 4a`. The next /reflect reaches the Seams-audit cadence.
+Cycle 23 Batches 1–3 are committed and pushed on `claude/blissful-johnson-cottl5` (Batch 1: 5 of 6, TC-02 awaits the operator's choice; Batches 2 and 3 complete). Next: deploy all three and walk S8/S18/S112/S65/S104/S90 + read the Reference-lookups diagnostics; then `/broad-implement Batch 4a`. The next /reflect reaches the Seams-audit cadence.

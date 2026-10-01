@@ -971,6 +971,16 @@ not restate it. Server endpoints live in the fourteen server files
      and reverting to an earlier revision no longer counts as reviewing the
      article.
 
+     **Cycle 23 Batch 3 (2026-10-01) — a disabled Drive is named, not blamed on
+     a folder or a file.** With the domain's Drive service off, the embed check
+     on Admin → System says the embeds "could not be checked" instead of
+     listing every one as deleted; the KB Images folder is replaced only when
+     Drive says it is gone; and a converted article saved while the folder
+     cannot be reached keeps its image references as pending chips, so a later
+     save can still export them (they used to become a permanent
+     "see the original Doc" placeholder). The image export and
+     paste-a-screenshot errors carry the one disabled-Drive message.
+
 <a id="training-employee-docs"></a>
      **Batch 6 (2026-09-18):** the drawer is `role="dialog"` named by its own
      heading and hands focus back to whatever opened it — open it with
@@ -1294,3 +1304,10 @@ not restate it. Server endpoints live in the fourteen server files
      re-attribute a recording of their OWN call; an admin can
      (`qaSelfReviewRefusal_`, S6). The check is on the server; the detail
      still offers the controls.
+
+     **Cycle 23 Batch 3 (2026-10-01):** with the domain's Drive service
+     disabled, Sync and playback return the one disabled-Drive message
+     (`DRIVE_DISABLED_MSG`, plus `driveDisabled: true`) instead of "check
+     `QA_RECORDINGS_FOLDER_ID`" and "Recording not found." A genuinely missing
+     file still gets the generic refusal. The recordings folder is probed on
+     Admin → System (`QA_FOLDER_PROP`, read by `qaFolderId_` too) — QA-1.

@@ -220,6 +220,13 @@ entry says which it is.
   server-side only: the detail still shows the controls and refuses on use.
   Claiming and commenting are not restricted. Nothing to set up; tell the QA
   reviewers.
+  **The folder is checked on Admin → System (cycle 23 QA-1, 2026-10-01):**
+  `QA_RECORDINGS_FOLDER_ID` is probed beside the KB Images folder, and a folder
+  the deploying account cannot open is a "QA recordings folder unreachable"
+  warning. While this domain disables Apps Script's Drive (M4-FU3), Sync and
+  playback both say so ("Apps Script's Drive service is disabled for this
+  domain…") instead of blaming the folder id or the recording — QA sync and
+  playback cannot work until IT allows Drive for Apps Script.
 <a id="operator-set-script-property-adp-ss-id"></a>
 - **Set Script Property `ADP_SS_ID`** to the real spreadsheet ID in
   Apps Script editor → Project Settings → Script Properties. Without
@@ -403,6 +410,17 @@ entry says which it is.
   restricted"), which is the one case that is genuinely a Workspace policy
   block, and you then have the exact scope name to give IT. Admin → System →
   Storage inventory reports which of these you are in (INV-197).
+  **AMENDED (cycle 23 DRV-1/DRV-4/DRV-5, 2026-10-01).** On THIS domain the
+  scope is granted and Apps Script's Drive SERVICE is disabled by the Workspace
+  admin (M4-FU3) — re-authorizing does not help; Admin → System now leads with a
+  BLOCKING "Drive is disabled for this domain" finding until IT allows Drive for
+  Apps Script. The folder is replaced automatically ONLY when Drive says it is
+  gone ("No item with the given ID"); any other failure leaves the property as
+  it is and the save names the reason. **Do not clear the property by hand while
+  the folder still exists** — every exported image lives in it, and the image
+  fallback reads only the folder the property names. A save that cannot reach
+  the folder keeps the converter's image references as pending chips; save the
+  article again once Drive is reachable to export them.
 <a id="operator-script-property-kb-search-synonyms"></a>
 - **Script Property `KB_SEARCH_SYNONYMS`** (auto-managed, #8). JSON array of
   ≥2-term lowercase synonym groups (e.g. `[["cpap","pap"],["pmd","power chair"]]`)
