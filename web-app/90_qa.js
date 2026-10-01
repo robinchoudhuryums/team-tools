@@ -885,13 +885,12 @@ function purgeOldQaReviews() {
        [QA_SCORECARDS_TAB, QSC.CREATED_MS, function (n) { scorecards = n; }]].forEach(function (t) {
         const sheet = ss.getSheetByName(t[0]);
         if (!sheet || sheet.getLastRow() < 2) return;
-        const col = sheet.getRange(2, t[1] + 1, sheet.getLastRow() - 1, 1).getValues();
-        let removed = 0;
-        for (let i = col.length - 1; i >= 0; i--) {   // bottom-up so indices hold
-          const ms = Number(col[i][0]) || 0;
-          if (ms > 0 && ms < cutoffMs) { sheet.deleteRow(i + 2); removed++; }
-        }
-        t[2](removed);
+        // QA-3 (cycle 23): the shared deleter, not a hand-written loop — the
+        // loop had no spare row, so a full grid whose every row had expired
+        // threw on its LAST delete (C5's sibling), the audit row below was
+        // never written, and every later run threw on the survivor. The cells
+        // are NUMBER ms, read by qaPurgeMs_ (a 0/garbage stamp is never deleted).
+        t[2](purgeSheetRowsOlderThan_(sheet, t[1], cutoffMs, qaPurgeMs_));
       });
     } finally {
       lock.releaseLock();
@@ -899,9 +898,17 @@ function purgeOldQaReviews() {
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'QaReviewPurge', '', '', false, 0,
       `retentionDays=${days}; commentsRemoved=${comments}; scorecardsRemoved=${scorecards}`);
     Logger.log(`purgeOldQaReviews: removed ${comments} comment(s) + ${scorecards} scorecard(s) older than ${days} day(s).`);
+    clearAutomationError_('QaReviewPurge');
   } catch (err) {
+    stampAutomationError_('QaReviewPurge', err.message);   // QA-3: the F4 rule — a caught failure reaches nobody unless stamped
     Logger.log('purgeOldQaReviews failed: ' + err.message);
   }
+}
+/** PURE (Node-pinned) — QA-3: a QA review row's CreatedMs as epoch ms, or null
+ *  (never deleted) for a 0, blank or non-numeric cell. */
+function qaPurgeMs_(v) {
+  const ms = Number(v);
+  return (isFinite(ms) && ms > 0) ? ms : null;
 }
 /** Set which AGENT a recording belongs to (feeds the per-agent stats). Free
  *  text bounded ≤80 chars — roster names ride the queue payload as a datalist,

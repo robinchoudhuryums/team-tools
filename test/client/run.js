@@ -4913,12 +4913,15 @@ test('the brief suppresses exactly the four daily manager streams — never the 
     assert.ok(src.indexOf('managerBriefSuppressionActive_(') >= 0 &&
               src.indexOf('stampDigestLastRun_') >= 0, h + ' has both the gate and a heartbeat');
   });
-  // The brief itself heartbeats BEFORE its flag check — trigger liveness is
-  // observable even while the feature is off.
+  // The brief heartbeats on its flag-off branch — trigger liveness is
+  // observable even while the feature is off. CORE-01 (cycle 23): with the
+  // flag ON the heartbeat lands only after the sends, and only when none
+  // failed — it is what makes the four digests stand down (driven in CORE-01).
   const briefSrc = extractRawFunction('Code.js', 'sendManagerDailyBrief');
-  assert.ok(briefSrc.indexOf("stampDigestLastRun_('managerBrief')") <
-            briefSrc.indexOf("getFlag_('managerDailyBrief')"),
-    'sendManagerDailyBrief stamps its heartbeat before the flag gate');
+  assert.ok(/if \(!getFlag_\('managerDailyBrief'\)\) \{ stampDigestLastRun_\('managerBrief'\);/.test(briefSrc),
+    'sendManagerDailyBrief stamps its heartbeat on the flag-off branch');
+  assert.ok(briefSrc.indexOf("if (!sendFailed) stampDigestLastRun_('managerBrief');") > briefSrc.indexOf('sendManagerBriefEmail_('),
+    'and, with the flag on, only after the sends');
 });
 test('managerDailyBrief is a registered server-scope flag defaulting OFF', () => {
   const m = codeSrc.match(/key:\s*'managerDailyBrief'[\s\S]*?scope:\s*'(\w+)'/);
@@ -18012,8 +18015,11 @@ test('QA-18: QA review-record retention — index untouched, ms fail-safe, botto
   // (b) Fail-safe on an unreadable stamp: `ms > 0 &&` means a 0/garbage
   // CreatedMs cell is never deleted (the unparseable-date purge rule), and
   // the delete walks BOTTOM-UP so row indices hold as rows are removed.
-  assert.ok(/ms > 0 && ms < cutoffMs/.test(f), 'a 0/garbage stamp is never deleted (fail-safe)');
-  assert.ok(/for \(let i = col\.length - 1; i >= 0; i--\)/.test(f), 'bottom-up delete');
+  // QA-3 (cycle 23): the deletion now rides the shared purgeSheetRowsOlderThan_
+  // (bottom-up, with C5's spare-row guard), reading each cell through
+  // qaPurgeMs_ — the fail-safe moved there and is DRIVEN in the QA-3 pin.
+  assert.ok(/purgeSheetRowsOlderThan_\(sheet, t\[1\], cutoffMs, qaPurgeMs_\)/.test(f), 'a 0/garbage stamp is never deleted (fail-safe): the ms reader rides the shared deleter');
+  assert.ok(/for \(let j = toDelete\.length - 1; j >= 0; j--\)/.test(extractRawFunction('Code.js', 'purgeSheetRowsOlderThan_')), 'bottom-up delete');
   // (c) Both early returns come BEFORE the lock (a disabled window or an
   // unset store never queues punch writes), and the read never provisions.
   const lockIdx = f.indexOf('waitLock(15000)');
@@ -22258,7 +22264,7 @@ test('F-20: the three heartbeat-only daily jobs stamp a heartbeat and their own 
     'the export check heartbeats at the END of a clean run (after both period gates)');
   assert.ok(/catch \(err\) \{\s*stampAutomationError_\('DailyExportCheck', err\.message\)/.test(ex), 'and stamps its own failure');
   const dg = foNc(extractRawFunction('Code.js', 'sendAutomationHealthDigest'));
-  assert.strictEqual((dg.match(/stampAutomationError_\('AutomationHealthDigest'/g) || []).length, 2, 'the digest stamps a failed report AND its own outer failure');
+  assert.strictEqual((dg.match(/stampAutomationError_\('AutomationHealthDigest'/g) || []).length, 3, 'the digest stamps a failed report, a failed SEND (CORE-02/MAIL-4, cycle 23) AND its own outer failure');
   assert.ok(dg.indexOf("stampDigestLastRun_('automationHealth')") > dg.indexOf('if (!report) return;'), 'the heartbeat lands only when a report was computed — a dead computation reads stale');
   assert.ok(/clearAutomationError_\('AutomationHealthDigest'\)/.test(dg), 'and clears on a computed report');
 
@@ -31387,6 +31393,233 @@ test('QA-1 (cycle 23): QA sync and playback name a disabled Drive by the ONE mes
   assert.ok(/try \{ folder = DriveApp\.getFolderById\(folderId\); \}\s*catch \(e\) \{\s*if \(driveDisabledError_\(e && e\.message\)\) return \{ success: false, error: DRIVE_DISABLED_MSG/.test(sync),
     'the sync folder-open catch asks the ONE rule first');
   assert.ok(/getProperty\(QA_FOLDER_PROP\)/.test(extractRawFunction('Code.js', 'qaFolderId_')), 'one property name, shared with the Admin probe');
+});
+
+// ── cycle 23 Batch 4a — automation honesty (CORE-01, HR-3, MAIL-4, CORE-02, TC-07, QA-3) ──
+const c23Log_ = () => ({ err: [], clr: [], hb: [], mail: [] });
+const c23AutoCtx_ = (log, extra) => vm.createContext(Object.assign({ String, Object, JSON, Date, Array, Number, isFinite, Math,
+  console: { warn() {} }, Logger: { log() {} }, assertManagerCaller_() {},
+  stampAutomationError_: (k, m) => log.err.push(k + ':' + m), clearAutomationError_: (k) => log.clr.push(k),
+  stampDigestLastRun_: (k) => log.hb.push(k) }, extra || {}));
+
+test('CORE-01 (cycle 23): the daily brief heartbeats only once it has DELIVERED — a failed send withholds the heartbeat (so the four digests resume) and is stamped; a throw is stamped too (driven)', () => {
+  const run = (opts) => {
+    const log = c23Log_();
+    const ctx = c23AutoCtx_(log, { CONFIG: { TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago' }, Utilities: { formatDate: () => '2026-10-01' },
+      getFlag_: () => opts.flag !== false, getManagerEmails_: opts.mgrs || (() => ['a@x', 'b@x']),
+      computeMissedClockOuts_: () => [{ id: 1 }], managerAggregateUrgent_: () => ({ results: [], skippedReps: [] }),
+      trainOverdueForRoster_: () => [], empDocsOverdueAll_: () => [], coachUnackedAll_: () => [], deptRequestsOverdueOpen_: () => [],
+      empDocCanManagerSee_: () => true, coachCanManagerSee_: () => true, managerBriefSections_: () => ['s'],
+      sendManagerBriefEmail_: (e) => { if ((opts.failFor || []).indexOf(e) >= 0) throw new Error('quota'); log.mail.push(e); } });
+    vm.runInContext(extractRawFunction('Code.js', 'sendManagerDailyBrief'), ctx);
+    ctx.sendManagerDailyBrief();
+    return log;
+  };
+  let l = run({});
+  assert.deepStrictEqual(l.mail, ['a@x', 'b@x']); assert.deepStrictEqual(l.hb, ['managerBrief'], 'delivered → heartbeat');
+  assert.deepStrictEqual(l.clr, ['ManagerDailyBrief']); assert.strictEqual(l.err.length, 0);
+  l = run({ failFor: ['b@x'] });
+  assert.deepStrictEqual(l.hb, [], 'THE REGRESSION: the heartbeat was stamped before any send, so a failed brief kept the four digests suppressed');
+  assert.ok(l.err.length === 1 && /^ManagerDailyBrief:1 of 2 brief email\(s\) failed to send \(quota\)/.test(l.err[0]), l.err[0]);
+  l = run({ mgrs: () => { throw new Error('props down'); } });
+  assert.ok(l.err.some((e) => /ManagerDailyBrief:the brief run failed: props down/.test(e)), 'a throw is stamped, not just logged');
+  assert.deepStrictEqual(l.hb, []);
+  l = run({ flag: false });
+  assert.deepStrictEqual(l.hb, ['managerBrief'], 'flag off: the trigger ran, so it still heartbeats (INV-151)');
+  const det = stripJsComments_(extractRawFunction('Code.js', 'automationDetectorChecks_'));
+  assert.ok(/either its trigger is missing \(run installAutomationTriggers\(\)\) or its last run did not deliver/.test(det),
+    'a stale brief heartbeat names BOTH causes, not only the trigger (g142)');
+});
+
+test('CORE-02 (cycle 23): a health check that could not run is UNKNOWN — never failing:false, never cached — and the dot keeps its state; the health digest stamps itself clean only after it sends (driven)', () => {
+  const mk = (compute) => {
+    const puts = [];
+    const ctx = vm.createContext({ JSON, Logger: { log() {} }, getEmployeeInfo_: () => ({ isManager: true }),
+      CacheService: { getScriptCache: () => ({ get: () => null, put: (k, v) => puts.push(v) }) },
+      computeAutomationHealth_: compute, automationProblems_: (r) => r.p });
+    vm.runInContext(extractRawFunction('Code.js', 'getAutomationHealthBadge'), ctx);
+    return { r: JSON.parse(JSON.stringify(ctx.getAutomationHealthBadge())), puts };
+  };
+  let b = mk(() => { throw new Error('audit read failed'); });
+  assert.deepStrictEqual(b.r, { failing: null, unknown: true, count: 0 }, 'THE REGRESSION: it returned failing:false');
+  assert.strictEqual(b.puts.length, 0, 'and cached it org-wide for ten minutes');
+  b = mk(() => ({ p: ['x', 'y'] }));
+  assert.deepStrictEqual(b.r, { failing: true, count: 2 }); assert.strictEqual(b.puts.length, 1);
+  // Client: unknown leaves an existing dot where it is.
+  const dot = { title: '', remove() { this.removed = true; }, setAttribute() {} };
+  const btn = { querySelector: () => dot, appendChild() {} };
+  const render = loadFunction(vm.createContext({ document: { querySelector: () => btn, createElement: () => dot } }), 'script_core.html', 'renderHealthBadge_');
+  render({ failing: null, unknown: true, count: 0 });
+  assert.ok(!dot.removed, 'an unknown poll does not clear the dot');
+  render({ failing: false, count: 0 });
+  assert.ok(dot.removed, 'a real all-clear still does');
+  // The digest.
+  const dig = (problems, sendThrows) => {
+    const log = c23Log_();
+    const ctx = c23AutoCtx_(log, { getManagerEmails_: () => ['m@x'], computeAutomationHealth_: () => ({}), automationProblems_: () => problems,
+      esc_: (x) => x, buildBrandedEmailHtml_: () => '', appSendMail_: () => { if (sendThrows) throw new Error('quota'); log.mail.push(1); } });
+    vm.runInContext(extractRawFunction('Code.js', 'sendAutomationHealthDigest'), ctx);
+    ctx.sendAutomationHealthDigest();
+    return log;
+  };
+  let d = dig(['p1'], true);
+  assert.deepStrictEqual(d.hb, [], 'THE REGRESSION: heartbeat + clear landed before the send');
+  assert.deepStrictEqual(d.clr, []);
+  assert.ok(d.err.length === 1 && /AutomationHealthDigest:the digest found 1 issue\(s\) but could not be sent: quota/.test(d.err[0]), d.err[0]);
+  d = dig(['p1'], false);
+  assert.deepStrictEqual(d.hb, ['automationHealth']); assert.deepStrictEqual(d.clr, ['AutomationHealthDigest']); assert.strictEqual(d.mail.length, 1);
+  d = dig([], false);
+  assert.deepStrictEqual(d.hb, ['automationHealth'], 'an all-clear morning still heartbeats');
+});
+
+test('HR-3 (cycle 23): an UNREACHABLE HR store is a named failure, an UNSET one is a deployment without the feature — the sweeps no longer read both as "nothing overdue" (driven)', () => {
+  const mk = (prop, override) => {
+    const ctx = vm.createContext({ String, Logger: { log() {} }, CONFIG: { COACHING_UNACK_REMINDER_DAYS: 7 },
+      EMPDOC_TAB: 'EmpDocs', EMPDOC_HEADERS: ['a'], COACH_TAB: 'Coaching', COACH_HEADERS: ['a'],
+      PropertiesService: { getScriptProperties: () => ({ getProperty: () => prop }) },
+      getOrCreateEmpDocSheet_: () => { throw new Error('Service Spreadsheets timed out'); } });
+    if (override) ctx._TEST_OVERRIDE_HRDOCS_SS_ID = override;
+    ['hrDocsConfigured_', 'hrSweepFailed_', 'empDocsOverdueAll_', 'coachUnackedAll_'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx));
+    return ctx;
+  };
+  let ctx = mk('HRID');
+  assert.throws(() => ctx.empDocsOverdueAll_('2026-10-01'), /HR_DOCS_SS_ID\) could not be read for unsigned documents: Service Spreadsheets timed out/,
+    'THE REGRESSION: it returned [] — "nothing overdue"');
+  assert.throws(() => ctx.coachUnackedAll_(Date.now()), /could not be read for un-acknowledged coaching/);
+  ctx = mk(null);
+  assert.deepStrictEqual(Array.from(ctx.empDocsOverdueAll_('2026-10-01')), [], 'unset → the feature is off, nothing to report');
+  assert.deepStrictEqual(Array.from(ctx.coachUnackedAll_(Date.now())), []);
+  assert.strictEqual(mk(null, 'TESTID').hrDocsConfigured_(), true, 'the test override counts as configured');
+});
+
+test('HR-3 + MAIL-4 (cycle 23): the training digest still sends, SAYS which HR source could not be read, and stamps every failure — an unread source, a failed manager send, a failed employee nudge (driven)', () => {
+  const run = (opts) => {
+    const log = c23Log_();
+    const ctx = c23AutoCtx_(log, { getManagerEmails_: () => ['m@x'], trainTodayIso_: () => '2026-10-01', trainOverdueForRoster_: () => [],
+      empDocsOverdueAll_: opts.docs || (() => []), coachUnackedAll_: () => [], managerBriefSuppressionActive_: () => false,
+      empDocCanManagerSee_: () => true, coachCanManagerSee_: () => true,
+      sendTrainingOverdueEmail_: (e, t, d, c, iso, unread) => { if (opts.mgrThrows) throw new Error('quota'); log.mail.push(Array.from(unread || [])); },
+      sendEmployeeOverdueDocsEmail_: () => { if (opts.empThrows) throw new Error('bounce'); } });
+    vm.runInContext(extractRawFunction('Code.js', 'sendTrainingOverdueDigest'), ctx);
+    ctx.sendTrainingOverdueDigest();
+    return log;
+  };
+  let l = run({ docs: () => { throw new Error('HR store gone'); } });
+  assert.deepStrictEqual(l.mail, [['unsigned documents']], 'THE REGRESSION: nothing overdue + nothing readable = no email at all; now the manager is told what could not be checked');
+  assert.ok(l.err.length === 1 && /^TrainingOverdueDigest:could not read unsigned documents/.test(l.err[0]), l.err[0]);
+  assert.deepStrictEqual(l.hb, ['trainingOverdue'], 'the trigger ran — the heartbeat is not the failure signal');
+  l = run({});
+  assert.deepStrictEqual(l.mail, [], 'a genuine all-clear is still silent'); assert.deepStrictEqual(l.clr, ['TrainingOverdueDigest']);
+  l = run({ docs: () => [{ doc: {}, empName: 'A', empEmail: 'a@x' }], mgrThrows: true, empThrows: true });
+  assert.ok(/1 manager digest email\(s\) failed to send · 1 employee overdue-document reminder\(s\) failed to send/.test(l.err[0]), l.err[0]);
+  // The email names the unread source, escaped.
+  const sent = [];
+  const ctx = vm.createContext({ String, CN_EMAIL_PALETTE: { muted: '#1', warnDeep: '#2', ink: '#3' }, COACH_SEV_LABELS: {}, esc_: (x) => String(x).replace(/</g, '&lt;'),
+    buildBrandedEmailHtml_: (h, body) => body, safeWebAppUrl_: () => '', appSendMail_: (m) => sent.push(m) });
+  vm.runInContext(extractRawFunction('Code.js', 'sendTrainingOverdueEmail_'), ctx);
+  ctx.sendTrainingOverdueEmail_('m@x', [], [], [], '2026-10-01', ['<b>docs']);
+  assert.ok(/Could not be checked today: &lt;b>docs/.test(sent[0].htmlBody) && /Could not be checked today: <b>docs/.test(sent[0].body));
+});
+
+test('HR-3 / MAIL-3 (cycle 23): the coaching recap counts a FAILED send as failed (coachSendMail_ returns false, it never throws), and an unreachable store is stamped (driven)', () => {
+  const run = (opts) => {
+    const log = c23Log_();
+    const ctx = c23AutoCtx_(log, { CONFIG: { COACHING_RECAP_DAYS: 7 }, COACH_TAB: 'Coaching', COACH_HEADERS: ['a'], COACH_SEV_LABELS: {}, EMP: { ID: 0, NAME: 1 },
+      getOrCreateEmpDocSheet_: () => { if (opts.storeThrows) throw new Error('timed out'); return { getLastRow: () => 1 }; },
+      hrDocsConfigured_: () => opts.configured !== false,
+      coachRecapBuckets_: () => ({ E1: [{ severity: 'note', createdAt: '2026-09-30', createdBy: 'm@x' }], E2: [{ severity: 'note', createdAt: '2026-09-30', createdBy: 'm@x' }] }),
+      getEmployeeRosterRows_: () => [['h'], ['E1', 'Ann'], ['E2', 'Bo']], empRosterEmail_: (r) => r[1].toLowerCase() + '@x',
+      esc_: (x) => x, brandedKvRows_: () => '', buildBrandedEmailHtml_: () => '', safeWebAppUrl_: () => '',
+      coachSendMail_: (m) => !(opts.failTo || []).includes(m.to) });
+    vm.runInContext(extractRawFunction('Code.js', 'sendCoachingRecapDigest'), ctx);
+    ctx.sendCoachingRecapDigest();
+    return log;
+  };
+  let l = run({ failTo: ['bo@x'] });
+  assert.ok(l.err.length === 1 && /^CoachingRecapDigest:1 of 2 coaching recap email\(s\) failed to send/.test(l.err[0]), 'THE REGRESSION: sent++ ran unconditionally — ' + l.err);
+  l = run({});
+  assert.deepStrictEqual(l.clr, ['CoachingRecapDigest']);
+  l = run({ storeThrows: true });
+  assert.ok(/CoachingRecapDigest:the Employee Docs store \(HR_DOCS_SS_ID\) could not be read: timed out/.test(l.err[0]), l.err[0]);
+  assert.deepStrictEqual(l.hb, ['coachingRecap']);
+  l = run({ storeThrows: true, configured: false });
+  assert.strictEqual(l.err.length, 0, 'an UNSET store is a deployment without coaching — not a failure'); assert.deepStrictEqual(l.clr, ['CoachingRecapDigest']);
+});
+
+test('MAIL-4 (cycle 23): the dept-request reminder and the missed-punch alerts stamp a send they could not make, and clear only after a clean one (driven)', () => {
+  const dr = (opts) => {
+    const log = c23Log_();
+    const ctx = c23AutoCtx_(log, { managerBriefSuppressionActive_: () => false, getManagerEmails_: () => ['m@x'],
+      deptRequestsOverdueOpen_: opts.read || (() => [{ dept: 'D', byName: 'A', label: 'L', ageDaysLabel: '3 working days open' }]),
+      esc_: (x) => x, buildBrandedEmailHtml_: () => '', appSendMail_: () => { if (opts.sendThrows) throw new Error('quota'); log.mail.push(1); } });
+    vm.runInContext(extractRawFunction('Code.js', 'sendDeptRequestReminderDigest'), ctx);
+    ctx.sendDeptRequestReminderDigest();
+    return log;
+  };
+  let l = dr({ sendThrows: true });
+  assert.ok(l.err.length === 1 && /DeptRequestReminderDigest:1 overdue request\(s\) found but the reminder could not be sent: quota/.test(l.err[0]), 'THE REGRESSION: logged only');
+  assert.deepStrictEqual(l.clr, []);
+  assert.deepStrictEqual(dr({}).clr, ['DeptRequestReminderDigest']);
+  assert.ok(/DeptRequestReminderDigest:sheet gone/.test(dr({ read: () => { throw new Error('sheet gone'); } }).err[0]), 'a failed read is stamped, not "nothing overdue"');
+  assert.deepStrictEqual(dr({ read: () => [] }).clr, ['DeptRequestReminderDigest']);
+  const mp = (opts) => {
+    const log = c23Log_();
+    const ctx = c23AutoCtx_(log, { computeMissedClockOuts_: () => [{ id: 'E1', name: 'A', email: 'a@x', yesterdayStr: 'x', timezone: 'T' }],
+      tzAbbr_: () => 'T', esc_: (x) => x, CN_EMAIL_PALETTE: {}, buildBrandedEmailHtml_: () => '', safeWebAppUrl_: () => '',
+      managerBriefSuppressionActive_: () => !!opts.suppressed, getManagerEmails_: () => ['m@x'], getAdpSS_: () => ({ getId: () => 'ID' }),
+      appSendMail_: (m) => { if (m.to === 'a@x' && opts.empThrows) throw new Error('bounce'); if (m.to === 'm@x' && opts.mgrThrows) throw new Error('quota'); log.mail.push(m.to); } });
+    vm.runInContext(extractRawFunction('Code.js', 'sendDailyMissedPunchAlerts'), ctx);
+    ctx.sendDailyMissedPunchAlerts();
+    return log;
+  };
+  l = mp({ empThrows: true });
+  assert.ok(/MissedPunchAlerts:1 of 1 employee reminder\(s\) failed to send \(bounce\)/.test(l.err[0]), 'THE REGRESSION: the error was CLEARED before the sends — ' + l.err);
+  assert.deepStrictEqual(l.clr, []);
+  l = mp({ mgrThrows: true });
+  assert.ok(/the manager summary failed to send/.test(l.err[0]));
+  l = mp({ suppressed: true, empThrows: true });
+  assert.ok(/employee reminder/.test(l.err[0]), 'the suppressed-summary return settles too');
+  l = mp({});
+  assert.deepStrictEqual(l.clr, ['MissedPunchAlerts']); assert.deepStrictEqual(l.hb, ['missedPunch']);
+});
+
+test('TC-07 (cycle 23): a timesheet archive failure is STAMPED under its audit action, and a clean run clears it (driven)', () => {
+  const run = (daysFn) => {
+    const log = c23Log_();
+    const ctx = c23AutoCtx_(log, { getTimesheetArchiveDays_: daysFn, LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      CONFIG: { ADP_TAB: 'Timesheet' }, ADP: { DATE: 0 }, TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN: 500, TIMESHEET_ARCHIVE_TAB: 'TimesheetArchive', _SYSTEM_AUDIT_EMP_: {},
+      getAdpSS_: () => ({ getSheetByName: () => ({ getLastColumn: () => 9 }) }), getOrCreateTimesheetArchiveTab_: () => ({}),
+      archiveSheetRowsOlderThan_: () => 3, writeAuditLog_: () => {} });
+    vm.runInContext(extractRawFunction('Code.js', 'archiveOldTimesheetRows'), ctx);
+    ctx.archiveOldTimesheetRows();
+    return log;
+  };
+  assert.deepStrictEqual(run(() => { throw new Error('props quota'); }).err, ['TimesheetArchive:props quota'], 'THE REGRESSION: Logger.log only');
+  assert.deepStrictEqual(run(() => 400).clr, ['TimesheetArchive']);
+});
+
+test('QA-3 (cycle 23): the QA review purge rides the shared deleter — a full grid whose every row expired keeps a spare row instead of throwing on the last delete, a 0/garbage stamp is never deleted, and a failure is stamped (driven)', () => {
+  const ctx = vm.createContext({ Number, isFinite, Date, parseRetentionDateMs_: () => { throw new Error('the ms reader must be used'); } });
+  ['purgeSheetRowsOlderThan_', 'qaPurgeMs_'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx));
+  const OLD = Date.parse('2025-01-01'), CUT = Date.parse('2026-01-01');
+  const mkSheet = (cells) => {
+    const rows = [['CreatedMs']].concat(cells.map((c) => [c]));
+    const sh = { rows, maxRows: rows.length, inserted: 0,
+      getLastRow: () => sh.rows.length, getMaxRows: () => sh.maxRows,
+      getDataRange: () => ({ getValues: () => sh.rows.map((r) => r.slice()) }),
+      insertRowAfter() { sh.maxRows++; sh.inserted++; },
+      deleteRow(r) { if (sh.maxRows - 1 <= 1) throw new Error('This operation is not possible: it is not possible to delete all non-frozen rows.'); sh.rows.splice(r - 1, 1); sh.maxRows--; } };
+    return sh;
+  };
+  let sh = mkSheet([OLD, OLD + 1, OLD + 2]);   // a FULL grid (no spare rows), every row expired
+  assert.strictEqual(ctx.purgeSheetRowsOlderThan_(sh, 0, CUT, ctx.qaPurgeMs_), 3, 'THE REGRESSION: the hand loop threw on the third delete');
+  assert.strictEqual(sh.rows.length, 1); assert.strictEqual(sh.inserted, 1, 'one spare row inserted first (C5)');
+  sh = mkSheet([0, '', 'garbage', OLD, CUT + 5]);
+  assert.strictEqual(ctx.purgeSheetRowsOlderThan_(sh, 0, CUT, ctx.qaPurgeMs_), 1, 'only the real expired stamp');
+  assert.deepStrictEqual(sh.rows.slice(1).map((r) => r[0]), [0, '', 'garbage', CUT + 5], 'a 0/garbage stamp is never deleted (fail-safe)');
+  const purge = stripJsComments_(extractRawFunction('Code.js', 'purgeOldQaReviews'));
+  assert.ok(/catch \(err\) \{\s*stampAutomationError_\('QaReviewPurge', err\.message\)/.test(purge) && /clearAutomationError_\('QaReviewPurge'\)/.test(purge),
+    'a failure is stamped under the audit action (the F4 rule) and a clean run clears it');
 });
 
 

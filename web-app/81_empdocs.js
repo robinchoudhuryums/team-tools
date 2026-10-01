@@ -16,6 +16,23 @@ function getHrDocsSS_() {
   if (!id) throw new Error('Employee Docs is not configured — set Script Property HR_DOCS_SS_ID to a dedicated spreadsheet.');
   return SpreadsheetApp.openById(id);
 }
+/** HR-3 (cycle 23) — is the HR store CONFIGURED here? An unset HR_DOCS_SS_ID
+ *  is a deployment without the feature (nothing is overdue because nothing
+ *  exists); a set one that throws is a store that could not be read, and the
+ *  sweeps that read it must say so rather than report "nothing overdue" (the
+ *  g122/A3 unset-vs-unreachable rule). Can't tell → configured, so a real
+ *  read failure still reports itself. */
+function hrDocsConfigured_() {
+  if (typeof _TEST_OVERRIDE_HRDOCS_SS_ID !== 'undefined' && _TEST_OVERRIDE_HRDOCS_SS_ID) return true;
+  try { return !!PropertiesService.getScriptProperties().getProperty('HR_DOCS_SS_ID'); }
+  catch (e) { return true; }
+}
+/** HR-3: the one rule for a failed HR sweep — [] only when the store is UNSET,
+ *  otherwise a named error the caller reports. */
+function hrSweepFailed_(what, e) {
+  if (!hrDocsConfigured_()) return [];
+  throw new Error('the Employee Docs store (HR_DOCS_SS_ID) could not be read for ' + what + ': ' + ((e && e.message) || e));
+}
 function getOrCreateEmpDocSheet_(tabName, headers) {
   const ss = getHrDocsSS_();
   let sheet = ss.getSheetByName(tabName);

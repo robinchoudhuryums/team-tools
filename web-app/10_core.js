@@ -1399,7 +1399,10 @@ function automationDetectorChecks_() {
   // outage: the panel shows DEAD and the failure digest emails it.
   add('briefConfig', 'managerDailyBrief flag has a live brief trigger behind it', function () {
     if (getFlag_('managerDailyBrief') && !managerBriefSuppressionActive_()) {
-      throw new Error('managerDailyBrief is ON but sendManagerDailyBrief has no fresh heartbeat — run installAutomationTriggers(). The separate manager digests keep sending until then (fail-safe).');
+      // CORE-01 (cycle 23): the heartbeat is now withheld when a brief fails to
+      // send, so a stale one has TWO causes — naming only the trigger sent the
+      // operator to reinstall triggers that were fine (g142).
+      throw new Error('managerDailyBrief is ON but sendManagerDailyBrief has no fresh heartbeat — either its trigger is missing (run installAutomationTriggers()) or its last run did not deliver (see the ManagerDailyBrief failure). The separate manager digests keep sending until then (fail-safe).');
     }
   });
   // F9: config-coherence, not a parser round-trip — surfaces MANAGER_EMAILS ↔
@@ -1869,15 +1872,21 @@ function getAutomationHealthBadge() {
     const KEY = 'auto_health_badge_v1';
     const hit = cache.get(KEY);
     if (hit) { try { return JSON.parse(hit); } catch (e) {} }
-    let res = { failing: false, count: 0 };
+    let res;
     try {
       const problems = automationProblems_(computeAutomationHealth_());
       res = { failing: problems.length > 0, count: problems.length };
-    } catch (e) { Logger.log('getAutomationHealthBadge compute failed: ' + e.message); }
+    } catch (e) {
+      // CORE-02 (cycle 23): a check that could not run is UNKNOWN, never
+      // "not failing" — and it is not cached, or one bad read would clear
+      // every manager's dot for ten minutes. The client keeps the dot as-is.
+      Logger.log('getAutomationHealthBadge compute failed: ' + e.message);
+      return { failing: null, unknown: true, count: 0 };
+    }
     try { cache.put(KEY, JSON.stringify(res), 600); } catch (e) {}
     return res;
   } catch (err) {
-    return { failing: false, count: 0 };
+    return { failing: null, unknown: true, count: 0 };
   }
 }
 /** K-A alternative (operator-approved) — nightly IN-PROJECT self-test, the
@@ -2005,12 +2014,15 @@ function sendAutomationHealthDigest() {
       stampAutomationError_('AutomationHealthDigest', e.message);
     }
     if (!report) return;
-    stampDigestLastRun_('automationHealth');
-    clearAutomationError_('AutomationHealthDigest');
 
     const problems = automationProblems_(report);
 
-    if (!problems.length) { Logger.log('automation-health digest: all clear, nothing to send.'); return; }
+    if (!problems.length) {
+      stampDigestLastRun_('automationHealth');
+      clearAutomationError_('AutomationHealthDigest');
+      Logger.log('automation-health digest: all clear, nothing to send.');
+      return;
+    }
 
     const itemsHtml = '<ul style="margin:0;padding-left:18px;">' +
       problems.map(function (p) { return '<li style="margin:4px 0;">' + esc_(p) + '</li>'; }).join('') + '</ul>';
@@ -2026,7 +2038,15 @@ function sendAutomationHealthDigest() {
         body: textBody,
         htmlBody: buildBrandedEmailHtml_('Automation health needs attention', bodyHtml, { tone: 'warn', subLabel: 'Automation Health' }),
       });
-    } catch (mailErr) { Logger.log('automation-health digest send failed: ' + mailErr.message); }
+    } catch (mailErr) {
+      // CORE-02 + MAIL-4 (cycle 23): the heartbeat and the clear used to land
+      // BEFORE the send, so an undelivered digest read as a clean run.
+      Logger.log('automation-health digest send failed: ' + mailErr.message);
+      stampAutomationError_('AutomationHealthDigest', 'the digest found ' + problems.length + ' issue(s) but could not be sent: ' + mailErr.message);
+      return;
+    }
+    stampDigestLastRun_('automationHealth');
+    clearAutomationError_('AutomationHealthDigest');
     Logger.log('sendAutomationHealthDigest: ' + problems.length + ' issue(s) emailed to ' + mgrEmails.length + ' manager(s).');
   } catch (err) {
     stampAutomationError_('AutomationHealthDigest', err.message);
@@ -3127,14 +3147,18 @@ function esc_(s) {
 // ════════════════════════════════════════════════════════════════════════════
 /** Deletes data rows whose date column (0-based `dateColIdx`) is strictly older
  *  than `cutoffMs`. Deletes descending so row-index shifts don't skip rows.
- *  Returns the count removed. Caller holds the lock. */
-function purgeSheetRowsOlderThan_(sheet, dateColIdx, cutoffMs) {
+ *  Returns the count removed. Caller holds the lock. `msOf` (QA-3, cycle 23)
+ *  reads a cell as epoch ms or null (null = never deleted); it defaults to the
+ *  date-string reader, and a tab of NUMBER ms cells passes its own so it shares
+ *  this one deletion path — the C5 spare-row guard included. */
+function purgeSheetRowsOlderThan_(sheet, dateColIdx, cutoffMs, msOf) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return 0;
+  const readMs = msOf || parseRetentionDateMs_;
   const rows = sheet.getDataRange().getValues();
   const toDelete = [];
   for (let i = 1; i < rows.length; i++) {
-    const ms = parseRetentionDateMs_(rows[i][dateColIdx]);
+    const ms = readMs(rows[i][dateColIdx]);
     if (ms !== null && ms < cutoffMs) toDelete.push(i + 1);  // 1-based sheet row
   }
   // C5 (cycle 22): Sheets REFUSES to delete every non-frozen row of a grid
@@ -3713,12 +3737,15 @@ function sendManagerBriefEmail_(toEmail, sections, d, todayIso) {
 function sendManagerDailyBrief() {
   assertManagerCaller_('sendManagerDailyBrief');  // see sendDailyMissedPunchAlerts note
   try {
-    // Heartbeat stamps even while the flag is off — the trigger ran; the
-    // Automation Health caption explains the flag gate.
-    stampDigestLastRun_('managerBrief');
-    if (!getFlag_('managerDailyBrief')) { Logger.log('managerDailyBrief flag is off — brief not sent.'); return; }
+    // Heartbeat stamps while the flag is off — the trigger ran; the Automation
+    // Health caption explains the flag gate. CORE-01 (cycle 23): with the flag
+    // ON the heartbeat is what makes the four standalone digests stand down
+    // (managerBriefSuppressionActive_), so it is stamped only once the brief
+    // has DELIVERED — stamped first, a brief that failed to send left every
+    // manager with no daily mail at all and the health dot green.
+    if (!getFlag_('managerDailyBrief')) { stampDigestLastRun_('managerBrief'); Logger.log('managerDailyBrief flag is off — brief not sent.'); return; }
     const mgrEmails = getManagerEmails_();
-    if (!mgrEmails.length) { Logger.log('No manager emails — skipping daily brief.'); return; }
+    if (!mgrEmails.length) { stampDigestLastRun_('managerBrief'); Logger.log('No manager emails — skipping daily brief.'); return; }
     const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
     const now = new Date();
     const todayIso = Utilities.formatDate(now, mgrTz, 'yyyy-MM-dd');
@@ -3754,14 +3781,8 @@ function sendManagerDailyBrief() {
     const docs        = src('unsigned documents', function () { return empDocsOverdueAll_(todayIso); });
     const coaching    = src('un-acknowledged coaching', function () { return coachUnackedAll_(Date.now()); });
     const deptOverdue = src('overdue department requests', function () { return deptRequestsOverdueOpen_(); });
-    if (failedSources.length) {
-      stampAutomationError_('ManagerDailyBrief',
-        failedSources.length + ' source(s) unreadable: ' + failedSources.join(', '));
-    } else {
-      clearAutomationError_('ManagerDailyBrief');
-    }
 
-    let sent = 0;
+    let sent = 0, sendFailed = 0, lastSendError = '';
     mgrEmails.forEach(function (email) {
       const mgr = { email: email, isManager: true };
       const d = {
@@ -3778,14 +3799,25 @@ function sendManagerDailyBrief() {
       // absence of sections is not an all-clear and the brief says so.
       if (!sections.length && !failedSources.length) return;
       try { sendManagerBriefEmail_(email, sections, d, todayIso); sent++; }
-      catch (e) { console.warn('daily brief to ' + email + ' failed: ' + e.message); }
+      catch (e) { sendFailed++; lastSendError = String((e && e.message) || e); console.warn('daily brief to ' + email + ' failed: ' + lastSendError); }
     });
+    // One stamp names everything that went wrong this run — a source that could
+    // not be read AND a brief that could not be sent — and a clean run clears it.
+    const problems = [];
+    if (failedSources.length) problems.push(failedSources.length + ' source(s) unreadable: ' + failedSources.join(', '));
+    if (sendFailed) problems.push(sendFailed + ' of ' + (sent + sendFailed) + ' brief email(s) failed to send (' + lastSendError + ')');
+    if (problems.length) stampAutomationError_('ManagerDailyBrief', problems.join(' · '));
+    else clearAutomationError_('ManagerDailyBrief');
+    // A manager whose brief failed got none of the four suppressed digests
+    // either — withholding the heartbeat lets them send again (fail-safe).
+    if (!sendFailed) stampDigestLastRun_('managerBrief');
     Logger.log('sendManagerDailyBrief: managersEmailed=' + sent +
       ' missed=' + missed.length + ' urgent=' + urgent.length +
       ' training=' + training.length + ' docs=' + docs.length +
       ' coaching=' + coaching.length + ' deptOverdue=' + deptOverdue.length);
   } catch (err) {
     Logger.log('sendManagerDailyBrief failed: ' + err.message);
+    stampAutomationError_('ManagerDailyBrief', 'the brief run failed: ' + err.message);   // CORE-01: a throw is not a quiet morning
   }
 }
 /** H1 (2026-09-17): the ONE company holiday calendar -- [{date, name}] for

@@ -4645,7 +4645,12 @@ function archiveOldTimesheetRows() {
       (hitCap ? `; hitPerRunCap=${TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN} (more remain — continues tomorrow)` : ''));
     Logger.log(`archiveOldTimesheetRows: moved ${moved} row(s) older than ${days} day(s) to ${TIMESHEET_ARCHIVE_TAB}.` +
       (hitCap ? ' Hit the per-run cap — more rows remain for the next run.' : ''));
+    clearAutomationError_('TimesheetArchive');
   } catch (err) {
+    // TC-07 (cycle 23): the F4 rule — a caught failure reaches nobody unless
+    // stamped. Before this, only the audit row's staleness noticed, a day
+    // later and without the message.
+    stampAutomationError_('TimesheetArchive', err.message);
     Logger.log('archiveOldTimesheetRows failed: ' + err.message);
   }
 }
@@ -4705,8 +4710,18 @@ function sendDailyMissedPunchAlerts() {
     // invisible — the heartbeat (stale > 26h) is the liveness signal, stamped
     // once the read succeeded and BEFORE the no-work early return.
     stampDigestLastRun_('missedPunch');
-    clearAutomationError_('MissedPunchAlerts');
-    if (missed.length === 0) { Logger.log('No missed clock-outs.'); return; }
+    if (missed.length === 0) { clearAutomationError_('MissedPunchAlerts'); Logger.log('No missed clock-outs.'); return; }
+    // MAIL-4 (cycle 23): a reminder or a summary that could not be sent used
+    // to reach only the log, after the error had already been CLEARED — so the
+    // run read clean. The outcome is now settled after the sends.
+    let empFailed = 0, mgrFailed = false, lastSendError = '';
+    const settle = function () {
+      const p = [];
+      if (empFailed) p.push(empFailed + ' of ' + missed.length + ' employee reminder(s) failed to send');
+      if (mgrFailed) p.push('the manager summary failed to send');
+      if (p.length) stampAutomationError_('MissedPunchAlerts', p.join(' · ') + ' (' + lastSendError + ')');
+      else clearAutomationError_('MissedPunchAlerts');
+    };
 
     missed.forEach(emp => {
       try {
@@ -4727,7 +4742,7 @@ function sendDailyMissedPunchAlerts() {
             { accent: CN_EMAIL_PALETTE.warn, subLabel: 'Time Clock', statusLabel: 'Action needed',
               ctaUrl: safeWebAppUrl_('clock'), ctaLabel: 'Fix it in Time Clock' }),
         });
-      } catch (e) { Logger.log('Failed to email employee ' + emp.email + ': ' + e.message); }
+      } catch (e) { empFailed++; lastSendError = String((e && e.message) || e); Logger.log('Failed to email employee ' + emp.email + ': ' + lastSendError); }
     });
 
     // #2 (INV-151): while the consolidated daily brief is on, the manager
@@ -4736,6 +4751,7 @@ function sendDailyMissedPunchAlerts() {
     // F(cycle-8 M-11): suppression requires a LIVE brief heartbeat, not just the flag.
     if (managerBriefSuppressionActive_({ checkTrigger: true })) {
       Logger.log('Missed-punch manager summary: consolidated into the daily brief.');
+      settle();
       return;
     }
     const recipients = getManagerEmails_();
@@ -4762,8 +4778,9 @@ function sendDailyMissedPunchAlerts() {
             { accent: CN_EMAIL_PALETTE.warn, subLabel: 'Time Clock',
               ctaUrl: safeWebAppUrl_('manage'), ctaLabel: 'Open the manager dashboard' }),
         });
-      } catch (e) { Logger.log('Manager missed-punch digest email failed: ' + e.message); }
+      } catch (e) { mgrFailed = true; lastSendError = String((e && e.message) || e); Logger.log('Manager missed-punch digest email failed: ' + lastSendError); }
     }
+    settle();
   } catch (err) {
     // F-20: a caught failure reaches nobody unless stamped (the F4 rule).
     stampAutomationError_('MissedPunchAlerts', err.message);
@@ -4941,8 +4958,9 @@ function empDocsOverdueAll_(todayIso) {
     });
     return out;
   } catch (e) {
-    Logger.log('empDocsOverdueAll_ skipped (HR docs store unavailable): ' + e.message);
-    return [];
+    // HR-3 (cycle 23): an unreachable store is not "nothing overdue".
+    Logger.log('empDocsOverdueAll_: HR docs store unavailable: ' + e.message);
+    return hrSweepFailed_('unsigned documents', e);
   }
 }
 /** Branded reminder to ONE employee about their own overdue documents (v2 —

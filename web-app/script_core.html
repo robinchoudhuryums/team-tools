@@ -402,7 +402,10 @@ function startHealthBadgePolling_() {
   HEALTH_BADGE_TIMER = setInterval(poll, 10 * 60 * 1000);
 }
 function renderHealthBadge_(res) {
-  var failing = !!(res && res.failing);
+  // CORE-02 (cycle 23): a check that could not run is UNKNOWN — leave the dot
+  // as it is, exactly as a failed poll does, rather than clearing it.
+  if (!res || res.unknown) return;
+  var failing = !!res.failing;
   var count = (res && res.count) || 0;
   ['.sb-link[data-tool="manage"]', '.nav-btn[data-tool="manage"]'].forEach(function (sel) {
     var btn = document.querySelector(sel);

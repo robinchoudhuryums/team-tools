@@ -205,9 +205,18 @@ function sendTrainingOverdueDigest() {
     if (mgrEmails.length === 0) { Logger.log('No manager emails — skipping training overdue digest.'); return; }
     const todayIso = trainTodayIso_();
     const overdueTraining = trainOverdueForRoster_(todayIso);   // org-wide
-    const overdueDocs = empDocsOverdueAll_(todayIso);           // scope per manager below
-    const overdueCoaching = coachUnackedAll_(Date.now());       // scope per manager below
-    let sent = 0;
+    // HR-3 (cycle 23): the two HR sweeps throw by name when the store is set
+    // but unreadable. Each is caught HERE, so the training section still goes
+    // out — but the email and the health dot both say what could not be read,
+    // because "nothing overdue" and "could not look" are different answers.
+    const unread = [];
+    const hrRead = function (label, fn) {
+      try { return fn(); }
+      catch (e) { Logger.log('training digest: ' + label + ' unreadable: ' + e.message); unread.push(label); return []; }
+    };
+    const overdueDocs = hrRead('unsigned documents', function () { return empDocsOverdueAll_(todayIso); });            // scope per manager below
+    const overdueCoaching = hrRead('un-acknowledged coaching', function () { return coachUnackedAll_(Date.now()); });   // scope per manager below
+    let sent = 0, sendFailed = 0, empFailed = 0, lastSendError = '';
     // #2 (INV-151): while the consolidated daily brief is on, the MANAGER
     // nudge rides the 8am brief instead — but the employee-side reminders
     // below always send (the deadline reminds both sides, INV-135).
@@ -223,11 +232,12 @@ function sendTrainingOverdueDigest() {
         const scopedCoaching = overdueCoaching.filter(function (oc) {
           return coachCanManagerSee_(mgr, oc.item);
         });
-        if (!overdueTraining.length && !scopedDocs.length && !scopedCoaching.length) return;   // nothing for this manager
+        // Silent only on a genuine all-clear: an unreadable source is not one.
+        if (!overdueTraining.length && !scopedDocs.length && !scopedCoaching.length && !unread.length) return;   // nothing for this manager
         try {
-          sendTrainingOverdueEmail_(email, overdueTraining, scopedDocs, scopedCoaching, todayIso);
+          sendTrainingOverdueEmail_(email, overdueTraining, scopedDocs, scopedCoaching, todayIso, unread);
           sent++;
-        } catch (e) { console.warn('sendTrainingOverdueDigest to ' + email + ' failed: ' + e.message); }
+        } catch (e) { sendFailed++; lastSendError = String((e && e.message) || e); console.warn('sendTrainingOverdueDigest to ' + email + ' failed: ' + lastSendError); }
       });
     }
     // v2 — also nudge the EMPLOYEE about their own overdue documents (one
@@ -241,19 +251,29 @@ function sendTrainingOverdueDigest() {
     });
     Object.keys(byEmp).forEach(function (email) {
       try { sendEmployeeOverdueDocsEmail_(email, byEmp[email].name, byEmp[email].docs, todayIso); empNudged++; }
-      catch (e) { console.warn('employee overdue-docs nudge to ' + email + ' failed: ' + e.message); }
+      catch (e) { empFailed++; lastSendError = String((e && e.message) || e); console.warn('employee overdue-docs nudge to ' + email + ' failed: ' + lastSendError); }
     });
-    stampDigestLastRun_('trainingOverdue');
+    stampDigestLastRun_('trainingOverdue');   // the trigger ran
+    // HR-3 + MAIL-4 (cycle 23): one stamp names everything that went wrong —
+    // an unreadable source, an undelivered manager digest, an undelivered
+    // employee nudge — and a clean run clears it.
+    const problems = [];
+    if (unread.length) problems.push('could not read ' + unread.join(' and ') + ' (the Employee Docs store)');
+    if (sendFailed) problems.push(sendFailed + ' manager digest email(s) failed to send');
+    if (empFailed) problems.push(empFailed + ' employee overdue-document reminder(s) failed to send');
+    if (problems.length) stampAutomationError_('TrainingOverdueDigest', problems.join(' · ') + (lastSendError ? ' (' + lastSendError + ')' : ''));
+    else clearAutomationError_('TrainingOverdueDigest');
     Logger.log('sendTrainingOverdueDigest: training=' + overdueTraining.length +
       ' docs=' + overdueDocs.length + ' coaching=' + overdueCoaching.length +
       ' managersEmailed=' + sent + ' employeesNudged=' + empNudged);
   } catch (err) {
     Logger.log('sendTrainingOverdueDigest failed: ' + err.message);
+    stampAutomationError_('TrainingOverdueDigest', err.message);   // MAIL-4: a throw is not a quiet morning
   }
 }
 /** Branded overdue-digest email to one manager (INV-105 — heading esc_'d in
  *  the wrapper, every user field esc_'d here; plain-text body fallback). */
-function sendTrainingOverdueEmail_(toEmail, training, docs, coaching, todayIso) {
+function sendTrainingOverdueEmail_(toEmail, training, docs, coaching, todayIso, unread) {
   const P = CN_EMAIL_PALETTE;
   function section_(label, rowsHtml) {
     return '<div style="font-family:\'IBM Plex Mono\',monospace;font-size:10px;color:' + P.muted +
@@ -294,6 +314,13 @@ function sendTrainingOverdueEmail_(toEmail, training, docs, coaching, todayIso) 
     }).join('');
     html += section_('Un-acknowledged coaching (' + coaching.length + ')', rows);
     text += '\n\nUn-acknowledged coaching:\n' + coaching.map(function (oc) { return '  ' + oc.empName + ' · ' + (COACH_SEV_LABELS[oc.item.severity] || oc.item.severity) + ' (since ' + String(oc.item.createdAt).substring(0, 10) + ')'; }).join('\n');
+  }
+  if (unread && unread.length) {
+    // HR-3 (cycle 23): an empty section here is not an all-clear when the
+    // store behind it could not be read — say which, so nobody reads silence.
+    html += '<p style="margin:14px 0 0;color:' + P.warnDeep + ';">Could not be checked today: ' + esc_(unread.join(', ')) +
+      ' (the Employee Docs store could not be read). Open the app to see them.</p>';
+    text += '\n\nCould not be checked today: ' + unread.join(', ') + ' (the Employee Docs store could not be read).';
   }
   html += '<p style="margin:14px 0 0;">Open the web app → <strong>Training &amp; Employee Docs → Team Training / Issue Docs / Coaching</strong> to follow up.</p>';
   text += '\n\nOpen the web app → Training & Employee Docs to follow up.';

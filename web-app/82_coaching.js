@@ -545,8 +545,9 @@ function coachUnackedAll_(nowMs) {
     return coachUnackedOverdue_(items, nowMs, CONFIG.COACHING_UNACK_REMINDER_DAYS || 7, coachBizOpts_())
       .map(function (c) { return { item: c, empName: c.empName }; });
   } catch (e) {
-    Logger.log('coachUnackedAll_ skipped (HR docs store unavailable): ' + e.message);
-    return [];
+    // HR-3 (cycle 23): an unreachable store is not "nothing un-acknowledged".
+    Logger.log('coachUnackedAll_: HR docs store unavailable: ' + e.message);
+    return hrSweepFailed_('un-acknowledged coaching', e);
   }
 }
 
@@ -680,7 +681,11 @@ function sendCoachingRecapDigest() {
       }
     } catch (e) {
       Logger.log('sendCoachingRecapDigest: HR store unavailable — ' + e.message);
-      stampDigestLastRun_('coachingRecap');
+      stampDigestLastRun_('coachingRecap');   // the trigger ran
+      // HR-3 (cycle 23): an UNSET store is a deployment without coaching; a set
+      // one that throws means nobody got a recap, and that is a failure.
+      if (hrDocsConfigured_()) stampAutomationError_('CoachingRecapDigest', 'the Employee Docs store (HR_DOCS_SS_ID) could not be read: ' + e.message);
+      else clearAutomationError_('CoachingRecapDigest');
       return;
     }
     const buckets = coachRecapBuckets_(items, nowMs, windowDays);
@@ -692,7 +697,7 @@ function sendCoachingRecapDigest() {
       byId[String(roster[r][EMP.ID]).trim()] = { email: email, name: String(roster[r][EMP.NAME] || '').trim() };
       nameByEmail[email.toLowerCase()] = String(roster[r][EMP.NAME] || '').trim();
     }
-    let sent = 0, skipped = 0;
+    let sent = 0, skipped = 0, failed = 0;
     Object.keys(buckets).forEach(function (empId) {
       const who = byId[empId];
       if (!who || !who.email) { skipped++; return; }
@@ -709,17 +714,24 @@ function sendCoachingRecapDigest() {
       const text = 'Coaching logged for you in the last ' + windowDays + ' days:\n' +
         rowsHtml.map(function (r) { return '  ' + r[0] + ' — ' + r[1]; }).join('\n') +
         '\n\nOpen Team Tools → Training & Employee Docs → Coaching to read them.';
+      // HR-3 / MAIL-3 (cycle 23): coachSendMail_ RETURNS false on a failed
+      // send (it never throws), so counting every call as sent reported
+      // undelivered recaps as delivered.
+      let ok = false;
       try {
-        coachSendMail_({ to: who.email, subject: 'Your weekly coaching recap', body: text,
+        ok = coachSendMail_({ to: who.email, subject: 'Your weekly coaching recap', body: text,
           htmlBody: buildBrandedEmailHtml_('Your weekly coaching recap', html,
             { tone: 'info', subLabel: 'Training · Coaching', statusLabel: 'Weekly recap', ctaUrl: safeWebAppUrl_('coaching'), ctaLabel: 'Open Coaching' }) });
-        sent++;
       } catch (e) { console.warn('coaching recap to ' + who.email + ' failed: ' + e.message); }
+      if (ok) sent++; else failed++;
     });
     stampDigestLastRun_('coachingRecap');
-    Logger.log('sendCoachingRecapDigest: agents=' + Object.keys(buckets).length + ' sent=' + sent + ' noEmail=' + skipped);
+    if (failed) stampAutomationError_('CoachingRecapDigest', failed + ' of ' + (sent + failed) + ' coaching recap email(s) failed to send');
+    else clearAutomationError_('CoachingRecapDigest');
+    Logger.log('sendCoachingRecapDigest: agents=' + Object.keys(buckets).length + ' sent=' + sent + ' failed=' + failed + ' noEmail=' + skipped);
   } catch (err) {
     Logger.log('sendCoachingRecapDigest failed: ' + err.message);
+    stampAutomationError_('CoachingRecapDigest', err.message);
   }
 }
 

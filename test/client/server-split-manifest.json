@@ -1795,6 +1795,33 @@
     "qaSyncRecordings"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-01",
+   "why": "cycle 23 Batch 4a: hrDocsConfigured_/hrSweepFailed_, qaPurgeMs_",
+   "added": [
+    "hrDocsConfigured_",
+    "hrSweepFailed_",
+    "qaPurgeMs_"
+   ],
+   "removed": [],
+   "changed": [
+    "archiveOldTimesheetRows",
+    "automationDetectorChecks_",
+    "coachUnackedAll_",
+    "empDocsOverdueAll_",
+    "getAutomationHealthBadge",
+    "purgeOldQaReviews",
+    "purgeSheetRowsOlderThan_",
+    "sendAutomationHealthDigest",
+    "sendCoachingRecapDigest",
+    "sendDailyMissedPunchAlerts",
+    "sendDeptRequestReminderDigest",
+    "sendManagerDailyBrief",
+    "sendTrainingOverdueDigest",
+    "sendTrainingOverdueEmail_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4227,7 +4254,7 @@
   "archiveOldTimesheetRows": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "4ad847cbe85e940f"
+   "sha": "9e6994f9466be50f"
   },
   "archiveSheetRowsOlderThan_": {
    "file": "30_callnotes.js",
@@ -4287,7 +4314,7 @@
   "automationDetectorChecks_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "ec4d89fa27ad1fc1"
+   "sha": "e8c246da4e67250d"
   },
   "automationJobProblems_": {
    "file": "10_core.js",
@@ -4852,7 +4879,7 @@
   "coachUnackedAll_": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "3a25cfea0074acb9"
+   "sha": "53126850967acb97"
   },
   "coachUnackedOverdue_": {
    "file": "82_coaching.js",
@@ -5342,7 +5369,7 @@
   "empDocsOverdueAll_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "7e94b82658c4ea69"
+   "sha": "e03692cfc7fbb640"
   },
   "empIsAdmin_": {
    "file": "20_timeclock.js",
@@ -5617,7 +5644,7 @@
   "getAutomationHealthBadge": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "f84c865a84844912"
+   "sha": "beea51dd81e475e7"
   },
   "getBreakCoverage": {
    "file": "20_timeclock.js",
@@ -6513,6 +6540,16 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "08431146738269d7"
+  },
+  "hrDocsConfigured_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "f20a6eebfcc11b33"
+  },
+  "hrSweepFailed_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "91934f26b5cb9a34"
   },
   "humanizeFormFieldKey_": {
    "file": "61_forms.js",
@@ -8012,12 +8049,12 @@
   "purgeOldQaReviews": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "9e775f0d3c48c82a"
+   "sha": "5beb83697b2916e3"
   },
   "purgeSheetRowsOlderThan_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "d2d034ac9373cd31"
+   "sha": "66f08200d5d089c6"
   },
   "qaAddComment": {
    "file": "90_qa.js",
@@ -8198,6 +8235,11 @@
    "file": "90_qa.js",
    "kind": "function",
    "sha": "28d62b80697cd097"
+  },
+  "qaPurgeMs_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "978680e4668827a9"
   },
   "qaRangeHeader_": {
    "file": "90_qa.js",
@@ -8742,7 +8784,7 @@
   "sendAutomationHealthDigest": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "c766012abae13300"
+   "sha": "efc99bd051018909"
   },
   "sendCallNotesEodDigest": {
    "file": "30_callnotes.js",
@@ -8762,17 +8804,17 @@
   "sendCoachingRecapDigest": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "3b510bffe66e59a8"
+   "sha": "487f4e6d0af9fbd1"
   },
   "sendDailyMissedPunchAlerts": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "2a8a533961b1ff2d"
+   "sha": "c0ef01f6f36760c6"
   },
   "sendDeptRequestReminderDigest": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "7be6136685355196"
+   "sha": "2d4f0708178a01ae"
   },
   "sendEmployeeOverdueDocsEmail_": {
    "file": "20_timeclock.js",
@@ -8792,7 +8834,7 @@
   "sendManagerDailyBrief": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "fbfebbab10165aaf"
+   "sha": "4ccfa852fd55985e"
   },
   "sendManagerFlagDigest_": {
    "file": "30_callnotes.js",
@@ -8812,12 +8854,12 @@
   "sendTrainingOverdueDigest": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "bbc80bf1a1e7c178"
+   "sha": "f17a7cf54014ca46"
   },
   "sendTrainingOverdueEmail_": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "564abfd58101fab8"
+   "sha": "fb86f4f5f51001aa"
   },
   "serveExternalForm_": {
    "file": "61_forms.js",

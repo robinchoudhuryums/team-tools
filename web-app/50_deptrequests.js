@@ -1058,7 +1058,7 @@ function sendDeptRequestReminderDigest() {
     if (!mgrEmails.length) { Logger.log('No manager emails — skipping dept-request reminder.'); return; }
     const overdue = deptRequestsOverdueOpen_();
     stampDigestLastRun_('deptReqReminder');
-    if (!overdue.length) { Logger.log('dept-request reminder: nothing overdue.'); return; }
+    if (!overdue.length) { clearAutomationError_('DeptRequestReminderDigest'); Logger.log('dept-request reminder: nothing overdue.'); return; }
 
     const byDept = {};
     overdue.forEach(function (o) { (byDept[o.dept] = byDept[o.dept] || []).push(o); });
@@ -1084,9 +1084,16 @@ function sendDeptRequestReminderDigest() {
         body: textBody,
         htmlBody: buildBrandedEmailHtml_('Department requests past SLA', bodyHtml, { tone: 'warn', subLabel: 'Dept Requests' }),
       });
-    } catch (mailErr) { Logger.log('dept-request reminder send failed: ' + mailErr.message); }
+    } catch (mailErr) {
+      // MAIL-4 (cycle 23): an undelivered reminder used to reach only the log.
+      Logger.log('dept-request reminder send failed: ' + mailErr.message);
+      stampAutomationError_('DeptRequestReminderDigest', overdue.length + ' overdue request(s) found but the reminder could not be sent: ' + mailErr.message);
+      return;
+    }
+    clearAutomationError_('DeptRequestReminderDigest');
     Logger.log('sendDeptRequestReminderDigest: ' + overdue.length + ' overdue emailed to ' + mgrEmails.length + ' manager(s).');
   } catch (err) {
     Logger.log('sendDeptRequestReminderDigest failed: ' + err.message);
+    stampAutomationError_('DeptRequestReminderDigest', err.message);   // MAIL-4: a failed read is not "nothing overdue"
   }
 }
