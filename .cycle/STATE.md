@@ -5,9 +5,9 @@ Cycle: 23 — opened by the 2026-10-01 `/broad-scan` (0 Critical / 5 High; plan 
 Phase: implement
 Scope: broad — Batches 1–4a done except TC-02; next Batch 4b
 Test Command: manual
-Estimates: Batch 1: M (~9 h) · Batch 2: M (~11 h) · Batch 3: M (~9.5 h) · Batch 4a: M (~10 h) — each written before its first edit
+Estimates: Batch 1: M (~9 h) · Batch 2: M (~11 h) · Batch 3: M (~9.5 h) · Batch 4a: M (~10 h) · 4a follow-ons: S (~3 h) — each written before its first edit
 Subsystem cycles since last Seams audit: 3 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25) and 22post's /reflect (2026-09-30). The cadence is every 4, so the next reflection reaches it.
-Updated: 2026-10-01 (cycle 23 Batch 4a)
+Updated: 2026-10-01 (cycle 23 Batch 4a follow-ons)
 
 ## In progress (facts to carry forward — NOT judgments)
 - Cycle 23 opened 2026-10-01 with a `/broad-scan` (0 Critical / 5 High / ~110 findings; the full report and 13-batch plan are in that session's chat — the batch→ID list is copied under Pending below).
@@ -18,6 +18,7 @@ Updated: 2026-10-01 (cycle 23 Batch 4a)
 - Everything through 22post is merged (PRs #274–#282) and deployed (2026-09-30). The operator was finishing two 22post steps at close: the manual.json re-export + import, and the S124–S128 walks.
 
 ## Completed this cycle
+- 4a-FU1/FU2/FU3 | 00_config.js, 10_core.js, cn/script_callnotes.html | a stale heartbeat names its job's recent failure (not the trigger); every stamp ships a label from one map; the shared purge deletes contiguous runs (block: 23-batch4a-followons-broad-implement.md)
 - CORE-01 | 10_core.js | the brief heartbeats only after it delivers (a failed send lets the four digests resume); send failures + throws stamped; briefConfig names both causes
 - CORE-02 | 10_core.js, script_core.html | a failed badge compute is unknown, uncached, dot kept; the health digest stamps clean only after its send
 - HR-3 | 81_empdocs.js, 20_timeclock.js, 82_coaching.js, 80_training.js | HR sweeps throw by name when set-but-unreadable (unset = []); training digest says what it could not read; coaching recap counts false sends
@@ -76,7 +77,7 @@ Updated: 2026-10-01 (cycle 23 Batch 4a)
 - **DEFERRED, still an operator decision:** F-09's holiday FALLBACK; what a LocationAcceptance city row's Accepts column decides.
 
 ## Open follow-on items
-- **Batch 4a follow-ons:** the urgent digest (FU-B6a) withholds its heartbeat on a failed read (a stale-trigger line beside the stamp — g142); every purge deletes row-by-row under the global lock; the new stamp keys (TrainingOverdueDigest, CoachingRecapDigest, DeptRequestReminderDigest) are untabled in AUTOMATION_JOB_CHECKS.
+- **Batch 4a follow-ons — DONE** (4a-FU1/FU2/FU3). Remaining from them: the archive movers may still delete per row under the lock; the mock's automation fixture shows no `failedAt` / `label` state.
 - **Batch 3 follow-ons:** the reader's kbdoc pending chip says "appears after Save" to reps; kbGetImageData's generic refusal gives no hint of a disabled Drive; the QA tab has no standing disabled-Drive banner (both responses now carry `driveDisabled`).
 - **Lead item for cycle 23 — the domain disables Apps Script's Drive (M4-FU3, confirmed 2026-09-29).** Every other Drive feature is plausibly broken: the converter's images, paste-a-screenshot, the KB Images folder + the article image fallback, the embed reachability check, QA recording sync/playback. Admin → System's Drive row reads the SCOPE and cannot see an admin-disabled service. Ask IT to allow Apps Script Drive, or rework each. The ~1.6 MB single-call manual upload is unverified in a real runtime (fallback: chunked).
 - **22post reflection candidates, not yet in the library:** INV-350 (no path the manual import or reader reaches calls Drive), INV-351 (an import that fails in transport says so, never as a defect of the file), INV-352 (the floating Scratchpad stacks beneath every modal overlay — a ui-dialog can open beneath the panel today, z 56).
