@@ -1055,6 +1055,29 @@ const AUTOMATION_JOB_CHECKS = [
 // object (F4). Each such job stamps its last error here and clears it on a
 // clean run, so the panel and the daily digest can see it.
 const AUTOMATION_ERROR_PROP = 'AUTOMATION_LAST_ERRORS';
+// Cycle 23 (4a follow-ons) — the AUTOMATION_LAST_ERRORS key each digest
+// heartbeat's job stamps its failure under. A job that FAILED withholds or
+// ages its heartbeat, and the stale line used to blame the trigger ("may be
+// disabled") beside a stamp saying the job had just run and failed — g142.
+// With this map the stale line names the failure instead.
+const DIGEST_ERROR_KEYS = {
+  urgent: 'CallNotesUrgentDigest', weekly: 'CallNotesWeeklyDigests', trainingOverdue: 'TrainingOverdueDigest',
+  deptReqReminder: 'DeptRequestReminderDigest', managerBrief: 'ManagerDailyBrief', coachingRecap: 'CoachingRecapDigest',
+  spanishAutoAssign: 'SpanishAutoAssign', deptReplyScan: 'DeptReplyScan', missedPunch: 'MissedPunchAlerts',
+  exportCheck: 'DailyExportCheck', automationHealth: 'AutomationHealthDigest',
+};
+// The human label for a stamped key that has no AUTOMATION_JOB_CHECKS row (a
+// tabled key takes the table's label). ONE map, shipped on each stamp by
+// computeAutomationHealth_, so the digest, the dot and the System tab never
+// show a raw key — and the client keeps no copy of its own to drift.
+const AUTOMATION_ERROR_LABELS = {
+  CallNotesUrgentDigest: 'Urgent-flag digest', CallNotesWeeklyDigests: 'Weekly call-notes digests',
+  TrainingOverdueDigest: 'Training-overdue digest', DeptRequestReminderDigest: 'Dept-request SLA reminder',
+  ManagerDailyBrief: 'Manager daily brief', CoachingRecapDigest: 'Weekly coaching recap',
+  SpanishAutoAssign: 'Spanish Inbox auto-assign', DeptReplyScan: 'Dept Request reply scan',
+  MissedPunchAlerts: 'Daily missed-punch alerts', DailyExportCheck: 'Daily ADP export check',
+  AutomationHealthDigest: 'Automation-health failure digest',
+};
 const CN_EMAIL_PALETTE = {
   paperCard:    '#ffffff',
   paper:        '#f6f7f9',

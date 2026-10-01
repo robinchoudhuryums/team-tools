@@ -18019,7 +18019,7 @@ test('QA-18: QA review-record retention — index untouched, ms fail-safe, botto
   // (bottom-up, with C5's spare-row guard), reading each cell through
   // qaPurgeMs_ — the fail-safe moved there and is DRIVEN in the QA-3 pin.
   assert.ok(/purgeSheetRowsOlderThan_\(sheet, t\[1\], cutoffMs, qaPurgeMs_\)/.test(f), 'a 0/garbage stamp is never deleted (fail-safe): the ms reader rides the shared deleter');
-  assert.ok(/for \(let j = toDelete\.length - 1; j >= 0; j--\)/.test(extractRawFunction('Code.js', 'purgeSheetRowsOlderThan_')), 'bottom-up delete');
+  assert.ok(/contiguousRowRunsDesc_\(toDelete\)\.forEach\(function \(r\) \{ sheet\.deleteRows\(r\.start, r\.count\); \}\)/.test(extractRawFunction('Code.js', 'purgeSheetRowsOlderThan_')), 'bottom-up delete (descending contiguous runs, 4a follow-ons)');
   // (c) Both early returns come BEFORE the lock (a disabled window or an
   // unset store never queues punch writes), and the read never provisions.
   const lockIdx = f.indexOf('waitLock(15000)');
@@ -19063,9 +19063,9 @@ test('A4-1: managerParseBreakSlots_ accepts the list, keeps the legacy pair, ref
 });
 
 test('C5 (cycle 22): the retention purge never asks Sheets to delete every non-frozen row — a full grid purged whole loses nothing it did not count (driven)', () => {
-  const ctx = vm.createContext({ Date, Math, String, Number, isNaN, parseInt, CONFIG: { TIMEZONE: 'America/Chicago' },
+  const ctx = vm.createContext({ Date, Math, String, Number, isNaN, isFinite, parseInt, CONFIG: { TIMEZONE: 'America/Chicago' },
     Utilities: { parseDate: () => { throw new Error('use Date.parse'); } } });
-  ['parseRetentionDateMs_', 'purgeSheetRowsOlderThan_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  ['parseRetentionDateMs_', 'contiguousRowRunsDesc_', 'purgeSheetRowsOlderThan_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
   // A GRID with no spare rows: 1 frozen header + N data rows, maxRows = 1 + N.
   // Like Sheets, it refuses the delete that would leave no non-frozen row.
   const mk = (n, oldCount) => {
@@ -19076,7 +19076,9 @@ test('C5 (cycle 22): the retention purge never asks Sheets to delete every non-f
       getLastRow: () => rows.length, getMaxRows: () => maxRows,
       getDataRange: () => ({ getValues: () => rows.map((r) => r.slice()) }),
       insertRowAfter: () => { maxRows++; },
-      deleteRow: (r) => { if (maxRows - 1 <= 1) throw new Error('Sorry, it is not possible to delete all non-frozen rows.'); rows.splice(r - 1, 1); maxRows--; } };
+      deleteRow: (r) => { if (maxRows - 1 <= 1) throw new Error('Sorry, it is not possible to delete all non-frozen rows.'); rows.splice(r - 1, 1); maxRows--; },
+      // 4a follow-ons (cycle 23): the purge deletes contiguous RUNS — the same refusal, per call.
+      deleteRows: (r, n) => { if ((maxRows - 1) - n < 1) throw new Error('Sorry, it is not possible to delete all non-frozen rows.'); rows.splice(r - 1, n); maxRows -= n; } };
   };
   const CUT = Date.parse('2026-01-01T00:00:00Z');
   const full = mk(6, 6);
@@ -31600,7 +31602,7 @@ test('TC-07 (cycle 23): a timesheet archive failure is STAMPED under its audit a
 
 test('QA-3 (cycle 23): the QA review purge rides the shared deleter — a full grid whose every row expired keeps a spare row instead of throwing on the last delete, a 0/garbage stamp is never deleted, and a failure is stamped (driven)', () => {
   const ctx = vm.createContext({ Number, isFinite, Date, parseRetentionDateMs_: () => { throw new Error('the ms reader must be used'); } });
-  ['purgeSheetRowsOlderThan_', 'qaPurgeMs_'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx));
+  ['contiguousRowRunsDesc_', 'purgeSheetRowsOlderThan_', 'qaPurgeMs_'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx));
   const OLD = Date.parse('2025-01-01'), CUT = Date.parse('2026-01-01');
   const mkSheet = (cells) => {
     const rows = [['CreatedMs']].concat(cells.map((c) => [c]));
@@ -31608,7 +31610,7 @@ test('QA-3 (cycle 23): the QA review purge rides the shared deleter — a full g
       getLastRow: () => sh.rows.length, getMaxRows: () => sh.maxRows,
       getDataRange: () => ({ getValues: () => sh.rows.map((r) => r.slice()) }),
       insertRowAfter() { sh.maxRows++; sh.inserted++; },
-      deleteRow(r) { if (sh.maxRows - 1 <= 1) throw new Error('This operation is not possible: it is not possible to delete all non-frozen rows.'); sh.rows.splice(r - 1, 1); sh.maxRows--; } };
+      deleteRows(r, n) { sh.calls = (sh.calls || 0) + 1; if ((sh.maxRows - 1) - n < 1) throw new Error('This operation is not possible: it is not possible to delete all non-frozen rows.'); sh.rows.splice(r - 1, n); sh.maxRows -= n; } };
     return sh;
   };
   let sh = mkSheet([OLD, OLD + 1, OLD + 2]);   // a FULL grid (no spare rows), every row expired
@@ -31620,6 +31622,95 @@ test('QA-3 (cycle 23): the QA review purge rides the shared deleter — a full g
   const purge = stripJsComments_(extractRawFunction('Code.js', 'purgeOldQaReviews'));
   assert.ok(/catch \(err\) \{\s*stampAutomationError_\('QaReviewPurge', err\.message\)/.test(purge) && /clearAutomationError_\('QaReviewPurge'\)/.test(purge),
     'a failure is stamped under the audit action (the F4 rule) and a clean run clears it');
+});
+
+// ── cycle 23 — the Batch 4a follow-ons ──
+test('4a-FU1 (cycle 23): a stale heartbeat whose job ran and FAILED inside the window names that failure — never "the trigger may be disabled" beside it (driven: the window rule, the problem line, the System finding, the detail panel)', () => {
+  const NOW = Date.parse('2026-10-01T15:00:00Z');
+  const wctx = vm.createContext({ String, CONFIG: { TIMEZONE: 'UTC' },
+    Utilities: { parseDate: (s) => new Date(String(s).replace(' ', 'T') + 'Z') } });
+  vm.runInContext(extractRawFunction('Code.js', 'automationFailedWithin_'), wctx);
+  const fw = (at, h) => wctx.automationFailedWithin_(at ? { at } : null, h, NOW);
+  assert.strictEqual(fw('2026-10-01 08:00:00', 26), '2026-10-01 08:00:00', 'inside the window — this run failed');
+  assert.strictEqual(fw('2026-09-20 08:00:00', 26), '', 'an OLD failure is not offered as the cause (the trigger may have died since)');
+  assert.strictEqual(fw(null, 26), ''); assert.strictEqual(fw('garbage', 26), '');
+  // The server problem line.
+  const ctx = { String, Object, Date, Number, parseInt, JSON, CONFIG: { TIMEZONE: 'Asia/Kolkata', ADJUST_WINDOW_DAYS: 30 },
+    Utilities: { formatDate: (d, tz, f) => (f === 'd' ? '15' : '2026-10') }, AUTOMATION_JOB_CHECKS: [] };
+  vm.createContext(ctx);
+  ['automationJobProblems_', 'auditWindowProvesAbsence_', 'automationProblems_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const lines = (d) => ctx.automationProblems_({ automationLastRuns: [], digests: [d], automationErrors: {} });
+  assert.ok(/it ran and FAILED at 2026-10-01 08:00:00 \(see that failure\), so this is not a missing trigger/.test(lines({ key: 'urgent', stale: true, last: 'x', failedAt: '2026-10-01 08:00:00' })[0]),
+    'THE REGRESSION: "the trigger may be disabled" beside a stamp that said the job had just run');
+  assert.ok(/the trigger may be disabled/.test(lines({ key: 'urgent', stale: true, last: 'x', failedAt: '' })[0]), 'with no recent failure the trigger is still the suspect');
+  // The client finding.
+  sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD' };
+  const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
+  const find = (d) => fn({ digests: [d], automationErrors: {} }, null).items.filter((f) => f.id === 'digest:' + d.key)[0];
+  let f = find({ key: 'urgent', stale: true, last: 'x', failedAt: '2026-10-01 08:00:00' });
+  assert.ok(/ran and failed at 2026-10-01 08:00:00/.test(f.detail) && /its trigger is running/.test(f.fix) && !/installAutomationTriggers/.test(f.fix), f.fix);
+  f = find({ key: 'urgent', stale: true, last: 'x' });
+  assert.ok(/installAutomationTriggers/.test(f.fix));
+  // The detail panel: same rule, escaped.
+  const panel = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  assert.ok(/\(d\.failedAt \? 'it ran and failed at ' \+ esc\(d\.failedAt\) \+ ' — see the failure above' : 'the trigger may be dead'\)/.test(panel), 'the Automation detail row says the same');
+  // The server ships it.
+  const ch = stripJsComments_(extractRawFunction('Code.js', 'computeAutomationHealth_'));
+  assert.ok(/failedAt: \(stale && errorKey\) \? automationFailedWithin_\(automationErrors\[errorKey\], DIGEST_STALE_HOURS\[k\], Date\.now\(\)\) : ''/.test(ch));
+});
+
+test('4a-FU3 (cycle 23): every stamped automation failure carries a human LABEL from one map — the digest, the dot and the System tab never show a raw key (driven + a derived net over every stamp in the server)', () => {
+  const code = serverSource();
+  const ctx = vm.createContext({ Object });
+  ['AUTOMATION_ERROR_LABELS', 'DIGEST_ERROR_KEYS'].forEach((k) => {
+    const m = new RegExp('^const ' + k + ' = \\{[\\s\\S]*?\\n\\};$', 'm').exec(code);
+    assert.ok(m, k + ' declared'); vm.runInContext(m[0].replace(/^const /, 'var '), ctx);
+  });
+  ctx.AUTOMATION_JOB_CHECKS = [{ action: 'TimesheetArchive', label: 'Timesheet cold-archive' }];
+  vm.runInContext(extractRawFunction('Code.js', 'automationErrorsLabelled_'), ctx);
+  const out = JSON.parse(JSON.stringify(ctx.automationErrorsLabelled_({
+    TimesheetArchive: { at: 'a', message: 'm' }, ManagerDailyBrief: { at: 'b', message: 'n' }, SomethingNew: { at: 'c', message: 'o' } })));
+  assert.strictEqual(out.TimesheetArchive.label, 'Timesheet cold-archive', 'a tabled key takes the table label');
+  assert.strictEqual(out.ManagerDailyBrief.label, 'Manager daily brief', 'an untabled key takes the map');
+  assert.strictEqual(out.SomethingNew.label, 'SomethingNew', 'an unknown key falls back to itself, never vanishes');
+  // Derived net: every key the server STAMPS is tabled or labelled.
+  const tabled = {};
+  (code.match(/action: '([A-Za-z]+)'/g) || []).forEach((m) => { tabled[m.slice(9, -1)] = true; });
+  const stamped = {};
+  (code.match(/stampAutomationError_\('([A-Za-z]+)'/g) || []).forEach((m) => { stamped[m.slice(23, -1)] = true; });
+  assert.ok(Object.keys(stamped).length >= 10, 'the net found the stamps (non-vacuous)');
+  Object.keys(stamped).forEach((k) => assert.ok(tabled[k] || ctx.AUTOMATION_ERROR_LABELS[k], k + ' is stamped but has neither a job-table row nor a label'));
+  // ...and every digest→error mapping names a real heartbeat and a real stamp.
+  const staleKeys = (/const DIGEST_STALE_HOURS = \{([\s\S]*?)\};/.exec(code) || [])[1] || '';
+  Object.keys(ctx.DIGEST_ERROR_KEYS).forEach((d) => {
+    assert.ok(new RegExp('\\b' + d + ':').test(staleKeys), d + ' is a heartbeat key with a stale window');
+    assert.ok(stamped[ctx.DIGEST_ERROR_KEYS[d]], d + ' → ' + ctx.DIGEST_ERROR_KEYS[d] + ' is a key the server actually stamps');
+  });
+  // The readers.
+  sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD' };
+  const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
+  const f = fn({ automationErrors: { ManagerDailyBrief: { at: 't', message: 'quota', label: 'Manager daily brief' } }, digests: [] }, null)
+    .items.filter((x) => x.id === 'automationError:ManagerDailyBrief')[0];
+  assert.strictEqual(f.title, 'Manager daily brief failed on its last run', 'THE REGRESSION: the System tab read "ManagerDailyBrief failed…"');
+  const pctx = { String, Object, Date, Number, parseInt, JSON, CONFIG: { TIMEZONE: 'Asia/Kolkata', ADJUST_WINDOW_DAYS: 30 },
+    Utilities: { formatDate: (d, tz, fm) => (fm === 'd' ? '15' : '2026-10') }, AUTOMATION_JOB_CHECKS: [] };
+  vm.createContext(pctx);
+  ['automationJobProblems_', 'auditWindowProvesAbsence_', 'automationProblems_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), pctx));
+  assert.ok(/The Manager daily brief \(ManagerDailyBrief\) job FAILED on t: quota/.test(pctx.automationProblems_({ digests: [], automationErrors: { ManagerDailyBrief: { at: 't', message: 'quota', label: 'Manager daily brief' } } })[0]),
+    'the digest/dot line leads with the label and keeps the key');
+});
+
+test('4a-FU2 (cycle 23): the shared purge deletes each CONTIGUOUS run in ONE call, descending — not one deleteRow per row under the global lock (driven)', () => {
+  const ctx = vm.createContext({ Number, isFinite, Date });
+  ['contiguousRowRunsDesc_', 'purgeSheetRowsOlderThan_'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx));
+  const calls = [];
+  const rows = [['h'], [1], [1], [1], [9], [1], [1], [9]];   // expired: rows 2-4 and 6-7
+  const sh = { getLastRow: () => rows.length, getMaxRows: () => 100, getDataRange: () => ({ getValues: () => rows.map((r) => r.slice()) }),
+    insertRowAfter() {}, deleteRow() { throw new Error('per-row delete is the regression'); },
+    deleteRows(r, n) { calls.push([r, n]); rows.splice(r - 1, n); } };
+  assert.strictEqual(ctx.purgeSheetRowsOlderThan_(sh, 0, 5, (v) => Number(v)), 5);
+  assert.deepStrictEqual(calls, [[6, 2], [2, 3]], 'two calls for two runs, the later run first so the earlier one does not shift');
+  assert.deepStrictEqual(rows.map((r) => r[0]), ['h', 9, 9], 'exactly the expired rows went');
 });
 
 

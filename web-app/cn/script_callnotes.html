@@ -11307,7 +11307,7 @@ function cnHealthFindings_(health, storage) {
     var aeJobs = Object.keys(ae);
     aeJobs.forEach(function (job) {
       var e = ae[job] || {};
-      add('automationError:' + job, 'automation', 'fail', job + ' failed on its last run',
+      add('automationError:' + job, 'automation', 'fail', (e.label || job) + ' failed on its last run',
         (e.at ? 'at ' + e.at + ' — ' : '') + (e.message || e.error || 'unknown error'),   // F-20: the stamp's field is `message`
         'Run the job from the editor to reproduce; a clean run clears this flag.');
     });
@@ -11317,9 +11317,12 @@ function cnHealthFindings_(health, storage) {
     var stale = digests.filter(function (d) { return d.stale; });
     var never = digests.filter(function (d) { return !d.last; });
     stale.forEach(function (d) {
+      // 4a follow-ons (cycle 23): a stale heartbeat whose job ran and FAILED in
+      // the window is that failure, not a dead trigger — reinstalling triggers
+      // changes nothing (g142). The failure itself is its own finding above.
       add('digest:' + d.key, 'automation', 'warn', (CN_DIGEST_LABELS_[d.key] || d.key) + ' is stale',
-        'last ran ' + (d.last || '?') + ' — past its expected cadence',
-        'The trigger may be dead — re-run installAutomationTriggers().');
+        'last ran ' + (d.last || '?') + ' — past its expected cadence' + (d.failedAt ? '; it ran and failed at ' + d.failedAt : ''),
+        d.failedAt ? 'Fix the failure reported for this job — its trigger is running.' : 'The trigger may be dead — re-run installAutomationTriggers().');
     });
     if (!stale.length) {
       add('digests', 'automation', 'ok', 'Digest heartbeats',
@@ -11918,7 +11921,8 @@ function cnRenderHealthPanel_(res) {
       when = '<span style="color:var(--muted)">no heartbeat recorded yet — check the trigger is installed</span>';
     } else if (d.stale) {
       when = '<span style="color:var(--warning-deep);font-weight:600">' + icon('warning', 11) + ' last ran ' +
-        esc(d.last) + (tz ? ' ' + esc(tz) : '') + ' — past its expected cadence; the trigger may be dead</span>';
+        esc(d.last) + (tz ? ' ' + esc(tz) : '') + ' — past its expected cadence; ' +
+        (d.failedAt ? 'it ran and failed at ' + esc(d.failedAt) + ' — see the failure above' : 'the trigger may be dead') + '</span>';
     } else {
       when = '<span class="tabular" style="font-family:var(--mono)">' + esc(d.last) + (tz ? ' ' + esc(tz) : '') + '</span>';
     }

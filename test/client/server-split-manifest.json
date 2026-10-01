@@ -1822,6 +1822,23 @@
     "sendTrainingOverdueEmail_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-01",
+   "why": "cycle 23 4a follow-ons: automationErrorsLabelled_, automationFailedWithin_",
+   "added": [
+    "AUTOMATION_ERROR_LABELS",
+    "DIGEST_ERROR_KEYS",
+    "automationErrorsLabelled_",
+    "automationFailedWithin_"
+   ],
+   "removed": [],
+   "changed": [
+    "automationProblems_",
+    "computeAutomationHealth_",
+    "purgeSheetRowsOlderThan_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -1870,6 +1887,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "c46abfb663380734"
+  },
+  "AUTOMATION_ERROR_LABELS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9f6abc97e3d4316f"
   },
   "AUTOMATION_ERROR_PROP": {
    "file": "00_config.js",
@@ -2305,6 +2327,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "b5f4d676334826c5"
+  },
+  "DIGEST_ERROR_KEYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "d0ada0e56f1c0ad7"
   },
   "DIGEST_LAST_RUN_PROP": {
    "file": "00_config.js",
@@ -4316,6 +4343,16 @@
    "kind": "function",
    "sha": "e8c246da4e67250d"
   },
+  "automationErrorsLabelled_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "a6f4a1308378a2e9"
+  },
+  "automationFailedWithin_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "c7df53156c6c7850"
+  },
   "automationJobProblems_": {
    "file": "10_core.js",
    "kind": "function",
@@ -4329,7 +4366,7 @@
   "automationProblems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "e3fd06b9228bd54a"
+   "sha": "3b2eeb7c6e5b6008"
   },
   "automationRunKey_": {
    "file": "10_core.js",
@@ -4909,7 +4946,7 @@
   "computeAutomationHealth_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "ad8365aef46f7e5f"
+   "sha": "9929657e3cea7115"
   },
   "computeCnEmailHash_": {
    "file": "30_callnotes.js",
@@ -8054,7 +8091,7 @@
   "purgeSheetRowsOlderThan_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "66f08200d5d089c6"
+   "sha": "9026e73949894856"
   },
   "qaAddComment": {
    "file": "90_qa.js",

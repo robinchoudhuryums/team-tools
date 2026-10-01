@@ -1198,6 +1198,29 @@ function auditWindowProvesAbsence_(win, nowMs, staleHours) {
   if (!start || !isFinite(start) || !(staleHours > 0)) return false;
   return (nowMs - start) > staleHours * 3600000;
 }
+/** 4a follow-ons (cycle 23) — each stamp carries its human label: the job
+ *  table's for a tabled key, AUTOMATION_ERROR_LABELS' otherwise, the key last. */
+function automationErrorsLabelled_(map) {
+  const tabled = {};
+  AUTOMATION_JOB_CHECKS.forEach(function (j) { tabled[j.action] = j.label; });
+  const out = {};
+  Object.keys(map || {}).forEach(function (k) {
+    const e = (map[k] && typeof map[k] === 'object') ? map[k] : {};
+    out[k] = { at: e.at, message: e.message, label: tabled[k] || AUTOMATION_ERROR_LABELS[k] || k };
+  });
+  return out;
+}
+/** PURE (Node-pinned) — 4a follow-ons: the stamp's time when it lies inside
+ *  the last `hours` before `nowMs`, else ''. A failure older than the window
+ *  says nothing about why the heartbeat is stale now (the trigger may have
+ *  died since), so it is not offered as the cause. */
+function automationFailedWithin_(e, hours, nowMs) {
+  if (!e || !e.at || !(hours > 0)) return '';
+  try {
+    const ms = Utilities.parseDate(String(e.at), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime();
+    return (nowMs - ms) <= hours * 3600000 ? String(e.at) : '';
+  } catch (_) { return ''; }
+}
 function readAutomationErrors_() {
   try {
     const map = JSON.parse(PropertiesService.getScriptProperties()
@@ -1542,7 +1565,7 @@ function computeAutomationHealth_(opts) {
     });
     // F4: a job that catches its own error reports failure to nobody unless the
     // error is stamped somewhere the panel and the digest can read.
-    const automationErrors = readAutomationErrors_();
+    const automationErrors = automationErrorsLabelled_(readAutomationErrors_());
 
     // ── (b): CDR reachability + name-match health (last 7 days) ──────────
     let cdr;
@@ -1634,10 +1657,16 @@ function computeAutomationHealth_(opts) {
           stale = (Date.now() - ms) > DIGEST_STALE_HOURS[k] * 3600000;
         } catch (_) { stale = true; }
       }
+      // 4a follow-ons (cycle 23): a stale heartbeat whose job STAMPED a failure
+      // inside the same window ran — and failed. Ship that, so the stale line
+      // names the failure instead of a missing trigger (g142).
+      const errorKey = DIGEST_ERROR_KEYS[k] || '';
       return {
         key: k,
         last: raw ? convertAuditTs_(raw, CONFIG.TIMEZONE, mgrTz) : null,
         stale: stale,
+        failedAt: (stale && errorKey) ? automationFailedWithin_(automationErrors[errorKey], DIGEST_STALE_HOURS[k], Date.now()) : '',
+        errorKey: errorKey,
       };
     });
 
@@ -1737,7 +1766,11 @@ function automationProblems_(report, opts) {
   const done = function () { return (opts && opts.items) ? items : items.map(function (i) { return i.text; }); };
   if (!report) return done();
   (report.digests || []).forEach(function (d) {
-    if (d && d.stale) add('digest', d.key, 'The "' + d.key + '" digest last ran ' + (d.last || 'too long ago') + ' — the trigger may be disabled.');
+    if (d && d.stale) {
+      add('digest', d.key, d.failedAt
+        ? 'The "' + d.key + '" digest last ran ' + (d.last || 'too long ago') + ' — it ran and FAILED at ' + d.failedAt + ' (see that failure), so this is not a missing trigger.'
+        : 'The "' + d.key + '" digest last ran ' + (d.last || 'too long ago') + ' — the trigger may be disabled.');
+    }
   });
   // Per-JOB liveness + last-error, DERIVED from AUTOMATION_JOB_CHECKS rather
   // than hand-listed here (Gap4). This block used to check exactly one job
@@ -1763,7 +1796,7 @@ function automationProblems_(report, opts) {
   Object.keys(report.automationErrors || {}).forEach(function (k) {
     if (tabledActions[k]) return;
     const e = report.automationErrors[k] || {};
-    add('jobError', k, 'The ' + k + ' job FAILED on ' + (e.at || '?') + ': ' + (e.message || 'unknown error'));
+    add('jobError', k, 'The ' + (e.label && e.label !== k ? e.label + ' (' + k + ')' : k) + ' job FAILED on ' + (e.at || '?') + ': ' + (e.message || 'unknown error'));
   });
   // PTO accrual reconciliation (operator 2026-09-15). The top-up heals late
   // data on its own, so a top-up is NOT a problem — it is the system working.
@@ -3173,9 +3206,11 @@ function purgeSheetRowsOlderThan_(sheet, dateColIdx, cutoffMs, msOf) {
   if (toDelete.length && toDelete.length >= sheet.getMaxRows() - 1) {
     sheet.insertRowAfter(sheet.getMaxRows());
   }
-  for (let j = toDelete.length - 1; j >= 0; j--) {
-    sheet.deleteRow(toDelete[j]);
-  }
+  // 4a follow-ons (cycle 23): one deleteRows per CONTIGUOUS run, descending
+  // (the diagnostics purge's helper), not one deleteRow per row — every caller
+  // holds the global ScriptLock, and a first backlog of a few thousand rows
+  // held it for minutes (~0.5s a row), queueing every punch and note.
+  contiguousRowRunsDesc_(toDelete).forEach(function (r) { sheet.deleteRows(r.start, r.count); });
   return toDelete.length;
 }
 // Runs a dispatcher's jobs one after another, each in its own try/catch, so a
