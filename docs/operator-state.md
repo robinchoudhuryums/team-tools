@@ -1583,6 +1583,19 @@ entry says which it is.
   - A **city** limit does NOT lift when the customer pays out of pocket — it is
     about how the item physically gets there, not who is billing. A **state**
     limit still does.
+  - **Write it plainly — the reader no longer guesses (cycle 23):**
+    - A state list is uppercase codes, joined however you like: `TX, OK`,
+      `TX/OK`, `TX or OK` (the word "or" is a connective — before cycle 23 it
+      read as Oregon). A lowercase code that is also an English word (`ok`,
+      `in`, `me`, `hi`…) reads "cannot tell"; write it in capitals.
+    - A state BESIDE the city list must say `or`: `TX or listed cities` means
+      either one. `listed cities, TX` or `listed cities (TX)` reads "cannot
+      tell", because it could mean "only the listed cities in Texas".
+    - An `Open` note may only elaborate: `Open (anywhere in the US including
+      Hawaii)` is open; `Open (lower 48)`, `Open (call to confirm)` or `Open (HI
+      and AK)` read "cannot tell". Name the places with "including" if you mean
+      them included.
+    - An address outside the US is refused rather than answered.
 
   ### `LocationAcceptance`
   **The headers must be in ROW 1**, with data from row 2 down. A title row above
@@ -1623,6 +1636,13 @@ entry says which it is.
     reader does not recognise makes the row unreadable and it is REPORTED, not
     guessed at. A blank `Type` is classified by shape: an address makes it a
     warehouse.
+  - **A city row needs its `State`** (cycle 23). A blank State used to match
+    that city name in every state; it now reads "cannot tell" for that city and
+    is named in the diagnostics.
+  - **Warehouse names must be unique.** A second row with the same name is
+    reported and only the first address is used. Two names where one contains
+    the other (`Dallas`, `Dallas North`) are fine: the longer one is matched
+    first.
 
   **There is no default and no fallback.** A missing or empty
   `LocationAcceptance` tab makes every radius rule read "cannot tell" — never

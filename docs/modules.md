@@ -960,6 +960,17 @@ not restate it. Server endpoints live in the fourteen server files
      section index instead of the whole KB tab — every change made in the app
      is seen at once, a by-hand edit to the sheet within five minutes.
 
+     **Cycle 23 Batch 2 (2026-10-01) — the eligibility lookup reads less
+     generously.** "TX or OK" is Texas and Oklahoma (no longer Oregon); a state
+     beside "listed cities" needs its "or"; an Open note must only elaborate;
+     "Dallas North" is one warehouse; a city row with no State reads "cannot
+     tell"; an address outside the US is refused. Each change moves an
+     unreadable cell to "cannot tell", which the Admin → System → Reference
+     lookups panel lists by item. A price line is verified WHOLE at send. In
+     the article editor, Save waits for a pasted screenshot to finish uploading,
+     and reverting to an earlier revision no longer counts as reviewing the
+     article.
+
 <a id="training-employee-docs"></a>
      **Batch 6 (2026-09-18):** the drawer is `role="dialog"` named by its own
      heading and hands focus back to whatever opened it — open it with

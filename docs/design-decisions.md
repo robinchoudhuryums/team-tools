@@ -1851,6 +1851,10 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   narrowed by the code. A line verifies if ANY candidate row still produces it,
   so a price picked from the second of two same-named rows can be sent; a
   changed price on that row is still refused, with that row's figure.
+
+  **AMENDED (cycle 23 KB2-7, 2026-10-01):** "still produces it" means the line
+  appears WHOLE in the message — a substring match let a picked "$100" verify
+  inside a hand-extended "$1000".
 - <a id="which-eligibility-restrictions-lift-out-of-pocket-is-a-rule"></a>**Which eligibility restrictions LIFT out of pocket is a RULE, not a
   table (ELIG, operator 2026-09-16).** The OOP sheet's `Area Eligibility` column
   states the rule for an order going THROUGH INSURANCE. Paying out of pocket
@@ -1954,6 +1958,19 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   and normalises city spellings (Ft/St/Mt, punctuation); a listed city whose
   State cannot be read answers "cannot tell". The Accepts column stays
   display-only — what it should decide is still the operator's call.
+
+  **AMENDED (cycle 23 Batch 2, 2026-10-01):** T7's union of a state and the
+  city list needs the operator's own "or" — "TX or listed cities" is still
+  either-one (and still lifts out of pocket), but "listed cities, TX" /
+  "(TX)" reads "cannot tell", because there the state most plausibly QUALIFIES
+  the list, and the two readings are nationwide versus a few cities (KB2-1). A
+  city row with a BLANK State is "cannot tell" for that city rather than a
+  match in every state: the old "blank = any state" reading was written when
+  city rows only displayed, and since T7 they decide (KB2-5). If the operator
+  means "any state", the follow-on is an explicit marker, not a blank. Also:
+  "TX or OK" is Texas and Oklahoma (KB-1), an Open note must wholly elaborate
+  "anywhere in the US" (KB2-2), overlapping warehouse names resolve
+  longest-first (KB2-4), and an address outside the US is refused (KB2-3).
 - <a id="price-and-area-eligibility-are-one-panel-because-they-are"></a>**Price and area eligibility are ONE panel, because they are one
   question asked of one table (operator 2026-09-18).** They shipped as two
   cards two days apart and the split was an artefact of that order, not a

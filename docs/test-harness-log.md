@@ -2311,3 +2311,21 @@ per-change detail. By delta:
 - `server-split-manifest.json` gained a revision for `kbEnsureGrid_` and
   `KB_DATA_TABLE_MAX_CELL_CHARS` (F2c). The overlay scenarios were re-shot after
   the `ensureOverlay` change: 0 missing, 0px overflow.
+
+## Cycle 23 — Batch 2, the eligibility engine fails toward "cannot tell" (2026-10-01)
+
+- Node +8 (KB-1, KB2-1, KB2-2, KB2-3, KB2-4, KB2-5 + KB2-10 over a fake
+  `LocationAcceptance` tab, KB2-7, KB2-10), on one shared context (`c23Elig_`)
+  that loads the REAL engine functions plus the real `US_STATE_CODES` /
+  `US_STATE_NAMES` / `KB_GEO_US_COUNTRIES`. Three older pins' doubles changed
+  with the behaviour: the ELIG matcher pin's "a row with no state matches any
+  state" assertion is REVERSED (with its reason — written when city rows only
+  displayed), the K4 loader regex pins `stateBad: !stCode`, and the OOP-B / K7
+  verifier context loads `oopBodyHasLine_`.
+- 17 bite-checks, all BITE. One NO BITE acted on: the matcher's `!r.state`
+  guard was invisible, because with a geocoded state present
+  `st && r.state !== st` already rejects a blank row — the ELIG pin gained the
+  geocode-with-no-state case (g116's fourteenth direction: a fixture the
+  code's own path erases cannot tell the guard apart).
+- The KB2-3 pin caught a defect in the FIX before commit: looking the country
+  up in `US_STATE_CODES` read Canada's ISO "CA" as California.

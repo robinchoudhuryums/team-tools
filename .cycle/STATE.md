@@ -12,7 +12,7 @@ Updated: 2026-10-01 (cycle 23 Batch 1)
 ## In progress (facts to carry forward — NOT judgments)
 - Cycle 23 opened 2026-10-01 with a `/broad-scan` (0 Critical / 5 High / ~110 findings; the full report and 13-batch plan are in that session's chat — the batch→ID list is copied under Pending below).
 - Batch 1 implemented on branch `claude/blissful-johnson-cottl5` (block: `.cycle/blocks/23-batch1-broad-implement.md`); NOT yet deployed. TC-02 held back on a decision.
-- Batch 2 implemented on the same branch (block: `.cycle/blocks/23-batch2-broad-implement.md`); NOT yet deployed. /sync-docs for Batch 2 not yet run.
+- Batch 2 implemented on the same branch (block: `.cycle/blocks/23-batch2-broad-implement.md`); NOT yet deployed. /sync-docs for Batch 2 done.
 - Everything through 22post is merged (PRs #274–#282) and deployed (2026-09-30). The operator was finishing two 22post steps at close: the manual.json re-export + import, and the S124–S128 walks.
 
 ## Completed this cycle
@@ -21,6 +21,7 @@ Updated: 2026-10-01 (cycle 23 Batch 1)
 - SH-01 | web-app/script_core.html | ensureOverlay restacks a reused overlay on reopen (copy-failure modal no longer opens beneath the composer)
 - CNUI-07 | script_core.html, cn/script_callnotes.html | the save toast rides the copy outcome
 - CNUI-01 | cn/script_callnotes.html | a failed save never overwrites a newer sticky draft
+- /sync-docs (Batch 2) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g41/g128/g120 extended; ELIG + OOP-B decisions amended; the operator sheet rules; S65 + S112 cycle-23 steps
 - /sync-docs (Batch 1) | CLAUDE.md, docs/gotchas.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g145/g100/g76/g86 extended (index + AMENDED narratives); modules notes for the export, the data-table import and the save path; S18 updated; S129–S131 added
 - KB-1 | web-app/70_kb.js | lowercase or/and are connectives; everyday-word lowercase tokens are not codes
 - KB2-1 | web-app/70_kb.js | a state beside the city clause unions only with an explicit "or", no parentheses
@@ -72,4 +73,4 @@ Updated: 2026-10-01 (cycle 23 Batch 1)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 23 Batches 1 and 2 are committed and pushed on `claude/blissful-johnson-cottl5` (Batch 1: 5 of 6, TC-02 awaits the operator's choice; Batch 2: all 8). Next: `/sync-docs` for Batch 2, deploy both batches and walk S8/S18/S112/S65 + read the Reference-lookups diagnostics, then `/broad-implement Batch 3` (disabled Drive). The next /reflect reaches the Seams-audit cadence.
+Cycle 23 Batches 1 and 2 are committed and pushed on `claude/blissful-johnson-cottl5` (Batch 1: 5 of 6, TC-02 awaits the operator's choice; Batch 2: all 8). Next: deploy both batches and walk S8/S18/S112/S65 + read the Reference-lookups diagnostics, then `/broad-implement Batch 3` (disabled Drive). The next /reflect reaches the Seams-audit cadence.

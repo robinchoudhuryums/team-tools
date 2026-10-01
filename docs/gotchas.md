@@ -1014,6 +1014,24 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `intakeInherentlySolidCodes_`, read by the engine and the validator alike.
   Verify: the I2 and I6 pins.
 
+  **AMENDED (cycle 23 Batch 2, 2026-10-01): the operator's CONNECTIVES and
+  QUALIFIERS are not rules.** Five more shapes read as a broader yes:
+  (1) the STATES branch upper-cased every token, so "TX or OK" added OREGON and
+  "TX in OK" Indiana — lowercase "or"/"and" are now connectives, and any other
+  lowercase everyday-word token is not trusted as a code (KB-1); (2) a state
+  beside the city clause ("listed cities, TX", "(TX)") parsed as T7's either-one
+  union, whose state branch lifts out of pocket and opened a city-only item
+  nationwide — the union now needs the operator's own "or" and no parentheses
+  (KB2-1); (3) the Open parenthetical's deny-list could not be finished ("lower
+  48", "continental US", "call to confirm") — every word must now ELABORATE
+  "anywhere in the US", and a place name counts only beside an including-word
+  (KB2-2); (4) "Dallas" matched inside "Dallas North", so the radius was also
+  measured from Dallas, order-dependently — names match longest-first and
+  consume their span (KB2-4); (5) a city row with a blank State matched that
+  city in EVERY state — it is now "cannot tell" (KB2-5). Every one moves toward
+  unknown, and unknown never lifts. Verify: the KB-1 and KB2-1/2/4/5 drives,
+  bite-checked.
+
 
 <a id="g42-intake-ppd-controls-are-engine-safe-via"></a>
 
@@ -3294,6 +3312,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   a NAME so the separator cannot be inferred from the data), bite-checked by
   turning the server's em dash into a hyphen.
 
+  **AMENDED (cycle 23 KB2-7, 2026-10-01): the line must be found WHOLE.** The
+  verifier checked `body.indexOf(line)`, so "Scooter — $100" verified inside
+  "Scooter — $1000" — the send went out and the audit row recorded "$100
+  verified" beside a tenfold quote. `oopBodyHasLine_` now requires the line not
+  to run on into more of a number (a digit, or "."/"," + digit) and not to start
+  mid-word; a run-on figure falls to the existing "was edited" refusal. Verify:
+  the KB2-7 grid + wiring pin.
+
 <a id="g121-a-positional-tab-read-is-correct"></a>
 - **A positional tab read (`getSheets()[0]`) is correct right up until the
   spreadsheet gains a second purpose — and then it fails SILENTLY (OOP-A → the
@@ -3706,6 +3732,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   not placed), and the client geocodes a street address only on Enter or blur;
   a complete ZIP still checks by itself. Verify: the K5 pins, server and
   client, and the ELIG DOM pin (no request before Enter).
+
+  **AMENDED (cycle 23 KB2-3, 2026-10-01): "outside the US" is a FOURTH
+  answer.** `setRegion('us')` only BIASES the geocoder, and nothing read the
+  country, so a Canadian or Mexican address got an `open` verdict ("available
+  anywhere in the US") and a radius said yes across the border. `kbGeocodeOne_`
+  now returns `country` (additively — the map block reads only lat/lng), and
+  `checkOopEligibility` refuses a non-US geocode before reading any rule, with a
+  message that names no part of the address (g146). The US list is named
+  explicitly (`KB_GEO_US_COUNTRIES`): looking the country up in
+  `US_STATE_CODES` read Canada's ISO "CA" as California — which the new pin
+  caught in the first draft of the fix. Verify: the KB2-3 pin.
 
 <a id="g129-never-cache-a-failure-as-a-value"></a>
 
