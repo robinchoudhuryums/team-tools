@@ -4718,6 +4718,21 @@ function driveScopeError_(msg) {
   if (/authorization is required to perform that action/i.test(s)) return true;
   return /do not have permission to call/i.test(s) && /googleapis\.com\/auth\/drive/i.test(s);
 }
+/** PURE (Node-pinned) — DRV-1 (cycle 23): is this the domain's refusal of the
+ *  Drive SERVICE itself ("The feature you are attempting to use has been
+ *  disabled by your domain administrator.")? It is NOT a missing scope — the
+ *  token can carry /auth/drive while every DriveApp call throws this — and NOT
+ *  a folder problem, so no advice about scopes or folder ids applies to it. */
+function driveDisabledError_(msg) {
+  return /disabled by (?:your|the) (?:domain )?administrator/i.test(String(msg || ''));
+}
+/** PURE (Node-pinned) — DRV-4 (cycle 23): does Drive say the item is GONE
+ *  (deleted, or never shared with this account)? The one open failure a
+ *  replacement folder can fix; a timeout, a quota or a disabled service is
+ *  not, and replacing the folder on one strands every image already in it. */
+function driveItemGoneError_(msg) {
+  return /no item with the given id could be found/i.test(String(msg || ''));
+}
 /** Is the Drive scope the KB image export needs actually GRANTED to the
  *  identity this app runs as? SIDE-EFFECT FREE BY CONSTRUCTION: it
  *  introspects the OAuth token instead of attempting a write, so opening the
@@ -4730,7 +4745,9 @@ function driveScopeError_(msg) {
 function driveAccessStatus_() {
   const out = {
     scope: DRIVE_WRITE_SCOPE, granted: null, error: '', reauthHint: DRIVE_REAUTH_HINT,
+    service: null, serviceError: '', disabledMsg: DRIVE_DISABLED_MSG,
     folderProp: KB_IMAGES_FOLDER_PROP, folderId: '', folderOk: null, folderError: '',
+    qaFolderProp: QA_FOLDER_PROP, qaFolderId: '', qaFolderOk: null, qaFolderError: '',
   };
   const cache = CacheService.getScriptCache();
   try {
@@ -4755,16 +4772,40 @@ function driveAccessStatus_() {
     }
   } catch (e) { out.error = String((e && e.message) || e); }
 
-  try {
-    const fid = String(PropertiesService.getScriptProperties().getProperty(KB_IMAGES_FOLDER_PROP) || '').trim();
-    out.folderId = fid;
-    if (fid) {
-      try { DriveApp.getFolderById(fid).getName(); out.folderOk = true; }
-      catch (e) { out.folderOk = false; out.folderError = String((e && e.message) || e); }
+  // DRV-1 (cycle 23): EXERCISE the service, not just the grant. On this domain
+  // the token carries /auth/drive (the scope is auto-detected from the code),
+  // so `granted` read true while every DriveApp call threw "disabled by your
+  // domain administrator" — and the line read green ("Drive access granted")
+  // over a dead QA module and invisible article images. A read of the root
+  // folder's id is side-effect free and fails exactly when the service does.
+  if (out.granted !== false) {
+    try { DriveApp.getRootFolder().getId(); out.service = 'ok'; }
+    catch (e) {
+      out.serviceError = String((e && e.message) || e);
+      out.service = driveDisabledError_(out.serviceError) ? 'disabled' : 'error';
     }
-  } catch (e) { out.folderError = String((e && e.message) || e); }
+  }
+  // The folders are probed only while the service answers: with it disabled,
+  // every folder "fails", and reporting that as the FOLDER's fault told the
+  // operator to clear the property (g142) — which would strand every image
+  // once the service came back.
+  const probeFolder = function (prop) {
+    const r = { id: '', ok: null, error: '' };
+    try {
+      r.id = String(PropertiesService.getScriptProperties().getProperty(prop) || '').trim();
+      if (r.id && out.service !== 'disabled') {
+        try { DriveApp.getFolderById(r.id).getName(); r.ok = true; }
+        catch (e) { r.ok = false; r.error = String((e && e.message) || e); }
+      }
+    } catch (e) { r.error = String((e && e.message) || e); }
+    return r;
+  };
+  const kbF = probeFolder(KB_IMAGES_FOLDER_PROP);
+  out.folderId = kbF.id; out.folderOk = kbF.ok; out.folderError = kbF.error;
+  const qaF = probeFolder(QA_FOLDER_PROP);   // DRV-1/QA-1: the QA recordings folder was probed by nothing
+  out.qaFolderId = qaF.id; out.qaFolderOk = qaF.ok; out.qaFolderError = qaF.error;
 
-  if (!out.error && out.granted === true && out.folderOk !== false) {
+  if (!out.error && out.granted === true && out.service === 'ok' && out.folderOk !== false && out.qaFolderOk !== false) {
     try { cache.put(DRIVE_ACCESS_CACHE_KEY, JSON.stringify(out), DRIVE_ACCESS_CACHE_SEC); } catch (e) {}
   }
   return out;

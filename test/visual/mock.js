@@ -2021,6 +2021,9 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
           scope: 'https://www.googleapis.com/auth/drive', granted: true, error: '',
           reauthHint: 'the DEPLOYING account must re-authorize — open the Apps Script editor, run any function, and accept the Drive permission (a clasp push + New version never re-prompts). If Google refuses the consent screen, the scope is blocked by Workspace admin policy.',
           folderProp: 'KB_IMAGES_FOLDER_ID', folderId: '', folderOk: null, folderError: '',
+          // DRV-1 (cycle 23) — the service probe + the QA recordings folder probe.
+          service: 'ok', serviceError: '', disabledMsg: 'Apps Script\u2019s Drive service is disabled for this domain (a Workspace admin setting) \u2014 nothing about this app\u2019s folder ids or permissions can fix it. Ask IT to allow Drive for Apps Script.',
+          qaFolderProp: 'QA_RECORDINGS_FOLDER_ID', qaFolderId: '1QaRecFolderXyZ0123456789ab', qaFolderOk: true, qaFolderError: '',
         },
         // F3 — mailBccStatus_'s shape (INV-185). Set-and-internal is the warn
         // state, which is what the Admin System scenarios put on camera.
@@ -2114,6 +2117,17 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // it is where wrapping breaks first.
     if (/[?&]drive=denied\b/.test(window.location.search)) {
       FIXTURES.getStorageHealth.drive.granted = false;
+    }
+    // `?drive=disabled` (DRV-1, cycle 23) — the state this domain is ACTUALLY
+    // in (M4-FU3): the scope is granted, the Drive SERVICE is off. The line
+    // read green here; the folders go unprobed and the embed scan stops.
+    if (/[?&]drive=disabled\b/.test(window.location.search)) {
+      var dd = FIXTURES.getStorageHealth.drive;
+      dd.service = 'disabled';
+      dd.serviceError = 'The feature you are attempting to use has been disabled by your domain administrator.';
+      dd.folderOk = null; dd.qaFolderOk = null;
+      FIXTURES.getStorageHealth.kbEmbeds = { total: 1, probed: 0, reachable: 0, broken: [], truncated: false,
+        driveUnavailable: true, driveError: dd.disabledMsg };
     }
   } catch (e) {}
 
@@ -2227,6 +2241,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         scope: 'https://www.googleapis.com/auth/drive', granted: true, error: '',
         reauthHint: 'the DEPLOYING account must re-authorize — open the Apps Script editor, run any function, and accept the Drive permission (a clasp push + New version never re-prompts). If Google refuses the consent screen, the scope is blocked by Workspace admin policy.',
         folderProp: 'KB_IMAGES_FOLDER_ID', folderId: '1AbCdEfGhIjKlMnOpQrStUvWxYz', folderOk: true, folderError: '',
+        service: 'ok', serviceError: '', disabledMsg: 'Apps Script\u2019s Drive service is disabled for this domain (a Workspace admin setting) \u2014 nothing about this app\u2019s folder ids or permissions can fix it. Ask IT to allow Drive for Apps Script.',
+        qaFolderProp: 'QA_RECORDINGS_FOLDER_ID', qaFolderId: '', qaFolderOk: null, qaFolderError: '',
       },
       mailBcc: { prop: 'MAIL_BCC_ALL', enabled: false, addresses: [], external: null, ownDomain: '' },
       propStore: { valueMax: 9000, storeMax: 512000, warnPct: 80, count: 9, bytes: 8200,

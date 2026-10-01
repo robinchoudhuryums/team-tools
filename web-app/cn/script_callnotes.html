@@ -11005,6 +11005,21 @@ function cnRenderStoragePanel_(res) {
   '</div>';
 }
 
+/** DRV-1 (cycle 23): what a dead Drive takes down — one list, for the line and the finding. */
+function cnDriveSurfaces_() {
+  return 'Reference article images (converter export, paste-a-screenshot, the image fallback), the embed reachability check, and QA recording sync and playback';
+}
+/** DRV-1 (cycle 23, g142): the KB Images folder advice. "Clear the property"
+ *  was destructive whenever the folder still existed — the images already
+ *  exported live in it, and the reader's fallback reads only the folder the
+ *  property names. Only Drive's own "no item with the given ID" means gone,
+ *  and since DRV-4 the next export replaces a gone folder by itself. */
+function cnDriveFolderAdvice_(err) {
+  if (/no item with the given id could be found/i.test(String(err || ''))) {
+    return 'Drive says the folder is gone; the next image export creates a replacement (images that were in it do not come back).';
+  }
+  return 'Share the folder with the deploying account, or retry later \u2014 do not clear the property: the images already exported live in that folder.';
+}
 /** Drive capability line (operator 2026-09-09). The store probes above can
  *  every one of them read OK while Drive is unusable — they are Sheets, and
  *  Sheets ride a different scope. Renders NOTHING when the probe was skipped
@@ -11023,11 +11038,26 @@ function cnDriveAccessHtml_(dr) {
     tone = 'warn';
     body = '<strong>Drive access could not be checked</strong> — ' +
       esc(dr.error || 'the token could not be introspected') + '. Treat this as unknown, not as OK.';
-  } else if (dr.folderOk === false) {
+  } else if (dr.service === 'disabled') {
+    // DRV-1 (cycle 23): the scope is granted and the SERVICE is off — this
+    // line read green over a dead QA module and invisible article images.
+    tone = 'danger';
+    body = '<strong>Drive is disabled for this domain.</strong> The scope is granted, but every Drive call fails: ' +
+      cnDriveSurfaces_() + '. ' + esc(dr.disabledMsg || '');
+  } else if (dr.service === 'error') {
     tone = 'warn';
-    body = '<strong>KB Images folder unreachable.</strong> ' + esc(dr.folderProp || '') +
-      ' points at a folder the deploying account cannot open — ' + esc(dr.folderError || 'unknown error') +
-      '. Clear the property to let the next image export create a fresh folder.';
+    body = '<strong>Drive could not be reached</strong> — ' + esc(dr.serviceError || 'unknown error') +
+      '. Treat this as unknown, not as OK.';
+  } else if (dr.folderOk === false || dr.qaFolderOk === false) {
+    tone = 'warn';
+    body = [
+      dr.folderOk === false ? '<strong>KB Images folder unreachable.</strong> ' + esc(dr.folderProp || '') +
+        ' points at a folder the deploying account cannot open — ' + esc(dr.folderError || 'unknown error') +
+        '. ' + cnDriveFolderAdvice_(dr.folderError) : '',
+      dr.qaFolderOk === false ? '<strong>QA recordings folder unreachable.</strong> ' + esc(dr.qaFolderProp || '') +
+        ' points at a folder the deploying account cannot open — ' + esc(dr.qaFolderError || 'unknown error') +
+        '. QA sync and playback fail until it opens: share the folder with the deploying account, or correct the id.' : '',
+    ].filter(Boolean).join(' ');
   } else {
     tone = 'ok';
     body = 'Drive access granted' + (dr.folderId
@@ -11116,6 +11146,13 @@ function cnRenderKbEmbedsHealth_(ke) {
   var checked = (ke.probed != null && ke.probed < ke.total)
     ? ('checked ' + ke.probed + ' of ' + ke.total)
     : (ke.total + ' embed' + (ke.total === 1 ? '' : 's'));
+  if (ke.driveUnavailable) {
+    // DRV-2 (cycle 23): nothing was checked — never "all reachable", never "broken".
+    return top +
+      '<div style="font-size:11px;color:var(--warning-deep)">' + icon('warning', 12) + ' Reference embeds could not be checked \u2014 ' +
+      esc(ke.driveError || 'Drive is unavailable') + '</div>' +
+    '</div>';
+  }
   if (ke.broken && ke.broken.length) {
     return top +
       '<div style="font-size:12px;color:var(--danger-deep);margin-bottom:8px">' + icon('warning', 12) + ' ' +
@@ -11492,17 +11529,38 @@ function cnHealthFindings_(health, storage) {
         add('driveScope', 'storage', 'warn', 'Drive access could not be checked',
           dr.error || 'the token could not be introspected',
           'Retry from the Admin tab — until it reads, treat Drive as unknown rather than working.');
+      } else if (dr.service === 'disabled') {
+        add('driveScope', 'storage', 'fail', 'Drive is disabled for this domain',
+          'the scope is granted, but every Drive call fails — ' + cnDriveSurfaces_(),
+          dr.disabledMsg);
+      } else if (dr.service === 'error') {
+        add('driveScope', 'storage', 'warn', 'Drive could not be reached',
+          dr.serviceError || 'unknown error',
+          'Retry from the Admin tab — until it answers, treat Drive as unknown rather than working.');
       } else if (dr.folderOk === false) {
         add('driveScope', 'storage', 'warn', 'KB Images folder unreachable',
           dr.folderProp + ' points at a folder the deploying account cannot open — ' + (dr.folderError || 'unknown error'),
-          'Clear ' + dr.folderProp + ' to let the next image export create a fresh folder, or re-share the existing one.');
+          cnDriveFolderAdvice_(dr.folderError));
       } else {
         add('driveScope', 'storage', 'ok', 'Drive access',
           'granted' + (dr.folderId ? ' · KB Images folder reachable' : ' · KB Images folder is created on the first image export'));
       }
+      // DRV-1/QA-1 (cycle 23): the QA recordings folder was probed by nothing,
+      // so a wrong or unshared id surfaced only as a failed Sync.
+      if (dr.qaFolderOk === false && dr.service !== 'disabled') {
+        add('driveQaFolder', 'storage', 'warn', 'QA recordings folder unreachable',
+          (dr.qaFolderProp || 'QA_RECORDINGS_FOLDER_ID') + ' points at a folder the deploying account cannot open — ' + (dr.qaFolderError || 'unknown error'),
+          'Share the folder with the deploying account, or correct the id — QA sync and playback fail until it opens.');
+      }
     }
     var ke = storage.kbEmbeds;
-    if (ke && ke.total) {
+    if (ke && ke.driveUnavailable) {
+      // DRV-2 (cycle 23): with the service disabled every probe fails, and
+      // the panel named every embed "deleted/moved" — a claim about each file
+      // that no file can fix (g142).
+      add('kbEmbeds', 'storage', 'warn', 'Reference embeds could not be checked',
+        ke.driveError || 'Drive is unavailable', 'This clears when Drive is reachable again — the embeds themselves are not the problem.');
+    } else if (ke && ke.total) {
       var broken = (ke.broken || []).length;
       if (broken) {
         add('kbEmbeds', 'storage', 'warn', plural(broken, 'broken Reference embed'),

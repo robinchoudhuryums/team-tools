@@ -1774,6 +1774,27 @@
     "kbGeoOutsideUs_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-01",
+   "why": "cycle 23 Batch 3: Drive service probe, QA_FOLDER_PROP, DRIVE_DISABLED_MSG moved to config",
+   "added": [
+    "DRIVE_DISABLED_MSG",
+    "QA_FOLDER_PROP",
+    "driveDisabledError_",
+    "driveItemGoneError_"
+   ],
+   "removed": [],
+   "changed": [
+    "driveAccessStatus_",
+    "getOrCreateKbImagesFolder_",
+    "kbResolveDocImages_",
+    "kbScanBrokenEmbeds_",
+    "qaAudioChunkFor_",
+    "qaFolderId_",
+    "qaSyncRecordings"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2277,6 +2298,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "bfbf47927e477911"
+  },
+  "DRIVE_DISABLED_MSG": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "c19ca75ffc171a5f"
   },
   "DRIVE_REAUTH_HINT": {
    "file": "00_config.js",
@@ -3447,6 +3473,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "775d3231170cb7c3"
+  },
+  "QA_FOLDER_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "88257729dec58d52"
   },
   "QA_LIST_CAP": {
    "file": "00_config.js",
@@ -5206,7 +5237,17 @@
   "driveAccessStatus_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "5278ee2834f6965f"
+   "sha": "1bb84ccb314f9d55"
+  },
+  "driveDisabledError_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "e2b214016af895ee"
+  },
+  "driveItemGoneError_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "68c52f1857389229"
   },
   "driveScopeError_": {
    "file": "10_core.js",
@@ -6151,7 +6192,7 @@
   "getOrCreateKbImagesFolder_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "029ca38e4b1a420d"
+   "sha": "250e9deb6ff03e20"
   },
   "getOrCreateKbRequestsSheet_": {
    "file": "70_kb.js",
@@ -7256,7 +7297,7 @@
   "kbResolveDocImages_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "5f0968f6e2b732be"
+   "sha": "5fd58fc3e59b0bf0"
   },
   "kbRevertItem": {
    "file": "70_kb.js",
@@ -7301,7 +7342,7 @@
   "kbScanBrokenEmbeds_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "c16d7c2610255755"
+   "sha": "796cafdd764b4f86"
   },
   "kbSearchIndexKey_": {
    "file": "70_kb.js",
@@ -7996,7 +8037,7 @@
   "qaAudioChunkFor_": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "d9d8ba331ca5fa86"
+   "sha": "50b66d4059bea9a7"
   },
   "qaAuditTarget_": {
    "file": "90_qa.js",
@@ -8066,7 +8107,7 @@
   "qaFolderId_": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "96a2b80b794e1077"
+   "sha": "903154214b642b5d"
   },
   "qaGetAudioChunk": {
    "file": "90_qa.js",
@@ -8266,7 +8307,7 @@
   "qaSyncRecordings": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "fbd4f972e798bf93"
+   "sha": "02359e74ebbef88e"
   },
   "qaSyncTokenRead_": {
    "file": "90_qa.js",

@@ -412,6 +412,10 @@ const SCENARIOS = [
   // failing state of the new capability line, at both widths.
   ['admin-system-nodrive-light-wide',   { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '?drive=denied', "cnAdminTab_('system')"],
   ['admin-system-nodrive-light-mobile', { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '?drive=denied', "cnAdminTab_('system')"],
+  // DRV-1 (cycle 23): granted scope, DISABLED service — the domain's real
+  // state, which the line read as green. The longest message it carries.
+  ['admin-system-drivedisabled-light-wide',   { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '?drive=disabled', "cnAdminTab_('system')"],
+  ['admin-system-drivedisabled-light-mobile', { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '?drive=disabled', "cnAdminTab_('system')"],
 
   // Follow-on (2026-09-01): Manage Time was covered only at WIDE, so an inline
   // `grid-template-columns:1fr 1fr` on the analytics pair — which beats every

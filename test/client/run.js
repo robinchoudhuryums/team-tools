@@ -20014,6 +20014,8 @@ test('PR2-3: the storage inventory renders through mtRenderTable_ with a detail 
   // Driven: a fixture with one unreachable + one tz-drifted store renders the
   // toned rows, the pills, and exactly the detail rows that have content.
   loadFunction(sb, 'cn/script_callnotes.html', 'cnRenderKbEmbedsHealth_');
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveSurfaces_');     // DRV-1 (cycle 23) helpers
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveFolderAdvice_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveAccessHtml_');   // DRV-4 sibling
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailBccHtml_');       // F3 sibling
   loadFunction(sb, 'cn/script_callnotes.html', 'cnPropStoreHtml_');     // Q3 sibling
@@ -23226,13 +23228,13 @@ function drvCtx(extra) {
   const code = serverSource();
   const ctx = vm.createContext(Object.assign({ console: { warn() {}, log() {} }, JSON, String, Number, Object }, extra || {}));
   // Pull the real constants, so a rename or a reworded hint fails here.
-  ['KB_IMAGES_FOLDER_PROP', 'DRIVE_WRITE_SCOPE', 'DRIVE_REAUTH_HINT', 'DRIVE_ACCESS_CACHE_KEY', 'DRIVE_ACCESS_CACHE_SEC']
+  ['KB_IMAGES_FOLDER_PROP', 'QA_FOLDER_PROP', 'DRIVE_WRITE_SCOPE', 'DRIVE_REAUTH_HINT', 'DRIVE_ACCESS_CACHE_KEY', 'DRIVE_ACCESS_CACHE_SEC', 'DRIVE_DISABLED_MSG']
     .forEach((k) => {
-      const m = new RegExp('^const ' + k + ' = .*?;$', 'm').exec(code);
+      const m = new RegExp('^const ' + k + ' = [\\s\\S]*?;$', 'm').exec(code);
       assert.ok(m, k + ' declared');
       vm.runInContext(m[0], ctx, { filename: 'Code.js#' + k });
     });
-  ['driveScopeError_', 'driveAccessStatus_', 'getOrCreateKbImagesFolder_'].forEach((fn) =>
+  ['driveScopeError_', 'driveDisabledError_', 'driveItemGoneError_', 'driveAccessStatus_', 'getOrCreateKbImagesFolder_'].forEach((fn) =>
     vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
   return ctx;
 }
@@ -23303,9 +23305,9 @@ test('DRV-2: getOrCreateKbImagesFolder_ NAMES why it failed — unset property v
   assert.strictEqual(r.ok, false);
   assert.ok(!/re-authorize/.test(r.msg), 'no re-auth hint on a Drive-side failure: ' + r.msg);
 
-  // (d) The pre-existing recovery path still works: a dead stored id is
-  // replaced and the new id is stored.
-  h = mk({ props: { KB_IMAGES_FOLDER_ID: 'DEAD' }, openThrows: 'gone' });
+  // (d) The pre-existing recovery path still works: a stored id Drive says
+  // is GONE is replaced and the new id is stored (DRV-4, cycle 23: only then).
+  h = mk({ props: { KB_IMAGES_FOLDER_ID: 'DEAD' }, openThrows: 'No item with the given ID could be found' });
   r = run(h);
   assert.strictEqual(r.ok, true);
   assert.strictEqual(h.calls.created, 1); assert.strictEqual(h.calls.set, 1);
@@ -23341,7 +23343,8 @@ test('DRV-3: driveAccessStatus_ is side-effect free, reports unknown as unknown,
         CacheService: { getScriptCache: () => ({ get: () => cacheHit, put: (k, v) => { calls.put++; calls.putKey = k; calls.putVal = v; } }) },
         PropertiesService: { getScriptProperties: () => ({ getProperty: () => (opts.folderId || null) }) },
         DriveApp: {
-          getFolderById: (id) => { if (opts.folderThrows) throw new Error(opts.folderThrows); return { getName: () => 'KB Images' }; },
+          getRootFolder: () => { calls.root = (calls.root || 0) + 1; if (opts.rootThrows) throw new Error(opts.rootThrows); return { getId: () => 'ROOT' }; },
+          getFolderById: (id) => { calls.folderOpens = (calls.folderOpens || 0) + 1; if (opts.folderThrows) throw new Error(opts.folderThrows); return { getName: () => 'KB Images' }; },
           createFolder: () => { calls.created++; throw new Error('driveAccessStatus_ must NEVER create anything'); },
         },
       }),
@@ -23423,6 +23426,8 @@ test('DRV-3: driveAccessStatus_ is side-effect free, reports unknown as unknown,
 test('DRV-4: the Admin System tab reports Drive — finding + inventory line, and renders nothing when unprobed', () => {
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD unresolved-flag digest' };
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveSurfaces_');
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveFolderAdvice_');
   const line = loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveAccessHtml_');
   const stores = [{ label: 'Time Clock / ADP', cls: 'Payroll', prop: 'ADP_SS_ID', configured: true, reachable: true, tzMatch: true }];
   const find = (drive) => fn(null, { configTimezone: 'Asia/Kolkata', stores: stores, drive: drive })
@@ -31150,6 +31155,238 @@ test('KB2-10 (cycle 23): a revert is not a review (the review clock is kept), an
   ctx.KB_EDIT.body = 'Intro\n![Screenshot](https://x/y)\nmore';
   ctx.kbSaveFromEditor_(null);
   assert.strictEqual(calls.length, 1, 'once the upload has landed, Save goes through');
+});
+
+// ── cycle 23 Batch 3 — a disabled Drive SERVICE (DRV-1, QA-1, DRV-2, DRV-4, DRV-5) ──
+const C23_DRIVE_OFF = 'The feature you are attempting to use has been disabled by your domain administrator.';
+const c23ConstCtx_ = (names, extra) => {
+  const code = serverSource();
+  const ctx = vm.createContext(Object.assign({ console: { warn() {}, log() {} }, JSON, String, Number, Object, Math }, extra || {}));
+  names.forEach((k) => {
+    const m = new RegExp('^const ' + k + ' = [\\s\\S]*?;$', 'm').exec(code);
+    assert.ok(m, k + ' declared');
+    vm.runInContext(m[0], ctx, { filename: 'Code.js#' + k });
+  });
+  return ctx;
+};
+
+test('DRV-1 (cycle 23): driveDisabledError_ recognises the DOMAIN\'s refusal of the service — not a scope error, not a gone folder, not a quota', () => {
+  const ctx = drvCtx();
+  const f = (m) => vm.runInContext('driveDisabledError_(' + JSON.stringify(m) + ')', ctx);
+  const g = (m) => vm.runInContext('driveItemGoneError_(' + JSON.stringify(m) + ')', ctx);
+  assert.strictEqual(f(C23_DRIVE_OFF), true, 'the live message (M4-FU3)');
+  assert.strictEqual(f('Exception: ' + C23_DRIVE_OFF + ' (line 12, file "70_kb")'), true, 'as Apps Script wraps it');
+  [DRV_SCOPE_MSG, 'No item with the given ID could be found', 'Limit Exceeded: Drive.', 'Service error: Drive', '', null]
+    .forEach((m) => assert.strictEqual(f(m), false, 'not disabled: ' + m));
+  assert.strictEqual(g('No item with the given ID could be found, or you do not have permission to access it.'), true);
+  [C23_DRIVE_OFF, DRV_SCOPE_MSG, 'Service error: Drive', 'gone', '', null]
+    .forEach((m) => assert.strictEqual(g(m), false, 'not gone: ' + m));
+  // The scope rule must not swallow it either — the two are disjoint.
+  assert.strictEqual(vm.runInContext('driveScopeError_(' + JSON.stringify(C23_DRIVE_OFF) + ')', ctx), false);
+});
+
+test('DRV-1 + QA-1 (cycle 23): driveAccessStatus_ EXERCISES the service — granted-but-disabled is "disabled", no folder is blamed, nothing is cached; the QA folder is probed too (driven)', () => {
+  const mk = (opts) => {
+    const calls = { put: 0, opened: [], root: 0 };
+    const props = opts.props || {};
+    return { calls, ctx: drvCtx({
+      ScriptApp: { getOAuthToken: () => 'tok' },
+      UrlFetchApp: { fetch: () => ({ getResponseCode: () => 200, getContentText: () => JSON.stringify({ scope: 'https://www.googleapis.com/auth/drive' }) }) },
+      CacheService: { getScriptCache: () => ({ get: () => null, put: () => { calls.put++; } }) },
+      PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null) }) },
+      DriveApp: {
+        getRootFolder: () => { calls.root++; if (opts.rootThrows) throw new Error(opts.rootThrows); return { getId: () => 'ROOT' }; },
+        getFolderById: (id) => { calls.opened.push(id); if ((opts.deadIds || []).indexOf(id) >= 0) throw new Error(opts.folderThrows || 'No item with the given ID could be found'); return { getName: () => 'n' }; },
+        createFolder: () => { throw new Error('never'); },
+      },
+    }) };
+  };
+  const run = (h) => vm.runInContext('driveAccessStatus_()', h.ctx);
+  const both = { KB_IMAGES_FOLDER_ID: 'KBF', QA_RECORDINGS_FOLDER_ID: 'QAF' };
+
+  // THE LIVE STATE: the token carries /auth/drive, the service is off.
+  let h = mk({ props: both, rootThrows: C23_DRIVE_OFF });
+  let r = run(h);
+  assert.strictEqual(r.granted, true, 'the scope IS granted — that was never the problem');
+  assert.strictEqual(r.service, 'disabled', 'and the service read says what is');
+  assert.ok(/disabled for this domain/.test(r.disabledMsg), 'the one message rides the payload');
+  assert.deepStrictEqual(h.calls.opened, [], 'no folder is probed while the service is off — each would "fail" and be blamed (g142)');
+  assert.strictEqual(r.folderOk, null); assert.strictEqual(r.qaFolderOk, null);
+  assert.strictEqual(r.folderId, 'KBF', 'the stored ids are still reported');
+  assert.strictEqual(h.calls.put, 0, 'a disabled round is never cached');
+
+  // An unrecognised service failure is UNKNOWN, never ok and never "disabled".
+  h = mk({ props: both, rootThrows: 'Service error: Drive' });
+  r = run(h);
+  assert.strictEqual(r.service, 'error'); assert.ok(/Service error/.test(r.serviceError));
+  assert.strictEqual(h.calls.put, 0);
+
+  // Clean: service ok, BOTH folders probed, cached.
+  h = mk({ props: both });
+  r = run(h);
+  assert.strictEqual(r.service, 'ok');
+  assert.deepStrictEqual(h.calls.opened.slice().sort(), ['KBF', 'QAF'], 'the QA recordings folder is probed beside the KB one');
+  assert.strictEqual(r.qaFolderOk, true); assert.strictEqual(r.qaFolderProp, 'QA_RECORDINGS_FOLDER_ID');
+  assert.strictEqual(h.calls.put, 1);
+
+  // A dead QA folder alone is named, and the round is not cached.
+  h = mk({ props: both, deadIds: ['QAF'] });
+  r = run(h);
+  assert.strictEqual(r.folderOk, true); assert.strictEqual(r.qaFolderOk, false);
+  assert.ok(/No item/.test(r.qaFolderError));
+  assert.strictEqual(h.calls.put, 0, 'a dead QA folder is not a clean round');
+
+  // Not granted: the service is not exercised at all (the scope finding owns it).
+  h = mk({ props: both });
+  h.ctx.UrlFetchApp = { fetch: () => ({ getResponseCode: () => 200, getContentText: () => JSON.stringify({ scope: 'x' }) }) };
+  r = run(h);
+  assert.strictEqual(r.granted, false); assert.strictEqual(r.service, null); assert.strictEqual(h.calls.root, 0);
+});
+
+test('DRV-1 + QA-1 (cycle 23): the System tab reads a disabled service as a FAIL naming every surface, and never advises clearing a folder property that may still hold the images (driven)', () => {
+  sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD unresolved-flag digest' };
+  const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveSurfaces_');
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveFolderAdvice_');
+  const line = loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveAccessHtml_');
+  const stores = [{ label: 'Time Clock / ADP', cls: 'Payroll', prop: 'ADP_SS_ID', configured: true, reachable: true, tzMatch: true }];
+  const items = (drive) => fn(null, { configTimezone: 'Asia/Kolkata', stores: stores, drive: drive }).items;
+  const find = (drive, id) => items(drive).filter((f) => f.id === (id || 'driveScope'))[0];
+  const base = { scope: 'https://www.googleapis.com/auth/drive', reauthHint: 'r', granted: true, error: '', service: 'ok', serviceError: '',
+    disabledMsg: 'Apps Script’s Drive service is disabled for this domain — Ask IT.',
+    folderProp: 'KB_IMAGES_FOLDER_ID', folderId: 'KBF', folderOk: true, folderError: '',
+    qaFolderProp: 'QA_RECORDINGS_FOLDER_ID', qaFolderId: 'QAF', qaFolderOk: true, qaFolderError: '' };
+  const D = (o) => Object.assign({}, base, o);
+
+  let f = find(D({ service: 'disabled', folderOk: null, qaFolderOk: null }));
+  assert.strictEqual(f.severity, 'fail', 'THE REGRESSION: this read "Drive access granted" in green');
+  assert.ok(/QA recording sync and playback/.test(f.detail) && /article images/.test(f.detail), 'names what is down');
+  assert.ok(/Ask IT/.test(f.fix), 'the fix is the admin setting');
+  assert.ok(!/re-authorize|Clear /.test(f.detail + f.fix), 'no scope advice and no folder advice');
+  assert.strictEqual(find(D({ service: 'disabled', qaFolderOk: false }), 'driveQaFolder'), undefined, 'a disabled service never blames the QA folder');
+  let h = line(D({ service: 'disabled', folderOk: null, qaFolderOk: null }));
+  assert.ok(/cn-drive-danger/.test(h) && /disabled for this domain/.test(h) && !/access granted/.test(h), h);
+
+  f = find(D({ service: 'error', serviceError: '<b>Service error</b>' }));
+  assert.strictEqual(f.severity, 'warn'); assert.ok(/Service error/.test(f.detail));
+  h = line(D({ service: 'error', serviceError: '<img src=x onerror=alert(1)>' }));
+  assert.ok(/cn-drive-warn/.test(h) && !/<img/.test(h), 'unknown, and escaped');
+
+  // g142: a folder that will not open for a reason other than "gone" keeps its property.
+  f = find(D({ folderOk: false, folderError: 'Service error: Drive' }));
+  assert.ok(!/^Clear /.test(f.fix) && /do not clear the property/.test(f.fix), 'advice is non-destructive: ' + f.fix);
+  assert.ok(!/Clear the property/.test(line(D({ folderOk: false, folderError: 'Service error: Drive' }))), 'the line says the same');
+  f = find(D({ folderOk: false, folderError: 'No item with the given ID could be found' }));
+  assert.ok(/creates a replacement/.test(f.fix), 'gone: the next export replaces it (DRV-4)');
+
+  // QA-1: the QA folder now has a finding of its own.
+  f = find(D({ qaFolderOk: false, qaFolderError: 'No item with the given ID could be found' }), 'driveQaFolder');
+  assert.strictEqual(f.severity, 'warn');
+  assert.ok(/QA_RECORDINGS_FOLDER_ID/.test(f.detail) && /QA sync and playback/.test(f.fix));
+  h = line(D({ qaFolderOk: false, qaFolderError: 'x' }));
+  assert.ok(/QA recordings folder unreachable/.test(h) && /cn-drive-warn/.test(h));
+  assert.strictEqual(find(D({}), 'driveQaFolder'), undefined, 'a clean QA folder raises nothing');
+  assert.strictEqual(find(D({})).severity, 'ok');
+});
+
+test('DRV-1 (cycle 23): the disabled-service state is on camera — a mock hook and two System scenarios, and both fixtures carry the new fields', () => {
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/\[\?&\]drive=disabled/.test(mock) && /dd\.service = 'disabled';/.test(mock) && /driveUnavailable: true/.test(mock), 'the mock has a disabled-Drive hook');
+  assert.strictEqual((mock.match(/service: 'ok', serviceError: ''/g) || []).length, 2, 'both getStorageHealth fixtures carry the service probe');
+  assert.strictEqual((mock.match(/qaFolderProp: 'QA_RECORDINGS_FOLDER_ID'/g) || []).length, 2, 'and the QA folder probe');
+  const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8');
+  ['admin-system-drivedisabled-light-wide', 'admin-system-drivedisabled-light-mobile'].forEach((n) =>
+    assert.ok(new RegExp("'" + n + "'[\\s\\S]{0,200}\\?drive=disabled").test(shoot), n + ' is shot with the hook'));
+});
+
+test('DRV-4 (cycle 23): getOrCreateKbImagesFolder_ replaces the folder ONLY when Drive says it is gone — a disabled service or a transient failure leaves the property alone (driven)', () => {
+  const mk = (openThrows, createThrows) => {
+    const store = { KB_IMAGES_FOLDER_ID: 'REAL' }, calls = { created: 0, set: 0 };
+    const ctx = drvCtx({
+      PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => store[k] || null, setProperty: (k, v) => { calls.set++; store[k] = v; } }) },
+      DriveApp: { Access: { DOMAIN_WITH_LINK: 'd' }, Permission: { VIEW: 'v' },
+        getFolderById: () => { throw new Error(openThrows); },
+        createFolder: () => { calls.created++; if (createThrows) throw new Error(createThrows); return { getId: () => 'NEW', setSharing() {} }; } },
+    });
+    let msg = null;
+    try { vm.runInContext('getOrCreateKbImagesFolder_()', ctx); } catch (e) { msg = e.message; }
+    return { msg, calls, store };
+  };
+  let r = mk(C23_DRIVE_OFF);
+  assert.ok(r.msg && /disabled for this domain/.test(r.msg) && /REAL/.test(r.msg), 'names the service and the id: ' + r.msg);
+  assert.strictEqual(r.calls.created, 0, 'no replacement attempted');
+  assert.strictEqual(r.store.KB_IMAGES_FOLDER_ID, 'REAL', 'THE REGRESSION: a replacement re-pointed the property and stranded every image');
+  r = mk('Service error: Drive');
+  assert.ok(r.msg && /not replaced/.test(r.msg), r.msg);
+  assert.strictEqual(r.calls.created, 0); assert.strictEqual(r.calls.set, 0);
+  r = mk(DRV_SCOPE_MSG);
+  assert.ok(/re-authorize/.test(r.msg) && r.calls.created === 0, 'a scope refusal on open keeps the re-auth hint and replaces nothing');
+  r = mk('No item with the given ID could be found');
+  assert.strictEqual(r.msg, null); assert.strictEqual(r.calls.created, 1); assert.strictEqual(r.store.KB_IMAGES_FOLDER_ID, 'NEW', 'gone → replaced, as before');
+  // An UNSET property whose create hits the disabled service names the service.
+  const ctx = drvCtx({
+    PropertiesService: { getScriptProperties: () => ({ getProperty: () => null, setProperty() {} }) },
+    DriveApp: { createFolder: () => { throw new Error(C23_DRIVE_OFF); } } });
+  let msg = null; try { vm.runInContext('getOrCreateKbImagesFolder_()', ctx); } catch (e) { msg = e.message; }
+  assert.ok(/is not set/.test(msg) && /disabled for this domain/.test(msg) && !/re-authorize/.test(msg), msg);
+});
+
+test('DRV-5 (cycle 23): a KB Images folder that cannot open KEEPS the converter\'s image tokens — a later save can still export them (driven)', () => {
+  const ctx = vm.createContext({ String, Object, parseInt, console: { warn() {} } });
+  ['kbExtractDocImageRefs_', 'kbReplaceDocImageTokens_', 'kbResolveDocImages_'].forEach((fn) =>
+    vm.runInContext(extractRawFunction('Code.js', fn), ctx));
+  ctx.getOrCreateKbImagesFolder_ = () => { throw new Error('KB_IMAGES_FOLDER_ID is set to F but that folder could not be opened (' + C23_DRIVE_OFF + ')'); };
+  const body = 'Intro\n![Doc image 1](kbdoc:DOC123abc:1)\nmid\n![Doc image 2](kbdoc:DOC123abc:2)\nend';
+  const r = ctx.kbResolveDocImages_(body);
+  assert.strictEqual(r.bodyMd, body, 'THE REGRESSION: the tokens were rewritten to "*[image — see the original Doc]*", losing which image went where');
+  assert.strictEqual(r.exported, 0); assert.strictEqual(r.pending, 2);
+  assert.ok(r.warnings.length === 1 && /2 image\(s\) kept as pending/.test(r.warnings[0]) && /save again/.test(r.warnings[0]), r.warnings[0]);
+  assert.ok(/disabled by your domain administrator/.test(r.warnings[0]), 'the reason rides the warning');
+});
+
+test('DRV-2 (cycle 23): a disabled Drive is not N broken embeds — the scan stops, says why, and the panel claims neither "broken" nor "reachable" (driven)', () => {
+  const ctx = c23ConstCtx_(['KB', 'KB_HEADERS', 'DRIVE_DISABLED_MSG']);
+  ['kbOpenUrl_', 'driveDisabledError_', 'kbScanBrokenEmbeds_'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx));
+  const KB = vm.runInContext('KB', ctx), W = vm.runInContext('KB_HEADERS.length', ctx);
+  const row = (id, fid) => { const r = new Array(W).fill(''); r[KB.ID] = id; r[KB.TITLE] = 'T' + id; r[KB.TYPE] = 'embed'; r[KB.DRIVE_FILE_ID] = fid; r[KB.DRIVE_KIND] = 'doc'; return r; };
+  const rows = [row('a', 'F1'), row('b', 'F2'), row('c', 'F3')];
+  ctx.getOrCreateKbSheet_ = () => ({ getLastRow: () => rows.length + 1, getRange: () => ({ getValues: () => rows }) });
+  let thrower = () => { throw new Error(C23_DRIVE_OFF); };
+  ctx.DriveApp = { getFileById: (id) => ({ getName: () => thrower(id) }) };
+  let r = vm.runInContext('kbScanBrokenEmbeds_(10)', ctx);
+  assert.strictEqual(r.driveUnavailable, true);
+  assert.strictEqual(r.broken.length, 0, 'THE REGRESSION: every embed was listed as deleted/moved');
+  assert.ok(/disabled for this domain/.test(r.driveError));
+  // A REAL broken file is still reported as broken.
+  thrower = (id) => { if (id === 'F2') throw new Error('No item with the given ID could be found'); return 'ok'; };
+  r = vm.runInContext('kbScanBrokenEmbeds_(10)', ctx);
+  assert.ok(!r.driveUnavailable); assert.strictEqual(r.broken.length, 1); assert.strictEqual(r.reachable, 2);
+  // Client: the inventory block and the finding.
+  const panel = loadFunction(sb, 'cn/script_callnotes.html', 'cnRenderKbEmbedsHealth_');
+  const html = panel({ total: 3, reachable: 0, probed: 0, broken: [], driveUnavailable: true, driveError: 'Drive is <off>' });
+  assert.ok(/could not be checked/.test(html) && !/all Drive files reachable/.test(html) && !/deleted\/moved/.test(html), html);
+  assert.ok(/Drive is &lt;off&gt;/.test(html), 'escaped');
+  const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
+  const f = fn(null, { configTimezone: 'Asia/Kolkata', stores: [], kbEmbeds: { total: 3, broken: [], driveUnavailable: true, driveError: 'off' } })
+    .items.filter((x) => x.id === 'kbEmbeds')[0];
+  assert.strictEqual(f.severity, 'warn'); assert.ok(/could not be checked/.test(f.title));
+});
+
+test('QA-1 (cycle 23): QA sync and playback name a disabled Drive by the ONE message — never "check the folder id", never "Recording not found" (driven + wiring)', () => {
+  const ctx = c23ConstCtx_(['DRIVE_DISABLED_MSG']);
+  ['driveDisabledError_', 'qaAudioChunkFor_'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx));
+  ctx.qaFolderId_ = () => 'QAF';
+  let throwMsg = C23_DRIVE_OFF;
+  ctx.DriveApp = { getFileById: () => { throw new Error(throwMsg); } };
+  let r = vm.runInContext('qaAudioChunkFor_("abcdefghijkl", 0)', ctx);
+  assert.ok(/disabled for this domain/.test(r.error) && r.driveDisabled === true, 'THE REGRESSION: every recording read "Recording not found." — ' + r.error);
+  throwMsg = 'No item with the given ID could be found';
+  r = vm.runInContext('qaAudioChunkFor_("abcdefghijkl", 0)', ctx);
+  assert.strictEqual(r.error, 'Recording not found.', 'a genuinely missing file keeps the generic refusal (existence never leaks)');
+  const sync = stripJsComments_(extractRawFunction('Code.js', 'qaSyncRecordings'));
+  assert.ok(/try \{ folder = DriveApp\.getFolderById\(folderId\); \}\s*catch \(e\) \{\s*if \(driveDisabledError_\(e && e\.message\)\) return \{ success: false, error: DRIVE_DISABLED_MSG/.test(sync),
+    'the sync folder-open catch asks the ONE rule first');
+  assert.ok(/getProperty\(QA_FOLDER_PROP\)/.test(extractRawFunction('Code.js', 'qaFolderId_')), 'one property name, shared with the Admin probe');
 });
 
 

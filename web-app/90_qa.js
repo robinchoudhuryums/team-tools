@@ -89,7 +89,7 @@ function qaCanReviewEmail_(email) {
   return false;
 }
 function qaFolderId_() {
-  try { return String(PropertiesService.getScriptProperties().getProperty('QA_RECORDINGS_FOLDER_ID') || '').trim(); }
+  try { return String(PropertiesService.getScriptProperties().getProperty(QA_FOLDER_PROP) || '').trim(); }
   catch (e) { return ''; }
 }
 /** The dedicated QA store — NO fallback (the getHrDocsSS_ posture): an unset
@@ -274,7 +274,12 @@ function qaSyncRecordings() {
     if (!folderId) return { success: false, error: 'The QA recordings folder is not configured — set Script Property QA_RECORDINGS_FOLDER_ID to the Drive folder recordings are dropped into.' };
     let folder;
     try { folder = DriveApp.getFolderById(folderId); }
-    catch (e) { return { success: false, error: 'The QA recordings folder could not be opened — check QA_RECORDINGS_FOLDER_ID and the deploying account\'s access to it.' }; }
+    catch (e) {
+      // QA-1 (cycle 23): a disabled Drive SERVICE is not the folder's fault —
+      // "check QA_RECORDINGS_FOLDER_ID" sent the operator to edit a correct id (g142).
+      if (driveDisabledError_(e && e.message)) return { success: false, error: DRIVE_DISABLED_MSG, driveDisabled: true };
+      return { success: false, error: 'The QA recordings folder could not be opened — check QA_RECORDINGS_FOLDER_ID and the deploying account\'s access to it.' };
+    }
     const sheet = getOrCreateQaRecordingsSheet_();
     let known = qaKnownFileIds_(sheet);
     // Resume where the last capped run stopped — only for THIS folder.
@@ -482,7 +487,12 @@ function qaAudioChunkFor_(fid, chunkIndex) {
     if (!folderId) return { error: 'The QA recordings folder is not configured (Script Property QA_RECORDINGS_FOLDER_ID).' };
     let file;
     try { file = DriveApp.getFileById(fid); }
-    catch (e) { return { error: 'Recording not found.' }; }
+    catch (e) {
+      // QA-1 (cycle 23): with the service disabled EVERY recording read
+      // "not found" — a claim about the file that the file cannot fix.
+      if (driveDisabledError_(e && e.message)) return { error: DRIVE_DISABLED_MSG, driveDisabled: true };
+      return { error: 'Recording not found.' };
+    }
     let inFolder = false;
     const parents = file.getParents();
     while (parents.hasNext()) {

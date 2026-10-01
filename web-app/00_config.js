@@ -2062,6 +2062,11 @@ const DRIVE_WRITE_SCOPE = 'https://www.googleapis.com/auth/drive';
 const DRIVE_ACCESS_CACHE_KEY = 'drive_access_v1';
 const DRIVE_ACCESS_CACHE_SEC = 300;
 const DRIVE_REAUTH_HINT = 'the DEPLOYING account must re-authorize — open the Apps Script editor, run any function, and accept the Drive permission (a clasp push + New version never re-prompts). If Google refuses the consent screen, the scope is blocked by Workspace admin policy.';
+/** DRV-1 (cycle 23) — the ONE message for a disabled Drive service, shared by
+ *  every surface that hits it (image export, paste upload, QA sync, QA
+ *  playback), so none of them names a cause the operator can act on wrongly. */
+const DRIVE_DISABLED_MSG = 'Apps Script\u2019s Drive service is disabled for this domain (a Workspace admin setting) \u2014 ' +
+  'nothing about this app\u2019s folder ids or permissions can fix it. Ask IT to allow Drive for Apps Script.';
 // ── KB Phase 3 — paste-a-screenshot upload (article editor) ─────────────────
 // The editor textarea accepts a pasted image: the client reads it as a data
 // URL and calls kbUploadImage, which exports the blob to the same KB Images
@@ -2326,6 +2331,9 @@ const COACH_TRX_MAX = 200;
 const COACH_RESPONSE_MAX = 2000;
 const COACH_VOIDED_CAP = 50;
 const QA_RECORDINGS_TAB = 'QaRecordings';
+/** The Script Property naming the Drive folder QA recordings are dropped into —
+ *  ONE name, read by qaFolderId_ and probed by Admin → System's Drive line (DRV-1). */
+const QA_FOLDER_PROP = 'QA_RECORDINGS_FOLDER_ID';
 // Phase 2 added the trailing Agent column (which agent the call belongs to —
 // feeds the per-agent stats); Phase 3 added SharedMs (the explicit
 // release-to-agent stamp — 0/blank = not shared). Both extended IN PLACE

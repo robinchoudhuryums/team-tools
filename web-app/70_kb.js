@@ -2871,6 +2871,15 @@ function kbScanBrokenEmbeds_(cap) {
         DriveApp.getFileById(fid).getName();
         out.reachable++;
       } catch (e) {
+        // DRV-2 (cycle 23): a disabled Drive SERVICE fails every probe, and
+        // the panel listed every embed as broken — a claim about each file
+        // that the files cannot fix (g142). Stop probing and say what it is.
+        if (driveDisabledError_(e && e.message)) {
+          out.driveUnavailable = true;
+          out.driveError = DRIVE_DISABLED_MSG;
+          out.reachable = 0; out.broken = []; probed = 0;
+          break;
+        }
         out.broken.push({
           id: String(rows[i][KB.ID] || ''),
           title: String(rows[i][KB.TITLE] || '(untitled)'),
@@ -4276,13 +4285,24 @@ function getOrCreateKbImagesFolder_() {
       // the message said "open or create" while describing only the second
       // half. Carry the reason into the throw (INV-187).
       openErr = KB_IMAGES_FOLDER_PROP + ' is set to ' + id + ' but that folder could not be opened (' + e.message + ')';
+      // DRV-4 (cycle 23): replace the folder ONLY when Drive says it is gone.
+      // A disabled service, a timeout or a quota also landed here, and the
+      // replacement (had the create succeeded) re-pointed the property and
+      // stranded every image already in the real folder — the reader's
+      // fallback is scoped to the folder the property names.
+      if (driveDisabledError_(e.message)) throw new Error(openErr + ' \u2014 ' + DRIVE_DISABLED_MSG);
+      if (!driveItemGoneError_(e.message)) {
+        throw new Error(openErr + ' \u2014 not replaced: Drive did not say the folder is gone, so the property is left as it is. Try again shortly.' +
+          (driveScopeError_(e.message) ? ' \u2014 ' + DRIVE_REAUTH_HINT : ''));
+      }
       console.warn('KB Images: ' + openErr + ' — creating a replacement.');
     }
   }
   let folder;
   try { folder = DriveApp.createFolder('KB Images'); }
   catch (e) {
-    const hint = driveScopeError_(e.message) ? ' — ' + DRIVE_REAUTH_HINT : '';
+    const hint = driveDisabledError_(e.message) ? ' \u2014 ' + DRIVE_DISABLED_MSG
+      : driveScopeError_(e.message) ? ' — ' + DRIVE_REAUTH_HINT : '';
     throw new Error((openErr
       ? openErr + '; creating a replacement also failed: ' + e.message
       : KB_IMAGES_FOLDER_PROP + ' is not set, and the folder could not be created: ' + e.message) + hint);
@@ -4302,9 +4322,14 @@ function kbResolveDocImages_(bodyMd) {
   let folder = null;
   try { folder = getOrCreateKbImagesFolder_(); }
   catch (e) {
-    const r0 = kbReplaceDocImageTokens_(bodyMd, function () { return null; });
-    warnings.push('KB Images folder: ' + e.message + ' — image(s) left as placeholders.');
-    return { bodyMd: r0.bodyMd, exported: 0, warnings: warnings };
+    // DRV-5 (cycle 23): KEEP the tokens. Rewriting them to the placeholder
+    // threw away the only record of which Doc image belonged where, so a
+    // folder that could not open for an hour (or a disabled Drive service)
+    // made the article's images unrecoverable by any later save. A kept
+    // token renders as the pending chip and the next save retries it.
+    warnings.push('KB Images folder: ' + e.message + ' — ' + refs.length +
+      ' image(s) kept as pending; save again once Drive is reachable to export them.');
+    return { bodyMd: bodyMd, exported: 0, warnings: warnings, pending: refs.length };
   }
   const blobsByDoc = {};   // fileId → blobs[] | null (Doc unreachable)
   const urlCache = {};     // "fileId:ord" → resolved URL
