@@ -7,16 +7,37 @@ Scope: broad — Batch 1 (TC-01, ADM-05, SH-01, CNUI-07, TC-02, CNUI-01)
 Test Command: manual
 Estimates: Batch 1: M (~9 h) — written before the first edit
 Subsystem cycles since last Seams audit: 3 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25) and 22post's /reflect (2026-09-30). The cadence is every 4, so the next reflection reaches it.
-Updated: 2026-10-01
+Updated: 2026-10-01 (cycle 23 Batch 1)
 
 ## In progress (facts to carry forward — NOT judgments)
-- Nothing in progress. Everything through 22post is merged (PRs #274–#282) and deployed (2026-09-30).
-- The operator was finishing two 22post steps at close: the manual.json re-export + import (the M5b glossary synonyms ride it into ManualMeta), and the S124–S128 walks.
+- Cycle 23 opened 2026-10-01 with a `/broad-scan` (0 Critical / 5 High / ~110 findings; the full report and 13-batch plan are in that session's chat — the batch→ID list is copied under Pending below).
+- Batch 1 implemented on branch `claude/blissful-johnson-cottl5` (block: `.cycle/blocks/23-batch1-broad-implement.md`); NOT yet deployed. TC-02 held back on a decision.
+- Everything through 22post is merged (PRs #274–#282) and deployed (2026-09-30). The operator was finishing two 22post steps at close: the manual.json re-export + import, and the S124–S128 walks.
 
 ## Completed this cycle
-- (none — cycle 23 not yet opened)
+- TC-01 | web-app/20_timeclock.js | the payroll export appends through appendRowsSafe_ (threw past ~998 rows)
+- ADM-05 | web-app/70_kb.js, 00_config.js | data-table import: cell ceiling checked pre-dry-run, grid grown before clear(), previous table restored on a failed write
+- SH-01 | web-app/script_core.html | ensureOverlay restacks a reused overlay on reopen (copy-failure modal no longer opens beneath the composer)
+- CNUI-07 | script_core.html, cn/script_callnotes.html | the save toast rides the copy outcome
+- CNUI-01 | cn/script_callnotes.html | a failed save never overwrites a newer sticky draft
 
 ## Pending / not yet done
+- **Cycle 23 plan (from the 2026-10-01 scan; IDs only — the findings are in the scan's chat report):**
+  - Batch 1 — DONE except **TC-02 (blocked: needs an operator decision — see Decisions pending)**.
+  - Batch 2 eligibility fail-open: KB2-1, KB-1, KB2-2, KB2-3, KB2-4, KB2-5, KB2-7, KB2-10
+  - Batch 3 disabled Drive: DRV-1, QA-1, DRV-2, DRV-4, DRV-5 + a "scope granted / service disabled" visual scenario
+  - Batch 4a automation honesty: CORE-01, HR-3, MAIL-4, CORE-02, TC-07, QA-3
+  - Batch 4b failure-as-data reads: ADM-04 (+ the mock fixture + F-11 pin), ADM-09, ADM-07, ADM-08, MET-1, TC2-2, MET-2/3/4, KBUI-1, METUI-1, ADM-11
+  - Batch 5 Spanish/DR: SP-1, DR-2, DR-1, RES-1, SP-3, SP-4, DR-3
+  - Batch 6a PTO/punch: TC-03, TC-04, TC-05, TC-06, TC-08, CORE-07, VIS-1
+  - Batch 6b schedules: TC2-1, TC2-6, TC2-3, TC2-4, TC2-7, TC2-8, COA-2, MET2-2
+  - Batch 7a store data: FORM-1, HR-1+CN-7, FORM-2, FORM-3, FORM-4, FORM-5, CN-1, CN-2, CN-4, CN-5
+  - Batch 7b CN client: CNUI-02, CNUI-03, CNUI-04, CNUI-05, CNUI-06, CNUI-08, CNUI-09
+  - Batch 8 QA: QA2-1, QA2-2, QA2-3, QA-2, QA-4, QA-5, QA2-4/5, QAUI-1
+  - Batch 9 editors/a11y: UI-ESC, INTUI-1, TRUI-2, KB2-9, KB2-8, ADM-06, ADM-10/KBUI-5, SH-02, SH-03/04/05, TCUI-1
+  - Batch 10 PHI/config: KBUI-2, KB-2, INT2-3, INT-1/INT2-1/INT2-2, INT-2/INT2-4, CN-3, ADM-12, ADM-13/CORE-04/05/06/03/TRN-2, MET-5/MET2-1
+  - Deferred (decisions): DRV-3, SP-2, KB2-6, HR-2, TRN-1, CN-8, INT-3, TC2-9
+- **Batch 1 deploy + walks:** clasp push + New version; S8 with >1,000 rows; S18's blocked-clipboard step twice via Save & Compose; S1.
 - **22post, unconfirmed at close:** the manual.json re-export + import (Reference → Manual → Choose File → Check → Import); the S124–S128 walks; publish the manual by part, then unpublish the old guides once vetted.
 - **Editorial, operator's call:** whether to add numbered-heading anchors in the manual source for the links `node scripts/manual-xref-report.mjs --list` names (it changes the printed number).
 - **Cycle 22's regression walks — NOT confirmed** (scenario steps in `.cycle/config.md`: S4, S25, S55, S59–S61, S68, S69, S74, S76, S80, S87, S90, S97, S98, S101, S114–S118), plus the 22post batch walks S119–S123.
@@ -33,10 +54,10 @@ Updated: 2026-10-01
 - **Numbers — do not reuse:** INV-225..227 RESERVED (cycle 20); INV-229..232, INV-240..242, INV-301..303 and INV-350..352 PROPOSED (cycles 21, 21post, 22, 22post), not in the library. **Next free: INV-353; gotcha g163; scenario S129.**
 
 ## Decisions made (so the next session doesn't re-litigate)
+- **TC-02 is NOT a code-only fix (cycle 23 Batch 1):** a break adjustment cannot say "correct my existing break" vs "add a missing one" — the modal and the PunchAdjustRequests row carry no intent. Pending an operator choice among: (a) an intent control on break types, carried in the request; (b) break types always append, corrections via manager Day Edit; (c) refuse a break adjustment on a day that already has that type. Do not guess the semantics.
 - **The procedures manual (operator, 2026-09-28):** maintained long-term in the repo only — `manual/` is the one source; manual sections are read-only in the app; the old guides are unpublished once the manual is live and vetted.
 - **No Drive in the manual path (2026-09-29):** the domain disables Apps Script's Drive, so manual.json is chosen from the computer and images live in the ManualImages tab.
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-22post is closed and archived in HISTORY.md (reflected −3). Nothing is open. The next `/broad-scan` opens cycle 23:
-lead with the Drive-dependent features against the domain's Drive block, and note that the next reflection reaches the Seams-audit cadence.
+Cycle 23 Batch 1 is committed and pushed on `claude/blissful-johnson-cottl5` (5 of 6 findings; TC-02 awaits the operator's choice above). Next: deploy Batch 1 and walk S8/S18, then `/broad-implement Batch 2` (eligibility fail-open) or Batch 3 (Drive) as the operator chooses. The next /reflect reaches the Seams-audit cadence.
