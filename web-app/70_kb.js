@@ -2331,13 +2331,21 @@ function kbDataTableSummary_(grid, spec) {
     warnings: warnings,
   };
 }
+/** ADM-05 (cycle 23): grow a tab's grid to at least rows × cols BEFORE a block
+ *  write — a tab is a fixed grid (1000×26 when new) and getRange past its edge
+ *  throws (g145). Never shrinks. */
+function kbEnsureGrid_(sh, rows, cols) {
+  if (rows > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), rows - sh.getMaxRows());
+  if (cols > sh.getMaxColumns()) sh.insertColumnsAfter(sh.getMaxColumns(), cols - sh.getMaxColumns());
+}
 /** Upload a CSV into one ALLOWLISTED KB sheet tab. Admin-gated (INV-136 tier —
  *  it rewrites a store the whole team reads), locked (INV-01), audited.
  *  `dryRun` returns the summary WITHOUT writing, so the same parse drives the
  *  preview and the write — one code path, no client/server parser to drift
  *  (the two-stage email posture applied to a destructive import).
  *  The write REPLACES the tab's contents; Sheets' own File → Version history
- *  is the undo, which the client's confirm says out loud. */
+ *  is the undo, which the client's confirm says out loud — and since ADM-05
+ *  (cycle 23) a write that fails puts the previous table back itself. */
 function kbImportDataTable(tabKey, csvBase64, opts) {
   const o = opts || {};
   const dryRun = o.dryRun !== false;          // default DRY — a bare call never writes
@@ -2366,6 +2374,17 @@ function kbImportDataTable(tabKey, csvBase64, opts) {
     if (grid[0].length > KB_DATA_TABLE_MAX_COLS) {
       return { error: grid[0].length + ' columns exceeds the ' + KB_DATA_TABLE_MAX_COLS + '-column limit for this table.' };
     }
+    // ADM-05 (cycle 23): Sheets refuses a cell over 50,000 characters, and the
+    // write below runs AFTER the live table is cleared. Refuse it here, where
+    // the preview reports it too, rather than discover it mid-replace.
+    for (let r = 0; r < grid.length; r++) {
+      for (let c = 0; c < grid[r].length; c++) {
+        if (String(grid[r][c]).length > KB_DATA_TABLE_MAX_CELL_CHARS) {
+          return { error: 'Row ' + (r + 1) + ', column ' + (c + 1) + ' holds ' + String(grid[r][c]).length +
+            ' characters — a spreadsheet cell holds at most ' + KB_DATA_TABLE_MAX_CELL_CHARS + '. Trim it and import again.' };
+        }
+      }
+    }
     const summary = kbDataTableSummary_(grid, spec);
 
     const ss = getKbSS_();
@@ -2376,17 +2395,47 @@ function kbImportDataTable(tabKey, csvBase64, opts) {
     if (dryRun) { summary.dryRun = true; return summary; }
 
     const sh = existing || ss.insertSheet(spec.tab);
+    // ADM-05 (cycle 23): this used to clear() and then write a block sized to
+    // the FILE — but a tab is a fixed grid (1000×26 when new, g145), the limits
+    // above allow 5000×60, and the write threw AFTER the clear, leaving the
+    // live lookup table empty under an "Import failed" toast. Every insurance
+    // or price lookup then read "not found" until someone restored the
+    // spreadsheet's version history. So: the grid is grown BEFORE anything is
+    // cleared, and what the readers saw (display values — the readers use
+    // getDisplayValues) is kept so a failed write puts it back.
+    const prevRows = sh.getLastRow() > 0 && sh.getLastColumn() > 0
+      ? sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues() : null;
+    kbEnsureGrid_(sh, grid.length, grid[0].length);
     sh.clear();
-    const range = sh.getRange(1, 1, grid.length, grid[0].length);
-    // Plain-text format BEFORE the write: a payor named "Aetna 5-2024" or a
-    // code like "1/2" would otherwise be coerced to a date/number and the
-    // getDisplayValues reader would hand reps a reformatted value that is not
-    // what the operator's file says (INV-64 — a foreign-authored sheet is
-    // never reinterpreted; here we are the one authoring it, so we pin it).
-    range.setNumberFormat('@');
-    range.setValues(sheetTextRows_(grid, null));   // S2: the whole block was just formatted '@' — raw, no apostrophe
-    sh.setFrozenRows(1);
-    SpreadsheetApp.flush();
+    try {
+      const range = sh.getRange(1, 1, grid.length, grid[0].length);
+      // Plain-text format BEFORE the write: a payor named "Aetna 5-2024" or a
+      // code like "1/2" would otherwise be coerced to a date/number and the
+      // getDisplayValues reader would hand reps a reformatted value that is not
+      // what the operator's file says (INV-64 — a foreign-authored sheet is
+      // never reinterpreted; here we are the one authoring it, so we pin it).
+      range.setNumberFormat('@');
+      range.setValues(sheetTextRows_(grid, null));   // S2: the whole block was just formatted '@' — raw, no apostrophe
+      sh.setFrozenRows(1);
+      SpreadsheetApp.flush();
+    } catch (writeErr) {
+      let restored = false;
+      if (prevRows) {
+        try {
+          sh.clear();
+          const back = sh.getRange(1, 1, prevRows.length, prevRows[0].length);
+          back.setNumberFormat('@');
+          back.setValues(sheetTextRows_(prevRows, null));   // S2: formatted '@' just above
+          sh.setFrozenRows(1);
+          SpreadsheetApp.flush();
+          restored = true;
+        } catch (restoreErr) { console.warn('kbImportDataTable restore failed: ' + restoreErr.message); }
+      }
+      return { error: 'Import failed: ' + writeErr.message + (prevRows
+        ? (restored ? ' — the previous ' + spec.label + ' table was put back unchanged.'
+                    : ' — and putting the previous table back ALSO failed: restore it from the spreadsheet\'s Version history.')
+        : '') };
+    }
 
     writeAuditLog_(emp, 'KbDataTableImport', '', '', false, 0,
       'tab=' + spec.tab + '; rows=' + summary.rows + '; cols=' + summary.cols + '; replaced=' + summary.replacingRows);

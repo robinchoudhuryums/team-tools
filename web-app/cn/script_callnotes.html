@@ -4237,8 +4237,12 @@ function cnSubmitActiveForm_(opts) {
   // Optimistic path — runs synchronously, well under one frame:
   // 1. Put the note in the stack so it renders immediately
   CN_STATE.rollingNotes.unshift(pendingNote);
-  // 2. Copy to clipboard NOW so the rep can paste into the CRM without waiting
-  cnAutoCopyNote_(pendingNote);
+  // 2. Copy to clipboard NOW so the rep can paste into the CRM without waiting.
+  // CNUI-07 (cycle 23): the save toast rides the copy's OUTCOME. It used to be
+  // shown synchronously below as "Saved · copied to clipboard" — before the
+  // copy had settled, and beside the "nothing was copied" modal when it failed.
+  cnAutoCopyNote_(pendingNote, { announce: true, ok: 'Saved · copied to clipboard',
+    fail: 'Saved — but nothing was copied to the clipboard' });
   if (opts && opts.keepForm) {
     // Operator feedback (2026-06-12 r3): Save & Compose is TRANSACTIONAL —
     // the form keeps its text while the composer is open. Send success
@@ -4259,7 +4263,6 @@ function cnSubmitActiveForm_(opts) {
   // 4. Re-render
   cnRenderStack_();
   cnRenderFilterBar_();
-  showToast('Saved · copied to clipboard', 'toast-success');
 
   // Server sync in background
   google.script.run
@@ -4325,6 +4328,7 @@ function cnSubmitActiveForm_(opts) {
  *    - form gone (navigated away) → park the snapshot in the sticky-draft
  *      slot so the next Log view restores it ("Draft restored"). */
 function cnRevertPendingSubmit_(pendingId, snapshot, message) {
+  const lostNote = CN_STATE.rollingNotes.filter(function (n) { return n.noteId === pendingId; })[0] || null;
   CN_STATE.rollingNotes = CN_STATE.rollingNotes.filter(function (n) { return n.noteId !== pendingId; });
   cnRenderStack_();
   cnRenderFilterBar_();
@@ -4342,6 +4346,16 @@ function cnRevertPendingSubmit_(pendingId, snapshot, message) {
       outcome = ' — note restored to the form';
     } else if (form) {
       outcome = ' — the unsaved note is on your clipboard (your current typing was left untouched)';
+    } else if (cnStickyDraftHasOtherText_(snapshot)) {
+      // CNUI-01 (cycle 23): the ONE draft slot already holds newer typing — the
+      // rep started the next note, then left Log while this save was still in
+      // flight. Writing the failed note there destroyed that newer note for
+      // good while the toast promised the failed one "was kept". Keep the newer
+      // draft, and put the note that did not save in front of the rep to copy.
+      const v = snapshot.values || {};
+      manualCopyModal_(cnFormatNoteForCopy_(lostNote || Object.assign({}, v, { patientAndTrx: v.patient })),
+        'The call note that did not save');
+      outcome = ' — your newer draft was kept; the note that did not save is shown so you can copy it';
     } else {
       cnSaveSnapshotAsStickyDraft_(snapshot);
       outcome = ' — the unsaved note was kept as a draft (restores on the Log view) and is on your clipboard';
@@ -4354,6 +4368,27 @@ function cnRevertPendingSubmit_(pendingId, snapshot, message) {
  *  cnPersistActiveFormDraft_ writes / cnRestoreActiveFormDraft_ reads) so a
  *  rep who navigated away mid-save gets the note back on their next Log view
  *  enter instead of losing it. Carries an `at` stamp for the PHI TTL. */
+/** CNUI-01: does the sticky-draft slot hold OTHER typing worth keeping — a
+ *  live (within the PHI TTL) draft with a non-blank field that differs from
+ *  `snap`, the note that failed? (A Save & Compose keeps its own text in the
+ *  form, so the slot can hold the failed note itself — that is not newer work,
+ *  and overwriting it with the same note is the old, correct path.) Read-only. */
+function cnStickyDraftHasOtherText_(snap) {
+  try {
+    const raw = localStorage.getItem(CN_FORM_STICKY_LS_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (!data || (data.at && (Date.now() - data.at) > CN_FORM_STICKY_MAX_AGE_MS)) return false;
+    const vals = data.values || {};
+    const mine = (snap && snap.values) || {};
+    const t = function (x) { return String(x || '').trim(); };
+    const hasText = Object.keys(vals).some(function (k) { return t(vals[k]) !== ''; }) ||
+      t(data.trainingQ) !== '' || t(data.reviewC) !== '';
+    if (!hasText) return false;
+    return Object.keys(vals).some(function (k) { return t(vals[k]) !== t(mine[k]); }) ||
+      t(data.trainingQ) !== t(snap && snap.trainingQ) || t(data.reviewC) !== t(snap && snap.reviewC);
+  } catch (e) { return false; }
+}
 function cnSaveSnapshotAsStickyDraft_(snap) {
   try {
     localStorage.setItem(CN_FORM_STICKY_LS_KEY, JSON.stringify({
@@ -4387,7 +4422,8 @@ function cnAutoCopyNote_(note, opts) {
   const text = cnFormatNoteForCopy_(note);
   copyWithFeedback_(text, {
     silent: !(opts && opts.announce),
-    ok: 'Copied to clipboard',
+    ok: (opts && opts.ok) || 'Copied to clipboard',
+    fail: (opts && opts.fail) || '',
     label: 'Call note',
   });
 }

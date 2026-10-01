@@ -5117,7 +5117,12 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
   const sh = newSs.getActiveSheet();
   sh.setName('Timesheet');
   sh.getRange(1, 1, 2, 9).setValues(sheetSafeRows_([rows[0].slice(0, 9), rows[1].slice(0, 9)]));
-  sh.getRange(3, 1, matched.length, 9).setValues(sheetSafeRows_(matched));
+  // TC-01 (cycle 23): a new spreadsheet is a FIXED 1000-row grid, and a bare
+  // getRange(3, 1, matched.length, 9) threw once a period passed ~998 punch
+  // rows — the automated run fell back to "export manually", which threw the
+  // same way, and payroll stopped. appendRowsSafe_ grows the grid first (g145);
+  // the two header rows above make its next free row exactly row 3.
+  appendRowsSafe_(sh, matched);
   sh.getRange(1, 1, 1, 9).setFontWeight('bold');
   sh.setFrozenRows(2);
   SpreadsheetApp.flush();

@@ -1743,6 +1743,10 @@ function copyWithFeedback_(text, opts) {
       if (!o.silent) showToast(o.ok || 'Copied', 'toast-success');
       return;
     }
+    // CNUI-07 (cycle 23): a caller whose success toast is ALSO news about
+    // something else (the save path's "Saved · copied") passes `fail` so that
+    // news still arrives — without the claim — beside the manual-copy modal.
+    if (o.fail) showToast(o.fail, 'toast-warn');
     manualCopyModal_(text, o.label || '');
   });
 }
@@ -3028,6 +3032,18 @@ function ensureOverlay(id, opts) {
   // the caller's innerHTML mount lands first) move focus INTO the dialog —
   // unless the module already placed it somewhere inside.
   var wasOpen = overlay.classList.contains('open');
+  // SH-01 (cycle 23): every overlay shares one z-index, so DOM ORDER decides
+  // which paints on top — and the Escape handler and focus trap both treat the
+  // LAST open overlay as the top one. A REUSED node kept its old position, so
+  // a closed-then-reopened overlay (the hook-less "Copy it by hand" modal,
+  // whose close only drops `open`) came back BENEATH any overlay created since:
+  // on a second clipboard failure during Save & Compose the "nothing was
+  // copied" warning sat under the composer while the rep pasted the PREVIOUS
+  // note into the CRM (g76). A closed→open transition moves the node to the
+  // end of <body>, so whatever opened last is on top, by construction.
+  if (!wasOpen && overlay.parentNode === document.body && overlay !== document.body.lastElementChild) {
+    document.body.appendChild(overlay);
+  }
   overlay.className = 'overlay open' + (opts.extraClass ? ' ' + opts.extraClass : '');
   overlay.setAttribute('role', 'dialog');
   overlay.setAttribute('aria-modal', 'true');

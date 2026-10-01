@@ -2022,6 +2022,7 @@ const KB_DATA_TABLES = {
 const KB_DATA_TABLE_MAX_ROWS = 5000;
 const KB_DATA_TABLE_MAX_COLS = 60;
 const KB_DATA_TABLE_MAX_CHARS = 6000000;   // ~4.5MB of CSV after base64 decode
+const KB_DATA_TABLE_MAX_CELL_CHARS = 50000;   // ADM-05: Sheets' per-cell ceiling — refused before the live tab is cleared
 // ── Reference comments, Phase A (pilot round 3 #6) ──────────────────────────
 // A visible per-article comment thread — the DISCUSSION complement to the
 // private kbFlagItem signal (INV-139). Append-only `KbComments` tab in the KB

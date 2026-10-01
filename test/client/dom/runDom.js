@@ -5586,3 +5586,91 @@ test('M5b DOM: results mark what the SERVER matched on (a stem, a glossary phras
   h.run.flushSuccess({ results: [res.results[0]] }, 'searchReference');
   assert.ok(!h.$$('#kb-main mark.kb-hl').some((m) => m.textContent.toLowerCase() === 'deliver'), 'no terms → no stem marks');
 });
+
+// ── Cycle 23 Batch 1 — the copy-failure modal on top; the save toast rides the copy; the draft slot ──
+section('Cycle 23 Batch 1 — overlay stacking (SH-01), the save toast (CNUI-07), the one draft slot (CNUI-01)');
+
+const c23Clipboard_ = (h, ok) => {
+  Object.defineProperty(h.window.navigator, 'clipboard', { configurable: true, writable: true,
+    value: { writeText: () => (ok ? Promise.resolve() : Promise.reject(new Error('denied'))) } });
+  h.window.document.execCommand = () => false;   // the fallback is denied too — it returns false, never throws
+};
+const c23Toasts_ = (h) => h.$$('#toast-stack .toast').map((t) => t.textContent);
+
+test('SH-01: a REOPENED overlay comes back on TOP — the hook-less "Copy it by hand" modal is never stranded beneath an overlay opened since', () => {
+  const h = boot();
+  h.bootShell({});
+  const mc = h.read('manualCopyModal_')('first note', 'Call note');
+  h.read('closeOverlay')(mc);                      // hook-less: only `open` drops, the node stays put
+  assert.ok(!mc.classList.contains('open') && mc.parentNode === h.window.document.body, 'closed, still in <body>');
+  h.read('ensureOverlay')('cn-compose-overlay', { label: 'Department email composer', onClose: () => {} });
+  const again = h.read('manualCopyModal_')('second note', 'Call note');
+  assert.strictEqual(again, mc, 'the same node is reused');
+  const open = h.$$('.overlay.open');
+  assert.strictEqual(open[open.length - 1].id, 'manual-copy-overlay',
+    'the reopened warning is the LAST open overlay — the one that paints on top and that Escape and the focus trap treat as the top');
+  assert.strictEqual(h.window.document.body.lastElementChild.id, 'manual-copy-overlay');
+  // An overlay that is merely RE-RENDERED while open does not move (its focus and position are left alone).
+  const composer = h.$('#cn-compose-overlay');
+  h.read('ensureOverlay')('cn-compose-overlay', { label: 'Department email composer', onClose: () => {} });
+  assert.strictEqual(h.window.document.body.lastElementChild.id, 'manual-copy-overlay', 'an open overlay is not restacked by a re-render');
+  assert.ok(composer.classList.contains('open'));
+});
+
+test('CNUI-07: the save toast rides the copy OUTCOME — "copied" only when it was, and a blocked clipboard still says "Saved" beside the modal', async () => {
+  let h = bootLog();
+  c23Clipboard_(h, false);
+  h.setField('cn-fld-issue', 'Blocked clipboard note');
+  h.window.cnSubmitActiveForm_();
+  assert.ok(!c23Toasts_(h).some((t) => /copied to clipboard/.test(t)), 'no "copied" claim before the copy has settled');
+  await tick(); await tick();
+  const t = c23Toasts_(h);
+  assert.ok(!t.some((x) => /copied to clipboard/.test(x)), 'and none after it failed: ' + JSON.stringify(t));
+  assert.ok(t.some((x) => /Saved — but nothing was copied/.test(x)), 'the rep is still told the note saved');
+  const mc = h.$('#manual-copy-overlay');
+  assert.ok(mc && mc.classList.contains('open') && /Blocked clipboard note/.test(mc.querySelector('#manual-copy-val').value), 'with the note to copy by hand');
+
+  h = bootLog();
+  c23Clipboard_(h, true);
+  h.setField('cn-fld-issue', 'Working clipboard note');
+  h.window.cnSubmitActiveForm_();
+  await tick(); await tick();
+  assert.ok(c23Toasts_(h).some((x) => /Saved · copied to clipboard/.test(x)), 'a copy that worked says so');
+  assert.strictEqual(h.$('#manual-copy-overlay'), null, 'and nothing interrupts it');
+});
+
+test('CNUI-01: a save that fails after the rep left Log never overwrites the NEWER draft they had started — the failed note is shown to copy instead', () => {
+  const h = bootLog();
+  const KEY = h.read('CN_FORM_STICKY_LS_KEY');
+  h.setField('cn-fld-issue', 'Note A — the one that will fail');
+  h.window.cnSubmitActiveForm_();                    // optimistic clear; the draft slot is cleared
+  // The rep types note B (the debounced persister writes the slot), then leaves Log.
+  h.window.localStorage.setItem(KEY, JSON.stringify({ values: { issue: 'Note B — newer typing' }, at: Date.now() }));
+  h.$('#cn-active-form').remove();
+  h.run.flushFailure(new Error('Lock timeout'), 'submitCallNote');
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem(KEY)).values.issue, 'Note B — newer typing', 'note B survives');
+  const mc = h.$('#manual-copy-overlay');
+  assert.ok(mc && mc.classList.contains('open') && /Note A/.test(mc.querySelector('#manual-copy-val').value), 'note A is in front of the rep to copy');
+  assert.ok(c23Toasts_(h).some((t) => /newer draft was kept/.test(t)), 'and the toast says what happened');
+});
+
+test('CNUI-01: with nothing newer in the slot — or only the failed note itself — the failed note is still parked as the draft (unchanged)', () => {
+  let h = bootLog();
+  const KEY = h.read('CN_FORM_STICKY_LS_KEY');
+  h.setField('cn-fld-issue', 'Only note');
+  h.window.cnSubmitActiveForm_();
+  h.$('#cn-active-form').remove();
+  h.run.flushFailure(new Error('boom'), 'submitCallNote');
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem(KEY)).values.issue, 'Only note', 'parked as the draft');
+  assert.strictEqual(h.$('#manual-copy-overlay'), null, 'no modal on the ordinary path');
+
+  // Save & Compose keeps its own text in the form, so the slot holds the SAME note: still the draft path.
+  h = bootLog();
+  h.setField('cn-fld-issue', 'Compose note');
+  h.window.cnSubmitActiveForm_({ keepForm: true });
+  h.window.localStorage.setItem(KEY, JSON.stringify({ values: { issue: 'Compose note' }, at: Date.now() }));
+  h.$('#cn-active-form').remove();
+  h.run.flushFailure(new Error('boom'), 'submitCallNote');
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem(KEY)).values.issue, 'Compose note');
+  assert.strictEqual(h.$('#manual-copy-overlay'), null, 'its own text is not "newer work"');
+});

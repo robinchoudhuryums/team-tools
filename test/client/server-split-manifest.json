@@ -1725,6 +1725,20 @@
     "searchReference"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-01",
+   "why": "cycle 23 Batch 1: TC-01 export appends through appendRowsSafe_; ADM-05 data-table import grows the grid before clearing, refuses an over-long cell, and restores the previous table when its write fails (kbEnsureGrid_, KB_DATA_TABLE_MAX_CELL_CHARS)",
+   "added": [
+    "KB_DATA_TABLE_MAX_CELL_CHARS",
+    "kbEnsureGrid_"
+   ],
+   "removed": [],
+   "changed": [
+    "generateExportSheet_",
+    "kbImportDataTable"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2708,6 +2722,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "b180d3d2fba911f6"
+  },
+  "KB_DATA_TABLE_MAX_CELL_CHARS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3c8706bba49745b4"
   },
   "KB_DATA_TABLE_MAX_CHARS": {
    "file": "00_config.js",
@@ -5462,7 +5481,7 @@
   "generateExportSheet_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "f35027432e53d766"
+   "sha": "ba6ec536d9d9a14a"
   },
   "generateFormToken_": {
    "file": "61_forms.js",
@@ -6894,6 +6913,11 @@
    "kind": "function",
    "sha": "7f799dae8bd11769"
   },
+  "kbEnsureGrid_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "45e9c6d4a0a70303"
+  },
   "kbExpandGlossaryTokens_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -7002,7 +7026,7 @@
   "kbImportDataTable": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "1e3d5609a64eecdd"
+   "sha": "cf69456f17144747"
   },
   "kbImportManual": {
    "file": "70_kb.js",

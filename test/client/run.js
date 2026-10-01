@@ -30877,6 +30877,124 @@ test('M5b-E1: the export sends the glossary\'s abbreviations as synonyms, and th
   assert.deepStrictEqual(J2(s.kbManualBundle_({ format: 'ums-manual/1', articles: [], synonyms: [['A', 'b']] }).meta.synonyms), [['A', 'b']], 'the bundle carries them to the validator');
 });
 
+// ── Cycle 23 Batch 1 — a sheet is a FIXED grid (g145): the payroll export and the data-table import ──
+console.log('\nCycle 23 Batch 1 — the payroll export and the data-table import write past a fixed grid');
+test('TC-01 (cycle 23): the payroll export appends through appendRowsSafe_ — a 1,500-row period grows a fresh 1000-row sheet and lands at row 3 (driven + wiring)', () => {
+  const fn = stripJsComments_(extractRawFunction('Code.js', 'generateExportSheet_'));
+  assert.ok(!/getRange\(3,\s*1,\s*matched\.length/.test(fn), 'no fixed-grid block write of the punch rows');
+  const hdr = fn.indexOf('sh.getRange(1, 1, 2, 9).setValues(');
+  const app = fn.indexOf('appendRowsSafe_(sh, matched)');
+  assert.ok(hdr > 0 && app > hdr, 'the two header rows are written FIRST, so appendRowsSafe_\'s next free row is row 3');
+  const ctx = vm.createContext({ String, Array });
+  ['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_', 'appendRowsSafe_'].forEach((n) => vm.runInContext(extractRawFunction('10_core.js', n), ctx));
+  let maxRows = 1000, lastRow = 2;   // SpreadsheetApp.create(): 1000 rows; the export wrote 2 header rows
+  const writes = [];
+  const sh = { getLastRow: () => lastRow, getMaxRows: () => maxRows,
+    insertRowsAfter: (a, n) => { maxRows += n; },
+    getRange: (r, c, n, w) => {
+      if (r + n - 1 > maxRows) throw new Error('The coordinates of the range are outside the dimensions of the sheet.');
+      return { setValues: () => { writes.push([r, n, w]); lastRow += n; } };
+    } };
+  const rows = Array.from({ length: 1500 }, (_, i) => ['E-' + i, '2026-09-01', '08:00:00', 'IN', '', '', '', '', '']);
+  assert.strictEqual(ctx.appendRowsSafe_(sh, rows), 3, 'the punch rows start at row 3');
+  assert.deepStrictEqual(writes, [[3, 1500, 9]], 'ONE write of every row, nine columns');
+  assert.ok(maxRows >= 1502, 'the grid grew to hold them (it threw at row 1001 before)');
+});
+
+/** A fake KB tab with a FIXED grid, like Sheets: getRange past it throws, clear()
+ *  empties it, and `failWrites` makes the next N setValues calls throw. */
+function adm05Sheet_(rows, maxRows, maxCols) {
+  const sh = { data: rows.map((r) => r.slice()), maxRows, maxCols, failWrites: 0, cleared: 0, grownRows: 0, grownCols: 0,
+    getLastRow: () => sh.data.length,
+    getLastColumn: () => sh.data.reduce((w, r) => Math.max(w, r.length), 0),
+    getMaxRows: () => sh.maxRows, getMaxColumns: () => sh.maxCols,
+    insertRowsAfter: (a, n) => { sh.maxRows += n; sh.grownRows += n; },
+    insertColumnsAfter: (a, n) => { sh.maxCols += n; sh.grownCols += n; },
+    clear: () => { sh.data = []; sh.cleared++; },
+    setFrozenRows: () => {},
+    getRange: (r, c, n, w) => {
+      if (r + n - 1 > sh.maxRows || c + w - 1 > sh.maxCols) throw new Error('The coordinates of the range are outside the dimensions of the sheet.');
+      return {
+        setNumberFormat: () => {},
+        getDisplayValues: () => sh.data.slice(r - 1, r - 1 + n).map((x) => x.slice(c - 1, c - 1 + w).map(String)),
+        setValues: (v) => {
+          if (sh.failWrites > 0) { sh.failWrites--; throw new Error('Service Spreadsheets failed while accessing document'); }
+          v.forEach((row, i) => { sh.data[r - 1 + i] = row.slice(); });
+        },
+      };
+    } };
+  return sh;
+}
+function adm05Ctx_(sheet) {
+  const book = { audits: 0, inserted: 0 };
+  const ctx = vm.createContext({ String, Array, Object, Math, Number, JSON, console: { warn: () => {} },
+    KB_DATA_TABLE_MAX_ROWS: 5000, KB_DATA_TABLE_MAX_COLS: 60, KB_DATA_TABLE_MAX_CHARS: 6000000,
+    KB_DATA_TABLE_MAX_CELL_CHARS: m5bConst_('KB_DATA_TABLE_MAX_CELL_CHARS'),
+    KB_DATA_TABLES: { T: { tab: 'Tab', label: 'Insurance payor acceptance', minCols: 2 } },
+    LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
+    getEmployeeInfo_: () => ({ isAdmin: true, email: 'admin@x' }),
+    Utilities: { base64Decode: (s) => s, newBlob: (b) => ({ getDataAsString: () => b }) },
+    SpreadsheetApp: { flush: () => {} },
+    getKbSS_: () => ({ getSheetByName: () => sheet.exists === false ? null : sheet,
+      insertSheet: () => { book.inserted++; sheet.exists = true; return sheet; } }),
+    writeAuditLog_: () => { book.audits++; } });
+  ['sheetSafe_', 'sheetTextRows_', 'kbParseCsv_', 'kbDataTableSummary_', 'kbEnsureGrid_', 'kbImportDataTable']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  return { ctx, book };
+}
+test('ADM-05 (cycle 23): a data-table import larger than the tab\'s grid GROWS it before anything is cleared, and a write that fails puts the previous table back (driven)', () => {
+  const prev = [['Insurance', 'Accepted', 'Notes'], ['Aetna', 'Yes', ''], ['Cigna', 'No', 'PPO only']];
+  const csvOf = (n, w) => [Array.from({ length: w }, (_, j) => 'H' + j).join(',')]
+    .concat(Array.from({ length: n }, (_, i) => Array.from({ length: w }, (_, j) => 'r' + i + 'c' + j).join(','))).join('\n');
+
+  // 1,200 data rows × 30 columns into a 1000×26 tab — both limits allow it, the grid does not.
+  let sh = adm05Sheet_(prev, 1000, 26);
+  let s = adm05Ctx_(sh);
+  let res = JSON.parse(JSON.stringify(s.ctx.kbImportDataTable('T', csvOf(1200, 30), { dryRun: false })));
+  assert.strictEqual(res.imported, true, 'imported: ' + JSON.stringify(res.error));
+  assert.strictEqual(sh.data.length, 1201, 'every row landed (it threw after the clear before)');
+  assert.strictEqual(sh.data[1200][29], 'r1199c29', 'out to the last cell');
+  assert.ok(sh.grownRows >= 201 && sh.grownCols >= 4, 'the grid grew in both directions');
+  assert.strictEqual(s.book.audits, 1, 'and the import is audited');
+
+  // A write that fails AFTER the clear: the previous table is put back, verbatim.
+  sh = adm05Sheet_(prev, 1000, 26);
+  sh.failWrites = 1;
+  s = adm05Ctx_(sh);
+  res = s.ctx.kbImportDataTable('T', csvOf(5, 3), { dryRun: false });
+  assert.ok(/Import failed/.test(res.error) && /put back unchanged/.test(res.error), 'the failure says the table was restored: ' + res.error);
+  assert.deepStrictEqual(sh.data, prev, 'the readers see exactly what they saw before');
+  assert.strictEqual(s.book.audits, 0, 'no import row for an import that did not happen');
+
+  // Both writes fail: say so, and name the real recovery.
+  sh = adm05Sheet_(prev, 1000, 26);
+  sh.failWrites = 2;
+  res = adm05Ctx_(sh).ctx.kbImportDataTable('T', csvOf(5, 3), { dryRun: false });
+  assert.ok(/ALSO failed/.test(res.error) && /Version history/.test(res.error), 'an unrestorable failure names Version history: ' + res.error);
+
+  // A brand-new tab has nothing to restore — the message does not pretend it does.
+  sh = adm05Sheet_([], 1000, 26);
+  sh.exists = false; sh.failWrites = 1;
+  res = adm05Ctx_(sh).ctx.kbImportDataTable('T', csvOf(5, 3), { dryRun: false });
+  assert.ok(/Import failed/.test(res.error) && !/put back|Version history/.test(res.error), 'no restore claim for a first import: ' + res.error);
+
+  // An over-long cell is refused BEFORE the clear — in the preview AND the write.
+  const long = 'Insurance,Notes\nAetna,' + 'x'.repeat(m5bConst_('KB_DATA_TABLE_MAX_CELL_CHARS') + 1);
+  sh = adm05Sheet_(prev, 1000, 26);
+  s = adm05Ctx_(sh);
+  assert.ok(/at most \d+/.test(s.ctx.kbImportDataTable('T', long, {}).error), 'the dry run reports it');
+  assert.ok(/Row 2, column 2/.test(s.ctx.kbImportDataTable('T', long, { dryRun: false }).error), 'the write refuses it by cell');
+  assert.strictEqual(sh.cleared, 0, 'and never touched the live table');
+  assert.deepStrictEqual(sh.data, prev);
+});
+test('ADM-05 (cycle 23): kbImportDataTable grows the grid and captures the previous table BEFORE its clear() (wiring)', () => {
+  const f = stripJsComments_(extractRawFunction('Code.js', 'kbImportDataTable'));
+  const prevAt = f.indexOf('getDisplayValues()'), growAt = f.indexOf('kbEnsureGrid_(sh,'), clearAt = f.indexOf('sh.clear()');
+  assert.ok(prevAt > 0 && growAt > prevAt && clearAt > growAt, 'capture → grow → clear, in that order');
+  const cellAt = f.indexOf('KB_DATA_TABLE_MAX_CELL_CHARS'), dryAt = f.indexOf('if (dryRun)');
+  assert.ok(cellAt > 0 && cellAt < dryAt, 'the per-cell ceiling is checked before the dry-run return, so the preview reports it');
+});
+
 
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
