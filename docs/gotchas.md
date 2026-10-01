@@ -2009,6 +2009,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   and T5 DOM pins driving a denied `execCommand` and a rejected `writeText`,
   bite-checked eight ways.
 
+  **AMENDED (cycle 23 CNUI-07, 2026-10-01): the TOAST was a second claim.** The
+  helpers reported failure correctly after T5, but the save path still showed
+  "Saved · copied to clipboard" synchronously — before the copy had settled,
+  and beside the "nothing was copied" box when it failed. A message that says
+  the copy worked is part of the copy: the save path now passes its toast to
+  `copyWithFeedback_` as `ok`, and a `fail` toast ("Saved — but nothing was
+  copied to the clipboard") rides beside the manual-copy box, so the rep still
+  learns the note saved. Verify: the CNUI-07 DOM pin (a blocked clipboard never
+  shows "copied"; a working one does), bite-checked.
+
 <a id="g77-showtoast-msg-type-normalizes-the-variant-pass"></a>
 
 - **`showToast(msg, type)` normalizes the variant — pass either form.**
@@ -2216,6 +2226,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   (`cnVoiceStopAll_`, handlers detached BEFORE `abort()`), because a session
   captured the field's text when it started and wrote it back on its next
   result. Verify: the C4 and C11 DOM pins.
+
+  **AMENDED (cycle 23 CNUI-01, 2026-10-01): the slot holds ONE draft.** A save
+  that failed after the rep had left Log parked its snapshot in the draft slot
+  — over the NEXT note the rep had already started there — and the toast said
+  the failed note "was kept as a draft". `cnRevertPendingSubmit_` now asks
+  `cnStickyDraftHasOtherText_(snapshot)` first: live, DIFFERENT typing is kept,
+  and the note that did not save opens in the manual-copy box instead. A slot
+  holding nothing, or the failed note itself (Save & Compose keeps its text in
+  the form), takes the old park-as-draft path. Verify: the two CNUI-01 DOM pins,
+  bite-checked.
 
 <a id="g87-voice-dictation-routes-audio-outside-the-baa"></a>
 
@@ -2454,6 +2474,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   handles its own Escape (stopped at the panel, so it never closes a modal
   underneath), and the shell's focus trap and a dialog's Enter both exempt it.
   A future non-modal panel takes the same class rather than an overlay.
+
+  **AMENDED (cycle 23 SH-01, 2026-10-01): a REOPENED overlay goes on top.**
+  Every overlay shares one z-index, so DOM ORDER decides which paints above —
+  and the Escape handler and the focus trap both take the LAST open overlay as
+  the top. `ensureOverlay` appends a node only when it creates it, so a reused
+  node kept its old place: the hook-less "Copy it by hand" box (its close only
+  drops `open`) came back BENEATH any overlay created since, which on a second
+  clipboard failure during Save & Compose was the composer. Now a closed→open
+  transition of a direct child of `<body>` moves it to the end; an overlay
+  re-rendered while open is left where it is. Verify: the SH-01 DOM pin,
+  bite-checked.
 
 <a id="g101-public-form-endpoints-have-no-employee-auth"></a>
 
@@ -4293,6 +4324,22 @@ failed (…). This says nothing about …". Verify: the A5 pin, driven over
   every server function that writes at `getLastRow() + 1` calls
   `insertRowsAfter(` before its `setValues(`), the C1 pin's small-grid fake,
   and the C5 spare-row pin.
+
+  **AMENDED (cycle 23 TC-01 + ADM-05, 2026-10-01): a NEW or CLEARED sheet is
+  the same fixed grid.** `SpreadsheetApp.create()` returns a 1000-row sheet,
+  and the payroll export wrote its punch rows with
+  `getRange(3, 1, matched.length, 9)` — so a period past ~998 rows threw, the
+  automated run told the operator to "export manually", and the manual run
+  threw the same way. It now goes through `appendRowsSafe_`. The data-table
+  import was worse: it `clear()`ed the live lookup tab and THEN wrote a block
+  sized to the CSV (limits 5000×60 against a 1000×26 tab), so the throw left
+  InsurancePayors / OopPricing / LocationAcceptance EMPTY. It now refuses an
+  over-long cell before the dry-run return, grows rows AND columns
+  (`kbEnsureGrid_`) before the clear, and puts the previous table back if the
+  write still fails. The F4 derived net cannot see either — neither writes at
+  `getLastRow() + 1` — which is why both have their own drive. Verify: the
+  TC-01 drive + wiring and the ADM-05 drive (grow, restore, unrestorable,
+  first import, over-long cell) + wiring, bite-checked four ways.
 
 <a id="g146-a-failure-message-that-echoes-typed-input"></a>
 

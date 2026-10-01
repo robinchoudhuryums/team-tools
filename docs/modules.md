@@ -138,6 +138,12 @@ not restate it. Server endpoints live in the fourteen server files
      drift (T2), and the sheet doctor accepts a finished break plus one in
      progress as legal data (T6).
 
+     **Cycle 23 Batch 1 (2026-10-01):** the ADP export no longer fails on a
+     long period. Its new spreadsheet is a fixed 1000-row grid and the punch
+     rows were written as one block from row 3, so a range past ~998 rows threw
+     — the automated monthly run and its manual retry alike. The rows now go
+     through `appendRowsSafe_`, which grows the grid first (TC-01, g145).
+
 ## Call Notes
 
    - **Call Notes** — rolling-note panel for CSR call logging. Each
@@ -255,6 +261,15 @@ not restate it. Server endpoints live in the fourteen server files
      client sanitizes too, from the same case table); a plain-text pad from
      before converts on open. The composers share the same pointer drag helper
      and now stay fully on screen.
+
+     **Cycle 23 Batch 1 (2026-10-01) — the save path tells the truth about
+     the clipboard.** The save toast now waits for the auto-copy: "Saved ·
+     copied to clipboard" only when it worked, "Saved — but nothing was copied
+     to the clipboard" beside the **Copy it by hand** box when it did not
+     (CNUI-07). That box always opens on top, even when the email composer is
+     already up (SH-01, g100). And a save that fails after the rep has moved on
+     never overwrites the next note they started: the draft is kept, and the
+     note that did not save is shown to copy (CNUI-01, g86).
 
 <a id="metrics"></a>
      **Batch 6 (2026-09-18):** the Admin Overview KPI strip reports TEAM
@@ -799,7 +814,13 @@ not restate it. Server endpoints live in the fourteen server files
      first column that does not look like the searched one — facts, never a
      silent merge — and a well-formed file warns about nothing (INV-186).
      Sheets' own File → Version history is the undo, which the danger confirm
-     says out loud.
+     says out loud. **Cycle 23 (ADM-05):** the write no longer depends on
+     it. A cell longer than Sheets' 50,000-character ceiling is refused in the
+     preview and the write alike; the tab's grid is grown (rows and columns)
+     before anything is cleared; and a write that still fails puts the previous
+     table back and says so — Version history is named only when that restore
+     fails too. Before this, a file past the tab's 1000-row grid cleared the
+     live lookup table and then threw, leaving it empty.
 
 
      **Cycle 22 Batch 3 (2026-09-23):** the Ctrl/⌘+K drawer keeps what the rep

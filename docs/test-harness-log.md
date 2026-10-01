@@ -2286,3 +2286,28 @@ per-change detail. By delta:
 - Reading the drawer shot caught the chunk's **Open ¶** wrapping beside a long
   router heading; the button no longer shrinks.
 
+
+## Cycle 23 — Batch 1, the fixed grid and the clipboard (2026-10-01)
+
+- Node +3: TC-01 (the export's punch rows go through `appendRowsSafe_` after
+  the two header rows — DRIVEN on a 1000-row fake that throws past its edge,
+  plus wiring), and two ADM-05 pins (the data-table import DRIVEN against a
+  fixed-grid fake tab that can fail its writes: a 1,200×30 file into 1000×26,
+  a failed write restored verbatim, an unrestorable one naming Version
+  history, a first import claiming nothing, an over-long cell refused in the
+  preview and the write with the live tab untouched; plus capture → grow →
+  clear wiring). DOM +4: SH-01 (a reopened overlay is the last open one — and
+  an overlay re-rendered while open is not moved), CNUI-07 (a blocked clipboard
+  never toasts "copied", a working one does), and two CNUI-01 pins (newer
+  typing in the draft slot survives a failed save; an empty slot, or the failed
+  note itself, still parks it).
+- The F4 derived net could not have caught either grid defect: neither writes
+  at `getLastRow() + 1`. That is why both carry their own drive, not a widened
+  net — a scan for "every `getRange(r, c, n, …)` with a variable `n`" matches
+  hundreds of safe reads.
+- 8 bite-checks, all BITE (TC-01 revert; ADM-05 no-grow, no-restore, cell
+  check removed; SH-01 no-restack; CNUI-07 the synchronous toast restored;
+  CNUI-01 the overwrite restored, and the same-note case treated as newer).
+- `server-split-manifest.json` gained a revision for `kbEnsureGrid_` and
+  `KB_DATA_TABLE_MAX_CELL_CHARS` (F2c). The overlay scenarios were re-shot after
+  the `ensureOverlay` change: 0 missing, 0px overflow.

@@ -790,7 +790,8 @@ S18 | Call Notes — submit, auto-copy, rolling stack appends | Subsystem: Clien
     - Inspect clipboard, the rolling stack, and the rep's `Notes` tab
     - Press the copy button on the just-saved card and re-inspect clipboard
     - **(T5, 2026-09-21)** With the clipboard BLOCKED (deny the permission, or use a browser that refuses it inside the iframe), save a note → a **Copy it by hand** box opens with the note in it and says plainly that nothing was copied. It must NEVER complete the save silently, and never say "Copied": the clipboard is what the rep pastes into the CRM seconds later, so a silent failure puts the PREVIOUS patient's note in the record
-  Expected: A new card appears at the top of the rolling stack with animation; clipboard holds the serialized note matching `CONFIG.CALL_NOTES.AUTO_COPY_FORMAT`; the form cleared and re-focused on Callback; AuditLog has a `CallNoteCreate` row with `noteId=<uuid>`. Manual copy re-renders the same string.
+    - **(cycle 23 CNUI-07)** Watch the toast in both cases: with the clipboard working it reads "Saved · copied to clipboard"; with it blocked it reads "Saved — but nothing was copied to the clipboard" beside the Copy-it-by-hand box — never "copied"
+  Expected: A new card appears at the top of the rolling stack with animation; clipboard holds the serialized note matching `CONFIG.CALL_NOTES.AUTO_COPY_FORMAT`; the form cleared and re-focused on Callback; AuditLog has a `CallNoteCreate` row with `noteId=<uuid>`. Manual copy re-renders the same string. The "copied" toast appears only once the copy has actually worked.
 
 S19 | Call Notes — email composer with preview gate | Subsystem: Client (Call Notes), Server
   Steps:
@@ -2136,6 +2137,24 @@ S128 | Procedures manual — search: forms, glossary phrases, the call router, t
     - As a rep, search for a caller phrase whose router row also targets a draft section
     - Edit a hand-written article in the app and search for a word you added; then change a word directly in the KB tab and search for it straight away, and again after five minutes
   Expected: "delivered" finds delivery sections, "denied" finds Denials and appeals, with the stem marked; "ABN" finds 10.18 and never a section that only says "notice", and the phrase finds "ABN"; "PWC" finds power wheelchairs; a caller phrase puts "The caller said …" (phone mark) first and Open lands on the router's target, never on a draft for a rep. The app edit is found at once; the by-hand sheet edit within five minutes.
+
+S129 | ADP export of a long period — past the new sheet's 1000-row grid (cycle 23 TC-01) | Subsystem: Server
+  Steps:
+    - As a manager: Manage → Export → choose a range with more than 1,000 punch rows (several months, or the whole team over a long period) → run
+  Expected: The export opens with every row (row 3 onward, sorted), the AuditLog `AdpExport` row carries the full count, and no orphan half-built spreadsheet is left in Drive. Before cycle 23 this threw "outside the dimensions of the sheet" past ~998 rows, and the automated monthly run then failed its manual retry the same way.
+
+S130 | Data-table import past the tab's grid, and a failed write puts the table back (cycle 23 ADM-05) | Subsystem: Server, Client (Call Notes views)
+  Steps:
+    - On a DEV or copy KB store: Manage → Admin → Config → Reference data tables → import a CSV of more than 1,000 rows (or more than 26 columns) into one table → confirm
+    - Import a CSV with one cell longer than 50,000 characters
+  Expected: The large file imports in full and the lookup finds a row past 1,000. The over-long cell is refused in the PREVIEW, by row and column, and the live table is untouched. (A write that fails after the clear is driven by the Node pin; if one is ever seen live, the message says the previous table was put back — and names Version history only when the restore also failed.)
+
+S131 | Blocked clipboard, Save & Compose twice — the warning is on top (cycle 23 SH-01 + CNUI-07 + CNUI-01) | Subsystem: Client (Call Notes views), Client (shell)
+  Steps:
+    - Block the clipboard for the site; in Call Notes fill a note and press Save & Compose; close the Copy-it-by-hand box; cancel the composer
+    - Fill another note and press Save & Compose again
+    - Then: type a note, press Save & Copy, start typing the NEXT note, and switch tools before the save lands — on a save that fails (e.g. a revoked Sheet on a test rep), return to Log
+  Expected: The Copy-it-by-hand box is ON TOP of the composer the second time too, holds this note, and has focus; Escape closes the box first. The toast reads "Saved — but nothing was copied to the clipboard". On the failed save, the NEXT note's draft is still there on return, and the note that did not save was shown in the Copy-it-by-hand box.
 
 ### Frozen Subsystems
 - **DELETED in cycle 13 (batch 5) — all three frozen directories are gone from the working tree and live only in git history (last present at commit `9586b29`).** They were `call-notes/` + `call-notes-legacy/` (the superseded Workspace Add-on scaffold) and `incoming/form-generator/` (the pre-port bound Apps Script the Intake module was rewritten from) — ~3k lines across 29 files that every grep hit, every agent read, and every audit had to consciously skip, while contributing nothing: `clasp` only ever pushed `web-app/`, and no live code, test, or CI step referenced them. The Add-on path is abandoned for good (org admin policy blocks Marketplace install without ticket-driven allowlisting, the same constraint that blocks the external `?form` route); the form-generator port shipped and was settled. Provenance comments in `Code.js` / `script_intake.html` now point at git history instead of a path that no longer exists.
