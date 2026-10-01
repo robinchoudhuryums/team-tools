@@ -3,11 +3,11 @@
 ## Current
 Cycle: 23 — opened by the 2026-10-01 `/broad-scan` (0 Critical / 5 High; plan of 13 batches + 8 deferred, in chat). Cycle 22 and 22post are in `.cycle/HISTORY.md`.
 Phase: implement
-Scope: broad — Batches 1–4a done except TC-02; next Batch 4b
+Scope: broad — Batches 1–4b done except TC-02; next Batch 5
 Test Command: manual
-Estimates: Batch 1: M (~9 h) · Batch 2: M (~11 h) · Batch 3: M (~9.5 h) · Batch 4a: M (~10 h) · 4a follow-ons: S (~3 h) — each written before its first edit
+Estimates: Batch 1: M (~9 h) · Batch 2: M (~11 h) · Batch 3: M (~9.5 h) · Batch 4a: M (~10 h) · 4a follow-ons: S (~3 h) · Batch 4b: M (~11 h) — each written before its first edit
 Subsystem cycles since last Seams audit: 3 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25) and 22post's /reflect (2026-09-30). The cadence is every 4, so the next reflection reaches it.
-Updated: 2026-10-01 (cycle 23 Batch 4a follow-ons)
+Updated: 2026-10-01 (cycle 23 Batch 4b)
 
 ## In progress (facts to carry forward — NOT judgments)
 - Cycle 23 opened 2026-10-01 with a `/broad-scan` (0 Critical / 5 High / ~110 findings; the full report and 13-batch plan are in that session's chat — the batch→ID list is copied under Pending below).
@@ -15,9 +15,20 @@ Updated: 2026-10-01 (cycle 23 Batch 4a follow-ons)
 - Batch 2 implemented on the same branch (block: `.cycle/blocks/23-batch2-broad-implement.md`); NOT yet deployed. /sync-docs for Batch 2 done.
 - Batch 3 implemented on the same branch (block: `.cycle/blocks/23-batch3-broad-implement.md`); NOT yet deployed. /sync-docs for Batch 3 done.
 - Batch 4a and its follow-ons implemented on the same branch (blocks: `.cycle/blocks/23-batch4a-broad-implement.md`, `…-batch4a-followons-broad-implement.md`); NOT yet deployed. /sync-docs for both done.
+- Batch 4b implemented on the same branch (block: `.cycle/blocks/23-batch4b-broad-implement.md`); NOT yet deployed; /sync-docs for it not yet run.
 - Everything through 22post is merged (PRs #274–#282) and deployed (2026-09-30). The operator was finishing two 22post steps at close: the manual.json re-export + import, and the S124–S128 walks.
 
 ## Completed this cycle
+- ADM-04 | 10_core.js, test/visual/mock.js | Forms / Dept Requests on the ADP fallback read configured:false (still probed)
+- ADM-09 | 10_core.js, test/visual/mock.js | deploy readiness gains a `health` row from the one problem list the dot counts
+- ADM-07 | cn/script_callnotes.html, test/visual/mock.js | Reference-lookups diagnostics become storage-area findings (cnOopFindings_)
+- ADM-08 | 10_core.js, cn/script_callnotes.html | an unset HR/QA store is "not set up" in the formula scan, never "could not open"
+- MET-1 | 40_metrics.js | the range endpoint refuses a failed CDR read; a missing DQE tab names itself to the breakdown readers
+- MET-2/3/4 | 40_metrics.js | My Stats, the ambient badge and the Team Metrics range trend never cache a degraded round; ambient says `unavailable:'cdr'`
+- METUI-1 | metrics/script_metrics.html | the alert badge survives an unreadable or failed poll
+- TC2-2 | 20_timeclock.js, cn/script_callnotes.html | shift stats ship `cdrUnavailable`, render a notice, never cache the round
+- KBUI-1 | kb/script_kb.html | a failed Reference search (tab + drawer) is an error state, never "No matches"/the CTA; no query in it
+- ADM-11 | cn/script_callnotes.html | a truncated note history says so
 - /sync-docs (Batch 4a + follow-ons) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g142/g122/g145/g53 extended; INV-151 reworded, INV-161 amended; S9/S55/S99/S117 steps; the automation-health decision amended
 - 4a-FU1/FU2/FU3 | 00_config.js, 10_core.js, cn/script_callnotes.html | a stale heartbeat names its job's recent failure (not the trigger); every stamp ships a label from one map; the shared purge deletes contiguous runs (block: 23-batch4a-followons-broad-implement.md)
 - CORE-01 | 10_core.js | the brief heartbeats only after it delivers (a failed send lets the four digests resume); send failures + throws stamped; briefConfig names both causes
@@ -55,7 +66,7 @@ Updated: 2026-10-01 (cycle 23 Batch 4a follow-ons)
   - Batch 2 eligibility fail-open — DONE (KB2-1, KB-1, KB2-2, KB2-3, KB2-4, KB2-5, KB2-7, KB2-10)
   - Batch 3 disabled Drive — DONE (DRV-1, QA-1, DRV-2, DRV-4, DRV-5 + the drivedisabled scenarios)
   - Batch 4a automation honesty — DONE (CORE-01, HR-3, MAIL-4, CORE-02, TC-07, QA-3)
-  - Batch 4b failure-as-data reads: ADM-04 (+ the mock fixture + F-11 pin), ADM-09, ADM-07, ADM-08, MET-1, TC2-2, MET-2/3/4, KBUI-1, METUI-1, ADM-11
+  - Batch 4b failure-as-data reads — DONE (ADM-04, ADM-09, ADM-07, ADM-08, MET-1, TC2-2, MET-2/3/4, KBUI-1, METUI-1, ADM-11)
   - Batch 5 Spanish/DR: SP-1, DR-2, DR-1, RES-1, SP-3, SP-4, DR-3
   - Batch 6a PTO/punch: TC-03, TC-04, TC-05, TC-06, TC-08, CORE-07, VIS-1
   - Batch 6b schedules: TC2-1, TC2-6, TC2-3, TC2-4, TC2-7, TC2-8, COA-2, MET2-2
@@ -66,6 +77,7 @@ Updated: 2026-10-01 (cycle 23 Batch 4a follow-ons)
   - Batch 10 PHI/config: KBUI-2, KB-2, INT2-3, INT-1/INT2-1/INT2-2, INT-2/INT2-4, CN-3, ADM-12, ADM-13/CORE-04/05/06/03/TRN-2, MET-5/MET2-1
   - Deferred (decisions): DRV-3, SP-2, KB2-6, HR-2, TRN-1, CN-8, INT-3, TC2-9
 - **Batch 1 deploy + walks:** clasp push + New version; S8 with >1,000 rows; S18's blocked-clipboard step twice via Save & Compose; S1.
+- **Batch 4b deploy:** expect System + the Overview checklist to show "Forms (PHI) not set" / "Dept Requests (PHI-adjacent) not set" while those properties are unset (set both to the Intake spreadsheet), a readiness "Automation health" row, and Reference-lookups findings; walk S43/S44/S62/S64/S97/S112/S114/S117.
 - **Batch 4a deploy:** expect NEW stamped failures on Admin → System that were invisible before (each names its cause); if `managerDailyBrief` is ON, confirm the 8am brief still arrives (S55).
 - **Batch 3 deploy + walks:** after the push, Admin → System should lead with BLOCKING "Drive is disabled for this domain"; walk S104 and S90 (Sync + Play show the disabled message).
 - **Batch 2 deploy + operator check:** after the push read Admin → System → Reference lookups ("Cannot read", "Rows that could not be read in full") and fix the cells now named; walk S112's new eligibility cases and S65's save-while-uploading step.
@@ -78,6 +90,7 @@ Updated: 2026-10-01 (cycle 23 Batch 4a follow-ons)
 - **DEFERRED, still an operator decision:** F-09's holiday FALLBACK; what a LocationAcceptance city row's Accepts column decides.
 
 ## Open follow-on items
+- **Batch 4b follow-ons** (full text in its block): a fallback row repeats the ADP sheet's tz verdict; the readiness health row shows raw problem text; `getMyMetrics` does not flag a failed trend the way the range endpoint now does; no visual scenario for a failed search or shift stats with `cdrUnavailable`.
 - **Batch 4a follow-ons — DONE** (4a-FU1/FU2/FU3). Remaining from them: the archive movers may still delete per row under the lock; the mock's automation fixture shows no `failedAt` / `label` state.
 - **Batch 3 follow-ons:** the reader's kbdoc pending chip says "appears after Save" to reps; kbGetImageData's generic refusal gives no hint of a disabled Drive; the QA tab has no standing disabled-Drive banner (both responses now carry `driveDisabled`).
 - **Lead item for cycle 23 — the domain disables Apps Script's Drive (M4-FU3, confirmed 2026-09-29).** Every other Drive feature is plausibly broken: the converter's images, paste-a-screenshot, the KB Images folder + the article image fallback, the embed reachability check, QA recording sync/playback. Admin → System's Drive row reads the SCOPE and cannot see an admin-disabled service. Ask IT to allow Apps Script Drive, or rework each. The ~1.6 MB single-call manual upload is unverified in a real runtime (fallback: chunked).
@@ -94,4 +107,4 @@ Updated: 2026-10-01 (cycle 23 Batch 4a follow-ons)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 23 Batches 1–4a and the 4a follow-ons are committed and pushed on `claude/blissful-johnson-cottl5`, docs synced (Batch 1: 5 of 6, TC-02 awaits the operator's choice). Next: deploy and walk S8/S18/S112/S65/S104/S90/S55/S117; then `/broad-implement Batch 4b`. The next /reflect reaches the Seams-audit cadence.
+Cycle 23 Batches 1–4b and the 4a follow-ons are committed and pushed on `claude/blissful-johnson-cottl5` (Batch 1: 5 of 6, TC-02 awaits the operator's choice). Next: `/sync-docs` for Batch 4b (its DOCUMENTATION UPDATES list), then deploy and walk the Batch 1–4b scenarios; then `/broad-implement Batch 5`. The next /reflect reaches the Seams-audit cadence.
