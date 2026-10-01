@@ -1839,6 +1839,25 @@
     "purgeSheetRowsOlderThan_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-01",
+   "why": "cycle 23 Batch 4b",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "adminScanStoredFormulas",
+    "deployReadinessItems_",
+    "getCdrDailyBreakdown_",
+    "getMetricsAmbient",
+    "getMyMetrics",
+    "getMyMetricsRange",
+    "getStorageHealth",
+    "getTeamMetrics",
+    "managerGetShiftStats",
+    "scanStoredFormulas_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4201,7 +4220,7 @@
   "adminScanStoredFormulas": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "9fa7a2957a0e1c73"
+   "sha": "10e3edb71794234e"
   },
   "adminSheetViewBuild_": {
    "file": "10_core.js",
@@ -5096,7 +5115,7 @@
   "deployReadinessItems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "28c90621c1bd6221"
+   "sha": "cd72584b7ab47937"
   },
   "deptRequestsOverdueOpen_": {
    "file": "50_deptrequests.js",
@@ -5756,7 +5775,7 @@
   "getCdrDailyBreakdown_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "7517a82b706d7469"
+   "sha": "96cc380dd76e688f"
   },
   "getCdrDashboardStandard_": {
    "file": "40_metrics.js",
@@ -6081,7 +6100,7 @@
   "getMetricsAmbient": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "f8a4cb935aef6ea9"
+   "sha": "3921c81c4339c387"
   },
   "getMonthRange_": {
    "file": "20_timeclock.js",
@@ -6116,12 +6135,12 @@
   "getMyMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "afaee1183eed2cf4"
+   "sha": "4774641666de5c4b"
   },
   "getMyMetricsRange": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "01ea4f1437b6ad26"
+   "sha": "b495b94c1cf01bad"
   },
   "getMyNoteHourBuckets": {
    "file": "30_callnotes.js",
@@ -6496,7 +6515,7 @@
   "getStorageHealth": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "bd503593b5892a4d"
+   "sha": "a98f6926cd7d30ac"
   },
   "getTeamCalendar": {
    "file": "20_timeclock.js",
@@ -6506,7 +6525,7 @@
   "getTeamMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "ab757aa073b6af20"
+   "sha": "3495eb859042681f"
   },
   "getTeammateStatus": {
    "file": "20_timeclock.js",
@@ -7596,7 +7615,7 @@
   "managerGetShiftStats": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "a684900aba9fe8cd"
+   "sha": "16cf5302bbba3e66"
   },
   "managerGetTrainingQueue": {
    "file": "80_training.js",
@@ -8756,7 +8775,7 @@
   "scanStoredFormulas_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "370684c90f2a67a8"
+   "sha": "b424779f640ee367"
   },
   "schedReadMine_": {
    "file": "30_callnotes.js",

@@ -1874,8 +1874,12 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         { key: 'FORMS_SS_ID', label: 'Forms (PHI)', status: 'warn', detail: 'Optional — unset (falls back to the ADP sheet)' },
         { key: 'DEPT_REQUESTS_SS_ID', label: 'Dept Requests (PHI-adjacent)', status: 'warn', detail: 'Optional — unset (falls back to the ADP sheet)' },
         { key: 'QA_SS_ID', label: 'QA (recordings)', status: 'warn', detail: 'Optional — unset (no fallback store, by design — INV-196)' },
-        { key: 'digests', label: 'Digest heartbeats', status: 'warn', detail: 'No heartbeat recorded yet (fresh deploy)' }],
-      summary: { ok: 4, warn: 3, fail: 0 },
+        { key: 'digests', label: 'Digest heartbeats', status: 'warn', detail: 'No heartbeat recorded yet (fresh deploy)' },
+        // ADM-09 (cycle 23): the row built from the health dot's own problem list.
+        // ADM-09: the SAME problem list getAutomationHealth's fixture carries (one open-punch line), so the
+        // Overview and the System tab cannot disagree in the shots.
+        { key: 'health', label: 'Automation health (what the health dot counts)', status: 'warn', detail: '1 issue(s): Open punches: 2 day(s) across 1 rep(s) have no usable clock-in/clock-out pair — Jordan Reyes (2). Those days earn no hours and no PTO until they are fixed (checked 2026-08-16…2026-09-13).' }],
+      summary: { ok: 4, warn: 4, fail: 0 },
       configTimezone: 'Asia/Kolkata',
     },
     // X1 (cycle 22): the Reference-lookups diagnostics (T8). It had NO fixture,
@@ -2001,11 +2005,13 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
               holidays: { source: 'sheet', ranges: 9, thisYear: 9, year: '2026', error: '' } }),
           store('Intake (PHI)', 'Offerings + PPD/PMD/PAP submissions', 'PHI', 'Optional purge', 'INTAKE_SS_ID'),
           store('Forms (PHI)', 'FormTokens + FormSubmissions', 'PHI', '90-day purge (if enabled)', 'FORMS_SS_ID',
-            { configured: false, reachable: false, name: '', tz: '', tzMatch: null, url: '', source: 'unset',
-              note: 'Falls back to the ADP sheet — set FORMS_SS_ID to segregate form PHI.' }),
+            // ADM-04 (cycle 23): the shape the server now ships for an unset
+            // fallback store — NOT configured, but the fallback opened.
+            { configured: false, reachable: true, source: 'ADP fallback', name: 'Time Clock / ADP (live)',
+              note: 'Unset → form PHI is co-located with the ADP/payroll sheet. Recommend setting FORMS_SS_ID to the Intake spreadsheet.' }),
           // F-11 — the Dept Requests row, in the SAME unset-fallback state as Forms.
           store('Dept Requests (PHI-adjacent)', 'DeptRequests (inter-department request tracker; PatientTrx names a patient)', 'PHI-adjacent', 'Kept', 'DEPT_REQUESTS_SS_ID',
-            { configured: true, reachable: true, source: 'ADP fallback', name: 'Time Clock / ADP (live)',
+            { configured: false, reachable: true, source: 'ADP fallback', name: 'Time Clock / ADP (live)',
               note: 'Unset → DeptRequests rows (each names a patient + TRX) are co-located with the ADP/payroll sheet. Recommend setting DEPT_REQUESTS_SS_ID to the Intake spreadsheet.' }),
           store('Knowledge Base + Training', 'KB, KbViews, Training/Quiz tabs', 'PHI-free', 'Kept', 'KB_SS_ID'),
           store('Employee Docs (HR)', 'EmpDocs + DocSignatures', 'HR — keep-forever', 'Never purged', 'HR_DOCS_SS_ID'),
@@ -2227,6 +2233,20 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       intakeCatalog: { ok: true, totalRows: 22, errors: [], warnings: [] },
       auditScanComplete: true, auditWindow: { complete: true, startMgr: '', startMs: null, rows: 4000 }, problems: [],
       managerTzAbbr: 'CST', auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',
+    },
+    // ADM-07 (cycle 23): the Reference-lookups diagnostics now reach "Needs
+    // attention", so the all-clear shot needs their CLEAN shape too — every
+    // column found, a registry, no unreadable row or value.
+    getOopPricingDiagnostics: {
+      tab: 'OopPricing', rows: 42, nameCol: 'Item', nameByHeader: true, truncated: false, missing: [],
+      cols: [{ header: 'HCPCS', role: 'code' }, { header: 'Item', role: 'name (the searched column)' }, { header: 'Pick-Up Price', role: 'price' },
+        { header: 'Area Eligibility', role: 'eligibility' }],
+      warehouses: [{ name: 'Dallas', address: '2150 Irving Blvd, Dallas, TX 75207' }],
+      locationTab: 'LocationAcceptance', locationError: '',
+      locCols: [{ header: 'Type', role: 'type' }, { header: 'Name', role: 'name' }, { header: 'Address', role: 'address' }, { header: 'State', role: 'state' }],
+      cities: 6, locNoAddress: [], locUnreadable: [],
+      eligibility: { open: 18, states: 9, radius: 11, cities: 1, any: 2, unknownCount: 0, unknown: [] },
+      sample: [],
     },
     getStorageHealth: {
       configTimezone: 'Asia/Kolkata', adpLocale: 'en_US',

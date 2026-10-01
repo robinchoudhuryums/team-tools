@@ -2114,7 +2114,13 @@ function getStorageHealth(opts) {
       const out = {
         label: spec.label, role: spec.role, cls: spec.cls, retention: spec.retention,
         prop: spec.prop, source: spec.source, note: spec.note || '',
-        configured: !!spec.id, reachable: false, name: '', tz: '', tzMatch: null, url: '',
+        // ADM-04 (cycle 23): a store that FALLS BACK onto another one is NOT
+        // configured — `!!spec.id` was always true for Forms and Dept Requests
+        // (the fallback id is the ADP sheet's), so "PHI on the payroll sheet"
+        // read as OK on every surface. The fallback is still opened below, so
+        // reachability and tz stay visible.
+        configured: (spec.configured !== undefined) ? !!spec.configured : !!spec.id,
+        reachable: false, name: '', tz: '', tzMatch: null, url: '',
       };
       if (!spec.id) return out;
       try {
@@ -2170,7 +2176,7 @@ function getStorageHealth(opts) {
     const formsProp = props.getProperty('FORMS_SS_ID');
     const formsId = formsProp || adpId;
     stores.push(probe({ label: 'Forms (PHI)', role: 'FormTokens + FormSubmissions',
-      cls: 'PHI', retention: '90-day purge (if enabled)', prop: 'FORMS_SS_ID', id: formsId,
+      cls: 'PHI', retention: '90-day purge (if enabled)', prop: 'FORMS_SS_ID', id: formsId, configured: !!formsProp,
       source: formsProp ? 'Script Property' : (formsId ? 'ADP fallback' : 'unset'),
       note: formsProp ? '' : 'Unset → form PHI is co-located with the ADP/payroll sheet. Recommend setting FORMS_SS_ID to the Intake spreadsheet.' }));
 
@@ -2181,7 +2187,7 @@ function getStorageHealth(opts) {
     const drProp = props.getProperty('DEPT_REQUESTS_SS_ID');
     const drId = drProp || adpId;
     stores.push(probe({ label: 'Dept Requests (PHI-adjacent)', role: 'DeptRequests (inter-department request tracker; PatientTrx names a patient)',
-      cls: 'PHI-adjacent', retention: 'Kept', prop: 'DEPT_REQUESTS_SS_ID', id: drId,
+      cls: 'PHI-adjacent', retention: 'Kept', prop: 'DEPT_REQUESTS_SS_ID', id: drId, configured: !!drProp,
       source: drProp ? 'Script Property' : (drId ? 'ADP fallback' : 'unset'),
       note: drProp ? '' : 'Unset → DeptRequests rows (each names a patient + TRX) are co-located with the ADP/payroll sheet. Recommend setting DEPT_REQUESTS_SS_ID to the Intake spreadsheet.' }));
 
@@ -2357,6 +2363,12 @@ function scanStoredFormulas_(targets, deadline, now) {
   for (let t = 0; t < targets.length; t++) {
     const tg = targets[t];
     if (clock() > deadline) { out.unscanned.push(tg.label); continue; }
+    // ADM-08 (cycle 23): a NO-FALLBACK store that is simply unset (HR, QA) is
+    // a deployment without that feature, not a store that could not be opened
+    // — reported as an error, it kept the scan from ever reading clean (g02).
+    let isSet = true;
+    try { isSet = !tg.configured || !!tg.configured(); } catch (e) { isSet = true; }
+    if (!isSet) { out.stores.push({ label: tg.label, notConfigured: true }); continue; }
     let ss;
     try { ss = tg.open(); } catch (e) { out.stores.push({ label: tg.label, error: e.message }); continue; }
     if (!ss) { out.stores.push({ label: tg.label, error: 'not configured' }); continue; }
@@ -2400,8 +2412,8 @@ function adminScanStoredFormulas() {
       { label: 'Dept Requests', open: getDeptRequestsSS_ },
       { label: 'Intake (PHI)', open: getIntakeSS_ },
       { label: 'Knowledge Base + Training', open: getKbSS_ },
-      { label: 'Employee Docs (HR)', open: getHrDocsSS_ },
-      { label: 'QA (recordings)', open: getQaSS_ },
+      { label: 'Employee Docs (HR)', open: getHrDocsSS_, configured: hrDocsConfigured_ },
+      { label: 'QA (recordings)', open: getQaSS_, configured: qaStoreConfigured_ },
     ];
     const roster = getEmployeeRosterRows_();
     for (let i = 1; i < roster.length; i++) {
@@ -2727,6 +2739,25 @@ function deployReadinessItems_(storage, automation, managerCount) {
     !anyHeartbeat ? 'warn' : (anyStale ? 'warn' : 'ok'),
     !anyHeartbeat ? 'No digest has run yet — run installAutomationTriggers() (expected on a fresh deploy).'
       : (anyStale ? 'A digest looks stale — check the cross-account trigger-ownership trap.' : 'Heartbeats fresh.'));
+
+  // ADM-09 (cycle 23): the readiness headline read "All clear" under a red
+  // health dot — it checked stores, heartbeats and CDR, never the problem list
+  // the dot counts (job failures, dead detectors, a failing self-test, open
+  // punches, accrual shortfalls). It reads that ONE list now (g151), as items
+  // so a count and the first few lines ride the row.
+  if (!autoErr) {
+    var probs = Array.isArray(automation && automation.problems) ? automation.problems : null;
+    if (!probs) {
+      push('health', 'Automation health (what the health dot counts)', 'warn',
+        'Could not check — the report carried no problem list. Reload to retry.');
+    } else {
+      var texts = probs.map(function (p) { return (p && p.text) || String(p); });
+      push('health', 'Automation health (what the health dot counts)', probs.length ? 'warn' : 'ok',
+        probs.length ? (probs.length + ' issue(s): ' + texts.slice(0, 3).join(' · ') +
+          (texts.length > 3 ? ' (+' + (texts.length - 3) + ' more — see Manage → Admin → System)' : ''))
+          : 'Nothing the health dot counts is failing.');
+    }
+  }
 
   var cdrOk = !!(automation && automation.cdr && automation.cdr.ok);
   if (!autoErr) push('cdr', 'CDR reachability (Metrics)',

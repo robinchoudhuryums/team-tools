@@ -4526,12 +4526,18 @@ function managerGetShiftStats(date) {
 
     // ── CDR enrichment (best-effort) ──────────────────────────────────
     // Overlay call-volume metrics from DQE Historical Data onto each rep.
-    // Failure here must not break the core shift-stats response.
+    // Failure here must not break the core shift-stats response — but it must
+    // SAY so. TC2-2 (cycle 23): a CDR read that failed beside an empty agents
+    // map (meta.error, the M7 class) rendered every call column as "—", the
+    // same as a rep with no calls, and the client cached that round for the
+    // session. `cdrAgentsOrThrow_` refuses it; the response carries
+    // `cdrUnavailable` and the client neither caches nor reads it as "no calls".
+    let cdrUnavailable = '';
     try {
       const repNames = reps.map(function (r) { return r.repName; });
-      const cdrResult = getCdrAgentMetrics_(date, date, repNames);
+      const cdrAgents = cdrAgentsOrThrow_(getCdrAgentMetrics_(date, date, repNames));
       for (let ri = 0; ri < reps.length; ri++) {
-        const cdr = cdrResult.agents[reps[ri].repName] || null;
+        const cdr = cdrAgents[reps[ri].repName] || null;
         reps[ri].cdr = cdr ? {
           totalRung:     cdr.totalRung,
           totalAnswered: cdr.totalAnswered,
@@ -4548,10 +4554,14 @@ function managerGetShiftStats(date) {
       }
     } catch (cdrErr) {
       console.warn('managerGetShiftStats CDR enrichment failed: ' + cdrErr.message);
+      cdrUnavailable = String(cdrErr.message || cdrErr);
+      for (let rj = 0; rj < reps.length; rj++) { reps[rj].cdr = null; reps[rj].noteCoverage = null; }
     }
 
     reps.sort(function (a, b) { return a.repName.localeCompare(b.repName); });
-    return { date: date, reps: reps };
+    const out = { date: date, reps: reps };
+    if (cdrUnavailable) out.cdrUnavailable = cdrUnavailable;
+    return out;
   } catch (err) { return { error: err.message }; }
 }
 /** Is any roster row carrying a column-Q accrual rate? Decides whether the

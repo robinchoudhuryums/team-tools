@@ -5674,3 +5674,78 @@ test('CNUI-01: with nothing newer in the slot — or only the failed note itself
   assert.strictEqual(JSON.parse(h.window.localStorage.getItem(KEY)).values.issue, 'Compose note');
   assert.strictEqual(h.$('#manual-copy-overlay'), null, 'its own text is not "newer work"');
 });
+
+// ── Cycle 23 Batch 4b — a failed read never renders as data ──
+section('Cycle 23 Batch 4b — a failed search is not "no matches" (KBUI-1), a failed poll keeps the badge (METUI-1), a partial history says so (ADM-11)');
+
+test('KBUI-1: a search the SERVER failed renders as a failure in the tab and in the drawer — never "No matches", never the request-an-article CTA, and never the query in the error state', async () => {
+  const h = m5aBoot_();
+  const beacons = [];
+  h.window.errBeaconSend_ = (m) => { beacons.push(String(m)); };
+  h.read('kbDoSearch_')('Jane Doe oxygen');
+  h.run.flushSuccess({ error: 'Lock timeout' }, 'searchReference');
+  const tab = h.$('#kb-tree').textContent + ' ' + h.$('#kb-main').textContent;
+  assert.ok(/Reference search failed: Lock timeout/.test(tab) && /this is not "no matches"/.test(tab), 'THE REGRESSION: the tab read "No matches" for a failed search');
+  assert.ok(!/No matches/.test(tab) && !/Request an article/i.test(tab), 'no empty-state, no CTA');
+  assert.ok(h.$('#kb-tree .error-state') && h.$('#kb-main .error-state'), 'the designed error state in both panes');
+  [...h.window.document.querySelectorAll('.error-state')].forEach((e) => assert.ok(!/Jane Doe/.test(e.textContent), 'the query never rides the error state (g146)'));
+  // A clean search afterwards clears it.
+  h.read('kbDoSearch_')('oxygen');
+  h.run.flushSuccess({ results: [] }, 'searchReference');
+  assert.ok(/No matches/.test(h.$('#kb-tree').textContent) && !h.$('#kb-tree .error-state'), 'a real empty result is still "No matches"');
+  // The drawer.
+  h.read('kbDrawerOpen_')();
+  h.read('kbDrawerSearch_')('Jane Doe oxygen');
+  h.run.flushSuccess({ error: 'Lock timeout' }, 'searchReference');
+  const body = h.$('#kbd-body');
+  assert.ok(/Reference search failed: Lock timeout/.test(body.textContent) && body.querySelector('.error-state'), 'THE REGRESSION: the drawer offered "Request an article on this"');
+  assert.ok(!/Request an article/i.test(body.textContent) && !/Results \(0\)/.test(body.textContent));
+  assert.ok(!/Jane Doe/.test(body.querySelector('.error-state').textContent), 'the query never rides the drawer error state either');
+  assert.ok(beacons.length >= 2 && beacons.every((b) => !/Jane Doe/.test(b)), 'the beacon fired (non-vacuous) and never carried the query');
+  h.read('kbDrawerSearch_')('oxygen');
+  h.run.flushSuccess({ results: [] }, 'searchReference');
+  assert.ok(!body.querySelector('.error-state') && /Request an article/i.test(body.textContent), 'a real empty result keeps its CTA');
+});
+
+test('METUI-1: the Metrics alert badge survives a poll that could not read the call data and a poll that failed outright — only a clean "no badge" clears it', () => {
+  const h = boot();
+  h.bootShell({ isManager: true });
+  h.run.drain();
+  const badge = () => h.$('[data-tool="metrics"] .m-alert-badge');
+  const poll = () => h.read('mPollAmbient_')();
+  poll(); h.run.flushSuccess({ badge: { label: '80%', date: '2026-09-30' }, threshold: 92 }, 'getMetricsAmbient');
+  assert.ok(badge() && badge().textContent === '80%', 'sanity: a below-target day badges');
+  poll(); h.run.flushSuccess({ badge: null, unavailable: 'cdr' }, 'getMetricsAmbient');
+  assert.ok(badge() && badge().textContent === '80%', 'THE REGRESSION: an unreadable CDR read as "the team is fine" and removed the alert');
+  poll(); h.run.flushFailure(new Error('network'), 'getMetricsAmbient');
+  assert.ok(badge(), 'THE REGRESSION: one transport failure removed a real alert for five minutes');
+  poll(); h.run.flushSuccess({ badge: null }, 'getMetricsAmbient');
+  assert.ok(!badge(), 'a clean read with no badge clears it');
+});
+
+test('ADM-11: a lifecycle history the server TRUNCATED says so — above the rows, and in place of "No history found" when the window held none', () => {
+  const h = boot();
+  h.bootShell({ isManager: true });
+  h.run.drain();
+  const host = h.$('#view-area');
+  const mk = () => {
+    host.innerHTML = '<div class="cn-audit-row"><button id="adm11-btn">History</button><div class="cn-audit-history" style="display:none"></div></div>';
+    return h.$('#adm11-btn');
+  };
+  const cv = h.read('currentView');
+  let btn = mk();
+  h.read('cnToggleAuditHistory_')(btn, 'n1');
+  h.run.flushSuccess({ rows: [{ timestamp: '2026-09-30 10:00:00', action: 'CallNoteFlag', actor: 'a@x', notes: '' }], truncated: true }, 'getCallNoteAuditHistory');
+  let hist = h.$('.cn-audit-history');
+  assert.ok(/Older history was not scanned/.test(hist.textContent) && /CallNoteFlag/.test(hist.textContent), 'THE REGRESSION: a partial history read as the whole lifecycle');
+  btn = mk();
+  h.read('cnToggleAuditHistory_')(btn, 'n1');
+  h.run.flushSuccess({ rows: [], truncated: true }, 'getCallNoteAuditHistory');
+  hist = h.$('.cn-audit-history');
+  assert.ok(/Older history was not scanned/.test(hist.textContent) && !/No history found/.test(hist.textContent), 'an empty window that was cut short is not "no history"');
+  btn = mk();
+  h.read('cnToggleAuditHistory_')(btn, 'n1');
+  h.run.flushSuccess({ rows: [], truncated: false }, 'getCallNoteAuditHistory');
+  assert.ok(/No history found in the scan window/.test(h.$('.cn-audit-history').textContent), 'an untruncated empty window keeps its empty state');
+  assert.strictEqual(h.read('currentView'), cv);
+});

@@ -8309,7 +8309,7 @@ test('#8: multi-day team trend is span-capped + best-effort; the delta names its
   // throw degrades to no sparkline, never a failed team table.
   const elseIdx = teamFn.indexOf('rangeSpan');
   assert.ok(teamFn.slice(elseIdx - 400, elseIdx + 900).indexOf('try {') >= 0 &&
-            /catch \(eRt\) \{ trendData = null; \}/.test(teamFn),
+            /catch \(eRt\) \{ trendData = null; trendFailed = true; \}/.test(teamFn),   // MET-4 (cycle 23): and the round is flagged so it is not cached
     'a failed range-trend read leaves trend null (pre-#8 shape)');
   assert.ok(/period daily average/.test(mopPartial) && /30-day team average/.test(mopPartial),
     'the client delta names which average a multi-day vs single-day trend compares against');
@@ -10629,7 +10629,7 @@ test('getTeamMetrics endpoint cache: org-wide key, degraded rounds never cached'
     'BOTH return paths (cache hit + fresh compute) strip for a non-manager');
   // INV-129: cache only a fully-successful round — a per-rep-Sheet failure or
   // a transfer-read error must not pin a degraded aggregate for the TTL.
-  assert.ok(/if \(useTeamCache && !teamTotals\.noteCountPartial && !transferMeta\.error\) \{/.test(f),
+  assert.ok(/if \(useTeamCache && !teamTotals\.noteCountPartial && !transferMeta\.error && !trendFailed\) \{/.test(f),   // MET-4: a failed trend read is degraded too
     'the put is gated on the round being clean');
   assert.ok(/_TEST_OVERRIDE_CDR_SS_ID/.test(f), 'bypassed under the CDR test override (the getMyMetrics pattern)');
   assert.ok(/team_metrics_v3:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate (v3: H2 rate formula + published standard, INV-85)');
@@ -19975,7 +19975,7 @@ test('PR2-2: the Overview cards, the System badge and the findings list all deri
   const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
   const code = stripJsComments_(cn);
   const render = extractFnFrom(code, 'cnRenderSystemFindings_');
-  assert.ok(/cnHealthFindings_\(health, storage\)/.test(render), 'the renderer calls the derivation once');
+  assert.ok(/cnHealthFindings_\(health, storage, CN_STATE\.adminOop\)/.test(render), 'the renderer calls the derivation once (ADM-07: with the Reference-lookups payload too)');
   assert.ok((render.match(/cnSetSysCard_\(/g) || []).length >= 2, 'the cards are set FROM the list');
   assert.ok(/cnSetSysBadge_\(needs\.length, worst\)/.test(render), 'the badge is the non-ok count');
   // No other site may compute a card tone from the payload — the retired
@@ -22195,7 +22195,7 @@ test('F-35: the ambient badge judges the PREVIOUS WORKDAY — Monday reads Frida
       getCdrAgentMetrics_: (from, to) => { asked.push(from + '|' + to); return { agents: { 'Avery Blake': { totalAnswered: 8, totalMissed: 2, totalRung: 10 } } }; },
     };
     vm.createContext(ctx);
-    ['cdrAnswerPct_', 'prevWorkdayIso_', 'getMetricsAmbient'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+    ['cdrAnswerPct_', 'prevWorkdayIso_', 'cdrAgentsOrThrow_', 'getMetricsAmbient'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));   // MET-3: the M7 refusal
     return ctx.getMetricsAmbient();
   };
   const mon = mk('2026-09-14');   // a Monday
@@ -31711,6 +31711,185 @@ test('4a-FU2 (cycle 23): the shared purge deletes each CONTIGUOUS run in ONE cal
   assert.strictEqual(ctx.purgeSheetRowsOlderThan_(sh, 0, 5, (v) => Number(v)), 5);
   assert.deepStrictEqual(calls, [[6, 2], [2, 3]], 'two calls for two runs, the later run first so the earlier one does not shift');
   assert.deepStrictEqual(rows.map((r) => r[0]), ['h', 9, 9], 'exactly the expired rows went');
+});
+
+
+// ── cycle 23 — Batch 4b: a failed read never renders as data ──
+test('ADM-04 (cycle 23): a store that FALLS BACK onto the ADP sheet is NOT configured — Forms and Dept Requests read configured:false while still probed (reachable, tz), and configured:true once their property is set (driven)', () => {
+  const run = (props) => {
+    const opened = [];
+    const ctx = { String, Object, Date, Array, JSON, console: { warn() {} },
+      getEmployeeInfo_: () => ({ isAdmin: true }),
+      PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (props[k] || null) }) },
+      CONFIG: { TIMEZONE: 'Asia/Kolkata', ADP_SS_ID: 'YOUR_ADP', CDR_SS_ID: 'YOUR_CDR', INTAKE: { SS_ID: 'YOUR_I' }, KB: { SS_ID: 'YOUR_KB' } },
+      SpreadsheetApp: { openById: (id) => { opened.push(id); return { getName: () => 'n-' + id, getSpreadsheetTimeZone: () => 'Asia/Kolkata', getSpreadsheetLocale: () => 'en_US', getUrl: () => 'u' }; } },
+      tzEquivalent_: (a, b) => a === b, diagRetentionText_: () => 'x', cdrStandardProbe_: () => ({}), cdrHolidayProbe_: () => ({}),
+      qaReviewRetentionDays_: () => 0, getEmployeeRosterRows_: () => [['h']], cnEnrolledSheetId_: () => '', EMP: { NAME: 0 },
+      kbScanBrokenEmbeds_: () => null, driveAccessStatus_: () => null, mailBccStatus_: () => null, scriptPropertiesStatus_: () => null,
+      KB_EMBED_SCAN_CAP: 1, DRIVE_WRITE_SCOPE: 's', DRIVE_REAUTH_HINT: 'h', KB_IMAGES_FOLDER_PROP: 'p' };
+    vm.createContext(ctx);
+    ['storePlaceholder_', 'getStorageHealth'].forEach((n) => vm.runInContext(extractRawFunction('10_core.js', n), ctx));
+    const out = ctx.getStorageHealth({ scanEmbeds: false, checkDrive: false });
+    assert.ok(!out.error, out.error);
+    const by = {}; out.stores.forEach((x) => { by[x.prop] = x; });
+    return { by, opened };
+  };
+  let r = run({ ADP_SS_ID: 'adp' });
+  ['FORMS_SS_ID', 'DEPT_REQUESTS_SS_ID'].forEach((k) => {
+    assert.strictEqual(r.by[k].configured, false, 'THE REGRESSION: ' + k + ' read configured:true because the fallback id is the ADP sheet\'s');
+    assert.strictEqual(r.by[k].reachable, true, k + ': the fallback is still probed, so reachability stays visible');
+    assert.strictEqual(r.by[k].source, 'ADP fallback');
+  });
+  assert.strictEqual(r.opened.filter((id) => id === 'adp').length, 3, 'ADP itself + both fallbacks were opened');
+  assert.strictEqual(r.by.ADP_SS_ID.configured, true, 'a store with its own id is still configured by id');
+  r = run({ ADP_SS_ID: 'adp', FORMS_SS_ID: 'intake', DEPT_REQUESTS_SS_ID: 'intake' });
+  ['FORMS_SS_ID', 'DEPT_REQUESTS_SS_ID'].forEach((k) => assert.strictEqual(r.by[k].configured, true, k + ' set → configured'));
+  // Every consumer now sees the fallback: the readiness checklist and the System findings warn on it.
+  const unset = run({ ADP_SS_ID: 'adp' }).by;
+  const items = deployReadinessItems_({ configTimezone: 'Asia/Kolkata', stores: Object.values(unset) },
+    { digests: [{ key: 'eod', last: 'x', stale: false }], cdr: { ok: true }, problems: [] }, 1).items;
+  ['FORMS_SS_ID', 'DEPT_REQUESTS_SS_ID'].forEach((k) => assert.strictEqual(items.find((i) => i.key === 'store_' + k).status, 'warn', 'readiness warns on the ' + k + ' fallback (it read ok)'));
+  sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD' };
+  const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
+  const sev = (st) => (fn(null, { configTimezone: 'Asia/Kolkata', stores: [st] }).items.filter((x) => x.id === 'store:FORMS_SS_ID')[0] || {}).severity;
+  assert.strictEqual(sev(unset.FORMS_SS_ID), 'warn', 'the System tab warns on the server\'s real fallback shape (the F-11 rule, now reachable)');
+  assert.notStrictEqual(sev(r.by.FORMS_SS_ID), 'warn', 'and not once the property is set');
+  // The mock carries the real shape (INV-185).
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/'FORMS_SS_ID',[\s\S]{0,200}?\{ configured: false, reachable: true, source: 'ADP fallback'/.test(mock) && /'DEPT_REQUESTS_SS_ID',\s*\{ configured: false, reachable: true, source: 'ADP fallback'/.test(mock), 'the Storage Health fixture models the fallback as unconfigured-but-reachable');
+});
+
+test('ADM-09 (cycle 23): deploy readiness reads the ONE problem list the health dot counts — problems warn with a count and the first lines, none is ok, and a report with no list is "Could not check" (driven)', () => {
+  const store = { configTimezone: 'X', stores: [{ label: 'ADP', prop: 'ADP_SS_ID', configured: true, reachable: true, tzMatch: true }] };
+  const auto = (problems) => Object.assign({ digests: [{ key: 'eod', last: 'x', stale: false }], cdr: { ok: true } }, problems === undefined ? {} : { problems });
+  const row = (a) => deployReadinessItems_(store, a, 1).items.find((i) => i.key === 'health');
+  let r = row(auto([{ kind: 'job', text: 'Timesheet archive FAILED' }, { kind: 'punch', text: '2 open punches' }, { kind: 'a', text: 'three' }, { kind: 'b', text: 'four' }]));
+  assert.strictEqual(r.status, 'warn', 'THE REGRESSION: the headline read "All clear" under a red dot');
+  assert.ok(/^4 issue\(s\): Timesheet archive FAILED · 2 open punches · three \(\+1 more/.test(r.detail), r.detail);
+  r = row(auto(['a bare string problem']));
+  assert.ok(/1 issue\(s\): a bare string problem/.test(r.detail), 'a plain-string list (the digest shape) reads too');
+  r = row(auto([]));
+  assert.strictEqual(r.status, 'ok'); assert.ok(/Nothing the health dot counts is failing/.test(r.detail));
+  r = row(auto(undefined));
+  assert.strictEqual(r.status, 'warn'); assert.ok(/Could not check/.test(r.detail), 'no list is unknown, never clean (g53)');
+  assert.strictEqual(deployReadinessItems_(store, { error: 'boom' }, 1).items.filter((i) => i.key === 'health').length, 0, 'a failed automation read already says so on its own rows');
+  const core = stripJsComments_(extractRawFunction('10_core.js', 'getAutomationHealth'));
+  assert.ok(/report\.problems = automationProblems_\(report, \{ items: true \}\)/.test(core), 'the list readiness reads is the one the dot counts (g151)');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/key: 'health'/.test(mock), 'the readiness fixture carries the row (INV-185)');
+});
+
+test('ADM-07 (cycle 23): the Reference-lookups diagnostics are FINDINGS — each warning the panel shows reaches "Needs attention", a failed load is a finding, and a clean table is one ok line (driven)', () => {
+  sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnOopFindings_');
+  const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
+  const ids = (oop) => Array.from(fn(null, null, oop).items.filter((x) => /^oop/.test(x.id)).map((x) => x.id + ':' + x.severity + ':' + x.area));
+  assert.deepStrictEqual(fn(null, null, null).items.filter((x) => /^oop/.test(x.id)).length, 0, 'null = not loaded yet: nothing, not a clean verdict');
+  assert.deepStrictEqual(ids({ error: 'quota' }), ['oop:load:warn:storage'], 'a failed diagnostics read is a finding, never silence');
+  const all = ids({ tab: 'OopPricing', missing: ['Price'], truncated: true, warehouses: [], eligibility: { radius: 3, unknownCount: 2 },
+    locUnreadable: [{}], locNoAddress: [{}, {}] });
+  ['oop:missing', 'oop:truncated', 'oop:warehouses', 'oop:locrows', 'oop:unknown'].forEach((k) => assert.ok(all.indexOf(k + ':warn:storage') >= 0, k + ' — THE REGRESSION: the panel warned and the tab read clean'));
+  assert.ok(all.indexOf('oop:ok:storage') < 0 && !all.some((x) => /^oop:storage/.test(x)), 'no ok line beside warnings');
+  assert.deepStrictEqual(ids({ locationError: 'tab missing', warehouses: [], eligibility: { radius: 3 } }), ['oop:location:warn:storage'], 'an unusable delivery table names ITSELF, not "no warehouses"');
+  assert.deepStrictEqual(ids({ warehouses: [], eligibility: { radius: 0 } }), ['oop:ok:storage'], 'no radius rule → an empty registry is not a problem');
+  assert.deepStrictEqual(ids({ warehouses: [{}], eligibility: { radius: 2, unknownCount: 0 } }), ['oop:ok:storage'], 'a clean table is one ok line');
+  // Wired: the admin load stores the payload (or its failure) and re-derives the findings; the render passes it in.
+  const cn = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  const load = stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnLoadOopDiagPanel_'));
+  assert.ok(/CN_STATE\.adminOop = \{ error: msg \};/.test(load) && /CN_STATE\.adminOop = res \|\| \{ error: 'no response' \};/.test(load), 'both outcomes are held');
+  assert.strictEqual((load.match(/cnRenderSystemFindings_\(\);/g) || []).length, 2, 'both re-derive the findings');
+  assert.ok(/cnHealthFindings_\(health, storage, CN_STATE\.adminOop\)/.test(cn) && /CN_STATE\.adminOop = null;/.test(cn), 'the render passes it; a fresh Admin enter resets it');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/getOopPricingDiagnostics/.test(mock), 'the clean fixture exists, so the all-clear shot stays clean (X1)');
+});
+
+test('ADM-08 (cycle 23): an UNSET no-fallback store (HR, QA) is "not set up", never "could not open" — the scan can read clean on a deployment without those features (driven, server + panel)', () => {
+  const ctx = f3Ctx();
+  const adp = { getId: () => 'adp', getSheets: () => [] };
+  let opened = 0;
+  const res = ctx.scanStoredFormulas_([
+    { label: 'ADP', open: () => adp },
+    { label: 'Employee Docs (HR)', open: () => { opened++; throw new Error('HR_DOCS_SS_ID is not set'); }, configured: () => false },
+    { label: 'QA (recordings)', open: () => { throw new Error('unreachable'); }, configured: () => true },
+    { label: 'Throws', open: () => { throw new Error('x'); }, configured: () => { throw new Error('y'); } },
+  ], Infinity, () => 0);
+  const st = JSON.parse(JSON.stringify(res.stores));
+  assert.deepStrictEqual(st[1], { label: 'Employee Docs (HR)', notConfigured: true }, 'THE REGRESSION: an unset HR store was an error row on every scan');
+  assert.strictEqual(opened, 0, 'an unset store is not opened');
+  assert.strictEqual(st[2].error, 'unreachable', 'a SET store that will not open is still an error');
+  assert.strictEqual(st[3].error, 'x', 'a configured check that throws falls through to the honest open');
+  const ep = stripJsComments_(extractRawFunction('10_core.js', 'adminScanStoredFormulas'));
+  assert.ok(/open: getHrDocsSS_, configured: hrDocsConfigured_/.test(ep) && /open: getQaSS_, configured: qaStoreConfigured_/.test(ep), 'HR and QA carry their predicates');
+  ['Forms', 'Dept Requests'].forEach((l) => assert.ok(!new RegExp("label: '" + l + "[^}]*configured:").test(ep), l + ' falls back — it is always scanned'));
+  // The panel.
+  const panel = loadFunction(sb, 'cn/script_callnotes.html', 'cnRenderFormulaScanPanel_');
+  const html = panel({ stores: [{ label: 'ADP', tabs: 2, count: 0 }, { label: 'Employee Docs (HR)', notConfigured: true }, { label: 'QA (recordings)', notConfigured: true }], hits: [], total: 0, unscanned: [] });
+  assert.ok(/No stored formulas in any store the app writes/.test(html), 'the scan reads clean');
+  assert.ok(/Not set up on this deployment \(no store to scan\): Employee Docs \(HR\), QA \(recordings\)/.test(html), 'and names what it skipped, muted');
+  assert.ok(/>1<\/?[^>]*>? ?store scanned|1 store scanned/.test(html.replace(/<[^>]+>/g, '')), 'an unset store is not counted as scanned');
+  assert.ok(!/Could not open/.test(html));
+});
+
+test('MET-1 (cycle 23): a CDR read that FAILED is an error from the range endpoint — never "no calls", never cached — and a missing DQE tab names itself to the trend readers (driven)', () => {
+  const c = m3CdrCtx_([], true);
+  assert.ok(/DQE Historical Data tab was not found/.test(c.getCdrDailyBreakdown_('2026-05-04', '2026-05-06', ['Ann']).error), 'THE REGRESSION: a missing tab returned bare empty maps — "no calls"');
+  const run = (agg, bd) => {
+    const puts = [];
+    const ctx = { String, Number, Math, Date, JSON, Object, Error, isFinite, console: { warn() {} },
+      getEmployeeInfo_: () => ({ id: 'e1', name: 'Ann' }), CONFIG: { CDR_CACHE_TTL: 60 },
+      CacheService: { getScriptCache: () => ({ get: () => null, put: (k) => puts.push(k) }) },
+      getCdrDashboardStandard_: () => ({}), cdrStandardShip_: () => ({ alertThreshold: 92, alertBand: 2, standardSource: 'sheet' }),
+      getCdrAgentMetrics_: () => agg, getCdrDailyBreakdown_: () => bd, metricsWorkdayIsos_: () => ['2026-05-04'],
+      getCsrTransferPerRepDaily_: () => ({ agents: {} }), cnCountNotesResult_: () => ({ count: 1 }), cnCountIntakeNotesResult_: () => ({ count: 0 }),
+      cnNoteCoverage_: () => 50, cdrAgentsOrThrow_: c.cdrAgentsOrThrow_ };
+    vm.createContext(ctx);
+    vm.runInContext(extractRawFunction('Code.js', 'getMyMetricsRange'), ctx);
+    return { out: JSON.parse(JSON.stringify(ctx.getMyMetricsRange('2026-05-04', '2026-05-06'))), puts };
+  };
+  const ok = { agents: { Ann: { totalRung: 2, totalAnswered: 2, totalMissed: 0, pctAnswered: 100 } }, meta: {} };
+  let r = run({ agents: {}, meta: { error: 'DQE Historical Data sheet not found' } }, { daily: {}, agents: {} });
+  assert.ok(/Call data unavailable/.test(r.out.error), 'THE REGRESSION: the range read cdr:null — a rep who took no calls');
+  assert.strictEqual(r.puts.length, 0, 'and that was cached for the TTL');
+  r = run(ok, { daily: {}, agents: {}, error: 'the DQE Historical Data tab was not found in the CDR Report' });
+  assert.strictEqual(r.out.trendUnavailable, true, 'a missing-tab trend is a FAILED trend, flagged');
+  assert.strictEqual(r.puts.length, 0, 'never cached');
+  r = run(ok, { perRepDaily: { '2026-05-04': { Ann: { pctAnswered: 100, answered: 2, missed: 0 } } } });
+  assert.ok(!r.out.error && !r.out.trendUnavailable && r.puts.length === 1, 'a clean read still caches');
+});
+
+test('MET-2/MET-3/MET-4 (cycle 23): a degraded CDR round is never cached — My Stats while cdrUnavailable, the ambient badge (which now SAYS unavailable), and a Team Metrics range whose trend failed (driven ambient + the cache guards)', () => {
+  const my = stripJsComments_(extractRawFunction('Code.js', 'getMyMetrics'));
+  assert.ok(/if \(useMetricsCache && !noteRes\.unavailable && !cdrUnavailable\) \{/.test(my), 'MET-2: My Stats does not pin an unavailable CDR read for the TTL');
+  const team = stripJsComments_(extractRawFunction('Code.js', 'getTeamMetrics'));
+  assert.ok(/catch \(eRt\) \{ trendData = null; trendFailed = true; \}/.test(team) && /&& !transferMeta\.error && !trendFailed\)/.test(team), 'MET-4: a failed range trend is not cached');
+  assert.ok(/if \(rangeBreakdown && rangeBreakdown\.error\) throw new Error\(rangeBreakdown\.error\);/.test(team), 'MET-4: a missing tab is a failed range trend, not an empty one');
+  assert.ok(/if \(trendBreakdown && trendBreakdown\.error\) throw new Error\('Call data unavailable: ' \+ trendBreakdown\.error\);/.test(team), 'the single-day trend refuses it too');
+  // MET-3 driven.
+  const puts = [];
+  const ctx = { CONFIG: { TIMEZONE: 'America/Chicago', CDR_CACHE_TTL: 300 }, EMP: { NAME: 1 }, JSON, Date, String, Number, Object, isFinite, Error, console: { warn() {} },
+    getEmployeeInfo_: () => ({ isManager: true }),
+    CacheService: { getScriptCache: () => ({ get: () => null, put: (k, v) => puts.push(v) }) },
+    getCdrDashboardStandard_: () => ({ target: 92, band: 2, source: 'sheet' }), Utilities: { formatDate: () => '2026-09-16' },
+    companyHolidayMap_: () => ({}), getEmployeeRosterRows_: () => [['h'], ['e1', 'Avery']], empRosterEmail_: () => 'a@x',
+    getCdrAgentMetrics_: () => ({ agents: {}, meta: { error: 'DQE Historical Data sheet not found' } }) };
+  vm.createContext(ctx);
+  ['cdrAnswerPct_', 'prevWorkdayIso_', 'cdrAgentsOrThrow_', 'getMetricsAmbient'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const out = JSON.parse(JSON.stringify(ctx.getMetricsAmbient()));
+  assert.deepStrictEqual(out, { badge: null, unavailable: 'cdr' }, 'THE REGRESSION: an unreadable CDR read as {badge:null} — "the team is fine"');
+  assert.strictEqual(puts.length, 0, '…and was cached as such');
+});
+
+test('TC2-2 (cycle 23): a shift-stats CDR read that failed SAYS so — the server nulls every call column and ships cdrUnavailable, the client warns above the table and never caches the round', () => {
+  const ms = stripJsComments_(extractRawFunction('Code.js', 'managerGetShiftStats'));
+  assert.ok(/const cdrAgents = cdrAgentsOrThrow_\(getCdrAgentMetrics_\(date, date, repNames\)\);/.test(ms), 'THE REGRESSION: a meta.error read rendered as a shift with no calls');
+  assert.ok(/cdrUnavailable = String\(cdrErr\.message \|\| cdrErr\);\s*for \(let rj = 0; rj < reps\.length; rj\+\+\) \{ reps\[rj\]\.cdr = null; reps\[rj\]\.noteCoverage = null; \}/.test(ms), 'a half-enriched rep list is cleared, never partly right');
+  assert.ok(/if \(cdrUnavailable\) out\.cdrUnavailable = cdrUnavailable;/.test(ms));
+  const load = stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnMgrLoadStats_'));
+  assert.ok(/if \(res && !res\.error && !res\.cdrUnavailable && /.test(load), 'a degraded round never becomes the instant paint (INV-129)');
+  const render = stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnMgrRenderStats_'));
+  assert.ok(/const cdrNote = res\.cdrUnavailable\s*\? '<div role="status"[^']*'/.test(render) && /esc\(res\.cdrUnavailable\)/.test(render), 'the notice renders, the server text escaped');
+  assert.ok(/host\.innerHTML = cdrNote \+/.test(render), 'above the table');
+  assert.ok(!/<div class="[^"]*" role="status"[^>]*>' \+ icon\('warning', 12\)/.test(render), 'no new bare class (g140)');
 });
 
 

@@ -1879,7 +1879,9 @@ function mStartAmbientPolling_() {
 function mPollAmbient_() {
   google.script.run
     .withSuccessHandler(function (res) {
-      if (!res) { mClearBadge_(); return; }
+      // METUI-1 (cycle 23): a poll that could not READ the call data is unknown,
+      // not "the team is fine" — keep the last badge, as a failed poll does.
+      if (!res || res.unavailable === 'cdr') return;
       if (!res.badge) { mClearBadge_(); return; }
       var link = document.querySelector('.sb-link[data-tool="metrics"]')
               || document.querySelector('.nav-btn[data-tool="metrics"]');
@@ -1897,7 +1899,9 @@ function mPollAmbient_() {
   // threshold is always on the response — the `|| 85` was a client mirror.
   badge.title = 'Previous workday (' + res.badge.date + '): ' + res.badge.label + ' answered — below the ' + res.threshold + '% Dashboard Standards target';
     })
-    .withFailureHandler(function () { mClearBadge_(); })
+    // METUI-1 (cycle 23): one transient transport failure removed a real
+    // below-target alert for five minutes (g53). A failed poll changes nothing.
+    .withFailureHandler(function () { /* keep the last badge */ })
     .getMetricsAmbient();
 }
 

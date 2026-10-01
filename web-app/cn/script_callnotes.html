@@ -8672,7 +8672,9 @@ function cnMgrLoadStats_() {
     .withSuccessHandler(function (res) {
       // Key-exact cache write before the guards (INV-156): a stale-date
       // response warms ITS date; only the render is dropped.
-      if (res && !res.error && !((res.reps || []).some(function (r) { return r.notesUnavailable; }))) {
+      // TC2-2 (cycle 23): a round whose call data could not be read is
+      // degraded too, so it never becomes the instant paint (INV-129).
+      if (res && !res.error && !res.cdrUnavailable && !((res.reps || []).some(function (r) { return r.notesUnavailable; }))) {
         CN_STATE.mgrStatsCache[requestedDate] = res;
       }
       pillOff();
@@ -8758,7 +8760,14 @@ function cnMgrRenderStats_(host, res) {
   const pctCls = (typeof mPctClass_ === 'function') ? mPctClass_ : function () { return ''; };
   const covBadge = (typeof mCoverageBadge_ === 'function') ? mCoverageBadge_ : function (p) { return p + '%'; };
   const sorted = cnStatsSortReps_(reps, CN_STATE.statsSort);
-  host.innerHTML =
+  // TC2-2 (cycle 23): the call columns read "—" for every rep when the call
+  // data could not be read — say so above the table, so it never reads as a
+  // shift with no calls. The server's message is escaped.
+  const cdrNote = res.cdrUnavailable
+    ? '<div role="status" style="margin-bottom:8px;font-size:12px;color:var(--warning-deep)">' + icon('warning', 12) +
+      ' Call data could not be read (' + esc(res.cdrUnavailable) + ') — the % answered and coverage columns are unknown, not zero.</div>'
+    : '';
+  host.innerHTML = cdrNote +
     mtRenderTable_({
       rows: sorted,
       sort: CN_STATE.statsSort,
@@ -9604,7 +9613,7 @@ function enterCallNotesAdminView(area) {
   // Design handoff A3 (2026-09-02): the two health payloads are held here so
   // the findings list + the status cards can be derived from BOTH once either
   // lands (null = not loaded yet; {error} = that load failed).
-  CN_STATE.adminHealth = null; CN_STATE.adminStorage = null;
+  CN_STATE.adminHealth = null; CN_STATE.adminStorage = null; CN_STATE.adminOop = null;
   area.innerHTML =
     compactHeader +
     // Design handoff A1: the shared app-bar (two-level crumb — the sidebar IS
@@ -10539,8 +10548,15 @@ function cnToggleAuditHistory_(btn, noteId) {
       // not read as a note with no audit trail. No outer esc().
       if (!res || res.error) { hist.innerHTML = errorStateHtml_((res && res.error) || 'Could not load history'); return; }
       var hrows = res.rows || [];
-      if (hrows.length === 0) { hist.innerHTML = '<div class="cn-audit-hist-empty">No history found in the scan window.</div>'; return; }
-      hist.innerHTML = hrows.map(function (h) {
+      // ADM-11 (cycle 23): the server flags `truncated` when its bounded scan
+      // never reached the note's CallNoteCreate row, so what it found is only
+      // the newer part of the lifecycle. It was ignored, and a partial history
+      // read as the whole one.
+      var truncNote = res.truncated
+        ? '<div class="cn-audit-hist-empty" style="color:var(--warning-deep)">Older history was not scanned — this is the most recent part of the lifecycle, not all of it (the AuditLog tab has the rest).</div>'
+        : '';
+      if (hrows.length === 0) { hist.innerHTML = truncNote || '<div class="cn-audit-hist-empty">No history found in the scan window.</div>'; return; }
+      hist.innerHTML = truncNote + hrows.map(function (h) {
         return '<div class="cn-audit-hist-row">' +
           '<span class="cn-audit-hist-ts tabular">' + esc(h.timestampMgr || h.timestamp) + '</span>' +
           '<span class="cn-audit-hist-action">' + esc(h.action) + '</span>' +
@@ -10793,10 +10809,12 @@ function cnRenderFormulaScanPanel_(res) {
     var stores = res.stores || [];
     var failed = stores.filter(function (s) { return s.error; });
     var unscanned = res.unscanned || [];
-    var checked = stores.filter(function (s) { return !s.error && !s.sameAs; }).length;
+    var checked = stores.filter(function (s) { return !s.error && !s.sameAs && !s.notConfigured; }).length;
+    var notSet = stores.filter(function (s) { return s.notConfigured; });   // ADM-08: no store, by design — not a failure
     var hits = res.hits || [];
     body += '<div style="font-size:12px;margin-top:8px">' + esc(String(checked)) + ' store' + (checked === 1 ? '' : 's') +
       ' scanned · <b>' + esc(String(res.total || 0)) + '</b> formula cell' + (res.total === 1 ? '' : 's') + ' found</div>';
+    if (notSet.length) body += '<div style="font-size:12px;margin-top:6px">' + muted('Not set up on this deployment (no store to scan): ' + esc(notSet.map(function (s) { return s.label; }).join(', '))) + '</div>';
     if (failed.length) body += warn('Could not open: <b>' + esc(failed.map(function (s) { return s.label + ' (' + s.error + ')'; }).join(' · ')) + '</b>');
     if (unscanned.length) body += warn('Not reached before the time limit — NOT checked: <b>' + esc(unscanned.join(', ')) + '</b>. Run the scan again to continue.');
     if (res.capped) body += warn('Showing the first ' + esc(String(hits.length)) + ' of ' + esc(String(res.total)) + '.');
@@ -10838,14 +10856,18 @@ function cnLoadOopDiagPanel_() {
   // a diagnostic that fails silently is the defect this panel exists to fix.
   var fail = function (msg) {
     if (currentView !== requestedView) return;
+    CN_STATE.adminOop = { error: msg };   // ADM-07: a failed read is a finding too
     var live = document.getElementById('cn-admin-oop');
     if (live) live.innerHTML = cnRenderOopDiagPanel_({ error: msg });
+    cnRenderSystemFindings_();
   };
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requestedView) return;
+      CN_STATE.adminOop = res || { error: 'no response' };
       var live = document.getElementById('cn-admin-oop');
       if (live) live.innerHTML = cnRenderOopDiagPanel_(res);
+      cnRenderSystemFindings_();
     })
     .withFailureHandler(function (err) { fail((err && err.message) || 'load failed'); })
     .getOopPricingDiagnostics();
@@ -11268,7 +11290,7 @@ function cnHolidayFindings_(add, hol) {
       'the computed US-federal list is in use instead — Columbus and Veterans Day count as closures, and the closures the team actually observes do not', fix);
   }
 }
-function cnHealthFindings_(health, storage) {
+function cnHealthFindings_(health, storage, oop) {
   var items = [];
   var degraded = { automation: null, cdr: null, storage: null };
   var add = function (id, area, severity, title, detail, fix, link) {
@@ -11574,7 +11596,51 @@ function cnHealthFindings_(health, storage) {
       }
     }
   }
+  // ADM-07 (cycle 23): the Reference-lookups diagnostics (T8) are judged HERE,
+  // with everything else the tab, the badge and the cards count. The panel
+  // below them reports facts; a missing price column, an empty delivery
+  // registry or an unreadable eligibility cell never reached "Needs attention",
+  // so the tab read clean above a panel of warnings (g151). Storage area: the
+  // three lookup tabs live in the KB store. null = not loaded yet.
+  if (oop) cnOopFindings_(add, oop, plural);
   return { items: items, degraded: degraded };
+}
+
+/** ADM-07 (cycle 23) — the findings the pricing + delivery-reach diagnostics
+ *  imply, from the SAME payload cnRenderOopDiagPanel_ draws. */
+function cnOopFindings_(add, res, plural) {
+  var fix = 'Fix the cells named under Reference lookups · pricing + delivery reach, below.';
+  if (res.error) {
+    add('oop:load', 'storage', 'warn', 'Reference lookups could not be checked', String(res.error),
+      'Reload the Admin tab; until it reads, treat the pricing and delivery tables as unchecked.');
+    return;
+  }
+  var e = res.eligibility || {};
+  var n = 0;
+  if ((res.missing || []).length) {
+    n++; add('oop:missing', 'storage', 'warn', 'Pricing columns not found: ' + res.missing.join(', '),
+      'those fields render blank for every item in ' + (res.tab || 'the pricing tab'), fix);
+  }
+  if (res.truncated) {
+    n++; add('oop:truncated', 'storage', 'warn', 'Pricing tab longer than the scan limit', 'rows past it are never searched', fix);
+  }
+  var radius = Number(e.radius || 0);
+  if (res.locationError) {
+    n++; add('oop:location', 'storage', 'warn', (res.locationTab || 'Delivery table') + ' could not be used', String(res.locationError), fix);
+  } else if (!(res.warehouses || []).length && radius > 0) {
+    n++; add('oop:warehouses', 'storage', 'warn', 'No warehouses in ' + (res.locationTab || 'the delivery table'),
+      plural(radius, 'item rule') + ' measure a distance from a warehouse — each reads "cannot tell"', fix);
+  }
+  var unread = (res.locUnreadable || []).length + (res.locNoAddress || []).length;
+  if (unread) {
+    n++; add('oop:locrows', 'storage', 'warn', plural(unread, 'delivery-table row') + ' could not be read in full',
+      'see "Rows that could not be read in full" / "No address"', fix);
+  }
+  if (Number(e.unknownCount || 0) > 0) {
+    n++; add('oop:unknown', 'storage', 'warn', plural(Number(e.unknownCount), 'Area Eligibility value') + ' cannot be read',
+      'each reads "cannot tell" for every rep, on every address', fix);
+  }
+  if (!n) add('oop', 'storage', 'ok', 'Reference lookups', 'pricing and delivery tables read cleanly');
 }
 
 /** Worst severity across a findings list — 'fail' > 'warn' > 'ok'. */
@@ -11619,7 +11685,7 @@ var CN_SYS_AREAS_ = [['automation', 'Automation'], ['cdr', 'CDR'], ['storage', '
  *  premature all-clear. */
 function cnRenderSystemFindings_() {
   var health = CN_STATE.adminHealth, storage = CN_STATE.adminStorage;
-  var r = cnHealthFindings_(health, storage);
+  var r = cnHealthFindings_(health, storage, CN_STATE.adminOop);
   var items = r.items, degraded = r.degraded;
   var areaIdx = { automation: 0, cdr: 1, storage: 2 };
   var needs = items.filter(function (f) { return f.severity !== 'ok'; }).sort(function (a, b) {

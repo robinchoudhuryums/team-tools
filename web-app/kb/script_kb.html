@@ -5543,6 +5543,10 @@ function kbDoSearch_(q) {
       KB_STATE.searchResults = (res && res.results) || [];
       KB_STATE.searchTerms = (res && res.terms) || [];   // M5b — what the server matched on, for the marks
       KB_STATE.searchQuery = q;
+      // KBUI-1 (cycle 23): searchReference reports a server-side failure by
+      // RETURNING {error}, which read as "No matches" plus "Request an article
+      // on this" — a rep concluded no article existed for a topic the KB has.
+      KB_STATE.searchError = (res && res.error) ? String(res.error) : '';
       KB_STATE.searchFilterType = 'all';
       KB_STATE.searchFilterDept = '';
       kbRenderSearchResults_();
@@ -5573,6 +5577,16 @@ function kbRenderSearchResults_() {
   });
   var groups = kbGroupResults_(results);
   var html = kbAddBtnHtml_() + '<div class="kb-dept-h">Search · ' + esc(q) + ' (' + groups.length + ')</div>';
+  if (KB_STATE.searchError) {
+    // KBUI-1: a FAILED search is not an empty one. The message is the server's
+    // only — never the query, which may name a patient (g146: errorStateHtml_
+    // reports to the shared ClientErrors tab).
+    var failHtml = errorStateHtml_('Reference search failed: ' + KB_STATE.searchError + ' — this is not "no matches"; try again.');
+    el.innerHTML = html + failHtml;
+    var mainF = document.getElementById('kb-main');
+    if (mainF) { KB_STATE.currentId = null; KB_STATE.landing = false; mainF.innerHTML = '<div class="kb-item-head"><h2>Results for "' + esc(q) + '"</h2></div>' + failHtml; }
+    return;
+  }
   if (!results.length) html += '<div class="kb-empty">No matches' + (ftype !== 'all' || fdept ? ' with these filters' : '') + '.</div>';
   groups.forEach(function (g) {
     html += '<button class="kb-item" data-kb-id="' + esc(g.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))"><span>' + esc(g.title) + '</span></button>';
@@ -6979,6 +6993,13 @@ function kbDrawerSearch_(q) {
       KB_DRAWER.view = 'results';
       var results = (res && res.results) || [];
       var groups = kbGroupResults_(results);
+      // KBUI-1 (cycle 23): the mid-call drawer, where a wrong "no article"
+      // costs most — a returned {error} renders as a failure, never the
+      // request-an-article CTA. The server's message only (g146).
+      if (res && res.error) {
+        body.innerHTML = kbDrawerBackToHtml_() + errorStateHtml_('Reference search failed: ' + String(res.error) + ' — this is not "no matches"; try again.');
+        return;
+      }
       var html = kbDrawerBackToHtml_() + '<div class="kbd-sec">Results (' + groups.length + ')</div>';
       if (!results.length) html += kbNoResultsHtml_(q);   // #1 — request-an-article CTA in the drawer too
       else html += kbChunkGroupsHtml_(results, 'kbDrawerOpenItem_');
