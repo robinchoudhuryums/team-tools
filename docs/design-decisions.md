@@ -4672,6 +4672,16 @@ pick them up without re-deriving the context.
   read reaches back past its stale hours (`auditWindowProvesAbsence_`, the
   follow-ups) — a fresh AuditLog proves nothing, so the fresh-deploy posture
   holds. Verify: the A1 and A2 pins, and FU-B6d.
+  **AMENDED (cycle 23 Batch 4a + follow-ons, 2026-10-01).** A send that did
+  not happen is a stamped failure for every digest (the clean stamp lands only
+  after the send); a health badge that could not compute is UNKNOWN —
+  `{failing:null, unknown:true}`, never cached, and the dot keeps its state;
+  every stamp ships a human label from ONE map (`AUTOMATION_ERROR_LABELS`, the
+  job table's label first); and a stale digest whose job stamped a failure
+  inside its window names that failure rather than the trigger
+  (`DIGEST_ERROR_KEYS`, `automationFailedWithin_`). Still one list, three
+  readers — the new fields ride the report, not a second derivation.
+
 - <a id="a-half-day-is-graded-on-the-hours-worked"></a>**A half day is graded on the hours worked, not on a start it does not have (cycle 22 T5 rework, operator 2026-09-25).**
   The operator's rule: a half day "could really start and end at any time, as
   long as at least half the typical hours are worked (at least 4 hours)". So

@@ -439,6 +439,10 @@ not restate it. Server endpoints live in the fourteen server files
      Only requests sent after the deploy carry a thread, and the
      `deptReplyResolve` toggle turns the reading off.
 
+     **Cycle 23 Batch 4a (2026-10-01) — Dept Requests:** the SLA reminder
+     stamps a reminder it could not send, and a failed read, as
+     `DeptRequestReminderDigest` on Admin → System; it clears after a clean run.
+
 <a id="intake"></a>
      **Batch 5 (2026-09-18):** `QaRecordings` carries a trailing `AgentId`
      written from the roster when a reviewer attributes a recording, and the
@@ -1123,6 +1127,14 @@ not restate it. Server endpoints live in the fourteen server files
      (spec §9.4). The QuizAttempts row records the marks on every attempt, for
      managers.
 
+     **Cycle 23 Batch 4a (2026-10-01):** with `HR_DOCS_SS_ID` set but
+     unreadable, the training-overdue digest still sends its training
+     section, says "Could not be checked today: unsigned documents /
+     un-acknowledged coaching", and stamps the failure; a failed manager
+     digest or employee nudge is stamped too. The weekly coaching recap counts
+     a failed send as failed (it counted every send as delivered) and stamps
+     an unreachable store.
+
 <a id="qa"></a>
 ## QA
 
@@ -1311,3 +1323,9 @@ not restate it. Server endpoints live in the fourteen server files
      `QA_RECORDINGS_FOLDER_ID`" and "Recording not found." A genuinely missing
      file still gets the generic refusal. The recordings folder is probed on
      Admin → System (`QA_FOLDER_PROP`, read by `qaFolderId_` too) — QA-1.
+
+     **Cycle 23 Batch 4a + follow-ons (2026-10-01):** the review-record purge
+     rides the shared row deleter (`purgeSheetRowsOlderThan_` with `qaPurgeMs_`),
+     so a full grid of expired rows no longer throws on its last delete, deletes
+     contiguous runs in one call each, and a failed run is stamped as
+     `QaReviewPurge` — QA-3, 4a-FU2.

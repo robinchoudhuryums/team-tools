@@ -1442,6 +1442,12 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   **And the health dot itself (follow-ups, 2026-09-25):** an unreadable
   ClientErrors tab was named on the panel but counted as zero errors on the dot
   and in the digest; `automationProblems_` now emits it as a problem.
+  **AMENDED (cycle 23 HR-3 / MAIL-3 + MAIL-4, 2026-10-01): a SEND is a read
+  too.** `coachSendMail_` returns `false` on a failed send (it never throws),
+  and the weekly recap counted every call as sent; four other digests caught a
+  failed send, logged it and stamped a clean run. A delivery that did not happen
+  now stamps the job's failure (`stampAutomationError_`), and the clean stamp
+  lands only after the send. Verify: the HR-3/MAIL-3, MAIL-4 and CORE-02 drives.
 
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
@@ -3392,6 +3398,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   fallback and read "reachable". A fallback is for an UNSET store; a configured
   store that will not open is an outage and throws by name. Verify: the A3
   driven pin (the ADP resolver is never called).
+  **AMENDED (cycle 23 HR-3, 2026-10-01): a third instance — the HR sweeps.**
+  `empDocsOverdueAll_` and `coachUnackedAll_` returned `[]` on ANY throw, so an
+  `HR_DOCS_SS_ID` that was set but unreadable read as "nothing overdue" in the
+  daily brief and the training digest — the same answer as a deployment with no
+  HR store at all. `hrSweepFailed_` now returns `[]` only while the property is
+  UNSET (`hrDocsConfigured_`; can't tell → configured) and otherwise throws by
+  name, and both callers catch per source and SAY what they could not read.
+  Verify: the HR-3 drives.
 
 
 <a id="g123-the-holiday-calendar-is-the-cdr-report-s"></a>
@@ -4303,6 +4317,19 @@ off; one message (`DRIVE_DISABLED_MSG`) is used wherever the disabled rule
 capability check: does it exercise the thing, or only the precondition for it?**
 Verify: the cycle-23 DRV-1 / QA-1 / DRV-2 / DRV-4 / DRV-5 drives and the
 `admin-system-drivedisabled-*` shots.
+**AMENDED (cycle 23 CORE-01 + 4a-FU1, 2026-10-01): a STALE HEARTBEAT has two
+causes, and naming only one is the same defect.** A job that fails withholds
+or ages its heartbeat (the urgent digest since FU-B6a, the health digest since
+F-20, and since CORE-01 the daily brief, where the heartbeat is what makes the
+four standalone digests stand down). Every stale line then said "the trigger
+may be disabled — re-run installAutomationTriggers()" beside a stamp saying
+the job had just RUN and failed, and the `briefConfig` detector said the same.
+Following it changes nothing. `DIGEST_ERROR_KEYS` maps each heartbeat to the
+key its job stamps; `computeAutomationHealth_` ships `failedAt` when that stamp
+lies inside the digest's stale window (`automationFailedWithin_` — an older
+failure is NOT offered, because the trigger may have died since), and the
+problem line, the System finding and the detail row name the failure instead.
+Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
 
 
 <a id="g143-a-leading-underscore-is-not-private"></a>
@@ -4399,6 +4426,16 @@ Verify: the cycle-23 DRV-1 / QA-1 / DRV-2 / DRV-4 / DRV-5 drives and the
   `getLastRow() + 1` — which is why both have their own drive. Verify: the
   TC-01 drive + wiring and the ADM-05 drive (grow, restore, unrestorable,
   first import, over-long cell) + wiring, bite-checked four ways.
+  **AMENDED (cycle 23 QA-3 + 4a-FU2, 2026-10-01): the hand-written sibling.**
+  The QA review purge had its own bottom-up `deleteRow` loop with no spare row,
+  so a full grid whose every row had expired threw on its last delete — after
+  which the purge's audit row was never written and every later run threw on
+  the survivor. It now rides the shared `purgeSheetRowsOlderThan_`, which takes
+  an optional `msOf` cell reader (the default date-string reader would have read
+  a `0` ms cell as a year-2000 date and deleted it) and, since 4a-FU2, deletes
+  descending CONTIGUOUS runs with one `deleteRows` each (`contiguousRowRunsDesc_`)
+  instead of one call per row under the global lock. Verify: the QA-3 and 4a-FU2
+  drives + C5's fake grid, which now refuses per `deleteRows` call.
 
 <a id="g146-a-failure-message-that-echoes-typed-input"></a>
 

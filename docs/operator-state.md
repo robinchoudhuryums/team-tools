@@ -1774,6 +1774,13 @@ entry says which it is.
   deployer needs edit access. NEVER point a retention purge at it —
   HR records are keep-forever (INV-122). `TEST_HRDOCS_SS_ID` is the
   auto-managed test fixture twin (created on first `runAllTests`).
+  **Set but unreachable (cycle 23 HR-3):** the overdue-documents and
+  un-acknowledged-coaching sweeps no longer read as "nothing overdue". The
+  training-overdue digest still sends its training section, adds "Could not
+  be checked today: …", and stamps `TrainingOverdueDigest`; the daily brief
+  names the source; the weekly coaching recap stamps `CoachingRecapDigest`.
+  UNSET stays quiet — that is a deployment without the feature.
+
 <a id="operator-employees-sheet-column-p-payrate"></a>
 - **`Employees` sheet column P = `PayRate`** (operator 2026-08-17) — an
   OPTIONAL hourly pay rate per rep (plain number; `$18.50`-style entries
@@ -2021,6 +2028,14 @@ entry says which it is.
   their separate MANAGER emails (employee reminders, the weekly digests, and
   the automation-failure watchdog still send). Silent on an all-clear morning.
   Flip it off to restore the individual digests instantly (next trigger runs).
+  **Since cycle 23 CORE-01 (2026-10-01):** with the flag on, the brief's
+  heartbeat — the thing that makes the four streams stand down — is stamped
+  only after the brief has been DELIVERED. If any manager's brief fails to
+  send, the failure is stamped (`ManagerDailyBrief` on Admin → System) and
+  the next morning EVERY manager also gets the four separate digests — a
+  doubled email by design, never a silent one. A stale brief heartbeat names
+  both possible causes: a missing trigger, or a last run that did not deliver.
+
 <a id="operator-clienterrors-sheet-tab"></a>
 - **`ClientErrors` sheet tab** (auto-provisioned in the ADP spreadsheet on the
   first client-error beacon, INV-150). PHI-free diagnostics — exception

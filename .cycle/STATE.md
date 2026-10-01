@@ -14,10 +14,11 @@ Updated: 2026-10-01 (cycle 23 Batch 4a follow-ons)
 - Batch 1 implemented on branch `claude/blissful-johnson-cottl5` (block: `.cycle/blocks/23-batch1-broad-implement.md`); NOT yet deployed. TC-02 held back on a decision.
 - Batch 2 implemented on the same branch (block: `.cycle/blocks/23-batch2-broad-implement.md`); NOT yet deployed. /sync-docs for Batch 2 done.
 - Batch 3 implemented on the same branch (block: `.cycle/blocks/23-batch3-broad-implement.md`); NOT yet deployed. /sync-docs for Batch 3 done.
-- Batch 4a implemented on the same branch (block: `.cycle/blocks/23-batch4a-broad-implement.md`); NOT yet deployed; /sync-docs for Batch 4a NOT yet run.
+- Batch 4a and its follow-ons implemented on the same branch (blocks: `.cycle/blocks/23-batch4a-broad-implement.md`, `…-batch4a-followons-broad-implement.md`); NOT yet deployed. /sync-docs for both done.
 - Everything through 22post is merged (PRs #274–#282) and deployed (2026-09-30). The operator was finishing two 22post steps at close: the manual.json re-export + import, and the S124–S128 walks.
 
 ## Completed this cycle
+- /sync-docs (Batch 4a + follow-ons) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g142/g122/g145/g53 extended; INV-151 reworded, INV-161 amended; S9/S55/S99/S117 steps; the automation-health decision amended
 - 4a-FU1/FU2/FU3 | 00_config.js, 10_core.js, cn/script_callnotes.html | a stale heartbeat names its job's recent failure (not the trigger); every stamp ships a label from one map; the shared purge deletes contiguous runs (block: 23-batch4a-followons-broad-implement.md)
 - CORE-01 | 10_core.js | the brief heartbeats only after it delivers (a failed send lets the four digests resume); send failures + throws stamped; briefConfig names both causes
 - CORE-02 | 10_core.js, script_core.html | a failed badge compute is unknown, uncached, dot kept; the health digest stamps clean only after its send
@@ -93,4 +94,4 @@ Updated: 2026-10-01 (cycle 23 Batch 4a follow-ons)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 23 Batches 1–4a are committed and pushed on `claude/blissful-johnson-cottl5` (Batch 1: 5 of 6, TC-02 awaits the operator's choice). Next: `/sync-docs` for Batch 4a (INV-151 wording first), then deploy and walk S8/S18/S112/S65/S104/S90/S55; then `/broad-implement Batch 4b`. The next /reflect reaches the Seams-audit cadence.
+Cycle 23 Batches 1–4a and the 4a follow-ons are committed and pushed on `claude/blissful-johnson-cottl5`, docs synced (Batch 1: 5 of 6, TC-02 awaits the operator's choice). Next: deploy and walk S8/S18/S112/S65/S104/S90/S55/S117; then `/broad-implement Batch 4b`. The next /reflect reaches the Seams-audit cadence.

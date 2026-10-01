@@ -2351,3 +2351,24 @@ per-change detail. By delta:
   the disabled rule, the line and finding branches, the destructive folder
   advice, the QA folder probe and finding, QA playback and sync, the embed
   scan, panel and finding, DRV-4 twice, DRV-5).
+
+## Cycle 23 — Batch 4a and its follow-ons, a failure is never a clean run (2026-10-01)
+
+- Node +8 for Batch 4a (CORE-01, CORE-02, the HR-3 readers, the HR-3 + MAIL-4
+  training digest, the HR-3/MAIL-3 coaching recap, MAIL-4 over the dept
+  reminder and the missed-punch alerts, TC-07, QA-3), all DRIVEN over stubbed
+  stamps (`c23AutoCtx_` records every `stampAutomationError_` /
+  `clearAutomationError_` / `stampDigestLastRun_` call). Node +3 for the
+  follow-ons: 4a-FU1 (the window rule and every stale-line reader), 4a-FU3 (the
+  labeller, both readers, and a DERIVED net — every key the server stamps is
+  tabled or labelled; every `DIGEST_ERROR_KEYS` entry names a real heartbeat
+  and a real stamp), 4a-FU2 (two runs → two descending `deleteRows`).
+- Six older doubles changed with the behaviour: the INV-151 tripwire (the
+  heartbeat now rides the flag-off branch and, when on, follows the sends);
+  QA-18 (the fail-safe and the bottom-up order moved into the shared deleter);
+  F-20 (the health digest stamps a third failure, its send); C5's and QA-3's
+  fake grids gained `deleteRows` with the same "not possible to delete all
+  non-frozen rows" refusal per call.
+- 27 bite-checks, all BITE (19 for Batch 4a, 8 for the follow-ons, including
+  dropping one label from `AUTOMATION_ERROR_LABELS` to prove the derived net
+  sees it).
