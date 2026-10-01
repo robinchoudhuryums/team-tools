@@ -14703,6 +14703,8 @@ test('ELIG: locCityMatches_ requires the STATE when the row carries one, and an 
   // blank State said yes to a same-named city in every state. KB2-5 (cycle 23):
   // it matches nothing, and locCityUnreadable_ reports it — "cannot tell".
   assert.strictEqual(M(CITIES, 'Loose City', 'NV').length, 0, 'a row with no State never matches');
+  assert.strictEqual(M(CITIES, 'Loose City', '').length, 0,
+    'not even when the GEOCODE has no state either — the case only the !r.state guard decides (found by bite-check: the NV case alone could not see it)');
   assert.strictEqual(JSON.parse(vm.runInContext('JSON.stringify(locCityUnreadable_(' + JSON.stringify(CITIES) + ', "Loose City"))', _vmCtx)).length, 1,
     'it is reported as unreadable instead, so the verdict there is "cannot tell"');
 
