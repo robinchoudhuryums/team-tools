@@ -398,10 +398,11 @@ function qaCoverageSummary_(rows, todayYmd, periodEnd) {
     const cards = Number(r.cardCount) || 0;
     if (r.avg != null && cards > 0) { wSum += Number(r.avg) * cards; wN += cards; }
     if (r.avg != null && Number(r.avg) < 3.5) below.push(String(r.name || ''));
-    // The previous period has no card count on the row — weight by its
-    // sampled count instead (the closest proxy the join carries).
-    const ps = Number(r.prevSampled) || 0;
-    if (r.prevAvg != null && ps > 0) { pSum += Number(r.prevAvg) * ps; pN += ps; }
+    // QA2-4 (cycle 23): the previous period is CARD-weighted too — it was
+    // weighted by its sampled count, so the delta compared two different
+    // averages. An older server without prevCardCount falls back to sampled.
+    const pc = r.prevCardCount != null ? (Number(r.prevCardCount) || 0) : (Number(r.prevSampled) || 0);
+    if (r.prevAvg != null && pc > 0) { pSum += Number(r.prevAvg) * pc; pN += pc; }
   });
   const avg = wN ? Math.round((wSum / wN) * 100) / 100 : null;
   const prevAvg = pN ? Math.round((pSum / pN) * 100) / 100 : null;
@@ -573,8 +574,15 @@ function qaCoverageSectionHtml_(d) {
       // handler, never an onclick literal — esc() had already turned an
       // apostrophe into &#39;, so the old `.replace(/'/g, "\\'")` was a
       // no-op and the button for "O'Brien" threw on click.
-      if (r.exempt) return '<button type="button" class="qa-btn" data-qa-exempt="' + esc(r.name) + '" data-qa-exempt-on="0">Revoke exemption</button>';
-      if (r.eligible) return '<button type="button" class="qa-btn" data-qa-exempt="' + esc(r.name) + '" data-qa-exempt-on="1">Grant exemption</button>';
+      // QA2-1 (cycle 23): an exemption earned here is granted for the NEXT
+      // period (d.nextPeriod); each button names the period it changes.
+      const btn = function (on, per, label) {
+        return '<button type="button" class="qa-btn" data-qa-exempt="' + esc(r.name) + '" data-qa-exempt-on="' + (on ? '1' : '0') +
+          '" data-qa-exempt-period="' + esc(per) + '">' + esc(label) + '</button>';
+      };
+      if (r.exempt) return btn(false, d.period || '', 'Revoke exemption');
+      if (r.exemptNext) return btn(false, d.nextPeriod || '', 'Revoke for ' + (d.nextPeriodLabel || 'next period'));
+      if (r.eligible && d.nextPeriod) return btn(true, d.nextPeriod, 'Exempt for ' + (d.nextPeriodLabel || 'next period'));
       return '';
     } });
   }
@@ -585,7 +593,7 @@ function qaCoverageSectionHtml_(d) {
       return (k === 'shortlow' || k === 'short' || k === 'exempt') ? 'qa-row-' + k : '';
     },
   });
-  html += '<div class="qa-note">Exemption = two covered periods in a row at 4.5+ with no criterion under 4 (managers grant it for ONE period). Sampled counts reviews marked done on calls dropped in the period; the average is the mean of their scorecards.</div>';
+  html += '<div class="qa-note">Exemption = two covered periods in a row at 4.5+ with no criterion under 4 (managers grant it for the NEXT period). Sampled counts reviews marked done on calls dropped in the period; the average is the mean of their scorecards.</div>';
   html += '</section>';
   return html;
 }
@@ -756,16 +764,17 @@ function qaSample_() {
     var b = ev.target && ev.target.closest ? ev.target.closest('[data-qa-exempt]') : null;
     if (!b) return;
     ev.preventDefault();
-    qaSetExemption_(b.getAttribute('data-qa-exempt') || '', b.getAttribute('data-qa-exempt-on') === '1');
+    qaSetExemption_(b.getAttribute('data-qa-exempt') || '', b.getAttribute('data-qa-exempt-on') === '1', b.getAttribute('data-qa-exempt-period') || '');
   });
 })();
-function qaSetExemption_(name, on) {
+function qaSetExemption_(name, on, period) {
   const d = QA_STATE.queue || {};
-  const label = qaPeriodLabelOf_(d.period);
+  const per = period || d.period || '';
+  const label = per === d.nextPeriod ? (d.nextPeriodLabel || per) : qaPeriodLabelOf_(per);
   uiConfirm({
     title: on ? 'Grant exemption' : 'Revoke exemption',
     message: on
-      ? name + ' has two covered periods in a row at 4.5+ with no criterion under 4. Exempt them from sampling for ' + label + '? Their target this period becomes 0.'
+      ? name + ' has two covered periods in a row at 4.5+ with no criterion under 4. Exempt them from sampling for ' + label + '? Their target that period becomes 0.'
       : 'Put ' + name + ' back on the sampling target for ' + label + '?',
     confirmLabel: on ? 'Grant' : 'Revoke',
   }).then(function (ok) {
@@ -780,7 +789,7 @@ function qaSetExemption_(name, on) {
         }
       })
       .withFailureHandler(function (err) { showToast('Exemption change failed: ' + (err && err.message), 'toast-error'); })
-      .qaSetExemption(name, d.period || '', !!on);
+      .qaSetExemption(name, per, !!on);
   });
 }
 
@@ -1537,9 +1546,6 @@ function qaRenderScoreForm_() {
   if (!host) return;
   const crit = QA_STATE.criteria || [];
   if (!crit.length) { host.innerHTML = ''; return; }
-  const avg = qaCardAvg_(QA_STATE.ratings);
-  const rated = Object.keys(QA_STATE.ratings).length;
-  const tone = qaScoreTone_(avg);
   host.innerHTML =
   '<div class="qa-score-anchors" aria-hidden="true"><span>1 · missed</span><span>3 · met</span><span>5 · exemplary</span></div>' +
   crit.map(function (c) {
@@ -1549,32 +1555,27 @@ function qaRenderScoreForm_() {
     if (t === 'check') {
       // Yes / No pair — click the selected one again to unselect (the intake
       // accidental-click recovery pattern), so "not answered" stays possible.
-      control = '<div class="qa-rate-btns" role="group" aria-label="' + esc(c.label) + '">' +
+      control = '<div class="qa-rate-btns" role="group" data-qa-crit="' + esc(c.key) + '" aria-label="' + esc(c.label) + '">' +
         ['yes', 'no'].map(function (v) {
           return '<button type="button" class="qa-yn-btn" data-v="' + v + '" aria-pressed="' + (cur === v ? 'true' : 'false') +
             '" onclick="qaSetRating_(\'' + esc(c.key) + '\', \'' + v + '\')">' + (v === 'yes' ? 'Yes' : 'No') + '</button>';
         }).join('') + '</div>';
     } else if (t === 'choice') {
-      control = '<select class="qa-choice-sel" aria-label="' + esc(c.label) + '" onchange="qaSetRating_(\'' + esc(c.key) + '\', this.value)">' +
+      control = '<select class="qa-choice-sel" data-qa-crit="' + esc(c.key) + '" aria-label="' + esc(c.label) + '" onchange="qaSetRating_(\'' + esc(c.key) + '\', this.value)">' +
         '<option value=""' + (cur == null ? ' selected' : '') + '>— choose —</option>' +
         (c.options || []).map(function (o) {
           return '<option value="' + esc(o) + '"' + (String(cur) === String(o) ? ' selected' : '') + '>' + esc(o) + '</option>';
         }).join('') + '</select>';
     } else {
-      control = '<div class="qa-rate-btns" role="group" aria-label="' + esc(c.label) + ' rating">' +
+      control = '<div class="qa-rate-btns" role="group" data-qa-crit="' + esc(c.key) + '" aria-label="' + esc(c.label) + ' rating">' +
         [1, 2, 3, 4, 5].map(function (v) {
-          return '<button type="button" class="qa-rate-btn" aria-pressed="' + (cur === v ? 'true' : 'false') +
+          return '<button type="button" class="qa-rate-btn" data-v="' + v + '" aria-pressed="' + (cur === v ? 'true' : 'false') +
             '" aria-label="' + esc(c.label) + ': ' + v + ' of 5" onclick="qaSetRating_(\'' + esc(c.key) + '\', ' + v + ')">' + v + '</button>';
         }).join('') + '</div>';
     }
     return '<div class="qa-score-row"><span>' + esc(c.label) + '</span>' + control + '</div>';
   }).join('') +
-  '<div class="qa-score-running" aria-live="polite">' +
-    (avg == null
-      ? '<span>No criteria rated yet</span>'
-      : '<span class="qa-sc-chip"' + (tone ? ' data-tone="' + tone + '"' : '') + '>running avg ' + esc(String(avg)) + ' /5</span>') +
-    '<span>' + rated + ' of ' + crit.length + ' rated</span>' +
-  '</div>' +
+  '<div class="qa-score-running" aria-live="polite">' + qaScoreRunningHtml_() + '</div>' +
   '<textarea class="qa-score-notes" id="qa-score-notes" aria-label="Scorecard notes" placeholder="Notes (optional)">' + esc(QA_STATE.scoreNotes || '') + '</textarea>' +
   '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">' +
     '<button type="button" class="qa-btn prime" id="qa-score-save" onclick="qaSubmitScorecard_()">Save scorecard</button>' +
@@ -1582,14 +1583,42 @@ function qaRenderScoreForm_() {
   '</div>';
 }
 
+/** The running average + "N of M rated" line — one builder for the first
+ *  render and the in-place update. */
+function qaScoreRunningHtml_() {
+  const avg = qaCardAvg_(QA_STATE.ratings);
+  const tone = qaScoreTone_(avg);
+  const rated = Object.keys(QA_STATE.ratings).length;
+  return (avg == null
+      ? '<span>No criteria rated yet</span>'
+      : '<span class="qa-sc-chip"' + (tone ? ' data-tone="' + tone + '"' : '') + '>running avg ' + esc(String(avg)) + ' /5</span>') +
+    '<span>' + rated + ' of ' + (QA_STATE.criteria || []).length + ' rated</span>';
+}
 function qaSetRating_(key, v) {
   // Clicking the SELECTED rating unselects it (the intake accidental-click
   // recovery pattern); a dropdown's blank option clears the same way.
   if (v === '' || v == null || QA_STATE.ratings[key] === v) delete QA_STATE.ratings[key];
   else QA_STATE.ratings[key] = v;
+  // QAUI-1 (cycle 23): patch the pressed state and the running line IN PLACE.
+  // Every click used to rebuild the whole form, so keyboard focus fell back
+  // to the page and a reviewer rating by keyboard lost their place each time.
+  const host = document.getElementById('qa-score-form');
+  let group = null;
+  if (host) host.querySelectorAll('[data-qa-crit]').forEach(function (g) { if (!group && g.getAttribute('data-qa-crit') === key) group = g; });
+  if (group) {
+    const cur = QA_STATE.ratings[key];
+    if (group.tagName === 'SELECT') group.value = cur == null ? '' : String(cur);
+    group.querySelectorAll('button[data-v]').forEach(function (b) {
+      const bv = b.getAttribute('data-v');
+      b.setAttribute('aria-pressed', String(cur) === bv ? 'true' : 'false');
+    });
+    const run = host.querySelector('.qa-score-running');
+    if (run) run.innerHTML = qaScoreRunningHtml_();
+    return;
+  }
   const ta = document.getElementById('qa-score-notes');
   if (ta) QA_STATE.scoreNotes = ta.value;   // typed notes survive the re-render
-  qaRenderScoreForm_();
+  qaRenderScoreForm_();   // a select, or no form yet: the full render, as before
 }
 
 function qaSubmitScorecard_() {

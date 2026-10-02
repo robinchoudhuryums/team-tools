@@ -2064,6 +2064,34 @@
     "deleteCallNote"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-02",
+   "why": "cycle 23 Batch 8: QA2-1 next-period exemptions, QA2-2/QA-4 sampler, QA2-3 agent id, QA-2 read guard, QA-5 beyond the tail, QA2-5 case-fold",
+   "added": [
+    "qaAgentEmpId_",
+    "qaExemptFor_",
+    "qaMySharedRowIdxs_",
+    "qaNextPeriod_",
+    "qaReviewerByEmail_",
+    "qaRosterIdIndex_",
+    "qaSelfReviewRefusalFor_"
+   ],
+   "removed": [],
+   "changed": [
+    "getMyQaReviews",
+    "getQaLog",
+    "getQaQueue",
+    "qaAddComment",
+    "qaAssignRecording",
+    "qaCoverageRows_",
+    "qaFindRecordingRow_",
+    "qaListComments",
+    "qaListScorecards",
+    "qaSampleRecordings",
+    "qaStatsAggregate_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -6491,7 +6519,7 @@
   "getMyQaReviews": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "33110b1473783142"
+   "sha": "3c4ce7e87fa9ce1d"
   },
   "getMyScheduledCalls": {
    "file": "30_callnotes.js",
@@ -6716,7 +6744,7 @@
   "getQaLog": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "dfc5c68750b8bb77"
+   "sha": "47e7b838dd6f9b78"
   },
   "getQaMembers_": {
    "file": "90_qa.js",
@@ -6726,7 +6754,7 @@
   "getQaQueue": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "b4096aa20123cec2"
+   "sha": "af0e1af750f0409e"
   },
   "getQaSS_": {
    "file": "90_qa.js",
@@ -8441,17 +8469,22 @@
   "qaAddComment": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "12060df3b137d4fa"
+   "sha": "4dac6f089d64a508"
   },
   "qaAgentChangeUnshares_": {
    "file": "90_qa.js",
    "kind": "function",
    "sha": "23f02840b2f502dc"
   },
+  "qaAgentEmpId_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "6454a6a5e0fb158e"
+  },
   "qaAssignRecording": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "7c5aa12554bdf3d8"
+   "sha": "6838f5c3bd259c03"
   },
   "qaAudioChunkFor_": {
    "file": "90_qa.js",
@@ -8491,7 +8524,7 @@
   "qaCoverageRows_": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "ebc6e795a6380242"
+   "sha": "0fa01415b012c378"
   },
   "qaCreateManualRecording": {
    "file": "90_qa.js",
@@ -8518,10 +8551,15 @@
    "kind": "function",
    "sha": "c3a509aed66ef21e"
   },
+  "qaExemptFor_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "c52433d32fedf7fc"
+  },
   "qaFindRecordingRow_": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "1bc855c656226304"
+   "sha": "69ea5f256a62a3df"
   },
   "qaFolderId_": {
    "file": "90_qa.js",
@@ -8556,12 +8594,12 @@
   "qaListComments": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "fef6e03b5c63daef"
+   "sha": "0c23b81d334b3a90"
   },
   "qaListScorecards": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "e6a3851243811bb5"
+   "sha": "09ae5082807f5420"
   },
   "qaLogEntries_": {
    "file": "90_qa.js",
@@ -8577,6 +8615,16 @@
    "file": "90_qa.js",
    "kind": "function",
    "sha": "a5123b86ccfa431c"
+  },
+  "qaMySharedRowIdxs_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "d9dab1719699ce3f"
+  },
+  "qaNextPeriod_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "ddc2cd21ad2de68d"
   },
   "qaOptionIsNumeric_": {
    "file": "90_qa.js",
@@ -8653,10 +8701,20 @@
    "kind": "function",
    "sha": "8e65c327742009df"
   },
+  "qaReviewerByEmail_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "198bc8db753581ca"
+  },
   "qaRosterIdByName_": {
    "file": "90_qa.js",
    "kind": "function",
    "sha": "119e22b0e3c6813a"
+  },
+  "qaRosterIdIndex_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "1a356bcd0954bb78"
   },
   "qaRosterIdsForName_": {
    "file": "90_qa.js",
@@ -8676,12 +8734,17 @@
   "qaSampleRecordings": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "619313cbebb7ae48"
+   "sha": "2be9d3c2b45ab9ea"
   },
   "qaSaveScorecard": {
    "file": "90_qa.js",
    "kind": "function",
    "sha": "059eb0a4cd11a49e"
+  },
+  "qaSelfReviewRefusalFor_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "4c9ddf615f5b5f2d"
   },
   "qaSelfReviewRefusal_": {
    "file": "90_qa.js",
@@ -8716,7 +8779,7 @@
   "qaStatsAggregate_": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "23c066fbf757337a"
+   "sha": "172c7d0544a9f3ec"
   },
   "qaStatus_": {
    "file": "90_qa.js",

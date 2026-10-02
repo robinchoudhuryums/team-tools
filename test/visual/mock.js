@@ -189,6 +189,28 @@ function qaExemptEligible_(row) {
   if (!(row.minCriterion != null && row.prevMinCriterion != null)) return false;
   return row.minCriterion >= QA_EXEMPT_CRIT_MIN && row.prevMinCriterion >= QA_EXEMPT_CRIT_MIN;
 }
+function qaNextPeriod_(key) {
+  const k = String(key || '').trim();
+  let m = /^(\d{4})-(\d{2})$/.exec(k);
+  if (m) {
+    let y = Number(m[1]), mo = Number(m[2]) + 1;
+    if (mo > 12) { mo = 1; y++; }
+    return y + '-' + (mo < 10 ? '0' : '') + mo;
+  }
+  m = /^(\d{4})-Q([1-4])$/.exec(k);
+  if (m) {
+    let y = Number(m[1]), q = Number(m[2]) + 1;
+    if (q > 4) { q = 1; y++; }
+    return y + '-Q' + q;
+  }
+  return '';
+}
+function qaExemptFor_(exemptions, nameKey, period) {
+  const ex = exemptions || {};
+  if (ex[nameKey + '|' + period]) return true;
+  const ks = /^\d{4}-\d{2}$/.test(String(period || '')) ? qaPeriodKeysForYmd_(period + '-01') : null;
+  return !!(ks && ex[nameKey + '|' + ks.quarter]);
+}
 function qaCoverageRows_(recs, latestCards, rosterNames, period, target, exemptions, prevPeriod) {
   const cardsByFile = {};
   (latestCards || []).forEach(function (c) {
@@ -224,14 +246,20 @@ function qaCoverageRows_(recs, latestCards, rosterNames, period, target, exempti
   return Object.keys(byName).sort().map(function (k) {
     const row = byName[k];
     const cur = fin(row.cur), prev = fin(row.prev);
-    const exempt = !!(exemptions || {})[k + '|' + period];
+    // QA2-1 (cycle 23): an exemption EARNED in this period applies to the
+    // NEXT one — granting it for the period that earned it saved no review —
+    // and a quarter's exemption covers its months (qaExemptFor_).
+    const exempt = qaExemptFor_(exemptions, k, period);
+    const next = qaNextPeriod_(period);
+    const exemptNext = !!next && qaExemptFor_(exemptions, k, next);
     const out = {
       name: row.name, sampled: row.cur.sampled, target: exempt ? 0 : (Number(target) || 0),
       cardCount: row.cur.cards, avg: cur.avg, minCriterion: cur.min,
-      prevSampled: row.prev.sampled, prevAvg: prev.avg, prevMinCriterion: prev.min,
+      prevSampled: row.prev.sampled, prevCardCount: row.prev.cards, prevAvg: prev.avg, prevMinCriterion: prev.min,
       lastReviewedMs: row.lastReviewedMs, exempt: exempt, exemptUntil: exempt ? period : '',
+      exemptNext: exemptNext,
     };
-    out.eligible = !exempt && qaExemptEligible_(out);
+    out.eligible = !exempt && !exemptNext && qaExemptEligible_(out);
     return out;
   });
 }
@@ -827,6 +855,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         agentOptions: agentOptions, criteria: criteria,
         period: period, periodOptions: opts, target: 3, todayYmd: todayIso,
         periodEnd: qaPeriodBounds_(period).end,
+        nextPeriod: qaNextPeriod_(period), nextPeriodLabel: qaPeriodLabel_(qaNextPeriod_(period)),
         recordings: recs, total: recs.length, cap: 200,
         coverage: coverage,
       };

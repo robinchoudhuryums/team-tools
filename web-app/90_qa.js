@@ -88,6 +88,20 @@ function qaCanReviewEmail_(email) {
   } catch (err) {}
   return false;
 }
+/** QA-4 — the identity the self-review rule needs ({id, name, isAdmin}) for a
+ *  reviewer named by email; null when the address is not on the roster
+ *  (no identity to compare — the assignment is not refused on a guess). */
+function qaReviewerByEmail_(email) {
+  const e = String(email || '').trim().toLowerCase();
+  if (!e) return null;
+  const rows = getEmployeeRosterRows_();
+  for (let i = 1; i < rows.length; i++) {
+    if (empRosterEmail_(rows[i]).toLowerCase() !== e) continue;
+    const mgr = /^(true|yes|y|1)$/i.test(String(rows[i][EMP.IS_MANAGER] || '').trim());
+    return { id: String(rows[i][EMP.ID] || '').trim(), name: String(rows[i][EMP.NAME] || '').trim(), isAdmin: empIsAdmin_(e, mgr) };
+  }
+  return null;
+}
 function qaFolderId_() {
   try { return String(PropertiesService.getScriptProperties().getProperty(QA_FOLDER_PROP) || '').trim(); }
   catch (e) { return ''; }
@@ -159,16 +173,16 @@ function getQaQueue(period) {
     // the same disclosure getTeammateStatus already makes; free text stays
     // allowed so an ex-agent's recording is still attributable).
     const agentOptions = [];
-    const rosterIdByName = {};   // Q7 — the coaching hand-off needs the rep's id, not their name
+    let rosterIdsByName = {};   // Q7 — the coaching hand-off needs the rep's id, not their name
     try {
       const rrows = getEmployeeRosterRows_();
       for (let i = 1; i < rrows.length; i++) {
         if (!empRosterEmail_(rrows[i])) continue;   // INV-183: one inclusion predicate
         const nm = String(rrows[i][EMP.NAME] || '').trim();
         if (nm && agentOptions.indexOf(nm) < 0) agentOptions.push(nm);
-        if (nm && !rosterIdByName[nm.toLowerCase()]) rosterIdByName[nm.toLowerCase()] = String(rrows[i][EMP.ID] || '').trim();
       }
       agentOptions.sort();
+      rosterIdsByName = qaRosterIdIndex_(rrows);   // QA2-3: every id per name, so a shared name is SEEN
     } catch (e) { /* best-effort — the queue still renders */ }
     // Q4 — the audit period (operator decision 6: derived from DriveCreatedMs).
     // The client sends the key it wants; an absent/invalid one lands on the
@@ -184,6 +198,8 @@ function getQaQueue(period) {
       agentOptions: agentOptions, criteria: getQaScorecardCriteria_(),
       period: periodKey, periodOptions: periodOptions, target: target, todayYmd: todayYmd,
       periodEnd: (qaPeriodBounds_(periodKey) || {}).end || '',
+      // QA2-1: an exemption is granted for the period AFTER the one viewed.
+      nextPeriod: qaNextPeriod_(periodKey), nextPeriodLabel: qaPeriodLabel_(qaNextPeriod_(periodKey)),
     };
     if (!storeSet) { base.notConfigured = true; base.recordings = []; base.total = 0; base.cap = QA_LIST_CAP; base.coverage = []; return base; }
     const sheet = getOrCreateQaRecordingsSheet_();
@@ -207,7 +223,7 @@ function getQaQueue(period) {
           assignee: String(rows[i][QAR.ASSIGNEE] || '').trim().toLowerCase(),
           url: String(rows[i][QAR.URL] || ''),
           agent: String(rows[i][QAR.AGENT] || '').trim(),
-          agentEmpId: String(rows[i][QAR.AGENT] || '').trim() ? (rosterIdByName[String(rows[i][QAR.AGENT] || '').trim().toLowerCase()] || '') : '',
+          agentEmpId: qaAgentEmpId_(rows[i][QAR.AGENT_ID], rows[i][QAR.AGENT], rosterIdsByName),   // QA2-3
           sharedMs: Number(rows[i][QAR.SHARED_MS]) || 0,
           durationSec: Number(rows[i][QAR.DURATION_SEC]) || 0,
           skipReason: String(rows[i][QAR.SKIP_REASON] || ''),
@@ -360,13 +376,20 @@ function qaFindRecordingRow_(sheet, fileId) {
   const last = sheet.getLastRow();
   if (last < 2) return null;
   const start = Math.max(2, last - QA_LIST_SCAN + 1);
-  const ids = sheet.getRange(start, QAR.FILE_ID + 1, last - start + 1, 1).getValues();
-  for (let i = ids.length - 1; i >= 0; i--) {
-    if (String(ids[i][0] || '').trim() !== fileId) continue;
-    const rowIdx = start + i;
-    return { rowIdx: rowIdx, row: sheet.getRange(rowIdx, 1, 1, QA_RECORDINGS_HEADERS.length).getValues()[0] };
-  }
-  return null;
+  const hit = function (from, to) {   // newest first within [from, to]
+    if (to < from) return null;
+    const ids = sheet.getRange(from, QAR.FILE_ID + 1, to - from + 1, 1).getValues();
+    for (let i = ids.length - 1; i >= 0; i--) {
+      if (String(ids[i][0] || '').trim() !== fileId) continue;
+      const rowIdx = from + i;
+      return { rowIdx: rowIdx, row: sheet.getRange(rowIdx, 1, 1, QA_RECORDINGS_HEADERS.length).getValues()[0] };
+    }
+    return null;
+  };
+  // QA-5 (cycle 23): the tail first (the common case), then the rest of the
+  // ONE id column — a recording older than the tail read "Recording not
+  // found." for every action, though its row was there.
+  return hit(start, last) || hit(2, start - 1);
 }
 /** PURE (S6, cycle 22; operator 2026-09-25) — is this recording the caller's
  *  OWN call? By the roster id stored at attribution when there is one, else by
@@ -386,6 +409,20 @@ function qaSelfReviewRefusal_(emp, names) {
   if (!emp || emp.isAdmin) return '';
   const own = (names || []).some(function (n) { return n && qaIsOwnRecording_(emp, n.name, n.id); });
   return own ? 'This is your own call — another reviewer (or an admin) has to review it.' : '';
+}
+/** QA-2 (cycle 23) — the S6 rule for a READ: the refusal when `fid` is the
+ *  caller's own call, '' otherwise (an unknown id, or no recordings tab, is
+ *  left to the caller's own handling). Read-only — never provisions. The
+ *  status, agent, scorecard and share writes had the guard; the comment write
+ *  and both review READS did not, so a reviewer could read and annotate the
+ *  reviews of their own calls before they were released to them. */
+function qaSelfReviewRefusalFor_(emp, ss, fid) {
+  if (!fid || !emp || emp.isAdmin) return '';
+  const sheet = ss.getSheetByName(QA_RECORDINGS_TAB);
+  if (!sheet) return '';
+  const found = qaFindRecordingRow_(sheet, fid);
+  if (!found) return '';
+  return qaSelfReviewRefusal_(emp, [{ name: found.row[QAR.AGENT], id: found.row[QAR.AGENT_ID] }]);
 }
 /** Set a recording's review status. QA-gated, locked; status is enum-bounded
  *  so a crafted call can never write garbage into the column (INV-37 spirit).
@@ -454,6 +491,15 @@ function qaAssignRecording(fileId, assigneeEmail) {
     }
     if (current && current !== self && !emp.isManager) {
       return { success: false, error: 'This recording is already assigned — a manager can reassign it.' };
+    }
+    // QA-4 (cycle 23): never hand a reviewer their own call — the status and
+    // scorecard writes refuse it (S6), so the assignment only stranded it.
+    const assignee = target === self ? emp : qaReviewerByEmail_(target);
+    const recAgent = [{ name: found.row[QAR.AGENT], id: found.row[QAR.AGENT_ID] }];
+    if (assignee && qaSelfReviewRefusal_(assignee, recAgent)) {
+      return { success: false, error: target === self
+        ? 'This is your own call — another reviewer (or an admin) has to review it.'
+        : 'That is ' + target + '\'s own call — assign it to another reviewer.' };
     }
     sheet.getRange(found.rowIdx, QAR.ASSIGNEE + 1).setValue(sheetSafe_(target));
     writeAuditLog_(emp, 'QaAssign', '', '', false, 0, 'fileId=' + fid + '; assigned', emp.email);
@@ -581,6 +627,8 @@ function qaListComments(fileId) {
     if (!emp || !canSeeQa_(emp)) return { error: 'QA access required.' };
     const fid = String(fileId || '').trim();
     const ss = getQaSS_();
+    const selfNo = qaSelfReviewRefusalFor_(emp, ss, fid);   // QA-2 (cycle 23)
+    if (selfNo) return { error: selfNo };
     const sheet = ss.getSheetByName(QA_COMMENTS_TAB);
     if (!fid || !sheet || sheet.getLastRow() < 2) return { comments: [], canModerate: !!emp.isManager };
     const last = sheet.getLastRow();
@@ -624,7 +672,10 @@ function qaAddComment(fileId, atSec, text) {
       return { success: false, error: 'Comments are capped at ' + QA_COMMENT_MAX_CHARS + ' characters (' + t.length + ') — trim it and post again.' };
     }
     const recSheet = getOrCreateQaRecordingsSheet_();
-    if (!qaFindRecordingRow_(recSheet, fid)) return { success: false, error: 'Recording not found.' };
+    const rec = qaFindRecordingRow_(recSheet, fid);
+    if (!rec) return { success: false, error: 'Recording not found.' };
+    const selfNo = qaSelfReviewRefusal_(emp, [{ name: rec.row[QAR.AGENT], id: rec.row[QAR.AGENT_ID] }]);   // QA-2 (cycle 23)
+    if (selfNo) return { success: false, error: selfNo };
     const commentId = Utilities.getUuid();
     appendRowsTextSafe_(getOrCreateQaCommentsSheet_(), [[
       commentId, fid, emp.id, emp.name, at, t, Date.now(), 'active',   // AtSec/CreatedMs: NUMBER cells
@@ -1057,6 +1108,8 @@ function qaListScorecards(fileId) {
     if (!emp || !canSeeQa_(emp)) return { error: 'QA access required.' };
     const fid = String(fileId || '').trim();
     if (!fid) return { error: 'Missing recording id.' };
+    const selfNo = qaSelfReviewRefusalFor_(emp, getQaSS_(), fid);   // QA-2 (cycle 23)
+    if (selfNo) return { error: selfNo };
     const read = qaReadScorecards_(fid);
     const cards = qaLatestScorecards_(read.cards);
     cards.sort(function (a, b) { return b.createdMs - a.createdMs; });
@@ -1083,8 +1136,15 @@ function qaStatsAggregate_(recs, cards, criteria) {
     }
     return byAgent[a];
   };
+  // QA2-5 (cycle 23): one row per agent whatever the capitalisation — "maria
+  // garcia" and "Maria Garcia" were two Stats rows. Keyed case-folded,
+  // labelled with the first spelling seen (the coverage join's rule).
+  const label = {};
   (recs || []).forEach(function (r) {
-    const a = String((r && r.agent) || '').trim() || '(unassigned)';
+    const raw = String((r && r.agent) || '').trim() || '(unassigned)';
+    const fk = raw.toLowerCase();
+    if (!label[fk]) label[fk] = raw;
+    const a = label[fk];
     agentOf[String((r && r.fileId) || '')] = a;
     const b = mk(a);
     b.recordings++;
@@ -1292,15 +1352,8 @@ function getQaLog(opts) {
     const recSheet = getOrCreateQaRecordingsSheet_();
     const last = recSheet.getLastRow();
     const selfEmail = String(emp.email || '').trim().toLowerCase();
-    let rosterIdByName = {};
-    try {
-      const rrows2 = getEmployeeRosterRows_();
-      for (let i = 1; i < rrows2.length; i++) {
-        if (!empRosterEmail_(rrows2[i])) continue;
-        const nm = String(rrows2[i][EMP.NAME] || '').trim().toLowerCase();
-        if (nm && !rosterIdByName[nm]) rosterIdByName[nm] = String(rrows2[i][EMP.ID] || '').trim();
-      }
-    } catch (e) { rosterIdByName = {}; }
+    let rosterIdsByName = {};
+    try { rosterIdsByName = qaRosterIdIndex_(getEmployeeRosterRows_()); } catch (e) { rosterIdsByName = {}; }   // QA2-3
     if (last >= 2) {
       const start = Math.max(2, last - QA_LIST_SCAN + 1);
       base.truncated = start > 2;
@@ -1311,7 +1364,7 @@ function getQaLog(opts) {
         const agent = String(rows[i][QAR.AGENT] || '').trim();
         const status = qaStatus_(rows[i][QAR.STATUS]);
         recs[fid] = { name: String(rows[i][QAR.NAME] || ''), agent: agent,
-                      agentEmpId: agent ? (rosterIdByName[agent.toLowerCase()] || '') : '',
+                      agentEmpId: qaAgentEmpId_(rows[i][QAR.AGENT_ID], agent, rosterIdsByName),   // QA2-3
                       status: status, createdMs: Number(rows[i][QAR.CREATED_MS]) || 0 };
         if ((status === 'new' || status === 'in_review') &&
             String(rows[i][QAR.ASSIGNEE] || '').trim().toLowerCase() === selfEmail && base.pending.length < QA_LOG_PENDING_CAP) {
@@ -1418,9 +1471,14 @@ function getMyQaReviews() {
     const mine = [];
     const nameUnique = qaMyNameUnique_(emp);   // F-16: the legacy name match needs a unique name
     if (sheet && sheet.getLastRow() >= 2) {
+      // QA-5 (cycle 23): every row, not the last 2,000 — a released review
+      // dropped out of My Reviews once 2,000 newer recordings were indexed.
+      // Three narrow column reads find the caller's shared rows; only those
+      // (newest-shared first, capped) are read in full.
       const last = sheet.getLastRow();
-      const start = Math.max(2, last - QA_LIST_SCAN + 1);
-      const rows = sheet.getRange(start, 1, last - start + 1, QA_RECORDINGS_HEADERS.length).getValues();
+      const col = function (c) { return sheet.getRange(2, c + 1, last - 1, 1).getValues(); };
+      const idxs = qaMySharedRowIdxs_(col(QAR.AGENT), col(QAR.AGENT_ID), col(QAR.SHARED_MS), emp, nameUnique, QA_MY_REVIEWS_CAP);
+      const rows = idxs.map(function (i) { return sheet.getRange(i + 2, 1, 1, QA_RECORDINGS_HEADERS.length).getValues()[0]; });
       for (let i = 0; i < rows.length; i++) {
         const fid = String(rows[i][QAR.FILE_ID] || '').trim();
         if (!fid) continue;
@@ -1544,7 +1602,7 @@ function qaSampleRecordings(count, period) {
         const nm = String(rrows[i][EMP.NAME] || '').trim();
         if (!nm) continue;
         canon[nm.toLowerCase()] = nm;
-        targets[nm] = exemptions[nm.toLowerCase() + '|' + periodKey] ? 0 : target;
+        targets[nm] = qaExemptFor_(exemptions, nm.toLowerCase(), periodKey) ? 0 : target;   // QA2-1: one key rule
       }
     } catch (e) { /* best-effort — an unreadable roster degrades to the uncapped pick */ }
     const candidates = [];
@@ -1560,9 +1618,14 @@ function qaSampleRecordings(count, period) {
       }
       if (qaStatus_(rows[i][QAR.STATUS]) !== 'new') continue;
       if (String(rows[i][QAR.ASSIGNEE] || '').trim()) continue;
+      // QA2-2 (cycle 23): only the period's own calls — a pick from another
+      // period counts toward nothing, so "Sample the gaps" never closed them.
+      if (!qaPeriodMatches_(createdYmd, periodKey)) continue;
+      // QA-4 (cycle 23): never the caller's own call (S6 refuses reviewing it).
+      if (qaSelfReviewRefusal_(emp, [{ name: rows[i][QAR.AGENT], id: rows[i][QAR.AGENT_ID] }])) continue;
       candidates.push({ fileId: fid, agent: agent, rowIdx: start + i });
     }
-    if (!candidates.length) return { success: false, error: 'Nothing to sample — every new recording is already assigned.' };
+    if (!candidates.length) return { success: false, error: 'Nothing to sample — no unassigned new recording from ' + qaPeriodLabel_(periodKey) + ' that you can review.' };
     const picked = qaSamplePick_(candidates, n, reviewedByAgent, null, targets);
     if (!picked.length) return { success: false, error: 'Nothing to sample — every unassigned recording belongs to an agent already at target this period.' };
     picked.forEach(function (c) { sheet.getRange(c.rowIdx, QAR.ASSIGNEE + 1).setValue(sheetSafe_(self)); });
@@ -1598,6 +1661,32 @@ function qaRosterIdByName_(name) {
   } catch (e) { /* best-effort */ }
   return '';
 }
+/** PURE (Node-pinned) — QA2-3 (cycle 23): { lowercase name: [every included
+ *  roster id with that name] }. The queue and the log kept the FIRST row's id
+ *  per name, so for a name two roster rows share, "Coach on this call" filed
+ *  the coaching record on whichever came first — a never-purged HR record on
+ *  the wrong person. */
+function qaRosterIdIndex_(rrows) {
+  const out = {};
+  for (let i = 1; i < (rrows || []).length; i++) {
+    if (!empRosterEmail_(rrows[i])) continue;   // INV-183
+    const nm = String(rrows[i][EMP.NAME] || '').trim().toLowerCase();
+    if (!nm) continue;
+    const id = String(rrows[i][EMP.ID] || '').trim();
+    (out[nm] = out[nm] || []).push(id);
+  }
+  return out;
+}
+/** PURE (Node-pinned) — QA2-3: the roster id a recording's agent resolves to.
+ *  The AgentId stored at attribution wins (F-16 resolved it then); a legacy
+ *  row falls back to the name ONLY when exactly one roster row carries it —
+ *  an ambiguous or unknown name is '' (no hand-off), never a guess. */
+function qaAgentEmpId_(storedId, agentName, idsByName) {
+  const id = String(storedId == null ? '' : storedId).trim();
+  if (id) return id;
+  const ids = (idsByName || {})[String(agentName || '').trim().toLowerCase()] || [];
+  return ids.length === 1 ? ids[0] : '';
+}
 /** PURE (Node-pinned): every INCLUDED roster row's id whose name matches
  *  `key` (already trimmed + lowercased). Two ids = an ambiguous name. */
 function qaRosterIdsForName_(rrows, key) {
@@ -1622,6 +1711,23 @@ function qaRowIsMine_(row, emp, nameUnique) {
   const n = String((row && row[QAR.AGENT]) || '').trim().toLowerCase();
   const myName = String((emp && emp.name) || '').trim().toLowerCase();
   return !!n && !!myName && n === myName;
+}
+/** PURE (Node-pinned) — QA-5: the 0-based data indexes of the caller's
+ *  SHARED rows, newest share first, at most `cap`, from three single-column
+ *  reads (Agent, AgentId, SharedMs). The match is qaRowIsMine_'s own rule. */
+function qaMySharedRowIdxs_(agents, agentIds, sharedMs, emp, nameUnique, cap) {
+  const hits = [];
+  for (let i = 0; i < (sharedMs || []).length; i++) {
+    const ms = Number(sharedMs[i] && sharedMs[i][0]);
+    if (!(ms > 0)) continue;
+    const row = [];
+    row[QAR.AGENT] = agents[i] && agents[i][0];
+    row[QAR.AGENT_ID] = agentIds[i] && agentIds[i][0];
+    if (!qaRowIsMine_(row, emp, nameUnique)) continue;
+    hits.push({ i: i, ms: ms });
+  }
+  hits.sort(function (a, b) { return b.ms - a.ms; });
+  return hits.slice(0, Math.max(0, Number(cap) || 0)).map(function (h) { return h.i; });
 }
 /** Is the caller's roster name unique (exactly one included row)? */
 function qaMyNameUnique_(emp) {
@@ -1672,6 +1778,34 @@ function qaPrevPeriod_(key) {
     return y + '-Q' + q;
   }
   return '';
+}
+/** PURE (Node-pinned) — QA2-1: the period immediately AFTER `key` (same
+ *  shape); '' on a bad key. */
+function qaNextPeriod_(key) {
+  const k = String(key || '').trim();
+  let m = /^(\d{4})-(\d{2})$/.exec(k);
+  if (m) {
+    let y = Number(m[1]), mo = Number(m[2]) + 1;
+    if (mo > 12) { mo = 1; y++; }
+    return y + '-' + (mo < 10 ? '0' : '') + mo;
+  }
+  m = /^(\d{4})-Q([1-4])$/.exec(k);
+  if (m) {
+    let y = Number(m[1]), q = Number(m[2]) + 1;
+    if (q > 4) { q = 1; y++; }
+    return y + '-Q' + q;
+  }
+  return '';
+}
+/** PURE (Node-pinned) — QA2-1: is `nameKey` (lowercased) exempt for
+ *  `period`? Its own key, or — for a month — the quarter it falls in, so an
+ *  exemption granted from the quarter view holds in each of its months. A
+ *  month's exemption does not exempt the whole quarter. */
+function qaExemptFor_(exemptions, nameKey, period) {
+  const ex = exemptions || {};
+  if (ex[nameKey + '|' + period]) return true;
+  const ks = /^\d{4}-\d{2}$/.test(String(period || '')) ? qaPeriodKeysForYmd_(period + '-01') : null;
+  return !!(ks && ex[nameKey + '|' + ks.quarter]);
 }
 /** PURE — a human label: `2026-08` → 'Aug 2026', `2026-Q3` → 'Q3 2026'. */
 function qaPeriodLabel_(key) {
@@ -1781,14 +1915,20 @@ function qaCoverageRows_(recs, latestCards, rosterNames, period, target, exempti
   return Object.keys(byName).sort().map(function (k) {
     const row = byName[k];
     const cur = fin(row.cur), prev = fin(row.prev);
-    const exempt = !!(exemptions || {})[k + '|' + period];
+    // QA2-1 (cycle 23): an exemption EARNED in this period applies to the
+    // NEXT one — granting it for the period that earned it saved no review —
+    // and a quarter's exemption covers its months (qaExemptFor_).
+    const exempt = qaExemptFor_(exemptions, k, period);
+    const next = qaNextPeriod_(period);
+    const exemptNext = !!next && qaExemptFor_(exemptions, k, next);
     const out = {
       name: row.name, sampled: row.cur.sampled, target: exempt ? 0 : (Number(target) || 0),
       cardCount: row.cur.cards, avg: cur.avg, minCriterion: cur.min,
-      prevSampled: row.prev.sampled, prevAvg: prev.avg, prevMinCriterion: prev.min,
+      prevSampled: row.prev.sampled, prevCardCount: row.prev.cards, prevAvg: prev.avg, prevMinCriterion: prev.min,
       lastReviewedMs: row.lastReviewedMs, exempt: exempt, exemptUntil: exempt ? period : '',
+      exemptNext: exemptNext,
     };
-    out.eligible = !exempt && qaExemptEligible_(out);
+    out.eligible = !exempt && !exemptNext && qaExemptEligible_(out);
     return out;
   });
 }

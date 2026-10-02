@@ -17621,7 +17621,7 @@ test('QA-10: Phase 2 wiring — agent boundary, headers, stats gate, waveform fa
     'the [hidden] companion rule — display:block would beat the UA hidden rule (the documented gotcha)');
   // Rating buttons expose state; a rating click on the selected value
   // UNSELECTS (the intake pattern); stats nulls render em dashes.
-  assert.ok(/qa-rate-btn" aria-pressed="/.test(qaSrc), 'rating buttons carry aria-pressed (A11/INV-174)');
+  assert.ok(/qa-rate-btn" data-v="' \+ v \+ '" aria-pressed="/.test(qaSrc), 'rating buttons carry aria-pressed (A11/INV-174; data-v since QAUI-1)');
   assert.ok(/if \(v === '' \|\| v == null \|\| QA_STATE\.ratings\[key\] === v\) delete QA_STATE\.ratings\[key\];/.test(qaSrc), 'selected-rating click unselects (and a dropdown\'s blank option clears)');
   assert.ok(/r\.avgScore == null \? '—'/.test(qaSrc), 'a missing average is an em dash, never 0 (INV-187)');
   // The stats tab rides the same third-tier gate flag as the queue.
@@ -17693,7 +17693,7 @@ test('QA-11: qaSamplePick_ coverage-fair behavioral + sample endpoint assigns to
   // roster targets (0 for an exempt rep) ride into the pick, and an all-at-
   // target pool is a NAMED refusal rather than an empty success.
   assert.ok(/qaPeriodMatches_\(createdYmd, periodKey\)/.test(src), 'done-review load is period-scoped');
-  assert.ok(/targets\[nm\] = exemptions\[nm\.toLowerCase\(\) \+ '\|' \+ periodKey\] \? 0 : target;/.test(src), 'an exempt rep carries target 0');
+  assert.ok(/targets\[nm\] = qaExemptFor_\(exemptions, nm\.toLowerCase\(\), periodKey\) \? 0 : target;/.test(src), 'an exempt rep carries target 0 (the one key rule, QA2-1)');
   assert.ok(/qaSamplePick_\(candidates, n, reviewedByAgent, null, targets\)/.test(src), 'the pick is target-aware');
   assert.ok(/already at target this period/.test(src), 'an empty pick is refused by name');
   assert.ok(/writeAuditLog_\(emp, 'QaSample', '', '', false, 0,\s*'requested=' \+ n \+ '; assigned=' \+ picked\.length, emp\.email\);/.test(src),
@@ -20556,7 +20556,7 @@ console.log('\nDesign handoff PR 5 — QA surface');
 test('QA-19: qaCoverageRows_ behavioural — one row per roster name, case-insensitive attribution, period split, null-not-0, exempt target 0', () => {
   const ctx = {};
   vm.createContext(ctx);
-  ['qaPeriodKeysForYmd_', 'qaPeriodMatches_', 'qaCardStats_', 'qaExemptEligible_', 'qaCoverageRows_'].forEach((fn) => {
+  ['qaPeriodKeysForYmd_', 'qaPeriodMatches_', 'qaCardStats_', 'qaExemptEligible_', 'qaNextPeriod_', 'qaExemptFor_', 'qaCoverageRows_'].forEach((fn) => {
     vm.runInContext(extractRawFunction('Code.js', fn), ctx);
   });
   vm.runInContext('const QA_EXEMPT_AVG_MIN = 4.5; const QA_EXEMPT_CRIT_MIN = 4;', ctx);
@@ -20678,7 +20678,7 @@ test('QA-21: audit periods, eligibility, exemption + duration + skip contracts',
   assert.ok(/const periodKey = qaPeriodValid_\(period\) \? String\(period\)\.trim\(\) : periodOptions\[0\]\.key;/.test(q), 'an unknown period lands on the current month');
   assert.ok(/base\.coverage = qaCoverageRows_\(items, latest, agentOptions, periodKey, target, qaReadExemptions_\(\), qaPrevPeriod_\(periodKey\)\);/.test(q));
   assert.ok(/catch \(e\) \{ base\.coverage = \[\]; base\.coverageUnavailable = true; \}/.test(q), 'a failed join is NAMED, not an empty table');
-  assert.ok(/agentEmpId: /.test(q) && /rosterIdByName\[/.test(q), 'each recording carries the roster id for the coaching hand-off');
+  assert.ok(/agentEmpId: qaAgentEmpId_\(rows\[i\]\[QAR\.AGENT_ID\], rows\[i\]\[QAR\.AGENT\], rosterIdsByName\)/.test(q), 'each recording carries the roster id for the coaching hand-off (stored id first, an ambiguous name none — QA2-3)');
   // The CONFIG target has a reader and a bounded property override.
   const tg = nc(extractRawFunction('Code.js', 'qaAuditTarget_'));
   assert.ok(/CONFIG\.QA_AUDIT_TARGET_PER_PERIOD/.test(tg) && /n >= 1 && n <= 50/.test(tg));
@@ -21576,7 +21576,7 @@ test('QA-27: QA Log client — registry entry, shared range control, seq/view gu
   assert.ok(/r\.manual \? '<span class="qa-manual-pill">no recording<\/span>' :/.test(qan), 'My Reviews renders the pill instead of Play on a manual review');
   // Typed form controls + the unselect rule.
   assert.ok(/class="qa-yn-btn" data-v="' \+ v \+ '" aria-pressed=/.test(qan), 'a check renders a Yes/No pair with aria-pressed');
-  assert.ok(/class="qa-choice-sel" aria-label=/.test(qan), 'a choice renders a NAMED select');
+  assert.ok(/class="qa-choice-sel" data-qa-crit="' \+ esc\(c\.key\) \+ '" aria-label=/.test(qan), 'a choice renders a NAMED select');
   assert.ok(/if \(v === '' \|\| v == null \|\| QA_STATE\.ratings\[key\] === v\) delete QA_STATE\.ratings\[key\];/.test(qan), 'clicking the selected answer (or the blank option) UNSELECTS');
   // The "Log an audit" dialog: ensureOverlay + a name + an idempotent close hook.
   assert.ok(/ensureOverlay\('qa-log-new-overlay', \{ labelledBy: 'qa-log-new-title', onClose: qaLogNewClose_ \}\)/.test(qan), 'a NAMED dialog via ensureOverlay (INV-83)');
@@ -22507,8 +22507,8 @@ test('F-17: the exemption buttons carry the agent name in a data-* attribute and
   const qa = fs.readFileSync(path.join(__dirname, '../../web-app/qa/script_qa.html'), 'utf8');
   const cov = foNc(extractFunction('qa/script_qa.html', 'qaCoverageSectionHtml_'));
   assert.ok(!/onclick="qaSetExemption_/.test(cov), 'no onclick literal survives');
-  assert.ok(/data-qa-exempt="' \+ esc\(r\.name\) \+ '" data-qa-exempt-on="1"/.test(cov) && /data-qa-exempt-on="0"/.test(cov), 'grant and revoke ride data-* attributes, escaped');
-  assert.ok(/closest\('\[data-qa-exempt\]'\)/.test(qa) && /qaSetExemption_\(b\.getAttribute\('data-qa-exempt'\) \|\| '', b\.getAttribute\('data-qa-exempt-on'\) === '1'\)/.test(qa), 'ONE delegated document listener dispatches by attribute');
+  assert.ok(/data-qa-exempt="' \+ esc\(r\.name\) \+ '" data-qa-exempt-on="' \+ \(on \? '1' : '0'\)/.test(cov) && /data-qa-exempt-period="' \+ esc\(per\)/.test(cov), 'grant and revoke ride data-* attributes, escaped (and name their period — QA2-1)');
+  assert.ok(/closest\('\[data-qa-exempt\]'\)/.test(qa) && /qaSetExemption_\(b\.getAttribute\('data-qa-exempt'\) \|\| '', b\.getAttribute\('data-qa-exempt-on'\) === '1', b\.getAttribute\('data-qa-exempt-period'\) \|\| ''\)/.test(qa), 'ONE delegated document listener dispatches by attribute (the period too — QA2-1)');
   assert.ok(/window\.__qaExemptDelegated/.test(qa), 'registered once');
   // The attribute round trip: esc() encodes the apostrophe, the DOM decodes it, the function gets the real name.
   const escaped = sb.esc("O'Brien \"Sam\"");
@@ -32902,6 +32902,184 @@ test('CNUI-08 / TC2-5 (cycle 23): a new reminder busts the rep\'s cached Needs-y
   const c = stripJsComments_(extractRawFunction('Code.js', 'createScheduledCall'));
   const app = c.indexOf("'ScheduledCallCreate'"), bust = c.indexOf('pendingTasksBust_(emp.id);');
   assert.ok(app > 0 && bust > app && bust < c.indexOf('return { success: true'), 'busted after the row lands, before the reply');
+});
+
+
+console.log('\ncycle 23 Batch 8 — QA logic');
+// A sandbox holding the REAL QA functions named, the config enums they read,
+// and the stubs a test passes. Every QA function is driven, never paraphrased.
+const b8Ctx_ = (fns, extra) => {
+  const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, Date, isFinite,
+    CONFIG: { TIMEZONE: 'UTC', MANAGER_TIMEZONE: 'UTC' },
+    Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) },
+    empRosterEmail_: (r) => String((r && r[2]) || '').trim(),
+    EMP: { ID: 0, NAME: 1, EMAIL: 2, IS_MANAGER: 3 },
+  }, extra || {}));
+  ['QAR', 'QA_RECORDINGS_HEADERS', 'QA_MY_REVIEWS_CAP', 'QA_STATUSES'].forEach((n) =>
+    vm.runInContext(new RegExp('const ' + n + ' = [^\\n]*;').exec(codeSrc)[0].replace('const ', 'var '), ctx));
+  vm.runInContext('var QA_LIST_SCAN = 2000; var QA_EXEMPT_AVG_MIN = 4.5; var QA_EXEMPT_CRIT_MIN = 4;', ctx);
+  fns.forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  return ctx;
+};
+// A recordings sheet over plain rows (data from row 2), recording every range read.
+const b8Sheet_ = (rows) => {
+  const reads = [], writes = [];
+  return { reads, writes, rows,
+    getLastRow: () => rows.length + 1,
+    getRange: (r, c, n, w) => {
+      reads.push([r, c, n, w]);
+      return { getValues: () => rows.slice(r - 2, r - 2 + n).map((x) => x.slice(c - 1, c - 1 + (w || 1))),
+               setValue: (v) => { writes.push([r, c, v]); return {}; } };
+    } };
+};
+const b8Rec_ = (o) => { const r = new Array(15).fill(''); Object.keys(o).forEach((k) => { r[{ fid: 0, created: 4, status: 6, assignee: 7, agent: 10, shared: 11, agentId: 14 }[k]] = o[k]; }); return r; };
+
+test('QA2-1 (cycle 23): an exemption EARNED in a period is granted for the NEXT one, and a quarter\'s exemption holds in its months (driven)', () => {
+  const ctx = b8Ctx_(['qaPeriodKeysForYmd_', 'qaPeriodMatches_', 'qaCardStats_', 'qaExemptEligible_', 'qaNextPeriod_', 'qaExemptFor_', 'qaCoverageRows_']);
+  assert.deepStrictEqual(['2026-09', '2026-12', '2026-Q3', '2026-Q4', 'x'].map((k) => ctx.qaNextPeriod_(k)), ['2026-10', '2027-01', '2026-Q4', '2027-Q1', '']);
+  const ex = { 'ann|2026-Q3': true, 'bob|2026-08': true };
+  assert.strictEqual(ctx.qaExemptFor_(ex, 'ann', '2026-08'), true, 'THE REGRESSION (keys): a quarter exemption did not hold in the month view');
+  assert.strictEqual(ctx.qaExemptFor_(ex, 'bob', '2026-Q3'), false, 'a month does not exempt its whole quarter');
+  assert.strictEqual(ctx.qaExemptFor_(ex, 'bob', '2026-08'), true);
+  // Dee: covered in both 2026-09 and 2026-08 at 5s — eligible, and the grant is for 2026-10.
+  const recs = [], cards = [];
+  ['2026-09-0', '2026-08-0'].forEach((m) => [1, 2, 3].forEach((d) => {
+    const fid = 'f' + m + d; recs.push({ fileId: fid, agent: 'Dee', status: 'done', createdYmd: m + d, statusMs: 1 });
+    cards.push({ fileId: fid, ratings: { a: 5, b: 5 } });
+  }));
+  const rows = (exm) => ctx.qaCoverageRows_(recs, cards, ['Dee'], '2026-09', 3, exm, '2026-08');
+  const before = rows({})[0];
+  assert.strictEqual(before.eligible, true, 'eligible on the period that earned it');
+  assert.strictEqual(before.prevCardCount, 3, 'the previous period carries its card count (QA2-4)');
+  const granted = rows({ 'dee|2026-10': true })[0];
+  assert.strictEqual(granted.exemptNext, true, 'the grant is SEEN on the period that earned it');
+  assert.strictEqual(granted.eligible, false, 'and is not offered twice');
+  assert.strictEqual(granted.target, 3, 'this period keeps its target — the exemption saves NEXT period\'s reviews');
+  const nextView = ctx.qaCoverageRows_(recs, cards, ['Dee'], '2026-10', 3, { 'dee|2026-10': true }, '2026-09')[0];
+  assert.strictEqual(nextView.exempt, true); assert.strictEqual(nextView.target, 0, 'next period: target 0 — a review actually saved');
+  const q = stripJsComments_(extractRawFunction('Code.js', 'getQaQueue'));
+  assert.ok(/nextPeriod: qaNextPeriod_\(periodKey\), nextPeriodLabel: qaPeriodLabel_\(qaNextPeriod_\(periodKey\)\)/.test(q), 'the payload names the next period');
+  const qa = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/qa/script_qa.html'), 'utf8'));
+  const cov = stripJsComments_(extractFnFrom(qa, 'qaCoverageSectionHtml_'));
+  assert.ok(/if \(r\.eligible && d\.nextPeriod\) return btn\(true, d\.nextPeriod,/.test(cov), 'THE REGRESSION: Grant wrote the VIEWED period');
+  assert.ok(/if \(r\.exemptNext\) return btn\(false, d\.nextPeriod/.test(cov), 'a granted next-period exemption can be revoked from here');
+  assert.ok(/\.qaSetExemption\(name, per, !!on\)/.test(stripJsComments_(extractFnFrom(qa, 'qaSetExemption_'))), 'the call carries the button\'s period');
+});
+
+test('QA2-2 + QA-4 (cycle 23): "Sample the gaps" draws only the period\'s own calls, and never the sampler\'s own (driven)', () => {
+  const ms = (ymd) => Date.parse(ymd + 'T12:00:00Z');
+  const rows = [
+    b8Rec_({ fid: 'old-period', created: ms('2026-07-10'), status: 'new', agent: 'Dee' }),
+    b8Rec_({ fid: 'mine', created: ms('2026-09-10'), status: 'new', agent: 'Rev Iewer', agentId: 'E-R' }),
+    b8Rec_({ fid: 'good', created: ms('2026-09-11'), status: 'new', agent: 'Dee' }),
+  ];
+  const sheet = b8Sheet_(rows);
+  const me = { id: 'E-R', name: 'Rev Iewer', email: 'r@x', isAdmin: false };
+  const ctx = b8Ctx_(['qaPeriodKeysForYmd_', 'qaPeriodMatches_', 'qaPeriodValid_', 'qaPeriodLabel_', 'qaStatus_', 'qaMsToYmd_', 'qaExemptFor_',
+    'qaIsOwnRecording_', 'qaSelfReviewRefusal_', 'qaSamplePick_', 'qaSampleRecordings'], {
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    getEmployeeInfo_: () => me, canSeeQa_: () => true, getOrCreateQaRecordingsSheet_: () => sheet,
+    qaAuditTarget_: () => 3, qaReadExemptions_: () => ({}), getEmployeeRosterRows_: () => [[], ['E-D', 'Dee', 'd@x'], ['E-R', 'Rev Iewer', 'r@x']],
+    sheetSafe_: (v) => v, writeAuditLog_: () => {}, qaPeriodOptions_: () => [{ key: '2026-09' }],
+  });
+  const r = ctx.qaSampleRecordings(5, '2026-09');
+  assert.ok(r.success, JSON.stringify(r));
+  assert.deepStrictEqual(Array.from(r.fileIds), ['good'], 'THE REGRESSION: the July call and the sampler\'s own call were both handed out');
+  me.isAdmin = true;
+  rows[2][7] = 'someone@x';   // "good" is taken now
+  const r2 = ctx.qaSampleRecordings(5, '2026-09');
+  assert.deepStrictEqual(Array.from(r2.fileIds), ['mine'], 'an admin may review their own call (S6)');
+  rows[1][7] = 'someone@x';
+  const r3 = ctx.qaSampleRecordings(5, '2026-09');
+  assert.ok(!r3.success && /no unassigned new recording from Sep 2026/.test(r3.error), 'nothing in the period says so: ' + r3.error);
+});
+
+test('QA-4 (cycle 23): an assignment never hands a reviewer their own call (driven)', () => {
+  const rec = b8Rec_({ fid: 'f1', agent: 'Ann Bee', agentId: 'E-A', status: 'new' });
+  const sheet = b8Sheet_([rec]);
+  let me = { id: 'E-A', name: 'Ann Bee', email: 'ann@x', isManager: true, isAdmin: false };
+  const ctx = b8Ctx_(['qaFindRecordingRow_', 'qaIsOwnRecording_', 'qaSelfReviewRefusal_', 'qaReviewerByEmail_', 'qaAssignRecording'], {
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    getEmployeeInfo_: () => me, canSeeQa_: () => true, getOrCreateQaRecordingsSheet_: () => sheet,
+    qaCanReviewEmail_: () => true, empIsAdmin_: () => false, sheetSafe_: (v) => v, writeAuditLog_: () => {},
+    getEmployeeRosterRows_: () => [[], ['E-A', 'Ann Bee', 'ann@x', 'TRUE'], ['E-C', 'Cy Dee', 'cy@x', '']],
+  });
+  assert.ok(/your own call/.test(ctx.qaAssignRecording('f1', 'ann@x').error), 'THE REGRESSION: a reviewer could take their own call');
+  me = { id: 'E-M', name: 'Mgr', email: 'm@x', isManager: true, isAdmin: false };
+  assert.ok(/ann@x's own call/.test(ctx.qaAssignRecording('f1', 'ann@x').error), 'a manager cannot assign Ann her own call');
+  assert.ok(ctx.qaAssignRecording('f1', 'cy@x').success, 'another reviewer can have it');
+  assert.ok(ctx.qaAssignRecording('f1', 'stranger@x').success, 'an address with no roster identity is not refused on a guess');
+});
+
+test('QA2-3 (cycle 23): the coaching hand-off uses the STORED agent id, and a name two roster rows share resolves to nobody (driven)', () => {
+  const ctx = b8Ctx_(['qaRosterIdIndex_', 'qaAgentEmpId_']);
+  const idx = ctx.qaRosterIdIndex_([[], ['E-1', 'Sam Lee', 'a@x'], ['E-2', 'sam lee', 'b@x'], ['E-3', 'Ana', 'c@x'], ['E-9', 'Gone', '']]);
+  assert.deepStrictEqual(Array.from(idx['sam lee']), ['E-1', 'E-2'], 'both rows are SEEN');
+  assert.ok(!idx.gone, 'an offboarded row is not a person (INV-183)');
+  assert.strictEqual(ctx.qaAgentEmpId_('', 'Sam Lee', idx), '', 'THE REGRESSION: the first row\'s id — a coaching record on the wrong person');
+  assert.strictEqual(ctx.qaAgentEmpId_('E-2', 'Sam Lee', idx), 'E-2', 'the id stored at attribution wins');
+  assert.strictEqual(ctx.qaAgentEmpId_('', ' ana ', idx), 'E-3', 'a unique name resolves');
+  assert.strictEqual(ctx.qaAgentEmpId_('', 'Nobody', idx), '');
+  ['getQaQueue', 'getQaLog'].forEach((f) => {
+    const src = stripJsComments_(extractRawFunction('Code.js', f));
+    assert.ok(/qaAgentEmpId_\(rows\[i\]\[QAR\.AGENT_ID\]/.test(src) && !/rosterIdByName\[/.test(src), f + ' resolves through the one helper');
+  });
+});
+
+test('QA-2 (cycle 23): a reviewer cannot read or annotate the reviews of their OWN call before it is released; an admin can (driven)', () => {
+  const rec = b8Rec_({ fid: 'own', agent: 'Ann Bee', agentId: 'E-A' });
+  const recSheet = b8Sheet_([rec]);
+  let me = { id: 'E-A', name: 'Ann Bee', email: 'ann@x', isAdmin: false };
+  const ss = { getSheetByName: (n) => (n === 'QaRecordings' ? recSheet : null) };
+  const ctx = b8Ctx_(['qaFindRecordingRow_', 'qaIsOwnRecording_', 'qaSelfReviewRefusal_', 'qaSelfReviewRefusalFor_', 'qaListComments', 'qaListScorecards'], {
+    getEmployeeInfo_: () => me, canSeeQa_: () => true, getQaSS_: () => ss,
+    QA_RECORDINGS_TAB: 'QaRecordings', QA_COMMENTS_TAB: 'QaComments',
+    qaReadScorecards_: () => ({ cards: [] }), qaLatestScorecards_: (c) => c, getQaScorecardCriteria_: () => [],
+  });
+  assert.ok(/your own call/.test(ctx.qaListComments('own').error), 'THE REGRESSION: the comments on your own call were readable');
+  assert.ok(/your own call/.test(ctx.qaListScorecards('own').error), 'and the scorecards');
+  me = { id: 'E-A', name: 'Ann Bee', email: 'ann@x', isAdmin: true };
+  assert.ok(!ctx.qaListComments('own').error && !ctx.qaListScorecards('own').error, 'an admin may (S6)');
+  me = { id: 'E-B', name: 'Bo', email: 'bo@x', isAdmin: false };
+  assert.ok(!ctx.qaListComments('own').error, 'another reviewer may');
+  const add = stripJsComments_(extractRawFunction('Code.js', 'qaAddComment'));
+  assert.ok(add.indexOf('qaSelfReviewRefusal_(emp,') > 0 && add.indexOf('qaSelfReviewRefusal_(emp,') < add.indexOf('appendRowsTextSafe_('), 'the comment write refuses before it appends');
+});
+
+test('QA-5 (cycle 23): a recording older than the 2,000-row tail is still found, and still on its agent\'s My Reviews (driven)', () => {
+  const rows = [b8Rec_({ fid: 'ancient', agent: 'Ann', agentId: 'E-A', shared: 50 })];
+  for (let i = 0; i < 2500; i++) rows.push(b8Rec_({ fid: 'r' + i, agent: 'Bo', shared: i % 3 ? 0 : 100 + i }));
+  rows.push(b8Rec_({ fid: 'recent', agent: 'Ann', agentId: 'E-A', shared: 9000 }));
+  const sheet = b8Sheet_(rows);
+  const ctx = b8Ctx_(['qaFindRecordingRow_', 'qaRowIsMine_', 'qaMySharedRowIdxs_']);
+  const hit = ctx.qaFindRecordingRow_(sheet, 'ancient');
+  assert.ok(hit && hit.rowIdx === 2 && hit.row[0] === 'ancient', 'THE REGRESSION: "Recording not found." for a row 2,500 deep');
+  assert.strictEqual(ctx.qaFindRecordingRow_(sheet, 'r2499').rowIdx, 2502, 'the tail is still read first');
+  assert.strictEqual(ctx.qaFindRecordingRow_(sheet, 'nope'), null);
+  const col = (c) => rows.map((r) => [r[c]]);
+  const me = { id: 'E-A', name: 'Ann' };
+  assert.deepStrictEqual(Array.from(ctx.qaMySharedRowIdxs_(col(10), col(14), col(11), me, true, 50)), [2501, 0], 'both shared rows, newest share first');
+  assert.deepStrictEqual(Array.from(ctx.qaMySharedRowIdxs_(col(10), col(14), col(11), me, true, 1)), [2501], 'capped');
+  const mine = stripJsComments_(extractRawFunction('Code.js', 'getMyQaReviews'));
+  assert.ok(/qaMySharedRowIdxs_\(col\(QAR\.AGENT\), col\(QAR\.AGENT_ID\), col\(QAR\.SHARED_MS\), emp, nameUnique, QA_MY_REVIEWS_CAP\)/.test(mine) && !/QA_LIST_SCAN/.test(mine), 'My Reviews reads every row');
+});
+
+test('QA2-4 + QA2-5 (cycle 23): the previous period is card-weighted like the current one, and one agent is one Stats row whatever the case (driven)', () => {
+  const sb = buildSandbox([]);
+  const sum = loadFunction(sb, 'qa/script_qa.html', 'qaCoverageSummary_');
+  loadFunction(sb, 'qa/script_qa.html', 'qaDayDiff_');
+  const rows = [
+    { name: 'A', sampled: 3, target: 3, cardCount: 3, avg: 4, prevSampled: 3, prevCardCount: 6, prevAvg: 2 },
+    { name: 'B', sampled: 3, target: 3, cardCount: 3, avg: 4, prevSampled: 3, prevCardCount: 1, prevAvg: 5 },
+  ];
+  assert.strictEqual(sum(rows, '2026-09-10', '2026-09-30').prevAvg, 2.43, 'THE REGRESSION: weighted by sampled it read 3.5 — a different average from the current one');
+  assert.strictEqual(sum([{ name: 'A', sampled: 1, target: 3, cardCount: 1, avg: 4, prevSampled: 2, prevAvg: 3 }], '2026-09-10', '2026-09-30').prevAvg, 3, 'an older payload without prevCardCount still reads');
+  const ctx = b8Ctx_(['qaStatsAggregate_']);
+  const out = ctx.qaStatsAggregate_([{ fileId: 'a', agent: 'Maria Garcia', status: 'done' }, { fileId: 'b', agent: 'maria garcia ', status: 'new' }],
+    [{ fileId: 'a', ratings: { x: 4 } }, { fileId: 'b', ratings: { x: 2 } }], [{ key: 'x' }]);
+  assert.strictEqual(out.length, 1, 'THE REGRESSION: two Stats rows for one agent');
+  assert.strictEqual(out[0].agent, 'Maria Garcia', 'labelled with the first spelling seen');
+  assert.strictEqual(out[0].recordings, 2); assert.strictEqual(out[0].avgScore, 3);
 });
 
 

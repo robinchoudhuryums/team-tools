@@ -2263,7 +2263,17 @@ test('QA-LOG-DOM: the typed scorecard form — Yes/No pair, dropdown, unselect, 
   h.read('qaSetRating_')('outcome', '');
   assert.strictEqual(h.read('QA_STATE').ratings.outcome, undefined, 'the blank option clears the choice');
   h.read('qaSetRating_')('outcome', 'Resolved');
+  // QAUI-1 (cycle 23): a rating is patched IN PLACE — the button the reviewer
+  // pressed is the same node afterwards, and keeps the focus.
+  const g4 = h.$('[data-qa-crit="greeting"] button[data-v="4"]');
+  g4.focus();
+  h.read('qaSetRating_')('greeting', 4);
+  assert.strictEqual(h.$('[data-qa-crit="greeting"] button[data-v="4"]'), g4, 'THE REGRESSION: every click rebuilt the form');
+  assert.strictEqual(h.window.document.activeElement, g4, 'focus stays on the pressed rating');
+  assert.strictEqual(g4.getAttribute('aria-pressed'), 'true');
+  assert.ok(/running avg 4/.test(h.$('.qa-score-running').textContent), 'the running line updates in place');
   h.read('qaSetRating_')('greeting', 5);
+  assert.strictEqual(g4.getAttribute('aria-pressed'), 'false', 'a different rating un-presses the old one');
   assert.ok(/running avg 5/.test(h.$('.qa-score-running').textContent), 'the running average counts ONLY the scale answer');
   assert.ok(/3 of 3 rated/.test(h.$('.qa-score-running').textContent), 'but completeness counts every answered criterion');
   h.$('#qa-score-notes').value = 'Escalated correctly.';
