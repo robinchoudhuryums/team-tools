@@ -3,11 +3,11 @@
 ## Current
 Cycle: 23 — opened by the 2026-10-01 `/broad-scan` (0 Critical / 5 High; plan of 13 batches + 8 deferred, in chat). Cycle 22 and 22post are in `.cycle/HISTORY.md`.
 Phase: implement
-Scope: broad — Batches 1–5 (TC-02 included), 6a and 6b done and doc-synced; 7a done (docs not yet synced)
+Scope: broad — Batches 1–5 (TC-02 included), 6a and 6b done and doc-synced; 7a and 7b done (docs not yet synced)
 Test Command: manual
 Estimates: Batch 1: M (~9 h) · Batch 2: M (~11 h) · Batch 3: M (~9.5 h) · Batch 4a: M (~10 h) · 4a follow-ons: S (~3 h) · Batch 4b: M (~11 h) · TC-02 (option a): M (~8 h) · Batch 5: M (~10 h) · Batch 6a: M (~9.5 h) · Batch 6b: M (~10 h) · Batch 7a: M (~10 h) · Batch 7b: M (~7.5 h) — each written before its first edit
 Subsystem cycles since last Seams audit: 3 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25) and 22post's /reflect (2026-09-30). The cadence is every 4, so the next reflection reaches it.
-Updated: 2026-10-02 (cycle 23 Batch 7a)
+Updated: 2026-10-02 (cycle 23 Batch 7b)
 
 ## In progress (facts to carry forward — NOT judgments)
 - Cycle 23 opened 2026-10-01 with a `/broad-scan` (0 Critical / 5 High / ~110 findings; the full report and 13-batch plan are in that session's chat — the batch→ID list is copied under Pending below).
@@ -22,9 +22,17 @@ Updated: 2026-10-02 (cycle 23 Batch 7a)
 - Batch 6b implemented on the same branch (block: `.cycle/blocks/23-batch6b-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Batch 6a implemented on the restarted branch (block: `.cycle/blocks/23-batch6a-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Batch 7a implemented on the same branch (block: `.cycle/blocks/23-batch7a-broad-implement.md`); NOT yet deployed. /sync-docs NOT yet run.
+- Batch 7b implemented on the same branch (block: `.cycle/blocks/23-batch7b-broad-implement.md`); NOT yet deployed. /sync-docs NOT yet run.
 - Everything through 22post is merged (PRs #274–#282) and deployed (2026-09-30). The operator was finishing two 22post steps at close: the manual.json re-export + import, and the S124–S128 walks.
 
 ## Completed this cycle
+- CNUI-02 | 30_callnotes.js, cn/script_callnotes.html | a Save & Compose cancel past the undo window keeps the note and clears the form (deleteCallNote names `windowClosed`)
+- CNUI-03 | cn/script_callnotes.html | the timeline and submission viewers drop a stale answer (CN_VIEWER_SEQ)
+- CNUI-04 | cn/script_callnotes.html | a manager comment/reply save patches its own card only (cnMgrPatchCard_)
+- CNUI-05 | cn/script_callnotes.html | an open Clarify box keeps text, focus and caret across re-renders
+- CNUI-06 | cn/script_callnotes.html | undo-save announces and restores only after the server deletes
+- CNUI-08 | 30_callnotes.js, cn/script_callnotes.html | creating a reminder busts and refetches Needs you
+- CNUI-09 | cn/script_callnotes.html | the stale-flag badge on both nav forms (phone bottom nav)
 - FORM-1 | 61_forms.js | the unlocked token/submission lookups re-check the fetched row carries its token (located once more, then refused)
 - HR-1 + CN-7 | 00_config.js, 81_empdocs.js, 82_coaching.js, 30_callnotes.js | doc, coaching and note free-text columns written into '@' cells (EMPDOC/COACH/CN_TEXT_IDX)
 - FORM-2 | 61_forms.js, Tests.js | the FormSubmissionReceived witness + the failure log carry tokenRef, never the token
@@ -114,12 +122,13 @@ Updated: 2026-10-02 (cycle 23 Batch 7a)
   - Batch 6a PTO/punch — DONE (TC-03, TC-04, TC-05, TC-06, TC-08, CORE-07, VIS-1)
   - Batch 6b schedules — DONE (TC2-1, TC2-6, TC2-3, TC2-4, TC2-7, TC2-8, COA-2, MET2-2)
   - Batch 7a store data — DONE (FORM-1, HR-1+CN-7, FORM-2, FORM-3, FORM-4, FORM-5, CN-1, CN-2, CN-4, CN-5)
-  - Batch 7b CN client: CNUI-02, CNUI-03, CNUI-04, CNUI-05, CNUI-06, CNUI-08, CNUI-09
+  - Batch 7b CN client — DONE (CNUI-02, CNUI-03, CNUI-04, CNUI-05, CNUI-06, CNUI-08, CNUI-09)
   - Batch 8 QA: QA2-1, QA2-2, QA2-3, QA-2, QA-4, QA-5, QA2-4/5, QAUI-1
   - Batch 9 editors/a11y: UI-ESC, INTUI-1, TRUI-2, KB2-9, KB2-8, ADM-06, ADM-10/KBUI-5, SH-02, SH-03/04/05, TCUI-1
   - Batch 10 PHI/config: KBUI-2, KB-2, INT2-3, INT-1/INT2-1/INT2-2, INT-2/INT2-4, CN-3, ADM-12, ADM-13/CORE-04/05/06/03/TRN-2, MET-5/MET2-1
   - Deferred (decisions): DRV-3, SP-2, KB2-6, HR-2, TRN-1, CN-8, INT-3, TC2-9
 - **Batch 1 deploy + walks:** clasp push + New version; S8 with >1,000 rows; S18's blocked-clipboard step twice via Save & Compose; S1.
+- **Batch 7b deploy:** no operator action; walk S19, S26, S28, S31, S34, S35, S50, S73 and S113.
 - **Batch 7a deploy:** optionally void + reissue any pre-deploy Employee Doc whose title/body reads as a date or number (it still verifies as tampered); walk S18, S21, S28, S61, S69, S99, S113 and S114.
 - **Batch 6b deploy:** optionally set per-employee breaks for reps with a column-O override; walk the reminder scenarios (a window left open overnight), S75 (a misspelled zone), Coverage, S110, Punctuality and the coaching board.
 - **Batch 6a deploy:** optionally deny any pre-deploy Pending single-date request on a weekend/holiday (approval is not re-checked); walk S4, S5, S7, S13, S75, S92 and S133.
@@ -138,6 +147,7 @@ Updated: 2026-10-02 (cycle 23 Batch 7a)
 - **DEFERRED, still an operator decision:** F-09's holiday FALLBACK; what a LocationAcceptance city row's Accepts column decides.
 
 ## Open follow-on items
+- **Batch 7b follow-ons** (full text in its block): the Metrics alert badge has CNUI-09's shape (set on the first nav form only); `cnMgrPatchCard_`'s fallback still reloads the whole stack; undo-save of a note missing from local state restores without deleting; no visual of a multi-card manager session.
 - **Batch 7a follow-ons** (full text in its block): pre-fix notes/docs/coaching rows keep their coerced values (a note re-formats on edit, docs and coaching never); the timeline's sent-forms stream does not report its own cap; `spanishSpanStartRow_` / `schedSpanStartRow_` are one function twice; the ScheduledCalls Label column is not '@'.
 - **Batch 6b follow-ons** (full text in its block): other empState readers were not audited for a day rollover; `saveShiftSchedules` checks timezone keys by shape only; the punctuality table sorts a null on-time first.
 - **Batch 6a follow-ons** (full text in its block): approval does not re-check the closed-day rule; `EmployeeAdd`'s audit row has CORE-07's shape; a deny during a tracking-off window clears the record without crediting; no visual fixture for the doctor card; no editor-suite case for the Deducted column, the closed-day refusal or the 16 h bound.
@@ -163,4 +173,4 @@ Updated: 2026-10-02 (cycle 23 Batch 7a)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 23 Batches 1–5 (TC-02 included) are merged to main (PR #284). Batches 6a, 6b and 7a are committed and pushed on `claude/blissful-johnson-cottl5` (restarted from main); 6a and 6b are doc-synced. Next: `/sync-docs` for Batch 7a (the block's DOCUMENTATION UPDATES list, incl. S114's stale Expected), then `/broad-implement Batch 7b`; deploy and walk the Batch 1–7a scenarios. The next /reflect reaches the Seams-audit cadence.
+Cycle 23 Batches 1–5 (TC-02 included) are merged to main (PR #284). Batches 6a, 6b, 7a and 7b are committed and pushed on `claude/blissful-johnson-cottl5` (restarted from main); 6a and 6b are doc-synced. Next: `/sync-docs` for Batches 7a + 7b (both blocks' DOCUMENTATION UPDATES lists, incl. S114's stale Expected), then `/broad-implement Batch 8`; deploy and walk the Batch 1–7b scenarios. The next /reflect reaches the Seams-audit cadence.
