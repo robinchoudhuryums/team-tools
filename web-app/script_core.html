@@ -2335,6 +2335,7 @@ var _remindFired = {};        // key → true, reset on the rep's day rollover
 var _remindDay = '';
 var _remindStateAt = 0;       // last punch-state refresh ATTEMPT (ms — the throttle)
 var _remindStateOkAt = 0;     // last CONFIRMED snapshot (ms — boot or a successful refresh)
+var _remindStaleDay = '';     // TC2-1 — the rep-local day a stale-snapshot refresh was last forced for
 var _remindLastActivityAt = 0; // last real user input anywhere in the shell (ms)
 var REMIND_CLOCKIN_GRACE_MIN = 15;            // no clock-in nag in the first shift minutes
 var REMIND_ACTIVITY_WINDOW_MS = 5 * 60 * 1000;   // "activity" = input in the last 5 min
@@ -2566,6 +2567,19 @@ function remindersTick_() {
     if (!tz) return;
     var today = isoDateTz(tz);
     if (today !== _remindDay) { _remindDay = today; _remindFired = {}; }
+    // TC2-1 (cycle 23): every inferred reminder below reads empState — the
+    // day-off flag, the half day, the schedule and the punch state — and that
+    // snapshot describes the day it was FETCHED. A window left open overnight
+    // ran today's reminders on yesterday's PTO, half day and clock-out: a day
+    // off was nagged, or a working day silenced. A snapshot of another day
+    // is not used: the ticker asks for today's at once (the throttle is reset
+    // on the rollover) and fires nothing inferred until it arrives.
+    if (!remindStateIsToday_(empState, today)) {
+      if (_remindStaleDay !== today) { _remindStaleDay = today; _remindStateAt = 0; }
+      remindMaybeRefreshState_();
+      schedTick_();   // (d) rep-created reminders do not read empState
+      return;
+    }
     var sched = remindersSchedule_();
     if (!sched) return;
     // F2 (cycle 18) — a shift SHAPE exists every day of the week, so without
@@ -2588,7 +2602,12 @@ function remindersTick_() {
     var lead = sched.breakReminderMin || 10;
     // T5 rework: none on a half day — its hours are the rep's to place, so a
     // scheduled break is not a break they are due.
-    var breaks = dayOff ? [] : ((plan.breaks && Array.isArray(sched.breaks)) ? sched.breaks : []).filter(function (b) { return !!b; });
+    // TC2-4 (cycle 23): only a break inside today's shift is reminded of —
+    // the server now trims a column-O override's tz-default breaks, and this
+    // guard holds the same line for any list that still reaches here.
+    var breaks = dayOff ? [] : ((plan.breaks && Array.isArray(sched.breaks)) ? sched.breaks : []).filter(function (b) {
+      return !!b && remindBreakInShift_(b, sched.startMin, sched.lengthMin);
+    });
     for (var i = 0; i < breaks.length; i++) {
       var b = breaks[i];
       var until = b.startMin - nowMin;
@@ -2737,6 +2756,20 @@ function schedFetch_(force) {
  *  midnight (the F6 discipline). `offToday` is server-computed approved PTO
  *  (empTimeOffToday_ — a FULL day only since T5); an older server that does not send it simply yields the
  *  weekend-only guard, which is the additive-field posture. */
+/** TC2-1 (cycle 23) — PURE (Node-pinned). Does the state snapshot describe
+ *  `today` (the rep-local yyyy-MM-dd)? getEmployeeState ships the day it was
+ *  built for as `today`; a snapshot without one (an older server) is trusted,
+ *  as before. */
+function remindStateIsToday_(state, today) {
+  if (!state || !state.today) return true;
+  return String(state.today) === String(today);
+}
+/** TC2-4 (cycle 23) — PURE (Node-pinned). Does break `b` ({startMin}) start
+ *  inside the shift [startMin, startMin + lengthMin)? */
+function remindBreakInShift_(b, startMin, lengthMin) {
+  var bs = Number(b && b.startMin), s = Number(startMin) || 0, e = s + (Number(lengthMin) || 0);
+  return isFinite(bs) && bs >= s && bs < e;
+}
 function remindIsDayOff_(tz) {
   if (empState && empState.offToday) return true;
   try {

@@ -21266,9 +21266,9 @@ test('OPS-1: mgrWorkdaysEnding_ walks weekdays only, oldest→newest, and every 
   assert.strictEqual(f(new Date('2026-09-05T12:00:00Z'), 'UTC', 1, 0).join('|'), '2026-09-04', 'a Saturday "today" is itself skipped');
   assert.strictEqual(f(wed, 'UTC', 0, 0).length, 0, 'n=0 is empty, never a spin');
   const dash = extractRawFunction('Code.js', 'getManagerDashboard').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-  assert.ok(/mgrWorkdaysEnding_\(now, mgrTz, 8, 0\)/.test(dash), 'punchTrend: 8 workdays incl. today');
-  assert.ok(/mgrWorkdaysEnding_\(now, mgrTz, 7, 1\)/.test(dash), 'recentHours: 7 workdays excl. today');
-  assert.ok(/mgrWorkdaysEnding_\(now, mgrTz, trendDays, 1\)/.test(dash), 'missedTrend: 14 workdays excl. today');
+  assert.ok(/mgrWorkdaysEnding_\(now, mgrTz, 8, 0, mgrHolidays\)/.test(dash), 'punchTrend: 8 workdays incl. today');
+  assert.ok(/mgrWorkdaysEnding_\(now, mgrTz, 7, 1, mgrHolidays\)/.test(dash), 'recentHours: 7 workdays excl. today');
+  assert.ok(/mgrWorkdaysEnding_\(now, mgrTz, trendDays, 1, mgrHolidays\)/.test(dash), 'missedTrend: 14 workdays excl. today');
   assert.ok(/for \(let off = trendDays - 1; off >= 0; off--\)/.test(dash), 'pendingTrend stays on CALENDAR days — a Saturday submission is data');
   assert.ok(!/analyticsDays|sparkDays/.test(dash), 'the calendar-day loops are gone');
   const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
@@ -27845,9 +27845,9 @@ test('T5 (rework): a HALF day has no fixed start — graded on HOURS WORKED (>= 
     getAdpSS_: () => ({ getSheetByName: () => ({ getDataRange: () => ({ getValues: () => ts }) }) }),
     getOrCreateTimeOffSheet_: () => ({ getDataRange: () => ({ getValues: () => to }) }),
     getCompanyHolidays_: () => [], normalizeDate_: (x) => x, normalizeTime_: (x) => x,
-    Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) }, fmtDateTz_: () => rTodayIso });
+    Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) }, fmtDateTz_: () => rTodayIso, fmtTimeTz_: () => '09:00:00' });
   ['daysBetween_', 'addDaysIso_', 'normalizeType_', 'timeToMins_', 'timeOffDayKind_', 'calcHours_', 'breakPairs_', 'breakSortKey_',
-   'punchDayAdd_', 'punctIsHalfDay_', 'punctHalfDayVerdict_', 'punctLunchNearest_', 'punctDayState_', 'punctWeeklyBuckets_',
+   'punchDayAdd_', 'punctIsHalfDay_', 'punctHalfDayVerdict_', 'punctLunchNearest_', 'punctDayState_', 'punctNotYet_', 'punctWeeklyBuckets_',
    'getPunctualityReport'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), rctx));
   let rTodayIso = '2026-09-26';   // the range is in the past
   const rep = JSON.parse(JSON.stringify(rctx.getPunctualityReport('2026-09-21', '2026-09-25')));
@@ -32541,6 +32541,159 @@ test('VIS-1 (cycle 23): the Day Edit hint no longer claims 24-hour entry — the
   const hint = /id="day-edit-subtitle"[\s\S]*?<div class="modal-hint">([\s\S]*?)<\/div>/.exec(m);
   assert.ok(hint, 'the Day Edit hint is found');
   assert.ok(!/24-hour/.test(hint[1]) && /check AM or PM/.test(hint[1]), 'the hint matches the inputs');
+});
+
+console.log('\ncycle 23 Batch 6b — schedules, reminders, planner');
+
+test('TC2-1 (cycle 23): the reminder ticker never runs today\'s inferred reminders on another day\'s state snapshot — it forces a refresh at the rollover and fires nothing inferred until today\'s arrives (driven)', () => {
+  const s = buildSandbox([]);
+  const isToday = loadFunction(s, 'script_core.html', 'remindStateIsToday_');
+  assert.strictEqual(isToday({ today: '2026-10-01' }, '2026-10-02'), false, 'yesterday\'s snapshot is not today\'s');
+  assert.strictEqual(isToday({ today: '2026-10-02' }, '2026-10-02'), true);
+  assert.strictEqual(isToday({}, '2026-10-02'), true, 'an older server without `today` is trusted, as before');
+  // Drive the tick itself.
+  const calls = { refresh: 0, sched: 0, schedule: 0 };
+  Object.assign(s, { buildStampTick_() {}, empTz: () => 'America/Chicago', isoDateTz: () => '2026-10-02',
+    _remindDay: '2026-10-01', _remindFired: { x: 1 }, _remindStaleDay: '', _remindStateAt: 12345,
+    remindMaybeRefreshState_() { calls.refresh++; calls.stateAtSeen = s._remindStateAt; }, schedTick_() { calls.sched++; },
+    remindersSchedule_() { calls.schedule++; return null; } });
+  const tick = loadFunction(s, 'script_core.html', 'remindersTick_');
+  s.empState = { today: '2026-10-01', offToday: true, timezone: 'America/Chicago' };
+  tick();
+  assert.strictEqual(calls.schedule, 0, 'THE REGRESSION: yesterday\'s day-off / half day / schedule drove today\'s reminders');
+  assert.strictEqual(calls.refresh, 1, 'today\'s state is asked for');
+  assert.strictEqual(calls.stateAtSeen, 0, 'at once — the 10-minute throttle is reset on the rollover');
+  assert.strictEqual(calls.sched, 1, 'the rep-created reminders still fire (they do not read empState)');
+  s._remindStateAt = 999; tick();
+  assert.strictEqual(calls.stateAtSeen, 999, 'the throttle is reset once per day, not every tick');
+  s.empState = { today: '2026-10-02', timezone: 'America/Chicago' };
+  tick();
+  assert.strictEqual(calls.schedule, 1, 'today\'s snapshot runs the reminders again');
+});
+
+test('TC2-6 (cycle 23): onboarding refuses a misspelled timezone id the runtime does not know (it would silently become GMT), and never blocks when the runtime cannot judge (driven)', () => {
+  const ctx = vm.createContext({ Intl, Date, String });
+  vm.runInContext(/const EMP = \{[\s\S]*?\};/.exec(codeSrc)[0], ctx);
+  ['parseShiftOverride_', 'empValidateNewEmployee_', 'tzIdKnown_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  assert.strictEqual(ctx.tzIdKnown_('America/Chicgo'), false);
+  assert.strictEqual(ctx.tzIdKnown_('Asia/Manila'), true);
+  assert.strictEqual(ctx.tzIdKnown_('GMT+5'), null, 'an offset token is not Intl\'s to judge');
+  const base = { email: 'ana@x.com', id: 'E-1', name: 'Ana', timezone: 'America/Chicgo', schedule: '' };
+  const r = ctx.empValidateNewEmployee_(base, { tzKnown: ctx.tzIdKnown_ });
+  assert.ok(!r.ok && /"America\/Chicgo" is not a timezone this system recognises/.test(r.error), 'THE REGRESSION: it passed the shape check and became GMT');
+  assert.ok(!/not a timezone this system recognises/.test(ctx.empValidateNewEmployee_(Object.assign({}, base, { timezone: 'America/Chicago' }), { tzKnown: ctx.tzIdKnown_ }).error || ''), 'a real zone passes the probe');
+  assert.ok(!/not a timezone this system recognises/.test(ctx.empValidateNewEmployee_(base, { tzKnown: () => null }).error || ''), 'a runtime that cannot judge falls back to the shape check');
+  assert.ok(/tzKnown: tzIdKnown_/.test(extractRawFunction('Code.js', 'addEmployee')), 'the endpoint injects the probe');
+});
+
+test('TC2-3 (cycle 23): the coverage planner counts an approved HALF day as a tentative presence across the shift, never as a day off (driven)', () => {
+  const ctx = vm.createContext({ String, Math, Date, Object, Number, JSON, console: { warn() {} },
+    CONFIG: { MANAGER_TIMEZONE: 'America/Chicago', TIMEZONE: 'America/Chicago' },
+    EMP: { ID: 0, NAME: 1, TIMEZONE: 2, SCHEDULE: 3 }, TO: { EMP_ID: 0, NAME: 1, DATE: 2, TYPE: 3, NOTES: 4, STATUS: 5 },
+    getEmployeeInfo_: () => ({ isManager: true }),
+    getEmployeeRosterRows_: () => [['h'], ['E1', 'Ann', 'America/Chicago', ''], ['E2', 'Bo', 'America/Chicago', '']],
+    empRosterEmail_: () => 'x@y', safeTimezone_: (t) => t,
+    empShiftSchedule_: () => ({ startMin: 480, lengthMin: 540, breaks: [] }),
+    getOrCreateTimeOffSheet_: () => ({ getDataRange: () => ({ getValues: () => [['h'],
+      ['E1', 'Ann', '2026-10-06', 'Half Day - Morning', '', 'Approved'],
+      ['E2', 'Bo', '2026-10-06', 'Half Day - Morning', '', 'Approved'], ['E2', 'Bo', '2026-10-06', 'Half Day - Afternoon', '', 'Approved']] }) }),
+    getCompanyHolidays_: () => [], normalizeDate_: (x) => x,
+    convertDateTime_: (d, t) => ({ date: d, time: t, displayTime: t }),
+    Utilities: { formatDate: (d) => d.toISOString().slice(0, 10), parseDate: (x) => new Date(String(x).slice(0, 10) + 'T12:00:00Z') } });
+  ['daysBetween_', 'addDaysIso_', 'timeToMins_', 'timeOffDayKind_', 'timeOffKindsCombine_', 'coverageSplitAtBreaks_', 'coverageBucketHours_', 'getCoveragePlan']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const r = JSON.parse(JSON.stringify(ctx.getCoveragePlan('2026-10-06', '2026-10-06')));
+  assert.ok(!r.error, r.error);
+  const ann = r.days[0].reps.find((x) => x.name === 'Ann'), bo = r.days[0].reps.find((x) => x.name === 'Bo');
+  assert.strictEqual(ann.status, 'half', 'THE REGRESSION: an approved half day read as a full day off');
+  assert.strictEqual(ann.ptoType, 'Half day');
+  assert.strictEqual(bo.status, 'off', 'both halves are a full day off (the one combine rule)');
+  assert.strictEqual(r.days[0].hours[10].tentative, 1, 'Ann is a tentative presence in the shift hours');
+  assert.strictEqual(r.days[0].hours[10].confirmed, 0);
+  const mgr = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8'));
+  assert.ok(/r\.status === 'half'\s*\?\s*'Half day — works part of the shift'/.test(mgr) && /r\.status === 'tentative' \|\| r\.status === 'half'\) \? 'tentative'/.test(mgr), 'the planner names it and tones it tentative');
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(/status: \(d === 3\) \? 'half'/.test(mock), 'the fixture carries the state the server ships (INV-185)');
+});
+
+test('TC2-4 (cycle 23): a column-O shift override keeps only the tz-default breaks inside its own shift, and the ticker reminds of a break only inside the shift (driven)', () => {
+  const ctx = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'shiftBreaksInside_'), ctx);
+  const brk = [{ label: 'Break', startMin: 600, lenMin: 15 }, { label: 'Lunch', startMin: 720, lenMin: 30 }, { label: 'Break', startMin: 900, lenMin: 15 }];
+  assert.deepStrictEqual(ctx.shiftBreaksInside_(brk, 780, 480).map((b) => b.startMin), [900], 'THE REGRESSION: a 1 pm–9 pm rep was graded against a 12:00 lunch');
+  assert.deepStrictEqual(ctx.shiftBreaksInside_(brk, 510, 510).map((b) => b.startMin), [600, 720, 900], 'an override that barely moves the shift keeps them');
+  assert.deepStrictEqual(ctx.shiftBreaksInside_(brk, 710, 200).map((b) => b.startMin), [720], 'a break that runs past the shift end (900 + 15 > 910) is not inside');
+  const src = stripJsComments_(extractRawFunction('Code.js', 'empShiftSchedule_'));
+  assert.ok(/if \(ov && !perEmployee\) breaks = shiftBreaksInside_\(breaks, ov\.startMin, ov\.lengthMin\);/.test(src), 'only an override without a per-employee list is trimmed');
+  const s = buildSandbox([]);
+  const inShift = loadFunction(s, 'script_core.html', 'remindBreakInShift_');
+  assert.strictEqual(inShift({ startMin: 720 }, 780, 480), false);
+  assert.strictEqual(inShift({ startMin: 900 }, 780, 480), true);
+  assert.ok(/return !!b && remindBreakInShift_\(b, sched\.startMin, sched\.lengthMin\);/.test(stripJsComments_(extractFunction('script_core.html', 'remindersTick_'))), 'the ticker filters on it');
+});
+
+test('TC2-7 (cycle 23): punctuality marks a day with no clock-in as `notyet` before the shift (plus grace) or on a date still ahead — never "no clock-in" (driven)', () => {
+  const ctx = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'punctNotYet_'), ctx);
+  const f = ctx.punctNotYet_;
+  assert.strictEqual(f('2026-10-02', '2026-10-02', 470, 485), true, 'THE REGRESSION: 7:50 AM read as "no clock-in" for an 8:00 shift');
+  assert.strictEqual(f('2026-10-02', '2026-10-02', 486, 485), false, 'past start + grace, it is a missing clock-in');
+  assert.strictEqual(f('2026-10-03', '2026-10-02', 0, 485), true, 'a date still ahead');
+  assert.strictEqual(f('2026-10-01', '2026-10-02', 0, 485), false, 'a past date is graded as before');
+  assert.strictEqual(f('2026-10-02', '2026-10-02', null, 485), false, 'an unknown now keeps the old answer');
+  const rep = stripJsComments_(extractRawFunction('Code.js', 'getPunctualityReport'));
+  assert.ok(/if \(state === 'nopunch' && punctNotYet_\(dIso, repToday, repNowMin, r\.startMin \+ grace\)\) state = 'notyet';/.test(rep), 'the report applies it after holidays and time off');
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  assert.ok(/\.pt-day\.notyet\s*\{/.test(mgr), 'the strip state has a rule (the T6 ratchet)');
+  assert.ok(/d\.state === 'notyet' \? 'not started yet — the shift starts at '/.test(mgr) && /notyet: 0/.test(mgr), 'and a title and a count');
+});
+
+test('TC2-8 (cycle 23): Team on-time with no graded day is unknown ("—"), not 0%, and company holidays leave the manager trends and are closed in the planner (driven)', () => {
+  const tctx = vm.createContext({ Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) } });
+  vm.runInContext(extractRawFunction('Code.js', 'fmtDateTz_') + '\n' + extractRawFunction('Code.js', 'mgrWorkdaysEnding_'), tctx);
+  const tue = new Date('2026-09-08T12:00:00Z');
+  assert.strictEqual(tctx.mgrWorkdaysEnding_(tue, 'UTC', 3, 0, { '2026-09-07': 'Labor Day' }).join('|'), '2026-09-03|2026-09-04|2026-09-08',
+    'THE REGRESSION: Labor Day was a bar the whole team "missed"');
+  assert.strictEqual(tctx.mgrWorkdaysEnding_(tue, 'UTC', 3, 0).join('|'), '2026-09-04|2026-09-07|2026-09-08', 'no calendar: weekends only, as before');
+  const dash = stripJsComments_(extractRawFunction('Code.js', 'getManagerDashboard'));
+  assert.ok(/const mgrHolidays = companyHolidayMap_\(/.test(dash), 'the dashboard reads the ONE calendar');
+  const cov = stripJsComments_(extractRawFunction('Code.js', 'getCoveragePlan'));
+  assert.ok(/const closed = \(weekdaysOnly && \(dow === 0 \|\| dow === 6\)\) \|\| !!holMap\[dateIso\];/.test(cov), 'a holiday is closed in the planner');
+  const mgr = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8'));
+  assert.ok(/var teamPct = totDays \? Math\.round\(\(totOn \/ totDays\) \* 100\) : null;/.test(mgr), 'no graded day is null, never 0');
+  assert.ok(/\(teamPct == null \? '—' : teamPct \+ '%'\)/.test(mgr) && /teamPct == null \? 'no graded days in this range'/.test(mgr), 'and it renders as unknown');
+});
+
+test('COA-2 (cycle 23): the client reads a coaching stamp as a wall time in CONFIG.TIMEZONE, as the server does — not as UTC (driven)', () => {
+  const s = buildSandbox([]);
+  loadFunction(s, 'script_core.html', 'tzOffsetMinAt_');
+  const co = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8'));
+  vm.runInContext(extractFnFrom(co, 'coachTsMs_'), s);
+  s.window = s; s.SERVER_STORAGE_TZ = 'Asia/Kolkata';
+  assert.strictEqual(s.coachTsMs_('2026-10-02 10:00:00'), Date.UTC(2026, 9, 2, 4, 30, 0), 'THE REGRESSION: 10:00 IST was read as 10:00 UTC (5.5 h late)');
+  s.SERVER_STORAGE_TZ = 'America/Chicago';
+  assert.strictEqual(s.coachTsMs_('2026-11-01 01:30:00'), Date.UTC(2026, 10, 1, 6, 30, 0), 'the offset at the stamp\'s own instant (CDT, before the fall-back)');
+  s.SERVER_STORAGE_TZ = '';
+  assert.strictEqual(s.coachTsMs_('2026-10-02 10:00:00'), Date.UTC(2026, 9, 2, 10, 0, 0), 'no zone shipped (an older server): UTC, as before');
+  assert.ok(isNaN(s.coachTsMs_('garbage')));
+  const idx = fs.readFileSync(path.join(__dirname, '../../web-app/index.html'), 'utf8');
+  assert.ok(/window\.SERVER_STORAGE_TZ = <\?!= JSON\.stringify\(storageTz \|\| ''\)/.test(idx), 'the page carries the zone');
+  assert.ok(/tpl\.storageTz = CONFIG\.TIMEZONE;/.test(serverSource()), 'and doGet supplies it');
+});
+
+test('MET2-2 (cycle 23): the inbound-volume average leaves company holidays out of its denominator (driven)', () => {
+  const ctx = vm.createContext({ String, Date, Math, Number, Object });
+  ['cdrRowDateIso_', 'inboundVolumeBuckets_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  if (!ctx.Utilities) ctx.Utilities = { formatDate: (d) => d.toISOString().slice(0, 10) };
+  const H = ['Call Date', 'Call Start', 'Is Internal', 'Entry Queue'];
+  const rows = [['2026-09-04', '09:05:00', 'FALSE', 'q'], ['2026-09-04', '09:10:00', 'FALSE', 'q'], ['2026-09-07', '09:05:00', 'FALSE', 'q']];
+  const opt = { slotMin: 60, startHour: 8, endHour: 10 };
+  const before = ctx.inboundVolumeBuckets_(H, rows, opt);
+  assert.strictEqual(before.weekdays, 2, 'without the calendar, Labor Day counts as a working weekday');
+  const after = ctx.inboundVolumeBuckets_(H, rows, Object.assign({ holidays: { '2026-09-07': true } }, opt));
+  assert.strictEqual(after.weekdays, 1, 'THE REGRESSION: the holiday\'s one call pulled the average down');
+  assert.deepStrictEqual(Array.from(after.slots), [0, 2]);
+  assert.ok(/holidays: companyHolidayMap_\(fromIso, toIso\)/.test(serverSource()), 'the endpoint passes the ONE calendar');
 });
 
 

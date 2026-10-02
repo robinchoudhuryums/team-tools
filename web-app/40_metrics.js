@@ -87,7 +87,8 @@ function getCdrInboundVolume_(opts) {
     }
     const rows = (first < 0) ? [] : sheet.getRange(startRow + first, 1, last - first + 1, lastCol).getDisplayValues();
     const b = inboundVolumeBuckets_(headers, rows, { fromIso: fromIso, toIso: toIso, slotMin: slotMin, startHour: startHour, endHour: endHour,
-      shiftHours: Number(CONFIG.CDR_INBOUND_PST_TO_CST_HOURS) || 0, queues: qset, tz: anchor });
+      shiftHours: Number(CONFIG.CDR_INBOUND_PST_TO_CST_HOURS) || 0, queues: qset, tz: anchor,
+      holidays: companyHolidayMap_(fromIso, toIso) });   // MET2-2
     if (b.missing.length) return { unavailable: 'The "' + CONFIG.CDR_INBOUND_TAB + '" tab is missing column(s): ' + b.missing.join(', ') + ' (a pre-extension export — re-run the export in call-data-reporting).' };
     if (!b.weekdays) return { unavailable: 'No inbound rows between ' + fromIso + ' and ' + toIso + ' in the "' + CONFIG.CDR_INBOUND_TAB + '" tab (through ' + (through || '—') + ').' };
     out = { slots: b.slots, weekdays: b.weekdays, counted: b.counted, from: fromIso, to: toIso, through: through,

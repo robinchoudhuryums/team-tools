@@ -95,6 +95,9 @@ function doGet(e) {
   // previous-workday walk agrees with the server's -- [] on any failure, and
   // the client then walks weekends only (its pre-H1 behaviour), never breaks.
   try { tpl.companyHolidays = companyHolidayIsoList_(); } catch (_) { tpl.companyHolidays = []; }
+  // COA-2 (cycle 23): the zone every stored wall-clock stamp is written in
+  // (fmtDate_/fmtTime_), so the client reads a stamp as the server does.
+  tpl.storageTz = CONFIG.TIMEZONE;
   return tpl
     .evaluate()
     .setTitle('UMS Team Tools')
@@ -4355,7 +4358,8 @@ function businessMinutesBetween_(startMs, endMs, tz) {
  *  header map to drift): Call Date / Call Start / Is Internal / Entry Queue.
  *  Mirrors call-data-reporting's heatmap fallback: Call Start is RAW PST
  *  'HH:MM:SS' shifted by `opts.shiftHours` (% 1440 wrap), internal calls
- *  excluded, weekends excluded, an optional lowercase entry-queue set. The
+ *  excluded, weekends and company holidays (`opts.holidays`) excluded, an
+ *  optional lowercase entry-queue set. The
  *  denominator is the number of DISTINCT weekday dates that carried ANY
  *  counted row (a day with no export is not a quiet day). A missing column is
  *  NAMED in `missing` and yields no slots — never a strip of zeros. */
@@ -4384,6 +4388,10 @@ function inboundVolumeBuckets_(headers, rows, opts) {
     if (qset && !qset[String(r[col.queue] == null ? '' : r[col.queue]).trim().toLowerCase()]) return;
     const wd = new Date(iso + 'T00:00:00Z').getUTCDay();
     if (wd === 0 || wd === 6) return;
+    // MET2-2 (cycle 23): a company holiday is not a working weekday either —
+    // its handful of calls counted it in the denominator and pulled every
+    // slot's average down (`opts.holidays`: {iso: truthy}, the ONE calendar).
+    if (opts && opts.holidays && opts.holidays[iso]) return;
     const cs = String(r[col.start] == null ? '' : r[col.start]).trim();
     const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(cs);
     if (!m) return;

@@ -41,6 +41,9 @@
     // Company Holidays tab (federal fallback). mPrevWorkdayIso_ steps over
     // these so "Yesterday" never lands on a holiday. Empty = weekends only.
     window.SERVER_COMPANY_HOLIDAYS = <?!= JSON.stringify(companyHolidays || []).replace(/</g, '\\u003c') ?>;
+    // COA-2 (cycle 23): CONFIG.TIMEZONE — the zone stored "yyyy-MM-dd HH:mm:ss"
+    // stamps are written in. '' (an older server) = read them as UTC, as before.
+    window.SERVER_STORAGE_TZ = <?!= JSON.stringify(storageTz || '').replace(/</g, '\\u003c') ?>;
     (function () {
       try {
         if (window.SERVER_QUERY_PARAMS && window.SERVER_QUERY_PARAMS.compact === '1') {

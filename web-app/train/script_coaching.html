@@ -54,12 +54,24 @@ function coachSevLabel_(sev) { return COACH_SEV_LABELS[sev] || ((sev || '').char
 function coachSevChip_(sev) {
   return '<span class="kicker-pill" data-tone="' + coachSevTone_(sev) + '">' + esc(coachSevLabel_(sev)) + '</span>';
 }
-/** Client twin of the server's coachParseTs_ — both stamp forms, UTC, NaN on
- *  garbage. Used only for DIFFERENCES (windows, relative days). */
+/** Client twin of the server's coachParseTs_ — both stamp forms, NaN on
+ *  garbage. COA-2 (cycle 23): the stamp is a wall time in CONFIG.TIMEZONE
+ *  (window.SERVER_STORAGE_TZ), as the server reads it since cycle 22 D1 —
+ *  read as UTC it was 5.5 hours off, and the 30-day and quarter windows it
+ *  is compared against the real clock with moved by that much. The zone's
+ *  offset is taken at the stamp's own instant (refined once, for a stamp on
+ *  a DST edge); no zone, or one this browser cannot resolve, reads as UTC. */
 function coachTsMs_(s) {
   var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(String(s || ''));
   if (!m) return NaN;
-  return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+  var guess = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+  var tz = (typeof window !== 'undefined' && window.SERVER_STORAGE_TZ) || '';
+  if (!tz || typeof tzOffsetMinAt_ !== 'function') return guess;
+  var off = tzOffsetMinAt_(tz, new Date(guess));
+  if (off == null) return guess;
+  var ms = guess - off * 60000;
+  var off2 = tzOffsetMinAt_(tz, new Date(ms));
+  return (off2 != null && off2 !== off) ? guess - off2 * 60000 : ms;
 }
 var COACH_MONTHS_ = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 var COACH_MONTHS_LONG_ = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];

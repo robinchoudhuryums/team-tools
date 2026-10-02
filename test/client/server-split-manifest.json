@@ -1982,6 +1982,29 @@
     "writeAdjustPunchForEmployee_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-02",
+   "why": "cycle 23 Batch 6b",
+   "added": [
+    "punctNotYet_",
+    "shiftBreaksInside_",
+    "tzIdKnown_"
+   ],
+   "removed": [],
+   "changed": [
+    "addEmployee",
+    "doGet",
+    "empShiftSchedule_",
+    "empValidateNewEmployee_",
+    "getCdrInboundVolume_",
+    "getCoveragePlan",
+    "getManagerDashboard",
+    "getPunctualityReport",
+    "inboundVolumeBuckets_",
+    "mgrWorkdaysEnding_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4334,7 +4357,7 @@
   "addEmployee": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "eb32fb22a792e107"
+   "sha": "3bb6f5206e6276ed"
   },
   "addrListMerge_": {
    "file": "10_core.js",
@@ -5319,7 +5342,7 @@
   "doGet": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "7b2e34a713ff7b3d"
+   "sha": "a74168cfc5e5d265"
   },
   "drAddThreadId_": {
    "file": "50_deptrequests.js",
@@ -5649,7 +5672,7 @@
   "empShiftSchedule_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "50fa665047a2ab0f"
+   "sha": "f1bddb75eab01ef1"
   },
   "empTimeOffToday_": {
    "file": "20_timeclock.js",
@@ -5664,7 +5687,7 @@
   "empValidateNewEmployee_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "456e695eb2f80b91"
+   "sha": "f9dc7a00acf6b5b4"
   },
   "esc_": {
    "file": "10_core.js",
@@ -5964,7 +5987,7 @@
   "getCdrInboundVolume_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "024a99ca5f2666a6"
+   "sha": "f2b49b4668c1ef2b"
   },
   "getCdrNameMap_": {
    "file": "40_metrics.js",
@@ -5999,7 +6022,7 @@
   "getCoveragePlan": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "12b091a4e70b0c4d"
+   "sha": "7c3b26dfb3789a98"
   },
   "getCsrTransferPerRepDaily_": {
    "file": "40_metrics.js",
@@ -6254,7 +6277,7 @@
   "getManagerDashboard": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "78e40704cdf14cef"
+   "sha": "49f12c29974e76fd"
   },
   "getManagerEmails_": {
    "file": "10_core.js",
@@ -6579,7 +6602,7 @@
   "getPunctualityReport": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "e39b60c0c02a8015"
+   "sha": "0f6c78b05b31b848"
   },
   "getQaLog": {
    "file": "90_qa.js",
@@ -6804,7 +6827,7 @@
   "inboundVolumeBuckets_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "b2e27c70beb5133b"
+   "sha": "dadb71928c100a08"
   },
   "include": {
    "file": "10_core.js",
@@ -7889,7 +7912,7 @@
   "mgrWorkdaysEnding_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "61b6a7c0bfa653a2"
+   "sha": "2074aebcd47dfaed"
   },
   "monthEndIso_": {
    "file": "20_timeclock.js",
@@ -8265,6 +8288,11 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "92cc1fac1b16ce59"
+  },
+  "punctNotYet_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "e0cad973ed144d2a"
   },
   "punctWeeklyBuckets_": {
    "file": "20_timeclock.js",
@@ -9196,6 +9224,11 @@
    "kind": "function",
    "sha": "6f4b7b46467de535"
   },
+  "shiftBreaksInside_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "e981d20ff6a98a09"
+  },
   "signatureDataUrlToBlob_": {
    "file": "61_forms.js",
    "kind": "function",
@@ -9625,6 +9658,11 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "7115b7c27adfa164"
+  },
+  "tzIdKnown_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "01f8e811631a04c5"
   },
   "tzRepairPlanRow_": {
    "file": "20_timeclock.js",

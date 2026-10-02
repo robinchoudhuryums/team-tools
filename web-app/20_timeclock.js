@@ -1881,7 +1881,10 @@ function getManagerDashboard() {
     // since reps still mid-shift would always register as 0 hours)
     // for each liveStatus entry. Reuses already-loaded adpRows; one
     // extra in-memory pass — no Sheet reads, INV-13 honored.
-    const sparkIsos = mgrWorkdaysEnding_(now, mgrTz, 7, 1);    // 7 WORKDAYS, excluding today (operator 2026-09-03)
+    // TC2-8 (cycle 23): the ONE calendar (g123), over a window the walks
+    // below cannot outrun; a calendar that cannot be read leaves weekends only.
+    const mgrHolidays = companyHolidayMap_(addDaysIso_(fmtDateTz_(now, mgrTz), -60), fmtDateTz_(now, mgrTz));
+    const sparkIsos = mgrWorkdaysEnding_(now, mgrTz, 7, 1, mgrHolidays);    // 7 WORKDAYS, excluding today (operator 2026-09-03)
     const sparkStart = sparkIsos[0];
     const sparkEnd = sparkIsos[sparkIsos.length - 1];
     const sparkPunchMap = {}; // {empId}|{date} → { ClockIn, LunchOut, LunchIn, ClockOut }
@@ -2090,7 +2093,7 @@ function getManagerDashboard() {
     // aggregate excluded them.
     // Operator 2026-09-03: WORKDAYS, not calendar days — the chart carried two
     // guaranteed-zero weekend bars every week (see mgrWorkdaysEnding_).
-    const analyticsIsos = mgrWorkdaysEnding_(now, mgrTz, 8, 0);   // 8 bars: today + 7 prior workdays
+    const analyticsIsos = mgrWorkdaysEnding_(now, mgrTz, 8, 0, mgrHolidays);   // 8 bars: today + 7 prior workdays
     const punchCountsByDate = {};
     const analyticsStart = analyticsIsos[0];
     for (let i = 2; i < adpRows.length; i++) {
@@ -2124,7 +2127,7 @@ function getManagerDashboard() {
     // missedTrend walks WORKDAYS (a weekend can never carry a missed clock-out
     // on this roster); pendingTrend stays on CALENDAR days — a PTO request can
     // be SUBMITTED on a Saturday, and that bar is data, not a structural zero.
-    const missedIsos = mgrWorkdaysEnding_(now, mgrTz, trendDays, 1);
+    const missedIsos = mgrWorkdaysEnding_(now, mgrTz, trendDays, 1, mgrHolidays);
     const missedTrendStart = missedIsos[0];
     const missedTrendEnd = missedIsos[missedIsos.length - 1];
 
@@ -2213,7 +2216,7 @@ function getManagerDashboard() {
  * weekend is INFERRED, the same limit remindIsDayOff_ carries). Walks back
  * from (today − endOffset) in the manager tz collecting `n` weekdays, oldest
  * → newest. Bounded so a bad `n` can never spin. */
-function mgrWorkdaysEnding_(now, tz, n, endOffset) {
+function mgrWorkdaysEnding_(now, tz, n, endOffset, holidays) {
   const out = [];
   const limit = endOffset + n * 2 + 7;
   for (let off = endOffset; out.length < n && off < limit; off++) {
@@ -2221,6 +2224,9 @@ function mgrWorkdaysEnding_(now, tz, n, endOffset) {
     const iso = fmtDateTz_(d, tz);
     const dow = new Date(iso + 'T12:00:00Z').getUTCDay();
     if (dow === 0 || dow === 6) continue;
+    // TC2-8 (cycle 23): a company holiday is not a workday either — a bar for
+    // it reads as a day the whole team missed (`holidays`: {iso: truthy}).
+    if (holidays && holidays[iso]) continue;
     out.unshift(iso);
   }
   return out;
@@ -4298,6 +4304,23 @@ function exportAdpRange(startDate, endDate) {
  *  - SCHEDULE must be the full H:mm-H:mm form: parseShiftOverride_ accepts
  *    bare hours, but Sheets date-coerces a bare `9-17` typed into the cell —
  *    and setValue of the same string risks the same coercion. */
+/** TC2-6 (cycle 23) — does the runtime know this IANA zone id? `true` /
+ *  `false` from an Intl probe (an unknown id throws a RangeError there,
+ *  where Utilities.formatDate silently uses GMT); `null` when the runtime
+ *  cannot judge — a zone it must know (America/Chicago) fails the probe too —
+ *  so a missing Intl never blocks onboarding. */
+function tzIdKnown_(tz) {
+  const probe = function (id) {
+    try { new Intl.DateTimeFormat('en-US', { timeZone: id }).format(new Date(0)); return true; }
+    catch (e) { return false; }
+  };
+  const t = String(tz || '').trim();
+  // A UTC/GMT offset token (GMT+5) is a form the shape gate allows and
+  // Utilities.formatDate reads, but Intl does not — not Intl's to judge.
+  if (/^(UTC|GMT([+-]\d{1,2}(:\d{2})?)?)$/i.test(t)) return null;
+  if (!probe('America/Chicago')) return null;
+  return probe(t);
+}
 function empValidateNewEmployee_(p, ctx) {
   p = p || {}; ctx = ctx || {};
   var bad = function (msg) { return { ok: false, error: msg }; };
@@ -4339,6 +4362,14 @@ function empValidateNewEmployee_(p, ctx) {
   var tzShapeOk = /^[A-Za-z]+(\/[A-Za-z0-9_+\-]+)+$/.test(tz) ||
                   /^(UTC|GMT([+-]\d{1,2}(:\d{2})?)?)$/i.test(tz);
   if (!tzShapeOk) return bad('"' + tz + '" is not a valid timezone id (use the Area/Location form, e.g. America/Chicago).');
+  // TC2-6 (cycle 23): the shape check passes a misspelling ("America/Chicgo"),
+  // which the runtime then silently reads as GMT — splitting every punch day
+  // at the wrong midnight. The caller injects a probe of the runtime's own
+  // zone list; false is a definite "unknown", null means it cannot judge.
+  if (typeof ctx.tzKnown === 'function' && ctx.tzKnown(tz) === false) {
+    return bad('"' + tz + '" is not a timezone this system recognises — check the spelling (e.g. America/Chicago, Asia/Manila). ' +
+      'An unknown id is silently read as GMT, which would split every punch day at the wrong midnight.');
+  }
   var cycle = String(p.payCycle || '').trim().toLowerCase();
   if (cycle && cycle !== 'biweekly' && cycle !== 'monthly') return bad('Pay cycle must be biweekly or monthly (or blank).');
   var anchor = String(p.payAnchor || '').trim();
@@ -4463,6 +4494,7 @@ function addEmployee(payload) {
         managerEmails: getManagerEmails_().map(function (e) { return String(e).toLowerCase(); }),
         deptKeys: Object.keys(getDepartmentEmails_()),
         hasBiweeklyAnchor: hasBiweeklyAnchor,
+        tzKnown: tzIdKnown_,   // TC2-6
       });
       if (!check.ok) return { error: check.error };
       sheet.appendRow(sheetSafeRow_(check.row));
@@ -5957,9 +5989,25 @@ function empShiftSchedule_(empLike, tz) {
     }
   }
   if (!ov && !perEmployee) return base;
+  // TC2-4 (cycle 23): the tz layer's breaks were laid out for the DEFAULT
+  // shift. A column-O override kept them whole, so a 1 pm–9 pm rep was
+  // reminded of, and graded against, a 12:00 lunch before their shift began.
+  // With an override and no per-employee list, only the defaults that fall
+  // wholly inside the overridden shift are kept (shiftBreaksInside_); an
+  // operator who wants that rep's breaks set says so per employee.
+  if (ov && !perEmployee) breaks = shiftBreaksInside_(breaks, ov.startMin, ov.lengthMin);
   return { startMin: ov ? ov.startMin : base.startMin, lengthMin: ov ? ov.lengthMin : base.lengthMin,
            breaks: breaks, breakReminderMin: base.breakReminderMin,
            override: !!ov, perEmployee: perEmployee };
+}
+/** TC2-4 (cycle 23) — PURE. The breaks that lie wholly inside a shift that
+ *  starts at `startMin` and runs `lengthMin` (minutes of the rep's day). */
+function shiftBreaksInside_(breaks, startMin, lengthMin) {
+  const s = Number(startMin) || 0, e = s + (Number(lengthMin) || 0);
+  return (breaks || []).filter(function (b) {
+    const bs = Number(b && b.startMin), bl = Number(b && b.lenMin) || 0;
+    return isFinite(bs) && bs >= s && bs + bl <= e;
+  });
 }
 /** PURE (Node-pinned): split one shift interval [absStart, absEnd) at its
  *  breaks — `breaks` are {offsetMin, lenMin} RELATIVE to the shift start (an
@@ -6096,6 +6144,12 @@ function getCoveragePlan(fromDate, toDate) {
     let ptoUnavailable = false;
     try {
       const trows = getOrCreateTimeOffSheet_().getDataRange().getValues();
+      // TC2-3 (cycle 23): an approved HALF day is not a day off — the rep
+      // works part of the shift, at a time they choose (T5 rework), so they
+      // count as a TENTATIVE presence across it, never as absent. Approved
+      // kinds are combined per day by the one rule (a morning + an afternoon
+      // half, or any full day, is a full day off).
+      const approvedKinds = {};
       for (let i = 1; i < trows.length; i++) {
         const eid = String(trows[i][TO.EMP_ID]).trim();
         const dt = normalizeDate_(trows[i][TO.DATE]);
@@ -6103,8 +6157,17 @@ function getCoveragePlan(fromDate, toDate) {
         if (!eid || !dt || dt < padStart || dt > padEnd) continue;
         if (st !== 'approved' && st !== 'pending') continue;
         if (!ptoMap[eid]) ptoMap[eid] = {};
-        if (ptoMap[eid][dt] !== 'Approved') ptoMap[eid][dt] = (st === 'approved') ? 'Approved' : 'Pending';
+        if (st === 'approved') {
+          ((approvedKinds[eid] || (approvedKinds[eid] = {}))[dt] || (approvedKinds[eid][dt] = [])).push(timeOffDayKind_(trows[i][TO.TYPE]));
+        } else if (!ptoMap[eid][dt]) {
+          ptoMap[eid][dt] = 'Pending';
+        }
       }
+      Object.keys(approvedKinds).forEach(function (eid) {
+        Object.keys(approvedKinds[eid]).forEach(function (dt) {
+          ptoMap[eid][dt] = timeOffKindsCombine_(approvedKinds[eid][dt]) === 'full' ? 'Approved' : 'Half';
+        });
+      });
     } catch (e) {
       // F4 (cycle 16) — best-effort is right (a coverage grid with no PTO
       // overlay still beats no grid at all), but SILENT was not. With ptoMap
@@ -6135,7 +6198,9 @@ function getCoveragePlan(fromDate, toDate) {
       const dateIso = addDaysIso_(fromDate, d);
       const dow = new Date(dateIso + 'T12:00:00Z').getUTCDay();
       // Weekends are closed (we're only open weekdays) — shown but never flagged.
-      const closed = weekdaysOnly && (dow === 0 || dow === 6);
+      // TC2-8 (cycle 23): a company holiday is closed like a weekend — it was
+      // drawn and flagged as an understaffed working day.
+      const closed = (weekdaysOnly && (dow === 0 || dow === 6)) || !!holMap[dateIso];
       days.push({ date: dateIso, weekday: DOW[dow], holidayName: holMap[dateIso] || null, closed: closed, reps: [] });
     }
 
@@ -6150,7 +6215,8 @@ function getCoveragePlan(fromDate, toDate) {
         const localDate = addDaysIso_(fromDate, dd);
         const pto = (ptoMap[r.id] && ptoMap[r.id][localDate]) || '';
         const off = (pto === 'Approved');
-        const tentative = (pto === 'Pending');
+        const half = (pto === 'Half');   // TC2-3 — works part of the shift, when is theirs to choose
+        const tentative = (pto === 'Pending') || half;
         const conv = convertDateTime_(localDate, startHH, r.tz, mgrTz);
         const dayDelta = daysBetween_(fromDate, conv.date);
         const convMins = timeToMins_(conv.time);
@@ -6176,8 +6242,8 @@ function getCoveragePlan(fromDate, toDate) {
           const endConv = convertDateTime_(localDate, endHH, r.tz, mgrTz);
           days[dd].reps.push({
             name: r.name, tz: r.tz,
-            status: off ? 'off' : (tentative ? 'tentative' : 'working'),
-            ptoType: pto || null,
+            status: off ? 'off' : (half ? 'half' : (tentative ? 'tentative' : 'working')),
+            ptoType: half ? 'Half day' : (pto || null),
             startMgr: conv.displayTime,
             endMgr: endConv.displayTime,
             // F(cycle-8): an IST rep's local Jul-10 shift converts to mgr-tz
@@ -6246,6 +6312,14 @@ function punctLunchNearest_(lunches, lunchMin) {
         (Math.abs(m - lunchMin) === Math.abs(best - lunchMin) && m < best)) best = m;
   });
   return best;
+}
+/** TC2-7 (cycle 23) — PURE. Is a day with no clock-in still ahead? A date
+ *  after the rep's today, or today before `dueMin` (the shift start plus the
+ *  grace window; minutes of the rep's day). An unknown `nowMin` is not "not
+ *  yet" — the old answer stands. */
+function punctNotYet_(dIso, todayIso, nowMin, dueMin) {
+  if (dIso > todayIso) return true;
+  return dIso === todayIso && nowMin != null && nowMin < dueMin;
 }
 function punctDayState_(hasIn, lateMin, grace, holidayName, ptoType, isWeekend) {
   if (hasIn) return (lateMin > grace) ? 'late' : 'ontime';
@@ -6427,6 +6501,7 @@ function getPunctualityReport(fromDate, toDate) {
       // M2 — the attendance record, one entry per day in range (the client's
       // day strip, late-day chips, timeline and weekly bars all draw from it).
       const dayDetail = [];
+      const repNowMin = timeToMins_(fmtTimeTz_(new Date(), r.tz));   // TC2-7 (repToday is the half-day guard's, above)
       for (let k = 0; k < numDays; k++) {
         const dIso = addDaysIso_(fromDate, k);
         const dow = new Date(dIso + 'T12:00:00Z').getUTCDay();
@@ -6439,8 +6514,12 @@ function getPunctualityReport(fromDate, toDate) {
           continue;
         }
         const lateMin = hasIn ? (r.days[dIso].in - r.startMin) : null;
-        const state = punctDayState_(hasIn, lateMin, grace, holMap[dIso] || null, ptoType, dow === 0 || dow === 6);
+        let state = punctDayState_(hasIn, lateMin, grace, holMap[dIso] || null, ptoType, dow === 0 || dow === 6);
         if (!state) continue;
+        // TC2-7 (cycle 23): no clock-in is not yet a missed one — today before
+        // the shift has started (plus grace), or a date still ahead, reads
+        // `notyet`, never `nopunch`.
+        if (state === 'nopunch' && punctNotYet_(dIso, repToday, repNowMin, r.startMin + grace)) state = 'notyet';
         dayDetail.push({ date: dIso, schedStartMin: r.startMin, actualMin: hasIn ? r.days[dIso].in : null,
           lateMin: (hasIn && lateMin > grace) ? lateMin : (hasIn ? 0 : null), state: state,
           ptoType: ptoType, holidayName: holMap[dIso] || null });

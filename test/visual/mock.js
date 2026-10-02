@@ -1368,7 +1368,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         var iso = addIso(from, d), dow = new Date(iso + 'T12:00:00Z').getUTCDay(), closed = dow === 0 || dow === 6;
         var reps = [
           { name: 'Avery Blake', tz: 'America/Chicago', status: (d === 2) ? 'off' : 'working', ptoType: (d === 2) ? 'Full Day' : null, startMgr: '8:00 AM', endMgr: '5:00 PM', startsPrevDay: false },
-          { name: 'Sam Ortiz', tz: 'America/Chicago', status: (d === 3) ? 'tentative' : 'working', ptoType: (d === 3) ? 'Half Day' : null, startMgr: '8:30 AM', endMgr: '5:00 PM', startsPrevDay: false },
+          { name: 'Sam Ortiz', tz: 'America/Chicago', status: (d === 3) ? 'half' : (d === 4 ? 'tentative' : 'working'), ptoType: (d === 3) ? 'Half day' : (d === 4 ? 'Pending' : null), startMgr: '8:30 AM', endMgr: '5:00 PM', startsPrevDay: false },
           { name: 'Nina Patel', tz: 'America/Chicago', status: 'working', ptoType: null, startMgr: '8:00 AM', endMgr: '5:00 PM', startsPrevDay: false },
           { name: 'Leo Kim', tz: 'Asia/Kolkata', status: 'working', ptoType: null, startMgr: '9:30 PM', endMgr: '6:30 AM', startsPrevDay: true },
         ];
@@ -1377,7 +1377,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
           var c = 0, t = 0;
           if (!closed) {
             if (h >= 8 && h < 17) c += reps.filter(function (r, i) { return i < 3 && r.status === 'working' && !(i === 1 && h < 9); }).length;
-            if (h >= 8 && h < 17 && reps[1].status === 'tentative' && h >= 9) t++;
+            if (h >= 8 && h < 17 && (reps[1].status === 'tentative' || reps[1].status === 'half') && h >= 9) t++;   // TC2-3: a half day is a tentative presence
             if (h < 7 || h >= 21) c++;   // Leo's cross-tz shift
           }
           hours.push({ hour: h, confirmed: c, tentative: t });

@@ -208,6 +208,7 @@ function boot(opts) {
   window.SERVER_QUERY_PARAMS = opts.serverQueryParams || {};
   window.SERVER_WEB_APP_URL = 'https://example.test/exec';
   window.SERVER_COMPANY_HOLIDAYS = opts.companyHolidays || [];
+  window.SERVER_STORAGE_TZ = opts.storageTz || '';   // COA-2 — '' reads stamps as UTC (the pre-fix behaviour)
   window.google = { script: { get run() { return run.runner; } } };
   if (!window.matchMedia) {
     window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} });

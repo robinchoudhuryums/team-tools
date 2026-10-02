@@ -28,6 +28,8 @@ html = html.replace(/<\?!=\s*JSON\.stringify\(buildStamp[\s\S]*?\?>/, "''");
 // H1: no company holidays in the harness page (the walk is weekends-only);
 // same ordering rule as the stamp -- must precede the straggler strip.
 html = html.replace(/<\?!=\s*JSON\.stringify\(companyHolidays[\s\S]*?\?>/, '[]');
+// COA-2: the server's CONFIG.TIMEZONE, so coaching stamps read as they do live.
+html = html.replace(/<\?!=\s*JSON\.stringify\(storageTz[\s\S]*?\?>/, "'Asia/Kolkata'");
 // Any straggler scriptlets
 html = html.replace(/<\?[\s\S]*?\?>/g, '');
 

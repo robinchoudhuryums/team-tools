@@ -91,6 +91,7 @@
   .pt-day.off     { background: var(--paper-3); border: 1px dashed var(--muted-3); box-sizing: border-box; }
   .pt-day.holiday { background: var(--info-soft); }
   .pt-day.nopunch { background: var(--paper-card); border: 1px solid var(--line); box-sizing: border-box; }
+  .pt-day.notyet  { background: transparent; border: 1px dashed var(--line); box-sizing: border-box; }   /* TC2-7 */
   .pt-day.half      { background: var(--accent); opacity: .55; }
   .pt-day.halfshort { background: var(--destructive); opacity: .55; }
   .pt-day.halfopen  { background: var(--paper-3); border: 1px solid var(--muted-3); box-sizing: border-box; }
@@ -2253,14 +2254,18 @@ function covToggleDay_(id, btn) {
 function covRepsHtml_(day) {
   if (!day.reps || !day.reps.length) return '<div style="font-size:12px;color:var(--muted)">No reps scheduled.</div>';
   return '<div class="cov-reps">' + day.reps.map(function (r) {
-    var statusCls = (r.status === 'off') ? 'off' : (r.status === 'tentative' ? 'tentative' : 'working');
+    // TC2-3 (cycle 23): a half day reads as a tentative presence — the rep
+    // works part of the shift, at a time of their choosing.
+    var statusCls = (r.status === 'off') ? 'off' : ((r.status === 'tentative' || r.status === 'half') ? 'tentative' : 'working');
     // F(cycle-8): a cross-tz shift can START on the previous manager-tz day
     // (IST local Jul-10 → mgr Jul-9 21:30–Jul-10 06:30); without the marker a
     // bare "9:30 PM – 6:30 AM" read as THIS day's evening coverage.
     var prevMark = r.startsPrevDay ? '<span style="color:var(--muted);font-size:10px;"> (from prev. day)</span>' : '';
     var lbl = (r.status === 'off')
       ? ('Off' + (r.ptoType ? (' · ' + esc(r.ptoType)) : ''))
-      : (r.status === 'tentative'
+      : (r.status === 'half'
+          ? 'Half day — works part of the shift'
+          : r.status === 'tentative'
           ? ('Tentative' + (r.ptoType ? (' · ' + esc(r.ptoType)) : ''))
           : (esc(r.startMgr) + ' – ' + esc(r.endMgr) + prevMark));
     return '<div class="cov-rep ' + statusCls + '">' +
@@ -2272,7 +2277,7 @@ function covRepsHtml_(day) {
 
 // Reps off/tentative on a day, for the risk callout's "— who" suffix (escaped).
 function covOffReps_(day) {
-  var names = (day.reps || []).filter(function (r) { return r.status === 'off' || r.status === 'tentative'; })
+  var names = (day.reps || []).filter(function (r) { return r.status === 'off' || r.status === 'tentative' || r.status === 'half'; })
     .map(function (r) { return esc(r.name) + (r.ptoType ? (' (' + esc(r.ptoType) + ')') : ''); });
   return names.join(', ');
 }
@@ -2571,7 +2576,7 @@ function punctHalfDayTitle_(d) {
 function punctDetailHtml_(r, grace) {
   var dd = r.dayDetail || [];
   if (!dd.length) return '';
-  var n = { ontime: 0, late: 0, late15: 0, off: 0, holiday: 0, nopunch: 0, half: 0, halfshort: 0, halfopen: 0 };
+  var n = { ontime: 0, late: 0, late15: 0, off: 0, holiday: 0, nopunch: 0, notyet: 0, half: 0, halfshort: 0, halfopen: 0 };
   dd.forEach(function (d) {
     if (d.state === 'late') { n.late++; if (d.lateMin > 15) n.late15++; }
     else if (n[d.state] !== undefined) n[d.state]++;
@@ -2579,18 +2584,21 @@ function punctDetailHtml_(r, grace) {
   var stripLabel = dd.length + ' days: ' + n.ontime + ' on time, ' + n.late + ' late, ' + n.late15 +
     ' late over 15 minutes, ' + n.off + ' time off, ' + n.holiday + ' holiday' + (n.holiday === 1 ? '' : 's') +
     (n.nopunch ? ', ' + n.nopunch + ' with no clock-in' : '') +
+    (n.notyet ? ', ' + n.notyet + ' not started yet' : '') +
     (n.half + n.halfshort + n.halfopen ? ', ' + (n.half + n.halfshort + n.halfopen) + ' half day' + (n.half + n.halfshort + n.halfopen === 1 ? '' : 's') +
       (n.halfshort ? ' (' + n.halfshort + ' under the minimum hours)' : '') : '');
   var strip = '<div class="pt-strip" role="img" aria-label="' + esc(stripLabel) + '">' + dd.map(function (d) {
     var cls = d.state === 'late' ? (d.lateMin > 15 ? 'late15' : 'late') : d.state;
     var t = punctFmtDate_(d.date) + ' — ' + (d.state === 'ontime' ? 'on time' : d.state === 'late' ? d.lateMin + 'm late'
       : d.state === 'off' ? 'time off (' + (d.ptoType || '') + ')' : d.state === 'holiday' ? (d.holidayName || 'holiday')
-      : (d.state === 'half' || d.state === 'halfshort' || d.state === 'halfopen') ? punctHalfDayTitle_(d) : 'no clock-in');
+      : (d.state === 'half' || d.state === 'halfshort' || d.state === 'halfopen') ? punctHalfDayTitle_(d)
+      : d.state === 'notyet' ? 'not started yet — the shift starts at ' + punctFmtMin_(d.schedStartMin) : 'no clock-in');
     return '<i class="pt-day ' + cls + '" title="' + esc(t) + '"></i>';
   }).join('') + '</div>';
   var legend = '<div class="pt-legend"><span><i class="pt-day ontime"></i>on time</span><span><i class="pt-day late"></i>late ≤15m</span>' +
     '<span><i class="pt-day late15"></i>late &gt;15m</span><span><i class="pt-day off"></i>time off</span><span><i class="pt-day holiday"></i>holiday</span>' +
     (n.nopunch ? '<span><i class="pt-day nopunch"></i>no clock-in</span>' : '') +
+    (n.notyet ? '<span><i class="pt-day notyet"></i>not started yet</span>' : '') +
     (n.half ? '<span><i class="pt-day half"></i>half day, hours met</span>' : '') +
     (n.halfshort ? '<span><i class="pt-day halfshort"></i>half day, under the hours</span>' : '') +
     (n.halfopen ? '<span><i class="pt-day halfopen"></i>half day, hours not known</span>' : '') + '</div>';
@@ -2648,18 +2656,20 @@ function punctRender_(data) {
     if (r.worst > worstAll) { worstAll = r.worst; worstRep = r; }
     prevDays += r.prevDays || 0; prevOn += r.prevOnTime || 0;
   });
-  var teamPct = totDays ? Math.round((totOn / totDays) * 100) : 0;
+  // TC2-8 (cycle 23): no graded day is UNKNOWN, never 0% — a range of only
+  // half days, time off and holidays read as a team that was always late.
+  var teamPct = totDays ? Math.round((totOn / totDays) * 100) : null;
   var prevPct = prevDays ? Math.round((prevOn / prevDays) * 100) : null;
   var teamAvgLate = totLateDays ? Math.round(totLateMin / totLateDays) : 0;
-  var teamCls = teamPct >= 90 ? 'success' : (teamPct >= 75 ? 'warn' : 'crit');
+  var teamCls = teamPct == null ? '' : (teamPct >= 90 ? 'success' : (teamPct >= 75 ? 'warn' : 'crit'));
   var lateCls = teamAvgLate <= 5 ? 'success' : (teamAvgLate <= 15 ? 'warn' : 'crit');
-  var deltaTxt = prevPct == null ? 'no previous range to compare'
+  var deltaTxt = teamPct == null ? 'no graded days in this range' : prevPct == null ? 'no previous range to compare'
     : ((teamPct - prevPct > 0 ? '+' : '') + (teamPct - prevPct) + 'pt vs ' + esc(punctFmtDate_(data.prevFrom)) + '–' + esc(punctFmtDate_(data.prevTo)));
   var note = '<div style="font-size:12px;color:var(--muted);margin-bottom:14px">On-time = clock-in within ' + esc(String(data.grace)) +
     ' min of the scheduled start. Only days with a clock-in are graded; time off and holidays are drawn in the day-by-day record but never counted against a rep. A half day has no fixed start, so it is graded on hours worked instead (at least half the typical day), never on its start or lunch.' +
     (data.ptoUnavailable ? ' <span style="color:var(--warning-deep)">' + icon('warning', 11) + ' Time-off data could not be read — approved PTO days show as no clock-in.</span>' : '') + '</div>';
   var summary = '<div class="telemetry" style="margin-bottom:16px">' +
-    '<div class="tel-cell"><div class="tel-label">Team on-time</div><div class="tel-value ' + teamCls + '">' + teamPct + '%</div><div class="tel-sub">' + totOn + ' / ' + totDays + ' days · ' + deltaTxt + '</div></div>' +
+    '<div class="tel-cell"><div class="tel-label">Team on-time</div><div class="tel-value ' + teamCls + '">' + (teamPct == null ? '—' : teamPct + '%') + '</div><div class="tel-sub">' + totOn + ' / ' + totDays + ' days · ' + deltaTxt + '</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Reps</div><div class="tel-value">' + reps.length + '</div><div class="tel-sub">with clock-ins</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Avg late</div><div class="tel-value ' + (totLateDays ? lateCls : '') + '">' + (totLateDays ? teamAvgLate + 'm' : '0m') + '</div><div class="tel-sub">on late days</div></div>' +
     '<div class="tel-cell' + (worstAll > 15 ? ' pt-worst' : '') + '"><div class="tel-label">Worst</div><div class="tel-value ' + (worstAll > 15 ? 'crit' : '') + '">' + (worstAll ? worstAll + 'm' : '—') + '</div>' +
