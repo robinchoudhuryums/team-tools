@@ -32673,6 +32673,7 @@ test('COA-2 (cycle 23): the client reads a coaching stamp as a wall time in CONF
   assert.strictEqual(s.coachTsMs_('2026-10-02 10:00:00'), Date.UTC(2026, 9, 2, 4, 30, 0), 'THE REGRESSION: 10:00 IST was read as 10:00 UTC (5.5 h late)');
   s.SERVER_STORAGE_TZ = 'America/Chicago';
   assert.strictEqual(s.coachTsMs_('2026-11-01 01:30:00'), Date.UTC(2026, 10, 1, 6, 30, 0), 'the offset at the stamp\'s own instant (CDT, before the fall-back)');
+  assert.strictEqual(s.coachTsMs_('2026-11-01 03:00:00'), Date.UTC(2026, 10, 1, 9, 0, 0), 'after the fall-back the first guess lands in CDT; the refine reads CST');
   s.SERVER_STORAGE_TZ = '';
   assert.strictEqual(s.coachTsMs_('2026-10-02 10:00:00'), Date.UTC(2026, 9, 2, 10, 0, 0), 'no zone shipped (an older server): UTC, as before');
   assert.ok(isNaN(s.coachTsMs_('garbage')));
