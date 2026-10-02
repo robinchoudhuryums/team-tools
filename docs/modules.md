@@ -97,6 +97,18 @@ not restate it. Server endpoints live in the fourteen server files
      pay; Day Edit's hint says "check AM or PM"; and the offboarding audit row
      names the person offboarded.
 
+     **Cycle 23 Batch 6b (2026-10-02) — schedules, reminders, planner.** The
+     reminder ticker uses a state snapshot only for its own day, so a window
+     left open overnight fetches the new day's state before it reminds of
+     anything. A column-O shift override keeps only the default breaks inside
+     its own shift. Onboarding refuses a timezone the system does not
+     recognise. On Manage: the Coverage planner closes company holidays and
+     shows an approved half day as a tentative presence; Punctuality reads "not
+     started yet" before the shift, and Team on-time "—" when nothing in the
+     range was graded; the manager sparkline and trends skip holidays. The
+     coaching board reads its stamps in the server's storage timezone, and the
+     inbound-volume average leaves holidays out.
+
 <a id="call-notes"></a>
      **2026-09-17 (the /broad-scan's Batches 1 + 2):** an EQUAL Clock In /
      Clock Out is zero hours, not the 24-hour day the `<=` overnight wrap paid

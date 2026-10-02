@@ -635,6 +635,10 @@ entry says which it is.
   `from`/`to`/`customOpen`, the D5 midnight re-anchor of the DEFAULT range only,
   and the `Manage › Coverage` app-bar; the hand-rolled `cov-controls` row and
   `toneCol` are retired (INV-184).
+  **Cycle 23 TC2-3 + TC2-8 (2026-10-02):** a company holiday is CLOSED in the
+  grid like a weekend (drawn, never flagged), and an approved half day shows
+  as "Half day — works part of the shift", counted as a tentative presence
+  across the shift rather than as a day off.
 <a id="operator-spanish-inbox-tracking-gmail-needs-3-things"></a>
 - **Spanish-inbox tracking (Gmail) needs 3 things.** The Metrics → **Spanish
   Inbox** tab (`getSpanishInboxStats`, manager-gated, read-only, 5-min cached)
@@ -1033,6 +1037,10 @@ entry says which it is.
   differently). Offboarding is the panel's Offboard button (clears the login
   email, keeps the name + history — the documented roster convention). The
   manual sheet-edit path still works; the panel is the recommended one.
+  **Since cycle 23 TC2-6 (2026-10-02)** the Add form refuses a timezone the
+  system does not recognise ("America/Chicgo") instead of storing it — an
+  unknown id was silently read as GMT. Fix the spelling; a UTC/GMT offset
+  (GMT+5) is still accepted on its shape.
 <a id="operator-daily-automation-triggers"></a>
 - **Daily automation triggers** must be installed by a manager
   account via `installAutomationTriggers()` from the editor. **The
@@ -1477,7 +1485,12 @@ entry says which it is.
   `parseShiftOverride_`; a typo'd/overnight/out-of-range cell silently falls
   back to the per-tz schedule (fail-safe — a bad cell can never break the
   ribbon). Breaks + the break reminder still come from the per-tz schedule
-  (the override changes start/length only). Overnight shifts are unsupported.
+  (the override changes start/length only) — **but since cycle 23 TC2-4
+  (2026-10-02) only the per-tz breaks that fall wholly inside the overridden
+  shift are kept**, so a rep moved to 1 pm–9 pm is no longer reminded of or
+  graded against a noon lunch. To give an overridden rep breaks of their own,
+  set them per employee (Manage → Admin → break schedule); a per-employee list
+  is never trimmed. Overnight shifts are unsupported.
   `ROSTER_CACHE_KEY` bumped to `employee_roster_v8` for this column.
 <a id="operator-the-insurancepayors-tab-kb-spreadsheet"></a>
 - **The `InsurancePayors` tab** (operator 2026-08-25) lives in the **KB

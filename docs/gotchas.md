@@ -1672,6 +1672,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   holds) and its columns are found BY HEADER NAME (the Phase-1 rule) with a
   missing column NAMED — a pre-extension export renders no bars, never a
   strip of zeros. Pinned by BCV-1..4 (11 mutations bite-checked).
+  **AMENDED (cycle 23 TC2-4, 2026-10-02): a shift override trims the
+  defaults.** The tz layer's breaks were laid out for the DEFAULT shift, and a
+  column-O override kept them whole — a 1 pm–9 pm rep was reminded of, and
+  graded against, a 12:00 lunch. `empShiftSchedule_` now keeps only the tz-default
+  breaks that lie wholly inside an overridden shift (`shiftBreaksInside_`)
+  unless the rep has a per-employee list, which is never trimmed; the ticker
+  also reminds only of a break inside the shift (`remindBreakInShift_`).
+  Verify: the TC2-4 drive.
 
 <a id="g60-a-max-height-on-a-grid-container"></a>
 
@@ -2356,6 +2364,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `sendDailyMissedPunchAlerts`. New code reading timezone values from
   the roster for trigger/automation contexts should route through this
   helper rather than raw `|| CONFIG.TIMEZONE` fallback.
+  **AMENDED (cycle 23 TC2-6, 2026-10-02): onboarding closes the residual
+  gap.** A well-shaped misspelling ("America/Chicgo") passed the shape check
+  and became GMT for every punch the new rep made. `addEmployee` now injects
+  `tzIdKnown_` — an Intl.DateTimeFormat probe, which THROWS on an unknown id
+  where `Utilities.formatDate` silently uses GMT — into the pure validator, and
+  a definite "unknown" is refused by name. The probe answers null (cannot
+  judge) for a UTC/GMT offset token, which Intl does not read, and when the
+  runtime fails a zone it must know, so a missing Intl never blocks onboarding.
+  `safeTimezone_` itself is unchanged. Verify: the TC2-6 drive.
 
 <a id="g89-personal-sheet-sync-failures-log-to-the"></a>
 
@@ -3558,6 +3575,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the balance preview skips `SERVER_COMPANY_HOLIDAYS`), and the reminder ticker
   nagged "not clocked in" on Labor Day (`remindIsDayOff_` reads the same list).
   Verify: the T7 and T8 pins.
+  **Three more readers (cycle 23 TC2-8 + MET2-2, 2026-10-02).** The manager
+  sparkline, punch trend and missed-punch trend walked weekdays only, so Labor
+  Day sat in each as a workday bar the whole team "missed" (`mgrWorkdaysEnding_`
+  now takes the `companyHolidayMap_` map); the coverage planner drew a holiday as
+  an open, understaffed day (now closed like a weekend); and the inbound-volume
+  average counted a holiday's few calls as a working weekday in its
+  denominator (`inboundVolumeBuckets_` skips `opts.holidays`). Verify: the TC2-8
+  and MET2-2 drives.
 
 
 <a id="g124-answer-is-the-dashboard-s-formula-and"></a>
@@ -4631,6 +4656,13 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   compare a parsed stamp with now. Verify: the D1 pin (an Intl-backed
   `parseDate`: 09:00 IST is 03:30 UTC, an item exactly seven days old on the
   real clock is overdue at 7, and a DST zone resolves through its own offset).
+  **AMENDED (cycle 23 COA-2, 2026-10-02): the client twin is fixed.**
+  `coachTsMs_` now reads the stamp in CONFIG.TIMEZONE, which `doGet` ships as
+  `window.SERVER_STORAGE_TZ`, through the shell's `tzOffsetMinAt_` — the offset
+  taken at the stamp's own instant and refined once (a stamp just after a DST
+  change lands on the other side of it at the first guess). No zone shipped, or
+  one the browser cannot resolve, reads as UTC, the old answer. Verify: the
+  COA-2 drive (IST; both sides of a CDT→CST fall-back; no zone).
 
 <a id="g150-a-client-rpc-with-no-mock-fixture"></a>
 
@@ -4773,6 +4805,16 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   'afternoon'); the minimum ships as `halfDayMinHours` so the client carries no
   literal. Fires when you read approved time off, grade or remind against a
   schedule, or treat PTO as a yes/no. Verify: the T5 (rework) pins, both driven.
+  **AMENDED (cycle 23 TC2-3 + TC2-1, 2026-10-02): two more readers.** The
+  coverage planner treated an approved half day as a full day OFF; it now counts
+  the rep as a TENTATIVE presence across the whole shift (when they work is
+  theirs to choose, so no hour is assumed), labelled "Half day — works part of
+  the shift", while a morning plus an afternoon half is still a full day off
+  (`timeOffKindsCombine_`). And the reminder ticker applied the half-day plan
+  from whatever state snapshot it held — in a window left open overnight,
+  yesterday's half day (or day off) shaped today's reminders; it now uses a
+  snapshot only for the day it describes (`remindStateIsToday_`). Verify: the
+  TC2-3 and TC2-1 drives.
 
 <a id="g155-the-first-message-is-not-the-thread"></a>
 

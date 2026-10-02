@@ -2468,3 +2468,24 @@ per-change detail. By delta:
   would otherwise fail on any day whose +30 lands on a closed day.
 - 19 bite-checks, all BITE. Hazard met: a quote inside the python mutation
   string ends the shell argument; write it as `chr(39)`.
+
+## Cycle 23 — Batch 6b, schedules, reminders, planner (2026-10-02)
+
+- Node +8, one per finding, each driven: TC2-1 drives `remindersTick_` itself
+  in a sandbox (a stale snapshot runs no inferred reminder, resets the throttle
+  once per day, still runs `schedTick_`); TC2-6 the Intl probe and the
+  validator; TC2-3 `getCoveragePlan` over a single half and a morning +
+  afternoon pair; TC2-4 the trim grid and the ticker guard; TC2-7 the not-yet
+  grid; TC2-8 the workday walk with a holiday, the planner close, the unknown
+  tile and the fixture; COA-2 the client parser in IST and across a CDT→CST
+  fall-back; MET2-2 the inbound denominator.
+- Two old pins moved: OPS-1's literal `mgrWorkdaysEnding_` call shapes, and the
+  T5-rework report context (it now needs `fmtTimeTz_` and `punctNotYet_`).
+- The coverage fixture had shipped a `tentative` row with `ptoType: 'Half
+  Day'` — a shape the server never sent — and an open holiday; it now carries
+  a `half` day, a separate Pending day and a closed holiday (INV-185).
+- 15 bite-checks, all BITE after one NO BITE acted on: COA-2's DST case
+  (01:30 on the fall-back day) is CDT on both readings, so the one-step offset
+  refine never ran; a 03:00 stamp, where the first guess lands in CDT and the
+  answer is CST, now pins it. Pick a fixture the code's own shortcut cannot
+  satisfy (g116's fourteenth direction).

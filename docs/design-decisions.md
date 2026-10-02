@@ -1131,6 +1131,16 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   apps have no background push, so a closed browser still gets nothing —
   the reminder is for a rep with the app open, which is the case the operator
   asked about.
+  **AMENDED (cycle 23 TC2-1, 2026-10-02): a snapshot is used only for its
+  own day.** Every inferred reminder reads the `getEmployeeState` snapshot,
+  which describes the day it was fetched; a pinned pop-out left open overnight
+  ran today's reminders on yesterday's day off, half day, schedule and punch
+  state. The ticker now compares the payload's `today` with the rep-local date:
+  another day's snapshot fires no inferred reminder, today's is requested at
+  once (the 10-minute throttle is reset once per day), and the rep-created
+  scheduled-call reminders still run. Chosen over refreshing on every rollover
+  tick and firing meanwhile: a reminder on the wrong day's state is the false
+  positive the channel cannot afford.
 - <a id="two-way-sheet-entry-via-the-reconcile-pass-8"></a>**Two-way Sheet entry via the reconcile pass (#8).** Because the per-rep
   Sheets are real Google Sheets, a rep can type notes directly into the
   `Notes` tab. Such hand-entered rows lack the app-assigned `noteId`,
@@ -2531,6 +2541,9 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   actionable specific (first missed rep + day, oldest pending rep).
   Sparkline data is computed in-memory from already-loaded `toRows`
   / `adpRows` — no extra Sheet reads (INV-13 honored).
+  **AMENDED (cycle 23 TC2-8, 2026-10-02):** the sparkline and both trends walk
+  WORKDAYS from the one holiday calendar, not weekdays — a company holiday is no
+  longer a bar (`mgrWorkdaysEnding_` with the `companyHolidayMap_` map).
 - <a id="live-status-sparkline"></a>**Live-status sparkline.** Each live-status emp-card on the
   manager dashboard carries a 7-bar daily-hours sparkline + a
   `Xh·Nd` total/days-worked label. Driven by `recentHours[]` on
@@ -4766,6 +4779,9 @@ pick them up without re-deriving the context.
   hours can no longer fit. The first version (mid-shift start) was replaced
   rather than kept as a default, because a default that encodes the wrong rule
   would grade every morning half day. Verify: the T5 (rework) pins (g154).
+  **AMENDED (cycle 23 TC2-3, 2026-10-02):** the coverage planner reads a half
+  day by the same rule — the rep is a tentative presence across the shift,
+  never absent and never placed in a half of it.
 - <a id="dept-request-sla-targets-are-working-days"></a>**Dept Request SLA targets
   are WORKING DAYS, and the stored map carries its unit (cycle 22 M6, operator
   2026-09-25).** The tracker has measured a request's age in BUSINESS time

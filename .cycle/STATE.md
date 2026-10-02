@@ -3,11 +3,11 @@
 ## Current
 Cycle: 23 — opened by the 2026-10-01 `/broad-scan` (0 Critical / 5 High; plan of 13 batches + 8 deferred, in chat). Cycle 22 and 22post are in `.cycle/HISTORY.md`.
 Phase: implement
-Scope: broad — Batches 1–5 (TC-02 included), 6a and 6b done (6b not yet doc-synced); next /sync-docs for 6b, then Batch 7a
+Scope: broad — Batches 1–5 (TC-02 included), 6a and 6b done and doc-synced; next Batch 7a
 Test Command: manual
 Estimates: Batch 1: M (~9 h) · Batch 2: M (~11 h) · Batch 3: M (~9.5 h) · Batch 4a: M (~10 h) · 4a follow-ons: S (~3 h) · Batch 4b: M (~11 h) · TC-02 (option a): M (~8 h) · Batch 5: M (~10 h) · Batch 6a: M (~9.5 h) · Batch 6b: M (~10 h) — each written before its first edit
 Subsystem cycles since last Seams audit: 3 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25) and 22post's /reflect (2026-09-30). The cadence is every 4, so the next reflection reaches it.
-Updated: 2026-10-02 (cycle 23 Batch 6b)
+Updated: 2026-10-02 (cycle 23 Batch 6b + its /sync-docs)
 
 ## In progress (facts to carry forward — NOT judgments)
 - Cycle 23 opened 2026-10-01 with a `/broad-scan` (0 Critical / 5 High / ~110 findings; the full report and 13-batch plan are in that session's chat — the batch→ID list is copied under Pending below).
@@ -19,11 +19,12 @@ Updated: 2026-10-02 (cycle 23 Batch 6b)
 - TC-02 implemented on the same branch as option (a) (block: `.cycle/blocks/23-tc02-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Batch 4b implemented on the same branch (block: `.cycle/blocks/23-batch4b-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Batches 1–5 (+ TC-02, 4a follow-ons) merged to main as PR #284 (2026-10-02); the branch was restarted from main after the merge. NOT yet deployed.
-- Batch 6b implemented on the same branch (block: `.cycle/blocks/23-batch6b-broad-implement.md`); NOT yet deployed; /sync-docs for it not yet run.
+- Batch 6b implemented on the same branch (block: `.cycle/blocks/23-batch6b-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Batch 6a implemented on the restarted branch (block: `.cycle/blocks/23-batch6a-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Everything through 22post is merged (PRs #274–#282) and deployed (2026-09-30). The operator was finishing two 22post steps at close: the manual.json re-export + import, and the S124–S128 walks.
 
 ## Completed this cycle
+- /sync-docs (Batch 6b) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g154/g88/g123/g149/g59 extended (index + AMENDED narratives); the reminders, telemetry-strip and half-day decisions amended; column O, onboarding and Coverage operator notes; INV-354 added; S72/S75/S76/S98/S99/S102/S110/S118 steps
 - TC2-1 | script_core.html | the reminder ticker uses a state snapshot only for its own day; a stale day forces one immediate refresh
 - TC2-6 | 20_timeclock.js | onboarding refuses a timezone id the runtime does not know (Intl probe; offset tokens and an unable runtime pass)
 - TC2-3 | 20_timeclock.js, tc/script_manager.html, mock | the planner counts an approved half day as a tentative presence
@@ -135,8 +136,8 @@ Updated: 2026-10-02 (cycle 23 Batch 6b)
 - **Lead item for cycle 23 — the domain disables Apps Script's Drive (M4-FU3, confirmed 2026-09-29).** Every other Drive feature is plausibly broken: the converter's images, paste-a-screenshot, the KB Images folder + the article image fallback, the embed reachability check, QA recording sync/playback. Admin → System's Drive row reads the SCOPE and cannot see an admin-disabled service. Ask IT to allow Apps Script Drive, or rework each. The ~1.6 MB single-call manual upload is unverified in a real runtime (fallback: chunked).
 - **22post reflection candidates, not yet in the library:** INV-350 (no path the manual import or reader reaches calls Drive), INV-351 (an import that fails in transport says so, never as a defect of the file), INV-352 (the floating Scratchpad stacks beneath every modal overlay — a ui-dialog can open beneath the panel today, z 56).
 - **22post batch follow-ons** (full text in the 22post HISTORY block): A — no visual opens the composer on a Close Order, the team Median sub-line ellipsizes at half width, the date range does not reach the server-derived table/cards; B — no pressed toolbar state, no visual of formatted content; C — no DOM harness drives renderManagerView, the manager fixture's Leo Kim has an impossible shape, no toast on the assignee's open window; D — the scan's counts are only logged; E — Half/Full shows on a phone, no drag-to-reorder; M5b — the highlighter marks a two-letter word inside longer words and marks the results heading, `kbMarkReviewed` does not bump the KB generation (named exemption in M5b-I2).
-- **Carried from cycle 22** (full list in its HISTORY block): S6 is server-only; the coaching business-days note and the Spanish auto-assign flag description still say "US holidays"; Save Departments lets two rows share a name; the half-day grade's three gaps; the client `coachTsMs_` reads coaching stamps as UTC and M7's class survives in three readers; X1 names reads owed a fixture and the mock lacks `adminScanStoredFormulas`; the missing visual scenarios; an intermittent DOM pin (`the resume request states the unpaid gap before it is filed`); `assertNotProdInstance_` permits while INSTANCE_IS_PROD is unset.
-- **Numbers — do not reuse:** INV-225..227 RESERVED (cycle 20); INV-229..232, INV-240..242, INV-301..303 and INV-350..352 PROPOSED (cycles 21, 21post, 22, 22post), not in the library. **Next free: INV-354; gotcha g164; scenario S134.**
+- **Carried from cycle 22** (full list in its HISTORY block): S6 is server-only; the coaching business-days note and the Spanish auto-assign flag description still say "US holidays"; Save Departments lets two rows share a name; the half-day grade's three gaps; M7's class survives in three readers (the client `coachTsMs_` UTC read was fixed in cycle 23 COA-2); X1 names reads owed a fixture and the mock lacks `adminScanStoredFormulas`; the missing visual scenarios; an intermittent DOM pin (`the resume request states the unpaid gap before it is filed`); `assertNotProdInstance_` permits while INSTANCE_IS_PROD is unset.
+- **Numbers — do not reuse:** INV-225..227 RESERVED (cycle 20); INV-229..232, INV-240..242, INV-301..303 and INV-350..352 PROPOSED (cycles 21, 21post, 22, 22post), not in the library. **Next free: INV-355; gotcha g164; scenario S134.**
 
 ## Decisions made (so the next session doesn't re-litigate)
 - **TC2-4 (cycle 23 Batch 6b):** a column-O override keeps the tz-default breaks that fall wholly inside its own shift, rather than dropping them all as the scan's plan said — dropping would silently remove still-valid break reminders and lunch grading for overrides that barely move the shift. A per-employee break list is never trimmed.
@@ -149,4 +150,4 @@ Updated: 2026-10-02 (cycle 23 Batch 6b)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 23 Batches 1–5 (TC-02 included) are merged to main (PR #284); Batch 6a is committed and pushed on `claude/blissful-johnson-cottl5` (restarted from main). Batch 6a's docs are synced. Batch 6b is committed and pushed too. Next: `/sync-docs` for Batch 6b; deploy and walk the Batch 1–6b scenarios; then `/broad-implement Batch 7a`. The next /reflect reaches the Seams-audit cadence.
+Cycle 23 Batches 1–5 (TC-02 included) are merged to main (PR #284); Batch 6a is committed and pushed on `claude/blissful-johnson-cottl5` (restarted from main). Batch 6a's docs are synced. Batch 6b is committed and pushed too. Batch 6b's docs are synced. Next: deploy and walk the Batch 1–6b scenarios; then `/broad-implement Batch 7a`. The next /reflect reaches the Seams-audit cadence.
