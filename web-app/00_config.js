@@ -126,6 +126,13 @@ const CONFIG = {
 
   MANAGER_EMAILS: ['YOUR_EMAIL@umsupply.com'],
 
+  // CORE-05 (cycle 23): the org's sign-in domains — doGet's outsider check
+  // reads them through isOrgEmail_. It tested @umsupply.com alone, while every
+  // org address in this file is @universalmedsupply.com (the Workspace domain
+  // docs/operator-state.md confirms), so the carve-out never matched it. Both
+  // are listed: umsupply.com is the login form the roster and docs use.
+  ORG_EMAIL_DOMAINS: ['universalmedsupply.com', 'umsupply.com'],
+
   ADJUST_WINDOW_DAYS:        30,
   OLD_ADJUST_ALERT_DAYS:     7,   // also: reason becomes required beyond this
   MGR_DELETE_WINDOW_DAYS:    7,   // how far back a manager can delete a punch

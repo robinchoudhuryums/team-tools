@@ -1118,6 +1118,7 @@ test('M-2: intakeFlushDraftNow_ captures a pending save synchronously while the 
     '<button data-set="TRUE">Yes</button><button data-set="FALSE">No</button></div>';
   h.document.body.appendChild(form);
   h.window.localStorage.removeItem('umsIntakeDrafts');
+  h.read('empState = { email: "rep@umsupply.com" }');   // INT2-3: a draft is written only with an owner
   h.window.intakeSaveDraft_('pmd');    // debounce armed, not yet fired
   h.window.intakeFlushDraftNow_();     // the showView navigation flush
   const draft = JSON.parse(h.window.localStorage.getItem('umsIntakeDrafts') || '{}');
@@ -6331,4 +6332,76 @@ test('SH-05: re-rendering the shell (each view-as switch) binds the sidebar drag
   h.document.dispatchEvent(new h.window.MouseEvent('mousemove', { bubbles: true, clientX: 150 }));
   h.document.dispatchEvent(new h.window.MouseEvent('mouseup', { bubbles: true }));
   assert.strictEqual(h.document.documentElement.style.getPropertyValue('--sidebar-w'), '218px', 'the drag resized the live sidebar');
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+section('Cycle 23 Batch 10 — PHI at the boundary, honest admin, metrics');
+
+const b10Toasts = (h) => h.$$('#toast-stack .toast').map((t) => t.textContent);
+
+test('KBUI-2: an eligibility error that quotes the typed address is SHOWN to the rep but never beaconed to the shared log', () => {
+  const h = boot();
+  const sent = [];
+  h.window.errBeaconSend_ = (m) => sent.push(String(m));
+  const host = mount_(h, 'kb-oop-results');
+  const quoted = 'That address only partly matched (the closest place found was "12 Elm St, Springfield") — add the street number and city';
+  h.read('oopRenderResults_')('', { item: '', addr: '12 Elm', elig: true }, { error: quoted });
+  assert.ok(/12 Elm St, Springfield/.test(host.textContent), 'the rep still reads the server\'s message (g128)');
+  assert.strictEqual(sent.length, 1);
+  assert.ok(!/Elm|Springfield/.test(sent[0]), 'THE REGRESSION: the partial-match location rode the error beacon into ClientErrors: ' + sent[0]);
+  assert.strictEqual(sent[0], h.read('OOP_ELIG_BEACON'));
+  // A price-only (no address) error still beacons its own text — nothing typed is in it.
+  sent.length = 0;
+  h.read('oopRenderResults_')('', { item: 'cane', addr: '', elig: false }, { error: 'Pricing tab unreadable' });
+  assert.deepStrictEqual(sent, ['Pricing tab unreadable']);
+});
+
+test('INT2-3: intake drafts are per USER — another user\'s or an ownerless draft is dropped at boot and never restored; your own fresh draft survives', () => {
+  const h = boot();
+  const now = Date.now();
+  h.window.localStorage.setItem('umsIntakeDrafts', JSON.stringify({
+    ppd: { answers: { '38': '250' }, patientInfo: 'Other rep\'s patient', at: now, owner: 'someone@else.com' },
+    pmd: { answers: { '1': 'Mine' }, at: now, owner: 'rep@umsupply.com' },
+    pap: { answers: { '1': 'Old' }, at: now },   // saved before drafts had owners
+  }));
+  h.bootShell();   // empState.email = rep@umsupply.com
+  const left = JSON.parse(h.window.localStorage.getItem('umsIntakeDrafts') || '{}');
+  assert.deepStrictEqual(Object.keys(left), ['pmd'], 'THE REGRESSION: the previous rep\'s patient draft sat at rest until that form was opened');
+  // A draft written after boot carries the owner, and a restore refuses a mismatch.
+  h.window.localStorage.setItem('umsIntakeDrafts', JSON.stringify({ ppd: { answers: { '38': '300' }, patientInfo: 'X', at: now, owner: 'someone@else.com' } }));
+  mount_(h, 'view-area');
+  h.run.drain();
+  h.window.enterIntakePpdView();
+  assert.notStrictEqual(h.document.getElementById('intk-ppd-patient').value, 'X', 'another user\'s draft is never restored');
+  assert.ok(!b10Toasts(h).some((t) => /Draft restored/.test(t)));
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem('umsIntakeDrafts') || '{}').ppd, undefined, 'and it is dropped');
+});
+
+test('ADM-13: shortening a diagnostics purge window asks before anything is saved', async () => {
+  const h = boot();
+  h.bootShell({ isManager: true }); h.run.drain();
+  const area = mount_(h, 'cn-ret-host');
+  area.innerHTML = '<input id="cn-ret-archive" value=""><input id="cn-ret-purge" value=""><input id="cn-ret-archpurge" value="">' +
+    '<input id="cn-ret-viewusage" value="30"><input id="cn-ret-clienterr" value="90"><button id="cn-ret-save">Save retention</button>';
+  h.read('CN_STATE.retentionCfg = { retentionDays: { value: 0 }, archiveRetentionDays: { value: 0 }, viewUsageDays: { value: 90 }, clientErrDays: { value: 90 } }');
+  h.read('cnSaveRetention_')();
+  assert.strictEqual(h.run.pending('saveRetentionConfig').length, 0, 'THE REGRESSION: an irreversible window saved with no question');
+  const d = h.$('.ui-dialog');
+  assert.ok(d && /Delete older diagnostics rows\?/.test(d.textContent) && /ViewUsage\) rows older than 30 days/.test(d.textContent));
+  h.click('.ui-dialog-ok'); await tick();
+  assert.strictEqual(h.run.pending('saveRetentionConfig').length, 1, 'confirmed: saved');
+});
+
+test('ADM-12: a tag merge that fails in transit says it may have PARTLY applied, and the warning stays on screen', async () => {
+  const h = boot();
+  h.read('cnPromptMergeTag_')('old-tag');
+  h.$('.ui-dialog-input').value = 'new-tag';
+  h.click('.ui-dialog-ok'); await tick();
+  h.click('.ui-dialog-ok'); await tick();   // the merge confirm
+  assert.strictEqual(h.run.pending('mergeCallNoteTags').length, 1, 'the merge was sent');
+  h.run.flushFailure('Exceeded maximum execution time', 'mergeCallNoteTags');
+  const t = h.$$('#toast-stack .toast').find((x) => /did not finish/.test(x.textContent));
+  assert.ok(t && /PARTLY applied/.test(t.textContent) && /safe to repeat/.test(t.textContent),
+    'THE REGRESSION: a half-applied merge read as a bare "Server error"');
+  assert.ok(t.classList.contains('toast-sticky'), 'it stays until read');
 });

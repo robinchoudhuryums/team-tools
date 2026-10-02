@@ -591,6 +591,7 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
   var agents = {};
   var offRoster = {};   // F(M-11): canonical in-range agent names NOT on the roster
   var rowsMatched = 0;
+  var latestDate = null;   // MET-5
 
   for (var i = 0; i < values.length; i++) {
     var rawAgent = String(values[i][CDR.AGENT - 1] || '').trim();
@@ -630,6 +631,7 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
     // which was already answered-weighted).
     if (att > 0 && ansRow > 0) { a.attSum += att * ansRow; a.attCount += ansRow; }
     if (!a._dates[dateIso]) { a._dates[dateIso] = true; a.daysActive++; }
+    if (!latestDate || dateIso > latestDate) latestDate = dateIso;   // MET-5: the newest day the window holds
   }
 
   Object.keys(agents).forEach(function (k) {
@@ -642,7 +644,7 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
   });
 
   var result = { agents: agents, meta: { rowsScanned: values.length, rowsMatched: rowsMatched, columnWarning: colWarning,
-    offRosterAgents: Object.keys(offRoster).sort() } };   // F(M-11)
+    offRosterAgents: Object.keys(offRoster).sort(), latestDate: latestDate } };   // F(M-11); MET-5
   try {
     if (!useCache) return result;   // F-31: a fixture read never writes prod's key
     var payload = JSON.stringify(result);
@@ -1312,6 +1314,16 @@ function dashboardPeriodRange_(periodKey, todayIso, holidays) {
   if (periodKey === 'ytd') { var yf = y + '-01-01'; return { from: yf, to: todayIso, label: 'Year to date', dataThrough: through(yf) }; }
   return null;
 }
+/** PURE (MET-5, cycle 23; Node-pinned) — has the daily CDR import NOT yet
+ *  landed for a period-to-date window? True when the window should hold the
+ *  previous workday (it starts on or before it, and has a complete day) but
+ *  its newest data day is earlier. 'yesterday' and a window with no complete
+ *  day are never pending here (M2 already declines to cache an empty one). */
+function dashboardImportPending_(range, latestDate, prevWorkday) {
+  if (!range || !range.dataThrough || !prevWorkday) return false;
+  if (prevWorkday < range.from) return false;
+  return !latestDate || latestDate < prevWorkday;
+}
 /** Pure (Node-pinned) — the LIKE-FOR-LIKE prior window for a period, used for
  *  the MTD deltas (operator 2026-08-12: "show the delta from last month").
  *
@@ -1467,7 +1479,8 @@ function getDashboardMetrics(periodKey) {
       // cost across the 3 periods (and the MTD prev window). emp.name is in
       // allNames by construction: the caller passed getEmployeeInfo_, so
       // their roster row has an email and survives the F3/F4 skip above.
-      var dqMap = cdrAgentsOrThrow_(getCdrAgentMetrics_(wFrom, wTo, allNames));   // M7: never cached as no calls
+      var dqRes = getCdrAgentMetrics_(wFrom, wTo, allNames);
+      var dqMap = cdrAgentsOrThrow_(dqRes);   // M7: never cached as no calls
       var trMap = getCsrTransferPerRepDaily_(wFrom, wTo, allNames).agents || {};
       var dq = dqMap[emp.name] || null;
       var tr = trMap[emp.name] || null;
@@ -1486,6 +1499,7 @@ function getDashboardMetrics(periodKey) {
           transferPct: trAgg.transfer ? trAgg.transfer.transferPct : null,
         } : null,
         cohort: agg.cohort,
+        latestDate: (dqRes && dqRes.meta && dqRes.meta.latestDate) || null,   // MET-5
       };
     };
     var cur = shapeWindow(from, to);
@@ -1540,7 +1554,14 @@ function getDashboardMetrics(periodKey) {
     // the daily CDR import lands, the previous workday is empty for everyone;
     // cached, that empty card was pinned for the whole TTL after the import.
     // A genuinely empty window is cheap to re-read, so the cost is nil.
-    if (useCache && !noteRes.unavailable && !prevUnavailable && cur.team) {
+    // MET-5 (cycle 23): nor is a period-to-date window read BEFORE the daily
+    // import. M8 lag-aligns the window on the assumption that the previous
+    // workday is in; before the import it holds one day fewer, so the deltas
+    // read ~1/d low and the run-rate divides by a day with no data — and the
+    // 6-hour TTL pinned those WRONG numbers past the import. Not cached until
+    // the newest data day reaches the previous workday.
+    var importPending = dashboardImportPending_(range, cur.latestDate, prevWorkdayIso_(todayIso));
+    if (useCache && !noteRes.unavailable && !prevUnavailable && cur.team && !importPending) {
       try { cache.put(cacheKey, JSON.stringify(result), DASHBOARD_CACHE_TTL); } catch (_) {}
     }
     return result;
@@ -1623,7 +1644,7 @@ function getMyMetrics(date) {
       var own = dqPRD[iso] && dqPRD[iso][emp.name];
       // M9 (cycle 22): a workday with no CDR row is NO DATA, not zero calls —
       // the rail sparklines drew a PTO day as a dive to 0 (g136's class).
-      // Every consumer (mMiniSparkSvg_, mTrendAvg_) skips null.
+      // Every consumer (mMiniSparkSvg_, mTrendWeightedPct_) skips null.
       return {
         date: iso,
         pctAnswered: own ? own.pctAnswered : null,

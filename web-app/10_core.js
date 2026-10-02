@@ -13,7 +13,7 @@
 // ── WEB APP ENTRY ───────────────────────────────────────────────────────────
 // Security model: appsscript.json sets access: "ANYONE_ANONYMOUS" so external
 // form recipients can reach the ?form=<token> route. The internal app route
-// gates on @umsupply.com domain check via Session.getActiveUser().getEmail() —
+// gates on the org-domain check (isOrgEmail_ — CONFIG.ORG_EMAIL_DOMAINS) via Session.getActiveUser().getEmail() —
 // with executeAs: "USER_DEPLOYING", this returns the visitor's email when
 // they're in the same Workspace domain as the deployer, or empty string for
 // external users. EVERY function without a trailing underscore, in EVERY .js
@@ -26,6 +26,14 @@
 // The only endpoints with no identity gate are getFormByToken and
 // submitFormByToken, which validate via token. The PUBLIC-GATE pin in
 // test/client/run.js enumerates every pushed file to hold this.
+/** PURE (CORE-05, cycle 23; Node-pinned) — is this address on one of the
+ *  org's own domains? Exact domain match, case-insensitive: a look-alike such
+ *  as "x@notumsupply.com" or "x@umsupply.com.evil.test" is not the org. */
+function isOrgEmail_(email) {
+  const m = /@([^@\s]+)$/.exec(String(email || '').trim().toLowerCase());
+  if (!m) return false;
+  return (CONFIG.ORG_EMAIL_DOMAINS || []).some(function (d) { return m[1] === String(d).toLowerCase(); });
+}
 function doGet(e) {
   // ── Public form route ──────────────────────────────────────────────
   // External recipients reach ?form=<token> to fill out interactive forms.
@@ -35,7 +43,7 @@ function doGet(e) {
   }
   // ── Inter-department request resolve route ─────────────────────────
   // The "✓ Mark this resolved" link in a tracked dept-request email lands
-  // here. The recipient is internal (@umsupply.com) so normal auth applies;
+  // here. The recipient is internal (an org account) so normal auth applies;
   // serveResolvePage_ identifies them via getActiveUserEmail_().
   if (e && e.parameter && e.parameter.resolve) {
     return serveResolvePage_(e.parameter.resolve);
@@ -51,16 +59,16 @@ function doGet(e) {
   // Defense in depth on top of the per-endpoint getEmployeeInfo_() check.
   // We render an "Access Restricted" page only for a visitor we can
   // POSITIVELY identify as outside the org: a non-empty Google email that
-  // is neither @umsupply.com NOR a registered employee. Two deliberate
+  // is neither an org-domain address (isOrgEmail_) NOR a registered employee. Two deliberate
   // carve-outs:
   //   • Empty email — anonymous / the executeAs:USER_DEPLOYING +
   //     ANYONE_ANONYMOUS "unreliable" case — is fail-open: the shell loads
   //     but every google.script.run endpoint returns null, so no data leaks.
-  //   • Registered employees on a non-@umsupply.com login (contractors,
+  //   • Registered employees on a non-org login (contractors,
   //     e.g. PH/India reps) are never blocked — gating on domain alone
   //     would lock them out, which is why the prior code skipped the gate.
   const viewerEmail = String(Session.getActiveUser().getEmail() || '').toLowerCase();
-  if (viewerEmail && !/@umsupply\.com$/.test(viewerEmail) && !getEmployeeInfo_()) {
+  if (viewerEmail && !isOrgEmail_(viewerEmail) && !getEmployeeInfo_()) {   // CORE-05: both org domains
     return HtmlService.createHtmlOutput(
       '<!DOCTYPE html><html><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width, initial-scale=1">' +
@@ -1940,6 +1948,15 @@ function getAutomationHealthBadge() {
  *  the INV-151 posture). INV-44 trigger-handler gate. Silent when green. */
 function runNightlySelfTest() {
   assertManagerCaller_('runNightlySelfTest');
+  // CORE-03 (cycle 23): a MANAGER could call this from the browser. It stamped
+  // the heartbeat and the running sentinel, then the suite's owner check threw,
+  // so it stored a failed self-test and emailed every manager — a false red,
+  // and a fresh heartbeat that masked a dead 1am trigger for 26 hours. It runs
+  // from its own trigger (the script owner); anyone else is refused BEFORE
+  // anything is stamped.
+  if (!callerIsScriptOwner_()) {
+    return { error: 'runNightlySelfTest runs from its own trigger as the script owner — not from the browser. Nothing was recorded.' };
+  }
   stampDigestLastRun_('selfTest');
   const props = PropertiesService.getScriptProperties();
   try {
@@ -3515,8 +3532,14 @@ function installAutomationTriggers() {
              AUTOMATION_TRIGGER_QUOTA + ' Apps Script allows).');
   // Follow-up to S7 (cycle 22): record the installer, so offboarding them —
   // which disables the account every trigger runs as — is named, not silent.
+  // CORE-03 (cycle 23): record the account the triggers RUN AS — the effective
+  // user. From the web app that is the deployer whoever pressed the button;
+  // recording the visiting manager raised a false "installer offboarded" alarm
+  // when they left and never watched the real owner. `by` keeps who asked.
   try {
-    propSetBounded_(AUTOMATION_TRIGGER_OWNER_PROP, JSON.stringify({ email: userEmail, at: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()) }));
+    let runsAs = '';
+    try { runsAs = String(Session.getEffectiveUser().getEmail() || '').toLowerCase(); } catch (_) { runsAs = ''; }
+    propSetBounded_(AUTOMATION_TRIGGER_OWNER_PROP, JSON.stringify({ email: runsAs || userEmail, by: userEmail, at: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()) }));
   } catch (e) { Logger.log('installAutomationTriggers: could not record the installer — ' + e.message); }
 
   // Trigger-ownership warning: Apps Script time-triggers are owned by the
@@ -3573,11 +3596,22 @@ function removeAutomationTriggers() {
     'runNightlySelfTest',
     'creditMonthlyPtoAccruals',
   ];
+  let removed = 0;
   ScriptApp.getProjectTriggers().forEach(t => {
     const h = t.getHandlerFunction();
-    if (TARGETS.indexOf(h) >= 0 || RETIRED_TRIGGER_HANDLERS.indexOf(h) >= 0) ScriptApp.deleteTrigger(t);
+    if (TARGETS.indexOf(h) >= 0 || RETIRED_TRIGGER_HANDLERS.indexOf(h) >= 0) { ScriptApp.deleteTrigger(t); removed++; }
   });
   Logger.log('Automation triggers removed.');
+  // CORE-03 (cycle 23): this deletes EVERY automation trigger, the failure
+  // digest included — the one job that would have reported the silence — and
+  // it left no trace but a Logger line. The shared AuditLog now records who.
+  try {
+    const caller = getEmployeeInfo_() || _SYSTEM_AUDIT_EMP_;
+    writeAuditLog_(caller, 'AutomationTriggersRemoved', '', '', false, 0,
+      'removed=' + removed + ' — every automation job (the failure digest included) is OFF until installAutomationTriggers() runs again',
+      String(getActiveUserEmail_() || ''));
+  } catch (e) { Logger.log('removeAutomationTriggers: could not write the audit row — ' + e.message); }
+  return { removed: removed };
 }
 function clearCaches_() {
   // Private (underscore-suffixed) so it is NOT reachable via google.script.run.
@@ -4028,7 +4062,13 @@ function getDepartmentEmails_() {
           const email = (typeof raw[k] === 'string') ? raw[k].trim() : '';
           if (name && email && email.indexOf('@') > 0) clean[name] = email;
         });
-        if (Object.keys(clean).length > 0) return clean;
+        // CORE-04 (cycle 23): a deliberately-cleared map ({} saved through
+        // saveDepartmentEmails) stays EMPTY — the C5 rule tax rates and update
+        // suggestions got in cycle 10. It used to fall back to CONFIG's eleven
+        // real department addresses, so composers kept offering, and sending
+        // to, departments the admin had removed. An object whose entries ALL
+        // failed validation still degrades to CONFIG (the corrupt-blob intent).
+        if (Object.keys(raw).length === 0 || Object.keys(clean).length > 0) return clean;
       }
     } catch (_) {}
   }
@@ -4236,6 +4276,23 @@ function getManagerEmails_() {
  *  but a person who is a manager in ONE source and not the OTHER gets
  *  inconsistent capability — keep the roster column and MANAGER_EMAILS in sync
  *  when onboarding/offboarding a manager. */
+/** PURE (CORE-03, cycle 23; Node-pinned) — the active user IS the effective
+ *  user, both known: the script owner, in the editor or an owner-installed
+ *  trigger. A visitor through the web app runs AS the owner (executeAs
+ *  USER_DEPLOYING) but is a different active user. The rule the suite's
+ *  `_suiteCallerAllowed_` applies, held here so production code does not
+ *  depend on Tests.js. */
+function scriptOwnerMatch_(activeEmail, effectiveEmail) {
+  const a = String(activeEmail == null ? '' : activeEmail).trim().toLowerCase();
+  const e = String(effectiveEmail == null ? '' : effectiveEmail).trim().toLowerCase();
+  return !!a && !!e && a === e;
+}
+function callerIsScriptOwner_() {
+  let a = '', e = '';
+  try { a = Session.getActiveUser().getEmail(); } catch (_) { a = ''; }
+  try { e = Session.getEffectiveUser().getEmail(); } catch (_) { e = ''; }
+  return scriptOwnerMatch_(a, e);
+}
 function assertManagerCaller_(label) {
   const userEmail = String(getActiveUserEmail_() || '').toLowerCase();
   const allowed = getManagerEmails_().map(e => String(e).toLowerCase());

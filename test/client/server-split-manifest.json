@@ -2103,6 +2103,61 @@
     "kbManualPlan_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-02",
+   "why": "cycle 23 Batch 10: INT-1 Q43 entry reader (intakeNeuroEntryIsDx_/intakeNeuroDxEntries_), INT2-1 seat negation, INT2-2 unit-aware weight, KB-2 facet counts",
+   "added": [
+    "intakeNeuroDxEntries_",
+    "intakeNeuroEntryIsDx_",
+    "kbAiFacetCounts_"
+   ],
+   "removed": [],
+   "changed": [
+    "intakeDeriveClinicalFactors_",
+    "intakeExplainFactors_",
+    "intakeParseWeight_",
+    "intakeSeatKinds_",
+    "kbGetFacetGuidance"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-02",
+   "why": "cycle 23 Batch 10: CN-3 Other-recipient domain, ADM-12 start audit + archive walk, CORE-03 owner check + trigger audit, CORE-04 empty dept map, CORE-05 isOrgEmail_, INT-2 superseded guard, INT2-4 answers hash, MET-5 import-pending, TRN-2",
+   "added": [
+    "callerIsScriptOwner_",
+    "cnTagAdminStartAudit_",
+    "dashboardImportPending_",
+    "intakePpdAnswersHash_",
+    "intakeSupersededMsg_",
+    "isOrgEmail_",
+    "scriptOwnerMatch_"
+   ],
+   "removed": [],
+   "changed": [
+    "CONFIG",
+    "applyTagTransformAcrossReps_",
+    "confirmDeptRequestResolve",
+    "doGet",
+    "emailFromCallNote",
+    "getCdrAgentMetrics_",
+    "getDashboardMetrics",
+    "getDepartmentEmails_",
+    "getMyMetrics",
+    "importQuizFromForm",
+    "installAutomationTriggers",
+    "intakeAmendSource_",
+    "intakePreviewPPD",
+    "intakeSendAcct_",
+    "intakeSendPPD",
+    "mergeCallNoteTags",
+    "removeAutomationTriggers",
+    "renameCallNoteTag",
+    "runNightlySelfTest",
+    "serveResolvePage_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2545,7 +2600,7 @@
   "CONFIG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "30a9807336a402cf"
+   "sha": "e8cf993b26cae6b5"
   },
   "CSRT": {
    "file": "00_config.js",
@@ -4570,7 +4625,7 @@
   "applyTagTransformAcrossReps_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "44de31aa8d495746"
+   "sha": "c3d4e2bf8b085a28"
   },
   "archiveCallNoteTag": {
    "file": "30_callnotes.js",
@@ -4902,6 +4957,11 @@
    "kind": "function",
    "sha": "e9b140c18786fae7"
   },
+  "callerIsScriptOwner_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "91f49d1817de3181"
+  },
   "canSeeQa_": {
    "file": "90_qa.js",
    "kind": "function",
@@ -5147,6 +5207,11 @@
    "kind": "function",
    "sha": "e3ef8698c81ca85a"
   },
+  "cnTagAdminStartAudit_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "86cbc1778998a6f2"
+  },
   "cnTagSkippedNote_": {
    "file": "30_callnotes.js",
    "kind": "function",
@@ -5295,7 +5360,7 @@
   "confirmDeptRequestResolve": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "400b64d85c2782d2"
+   "sha": "5fce37077c348527"
   },
   "contiguousRowRunsDesc_": {
    "file": "10_core.js",
@@ -5382,6 +5447,11 @@
    "kind": "function",
    "sha": "b1e1679167bf2a99"
   },
+  "dashboardImportPending_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "ebfe3df1e23d9e62"
+  },
   "dashboardPeriodRange_": {
    "file": "40_metrics.js",
    "kind": "function",
@@ -5460,7 +5530,7 @@
   "doGet": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "a74168cfc5e5d265"
+   "sha": "ae489826773c9785"
   },
   "drAddThreadId_": {
    "file": "50_deptrequests.js",
@@ -5660,7 +5730,7 @@
   "emailFromCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "7f346b4275f5946b"
+   "sha": "95d2a947964d19b3"
   },
   "empDepartments_": {
    "file": "20_timeclock.js",
@@ -6115,7 +6185,7 @@
   "getCdrAgentMetrics_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "cd90e13c93deddc9"
+   "sha": "43ba56ce1f8088ea"
   },
   "getCdrCompanyHolidayRanges_": {
    "file": "40_metrics.js",
@@ -6185,12 +6255,12 @@
   "getDashboardMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "3f8103fa49728036"
+   "sha": "46854788be2d9afa"
   },
   "getDepartmentEmails_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "d0107c73e5c3cc1d"
+   "sha": "5e28e6727ecf0cc8"
   },
   "getDeployReadiness": {
    "file": "10_core.js",
@@ -6490,7 +6560,7 @@
   "getMyMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "4774641666de5c4b"
+   "sha": "e77c728c92341337"
   },
   "getMyMetricsRange": {
    "file": "40_metrics.js",
@@ -6970,7 +7040,7 @@
   "importQuizFromForm": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "860bbfa6839d41d2"
+   "sha": "7987ade97f522963"
   },
   "inboundVolumeBuckets_": {
    "file": "10_core.js",
@@ -7000,7 +7070,7 @@
   "installAutomationTriggers": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "d7cd4df35c93f0f1"
+   "sha": "a00a69010e8e2a78"
   },
   "instanceLabel_": {
    "file": "10_core.js",
@@ -7025,7 +7095,7 @@
   "intakeAmendSource_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "326e27216b243617"
+   "sha": "d74f7bfdcbc9eb77"
   },
   "intakeBodyHash_": {
    "file": "60_intake.js",
@@ -7055,7 +7125,7 @@
   "intakeDeriveClinicalFactors_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "0acbf1256fccfc72"
+   "sha": "321514cba8e2e2bd"
   },
   "intakeEmailDomain_": {
    "file": "60_intake.js",
@@ -7070,7 +7140,7 @@
   "intakeExplainFactors_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "f8fdda0677917eba"
+   "sha": "be0b8aba90d5a7fb"
   },
   "intakeFeedbackCtaHtml_": {
    "file": "60_intake.js",
@@ -7122,15 +7192,30 @@
    "kind": "function",
    "sha": "5e430c7bb6c98d4b"
   },
+  "intakeNeuroDxEntries_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "ffff7f24081b9ad8"
+  },
+  "intakeNeuroEntryIsDx_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "4849ea455bf958a4"
+  },
   "intakeParseWeight_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "a89897bd2b71f478"
+   "sha": "5f0af18e91dcbcc7"
   },
   "intakePpdAnswerStyles_": {
    "file": "60_intake.js",
    "kind": "function",
    "sha": "2cdadb352a48b845"
+  },
+  "intakePpdAnswersHash_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "03c026c8bfc5570d"
   },
   "intakePpdLabelEn_": {
    "file": "60_intake.js",
@@ -7160,7 +7245,7 @@
   "intakePreviewPPD": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "0c8e7afe7630cce1"
+   "sha": "0b68cf677f624fbf"
   },
   "intakeRecListHtml_": {
    "file": "60_intake.js",
@@ -7175,7 +7260,7 @@
   "intakeSeatKinds_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "f22354d1a3dff5a2"
+   "sha": "04afca0a5ad8cf88"
   },
   "intakeSectionRowHtml_": {
    "file": "60_intake.js",
@@ -7185,7 +7270,7 @@
   "intakeSendAcct_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "3bf2394db3b601ca"
+   "sha": "89fc003683e72dc1"
   },
   "intakeSendPAP": {
    "file": "60_intake.js",
@@ -7200,7 +7285,7 @@
   "intakeSendPPD": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "870704677ecde3e7"
+   "sha": "242a0eba1651e93f"
   },
   "intakeStoreFailWarn_": {
    "file": "60_intake.js",
@@ -7211,6 +7296,11 @@
    "file": "60_intake.js",
    "kind": "function",
    "sha": "60ae387b05fb68f2"
+  },
+  "intakeSupersededMsg_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "64e64e2e3e30a102"
   },
   "intakeTsString_": {
    "file": "60_intake.js",
@@ -7256,6 +7346,11 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "25ac5f394712a866"
+  },
+  "isOrgEmail_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "69f39d83a998b8b4"
   },
   "isProdInstance_": {
    "file": "10_core.js",
@@ -7311,6 +7406,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "b1a8477b2dfbc8b6"
+  },
+  "kbAiFacetCounts_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "48954f99b7b42e51"
   },
   "kbAiGeneration_": {
    "file": "70_kb.js",
@@ -7520,7 +7620,7 @@
   "kbGetFacetGuidance": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "526a2abfd36912d2"
+   "sha": "f372eb40ae70ef1a"
   },
   "kbGetImageData": {
    "file": "70_kb.js",
@@ -8035,7 +8135,7 @@
   "mergeCallNoteTags": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "1f7dbf4bb3c230ab"
+   "sha": "0a7da66235b1bc80"
   },
   "metricsBuildKpiSeries_": {
    "file": "40_metrics.js",
@@ -8900,12 +9000,12 @@
   "removeAutomationTriggers": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "216c252213ffca5c"
+   "sha": "f0ed57dc339737f6"
   },
   "renameCallNoteTag": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "9e09c79c1c973ae8"
+   "sha": "917e3dd9051001fb"
   },
   "renderOopDetailsHtml_": {
    "file": "30_callnotes.js",
@@ -9035,7 +9135,7 @@
   "runNightlySelfTest": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "2bb3b7280ec12e37"
+   "sha": "f2ae8d43d81aec5d"
   },
   "runTriggerGroup_": {
    "file": "10_core.js",
@@ -9212,6 +9312,11 @@
    "kind": "function",
    "sha": "463678f9e1460ff4"
   },
+  "scriptOwnerMatch_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "528dcd9cf26262eb"
+  },
   "scriptPropertiesStatus_": {
    "file": "10_core.js",
    "kind": "function",
@@ -9345,7 +9450,7 @@
   "serveResolvePage_": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "ca7125b92b2081a7"
+   "sha": "cdca648659c45cc9"
   },
   "setArchivedTagsSet_": {
    "file": "30_callnotes.js",

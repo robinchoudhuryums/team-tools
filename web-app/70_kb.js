@@ -4669,6 +4669,13 @@ function kbAiCanonicalFacets_(clean) {
   if (tags.length) parts.push('tags=' + tags.join(','));
   return parts.join('|');
 }
+/** PURE (KB-2, cycle 23): what the AuditLog row says about the facets —
+ *  how many of each kind, never a value. */
+function kbAiFacetCounts_(clean) {
+  clean = clean || {};
+  return 'dept:' + (clean.department ? 1 : 0) + ',update:' + (clean.updateType ? 1 : 0) +
+    ',flag:' + (clean.flagType ? 1 : 0) + ',tags:' + ((clean.tags || []).length);
+}
 /** PURE: search-query terms derived from sanitized facets — feeds the
  *  existing section search (kebab-case tags split into words). */
 function kbAiQueryTerms_(clean) {
@@ -4826,22 +4833,25 @@ function kbGetFacetGuidance(facets) {
     if (!emp) return { error: 'Not authorized.' };
     if (!getFlag_('kbAiGuidance')) return { none: true, reason: 'disabled' };
 
-    // Vocabularies: departments + update types are org config; tags are the
-    // CALLER's own established tag vocabulary (tags already on their saved
-    // notes — the same source as the tag-autocomplete datalist), so a novel
-    // tag typed this minute never reaches the vendor.
+    // Vocabularies: departments, update types AND tags are all org config.
+    // KB-2 (cycle 23): tags used to be the CALLER's own established tags —
+    // free text from the per-rep PHI store, so a tag that was once a patient's
+    // surname or member id became "vocabulary" and went to the vendor and the
+    // AuditLog. Tags are now the ADMIN's taxonomy only: the tags of the
+    // auto-tag rules (Admin → Config → Auto-tag rules, `getAutoTagRules_`),
+    // which an admin wrote on purpose and which no rep can add to.
     const updByDept = getUpdateSuggestions_() || {};
     const updateTypes = (CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT || []).slice();
     Object.keys(updByDept).forEach(function (d) {
       (updByDept[d] || []).forEach(function (u) { if (updateTypes.indexOf(u) < 0) updateTypes.push(u); });
     });
-    let ownTags = [];
-    try { const ts = getCallNoteTagSuggestions(); ownTags = (ts && ts.tags) || []; } catch (_) {}
+    let adminTags = [];
+    try { adminTags = (getAutoTagRules_() || []).map(function (r) { return r.tag; }); } catch (_) {}
     const clean = kbAiSanitizeFacets_(facets, {
       departments: Object.keys(getDepartmentEmails_() || {}),
       updateTypes: updateTypes,
       flagTypes: CN_FLAG_TYPES.concat(['urgent']),
-      tags: ownTags,
+      tags: adminTags,
     });
     // Department alone is too generic to guide on — require a real signal.
     if (!clean.updateType && !clean.flagType && !clean.tags.length) {
@@ -4892,9 +4902,11 @@ function kbGetFacetGuidance(facets) {
 
     const cost = kbAiEstimateCostUsd_(cfg.model, vendor.usage);
     kbAiApplySpend_(cost - KB_AI_CALL_RESERVE_USD, 1);
-    // PHI-free audit row — facets are validated enums, never note content.
+    // KB-2: the shared AuditLog carries COUNTS of facets, never their values —
+    // the row records that a guidance call happened and what it cost, and
+    // nothing a later vocabulary change could turn into note content.
     writeAuditLog_(emp, 'KbAiGuidance', '', '', false, 0,
-      'facets=' + canonical + '; model=' + cfg.model + '; usd=' + cost.toFixed(4), emp.email);
+      'facets=' + kbAiFacetCounts_(clean) + '; model=' + cfg.model + '; usd=' + cost.toFixed(4), emp.email);
     if (!vendor.text || vendor.text.indexOf('NOT_COVERED') >= 0) return noneOut('not-covered', true);
 
     const out = {

@@ -842,7 +842,7 @@ test('dashboardPeriodRange_: yesterday is the previous WORKDAY; mtd/ytd resolve 
 test('M2/M8 (cycle 22): getDashboardMetrics ships dataThrough, the cards project from it, and a window nobody reported in is never cached', () => {
   const dash = stripJsComments_(extractRawFunction('Code.js', 'getDashboardMetrics'));
   assert.ok(/dataThrough: range\.dataThrough \|\| null,/.test(dash), 'the payload carries the last day with data');
-  assert.ok(/if \(useCache && !noteRes\.unavailable && !prevUnavailable && cur\.team\) \{/.test(dash),
+  assert.ok(/if \(useCache && !noteRes\.unavailable && !prevUnavailable && cur\.team && !importPending\) \{/.test(dash),   // MET-5 (cycle 23) added the import gate
     'M2 — an all-empty window (the pre-import morning) is not pinned for the dashboard TTL');
   const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
   const calls = [...clk.matchAll(/dashProjection_\(([^)]*)\)/g)].map((m) => m[1]).filter((a) => /res\./.test(a));
@@ -1481,6 +1481,12 @@ test('PUBLIC-GATE: every public function in every pushed .js file gates its call
         if (!/^\{\s*_assertSuiteCaller_\(/.test(body)) bad.push(f + ' ' + name + ' — first statement must be _assertSuiteCaller_()');
         continue;
       }
+      // CORE-06 (cycle 23): DevTools.js's editor entry points are owner-only,
+      // by the Tests.js rule — the owner check is the FIRST statement.
+      if (f === 'DevTools.js') {
+        if (!/^\{\s*_assertSuiteCaller_\(/.test(body)) bad.push(f + ' ' + name + ' — first statement must be _assertSuiteCaller_()');
+        continue;
+      }
       if (ALLOW[name]) continue;
       if (DELEGATE[name]) {
         const callee = DELEGATE[name];
@@ -1828,7 +1834,7 @@ test('M7 (cycle 22): a missing DQE tab is an ERROR at every caller, never "no ca
   assert.strictEqual(ready.ok, false, 'THE REGRESSION: the old read returned ok:true with Ann unseen, i.e. "not in the CDR"');
   // The other two callers: the throw lands in each endpoint's own catch, which returns {error} and skips the put.
   const dash = stripJsComments_(extractRawFunction('Code.js', 'getDashboardMetrics'));
-  assert.ok(/var dqMap = cdrAgentsOrThrow_\(getCdrAgentMetrics_\(wFrom, wTo, allNames\)\);/.test(dash), 'the Dashboard (6-hour cache) refuses the empty map');
+  assert.ok(/var dqRes = getCdrAgentMetrics_\(wFrom, wTo, allNames\);\s*var dqMap = cdrAgentsOrThrow_\(dqRes\);/.test(dash), 'the Dashboard (6-hour cache) refuses the empty map');   // MET-5 keeps the result for its meta
   const team = stripJsComments_(extractRawFunction('Code.js', 'getTeamMetrics'));
   assert.ok(/var cdrResult = getCdrAgentMetrics_\(from, toDate, rosterNames\);\s*cdrAgentsOrThrow_\(cdrResult\);/.test(team), 'Team Metrics refuses it before any row is built');
   ['getOnboardingCdrReadiness', 'getDashboardMetrics', 'getTeamMetrics'].forEach((fn) => {
@@ -2809,7 +2815,8 @@ const engineCtx = vm.createContext({});
 // surface can't drift) — load it into the ctx first or the engine's call throws.
 // Batch 8 (cycle 22): the engine reads three shared helpers — the seat words
 // (I2), the inherently-solid code list (I6) and the weight parse (I3).
-['intakeSeatKinds_', 'intakeInherentlySolidCodes_', 'intakeParseWeight_'].forEach((n) =>
+// Cycle 23 INT-1: and the Q43 entry reader.
+['intakeSeatKinds_', 'intakeInherentlySolidCodes_', 'intakeParseWeight_', 'intakeNeuroEntryIsDx_', 'intakeNeuroDxEntries_'].forEach((n) =>
   vm.runInContext(extractRawFunction('Code.js', n), engineCtx, { filename: 'Code.js#' + n }));
 vm.runInContext(extractRawFunction('Code.js', 'intakeDeriveClinicalFactors_'), engineCtx,
   { filename: 'Code.js#intakeDeriveClinicalFactors_' });
@@ -7877,11 +7884,14 @@ test('C17-11: a mixed split-send that half-fails still books the delivered half'
 });
 
 test('C17-13: intake condition custom-add blocks LEADING negation tokens', () => {
+  // Cycle 23 INT-1: the guard is now the shared token rule, driven here.
   const ik = c17strip(fs.readFileSync(path.join(__dirname, '../../web-app/intake/script_intake.html'), 'utf8'));
-  assert.ok(/negTok = val\.toLowerCase\(\)\.split\(/.test(ik), 'the check keys off the first token');
-  ['none', 'nothing', 'denies', 'negative'].forEach((w) => {
-    assert.ok(new RegExp("'" + w + "'").test(ik), 'negation vocabulary includes ' + w);
+  assert.ok(/if \(!intakeNeuroEntryIsDxClient_\(val\)\)/.test(ik), 'the custom-add guard asks the shared rule');
+  const isDx = loadFunction(buildSandbox([]), 'intake/script_intake.html', 'intakeNeuroEntryIsDxClient_');
+  ['none', 'nothing', 'denies', 'negative', 'None diagnosed', 'Nothing neurological'].forEach((w) => {
+    assert.strictEqual(isDx(w), false, 'a LEADING negation is not a diagnosis: ' + w);
   });
+  assert.strictEqual(isDx('non-epileptic seizures'), true, '"non-…" is a real condition');
 });
 
 test('batch-5: the last uncapped client-writable cells are bounded + validated', () => {
@@ -8317,8 +8327,10 @@ test('#8: multi-day team trend is span-capped + best-effort; the delta names its
   assert.ok(teamFn.slice(elseIdx - 400, elseIdx + 900).indexOf('try {') >= 0 &&
             /catch \(eRt\) \{ trendData = null; trendFailed = true; \}/.test(teamFn),   // MET-4 (cycle 23): and the round is flagged so it is not cached
     'a failed range-trend read leaves trend null (pre-#8 shape)');
-  assert.ok(/period daily average/.test(mopPartial) && /30-day team average/.test(mopPartial),
-    'the client delta names which average a multi-day vs single-day trend compares against');
+  // MET2-1 (cycle 23): only the single-day view compares with another window
+  // (the 30-day team rate); a multi-day range no longer compares with itself.
+  assert.ok(!/period daily average/.test(mopPartial) && /vs 30-day team rate/.test(mopPartial),
+    'the client delta compares only against a different window, and names it');
 });
 
 test('#9: rep drill-through is a real button riding data-* attributes', () => {
@@ -22230,8 +22242,9 @@ test('F-32: a window with nothing answered or missed has NO answer rate — null
   assert.strictEqual((mp.match(/mPctValueHtml_\((c|t)\.pctAnswered\)/g) || []).length, 2, 'both heroes route through it');
   assert.ok(/\(r\.pctAnswered == null\) \? '<span style="color:var\(--muted\)">—<\/span>' : '<span class="' \+ mPctClass_\(r\.pctAnswered, thr, band\)/.test(mp), 'the team table cell renders a dash for null');
   assert.ok(!/esc\((c|t|r)\.pctAnswered\) \+ '%'|esc\((c|t)\.pctAnswered\) \+ '<span class="unit">%/.test(mp), 'no hero or cell concatenates the raw value with a % any more');
-  const mTrendAvg_ = loadFunction(sb, 'metrics/script_metrics.html', 'mTrendAvg_');
-  assert.strictEqual(mTrendAvg_([{ pctAnswered: null }, { pctAnswered: 80 }, { pctAnswered: 90 }], 'pctAnswered'), 85, 'a null day is skipped, not averaged as 0');
+  // MET2-1 (cycle 23): the trend baseline is call-weighted now; a no-data day is still skipped.
+  const wpct = loadFunction(sb, 'metrics/script_metrics.html', 'mTrendWeightedPct_');
+  assert.strictEqual(wpct([{ answered: null, missed: null }, { answered: 8, missed: 2 }, { answered: 9, missed: 1 }]), 85, 'a null day is skipped, not averaged as 0');
   const ser = sb.metricsTeamAvgSeries_({ d: { a: { v: null }, b: { v: 80 }, c: { v: 90 } } }, ['d'], 'v', 2, []);
   assert.strictEqual(ser[0].avg, 85); assert.strictEqual(ser[0].cohort, 2, 'the series cohort excludes the rate-less rep');
   const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
@@ -22464,8 +22477,10 @@ test('F-10: a cross-rep tag transform REPORTS the rep Sheets it could not read �
     getCallNotesSheet_: (emp) => {
       if (emp.id === 'E-2') throw new Error('You do not have permission');
       return { getDataRange: () => ({ getValues: () => [['h'], ['', '', '', JSON.stringify({ tags: ['old', 'keep'] })], ['', '', '', '']] }),
-               getRange: () => ({ setValue() {} }) };
-    } };
+               getRange: () => ({ setValue() {} }),
+               getParent: () => ({ getSheetByName: () => null }) };   // ADM-12: no archive tab here
+    },
+    CONFIG: { CALL_NOTES: { ARCHIVE_TAB: 'NotesArchive' } } };
   vm.createContext(ctx);
   ['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
   vm.runInContext(extractRawFunction('Code.js', 'applyTagTransformAcrossReps_'), ctx);
@@ -28455,7 +28470,8 @@ test('FU-B6e: the trigger installer is recorded, and offboarding them is named b
   assert.strictEqual(f({ email: 'svc@x.com' }, [], []), '', 'a deployer with no roster row is NOT flagged (only offboardEmployee writes the record)');
   assert.strictEqual(f(null, [], ['lee@x.com']), '', 'no record (installed before it existed) says nothing');
   const inst = stripJsComments_(extractRawFunction('Code.js', 'installAutomationTriggers'));
-  assert.ok(/propSetBounded_\(AUTOMATION_TRIGGER_OWNER_PROP, JSON\.stringify\(\{ email: userEmail/.test(inst), 'the installer stamps who ran it');
+  // CORE-03 (cycle 23): the stamp is the account the triggers RUN AS (the effective user), with `by` the caller.
+  assert.ok(/propSetBounded_\(AUTOMATION_TRIGGER_OWNER_PROP, JSON\.stringify\(\{ email: runsAs \|\| userEmail, by: userEmail/.test(inst), 'the installer stamps the account the triggers run as');
   const det = stripJsComments_(extractRawFunction('Code.js', 'automationDetectorChecks_'));
   assert.ok(/add\('triggerOwner'/.test(det) && /triggerOwnerOffboarded_\(owner, emails, readOffboardedEmails_\(\)\)/.test(det), 'the detector reads it');
   const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
@@ -33181,6 +33197,275 @@ test('TRUI-2 (cycle 23): the signature pad is a FIXED palette — white ground, 
   assert.ok(/ctx\.strokeStyle = ED_SIG_INK;/.test(code) && /ctx\.fillStyle = ED_SIG_INK;/.test(code), 'drawn and typed signatures both use it');
   assert.ok(/\.ed-sig-wrap canvas \{[^}]*background: #ffffff;/.test(src), 'the pad itself is white in both themes');
 });
+
+console.log('\ncycle 23 Batch 10 — PHI boundary, config, metrics polish');
+
+const b10Ctx_ = (fns, extra) => {
+  const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, Date, isFinite, parseFloat, parseInt, RegExp, Error },
+    extra || {}));
+  fns.forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  return ctx;
+};
+const b10J = (x) => JSON.parse(JSON.stringify(x));
+
+test('KB-2 (cycle 23): the AI guidance vocabulary is the ADMIN taxonomy, and the AuditLog row carries counts, never a facet value (driven)', () => {
+  const audits = [], prompts = [];
+  const ctx = b10Ctx_(['kbAiSanitizeFacets_', 'kbAiCanonicalFacets_', 'kbAiQueryTerms_', 'kbAiBuildPrompt_', 'kbAiFacetCounts_', 'kbGetFacetGuidance'], {
+    getEmployeeInfo_: () => ({ id: 'E-1', email: 'rep@ums.com' }),
+    getFlag_: () => true,
+    getUpdateSuggestions_: () => ({}),
+    CONFIG: { CALL_NOTES: { UPDATE_SUGGESTIONS_DEFAULT: ['Close Order'] } },
+    getCallNoteTagSuggestions: () => ({ tags: ['smith-john', 'shipping'] }),   // the rep's own free-text tags
+    getAutoTagRules_: () => [{ tag: 'shipping', keywords: ['shipped'] }, { tag: 'billing', keywords: ['refund'] }],
+    getDepartmentEmails_: () => ({ Billing: 'b@x' }),
+    CN_FLAG_TYPES: ['training'],
+    KB_AI_CACHE_PREFIX: 'kbai:', KB_AI_CACHE_TTL: 60, KB_AI_MAX_CHUNKS: 3, KB_AI_SCORE_FLOOR: 0, KB_AI_CALL_RESERVE_USD: 0.01,
+    kbAiGeneration_: () => 1,
+    Utilities: { computeDigest: () => [1, 2, 3], DigestAlgorithm: { MD5: 'md5' } },
+    CacheService: { getScriptCache: () => ({ get: () => null, put: () => {} }) },
+    searchReference: () => ({ results: [{ type: 'article', chunkMd: 'x', score: 9, id: 'k1', title: 'T' }] }),
+    getKbAiConfig_: () => ({ apiKey: 'k', model: 'm', dailyCap: 1 }),
+    kbAiTryReserveSpend_: () => true,
+    kbAiCallVendor_: (cfg, prompt) => { prompts.push(JSON.stringify(prompt)); return { text: 'Guidance.', usage: {} }; },
+    kbAiEstimateCostUsd_: () => 0.001, kbAiApplySpend_: () => {},
+    writeAuditLog_: (e, a, d, t, f, n, notes) => audits.push(a + ' ' + notes),
+    Logger: { log() {} },
+  });
+  const r = b10J(ctx.kbGetFacetGuidance({ updateType: 'Close Order', tags: ['smith-john', 'shipping'] }));
+  assert.ok(r.guidance, 'a guidance call went through');
+  assert.ok(/shipping/.test(prompts[0]) && !/smith-john/.test(prompts[0]), 'THE REGRESSION: the rep\'s own tag (a surname) reached the vendor prompt');
+  assert.strictEqual(audits.length, 1);
+  assert.ok(/facets=dept:0,update:1,flag:0,tags:1;/.test(audits[0]), 'the audit row counts facets: ' + audits[0]);
+  assert.ok(!/shipping|Close Order|smith/.test(audits[0]), 'and names none of them');
+});
+
+test('INT-1 / INT2-1 / INT2-2 (cycle 23): Q43 is read entry by entry by token, a negated seat word is not that seat, and a weight is read by its UNIT (driven, client twins agree)', () => {
+  const ctx = b10Ctx_(['intakeNeuroEntryIsDx_', 'intakeNeuroDxEntries_', 'intakeSeatKinds_', 'intakeParseWeight_']);
+  const sb = buildSandbox([]);
+  const dxC = loadFunction(sb, 'intake/script_intake.html', 'intakeNeuroEntryIsDxClient_');
+  const seatC = loadFunction(sb, 'intake/script_intake.html', 'intakeSeatKindsClient_');
+  [['Not sure', false], ['Unknown', false], ['Pt unsure', false], ['MS?', false], ['none', false], ['None diagnosed', false],
+    ['not applicable', false], ["don't know", false], ['multiple sclerosis', true], ['normal pressure hydrocephalus', true],
+    ['non-epileptic seizures', true], ["Parkinson's", true]].forEach(([e, want]) => {
+    assert.strictEqual(ctx.intakeNeuroEntryIsDx_(e), want, 'server: ' + e);
+    assert.strictEqual(dxC(e), want, 'client twin agrees: ' + e);
+  });
+  assert.deepStrictEqual(b10J(ctx.intakeNeuroDxEntries_('cerebral palsy, unknown')), ['cerebral palsy'], 'the multi-select keeps only the diagnoses');
+  assert.deepStrictEqual(b10J(ctx.intakeNeuroDxEntries_('Not sure')), [], 'THE REGRESSION: "Not sure" read as a valid neuro Dx');
+  // The engine reads it through the shared derivation.
+  assert.strictEqual(_F({ '43': 'Pt unsure' }).hasValidNeuroDiagnosis, false, 'the engine: no Dx for an uncertain chip');
+  assert.strictEqual(_F({ '43': 'ALS' }).hasValidNeuroDiagnosis, true);
+  [['Not solid', false, false], ['Sling (no solid)', false, false], ['non-solid', false, false], ['Solid', true, false],
+    ['no captain, solid', true, false], ['S or C', true, true]].forEach(([cell, solid, captain]) => {
+    const sv = b10J(ctx.intakeSeatKinds_(cell));
+    assert.deepStrictEqual([sv.solid, sv.captain], [solid, captain], 'server seat: ' + cell);
+    assert.deepStrictEqual(b10J(seatC(cell)), sv, 'client seat twin agrees: ' + cell);
+  });
+  const W = (t) => b10J(ctx.intakeParseWeight_(t));
+  assert.strictEqual(W('120 kg').lbs, 264.6, 'THE REGRESSION: 120 kg read as 120 lbs');
+  assert.strictEqual(W('113kg').lbs, 249.1);
+  assert.strictEqual(W('5\'6", 250').lbs, 250, 'THE REGRESSION: a height read as a 5 lb weight');
+  assert.strictEqual(W('5 ft 6 in 180 lbs').lbs, 180);
+  assert.strictEqual(W('168 cm, 90 kg').lbs, 198.4);
+  assert.strictEqual(W('250 lbs (was 265)').lbs, 250, 'the unit-bearing number wins');
+  assert.deepStrictEqual([W('250 (was 265)').lbs, W('250 (was 265)').unreadable], [0, true], 'two bare numbers that are not a range are UNREADABLE, never a guess');
+  assert.deepStrictEqual([W('300 to 320').lbs, W('250-260').lbs], [300, 250], 'a range is its first number');
+  assert.deepStrictEqual([W('').lbs, W('').unreadable], [0, false], 'blank is not provided');
+  const rows = intakeExplainFactors_({ '38': '120 kg' });
+  assert.ok(/264\.6 lbs \(from 120 kg\)/.test(rows.find((r) => r.label === 'Weight').value), 'the explain row shows the conversion');
+});
+
+test('INT-2 (cycle 23): the server refuses to amend a submission that was already amended, and names the newer one (driven)', () => {
+  const W = 11;   // INTAKE_PPD_SUB_HEADERS.length; AmendsId is the trailing column
+  const rows = [
+    ['SUB-A', '2026-09-20 10:00', 'E-1', 'Rep', 'P', 'EN', '{"38":"250"}', '', '', '', ''],
+    ['SUB-B', '2026-09-21 11:00', 'E-1', 'Rep', 'P', 'EN', '{"38":"260"}', '', '', '', 'SUB-A'],
+  ];
+  const sheet = { getLastRow: () => rows.length + 1, getLastColumn: () => W,
+    getRange: (r, c, n, w) => ({ getValues: () => rows.slice(r - 2, r - 2 + n).map((x) => x.slice(c - 1, c - 1 + (w || 1))) }) };
+  const ctx = b10Ctx_(['intakeAmendSource_', 'intakeSupersededMsg_'], {
+    getIntakeSubmissionSheet_: () => sheet, INTAKE_PPD_SUB_HEADERS: new Array(W).fill('h'), INTAKE_ACCT_SUB_HEADERS: new Array(W).fill('h'),
+    intakeTsString_: (x) => String(x),
+  });
+  const me = { id: 'E-1' };
+  const a = b10J(ctx.intakeAmendSource_('PPD', 'SUB-A', me));
+  assert.deepStrictEqual(a.superseded, { submissionId: 'SUB-B', timestamp: '2026-09-21 11:00' }, 'THE REGRESSION: amending the original again dropped the first amendment');
+  const b = b10J(ctx.intakeAmendSource_('PPD', 'SUB-B', me));
+  assert.ok(!b.superseded && b.answers['38'] === '260', 'the newest version amends normally');
+  assert.strictEqual(ctx.intakeAmendSource_('PPD', 'SUB-A', { id: 'E-2' }), null, 'owner-only, as before');
+  assert.ok(/already amended on 2026-09-21 11:00/.test(ctx.intakeSupersededMsg_(a.superseded)) && /Nothing was sent/.test(ctx.intakeSupersededMsg_(a.superseded)));
+  ['intakeSendPPD', 'intakeSendAcct_'].forEach((fn) => {
+    const src = stripJsComments_(extractRawFunction('Code.js', fn));
+    assert.ok(/if \(amendSrc\.superseded\) return \{ success: false, error: intakeSupersededMsg_\(amendSrc\.superseded\) \};/.test(src)
+      && src.indexOf('amendSrc.superseded') < src.indexOf('sendRepEmail_'), fn + ' refuses BEFORE the send');
+  });
+});
+
+test('INT2-4 (cycle 23): a catalog change between preview and send is named as one — not "the form changed" (driven)', () => {
+  let catalog = 'A';
+  const ctx = b10Ctx_(['intakePpdAnswersHash_', 'intakeSendPPD'], {
+    getEmployeeInfo_: () => ({ id: 'E-1', name: 'Rep', email: 'r@x' }),
+    intakeFilterRecommendations_: () => ({ complex: [], standard: [{ hcpcs: catalog }] }),
+    getIntakeOfferings_: () => [],
+    intakePpdRowsEn_: (a) => a || {},
+    intakeBuildPpdBodyHtml_: (p, rows, rec) => p + JSON.stringify(rows) + JSON.stringify(rec),
+    intakeBodyHash_: (b, s) => b + '|' + s,
+  });
+  const payload = (ans) => ({ patientInfo: 'P', answers: ans });
+  const previewHash = 'P' + JSON.stringify({ '38': '250' }) + JSON.stringify({ complex: [], standard: [{ hcpcs: 'A' }] }) + '|PPD for P';
+  const answersHash = ctx.intakePpdAnswersHash_('P', { '38': '250' }, 'PPD for P');
+  catalog = 'B';   // the operator edited the catalog after the preview
+  const p1 = payload({ '38': '250' }); p1.previewAnswersHash = answersHash;
+  const r1 = b10J(ctx.intakeSendPPD(p1, { kind: 'all' }, previewHash));
+  assert.ok(/recommended products changed since you previewed/.test(r1.error), 'THE REGRESSION: a catalog edit read as "The form changed": ' + r1.error);
+  const p2 = payload({ '38': '260' }); p2.previewAnswersHash = answersHash;
+  assert.ok(/The form changed since you previewed it/.test(ctx.intakeSendPPD(p2, { kind: 'all' }, previewHash).error), 'changed answers are still "the form changed"');
+  assert.ok(/The form changed/.test(ctx.intakeSendPPD(payload({ '38': '250' }), { kind: 'all' }, previewHash).error), 'no answers hash (an older client) keeps the old message');
+  const ik = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/intake/script_intake.html'), 'utf8'));
+  assert.ok(/payload\.previewAnswersHash = res\.answersHash \|\| '';/.test(ik), 'the client carries the preview\'s answers hash into the send payload');
+  assert.ok(/answersHash: intakePpdAnswersHash_\(patientInfo, payload\.answers, subject\)/.test(stripJsComments_(extractRawFunction('Code.js', 'intakePreviewPPD'))), 'the preview ships it');
+});
+
+test('CN-3 (cycle 23): the CallNoteEmail audit row names the DOMAIN an "Other" recipient is at — never the address', () => {
+  const src = stripJsComments_(extractRawFunction('Code.js', 'emailFromCallNote'));
+  assert.ok(/const otherDomain = \(selections\.departments\.indexOf\('Other'\) >= 0 && selections\.individualEmail\)\s*\? intakeEmailDomain_\(selections\.individualEmail\) : '';/.test(src), 'the domain is derived from the Other address');
+  const audit = src.slice(src.indexOf("'CallNoteEmail'"), src.indexOf("'CallNoteEmail'") + 400);
+  assert.ok(/otherDomain=\$\{otherDomain\}/.test(audit) && !/individualEmail/.test(audit), 'the row carries the domain, and the address never reaches it');
+  const ctx = b10Ctx_(['intakeEmailDomain_']);
+  assert.strictEqual(ctx.intakeEmailDomain_('Jane.Doe@Gmail.com'), 'gmail.com');
+});
+
+test('ADM-12 (cycle 23): a cross-rep tag rename writes its STARTED row first, walks the archive too, and a run that dies partway leaves a trace (driven)', () => {
+  const audits = [];
+  const mk = (rows) => ({ rows, getDataRange: () => ({ getValues: () => rows }),
+    getRange: (r) => ({ setValue: (v) => { rows[r - 1][3] = v; } }) });
+  const live = mk([['h'], ['', '', '', JSON.stringify({ tags: ['old'] })]]);
+  const arch = mk([['h'], ['', '', '', JSON.stringify({ tags: ['old', 'x'] })]]);
+  live.getParent = () => ({ getSheetByName: (n) => (n === 'NotesArchive' ? arch : null) });
+  const ctx = b10Ctx_(['applyTagTransformAcrossReps_', 'cnTagSkippedNote_', 'cnTagAdminStartAudit_', 'renameCallNoteTag', 'sheetSafe_', 'normalizeTagForAdmin_'], {
+    EMP: { ID: 0 }, CN: { SUBFORM_DATA: 3 }, CONFIG: { CALL_NOTES: { ARCHIVE_TAB: 'NotesArchive' } },
+    getEmployeeRosterRows_: () => [['h'], ['E-1']], cnEnrolledSheetId_: () => 'sheet-1',
+    getCallNotesSheet_: () => live,
+    arraysEqual_: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    getEmployeeInfo_: () => ({ isAdmin: true, email: 'a@x' }),
+    writeAuditLog_: (e, a, d, t, f, n, notes) => audits.push(notes),
+    invalidateCnTaxonomyCache_: () => {},
+  });
+  const r = b10J(ctx.renameCallNoteTag('old', 'new'));
+  assert.deepStrictEqual([r.notesUpdated, r.repsTouched], [2, 1]);
+  assert.ok(/"new"/.test(arch.rows[1][3]) && !/"old"/.test(arch.rows[1][3]), 'THE REGRESSION: the archived note kept the old tag');
+  assert.ok(/started/.test(audits[0]) && /done; reps=1, notes=2 \(archived=1\)/.test(audits[1]), 'started row FIRST, then the completion row: ' + audits.join(' | '));
+  // A run killed partway: the shared deleter's analogue — the walk throws past the guard.
+  audits.length = 0;
+  ctx.applyTagTransformAcrossReps_ = () => { throw new Error('Exceeded maximum execution time'); };
+  const r2 = b10J(ctx.renameCallNoteTag('old', 'new'));
+  assert.strictEqual(r2.success, false);
+  assert.strictEqual(audits.length, 1, 'only the started row exists');
+  assert.ok(/no completion row after this one means the run stopped partway/.test(audits[0]), 'and it says what its lone presence means');
+  const sb = buildSandbox([]);
+  const msg = loadFunction(sb, 'cn/script_callnotes.html', 'cnTagTransformFailMsg_')('Rename', { message: 'timeout' });
+  assert.ok(/PARTLY applied/.test(msg) && /safe to repeat/.test(msg), 'the client says it may have partly applied, and how to finish');
+});
+
+test('ADM-13 (cycle 23): turning on or SHORTENING a diagnostics purge window asks first; lengthening or leaving it does not (driven)', () => {
+  const sb = buildSandbox([]);
+  const f = loadFunction(sb, 'cn/script_callnotes.html', 'cnRetentionDiagChanges_');
+  const prev = { viewUsageDays: { value: 90 }, clientErrDays: { value: 0 } };
+  assert.deepStrictEqual(Array.from(f(prev, { viewUsageDays: '30' })), ['feature-usage (ViewUsage) rows older than 30 days'], 'shortened');
+  assert.deepStrictEqual(Array.from(f(prev, { clientErrDays: '60' })), ['client-error (ClientErrors) rows older than 60 days'], 'turned on');
+  assert.deepStrictEqual(Array.from(f(prev, { viewUsageDays: '120', clientErrDays: '0' })), [], 'lengthened, or left off');
+  assert.deepStrictEqual(Array.from(f(prev, {})), [], 'an omitted window is not asked about');
+  const save = stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnSaveRetention_'));
+  assert.ok(/var diagLines = cnRetentionDiagChanges_\(prev, payload\);/.test(save) && /title: 'Delete older diagnostics rows\?'/.test(save), 'the save asks through it before the RPC');
+});
+
+test('CORE-04 / CORE-05 / CORE-06 (cycle 23): a cleared department map stays empty; the org check reads both domains exactly; "(unset)" says when it means a real address', () => {
+  const sb = buildSandbox([]);
+  sb.CONFIG = { CALL_NOTES: { DEPARTMENT_EMAILS: { Billing: 'billing@universalmedsupply.com' } } };
+  let prop = '{}';
+  sb.PropertiesService = { getScriptProperties: () => ({ getProperty: () => prop }) };
+  vm.runInContext(extractRawFunction('Code.js', 'getDepartmentEmails_'), sb);
+  assert.deepStrictEqual(b10J(sb.getDepartmentEmails_()), {}, 'THE REGRESSION: a cleared map brought back the real department addresses');
+  prop = JSON.stringify({ Broken: 42 });
+  assert.deepStrictEqual(b10J(sb.getDepartmentEmails_()), { Billing: 'billing@universalmedsupply.com' }, 'an all-junk map still degrades to CONFIG');
+  const ctx = b10Ctx_(['isOrgEmail_'], { CONFIG: { ORG_EMAIL_DOMAINS: ['universalmedsupply.com', 'umsupply.com'] } });
+  [['a@universalmedsupply.com', true], ['A@UMSUPPLY.COM', true], ['a@notumsupply.com', false], ['a@umsupply.com.evil.test', false],
+    ['a@gmail.com', false], ['', false], ['umsupply.com', false]].forEach(([e, w]) => assert.strictEqual(ctx.isOrgEmail_(e), w, e));
+  assert.ok(/if \(viewerEmail && !isOrgEmail_\(viewerEmail\) && !getEmployeeInfo_\(\)\)/.test(stripJsComments_(extractRawFunction('Code.js', 'doGet'))), 'doGet asks it');
+  const dv = vm.createContext({ String });
+  vm.runInContext(extractRawFunction('DevTools.js', 'devConfigValueLine_'), dv);
+  assert.ok(/FALLS BACK to CONFIG's REAL department addresses/.test(dv.devConfigValueLine_('CN_DEPARTMENT_EMAILS', null)), 'THE REGRESSION: an unset recipient read as harmless "(unset)"');
+  assert.strictEqual(dv.devConfigValueLine_('QA_SS_ID', null), '(unset)');
+  assert.strictEqual(dv.devConfigValueLine_('CN_DEPARTMENT_EMAILS', '{"A":"me@x"}'), '{"A":"me@x"}');
+  const shown = extractRawFunction('DevTools.js', 'devShowConfig_');
+  ['QA_SS_ID', 'MAIL_BCC_ALL', 'REP_SENDER_FROM', 'KB_IMAGES_FOLDER_ID'].forEach((k) => assert.ok(shown.indexOf("'" + k + "'") >= 0, 'devShowConfig_ lists ' + k));
+});
+
+test('CORE-03 (cycle 23): the nightly self-test refuses anyone but the script owner BEFORE stamping; removing the triggers leaves an audit row (driven)', () => {
+  const ctx = b10Ctx_(['scriptOwnerMatch_']);
+  [['o@x', 'o@x', true], ['O@X', 'o@x', true], ['mgr@x', 'o@x', false], ['', 'o@x', false], ['o@x', '', false]].forEach(([a, e, w]) =>
+    assert.strictEqual(ctx.scriptOwnerMatch_(a, e), w, a + ' / ' + e));
+  const stamped = [];
+  const st = b10Ctx_(['scriptOwnerMatch_', 'callerIsScriptOwner_', 'runNightlySelfTest'], {
+    assertManagerCaller_: () => {},
+    Session: { getActiveUser: () => ({ getEmail: () => 'mgr@x' }), getEffectiveUser: () => ({ getEmail: () => 'owner@x' }) },
+    stampDigestLastRun_: (k) => stamped.push(k),
+    PropertiesService: { getScriptProperties: () => ({}) },
+  });
+  const r = b10J(st.runNightlySelfTest());
+  assert.ok(/not from the browser/.test(r.error), r.error);
+  assert.deepStrictEqual(stamped, [], 'THE REGRESSION: a manager\'s browser call stamped the heartbeat and stored a false failure');
+  const audits = [], deleted = [];
+  const rm = b10Ctx_(['removeAutomationTriggers'], {
+    assertManagerCaller_: () => {}, RETIRED_TRIGGER_HANDLERS: [],
+    ScriptApp: { getProjectTriggers: () => [{ getHandlerFunction: () => 'runHourlyJobs' }, { getHandlerFunction: () => 'someOtherThing' }],
+      deleteTrigger: (t) => deleted.push(t.getHandlerFunction()) },
+    Logger: { log() {} }, getEmployeeInfo_: () => ({ id: 'M', email: 'mgr@x' }), _SYSTEM_AUDIT_EMP_: { id: 'SYSTEM' },
+    writeAuditLog_: (e, a, d, t, f, n, notes) => audits.push(a + ' ' + notes), getActiveUserEmail_: () => 'mgr@x',
+  });
+  assert.deepStrictEqual(b10J(rm.removeAutomationTriggers()), { removed: 1 });
+  assert.deepStrictEqual(deleted, ['runHourlyJobs']);
+  assert.ok(/^AutomationTriggersRemoved removed=1/.test(audits[0]), 'THE REGRESSION: only a Logger line recorded that every job was switched off');
+});
+
+test('TRN-2 (cycle 23): a correct answer the option cap CUT OFF is named — not "no correct answer marked" (driven)', () => {
+  const mkItem = (title, n, correctAt) => ({ getType: () => 'MULTIPLE_CHOICE', asMultipleChoiceItem: () => ({
+    getTitle: () => title,
+    getChoices: () => Array.from({ length: n }, (_, j) => ({ getValue: () => 'opt ' + (j + 1), isCorrectAnswer: () => j === correctAt })),
+  }) });
+  const ctx = b10Ctx_(['importQuizFromForm'], {
+    getEmployeeInfo_: () => ({ isManager: true }), TRAIN_QUIZ_MAX_QUESTIONS: 50, TRAIN_QUIZ_MAX_OPTIONS: 6,
+    trainParseFormId_: () => ({ id: 'F1' }),
+    FormApp: { openById: () => ({ getItems: () => [mkItem('Cut', 8, 6), mkItem('None', 3, -1)], getTitle: () => 'Quiz' }) },
+  });
+  const r = b10J(ctx.importQuizFromForm('https://docs.google.com/forms/d/F1/edit'));
+  assert.ok(!r.error, 'the import ran: ' + r.error);
+  const w = r.warnings.join(' | ');
+  assert.ok(/"Cut": its marked correct answer \(option 7\) was past the first 6/.test(w), 'THE REGRESSION: it said the form had no correct answer: ' + w);
+  assert.ok(/"None" had no correct answer marked/.test(w), 'a form with none marked still says so');
+});
+
+test('MET-5 + MET2-1 (cycle 23): a period-to-date window read before the daily import is not cached; the hero compares call-weighted rates, never a window with itself (driven)', () => {
+  const ctx = b10Ctx_(['dashboardImportPending_']);
+  const mtd = { from: '2026-10-01', to: '2026-10-07', dataThrough: '2026-10-06' };
+  assert.strictEqual(ctx.dashboardImportPending_(mtd, '2026-10-05', '2026-10-06'), true, 'THE REGRESSION: yesterday is not in yet — pinned for 6 hours');
+  assert.strictEqual(ctx.dashboardImportPending_(mtd, '2026-10-06', '2026-10-06'), false, 'the import landed');
+  assert.strictEqual(ctx.dashboardImportPending_({ from: '2026-10-01', to: '2026-10-05', dataThrough: '2026-10-04' }, '2026-10-02', '2026-10-02'), false,
+    'a Monday: the previous WORKDAY (Friday) is the bar, never the calendar Sunday');
+  assert.strictEqual(ctx.dashboardImportPending_({ from: '2026-10-01', to: '2026-10-01', dataThrough: null }, null, '2026-09-30'), false, 'no complete day: M2 handles it');
+  assert.strictEqual(ctx.dashboardImportPending_({ from: '2026-10-05', to: '2026-10-05' }, null, '2026-10-02'), false, "'yesterday' is never pending here");
+  const dash = stripJsComments_(extractRawFunction('Code.js', 'getDashboardMetrics'));
+  assert.ok(/var importPending = dashboardImportPending_\(range, cur\.latestDate, prevWorkdayIso_\(todayIso\)\);/.test(dash), 'the cache put asks it');
+  const sb = buildSandbox([]);
+  const w = loadFunction(sb, 'metrics/script_metrics.html', 'mTrendWeightedPct_');
+  assert.strictEqual(Math.round(w([{ answered: 90, missed: 10 }, { answered: 5, missed: 5 }]) * 10) / 10, 86.4, 'weighted by calls (the plain mean read 70.0)');
+  assert.strictEqual(w([{ answered: 0, missed: 0 }]), null, 'no calls is no rate');
+  const mp = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8'));
+  assert.ok(!/mTrendAvg_\(/.test(mp), 'the unweighted mean is gone from every surface');
+  assert.ok(/if \(!multiDay && avg != null && t\.pctAnswered != null\)/.test(mp), 'a multi-day range draws no delta against itself');
+});
+
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 

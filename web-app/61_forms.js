@@ -1288,7 +1288,7 @@ function serveResolvePage_(token) {
       // Anonymous / unidentifiable visitor (the ANYONE_ANONYMOUS executeAs case):
       // don't resolve unattributed — ask them to open it from their work account.
       heading = 'Sign in to confirm';
-      msg = 'Open this link while signed in to your @umsupply.com account so we can record who resolved the request.';
+      msg = 'Open this link while signed in to your UniversalMed Supply work account so we can record who resolved the request.';
     } else {
       heading = 'Mark the ' + (String(hit.row[DR.TO_DEPT] || '') || 'department') + ' request resolved?';
       msg = 'Press the button once the request has been actioned. Nothing has been recorded yet.';
@@ -1332,7 +1332,7 @@ function confirmDeptRequestResolve(token) {
     const tok = String(token || '').trim();
     if (!/^[A-Za-z0-9_-]{1,80}$/.test(tok)) return { heading: 'Request not found', message: 'This link is invalid or the request was removed.' };
     const by = getActiveUserEmail_();
-    if (!by) return { heading: 'Sign in to confirm', message: 'Open this link while signed in to your @umsupply.com account so we can record who resolved the request.' };
+    if (!by) return { heading: 'Sign in to confirm', message: 'Open this link while signed in to your UniversalMed Supply work account so we can record who resolved the request.' };
     const res = markDeptRequestResolved_(tok, by, 'email');
     if (!res.found) return { heading: 'Request not found', message: 'This link is invalid or the request was removed.' };
     if (res.already) return { heading: 'Already resolved', message: 'This was already marked resolved' + (res.resolvedBy ? ' by ' + res.resolvedBy : '') + (res.resolvedAt ? ' on ' + res.resolvedAt : '') + '.' };

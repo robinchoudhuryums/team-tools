@@ -1332,7 +1332,7 @@ function normalizeTagForAdmin_(raw) {
  *  caller holding LockService.getScriptLock. */
 function applyTagTransformAcrossReps_(oldTag, transform) {
   const roster = getEmployeeRosterRows_();
-  let repsTouched = 0, notesUpdated = 0;
+  let repsTouched = 0, notesUpdated = 0, archivedUpdated = 0;
   // F-10 (2026-09-18): a rep Sheet the deployer cannot open used to be skipped
   // in SILENCE — the rename reported success and the audit row counted N-1
   // reps, so the old tag lived on in that rep's notes with nothing saying so.
@@ -1348,29 +1348,51 @@ function applyTagTransformAcrossReps_(oldTag, transform) {
     };
     try {
       const sheet = getCallNotesSheet_(repEmp);
-      const rows = sheet.getDataRange().getValues();
+      // ADM-12 (cycle 23): the cold NotesArchive tab too. It was never walked,
+      // so archived notes kept the old tag and still showed under it in an
+      // "Include archive" search while the result reported the rename complete.
+      // Same columns as Notes (archiving MOVES rows); read only if it exists.
+      const tabs = [sheet];
+      const archive = sheet.getParent().getSheetByName(CONFIG.CALL_NOTES.ARCHIVE_TAB);
+      if (archive) tabs.push(archive);
       let repHadUpdate = false;
-      for (let j = 1; j < rows.length; j++) {
-        const subRaw = rows[j][CN.SUBFORM_DATA];
-        if (!subRaw) continue;
-        let sub = null;
-        try { sub = JSON.parse(subRaw); } catch (e) { continue; }
-        if (!sub || !Array.isArray(sub.tags)) continue;
-        if (sub.tags.indexOf(oldTag) < 0) continue;
-        const next = transform(sub.tags.slice());
-        if (!arraysEqual_(next, sub.tags)) {
-          sub.tags = next;
-          sheet.getRange(j + 1, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(sub)));
-          notesUpdated++;
-          repHadUpdate = true;
+      tabs.forEach(function (tab, ti) {
+        const rows = tab.getDataRange().getValues();
+        for (let j = 1; j < rows.length; j++) {
+          const subRaw = rows[j][CN.SUBFORM_DATA];
+          if (!subRaw) continue;
+          let sub = null;
+          try { sub = JSON.parse(subRaw); } catch (e) { continue; }
+          if (!sub || !Array.isArray(sub.tags)) continue;
+          if (sub.tags.indexOf(oldTag) < 0) continue;
+          const next = transform(sub.tags.slice());
+          if (!arraysEqual_(next, sub.tags)) {
+            sub.tags = next;
+            tab.getRange(j + 1, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(sub)));
+            notesUpdated++;
+            if (ti > 0) archivedUpdated++;
+            repHadUpdate = true;
+          }
         }
-      }
+      });
       if (repHadUpdate) repsTouched++;
     } catch (e) {
       skippedReps.push({ id: repEmp.id, error: String((e && e.message) || e).slice(0, 200) });   // F-10: reported, never silent
     }
   }
-  return { repsTouched: repsTouched, notesUpdated: notesUpdated, skippedReps: skippedReps };
+  return { repsTouched: repsTouched, notesUpdated: notesUpdated, archivedUpdated: archivedUpdated, skippedReps: skippedReps };
+}
+/** ADM-12 (cycle 23): the audit row written BEFORE a cross-rep tag transform.
+ *  The walk writes one cell per note across every rep's Sheet and can be cut
+ *  off by the 6-minute limit or a lost connection; the completion row is
+ *  written only at the end, so a run that died partway left rewritten notes
+ *  and no trace at all. This row says the run STARTED; a started row with no
+ *  completion row after it is a partial run. The transform is idempotent, so
+ *  running it again finishes the job. */
+function cnTagAdminStartAudit_(callerEmp, verb, from, to) {
+  writeAuditLog_(callerEmp, 'CallNoteTagAdmin', '', '', false, 0,
+    `${verb} ${from} → ${to}; started — no completion row after this one means the run stopped partway; run it again to finish`,
+    callerEmp.email);
 }
 /** F-10: the audit-row tail naming the rep Sheets a cross-rep tag transform
  *  could NOT read — ids only (INV-32: the shared trail carries no names). */
@@ -1395,6 +1417,7 @@ function renameCallNoteTag(oldTag, newTag) {
     if (!oldT) return { success: false, error: 'Invalid source tag.' };
     if (!newT) return { success: false, error: 'Invalid target tag (lowercase kebab-case, 2–24 chars).' };
     if (oldT === newT) return { success: false, error: 'Source and target are the same tag.' };
+    cnTagAdminStartAudit_(callerEmp, 'rename', oldT, newT);   // ADM-12: before the walk
     const result = applyTagTransformAcrossReps_(oldT, function (tags) {
       // Replace oldT with newT; dedupe so the same tag never appears twice.
       const seen = {};
@@ -1406,7 +1429,7 @@ function renameCallNoteTag(oldTag, newTag) {
       return out;
     });
     writeAuditLog_(callerEmp, 'CallNoteTagAdmin', '', '', false, 0,
-      `rename ${oldT} → ${newT}; reps=${result.repsTouched}, notes=${result.notesUpdated}` + cnTagSkippedNote_(result.skippedReps),
+      `rename ${oldT} → ${newT}; done; reps=${result.repsTouched}, notes=${result.notesUpdated} (archived=${result.archivedUpdated})` + cnTagSkippedNote_(result.skippedReps),
       callerEmp.email);
     invalidateCnTaxonomyCache_();
     return { success: true, action: 'rename', oldTag: oldT, newTag: newT,
@@ -1432,6 +1455,7 @@ function mergeCallNoteTags(sourceTag, targetTag) {
     if (!srcT) return { success: false, error: 'Invalid source tag.' };
     if (!tgtT) return { success: false, error: 'Invalid target tag (lowercase kebab-case, 2–24 chars).' };
     if (srcT === tgtT) return { success: false, error: 'Source and target are the same tag.' };
+    cnTagAdminStartAudit_(callerEmp, 'merge', srcT, tgtT);   // ADM-12: before the walk
     const result = applyTagTransformAcrossReps_(srcT, function (tags) {
       const seen = {};
       const out = [];
@@ -1442,7 +1466,7 @@ function mergeCallNoteTags(sourceTag, targetTag) {
       return out;
     });
     writeAuditLog_(callerEmp, 'CallNoteTagAdmin', '', '', false, 0,
-      `merge ${srcT} → ${tgtT}; reps=${result.repsTouched}, notes=${result.notesUpdated}` + cnTagSkippedNote_(result.skippedReps),
+      `merge ${srcT} → ${tgtT}; done; reps=${result.repsTouched}, notes=${result.notesUpdated} (archived=${result.archivedUpdated})` + cnTagSkippedNote_(result.skippedReps),
       callerEmp.email);
     invalidateCnTaxonomyCache_();
     return { success: true, action: 'merge', sourceTag: srcT, targetTag: tgtT,
@@ -2528,8 +2552,16 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     // addresses, neither of which belongs in the shared AuditLog. Record
     // the noteId (an investigator can open the note for full detail), the
     // department label, and the recipient count instead.
+    // CN-3 (cycle 23): an 'Other' recipient mails the full note to any address,
+    // and this row recorded only "Other" and a count — while ExternalEmailSent
+    // records the recipient DOMAIN (g36). The domain says where PHI went
+    // without naming anyone; the full address stays in the note's own
+    // subformData (individualEmail).
+    const otherDomain = (selections.departments.indexOf('Other') >= 0 && selections.individualEmail)
+      ? intakeEmailDomain_(selections.individualEmail) : '';
     writeAuditLog_(emp, 'CallNoteEmail', note.dateLocal, '', false, 0,
       `noteId=${noteId}; depts=${deptLabel || '(none)'}; recipients=${recipientList.to.split(',').length}` +
+      (otherDomain ? `; otherDomain=${otherDomain}` : '') +
       (externalSendFailed ? '; externalCopyFailed' : ''));
 
     // Auto-log the inter-department request (best-effort — never fails the send).

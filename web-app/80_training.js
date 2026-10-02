@@ -1158,6 +1158,7 @@ function importQuizFromForm(formRef) {
       const choices = mc.getChoices();
       const options = [];
       let correctIdx = -1, correctCount = 0;
+      let cutOffCorrect = 0;   // TRN-2: the 1-based option the form marked correct, when the cap cut it off
       for (let j = 0; j < choices.length; j++) {
         let v = String(choices[j].getValue() || '').trim();
         if (v.length > 200) v = v.substring(0, 200);
@@ -1170,13 +1171,19 @@ function importQuizFromForm(formRef) {
       if (options.length > TRAIN_QUIZ_MAX_OPTIONS) {
         warnings.push('"' + title + '" had ' + options.length + ' options; kept the first ' + TRAIN_QUIZ_MAX_OPTIONS + '.');
         options.length = TRAIN_QUIZ_MAX_OPTIONS;
-        if (correctIdx >= TRAIN_QUIZ_MAX_OPTIONS) correctIdx = -1;
+        if (correctIdx >= TRAIN_QUIZ_MAX_OPTIONS) { cutOffCorrect = correctIdx + 1; correctIdx = -1; }
       }
       if (type === 'CHECKBOX' && correctCount > 1) {
         warnings.push('"' + title + '" allows multiple correct answers; this tool grades ONE answer — set the right one after import.');
       }
       if (correctIdx < 0) {
-        warnings.push('"' + title + '" had no correct answer marked — defaulted to the first option; set it after import.');
+        // TRN-2 (cycle 23): a correct answer the option cap CUT OFF is not "no
+        // correct answer marked" — that said the form was wrong when it was
+        // the import, and sent the manager looking in the wrong place.
+        warnings.push(cutOffCorrect
+          ? '"' + title + '": its marked correct answer (option ' + cutOffCorrect + ') was past the first ' + TRAIN_QUIZ_MAX_OPTIONS +
+            ' options kept, so it was not imported — option 1 is a placeholder; edit the options and set the right answer before saving.'
+          : '"' + title + '" had no correct answer marked — defaulted to the first option; set it after import.');
         correctIdx = 0;
       }
       questions.push({ q: title || ('Question ' + (questions.length + 1)), options: options, correct: correctIdx });

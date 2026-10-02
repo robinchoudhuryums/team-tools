@@ -4323,7 +4323,7 @@ function oopLookupInput_(inp, opts) {
         var msg = (err && err.message) || 'Eligibility check failed.';
         if (item.length >= 2) { oopDegraded_(suffix, mySeq, item, msg); return; }
         var h = document.getElementById('kb-oop-results' + suffix);
-        if (h) h.innerHTML = errorStateHtml_(msg);
+        if (h) h.innerHTML = errorStateHtml_(msg, OOP_ELIG_BEACON);   // KBUI-2
       })
       .checkOopEligibility(addr, item);
   }, (opts && opts.now) ? 0 : (wantElig ? 700 : 350));
@@ -4346,6 +4346,13 @@ function oopLookupInput_(inp, opts) {
  *
  *  `mySeq` is carried in rather than re-minted: this is the SAME keystroke
  *  still being answered, so a newer one must still win. */
+/** KBUI-2 (cycle 23) — what the shared ClientErrors log records for a failed
+ *  eligibility check. The rep still sees the server's message (g128 — it says
+ *  WHICH failure), but that message can echo the typed address: a partial
+ *  geocode quotes "the closest place found", which is usually a patient's
+ *  street or city. `errorStateHtml_` beacons its text verbatim, so the address
+ *  path passes this fixed line instead (g146, the S3 sibling). */
+var OOP_ELIG_BEACON = 'OOP eligibility: no verdict (message withheld from the log — it can quote the typed address)';
 function oopDegraded_(suffix, mySeq, item, why) {
   var host = document.getElementById('kb-oop-results' + suffix);   // K2 — this host, not a rebuilt one
   google.script.run
@@ -4356,7 +4363,7 @@ function oopDegraded_(suffix, mySeq, item, why) {
     .withFailureHandler(function () {
       if (mySeq !== KB_OOP.seq || !kbLookupHostLive_(host)) return;
       var h = document.getElementById('kb-oop-results' + suffix);
-      if (h) h.innerHTML = errorStateHtml_(why);
+      if (h) h.innerHTML = errorStateHtml_(why, OOP_ELIG_BEACON);   // KBUI-2: `why` came from the address path
     })
     .searchOopPricing(item);
 }
@@ -4653,7 +4660,13 @@ function oopRenderResults_(suffix, ctx, res) {
   // gone the moment its row is, but a stale payload outliving the rows it
   // described is how an index would resolve against the wrong item.
   host._oopItems = null;
-  if (!res || res.error) { host.innerHTML = errorStateHtml_((res && res.error) || 'Lookup failed.'); return; }
+  if (!res || res.error) {
+    // KBUI-2: an eligibility answer's error can quote the typed address back
+    // (a partial geocode names "the closest place found"), so it is shown to
+    // the rep but never beaconed verbatim — the shared log gets a fixed line.
+    host.innerHTML = errorStateHtml_((res && res.error) || 'Lookup failed.', ctx.elig ? OOP_ELIG_BEACON : undefined);
+    return;
+  }
   var items = ctx.elig ? (res.items || []) : (res.matches || []);
   if (res.notFound || !items.length) {
     // A no-match is stated plainly. The alternative — showing the nearest item

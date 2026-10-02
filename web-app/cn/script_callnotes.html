@@ -9972,6 +9972,19 @@ function cnRenderRetentionHtml_(res) {
     '</div>' +
   '</div>';
 }
+/** PURE (ADM-13, cycle 23; Node-pinned) — the diagnostics windows this save
+ *  turns on or SHORTENS, as phrases for the confirm. A window omitted from the
+ *  payload, unchanged, lengthened or turned off is not listed. */
+function cnRetentionDiagChanges_(prev, payload) {
+  var out = [];
+  [['viewUsageDays', 'feature-usage (ViewUsage) rows'], ['clientErrDays', 'client-error (ClientErrors) rows']].forEach(function (k) {
+    if (!payload || !Object.prototype.hasOwnProperty.call(payload, k[0])) return;
+    var n = parseInt(payload[k[0]], 10) || 0;
+    var p = parseInt(prev && prev[k[0]] && prev[k[0]].value, 10) || 0;
+    if (n > 0 && (p === 0 || n < p)) out.push(k[1] + ' older than ' + n + ' days');
+  });
+  return out;
+}
 function cnSaveRetention_() {
   var rd = function (id) { var el = document.getElementById('cn-ret-' + id); return el ? el.value : ''; };
   var payload = { archiveDays: rd('archive'), retentionDays: rd('purge'), archiveRetentionDays: rd('archpurge') };
@@ -10000,6 +10013,21 @@ function cnSaveRetention_() {
       .withFailureHandler(function (err) { showToast((err && err.message) || 'Save failed', 'toast-error'); if (btn) { btn.disabled = false; btn.textContent = 'Save retention'; } })
       .saveRetentionConfig(payload);
   };
+  // ADM-13 (cycle 23): the two DIAGNOSTICS windows (ViewUsage, ClientErrors)
+  // are labelled irreversible too, but saved with no question. They hold no
+  // PHI, so they get their own, plainer confirm — when a window is turned on
+  // or SHORTENED (the change that deletes rows sooner); lengthening one keeps
+  // more and is not asked about.
+  var diagLines = cnRetentionDiagChanges_(prev, payload);
+  if (!(raisingPurge || raisingCold) && diagLines.length) {
+    uiConfirm({
+      title: 'Delete older diagnostics rows?',
+      message: 'This permanently deletes ' + diagLines.join(' and ') + ' on the next nightly run. ' +
+        'These rows hold no patient data, but they cannot be brought back.',
+      confirmLabel: 'Save and delete', tone: 'danger',
+    }).then(function (ok) { if (ok) doSave(); });
+    return;
+  }
   if (raisingPurge || raisingCold) {
     uiConfirm({
       title: 'Enable an irreversible purge?',
@@ -10007,7 +10035,8 @@ function cnSaveRetention_() {
         (raisingPurge ? 'live notes older than ' + newPurge + ' days' : '') +
         (raisingPurge && raisingCold ? ' and ' : '') +
         (raisingCold ? 'archived notes older than ' + newCold + ' days' : '') +
-        '. This cannot be undone. Confirm the canonical record lives elsewhere first.',
+        '. This cannot be undone. Confirm the canonical record lives elsewhere first.' +
+        (diagLines.length ? ' It also permanently deletes ' + diagLines.join(' and ') + '.' : ''),   // ADM-13
       confirmLabel: 'Enable purge', tone: 'danger',
     }).then(function (ok) { if (ok) doSave(); });
   } else {
@@ -10471,7 +10500,7 @@ function cnPromptRenameTag_(oldTag) {
           cnLoadAdminAugment_();
         })
         .withFailureHandler(function (err) {
-          showToast((err && err.message) || 'Server error', 'toast-error');
+          showToast(cnTagTransformFailMsg_('Rename', err), 'toast-error', { sticky: true });   // ADM-12
         })
         .renameCallNoteTag(oldTag, trimmed);
     });
@@ -10511,7 +10540,7 @@ function cnPromptMergeTag_(sourceTag) {
           cnLoadAdminAugment_();
         })
         .withFailureHandler(function (err) {
-          showToast((err && err.message) || 'Server error', 'toast-error');
+          showToast(cnTagTransformFailMsg_('Merge', err), 'toast-error', { sticky: true });   // ADM-12
         })
         .mergeCallNoteTags(sourceTag, trimmed);
     });
@@ -11076,6 +11105,13 @@ function cnLoadStoragePanel_() {
 /** F-10 (2026-09-18): the tag rename/merge outcome. A rep Sheet the server
  *  could not read is NAMED and the toast is a WARNING — the old tag still
  *  lives in that rep's notes, which a green "Renamed" toast used to hide. */
+/** ADM-12 (cycle 23) — a transport failure during a cross-rep tag transform
+ *  is not "nothing happened": the server writes one note at a time, so the
+ *  change may be half applied. Said, with the way out (it is safe to re-run). */
+function cnTagTransformFailMsg_(verb, err) {
+  return verb + ' did not finish (' + ((err && err.message) || 'server error') + '). It may have PARTLY applied — ' +
+    'some notes may carry the new tag and some the old. Run the same ' + verb.toLowerCase() + ' again to finish; it is safe to repeat.';
+}
 function cnTagTransformToast_(verb, res) {
   var skipped = (res && res.skippedReps) || [];
   var base = verb + ': ' + res.notesUpdated + ' notes across ' + res.repsTouched + ' rep(s)';

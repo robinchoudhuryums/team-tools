@@ -311,6 +311,9 @@ window.addEventListener('load', () => {
       if (BOOT_T.stateStart !== null) { var _bn = bootNow_(); BOOT_T.stateMs = _bn === null ? null : _bn - BOOT_T.stateStart; }
       if (state.error) { renderError(state.error); return; }
       empState = state;
+      // INT2-3 (cycle 23): drop expired and other users' intake drafts (PHI at
+      // rest) now that we know who signed in — not only when a form is opened.
+      if (typeof intakeSweepDrafts_ === 'function') { try { intakeSweepDrafts_(); } catch (e) {} }
       adjustWindowDays = state.adjustWindowDays || 30;
       if (state.selfUndoWindowSeconds) SELF_UNDO_WINDOW_SECONDS = state.selfUndoWindowSeconds;
       document.getElementById('adj-days-disp').textContent = adjustWindowDays;

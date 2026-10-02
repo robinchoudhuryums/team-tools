@@ -185,11 +185,19 @@ function getIntakeOfferings_() {
 function intakeSeatKinds_(cell) {
   const words = String(cell == null ? '' : cell).toLowerCase().replace(/['\u2019]/g, '').split(/[^a-z]+/).filter(Boolean);
   const out = { solid: false, captain: false, unknown: [] };
+  // INT2-1 (cycle 23): a NEGATION cancels the seat word after it. "Not solid"
+  // and "Sling (no solid)" read as SOLID — the engine dropped the unknown word
+  // and kept "solid" — so a spinal-curvature patient was recommended a sling
+  // seat as "Solid Seat indicated", while the validator said the row matched
+  // no seat branch. The negation is not an unknown word (it was understood).
+  let negated = false;
   words.forEach(function (w) {
-    if (w === 's' || w === 'solid') out.solid = true;
-    else if (w === 'c' || w === 'captain' || w === 'captains') out.captain = true;
+    if (w === 'not' || w === 'no' || w === 'non' || w === 'without') { negated = true; return; }
+    if (w === 's' || w === 'solid') { if (!negated) out.solid = true; }
+    else if (w === 'c' || w === 'captain' || w === 'captains') { if (!negated) out.captain = true; }
     else if (w === 'seat' || w === 'seats' || w === 'and' || w === 'or') return;
     else out.unknown.push(w);
+    negated = false;
   });
   return out;
 }
@@ -209,11 +217,35 @@ function intakeInherentlySolidCodes_() {
  *  number in it. The old read stripped every non-digit, so "250-260" became
  *  250260 lbs and no chair matched. `unreadable` = the rep typed something
  *  but it holds no number — reported as a decision factor, never silent. */
+/*  INT2-2 (cycle 23): read by UNIT, never by first number. "120 kg" read as
+ *  120 lbs (a 2.2x under-read: chairs too weak for the patient passed the
+ *  capacity filter, and the mobile-home "K0821 only (<285)" rule fired), and
+ *  "5'6\", 250" read as 5 lbs — both with `unreadable` false, so the I3
+ *  warning never showed. Now a height (5'6", 5 ft 6 in, 66 in, 168 cm) is not
+ *  a weight; a number WITH a unit wins (kg converts to lbs); one bare number,
+ *  or a range ("250-260", its first number), is lbs — the field's own unit;
+ *  and several bare numbers that are not a range are UNREADABLE — a named
+ *  decision factor, never a guess (g156). */
 function intakeParseWeight_(text) {
   const t = String(text == null ? '' : text).trim();
-  const m = /\d+(?:\.\d+)?/.exec(t.replace(/,(?=\d{3}\b)/g, ''));
-  const lbs = m ? parseFloat(m[0]) : 0;
-  return { lbs: (isFinite(lbs) && lbs > 0) ? lbs : 0, unreadable: !!t && !m, raw: t };
+  if (!t) return { lbs: 0, unreadable: false, raw: t, unit: '', value: 0 };
+  let s = t.toLowerCase().replace(/,(?=\d{3}\b)/g, '');
+  s = s.replace(/\d+(?:\.\d+)?\s*(?:'|\u2019|ft\b|feet\b|foot\b)\s*(?:\d+(?:\.\d+)?\s*(?:"|\u201d|''|in\b|inch(?:es)?\b)?)?/g, ' ')
+       .replace(/\d+(?:\.\d+)?\s*(?:"|\u201d|in\b|inch(?:es)?\b|cm\b|centimet(?:er|re)s?\b)/g, ' ');
+  const nums = [];
+  const re = /(\d+(?:\.\d+)?)\s*(kilograms?|kilos?|kgs?|pounds?|lbs?|#)?/g;
+  let m;
+  while ((m = re.exec(s))) {
+    nums.push({ v: parseFloat(m[1]), unit: m[2] ? (/^k/.test(m[2]) ? 'kg' : 'lb') : '', start: m.index, end: re.lastIndex });
+  }
+  let pick = null;
+  for (let i = 0; i < nums.length && !pick; i++) if (nums[i].unit) pick = nums[i];
+  if (!pick && nums.length === 1) pick = nums[0];
+  if (!pick && nums.length === 2 && /^\s*(?:-|\u2013|\u2014|to)\s*$/.test(s.slice(nums[0].end, nums[1].start))) pick = nums[0];
+  const value = pick ? pick.v : 0;
+  const lbs = !pick ? 0 : (pick.unit === 'kg' ? Math.round(value * 2.20462 * 10) / 10 : value);
+  const ok = isFinite(lbs) && lbs > 0;
+  return { lbs: ok ? lbs : 0, unreadable: !ok, raw: t, unit: pick ? (pick.unit || 'lb') : '', value: value };
 }
 function intakeCatalogIssues_(rows) {
   const out = [];
@@ -493,6 +525,28 @@ function getIntakeAgents() {
 // (2) the diagnostic toast is removed. `allProducts` is the raw 2D Offerings
 // array [features, hcpcs, weightCap, seatType, pdfLink, imageUrl]. Pure +
 // self-contained so the Node harness can unit-test the eligibility branches.
+/** PURE (INT-1, cycle 23; Node-pinned, mirrored by the client's chip guard
+ *  `intakeNeuroEntryIsDxClient_`) — is ONE Q43 entry a diagnosis? Not when its
+ *  LEADING token is a negation ("none", "no", "denies", "not …", "n/a"), nor
+ *  when it states uncertainty anywhere ("unsure", "unknown", "not sure",
+ *  "don't know", "tbd", "?"). Deliberately conservative the other way:
+ *  "normal …" and "non-epileptic …" are real conditions and still count. */
+function intakeNeuroEntryIsDx_(entry) {
+  const e = String(entry == null ? '' : entry).toLowerCase().trim();
+  if (!e || /^\?+$/.test(e)) return false;
+  const toks = e.replace(/['\u2019]/g, '').split(/[^a-z0-9/]+/).filter(Boolean);
+  if (!toks.length) return false;
+  if (['no', 'n/a', 'na', 'none', 'nothing', 'denies', 'denied', 'negative', 'neg', 'not', 'nil'].indexOf(toks[0]) >= 0) return false;
+  if (toks.some(function (t) { return ['unsure', 'unknown', 'unk', 'uncertain', 'tbd', 'dunno'].indexOf(t) >= 0; })) return false;
+  if (/\bnot\s+sure\b|\bdon'?t\s+know\b|\bdo\s+not\s+know\b|\?/.test(e.replace(/\u2019/g, "'"))) return false;
+  return true;
+}
+/** PURE (INT-1) — the Q43 entries (the multi-select is comma-joined) that are
+ *  diagnoses. */
+function intakeNeuroDxEntries_(text) {
+  return String(text == null ? '' : text).split(',').map(function (x) { return x.trim(); })
+    .filter(function (x) { return intakeNeuroEntryIsDx_(x); });
+}
 /** Pure — derive the PPD engine's clinical decision FACTORS from the raw answer
  *  map (bare question numbers). Extracted from intakeFilterRecommendations_ so the
  *  engine AND the read-only explainability surface (intakeExplainFactors_) share
@@ -508,8 +562,9 @@ function intakeDeriveClinicalFactors_(answers) {
     // F(cycle-8): keep the decimal point — the old \D strip turned "250.5"
     // into 2505 lbs, failing every weight-cap filter AND reading as ≥285 for
     // the Q39a mobile-home rule. Units/commas still drop.
-    weight: intakeParseWeight_(getAnswerText('38')).lbs,   // I3: the first number, not every digit
+    weight: intakeParseWeight_(getAnswerText('38')).lbs,   // I3 + INT2-2: by unit, not by first number
     weightUnreadable: intakeParseWeight_(getAnswerText('38')).unreadable,
+    weightFromKg: intakeParseWeight_(getAnswerText('38')).unit === 'kg' ? intakeParseWeight_(getAnswerText('38')).value : 0,
     neuroCondition: getAnswerText('43'),
     numbnessAnswer: getAnswerText('25'),
     amputationStatus: getAnswerText('34'),
@@ -558,7 +613,11 @@ function intakeDeriveClinicalFactors_(answers) {
     else if (leftParaCount >= 2)  { qualifiesForHemiplegia = true; hemiplegiaSide = 'Left'; }
   }
 
-  const hasValidNeuroDiagnosis = patient.neuroCondition && !['no', 'n/a', 'none', '', 'no.'].includes(patient.neuroCondition);
+  // INT-1 (cycle 23): read ENTRY BY ENTRY, by token (g156). Any non-empty text
+  // used to count, so a custom chip "Not sure", "Unknown" or "Pt unsure" (or
+  // any direct RPC) switched on the solid-seat requirement and Group-3, and
+  // the email justified it as "Medically Necessary Upgrade due to: Neuro Dx".
+  const hasValidNeuroDiagnosis = intakeNeuroDxEntries_(patient.neuroCondition).length > 0;
 
   const isNeuroEligible = hasValidNeuroDiagnosis || patient.hasSpasticity || qualifiesForHemiplegia;
   const isSPOEligible = patient.hasSwelling || patient.hasPressureUlcers || isNeuroEligible ||
@@ -588,8 +647,8 @@ function intakeExplainFactors_(answers) {
   const p = F.patient;
   const yn = (b) => b ? 'Yes' : 'No';
   const rows = [];
-  rows.push({ label: 'Weight', value: p.weight ? (p.weight + ' lbs')
-    : (p.weightUnreadable ? 'UNREADABLE — no number in the answer, so NO weight-capacity check was applied; re-enter it as lbs'
+  rows.push({ label: 'Weight', value: p.weight ? (p.weight + ' lbs' + (p.weightFromKg ? ' (from ' + p.weightFromKg + ' kg)' : ''))
+    : (p.weightUnreadable ? 'UNREADABLE — the answer could not be read as one weight (no number, or several numbers without a unit), so NO weight-capacity check was applied; re-enter it as one number in lbs'
       : 'not provided') });
   rows.push({ label: 'Dwelling (Q39a)', value: p.dwelling || 'not provided' });
   if (p.livesInMobileHome) {
@@ -1216,6 +1275,12 @@ function intakeAmendBannerHtml_(sentTs, changedLabels) {
  *  belong to the CALLER (owner-only — an amendment sends under the sender's
  *  name; the IntakeFeedback forged-id rule applied to a write). Bounded
  *  id-column scan. Returns { ts, answers } or null. */
+/** INT-2 (cycle 23) — the refusal for amending a submission someone already
+ *  amended: name the newer one, so the rep amends THAT. */
+function intakeSupersededMsg_(sup) {
+  return 'This submission was already amended' + (sup && sup.timestamp ? ' on ' + sup.timestamp : '') +
+    ' — open the newest version from the Sent tab and amend that, so the earlier amendment\'s changes are kept. Nothing was sent.';
+}
 function intakeAmendSource_(ft, amendsId, emp) {
   const id = String(amendsId || '').trim();
   if (!id) return null;
@@ -1229,6 +1294,20 @@ function intakeAmendSource_(ft, amendsId, emp) {
     if (String(ids[i][0]).trim() !== id) continue;
     const row = sheet.getRange(i + 2, 1, 1, width).getValues()[0];
     if (String(row[2] || '').trim() !== emp.id) return null;   // owner-only
+    // INT-2 (cycle 23): an amendment that is itself ALREADY AMENDED is refused.
+    // The guard was client-only, so a stale detail view or a second window
+    // amended the original again — dropping the first amendment's changes
+    // under a banner that said it superseded the original. AmendsId is the
+    // trailing header column (the detail view's supersededBy reads the same).
+    if (sheet.getLastColumn() >= width) {
+      const amends = sheet.getRange(2, width, last - 1, 1).getValues();
+      for (let k = 0; k < amends.length; k++) {
+        if (String(amends[k][0] || '').trim() === id) {
+          const meta = sheet.getRange(k + 2, 1, 1, 2).getValues()[0];
+          return { superseded: { submissionId: String(meta[0] || ''), timestamp: intakeTsString_(meta[1]) } };
+        }
+      }
+    }
     let answers = {};
     try { answers = JSON.parse(isPpd ? row[6] : row[7]) || {}; } catch (e) {}
     return { ts: intakeTsString_(row[1]), answers: answers };
@@ -1251,8 +1330,15 @@ function intakePreviewPPD(payload) {
     // rep reads before sending (additive; the engine is unchanged).
     const weightUnreadable = !!intakeDeriveClinicalFactors_(payload.answers || {}).patient.weightUnreadable;
     return { success: true, html: html, subject: subject, recommendations: recData, bodyHash: intakeBodyHash_(body, subject),
+             answersHash: intakePpdAnswersHash_(patientInfo, payload.answers, subject),   // INT2-4
              weightUnreadable: weightUnreadable };
   } catch (err) { return { error: err.message }; }
+}
+/** INT2-4 (cycle 23) — the preview hash of the ANSWERS alone: the PPD body
+ *  built with no recommendations. Lets a failed send tell "your answers
+ *  changed" from "the catalog changed". */
+function intakePpdAnswersHash_(patientInfo, answers, subject) {
+  return intakeBodyHash_(intakeBuildPpdBodyHtml_(patientInfo, intakePpdRowsEn_(answers), { complex: [], standard: [] }, null), subject);
 }
 function intakeStoreOversizeError_(cellStrings) {
   for (let i = 0; i < cellStrings.length; i++) {
@@ -1292,7 +1378,15 @@ function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
       return { success: false, error: 'Missing preview hash — open Preview and send from there.' };
     }
     if (intakeBodyHash_(baseBody, subject) !== expectedBodyHash) {
-      return { success: false, error: 'The form changed since you previewed it. Please preview again before sending.' };
+      // INT2-4 (cycle 23): the body hash covers the RECOMMENDATIONS too, so an
+      // operator's catalog edit between preview and send read as "The form
+      // changed" — the rep re-checked answers that had not moved. When the
+      // answers alone still match the preview, say what really changed.
+      const answersSame = !!payload.previewAnswersHash &&
+        intakePpdAnswersHash_(patientInfo, payload.answers, subject) === payload.previewAnswersHash;
+      return { success: false, error: answersSame
+        ? 'The recommended products changed since you previewed (the product catalog was updated). Preview again to see the current list before sending.'
+        : 'The form changed since you previewed it. Please preview again before sending.' };
     }
     const recipient = intakeResolveRecipient_('PPD', recipientSpec);
     // Amend & re-send (operator 2026-08-25): validate the source BEFORE the
@@ -1303,6 +1397,7 @@ function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
     if (amendId) {
       amendSrc = intakeAmendSource_('PPD', amendId, emp);
       if (!amendSrc) return { success: false, error: 'The submission being amended was not found (or is not yours).' };
+    if (amendSrc.superseded) return { success: false, error: intakeSupersededMsg_(amendSrc.superseded) };   // INT-2
     }
     // The submission id is minted BEFORE the send so the feedback button can
     // reference it; the CTA + the amendment banner/prefix ride the FINAL body
@@ -1390,6 +1485,7 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
   if (amendId) {
     amendSrc = intakeAmendSource_(formType, amendId, emp);
     if (!amendSrc) return { success: false, error: 'The submission being amended was not found (or is not yours).' };
+    if (amendSrc.superseded) return { success: false, error: intakeSupersededMsg_(amendSrc.superseded) };   // INT-2
   }
   let sendSubject = subject, amendBanner = '';
   if (amendSrc) {

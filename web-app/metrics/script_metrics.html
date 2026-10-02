@@ -759,21 +759,18 @@ function mRenderMyStats_(data) {
 
   // Hero + Rail. Hero = % answered (range = aggregate over from→to) + vs-avg +
   // period sparkline. Rail = notes filed, answered, missed, avg/total talk.
-  var avg = mTrendAvg_(trend, 'pctAnswered');
+  // MET2-1 (cycle 23): the baseline is the CALL-WEIGHTED rate of the trend
+  // days. Here the trend covers the hero's own range, so that rate IS the hero
+  // value — the old "vs period daily average" delta compared the period with
+  // itself under two weightings and is gone; the dashed baseline stays, so
+  // each day still reads above or below the period.
+  var avg = mTrendWeightedPct_(trend);
   // #4 — the server-shipped alert threshold. Guarded everywhere: a ≤5-min
   // stale cached payload from before the deploy lacks the field, and the
   // client then simply renders no target line (no client-side mirror of 85).
   var thr = data.alertThreshold;
   var stdBit = mStandardSourceHtml_(thr, data.standardSource);   // F-08
-  var deltaCore = '';
-  if (trend.length > 1 && avg != null && c.pctAnswered != null) {
-    var d = c.pctAnswered - avg;
-    var sign = d > 0.05 ? 'pos' : (d < -0.05 ? 'neg' : 'neu');
-    var label = d > 0.05 ? '+' + Math.abs(d).toFixed(1)
-              : d < -0.05 ? '−' + Math.abs(d).toFixed(1)
-              : '±0';
-    deltaCore = '<span class="' + sign + '">' + label + ' pts</span> vs period daily average (' + avg.toFixed(1) + '%)';
-  }
+  var deltaCore = '';   // MET2-1: no self-comparison (see above)
   var targetBit = (thr != null)
     ? '<span class="m-hero-target" title="The Department Dashboard standard for this team (published from call-data-reporting); the sidebar alert fires below it">target ' + esc(thr) + '%</span>' : '';
   var deltaHtml = (deltaCore || targetBit || stdBit)
@@ -1030,15 +1027,20 @@ function mBuildDualSparkSvg_(series) {
   '</svg>';
 }
 
-/** Average a metric across the trend array, skipping null/missing values. */
-function mTrendAvg_(trend, metric) {
+/** MET2-1 (cycle 23; Node-pinned) — the CALL-WEIGHTED answer rate over the
+ *  trend days that have data: Σanswered / Σ(answered + missed) — the dashboard
+ *  formula over the same days (H2, M3). The plain mean of daily rates gave a
+ *  10-call day the vote of a 100-call day, so "86.4% vs 70.0%" measured
+ *  volume skew, not performance. Null when no day has calls. */
+function mTrendWeightedPct_(trend) {
   if (!trend || !trend.length) return null;
-  var sum = 0, n = 0;
+  var a = 0, m = 0;
   for (var i = 0; i < trend.length; i++) {
-    var v = trend[i][metric];
-    if (v != null && !isNaN(v)) { sum += v; n++; }
+    var t = trend[i] || {};
+    if (t.answered == null || t.missed == null || isNaN(t.answered) || isNaN(t.missed)) continue;
+    a += Number(t.answered); m += Number(t.missed);
   }
-  return n > 0 ? sum / n : null;
+  return (a + m) > 0 ? (a / (a + m)) * 100 : null;
 }
 
 /** Hero sparkline with a dashed baseline at the trend average (visual
@@ -1468,19 +1470,22 @@ function mRenderTeamMetrics_(data) {
   // (previously single-day only, so ranges showed a bare number) — the delta
   // label names which comparison it is.
   var multiDay = !!(data.from && data.to && data.from !== data.to);
-  var avg = data.trend ? mTrendAvg_(data.trend, 'pctAnswered') : null;
+  // MET2-1 (cycle 23): call-weighted, like the hero. On a multi-day range the
+  // trend is the hero's own days, so the weighted rate IS the hero — no delta
+  // is drawn (it compared the period with itself); single-day compares today
+  // with the 30-day team rate, a different window.
+  var avg = data.trend ? mTrendWeightedPct_(data.trend) : null;
   var thr = data.alertThreshold;   // #4 — guarded like My Stats (absent → no line)
   var band = data.alertBand;       // H2 — the amber width below the target
   var stdBit = mStandardSourceHtml_(thr, data.standardSource);   // F-08
   var deltaCore = '';
-  if (avg != null && t.pctAnswered != null) {
+  if (!multiDay && avg != null && t.pctAnswered != null) {
     var d = t.pctAnswered - avg;
     var sign = d > 0.05 ? 'pos' : (d < -0.05 ? 'neg' : 'neu');
     var label = d > 0.05 ? '+' + Math.abs(d).toFixed(1)
               : d < -0.05 ? '−' + Math.abs(d).toFixed(1)
               : '±0';
-    deltaCore = '<span class="' + sign + '">' + label + ' pts</span> vs ' +
-      (multiDay ? 'period daily average' : '30-day team average') + ' (' + avg.toFixed(1) + '%)';
+    deltaCore = '<span class="' + sign + '">' + label + ' pts</span> vs 30-day team rate (' + avg.toFixed(1) + '%)';
   }
   var targetBit = (thr != null)
     ? '<span class="m-hero-target" title="The Department Dashboard standard for this team (published from call-data-reporting); the sidebar alert fires below it">target ' + esc(thr) + '%</span>' : '';
