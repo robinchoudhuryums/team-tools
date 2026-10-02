@@ -8062,9 +8062,10 @@ function getMyPendingTasks() {
     if (canSeeSpanishInbox_(emp) && getSpanishInboxAddress_()) {
       try {
         var spClaims = spanishClaimsMap_();
-        var spManual = spanishManualResolvedMap_();
         var me = String(emp.email || '').trim().toLowerCase();
-        var anyMine = Object.keys(spClaims).some(function (t) { return spClaims[t].by === me && !spManual[t]; });
+        // SP-1 (cycle 23): the pending ids decide, never "a manual resolve
+        // exists" — a repeat voicemail makes a resolved thread pending again.
+        var anyMine = Object.keys(spClaims).some(function (t) { return spClaims[t].by === me; });
         if (anyMine) {
           var spIds = spanishPendingIdsGet_(SPANISH_AUTO_ASSIGN_DAYS);
           if (!spIds) {
@@ -8072,7 +8073,7 @@ function getMyPendingTasks() {
             if (!spRes || spRes.error) throw new Error((spRes && spRes.error) || 'unreadable');
             spIds = (spRes.pending || []).map(function (p) { return p.threadId; });
           }
-          var spOpen = spanishMyOpenClaims_(spClaims, me, spIds, spManual);
+          var spOpen = spanishMyOpenClaims_(spClaims, me, spIds);
           if (spOpen.length) {
             var spOldest = spOpen[0];
             var spAssigned = spOpen.filter(function (o) { return o.assignedBy; }).length;

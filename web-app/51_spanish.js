@@ -294,9 +294,9 @@ function getSpanishInboxStats(days) {
     durations.sort(function (a, b) { return a - b; });
     bizDurations.sort(function (a, b) { return a - b; });
     const avg = durations.length ? Math.round(durations.reduce(function (s, x) { return s + x; }, 0) / durations.length) : null;
-    const median = durations.length ? durations[Math.floor(durations.length / 2)] : null;
+    const median = medianWhole_(durations);   // DR-3: a true median
     const bizAvg = bizDurations.length ? Math.round(bizDurations.reduce(function (s, x) { return s + x; }, 0) / bizDurations.length) : null;
-    const bizMedian = bizDurations.length ? bizDurations[Math.floor(bizDurations.length / 2)] : null;
+    const bizMedian = medianWhole_(bizDurations);
     pending.sort(function (a, b) { return b.ageHours - a.ageHours; });
     const result = {
       address: addr, days: d,
@@ -430,6 +430,16 @@ function getSpanishInboxPending(days) {
   try {
     const emp = getEmployeeInfo_();
     if (!canSeeSpanishInbox_(emp)) return { error: 'Spanish Inbox access required.' };
+    return spanishPendingCore_(days, emp);
+  } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
+}
+/** SP-4 (cycle 23): the pending read WITHOUT the caller gate, for a caller that
+ *  has already passed its own — the scheduled auto-assign runs as the trigger's
+ *  installer, who passes the trigger gate (a MANAGER_EMAILS address) but may
+ *  not be a roster member or manager, so the gated endpoint refused every run.
+ *  `emp` only names the caller (`self`); it may be the SYSTEM actor. */
+function spanishPendingCore_(days, emp) {
+  try {
     let d = parseInt(days, 10); if (!d || d < 1) d = 30; if (d > 90) d = 90;
     const addr = getSpanishInboxAddress_();
     if (!addr) return { error: 'Spanish inbox not configured (set Script Property SPANISH_INBOX_ADDRESS).' };
@@ -437,8 +447,12 @@ function getSpanishInboxPending(days) {
     const members = getSpanishInboxMembers_();
     const haveMembers = Object.keys(members).length > 0;
     const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, SPANISH_THREAD_SCAN_MAX);
-    const manual = spanishManualResolvedMap_();
-    const claims = spanishClaimsMap_();   // pilot round 2 — advisory claim per thread
+    const manual = spanishManualResolvedMap_();   // SP-3: a failed read is the endpoint's error
+    // pilot round 2 — advisory claim per thread. SP-3 (cycle 23): an unreadable
+    // claims tab is NOT "nobody has claimed anything" — the list still renders
+    // (the claims are advisory) but says so, and auto-assign refuses on it.
+    let claims = {}, claimsUnavailable = '';
+    try { claims = spanishClaimsMap_(); } catch (eC) { claimsUnavailable = String(eC.message || eC); }
     const out = [];
     const nowMs = Date.now();
     threads.forEach(function (th) {
@@ -513,7 +527,8 @@ function getSpanishInboxPending(days) {
       // SP4 — what the gate HID, and the threshold it hid it at. A filter
       // nobody can see is a filter that can fail silently forever.
       vmSuppressed: vmSuppressed, vmUnparsed: vmUnparsed, vmMinSeconds: vmMinSec,
-      members: Object.keys(members), self: String(emp.email || '').trim().toLowerCase() };
+      members: Object.keys(members), self: String((emp && emp.email) || '').trim().toLowerCase(),
+      claimsUnavailable: claimsUnavailable };
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
 /** Resolved Spanish-inbox requests over the window (canSeeSpanishInbox_-gated, live-read,
@@ -668,24 +683,61 @@ function getOrCreateSpanishResolvedSheet_() {
   }
   return sh;
 }
-/** Bounded-tail map of manually-resolved threads: { threadId: { by, ms } }.
- *  Best-effort — no tab yet (nothing ever marked) reads as empty. */
-function spanishManualResolvedMap_() {
+/** SP-3 (cycle 23) — the first row of an append-only Spanish state tab worth
+ *  reading: the row after the LAST one stamped (column `msCol`, an epoch-ms
+ *  NUMBER) before `cutoffMs`. A legacy row with no stamp sits ABOVE every
+ *  stamped row, so it falls before such a row too; with no row before the
+ *  cutoff the whole tab is read. One column read, then the caller reads the
+ *  span. PURE over `msCells` (a getValues() column). */
+function spanishSpanStartRow_(msCells, cutoffMs) {
+  let lastOld = -1;
+  for (let i = 0; i < (msCells || []).length; i++) {
+    const ms = Number(msCells[i] && msCells[i][0]);
+    if (ms > 0 && ms < cutoffMs) lastOld = i;
+  }
+  return 2 + lastOld + 1;   // data starts at row 2
+}
+function spanishSpanRows_(sh, msCol, width) {
+  const last = sh.getLastRow();
+  if (last < 2) return [];
+  const cutoff = Date.now() - SPANISH_STATE_SPAN_DAYS * 86400000;
+  const start = spanishSpanStartRow_(sh.getRange(2, msCol, last - 1, 1).getValues(), cutoff);
+  if (start > last) return [];
+  return sh.getRange(start, 1, last - start + 1, width).getValues();
+}
+/** PURE (Node-pinned) — fold SpanishManualResolved rows (oldest → newest) into
+ *  { threadId: { by, ms } }. SP-1 (cycle 23): the LATEST stamped row wins. The
+ *  first-wins fold froze a thread at its first resolve, so a repeat voicemail
+ *  that arrived after it could never be resolved (the endpoint answered
+ *  "already") and stayed pending, counted and assignable for the whole window.
+ *  A legacy row with no stamp (ms 0) resolved EVERY voicemail in the thread and
+ *  is kept as such — nothing says when it happened. */
+function spanishManualResolvedFold_(rows) {
   const out = {};
-  try {
-    const sh = getAdpSS_().getSheetByName(SPANISH_RESOLVED_TAB);
-    if (!sh) return out;
-    const last = sh.getLastRow();
-    if (last < 2) return out;
-    const start = Math.max(2, last - SPANISH_RESOLVED_SCAN + 1);
-    const rows = sh.getRange(start, 1, last - start + 1, 4).getValues();
-    for (let i = 0; i < rows.length; i++) {
-      const tid = String(rows[i][1] || '').trim();
-      if (!tid || out[tid]) continue;
-      out[tid] = { by: String(rows[i][2] || ''), ms: Number(rows[i][3]) || 0 };
-    }
-  } catch (e) { Logger.log('spanishManualResolvedMap_ skipped: ' + e.message); }
+  (rows || []).forEach(function (r) {
+    const tid = String((r && r[1]) || '').trim();
+    if (!tid) return;
+    const ms = Number(r[3]) || 0;
+    if (out[tid] && !out[tid].ms) return;   // a legacy resolve-all stands
+    out[tid] = { by: String(r[2] || ''), ms: ms };
+  });
   return out;
+}
+/** Manually-resolved threads over the state span: { threadId: { by, ms } }.
+ *  No tab yet (nothing ever marked) reads as empty; SP-3: a FAILED read
+ *  throws — every caller either refuses or names the failure, because "no
+ *  resolves" would put every resolved request back on the pending list. */
+function spanishManualResolvedMap_() {
+  const sh = getAdpSS_().getSheetByName(SPANISH_RESOLVED_TAB);
+  if (!sh) return {};
+  return spanishManualResolvedFold_(spanishSpanRows_(sh, 4, 4));
+}
+/** SP-1 — the newest message's time in a thread (a repeat voicemail, or any
+ *  later mail), against which an existing manual resolve is judged. */
+function spanishThreadLatestMs_(msgs) {
+  let m = 0;
+  (msgs || []).forEach(function (x) { const t = x.getDate().getTime(); if (t > m) m = t; });
+  return m;
 }
 /** Manual resolve — gated on canSeeSpanishInbox_ (the members who action the
  *  inbox + managers), SCOPE-GUARDED like getSpanishInboxThreadBody (the thread
@@ -712,12 +764,17 @@ function resolveSpanishThread(threadId) {
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     try {
-      if (spanishManualResolvedMap_()[tid]) return { success: true, already: true };
+      // SP-1 (cycle 23): "already" only when the existing resolve covers the
+      // thread's NEWEST message — a voicemail that arrived after it is new
+      // work, and resolving it appends a later row (the fold keeps the latest).
+      const prior = spanishManualResolvedMap_()[tid];
+      if (prior && (!prior.ms || prior.ms >= spanishThreadLatestMs_(msgs))) return { success: true, already: true };
       getOrCreateSpanishResolvedSheet_().appendRow(sheetSafeRow_([
         fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), tid, emp.email, Date.now(),
       ]));
     } finally { lock.releaseLock(); }
     writeAuditLog_(emp, 'SpanishInboxResolve', '', '', false, 0, 'threadId=' + tid);
+    spanishPendingIdsDrop_(tid);   // SP-1
     // 22post C-8: a resolved request leaves its owner's Needs-you list.
     try { const c = spanishClaimsMap_()[tid]; if (c) spanishBustClaimants_([c.by]); } catch (_) {}
     return { success: true };
@@ -734,10 +791,10 @@ function getOrCreateSpanishClaimsSheet_() {
   return sh;
 }
 /** PURE (Node-pinned) — fold the append-only claim rows (OLDEST→NEWEST within
- *  the scanned tail) into { threadId: {by, assignedBy, atMs} }. The LATEST row
- *  per thread wins (unlike spanishManualResolvedMap_'s first-wins, which is
- *  fine there only because resolve is idempotent — claims genuinely change
- *  hands); a 'release' row clears the claim; junk rows are skipped.
+ *  the scanned span) into { threadId: {by, assignedBy, atMs} }. The LATEST row
+ *  per thread wins (claims genuinely change hands — and since SP-1 the resolve
+ *  fold keeps its latest row too); a 'release' row clears the claim; junk rows
+ *  are skipped.
  *  rows = [[threadId, action, claimant, actor, atMs], …]. */
 function spanishClaimsFold_(rows) {
   const out = {};
@@ -754,16 +811,14 @@ function spanishClaimsFold_(rows) {
   });
   return out;
 }
-/** Bounded-tail claim map. Best-effort — no tab yet reads as no claims. */
+/** The claim map over the state span. No tab yet reads as no claims; SP-3: a
+ *  FAILED read throws. "No claims" let the steal guard pass and auto-assign
+ *  treat every request as unclaimed — so a claim, a release and an
+ *  auto-assign REFUSE on it, and the pending list says the claims are unknown. */
 function spanishClaimsMap_() {
-  try {
-    const sh = getAdpSS_().getSheetByName(SPANISH_CLAIMS_TAB);
-    if (!sh) return {};
-    const last = sh.getLastRow();
-    if (last < 2) return {};
-    const start = Math.max(2, last - SPANISH_CLAIMS_SCAN + 1);
-    return spanishClaimsFold_(sh.getRange(start, 2, last - start + 1, 5).getValues());
-  } catch (e) { Logger.log('spanishClaimsMap_ skipped: ' + e.message); return {}; }
+  const sh = getAdpSS_().getSheetByName(SPANISH_CLAIMS_TAB);
+  if (!sh) return {};
+  return spanishClaimsFold_(spanishSpanRows_(sh, 6, 6).map(function (r) { return r.slice(1); }));
 }
 /** Claim a pending request (self), or — manager only — ASSIGN it to a
  *  configured member. Gated on canSeeSpanishInbox_ and SCOPE-GUARDED like
@@ -926,6 +981,20 @@ function spanishPendingIdsPut_(days, ids) {
       JSON.stringify({ atMs: Date.now(), ids: ids || [] }), SPANISH_PENDING_IDS_TTL);
   } catch (e) {}
 }
+/** SP-1 (cycle 23): a resolved thread leaves the cached id list Needs-you
+ *  reads at once, rather than at the TTL — the list is that view's ONLY
+ *  authority on pending-ness now (a once-resolved thread can be pending again).
+ *  Best-effort, like the put. */
+function spanishPendingIdsDrop_(threadId) {
+  try {
+    const cache = CacheService.getScriptCache();
+    const key = SPANISH_PENDING_IDS_PREFIX + SPANISH_AUTO_ASSIGN_DAYS;
+    const v = JSON.parse(cache.get(key) || 'null');
+    if (!v || !Array.isArray(v.ids) || v.ids.indexOf(threadId) < 0) return;
+    v.ids = v.ids.filter(function (t) { return t !== threadId; });
+    cache.put(key, JSON.stringify(v), SPANISH_PENDING_IDS_TTL);
+  } catch (e) {}
+}
 function spanishPendingIdsGet_(days) {
   try {
     const hit = CacheService.getScriptCache().get(SPANISH_PENDING_IDS_PREFIX + days);
@@ -934,15 +1003,18 @@ function spanishPendingIdsGet_(days) {
   } catch (e) { return null; }
 }
 /** PURE (Node-pinned) — the rep's claims that are still PENDING. claims:
- *  spanishClaimsMap_(); pendingIds: [threadId]; manual: the manual-resolve map.
+ *  spanishClaimsMap_(); pendingIds: [threadId] — the ONE authority. SP-1
+ *  (cycle 23): it used to drop any thread with a manual resolve as well, which
+ *  hid a repeat voicemail on a once-resolved thread; a resolve now leaves the
+ *  cached ids directly (spanishPendingIdsDrop_).
  *  Returns [{threadId, atMs, assignedBy}] oldest claim first. */
-function spanishMyOpenClaims_(claims, email, pendingIds, manual) {
+function spanishMyOpenClaims_(claims, email, pendingIds) {
   const me = String(email || '').trim().toLowerCase();
   const pend = {};
   (pendingIds || []).forEach(function (t) { pend[t] = true; });
   return Object.keys(claims || {}).filter(function (tid) {
     const c = claims[tid];
-    return c && c.by === me && pend[tid] && !(manual || {})[tid];
+    return c && c.by === me && pend[tid];
   }).map(function (tid) {
     return { threadId: tid, atMs: Number(claims[tid].atMs) || 0, assignedBy: claims[tid].assignedBy || '' };
   }).sort(function (a, b) { return a.atMs - b.atMs; });
@@ -1005,8 +1077,11 @@ function spanishOpenLoad_(liveMap, pendingIds) {
 function spanishAutoAssignCore_(emp, days) {
   const members = Object.keys(getSpanishInboxMembers_());
   if (!members.length) return { success: false, error: 'No Spanish Inbox members are configured (Manage → Admin → Config → Spanish bilingual members).' };
-  const pendingRes = getSpanishInboxPending(days);
+  const pendingRes = spanishPendingCore_(days, emp);   // SP-4 — the caller is already gated
   if (!pendingRes || pendingRes.error) return { success: false, error: (pendingRes && pendingRes.error) || 'Pending read failed.' };
+  // SP-3: with the claims unreadable every request would look unclaimed and be
+  // handed out again over its owner. Refuse by name; nothing is assigned.
+  if (pendingRes.claimsUnavailable) return { success: false, error: 'The claims could not be read (' + pendingRes.claimsUnavailable + ') — nothing was assigned.' };
   const unclaimed = (pendingRes.pending || []).filter(function (p) { return !(p && p.claim && p.claim.by); });
   const pendingIds = {};
   (pendingRes.pending || []).forEach(function (p) { if (p && p.threadId) pendingIds[p.threadId] = true; });

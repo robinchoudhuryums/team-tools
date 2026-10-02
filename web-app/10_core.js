@@ -4623,6 +4623,16 @@ function writeWitnessAuditLog_(targetEmp, action, punchDate, punchTime, isAdjust
   console.error('WITNESS audit row lost after retry: ' + action);
   return false;
 }
+/** PURE — DR-3 (cycle 23): the median of whole minutes, as a whole number;
+ *  NULL for an empty set. Four readers took the upper-middle element, which
+ *  for an even count is not a median (two samples of 10 and 90 read 90).
+ *  Callers pass a SORTED array (each already sorts it for other reads). */
+function medianWhole_(sorted) {
+  const a = sorted || [];
+  if (!a.length) return null;
+  const mid = Math.floor(a.length / 2);
+  return a.length % 2 ? a[mid] : Math.round((a[mid - 1] + a[mid]) / 2);
+}
 function daysBetween_(earlierIso, laterIso) {
   return Math.round((new Date(laterIso+'T00:00:00Z') - new Date(earlierIso+'T00:00:00Z')) / 86400000);
 }

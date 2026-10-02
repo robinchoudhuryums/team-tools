@@ -1176,30 +1176,76 @@ function purgeExpiredFormData() {
 }
 /** Public-ish resolve page served by doGet?resolve=<token>. The token is the
  *  credential (in the email to the dept); we record the clicker if Google can
- *  identify them. A simple branded confirmation page (no internal partials). */
+ *  identify them. A simple branded page (no internal partials).
+ *  RES-1 (cycle 23): opening the link CHANGES NOTHING. It used to resolve on
+ *  the GET, so anything that fetched the link — a mail scanner's preview, the
+ *  sender opening their own sent copy — closed the request as a timed
+ *  department response. The page states the request and offers a button; the
+ *  button calls `confirmDeptRequestResolve`, which writes. */
 function serveResolvePage_(token) {
-  const P = CN_EMAIL_PALETTE;
-  let heading, msg;
+  let heading, msg, canConfirm = false;
+  const tok = String(token || '').trim();
   try {
     const by = getActiveUserEmail_();
-    if (!by) {
+    const hit = /^[A-Za-z0-9_-]{1,80}$/.test(tok) ? drFindRowByReqId_(getOrCreateDeptRequestsSheet_(), tok) : null;
+    if (!hit) { heading = 'Request not found'; msg = 'This link is invalid or the request was removed.'; }
+    else if (drStatus_(hit.row) === 'resolved') {
+      const at = formTokenIsoString_(hit.row[DR.RESOLVED_AT]), who = String(hit.row[DR.RESOLVED_BY] || '');
+      heading = 'Already resolved'; msg = 'This was already marked resolved' + (who ? ' by ' + who : '') + (at ? ' on ' + at : '') + '.';
+    } else if (!by) {
       // Anonymous / unidentifiable visitor (the ANYONE_ANONYMOUS executeAs case):
       // don't resolve unattributed — ask them to open it from their work account.
       heading = 'Sign in to confirm';
       msg = 'Open this link while signed in to your @umsupply.com account so we can record who resolved the request.';
     } else {
-      const res = markDeptRequestResolved_(token, by, 'email');
-      if (!res.found) { heading = 'Request not found'; msg = 'This link is invalid or the request was removed.'; }
-      else if (res.already) { heading = 'Already resolved'; msg = 'This was already marked resolved' + (res.resolvedBy ? ' by ' + res.resolvedBy : '') + (res.resolvedAt ? ' on ' + res.resolvedAt : '') + '.'; }
-      else { heading = 'Marked resolved — thank you!'; msg = 'The ' + (res.dept || 'department') + ' request is now recorded as resolved (' + by + ').'; }
+      heading = 'Mark the ' + (String(hit.row[DR.TO_DEPT] || '') || 'department') + ' request resolved?';
+      msg = 'Press the button once the request has been actioned. Nothing has been recorded yet.';
+      canConfirm = true;
     }
-  } catch (e) { heading = 'Something went wrong'; msg = 'Could not record the resolution. Please try again.'; }
-  const html =
-    '<div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:48px auto;padding:28px;border:1px solid ' + P.line + ';border-radius:12px;text-align:center;color:' + P.ink + ';">' +
+  } catch (e) { heading = 'Something went wrong'; msg = 'Could not read the request. Please try again.'; }
+  return HtmlService.createHtmlOutput(resolvePageHtml_(heading, msg, canConfirm ? tok : '')).setTitle('Mark resolved');
+}
+/** RES-1 — the resolve page's markup. With a token it carries the confirm
+ *  button; the token is embedded as a JSON string with `<` escaped, so it
+ *  cannot close the script block (it is also shape-checked by the caller). */
+function resolvePageHtml_(heading, msg, token) {
+  const P = CN_EMAIL_PALETTE;
+  const btn = token
+    ? '<button id="rp-go" type="button" style="margin-top:18px;background:' + P.accent + ';color:#ffffff;border:0;font-weight:600;' +
+        'padding:10px 20px;border-radius:8px;font-size:14px;cursor:pointer;">&#10003; Mark resolved</button>' +
+      '<script>(function () { var t = ' + JSON.stringify(String(token)).replace(/</g, '\\u003c') + ';' +
+        'var b = document.getElementById("rp-go");' +
+        'b.addEventListener("click", function () { b.disabled = true; b.textContent = "Saving…";' +
+          'google.script.run.withSuccessHandler(function (r) {' +
+            'document.getElementById("rp-h").textContent = (r && r.heading) || "Done";' +
+            'document.getElementById("rp-m").textContent = (r && r.message) || ""; b.style.display = "none"; })' +
+          '.withFailureHandler(function () { b.disabled = false; b.textContent = "Mark resolved";' +
+            'document.getElementById("rp-m").textContent = "Could not record the resolution. Please try again."; })' +
+          '.confirmDeptRequestResolve(t); }); })();</script>'
+    : '';
+  return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:48px auto;padding:28px;border:1px solid ' + P.line + ';border-radius:12px;text-align:center;color:' + P.ink + ';">' +
       '<div style="font-size:40px;color:' + P.accent + ';line-height:1;">&#10003;</div>' +
-      '<h2 style="font-size:20px;margin:12px 0 8px;color:' + P.brand + ';">' + esc_(heading) + '</h2>' +
-      '<p style="font-size:14px;color:' + P.muted + ';margin:0;">' + esc_(msg) + '</p>' +
+      '<h2 id="rp-h" style="font-size:20px;margin:12px 0 8px;color:' + P.brand + ';">' + esc_(heading) + '</h2>' +
+      '<p id="rp-m" style="font-size:14px;color:' + P.muted + ';margin:0;">' + esc_(msg) + '</p>' + btn +
       '<p style="font-size:11px;color:' + P.muted + ';margin-top:20px;">UMS Team Tools</p>' +
     '</div>';
-  return HtmlService.createHtmlOutput(html).setTitle('Mark resolved');
+}
+/** RES-1 (cycle 23) — the resolve page's button. Public on purpose (the page
+ *  is opened from an email by anyone in the department): the TOKEN is the
+ *  credential, exactly as the link was, and the caller must be identifiable —
+ *  an unattributed resolve is refused, as before. The sender's own click is
+ *  recorded as 'self' (untimed) by markDeptRequestResolved_. */
+function confirmDeptRequestResolve(token) {
+  try {
+    const tok = String(token || '').trim();
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(tok)) return { heading: 'Request not found', message: 'This link is invalid or the request was removed.' };
+    const by = getActiveUserEmail_();
+    if (!by) return { heading: 'Sign in to confirm', message: 'Open this link while signed in to your @umsupply.com account so we can record who resolved the request.' };
+    const res = markDeptRequestResolved_(tok, by, 'email');
+    if (!res.found) return { heading: 'Request not found', message: 'This link is invalid or the request was removed.' };
+    if (res.already) return { heading: 'Already resolved', message: 'This was already marked resolved' + (res.resolvedBy ? ' by ' + res.resolvedBy : '') + (res.resolvedAt ? ' on ' + res.resolvedAt : '') + '.' };
+    return { heading: 'Marked resolved — thank you!',
+      message: 'The ' + (res.dept || 'department') + ' request is now recorded as resolved (' + by + ')' +
+        (res.self ? ' — as your own clear, since you sent it: it is not counted as a department response time.' : '.') };
+  } catch (e) { return { heading: 'Something went wrong', message: 'Could not record the resolution. Please try again.' }; }
 }

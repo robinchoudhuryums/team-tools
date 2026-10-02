@@ -517,7 +517,10 @@ const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','
 //                reply's text.
 // ResolvedVia gains 'reply': resolved by the department's own reply, which IS
 // a response time (timed, like 'email').
-const DR_RESOLVED_VIA_VALUES = ['email', 'app', 'reply'];
+// RES-1 (cycle 23): and 'self' — the email link clicked by the request's own
+// SENDER (their sent/BCC copy carries the same link). That is a manual clear,
+// not the department responding, so it is UNTIMED, like 'app'.
+const DR_RESOLVED_VIA_VALUES = ['email', 'app', 'reply', 'self'];
 const DR_REPLY_VERDICTS = ['resolved', 'needs-look'];
 const DR_THREAD_IDS_MAX = 3;
 const DR_REPLY_SCAN_MAX = 150;      // threads read per hourly run (Gmail read quota + the six-minute limit)
@@ -1388,7 +1391,6 @@ const SPANISH_THREAD_SCAN_MAX = 200;
 // SpanishManualResolved tab on the ADP spreadsheet. The resolved-at ms is
 // stored as a NUMBER cell (immune to the Sheets date-coercion class).
 const SPANISH_RESOLVED_TAB = 'SpanishManualResolved';
-const SPANISH_RESOLVED_SCAN = 1000;   // bounded tail — the map read stays cheap
 // ── Spanish inbox — claim / assign (pilot round 2, 2026-08-24) ──────────────
 // Pilot ask #4: agents mark that they are WORKING a pending request so
 // teammates don't duplicate the work, and managers can assign one to a
@@ -1398,7 +1400,13 @@ const SPANISH_RESOLVED_SCAN = 1000;   // bounded tail — the map read stays che
 // ADP sheet, PHI-free (threadId + internal emails + ms-number only — never
 // subject/body), latest row per thread wins, a 'release' row clears it.
 const SPANISH_CLAIMS_TAB = 'SpanishClaims';
-const SPANISH_CLAIMS_SCAN = 1000;   // bounded tail — the map read stays cheap
+// SP-3 (cycle 23): both tabs are read by a TIME span, never a fixed row
+// count. A 1000-row tail let a resolve or a claim inside the inbox's own window
+// scroll out of the read, so an old request came back as pending (or
+// unclaimed). Rows are append-only in time order, so the read starts after the
+// last row stamped before this many days ago — every newer row is kept however
+// many there are. It spans twice the longest window a reader asks for (90).
+const SPANISH_STATE_SPAN_DAYS = 180;
 /** The SCHEDULED twin of the button (operator testing note 4's "might follow",
  *  2026-09-11): an hourly trigger that runs the SAME spanishAutoAssignCore_
  *  — one scope rule, one voicemail fold, one picker, one claim-row shape —

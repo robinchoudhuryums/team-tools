@@ -269,11 +269,16 @@ function drKpiStripHtml_(data) {
   // median must skip `resolvedVia === 'app'` explicitly. Only email-link
   // resolves (the receiver's own click) carry a resolution time.
   const resolvedMins = resolvedAll
-    .filter(function (r) { return r.resolvedVia !== 'app'; })
+    .filter(function (r) { return r.resolvedVia !== 'app' && r.resolvedVia !== 'self'; })
     .map(function (r) { return r.elapsedMin; })
     .filter(function (x) { return x != null; }).sort(function (a, b) { return a - b; });
-  const manualCount = resolvedAll.filter(function (r) { return r.resolvedVia === 'app'; }).length;
-  const medianResolve = resolvedMins.length ? resolvedMins[Math.floor(resolvedMins.length / 2)] : null;
+  // RES-1 (cycle 23): 'self' — the sender clicked their own copy's link — is a
+  // manual clear too, never a timed reply.
+  const manualCount = resolvedAll.filter(function (r) { return r.resolvedVia === 'app' || r.resolvedVia === 'self'; }).length;
+  // DR-3 (cycle 23): a true median — the client tile is the server's twin.
+  const mm = Math.floor(resolvedMins.length / 2);
+  const medianResolve = !resolvedMins.length ? null
+    : (resolvedMins.length % 2 ? resolvedMins[mm] : Math.round((resolvedMins[mm - 1] + resolvedMins[mm]) / 2));
   // The id sits on the WRAPPER, not the telemetry grid: drRepaintKpi_ replaces
   // this element's outerHTML on an in-place resolve, and a note rendered as a
   // SIBLING would accumulate one copy per patch.
@@ -282,7 +287,7 @@ function drKpiStripHtml_(data) {
     '<div class="tel-cell"><div class="tel-label">Overdue</div><div class="tel-value ' + (overdueCount ? 'crit' : '') + '">' + overdueCount + '</div><div class="tel-sub">past their SLA</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Resolved</div><div class="tel-value success">' + resolvedAll.length + '</div><div class="tel-sub">of ' + mineAll.length + '</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Median</div><div class="tel-value">' + esc(medianResolve != null ? drFmtMin_(medianResolve) : '—') + '</div><div class="tel-sub">' +
-      esc(manualCount ? ('to resolve · ' + manualCount + ' marked in app, not timed') : 'to resolve') + '</div></div>' +
+      esc(manualCount ? ('to resolve · ' + manualCount + ' marked by hand, not timed') : 'to resolve') + '</div></div>' +
     '</div>' + drBusinessNoteHtml_(data) + '</div>';
 }
 
@@ -295,7 +300,7 @@ function drTeamKpiStripHtml_(data, t) {
     '<div class="tel-cell"><div class="tel-label">Overdue · team</div><div class="tel-value ' + (t.overdue ? 'crit' : '') + '">' + t.overdue + '</div><div class="tel-sub">past their SLA</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Resolved · team</div><div class="tel-value success">' + t.resolved + '</div><div class="tel-sub">of ' + t.total + '</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Median · team</div><div class="tel-value">' + esc(median) + '</div><div class="tel-sub">' +
-      esc(t.manualCount ? ('to resolve · ' + t.manualCount + ' marked in app, not timed') : 'to resolve') + '</div></div>' +
+      esc(t.manualCount ? ('to resolve · ' + t.manualCount + ' marked by hand, not timed') : 'to resolve') + '</div></div>' +
     '</div><div class="dr-kpi-scope">Team-wide — every tracked request in the loaded window, whoever sent it.</div>' +
     drBusinessNoteHtml_(data) + '</div>';
 }
@@ -454,10 +459,12 @@ function drCardStatusHtml_(item) {
     // shows a duration (the server ships elapsedMin null for both).
     // 22post D: 'reply' — the department's own reply resolved it; timed.
     const via = item.resolvedVia === 'app' ? 'marked in app'
+      : item.resolvedVia === 'self' ? 'marked by the sender'   // RES-1 — untimed
       : (item.resolvedVia === 'reply' && item.elapsedMin != null) ? 'replied · ' + drFmtMin_(item.elapsedMin)
       : (item.resolvedVia === 'email' && item.elapsedMin != null) ? drFmtMin_(item.elapsedMin)
       : 'resolved';
     const viaTtl = item.resolvedVia === 'app' ? ' title="Marked resolved in the app — not counted as a timed reply"'
+      : item.resolvedVia === 'self' ? ' title="The sender used the email link on their own copy — not counted as a timed reply"'
       : item.resolvedVia === 'reply' ? ' title="Resolved by the department\u2019s reply to the email"' : ttl;
     return '<span class="sp-task-age" style="color:var(--success-deep)"' + viaTtl + '>' + icon('check', 12) + ' ' +
       esc(via) + '</span>';
@@ -611,7 +618,7 @@ function drStatsNotTimedCell_(s) {
   if (s == null || (s.manualResolved == null && s.untrackedResolved == null)) return '—';
   if (!m && !u) return '0';
   const parts = [];
-  if (m) parts.push(m + ' in app');
+  if (m) parts.push(m + ' by hand');   // RES-1: the in-app button and the sender's own link alike
   if (u) parts.push(u + ' legacy');
   return esc(String(m + u)) + ' <span class="dr-tag">' + esc(parts.join(' · ')) + '</span>';
 }

@@ -9353,6 +9353,7 @@ function test_deptRequest_resolveLinkIdempotent() {
   // unknown token is not-found, and the DeptRequestResolved audit row lands.
   const sh = getOrCreateDeptRequestsSheet_();
   const token = 'TESTDR-' + Utilities.getUuid();
+  const token2 = 'TESTDR-' + Utilities.getUuid();   // RES-1
   sh.appendRow([token, _TEST_INDIA_ID, 'Test India User', _TEST_INDIA_EMAIL,
     'Billing', 'example.com', drNowTs_(), 'open', '', '', 'test label', '', '']);
   try {
@@ -9374,7 +9375,19 @@ function test_deptRequest_resolveLinkIdempotent() {
       'unknown token → not found');
     _assertEq(_countAuditRows(_TEST_INDIA_ID, 'DeptRequestResolved'), before + 1,
       'exactly one DeptRequestResolved audit row (the already-branch writes none)');
+    // RES-1 (cycle 23): the SENDER clicking their own copy's link is 'self' —
+    // untimed, never a department response time.
+    sh.appendRow([token2, _TEST_INDIA_ID, 'Test India User', _TEST_INDIA_EMAIL,
+      'Billing', 'example.com', drNowTs_(), 'open', '', '', 'test label', '', '']);
+    const r3 = markDeptRequestResolved_(token2, _TEST_INDIA_EMAIL, 'email');
+    _assertTrue(r3.found === true && r3.self === true, 'the sender\'s own click is reported as self');
+    const rows3 = sh.getDataRange().getValues();
+    let via3 = null;
+    for (let i = rows3.length - 1; i >= 1; i--) {
+      if (String(rows3[i][DR.REQ_ID]) === token2) { via3 = drResolvedVia_(rows3[i]); break; }
+    }
+    _assertEq(via3, 'self', 'ResolvedVia records it as self');
   } finally {
-    _deleteRowsWhereLocked_(sh, 2, function (r) { return String(r[DR.REQ_ID]) === token; }, 1);
+    _deleteRowsWhereLocked_(sh, 2, function (r) { return String(r[DR.REQ_ID]) === token || String(r[DR.REQ_ID]) === token2; }, 2);
   }
 }

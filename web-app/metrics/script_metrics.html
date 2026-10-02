@@ -2026,6 +2026,14 @@ function spanishTruncNote_(d) {
  *  not be measured" are different facts, and only the second one means
  *  something is broken. The unparsed note is WARNING-toned; the hidden count
  *  is neutral, because hiding hang-ups is the feature working. */
+/** SP-3 (cycle 23): the claims tab could not be read, so every card reads as
+ *  unclaimed — say so, warning-toned, so "unclaimed" is never taken at face
+ *  value. The server's message is escaped. */
+function spanishClaimsNote_(d) {
+  if (!d || !d.claimsUnavailable) return '';
+  return ' · <span style="color:var(--warning-deep)">claims could not be read (' + esc(String(d.claimsUnavailable)) +
+    ') — who is working what is unknown, not "nobody"</span>';
+}
 function spanishVmNote_(d) {
   if (!d) return '';
   var out = '';
@@ -2152,6 +2160,7 @@ function spanishAutoAssignBtnHtml_() {
   var members = (pd && pd.members) || [];
   var disabled, title;
   if (n == null) { disabled = true; title = 'Pending requests are still loading'; }
+  else if (pd && pd.claimsUnavailable) { disabled = true; n = null; title = 'The claims could not be read, so who is working what is unknown — nothing can be assigned until they load'; }   // SP-3
   else if (!members.length) { disabled = true; title = 'No Spanish Inbox members are configured — Manage → Admin → Config → Spanish bilingual members'; }
   else if (!n) { disabled = true; title = 'Every pending request is already claimed'; }
   else {
@@ -2412,10 +2421,10 @@ function spanishRenderList_() {
           // "All caught up" with three voicemails suppressed is EXACTLY the
           // state the count exists for — an empty list is the most misleading
           // place to omit it.
-          ' Nothing pending — all caught up.' + spanishTruncNote_(pd) + spanishVmNote_(pd) + '</div>';
+          ' Nothing pending — all caught up.' + spanishTruncNote_(pd) + spanishVmNote_(pd) + spanishClaimsNote_(pd) + '</div>';
       } else {
         html += '<div class="day-section-label" style="margin:6px 0 10px">Pending · ' + pending.length +
-          spanishTruncNote_(pd) + spanishVmNote_(pd) + '</div>' +
+          spanishTruncNote_(pd) + spanishVmNote_(pd) + spanishClaimsNote_(pd) + '</div>' +
           spCappedTasksHtml_(pending.map(spanishTaskCard_), (SPANISH_STATE.shown || {}).pending,
             "spanishShowMore_('pending')", 'margin-bottom:16px');
       }

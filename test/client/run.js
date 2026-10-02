@@ -1444,6 +1444,7 @@ test('PUBLIC-GATE: every public function in every pushed .js file gates its call
     'cnPing': 'a no-op latency probe: { ok, t } and nothing else',
     'getFormByToken': 'public form route — the token IS the credential (g101)',
     'submitFormByToken': 'public form route — the token IS the credential (g101)',
+    'confirmDeptRequestResolve': 'the resolve page\'s button (RES-1) — the request token IS the credential, exactly as the ?resolve= link it replaces; refuses an unidentified caller',
   };
   const DELEGATE = {
     recordPunch: 'recordPunchCore_',
@@ -4982,7 +4983,7 @@ test('resolveSpanishThread is member-gated, scope-guarded, locked, and PHI-free 
   assert.ok(/'SpanishInboxResolve'/.test(src) && /threadId=/.test(src), 'audit row carries the threadId only');
   assert.ok(!/getSubject|getPlainBody/.test(src), 'PHI-free — never reads/stores subject or body');
   // All three readers consult the manual map (pending skips; stats + resolved count it).
-  ['getSpanishInboxStats', 'getSpanishInboxPending', 'getSpanishInboxResolved'].forEach((fn) => {
+  ['getSpanishInboxStats', 'spanishPendingCore_', 'getSpanishInboxResolved'].forEach((fn) => {
     assert.ok(/spanishManualResolvedMap_\(/.test(extractRawFunction('Code.js', fn)),
       fn + ' consults the manual-resolved map');
   });
@@ -7978,7 +7979,7 @@ test('batch-6: an unknown punch type is not a state — getNextActions_ skips it
 });
 
 test('batch-6: the Spanish readers report their scan cap (INV-169) and the tab renders it', () => {
-  ['getSpanishInboxStats', 'getSpanishInboxPending', 'getSpanishInboxResolved'].forEach((fn) => {
+  ['getSpanishInboxStats', 'spanishPendingCore_', 'getSpanishInboxResolved'].forEach((fn) => {
     const b = c17strip(extractRawFunction('Code.js', fn));
     assert.ok(/GmailApp\.search\([\s\S]*?SPANISH_THREAD_SCAN_MAX\)/.test(b), fn + ' searches via the named cap');
     assert.ok(!/, 0, 200\)/.test(b), fn + ' has no bare 200 literal');
@@ -13146,11 +13147,11 @@ console.log('\nround-2 pilot — Spanish claim/assign · scheduled-call reminder
   });
 
   test('R2 #4: the pending payload carries claim/members/self (additive fields)', () => {
-    const src = strip(extractRawFunction('Code.js', 'getSpanishInboxPending'));
+    const src = strip(extractRawFunction('Code.js', 'spanishPendingCore_'));
     assert.ok(/spanishClaimsMap_\(\)/.test(src), 'reads the claim map once per scan');
     assert.ok(/claim: claims\[th\.getId\(\)\] \|\| null/.test(src), 'each pending item carries its claim (null = unclaimed)');
     assert.ok(/members: Object\.keys\(members\)/.test(src), 'ships the assign-select options');
-    assert.ok(/self: String\(emp\.email/.test(src), 'ships the caller identity for "claimed by me"');
+    assert.ok(/self: String\(\(emp && emp\.email\) \|\| ''\)/.test(src), 'ships the caller identity for "claimed by me" (SP-4: null-safe for the SYSTEM actor)');
   });
 
   test('R2 #4: claim pill + controls render by role (client, behavioural)', () => {
@@ -15836,7 +15837,7 @@ test('wiring: the fold rides both lists, first-message re-check, one predicate a
     }
     throw new Error('unbalanced ' + name);
   };
-  const pend = grab('getSpanishInboxPending'), res = grab('getSpanishInboxResolved');
+  const pend = grab('spanishPendingCore_'), res = grab('getSpanishInboxResolved');
   const stats = grab('getSpanishInboxStats'), fold = grab('spanishVmFold_');
   // F-34 (cycle 20): the pending list's inline fold became `spanishVmFold_`,
   // and the STATS card — which had no fold at all and so reported a smaller
@@ -23618,7 +23619,7 @@ console.log('\nOperator notes 2026-09-10 — Batch B (N2 business-hours fold, N3
 test('N2: drDeptStats_ is a PURE fold over business minutes — email resolves only, counts reported', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   const sbx = vm.createContext({ CONFIG: { CALL_NOTES: { DR_SLA_DEFAULT_DAYS: 2 } } });   // M6: working days
-  ['drSplitDepts_', 'getDeptRequestSla_', 'drDeptStats_'].forEach((fn) =>
+  ['drSplitDepts_', 'getDeptRequestSla_', 'medianWhole_', 'drDeptStats_'].forEach((fn) =>   // DR-3: the shared median
     vm.runInContext(extractRawFunction('Code.js', fn), sbx, { filename: 'Code.js#' + fn }));
   // The Friday-16:00 → Monday-09:00 pair the operator asked about: 120
   // BUSINESS minutes through the real core, where wall clock reads 3 days.
@@ -23641,7 +23642,7 @@ test('N2: drDeptStats_ is a PURE fold over business minutes — email resolves o
   const ship = out.filter((r) => r.dept === 'Shipping')[0];
   assert.ok(bill && ship, 'one row per component department');
   assert.strictEqual(bill.avgMinutes, 90, 'avg over the TWO timed email resolves: (120 + 60) / 2 — never the 3900 wall figure');
-  assert.strictEqual(bill.medianMinutes, 120, 'median from the same sample');
+  assert.strictEqual(bill.medianMinutes, 90, 'median from the same sample — DR-3 (cycle 23): two samples (60, 120) have a median of 90; this pin read 120, the upper-middle element, i.e. it encoded the defect');
   assert.strictEqual(bill.timed, 2, 'the sample size behind avg/median is reported');
   assert.strictEqual(bill.resolved, 5, 'every resolved row still COUNTS as resolved (the unusable-pair row included)');
   assert.strictEqual(bill.manualResolved, 1, 'the in-app clear is counted, not timed');
@@ -23703,8 +23704,8 @@ test('N3-DR: an in-app "Mark resolved" is recorded (ResolvedVia) and leaves ever
   assert.ok(/via=/.test(w), 'the audit note names the path (PHI-free either way)');
   assert.ok(/markDeptRequestResolved_\(requestId,[^;]*'app'\)/.test(nc(extractRawFunction('Code.js', 'resolveDeptRequest'))),
     "the in-app button resolves as 'app'");
-  assert.ok(/markDeptRequestResolved_\(token, by, 'email'\)/.test(nc(extractRawFunction('Code.js', 'serveResolvePage_'))),
-    "the email link resolves as 'email'");
+  assert.ok(/markDeptRequestResolved_\(tok, by, 'email'\)/.test(nc(extractRawFunction('Code.js', 'confirmDeptRequestResolve'))),
+    "the email link's confirm button resolves as 'email' (RES-1: the GET page itself writes nothing; the sender's own click becomes 'self')");
   // (d) The item: untimed rows ship NULL on BOTH units, with the via beside
   //     them so the exclusion is visible.
   const dr = nc(codeSrc.slice(codeSrc.indexOf('\nfunction getDeptRequests()'),
@@ -23721,9 +23722,9 @@ test('N3-DR: an in-app "Mark resolved" is recorded (ResolvedVia) and leaves ever
   assert.ok(/item\.resolvedVia === 'app' \? 'marked in app'/.test(card), "an in-app resolve reads 'marked in app'");
   assert.ok(/item\.resolvedVia === 'email' && item\.elapsedMin != null/.test(card), 'a duration renders ONLY for an email resolve');
   const kpi = nc(extractFunction('metrics/script_deptrequests.html', 'drKpiStripHtml_'));
-  assert.ok(/\.filter\(function \(r\) \{ return r\.resolvedVia !== 'app'; \}\)/.test(kpi),
+  assert.ok(/\.filter\(function \(r\) \{ return r\.resolvedVia !== 'app' && r\.resolvedVia !== 'self'; \}\)/.test(kpi),
     "the median skips 'app' rows explicitly — the optimistic patch leaves the OPEN figure on the row");
-  assert.ok(/marked in app, not timed/.test(kpi), 'the strip names the excluded count');
+  assert.ok(/marked by hand, not timed/.test(kpi), 'the strip names the excluded count (RES-1: in-app and the sender\'s own link alike)');
   const apply = nc(extractFunction('metrics/script_deptrequests.html', 'drApplyResolved_'));
   assert.ok(/r\.resolvedVia = 'app';/.test(apply), "the optimistic patch stamps 'app' — exactly what the next payload says");
   const mgr = nc(extractFunction('metrics/script_deptrequests.html', 'drMgrStatsHtml_'));   // 22post A-7: the table's own renderer
@@ -23731,7 +23732,7 @@ test('N3-DR: an in-app "Mark resolved" is recorded (ResolvedVia) and leaves ever
   const cellSb = vm.createContext({ esc: (x) => String(x) });
   vm.runInContext(extractFunction('metrics/script_deptrequests.html', 'drStatsNotTimedCell_'), cellSb, { filename: 'dr#cell' });
   assert.strictEqual(cellSb.drStatsNotTimedCell_({ manualResolved: 3, untrackedResolved: 2 }).replace(/<[^>]+>/g, ''),
-    '5 3 in app · 2 legacy', 'both kinds reported by name');
+    '5 3 by hand · 2 legacy', 'both kinds reported by name (RES-1: "by hand" covers the in-app button and the sender\'s own link)');
   assert.strictEqual(cellSb.drStatsNotTimedCell_({ manualResolved: 0, untrackedResolved: 0 }), '0');
   assert.strictEqual(cellSb.drStatsNotTimedCell_({ avgMinutes: 5 }), '—', 'an older server (no counts) renders an em dash, never 0');
   // (f) The visual fixture mirrors the contract (INV-185): an 'app' row with
@@ -23812,7 +23813,7 @@ test('C-N4: Spanish auto-assign — least-loaded pick (pure), manager gate BEFOR
   // (c) The core: unclaimed from the pending read, load re-derived from the
   //     LIVE map inside the lock, one batched write, counts-only audit.
   const core = nc(extractRawFunction('Code.js', 'spanishAutoAssignCore_'));
-  assert.ok(/getSpanishInboxPending\(days\)/.test(core), 'reuses the pending read (one scope rule, one voicemail fold)');
+  assert.ok(/spanishPendingCore_\(days, emp\)/.test(core), 'reuses the pending read (one scope rule, one voicemail fold) — the UNGATED core, since the trigger installer may not be a roster member (SP-4)');
   assert.ok(!/\bkind\b/.test(core), 'voicemails are NOT filtered out — they are worked the same way');
   assert.ok(/lock\.waitLock\(15000\)/.test(core) && /finally \{ lock\.releaseLock\(\); \}/.test(core), 'locked (INV-01)');
   const lockAt = core.indexOf('waitLock(15000)');
@@ -26799,7 +26800,7 @@ test('F-34: ONE voicemail fold — the stats card counts the voicemails the list
     return code.slice(i, k + 1);
   };
   assert.ok(/spanishVmFold_\(/.test(grab('getSpanishInboxStats')), 'the STATS card folds voicemails');
-  assert.ok(/spanishVmFold_\(/.test(grab('getSpanishInboxPending')), 'the LIST folds voicemails');
+  assert.ok(/spanishVmFold_\(/.test(grab('spanishPendingCore_')), 'the LIST folds voicemails');
 
   // (f) The stats card RENDERS the voicemail half of its own figures, and
   // says "not configured" differently from "none came in" (INV-187). Four
@@ -28175,7 +28176,7 @@ test('M5: every voicemail in a thread is its own request — a repeat voicemail 
   sb._threads = [{ getId: () => 't1', getMessages: () => [m('no-reply@8x8.com', 'VM A_Q_Spanish', 900), m('Ana <ana@x>', 're', 930), m('no-reply@8x8.com', 'VM A_Q_Spanish', 1100)] }];
   const rows = JSON.parse(JSON.stringify(sb.spanishVmFold_(30, {}, {}, false, {}).rows.map((r) => ({ i: r.msgIndex, res: r.resolveMs }))));
   assert.deepStrictEqual(rows, [{ i: 0, res: 930 }, { i: 2, res: null }], 'the first is answered, the repeat is still waiting');
-  const list = stripJsComments_(extractRawFunction('Code.js', 'getSpanishInboxPending'));
+  const list = stripJsComments_(extractRawFunction('Code.js', 'spanishPendingCore_'));
   assert.ok(/vmPendingByThread/.test(list) && /vmPending: vmPendingByThread\[tid\]\.n/.test(list),
     'the list shows ONE card per thread (resolve and claim act on the thread) and says how many are waiting');
 });
@@ -28919,7 +28920,7 @@ test('A-6: Dept Requests sort + date range — open first, newest by default; a 
 
 test('A-7: a manager\'s Dept Requests summary is TEAM-WIDE (timed resolves only in the median) and the optimistic resolve keeps it right (driven)', () => {
   const ctx = vm.createContext({ String, Number, Math });
-  vm.runInContext(extractRawFunction('Code.js', 'drTeamKpis_'), ctx);
+  ['medianWhole_', 'drTeamKpis_'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx));   // DR-3: the shared median
   const k = JSON.parse(JSON.stringify(ctx.drTeamKpis_([
     { status: 'open', slaStatus: 'overdue' }, { status: 'open', slaStatus: 'ontime' },
     { status: 'resolved', resolvedVia: 'email', elapsedMin: 60 }, { status: 'resolved', resolvedVia: 'email', elapsedMin: 200 },
@@ -29041,11 +29042,13 @@ test('C-8: an assignment tells the assignee — one PHI-free email per assignee 
   assert.ok(/CTA:https:\/\/app\/exec\?tool=metricsSpanish/.test(m.html) && /tool=metricsSpanish/.test(m.text), 'a deep link to the Spanish Inbox');
   assert.strictEqual(extractRawFunction('Code.js', 'spanishAssignEmail_').match(/function spanishAssignEmail_\(([^)]*)\)/)[1], 'count, actorName, url',
     'the builder takes no request content — it cannot leak a subject or a body');
-  // The Needs-you fold: my claims that are still pending, not manually resolved.
+  // The Needs-you fold: my claims that are still pending — the pending ids are
+  // the ONE authority (SP-1, cycle 23: t5 was resolved once and a repeat
+  // voicemail made it pending again; the old "never manually resolved" filter hid it).
   const claims = { t1: { by: 'me@x', atMs: 20, assignedBy: 'mgr@x' }, t2: { by: 'me@x', atMs: 10, assignedBy: '' },
     t3: { by: 'other@x', atMs: 5 }, t4: { by: 'me@x', atMs: 1 }, t5: { by: 'me@x', atMs: 2 } };
-  assert.deepStrictEqual(J(ctx.spanishMyOpenClaims_(claims, 'ME@x', ['t1', 't2', 't3', 't5'], { t5: true })).map((o) => o.threadId), ['t2', 't1'],
-    'mine, still pending (t4 is not), never manually resolved (t5), oldest first');
+  assert.deepStrictEqual(J(ctx.spanishMyOpenClaims_(claims, 'ME@x', ['t1', 't2', 't3', 't5'])).map((o) => o.threadId), ['t5', 't2', 't1'],
+    'mine and still pending (t4 is not), a once-resolved thread that is pending again included, oldest first');
 });
 
 test('C-8: the notices, busts and Needs-you item are wired — after the lock, only for a member, pending-ness from the cached id set (source)', () => {
@@ -29057,7 +29060,7 @@ test('C-8: the notices, busts and Needs-you item are wired — after the lock, o
   assert.ok(/spanishBustClaimants_\(\[c\.by\]\)/.test(stripJsComments_(extractRawFunction('Code.js', 'resolveSpanishThread'))), 'a resolve refreshes');
   const auto = stripJsComments_(extractRawFunction('Code.js', 'spanishAutoAssignCore_'));
   assert.ok(auto.indexOf('lock.releaseLock()') < auto.indexOf('spanishNotifyAssignees_(picks, emp)'), 'auto-assign emails after the lock, one summary per assignee');
-  assert.ok(/spanishPendingIdsPut_\(d, out\.map\(function \(x\) \{ return x\.threadId; \}\)\)/.test(stripJsComments_(extractRawFunction('Code.js', 'getSpanishInboxPending'))),
+  assert.ok(/spanishPendingIdsPut_\(d, out\.map\(function \(x\) \{ return x\.threadId; \}\)\)/.test(stripJsComments_(extractRawFunction('Code.js', 'spanishPendingCore_'))),
     'the cached set is thread ids ONLY');
   const pt = stripJsComments_(extractRawFunction('Code.js', 'getMyPendingTasks'));
   assert.ok(/if \(canSeeSpanishInbox_\(emp\) && getSpanishInboxAddress_\(\)\)/.test(pt), 'members only');
@@ -29163,7 +29166,7 @@ test('D-2: the four rules — after the send/reopen, not the agent/mailbox/autom
   assert.strictEqual(v({ body: 'Can you send the TRX?' }), 'needs-look', 'rule 4 alone fails: needs a look');
   assert.strictEqual(v({ body: '> quoted only' }), 'needs-look', 'no new text: needs a look');
   assert.strictEqual(v({ fromAddr: 'someone@gmail.com', body: 'Can you?' }), '', 'failing rule 3 AND 4 is not the department at all');
-  // The pick: the EARLIEST resolving reply wins; else the LATEST needs-look.
+  // The pick (DR-2, cycle 23): the LATEST reply decides; a resolve is timed at the first resolving reply after the last needs-look.
   const pick = c.drReplyPick_([m({ ms: 5000, body: 'Done.' }), m({ ms: 3000, body: 'Can you send it?' }), m({ ms: 4000, body: 'Refund issued.' })], ctx);
   assert.strictEqual(pick.verdict + '@' + pick.msg.ms, 'resolved@4000');
   const look = c.drReplyPick_([m({ ms: 3000, body: 'Can you?' }), m({ ms: 6000, body: 'Still pending' }), m({ ms: 7000, fromAddr: 'agent@ums.com', body: 'thanks' })], ctx);
@@ -29335,7 +29338,7 @@ test('D-2/D-3: the wiring — the hourly rider, its heartbeat and flag, a reply 
   const cfg = stripJsComments_(fs.readFileSync(path.join(PA_WEB, '00_config.js'), 'utf8'));
   assert.ok(/runHourlyJobs:\s*\[[^\]]*'scanDeptRequestReplies'/.test(cfg), 'rides the hourly dispatcher (no trigger of its own)');
   assert.ok(/key: 'deptReplyResolve'[\s\S]{0,900}?default: true, scope: 'server'/.test(cfg), 'a server flag, ON by default (the operator asked for it), off = replies never read');
-  assert.ok(/DR_RESOLVED_VIA_VALUES = \['email', 'app', 'reply'\]/.test(cfg));
+  assert.ok(/DR_RESOLVED_VIA_VALUES = \['email', 'app', 'reply', 'self'\]/.test(cfg), 'reply joined; RES-1 added self');
   const h = stripJsComments_(extractRawFunction('Code.js', 'scanDeptRequestReplies'));
   assert.ok(h.indexOf("assertManagerCaller_('scanDeptRequestReplies')") < h.indexOf('stampDigestLastRun_') &&
     h.indexOf("stampDigestLastRun_('deptReplyScan')") < h.indexOf("getFlag_('deptReplyResolve')") &&
@@ -29344,7 +29347,7 @@ test('D-2/D-3: the wiring — the hourly rider, its heartbeat and flag, a reply 
   assert.ok(/deptReplyScan: 2[,\s}]/.test(stripJsComments_(fs.readFileSync(path.join(PA_WEB, '10_core.js'), 'utf8'))), 'an hourly staleness window');
   // A reply is a response time in the per-department fold.
   const sctx = vm.createContext({ String, Math, Object, getDeptRequestSla_: () => 2 });
-  ['drSplitDepts_', 'drDeptStats_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), sctx));
+  ['drSplitDepts_', 'medianWhole_', 'drDeptStats_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), sctx));
   const st = JSON.parse(JSON.stringify(sctx.drDeptStats_([
     { toDept: 'Billing', status: 'resolved', resolvedVia: 'reply', elapsedMin: 60 },
     { toDept: 'Billing', status: 'resolved', resolvedVia: 'app', elapsedMin: null },
@@ -32035,6 +32038,232 @@ test('TC-02 (cycle 23): getMyDayBreaks is the caller\'s own breaks for one date 
   assert.ok(/: r\.punchType \+ ' · ' \+ r\.date \+ ' · ' \+ r\.time \+ mgrAdjIntentText_\(r\);/.test(mgr), 'the queue row carries it');
   const srv = serverSource();
   assert.strictEqual((srv.match(/breakIntent: breakIntentNorm_\(rows\[i\]\[PAR\.BREAK_TARGET\]\)/g) || []).length, 3, 'all three pending-request readers ship it');
+});
+
+
+// ── cycle 23 — Batch 5: Spanish Inbox + Dept Requests integrity ──
+test('SP-1 (cycle 23): a voicemail that arrives AFTER a manual resolve can be resolved — the fold keeps the LATEST stamped row (a legacy unstamped row still resolves everything), and the endpoint re-resolves instead of answering "already" (driven)', () => {
+  const ctx = vm.createContext({ String, Number, Object, Math });
+  ['spanishManualResolvedFold_', 'spanishVmResolution_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  const fold = (rows) => J(ctx.spanishManualResolvedFold_(rows));
+  assert.deepStrictEqual(fold([['ts', 't1', 'a@x', 100], ['ts', 't1', 'b@x', 300]]).t1, { by: 'b@x', ms: 300 }, 'THE REGRESSION: the first row (100) won, so a voicemail at 200..300 stayed pending for ever');
+  assert.deepStrictEqual(fold([['ts', 't1', 'a@x', 0], ['ts', 't1', 'b@x', 300]]).t1, { by: 'a@x', ms: 0 }, 'a legacy resolve-all (no stamp) stands');
+  assert.deepStrictEqual(fold([['ts', '', 'a@x', 1], ['ts', ' t2 ', 'c@x', '5']]), { t2: { by: 'c@x', ms: 5 } }, 'junk skipped, ids trimmed, ms read as a number');
+  const man = fold([['ts', 't1', 'a@x', 100], ['ts', 't1', 'b@x', 300]]).t1;
+  assert.strictEqual(J(ctx.spanishVmResolution_(1, 200, [], man)).wasManual, true, 'a voicemail at 200 is resolved by the 300 row');
+  assert.strictEqual(J(ctx.spanishVmResolution_(2, 400, [], man)).resolveMs, null, 'one at 400 is still pending');
+  // The endpoint.
+  const run = (prior, latestMs) => {
+    const appended = [], dropped = [];
+    const msgs = [{ getDate: () => new Date(50) }, { getDate: () => new Date(latestMs) }];
+    const c = vm.createContext({ String, Number, Date, Math,
+      getEmployeeInfo_: () => ({ email: 'm@x' }), canSeeSpanishInbox_: () => true, GmailApp: { getThreadById: () => ({ getMessages: () => msgs }) },
+      getSpanishInboxAddress_: () => 'sp@x', spanishThreadInScope_: () => true,
+      LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      spanishManualResolvedMap_: () => (prior ? { t1: prior } : {}),
+      getOrCreateSpanishResolvedSheet_: () => ({ appendRow: (r) => appended.push(r) }), sheetSafeRow_: (r) => r,
+      fmtDate_: () => 'd', fmtTime_: () => 't', writeAuditLog_: () => {}, spanishPendingIdsDrop_: (t) => dropped.push(t),
+      spanishClaimsMap_: () => ({}), spanishBustClaimants_: () => {} });
+    ['spanishThreadLatestMs_', 'resolveSpanishThread'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), c));
+    return { r: JSON.parse(JSON.stringify(c.resolveSpanishThread('t1'))), appended, dropped };
+  };
+  let r = run({ by: 'a@x', ms: 100 }, 400);
+  assert.ok(r.r.success && !r.r.already && r.appended.length === 1, 'THE REGRESSION: a newer voicemail answered "already" and could never be cleared');
+  assert.deepStrictEqual(r.dropped, ['t1'], 'and it leaves the cached pending ids Needs-you reads');
+  r = run({ by: 'a@x', ms: 500 }, 400);
+  assert.ok(r.r.already && !r.appended.length, 'a resolve that covers the newest message is still idempotent');
+  r = run({ by: 'a@x', ms: 0 }, 400);
+  assert.ok(r.r.already && !r.appended.length, 'a legacy resolve-all is too');
+  // Needs-you takes pending-ness from the ids alone.
+  const nt = stripJsComments_(serverSource());
+  assert.ok(!/spanishMyOpenClaims_\([^)]*spManual/.test(nt) && !/var spManual/.test(nt), 'the Needs-you item no longer second-guesses the pending ids with the manual map');
+});
+
+test('SP-3 (cycle 23): the resolve and claim tabs are read by a TIME span, never a 1000-row tail — and a failed read is an error, never "no resolves" / "no claims" (driven)', () => {
+  const ctx = vm.createContext({ Number });
+  vm.runInContext(extractRawFunction('Code.js', 'spanishSpanStartRow_'), ctx);
+  const st = (cells, cut) => ctx.spanishSpanStartRow_(cells.map((x) => [x]), cut);
+  assert.strictEqual(st([0, 0, 100, 200, 500, 900], 300), 6, 'starts after the last row stamped before the cutoff (legacy rows above it go too)');
+  assert.strictEqual(st([500, 900], 300), 2, 'nothing older: the whole tab');
+  assert.strictEqual(st([0, 0], 300), 2, 'only legacy rows: kept (nothing dates them)');
+  assert.strictEqual(st([100, 200], 300), 4, 'everything older: past the last row (an empty read)');
+  // The maps: no tab → empty; a read that fails → THROWS (it used to log and read as empty).
+  const maps = (sheet) => {
+    const c = vm.createContext({ Number, String, Date, Math, SPANISH_RESOLVED_TAB: 'R', SPANISH_CLAIMS_TAB: 'C', SPANISH_STATE_SPAN_DAYS: 180,
+      getAdpSS_: () => ({ getSheetByName: () => sheet }) });
+    ['spanishSpanStartRow_', 'spanishSpanRows_', 'spanishManualResolvedFold_', 'spanishManualResolvedMap_', 'spanishClaimsFold_', 'spanishClaimsMap_']
+      .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), c));
+    return c;
+  };
+  let c = maps(null);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.spanishManualResolvedMap_())), {}); assert.deepStrictEqual(JSON.parse(JSON.stringify(c.spanishClaimsMap_())), {});
+  c = maps({ getLastRow: () => 9, getRange: () => { throw new Error('Service Spreadsheets timed out'); } });
+  assert.throws(() => c.spanishManualResolvedMap_(), /timed out/, 'THE REGRESSION: a failed read was {} — every resolved request back on the pending list');
+  assert.throws(() => c.spanishClaimsMap_(), /timed out/, 'and every claim gone: the steal guard passed, auto-assign handed claimed work out again');
+  // A real span: 1,500 recent rows are ALL read (the tail kept 1,000).
+  const now = Date.now();
+  const grid = []; for (let i = 0; i < 1500; i++) grid.push(['ts', 'id' + i, 'claim', 'a@x', 'a@x', now - (1500 - i) * 1000]);
+  c = maps({ getLastRow: () => grid.length + 1, getRange: (r, col, n, w) => ({ getValues: () => grid.slice(r - 2, r - 2 + n).map((row) => (w === 1 ? [row[col - 1]] : row.slice(col - 1, col - 1 + w))) }) });
+  assert.strictEqual(Object.keys(c.spanishClaimsMap_()).length, 1500, 'every claim inside the span is read');
+  const cfg = fs.readFileSync(path.join(__dirname, '../../web-app/00_config.js'), 'utf8');
+  assert.ok(/const SPANISH_STATE_SPAN_DAYS = 180;/.test(cfg) && !/SPANISH_(RESOLVED|CLAIMS)_SCAN/.test(cfg), 'the row-count tails are gone');
+});
+
+test('SP-3 + SP-4 (cycle 23): the pending list says when claims could not be read and auto-assign refuses on it; the scheduled auto-assign reads pending through the UNGATED core, so an installer who is not a roster member no longer fails every run (driven)', () => {
+  const run = (pendingRes) => {
+    let gatedCalls = 0, locked = 0;
+    const c = vm.createContext({ String, Object, Date, Number,
+      getSpanishInboxMembers_: () => ({ 'a@x': true }),
+      spanishPendingCore_: () => pendingRes,
+      getSpanishInboxPending: () => { gatedCalls++; return { error: 'Spanish Inbox access required.' }; },
+      LockService: { getScriptLock: () => ({ waitLock() { locked++; }, releaseLock() {} }) },
+      spanishClaimsMap_: () => ({}), fmtDate_: () => 'd', fmtTime_: () => 't',
+      spanishOpenLoad_: () => ({}), spanishAutoAssignPick_: (u) => u.map((x) => ({ threadId: x.threadId, by: 'a@x' })),
+      appendRowsSafe_: () => {}, getOrCreateSpanishClaimsSheet_: () => ({}), writeAuditLog_: () => {},
+      spanishBustClaimants_: () => {}, spanishNotifyAssignees_: () => 0 });
+    vm.runInContext(extractRawFunction('Code.js', 'spanishAutoAssignCore_'), c);
+    return { r: JSON.parse(JSON.stringify(c.spanishAutoAssignCore_({ email: 'installer@x' }, 7))), gatedCalls, locked };
+  };
+  let r = run({ pending: [{ threadId: 't1' }], members: ['a@x'], claimsUnavailable: '' });
+  assert.ok(r.r.success && r.r.assigned.length === 1 && r.gatedCalls === 0, 'THE REGRESSION (SP-4): the core called the gated endpoint, which refused the installer');
+  r = run({ pending: [{ threadId: 't1' }], members: ['a@x'], claimsUnavailable: 'timed out' });
+  assert.ok(!r.r.success && /claims could not be read \(timed out\) — nothing was assigned/.test(r.r.error) && r.locked === 0, 'SP-3: unknown claims assign nothing');
+  const core = stripJsComments_(extractRawFunction('Code.js', 'spanishPendingCore_'));
+  assert.ok(/try \{ claims = spanishClaimsMap_\(\); \} catch \(eC\) \{ claimsUnavailable = String\(eC\.message \|\| eC\); \}/.test(core) && /claimsUnavailable: claimsUnavailable/.test(core), 'the list renders and ships the flag');
+  assert.ok(!/getEmployeeInfo_|canSeeSpanishInbox_/.test(core), 'the core carries no caller gate …');
+  const gate = stripJsComments_(extractRawFunction('Code.js', 'getSpanishInboxPending'));
+  assert.ok(/if \(!canSeeSpanishInbox_\(emp\)\) return \{ error: 'Spanish Inbox access required\.' \};\s*return spanishPendingCore_\(days, emp\);/.test(gate), '… the endpoint keeps it (g143)');
+  // The client says so, and the button will not offer an assignment.
+  const mctx = vm.createContext({ String, Number, esc: (x) => String(x).replace(/</g, '&lt;'), icon: () => '' });
+  vm.runInContext(extractFunction('metrics/script_metrics.html', 'spanishClaimsNote_'), mctx);
+  assert.ok(/claims could not be read \(a&lt;b\) — who is working what is unknown, not "nobody"/.test(mctx.spanishClaimsNote_({ claimsUnavailable: 'a<b' })));
+  assert.strictEqual(mctx.spanishClaimsNote_({ claimsUnavailable: '' }), '');
+  vm.runInContext('var empState = { isManager: true }; var SPANISH_STATE = { pendingRes: { claimsUnavailable: "x", members: ["a@x"] } }; function spanishUnclaimedCount_() { return 3; }', mctx);
+  vm.runInContext(extractFunction('metrics/script_metrics.html', 'spanishAutoAssignBtnHtml_'), mctx);
+  const b = mctx.spanishAutoAssignBtnHtml_();
+  assert.ok(/ disabled/.test(b) && /claims could not be read/.test(b) && !/3 unclaimed/.test(b), 'disabled, says why, and no longer advertises "3 unclaimed"');
+});
+
+const c23DrScan_ = (rows, threads, now) => {
+  const sh = drDSheet_(rows);
+  const read = [], audits = [];
+  const ctx = vm.createContext({ String, Number, Object, Math, JSON, Date: Object.assign(function () {}, Date, { now: () => now }), isFinite, console,
+    DR: DR_D_ENUM, DR_HEADERS: new Array(18).fill('h'), DR_MAX_SCAN: 4000, DR_REPLY_SCAN_DAYS: 30, DR_REPLY_SCAN_MAX: 150,
+    DR_REPLY_VERDICTS: ['resolved', 'needs-look'], CONFIG: { TIMEZONE: 'UTC' },
+    getOrCreateDeptRequestsSheet_: () => sh, parseTimestampMs_: (x) => (x ? Date.parse(x + 'Z') : 0),
+    drReplyDirectory_: () => ({ byDept: { billing: { addrs: ['dana@ums.com'], domains: ['ums.com'] } }, names: {} }),
+    drReplyExcludedBase_: () => ({ 'robin@ums.com': 1 }),
+    GmailApp: { getThreadById: (id) => { read.push(id); return threads[id] ? { getMessages: () => threads[id] } : null; } },
+    Utilities: { formatDate: (d) => new Date(d).toISOString().slice(0, 19) },
+    LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
+    sheetSafe_: (x) => x, sheetSafeRows_: (x) => x, writeAuditLog_: (e, a, d, t, adj, h, n) => audits.push(n),
+    drBumpCacheGen_: () => {}, pendingTasksBust_: () => {} });
+  ctx.Date = Date;   // real dates inside the core (the D-2 pin's step); Date.now is pinned below
+  [/const DR_REPLY_HOLD_RE_ = [^\n]+;/, /const DR_REPLY_QUESTION_LINE_RE_ = [^\n]+;/].forEach((re) => vm.runInContext(re.exec(serverSource())[0].replace(/^const /, 'var '), ctx));
+  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyPick_', 'drReplyScanCore_']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const orig = Date.now; Date.now = () => now;
+  try { ctx.drReplyScanCore_(); } finally { Date.now = orig; }
+  return { row: (id) => sh.grid.filter((x) => x[0] === id)[0] };
+};
+test('DR-2 (cycle 23): the LATEST department reply decides — "Done" followed by a question is a look, never a resolve; a resolve is timed at the first answer after the last question (driven pick + scan)', () => {
+  const now = Date.parse('2026-09-28T15:00:00Z');
+  const iso = (h) => new Date(now - h * 3600000).toISOString().slice(0, 19);
+  const msg = (from, h, body) => ({ getFrom: () => from, getDate: () => new Date(now - h * 3600000), getSubject: () => 'Re: L', getHeader: () => '', getPlainBody: () => body });
+  const S = c23DrScan_([
+    drDRow_({ REQ_ID: 'A', BY_ID: 'E1', BY_EMAIL: 'ana@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(6), STATUS: 'open', LABEL: 'L', THREAD_ID: 'tA' }),
+    drDRow_({ REQ_ID: 'B', BY_ID: 'E1', BY_EMAIL: 'ana@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(6), STATUS: 'open', LABEL: 'L', THREAD_ID: 'tB' }),
+  ], {
+    tA: [msg('robin@ums.com', 6, 'original'), msg('dana@ums.com', 4, 'Done.'), msg('dana@ums.com', 2, 'Wait — which patient is this?')],
+    tB: [msg('robin@ums.com', 6, 'original'), msg('dana@ums.com', 5, 'Which TRX?'), msg('dana@ums.com', 4, 'Found it, refunded.'), msg('dana@ums.com', 1, 'All set, thanks again.')],
+  }, now);
+  assert.strictEqual(S.row('A')[DR_D_ENUM.STATUS], 'open', 'THE REGRESSION: the earlier "Done." closed it and the question was never seen');
+  assert.strictEqual(S.row('A')[DR_D_ENUM.REPLY_VERDICT], 'needs-look'); assert.strictEqual(S.row('A')[DR_D_ENUM.REPLIED_AT], iso(2), 'the question is the reply recorded');
+  assert.strictEqual(S.row('B')[DR_D_ENUM.STATUS], 'resolved');
+  assert.strictEqual(S.row('B')[DR_D_ENUM.RESOLVED_AT], iso(4), 'timed at the answer that settled it, not the later "thanks"');
+});
+
+test('DR-1 (cycle 23): on a Gmail thread two requests SHARE, a department reply resolves only the request it names (the resolve link it quotes); one naming neither is a look for both, never a resolve (driven scan + verdict)', () => {
+  const now = Date.parse('2026-09-28T15:00:00Z');
+  const iso = (h) => new Date(now - h * 3600000).toISOString().slice(0, 19);
+  const msg = (from, h, body) => ({ getFrom: () => from, getDate: () => new Date(now - h * 3600000), getSubject: () => 'Re: Close Order', getHeader: () => '', getPlainBody: () => body });
+  const A = 'aaaa-1111', B = 'bbbb-2222';
+  const rows = [
+    drDRow_({ REQ_ID: A, BY_ID: 'E1', BY_EMAIL: 'ana@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(6), STATUS: 'open', LABEL: 'L', THREAD_ID: 'tS' }),
+    drDRow_({ REQ_ID: B, BY_ID: 'E2', BY_EMAIL: 'bo@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(5), STATUS: 'open', LABEL: 'L', THREAD_ID: 'tS' }),
+  ];
+  let S = c23DrScan_(rows.map((r) => r.slice()), { tS: [msg('robin@ums.com', 6, 'x ?resolve=' + A), msg('robin@ums.com', 5, 'y ?resolve=' + B),
+    msg('dana@ums.com', 2, 'Refund issued.\n\nOn Mon Robin wrote:\n> Mark this request resolved: https://app/exec?resolve=' + A)] }, now);
+  assert.strictEqual(S.row(A)[DR_D_ENUM.STATUS], 'resolved', 'the request the reply quotes is resolved');
+  assert.strictEqual(S.row(B)[DR_D_ENUM.STATUS], 'open', 'THE REGRESSION: one reply resolved BOTH requests on the thread');
+  assert.strictEqual(S.row(B)[DR_D_ENUM.REPLY_VERDICT], '', 'and the other is not even marked — the reply was not about it');
+  S = c23DrScan_(rows.map((r) => r.slice()), { tS: [msg('dana@ums.com', 2, 'Refund issued.')] }, now);
+  assert.ok([A, B].every((id) => S.row(id)[DR_D_ENUM.STATUS] === 'open' && S.row(id)[DR_D_ENUM.REPLY_VERDICT] === 'needs-look'), 'a reply naming neither cannot be attributed: a look for both');
+  const one = c23DrScan_([rows[0].slice()], { tS: [msg('dana@ums.com', 2, 'Refund issued.')] }, now);
+  assert.strictEqual(one.row(A)[DR_D_ENUM.STATUS], 'resolved', 'an UNSHARED thread is unchanged — no token needed');
+});
+
+test('RES-1 (cycle 23): the resolve link changes nothing on GET — it shows a confirm button; the sender clicking their own copy is "self" (untimed, counted as manual), never a department response (driven)', () => {
+  // markDeptRequestResolved_: the sender's own click.
+  const sh = drDSheet_([drDRow_({ REQ_ID: 'R1', BY_ID: 'E1', BY_EMAIL: 'Ana@ums.com', TO_DEPT: 'Billing', STATUS: 'open', LABEL: 'L' }),
+    drDRow_({ REQ_ID: 'R2', BY_ID: 'E1', BY_EMAIL: 'ana@ums.com', TO_DEPT: 'Billing', STATUS: 'open', LABEL: 'L' })]);
+  const mctx = vm.createContext({ String, Number, Object, DR: DR_D_ENUM, DR_HEADERS: new Array(18).fill('h'), DR_RESOLVED_VIA_VALUES: ['email', 'app', 'reply', 'self'],
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) }, getOrCreateDeptRequestsSheet_: () => sh,
+    sheetSafe_: (x) => x, drNowTs_: () => 'now', drBumpCacheGen_: () => {}, pendingTasksBust_: () => {}, writeAuditLog_: () => {}, formTokenIsoString_: (x) => String(x) });
+  ['drStatus_', 'drFindRowByReqId_', 'markDeptRequestResolved_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), mctx));
+  assert.strictEqual(JSON.parse(JSON.stringify(mctx.markDeptRequestResolved_('R1', 'ana@ums.com', 'email'))).self, true);
+  assert.strictEqual(sh.grid.filter((x) => x[0] === 'R1')[0][DR_D_ENUM.RESOLVED_VIA], 'self', 'THE REGRESSION: the sender\'s own copy closed it as a timed department response');
+  mctx.markDeptRequestResolved_('R2', 'dana@ums.com', 'email');
+  assert.strictEqual(sh.grid.filter((x) => x[0] === 'R2')[0][DR_D_ENUM.RESOLVED_VIA], 'email', 'a department member\'s click is still a timed response');
+  // The GET page writes nothing.
+  const page = (who, tok, status) => {
+    let marks = 0;
+    const out = {};
+    const c = vm.createContext({ String, JSON, Number,
+      getActiveUserEmail_: () => who, getOrCreateDeptRequestsSheet_: () => ({}),
+      drFindRowByReqId_: (s2, t) => (t === 'R9' ? { row: (() => { const r = new Array(18).fill(''); r[DR_D_ENUM.TO_DEPT] = 'Billing'; r[DR_D_ENUM.STATUS] = status; return r; })() } : null),
+      drStatus_: (r) => r[DR_D_ENUM.STATUS], DR: DR_D_ENUM, formTokenIsoString_: () => '',
+      markDeptRequestResolved_: () => { marks++; return { found: true }; },
+      CN_EMAIL_PALETTE: { accent: 'a', line: 'l', ink: 'i', brand: 'b', muted: 'm' }, esc_: (x) => String(x).replace(/</g, '&lt;'),
+      HtmlService: { createHtmlOutput: (h) => { out.html = h; return { setTitle: () => out }; } } });
+    ['resolvePageHtml_', 'serveResolvePage_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), c));
+    c.serveResolvePage_(tok);
+    return { html: out.html, marks };
+  };
+  let p = page('dana@ums.com', 'R9', 'open');
+  assert.strictEqual(p.marks, 0, 'THE REGRESSION: opening the link resolved the request (a scanner or a preview was enough)');
+  assert.ok(/Mark the Billing request resolved\?/.test(p.html) && /id="rp-go"/.test(p.html) && /confirmDeptRequestResolve\(t\)/.test(p.html), 'a confirm button that calls the endpoint');
+  p = page('dana@ums.com', 'R9', 'resolved'); assert.ok(/Already resolved/.test(p.html) && !/rp-go/.test(p.html));
+  p = page('', 'R9', 'open'); assert.ok(/Sign in to confirm/.test(p.html) && !/rp-go/.test(p.html), 'no button for an unidentified visitor');
+  p = page('dana@ums.com', '"><script>x', 'open'); assert.ok(/Request not found/.test(p.html) && !/<script>x/.test(p.html), 'a token of the wrong shape is never echoed into the page');
+  // The button endpoint.
+  const conf = (who, res) => {
+    const c = vm.createContext({ String, getActiveUserEmail_: () => who, markDeptRequestResolved_: (t, by, via) => Object.assign({ via }, res) });
+    vm.runInContext(extractRawFunction('Code.js', 'confirmDeptRequestResolve'), c);
+    return JSON.parse(JSON.stringify(c.confirmDeptRequestResolve('R9')));
+  };
+  assert.ok(/as your own clear, since you sent it/.test(conf('ana@ums.com', { found: true, already: false, dept: 'Billing', self: true }).message));
+  assert.ok(/Marked resolved/.test(conf('dana@ums.com', { found: true, already: false, dept: 'Billing' }).heading));
+  assert.ok(/Sign in/.test(conf('', {}).heading), 'an unattributed resolve is refused');
+  // 'self' is manual everywhere a duration is read.
+  const src = stripJsComments_(serverSource());
+  assert.ok(/if \(it\.resolvedVia === 'app' \|\| it\.resolvedVia === 'self'\) b\.manualResolved\+\+;/.test(src) && /if \(it\.resolvedVia === 'app' \|\| it\.resolvedVia === 'self'\) manual\+\+;/.test(src), 'both server folds count it manual');
+  const dr = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_deptrequests.html'), 'utf8'));
+  assert.ok(/item\.resolvedVia === 'self' \? 'marked by the sender'/.test(dr) && /r\.resolvedVia === 'app' \|\| r\.resolvedVia === 'self'/.test(dr), 'the card names it and the tile does not time it');
+});
+
+test('DR-3 (cycle 23): every response-time median is a true median — an even count is the mean of the two middle values, an empty set is null (driven + every former upper-middle site)', () => {
+  const ctx = vm.createContext({ Math });
+  vm.runInContext(extractRawFunction('Code.js', 'medianWhole_'), ctx);
+  assert.strictEqual(ctx.medianWhole_([10, 90]), 50, 'THE REGRESSION: two samples of 10 and 90 read 90');
+  assert.strictEqual(ctx.medianWhole_([1, 2, 3]), 2); assert.strictEqual(ctx.medianWhole_([1, 2]), 2, 'rounded to whole minutes');
+  assert.strictEqual(ctx.medianWhole_([]), null); assert.strictEqual(ctx.medianWhole_(null), null);
+  const src = stripJsComments_(serverSource());
+  assert.ok(!/\[Math\.floor\([a-zA-Z.]+\.length \/ 2\)\]/.test(src.replace(/function medianWhole_[\s\S]*?\n\}/, '')), 'no upper-middle median survives on the server');
+  ['medianWhole_(b.durations)', 'medianWhole_(mins)', 'medianWhole_(durations)', 'medianWhole_(bizDurations)'].forEach((c) => assert.ok(src.indexOf(c) >= 0, c));
+  const dr = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_deptrequests.html'), 'utf8'));
+  assert.ok(/resolvedMins\.length % 2 \? resolvedMins\[mm\] : Math\.round\(\(resolvedMins\[mm - 1\] \+ resolvedMins\[mm\]\) \/ 2\)/.test(dr), 'the client tile is the server\'s twin');
 });
 
 
