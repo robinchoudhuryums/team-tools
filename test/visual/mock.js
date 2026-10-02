@@ -282,7 +282,9 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       transferredTo: i === 1 ? 'Billing' : '', resolution: 'Confirmed the order ships Friday; updated the callback number on file.',
       flagType: i === 0 ? 'action' : (i === 1 ? 'training' : ''), resolved: false,
       emailedAt: i === 2 ? ts(todayIso, '10:44:12') : '', emailDepartments: i === 2 ? 'Shipping' : '',
-      subformData: { flags: i === 0 ? ['action'] : [], tags: i === 0 ? ['resupply'] : [], trainingQuestion: i === 1 ? 'Should we escalate mask-fit questions to clinical?' : '' },
+      subformData: Object.assign({ flags: i === 0 ? ['action'] : [], tags: i === 0 ? ['resupply'] : [], trainingQuestion: i === 1 ? 'Should we escalate mask-fit questions to clinical?' : '' },
+        // FORM-3 (cycle 23): the emailed note carries two submitted forms — the server's list + its latest.
+        i === 2 ? { formSubmissions: [{ token: 'tok-fx-1', formType: 'cmn' }, { token: 'tok-fx-2', formType: 'aob' }], formSubmission: { token: 'tok-fx-2', formType: 'aob' } } : {}),
     }, over || {});
   }
 
@@ -1127,7 +1129,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true },
       membersConfigured: 3, threadsScanned: 15, truncated: false,
       vmOn: true, vmCounted: 2, vmSuppressed: 2, vmUnparsed: 0, vmMinSeconds: 5 },
-    getPatientTimeline: { events: [], partial: false, failedSources: [] },
+    getPatientTimeline: { events: [], partial: false, failedSources: [], truncatedSources: [] },
     cnPing: { ok: true },
     getCalendarData: function (year, month) {
       var m2 = String(month).padStart(2, '0');

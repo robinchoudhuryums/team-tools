@@ -2175,6 +2175,11 @@
     letter-spacing: .04em; vertical-align: middle; cursor: pointer;
   }
   .cn-form-pill svg { flex-shrink: 0; }
+  /* FORM-3 (cycle 23) — a note's several form pills stack, one pill wide. */
+  .cn-form-pills {
+    display: inline-flex; flex-direction: column; align-items: stretch; gap: 2px;
+    vertical-align: middle;
+  }
   /* Intake-sourced note chip — a note auto-logged after an intake form send.
      Colored by intake category (PPD blue / PMD orange / PAP purple) to match
      the Intake tab section headers. */
@@ -4917,6 +4922,9 @@ function cnRenderCardCore_(note, expandable) {
       'data-cn-action="view-form" data-token="' + esc(fs.token) + '">' +
       icon('paperclip', 11) + '<span>form' + (formSubs.length > 1 ? ' ' + (i + 1) : '') + '</span></button>';
   }).join('');
+  // Several pills STACK (.cn-form-pills) — side by side they squeezed the
+  // compact card's text column to a word per line.
+  const formIndicatorHtml = formSubs.length > 1 ? '<span class="cn-form-pills">' + formIndicator + '</span>' : formIndicator;
 
   return `
     <div class="cn-card${flagCls}${staleCls}${urgentCls}${pendingCls}" data-note-id="${esc(note.noteId)}">
@@ -4935,7 +4943,7 @@ function cnRenderCardCore_(note, expandable) {
             ? '<span class="cn-pending-badge" title="Saving to server"><span class="cn-pending-dot"></span>Saving</span>'
             : flagBtn('action', 'flag', note.flagType === 'action') +
               flagBtn('training', 'bulb', note.flagType === 'training') +
-              pinBtn + copyBtn + emailBtn + extIndicator + formIndicator +
+              pinBtn + copyBtn + emailBtn + extIndicator + formIndicatorHtml +
               (function () {
                 var urgentBtn = '<button class="cn-act-btn cn-urgent-toggle' + (isUrgent ? ' is-on' : '') +
                   '" title="' + (isUrgent ? 'Remove urgent flag' : 'Mark urgent') +
@@ -8434,6 +8442,7 @@ function cnMgrRenderReadonlyCard_(note) {
   const formPill = mgrFormSubs.map(function (fs, i) {
     return `<button class="cn-form-pill" title="Form received${fs.formType ? ' (' + esc(fs.formType) + ')' : ''} — view submission" data-token="${esc(fs.token)}" data-rep-id="${esc(mgrRepIdForForm)}" onclick="cnMgrViewFormSubmission_(this)">${icon('paperclip', 11)}<span>form${mgrFormSubs.length > 1 ? ' ' + (i + 1) : ''}</span></button>`;
   }).join('');
+  const formPillHtml = mgrFormSubs.length > 1 ? '<span class="cn-form-pills">' + formPill + '</span>' : formPill;
   const urgentCls = cnIsUrgent_(note) ? ' is-urgent' : '';
   return `
     <div class="cn-card${flagCls}${urgentCls}" data-note-id="${esc(note.noteId)}">
@@ -8450,7 +8459,7 @@ function cnMgrRenderReadonlyCard_(note) {
           ${flagPill}
           ${sentPill}
           ${cnExtEmailPillHtml_(note)}
-          ${formPill}
+          ${formPillHtml}
         </div>
       </div>
       ${editor}

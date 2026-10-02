@@ -5843,7 +5843,9 @@ test('FORM-3 (cycle 23): a note with two submitted forms renders two pills, each
   assert.deepStrictEqual(pills.map((p) => p.getAttribute('data-token')), ['tok-A', 'tok-B'], 'THE REGRESSION: only tok-B had a pill');
   assert.deepStrictEqual(pills.map((p) => p.textContent.trim()), ['form 1', 'form 2']);
   assert.ok(/\(cmn\)/.test(pills[0].getAttribute('title')), 'the title names the form type');
+  assert.ok(pills.every((p) => p.parentElement.classList.contains('cn-form-pills')), 'several pills stack in one column — side by side they squeezed the compact card\'s text (measured in cn-log-light-compact)');
   area.innerHTML = h.window.cnRenderCardCore_(Object.assign({}, base, { subformData: { formSubmission: { token: 'tok-old' } } }), false);
   const one = area.querySelectorAll('.cn-form-pill');
   assert.strictEqual(one.length, 1); assert.strictEqual(one[0].textContent.trim(), 'form', 'a note stamped before the list: one pill, labelled as before');
+  assert.ok(!one[0].parentElement.classList.contains('cn-form-pills'), 'and unwrapped, as before');
 });
