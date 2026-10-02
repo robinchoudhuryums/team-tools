@@ -13207,7 +13207,7 @@ console.log('\nround-2 pilot — Spanish claim/assign · scheduled-call reminder
     assert.ok(auditCall && /'id=' \+ id\)/.test(auditCall[0]) && !/label/i.test(auditCall[0]),
       'the audit row carries the id ONLY — never the (PHI-adjacent) label');
     const mine = strip(extractRawFunction('Code.js', 'schedReadMine_'));
-    assert.ok(/SCHED_CALLS_SCAN/.test(mine), 'bounded tail read');
+    assert.ok(/schedSpanStartRow_\([\s\S]*SCHED_STATE_SPAN_DAYS/.test(mine), 'bounded read — by creation TIME, not a row-count tail (CN-1, cycle 23)');
     assert.ok(/\.trim\(\)\.toLowerCase\(\) !== 'active'/.test(mine), 'status normalized in the ONE reader (the DR.STATUS lesson, from birth)');
     const st = strip(extractRawFunction('Code.js', 'setScheduledCallStatus'));
     assert.ok(/st !== 'done' && st !== 'cancelled'/.test(st), 'status whitelist');
@@ -19070,8 +19070,9 @@ test('A4-1: managerParseBreakSlots_ accepts the list, keeps the legacy pair, ref
 
 test('C5 (cycle 22): the retention purge never asks Sheets to delete every non-frozen row — a full grid purged whole loses nothing it did not count (driven)', () => {
   const ctx = vm.createContext({ Date, Math, String, Number, isNaN, isFinite, parseInt, CONFIG: { TIMEZONE: 'America/Chicago' },
-    Utilities: { parseDate: () => { throw new Error('use Date.parse'); } } });
-  ['parseRetentionDateMs_', 'contiguousRowRunsDesc_', 'purgeSheetRowsOlderThan_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+    // FORM-4 (cycle 23): no Date.parse fallback any more — the fake parses the two written shapes.
+    Utilities: { parseDate: (s) => new Date(Date.parse(s.length === 10 ? s + 'T00:00:00' : s)) } });
+  ['parseRetentionDateMs_', 'retentionStampPattern_', 'contiguousRowRunsDesc_', 'purgeSheetRowsOlderThan_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
   // A GRID with no spare rows: 1 frozen header + N data rows, maxRows = 1 + N.
   // Like Sheets, it refuses the delete that would leave no non-frozen row.
   const mk = (n, oldCount) => {
@@ -20278,7 +20279,7 @@ test('PR4-1: server contract — 19 trailing-column headers ↔ CO indices, vali
   const rowObj = stripJsComments_(extractRawFunction('Code.js', 'coachRowToObj_'));
   ['CO.REP_RESPONSE', 'CO.FOLLOW_UP_AT', 'CO.NUDGED_AT', 'CO.NOTE_DATE', 'CO.QA_FILE_ID'].forEach((k) => assert.ok(rowObj.indexOf(k) > -1, 'coachRowToObj_ reads ' + k));
   const create = stripJsComments_(extractRawFunction('Code.js', 'createCoaching'));
-  const appendLit = /appendRow\(sheetSafeRow_\(\[([\s\S]*?)\]\)\)/.exec(create)[1];
+  const appendLit = /appendRowsTextSafe_\(getOrCreateEmpDocSheet_\(COACH_TAB, COACH_HEADERS\), \[\[([\s\S]*?)\]\], COACH_TEXT_IDX\)/.exec(create)[1];   // HR-1 (cycle 23): '@' text columns
   assert.strictEqual(appendLit.split(',').filter((x) => x.trim()).length, headers.length, 'createCoaching appends a full-width row (a short row would leave FollowUpAt/NoteDate/QaFileId in the wrong cells)');
   assert.ok(/v\.item\.followUpAt, '', v\.item\.noteDate, v\.item\.qaFileId/.test(appendLit), 'followUpAt / noteDate / qaFileId land in their own trailing cells (NudgedAt starts blank)');
   // Validate: the three new fields are optional, normalized, and bounded.
@@ -20292,7 +20293,7 @@ test('PR4-1: server contract — 19 trailing-column headers ↔ CO indices, vali
   const ack = stripJsComments_(extractRawFunction('Code.js', 'acknowledgeCoaching'));
   const iAlready = ack.indexOf("found.item.status === 'acknowledged') return { success: true, alreadyAcknowledged: true");
   const iVoid = ack.indexOf("found.item.status === 'void') return { success: false");
-  const iReply = ack.indexOf('CO.REP_RESPONSE + 1).setValue(sheetSafe_(reply))');
+  const iReply = ack.indexOf("CO.REP_RESPONSE + 1).setNumberFormat('@').setValue(sheetText_(reply))");   // HR-1: a '@' column
   assert.ok(iAlready > -1 && iVoid > -1 && iReply > -1 && iAlready < iReply && iVoid < iReply, 'reply write sits after both terminal-state guards');
   assert.ok(/reply\.length > COACH_RESPONSE_MAX\) return \{ success: false/.test(ack), 'the reply is bounded by name');
   assert.ok(/notifyAfter = function \(\) \{ notifyManagerOfCoachingAck_\(found\.item, emp, !!reply\); \}/.test(ack), 'the manager ack mail is deferred past the lock and says whether a reply exists (M-7)');
@@ -26952,11 +26953,12 @@ test('F3 (rewritten BEHAVIOURAL, F-52): archiveSheetRowsOlderThan_ really stops 
   const sb = buildSandbox([]);
   sb.CONFIG = { TIMEZONE: 'America/Chicago' };
   sb.CN_HEADERS = ['A', 'B'];
-  sb.Utilities = { parseDate: () => { throw new Error('use Date.parse'); } };
+  sb.Utilities = { parseDate: (s) => new Date(Date.parse(s)) };   // FORM-4: the written shape only, no fallback
   let flushes = 0;
   sb.SpreadsheetApp = { flush: () => { flushes++; } };
   ['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), sb));   // S2 — the real helpers
   vm.runInContext(extractRawFunction('Code.js', 'parseRetentionDateMs_'), sb, { filename: 'Code.js#parseRetentionDateMs_' });
+  vm.runInContext(extractRawFunction('Code.js', 'retentionStampPattern_'), sb);
   vm.runInContext(extractRawFunction('Code.js', 'archiveSheetRowsOlderThan_'), sb, { filename: 'Code.js#archiveSheetRowsOlderThan_' });
 
   // A source tab of 1 header + 30 old rows + 3 recent ones.
@@ -27395,14 +27397,17 @@ test('S2: every raw plain-text write sits after a setNumberFormat(\'@\') in its 
       appenders.push(name);
       const lAt = body.indexOf('waitLock(');
       if (lAt < 0 || lAt > aAt) bad.push(name + ': appendRowsTextSafe_ needs the ScriptLock held (getLastRow() + 1)');
-      if (!/appendRowsTextSafe_\([^;]*?, QA_[A-Z_]+_TEXT_IDX\)/.test(body)) bad.push(name + ': pass the tab\'s ONE _TEXT_IDX list');
+      if (!/appendRowsTextSafe_\([^;]*?, [A-Z_]+_TEXT_IDX\)/.test(body)) bad.push(name + ': pass the tab\'s ONE _TEXT_IDX list');
     }
   }
   // The guarded set, named — a new raw-text writer must be added here on purpose.
-  assert.deepStrictEqual(uses.sort(), ['kbImportDataTable', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad'].sort(),
-    'the raw plain-text writers are exactly the known four');
-  assert.deepStrictEqual(appenders.sort(), ['qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings'].sort(),
-    'the plain-text appenders are exactly the five QA writers');
+  // Cycle 23 HR-1 + CN-7 added the coaching/doc text columns and the note edit.
+  assert.deepStrictEqual(uses.sort(), ['acknowledgeCoaching', 'kbImportDataTable', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad',
+    'updateCallNote', 'voidCoaching', 'voidDoc'].sort(),
+    'the raw plain-text writers are exactly the known eight');
+  assert.deepStrictEqual(appenders.sort(), ['createCoaching', 'issueDoc', 'qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings',
+    'submitCallNote'].sort(),
+    'the plain-text appenders are exactly the five QA writers, plus the coaching, doc and note creators (cycle 23 HR-1 + CN-7)');
   assert.deepStrictEqual(bad, [], bad.join('\n'));
 });
 
@@ -32696,6 +32701,194 @@ test('MET2-2 (cycle 23): the inbound-volume average leaves company holidays out 
   assert.strictEqual(after.weekdays, 1, 'THE REGRESSION: the holiday\'s one call pulled the average down');
   assert.deepStrictEqual(Array.from(after.slots), [0, 2]);
   assert.ok(/holidays: companyHolidayMap_\(fromIso, toIso\)/.test(serverSource()), 'the endpoint passes the ONE calendar');
+});
+
+
+console.log('\ncycle 23 Batch 7a — forms and call-note integrity');
+test('FORM-1 (cycle 23): a token or submission row fetched by index must still carry its token — a row that moved is located once more, then refused (driven)', () => {
+  const ctx = vm.createContext({ String, FT: { TOKEN: 0 }, FS: { TOKEN: 0 }, FS_HEADERS: ['Token', 'x'] });
+  ['formLocatedRowIs_', 'findFormTokenRow_', 'findFormSubmissionRow_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  // A fake whose column scan sees the rows BEFORE a purge, and whose row
+  // fetch sees them after (`shiftFetches` times): row 3 then holds another token.
+  const mk = (rows, shiftFetches) => {
+    let fetches = 0, scans = 0;
+    return {
+      get scans() { return scans; },
+      getLastRow: () => rows.length + 1,
+      getLastColumn: () => 2,
+      getRange: (r, c, n) => ({ getValues: () => {
+        if (n > 1 || (c === 1 && n === rows.length)) { scans++; return rows.map((x) => [x[0]]); }
+        fetches++;
+        const after = fetches <= shiftFetches ? rows.filter((x, i) => i !== 0) : rows;
+        return [after[r - 2] || ['', '']];
+      } }),
+    };
+  };
+  const rows = [['t-purged', 'old'], ['t-mine', 'MY PREFILL'], ['t-other', 'OTHER PATIENT']];
+  const once = mk(rows, 1);
+  const hit = ctx.findFormTokenRow_(once, 't-mine');
+  assert.ok(hit && hit.row[1] === 'MY PREFILL', 'THE REGRESSION: the first fetch read t-other\'s row; the re-check located it again');
+  assert.strictEqual(once.scans, 2, 'located twice');
+  assert.strictEqual(ctx.findFormTokenRow_(mk(rows, 9), 't-mine'), null, 'a row that keeps moving is refused, never served');
+  assert.strictEqual(ctx.findFormTokenRow_(mk(rows, 0), 't-mine').row[1], 'MY PREFILL', 'a still table: one locate');
+  assert.strictEqual(ctx.findFormSubmissionRow_(mk(rows, 9), 't-mine'), null, 'the submission lookup re-checks the same way');
+  assert.strictEqual(ctx.findFormSubmissionRow_(mk(rows, 1), 't-mine').row[1], 'MY PREFILL');
+  assert.strictEqual(ctx.formLocatedRowIs_(['t-other'], 0, 't-mine'), false);
+});
+
+test('FORM-2 (cycle 23): no form token reaches the shared AuditLog or the log in full — the witness row and the failure log name a reference', () => {
+  const sub = stripJsComments_(extractRawFunction('Code.js', 'submitFormByToken'));
+  assert.ok(/'FormSubmissionReceived', '', '', false, 0,\s*'tokenRef=' \+ formTokenRef_\(token\)/.test(sub), 'the witness row carries the reference');
+  assert.ok(/console\.warn\('submitFormByToken failed \(tokenRef=' \+ formTokenRef_\(token\)/.test(sub), 'a failed submit (token still live) logs the reference');
+  const all = stripJsComments_(serverSource());
+  assert.ok(!/['(]token=' \+ (token|t)\b/.test(all), 'no server line writes a bare "token=" + the token');
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/indexOf\('tokenRef=' \+ formTokenRef_\(token\)\)/.test(tests), 'the suite\'s witness cleanup matches the row as it is now written');
+});
+
+test('FORM-3 (cycle 23): every form submitted on a note is kept and shown — a second no longer replaces the first (driven)', () => {
+  const ctx = vm.createContext({ Array });
+  vm.runInContext(extractRawFunction('Code.js', 'formSubmissionsWith_'), ctx);
+  const a = { token: 'A', formType: 'f1' }, b = { token: 'B', formType: 'f2' };
+  const one = ctx.formSubmissionsWith_({}, a);
+  const two = ctx.formSubmissionsWith_({ formSubmissions: one, formSubmission: a }, b);
+  assert.deepStrictEqual(Array.from(two, (x) => x.token), ['A', 'B'], 'THE REGRESSION: the second submit overwrote A');
+  assert.deepStrictEqual(Array.from(ctx.formSubmissionsWith_({ formSubmission: a }, b), (x) => x.token), ['A', 'B'], 'a note stamped before the list seeds it from its single slot');
+  assert.deepStrictEqual(Array.from(ctx.formSubmissionsWith_({ formSubmissions: two }, { token: 'A', formType: 'f1b' }), (x) => x.token + x.formType), ['Bf2', 'Af1b'], 'a re-stamp of one token replaces its own entry');
+  const sub = stripJsComments_(extractRawFunction('Code.js', 'submitFormByToken'));
+  assert.ok(/subformData\.formSubmissions = formSubmissionsWith_\(subformData, sub\);\s*subformData\.formSubmission = sub;/.test(sub), 'the stamp keeps the list and the latest');
+  const cn = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  const sb = buildSandbox([]);
+  vm.runInContext(extractFnFrom(cn, 'cnFormSubsOf_'), sb);
+  assert.deepStrictEqual(Array.from(sb.cnFormSubsOf_({ subformData: { formSubmissions: [a, {}, b] } }), (x) => x.token), ['A', 'B']);
+  assert.deepStrictEqual(Array.from(sb.cnFormSubsOf_({ subformData: { formSubmission: a } }), (x) => x.token), ['A'], 'an old note still shows its one form');
+  assert.strictEqual(sb.cnFormSubsOf_({}).length, 0);
+  assert.strictEqual((cn.match(/= cnFormSubsOf_\(note\)/g) || []).length, 2, 'the rep card and the manager card both render the list');
+  assert.ok(!/subformData\.formSubmission\)/.test(cn), 'no renderer reads the single slot directly');
+});
+
+test('FORM-4 (cycle 23): a retention cell is parsed only in the shapes the app writes — "9/30" is never 2001, so it is never purged (driven)', () => {
+  const calls = [];
+  const ctx = vm.createContext({ String, Date, isFinite, CONFIG: { TIMEZONE: 'America/Chicago' },
+    Utilities: { parseDate: (s, tz, p) => { calls.push(p); return new Date(Date.parse(s.length === 10 ? s + 'T00:00:00Z' : s + 'Z')); } } });
+  ['parseRetentionDateMs_', 'retentionStampPattern_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  ['9/30', 'Sept 30', '30 Sep', '2026/09/30', 'call back 9/30', '2026-09-30 10:00:00', '1'].forEach((v) =>
+    assert.strictEqual(ctx.parseRetentionDateMs_(v), null, 'THE REGRESSION: ' + JSON.stringify(v) + ' read as an old date and deleted'));
+  assert.strictEqual(ctx.parseRetentionDateMs_('2026-09-30T10:00:00'), Date.UTC(2026, 8, 30, 10), 'the written stamp');
+  assert.strictEqual(ctx.parseRetentionDateMs_('2026-09-30'), Date.UTC(2026, 8, 30), 'the Timesheet / note date column (the archive tiers share this reader)');
+  assert.deepStrictEqual(calls, ["yyyy-MM-dd'T'HH:mm:ss", 'yyyy-MM-dd'], 'each shape with its own pattern');
+  const d = new Date(5);
+  assert.strictEqual(ctx.parseRetentionDateMs_(d), 5, 'a coerced Date still reads');
+  assert.strictEqual(ctx.parseRetentionDateMs_(''), null);
+  assert.ok(!/Date\.parse/.test(stripJsComments_(extractRawFunction('Code.js', 'parseRetentionDateMs_'))), 'no lenient fallback');
+});
+
+test('FORM-5 (cycle 23): the email states the configured link life, and a submission notice never goes to a rep who has left (driven)', () => {
+  const ctx = vm.createContext({ Number, Math, String });
+  ['formLinkExpiryPhrase_', 'formNotifyRoute_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  assert.strictEqual(ctx.formLinkExpiryPhrase_(48), '48 hours');
+  assert.strictEqual(ctx.formLinkExpiryPhrase_(1), '1 hour');
+  assert.strictEqual(ctx.formLinkExpiryPhrase_(undefined), '72 hours', 'unset reads as the CONFIG default createFormToken uses');
+  const all = stripJsComments_(serverSource());
+  assert.ok(!/expire in 72 hours/.test(all), 'THE REGRESSION: three email bodies said 72 hours whatever the setting');
+  assert.strictEqual((all.match(/formLinkExpiryPhrase_\(CONFIG\.FORM_TOKEN_EXPIRY_HOURS\)/g) || []).length, 3, 'the HTML block and both plain-text bodies read it');
+  const r = ctx.formNotifyRoute_;
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r('Rep@x.com ', ['rep@x.com'], ['m@x.com']))), { to: ['Rep@x.com'], rerouted: false }, 'a rostered creator is mailed');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r('gone@x.com', ['rep@x.com'], ['m@x.com', 'n@x.com']))), { to: ['m@x.com', 'n@x.com'], rerouted: true }, 'THE REGRESSION: an offboarded creator\'s mailbox got the PHI form');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r('', ['rep@x.com'], ['m@x.com']))), { to: [], rerouted: false }, 'no creator, no notice (as before)');
+  const sub = stripJsComments_(extractRawFunction('Code.js', 'submitFormByToken'));
+  assert.ok(/const fr = formNotifyTargets_\(failNotify\.createdBy\);/.test(sub) && /const nr = formNotifyTargets_\(notifyPayload\.createdBy\);/.test(sub), 'both notices route');
+  const tgt = stripJsComments_(extractRawFunction('Code.js', 'formNotifyTargets_'));
+  assert.ok(/empRosterEmail_\(roster\[i\]\)/.test(tgt) && /getManagerEmails_\(\)/.test(tgt), 'over the ONE roster predicate and MANAGER_EMAILS');
+});
+
+test('CN-1 (cycle 23): a reminder is read by creation TIME, so one set weeks ahead never scrolls out behind the team\'s newer rows (driven)', () => {
+  const NOW = Date.UTC(2026, 9, 2);
+  const ctx = vm.createContext({ String, Number, Math, Date: { now: () => NOW }, SC: { ID: 0, EMP_ID: 1, WHEN_MS: 2, LEAD_MIN: 3, LABEL: 4, STATUS: 5, CREATED_MS: 6 },
+    SCHED_STATE_SPAN_DAYS: 90 });
+  ['schedSpanStartRow_', 'schedReadMine_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  const day = 86400000;
+  const rows = [['old', 'E1', NOW - 50 * day, 5, 'ancient', 'active', NOW - 200 * day],
+    ['mine', 'E1', NOW + 10 * day, 5, 'set 40 days ago', 'active', NOW - 40 * day]];
+  for (let i = 0; i < 2500; i++) rows.push(['x' + i, 'E' + (i % 9 + 2), NOW + day, 5, 'l', 'active', NOW - 30 * day + i]);
+  const reads = [];
+  const sh = { getLastRow: () => rows.length + 1,
+    getRange: (r, c, n, w) => { reads.push([r, c, n, w]); return { getValues: () => rows.slice(r - 2, r - 2 + n).map((x) => (w === 1 ? [x[c - 1]] : x.slice(0, w))) }; } };
+  const mine = ctx.schedReadMine_(sh, 'E1');
+  assert.deepStrictEqual(Array.from(mine, (m) => m.id), ['mine'], 'THE REGRESSION: 2,500 newer rows pushed it out of a 2,000-row tail');
+  assert.strictEqual(mine[0].rowIndex, 3, 'its LIVE row, for the status write');
+  assert.deepStrictEqual(Array.from(reads[0]), [2, 7, rows.length, 1], 'one CreatedAtMs column read');
+  assert.strictEqual(reads[1][0], 3, 'then the span from the first row inside it');
+  assert.strictEqual(ctx.schedSpanStartRow_([[NOW - 200 * day], [''], [NOW]], NOW - 90 * day), 3, 'a row with no stamp is read, not skipped');
+  assert.strictEqual(ctx.schedSpanStartRow_([[NOW]], NOW - 90 * day), 2, 'nothing old: the whole tab');
+  assert.ok(/const SCHED_STATE_SPAN_DAYS = SCHED_MAX_DAYS_AHEAD \+ \d+;/.test(codeSrc), 'the span outlasts the furthest a reminder may be set');
+  assert.ok(!/SCHED_CALLS_SCAN/.test(codeSrc), 'the row-count tail is gone');
+});
+
+test('CN-2 (cycle 23): a note whose time cannot be read is not self-deletable — the window is never skipped (driven)', () => {
+  const ctx = vm.createContext({ Math, isFinite });
+  vm.runInContext(extractRawFunction('Code.js', 'cnDeleteWindowError_'), ctx);
+  const f = ctx.cnDeleteWindowError_;
+  assert.ok(/could not be read/.test(f(null, 1e12, 300)), 'THE REGRESSION: an unreadable stamp skipped the window — any age deletable');
+  assert.ok(/could not be read/.test(f(NaN, 1e12, 300)));
+  assert.strictEqual(f(1e12 - 60000, 1e12, 300), null, 'inside the window');
+  assert.ok(/within 5 minutes/.test(f(1e12 - 301000, 1e12, 300)), 'outside it');
+  const del = stripJsComments_(extractRawFunction('Code.js', 'deleteCallNote'));
+  assert.ok(/const windowErr = cnDeleteWindowError_\(noteMs, Date\.now\(\), CONFIG\.CALL_NOTES\.DELETE_WINDOW_SECONDS\);\s*if \(windowErr\) return/.test(del)
+    && del.indexOf('windowErr') < del.indexOf('sheet.deleteRow('), 'the endpoint refuses before it deletes');
+});
+
+test('CN-4 (cycle 23): when a later form link fails, the links already made for that email are withdrawn', () => {
+  const send = stripJsComments_(extractRawFunction('Code.js', 'sendExternalEmail'));
+  const fail = /if \(!tokenResult\.success\) \{([\s\S]*?)return \{ success: false, error: 'Failed to create form link/.exec(send);
+  assert.ok(fail && /formTokensVoid_\(formLinks\.map\(function \(fl\) \{ return fl\.token; \}\), emp,/.test(fail[1]), 'THE REGRESSION: the earlier links stayed live and unsent');
+  const v = stripJsComments_(extractRawFunction('Code.js', 'formTokensVoid_'));
+  assert.ok(/function formTokensVoid_\(tokens, emp, reason\)/.test(v) && /'; reason=' \+ \(reason \|\| 'the email carrying it failed to send'\)/.test(v), 'the audit row says why');
+});
+
+test('CN-5 (cycle 23): the patient timeline reads the archive and says when a stream was capped (driven)', () => {
+  const ctx = vm.createContext({ String });
+  vm.runInContext(extractRawFunction('Code.js', 'buildPatientTimeline_'), ctx);
+  const ev = ctx.buildPatientTimeline_([{ noteId: 'n1', timestamp: '2025-01-01T09:00:00', patientAndTrx: 'TRX-1', _archived: true },
+    { noteId: 'n2', timestamp: '2026-09-01T09:00:00', patientAndTrx: 'TRX-1' }], [], [], 'trx-1');
+  assert.deepStrictEqual(Array.from(ev, (e) => e.noteId + ':' + e.archived), ['n2:false', 'n1:true'], 'an archived note is on the timeline, marked');
+  const tl = stripJsComments_(extractRawFunction('Code.js', 'getPatientTimeline'));
+  assert.ok(/searchMyCallNotes\(t, 'trx', null, false, true\)/.test(tl), 'THE REGRESSION: the live tab only');
+  assert.ok(/partial: failedSources\.length > 0 \|\| truncatedSources\.length > 0/.test(tl), 'a capped stream is partial');
+  const srch = stripJsComments_(extractRawFunction('Code.js', 'searchMyCallNotes'));
+  assert.ok(/const truncated = results\.length > 200;\s*if \(truncated\) results\.length = 200;/.test(srch), 'the search says it was capped');
+  const sb = buildSandbox(['script_icons.html', 'script_core.html']);
+  const cn = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  ['cnTimelineRowHtml_', 'cnBuildTimelineHtml_'].forEach((f) => vm.runInContext(extractFnFrom(cn, f), sb));
+  const html = sb.cnBuildTimelineHtml_({ trx: 'TRX-1', partial: true, failedSources: [], truncatedSources: ['call notes (newest 200 shown)'],
+    events: [{ kind: 'note', caller: 'C', archived: true, ts: 't' }] });
+  assert.ok(/Incomplete — only part shown: call notes \(newest 200 shown\)\./.test(html), 'the cap is said');
+  assert.ok(/Call note · C · archived/.test(html), 'and an archived note is marked');
+  const both = sb.cnBuildTimelineHtml_({ trx: 'T', partial: true, failedSources: ['sent forms'], truncatedSources: ['call notes (newest 200 shown)'], events: [] });
+  assert.ok(/could not load: sent forms\. Retry for the full picture\. Only part shown/.test(both), 'both together');
+  assert.ok(!/Incomplete/.test(sb.cnBuildTimelineHtml_({ trx: 'T', partial: false, events: [] })), 'a whole read has no banner');
+});
+
+test('HR-1 + CN-7 (cycle 23): the free-text columns of notes, documents and coaching are written as TEXT — the doc hash survives a date-shaped title', () => {
+  const ctx = vm.createContext({});
+  ['CN', 'ED', 'CO'].forEach((n) => vm.runInContext(new RegExp('const ' + n + ' = \\{[\\s\\S]*?\\};').exec(codeSrc)[0].replace('const ', 'var '), ctx));
+  ['CN_TEXT_IDX', 'EMPDOC_TEXT_IDX', 'COACH_TEXT_IDX'].forEach((n) => vm.runInContext(new RegExp('const ' + n + ' = \\[[^\\]]*\\];').exec(codeSrc)[0].replace('const ', 'var '), ctx));
+  const name = (h, idx) => idx.map((i) => arrayLiteral_(codeSrc, h)[i]).join(',');
+  assert.strictEqual(name('CN_HEADERS', ctx.CN_TEXT_IDX), 'Callback,Caller,Relationship,PatientAndTRX,Issue,TransferredTo,Resolution', 'the note text columns, by header');
+  assert.strictEqual(name('EMPDOC_HEADERS', ctx.EMPDOC_TEXT_IDX), 'Title,BodyMd,VoidReason', 'the doc text the content hash covers');
+  assert.strictEqual(name('COACH_HEADERS', ctx.COACH_TEXT_IDX), 'PatientTRX,WhatHappened,WhatShould,VoidReason,RepResponse');
+  assert.deepStrictEqual(Array.from(ctx.CN_TEXT_IDX, (x, i) => x - ctx.CN_TEXT_IDX[0] - i), [0, 0, 0, 0, 0, 0, 0], 'contiguous — the edit writes them as one range');
+  const submit = stripJsComments_(extractRawFunction('Code.js', 'submitCallNote'));
+  assert.ok(/const newRowIndex = appendRowsTextSafe_\(sheet, \[row\], CN_TEXT_IDX\);/.test(submit) && !/appendRow\(/.test(submit), 'THE REGRESSION (CN-7): a callback "0123" lost its zero');
+  const upd = stripJsComments_(extractRawFunction('Code.js', 'updateCallNote'));
+  assert.ok(/getRange\(located\.rowIndex, CN\.CALLBACK \+ 1, 1, CN_TEXT_IDX\.length\)\.setNumberFormat\('@'\)\s*\.setValues\(sheetTextRows_\(/.test(upd), 'the edit re-asserts the format on the cells it writes');
+  assert.ok(/appendRowsTextSafe_\(getOrCreateEmpDocSheet_\(EMPDOC_TAB, EMPDOC_HEADERS\), \[\[[\s\S]*?\]\], EMPDOC_TEXT_IDX\)/.test(stripJsComments_(extractRawFunction('Code.js', 'issueDoc'))),
+    'THE REGRESSION (HR-1): a title like "3/4" was stored as a Date and the doc verified as tampered');
+  // The '@' write itself is driven by the S2 appendRowsTextSafe_ pin; the
+  // Sheets coercion it prevents exists only in a real sheet, so the round
+  // trip is the editor suite's.
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  assert.ok(/_integrationTest\('cn_textColumnsKeepTheirText',\s*test_cn_textColumnsKeepTheirText\);/.test(tests), 'the editor suite drives a real round trip');
 });
 
 

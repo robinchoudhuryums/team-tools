@@ -5831,3 +5831,19 @@ test('TC-02: a day without that break is plainly an add; a reply for a date the 
   $('adj-add').click();
   assert.strictEqual(batch().length, 2); assert.strictEqual(batch()[1].breakIntent, undefined, 'and carries none');
 });
+
+test('FORM-3 (cycle 23): a note with two submitted forms renders two pills, each opening its own submission — the second no longer hides the first', () => {
+  const h = boot(); const area = mount_(h, 'view-area');
+  const base = { noteId: 'n1', timestamp: '2026-06-15T10:00:00', dateLocal: '2026-06-15', callback: '', caller: 'C', relationship: '',
+    patientAndTrx: 'P', issue: 'i', transferredTo: '', resolution: '', flagType: '', resolved: false, emailedAt: '', emailDepartments: '', subform: '' };
+  area.innerHTML = h.window.cnRenderCardCore_(Object.assign({}, base, { subformData: {
+    formSubmissions: [{ token: 'tok-A', formType: 'cmn' }, { token: 'tok-B', formType: 'aob' }],
+    formSubmission: { token: 'tok-B', formType: 'aob' } } }), false);
+  const pills = Array.from(area.querySelectorAll('.cn-form-pill'));
+  assert.deepStrictEqual(pills.map((p) => p.getAttribute('data-token')), ['tok-A', 'tok-B'], 'THE REGRESSION: only tok-B had a pill');
+  assert.deepStrictEqual(pills.map((p) => p.textContent.trim()), ['form 1', 'form 2']);
+  assert.ok(/\(cmn\)/.test(pills[0].getAttribute('title')), 'the title names the form type');
+  area.innerHTML = h.window.cnRenderCardCore_(Object.assign({}, base, { subformData: { formSubmission: { token: 'tok-old' } } }), false);
+  const one = area.querySelectorAll('.cn-form-pill');
+  assert.strictEqual(one.length, 1); assert.strictEqual(one[0].textContent.trim(), 'form', 'a note stamped before the list: one pill, labelled as before');
+});

@@ -268,11 +268,13 @@ function issueDoc(payload) {
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
     const fieldsRaw = v.doc.fields.length ? JSON.stringify(v.doc.fields) : '';
     const contentHash = empDocContentHash_(v.doc.bodyMd, v.doc.title, v.doc.docType, v.doc.empId, fieldsRaw);
-    getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS).appendRow(sheetSafeRow_([
+    // HR-1 (cycle 23): the title and body land in '@' cells (EMPDOC_TEXT_IDX)
+    // — the hash above is over the TEXT, so the cell must keep the text.
+    appendRowsTextSafe_(getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS), [[
       docId, v.doc.empId, v.doc.docType, v.doc.title, v.doc.bodyMd, contentHash,
       v.doc.requiresSignature ? 'TRUE' : 'FALSE', v.doc.status,
       String(callerEmp.email).toLowerCase().trim(), ts, v.doc.dueAt, '', '', fieldsRaw, '',
-    ]));
+    ]], EMPDOC_TEXT_IDX);
     writeAuditLog_(callerEmp, 'EmpDocIssue', fmtDate_(now), '', false, 0,
       'docId=' + docId + '; empId=' + v.doc.empId + '; type=' + v.doc.docType + '; status=' + v.doc.status, callerEmp.email);
     // Only a RELEASED (issued) doc is visible to the employee — drafts stay silent.
@@ -364,7 +366,7 @@ function voidDoc(docId, reason) {
     if (found.doc.status === 'void') return { success: true, alreadyVoid: true };
     const sheet = getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS);
     sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue(sheetSafe_('void'));
-    sheet.getRange(found.rowIdx, ED.VOID_REASON + 1).setValue(sheetSafe_(String(reason || '').substring(0, 500)));
+    sheet.getRange(found.rowIdx, ED.VOID_REASON + 1).setNumberFormat('@').setValue(sheetText_(String(reason || '').substring(0, 500)));   // HR-1: a '@' column
     const now = new Date();
     writeAuditLog_(callerEmp, 'EmpDocVoid', fmtDate_(now), '', false, 0,
       'docId=' + found.doc.docId, callerEmp.email);

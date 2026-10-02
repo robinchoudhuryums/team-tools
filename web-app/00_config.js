@@ -568,6 +568,10 @@ const CN_HEADERS = [
   'EmailedAt','EmailDepartments',
   'Subform','SubformData',
 ];
+// CN-7 (cycle 23) — the free-text note columns are written into PLAIN-TEXT
+// ('@') cells: Sheets parsed a callback "0123…" as a number (the zero lost) and
+// "12/5" as a Date. One list, read by every writer of these columns.
+const CN_TEXT_IDX = [CN.CALLBACK, CN.CALLER, CN.RELATIONSHIP, CN.PATIENT_TRX, CN.ISSUE, CN.TRANSFERRED_TO, CN.RESOLUTION];
 const CN_FLAG_TYPES = ['action','training','review'];
 // Round 2 · 8e — extended flag set for the multi-select toolbar. 'urgent'
 // is new; pin lives separately in subformData.pinned (subject to its own
@@ -1456,10 +1460,13 @@ const SPANISH_PENDING_IDS_TTL = 900;   // 15 min — a reply-resolved request le
 // background push — a closed browser gets nothing. The reminder serves a rep
 // with the app open, which is the pilot's case (the pinned pop-out).
 const SCHED_CALLS_TAB = 'ScheduledCalls';
-const SCHED_CALLS_SCAN = 2000;      // bounded tail — the read stays cheap
 const SCHED_ACTIVE_CAP = 20;        // per-rep active bound (stale ones surface in the list)
 const SCHED_LABEL_MAX = 300;
 const SCHED_MAX_DAYS_AHEAD = 60;
+// CN-1 (cycle 23) — how far back the reminder read reaches, by CREATION time:
+// past the furthest a reminder may be set ahead, plus 30 days for one left
+// active (overdue, not marked done) to stay on the rep's list.
+const SCHED_STATE_SPAN_DAYS = SCHED_MAX_DAYS_AHEAD + 30;
 const SC = { ID: 0, EMP_ID: 1, WHEN_MS: 2, LEAD_MIN: 3, LABEL: 4, STATUS: 5, CREATED_MS: 6 };
 // ── Per-rep scratchpad (pilot round 3 #5 — server-backed sticky notes) ──────
 // Personal scratch space that follows the rep across browsers/devices —
@@ -2323,6 +2330,11 @@ const EMPDOC_SIG_TAB = 'DocSignatures';
 const EMPDOC_HEADERS = ['DocId','EmpId','DocType','Title','BodyMd','ContentHash','RequiresSignature','Status','IssuedBy','IssuedAt','DueAt','SignedAt','VoidReason','FieldsJson','ResponsesJson'];
 const EMPDOC_SIG_HEADERS = ['DocId','EmpId','SignedAt','SignatureDataUrl','AckVersion','SignatureHash','Certificate'];
 const ED = { DOC_ID:0, EMP_ID:1, DOC_TYPE:2, TITLE:3, BODY_MD:4, CONTENT_HASH:5, REQUIRES_SIG:6, STATUS:7, ISSUED_BY:8, ISSUED_AT:9, DUE_AT:10, SIGNED_AT:11, VOID_REASON:12, FIELDS:13, RESPONSES:14 };
+// HR-1 (cycle 23) — the doc's text columns are written into '@' cells: a title
+// that read as a date or number was coerced on write, so the content hash
+// recomputed from the cell never matched — the doc could not be signed and
+// verified as TAMPERED.
+const EMPDOC_TEXT_IDX = [ED.TITLE, ED.BODY_MD, ED.VOID_REASON];
 const EDS = { DOC_ID:0, EMP_ID:1, SIGNED_AT:2, SIGNATURE:3, ACK_VERSION:4, SIG_HASH:5, CERTIFICATE:6 };
 const EMPDOC_TYPES = ['review','pip','policy','other'];
 // v2 — manager-curated reusable templates (e.g. "Annual Performance Review").
@@ -2382,6 +2394,9 @@ const COACH_TAB = 'Coaching';
 // them stay in the HR store; none reaches the shared AuditLog.
 const COACH_HEADERS = ['CoachId','EmpId','EmpName','PatientTRX','Severity','WhatHappened','WhatShould','NoteId','Status','CreatedBy','CreatedAt','AcknowledgedAt','AckBy','VoidReason','RepResponse','FollowUpAt','NudgedAt','NoteDate','QaFileId'];
 const CO = { COACH_ID:0, EMP_ID:1, EMP_NAME:2, PATIENT_TRX:3, SEVERITY:4, WHAT_HAPPENED:5, WHAT_SHOULD:6, NOTE_ID:7, STATUS:8, CREATED_BY:9, CREATED_AT:10, ACK_AT:11, ACK_BY:12, VOID_REASON:13, REP_RESPONSE:14, FOLLOW_UP_AT:15, NUDGED_AT:16, NOTE_DATE:17, QA_FILE_ID:18 };
+// HR-1 (cycle 23) — the coaching free text is written into '@' cells (a TRX
+// "0012" lost its zeros, a "3/4" became a Date).
+const COACH_TEXT_IDX = [CO.PATIENT_TRX, CO.WHAT_HAPPENED, CO.WHAT_SHOULD, CO.VOID_REASON, CO.REP_RESPONSE];
 const COACH_SEVERITIES = ['praise','minor','major','critical'];
 // K4 — DISPLAY labels only. The stored enum is untouched (`major` stays
 // `major` in every row, every audit line, `coachSevTone_` and the analytics

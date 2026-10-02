@@ -4908,12 +4908,15 @@ function cnRenderCardCore_(note, expandable) {
   // G3 — when a fillable form linked to this note has been submitted, show a
   // clickable pill that opens the submitted form data in a read-only modal
   // (so the rep doesn't have to open the FormSubmissions sheet).
-  const formSub = (note.subformData && note.subformData.formSubmission) ? note.subformData.formSubmission : null;
-  const formIndicator = (formSub && formSub.token)
-    ? '<button class="cn-form-pill" title="Form received — click to view submission" ' +
-      'data-cn-action="view-form" data-token="' + esc(formSub.token) + '">' +
-      icon('paperclip', 11) + '<span>form</span></button>'
-    : '';
+  // FORM-3 (cycle 23): one pill per submitted form — a second form on the
+  // same note used to replace the first one's link.
+  const formSubs = cnFormSubsOf_(note);
+  const formIndicator = formSubs.map(function (fs, i) {
+    return '<button class="cn-form-pill" title="Form received' + (fs.formType ? ' (' + esc(fs.formType) + ')' : '') +
+      ' — click to view submission" ' +
+      'data-cn-action="view-form" data-token="' + esc(fs.token) + '">' +
+      icon('paperclip', 11) + '<span>form' + (formSubs.length > 1 ? ' ' + (i + 1) : '') + '</span></button>';
+  }).join('');
 
   return `
     <div class="cn-card${flagCls}${staleCls}${urgentCls}${pendingCls}" data-note-id="${esc(note.noteId)}">
@@ -5679,6 +5682,16 @@ function cnCloseFormSubOverlay_() {
   if (overlay) overlay.remove();
 }
 
+// FORM-3 (cycle 23) — a note's submitted forms, oldest first: the server's
+// `formSubmissions` list, or a note stamped before it existed, its single
+// `formSubmission`. Entries without a token are dropped.
+function cnFormSubsOf_(note) {
+  var d = (note && note.subformData) || {};
+  var list = Array.isArray(d.formSubmissions) ? d.formSubmissions
+    : (d.formSubmission ? [d.formSubmission] : []);
+  return list.filter(function (x) { return x && x.token; });
+}
+
 // ── #3: patient/TRX timeline ────────────────────────────────────────────────
 // Stitches the rep's OWN call notes + intake submissions + sent fillable forms
 // for one patient/order into a single newest-first timeline (server endpoint
@@ -5728,7 +5741,7 @@ function cnTimelineRowHtml_(ev) {
     detail = 'Status: ' + esc(ev.status || '') + (ev.recipientName ? ' · ' + esc(ev.recipientName) : '');
   } else {
     glyph = icon('adjust', 15);
-    head = 'Call note' + (ev.caller ? ' · ' + esc(ev.caller) : '');
+    head = 'Call note' + (ev.caller ? ' · ' + esc(ev.caller) : '') + (ev.archived ? ' · archived' : '');
     var bits = [];
     if (ev.issue) bits.push(esc(ev.issue));
     if (ev.flagType) bits.push('[' + esc(ev.flagType) + ']');
@@ -5753,9 +5766,16 @@ function cnBuildTimelineHtml_(res) {
   // Cycle-9 L-8: a failed source stream is meaningfully different from "no
   // data" on a patient-context surface — surface which streams are missing
   // instead of rendering an authoritative-looking partial timeline.
-  var partialBanner = (res && res.partial && res.failedSources && res.failedSources.length)
+  // CN-5 (cycle 23): a CAPPED stream is incomplete too — it names what it
+  // cut, and a retry would not help, so it says so differently.
+  var failed = (res && res.failedSources) || [];
+  var cut = (res && res.truncatedSources) || [];
+  var bannerBits = [];
+  if (failed.length) bannerBits.push('could not load: ' + esc(failed.join(', ')) + '. Retry for the full picture.');
+  if (cut.length) bannerBits.push((failed.length ? 'Only' : 'only') + ' part shown: ' + esc(cut.join(', ')) + '.');
+  var partialBanner = (res && res.partial && bannerBits.length)
     ? '<div style="font-size:12px;color:var(--warning-deep);background:var(--warn-soft);border-radius:8px;padding:6px 10px;margin-bottom:8px">' +
-      icon('warning', 12) + ' Incomplete — could not load: ' + esc(res.failedSources.join(', ')) + '. Retry for the full picture.</div>'
+      icon('warning', 12) + ' Incomplete — ' + bannerBits.join(' ') + '</div>'
     : '';
   if (!events.length) {
     return '<div class="modal cn-timeline-modal" style="max-width:600px">' + head +
@@ -8409,11 +8429,11 @@ function cnMgrRenderReadonlyCard_(note) {
   const sentPill = cnDeptEmailPillHtml_(note);   // readable "emailed to <depts>" (no truncation)
   // Manager-side form-submission viewer: clickable pill when the rep's note
   // carries a submitted fillable form (parallels the rep's cn-form-pill).
-  const mgrFormSub = (note.subformData && note.subformData.formSubmission) ? note.subformData.formSubmission : null;
+  const mgrFormSubs = cnFormSubsOf_(note);   // FORM-3: every submitted form
   const mgrRepIdForForm = (CN_STATE.mgrRepView && CN_STATE.mgrRepView.repId) || '';
-  const formPill = (mgrFormSub && mgrFormSub.token)
-    ? `<button class="cn-form-pill" title="Form received — view submission" data-token="${esc(mgrFormSub.token)}" data-rep-id="${esc(mgrRepIdForForm)}" onclick="cnMgrViewFormSubmission_(this)">${icon('paperclip', 11)}<span>form</span></button>`
-    : '';
+  const formPill = mgrFormSubs.map(function (fs, i) {
+    return `<button class="cn-form-pill" title="Form received${fs.formType ? ' (' + esc(fs.formType) + ')' : ''} — view submission" data-token="${esc(fs.token)}" data-rep-id="${esc(mgrRepIdForForm)}" onclick="cnMgrViewFormSubmission_(this)">${icon('paperclip', 11)}<span>form${mgrFormSubs.length > 1 ? ' ' + (i + 1) : ''}</span></button>`;
+  }).join('');
   const urgentCls = cnIsUrgent_(note) ? ' is-urgent' : '';
   return `
     <div class="cn-card${flagCls}${urgentCls}" data-note-id="${esc(note.noteId)}">

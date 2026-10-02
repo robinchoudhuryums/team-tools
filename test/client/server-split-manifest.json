@@ -2005,6 +2005,54 @@
     "mgrWorkdaysEnding_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-02",
+   "why": "cycle 23 Batch 7a: FORM-1 formLocatedRowIs_, FORM-3 formSubmissionsWith_, FORM-4 retentionStampPattern_, FORM-5 expiry phrase + notify route, CN-1 span read, CN-2 delete window, CN/HR text columns",
+   "added": [
+    "CN_TEXT_IDX",
+    "COACH_TEXT_IDX",
+    "EMPDOC_TEXT_IDX",
+    "SCHED_STATE_SPAN_DAYS",
+    "cnDeleteWindowError_",
+    "formDepartedSenderLine_",
+    "formLinkExpiryPhrase_",
+    "formLocatedRowIs_",
+    "formNotifyRoute_",
+    "formNotifyTargets_",
+    "formSubmissionsWith_",
+    "retentionStampPattern_",
+    "schedSpanStartRow_"
+   ],
+   "removed": [
+    "SCHED_CALLS_SCAN"
+   ],
+   "changed": [
+    "acknowledgeCoaching",
+    "buildCustomerEmailText_",
+    "buildFormLinksBlock_",
+    "buildPatientTimeline_",
+    "buildProviderEmailText_",
+    "createCoaching",
+    "deleteCallNote",
+    "findFormSubmissionRow_",
+    "findFormTokenRow_",
+    "formTokensVoid_",
+    "getPatientTimeline",
+    "issueDoc",
+    "notifyRepOfFailedSubmission_",
+    "notifyRepOfFormSubmission_",
+    "parseRetentionDateMs_",
+    "schedReadMine_",
+    "searchMyCallNotes",
+    "sendExternalEmail",
+    "submitCallNote",
+    "submitFormByToken",
+    "updateCallNote",
+    "voidCoaching",
+    "voidDoc"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2379,6 +2427,11 @@
    "kind": "const",
    "sha": "2295b6851fc8cdaa"
   },
+  "CN_TEXT_IDX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "d788cc1407056344"
+  },
   "CN_UNRESOLVED_CACHE_KEY": {
    "file": "00_config.js",
    "kind": "const",
@@ -2418,6 +2471,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "09de3c067a092f90"
+  },
+  "COACH_TEXT_IDX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "c04e4ca8911a33e0"
   },
   "COACH_TEXT_MAX": {
    "file": "00_config.js",
@@ -2698,6 +2756,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "8aa79cfc5191f455"
+  },
+  "EMPDOC_TEXT_IDX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "fb1afaf58851d745"
   },
   "EMPDOC_TITLE_MAX": {
    "file": "00_config.js",
@@ -3854,11 +3917,6 @@
    "kind": "const",
    "sha": "55271d59ca764fd9"
   },
-  "SCHED_CALLS_SCAN": {
-   "file": "00_config.js",
-   "kind": "const",
-   "sha": "8d66bba0f37f2eef"
-  },
   "SCHED_CALLS_TAB": {
    "file": "00_config.js",
    "kind": "const",
@@ -3873,6 +3931,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "5b674f37f5d3bea4"
+  },
+  "SCHED_STATE_SPAN_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1a99d04fe5c42015"
   },
   "SCRATCHPAD_MAX_CHARS": {
    "file": "00_config.js",
@@ -4342,7 +4405,7 @@
   "acknowledgeCoaching": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "f164143db4699899"
+   "sha": "dee059da7f8b94b0"
   },
   "acknowledgeDoc": {
    "file": "81_empdocs.js",
@@ -4692,7 +4755,7 @@
   "buildCustomerEmailText_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "81d3ea9e45131c4b"
+   "sha": "82b2904e7a4f4d48"
   },
   "buildEmailSubject_": {
    "file": "30_callnotes.js",
@@ -4707,7 +4770,7 @@
   "buildFormLinksBlock_": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "5a83cc4c680ad679"
+   "sha": "ea3df2aa41292c04"
   },
   "buildFormSubmissionCardHtml_": {
    "file": "61_forms.js",
@@ -4742,7 +4805,7 @@
   "buildPatientTimeline_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "c1345d9098bbdb65"
+   "sha": "2dca98dc8bfe2dcc"
   },
   "buildProviderEmailHtml_": {
    "file": "30_callnotes.js",
@@ -4752,7 +4815,7 @@
   "buildProviderEmailText_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "e68d6899cd9c152a"
+   "sha": "4a457722b2eb7e59"
   },
   "buildTimesheetForEmployee_": {
    "file": "20_timeclock.js",
@@ -4978,6 +5041,11 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "064292e8b82e3bed"
+  },
+  "cnDeleteWindowError_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "cefdb748ec3ea19a"
   },
   "cnEnrolledSheetId_": {
    "file": "30_callnotes.js",
@@ -5207,7 +5275,7 @@
   "createCoaching": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "ef6aaf06bbf04cf6"
+   "sha": "c7bfd908162ba349"
   },
   "createFormToken": {
    "file": "61_forms.js",
@@ -5292,7 +5360,7 @@
   "deleteCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "0a7dd01ceea235f3"
+   "sha": "7b90adb6b956d212"
   },
   "deleteEmpDocTemplate": {
    "file": "81_empdocs.js",
@@ -5737,12 +5805,12 @@
   "findFormSubmissionRow_": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "8155f27a549f0447"
+   "sha": "8a14bae6065ddd8d"
   },
   "findFormTokenRow_": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "d05d950e969a1570"
+   "sha": "93c26b960eaa4663"
   },
   "fixPtoReconciliation": {
    "file": "20_timeclock.js",
@@ -5779,10 +5847,40 @@
    "kind": "function",
    "sha": "2dc8cc4784db820e"
   },
+  "formDepartedSenderLine_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "cc4e23c047dc1a91"
+  },
+  "formLinkExpiryPhrase_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "c8cad8c628e8d083"
+  },
+  "formLocatedRowIs_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "65df241be2582aff"
+  },
+  "formNotifyRoute_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "108326ba363d2fba"
+  },
+  "formNotifyTargets_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "27fcffbdb5aec9e9"
+  },
   "formRetentionEffectiveDays_": {
    "file": "61_forms.js",
    "kind": "function",
    "sha": "9f58e6f4ad89606f"
+  },
+  "formSubmissionsWith_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "969439d15ae41059"
   },
   "formTokenCellMs_": {
    "file": "61_forms.js",
@@ -5807,7 +5905,7 @@
   "formTokensVoid_": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "6d9bd2454ac82faa"
+   "sha": "ffe306ce51042ab1"
   },
   "formatFormFieldValue_": {
    "file": "61_forms.js",
@@ -6592,7 +6690,7 @@
   "getPatientTimeline": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "442c397ad0715c2e"
+   "sha": "a54343a06310519f"
   },
   "getPtoReconciliation": {
    "file": "20_timeclock.js",
@@ -7132,7 +7230,7 @@
   "issueDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "5d0100563436b4e3"
+   "sha": "598f883628af56fb"
   },
   "kbAddComment": {
    "file": "70_kb.js",
@@ -8007,12 +8105,12 @@
   "notifyRepOfFailedSubmission_": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "5146fb47893492e9"
+   "sha": "f6a7bdcf8e4d97f9"
   },
   "notifyRepOfFormSubmission_": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "788c6bf3bd66fcdf"
+   "sha": "cb1195db86d49d33"
   },
   "notifyTrainingAssigned_": {
    "file": "80_training.js",
@@ -8137,7 +8235,7 @@
   "parseRetentionDateMs_": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "886c7b0cbec5b62c"
+   "sha": "6dad222f80f189f1"
   },
   "parseShiftOverride_": {
    "file": "20_timeclock.js",
@@ -8804,6 +8902,11 @@
    "kind": "function",
    "sha": "4d461c3bf00c4d81"
   },
+  "retentionStampPattern_": {
+   "file": "61_forms.js",
+   "kind": "function",
+   "sha": "b4a7c1731f316690"
+  },
   "retentionWarnings_": {
    "file": "10_core.js",
    "kind": "function",
@@ -9002,7 +9105,12 @@
   "schedReadMine_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "7f7859bf29c46ad5"
+   "sha": "4cbfb8531ca9f27e"
+  },
+  "schedSpanStartRow_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "19c2ea13cc7e1715"
   },
   "schedValidateShape_": {
    "file": "30_callnotes.js",
@@ -9032,7 +9140,7 @@
   "searchMyCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "be911415bb994066"
+   "sha": "e24d47650e5f76b9"
   },
   "searchOopPricing": {
    "file": "70_kb.js",
@@ -9102,7 +9210,7 @@
   "sendExternalEmail": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "15be5b4a40c01a99"
+   "sha": "2da4b5a1ae668495"
   },
   "sendManagerBriefEmail_": {
    "file": "10_core.js",
@@ -9442,12 +9550,12 @@
   "submitCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "28908e8d6b91cd58"
+   "sha": "fece7ceb0b075466"
   },
   "submitFormByToken": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "97f2087ec8471b88"
+   "sha": "eff67fc3ccb8c6a5"
   },
   "submitIntakeFeedback": {
    "file": "60_intake.js",
@@ -9677,7 +9785,7 @@
   "updateCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "e14d87a6f18b9d7c"
+   "sha": "9c33bab4a4537af3"
   },
   "updateInfoToSubformKey_": {
    "file": "30_callnotes.js",
@@ -9757,12 +9865,12 @@
   "voidCoaching": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "a20ae1e43159c66f"
+   "sha": "1fc21036ca9fae2a"
   },
   "voidDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "d9b6b12a27d2ecb7"
+   "sha": "696fbefa28883d9e"
   },
   "withAutomationErrorLock_": {
    "file": "10_core.js",

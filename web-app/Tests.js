@@ -1579,6 +1579,7 @@ function _registerIntegrationB_() {
   _integrationTest('cn_setCallNoteResolved_actionOnly',      test_cn_setCallNoteResolved_actionOnly);
   _integrationTest('cn_setCallNoteResolved_rejectsNonAction',test_cn_setCallNoteResolved_rejectsNonAction);
   _integrationTest('cn_deleteCallNote_basic',                test_cn_deleteCallNote_basic);
+  _integrationTest('cn_textColumnsKeepTheirText',            test_cn_textColumnsKeepTheirText);
   _integrationTest('cn_setCallNotePinned_capAt3',            test_cn_setCallNotePinned_capAt3);
   _integrationTest('cn_updateCallNote_basic',                test_cn_updateCallNote_basic);
   _integrationTest('cn_search_phoneTrxFieldScopes',          test_cn_search_phoneTrxFieldScopes);
@@ -5025,6 +5026,29 @@ function test_cn_deleteCallNote_basic() {
   _assertFailure(r, 'not found', 'Double-delete should fail');
 }
 
+// CN-7 (cycle 23) — the note's free-text columns are '@' cells: a callback
+// with a leading zero, a date-shaped caller and a number-shaped TRX read back
+// exactly as typed, on create and on edit. Only a real sheet coerces, so this
+// round trip is the pin the Node harness cannot be.
+function test_cn_textColumnsKeepTheirText() {
+  _assertSuiteCaller_();
+  _clearTestCallNotes();
+  var noteId;
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    noteId = submitCallNote(_cnTestPayload({ callback: '0123456789', caller: '12/5', patientAndTrx: '0042' })).note.noteId;
+  });
+  var found = _asUser(_TEST_INDIA_EMAIL, function () { return searchMyCallNotes('0042', 'trx', null, true); });
+  _assertEq((found.results || []).length, 1, 'the number-shaped TRX is found as text (exact match)');
+  _assertEq(found.results[0].callback, '0123456789', 'the leading zero survives');
+  _assertEq(found.results[0].caller, '12/5', 'a date-shaped caller stays text');
+  _assertSuccess(_asUser(_TEST_INDIA_EMAIL, function () {
+    return updateCallNote(noteId, _cnTestPayload({ callback: '0123456789', caller: '12/5', patientAndTrx: '0042', issue: '3/4' }));
+  }), 'edit');
+  found = _asUser(_TEST_INDIA_EMAIL, function () { return searchMyCallNotes('0042', 'trx', null, true); });
+  _assertEq(found.results[0].issue, '3/4', 'an edited date-shaped issue stays text');
+  _clearTestCallNotes();
+}
+
 // ── setCallNotePinned (cap enforcement) ──
 
 function test_cn_setCallNotePinned_capAt3() {
@@ -6314,7 +6338,7 @@ function _deleteFormWitnessAuditRow_(token) {
   try {
     _deleteRowsWhereLocked_(getAdpSS_().getSheetByName(CONFIG.AUDIT_TAB), 2, function (r) {
       return String(r[AUDIT.ACTION]) === 'FormSubmissionReceived'
-        && String(r[AUDIT.NOTES]).indexOf('token=' + token) >= 0;
+        && String(r[AUDIT.NOTES]).indexOf('tokenRef=' + formTokenRef_(token)) >= 0;   // FORM-2: the row names a REFERENCE
     });
   } catch (e) { Logger.log('_deleteFormWitnessAuditRow_ skipped: ' + e.message); }
 }
