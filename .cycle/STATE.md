@@ -3,11 +3,11 @@
 ## Current
 Cycle: 23 — opened by the 2026-10-01 `/broad-scan` (0 Critical / 5 High; plan of 13 batches + 8 deferred, in chat). Cycle 22 and 22post are in `.cycle/HISTORY.md`.
 Phase: implement
-Scope: broad — Batches 1–5 (TC-02 included), 6a, 6b, 7a and 7b done and doc-synced; Batch 8 done and doc-synced; next Batch 9
+Scope: broad — Batches 1–5 (TC-02 included), 6a, 6b, 7a and 7b done and doc-synced; Batch 8 done and doc-synced; Batch 9 done (docs not yet synced); next /sync-docs, then Batch 10
 Test Command: manual
 Estimates: Batch 1: M (~9 h) · Batch 2: M (~11 h) · Batch 3: M (~9.5 h) · Batch 4a: M (~10 h) · 4a follow-ons: S (~3 h) · Batch 4b: M (~11 h) · TC-02 (option a): M (~8 h) · Batch 5: M (~10 h) · Batch 6a: M (~9.5 h) · Batch 6b: M (~10 h) · Batch 7a: M (~10 h) · Batch 7b: M (~7.5 h) · Batch 8: M (~9.5 h) · Batch 9: L (~13 h) — each written before its first edit
 Subsystem cycles since last Seams audit: 3 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25) and 22post's /reflect (2026-09-30). The cadence is every 4, so the next reflection reaches it.
-Updated: 2026-10-02 (cycle 23 Batch 8 + its /sync-docs)
+Updated: 2026-10-02 (cycle 23 Batch 9)
 
 ## In progress (facts to carry forward — NOT judgments)
 - Cycle 23 opened 2026-10-01 with a `/broad-scan` (0 Critical / 5 High / ~110 findings; the full report and 13-batch plan are in that session's chat — the batch→ID list is copied under Pending below).
@@ -24,9 +24,19 @@ Updated: 2026-10-02 (cycle 23 Batch 8 + its /sync-docs)
 - Batch 7a implemented on the same branch (block: `.cycle/blocks/23-batch7a-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Batch 7b implemented on the same branch (block: `.cycle/blocks/23-batch7b-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Batch 8 implemented on the same branch (block: `.cycle/blocks/23-batch8-broad-implement.md`); NOT yet deployed. /sync-docs done.
+- Batch 9 implemented on the same branch (block: `.cycle/blocks/23-batch9-broad-implement.md`); NOT yet deployed. /sync-docs NOT yet run — the block's DOCUMENTATION UPDATES NEEDED is the list.
 - Everything through 22post is merged (PRs #274–#282) and deployed (2026-09-30). The operator was finishing two 22post steps at close: the manual.json re-export + import, and the S124–S128 walks.
 
 ## Completed this cycle
+- UI-ESC | script_core.html + kb/train/empdocs/coaching partials | an editor overlay opened with `unsaved` asks "Discard changes?" before Escape, the backdrop or Cancel discards typed work (`overlayDiscardGuard_`, `overlayMarkDirty_`)
+- INTUI-1 | intake/script_intake.html, train/script_coaching.html | the intake preview and the coaching drawer refuse to close mid-send
+- TRUI-2 | train/script_empdocs.html | the signature pad is white with a fixed #101418 ink
+- KB2-9 | kb/script_kb.html | a file read or conversion is dropped when the editor changed
+- KB2-8 | 70_kb.js, kb/script_kb.html | a section an unfinished import wrote is recorded (`repair`), not skipped as foreign
+- ADM-06 | cn/script_callnotes.html | a blank tax rate is refused by name (`cnRateMapFromRows_`)
+- ADM-10 / KBUI-5 | cn/script_callnotes.html, kb/script_kb.html | the Team Members add form and a comment draft survive their re-render
+- SH-02..05 | shell + six partials | closes route through closeOverlay; the trap covers the shortcuts dialog; the tour is a dialog; the sidebar drag binds once
+- TCUI-1 | tc/script_clock.html | a failed refresh after a self-undo is reported
 - /sync-docs (Batch 8) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g152 extended (QA-5); NEW g165 (a grant earned by a covered period applies forward); NEW decision "A QA exemption applies to the period AFTER the one that earned it"; the QA operator note (re-grant a pre-deploy exemption if the next period was meant); modules note; S100's stale exemption Expected fixed + S90/S100/S103 steps; INV-356
 - QA2-1 | 90_qa.js, qa/script_qa.html, mock | an exemption is granted for the NEXT period; a quarter's exemption holds in its months (qaExemptFor_, qaNextPeriod_)
 - QA2-2 | 90_qa.js | Sample the gaps draws only the period's own calls
@@ -135,10 +145,11 @@ Updated: 2026-10-02 (cycle 23 Batch 8 + its /sync-docs)
   - Batch 7a store data — DONE (FORM-1, HR-1+CN-7, FORM-2, FORM-3, FORM-4, FORM-5, CN-1, CN-2, CN-4, CN-5)
   - Batch 7b CN client — DONE (CNUI-02, CNUI-03, CNUI-04, CNUI-05, CNUI-06, CNUI-08, CNUI-09)
   - Batch 8 QA — DONE (QA2-1, QA2-2, QA2-3, QA-2, QA-4, QA-5, QA2-4/5, QAUI-1)
-  - Batch 9 editors/a11y: UI-ESC, INTUI-1, TRUI-2, KB2-9, KB2-8, ADM-06, ADM-10/KBUI-5, SH-02, SH-03/04/05, TCUI-1
+  - Batch 9 editors/a11y — DONE (UI-ESC, INTUI-1, TRUI-2, KB2-9, KB2-8, ADM-06, ADM-10/KBUI-5, SH-02, SH-03/04/05, TCUI-1)
   - Batch 10 PHI/config: KBUI-2, KB-2, INT2-3, INT-1/INT2-1/INT2-2, INT-2/INT2-4, CN-3, ADM-12, ADM-13/CORE-04/05/06/03/TRN-2, MET-5/MET2-1
   - Deferred (decisions): DRV-3, SP-2, KB2-6, HR-2, TRN-1, CN-8, INT-3, TC2-9
 - **Batch 1 deploy + walks:** clasp push + New version; S8 with >1,000 rows; S18's blocked-clipboard step twice via Save & Compose; S1.
+- **Batch 9 deploy:** no operator action; walk S12, S45, S51, S54, S59, S62, S63, S68, S69, S75, S99, S113 and S124 (Escape with typed work asks; close mid-send refuses; a dark-mode signature prints dark; an interrupted import is repaired).
 - **Batch 8 deploy:** an exemption granted before the deploy for the CURRENT period stays there — re-grant from the coverage row if the next period was meant; walk S90, S100 and S103.
 - **Batch 7b deploy:** no operator action; walk S19, S26, S28, S31, S34, S35, S50, S73 and S113.
 - **Batch 7a deploy:** optionally void + reissue any pre-deploy Employee Doc whose title/body reads as a date or number (it still verifies as tampered); walk S18, S21, S28, S61, S69, S99, S113 and S114.
@@ -159,6 +170,7 @@ Updated: 2026-10-02 (cycle 23 Batch 8 + its /sync-docs)
 - **DEFERRED, still an operator decision:** F-09's holiday FALLBACK; what a LocationAcceptance city row's Accepts column decides.
 
 ## Open follow-on items
+- **Batch 9 follow-ons** (full text in its block): the KB type toggle alone does not mark the editor dirty, and the converter and ingest marks are not driven by a pin; the doc reader's submit `busy` has no drive; the Scratchpad Close is outside the overlay lifecycle and the SH-02 net; no visual scenario for the discard question, the tour popover or a dark-mode signature.
 - **Batch 8 follow-ons** (full text in its block): the recordings table's Skipped reason runs under the reviewer pill and the New row's third button clips at the right edge (wide shot); the queue/stats/log/sampler lists still read the 2,000-row tail; `qaReadExemptions_` is a row-count tail; no editor-suite case for the QA self-review reads or an exemption round trip.
 - **Batch 7b follow-ons** (full text in its block): the Metrics alert badge has CNUI-09's shape (set on the first nav form only); `cnMgrPatchCard_`'s fallback still reloads the whole stack; undo-save of a note missing from local state restores without deleting; no visual of a multi-card manager session.
 - **Batch 7a follow-ons** (full text in its block): pre-fix notes/docs/coaching rows keep their coerced values (a note re-formats on edit, docs and coaching never); the timeline's sent-forms stream does not report its own cap; `spanishSpanStartRow_` / `schedSpanStartRow_` are one function twice; the ScheduledCalls Label column is not '@'.
@@ -186,4 +198,4 @@ Updated: 2026-10-02 (cycle 23 Batch 8 + its /sync-docs)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 23 Batches 1–5 (TC-02 included) are merged to main (PR #284). Batches 6a, 6b, 7a and 7b are committed and pushed on `claude/blissful-johnson-cottl5` (restarted from main); 6a and 6b are doc-synced. Batches 7a and 7b are doc-synced too. Batch 8 is committed, pushed and doc-synced. Next: `/broad-implement Batch 9`; deploy and walk the Batch 1–8 scenarios (incl. S134). The next /reflect reaches the Seams-audit cadence.
+Cycle 23 Batches 1–5 (TC-02 included) are merged to main (PR #284). Batches 6a–8 are committed, pushed and doc-synced on `claude/blissful-johnson-cottl5`. Batch 9 is committed and pushed (block: `.cycle/blocks/23-batch9-broad-implement.md`); its /sync-docs is next, then `/broad-implement Batch 10`. Deploy and walk the Batch 1–9 scenarios (incl. S134). The next /reflect reaches the Seams-audit cadence.
