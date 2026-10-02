@@ -183,6 +183,15 @@ not restate it. Server endpoints live in the fourteen server files
      that includes a day with more than one break when its break slots are filled,
      and names those days (g163, the break-adjustment decision).
 
+     **Cycle 23 Batch 9 (2026-10-02) — shell.** A self-undo whose dashboard
+     refresh fails now says so ("The punch was undone, but the dashboard could not
+     refresh — … Reload to see the change.") instead of leaving the undone punch on
+     screen in silence (TCUI-1). The onboarding tour is a named dialog: focus moves
+     into it each step, Tab stays inside, and focus goes back when it ends (SH-04).
+     A view-as switch no longer adds another pair of sidebar-drag listeners
+     (SH-05). Every close button returns focus to whatever opened the dialog, and
+     Tab cannot leave the keyboard-shortcuts dialog (SH-02, SH-03 — g100).
+
 ## Call Notes
 
    - **Call Notes** — rolling-note panel for CSR call logging. Each
@@ -353,6 +362,13 @@ not restate it. Server endpoints live in the fourteen server files
      clean. The manager Stats tab says "Call data could not be read — … unknown, not
      zero" above the table instead of a column of dashes, and a note's lifecycle
      history says when older history was not scanned (g122, g151, g02, g05, g53).
+
+     **Cycle 23 Batch 9 (2026-10-02) — Manage → Admin.** Saving the state tax
+     rates with a blank rate is refused, naming the state ("0 for no tax"); it used
+     to drop the state from the composer's State list (ADM-06). An "Add team
+     member" form being filled in survives the panel's reload after an offboard —
+     values, open state, focus and caret; only a completed add empties it (ADM-10,
+     g141).
 
 ## Metrics
 
@@ -658,6 +674,10 @@ not restate it. Server endpoints live in the fourteen server files
      nowhere, so the g43 English rule no longer depends on the client keeping
      it (F-27). The banks mirror the client's byte-for-byte and are pinned
      equal.
+
+     **Cycle 23 Batch 9 (2026-10-02):** the preview modal cannot be closed while
+     its send is in flight — Escape, × and Cancel say "Sending — one moment…" — so a
+     second Send can no longer go out as a duplicate PHI email (INTUI-1, g130).
 
 ## Reference
 
@@ -1089,6 +1109,17 @@ not restate it. Server endpoints live in the fourteen server files
      drawer, never "No matches" with the request-an-article button. The query is not
      part of the message (g146, g53).
 
+     **Cycle 23 Batch 9 (2026-10-02):** the article editor asks "Discard
+     changes?" before Escape, the backdrop or × throws typed work away; a
+     converted Doc or an ingested file counts as work, and Save closes without
+     asking (UI-ESC, g166). A file dropped into the editor is dropped if the
+     admin has opened another item before it is read or converted (KB2-9, g147).
+     A new comment being typed survives an edit or delete of another comment, and
+     a posted one leaves the box (KBUI-5, g141). A manual import interrupted
+     between a section's write and its ledger row is reported as "written by an
+     earlier import that did not finish" on Check and recorded on Import, instead
+     of being skipped as foreign for ever (KB2-8).
+
 ## Training & Employee Docs
 
    - **Training & Employee Docs** — phased module
@@ -1238,6 +1269,14 @@ not restate it. Server endpoints live in the fourteen server files
      and its content hash, so it signs and verifies (HR-1, g144). A doc issued
      before the fix with such a title still verifies as tampered: void it and
      reissue it.
+
+     **Cycle 23 Batch 9 (2026-10-02):** the quiz editor, a fillable document and
+     the coaching composer ask "Discard changes?" before Escape, the backdrop or
+     Cancel discards typed work, a structural quiz edit or a drawn signature; a
+     coaching prefill alone is not work (UI-ESC, g166). The coaching drawer cannot
+     close while a save is in flight, so a second HR record cannot be filed
+     (INTUI-1). The signature pad is white with a fixed dark ink in both themes, so
+     a dark-mode signature prints dark (TRUI-2, g58).
 
 <a id="qa"></a>
 ## QA

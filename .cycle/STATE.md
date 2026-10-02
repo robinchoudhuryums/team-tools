@@ -3,11 +3,11 @@
 ## Current
 Cycle: 23 — opened by the 2026-10-01 `/broad-scan` (0 Critical / 5 High; plan of 13 batches + 8 deferred, in chat). Cycle 22 and 22post are in `.cycle/HISTORY.md`.
 Phase: implement
-Scope: broad — Batches 1–5 (TC-02 included), 6a, 6b, 7a and 7b done and doc-synced; Batch 8 done and doc-synced; Batch 9 done (docs not yet synced); next /sync-docs, then Batch 10
+Scope: broad — Batches 1–5 (TC-02 included), 6a, 6b, 7a and 7b done and doc-synced; Batch 8 done and doc-synced; Batch 9 done and doc-synced; next Batch 10
 Test Command: manual
 Estimates: Batch 1: M (~9 h) · Batch 2: M (~11 h) · Batch 3: M (~9.5 h) · Batch 4a: M (~10 h) · 4a follow-ons: S (~3 h) · Batch 4b: M (~11 h) · TC-02 (option a): M (~8 h) · Batch 5: M (~10 h) · Batch 6a: M (~9.5 h) · Batch 6b: M (~10 h) · Batch 7a: M (~10 h) · Batch 7b: M (~7.5 h) · Batch 8: M (~9.5 h) · Batch 9: L (~13 h) — each written before its first edit
 Subsystem cycles since last Seams audit: 3 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25) and 22post's /reflect (2026-09-30). The cadence is every 4, so the next reflection reaches it.
-Updated: 2026-10-02 (cycle 23 Batch 9)
+Updated: 2026-10-02 (cycle 23 Batch 9 + its /sync-docs)
 
 ## In progress (facts to carry forward — NOT judgments)
 - Cycle 23 opened 2026-10-01 with a `/broad-scan` (0 Critical / 5 High / ~110 findings; the full report and 13-batch plan are in that session's chat — the batch→ID list is copied under Pending below).
@@ -24,10 +24,11 @@ Updated: 2026-10-02 (cycle 23 Batch 9)
 - Batch 7a implemented on the same branch (block: `.cycle/blocks/23-batch7a-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Batch 7b implemented on the same branch (block: `.cycle/blocks/23-batch7b-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Batch 8 implemented on the same branch (block: `.cycle/blocks/23-batch8-broad-implement.md`); NOT yet deployed. /sync-docs done.
-- Batch 9 implemented on the same branch (block: `.cycle/blocks/23-batch9-broad-implement.md`); NOT yet deployed. /sync-docs NOT yet run — the block's DOCUMENTATION UPDATES NEEDED is the list.
+- Batch 9 implemented on the same branch (block: `.cycle/blocks/23-batch9-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Everything through 22post is merged (PRs #274–#282) and deployed (2026-09-30). The operator was finishing two 22post steps at close: the manual.json re-export + import, and the S124–S128 walks.
 
 ## Completed this cycle
+- /sync-docs (Batch 9) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | NEW g166 (a close that discards typed work must ask); g100 (SH-02/03/04), g141 (ADM-10, KBUI-5), g147 (KB2-9), g58 (TRUI-2), g130 (INTUI-1) amended; g116's fifteenth direction (the harness does not move focus on Tab); NEW decision "An editor overlay asks before it discards" + amendments to the tour, tax-rate and manual-import decisions; modules notes in five sections; S12/S45/S51/S54/S59/S62/S68/S69/S75/S99/S124 extended; INV-357..359; harness log
 - UI-ESC | script_core.html + kb/train/empdocs/coaching partials | an editor overlay opened with `unsaved` asks "Discard changes?" before Escape, the backdrop or Cancel discards typed work (`overlayDiscardGuard_`, `overlayMarkDirty_`)
 - INTUI-1 | intake/script_intake.html, train/script_coaching.html | the intake preview and the coaching drawer refuse to close mid-send
 - TRUI-2 | train/script_empdocs.html | the signature pad is white with a fixed #101418 ink
@@ -198,4 +199,4 @@ Updated: 2026-10-02 (cycle 23 Batch 9)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 23 Batches 1–5 (TC-02 included) are merged to main (PR #284). Batches 6a–8 are committed, pushed and doc-synced on `claude/blissful-johnson-cottl5`. Batch 9 is committed and pushed (block: `.cycle/blocks/23-batch9-broad-implement.md`); its /sync-docs is next, then `/broad-implement Batch 10`. Deploy and walk the Batch 1–9 scenarios (incl. S134). The next /reflect reaches the Seams-audit cadence.
+Cycle 23 Batches 1–5 (TC-02 included) are merged to main (PR #284). Batches 6a–8 are committed, pushed and doc-synced on `claude/blissful-johnson-cottl5`. Batch 9 is committed, pushed and doc-synced (block: `.cycle/blocks/23-batch9-broad-implement.md`). Next: `/broad-implement Batch 10`. Deploy and walk the Batch 1–9 scenarios (incl. S134). The next /reflect reaches the Seams-audit cadence.

@@ -1660,6 +1660,13 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   "Billing, West" name round-tripped as TWO phantom departments through
   every `drSplitDepts_` consumer (the INV-131 dedup, the Incoming inbox,
   per-dept SLA and `deptStats`).
+  **AMENDED (cycle 23 ADM-06, 2026-10-02):** a BLANK rate is refused, naming
+  every blank state ("Enter a rate for NM, AZ (0 for no tax) …"), and nothing
+  is saved. It used to be skipped, which deleted the state from the map — and
+  from the composer's State list, with no way to add it back in the app. A
+  zero is a rate. The rows → map rule is one pure helper,
+  `cnRateMapFromRows_`.
+
 - <a id="runtime-feature-toggles-via-a-registry-the-admin-tab"></a>**Runtime feature toggles via a registry + the Admin tab.** A
   manager-flippable boolean store lets features be turned on/off live,
   no redeploy. `FEATURE_FLAGS` (a `Code.js` constant) is the single
@@ -4299,6 +4306,14 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   a managers-only closing step. Interactive gating ("now type here…") was
   deliberately deferred — the passive spotlight teaches the same things
   without fighting the optimistic re-renders.
+  **AMENDED (cycle 23 SH-04, 2026-10-02):** the popover is a modal dialog in
+  everything but name, so it now says so — `role="dialog"`, `aria-modal`,
+  named by the step title and described by its body. Each step focuses its
+  primary button, Tab / Shift+Tab cycle the popover's buttons, and the element
+  focused when the tour started gets focus back when it ends. It stays outside
+  the overlay lifecycle (its own dim layer and keys), so it carries this
+  contract itself.
+
 - <a id="the-script-property-budget-badge-has-one-home-propbudgethtml"></a>**The Script-Property budget badge has ONE home (`propBudgetHtml_` +
   `.prop-budget`, Batch Q).** Eleven Admin editors and the Reference synonyms
   modal each save into a capped Script Property, and a size the operator cannot
@@ -4939,6 +4954,15 @@ pick them up without re-deriving the context.
   inside a quote), never HTML carried in the file. Rejected: converting the
   Word/HTML output with the Doc converter (lossy, and one-way) and a sync
   that overwrites (it would silently discard an admin's fix).
+  **AMENDED (cycle 23 KB2-8, 2026-10-02): a fourth class, REPAIR.** An import
+  that wrote a section's KB row and stopped before its ledger row left the
+  section looking "foreign" — skipped on every later import, so it never
+  updated again. A `man-` row with no matching ledger row whose text already
+  EQUALS the file's is the import's own unfinished work: Check reports it,
+  Import writes only its ledger row (never the KB row), and the result panel
+  and the audit row (`repaired=`) count it. A row whose text differs is still
+  foreign, and is skipped and reported as before.
+
 - <a id="the-procedures-manual-is-its-own-surface-and-the-repo-is-its-one-source"></a>**The procedures manual is its own surface, and the repo is its one source (22post M2, operator 2026-09-28).** The operator asked whether a different shape would make a better manual than
   the per-department guides Reference started with, and confirmed they alone
   maintain it. So the app is READ-ONLY for manual sections: `kbSaveItem`,
@@ -5138,3 +5162,22 @@ pick them up without re-deriving the context.
   falls in; a month's exemption does not exempt its whole quarter. Rejected:
   exempting the CURRENT period's remainder (the rep may already have been
   sampled, and the target math would need partial periods).
+- <a id="an-editor-overlay-asks-before-it-discards"></a>**An editor overlay asks "Discard changes?" before Escape, the backdrop or Cancel throws typed work away — `unsaved` on `ensureOverlay`, and "dirty" is an event since open (cycle 23 UI-ESC, 2026-10-02).**
+  The shell's Escape closes the topmost overlay wherever the key is pressed,
+  which is right for a viewer and wrong for an editor. Rather than exempt
+  textareas from Escape (a viewer with a search box would stop closing) or add
+  a per-module check (four modules, each forgetting a path), the guard is ONE
+  option on the shared lifecycle: `ensureOverlay(id, { unsaved: { what, busy?,
+  dirty? } })`, honoured by `closeOverlay` before the hook runs, so every close
+  path that already goes through it — Escape, the backdrop, a Cancel / × wired
+  to it (SH-02) — asks the same question. Dirty means an `input` or `change`
+  event inside the overlay since this open, a module's `overlayMarkDirty_` for
+  work no key produced, or the overlay's own `dirty()`; it is not a diff, so
+  typing a field back to its original value still asks. `busy()` true (a save
+  in flight) hands the answer to the hook's refusal (INV-145). A module's close
+  after a successful save calls its hook directly. Guarded: the KB article
+  editor, the quiz editor, the Employee Docs reader and the coaching composer.
+  Rejected: a snapshot diff (async-rendered editors have no stable "clean"
+  moment, and a structural edit changes the field set) and a native
+  `beforeunload`-style prompt (an in-app dialog must be a `uiConfirm`,
+  the native-dialog replacement decision).

@@ -1655,6 +1655,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   is white-on-amber at the same ~1.5:1 — so it needs an operator design call
   (scrim, or a darker gradient end), not a per-span patch.
 
+  **AMENDED (cycle 23 TRUI-2, 2026-10-02): a canvas whose pixels are STORED is
+  a fixed palette by definition.** The Employee Docs signature pad drew in the
+  theme's `--ink`, which is near-white in dark mode — so a signature made in
+  dark mode was stored as a near-invisible PNG on the HR record and on paper.
+  The pad is now white in both themes, its placeholder a fixed grey, and its
+  ink a fixed `#101418` (`ED_SIG_INK`) for drawn and typed signatures alike.
+  Fires when you draw anything that is exported, printed or stored. Verify: the
+  TRUI-2 Node pin + the DOM drive (dark mode, `--ink` near-white, stroke and
+  fill both read `#101418`).
+
 <a id="g59-the-coverage-planner-counted-a-rep-on"></a>
 
 - **The Coverage planner counted a rep on lunch as PRESENT until 2026-09-03 —
@@ -2625,6 +2635,26 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   re-rendered while open is left where it is. Verify: the SH-01 DOM pin,
   bite-checked.
 
+  **AMENDED (cycle 23 SH-02 + SH-03 + SH-04, 2026-10-02): every close BUTTON
+  goes through `closeOverlay` too.** Escape and the backdrop did, but a dozen
+  Close / Cancel / × / "Got it" buttons called the module's hook directly —
+  the timeline, both submission viewers, both composers, What's new, the
+  training reader and quiz, the quiz editor, the doc reader, the intake modal
+  and the KB editor — so focus was never handed back, and since UI-ESC (g166)
+  the discard question would have been skipped as well. They now call
+  `closeOverlay(…)`; a module's own close after a SAVE may still call its hook
+  (or `closeOverlay(el, { discard: true })`). The keyboard-shortcuts dialog's
+  container is `.cn-shortcuts-modal`, so the focus trap (which looked for
+  `.modal` / `.cn-compose-modal`) returned early and Tab walked into the page
+  behind; the trap now falls back to `.cn-shortcuts-modal` and then to the
+  overlay's first child. The onboarding tour is NOT an overlay (it has its own
+  dim layer), so it carries its own dialog contract: `role="dialog"`, named by
+  the step title, focus on the primary button each step, Tab cycling inside,
+  and focus handed back on end. Verify: the SH-02 DERIVED net (every hook
+  registered through `ensureOverlay(…, { onClose })` is collected, and no
+  `onclick="hook()"` or delegated `closest(…)) hook()` may call one) + the SH-02
+  / SH-03 / SH-04 DOM drives.
+
 <a id="g101-public-form-endpoints-have-no-employee-auth"></a>
 
 - **Public form endpoints have no employee auth — token is the
@@ -3263,6 +3293,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   (every cache piece present before the parse; a missing piece makes the JSON
   invalid anyway), is recorded as equivalent and the check kept. It is not
   "fixed" by weakening the code to make a test fail.
+
+  **A FIFTEENTH direction (cycle 23 Batch 9, SH-04): the harness does not do
+  what the browser does.** The tour pin dispatched Tab and asserted focus was
+  "still inside the popover" — which held with the Tab handler REMOVED, because
+  jsdom never moves focus on Tab by itself. The assertion must be one only the
+  handler can satisfy: Tab is `defaultPrevented`, and focus MOVES to the other
+  button and wraps back. Before you assert a state, ask whether the harness
+  would have produced it anyway.
 
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
@@ -3965,6 +4003,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   flush-on-close, and a SWEEP that closes every hook registered at that moment
   (a floor, not a claim that no hook may ever refuse).
 
+  **AMENDED (cycle 23 INTUI-1, 2026-10-02): two more hooks refuse mid-send.**
+  The intake preview and the coaching drawer closed while their send was in
+  flight; the rep was put back on the still-filled form and a second send went
+  out — a duplicate PHI email, or a second never-purged HR record.
+  `intakeCloseModal_` refuses while `INTAKE_STATE.sending`, and
+  `coachCloseDrawer_` while `COACH_SENDING` ("Sending — one moment…" / "Saving —
+  one moment…"); each send sets the flag before its RPC and clears it in both
+  handlers, before its own close. A guarded overlay's `busy()` (g166) hands the
+  answer to this refusal rather than asking "Discard changes?". Verify: the
+  INTUI-1 DOM drives.
+
 <a id="g131-a-null-a-payload-ships-is-a-rule"></a>
 
 - **A NULL a payload ships is a RULE one helper decides, never a per-consumer
@@ -4402,6 +4451,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   focus, caret) now rides the existing edit snapshot (`cnClarifySnapshot_` /
   `cnClarifyRestore_`), and a SENT follow-up leaves the box before the
   re-render so it is never put back. Verify: the CNUI-04 and CNUI-05 DOM pins.
+  **AMENDED (cycle 23 ADM-10 + KBUI-5, 2026-10-02): two more instances.** An
+  offboard reloaded the Team Members panel and wiped an "Add team member" form
+  being filled in; the form (values, checked state, open state, `aria-expanded`,
+  focus, caret) now rides the re-render, and only a completed ADD asks for an
+  empty form (`cnAdminLoadOnboarding_({ resetForm: true })`). Editing or
+  deleting a KB comment refreshed the block and wiped a new comment being typed
+  below; the draft rides the re-render, and a POSTED comment leaves the box
+  before its refresh so it is never put back. Verify: the ADM-10 and KBUI-5 DOM
+  drives.
 
 <a id="g142-a-diagnostic-that-names-the-wrong-source"></a>
 ### g142 — A diagnostic that names the WRONG source is worse than a vague one, because it is actionable and the action is destructive
@@ -4672,6 +4730,13 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   fresh open forgets both caches, and a late payor answer paints nothing) and
   the `reference-drawer-xref-light-wide` shot, which now shows its typed inputs
   above its results.
+  **AMENDED (cycle 23 KB2-9, 2026-10-02): an editor is a host too.** A file
+  dropped into the KB editor is read, then converted on the server; when either
+  was slow and the admin had opened another item meanwhile, the result landed
+  in THAT editor, and Save overwrote the other article. `kbIngestFile_` now
+  captures the editor (`KB_EDIT`) it was dropped into, and the read's handlers
+  and the RPC's both drop a result for any other. Verify: the KB2-9 DOM drive (a
+  late read and a late conversion).
 
 <a id="g148-a-lagged-source-s-windows-count-days"></a>
 
@@ -5110,3 +5175,29 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   reward something computed from a period's own results, or key a record by a
   period another view reads at a different grain. Verify: the QA2-1 drive (the
   row before the grant, after it, and in the next period's own view).
+
+
+<a id="g166-a-close-that-discards-typed-work-must-ask"></a>
+
+- **A close that DISCARDS typed work must ASK — Escape is pressed for other
+  reasons (cycle 23 UI-ESC, 2026-10-02).** The shell's Escape closes the
+  topmost overlay even when the key is pressed inside a textarea (to dismiss an
+  autocomplete, a browser suggestion, a habit), and a backdrop click does the
+  same. Four editors threw their work away that way with no question: the KB
+  article editor, the quiz editor, a fillable HR document and the coaching
+  composer — and "Add item" resets the editor state on reopen, so nothing came
+  back. An editor overlay now opens with `unsaved: { what, busy?, dirty? }`;
+  while it is DIRTY, every close through `closeOverlay` puts up one
+  `uiConfirm` "Discard changes?" (Discard / Keep editing) and refuses until the
+  answer is Discard. "Dirty" is an EVENT since this open, never a diff:
+  `ensureOverlay` marks any `input` / `change` inside the overlay, a
+  closed→open transition starts clean, a module marks work no key produced
+  (`overlayMarkDirty_`: a converted Doc, an ingested file, imported questions,
+  a structural quiz edit), and `dirty()` covers what fires no event (a drawn
+  signature). A prefill is not work. `busy()` true means a save is in flight
+  and the hook's own refusal answers (g130). A module's close after a SAVE
+  calls its hook directly and is never asked. Fires when you add an overlay a
+  person types into, or a close path to one. Verify: the UI-ESC Node pin (the
+  four editors register `unsaved`; the guard runs first in `closeOverlay`) +
+  the UI-ESC DOM drives (Escape inside a field, the backdrop, the ×, Keep
+  editing, Discard, a prefill, a reopen, a module mark, mid-save).

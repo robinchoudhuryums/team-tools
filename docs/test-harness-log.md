@@ -2554,3 +2554,35 @@ per-change detail. By delta:
   `qaNextPeriod_` / `qaExemptFor_` and the new `qaCoverageRows_` (the F4
   mirror pin).
 - 14 bite-checks, all BITE.
+
+## Cycle 23 — Batch 9, editors, closes and imports (2026-10-02)
+
+- Node +5: ADM-06 drives `cnRateMapFromRows_` and checks the handler refuses
+  before the RPC; KB2-8 drives `kbImportManual` over the M1 fake book with a
+  lost ledger row (a check reports it and writes nothing, the import records
+  it with no KB write, the audit counts it, a re-import is a no-op); SH-02 is a
+  DERIVED net — the hook set is collected from every `ensureOverlay(…,
+  { onClose })` in the partials, and no `onclick="hook()"` or delegated
+  `closest(…)) hook()` may call one; UI-ESC checks the four editors register
+  `unsaved` and the guard runs first in `closeOverlay`; TRUI-2 the fixed ink
+  and the white pad.
+- DOM +12, in a new section driving the real partials: the UI-ESC editors (KB
+  — inside a field, the backdrop, the ×, Keep editing, no stacked question,
+  Discard, a module mark; quiz — a structural edit; coaching — a prefill is
+  not work, typed text asks, a reopen starts clean; the doc reader — typed
+  answers and a drawn signature), INTUI-1 for intake and coaching, TRUI-2
+  (dark mode with a near-white `--ink`; stroke and fill read `#101418`, via a
+  stubbed 2D context and a stubbed `getBoundingClientRect`, since jsdom has
+  neither), TCUI-1, ADM-10, KBUI-5, KB2-9 (a fake `FileReader` whose `onload`
+  the test fires), SH-02 (each close button's own `onclick` text is run with
+  `h.read`, since jsdom never compiles inline handlers), SH-03, SH-04 and SH-05
+  (a counting wrapper on `document.addEventListener` across three shell
+  renders).
+- Moved pins: PR4-5 (the coaching `ensureOverlay` line carries `unsaved`),
+  TW-B (two canvas fallbacks, not four — empdocs left that category for the
+  fixed ink), M1-S3 (man-5 is a repair) and M1-S5 (the audit row carries
+  `repaired=0`).
+- 31 bite-checks, all BITE. One NO BITE first: SH-04's Tab case asserted focus
+  was "still inside the popover", which held with the handler removed — jsdom
+  never moves focus on Tab (g116's fifteenth direction). It now asserts the
+  key is handled and focus MOVES and wraps.
