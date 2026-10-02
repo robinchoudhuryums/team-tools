@@ -3,11 +3,11 @@
 ## Current
 Cycle: 23 — opened by the 2026-10-01 `/broad-scan` (0 Critical / 5 High; plan of 13 batches + 8 deferred, in chat). Cycle 22 and 22post are in `.cycle/HISTORY.md`.
 Phase: implement
-Scope: broad — Batches 1–4b and TC-02 done; next Batch 5
+Scope: broad — Batches 1–5 (TC-02 included) done; next Batch 6a
 Test Command: manual
-Estimates: Batch 1: M (~9 h) · Batch 2: M (~11 h) · Batch 3: M (~9.5 h) · Batch 4a: M (~10 h) · 4a follow-ons: S (~3 h) · Batch 4b: M (~11 h) · TC-02 (option a): M (~8 h) — each written before its first edit
+Estimates: Batch 1: M (~9 h) · Batch 2: M (~11 h) · Batch 3: M (~9.5 h) · Batch 4a: M (~10 h) · 4a follow-ons: S (~3 h) · Batch 4b: M (~11 h) · TC-02 (option a): M (~8 h) · Batch 5: M (~10 h) — each written before its first edit
 Subsystem cycles since last Seams audit: 3 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25) and 22post's /reflect (2026-09-30). The cadence is every 4, so the next reflection reaches it.
-Updated: 2026-10-02 (cycle 23 TC-02)
+Updated: 2026-10-02 (cycle 23 Batch 5)
 
 ## In progress (facts to carry forward — NOT judgments)
 - Cycle 23 opened 2026-10-01 with a `/broad-scan` (0 Critical / 5 High / ~110 findings; the full report and 13-batch plan are in that session's chat — the batch→ID list is copied under Pending below).
@@ -15,11 +15,19 @@ Updated: 2026-10-02 (cycle 23 TC-02)
 - Batch 2 implemented on the same branch (block: `.cycle/blocks/23-batch2-broad-implement.md`); NOT yet deployed. /sync-docs for Batch 2 done.
 - Batch 3 implemented on the same branch (block: `.cycle/blocks/23-batch3-broad-implement.md`); NOT yet deployed. /sync-docs for Batch 3 done.
 - Batch 4a and its follow-ons implemented on the same branch (blocks: `.cycle/blocks/23-batch4a-broad-implement.md`, `…-batch4a-followons-broad-implement.md`); NOT yet deployed. /sync-docs for both done.
+- Batch 5 implemented on the same branch (block: `.cycle/blocks/23-batch5-broad-implement.md`); NOT yet deployed; /sync-docs for it not yet run.
 - TC-02 implemented on the same branch as option (a) (block: `.cycle/blocks/23-tc02-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Batch 4b implemented on the same branch (block: `.cycle/blocks/23-batch4b-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Everything through 22post is merged (PRs #274–#282) and deployed (2026-09-30). The operator was finishing two 22post steps at close: the manual.json re-export + import, and the S124–S128 walks.
 
 ## Completed this cycle
+- SP-1 | 51_spanish.js, 20_timeclock.js | a voicemail after a manual resolve can be resolved (latest-row fold, re-resolve, Needs-you trusts the pending ids)
+- SP-3 | 00_config.js, 51_spanish.js, metrics/script_metrics.html | resolve/claim tabs read by a 180-day span; a failed read throws; unknown claims flagged and auto-assign refuses
+- SP-4 | 51_spanish.js | auto-assign reads pending through the ungated `spanishPendingCore_`
+- DR-2 | 50_deptrequests.js | the latest department reply decides
+- DR-1 | 50_deptrequests.js | a shared thread's reply resolves only the request whose link it quotes
+- RES-1 | 61_forms.js, 50_deptrequests.js, 00_config.js, metrics/script_deptrequests.html, Tests.js | the resolve link is a confirm page; the sender's own click is 'self', untimed
+- DR-3 | 10_core.js, 50_deptrequests.js, 51_spanish.js, metrics/script_deptrequests.html | true medians (`medianWhole_`)
 - /sync-docs (Batch 4b + TC-02) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g02/g05/g53/g122/g128/g129/g151 amended; new g163 (an adjustment that names a type must say which); the break-adjustment decision + three amended decisions; BreakTarget + the Forms/DR warnings in operator-state; S7/S43/S44/S62/S64/S95/S96/S97/S114/S117 steps; new S132
 - TC-02 | 00_config.js, 20_timeclock.js, modals.html, tc/script_clock.html, tc/script_manager.html | a break adjustment says which break (add / correct the one at HH:MM) — one resolver for every writer, refused rather than guessed; request column BreakTarget; range mode refuses multi-break days; getMyDayBreaks
 - ADM-04 | 10_core.js, test/visual/mock.js | Forms / Dept Requests on the ADP fallback read configured:false (still probed)
@@ -70,7 +78,7 @@ Updated: 2026-10-02 (cycle 23 TC-02)
   - Batch 3 disabled Drive — DONE (DRV-1, QA-1, DRV-2, DRV-4, DRV-5 + the drivedisabled scenarios)
   - Batch 4a automation honesty — DONE (CORE-01, HR-3, MAIL-4, CORE-02, TC-07, QA-3)
   - Batch 4b failure-as-data reads — DONE (ADM-04, ADM-09, ADM-07, ADM-08, MET-1, TC2-2, MET-2/3/4, KBUI-1, METUI-1, ADM-11)
-  - Batch 5 Spanish/DR: SP-1, DR-2, DR-1, RES-1, SP-3, SP-4, DR-3
+  - Batch 5 Spanish/DR — DONE (SP-1, DR-2, DR-1, RES-1, SP-3, SP-4, DR-3)
   - Batch 6a PTO/punch: TC-03, TC-04, TC-05, TC-06, TC-08, CORE-07, VIS-1
   - Batch 6b schedules: TC2-1, TC2-6, TC2-3, TC2-4, TC2-7, TC2-8, COA-2, MET2-2
   - Batch 7a store data: FORM-1, HR-1+CN-7, FORM-2, FORM-3, FORM-4, FORM-5, CN-1, CN-2, CN-4, CN-5
@@ -80,6 +88,7 @@ Updated: 2026-10-02 (cycle 23 TC-02)
   - Batch 10 PHI/config: KBUI-2, KB-2, INT2-3, INT-1/INT2-1/INT2-2, INT-2/INT2-4, CN-3, ADM-12, ADM-13/CORE-04/05/06/03/TRN-2, MET-5/MET2-1
   - Deferred (decisions): DRV-3, SP-2, KB2-6, HR-2, TRN-1, CN-8, INT-3, TC2-9
 - **Batch 1 deploy + walks:** clasp push + New version; S8 with >1,000 rows; S18's blocked-clipboard step twice via Save & Compose; S1.
+- **Batch 5 deploy:** the DR-1 operator check (any two DeptRequests rows sharing a ThreadId?); tell the departments the resolve link now opens a page with a button; walk S74/S80/S101/S105/S121/S122.
 - **TC-02 deploy:** deny-and-refile any pre-deploy break request the queue marks "filed without add/correct" if its approval is refused; walk S5/S7/S92/S95/S96 and the new break-choice scenario.
 - **Batch 4b deploy:** expect System + the Overview checklist to show "Forms (PHI) not set" / "Dept Requests (PHI-adjacent) not set" while those properties are unset (set both to the Intake spreadsheet), a readiness "Automation health" row, and Reference-lookups findings; walk S43/S44/S62/S64/S97/S112/S114/S117.
 - **Batch 4a deploy:** expect NEW stamped failures on Admin → System that were invisible before (each names its cause); if `managerDailyBrief` is ON, confirm the 8am brief still arrives (S55).
@@ -94,6 +103,7 @@ Updated: 2026-10-02 (cycle 23 TC-02)
 - **DEFERRED, still an operator decision:** F-09's holiday FALLBACK; what a LocationAcceptance city row's Accepts column decides.
 
 ## Open follow-on items
+- **Batch 5 follow-ons** (full text in its block): email-request Spanish threads still read any manual resolve as resolving the whole thread; no visual fixture for a 'self' resolve, `claimsUnavailable`, or the resolve page.
 - **TC-02 follow-ons** (full text in its block): two same-type "add" requests for one day in one batch are still a duplicate; the personal-sheet mirror is one slot per type; no editor-suite case drives a real multi-break adjustment.
 - **Batch 4b follow-ons** (full text in its block): a fallback row repeats the ADP sheet's tz verdict; the readiness health row shows raw problem text; `getMyMetrics` does not flag a failed trend the way the range endpoint now does; no visual scenario for a failed search or shift stats with `cdrUnavailable`.
 - **Batch 4a follow-ons — DONE** (4a-FU1/FU2/FU3). Remaining from them: the archive movers may still delete per row under the lock; the mock's automation fixture shows no `failedAt` / `label` state.
@@ -112,4 +122,4 @@ Updated: 2026-10-02 (cycle 23 TC-02)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 23 Batches 1–4b (TC-02 included) and the 4a follow-ons are committed, pushed and doc-synced on `claude/blissful-johnson-cottl5`. Next: deploy (`clasp push -f` + New version) and walk the Batch 1–4b + TC-02 scenarios (incl. S132); then `/broad-implement Batch 5`. The next /reflect reaches the Seams-audit cadence.
+Cycle 23 Batches 1–5 (TC-02 included) and the 4a follow-ons are committed and pushed on `claude/blissful-johnson-cottl5`; Batch 5's docs are not yet synced. Next: `/sync-docs` for Batch 5, then deploy and walk the Batch 1–5 scenarios; then `/broad-implement Batch 6a`. The next /reflect reaches the Seams-audit cadence.
