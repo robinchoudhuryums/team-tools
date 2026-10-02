@@ -33456,7 +33456,8 @@ test('MET-5 + MET2-1 (cycle 23): a period-to-date window read before the daily i
   assert.strictEqual(ctx.dashboardImportPending_({ from: '2026-10-01', to: '2026-10-01', dataThrough: null }, null, '2026-09-30'), false, 'no complete day: M2 handles it');
   assert.strictEqual(ctx.dashboardImportPending_({ from: '2026-10-05', to: '2026-10-05' }, null, '2026-10-02'), false, "'yesterday' is never pending here");
   const dash = stripJsComments_(extractRawFunction('Code.js', 'getDashboardMetrics'));
-  assert.ok(/var importPending = dashboardImportPending_\(range, cur\.latestDate, prevWorkdayIso_\(todayIso\)\);/.test(dash), 'the cache put asks it');
+  assert.ok(/var importPending = dashboardImportPending_\(range, cur\.latestDate, prevWorkdayIso_\(todayIso\)\);/.test(dash) &&
+    /if \(useCache && [^)]*!importPending\) \{\s*try \{ cache\.put\(cacheKey/.test(dash), 'the cache put is gated on it');
   const sb = buildSandbox([]);
   const w = loadFunction(sb, 'metrics/script_metrics.html', 'mTrendWeightedPct_');
   assert.strictEqual(Math.round(w([{ answered: 90, missed: 10 }, { answered: 5, missed: 5 }]) * 10) / 10, 86.4, 'weighted by calls (the plain mean read 70.0)');
