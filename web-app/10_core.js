@@ -1198,6 +1198,29 @@ function auditWindowProvesAbsence_(win, nowMs, staleHours) {
   if (!start || !isFinite(start) || !(staleHours > 0)) return false;
   return (nowMs - start) > staleHours * 3600000;
 }
+/** 4a follow-ons (cycle 23) — each stamp carries its human label: the job
+ *  table's for a tabled key, AUTOMATION_ERROR_LABELS' otherwise, the key last. */
+function automationErrorsLabelled_(map) {
+  const tabled = {};
+  AUTOMATION_JOB_CHECKS.forEach(function (j) { tabled[j.action] = j.label; });
+  const out = {};
+  Object.keys(map || {}).forEach(function (k) {
+    const e = (map[k] && typeof map[k] === 'object') ? map[k] : {};
+    out[k] = { at: e.at, message: e.message, label: tabled[k] || AUTOMATION_ERROR_LABELS[k] || k };
+  });
+  return out;
+}
+/** PURE (Node-pinned) — 4a follow-ons: the stamp's time when it lies inside
+ *  the last `hours` before `nowMs`, else ''. A failure older than the window
+ *  says nothing about why the heartbeat is stale now (the trigger may have
+ *  died since), so it is not offered as the cause. */
+function automationFailedWithin_(e, hours, nowMs) {
+  if (!e || !e.at || !(hours > 0)) return '';
+  try {
+    const ms = Utilities.parseDate(String(e.at), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime();
+    return (nowMs - ms) <= hours * 3600000 ? String(e.at) : '';
+  } catch (_) { return ''; }
+}
 function readAutomationErrors_() {
   try {
     const map = JSON.parse(PropertiesService.getScriptProperties()
@@ -1399,7 +1422,10 @@ function automationDetectorChecks_() {
   // outage: the panel shows DEAD and the failure digest emails it.
   add('briefConfig', 'managerDailyBrief flag has a live brief trigger behind it', function () {
     if (getFlag_('managerDailyBrief') && !managerBriefSuppressionActive_()) {
-      throw new Error('managerDailyBrief is ON but sendManagerDailyBrief has no fresh heartbeat — run installAutomationTriggers(). The separate manager digests keep sending until then (fail-safe).');
+      // CORE-01 (cycle 23): the heartbeat is now withheld when a brief fails to
+      // send, so a stale one has TWO causes — naming only the trigger sent the
+      // operator to reinstall triggers that were fine (g142).
+      throw new Error('managerDailyBrief is ON but sendManagerDailyBrief has no fresh heartbeat — either its trigger is missing (run installAutomationTriggers()) or its last run did not deliver (see the ManagerDailyBrief failure). The separate manager digests keep sending until then (fail-safe).');
     }
   });
   // F9: config-coherence, not a parser round-trip — surfaces MANAGER_EMAILS ↔
@@ -1539,7 +1565,7 @@ function computeAutomationHealth_(opts) {
     });
     // F4: a job that catches its own error reports failure to nobody unless the
     // error is stamped somewhere the panel and the digest can read.
-    const automationErrors = readAutomationErrors_();
+    const automationErrors = automationErrorsLabelled_(readAutomationErrors_());
 
     // ── (b): CDR reachability + name-match health (last 7 days) ──────────
     let cdr;
@@ -1631,10 +1657,16 @@ function computeAutomationHealth_(opts) {
           stale = (Date.now() - ms) > DIGEST_STALE_HOURS[k] * 3600000;
         } catch (_) { stale = true; }
       }
+      // 4a follow-ons (cycle 23): a stale heartbeat whose job STAMPED a failure
+      // inside the same window ran — and failed. Ship that, so the stale line
+      // names the failure instead of a missing trigger (g142).
+      const errorKey = DIGEST_ERROR_KEYS[k] || '';
       return {
         key: k,
         last: raw ? convertAuditTs_(raw, CONFIG.TIMEZONE, mgrTz) : null,
         stale: stale,
+        failedAt: (stale && errorKey) ? automationFailedWithin_(automationErrors[errorKey], DIGEST_STALE_HOURS[k], Date.now()) : '',
+        errorKey: errorKey,
       };
     });
 
@@ -1734,7 +1766,11 @@ function automationProblems_(report, opts) {
   const done = function () { return (opts && opts.items) ? items : items.map(function (i) { return i.text; }); };
   if (!report) return done();
   (report.digests || []).forEach(function (d) {
-    if (d && d.stale) add('digest', d.key, 'The "' + d.key + '" digest last ran ' + (d.last || 'too long ago') + ' — the trigger may be disabled.');
+    if (d && d.stale) {
+      add('digest', d.key, d.failedAt
+        ? 'The "' + d.key + '" digest last ran ' + (d.last || 'too long ago') + ' — it ran and FAILED at ' + d.failedAt + ' (see that failure), so this is not a missing trigger.'
+        : 'The "' + d.key + '" digest last ran ' + (d.last || 'too long ago') + ' — the trigger may be disabled.');
+    }
   });
   // Per-JOB liveness + last-error, DERIVED from AUTOMATION_JOB_CHECKS rather
   // than hand-listed here (Gap4). This block used to check exactly one job
@@ -1760,7 +1796,7 @@ function automationProblems_(report, opts) {
   Object.keys(report.automationErrors || {}).forEach(function (k) {
     if (tabledActions[k]) return;
     const e = report.automationErrors[k] || {};
-    add('jobError', k, 'The ' + k + ' job FAILED on ' + (e.at || '?') + ': ' + (e.message || 'unknown error'));
+    add('jobError', k, 'The ' + (e.label && e.label !== k ? e.label + ' (' + k + ')' : k) + ' job FAILED on ' + (e.at || '?') + ': ' + (e.message || 'unknown error'));
   });
   // PTO accrual reconciliation (operator 2026-09-15). The top-up heals late
   // data on its own, so a top-up is NOT a problem — it is the system working.
@@ -1869,15 +1905,21 @@ function getAutomationHealthBadge() {
     const KEY = 'auto_health_badge_v1';
     const hit = cache.get(KEY);
     if (hit) { try { return JSON.parse(hit); } catch (e) {} }
-    let res = { failing: false, count: 0 };
+    let res;
     try {
       const problems = automationProblems_(computeAutomationHealth_());
       res = { failing: problems.length > 0, count: problems.length };
-    } catch (e) { Logger.log('getAutomationHealthBadge compute failed: ' + e.message); }
+    } catch (e) {
+      // CORE-02 (cycle 23): a check that could not run is UNKNOWN, never
+      // "not failing" — and it is not cached, or one bad read would clear
+      // every manager's dot for ten minutes. The client keeps the dot as-is.
+      Logger.log('getAutomationHealthBadge compute failed: ' + e.message);
+      return { failing: null, unknown: true, count: 0 };
+    }
     try { cache.put(KEY, JSON.stringify(res), 600); } catch (e) {}
     return res;
   } catch (err) {
-    return { failing: false, count: 0 };
+    return { failing: null, unknown: true, count: 0 };
   }
 }
 /** K-A alternative (operator-approved) — nightly IN-PROJECT self-test, the
@@ -2005,12 +2047,15 @@ function sendAutomationHealthDigest() {
       stampAutomationError_('AutomationHealthDigest', e.message);
     }
     if (!report) return;
-    stampDigestLastRun_('automationHealth');
-    clearAutomationError_('AutomationHealthDigest');
 
     const problems = automationProblems_(report);
 
-    if (!problems.length) { Logger.log('automation-health digest: all clear, nothing to send.'); return; }
+    if (!problems.length) {
+      stampDigestLastRun_('automationHealth');
+      clearAutomationError_('AutomationHealthDigest');
+      Logger.log('automation-health digest: all clear, nothing to send.');
+      return;
+    }
 
     const itemsHtml = '<ul style="margin:0;padding-left:18px;">' +
       problems.map(function (p) { return '<li style="margin:4px 0;">' + esc_(p) + '</li>'; }).join('') + '</ul>';
@@ -2026,7 +2071,15 @@ function sendAutomationHealthDigest() {
         body: textBody,
         htmlBody: buildBrandedEmailHtml_('Automation health needs attention', bodyHtml, { tone: 'warn', subLabel: 'Automation Health' }),
       });
-    } catch (mailErr) { Logger.log('automation-health digest send failed: ' + mailErr.message); }
+    } catch (mailErr) {
+      // CORE-02 + MAIL-4 (cycle 23): the heartbeat and the clear used to land
+      // BEFORE the send, so an undelivered digest read as a clean run.
+      Logger.log('automation-health digest send failed: ' + mailErr.message);
+      stampAutomationError_('AutomationHealthDigest', 'the digest found ' + problems.length + ' issue(s) but could not be sent: ' + mailErr.message);
+      return;
+    }
+    stampDigestLastRun_('automationHealth');
+    clearAutomationError_('AutomationHealthDigest');
     Logger.log('sendAutomationHealthDigest: ' + problems.length + ' issue(s) emailed to ' + mgrEmails.length + ' manager(s).');
   } catch (err) {
     stampAutomationError_('AutomationHealthDigest', err.message);
@@ -2061,7 +2114,13 @@ function getStorageHealth(opts) {
       const out = {
         label: spec.label, role: spec.role, cls: spec.cls, retention: spec.retention,
         prop: spec.prop, source: spec.source, note: spec.note || '',
-        configured: !!spec.id, reachable: false, name: '', tz: '', tzMatch: null, url: '',
+        // ADM-04 (cycle 23): a store that FALLS BACK onto another one is NOT
+        // configured — `!!spec.id` was always true for Forms and Dept Requests
+        // (the fallback id is the ADP sheet's), so "PHI on the payroll sheet"
+        // read as OK on every surface. The fallback is still opened below, so
+        // reachability and tz stay visible.
+        configured: (spec.configured !== undefined) ? !!spec.configured : !!spec.id,
+        reachable: false, name: '', tz: '', tzMatch: null, url: '',
       };
       if (!spec.id) return out;
       try {
@@ -2117,7 +2176,7 @@ function getStorageHealth(opts) {
     const formsProp = props.getProperty('FORMS_SS_ID');
     const formsId = formsProp || adpId;
     stores.push(probe({ label: 'Forms (PHI)', role: 'FormTokens + FormSubmissions',
-      cls: 'PHI', retention: '90-day purge (if enabled)', prop: 'FORMS_SS_ID', id: formsId,
+      cls: 'PHI', retention: '90-day purge (if enabled)', prop: 'FORMS_SS_ID', id: formsId, configured: !!formsProp,
       source: formsProp ? 'Script Property' : (formsId ? 'ADP fallback' : 'unset'),
       note: formsProp ? '' : 'Unset → form PHI is co-located with the ADP/payroll sheet. Recommend setting FORMS_SS_ID to the Intake spreadsheet.' }));
 
@@ -2128,7 +2187,7 @@ function getStorageHealth(opts) {
     const drProp = props.getProperty('DEPT_REQUESTS_SS_ID');
     const drId = drProp || adpId;
     stores.push(probe({ label: 'Dept Requests (PHI-adjacent)', role: 'DeptRequests (inter-department request tracker; PatientTrx names a patient)',
-      cls: 'PHI-adjacent', retention: 'Kept', prop: 'DEPT_REQUESTS_SS_ID', id: drId,
+      cls: 'PHI-adjacent', retention: 'Kept', prop: 'DEPT_REQUESTS_SS_ID', id: drId, configured: !!drProp,
       source: drProp ? 'Script Property' : (drId ? 'ADP fallback' : 'unset'),
       note: drProp ? '' : 'Unset → DeptRequests rows (each names a patient + TRX) are co-located with the ADP/payroll sheet. Recommend setting DEPT_REQUESTS_SS_ID to the Intake spreadsheet.' }));
 
@@ -2304,6 +2363,12 @@ function scanStoredFormulas_(targets, deadline, now) {
   for (let t = 0; t < targets.length; t++) {
     const tg = targets[t];
     if (clock() > deadline) { out.unscanned.push(tg.label); continue; }
+    // ADM-08 (cycle 23): a NO-FALLBACK store that is simply unset (HR, QA) is
+    // a deployment without that feature, not a store that could not be opened
+    // — reported as an error, it kept the scan from ever reading clean (g02).
+    let isSet = true;
+    try { isSet = !tg.configured || !!tg.configured(); } catch (e) { isSet = true; }
+    if (!isSet) { out.stores.push({ label: tg.label, notConfigured: true }); continue; }
     let ss;
     try { ss = tg.open(); } catch (e) { out.stores.push({ label: tg.label, error: e.message }); continue; }
     if (!ss) { out.stores.push({ label: tg.label, error: 'not configured' }); continue; }
@@ -2347,8 +2412,8 @@ function adminScanStoredFormulas() {
       { label: 'Dept Requests', open: getDeptRequestsSS_ },
       { label: 'Intake (PHI)', open: getIntakeSS_ },
       { label: 'Knowledge Base + Training', open: getKbSS_ },
-      { label: 'Employee Docs (HR)', open: getHrDocsSS_ },
-      { label: 'QA (recordings)', open: getQaSS_ },
+      { label: 'Employee Docs (HR)', open: getHrDocsSS_, configured: hrDocsConfigured_ },
+      { label: 'QA (recordings)', open: getQaSS_, configured: qaStoreConfigured_ },
     ];
     const roster = getEmployeeRosterRows_();
     for (let i = 1; i < roster.length; i++) {
@@ -2674,6 +2739,25 @@ function deployReadinessItems_(storage, automation, managerCount) {
     !anyHeartbeat ? 'warn' : (anyStale ? 'warn' : 'ok'),
     !anyHeartbeat ? 'No digest has run yet — run installAutomationTriggers() (expected on a fresh deploy).'
       : (anyStale ? 'A digest looks stale — check the cross-account trigger-ownership trap.' : 'Heartbeats fresh.'));
+
+  // ADM-09 (cycle 23): the readiness headline read "All clear" under a red
+  // health dot — it checked stores, heartbeats and CDR, never the problem list
+  // the dot counts (job failures, dead detectors, a failing self-test, open
+  // punches, accrual shortfalls). It reads that ONE list now (g151), as items
+  // so a count and the first few lines ride the row.
+  if (!autoErr) {
+    var probs = Array.isArray(automation && automation.problems) ? automation.problems : null;
+    if (!probs) {
+      push('health', 'Automation health (what the health dot counts)', 'warn',
+        'Could not check — the report carried no problem list. Reload to retry.');
+    } else {
+      var texts = probs.map(function (p) { return (p && p.text) || String(p); });
+      push('health', 'Automation health (what the health dot counts)', probs.length ? 'warn' : 'ok',
+        probs.length ? (probs.length + ' issue(s): ' + texts.slice(0, 3).join(' · ') +
+          (texts.length > 3 ? ' (+' + (texts.length - 3) + ' more — see Manage → Admin → System)' : ''))
+          : 'Nothing the health dot counts is failing.');
+    }
+  }
 
   var cdrOk = !!(automation && automation.cdr && automation.cdr.ok);
   if (!autoErr) push('cdr', 'CDR reachability (Metrics)',
@@ -3127,14 +3211,18 @@ function esc_(s) {
 // ════════════════════════════════════════════════════════════════════════════
 /** Deletes data rows whose date column (0-based `dateColIdx`) is strictly older
  *  than `cutoffMs`. Deletes descending so row-index shifts don't skip rows.
- *  Returns the count removed. Caller holds the lock. */
-function purgeSheetRowsOlderThan_(sheet, dateColIdx, cutoffMs) {
+ *  Returns the count removed. Caller holds the lock. `msOf` (QA-3, cycle 23)
+ *  reads a cell as epoch ms or null (null = never deleted); it defaults to the
+ *  date-string reader, and a tab of NUMBER ms cells passes its own so it shares
+ *  this one deletion path — the C5 spare-row guard included. */
+function purgeSheetRowsOlderThan_(sheet, dateColIdx, cutoffMs, msOf) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return 0;
+  const readMs = msOf || parseRetentionDateMs_;
   const rows = sheet.getDataRange().getValues();
   const toDelete = [];
   for (let i = 1; i < rows.length; i++) {
-    const ms = parseRetentionDateMs_(rows[i][dateColIdx]);
+    const ms = readMs(rows[i][dateColIdx]);
     if (ms !== null && ms < cutoffMs) toDelete.push(i + 1);  // 1-based sheet row
   }
   // C5 (cycle 22): Sheets REFUSES to delete every non-frozen row of a grid
@@ -3149,9 +3237,11 @@ function purgeSheetRowsOlderThan_(sheet, dateColIdx, cutoffMs) {
   if (toDelete.length && toDelete.length >= sheet.getMaxRows() - 1) {
     sheet.insertRowAfter(sheet.getMaxRows());
   }
-  for (let j = toDelete.length - 1; j >= 0; j--) {
-    sheet.deleteRow(toDelete[j]);
-  }
+  // 4a follow-ons (cycle 23): one deleteRows per CONTIGUOUS run, descending
+  // (the diagnostics purge's helper), not one deleteRow per row — every caller
+  // holds the global ScriptLock, and a first backlog of a few thousand rows
+  // held it for minutes (~0.5s a row), queueing every punch and note.
+  contiguousRowRunsDesc_(toDelete).forEach(function (r) { sheet.deleteRows(r.start, r.count); });
   return toDelete.length;
 }
 // Runs a dispatcher's jobs one after another, each in its own try/catch, so a
@@ -3713,12 +3803,15 @@ function sendManagerBriefEmail_(toEmail, sections, d, todayIso) {
 function sendManagerDailyBrief() {
   assertManagerCaller_('sendManagerDailyBrief');  // see sendDailyMissedPunchAlerts note
   try {
-    // Heartbeat stamps even while the flag is off — the trigger ran; the
-    // Automation Health caption explains the flag gate.
-    stampDigestLastRun_('managerBrief');
-    if (!getFlag_('managerDailyBrief')) { Logger.log('managerDailyBrief flag is off — brief not sent.'); return; }
+    // Heartbeat stamps while the flag is off — the trigger ran; the Automation
+    // Health caption explains the flag gate. CORE-01 (cycle 23): with the flag
+    // ON the heartbeat is what makes the four standalone digests stand down
+    // (managerBriefSuppressionActive_), so it is stamped only once the brief
+    // has DELIVERED — stamped first, a brief that failed to send left every
+    // manager with no daily mail at all and the health dot green.
+    if (!getFlag_('managerDailyBrief')) { stampDigestLastRun_('managerBrief'); Logger.log('managerDailyBrief flag is off — brief not sent.'); return; }
     const mgrEmails = getManagerEmails_();
-    if (!mgrEmails.length) { Logger.log('No manager emails — skipping daily brief.'); return; }
+    if (!mgrEmails.length) { stampDigestLastRun_('managerBrief'); Logger.log('No manager emails — skipping daily brief.'); return; }
     const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
     const now = new Date();
     const todayIso = Utilities.formatDate(now, mgrTz, 'yyyy-MM-dd');
@@ -3754,14 +3847,8 @@ function sendManagerDailyBrief() {
     const docs        = src('unsigned documents', function () { return empDocsOverdueAll_(todayIso); });
     const coaching    = src('un-acknowledged coaching', function () { return coachUnackedAll_(Date.now()); });
     const deptOverdue = src('overdue department requests', function () { return deptRequestsOverdueOpen_(); });
-    if (failedSources.length) {
-      stampAutomationError_('ManagerDailyBrief',
-        failedSources.length + ' source(s) unreadable: ' + failedSources.join(', '));
-    } else {
-      clearAutomationError_('ManagerDailyBrief');
-    }
 
-    let sent = 0;
+    let sent = 0, sendFailed = 0, lastSendError = '';
     mgrEmails.forEach(function (email) {
       const mgr = { email: email, isManager: true };
       const d = {
@@ -3778,14 +3865,25 @@ function sendManagerDailyBrief() {
       // absence of sections is not an all-clear and the brief says so.
       if (!sections.length && !failedSources.length) return;
       try { sendManagerBriefEmail_(email, sections, d, todayIso); sent++; }
-      catch (e) { console.warn('daily brief to ' + email + ' failed: ' + e.message); }
+      catch (e) { sendFailed++; lastSendError = String((e && e.message) || e); console.warn('daily brief to ' + email + ' failed: ' + lastSendError); }
     });
+    // One stamp names everything that went wrong this run — a source that could
+    // not be read AND a brief that could not be sent — and a clean run clears it.
+    const problems = [];
+    if (failedSources.length) problems.push(failedSources.length + ' source(s) unreadable: ' + failedSources.join(', '));
+    if (sendFailed) problems.push(sendFailed + ' of ' + (sent + sendFailed) + ' brief email(s) failed to send (' + lastSendError + ')');
+    if (problems.length) stampAutomationError_('ManagerDailyBrief', problems.join(' · '));
+    else clearAutomationError_('ManagerDailyBrief');
+    // A manager whose brief failed got none of the four suppressed digests
+    // either — withholding the heartbeat lets them send again (fail-safe).
+    if (!sendFailed) stampDigestLastRun_('managerBrief');
     Logger.log('sendManagerDailyBrief: managersEmailed=' + sent +
       ' missed=' + missed.length + ' urgent=' + urgent.length +
       ' training=' + training.length + ' docs=' + docs.length +
       ' coaching=' + coaching.length + ' deptOverdue=' + deptOverdue.length);
   } catch (err) {
     Logger.log('sendManagerDailyBrief failed: ' + err.message);
+    stampAutomationError_('ManagerDailyBrief', 'the brief run failed: ' + err.message);   // CORE-01: a throw is not a quiet morning
   }
 }
 /** H1 (2026-09-17): the ONE company holiday calendar -- [{date, name}] for
@@ -4525,6 +4623,16 @@ function writeWitnessAuditLog_(targetEmp, action, punchDate, punchTime, isAdjust
   console.error('WITNESS audit row lost after retry: ' + action);
   return false;
 }
+/** PURE — DR-3 (cycle 23): the median of whole minutes, as a whole number;
+ *  NULL for an empty set. Four readers took the upper-middle element, which
+ *  for an even count is not a median (two samples of 10 and 90 read 90).
+ *  Callers pass a SORTED array (each already sorts it for other reads). */
+function medianWhole_(sorted) {
+  const a = sorted || [];
+  if (!a.length) return null;
+  const mid = Math.floor(a.length / 2);
+  return a.length % 2 ? a[mid] : Math.round((a[mid - 1] + a[mid]) / 2);
+}
 function daysBetween_(earlierIso, laterIso) {
   return Math.round((new Date(laterIso+'T00:00:00Z') - new Date(earlierIso+'T00:00:00Z')) / 86400000);
 }
@@ -4718,6 +4826,21 @@ function driveScopeError_(msg) {
   if (/authorization is required to perform that action/i.test(s)) return true;
   return /do not have permission to call/i.test(s) && /googleapis\.com\/auth\/drive/i.test(s);
 }
+/** PURE (Node-pinned) — DRV-1 (cycle 23): is this the domain's refusal of the
+ *  Drive SERVICE itself ("The feature you are attempting to use has been
+ *  disabled by your domain administrator.")? It is NOT a missing scope — the
+ *  token can carry /auth/drive while every DriveApp call throws this — and NOT
+ *  a folder problem, so no advice about scopes or folder ids applies to it. */
+function driveDisabledError_(msg) {
+  return /disabled by (?:your|the) (?:domain )?administrator/i.test(String(msg || ''));
+}
+/** PURE (Node-pinned) — DRV-4 (cycle 23): does Drive say the item is GONE
+ *  (deleted, or never shared with this account)? The one open failure a
+ *  replacement folder can fix; a timeout, a quota or a disabled service is
+ *  not, and replacing the folder on one strands every image already in it. */
+function driveItemGoneError_(msg) {
+  return /no item with the given id could be found/i.test(String(msg || ''));
+}
 /** Is the Drive scope the KB image export needs actually GRANTED to the
  *  identity this app runs as? SIDE-EFFECT FREE BY CONSTRUCTION: it
  *  introspects the OAuth token instead of attempting a write, so opening the
@@ -4730,7 +4853,9 @@ function driveScopeError_(msg) {
 function driveAccessStatus_() {
   const out = {
     scope: DRIVE_WRITE_SCOPE, granted: null, error: '', reauthHint: DRIVE_REAUTH_HINT,
+    service: null, serviceError: '', disabledMsg: DRIVE_DISABLED_MSG,
     folderProp: KB_IMAGES_FOLDER_PROP, folderId: '', folderOk: null, folderError: '',
+    qaFolderProp: QA_FOLDER_PROP, qaFolderId: '', qaFolderOk: null, qaFolderError: '',
   };
   const cache = CacheService.getScriptCache();
   try {
@@ -4755,16 +4880,40 @@ function driveAccessStatus_() {
     }
   } catch (e) { out.error = String((e && e.message) || e); }
 
-  try {
-    const fid = String(PropertiesService.getScriptProperties().getProperty(KB_IMAGES_FOLDER_PROP) || '').trim();
-    out.folderId = fid;
-    if (fid) {
-      try { DriveApp.getFolderById(fid).getName(); out.folderOk = true; }
-      catch (e) { out.folderOk = false; out.folderError = String((e && e.message) || e); }
+  // DRV-1 (cycle 23): EXERCISE the service, not just the grant. On this domain
+  // the token carries /auth/drive (the scope is auto-detected from the code),
+  // so `granted` read true while every DriveApp call threw "disabled by your
+  // domain administrator" — and the line read green ("Drive access granted")
+  // over a dead QA module and invisible article images. A read of the root
+  // folder's id is side-effect free and fails exactly when the service does.
+  if (out.granted !== false) {
+    try { DriveApp.getRootFolder().getId(); out.service = 'ok'; }
+    catch (e) {
+      out.serviceError = String((e && e.message) || e);
+      out.service = driveDisabledError_(out.serviceError) ? 'disabled' : 'error';
     }
-  } catch (e) { out.folderError = String((e && e.message) || e); }
+  }
+  // The folders are probed only while the service answers: with it disabled,
+  // every folder "fails", and reporting that as the FOLDER's fault told the
+  // operator to clear the property (g142) — which would strand every image
+  // once the service came back.
+  const probeFolder = function (prop) {
+    const r = { id: '', ok: null, error: '' };
+    try {
+      r.id = String(PropertiesService.getScriptProperties().getProperty(prop) || '').trim();
+      if (r.id && out.service !== 'disabled') {
+        try { DriveApp.getFolderById(r.id).getName(); r.ok = true; }
+        catch (e) { r.ok = false; r.error = String((e && e.message) || e); }
+      }
+    } catch (e) { r.error = String((e && e.message) || e); }
+    return r;
+  };
+  const kbF = probeFolder(KB_IMAGES_FOLDER_PROP);
+  out.folderId = kbF.id; out.folderOk = kbF.ok; out.folderError = kbF.error;
+  const qaF = probeFolder(QA_FOLDER_PROP);   // DRV-1/QA-1: the QA recordings folder was probed by nothing
+  out.qaFolderId = qaF.id; out.qaFolderOk = qaF.ok; out.qaFolderError = qaF.error;
 
-  if (!out.error && out.granted === true && out.folderOk !== false) {
+  if (!out.error && out.granted === true && out.service === 'ok' && out.folderOk !== false && out.qaFolderOk !== false) {
     try { cache.put(DRIVE_ACCESS_CACHE_KEY, JSON.stringify(out), DRIVE_ACCESS_CACHE_SEC); } catch (e) {}
   }
   return out;

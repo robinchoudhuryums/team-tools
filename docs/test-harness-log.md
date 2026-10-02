@@ -2286,3 +2286,161 @@ per-change detail. By delta:
 - Reading the drawer shot caught the chunk's **Open ¶** wrapping beside a long
   router heading; the button no longer shrinks.
 
+
+## Cycle 23 — Batch 1, the fixed grid and the clipboard (2026-10-01)
+
+- Node +3: TC-01 (the export's punch rows go through `appendRowsSafe_` after
+  the two header rows — DRIVEN on a 1000-row fake that throws past its edge,
+  plus wiring), and two ADM-05 pins (the data-table import DRIVEN against a
+  fixed-grid fake tab that can fail its writes: a 1,200×30 file into 1000×26,
+  a failed write restored verbatim, an unrestorable one naming Version
+  history, a first import claiming nothing, an over-long cell refused in the
+  preview and the write with the live tab untouched; plus capture → grow →
+  clear wiring). DOM +4: SH-01 (a reopened overlay is the last open one — and
+  an overlay re-rendered while open is not moved), CNUI-07 (a blocked clipboard
+  never toasts "copied", a working one does), and two CNUI-01 pins (newer
+  typing in the draft slot survives a failed save; an empty slot, or the failed
+  note itself, still parks it).
+- The F4 derived net could not have caught either grid defect: neither writes
+  at `getLastRow() + 1`. That is why both carry their own drive, not a widened
+  net — a scan for "every `getRange(r, c, n, …)` with a variable `n`" matches
+  hundreds of safe reads.
+- 8 bite-checks, all BITE (TC-01 revert; ADM-05 no-grow, no-restore, cell
+  check removed; SH-01 no-restack; CNUI-07 the synchronous toast restored;
+  CNUI-01 the overwrite restored, and the same-note case treated as newer).
+- `server-split-manifest.json` gained a revision for `kbEnsureGrid_` and
+  `KB_DATA_TABLE_MAX_CELL_CHARS` (F2c). The overlay scenarios were re-shot after
+  the `ensureOverlay` change: 0 missing, 0px overflow.
+
+## Cycle 23 — Batch 2, the eligibility engine fails toward "cannot tell" (2026-10-01)
+
+- Node +8 (KB-1, KB2-1, KB2-2, KB2-3, KB2-4, KB2-5 + KB2-10 over a fake
+  `LocationAcceptance` tab, KB2-7, KB2-10), on one shared context (`c23Elig_`)
+  that loads the REAL engine functions plus the real `US_STATE_CODES` /
+  `US_STATE_NAMES` / `KB_GEO_US_COUNTRIES`. Three older pins' doubles changed
+  with the behaviour: the ELIG matcher pin's "a row with no state matches any
+  state" assertion is REVERSED (with its reason — written when city rows only
+  displayed), the K4 loader regex pins `stateBad: !stCode`, and the OOP-B / K7
+  verifier context loads `oopBodyHasLine_`.
+- 17 bite-checks, all BITE. One NO BITE acted on: the matcher's `!r.state`
+  guard was invisible, because with a geocoded state present
+  `st && r.state !== st` already rejects a blank row — the ELIG pin gained the
+  geocode-with-no-state case (g116's fourteenth direction: a fixture the
+  code's own path erases cannot tell the guard apart).
+- The KB2-3 pin caught a defect in the FIX before commit: looking the country
+  up in `US_STATE_CODES` read Canada's ISO "CA" as California.
+
+## Cycle 23 — Batch 3, a disabled Drive is named, never blamed on a folder or a file (2026-10-01)
+
+- Node +8 (DRV-1 the two pure rules; DRV-1 + QA-1 `driveAccessStatus_` driven
+  over a granted-but-disabled service, an unexplained service error, a clean
+  round and a dead QA folder; DRV-1 + QA-1 the System line and findings; the
+  `?drive=disabled` mock hook and scenarios; DRV-4 the folder helper; DRV-5 the
+  kept tokens; DRV-2 the embed scan, panel and finding; QA-1 playback driven
+  and the sync catch's wiring). Older doubles changed with the behaviour:
+  DRV-2(d) now replaces on Drive's own "No item with the given ID" instead of a
+  bare 'gone'; the `drvCtx` const loader matches a multi-line `const` (for
+  `DRIVE_DISABLED_MSG`) and loads the two new rules; DRV-3's `DriveApp` stub
+  gained `getRootFolder`; the DRV-4 and storage-panel sandboxes load
+  `cnDriveSurfaces_` / `cnDriveFolderAdvice_`.
+- Visual +2: `admin-system-drivedisabled-light-{wide,mobile}` via a
+  `?drive=disabled` hook (service disabled, folders unprobed, the embed scan
+  unavailable). Both mock `getStorageHealth` fixtures carry `service` and the
+  QA folder probe.
+- 16 bite-checks, all BITE (the service probe, folders probed while disabled,
+  the disabled rule, the line and finding branches, the destructive folder
+  advice, the QA folder probe and finding, QA playback and sync, the embed
+  scan, panel and finding, DRV-4 twice, DRV-5).
+
+## Cycle 23 — Batch 4a and its follow-ons, a failure is never a clean run (2026-10-01)
+
+- Node +8 for Batch 4a (CORE-01, CORE-02, the HR-3 readers, the HR-3 + MAIL-4
+  training digest, the HR-3/MAIL-3 coaching recap, MAIL-4 over the dept
+  reminder and the missed-punch alerts, TC-07, QA-3), all DRIVEN over stubbed
+  stamps (`c23AutoCtx_` records every `stampAutomationError_` /
+  `clearAutomationError_` / `stampDigestLastRun_` call). Node +3 for the
+  follow-ons: 4a-FU1 (the window rule and every stale-line reader), 4a-FU3 (the
+  labeller, both readers, and a DERIVED net — every key the server stamps is
+  tabled or labelled; every `DIGEST_ERROR_KEYS` entry names a real heartbeat
+  and a real stamp), 4a-FU2 (two runs → two descending `deleteRows`).
+- Six older doubles changed with the behaviour: the INV-151 tripwire (the
+  heartbeat now rides the flag-off branch and, when on, follows the sends);
+  QA-18 (the fail-safe and the bottom-up order moved into the shared deleter);
+  F-20 (the health digest stamps a third failure, its send); C5's and QA-3's
+  fake grids gained `deleteRows` with the same "not possible to delete all
+  non-frozen rows" refusal per call.
+- 27 bite-checks, all BITE (19 for Batch 4a, 8 for the follow-ons, including
+  dropping one label from `AUTOMATION_ERROR_LABELS` to prove the derived net
+  sees it).
+
+## Cycle 23 — Batch 4b, a failed read never renders as data (2026-10-01)
+
+- Node +7: ADM-04 drives `getStorageHealth` with and without the fallback
+  properties, then feeds its REAL output to the readiness checklist and the
+  System finding (the F-11 warning had only ever been tested on a shape the
+  server never shipped); ADM-09 (the readiness `health` row: problems, none, no
+  list); ADM-07 (`cnOopFindings_` per branch, a failed load, a clean table);
+  ADM-08 (the scan walk with `configured()` predicates, and the panel); MET-1
+  (drives `getMyMetricsRange` over a meta.error, a missing-tab trend and a clean
+  read, counting cache puts); MET-2/3/4 (drives `getMetricsAmbient`; the cache
+  guards); TC2-2.
+- DOM +3: KBUI-1 (tab and drawer — and the error BEACON, captured by replacing
+  `errBeaconSend_`, never carries the query: the check is non-vacuous because it
+  asserts the beacon fired), METUI-1 (the badge survives `unavailable` and a
+  failure; only a clean `{badge:null}` clears it), ADM-11.
+- Four older doubles changed with the behaviour (#8 and the Team Metrics cache
+  regex now expect `trendFailed`; PR2-2 the three-argument `cnHealthFindings_`;
+  F-35's context loads `cdrAgentsOrThrow_`). The mock's Storage Health rows for
+  Forms / Dept Requests model the fallback as `configured:false,
+  reachable:true`, the readiness fixture carries the same open-punch problem as
+  the health fixture (the two shots had disagreed), and EMPTY_FIXTURES gained a
+  clean `getOopPricingDiagnostics` so the all-clear shot stays clean.
+- 14 bite-checks, all BITE. Hazard met: a vm sandbox's arrays fail
+  `deepStrictEqual` against the test realm's — wrap with `Array.from` or a JSON
+  round trip (g116's sandbox-value direction).
+
+## Cycle 23 — TC-02, a break adjustment says which break (2026-10-02)
+
+- Node +5: the resolver grid (`breakAdjustTargetRow_` — including that an RPC
+  payload `{mode:'last'}` cannot reach the identity-matched `BREAK_INTENT_LAST`),
+  the shared writer driven over a fake Timesheet (a refusal writes nothing —
+  sheet, append and audit all counted), submit driven over six cases, the
+  approval / Apply-now wiring with the range DRIVEN, and `getMyDayBreaks` + the
+  queue text.
+- DOM +2: the modal asks, nothing is queued until the rep chooses, and the
+  choice rides Add to list, Submit and Apply now; a day without the break is an
+  add, a reply for a date the rep has left is ignored, a failed read refuses.
+- Six older doubles changed: C17-9 (the writer's ctx-absent branch is a
+  one-date index read; the index key line), B3 (the trailing `BreakTarget`
+  cell), TZR-4 and the range pin (`BREAK_INTENT_LAST`), OPS-2 (approval passes
+  `breakTarget`), and X1 (`getMyPunchAdjustRequests` left the shrink-only list
+  when it gained a fixture). New visual scenarios `adjust-break-light-wide` /
+  `-mobile`; the first shot showed the radio labels in `.field label`'s mono
+  heading font, which only reading the shot found.
+- 11 bite-checks, all BITE. Hazard met: a `const` declared in a vm context is
+  NOT a property of the context object — read it with
+  `vm.runInContext('NAME', ctx)`, or a check against `ctx.NAME` compares with
+  `undefined` and passes or fails for the wrong reason.
+
+## Cycle 23 — Batch 5, Spanish Inbox and Dept Requests integrity (2026-10-02)
+
+- Node +7: SP-1 (the latest-row fold, the endpoint's "already" test against the
+  thread's newest message, the Needs-you source); SP-3 (the span rule with
+  legacy unstamped rows, both maps THROWING over a failing sheet, a 1,500-row
+  span read in full); SP-3 + SP-4 (the auto-assign core driven — the ungated
+  pending read, the refusal on unknown claims — plus the client note and the
+  disabled button); DR-2 and DR-1 driven through the whole reply scan by a
+  shared helper, `c23DrScan_` (shared thread named / unnamed / unshared);
+  RES-1 (the GET page writes nothing, the button's token is shape-checked and
+  script-safe, the sender's click is `self`, both folds count it manual); DR-3
+  (`medianWhole_` and every former upper-middle site).
+- Thirteen older pins moved with the behaviour. Seven Spanish source pins read
+  `spanishPendingCore_` now (where the read lives — the gate is still covered
+  by the omnibus gate test), and C-N4, R2 #4 and C-8 followed. PUBLIC-GATE names
+  `confirmDeptRequestResolve` as token-gated, beside the form routes. **N2
+  asserted a median of 120 for the samples 60 and 120 — the pin had encoded
+  DR-3's defect**; it now asserts 90. N3-DR, A-7 and D-2/D-3 load the shared
+  median and accept `self`.
+- 11 bite-checks, all BITE. Hazard met: a vm context with no `Date` makes any
+  server stamp throw "Invalid time value" far from the cause — a context that
+  drives a writer sets `ctx.Date = Date` (the scan helper does).

@@ -615,6 +615,11 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   `notifyManagersOfAdjustRequests_` is branded, PHI-free, best-effort (INV-14)
   and deferred past `releaseLock` (M-7). (B3) **The RESUME path** — see its own
   Key Design Decision below.
+
+  **AMENDED (cycle 23 TC-02, 2026-10-02):** a BREAK request carries its intent
+  in a trailing `BreakTarget` column — see "A break adjustment says which break it
+  means".
+
 - <a id="normalizetime-as-the-universal-read-shim"></a>**`normalizeTime_` as the universal read shim.** Because Sheets
   auto-coerces time strings to Dates on read, every read of
   `row[ADP.TIME]` goes through `normalizeTime_`. New code must
@@ -1851,6 +1856,10 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   narrowed by the code. A line verifies if ANY candidate row still produces it,
   so a price picked from the second of two same-named rows can be sent; a
   changed price on that row is still refused, with that row's figure.
+
+  **AMENDED (cycle 23 KB2-7, 2026-10-01):** "still produces it" means the line
+  appears WHOLE in the message — a substring match let a picked "$100" verify
+  inside a hand-extended "$1000".
 - <a id="which-eligibility-restrictions-lift-out-of-pocket-is-a-rule"></a>**Which eligibility restrictions LIFT out of pocket is a RULE, not a
   table (ELIG, operator 2026-09-16).** The OOP sheet's `Area Eligibility` column
   states the rule for an order going THROUGH INSURANCE. Paying out of pocket
@@ -1954,6 +1963,19 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   and normalises city spellings (Ft/St/Mt, punctuation); a listed city whose
   State cannot be read answers "cannot tell". The Accepts column stays
   display-only — what it should decide is still the operator's call.
+
+  **AMENDED (cycle 23 Batch 2, 2026-10-01):** T7's union of a state and the
+  city list needs the operator's own "or" — "TX or listed cities" is still
+  either-one (and still lifts out of pocket), but "listed cities, TX" /
+  "(TX)" reads "cannot tell", because there the state most plausibly QUALIFIES
+  the list, and the two readings are nationwide versus a few cities (KB2-1). A
+  city row with a BLANK State is "cannot tell" for that city rather than a
+  match in every state: the old "blank = any state" reading was written when
+  city rows only displayed, and since T7 they decide (KB2-5). If the operator
+  means "any state", the follow-on is an explicit marker, not a blank. Also:
+  "TX or OK" is Texas and Oklahoma (KB-1), an Open note must wholly elaborate
+  "anywhere in the US" (KB2-2), overlapping warehouse names resolve
+  longest-first (KB2-4), and an address outside the US is refused (KB2-3).
 - <a id="price-and-area-eligibility-are-one-panel-because-they-are"></a>**Price and area eligibility are ONE panel, because they are one
   question asked of one table (operator 2026-09-18).** They shipped as two
   cards two days apart and the split was an artefact of that order, not a
@@ -3424,6 +3446,14 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
         catch (e) { Logger.log('DriveApp FAILED: ' + e.message); }
         Logger.log('probe: ' + JSON.stringify(driveAccessStatus_()));
       }
+  **AMENDED (cycle 23 DRV-1, 2026-10-01): a FIFTH outcome — the scope is
+  granted and the SERVICE is disabled.** Since M4-FU3 (2026-09-29) this domain
+  refuses every `DriveApp` call with "The feature you are attempting to use has
+  been disabled by your domain administrator." That is neither a missing scope
+  (the token carries `/auth/drive`) nor a consent-screen block: re-authorizing
+  changes nothing, and no folder id or share can fix it. Only IT allowing Drive
+  for Apps Script does. The app now tells it apart (`driveDisabledError_`) and
+  says so with one message, `DRIVE_DISABLED_MSG`.
 - <a id="sheet-article-conversion-operator-2026-08-11"></a>**Sheet→article conversion (operator 2026-08-11).** A Drive SHEET embed is
   the WEAKEST item type in the KB, and the reason is structural, not cosmetic:
   `searchReference` treats every embed as a **title-only hit** ("No stored
@@ -3693,6 +3723,16 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   a fresh deploy). Manager-gated (the omnibus pins it). Every server string
   `esc()`'d. Surfaces the operator-state gaps (sheet-tz drift, unset properties,
   uninstalled triggers) as one glance before cutting a new deployment version.
+
+  **AMENDED (cycle 23 ADM-09 + ADM-04, 2026-10-01):** the checklist gains a
+  `health` row read from the ONE problem list the health dot counts
+  (`automation.problems`) — warn with a count and the first three lines, ok on an
+  empty list, "Could not check" when the report carries no list; it is skipped
+  when the automation read itself failed, whose rows already say so. Its headline
+  had read "All clear" under a red dot. And Forms / Dept Requests now band WARN
+  while their property is unset (they read configured + OK through the ADP
+  fallback id).
+
 - <a id="patient-trx-timeline-rep-facing-read-only"></a>**Patient/TRX timeline (rep-facing, read-only).** `getPatientTimeline(trx)`
   (rep-callable, **caller-scoped**) stitches everything the rep has on one
   patient/order into a single newest-first list: their OWN call notes (TRX
@@ -3764,6 +3804,18 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   as an **ok FACT** while the store is comfortable, warning only past
   `PROP_WARN_PCT` (80%) of either cap or on an unreadable read, so the System tab
   still reaches "Nothing needs attention" on a healthy deployment (INV-186).
+  **AMENDED (cycle 23 DRV-1 + QA-1, 2026-10-01): the line EXERCISES the
+  service, and probes the QA folder too.** Introspecting the token answered
+  "is the permission granted", which on this domain is yes while the service is
+  disabled — so the line read green over a dead QA module. `driveAccessStatus_`
+  now makes one side-effect-free call (`DriveApp.getRootFolder().getId()`) and
+  ships `service` (ok / disabled / error); a disabled service is a BLOCKING
+  finding naming every Drive surface, an unexplained failure is a warn
+  (unknown, INV-187), and neither is cached (INV-129). Folders are not probed
+  while the service is off, because each would "fail" and be blamed. The QA
+  recordings folder (`QA_FOLDER_PROP`) is probed beside the KB Images folder
+  and has its own `driveQaFolder` finding. The KB folder advice never says
+  "clear the property" unless Drive says the folder is gone (g142).
 - <a id="storage-health-panel-admin-tab-1"></a>**Storage Health panel (Admin tab, #1).** Manager-only, read-only
   one-pane-of-glass over every spreadsheet the app uses (`getStorageHealth`,
   rendered by `cnLoadStoragePanel_`). Since design handoff PR 2 (2026-09-02) it
@@ -3810,6 +3862,13 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   `getStorageHealth({scanEmbeds})` (default on) and **skipped by
   `getDeployReadiness`** (`{scanEmbeds:false}`), which only bands store config —
   so the Admin Overview doesn't double-scan Drive.
+
+  **AMENDED (cycle 23 ADM-04, 2026-10-01):** `configured` is the PROPERTY, not
+  the resolved id — a store on its ADP fallback (Forms, Dept Requests) reads
+  `configured:false, reachable:true, source:'ADP fallback'`, so it is a "not set"
+  warn on the panel, the readiness checklist and the System findings, while the
+  fallback is still opened so its reachability and timezone stay visible.
+
 - <a id="automation-health-panel-admin-tab"></a>**Automation Health panel (Admin tab).** Manager-only, read-only
   surfacing of the silent-degradation signals (`getAutomationHealth`,
   rendered by `cnLoadHealthPanel_`; since design handoff PR 2 (2026-09-02) it
@@ -4545,6 +4604,18 @@ pick them up without re-deriving the context.
   nobody reading it as a bug, so the pin now requires the fixture's stats count
   to equal the number of cards it renders. Recorded as INV-223.
 
+  **AMENDED (cycle 23 SP-1 + SP-3, 2026-10-02): the state the fold reads.**
+  The manual-resolve fold keeps the LATEST stamped row per thread, not the
+  first, so a voicemail that arrives after a resolve is new work and can be
+  resolved in its turn (a legacy unstamped row still resolves the whole
+  thread). The resolve and claim tabs are read over a 180-day TIME span
+  (`SPANISH_STATE_SPAN_DAYS`), not a 1000-row tail, so a busy inbox cannot push
+  a live claim out of view. And claims that could not be read are UNKNOWN, not
+  none: the list still renders (who is working what is advisory) but says so,
+  and every action that would act on "unclaimed" — claim, release,
+  auto-assign — refuses. A resolve map that could not be read fails the list
+  outright, because without it every resolved request would read as pending.
+
 - <a id="a-gate-claim-is-derived-from-the-refusal"></a>**A gate CLAIM is derived from the refusal, never written by hand (Batch 7 of the cycle-20 scan, F-26 + F-51, 2026-09-18)**
 
   Twenty-one places in this repo said "manager-gated" about an endpoint that
@@ -4635,6 +4706,23 @@ pick them up without re-deriving the context.
   read reaches back past its stale hours (`auditWindowProvesAbsence_`, the
   follow-ups) — a fresh AuditLog proves nothing, so the fresh-deploy posture
   holds. Verify: the A1 and A2 pins, and FU-B6d.
+  **AMENDED (cycle 23 Batch 4a + follow-ons, 2026-10-01).** A send that did
+  not happen is a stamped failure for every digest (the clean stamp lands only
+  after the send); a health badge that could not compute is UNKNOWN —
+  `{failing:null, unknown:true}`, never cached, and the dot keeps its state;
+  every stamp ships a human label from ONE map (`AUTOMATION_ERROR_LABELS`, the
+  job table's label first); and a stale digest whose job stamped a failure
+  inside its window names that failure rather than the trigger
+  (`DIGEST_ERROR_KEYS`, `automationFailedWithin_`). Still one list, three
+  readers — the new fields ride the report, not a second derivation.
+
+  **AMENDED (cycle 23 ADM-09 + ADM-07, 2026-10-01):** two more readers ride the
+  list. The deploy-readiness checklist reads `automation.problems` for its health
+  row, and the Reference-lookups diagnostics are judged by `cnOopFindings_` among
+  the System findings (storage area), so the tab, its badge and the cards count a
+  missing price column or an unreadable eligibility cell instead of leaving it to
+  a panel below.
+
 - <a id="a-half-day-is-graded-on-the-hours-worked"></a>**A half day is graded on the hours worked, not on a start it does not have (cycle 22 T5 rework, operator 2026-09-25).**
   The operator's rule: a half day "could really start and end at any time, as
   long as at least half the typical hours are worked (at least 4 hours)". So
@@ -4742,6 +4830,15 @@ pick them up without re-deriving the context.
   after re-reading the row. Nothing of a reply's text is stored. Rejected: a
   per-department keyword list (operator upkeep for a small gain) and resolving on
   any reply (the operator ruled out questions).
+  **AMENDED (cycle 23 DR-2 + DR-1, 2026-10-02): which reply, and whose.** The
+  LATEST counting reply decides: if it needs a look, the request needs a look,
+  whatever an earlier reply said; otherwise it resolves, timed at the first
+  resolving reply after the last needs-look one (the answer that settled it, not
+  a later "thanks"). A fifth rule applies only on a thread two requests share
+  (Gmail threads same-subject mail): a reply counts for a request when it names
+  that request's id, which the resolve link carries and a reply quotes; one that
+  names only another sharer is not this request's, and one that names none
+  cannot be attributed, so it is a look, never a resolve.
 - <a id="the-dashboard-is-a-widget-grid-that-is-never-empty"></a>**The Dashboard is a widget grid resolved own → team default → standard, and it is never empty (22post E, operator 2026-09-27).** The operator wanted customization with an optional manager default and a
   base everyone falls back to. The widget ids are one registry on each side
   (`CLK_DASH_WIDGETS`, `DASH_WIDGET_IDS`, pinned equal), and each widget keeps
@@ -4922,3 +5019,41 @@ pick them up without re-deriving the context.
   match costs more here than a miss), and caching per query (the query space
   is open; the index is what repeats).
 
+- <a id="a-break-adjustment-says-which-break-it-means"></a>**A break adjustment says which break it means — "add a missing break" or "correct the one at HH:MM" — and the server refuses rather than guesses (cycle 23 TC-02, operator 2026-10-02).** Multi-break days are legal, and a break adjustment
+  used to carry only a date, a type and a time, so every writer rewrote the
+  LAST punch of that type. Three options were weighed: (a) ask the rep and carry
+  the answer; (b) always append, with corrections through a manager's Day Edit;
+  (c) refuse a break adjustment on a day that already has one. The operator
+  chose (a): (b) is the same silent wrong write pointed the other way (a
+  correction becomes a duplicate, and Apply now has no reviewer), and (c) drops
+  self-service for the common case of a forgotten second break. The choice shows
+  only when the day already has that punch (`getMyDayBreaks`, caller-scoped, one
+  date inside the adjust window); nothing is preselected, and a break cannot be
+  filed while that read is loading or after it failed — fail-closed, never a
+  guess. The request stores `add` or `correct@HH:mm` (prefixed so the cell is
+  never coerced to a time). ONE resolver, `breakAdjustTargetRow_`, serves Apply
+  now, the request submit, the approval and the shared writer: a correction
+  must name a punch the day still has, and an unstated break on a day that has
+  one is refused — at submit with "choose…", at approval with the row left
+  Pending and the reason shown, which is how a request filed before this
+  shipped is handled. Two server callers keep the last-row rule, through a
+  frozen sentinel matched by IDENTITY so no RPC payload can reach it
+  (`BREAK_INTENT_LAST`): the editor-run split-day repair, whose dry run already
+  names the row it updates, and range mode — which first refuses the whole
+  range when any day in it has more than one break of a type it sets, because
+  one slot applied across many days cannot say which break it means.
+  ClockIn and ClockOut are one per day and keep their rule unchanged.
+- <a id="the-resolve-link-opens-a-confirm-page"></a>**The Dept Request resolve link opens a confirm page, and the sender's own click is recorded as `self` (cycle 23 RES-1, 2026-10-02).** The link in the department email used to
+  resolve on load. A link in an email is a GET that anyone's software may
+  follow — a mail scanner's preview, the sender opening their own sent or BCC
+  copy — and each of those closed the request as a timed department response.
+  The page now only reads: it names the request (or says not found, already
+  resolved, or sign in) and offers a button; the button calls the public
+  `confirmDeptRequestResolve`, whose credential is the token, exactly as the
+  link's was, and which still refuses an unidentifiable caller. The token is
+  shape-checked and embedded in the page as script-safe JSON. A click by the
+  request's own SENDER is recorded with via `self`: it is a clear, not a
+  response, so it is untimed and counted with the manual clears ("marked by
+  the sender" on the card). Rejected: keeping the write on the GET behind a
+  filter for known scanners (an unbounded list, and the sender's own click is
+  not a scanner).

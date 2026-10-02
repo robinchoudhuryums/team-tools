@@ -517,7 +517,10 @@ const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','
 //                reply's text.
 // ResolvedVia gains 'reply': resolved by the department's own reply, which IS
 // a response time (timed, like 'email').
-const DR_RESOLVED_VIA_VALUES = ['email', 'app', 'reply'];
+// RES-1 (cycle 23): and 'self' — the email link clicked by the request's own
+// SENDER (their sent/BCC copy carries the same link). That is a manual clear,
+// not the department responding, so it is UNTIMED, like 'app'.
+const DR_RESOLVED_VIA_VALUES = ['email', 'app', 'reply', 'self'];
 const DR_REPLY_VERDICTS = ['resolved', 'needs-look'];
 const DR_THREAD_IDS_MAX = 3;
 const DR_REPLY_SCAN_MAX = 150;      // threads read per hourly run (Gmail read quota + the six-minute limit)
@@ -1055,6 +1058,29 @@ const AUTOMATION_JOB_CHECKS = [
 // object (F4). Each such job stamps its last error here and clears it on a
 // clean run, so the panel and the daily digest can see it.
 const AUTOMATION_ERROR_PROP = 'AUTOMATION_LAST_ERRORS';
+// Cycle 23 (4a follow-ons) — the AUTOMATION_LAST_ERRORS key each digest
+// heartbeat's job stamps its failure under. A job that FAILED withholds or
+// ages its heartbeat, and the stale line used to blame the trigger ("may be
+// disabled") beside a stamp saying the job had just run and failed — g142.
+// With this map the stale line names the failure instead.
+const DIGEST_ERROR_KEYS = {
+  urgent: 'CallNotesUrgentDigest', weekly: 'CallNotesWeeklyDigests', trainingOverdue: 'TrainingOverdueDigest',
+  deptReqReminder: 'DeptRequestReminderDigest', managerBrief: 'ManagerDailyBrief', coachingRecap: 'CoachingRecapDigest',
+  spanishAutoAssign: 'SpanishAutoAssign', deptReplyScan: 'DeptReplyScan', missedPunch: 'MissedPunchAlerts',
+  exportCheck: 'DailyExportCheck', automationHealth: 'AutomationHealthDigest',
+};
+// The human label for a stamped key that has no AUTOMATION_JOB_CHECKS row (a
+// tabled key takes the table's label). ONE map, shipped on each stamp by
+// computeAutomationHealth_, so the digest, the dot and the System tab never
+// show a raw key — and the client keeps no copy of its own to drift.
+const AUTOMATION_ERROR_LABELS = {
+  CallNotesUrgentDigest: 'Urgent-flag digest', CallNotesWeeklyDigests: 'Weekly call-notes digests',
+  TrainingOverdueDigest: 'Training-overdue digest', DeptRequestReminderDigest: 'Dept-request SLA reminder',
+  ManagerDailyBrief: 'Manager daily brief', CoachingRecapDigest: 'Weekly coaching recap',
+  SpanishAutoAssign: 'Spanish Inbox auto-assign', DeptReplyScan: 'Dept Request reply scan',
+  MissedPunchAlerts: 'Daily missed-punch alerts', DailyExportCheck: 'Daily ADP export check',
+  AutomationHealthDigest: 'Automation-health failure digest',
+};
 const CN_EMAIL_PALETTE = {
   paperCard:    '#ffffff',
   paper:        '#f6f7f9',
@@ -1365,7 +1391,6 @@ const SPANISH_THREAD_SCAN_MAX = 200;
 // SpanishManualResolved tab on the ADP spreadsheet. The resolved-at ms is
 // stored as a NUMBER cell (immune to the Sheets date-coercion class).
 const SPANISH_RESOLVED_TAB = 'SpanishManualResolved';
-const SPANISH_RESOLVED_SCAN = 1000;   // bounded tail — the map read stays cheap
 // ── Spanish inbox — claim / assign (pilot round 2, 2026-08-24) ──────────────
 // Pilot ask #4: agents mark that they are WORKING a pending request so
 // teammates don't duplicate the work, and managers can assign one to a
@@ -1375,7 +1400,13 @@ const SPANISH_RESOLVED_SCAN = 1000;   // bounded tail — the map read stays che
 // ADP sheet, PHI-free (threadId + internal emails + ms-number only — never
 // subject/body), latest row per thread wins, a 'release' row clears it.
 const SPANISH_CLAIMS_TAB = 'SpanishClaims';
-const SPANISH_CLAIMS_SCAN = 1000;   // bounded tail — the map read stays cheap
+// SP-3 (cycle 23): both tabs are read by a TIME span, never a fixed row
+// count. A 1000-row tail let a resolve or a claim inside the inbox's own window
+// scroll out of the read, so an old request came back as pending (or
+// unclaimed). Rows are append-only in time order, so the read starts after the
+// last row stamped before this many days ago — every newer row is kept however
+// many there are. It spans twice the longest window a reader asks for (90).
+const SPANISH_STATE_SPAN_DAYS = 180;
 /** The SCHEDULED twin of the button (operator testing note 4's "might follow",
  *  2026-09-11): an hourly trigger that runs the SAME spanishAutoAssignCore_
  *  — one scope rule, one voicemail fold, one picker, one claim-row shape —
@@ -1485,8 +1516,27 @@ let _personalSsCache = Object.create(null);
 // once that day has ended, so the finish rides the request: filed with Adjust →
 // Clock Out while the resume is pending, written as the day's Clock Out when the
 // resume is approved. HH:mm, a coerced column (g10) — read via normalizeTime_.
-const PAR = { REQ_ID:0, EMP_ID:1, EMP_NAME:2, DATE:3, PUNCH_TYPE:4, REQ_TIME:5, REASON:6, STATUS:7, SUBMITTED_AT:8, ACTION:9, END_TIME:10 };
-const PAR_HEADERS = ['ReqId','EmpId','EmpName','Date','PunchType','RequestedTime','Reason','Status','SubmittedAt','Action','EndTime'];
+// TC-02 (cycle 23): BREAK_TARGET is a third trailing add — what a BREAK
+// adjustment (LunchOut / LunchIn) means on a day that may hold several breaks:
+// 'add' (a missing break — append) or 'correct@HH:mm' (rewrite the punch of
+// that type stamped HH:mm). Until it existed the writers overwrote the LAST
+// punch of the type, so a forgotten second break rewrote the first. '' on a
+// legacy row (or any non-break type) — a break with no stated intent is
+// refused at approval when the day already has that punch. Stored with the
+// prefix so the cell is never coerced to a time (g10); read via
+// breakIntentNorm_.
+const PAR = { REQ_ID:0, EMP_ID:1, EMP_NAME:2, DATE:3, PUNCH_TYPE:4, REQ_TIME:5, REASON:6, STATUS:7, SUBMITTED_AT:8, ACTION:9, END_TIME:10, BREAK_TARGET:11 };
+const PAR_HEADERS = ['ReqId','EmpId','EmpName','Date','PunchType','RequestedTime','Reason','Status','SubmittedAt','Action','EndTime','BreakTarget'];
+/** TC-02 — the punch types a day can carry more than one of (multi-break days
+ *  are legal: getNextActions_ offers LunchOut again after LunchIn). */
+const BREAK_PUNCH_TYPES = ['LunchOut', 'LunchIn'];
+/** TC-02 — the caller-side intent that keeps the pre-TC-02 rule (update the
+ *  LAST punch of the type, else append), for the two server callers where that
+ *  rule is unambiguous: the editor-run split-day repair, whose dry run already
+ *  names the row it will update, and managerSaveDayRange, AFTER it has refused
+ *  any day with more than one punch of a break type it sets. Matched by
+ *  IDENTITY, so no RPC payload can produce it. */
+const BREAK_INTENT_LAST = Object.freeze({ mode: 'last' });
 const PUNCH_ADJUST_BULK_MAX = 50;
 // Cycle-11 L-11 — time-off date sanity horizon (see the submit paths).
 const TIMEOFF_MAX_DAYS_AHEAD = 370;   // ~a year of planned leave + slop
@@ -2022,6 +2072,7 @@ const KB_DATA_TABLES = {
 const KB_DATA_TABLE_MAX_ROWS = 5000;
 const KB_DATA_TABLE_MAX_COLS = 60;
 const KB_DATA_TABLE_MAX_CHARS = 6000000;   // ~4.5MB of CSV after base64 decode
+const KB_DATA_TABLE_MAX_CELL_CHARS = 50000;   // ADM-05: Sheets' per-cell ceiling — refused before the live tab is cleared
 // ── Reference comments, Phase A (pilot round 3 #6) ──────────────────────────
 // A visible per-article comment thread — the DISCUSSION complement to the
 // private kbFlagItem signal (INV-139). Append-only `KbComments` tab in the KB
@@ -2061,6 +2112,11 @@ const DRIVE_WRITE_SCOPE = 'https://www.googleapis.com/auth/drive';
 const DRIVE_ACCESS_CACHE_KEY = 'drive_access_v1';
 const DRIVE_ACCESS_CACHE_SEC = 300;
 const DRIVE_REAUTH_HINT = 'the DEPLOYING account must re-authorize — open the Apps Script editor, run any function, and accept the Drive permission (a clasp push + New version never re-prompts). If Google refuses the consent screen, the scope is blocked by Workspace admin policy.';
+/** DRV-1 (cycle 23) — the ONE message for a disabled Drive service, shared by
+ *  every surface that hits it (image export, paste upload, QA sync, QA
+ *  playback), so none of them names a cause the operator can act on wrongly. */
+const DRIVE_DISABLED_MSG = 'Apps Script\u2019s Drive service is disabled for this domain (a Workspace admin setting) \u2014 ' +
+  'nothing about this app\u2019s folder ids or permissions can fix it. Ask IT to allow Drive for Apps Script.';
 // ── KB Phase 3 — paste-a-screenshot upload (article editor) ─────────────────
 // The editor textarea accepts a pasted image: the client reads it as a data
 // URL and calls kbUploadImage, which exports the blob to the same KB Images
@@ -2325,6 +2381,9 @@ const COACH_TRX_MAX = 200;
 const COACH_RESPONSE_MAX = 2000;
 const COACH_VOIDED_CAP = 50;
 const QA_RECORDINGS_TAB = 'QaRecordings';
+/** The Script Property naming the Drive folder QA recordings are dropped into —
+ *  ONE name, read by qaFolderId_ and probed by Admin → System's Drive line (DRV-1). */
+const QA_FOLDER_PROP = 'QA_RECORDINGS_FOLDER_ID';
 // Phase 2 added the trailing Agent column (which agent the call belongs to —
 // feeds the per-agent stats); Phase 3 added SharedMs (the explicit
 // release-to-agent stamp — 0/blank = not shared). Both extended IN PLACE

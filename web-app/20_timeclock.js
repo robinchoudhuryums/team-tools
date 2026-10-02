@@ -1440,13 +1440,23 @@ function recordPunchCore_(punchType, custom) {
     const commentLabel = isAdj ? `ADJ-${punchType}` : punchType;
 
     if (isAdj) {
-      const existing = findExistingPunch_(emp.id, date, punchType);
-      if (existing) {
-        existing.sheet.getRange(existing.rowIndex, ADP.TIME + 1).setValue(sheetSafe_(time));
-        existing.sheet.getRange(existing.rowIndex, ADP.COMMENTS + 1).setValue(sheetSafe_(commentLabel));
+      // TC-02 (cycle 23): a break adjustment says which break it means —
+      // custom.breakIntent {mode:'add'} or {mode:'correct', target:'HH:mm'} —
+      // and is refused rather than guessed when the day already has one.
+      const ds = {}; ds[date] = true;
+      const c = buildAdjustPunchIndex_(emp.id, ds);
+      const target = breakAdjustTargetRow_(c.all[date + '|' + punchType] || [], punchType, custom.breakIntent, date);
+      if (target.code === 'stale') return { success: false, error: 'There is no ' + target.label + ' at ' +
+        breakIntentNorm_(custom.breakIntent).target + ' on ' + date + ' to correct — reopen Adjust to see that day\'s breaks.' };
+      if (target.error) return { success: false, error: date + ' already has a ' + target.label + ' at ' + target.times +
+        ' — reopen Adjust and choose "add a missing break" or the break this corrects. Nothing was changed.' };
+      if (target.rowIndex) {
+        c.sheet.getRange(target.rowIndex, ADP.TIME + 1).setValue(sheetSafe_(time));
+        c.sheet.getRange(target.rowIndex, ADP.COMMENTS + 1).setValue(sheetSafe_(commentLabel));
       } else {
         appendToAdpSheet_(emp, date, time, dir, commentLabel);
       }
+      reason = (reason + breakIntentNote_(punchType, custom.breakIntent)).trim();
     } else {
       appendToAdpSheet_(emp, date, time, dir, commentLabel);
     }
@@ -3402,7 +3412,10 @@ function repairSplitDayPunches(opts) {
     adds.forEach((a) => {
       const ctx = { sheet: sheet, idx: {} };
       if (a.existingRow) ctx.idx[a.date + '|' + a.type] = a.existingRow;
-      writeAdjustPunchForEmployee_(targets[a.empId], a.date, a.type, a.time, actorEmail, reason, ctx);
+      // TC-02: the plan above already says "updates the existing row" — the
+      // repair keeps that rule explicitly (it is not a rep's break request).
+      const w = writeAdjustPunchForEmployee_(targets[a.empId], a.date, a.type, a.time, actorEmail, reason, ctx, BREAK_INTENT_LAST);
+      if (w && w.error) throw new Error('Refusing mid-run: ' + w.error);
     });
     plan.deletes.forEach((d) => {                              // already bottom-up
       sheet.deleteRow(d.row);
@@ -4526,12 +4539,18 @@ function managerGetShiftStats(date) {
 
     // ── CDR enrichment (best-effort) ──────────────────────────────────
     // Overlay call-volume metrics from DQE Historical Data onto each rep.
-    // Failure here must not break the core shift-stats response.
+    // Failure here must not break the core shift-stats response — but it must
+    // SAY so. TC2-2 (cycle 23): a CDR read that failed beside an empty agents
+    // map (meta.error, the M7 class) rendered every call column as "—", the
+    // same as a rep with no calls, and the client cached that round for the
+    // session. `cdrAgentsOrThrow_` refuses it; the response carries
+    // `cdrUnavailable` and the client neither caches nor reads it as "no calls".
+    let cdrUnavailable = '';
     try {
       const repNames = reps.map(function (r) { return r.repName; });
-      const cdrResult = getCdrAgentMetrics_(date, date, repNames);
+      const cdrAgents = cdrAgentsOrThrow_(getCdrAgentMetrics_(date, date, repNames));
       for (let ri = 0; ri < reps.length; ri++) {
-        const cdr = cdrResult.agents[reps[ri].repName] || null;
+        const cdr = cdrAgents[reps[ri].repName] || null;
         reps[ri].cdr = cdr ? {
           totalRung:     cdr.totalRung,
           totalAnswered: cdr.totalAnswered,
@@ -4548,10 +4567,14 @@ function managerGetShiftStats(date) {
       }
     } catch (cdrErr) {
       console.warn('managerGetShiftStats CDR enrichment failed: ' + cdrErr.message);
+      cdrUnavailable = String(cdrErr.message || cdrErr);
+      for (let rj = 0; rj < reps.length; rj++) { reps[rj].cdr = null; reps[rj].noteCoverage = null; }
     }
 
     reps.sort(function (a, b) { return a.repName.localeCompare(b.repName); });
-    return { date: date, reps: reps };
+    const out = { date: date, reps: reps };
+    if (cdrUnavailable) out.cdrUnavailable = cdrUnavailable;
+    return out;
   } catch (err) { return { error: err.message }; }
 }
 /** Is any roster row carrying a column-Q accrual rate? Decides whether the
@@ -4645,7 +4668,12 @@ function archiveOldTimesheetRows() {
       (hitCap ? `; hitPerRunCap=${TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN} (more remain — continues tomorrow)` : ''));
     Logger.log(`archiveOldTimesheetRows: moved ${moved} row(s) older than ${days} day(s) to ${TIMESHEET_ARCHIVE_TAB}.` +
       (hitCap ? ' Hit the per-run cap — more rows remain for the next run.' : ''));
+    clearAutomationError_('TimesheetArchive');
   } catch (err) {
+    // TC-07 (cycle 23): the F4 rule — a caught failure reaches nobody unless
+    // stamped. Before this, only the audit row's staleness noticed, a day
+    // later and without the message.
+    stampAutomationError_('TimesheetArchive', err.message);
     Logger.log('archiveOldTimesheetRows failed: ' + err.message);
   }
 }
@@ -4705,8 +4733,18 @@ function sendDailyMissedPunchAlerts() {
     // invisible — the heartbeat (stale > 26h) is the liveness signal, stamped
     // once the read succeeded and BEFORE the no-work early return.
     stampDigestLastRun_('missedPunch');
-    clearAutomationError_('MissedPunchAlerts');
-    if (missed.length === 0) { Logger.log('No missed clock-outs.'); return; }
+    if (missed.length === 0) { clearAutomationError_('MissedPunchAlerts'); Logger.log('No missed clock-outs.'); return; }
+    // MAIL-4 (cycle 23): a reminder or a summary that could not be sent used
+    // to reach only the log, after the error had already been CLEARED — so the
+    // run read clean. The outcome is now settled after the sends.
+    let empFailed = 0, mgrFailed = false, lastSendError = '';
+    const settle = function () {
+      const p = [];
+      if (empFailed) p.push(empFailed + ' of ' + missed.length + ' employee reminder(s) failed to send');
+      if (mgrFailed) p.push('the manager summary failed to send');
+      if (p.length) stampAutomationError_('MissedPunchAlerts', p.join(' · ') + ' (' + lastSendError + ')');
+      else clearAutomationError_('MissedPunchAlerts');
+    };
 
     missed.forEach(emp => {
       try {
@@ -4727,7 +4765,7 @@ function sendDailyMissedPunchAlerts() {
             { accent: CN_EMAIL_PALETTE.warn, subLabel: 'Time Clock', statusLabel: 'Action needed',
               ctaUrl: safeWebAppUrl_('clock'), ctaLabel: 'Fix it in Time Clock' }),
         });
-      } catch (e) { Logger.log('Failed to email employee ' + emp.email + ': ' + e.message); }
+      } catch (e) { empFailed++; lastSendError = String((e && e.message) || e); Logger.log('Failed to email employee ' + emp.email + ': ' + lastSendError); }
     });
 
     // #2 (INV-151): while the consolidated daily brief is on, the manager
@@ -4736,6 +4774,7 @@ function sendDailyMissedPunchAlerts() {
     // F(cycle-8 M-11): suppression requires a LIVE brief heartbeat, not just the flag.
     if (managerBriefSuppressionActive_({ checkTrigger: true })) {
       Logger.log('Missed-punch manager summary: consolidated into the daily brief.');
+      settle();
       return;
     }
     const recipients = getManagerEmails_();
@@ -4762,8 +4801,9 @@ function sendDailyMissedPunchAlerts() {
             { accent: CN_EMAIL_PALETTE.warn, subLabel: 'Time Clock',
               ctaUrl: safeWebAppUrl_('manage'), ctaLabel: 'Open the manager dashboard' }),
         });
-      } catch (e) { Logger.log('Manager missed-punch digest email failed: ' + e.message); }
+      } catch (e) { mgrFailed = true; lastSendError = String((e && e.message) || e); Logger.log('Manager missed-punch digest email failed: ' + lastSendError); }
     }
+    settle();
   } catch (err) {
     // F-20: a caught failure reaches nobody unless stamped (the F4 rule).
     stampAutomationError_('MissedPunchAlerts', err.message);
@@ -4941,8 +4981,9 @@ function empDocsOverdueAll_(todayIso) {
     });
     return out;
   } catch (e) {
-    Logger.log('empDocsOverdueAll_ skipped (HR docs store unavailable): ' + e.message);
-    return [];
+    // HR-3 (cycle 23): an unreachable store is not "nothing overdue".
+    Logger.log('empDocsOverdueAll_: HR docs store unavailable: ' + e.message);
+    return hrSweepFailed_('unsigned documents', e);
   }
 }
 /** Branded reminder to ONE employee about their own overdue documents (v2 —
@@ -5117,7 +5158,12 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
   const sh = newSs.getActiveSheet();
   sh.setName('Timesheet');
   sh.getRange(1, 1, 2, 9).setValues(sheetSafeRows_([rows[0].slice(0, 9), rows[1].slice(0, 9)]));
-  sh.getRange(3, 1, matched.length, 9).setValues(sheetSafeRows_(matched));
+  // TC-01 (cycle 23): a new spreadsheet is a FIXED 1000-row grid, and a bare
+  // getRange(3, 1, matched.length, 9) threw once a period passed ~998 punch
+  // rows — the automated run fell back to "export manually", which threw the
+  // same way, and payroll stopped. appendRowsSafe_ grows the grid first (g145);
+  // the two header rows above make its next free row exactly row 3.
+  appendRowsSafe_(sh, matched);
   sh.getRange(1, 1, 1, 9).setFontWeight('bold');
   sh.setFrozenRows(2);
   SpreadsheetApp.flush();
@@ -5446,6 +5492,7 @@ function empPendingAdjustments_(empId, dateIso) {
         // ignores the field and renders as before.
         action: String(rows[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set',
         endTime: parEndTime_(rows[i]),   // T3
+        breakIntent: breakIntentNorm_(rows[i][PAR.BREAK_TARGET]),   // TC-02 — what a break request means
       });
     }
     return out;
@@ -6764,7 +6811,29 @@ function submitPunchAdjustRequests(requests) {
       const daysBack = daysBetween_(date, todayStr);
       if (daysBack > CONFIG.ADJUST_WINDOW_DAYS) return { success: false, error: label + ': older than the ' + CONFIG.ADJUST_WINDOW_DAYS + '-day adjust window.' };
       if (daysBack > CONFIG.OLD_ADJUST_ALERT_DAYS && !reason) return { success: false, error: label + ': a reason is required for dates more than ' + CONFIG.OLD_ADJUST_ALERT_DAYS + ' days back.' };
-      clean.push({ date: date, time: time, punchType: punchType, reason: reason, action: action });
+      clean.push({ date: date, time: time, punchType: punchType, reason: reason, action: action,
+        breakIntent: (action === 'set' && BREAK_PUNCH_TYPES.indexOf(punchType) >= 0) ? breakIntentNorm_(r.breakIntent) : null });
+    }
+    // TC-02 (cycle 23): a break request is checked against the day NOW, with
+    // ONE Timesheet read for the batch: no stated intent on a day without that
+    // punch is plainly an add; on a day with one it is refused (the form asks);
+    // a correction must name a punch the day actually has. Re-checked at
+    // approval — the day can be edited while the request waits.
+    const breakDates = {};
+    clean.forEach(function (c) { if (c.breakIntent) breakDates[c.date] = true; });
+    if (Object.keys(breakDates).length) {
+      const bix = buildAdjustPunchIndex_(emp.id, breakDates);
+      for (let i = 0; i < clean.length; i++) {
+        const c = clean[i];
+        if (!c.breakIntent) continue;
+        const matches = bix.all[c.date + '|' + c.punchType] || [];
+        if (!c.breakIntent.mode && !matches.length) c.breakIntent = { mode: 'add', target: '' };
+        const t = breakAdjustTargetRow_(matches, c.punchType, c.breakIntent, c.date);
+        if (t.code === 'stale') return { success: false, error: 'Adjustment #' + (i + 1) + ': there is no ' + t.label + ' at ' +
+          c.breakIntent.target + ' on ' + c.date + ' to correct.' };
+        if (t.code === 'ambiguous') return { success: false, error: 'Adjustment #' + (i + 1) + ': ' + c.date + ' already has a ' + t.label +
+          ' at ' + t.times + ' — choose "add a missing break" or the break it corrects.' };
+      }
     }
     // Duplicate guards (same family as INV-94's time-off dup-guard): reject a
     // batch carrying two entries for the same (date, punchType), and reject an
@@ -6772,9 +6841,12 @@ function submitPunchAdjustRequests(requests) {
     // would otherwise queue twin rows that each write a punch on approval
     // (benign-ish since approve updates-in-place, but it clutters the queue
     // and invites a double-approve race).
+    // TC-02: a break request's key carries its intent, so "add a break" and
+    // "correct the 12:30 one" on the same day are two requests, not a duplicate.
+    const parKey = function (date, type, cell) { return date + '|' + type + (BREAK_PUNCH_TYPES.indexOf(type) >= 0 ? '|' + cell : ''); };
     const batchSeen = {};
     for (let i = 0; i < clean.length; i++) {
-      const key = clean[i].date + '|' + clean[i].punchType;
+      const key = parKey(clean[i].date, clean[i].punchType, breakIntentCell_(clean[i].breakIntent));
       if (batchSeen[key]) return { success: false, error: 'Duplicate adjustment in this batch: ' + clean[i].punchType + ' on ' + clean[i].date + '.' };
       batchSeen[key] = true;
     }
@@ -6810,10 +6882,11 @@ function submitPunchAdjustRequests(requests) {
     for (let i = 1; i < existing.length; i++) {
       if (String(existing[i][PAR.EMP_ID]).trim() !== emp.id) continue;
       if (String(existing[i][PAR.STATUS]).trim().toLowerCase() !== 'pending') continue;
-      const key = normalizeDate_(existing[i][PAR.DATE]) + '|' + String(existing[i][PAR.PUNCH_TYPE]).trim();
+      const key = parKey(normalizeDate_(existing[i][PAR.DATE]), String(existing[i][PAR.PUNCH_TYPE]).trim(),
+        breakIntentCell_(existing[i][PAR.BREAK_TARGET]));
       if (batchSeen[key]) {
         const isResume = String(existing[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume';
-        const ci = clean.findIndex(function (c) { return c.date + '|' + c.punchType === key; });
+        const ci = clean.findIndex(function (c) { return parKey(c.date, c.punchType, breakIntentCell_(c.breakIntent)) === key; });
         if (isResume && ci >= 0 && clean[ci].action === 'set' && clean[ci].punchType === 'ClockOut') {
           const backAt = normalizeTime_(existing[i][PAR.REQ_TIME]).trim().substring(0, 5);
           if (!(clean[ci].time > backAt)) {
@@ -6835,7 +6908,8 @@ function submitPunchAdjustRequests(requests) {
         attached++;
         return;
       }
-      sheet.appendRow(sheetSafeRow_([Utilities.getUuid(), emp.id, emp.name, c.date, c.punchType, c.time, c.reason, 'Pending', submittedAt, c.action, '']));
+      sheet.appendRow(sheetSafeRow_([Utilities.getUuid(), emp.id, emp.name, c.date, c.punchType, c.time, c.reason, 'Pending', submittedAt, c.action, '',
+        breakIntentCell_(c.breakIntent)]));
     });
     writeAuditLog_(emp, 'PunchAdjustRequest', clean[0].date, '', false, 0,
       'requested ' + clean.length + ' punch adjustment(s) pending approval');
@@ -6866,12 +6940,34 @@ function getMyPunchAdjustRequests() {
         time: normalizeTime_(rows[i][PAR.REQ_TIME]).trim().substring(0, 5),
         reason: String(rows[i][PAR.REASON] || ''),
         action: String(rows[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set',
+        breakIntent: breakIntentNorm_(rows[i][PAR.BREAK_TARGET]),   // TC-02
         status: String(rows[i][PAR.STATUS]).trim(),
         submittedAt: normalizeAuditTs_(rows[i][PAR.SUBMITTED_AT]),
       });
     }
     out.sort(function (a, b) { return String(b.submittedAt).localeCompare(String(a.submittedAt)); });
     return { requests: out };
+  } catch (err) { return { error: err.message }; }
+}
+/** TC-02 (cycle 23) — the caller's OWN break punches on one date, for the
+ *  Adjust modal's "add a missing break / correct the one at HH:MM" choice.
+ *  Caller-scoped (getEmployeeInfo_), read-only, one date, inside the adjust
+ *  window (the only dates the modal can pick). Times are HH:mm, sorted. */
+function getMyDayBreaks(date) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    const d = String(date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return { error: 'Invalid date (expected yyyy-MM-dd).' };
+    const back = daysBetween_(d, fmtDateTz_(new Date(), empTz_(emp)));
+    if (back < 0 || back > CONFIG.ADJUST_WINDOW_DAYS) return { error: 'That date is outside the adjust window.' };
+    const ds = {}; ds[d] = true;
+    const c = buildAdjustPunchIndex_(emp.id, ds);
+    const out = { date: d };
+    BREAK_PUNCH_TYPES.forEach(function (t) {
+      out[t] = (c.all[d + '|' + t] || []).map(function (m) { return m.time; }).filter(Boolean).sort();
+    });
+    return out;
   } catch (err) { return { error: err.message }; }
 }
 /** Manager-gated, read-only — all Pending adjustment requests across reps, for
@@ -6899,6 +6995,7 @@ function managerGetPendingAdjustments() {
         // T3: a resume's filed finish ('' when none) — the manager sees whether
         // approving closes the day or leaves it for the rep to clock out.
         endTime: parEndTime_(rows[i]),
+        breakIntent: breakIntentNorm_(rows[i][PAR.BREAK_TARGET]),   // TC-02 — what a break request means
         submittedAt: normalizeAuditTs_(rows[i][PAR.SUBMITTED_AT]),
       });
     }
@@ -6999,17 +7096,29 @@ function punchAdjustDecideAll_(reqIds, newStatus) {
           // that actually contains a resume.
           delete ctxByEmp[empId];
         } else {
-          writeAdjustPunchForEmployee_(targetEmp, date, punchType, reqTime, callerEmp.email, reason, ctxFor(empId));
+          // TC-02 (cycle 23): a break request carries what it means ('add' or
+          // 'correct@HH:mm'); the writer refuses a target that is gone (the day
+          // was edited while the request waited) or a legacy row with no stated
+          // intent on a day that already has the punch. Nothing is written and
+          // the row stays Pending, so the manager denies with the reason shown.
+          const breakTarget = rows[i][PAR.BREAK_TARGET];
+          const w = writeAdjustPunchForEmployee_(targetEmp, date, punchType, reqTime, callerEmp.email, reason, ctxFor(empId), breakTarget);
+          if (w && w.error) { fail(id, w.error); return; }
+          // An APPENDED break, or a correction, changes what this employee's
+          // cached index says about that day (F6's rule) — drop it, as a resume does.
+          if (BREAK_PUNCH_TYPES.indexOf(punchType) >= 0) delete ctxByEmp[empId];
         }
         // M-7: the decision email is DEFERRED to the post-lock finally — a
         // MailApp send inside the ONE project lock stalls every rep's punch.
-        notifyAfter = function () { notifyEmployeeOfAdjustDecision_(targetEmp, date, punchType, reqTime, reason, 'Approved', action, endTime); };
+        const note = breakIntentNote_(punchType, rows[i][PAR.BREAK_TARGET]);
+        notifyAfter = function () { notifyEmployeeOfAdjustDecision_(targetEmp, date, punchType, reqTime, reason, 'Approved', action, endTime, note); };
         later.push(notifyAfter);
       } else {
         const targetForAudit = lookupEmployeeById_(empId) || { id: empId, name: empName, email: '' };
         writeAuditLog_(targetForAudit, 'PunchAdjustStatusChange', date, '', false, 0,
           `${punchType} ${reqTime} request denied`, callerEmp.email);
-        notifyAfter = function () { notifyEmployeeOfAdjustDecision_(targetForAudit, date, punchType, reqTime, reason, 'Denied', action); };
+        const dnote = breakIntentNote_(punchType, rows[i][PAR.BREAK_TARGET]);
+        notifyAfter = function () { notifyEmployeeOfAdjustDecision_(targetForAudit, date, punchType, reqTime, reason, 'Denied', action, '', dnote); };
         later.push(notifyAfter);
       }
       sheet.getRange(i + 1, PAR.STATUS + 1).setValue(sheetSafe_(newStatus));
@@ -7041,14 +7150,14 @@ function notifyManagersOfAdjustRequests_(emp, entries) {
     const n = entries.length;
     const subj = `${emp.name} requested ${n} punch adjustment${n === 1 ? '' : 's'}`;
     const lines = entries.map(function (c) {
-      return `  ${c.date}  ${c.punchType} ${c.time}` + (c.reason ? `  — ${c.reason}` : '');
+      return `  ${c.date}  ${c.punchType} ${c.time}` + breakIntentNote_(c.punchType, c.breakIntent) + (c.reason ? `  — ${c.reason}` : '');
     }).join('\n');
     const body = `${emp.name} submitted ${n} punch adjustment request${n === 1 ? '' : 's'} ` +
       `for your approval:\n\n${lines}\n\n` +
       `Approve or deny from Manage \u2192 Manage Time. Nothing changes on their ` +
       `timesheet until you do.\n\n\u2014 UMS Time Clock (automated)\n`;
     const rows = entries.map(function (c) {
-      return [c.date, c.punchType + ' ' + c.time + (c.reason ? ' \u2014 ' + c.reason : '')];
+      return [c.date, c.punchType + ' ' + c.time + breakIntentNote_(c.punchType, c.breakIntent) + (c.reason ? ' \u2014 ' + c.reason : '')];
     });
     const html = buildBrandedEmailHtml_('Punch adjustment' + (n === 1 ? '' : 's') + ' awaiting approval',
       '<p style="margin:0 0 12px;"><b>' + esc_(emp.name) + '</b> submitted ' + n +
@@ -7070,14 +7179,14 @@ function notifyManagersOfAdjustRequests_(emp, entries) {
  *  adjustments were the one request type with no notification at all.
  *  Best-effort (INV-14) — a failed send never affects the approval, which is
  *  already committed — and PHI-free (a punch time is not clinical data). */
-function notifyEmployeeOfAdjustDecision_(emp, date, punchType, reqTime, reason, newStatus, action, endTime) {
+function notifyEmployeeOfAdjustDecision_(emp, date, punchType, reqTime, reason, newStatus, action, endTime, intentNote) {
   if (!emp || !emp.email) return;
   try {
     const approved = newStatus === 'Approved';
     const verb = approved ? 'approved' : 'denied';
     const resume = String(action || '') === 'resume';
     const label = resume ? 'Resume shift'
-      : (PUNCH_LABELS_.indexOf(punchType) >= 0 ? punchType : String(punchType || ''));
+      : (PUNCH_LABELS_.indexOf(punchType) >= 0 ? punchType : String(punchType || '')) + String(intentNote || '');   // TC-02
     const subj = resume
       ? `Your request to resume your ${date} shift was ${verb}`
       : `Your punch adjustment for ${date} was ${verb}`;
@@ -7210,7 +7319,7 @@ function resumeShiftForEmployee_(targetEmp, date, resumeTime, actorEmail, reason
  *  recordPunch's adjustment write + the personal-sheet mirror (INV-09/26/59).
  *  Touches ONLY that punch type — unlike managerSaveDay's full-day reconcile.
  *  Writes the `ADJ-` audit row with the approving manager as actor. */
-function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEmail, reason, ctx) {
+function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEmail, reason, ctx, intent) {
   const timeFull = time + ':00';
   const dir = ['ClockIn', 'LunchIn'].indexOf(punchType) >= 0 ? 'IN' : 'OUT';
   const commentLabel = 'ADJ-' + punchType;
@@ -7218,13 +7327,17 @@ function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEma
   // read for the whole range. Without it a 31-day × 4-slot range ran up to
   // 124 findExistingPunch_ FULL-sheet reads inside the ONE project ScriptLock
   // (every rep's punch waits out the 15s waitLock meanwhile — the INV-153
-  // starvation reasoning). Single-punch callers keep findExistingPunch_.
-  const existing = ctx
-    ? (ctx.idx[date + '|' + punchType] ? { sheet: ctx.sheet, rowIndex: ctx.idx[date + '|' + punchType] } : null)
-    : findExistingPunch_(targetEmp.id, date, punchType);
-  if (existing) {
-    existing.sheet.getRange(existing.rowIndex, ADP.TIME + 1).setValue(sheetSafe_(timeFull));
-    existing.sheet.getRange(existing.rowIndex, ADP.COMMENTS + 1).setValue(sheetSafe_(commentLabel));
+  // starvation reasoning). A single-punch caller reads the one date.
+  // TC-02 (cycle 23): WHICH row is breakAdjustTargetRow_'s decision — a break
+  // type is written where its intent says, or refused ({error}, nothing
+  // written); every caller checks the return.
+  const c = ctx || (function () { const ds = {}; ds[date] = true; return buildAdjustPunchIndex_(targetEmp.id, ds); })();
+  const target = breakAdjustTargetRow_((c.all || {})[date + '|' + punchType] ||
+    (c.idx[date + '|' + punchType] ? [{ rowIndex: c.idx[date + '|' + punchType], time: '' }] : []), punchType, intent, date);
+  if (target.error) return { error: target.error };
+  if (target.rowIndex) {
+    c.sheet.getRange(target.rowIndex, ADP.TIME + 1).setValue(sheetSafe_(timeFull));
+    c.sheet.getRange(target.rowIndex, ADP.COMMENTS + 1).setValue(sheetSafe_(commentLabel));
   } else {
     appendToAdpSheet_(targetEmp, date, timeFull, dir, commentLabel);
   }
@@ -7233,7 +7346,15 @@ function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEma
   }
   const daysBack = Math.abs(daysBetween_(date, fmtDateTz_(new Date(), empTz_(targetEmp))));
   writeAuditLog_(targetEmp, punchType, date, timeFull, true, daysBack,
-    'approved adjustment request' + (reason ? ' — ' + reason : ''), actorEmail);
+    'approved adjustment request' + breakIntentNote_(punchType, intent) + (reason ? ' — ' + reason : ''), actorEmail);
+  return { appended: !target.rowIndex };
+}
+/** TC-02 — PURE. The audit/email phrase for a break adjustment's intent
+ *  (' (adds a break)' / ' (corrects the 12:30 punch)'; '' otherwise). */
+function breakIntentNote_(punchType, intent) {
+  if (BREAK_PUNCH_TYPES.indexOf(punchType) < 0) return '';
+  const it = breakIntentNorm_(intent);
+  return it.mode === 'add' ? ' (adds a break)' : (it.mode === 'correct' ? ' (corrects the ' + it.target + ' punch)' : '');
 }
 /** C17-9 — one Timesheet read for a whole managerSaveDayRange run. Builds
  *  {date|type: rowIndex} for the target emp over the range's dates. The LAST
@@ -7250,19 +7371,79 @@ function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEma
  *  RETYPES the ClockOut row to ADJ-LunchOut and appends an ADJ-LunchIn — so
  *  three keys for that date are stale the moment it lands, and that caller
  *  DISCARDS the employee's cached index rather than reasoning about which of
- *  them a later request in the same batch might read. Any new write path added
- *  to a ctx-bearing loop owes the same. */
+ *  them a later request in the same batch might read. A BREAK-type `set`
+ *  (TC-02, cycle 23) is discarded the same way: it may APPEND a row the index
+ *  never saw, or move the stamp a later correction targets. Any new write path
+ *  added to a ctx-bearing loop owes the same. */
 function buildAdjustPunchIndex_(empId, dateSet) {
   const sheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
   const rows = sheet.getDataRange().getValues();
   const idx = {};
+  // TC-02 (cycle 23): EVERY row of each (date, type), in sheet order, with its
+  // HH:mm — a break adjustment names WHICH break it corrects, so "the last
+  // one" (idx) is not enough for a break type.
+  const all = {};
   for (let i = 2; i < rows.length; i++) {
     if (String(rows[i][ADP.EMP_ID]).trim() !== empId) continue;
     const d = normalizeDate_(rows[i][ADP.DATE]);
     if (!dateSet[d]) continue;
-    idx[d + '|' + normalizeType_(String(rows[i][ADP.COMMENTS]))] = i + 1;
+    const key = d + '|' + normalizeType_(String(rows[i][ADP.COMMENTS]));
+    idx[key] = i + 1;
+    (all[key] || (all[key] = [])).push({ rowIndex: i + 1, time: String(normalizeTime_(rows[i][ADP.TIME]) || '').substring(0, 5) });
   }
-  return { sheet: sheet, idx: idx };
+  return { sheet: sheet, idx: idx, all: all };
+}
+/** TC-02 (cycle 23) — PURE. A break adjustment's intent, from the client's
+ *  `{mode, target}` or the stored BreakTarget cell ('add' | 'correct@HH:mm').
+ *  Anything else is '' — no stated intent. */
+function breakIntentNorm_(raw) {
+  if (raw && typeof raw === 'object') {
+    const mode = String(raw.mode || '').trim().toLowerCase();
+    const target = String(raw.target || '').trim();
+    if (mode === 'add') return { mode: 'add', target: '' };
+    if (mode === 'correct' && /^([01]\d|2[0-3]):[0-5]\d$/.test(target)) return { mode: 'correct', target: target };
+    return { mode: '', target: '' };
+  }
+  const str = String(raw == null ? '' : raw).trim().toLowerCase();
+  if (str === 'add') return { mode: 'add', target: '' };
+  const m = /^correct@(([01]\d|2[0-3]):[0-5]\d)$/.exec(str);
+  return m ? { mode: 'correct', target: m[1] } : { mode: '', target: '' };
+}
+/** TC-02 — PURE. The BreakTarget cell for an intent ('' for none). */
+function breakIntentCell_(intent) {
+  const it = breakIntentNorm_(intent);
+  return it.mode === 'add' ? 'add' : (it.mode === 'correct' ? 'correct@' + it.target : '');
+}
+/** TC-02 — PURE. Which Timesheet row an adjustment writes. `matches` are the
+ *  rows of that (date, type) in sheet order ({rowIndex, time HH:mm}).
+ *  Returns {rowIndex} (update), {append: true}, or {error}.
+ *  - ClockIn / ClockOut: one per day — the last match is updated, else append
+ *    (unchanged).
+ *  - A BREAK type never guesses: 'add' appends; 'correct' rewrites the punch
+ *    stamped at its target, and REFUSES when that punch is no longer there
+ *    (the day was edited after the request was filed); no stated intent
+ *    appends only on a day without that punch, and is refused otherwise —
+ *    "correct the last one" was the TC-02 defect, "always add" its mirror. */
+function breakAdjustTargetRow_(matches, punchType, intent, date) {
+  const list = Array.isArray(matches) ? matches : [];
+  if (BREAK_PUNCH_TYPES.indexOf(punchType) < 0 || intent === BREAK_INTENT_LAST) {
+    return list.length ? { rowIndex: list[list.length - 1].rowIndex } : { append: true };
+  }
+  const it = breakIntentNorm_(intent);
+  const label = punchType === 'LunchIn' ? 'Lunch Return' : 'Lunch Out';
+  const on = date ? ' on ' + date : '';
+  if (it.mode === 'add') return { append: true };
+  if (it.mode === 'correct') {
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i].time === it.target) return { rowIndex: list[i].rowIndex };
+    }
+    return { code: 'stale', label: label, error: 'The ' + label + ' at ' + it.target + on + ' is no longer on the timesheet — the day was changed after this ' +
+      'adjustment was filed. Nothing was written; deny it and ask for a new one if it is still needed.' };
+  }
+  if (!list.length) return { append: true };
+  const times = list.map(function (m) { return m.time; }).join(' / ');
+  return { code: 'ambiguous', label: label, times: times, error: 'This ' + label + ' adjustment' + on + ' does not say whether it adds a missing break or corrects the one at ' +
+    times + ' — nothing was written. Deny it and file it again from Adjust, which now asks.' };
 }
 /** #4b — manager multi-day adjust. Applies the given punch times to EVERY date
  *  in [fromDate, toDate] for one rep, ADDITIVELY: each non-empty slot is
@@ -7353,12 +7534,30 @@ function managerSaveDayRange(targetEmpId, fromDate, toDate, slots, reason) {
     const dateSet = {};
     dates.forEach(function (dd) { dateSet[dd] = true; });
     const ctx = buildAdjustPunchIndex_(targetEmp.id, dateSet);
+    // TC-02 (cycle 23): range mode SETS each slot — on a day with ONE break of
+    // that type it updates it, on a day with none it adds one. On a day with
+    // SEVERAL it cannot know which break the slot means (it used to rewrite the
+    // last), so the whole range is refused before anything is written and
+    // those days are named for single-day Day Edit.
+    const multiBreak = [];
+    dates.forEach(function (date) {
+      BREAK_PUNCH_TYPES.forEach(function (type) {
+        if (cleanSlots[type] && (ctx.all[date + '|' + type] || []).length > 1 && multiBreak.indexOf(date) < 0) multiBreak.push(date);
+      });
+    });
+    if (multiBreak.length) {
+      return { success: false, error: 'These days already have more than one break, so range apply cannot tell which one to change: ' +
+        multiBreak.join(', ') + '. Nothing was written — edit those days one at a time (Day Edit), or leave the break slots blank for the range.' };
+    }
     let punchesWritten = 0;
     dates.forEach(function (date) {
       PUNCH_LABELS_.forEach(function (type) {
         const t = cleanSlots[type];
         if (!t) return;
-        writeAdjustPunchForEmployee_(targetEmp, date, type, t, callerEmp.email, trimmedReason || 'multi-day edit', ctx);
+        // ≤1 punch of each break type on every day (checked above), so the
+        // last-row rule IS the one row — the range's documented set/update.
+        const w = writeAdjustPunchForEmployee_(targetEmp, date, type, t, callerEmp.email, trimmedReason || 'multi-day edit', ctx, BREAK_INTENT_LAST);
+        if (w && w.error) throw new Error(w.error);
         punchesWritten++;
       });
     });
@@ -7863,9 +8062,10 @@ function getMyPendingTasks() {
     if (canSeeSpanishInbox_(emp) && getSpanishInboxAddress_()) {
       try {
         var spClaims = spanishClaimsMap_();
-        var spManual = spanishManualResolvedMap_();
         var me = String(emp.email || '').trim().toLowerCase();
-        var anyMine = Object.keys(spClaims).some(function (t) { return spClaims[t].by === me && !spManual[t]; });
+        // SP-1 (cycle 23): the pending ids decide, never "a manual resolve
+        // exists" — a repeat voicemail makes a resolved thread pending again.
+        var anyMine = Object.keys(spClaims).some(function (t) { return spClaims[t].by === me; });
         if (anyMine) {
           var spIds = spanishPendingIdsGet_(SPANISH_AUTO_ASSIGN_DAYS);
           if (!spIds) {
@@ -7873,7 +8073,7 @@ function getMyPendingTasks() {
             if (!spRes || spRes.error) throw new Error((spRes && spRes.error) || 'unreadable');
             spIds = (spRes.pending || []).map(function (p) { return p.threadId; });
           }
-          var spOpen = spanishMyOpenClaims_(spClaims, me, spIds, spManual);
+          var spOpen = spanishMyOpenClaims_(spClaims, me, spIds);
           if (spOpen.length) {
             var spOldest = spOpen[0];
             var spAssigned = spOpen.filter(function (o) { return o.assignedBy; }).length;

@@ -5586,3 +5586,248 @@ test('M5b DOM: results mark what the SERVER matched on (a stem, a glossary phras
   h.run.flushSuccess({ results: [res.results[0]] }, 'searchReference');
   assert.ok(!h.$$('#kb-main mark.kb-hl').some((m) => m.textContent.toLowerCase() === 'deliver'), 'no terms → no stem marks');
 });
+
+// ── Cycle 23 Batch 1 — the copy-failure modal on top; the save toast rides the copy; the draft slot ──
+section('Cycle 23 Batch 1 — overlay stacking (SH-01), the save toast (CNUI-07), the one draft slot (CNUI-01)');
+
+const c23Clipboard_ = (h, ok) => {
+  Object.defineProperty(h.window.navigator, 'clipboard', { configurable: true, writable: true,
+    value: { writeText: () => (ok ? Promise.resolve() : Promise.reject(new Error('denied'))) } });
+  h.window.document.execCommand = () => false;   // the fallback is denied too — it returns false, never throws
+};
+const c23Toasts_ = (h) => h.$$('#toast-stack .toast').map((t) => t.textContent);
+
+test('SH-01: a REOPENED overlay comes back on TOP — the hook-less "Copy it by hand" modal is never stranded beneath an overlay opened since', () => {
+  const h = boot();
+  h.bootShell({});
+  const mc = h.read('manualCopyModal_')('first note', 'Call note');
+  h.read('closeOverlay')(mc);                      // hook-less: only `open` drops, the node stays put
+  assert.ok(!mc.classList.contains('open') && mc.parentNode === h.window.document.body, 'closed, still in <body>');
+  h.read('ensureOverlay')('cn-compose-overlay', { label: 'Department email composer', onClose: () => {} });
+  const again = h.read('manualCopyModal_')('second note', 'Call note');
+  assert.strictEqual(again, mc, 'the same node is reused');
+  const open = h.$$('.overlay.open');
+  assert.strictEqual(open[open.length - 1].id, 'manual-copy-overlay',
+    'the reopened warning is the LAST open overlay — the one that paints on top and that Escape and the focus trap treat as the top');
+  assert.strictEqual(h.window.document.body.lastElementChild.id, 'manual-copy-overlay');
+  // An overlay that is merely RE-RENDERED while open does not move (its focus and position are left alone).
+  const composer = h.$('#cn-compose-overlay');
+  h.read('ensureOverlay')('cn-compose-overlay', { label: 'Department email composer', onClose: () => {} });
+  assert.strictEqual(h.window.document.body.lastElementChild.id, 'manual-copy-overlay', 'an open overlay is not restacked by a re-render');
+  assert.ok(composer.classList.contains('open'));
+});
+
+test('CNUI-07: the save toast rides the copy OUTCOME — "copied" only when it was, and a blocked clipboard still says "Saved" beside the modal', async () => {
+  let h = bootLog();
+  c23Clipboard_(h, false);
+  h.setField('cn-fld-issue', 'Blocked clipboard note');
+  h.window.cnSubmitActiveForm_();
+  assert.ok(!c23Toasts_(h).some((t) => /copied to clipboard/.test(t)), 'no "copied" claim before the copy has settled');
+  await tick(); await tick();
+  const t = c23Toasts_(h);
+  assert.ok(!t.some((x) => /copied to clipboard/.test(x)), 'and none after it failed: ' + JSON.stringify(t));
+  assert.ok(t.some((x) => /Saved — but nothing was copied/.test(x)), 'the rep is still told the note saved');
+  const mc = h.$('#manual-copy-overlay');
+  assert.ok(mc && mc.classList.contains('open') && /Blocked clipboard note/.test(mc.querySelector('#manual-copy-val').value), 'with the note to copy by hand');
+
+  h = bootLog();
+  c23Clipboard_(h, true);
+  h.setField('cn-fld-issue', 'Working clipboard note');
+  h.window.cnSubmitActiveForm_();
+  await tick(); await tick();
+  assert.ok(c23Toasts_(h).some((x) => /Saved · copied to clipboard/.test(x)), 'a copy that worked says so');
+  assert.strictEqual(h.$('#manual-copy-overlay'), null, 'and nothing interrupts it');
+});
+
+test('CNUI-01: a save that fails after the rep left Log never overwrites the NEWER draft they had started — the failed note is shown to copy instead', () => {
+  const h = bootLog();
+  const KEY = h.read('CN_FORM_STICKY_LS_KEY');
+  h.setField('cn-fld-issue', 'Note A — the one that will fail');
+  h.window.cnSubmitActiveForm_();                    // optimistic clear; the draft slot is cleared
+  // The rep types note B (the debounced persister writes the slot), then leaves Log.
+  h.window.localStorage.setItem(KEY, JSON.stringify({ values: { issue: 'Note B — newer typing' }, at: Date.now() }));
+  h.$('#cn-active-form').remove();
+  h.run.flushFailure(new Error('Lock timeout'), 'submitCallNote');
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem(KEY)).values.issue, 'Note B — newer typing', 'note B survives');
+  const mc = h.$('#manual-copy-overlay');
+  assert.ok(mc && mc.classList.contains('open') && /Note A/.test(mc.querySelector('#manual-copy-val').value), 'note A is in front of the rep to copy');
+  assert.ok(c23Toasts_(h).some((t) => /newer draft was kept/.test(t)), 'and the toast says what happened');
+});
+
+test('CNUI-01: with nothing newer in the slot — or only the failed note itself — the failed note is still parked as the draft (unchanged)', () => {
+  let h = bootLog();
+  const KEY = h.read('CN_FORM_STICKY_LS_KEY');
+  h.setField('cn-fld-issue', 'Only note');
+  h.window.cnSubmitActiveForm_();
+  h.$('#cn-active-form').remove();
+  h.run.flushFailure(new Error('boom'), 'submitCallNote');
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem(KEY)).values.issue, 'Only note', 'parked as the draft');
+  assert.strictEqual(h.$('#manual-copy-overlay'), null, 'no modal on the ordinary path');
+
+  // Save & Compose keeps its own text in the form, so the slot holds the SAME note: still the draft path.
+  h = bootLog();
+  h.setField('cn-fld-issue', 'Compose note');
+  h.window.cnSubmitActiveForm_({ keepForm: true });
+  h.window.localStorage.setItem(KEY, JSON.stringify({ values: { issue: 'Compose note' }, at: Date.now() }));
+  h.$('#cn-active-form').remove();
+  h.run.flushFailure(new Error('boom'), 'submitCallNote');
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem(KEY)).values.issue, 'Compose note');
+  assert.strictEqual(h.$('#manual-copy-overlay'), null, 'its own text is not "newer work"');
+});
+
+// ── Cycle 23 Batch 4b — a failed read never renders as data ──
+section('Cycle 23 Batch 4b — a failed search is not "no matches" (KBUI-1), a failed poll keeps the badge (METUI-1), a partial history says so (ADM-11)');
+
+test('KBUI-1: a search the SERVER failed renders as a failure in the tab and in the drawer — never "No matches", never the request-an-article CTA, and never the query in the error state', async () => {
+  const h = m5aBoot_();
+  const beacons = [];
+  h.window.errBeaconSend_ = (m) => { beacons.push(String(m)); };
+  h.read('kbDoSearch_')('Jane Doe oxygen');
+  h.run.flushSuccess({ error: 'Lock timeout' }, 'searchReference');
+  const tab = h.$('#kb-tree').textContent + ' ' + h.$('#kb-main').textContent;
+  assert.ok(/Reference search failed: Lock timeout/.test(tab) && /this is not "no matches"/.test(tab), 'THE REGRESSION: the tab read "No matches" for a failed search');
+  assert.ok(!/No matches/.test(tab) && !/Request an article/i.test(tab), 'no empty-state, no CTA');
+  assert.ok(h.$('#kb-tree .error-state') && h.$('#kb-main .error-state'), 'the designed error state in both panes');
+  [...h.window.document.querySelectorAll('.error-state')].forEach((e) => assert.ok(!/Jane Doe/.test(e.textContent), 'the query never rides the error state (g146)'));
+  // A clean search afterwards clears it.
+  h.read('kbDoSearch_')('oxygen');
+  h.run.flushSuccess({ results: [] }, 'searchReference');
+  assert.ok(/No matches/.test(h.$('#kb-tree').textContent) && !h.$('#kb-tree .error-state'), 'a real empty result is still "No matches"');
+  // The drawer.
+  h.read('kbDrawerOpen_')();
+  h.read('kbDrawerSearch_')('Jane Doe oxygen');
+  h.run.flushSuccess({ error: 'Lock timeout' }, 'searchReference');
+  const body = h.$('#kbd-body');
+  assert.ok(/Reference search failed: Lock timeout/.test(body.textContent) && body.querySelector('.error-state'), 'THE REGRESSION: the drawer offered "Request an article on this"');
+  assert.ok(!/Request an article/i.test(body.textContent) && !/Results \(0\)/.test(body.textContent));
+  assert.ok(!/Jane Doe/.test(body.querySelector('.error-state').textContent), 'the query never rides the drawer error state either');
+  assert.ok(beacons.length >= 2 && beacons.every((b) => !/Jane Doe/.test(b)), 'the beacon fired (non-vacuous) and never carried the query');
+  h.read('kbDrawerSearch_')('oxygen');
+  h.run.flushSuccess({ results: [] }, 'searchReference');
+  assert.ok(!body.querySelector('.error-state') && /Request an article/i.test(body.textContent), 'a real empty result keeps its CTA');
+});
+
+test('METUI-1: the Metrics alert badge survives a poll that could not read the call data and a poll that failed outright — only a clean "no badge" clears it', () => {
+  const h = boot();
+  h.bootShell({ isManager: true });
+  h.run.drain();
+  const badge = () => h.$('[data-tool="metrics"] .m-alert-badge');
+  const poll = () => h.read('mPollAmbient_')();
+  poll(); h.run.flushSuccess({ badge: { label: '80%', date: '2026-09-30' }, threshold: 92 }, 'getMetricsAmbient');
+  assert.ok(badge() && badge().textContent === '80%', 'sanity: a below-target day badges');
+  poll(); h.run.flushSuccess({ badge: null, unavailable: 'cdr' }, 'getMetricsAmbient');
+  assert.ok(badge() && badge().textContent === '80%', 'THE REGRESSION: an unreadable CDR read as "the team is fine" and removed the alert');
+  poll(); h.run.flushFailure(new Error('network'), 'getMetricsAmbient');
+  assert.ok(badge(), 'THE REGRESSION: one transport failure removed a real alert for five minutes');
+  poll(); h.run.flushSuccess({ badge: null }, 'getMetricsAmbient');
+  assert.ok(!badge(), 'a clean read with no badge clears it');
+});
+
+test('ADM-11: a lifecycle history the server TRUNCATED says so — above the rows, and in place of "No history found" when the window held none', () => {
+  const h = boot();
+  h.bootShell({ isManager: true });
+  h.run.drain();
+  const host = h.$('#view-area');
+  const mk = () => {
+    host.innerHTML = '<div class="cn-audit-row"><button id="adm11-btn">History</button><div class="cn-audit-history" style="display:none"></div></div>';
+    return h.$('#adm11-btn');
+  };
+  const cv = h.read('currentView');
+  let btn = mk();
+  h.read('cnToggleAuditHistory_')(btn, 'n1');
+  h.run.flushSuccess({ rows: [{ timestamp: '2026-09-30 10:00:00', action: 'CallNoteFlag', actor: 'a@x', notes: '' }], truncated: true }, 'getCallNoteAuditHistory');
+  let hist = h.$('.cn-audit-history');
+  assert.ok(/Older history was not scanned/.test(hist.textContent) && /CallNoteFlag/.test(hist.textContent), 'THE REGRESSION: a partial history read as the whole lifecycle');
+  btn = mk();
+  h.read('cnToggleAuditHistory_')(btn, 'n1');
+  h.run.flushSuccess({ rows: [], truncated: true }, 'getCallNoteAuditHistory');
+  hist = h.$('.cn-audit-history');
+  assert.ok(/Older history was not scanned/.test(hist.textContent) && !/No history found/.test(hist.textContent), 'an empty window that was cut short is not "no history"');
+  btn = mk();
+  h.read('cnToggleAuditHistory_')(btn, 'n1');
+  h.run.flushSuccess({ rows: [], truncated: false }, 'getCallNoteAuditHistory');
+  assert.ok(/No history found in the scan window/.test(h.$('.cn-audit-history').textContent), 'an untruncated empty window keeps its empty state');
+  assert.strictEqual(h.read('currentView'), cv);
+});
+
+// ── Cycle 23 TC-02 — a break adjustment says WHICH break ──
+section('Cycle 23 TC-02 — the Adjust modal asks "add a missing break" or "correct the one at HH:MM"');
+
+test('TC-02: a break adjustment on a day that already has that break asks WHICH — nothing is queued until the rep chooses, and the choice rides the request and Apply now', () => {
+  const h = boot();
+  h.bootShell();
+  h.run.drain();
+  const doc = h.window.document;
+  const $ = (id) => doc.getElementById(id);
+  const change = (id) => $(id).dispatchEvent(new h.window.Event('change'));
+  const radios = () => [...$('adj-break-target').querySelectorAll('input[name="adj-break-intent"]')];
+  const batch = () => JSON.parse(JSON.stringify(h.read('ADJ_BATCH')));
+  h.read('openAdjustModal')();
+  assert.ok($('adj-break-target').hidden, 'a Clock In needs no choice');
+  assert.strictEqual(h.run.pending('getMyDayBreaks').length, 0, 'and asks nothing');
+  const day = $('adj-date').value;
+  $('adj-type').value = 'LunchOut'; change('adj-type');
+  const ask = h.run.pending('getMyDayBreaks');
+  assert.strictEqual(ask.length, 1); assert.strictEqual(ask[0].args[0], day, 'the day\'s breaks are read for the chosen date');
+  h.run.flushSuccess({ date: day, LunchOut: ['12:00', '15:00'], LunchIn: ['12:30'] }, 'getMyDayBreaks');
+  assert.deepStrictEqual(radios().map((r) => r.value), ['add', 'correct@12:00', 'correct@15:00'], 'add, or one choice per existing Lunch Out');
+  assert.ok(radios().every((r) => !r.checked), 'nothing is preselected — the rep decides');
+  $('adj-time').value = '12:10';
+  $('adj-add').click();
+  assert.strictEqual(batch().length, 0, 'THE REGRESSION: an unstated break went in and the server rewrote the LAST break (15:00)');
+  radios()[1].checked = true;
+  $('adj-add').click();
+  assert.deepStrictEqual(batch()[0].breakIntent, { mode: 'correct', target: '12:00' }, 'a correction names the punch it moves');
+  assert.ok(radios().every((r) => !r.checked), 'the next entry chooses its own break');
+  assert.ok(/\(corrects the 12:00 one\)/.test($('adj-batch-list').textContent), 'the list says what each entry does');
+  radios()[0].checked = true;
+  $('adj-time').value = '16:00';
+  $('adj-submit').click();
+  const sent = h.run.pending('submitPunchAdjustRequests');
+  assert.strictEqual(sent.length, 1);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sent[0].args[0].map((e) => e.breakIntent))), [{ mode: 'correct', target: '12:00' }, { mode: 'add', target: '' }], 'both intents ride the request');
+  // Apply now carries it too.
+  $('adj-type').value = 'LunchOut'; change('adj-type');   // cached for this date — no second read
+  assert.strictEqual(h.run.pending('getMyDayBreaks').length, 0, 'the same date is not re-read while the modal is open');
+  radios()[2].checked = true;
+  $('adj-time').value = '15:05';
+  $('adj-apply-now').click();
+  const rp = h.run.pending('recordPunch');
+  assert.strictEqual(rp.length, 1);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(rp[0].args[1].breakIntent)), { mode: 'correct', target: '15:00' }, 'Apply now sends the choice too');
+});
+
+test('TC-02: a day without that break is plainly an add; a reply for a date the rep has left is ignored; a failed read refuses the break rather than guessing', () => {
+  const h = boot();
+  h.bootShell();
+  h.run.drain();
+  const doc = h.window.document;
+  const $ = (id) => doc.getElementById(id);
+  const change = (id) => $(id).dispatchEvent(new h.window.Event('change'));
+  const batch = () => JSON.parse(JSON.stringify(h.read('ADJ_BATCH')));
+  h.read('openAdjustModal')();
+  const today = $('adj-date').value;
+  const prev = h.read('mgrAddDaysIso_')(today, -1);
+  $('adj-type').value = 'LunchIn'; change('adj-type');
+  h.run.flushSuccess({ date: today, LunchOut: ['12:00'], LunchIn: [] }, 'getMyDayBreaks');
+  assert.ok(/No Lunch Return on that day yet — this adds one/.test($('adj-break-target').textContent));
+  $('adj-time').value = '12:40';
+  $('adj-add').click();
+  assert.deepStrictEqual(batch()[0].breakIntent, { mode: 'add', target: '' }, 'no choice to make: an add');
+  // Race: the rep moves to yesterday, then back — the stale reply must not paint over the newer date.
+  $('adj-date').value = prev; change('adj-date');
+  $('adj-date').value = today; change('adj-date');
+  h.run.flushSuccess({ date: prev, LunchOut: ['09:00'], LunchIn: ['09:30', '14:00'] }, 'getMyDayBreaks');
+  $('adj-time').value = '13:00';
+  $('adj-add').click();
+  assert.strictEqual(batch().length, 1, 'still checking today — yesterday\'s breaks were not used for it');
+  h.run.flushFailure(new Error('Lock timeout'), 'getMyDayBreaks');
+  assert.ok(/Couldn't read that day's breaks \(Lock timeout\)/.test($('adj-break-target').textContent), 'the failure is said');
+  $('adj-add').click();
+  assert.strictEqual(batch().length, 1, 'a break with unknown neighbours is not filed');
+  $('adj-type').value = 'ClockOut'; change('adj-type');
+  assert.ok($('adj-break-target').hidden, 'a Clock Out needs no choice');
+  $('adj-time').value = '17:00';
+  $('adj-add').click();
+  assert.strictEqual(batch().length, 2); assert.strictEqual(batch()[1].breakIntent, undefined, 'and carries none');
+});

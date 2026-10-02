@@ -138,6 +138,25 @@ not restate it. Server endpoints live in the fourteen server files
      drift (T2), and the sheet doctor accepts a finished break plus one in
      progress as legal data (T6).
 
+     **Cycle 23 Batch 1 (2026-10-01):** the ADP export no longer fails on a
+     long period. Its new spreadsheet is a fixed 1000-row grid and the punch
+     rows were written as one block from row 3, so a range past ~998 rows threw
+     — the automated monthly run and its manual retry alike. The rows now go
+     through `appendRowsSafe_`, which grows the grid first (TC-01, g145).
+
+     **Cycle 23 TC-02 (2026-10-02, operator option (a)) — a break adjustment says
+     which break.** On a day that already has a Lunch Out (or Lunch Return), the
+     Adjust modal reads that day's breaks and asks: "A missing break (add another
+     …)" or "A fix to the … at HH:MM" — nothing preselected, and the break cannot be
+     filed until it is chosen (or while the read is loading or has failed). A day
+     without that punch is plainly an add. The choice rides Add to list, Submit and
+     Apply now, and the lists say "(adds a break)" / "(corrects the 12:00 one)". The
+     manager's queue says "(adds a break)" or "(moves the 12:30 punch)"; a break
+     request filed before the deploy says approval is refused if that day already
+     has one — deny it and ask for it again. Range mode in Day Edit refuses a range
+     that includes a day with more than one break when its break slots are filled,
+     and names those days (g163, the break-adjustment decision).
+
 ## Call Notes
 
    - **Call Notes** — rolling-note panel for CSR call logging. Each
@@ -256,6 +275,15 @@ not restate it. Server endpoints live in the fourteen server files
      before converts on open. The composers share the same pointer drag helper
      and now stay fully on screen.
 
+     **Cycle 23 Batch 1 (2026-10-01) — the save path tells the truth about
+     the clipboard.** The save toast now waits for the auto-copy: "Saved ·
+     copied to clipboard" only when it worked, "Saved — but nothing was copied
+     to the clipboard" beside the **Copy it by hand** box when it did not
+     (CNUI-07). That box always opens on top, even when the email composer is
+     already up (SH-01, g100). And a save that fails after the rep has moved on
+     never overwrites the next note they started: the draft is kept, and the
+     note that did not save is shown to copy (CNUI-01, g86).
+
 <a id="metrics"></a>
      **Batch 6 (2026-09-18):** the Admin Overview KPI strip reports TEAM
      numbers — notes across every enrolled rep (all-time) and the cross-rep
@@ -266,6 +294,18 @@ not restate it. Server endpoints live in the fourteen server files
      row's label reads "all time", matching counts that always spanned the
      whole Sheet (F-28), and the Q&A thread says "Rep" rather than "You" when
      a manager is the one reading it (F-29).
+
+     **Cycle 23 Batch 4b (2026-10-01) — Manage → Admin and the manager Stats tab say
+     what they could not read.** Storage Health, the Overview checklist and the
+     System findings warn "Forms (PHI) not set" / "Dept Requests (PHI-adjacent) not
+     set" while those stores sit on the ADP fallback (they read OK). The Overview
+     checklist gains an "Automation health" row from the list the health dot counts.
+     The Reference-lookups diagnostics are findings now, so a missing price column
+     or an unreadable eligibility cell reaches "Needs attention". The stored-formula
+     scan lists an unset Employee Docs or QA store as "not set up", so it can read
+     clean. The manager Stats tab says "Call data could not be read — … unknown, not
+     zero" above the table instead of a column of dashes, and a note's lifecycle
+     history says when older history was not scanned (g122, g151, g02, g05, g53).
 
 ## Metrics
 
@@ -423,6 +463,30 @@ not restate it. Server endpoints live in the fourteen server files
      resolved" section lists the last 7 days' requests the viewer may reopen.
      Only requests sent after the deploy carry a thread, and the
      `deptReplyResolve` toggle turns the reading off.
+
+     **Cycle 23 Batch 4a (2026-10-01) — Dept Requests:** the SLA reminder
+     stamps a reminder it could not send, and a failed read, as
+     `DeptRequestReminderDigest` on Admin → System; it clears after a clean run.
+
+     **Cycle 23 Batch 4b (2026-10-01) — Metrics never caches what it could not
+     read.** A call-data read that failed is an error on the date-range view (it was
+     "no calls"), My Stats, Team Metrics and the ambient badge do not cache a
+     degraded round, and the sidebar's below-target badge stays put through a
+     failed or unreadable poll rather than vanishing (g128, g129, g53).
+
+     **Cycle 23 Batch 5 (2026-10-02) — Spanish Inbox and Dept Requests.** A
+     voicemail that arrives after a manual resolve is a new pending card that
+     can be resolved in turn (the latest resolve row wins). The resolve and
+     claim records are read over 180 days rather than the last 1000 rows, and
+     claims that could not be read are named in the pending header with
+     Auto-assign disabled, never shown as "unclaimed". The scheduled auto-assign
+     no longer fails when its installer is not on the roster. On Dept Requests,
+     the reply scan lets the latest department reply decide (a "done" followed by
+     a question needs a look), and on a thread two requests share it needs the
+     reply to name the request. The email's resolve link opens a page with a
+     **Mark resolved** button instead of resolving on open, and the sender's own
+     click is recorded as "marked by the sender", untimed. Both modules' median
+     tiles are true medians (an even count averages the middle two).
 
 <a id="intake"></a>
      **Batch 5 (2026-09-18):** `QaRecordings` carries a trailing `AgentId`
@@ -799,7 +863,13 @@ not restate it. Server endpoints live in the fourteen server files
      first column that does not look like the searched one — facts, never a
      silent merge — and a well-formed file warns about nothing (INV-186).
      Sheets' own File → Version history is the undo, which the danger confirm
-     says out loud.
+     says out loud. **Cycle 23 (ADM-05):** the write no longer depends on
+     it. A cell longer than Sheets' 50,000-character ceiling is refused in the
+     preview and the write alike; the tab's grid is grown (rows and columns)
+     before anything is cleared; and a write that still fails puts the previous
+     table back and says so — Version history is named only when that restore
+     fails too. Before this, a file past the tab's 1000-row grid cleared the
+     live lookup table and then threw, leaving it empty.
 
 
      **Cycle 22 Batch 3 (2026-09-23):** the Ctrl/⌘+K drawer keeps what the rep
@@ -939,12 +1009,38 @@ not restate it. Server endpoints live in the fourteen server files
      section index instead of the whole KB tab — every change made in the app
      is seen at once, a by-hand edit to the sheet within five minutes.
 
+     **Cycle 23 Batch 2 (2026-10-01) — the eligibility lookup reads less
+     generously.** "TX or OK" is Texas and Oklahoma (no longer Oregon); a state
+     beside "listed cities" needs its "or"; an Open note must only elaborate;
+     "Dallas North" is one warehouse; a city row with no State reads "cannot
+     tell"; an address outside the US is refused. Each change moves an
+     unreadable cell to "cannot tell", which the Admin → System → Reference
+     lookups panel lists by item. A price line is verified WHOLE at send. In
+     the article editor, Save waits for a pasted screenshot to finish uploading,
+     and reverting to an earlier revision no longer counts as reviewing the
+     article.
+
+     **Cycle 23 Batch 3 (2026-10-01) — a disabled Drive is named, not blamed on
+     a folder or a file.** With the domain's Drive service off, the embed check
+     on Admin → System says the embeds "could not be checked" instead of
+     listing every one as deleted; the KB Images folder is replaced only when
+     Drive says it is gone; and a converted article saved while the folder
+     cannot be reached keeps its image references as pending chips, so a later
+     save can still export them (they used to become a permanent
+     "see the original Doc" placeholder). The image export and
+     paste-a-screenshot errors carry the one disabled-Drive message.
+
 <a id="training-employee-docs"></a>
      **Batch 6 (2026-09-18):** the drawer is `role="dialog"` named by its own
      heading and hands focus back to whatever opened it — open it with
      Ctrl/⌘+K from inside a note field and Escape returns you there. It is
      deliberately NOT `aria-modal`: it does not trap focus, and the shell's
      trap exempts it (F-43).
+
+     **Cycle 23 Batch 4b (2026-10-01):** a search the server FAILED reads "Reference
+     search failed: … — this is not ‘no matches’; try again", in the tab and in the
+     drawer, never "No matches" with the request-an-article button. The query is not
+     part of the message (g146, g53).
 
 ## Training & Employee Docs
 
@@ -1080,6 +1176,14 @@ not restate it. Server endpoints live in the fourteen server files
      the per-question marks as before, and the correct option is never shown
      (spec §9.4). The QuizAttempts row records the marks on every attempt, for
      managers.
+
+     **Cycle 23 Batch 4a (2026-10-01):** with `HR_DOCS_SS_ID` set but
+     unreadable, the training-overdue digest still sends its training
+     section, says "Could not be checked today: unsigned documents /
+     un-acknowledged coaching", and stamps the failure; a failed manager
+     digest or employee nudge is stamped too. The weekly coaching recap counts
+     a failed send as failed (it counted every send as delivered) and stamps
+     an unreachable store.
 
 <a id="qa"></a>
 ## QA
@@ -1262,3 +1366,16 @@ not restate it. Server endpoints live in the fourteen server files
      re-attribute a recording of their OWN call; an admin can
      (`qaSelfReviewRefusal_`, S6). The check is on the server; the detail
      still offers the controls.
+
+     **Cycle 23 Batch 3 (2026-10-01):** with the domain's Drive service
+     disabled, Sync and playback return the one disabled-Drive message
+     (`DRIVE_DISABLED_MSG`, plus `driveDisabled: true`) instead of "check
+     `QA_RECORDINGS_FOLDER_ID`" and "Recording not found." A genuinely missing
+     file still gets the generic refusal. The recordings folder is probed on
+     Admin → System (`QA_FOLDER_PROP`, read by `qaFolderId_` too) — QA-1.
+
+     **Cycle 23 Batch 4a + follow-ons (2026-10-01):** the review-record purge
+     rides the shared row deleter (`purgeSheetRowsOlderThan_` with `qaPurgeMs_`),
+     so a full grid of expired rows no longer throws on its last delete, deletes
+     contiguous runs in one call each, and a failed run is stamped as
+     `QaReviewPurge` — QA-3, 4a-FU2.

@@ -386,6 +386,13 @@ const SCENARIOS = [
     "openDayEditModal('E-1077', 'Nina Patel')"],
   ['dayedit-light-compact', { tool: 'manage', tab: 'manage' }, COMPACT, 'light', '?compact=1',
     "openDayEditModal('E-1077', 'Nina Patel')"],
+  // TC-02 (cycle 23): the Adjust modal's "which break" choice. The fixture day
+  // already has a Lunch Out (getMyDayBreaks), so the add / correct radios are on
+  // camera; the phone width is where the radio labels wrap.
+  ['adjust-break-light-wide',   { tool: 'timeClock', tab: 'clock' }, WIDE,   'light', '',
+    "openAdjustModal(); var t = document.getElementById('adj-type'); t.value = 'LunchOut'; t.dispatchEvent(new Event('change'))"],
+  ['adjust-break-light-mobile', { tool: 'timeClock', tab: 'clock' }, MOBILE, 'light', '',
+    "openAdjustModal(); var t = document.getElementById('adj-type'); t.value = 'LunchOut'; t.dispatchEvent(new Event('change'))"],
 
   // Follow-on (2026-09-01): the ADMIN sub-tabs were the matrix's last
   // wide-only surface, and the Visual Audit Stage had been carrying them as a
@@ -412,6 +419,10 @@ const SCENARIOS = [
   // failing state of the new capability line, at both widths.
   ['admin-system-nodrive-light-wide',   { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '?drive=denied', "cnAdminTab_('system')"],
   ['admin-system-nodrive-light-mobile', { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '?drive=denied', "cnAdminTab_('system')"],
+  // DRV-1 (cycle 23): granted scope, DISABLED service — the domain's real
+  // state, which the line read as green. The longest message it carries.
+  ['admin-system-drivedisabled-light-wide',   { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '?drive=disabled', "cnAdminTab_('system')"],
+  ['admin-system-drivedisabled-light-mobile', { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '?drive=disabled', "cnAdminTab_('system')"],
 
   // Follow-on (2026-09-01): Manage Time was covered only at WIDE, so an inline
   // `grid-template-columns:1fr 1fr` on the analytics pair — which beats every

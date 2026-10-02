@@ -4237,8 +4237,12 @@ function cnSubmitActiveForm_(opts) {
   // Optimistic path — runs synchronously, well under one frame:
   // 1. Put the note in the stack so it renders immediately
   CN_STATE.rollingNotes.unshift(pendingNote);
-  // 2. Copy to clipboard NOW so the rep can paste into the CRM without waiting
-  cnAutoCopyNote_(pendingNote);
+  // 2. Copy to clipboard NOW so the rep can paste into the CRM without waiting.
+  // CNUI-07 (cycle 23): the save toast rides the copy's OUTCOME. It used to be
+  // shown synchronously below as "Saved · copied to clipboard" — before the
+  // copy had settled, and beside the "nothing was copied" modal when it failed.
+  cnAutoCopyNote_(pendingNote, { announce: true, ok: 'Saved · copied to clipboard',
+    fail: 'Saved — but nothing was copied to the clipboard' });
   if (opts && opts.keepForm) {
     // Operator feedback (2026-06-12 r3): Save & Compose is TRANSACTIONAL —
     // the form keeps its text while the composer is open. Send success
@@ -4259,7 +4263,6 @@ function cnSubmitActiveForm_(opts) {
   // 4. Re-render
   cnRenderStack_();
   cnRenderFilterBar_();
-  showToast('Saved · copied to clipboard', 'toast-success');
 
   // Server sync in background
   google.script.run
@@ -4325,6 +4328,7 @@ function cnSubmitActiveForm_(opts) {
  *    - form gone (navigated away) → park the snapshot in the sticky-draft
  *      slot so the next Log view restores it ("Draft restored"). */
 function cnRevertPendingSubmit_(pendingId, snapshot, message) {
+  const lostNote = CN_STATE.rollingNotes.filter(function (n) { return n.noteId === pendingId; })[0] || null;
   CN_STATE.rollingNotes = CN_STATE.rollingNotes.filter(function (n) { return n.noteId !== pendingId; });
   cnRenderStack_();
   cnRenderFilterBar_();
@@ -4342,6 +4346,16 @@ function cnRevertPendingSubmit_(pendingId, snapshot, message) {
       outcome = ' — note restored to the form';
     } else if (form) {
       outcome = ' — the unsaved note is on your clipboard (your current typing was left untouched)';
+    } else if (cnStickyDraftHasOtherText_(snapshot)) {
+      // CNUI-01 (cycle 23): the ONE draft slot already holds newer typing — the
+      // rep started the next note, then left Log while this save was still in
+      // flight. Writing the failed note there destroyed that newer note for
+      // good while the toast promised the failed one "was kept". Keep the newer
+      // draft, and put the note that did not save in front of the rep to copy.
+      const v = snapshot.values || {};
+      manualCopyModal_(cnFormatNoteForCopy_(lostNote || Object.assign({}, v, { patientAndTrx: v.patient })),
+        'The call note that did not save');
+      outcome = ' — your newer draft was kept; the note that did not save is shown so you can copy it';
     } else {
       cnSaveSnapshotAsStickyDraft_(snapshot);
       outcome = ' — the unsaved note was kept as a draft (restores on the Log view) and is on your clipboard';
@@ -4354,6 +4368,27 @@ function cnRevertPendingSubmit_(pendingId, snapshot, message) {
  *  cnPersistActiveFormDraft_ writes / cnRestoreActiveFormDraft_ reads) so a
  *  rep who navigated away mid-save gets the note back on their next Log view
  *  enter instead of losing it. Carries an `at` stamp for the PHI TTL. */
+/** CNUI-01: does the sticky-draft slot hold OTHER typing worth keeping — a
+ *  live (within the PHI TTL) draft with a non-blank field that differs from
+ *  `snap`, the note that failed? (A Save & Compose keeps its own text in the
+ *  form, so the slot can hold the failed note itself — that is not newer work,
+ *  and overwriting it with the same note is the old, correct path.) Read-only. */
+function cnStickyDraftHasOtherText_(snap) {
+  try {
+    const raw = localStorage.getItem(CN_FORM_STICKY_LS_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (!data || (data.at && (Date.now() - data.at) > CN_FORM_STICKY_MAX_AGE_MS)) return false;
+    const vals = data.values || {};
+    const mine = (snap && snap.values) || {};
+    const t = function (x) { return String(x || '').trim(); };
+    const hasText = Object.keys(vals).some(function (k) { return t(vals[k]) !== ''; }) ||
+      t(data.trainingQ) !== '' || t(data.reviewC) !== '';
+    if (!hasText) return false;
+    return Object.keys(vals).some(function (k) { return t(vals[k]) !== t(mine[k]); }) ||
+      t(data.trainingQ) !== t(snap && snap.trainingQ) || t(data.reviewC) !== t(snap && snap.reviewC);
+  } catch (e) { return false; }
+}
 function cnSaveSnapshotAsStickyDraft_(snap) {
   try {
     localStorage.setItem(CN_FORM_STICKY_LS_KEY, JSON.stringify({
@@ -4387,7 +4422,8 @@ function cnAutoCopyNote_(note, opts) {
   const text = cnFormatNoteForCopy_(note);
   copyWithFeedback_(text, {
     silent: !(opts && opts.announce),
-    ok: 'Copied to clipboard',
+    ok: (opts && opts.ok) || 'Copied to clipboard',
+    fail: (opts && opts.fail) || '',
     label: 'Call note',
   });
 }
@@ -8636,7 +8672,9 @@ function cnMgrLoadStats_() {
     .withSuccessHandler(function (res) {
       // Key-exact cache write before the guards (INV-156): a stale-date
       // response warms ITS date; only the render is dropped.
-      if (res && !res.error && !((res.reps || []).some(function (r) { return r.notesUnavailable; }))) {
+      // TC2-2 (cycle 23): a round whose call data could not be read is
+      // degraded too, so it never becomes the instant paint (INV-129).
+      if (res && !res.error && !res.cdrUnavailable && !((res.reps || []).some(function (r) { return r.notesUnavailable; }))) {
         CN_STATE.mgrStatsCache[requestedDate] = res;
       }
       pillOff();
@@ -8722,7 +8760,14 @@ function cnMgrRenderStats_(host, res) {
   const pctCls = (typeof mPctClass_ === 'function') ? mPctClass_ : function () { return ''; };
   const covBadge = (typeof mCoverageBadge_ === 'function') ? mCoverageBadge_ : function (p) { return p + '%'; };
   const sorted = cnStatsSortReps_(reps, CN_STATE.statsSort);
-  host.innerHTML =
+  // TC2-2 (cycle 23): the call columns read "—" for every rep when the call
+  // data could not be read — say so above the table, so it never reads as a
+  // shift with no calls. The server's message is escaped.
+  const cdrNote = res.cdrUnavailable
+    ? '<div role="status" style="margin-bottom:8px;font-size:12px;color:var(--warning-deep)">' + icon('warning', 12) +
+      ' Call data could not be read (' + esc(res.cdrUnavailable) + ') — the % answered and coverage columns are unknown, not zero.</div>'
+    : '';
+  host.innerHTML = cdrNote +
     mtRenderTable_({
       rows: sorted,
       sort: CN_STATE.statsSort,
@@ -9568,7 +9613,7 @@ function enterCallNotesAdminView(area) {
   // Design handoff A3 (2026-09-02): the two health payloads are held here so
   // the findings list + the status cards can be derived from BOTH once either
   // lands (null = not loaded yet; {error} = that load failed).
-  CN_STATE.adminHealth = null; CN_STATE.adminStorage = null;
+  CN_STATE.adminHealth = null; CN_STATE.adminStorage = null; CN_STATE.adminOop = null;
   area.innerHTML =
     compactHeader +
     // Design handoff A1: the shared app-bar (two-level crumb — the sidebar IS
@@ -10503,8 +10548,15 @@ function cnToggleAuditHistory_(btn, noteId) {
       // not read as a note with no audit trail. No outer esc().
       if (!res || res.error) { hist.innerHTML = errorStateHtml_((res && res.error) || 'Could not load history'); return; }
       var hrows = res.rows || [];
-      if (hrows.length === 0) { hist.innerHTML = '<div class="cn-audit-hist-empty">No history found in the scan window.</div>'; return; }
-      hist.innerHTML = hrows.map(function (h) {
+      // ADM-11 (cycle 23): the server flags `truncated` when its bounded scan
+      // never reached the note's CallNoteCreate row, so what it found is only
+      // the newer part of the lifecycle. It was ignored, and a partial history
+      // read as the whole one.
+      var truncNote = res.truncated
+        ? '<div class="cn-audit-hist-empty" style="color:var(--warning-deep)">Older history was not scanned — this is the most recent part of the lifecycle, not all of it (the AuditLog tab has the rest).</div>'
+        : '';
+      if (hrows.length === 0) { hist.innerHTML = truncNote || '<div class="cn-audit-hist-empty">No history found in the scan window.</div>'; return; }
+      hist.innerHTML = truncNote + hrows.map(function (h) {
         return '<div class="cn-audit-hist-row">' +
           '<span class="cn-audit-hist-ts tabular">' + esc(h.timestampMgr || h.timestamp) + '</span>' +
           '<span class="cn-audit-hist-action">' + esc(h.action) + '</span>' +
@@ -10757,10 +10809,12 @@ function cnRenderFormulaScanPanel_(res) {
     var stores = res.stores || [];
     var failed = stores.filter(function (s) { return s.error; });
     var unscanned = res.unscanned || [];
-    var checked = stores.filter(function (s) { return !s.error && !s.sameAs; }).length;
+    var checked = stores.filter(function (s) { return !s.error && !s.sameAs && !s.notConfigured; }).length;
+    var notSet = stores.filter(function (s) { return s.notConfigured; });   // ADM-08: no store, by design — not a failure
     var hits = res.hits || [];
     body += '<div style="font-size:12px;margin-top:8px">' + esc(String(checked)) + ' store' + (checked === 1 ? '' : 's') +
       ' scanned · <b>' + esc(String(res.total || 0)) + '</b> formula cell' + (res.total === 1 ? '' : 's') + ' found</div>';
+    if (notSet.length) body += '<div style="font-size:12px;margin-top:6px">' + muted('Not set up on this deployment (no store to scan): ' + esc(notSet.map(function (s) { return s.label; }).join(', '))) + '</div>';
     if (failed.length) body += warn('Could not open: <b>' + esc(failed.map(function (s) { return s.label + ' (' + s.error + ')'; }).join(' · ')) + '</b>');
     if (unscanned.length) body += warn('Not reached before the time limit — NOT checked: <b>' + esc(unscanned.join(', ')) + '</b>. Run the scan again to continue.');
     if (res.capped) body += warn('Showing the first ' + esc(String(hits.length)) + ' of ' + esc(String(res.total)) + '.');
@@ -10802,14 +10856,18 @@ function cnLoadOopDiagPanel_() {
   // a diagnostic that fails silently is the defect this panel exists to fix.
   var fail = function (msg) {
     if (currentView !== requestedView) return;
+    CN_STATE.adminOop = { error: msg };   // ADM-07: a failed read is a finding too
     var live = document.getElementById('cn-admin-oop');
     if (live) live.innerHTML = cnRenderOopDiagPanel_({ error: msg });
+    cnRenderSystemFindings_();
   };
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requestedView) return;
+      CN_STATE.adminOop = res || { error: 'no response' };
       var live = document.getElementById('cn-admin-oop');
       if (live) live.innerHTML = cnRenderOopDiagPanel_(res);
+      cnRenderSystemFindings_();
     })
     .withFailureHandler(function (err) { fail((err && err.message) || 'load failed'); })
     .getOopPricingDiagnostics();
@@ -10969,6 +11027,21 @@ function cnRenderStoragePanel_(res) {
   '</div>';
 }
 
+/** DRV-1 (cycle 23): what a dead Drive takes down — one list, for the line and the finding. */
+function cnDriveSurfaces_() {
+  return 'Reference article images (converter export, paste-a-screenshot, the image fallback), the embed reachability check, and QA recording sync and playback';
+}
+/** DRV-1 (cycle 23, g142): the KB Images folder advice. "Clear the property"
+ *  was destructive whenever the folder still existed — the images already
+ *  exported live in it, and the reader's fallback reads only the folder the
+ *  property names. Only Drive's own "no item with the given ID" means gone,
+ *  and since DRV-4 the next export replaces a gone folder by itself. */
+function cnDriveFolderAdvice_(err) {
+  if (/no item with the given id could be found/i.test(String(err || ''))) {
+    return 'Drive says the folder is gone; the next image export creates a replacement (images that were in it do not come back).';
+  }
+  return 'Share the folder with the deploying account, or retry later \u2014 do not clear the property: the images already exported live in that folder.';
+}
 /** Drive capability line (operator 2026-09-09). The store probes above can
  *  every one of them read OK while Drive is unusable — they are Sheets, and
  *  Sheets ride a different scope. Renders NOTHING when the probe was skipped
@@ -10987,11 +11060,26 @@ function cnDriveAccessHtml_(dr) {
     tone = 'warn';
     body = '<strong>Drive access could not be checked</strong> — ' +
       esc(dr.error || 'the token could not be introspected') + '. Treat this as unknown, not as OK.';
-  } else if (dr.folderOk === false) {
+  } else if (dr.service === 'disabled') {
+    // DRV-1 (cycle 23): the scope is granted and the SERVICE is off — this
+    // line read green over a dead QA module and invisible article images.
+    tone = 'danger';
+    body = '<strong>Drive is disabled for this domain.</strong> The scope is granted, but every Drive call fails: ' +
+      cnDriveSurfaces_() + '. ' + esc(dr.disabledMsg || '');
+  } else if (dr.service === 'error') {
     tone = 'warn';
-    body = '<strong>KB Images folder unreachable.</strong> ' + esc(dr.folderProp || '') +
-      ' points at a folder the deploying account cannot open — ' + esc(dr.folderError || 'unknown error') +
-      '. Clear the property to let the next image export create a fresh folder.';
+    body = '<strong>Drive could not be reached</strong> — ' + esc(dr.serviceError || 'unknown error') +
+      '. Treat this as unknown, not as OK.';
+  } else if (dr.folderOk === false || dr.qaFolderOk === false) {
+    tone = 'warn';
+    body = [
+      dr.folderOk === false ? '<strong>KB Images folder unreachable.</strong> ' + esc(dr.folderProp || '') +
+        ' points at a folder the deploying account cannot open — ' + esc(dr.folderError || 'unknown error') +
+        '. ' + cnDriveFolderAdvice_(dr.folderError) : '',
+      dr.qaFolderOk === false ? '<strong>QA recordings folder unreachable.</strong> ' + esc(dr.qaFolderProp || '') +
+        ' points at a folder the deploying account cannot open — ' + esc(dr.qaFolderError || 'unknown error') +
+        '. QA sync and playback fail until it opens: share the folder with the deploying account, or correct the id.' : '',
+    ].filter(Boolean).join(' ');
   } else {
     tone = 'ok';
     body = 'Drive access granted' + (dr.folderId
@@ -11080,6 +11168,13 @@ function cnRenderKbEmbedsHealth_(ke) {
   var checked = (ke.probed != null && ke.probed < ke.total)
     ? ('checked ' + ke.probed + ' of ' + ke.total)
     : (ke.total + ' embed' + (ke.total === 1 ? '' : 's'));
+  if (ke.driveUnavailable) {
+    // DRV-2 (cycle 23): nothing was checked — never "all reachable", never "broken".
+    return top +
+      '<div style="font-size:11px;color:var(--warning-deep)">' + icon('warning', 12) + ' Reference embeds could not be checked \u2014 ' +
+      esc(ke.driveError || 'Drive is unavailable') + '</div>' +
+    '</div>';
+  }
   if (ke.broken && ke.broken.length) {
     return top +
       '<div style="font-size:12px;color:var(--danger-deep);margin-bottom:8px">' + icon('warning', 12) + ' ' +
@@ -11195,7 +11290,7 @@ function cnHolidayFindings_(add, hol) {
       'the computed US-federal list is in use instead — Columbus and Veterans Day count as closures, and the closures the team actually observes do not', fix);
   }
 }
-function cnHealthFindings_(health, storage) {
+function cnHealthFindings_(health, storage, oop) {
   var items = [];
   var degraded = { automation: null, cdr: null, storage: null };
   var add = function (id, area, severity, title, detail, fix, link) {
@@ -11234,7 +11329,7 @@ function cnHealthFindings_(health, storage) {
     var aeJobs = Object.keys(ae);
     aeJobs.forEach(function (job) {
       var e = ae[job] || {};
-      add('automationError:' + job, 'automation', 'fail', job + ' failed on its last run',
+      add('automationError:' + job, 'automation', 'fail', (e.label || job) + ' failed on its last run',
         (e.at ? 'at ' + e.at + ' — ' : '') + (e.message || e.error || 'unknown error'),   // F-20: the stamp's field is `message`
         'Run the job from the editor to reproduce; a clean run clears this flag.');
     });
@@ -11244,9 +11339,12 @@ function cnHealthFindings_(health, storage) {
     var stale = digests.filter(function (d) { return d.stale; });
     var never = digests.filter(function (d) { return !d.last; });
     stale.forEach(function (d) {
+      // 4a follow-ons (cycle 23): a stale heartbeat whose job ran and FAILED in
+      // the window is that failure, not a dead trigger — reinstalling triggers
+      // changes nothing (g142). The failure itself is its own finding above.
       add('digest:' + d.key, 'automation', 'warn', (CN_DIGEST_LABELS_[d.key] || d.key) + ' is stale',
-        'last ran ' + (d.last || '?') + ' — past its expected cadence',
-        'The trigger may be dead — re-run installAutomationTriggers().');
+        'last ran ' + (d.last || '?') + ' — past its expected cadence' + (d.failedAt ? '; it ran and failed at ' + d.failedAt : ''),
+        d.failedAt ? 'Fix the failure reported for this job — its trigger is running.' : 'The trigger may be dead — re-run installAutomationTriggers().');
     });
     if (!stale.length) {
       add('digests', 'automation', 'ok', 'Digest heartbeats',
@@ -11456,17 +11554,38 @@ function cnHealthFindings_(health, storage) {
         add('driveScope', 'storage', 'warn', 'Drive access could not be checked',
           dr.error || 'the token could not be introspected',
           'Retry from the Admin tab — until it reads, treat Drive as unknown rather than working.');
+      } else if (dr.service === 'disabled') {
+        add('driveScope', 'storage', 'fail', 'Drive is disabled for this domain',
+          'the scope is granted, but every Drive call fails — ' + cnDriveSurfaces_(),
+          dr.disabledMsg);
+      } else if (dr.service === 'error') {
+        add('driveScope', 'storage', 'warn', 'Drive could not be reached',
+          dr.serviceError || 'unknown error',
+          'Retry from the Admin tab — until it answers, treat Drive as unknown rather than working.');
       } else if (dr.folderOk === false) {
         add('driveScope', 'storage', 'warn', 'KB Images folder unreachable',
           dr.folderProp + ' points at a folder the deploying account cannot open — ' + (dr.folderError || 'unknown error'),
-          'Clear ' + dr.folderProp + ' to let the next image export create a fresh folder, or re-share the existing one.');
+          cnDriveFolderAdvice_(dr.folderError));
       } else {
         add('driveScope', 'storage', 'ok', 'Drive access',
           'granted' + (dr.folderId ? ' · KB Images folder reachable' : ' · KB Images folder is created on the first image export'));
       }
+      // DRV-1/QA-1 (cycle 23): the QA recordings folder was probed by nothing,
+      // so a wrong or unshared id surfaced only as a failed Sync.
+      if (dr.qaFolderOk === false && dr.service !== 'disabled') {
+        add('driveQaFolder', 'storage', 'warn', 'QA recordings folder unreachable',
+          (dr.qaFolderProp || 'QA_RECORDINGS_FOLDER_ID') + ' points at a folder the deploying account cannot open — ' + (dr.qaFolderError || 'unknown error'),
+          'Share the folder with the deploying account, or correct the id — QA sync and playback fail until it opens.');
+      }
     }
     var ke = storage.kbEmbeds;
-    if (ke && ke.total) {
+    if (ke && ke.driveUnavailable) {
+      // DRV-2 (cycle 23): with the service disabled every probe fails, and
+      // the panel named every embed "deleted/moved" — a claim about each file
+      // that no file can fix (g142).
+      add('kbEmbeds', 'storage', 'warn', 'Reference embeds could not be checked',
+        ke.driveError || 'Drive is unavailable', 'This clears when Drive is reachable again — the embeds themselves are not the problem.');
+    } else if (ke && ke.total) {
       var broken = (ke.broken || []).length;
       if (broken) {
         add('kbEmbeds', 'storage', 'warn', plural(broken, 'broken Reference embed'),
@@ -11477,7 +11596,51 @@ function cnHealthFindings_(health, storage) {
       }
     }
   }
+  // ADM-07 (cycle 23): the Reference-lookups diagnostics (T8) are judged HERE,
+  // with everything else the tab, the badge and the cards count. The panel
+  // below them reports facts; a missing price column, an empty delivery
+  // registry or an unreadable eligibility cell never reached "Needs attention",
+  // so the tab read clean above a panel of warnings (g151). Storage area: the
+  // three lookup tabs live in the KB store. null = not loaded yet.
+  if (oop) cnOopFindings_(add, oop, plural);
   return { items: items, degraded: degraded };
+}
+
+/** ADM-07 (cycle 23) — the findings the pricing + delivery-reach diagnostics
+ *  imply, from the SAME payload cnRenderOopDiagPanel_ draws. */
+function cnOopFindings_(add, res, plural) {
+  var fix = 'Fix the cells named under Reference lookups · pricing + delivery reach, below.';
+  if (res.error) {
+    add('oop:load', 'storage', 'warn', 'Reference lookups could not be checked', String(res.error),
+      'Reload the Admin tab; until it reads, treat the pricing and delivery tables as unchecked.');
+    return;
+  }
+  var e = res.eligibility || {};
+  var n = 0;
+  if ((res.missing || []).length) {
+    n++; add('oop:missing', 'storage', 'warn', 'Pricing columns not found: ' + res.missing.join(', '),
+      'those fields render blank for every item in ' + (res.tab || 'the pricing tab'), fix);
+  }
+  if (res.truncated) {
+    n++; add('oop:truncated', 'storage', 'warn', 'Pricing tab longer than the scan limit', 'rows past it are never searched', fix);
+  }
+  var radius = Number(e.radius || 0);
+  if (res.locationError) {
+    n++; add('oop:location', 'storage', 'warn', (res.locationTab || 'Delivery table') + ' could not be used', String(res.locationError), fix);
+  } else if (!(res.warehouses || []).length && radius > 0) {
+    n++; add('oop:warehouses', 'storage', 'warn', 'No warehouses in ' + (res.locationTab || 'the delivery table'),
+      plural(radius, 'item rule') + ' measure a distance from a warehouse — each reads "cannot tell"', fix);
+  }
+  var unread = (res.locUnreadable || []).length + (res.locNoAddress || []).length;
+  if (unread) {
+    n++; add('oop:locrows', 'storage', 'warn', plural(unread, 'delivery-table row') + ' could not be read in full',
+      'see "Rows that could not be read in full" / "No address"', fix);
+  }
+  if (Number(e.unknownCount || 0) > 0) {
+    n++; add('oop:unknown', 'storage', 'warn', plural(Number(e.unknownCount), 'Area Eligibility value') + ' cannot be read',
+      'each reads "cannot tell" for every rep, on every address', fix);
+  }
+  if (!n) add('oop', 'storage', 'ok', 'Reference lookups', 'pricing and delivery tables read cleanly');
 }
 
 /** Worst severity across a findings list — 'fail' > 'warn' > 'ok'. */
@@ -11522,7 +11685,7 @@ var CN_SYS_AREAS_ = [['automation', 'Automation'], ['cdr', 'CDR'], ['storage', '
  *  premature all-clear. */
 function cnRenderSystemFindings_() {
   var health = CN_STATE.adminHealth, storage = CN_STATE.adminStorage;
-  var r = cnHealthFindings_(health, storage);
+  var r = cnHealthFindings_(health, storage, CN_STATE.adminOop);
   var items = r.items, degraded = r.degraded;
   var areaIdx = { automation: 0, cdr: 1, storage: 2 };
   var needs = items.filter(function (f) { return f.severity !== 'ok'; }).sort(function (a, b) {
@@ -11824,7 +11987,8 @@ function cnRenderHealthPanel_(res) {
       when = '<span style="color:var(--muted)">no heartbeat recorded yet — check the trigger is installed</span>';
     } else if (d.stale) {
       when = '<span style="color:var(--warning-deep);font-weight:600">' + icon('warning', 11) + ' last ran ' +
-        esc(d.last) + (tz ? ' ' + esc(tz) : '') + ' — past its expected cadence; the trigger may be dead</span>';
+        esc(d.last) + (tz ? ' ' + esc(tz) : '') + ' — past its expected cadence; ' +
+        (d.failedAt ? 'it ran and failed at ' + esc(d.failedAt) + ' — see the failure above' : 'the trigger may be dead') + '</span>';
     } else {
       when = '<span class="tabular" style="font-family:var(--mono)">' + esc(d.last) + (tz ? ' ' + esc(tz) : '') + '</span>';
     }

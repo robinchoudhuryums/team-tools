@@ -78,6 +78,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   computed from something that is permanently true on a real deployment, so it
   carried no information and taught the reader to scroll past it. Span-bounding
   the read made the flag mean what it says.
+  **AMENDED (cycle 23 ADM-08, 2026-10-01): a THIRD instance — the stored-formula
+  scan.** It reported an UNSET no-fallback store (Employee Docs, QA) as "Could
+  not open", so on a deployment without those features the scan could never read
+  clean. A target may now carry a `configured()` predicate (`hrDocsConfigured_`,
+  `qaStoreConfigured_`); an unset store is `notConfigured`, is not opened, and
+  renders muted as "Not set up on this deployment". A SET store that will not
+  open is still an error. Verify: the ADM-08 pin (server walk + panel).
 
 <a id="g03-roster-inclusion-goes-through-emprosteremail-row-the"></a>
 
@@ -138,6 +145,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   deployer account lost access, etc.) the existing call-notes stats
   still return normally — the `cdr` field is simply absent. Client
   rendering checks `r.cdr` before showing CDR rows.
+  **AMENDED (cycle 23 TC2-2, 2026-10-01): best-effort, and it SAYS so.** The
+  overlay read `getCdrAgentMetrics_` bare, so a read that failed BESIDE an empty
+  agents map (`meta.error`, the M7 class) rendered every call column as "—" — a
+  shift with no calls — and the client cached that round as its instant paint.
+  It now reads through `cdrAgentsOrThrow_`; the catch nulls every rep's `cdr` and
+  `noteCoverage` (a half-enriched list is never partly right) and ships
+  `cdrUnavailable`, which the client renders as a notice above the table and
+  never caches. Verify: the TC2-2 pin.
 
 <a id="g06-secrets-via-script-properties-not-config"></a>
 
@@ -1014,6 +1029,24 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `intakeInherentlySolidCodes_`, read by the engine and the validator alike.
   Verify: the I2 and I6 pins.
 
+  **AMENDED (cycle 23 Batch 2, 2026-10-01): the operator's CONNECTIVES and
+  QUALIFIERS are not rules.** Five more shapes read as a broader yes:
+  (1) the STATES branch upper-cased every token, so "TX or OK" added OREGON and
+  "TX in OK" Indiana — lowercase "or"/"and" are now connectives, and any other
+  lowercase everyday-word token is not trusted as a code (KB-1); (2) a state
+  beside the city clause ("listed cities, TX", "(TX)") parsed as T7's either-one
+  union, whose state branch lifts out of pocket and opened a city-only item
+  nationwide — the union now needs the operator's own "or" and no parentheses
+  (KB2-1); (3) the Open parenthetical's deny-list could not be finished ("lower
+  48", "continental US", "call to confirm") — every word must now ELABORATE
+  "anywhere in the US", and a place name counts only beside an including-word
+  (KB2-2); (4) "Dallas" matched inside "Dallas North", so the radius was also
+  measured from Dallas, order-dependently — names match longest-first and
+  consume their span (KB2-4); (5) a city row with a blank State matched that
+  city in EVERY state — it is now "cannot tell" (KB2-5). Every one moves toward
+  unknown, and unknown never lifts. Verify: the KB-1 and KB2-1/2/4/5 drives,
+  bite-checked.
+
 
 <a id="g42-intake-ppd-controls-are-engine-safe-via"></a>
 
@@ -1424,7 +1457,33 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   **And the health dot itself (follow-ups, 2026-09-25):** an unreadable
   ClientErrors tab was named on the panel but counted as zero errors on the dot
   and in the digest; `automationProblems_` now emits it as a problem.
-
+  **AMENDED (cycle 23 HR-3 / MAIL-3 + MAIL-4, 2026-10-01): a SEND is a read
+  too.** `coachSendMail_` returns `false` on a failed send (it never throws),
+  and the weekly recap counted every call as sent; four other digests caught a
+  failed send, logged it and stamped a clean run. A delivery that did not happen
+  now stamps the job's failure (`stampAutomationError_`), and the clean stamp
+  lands only after the send. Verify: the HR-3/MAIL-3, MAIL-4 and CORE-02 drives.
+  **AMENDED (cycle 23 METUI-1 + KBUI-1 + ADM-11, 2026-10-01): three more
+  absences that read as answers.** The Metrics alert badge was CLEARED by a
+  failed poll and by a CDR read that could not be done — "the team is fine" for
+  "could not tell"; it now keeps its last verdict on both (`getMetricsAmbient`
+  ships `unavailable:'cdr'`). A Reference search the server failed (`{error}`
+  returned) rendered "No matches" plus "Request an article on this", in the tab
+  and in the mid-call drawer; it now renders the failure, carrying the server's
+  message only (g146). A note's lifecycle history ignored the server's
+  `truncated` flag, so a history the bounded scan cut short read as the whole
+  one; it now says older history was not scanned. Verify: the KBUI-1, METUI-1
+  and ADM-11 DOM pins.
+  **AMENDED (cycle 23 SP-3, 2026-10-02): a failed STATE read is not an empty
+  state.** The Spanish Inbox's manual-resolve and claim maps returned `{}` on
+  any read failure — so a resolve tab that could not be read put every resolved
+  request back on the pending list, and a claims tab that could not be read let
+  the steal guard pass and auto-assign treat every request as unclaimed. No tab
+  yet still reads as empty; a FAILED read now throws. The pending list fails as
+  a whole on the resolve map, and on the claims map it renders with
+  `claimsUnavailable` named in both headers and Auto-assign disabled; a claim,
+  release or auto-assign refuses ("nothing was assigned"). Verify: the SP-3
+  pins (both maps driven over a throwing sheet; the auto-assign refusal).
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 
@@ -2009,6 +2068,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   and T5 DOM pins driving a denied `execCommand` and a rejected `writeText`,
   bite-checked eight ways.
 
+  **AMENDED (cycle 23 CNUI-07, 2026-10-01): the TOAST was a second claim.** The
+  helpers reported failure correctly after T5, but the save path still showed
+  "Saved · copied to clipboard" synchronously — before the copy had settled,
+  and beside the "nothing was copied" box when it failed. A message that says
+  the copy worked is part of the copy: the save path now passes its toast to
+  `copyWithFeedback_` as `ok`, and a `fail` toast ("Saved — but nothing was
+  copied to the clipboard") rides beside the manual-copy box, so the rep still
+  learns the note saved. Verify: the CNUI-07 DOM pin (a blocked clipboard never
+  shows "copied"; a working one does), bite-checked.
+
 <a id="g77-showtoast-msg-type-normalizes-the-variant-pass"></a>
 
 - **`showToast(msg, type)` normalizes the variant — pass either form.**
@@ -2216,6 +2285,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   (`cnVoiceStopAll_`, handlers detached BEFORE `abort()`), because a session
   captured the field's text when it started and wrote it back on its next
   result. Verify: the C4 and C11 DOM pins.
+
+  **AMENDED (cycle 23 CNUI-01, 2026-10-01): the slot holds ONE draft.** A save
+  that failed after the rep had left Log parked its snapshot in the draft slot
+  — over the NEXT note the rep had already started there — and the toast said
+  the failed note "was kept as a draft". `cnRevertPendingSubmit_` now asks
+  `cnStickyDraftHasOtherText_(snapshot)` first: live, DIFFERENT typing is kept,
+  and the note that did not save opens in the manual-copy box instead. A slot
+  holding nothing, or the failed note itself (Save & Compose keeps its text in
+  the form), takes the old park-as-draft path. Verify: the two CNUI-01 DOM pins,
+  bite-checked.
 
 <a id="g87-voice-dictation-routes-audio-outside-the-baa"></a>
 
@@ -2454,6 +2533,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   handles its own Escape (stopped at the panel, so it never closes a modal
   underneath), and the shell's focus trap and a dialog's Enter both exempt it.
   A future non-modal panel takes the same class rather than an overlay.
+
+  **AMENDED (cycle 23 SH-01, 2026-10-01): a REOPENED overlay goes on top.**
+  Every overlay shares one z-index, so DOM ORDER decides which paints above —
+  and the Escape handler and the focus trap both take the LAST open overlay as
+  the top. `ensureOverlay` appends a node only when it creates it, so a reused
+  node kept its old place: the hook-less "Copy it by hand" box (its close only
+  drops `open`) came back BENEATH any overlay created since, which on a second
+  clipboard failure during Save & Compose was the composer. Now a closed→open
+  transition of a direct child of `<body>` moves it to the end; an overlay
+  re-rendered while open is left where it is. Verify: the SH-01 DOM pin,
+  bite-checked.
 
 <a id="g101-public-form-endpoints-have-no-employee-auth"></a>
 
@@ -3263,6 +3353,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   a NAME so the separator cannot be inferred from the data), bite-checked by
   turning the server's em dash into a hyphen.
 
+  **AMENDED (cycle 23 KB2-7, 2026-10-01): the line must be found WHOLE.** The
+  verifier checked `body.indexOf(line)`, so "Scooter — $100" verified inside
+  "Scooter — $1000" — the send went out and the audit row recorded "$100
+  verified" beside a tenfold quote. `oopBodyHasLine_` now requires the line not
+  to run on into more of a number (a digit, or "."/"," + digit) and not to start
+  mid-word; a run-on figure falls to the existing "was edited" refusal. Verify:
+  the KB2-7 grid + wiring pin.
+
 <a id="g121-a-positional-tab-read-is-correct"></a>
 - **A positional tab read (`getSheets()[0]`) is correct right up until the
   spreadsheet gains a second purpose — and then it fails SILENTLY (OOP-A → the
@@ -3335,7 +3433,24 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   fallback and read "reachable". A fallback is for an UNSET store; a configured
   store that will not open is an outage and throws by name. Verify: the A3
   driven pin (the ADP resolver is never called).
-
+  **AMENDED (cycle 23 HR-3, 2026-10-01): a third instance — the HR sweeps.**
+  `empDocsOverdueAll_` and `coachUnackedAll_` returned `[]` on ANY throw, so an
+  `HR_DOCS_SS_ID` that was set but unreadable read as "nothing overdue" in the
+  daily brief and the training digest — the same answer as a deployment with no
+  HR store at all. `hrSweepFailed_` now returns `[]` only while the property is
+  UNSET (`hrDocsConfigured_`; can't tell → configured) and otherwise throws by
+  name, and both callers catch per source and SAY what they could not read.
+  Verify: the HR-3 drives.
+  **AMENDED (cycle 23 ADM-04, 2026-10-01): a FALLBACK is not a configured
+  store.** Storage Health set `configured: !!spec.id`, and the Forms and Dept
+  Requests id IS the ADP sheet's whenever their property is unset — so "PHI on the
+  payroll sheet" read configured and OK on the panel, the readiness checklist and
+  the System findings, and F-11's client warning on `configured:false` could never
+  fire against the real server. The mock had modelled `configured:false`, a shape
+  the server never shipped (INV-185's reason for existing). The probe now takes
+  `configured` from the PROPERTY (`!!formsProp`, `!!drProp`) and still opens the
+  fallback, so its reachability and timezone stay visible. Verify: the ADM-04 pin
+  (drives `getStorageHealth` with and without the properties).
 
 <a id="g123-the-holiday-calendar-is-the-cdr-report-s"></a>
 
@@ -3676,6 +3791,25 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   a complete ZIP still checks by itself. Verify: the K5 pins, server and
   client, and the ELIG DOM pin (no request before Enter).
 
+  **AMENDED (cycle 23 KB2-3, 2026-10-01): "outside the US" is a FOURTH
+  answer.** `setRegion('us')` only BIASES the geocoder, and nothing read the
+  country, so a Canadian or Mexican address got an `open` verdict ("available
+  anywhere in the US") and a radius said yes across the border. `kbGeocodeOne_`
+  now returns `country` (additively — the map block reads only lat/lng), and
+  `checkOopEligibility` refuses a non-US geocode before reading any rule, with a
+  message that names no part of the address (g146). The US list is named
+  explicitly (`KB_GEO_US_COUNTRIES`): looking the country up in
+  `US_STATE_CODES` read Canada's ISO "CA" as California — which the new pin
+  caught in the first draft of the fix. Verify: the KB2-3 pin.
+  **AMENDED (cycle 23 MET-1 + MET-3 + TC2-2, 2026-10-01): three more callers,
+  and the breakdown reader names its miss.** `getMyMetricsRange`,
+  `getMetricsAmbient` and `managerGetShiftStats` read the aggregate's `agents`
+  bare beside a `meta.error`; all three go through `cdrAgentsOrThrow_` now. And
+  `getCdrDailyBreakdown_` returned bare empty maps for a MISSING DQE tab — it
+  ships `error` beside them, which both trend readers throw on (a failed trend,
+  never an empty one). Verify: the MET-1 pin (drives `getMyMetricsRange` over a
+  meta.error, a missing-tab trend and a clean read).
+
 <a id="g129-never-cache-a-failure-as-a-value"></a>
 
 - **Never cache a FAILURE as a value (Batch 2 of the 2026-09-17 /broad-scan,
@@ -3695,6 +3829,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   stores a payload without checking `.error`. Verify: the F-06 DOM pin
   (failure → null → refetch; `{error}` → null; a real config → stored and then
   honoured).
+  **AMENDED (cycle 23 MET-2/3/4 + TC2-2, 2026-10-01): a DEGRADED round is a
+  failure too.** My Stats cached its result while `cdrUnavailable` (the flag was
+  honest; pinning it for the TTL outlived the blip); the ambient badge cached the
+  silence of a `meta.error` read; Team Metrics cached a range whose trend read
+  had thrown; the shift-stats client cached a round whose call data was
+  unreadable. None of them caches such a round now. Verify: the MET-2/3/4 and
+  TC2-2 pins.
 
 <a id="g130-a-registered-onclose-hook-owns-the-close"></a>
 
@@ -4213,6 +4354,41 @@ instruction changes nothing, because the triggers and the CDR store were never
 looked at. Both rows now say "Could not check — the automation health read
 failed (…). This says nothing about …". Verify: the A5 pin, driven over
 `{error}`, `{readFailed}` and no report.
+**AMENDED (cycle 23 DRV-1 + QA-1 + DRV-2 + DRV-4, 2026-10-01): a check of the
+PERMISSION cannot see the SERVICE.** This domain disables Apps Script's Drive
+(M4-FU3). The token still carries `/auth/drive` — the scope is auto-detected
+from the code — so the Admin → System Drive line, which only introspected the
+token, read **Drive access granted** while every `DriveApp` call threw "disabled
+by your domain administrator". Each surface behind it then named the wrong
+cause, and each named cause was actionable: QA Sync said *check
+`QA_RECORDINGS_FOLDER_ID`* (a correct id), playback said *Recording not found*
+(about every recording), the embed scan listed every embed as *deleted/moved or
+the deployer lost access*, the folder line's advice was *clear the property*,
+and `getOrCreateKbImagesFolder_` treated ANY open failure as a dead folder and
+created a replacement, which would re-point the property away from every image
+already exported (the reader's fallback reads only the folder the property
+names). The fix is the rule above applied to each: `driveAccessStatus_` makes
+one side-effect-free call (`DriveApp.getRootFolder().getId()`) and reports
+`service` ok / disabled / error; folders are not probed while the service is
+off; one message (`DRIVE_DISABLED_MSG`) is used wherever the disabled rule
+(`driveDisabledError_`) matches; and the folder is replaced only on Drive's own
+"No item with the given ID" (`driveItemGoneError_`). **The question to ask of a
+capability check: does it exercise the thing, or only the precondition for it?**
+Verify: the cycle-23 DRV-1 / QA-1 / DRV-2 / DRV-4 / DRV-5 drives and the
+`admin-system-drivedisabled-*` shots.
+**AMENDED (cycle 23 CORE-01 + 4a-FU1, 2026-10-01): a STALE HEARTBEAT has two
+causes, and naming only one is the same defect.** A job that fails withholds
+or ages its heartbeat (the urgent digest since FU-B6a, the health digest since
+F-20, and since CORE-01 the daily brief, where the heartbeat is what makes the
+four standalone digests stand down). Every stale line then said "the trigger
+may be disabled — re-run installAutomationTriggers()" beside a stamp saying
+the job had just RUN and failed, and the `briefConfig` detector said the same.
+Following it changes nothing. `DIGEST_ERROR_KEYS` maps each heartbeat to the
+key its job stamps; `computeAutomationHealth_` ships `failedAt` when that stamp
+lies inside the digest's stale window (`automationFailedWithin_` — an older
+failure is NOT offered, because the trigger may have died since), and the
+problem line, the System finding and the detail row name the failure instead.
+Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
 
 
 <a id="g143-a-leading-underscore-is-not-private"></a>
@@ -4242,6 +4418,17 @@ failed (…). This says nothing about …". Verify: the A5 pin, driven over
   `serverSource()`. Verify: the PUBLIC-GATE pins (a directory scan that
   refuses a `.claspignore` it cannot honour, plus the owner-predicate pin),
   bite-checked.
+  **AMENDED (cycle 23 RES-1, 2026-10-02): a GET that WRITES is reachable by
+  everything that fetches a link.** The Dept Request email's resolve link
+  resolved the request on load, so a mail scanner's preview, or the sender
+  opening their own sent copy, closed it as a timed department response. The
+  page is read-only now and offers a button; the write moved to a public,
+  token-gated `confirmDeptRequestResolve` (a named PUBLIC-GATE exemption — the
+  token is the credential, an unidentifiable caller is refused), and the
+  sender's own click is recorded as `self`, untimed. RULE: a link in an email is
+  a GET anyone's software may follow; it may show state, never change it.
+  Verify: the RES-1 pins (the page writes nothing; the button's token is
+  shape-checked and script-safe; `self` for the sender).
 
 <a id="g144-a-string-written-to-a-cell-is-parsed"></a>
 
@@ -4293,6 +4480,32 @@ failed (…). This says nothing about …". Verify: the A5 pin, driven over
   every server function that writes at `getLastRow() + 1` calls
   `insertRowsAfter(` before its `setValues(`), the C1 pin's small-grid fake,
   and the C5 spare-row pin.
+
+  **AMENDED (cycle 23 TC-01 + ADM-05, 2026-10-01): a NEW or CLEARED sheet is
+  the same fixed grid.** `SpreadsheetApp.create()` returns a 1000-row sheet,
+  and the payroll export wrote its punch rows with
+  `getRange(3, 1, matched.length, 9)` — so a period past ~998 rows threw, the
+  automated run told the operator to "export manually", and the manual run
+  threw the same way. It now goes through `appendRowsSafe_`. The data-table
+  import was worse: it `clear()`ed the live lookup tab and THEN wrote a block
+  sized to the CSV (limits 5000×60 against a 1000×26 tab), so the throw left
+  InsurancePayors / OopPricing / LocationAcceptance EMPTY. It now refuses an
+  over-long cell before the dry-run return, grows rows AND columns
+  (`kbEnsureGrid_`) before the clear, and puts the previous table back if the
+  write still fails. The F4 derived net cannot see either — neither writes at
+  `getLastRow() + 1` — which is why both have their own drive. Verify: the
+  TC-01 drive + wiring and the ADM-05 drive (grow, restore, unrestorable,
+  first import, over-long cell) + wiring, bite-checked four ways.
+  **AMENDED (cycle 23 QA-3 + 4a-FU2, 2026-10-01): the hand-written sibling.**
+  The QA review purge had its own bottom-up `deleteRow` loop with no spare row,
+  so a full grid whose every row had expired threw on its last delete — after
+  which the purge's audit row was never written and every later run threw on
+  the survivor. It now rides the shared `purgeSheetRowsOlderThan_`, which takes
+  an optional `msOf` cell reader (the default date-string reader would have read
+  a `0` ms cell as a year-2000 date and deleted it) and, since 4a-FU2, deletes
+  descending CONTIGUOUS runs with one `deleteRows` each (`contiguousRowRunsDesc_`)
+  instead of one call per row under the global lock. Verify: the QA-3 and 4a-FU2
+  drives + C5's fake grid, which now refuses per `deleteRows` call.
 
 <a id="g146-a-failure-message-that-echoes-typed-input"></a>
 
@@ -4415,6 +4628,17 @@ failed (…). This says nothing about …". Verify: the A5 pin, driven over
   — its fixture must fire every kind DERIVED from the server source, and each
   item must appear among the tab's findings; a kind the client claims must
   have a branch the pin checks.
+  **AMENDED (cycle 23 ADM-09 + ADM-07, 2026-10-01): a third reader, and a panel
+  that was not a reader at all.** The Overview's deploy-readiness checklist
+  checked stores, heartbeats and CDR — never the problem list — so its headline
+  read "All clear" under a red dot. `deployReadinessItems_` now adds a `health`
+  row from `automation.problems`: warn with a count and the first three lines, ok
+  on an empty list, and "Could not check" when the report carries no list (g53).
+  And the Reference-lookups diagnostics (missing price columns, an empty delivery
+  registry, unreadable eligibility cells and delivery rows) rendered as a panel
+  BELOW the findings and never reached "Needs attention"; `cnOopFindings_` turns
+  them into storage-area findings (`oop:*`, a failed load `oop:load`) that the
+  tab, its badge and the cards all count. Verify: the ADM-09 and ADM-07 pins.
 
 <a id="g152-a-bounded-tail-scans-absence-is-evidence"></a>
 
@@ -4444,6 +4668,14 @@ failed (…). This says nothing about …". Verify: the A5 pin, driven over
   or an unparseable oldest row proves nothing. Known gap: a job whose flag was
   switched on moments ago reads "no run on record" until its first run. Verify:
   FU-B6d.
+  **AMENDED (cycle 23 SP-3, 2026-10-02): a ROW-COUNT tail drops evidence that a
+  TIME span keeps.** The Spanish resolve and claim tabs were read as their last
+  1000 rows, so on a busy inbox an old claim or resolve fell out of the tail and
+  its thread read as unclaimed or pending again, inside the very window the
+  list shows. Both tabs are now read over a TIME span (`SPANISH_STATE_SPAN_DAYS`,
+  180): `spanishSpanStartRow_` starts after the last row stamped before the
+  cutoff, and an unstamped (legacy) row is always kept, since nothing says when
+  it happened. Verify: the SP-3 span pin (cutoff, legacy rows, empty tab).
 
 
 <a id="g153-clearing-the-roster-email-does-not-reach-the-gate-lists"></a>
@@ -4516,6 +4748,16 @@ failed (…). This says nothing about …". Verify: the A5 pin, driven over
   still runs on the first message. Whether 8x8 really threads is UNVERIFIED on
   the live inbox; a single-voicemail thread reads exactly as before. Fires when
   you read a mail thread as one request. Verify: the M5 pins and FU-B7b.
+  **AMENDED (cycle 23 SP-1, 2026-10-02): the RESOLVE fold had the same
+  first-message bias.** M5 made each voicemail its own request, but the manual
+  resolve fold kept the FIRST row per thread and `resolveSpanishThread` answered
+  "already resolved" whenever any row existed — so a repeat voicemail that
+  arrived after a resolve could never be resolved, and stayed pending, counted
+  and assignable for the whole window. The fold now keeps the LATEST stamped row
+  (a legacy unstamped row still resolves all), "already" means the resolve
+  covers the thread's newest message (`spanishThreadLatestMs_`), and the
+  Needs-you list asks the pending ids rather than "a resolve exists". Verify:
+  the SP-1 pins (the fold, the endpoint's already-test, the Needs-you wiring).
 
 <a id="g156-read-a-word-or-a-number-by-token"></a>
 
@@ -4595,6 +4837,17 @@ failed (…). This says nothing about …". Verify: the A5 pin, driven over
   that ends a task or moves it out of view. Verify: the D-2 rule grid (the
   question-line case, the empty-text case, rule 4 alone failing is
   'needs-look').
+  **AMENDED (cycle 23 DR-2 + DR-1, 2026-10-02): the LATEST reply decides, and
+  a shared thread needs the request NAMED.** The pick took the EARLIEST
+  resolving reply, so "Done" followed by "wait — which patient?" in one scan
+  window closed the request and the question was never seen; now a latest reply
+  that needs a look wins, and a resolve is timed at the first resolving reply
+  after the last needs-look one. And two requests can share one Gmail thread
+  (same subject), where one "Done" resolved both: on a shared thread a reply
+  counts for a request only when its body names that request's id (the resolve
+  link carries it, and a reply quotes it); naming only another sharer is not a
+  reply to this one, and naming none is a look, never a resolve. Verify: the
+  DR-2 pick grid and the DR-1 scan drive (`c23DrScan_`).
 
 <a id="g160-an-escape-first-renderer-must-match-escaped-markers"></a>
 
@@ -4647,3 +4900,25 @@ failed (…). This says nothing about …". Verify: the A5 pin, driven over
   scroller. Verify: M5a-FU2 (derived from the scrollers' own padding rules) +
   the `reference-manual-backchip-*` and `reference-drawer-backto-*` shots.
 
+<a id="g163-an-adjustment-that-names-a-type-must-say-which"></a>
+
+- **An adjustment that names a punch TYPE on a day that may hold several of
+  that type must also say WHICH — and a writer that cannot tell must refuse,
+  never pick the last (cycle 23 TC-02, operator 2026-10-02).** Multi-break days
+  are legal (Lunch Out is re-offered after Lunch Return), but a rep's break
+  adjustment — Apply now, or an approved request — carried only a date, a type
+  and a time, and every writer resolved it with "the LAST punch of that type"
+  (`findExistingPunch_`, `buildAdjustPunchIndex_`). So a forgotten second break
+  rewrote the first, and a correction of the first moved the second. Appending
+  instead is the same defect pointed the other way: a correction becomes a
+  duplicate. The intent now rides the request (`BreakTarget`: `add` or
+  `correct@HH:mm`), ONE resolver (`breakAdjustTargetRow_`) decides the row for
+  every writer, and a target that has moved, or an unstated break on a day
+  that already has one, is REFUSED with nothing written — at submit, at Apply
+  now, and again at approval. The last-row rule survives only where it is
+  unambiguous, behind a sentinel no RPC payload can produce
+  (`BREAK_INTENT_LAST`): the editor-run split-day repair, and range mode after
+  it has refused any day with more than one break of a type it sets. Fires
+  when a write identifies a punch by its TYPE, or you add a punch type a day
+  can hold more than once. Verify: the TC-02 pins (the resolver grid, the
+  writer over a fake Timesheet, submit, approval/range, the modal DOM pins).

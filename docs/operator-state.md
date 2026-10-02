@@ -220,6 +220,13 @@ entry says which it is.
   server-side only: the detail still shows the controls and refuses on use.
   Claiming and commenting are not restricted. Nothing to set up; tell the QA
   reviewers.
+  **The folder is checked on Admin → System (cycle 23 QA-1, 2026-10-01):**
+  `QA_RECORDINGS_FOLDER_ID` is probed beside the KB Images folder, and a folder
+  the deploying account cannot open is a "QA recordings folder unreachable"
+  warning. While this domain disables Apps Script's Drive (M4-FU3), Sync and
+  playback both say so ("Apps Script's Drive service is disabled for this
+  domain…") instead of blaming the folder id or the recording — QA sync and
+  playback cannot work until IT allows Drive for Apps Script.
 <a id="operator-set-script-property-adp-ss-id"></a>
 - **Set Script Property `ADP_SS_ID`** to the real spreadsheet ID in
   Apps Script editor → Project Settings → Script Properties. Without
@@ -403,6 +410,17 @@ entry says which it is.
   restricted"), which is the one case that is genuinely a Workspace policy
   block, and you then have the exact scope name to give IT. Admin → System →
   Storage inventory reports which of these you are in (INV-197).
+  **AMENDED (cycle 23 DRV-1/DRV-4/DRV-5, 2026-10-01).** On THIS domain the
+  scope is granted and Apps Script's Drive SERVICE is disabled by the Workspace
+  admin (M4-FU3) — re-authorizing does not help; Admin → System now leads with a
+  BLOCKING "Drive is disabled for this domain" finding until IT allows Drive for
+  Apps Script. The folder is replaced automatically ONLY when Drive says it is
+  gone ("No item with the given ID"); any other failure leaves the property as
+  it is and the save names the reason. **Do not clear the property by hand while
+  the folder still exists** — every exported image lives in it, and the image
+  fallback reads only the folder the property names. A save that cannot reach
+  the folder keeps the converter's image references as pending chips; save the
+  article again once Drive is reachable to export them.
 <a id="operator-script-property-kb-search-synonyms"></a>
 - **Script Property `KB_SEARCH_SYNONYMS`** (auto-managed, #8). JSON array of
   ≥2-term lowercase synonym groups (e.g. `[["cpap","pap"],["pmd","power chair"]]`)
@@ -769,6 +787,21 @@ entry says which it is.
   Needs-you list. Nothing to set up. The pending thread ids are cached for 15
   minutes (`spanish_pending_ids_v1:<days>`, ids only), so a request answered in
   Gmail outside the app can stay on Needs you that long.
+  **Cycle 23 Batch 5 (2026-10-02) — nothing to set up.** The SpanishManualResolved
+  and SpanishClaims tabs are read over the last **180 days**
+  (`SPANISH_STATE_SPAN_DAYS`, a code constant — not a Script Property), no
+  longer their last 1000 rows; an unstamped legacy row is always read. A
+  manual resolve covers the voicemails up to it: a repeat voicemail that lands
+  after it re-opens the card and can be resolved again (SP-1). If the claims
+  tab cannot be read, the pending list still shows, says "claims could not be
+  read", and disables Auto-assign; a claim, release or auto-assign run refuses
+  rather than act on "unclaimed" (SP-3) — the scheduled run stamps that refusal
+  into `AUTOMATION_LAST_ERRORS`. The scheduled auto-assign no longer needs its
+  installer to be a roster manager or member: its own gate is the trigger, and
+  it reads the pending list without re-checking the installer (SP-4). The
+  median tiles are true medians since this batch (an even count averages the
+  two middle values), so a figure can move on deploy with no change in the
+  data (DR-3).
 
 <a id="operator-elapsed-time-is-business-hours-and-one-pure-core-computes-it"></a>
 - **Elapsed time is BUSINESS hours, and ONE pure core computes it (operator
@@ -854,8 +887,14 @@ entry says which it is.
   request. Legacy rows (no `noteId`) never dedupe; the lookup failing-open mints a
   fresh token. **Two resolve paths:** (1) the receiver
   (internal `@umsupply.com`) clicks the email link → `doGet`'s `?resolve=`
-  branch → `serveResolvePage_` → `markDeptRequestResolved_` (locked,
-  **idempotent**; requires a signed-in `getActiveUserEmail_` so it's attributed);
+  branch → `serveResolvePage_`, which since cycle 23 RES-1 (2026-10-02) only
+  READS — it names the request and offers a **Mark resolved** button, so a mail
+  scanner or a preview fetching the link records nothing — and the button calls
+  `confirmDeptRequestResolve` → `markDeptRequestResolved_` (locked,
+  **idempotent**; requires a signed-in `getActiveUserEmail_` so it's attributed;
+  the SENDER's own click is recorded with via `self`, untimed, "marked by the
+  sender" on the card). **Tell the departments** the link now opens a page with
+  a button;
   (2) the **sender or a manager** clicks "Mark resolved" in-app →
   `resolveDeptRequest(requestId)` (rep-callable, owner-or-manager-checked) — for
   when the recipient replied "done" without clicking. The surface is the
@@ -926,6 +965,10 @@ entry says which it is.
   **SLA-reminder digest** (`sendDeptRequestReminderDigest` — PHI-free summary of
   overdue-open requests, the operator chose a manager summary over per-dept member
   nudges). See `docs/email-request-tracking-plan.md`.
+  **Since cycle 23 ADM-04 (2026-10-01)** an unset `DEPT_REQUESTS_SS_ID` is a
+  "Dept Requests (PHI-adjacent) not set" warning on Storage Health, the Overview
+  checklist and Admin → System (the ADP fallback used to read configured and OK).
+  Set it to the Intake spreadsheet, as with `FORMS_SS_ID`.
 <a id="operator-external-fillable-form-links-must-be-the-canonical-anonymous"></a>
 - **External fillable-form links must be the canonical anonymous `/exec` URL.**
   Inside a Google Workspace, `ScriptApp.getService().getUrl()` returns the
@@ -1198,6 +1241,10 @@ entry says which it is.
   (no hash/consent/certificate — `verify` reports them as legacy). The deployer
   account needs edit access to whatever `FORMS_SS_ID` points at (it already does
   for `INTAKE_SS_ID`).
+  **Since cycle 23 ADM-04 (2026-10-01)** Storage Health, the Overview checklist
+  and Admin → System all WARN "Forms (PHI) not set" while `FORMS_SS_ID` is
+  unset — the fallback used to read configured and OK. Setting the property
+  clears it.
 <a id="operator-form-consent-version-in-config"></a>
 - **`FORM_CONSENT_VERSION` in CONFIG** stamps every form submission with the
   Privacy-Notice version the signer saw (server-authoritative — the client's
@@ -1583,6 +1630,19 @@ entry says which it is.
   - A **city** limit does NOT lift when the customer pays out of pocket — it is
     about how the item physically gets there, not who is billing. A **state**
     limit still does.
+  - **Write it plainly — the reader no longer guesses (cycle 23):**
+    - A state list is uppercase codes, joined however you like: `TX, OK`,
+      `TX/OK`, `TX or OK` (the word "or" is a connective — before cycle 23 it
+      read as Oregon). A lowercase code that is also an English word (`ok`,
+      `in`, `me`, `hi`…) reads "cannot tell"; write it in capitals.
+    - A state BESIDE the city list must say `or`: `TX or listed cities` means
+      either one. `listed cities, TX` or `listed cities (TX)` reads "cannot
+      tell", because it could mean "only the listed cities in Texas".
+    - An `Open` note may only elaborate: `Open (anywhere in the US including
+      Hawaii)` is open; `Open (lower 48)`, `Open (call to confirm)` or `Open (HI
+      and AK)` read "cannot tell". Name the places with "including" if you mean
+      them included.
+    - An address outside the US is refused rather than answered.
 
   ### `LocationAcceptance`
   **The headers must be in ROW 1**, with data from row 2 down. A title row above
@@ -1623,6 +1683,13 @@ entry says which it is.
     reader does not recognise makes the row unreadable and it is REPORTED, not
     guessed at. A blank `Type` is classified by shape: an address makes it a
     warehouse.
+  - **A city row needs its `State`** (cycle 23). A blank State used to match
+    that city name in every state; it now reads "cannot tell" for that city and
+    is named in the diagnostics.
+  - **Warehouse names must be unique.** A second row with the same name is
+    reported and only the first address is used. Two names where one contains
+    the other (`Dallas`, `Dallas North`) are fine: the longer one is matched
+    first.
 
   **There is no default and no fallback.** A missing or empty
   `LocationAcceptance` tab makes every radius rule read "cannot tell" — never
@@ -1736,6 +1803,13 @@ entry says which it is.
   deployer needs edit access. NEVER point a retention purge at it —
   HR records are keep-forever (INV-122). `TEST_HRDOCS_SS_ID` is the
   auto-managed test fixture twin (created on first `runAllTests`).
+  **Set but unreachable (cycle 23 HR-3):** the overdue-documents and
+  un-acknowledged-coaching sweeps no longer read as "nothing overdue". The
+  training-overdue digest still sends its training section, adds "Could not
+  be checked today: …", and stamps `TrainingOverdueDigest`; the daily brief
+  names the source; the weekly coaching recap stamps `CoachingRecapDigest`.
+  UNSET stays quiet — that is a deployment without the feature.
+
 <a id="operator-employees-sheet-column-p-payrate"></a>
 - **`Employees` sheet column P = `PayRate`** (operator 2026-08-17) — an
   OPTIONAL hourly pay rate per rep (plain number; `$18.50`-style entries
@@ -1983,6 +2057,14 @@ entry says which it is.
   their separate MANAGER emails (employee reminders, the weekly digests, and
   the automation-failure watchdog still send). Silent on an all-clear morning.
   Flip it off to restore the individual digests instantly (next trigger runs).
+  **Since cycle 23 CORE-01 (2026-10-01):** with the flag on, the brief's
+  heartbeat — the thing that makes the four streams stand down — is stamped
+  only after the brief has been DELIVERED. If any manager's brief fails to
+  send, the failure is stamped (`ManagerDailyBrief` on Admin → System) and
+  the next morning EVERY manager also gets the four separate digests — a
+  doubled email by design, never a silent one. A stale brief heartbeat names
+  both possible causes: a missing trigger, or a last run that did not deliver.
+
 <a id="operator-clienterrors-sheet-tab"></a>
 - **`ClientErrors` sheet tab** (auto-provisioned in the ADP spreadsheet on the
   first client-error beacon, INV-150). PHI-free diagnostics — exception
@@ -2180,6 +2262,13 @@ entry says which it is.
   Leave both alone. A blank `EndTime` on a resume for a day that has already
   ended is why approval refuses it: ask the rep to file their finish, or deny
   the request.
+  A third trailing column, **`BreakTarget` (cycle 23 TC-02, 2026-10-02)**, says
+  what a BREAK request means: `add` (a missing break) or `correct@HH:mm` (move
+  the punch stamped at that time). Leave it alone. A break request filed before
+  it existed carries none; approving one on a day that already has that break is
+  REFUSED (the row stays Pending and the queue row says so in advance) — deny it
+  and ask the rep to file it again from Adjust, which now asks. A correction whose
+  target was changed in the meantime is refused the same way.
 <a id="operator-form-catalog"></a>
 - **Form catalog** is configured in
   `CONFIG.CALL_NOTES.FORM_CATALOG` — each entry maps an ID to a
@@ -2264,6 +2353,13 @@ entry says which it is.
   RepliedAt and ReplyVerdict (the header self-heals). Only requests sent after
   the deploy carry a thread. **Tell the departments** that a reply now resolves
   unless it asks a question.
+  **Cycle 23 Batch 5 (2026-10-02):** the LATEST counting reply decides — a
+  "done" followed by a question is a look, not a resolve (DR-2) — and on a
+  thread two requests share, a reply counts for a request only when it quotes
+  that request's id (the resolve link carries it); otherwise it is a look
+  (DR-1). **One-time check:** in the DeptRequests tab, look for two rows with
+  the same ThreadId value — those requests share a Gmail conversation, and
+  their unnamed replies will now ask for a look instead of resolving both.
 
 <a id="operator-script-property-dash-team-layouts-22post-e"></a>
 - **Script Property `DASH_TEAM_LAYOUTS` (22post E, 2026-09-28; auto-managed).**

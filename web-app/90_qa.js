@@ -89,7 +89,7 @@ function qaCanReviewEmail_(email) {
   return false;
 }
 function qaFolderId_() {
-  try { return String(PropertiesService.getScriptProperties().getProperty('QA_RECORDINGS_FOLDER_ID') || '').trim(); }
+  try { return String(PropertiesService.getScriptProperties().getProperty(QA_FOLDER_PROP) || '').trim(); }
   catch (e) { return ''; }
 }
 /** The dedicated QA store — NO fallback (the getHrDocsSS_ posture): an unset
@@ -274,7 +274,12 @@ function qaSyncRecordings() {
     if (!folderId) return { success: false, error: 'The QA recordings folder is not configured — set Script Property QA_RECORDINGS_FOLDER_ID to the Drive folder recordings are dropped into.' };
     let folder;
     try { folder = DriveApp.getFolderById(folderId); }
-    catch (e) { return { success: false, error: 'The QA recordings folder could not be opened — check QA_RECORDINGS_FOLDER_ID and the deploying account\'s access to it.' }; }
+    catch (e) {
+      // QA-1 (cycle 23): a disabled Drive SERVICE is not the folder's fault —
+      // "check QA_RECORDINGS_FOLDER_ID" sent the operator to edit a correct id (g142).
+      if (driveDisabledError_(e && e.message)) return { success: false, error: DRIVE_DISABLED_MSG, driveDisabled: true };
+      return { success: false, error: 'The QA recordings folder could not be opened — check QA_RECORDINGS_FOLDER_ID and the deploying account\'s access to it.' };
+    }
     const sheet = getOrCreateQaRecordingsSheet_();
     let known = qaKnownFileIds_(sheet);
     // Resume where the last capped run stopped — only for THIS folder.
@@ -482,7 +487,12 @@ function qaAudioChunkFor_(fid, chunkIndex) {
     if (!folderId) return { error: 'The QA recordings folder is not configured (Script Property QA_RECORDINGS_FOLDER_ID).' };
     let file;
     try { file = DriveApp.getFileById(fid); }
-    catch (e) { return { error: 'Recording not found.' }; }
+    catch (e) {
+      // QA-1 (cycle 23): with the service disabled EVERY recording read
+      // "not found" — a claim about the file that the file cannot fix.
+      if (driveDisabledError_(e && e.message)) return { error: DRIVE_DISABLED_MSG, driveDisabled: true };
+      return { error: 'Recording not found.' };
+    }
     let inFolder = false;
     const parents = file.getParents();
     while (parents.hasNext()) {
@@ -875,13 +885,12 @@ function purgeOldQaReviews() {
        [QA_SCORECARDS_TAB, QSC.CREATED_MS, function (n) { scorecards = n; }]].forEach(function (t) {
         const sheet = ss.getSheetByName(t[0]);
         if (!sheet || sheet.getLastRow() < 2) return;
-        const col = sheet.getRange(2, t[1] + 1, sheet.getLastRow() - 1, 1).getValues();
-        let removed = 0;
-        for (let i = col.length - 1; i >= 0; i--) {   // bottom-up so indices hold
-          const ms = Number(col[i][0]) || 0;
-          if (ms > 0 && ms < cutoffMs) { sheet.deleteRow(i + 2); removed++; }
-        }
-        t[2](removed);
+        // QA-3 (cycle 23): the shared deleter, not a hand-written loop — the
+        // loop had no spare row, so a full grid whose every row had expired
+        // threw on its LAST delete (C5's sibling), the audit row below was
+        // never written, and every later run threw on the survivor. The cells
+        // are NUMBER ms, read by qaPurgeMs_ (a 0/garbage stamp is never deleted).
+        t[2](purgeSheetRowsOlderThan_(sheet, t[1], cutoffMs, qaPurgeMs_));
       });
     } finally {
       lock.releaseLock();
@@ -889,9 +898,17 @@ function purgeOldQaReviews() {
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'QaReviewPurge', '', '', false, 0,
       `retentionDays=${days}; commentsRemoved=${comments}; scorecardsRemoved=${scorecards}`);
     Logger.log(`purgeOldQaReviews: removed ${comments} comment(s) + ${scorecards} scorecard(s) older than ${days} day(s).`);
+    clearAutomationError_('QaReviewPurge');
   } catch (err) {
+    stampAutomationError_('QaReviewPurge', err.message);   // QA-3: the F4 rule — a caught failure reaches nobody unless stamped
     Logger.log('purgeOldQaReviews failed: ' + err.message);
   }
+}
+/** PURE (Node-pinned) — QA-3: a QA review row's CreatedMs as epoch ms, or null
+ *  (never deleted) for a 0, blank or non-numeric cell. */
+function qaPurgeMs_(v) {
+  const ms = Number(v);
+  return (isFinite(ms) && ms > 0) ? ms : null;
 }
 /** Set which AGENT a recording belongs to (feeds the per-agent stats). Free
  *  text bounded ≤80 chars — roster names ride the queue payload as a datalist,

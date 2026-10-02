@@ -672,7 +672,10 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
 function getCdrDailyBreakdown_(from, to, rosterNames) {
   var ss = getCdrSS_();
   var sheet = ss.getSheetByName('DQE Historical Data');
-  if (!sheet) return { daily: {}, agents: {} };
+  // MET-1 (cycle 23): a MISSING tab is not an empty one — it names itself
+  // beside the empty maps (the getCdrAgentMetrics_ meta.error shape), so a
+  // caller can tell "no calls" from "could not read the calls" (g128).
+  if (!sheet) return { daily: {}, agents: {}, error: 'the DQE Historical Data tab was not found in the CDR Report' };
 
   validateCdrColumns_(sheet);
 
@@ -1691,7 +1694,9 @@ function getMyMetrics(date) {
     // F5: a failed notes read must not be cached as fresh — the Clock coverage
     // strip reads this endpoint, so a 5-minute-pinned degraded result would
     // outlive the transient failure that caused it (the L-3 rule).
-    if (useMetricsCache && !noteRes.unavailable) {
+    // MET-2 (cycle 23): and neither is a CDR read flagged unavailable (F-47) —
+    // the flag was honest, but pinning it for CDR_CACHE_TTL outlived the blip (g129).
+    if (useMetricsCache && !noteRes.unavailable && !cdrUnavailable) {
       try { metricsCache.put(myCacheKey, JSON.stringify(result), CONFIG.CDR_CACHE_TTL); } catch (_) {}
     }
     return result;
@@ -1734,8 +1739,11 @@ function getMyMetricsRange(from, to) {
 
     var std = getCdrDashboardStandard_();   // H2 -- the published standard (memoized per execution)
     var ship = cdrStandardShip_(std);
-    var agg = getCdrAgentMetrics_(from, to, [emp.name]);
-    var c = (agg && agg.agents && agg.agents[emp.name]) || null;
+    // MET-1 (cycle 23): the M7 refusal — a CDR read that names its failure
+    // beside an empty `agents` map read as "a rep who took no calls", and was
+    // CACHED that way. It now throws into the catch below: an honest {error},
+    // never cached.
+    var c = cdrAgentsOrThrow_(getCdrAgentMetrics_(from, to, [emp.name]))[emp.name] || null;
 
     // Per-day trend across the range for the sparklines (own row only).
     // L-3 (cycle 11): a thrown breakdown read degrades to trend=[] for THIS
@@ -1747,6 +1755,7 @@ function getMyMetricsRange(from, to) {
     var trendFailed = false;
     try {
       var bd = getCdrDailyBreakdown_(from, to, [emp.name]);
+      if (bd && bd.error) throw new Error(bd.error);   // MET-1: a missing tab is a failed trend, not an empty one
       var prd = (bd && bd.perRepDaily) || {};
       metricsWorkdayIsos_(from, to).forEach(function (iso) {   // workdays only
         var own = prd[iso] && prd[iso][emp.name];
@@ -1922,11 +1931,13 @@ function getTeamMetrics(dateOrFrom, to) {
 
     // For single-day, also compute 30-day trend
     var trendData = null;
+    var trendFailed = false;   // MET-4 (cycle 23): a failed trend read is never cached (g129)
     if (isSingleDay) {
       var endD = new Date(from + 'T12:00:00Z');
       var startD = new Date(endD.getTime() - 29 * 86400000);
       var trendFrom = isoFromUtc_(startD);
       var trendBreakdown = getCdrDailyBreakdown_(trendFrom, from, rosterNames);
+      if (trendBreakdown && trendBreakdown.error) throw new Error('Call data unavailable: ' + trendBreakdown.error);   // MET-1's named miss
       trendData = [];
       metricsWorkdayIsos_(trendFrom, from).forEach(function (iso) {   // workdays only
         var day = trendBreakdown.daily[iso];
@@ -1951,6 +1962,7 @@ function getTeamMetrics(dateOrFrom, to) {
       if (rangeSpan >= 2 && rangeSpan <= 92) {
         try {
           var rangeBreakdown = getCdrDailyBreakdown_(from, toDate, rosterNames);
+          if (rangeBreakdown && rangeBreakdown.error) throw new Error(rangeBreakdown.error);
           trendData = [];
           metricsWorkdayIsos_(from, toDate).forEach(function (rIso) {   // workdays only
             var rDay = rangeBreakdown.daily[rIso];
@@ -1962,7 +1974,7 @@ function getTeamMetrics(dateOrFrom, to) {
               missed: rDay ? rDay.missed : null,
             });
           });
-        } catch (eRt) { trendData = null; }
+        } catch (eRt) { trendData = null; trendFailed = true; }
       }
     }
 
@@ -2141,7 +2153,7 @@ function getTeamMetrics(dateOrFrom, to) {
     // (noteCountPartial) or ANY transfer-read error would pin a degraded
     // aggregate as authoritative for the TTL. On a deployment with no Transfer
     // tab this endpoint simply stays uncached — the pre-cache behaviour.
-    if (useTeamCache && !teamTotals.noteCountPartial && !transferMeta.error) {
+    if (useTeamCache && !teamTotals.noteCountPartial && !transferMeta.error && !trendFailed) {
       try { teamMetricsCache.put(teamCacheKey, JSON.stringify(teamResult), CONFIG.CDR_CACHE_TTL || 300); }
       catch (_) { /* >100KB or transient — the cache is a convenience */ }
     }
@@ -2196,12 +2208,16 @@ function getMetricsAmbient() {
       if (n) names.push(n);
     }
 
-    var result = getCdrAgentMetrics_(yIso, yIso, names);
+    // MET-3 (cycle 23): a CDR read that failed BESIDE an empty agents map
+    // (meta.error) made "no badge" mean both "the team is fine" and "the call
+    // data could not be read" — and that silence was cached. The M7 refusal
+    // throws it into the catch below, which says so and caches nothing.
+    var agents = cdrAgentsOrThrow_(getCdrAgentMetrics_(yIso, yIso, names));
     var totalAns = 0, totalMissed = 0, anyRung = false;
-    Object.keys(result.agents).forEach(function (k) {
-      totalAns += result.agents[k].totalAnswered;
-      totalMissed += result.agents[k].totalMissed;
-      if (result.agents[k].totalRung > 0) anyRung = true;
+    Object.keys(agents).forEach(function (k) {
+      totalAns += agents[k].totalAnswered;
+      totalMissed += agents[k].totalMissed;
+      if (agents[k].totalRung > 0) anyRung = true;
     });
     var pct = (anyRung && (totalAns + totalMissed) > 0) ? cdrAnswerPct_(totalAns, totalMissed) : null;   // H2
     var badge = (pct !== null && pct < ambientThreshold)
@@ -2216,7 +2232,10 @@ function getMetricsAmbient() {
     // detector for a broken CDR read stays the Automation Health CDR card +
     // failure digest; this catch now at least logs instead of `catch (_)`.
     try { console.warn('getMetricsAmbient failed: ' + err.message); } catch (_) {}
-    return { badge: null };
+    // MET-3: the payload now says so — `unavailable: 'cdr'` is UNKNOWN, and the
+    // client keeps whatever badge it had (METUI-1). Never cached (this catch
+    // returns before the put).
+    return { badge: null, unavailable: 'cdr' };
   }
 }
 

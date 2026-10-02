@@ -2117,7 +2117,7 @@ function clkPendingAdjustHtml_(s) {
         (a.endTime ? ' · finished ' + a.endTime : ' · when you finish, add your finish time with Adjust')) + '</span>';
     }
     var label = (PUNCH_META[a.punchType] && PUNCH_META[a.punchType].label) || a.punchType || '';
-    return '<span class="aj-item">' + esc(label) + ' ' + esc(a.time || '') + '</span>';
+    return '<span class="aj-item">' + esc(label) + ' ' + esc(a.time || '') + esc(adjIntentText_(a.punchType, a.breakIntent)) + '</span>';
   }).join('<span aria-hidden="true">·</span>');
   return '<div class="clk-adj-pending" role="status">' +
     icon('clock', 13) +
@@ -2863,7 +2863,7 @@ function adjRenderBatch_() {
   host.innerHTML = '<div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:4px">To submit (' + ADJ_BATCH.length + ')</div>' +
     ADJ_BATCH.map(function (e, i) {
       return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px dashed var(--line);font-size:13px">' +
-        '<span style="flex:1">' + esc(e.date) + ' · ' + esc(label(e.punchType)) + ' · ' + esc(e.time) + (e.reason ? ' · ' + esc(e.reason) : '') + '</span>' +
+        '<span style="flex:1">' + esc(e.date) + ' · ' + esc(label(e.punchType)) + ' · ' + esc(e.time) + esc(adjIntentText_(e.punchType, e.breakIntent)) + (e.reason ? ' · ' + esc(e.reason) : '') + '</span>' +
         '<button class="cn-act-btn" title="Remove" onclick="adjRemoveBatch_(' + i + ')">✕</button>' +
       '</div>';
     }).join('');
@@ -2883,7 +2883,86 @@ function adjReadEntry_() {
     document.getElementById('adj-reason').focus();
     return null;
   }
-  return { date: date, punchType: punchType, time: time, reason: reason };
+  // TC-02 (cycle 23): a break says which break it is — the server refuses a
+  // break on a day that already has one when it does not.
+  let breakIntent = null;
+  if (ADJ_BREAK_TYPES_.indexOf(punchType) >= 0) {
+    if (ADJ_BREAKS.date !== date || ADJ_BREAKS.state !== 'ready') {
+      showToast(ADJ_BREAKS.state === 'error'
+        ? 'Couldn\'t read that day\'s breaks — change the date or type to try again'
+        : 'Still checking that day\'s breaks — try again in a moment', 'toast-warn');
+      return null;
+    }
+    if (!(ADJ_BREAKS[punchType] || []).length) breakIntent = { mode: 'add', target: '' };
+    else {
+      const pick = document.querySelector('#adj-break-target input[name="adj-break-intent"]:checked');
+      if (!pick) { showToast('Choose whether this adds a missing break or corrects one', 'toast-error'); return null; }
+      breakIntent = pick.value === 'add' ? { mode: 'add', target: '' } : { mode: 'correct', target: pick.value.slice(8) };
+    }
+  }
+  const out = { date: date, punchType: punchType, time: time, reason: reason };
+  if (breakIntent) out.breakIntent = breakIntent;
+  return out;
+}
+/* TC-02 (cycle 23) — "add a missing break" vs "correct the break at HH:MM".
+   A day can hold several breaks (getNextActions_ offers Lunch Out again after
+   Lunch Return), and the writers used to rewrite the LAST one, so a forgotten
+   second break overwrote the first. The choice shows only for a break type on
+   a day that already has that punch; a day without one is plainly an add. */
+var ADJ_BREAK_TYPES_ = ['LunchOut', 'LunchIn'];
+var ADJ_BREAKS = { date: '', state: 'idle', LunchOut: [], LunchIn: [] };
+function adjIntentText_(punchType, bi) {
+  if (ADJ_BREAK_TYPES_.indexOf(punchType) < 0 || !bi || !bi.mode) return '';
+  return bi.mode === 'add' ? ' (adds a break)' : ' (corrects the ' + bi.target + ' one)';
+}
+function adjRefreshBreakTarget_(force) {
+  const host = document.getElementById('adj-break-target');
+  if (!host) return;
+  const date = document.getElementById('adj-date').value;
+  const type = document.getElementById('adj-type').value;
+  if (ADJ_BREAK_TYPES_.indexOf(type) < 0 || !date) { host.hidden = true; host.innerHTML = ''; return; }
+  host.hidden = false;
+  if (!force && ADJ_BREAKS.date === date && ADJ_BREAKS.state === 'ready') { adjRenderBreakTarget_(); return; }
+  ADJ_BREAKS = { date: date, state: 'loading', LunchOut: [], LunchIn: [] };
+  adjRenderBreakTarget_();
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (ADJ_BREAKS.date !== date) return;   // the rep picked another date meanwhile
+      if (!res || res.error) { ADJ_BREAKS.state = 'error'; ADJ_BREAKS.error = (res && res.error) || 'no response'; }
+      else ADJ_BREAKS = { date: date, state: 'ready', LunchOut: res.LunchOut || [], LunchIn: res.LunchIn || [] };
+      adjRenderBreakTarget_();
+    })
+    .withFailureHandler(function (err) {
+      if (ADJ_BREAKS.date !== date) return;
+      ADJ_BREAKS.state = 'error'; ADJ_BREAKS.error = (err && err.message) || 'load failed';
+      adjRenderBreakTarget_();
+    })
+    .getMyDayBreaks(date);
+}
+function adjRenderBreakTarget_() {
+  const host = document.getElementById('adj-break-target');
+  if (!host || host.hidden) return;
+  const type = document.getElementById('adj-type').value;
+  const label = (PUNCH_META[type] && PUNCH_META[type].label) || type;
+  if (ADJ_BREAKS.state === 'loading') { host.innerHTML = '<div style="font-size:12px;color:var(--muted)">Checking that day\'s breaks…</div>'; return; }
+  if (ADJ_BREAKS.state === 'error') {
+    host.innerHTML = '<div role="alert" style="font-size:12px;color:var(--warning-deep)">Couldn\'t read that day\'s breaks (' + esc(ADJ_BREAKS.error || '') +
+      '), so this break can\'t be filed yet — change the date or type to try again.</div>';
+    return;
+  }
+  const times = ADJ_BREAKS[type] || [];
+  if (!times.length) {
+    host.innerHTML = '<div style="font-size:12px;color:var(--muted)">No ' + esc(label) + ' on that day yet — this adds one.</div>';
+    return;
+  }
+  const opt = function (value, text) {
+    return '<label style="display:flex;align-items:center;gap:6px;font-family:var(--ui);font-size:13px;font-weight:400;color:var(--ink);text-transform:none;letter-spacing:0;margin:2px 0">' +
+      '<input type="radio" name="adj-break-intent" value="' + esc(value) + '" style="width:auto;margin:0"> ' + esc(text) + '</label>';
+  };
+  host.innerHTML = '<div style="font-size:12px;color:var(--muted);margin-bottom:4px">That day already has a ' + esc(label) +
+    ' at ' + esc(times.join(', ')) + '. Is this one…</div>' +
+    opt('add', 'A missing break (add another ' + label + ')') +
+    times.map(function (t) { return opt('correct@' + t, 'A fix to the ' + label + ' at ' + t); }).join('');
 }
 function adjLoadPending_() {
   const host = document.getElementById('adj-pending-list');
@@ -2896,7 +2975,7 @@ function adjLoadPending_() {
     const label = function (t) { return (PUNCH_META[t] && PUNCH_META[t].label) || t; };
     h.innerHTML = '<div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:4px">Awaiting approval (' + pend.length + ')</div>' +
       pend.map(function (r) {
-        return '<div style="padding:2px 0">' + esc(r.date) + ' · ' + esc(label(r.punchType)) + ' · ' + esc(r.time) + '</div>';
+        return '<div style="padding:2px 0">' + esc(r.date) + ' · ' + esc(label(r.punchType)) + ' · ' + esc(r.time) + esc(adjIntentText_(r.punchType, r.breakIntent)) + '</div>';
       }).join('');
   }).withFailureHandler(function () {}).getMyPunchAdjustRequests();
 }
@@ -2949,6 +3028,7 @@ function openAdjustModal(prefillDate, prefillType) {
   // flag is on; the server enforces the same gate (recordPunch).
   const applyBtn = document.getElementById('adj-apply-now');
   if (applyBtn) applyBtn.style.display = flagOn_('employeeImmediateAdjust') ? '' : 'none';
+  adjRefreshBreakTarget_(true);   // TC-02 — fresh each open: the day may have changed since
   ensureOverlay('adjust-overlay');   // F-40: the focus stash/restore lifecycle
 }
 
@@ -2983,6 +3063,8 @@ document.getElementById('adjust-overlay').addEventListener('click', e => {
     closeOverlay(document.getElementById('adjust-overlay'));
 });
 document.getElementById('adj-date').addEventListener('change', updateAdjReasonRequirement);
+document.getElementById('adj-date').addEventListener('change', function () { adjRefreshBreakTarget_(); });   // TC-02
+document.getElementById('adj-type').addEventListener('change', function () { adjRefreshBreakTarget_(); });   // TC-02
 
 document.getElementById('adj-add').addEventListener('click', () => {
   const entry = adjReadEntry_();
@@ -2992,6 +3074,7 @@ document.getElementById('adj-add').addEventListener('click', () => {
   // Keep date + type, clear time + reason for the next entry.
   document.getElementById('adj-time').value = '';
   document.getElementById('adj-reason').value = '';
+  adjRenderBreakTarget_();   // TC-02 — the next entry chooses its own break
 });
 
 // "Apply now" — immediate single fix (employeeImmediateAdjust flag on). Uses
@@ -3000,7 +3083,7 @@ document.getElementById('adj-apply-now').addEventListener('click', () => {
   const entry = adjReadEntry_();
   if (!entry) return;
   closeOverlay(document.getElementById('adjust-overlay'));
-  submitPunch(entry.punchType, { date: entry.date, time: entry.time, reason: entry.reason });
+  submitPunch(entry.punchType, { date: entry.date, time: entry.time, reason: entry.reason, breakIntent: entry.breakIntent || null });
 });
 
 document.getElementById('adj-submit').addEventListener('click', () => {

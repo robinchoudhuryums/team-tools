@@ -255,7 +255,7 @@ function markDeptRequestResolved_(token, byEmail, via) {
   // link, 'app' from the tracker's Mark-resolved button. The two paths share
   // this writer, and until the column existed the store could not tell them
   // apart — so every manual clear counted as a response time.
-  const viaClean = DR_RESOLVED_VIA_VALUES.indexOf(String(via || '').trim().toLowerCase()) >= 0
+  let viaClean = DR_RESOLVED_VIA_VALUES.indexOf(String(via || '').trim().toLowerCase()) >= 0
     ? String(via).trim().toLowerCase() : '';
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
@@ -267,6 +267,13 @@ function markDeptRequestResolved_(token, byEmail, via) {
     const hit = drFindRowByReqId_(sh, token);
     if (!hit) return { found: false };
     const row = hit.row, rowIndex = hit.rowIndex;
+    // RES-1 (cycle 23): the email link reaches the SENDER too (their sent copy,
+    // a BCC-all copy). Their click is not the department responding — it is
+    // recorded as 'self', untimed, so it can never pass for a fast reply.
+    if (viaClean === 'email' && String(byEmail || '').trim().toLowerCase() &&
+        String(byEmail).trim().toLowerCase() === String(row[DR.BY_EMAIL] || '').trim().toLowerCase()) {
+      viaClean = 'self';
+    }
     if (drStatus_(row) === 'resolved') {
       return { found: true, already: true, dept: row[DR.TO_DEPT],
                resolvedAt: formTokenIsoString_(row[DR.RESOLVED_AT]),   // L-5 — coercion-safe for the resolve page
@@ -280,7 +287,7 @@ function markDeptRequestResolved_(token, byEmail, via) {
     pendingTasksBust_(row[DR.BY_ID]);   // F4 — and neither must the SENDER's Needs-you list
     try { writeAuditLog_({ id: row[DR.BY_ID], name: row[DR.BY_NAME] }, 'DeptRequestResolved',
       '', '', false, 0, 'reqId=' + token + '; by=' + (byEmail || 'unknown') + (viaClean ? '; via=' + viaClean : ''), byEmail || ''); } catch (e) {}
-    return { found: true, already: false, dept: row[DR.TO_DEPT] };
+    return { found: true, already: false, dept: row[DR.TO_DEPT], self: viaClean === 'self' };
   } finally { lock.releaseLock(); }
 }
 /** In-app resolve (the manual path that complements the email link): the
@@ -499,7 +506,8 @@ function drReplyIsAutomatic_(m) {
  *      member of the department, or the department address's domain;
  *   4. its new text is non-empty and neither asks nor holds.
  *  Failing only rule 4 is 'needs-look'. The verdict literals are
- *  DR_REPLY_VERDICTS. */
+ *  DR_REPLY_VERDICTS. DR-1 (cycle 23) adds `ctx.token` / `ctx.sharedTokens`:
+ *  on a thread another request shares, see the block at the end. */
 function drReplyVerdict_(m, ctx) {
   if (!m || !ctx) return '';
   if (!(Number(m.ms) > Number(ctx.afterMs || 0))) return '';
@@ -508,20 +516,45 @@ function drReplyVerdict_(m, ctx) {
   const dom = addr.slice(addr.indexOf('@') + 1);
   if (!(ctx.deptAddrs || {})[addr] && !(ctx.deptDomains || {})[dom]) return '';
   const text = drReplyNewText_(m.body);
-  return (text && !drReplyAsksOrHolds_(text)) ? DR_REPLY_VERDICTS[0] : DR_REPLY_VERDICTS[1];
+  const verdict = (text && !drReplyAsksOrHolds_(text)) ? DR_REPLY_VERDICTS[0] : DR_REPLY_VERDICTS[1];
+  // DR-1 (cycle 23): two requests can share ONE Gmail thread (Gmail threads
+  // same-subject mail), and one department reply then resolved both. On a
+  // shared thread a reply counts for THIS request only when it names it — the
+  // sent email's resolve link carries the request id, and a reply quotes it.
+  // A reply that names only ANOTHER sharer is not ours; one that names none
+  // cannot be attributed, so it can only ask for a look (g159), never resolve.
+  const others = ctx.sharedTokens || [];
+  if (others.length && ctx.token) {
+    const body = String(m.body || '');
+    if (body.indexOf(ctx.token) < 0) {
+      if (others.some(function (t) { return t && body.indexOf(t) >= 0; })) return '';
+      return DR_REPLY_VERDICTS[1];
+    }
+  }
+  return verdict;
 }
 /** PURE (Node-pinned) — over a request's messages (any order), the one the
- *  scan acts on: the EARLIEST resolving reply, else the LATEST needs-look
- *  one, else null. Returns {verdict, msg}. */
+ *  scan acts on. DR-2 (cycle 23): the LATEST department reply decides. It used
+ *  to be the EARLIEST resolving one, so "Done" followed by "wait — which
+ *  patient?" in the same scan window closed the request and the question was
+ *  never seen (g159: a rule that closes work fails toward a look). So: the
+ *  latest reply needs a look → needs-look (that reply); else resolved, timed at
+ *  the FIRST resolving reply after the last needs-look one — the answer that
+ *  settled it, not a later "thanks". Null when no department reply counts.
+ *  Returns {verdict, msg}. */
 function drReplyPick_(msgs, ctx) {
   const sorted = (msgs || []).slice().sort(function (a, b) { return Number(a.ms) - Number(b.ms); });
-  let look = null;
+  const seen = [];
   for (let i = 0; i < sorted.length; i++) {
     const v = drReplyVerdict_(sorted[i], ctx);
-    if (v === 'resolved') return { verdict: v, msg: sorted[i] };
-    if (v === 'needs-look') look = sorted[i];
+    if (v) seen.push({ verdict: v, msg: sorted[i] });
   }
-  return look ? { verdict: 'needs-look', msg: look } : null;
+  if (!seen.length) return null;
+  const last = seen[seen.length - 1];
+  if (last.verdict === 'needs-look') return last;
+  let start = 0;
+  for (let j = seen.length - 1; j >= 0; j--) { if (seen[j].verdict === 'needs-look') { start = j + 1; break; } }
+  return seen[start];
 }
 /** The department side of rule 3, per request: every address in the
  *  department map for each component department, every roster member of it
@@ -582,6 +615,16 @@ function drReplyScanCore_() {
     cands.push({ reqId: String(r[DR.REQ_ID]), row: r, createdMs: createdMs });
   }
   out.candidates = cands.length;
+  // DR-1 (cycle 23): which request ids share each thread, over every row the
+  // window read (a resolved sharer still owns its replies).
+  const byThread = {};
+  for (let i = 0; i < rows.length; i++) {
+    const rid = String(rows[i][DR.REQ_ID] || '').trim();
+    if (!rid) continue;
+    String(rows[i][DR.THREAD_ID] || '').split(/\s+/).filter(Boolean).forEach(function (tid) {
+      (byThread[tid] || (byThread[tid] = [])).push(rid);
+    });
+  }
   cands.sort(function (a, b) { return b.createdMs - a.createdMs; });
   if (cands.length > DR_REPLY_SCAN_MAX) { out.truncated = true; cands = cands.slice(0, DR_REPLY_SCAN_MAX); }
   if (!cands.length) return out;
@@ -615,8 +658,12 @@ function drReplyScanCore_() {
         });
       });
       out.scanned++;
+      const shared = {};
+      String(r[DR.THREAD_ID] || '').split(/\s+/).filter(Boolean).forEach(function (tid) {
+        (byThread[tid] || []).forEach(function (rid) { if (rid !== c.reqId) shared[rid] = 1; });
+      });
       const pick = drReplyPick_(msgs, { afterMs: Math.max(c.createdMs, reopenedMs || 0), excluded: excluded,
-        deptAddrs: deptAddrs, deptDomains: deptDomains });
+        deptAddrs: deptAddrs, deptDomains: deptDomains, token: c.reqId, sharedTokens: Object.keys(shared) });
       if (!pick) return;
       const at = Utilities.formatDate(new Date(pick.msg.ms), CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss");
       if (pick.verdict === 'needs-look' && String(r[DR.REPLY_VERDICT] || '') === 'needs-look' &&
@@ -725,7 +772,7 @@ function drDeptStats_(items, slaCfg) {
       const b = byDept[k];
       if (it.status === 'resolved') {
         b.resolved++;
-        if (it.resolvedVia === 'app') b.manualResolved++;
+        if (it.resolvedVia === 'app' || it.resolvedVia === 'self') b.manualResolved++;   // RES-1: the sender's own click is manual too
         else if (it.resolvedVia !== 'email' && it.resolvedVia !== 'reply') b.untrackedResolved++;   // 22post D: a reply is a response time
         else if (it.elapsedMin != null) b.durations.push(it.elapsedMin);
       } else { b.open++; if (it.slaStatus === 'overdue') b.overdueOpen++; }
@@ -735,7 +782,7 @@ function drDeptStats_(items, slaCfg) {
     const b = byDept[k];
     b.durations.sort(function (x, y) { return x - y; });
     const avg = b.durations.length ? Math.round(b.durations.reduce(function (s, x) { return s + x; }, 0) / b.durations.length) : null;
-    const med = b.durations.length ? b.durations[Math.floor(b.durations.length / 2)] : null;
+    const med = medianWhole_(b.durations);   // DR-3: a true median
     return { dept: b.dept, open: b.open, resolved: b.resolved, overdueOpen: b.overdueOpen,
              manualResolved: b.manualResolved, untrackedResolved: b.untrackedResolved, timed: b.durations.length,
              slaDays: getDeptRequestSla_(b.dept, slaCfg), avgMinutes: avg, medianMinutes: med };   // M6: working days
@@ -935,7 +982,7 @@ function drTeamKpis_(items) {
   (items || []).forEach(function (it) {
     if (it.status === 'resolved') {
       resolved++;
-      if (it.resolvedVia === 'app') manual++;
+      if (it.resolvedVia === 'app' || it.resolvedVia === 'self') manual++;   // RES-1
       else if (it.elapsedMin != null) mins.push(it.elapsedMin);
     } else {
       open++;
@@ -944,7 +991,7 @@ function drTeamKpis_(items) {
   });
   mins.sort(function (a, b) { return a - b; });
   return { open: open, overdue: overdue, resolved: resolved, total: (items || []).length,
-           medianMin: mins.length ? mins[Math.floor(mins.length / 2)] : null, manualCount: manual };
+           medianMin: medianWhole_(mins), manualCount: manual };   // DR-3
 }
 /** Admin-gated (INV-136): read the DeptRequests SLA config for the editor —
  *  the per-dept overrides + the default + the known departments. */
@@ -1058,7 +1105,7 @@ function sendDeptRequestReminderDigest() {
     if (!mgrEmails.length) { Logger.log('No manager emails — skipping dept-request reminder.'); return; }
     const overdue = deptRequestsOverdueOpen_();
     stampDigestLastRun_('deptReqReminder');
-    if (!overdue.length) { Logger.log('dept-request reminder: nothing overdue.'); return; }
+    if (!overdue.length) { clearAutomationError_('DeptRequestReminderDigest'); Logger.log('dept-request reminder: nothing overdue.'); return; }
 
     const byDept = {};
     overdue.forEach(function (o) { (byDept[o.dept] = byDept[o.dept] || []).push(o); });
@@ -1084,9 +1131,16 @@ function sendDeptRequestReminderDigest() {
         body: textBody,
         htmlBody: buildBrandedEmailHtml_('Department requests past SLA', bodyHtml, { tone: 'warn', subLabel: 'Dept Requests' }),
       });
-    } catch (mailErr) { Logger.log('dept-request reminder send failed: ' + mailErr.message); }
+    } catch (mailErr) {
+      // MAIL-4 (cycle 23): an undelivered reminder used to reach only the log.
+      Logger.log('dept-request reminder send failed: ' + mailErr.message);
+      stampAutomationError_('DeptRequestReminderDigest', overdue.length + ' overdue request(s) found but the reminder could not be sent: ' + mailErr.message);
+      return;
+    }
+    clearAutomationError_('DeptRequestReminderDigest');
     Logger.log('sendDeptRequestReminderDigest: ' + overdue.length + ' overdue emailed to ' + mgrEmails.length + ' manager(s).');
   } catch (err) {
     Logger.log('sendDeptRequestReminderDigest failed: ' + err.message);
+    stampAutomationError_('DeptRequestReminderDigest', err.message);   // MAIL-4: a failed read is not "nothing overdue"
   }
 }

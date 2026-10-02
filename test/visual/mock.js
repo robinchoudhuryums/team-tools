@@ -1411,8 +1411,17 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // Manage shots carry two rows (keys mirror managerGetPendingAdjustments'
     // own push literal — INV-185).
     managerGetPendingAdjustments: { requests: [
-      { reqId: 'req-1', empId: 'E-1090', empName: 'Leo Kim', date: daysAgo(2), punchType: 'ClockOut', time: '17:02', reason: 'Forgot to clock out', action: 'set', endTime: '', submittedAt: daysAgo(1) + ' 08:10:00' },
-      { reqId: 'req-2', empId: 'E-1088', empName: 'Sam Ortiz', date: daysAgo(1), punchType: 'ClockOut', time: '19:00', reason: '', action: 'resume', endTime: '21:15', submittedAt: daysAgo(1) + ' 17:40:00' },   // T3: a filed finish
+      { reqId: 'req-1', empId: 'E-1090', empName: 'Leo Kim', date: daysAgo(2), punchType: 'ClockOut', time: '17:02', reason: 'Forgot to clock out', action: 'set', endTime: '', breakIntent: { mode: '', target: '' }, submittedAt: daysAgo(1) + ' 08:10:00' },
+      { reqId: 'req-2', empId: 'E-1088', empName: 'Sam Ortiz', date: daysAgo(1), punchType: 'ClockOut', time: '19:00', reason: '', action: 'resume', endTime: '21:15', breakIntent: { mode: '', target: '' }, submittedAt: daysAgo(1) + ' 17:40:00' },   // T3: a filed finish
+    ] },
+    // TC-02 (cycle 23): the Adjust modal's "which break" read — one break on
+    // every day, so a Lunch Out adjustment shows the add / correct choice.
+    getMyDayBreaks: function (date) { return { date: date, LunchOut: ['12:30'], LunchIn: ['13:00'] }; },
+    // The modal's "Awaiting approval" list (keys mirror getMyPunchAdjustRequests'
+    // push literal — INV-185); one pending break add, so its intent text shows.
+    getMyPunchAdjustRequests: { requests: [
+      { reqId: 'req-9', date: daysAgo(1), punchType: 'LunchOut', time: '15:05', reason: 'Second break, forgot to punch', action: 'set',
+        breakIntent: { mode: 'add', target: '' }, status: 'Pending', submittedAt: daysAgo(0) + ' 09:12:00' },
     ] },
     // Team punches calendar (operator 2026-08-31). A FUNCTION of the month
     // argument (the F14 rule — the client asks for whatever month is on
@@ -1874,8 +1883,12 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         { key: 'FORMS_SS_ID', label: 'Forms (PHI)', status: 'warn', detail: 'Optional — unset (falls back to the ADP sheet)' },
         { key: 'DEPT_REQUESTS_SS_ID', label: 'Dept Requests (PHI-adjacent)', status: 'warn', detail: 'Optional — unset (falls back to the ADP sheet)' },
         { key: 'QA_SS_ID', label: 'QA (recordings)', status: 'warn', detail: 'Optional — unset (no fallback store, by design — INV-196)' },
-        { key: 'digests', label: 'Digest heartbeats', status: 'warn', detail: 'No heartbeat recorded yet (fresh deploy)' }],
-      summary: { ok: 4, warn: 3, fail: 0 },
+        { key: 'digests', label: 'Digest heartbeats', status: 'warn', detail: 'No heartbeat recorded yet (fresh deploy)' },
+        // ADM-09 (cycle 23): the row built from the health dot's own problem list.
+        // ADM-09: the SAME problem list getAutomationHealth's fixture carries (one open-punch line), so the
+        // Overview and the System tab cannot disagree in the shots.
+        { key: 'health', label: 'Automation health (what the health dot counts)', status: 'warn', detail: '1 issue(s): Open punches: 2 day(s) across 1 rep(s) have no usable clock-in/clock-out pair — Jordan Reyes (2). Those days earn no hours and no PTO until they are fixed (checked 2026-08-16…2026-09-13).' }],
+      summary: { ok: 4, warn: 4, fail: 0 },
       configTimezone: 'Asia/Kolkata',
     },
     // X1 (cycle 22): the Reference-lookups diagnostics (T8). It had NO fixture,
@@ -2001,11 +2014,13 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
               holidays: { source: 'sheet', ranges: 9, thisYear: 9, year: '2026', error: '' } }),
           store('Intake (PHI)', 'Offerings + PPD/PMD/PAP submissions', 'PHI', 'Optional purge', 'INTAKE_SS_ID'),
           store('Forms (PHI)', 'FormTokens + FormSubmissions', 'PHI', '90-day purge (if enabled)', 'FORMS_SS_ID',
-            { configured: false, reachable: false, name: '', tz: '', tzMatch: null, url: '', source: 'unset',
-              note: 'Falls back to the ADP sheet — set FORMS_SS_ID to segregate form PHI.' }),
+            // ADM-04 (cycle 23): the shape the server now ships for an unset
+            // fallback store — NOT configured, but the fallback opened.
+            { configured: false, reachable: true, source: 'ADP fallback', name: 'Time Clock / ADP (live)',
+              note: 'Unset → form PHI is co-located with the ADP/payroll sheet. Recommend setting FORMS_SS_ID to the Intake spreadsheet.' }),
           // F-11 — the Dept Requests row, in the SAME unset-fallback state as Forms.
           store('Dept Requests (PHI-adjacent)', 'DeptRequests (inter-department request tracker; PatientTrx names a patient)', 'PHI-adjacent', 'Kept', 'DEPT_REQUESTS_SS_ID',
-            { configured: true, reachable: true, source: 'ADP fallback', name: 'Time Clock / ADP (live)',
+            { configured: false, reachable: true, source: 'ADP fallback', name: 'Time Clock / ADP (live)',
               note: 'Unset → DeptRequests rows (each names a patient + TRX) are co-located with the ADP/payroll sheet. Recommend setting DEPT_REQUESTS_SS_ID to the Intake spreadsheet.' }),
           store('Knowledge Base + Training', 'KB, KbViews, Training/Quiz tabs', 'PHI-free', 'Kept', 'KB_SS_ID'),
           store('Employee Docs (HR)', 'EmpDocs + DocSignatures', 'HR — keep-forever', 'Never purged', 'HR_DOCS_SS_ID'),
@@ -2021,6 +2036,9 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
           scope: 'https://www.googleapis.com/auth/drive', granted: true, error: '',
           reauthHint: 'the DEPLOYING account must re-authorize — open the Apps Script editor, run any function, and accept the Drive permission (a clasp push + New version never re-prompts). If Google refuses the consent screen, the scope is blocked by Workspace admin policy.',
           folderProp: 'KB_IMAGES_FOLDER_ID', folderId: '', folderOk: null, folderError: '',
+          // DRV-1 (cycle 23) — the service probe + the QA recordings folder probe.
+          service: 'ok', serviceError: '', disabledMsg: 'Apps Script\u2019s Drive service is disabled for this domain (a Workspace admin setting) \u2014 nothing about this app\u2019s folder ids or permissions can fix it. Ask IT to allow Drive for Apps Script.',
+          qaFolderProp: 'QA_RECORDINGS_FOLDER_ID', qaFolderId: '1QaRecFolderXyZ0123456789ab', qaFolderOk: true, qaFolderError: '',
         },
         // F3 — mailBccStatus_'s shape (INV-185). Set-and-internal is the warn
         // state, which is what the Admin System scenarios put on camera.
@@ -2114,6 +2132,17 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // it is where wrapping breaks first.
     if (/[?&]drive=denied\b/.test(window.location.search)) {
       FIXTURES.getStorageHealth.drive.granted = false;
+    }
+    // `?drive=disabled` (DRV-1, cycle 23) — the state this domain is ACTUALLY
+    // in (M4-FU3): the scope is granted, the Drive SERVICE is off. The line
+    // read green here; the folders go unprobed and the embed scan stops.
+    if (/[?&]drive=disabled\b/.test(window.location.search)) {
+      var dd = FIXTURES.getStorageHealth.drive;
+      dd.service = 'disabled';
+      dd.serviceError = 'The feature you are attempting to use has been disabled by your domain administrator.';
+      dd.folderOk = null; dd.qaFolderOk = null;
+      FIXTURES.getStorageHealth.kbEmbeds = { total: 1, probed: 0, reachable: 0, broken: [], truncated: false,
+        driveUnavailable: true, driveError: dd.disabledMsg };
     }
   } catch (e) {}
 
@@ -2214,6 +2243,20 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       auditScanComplete: true, auditWindow: { complete: true, startMgr: '', startMs: null, rows: 4000 }, problems: [],
       managerTzAbbr: 'CST', auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',
     },
+    // ADM-07 (cycle 23): the Reference-lookups diagnostics now reach "Needs
+    // attention", so the all-clear shot needs their CLEAN shape too — every
+    // column found, a registry, no unreadable row or value.
+    getOopPricingDiagnostics: {
+      tab: 'OopPricing', rows: 42, nameCol: 'Item', nameByHeader: true, truncated: false, missing: [],
+      cols: [{ header: 'HCPCS', role: 'code' }, { header: 'Item', role: 'name (the searched column)' }, { header: 'Pick-Up Price', role: 'price' },
+        { header: 'Area Eligibility', role: 'eligibility' }],
+      warehouses: [{ name: 'Dallas', address: '2150 Irving Blvd, Dallas, TX 75207' }],
+      locationTab: 'LocationAcceptance', locationError: '',
+      locCols: [{ header: 'Type', role: 'type' }, { header: 'Name', role: 'name' }, { header: 'Address', role: 'address' }, { header: 'State', role: 'state' }],
+      cities: 6, locNoAddress: [], locUnreadable: [],
+      eligibility: { open: 18, states: 9, radius: 11, cities: 1, any: 2, unknownCount: 0, unknown: [] },
+      sample: [],
+    },
     getStorageHealth: {
       configTimezone: 'Asia/Kolkata', adpLocale: 'en_US',
       stores: [
@@ -2227,6 +2270,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         scope: 'https://www.googleapis.com/auth/drive', granted: true, error: '',
         reauthHint: 'the DEPLOYING account must re-authorize — open the Apps Script editor, run any function, and accept the Drive permission (a clasp push + New version never re-prompts). If Google refuses the consent screen, the scope is blocked by Workspace admin policy.',
         folderProp: 'KB_IMAGES_FOLDER_ID', folderId: '1AbCdEfGhIjKlMnOpQrStUvWxYz', folderOk: true, folderError: '',
+        service: 'ok', serviceError: '', disabledMsg: 'Apps Script\u2019s Drive service is disabled for this domain (a Workspace admin setting) \u2014 nothing about this app\u2019s folder ids or permissions can fix it. Ask IT to allow Drive for Apps Script.',
+        qaFolderProp: 'QA_RECORDINGS_FOLDER_ID', qaFolderId: '', qaFolderOk: null, qaFolderError: '',
       },
       mailBcc: { prop: 'MAIL_BCC_ALL', enabled: false, addresses: [], external: null, ownDomain: '' },
       propStore: { valueMax: 9000, storeMax: 512000, warnPct: 80, count: 9, bytes: 8200,
