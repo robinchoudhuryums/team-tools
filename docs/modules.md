@@ -474,6 +474,20 @@ not restate it. Server endpoints live in the fourteen server files
      degraded round, and the sidebar's below-target badge stays put through a
      failed or unreadable poll rather than vanishing (g128, g129, g53).
 
+     **Cycle 23 Batch 5 (2026-10-02) — Spanish Inbox and Dept Requests.** A
+     voicemail that arrives after a manual resolve is a new pending card that
+     can be resolved in turn (the latest resolve row wins). The resolve and
+     claim records are read over 180 days rather than the last 1000 rows, and
+     claims that could not be read are named in the pending header with
+     Auto-assign disabled, never shown as "unclaimed". The scheduled auto-assign
+     no longer fails when its installer is not on the roster. On Dept Requests,
+     the reply scan lets the latest department reply decide (a "done" followed by
+     a question needs a look), and on a thread two requests share it needs the
+     reply to name the request. The email's resolve link opens a page with a
+     **Mark resolved** button instead of resolving on open, and the sender's own
+     click is recorded as "marked by the sender", untimed. Both modules' median
+     tiles are true medians (an even count averages the middle two).
+
 <a id="intake"></a>
      **Batch 5 (2026-09-18):** `QaRecordings` carries a trailing `AgentId`
      written from the roster when a reviewer attributes a recording, and the

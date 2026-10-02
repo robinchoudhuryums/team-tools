@@ -7,7 +7,7 @@ Scope: broad — Batches 1–5 (TC-02 included) done; next Batch 6a
 Test Command: manual
 Estimates: Batch 1: M (~9 h) · Batch 2: M (~11 h) · Batch 3: M (~9.5 h) · Batch 4a: M (~10 h) · 4a follow-ons: S (~3 h) · Batch 4b: M (~11 h) · TC-02 (option a): M (~8 h) · Batch 5: M (~10 h) — each written before its first edit
 Subsystem cycles since last Seams audit: 3 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25) and 22post's /reflect (2026-09-30). The cadence is every 4, so the next reflection reaches it.
-Updated: 2026-10-02 (cycle 23 Batch 5)
+Updated: 2026-10-02 (cycle 23 Batch 5 + its /sync-docs)
 
 ## In progress (facts to carry forward — NOT judgments)
 - Cycle 23 opened 2026-10-01 with a `/broad-scan` (0 Critical / 5 High / ~110 findings; the full report and 13-batch plan are in that session's chat — the batch→ID list is copied under Pending below).
@@ -21,6 +21,7 @@ Updated: 2026-10-02 (cycle 23 Batch 5)
 - Everything through 22post is merged (PRs #274–#282) and deployed (2026-09-30). The operator was finishing two 22post steps at close: the manual.json re-export + import, and the S124–S128 walks.
 
 ## Completed this cycle
+- /sync-docs (Batch 5) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g53/g152/g155/g159/g143 extended (index + AMENDED narratives); the voicemail-fold and reply-rules decisions amended; new decision `the-resolve-link-opens-a-confirm-page`; Spanish + DR operator notes (the ThreadId check); INV-31 span text; S74/S80/S101/S105/S122 cycle-23 steps
 - SP-1 | 51_spanish.js, 20_timeclock.js | a voicemail after a manual resolve can be resolved (latest-row fold, re-resolve, Needs-you trusts the pending ids)
 - SP-3 | 00_config.js, 51_spanish.js, metrics/script_metrics.html | resolve/claim tabs read by a 180-day span; a failed read throws; unknown claims flagged and auto-assign refuses
 - SP-4 | 51_spanish.js | auto-assign reads pending through the ungated `spanishPendingCore_`
@@ -122,4 +123,4 @@ Updated: 2026-10-02 (cycle 23 Batch 5)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 23 Batches 1–5 (TC-02 included) and the 4a follow-ons are committed and pushed on `claude/blissful-johnson-cottl5`; Batch 5's docs are not yet synced. Next: `/sync-docs` for Batch 5, then deploy and walk the Batch 1–5 scenarios; then `/broad-implement Batch 6a`. The next /reflect reaches the Seams-audit cadence.
+Cycle 23 Batches 1–5 (TC-02 included) and the 4a follow-ons are committed, doc-synced and pushed on `claude/blissful-johnson-cottl5`, and opened as a PR for merge into the default branch. Next: deploy and walk the Batch 1–5 scenarios; then `/broad-implement Batch 6a`. The next /reflect reaches the Seams-audit cadence.

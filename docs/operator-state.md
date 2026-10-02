@@ -787,6 +787,21 @@ entry says which it is.
   Needs-you list. Nothing to set up. The pending thread ids are cached for 15
   minutes (`spanish_pending_ids_v1:<days>`, ids only), so a request answered in
   Gmail outside the app can stay on Needs you that long.
+  **Cycle 23 Batch 5 (2026-10-02) — nothing to set up.** The SpanishManualResolved
+  and SpanishClaims tabs are read over the last **180 days**
+  (`SPANISH_STATE_SPAN_DAYS`, a code constant — not a Script Property), no
+  longer their last 1000 rows; an unstamped legacy row is always read. A
+  manual resolve covers the voicemails up to it: a repeat voicemail that lands
+  after it re-opens the card and can be resolved again (SP-1). If the claims
+  tab cannot be read, the pending list still shows, says "claims could not be
+  read", and disables Auto-assign; a claim, release or auto-assign run refuses
+  rather than act on "unclaimed" (SP-3) — the scheduled run stamps that refusal
+  into `AUTOMATION_LAST_ERRORS`. The scheduled auto-assign no longer needs its
+  installer to be a roster manager or member: its own gate is the trigger, and
+  it reads the pending list without re-checking the installer (SP-4). The
+  median tiles are true medians since this batch (an even count averages the
+  two middle values), so a figure can move on deploy with no change in the
+  data (DR-3).
 
 <a id="operator-elapsed-time-is-business-hours-and-one-pure-core-computes-it"></a>
 - **Elapsed time is BUSINESS hours, and ONE pure core computes it (operator
@@ -872,8 +887,14 @@ entry says which it is.
   request. Legacy rows (no `noteId`) never dedupe; the lookup failing-open mints a
   fresh token. **Two resolve paths:** (1) the receiver
   (internal `@umsupply.com`) clicks the email link → `doGet`'s `?resolve=`
-  branch → `serveResolvePage_` → `markDeptRequestResolved_` (locked,
-  **idempotent**; requires a signed-in `getActiveUserEmail_` so it's attributed);
+  branch → `serveResolvePage_`, which since cycle 23 RES-1 (2026-10-02) only
+  READS — it names the request and offers a **Mark resolved** button, so a mail
+  scanner or a preview fetching the link records nothing — and the button calls
+  `confirmDeptRequestResolve` → `markDeptRequestResolved_` (locked,
+  **idempotent**; requires a signed-in `getActiveUserEmail_` so it's attributed;
+  the SENDER's own click is recorded with via `self`, untimed, "marked by the
+  sender" on the card). **Tell the departments** the link now opens a page with
+  a button;
   (2) the **sender or a manager** clicks "Mark resolved" in-app →
   `resolveDeptRequest(requestId)` (rep-callable, owner-or-manager-checked) — for
   when the recipient replied "done" without clicking. The surface is the
@@ -2332,6 +2353,13 @@ entry says which it is.
   RepliedAt and ReplyVerdict (the header self-heals). Only requests sent after
   the deploy carry a thread. **Tell the departments** that a reply now resolves
   unless it asks a question.
+  **Cycle 23 Batch 5 (2026-10-02):** the LATEST counting reply decides — a
+  "done" followed by a question is a look, not a resolve (DR-2) — and on a
+  thread two requests share, a reply counts for a request only when it quotes
+  that request's id (the resolve link carries it); otherwise it is a look
+  (DR-1). **One-time check:** in the DeptRequests tab, look for two rows with
+  the same ThreadId value — those requests share a Gmail conversation, and
+  their unnamed replies will now ask for a look instead of resolving both.
 
 <a id="operator-script-property-dash-team-layouts-22post-e"></a>
 - **Script Property `DASH_TEAM_LAYOUTS` (22post E, 2026-09-28; auto-managed).**

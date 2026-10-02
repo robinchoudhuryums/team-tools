@@ -1474,6 +1474,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `truncated` flag, so a history the bounded scan cut short read as the whole
   one; it now says older history was not scanned. Verify: the KBUI-1, METUI-1
   and ADM-11 DOM pins.
+  **AMENDED (cycle 23 SP-3, 2026-10-02): a failed STATE read is not an empty
+  state.** The Spanish Inbox's manual-resolve and claim maps returned `{}` on
+  any read failure — so a resolve tab that could not be read put every resolved
+  request back on the pending list, and a claims tab that could not be read let
+  the steal guard pass and auto-assign treat every request as unclaimed. No tab
+  yet still reads as empty; a FAILED read now throws. The pending list fails as
+  a whole on the resolve map, and on the claims map it renders with
+  `claimsUnavailable` named in both headers and Auto-assign disabled; a claim,
+  release or auto-assign refuses ("nothing was assigned"). Verify: the SP-3
+  pins (both maps driven over a throwing sheet; the auto-assign refusal).
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 
@@ -4408,6 +4418,17 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   `serverSource()`. Verify: the PUBLIC-GATE pins (a directory scan that
   refuses a `.claspignore` it cannot honour, plus the owner-predicate pin),
   bite-checked.
+  **AMENDED (cycle 23 RES-1, 2026-10-02): a GET that WRITES is reachable by
+  everything that fetches a link.** The Dept Request email's resolve link
+  resolved the request on load, so a mail scanner's preview, or the sender
+  opening their own sent copy, closed it as a timed department response. The
+  page is read-only now and offers a button; the write moved to a public,
+  token-gated `confirmDeptRequestResolve` (a named PUBLIC-GATE exemption — the
+  token is the credential, an unidentifiable caller is refused), and the
+  sender's own click is recorded as `self`, untimed. RULE: a link in an email is
+  a GET anyone's software may follow; it may show state, never change it.
+  Verify: the RES-1 pins (the page writes nothing; the button's token is
+  shape-checked and script-safe; `self` for the sender).
 
 <a id="g144-a-string-written-to-a-cell-is-parsed"></a>
 
@@ -4647,6 +4668,14 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   or an unparseable oldest row proves nothing. Known gap: a job whose flag was
   switched on moments ago reads "no run on record" until its first run. Verify:
   FU-B6d.
+  **AMENDED (cycle 23 SP-3, 2026-10-02): a ROW-COUNT tail drops evidence that a
+  TIME span keeps.** The Spanish resolve and claim tabs were read as their last
+  1000 rows, so on a busy inbox an old claim or resolve fell out of the tail and
+  its thread read as unclaimed or pending again, inside the very window the
+  list shows. Both tabs are now read over a TIME span (`SPANISH_STATE_SPAN_DAYS`,
+  180): `spanishSpanStartRow_` starts after the last row stamped before the
+  cutoff, and an unstamped (legacy) row is always kept, since nothing says when
+  it happened. Verify: the SP-3 span pin (cutoff, legacy rows, empty tab).
 
 
 <a id="g153-clearing-the-roster-email-does-not-reach-the-gate-lists"></a>
@@ -4719,6 +4748,16 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   still runs on the first message. Whether 8x8 really threads is UNVERIFIED on
   the live inbox; a single-voicemail thread reads exactly as before. Fires when
   you read a mail thread as one request. Verify: the M5 pins and FU-B7b.
+  **AMENDED (cycle 23 SP-1, 2026-10-02): the RESOLVE fold had the same
+  first-message bias.** M5 made each voicemail its own request, but the manual
+  resolve fold kept the FIRST row per thread and `resolveSpanishThread` answered
+  "already resolved" whenever any row existed — so a repeat voicemail that
+  arrived after a resolve could never be resolved, and stayed pending, counted
+  and assignable for the whole window. The fold now keeps the LATEST stamped row
+  (a legacy unstamped row still resolves all), "already" means the resolve
+  covers the thread's newest message (`spanishThreadLatestMs_`), and the
+  Needs-you list asks the pending ids rather than "a resolve exists". Verify:
+  the SP-1 pins (the fold, the endpoint's already-test, the Needs-you wiring).
 
 <a id="g156-read-a-word-or-a-number-by-token"></a>
 
@@ -4798,6 +4837,17 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   that ends a task or moves it out of view. Verify: the D-2 rule grid (the
   question-line case, the empty-text case, rule 4 alone failing is
   'needs-look').
+  **AMENDED (cycle 23 DR-2 + DR-1, 2026-10-02): the LATEST reply decides, and
+  a shared thread needs the request NAMED.** The pick took the EARLIEST
+  resolving reply, so "Done" followed by "wait — which patient?" in one scan
+  window closed the request and the question was never seen; now a latest reply
+  that needs a look wins, and a resolve is timed at the first resolving reply
+  after the last needs-look one. And two requests can share one Gmail thread
+  (same subject), where one "Done" resolved both: on a shared thread a reply
+  counts for a request only when its body names that request's id (the resolve
+  link carries it, and a reply quotes it); naming only another sharer is not a
+  reply to this one, and naming none is a look, never a resolve. Verify: the
+  DR-2 pick grid and the DR-1 scan drive (`c23DrScan_`).
 
 <a id="g160-an-escape-first-renderer-must-match-escaped-markers"></a>
 

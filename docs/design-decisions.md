@@ -4604,6 +4604,18 @@ pick them up without re-deriving the context.
   nobody reading it as a bug, so the pin now requires the fixture's stats count
   to equal the number of cards it renders. Recorded as INV-223.
 
+  **AMENDED (cycle 23 SP-1 + SP-3, 2026-10-02): the state the fold reads.**
+  The manual-resolve fold keeps the LATEST stamped row per thread, not the
+  first, so a voicemail that arrives after a resolve is new work and can be
+  resolved in its turn (a legacy unstamped row still resolves the whole
+  thread). The resolve and claim tabs are read over a 180-day TIME span
+  (`SPANISH_STATE_SPAN_DAYS`), not a 1000-row tail, so a busy inbox cannot push
+  a live claim out of view. And claims that could not be read are UNKNOWN, not
+  none: the list still renders (who is working what is advisory) but says so,
+  and every action that would act on "unclaimed" — claim, release,
+  auto-assign — refuses. A resolve map that could not be read fails the list
+  outright, because without it every resolved request would read as pending.
+
 - <a id="a-gate-claim-is-derived-from-the-refusal"></a>**A gate CLAIM is derived from the refusal, never written by hand (Batch 7 of the cycle-20 scan, F-26 + F-51, 2026-09-18)**
 
   Twenty-one places in this repo said "manager-gated" about an endpoint that
@@ -4818,6 +4830,15 @@ pick them up without re-deriving the context.
   after re-reading the row. Nothing of a reply's text is stored. Rejected: a
   per-department keyword list (operator upkeep for a small gain) and resolving on
   any reply (the operator ruled out questions).
+  **AMENDED (cycle 23 DR-2 + DR-1, 2026-10-02): which reply, and whose.** The
+  LATEST counting reply decides: if it needs a look, the request needs a look,
+  whatever an earlier reply said; otherwise it resolves, timed at the first
+  resolving reply after the last needs-look one (the answer that settled it, not
+  a later "thanks"). A fifth rule applies only on a thread two requests share
+  (Gmail threads same-subject mail): a reply counts for a request when it names
+  that request's id, which the resolve link carries and a reply quotes; one that
+  names only another sharer is not this request's, and one that names none
+  cannot be attributed, so it is a look, never a resolve.
 - <a id="the-dashboard-is-a-widget-grid-that-is-never-empty"></a>**The Dashboard is a widget grid resolved own → team default → standard, and it is never empty (22post E, operator 2026-09-27).** The operator wanted customization with an optional manager default and a
   base everyone falls back to. The widget ids are one registry on each side
   (`CLK_DASH_WIDGETS`, `DASH_WIDGET_IDS`, pinned equal), and each widget keeps
@@ -5022,3 +5043,17 @@ pick them up without re-deriving the context.
   range when any day in it has more than one break of a type it sets, because
   one slot applied across many days cannot say which break it means.
   ClockIn and ClockOut are one per day and keep their rule unchanged.
+- <a id="the-resolve-link-opens-a-confirm-page"></a>**The Dept Request resolve link opens a confirm page, and the sender's own click is recorded as `self` (cycle 23 RES-1, 2026-10-02).** The link in the department email used to
+  resolve on load. A link in an email is a GET that anyone's software may
+  follow — a mail scanner's preview, the sender opening their own sent or BCC
+  copy — and each of those closed the request as a timed department response.
+  The page now only reads: it names the request (or says not found, already
+  resolved, or sign in) and offers a button; the button calls the public
+  `confirmDeptRequestResolve`, whose credential is the token, exactly as the
+  link's was, and which still refuses an unidentifiable caller. The token is
+  shape-checked and embedded in the page as script-safe JSON. A click by the
+  request's own SENDER is recorded with via `self`: it is a clear, not a
+  response, so it is untimed and counted with the manual clears ("marked by
+  the sender" on the card). Rejected: keeping the write on the GET behind a
+  filter for known scanners (an unbounded list, and the sender's own click is
+  not a scanner).

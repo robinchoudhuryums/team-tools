@@ -2421,3 +2421,26 @@ per-change detail. By delta:
   NOT a property of the context object — read it with
   `vm.runInContext('NAME', ctx)`, or a check against `ctx.NAME` compares with
   `undefined` and passes or fails for the wrong reason.
+
+## Cycle 23 — Batch 5, Spanish Inbox and Dept Requests integrity (2026-10-02)
+
+- Node +7: SP-1 (the latest-row fold, the endpoint's "already" test against the
+  thread's newest message, the Needs-you source); SP-3 (the span rule with
+  legacy unstamped rows, both maps THROWING over a failing sheet, a 1,500-row
+  span read in full); SP-3 + SP-4 (the auto-assign core driven — the ungated
+  pending read, the refusal on unknown claims — plus the client note and the
+  disabled button); DR-2 and DR-1 driven through the whole reply scan by a
+  shared helper, `c23DrScan_` (shared thread named / unnamed / unshared);
+  RES-1 (the GET page writes nothing, the button's token is shape-checked and
+  script-safe, the sender's click is `self`, both folds count it manual); DR-3
+  (`medianWhole_` and every former upper-middle site).
+- Thirteen older pins moved with the behaviour. Seven Spanish source pins read
+  `spanishPendingCore_` now (where the read lives — the gate is still covered
+  by the omnibus gate test), and C-N4, R2 #4 and C-8 followed. PUBLIC-GATE names
+  `confirmDeptRequestResolve` as token-gated, beside the form routes. **N2
+  asserted a median of 120 for the samples 60 and 120 — the pin had encoded
+  DR-3's defect**; it now asserts 90. N3-DR, A-7 and D-2/D-3 load the shared
+  median and accept `self`.
+- 11 bite-checks, all BITE. Hazard met: a vm context with no `Date` makes any
+  server stamp throw "Invalid time value" far from the cause — a context that
+  drives a writer sets `ctx.Date = Date` (the scan helper does).
