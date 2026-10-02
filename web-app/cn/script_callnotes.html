@@ -5853,7 +5853,7 @@ function cnTimelineRowHtml_(ev) {
 function cnBuildTimelineHtml_(res) {
   var events = (res && res.events) || [];
   var head = '<div class="head"><h3>Patient timeline · ' + esc(res.trx || '') + '</h3>' +
-    '<button class="xclose" onclick="cnCloseTimelineOverlay_()" aria-label="Close">' + icon('x', 16) + '</button></div>';
+    '<button class="xclose" onclick="closeOverlay(document.getElementById(\'cn-timeline-overlay\'))" aria-label="Close">' + icon('x', 16) + '</button></div>';
   // Cycle-9 L-8: a failed source stream is meaningfully different from "no
   // data" on a patient-context surface — surface which streams are missing
   // instead of rendering an authoritative-looking partial timeline.
@@ -5917,7 +5917,7 @@ function cnBuildFormSubModalHtml_(res) {
     return '<div class="modal cn-form-sub-modal" style="max-width:560px">' +
       '<div class="modal-title">' + head + '</div>' +
       '<div class="modal-sub">Not submitted yet' + (res.status ? ' (' + esc(res.status) + ')' : '') + '.</div>' +
-      '<div class="modal-footer"><button class="btn-modal-ok" onclick="cnCloseFormSubOverlay_()">Close</button></div>' +
+      '<div class="modal-footer"><button class="btn-modal-ok" onclick="closeOverlay(document.getElementById(\'cn-form-sub-overlay\'))">Close</button></div>' +
       '</div>';
   }
   var who = esc(res.recipientName || res.recipientEmail || '');
@@ -5947,7 +5947,7 @@ function cnBuildFormSubModalHtml_(res) {
     '<div class="modal-title">' + head + '</div>' +
     '<div class="modal-sub">' + (who ? 'From ' + who : '') + (when ? ' · ' + when : '') + '</div>' +
     '<div class="cn-form-sub-fields">' + body + '</div>' +
-    '<div class="modal-footer"><button class="btn-modal-ok" onclick="cnCloseFormSubOverlay_()">Close</button></div>' +
+    '<div class="modal-footer"><button class="btn-modal-ok" onclick="closeOverlay(document.getElementById(\'cn-form-sub-overlay\'))">Close</button></div>' +
     '</div>';
 }
 
@@ -6796,7 +6796,7 @@ function cnRenderComposerFormStep_() {
       ${cnComposerNoteRefHtml_()}
 
       <div class="modal-footer">
-        <button class="btn-modal-cancel" onclick="cnCloseComposerModal_()">Cancel</button>
+        <button class="btn-modal-cancel" onclick="closeOverlay(document.getElementById('cn-compose-overlay'))">Cancel</button>
         <button class="btn-modal-ok" id="cnC-preview-btn" onclick="cnComposerGoToPreview_()">Preview →</button>
       </div>
     </div>
@@ -12528,9 +12528,10 @@ function cnDTableImport_(key, btn) {
 
 // ── Team-member onboarding (Admin → Config → Team Members) ──────────────────
 
-function cnAdminLoadOnboarding_() {
+function cnAdminLoadOnboarding_(opts) {
   var slot = document.getElementById('cn-admin-onboard');
   if (!slot) return;
+  var keepForm = !(opts && opts.resetForm);   // ADM-10: only a completed ADD empties the form
   if (!slot._onboardDelegated) {
     slot.addEventListener('click', function (e) {
       var t = e.target.closest ? e.target.closest('button') : null;
@@ -12559,7 +12560,12 @@ function cnAdminLoadOnboarding_() {
         return;
       }
       CN_STATE.onboardPanel = res;
+      // ADM-10 (cycle 23): an offboard (or any other reload) re-renders this
+      // panel, and it used to wipe an "Add team member" form being filled in.
+      // The form rides the re-render — values, open state, focus and caret (g141).
+      var formSnap = keepForm ? cnOnboardFormSnapshot_(slot) : null;
       slot.innerHTML = cnRenderOnboardingHtml_(res);
+      cnOnboardFormRestore_(slot, formSnap);
       cnOnboardLoadCdr_(requestedView);
     })
     .withFailureHandler(function (err) {
@@ -12733,6 +12739,45 @@ function cnOnboardNoEmailHtml_(list) {
       'Clear the row’s ID and add them with the form above, or fill the row in by hand');
 }
 
+/** ADM-10 — the add form's state: every cn-ob-* field's value (or checked),
+ *  whether the form is open, and the focused field's caret. null when there
+ *  is no form, or nothing typed and the form is closed. */
+function cnOnboardFormSnapshot_(slot) {
+  var form = slot && slot.querySelector('#cn-ob-form');
+  if (!form) return null;
+  var vals = {}, typed = false;
+  form.querySelectorAll('input[id^="cn-ob-"], select[id^="cn-ob-"], textarea[id^="cn-ob-"]').forEach(function (el) {
+    if (el.type === 'checkbox') vals[el.id] = { checked: el.checked };
+    else { vals[el.id] = { value: el.value }; if (el.value && el.type !== 'select-one') typed = true; }
+  });
+  if (form.hidden && !typed) return null;
+  var a = document.activeElement, focus = null;
+  if (a && a.id && vals[a.id]) {
+    focus = { id: a.id, start: null, end: null };
+    try { focus.start = a.selectionStart; focus.end = a.selectionEnd; } catch (e) {}
+  }
+  return { open: !form.hidden, vals: vals, focus: focus };
+}
+function cnOnboardFormRestore_(slot, snap) {
+  if (!snap || !slot) return;
+  var form = slot.querySelector('#cn-ob-form');
+  if (!form) return;
+  form.hidden = !snap.open;
+  var tog = slot.querySelector('#cn-ob-toggle');
+  if (tog) tog.setAttribute('aria-expanded', String(!!snap.open));   // INV-174
+  Object.keys(snap.vals).forEach(function (id) {
+    var el = slot.querySelector('#' + id);
+    if (!el) return;
+    if ('checked' in snap.vals[id]) el.checked = snap.vals[id].checked;
+    else el.value = snap.vals[id].value;
+  });
+  var anchor = slot.querySelector('#cn-ob-anchor'), cyc = slot.querySelector('#cn-ob-paycycle');
+  if (anchor && cyc) anchor.disabled = cyc.value !== 'biweekly';   // the change handler's rule
+  if (snap.focus) {
+    var f = slot.querySelector('#' + snap.focus.id);
+    if (f) { try { f.focus(); if (snap.focus.start != null) f.setSelectionRange(snap.focus.start, snap.focus.end); } catch (e) {} }
+  }
+}
 function cnOnboardToggleForm_(btn) {
   var f = document.getElementById('cn-ob-form');
   if (!f) return;
@@ -12773,7 +12818,7 @@ function cnOnboardSubmit_(btn) {
         if (!res || res.error) { showToast((res && res.error) || 'Add failed', 'toast-error'); return; }
         if (res.provisionWarning) showToast(res.name + ' added — but ' + res.provisionWarning, 'toast-warn');
         else showToast(res.name + ' added' + (res.provision ? ' + Call Notes Sheet provisioned' : ''), 'toast-success');
-        cnAdminLoadOnboarding_();
+        cnAdminLoadOnboarding_({ resetForm: true });   // ADM-10: the person is added — the form empties
         cnAdminLoadEnrollment_();
       })
       .withFailureHandler(function (err) {
@@ -13279,13 +13324,11 @@ function cnRenderAdminBody_(cfg) {
     var btn = this;
     var nameEls = document.querySelectorAll('.cn-admin-rate-state');
     var rateEls = document.querySelectorAll('.cn-admin-rate-value');
-    var map = {};
-    for (var i = 0; i < nameEls.length; i++) {
-      var st = nameEls[i].textContent.trim();
-      var rv = rateEls[i].value.trim();
-      if (!st || rv === '') continue;
-      map[st] = parseFloat(rv);
-    }
+    var rows = [];
+    for (var i = 0; i < nameEls.length; i++) rows.push({ state: nameEls[i].textContent, value: rateEls[i] ? rateEls[i].value : '' });
+    var built = cnRateMapFromRows_(rows);
+    if (built.error) { showToast(built.error, 'toast-warn'); return; }   // ADM-06: nothing is saved
+    var map = built.map;
     btn.disabled = true; btn.textContent = 'Saving…';
     google.script.run
       .withSuccessHandler(function (res) {
@@ -14219,6 +14262,25 @@ function cnRenderTemplateRow_(t) {
   '</div>';
 }
 
+/** PURE (Node-pinned) — ADM-06 (cycle 23): the tax-rate map to save from the
+ *  editor's rows, or {error}. A BLANK rate is refused by name: it used to be
+ *  skipped, so the saved map simply lost that state — and the same map feeds
+ *  the composer's State dropdown, with no way to add a state back in the app. */
+function cnRateMapFromRows_(rows) {
+  var map = {}, blank = [];
+  (rows || []).forEach(function (r) {
+    var st = String((r && r.state) || '').trim();
+    if (!st) return;
+    var rv = String((r && r.value) == null ? '' : r.value).trim();
+    if (rv === '') { blank.push(st); return; }
+    map[st] = parseFloat(rv);
+  });
+  if (blank.length) {
+    return { error: 'Enter a rate for ' + blank.join(', ') + ' (0 for no tax) — a blank would remove ' +
+      (blank.length === 1 ? 'that state' : 'those states') + ' from the map and the composer\'s State list. Nothing was saved.' };
+  }
+  return { map: map };
+}
 function cnRenderRateRows_(rates) {
   return Object.keys(rates).sort().map(function (st) {
     return '<div class="field-row" style="gap:8px;margin-bottom:4px;align-items:center">' +
@@ -14809,7 +14871,7 @@ function cnBuildExternalEmailHtml_() {
     '</div>' +
 
     '<div class="modal-footer">' +
-      '<button class="btn-modal-cancel" onclick="cnCloseExternalEmailModal_()">Cancel</button>' +
+      '<button class="btn-modal-cancel" onclick="closeOverlay(document.getElementById(\'cn-ext-overlay\'))">Cancel</button>' +
       '<button class="btn-modal-ok" id="cnX-send-btn">' + icon('send', 14) + ' Send</button>' +
     '</div>' +
   '</div>';

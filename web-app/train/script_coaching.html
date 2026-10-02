@@ -640,7 +640,10 @@ function coachOpenDrawer_(pre) {
   var emps = (COACH_STATE.emps && COACH_STATE.emps.employees) || [];
   COACH_DRAWER = { kind: 'coaching', sev: 'minor', pre: pre || null,
     noteId: (pre && pre.noteId) || '', noteDate: (pre && pre.noteDate) || '', qaFileId: (pre && pre.qaFileId) || '' };
-  var ov = ensureOverlay('coach-compose-overlay', { labelledBy: 'coach-drawer-title', extraClass: 'drawer-host', onClose: coachCloseDrawer_ });
+  // UI-ESC (cycle 23): guarded — a typed narrative is asked about before
+  // Escape, the backdrop or Cancel discards it; a save in flight refuses instead.
+  var ov = ensureOverlay('coach-compose-overlay', { labelledBy: 'coach-drawer-title', extraClass: 'drawer-host', onClose: coachCloseDrawer_,
+    unsaved: { what: 'this coaching note', busy: function () { return COACH_SENDING; } } });
   var empSel = '<select id="coach-emp"><option value="">Pick an employee…</option>';
   emps.forEach(function (e) {
     var seld = (pre && pre.empId === e.id) ? ' selected' : '';
@@ -682,8 +685,14 @@ function coachOpenDrawer_(pre) {
     .filter(function (e) { return e && !e.value; })[0] || document.getElementById('coach-what');
   if (first) first.focus();
 }
+/** INTUI-1 (cycle 23) — a coaching save is in flight; the drawer refuses to
+ *  close until it answers (the composer's INV-145 rule). Closing mid-save let
+ *  the manager press Log again, and the HR record (never purged) was filed
+ *  twice. */
+var COACH_SENDING = false;
 /** Idempotent (the ensureOverlay onClose contract) — safe to call when closed. */
 function coachCloseDrawer_() {
+  if (COACH_SENDING) { if (typeof showToast === 'function') showToast('Saving — one moment…', 'toast-info'); return; }
   var ov = document.getElementById('coach-compose-overlay');
   if (ov) ov.classList.remove('open');
   COACH_DRAWER = null;
@@ -729,8 +738,10 @@ function coachCreate_() {
   var btn = document.getElementById('coach-go');
   var restore = function () { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 13) + ' <span id="coach-go-lbl">' + (severity === 'praise' ? 'Log praise' : 'Log coaching') + '</span>'; } };
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  COACH_SENDING = true;   // INTUI-1
   google.script.run
     .withSuccessHandler(function (r) {
+      COACH_SENDING = false;
       if (r && r.success) {
         if (typeof showToast === 'function') {
           if (severity === 'critical' && r.mailed === false) showToast('Coaching logged — the email didn’t send', 'toast-warn');
@@ -744,6 +755,7 @@ function coachCreate_() {
       }
     })
     .withFailureHandler(function (err) {
+      COACH_SENDING = false;
       restore();
       if (typeof showToast === 'function') showToast((err && err.message) || err, 'toast-error');
     })

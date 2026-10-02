@@ -147,6 +147,10 @@ function tourVisibleSteps_() {
 }
 
 let _tourReturnView = '';
+// SH-04 (cycle 23): the element that had focus when the tour started, handed
+// back when it ends (the overlay lifecycle's _restoreFocus, for a surface that
+// is not an overlay).
+let _tourRestoreFocus = null;
 
 function tourStart() {
   if (TOUR_ACTIVE) return;
@@ -155,6 +159,8 @@ function tourStart() {
   // through several tabs; without this it strands the rep on the last step's
   // view — Call Notes / Team Notes — instead of where they invoked it).
   _tourReturnView = (typeof currentView !== 'undefined') ? currentView : '';
+  const ae = document.activeElement;
+  _tourRestoreFocus = (ae && ae !== document.body) ? ae : null;
   TOUR_VISIBLE = tourVisibleSteps_();
   TOUR_I = -1;
   tourEnsureNodes_();
@@ -174,6 +180,15 @@ function tourEnsureNodes_() {
   const block = document.createElement('div'); block.id = 'tour-block';
   const spot = document.createElement('div'); spot.id = 'tour-spot';
   const pop = document.createElement('div'); pop.id = 'tour-pop';
+  // SH-04 (cycle 23): the popover is a modal DIALOG — it dims and blocks the
+  // page — but it had no role, no name and never took focus, so a keyboard or
+  // screen-reader user stayed on (and could activate) the controls under the
+  // dim layer. Named by the step title, described by its body; focus moves to
+  // the primary button on every step and Tab cycles inside (tourKeydown_).
+  pop.setAttribute('role', 'dialog');
+  pop.setAttribute('aria-modal', 'true');
+  pop.setAttribute('aria-labelledby', 'tour-pop-title');
+  pop.setAttribute('aria-describedby', 'tour-pop-body');
   document.body.appendChild(block);
   document.body.appendChild(spot);
   document.body.appendChild(pop);
@@ -244,6 +259,7 @@ function tourPaint_(step) {
   pop.classList.add('show');
   pop.innerHTML = tourPopHtml_(step);
   tourWirePop_();
+  tourFocusPop_();
 
   if (target) {
     block.classList.remove('dim');
@@ -302,8 +318,8 @@ function tourPopHtml_(step) {
   return '' +
     '<button class="tour-btn ghost tour-skip" data-tour="skip">Skip</button>' +
     '<div class="tour-kicker">Step ' + (TOUR_I + 1) + ' of ' + total + '</div>' +
-    '<div class="tour-title">' + step.title + '</div>' +
-    '<div class="tour-body">' + step.body + '</div>' +
+    '<div class="tour-title" id="tour-pop-title">' + step.title + '</div>' +
+    '<div class="tour-body" id="tour-pop-body">' + step.body + '</div>' +
     '<div class="tour-foot">' +
       '<div class="tour-dots">' + dots + '</div>' +
       (first ? '' : '<button class="tour-btn" data-tour="prev">Back</button>') +
@@ -323,6 +339,14 @@ function tourWirePop_() {
   });
 }
 
+/** SH-04 — land focus on the step's primary button (the content was just
+ *  replaced, so the old focused node is gone). */
+function tourFocusPop_() {
+  const pop = document.getElementById('tour-pop');
+  const btn = pop && pop.querySelector('[data-tour="next"]');
+  if (btn) { try { btn.focus({ preventScroll: true }); } catch (_) { try { btn.focus(); } catch (__) {} } }
+}
+
 function tourReposition_() {
   if (!TOUR_ACTIVE || TOUR_I < 0) return;
   tourPaint_(TOUR_VISIBLE[TOUR_I]);
@@ -337,6 +361,16 @@ function tourKeydown_(e) {
   if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); tourEnd_(false); }
   else if (e.key === 'ArrowRight') { e.preventDefault(); tourNext_(); }
   else if (e.key === 'ArrowLeft') { e.preventDefault(); tourPrev_(); }
+  else if (e.key === 'Tab') {
+    // SH-04: Tab cycles the popover's buttons — never the page under the dim.
+    const pop = document.getElementById('tour-pop');
+    const btns = pop ? Array.prototype.slice.call(pop.querySelectorAll('button')) : [];
+    if (!btns.length) return;
+    e.preventDefault();
+    const at = btns.indexOf(document.activeElement);
+    const next = at < 0 ? 0 : (at + (e.shiftKey ? btns.length - 1 : 1)) % btns.length;
+    btns[next].focus();
+  }
 }
 
 function tourEnd_(completed) {
@@ -358,6 +392,10 @@ function tourEnd_(completed) {
     enterTool(VIEW_TO_TOOL[_tourReturnView], _tourReturnView);
   }
   _tourReturnView = '';
+  // SH-04: hand focus back to where it was, when that element still exists.
+  const restore = _tourRestoreFocus;
+  _tourRestoreFocus = null;
+  if (restore && restore.isConnected) { try { restore.focus(); } catch (_) {} }
   if (completed) showToast('Tour complete — replay it anytime from the ? button', 'toast-success');
 }
 </script>

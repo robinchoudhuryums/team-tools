@@ -1976,8 +1976,10 @@ function intakePpdSend_() {
   var btn = document.getElementById('intk-ppd-send');
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
   var requestedView = currentView;   // M8 — late-success guard (CN loader pattern)
+  INTAKE_STATE.sending = true;   // INTUI-1: the modal cannot close until the send answers
   google.script.run
     .withSuccessHandler(function (res) {
+      INTAKE_STATE.sending = false;
       if (!res || !res.success) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast((res && res.error) || 'Send failed.', 'toast-error'); return; }
       intakeCloseModal_();
       intakeClearDraft_('ppd');   // drop the persisted draft (PHI) on a successful send
@@ -1992,7 +1994,7 @@ function intakePpdSend_() {
       else showToast('PPD emailed to ' + res.recipient, 'toast-success');
       intakeAutoLogNote_('ppd', st.payload, res.recipient, st.recommendations, currentView === requestedView);
     })
-    .withFailureHandler(function (err) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })
+    .withFailureHandler(function (err) { INTAKE_STATE.sending = false; if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })
     .intakeSendPPD(st.payload, spec, st.bodyHash);
 }
 
@@ -2237,8 +2239,10 @@ function intakeAcctSend_(form) {
   var btn = document.getElementById('intk-acct-send');
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
   var requestedView = currentView;   // M8 — late-success guard (CN loader pattern)
+  INTAKE_STATE.sending = true;   // INTUI-1
   google.script.run
     .withSuccessHandler(function (res) {
+      INTAKE_STATE.sending = false;
       if (!res || !res.success) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast((res && res.error) || 'Send failed.', 'toast-error'); return; }
       intakeCloseModal_();
       intakeClearDraft_(form);   // drop the persisted draft (PHI) on a successful send
@@ -2249,7 +2253,7 @@ function intakeAcctSend_(form) {
       else showToast(form.toUpperCase() + ' emailed to ' + res.recipient, 'toast-success');
       intakeAutoLogNote_(form, st.payload, res.recipient, null, currentView === requestedView);
     })
-    .withFailureHandler(function (err) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })
+    .withFailureHandler(function (err) { INTAKE_STATE.sending = false; if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })
     [fn](st.payload, spec, images, st.bodyHash);
 }
 
@@ -3050,13 +3054,19 @@ function intakeOpenModal_(title, bodyHtml) {
     '<div class="head"><h3>' + esc(title) + '</h3><button class="xclose" data-intk-close="1" aria-label="Close">' + icon('x', 16) + '</button></div>' +
     '<div class="body">' + bodyHtml + '</div></div>';
   ov.addEventListener('click', function (e) {
-    if (e.target.closest && e.target.closest('[data-intk-close]')) intakeCloseModal_();
+    if (e.target.closest && e.target.closest('[data-intk-close]')) closeOverlay(ov);   // SH-02: focus returns to the opener
   });
 }
 
 function intakeCloseModal_() {
   var ov = document.getElementById('intk-modal-overlay');
   if (!ov) return;
+  // INTUI-1 (cycle 23): refuse to close while a send is in flight (the
+  // composer's INV-145 rule). Closing mid-send put the rep back on the still-
+  // filled form, and a second Send went out as a DUPLICATE PHI email. A
+  // registered close hook owns the close (g130), so returning here keeps the
+  // modal open under Close, Escape and the backdrop alike.
+  if (INTAKE_STATE.sending) { showToast('Sending — one moment…', 'toast-info'); return; }
   var drop = document.getElementById('intk-drop');
   if (drop && drop._intkPaste) document.removeEventListener('paste', drop._intkPaste);
   ov.remove();

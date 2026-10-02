@@ -3833,6 +3833,12 @@ function kbManualResultHtml_(r, dryRun) {
     (r.unchanged || 0) + ' unchanged',
     skipped.length + ' skipped',
   ].join(' · ');
+  // KB2-8 (cycle 23): sections an import that did not finish had already
+  // written. They are recorded now, so the next Check reads them as the
+  // import's own — never "edited here" or "not written by the import".
+  var repairLine = r.repaired
+    ? '<div class="kb-man-meta">' + esc(r.repaired + ' section' + (r.repaired === 1 ? '' : 's') + ' ' + (dryRun ? 'were written by an earlier import that did not finish and will be recorded on Import' : 'from an earlier import that did not finish ' + (r.repaired === 1 ? 'was' : 'were') + ' recorded')) + '.</div>'
+    : '';
   var head = dryRun
     ? 'Checked ' + (r.total || 0) + ' articles — nothing written yet.'
     : 'Imported ' + (r.total || 0) + ' articles.';
@@ -3845,7 +3851,7 @@ function kbManualResultHtml_(r, dryRun) {
     : 'No call router or changelog in this file — rebuild with the current export to include them.';
   var im = kbManualImagesLine_(r.images, dryRun);
   return '<div class="kb-man-res' + (skipped.length || orphaned.length || im.warn ? ' warn' : '') + '"><b>' + esc(head) + '</b><div>' + esc(line) + '</div>' +
-    '<div class="kb-man-meta">' + esc(metaLine) + '</div>' + im.html +
+    '<div class="kb-man-meta">' + esc(metaLine) + '</div>' + repairLine + im.html +
     (skipped.length
       ? '<div class="kb-man-skiph">These ' + verb + ' skipped:</div><ul>' + skipped.map(function (s) {
           return '<li>' + esc(s.title || s.id) + ' <span class="kb-man-why">— ' + esc(KB_MANUAL_SKIP_WHY[s.reason] || s.reason) + '</span></li>';
@@ -5805,6 +5811,15 @@ function kbRenderComments_(host, id, res) {
       '<div class="kb-cmt-text">' + esc(c.text) + '</div>' +
     '</div>';
   }).join('');
+  // KBUI-5 (cycle 23): editing or removing a comment refreshes this block,
+  // and the refresh wiped a NEW comment being typed below it. The add box's
+  // draft rides the re-render — text, focus and caret (g141).
+  var oldBox = host.querySelector('.kb-cmt-add textarea');
+  var draft = null;
+  if (oldBox && oldBox.value) {
+    draft = { text: oldBox.value, focused: document.activeElement === oldBox, start: null, end: null };
+    try { draft.start = oldBox.selectionStart; draft.end = oldBox.selectionEnd; } catch (e) {}
+  }
   host.innerHTML =
     '<div class="kb-comments">' +
       '<h3 class="kb-cmt-h">' + icon('list', 13) + ' Comments' + (res.total ? ' · ' + res.total : '') + '</h3>' +
@@ -5818,6 +5833,11 @@ function kbRenderComments_(host, id, res) {
         '</div>' +
       '</div>' +
     '</div>';
+  var newBox = draft && host.querySelector('.kb-cmt-add textarea');
+  if (newBox) {
+    newBox.value = draft.text;
+    if (draft.focused) { try { newBox.focus(); if (draft.start != null) newBox.setSelectionRange(draft.start, draft.end); } catch (e) {} }
+  }
 }
 
 /** Refresh the comments block the clicked control lives in — the tab and the
@@ -5841,6 +5861,9 @@ function kbAddComment_(btn) {
       btn.disabled = false;
       if (!r || !r.success) { showToast((r && r.error) || 'Could not post', 'toast-error'); return; }
       showToast('Comment posted', 'toast-success');
+      // KBUI-5: the posted text leaves the box before the refresh, so the
+      // draft carry never puts it back (text typed after Post stays).
+      if (input && String(input.value || '').trim() === text) input.value = '';
       kbCommentsRefresh_(btn, id);
     })
     .withFailureHandler(function (e) { btn.disabled = false; showToast((e && e.message) || 'Could not post', 'toast-error'); })
@@ -6135,6 +6158,7 @@ function kbConvertItem_(id, kind, srcBtn) {
           status: res.status || 'published',
         };
         kbRenderEditor_();
+        overlayMarkDirty_('kb-ed-overlay');   // UI-ESC: a converted article is unsaved work
         kbShowConvertWarnings_(res.warnings);
       })
       .withFailureHandler(function (err) {
@@ -6260,7 +6284,9 @@ function kbRenderEditor_() {
   // ensureOverlay (script_core) registers kbCloseModal_ as the close hook so
   // the shell's Escape path removes the editor node instead of merely hiding
   // it (a hidden-but-present editor would shadow the next open).
-  var ov = ensureOverlay('kb-ed-overlay', { label: 'Reference item editor', onClose: kbCloseModal_ });
+  // UI-ESC (cycle 23): guarded — Escape or the backdrop asks before an
+  // unsaved article is thrown away.
+  var ov = ensureOverlay('kb-ed-overlay', { label: 'Reference item editor', onClose: kbCloseModal_, unsaved: { what: 'this item' } });
   ov.innerHTML = '<div class="modal kb-ed">' +
     '<div class="head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><h3 style="margin:0;">' + (e.id ? 'Edit item' : 'Add item') + '</h3>' +
       '<button class="kb-btn" data-kb-close="1">' + icon('x', 15) + '</button></div>' +
@@ -6290,7 +6316,7 @@ function kbRenderEditor_() {
       '<button class="kb-btn" data-kb-close="1">Cancel</button>' +
       '<button class="kb-btn" style="background:var(--accent);color:#fff;border-color:var(--accent);" onclick="kbSaveFromEditor_(this)">' + icon('check', 13) + ' Save</button></div>' +
   '</div>';
-  ov.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('[data-kb-close]')) kbCloseModal_(); });
+  ov.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('[data-kb-close]')) closeOverlay(ov); });   // SH-02: focus returns; UI-ESC: asks first
   kbBindEditorDrop_(ov);
   kbRenderEditorBody_();
 }
@@ -6328,6 +6354,11 @@ var KB_INGEST_MAX_BYTES = 4 * 1024 * 1024;
 function kbIngestFile_(file) {
   var slot = document.getElementById('kb-ed-ingest');
   if (!slot) return;
+  // KB2-9 (cycle 23): the editor this file was dropped into. A slow read or
+  // conversion used to land in WHATEVER editor was open when it returned —
+  // the next article's — and Save then overwrote that article (g147; the
+  // M-7 identity guard the Doc converter already has).
+  var ed = KB_EDIT;
   if (file.size > KB_INGEST_MAX_BYTES) {
     slot.innerHTML = errorStateHtml_('That file is ' + Math.round(file.size / 1048576) +
       'MB — the limit is ' + Math.round(KB_INGEST_MAX_BYTES / 1048576) + 'MB.');
@@ -6335,8 +6366,9 @@ function kbIngestFile_(file) {
   }
   slot.innerHTML = '<div class="kb-ed-ingesting" role="status"><span class="lo-dots"><span></span><span></span><span></span></span> Reading ' + esc(file.name) + '…</div>';
   var reader = new FileReader();
-  reader.onerror = function () { slot.innerHTML = errorStateHtml_('Could not read that file.'); };
+  reader.onerror = function () { if (KB_EDIT === ed) slot.innerHTML = errorStateHtml_('Could not read that file.'); };
   reader.onload = function () {
+    if (KB_EDIT !== ed) return;   // KB2-9: the editor changed while the file was read
     var b64 = String(reader.result || '');
     var comma = b64.indexOf(',');
     b64 = comma >= 0 ? b64.slice(comma + 1) : b64;
@@ -6346,6 +6378,7 @@ function kbIngestFile_(file) {
       .withSuccessHandler(function (res) {
         var host = document.getElementById('kb-ed-ingest');
         if (!host) return;                       // editor closed mid-flight
+        if (KB_EDIT !== ed) return;              // KB2-9: a different item's editor is open now
         if (!res || res.error) { host.innerHTML = errorStateHtml_((res && res.error) || 'Could not ingest that file'); return; }
         kbSnapshotEditor_();
         if (!KB_EDIT.title && res.title) KB_EDIT.title = res.title;
@@ -6356,6 +6389,7 @@ function kbIngestFile_(file) {
         kbTypeTabSet_(document.getElementById('kb-tt-article'), KB_EDIT.type !== 'embed');
         kbTypeTabSet_(document.getElementById('kb-tt-embed'), KB_EDIT.type === 'embed');
         kbRenderEditorBody_();
+        overlayMarkDirty_('kb-ed-overlay');      // UI-ESC: an ingested file is unsaved work
         var warns = res.warnings || [];
         host.innerHTML = '<div class="kb-ed-ingested">' +
           icon('check', 13) + ' <strong>' + esc(file.name) + '</strong> ingested as ' +
@@ -6366,6 +6400,7 @@ function kbIngestFile_(file) {
         '</div>';
       })
       .withFailureHandler(function (err) {
+        if (KB_EDIT !== ed) return;              // KB2-9
         var host = document.getElementById('kb-ed-ingest');
         if (host) host.innerHTML = errorStateHtml_((err && err.message) || 'Could not ingest that file');
       })

@@ -3572,7 +3572,7 @@ function kbManualValidate_(data) {
  *  'deleted' (the ledger knows it, the KB does not), 'foreign' (a man- id the
  *  import never wrote). */
 function kbManualPlan_(items, rows, ledger, hashFn) {
-  const plan = { create: [], update: [], unchanged: [], skipped: [] };
+  const plan = { create: [], update: [], unchanged: [], skipped: [], repair: [] };
   items.forEach(function (it) {
     const row = rows[it.id], led = ledger[it.id];
     if (!row) {
@@ -3580,8 +3580,19 @@ function kbManualPlan_(items, rows, ledger, hashFn) {
       else plan.create.push(it);
       return;
     }
+    // KB2-8 (cycle 23): the import writes the KB rows BEFORE its ledger, so an
+    // import stopped partway (the 6-minute limit, a lost connection) left rows
+    // with no ledger entry ("foreign") or a stale one ("edited"), and every
+    // later Check refused them. A row that already holds EXACTLY this file's
+    // text is the import's own work: it is a REPAIR — only the ledger is
+    // written — never a refusal.
+    const rowHash = hashFn(row.department, row.title, row.body);
+    if ((!led || rowHash !== led.bodyHash) && rowHash === hashFn(it.department, it.title, it.body)) {
+      plan.repair.push(it);
+      return;
+    }
     if (!led) { plan.skipped.push({ id: it.id, title: it.title, reason: 'foreign' }); return; }
-    if (hashFn(row.department, row.title, row.body) !== led.bodyHash) {
+    if (rowHash !== led.bodyHash) {
       plan.skipped.push({ id: it.id, title: row.title || it.title, reason: 'edited' });
       return;
     }
@@ -4063,6 +4074,7 @@ function kbImportManual(source, opts) {
       const summary = {
         total: v.items.length, created: plan.create.length, updated: plan.update.length,
         unchanged: plan.unchanged.length, skipped: plan.skipped,
+        repaired: plan.repair.length,   // KB2-8: rows an unfinished import wrote; this run records them
         orphaned: orphaned, removed: 0, metaUpdated: metaChanged, hasMeta: !!metaJson,
         version: mv.meta ? mv.meta.version : '',
         images: null,
@@ -4093,6 +4105,8 @@ function kbImportManual(source, opts) {
         sheet.getRange(at.sheetRow, 1, 1, KB_HEADERS.length).setValues(sheetSafeRows_([vals]));
         ledgerWrites.push([it.id, it.sourceHash, hashFn(it.department, it.title, it.body)]);
       });
+      // KB2-8: the rows are already this file's text — record them, write nothing else.
+      plan.repair.forEach(function (it) { ledgerWrites.push([it.id, it.sourceHash, hashFn(it.department, it.title, it.body)]); });
       if (plan.create.length) {
         appendRowsSafe_(sheet, plan.create.map(function (it) {
           return [it.id, it.department, it.title, 'article', it.body, '', '', it.sortOrder,
@@ -4145,7 +4159,7 @@ function kbImportManual(source, opts) {
       plan.skipped.forEach(function (s) { skipBy[s.reason] = (skipBy[s.reason] || 0) + 1; });
       writeAuditLog_(emp, 'KbManualImport', '', '', false, 0,
         'total=' + summary.total + '; created=' + summary.created + '; updated=' + summary.updated +
-        '; unchanged=' + summary.unchanged + '; skipped=' + plan.skipped.length +
+        '; unchanged=' + summary.unchanged + '; skipped=' + plan.skipped.length + '; repaired=' + summary.repaired +
         '; orphaned=' + orphaned.length + '; removed=' + summary.removed + '; meta=' + (metaChanged ? 'updated' : 'same') +
         (summary.images ? '; imagesStored=' + summary.images.stored + '; imagesRemoved=' + summary.images.removed +
           (summary.images.error ? '; imagesError=1' : '') : '') +

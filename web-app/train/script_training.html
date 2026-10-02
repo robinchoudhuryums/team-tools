@@ -395,7 +395,7 @@ function trainSyncReaderFoot_(itemId) {
   var foot = document.getElementById('tr-reader-foot');
   if (!foot || TRAIN_STATE.readerItemId !== itemId) return;
   var it = trainItemById_(itemId);
-  var h = '<button class="kb-btn" onclick="trainCloseReader_()">Close</button>';
+  var h = '<button class="kb-btn" onclick="closeOverlay(document.getElementById(\'train-reader-overlay\'))">Close</button>';
   if (it && !it.completed) {
     h = '<button class="tr-complete-btn" data-tr-complete-reader="1">' + icon('check', 13) + ' Mark complete</button>' + h;
   } else if (it && it.completed) {
@@ -453,7 +453,7 @@ function trainRenderQuizForm_(quiz) {
     h += '</div>';
   });
   h += '</div><div class="foot">' +
-    '<button class="kb-btn" onclick="trainCloseQuiz_()">Cancel</button>' +
+    '<button class="kb-btn" onclick="closeOverlay(document.getElementById(\'train-quiz-overlay\'))">Cancel</button>' +
     '<button class="tr-complete-btn" id="tr-quiz-submit">' + icon('check', 13) + ' Submit answers</button>' +
     '</div></div>';
   overlay.innerHTML = h;
@@ -549,7 +549,7 @@ function trainRenderQuizResult_(quiz, answers, res) {
   });
   h += '</div><div class="foot">' +
     (res.passed ? '' : '<button class="kb-btn" id="tr-quiz-retake">' + icon('refresh', 13) + ' Retake</button>') +
-    '<button class="tr-complete-btn" onclick="trainCloseQuiz_()">Done</button>' +
+    '<button class="tr-complete-btn" onclick="closeOverlay(document.getElementById(\'train-quiz-overlay\'))">Done</button>' +
     '</div></div>';
   overlay.innerHTML = h;
   var rt = document.getElementById('tr-quiz-retake');
@@ -897,7 +897,7 @@ function trainOpenQuizEditor_(quizId) {
     ? { quizId: quizId, title: existing.title, kbItemId: existing.kbItemId, passPct: existing.passPct,
         questions: existing.questions.map(function (q) { return { q: q.q, options: q.options.slice(), correct: q.correct }; }) }
     : { quizId: '', title: '', kbItemId: '', passPct: 80, questions: [{ q: '', options: ['', ''], correct: 0 }] };
-  var overlay = ensureOverlay('train-qed-overlay', { label: 'Quiz editor', onClose: trainCloseQuizEditor_ });
+  var overlay = ensureOverlay('train-qed-overlay', { label: 'Quiz editor', onClose: trainCloseQuizEditor_, unsaved: { what: 'this quiz' } });   // UI-ESC
   trainRenderQuizEditor_(overlay);
 }
 
@@ -933,7 +933,7 @@ function trainRenderQuizEditor_(overlay) {
   h += st.questions.map(function (q, qi) { return trainQedQuestionHtml_(q, qi, st.questions.length); }).join('');
   h += (st.questions.length < 50 ? '<button class="kb-btn" id="tr-qed-addq">+ Question</button>' : '') +
     '</div><div class="foot">' +
-    '<button class="kb-btn" onclick="trainCloseQuizEditor_()">Cancel</button>' +
+    '<button class="kb-btn" onclick="closeOverlay(document.getElementById(\'train-qed-overlay\'))">Cancel</button>' +
     '<button class="tr-complete-btn" id="tr-qed-save">' + icon('check', 13) + ' Save quiz</button>' +
     '</div></div>';
   overlay.innerHTML = h;
@@ -942,6 +942,7 @@ function trainRenderQuizEditor_(overlay) {
   if (imp) imp.addEventListener('click', trainImportQuizFromForm_);
   var aq = document.getElementById('tr-qed-addq');
   if (aq) aq.addEventListener('click', function () {
+    overlayMarkDirty_(overlay);   // UI-ESC: a structural edit is work too
     trainQedSnapshot_();
     TRAIN_STATE.qed.questions.push({ q: '', options: ['', ''], correct: 0 });
     trainRenderQuizEditor_();
@@ -951,6 +952,7 @@ function trainRenderQuizEditor_(overlay) {
     overlay._qedDelegated = true;
     overlay.addEventListener('click', function (e) {
       var t;
+      if (e.target.closest('[data-qed-addopt],[data-qed-delopt],[data-qed-delq]')) overlayMarkDirty_(overlay);   // UI-ESC
       if ((t = e.target.closest('[data-qed-addopt]'))) {
         trainQedSnapshot_();
         var qa = Number(t.getAttribute('data-qed-addopt'));
@@ -1058,6 +1060,7 @@ function trainImportQuizFromForm_() {
         if (res.questions && res.questions.length) st.questions = res.questions;
         st._importWarnings = res.warnings || [];
         trainRenderQuizEditor_();
+        overlayMarkDirty_('train-qed-overlay');   // UI-ESC: imported questions are unsaved until Save quiz
         var w = (res.warnings || []).length;
         showToast('Imported ' + res.questions.length + ' question' + (res.questions.length === 1 ? '' : 's') +
           (w ? ' · ' + w + ' note' + (w === 1 ? '' : 's') + ' — review below' : '') + '.', w ? 'warn' : 'success');

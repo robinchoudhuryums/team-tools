@@ -20510,7 +20510,7 @@ test('PR4-5: client — coachRepSignal_ tiers (nosignal is INFO and out-ranks st
   assert.ok(/\.coach-card\.is-acked \{ opacity:\.86; \}/.test(co), 'acked cards recede without disappearing');
   assert.ok(/@media \(max-width: 540px\) \{ \.coach-kpis \{ grid-template-columns:repeat\(2, 1fr\); \} \}/.test(co), 'the KPI strip goes 2×2 on a phone');
   // The drawer is the shared side-anchored variant, named by its heading (A14).
-  assert.ok(/ensureOverlay\('coach-compose-overlay', \{ labelledBy: 'coach-drawer-title', extraClass: 'drawer-host', onClose: coachCloseDrawer_ \}\)/.test(cs), 'drawer via ensureOverlay with a labelledBy name');
+  assert.ok(/ensureOverlay\('coach-compose-overlay', \{ labelledBy: 'coach-drawer-title', extraClass: 'drawer-host', onClose: coachCloseDrawer_,/.test(cs), 'drawer via ensureOverlay with a labelledBy name');
   const styles = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
   assert.ok(/\.overlay\.drawer-host \{ align-items: stretch; justify-content: flex-end; padding: 0; \}/.test(styles) && /\.modal\.drawer \{[^}]*max-height: 100vh;[^}]*flex-direction: column;/.test(styles), 'the shared drawer geometry lives in styles.html');
 });
@@ -24639,7 +24639,10 @@ test('TW-B: a chromatic hex literal in a partial never duplicates a design token
   });
   // The three canvas fallbacks the tripwire found stale are the category's whole membership today.
   const canvasCount = files.reduce((n, f) => { const s = strip(read(f)); CANVAS_FALLBACK.lastIndex = 0; let c = 0; while (CANVAS_FALLBACK.exec(s)) c++; return n + c; }, 0);
-  assert.strictEqual(canvasCount, 4, 'four canvas fallbacks (qa ×2, empdocs ×2) — each pinned equal to its token above');
+  // TRUI-2 (cycle 23): the signature canvas no longer reads a token — its ink is
+  // a FIXED dark (g58: the pad is white in both themes, and the stored PNG is
+  // printed), so empdocs' two fallbacks left the category.
+  assert.strictEqual(canvasCount, 2, 'two canvas fallbacks (qa ×2) — each pinned equal to its token above');
 });
 
 test('P2: the clock ribbon fallbacks ride --accent-glow / --warn-glow, and --warn-glow lives in the two base blocks only', () => {
@@ -29608,7 +29611,13 @@ test('M1-S3: kbManualPlan_ — new → create; unchanged source → nothing; cha
   assert.deepStrictEqual(ids(p.create), ['man-6']);
   assert.deepStrictEqual(ids(p.unchanged), ['man-1'], 'the same SourceHash over an untouched row writes nothing');
   assert.deepStrictEqual(ids(p.update), ['man-2']);
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(p.skipped)).map((x) => x.id + ':' + x.reason), ['man-3:edited', 'man-4:deleted', 'man-5:foreign']);
+  // KB2-8 (cycle 23): man-5 holds exactly this file's text with no ledger entry
+  // — what an import stopped before its ledger write leaves — so it is a
+  // REPAIR now, not "foreign"; a man- row with OTHER text still is foreign.
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(p.skipped)).map((x) => x.id + ':' + x.reason), ['man-3:edited', 'man-4:deleted']);
+  assert.deepStrictEqual(ids(p.repair), ['man-5']);
+  const p2 = s.kbManualPlan_([it('man-7', 's7')], { 'man-7': { department: 'D', title: 'T man-7', body: 'someone else\'s text' } }, {}, h);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(p2.skipped)).map((x) => x.id + ':' + x.reason), ['man-7:foreign']);
   // The basis ignores what a cell round-trip changes, and nothing else.
   assert.strictEqual(h('D', 'T', "'- item\r\nnext  \n"), h('D', 'T', '- item\nnext'), 'sheetSafe_\'s apostrophe, CRLF and trailing space are not edits');
   assert.strictEqual(h(' D ', ' T ', 'x'), h('D', 'T', 'x'));
@@ -29723,7 +29732,7 @@ test('M1-S5: kbImportManual (driven over a fake book) — drafts arrive, a hand-
   assert.deepStrictEqual(led[0], ['Id', 'SourceHash', 'BodyHash', 'ImportedAt', 'ImportedBy'], 'the ledger tab is provisioned with its header');
   assert.deepStrictEqual(led.slice(1).map((r) => r[0]), ['man-0-1', 'man-0-2', 'man-c-0']);
   assert.ok(led.slice(1).every((r) => /^[0-9a-f]{64}$/.test(r[2]) && r[1] === M1_HASH && r[4] === 'admin@ums.com'), 'SourceHash, a SHA-256 BodyHash, who');
-  assert.ok(/^KbManualImport total=3; created=3; updated=0; unchanged=0; skipped=0; orphaned=0; removed=0; meta=same$/.test(imp.audits[0]), 'a counts-only audit row: ' + imp.audits[0]);
+  assert.ok(/^KbManualImport total=3; created=3; updated=0; unchanged=0; skipped=0; repaired=0; orphaned=0; removed=0; meta=same$/.test(imp.audits[0]), 'a counts-only audit row: ' + imp.audits[0]);
   // Re-import the same file: NOTHING is written, not even the cache.
   book.writes.length = 0;
   const r2 = imp.ctx.kbImportManual(M1_LINK, {});
@@ -33082,6 +33091,96 @@ test('QA2-4 + QA2-5 (cycle 23): the previous period is card-weighted like the cu
   assert.strictEqual(out[0].recordings, 2); assert.strictEqual(out[0].avgScore, 3);
 });
 
+
+console.log('\ncycle 23 Batch 9 — editors, closes, imports');
+
+test('ADM-06 (cycle 23): a BLANK tax rate is refused by name and nothing is saved — it used to drop the state from the map and the composer\'s State list (driven)', () => {
+  const sb = buildSandbox([]);
+  const build = loadFunction(sb, 'cn/script_callnotes.html', 'cnRateMapFromRows_');
+  const ok = build([{ state: 'TX', value: '0.0825' }, { state: 'OK', value: '0' }, { state: '  ', value: '' }]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ok)), { map: { TX: 0.0825, OK: 0 } }, 'a zero is a rate, and a nameless row is ignored');
+  const bad = build([{ state: 'TX', value: '0.0825' }, { state: 'NM', value: '' }, { state: 'AZ', value: '  ' }]);
+  assert.ok(!bad.map, 'THE REGRESSION: the blank rows were skipped and the save went ahead without NM and AZ');
+  assert.ok(/NM, AZ/.test(bad.error) && /0 for no tax/.test(bad.error) && /Nothing was saved/.test(bad.error), bad.error);
+  const handler = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
+  assert.ok(/var built = cnRateMapFromRows_\(rows\);\s*if \(built\.error\) \{ showToast\(built\.error, 'toast-warn'\); return; \}/.test(handler), 'the Save Tax Rates handler refuses BEFORE the RPC');
+});
+
+test('KB2-8 (cycle 23): a section an unfinished import wrote is RECORDED on the next run — not skipped as foreign forever, and not rewritten (driven)', () => {
+  const book = m1Book_([], null);
+  const arts = [m1Art_({ Id: 'man-0-1', Department: 'Part 00 — CSR Core', Title: '0.1 Start', BodyMd: 'one\n', SortOrder: 1 }),
+    m1Art_({ Id: 'man-0-2', Department: 'Part 00 — CSR Core', Title: '0.2 Status', BodyMd: 'two\n', SortOrder: 2 })];
+  let imp = m1Importer_(book, JSON.stringify(arts));
+  imp.ctx.kbImportManual(M1_LINK, {});
+  // The crash: man-0-2's KB row landed, its ledger row did not.
+  const led = book.sheets.ManualImport.grid;
+  led.splice(led.findIndex((r) => r[0] === 'man-0-2'), 1);
+  imp = m1Importer_(book, JSON.stringify(arts));
+  book.writes.length = 0;
+  const chk = imp.ctx.kbImportManual(M1_LINK, { dryRun: true });
+  assert.strictEqual(chk.repaired, 1, 'a check reports the repair');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(chk.skipped)), [], 'THE REGRESSION: the section was skipped as "foreign" on every later import, so it never updated again');
+  assert.deepStrictEqual(book.writes, [], 'and a check writes nothing');
+  const r = imp.ctx.kbImportManual(M1_LINK, {});
+  assert.deepStrictEqual([r.created, r.updated, r.unchanged, r.repaired], [0, 0, 1, 1]);
+  assert.deepStrictEqual(book.writes.filter((w) => w[0] === 'KB'), [], 'the section is not rewritten');
+  assert.ok(led.some((x) => x[0] === 'man-0-2' && /^[0-9a-f]{64}$/.test(x[2])), 'its ledger row is written');
+  assert.ok(/; repaired=1; /.test(imp.audits[imp.audits.length - 1]), 'the audit row counts it');
+  // Then it behaves like any recorded section: a re-import changes nothing.
+  book.writes.length = 0;
+  const r2 = m1Importer_(book, JSON.stringify(arts)).ctx.kbImportManual(M1_LINK, {});
+  assert.deepStrictEqual([r2.unchanged, r2.repaired], [2, 0]);
+  assert.deepStrictEqual(book.writes, [], 'nothing written');
+  // The client says so (a check, and an import).
+  const html = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  assert.ok(/earlier import that did not finish/.test(html), 'the result panel names the repair');
+});
+
+test('SH-02 (cycle 23): no button calls a registered close hook directly — every close goes through closeOverlay, so focus returns and the discard guard runs (derived)', () => {
+  const read = (f) => fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8');
+  const files = A11Y_SCAN_PARTIALS.filter((f) => /\.html$/.test(f));
+  const hooks = {};
+  files.forEach((f) => {
+    const src = read(f);
+    const re = /ensureOverlay\(\s*'([\w-]+)'([\s\S]{0,400}?)\)\s*;/g;
+    let m;
+    while ((m = re.exec(src))) { const h = /onClose:\s*([A-Za-z_$][\w$]*)/.exec(m[2]); if (h && h[1] !== 'function') hooks[h[1]] = m[1]; }
+  });
+  ['kbCloseModal_', 'edCloseDoc_', 'trainCloseReader_', 'trainCloseQuiz_', 'trainCloseQuizEditor_', 'coachCloseDrawer_', 'intakeCloseModal_',
+    'whatsNewClose_', 'cnCloseComposerModal_', 'cnCloseExternalEmailModal_', 'cnCloseTimelineOverlay_', 'cnCloseFormSubOverlay_']
+    .forEach((h) => assert.ok(hooks[h], 'the hook set was derived and includes ' + h));
+  const bad = [];
+  files.forEach((f) => {
+    const src = read(f);
+    Object.keys(hooks).forEach((h) => {
+      if (new RegExp('onclick=\\\\?"' + h.replace(/\$/g, '\\$') + '\\(\\)').test(src)) bad.push(f + ': onclick="' + h + '()"');
+      if (new RegExp("closest\\([^)]*\\)\\)\\s*\\{?\\s*" + h.replace(/\$/g, '\\$') + '\\(\\)').test(src)) bad.push(f + ': a delegated click calls ' + h + '()');
+    });
+  });
+  assert.deepStrictEqual(bad, [], 'a direct hook call skips closeOverlay — no focus restore (g100), and no UI-ESC question');
+});
+
+test('UI-ESC (cycle 23): the four editors are GUARDED, and closeOverlay asks before a dirty one discards (structure; the DOM suite drives it)', () => {
+  const read = (f) => stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8'));
+  [['kb/script_kb.html', 'kb-ed-overlay'], ['train/script_training.html', 'train-qed-overlay'],
+    ['train/script_empdocs.html', 'ed-reader-overlay'], ['train/script_coaching.html', 'coach-compose-overlay']].forEach(([f, id]) => {
+    const m = new RegExp("ensureOverlay\\('" + id + "',([\\s\\S]{0,400}?)\\);").exec(read(f));
+    assert.ok(m && /unsaved: \{ what: '/.test(m[1]), f + ': ' + id + ' opens with an `unsaved` guard');
+  });
+  const core = read('script_core.html');
+  const close = /function closeOverlay\(el, opts\) \{([\s\S]*?)\n\}/.exec(core)[1];
+  assert.ok(/if \(!\(opts && opts\.discard\) && overlayDiscardGuard_\(el\)\) return;/.test(close.split('\n').slice(0, 3).join('\n')), 'the guard runs FIRST, before the hook');
+});
+
+
+test('TRUI-2 (cycle 23): the signature pad is a FIXED palette — white ground, fixed dark ink — so a dark-mode signature is not near-invisible on the stored PNG (g58)', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_empdocs.html'), 'utf8');
+  const code = stripJsComments_(src);
+  assert.ok(/var ED_SIG_INK = '#101418';/.test(code), 'one fixed ink');
+  assert.ok(!/getPropertyValue\('--ink'\)/.test(code), 'THE REGRESSION: the ink was read from the theme\'s --ink (near-white in dark mode)');
+  assert.ok(/ctx\.strokeStyle = ED_SIG_INK;/.test(code) && /ctx\.fillStyle = ED_SIG_INK;/.test(code), 'drawn and typed signatures both use it');
+  assert.ok(/\.ed-sig-wrap canvas \{[^}]*background: #ffffff;/.test(src), 'the pad itself is white in both themes');
+});
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 

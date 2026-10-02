@@ -2423,8 +2423,12 @@ function cnDoSelfUndo_(btn, date, time, type) {
             return;
           }
           showToast('Punch undone', 'toast-success');
+          // TCUI-1 (cycle 23): a refresh that fails is SAID — the dashboard
+          // still shows the undone punch, and silence read as "it didn't work".
+          const staleNote = () => showToast('The punch was undone, but the dashboard could not refresh — it may still show it. Reload to see the change.', 'toast-warn');
           google.script.run
             .withSuccessHandler(state => {
+              if (!state || state.error) { staleNote(); return; }
               empState = state;
       if (typeof viewAsReapply_ === 'function') viewAsReapply_();   // preview flags survive refreshes
               // Round 2 · 8b — re-renders target view-area directly now
@@ -2433,7 +2437,7 @@ function cnDoSelfUndo_(btn, date, time, type) {
               const area = getClockArea_();
               if (area && currentView === 'clock') { renderClockView(area); startClock(); }
             })
-            .withFailureHandler(()=>{})
+            .withFailureHandler(staleNote)
             .getEmployeeState();
         })
         .withFailureHandler(err => {

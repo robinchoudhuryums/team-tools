@@ -2092,6 +2092,17 @@
     "qaStatsAggregate_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-02",
+   "why": "cycle 23 Batch 9 KB2-8: kbManualPlan_ classifies a row an unfinished import wrote as repair; kbImportManual records its ledger row",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "kbImportManual",
+    "kbManualPlan_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -7559,7 +7570,7 @@
   "kbImportManual": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "a9e741c78be52dc9"
+   "sha": "28ea49cdad83ccf8"
   },
   "kbIngestFile": {
    "file": "70_kb.js",
@@ -7644,7 +7655,7 @@
   "kbManualPlan_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "64bce6a237514118"
+   "sha": "668d5d721b33f4cc"
   },
   "kbManualRecentPayload_": {
    "file": "70_kb.js",

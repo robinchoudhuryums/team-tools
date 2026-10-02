@@ -6038,3 +6038,289 @@ test('CNUI-09: the stale-flag count lands on BOTH nav forms — a phone shows th
   h.window.cnRenderStaleBadge_(0);
   assert.strictEqual(h.$$('.cn-stale-badge').length, 0, 'zero clears both');
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+section('Cycle 23 Batch 9 — editors that ask before discarding, closes that return focus');
+
+const b9Toasts = (h) => h.$$('#toast-stack .toast').map((t) => t.textContent);
+const b9TourSeen = (h) => h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+// jsdom never compiles an inline onclick — run the attribute's own text.
+const b9Press = (h, el) => { assert.ok(el, 'the button exists'); h.read(el.getAttribute('onclick')); };
+const b9Ask = (h) => { const d = h.$('.ui-dialog'); return d && /Discard changes\?/.test(d.textContent) ? d : null; };
+
+test('UI-ESC: the KB article editor ASKS before Escape or the backdrop discards a typed article — Keep editing keeps it, Discard closes; a clean editor closes at once', async () => {
+  const h = boot();
+  h.read('kbOpenEditor_')();
+  assert.ok(h.$('#kb-ed-overlay.open'), 'the editor opened');
+  h.dispatchKey('Escape');
+  assert.ok(!h.$('#kb-ed-overlay') && !h.$('.ui-dialog'), 'nothing typed: Escape closes at once, no question');
+  h.read('kbOpenEditor_')();
+  h.setField('kb-ed-title', 'New refill policy');
+  h.dispatchKey('Escape', { target: h.$('#kb-ed-title') });
+  assert.ok(h.$('#kb-ed-overlay'), 'THE REGRESSION: one Escape (even inside a field) threw the article away');
+  assert.ok(b9Ask(h), 'the discard question is up');
+  h.dispatchKey('Escape');                      // the question's own Escape = Keep editing
+  await tick();
+  assert.ok(!h.$('.ui-dialog'), 'the question closed');
+  assert.strictEqual(h.$('#kb-ed-title').value, 'New refill policy', 'and the article is still there');
+  h.dispatchKey('Escape'); h.dispatchKey('Escape');
+  assert.strictEqual(h.$$('.ui-dialog').length, 0, 'a second Escape answered the first question, never stacked a second');
+  await tick();
+  h.click(h.$('#kb-ed-overlay'));               // the backdrop asks too
+  assert.ok(b9Ask(h), 'a backdrop click asks');
+  h.click('.ui-dialog-ok');
+  await tick();
+  assert.ok(!h.$('#kb-ed-overlay'), 'Discard closes the editor');
+  // The × asks as well (it routes through closeOverlay — SH-02).
+  h.read('kbOpenEditor_')();
+  h.setField('kb-ed-title', 'Again');
+  h.click(h.$('#kb-ed-overlay [data-kb-close]'));
+  assert.ok(h.$('#kb-ed-overlay') && b9Ask(h), 'the × asks rather than discarding');
+  // A file the module filled in is work too, though no key was pressed.
+  h.click('.ui-dialog-ok'); await tick();
+  h.read('kbOpenEditor_')();
+  h.read('overlayMarkDirty_')('kb-ed-overlay');
+  h.dispatchKey('Escape');
+  assert.ok(b9Ask(h), 'a module-marked editor asks');
+});
+
+test('UI-ESC: the quiz editor asks after a STRUCTURAL edit; the coaching composer does not treat its prefill as work, asks once typed, and refuses mid-save (INTUI-1)', async () => {
+  let h = boot();
+  b9TourSeen(h);
+  h.bootShell({ isManager: true });
+  h.read('trainOpenQuizEditor_')(null);
+  h.click('[data-qed-addopt="0"]');            // no key pressed — still work
+  h.dispatchKey('Escape');
+  assert.ok(h.$('#train-qed-overlay.open') && b9Ask(h), 'the quiz editor asks after "+ Option"');
+  h.click('.ui-dialog-ok'); await tick();
+  assert.ok(!h.$('#train-qed-overlay.open'), 'Discard closes it');
+  // Coaching.
+  h = boot();
+  b9TourSeen(h);
+  h.bootShell({ isManager: true });
+  h.run.drain();
+  h.read('COACH_STATE.emps = { employees: [{ id: "E-1", name: "Sam Ortiz" }] }');
+  h.read('coachOpenDrawer_')({ empId: 'E-1', what: 'prefilled from the call note' });
+  h.dispatchKey('Escape');
+  assert.ok(!h.$('#coach-compose-overlay.open') && !h.$('.ui-dialog'), 'a prefill alone is not work: Escape closes at once');
+  h.read('coachOpenDrawer_')({ empId: 'E-1' });
+  h.setField('coach-what', 'Talked over the patient twice');
+  h.dispatchKey('Escape', { target: h.$('#coach-what') });
+  assert.ok(h.$('#coach-compose-overlay.open') && b9Ask(h), 'typed: Escape asks');
+  h.click('.ui-dialog-cancel'); await tick();
+  assert.strictEqual(h.$('#coach-what').value, 'Talked over the patient twice', 'Keep editing keeps it');
+  // INTUI-1: mid-save, nothing is being discarded — the drawer refuses instead of asking.
+  h.read('coachCreate_')();
+  assert.strictEqual(h.run.pending('createCoaching').length, 1, 'the save is in flight');
+  h.dispatchKey('Escape');
+  h.click('#coach-cancel');
+  assert.ok(h.$('#coach-compose-overlay.open'), 'THE REGRESSION: closing mid-save let the manager press Log again — a second HR record');
+  assert.ok(!h.$('.ui-dialog'), 'no discard question while saving');
+  assert.ok(b9Toasts(h).some((t) => /Saving — one moment/.test(t)), 'the refusal is said');
+  h.run.flushSuccess({ success: true }, 'createCoaching');
+  assert.ok(!h.$('#coach-compose-overlay.open'), 'the save closes it — without a question');
+  assert.ok(!h.$('.ui-dialog'));
+});
+
+test('UI-ESC + TRUI-2: a filled HR document or a drawn signature is asked about before it is discarded — and the signature ink is a FIXED dark in dark mode', async () => {
+  const h = boot();
+  const ctx = { scale() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, clearRect() {}, fillText() {}, measureText: () => ({ width: 40 }) };
+  h.window.HTMLCanvasElement.prototype.getContext = () => ctx;
+  h.window.HTMLElement.prototype.getBoundingClientRect = () => ({ width: 300, height: 140, left: 0, top: 0, right: 300, bottom: 140 });
+  h.document.documentElement.setAttribute('data-theme', 'dark');
+  h.document.documentElement.style.setProperty('--ink', '#eef1f5');
+  const doc = { docId: 'd1', title: 'Self assessment', bodyMd: 'Read and sign.', status: 'issued', canComplete: true,
+    fields: [{ id: 'f1', label: 'Goals', type: 'textarea' }], responses: {}, ackText: 'I have read this document.' };
+  const open = () => { h.read('edOpenDoc_')('d1'); h.run.flushSuccess(JSON.parse(JSON.stringify(doc)), 'getMyDoc'); };
+  open();
+  h.dispatchKey('Escape');
+  assert.ok(!h.$('#ed-reader-overlay.open') && !h.$('.ui-dialog'), 'untouched: closes at once');
+  open();
+  const resp = h.$('#ed-reader-overlay .ed-resp');
+  resp.value = 'Shorter holds'; resp.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  h.dispatchKey('Escape', { target: resp });
+  assert.ok(h.$('#ed-reader-overlay.open') && b9Ask(h), 'THE REGRESSION: every answer was lost on one Escape');
+  h.click('.ui-dialog-ok'); await tick();
+  assert.ok(!h.$('#ed-reader-overlay.open'), 'Discard closes');
+  // A drawn signature fires no input event — the reader's own dirty() covers it.
+  open();
+  const cv = h.$('#ed-sig-canvas');
+  cv.dispatchEvent(new h.window.MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+  cv.dispatchEvent(new h.window.MouseEvent('mousemove', { bubbles: true, cancelable: true, clientX: 40, clientY: 30 }));
+  cv.dispatchEvent(new h.window.MouseEvent('mouseup', { bubbles: true }));
+  assert.strictEqual(ctx.strokeStyle, '#101418', 'TRUI-2: dark-mode ink is the fixed #101418, not the theme\'s near-white --ink');
+  h.dispatchKey('Escape');
+  assert.ok(b9Ask(h), 'a drawn signature is asked about');
+  h.click('.ui-dialog-cancel'); await tick();
+  h.read('ED_STATE.sigPad').setTypedName('Jo Rep');
+  assert.strictEqual(ctx.fillStyle, '#101418', 'a TYPED signature uses the same fixed ink');
+});
+
+test('INTUI-1: the intake preview cannot close while its send is in flight — Escape and × refuse, a failure re-opens the way', () => {
+  const h = boot();
+  h.read('INTAKE_STATE.preview = { formType: "PPD", payload: {}, bodyHash: "h", recommendations: [] }');
+  h.read('intakeOpenModal_')('Preview', '<button id="intk-ppd-send">Send</button>');
+  h.read('intakePpdSend_')();
+  assert.strictEqual(h.run.pending('intakeSendPPD').length, 1, 'the send is in flight');
+  h.dispatchKey('Escape');
+  h.click(h.$('#intk-modal-overlay [data-intk-close]'));
+  assert.ok(h.$('#intk-modal-overlay'), 'THE REGRESSION: closing mid-send put the rep back on the filled form, and a second Send was a duplicate PHI email');
+  assert.ok(b9Toasts(h).some((t) => /Sending — one moment/.test(t)));
+  h.run.flushFailure('quota', 'intakeSendPPD');
+  h.dispatchKey('Escape');
+  assert.ok(!h.$('#intk-modal-overlay'), 'once the send has answered, it closes');
+});
+
+test('TCUI-1: a self-undo whose dashboard refresh fails SAYS so — the undone punch may still be on screen', () => {
+  const h = boot();
+  h.bootShell();
+  h.run.drain();
+  const undo = () => { const b = h.document.createElement('button'); h.read('cnDoSelfUndo_')(b, '2026-10-02', '09:00', 'IN'); h.run.flushSuccess({ success: true }, 'selfDeletePunch'); };
+  undo();
+  h.run.flushFailure('timeout', 'getEmployeeState');
+  assert.ok(b9Toasts(h).some((t) => /could not refresh/.test(t)), 'THE REGRESSION: a failed refresh was silent');
+  undo();
+  h.run.flushSuccess({ error: 'Not enrolled' }, 'getEmployeeState');
+  assert.strictEqual(b9Toasts(h).filter((t) => /could not refresh/.test(t)).length, 2, 'an {error} reply is a failed refresh too');
+  undo();
+  h.run.flushSuccess(h.read('empState'), 'getEmployeeState');
+  assert.strictEqual(b9Toasts(h).filter((t) => /could not refresh/.test(t)).length, 2, 'a good refresh says nothing more');
+});
+
+test('ADM-10: reloading the team-members panel keeps an "Add team member" form being filled — values, open state, focus and caret; a completed add empties it', () => {
+  const h = boot();
+  h.bootShell({ isManager: true });
+  h.run.drain();
+  mount_(h, 'cn-admin-onboard');
+  const load = (opts, reps) => { h.read('cnAdminLoadOnboarding_')(opts); h.run.flushSuccess({ reps: reps || [] }, 'getOnboardingPanel'); h.run.drain(); };
+  load();
+  h.click('#cn-ob-toggle');
+  assert.strictEqual(h.$('#cn-ob-form').hidden, false, 'the form is open');
+  h.setField('cn-ob-name', 'Ana Ruiz');
+  h.setField('cn-ob-email', 'ana@ums.com');
+  const name = h.$('#cn-ob-name'); name.focus(); name.setSelectionRange(2, 2);
+  load(null, [{ id: 'E-9', name: 'Leo Kim', email: 'leo@ums.com', enrolled: true, managerEmail: '', tzValid: true, timezone: 'America/Chicago' }]);   // e.g. after an offboard
+  assert.strictEqual(h.$('#cn-ob-name').value, 'Ana Ruiz', 'THE REGRESSION: an offboard mid-form wiped the new member being added');
+  assert.strictEqual(h.$('#cn-ob-email').value, 'ana@ums.com');
+  assert.strictEqual(h.$('#cn-ob-form').hidden, false, 'still open');
+  assert.strictEqual(h.$('#cn-ob-toggle').getAttribute('aria-expanded'), 'true', 'and the toggle says so (INV-174)');
+  assert.strictEqual(h.document.activeElement && h.document.activeElement.id, 'cn-ob-name', 'focus came back');
+  assert.strictEqual(h.document.activeElement.selectionStart, 2, 'with the caret where it was');
+  load({ resetForm: true });
+  assert.strictEqual(h.$('#cn-ob-name').value, '', 'a completed add empties the form');
+  assert.strictEqual(h.$('#cn-ob-form').hidden, true);
+});
+
+test('KBUI-5: refreshing an article\'s comments keeps a new comment being typed — text, focus and caret; a POSTED comment leaves the box', () => {
+  const h = boot();
+  const host = mount_(h, 'kb-comments');
+  h.read('kbRenderComments_')(host, 'kb1', { comments: [{ commentId: 'c1', name: 'Me', mine: true, atMs: 0, text: 'old' }], total: 1 });
+  const ta = host.querySelector('.kb-cmt-add textarea');
+  ta.value = 'half typed'; ta.focus(); ta.setSelectionRange(4, 4);
+  h.read('kbRenderComments_')(host, 'kb1', { comments: [], total: 0 });   // an edit or delete elsewhere refreshed the block
+  const nb = host.querySelector('.kb-cmt-add textarea');
+  assert.strictEqual(nb.value, 'half typed', 'THE REGRESSION: editing or deleting a comment wiped the new one being typed');
+  assert.strictEqual(h.document.activeElement, nb, 'focus rides the re-render');
+  assert.strictEqual(nb.selectionStart, 4, 'and the caret');
+  // Post: the sent text is not put back by the refresh it triggers.
+  nb.value = 'Posted text';
+  h.read('KB_STATE.currentId = "kb1"');
+  h.read('kbAddComment_')(host.querySelector('[data-kb-item]'));
+  h.run.flushSuccess({ success: true }, 'kbAddComment');
+  h.run.flushSuccess({ comments: [{ commentId: 'c2', name: 'Me', mine: true, atMs: 0, text: 'Posted text' }], total: 1 }, 'kbGetComments');
+  assert.strictEqual(host.querySelector('.kb-cmt-add textarea').value, '', 'a posted comment is not restored into the box');
+});
+
+test('KB2-9: a file dropped into one editor never lands in the NEXT editor — a slow read or a slow conversion is dropped', () => {
+  const h = boot();
+  const readers = [];
+  h.window.FileReader = function () { readers.push(this); this.readAsDataURL = () => {}; };
+  const file = { name: 'policy.txt', size: 10, type: 'text/plain' };
+  h.read('kbOpenEditor_')();
+  h.read('kbIngestFile_')(file);
+  h.read('kbOpenEditor_')();                     // the admin moved on to another item
+  readers[0].result = 'data:text/plain;base64,aGk=';
+  readers[0].onload();
+  assert.strictEqual(h.run.pending('kbIngestFile').length, 0, 'a read that finished under another editor is dropped');
+  h.read('kbIngestFile_')(file);
+  readers[1].result = 'data:text/plain;base64,aGk=';
+  readers[1].onload();
+  assert.strictEqual(h.run.pending('kbIngestFile').length, 1);
+  h.read('kbOpenEditor_')();
+  h.setField('kb-ed-title', 'Other item');
+  h.run.flushSuccess({ kind: 'article', title: 'From the file', markdown: '# the file' }, 'kbIngestFile');
+  assert.strictEqual(h.$('#kb-ed-title').value, 'Other item', 'THE REGRESSION: the conversion overwrote the next article, and Save would have kept it');
+  assert.strictEqual(h.read('KB_EDIT.body'), '', 'nothing landed in the open editor');
+});
+
+test('SH-02: the close buttons go through closeOverlay — focus returns to the button that opened the dialog', () => {
+  const h = boot();
+  b9TourSeen(h);
+  h.bootShell({ isManager: true });
+  h.run.drain();
+  const opener = h.document.createElement('button'); h.document.body.appendChild(opener);
+  const check = (label, openFn, closeBtn) => {
+    opener.focus();
+    openFn();
+    h.flushTimers();
+    b9Press(h, closeBtn());
+    assert.strictEqual(h.document.activeElement, opener, label + ': THE REGRESSION — focus fell to <body>');
+  };
+  h.window.WHATSNEW_STATE = { id: 'kb1', title: 'T', bodyMd: 'hello', stamp: 'S9' };
+  check('What\'s new', () => h.window.whatsNewOpen_(), () => h.$('#whatsnew-overlay .btn-modal-ok'));
+  check('quiz editor (clean)', () => h.read('trainOpenQuizEditor_')(null), () => h.$('#train-qed-overlay .foot .kb-btn'));
+  const doc = { docId: 'd2', title: 'Handbook', bodyMd: 'x', status: 'signed', canComplete: false, fields: [], responses: {}, signedAt: '2026-09-01' };
+  check('employee document', () => { h.read('edOpenDoc_')('d2'); h.run.flushSuccess(doc, 'getMyDoc'); }, () => h.$('#ed-reader-overlay .foot .kb-btn'));
+});
+
+test('SH-03: Tab cannot leave the keyboard-shortcuts dialog for the page behind it', () => {
+  const h = bootLog();
+  h.window.cnOpenShortcutsOverlay_();
+  const outside = h.document.createElement('button'); h.document.body.insertBefore(outside, h.document.body.firstChild);
+  outside.focus();
+  outside.dispatchEvent(new h.window.FocusEvent('focusin', { bubbles: true }));
+  assert.ok(h.$('.cn-shortcuts-modal').contains(h.document.activeElement), 'THE REGRESSION: the trap looked for .modal only, so focus walked out of the shortcuts dialog');
+});
+
+test('SH-04: the tour popover is a named dialog that takes focus, keeps Tab inside, and hands focus back when it ends', () => {
+  const h = boot();
+  b9TourSeen(h);
+  h.bootShell();
+  h.run.drain();
+  const view = h.read('currentView');
+  h.window.tourVisibleSteps_ = () => [{ view: view, title: 'Welcome', body: 'This is the Dashboard.', selector: null }];
+  const opener = h.document.createElement('button'); h.document.body.appendChild(opener); opener.focus();
+  h.window.tourStart();
+  h.flushTimers();
+  const pop = h.$('#tour-pop');
+  assert.strictEqual(pop.getAttribute('role'), 'dialog', 'THE REGRESSION: no role — a screen reader never heard a dialog');
+  assert.strictEqual(pop.getAttribute('aria-modal'), 'true');
+  assert.strictEqual(h.$('#' + pop.getAttribute('aria-labelledby')).textContent, 'Welcome', 'named by the step title');
+  assert.ok(h.$('#' + pop.getAttribute('aria-describedby')), 'described by the step body');
+  assert.strictEqual(h.document.activeElement, pop.querySelector('[data-tour="next"]'), 'focus moved INTO the popover');
+  h.dispatchKey('Tab', { target: h.document.activeElement });
+  assert.ok(pop.contains(h.document.activeElement), 'Tab stays inside');
+  h.dispatchKey('Tab', { target: h.document.activeElement, shift: true });
+  assert.ok(pop.contains(h.document.activeElement), 'Shift+Tab too');
+  h.dispatchKey('Escape');
+  assert.ok(!h.$('#tour-pop'), 'Escape ends the tour');
+  assert.strictEqual(h.document.activeElement, opener, 'and focus goes back where it was');
+});
+
+test('SH-05: re-rendering the shell (each view-as switch) binds the sidebar drag ONCE — and a drag still moves the CURRENT sidebar', () => {
+  const h = boot();
+  let moves = 0;
+  const orig = h.document.addEventListener.bind(h.document);
+  h.document.addEventListener = function (t, fn, o) { if (t === 'mousemove') moves++; return orig(t, fn, o); };
+  h.bootShell();
+  h.run.drain();
+  h.read('renderShell')(h.read('empState')); h.run.drain();
+  h.read('renderShell')(h.read('empState')); h.run.drain();
+  assert.strictEqual(moves, 1, 'THE REGRESSION: one document mousemove listener per render, each holding a stale sidebar');
+  const sb = h.$('.sidebar');
+  sb.getBoundingClientRect = () => ({ width: 168 });
+  h.$('#sidebar-grip').dispatchEvent(new h.window.MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 100 }));
+  h.document.dispatchEvent(new h.window.MouseEvent('mousemove', { bubbles: true, clientX: 150 }));
+  h.document.dispatchEvent(new h.window.MouseEvent('mouseup', { bubbles: true }));
+  assert.strictEqual(h.document.documentElement.style.getPropertyValue('--sidebar-w'), '218px', 'the drag resized the live sidebar');
+});
