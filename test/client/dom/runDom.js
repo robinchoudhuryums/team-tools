@@ -5997,11 +5997,15 @@ test('CNUI-05: a Clarify box the rep is typing in survives a stack re-render —
   assert.strictEqual(ta2.value, 'Does that cover the mask too', 'and dropped the text');
   assert.strictEqual(h.window.document.activeElement, ta2, 'focus is back in it');
   assert.deepStrictEqual([ta2.selectionStart, ta2.selectionEnd], [5, 9], 'at the same caret');
-  // Sent: the box empties and closes, and the re-render does not put the text back.
+  // Sent: the box empties and closes, and the re-render does not put the text
+  // back. The returned thread still takes a reply (the manager answered again
+  // meanwhile), so the box IS re-rendered — the case where a restore would bite.
   row().querySelector('.qa-clarify-submit').click();
   h.run.flushSuccess({ success: true, note: noteFixture({ noteId: 'q1', flagType: 'training', subformData: { trainingQuestion: 'Q?', feedback: [
-    { role: 'manager', kind: 'reply', message: 'A.', at: '2026-06-16 11:00:00' }, { role: 'agent', kind: 'clarification', message: 'Does that cover the mask too', at: '2026-06-16 11:05:00' }] } }) }, 'appendCallNoteFeedback');
-  assert.ok(!row() || (row().hidden && !row().querySelector('textarea').value), 'a sent follow-up is not restored');
+    { role: 'manager', kind: 'reply', message: 'A.', at: '2026-06-16 11:00:00' }, { role: 'agent', kind: 'clarification', message: 'Does that cover the mask too', at: '2026-06-16 11:05:00' },
+    { role: 'manager', kind: 'reply', message: 'Yes.', at: '2026-06-16 11:06:00' }] } }) }, 'appendCallNoteFeedback');
+  assert.ok(row(), 'sanity: the thread still takes a reply, so the box is rendered');
+  assert.ok(row().hidden && !row().querySelector('textarea').value, 'a SENT follow-up is not put back into a reopened box');
 });
 
 test('CNUI-08: creating a reminder refetches Needs you, as done and cancel already did', () => {
