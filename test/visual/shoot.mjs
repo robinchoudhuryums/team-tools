@@ -386,6 +386,13 @@ const SCENARIOS = [
     "openDayEditModal('E-1077', 'Nina Patel')"],
   ['dayedit-light-compact', { tool: 'manage', tab: 'manage' }, COMPACT, 'light', '?compact=1',
     "openDayEditModal('E-1077', 'Nina Patel')"],
+  // TC-02 (cycle 23): the Adjust modal's "which break" choice. The fixture day
+  // already has a Lunch Out (getMyDayBreaks), so the add / correct radios are on
+  // camera; the phone width is where the radio labels wrap.
+  ['adjust-break-light-wide',   { tool: 'timeClock', tab: 'clock' }, WIDE,   'light', '',
+    "openAdjustModal(); var t = document.getElementById('adj-type'); t.value = 'LunchOut'; t.dispatchEvent(new Event('change'))"],
+  ['adjust-break-light-mobile', { tool: 'timeClock', tab: 'clock' }, MOBILE, 'light', '',
+    "openAdjustModal(); var t = document.getElementById('adj-type'); t.value = 'LunchOut'; t.dispatchEvent(new Event('change'))"],
 
   // Follow-on (2026-09-01): the ADMIN sub-tabs were the matrix's last
   // wide-only surface, and the Visual Audit Stage had been carrying them as a

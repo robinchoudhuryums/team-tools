@@ -7920,14 +7920,16 @@ console.log('\ncycle 17 — batch-6 pins');
 test('C17-9: managerSaveDayRange is one-read indexed; the mirror memoizes its handle', () => {
   const range = c17strip(extractRawFunction('Code.js', 'managerSaveDayRange'));
   assert.ok(/buildAdjustPunchIndex_\(/.test(range), 'the range edit builds ONE Timesheet index for the whole run');
-  assert.ok(/'multi-day edit', ctx\)/.test(range), 'the range edit passes the ctx into every punch write');
+  assert.ok(/'multi-day edit', ctx, BREAK_INTENT_LAST\)/.test(range), 'the range edit passes the ctx into every punch write (TC-02: with the last-row rule, after refusing multi-break days)');
   const wr = c17strip(extractRawFunction('Code.js', 'writeAdjustPunchForEmployee_'));
-  assert.ok(/actorEmail, reason, ctx\)/.test(wr), 'writeAdjustPunchForEmployee_ takes the optional ctx');
-  assert.strictEqual((wr.match(/findExistingPunch_\(/g) || []).length, 1,
-    'exactly one findExistingPunch_ call — the no-ctx single-punch path');
-  assert.ok(/: findExistingPunch_\(/.test(wr), 'findExistingPunch_ is the ctx-absent branch of the ternary');
+  assert.ok(/actorEmail, reason, ctx, intent\)/.test(wr), 'writeAdjustPunchForEmployee_ takes the optional ctx (and, TC-02, the break intent)');
+  // TC-02 (cycle 23): the no-ctx single-punch path reads ONE date through the
+  // same index (it needs every break row of that day, not findExistingPunch_'s last).
+  assert.strictEqual((wr.match(/findExistingPunch_\(|buildAdjustPunchIndex_\(/g) || []).length, 1,
+    'exactly one Timesheet read in the writer — the no-ctx single-punch path');
+  assert.ok(/const c = ctx \|\| \(function \(\) \{ const ds = \{\}; ds\[date\] = true; return buildAdjustPunchIndex_\(targetEmp\.id, ds\); \}\)\(\);/.test(wr), 'a one-date index is the ctx-absent branch');
   const idx = c17strip(extractRawFunction('Code.js', 'buildAdjustPunchIndex_'));
-  assert.ok(/idx\[d \+ '\|' \+ normalizeType_\(String\(rows\[i\]\[ADP\.COMMENTS\]\)\)\] = i \+ 1/.test(idx),
+  assert.ok(/const key = d \+ '\|' \+ normalizeType_\(String\(rows\[i\]\[ADP\.COMMENTS\]\)\);\s*idx\[key\] = i \+ 1;/.test(idx),
     'index assignment is unconditional — LAST match wins (the findExistingPunch_/INV-155 agreement)');
   assert.ok(!/break/.test(idx), 'the index scan never breaks on first match');
   // The personal-sheet mirror opened the SAME spreadsheet by id once per punch
@@ -15027,7 +15029,7 @@ test('T2: a value the panel COLOURS is a value it can EXPLAIN — the tone and t
 const X1_NO_FIXTURE_READS = [   // reads no scenario photographs yet — each is owed a fixture when one does
     'adminScanStoredFormulas', 'exportAdpRange', 'exportCallNotesRange', 'getCallNoteAuditHistory', 'getDeployStamp', 'getDocsDashboard',
     'getEmpDocTemplates', 'getFormByToken', 'getFormCatalog', 'getFormSubmission', 'getIntakeAgents',
-    'getMyCallNotesRange', 'getMyDoc', 'getMyDocs', 'getMyPunchAdjustRequests', 'getMySentForms', 'getQuiz',
+    'getMyCallNotesRange', 'getMyDoc', 'getMyDocs', 'getMySentForms', 'getQuiz',
     'getQuizAnalytics', 'getQuizzes', 'getTrainingDashboard', 'intakeGetSubmission', 'intakeListMySubmissions',
     'intakePreviewPPD', 'kbGetImageData', 'kbMapDistances', 'managerGetFormSubmission', 'managerGetShiftStats',
     'managerSearchCallNotes', 'searchMyCallNotes', 'verifyDocSignature',
@@ -19707,8 +19709,8 @@ test('B3: a resume CONVERTS the clock-out into a break — it never just deletes
     'a resume cannot target another punch type');
   assert.ok(/there is no Clock Out on/.test(sub), 'submit refuses without one');
   assert.ok(/the resume time must be after the Clock Out/.test(sub), 'and refuses a backwards one');
-  assert.ok(/, c\.action, ''\]\)\);/.test(sub),
-    'the action is persisted (and a new row\'s trailing EndTime starts blank — T3)');
+  assert.ok(/, c\.action, '',\s*breakIntentCell_\(c\.breakIntent\)\]\)\);/.test(sub),
+    'the action is persisted (and a new row\'s trailing EndTime starts blank — T3; then the TC-02 BreakTarget)');
 
   // Back-compat: PAR.ACTION is TRAILING and a legacy row reads as 'set'.
   assert.ok(/SUBMITTED_AT:8, ACTION:9/.test(code), 'ACTION is the trailing column');
@@ -21236,7 +21238,7 @@ test('TZR-4: repairSplitDayPunches is gated, dry-run by default, one-read, adds-
   const applied = stripped.slice(lockIdx);
   const wIdx = applied.indexOf('writeAdjustPunchForEmployee_('), dIdx = applied.indexOf('sheet.deleteRow(d.row)'), mIdx = applied.indexOf("writeToEmployeeSheet_(emp, k.date, k.time, 'IN', 'ClockIn')");
   assert.ok(wIdx > 0 && dIdx > wIdx && mIdx > dIdx, 'adds → deletes → mirror re-point, in that order');
-  assert.ok(/writeAdjustPunchForEmployee_\(targets\[a\.empId\], a\.date, a\.type, a\.time, actorEmail, reason, ctx\)/.test(applied), 'adds go through the adjust writer (ADJ- row, mirror, audit — INV-09/26/59), never a bare appendRow');
+  assert.ok(/writeAdjustPunchForEmployee_\(targets\[a\.empId\], a\.date, a\.type, a\.time, actorEmail, reason, ctx, BREAK_INTENT_LAST\)/.test(applied), 'adds go through the adjust writer (ADJ- row, mirror, audit — INV-09/26/59), never a bare appendRow — on the last-row rule its dry run states (TC-02)');
   assert.ok(!/appendRow\(/.test(stripped) && !/setValue\(/.test(stripped), 'no direct cell writes of its own');
   assert.ok(/deletes\.sort\(\(a, b\) => b\.row - a\.row\)/.test(extractRawFunction('Code.js', 'splitDayRepairPlan_')), 'the planner hands back deletes bottom-up');
   assert.ok(/writeAuditLog_\(targets\[d\.empId\], 'PunchDelete', d\.date, d\.time, false, 0,\s*'duplicate ClockIn removed \(split-day repair\) — kept ' \+ d\.keptTime, actorEmail\)/.test(applied), 'one PunchDelete audit row per removed row, naming the kept time, caller as actor (INV-08)');
@@ -21277,7 +21279,7 @@ test('OPS-2: the multi-select adjust approve is ONE lock + ONE read, per-id outc
   assert.strictEqual((body.match(/waitLock\(15000\)/g) || []).length, 1, 'one lock for the whole batch');
   assert.strictEqual((body.match(/getDataRange\(\)\.getValues\(\)/g) || []).length, 1, 'one queue read');
   assert.ok(/ids\.length > PUNCH_ADJUST_BULK_MAX/.test(body), 'bounded per batch');
-  assert.ok(/buildAdjustPunchIndex_\(empId, datesByEmp\[empId\] \|\| \{\}\)/.test(body) && /writeAdjustPunchForEmployee_\(targetEmp, date, punchType, reqTime, callerEmp\.email, reason, ctxFor\(empId\)\)/.test(body),
+  assert.ok(/buildAdjustPunchIndex_\(empId, datesByEmp\[empId\] \|\| \{\}\)/.test(body) && /writeAdjustPunchForEmployee_\(targetEmp, date, punchType, reqTime, callerEmp\.email, reason, ctxFor\(empId\), breakTarget\)/.test(body),
     'the adjust writer gets ONE Timesheet index per employee (C17-9) instead of a full read per request');
   assert.ok(/results\.push\(\{ reqId: id, success: true \}\)/.test(body) && /const fail = \(id, error\) =>/.test(body), 'per-id outcomes');
   assert.ok(/sheet\.getRange\(i \+ 1, PAR\.STATUS \+ 1\)\.setValue\(sheetSafe_\(newStatus\)\)/.test(body), 'the status cell flips per row');
@@ -31890,6 +31892,149 @@ test('TC2-2 (cycle 23): a shift-stats CDR read that failed SAYS so — the serve
   assert.ok(/const cdrNote = res\.cdrUnavailable\s*\? '<div role="status"[^']*'/.test(render) && /esc\(res\.cdrUnavailable\)/.test(render), 'the notice renders, the server text escaped');
   assert.ok(/host\.innerHTML = cdrNote \+/.test(render), 'above the table');
   assert.ok(!/<div class="[^"]*" role="status"[^>]*>' \+ icon\('warning', 12\)/.test(render), 'no new bare class (g140)');
+});
+
+
+// ── cycle 23 — TC-02: a break adjustment says WHICH break ──
+const tc02Ctx_ = (extra) => {
+  const ctx = vm.createContext(Object.assign({ String, Object, Array, JSON, Number, Math, Date, Error }, extra || {}));
+  vm.runInContext("const BREAK_PUNCH_TYPES = ['LunchOut', 'LunchIn']; const BREAK_INTENT_LAST = Object.freeze({ mode: 'last' }); " +
+    "const PUNCH_LABELS_ = ['ClockIn','LunchOut','LunchIn','ClockOut'];", ctx);
+  ['breakIntentNorm_', 'breakIntentCell_', 'breakIntentNote_', 'breakAdjustTargetRow_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  return ctx;
+};
+test('TC-02 (cycle 23): which row a punch adjustment writes — ClockIn/Out keep the last-row rule; a BREAK adds, corrects the punch it names, or is refused; nothing an RPC can send reaches the server-only last-row rule (driven grid)', () => {
+  const c = tc02Ctx_();
+  const M = [{ rowIndex: 3, time: '12:00' }, { rowIndex: 7, time: '15:00' }];
+  const t = (m, type, intent) => JSON.parse(JSON.stringify(c.breakAdjustTargetRow_(m, type, intent, '2026-09-30')));
+  assert.deepStrictEqual(t(M, 'ClockOut', null), { rowIndex: 7 }, 'one-per-day types: the last row, as before');
+  assert.deepStrictEqual(t([], 'ClockIn', null), { append: true });
+  assert.deepStrictEqual(t(M, 'LunchOut', { mode: 'add' }), { append: true }, 'add a missing break: APPEND');
+  assert.deepStrictEqual(t(M, 'LunchOut', { mode: 'correct', target: '12:00' }), { rowIndex: 3 }, 'THE REGRESSION: correcting the FIRST break rewrote the last (row 7)');
+  assert.deepStrictEqual(t(M, 'LunchOut', 'correct@12:00'), { rowIndex: 3 }, 'the stored cell reads the same');
+  const stale = t(M, 'LunchOut', 'correct@12:30');
+  assert.strictEqual(stale.code, 'stale'); assert.ok(/no longer on the timesheet/.test(stale.error) && /Nothing was written/.test(stale.error), 'a target that moved is refused, never guessed');
+  const amb = t(M, 'LunchIn', '');
+  assert.strictEqual(amb.code, 'ambiguous'); assert.strictEqual(amb.times, '12:00 / 15:00');
+  assert.ok(/does not say whether it adds a missing break or corrects/.test(amb.error), 'a legacy break on a day that has one is refused');
+  assert.deepStrictEqual(t([], 'LunchIn', ''), { append: true }, 'a legacy break on a day without one is plainly an add');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.breakAdjustTargetRow_(M, 'LunchOut', vm.runInContext('BREAK_INTENT_LAST', c)))), { rowIndex: 7 }, 'the server-only rule (repair, range) keeps last-row');
+  assert.strictEqual(t(M, 'LunchOut', { mode: 'last' }).code, 'ambiguous', 'an RPC payload cannot forge it — it is matched by identity');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.breakIntentNorm_({ mode: 'correct', target: '25:00' }))), { mode: '', target: '' }, 'a bad target is no intent');
+  assert.strictEqual(c.breakIntentCell_({ mode: 'correct', target: '09:05' }), 'correct@09:05');
+  assert.strictEqual(c.breakIntentCell_({ mode: 'add' }), 'add'); assert.strictEqual(c.breakIntentCell_(null), '');
+  assert.strictEqual(c.breakIntentNote_('LunchOut', 'add'), ' (adds a break)'); assert.strictEqual(c.breakIntentNote_('ClockOut', 'add'), '', 'only breaks carry a note');
+  const cfg = fs.readFileSync(path.join(__dirname, '../../web-app/00_config.js'), 'utf8');
+  assert.ok(/BREAK_TARGET:11 \};/.test(cfg) && /'EndTime','BreakTarget'\];/.test(cfg), 'BreakTarget is the trailing PAR column (self-healed header)');
+});
+
+test('TC-02 (cycle 23): the shared adjust writer updates exactly the break it is told, appends an add, and writes NOTHING when it refuses (driven over a fake Timesheet)', () => {
+  const run = (intent) => {
+    const writes = [], appended = [], audits = [];
+    const sheet = { getRange: (r, c) => ({ setValue: (v) => writes.push([r, c, v]) }) };
+    const ctx = tc02Ctx_({ ADP: { TIME: 2, COMMENTS: 5 }, sheetSafe_: (v) => v,
+      buildAdjustPunchIndex_: () => ({ sheet, idx: { '2026-09-30|LunchOut': 7 }, all: { '2026-09-30|LunchOut': [{ rowIndex: 3, time: '12:00' }, { rowIndex: 7, time: '15:00' }] } }),
+      appendToAdpSheet_: (e, d, t, dir, label) => appended.push([d, t, dir, label]),
+      writeToEmployeeSheet_: () => {}, daysBetween_: () => 1, fmtDateTz_: () => '2026-10-01', empTz_: () => 'UTC',
+      writeAuditLog_: (e, type, d, t, adj, back, note) => audits.push(note) });
+    vm.runInContext(extractRawFunction('Code.js', 'writeAdjustPunchForEmployee_'), ctx);
+    const out = ctx.writeAdjustPunchForEmployee_({ id: 'E1' }, '2026-09-30', 'LunchOut', '12:10', 'm@x', 'late', null, intent);
+    return { out: JSON.parse(JSON.stringify(out || {})), writes, appended, audits };
+  };
+  let r = run('correct@12:00');
+  assert.deepStrictEqual(r.writes.map((w) => w[0]), [3, 3], 'THE REGRESSION: row 7 (the 15:00 break) was rewritten');
+  assert.ok(/\(corrects the 12:00 punch\) — late/.test(r.audits[0]), 'the audit row says which');
+  r = run({ mode: 'add' });
+  assert.strictEqual(r.writes.length, 0); assert.deepStrictEqual(r.appended, [['2026-09-30', '12:10:00', 'OUT', 'ADJ-LunchOut']], 'an add appends');
+  r = run('');
+  assert.ok(r.out.error && r.writes.length === 0 && r.appended.length === 0 && r.audits.length === 0, 'a refusal writes nothing — not the sheet, not the audit');
+});
+
+test('TC-02 (cycle 23): a request is checked against the day at SUBMIT — unstated on a day with that break is refused, unstated without one is stored as an add, a correction must name a real punch, and add + correct on one day are two requests (driven)', () => {
+  const run = (requests, dayBreaks, pendingRows) => {
+    const appended = [];
+    const ctx = tc02Ctx_({
+      LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      getEmployeeInfo_: () => ({ id: 'E1', name: 'Ann' }), empTz_: () => 'UTC',
+      fmtDateTz_: () => '2026-10-01', fmtTimeTz_: () => '23:59:00', daysBetween_: () => 1,
+      CONFIG: { ADJUST_WINDOW_DAYS: 30, OLD_ADJUST_ALERT_DAYS: 7 },
+      PAR: { REQ_ID: 0, EMP_ID: 1, EMP_NAME: 2, DATE: 3, PUNCH_TYPE: 4, REQ_TIME: 5, REASON: 6, STATUS: 7, SUBMITTED_AT: 8, ACTION: 9, END_TIME: 10, BREAK_TARGET: 11 },
+      findExistingPunch_: () => null,
+      buildAdjustPunchIndex_: () => ({ all: dayBreaks || {} }),
+      getOrCreatePunchAdjustSheet_: () => ({ getDataRange: () => ({ getValues: () => [['h']].concat(pendingRows || []) }), appendRow: (r) => appended.push(r) }),
+      normalizeDate_: (v) => v, normalizeTime_: (v) => v, fmtDate_: () => 'd', fmtTime_: () => 't',
+      Utilities: { getUuid: () => 'u' }, sheetSafeRow_: (r) => r, sheetSafe_: (v) => v,
+      writeAuditLog_: () => {}, notifyManagersOfAdjustRequests_: () => {}, console: { warn() {} } });
+    vm.runInContext(extractRawFunction('Code.js', 'submitPunchAdjustRequests'), ctx);
+    return { res: JSON.parse(JSON.stringify(ctx.submitPunchAdjustRequests(requests))), appended };
+  };
+  const D = '2026-09-30', has = { [D + '|LunchOut']: [{ rowIndex: 3, time: '12:00' }] };
+  let r = run([{ date: D, time: '15:00', punchType: 'LunchOut' }], has);
+  assert.ok(!r.res.success && /already has a Lunch Out at 12:00 — choose "add a missing break" or the break it corrects/.test(r.res.error), 'THE REGRESSION: it queued, and approval rewrote the 12:00 break');
+  r = run([{ date: D, time: '15:00', punchType: 'LunchOut' }], {});
+  assert.ok(r.res.success); assert.strictEqual(r.appended[0][11], 'add', 'unstated on a day without one is stored as an add');
+  r = run([{ date: D, time: '12:10', punchType: 'LunchOut', breakIntent: { mode: 'correct', target: '12:30' } }], has);
+  assert.ok(!r.res.success && /there is no Lunch Out at 12:30 on 2026-09-30 to correct/.test(r.res.error));
+  r = run([{ date: D, time: '12:10', punchType: 'LunchOut', breakIntent: { mode: 'correct', target: '12:00' } },
+           { date: D, time: '15:00', punchType: 'LunchOut', breakIntent: { mode: 'add' } }], has);
+  assert.ok(r.res.success, r.res.error); assert.deepStrictEqual(r.appended.map((a) => a[11]), ['correct@12:00', 'add'], 'a correction and an add on one day are two requests');
+  r = run([{ date: D, time: '15:00', punchType: 'LunchOut', breakIntent: { mode: 'add' } }], has,
+    [['old', 'E1', 'Ann', D, 'LunchOut', '14:00', '', 'Pending', 's', 'set', '', 'add']]);
+  assert.ok(!r.res.success && /already have a pending LunchOut adjustment/.test(r.res.error), 'the SAME intent pending is still a duplicate');
+  r = run([{ date: D, time: '17:00', punchType: 'ClockOut', breakIntent: { mode: 'add' } }], has);
+  assert.strictEqual(r.appended[0][11], '', 'a Clock Out carries no break intent');
+});
+
+test('TC-02 (cycle 23): approval and Apply now go through the one resolver, and range mode refuses a day with several breaks before writing anything (driven range + the wiring)', () => {
+  const body = stripJsComments_(extractRawFunction('Code.js', 'punchAdjustDecideAll_'));
+  assert.ok(/const w = writeAdjustPunchForEmployee_\(targetEmp, date, punchType, reqTime, callerEmp\.email, reason, ctxFor\(empId\), breakTarget\);\s*if \(w && w\.error\) \{ fail\(id, w\.error\); return; \}/.test(body),
+    'a refused approval fails that id and leaves the row Pending');
+  assert.ok(/if \(BREAK_PUNCH_TYPES\.indexOf\(punchType\) >= 0\) delete ctxByEmp\[empId\];/.test(body), 'a break write drops the cached index (F6)');
+  const rp = stripJsComments_(extractRawFunction('Code.js', 'recordPunchCore_'));
+  assert.ok(/breakAdjustTargetRow_\(c\.all\[date \+ '\|' \+ punchType\] \|\| \[\], punchType, custom\.breakIntent, date\)/.test(rp) && /if \(target\.code === 'stale'\) return \{ success: false/.test(rp) && /if \(target\.error\) return \{ success: false, error: date \+ ' already has a '/.test(rp),
+    'Apply now resolves through the same rule and refuses rather than guessing');
+  assert.ok(!/findExistingPunch_\(emp\.id, date, punchType\)/.test(rp), 'the last-row lookup is gone from Apply now');
+  // Driven range.
+  const run = (all) => {
+    const writes = [];
+    const ctx = tc02Ctx_({
+      LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      getEmployeeInfo_: () => ({ isManager: true, email: 'm@x' }), lookupEmployeeById_: () => ({ id: 'E1' }),
+      managerClockOrderError_: () => '', empTz_: () => 'UTC', fmtDateTz_: () => '2026-10-01', fmtTimeTz_: () => '23:59:00',
+      CONFIG: { ADJUST_WINDOW_DAYS: 30, OLD_ADJUST_ALERT_DAYS: 7 },
+      buildAdjustPunchIndex_: () => ({ idx: {}, all: all }),
+      daysBetween_: (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000),
+      addDaysIso_: (iso, n) => new Date(Date.parse(iso + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10),
+      writeAdjustPunchForEmployee_: (e, d, type, t, a, r, c, intent) => { writes.push([d, type, intent === vm.runInContext('BREAK_INTENT_LAST', ctx)]); return { appended: false }; } });
+    vm.runInContext(extractRawFunction('Code.js', 'managerSaveDayRange'), ctx);
+    return { res: JSON.parse(JSON.stringify(ctx.managerSaveDayRange('E1', '2026-09-28', '2026-09-30', { LunchOut: '12:00', LunchIn: '12:30' }, 'x'))), writes };
+  };
+  let r = run({ '2026-09-29|LunchOut': [{ rowIndex: 3, time: '11:00' }, { rowIndex: 5, time: '15:00' }] });
+  assert.ok(!r.res.success && /more than one break[\s\S]*2026-09-29/.test(r.res.error), 'THE REGRESSION: range mode rewrote the LAST break on a multi-break day — ' + JSON.stringify(r.res));
+  assert.strictEqual(r.writes.length, 0, 'and refused before writing anything');
+  r = run({ '2026-09-29|LunchOut': [{ rowIndex: 3, time: '11:00' }] });
+  assert.ok(r.res.success, r.res.error); assert.strictEqual(r.writes.length, 6);
+  assert.ok(r.writes.every((w) => w[2]), 'one break or none: the documented set/update, on the server-only last-row rule');
+});
+
+test('TC-02 (cycle 23): getMyDayBreaks is the caller\'s own breaks for one date inside the adjust window, sorted HH:mm; the manager queue states what approving does (driven)', () => {
+  const ctx = tc02Ctx_({ getEmployeeInfo_: () => ({ id: 'E1' }), empTz_: () => 'UTC', fmtDateTz_: () => '2026-10-01',
+    CONFIG: { ADJUST_WINDOW_DAYS: 30 },
+    buildAdjustPunchIndex_: (id, ds) => ({ all: { '2026-09-30|LunchOut': [{ rowIndex: 9, time: '15:00' }, { rowIndex: 3, time: '12:00' }] } }) });
+  ['daysBetween_', 'getMyDayBreaks'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.getMyDayBreaks('2026-09-30'))), { date: '2026-09-30', LunchOut: ['12:00', '15:00'], LunchIn: [] });
+  assert.ok(/outside the adjust window/.test(ctx.getMyDayBreaks('2026-08-01').error));
+  assert.ok(/outside the adjust window/.test(ctx.getMyDayBreaks('2026-10-05').error), 'no future date');
+  assert.ok(/Invalid date/.test(ctx.getMyDayBreaks('x').error));
+  const q = loadFunction(sb, 'tc/script_manager.html', 'mgrAdjIntentText_');
+  assert.strictEqual(q({ punchType: 'LunchOut', breakIntent: { mode: 'add' } }), ' (adds a break)');
+  assert.strictEqual(q({ punchType: 'LunchIn', breakIntent: { mode: 'correct', target: '12:30' } }), ' (moves the 12:30 punch)');
+  assert.ok(/approval is refused if that day already has one/.test(q({ punchType: 'LunchOut', breakIntent: { mode: '' } })), 'a legacy break says what approving will do');
+  assert.strictEqual(q({ punchType: 'ClockOut', breakIntent: { mode: '' } }), '');
+  const mgr = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8'));
+  assert.ok(/: r\.punchType \+ ' · ' \+ r\.date \+ ' · ' \+ r\.time \+ mgrAdjIntentText_\(r\);/.test(mgr), 'the queue row carries it');
+  const srv = serverSource();
+  assert.strictEqual((srv.match(/breakIntent: breakIntentNorm_\(rows\[i\]\[PAR\.BREAK_TARGET\]\)/g) || []).length, 3, 'all three pending-request readers ship it');
 });
 
 

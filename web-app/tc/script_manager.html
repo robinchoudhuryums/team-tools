@@ -528,6 +528,16 @@ function loadPendingAdjustments_() {
     .managerGetPendingAdjustments();
 }
 
+/** TC-02 (cycle 23): what approving a BREAK request does — add another break,
+ *  or move the one at HH:MM. A request filed before the form asked carries
+ *  neither, and the server refuses it on a day that already has that punch. */
+function mgrAdjIntentText_(r) {
+  if (!r || (r.punchType !== 'LunchOut' && r.punchType !== 'LunchIn')) return '';
+  var bi = r.breakIntent || {};
+  if (bi.mode === 'add') return ' (adds a break)';
+  if (bi.mode === 'correct') return ' (moves the ' + bi.target + ' punch)';
+  return ' (filed without add/correct — approval is refused if that day already has one)';
+}
 function renderAdjustQueueCard_(requests) {
   if (!requests || !requests.length) {
     return '<div class="card"><h2 class="card-label">Pending Punch Adjustments</h2>' +
@@ -548,7 +558,7 @@ function renderAdjustQueueCard_(requests) {
       ? 'Resume shift · ' + r.date + ' · back at ' + r.time +
         (r.endTime ? ' · finished ' + r.endTime : ' · no finish filed yet') +
         ' (clock-out becomes a break — the gap is unpaid)'
-      : r.punchType + ' · ' + r.date + ' · ' + r.time;
+      : r.punchType + ' · ' + r.date + ' · ' + r.time + mgrAdjIntentText_(r);
     return '<div class="mgr-adj-row" data-req-row="' + esc(r.reqId) + '">' +
       (multi ? '<input type="checkbox" class="mgr-adj-chk" data-req-id="' + esc(r.reqId) + '" data-emp-name="' + esc(r.empName) + '" aria-label="Select the request from ' + esc(r.empName) + '" onchange="adjBulkSync_()">' : '') +
       '<div class="mgr-adj-text">' +

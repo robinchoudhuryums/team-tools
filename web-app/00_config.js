@@ -1508,8 +1508,27 @@ let _personalSsCache = Object.create(null);
 // once that day has ended, so the finish rides the request: filed with Adjust →
 // Clock Out while the resume is pending, written as the day's Clock Out when the
 // resume is approved. HH:mm, a coerced column (g10) — read via normalizeTime_.
-const PAR = { REQ_ID:0, EMP_ID:1, EMP_NAME:2, DATE:3, PUNCH_TYPE:4, REQ_TIME:5, REASON:6, STATUS:7, SUBMITTED_AT:8, ACTION:9, END_TIME:10 };
-const PAR_HEADERS = ['ReqId','EmpId','EmpName','Date','PunchType','RequestedTime','Reason','Status','SubmittedAt','Action','EndTime'];
+// TC-02 (cycle 23): BREAK_TARGET is a third trailing add — what a BREAK
+// adjustment (LunchOut / LunchIn) means on a day that may hold several breaks:
+// 'add' (a missing break — append) or 'correct@HH:mm' (rewrite the punch of
+// that type stamped HH:mm). Until it existed the writers overwrote the LAST
+// punch of the type, so a forgotten second break rewrote the first. '' on a
+// legacy row (or any non-break type) — a break with no stated intent is
+// refused at approval when the day already has that punch. Stored with the
+// prefix so the cell is never coerced to a time (g10); read via
+// breakIntentNorm_.
+const PAR = { REQ_ID:0, EMP_ID:1, EMP_NAME:2, DATE:3, PUNCH_TYPE:4, REQ_TIME:5, REASON:6, STATUS:7, SUBMITTED_AT:8, ACTION:9, END_TIME:10, BREAK_TARGET:11 };
+const PAR_HEADERS = ['ReqId','EmpId','EmpName','Date','PunchType','RequestedTime','Reason','Status','SubmittedAt','Action','EndTime','BreakTarget'];
+/** TC-02 — the punch types a day can carry more than one of (multi-break days
+ *  are legal: getNextActions_ offers LunchOut again after LunchIn). */
+const BREAK_PUNCH_TYPES = ['LunchOut', 'LunchIn'];
+/** TC-02 — the caller-side intent that keeps the pre-TC-02 rule (update the
+ *  LAST punch of the type, else append), for the two server callers where that
+ *  rule is unambiguous: the editor-run split-day repair, whose dry run already
+ *  names the row it will update, and managerSaveDayRange, AFTER it has refused
+ *  any day with more than one punch of a break type it sets. Matched by
+ *  IDENTITY, so no RPC payload can produce it. */
+const BREAK_INTENT_LAST = Object.freeze({ mode: 'last' });
 const PUNCH_ADJUST_BULK_MAX = 50;
 // Cycle-11 L-11 — time-off date sanity horizon (see the submit paths).
 const TIMEOFF_MAX_DAYS_AHEAD = 370;   // ~a year of planned leave + slop

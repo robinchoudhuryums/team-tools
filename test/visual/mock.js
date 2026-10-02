@@ -1411,8 +1411,17 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // Manage shots carry two rows (keys mirror managerGetPendingAdjustments'
     // own push literal — INV-185).
     managerGetPendingAdjustments: { requests: [
-      { reqId: 'req-1', empId: 'E-1090', empName: 'Leo Kim', date: daysAgo(2), punchType: 'ClockOut', time: '17:02', reason: 'Forgot to clock out', action: 'set', endTime: '', submittedAt: daysAgo(1) + ' 08:10:00' },
-      { reqId: 'req-2', empId: 'E-1088', empName: 'Sam Ortiz', date: daysAgo(1), punchType: 'ClockOut', time: '19:00', reason: '', action: 'resume', endTime: '21:15', submittedAt: daysAgo(1) + ' 17:40:00' },   // T3: a filed finish
+      { reqId: 'req-1', empId: 'E-1090', empName: 'Leo Kim', date: daysAgo(2), punchType: 'ClockOut', time: '17:02', reason: 'Forgot to clock out', action: 'set', endTime: '', breakIntent: { mode: '', target: '' }, submittedAt: daysAgo(1) + ' 08:10:00' },
+      { reqId: 'req-2', empId: 'E-1088', empName: 'Sam Ortiz', date: daysAgo(1), punchType: 'ClockOut', time: '19:00', reason: '', action: 'resume', endTime: '21:15', breakIntent: { mode: '', target: '' }, submittedAt: daysAgo(1) + ' 17:40:00' },   // T3: a filed finish
+    ] },
+    // TC-02 (cycle 23): the Adjust modal's "which break" read — one break on
+    // every day, so a Lunch Out adjustment shows the add / correct choice.
+    getMyDayBreaks: function (date) { return { date: date, LunchOut: ['12:30'], LunchIn: ['13:00'] }; },
+    // The modal's "Awaiting approval" list (keys mirror getMyPunchAdjustRequests'
+    // push literal — INV-185); one pending break add, so its intent text shows.
+    getMyPunchAdjustRequests: { requests: [
+      { reqId: 'req-9', date: daysAgo(1), punchType: 'LunchOut', time: '15:05', reason: 'Second break, forgot to punch', action: 'set',
+        breakIntent: { mode: 'add', target: '' }, status: 'Pending', submittedAt: daysAgo(0) + ' 09:12:00' },
     ] },
     // Team punches calendar (operator 2026-08-31). A FUNCTION of the month
     // argument (the F14 rule — the client asks for whatever month is on

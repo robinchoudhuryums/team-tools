@@ -1858,6 +1858,47 @@
     "scanStoredFormulas_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-02",
+   "why": "TC-02 (cycle 23): break-adjustment intent — BREAK_PUNCH_TYPES, BREAK_INTENT_LAST, breakIntentNorm_/Cell_/Note_, breakAdjustTargetRow_, getMyDayBreaks",
+   "added": [
+    "BREAK_INTENT_LAST",
+    "BREAK_PUNCH_TYPES",
+    "breakAdjustTargetRow_",
+    "breakIntentCell_",
+    "breakIntentNorm_",
+    "breakIntentNote_",
+    "getMyDayBreaks"
+   ],
+   "removed": [],
+   "changed": [
+    "PAR",
+    "PAR_HEADERS",
+    "buildAdjustPunchIndex_",
+    "empPendingAdjustments_",
+    "getMyPunchAdjustRequests",
+    "managerGetPendingAdjustments",
+    "managerSaveDayRange",
+    "notifyEmployeeOfAdjustDecision_",
+    "notifyManagersOfAdjustRequests_",
+    "punchAdjustDecideAll_",
+    "recordPunchCore_",
+    "repairSplitDayPunches",
+    "submitPunchAdjustRequests",
+    "writeAdjustPunchForEmployee_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-02",
+   "why": "TC-02 (cycle 23): rep-facing wording for an Apply-now break refusal",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "recordPunchCore_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -1956,6 +1997,16 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "f02bc00c5785274b"
+  },
+  "BREAK_INTENT_LAST": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3852dab3df092d8a"
+  },
+  "BREAK_PUNCH_TYPES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "90f0107914b7822c"
   },
   "CDR": {
    "file": "00_config.js",
@@ -3355,12 +3406,12 @@
   "PAR": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "dc1a38332fcc798f"
+   "sha": "d1b246c12f404cfe"
   },
   "PAR_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "1509cb65519903a3"
+   "sha": "34002a38529dc907"
   },
   "PENDING_TASKS_CACHE_PREFIX": {
    "file": "00_config.js",
@@ -4407,6 +4458,11 @@
    "kind": "function",
    "sha": "db7342c6b16af6ac"
   },
+  "breakAdjustTargetRow_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "e20fc1132096130b"
+  },
   "breakCoverageAgents_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -4416,6 +4472,21 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "94df589cc8c0f5c2"
+  },
+  "breakIntentCell_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "1c84641d59440139"
+  },
+  "breakIntentNorm_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "8c2c064c70f67d7d"
+  },
+  "breakIntentNote_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "03bede277184983a"
   },
   "breakListResolve_": {
    "file": "20_timeclock.js",
@@ -4470,7 +4541,7 @@
   "buildAdjustPunchIndex_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "34f47083c8d984ae"
+   "sha": "0ebe2af704c4f7a8"
   },
   "buildBrandedEmailHtml_": {
    "file": "10_core.js",
@@ -5455,7 +5526,7 @@
   "empPendingAdjustments_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "7049ac955de057ec"
+   "sha": "d0a5be553aacac1c"
   },
   "empPtoAccrual_": {
    "file": "20_timeclock.js",
@@ -6122,6 +6193,11 @@
    "kind": "function",
    "sha": "a127f8355bcede91"
   },
+  "getMyDayBreaks": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "40c4ef01973bb1fd"
+  },
   "getMyDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
@@ -6165,7 +6241,7 @@
   "getMyPunchAdjustRequests": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "395ecf2288798d6d"
+   "sha": "f467796a8c856436"
   },
   "getMyQaReviewAudioChunk": {
    "file": "90_qa.js",
@@ -7605,7 +7681,7 @@
   "managerGetPendingAdjustments": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "37a25f55e22f62c3"
+   "sha": "e60a19622d87f787"
   },
   "managerGetReviewCandidates": {
    "file": "30_callnotes.js",
@@ -7645,7 +7721,7 @@
   "managerSaveDayRange": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "919582bacc83b63c"
+   "sha": "eb9528d4110bc3e5"
   },
   "managerSearchCallNotes": {
    "file": "30_callnotes.js",
@@ -7750,7 +7826,7 @@
   "notifyEmployeeOfAdjustDecision_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "cb72586f76e6b411"
+   "sha": "ffb2f27c926aa57e"
   },
   "notifyEmployeeOfDecision_": {
    "file": "20_timeclock.js",
@@ -7775,7 +7851,7 @@
   "notifyManagersOfAdjustRequests_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "4ecc534fcff1aa66"
+   "sha": "bae060eb59e4d59c"
   },
   "notifyRepOfCoachingNudge_": {
    "file": "82_coaching.js",
@@ -8045,7 +8121,7 @@
   "punchAdjustDecideAll_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "3a73b3b25f590f4d"
+   "sha": "107bf459504cfde0"
   },
   "punchDayAdd_": {
    "file": "20_timeclock.js",
@@ -8480,7 +8556,7 @@
   "recordPunchCore_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "ea72054da71a0e4e"
+   "sha": "db9f1c8719e291fd"
   },
   "recordViewEnter": {
    "file": "10_core.js",
@@ -8545,7 +8621,7 @@
   "repairSplitDayPunches": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "5285a9a33185e605"
+   "sha": "3398f9d5e21763e9"
   },
   "repairTimesheetTimezone": {
    "file": "20_timeclock.js",
@@ -9200,7 +9276,7 @@
   "submitPunchAdjustRequests": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "a39fe84eeee393bf"
+   "sha": "31693d7ee07a324e"
   },
   "submitQuizAttempt": {
    "file": "80_training.js",
@@ -9500,7 +9576,7 @@
   "writeAdjustPunchForEmployee_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "29dc9068aaaec300"
+   "sha": "12b7b296b1d4ba2c"
   },
   "writeAuditLog_": {
    "file": "10_core.js",

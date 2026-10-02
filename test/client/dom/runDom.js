@@ -5749,3 +5749,85 @@ test('ADM-11: a lifecycle history the server TRUNCATED says so — above the row
   assert.ok(/No history found in the scan window/.test(h.$('.cn-audit-history').textContent), 'an untruncated empty window keeps its empty state');
   assert.strictEqual(h.read('currentView'), cv);
 });
+
+// ── Cycle 23 TC-02 — a break adjustment says WHICH break ──
+section('Cycle 23 TC-02 — the Adjust modal asks "add a missing break" or "correct the one at HH:MM"');
+
+test('TC-02: a break adjustment on a day that already has that break asks WHICH — nothing is queued until the rep chooses, and the choice rides the request and Apply now', () => {
+  const h = boot();
+  h.bootShell();
+  h.run.drain();
+  const doc = h.window.document;
+  const $ = (id) => doc.getElementById(id);
+  const change = (id) => $(id).dispatchEvent(new h.window.Event('change'));
+  const radios = () => [...$('adj-break-target').querySelectorAll('input[name="adj-break-intent"]')];
+  const batch = () => JSON.parse(JSON.stringify(h.read('ADJ_BATCH')));
+  h.read('openAdjustModal')();
+  assert.ok($('adj-break-target').hidden, 'a Clock In needs no choice');
+  assert.strictEqual(h.run.pending('getMyDayBreaks').length, 0, 'and asks nothing');
+  const day = $('adj-date').value;
+  $('adj-type').value = 'LunchOut'; change('adj-type');
+  const ask = h.run.pending('getMyDayBreaks');
+  assert.strictEqual(ask.length, 1); assert.strictEqual(ask[0].args[0], day, 'the day\'s breaks are read for the chosen date');
+  h.run.flushSuccess({ date: day, LunchOut: ['12:00', '15:00'], LunchIn: ['12:30'] }, 'getMyDayBreaks');
+  assert.deepStrictEqual(radios().map((r) => r.value), ['add', 'correct@12:00', 'correct@15:00'], 'add, or one choice per existing Lunch Out');
+  assert.ok(radios().every((r) => !r.checked), 'nothing is preselected — the rep decides');
+  $('adj-time').value = '12:10';
+  $('adj-add').click();
+  assert.strictEqual(batch().length, 0, 'THE REGRESSION: an unstated break went in and the server rewrote the LAST break (15:00)');
+  radios()[1].checked = true;
+  $('adj-add').click();
+  assert.deepStrictEqual(batch()[0].breakIntent, { mode: 'correct', target: '12:00' }, 'a correction names the punch it moves');
+  assert.ok(radios().every((r) => !r.checked), 'the next entry chooses its own break');
+  assert.ok(/\(corrects the 12:00 one\)/.test($('adj-batch-list').textContent), 'the list says what each entry does');
+  radios()[0].checked = true;
+  $('adj-time').value = '16:00';
+  $('adj-submit').click();
+  const sent = h.run.pending('submitPunchAdjustRequests');
+  assert.strictEqual(sent.length, 1);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sent[0].args[0].map((e) => e.breakIntent))), [{ mode: 'correct', target: '12:00' }, { mode: 'add', target: '' }], 'both intents ride the request');
+  // Apply now carries it too.
+  $('adj-type').value = 'LunchOut'; change('adj-type');   // cached for this date — no second read
+  assert.strictEqual(h.run.pending('getMyDayBreaks').length, 0, 'the same date is not re-read while the modal is open');
+  radios()[2].checked = true;
+  $('adj-time').value = '15:05';
+  $('adj-apply-now').click();
+  const rp = h.run.pending('recordPunch');
+  assert.strictEqual(rp.length, 1);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(rp[0].args[1].breakIntent)), { mode: 'correct', target: '15:00' }, 'Apply now sends the choice too');
+});
+
+test('TC-02: a day without that break is plainly an add; a reply for a date the rep has left is ignored; a failed read refuses the break rather than guessing', () => {
+  const h = boot();
+  h.bootShell();
+  h.run.drain();
+  const doc = h.window.document;
+  const $ = (id) => doc.getElementById(id);
+  const change = (id) => $(id).dispatchEvent(new h.window.Event('change'));
+  const batch = () => JSON.parse(JSON.stringify(h.read('ADJ_BATCH')));
+  h.read('openAdjustModal')();
+  const today = $('adj-date').value;
+  const prev = h.read('mgrAddDaysIso_')(today, -1);
+  $('adj-type').value = 'LunchIn'; change('adj-type');
+  h.run.flushSuccess({ date: today, LunchOut: ['12:00'], LunchIn: [] }, 'getMyDayBreaks');
+  assert.ok(/No Lunch Return on that day yet — this adds one/.test($('adj-break-target').textContent));
+  $('adj-time').value = '12:40';
+  $('adj-add').click();
+  assert.deepStrictEqual(batch()[0].breakIntent, { mode: 'add', target: '' }, 'no choice to make: an add');
+  // Race: the rep moves to yesterday, then back — the stale reply must not paint over the newer date.
+  $('adj-date').value = prev; change('adj-date');
+  $('adj-date').value = today; change('adj-date');
+  h.run.flushSuccess({ date: prev, LunchOut: ['09:00'], LunchIn: ['09:30', '14:00'] }, 'getMyDayBreaks');
+  $('adj-time').value = '13:00';
+  $('adj-add').click();
+  assert.strictEqual(batch().length, 1, 'still checking today — yesterday\'s breaks were not used for it');
+  h.run.flushFailure(new Error('Lock timeout'), 'getMyDayBreaks');
+  assert.ok(/Couldn't read that day's breaks \(Lock timeout\)/.test($('adj-break-target').textContent), 'the failure is said');
+  $('adj-add').click();
+  assert.strictEqual(batch().length, 1, 'a break with unknown neighbours is not filed');
+  $('adj-type').value = 'ClockOut'; change('adj-type');
+  assert.ok($('adj-break-target').hidden, 'a Clock Out needs no choice');
+  $('adj-time').value = '17:00';
+  $('adj-add').click();
+  assert.strictEqual(batch().length, 2); assert.strictEqual(batch()[1].breakIntent, undefined, 'and carries none');
+});
