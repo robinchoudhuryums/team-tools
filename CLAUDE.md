@@ -255,12 +255,12 @@ The payroll-facing rules. Getting one wrong costs money or a balance.
 
 - **Roster INCLUSION goes through `empRosterEmail_(row)` — the one predicate (cycle-15 F3).** Fires when you read the roster email column to decide who counts as a person. [Detail](docs/gotchas.md#g03-roster-inclusion-goes-through-emprosteremail-row-the)
 - **Timesheet rows are in APPEND order, not time order.** Fires when you consume same-day punch rows. Verify: `test_getTodayPunches_sortsOutOfOrderBackfill`. [Detail](docs/gotchas.md#g14-timesheet-rows-are-in-append-order-not)
-- **The live punch path enforces the client's own state machine; Day Edit reconciles duplicates (cycle-10 M-1) — and the reconcile is only as lossless as its input: the day ships the OPEN break and every STRAY stamp, or a save deletes them (cycle 22 T1 + F5).** Fires when you add a punch path, reconcile a day, or change what the Day Edit prefill carries. Verify: the T1/F5 pins. [Detail](docs/gotchas.md#g15-the-live-punch-path-enforces-the-client)
-- **`calcHours_` wraps `out < in` as overnight; an EQUAL minute pair is ZERO hours — `timeToMins_` drops seconds, so a same-minute in/out compared equal and paid a 24-hour day (Batch 1, 2026-09-17).** Fires when you compare two clock stamps at minute granularity, or add a clock writer. Verify: the A1 equal-minute cases, the `managerClockOrderError_` pin, `calcHours_equalMinuteIsZeroNotADay`. [Detail](docs/gotchas.md#g127-calchours-wraps-out-in-as-overnight)
+- **The live punch path enforces the client's own state machine; Day Edit reconciles duplicates (cycle-10 M-1) — and the reconcile is only as lossless as its input: the day ships the OPEN break and every STRAY stamp, or a save deletes them (cycle 22 T1 + F5); the sheet doctor's collapse keeps the stamp the hours count, never just the last appended (cycle 23 TC-08).** Fires when you add a punch path, reconcile a day, or change what the Day Edit prefill carries. Verify: the T1/F5 pins. [Detail](docs/gotchas.md#g15-the-live-punch-path-enforces-the-client)
+- **`calcHours_` wraps `out < in` as overnight; an EQUAL minute pair is ZERO hours — `timeToMins_` drops seconds, so a same-minute in/out compared equal and paid a 24-hour day (Batch 1, 2026-09-17); a REP's adjustment is refused past 16 hours, the AM/PM slip the wrap would pay (cycle 23 TC-05).** Fires when you compare two clock stamps at minute granularity, or add a clock writer. Verify: the A1 equal-minute cases, the `managerClockOrderError_` pin, `calcHours_equalMinuteIsZeroNotADay`. [Detail](docs/gotchas.md#g127-calchours-wraps-out-in-as-overnight)
 - **`PtoEnabled` defaults to TRUE.** Fires when you touch PTO display OR the deduction. [Detail](docs/gotchas.md#g20-ptoenabled-defaults-to-true)
 - **Sick leave is UI-removed but backend-dormant (deferred #2 / C1).** Fires when you are tempted to re-add `Sick Leave` to `TIME_OFF_TYPES`. [Detail](docs/gotchas.md#g21-sick-leave-is-ui-removed-but-backend)
-- **PTO balance transitions.** Fires when you change a time-off status. [Detail](docs/gotchas.md#g27-pto-balance-transitions)
-- **Time-off submit has a duplicate-date guard + leave-type whitelist — and the multi-day `submitTimeOffRange` shares BOTH, atomically.** Fires when you add a time-off submit path. [Detail](docs/gotchas.md#g28-time-off-submit-has-a-duplicate-date)
+- **PTO balance transitions — un-approving restores what the approval TOOK (the row's `Deducted` cell), not what the type implies; a request approved while tracking or the rep's PTO was off took nothing (cycle 23 TC-04).** Fires when you change a time-off status. Verify: the TC-04 drive. [Detail](docs/gotchas.md#g27-pto-balance-transitions)
+- **Time-off submit has a duplicate-date guard + leave-type whitelist — and the multi-day `submitTimeOffRange` shares BOTH, atomically; the single-date paths share its closed-day rule since cycle 23 TC-03 (no weekend, no company holiday).** Fires when you add a time-off submit path. [Detail](docs/gotchas.md#g28-time-off-submit-has-a-duplicate-date)
 - **Bi-weekly anchor read.** Fires when you blank or add a biweekly `PayAnchor` cell. [Detail](docs/gotchas.md#g29-bi-weekly-anchor-read)
 - **Future punches are rejected by `recordPunch`.** Fires when you add a punch writer. [Detail](docs/gotchas.md#g30-future-punches-are-rejected-by-recordpunch)
 - **Min-interval debounce on live punches only.** Fires when you wonder why an adjustment lands 2s after a punch. [Detail](docs/gotchas.md#g31-min-interval-debounce-on-live-punches-only)
@@ -713,6 +713,7 @@ the dated round entries that used to sit here moved to
 - [`CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED`](docs/operator-state.md#operator-config-call-notes-voice-input-enabled)
 - [`FormTokens` and `FormSubmissions` sheet tabs](docs/operator-state.md#operator-formtokens-and-formsubmissions-sheet-tabs)
 - [`PunchAdjustRequests` sheet tab (#4a)](docs/operator-state.md#operator-punchadjustrequests-sheet-tab-4a)
+- [`TimeOffRequests` — the trailing `Deducted` column, what an approval took (cycle 23 TC-04)](docs/operator-state.md#operator-timeoffrequests-deducted-column-cycle-23)
 - [Form catalog](docs/operator-state.md#operator-form-catalog)
 - [The editor suite is OWNER-only (cycle 22 S1)](docs/operator-state.md#operator-the-editor-suite-is-owner-only-cycle-22)
 - [Stored formulas — a one-time clean-up (cycle 22 S2 + F3)](docs/operator-state.md#operator-stored-formulas-one-time-clean-up-cycle-22)
@@ -928,8 +929,8 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 11 | `TRIGGER_GROUPS` |
 | localStorage keys | 20 | `ums…` literals in `web-app/` |
-| Invariant library entries | 336 | `.cycle/config.md` |
-| Regression scenarios (S*) | 127 | `.cycle/config.md` |
+| Invariant library entries | 337 | `.cycle/config.md` |
+| Regression scenarios (S*) | 128 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

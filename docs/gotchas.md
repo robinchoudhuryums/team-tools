@@ -397,6 +397,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the manager completes the row or removes it on purpose. Verify: the T1 and
   F5 Node/DOM pins, `test_managerSaveDay_openBreakRoundTrips` and
   `test_managerSaveDay_strayBreakRefused`.
+  **AMENDED (cycle 23 TC-08, 2026-10-02): the sheet doctor's collapse keeps
+  the stamp the hours COUNT.** It kept the last row APPENDED per (rep, date,
+  type), and append order is not time order (g14) — so on a day with one leave
+  and two returns it could delete the return the break was paired with and keep
+  a stray, lengthening the unpaid break. `tsDoctorKeepIndex_` keeps the
+  last-appended Clock In / Clock Out (the stamp `punchDayAdd_` pays — INV-155
+  unchanged) and, for a break type, the stamp `breakPairs_` pairs or the open
+  leave, so a collapse never changes paid hours; the detector ships the kept
+  stamp and the card names it. Verify: the TC-08 drive (calcHours_ before and
+  after the collapse).
 
 <a id="g16-cn-date-local-is-a-sheets-coerced"></a>
 
@@ -706,6 +716,18 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the Pending stage and deducts immediately. Skipping the
   transition guard double-deducts on re-approval or fails to
   restore on revert.
+  **AMENDED (cycle 23 TC-04, 2026-10-02): a transition restores what the
+  approval TOOK, not what the type implies.** The restore on Approved→other
+  credited the type's deduction whenever the row had been Approved, so a request
+  approved while tracking was off, or while the rep's PtoEnabled was FALSE —
+  nothing deducted — credited a day back on a later Deny once either was on. An
+  approval now records what `adjustLeaveBalance_` actually moved in the
+  trailing `TO.DEDUCTED` cell (`annual:1`, `sick:0.5`, or `none`), un-approving
+  restores exactly that and clears the cell, and `managerSubmitTimeOff`'s
+  auto-approve records the same. A row approved before the column existed is
+  blank and keeps the by-type rule — nothing says what it took. Verify: the
+  TC-04 drive (tracking off then on, PTO off, half day, unpaid, legacy blank, a
+  recorded bucket that differs from the type).
 
 <a id="g28-time-off-submit-has-a-duplicate-date"></a>
 
@@ -730,6 +752,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   (`TIMEOFF_MAX_DAYS_AHEAD`=370 / `_BACK`=90, in the rep's/target's tz) —
   a typo'd year used to create an approvable, balance-deducting row no
   month view ever showed.
+  **AMENDED (cycle 23 TC-03, 2026-10-02): the single-date paths share the
+  range path's CLOSED-DAY rule.** The range path skipped weekends and company
+  holidays (T7, cycle 22), but `submitTimeOffRequest` and `managerSubmitTimeOff`
+  filed a single date on either, and approving it deducted a day the office was
+  closed. Both now refuse through `timeOffClosedDayReason_` ("2026-11-26 is a
+  company holiday (Thanksgiving Day) — no time off is needed for it."), which
+  reads the ONE calendar (g123) and degrades to weekends only when the calendar
+  cannot be read. The editor suite's time-off fixture date is moved onto a
+  working day for the same reason. Approval does not re-check it (a follow-on).
+  Verify: the TC-03 drive.
 
 <a id="g29-bi-weekly-anchor-read"></a>
 
@@ -3737,6 +3769,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `managerClockOrderError_` pin (behavioural + both writers + the strict wrap +
   the doctor's minute compare), and the smoke test
   `calcHours_equalMinuteIsZeroNotADay`.
+  **AMENDED (cycle 23 TC-05, 2026-10-02): a REP's adjustment is bounded,
+  because the wrap pays an AM/PM slip.** A rep could adjust Clock Out to 05:00
+  on a day clocked in at 08:00, and the deliberate wrap paid a 21-hour shift.
+  The wrap stays (overnight-local reps exist); what changed is that a rep's own
+  adjustment — Apply now, a request at submit, and the request again at
+  approval — is refused when it leaves an equal pair or a shift longer than
+  `ADJUST_MAX_SHIFT_HOURS` (16), through one pure rule, `adjustShiftSpanError_`
+  ("Clock In 8:00 AM and Clock Out 5:00 AM would make a 21-hour shift — check AM
+  and PM."). Manager Day Edit is not bound. Verify: the TC-05 span grid (the
+  16-hour boundary both sides, an overnight shift allowed) and the submit drive.
 
 <a id="g128-not-found-and-could-not-look-up"></a>
 

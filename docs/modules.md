@@ -83,6 +83,20 @@ not restate it. Server endpoints live in the fourteen server files
      through, so the Dashboard is never empty. A manager saves or clears the
      team default from the same panel. A hidden widget loads nothing.
 
+     **Cycle 23 Batch 6a (2026-10-02) — PTO and punch correctness.** A
+     single-date time-off request on a weekend or company holiday is refused by
+     name, as the range path already skipped them (rep and manager). An
+     approval records what it took on the request row (`Deducted`), and Deny
+     restores exactly that — nothing, when tracking or the rep's PTO was off. A
+     rep's adjustment that would leave an equal Clock In / Clock Out or a shift
+     over 16 hours (an AM/PM slip) is refused at Apply now, at submit and again
+     at approval; a real overnight shift is allowed. On Manage Time, the PTO
+     drift card's Credit & reconcile refuses while tracking is off and no longer
+     lists reps with PTO off; the Timesheet Doctor keeps the stamp the hours
+     already count ("keeps HH:MM:SS" on each line), so a collapse never changes
+     pay; Day Edit's hint says "check AM or PM"; and the offboarding audit row
+     names the person offboarded.
+
 <a id="call-notes"></a>
      **2026-09-17 (the /broad-scan's Batches 1 + 2):** an EQUAL Clock In /
      Clock Out is zero hours, not the 24-hour day the `<=` overnight wrap paid

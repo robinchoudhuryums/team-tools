@@ -2269,6 +2269,24 @@ entry says which it is.
   REFUSED (the row stays Pending and the queue row says so in advance) — deny it
   and ask the rep to file it again from Adjust, which now asks. A correction whose
   target was changed in the meantime is refused the same way.
+  **Since cycle 23 TC-05 (2026-10-02)** a Clock In / Clock Out request is also
+  refused at approval (row left Pending) when it would leave the day with an
+  equal pair or a shift over 16 hours — the AM/PM slip; deny it and ask for the
+  right time.
+<a id="operator-timeoffrequests-deducted-column-cycle-23"></a>
+- **`TimeOffRequests` — the trailing `Deducted` column (cycle 23 TC-04,
+  2026-10-02).** Self-heals onto the existing tab on first use; no setup. Each
+  approval records what it took from the balance: `annual:1`, `sick:0.5`, or
+  `none` (tracking off, the rep's PtoEnabled FALSE, or an unpaid type). Deny
+  or Pending restores exactly that and clears the cell. Leave it alone — a
+  hand edit changes what a later Deny credits. A blank cell on an Approved
+  row means it was approved before this column existed, and a Deny restores
+  by type as before. Two related refusals shipped with it: the PTO drift
+  card's **Credit & reconcile** now refuses while PTO tracking is off ("no
+  balance can be credited — nothing was changed") and for a rep with PTO off,
+  whom the card no longer lists; and a single-date time-off request on a
+  weekend or company holiday is refused by name (filed before the deploy, one
+  can still be approved — deny it).
 <a id="operator-form-catalog"></a>
 - **Form catalog** is configured in
   `CONFIG.CALL_NOTES.FORM_CATALOG` — each entry maps an ID to a

@@ -2444,3 +2444,27 @@ per-change detail. By delta:
 - 11 bite-checks, all BITE. Hazard met: a vm context with no `Date` makes any
   server stamp throw "Invalid time value" far from the cause — a context that
   drives a writer sets `ctx.Date = Date` (the scan helper does).
+
+## Cycle 23 — Batch 6a, PTO and punch correctness (2026-10-02)
+
+- Node +7, one per finding, each driven: TC-03 (the closed-day reason, both
+  single-date submit paths, a calendar that throws); TC-04 (a shared
+  `c23ToCtx_` context — a fake TimeOffRequests sheet whose writes land back in
+  its rows, and a balance ledger the fake `adjustLeaveBalance_` moves exactly as
+  the real one, null when tracking or PTO is off — driven through approve /
+  deny across tracking off then on, PTO off, a half day, an unpaid type, a
+  legacy blank row and a recorded bucket that differs from the type); TC-05
+  (the span grid both sides of 16 h, submit through the TC-02 harness, the
+  writer's ctx update); TC-06 (the fix's refusals, a null credit reverting the
+  rows, the detector on a `none` duplicate and a coerced-FALSE PTO-off rep);
+  TC-08 (the keep index with `calcHours_` before and after); CORE-07; VIS-1.
+- Two old doubles moved: the sheet-doctor structural pin asserted
+  `g.rows.length - 1` — it encoded TC-08 — and now asserts the shared keep
+  index; the TC-02 context loads the span helpers, and its writer's fake sheet
+  gained `getLastRow` (the writer now indexes an append).
+- The editor suite's `_TEST_DATE_FUTURE` became `let`: weekend-skipped at load
+  (pure date math, no sheet read at global scope) and holiday-skipped in
+  `setupTestEnvironment` through the server's own rule — the time-off tests
+  would otherwise fail on any day whose +30 lands on a closed day.
+- 19 bite-checks, all BITE. Hazard met: a quote inside the python mutation
+  string ends the shell argument; write it as `chr(39)`.

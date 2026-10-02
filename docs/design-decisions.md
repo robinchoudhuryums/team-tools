@@ -331,6 +331,15 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   PtoEnabled per-employee toggle). Time-off rows in
   TimeOffRequests don't carry balance — they trigger balance
   updates on approve/revert transitions.
+  **AMENDED (cycle 23 TC-04, 2026-10-02): a time-off row records what its
+  approval took.** The row still carries no balance, but a trailing `Deducted`
+  cell now says what the approval moved (`annual:1`, `sick:0.5`, `none`), so
+  un-approving restores exactly that instead of inferring it from the type —
+  which over-credited any request approved while tracking or the rep's PTO was
+  off. Rejected: re-deriving "was tracking on at approval time" from the
+  AuditLog (a bounded tail, g152) and refusing to restore legacy rows (blank
+  cells keep the by-type rule; guessing "none" would under-credit every
+  legitimate pre-deploy deduction).
 - <a id="per-employee-pto-opt-out-via-emp-pto-enabled-column"></a>**Per-employee PTO opt-out via `EMP.PTO_ENABLED` column.**
   An employee who earns no paid leave gets `FALSE` in column K; their UI
   hides the PTO ring and balance line entirely, and `adjustLeaveBalance_`
@@ -619,6 +628,12 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   **AMENDED (cycle 23 TC-02, 2026-10-02):** a BREAK request carries its intent
   in a trailing `BreakTarget` column — see "A break adjustment says which break it
   means".
+  **AMENDED (cycle 23 TC-05, 2026-10-02):** a rep's own clock adjustment is
+  checked for a plausible shift (an equal pair, or longer than 16 hours, is
+  refused) at Apply now, at submit and again at approval, where the queue row
+  stays Pending — see g127. Refusing every Clock Out earlier than Clock In was
+  rejected: the overnight wrap is deliberate (g127) and needs an operator
+  decision to change.
 
 - <a id="normalizetime-as-the-universal-read-shim"></a>**`normalizeTime_` as the universal read shim.** Because Sheets
   auto-coerces time strings to Dates on read, every read of
@@ -1724,6 +1739,16 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   (INV-94), so this surfaces pre-fix damage. Pinned by
   `test_getPtoReconciliation_detectsDoubleDeduct` +
   `test_fixPtoReconciliation_creditsAndIdempotent` (INV-99 / INV-102).
+  **AMENDED (cycle 23 TC-06 + TC-04, 2026-10-02): no Reconciled row without a
+  credit that landed.** With tracking off, `adjustLeaveBalance_` writes nothing,
+  yet the fix marked the rows Reconciled (so they could never be detected
+  again) and audited `creditedAnnual=N`. It now refuses up front when tracking is
+  off or the rep's PtoEnabled is FALSE, and a credit that writes nothing inside
+  the run is a failure that reverts the rows. Both the detector and the fix now
+  count what each approval actually TOOK (`toRowCharge_` — the recorded
+  `Deducted` cell, else the type), so a duplicate that took nothing is no
+  over-charge; and the detector skips PTO-off reps, whose card would otherwise
+  offer a fix that must refuse.
 - <a id="cn-card-actions-use-a-primary-secondary-split"></a>**CN card actions use a primary/secondary split.** Frequently used
   actions (flag-action, flag-training, pin, copy, email) are always
   visible. Less-frequent actions (urgent-toggle, flag-review, resolve,
