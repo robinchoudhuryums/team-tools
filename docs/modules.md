@@ -144,6 +144,19 @@ not restate it. Server endpoints live in the fourteen server files
      — the automated monthly run and its manual retry alike. The rows now go
      through `appendRowsSafe_`, which grows the grid first (TC-01, g145).
 
+     **Cycle 23 TC-02 (2026-10-02, operator option (a)) — a break adjustment says
+     which break.** On a day that already has a Lunch Out (or Lunch Return), the
+     Adjust modal reads that day's breaks and asks: "A missing break (add another
+     …)" or "A fix to the … at HH:MM" — nothing preselected, and the break cannot be
+     filed until it is chosen (or while the read is loading or has failed). A day
+     without that punch is plainly an add. The choice rides Add to list, Submit and
+     Apply now, and the lists say "(adds a break)" / "(corrects the 12:00 one)". The
+     manager's queue says "(adds a break)" or "(moves the 12:30 punch)"; a break
+     request filed before the deploy says approval is refused if that day already
+     has one — deny it and ask for it again. Range mode in Day Edit refuses a range
+     that includes a day with more than one break when its break slots are filled,
+     and names those days (g163, the break-adjustment decision).
+
 ## Call Notes
 
    - **Call Notes** — rolling-note panel for CSR call logging. Each
@@ -281,6 +294,18 @@ not restate it. Server endpoints live in the fourteen server files
      row's label reads "all time", matching counts that always spanned the
      whole Sheet (F-28), and the Q&A thread says "Rep" rather than "You" when
      a manager is the one reading it (F-29).
+
+     **Cycle 23 Batch 4b (2026-10-01) — Manage → Admin and the manager Stats tab say
+     what they could not read.** Storage Health, the Overview checklist and the
+     System findings warn "Forms (PHI) not set" / "Dept Requests (PHI-adjacent) not
+     set" while those stores sit on the ADP fallback (they read OK). The Overview
+     checklist gains an "Automation health" row from the list the health dot counts.
+     The Reference-lookups diagnostics are findings now, so a missing price column
+     or an unreadable eligibility cell reaches "Needs attention". The stored-formula
+     scan lists an unset Employee Docs or QA store as "not set up", so it can read
+     clean. The manager Stats tab says "Call data could not be read — … unknown, not
+     zero" above the table instead of a column of dashes, and a note's lifecycle
+     history says when older history was not scanned (g122, g151, g02, g05, g53).
 
 ## Metrics
 
@@ -442,6 +467,12 @@ not restate it. Server endpoints live in the fourteen server files
      **Cycle 23 Batch 4a (2026-10-01) — Dept Requests:** the SLA reminder
      stamps a reminder it could not send, and a failed read, as
      `DeptRequestReminderDigest` on Admin → System; it clears after a clean run.
+
+     **Cycle 23 Batch 4b (2026-10-01) — Metrics never caches what it could not
+     read.** A call-data read that failed is an error on the date-range view (it was
+     "no calls"), My Stats, Team Metrics and the ambient badge do not cache a
+     degraded round, and the sidebar's below-target badge stays put through a
+     failed or unreadable poll rather than vanishing (g128, g129, g53).
 
 <a id="intake"></a>
      **Batch 5 (2026-09-18):** `QaRecordings` carries a trailing `AgentId`
@@ -991,6 +1022,11 @@ not restate it. Server endpoints live in the fourteen server files
      Ctrl/⌘+K from inside a note field and Escape returns you there. It is
      deliberately NOT `aria-modal`: it does not trap focus, and the shell's
      trap exempts it (F-43).
+
+     **Cycle 23 Batch 4b (2026-10-01):** a search the server FAILED reads "Reference
+     search failed: … — this is not ‘no matches’; try again", in the tab and in the
+     drawer, never "No matches" with the request-an-article button. The query is not
+     part of the message (g146, g53).
 
 ## Training & Employee Docs
 

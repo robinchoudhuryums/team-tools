@@ -15,11 +15,12 @@ Updated: 2026-10-02 (cycle 23 TC-02)
 - Batch 2 implemented on the same branch (block: `.cycle/blocks/23-batch2-broad-implement.md`); NOT yet deployed. /sync-docs for Batch 2 done.
 - Batch 3 implemented on the same branch (block: `.cycle/blocks/23-batch3-broad-implement.md`); NOT yet deployed. /sync-docs for Batch 3 done.
 - Batch 4a and its follow-ons implemented on the same branch (blocks: `.cycle/blocks/23-batch4a-broad-implement.md`, `…-batch4a-followons-broad-implement.md`); NOT yet deployed. /sync-docs for both done.
-- TC-02 implemented on the same branch as option (a) (block: `.cycle/blocks/23-tc02-broad-implement.md`); NOT yet deployed.
-- Batch 4b implemented on the same branch (block: `.cycle/blocks/23-batch4b-broad-implement.md`); NOT yet deployed; /sync-docs for it not yet run.
+- TC-02 implemented on the same branch as option (a) (block: `.cycle/blocks/23-tc02-broad-implement.md`); NOT yet deployed. /sync-docs done.
+- Batch 4b implemented on the same branch (block: `.cycle/blocks/23-batch4b-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Everything through 22post is merged (PRs #274–#282) and deployed (2026-09-30). The operator was finishing two 22post steps at close: the manual.json re-export + import, and the S124–S128 walks.
 
 ## Completed this cycle
+- /sync-docs (Batch 4b + TC-02) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g02/g05/g53/g122/g128/g129/g151 amended; new g163 (an adjustment that names a type must say which); the break-adjustment decision + three amended decisions; BreakTarget + the Forms/DR warnings in operator-state; S7/S43/S44/S62/S64/S95/S96/S97/S114/S117 steps; new S132
 - TC-02 | 00_config.js, 20_timeclock.js, modals.html, tc/script_clock.html, tc/script_manager.html | a break adjustment says which break (add / correct the one at HH:MM) — one resolver for every writer, refused rather than guessed; request column BreakTarget; range mode refuses multi-break days; getMyDayBreaks
 - ADM-04 | 10_core.js, test/visual/mock.js | Forms / Dept Requests on the ADP fallback read configured:false (still probed)
 - ADM-09 | 10_core.js, test/visual/mock.js | deploy readiness gains a `health` row from the one problem list the dot counts
@@ -101,7 +102,7 @@ Updated: 2026-10-02 (cycle 23 TC-02)
 - **22post reflection candidates, not yet in the library:** INV-350 (no path the manual import or reader reaches calls Drive), INV-351 (an import that fails in transport says so, never as a defect of the file), INV-352 (the floating Scratchpad stacks beneath every modal overlay — a ui-dialog can open beneath the panel today, z 56).
 - **22post batch follow-ons** (full text in the 22post HISTORY block): A — no visual opens the composer on a Close Order, the team Median sub-line ellipsizes at half width, the date range does not reach the server-derived table/cards; B — no pressed toolbar state, no visual of formatted content; C — no DOM harness drives renderManagerView, the manager fixture's Leo Kim has an impossible shape, no toast on the assignee's open window; D — the scan's counts are only logged; E — Half/Full shows on a phone, no drag-to-reorder; M5b — the highlighter marks a two-letter word inside longer words and marks the results heading, `kbMarkReviewed` does not bump the KB generation (named exemption in M5b-I2).
 - **Carried from cycle 22** (full list in its HISTORY block): S6 is server-only; the coaching business-days note and the Spanish auto-assign flag description still say "US holidays"; Save Departments lets two rows share a name; the half-day grade's three gaps; the client `coachTsMs_` reads coaching stamps as UTC and M7's class survives in three readers; X1 names reads owed a fixture and the mock lacks `adminScanStoredFormulas`; the missing visual scenarios; an intermittent DOM pin (`the resume request states the unpaid gap before it is filed`); `assertNotProdInstance_` permits while INSTANCE_IS_PROD is unset.
-- **Numbers — do not reuse:** INV-225..227 RESERVED (cycle 20); INV-229..232, INV-240..242, INV-301..303 and INV-350..352 PROPOSED (cycles 21, 21post, 22, 22post), not in the library. **Next free: INV-353; gotcha g163; scenario S132.**
+- **Numbers — do not reuse:** INV-225..227 RESERVED (cycle 20); INV-229..232, INV-240..242, INV-301..303 and INV-350..352 PROPOSED (cycles 21, 21post, 22, 22post), not in the library. **Next free: INV-353; gotcha g164; scenario S133.**
 
 ## Decisions made (so the next session doesn't re-litigate)
 - **KB2-5 (cycle 23 Batch 2):** a LocationAcceptance city row with a BLANK State now reads "cannot tell" — the old "blank = any state" reading dated from when city rows only displayed; since T7 they decide. If the operator wants "any state", the follow-on is an explicit marker in the State cell, not a blank.
@@ -111,4 +112,4 @@ Updated: 2026-10-02 (cycle 23 TC-02)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 23 Batches 1–4b (all six of Batch 1, TC-02 included) and the 4a follow-ons are committed and pushed on `claude/blissful-johnson-cottl5`. Next: `/sync-docs` for Batch 4b + TC-02 (their DOCUMENTATION UPDATES lists), then deploy and walk the Batch 1–4b + TC-02 scenarios; then `/broad-implement Batch 5`. The next /reflect reaches the Seams-audit cadence.
+Cycle 23 Batches 1–4b (TC-02 included) and the 4a follow-ons are committed, pushed and doc-synced on `claude/blissful-johnson-cottl5`. Next: deploy (`clasp push -f` + New version) and walk the Batch 1–4b + TC-02 scenarios (incl. S132); then `/broad-implement Batch 5`. The next /reflect reaches the Seams-audit cadence.

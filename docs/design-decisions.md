@@ -615,6 +615,11 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   `notifyManagersOfAdjustRequests_` is branded, PHI-free, best-effort (INV-14)
   and deferred past `releaseLock` (M-7). (B3) **The RESUME path** — see its own
   Key Design Decision below.
+
+  **AMENDED (cycle 23 TC-02, 2026-10-02):** a BREAK request carries its intent
+  in a trailing `BreakTarget` column — see "A break adjustment says which break it
+  means".
+
 - <a id="normalizetime-as-the-universal-read-shim"></a>**`normalizeTime_` as the universal read shim.** Because Sheets
   auto-coerces time strings to Dates on read, every read of
   `row[ADP.TIME]` goes through `normalizeTime_`. New code must
@@ -3718,6 +3723,16 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   a fresh deploy). Manager-gated (the omnibus pins it). Every server string
   `esc()`'d. Surfaces the operator-state gaps (sheet-tz drift, unset properties,
   uninstalled triggers) as one glance before cutting a new deployment version.
+
+  **AMENDED (cycle 23 ADM-09 + ADM-04, 2026-10-01):** the checklist gains a
+  `health` row read from the ONE problem list the health dot counts
+  (`automation.problems`) — warn with a count and the first three lines, ok on an
+  empty list, "Could not check" when the report carries no list; it is skipped
+  when the automation read itself failed, whose rows already say so. Its headline
+  had read "All clear" under a red dot. And Forms / Dept Requests now band WARN
+  while their property is unset (they read configured + OK through the ADP
+  fallback id).
+
 - <a id="patient-trx-timeline-rep-facing-read-only"></a>**Patient/TRX timeline (rep-facing, read-only).** `getPatientTimeline(trx)`
   (rep-callable, **caller-scoped**) stitches everything the rep has on one
   patient/order into a single newest-first list: their OWN call notes (TRX
@@ -3847,6 +3862,13 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   `getStorageHealth({scanEmbeds})` (default on) and **skipped by
   `getDeployReadiness`** (`{scanEmbeds:false}`), which only bands store config —
   so the Admin Overview doesn't double-scan Drive.
+
+  **AMENDED (cycle 23 ADM-04, 2026-10-01):** `configured` is the PROPERTY, not
+  the resolved id — a store on its ADP fallback (Forms, Dept Requests) reads
+  `configured:false, reachable:true, source:'ADP fallback'`, so it is a "not set"
+  warn on the panel, the readiness checklist and the System findings, while the
+  fallback is still opened so its reachability and timezone stay visible.
+
 - <a id="automation-health-panel-admin-tab"></a>**Automation Health panel (Admin tab).** Manager-only, read-only
   surfacing of the silent-degradation signals (`getAutomationHealth`,
   rendered by `cnLoadHealthPanel_`; since design handoff PR 2 (2026-09-02) it
@@ -4682,6 +4704,13 @@ pick them up without re-deriving the context.
   (`DIGEST_ERROR_KEYS`, `automationFailedWithin_`). Still one list, three
   readers — the new fields ride the report, not a second derivation.
 
+  **AMENDED (cycle 23 ADM-09 + ADM-07, 2026-10-01):** two more readers ride the
+  list. The deploy-readiness checklist reads `automation.problems` for its health
+  row, and the Reference-lookups diagnostics are judged by `cnOopFindings_` among
+  the System findings (storage area), so the tab, its badge and the cards count a
+  missing price column or an unreadable eligibility cell instead of leaving it to
+  a panel below.
+
 - <a id="a-half-day-is-graded-on-the-hours-worked"></a>**A half day is graded on the hours worked, not on a start it does not have (cycle 22 T5 rework, operator 2026-09-25).**
   The operator's rule: a half day "could really start and end at any time, as
   long as at least half the typical hours are worked (at least 4 hours)". So
@@ -4969,3 +4998,27 @@ pick them up without re-deriving the context.
   match costs more here than a miss), and caching per query (the query space
   is open; the index is what repeats).
 
+- <a id="a-break-adjustment-says-which-break-it-means"></a>**A break adjustment says which break it means — "add a missing break" or "correct the one at HH:MM" — and the server refuses rather than guesses (cycle 23 TC-02, operator 2026-10-02).** Multi-break days are legal, and a break adjustment
+  used to carry only a date, a type and a time, so every writer rewrote the
+  LAST punch of that type. Three options were weighed: (a) ask the rep and carry
+  the answer; (b) always append, with corrections through a manager's Day Edit;
+  (c) refuse a break adjustment on a day that already has one. The operator
+  chose (a): (b) is the same silent wrong write pointed the other way (a
+  correction becomes a duplicate, and Apply now has no reviewer), and (c) drops
+  self-service for the common case of a forgotten second break. The choice shows
+  only when the day already has that punch (`getMyDayBreaks`, caller-scoped, one
+  date inside the adjust window); nothing is preselected, and a break cannot be
+  filed while that read is loading or after it failed — fail-closed, never a
+  guess. The request stores `add` or `correct@HH:mm` (prefixed so the cell is
+  never coerced to a time). ONE resolver, `breakAdjustTargetRow_`, serves Apply
+  now, the request submit, the approval and the shared writer: a correction
+  must name a punch the day still has, and an unstated break on a day that has
+  one is refused — at submit with "choose…", at approval with the row left
+  Pending and the reason shown, which is how a request filed before this
+  shipped is handled. Two server callers keep the last-row rule, through a
+  frozen sentinel matched by IDENTITY so no RPC payload can reach it
+  (`BREAK_INTENT_LAST`): the editor-run split-day repair, whose dry run already
+  names the row it updates, and range mode — which first refuses the whole
+  range when any day in it has more than one break of a type it sets, because
+  one slot applied across many days cannot say which break it means.
+  ClockIn and ClockOut are one per day and keep their rule unchanged.

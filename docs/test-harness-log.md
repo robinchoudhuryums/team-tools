@@ -2372,3 +2372,52 @@ per-change detail. By delta:
 - 27 bite-checks, all BITE (19 for Batch 4a, 8 for the follow-ons, including
   dropping one label from `AUTOMATION_ERROR_LABELS` to prove the derived net
   sees it).
+
+## Cycle 23 — Batch 4b, a failed read never renders as data (2026-10-01)
+
+- Node +7: ADM-04 drives `getStorageHealth` with and without the fallback
+  properties, then feeds its REAL output to the readiness checklist and the
+  System finding (the F-11 warning had only ever been tested on a shape the
+  server never shipped); ADM-09 (the readiness `health` row: problems, none, no
+  list); ADM-07 (`cnOopFindings_` per branch, a failed load, a clean table);
+  ADM-08 (the scan walk with `configured()` predicates, and the panel); MET-1
+  (drives `getMyMetricsRange` over a meta.error, a missing-tab trend and a clean
+  read, counting cache puts); MET-2/3/4 (drives `getMetricsAmbient`; the cache
+  guards); TC2-2.
+- DOM +3: KBUI-1 (tab and drawer — and the error BEACON, captured by replacing
+  `errBeaconSend_`, never carries the query: the check is non-vacuous because it
+  asserts the beacon fired), METUI-1 (the badge survives `unavailable` and a
+  failure; only a clean `{badge:null}` clears it), ADM-11.
+- Four older doubles changed with the behaviour (#8 and the Team Metrics cache
+  regex now expect `trendFailed`; PR2-2 the three-argument `cnHealthFindings_`;
+  F-35's context loads `cdrAgentsOrThrow_`). The mock's Storage Health rows for
+  Forms / Dept Requests model the fallback as `configured:false,
+  reachable:true`, the readiness fixture carries the same open-punch problem as
+  the health fixture (the two shots had disagreed), and EMPTY_FIXTURES gained a
+  clean `getOopPricingDiagnostics` so the all-clear shot stays clean.
+- 14 bite-checks, all BITE. Hazard met: a vm sandbox's arrays fail
+  `deepStrictEqual` against the test realm's — wrap with `Array.from` or a JSON
+  round trip (g116's sandbox-value direction).
+
+## Cycle 23 — TC-02, a break adjustment says which break (2026-10-02)
+
+- Node +5: the resolver grid (`breakAdjustTargetRow_` — including that an RPC
+  payload `{mode:'last'}` cannot reach the identity-matched `BREAK_INTENT_LAST`),
+  the shared writer driven over a fake Timesheet (a refusal writes nothing —
+  sheet, append and audit all counted), submit driven over six cases, the
+  approval / Apply-now wiring with the range DRIVEN, and `getMyDayBreaks` + the
+  queue text.
+- DOM +2: the modal asks, nothing is queued until the rep chooses, and the
+  choice rides Add to list, Submit and Apply now; a day without the break is an
+  add, a reply for a date the rep has left is ignored, a failed read refuses.
+- Six older doubles changed: C17-9 (the writer's ctx-absent branch is a
+  one-date index read; the index key line), B3 (the trailing `BreakTarget`
+  cell), TZR-4 and the range pin (`BREAK_INTENT_LAST`), OPS-2 (approval passes
+  `breakTarget`), and X1 (`getMyPunchAdjustRequests` left the shrink-only list
+  when it gained a fixture). New visual scenarios `adjust-break-light-wide` /
+  `-mobile`; the first shot showed the radio labels in `.field label`'s mono
+  heading font, which only reading the shot found.
+- 11 bite-checks, all BITE. Hazard met: a `const` declared in a vm context is
+  NOT a property of the context object — read it with
+  `vm.runInContext('NAME', ctx)`, or a check against `ctx.NAME` compares with
+  `undefined` and passes or fails for the wrong reason.

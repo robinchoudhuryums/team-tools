@@ -78,6 +78,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   computed from something that is permanently true on a real deployment, so it
   carried no information and taught the reader to scroll past it. Span-bounding
   the read made the flag mean what it says.
+  **AMENDED (cycle 23 ADM-08, 2026-10-01): a THIRD instance — the stored-formula
+  scan.** It reported an UNSET no-fallback store (Employee Docs, QA) as "Could
+  not open", so on a deployment without those features the scan could never read
+  clean. A target may now carry a `configured()` predicate (`hrDocsConfigured_`,
+  `qaStoreConfigured_`); an unset store is `notConfigured`, is not opened, and
+  renders muted as "Not set up on this deployment". A SET store that will not
+  open is still an error. Verify: the ADM-08 pin (server walk + panel).
 
 <a id="g03-roster-inclusion-goes-through-emprosteremail-row-the"></a>
 
@@ -138,6 +145,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   deployer account lost access, etc.) the existing call-notes stats
   still return normally — the `cdr` field is simply absent. Client
   rendering checks `r.cdr` before showing CDR rows.
+  **AMENDED (cycle 23 TC2-2, 2026-10-01): best-effort, and it SAYS so.** The
+  overlay read `getCdrAgentMetrics_` bare, so a read that failed BESIDE an empty
+  agents map (`meta.error`, the M7 class) rendered every call column as "—" — a
+  shift with no calls — and the client cached that round as its instant paint.
+  It now reads through `cdrAgentsOrThrow_`; the catch nulls every rep's `cdr` and
+  `noteCoverage` (a half-enriched list is never partly right) and ships
+  `cdrUnavailable`, which the client renders as a notice above the table and
+  never caches. Verify: the TC2-2 pin.
 
 <a id="g06-secrets-via-script-properties-not-config"></a>
 
@@ -1448,7 +1463,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   failed send, logged it and stamped a clean run. A delivery that did not happen
   now stamps the job's failure (`stampAutomationError_`), and the clean stamp
   lands only after the send. Verify: the HR-3/MAIL-3, MAIL-4 and CORE-02 drives.
-
+  **AMENDED (cycle 23 METUI-1 + KBUI-1 + ADM-11, 2026-10-01): three more
+  absences that read as answers.** The Metrics alert badge was CLEARED by a
+  failed poll and by a CDR read that could not be done — "the team is fine" for
+  "could not tell"; it now keeps its last verdict on both (`getMetricsAmbient`
+  ships `unavailable:'cdr'`). A Reference search the server failed (`{error}`
+  returned) rendered "No matches" plus "Request an article on this", in the tab
+  and in the mid-call drawer; it now renders the failure, carrying the server's
+  message only (g146). A note's lifecycle history ignored the server's
+  `truncated` flag, so a history the bounded scan cut short read as the whole
+  one; it now says older history was not scanned. Verify: the KBUI-1, METUI-1
+  and ADM-11 DOM pins.
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 
@@ -3406,7 +3431,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   UNSET (`hrDocsConfigured_`; can't tell → configured) and otherwise throws by
   name, and both callers catch per source and SAY what they could not read.
   Verify: the HR-3 drives.
-
+  **AMENDED (cycle 23 ADM-04, 2026-10-01): a FALLBACK is not a configured
+  store.** Storage Health set `configured: !!spec.id`, and the Forms and Dept
+  Requests id IS the ADP sheet's whenever their property is unset — so "PHI on the
+  payroll sheet" read configured and OK on the panel, the readiness checklist and
+  the System findings, and F-11's client warning on `configured:false` could never
+  fire against the real server. The mock had modelled `configured:false`, a shape
+  the server never shipped (INV-185's reason for existing). The probe now takes
+  `configured` from the PROPERTY (`!!formsProp`, `!!drProp`) and still opens the
+  fallback, so its reachability and timezone stay visible. Verify: the ADM-04 pin
+  (drives `getStorageHealth` with and without the properties).
 
 <a id="g123-the-holiday-calendar-is-the-cdr-report-s"></a>
 
@@ -3757,6 +3791,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   explicitly (`KB_GEO_US_COUNTRIES`): looking the country up in
   `US_STATE_CODES` read Canada's ISO "CA" as California — which the new pin
   caught in the first draft of the fix. Verify: the KB2-3 pin.
+  **AMENDED (cycle 23 MET-1 + MET-3 + TC2-2, 2026-10-01): three more callers,
+  and the breakdown reader names its miss.** `getMyMetricsRange`,
+  `getMetricsAmbient` and `managerGetShiftStats` read the aggregate's `agents`
+  bare beside a `meta.error`; all three go through `cdrAgentsOrThrow_` now. And
+  `getCdrDailyBreakdown_` returned bare empty maps for a MISSING DQE tab — it
+  ships `error` beside them, which both trend readers throw on (a failed trend,
+  never an empty one). Verify: the MET-1 pin (drives `getMyMetricsRange` over a
+  meta.error, a missing-tab trend and a clean read).
 
 <a id="g129-never-cache-a-failure-as-a-value"></a>
 
@@ -3777,6 +3819,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   stores a payload without checking `.error`. Verify: the F-06 DOM pin
   (failure → null → refetch; `{error}` → null; a real config → stored and then
   honoured).
+  **AMENDED (cycle 23 MET-2/3/4 + TC2-2, 2026-10-01): a DEGRADED round is a
+  failure too.** My Stats cached its result while `cdrUnavailable` (the flag was
+  honest; pinning it for the TTL outlived the blip); the ambient badge cached the
+  silence of a `meta.error` read; Team Metrics cached a range whose trend read
+  had thrown; the shift-stats client cached a round whose call data was
+  unreadable. None of them caches such a round now. Verify: the MET-2/3/4 and
+  TC2-2 pins.
 
 <a id="g130-a-registered-onclose-hook-owns-the-close"></a>
 
@@ -4558,6 +4607,17 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   — its fixture must fire every kind DERIVED from the server source, and each
   item must appear among the tab's findings; a kind the client claims must
   have a branch the pin checks.
+  **AMENDED (cycle 23 ADM-09 + ADM-07, 2026-10-01): a third reader, and a panel
+  that was not a reader at all.** The Overview's deploy-readiness checklist
+  checked stores, heartbeats and CDR — never the problem list — so its headline
+  read "All clear" under a red dot. `deployReadinessItems_` now adds a `health`
+  row from `automation.problems`: warn with a count and the first three lines, ok
+  on an empty list, and "Could not check" when the report carries no list (g53).
+  And the Reference-lookups diagnostics (missing price columns, an empty delivery
+  registry, unreadable eligibility cells and delivery rows) rendered as a panel
+  BELOW the findings and never reached "Needs attention"; `cnOopFindings_` turns
+  them into storage-area findings (`oop:*`, a failed load `oop:load`) that the
+  tab, its badge and the cards all count. Verify: the ADM-09 and ADM-07 pins.
 
 <a id="g152-a-bounded-tail-scans-absence-is-evidence"></a>
 
@@ -4790,3 +4850,25 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   scroller. Verify: M5a-FU2 (derived from the scrollers' own padding rules) +
   the `reference-manual-backchip-*` and `reference-drawer-backto-*` shots.
 
+<a id="g163-an-adjustment-that-names-a-type-must-say-which"></a>
+
+- **An adjustment that names a punch TYPE on a day that may hold several of
+  that type must also say WHICH — and a writer that cannot tell must refuse,
+  never pick the last (cycle 23 TC-02, operator 2026-10-02).** Multi-break days
+  are legal (Lunch Out is re-offered after Lunch Return), but a rep's break
+  adjustment — Apply now, or an approved request — carried only a date, a type
+  and a time, and every writer resolved it with "the LAST punch of that type"
+  (`findExistingPunch_`, `buildAdjustPunchIndex_`). So a forgotten second break
+  rewrote the first, and a correction of the first moved the second. Appending
+  instead is the same defect pointed the other way: a correction becomes a
+  duplicate. The intent now rides the request (`BreakTarget`: `add` or
+  `correct@HH:mm`), ONE resolver (`breakAdjustTargetRow_`) decides the row for
+  every writer, and a target that has moved, or an unstated break on a day
+  that already has one, is REFUSED with nothing written — at submit, at Apply
+  now, and again at approval. The last-row rule survives only where it is
+  unambiguous, behind a sentinel no RPC payload can produce
+  (`BREAK_INTENT_LAST`): the editor-run split-day repair, and range mode after
+  it has refused any day with more than one break of a type it sets. Fires
+  when a write identifies a punch by its TYPE, or you add a punch type a day
+  can hold more than once. Verify: the TC-02 pins (the resolver grid, the
+  writer over a fake Timesheet, submit, approval/range, the modal DOM pins).

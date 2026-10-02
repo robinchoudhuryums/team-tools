@@ -944,6 +944,10 @@ entry says which it is.
   **SLA-reminder digest** (`sendDeptRequestReminderDigest` — PHI-free summary of
   overdue-open requests, the operator chose a manager summary over per-dept member
   nudges). See `docs/email-request-tracking-plan.md`.
+  **Since cycle 23 ADM-04 (2026-10-01)** an unset `DEPT_REQUESTS_SS_ID` is a
+  "Dept Requests (PHI-adjacent) not set" warning on Storage Health, the Overview
+  checklist and Admin → System (the ADP fallback used to read configured and OK).
+  Set it to the Intake spreadsheet, as with `FORMS_SS_ID`.
 <a id="operator-external-fillable-form-links-must-be-the-canonical-anonymous"></a>
 - **External fillable-form links must be the canonical anonymous `/exec` URL.**
   Inside a Google Workspace, `ScriptApp.getService().getUrl()` returns the
@@ -1216,6 +1220,10 @@ entry says which it is.
   (no hash/consent/certificate — `verify` reports them as legacy). The deployer
   account needs edit access to whatever `FORMS_SS_ID` points at (it already does
   for `INTAKE_SS_ID`).
+  **Since cycle 23 ADM-04 (2026-10-01)** Storage Health, the Overview checklist
+  and Admin → System all WARN "Forms (PHI) not set" while `FORMS_SS_ID` is
+  unset — the fallback used to read configured and OK. Setting the property
+  clears it.
 <a id="operator-form-consent-version-in-config"></a>
 - **`FORM_CONSENT_VERSION` in CONFIG** stamps every form submission with the
   Privacy-Notice version the signer saw (server-authoritative — the client's
@@ -2233,6 +2241,13 @@ entry says which it is.
   Leave both alone. A blank `EndTime` on a resume for a day that has already
   ended is why approval refuses it: ask the rep to file their finish, or deny
   the request.
+  A third trailing column, **`BreakTarget` (cycle 23 TC-02, 2026-10-02)**, says
+  what a BREAK request means: `add` (a missing break) or `correct@HH:mm` (move
+  the punch stamped at that time). Leave it alone. A break request filed before
+  it existed carries none; approving one on a day that already has that break is
+  REFUSED (the row stays Pending and the queue row says so in advance) — deny it
+  and ask the rep to file it again from Adjust, which now asks. A correction whose
+  target was changed in the meantime is refused the same way.
 <a id="operator-form-catalog"></a>
 - **Form catalog** is configured in
   `CONFIG.CALL_NOTES.FORM_CATALOG` — each entry maps an ID to a
