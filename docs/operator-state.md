@@ -1822,6 +1822,14 @@ entry says which it is.
   be checked today: …", and stamps `TrainingOverdueDigest`; the daily brief
   names the source; the weekly coaching recap stamps `CoachingRecapDigest`.
   UNSET stays quiet — that is a deployment without the feature.
+  **AMENDED (cycle 23 HR-1, 2026-10-02) — a one-time check, optional.** A
+  document's title and body, and coaching free text, are now written as plain
+  text. A document issued BEFORE this deploy whose title or body reads as a
+  date or a number (e.g. "3/4", "2026") was stored converted, so it still
+  verifies as tampered and cannot be signed: void it (Issue Docs) and issue it
+  again. Coaching rows written before keep their converted values; nothing
+  depends on them byte-for-byte.
+
 
 <a id="operator-employees-sheet-column-p-payrate"></a>
 - **`Employees` sheet column P = `PayRate`** (operator 2026-08-17) — an
@@ -2263,6 +2271,17 @@ entry says which it is.
   No manual setup needed — the `getOrCreateFormTokensSheet_()` /
   `getOrCreateFormSubmissionsSheet_()` helpers provision them with headers on
   first call.
+  **AMENDED (cycle 23 Batch 7a, 2026-10-02) — nothing to set up, three things
+  to know.** `CONFIG.FORM_TOKEN_EXPIRY_HOURS` now also sets the "these links
+  expire in N hours" line in the customer and provider emails (it was a fixed
+  "72 hours"), so change the one value and both agree. A submission notice for
+  a rep who is no longer on the roster goes to `MANAGER_EMAILS` (with a line
+  saying the sender has left), so keep that list current. And the
+  `ScheduledCalls` tab in the same store is read over a 90-day CREATION span
+  (`SCHED_STATE_SPAN_DAYS`), not its last 2,000 rows: a reminder left active
+  more than about 30 days past the furthest it could be set drops off its rep's
+  list.
+
 <a id="operator-punchadjustrequests-sheet-tab-4a"></a>
 - **`PunchAdjustRequests` sheet tab (#4a)** is auto-created in the ADP
   spreadsheet on first adjustment request (`getOrCreatePunchAdjustSheet_`).

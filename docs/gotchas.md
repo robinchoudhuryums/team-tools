@@ -1516,6 +1516,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `claimsUnavailable` named in both headers and Auto-assign disabled; a claim,
   release or auto-assign refuses ("nothing was assigned"). Verify: the SP-3
   pins (both maps driven over a throwing sheet; the auto-assign refusal).
+  **AMENDED (cycle 23 CN-5, 2026-10-02): a stream that read only PART of its
+  source is partial.** The patient timeline searched the live Notes tab only,
+  and a capped search said nothing, so a patient whose older notes had been
+  cold-archived showed a short history marked complete. It now reads the
+  archive (archived notes are marked), and a search that hit its 200 cap ships
+  `truncated`, which the timeline names in `truncatedSources`. Verify: the CN-5
+  drive.
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 
@@ -1894,7 +1901,11 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   and by every completing partial, and it broadcasts on a `BroadcastChannel`
   (no persisted key) so a task finished in the pinned pop-out refreshes the
   main window's list as well. Verify: the T9/T10 pins and FU-B7a/FU-B7c.
-
+  **AMENDED (cycle 23 CNUI-08 / TC2-5, 2026-10-02): CREATE was the missing
+  flow for reminders.** Mark-done and cancel busted and refetched Needs you;
+  creating a scheduled call did neither, so the new task appeared only after a
+  reload. `createScheduledCall` busts the server cache and `cnSchedCreate_`
+  broadcasts the client invalidation. Verify: the CNUI-08 pins.
 
 <a id="g68-an-async-prefill-must-fill-only-the"></a>
 
@@ -2235,7 +2246,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   recording cleared that recording's composer and pin and resumed its player.
   The handler now returns (with a toast) unless the same recording is still
   open. A late handler must check the ITEM it acted on, not just the view.
-
+  **AMENDED (cycle 23 CNUI-03, 2026-10-02): a viewer is a loader too, and its
+  stale FAILURE is dropped as well.** The patient timeline and the form-
+  submission viewers (rep and manager) painted whatever answer arrived: a late
+  one re-opened a viewer the rep had closed, or drew the previous patient under
+  the next one's title — and a stale failure closed the viewer that replaced
+  it. `CN_VIEWER_SEQ` moves on every open and every close; a handler whose
+  number is no longer current returns. Verify: the two CNUI-03 DOM pins.
 
 <a id="g82-cnrendersubforms-is-shape-keyed-via-host-dataset"></a>
 
@@ -2287,6 +2304,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   is a counter, not a clock: a confirm and a poll can share a millisecond.
   Verify: the C10 DOM pin, both ways (kept against an older poll, dropped by a
   newer one).
+  **AMENDED (cycle 23 CNUI-02 + CNUI-06, 2026-10-02): an optimistic UNDO
+  claims nothing before the server answers.** Undo-save said "note deleted" and
+  restored the text at once, so a refused delete left the saved note's text in
+  the form and the next Save filed it twice; it now announces and restores on
+  the delete's success, and keeps text typed meanwhile. A Save & Compose
+  cancelled past the 5-minute window had the same shape: `deleteCallNote` names
+  that refusal (`windowClosed`), and the cancel keeps the note and clears the
+  form when it still holds that note. Verify: the CNUI-02 and CNUI-06 DOM pins.
 
 <a id="g85-form-completion-timer-is-persisted-to-localstorage"></a>
 
@@ -2514,6 +2539,12 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `.sb-link[data-tool="..."]`, not `data-view`. A prior mismatch
   caused the CN stale-flag badge to silently never render. The
   Metrics alert badge follows the same `data-tool` pattern.
+  **AMENDED (cycle 23 CNUI-09, 2026-10-02): a badge goes on EVERY nav form.**
+  The stale-flag count looked up `.sb-link … || .nav-btn …`, and the sidebar
+  link is always present (hidden, not removed, at phone width), so the phone's
+  bottom nav never got it. `cnRenderStaleBadge_` writes every form, the health
+  dot's pattern; on the column-shaped bottom-nav button it sits on the icon's
+  corner. Verify: the CNUI-09 DOM pin.
 
 <a id="g100-modals-close-on-escape-through-their-close"></a>
 
@@ -2612,6 +2643,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   signature — returning a specific, actionable error and leaving the
   token `pending` for retry instead of throwing mid-append on an
   oversized signature (INV-96).
+  **AMENDED (cycle 23 FORM-1, 2026-10-02): the token lookup is two reads, and
+  a row can move between them.** `findFormTokenRow_` scans the Token column,
+  then fetches the row by index — unlocked on the public route. A purge that
+  deleted rows between the two put ANOTHER token's row under the index, and the
+  visitor got that patient's prefill. Both form lookups now re-check that the
+  fetched row carries the token it was found by (g164). Verify: the FORM-1
+  drive.
 
 <a id="g102-form-submissions-are-phi-and-segregated-hashed"></a>
 
@@ -4356,7 +4394,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   Verify: the K6 + K2, D6 and D7 DOM pins. D6's reset is driven through the
   real `edSubmitIssue_`, after a first draft that set the flag by hand passed
   with the reset deleted (a NO BITE, g138).
-
+  **AMENDED (cycle 23 CNUI-04 + CNUI-05, 2026-10-02): two more instances.**
+  Saving a manager comment or reply reloaded the whole per-rep stack, wiping a
+  reply half-typed on every other card — it now patches the saved card only
+  (`cnMgrPatchCard_`, the whole renderer root, g66). A rep's Clarify follow-up
+  was closed and lost on any stack re-render — the box (open state, text,
+  focus, caret) now rides the existing edit snapshot (`cnClarifySnapshot_` /
+  `cnClarifyRestore_`), and a SENT follow-up leaves the box before the
+  re-render so it is never put back. Verify: the CNUI-04 and CNUI-05 DOM pins.
 
 <a id="g142-a-diagnostic-that-names-the-wrong-source"></a>
 ### g142 — A diagnostic that names the WRONG source is worse than a vague one, because it is actionable and the action is destructive
@@ -4523,6 +4568,18 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   Verify: the SHEET-SAFE rule in `npm run lint:server` (Tests.js exempt:
   fixtures write raw by design), the S2 pins, the F2 mirror pin (`tsvCell_`
   driven against `sheetSafe_` over one grid) and the F3 scan pins.
+  **AMENDED (cycle 23 HR-1 + CN-7, 2026-10-02): COERCION is the other half of
+  "parsed as if typed".** The neutraliser stops a formula, but a value that reads
+  as a number or a date is still converted on write: an Employee Doc titled
+  "3/4" was stored as a Date, so the content hash recomputed from the cell never
+  matched and the doc could not be signed — it verified as TAMPERED; a callback
+  "0123…" lost its zero; "12/5" in a note became a Date. The free-text columns
+  of notes (`CN_TEXT_IDX`), Employee Docs (`EMPDOC_TEXT_IDX`) and coaching
+  (`COACH_TEXT_IDX`) are now '@' cells, written through `appendRowsTextSafe_` /
+  `setNumberFormat('@')` + `sheetText_`. Rows written before the fix keep what
+  Sheets made of them (a note re-formats on its next edit). Verify: the
+  HR-1 + CN-7 pin, the S2 writer lists, and the editor suite's
+  `cn_textColumnsKeepTheirText` round trip.
 
 <a id="g145-a-positional-write-at-getlastrow-1"></a>
 
@@ -4750,7 +4807,14 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   180): `spanishSpanStartRow_` starts after the last row stamped before the
   cutoff, and an unstamped (legacy) row is always kept, since nothing says when
   it happened. Verify: the SP-3 span pin (cutoff, legacy rows, empty tab).
-
+  **AMENDED (cycle 23 CN-1, 2026-10-02): a per-REP read of a TEAM-WIDE tab
+  is the same blind spot.** Scheduled-call reminders were read from the last
+  2,000 rows of the shared ScheduledCalls tab, so a reminder set weeks ahead
+  scrolled out behind everyone else's rows, stopped firing, and stopped counting
+  toward the active cap. They are read by CREATION TIME now
+  (`SCHED_STATE_SPAN_DAYS`, longer than the furthest a reminder may be set;
+  `schedSpanStartRow_` over one CreatedAtMs column read). Verify: the CN-1
+  drive.
 
 <a id="g153-clearing-the-roster-email-does-not-reach-the-gate-lists"></a>
 
@@ -4780,6 +4844,12 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   installer who is on the offboarded record and not back on the roster.
   `QA_MEMBERS` / `SPANISH_INBOX_MEMBERS` need no edit: both gates require a
   roster employee, so an offboarded member has no access. Verify: FU-B6e.
+  **AMENDED (cycle 23 FORM-5, 2026-10-02): an address STORED on a record
+  outlives the person too.** A form token carries its creator's email, and a
+  submission — PHI — was mailed there after the rep was offboarded.
+  `formNotifyRoute_` mails the creator only while they are on the live roster
+  (`empRosterEmail_`); otherwise MANAGER_EMAILS, with a line saying why.
+  Verify: the FORM-5 route grid.
 
 <a id="g154-a-half-day-has-no-fixed-start"></a>
 
@@ -5006,3 +5076,16 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   when a write identifies a punch by its TYPE, or you add a punch type a day
   can hold more than once. Verify: the TC-02 pins (the resolver grid, the
   writer over a fake Timesheet, submit, approval/range, the modal DOM pins).
+
+<a id="g164-a-row-fetched-by-index-must-carry-its-key"></a>
+
+- **A row fetched by INDEX after an unlocked scan must still carry the key it
+  was located by (cycle 23 FORM-1, 2026-10-02).** The bounded lookups (L9) scan
+  one column, then read the one full row at the index they found — two reads.
+  Without the lock, a delete between them (the nightly purge) shifts another
+  row under that index, and the caller acts on the wrong record: the public
+  form route served another patient's prefill. `formLocatedRowIs_` re-checks
+  the fetched row's key; a mismatch is located once more, then refused. Fires
+  when you add a scan-then-fetch lookup that can run without the lock, or
+  reuse one from a public endpoint. Verify: the FORM-1 drive (a table that
+  shifts between the two reads, once and for ever).

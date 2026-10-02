@@ -2489,3 +2489,48 @@ per-change detail. By delta:
   refine never ran; a 03:00 stamp, where the first guess lands in CDT and the
   answer is CST, now pins it. Pick a fixture the code's own shortcut cannot
   satisfy (g116's fourteenth direction).
+
+## Cycle 23 — Batch 7a, forms and call-note integrity (2026-10-02)
+
+- Node +10, one per finding, driven wherever the code is pure: FORM-1 drives
+  both form lookups over a fake table that shifts between the column scan and
+  the row fetch (once → located again; for ever → refused); FORM-4 refuses
+  seven free-text shapes and parses the two written ones; FORM-5 the expiry
+  phrase and the notify route grid; CN-1 `schedReadMine_` over a 2,500-row tab
+  with the rep's reminder at row 3; CN-2 the delete-window grid; CN-5 the
+  timeline event, the endpoint wiring and the rendered banner; HR-1 + CN-7
+  resolve the three `_TEXT_IDX` lists to header names. FORM-2 and CN-4 are
+  structural (the witness/log lines and the void call's place).
+- DOM +1: a real card with two submitted forms renders two STACKED pills
+  (`.cn-form-pills`); a pre-fix note one unwrapped pill. The stacking came from
+  a shot: side by side, two pills squeezed the compact card's text column to a
+  word per line (cn-log-light-compact, 0px overflow — g72's lesson again).
+- Editor suite +1: `cn_textColumnsKeepTheirText` — only a real sheet coerces,
+  so the '@' round trip (a leading-zero callback, a date-shaped caller and
+  issue) is the editor's to prove.
+- Moved pins: S2's raw-writer and appender lists (the new '@' writers), PR4-1's
+  createCoaching row literal, R2 #3's bounded-read assertion, and the C5 + F3
+  retention drives — their `parseDate` fake THREW to force the old `Date.parse`
+  fallback, which FORM-4 removed; the fake now parses the written shapes.
+- Fixtures: the emailed fixture note carries two `formSubmissions`; the
+  timeline mock gained `truncatedSources: []` (INV-185).
+- 18 bite-checks, all BITE.
+
+## Cycle 23 — Batch 7b, the Call Notes client (2026-10-02)
+
+- DOM +8, every one driving the real partial: CNUI-02 (the window refusal
+  clears the form and keeps the note; a form holding the next call is
+  untouched; any other refusal keeps the text), CNUI-06 (the announcement waits
+  for the delete; a refused undo restores nothing; text typed meanwhile is
+  kept), CNUI-03 ×2 (timeline; rep + manager submission viewers, incl. a stale
+  FAILURE), CNUI-04 (the other card's input value AND focus survive; one card
+  replaced), CNUI-05 (open state, text, focus and caret survive
+  `cnReRenderActiveView_`), CNUI-08, CNUI-09 (both nav forms).
+- Node +2: `windowClosed` only on the window refusal; the reminder bust after
+  the row lands.
+- 17 bite-checks, all BITE after one NO BITE acted on: CNUI-05's "a sent
+  follow-up is not put back" case returned a thread that no longer took a
+  reply, so the box was never rendered and the assertion held either way. It
+  now returns a thread the manager answered again — the only shape where a
+  restore could bite (g116's fourteenth direction: a fixture the code's own
+  filter erases cannot tell two paths apart).

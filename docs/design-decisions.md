@@ -1264,6 +1264,13 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   into the CRM before the network has acknowledged anything. Email
   and edit actions stay pessimistic — they need a server-issued noteId
   and can't easily undo.
+  **AMENDED (cycle 23 CNUI-02 + CNUI-06, 2026-10-02): an optimistic UNDO waits
+  for the server.** Undo-save (Ctrl/⌘+Z after a save) announces "note deleted"
+  and puts the text back only when `deleteCallNote` succeeds — a refused delete
+  leaves the note saved and the form empty, so nothing is filed twice — and text
+  the rep typed meanwhile is kept. A Save & Compose cancelled past the 5-minute
+  window is told apart from a failure (`windowClosed` on the response): the note
+  stays, and the form is cleared when it still holds that note.
 - <a id="pay-statement-own-data-payroll-self-check-operator-2026-08-1"></a>**Pay statement — own-data payroll self-check (operator 2026-08-17).**
   Time / PTO (side-rail pay-period block since the 2026-08-18 consolidation)
   → **"View pay statement"** opens a per-period
@@ -1532,6 +1539,11 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   specialized clearable reply editor on training notes and a general
   "Comment" box on every other note. Audit row `CallNoteManagerComment`
   (PHI-free: noteId only). See INV-103.
+  **AMENDED (cycle 23 CNUI-04, 2026-10-02): a save refreshes ITS card.** A
+  comment, a training reply and a cleared reply re-render only the saved card
+  from the note the endpoint returns (`cnMgrPatchCard_`); the whole per-rep
+  stack used to reload and wipe replies typed on other cards. A different rep on
+  screen, or the card gone, still reloads the stack.
 - <a id="automated-notification-emails-are-branded-item-2"></a>**Automated notification emails are branded (item 2).** A shared
   `buildBrandedEmailHtml_(heading, bodyHtml, opts)` wrapper (logo bar +
   colored header + white card + footer, inline hex from `CN_EMAIL_PALETTE`
@@ -2097,6 +2109,15 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   — fillable forms generate tokens and embed "Complete this form"
   CTA buttons in the email body. Reps can pre-fill key fields
   (patient name, dates) before sending.
+  **AMENDED (cycle 23 FORM-2/3/5 + CN-4, 2026-10-02):** a note keeps EVERY form
+  submitted on it — `subformData.formSubmissions` (oldest first, one per token),
+  with `formSubmission` kept as the latest for the old key — and the card shows
+  one pill each, stacked. The email's "expire in N hours" is
+  `FORM_TOKEN_EXPIRY_HOURS`, the value the token is stamped with. The
+  submission notice goes to the creating rep only while they are on the roster,
+  otherwise to MANAGER_EMAILS saying why. The FormSubmissionReceived witness
+  names the token by reference (S4). When one of several links in an email
+  fails to create, the links already made are voided and the email is not sent.
 - <a id="in-app-form-submission-viewer"></a>**In-app form-submission viewer.** Once a recipient submits a
   fillable form, the rep who sent it can review the entered data
   without opening the `FormSubmissions` sheet. Note cards carrying a
@@ -2130,6 +2151,9 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   note (`submitFormByToken` stamps only `if (noteId)`), so it has no
   `.cn-form-pill` — the **Sent Forms** tab (below) is the in-app surface for
   those.
+  **AMENDED (cycle 23 CNUI-03, 2026-10-02):** the viewer (rep and manager)
+  paints only the answer to its CURRENT open — a late answer never re-opens a
+  closed viewer or draws a previous submission (`CN_VIEWER_SEQ`).
 - <a id="sent-forms-tab-rep-facing-read-only"></a>**Sent Forms tab (rep-facing, read-only).** A Call Notes tab
   (`callNotesForms` → `enterCallNotesFormsView`) listing every fillable
   form the rep has sent. Backed by `getMySentForms`, caller-scoped to
@@ -3794,6 +3818,11 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   every server string `esc()`'d. **v1 is rep's-own-patient context, NOT a
   cross-rep manager view** (a manager-gated variant reusing
   `managerSearchCallNotes` is the follow-on if needed).
+  **AMENDED (cycle 23 CN-5 + CNUI-03, 2026-10-02):** the notes stream includes
+  the cold archive (archived notes are marked "· archived"), and a stream the
+  search capped at 200 is named in `truncatedSources` — the timeline is
+  `partial` when a source failed OR was capped, and the banner says which. A
+  late answer is dropped once the timeline is closed or another patient opened.
 - <a id="storage-health-leads-with-drive-which-no-store-row-can-see-o"></a>**Storage Health leads with DRIVE, which no store row can see (operator
   2026-09-09).** Every row in the inventory is a Spreadsheet, and Sheets ride
   a different scope — so all eight could read OK while the KB image export,

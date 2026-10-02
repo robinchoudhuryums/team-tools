@@ -310,6 +310,27 @@ not restate it. Server endpoints live in the fourteen server files
      never overwrites the next note they started: the draft is kept, and the
      note that did not save is shown to copy (CNUI-01, g86).
 
+     **Cycle 23 Batch 7a (2026-10-02) — what the store keeps.** The note's
+     free-text columns are plain-text cells, so a callback "0123…" keeps its
+     zero and "12/5" stays text (CN-7, g144). A note can carry several
+     submitted forms, each with its own pill (FORM-3). The patient timeline
+     reads the archive too and says when a stream was capped (CN-5). A note
+     whose time cannot be read cannot be self-deleted (CN-2). Scheduled-call
+     reminders are read by creation time, so one set weeks ahead still fires
+     (CN-1). An external email whose second form link fails withdraws the first
+     (CN-4), and the links' stated expiry is the configured one (FORM-5).
+
+     **Cycle 23 Batch 7b (2026-10-02) — what the rep typed, and what the server
+     said.** Cancelling Save & Compose more than five minutes after the save
+     keeps the note and clears the form ("the note stays saved"), instead of
+     leaving the text to be saved twice (CNUI-02). Undo-save says "note deleted"
+     and restores the text only once the server has deleted it (CNUI-06). The
+     timeline and submission viewers ignore a late answer (CNUI-03). A Clarify
+     follow-up being typed survives a refresh (CNUI-05); a manager's comment or
+     reply save refreshes only that card, so replies typed on other cards
+     survive (CNUI-04). Creating a reminder refreshes Needs you (CNUI-08), and
+     the overdue-flag count shows on the phone's bottom nav too (CNUI-09).
+
 <a id="metrics"></a>
      **Batch 6 (2026-09-18):** the Admin Overview KPI strip reports TEAM
      numbers — notes across every enrolled rep (all-time) and the cross-rep
@@ -1210,6 +1231,13 @@ not restate it. Server endpoints live in the fourteen server files
      digest or employee nudge is stamped too. The weekly coaching recap counts
      a failed send as failed (it counted every send as delivered) and stamps
      an unreachable store.
+
+     **Cycle 23 Batch 7a (2026-10-02):** a document's title, body and void
+     reason, and a coaching item's patient/TRX and free text, are written as
+     plain text, so a title that reads as a date or number keeps its text —
+     and its content hash, so it signs and verifies (HR-1, g144). A doc issued
+     before the fix with such a title still verifies as tampered: void it and
+     reissue it.
 
 <a id="qa"></a>
 ## QA
