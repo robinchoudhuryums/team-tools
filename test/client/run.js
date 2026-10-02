@@ -32892,6 +32892,19 @@ test('HR-1 + CN-7 (cycle 23): the free-text columns of notes, documents and coac
 });
 
 
+console.log('\ncycle 23 Batch 7b — the Call Notes client\'s server half');
+test('CNUI-02 (cycle 23): a refusal for the undo window is NAMED on the delete response, so the compose cancel can tell "too late" from "failed"', () => {
+  const del = stripJsComments_(extractRawFunction('Code.js', 'deleteCallNote'));
+  assert.ok(/if \(windowErr\) return \{ success: false, error: windowErr, windowClosed: true \};/.test(del), 'the window refusal carries windowClosed');
+  assert.strictEqual((del.match(/windowClosed/g) || []).length, 1, 'and only that refusal does');
+});
+test('CNUI-08 / TC2-5 (cycle 23): a new reminder busts the rep\'s cached Needs-you list on the server (g67 — every flow that CREATES a task)', () => {
+  const c = stripJsComments_(extractRawFunction('Code.js', 'createScheduledCall'));
+  const app = c.indexOf("'ScheduledCallCreate'"), bust = c.indexOf('pendingTasksBust_(emp.id);');
+  assert.ok(app > 0 && bust > app && bust < c.indexOf('return { success: true'), 'busted after the row lands, before the reply');
+});
+
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

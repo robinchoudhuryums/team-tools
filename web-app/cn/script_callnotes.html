@@ -1603,6 +1603,13 @@
     border-radius: 999px;
     margin-left: 6px;
   }
+  /* CNUI-09 (cycle 23) — on the phone's bottom nav the button is a column
+     (icon over label): the count sits on the icon's corner instead of
+     becoming a third row. */
+  .nav-btn .cn-stale-badge {
+    position: absolute; top: 4px; left: calc(50% + 4px);
+    margin-left: 0; min-width: 14px; height: 14px; font-size: 9px;
+  }
 
   /* ── Email composer modal ───────────────────────────────────────── */
   .cn-compose-section {
@@ -3491,9 +3498,13 @@ function cnWireActiveForm_() {
         return;
       }
       CN_STATE.lastSaveUndo = null;
-      if (cnFindNoteAnywhere_(su.note.noteId)) cnDoDeleteNote_(su.note.noteId);
-      cnRestoreFromSnapshot_(su.snap);
-      showToast('Save undone — note deleted, text restored', 'toast-success');
+      // CNUI-06 (cycle 23): the undo is announced — and the text restored —
+      // only when the server has deleted the note. It used to say "note
+      // deleted" at once and restore the text even when the delete was then
+      // refused, so the next Save filed the note a second time.
+      if (!cnFindNoteAnywhere_(su.note.noteId)) { cnRestoreFromSnapshot_(su.snap); return; }
+      showToast('Undoing the save…', 'toast-info');
+      cnDoDeleteNote_(su.note.noteId, { toast: '', onDeleted: function () { cnFinishSaveUndo_(su.snap); } });
     }
   });
   document.getElementById('cn-form-submit').addEventListener('click', function () { cnSubmitActiveForm_(); });
@@ -3527,6 +3538,19 @@ function cnWireActiveForm_() {
   if (extBtn) extBtn.addEventListener('click', function () { cnOpenExternalEmailModal_(); });
 }
 
+/** CNUI-06 — the undone note is gone on the server: put its text back, unless
+ *  the rep has started typing in the meantime (their new text is kept). */
+function cnFinishSaveUndo_(snap) {
+  var f = function (k) { return String(cnGetFieldValue_('cn-fld-' + k) || '').trim(); };
+  var empty = !document.getElementById('cn-active-form')
+    || !(f('callback') || f('caller') || f('patient') || f('issue') || f('resolution'));
+  if (empty && document.getElementById('cn-active-form')) {
+    cnRestoreFromSnapshot_(snap);
+    showToast('Save undone — note deleted, text restored', 'toast-success');
+  } else {
+    showToast('Save undone — note deleted. Its text was not put back because the form is in use.', 'toast-success');
+  }
+}
 function cnRestoreFromSnapshot_(snap) {
   if (!snap) return;
   Object.keys(snap.values || {}).forEach(function (k) {
@@ -4308,7 +4332,7 @@ function cnSubmitActiveForm_(opts) {
       // Composer was cancelled while the save was still in flight → finish
       // the rollback now that the server row exists, and skip the composer.
       if (pendingNote._deleteOnConfirm) {
-        cnDoDeleteNote_(res.note.noteId, { toast: 'Compose cancelled — save undone, your text is still in the form' });
+        cnDoDeleteNote_(res.note.noteId, cnRollbackDeleteOpts_(res.note));
         return;
       }
       if (opts && typeof opts.onConfirmed === 'function' && currentView === requestedView) {
@@ -4542,17 +4566,53 @@ function cnFormatTimestampForCopy_(iso) {
  *  from the note's STORED values — silently discarding everything typed since
  *  the editor opened. */
 function cnEditSnapshot_() {
-  if (!CN_STATE.editingNoteId) return null;
+  // CNUI-05 (cycle 23): an open or typed-into Clarify box rides the same
+  // snapshot — any stack re-render (a flag on another card, the live refresh)
+  // used to close it and drop the follow-up the rep was writing.
+  const clarify = cnClarifySnapshot_();
+  if (!CN_STATE.editingNoteId) return clarify.length ? { vals: {}, clarify: clarify } : null;
   const fields = document.querySelectorAll('[id^="cnE-"]');
-  if (!fields.length) return null;
+  if (!fields.length) return clarify.length ? { vals: {}, clarify: clarify } : null;
   const vals = {};
   fields.forEach(function (el) {
     vals[el.id] = el.isContentEditable ? el.textContent : el.value;
   });
-  return { active: document.activeElement && document.activeElement.id, vals: vals };
+  return { active: document.activeElement && document.activeElement.id, vals: vals, clarify: clarify };
+}
+/** CNUI-05 — every Clarify box that is open or holds text: its note, text,
+ *  and (for the focused one) the caret, so the restore puts the rep back
+ *  where they were typing (g141 — values alone are not enough). */
+function cnClarifySnapshot_() {
+  const out = [];
+  document.querySelectorAll('.qa-clarify-row[data-qa-clarify-row]').forEach(function (row) {
+    const ta = row.querySelector('textarea');
+    const text = ta ? ta.value : '';
+    if (row.hidden && !text) return;
+    const focused = !!ta && document.activeElement === ta;
+    out.push({ noteId: row.getAttribute('data-qa-clarify-row'), open: !row.hidden, text: text,
+      focused: focused, start: focused ? ta.selectionStart : 0, end: focused ? ta.selectionEnd : 0 });
+  });
+  return out;
+}
+function cnClarifyRestore_(list) {
+  (list || []).forEach(function (c) {
+    let row = null;
+    document.querySelectorAll('.qa-clarify-row[data-qa-clarify-row]').forEach(function (r) {
+      if (!row && r.getAttribute('data-qa-clarify-row') === c.noteId) row = r;
+    });
+    if (!row) return;   // the thread no longer takes a reply (acknowledged) — nothing to put back
+    const ta = row.querySelector('textarea');
+    row.hidden = !c.open;
+    if (ta) {
+      ta.value = c.text;
+      if (c.focused) { try { ta.focus(); ta.setSelectionRange(c.start, c.end); } catch (e) {} }
+    }
+  });
 }
 function cnEditRestore_(snap) {
-  if (!snap || !CN_STATE.editingNoteId) return;
+  if (!snap) return;
+  cnClarifyRestore_(snap.clarify);
+  if (!CN_STATE.editingNoteId) return;
   Object.keys(snap.vals).forEach(function (id) {
     const el = document.getElementById(id);
     if (!el) return;
@@ -4708,6 +4768,13 @@ function cnSubmitClarification_(noteId, message) {
         if (typeof showToast === 'function') showToast((res && res.error) || 'Could not send', 'toast-error');
         return;
       }
+      // CNUI-05: the sent text leaves the box before the re-render, so the
+      // snapshot does not put it back (text typed after Send stays).
+      document.querySelectorAll('.qa-clarify-row[data-qa-clarify-row]').forEach(function (r) {
+        if (r.getAttribute('data-qa-clarify-row') !== noteId) return;
+        const ta = r.querySelector('textarea');
+        if (ta && ta.value.trim() === trimmed) { ta.value = ''; r.hidden = true; }
+      });
       if (typeof cnReplaceNoteInState_ === 'function') cnReplaceNoteInState_(res.note);
       if (typeof cnReRenderActiveView_ === 'function') cnReRenderActiveView_();
       if (typeof showToast === 'function') showToast('Sent', 'toast-success');
@@ -5174,6 +5241,9 @@ function cnSchedCreate_(btn) {
       var l = document.getElementById('cn-sched-label'); if (l) l.value = '';
       cnSchedRenderList_();
       showToast('Reminder scheduled', 'toast-success');
+      // CNUI-08 (cycle 23): a new reminder is a Needs-you task — mark-done and
+      // cancel already refetched the list; create did not.
+      if (typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();
     })
     .withFailureHandler(function (e) { btn.disabled = false; showToast((e && e.message) || 'Could not schedule', 'toast-error'); })
     .createScheduledCall({ date: date, time: time, label: label, leadMin: parseInt(lead, 10) });
@@ -5657,15 +5727,22 @@ function cnScratchSave_(force) {
 // Fetches the submission (caller-scoped: server verifies the calling rep
 // created the token) and shows the entered fields + signature in a modal, so
 // the rep doesn't have to open the FormSubmissions sheet.
+// CNUI-03 (cycle 23): every open and every close moves the viewer's sequence;
+// a response that is not the CURRENT open's is dropped. A late answer used to
+// re-open a modal the rep had closed, or paint the previous submission (or
+// patient) under the next one's title.
+var CN_VIEWER_SEQ = { formSub: 0, timeline: 0 };
 function cnViewFormSubmission_(token) {
   token = String(token || '').trim();
   if (!token) return;
+  var seq = ++CN_VIEWER_SEQ.formSub;
   cnRenderFormSubOverlay_(
     '<div class="modal cn-form-sub-modal" style="max-width:560px">' +
       '<div class="state-center" role="status"><span class="lo-dots"><span></span><span></span><span></span></span>' +
       '<div class="state-label">Loading submission…</div></div></div>');
   google.script.run
     .withSuccessHandler(function (res) {
+      if (seq !== CN_VIEWER_SEQ.formSub) return;   // CNUI-03: closed, or another opened
       if (!res || res.error) {
         cnCloseFormSubOverlay_();
         if (typeof showToast === 'function') showToast((res && res.error) || 'Could not load submission', 'toast-error');
@@ -5674,6 +5751,7 @@ function cnViewFormSubmission_(token) {
       cnRenderFormSubOverlay_(cnBuildFormSubModalHtml_(res));
     })
     .withFailureHandler(function (err) {
+      if (seq !== CN_VIEWER_SEQ.formSub) return;
       cnCloseFormSubOverlay_();
       if (typeof showToast === 'function') showToast('Could not load submission: ' + (err && err.message || err), 'toast-error');
     })
@@ -5686,6 +5764,7 @@ function cnRenderFormSubOverlay_(html) {
 }
 
 function cnCloseFormSubOverlay_() {
+  CN_VIEWER_SEQ.formSub++;   // CNUI-03: an answer still on its way is now stale
   var overlay = document.getElementById('cn-form-sub-overlay');
   if (overlay) overlay.remove();
 }
@@ -5709,12 +5788,14 @@ function cnFormSubsOf_(note) {
 function cnOpenPatientTimeline_(trx) {
   trx = String(trx || '').trim();
   if (!trx) return;
+  var seq = ++CN_VIEWER_SEQ.timeline;   // CNUI-03
   cnRenderTimelineOverlay_(
     '<div class="modal cn-timeline-modal" style="max-width:600px">' +
       '<div class="state-center" role="status"><span class="lo-dots"><span></span><span></span><span></span></span>' +
       '<div class="state-label">Building timeline…</div></div></div>');
   google.script.run
     .withSuccessHandler(function (res) {
+      if (seq !== CN_VIEWER_SEQ.timeline) return;   // CNUI-03: closed, or another patient opened
       if (!res || res.error) {
         cnCloseTimelineOverlay_();
         if (typeof showToast === 'function') showToast((res && res.error) || 'Could not build timeline', 'toast-error');
@@ -5723,6 +5804,7 @@ function cnOpenPatientTimeline_(trx) {
       cnRenderTimelineOverlay_(cnBuildTimelineHtml_(res));
     })
     .withFailureHandler(function (err) {
+      if (seq !== CN_VIEWER_SEQ.timeline) return;
       cnCloseTimelineOverlay_();
       if (typeof showToast === 'function') showToast('Could not build timeline: ' + ((err && err.message) || err), 'toast-error');
     })
@@ -5733,6 +5815,7 @@ function cnRenderTimelineOverlay_(html) {
   overlay.innerHTML = html;
 }
 function cnCloseTimelineOverlay_() {
+  CN_VIEWER_SEQ.timeline++;   // CNUI-03
   var overlay = document.getElementById('cn-timeline-overlay');
   if (overlay) overlay.remove();
 }
@@ -5805,12 +5888,14 @@ function cnMgrViewFormSubmission_(btn) {
   var token = btn && btn.dataset ? btn.dataset.token : '';
   var repId = btn && btn.dataset ? btn.dataset.repId : '';
   if (!token || !repId) return;
+  var seq = ++CN_VIEWER_SEQ.formSub;   // CNUI-03
   cnRenderFormSubOverlay_(
     '<div class="modal cn-form-sub-modal" style="max-width:560px">' +
       '<div class="state-center" role="status"><span class="lo-dots"><span></span><span></span><span></span></span>' +
       '<div class="state-label">Loading submission…</div></div></div>');
   google.script.run
     .withSuccessHandler(function (res) {
+      if (seq !== CN_VIEWER_SEQ.formSub) return;   // CNUI-03: closed, or another opened
       if (!res || res.error) {
         cnCloseFormSubOverlay_();
         if (typeof showToast === 'function') showToast((res && res.error) || 'Could not load submission', 'toast-error');
@@ -5819,6 +5904,7 @@ function cnMgrViewFormSubmission_(btn) {
       cnRenderFormSubOverlay_(cnBuildFormSubModalHtml_(res));
     })
     .withFailureHandler(function (err) {
+      if (seq !== CN_VIEWER_SEQ.formSub) return;
       cnCloseFormSubOverlay_();
       if (typeof showToast === 'function') showToast('Could not load submission: ' + (err && err.message || err), 'toast-error');
     })
@@ -5942,6 +6028,9 @@ function cnDoDeleteNote_(noteId, opts) {
     .withSuccessHandler(function (res) {
       if (!res.success) {
         document.querySelectorAll('[data-note-id="' + noteId + '"]').forEach(function (c) { c.classList.remove('is-deleting'); });
+        // CNUI-02 (cycle 23): a caller that owns the refusal (the compose
+        // rollback) handles "past the undo window" itself.
+        if (res.windowClosed && opts && typeof opts.onWindowClosed === 'function') { opts.onWindowClosed(res); return; }
         showToast(res.error || 'Delete failed', 'toast-error');
         return;
       }
@@ -5952,7 +6041,8 @@ function cnDoDeleteNote_(noteId, opts) {
       cnReRenderActiveView_();
       cnRenderFilterBar_();
       cnRenderPinnedTray_();
-      showToast((opts && opts.toast) || 'Deleted', 'toast-success');
+      if (opts && typeof opts.onDeleted === 'function') { try { opts.onDeleted(res); } catch (e) {} }
+      if (!opts || opts.toast !== '') showToast((opts && opts.toast) || 'Deleted', 'toast-success');
     })
     .withFailureHandler(function (err) {
       document.querySelectorAll('[data-note-id="' + noteId + '"]').forEach(function (c) { c.classList.remove('is-deleting'); });
@@ -6589,8 +6679,32 @@ function cnRollbackComposeFlow_() {
     fl.note._deleteOnConfirm = true;   // finish the rollback when the save confirms
     showToast('Compose cancelled — undoing the save…', 'toast-warn');
   } else if (cnFindNoteAnywhere_(fl.note.noteId)) {
-    cnDoDeleteNote_(fl.note.noteId, { toast: 'Compose cancelled — save undone, your text is still in the form' });
+    cnDoDeleteNote_(fl.note.noteId, cnRollbackDeleteOpts_(fl.note));
   }
+}
+/** CNUI-02 (cycle 23) — the rollback's delete. Past the server's 5-minute
+ *  self-delete window the delete is refused and the note STAYS saved, while
+ *  its text was still in the form: the next Save duplicated it. A refusal
+ *  for the window now keeps the note, clears the form (restorable from the
+ *  cleared-form snapshot) when it still holds that note, and says so. */
+function cnRollbackDeleteOpts_(note) {
+  return {
+    toast: 'Compose cancelled — save undone, your text is still in the form',
+    onWindowClosed: function () {
+      var holds = !!document.getElementById('cn-active-form') && cnFormHoldsNote_(note);
+      if (holds) { cnClearActiveForm_(); cnFormTimerReset_(); cnClearStickyFormDraft_(); }
+      showToast('Compose cancelled — the note stays saved (it is past the 5-minute undo window)' +
+        (holds ? ', so the form was cleared to keep it from being saved twice.' : '.'), 'toast-warn');
+    },
+  };
+}
+/** CNUI-02 — does the Log form still hold this saved note's text? Compared on
+ *  the caller and the issue, trimmed: a rep who has started the next call is
+ *  never cleared. */
+function cnFormHoldsNote_(note) {
+  var t = function (v) { return String(v == null ? '' : v).trim(); };
+  return t(cnGetFieldValue_('cn-fld-caller')) === t(note && note.caller)
+      && t(cnGetFieldValue_('cn-fld-issue')) === t(note && note.issue);
 }
 /** Complete the Save & Compose transaction on a SEND: the note stays, and the
  *  form (kept populated while composing — r3), its timer and the sticky draft
@@ -8549,8 +8663,7 @@ function cnMgrSaveTrainingReply_(btn) {
       btn.disabled = false;
       if (!res.success) { showToast(res.error || 'Reply failed', 'toast-error'); return; }
       showToast('Reply saved', 'toast-success');
-      // Refresh the per-rep view so the reply line shows on the card
-      cnMgrLoadRepNotes_();
+      cnMgrPatchCard_(repId, res.note);   // CNUI-04: this card only
     })
     .withFailureHandler(function (err) {
       btn.disabled = false;
@@ -8559,6 +8672,22 @@ function cnMgrSaveTrainingReply_(btn) {
     .setCallNoteTrainingReply(repId, noteId, reply);
 }
 
+/** CNUI-04 (cycle 23) — re-render ONE card of the per-rep stack from the note
+ *  the save returned. Saving a comment or reply used to reload the whole
+ *  stack, which wiped a reply half-typed on every OTHER card (g141 — the
+ *  result of the manager's own action rides a targeted patch). The card is
+ *  replaced by the renderer's whole root (g66). No note, a different rep on
+ *  screen, or the card gone: the stack reloads, as before. */
+function cnMgrPatchCard_(repId, note) {
+  var stack = document.getElementById('cn-mgr-rep-stack');
+  if (!stack || !note || !note.noteId || !CN_STATE.mgrRepView || CN_STATE.mgrRepView.repId !== repId) { cnMgrLoadRepNotes_(); return; }
+  var card = null;
+  stack.querySelectorAll('.cn-card').forEach(function (c) { if (!card && c.dataset.noteId === note.noteId) card = c; });
+  if (!card) { cnMgrLoadRepNotes_(); return; }
+  var tmp = document.createElement('div');
+  tmp.innerHTML = cnMgrRenderReadonlyCard_(note).trim();
+  if (tmp.firstElementChild) card.replaceWith(tmp.firstElementChild);
+}
 /** Item 9 — manager comment (feedback / praise) on ANY note. Reads the text
  *  from the sibling input and fires setCallNoteManagerComment; refreshes the
  *  per-rep view so the comment thread renders. */
@@ -8577,7 +8706,7 @@ function cnMgrSaveComment_(btn) {
       btn.disabled = false;
       if (!res || !res.success) { showToast((res && res.error) || 'Comment failed', 'toast-error'); return; }
       showToast('Comment added', 'toast-success');
-      cnMgrLoadRepNotes_();
+      cnMgrPatchCard_(repId, res.note);   // CNUI-04: this card only
     })
     .withFailureHandler(function (err) {
       btn.disabled = false;
@@ -8606,7 +8735,7 @@ function cnMgrClearTrainingReply_(btn) {
         btn.disabled = false;
         if (!res.success) { showToast(res.error || 'Clear failed', 'toast-error'); return; }
         showToast('Reply cleared', 'toast-success');
-        cnMgrLoadRepNotes_();
+        cnMgrPatchCard_(repId, res.note);   // CNUI-04: this card only
       })
       .withFailureHandler(function (err) {
         btn.disabled = false;
@@ -9102,19 +9231,7 @@ function cnPollAmbient_() {
       // wake and nav paths refresh unconditionally (cross-window sync).
       const stackFresh = CN_STATE.rollingEntry && (Date.now() - (CN_STATE.rollingEntry.at || 0)) < 15000;
       if (currentView === 'callNotes' && !stackFresh) cnRefreshRollingStack_();
-      // Update sidebar badge on the Call Notes nav link
-      const link = document.querySelector('.sb-link[data-tool="callNotes"]')
-                || document.querySelector('.nav-btn[data-tool="callNotes"]');
-      if (!link) return;
-      let badge = link.querySelector('.cn-stale-badge');
-      const count = res.staleActionCount || 0;
-      if (count <= 0) { if (badge) badge.remove(); return; }
-      if (!badge) {
-        badge = document.createElement('span');
-        badge.className = 'cn-stale-badge';
-        link.appendChild(badge);
-      }
-      badge.textContent = String(count);
+      cnRenderStaleBadge_(res.staleActionCount || 0);
     })
     .withFailureHandler(function (err) {
       // Benign: the next 60s tick retries. Log only (matches the
@@ -9123,6 +9240,23 @@ function cnPollAmbient_() {
       console.warn('cnPollAmbient_ failed: ' + ((err && err.message) || err));
     })
     .getCallNotesAmbient();
+}
+
+/** The stale-action-flag count on the Call Notes nav. CNUI-09 (cycle 23): on
+ *  BOTH nav forms — the sidebar link and the phone-width bottom nav button;
+ *  the `||` lookup always found the sidebar link (present, only hidden, on a
+ *  phone), so a mobile rep never saw the badge. The health dot's pattern. */
+function cnRenderStaleBadge_(count) {
+  document.querySelectorAll('.sb-link[data-tool="callNotes"], .nav-btn[data-tool="callNotes"]').forEach(function (link) {
+    let badge = link.querySelector('.cn-stale-badge');
+    if (count <= 0) { if (badge) badge.remove(); return; }
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'cn-stale-badge';
+      link.appendChild(badge);
+    }
+    badge.textContent = String(count);
+  });
 }
 
 /** Round 2 · 8g — render multi-turn Q&A thread on training-flagged note

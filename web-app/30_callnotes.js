@@ -327,7 +327,9 @@ function deleteCallNote(noteId) {
     // delete window (fail-open) on a coercing per-rep sheet.
     const noteMs = parseTimestampMs_(cnTimestampString_(located.row[CN.TIMESTAMP]), empTz);
     const windowErr = cnDeleteWindowError_(noteMs, Date.now(), CONFIG.CALL_NOTES.DELETE_WINDOW_SECONDS);
-    if (windowErr) return { success: false, error: windowErr };
+    // CNUI-02 (cycle 23): `windowClosed` lets a caller tell "too late to undo"
+    // (the note stays saved) from a failure — the Save & Compose cancel acts on it.
+    if (windowErr) return { success: false, error: windowErr, windowClosed: true };
 
     const dateLocal = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
     sheet.deleteRow(located.rowIndex);
@@ -4314,6 +4316,7 @@ function createScheduledCall(payload) {
     const id = Utilities.getUuid();
     sh.appendRow(sheetSafeRow_([id, emp.id, whenMs, v.leadMin, v.label, 'active', now]));
     writeAuditLog_(emp, 'ScheduledCallCreate', '', '', false, 0, 'id=' + id);
+    pendingTasksBust_(emp.id);   // CNUI-08 / TC2-5 (cycle 23): a new reminder is a Needs-you task (g67)
     return { success: true, call: { id: id, whenMs: whenMs, leadMin: v.leadMin, label: v.label, status: 'active' } };
   } catch (err) { return { error: err.message }; }
   finally { lock.releaseLock(); }

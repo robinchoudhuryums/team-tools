@@ -5849,3 +5849,178 @@ test('FORM-3 (cycle 23): a note with two submitted forms renders two pills, each
   assert.strictEqual(one.length, 1); assert.strictEqual(one[0].textContent.trim(), 'form', 'a note stamped before the list: one pill, labelled as before');
   assert.ok(!one[0].parentElement.classList.contains('cn-form-pills'), 'and unwrapped, as before');
 });
+
+section('Cycle 23 Batch 7b — Call Notes client: what the rep typed, and what the server said');
+
+const b7Toasts = (h) => h.$$('#toast-stack .toast').map((t) => t.textContent);
+const b7ArmCompose = (h, issue) => {
+  h.setField('cn-fld-caller', 'Jane');
+  h.setField('cn-fld-issue', issue);
+  h.window.cnSubmitActiveForm_({ keepForm: true });
+  h.run.flushSuccess({ success: true, note: noteFixture({ noteId: 'real-a', caller: 'Jane', issue: issue, _pending: false }) }, 'submitCallNote');
+};
+
+test('CNUI-02: a Save & Compose cancelled past the undo window KEEPS the note and clears the form, so the next Save cannot file it twice', () => {
+  let h = bootLog();
+  b7ArmCompose(h, 'Patient A issue');
+  h.window.cnCloseComposerModal_();
+  assert.strictEqual(h.run.pending('deleteCallNote').length, 1, 'the rollback asks the server to delete');
+  h.run.flushSuccess({ success: false, error: 'Notes can only be deleted within 5 minutes of creation.', windowClosed: true }, 'deleteCallNote');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), '', 'THE REGRESSION: the saved text stayed in the form and the next Save duplicated it');
+  assert.ok(h.read('CN_STATE.rollingNotes.some(function (n) { return n.noteId === "real-a"; })'), 'the note stays in the stack — it IS saved');
+  assert.ok(b7Toasts(h).some((t) => /stays saved/.test(t) && /form was cleared/.test(t)), 'and the rep is told why');
+  assert.ok(!b7Toasts(h).some((t) => /Notes can only be deleted/.test(t)), 'not the raw refusal');
+  // The rep had already started the next call: their text is never cleared.
+  h = bootLog();
+  b7ArmCompose(h, 'Patient A issue');
+  h.window.cnCloseComposerModal_();
+  h.setField('cn-fld-issue', 'Patient B — new call');
+  h.run.flushSuccess({ success: false, error: 'x', windowClosed: true }, 'deleteCallNote');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), 'Patient B — new call', 'a form holding another note is left alone');
+  assert.ok(b7Toasts(h).some((t) => /stays saved/.test(t) && !/form was cleared/.test(t)));
+  // Any OTHER refusal is a failure, as before: the text stays for the rep.
+  h = bootLog();
+  b7ArmCompose(h, 'Patient A issue');
+  h.window.cnCloseComposerModal_();
+  h.run.flushSuccess({ success: false, error: 'Lock timeout' }, 'deleteCallNote');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), 'Patient A issue', 'a failed delete keeps the text');
+  assert.ok(b7Toasts(h).some((t) => /Lock timeout/.test(t)));
+});
+
+test('CNUI-06: undo-save says "deleted" and restores the text only AFTER the server deletes — a refused undo restores nothing', () => {
+  const undo = (h) => {
+    const form = h.$('#cn-active-form');
+    form.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true }));
+  };
+  let h = bootLog();
+  h.setField('cn-fld-issue', 'Refill request');
+  h.window.cnSubmitActiveForm_();
+  h.run.flushSuccess({ success: true, note: noteFixture({ noteId: 'real-1', issue: 'Refill request', _pending: false }) }, 'submitCallNote');
+  undo(h);
+  assert.strictEqual(h.run.pending('deleteCallNote').length, 1, 'the undo asks the server');
+  assert.ok(!b7Toasts(h).some((t) => /note deleted/.test(t)), 'THE REGRESSION: "note deleted" was announced before the server answered');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), '', 'and nothing is restored yet');
+  h.run.flushSuccess({ success: true }, 'deleteCallNote');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), 'Refill request', 'deleted: the text comes back');
+  assert.ok(b7Toasts(h).some((t) => /Save undone — note deleted, text restored/.test(t)));
+  // Refused: the note is still saved, so its text is NOT put back (that would file it twice).
+  h = bootLog();
+  h.setField('cn-fld-issue', 'Refill request');
+  h.window.cnSubmitActiveForm_();
+  h.run.flushSuccess({ success: true, note: noteFixture({ noteId: 'real-2', issue: 'Refill request', _pending: false }) }, 'submitCallNote');
+  undo(h);
+  h.run.flushSuccess({ success: false, error: 'Lock timeout' }, 'deleteCallNote');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), '', 'a refused undo restores nothing');
+  assert.ok(!b7Toasts(h).some((t) => /note deleted/.test(t)), 'and claims nothing');
+  // Deleted while the rep had begun typing: their text is kept.
+  h = bootLog();
+  h.setField('cn-fld-issue', 'Refill request');
+  h.window.cnSubmitActiveForm_();
+  h.run.flushSuccess({ success: true, note: noteFixture({ noteId: 'real-3', issue: 'Refill request', _pending: false }) }, 'submitCallNote');
+  undo(h);
+  h.setField('cn-fld-issue', 'next call');
+  h.run.flushSuccess({ success: true }, 'deleteCallNote');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), 'next call');
+  assert.ok(b7Toasts(h).some((t) => /not put back because the form is in use/.test(t)));
+});
+
+test('CNUI-03: a late timeline or submission answer never re-opens a closed viewer or paints the previous patient', () => {
+  const h = bootLog();
+  const tl = (trx) => ({ trx: trx, events: [], partial: false, failedSources: [], truncatedSources: [] });
+  h.window.cnOpenPatientTimeline_('TRX-A');
+  h.window.cnCloseTimelineOverlay_();
+  h.run.flushSuccess(tl('TRX-A'), 'getPatientTimeline');
+  assert.ok(!h.$('#cn-timeline-overlay'), 'THE REGRESSION: the closed timeline popped back up');
+  h.window.cnOpenPatientTimeline_('TRX-A');
+  h.window.cnOpenPatientTimeline_('TRX-B');
+  h.run.flushSuccess(tl('TRX-A'), 'getPatientTimeline');
+  assert.ok(!/TRX-A/.test(h.$('#cn-timeline-overlay').textContent), 'A\'s late answer does not paint under B');
+  h.run.flushSuccess(tl('TRX-B'), 'getPatientTimeline');
+  assert.ok(/TRX-B/.test(h.$('#cn-timeline-overlay').textContent), 'B\'s answer does');
+});
+
+test('CNUI-03: the submission viewer drops a stale answer too (rep and manager)', () => {
+  const h = bootLog();
+  h.window.cnViewFormSubmission_('tok-1');
+  h.window.cnCloseFormSubOverlay_();
+  h.run.flushSuccess({ formName: 'One', fields: [] }, 'getFormSubmission');
+  assert.ok(!h.$('#cn-form-sub-overlay'), 'closed stays closed');
+  h.window.cnViewFormSubmission_('tok-1');
+  h.window.cnViewFormSubmission_('tok-2');
+  h.run.flushFailure(new Error('late failure for tok-1'), 'getFormSubmission');
+  assert.ok(h.$('#cn-form-sub-overlay'), 'a stale FAILURE does not close the current viewer');
+  h.read("CN_STATE.mgrRepView = { repId: 'E9', date: '2026-06-16' }");
+  const btn = h.window.document.createElement('button');
+  btn.dataset.token = 'tok-m'; btn.dataset.repId = 'E9';
+  h.window.cnMgrViewFormSubmission_(btn);
+  h.window.cnCloseFormSubOverlay_();
+  h.run.flushSuccess({ formName: 'M', fields: [] }, 'managerGetFormSubmission');
+  assert.ok(!h.$('#cn-form-sub-overlay'), 'the manager viewer too');
+});
+
+test('CNUI-04: saving a manager comment re-renders THAT card only — a reply typed on another card survives', () => {
+  const h = boot(); h.bootShell();
+  const area = mount_(h, 'view-area');
+  h.read("CN_STATE.mgrRepView = { repId: 'E9', date: '2026-06-16' }");
+  const n1 = noteFixture({ noteId: 'm1', caller: 'One' }), n2 = noteFixture({ noteId: 'm2', caller: 'Two' });
+  area.innerHTML = '<div id="cn-mgr-rep-stack">' + h.window.cnMgrRenderReadonlyCard_(n1) + h.window.cnMgrRenderReadonlyCard_(n2) + '</div>';
+  const input = (id) => h.$('#cn-mgr-rep-stack .cn-mgr-reply-row[data-note-id="' + id + '"] .cn-mgr-reply-input');
+  input('m2').value = 'half-typed for card two';
+  input('m2').focus();
+  input('m1').value = 'Nice save';
+  h.window.cnMgrSaveComment_(h.$('#cn-mgr-rep-stack .cn-mgr-reply-row[data-note-id="m1"] .cn-mgr-reply-save'));
+  const saved = noteFixture({ noteId: 'm1', caller: 'One', subformData: { feedback: [{ role: 'manager', kind: 'comment', message: 'Nice save', at: '2026-06-16 11:00:00' }] } });
+  h.run.flushSuccess({ success: true, note: saved }, 'setCallNoteManagerComment');
+  assert.strictEqual(h.run.pending('managerGetCallNotes').length, 0, 'THE REGRESSION: the whole stack reloaded');
+  assert.strictEqual(input('m2').value, 'half-typed for card two', 'the other card\'s typing survives');
+  assert.strictEqual(h.window.document.activeElement, input('m2'), 'and keeps its focus (the node was never replaced)');
+  assert.ok(/Nice save/.test(h.$('#cn-mgr-rep-stack .cn-card[data-note-id="m1"]').textContent), 'the saved card shows its comment');
+  assert.strictEqual(h.$$('#cn-mgr-rep-stack .cn-card').length, 2, 'one card replaced, none added (g66)');
+  // Another rep on screen by the time the save lands: the stack reloads.
+  h.read("CN_STATE.mgrRepView = { repId: 'E7', date: '2026-06-16' }");
+  h.window.cnMgrPatchCard_('E9', saved);
+  assert.strictEqual(h.run.pending('managerGetCallNotes').length, 1, 'a different rep reloads, as before');
+});
+
+test('CNUI-05: a Clarify box the rep is typing in survives a stack re-render — open, with its text and caret', () => {
+  const qn = noteFixture({ noteId: 'q1', flagType: 'training', subformData: { trainingQuestion: 'Q?', feedback: [{ role: 'manager', kind: 'reply', message: 'A.', at: '2026-06-16 11:00:00' }] } });
+  const h = bootLog([qn]);
+  const row = () => h.$('.qa-clarify-row[data-qa-clarify-row="q1"]');
+  h.$('[data-qa-clarify="q1"]').click();
+  assert.ok(!row().hidden, 'the box opens');
+  const ta = row().querySelector('textarea');
+  ta.value = 'Does that cover the mask too';
+  ta.focus(); ta.setSelectionRange(5, 9);
+  h.window.cnReRenderActiveView_();   // a flag on another card, the live refresh …
+  assert.ok(row() && !row().hidden, 'THE REGRESSION: the re-render closed it');
+  const ta2 = row().querySelector('textarea');
+  assert.strictEqual(ta2.value, 'Does that cover the mask too', 'and dropped the text');
+  assert.strictEqual(h.window.document.activeElement, ta2, 'focus is back in it');
+  assert.deepStrictEqual([ta2.selectionStart, ta2.selectionEnd], [5, 9], 'at the same caret');
+  // Sent: the box empties and closes, and the re-render does not put the text back.
+  row().querySelector('.qa-clarify-submit').click();
+  h.run.flushSuccess({ success: true, note: noteFixture({ noteId: 'q1', flagType: 'training', subformData: { trainingQuestion: 'Q?', feedback: [
+    { role: 'manager', kind: 'reply', message: 'A.', at: '2026-06-16 11:00:00' }, { role: 'agent', kind: 'clarification', message: 'Does that cover the mask too', at: '2026-06-16 11:05:00' }] } }) }, 'appendCallNoteFeedback');
+  assert.ok(!row() || (row().hidden && !row().querySelector('textarea').value), 'a sent follow-up is not restored');
+});
+
+test('CNUI-08: creating a reminder refetches Needs you, as done and cancel already did', () => {
+  const h = bootLog();
+  let invalidated = 0;
+  h.window.clkNeedsYouInvalidate_ = () => { invalidated++; };
+  h.window.cnOpenSchedModal_();
+  h.$('#cn-sched-date').value = '2026-10-05'; h.$('#cn-sched-time').value = '10:00';
+  h.window.cnSchedCreate_(h.window.document.createElement('button'));
+  h.run.flushSuccess({ success: true, call: { id: 'c1', whenMs: 1, leadMin: 5, label: 'x', status: 'active' } }, 'createScheduledCall');
+  assert.strictEqual(invalidated, 1, 'THE REGRESSION: a new reminder never reached Needs you until a reload');
+});
+
+test('CNUI-09: the stale-flag count lands on BOTH nav forms — a phone shows the bottom-nav button, not the sidebar', () => {
+  const h = boot(); h.bootShell();
+  const both = h.$$('.sb-link[data-tool="callNotes"], .nav-btn[data-tool="callNotes"]');
+  assert.ok(both.length >= 2, 'sanity: the shell renders both forms');
+  h.window.cnRenderStaleBadge_(3);
+  assert.deepStrictEqual(both.map((l) => (l.querySelector('.cn-stale-badge') || {}).textContent), both.map(() => '3'), 'THE REGRESSION: only the first form ever got it');
+  h.window.cnRenderStaleBadge_(0);
+  assert.strictEqual(h.$$('.cn-stale-badge').length, 0, 'zero clears both');
+});

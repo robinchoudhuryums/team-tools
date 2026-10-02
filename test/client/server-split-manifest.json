@@ -2053,6 +2053,17 @@
     "voidDoc"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-02",
+   "why": "cycle 23 Batch 7b: CNUI-02 windowClosed on deleteCallNote; CNUI-08 bust on createScheduledCall",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "createScheduledCall",
+    "deleteCallNote"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5290,7 +5301,7 @@
   "createScheduledCall": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "0c8e970bd20897c4"
+   "sha": "b9fd790113fb100f"
   },
   "creditMonthlyPtoAccruals": {
    "file": "20_timeclock.js",
@@ -5360,7 +5371,7 @@
   "deleteCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "7b90adb6b956d212"
+   "sha": "602c378e821db298"
   },
   "deleteEmpDocTemplate": {
    "file": "81_empdocs.js",
