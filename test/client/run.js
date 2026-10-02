@@ -5363,8 +5363,11 @@ test('sheet doctor: coercion-safe scan, last-row-wins fix, gates + lock', () => 
   const fix = extractRawFunction('Code.js', 'fixTimesheetDuplicates');
   assert.ok(/isManager/.test(fix) && /waitLock\(/.test(fix) && /finally/.test(fix) && /releaseLock/.test(fix),
     'fix is manager-gated + locked with finally release (INV-01/02)');
-  assert.ok(/g\.rows\.length - 1/.test(fix),
-    'fix keeps the LAST row per group — the findExistingPunch_/managerSaveDay convention (INV-155)');
+  // TC-08 (cycle 23): the kept row is tsDoctorKeepIndex_'s — the stamp the
+  // hours already count (the last-appended clock stamp, INV-155; for a break,
+  // the stamp the pairing uses) — and it is the one row never deleted.
+  assert.ok(/const keep = tsDoctorKeepIndex_\(g, scan\.days\)/.test(fix) && /if \(j === keep\) continue/.test(fix),
+    'fix keeps tsDoctorKeepIndex_\'s row per group and deletes the others (TC-08)');
   assert.ok(/PunchDelete/.test(fix) && /duplicate collapsed/.test(fix),
     'each deletion writes a duplicate-collapsed PunchDelete audit row (INV-08)');
   assert.ok(!/inverted/.test(fix),
@@ -24340,7 +24343,7 @@ test('BP-3: getTimesheetDoctor REPORTS an unpairable stamp on a protected multi-
       getEmployeeInfo_: () => ({ isManager: isManager }),
       tsDoctorScan_: () => scan,
     });
-    ['timeToMins_', 'breakSortKey_', 'breakPairs_', 'tsDoctorLegitBreaks_', 'getTimesheetDoctor']
+    ['timeToMins_', 'breakSortKey_', 'breakPairs_', 'breakOpenLeave_', 'tsDoctorLegitBreaks_', 'tsDoctorKeepIndex_', 'getTimesheetDoctor']
       .forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
     return ctx.getTimesheetDoctor();
   };
@@ -31902,8 +31905,10 @@ test('TC2-2 (cycle 23): a shift-stats CDR read that failed SAYS so — the serve
 const tc02Ctx_ = (extra) => {
   const ctx = vm.createContext(Object.assign({ String, Object, Array, JSON, Number, Math, Date, Error }, extra || {}));
   vm.runInContext("const BREAK_PUNCH_TYPES = ['LunchOut', 'LunchIn']; const BREAK_INTENT_LAST = Object.freeze({ mode: 'last' }); " +
-    "const PUNCH_LABELS_ = ['ClockIn','LunchOut','LunchIn','ClockOut'];", ctx);
-  ['breakIntentNorm_', 'breakIntentCell_', 'breakIntentNote_', 'breakAdjustTargetRow_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+    "const PUNCH_LABELS_ = ['ClockIn','LunchOut','LunchIn','ClockOut']; const ADJUST_MAX_SHIFT_HOURS = 16;", ctx);
+  // TC-05 (cycle 23): the adjust paths also run the clock-span check.
+  ['breakIntentNorm_', 'breakIntentCell_', 'breakIntentNote_', 'breakAdjustTargetRow_',
+    'timeToMins_', 'toDisplayTime_', 'adjustShiftSpanError_', 'adjustIndexLastTime_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   return ctx;
 };
 test('TC-02 (cycle 23): which row a punch adjustment writes — ClockIn/Out keep the last-row rule; a BREAK adds, corrects the punch it names, or is refused; nothing an RPC can send reaches the server-only last-row rule (driven grid)', () => {
@@ -31934,7 +31939,7 @@ test('TC-02 (cycle 23): which row a punch adjustment writes — ClockIn/Out keep
 test('TC-02 (cycle 23): the shared adjust writer updates exactly the break it is told, appends an add, and writes NOTHING when it refuses (driven over a fake Timesheet)', () => {
   const run = (intent) => {
     const writes = [], appended = [], audits = [];
-    const sheet = { getRange: (r, c) => ({ setValue: (v) => writes.push([r, c, v]) }) };
+    const sheet = { getRange: (r, c) => ({ setValue: (v) => writes.push([r, c, v]) }), getLastRow: () => 9 };
     const ctx = tc02Ctx_({ ADP: { TIME: 2, COMMENTS: 5 }, sheetSafe_: (v) => v,
       buildAdjustPunchIndex_: () => ({ sheet, idx: { '2026-09-30|LunchOut': 7 }, all: { '2026-09-30|LunchOut': [{ rowIndex: 3, time: '12:00' }, { rowIndex: 7, time: '15:00' }] } }),
       appendToAdpSheet_: (e, d, t, dir, label) => appended.push([d, t, dir, label]),
@@ -32266,6 +32271,277 @@ test('DR-3 (cycle 23): every response-time median is a true median — an even c
   assert.ok(/resolvedMins\.length % 2 \? resolvedMins\[mm\] : Math\.round\(\(resolvedMins\[mm - 1\] \+ resolvedMins\[mm\]\) \/ 2\)/.test(dr), 'the client tile is the server\'s twin');
 });
 
+
+console.log('\ncycle 23 Batch 6a — PTO and punch correctness');
+
+// A context for the time-off writers: a fake TimeOffRequests sheet whose
+// cells are written back into `rows`, and a balance ledger the fake
+// adjustLeaveBalance_ moves exactly as the real one does (null when tracking
+// is off or the rep's PTO is off).
+const c23ToCtx_ = (opts) => {
+  const o = opts || {};
+  const rows = o.rows || [['h']];
+  const balance = { annual: 10, sick: 5 };
+  const writes = [], audits = [], appended = [];
+  const sheet = {
+    getDataRange: () => ({ getValues: () => rows.map((r) => r.slice()) }),
+    getRange: (r, c) => ({ setValue: (v) => { writes.push([r, c, v]); (rows[r - 1] || (rows[r - 1] = []))[c - 1] = v; } }),
+    appendRow: (r) => { rows.push(r.slice()); appended.push(r.slice()); },
+    getLastRow: () => rows.length,
+    deleteRow: (r) => rows.splice(r - 1, 1),
+  };
+  const ctx = vm.createContext(Object.assign({ String, Object, Array, JSON, Number, Math, Date, Error, parseInt, parseFloat, isNaN,
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    Logger: { log() {} }, console: { warn() {} },
+    TO: { EMP_ID: 0, EMP_NAME: 1, DATE: 2, TYPE: 3, NOTES: 4, STATUS: 5, SUBMITTED_AT: 6, DEDUCTED: 7 },
+    TIMEOFF_MAX_DAYS_AHEAD: 370, TIMEOFF_MAX_DAYS_BACK: 90,
+    getEmployeeInfo_: () => ({ id: 'E1', name: 'Ann', email: 'ann@x', isManager: true }),
+    lookupEmployeeById_: () => ({ id: 'E1', name: 'Ann', email: 'ann@x' }),
+    empTz_: () => 'UTC', fmtDateTz_: () => '2026-10-02', daysBetween_: () => 5,
+    fmtDate_: () => '2026-10-02', fmtTime_: () => '09:00:00',
+    isValidTimeOffType_: () => true,
+    getCompanyHolidays_: o.holidays || (() => [{ date: '2026-11-26', name: 'Thanksgiving Day' }]),
+    getOrCreateTimeOffSheet_: () => sheet, hasActiveTimeOffOnDate_: () => false,
+    normalizeDate_: (v) => v, normalizeAuditTs_: (v) => v,
+    sheetSafe_: (v) => v, sheetSafeRow_: (r) => r,
+    getFlag_: (k) => (k === 'enablePtoTracking' ? o.tracking !== false : false),
+    getLeaveDeduction_: (t) => (t === 'Unpaid' ? { bucket: '', days: 0 } : { bucket: 'annual', days: t === 'Half Day - Morning' ? 0.5 : 1 }),
+    adjustLeaveBalance_: (id, bucket, delta) => {
+      if (o.tracking === false || o.ptoOff) return null;
+      balance[bucket] = +(balance[bucket] + delta).toFixed(2); return balance[bucket];
+    },
+    writeAuditLog_: (e, action, d, t, adj, back, notes) => audits.push({ e, action, d, notes }),
+    notifyEmployeeOfDecision_: () => {},
+  }, o.extra || {}));
+  ['timeOffClosedDayReason_', 'toDeductionCell_', 'toDeductionRead_', 'submitTimeOffRequest', 'managerSubmitTimeOff', 'updateTimeOffStatus']
+    .forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+  return { ctx, rows, balance, writes, audits, appended };
+};
+
+test('TC-03 (cycle 23): a single-date time-off request on a weekend or a company holiday is refused, on the rep path and the manager path, before anything is written (driven)', () => {
+  let t = c23ToCtx_();
+  assert.strictEqual(t.ctx.timeOffClosedDayReason_('2026-10-03'), 'a weekend', 'a Saturday');
+  assert.strictEqual(t.ctx.timeOffClosedDayReason_('2026-11-26'), 'a company holiday (Thanksgiving Day)', 'the ONE calendar, named');
+  assert.strictEqual(t.ctx.timeOffClosedDayReason_('2026-11-25'), '', 'a working day');
+  const r = JSON.parse(JSON.stringify(t.ctx.submitTimeOffRequest('2026-11-26', 'Full Day', '')));
+  assert.ok(!r.success && /2026-11-26 is a company holiday \(Thanksgiving Day\) — no time off is needed/.test(r.error), 'THE REGRESSION: it was filed, and approving it deducted a day the office was closed');
+  assert.strictEqual(t.appended.length, 0, 'nothing written'); assert.strictEqual(t.audits.length, 0);
+  t = c23ToCtx_();
+  const m = JSON.parse(JSON.stringify(t.ctx.managerSubmitTimeOff('E1', '2026-10-04', 'Full Day', '', true)));
+  assert.ok(!m.success && /is a weekend/.test(m.error), 'the manager path, auto-approve included');
+  assert.strictEqual(t.appended.length, 0); assert.strictEqual(t.balance.annual, 10, 'no deduction');
+  t = c23ToCtx_();
+  assert.ok(t.ctx.submitTimeOffRequest('2026-11-25', 'Full Day', '').success, 'a working day still files');
+  // A calendar that cannot be read degrades to weekends only, never refuses a working day.
+  t = c23ToCtx_({ holidays: () => { throw new Error('CDR down'); } });
+  assert.strictEqual(t.ctx.timeOffClosedDayReason_('2026-11-26'), '');
+});
+
+test('TC-04 (cycle 23): an approval records what it TOOK, and un-approving restores exactly that — nothing when tracking was off or the rep\'s PTO was off; a legacy row with no record keeps the by-type rule (driven)', () => {
+  const row = (status, type, ded) => ['E1', 'Ann', '2026-10-05', type || 'Full Day', '', status, 's1'].concat(ded === undefined ? [] : [ded]);
+  // Normal approve → 'annual:1'; deny → +1 and the record cleared.
+  let t = c23ToCtx_({ rows: [['h'], row('Pending')] });
+  assert.ok(t.ctx.updateTimeOffStatus('E1', '2026-10-05', 's1', 'Approved').success);
+  assert.strictEqual(t.balance.annual, 9); assert.strictEqual(t.rows[1][7], 'annual:1', 'the deduction is recorded on the row');
+  t.ctx.updateTimeOffStatus('E1', '2026-10-05', 's1', 'Denied');
+  assert.strictEqual(t.balance.annual, 10, 'restored exactly'); assert.strictEqual(t.rows[1][7], '', 'the record is cleared');
+  // THE REGRESSION: approved while tracking was OFF (nothing deducted), denied once it is back ON.
+  t = c23ToCtx_({ rows: [['h'], row('Pending')], tracking: false });
+  t.ctx.updateTimeOffStatus('E1', '2026-10-05', 's1', 'Approved');
+  assert.strictEqual(t.rows[1][7], 'none', 'nothing moved, and the row says so');
+  const on = c23ToCtx_({ rows: t.rows });
+  on.ctx.updateTimeOffStatus('E1', '2026-10-05', 's1', 'Denied');
+  assert.strictEqual(on.balance.annual, 10, 'THE REGRESSION: the deny credited a day that was never taken');
+  // PtoEnabled FALSE at approval → 'none' as well.
+  t = c23ToCtx_({ rows: [['h'], row('Pending')], ptoOff: true });
+  t.ctx.updateTimeOffStatus('E1', '2026-10-05', 's1', 'Approved');
+  assert.strictEqual(t.rows[1][7], 'none');
+  // A half day records its half; an unpaid type records none.
+  t = c23ToCtx_({ rows: [['h'], row('Pending', 'Half Day - Morning'), ['E1', 'Ann', '2026-10-06', 'Unpaid', '', 'Pending', 's2']] });
+  t.ctx.updateTimeOffStatus('E1', '2026-10-05', 's1', 'Approved'); t.ctx.updateTimeOffStatus('E1', '2026-10-06', 's2', 'Approved');
+  assert.strictEqual(t.rows[1][7], 'annual:0.5'); assert.strictEqual(t.rows[2][7], 'none');
+  // A LEGACY Approved row (no Deducted cell) keeps the by-type rule.
+  t = c23ToCtx_({ rows: [['h'], row('Approved')] });
+  t.ctx.updateTimeOffStatus('E1', '2026-10-05', 's1', 'Denied');
+  assert.strictEqual(t.balance.annual, 11, 'legacy: restored by type, as before');
+  // The record wins over the type: 'sick:0.5' restores half a sick day.
+  t = c23ToCtx_({ rows: [['h'], row('Approved', 'Full Day', 'sick:0.5')] });
+  t.ctx.updateTimeOffStatus('E1', '2026-10-05', 's1', 'Denied');
+  assert.strictEqual(t.balance.sick, 5.5); assert.strictEqual(t.balance.annual, 10);
+  // The manager's auto-approve records too.
+  t = c23ToCtx_({ tracking: false });
+  assert.ok(t.ctx.managerSubmitTimeOff('E1', '2026-10-05', 'Full Day', '', true).success);
+  assert.strictEqual(t.rows[1][7], 'none', 'auto-approved with tracking off: nothing taken, and recorded');
+  t = c23ToCtx_();
+  t.ctx.managerSubmitTimeOff('E1', '2026-10-05', 'Full Day', '', true);
+  assert.strictEqual(t.rows[1][7], 'annual:1'); assert.strictEqual(t.balance.annual, 9);
+  t = c23ToCtx_();
+  t.ctx.managerSubmitTimeOff('E1', '2026-10-05', 'Full Day', '', false);
+  assert.strictEqual(t.rows[1][7], undefined, 'a Pending row records nothing');
+  // The reader grid.
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(t.ctx.toDeductionRead_(''))), { known: false });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(t.ctx.toDeductionRead_('junk'))), { known: false }, 'unreadable is the legacy rule, never a guess');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(t.ctx.toDeductionRead_(' NONE '))), { known: true, bucket: '', days: 0 });
+  // The header self-heals.
+  const src = stripJsComments_(extractRawFunction('Code.js', 'getOrCreateTimeOffSheet_'));
+  assert.ok(/getLastColumn\(\) < TO_HEADERS\.length/.test(src) && /appendRow\(sheetSafeRow_\(TO_HEADERS\)\)/.test(src), 'the Deducted header self-heals on an existing tab');
+});
+
+test('TC-05 (cycle 23): a rep\'s adjustment that would make a shift longer than ADJUST_MAX_SHIFT_HOURS (an AM/PM slip) or an equal pair is refused at Apply now, at submit and at approval; a real overnight shift is allowed (driven)', () => {
+  const c = tc02Ctx_();
+  const e = (a, b) => c.adjustShiftSpanError_(a, b);
+  assert.ok(/would make a 21-hour shift — check AM and PM/.test(e('08:00', '05:00')), 'THE REGRESSION: in 8 AM, out 5 AM was paid as 21 hours');
+  assert.strictEqual(e('21:30', '06:00'), null, 'an overnight-local shift (8.5 h) is legitimate (g127)');
+  assert.strictEqual(e('08:00', '17:00'), null);
+  assert.strictEqual(e('08:00', '00:00'), null, 'exactly 16 h is allowed');
+  assert.ok(e('08:00', '00:01'), '16 h 1 min is not');
+  assert.ok(/not a shift/.test(e('09:00', '09:00:40')), 'an equal minute pair');
+  assert.strictEqual(e('', '05:00'), null); assert.strictEqual(e('08:00', ''), null, 'nothing to compare yet');
+  // Submit, driven through the TC-02 harness: the day's own Clock In, and this batch's pair.
+  const run = (requests, all) => {
+    const appended = [];
+    const ctx = tc02Ctx_({
+      LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      getEmployeeInfo_: () => ({ id: 'E1', name: 'Ann' }), empTz_: () => 'UTC',
+      fmtDateTz_: () => '2026-10-01', fmtTimeTz_: () => '23:59:00', daysBetween_: () => 1,
+      CONFIG: { ADJUST_WINDOW_DAYS: 30, OLD_ADJUST_ALERT_DAYS: 7 },
+      PAR: { REQ_ID: 0, EMP_ID: 1, EMP_NAME: 2, DATE: 3, PUNCH_TYPE: 4, REQ_TIME: 5, REASON: 6, STATUS: 7, SUBMITTED_AT: 8, ACTION: 9, END_TIME: 10, BREAK_TARGET: 11 },
+      findExistingPunch_: () => null, buildAdjustPunchIndex_: () => ({ all: all || {} }),
+      getOrCreatePunchAdjustSheet_: () => ({ getDataRange: () => ({ getValues: () => [['h']] }), appendRow: (r) => appended.push(r) }),
+      normalizeDate_: (v) => v, normalizeTime_: (v) => v, fmtDate_: () => 'd', fmtTime_: () => 't',
+      Utilities: { getUuid: () => 'u' }, sheetSafeRow_: (r) => r, sheetSafe_: (v) => v,
+      writeAuditLog_: () => {}, notifyManagersOfAdjustRequests_: () => {}, console: { warn() {} } });
+    vm.runInContext(extractRawFunction('Code.js', 'submitPunchAdjustRequests'), ctx);
+    return { res: JSON.parse(JSON.stringify(ctx.submitPunchAdjustRequests(requests))), appended };
+  };
+  const D = '2026-09-30', day = { [D + '|ClockIn']: [{ rowIndex: 3, time: '08:00' }] };
+  let r = run([{ date: D, time: '05:00', punchType: 'ClockOut' }], day);
+  assert.ok(!r.res.success && /2026-09-30: Clock In 8:00 AM and Clock Out 5:00 AM would make a 21-hour shift/.test(r.res.error), 'refused at submit; nothing queued');
+  assert.strictEqual(r.appended.length, 0);
+  assert.ok(run([{ date: D, time: '17:00', punchType: 'ClockOut' }], day).res.success, 'the right time files');
+  r = run([{ date: D, time: '20:00', punchType: 'ClockIn' }, { date: D, time: '05:00', punchType: 'ClockOut' }], day);
+  assert.ok(r.res.success, 'this batch\'s own Clock In wins over the day\'s: 20:00 → 05:00 is a 9-hour overnight shift');
+  // Apply now and approval run the same rule, and approval reads a ctx the writer keeps current.
+  const rp = stripJsComments_(extractRawFunction('Code.js', 'recordPunchCore_'));
+  assert.ok(/adjustShiftSpanError_\(custom\.time, adjustIndexLastTime_\(c, date, 'ClockOut'\)\)/.test(rp) && /adjustShiftSpanError_\(adjustIndexLastTime_\(c, date, 'ClockIn'\), custom\.time\)/.test(rp) &&
+    /if \(spanErr\) return \{ success: false, error: spanErr \};/.test(rp), 'Apply now refuses before anything is written');
+  const dec = stripJsComments_(extractRawFunction('Code.js', 'punchAdjustDecideAll_'));
+  const chk = dec.indexOf('adjustShiftSpanError_(reqTime, adjustIndexLastTime_(cx, date, \'ClockOut\'))'), wr = dec.indexOf('const w = writeAdjustPunchForEmployee_(');
+  assert.ok(chk > 0 && chk < wr && /if \(spanErr\) \{ fail\(id, spanErr/.test(dec), 'approval re-checks before the write and leaves the row Pending');
+  // The writer keeps a caller's ctx current (driven), so a Clock Out approved
+  // after its Clock In in one batch is judged against the NEW Clock In.
+  const writes = [];
+  const wctx = tc02Ctx_({ ADP: { TIME: 2, COMMENTS: 5 }, sheetSafe_: (v) => v, appendToAdpSheet_: () => {},
+    writeToEmployeeSheet_: () => {}, daysBetween_: () => 1, fmtDateTz_: () => 'x', empTz_: () => 'UTC', writeAuditLog_: () => {} });
+  vm.runInContext(extractRawFunction('Code.js', 'writeAdjustPunchForEmployee_'), wctx);
+  const cx = { sheet: { getRange: (r2, c2) => ({ setValue: (v) => writes.push([r2, c2, v]) }), getLastRow: () => 12 },
+    idx: { [D + '|ClockIn']: 3 }, all: { [D + '|ClockIn']: [{ rowIndex: 3, time: '08:00' }] } };
+  wctx.writeAdjustPunchForEmployee_({ id: 'E1' }, D, 'ClockIn', '20:00', 'm', '', cx, null);
+  assert.strictEqual(wctx.adjustIndexLastTime_(cx, D, 'ClockIn'), '20:00', 'an update in place is reflected');
+  wctx.writeAdjustPunchForEmployee_({ id: 'E1' }, D, 'ClockOut', '05:00', 'm', '', cx, null);
+  assert.strictEqual(wctx.adjustIndexLastTime_(cx, D, 'ClockOut'), '05:00'); assert.strictEqual(cx.idx[D + '|ClockOut'], 12, 'an append is indexed');
+});
+
+test('TC-06 (cycle 23): the reconciliation never marks rows Reconciled without a credit that landed, never reports one that did not, and counts what each approval actually took (driven)', () => {
+  const rows = () => [['h'],
+    ['E1', 'Ann', '2026-10-05', 'Full Day', '', 'Approved', 's1', 'annual:1'],
+    ['E1', 'Ann', '2026-10-05', 'Full Day', '', 'Approved', 's2']];
+  const mk = (o) => {
+    const t = c23ToCtx_(Object.assign({ rows: rows() }, o));
+    t.ctx.lookupEmployeeById_ = () => ({ id: 'E1', name: 'Ann', ptoEnabled: !(o && o.targetPtoOff) });
+    ['toRowCharge_', 'empPtoDisabledCell_', 'ptoLegitHalfDayPair_', 'fixPtoReconciliation', 'getPtoReconciliation']
+      .forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), t.ctx, { filename: 'Code.js#' + fn }));
+    return t;
+  };
+  let t = mk({ tracking: false });
+  let r = JSON.parse(JSON.stringify(t.ctx.fixPtoReconciliation('E1')));
+  assert.ok(!r.success && /PTO tracking is off/.test(r.error), 'THE REGRESSION: it reported creditedAnnual=1');
+  assert.strictEqual(t.writes.length, 0, 'no row was marked Reconciled'); assert.strictEqual(t.audits.length, 0, 'no audit of a credit that never happened');
+  t = mk({ targetPtoOff: true });
+  r = t.ctx.fixPtoReconciliation('E1');
+  assert.ok(!r.success && /has PTO turned off/.test(r.error)); assert.strictEqual(t.writes.length, 0);
+  // A credit that writes nothing mid-run: the rows go back to Approved.
+  t = mk({ ptoOff: true });
+  r = t.ctx.fixPtoReconciliation('E1');
+  assert.ok(!r.success && /could not be credited/.test(r.error));
+  assert.strictEqual(t.rows[2][5], 'Approved', 'the neutralized row was reverted');
+  assert.ok(!t.audits.some((a) => /creditedAnnual=1/.test(a.notes)), 'no credit audited');
+  // The working case still credits and neutralizes.
+  t = mk({});
+  r = t.ctx.fixPtoReconciliation('E1');
+  assert.ok(r.success && r.creditedAnnual === 1 && t.balance.annual === 11); assert.strictEqual(t.rows[2][5], 'Reconciled');
+  // A duplicate whose approval took NOTHING is no over-charge: not detected, not credited.
+  t = mk({}); t.rows[2][7] = 'none';
+  t.ctx.getEmployeeRosterRows_ = () => [['h'], ['E1']];
+  vm.runInContext('var EMP = { ID: 0, NAME: 1, ANNUAL_LEAVE: 2, SICK_LEAVE: 3, PTO_ENABLED: 4 };', t.ctx);
+  assert.strictEqual(t.ctx.getPtoReconciliation().reps.length, 0, 'the detector reads the recorded charge');
+  assert.strictEqual(t.ctx.fixPtoReconciliation('E1').fixed, false, 'and the fix agrees');
+  // The detector skips a rep with PTO off — their card would offer a fix that must refuse.
+  t = mk({});
+  t.ctx.getEmployeeRosterRows_ = () => [['h'], ['E1', 'Ann', 0, 0, false]];
+  vm.runInContext('var EMP = { ID: 0, NAME: 1, ANNUAL_LEAVE: 2, SICK_LEAVE: 3, PTO_ENABLED: 4 };', t.ctx);
+  assert.strictEqual(t.ctx.getPtoReconciliation().reps.length, 0, 'Sheets-coerced FALSE reads as PTO off');
+  t.ctx.getEmployeeRosterRows_ = () => [['h'], ['E1', 'Ann', 0, 0, '']];
+  assert.strictEqual(t.ctx.getPtoReconciliation().reps.length, 1, 'blank PtoEnabled is on (g20) — still detected');
+});
+
+test('TC-08 (cycle 23): the sheet doctor\'s duplicate collapse keeps the stamp the hours already count, so collapsing never changes what is paid (driven, with calcHours_ before and after)', () => {
+  const ctx = vm.createContext({ String, Object, Array, JSON, Number, Math, Date });
+  ['timeToMins_', 'breakSortKey_', 'breakPairs_', 'breakOpenLeave_', 'calcHours_', 'tsDoctorKeepIndex_']
+    .forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
+  const day = (lo, li) => ({ 'E1|D': { in: ['08:00:00'], out: ['17:00:00'], lo, li } });
+  const grp = (type, times) => ({ empId: 'E1', date: 'D', type, rows: times.map((_, i) => 10 + i), times });
+  // A return appended FIRST that pairs, and a later stray: keep the one that pairs.
+  let days = day(['12:00:00'], ['12:30:00', '13:00:00']);
+  let g = grp('LunchIn', ['12:30:00', '13:00:00']);
+  const k = ctx.tsDoctorKeepIndex_(g, days);
+  assert.strictEqual(k, 0, 'THE REGRESSION: the last-appended 13:00 was kept and the 12:30 return the break used was deleted');
+  const before = ctx.calcHours_('08:00:00', '17:00:00', ['12:00:00'], ['12:30:00', '13:00:00']);
+  const after = ctx.calcHours_('08:00:00', '17:00:00', ['12:00:00'], [g.times[k]]);
+  assert.strictEqual(after, before, 'pay unchanged (8.5 h)'); assert.strictEqual(before, 8.5);
+  // A double-punched leave with a return: keep the leave that pairs.
+  days = day(['12:01:00', '12:00:00'], ['12:30:00']);
+  g = grp('LunchOut', ['12:01:00', '12:00:00']);
+  assert.strictEqual(g.times[ctx.tsDoctorKeepIndex_(g, days)], '12:00:00', 'the pairing uses the earlier leave');
+  // Clock types keep the last appended (the stamp punchDayAdd_ pays — INV-155).
+  assert.strictEqual(ctx.tsDoctorKeepIndex_(grp('ClockIn', ['09:00:00', '09:05:00']), day([], [])), 1);
+  // No stamp used: the last row (deleting unused stamps changes nothing).
+  days = day(['12:00:00'], ['11:00:00', '11:30:00']);
+  assert.strictEqual(ctx.tsDoctorKeepIndex_(grp('LunchIn', ['11:00:00', '11:30:00']), days), 1);
+  // The collapse and the detector both use it.
+  const fix = stripJsComments_(extractRawFunction('Code.js', 'fixTimesheetDuplicates'));
+  assert.ok(/const keep = tsDoctorKeepIndex_\(g, scan\.days\);/.test(fix) && /if \(j === keep\) continue;/.test(fix));
+  const det = stripJsComments_(extractRawFunction('Code.js', 'getTimesheetDoctor'));
+  assert.ok(/keep: g\.times\[tsDoctorKeepIndex_\(g, scan\.days\)\]/.test(det), 'the card names the row it keeps');
+  const mgr = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8'));
+  assert.ok(/keeps ' \+ esc\(d\.keep\)/.test(mgr) && !/keeping the latest row/.test(mgr), 'the card and the confirm say what is kept');
+});
+
+test('CORE-07 (cycle 23): the EmployeeOffboard audit row names the person offboarded as its subject, with PunchDate blank and the admin as actor (driven)', () => {
+  const audits = [];
+  const ctx = vm.createContext({ String, Object, Array, JSON,
+    getEmployeeInfo_: () => ({ id: 'A1', name: 'Admin', email: 'admin@x', isAdmin: true }),
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    getAdpSS_: () => ({ getSheetByName: () => ({ getDataRange: () => ({ getValues: () => [['h'], ['R7', 'Rita', 'rita@x']] }),
+      getRange: () => ({ setValue() {} }) }) }),
+    CONFIG: { EMPLOYEE_TAB: 'Employees' }, EMP: { ID: 0, NAME: 1, EMAIL: 2 },
+    empRosterEmail_: (row) => row[2], sheetSafe_: (v) => v, invalidateRosterCache_: () => {},
+    offboardFromGateLists_: () => ({ removed: [], kept: [] }),
+    writeAuditLog_: (e, action, d, t, adj, back, notes, actor) => audits.push({ e, action, d, notes, actor }) });
+  vm.runInContext(extractRawFunction('Code.js', 'offboardEmployee'), ctx);
+  assert.ok(ctx.offboardEmployee('R7').success);
+  const a = JSON.parse(JSON.stringify(audits[0]));
+  assert.deepStrictEqual(a.e, { id: 'R7', name: 'Rita' }, 'THE REGRESSION: the admin was recorded as the subject');
+  assert.strictEqual(a.d, '', 'and the id no longer lands in PunchDate');
+  assert.strictEqual(a.actor, 'admin@x'); assert.strictEqual(a.action, 'EmployeeOffboard');
+});
+
+test('VIS-1 (cycle 23): the Day Edit hint no longer claims 24-hour entry — the time inputs render AM/PM', () => {
+  const m = fs.readFileSync(path.join(__dirname, '../../web-app/modals.html'), 'utf8');
+  const hint = /id="day-edit-subtitle"[\s\S]*?<div class="modal-hint">([\s\S]*?)<\/div>/.exec(m);
+  assert.ok(hint, 'the Day Edit hint is found');
+  assert.ok(!/24-hour/.test(hint[1]) && /check AM or PM/.test(hint[1]), 'the hint matches the inputs');
+});
 
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

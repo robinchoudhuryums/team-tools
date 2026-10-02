@@ -464,7 +464,13 @@ const EMP = {
  *  PTO_ACCRUAL_CATCHUP_MAX_MONTHS with the overflow RETURNED, not silently
  *  absorbed (INV-187 — the audit row names what the cap dropped). */
 const PTO_ACCRUAL_CATCHUP_MAX_MONTHS = 12;
-const TO  = { EMP_ID:0, EMP_NAME:1, DATE:2, TYPE:3, NOTES:4, STATUS:5, SUBMITTED_AT:6 };
+// TC-04 (cycle 23): DEDUCTED (col 8, a trailing add, self-healed by
+// getOrCreateTimeOffSheet_) records what an APPROVAL actually took from the
+// balance — 'annual:1', 'sick:0.5', or 'none' when nothing moved (tracking off,
+// the rep's PtoEnabled FALSE, an unpaid type). Un-approving restores exactly
+// that. Blank = a row approved before the column existed: the old by-type rule.
+const TO  = { EMP_ID:0, EMP_NAME:1, DATE:2, TYPE:3, NOTES:4, STATUS:5, SUBMITTED_AT:6, DEDUCTED:7 };
+const TO_HEADERS = ['EmployeeId','EmployeeName','Date','Type','Notes','Status','SubmittedAt','Deducted'];
 // Shared AuditLog columns (the ADP-spreadsheet AuditLog tab — writeAuditLog_ /
 // getOrCreateAuditSheet_ header order). Batch 3 (cycle-8): the AuditLog was the
 // ONE core sheet with NO named column enum, so its cells were read as bare
@@ -1541,6 +1547,13 @@ const PUNCH_ADJUST_BULK_MAX = 50;
 // Cycle-11 L-11 — time-off date sanity horizon (see the submit paths).
 const TIMEOFF_MAX_DAYS_AHEAD = 370;   // ~a year of planned leave + slop
 const TIMEOFF_MAX_DAYS_BACK  = 90;    // retroactive filing window
+// TC-05 (cycle 23) — the longest shift a REP's own adjustment may create.
+// calcHours_ wraps Clock Out < Clock In as overnight on purpose (overnight-local
+// reps exist), so an AM/PM typo (in 08:00, out 05:00) used to be paid as a
+// 21-hour shift. A real overnight shift is ~9 h; anything past this bound is
+// refused and the rep is asked to check AM and PM. Managers (Day Edit) are not
+// bound by it.
+const ADJUST_MAX_SHIFT_HOURS = 16;
 let _adpSsMemo = null;
 let _adpTzMemo = null;
 // ── Host-sheet timezone for CN coercion recovery (Part A, operator 2026-08-27) ──

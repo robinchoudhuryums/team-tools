@@ -80,10 +80,24 @@ const _TEST_DATE_RECENT = (() => {
   const d = new Date(); d.setDate(d.getDate() - 3);
   return Utilities.formatDate(d, CONFIG.TIMEZONE, 'yyyy-MM-dd');
 })();
-const _TEST_DATE_FUTURE = (() => {
+// TC-03 (cycle 23): a single-date time-off request is refused on a weekend or
+// a company holiday, so the time-off fixture date must be a WORKING day. At
+// load it is +30 days moved past a weekend (pure date math — no sheet read at
+// global scope, which runs on every execution); setupTestEnvironment then
+// moves it past a company holiday too (_testWorkdayOnOrAfter_), before any
+// test or cleanup reads it.
+let _TEST_DATE_FUTURE = (() => {
   const d = new Date(); d.setDate(d.getDate() + 30);
+  for (let k = 0; k < 3 && /^(Sat|Sun)$/.test(Utilities.formatDate(d, CONFIG.TIMEZONE, 'EEE')); k++) d.setDate(d.getDate() + 1);
   return Utilities.formatDate(d, CONFIG.TIMEZONE, 'yyyy-MM-dd');
 })();
+/** TC-03 — the first date on or after `iso` that takes time off (not a
+ *  weekend, not a company holiday), via the server's own rule. */
+function _testWorkdayOnOrAfter_(iso) {
+  let d = iso;
+  for (let k = 0; k < 14 && timeOffClosedDayReason_(d); k++) d = addDaysIso_(d, 1);
+  return d;
+}
 const _TEST_DATE_OLD = (() => {
   const d = new Date(); d.setDate(d.getDate() - 14);
   return Utilities.formatDate(d, CONFIG.TIMEZONE, 'yyyy-MM-dd');
@@ -510,6 +524,7 @@ function setupTestEnvironment() {
   _assertSuiteCaller_('setupTestEnvironment');   // S1 — WHO, before assertNotProdInstance_'s WHERE
   try { _suiteEnvCheck_(); } catch (e) { Logger.log('_suiteEnvCheck_ skipped: ' + e.message); }
   assertNotProdInstance_('setupTestEnvironment');   // blue-green guard (see runAllTests)
+  _TEST_DATE_FUTURE = _testWorkdayOnOrAfter_(_TEST_DATE_FUTURE);   // TC-03 — past a company holiday too
   const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
 
   // Ensure column K has a PtoEnabled header so getDataRange() reliably

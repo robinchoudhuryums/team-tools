@@ -405,7 +405,8 @@ function renderSheetDoctorCard_(res) {
     return '<div style="padding:6px 0;border-bottom:1px dashed var(--line);font-size:12px">' +
       '<span style="font-weight:600;color:var(--ink)">' + esc(d.name || d.empId) + '</span> · ' +
       esc(d.date) + ' · ' + esc(d.type) + ' ×' + esc(String(d.count)) +
-      ' <span style="color:var(--muted)">(' + d.times.map(esc).join(', ') + ')</span></div>';
+      ' <span style="color:var(--muted)">(' + d.times.map(esc).join(', ') + ')</span>' +
+      (d.keep ? ' <span style="color:var(--muted)">· keeps ' + esc(d.keep) + '</span>' : '') + '</div>';   // TC-08
   }).join('');
   const invs = (res.inverted || []).map(function (v) {
     const detail = (v.kind === 'lunch')
@@ -451,7 +452,7 @@ function renderSheetDoctorCard_(res) {
       '<span class="count-pill warn">' + total + '</span></h2>' +
     '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Scan of the last ' +
       esc(String(res.windowDays)) + ' days. Duplicate rows predate the live sequence guard; ' +
-      'collapsing keeps the latest row per punch (the row Day Edit already shows). ' +
+      'collapsing keeps the stamp the hours already count, so pay does not change. ' +
       'Inverted in/out pairs and unpaired break stamps are report-only — correct them via Day Edit.</div>' +
     truncNote +
     (dups ? '<h2 class="card-label" style="margin:6px 0 2px">Duplicate punches</h2>' + dups : '') +
@@ -469,7 +470,7 @@ function renderSheetDoctorCard_(res) {
 function fixSheetDoctorDups_(btn) {
   uiConfirm({
     title: 'Collapse duplicate punches',
-    message: 'Delete the earlier duplicate row(s) per (employee, date, punch type), keeping the latest row — the one Day Edit displays? Each deletion writes an audit entry. Runs in bounded batches (punches are briefly blocked while it runs), so a large backlog may need more than one click; idempotent either way.',
+    message: 'Delete the duplicate row(s) per (employee, date, punch type), keeping the stamp the hours already count (shown as "keeps" on each line), so no one\'s paid hours change? Each deletion writes an audit entry. Runs in bounded batches (punches are briefly blocked while it runs), so a large backlog may need more than one click; idempotent either way.',
     tone: 'danger', confirmLabel: 'Collapse duplicates',
   }).then(function (ok) {
     if (!ok) return;

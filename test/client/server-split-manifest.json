@@ -1948,6 +1948,40 @@
     "serveResolvePage_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-02",
+   "why": "cycle 23 Batch 6a: TC-03/04/05/06/08 helpers",
+   "added": [
+    "ADJUST_MAX_SHIFT_HOURS",
+    "TO_HEADERS",
+    "adjustIndexLastTime_",
+    "adjustShiftSpanError_",
+    "empPtoDisabledCell_",
+    "timeOffClosedDayReason_",
+    "toDeductionCell_",
+    "toDeductionRead_",
+    "toRowCharge_",
+    "tsDoctorKeepIndex_"
+   ],
+   "removed": [],
+   "changed": [
+    "TO",
+    "fixPtoReconciliation",
+    "fixTimesheetDuplicates",
+    "getOrCreateTimeOffSheet_",
+    "getPtoReconciliation",
+    "getTimesheetDoctor",
+    "managerSubmitTimeOff",
+    "offboardEmployee",
+    "punchAdjustDecideAll_",
+    "recordPunchCore_",
+    "submitPunchAdjustRequests",
+    "submitTimeOffRequest",
+    "updateTimeOffStatus",
+    "writeAdjustPunchForEmployee_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -1971,6 +2005,11 @@
    "file": "20_timeclock.js",
    "kind": "const",
    "sha": "68179aeacaee5fa7"
+  },
+  "ADJUST_MAX_SHIFT_HOURS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a193e9630581cb51"
   },
   "ADMIN_PROP_KEYS_": {
    "file": "00_config.js",
@@ -3940,7 +3979,12 @@
   "TO": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "7e0c3448e1ecc93f"
+   "sha": "1a97d36321e33827"
+  },
+  "TO_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "0baefefc0cbfb87c"
   },
   "TQ": {
    "file": "00_config.js",
@@ -4297,10 +4341,20 @@
    "kind": "function",
    "sha": "82c777e3a590ec1e"
   },
+  "adjustIndexLastTime_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "6d25fe746a2efcde"
+  },
   "adjustLeaveBalance_": {
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "c08b7b559af91d6e"
+  },
+  "adjustShiftSpanError_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "63e94ee153308695"
   },
   "adminAuditRowTone_": {
    "file": "10_core.js",
@@ -5582,6 +5636,11 @@
    "kind": "function",
    "sha": "eeedad1d4e9ffa7f"
   },
+  "empPtoDisabledCell_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "a6c9424c07779c42"
+  },
   "empRosterEmail_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -5665,12 +5724,12 @@
   "fixPtoReconciliation": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "3fadedfa734727ff"
+   "sha": "bea87fbe717bd37c"
   },
   "fixTimesheetDuplicates": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "134394568e609981"
+   "sha": "6020f95deb0ea040"
   },
   "fixedHoliday_": {
    "file": "10_core.js",
@@ -6490,7 +6549,7 @@
   "getOrCreateTimeOffSheet_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "3e4be2d23e4d111c"
+   "sha": "d7408f357e8b1223"
   },
   "getOrCreateTimesheetArchiveTab_": {
    "file": "20_timeclock.js",
@@ -6515,7 +6574,7 @@
   "getPtoReconciliation": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "4b4500f62ca45d99"
+   "sha": "fcb9784ad5be2ec4"
   },
   "getPunctualityReport": {
    "file": "20_timeclock.js",
@@ -6670,7 +6729,7 @@
   "getTimesheetDoctor": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "97d29690b7a29e78"
+   "sha": "a06cd838593a2984"
   },
   "getTodayPunches_": {
    "file": "20_timeclock.js",
@@ -7785,7 +7844,7 @@
   "managerSubmitTimeOff": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "d62fbad4506fe34b"
+   "sha": "dfa3e95daacd004b"
   },
   "markDeptRequestResolved_": {
    "file": "50_deptrequests.js",
@@ -7950,7 +8009,7 @@
   "offboardEmployee": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "f9f59d6715daf80a"
+   "sha": "4e86847cd9dc9cb5"
   },
   "offboardFromGateLists_": {
    "file": "20_timeclock.js",
@@ -8175,7 +8234,7 @@
   "punchAdjustDecideAll_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "107bf459504cfde0"
+   "sha": "724e4b18a97b40ad"
   },
   "punchDayAdd_": {
    "file": "20_timeclock.js",
@@ -8610,7 +8669,7 @@
   "recordPunchCore_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "db9f1c8719e291fd"
+   "sha": "ddd62fcfabe55a70"
   },
   "recordViewEnter": {
    "file": "10_core.js",
@@ -9365,7 +9424,7 @@
   "submitPunchAdjustRequests": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "31693d7ee07a324e"
+   "sha": "b2ee86d70106f854"
   },
   "submitQuizAttempt": {
    "file": "80_training.js",
@@ -9380,7 +9439,7 @@
   "submitTimeOffRequest": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "b09ac1d464fe2864"
+   "sha": "02371f6e1e0b9ea6"
   },
   "teamMetricsRepView_": {
    "file": "40_metrics.js",
@@ -9397,6 +9456,11 @@
    "kind": "function",
    "sha": "3425cc78d8750744"
   },
+  "timeOffClosedDayReason_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "76a503a4acc78906"
+  },
   "timeOffDayKind_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -9412,10 +9476,25 @@
    "kind": "function",
    "sha": "cc0a0c6d0641fa02"
   },
+  "toDeductionCell_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "7130ad97056fb2fb"
+  },
+  "toDeductionRead_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "2c7f3dbc60a18f18"
+  },
   "toDisplayTime_": {
    "file": "10_core.js",
    "kind": "function",
    "sha": "2aaaa6c4988aa9ec"
+  },
+  "toRowCharge_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "e3ddf461af169400"
   },
   "trainAttemptStats_": {
    "file": "80_training.js",
@@ -9512,6 +9591,11 @@
    "kind": "function",
    "sha": "0d792a5ca5b6311b"
   },
+  "tsDoctorKeepIndex_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "ebffb4f6138878d5"
+  },
   "tsDoctorLegitBreaks_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -9575,7 +9659,7 @@
   "updateTimeOffStatus": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "3990912d0b1b630a"
+   "sha": "00e5b95af22b8a40"
   },
   "utf8Len_": {
    "file": "10_core.js",
@@ -9665,7 +9749,7 @@
   "writeAdjustPunchForEmployee_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "12b7b296b1d4ba2c"
+   "sha": "be8b30a164f70e39"
   },
   "writeAuditLog_": {
    "file": "10_core.js",
