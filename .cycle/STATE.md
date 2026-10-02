@@ -3,11 +3,11 @@
 ## Current
 Cycle: 23 — opened by the 2026-10-01 `/broad-scan` (0 Critical / 5 High; plan of 13 batches + 8 deferred, in chat). Cycle 22 and 22post are in `.cycle/HISTORY.md`.
 Phase: implement
-Scope: broad — Batches 1–5 (TC-02 included) and 6a done; next /sync-docs for 6a, then Batch 6b
+Scope: broad — Batches 1–5 (TC-02 included) and 6a done and doc-synced; next Batch 6b
 Test Command: manual
 Estimates: Batch 1: M (~9 h) · Batch 2: M (~11 h) · Batch 3: M (~9.5 h) · Batch 4a: M (~10 h) · 4a follow-ons: S (~3 h) · Batch 4b: M (~11 h) · TC-02 (option a): M (~8 h) · Batch 5: M (~10 h) · Batch 6a: M (~9.5 h) — each written before its first edit
 Subsystem cycles since last Seams audit: 3 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25) and 22post's /reflect (2026-09-30). The cadence is every 4, so the next reflection reaches it.
-Updated: 2026-10-02 (cycle 23 Batch 6a)
+Updated: 2026-10-02 (cycle 23 Batch 6a + its /sync-docs)
 
 ## In progress (facts to carry forward — NOT judgments)
 - Cycle 23 opened 2026-10-01 with a `/broad-scan` (0 Critical / 5 High / ~110 findings; the full report and 13-batch plan are in that session's chat — the batch→ID list is copied under Pending below).
@@ -15,14 +15,15 @@ Updated: 2026-10-02 (cycle 23 Batch 6a)
 - Batch 2 implemented on the same branch (block: `.cycle/blocks/23-batch2-broad-implement.md`); NOT yet deployed. /sync-docs for Batch 2 done.
 - Batch 3 implemented on the same branch (block: `.cycle/blocks/23-batch3-broad-implement.md`); NOT yet deployed. /sync-docs for Batch 3 done.
 - Batch 4a and its follow-ons implemented on the same branch (blocks: `.cycle/blocks/23-batch4a-broad-implement.md`, `…-batch4a-followons-broad-implement.md`); NOT yet deployed. /sync-docs for both done.
-- Batch 5 implemented on the same branch (block: `.cycle/blocks/23-batch5-broad-implement.md`); NOT yet deployed; /sync-docs for it not yet run.
+- Batch 5 implemented on the same branch (block: `.cycle/blocks/23-batch5-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - TC-02 implemented on the same branch as option (a) (block: `.cycle/blocks/23-tc02-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Batch 4b implemented on the same branch (block: `.cycle/blocks/23-batch4b-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Batches 1–5 (+ TC-02, 4a follow-ons) merged to main as PR #284 (2026-10-02); the branch was restarted from main after the merge. NOT yet deployed.
-- Batch 6a implemented on the restarted branch (block: `.cycle/blocks/23-batch6a-broad-implement.md`); NOT yet deployed; /sync-docs for it not yet run.
+- Batch 6a implemented on the restarted branch (block: `.cycle/blocks/23-batch6a-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Everything through 22post is merged (PRs #274–#282) and deployed (2026-09-30). The operator was finishing two 22post steps at close: the manual.json re-export + import, and the S124–S128 walks.
 
 ## Completed this cycle
+- /sync-docs (Batch 6a) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g27/g28/g127/g15 extended (index + AMENDED narratives); PTO bucket, reconciliation and punch-queue decisions amended; new operator entry for the TimeOffRequests `Deducted` column (+ inventory line); INV-03/94/159 amended, INV-353 added; S4/S5/S7/S13/S75/S92 steps, S133 added
 - TC-03 | 20_timeclock.js, Tests.js | single-date time off refuses a weekend or company holiday (rep + manager paths); the editor fixture date is a working day
 - TC-04 | 00_config.js, 20_timeclock.js | TimeOffRequests `Deducted` records what an approval took; un-approving restores exactly that (blank = legacy by-type)
 - TC-05 | 00_config.js, 20_timeclock.js | rep adjustments refuse an equal pair or a shift over 16 h at Apply now, submit and approval; the writer keeps the ctx current
@@ -98,7 +99,7 @@ Updated: 2026-10-02 (cycle 23 Batch 6a)
   - Batch 10 PHI/config: KBUI-2, KB-2, INT2-3, INT-1/INT2-1/INT2-2, INT-2/INT2-4, CN-3, ADM-12, ADM-13/CORE-04/05/06/03/TRN-2, MET-5/MET2-1
   - Deferred (decisions): DRV-3, SP-2, KB2-6, HR-2, TRN-1, CN-8, INT-3, TC2-9
 - **Batch 1 deploy + walks:** clasp push + New version; S8 with >1,000 rows; S18's blocked-clipboard step twice via Save & Compose; S1.
-- **Batch 6a deploy:** optionally deny any pre-deploy Pending single-date request on a weekend/holiday (approval is not re-checked); walk S7, S5/S92/S96 (the AM/PM refusal), the time-off approve/deny scenarios, the PTO reconciliation card, the sheet doctor, S75.
+- **Batch 6a deploy:** optionally deny any pre-deploy Pending single-date request on a weekend/holiday (approval is not re-checked); walk S4, S5, S7, S13, S75, S92 and S133.
 - **Batch 5 deploy:** the DR-1 operator check (any two DeptRequests rows sharing a ThreadId?); tell the departments the resolve link now opens a page with a button; walk S74/S80/S101/S105/S121/S122.
 - **TC-02 deploy:** deny-and-refile any pre-deploy break request the queue marks "filed without add/correct" if its approval is refused; walk S5/S7/S92/S95/S96 and the new break-choice scenario.
 - **Batch 4b deploy:** expect System + the Overview checklist to show "Forms (PHI) not set" / "Dept Requests (PHI-adjacent) not set" while those properties are unset (set both to the Intake spreadsheet), a readiness "Automation health" row, and Reference-lookups findings; walk S43/S44/S62/S64/S97/S112/S114/S117.
@@ -124,7 +125,7 @@ Updated: 2026-10-02 (cycle 23 Batch 6a)
 - **22post reflection candidates, not yet in the library:** INV-350 (no path the manual import or reader reaches calls Drive), INV-351 (an import that fails in transport says so, never as a defect of the file), INV-352 (the floating Scratchpad stacks beneath every modal overlay — a ui-dialog can open beneath the panel today, z 56).
 - **22post batch follow-ons** (full text in the 22post HISTORY block): A — no visual opens the composer on a Close Order, the team Median sub-line ellipsizes at half width, the date range does not reach the server-derived table/cards; B — no pressed toolbar state, no visual of formatted content; C — no DOM harness drives renderManagerView, the manager fixture's Leo Kim has an impossible shape, no toast on the assignee's open window; D — the scan's counts are only logged; E — Half/Full shows on a phone, no drag-to-reorder; M5b — the highlighter marks a two-letter word inside longer words and marks the results heading, `kbMarkReviewed` does not bump the KB generation (named exemption in M5b-I2).
 - **Carried from cycle 22** (full list in its HISTORY block): S6 is server-only; the coaching business-days note and the Spanish auto-assign flag description still say "US holidays"; Save Departments lets two rows share a name; the half-day grade's three gaps; the client `coachTsMs_` reads coaching stamps as UTC and M7's class survives in three readers; X1 names reads owed a fixture and the mock lacks `adminScanStoredFormulas`; the missing visual scenarios; an intermittent DOM pin (`the resume request states the unpaid gap before it is filed`); `assertNotProdInstance_` permits while INSTANCE_IS_PROD is unset.
-- **Numbers — do not reuse:** INV-225..227 RESERVED (cycle 20); INV-229..232, INV-240..242, INV-301..303 and INV-350..352 PROPOSED (cycles 21, 21post, 22, 22post), not in the library. **Next free: INV-353; gotcha g164; scenario S133.**
+- **Numbers — do not reuse:** INV-225..227 RESERVED (cycle 20); INV-229..232, INV-240..242, INV-301..303 and INV-350..352 PROPOSED (cycles 21, 21post, 22, 22post), not in the library. **Next free: INV-354; gotcha g164; scenario S134.**
 
 ## Decisions made (so the next session doesn't re-litigate)
 - **TC-05 (cycle 23 Batch 6a):** rep adjustments are bounded (equal pair, or a shift over `ADJUST_MAX_SHIFT_HOURS` = 16 h), NOT refused on every Clock Out < Clock In — the overnight wrap is a documented, deliberate rule (g127, overnight-local reps), so refusing all wraps would need an operator decision. Manager Day Edit is not bound.
@@ -136,4 +137,4 @@ Updated: 2026-10-02 (cycle 23 Batch 6a)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 23 Batches 1–5 (TC-02 included) are merged to main (PR #284); Batch 6a is committed and pushed on `claude/blissful-johnson-cottl5` (restarted from main). Next: `/sync-docs` for Batch 6a; deploy and walk the Batch 1–6a scenarios; then `/broad-implement Batch 6b`. The next /reflect reaches the Seams-audit cadence.
+Cycle 23 Batches 1–5 (TC-02 included) are merged to main (PR #284); Batch 6a is committed and pushed on `claude/blissful-johnson-cottl5` (restarted from main). Batch 6a's docs are synced. Next: deploy and walk the Batch 1–6a scenarios (6a: S4, S5, S7, S13, S75, S92, S133); then `/broad-implement Batch 6b`. The next /reflect reaches the Seams-audit cadence.
