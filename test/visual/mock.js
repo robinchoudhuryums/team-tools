@@ -1365,7 +1365,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       var days = [];
       for (var d = 0; d < n; d++) {
-        var iso = addIso(from, d), dow = new Date(iso + 'T12:00:00Z').getUTCDay(), closed = dow === 0 || dow === 6;
+        var iso = addIso(from, d), dow = new Date(iso + 'T12:00:00Z').getUTCDay(), closed = dow === 0 || dow === 6 || d === 5;   // TC2-8: the holiday (d === 5) is closed too
         var reps = [
           { name: 'Avery Blake', tz: 'America/Chicago', status: (d === 2) ? 'off' : 'working', ptoType: (d === 2) ? 'Full Day' : null, startMgr: '8:00 AM', endMgr: '5:00 PM', startsPrevDay: false },
           { name: 'Sam Ortiz', tz: 'America/Chicago', status: (d === 3) ? 'half' : (d === 4 ? 'tentative' : 'working'), ptoType: (d === 3) ? 'Half day' : (d === 4 ? 'Pending' : null), startMgr: '8:30 AM', endMgr: '5:00 PM', startsPrevDay: false },

@@ -32659,6 +32659,7 @@ test('TC2-8 (cycle 23): Team on-time with no graded day is unknown ("—"), not 
   assert.ok(/const mgrHolidays = companyHolidayMap_\(/.test(dash), 'the dashboard reads the ONE calendar');
   const cov = stripJsComments_(extractRawFunction('Code.js', 'getCoveragePlan'));
   assert.ok(/const closed = \(weekdaysOnly && \(dow === 0 \|\| dow === 6\)\) \|\| !!holMap\[dateIso\];/.test(cov), 'a holiday is closed in the planner');
+  assert.ok(/closed = dow === 0 \|\| dow === 6 \|\| d === 5;/.test(fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8')), 'the fixture closes its holiday too (INV-185)');
   const mgr = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8'));
   assert.ok(/var teamPct = totDays \? Math\.round\(\(totOn \/ totDays\) \* 100\) : null;/.test(mgr), 'no graded day is null, never 0');
   assert.ok(/\(teamPct == null \? '—' : teamPct \+ '%'\)/.test(mgr) && /teamPct == null \? 'no graded days in this range'/.test(mgr), 'and it renders as unknown');

@@ -3,11 +3,11 @@
 ## Current
 Cycle: 23 — opened by the 2026-10-01 `/broad-scan` (0 Critical / 5 High; plan of 13 batches + 8 deferred, in chat). Cycle 22 and 22post are in `.cycle/HISTORY.md`.
 Phase: implement
-Scope: broad — Batches 1–5 (TC-02 included) and 6a done and doc-synced; next Batch 6b
+Scope: broad — Batches 1–5 (TC-02 included), 6a and 6b done (6b not yet doc-synced); next /sync-docs for 6b, then Batch 7a
 Test Command: manual
 Estimates: Batch 1: M (~9 h) · Batch 2: M (~11 h) · Batch 3: M (~9.5 h) · Batch 4a: M (~10 h) · 4a follow-ons: S (~3 h) · Batch 4b: M (~11 h) · TC-02 (option a): M (~8 h) · Batch 5: M (~10 h) · Batch 6a: M (~9.5 h) · Batch 6b: M (~10 h) — each written before its first edit
 Subsystem cycles since last Seams audit: 3 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25) and 22post's /reflect (2026-09-30). The cadence is every 4, so the next reflection reaches it.
-Updated: 2026-10-02 (cycle 23 Batch 6a + its /sync-docs)
+Updated: 2026-10-02 (cycle 23 Batch 6b)
 
 ## In progress (facts to carry forward — NOT judgments)
 - Cycle 23 opened 2026-10-01 with a `/broad-scan` (0 Critical / 5 High / ~110 findings; the full report and 13-batch plan are in that session's chat — the batch→ID list is copied under Pending below).
@@ -19,10 +19,19 @@ Updated: 2026-10-02 (cycle 23 Batch 6a + its /sync-docs)
 - TC-02 implemented on the same branch as option (a) (block: `.cycle/blocks/23-tc02-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Batch 4b implemented on the same branch (block: `.cycle/blocks/23-batch4b-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Batches 1–5 (+ TC-02, 4a follow-ons) merged to main as PR #284 (2026-10-02); the branch was restarted from main after the merge. NOT yet deployed.
+- Batch 6b implemented on the same branch (block: `.cycle/blocks/23-batch6b-broad-implement.md`); NOT yet deployed; /sync-docs for it not yet run.
 - Batch 6a implemented on the restarted branch (block: `.cycle/blocks/23-batch6a-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Everything through 22post is merged (PRs #274–#282) and deployed (2026-09-30). The operator was finishing two 22post steps at close: the manual.json re-export + import, and the S124–S128 walks.
 
 ## Completed this cycle
+- TC2-1 | script_core.html | the reminder ticker uses a state snapshot only for its own day; a stale day forces one immediate refresh
+- TC2-6 | 20_timeclock.js | onboarding refuses a timezone id the runtime does not know (Intl probe; offset tokens and an unable runtime pass)
+- TC2-3 | 20_timeclock.js, tc/script_manager.html, mock | the planner counts an approved half day as a tentative presence
+- TC2-4 | 20_timeclock.js, script_core.html | a column-O override keeps only tz-default breaks inside its shift; the ticker reminds only of in-shift breaks
+- TC2-7 | 20_timeclock.js, tc/script_manager.html | punctuality reads "not started yet" before the shift (plus grace) and for dates ahead
+- TC2-8 | 20_timeclock.js, tc/script_manager.html, mock | Team on-time "—" with no graded day; holidays leave the manager trends and are closed in the planner
+- COA-2 | 10_core.js, index.html, train/script_coaching.html | the client reads coaching stamps in CONFIG.TIMEZONE (SERVER_STORAGE_TZ)
+- MET2-2 | 10_core.js, 40_metrics.js | the inbound-volume average leaves holidays out of its denominator
 - /sync-docs (Batch 6a) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g27/g28/g127/g15 extended (index + AMENDED narratives); PTO bucket, reconciliation and punch-queue decisions amended; new operator entry for the TimeOffRequests `Deducted` column (+ inventory line); INV-03/94/159 amended, INV-353 added; S4/S5/S7/S13/S75/S92 steps, S133 added
 - TC-03 | 20_timeclock.js, Tests.js | single-date time off refuses a weekend or company holiday (rep + manager paths); the editor fixture date is a working day
 - TC-04 | 00_config.js, 20_timeclock.js | TimeOffRequests `Deducted` records what an approval took; un-approving restores exactly that (blank = legacy by-type)
@@ -91,7 +100,7 @@ Updated: 2026-10-02 (cycle 23 Batch 6a + its /sync-docs)
   - Batch 4b failure-as-data reads — DONE (ADM-04, ADM-09, ADM-07, ADM-08, MET-1, TC2-2, MET-2/3/4, KBUI-1, METUI-1, ADM-11)
   - Batch 5 Spanish/DR — DONE (SP-1, DR-2, DR-1, RES-1, SP-3, SP-4, DR-3)
   - Batch 6a PTO/punch — DONE (TC-03, TC-04, TC-05, TC-06, TC-08, CORE-07, VIS-1)
-  - Batch 6b schedules: TC2-1, TC2-6, TC2-3, TC2-4, TC2-7, TC2-8, COA-2, MET2-2
+  - Batch 6b schedules — DONE (TC2-1, TC2-6, TC2-3, TC2-4, TC2-7, TC2-8, COA-2, MET2-2)
   - Batch 7a store data: FORM-1, HR-1+CN-7, FORM-2, FORM-3, FORM-4, FORM-5, CN-1, CN-2, CN-4, CN-5
   - Batch 7b CN client: CNUI-02, CNUI-03, CNUI-04, CNUI-05, CNUI-06, CNUI-08, CNUI-09
   - Batch 8 QA: QA2-1, QA2-2, QA2-3, QA-2, QA-4, QA-5, QA2-4/5, QAUI-1
@@ -99,6 +108,7 @@ Updated: 2026-10-02 (cycle 23 Batch 6a + its /sync-docs)
   - Batch 10 PHI/config: KBUI-2, KB-2, INT2-3, INT-1/INT2-1/INT2-2, INT-2/INT2-4, CN-3, ADM-12, ADM-13/CORE-04/05/06/03/TRN-2, MET-5/MET2-1
   - Deferred (decisions): DRV-3, SP-2, KB2-6, HR-2, TRN-1, CN-8, INT-3, TC2-9
 - **Batch 1 deploy + walks:** clasp push + New version; S8 with >1,000 rows; S18's blocked-clipboard step twice via Save & Compose; S1.
+- **Batch 6b deploy:** optionally set per-employee breaks for reps with a column-O override; walk the reminder scenarios (a window left open overnight), S75 (a misspelled zone), Coverage, S110, Punctuality and the coaching board.
 - **Batch 6a deploy:** optionally deny any pre-deploy Pending single-date request on a weekend/holiday (approval is not re-checked); walk S4, S5, S7, S13, S75, S92 and S133.
 - **Batch 5 deploy:** the DR-1 operator check (any two DeptRequests rows sharing a ThreadId?); tell the departments the resolve link now opens a page with a button; walk S74/S80/S101/S105/S121/S122.
 - **TC-02 deploy:** deny-and-refile any pre-deploy break request the queue marks "filed without add/correct" if its approval is refused; walk S5/S7/S92/S95/S96 and the new break-choice scenario.
@@ -115,6 +125,7 @@ Updated: 2026-10-02 (cycle 23 Batch 6a + its /sync-docs)
 - **DEFERRED, still an operator decision:** F-09's holiday FALLBACK; what a LocationAcceptance city row's Accepts column decides.
 
 ## Open follow-on items
+- **Batch 6b follow-ons** (full text in its block): other empState readers were not audited for a day rollover; `saveShiftSchedules` checks timezone keys by shape only; the punctuality table sorts a null on-time first.
 - **Batch 6a follow-ons** (full text in its block): approval does not re-check the closed-day rule; `EmployeeAdd`'s audit row has CORE-07's shape; a deny during a tracking-off window clears the record without crediting; no visual fixture for the doctor card; no editor-suite case for the Deducted column, the closed-day refusal or the 16 h bound.
 - **Batch 5 follow-ons** (full text in its block): email-request Spanish threads still read any manual resolve as resolving the whole thread; no visual fixture for a 'self' resolve, `claimsUnavailable`, or the resolve page.
 - **TC-02 follow-ons** (full text in its block): two same-type "add" requests for one day in one batch are still a duplicate; the personal-sheet mirror is one slot per type; no editor-suite case drives a real multi-break adjustment.
@@ -128,6 +139,7 @@ Updated: 2026-10-02 (cycle 23 Batch 6a + its /sync-docs)
 - **Numbers — do not reuse:** INV-225..227 RESERVED (cycle 20); INV-229..232, INV-240..242, INV-301..303 and INV-350..352 PROPOSED (cycles 21, 21post, 22, 22post), not in the library. **Next free: INV-354; gotcha g164; scenario S134.**
 
 ## Decisions made (so the next session doesn't re-litigate)
+- **TC2-4 (cycle 23 Batch 6b):** a column-O override keeps the tz-default breaks that fall wholly inside its own shift, rather than dropping them all as the scan's plan said — dropping would silently remove still-valid break reminders and lunch grading for overrides that barely move the shift. A per-employee break list is never trimmed.
 - **TC-05 (cycle 23 Batch 6a):** rep adjustments are bounded (equal pair, or a shift over `ADJUST_MAX_SHIFT_HOURS` = 16 h), NOT refused on every Clock Out < Clock In — the overnight wrap is a documented, deliberate rule (g127, overnight-local reps), so refusing all wraps would need an operator decision. Manager Day Edit is not bound.
 - **TC-04 (cycle 23 Batch 6a):** a row approved before the `Deducted` column existed keeps the old by-type restore — nothing records what it took, so guessing "none" would under-credit every legitimate pre-deploy deduction.
 - **KB2-5 (cycle 23 Batch 2):** a LocationAcceptance city row with a BLANK State now reads "cannot tell" — the old "blank = any state" reading dated from when city rows only displayed; since T7 they decide. If the operator wants "any state", the follow-on is an explicit marker in the State cell, not a blank.
@@ -137,4 +149,4 @@ Updated: 2026-10-02 (cycle 23 Batch 6a + its /sync-docs)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 23 Batches 1–5 (TC-02 included) are merged to main (PR #284); Batch 6a is committed and pushed on `claude/blissful-johnson-cottl5` (restarted from main). Batch 6a's docs are synced. Next: deploy and walk the Batch 1–6a scenarios (6a: S4, S5, S7, S13, S75, S92, S133); then `/broad-implement Batch 6b`. The next /reflect reaches the Seams-audit cadence.
+Cycle 23 Batches 1–5 (TC-02 included) are merged to main (PR #284); Batch 6a is committed and pushed on `claude/blissful-johnson-cottl5` (restarted from main). Batch 6a's docs are synced. Batch 6b is committed and pushed too. Next: `/sync-docs` for Batch 6b; deploy and walk the Batch 1–6b scenarios; then `/broad-implement Batch 7a`. The next /reflect reaches the Seams-audit cadence.
