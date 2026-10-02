@@ -3,11 +3,11 @@
 ## Current
 Cycle: 23 — opened by the 2026-10-01 `/broad-scan` (0 Critical / 5 High; plan of 13 batches + 8 deferred, in chat). Cycle 22 and 22post are in `.cycle/HISTORY.md`.
 Phase: implement
-Scope: broad — Batches 1–4b done except TC-02; next Batch 5
+Scope: broad — Batches 1–4b and TC-02 done; next Batch 5
 Test Command: manual
-Estimates: Batch 1: M (~9 h) · Batch 2: M (~11 h) · Batch 3: M (~9.5 h) · Batch 4a: M (~10 h) · 4a follow-ons: S (~3 h) · Batch 4b: M (~11 h) — each written before its first edit
+Estimates: Batch 1: M (~9 h) · Batch 2: M (~11 h) · Batch 3: M (~9.5 h) · Batch 4a: M (~10 h) · 4a follow-ons: S (~3 h) · Batch 4b: M (~11 h) · TC-02 (option a): M (~8 h) — each written before its first edit
 Subsystem cycles since last Seams audit: 3 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25) and 22post's /reflect (2026-09-30). The cadence is every 4, so the next reflection reaches it.
-Updated: 2026-10-01 (cycle 23 Batch 4b)
+Updated: 2026-10-02 (cycle 23 TC-02)
 
 ## In progress (facts to carry forward — NOT judgments)
 - Cycle 23 opened 2026-10-01 with a `/broad-scan` (0 Critical / 5 High / ~110 findings; the full report and 13-batch plan are in that session's chat — the batch→ID list is copied under Pending below).
@@ -15,10 +15,12 @@ Updated: 2026-10-01 (cycle 23 Batch 4b)
 - Batch 2 implemented on the same branch (block: `.cycle/blocks/23-batch2-broad-implement.md`); NOT yet deployed. /sync-docs for Batch 2 done.
 - Batch 3 implemented on the same branch (block: `.cycle/blocks/23-batch3-broad-implement.md`); NOT yet deployed. /sync-docs for Batch 3 done.
 - Batch 4a and its follow-ons implemented on the same branch (blocks: `.cycle/blocks/23-batch4a-broad-implement.md`, `…-batch4a-followons-broad-implement.md`); NOT yet deployed. /sync-docs for both done.
+- TC-02 implemented on the same branch as option (a) (block: `.cycle/blocks/23-tc02-broad-implement.md`); NOT yet deployed.
 - Batch 4b implemented on the same branch (block: `.cycle/blocks/23-batch4b-broad-implement.md`); NOT yet deployed; /sync-docs for it not yet run.
 - Everything through 22post is merged (PRs #274–#282) and deployed (2026-09-30). The operator was finishing two 22post steps at close: the manual.json re-export + import, and the S124–S128 walks.
 
 ## Completed this cycle
+- TC-02 | 00_config.js, 20_timeclock.js, modals.html, tc/script_clock.html, tc/script_manager.html | a break adjustment says which break (add / correct the one at HH:MM) — one resolver for every writer, refused rather than guessed; request column BreakTarget; range mode refuses multi-break days; getMyDayBreaks
 - ADM-04 | 10_core.js, test/visual/mock.js | Forms / Dept Requests on the ADP fallback read configured:false (still probed)
 - ADM-09 | 10_core.js, test/visual/mock.js | deploy readiness gains a `health` row from the one problem list the dot counts
 - ADM-07 | cn/script_callnotes.html, test/visual/mock.js | Reference-lookups diagnostics become storage-area findings (cnOopFindings_)
@@ -62,7 +64,7 @@ Updated: 2026-10-01 (cycle 23 Batch 4b)
 
 ## Pending / not yet done
 - **Cycle 23 plan (from the 2026-10-01 scan; IDs only — the findings are in the scan's chat report):**
-  - Batch 1 — DONE except **TC-02 (blocked: needs an operator decision — see Decisions pending)**.
+  - Batch 1 — DONE (TC-02 done 2026-10-02 as option (a), after the operator's decision).
   - Batch 2 eligibility fail-open — DONE (KB2-1, KB-1, KB2-2, KB2-3, KB2-4, KB2-5, KB2-7, KB2-10)
   - Batch 3 disabled Drive — DONE (DRV-1, QA-1, DRV-2, DRV-4, DRV-5 + the drivedisabled scenarios)
   - Batch 4a automation honesty — DONE (CORE-01, HR-3, MAIL-4, CORE-02, TC-07, QA-3)
@@ -77,6 +79,7 @@ Updated: 2026-10-01 (cycle 23 Batch 4b)
   - Batch 10 PHI/config: KBUI-2, KB-2, INT2-3, INT-1/INT2-1/INT2-2, INT-2/INT2-4, CN-3, ADM-12, ADM-13/CORE-04/05/06/03/TRN-2, MET-5/MET2-1
   - Deferred (decisions): DRV-3, SP-2, KB2-6, HR-2, TRN-1, CN-8, INT-3, TC2-9
 - **Batch 1 deploy + walks:** clasp push + New version; S8 with >1,000 rows; S18's blocked-clipboard step twice via Save & Compose; S1.
+- **TC-02 deploy:** deny-and-refile any pre-deploy break request the queue marks "filed without add/correct" if its approval is refused; walk S5/S7/S92/S95/S96 and the new break-choice scenario.
 - **Batch 4b deploy:** expect System + the Overview checklist to show "Forms (PHI) not set" / "Dept Requests (PHI-adjacent) not set" while those properties are unset (set both to the Intake spreadsheet), a readiness "Automation health" row, and Reference-lookups findings; walk S43/S44/S62/S64/S97/S112/S114/S117.
 - **Batch 4a deploy:** expect NEW stamped failures on Admin → System that were invisible before (each names its cause); if `managerDailyBrief` is ON, confirm the 8am brief still arrives (S55).
 - **Batch 3 deploy + walks:** after the push, Admin → System should lead with BLOCKING "Drive is disabled for this domain"; walk S104 and S90 (Sync + Play show the disabled message).
@@ -90,6 +93,7 @@ Updated: 2026-10-01 (cycle 23 Batch 4b)
 - **DEFERRED, still an operator decision:** F-09's holiday FALLBACK; what a LocationAcceptance city row's Accepts column decides.
 
 ## Open follow-on items
+- **TC-02 follow-ons** (full text in its block): two same-type "add" requests for one day in one batch are still a duplicate; the personal-sheet mirror is one slot per type; no editor-suite case drives a real multi-break adjustment.
 - **Batch 4b follow-ons** (full text in its block): a fallback row repeats the ADP sheet's tz verdict; the readiness health row shows raw problem text; `getMyMetrics` does not flag a failed trend the way the range endpoint now does; no visual scenario for a failed search or shift stats with `cdrUnavailable`.
 - **Batch 4a follow-ons — DONE** (4a-FU1/FU2/FU3). Remaining from them: the archive movers may still delete per row under the lock; the mock's automation fixture shows no `failedAt` / `label` state.
 - **Batch 3 follow-ons:** the reader's kbdoc pending chip says "appears after Save" to reps; kbGetImageData's generic refusal gives no hint of a disabled Drive; the QA tab has no standing disabled-Drive banner (both responses now carry `driveDisabled`).
@@ -101,10 +105,10 @@ Updated: 2026-10-01 (cycle 23 Batch 4b)
 
 ## Decisions made (so the next session doesn't re-litigate)
 - **KB2-5 (cycle 23 Batch 2):** a LocationAcceptance city row with a BLANK State now reads "cannot tell" — the old "blank = any state" reading dated from when city rows only displayed; since T7 they decide. If the operator wants "any state", the follow-on is an explicit marker in the State cell, not a blank.
-- **TC-02 is NOT a code-only fix (cycle 23 Batch 1):** a break adjustment cannot say "correct my existing break" vs "add a missing one" — the modal and the PunchAdjustRequests row carry no intent. Pending an operator choice among: (a) an intent control on break types, carried in the request; (b) break types always append, corrections via manager Day Edit; (c) refuse a break adjustment on a day that already has that type. Do not guess the semantics.
+- **TC-02 — operator chose option (a) (2026-10-02):** a break adjustment carries its intent ("add a missing break" / "correct the break at HH:MM") on the request (BreakTarget); the server never guesses — a stale target or an unstated break on a day that has one is refused; range mode refuses multi-break days. (b) always-append and (c) refuse-when-ambiguous were rejected: (b) is the same silent wrong write pointed the other way, (c) drops self-service for the common forgotten-second-break case.
 - **The procedures manual (operator, 2026-09-28):** maintained long-term in the repo only — `manual/` is the one source; manual sections are read-only in the app; the old guides are unpublished once the manual is live and vetted.
 - **No Drive in the manual path (2026-09-29):** the domain disables Apps Script's Drive, so manual.json is chosen from the computer and images live in the ManualImages tab.
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 23 Batches 1–4b and the 4a follow-ons are committed and pushed on `claude/blissful-johnson-cottl5` (Batch 1: 5 of 6, TC-02 awaits the operator's choice). Next: `/sync-docs` for Batch 4b (its DOCUMENTATION UPDATES list), then deploy and walk the Batch 1–4b scenarios; then `/broad-implement Batch 5`. The next /reflect reaches the Seams-audit cadence.
+Cycle 23 Batches 1–4b (all six of Batch 1, TC-02 included) and the 4a follow-ons are committed and pushed on `claude/blissful-johnson-cottl5`. Next: `/sync-docs` for Batch 4b + TC-02 (their DOCUMENTATION UPDATES lists), then deploy and walk the Batch 1–4b + TC-02 scenarios; then `/broad-implement Batch 5`. The next /reflect reaches the Seams-audit cadence.
