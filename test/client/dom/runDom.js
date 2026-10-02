@@ -6302,10 +6302,14 @@ test('SH-04: the tour popover is a named dialog that takes focus, keeps Tab insi
   assert.strictEqual(h.$('#' + pop.getAttribute('aria-labelledby')).textContent, 'Welcome', 'named by the step title');
   assert.ok(h.$('#' + pop.getAttribute('aria-describedby')), 'described by the step body');
   assert.strictEqual(h.document.activeElement, pop.querySelector('[data-tour="next"]'), 'focus moved INTO the popover');
-  h.dispatchKey('Tab', { target: h.document.activeElement });
-  assert.ok(pop.contains(h.document.activeElement), 'Tab stays inside');
+  // jsdom never moves focus on Tab by itself, so "focus is still inside" would
+  // hold with no handler at all — assert the handler MOVES it, and wraps.
+  const next = pop.querySelector('[data-tour="next"]'), skip = pop.querySelector('[data-tour="skip"]');
+  const tabEv = h.dispatchKey('Tab', { target: h.document.activeElement });
+  assert.ok(tabEv.defaultPrevented, 'the popover handles Tab itself — the browser never takes focus under the dim');
+  assert.strictEqual(h.document.activeElement, skip, 'Tab from the last button wraps to the first, inside the popover');
   h.dispatchKey('Tab', { target: h.document.activeElement, shift: true });
-  assert.ok(pop.contains(h.document.activeElement), 'Shift+Tab too');
+  assert.strictEqual(h.document.activeElement, next, 'Shift+Tab wraps back');
   h.dispatchKey('Escape');
   assert.ok(!h.$('#tour-pop'), 'Escape ends the tour');
   assert.strictEqual(h.document.activeElement, opener, 'and focus goes back where it was');
