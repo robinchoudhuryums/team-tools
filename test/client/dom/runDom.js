@@ -6120,6 +6120,10 @@ test('UI-ESC: the quiz editor asks after a STRUCTURAL edit; the coaching compose
   h.run.flushSuccess({ success: true }, 'createCoaching');
   assert.ok(!h.$('#coach-compose-overlay.open'), 'the save closes it — without a question');
   assert.ok(!h.$('.ui-dialog'));
+  // A fresh open starts clean: the last drawer's typing does not make the next one "dirty".
+  h.read('coachOpenDrawer_')({ empId: 'E-1' });
+  h.dispatchKey('Escape');
+  assert.ok(!h.$('#coach-compose-overlay.open') && !h.$('.ui-dialog'), 'a reopened, untouched drawer closes at once');
 });
 
 test('UI-ESC + TRUI-2: a filled HR document or a drawn signature is asked about before it is discarded — and the signature ink is a FIXED dark in dark mode', async () => {
