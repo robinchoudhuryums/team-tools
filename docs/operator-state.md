@@ -227,6 +227,13 @@ entry says which it is.
   playback both say so ("Apps Script's Drive service is disabled for this
   domain…") instead of blaming the folder id or the recording — QA sync and
   playback cannot work until IT allows Drive for Apps Script.
+  **AMENDED (cycle 23 Batch 8, 2026-10-02) — one thing to check after the
+  deploy.** An exemption now applies to the period AFTER the one that earned
+  it ("Exempt for <next period>" on the coverage row). One a manager granted
+  before this deploy stays on the period it was granted for, where it is still
+  honoured; if the next period was meant, grant it again from the coverage
+  row. Nothing else to set up.
+
 <a id="operator-set-script-property-adp-ss-id"></a>
 - **Set Script Property `ADP_SS_ID`** to the real spreadsheet ID in
   Apps Script editor → Project Settings → Script Properties. Without

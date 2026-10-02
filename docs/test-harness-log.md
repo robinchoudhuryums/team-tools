@@ -2534,3 +2534,23 @@ per-change detail. By delta:
   now returns a thread the manager answered again — the only shape where a
   restore could bite (g116's fourteenth direction: a fixture the code's own
   filter erases cannot tell two paths apart).
+
+## Cycle 23 — Batch 8, QA logic (2026-10-02)
+
+- Node +7, each driving the real QA functions in a shared sandbox (`b8Ctx_`
+  loads the named functions plus the config enums; `b8Sheet_` is a recordings
+  sheet that records its reads): QA2-1 the coverage row before a grant, after
+  it and in the next period's own view; QA2-2 + QA-4 `qaSampleRecordings` over
+  another period's call, the caller's own and a good one; QA-4 the assignment
+  grid; QA2-3 the id index and resolver; QA-2 both review reads for the owner,
+  an admin and another reviewer; QA-5 a 2,500-row sheet; QA2-4 + QA2-5 the
+  summary weighting and the Stats fold.
+- DOM: the QA-LOG-DOM drive gained the QAUI-1 checks (the pressed button is
+  the same node and keeps focus). It exposed that a programmatic
+  `qaSetRating_` on a choice must mirror the select's value — the in-place
+  patch now does.
+- Moved pins: QA-10/11/19/21/27 and F-17's exemption regexes (the old
+  attribute and key shapes). The fixture's verbatim region gained
+  `qaNextPeriod_` / `qaExemptFor_` and the new `qaCoverageRows_` (the F4
+  mirror pin).
+- 14 bite-checks, all BITE.

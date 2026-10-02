@@ -1433,3 +1433,16 @@ not restate it. Server endpoints live in the fourteen server files
      so a full grid of expired rows no longer throws on its last delete, deletes
      contiguous runs in one call each, and a failed run is stamped as
      `QaReviewPurge` — QA-3, 4a-FU2.
+
+     **Cycle 23 Batch 8 (2026-10-02) — QA logic.** An exemption is granted for
+     the NEXT period ("Exempt for Nov 2026"), and a quarter's exemption holds in
+     its months (QA2-1). "Sample the gaps" draws only the period's own calls
+     (QA2-2), and neither sampling nor assignment hands a reviewer their own
+     call (QA-4); a reviewer cannot read or comment on the reviews of their own
+     call before release either, though an admin can (QA-2). "Coach on this
+     call" uses the agent id stored at attribution, and a name two roster rows
+     share hands off to nobody (QA2-3). A recording older than the newest 2,000
+     is still found and still on its agent's My Reviews (QA-5). The "vs
+     previous period" average is card-weighted like the current one (QA2-4);
+     "maria garcia" and "Maria Garcia" are one Stats row (QA2-5); and a rating
+     click keeps keyboard focus on the button (QAUI-1).

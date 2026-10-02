@@ -5127,3 +5127,14 @@ pick them up without re-deriving the context.
   the sender" on the card). Rejected: keeping the write on the GET behind a
   filter for known scanners (an unbounded list, and the sender's own click is
   not a scanner).
+- <a id="a-qa-exemption-applies-to-the-next-period"></a>**A QA exemption applies to the period AFTER the one that earned it, and a quarter's holds in its months (cycle 23 QA2-1, 2026-10-02).**
+  Eligibility reads two COVERED periods in a row (the viewed one and the one
+  before it, at 4.5+ with no criterion under 4). The grant used to be written
+  for the viewed period — already covered — so it never saved a single review.
+  It is now written for the next period (`qaNextPeriod_`); the coverage row
+  shows "Exempt for <next>" until granted, then "Revoke for <next>", and the
+  next period's own view shows the rep at target 0. Every reader asks ONE rule
+  (`qaExemptFor_`): the period's own key, or — for a month — the quarter it
+  falls in; a month's exemption does not exempt its whole quarter. Rejected:
+  exempting the CURRENT period's remainder (the rep may already have been
+  sampled, and the target math would need partial periods).

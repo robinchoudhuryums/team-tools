@@ -4815,6 +4815,13 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   (`SCHED_STATE_SPAN_DAYS`, longer than the furthest a reminder may be set;
   `schedSpanStartRow_` over one CreatedAtMs column read). Verify: the CN-1
   drive.
+  **AMENDED (cycle 23 QA-5, 2026-10-02): a LOOKUP bounded by the tail fails
+  as "not found".** `qaFindRecordingRow_` read the last 2,000 rows of the QA
+  index, so every action on an older recording said "Recording not found.",
+  and My Reviews dropped a released review once 2,000 newer recordings were
+  indexed. The lookup now reads the tail first, then the rest of the one id
+  column; My Reviews picks the caller's shared rows from three narrow column
+  reads (`qaMySharedRowIdxs_`). Verify: the QA-5 drive.
 
 <a id="g153-clearing-the-roster-email-does-not-reach-the-gate-lists"></a>
 
@@ -5089,3 +5096,17 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   when you add a scan-then-fetch lookup that can run without the lock, or
   reuse one from a public endpoint. Verify: the FORM-1 drive (a table that
   shifts between the two reads, once and for ever).
+
+<a id="g165-a-grant-earned-by-a-covered-period-applies-forward"></a>
+
+- **A grant EARNED by a period that is already covered must apply FORWARD
+  (cycle 23 QA2-1, 2026-10-02).** QA exemption eligibility needs two covered
+  periods in a row, the viewed one included — so the viewed period's reviews
+  were already done when the Grant button appeared, and the grant was written
+  for that same period. It saved nothing, ever. It is now written for the next
+  period (`qaNextPeriod_`). The same audit found the key read in two shapes: an
+  exemption granted from the quarter view did not hold in the month view; ONE
+  reader (`qaExemptFor_`) now answers for both. Fires when you grant, waive or
+  reward something computed from a period's own results, or key a record by a
+  period another view reads at a different grain. Verify: the QA2-1 drive (the
+  row before the grant, after it, and in the next period's own view).
