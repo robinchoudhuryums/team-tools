@@ -481,6 +481,13 @@ function submitIntakeFeedback(submissionId, formType, text) {
   finally { lock.releaseLock(); }
 }
 function intakeValidateEmail_(email) {
+  // Seams F21 (cycle 24): exactly ONE '@' and no quoted local part. The
+  // pattern below accepts `"x@gmail.com,y"@umsupply.com`, which isOrgEmail_
+  // reads by its LAST '@' (an org address — no outside-recipient confirm,
+  // INV-364) while intakeEmailDomain_ logs its FIRST (gmail.com…). No address
+  // a rep sends intake to needs either form.
+  const e = String(email);
+  if (e.indexOf('"') >= 0 || e.split('@').length !== 2) return false;
   const re = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
   return re.test(String(email).toLowerCase());
 }

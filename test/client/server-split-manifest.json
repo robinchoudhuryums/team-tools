@@ -2408,6 +2408,16 @@
     "kbSearchIndexKey_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Seams F21 (cycle 24): intakeValidateEmail_ refuses a quoted local part or a second @",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "intakeValidateEmail_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -7670,7 +7680,7 @@
   "intakeValidateEmail_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "1238cbb1fb5a587c"
+   "sha": "e0e73048c3bc6431"
   },
   "intakeVolumeBuckets_": {
    "file": "60_intake.js",

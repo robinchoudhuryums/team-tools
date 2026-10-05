@@ -34789,6 +34789,19 @@ test('Seams F8 remainder (cycle 24): every live-tab-only Timesheet window stays 
   assert.ok(/if \(v < TIMESHEET_ARCHIVE_MIN_DAYS\)/.test(clamp) && /return TIMESHEET_ARCHIVE_MIN_DAYS;/.test(clamp), 'every configured cutoff below the floor clamps UP to it');
 });
 
+test('Seams F21 (cycle 24): an intake recipient has exactly one @ and no quoted local part — the org check and the logged domain can never read one address two ways (driven)', () => {
+  const ctx = vm.createContext({ String, CONFIG: { ORG_EMAIL_DOMAINS: ['umsupply.com'] } });
+  ['intakeValidateEmail_', 'isOrgEmail_', 'intakeEmailDomain_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  const sneaky = '"x@gmail.com,y"@umsupply.com';
+  assert.strictEqual(ctx.isOrgEmail_(sneaky), true, 'the shape: the org check reads the LAST @…');
+  assert.ok(/^gmail\.com/.test(ctx.intakeEmailDomain_(sneaky)), '…while the logged domain reads the FIRST');
+  assert.strictEqual(ctx.intakeValidateEmail_(sneaky), false, 'THE REGRESSION: the validator accepted it, so it skipped the outside-recipient confirm');
+  assert.strictEqual(ctx.intakeValidateEmail_('"quoted"@umsupply.com'), false, 'a quoted local part is refused');
+  assert.strictEqual(ctx.intakeValidateEmail_('a@b@umsupply.com'), false, 'two @ are refused');
+  ['agent@umsupply.com', 'first.last@umsupply.com', 'pat@example.org'].forEach((ok) => assert.strictEqual(ctx.intakeValidateEmail_(ok), true, ok));
+  ['', 'nobody', 'x@', '@umsupply.com'].forEach((bad) => assert.strictEqual(ctx.intakeValidateEmail_(bad), false, JSON.stringify(bad)));
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
