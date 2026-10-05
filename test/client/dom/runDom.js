@@ -6459,3 +6459,68 @@ test('Batch 11 INT-3: an outside intake recipient is confirmed by its domain, an
   assert.strictEqual(h.run.pending('intakeSendPPD').length, 0, 'Go back → nothing sent');
   assert.strictEqual(h.$('#intk-ppd-send').disabled, false, 'and the Send button is live again');
 });
+
+// ── cycle 23 Batch 12 — DRV-3: article images from the KbImages tab ──
+section('Cycle 23 Batch 12 — DRV-3: article images from the KbImages tab');
+test('DRV-3 DOM: an article\'s kbimg chips arrive in ONE batched call and are set by property; "not stored" is said; a failed call is not cached', async () => {
+  const h = boot();
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const kA = 'kbimg-' + 'a'.repeat(24), kB = 'kbimg-' + 'b'.repeat(24), kGone = 'kbimg-' + 'c'.repeat(24);
+  const art = mount_(h, 'b12-art'); art.className = 'kb-article';
+  art.innerHTML = h.read('kbMd_')('![Shot A](kbimg:' + kA + ')\n\n![Shot A again](kbimg:' + kA + ')\n\n![Gone](kbimg:' + kGone + ')');
+  await tick(); h.flushTimers(); await tick();
+  const calls = h.run.pending('getKbImages');
+  assert.strictEqual(calls.length, 1, 'one call for the article');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(calls[0].args[0])).sort(), [kA, kGone], 'each key once');
+  assert.strictEqual(h.$$('.kb-kbimg[data-ki="loading"]').length, 3, 'the chips say they are loading meanwhile');
+  h.run.flushSuccess({ success: true, images: { [kA]: PNG }, missing: [kGone], failed: [] }, 'getKbImages');
+  const imgs = h.$$('#b12-art img.kb-kbimg-img');
+  assert.strictEqual(imgs.length, 2, 'both mentions become the image');
+  assert.ok(imgs.every((im) => im.getAttribute('src') === PNG) && imgs[0].alt === 'Shot A', 'the data URL by property, the alt from the chip');
+  const gone = h.$('.kb-kbimg[data-kbimg="' + kGone + '"]');
+  assert.ok(gone && gone.getAttribute('data-ki') === 'missing' && /not stored/.test(gone.title), '"not stored" is said on the chip');
+  // A failed call is marked and NOT cached; the success above IS (no second call for kA).
+  const art2 = mount_(h, 'b12-art2'); art2.className = 'kb-article';
+  art2.innerHTML = h.read('kbMd_')('![B](kbimg:' + kB + ') ![A](kbimg:' + kA + ')');
+  await tick(); h.flushTimers(); await tick();
+  const c2 = h.run.pending('getKbImages');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c2[0].args[0])), [kB], 'the cached success is not asked for again');
+  assert.ok(h.$('#b12-art2 img.kb-kbimg-img'), 'and renders at once');
+  h.run.flushFailure('Service timed out', 'getKbImages');
+  assert.strictEqual(h.$('.kb-kbimg[data-kbimg="' + kB + '"]').getAttribute('data-ki'), 'failed');
+  const art3 = mount_(h, 'b12-art3'); art3.className = 'kb-article';
+  art3.innerHTML = h.read('kbMd_')('![B](kbimg:' + kB + ')');
+  await tick(); h.flushTimers(); await tick();
+  assert.strictEqual(h.run.pending('getKbImages').length, 1, 'a failure was not cached — the next render asks again (g129)');
+});
+
+test('DRV-3 DOM: a pasted screenshot is fitted to 1600 px / 1.5 MB in the browser before it is sent, and the editor gets the kbimg: token', async () => {
+  const h = boot();
+  const w = h.window;
+  let size = { w: 1200, h: 800 };
+  w.Image = function () { const self = this; Object.defineProperty(self, 'src', { set(v) { self._src = v; self.naturalWidth = size.w; self.naturalHeight = size.h; self.onload(); }, get() { return self._src; } }); };
+  let drawn = null;
+  w.HTMLCanvasElement.prototype.getContext = function () { const cv = this; return { fillRect() {}, drawImage() { drawn = [cv.width, cv.height]; }, set fillStyle(v) {} }; };
+  const bigPng = 'data:image/png;base64,' + 'A'.repeat(2200000), jpg = 'data:image/jpeg;base64,' + 'B'.repeat(4000);
+  w.HTMLCanvasElement.prototype.toDataURL = function (type) { return type === 'image/png' ? bigPng : jpg; };
+  const paste = (url) => { w.FileReader = function () { this.readAsDataURL = () => this.onload({ target: { result: url } }); }; };
+  const ta = h.document.createElement('textarea'); ta.id = 'kb-ed-bodymd'; ta.value = 'Before '; h.document.body.appendChild(ta);
+  ta.selectionStart = ta.selectionEnd = ta.value.length;
+  const small = 'data:image/png;base64,' + 'C'.repeat(1000);
+  paste(small);
+  h.read('kbPasteUploadImage_')(ta, {}, () => {});
+  let call = h.run.pending('kbUploadImage')[0];
+  assert.strictEqual(call.args[0], small, 'inside both limits: sent byte for byte');
+  assert.strictEqual(drawn, null, 'and never redrawn');
+  const tok = 'kbimg:kbimg-' + 'd'.repeat(24);
+  h.run.flushSuccess({ success: true, key: tok.slice(6), token: tok }, 'kbUploadImage');
+  assert.ok(ta.value.indexOf('![Screenshot](' + tok + ')') >= 0 && ta.value.indexOf('kbpaste:pending') < 0, 'the token replaces the placeholder');
+  size = { w: 3200, h: 1800 };
+  paste('data:image/png;base64,' + 'E'.repeat(5000));
+  h.read('kbPasteUploadImage_')(ta, {}, () => {});
+  call = h.run.pending('kbUploadImage')[0];
+  assert.deepStrictEqual(drawn, [1600, 900], 'a wide screenshot is redrawn at 1600 px, aspect kept');
+  assert.strictEqual(call.args[0], jpg, 'the PNG was over 1.5 MB, so the JPEG went');
+  h.run.flushSuccess({ success: true, token: 'https://evil.example/x.png' }, 'kbUploadImage');
+  assert.ok(ta.value.indexOf('evil.example') < 0 && ta.value.indexOf('kbpaste:pending') < 0, 'a malformed token is never inserted — the placeholder goes');
+});

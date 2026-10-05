@@ -226,6 +226,11 @@
   .kb-article img.kb-manimg-icon { display: inline-block; height: 22px; width: auto; margin: 0 6px 0 0; border: 0; border-radius: 0; box-shadow: none; vertical-align: middle; }
   .kb-article img.kb-manimg-thumb { display: inline-block; max-height: 96px; width: auto; margin: 2px 0; vertical-align: middle; }
   .kb-article img.kb-manimg-figure { max-width: min(100%, 720px); }
+  /* DRV-3 (cycle 23 Batch 12) — an article image from the KbImages tab, while it
+     loads, when it could not load, and once it arrives (an ordinary article image). */
+  .kb-article .kb-kbimg[data-ki="loading"] { opacity: .65; }
+  .kb-article .kb-kbimg[data-ki="failed"], .kb-article .kb-kbimg[data-ki="missing"] { border-color: var(--warn); }
+  .kb-article img.kb-kbimg-img { cursor: zoom-in; }
   /* §4 — collapsible department headers (chevron + count) */
   .kb-dept-toggle { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; font: inherit; background: none; border: none; cursor: pointer; padding: 8px 6px 4px; }
   .kb-dept-toggle:hover .kb-dept-name { color: var(--ink); }
@@ -2427,7 +2432,16 @@ function kbMd_(src) {
       // CONTENT (no attribute), and no URL is emitted at all.
       if (/^kbdoc:/i.test(url)) {
         return keep('<span class="kb-img-pending">' + (alt || 'Doc image') +
-          ' \u2014 appears after Save (exports to Drive)</span>');
+          ' \u2014 appears after Save</span>');
+      }
+      // DRV-3 (cycle 23 Batch 12): an article image stored in the KbImages tab.
+      // The manual-image shape exactly: a keyed chip the hydrator
+      // (kbHydrateKbImages_) swaps for the image, by property, from a data URL.
+      // Only the key charset reaches the attribute.
+      if (/^kbimg:/i.test(url)) {
+        var ik = url.match(/^kbimg:(kbimg-[a-f0-9]{24})$/);
+        return keep('<span class="kb-img-pending' + (ik ? ' kb-kbimg" data-kbimg="' + ik[1] : '') + '" title="Article image">' +
+          (alt || 'Image') + '</span>');
       }
       // A manual image: its alt text as a chip, keyed so the hydrator
       // (kbHydrateManualImages_, Batch M3) can swap in the image the import
@@ -2718,6 +2732,75 @@ function kbManimgSchedule_() { if (!KB_MANIMG.timer) KB_MANIMG.timer = setTimeou
       for (var j = 0; j < added.length; j++) {
         var n = added[j];
         if (n.nodeType === 1 && ((n.classList && n.classList.contains('kb-manimg')) || (n.querySelector && n.querySelector('.kb-manimg')))) { kbManimgSchedule_(); return; }
+      }
+    }
+  }).observe(document.body, { childList: true, subtree: true });
+})();
+
+// ── DRV-3 (cycle 23 Batch 12) — article images from the KbImages tab ────────
+// The manual-image hydrator's rule (Batch M3) for `.kb-kbimg[data-kbimg]`
+// chips: batched getKbImages calls, only a success cached for the session
+// (g129), "not stored" told apart from "could not load", and an image set by
+// PROPERTY from a data URL re-checked here as a PNG/JPEG/GIF/WebP one.
+var KB_KBIMG = { cache: {}, inflight: {}, timer: null };
+var KB_KBIMG_BATCH = 6;   // = the server's KB_IMAGES_BATCH (pinned)
+function kbKbimgApply_(key, state) {
+  var nodes = document.querySelectorAll('.kb-kbimg[data-kbimg="' + key + '"]');   // the key charset is [a-z0-9-]
+  for (var i = 0; i < nodes.length; i++) {
+    var n = nodes[i];
+    if (typeof state === 'string' && /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+\/=]+$/.test(state)) {
+      var img = document.createElement('img');
+      img.className = 'kb-kbimg-img';
+      img.alt = n.textContent;
+      img.loading = 'lazy';
+      img.src = state;
+      if (n.parentNode) n.parentNode.replaceChild(img, n);
+    } else {
+      n.setAttribute('data-ki', state === 'missing' ? 'missing' : 'failed');
+      n.title = state === 'missing' ? 'Image \u2014 not stored (it may have been pasted into another copy of this article)'
+        : 'Image \u2014 could not load it; reopen the article to try again';
+    }
+  }
+}
+function kbHydrateKbImages_() {
+  KB_KBIMG.timer = null;
+  var nodes = document.querySelectorAll('.kb-kbimg[data-kbimg]:not([data-ki])');
+  var want = [];
+  for (var i = 0; i < nodes.length; i++) {
+    var key = nodes[i].getAttribute('data-kbimg');
+    if (KB_KBIMG.cache[key]) { kbKbimgApply_(key, KB_KBIMG.cache[key]); continue; }
+    nodes[i].setAttribute('data-ki', 'loading');
+    if (!KB_KBIMG.inflight[key] && want.indexOf(key) < 0) want.push(key);
+  }
+  for (var b = 0; b < want.length; b += KB_KBIMG_BATCH) {
+    (function (keys) {
+      keys.forEach(function (k) { KB_KBIMG.inflight[k] = 1; });
+      var settle = function (res) {
+        keys.forEach(function (k) {
+          delete KB_KBIMG.inflight[k];
+          var url = res && res.images && res.images[k];
+          if (url) KB_KBIMG.cache[k] = url;
+          kbKbimgApply_(k, url || (res && res.missing && res.missing.indexOf(k) >= 0 ? 'missing' : 'failed'));
+        });
+      };
+      try {
+        google.script.run
+          .withSuccessHandler(function (res) { settle(res && !res.error ? res : null); })
+          .withFailureHandler(function () { settle(null); })
+          .getKbImages(keys);
+      } catch (e) { settle(null); }
+    })(want.slice(b, b + KB_KBIMG_BATCH));
+  }
+}
+function kbKbimgSchedule_() { if (!KB_KBIMG.timer) KB_KBIMG.timer = setTimeout(kbHydrateKbImages_, 30); }
+(function kbBindKbImages_() {
+  if (typeof MutationObserver !== 'function' || typeof document === 'undefined' || !document.body) return;
+  new MutationObserver(function (records) {
+    for (var i = 0; i < records.length; i++) {
+      var added = records[i].addedNodes;
+      for (var j = 0; j < added.length; j++) {
+        var n = added[j];
+        if (n.nodeType === 1 && ((n.classList && n.classList.contains('kb-kbimg')) || (n.querySelector && n.querySelector('.kb-kbimg')))) { kbKbimgSchedule_(); return; }
       }
     }
   }).observe(document.body, { childList: true, subtree: true });
@@ -6489,6 +6572,55 @@ function kbRenderEditorBody_() {
 // the replacement targets the token wherever it now lives — the live
 // textarea, or the KB_EDIT snapshot if the body was re-rendered/snapshotted.
 var KB_PASTE_SEQ = 0;
+// DRV-3 (cycle 23 Batch 12, operator default 2026-10-05): a pasted image is
+// stored in the KbImages tab, at most KB_IMG_MAX_BYTES and KB_IMG_MAX_WIDTH
+// wide — the browser downscales BEFORE it sends (Apps Script has no image
+// library). Both mirror the server (pinned).
+var KB_IMG_MAX_WIDTH = 1600;
+var KB_IMG_MAX_BYTES = 1572864;   // = KB_IMAGE_MAX_BYTES
+/** Pure — the bytes a base64 data URL carries. */
+function kbImgDataUrlBytes_(dataUrl) {
+  var i = String(dataUrl || '').indexOf(',');
+  return i < 0 ? 0 : Math.floor((String(dataUrl).length - i - 1) * 3 / 4);
+}
+/** Pure — keep an image as it is, or the size to redraw it at: no wider than
+ *  KB_IMG_MAX_WIDTH, and never upscaled. An image already inside both limits
+ *  is kept byte for byte (an animated GIF stays animated). */
+function kbImgPastePlan_(width, height, bytes) {
+  if (width <= KB_IMG_MAX_WIDTH && bytes <= KB_IMG_MAX_BYTES) return { keep: true };
+  var scale = width > KB_IMG_MAX_WIDTH ? KB_IMG_MAX_WIDTH / width : 1;
+  return { keep: false, width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
+}
+/** Fit a pasted image to the limits: redraw it at the planned size, as a PNG
+ *  when that fits, else a JPEG at falling quality. cb(error, dataUrl). */
+function kbImgPrepare_(dataUrl, cb) {
+  var img = new Image();
+  img.onerror = function () { cb('That image could not be read \u2014 paste it again, or save it as a PNG first.'); };
+  img.onload = function () {
+    var plan = kbImgPastePlan_(img.naturalWidth || img.width, img.naturalHeight || img.height, kbImgDataUrlBytes_(dataUrl));
+    if (plan.keep) { cb(null, dataUrl); return; }
+    var c = document.createElement('canvas');
+    c.width = plan.width; c.height = plan.height;
+    var ctx = c.getContext && c.getContext('2d');
+    if (!ctx) { cb('This browser cannot shrink the image \u2014 crop it, then paste again.'); return; }
+    ctx.fillStyle = '#fff';   // a JPEG has no transparency — fill it white, never black
+    ctx.fillRect(0, 0, plan.width, plan.height);
+    ctx.drawImage(img, 0, 0, plan.width, plan.height);
+    var tries = [['image/png'], ['image/jpeg', 0.85], ['image/jpeg', 0.7], ['image/jpeg', 0.55]];
+    for (var t = 0; t < tries.length; t++) {
+      var out = c.toDataURL(tries[t][0], tries[t][1]);
+      if (kbImgDataUrlBytes_(out) <= KB_IMG_MAX_BYTES) { cb(null, out); return; }
+    }
+    cb('Image too large even after shrinking (max ' + (KB_IMG_MAX_BYTES / 1048576) + ' MB) \u2014 crop it, then paste again.');
+  };
+  img.src = dataUrl;
+}
+// Phase 3 — upload a pasted screenshot via kbUploadImage and insert the
+// returned markdown. A UNIQUE placeholder token goes in at the cursor first
+// and is string-replaced when the upload resolves, so typing (or a type-
+// switch re-render) during the round trip can't misplace the final markdown:
+// the replacement targets the token wherever it now lives — the live
+// textarea, or the KB_EDIT snapshot if the body was re-rendered/snapshotted.
 function kbPasteUploadImage_(ta, file, refreshPreview) {
   if (!file) return;
   var token = '![uploading-' + (++KB_PASTE_SEQ) + '…](kbpaste:pending)';
@@ -6508,27 +6640,24 @@ function kbPasteUploadImage_(ta, file, refreshPreview) {
   };
   var reader = new FileReader();
   reader.onload = function (ev) {
-    var dataUrl = String((ev.target || {}).result || '');
-    if (dataUrl.length > 4 * 1024 * 1024) {   // mirrors KB_IMG_UPLOAD_MAX_CHARS
-      done('');
-      showToast('Image too large (max ~3MB) — crop or downscale, then paste again.', 'toast-warn');
-      return;
-    }
-    google.script.run
-      .withSuccessHandler(function (res) {
-        if (!res || !res.success) {
+    kbImgPrepare_(String((ev.target || {}).result || ''), function (err, dataUrl) {
+      if (err) { done(''); showToast(err, 'toast-warn'); return; }
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.success || !/^kbimg:kbimg-[a-f0-9]{24}$/.test(String(res.token || ''))) {
+            done('');
+            showToast((res && res.error) || 'Image upload failed', 'toast-error');
+            return;
+          }
+          done('![Screenshot](' + res.token + ')');
+          showToast('Image uploaded', 'toast-success');
+        })
+        .withFailureHandler(function (err2) {
           done('');
-          showToast((res && res.error) || 'Image upload failed', 'toast-error');
-          return;
-        }
-        done('![Screenshot](' + res.url + ')');
-        showToast('Image uploaded', 'toast-success');
-      })
-      .withFailureHandler(function (err) {
-        done('');
-        showToast('Image upload failed: ' + ((err && err.message) || 'server error'), 'toast-error');
-      })
-      .kbUploadImage(dataUrl);
+          showToast('Image upload failed: ' + ((err2 && err2.message) || 'server error'), 'toast-error');
+        })
+        .kbUploadImage(dataUrl);
+    });
   };
   reader.readAsDataURL(file);
 }
@@ -6567,18 +6696,19 @@ function kbSaveFromEditor_(btn) {
   // calls and created duplicate rows (the server lock serializes inserts but
   // can't dedupe them). Disable for the round trip; re-enable on failure.
   if (btn && btn.disabled) return;
-  // Phase 2b exports every kbdoc: image token to Drive DURING this save —
-  // multi-second work the button should own up to (operator 2026-08-27).
+  // Phase 2b stores every kbdoc: image token (in the KbImages tab since
+  // DRV-3) DURING this save — multi-second work the button should own up to
+  // (operator 2026-08-27).
   var imgTokens = (String(e.body || '').match(/\(kbdoc:/g) || []).length;
-  kbBtnBusy_(btn, imgTokens ? ('Saving \u00b7 exporting ' + imgTokens + ' image(s)\u2026') : 'Saving\u2026');
+  kbBtnBusy_(btn, imgTokens ? ('Saving \u00b7 storing ' + imgTokens + ' image(s)\u2026') : 'Saving\u2026');
   var reenable = function () { kbBtnIdle_(btn); };
   google.script.run
     .withSuccessHandler(function (res) {
       reenable();
       if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); return; }
-      // Phase 2b — converter image tokens export to Drive during save;
-      // surface the count + any per-image degradations.
-      showToast(res.imagesExported ? ('Saved · ' + res.imagesExported + ' image(s) exported to Drive') : (res.status === 'draft' ? 'Saved as draft (hidden from reps)' : 'Saved'), 'toast-success');
+      // Phase 2b — converter image tokens are stored during save (the
+      // KbImages tab since DRV-3); surface the count + any per-image degradations.
+      showToast(res.imagesExported ? ('Saved · ' + res.imagesExported + ' image(s) stored') : (res.status === 'draft' ? 'Saved as draft (hidden from reps)' : 'Saved'), 'toast-success');
       // An image-export failure is an ACTIONABLE error — sticky, so the
       // reason survives long enough to read (the INV-190 reminder rule; the
       // operator's live report was "disappeared too quick to see").

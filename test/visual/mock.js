@@ -1066,6 +1066,15 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       (keys || []).forEach(function (k) { if (have[k]) res.images[k] = have[k]; else res.missing.push(k); });
       return res;
     },
+    // DRV-3 (cycle 23 Batch 12) — getKbImages: {images, missing, failed} like the
+    // server. Any key reads as a small grey PNG except one ending in zeros,
+    // which is "not stored", so both states can be photographed.
+    getKbImages: function (keys) {
+      var png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+      var res = { success: true, images: {}, missing: [], failed: [] };
+      (keys || []).forEach(function (k) { if (/0{6}$/.test(k)) res.missing.push(k); else res.images[k] = png; });
+      return res;
+    },
     // Batch M5b — searchReference: {results:[{id,title,department,type,status,
     // heading,anchor,chunkMd,truncated,score,snippet[,router]}], sectioned,
     // terms} like the server (INV-185) — a call-router hit first, a manual

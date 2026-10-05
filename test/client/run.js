@@ -2452,8 +2452,8 @@ const MIRROR_INDEX = [
     guards: ['CN_INTERACTIVE_FORM_IDS (cn partial) === INTERACTIVE_FORM_TYPES'] },
   { pair: 'client errBeaconPayload_ caps ↔ server CLIENT_ERR_MSG_MAX/STACK_MAX (INV-150)',
     guards: ['capped at the server CLIENT_ERR_MSG_MAX mirror'] },
-  { pair: 'client paste-upload cap ↔ server KB_IMG_UPLOAD_MAX_CHARS (INV-118)',
-    guards: ['client paste cap mirrors the server KB_IMG_UPLOAD_MAX_CHARS'] },
+  { pair: 'client paste-upload cap ↔ server KB_IMAGE_MAX_BYTES (INV-118; DRV-3, cycle 23 Batch 12)',
+    guards: ['client paste cap mirrors the server — DRV-3'] },
   { pair: 'health badge ↔ failure digest problem derivation (batch K E)',
     guards: ['getAutomationHealthBadge consumes the SAME derivation'] },
   { pair: 'AUTO_COPY_FORMAT server CONFIG default ↔ client fallback',
@@ -3936,8 +3936,8 @@ test('KBL: the editor Save + both convert flows carry in-button loaders, restore
   assert.ok(/btn\.disabled = true/.test(busy) && /lo-dots/.test(busy), 'busy disables AND shows the Role-D dots');
   const save = nc(extractFunction('kb/script_kb.html', 'kbSaveFromEditor_'));
   assert.ok(/if \(btn && btn\.disabled\) return;/.test(save), 'the L13 double-click guard survives');
-  assert.ok(/kbBtnBusy_\(btn,/.test(save) && /exporting/.test(save) && /kbdoc:/.test(save),
-    'Save goes busy, and a body carrying kbdoc image tokens SAYS it is exporting them');
+  assert.ok(/kbBtnBusy_\(btn,/.test(save) && /storing/.test(save) && /kbdoc:/.test(save),
+    'Save goes busy, and a body carrying kbdoc image tokens SAYS it is storing them (the KbImages tab since DRV-3)');
   assert.ok(/kbBtnIdle_\(btn\)/.test(save), 'and restores through the shared idle helper on both handlers');
   const edc = nc(extractFunction('kb/script_kb.html', 'kbConvertFromEditor_'));
   assert.strictEqual((edc.match(/kbBtnIdle_\(document\.getElementById\('kb-ed-convert-btn'\)\)/g) || []).length, 2,
@@ -5541,15 +5541,14 @@ test('updateTimeOffStatus re-checks hasActiveTimeOffOnDate_ (own row excluded) o
 // carries a literal that must equal the server constant (INV-118 "mirrored
 // client-side" finally has a guard). Both sides are numeric expressions —
 // evaluate and compare values, so `4*1024*1024` vs a plain number both work.
-test('client paste cap mirrors the server KB_IMG_UPLOAD_MAX_CHARS', () => {
-  const sm = codeSrc.match(/KB_IMG_UPLOAD_MAX_CHARS\s*=\s*([^;]+);/);
-  assert.ok(sm, 'server KB_IMG_UPLOAD_MAX_CHARS found');
+test('client paste cap mirrors the server — DRV-3 (cycle 23 Batch 12): the client downscales to KB_IMG_MAX_BYTES, which IS the server\'s KB_IMAGE_MAX_BYTES', () => {
+  const sm = codeSrc.match(/const KB_IMAGE_MAX_BYTES = (\d+);/);
+  assert.ok(sm, 'server KB_IMAGE_MAX_BYTES found');
   const kbSrc = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
-  const cm = kbSrc.match(/dataUrl\.length\s*>\s*([^)]+)\)[^\n]*mirrors KB_IMG_UPLOAD_MAX_CHARS/);
-  assert.ok(cm, "client mirror line not found (the '// mirrors KB_IMG_UPLOAD_MAX_CHARS' comment is the anchor)");
-  const evalNum = (expr) => Function('"use strict"; return (' + expr.split('//')[0] + ');')();
-  assert.strictEqual(evalNum(cm[1]), evalNum(sm[1]),
-    'the kb editor paste cap drifted from the server KB_IMG_UPLOAD_MAX_CHARS');
+  const cm = kbSrc.match(/var KB_IMG_MAX_BYTES = (\d+);/);
+  assert.ok(cm, 'the client mirror KB_IMG_MAX_BYTES is found');
+  assert.strictEqual(Number(cm[1]), Number(sm[1]), 'the kb editor paste cap drifted from the server KB_IMAGE_MAX_BYTES');
+  assert.ok(!/mirrors KB_IMG_UPLOAD_MAX_CHARS/.test(kbSrc), 'the old 3 MB client cap is gone (the store cap is the binding one)');
 });
 
 // L-3: a failed per-day trend read must never be cached as a fresh result.
@@ -17031,8 +17030,12 @@ test('QA-5: wiring — every endpoint gates before its store, the tab rides also
 test('KBI-3: a failed image export is NAMED, sticky, and audit-recorded', () => {
   const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   const f = nc(extractRawFunction('Code.js', 'kbResolveDocImages_'));
-  assert.ok(/could not be exported to Drive: ' \+ e\.message/.test(f),
-    'the per-image catch pushes the NAMED Drive error into warnings');
+  // DRV-3 (cycle 23 Batch 12): the images are stored in the KbImages tab; each
+  // failure is NAMED (a Doc that did not open, an image over the limit, a store
+  // that failed) — driven by the Batch 12 DRV-3 pin.
+  assert.ok(/Could not open the source Doc to store its image\(s\): ' \+ e\.message/.test(f) &&
+    /The image\(s\) could not be stored: ' \+ e\.message/.test(f),
+    'the per-image and store catches push the NAMED error into warnings');
   const save = nc(extractRawFunction('Code.js', 'kbSaveItem'));
   assert.ok(/imageWarnings=' \+ imageWarnings\.length/.test(save),
     'the KbItemSave audit row records the warning count + first reason (readable after the toast is gone)');
@@ -23366,11 +23369,10 @@ test('DRV-2: getOrCreateKbImagesFolder_ NAMES why it failed — unset property v
   assert.strictEqual(h.calls.created, 0, 'never creates when the stored folder opens');
   assert.strictEqual(h.calls.set, 0, 'and never rewrites the property');
 
-  // The caller's warning no longer double-says "open or create" over a
-  // message that now explains itself.
+  // DRV-3 (cycle 23 Batch 12): the converter no longer reaches this folder at
+  // all — its images go to the KbImages tab. The helper stays for file ingest.
   const src = extractRawFunction('Code.js', 'kbResolveDocImages_');
-  assert.ok(/KB Images folder: ' \+ e\.message/.test(src), 'the warning prefixes the real reason');
-  assert.ok(!/Could not open or create/.test(src), 'the old blanket wording is gone');
+  assert.ok(!/getOrCreateKbImagesFolder_|DriveApp/.test(src), 'the converter\'s image store is not Drive');
 });
 
 test('DRV-3: driveAccessStatus_ is side-effect free, reports unknown as unknown, and caches only a clean round', () => {
@@ -29742,7 +29744,8 @@ function m1Importer_(book, fileText, who, extra) {
   ['kbRowStatus_', 'kbSha256Hex_', 'getOrCreateManualImportSheet_', 'kbManualLedger_', 'kbManualBundle_', 'kbManualMetaValidate_',
     'kbManualOrphans_', 'kbDeleteRowSafe_', 'getOrCreateManualMetaSheet_', 'kbManualMetaRead_', 'kbImportManual', 'kbPublishManual',
     'kbDeptRank_', 'kbDeptCompare_', 'kbParseImageDataUrl_', 'kbManualImagesValidate_', 'kbManualImagesPlan_', 'kbManualImagesRows_',
-    'getOrCreateManualImagesSheet_', 'kbManualImagesHeaderOk_', 'kbManualImagesLedger_', 'kbManualImagesWrite_']
+    'getOrCreateManualImagesSheet_', 'kbManualImagesHeaderOk_', 'kbManualImagesLedger_', 'kbManualImagesWrite_',
+    'kbImageTabHeaderOk_', 'kbImageTabLedger_']   // DRV-3 (cycle 23 Batch 12): the manual functions delegate to the shared image-tab helpers
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   // M4-FU3: the file arrives as text. The tests keep naming it M1_LINK; the
   // wrapper hands the importer that file's text, as the browser does.
@@ -30399,7 +30402,7 @@ function m3Serve_(rows, cache, who, opts) {
     KB_MANUAL_IMAGES_BATCH: 40, KB_MANUAL_IMAGE_CACHE_PREFIX: 'kbmimg_',
     getEmployeeInfo_: () => (who === undefined ? { email: 'rep@ums.com' } : who), getKbSS_: () => book,
     CacheService: { getScriptCache: () => ({ getAll: (ks) => { const o = {}; ks.forEach((k) => { if (cache[k]) o[k] = cache[k]; }); return o; }, putAll: (o, ttl) => puts.push([Object.keys(o), ttl]) }) } });
-  ['kbManualImagesHeaderOk_', 'kbManualImagesLedger_', 'getManualImages'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  ['kbImageTabHeaderOk_', 'kbImageTabLedger_', 'kbImageTabServe_', 'kbManualImagesHeaderOk_', 'kbManualImagesLedger_', 'getManualImages'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));   // DRV-3: the shared helpers
   return { ctx, reads, puts };
 }
 
@@ -31404,16 +31407,18 @@ test('DRV-4 (cycle 23): getOrCreateKbImagesFolder_ replaces the folder ONLY when
   assert.ok(/is not set/.test(msg) && /disabled for this domain/.test(msg) && !/re-authorize/.test(msg), msg);
 });
 
-test('DRV-5 (cycle 23): a KB Images folder that cannot open KEEPS the converter\'s image tokens — a later save can still export them (driven)', () => {
-  const ctx = vm.createContext({ String, Object, parseInt, console: { warn() {} } });
-  ['kbExtractDocImageRefs_', 'kbReplaceDocImageTokens_', 'kbResolveDocImages_'].forEach((fn) =>
+test('DRV-5 → DRV-3 (cycle 23): a source Doc that cannot open KEEPS the converter\'s image tokens — a later save can still store them (driven)', () => {
+  const ctx = vm.createContext({ String, Object, parseInt, Math, console: { warn() {} },
+    KB_DOC_IMAGE_CAP: 20, KB_IMG_UPLOAD_TYPES: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'], KB_IMAGE_MAX_BYTES: 1572864,
+    DocumentApp: { openById: () => { throw new Error(C23_DRIVE_OFF); } },
+    kbImagesStoreLocked_: () => { throw new Error('the store must not run when nothing was read'); } });
+  ['kbExtractDocImageRefs_', 'kbReplaceDocImageTokens_', 'kbCollectDocInlineImages_', 'kbImageItem_', 'kbResolveDocImages_'].forEach((fn) =>
     vm.runInContext(extractRawFunction('Code.js', fn), ctx));
-  ctx.getOrCreateKbImagesFolder_ = () => { throw new Error('KB_IMAGES_FOLDER_ID is set to F but that folder could not be opened (' + C23_DRIVE_OFF + ')'); };
   const body = 'Intro\n![Doc image 1](kbdoc:DOC123abc:1)\nmid\n![Doc image 2](kbdoc:DOC123abc:2)\nend';
   const r = ctx.kbResolveDocImages_(body);
   assert.strictEqual(r.bodyMd, body, 'THE REGRESSION: the tokens were rewritten to "*[image — see the original Doc]*", losing which image went where');
   assert.strictEqual(r.exported, 0); assert.strictEqual(r.pending, 2);
-  assert.ok(r.warnings.length === 1 && /2 image\(s\) kept as pending/.test(r.warnings[0]) && /save again/.test(r.warnings[0]), r.warnings[0]);
+  assert.ok(r.warnings.length === 1 && /kept as pending/.test(r.warnings[0]) && /save again/.test(r.warnings[0]), r.warnings[0]);
   assert.ok(/disabled by your domain administrator/.test(r.warnings[0]), 'the reason rides the warning');
 });
 
@@ -33728,6 +33733,180 @@ test('Batch 11 KB2-6 (cycle 23, operator 2026-10-05): "and" in an Area Eligibili
   // The phrasings that COULD mean "both" are not guessed at — a person checks.
   ['TX and listed cities', '100 miles of Dallas and TX only', 'listed cities and surrounding areas'].forEach((t) =>
     assert.strictEqual(P(t).kind, 'unknown', t + ' reads as unreadable'));
+});
+
+
+// ---------------------------------------------------------------------------
+// cycle 23 Batch 12 — DRV-3: article images live in the KbImages tab, not Drive
+console.log('\ncycle 23 Batch 12 — DRV-3: KB article images in the KbImages tab');
+const b12Sha_ = (x) => require('crypto').createHash('sha256').update(String(x)).digest('hex');
+/** The REAL top-level declarations, run as vars (dependencies first). */
+const b12Ctx_ = (fns, extra) => {
+  const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, Date, isFinite, parseInt, RegExp, Error, console: { warn() {} } }, extra || {}));
+  ['KB_MANUAL_IMAGES_HEADERS', 'KBMG', 'KB_MANUAL_IMAGE_CELL_MAX', 'KB_IMG_UPLOAD_MAX_CHARS', 'KB_IMG_UPLOAD_TYPES', 'KB_IMAGES_TAB', 'KB_IMAGES_HEADERS',
+    'KB_IMAGE_KEY_RE', 'KB_IMAGE_MAX_BYTES', 'KB_IMAGES_BATCH', 'KB_IMAGE_CACHE_PREFIX', 'KB_DOC_IMAGE_CAP'].forEach((k) => {
+    const m = codeSrc.match(new RegExp('^const ' + k + ' = ([^\\n]+?);(?:\\s*//[^\\n]*)?$', 'm'));
+    if (!m) throw new Error(k + ' is not declared');
+    vm.runInContext('var ' + k + ' = ' + m[1] + ';', ctx);
+  });
+  fns.forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  return ctx;
+};
+const B12_HDR = ['Key', 'Sha', 'Type', 'Kind', 'Part', 'Data', 'ImportedAt'];
+function b12Sheet_(rows, header) {
+  const grid = [header || B12_HDR].concat((rows || []).map((r) => r.slice()));
+  const reads = [];
+  return { grid, reads,
+    getLastRow: () => grid.length, setFrozenRows() {},
+    appendRow: (r) => grid.push(r.slice()),
+    getRange: (r, c, nr, nc) => ({
+      getValues: () => { reads.push([r, c, nr, nc]); return grid.slice(r - 1, r - 1 + (nr || 1)).map((row) => { const o = []; for (let j = 0; j < (nc || 1); j++) o.push(row[c - 1 + j] == null ? '' : row[c - 1 + j]); return o; }); },
+      setFontWeight() {} }) };
+}
+const B12_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+test('DRV-3 (cycle 23 Batch 12): an image item is named by its CONTENT hash, and refuses a type off the list, non-base64 data or more than 1.5 MB (driven)', () => {
+  const ctx = b12Ctx_(['kbImageItem_']);
+  const it = b10J(ctx.kbImageItem_('IMAGE/PNG', B12_PNG_B64, 'paste', b12Sha_));
+  assert.strictEqual(it.key, 'kbimg-' + b12Sha_(B12_PNG_B64).slice(0, 24), 'the key is the content hash');
+  assert.ok(vm.runInContext('KB_IMAGE_KEY_RE', ctx).test(it.key));
+  assert.deepStrictEqual([it.contentType, it.kind, it.bytes], ['image/png', 'paste', Math.floor(B12_PNG_B64.length * 3 / 4)]);
+  assert.strictEqual(b10J(ctx.kbImageItem_('image/png', B12_PNG_B64, 'doc', b12Sha_)).key, it.key, 'the same bytes → the same key (stored once)');
+  assert.ok(/not a PNG, JPEG, GIF or WebP/.test(ctx.kbImageItem_('image/svg+xml', B12_PNG_B64, 'paste', b12Sha_).error), 'SVG is script-capable — never stored');
+  assert.ok(/not image data/.test(ctx.kbImageItem_('image/png', '<script>', 'paste', b12Sha_).error));
+  const big = 'A'.repeat(Math.ceil(1572864 * 4 / 3) + 8);
+  const r = b10J(ctx.kbImageItem_('image/jpeg', big, 'doc', b12Sha_));
+  assert.ok(r.tooLarge && /over the 1\.5 MB limit/.test(r.error), r.error);
+  assert.strictEqual(ctx.kbImageItem_('image/jpeg', 'A'.repeat(Math.floor(1572864 * 4 / 3)), 'doc', b12Sha_).error, undefined, 'exactly the limit is stored');
+});
+
+test('DRV-3 (cycle 23 Batch 12): the KbImages store is append-only under the lock — a stored key is reused, pieces stay under the cell limit, and a changed header REFUSES rather than appends (driven)', () => {
+  let locks = 0, sheet = b12Sheet_([]);
+  const ctx = b12Ctx_(['kbImageTabHeaderOk_', 'kbImageTabLedger_', 'kbManualImagesRows_', 'kbImageItem_', 'kbImagesStoreLocked_'], {
+    LockService: { getScriptLock: () => ({ waitLock() { locks++; }, releaseLock() {} }) },
+    getOrCreateKbImagesSheet_: () => sheet,
+    appendRowsSafe_: (sh, rows) => rows.forEach((r) => sh.grid.push(r.slice())),
+    fmtDate_: () => '2026-10-05', fmtTime_: () => '09:00:00' });
+  const cellMax = vm.runInContext('KB_MANUAL_IMAGE_CELL_MAX', ctx);
+  const bigB64 = 'B'.repeat(cellMax * 2 + 10);
+  const a = b10J(ctx.kbImageItem_('image/png', B12_PNG_B64, 'paste', b12Sha_)), b = b10J(ctx.kbImageItem_('image/jpeg', bigB64, 'doc', b12Sha_));
+  assert.deepStrictEqual(b10J(ctx.kbImagesStoreLocked_([a, b, a])), { stored: 2, reused: 1 }, 'a duplicate in one call is stored once');
+  assert.strictEqual(locks, 1, 'under the script lock (g17)');
+  const bRows = sheet.grid.filter((r) => r[0] === b.key);
+  assert.deepStrictEqual(bRows.map((r) => r[4]), [0, 1, 2], 'split into parts');
+  assert.ok(bRows.every((r) => r[5].length <= cellMax) && bRows.map((r) => r[5]).join('') === bigB64, 'each piece fits a cell, and they rejoin exactly');
+  assert.deepStrictEqual(b10J(bRows[0].slice(1, 4)), [b.sha, 'image/jpeg', 'doc']);
+  const n = sheet.grid.length;
+  assert.deepStrictEqual(b10J(ctx.kbImagesStoreLocked_([a])), { stored: 0, reused: 1 }, 'storing it again stores nothing');
+  assert.strictEqual(sheet.grid.length, n, 'APPEND-ONLY: nothing rewritten, nothing added');
+  sheet = b12Sheet_([['kbimg-' + 'c'.repeat(24), 'x', 'image/png', 'paste', 0, 'AAAA', 't']], ['Key', 'Sha', 'Kind', 'Type', 'Part', 'Data', 'ImportedAt']);
+  assert.throws(() => ctx.kbImagesStoreLocked_([a]), /header row was changed[^]*nothing was stored/, 'a changed header is refused by name (g142)');
+  assert.strictEqual(sheet.grid.length, 2, 'and nothing was appended to it');
+});
+
+test('DRV-3 (cycle 23 Batch 12): getKbImages serves the tab\'s own bytes — the manual reader\'s rule: rejoined, re-checked, "not stored" apart from "could not read", batched, gated, no Drive (driven)', () => {
+  assert.ok(!/DriveApp/.test(extractRawFunction('Code.js', 'getKbImages')) && !/DriveApp/.test(extractRawFunction('Code.js', 'kbImageTabServe_')), 'no Drive');
+  const k1 = 'kbimg-' + '1'.repeat(24), k2 = 'kbimg-' + '2'.repeat(24), k3 = 'kbimg-' + '3'.repeat(24), kGap = 'kbimg-' + '4'.repeat(24);
+  const sheet = b12Sheet_([
+    [k1, 's1', 'image/png', 'paste', 0, B12_PNG_B64.slice(0, 20), 't'], [k1, 's1', 'image/png', 'paste', 1, B12_PNG_B64.slice(20), 't'],
+    [k2, 's2', 'image/webp', 'doc', 0, B12_PNG_B64, 't'],
+    [k3, 's3', 'text/html', 'doc', 0, B12_PNG_B64, 't'],
+    [kGap, 's4', 'image/png', 'doc', 1, B12_PNG_B64, 't']]);
+  const puts = [];
+  let who = { email: 'rep@ums.com' };
+  const ctx = b12Ctx_(['kbImageTabHeaderOk_', 'kbImageTabLedger_', 'kbImageTabServe_', 'getKbImages'], {
+    getEmployeeInfo_: () => who, getKbSS_: () => ({ getSheetByName: (n) => (n === 'KbImages' ? sheet : null) }),
+    CacheService: { getScriptCache: () => ({ getAll: () => ({}), putAll: (o) => puts.push(Object.keys(o)) }) } });
+  const r = b10J(ctx.getKbImages([k1, k2, k3, kGap, 'kbimg-' + '9'.repeat(24), 'icon-a', '../x']));
+  assert.strictEqual(r.images[k1], 'data:image/png;base64,' + B12_PNG_B64, 'pieces rejoin in part order');
+  assert.strictEqual(r.images[k2], 'data:image/webp;base64,' + B12_PNG_B64, 'WebP is an article image type');
+  assert.deepStrictEqual(r.failed, [k3], 'a non-image type is "could not read" — never passed on');
+  assert.deepStrictEqual(r.missing.sort(), [kGap, 'kbimg-' + '9'.repeat(24)].sort(), 'a part missing, or never stored → not stored');
+  assert.ok(!('icon-a' in r.images) && r.missing.indexOf('icon-a') < 0, 'a manual key is not an article key');
+  assert.strictEqual(sheet.reads.filter((x) => x[1] === 6).length, 1, 'ONE read of the Data column');
+  assert.deepStrictEqual(puts, [['kbimg_s1', 'kbimg_s2']], 'cached by content hash');
+  const many = Array.from({ length: 20 }, (_, i) => 'kbimg-' + String(i).padStart(24, 'a'));
+  const r2 = b10J(ctx.getKbImages(many));
+  assert.strictEqual(r2.missing.length, vm.runInContext('KB_IMAGES_BATCH', ctx), 'one call answers at most KB_IMAGES_BATCH keys');
+  who = null;
+  assert.strictEqual(ctx.getKbImages([k1]).error, 'Not authorized.', 'an enrolled employee only');
+});
+
+test('DRV-3 (cycle 23 Batch 12): Save stores a converted Doc\'s images in the tab — a stored image becomes kbimg:<key>, one over 1.5 MB or a failed store stays PENDING and named, a missing image is the placeholder; no Drive (driven)', () => {
+  const small = { getContentType: () => 'image/png', getBytes: () => Buffer.from(B12_PNG_B64, 'base64') };
+  const huge = { getContentType: () => 'image/jpeg', getBytes: () => Buffer.alloc(1572864 + 10) };
+  const stored = [];
+  let storeThrows = null;
+  const para = (blobs) => ({ getType: () => 'PARAGRAPH', getNumChildren: () => blobs.length, getChild: (i) => ({ getType: () => 'INLINE_IMAGE', getBlob: () => blobs[i] }) });
+  const ctx = b12Ctx_(['kbExtractDocImageRefs_', 'kbReplaceDocImageTokens_', 'kbCollectDocInlineImages_', 'kbImageItem_', 'kbResolveDocImages_'], {
+    DocumentApp: { openById: () => ({ getBody: () => ({ getNumChildren: () => 1, getChild: () => para([small, huge]) }) }) },
+    Utilities: { base64Encode: (b) => Buffer.from(b).toString('base64') },
+    kbSha256Hex_: b12Sha_,
+    kbImagesStoreLocked_: (items) => { if (storeThrows) throw new Error(storeThrows); items.forEach((i) => stored.push(i.key)); return { stored: items.length, reused: 0 }; } });
+  assert.ok(!/DriveApp|getOrCreateKbImagesFolder_/.test(extractRawFunction('Code.js', 'kbResolveDocImages_')), 'no Drive');
+  const body = 'a ![Doc image 1](kbdoc:DOC123abc:1) b ![Doc image 2](kbdoc:DOC123abc:2) c ![Doc image 3](kbdoc:DOC123abc:3)';
+  let r = b10J(ctx.kbResolveDocImages_(body));
+  const key = 'kbimg-' + b12Sha_(B12_PNG_B64).slice(0, 24);
+  assert.ok(r.bodyMd.indexOf('![Doc image 1](kbimg:' + key + ')') >= 0, 'THE FIX: the image is stored and cited by key');
+  assert.ok(r.bodyMd.indexOf('![Doc image 2](kbdoc:DOC123abc:2)') >= 0, 'over the limit → kept as pending (a later save can store it)');
+  assert.ok(r.bodyMd.indexOf('*[image — see the original Doc]*') >= 0 && r.bodyMd.indexOf('kbdoc:DOC123abc:3') < 0, 'the Doc has no third image → placeholder');
+  assert.deepStrictEqual([r.exported, r.pending], [1, 1]);
+  assert.ok(r.warnings.some((w) => /Image 2 is [\d.]+ MB — over the 1\.5 MB limit — shrink it in the Doc and save again \(kept as pending\)/.test(w)), r.warnings.join(' | '));
+  assert.deepStrictEqual(stored, [key]);
+  storeThrows = 'Lock timeout';
+  r = b10J(ctx.kbResolveDocImages_('x ![Doc image 1](kbdoc:DOC123abc:1)'));
+  assert.strictEqual(r.bodyMd, 'x ![Doc image 1](kbdoc:DOC123abc:1)', 'a failed store keeps the token');
+  assert.ok(r.pending === 1 && r.warnings.some((w) => /could not be stored: Lock timeout[^]*kept as pending/.test(w)));
+  // kbReplaceDocImageTokens_'s keep contract.
+  const rr = b10J(ctx.kbReplaceDocImageTokens_('![a](kbdoc:D1:1) ![b](kbdoc:D1:2)', (f, o) => (o === 1 ? { keep: true } : 'kbimg:x')));
+  assert.deepStrictEqual(rr, { bodyMd: '![a](kbdoc:D1:1) ![b](kbimg:x)', failed: 0, kept: 1 });
+});
+
+test('DRV-3 (cycle 23 Batch 12): kbUploadImage stores a pasted image in the tab and returns its kbimg: token — admin-gated, typed, capped, audited by key; the same bytes twice are one image (driven)', () => {
+  const audits = [], stored = [];
+  let who = { email: 'admin@x', isAdmin: true };
+  const ctx = b12Ctx_(['kbParseImageDataUrl_', 'kbImageItem_', 'kbUploadImage'], {
+    getEmployeeInfo_: () => who, kbSha256Hex_: b12Sha_, writeAuditLog_: (...a) => audits.push(a),
+    kbImagesStoreLocked_: (items) => { const dup = stored.indexOf(items[0].key) >= 0; if (!dup) stored.push(items[0].key); return { stored: dup ? 0 : 1, reused: dup ? 1 : 0 }; } });
+  assert.ok(!/DriveApp|getOrCreateKbImagesFolder_/.test(extractRawFunction('Code.js', 'kbUploadImage')), 'no Drive');
+  const url = 'data:image/png;base64,' + B12_PNG_B64;
+  let r = b10J(ctx.kbUploadImage(url));
+  const key = 'kbimg-' + b12Sha_(B12_PNG_B64).slice(0, 24);
+  assert.deepStrictEqual(r, { success: true, key: key, token: 'kbimg:' + key });
+  assert.ok(audits[0][1] === 'KbImageUpload' && /key=kbimg-[a-f0-9]{24}; type=image\/png; bytes=\d+$/.test(audits[0][6]), 'a PHI-free audit row, by key');
+  r = b10J(ctx.kbUploadImage(url));
+  assert.strictEqual(r.token, 'kbimg:' + key); assert.strictEqual(stored.length, 1); assert.ok(/; reused$/.test(audits[1][6]));
+  assert.ok(/over the 1\.5 MB limit/.test(ctx.kbUploadImage('data:image/png;base64,' + 'A'.repeat(2200000)).error), 'over the store cap → refused');
+  assert.ok(/PNG\/JPEG\/GIF\/WebP/.test(ctx.kbUploadImage('data:image/svg+xml;base64,AAAA').error));
+  who = { email: 'mgr@x', isManager: true };
+  assert.strictEqual(ctx.kbUploadImage(url).error, 'Admin access required.');
+});
+
+test('DRV-3 (cycle 23 Batch 12): the client — a kbimg: chip carries only a key of the image charset, the batch is the server\'s, the paste is planned to 1600 px / 1.5 MB, and only an image data URL is set as a source', () => {
+  const c = m1Md_();
+  const key = 'kbimg-' + 'a1'.repeat(12);
+  assert.strictEqual(c.kbMd_('![Shot](kbimg:' + key + ')'), '<p><span class="kb-img-pending kb-kbimg" data-kbimg="' + key + '" title="Article image">Shot</span></p>');
+  ['kbimg:KBIMG-' + 'a'.repeat(24), 'kbimg:' + key + '"onerror=a', 'kbimg:kbimg-short', 'kbimg:icon-a'].forEach((u) => {
+    const h = c.kbMd_('![A](' + u + ')');
+    assert.ok(!/data-kbimg/.test(h) && !/onerror/.test(h.replace(/&quot;/g, '')), u + ' → ' + h);
+  });
+  assert.ok(/appears after Save<\/span>/.test(c.kbMd_('![D](kbdoc:Doc1:1)')) && !/Drive/.test(c.kbMd_('![D](kbdoc:Doc1:1)')), 'the converter chip no longer promises Drive');
+  assert.strictEqual(Number(/var KB_KBIMG_BATCH = (\d+);/.exec(M1_KB_SRC)[1]), Number(/const KB_IMAGES_BATCH = (\d+);/.exec(codeSrc)[1]), 'the client asks in batches the server answers whole');
+  const sb = buildSandbox([]);
+  vm.runInContext(/var KB_IMG_MAX_WIDTH = \d+;/.exec(M1_KB_SRC)[0] + /var KB_IMG_MAX_BYTES = \d+;/.exec(M1_KB_SRC)[0], sb);
+  const plan = loadFunction(sb, 'kb/script_kb.html', 'kbImgPastePlan_');
+  const bytes = loadFunction(sb, 'kb/script_kb.html', 'kbImgDataUrlBytes_');
+  assert.deepStrictEqual(b10J(plan(1200, 800, 500000)), { keep: true }, 'inside both limits: byte for byte (a GIF stays animated)');
+  assert.deepStrictEqual(b10J(plan(3200, 1800, 900000)), { keep: false, width: 1600, height: 900 }, 'too wide → 1600 px, aspect kept');
+  assert.deepStrictEqual(b10J(plan(1000, 700, 2000000)), { keep: false, width: 1000, height: 700 }, 'too heavy but narrow → redrawn, never upscaled');
+  assert.strictEqual(bytes('data:image/png;base64,' + 'A'.repeat(400)), 300);
+  const hyd = extractFnFrom(M1_KB_SRC, 'kbHydrateKbImages_');
+  assert.ok(/if \(url\) KB_KBIMG\.cache\[k\] = url;/.test(hyd) && !/cache\[k\] = ['"](missing|failed)/.test(hyd), 'only a success is cached (g129)');
+  const apply = extractFnFrom(M1_KB_SRC, 'kbKbimgApply_');
+  assert.ok(/\^data:image\\\/\(png\|jpeg\|gif\|webp\);base64,\[A-Za-z0-9\+\\\/=\]\+\$/.test(apply) && /img\.src = state;/.test(apply), 'a source only from an image data URL, by property');
+  const paste = extractFnFrom(M1_KB_SRC, 'kbPasteUploadImage_');
+  assert.ok(/kbImgPrepare_\(/.test(paste) && /\^kbimg:kbimg-\[a-f0-9\]\{24\}\$/.test(paste) && /done\('!\[Screenshot\]\(' \+ res\.token \+ '\)'\)/.test(paste),
+    'the paste is prepared before it is sent, and only a well-formed token is inserted');
 });
 
 

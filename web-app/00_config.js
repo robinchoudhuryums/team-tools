@@ -2159,8 +2159,24 @@ const DRIVE_DISABLED_MSG = 'Apps Script\u2019s Drive service is disabled for thi
 // to scrub patient data before pasting. Orphaned uploads (pasted but never
 // saved into an article) stay in the folder — trim manually if it bothers you
 // (same posture as KbViews growth).
-const KB_IMG_UPLOAD_MAX_CHARS = 4 * 1024 * 1024;   // base64 chars ≈ 3MB binary
+const KB_IMG_UPLOAD_MAX_CHARS = 4 * 1024 * 1024;   // base64 chars ≈ 3MB binary — the request sanity cap, before the store cap below
 const KB_IMG_UPLOAD_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+// ── DRV-3 (cycle 23 Batch 12, operator 2026-10-05): article images live in the
+// KbImages TAB, not a Drive folder — this domain disables Apps Script's Drive,
+// so every image the converter exported or a paste uploaded was unreadable.
+// The ManualImages row shape (Key, Sha, Type, Kind, Part, Data, ImportedAt —
+// KBMG), its ledger and its reader are shared; the difference is that this tab
+// is APPEND-ONLY (an article holds a key for good) and keyed by CONTENT hash,
+// so storing the same image twice stores it once. An article cites
+// `![alt](kbimg:<key>)`; any employee reads it through getKbImages. Kind is
+// 'paste' or 'doc'. Old Drive-thumbnail links keep rendering through the http
+// path and the kbGetImageData fallback below.
+const KB_IMAGES_TAB = 'KbImages';
+const KB_IMAGES_HEADERS = KB_MANUAL_IMAGES_HEADERS;
+const KB_IMAGE_KEY_RE = /^kbimg-[a-f0-9]{24}$/;
+const KB_IMAGE_MAX_BYTES = 1572864;            // 1.5 MB per image (operator default); the client downscales pasted images to fit
+const KB_IMAGES_BATCH = 6;                     // keys per getKbImages call — an article image is far larger than a manual icon
+const KB_IMAGE_CACHE_PREFIX = 'kbimg_';        // + content hash (g157: names the bytes, not the code)
 // ── Article-image fallback: serve KB Images through the app ─────────────────
 // (Operator 2026-08-13.) The Drive thumbnail URLs kbMd_ renders load only for
 // accounts the KB Images folder is visible to — and on this domain Workspace

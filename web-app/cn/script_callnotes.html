@@ -11228,7 +11228,9 @@ function cnRenderStoragePanel_(res) {
 
 /** DRV-1 (cycle 23): what a dead Drive takes down — one list, for the line and the finding. */
 function cnDriveSurfaces_() {
-  return 'Reference article images (converter export, paste-a-screenshot, the image fallback), the embed reachability check, and QA recording sync and playback';
+  // DRV-3 (cycle 23 Batch 12): article images moved to the KbImages tab, so
+  // only images uploaded BEFORE that (old Drive thumbnail links) still need Drive.
+  return 'Reference Drive embeds and file imports, article images uploaded before the move to the KbImages tab, the embed reachability check, and QA recording sync and playback';
 }
 /** DRV-1 (cycle 23, g142): the KB Images folder advice. "Clear the property"
  *  was destructive whenever the folder still existed — the images already

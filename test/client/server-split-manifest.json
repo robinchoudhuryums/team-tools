@@ -2212,6 +2212,37 @@
     "submitQuizAttempt"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Batch 12 DRV-3: KbImages tab — shared image-tab helpers, getKbImages, store, item",
+   "added": [
+    "KB_IMAGES_BATCH",
+    "KB_IMAGES_HEADERS",
+    "KB_IMAGES_TAB",
+    "KB_IMAGE_CACHE_PREFIX",
+    "KB_IMAGE_KEY_RE",
+    "KB_IMAGE_MAX_BYTES",
+    "getKbImages",
+    "getOrCreateKbImagesSheet_",
+    "kbImageItem_",
+    "kbImageTabHeaderOk_",
+    "kbImageTabLedger_",
+    "kbImageTabServe_",
+    "kbImagesStoreLocked_"
+   ],
+   "removed": [],
+   "changed": [
+    "KB_IMG_UPLOAD_MAX_CHARS",
+    "getManualImages",
+    "kbManualImagesHeaderOk_",
+    "kbManualImagesLedger_",
+    "kbReplaceDocImageTokens_",
+    "kbResolveDocImages_",
+    "kbSaveItem",
+    "kbUploadImage"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3321,10 +3352,40 @@
    "kind": "const",
    "sha": "8b94405f7f4dccb8"
   },
+  "KB_IMAGES_BATCH": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "bd0267992a606305"
+  },
   "KB_IMAGES_FOLDER_PROP": {
    "file": "00_config.js",
    "kind": "const",
    "sha": "819c80f4c9b0941e"
+  },
+  "KB_IMAGES_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "044b6e6310eba868"
+  },
+  "KB_IMAGES_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1ee9e52f40912e56"
+  },
+  "KB_IMAGE_CACHE_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "c2b019268975c123"
+  },
+  "KB_IMAGE_KEY_RE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1ae4f2e9abda82af"
+  },
+  "KB_IMAGE_MAX_BYTES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "74b88b79f67b90ab"
   },
   "KB_IMG_FETCH_MAX_BYTES": {
    "file": "00_config.js",
@@ -3334,7 +3395,7 @@
   "KB_IMG_UPLOAD_MAX_CHARS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "fc1587ace327f6f7"
+   "sha": "d91680dc8a05f2b9"
   },
   "KB_IMG_UPLOAD_TYPES": {
    "file": "00_config.js",
@@ -6566,6 +6627,11 @@
    "kind": "function",
    "sha": "6b3c262dbf877637"
   },
+  "getKbImages": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "76933ab9bc37e276"
+  },
   "getKbSS_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -6599,7 +6665,7 @@
   "getManualImages": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "019471d36417026f"
+   "sha": "111d2e6a1a4b8093"
   },
   "getManualMeta": {
    "file": "70_kb.js",
@@ -6795,6 +6861,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "250e9deb6ff03e20"
+  },
+  "getOrCreateKbImagesSheet_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "f319f494265c341a"
   },
   "getOrCreateKbRequestsSheet_": {
    "file": "70_kb.js",
@@ -7761,6 +7832,31 @@
    "kind": "function",
    "sha": "80bc103110b98773"
   },
+  "kbImageItem_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "1c9c3a1aa21c8e97"
+  },
+  "kbImageTabHeaderOk_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "1733971f5df1e39b"
+  },
+  "kbImageTabLedger_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "1691ad31a22fee6c"
+  },
+  "kbImageTabServe_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "f09cf03690f2a5ee"
+  },
+  "kbImagesStoreLocked_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "46e7d79354817167"
+  },
   "kbImportDataTable": {
    "file": "70_kb.js",
    "kind": "function",
@@ -7794,12 +7890,12 @@
   "kbManualImagesHeaderOk_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "61a029f27515c270"
+   "sha": "c322e2da8ab33a2f"
   },
   "kbManualImagesLedger_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "91ea76504bafaa72"
+   "sha": "9a1058faae9a99c4"
   },
   "kbManualImagesPlan_": {
    "file": "70_kb.js",
@@ -7929,7 +8025,7 @@
   "kbReplaceDocImageTokens_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "c60c6ba2f27955ac"
+   "sha": "99934452f7b6f94f"
   },
   "kbRequestArticle": {
    "file": "70_kb.js",
@@ -7944,7 +8040,7 @@
   "kbResolveDocImages_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "5fd58fc3e59b0bf0"
+   "sha": "05c5b77e4b5afb11"
   },
   "kbRevertItem": {
    "file": "70_kb.js",
@@ -7979,7 +8075,7 @@
   "kbSaveItem": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "29d844cbcf2b5fe7"
+   "sha": "e28726306c4aab48"
   },
   "kbSaveSearchConfig": {
    "file": "70_kb.js",
@@ -8054,7 +8150,7 @@
   "kbUploadImage": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "24d8b43a1cea4b27"
+   "sha": "5bc0397856766114"
   },
   "kbUsageCounts_": {
    "file": "70_kb.js",
