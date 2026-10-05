@@ -2407,7 +2407,13 @@ entry says which it is.
   could until cycle 22 — see g143). The nightly self-test keeps its
   MANAGER_EMAILS trigger gate and runs as the installer. `INSTANCE_IS_PROD`
   is unchanged: unset still PERMITS the full suite. Treating unset as prod
-  waits on standing up the DEV instance, and is still an operator decision.
+  waits on standing up the DEV instance, and is still an operator decision.  **Cycle 23 Batch 15 (2026-10-05):** eleven cases cover the server rules of
+  Batches 10–14 — nine pure ones in the smoke shard (safe on prod: run
+  `runSmokeTests` after the push) and two in Integration B (the DEV nightly,
+  or `runAllTestsPartB` on DEV: they write TEST rows to the Timesheet and an
+  image to the KB fixture). Read the expected count off the run's
+  `Expected:` line.
+
 <a id="operator-stored-formulas-one-time-clean-up-cycle-22"></a>
 - **Stored formulas — a one-time clean-up (cycle 22 S2 + F3, 2026-09-23).**
   From this deploy every app write is stored as literal text (g144). Text a

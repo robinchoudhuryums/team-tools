@@ -2699,3 +2699,11 @@ per-change detail. By delta:
   - Punctuality grading an archived previous window.
 - Moved pins: F1 and A7 (the export), the accrual source pin, the pay-statement note, T5's PTO-before-walk order, and the team calendar's behavioural pin (an archived month now READS). The team-calendar and T5 sandboxes return no archive tab for `TimesheetArchive` — a stub that answers every tab name with the live sheet made the reach read throw.
 - 21 bite-checks, all BITE.
+
+## Cycle 23 — Batch 15, editor-suite cases for the server rules of Batches 10–14
+
+- Editor suite +11 (the running-totals block carries the count):
+  - nine pure cases in the SMOKE shard (intake Dx / seat / weight, the org-domain and outside-recipient confirm, the AI facet audit counts, the pre-import Dashboard alignment, the quiz retry limit, the KbImages content key, the Spanish request episodes and courtesy filter);
+  - two in Integration B (the archive-aware Timesheet reader over TEST rows, cleared in `finally`; the KbImages store and reader on the KB FIXTURE, since the tab is append-only).
+- Node +1, a new pattern: **a pure editor case is RUN by the Node harness.** The pin loads the real server functions, the real constants and the real `Tests.js` assertions (`_describe_`, `_assertEq`, …) into a vm and calls each smoke case, so an editor case that cannot pass is caught before the operator's first editor run. Store-backed cases are still verified by reading every call they make.
+- 12 bite-checks against that runner, all BITE in the end. The neuro case first read NO BITE: "Not sure" is caught by its leading "not" too, so the uncertainty-phrase rule was untested; a case only the phrase rule catches ("Possibly MS, not sure") now carries it (g116's twelfth direction).
