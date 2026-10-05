@@ -5062,6 +5062,16 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   Needs-you list asks the pending ids rather than "a resolve exists". Verify:
   the SP-1 pins (the fold, the endpoint's already-test, the Needs-you wiring).
 
+  **AMENDED (cycle 23 SP-2, operator 2026-10-05): the first REPLY is not the
+  end of the thread either.** An email request was resolved for ever by the
+  first member reply, and a manual resolve hid the thread for good, so a
+  requester's follow-up question never became pending. A thread is now a
+  sequence of requests (`spanishEpisodes_`): a requester message opens one, a
+  member reply closes it, a click closes what was open at its stamp, and a
+  later message from the requester is new work — unclaimed, because the claim
+  was on the request that was answered. A courtesy reply is not a request
+  (g159). Verify: the SP-2 pins (INV-369/370/371).
+
 <a id="g156-read-a-word-or-a-number-by-token"></a>
 
 - **Read an operator's word or a rep's number by TOKEN, never by character
@@ -5172,6 +5182,14 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   link carries it, and a reply quotes it); naming only another sharer is not a
   reply to this one, and naming none is a look, never a resolve. Verify: the
   DR-2 pick grid and the DR-1 scan drive (`c23DrScan_`).
+  **A SECOND instance (cycle 23 SP-2 follow-up, operator 2026-10-05): the
+  Spanish courtesy filter.** A thank-you from a requester no longer reopens
+  their answered request, which makes the filter a heuristic that HIDES work.
+  So it is built the same way round: a message is a courtesy only when EVERY
+  word of its new text is on a short courtesy list (or it is a lone courtesy
+  emoji); a "?", a digit, a name, any other word or an empty new text keeps it
+  a request. "Gracias Ana" reopens — one click — rather than "gracias, ya
+  está?" hiding. Verify: the courtesy grid (`spanishIsCourtesyOnly_`).
 
 <a id="g160-an-escape-first-renderer-must-match-escaped-markers"></a>
 

@@ -2674,3 +2674,19 @@ per-change detail. By delta:
   - M3-I2/I3 (the sandboxes load the shared `kbImageTab*` helpers);
   - the visual mock gains `getKbImages` (X1).
 - 24 bite-checks, all BITE; no NO BITE. The Admin Drive-surface sentence is copy with no pin.
+
+## Cycle 23 — Batch 13, SP-2: a Spanish request that comes back (and its courtesy follow-up)
+
+- Node +8 (seven driven), over a fake Gmail (`b13Msg_` / `b13Th_`). `b13Ctx_` is `b10Ctx_` plus the courtesy rule the roles read (`SPANISH_COURTESY_WORDS_`, `drReplyNewText_`, `spanishIsCourtesyOnly_`):
+  - the episode grid (`spanishEpisodes_`: reply closes, follow-up reopens with the reply as floor, double-send, second reply, cc neutral, click then follow-up, click at the request, legacy, first close wins, a click after the answer raises the floor) and `spanishClaimLive_`;
+  - the role grid (`spanishThreadRoles_`);
+  - the pending list (two reopened threads, unclaimed or claimed after the reopen; answered and clicked threads absent; the cached ids carry the floors);
+  - the resolved list and the stats card over the same threads;
+  - `claimSpanishThread`'s steal guard;
+  - the voicemail fold's floor and resolver through the real fold;
+  - the courtesy grid (11 courtesy, 14 request cases) with its pending and Expand drives;
+  - plus one wiring pin (Needs-you, auto-assign, the claim guard's lock order, the pill, the confirm, the CSS rule, the fixture).
+- DOM +1: a reopened card renders the follow-up pill and no claim pill, counts in "Auto-assign N unclaimed", and the resolve confirm carries the new sentence.
+- Moved pins: M4, R2 #4, the fold wiring (the resolved list now reads the ONE fold), BIZ-2 and N3-SP (per-episode literals, the v4 key), C-8 (the floors), and the F-34 / M5 / SP-3+4 sandboxes (they load the new helpers).
+- The pending drive reads `Date.now()` for its fixture clock, because the core ages by `Date.now()` and an earlier pin may have frozen it (g116's seventeenth direction, met from the other side).
+- 27 bite-checks, all BITE in the end. The voicemail floor first bit only a source assertion, so a driven fold pin was added. The courtesy question rule first read NO BITE, because every question case also held a non-courtesy word; an all-courtesy question ("¿Todo bien?") now carries it (g116: a case that fails two guards proves neither).

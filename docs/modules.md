@@ -587,6 +587,16 @@ not restate it. Server endpoints live in the fourteen server files
      month-to-date comparison taken against a day of data that had not arrived
      (MET-5, g148, g129).
 
+     **Cycle 23 Batch 13 (2026-10-05) — a Spanish request that comes back.** A
+     requester who writes again after an answer, or after Mark resolved, is a
+     new pending card with a **follow-up** pill, aged from the new message and
+     showing it — and unclaimed: the earlier claim was on the request that was
+     answered, so it leaves the claimant's Needs-you list and the card counts
+     for Auto-assign. A plain thank-you ("Gracias!", "Thank you 🙏") does not
+     reopen. The Resolved list and the stats count each answered request, and
+     voicemails a member answered by reply are listed and credited. The
+     Mark-resolved confirm says a later message brings the request back.
+
 <a id="intake"></a>
      **Batch 5 (2026-09-18):** `QaRecordings` carries a trailing `AgentId`
      written from the roster when a reviewer attributes a recording, and the

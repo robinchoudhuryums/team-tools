@@ -851,6 +851,12 @@ entry says which it is.
   median tiles are true medians since this batch (an even count averages the
   two middle values), so a figure can move on deploy with no change in the
   data (DR-3).
+  **AMENDED (cycle 23 SP-2, 2026-10-05): "resolved" is per REQUEST, not per
+  thread.** A requester's later message after a member's reply, or after Mark
+  resolved, reopens the thread as a new, UNCLAIMED request (a thank-you
+  built only of courtesy words does not); the cached pending-id list
+  (`SPANISH_PENDING_IDS_PREFIX`) carries each reopened thread's claim floor
+  beside its id — timestamps only. Nothing to set; tell the members.
 
 <a id="operator-elapsed-time-is-business-hours-and-one-pure-core-computes-it"></a>
 - **Elapsed time is BUSINESS hours, and ONE pure core computes it (operator

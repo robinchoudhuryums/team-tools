@@ -282,8 +282,8 @@ What leaves the building, who it looks like it is from, and what the shared log 
 - **EOD digest runs hourly and matches each rep's local EOD hour.** Fires when you change the EOD hour or its trigger. [Detail](docs/gotchas.md#g79-eod-digest-runs-hourly-and-matches-each)
 - **Personal-sheet sync failures log to the audit trail.** Fires when a rep’s personal Sheet drifts from the ADP source of truth. [Detail](docs/gotchas.md#g89-personal-sheet-sync-failures-log-to-the)
 - **Training questions email managers immediately.** Fires when a note is flagged `training` with a question. [Detail](docs/gotchas.md#g92-training-questions-email-managers-immediately)
-- **A heuristic that CLOSES work must fail toward "a person should look" — the Dept Request reply scan would have resolved on "Is this the right patient" (no "?"); a line opening with a question word counts, and empty new text is a look (22post D, 2026-09-28); the LATEST reply decides, and on a thread two requests share a reply must name the request (cycle 23 DR-2 + DR-1).** Fires when an automatic rule ends a task or moves it out of view. Verify: the D-2 rule grid. [Detail](docs/gotchas.md#g159-a-heuristic-that-closes-work-fails-toward-a-look)
-- **The first message of a thread is not the thread — a caller's repeat voicemails share one Gmail conversation, and reading only the first hid every later one (cycle 22 M5 + follow-up); the resolve fold kept the FIRST row, so a repeat voicemail after a resolve could never be resolved (cycle 23 SP-1).** Fires when you read a mail thread as one request. Verify: the M5 pins + FU-B7b. [Detail](docs/gotchas.md#g155-the-first-message-is-not-the-thread)
+- **A heuristic that CLOSES work must fail toward "a person should look" — the Dept Request reply scan would have resolved on "Is this the right patient" (no "?"); a line opening with a question word counts, and empty new text is a look (22post D, 2026-09-28); the LATEST reply decides, and on a thread two requests share a reply must name the request (cycle 23 DR-2 + DR-1); a filter that HIDES work is built the same way — a Spanish thank-you is ignored only when every word is a courtesy word (cycle 23 SP-2 follow-up).** Fires when an automatic rule ends a task or moves it out of view. Verify: the D-2 rule grid. [Detail](docs/gotchas.md#g159-a-heuristic-that-closes-work-fails-toward-a-look)
+- **The first message of a thread is not the thread — a caller's repeat voicemails share one Gmail conversation, and reading only the first hid every later one (cycle 22 M5 + follow-up); the resolve fold kept the FIRST row, so a repeat voicemail after a resolve could never be resolved (cycle 23 SP-1); and the first REPLY is not the end — a requester's follow-up after an answer or a click is a new, unclaimed request (cycle 23 SP-2).** Fires when you read a mail thread as one request. Verify: the M5 pins + FU-B7b. [Detail](docs/gotchas.md#g155-the-first-message-is-not-the-thread)
 
 ### CDR / Metrics contract
 
@@ -572,6 +572,7 @@ for the reasoning, which is usually the part that matters.
 - [A QA exemption applies to the period AFTER the one that earned it, and a quarter's holds in its months (cycle 23 QA2-1, 2026-10-02)](docs/design-decisions.md#a-qa-exemption-applies-to-the-next-period)
 - [An editor overlay asks "Discard changes?" before Escape, the backdrop or Cancel throws typed work away (cycle 23 UI-ESC, 2026-10-02)](docs/design-decisions.md#an-editor-overlay-asks-before-it-discards)
 - [Article images live in the KbImages tab, keyed by content and append-only — the browser fits a paste, Save keeps what it cannot store yet (cycle 23 DRV-3, operator 2026-10-05)](docs/design-decisions.md#article-images-live-in-the-kbimages-tab)
+- [A Spanish thread is a sequence of requests; a reopened one comes back unclaimed, and a thank-you does not reopen (cycle 23 SP-2, operator 2026-10-05)](docs/design-decisions.md#a-spanish-thread-is-a-sequence-of-requests)
 - ["and" in an Area Eligibility cell means EITHER area; a phrase that could mean "both" is unreadable (cycle 23 KB2-6, operator 2026-10-05)](docs/design-decisions.md#and-in-an-eligibility-cell-means-either-area)
 
 ## Operator State Checklist
@@ -940,8 +941,8 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 11 | `TRIGGER_GROUPS` |
 | localStorage keys | 20 | `ums…` literals in `web-app/` |
-| Invariant library entries | 352 | `.cycle/config.md` |
-| Regression scenarios (S*) | 130 | `.cycle/config.md` |
+| Invariant library entries | 355 | `.cycle/config.md` |
+| Regression scenarios (S*) | 131 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

@@ -4774,6 +4774,12 @@ pick them up without re-deriving the context.
   auto-assign — refuses. A resolve map that could not be read fails the list
   outright, because without it every resolved request would read as pending.
 
+  **AMENDED (cycle 23 SP-2, 2026-10-05): the Resolved list reads it too.** It
+  had its own `msgs[0]` voicemail loop that listed only manual resolves; it
+  now lists one row per resolved voicemail from this fold, a member reply
+  timed and credited, a click untimed — what the stats card already counted.
+  Each row carries `resolverFrom` and its thread's claim `floorMs`.
+
 - <a id="a-gate-claim-is-derived-from-the-refusal"></a>**A gate CLAIM is derived from the refusal, never written by hand (Batch 7 of the cycle-20 scan, F-26 + F-51, 2026-09-18)**
 
   Twenty-one places in this repo said "manager-gated" about an endpoint that
@@ -5295,3 +5301,26 @@ pick them up without re-deriving the context.
   placeholder. Rejected: Script Properties (capped — g07), a new spreadsheet
   per image (Drive again), and a data URL in the article body (the body cell
   holds ~49,000 characters).
+
+- <a id="a-spanish-thread-is-a-sequence-of-requests"></a>**A Spanish thread is a sequence of requests; a reopened one comes back unclaimed, and a thank-you does not reopen (cycle 23 SP-2, operator 2026-10-05).**
+  An email to the Spanish inbox was one request for ever: the first member
+  reply resolved it, and a manual resolve hid it. A requester's follow-up
+  question after the answer was invisible to the pending list, the stats and
+  Needs-you. One pure rule now reads a thread as requests over its messages'
+  roles — the requester writing (or an 8x8 voicemail) opens or joins one, a
+  member reply closes it, the manual resolve closes what was open at its
+  stamp, a cc'd non-member is neutral — and the pending card, the Resolved
+  list and the stats card all read it, so they cannot disagree.
+
+  Three choices. **The first close wins:** a reply after a click closes
+  nothing, so that request counts as resolved by hand and untimed (before, a
+  later reply timed it); the operator accepted this. **A reopened request is
+  unclaimed** (the operator's call): the claim was on the request that was
+  answered, so a claim older than the thread's last close is read as none on
+  every surface that reads claims — the card, Needs-you, auto-assign and the
+  steal guard — rather than being released by a write. **A courtesy reply is
+  not a request** (the operator's call, after Batch 13 reported the noise): a
+  message wholly of courtesy words is neutral, and anything else stays a
+  request, so the filter fails toward a look (g159). Rejected: a reply-count
+  rule (a double-send would look like two requests) and releasing claims on
+  reopen (a write on a read path, and lost history).
