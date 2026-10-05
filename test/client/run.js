@@ -33552,6 +33552,10 @@ test('Batch 11 MET-5 follow-up (cycle 23): before the daily import BOTH windows 
   assert.strictEqual(note({ importPending: false, dataThrough: '2026-10-06' }), '', 'no note once the import is in');
   const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
   assert.strictEqual((clk.match(/clkDashCompareNote_\(res, pl\) \+ clkDashDataNote_\(res\)/g) || []).length, 2, 'both cards carry it');
+  // The endpoint wiring: the comparison window is taken from the ALIGNED anchor, and dataThrough/importPending ride the payload.
+  const dash = stripJsComments_(extractRawFunction('Code.js', 'getDashboardMetrics'));
+  assert.ok(/var prevRange = align\.prevAnchor \? dashboardPrevRange_\(periodKey, align\.prevAnchor\) : null/.test(dash), 'the prior window is anchored on the data, not on today');
+  assert.ok(/dataThrough: align\.dataThrough,/.test(dash) && /importPending: align\.importPending,/.test(dash), 'the payload carries both');
 });
 
 test('Batch 11 INT-3 (cycle 23): an intake recipient outside the org is sent to only after the rep confirms THAT domain; outside copies carry no feedback link (driven)', () => {
