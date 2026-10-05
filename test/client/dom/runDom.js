@@ -6328,6 +6328,24 @@ test('Seams F4 (cycle 24): the Search synonyms and Revision history × close thr
   });
 });
 
+test('Seams F8 (cycle 24): the Time / PTO calendar SAYS when the timesheet archive could not be read — and says nothing on a clean read', () => {
+  const h = boot();
+  b9TourSeen(h);
+  h.bootShell();
+  h.run.drain();
+  const cal = (archiveError) => ({ year: 2026, month: 6, monthName: 'June 2026', lastDay: 30, firstDayOfWeek: 1,
+    workedDates: ['2026-06-02'], workedHoursByDate: { '2026-06-02': 8 }, archiveError: archiveError,
+    timeOffRequests: [], teammates: [], holidays: [], allRequests: [], today: '2026-06-24', timezone: 'America/Chicago',
+    ptoEnabled: false, annualLeave: 0, sickLeave: 0 });
+  const area = h.document.createElement('div'); h.document.body.appendChild(area);
+  h.read('renderTimeOffView')(area, cal('Exception: archive tab unreadable'));
+  const note = area.querySelector('.cal-card [role="status"]');
+  assert.ok(note && /timesheet archive could not be read/.test(note.textContent), 'THE REGRESSION: archiveError shipped and the calendar showed a short month as complete');
+  assert.ok(!/unreadable/.test(area.innerHTML), 'the server message itself never reaches the page');
+  h.read('renderTimeOffView')(area, cal(''));
+  assert.ok(!/timesheet archive could not be read/.test(area.innerHTML), 'a clean read shows no note');
+});
+
 test('SH-03: Tab cannot leave the keyboard-shortcuts dialog for the page behind it', () => {
   const h = bootLog();
   h.window.cnOpenShortcutsOverlay_();
