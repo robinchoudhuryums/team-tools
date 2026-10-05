@@ -139,3 +139,24 @@ date,cycle,action,estimate,estimated_hours,actual_hours,calibration_note
 2026-09-30,22post,"M5a (context-focused previews, codes in more places, back to)",M-L,10,3.5,0.35x.
 2026-09-30,22post,"M5a-FU (unanchored links report, sticky Back-to)",S-M,3.5,1.5,0.43x.
 2026-09-30,22post,"M5b (stems, glossary phrases, router hits, cached index)",L,8.5,3,0.35x.
+2026-10-05,23,"Batch 1 (SH-01, CNUI-07, TC-01, ADM-05, CNUI-01)",M,9,3,0.33x.
+2026-10-05,23,"TC-02 option (a) (break add/correct)",M,8,3.5,0.44x.
+2026-10-05,23,"Batch 2 (eligibility grammar fail-closed reads)",M,11,3.5,0.32x.
+2026-10-05,23,"Batch 3 (Drive-disabled diagnostics)",M,9.5,2.5,0.26x.
+2026-10-05,23,"Batch 4a (stamped job failures)",M,10,3,0.3x.
+2026-10-05,23,"Batch 4a follow-ons",S,3,1.5,0.5x.
+2026-10-05,23,"Batch 4b (health surfaces, CDR failure honesty)",M,11,4,0.36x.
+2026-10-05,23,"Batch 5 (Spanish + Dept Requests)",M,10,4,0.4x.
+2026-10-05,23,"Batch 6a (PTO and punch correctness)",M,9.5,3.5,0.37x.
+2026-10-05,23,"Batch 6b (schedules, reminders, coaching tz)",M,10,3.5,0.35x.
+2026-10-05,23,"Batch 7a (plain-text cells, forms)",M,10,3,0.3x.
+2026-10-05,23,"Batch 7b (Call Notes UI honesty)",M,7.5,2.5,0.33x.
+2026-10-05,23,"Batch 8 (QA)",M,9.5,2.5,0.26x.
+2026-10-05,23,"Batch 9 (editor overlays, a11y)",L,13,4,0.31x.
+2026-10-05,23,"Batch 10 (PHI boundary, config, intake tokens)",L,11,4.5,0.41x.
+2026-10-05,23,"Batch 11 (TRN-1, INT-3, weight bounds, MET-5-FU)",M,10.5,4,0.38x.
+2026-10-05,23,"Batch 12 (DRV-3 KbImages tab)",L,14,3.5,0.25x.
+2026-10-05,23,"Batch 13 (SP-2 Spanish episodes)",M,7,3,0.43x.
+2026-10-05,23,"Batch 13 follow-up (courtesy filter)",S,1.5,1,0.67x.
+2026-10-05,23,"Batch 14 (TC2-9 archive-aware reader)",M,8,2.5,0.31x.
+2026-10-05,23,"Batch 15 (editor-suite cases)",M,5,1.5,0.3x.
