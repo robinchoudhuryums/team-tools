@@ -2340,6 +2340,19 @@
     "sendCallNotesEodDigest"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Seams F3 (cycle 24): TRIGGER_HANDLER_JOB_KEYS — the dispatcher stamps a grouped job's key",
+   "added": [
+    "TRIGGER_HANDLER_JOB_KEYS"
+   ],
+   "removed": [],
+   "changed": [
+    "AUTOMATION_ERROR_LABELS",
+    "runTriggerGroup_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2397,7 +2410,7 @@
   "AUTOMATION_ERROR_LABELS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "901bc4b71b83e8c9"
+   "sha": "4f181d511e4eef62"
   },
   "AUTOMATION_ERROR_PROP": {
    "file": "00_config.js",
@@ -4513,6 +4526,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "dacdbe9c4c9b1f09"
+  },
+  "TRIGGER_HANDLER_JOB_KEYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8c64c512a3018b5e"
   },
   "TS_ARCHIVE_REACH_CACHE_KEY": {
    "file": "00_config.js",
@@ -9452,7 +9470,7 @@
   "runTriggerGroup_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "4d14b09cfe487358"
+   "sha": "84e54426f402cad1"
   },
   "runWeeklyDigests": {
    "file": "10_core.js",

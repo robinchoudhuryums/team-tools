@@ -24905,7 +24905,7 @@ test('TQ-2: runTriggerGroup_ isolates each job — a throw is stamped under the 
       jobB: () => { log.ran.push('B'); throw new Error('boom'); },
       jobC: () => { log.ran.push('C'); return { success: true }; },
     });
-    vm.runInContext(groupSrc + '\n' + extractRawFunction('Code.js', 'runTriggerGroup_'), ctx, { filename: 'Code.js#runTriggerGroup_' });
+    vm.runInContext('var TRIGGER_HANDLER_JOB_KEYS = {};\n' + groupSrc + '\n' + extractRawFunction('Code.js', 'runTriggerGroup_'), ctx, { filename: 'Code.js#runTriggerGroup_' });   // unmapped jobs: the pre-F3 behaviour
     return { ctx, log };
   };
   let t = mk("const TRIGGER_GROUPS = { g: ['jobA', 'jobB', 'jobNope', 'jobC'] };");
@@ -24915,7 +24915,7 @@ test('TQ-2: runTriggerGroup_ isolates each job — a throw is stamped under the 
   assert.strictEqual(r.results.length, 4, 'one result per job, the undefined one included');
   assert.strictEqual(r.results[1].ok, false); assert.strictEqual(r.results[1].error, 'boom');
   assert.strictEqual(r.results[2].job, 'jobNope'); assert.strictEqual(r.results[2].ok, false);
-  assert.strictEqual(t.log.stamped.filter((x) => x.indexOf('jobB:boom') === 0).length, 1, 'the throw is stamped under the JOB name (the health dot + failure digest read it — INV-161)');
+  assert.strictEqual(t.log.stamped.filter((x) => x === 'jobB:jobB stopped with an unexpected error: boom').length, 1, 'the throw is stamped under the JOB name (the health dot + failure digest read it — INV-161)');
   assert.ok(t.log.stamped.some((x) => /^jobNope:.*not a defined top-level function/.test(x)), 'a typo in TRIGGER_GROUPS is stamped BY NAME, never silently skipped');
   assert.strictEqual(t.log.cleared.join('|'), 'jobA|jobC', 'each clean job clears its own stamp');
   t = mk("const TRIGGER_GROUPS = { g: ['jobA', 'jobC'] };");
@@ -34470,6 +34470,40 @@ test('Seams F2 (cycle 24): the EOD digest stamps a failed send or an unreadable 
     'an hour that matched no rep proves nothing — it must not wipe a failure before the morning digest reads it');
   // The key is wired to the heartbeat and labelled (the 4a-FU3 maps).
   assert.ok(/eod: 'CallNotesEodDigest'/.test(codeSrc) && /CallNotesEodDigest: '[^']+'/.test(codeSrc), 'DIGEST_ERROR_KEYS + AUTOMATION_ERROR_LABELS carry the EOD key');
+});
+
+test('Seams F3 (cycle 24): a grouped job\'s unexpected throw is stamped under its JOB key — labelled, and seen by its heartbeat — and the dispatcher never clears a key the job owns (driven + a two-sided net)', () => {
+  const code = serverSource();
+  const log = { stamped: [], cleared: [] };
+  const ctx = vm.createContext({ Logger: { log: () => {} },
+    stampAutomationError_: (j, m) => log.stamped.push([j, m]), clearAutomationError_: (j) => log.cleared.push(j),
+    sendCallNotesUrgentDigest: () => { throw new Error('quota'); },
+    checkOpenPunches: () => ({}), purgeOldQaReviews: () => ({}) });
+  vm.runInContext(extractConstDecl_('TRIGGER_HANDLER_JOB_KEYS').replace(/^const /, 'var ') +
+    "\nvar TRIGGER_GROUPS = { g: ['sendCallNotesUrgentDigest', 'checkOpenPunches', 'purgeOldQaReviews'] };\n" +
+    extractRawFunction('Code.js', 'runTriggerGroup_'), ctx);
+  ctx.runTriggerGroup_('g');
+  assert.deepStrictEqual(log.stamped.map((x) => x[0]), ['CallNotesUrgentDigest'], 'THE REGRESSION: the throw was stamped as "sendCallNotesUrgentDigest", a key no label or heartbeat knew');
+  assert.ok(/^sendCallNotesUrgentDigest stopped with an unexpected error: quota$/.test(log.stamped[0][1]), 'the message still names the handler');
+  assert.ok(log.cleared.indexOf('OpenPunchCheck') >= 0, 'a job that does not manage its key is cleared on a clean run');
+  assert.ok(log.cleared.indexOf('QaReviewPurge') < 0, 'a job that OWNS its key is never cleared by the dispatcher — that would erase its own failure stamp');
+  assert.ok(log.cleared.indexOf('checkOpenPunches') >= 0 && log.cleared.indexOf('purgeOldQaReviews') >= 0, 'a pre-F3 stamp under the handler name is cleaned up');
+  // Two-sided net: every grouped handler has a row; `owns` matches the job's own body; every key is labelled.
+  const groups = vm.runInContext('(' + /const TRIGGER_GROUPS = (\{[\s\S]*?\n\});/.exec(code)[1] + ')', vm.createContext({}));
+  const map = ctx.TRIGGER_HANDLER_JOB_KEYS;
+  const handlers = [].concat.apply([], Object.keys(groups).map((k) => groups[k]));
+  assert.ok(handlers.length >= 10, 'non-vacuous');
+  assert.deepStrictEqual(Object.keys(map).sort(), handlers.slice().sort(), 'every grouped handler — and only those — has a job-key row');
+  const lab = vm.createContext({});
+  vm.runInContext(/^const AUTOMATION_ERROR_LABELS = \{[\s\S]*?\n\};$/m.exec(code)[0].replace(/^const /, 'var '), lab);
+  const tabled = {}; (code.match(/action: '([A-Za-z]+)'/g) || []).forEach((m) => { tabled[m.slice(9, -1)] = true; });
+  handlers.forEach((h) => {
+    const body = extractRawFunction('Code.js', h);
+    const k = map[h].key;
+    const self = body.indexOf("stampAutomationError_('" + k + "'") >= 0 && body.indexOf("clearAutomationError_('" + k + "'") >= 0;
+    assert.strictEqual(map[h].owns, self, h + ': owns=' + map[h].owns + ' but its body ' + (self ? 'does' : 'does not') + ' stamp and clear ' + k);
+    assert.ok(tabled[k] || lab.AUTOMATION_ERROR_LABELS[k], k + ' (' + h + ') has neither a job-table row nor a label');
+  });
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

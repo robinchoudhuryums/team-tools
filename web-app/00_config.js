@@ -1098,6 +1098,7 @@ const AUTOMATION_ERROR_LABELS = {
   SpanishAutoAssign: 'Spanish Inbox auto-assign', DeptReplyScan: 'Dept Request reply scan',
   MissedPunchAlerts: 'Daily missed-punch alerts', DailyExportCheck: 'Daily ADP export check',
   AutomationHealthDigest: 'Automation-health failure digest',
+  OpenPunchCheck: 'Daily open-punch check',
 };
 const CN_EMAIL_PALETTE = {
   paperCard:    '#ffffff',
@@ -1297,6 +1298,28 @@ const TRIGGER_GROUPS = {
   // quota that already bit this deployment once (RETIRED_TRIGGER_HANDLERS is
   // derived from these lists, so a re-install removes its old trigger).
   runDailyChecks:   ['checkOpenPunches', 'sendCallNotesUrgentDigest'],
+};
+// Seams F3 (cycle 24) — the KEY each grouped handler's failures live under.
+// runTriggerGroup_ stamped an unexpected throw under the raw handler name,
+// which no label map knew (the digest showed "checkOpenPunches failed…") and
+// which DIGEST_ERROR_KEYS could not see, so a stale heartbeat still blamed the
+// trigger. `owns` = the job stamps AND clears this key itself, so the
+// dispatcher must never clear it after a normal return (that would erase the
+// job's own failure stamp); a job that does not own its key is cleared by the
+// dispatcher on a clean run. Every TRIGGER_GROUPS handler has a row, and
+// `owns` is checked against each job's body (pinned both ways).
+const TRIGGER_HANDLER_JOB_KEYS = {
+  sendCallNotesEodDigest:            { key: 'CallNotesEodDigest',     owns: true },
+  scanDeptRequestReplies:            { key: 'DeptReplyScan',          owns: true },
+  autoAssignSpanishThreadsScheduled: { key: 'SpanishAutoAssign',      owns: true },
+  sendCallNotesWeeklyDigests:        { key: 'CallNotesWeeklyDigests', owns: true },
+  sendCoachingRecapDigest:           { key: 'CoachingRecapDigest',    owns: true },
+  purgeOldDiagnostics:               { key: 'DiagnosticsPurge',       owns: true },
+  purgeOldQaReviews:                 { key: 'QaReviewPurge',          owns: true },
+  purgeExpiredFormData:              { key: 'FormDataPurge',          owns: false },
+  purgeArchivedCallNotes:            { key: 'CallNotesArchivePurge',  owns: false },
+  checkOpenPunches:                  { key: 'OpenPunchCheck',         owns: false },
+  sendCallNotesUrgentDigest:         { key: 'CallNotesUrgentDigest',  owns: true },
 };
 // Handlers that USED to own a trigger of their own. Both delete loops consult
 // this list so a re-install removes the standalone triggers a previous install

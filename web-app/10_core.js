@@ -3267,8 +3267,11 @@ function purgeSheetRowsOlderThan_(sheet, dateColIdx, cutoffMs, msOf) {
 // Runs a dispatcher's jobs one after another, each in its own try/catch, so a
 // job that throws never starves the ones after it. The jobs already catch
 // their own failures and stamp / audit them; this backstop only catches a
-// throw none of them expected, and stamps it under the JOB's name so the
-// health dot + failure digest see it (INV-161) — a clean run clears it.
+// throw none of them expected, and stamps it under the JOB's key
+// (TRIGGER_HANDLER_JOB_KEYS — seams F3, cycle 24: it used the raw handler
+// name, which no label map or heartbeat knew) so the health dot + failure
+// digest see it, labelled (INV-161). A clean run clears a key the job does
+// not manage itself, and any stamp a pre-F3 run left under the handler name.
 // KNOWN LIMIT: the group shares ONE six-minute execution. All eight grouped
 // jobs are cheap by default (the purges no-op while their windows are 0), but
 // a purge enabled against a large backlog that runs long is killed by the
@@ -3279,19 +3282,21 @@ function runTriggerGroup_(label) {
   const results = [];
   jobs.forEach(function (name) {
     const fn = globalThis[name];
+    const job = TRIGGER_HANDLER_JOB_KEYS[name] || { key: name, owns: false };
     if (typeof fn !== 'function') {
       results.push({ job: name, ok: false, error: 'not a defined function' });
-      stampAutomationError_(name, label + ': "' + name + '" is not a defined top-level function');
+      stampAutomationError_(job.key, label + ': "' + name + '" is not a defined top-level function');
       return;
     }
     try {
       const r = fn();
-      clearAutomationError_(name);
+      if (!job.owns) clearAutomationError_(job.key);
+      if (job.key !== name) clearAutomationError_(name);   // a pre-F3 stamp under the handler name
       results.push({ job: name, ok: true, result: r });
     } catch (e) {
       const msg = (e && e.message) ? e.message : String(e);
       Logger.log(label + ': ' + name + ' threw: ' + msg);
-      stampAutomationError_(name, msg);
+      stampAutomationError_(job.key, name + ' stopped with an unexpected error: ' + msg);
       results.push({ job: name, ok: false, error: msg });
     }
   });
