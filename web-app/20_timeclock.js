@@ -8363,12 +8363,15 @@ function getMyPendingTasks() {
         var anyMine = Object.keys(spClaims).some(function (t) { return spClaims[t].by === me; });
         if (anyMine) {
           var spIds = spanishPendingIdsGet_(SPANISH_AUTO_ASSIGN_DAYS);
+          var spFloors = spanishPendingFloorsGet_(SPANISH_AUTO_ASSIGN_DAYS);   // SP-2 — a reopened request comes back unclaimed
           if (!spIds) {
             var spRes = getSpanishInboxPending(SPANISH_AUTO_ASSIGN_DAYS);
             if (!spRes || spRes.error) throw new Error((spRes && spRes.error) || 'unreadable');
             spIds = (spRes.pending || []).map(function (p) { return p.threadId; });
+            spFloors = {};
+            (spRes.pending || []).forEach(function (p) { if (p.claimFloorMs) spFloors[p.threadId] = p.claimFloorMs; });
           }
-          var spOpen = spanishMyOpenClaims_(spClaims, me, spIds);
+          var spOpen = spanishMyOpenClaims_(spClaims, me, spIds, spFloors);
           if (spOpen.length) {
             var spOldest = spOpen[0];
             var spAssigned = spOpen.filter(function (o) { return o.assignedBy; }).length;

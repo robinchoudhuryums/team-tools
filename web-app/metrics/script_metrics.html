@@ -2584,6 +2584,17 @@ function spanishVmPillHtml_(t) {
     icon('mail', 10) + (n > 1 ? ' ' + n + ' voicemails' : ' voicemail') + '</span>';
 }
 
+/** SP-2 (cycle 23 Batch 13; Node-pinned) — a REOPENED request: the requester
+ *  wrote again after an earlier request on this thread was answered (or
+ *  marked resolved). Warn-toned — it is work that came back, and its old
+ *  claim did not come with it (operator 2026-10-05). Nothing on a first
+ *  request. */
+function spanishFollowUpPillHtml_(t) {
+  if (!t || !t.followUp) return '';
+  return '<span class="sp-followup-pill" title="The requester wrote again after an earlier request on this thread was answered — it is back as a new, unclaimed request">' +
+    icon('undo', 10) + ' follow-up</span>';
+}
+
 /** PURE (Node-pinned) — the claim pill for the card head. "you" for the
  *  caller's own claim; the tooltip carries the full email + how it was
  *  claimed. Nothing renders on an unclaimed card. */
@@ -2707,7 +2718,7 @@ function spanishTaskCard_(t) {
   var claimPill = spanishClaimPillHtml_(t, pd.self || '');
   var claimCtl = spanishClaimControlsHtml_(t, pd.self || '', isMgr, pd.members || []);
   return '<div class="sp-task ' + spanishPendingToneCls_(t.ageHours) + '">' +
-    '<div class="sp-task-head"><span class="sp-task-from">' + esc(t.requester) + '</span>' + spanishVmPillHtml_(t) + claimPill +
+    '<div class="sp-task-head"><span class="sp-task-from">' + esc(t.requester) + '</span>' + spanishVmPillHtml_(t) + spanishFollowUpPillHtml_(t) + claimPill +
       '<span class="sp-task-age" style="color:' + tone + '">' + esc(aged) + '</span></div>' +
     '<div class="sp-task-subj">' + esc(t.subject) + '</div>' +
     '<div class="sp-task-body" id="' + bodyId + '">' + (isOpen ? esc(SPANISH_STATE.bodies[t.threadId] || '(empty)') : esc(t.snippet) + (t.hasMore ? '…' : '')) + '</div>' +
@@ -2716,9 +2727,11 @@ function spanishTaskCard_(t) {
   '</div>';
 }
 
-/** Manual mark-resolved (member/manager). Confirm first — a mis-click would
- *  permanently hide a pending request (there is no un-resolve; the thread
- *  itself stays in Gmail). Success removes the card in place. */
+/** Manual mark-resolved (member/manager). Confirm first — a mis-click hides
+ *  a pending request until the requester writes again (there is no
+ *  un-resolve; the thread itself stays in Gmail; SP-2: a later message from
+ *  the requester comes back as a new, unclaimed request). Success removes the
+ *  card in place. */
 /** SP1 (operator 2026-09-16) — drop a resolved request from the list STATE.
  *  The mirror of spanishSetClaimLocal_, and it exists because this action used
  *  to call `card.remove()` instead: the DOM node went, but
@@ -2778,7 +2791,7 @@ function spanishResolve_(btn) {
   if (!tid || !card) return;
   uiConfirm({
     title: 'Mark this request resolved?',
-    message: 'Use this when the request was handled outside the email thread (phone call, CRM, in person). It moves to the Resolved list — this can’t be undone in-app.',
+    message: 'Use this when the request was handled outside the email thread (phone call, CRM, in person). It moves to the Resolved list — this can’t be undone in-app. If the requester writes again, it comes back as a new request, unclaimed.',
     confirmLabel: 'Mark resolved',
   }).then(function (ok) {
     if (!ok) return;

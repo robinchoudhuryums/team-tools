@@ -196,6 +196,95 @@ function spanishAddrListIncludes_(headerList, addr) {
 function spanishSearchQuery_(addr, days) {
   return '{to:' + addr + ' cc:' + addr + '} newer_than:' + days + 'd';
 }
+/** SP-2 (cycle 23 Batch 13) — a thread's messages as ROLES, in thread order:
+ *  'request' (the requester writing: the email requester, or an 8x8 voicemail),
+ *  'resolver' (a member reply — any non-requester when no member list is set,
+ *  the old fallback; a member's message answers even on a thread a member
+ *  opened, exactly as the first-reply rule read it), or 'other' (a cc'd colleague, a non-member — NEUTRAL: it
+ *  neither answers nor reopens). The first message is always the request.
+ *  `kind` is 'email' or 'vm'. Reads only From/Subject/Date. */
+function spanishThreadRoles_(msgs, kind, members, haveMembers, vmSender, vmFilter) {
+  const requester = msgs.length ? emailAddrOnly_(msgs[0].getFrom()) : '';
+  return msgs.map(function (m, i) {
+    const from = emailAddrOnly_(m.getFrom());
+    let role;
+    if (i === 0) role = 'request';
+    else if (kind === 'vm') role = spanishVmMatch_(m.getFrom(), m.getSubject(), vmSender, vmFilter) ? 'request'
+      : ((haveMembers ? !!members[from] : !!from) ? 'resolver' : 'other');
+    else if (haveMembers && members[from]) role = 'resolver';   // a member's message answers, as before — even on a thread a member opened
+    else if (from && from === requester) role = 'request';
+    else role = (!haveMembers && from) ? 'resolver' : 'other';
+    return { ms: m.getDate().getTime(), role: role, from: from };
+  });
+}
+/** PURE (SP-2, cycle 23 Batch 13; Node-pinned) — a thread as a SEQUENCE of
+ *  requests. M5 made every voicemail its own request; an email thread was one
+ *  request for ever: the first member reply resolved it, so a requester's
+ *  follow-up question after the answer never became pending, and a manual
+ *  resolve hid the thread for good. Now, walking the messages in time order
+ *  with the manual resolve placed AT its stamp:
+ *   - a request message opens an episode, or joins the open one (a double-send
+ *     is one request);
+ *   - a resolver message closes the open episode (a second reply closes
+ *     nothing — nor does a reply after a manual resolve: the first close wins);
+ *   - the manual resolve closes the episode open at its stamp — a request after
+ *     the click is new work. A legacy row with no stamp closes whatever is
+ *     open at the end (nothing says when), as it always did.
+ *  Returns { episodes: [{ firstIdx, lastIdx, reqMs, lastReqMs, resolveMs,
+ *  resolverFrom, wasManual }], floorMs } — idx are message indexes. floorMs is
+ *  when the thread last closed before the OPEN episode (a member reply, or a
+ *  manual resolve): a claim older than it belonged to the request that was
+ *  answered, so the reopened one comes back UNCLAIMED (operator 2026-10-05).
+ *  0 when nothing closed before it, or nothing is open. */
+function spanishEpisodes_(entries, manualRec) {
+  const list = (entries || []).map(function (e, i) { return { role: e.role, ms: Number(e.ms) || 0, from: e.from || '', idx: i }; });
+  if (manualRec) {
+    const mMs = Number(manualRec.ms) || 0;
+    let at = list.length;
+    if (mMs) { at = 0; while (at < list.length && list[at].ms <= mMs) at++; }
+    list.splice(at, 0, { role: 'manual', ms: mMs, from: String(manualRec.by || ''), idx: -1 });
+  }
+  const eps = [];
+  let cur = null, lastClose = 0;
+  list.forEach(function (e) {
+    if (e.role === 'request') {
+      if (!cur) cur = { firstIdx: e.idx, lastIdx: e.idx, reqMs: e.ms, lastReqMs: e.ms, resolveMs: null, resolverFrom: '', wasManual: false, floorMs: lastClose };
+      else { cur.lastIdx = e.idx; cur.lastReqMs = e.ms; }
+    } else if (e.role === 'resolver') {
+      if (!cur) return;
+      cur.resolveMs = e.ms; cur.resolverFrom = e.from;
+      eps.push(cur); cur = null; lastClose = e.ms;
+    } else if (e.role === 'manual') {
+      if (cur) {
+        cur.resolveMs = Math.max(cur.reqMs, e.ms || cur.reqMs);
+        cur.resolverFrom = e.from; cur.wasManual = true;
+        eps.push(cur); cur = null;
+      }
+      if (e.ms > lastClose) lastClose = e.ms;
+    }
+  });
+  const floorMs = cur ? cur.floorMs : 0;
+  if (cur) eps.push(cur);
+  eps.forEach(function (ep) { delete ep.floorMs; });
+  return { episodes: eps, floorMs: floorMs };
+}
+/** SP-2 — the claim floor of one thread (email or voicemail), from its
+ *  messages and its manual resolve. On a voicemail thread the episode walk
+ *  opens on the same voicemails M5's per-voicemail rule leaves pending (a
+ *  member reply after a voicemail, or a resolve stamped at or after it,
+ *  closes it), so one rule serves both kinds. */
+function spanishThreadFloorMs_(msgs, manualRec, members, haveMembers, vmSender, vmFilter) {
+  if (!msgs || !msgs.length) return 0;
+  const kind = (vmSender && vmFilter && spanishVmMatch_(msgs[0].getFrom(), msgs[0].getSubject(), vmSender, vmFilter)) ? 'vm' : 'email';
+  return spanishEpisodes_(spanishThreadRoles_(msgs, kind, members, haveMembers, vmSender, vmFilter), manualRec).floorMs;
+}
+/** PURE (SP-2) — a claim, or null when it is older than the floor: it was on
+ *  the request that was answered, not on the one that reopened. */
+function spanishClaimLive_(claim, floorMs) {
+  if (!claim || !claim.by) return null;
+  return (Number(claim.atMs) || 0) >= (Number(floorMs) || 0) ? claim : null;
+}
+
 /** Spanish-inbox resolution stats (canSeeSpanishInbox_-gated — manager OR SPANISH_INBOX_MEMBERS, INV-31 amendment; read-only). Scans the
  *  DEPLOYER's Gmail for threads addressed to the group inbox over the last
  *  `days` and computes time-to-resolution (first inbound → first reply from a
@@ -217,8 +306,8 @@ function getSpanishInboxStats(days) {
     // Cache key is scoped by address + member set (not just `days`) so an operator
     // editing SPANISH_INBOX_ADDRESS / SPANISH_INBOX_MEMBERS isn't served a stale
     // aggregate computed under the old config for the TTL.
-    const ckey = 'spanish_inbox_v3:' + d + ':' + spanishCacheHash_(addr, members,
-      { sender: getSpanishVmSender_(), filter: getSpanishVmFilter_(), minSec: getSpanishVmMinSeconds_() });   // v2: manual resolves left the duration series (2026-09-10); v3: voicemails joined the counts (F-34, cycle 20) — INV-85, a cached v2 aggregate must not keep serving the thread-only numbers for the TTL
+    const ckey = 'spanish_inbox_v4:' + d + ':' + spanishCacheHash_(addr, members,
+      { sender: getSpanishVmSender_(), filter: getSpanishVmFilter_(), minSec: getSpanishVmMinSeconds_() });   // v2: manual resolves left the duration series (2026-09-10); v3: voicemails joined the counts (F-34, cycle 20); v4: an email thread counts each request episode (SP-2, cycle 23) — INV-85, a cached older aggregate must not keep serving the old numbers for the TTL
     const hit = cache.get(ckey);
     if (hit) { try { return JSON.parse(hit); } catch (e) {} }
 
@@ -230,45 +319,32 @@ function getSpanishInboxStats(days) {
     threads.forEach(function (th) {
       const msgs = th.getMessages();
       if (!msgs.length) return;
-      const req = msgs[0];
-      const reqMs = req.getDate().getTime();
-      const requester = emailAddrOnly_(req.getFrom());
-      let resolveMs = null;
-      for (let i = 1; i < msgs.length; i++) {
-        const from = emailAddrOnly_(msgs[i].getFrom());
-        // Resolved = a reply from a configured bilingual member; if no member
-        // list is set, fall back to "first reply from someone else".
-        const isResolver = haveMembers ? !!members[from] : (from && from !== requester);
-        if (isResolver) { resolveMs = msgs[i].getDate().getTime(); break; }
-      }
-      // Manual mark-resolved (handled outside the thread) counts as resolved;
-      // an in-thread reply wins when both exist. max() guards a skewed stamp.
-      let wasManual = false;
-      if (resolveMs == null && manual[th.getId()]) {
-        resolveMs = Math.max(reqMs, manual[th.getId()].ms || reqMs);
-        wasManual = true;
-      }
-      if (resolveMs != null) {
-        resolvedCount++;
-        // Operator 2026-09-10: a MANUAL mark-resolved counts as resolved but
-        // NEVER as a response time — the stamp is when someone pressed the
-        // button, not when the requester was answered. Counted separately so
-        // the exclusion is visible (INV-187), and OUT of both series.
-        if (wasManual) { manualCount++; }
-        else {
-        durations.push(Math.max(0, Math.round((resolveMs - reqMs) / 60000)));   // wall-clock minutes
-        // Operator 2026-08-31 — BUSINESS minutes are the headline: nobody
-        // replies overnight or at the weekend, so a Friday-evening request
-        // answered first thing Monday was counting as ~41 hours of "response
-        // time". A null (corrupt stamp pair) is DROPPED from the business
-        // series rather than substituted, so the two series can legitimately
-        // differ in length — which is why each has its own count.
-        const bizMin = businessMinutesBetween_(reqMs, resolveMs);
-        if (bizMin != null) bizDurations.push(bizMin);
+      const requester = emailAddrOnly_(msgs[0].getFrom());
+      // SP-2 (cycle 23 Batch 13): a thread is a SEQUENCE of requests — each
+      // answered episode is counted and timed, and an open one is pending.
+      spanishEpisodes_(spanishThreadRoles_(msgs, 'email', members, haveMembers), manual[th.getId()]).episodes.forEach(function (ep) {
+        if (ep.resolveMs != null) {
+          resolvedCount++;
+          // Operator 2026-09-10: a MANUAL mark-resolved counts as resolved but
+          // NEVER as a response time — the stamp is when someone pressed the
+          // button, not when the requester was answered. Counted separately so
+          // the exclusion is visible (INV-187), and OUT of both series.
+          if (ep.wasManual) { manualCount++; }
+          else {
+          durations.push(Math.max(0, Math.round((ep.resolveMs - ep.reqMs) / 60000)));   // wall-clock minutes
+          // Operator 2026-08-31 — BUSINESS minutes are the headline: nobody
+          // replies overnight or at the weekend, so a Friday-evening request
+          // answered first thing Monday was counting as ~41 hours of "response
+          // time". A null (corrupt stamp pair) is DROPPED from the business
+          // series rather than substituted, so the two series can legitimately
+          // differ in length — which is why each has its own count.
+          const bizMin = businessMinutesBetween_(ep.reqMs, ep.resolveMs);
+          if (bizMin != null) bizDurations.push(bizMin);
+          }
+        } else {
+          pending.push({ requester: requester, ageHours: Math.round((nowMs - ep.reqMs) / 3600000) });
         }
-      } else {
-        pending.push({ requester: requester, ageHours: Math.round((nowMs - reqMs) / 3600000) });
-      }
+      });
     });
     // F-34: the SAME voicemail fold the list runs. `seen` is the group-address
     // thread set, so a voicemail that also reached the group address is not
@@ -359,6 +435,10 @@ function getSpanishInboxStats(days) {
  *  instead, because the body is a vendor artifact and the silent failure costs
  *  a patient a callback.
  *
+ *  SP-2 (cycle 23 Batch 13): each row also carries `resolverFrom` (the member
+ *  whose reply resolved it, or whoever clicked) and its thread's `floorMs`
+ *  (the claim floor — see spanishEpisodes_).
+ *
  *  Returns the surviving threads with their resolution stamp; each caller
  *  builds its own shape from `thread`/`body` so neither pays for the other's
  *  fields (the list calls `getPermalink()`, the stats card does not). */
@@ -389,8 +469,12 @@ function spanishVmFold_(days, manual, members, haveMembers, seen) {
     for (let i = 1; i < msgs.length; i++) {
       if (spanishVmMatch_(msgs[i].getFrom(), msgs[i].getSubject(), vmSender, vmFilter)) continue;
       const from = emailAddrOnly_(msgs[i].getFrom());
-      if (haveMembers ? !!members[from] : !!from) replies.push({ idx: i, ms: msgs[i].getDate().getTime() });
+      if (haveMembers ? !!members[from] : !!from) replies.push({ idx: i, ms: msgs[i].getDate().getTime(), from: from });
     }
+    // SP-2 (cycle 23 Batch 13): the claim floor — when the thread last closed
+    // before its pending voicemails, so a claim on the answered one does not
+    // ride the repeat voicemail (it comes back unclaimed).
+    const floorMs = spanishThreadFloorMs_(msgs, manual && manual[id], members, haveMembers, vmSender, vmFilter);
     for (let k = 0; k < msgs.length; k++) {
       const m = msgs[k];
       if (k > 0 && !spanishVmMatch_(m.getFrom(), m.getSubject(), vmSender, vmFilter)) continue;
@@ -401,8 +485,15 @@ function spanishVmFold_(days, manual, members, haveMembers, seen) {
       if (verdict === 'unparsed') out.unparsed++;
       const reqMs = m.getDate().getTime();
       const vm = spanishVmResolution_(k, reqMs, replies, manual && manual[id]);
+      // SP-2 — who resolved it: the member whose reply did, or whoever clicked.
+      let resolverFrom = '';
+      if (vm.resolveMs != null) {
+        if (vm.wasManual) resolverFrom = String((manual[id] && manual[id].by) || '');
+        else for (let r = 0; r < replies.length; r++) { if (replies[r].idx > k) { resolverFrom = replies[r].from; break; } }
+      }
       out.rows.push({ threadId: id, thread: th, from: m.getFrom(), subject: m.getSubject(), msgIndex: k,
-                      reqMs: reqMs, resolveMs: vm.resolveMs, wasManual: vm.wasManual, body: body });
+                      reqMs: reqMs, resolveMs: vm.resolveMs, wasManual: vm.wasManual, body: body,
+                      resolverFrom: resolverFrom, floorMs: floorMs });
     }
   });
   return out;
@@ -456,27 +547,32 @@ function spanishPendingCore_(days, emp) {
     const out = [];
     const nowMs = Date.now();
     threads.forEach(function (th) {
-      if (manual[th.getId()]) return;   // manually marked resolved — not pending
       const msgs = th.getMessages();
       if (!msgs.length) return;
+      const tid = th.getId();
+      // SP-2 (cycle 23 Batch 13): a thread is a sequence of requests — the
+      // card is its OPEN one, if any. A requester's follow-up after an answer
+      // (or after a manual resolve) is pending again; its claim floor drops
+      // the claim of the request that was answered (operator 2026-10-05: a
+      // reopened request comes back UNCLAIMED).
+      const epRes = spanishEpisodes_(spanishThreadRoles_(msgs, 'email', members, haveMembers), manual[tid]);
+      const open = epRes.episodes.length ? epRes.episodes[epRes.episodes.length - 1] : null;
+      if (!open || open.resolveMs != null) return;   // only pending
       const req = msgs[0];
       const requester = emailAddrOnly_(req.getFrom());
-      let resolved = false;
-      for (let i = 1; i < msgs.length; i++) {
-        const from = emailAddrOnly_(msgs[i].getFrom());
-        if (haveMembers ? !!members[from] : (from && from !== requester)) { resolved = true; break; }
-      }
-      if (resolved) return;   // only pending
-      const bodyRaw = String(req.getPlainBody() || '').replace(/\s+/g, ' ').trim();
+      const shown = msgs[open.lastIdx];   // the newest message of the open request
+      const bodyRaw = String(shown.getPlainBody() || '').replace(/\s+/g, ' ').trim();
       out.push({
-        threadId: th.getId(),
+        threadId: tid,
         requester: requester,
-        ageHours: Math.round((nowMs - req.getDate().getTime()) / 3600000),
+        ageHours: Math.round((nowMs - open.reqMs) / 3600000),
         subject: req.getSubject() || '(no subject)',
         snippet: bodyRaw.slice(0, 240),
         hasMore: bodyRaw.length > 240,
         permalink: th.getPermalink(),
-        claim: claims[th.getId()] || null,   // pilot round 2 — {by, assignedBy, atMs} | null
+        claim: spanishClaimLive_(claims[tid], epRes.floorMs),   // pilot round 2 — {by, assignedBy, atMs} | null
+        followUp: epRes.episodes.length > 1,   // SP-2 — additive: an earlier request on this thread was answered
+        claimFloorMs: epRes.floorMs,           // SP-2 — a claim older than this belongs to the answered request
       });
     });
     // ONE voicemail fold, shared with getSpanishInboxStats since F-34.
@@ -512,12 +608,16 @@ function spanishPendingCore_(days, emp) {
         snippet: vmText.slice(0, 240),
         hasMore: vmText.length > 240,
         permalink: r.thread.getPermalink(),
-        claim: claims[r.threadId] || null,
+        claim: spanishClaimLive_(claims[r.threadId], r.floorMs),   // SP-2 — a claim on an answered voicemail does not ride the repeat
+        followUp: !!(r.floorMs),               // SP-2 — an earlier voicemail on this thread was answered
+        claimFloorMs: r.floorMs || 0,
         vmPending: vmPendingByThread[tid].n,   // M5 — additive; 1 for an unthreaded voicemail
       });
     });
     out.sort(function (a, b) { return b.ageHours - a.ageHours; });
-    spanishPendingIdsPut_(d, out.map(function (x) { return x.threadId; }));   // 22post C-8 — ids only, never content
+    const floors = {};
+    out.forEach(function (x) { if (x.claimFloorMs) floors[x.threadId] = x.claimFloorMs; });
+    spanishPendingIdsPut_(d, out.map(function (x) { return x.threadId; }), floors);   // 22post C-8 — ids (and SP-2 claim floors) only, never content
     // Round 2 additive fields: `members` (the assign-select options — the same
     // internal team emails getSpanishInboxResolved already ships behind this
     // gate) and `self` (the caller's lowercased email, so the client can tell
@@ -532,8 +632,8 @@ function spanishPendingCore_(days, emp) {
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
 /** Resolved Spanish-inbox requests over the window (canSeeSpanishInbox_-gated, live-read,
- *  never stored — same posture as the pending list). For each resolved thread
- *  returns who resolved it + how long it took, newest-resolved first. PHI-lean:
+ *  never stored — same posture as the pending list). For each resolved request
+ *  (SP-2: a thread can carry several — one row each) returns who resolved it + how long it took, newest-resolved first. PHI-lean:
  *  subject only (no body snippet — the on-demand getSpanishInboxThreadBody expand
  *  is the body path if ever needed). */
 function getSpanishInboxResolved(days) {
@@ -549,85 +649,82 @@ function getSpanishInboxResolved(days) {
     const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, SPANISH_THREAD_SCAN_MAX);
     const manual = spanishManualResolvedMap_();
     const out = [];
+    const seenR = {};
     threads.forEach(function (th) {
+      seenR[th.getId()] = true;
       const msgs = th.getMessages();
       if (!msgs.length) return;
       const req = msgs[0];
-      const reqMs = req.getDate().getTime();
       const requester = emailAddrOnly_(req.getFrom());
-      let resolveMs = null, resolver = '', wasManual = false;
-      for (let i = 1; i < msgs.length; i++) {
-        const from = emailAddrOnly_(msgs[i].getFrom());
-        const isResolver = haveMembers ? !!members[from] : (from && from !== requester);
-        if (isResolver) { resolveMs = msgs[i].getDate().getTime(); resolver = from; break; }
-      }
-      // Manual mark-resolved — an in-thread reply wins when both exist.
-      if (resolveMs == null && manual[th.getId()]) {
-        const man = manual[th.getId()];
-        resolveMs = Math.max(reqMs, man.ms || reqMs);
-        resolver = man.by;
-        wasManual = true;
-      }
-      if (resolveMs == null) return;   // only resolved
-      out.push({
-        threadId: th.getId(),
-        requester: requester,
-        resolver: resolver,
-        manual: wasManual,
-        // A manual mark-resolved has NO response time (the stamp is the click,
-        // not the answer) — null, the voicemail shape, never a number (2026-09-10).
-        resolveMinutes: wasManual ? null : businessMinutesBetween_(reqMs, resolveMs),
-        resolveWallMinutes: wasManual ? null : Math.max(0, Math.round((resolveMs - reqMs) / 60000)),
-        resolvedAtMs: resolveMs,
-        subject: req.getSubject() || '(no subject)',
-        permalink: th.getPermalink(),
-      });
-    });
-    // Operator 2026-08-25: manually-resolved VOICEMAILS join the resolved list
-    // (and therefore the resolution-share chart, which attributes manual
-    // resolves to whoever clicked). No resolveMinutes for a VM — the clock
-    // would measure "notification arrived → someone clicked resolved", which
-    // is not a response time — so the duration is null and consumers skip it.
-    const vmSenderR = getSpanishVmSender_(), vmFilterR = getSpanishVmFilter_();
-    if (vmSenderR && vmFilterR) {
-      const seenR = {};
-      out.forEach(function (x) { seenR[x.threadId] = true; });
-      GmailApp.search(spanishVmQuery_(vmSenderR, vmFilterR, d), 0, SPANISH_THREAD_SCAN_MAX).forEach(function (th) {
-        const man = manual[th.getId()];
-        if (!man || seenR[th.getId()]) return;
-        const msgs = th.getMessages();
-        if (!msgs.length) return;
-        const req = msgs[0];
-        if (!spanishVmMatch_(req.getFrom(), req.getSubject(), vmSenderR, vmFilterR)) return;
+      // SP-2 (cycle 23 Batch 13): ONE row per answered REQUEST on the thread —
+      // the first reply resolved the thread for ever, so a follow-up's answer
+      // was never listed or attributed. When a reply and a manual resolve
+      // both follow a request, whichever came FIRST closed it (a reply after
+      // the click closes nothing; the old rule let a later reply win).
+      spanishEpisodes_(spanishThreadRoles_(msgs, 'email', members, haveMembers), manual[th.getId()]).episodes.forEach(function (ep) {
+        if (ep.resolveMs == null) return;   // only resolved
         out.push({
           threadId: th.getId(),
-          kind: 'voicemail',
-          requester: spanishVmCaller_(req.getSubject()) || emailAddrOnly_(req.getFrom()),
-          resolver: man.by,
-          manual: true,
-          resolveMinutes: null,
-          resolvedAtMs: Math.max(req.getDate().getTime(), man.ms || 0),
+          requester: requester,
+          resolver: ep.resolverFrom,
+          manual: ep.wasManual,
+          // A manual mark-resolved has NO response time (the stamp is the click,
+          // not the answer) — null, the voicemail shape, never a number (2026-09-10).
+          resolveMinutes: ep.wasManual ? null : businessMinutesBetween_(ep.reqMs, ep.resolveMs),
+          resolveWallMinutes: ep.wasManual ? null : Math.max(0, Math.round((ep.resolveMs - ep.reqMs) / 60000)),
+          resolvedAtMs: ep.resolveMs,
           subject: req.getSubject() || '(no subject)',
           permalink: th.getPermalink(),
         });
       });
-    }
+    });
+    // Operator 2026-08-25: resolved VOICEMAILS join the resolved list (and
+    // therefore the resolution-share chart, which attributes manual resolves
+    // to whoever clicked). SP-2: from the SAME fold the stats card counts —
+    // one row per resolved voicemail. A MANUAL resolve has no resolveMinutes
+    // (the clock would measure "notification arrived → someone clicked
+    // resolved", which is not a response time); a member REPLY is timed, as
+    // the stats card has timed it since F-34. Group-address threads are the
+    // loop above's (seenR), as on the stats card.
+    const vmFoldR = spanishVmFold_(d, manual, members, haveMembers, seenR);
+    vmFoldR.rows.forEach(function (r) {
+      if (r.resolveMs == null) return;
+      out.push({
+        threadId: r.threadId,
+        kind: 'voicemail',
+        requester: spanishVmCaller_(r.subject) || emailAddrOnly_(r.from),
+        resolver: r.resolverFrom,
+        manual: r.wasManual,
+        resolveMinutes: r.wasManual ? null : businessMinutesBetween_(r.reqMs, r.resolveMs),
+        resolveWallMinutes: r.wasManual ? null : Math.max(0, Math.round((r.resolveMs - r.reqMs) / 60000)),
+        resolvedAtMs: r.resolveMs,
+        subject: r.subject || '(no subject)',
+        permalink: r.thread.getPermalink(),
+      });
+    });
     out.sort(function (a, b) { return b.resolvedAtMs - a.resolvedAtMs; });   // newest resolved first
     // Resolution-share chart (operator 2026-08-17): ship the configured member
     // list so a member who resolved NOTHING renders as a zero bar — the
     // fairness check is exactly about them. Internal team emails, behind the
     // same canSeeSpanishInbox_ gate as everything else here.
     return { address: addr, days: d, resolved: out, members: Object.keys(members),
-      truncated: threads.length >= SPANISH_THREAD_SCAN_MAX };
+      truncated: threads.length >= SPANISH_THREAD_SCAN_MAX || vmFoldR.truncated };
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
 /** PURE (M5 follow-up) — which message a thread's body is read from: on a
  *  voicemail thread (its FIRST message is an 8x8 notification) the NEWEST
- *  voicemail message, with the count of voicemails; otherwise the first
- *  message (the request), vmCount 0. */
+ *  voicemail message, with the count of voicemails; otherwise the requester's
+ *  NEWEST message (SP-2, cycle 23 Batch 13 — the pending card of a reopened
+ *  thread shows the follow-up, so Expand must too; a thread with one request
+ *  message reads exactly as before), vmCount 0. */
 function spanishThreadBodyMessage_(msgs, vmSender, vmFilter) {
   const first = msgs[0];
-  if (!spanishVmMatch_(first.getFrom(), first.getSubject(), vmSender, vmFilter)) return { msg: first, vmCount: 0 };
+  if (!spanishVmMatch_(first.getFrom(), first.getSubject(), vmSender, vmFilter)) {
+    const requester = emailAddrOnly_(first.getFrom());
+    let newestReq = first;
+    msgs.forEach(function (m, k) { if (k > 0 && requester && emailAddrOnly_(m.getFrom()) === requester) newestReq = m; });
+    return { msg: newestReq, vmCount: 0 };
+  }
   let newest = first, n = 0;
   msgs.forEach(function (m, k) {
     if (k > 0 && !spanishVmMatch_(m.getFrom(), m.getSubject(), vmSender, vmFilter)) return;
@@ -850,11 +947,17 @@ function claimSpanishThread(threadId, assigneeEmail) {
     if (!msgs.length) return { error: 'Empty thread.' };
     if (!spanishThreadInScope_(msgs[0], addr))
       return { error: 'Not a Spanish-inbox thread.' };
+    // SP-2 (cycle 23 Batch 13): a claim older than the thread's reopen was on
+    // the request that was answered — it neither blocks a teammate nor counts
+    // as "already" (re-claiming stamps it on the reopened request).
+    const membersC = getSpanishInboxMembers_();
+    const floorMs = spanishThreadFloorMs_(msgs, spanishManualResolvedMap_()[tid], membersC,
+      Object.keys(membersC).length > 0, getSpanishVmSender_(), getSpanishVmFilter_());
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     let prev = '';
     try {
-      const cur = spanishClaimsMap_()[tid];
+      const cur = spanishClaimLive_(spanishClaimsMap_()[tid], floorMs);
       if (cur && cur.by === claimant) return { success: true, already: true, claim: cur };
       prev = cur ? cur.by : '';
       // Advisory, but not a free-for-all: only a manager reassigns over
@@ -975,10 +1078,13 @@ function spanishBustClaimants_(emails) {
     }
   } catch (e) {}
 }
-function spanishPendingIdsPut_(days, ids) {
+/** SP-2 (cycle 23 Batch 13): `floors` ({threadId: ms}) rides beside the ids —
+ *  the claim floor of every reopened request, so Needs-you drops the claim of
+ *  the request that was answered exactly as the list does. Timestamps only. */
+function spanishPendingIdsPut_(days, ids, floors) {
   try {
     CacheService.getScriptCache().put(SPANISH_PENDING_IDS_PREFIX + days,
-      JSON.stringify({ atMs: Date.now(), ids: ids || [] }), SPANISH_PENDING_IDS_TTL);
+      JSON.stringify({ atMs: Date.now(), ids: ids || [], floors: floors || {} }), SPANISH_PENDING_IDS_TTL);
   } catch (e) {}
 }
 /** SP-1 (cycle 23): a resolved thread leaves the cached id list Needs-you
@@ -1002,18 +1108,28 @@ function spanishPendingIdsGet_(days) {
     return (v && Array.isArray(v.ids)) ? v.ids : null;
   } catch (e) { return null; }
 }
+/** SP-2 — the claim floors cached beside the ids ({} when none, or unread). */
+function spanishPendingFloorsGet_(days) {
+  try {
+    const hit = CacheService.getScriptCache().get(SPANISH_PENDING_IDS_PREFIX + days);
+    const v = hit ? JSON.parse(hit) : null;
+    return (v && v.floors && typeof v.floors === 'object') ? v.floors : {};
+  } catch (e) { return {}; }
+}
 /** PURE (Node-pinned) — the rep's claims that are still PENDING. claims:
  *  spanishClaimsMap_(); pendingIds: [threadId] — the ONE authority. SP-1
  *  (cycle 23): it used to drop any thread with a manual resolve as well, which
  *  hid a repeat voicemail on a once-resolved thread; a resolve now leaves the
- *  cached ids directly (spanishPendingIdsDrop_).
+ *  cached ids directly (spanishPendingIdsDrop_). SP-2 (cycle 23 Batch 13):
+ *  `floors` ({threadId: ms}, optional) drops a claim older than its request's
+ *  reopen — the reopened request comes back unclaimed.
  *  Returns [{threadId, atMs, assignedBy}] oldest claim first. */
-function spanishMyOpenClaims_(claims, email, pendingIds) {
+function spanishMyOpenClaims_(claims, email, pendingIds, floors) {
   const me = String(email || '').trim().toLowerCase();
   const pend = {};
   (pendingIds || []).forEach(function (t) { pend[t] = true; });
   return Object.keys(claims || {}).filter(function (tid) {
-    const c = claims[tid];
+    const c = spanishClaimLive_(claims[tid], (floors || {})[tid]);   // SP-2 — a claim on the answered request is not the reopened one's
     return c && c.by === me && pend[tid];
   }).map(function (tid) {
     return { threadId: tid, atMs: Number(claims[tid].atMs) || 0, assignedBy: claims[tid].assignedBy || '' };
@@ -1061,12 +1177,15 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
  *  member who had worked the most requests looked the busiest for ever, and a
  *  new member received nearly every assignment until their total caught up.
  *  liveMap: spanishClaimsMap_() ({threadId: {by, …}}); pendingIds: {threadId:
- *  true} for every request still pending. Returns {email: count}. */
-function spanishOpenLoad_(liveMap, pendingIds) {
+ *  true} for every request still pending; floors (SP-2, optional): {threadId:
+ *  ms} — a claim older than its request's reopen is not load. Returns
+ *  {email: count}. */
+function spanishOpenLoad_(liveMap, pendingIds, floors) {
   const load = {};
   Object.keys(liveMap || {}).forEach(function (tid) {
     if (!(pendingIds || {})[tid]) return;
-    const by = liveMap[tid] && liveMap[tid].by;
+    const live = spanishClaimLive_(liveMap[tid], (floors || {})[tid]);   // SP-2 — a claim on the answered request is history
+    const by = live && live.by;
     if (by) load[by] = (load[by] || 0) + 1;
   });
   return load;
@@ -1083,8 +1202,10 @@ function spanishAutoAssignCore_(emp, days) {
   // handed out again over its owner. Refuse by name; nothing is assigned.
   if (pendingRes.claimsUnavailable) return { success: false, error: 'The claims could not be read (' + pendingRes.claimsUnavailable + ') — nothing was assigned.' };
   const unclaimed = (pendingRes.pending || []).filter(function (p) { return !(p && p.claim && p.claim.by); });
-  const pendingIds = {};
-  (pendingRes.pending || []).forEach(function (p) { if (p && p.threadId) pendingIds[p.threadId] = true; });
+  const pendingIds = {}, floors = {};
+  (pendingRes.pending || []).forEach(function (p) {
+    if (p && p.threadId) { pendingIds[p.threadId] = true; if (p.claimFloorMs) floors[p.threadId] = p.claimFloorMs; }
+  });
   if (!unclaimed.length) return { success: true, unclaimed: 0, assigned: [] };
   const self = String(emp.email || '').trim().toLowerCase();
   const nowMs = Date.now();
@@ -1097,8 +1218,9 @@ function spanishAutoAssignCore_(emp, days) {
     // the lock, so a claim that landed between the read and the lock is
     // respected rather than overwritten.
     const live = spanishClaimsMap_();
-    const load = spanishOpenLoad_(live, pendingIds);   // M4 — open requests only, never the history
-    const stillUnclaimed = unclaimed.filter(function (p) { return !live[p.threadId]; });
+    const load = spanishOpenLoad_(live, pendingIds, floors);   // M4 — open requests only, never the history
+    // SP-2: a claim older than the request's reopen is not a claim on it.
+    const stillUnclaimed = unclaimed.filter(function (p) { return !spanishClaimLive_(live[p.threadId], floors[p.threadId]); });
     picks = spanishAutoAssignPick_(stillUnclaimed, members, load);
     if (picks.length) {
       const rows = picks.map(function (pk) { return [stamp, pk.threadId, 'claim', pk.by, self, nowMs]; });

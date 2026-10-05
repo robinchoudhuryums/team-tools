@@ -1744,7 +1744,7 @@ test('C3 (cycle 22): the client History cap MIRRORS getMyCallNotesRange (the ser
 
 test('M4 (cycle 22): Spanish auto-assign load counts claims on PENDING requests only — a resolved request is history, not load', () => {
   const ctx = vm.createContext({ Object, Number, String });
-  ['spanishOpenLoad_', 'spanishAutoAssignPick_'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx));
+  ['spanishOpenLoad_', 'spanishAutoAssignPick_', 'spanishClaimLive_'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx));
   // Ana has worked 40 requests (all resolved) and holds 1 open; Ben is new.
   const live = {};
   for (let i = 0; i < 40; i++) live['old' + i] = { by: 'ana@x' };
@@ -1757,8 +1757,11 @@ test('M4 (cycle 22): Spanish auto-assign load counts claims on PENDING requests 
     'THE REGRESSION: the new member does not receive every request (the old load gave all three to Ben)');
   assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.spanishOpenLoad_(live, {}))), {}, 'nothing pending, no load');
   const core = stripJsComments_(extractRawFunction('Code.js', 'spanishAutoAssignCore_'));
-  assert.ok(/const load = spanishOpenLoad_\(live, pendingIds\)/.test(core), 'the core derives load through the helper, inside the lock');
+  assert.ok(/const load = spanishOpenLoad_\(live, pendingIds, floors\)/.test(core), 'the core derives load through the helper, inside the lock (SP-2: with the claim floors)');
   assert.ok(/pendingIds\[p\.threadId\] = true/.test(core), 'from the SAME pending read that decides what is unclaimed');
+  // SP-2: a claim from before the request REOPENED is not load.
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.spanishOpenLoad_({ open1: { by: 'ana@x', atMs: 100 } }, { open1: true }, { open1: 200 }))), {},
+    'a claim older than the reopen is history, not load');
 });
 
 test('M1 (cycle 22): a rep with no call data has NO answer rate — null on the row, "—" in the cell, lowest in the sort', () => {
@@ -13179,7 +13182,7 @@ console.log('\nround-2 pilot — Spanish claim/assign · scheduled-call reminder
   test('R2 #4: the pending payload carries claim/members/self (additive fields)', () => {
     const src = strip(extractRawFunction('Code.js', 'spanishPendingCore_'));
     assert.ok(/spanishClaimsMap_\(\)/.test(src), 'reads the claim map once per scan');
-    assert.ok(/claim: claims\[th\.getId\(\)\] \|\| null/.test(src), 'each pending item carries its claim (null = unclaimed)');
+    assert.ok(/claim: spanishClaimLive_\(claims\[tid\], epRes\.floorMs\)/.test(src), 'each pending item carries its claim (null = unclaimed; SP-2: a claim older than the reopen is null)');
     assert.ok(/members: Object\.keys\(members\)/.test(src), 'ships the assign-select options');
     assert.ok(/self: String\(\(emp && emp\.email\) \|\| ''\)/.test(src), 'ships the caller identity for "claimed by me" (SP-4: null-safe for the SYSTEM actor)');
   });
@@ -15873,8 +15876,8 @@ test('wiring: the fold rides both lists, first-message re-check, one predicate a
   // and the STATS card — which had no fold at all and so reported a smaller
   // pending count than the list right beside it — now reads the same one.
   // Both callers, or the two surfaces drift again.
-  [pend, stats].forEach((src, i) => {
-    assert.ok(/spanishVmFold_\(/.test(src), ['pending', 'stats'][i] + ' folds voicemails through the ONE helper');
+  [pend, stats, res].forEach((src, i) => {
+    assert.ok(/spanishVmFold_\(/.test(src), ['pending', 'stats', 'resolved'][i] + ' folds voicemails through the ONE helper (SP-2: the resolved list too)');
   });
   assert.ok(/spanishVmQuery_\(/.test(fold), 'the fold runs the VM scan');
   assert.ok(/kind: 'voicemail'/.test(pend), 'pending tags VM items');
@@ -15882,16 +15885,16 @@ test('wiring: the fold rides both lists, first-message re-check, one predicate a
   // The Gmail query matches subject across the THREAD; the first message is
   // re-checked so a stray reply-match can't smuggle a foreign thread in.
   assert.ok(/spanishVmMatch_\(req\.getFrom\(\)/.test(fold), 'the fold re-checks the FIRST message');
-  assert.ok(/spanishVmMatch_\(req\.getFrom\(\)/.test(res), 'resolved re-checks the FIRST message');
   // Both halves gate the fold (fail-quiet, never fail-wide).
   assert.ok(/if \(!vmSender \|\| !vmFilter\) return out;/.test(fold), 'the fold is gated on BOTH filter halves (behaviour: the F-34 pin drives it)');
-  assert.ok(/vmSenderR && vmFilterR/.test(res), 'resolved fold gated on BOTH filter halves');
-  // The resolved fold admits ONLY manually-resolved VM threads (a VM has no
-  // reply-based resolution semantics) and ships a NULL duration — "clicked
-  // resolved N hours after the voicemail" is not a response time.
-  const vmFold = res.slice(res.indexOf('vmSenderR &&'));
-  assert.ok(/if \(!man \|\| seenR/.test(vmFold), 'resolved fold: manual-map rows only');
-  assert.ok(/resolveMinutes: null/.test(vmFold), 'VM duration is null, never a fake response time');
+  // SP-2 (cycle 23 Batch 13): the resolved list reads the SAME fold as the
+  // stats card (which re-checks the first message and gates on both halves),
+  // so it lists what the card counts: a MANUAL resolve ships a NULL duration
+  // — "clicked resolved N hours after the voicemail" is not a response time —
+  // and a member REPLY is timed, as the card has timed it since F-34.
+  const vmFold = res.slice(res.indexOf('spanishVmFold_('));
+  assert.ok(/if \(r\.resolveMs == null\) return;/.test(vmFold), 'resolved fold: resolved voicemails only');
+  assert.ok(/resolveMinutes: r\.wasManual \? null : businessMinutesBetween_\(r\.reqMs, r\.resolveMs\)/.test(vmFold), 'a manual VM duration is null, never a fake response time');
   // VM truncation folds into the ONE truncated flag (INV-169/SPANISH cap) on
   // BOTH surfaces — a capped VM scan the stats card did not mention would be a
   // silently partial figure, the thing F-34 was about.
@@ -18624,10 +18627,14 @@ test('BIZ-2: ONE wrapper feeds every elapsed surface, and null is never substitu
   // REWRITTEN 2026-09-10 (note #3): a MANUAL mark-resolve carries NULL minutes
   // on both units — the stamp is when someone pressed the button, not when the
   // requester was answered, so a duration would be a substitute (INV-187).
-  assert.ok(/resolveMinutes: wasManual \? null : businessMinutesBetween_\(reqMs, resolveMs\)/.test(res),
+  // SP-2 (cycle 23 Batch 13): per answered REQUEST (an episode) and per
+  // resolved voicemail — the same rule on both rows.
+  assert.ok(/resolveMinutes: ep\.wasManual \? null : businessMinutesBetween_\(ep\.reqMs, ep\.resolveMs\)/.test(res),
     'the card duration is business minutes — null for a manual resolve');
-  assert.ok(/resolveWallMinutes: wasManual \? null : Math\.max\(0, Math\.round\(\(resolveMs - reqMs\) \/ 60000\)\)/.test(res),
+  assert.ok(/resolveWallMinutes: ep\.wasManual \? null : Math\.max\(0, Math\.round\(\(ep\.resolveMs - ep\.reqMs\) \/ 60000\)\)/.test(res),
     'the wall-clock figure rides along for the title — null for a manual resolve');
+  assert.ok(/resolveMinutes: r\.wasManual \? null : businessMinutesBetween_\(r\.reqMs, r\.resolveMs\)/.test(res),
+    'a voicemail row: the same rule');
 
   // (c) Dept Requests — elapsed AND the SLA bands.
   const dr = nc(codeSrc.slice(codeSrc.indexOf('\nfunction getDeptRequests()'),
@@ -23789,17 +23796,17 @@ test('N3-SP: a Spanish manual mark-resolve is counted but never timed — stats,
   // manual resolve increments resolvedCount, increments manualCount, and
   // reaches NEITHER series.
   const iCount = sp.indexOf('resolvedCount++;');
-  const iGuard = sp.indexOf('if (wasManual) { manualCount++; }');
+  const iGuard = sp.indexOf('if (ep.wasManual) { manualCount++; }');
   const iPush = sp.indexOf('durations.push(');
   assert.ok(iCount > -1 && iGuard > iCount && iPush > iGuard, 'count → manual guard → duration pushes, in that order');
-  assert.ok(/if \(wasManual\) \{ manualCount\+\+; \}\s*else \{/.test(sp), 'the pushes sit in the ELSE of the manual guard');
+  assert.ok(/if \(ep\.wasManual\) \{ manualCount\+\+; \}\s*else \{/.test(sp), 'the pushes sit in the ELSE of the manual guard (SP-2: per request episode)');
   assert.ok(/manualCount: manualCount,/.test(sp), 'the excluded count is shipped (INV-187 — visible, not absorbed)');
-  assert.ok(/'spanish_inbox_v3:'/.test(sp) && !/'spanish_inbox_v[12]:'/.test(sp),
-    'the stats cache key is bumped — a cached v1 payload would still carry manual resolves in its median, and a cached v2 the thread-only counts F-34 widened (INV-85)');
+  assert.ok(/'spanish_inbox_v4:'/.test(sp) && !/'spanish_inbox_v[123]:'/.test(sp),
+    'the stats cache key is bumped — a cached v1 payload would still carry manual resolves in its median, a cached v2 the thread-only counts F-34 widened, and a cached v3 one request per email thread (SP-2) (INV-85)');
   // The resolved-list card: null on BOTH units (BIZ-2 pins the exact literals).
   const res = nc(codeSrc.slice(codeSrc.indexOf('function getSpanishInboxResolved'),
                                codeSrc.indexOf('function claimSpanishThread')));
-  assert.ok(/manual: wasManual,/.test(res) && /resolveMinutes: wasManual \? null/.test(res) && /resolveWallMinutes: wasManual \? null/.test(res),
+  assert.ok(/manual: ep\.wasManual,/.test(res) && /resolveMinutes: ep\.wasManual \? null/.test(res) && /resolveWallMinutes: ep\.wasManual \? null/.test(res),
     'the resolved card ships manual:true with null minutes');
   // Client: the head note names the count; the card reads "not timed" rather
   // than an em dash that could pass for a missing figure.
@@ -26771,6 +26778,7 @@ test('F-34: ONE voicemail fold — the stats card counts the voicemails the list
   sb.emailAddrOnly_ = (s) => String(s).replace(/^.*</, '').replace(/>.*$/, '').trim().toLowerCase();
   vm.runInContext(extractRawFunction('Code.js', 'spanishVmFold_'), sb, { filename: 'Code.js#spanishVmFold_' });
   vm.runInContext(extractRawFunction('Code.js', 'spanishVmResolution_'), sb);   // M5: per-message resolution
+  ['spanishThreadFloorMs_', 'spanishThreadRoles_', 'spanishEpisodes_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), sb));   // SP-2: the claim floor
 
   const th = (id, msgs) => ({ getId: () => id, getMessages: () => msgs, getPermalink: () => 'link/' + id });
   const msg = (from, subj, body, ms) => ({
@@ -28215,7 +28223,7 @@ test('M5: every voicemail in a thread is its own request — a repeat voicemail 
     spanishVmMatch_: (from, subj, s, f) => String(from).indexOf(s) >= 0 && String(subj).indexOf(f) >= 0,
     spanishVmDurationSec_: () => 60, spanishVmTooShort_: () => 'show',
     emailAddrOnly_: (x) => String(x).replace(/^.*</, '').replace(/>.*$/, '').trim().toLowerCase() });
-  ['spanishVmResolution_', 'spanishVmFold_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), sb));
+  ['spanishVmResolution_', 'spanishVmFold_', 'spanishThreadFloorMs_', 'spanishThreadRoles_', 'spanishEpisodes_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), sb));
   const m = (from, subj, ms) => ({ getFrom: () => from, getSubject: () => subj, getPlainBody: () => 'Duration: 01:00', getDate: () => ({ getTime: () => ms }) });
   sb._threads = [{ getId: () => 't1', getMessages: () => [m('no-reply@8x8.com', 'VM A_Q_Spanish', 900), m('Ana <ana@x>', 're', 930), m('no-reply@8x8.com', 'VM A_Q_Spanish', 1100)] }];
   const rows = JSON.parse(JSON.stringify(sb.spanishVmFold_(30, {}, {}, false, {}).rows.map((r) => ({ i: r.msgIndex, res: r.resolveMs }))));
@@ -29083,7 +29091,7 @@ console.log('\n22post Batch C — Spanish assign notifications, presence');
 
 test('C-8: an assignment tells the assignee — one PHI-free email per assignee per action, never the actor (driven)', () => {
   const ctx = vm.createContext({ String, Number, Object, CN_EMAIL_PALETTE: {} });
-  ['spanishAssignNotices_', 'spanishMyOpenClaims_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  ['spanishAssignNotices_', 'spanishMyOpenClaims_', 'spanishClaimLive_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   const J = (x) => JSON.parse(JSON.stringify(x));
   assert.deepStrictEqual(J(ctx.spanishAssignNotices_([{ by: 'Ana@x' }, { by: 'bo@x' }, { by: 'ana@x' }, { by: 'mgr@x' }], 'MGR@x')),
     [{ email: 'ana@x', count: 2 }, { email: 'bo@x', count: 1 }], 'grouped per assignee; the actor is never emailed');
@@ -29105,6 +29113,10 @@ test('C-8: an assignment tells the assignee — one PHI-free email per assignee 
     t3: { by: 'other@x', atMs: 5 }, t4: { by: 'me@x', atMs: 1 }, t5: { by: 'me@x', atMs: 2 } };
   assert.deepStrictEqual(J(ctx.spanishMyOpenClaims_(claims, 'ME@x', ['t1', 't2', 't3', 't5'])).map((o) => o.threadId), ['t5', 't2', 't1'],
     'mine and still pending (t4 is not), a once-resolved thread that is pending again included, oldest first');
+  // SP-2 (cycle 23 Batch 13): a claim older than its request's REOPEN was on
+  // the answered request — the reopened one comes back unclaimed.
+  assert.deepStrictEqual(J(ctx.spanishMyOpenClaims_(claims, 'ME@x', ['t1', 't2', 't5'], { t2: 15 })).map((o) => o.threadId), ['t5', 't1'],
+    'a claim stamped before the reopen floor is not on the reopened request');
 });
 
 test('C-8: the notices, busts and Needs-you item are wired — after the lock, only for a member, pending-ness from the cached id set (source)', () => {
@@ -29116,8 +29128,10 @@ test('C-8: the notices, busts and Needs-you item are wired — after the lock, o
   assert.ok(/spanishBustClaimants_\(\[c\.by\]\)/.test(stripJsComments_(extractRawFunction('Code.js', 'resolveSpanishThread'))), 'a resolve refreshes');
   const auto = stripJsComments_(extractRawFunction('Code.js', 'spanishAutoAssignCore_'));
   assert.ok(auto.indexOf('lock.releaseLock()') < auto.indexOf('spanishNotifyAssignees_(picks, emp)'), 'auto-assign emails after the lock, one summary per assignee');
-  assert.ok(/spanishPendingIdsPut_\(d, out\.map\(function \(x\) \{ return x\.threadId; \}\)\)/.test(stripJsComments_(extractRawFunction('Code.js', 'spanishPendingCore_'))),
-    'the cached set is thread ids ONLY');
+  assert.ok(/spanishPendingIdsPut_\(d, out\.map\(function \(x\) \{ return x\.threadId; \}\), floors\)/.test(stripJsComments_(extractRawFunction('Code.js', 'spanishPendingCore_'))),
+    'the cached set is thread ids ONLY (SP-2: and their claim floors, which are timestamps)');
+  assert.ok(/if \(x\.claimFloorMs\) floors\[x\.threadId\] = x\.claimFloorMs;/.test(stripJsComments_(extractRawFunction('Code.js', 'spanishPendingCore_'))),
+    'the floors map is built from the cards — a number per id, no content');
   const pt = stripJsComments_(extractRawFunction('Code.js', 'getMyPendingTasks'));
   assert.ok(/if \(canSeeSpanishInbox_\(emp\) && getSpanishInboxAddress_\(\)\)/.test(pt), 'members only');
   assert.ok(pt.indexOf('spanishPendingIdsGet_(') < pt.indexOf('getSpanishInboxPending(') && /if \(anyMine\)/.test(pt),
@@ -32190,6 +32204,7 @@ test('SP-3 + SP-4 (cycle 23): the pending list says when claims could not be rea
       appendRowsSafe_: () => {}, getOrCreateSpanishClaimsSheet_: () => ({}), writeAuditLog_: () => {},
       spanishBustClaimants_: () => {}, spanishNotifyAssignees_: () => 0 });
     vm.runInContext(extractRawFunction('Code.js', 'spanishAutoAssignCore_'), c);
+    vm.runInContext(extractRawFunction('Code.js', 'spanishClaimLive_'), c);
     return { r: JSON.parse(JSON.stringify(c.spanishAutoAssignCore_({ email: 'installer@x' }, 7))), gatedCalls, locked };
   };
   let r = run({ pending: [{ threadId: 't1' }], members: ['a@x'], claimsUnavailable: '' });
@@ -33909,6 +33924,181 @@ test('DRV-3 (cycle 23 Batch 12): the client — a kbimg: chip carries only a key
     'the paste is prepared before it is sent, and only a well-formed token is inserted');
 });
 
+
+// ---------------------------------------------------------------------------
+// Cycle 23 Batch 13 — SP-2: a Spanish thread is a SEQUENCE of requests; a
+// reopened request comes back UNCLAIMED (operator 2026-10-05).
+console.log('\ncycle 23 Batch 13 — SP-2 reopened Spanish requests');
+
+const b13Msg_ = (from, ms, body, subj) => ({ getFrom: () => from, getDate: () => new Date(ms), getPlainBody: () => body || '', getSubject: () => subj || 'Pregunta' });
+const b13Th_ = (id, msgs) => ({ getId: () => id, getMessages: () => msgs, getPermalink: () => 'https://mail/' + id });
+const b13Addr_ = (x) => String(x || '').replace(/^.*</, '').replace(/>.*$/, '').trim().toLowerCase();
+
+test('SP-2 (cycle 23 Batch 13): the episode rule — a reply closes the open request, a requester\'s follow-up opens a new one, a manual resolve closes only what was open at its stamp, and the claim floor is the last close before the reopen (driven)', () => {
+  const ctx = b10Ctx_(['spanishEpisodes_', 'spanishClaimLive_']);
+  const E = (entries, man) => b10J(ctx.spanishEpisodes_(entries, man));
+  const q = (ms) => ({ role: 'request', ms }), r = (ms, from) => ({ role: 'resolver', ms, from: from || 'm@x' }), o = (ms) => ({ role: 'other', ms, from: 'cc@x' });
+  let x = E([q(100), r(130)]);
+  assert.deepStrictEqual(x, { episodes: [{ firstIdx: 0, lastIdx: 0, reqMs: 100, lastReqMs: 100, resolveMs: 130, resolverFrom: 'm@x', wasManual: false }], floorMs: 0 },
+    'one request, one reply — exactly the old reading');
+  x = E([q(100), r(130), q(200)]);
+  assert.strictEqual(x.episodes.length, 2, 'THE REGRESSION: the follow-up after the answer is a request of its own');
+  assert.deepStrictEqual([x.episodes[1].reqMs, x.episodes[1].resolveMs, x.floorMs], [200, null, 130], 'open from the follow-up; its claim floor is the reply');
+  x = E([q(100), q(110)]);
+  assert.deepStrictEqual([x.episodes.length, x.episodes[0].lastIdx, x.episodes[0].lastReqMs, x.floorMs], [1, 1, 110, 0], 'a double-send is ONE request');
+  x = E([q(100), r(130), r(140, 'm2@x')]);
+  assert.deepStrictEqual([x.episodes.length, x.episodes[0].resolverFrom], [1, 'm@x'], 'a second reply closes nothing');
+  x = E([q(100), o(120)]);
+  assert.deepStrictEqual([x.episodes.length, x.episodes[0].resolveMs], [1, null], 'a cc\'d non-member neither answers nor reopens');
+  x = E([q(100), q(200)], { by: 'boss@x', ms: 150 });
+  assert.deepStrictEqual(x.episodes.map((e) => [e.reqMs, e.resolveMs, e.wasManual, e.resolverFrom]), [[100, 150, true, 'boss@x'], [200, null, false, '']],
+    'THE REGRESSION: a manual resolve no longer hides the thread for good — the message after the click is new work');
+  assert.strictEqual(x.floorMs, 150, 'and the click is its claim floor');
+  x = E([q(100)], { by: 'boss@x', ms: 100 });
+  assert.deepStrictEqual([x.episodes[0].resolveMs, x.episodes[0].wasManual, x.floorMs], [100, true, 0], 'a resolve stamped AT the request covers it');
+  x = E([q(100), r(130), q(200)], { by: 'boss@x', ms: 0 });
+  assert.deepStrictEqual(x.episodes.map((e) => e.wasManual), [false, true], 'a legacy unstamped resolve closes what is open at the end, as it always did');
+  assert.strictEqual(x.floorMs, 0, 'and nothing is open');
+  x = E([q(100), r(300)], { by: 'boss@x', ms: 200 });
+  assert.deepStrictEqual(x.episodes.map((e) => [e.resolveMs, e.wasManual]), [[200, true]], 'the FIRST close wins — a reply after the click closes nothing');
+  x = E([q(100), r(130), q(200)], { by: 'boss@x', ms: 160 });
+  assert.deepStrictEqual([x.episodes.length, x.floorMs], [2, 160], 'a click after the answer (closing nothing) still raises the floor');
+  assert.deepStrictEqual(E([], null), { episodes: [], floorMs: 0 });
+  // The live test of a claim.
+  assert.strictEqual(ctx.spanishClaimLive_({ by: 'a@x', atMs: 120 }, 130), null, 'a claim from before the reopen is the answered request\'s');
+  assert.deepStrictEqual(b10J(ctx.spanishClaimLive_({ by: 'a@x', atMs: 130 }, 130)), { by: 'a@x', atMs: 130 }, 'one at or after it stands');
+  assert.deepStrictEqual(b10J(ctx.spanishClaimLive_({ by: 'a@x' }, 0)), { by: 'a@x' }, 'no floor — every claim stands, as before');
+  assert.strictEqual(ctx.spanishClaimLive_(null, 0), null);
+});
+
+test('SP-2 (cycle 23 Batch 13): the message roles — the requester writing again is a request, a member answers (even on a member\'s own thread), a cc\'d non-member is neutral, and with no member list any other sender answers (driven)', () => {
+  const ctx = b10Ctx_(['spanishThreadRoles_', 'spanishVmMatch_'], { emailAddrOnly_: b13Addr_ });
+  const R = (msgs, kind, members) => b10J(ctx.spanishThreadRoles_(msgs, kind, members || {}, Object.keys(members || {}).length > 0, 'no-reply@8x8.com', 'A_Q_Spanish')).map((e) => e.role);
+  const m = { 'm@x': true };
+  assert.deepStrictEqual(R([b13Msg_('Jo <jo@x>', 1), b13Msg_('m@x', 2), b13Msg_('jo@x', 3), b13Msg_('cc@x', 4)], 'email', m), ['request', 'resolver', 'request', 'other']);
+  assert.deepStrictEqual(R([b13Msg_('jo@x', 1), b13Msg_('cc@x', 2), b13Msg_('jo@x', 3)], 'email', {}), ['request', 'resolver', 'request'], 'no list: any non-requester answers (the old fallback)');
+  assert.deepStrictEqual(R([b13Msg_('m@x', 1), b13Msg_('m@x', 2)], 'email', m), ['request', 'resolver'], 'a member\'s message answers even on a thread a member opened — the first-reply rule read it so');
+  assert.deepStrictEqual(R([b13Msg_('no-reply@8x8.com', 1, '', 'VM via A_Q_Spanish'), b13Msg_('m@x', 2), b13Msg_('no-reply@8x8.com', 3, '', 'VM via A_Q_Spanish'), b13Msg_('cc@x', 4)], 'vm', m),
+    ['request', 'resolver', 'request', 'other'], 'a voicemail thread: every voicemail is a request');
+});
+
+const b13Pending_ = (threads, manual, claims) => {
+  const puts = [];
+  const ctx = b10Ctx_(['spanishPendingCore_', 'spanishThreadRoles_', 'spanishEpisodes_', 'spanishClaimLive_'], {
+    getSpanishInboxAddress_: () => 'es@x', getSpanishInboxMembers_: () => ({ 'm@x': true, 'm2@x': true }),
+    GmailApp: { search: () => threads }, spanishSearchQuery_: () => 'q', SPANISH_THREAD_SCAN_MAX: 200,
+    spanishManualResolvedMap_: () => manual || {}, spanishClaimsMap_: () => claims || {}, emailAddrOnly_: b13Addr_,
+    spanishVmFold_: () => ({ rows: [], truncated: false, suppressed: 0, unparsed: 0, minSeconds: 5 }),
+    spanishPendingIdsPut_: (d, ids, floors) => puts.push({ ids: b10J(ids), floors: b10J(floors) }),
+  });
+  return { res: b10J(ctx.spanishPendingCore_(7, { email: 'm@x' })), puts };
+};
+
+test('SP-2 (cycle 23 Batch 13): the pending list — a follow-up after an answer or a manual resolve is pending again, from the follow-up, showing it, UNCLAIMED, and the cached ids carry the claim floor (driven over a fake Gmail)', () => {
+  const NOW = Date.now(), H = 3600000;   // the core ages by Date.now() — an earlier pin may have frozen it (g116 16th direction), so the fixture reads the same clock
+  const threads = [
+    b13Th_('tA', [b13Msg_('Jo <jo@x>', NOW - 5 * H, 'hola'), b13Msg_('m@x', NOW - 4 * H, 'respuesta'), b13Msg_('jo@x', NOW - 2 * H, 'otra pregunta')]),
+    b13Th_('tB', [b13Msg_('ana@x', NOW - 6 * H, 'primera'), b13Msg_('ana@x', NOW - 1 * H, 'y ahora esto')]),
+    b13Th_('tC', [b13Msg_('lu@x', NOW - 3 * H, 'x'), b13Msg_('m2@x', NOW - 2 * H, 'y')]),
+    b13Th_('tD', [b13Msg_('bo@x', NOW - 3 * H, 'necesito'), b13Msg_('cc@x', NOW - 2.5 * H, 'fyi')]),
+    b13Th_('tE', [b13Msg_('ed@x', NOW - 8 * H, 'z')]),
+  ];
+  const manual = { tB: { by: 'boss@x', ms: NOW - 5 * H }, tE: { by: 'boss@x', ms: NOW - 7 * H } };
+  const claims = { tA: { by: 'm2@x', atMs: NOW - 4.5 * H }, tB: { by: 'm@x', atMs: NOW - 0.5 * H }, tD: { by: 'm2@x', atMs: NOW - 2.8 * H } };
+  const { res, puts } = b13Pending_(threads, manual, claims);
+  const by = {}; res.pending.forEach((p) => { by[p.threadId] = p; });
+  assert.deepStrictEqual(Object.keys(by).sort(), ['tA', 'tB', 'tD'], 'answered (tC) and resolved (tE) threads are not pending; the two reopened ones are');
+  assert.deepStrictEqual([by.tA.ageHours, by.tA.snippet, by.tA.followUp, by.tA.claim, by.tA.claimFloorMs], [2, 'otra pregunta', true, null, NOW - 4 * H],
+    'THE REGRESSION: the follow-up is a card — aged from the follow-up, showing it, and the claim on the ANSWERED request did not come with it');
+  assert.deepStrictEqual([by.tB.ageHours, by.tB.followUp, by.tB.claim && by.tB.claim.by, by.tB.claimFloorMs], [1, true, 'm@x', NOW - 5 * H],
+    'THE REGRESSION: a manual resolve no longer hides the thread for good — and a claim made after the reopen stands');
+  assert.deepStrictEqual([by.tD.ageHours, by.tD.followUp, by.tD.claim && by.tD.claim.by, by.tD.claimFloorMs], [3, false, 'm2@x', 0], 'a first request reads exactly as before');
+  assert.strictEqual(by.tA.subject, 'Pregunta');
+  assert.deepStrictEqual(puts, [{ ids: ['tD', 'tA', 'tB'], floors: { tA: NOW - 4 * H, tB: NOW - 5 * H } }], 'Needs-you\'s cache carries the floors beside the ids — timestamps only');
+});
+
+test('SP-2 (cycle 23 Batch 13): the resolved list and the stats card count each answered REQUEST — a thread answered twice is two rows, by two members; a manual resolve stays untimed; the first close wins (driven)', () => {
+  const NOW = new Date().getTime(), H = 3600000;
+  const threads = [
+    b13Th_('tA', [b13Msg_('jo@x', NOW - 5 * H), b13Msg_('m@x', NOW - 4 * H), b13Msg_('jo@x', NOW - 2 * H), b13Msg_('m2@x', NOW - 1 * H)]),
+    b13Th_('tB', [b13Msg_('ana@x', NOW - 6 * H), b13Msg_('ana@x', NOW - 1 * H)]),
+    b13Th_('tF', [b13Msg_('fe@x', NOW - 5 * H), b13Msg_('m@x', NOW - 3 * H)]),
+  ];
+  const manual = { tB: { by: 'boss@x', ms: NOW - 5 * H }, tF: { by: 'boss@x', ms: NOW - 4 * H } };
+  const base = {
+    getEmployeeInfo_: () => ({ email: 'm@x' }), canSeeSpanishInbox_: () => true,
+    getSpanishInboxAddress_: () => 'es@x', getSpanishInboxMembers_: () => ({ 'm@x': true, 'm2@x': true }),
+    GmailApp: { search: () => threads }, spanishSearchQuery_: () => 'q', SPANISH_THREAD_SCAN_MAX: 200,
+    spanishManualResolvedMap_: () => manual, emailAddrOnly_: b13Addr_,
+    spanishVmFold_: () => ({ rows: [], truncated: false, suppressed: 0, unparsed: 0, minSeconds: 5, on: false }),
+    businessMinutesBetween_: (a, b) => Math.round((b - a) / 60000),
+  };
+  const rctx = b10Ctx_(['getSpanishInboxResolved', 'spanishThreadRoles_', 'spanishEpisodes_'], base);
+  const rows = b10J(rctx.getSpanishInboxResolved(7)).resolved;
+  assert.deepStrictEqual(rows.map((x) => [x.threadId, x.resolver, x.manual, x.resolveWallMinutes]).sort(),
+    [['tA', 'm2@x', false, 60], ['tA', 'm@x', false, 60], ['tB', 'boss@x', true, null], ['tF', 'boss@x', true, null]],
+    'THE REGRESSION: tA\'s second answer is listed and attributed; tB\'s pending follow-up is not a row; tF\'s click came before the reply, so it was the close');
+  const sctx = b10Ctx_(['getSpanishInboxStats', 'spanishThreadRoles_', 'spanishEpisodes_', 'medianWhole_'], Object.assign({}, base, {
+    CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) }, spanishCacheHash_: () => 'h',
+    getSpanishVmSender_: () => '', getSpanishVmFilter_: () => '', getSpanishVmMinSeconds_: () => 5, businessHours_: () => ({}),
+  }));
+  const st = b10J(sctx.getSpanishInboxStats(7));
+  assert.deepStrictEqual([st.resolved, st.manualCount, st.pending, st.avgMinutes], [4, 2, 1, 60], 'the card counts the same requests: four answered (two by hand, untimed), one pending');
+});
+
+test('SP-2 (cycle 23 Batch 13): a claim from before the reopen neither blocks a teammate nor counts as "already" — the claim guard reads the thread\'s floor (driven)', () => {
+  const NOW = new Date().getTime(), H = 3600000;
+  const appended = [];
+  const run = (claimAtMs, who) => {
+    appended.length = 0;
+    const ctx = b10Ctx_(['claimSpanishThread', 'spanishThreadFloorMs_', 'spanishThreadRoles_', 'spanishEpisodes_', 'spanishClaimLive_', 'spanishVmMatch_'], {
+      getEmployeeInfo_: () => ({ email: who || 'b@x', isManager: false }), canSeeSpanishInbox_: () => true,
+      GmailApp: { getThreadById: () => b13Th_('t1', [b13Msg_('jo@x', NOW - 5 * H), b13Msg_('a@x', NOW - 4 * H), b13Msg_('jo@x', NOW - 1 * H)]) },
+      getSpanishInboxAddress_: () => 'es@x', spanishThreadInScope_: () => true, getSpanishInboxMembers_: () => ({ 'a@x': true, 'b@x': true }),
+      spanishManualResolvedMap_: () => ({}), getSpanishVmSender_: () => '', getSpanishVmFilter_: () => '', emailAddrOnly_: b13Addr_,
+      LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      spanishClaimsMap_: () => ({ t1: { by: 'a@x', atMs: claimAtMs } }),
+      getOrCreateSpanishClaimsSheet_: () => ({ appendRow: (r) => appended.push(r) }), sheetSafeRow_: (r) => r,
+      fmtDate_: () => 'd', fmtTime_: () => 't', writeAuditLog_: () => {}, spanishBustClaimants_: () => {}, spanishNotifyAssignees_: () => 0,
+    });
+    return b10J(ctx.claimSpanishThread('t1'));
+  };
+  let r = run(NOW - 4.5 * H);
+  assert.ok(r.success && !r.already && appended.length === 1, 'THE REGRESSION: a teammate can claim the reopened request — the old claim was on the answered one');
+  r = run(NOW - 0.5 * H);
+  assert.ok(/Already claimed by a@x/.test(r.error || '') && appended.length === 0, 'a claim made after the reopen still holds');
+  r = run(NOW - 4.5 * H, 'a@x');
+  assert.ok(r.success && !r.already && appended.length === 1, 'the old claimant re-claiming stamps a claim on the reopened request — not "already"');
+});
+
+test('SP-2 (cycle 23 Batch 13): the wiring — Expand shows the follow-up, Needs-you and auto-assign read the floors, the card carries a follow-up pill with its own rule, and the resolve confirm says a follow-up comes back', () => {
+  const bctx = b10Ctx_(['spanishThreadBodyMessage_', 'spanishVmMatch_'], { emailAddrOnly_: b13Addr_ });
+  const req = b13Msg_('jo@x', 1, 'primera'), staff = b13Msg_('m@x', 2, 'resp'), fu = b13Msg_('Jo <jo@x>', 3, 'segunda');
+  assert.strictEqual(bctx.spanishThreadBodyMessage_([req, staff, fu], 'no-reply@8x8.com', 'A_Q_Spanish').msg, fu, 'the requester\'s NEWEST message — what the reopened card shows');
+  assert.strictEqual(bctx.spanishThreadBodyMessage_([req, staff], 'no-reply@8x8.com', 'A_Q_Spanish').msg, req, 'one request message: as before');
+  const pt = stripJsComments_(extractRawFunction('Code.js', 'getMyPendingTasks'));
+  assert.ok(/spanishMyOpenClaims_\(spClaims, me, spIds, spFloors\)/.test(pt) && /spFloors = spanishPendingFloorsGet_\(SPANISH_AUTO_ASSIGN_DAYS\)/.test(pt)
+    && /if \(p\.claimFloorMs\) spFloors\[p\.threadId\] = p\.claimFloorMs;/.test(pt), 'Needs-you drops a claim from before the reopen — cached floors, or the live read\'s');
+  const core = stripJsComments_(extractRawFunction('Code.js', 'spanishAutoAssignCore_'));
+  assert.ok(/!spanishClaimLive_\(live\[p\.threadId\], floors\[p\.threadId\]\)/.test(core), 'auto-assign hands out a reopened request whose only claim is from before the reopen');
+  const claim = stripJsComments_(extractRawFunction('Code.js', 'claimSpanishThread'));
+  assert.ok(claim.indexOf('spanishThreadFloorMs_(') < claim.indexOf('lock.waitLock('), 'the floor (a Gmail read) is computed BEFORE the lock');
+  const fold = stripJsComments_(extractRawFunction('Code.js', 'spanishVmFold_'));
+  assert.ok(/resolverFrom: resolverFrom, floorMs: floorMs/.test(fold), 'the voicemail rows carry the resolver and the floor');
+  const pend = stripJsComments_(extractRawFunction('Code.js', 'spanishPendingCore_'));
+  assert.ok(/claim: spanishClaimLive_\(claims\[r\.threadId\], r\.floorMs\)/.test(pend), 'a repeat voicemail after an answered one comes back unclaimed too');
+  const sb = buildSandbox([]);
+  sb.icon = (n) => '<i data-icon="' + n + '"></i>';
+  const pill = loadFunction(sb, 'metrics/script_metrics.html', 'spanishFollowUpPillHtml_');
+  assert.strictEqual(pill({ followUp: false }), '');
+  assert.strictEqual(pill(null), '');
+  assert.ok(/class="sp-followup-pill"/.test(pill({ followUp: true })) && /follow-up/.test(pill({ followUp: true })), 'a reopened card says so');
+  const met = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
+  assert.ok(/spanishVmPillHtml_\(t\) \+ spanishFollowUpPillHtml_\(t\) \+ claimPill/.test(met), 'the pending card head renders it');
+  assert.ok(/If the requester writes again, it comes back as a new request, unclaimed\./.test(extractFnFrom(met, 'spanishResolve_')), 'the resolve confirm no longer reads as permanent');
+  assert.ok(/\.sp-followup-pill \{/.test(fs.readFileSync(path.join(PA_WEB, 'styles.html'), 'utf8')), 'the pill has its rule (g140)');
+  assert.ok(/followUp: true, claimFloorMs:/.test(fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8')), 'the fixture photographs it (INV-185)');
+});
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 

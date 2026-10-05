@@ -1006,7 +1006,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // Oldest-first (the tab's own sort) — and the CLAIMED item leads, so the
       // Dashboard Spanish card's slide 1 (index 0) carries the pill on camera.
       { threadId: 't2', requester: 'mgarcia@umsupply.com', ageHours: 29, subject: 'Ayuda con formulario de admisión', snippet: 'El paciente necesita ayuda para completar el formulario…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t2', claim: { by: 'sam@umsupply.com', assignedBy: 'avery@umsupply.com', atMs: Date.now() - 3600000 } },
-      { threadId: 't1', requester: 'jrivera@umsupply.com', ageHours: 3.2, subject: 'Paciente pregunta por su pedido', snippet: 'La paciente llama para preguntar cuándo llega…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t1', claim: null },
+      { threadId: 't1', requester: 'jrivera@umsupply.com', ageHours: 3.2, subject: 'Paciente pregunta por su pedido', snippet: 'La paciente llama para preguntar cuándo llega…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t1', claim: null, followUp: true, claimFloorMs: Date.now() - 4 * 3600000 },   // SP-2 — a reopened request, back unclaimed (the follow-up pill on camera)
       { threadId: 't5', requester: 'lchen@umsupply.com', ageHours: 1.1, subject: 'Verificación de seguro', snippet: 'El paciente quiere verificar la cobertura antes de la cita…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t5', claim: { by: 'avery@umsupply.com', atMs: Date.now() - 600000 } },
       // Operator 2026-08-25: an 8x8 voicemail item (kind:'voicemail' — the
       // sender+subject fold) so the VM pill is on camera.

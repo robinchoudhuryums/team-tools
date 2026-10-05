@@ -5,7 +5,7 @@ Cycle: 23 — opened by the 2026-10-01 `/broad-scan` (0 Critical / 5 High; plan 
 Phase: implement
 Scope: broad — Batches 1–5 (TC-02 included), 6a, 6b, 7a and 7b done and doc-synced; Batch 8 done and doc-synced; Batch 9 done and doc-synced; Batch 10 done and doc-synced — the scan's plan is complete; follow-up Batches 11–15 planned 2026-10-05 from the deferred decisions; Batch 11 done and doc-synced; Batch 12 done and doc-synced; next Batch 13
 Test Command: manual
-Estimates: Batch 1: M (~9 h) · Batch 2: M (~11 h) · Batch 3: M (~9.5 h) · Batch 4a: M (~10 h) · 4a follow-ons: S (~3 h) · Batch 4b: M (~11 h) · TC-02 (option a): M (~8 h) · Batch 5: M (~10 h) · Batch 6a: M (~9.5 h) · Batch 6b: M (~10 h) · Batch 7a: M (~10 h) · Batch 7b: M (~7.5 h) · Batch 8: M (~9.5 h) · Batch 9: L (~13 h) · Batch 10: L (~11 h) · Batch 11: M (~10.5 h) · Batch 12: L (~14 h) — each written before its first edit
+Estimates: Batch 1: M (~9 h) · Batch 2: M (~11 h) · Batch 3: M (~9.5 h) · Batch 4a: M (~10 h) · 4a follow-ons: S (~3 h) · Batch 4b: M (~11 h) · TC-02 (option a): M (~8 h) · Batch 5: M (~10 h) · Batch 6a: M (~9.5 h) · Batch 6b: M (~10 h) · Batch 7a: M (~10 h) · Batch 7b: M (~7.5 h) · Batch 8: M (~9.5 h) · Batch 9: L (~13 h) · Batch 10: L (~11 h) · Batch 11: M (~10.5 h) · Batch 12: L (~14 h) · Batch 13: M (~7 h) — each written before its first edit
 Subsystem cycles since last Seams audit: 3 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25) and 22post's /reflect (2026-09-30). The cadence is every 4, so the next reflection reaches it.
 Updated: 2026-10-05 (cycle 23 Batch 12 /sync-docs)
 

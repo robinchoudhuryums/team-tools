@@ -2736,6 +2736,37 @@ test('SP1/SP2 DOM: Mark resolved removes the request from STATE (count, header a
   assert.strictEqual(cards().length, 1, 'a re-render does not bring it back');
 });
 
+// SP-2 (cycle 23 Batch 13) — a requester's follow-up after an answer is a new,
+// UNCLAIMED request. The card says so, carries no claim pill (and so counts
+// toward Auto-assign), and Mark resolved no longer reads as permanent.
+test('SP-2 DOM: a reopened request renders with a follow-up pill and no claim, counts as unclaimed, and the resolve confirm says a follow-up comes back', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true, canSeeSpanish: true });
+  h.run.respond('getSpanishInboxStats', () => ({ address: 'spanishcalls@x.com', days: 30, pending: 2, resolved: 1,
+    avgMinutes: 60, medianMinutes: 60, avgBusinessMinutes: 60, medianBusinessMinutes: 60, businessCount: 1,
+    businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true }, membersConfigured: true, threadsScanned: 2, truncated: false }));
+  h.run.respond('getSpanishInboxPending', () => ({ pending: [
+    { threadId: 'f1', requester: 'a@x.com', ageHours: 2, subject: 'Uno', snippet: 'otra pregunta', permalink: 'https://mail.google.com/1', claim: null, followUp: true, claimFloorMs: 1 },
+    { threadId: 'f2', requester: 'b@x.com', ageHours: 3, subject: 'Dos', snippet: 'y', permalink: 'https://mail.google.com/2', claim: { by: 'sam@x.com', atMs: 5 }, followUp: false, claimFloorMs: 0 }],
+    members: ['sam@x.com', 'ines@x.com'], self: 'me@x.com', truncated: false }));
+  h.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['sam@x.com'], truncated: false }));
+  h.window.enterTool('metrics', 'metricsSpanish');
+  h.flushTimers();
+  const card = (tid) => h.$('.sp-resolve[data-thread="' + tid + '"]').closest('.sp-task');
+  assert.ok(card('f1').querySelector('.sp-followup-pill'), 'the reopened card says follow-up');
+  assert.ok(/follow-up/i.test(card('f1').querySelector('.sp-followup-pill').textContent));
+  assert.strictEqual(card('f1').querySelector('.sp-claim-pill'), null, 'and carries no claim — it came back unclaimed');
+  assert.strictEqual(card('f2').querySelector('.sp-followup-pill'), null, 'a first request has no pill');
+  assert.ok(/Auto-assign 1 unclaimed/.test(h.$('#sp-autoassign').textContent), 'the reopened request is in the unclaimed count');
+  let seen = null;
+  h.window.__stubConfirm = (o) => { seen = o; return Promise.resolve(false); };
+  h.read('uiConfirm = window.__stubConfirm');
+  h.read('spanishResolve_')(h.$('.sp-resolve[data-thread="f2"]'));
+  await tick();
+  assert.ok(seen && /If the requester writes again, it comes back as a new request, unclaimed\./.test(seen.message), 'the confirm no longer reads as permanent');
+});
+
 // SP4 (operator 2026-09-16) — a suppressed voicemail card is invisible BY
 // DEFINITION, so the count is the only thing standing between "3 hang-ups
 // hidden" and "8x8 changed the body format and the gate is eating every
