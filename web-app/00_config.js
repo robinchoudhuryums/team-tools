@@ -1336,6 +1336,13 @@ const _SYSTEM_AUDIT_EMP_ = { id: 'SYSTEM', name: 'Automation', email: 'automatio
 // Property heartbeat; getAutomationHealth surfaces it with a staleness flag —
 // closing the "silently dead digest trigger" blind spot.
 const DIGEST_LAST_RUN_PROP = 'AUTOMATION_DIGEST_LAST_RUNS';
+// Seams F11 (cycle 24): an UNMARKED instance is treated as production by the
+// suite guard too (isDevInstance_ already was). Running the full suite on one
+// knowingly takes an explicit, EXPIRING override: allowFullSuiteHere() (an
+// owner-only editor entry point in Tests.js) stamps this property with an
+// epoch-ms deadline SUITE_UNMARKED_OVERRIDE_HOURS ahead.
+const SUITE_UNMARKED_OVERRIDE_PROP = 'SUITE_UNMARKED_OK_UNTIL';
+const SUITE_UNMARKED_OVERRIDE_HOURS = 2;
 const SELF_TEST_RESULT_PROP = 'SELF_TEST_LAST_RESULT';   // {date, mode, pass, fail, skip[, error]} — nightly self-test outcome
 // F15 (cycle 12): how long a {running:true} sentinel may persist before it means
 // "the last run never finished". Apps Script kills an execution at 6 minutes and

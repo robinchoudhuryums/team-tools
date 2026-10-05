@@ -2405,9 +2405,17 @@ entry says which it is.
   runs as the deployer and every visitor differs, so a rep, manager or admin
   can no longer fire the suite or its helpers from a browser console (they
   could until cycle 22 — see g143). The nightly self-test keeps its
-  MANAGER_EMAILS trigger gate and runs as the installer. `INSTANCE_IS_PROD`
-  is unchanged: unset still PERMITS the full suite. Treating unset as prod
-  waits on standing up the DEV instance, and is still an operator decision.  **Cycle 23 Batch 15 (2026-10-05):** eleven cases cover the server rules of
+  MANAGER_EMAILS trigger gate and runs as the installer. **Seams F11 (cycle
+  24, operator-approved 2026-10-05): an UNSET `INSTANCE_IS_PROD` now REFUSES
+  the full suite** (`runAllTests`, `runAllTestsPartA`/`PartB`,
+  `setupTestEnvironment`) — production is unmarked, and the old default let the
+  integration tier write TEST_ rows into live payroll and PHI stores. On the
+  DEV project set `INSTANCE_LABEL` and `INSTANCE_IS_PROD="false"` and nothing
+  else changes. To run the full suite on an unmarked project KNOWINGLY, run
+  `allowFullSuiteHere()` from the editor first: it stamps the Script Property
+  `SUITE_UNMARKED_OK_UNTIL` (epoch ms) two hours ahead, and the suite runs until
+  then (delete the property to close it sooner). It never opens on a project
+  marked `INSTANCE_IS_PROD=true`. `runSmokeTests` is unaffected.  **Cycle 23 Batch 15 (2026-10-05):** eleven cases cover the server rules of
   Batches 10–14 — nine pure ones in the smoke shard (safe on prod: run
   `runSmokeTests` after the push) and two in Integration B (the DEV nightly,
   or `runAllTestsPartB` on DEV: they write TEST rows to the Timesheet and an

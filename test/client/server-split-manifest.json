@@ -2373,6 +2373,20 @@
     "updateTimeOffStatus"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Seams F11 (cycle 24): the suite guard fails closed on an unmarked instance; an expiring override",
+   "added": [
+    "SUITE_UNMARKED_OVERRIDE_HOURS",
+    "SUITE_UNMARKED_OVERRIDE_PROP",
+    "suiteUnmarkedOverrideLive_"
+   ],
+   "removed": [],
+   "changed": [
+    "assertNotProdInstance_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4372,6 +4386,16 @@
    "kind": "const",
    "sha": "836b046a3cbdd83f"
   },
+  "SUITE_UNMARKED_OVERRIDE_HOURS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5fd29a336b90878e"
+  },
+  "SUITE_UNMARKED_OVERRIDE_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "54ffb36b7039d544"
+  },
   "TA": {
    "file": "00_config.js",
    "kind": "const",
@@ -4960,7 +4984,7 @@
   "assertNotProdInstance_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "a26898e1e4503d83"
+   "sha": "7f02c96cb71fc44d"
   },
   "auditRowObj_": {
    "file": "10_core.js",
@@ -10151,6 +10175,11 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "02371f6e1e0b9ea6"
+  },
+  "suiteUnmarkedOverrideLive_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "befe34762d40e5be"
   },
   "teamMetricsRepView_": {
    "file": "40_metrics.js",

@@ -1373,23 +1373,36 @@ test('managerSourceDrift_: a demoted email appears once even on duplicate roster
 });
 
 console.log('\nCode.js — dev/prod instance guards (blue-green deploy support)');
-const instCtx = { String, JSON, Object, console, _p: {} };
+const instCtx = { String, JSON, Object, console, Number, isFinite, Date, _p: {}, SUITE_UNMARKED_OVERRIDE_PROP: 'SUITE_UNMARKED_OK_UNTIL', SUITE_UNMARKED_OVERRIDE_HOURS: 2 };
 instCtx.PropertiesService = { getScriptProperties: function () {
   return { getProperty: function (k) {
     return Object.prototype.hasOwnProperty.call(instCtx._p, k) ? instCtx._p[k] : null;
   } };
 } };
 vm.createContext(instCtx);
-['instanceLabel_', 'isProdInstance_', 'assertNotProdInstance_', 'isDevInstance_', 'assertDevInstance_'].forEach(function (fn) {
+['instanceLabel_', 'isProdInstance_', 'assertNotProdInstance_', 'suiteUnmarkedOverrideLive_', 'isDevInstance_', 'assertDevInstance_'].forEach(function (fn) {
   vm.runInContext(extractRawFunction('Code.js', fn), instCtx, { filename: 'Code.js#' + fn });
 });
-test('instance guards: prod default (no props) — destructive tests OK, dev tools refuse', () => {
+test('instance guards: an UNMARKED instance (no props — production today) refuses the destructive suite AND the dev tools; only the expiring override opens the suite (seams F11)', () => {
   instCtx._p = {};
   assert.strictEqual(instCtx.instanceLabel_(), '');
   assert.strictEqual(instCtx.isProdInstance_(), false);
   assert.strictEqual(instCtx.isDevInstance_(), false);
-  assert.doesNotThrow(() => instCtx.assertNotProdInstance_('runAllTests'));   // prod today still runs runAllTests
+  assert.throws(() => instCtx.assertNotProdInstance_('runAllTests'), /not marked as DEV[\s\S]*allowFullSuiteHere\(\)/,
+    'THE REGRESSION (F11): unset PERMITTED the full suite — the opposite of isDevInstance_ — and production is unset');
   assert.throws(() => instCtx.assertDevInstance_('devScrubRoster_'), /not a confirmed DEV instance/);
+  instCtx._p = { SUITE_UNMARKED_OK_UNTIL: String(Date.now() + 60000) };
+  assert.doesNotThrow(() => instCtx.assertNotProdInstance_('runAllTests'), 'an open override permits it');
+  assert.throws(() => instCtx.assertDevInstance_('devScrubRoster_'), /not a confirmed DEV instance/, 'the override never makes the dev TOOLS run');
+  instCtx._p = { SUITE_UNMARKED_OK_UNTIL: String(Date.now() - 1) };
+  assert.throws(() => instCtx.assertNotProdInstance_('runAllTests'), /not marked as DEV/, 'an EXPIRED override is closed');
+  instCtx._p = { SUITE_UNMARKED_OK_UNTIL: 'junk' };
+  assert.throws(() => instCtx.assertNotProdInstance_('runAllTests'), /not marked as DEV/, 'an unreadable override is closed');
+  instCtx._p = { INSTANCE_IS_PROD: 'true', SUITE_UNMARKED_OK_UNTIL: String(Date.now() + 60000) };
+  assert.throws(() => instCtx.assertNotProdInstance_('runAllTests'), /PRODUCTION instance/, 'a MARKED prod instance refuses whatever the override says');
+  const allow = extractRawFunction('Tests.js', 'allowFullSuiteHere');
+  assert.ok(/^function allowFullSuiteHere\(\) \{\s*_assertSuiteCaller_\('allowFullSuiteHere'\);/.test(allow), 'the override is owner-only (g143)');
+  assert.ok(/if \(isProdInstance_\(\)\) throw/.test(allow) && /SUITE_UNMARKED_OVERRIDE_HOURS \* 3600000/.test(allow), 'never on marked prod; it expires');
 });
 test('instance guards: INSTANCE_IS_PROD=true blocks destructive tests AND dev tools', () => {
   instCtx._p = { INSTANCE_IS_PROD: 'true', INSTANCE_LABEL: 'PROD' };

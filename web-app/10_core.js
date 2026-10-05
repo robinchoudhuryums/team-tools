@@ -169,15 +169,32 @@ function isProdInstance_() {
   try { return String(PropertiesService.getScriptProperties().getProperty('INSTANCE_IS_PROD') || '').trim().toLowerCase() === 'true'; }
   catch (e) { return false; }
 }
-/** Throws on the PROD instance (INSTANCE_IS_PROD='true') — guards the destructive
- *  TEST_-row writers so they can only run against a dev project's copy sheets.
- *  No-op until an operator sets the property on prod (back-compat: prod today
- *  runs runAllTests fine, and continues to until the property is set). */
+/** Guards the destructive TEST_-row writers so they run only against a dev
+ *  project's copy sheets. Throws on the PROD instance (INSTANCE_IS_PROD='true'),
+ *  and — seams F11 (cycle 24) — on an UNMARKED one too, unless the operator
+ *  has opened the expiring override (allowFullSuiteHere). It used to PERMIT
+ *  an unmarked instance, the opposite of isDevInstance_, and production is
+ *  unmarked: the integration tier wrote TEST_ rows into live payroll and PHI
+ *  stores (2026-09-18). */
 function assertNotProdInstance_(label) {
   if (isProdInstance_()) {
     throw new Error((label || 'This operation') + ' is blocked on the PRODUCTION instance ' +
       '(INSTANCE_IS_PROD is set). Run it on the DEV Apps Script project — see docs/deployment.md.');
   }
+  if (isDevInstance_() || suiteUnmarkedOverrideLive_()) return;
+  throw new Error((label || 'This operation') + ' refuses to run: this instance is not marked as DEV, and an ' +
+    'unmarked instance is treated as production. On the DEV project set INSTANCE_LABEL and INSTANCE_IS_PROD="false" ' +
+    '(docs/deployment.md). To run it HERE knowingly — it writes TEST_ rows into this project\'s live payroll and PHI ' +
+    'stores — run allowFullSuiteHere() from the editor first; that permits the full suite for ' +
+    SUITE_UNMARKED_OVERRIDE_HOURS + ' hours.');
+}
+/** Seams F11 — is the operator's expiring "run the full suite on this
+ *  unmarked instance" override still open? */
+function suiteUnmarkedOverrideLive_() {
+  try {
+    const until = Number(PropertiesService.getScriptProperties().getProperty(SUITE_UNMARKED_OVERRIDE_PROP));
+    return isFinite(until) && until > Date.now();
+  } catch (e) { return false; }
 }
 /**
  * THE dev-instance predicate (A5, cycle 13). An instance counts as DEV only
