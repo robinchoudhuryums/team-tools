@@ -34588,6 +34588,24 @@ test('Seams F19 (cycle 24): an un-approve whose credit cannot land keeps the cha
   assert.strictEqual(n.notRestored, undefined); assert.strictEqual(t.rows[1][7], '');
 });
 
+test('Seams F20 (cycle 24): an image tab whose header was EDITED reads "could not read", never "not stored" — for KbImages; the manual tab\'s old layout still reads as not imported (driven)', () => {
+  const k1 = 'kbimg-' + '1'.repeat(24);
+  const edited = b12Sheet_([[k1, 's1', 'image/png', 'paste', 0, B12_PNG_B64, 't']], ['Key', 'Hash', 'Type', 'Kind', 'Part', 'Data', 'ImportedAt']);
+  let sheet = edited;
+  const ctx = b12Ctx_(['kbImageTabHeaderOk_', 'kbImageTabLedger_', 'kbImageTabServe_', 'getKbImages'], {
+    getEmployeeInfo_: () => ({ email: 'rep@ums.com' }), getKbSS_: () => ({ getSheetByName: () => sheet }),
+    CacheService: { getScriptCache: () => ({ getAll: () => ({}), putAll() {} }) } });
+  const r = b10J(ctx.getKbImages([k1, 'kbimg-' + '2'.repeat(24), 'icon-a']));
+  assert.deepStrictEqual(r.missing, [], 'THE REGRESSION: every image read as "not stored" while the store said the header changed');
+  assert.deepStrictEqual(r.failed, [k1, 'kbimg-' + '2'.repeat(24)], 'every valid key is "could not read"');
+  assert.strictEqual(r.headerChanged, true);
+  sheet = null;
+  assert.deepStrictEqual(b10J(ctx.getKbImages([k1])).missing, [k1], 'no tab at all is nothing stored yet');
+  sheet = b12Sheet_([[k1, 's1', 'image/png', 'paste', 0, B12_PNG_B64, 't']]);
+  assert.ok(b10J(ctx.getKbImages([k1])).images[k1], 'the right header serves as before');
+  assert.ok(!/headerChangedFails/.test(extractRawFunction('Code.js', 'getManualImages')), 'the manual tab keeps "an old layout is not imported" (M4-FU3) — the next import rewrites it');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

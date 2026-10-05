@@ -3790,6 +3790,16 @@ function kbImageTabServe_(sheet, keys, spec) {
   });
   const res = { success: true, images: {}, missing: [], failed: [] };
   if (!want.length) return res;
+  // Seams F20 (cycle 24): a tab that EXISTS with a changed header (someone
+  // edited row 1) holds images this reader can no longer locate — "could not
+  // read", never "not stored" (g128), which the store already says by name.
+  // Opt-in per tab: the ManualImages tab's OLD (Drive-backed) layout reads as
+  // not imported on purpose, so the next import rewrites it (M4-FU3).
+  if (spec.headerChangedFails && sheet && sheet.getLastRow() >= 1 && !kbImageTabHeaderOk_(sheet, spec.headers)) {
+    res.failed = want.slice();
+    res.headerChanged = true;
+    return res;
+  }
   const ledger = kbImageTabLedger_(sheet, spec.headers, spec.keyRe);
   const cache = CacheService.getScriptCache();
   let hit = {};
@@ -3834,7 +3844,7 @@ function getKbImages(keys) {
     if (!emp) return { error: 'Not authorized.' };
     return kbImageTabServe_(getKbSS_().getSheetByName(KB_IMAGES_TAB), keys, {
       headers: KB_IMAGES_HEADERS, keyRe: KB_IMAGE_KEY_RE, batch: KB_IMAGES_BATCH,
-      types: KB_IMG_UPLOAD_TYPES, maxBytes: KB_IMAGE_MAX_BYTES, cachePrefix: KB_IMAGE_CACHE_PREFIX });
+      types: KB_IMG_UPLOAD_TYPES, maxBytes: KB_IMAGE_MAX_BYTES, cachePrefix: KB_IMAGE_CACHE_PREFIX, headerChangedFails: true });
   } catch (err) { return { error: err.message }; }
 }
 /** PURE (DRV-3; Node-pinned) — one image as a KbImages item: the content

@@ -2387,6 +2387,17 @@
     "assertNotProdInstance_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Seams F20 (cycle 24): a KbImages tab with an edited header reads could-not-read",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "getKbImages",
+    "kbImageTabServe_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -6799,7 +6810,7 @@
   "getKbImages": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "76933ab9bc37e276"
+   "sha": "34b69757083c54d1"
   },
   "getKbSS_": {
    "file": "70_kb.js",
@@ -8019,7 +8030,7 @@
   "kbImageTabServe_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "f09cf03690f2a5ee"
+   "sha": "b0ee1a6be0bb1d57"
   },
   "kbImagesStoreLocked_": {
    "file": "70_kb.js",
