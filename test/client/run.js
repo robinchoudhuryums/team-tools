@@ -34437,6 +34437,41 @@ test('Seams F1 (cycle 24): a revoke clears the KEY that granted the exemption â€
   assert.deepStrictEqual(appended.map((r) => [r[0], r[1], r[4]]), [['Ann', '2026-Q4', 'FALSE'], ['Cy', '2026-11', 'TRUE']]);
 });
 
+test('Seams F2 (cycle 24): the EOD digest stamps a failed send or an unreadable Sheet, and only a run that reached a rep clears it (driven)', () => {
+  const runEod = (opts) => {
+    const calls = { stamp: [], clear: [], beat: 0 };
+    const ctx = vm.createContext({ String, Number, Math, Object, Array, JSON, Date, parseInt,
+      assertManagerCaller_: () => {}, Logger: { log: () => {} },
+      CONFIG: { CALL_NOTES: { EOD_WARNING_HOUR: 17 } },
+      EMP: { EMAIL: 0, ID: 1, NAME: 2, TIMEZONE: 3 }, CN: { DATE_LOCAL: 0, FLAG_TYPE: 1, RESOLVED: 2 },
+      getEmployeeRosterRows_: () => [['h'], ['a@x', 'A', 'Ann', 'EOD'], ['b@x', 'B', 'Bob', 'EOD'], ['c@x', 'C', 'Cy', 'NOT']],
+      cnEnrolledSheetId_: () => 'sheet', safeTimezone_: (t) => t,
+      Utilities: { formatDate: (d, tz, f) => (f === 'H' ? (tz === 'EOD' && opts.hourMatches ? '17' : '3') : '2026-10-05') },
+      getCallNotesSheet_: (e) => { if (opts.unreadable && e.id === 'A') throw new Error('Sheet A gone'); return {}; },
+      readCallNoteRowsInRange_: () => [{ row: ['2026-10-05', 'action', ''] }],
+      cnDateLocalString_: (v) => v, callNoteRowToObject_: () => ({}),
+      sendOneRepEodDigest_: (e) => { if (opts.sendFails && e.id === 'B') throw new Error('Service invoked too many times'); },
+      stampDigestLastRun_: () => { calls.beat++; },
+      stampAutomationError_: (k, m) => calls.stamp.push([k, m]), clearAutomationError_: (k) => calls.clear.push(k) });
+    vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesEodDigest'), ctx);
+    ctx.sendCallNotesEodDigest();
+    return calls;
+  };
+  const failed = runEod({ hourMatches: true, unreadable: true, sendFails: true });
+  assert.strictEqual(failed.beat, 1, 'the heartbeat still says the trigger ran');
+  assert.strictEqual(failed.stamp.length, 1, 'THE REGRESSION: a failed send and an unreadable Sheet reached only the log');
+  assert.strictEqual(failed.stamp[0][0], 'CallNotesEodDigest');
+  assert.ok(/could not read 1 rep Call Notes Sheet/.test(failed.stamp[0][1]) && /1 EOD reminder email\(s\) failed to send/.test(failed.stamp[0][1]), failed.stamp[0][1]);
+  assert.deepStrictEqual(failed.clear, [], 'a failing run does not clear');
+  const clean = runEod({ hourMatches: true });
+  assert.deepStrictEqual([clean.stamp.length, clean.clear], [0, ['CallNotesEodDigest']], 'a run that reached reps and sent cleanly clears the flag');
+  const idle = runEod({ hourMatches: false });
+  assert.deepStrictEqual([idle.stamp.length, idle.clear.length, idle.beat], [0, 0, 1],
+    'an hour that matched no rep proves nothing â€” it must not wipe a failure before the morning digest reads it');
+  // The key is wired to the heartbeat and labelled (the 4a-FU3 maps).
+  assert.ok(/eod: 'CallNotesEodDigest'/.test(codeSrc) && /CallNotesEodDigest: '[^']+'/.test(codeSrc), 'DIGEST_ERROR_KEYS + AUTOMATION_ERROR_LABELS carry the EOD key');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

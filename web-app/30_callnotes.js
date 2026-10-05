@@ -3946,6 +3946,11 @@ function sendCallNotesEodDigest() {
     const now = new Date();
     const roster = getEmployeeRosterRows_();
     let sentCount = 0;
+    // Seams F2 (cycle 24) — the MAIL-4 sibling this digest was missing: a
+    // reminder that could not be sent, or a rep whose Sheet could not be read,
+    // reached only the log while the heartbeat below read healthy. Count both
+    // and stamp them; `attempted` = reps whose local EOD hour this run was.
+    let attempted = 0, unread = 0, sendFailed = 0, lastError = '';
     for (let r = 1; r < roster.length; r++) {
       const emailAddr = String(roster[r][EMP.EMAIL] || '').trim();
       const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
@@ -3971,6 +3976,7 @@ function sendCallNotesEodDigest() {
         timezone: tz,
       };
       const today = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+      attempted++;
       let unresolved;
       try {
         const sheet = getCallNotesSheet_(empObj);
@@ -3989,6 +3995,7 @@ function sendCallNotesEodDigest() {
         }
       } catch (e) {
         Logger.log(`sendCallNotesEodDigest: skipped ${empObj.id} (${e.message})`);
+        unread++; lastError = e.message;
         continue;
       }
       if (unresolved.length === 0) continue;
@@ -3997,12 +4004,23 @@ function sendCallNotesEodDigest() {
         sentCount++;
       } catch (e) {
         Logger.log(`Failed to email rep ${empObj.email} EOD digest: ${e.message}`);
+        sendFailed++; lastError = e.message;
       }
     }
     stampDigestLastRun_('eod');
+    // One stamp names everything that went wrong (the TrainingOverdueDigest
+    // shape). Only a run that reached a rep may CLEAR it: most hours match no
+    // rep's EOD hour, and an hour that did nothing proves nothing — clearing
+    // there would wipe a failure before the morning failure digest reads it.
+    const problems = [];
+    if (unread) problems.push('could not read ' + unread + ' rep Call Notes Sheet(s)');
+    if (sendFailed) problems.push(sendFailed + ' EOD reminder email(s) failed to send');
+    if (problems.length) stampAutomationError_('CallNotesEodDigest', problems.join(' · ') + (lastError ? ' (' + lastError + ')' : ''));
+    else if (attempted) clearAutomationError_('CallNotesEodDigest');
     Logger.log(`sendCallNotesEodDigest: sent ${sentCount} reminder(s).`);
   } catch (err) {
     Logger.log('sendCallNotesEodDigest failed: ' + err.message);
+    stampAutomationError_('CallNotesEodDigest', err.message);   // seams F2: a throw is not a quiet hour
   }
 }
 function sendOneRepEodDigest_(emp, unresolvedNotes) {

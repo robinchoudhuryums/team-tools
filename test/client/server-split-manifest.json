@@ -2328,6 +2328,18 @@
     "qaSetExemption"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Seams F2 (cycle 24): the EOD digest stamps CallNotesEodDigest on a failed send or unreadable Sheet",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "AUTOMATION_ERROR_LABELS",
+    "DIGEST_ERROR_KEYS",
+    "sendCallNotesEodDigest"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2385,7 +2397,7 @@
   "AUTOMATION_ERROR_LABELS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "9f6abc97e3d4316f"
+   "sha": "901bc4b71b83e8c9"
   },
   "AUTOMATION_ERROR_PROP": {
    "file": "00_config.js",
@@ -2845,7 +2857,7 @@
   "DIGEST_ERROR_KEYS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "d0ada0e56f1c0ad7"
+   "sha": "89d34316c2f32eea"
   },
   "DIGEST_LAST_RUN_PROP": {
    "file": "00_config.js",
@@ -9665,7 +9677,7 @@
   "sendCallNotesEodDigest": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "d34177267bca4054"
+   "sha": "22f082b4467b8f71"
   },
   "sendCallNotesUrgentDigest": {
    "file": "30_callnotes.js",

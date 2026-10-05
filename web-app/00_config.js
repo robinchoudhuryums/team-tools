@@ -1081,7 +1081,7 @@ const AUTOMATION_ERROR_PROP = 'AUTOMATION_LAST_ERRORS';
 // disabled") beside a stamp saying the job had just run and failed — g142.
 // With this map the stale line names the failure instead.
 const DIGEST_ERROR_KEYS = {
-  urgent: 'CallNotesUrgentDigest', weekly: 'CallNotesWeeklyDigests', trainingOverdue: 'TrainingOverdueDigest',
+  eod: 'CallNotesEodDigest', urgent: 'CallNotesUrgentDigest', weekly: 'CallNotesWeeklyDigests', trainingOverdue: 'TrainingOverdueDigest',
   deptReqReminder: 'DeptRequestReminderDigest', managerBrief: 'ManagerDailyBrief', coachingRecap: 'CoachingRecapDigest',
   spanishAutoAssign: 'SpanishAutoAssign', deptReplyScan: 'DeptReplyScan', missedPunch: 'MissedPunchAlerts',
   exportCheck: 'DailyExportCheck', automationHealth: 'AutomationHealthDigest',
@@ -1091,6 +1091,7 @@ const DIGEST_ERROR_KEYS = {
 // computeAutomationHealth_, so the digest, the dot and the System tab never
 // show a raw key — and the client keeps no copy of its own to drift.
 const AUTOMATION_ERROR_LABELS = {
+  CallNotesEodDigest: 'End-of-day unresolved-flag reminders',
   CallNotesUrgentDigest: 'Urgent-flag digest', CallNotesWeeklyDigests: 'Weekly call-notes digests',
   TrainingOverdueDigest: 'Training-overdue digest', DeptRequestReminderDigest: 'Dept-request SLA reminder',
   ManagerDailyBrief: 'Manager daily brief', CoachingRecapDigest: 'Weekly coaching recap',
