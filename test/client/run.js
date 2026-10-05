@@ -5967,7 +5967,7 @@ test('F9: the catalog scan is OPT-IN and a failed read is distinguishable from c
 // `assertManagerCaller_` (which THROWS), so they never contain the returned
 // error string — their own tripwire (INV-44) covers them.
 function gatedEndpointsFromSource_() {
-  const out = { admin: [], manager: [] };
+  const out = { admin: [], manager: [], qa: [] };   // seams F10 (cycle 24): the QA family too
   const re = /^function ([A-Za-z0-9_]+)\s*\(/gm;
   let m;
   while ((m = re.exec(codeSrc)) !== null) {
@@ -5982,6 +5982,7 @@ function gatedEndpointsFromSource_() {
     // Admin wins: an admin-gated endpoint returns the admin message only.
     if (body.indexOf("'Admin access required.'") >= 0) out.admin.push(m[1]);
     else if (body.indexOf("'Manager access required.'") >= 0) out.manager.push(m[1]);
+    else if (body.indexOf("'QA access required.'") >= 0) out.qa.push(m[1]);
   }
   return out;
 }
@@ -6019,11 +6020,15 @@ test('F9: every gated endpoint is covered by a gate test (enumerated from source
     managerAggregateFlagged_: 'private helper; public wrappers are covered',
     punchAdjustDecideAll_: 'private helper (operator 2026-09-03); both public wrappers — updatePunchAdjustStatus + updatePunchAdjustStatusBulk — are covered',
   };
-  const uncovered = gated.admin.concat(gated.manager)
+  // Seams F10 (cycle 24): the QA family (canSeeQa_) is enumerated as well —
+  // every endpoint was covered by test_qa_gates_rejectNonMember, but nothing
+  // required the NEXT one to be.
+  assert.ok(gated.qa.length >= 10, 'sanity: the QA-gated surface was found (' + gated.qa.length + ')');
+  const uncovered = gated.admin.concat(gated.manager, gated.qa)
     .filter((n) => !ALLOW[n] && blob.indexOf(n) < 0);
   assert.deepStrictEqual(uncovered, [],
     'gated endpoint(s) with no gate test — add them to test_managerGates_rejectNonManager ' +
-    '(or a dedicated *_nonManagerRejected test): ' + uncovered.join(', '));
+    '(or a dedicated *_nonManagerRejected test; a QA endpoint to test_qa_gates_rejectNonMember): ' + uncovered.join(', '));
 });
 
 test('F7: INV-136 NAMES the admin-gated set, and the COUNT lives only in the generated block', () => {
