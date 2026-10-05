@@ -34725,6 +34725,36 @@ test('Seams F9 (cycle 24): the X1 RPC derivation sees a chain broken by a commen
   assert.ok(!names.has('training') && !names.has('pap'), 'a ternary\'s CONDITION literal is not a name');
 });
 
+test('Seams F12 (cycle 24): INV-362\'s Node pins — a draft is written only with an owner, and the sweep keeps only the owner\'s unexpired drafts (driven)', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/intake/script_intake.html'), 'utf8');
+  const maxAge = vm.runInNewContext(/var INTAKE_DRAFT_MAX_AGE_MS = ([^;]+);/.exec(src)[1]);
+  assert.ok(maxAge > 0, 'the draft age limit is declared');
+  const store = {};
+  const ctx = vm.createContext({ String, Object, JSON, Date, Number,
+    INTAKE_DRAFT_MAX_AGE_MS: maxAge, INTAKE_DRAFT_KEY: 'umsIntakeDrafts', empState: null,
+    localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } },
+    intakeFormRoot_: () => ({}), intakeCollectAcct_: () => ({ answers: { 1: 'Jane Doe' } }), intakeCollectPpd_: () => ({ answers: {}, patientInfo: 'x' }) });
+  ['intakeDraftOwner_', 'intakeDraftsKept_', 'intakeReadDrafts_', 'intakeWriteDrafts_', 'intakeDraftSaveNow_'].forEach((f) => vm.runInContext(extractFnFrom(src, f), ctx));
+  // No owner → nothing is ever written (PHI nobody can be named as owning).
+  ctx.intakeDraftSaveNow_('pmd');
+  assert.strictEqual(store.umsIntakeDrafts, undefined, 'THE RULE: no signed-in owner, no draft');
+  ctx.empState = { email: 'Rep@UMSupply.com' };
+  assert.strictEqual(ctx.intakeDraftOwner_(), 'rep@umsupply.com', 'the owner is the lowercased signed-in email');
+  ctx.intakeDraftSaveNow_('pmd');
+  const saved = JSON.parse(store.umsIntakeDrafts).pmd;
+  assert.strictEqual(saved.owner, 'rep@umsupply.com'); assert.strictEqual(saved.answers['1'], 'Jane Doe');
+  // The sweep: own + fresh kept; own + expired, another user's and an ownerless one dropped.
+  const now = 1e12;
+  const r = JSON.parse(JSON.stringify(ctx.intakeDraftsKept_({
+    pmd: { owner: 'rep@umsupply.com', at: now - 1000 },
+    pap: { owner: 'rep@umsupply.com', at: now - maxAge - 1 },
+    ppd: { owner: 'other@umsupply.com', at: now - 1000 },
+    x: { at: now - 1000 } }, 'rep@umsupply.com', now)));
+  assert.deepStrictEqual(Object.keys(r.kept), ['pmd'], 'only the owner\'s unexpired draft is kept');
+  assert.strictEqual(r.dropped, 3, 'an expired own draft, another user\'s and an ownerless one are dropped');
+  assert.deepStrictEqual(Object.keys(ctx.intakeDraftsKept_({ pmd: { owner: 'a', at: now } }, '', now).kept), [], 'no owner keeps nothing');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
