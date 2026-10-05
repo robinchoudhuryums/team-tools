@@ -932,8 +932,8 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1232 | `node test/client/run.js` |
-| DOM harness tests | 221 | `node test/client/dom/runDom.js` |
+| Pure harness tests | 1240 | `node test/client/run.js` |
+| DOM harness tests | 222 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 152 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 54 | `'Admin access required.'` in the server source |
@@ -943,7 +943,7 @@ this block, or the command that prints the number.
 | Jobs riding a dispatcher | 11 | `TRIGGER_GROUPS` |
 | localStorage keys | 20 | `ums…` literals in `web-app/` |
 | Invariant library entries | 362 | `.cycle/config.md` |
-| Regression scenarios (S*) | 131 | `.cycle/config.md` |
+| Regression scenarios (S*) | 132 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

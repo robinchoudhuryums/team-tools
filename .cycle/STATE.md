@@ -3,15 +3,15 @@
 ## Current
 Cycle: 24 — opened 2026-10-05 by the Seams & Invariants audit (cycle 23 is CLOSED; its block is in `.cycle/HISTORY.md`).
 Phase: implement
-Scope: Seams & Invariants — the small production batch (F1, F2, F3, F4, F6, F8 client note, F19) is DONE; the nets-and-library batch is next.
+Scope: Seams & Invariants — BOTH batches DONE: the production batch (F1, F2, F3, F4, F6, F8 note, F19) and the nets-and-library batch (F5, F7, F8 remainder, F9–F18, F20, F21). Owed: /sync-docs, deploy, walks, /reflect.
 Test Command: manual
-Estimates: production batch (F1/F2/F3/F4/F6/F8/F19): M (~5 h) — written before the first edit. Actual ~2.5 h. · nets-and-library batch (F5, F7, F8r, F9–F18, F20, F21?): L (~8 h) — written before the first edit.
+Estimates: production batch (F1/F2/F3/F4/F6/F8/F19): M (~5 h) — written before the first edit. Actual ~2.5 h. · nets-and-library batch (F5, F7, F8r, F9–F18, F20, F21?): L (~8 h) — written before the first edit. Actual ~4.5 h.
 Subsystem cycles since last Seams audit: 0 — reset by the Seams & Invariants audit of 2026-10-05 (cycle 24). The cadence is every 4.
-Updated: 2026-10-05 (cycle 24 production batch)
+Updated: 2026-10-05 (cycle 24 nets-and-library batch)
 
 ## In progress (facts to carry forward — NOT judgments)
 - The seams audit's handoff block travelled by paste (as `/audit` does). Its findings, session-local F1–F21, are listed under Pending so a fresh session can continue without it.
-- The production batch is committed and pushed on `claude/beautiful-bohr-7l8epj` (7 fix commits + this checkpoint); block: `.cycle/blocks/24-seams-prod-broad-implement.md`. Not deployed.
+- Both batches are committed and pushed on `claude/beautiful-bohr-7l8epj`; blocks: `.cycle/blocks/24-seams-prod-broad-implement.md` and `.cycle/blocks/24-seams-nets-broad-implement.md`. Not deployed. No PR opened (not asked).
 
 ## Completed this cycle
 - Seams F1 | 90_qa.js, qa/script_qa.html, test/visual/mock.js | a QA exemption revoke clears the KEY that granted it (`qaExemptKeyFor_`); a revoke of a key with no active grant is refused by name
@@ -21,23 +21,23 @@ Updated: 2026-10-05 (cycle 24 production batch)
 - Seams F6 | 30_callnotes.js | `findCallNoteRow_` re-checks the fetched row's NoteId (the FORM-1 rule)
 - Seams F8 | tc/script_timeoff.html | the Time / PTO calendar names a failed archive read
 - Seams F19 | 20_timeclock.js | an un-approve that cannot credit keeps the Deducted charge, names it, and a re-approval never takes the day twice
+- Seams F7 | cn/script_callnotes.html | both email composers open with the UI-ESC `unsaved` guard (operator-approved 2026-10-05); scenario S137
+- Seams F11 | 10_core.js, 00_config.js, Tests.js, docs/operator-state.md | the full suite REFUSES an unmarked instance unless `allowFullSuiteHere()` opened the 2-hour `SUITE_UNMARKED_OK_UNTIL` window
+- Seams F20 | 70_kb.js | a KbImages tab with an edited header reads could-not-read (`headerChanged`), never not-stored
+- Seams F18 | 70_kb.js | `kbSearchIndexKey_` hashes `kbSlug_`; a pin derives the builder's call closure
+- Seams F5 | .cycle/config.md, run.js | a HELD NUMBERS line in the library; the id pin reads it and fails when it cannot
+- Seams F17 | .cycle/config.md, run.js | INV-229/230/231/374/375 written; INV-375's call-graph pin; INV-350 retired; the rest held as proposed
+- Seams F9 | run.js | the X1 derivation sees comment-broken chains, bracketed names and stored runners; ten RPCs classified
+- Seams F10 | run.js | the gate-coverage net enumerates the QA family
+- Seams F12 / F13 / F14 / F8r | run.js | INV-362's owner pins; INV-360 twins compared as whole bodies; Batch 15 cases derived from the shard; doctor/adjust windows pinned below the archive floor
+- Seams F15 / F16 | config.md, CLAUDE.md, docs/* | INV-44/85/190/306/371/357 text; Area Eligibility "displayed"; stale dash keys; g112 count and two missing keys (anchor renamed)
+- Seams F21 | 60_intake.js | an intake recipient has exactly one @ and no quoted local part
 
 ## Pending / not yet done
-- **Deploy the cycle-24 production batch** (`clasp push -f` + New version), then walk S4 (TC-04 step), S22, S30, S100 (QA2-1 step: grant from the quarter view, then revoke from one of its months — the button reads "Revoke exemption (Q4 …)" and the rep leaves Exempt), S117 (4a-FU1/FU3 step) and the Dept Request Expand.
-- **Next batch — nets and library (from the seams audit, not yet done):**
-  - F5: the reserved-number guard in the id-uniqueness pin never runs (it matches STATE prose the close-out reworded); read reserved/proposed numbers from a structured list in config.md.
-  - F9: `x1ClientRpcNames_` stops at a `//` comment inside a chain and never sees computed names (`kbGetRevisions`, `kbGetSearchConfig`, `kbGetFacetGuidance`, `intakePreviewPMD/PAP`, `intakeSendPMD/PAP`, `submitTimeOffRequest/Range`, `kbConvertDriveSheet` have no fixture).
-  - F10: `gatedEndpointsFromSource_` knows two gate families; add QA.
-  - F12: INV-362 cites "INT2-3 Node pins" that do not exist — pin `intakeDraftsKept_` / `intakeDraftOwner_`.
-  - F13: the INV-360 parity grid misses tokens (n/a, na, no, neg, nil, unk, uncertain, tbd, dunno, "do not know", seat `without`) — compare the lists directly.
-  - F14: the Batch 15 runner's `test_c23_*` list is hand-written — derive it from `_registerSmokeTests_`.
-  - F18: `kbSearchIndexKey_` hashes three functions but not `kbSlug_`.
-  - F15/F16: invariant text drift (INV-190 `empIsOffToday_`, INV-85 `cdr_metrics_v3`, INV-306 `dept_req_v2`, INV-44 dispatcher counts, INV-371 "14") and docs drift (Area Eligibility "not displayed"; `dash_metrics_v4/v6` in design-decisions.md; g112 "Eighteen" localStorage keys).
-  - F17: adopt INV-374 (scoped to its three readers) and INV-375 (worded "an image stored in KbImages/ManualImages" — `kbGetImageData` reads legacy Drive links on purpose; its pin should walk the call graph); decide the other PROPOSED numbers (229–232 are already pinned).
-  - F8 remainder: pin `TS_DOCTOR_WINDOW_DAYS` (92) below `TIMESHEET_ARCHIVE_MIN_DAYS` (120).
-  - F11: `assertNotProdInstance_` permits while `INSTANCE_IS_PROD` is unset (opposite of `isDevInstance_`) — fail closed unless dev, with an explicit override.
-  - F20 (KbImages header edit reads "not stored"), F21 (quoted local part vs `isOrgEmail_`, low confidence) — Low.
-- **F7 — APPROVED by the operator 2026-10-05 (rides the nets-and-library batch):** should the external (and department) email composer ask "Discard changes?" before Escape / the backdrop / × throws typed work away? Recommendation given 2026-10-05: yes, via the existing `unsaved` guard, asking only when the rep typed since open; after Discard today's rollback runs unchanged.
+- **`/sync-docs` for both cycle-24 batches** — each block's DOCUMENTATION UPDATES NEEDED (gotchas g164/g100/g53/g142/g166/g128/g150; INV-353/355/356/358/372 amendments; operator-state for `AUTOMATION_LAST_ERRORS` keys; the test-harness log).
+- **Deploy the cycle-24 batches** (`clasp push -f` + New version; `runSmokeTests` on prod), then walk S4 (TC-04 step), S22, S30, S100 (quarter grant → month revoke), S117, the Dept Request Expand, **S137** (both composers ask), **S2's new F11 step** (an unmarked project refuses; `allowFullSuiteHere()` opens two hours), S34, S52, S59/S60 (a normal custom recipient still sends), S62/S128 (search after the index key changes once).
+- **Operator, after the deploy:** the full suite now REFUSES on prod (unmarked) — run `allowFullSuiteHere()` first when you mean to run it there, or (better) stand up the DEV instance (cycle 19 step 8).
+- **Then `/reflect`** for cycle 24.
 - **Cycle 23 post-deploy — NOT confirmed** (each batch's deploy line, with its scenario list, is in the cycle 23 HISTORY block under Pending):
   - one-time operator steps:
     - Batch 2: read Admin → System → Reference lookups ("Cannot read", "Rows that could not be read in full") and fix the named cells.
@@ -67,11 +67,16 @@ Updated: 2026-10-05 (cycle 24 production batch)
   - Batch 7a: `spanishSpanStartRow_` / `schedSpanStartRow_` are one function twice.
   - Batch 6a: approval does not re-check the closed-day rule.
   - Batch 11: the training spec §9.4 still says unlimited retries.
-- **Proposed invariants, not yet in the library:** INV-350, INV-351, INV-352 (22post); INV-374, INV-375 (cycle 23 — `.cycle/blocks/23-a-reflect.md`).
+- **Proposed invariants still held (not written):** INV-232, INV-240..242, INV-301..303, INV-351..352 — see the HELD NUMBERS line for each one's status.
 - **22post and cycle 22 follow-ons** — full text in their HISTORY blocks (incl. the intermittent DOM pin `the resume request states the unpaid gap before it is filed`, and `assertNotProdInstance_` permitting while `INSTANCE_IS_PROD` is unset).
-- **Numbers — do not reuse:** INV-225..227 RESERVED (cycle 20); INV-229..232, INV-240..242, INV-301..303, INV-350..352 and INV-374..375 PROPOSED (cycles 21, 21post, 22, 22post, 23), not in the library. **Next free: INV-376; gotcha g168; scenario S137.**
+- **Numbers — do not reuse:** the held invariant numbers now live in `.cycle/config.md`'s `HELD NUMBERS` line (seams F5) — that line, not this one, is what the pin reads. INV-229/230/231/374/375 were written this cycle; INV-350 is retired. **Next free: INV-376; gotcha g168; scenario S138.**
 
 ## Decisions made (so the next session doesn't re-litigate)
+- **Seams F7 (operator, 2026-10-05):** both email composers ask "Discard changes?" once the rep has typed; Keep editing changes nothing (composer, email, Save & Compose transaction, saved note); Discard runs today's close unchanged. The tab switch and a send still close through the hook directly and never ask.
+- **Seams F11 (operator-approved via the batch, 2026-10-05):** an UNSET `INSTANCE_IS_PROD` refuses the full suite. The override is explicit and EXPIRING (`allowFullSuiteHere()` → `SUITE_UNMARKED_OK_UNTIL`, 2 h), owner-only, and never opens on a project marked prod. This reverses the operator-state line that called unset-as-prod "still an operator decision".
+- **Seams F20:** only KbImages reports an edited header as could-not-read; ManualImages keeps "old layout reads as not imported" so the next import rewrites it (M4-FU3).
+- **Seams F17:** adopt only what is already pinned (229–231) or newly pinned (374 scoped to its three readers, 375 with a call-graph pin); everything else stays held as proposed; INV-350 retired as subsumed.
+- **Seams F9:** the ten newly-seen RPCs are LISTED beside their siblings (reads owed a fixture, writes no scenario performs), not given fake fixtures.
 - **Seams F19 (cycle 24):** the `Deducted` cell means what the row CURRENTLY holds against the balance — an un-approve that cannot credit (tracking off / PtoEnabled FALSE) keeps it, and a re-approval of a row still holding a charge takes nothing. Keeping the cell alone would restore nothing, so the re-approval guard is what makes it matter. No client path un-approves today.
 - **Seams F3 (cycle 24):** the dispatcher keys a grouped job's failure by the job's own key (`TRIGGER_HANDLER_JOB_KEYS`) and never clears a key the job owns — clearing after a normal return would erase the job's own stamp (the EOD digest stamps and returns). `owns` is checked against each job body by a pin, not trusted.
 - **Seams F2 (cycle 24):** the EOD digest clears its failure flag only on a run that reached a rep — most hours match nobody, and an idle hour would wipe a failure before the 9am failure digest reads it.
@@ -89,4 +94,4 @@ Updated: 2026-10-05 (cycle 24 production batch)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 24 is open (the Seams & Invariants audit, 2026-10-05). The production batch (F1, F2, F3, F4, F6, F8 note, F19) is committed and pushed on `claude/beautiful-bohr-7l8epj`, green (pure 1232, DOM 221, lint, counts), 13/13 bite-checks; it needs `/sync-docs`, a deploy and the scenario walks under Pending. Next: the nets-and-library batch (F5, F9, F10, F12–F18, F11) and the operator's answer on F7.
+Cycle 24 (the Seams & Invariants audit, 2026-10-05) has both implementation batches committed and pushed on `claude/beautiful-bohr-7l8epj`: green (pure 1240, DOM 222, lint, counts), 13 + 19 bite-checks all BITE. Next: `/sync-docs` (both blocks list what is owed), deploy, the walks under Pending (S137 and S2's F11 step are new), then `/reflect`.
