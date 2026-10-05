@@ -26152,20 +26152,26 @@ test('F4 (seams 2026-09-18): every Regression Scenario and Invariant id in .cycl
   assert.deepStrictEqual(dupes('invariants', /^(INV-\d+)\s*\|/gm), [],
     'duplicate Invariant id(s) — a reused number silently merges two rules');
 
-  // The RESERVED numbers stay absent while STATE.md holds them. Cycle 20's
-  // reflection proposed INV-225..227 and could not verify any; reusing one
-  // would attach a new rule to a number another session is still holding.
-  const state = fs.readFileSync(path.join(__dirname, '../../.cycle/STATE.md'), 'utf8');
-  const reserved = [...state.matchAll(/INV-(\d+)[^\n]*RESERVED|RESERVED[^\n]*INV-(\d+)/g)];
-  if (reserved.length) {
-    const held = [...state.matchAll(/\*\*INV-(\d+), INV-(\d+) and INV-(\d+) are RESERVED/g)][0];
-    if (held) {
-      held.slice(1).forEach((n) => {
-        assert.ok(!new RegExp('^INV-' + n + '\\s*\\|', 'm').test(cfg),
-          'INV-' + n + ' is RESERVED in STATE.md but WRITTEN in config.md — do not reuse a held number');
-      });
-    }
-  }
+  // Seams F5 (cycle 24): the HELD numbers (reserved, proposed, retired) stay
+  // unwritten. They are read from the library's own `HELD NUMBERS` line — the
+  // old half read STATE.md's prose, and when the cycle-23 close-out reworded
+  // that sentence the match came back null and the check silently skipped.
+  // A missing or unparseable line FAILS here, never skips.
+  const heldLine = (cfg.match(/^\*\*HELD NUMBERS[^\n]*$/m) || [])[0];
+  assert.ok(heldLine, 'the Invariant Library carries its HELD NUMBERS line');
+  const listPart = heldLine.split(/Adopted out of this list/)[0];
+  const held = [];
+  // Each `·`-separated item LEADS with its number or range; a number inside
+  // the item's parenthesis is prose (e.g. "subsumed by INV-375"), not held.
+  listPart.replace(/^[\s\S]*?:\*\*/, '').split(' · ').map((it) => it.trim().match(/^INV-(\d+)(?:\.\.(\d+))?/)).filter(Boolean).forEach((m) => {
+    const a = Number(m[1]), b = m[2] ? Number(m[2]) : a;
+    for (let n = a; n <= b; n++) held.push(n);
+  });
+  assert.ok(held.indexOf(225) >= 0 && held.indexOf(227) >= 0 && held.length >= 10, 'non-vacuous: the held line parsed (' + held.join(',') + ')');
+  held.forEach((n) => {
+    assert.ok(!new RegExp('^INV-' + n + '\\s*\\|', 'm').test(cfg),
+      'INV-' + n + ' is HELD but WRITTEN in config.md — a held number is never reused; adopting it means taking it off the HELD line in the same edit');
+  });
 });
 
 test('F5 (seams 2026-09-18): every invariant from INV-139 up NAMES its verification — the ratchet', () => {
@@ -34624,6 +34630,40 @@ test('Seams F18 (cycle 24): the section-index cache key hashes EVERY function th
   assert.deepStrictEqual(missing, [], 'THE REGRESSION: the key omitted a function that shapes the cached index — a deploy changing it served the old shape from cache (g157)');
   const extra = [...hashed].filter((f) => !closure.has(f));
   assert.deepStrictEqual(extra, [], 'the key hashes nothing the builder does not reach');
+});
+
+test('Seams F17 (cycle 24): INV-375 — no path that stores or serves a KbImages/ManualImages image, or imports the manual, reaches Drive — derived over the call graph, not each function\'s own body', () => {
+  const code = serverSource();
+  const declared = [...code.matchAll(/^function ([A-Za-z_$][\w$]*)\(/gm)].map((m) => m[1]);
+  const decl = new Set(declared);
+  const bodies = {};
+  const body = (fn) => bodies[fn] || (bodies[fn] = stripJsComments_(extractRawFunction('Code.js', fn)));
+  const DRIVE = /\bDriveApp\b|\bDrive\.(Files|Permissions|Drives)\b|googleapis\.com\/(drive|upload\/drive)|\bgetOrCreateKbImagesFolder_\b|\bkbDriveUpload_\b/;
+  const reach = (roots) => {
+    const seen = new Set(), path = {}, hits = [];
+    const walk = (fn, from) => {
+      if (seen.has(fn)) return;
+      seen.add(fn); path[fn] = from;
+      const b = body(fn);
+      if (DRIVE.test(b.replace(/^function [\w$]+\(/, '('))) {
+        const chain = []; for (let f = fn; f; f = path[f]) chain.unshift(f);
+        hits.push(chain.join(' → '));
+      }
+      [...b.replace(/^function [\w$]+\(/, '(').matchAll(/\b([A-Za-z_$][\w$]*)\s*\(/g)].map((m) => m[1]).filter((n) => decl.has(n)).forEach((n) => walk(n, fn));
+    };
+    roots.forEach((r) => walk(r, null));
+    return { seen, hits };
+  };
+  const roots = declared.filter((n) => /^kbImage|^kbManual/.test(n))
+    .concat(['getKbImages', 'getManualImages', 'kbImportManual', 'kbResolveDocImages_', 'kbUploadImage']);
+  ['getKbImages', 'getManualImages', 'kbImportManual', 'kbResolveDocImages_', 'kbUploadImage'].forEach((r) => assert.ok(decl.has(r), r + ' is still a server function'));
+  assert.ok(roots.length >= 15, 'the roots were derived (' + roots.length + ')');
+  const r = reach(roots);
+  assert.deepStrictEqual(r.hits, [], 'a KbImages/ManualImages path reaches Drive, which this domain disables (INV-375)');
+  assert.ok(r.seen.size > roots.length, 'the walk descended into helpers');
+  // Non-vacuous: the same walk DOES find the paths that stay on Drive by design.
+  assert.ok(reach(['kbIngestFile']).hits.length > 0, 'the detector finds Drive where it is (file ingest)');
+  assert.ok(reach(['kbGetImageData']).hits.length > 0, 'the legacy image read is on Drive, deliberately out of scope');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
