@@ -1233,7 +1233,7 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   omits it, so existing pastes are byte-identical; the operator opts in
   by adding a `Direction: {callDirection}` line to the template.
 - <a id="client-side-persistence-is-localstorage-based"></a>**Client-side persistence is localStorage-based.** See the
-  authoritative "Eighteen client-side localStorage keys total" entry in
+  authoritative "Client-side localStorage keys" entry (g112) in
   Common Gotchas for the full key list (`umsTimeClockMode`, `umsTheme`,
   `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`,
@@ -2328,7 +2328,7 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   "nobody reported at all"; INV-124's per-day My Stats series guard is
   UNCHANGED) — over **Yesterday / MTD / YTD**, fed by
   `getDashboardMetrics(periodKey)` (all three fetched up front, server-cached;
-  cache key `dash_metrics_v4` — it bumps with every payload-semantics change; since 2026-08-18 the key carries the rep-local DAY and the TTL is 21600s — the CacheService max, operator-approved: the CDR data does not change again once the daily import lands, and the day in the key rolls the cache at the rep-local midnight; a load BEFORE the import can pin the pre-import aggregate for up to 6h, while the Metrics tabs keep their 5-min caches).
+  cache key `dash_metrics_v4` at the time — the current key is INV-366's — it bumps with every payload-semantics change; since 2026-08-18 the key carries the rep-local DAY and the TTL is 21600s — the CacheService max, operator-approved: the CDR data does not change again once the daily import lands, and the day in the key rolls the cache at the rep-local midnight; a load BEFORE the import can pin the pre-import aggregate for up to 6h, while the Metrics tabs keep their 5-min caches).
   **BOTH cards open on MTD** (operator 2026-08-12; `CLK_DASH_DEFAULT_IDX`,
   DERIVED from the period list so a reorder can't repoint it). Asked for on the
   Department card and applied to both, because they sit side by side with
@@ -2483,8 +2483,9 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   today, so the prior window is the same days OF DATA (1..d-1, so "vs Jul 1–11"
   on the 12th, and no comparison on the 1st). The run-rate projection divides by
   the payload's `dataThrough` (the last day with data) rather than by a today
-  that never has any (g148). The cache key is now `dash_metrics_v6` (v5 was
-  H2's formula).
+  that never has any (g148). The cache key was then `dash_metrics_v6` (v5 was
+  H2's formula); the CURRENT key is INV-366's (seams F16, cycle 24 — this
+  paragraph and the one above each named a key two bumps stale).
 - <a id="clock-view-hero-shift-strip-ledger-architecture"></a>**Clock view: hero + shift-strip + ledger architecture.** The
   Clock tab's `renderClockView` emits, in order: a `.hero` block
   (greet kicker + name + live status sentence on the left, live

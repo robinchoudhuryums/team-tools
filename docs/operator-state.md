@@ -1672,7 +1672,9 @@ entry says which it is.
     price, "Eligible Regions" as the area. Reorder freely. Any column the
     matcher does not recognise is shown VERBATIM beside the result rather than
     dropped.
-  - **`Area Eligibility` is READ BY AN ENGINE, not displayed.** It is parsed
+  - **`Area Eligibility` is READ BY AN ENGINE** — and also shown verbatim, as
+    an `area` chip on each price result (seams F16, cycle 24, corrected "not
+    displayed"; the chip is the cell, the verdict is the engine's). It is parsed
     into a rule and answered twice — once for an order through insurance and
     once for one paid out of pocket. The grammar and what each value means is
     INV-209; the short version is `Open` / a list of two-letter state codes /

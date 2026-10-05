@@ -2907,9 +2907,11 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
 
-<a id="g112-eighteen-client-side-localstorage-keys-total"></a>
+<a id="g112-client-side-localstorage-keys"></a>
 
-- **Eighteen client-side localStorage keys total.** All per-browser, all
+- **Client-side localStorage keys — the full list (the COUNT is the running-totals
+  block's `localStorage keys` row; seams F16, cycle 24, removed a hand-carried
+  "Eighteen" that had drifted, and added the two live keys it lacked).** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -3031,7 +3033,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
     `period` always wins on load (an unknown key lands on the current
     month), so a stale pref can never pin a period the server would not
     compute. Absent = the current month.
-  Clearing browser data wipes all eighteen. (`umsMergeMode` — the Time/PTO
+  - `umsDashLayout` — the rep's own Dashboard widget layout (22post E): the
+    order, sizes and hidden widgets; resolved own → the manager's team default
+    (`DASH_TEAM_LAYOUTS`) → the standard layout, so an empty or unreadable value
+    falls through and the Dashboard is never empty.
+  - `umsScratchGeom` — where the floating Scratchpad panel was left (22post
+    B-2b): position and size, fitted back inside the window on restore
+    (`cnScratchGeomFor_`).
+  Clearing browser data wipes them all. (`umsMergeMode` — the Time/PTO
   Time Off ⇄ Timesheet mode — was RETIRED with the 2026-08-18 consolidation:
   the two modes were one page with a swapped 240px rail, so the rail now
   stacks both; a stale stored value is simply ignored.) (`umsCallNotesLastDept` — the
