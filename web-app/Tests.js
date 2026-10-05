@@ -9462,6 +9462,7 @@ function test_deptRequest_resolveLinkIdempotent() {
 function test_c23_intakeNeuroDxByToken() {
   _assertSuiteCaller_();
   _assertFalse(intakeNeuroEntryIsDx_('Not sure'), '"Not sure" is not a neuro diagnosis (INT-1)');
+  _assertFalse(intakeNeuroEntryIsDx_('Possibly MS, not sure'), 'an uncertainty PHRASE anywhere is not a diagnosis (no leading negation to catch it)');
   _assertFalse(intakeNeuroEntryIsDx_('None'), 'a negation is not a diagnosis');
   _assertFalse(intakeNeuroEntryIsDx_('unknown'), 'uncertainty is not a diagnosis');
   _assertFalse(intakeNeuroEntryIsDx_('?'), 'a bare "?" is not a diagnosis');
