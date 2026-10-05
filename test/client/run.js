@@ -34755,6 +34755,20 @@ test('Seams F12 (cycle 24): INV-362\'s Node pins — a draft is written only wit
   assert.deepStrictEqual(Object.keys(ctx.intakeDraftsKept_({ pmd: { owner: 'a', at: now } }, '', now).kept), [], 'no owner keeps nothing');
 });
 
+test('Seams F13 (cycle 24): INV-360\'s client twins ARE the server rules — compared as whole bodies (every token list, every connective), not sampled through a grid', () => {
+  const cli = fs.readFileSync(path.join(__dirname, '../../web-app/intake/script_intake.html'), 'utf8');
+  // Normalised: comments out, const/let → var (the client partial's dialect), whitespace collapsed, the name masked.
+  const norm = (fnSrc, name) => stripJsComments_(fnSrc).replace(new RegExp('^function ' + name.replace(/\$/g, '\\$') + '\\('), 'function F(')
+    .replace(/\b(const|let)\b/g, 'var').replace(/\s+/g, ' ').trim();
+  [['intakeNeuroEntryIsDx_', 'intakeNeuroEntryIsDxClient_', ['n/a', 'nil', 'dunno', 'uncertain', 'tbd']],
+   ['intakeSeatKinds_', 'intakeSeatKindsClient_', ['without', 'captains', 'non']]].forEach(([srvName, cliName, tokens]) => {
+    const a = norm(extractRawFunction('Code.js', srvName), srvName);
+    const b = norm(extractFnFrom(cli, cliName), cliName);
+    tokens.forEach((t) => assert.ok(a.indexOf("'" + t + "'") >= 0, srvName + ' still carries ' + t + ' (non-vacuous)'));
+    assert.strictEqual(b, a, cliName + ' has drifted from ' + srvName + ' — the chip guard and the engine would read one entry two ways (INV-360)');
+  });
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
