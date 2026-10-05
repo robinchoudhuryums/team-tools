@@ -1,242 +1,55 @@
 # Cycle State
 
 ## Current
-Cycle: 23 — opened by the 2026-10-01 `/broad-scan` (0 Critical / 5 High; plan of 13 batches + 8 deferred, in chat). Cycle 22 and 22post are in `.cycle/HISTORY.md`.
-Phase: implement
-Scope: broad — Batches 1–5 (TC-02 included), 6a, 6b, 7a and 7b done and doc-synced; Batch 8 done and doc-synced; Batch 9 done and doc-synced; Batch 10 done and doc-synced — the scan's plan is complete; follow-up Batches 11–15 planned 2026-10-05 from the deferred decisions; Batch 11 done and doc-synced; Batch 12 done and doc-synced; Batch 13 (+ its courtesy follow-up) done and doc-synced; Batch 14 done and doc-synced; Batch 15 done and doc-synced — the follow-up plan is complete; next merge, deploy + walks + /reflect
+Cycle: 23 — CLOSED 2026-10-05 (deployed, reflected net +10; the whole block is in `.cycle/HISTORY.md`). The next audit opens cycle 24.
+Phase: idle
+Scope: — (none open). Next: the Seams & Invariants audit — the cadence is reached.
 Test Command: manual
-Estimates: Batch 1: M (~9 h) · Batch 2: M (~11 h) · Batch 3: M (~9.5 h) · Batch 4a: M (~10 h) · 4a follow-ons: S (~3 h) · Batch 4b: M (~11 h) · TC-02 (option a): M (~8 h) · Batch 5: M (~10 h) · Batch 6a: M (~9.5 h) · Batch 6b: M (~10 h) · Batch 7a: M (~10 h) · Batch 7b: M (~7.5 h) · Batch 8: M (~9.5 h) · Batch 9: L (~13 h) · Batch 10: L (~11 h) · Batch 11: M (~10.5 h) · Batch 12: L (~14 h) · Batch 13: M (~7 h) · Batch 14: M (~8 h) · Batch 15: M (~5 h) — each written before its first edit
-Subsystem cycles since last Seams audit: 4 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25), 22post's (2026-09-30) and cycle 23's (2026-10-05). The cadence is every 4 — REACHED: the next /audit is a Seams & Invariants audit.
-Updated: 2026-10-05 (cycle 23 Batch 15 /sync-docs)
+Estimates: — (record each batch's S/M/L + hours here BEFORE its first edit)
+Subsystem cycles since last Seams audit: 4 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25), 22post's (2026-09-30) and cycle 23's (2026-10-05). The cadence is every 4 — REACHED: the next /audit is a Seams & Invariants audit (it resets this to 0).
+Updated: 2026-10-05 (cycle 23 close-out)
 
 ## In progress (facts to carry forward — NOT judgments)
-- Cycle 23 opened 2026-10-01 with a `/broad-scan` (0 Critical / 5 High / ~110 findings; the full report and 13-batch plan are in that session's chat — the batch→ID list is copied under Pending below).
-- Batch 1 implemented on branch `claude/blissful-johnson-cottl5` (block: `.cycle/blocks/23-batch1-broad-implement.md`); NOT yet deployed. TC-02 held back on a decision.
-- Batch 2 implemented on the same branch (block: `.cycle/blocks/23-batch2-broad-implement.md`); NOT yet deployed. /sync-docs for Batch 2 done.
-- Batch 3 implemented on the same branch (block: `.cycle/blocks/23-batch3-broad-implement.md`); NOT yet deployed. /sync-docs for Batch 3 done.
-- Batch 4a and its follow-ons implemented on the same branch (blocks: `.cycle/blocks/23-batch4a-broad-implement.md`, `…-batch4a-followons-broad-implement.md`); NOT yet deployed. /sync-docs for both done.
-- Batch 5 implemented on the same branch (block: `.cycle/blocks/23-batch5-broad-implement.md`); NOT yet deployed. /sync-docs done.
-- TC-02 implemented on the same branch as option (a) (block: `.cycle/blocks/23-tc02-broad-implement.md`); NOT yet deployed. /sync-docs done.
-- Batch 4b implemented on the same branch (block: `.cycle/blocks/23-batch4b-broad-implement.md`); NOT yet deployed. /sync-docs done.
-- Batches 1–5 (+ TC-02, 4a follow-ons) merged to main as PR #284 (2026-10-02); the branch was restarted from main after the merge. NOT yet deployed.
-- Batch 6b implemented on the same branch (block: `.cycle/blocks/23-batch6b-broad-implement.md`); NOT yet deployed. /sync-docs done.
-- Batch 6a implemented on the restarted branch (block: `.cycle/blocks/23-batch6a-broad-implement.md`); NOT yet deployed. /sync-docs done.
-- Batch 7a implemented on the same branch (block: `.cycle/blocks/23-batch7a-broad-implement.md`); NOT yet deployed. /sync-docs done.
-- Batch 7b implemented on the same branch (block: `.cycle/blocks/23-batch7b-broad-implement.md`); NOT yet deployed. /sync-docs done.
-- Batch 8 implemented on the same branch (block: `.cycle/blocks/23-batch8-broad-implement.md`); NOT yet deployed. /sync-docs done.
-- Batch 9 implemented on the same branch (block: `.cycle/blocks/23-batch9-broad-implement.md`); NOT yet deployed. /sync-docs done.
-- Batch 10 implemented on the same branch (block: `.cycle/blocks/23-batch10-broad-implement.md`); NOT yet deployed. /sync-docs done.
-- Batch 11 implemented on the same branch (block: `.cycle/blocks/23-batch11-broad-implement.md`); NOT yet deployed. /sync-docs done.
-- Batch 12 (DRV-3) implemented on the same branch (block: `.cycle/blocks/23-batch12-broad-implement.md`); NOT yet deployed. /sync-docs done.
-- Batch 15 (editor-suite cases for Batches 10–14) implemented on the same branch (block: `.cycle/blocks/23-batch15-broad-implement.md`); NOT yet pushed to Apps Script. /sync-docs done.
-- Batch 14 (TC2-9) implemented on the same branch (block: `.cycle/blocks/23-batch14-broad-implement.md`); NOT yet deployed. /sync-docs done.
-- Batch 13 (SP-2) and its courtesy follow-up implemented on the same branch (blocks: `.cycle/blocks/23-batch13-broad-implement.md`, `…-batch13-followup-broad-implement.md`); NOT yet deployed. /sync-docs done.
-- Everything through 22post is merged (PRs #274–#282) and deployed (2026-09-30). The operator was finishing two 22post steps at close: the manual.json re-export + import, and the S124–S128 walks.
+- Nothing in progress. Cycle 23 is merged to main (PRs #284, #285, and the close-out PR) and deployed 2026-10-05; `runSmokeTests` on prod came back clear (operator).
+- The cycle-23 reflection (`.cycle/blocks/23-a-reflect.md`) proposes INV-374 and INV-375; they are not in the library yet.
 
 ## Completed this cycle
-- /sync-docs (Batch 15) | docs/test-harness-log.md, docs/operator-state.md, .cycle/config.md, CLAUDE.md | the Batch 15 harness entry (the run-the-editor-smoke-cases-in-Node pattern); the editor-suite operator entry (where the 11 cases run); INV-373
-- B15 | Tests.js, test/client/run.js | 11 editor-suite cases for the server rules of Batches 10–14 (9 pure in the smoke shard, 2 in Integration B on TEST rows / the KB fixture); a Node pin RUNS the 9 smoke cases against the real server functions and the real Tests.js assertions
-- /sync-docs (Batch 14) | CLAUDE.md, docs/design-decisions.md, docs/gotchas.md, docs/modules.md, docs/operator-state.md, docs/test-harness-log.md, .cycle/config.md | new decision "Every Timesheet range read goes through ONE archive-aware reader…" + index line; g152 amended (index + narrative); the storage map's TimesheetArchive cell; the cold-archive operator entry (no in-app view shortens; the reach cache); module note; INV-372 + INV-153 amended; S8/S79/S91/S98 extended
-- TC2-9 | 20_timeclock.js, 00_config.js, tc/script_manager.html, tc/script_timeoff.html | ONE archive-aware Timesheet range reader (`timesheetRowsInRange_`) for the export, the accrual, the pay statement/timesheet builder, both calendars and Punctuality; the archive gate keys on the archive's own reach (cached newest date ∪ the window's date), not the live tab's oldest row; a failed archive read throws for payroll/accrual and is named on the display surfaces
-- /sync-docs (Batch 13 + follow-up) | CLAUDE.md, docs/design-decisions.md, docs/gotchas.md, docs/modules.md, docs/operator-state.md, docs/test-harness-log.md, .cycle/config.md | new decision "A Spanish thread is a sequence of requests…" (+ the voicemail-fold decision amended); g155 + g159 amended (index and narrative); Spanish operator entry amended; module note; INV-369/370/371; new S136; S80/S105/S121 extended
-- SP-2-FU | 51_spanish.js | a requester's courtesy reply (every word a courtesy word, or a lone courtesy emoji) is neutral — it neither reopens nor is shown by Expand; anything else stays a request (g159)
-- SP-2 | 51_spanish.js, 20_timeclock.js, metrics/script_metrics.html, styles.html | a Spanish thread is a sequence of requests (spanishEpisodes_ over spanishThreadRoles_): a requester's follow-up after an answer or a manual resolve is pending again, aged from and showing the follow-up; each answered request is counted, timed and attributed; a reopened request comes back unclaimed (claim floor on the cards, Needs-you, auto-assign and the claim guard); follow-up pill; stats key v4
-- /sync-docs (Batch 12) | CLAUDE.md, docs/design-decisions.md, docs/operator-state.md, docs/gotchas.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | new decision "Article images live in the KbImages tab" (Phase 2b + Phase 3 superseded, the image fallback amended); KbImages operator entry + KB_IMAGES_FOLDER_ID narrowed; g142 amended; module note; INV-367/368, INV-118/197 amended; S62/S63/S65/S104 extended
-- DRV-3 | 70_kb.js, 00_config.js, kb/script_kb.html, cn/script_callnotes.html | KB article images (paste + converter) stored in an append-only, content-keyed KbImages tab (kbimg:<key>, getKbImages) instead of Drive; client downscales pastes to 1600 px / 1.5 MB; retryable failures keep the token pending
-- /sync-docs (Batch 11) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/training-employee-docs-spec.md, docs/test-harness-log.md, .cycle/config.md, web-app/Tests.js | g156/g148/g116 extended; T1 + intake-feedback decisions amended; QuizResets operator entry + ORG_EMAIL_DOMAINS now gates intake recipients; the spec's §9.4 retry policy; module notes; INV-363..366 (INV-298 superseded); S59/S60/S68/S116 extended; the editor quiz test moved to the TRN-1 rule (its S10 assertion would have failed the nightly run)
-- TRN-1 | 80_training.js, 00_config.js, train/script_training.html | a failed quiz shows which questions were wrong (never the option); 3 fails then a 24 h wait, inside the lock; manager reset (QuizResets tab)
-- INT-3 | 60_intake.js, intake/script_intake.html | an outside-domain intake recipient is sent to only after the rep confirms that domain (server-enforced); outside copies carry no feedback link
-- Weight bounds | 60_intake.js, 00_config.js, intake/script_intake.html | a reading under 20 or over 1000 lbs is unreadable and named
-- MET-5-FU | 40_metrics.js, tc/script_clock.html | before the daily import both MTD windows end on the newest data day; the card says so; cache key v7
-- KB2-6 | docs/design-decisions.md, CLAUDE.md | "and" = either area, operator-confirmed; decision recorded, grid pinned
-- /sync-docs (Batch 10) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g146/g156/g41/g122/g26/g36/g148/g143 extended + new g167 (a vocabulary built from user text is user text); six decisions amended; `CONFIG.ORG_EMAIL_DOMAINS` operator entry, trigger owner `{email, by, at}`, DevTools entry points; module notes; INV-360..362 + INV-66/INV-119 amended; S135 added and twelve scenarios extended; harness log
-- KBUI-2 | kb/script_kb.html | an eligibility error that quotes the typed address is shown, never beaconed (OOP_ELIG_BEACON)
-- KB-2 | 70_kb.js | AI guidance tags come from the admin auto-tag taxonomy; the audit row carries counts
-- INT2-3 | intake/script_intake.html, script_core.html | intake drafts carry an owner; a boot sweep drops expired and other users' drafts
-- INT-1 / INT2-1 / INT2-2 | 60_intake.js, intake/script_intake.html | Q43 by token (negation/uncertainty is not a Dx); negated seat words; weight by unit
-- INT-2 / INT2-4 | 60_intake.js, intake/script_intake.html | a superseded amend is refused server-side; a catalog change after preview is named
-- CN-3 | 30_callnotes.js | the CallNoteEmail row records an Other recipient's domain
-- ADM-12 / ADM-13 | 30_callnotes.js, cn/script_callnotes.html | tag transform: started row, archive walk, partial warning; diagnostics purge confirm
-- CORE-03/04/05/06 | 10_core.js, 00_config.js, 61_forms.js, DevTools.js, docs/deployment.md | self-test owner-only; runs-as trigger owner; removal audited; a cleared dept map stays empty; isOrgEmail_; editor-runnable dev tools
-- TRN-2 | 80_training.js | a correct answer the cap cut off is named
-- MET-5 / MET2-1 | 40_metrics.js, metrics/script_metrics.html | no Dashboard cache before the import; call-weighted hero, no self-comparison
-- /sync-docs (Batch 9) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | NEW g166 (a close that discards typed work must ask); g100 (SH-02/03/04), g141 (ADM-10, KBUI-5), g147 (KB2-9), g58 (TRUI-2), g130 (INTUI-1) amended; g116's fifteenth direction (the harness does not move focus on Tab); NEW decision "An editor overlay asks before it discards" + amendments to the tour, tax-rate and manual-import decisions; modules notes in five sections; S12/S45/S51/S54/S59/S62/S68/S69/S75/S99/S124 extended; INV-357..359; harness log
-- UI-ESC | script_core.html + kb/train/empdocs/coaching partials | an editor overlay opened with `unsaved` asks "Discard changes?" before Escape, the backdrop or Cancel discards typed work (`overlayDiscardGuard_`, `overlayMarkDirty_`)
-- INTUI-1 | intake/script_intake.html, train/script_coaching.html | the intake preview and the coaching drawer refuse to close mid-send
-- TRUI-2 | train/script_empdocs.html | the signature pad is white with a fixed #101418 ink
-- KB2-9 | kb/script_kb.html | a file read or conversion is dropped when the editor changed
-- KB2-8 | 70_kb.js, kb/script_kb.html | a section an unfinished import wrote is recorded (`repair`), not skipped as foreign
-- ADM-06 | cn/script_callnotes.html | a blank tax rate is refused by name (`cnRateMapFromRows_`)
-- ADM-10 / KBUI-5 | cn/script_callnotes.html, kb/script_kb.html | the Team Members add form and a comment draft survive their re-render
-- SH-02..05 | shell + six partials | closes route through closeOverlay; the trap covers the shortcuts dialog; the tour is a dialog; the sidebar drag binds once
-- TCUI-1 | tc/script_clock.html | a failed refresh after a self-undo is reported
-- /sync-docs (Batch 8) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g152 extended (QA-5); NEW g165 (a grant earned by a covered period applies forward); NEW decision "A QA exemption applies to the period AFTER the one that earned it"; the QA operator note (re-grant a pre-deploy exemption if the next period was meant); modules note; S100's stale exemption Expected fixed + S90/S100/S103 steps; INV-356
-- QA2-1 | 90_qa.js, qa/script_qa.html, mock | an exemption is granted for the NEXT period; a quarter's exemption holds in its months (qaExemptFor_, qaNextPeriod_)
-- QA2-2 | 90_qa.js | Sample the gaps draws only the period's own calls
-- QA2-3 | 90_qa.js | the coaching hand-off uses the stored AgentId; an ambiguous name resolves to nobody
-- QA-2 | 90_qa.js | the comment write and both review reads carry the self-review guard
-- QA-4 | 90_qa.js | sampling and assignment never hand a reviewer their own call
-- QA-5 | 90_qa.js | the recording lookup and My Reviews reach past the 2,000-row tail
-- QA2-4 / QA2-5 | qa/script_qa.html, 90_qa.js | card-weighted previous average; one Stats row per agent whatever the case
-- QAUI-1 | qa/script_qa.html | a rating click patches in place — focus stays
-- /sync-docs (Batches 7a + 7b) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g144/g152/g153/g53/g101/g141/g81/g67/g99/g84 extended (index + AMENDED narratives); NEW g164 (a row fetched by index must carry its key); the optimistic-UI, manager-comments, fillable-forms, viewer and timeline decisions amended; the FormTokens and HR_DOCS_SS_ID operator notes; INV-355; S114's stale Expected fixed; S26/S28/S34/S50/S61/S69/S73/S113 steps; S134 added
-- CNUI-02 | 30_callnotes.js, cn/script_callnotes.html | a Save & Compose cancel past the undo window keeps the note and clears the form (deleteCallNote names `windowClosed`)
-- CNUI-03 | cn/script_callnotes.html | the timeline and submission viewers drop a stale answer (CN_VIEWER_SEQ)
-- CNUI-04 | cn/script_callnotes.html | a manager comment/reply save patches its own card only (cnMgrPatchCard_)
-- CNUI-05 | cn/script_callnotes.html | an open Clarify box keeps text, focus and caret across re-renders
-- CNUI-06 | cn/script_callnotes.html | undo-save announces and restores only after the server deletes
-- CNUI-08 | 30_callnotes.js, cn/script_callnotes.html | creating a reminder busts and refetches Needs you
-- CNUI-09 | cn/script_callnotes.html | the stale-flag badge on both nav forms (phone bottom nav)
-- FORM-1 | 61_forms.js | the unlocked token/submission lookups re-check the fetched row carries its token (located once more, then refused)
-- HR-1 + CN-7 | 00_config.js, 81_empdocs.js, 82_coaching.js, 30_callnotes.js | doc, coaching and note free-text columns written into '@' cells (EMPDOC/COACH/CN_TEXT_IDX)
-- FORM-2 | 61_forms.js, Tests.js | the FormSubmissionReceived witness + the failure log carry tokenRef, never the token
-- FORM-3 | 61_forms.js, cn/script_callnotes.html, mock | a note keeps every submitted form (formSubmissions); one stacked pill each
-- FORM-4 | 61_forms.js | retention cells parse only the written shapes (no Date.parse fallback)
-- FORM-5 | 61_forms.js, 30_callnotes.js | emails state FORM_TOKEN_EXPIRY_HOURS; a departed creator's notice goes to the managers
-- CN-1 | 00_config.js, 30_callnotes.js | scheduled-call reminders read over a 90-day creation span, not a 2000-row tail
-- CN-2 | 30_callnotes.js | an unreadable note stamp refuses self-delete
-- CN-4 | 30_callnotes.js, 61_forms.js | a failed later form link voids the links already made
-- CN-5 | 30_callnotes.js, cn/script_callnotes.html | the patient timeline reads the archive, marks archived notes, and names a capped stream
-- /sync-docs (Batch 6b) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g154/g88/g123/g149/g59 extended (index + AMENDED narratives); the reminders, telemetry-strip and half-day decisions amended; column O, onboarding and Coverage operator notes; INV-354 added; S72/S75/S76/S98/S99/S102/S110/S118 steps
-- TC2-1 | script_core.html | the reminder ticker uses a state snapshot only for its own day; a stale day forces one immediate refresh
-- TC2-6 | 20_timeclock.js | onboarding refuses a timezone id the runtime does not know (Intl probe; offset tokens and an unable runtime pass)
-- TC2-3 | 20_timeclock.js, tc/script_manager.html, mock | the planner counts an approved half day as a tentative presence
-- TC2-4 | 20_timeclock.js, script_core.html | a column-O override keeps only tz-default breaks inside its shift; the ticker reminds only of in-shift breaks
-- TC2-7 | 20_timeclock.js, tc/script_manager.html | punctuality reads "not started yet" before the shift (plus grace) and for dates ahead
-- TC2-8 | 20_timeclock.js, tc/script_manager.html, mock | Team on-time "—" with no graded day; holidays leave the manager trends and are closed in the planner
-- COA-2 | 10_core.js, index.html, train/script_coaching.html | the client reads coaching stamps in CONFIG.TIMEZONE (SERVER_STORAGE_TZ)
-- MET2-2 | 10_core.js, 40_metrics.js | the inbound-volume average leaves holidays out of its denominator
-- /sync-docs (Batch 6a) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g27/g28/g127/g15 extended (index + AMENDED narratives); PTO bucket, reconciliation and punch-queue decisions amended; new operator entry for the TimeOffRequests `Deducted` column (+ inventory line); INV-03/94/159 amended, INV-353 added; S4/S5/S7/S13/S75/S92 steps, S133 added
-- TC-03 | 20_timeclock.js, Tests.js | single-date time off refuses a weekend or company holiday (rep + manager paths); the editor fixture date is a working day
-- TC-04 | 00_config.js, 20_timeclock.js | TimeOffRequests `Deducted` records what an approval took; un-approving restores exactly that (blank = legacy by-type)
-- TC-05 | 00_config.js, 20_timeclock.js | rep adjustments refuse an equal pair or a shift over 16 h at Apply now, submit and approval; the writer keeps the ctx current
-- TC-06 | 20_timeclock.js | the reconciliation fix refuses when no credit can land, reverts on a null credit; detector + fix read the recorded charge; PTO-off reps skipped
-- TC-08 | 20_timeclock.js, tc/script_manager.html | the doctor's collapse keeps the stamp the hours count (pay unchanged); the card names it
-- CORE-07 | 20_timeclock.js | the EmployeeOffboard audit row names the offboarded rep, PunchDate blank
-- VIS-1 | modals.html | Day Edit hint says "(check AM or PM)"
-- /sync-docs (Batch 5) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g53/g152/g155/g159/g143 extended (index + AMENDED narratives); the voicemail-fold and reply-rules decisions amended; new decision `the-resolve-link-opens-a-confirm-page`; Spanish + DR operator notes (the ThreadId check); INV-31 span text; S74/S80/S101/S105/S122 cycle-23 steps
-- SP-1 | 51_spanish.js, 20_timeclock.js | a voicemail after a manual resolve can be resolved (latest-row fold, re-resolve, Needs-you trusts the pending ids)
-- SP-3 | 00_config.js, 51_spanish.js, metrics/script_metrics.html | resolve/claim tabs read by a 180-day span; a failed read throws; unknown claims flagged and auto-assign refuses
-- SP-4 | 51_spanish.js | auto-assign reads pending through the ungated `spanishPendingCore_`
-- DR-2 | 50_deptrequests.js | the latest department reply decides
-- DR-1 | 50_deptrequests.js | a shared thread's reply resolves only the request whose link it quotes
-- RES-1 | 61_forms.js, 50_deptrequests.js, 00_config.js, metrics/script_deptrequests.html, Tests.js | the resolve link is a confirm page; the sender's own click is 'self', untimed
-- DR-3 | 10_core.js, 50_deptrequests.js, 51_spanish.js, metrics/script_deptrequests.html | true medians (`medianWhole_`)
-- /sync-docs (Batch 4b + TC-02) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g02/g05/g53/g122/g128/g129/g151 amended; new g163 (an adjustment that names a type must say which); the break-adjustment decision + three amended decisions; BreakTarget + the Forms/DR warnings in operator-state; S7/S43/S44/S62/S64/S95/S96/S97/S114/S117 steps; new S132
-- TC-02 | 00_config.js, 20_timeclock.js, modals.html, tc/script_clock.html, tc/script_manager.html | a break adjustment says which break (add / correct the one at HH:MM) — one resolver for every writer, refused rather than guessed; request column BreakTarget; range mode refuses multi-break days; getMyDayBreaks
-- ADM-04 | 10_core.js, test/visual/mock.js | Forms / Dept Requests on the ADP fallback read configured:false (still probed)
-- ADM-09 | 10_core.js, test/visual/mock.js | deploy readiness gains a `health` row from the one problem list the dot counts
-- ADM-07 | cn/script_callnotes.html, test/visual/mock.js | Reference-lookups diagnostics become storage-area findings (cnOopFindings_)
-- ADM-08 | 10_core.js, cn/script_callnotes.html | an unset HR/QA store is "not set up" in the formula scan, never "could not open"
-- MET-1 | 40_metrics.js | the range endpoint refuses a failed CDR read; a missing DQE tab names itself to the breakdown readers
-- MET-2/3/4 | 40_metrics.js | My Stats, the ambient badge and the Team Metrics range trend never cache a degraded round; ambient says `unavailable:'cdr'`
-- METUI-1 | metrics/script_metrics.html | the alert badge survives an unreadable or failed poll
-- TC2-2 | 20_timeclock.js, cn/script_callnotes.html | shift stats ship `cdrUnavailable`, render a notice, never cache the round
-- KBUI-1 | kb/script_kb.html | a failed Reference search (tab + drawer) is an error state, never "No matches"/the CTA; no query in it
-- ADM-11 | cn/script_callnotes.html | a truncated note history says so
-- /sync-docs (Batch 4a + follow-ons) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g142/g122/g145/g53 extended; INV-151 reworded, INV-161 amended; S9/S55/S99/S117 steps; the automation-health decision amended
-- 4a-FU1/FU2/FU3 | 00_config.js, 10_core.js, cn/script_callnotes.html | a stale heartbeat names its job's recent failure (not the trigger); every stamp ships a label from one map; the shared purge deletes contiguous runs (block: 23-batch4a-followons-broad-implement.md)
-- CORE-01 | 10_core.js | the brief heartbeats only after it delivers (a failed send lets the four digests resume); send failures + throws stamped; briefConfig names both causes
-- CORE-02 | 10_core.js, script_core.html | a failed badge compute is unknown, uncached, dot kept; the health digest stamps clean only after its send
-- HR-3 | 81_empdocs.js, 20_timeclock.js, 82_coaching.js, 80_training.js | HR sweeps throw by name when set-but-unreadable (unset = []); training digest says what it could not read; coaching recap counts false sends
-- MAIL-4 | 50_deptrequests.js, 20_timeclock.js, 80_training.js | dept reminder, missed-punch alerts and training digest stamp failed sends
-- TC-07 | 20_timeclock.js | the timesheet archive stamps its failure
-- QA-3 | 10_core.js, 90_qa.js | QA purge on the shared deleter (C5 spare row) with a ms reader; failure stamped
-- /sync-docs (Batch 3) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g142 extended (a permission check cannot see a disabled service); the missing-SCOPE + Storage Health decisions amended; KB_IMAGES_FOLDER_ID + QA operator notes; INV-197, S104, S90 amended
-- DRV-1 | 00_config.js, 10_core.js, cn/script_callnotes.html | the Drive line exercises the SERVICE (getRootFolder); a disabled service is a FAIL naming every surface; folder advice never says clear the property
-- QA-1 | 10_core.js, 90_qa.js, cn/script_callnotes.html | QA folder probed (QA_FOLDER_PROP); sync + playback name a disabled Drive by DRIVE_DISABLED_MSG
-- DRV-2 | 70_kb.js, cn/script_callnotes.html | embed scan stops on a disabled service (driveUnavailable), never lists every embed broken
-- DRV-4 | 70_kb.js | KB Images folder replaced only when Drive says it is gone
-- DRV-5 | 70_kb.js | a folder that cannot open keeps the converter's kbdoc tokens
-- (scenario) | test/visual | ?drive=disabled hook + admin-system-drivedisabled-* shots
-- TC-01 | web-app/20_timeclock.js | the payroll export appends through appendRowsSafe_ (threw past ~998 rows)
-- ADM-05 | web-app/70_kb.js, 00_config.js | data-table import: cell ceiling checked pre-dry-run, grid grown before clear(), previous table restored on a failed write
-- SH-01 | web-app/script_core.html | ensureOverlay restacks a reused overlay on reopen (copy-failure modal no longer opens beneath the composer)
-- CNUI-07 | script_core.html, cn/script_callnotes.html | the save toast rides the copy outcome
-- CNUI-01 | cn/script_callnotes.html | a failed save never overwrites a newer sticky draft
-- /sync-docs (Batch 2) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g41/g128/g120 extended; ELIG + OOP-B decisions amended; the operator sheet rules; S65 + S112 cycle-23 steps
-- /sync-docs (Batch 1) | CLAUDE.md, docs/gotchas.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g145/g100/g76/g86 extended (index + AMENDED narratives); modules notes for the export, the data-table import and the save path; S18 updated; S129–S131 added
-- KB-1 | web-app/70_kb.js | lowercase or/and are connectives; everyday-word lowercase tokens are not codes
-- KB2-1 | web-app/70_kb.js | a state beside the city clause unions only with an explicit "or", no parentheses
-- KB2-2 | web-app/70_kb.js | Open parenthetical allow-list (places need an including-word)
-- KB2-3 | web-app/70_kb.js | geocode country read; outside the US refused (KB_GEO_US_COUNTRIES)
-- KB2-4 | web-app/70_kb.js | warehouse names longest-first, span consumed; radius strip longest-first
-- KB2-5 | web-app/70_kb.js | blank-State city rows flagged, never matched (cannot tell)
-- KB2-7 | web-app/70_kb.js | whole-line quote match (oopBodyHasLine_)
-- KB2-10 | web-app/70_kb.js, kb/script_kb.html | revert keeps the review clock; duplicate warehouse named; Save waits for a pasted image
+- (none — no cycle open; cycle 23's record is in HISTORY.md)
 
 ## Pending / not yet done
-- **Cycle 23 plan (from the 2026-10-01 scan; IDs only — the findings are in the scan's chat report):**
-  - Batch 1 — DONE (TC-02 done 2026-10-02 as option (a), after the operator's decision).
-  - Batch 2 eligibility fail-open — DONE (KB2-1, KB-1, KB2-2, KB2-3, KB2-4, KB2-5, KB2-7, KB2-10)
-  - Batch 3 disabled Drive — DONE (DRV-1, QA-1, DRV-2, DRV-4, DRV-5 + the drivedisabled scenarios)
-  - Batch 4a automation honesty — DONE (CORE-01, HR-3, MAIL-4, CORE-02, TC-07, QA-3)
-  - Batch 4b failure-as-data reads — DONE (ADM-04, ADM-09, ADM-07, ADM-08, MET-1, TC2-2, MET-2/3/4, KBUI-1, METUI-1, ADM-11)
-  - Batch 5 Spanish/DR — DONE (SP-1, DR-2, DR-1, RES-1, SP-3, SP-4, DR-3)
-  - Batch 6a PTO/punch — DONE (TC-03, TC-04, TC-05, TC-06, TC-08, CORE-07, VIS-1)
-  - Batch 6b schedules — DONE (TC2-1, TC2-6, TC2-3, TC2-4, TC2-7, TC2-8, COA-2, MET2-2)
-  - Batch 7a store data — DONE (FORM-1, HR-1+CN-7, FORM-2, FORM-3, FORM-4, FORM-5, CN-1, CN-2, CN-4, CN-5)
-  - Batch 7b CN client — DONE (CNUI-02, CNUI-03, CNUI-04, CNUI-05, CNUI-06, CNUI-08, CNUI-09)
-  - Batch 8 QA — DONE (QA2-1, QA2-2, QA2-3, QA-2, QA-4, QA-5, QA2-4/5, QAUI-1)
-  - Batch 9 editors/a11y — DONE (UI-ESC, INTUI-1, TRUI-2, KB2-9, KB2-8, ADM-06, ADM-10/KBUI-5, SH-02, SH-03/04/05, TCUI-1)
-  - Batch 10 PHI/config — DONE (KBUI-2, KB-2, INT2-3, INT-1/INT2-1/INT2-2, INT-2/INT2-4, CN-3, ADM-12, ADM-13/CORE-04/05/06/03/TRN-2, MET-5/MET2-1)
-  - Deferred — decided 2026-10-05 (operator): DRV-3 → Batch 12; SP-2 → Batch 13; TC2-9 → Batch 14; TRN-1 + INT-3 + KB2-6 (record + pin only) → Batch 11; HR-2 stays deferred (roadmap — the operator is the only editor of the HR sheet and the script); CN-8 closed, no code (exports stay inside the BAA-covered Workspace; a docs note only).
-- **Cycle 23 follow-up plan (2026-10-05, after the deferred decisions):**
-  - **Batch 11 — DONE 2026-10-05 (actual ~4 h)** — quick fixes + follow-ups (M, ~10.5 h): MET-5-FU (a pre-import period-to-date window ends on its newest data day, the prior window shortened to the same day of month, a "calls through …" note); intake weight plausibility (under 20 lbs or over 1000 lbs is unreadable, with the reason; server + client twin); INT-3 (an outside-domain intake recipient is confirmed by name of domain; external copies drop the feedback link); TRN-1 (a failed attempt shows the score and which questions were wrong, never the right option; 3 attempts then a 24 h wait, server-enforced, shown to the rep after a fail; a manager reset); KB2-6 (decision record + a pin on the "and" grid).
-  - **Batch 12 — DONE 2026-10-05 (actual ~3.5 h)** — KB article images in a `KbImages` tab, not Drive (DRV-3) (L, ~14 h): content-hash keys, `kbimg:` token, the ManualImages row shape generalised; pasted screenshots downscaled in the browser to ≤1600 px wide and capped at 1.5 MB; PNG/JPEG/GIF/WebP kept; old thumbnail links keep rendering; Drive embeds and office-file ingest stay on Drive. Check first whether DocumentApp is also blocked.
-  - **Batch 13 — DONE 2026-10-05 (actual ~3 h)** — Spanish email threads: a follow-up reopens (SP-2) (M, ~7 h) — plus the courtesy follow-up (S, ~1.5 h; actual ~1 h): one pure episode helper for the three readers; Expand opens the newest request email; a reopened request comes back UNCLAIMED (a claim older than the previous close is ignored); stats cache key bumped; the VM resolved-list `msgs[0]` inconsistency fixed with it.
-  - **Batch 14 — DONE 2026-10-05 (actual ~2.5 h)** — archive-aware timesheet readers (TC2-9) (M, ~8 h): one shared live+archive range reader (export and accrual move onto it); Punctuality (both windows), the team calendar, the rep calendar and the monthly pay statement read through it; the archive gate keys on the archive cutoff, not the live tab's oldest date.
-  - **Batch 15 — DONE 2026-10-05 (actual ~1.5 h)** — editor-suite (Tests.js) cases (M, ~5 h): the Batch 10 server rules plus the server rules of Batches 11–14.
-- **Batch 1 deploy + walks:** clasp push + New version; S8 with >1,000 rows; S18's blocked-clipboard step twice via Save & Compose; S1.
-- **Batch 15 deploy:** after the push, run `runSmokeTests` on prod (the 9 new cases are pure) and let the DEV nightly (or `runAllTestsPartB` on DEV) run the 2 Integration B cases; the run's `Expected:` line reads 351.
-- **Batch 14 deploy:** no operator action (archiving stays off until `TIMESHEET_ARCHIVE_DAYS` is set; enabling it no longer shortens any in-app view); walk S8, S79, S88, S91, S98, S107 and S108.
-- **Batch 13 deploy:** tell the Spanish Inbox members a requester writing again brings the request back as a new, unclaimed request with a "follow-up" pill, and a plain thank-you does not (one with a question or a name does); walk S80, S105, S121 and S136.
-- **Batch 12 deploy:** paste a screenshot into a test article and save (the KbImages tab appears); convert a Doc with an image and save — a "Could not open the source Doc" warning means DocumentApp is blocked too (tell IT with the Drive request); walk S62, S63, S65 and S104.
-- **Batch 11 deploy:** tell the team about the quiz retry limit (3 fails → 24 h wait; managers reset from Team Training) and the outside-recipient confirm on intake; walk S68, S59, S60, S41 and S116.
-- **Batch 10 deploy:** tell the team an intake draft started before the deploy is not restored after it; if AI guidance is on, its tags are now the Auto-tag rules list; on DEV use `devScrubRosterForMe` / `devShowConfig`. Walk S59, S60, S87, S112, S66, S53, S106, S30/S117, S68, S41/S42 and S116.
-- **Batch 9 deploy:** no operator action; walk S12, S45, S51, S54, S59, S62, S63, S68, S69, S75, S99, S113 and S124 (Escape with typed work asks; close mid-send refuses; a dark-mode signature prints dark; an interrupted import is repaired).
-- **Batch 8 deploy:** an exemption granted before the deploy for the CURRENT period stays there — re-grant from the coverage row if the next period was meant; walk S90, S100 and S103.
-- **Batch 7b deploy:** no operator action; walk S19, S26, S28, S31, S34, S35, S50, S73 and S113.
-- **Batch 7a deploy:** optionally void + reissue any pre-deploy Employee Doc whose title/body reads as a date or number (it still verifies as tampered); walk S18, S21, S28, S61, S69, S99, S113 and S114.
-- **Batch 6b deploy:** optionally set per-employee breaks for reps with a column-O override; walk the reminder scenarios (a window left open overnight), S75 (a misspelled zone), Coverage, S110, Punctuality and the coaching board.
-- **Batch 6a deploy:** optionally deny any pre-deploy Pending single-date request on a weekend/holiday (approval is not re-checked); walk S4, S5, S7, S13, S75, S92 and S133.
-- **Batch 5 deploy:** the DR-1 operator check (any two DeptRequests rows sharing a ThreadId?); tell the departments the resolve link now opens a page with a button; walk S74/S80/S101/S105/S121/S122.
-- **TC-02 deploy:** deny-and-refile any pre-deploy break request the queue marks "filed without add/correct" if its approval is refused; walk S5/S7/S92/S95/S96 and the new break-choice scenario.
-- **Batch 4b deploy:** expect System + the Overview checklist to show "Forms (PHI) not set" / "Dept Requests (PHI-adjacent) not set" while those properties are unset (set both to the Intake spreadsheet), a readiness "Automation health" row, and Reference-lookups findings; walk S43/S44/S62/S64/S97/S112/S114/S117.
-- **Batch 4a deploy:** expect NEW stamped failures on Admin → System that were invisible before (each names its cause); if `managerDailyBrief` is ON, confirm the 8am brief still arrives (S55).
-- **Batch 3 deploy + walks:** after the push, Admin → System should lead with BLOCKING "Drive is disabled for this domain"; walk S104 and S90 (Sync + Play show the disabled message).
-- **Batch 2 deploy + operator check:** after the push read Admin → System → Reference lookups ("Cannot read", "Rows that could not be read in full") and fix the cells now named; walk S112's new eligibility cases and S65's save-while-uploading step.
+- **Next: the Seams & Invariants audit** (`/audit`, seams mode). It should probe the cycle-23 invariants (INV-353..373) and the proposed INV-374/375, and reset the Seams counter.
+- **Cycle 23 post-deploy — NOT confirmed** (each batch's deploy line, with its scenario list, is in the cycle 23 HISTORY block under Pending):
+  - one-time operator steps:
+    - Batch 2: read Admin → System → Reference lookups ("Cannot read", "Rows that could not be read in full") and fix the named cells.
+    - Batch 4b: set `FORMS_SS_ID` and `DEPT_REQUESTS_SS_ID` to the Intake spreadsheet (System shows "not set" until then).
+    - Batch 5: the DR-1 check (two DeptRequests rows sharing a ThreadId).
+    - TC-02: deny and re-file any break request flagged "filed without add/correct".
+    - Batch 12: paste a screenshot into a test article (the KbImages tab appears); convert a Doc with an image — a "Could not open the source Doc" warning means DocumentApp is blocked too (tell IT with the Drive request).
+  - tell the team: the quiz retry limit (3 fails, then 24 h or a manager reset), the outside-recipient confirm on intake, Spanish follow-ups returning unclaimed (a plain thank-you does not), the Dept Request resolve link's confirm page.
+  - the editor suite: the DEV nightly (or `runAllTestsPartB` on DEV) for the two Integration B cases — `Expected:` 351.
+  - the scenario walks, incl. the new S134, S135 and S136.
 - **22post, unconfirmed at close:** the manual.json re-export + import (Reference → Manual → Choose File → Check → Import); the S124–S128 walks; publish the manual by part, then unpublish the old guides once vetted.
 - **Editorial, operator's call:** whether to add numbered-heading anchors in the manual source for the links `node scripts/manual-xref-report.mjs --list` names (it changes the printed number).
-- **Cycle 22's regression walks — NOT confirmed** (scenario steps in `.cycle/config.md`: S4, S25, S55, S59–S61, S68, S69, S74, S76, S80, S87, S90, S97, S98, S101, S114–S118), plus the 22post batch walks S119–S123.
-- **Still owed from cycle 19's post-deploy walk:** step 8 — `INSTANCE_IS_PROD=true` plus standing up the DEV instance (Operator-Only State Gaps, the weakest axis four reflections running); steps 2, 5 and 6 unconfirmed.
+- **Cycle 22's regression walks — NOT confirmed** (S4, S25, S55, S59–S61, S68, S69, S74, S76, S80, S87, S90, S97, S98, S101, S114–S118), plus the 22post batch walks S119–S123.
+- **Still owed from cycle 19's post-deploy walk:** step 8 — `INSTANCE_IS_PROD=true` plus standing up the DEV instance (Operator-Only State Gaps, the weakest axis FIVE reflections running); steps 2, 5 and 6 unconfirmed.
 - The cycle-20 post-deploy walk items (S111 step 5, S110 step 5, S7's Day Edit steps, S113, the sheet doctor run) and 21post's S64/S18/S112/S73 walks.
 - **Operator sheet check (21post):** any `Local` left in `OopPricing` under Admin → System → Reference lookups → "Cannot read".
-- **DEFERRED, still an operator decision:** F-09's holiday FALLBACK; what a LocationAcceptance city row's Accepts column decides.
+- **DEFERRED, operator decisions:** F-09's holiday FALLBACK; what a LocationAcceptance city row's Accepts column decides; HR-2 (roadmap — the operator is the only editor of the HR sheet and the script); whether members' first names should join the Spanish courtesy vocabulary ("Gracias Ana" still reopens).
 
 ## Open follow-on items
-- **Batch 15 follow-ons** (full text in its block): Batch 10–14 rules still without an editor case, each needing a send / Gmail / gate-property write (CN-3, INT-2, CORE-04, the Spanish Gmail readers); the 2 Integration B cases are verified by reading, not run.
-- **Batch 14 follow-ons** (full text in its block): the break reports and the tz repair read both tabs whole by design; `getTimesheetData` / the manager timesheet ship `archiveError` without rendering it (inside the archive floor today); no visual fixture for the three archive-failure notes; editor-suite cases owed to Batch 15.
-- **Batch 13 follow-ons** (full text in its blocks): ~~a courtesy reply reopens~~ (closed by the follow-up); a thank-you that names someone ("Gracias Ana") still reopens — members' first names could join the vocabulary on an operator call; the pending core's voicemail `seen` set is pending email threads only (pre-existing double-fold path); a release of a pre-reopen claim appends a harmless row; no expanded-card visual of a reopen; editor-suite cases owed to Batch 15.
-- **Batch 12 follow-ons** (full text in its block): no visual scenario for a kbimg: image; no cleanup for orphaned KbImages rows; no Storage Health line for the tab; the Drive-thumbnail fallback can retire once no article cites one; editor-suite cases owed to Batch 15.
-- **Batch 11 follow-ons** (full text in its block): no visual fixture for the quiz modal or the manager waiting card (`getTrainingDashboard` has none); `stripJsComments_` mis-parses whole HTML partials (audit pins that strip a whole partial); the training spec §9.4 still says unlimited retries; editor-suite cases owed to Batch 15.
-- **Batch 10 follow-ons** (full text in its block): MET-5 stops pinning but one pre-import load still shows misaligned numbers; the weight parser knows only kg/lb (stone reads as lbs); INT-3 (deferred) still open; no editor-suite cases for the Batch 10 server rules.
-- **Batch 9 follow-ons** (full text in its block): the KB type toggle alone does not mark the editor dirty, and the converter and ingest marks are not driven by a pin; the doc reader's submit `busy` has no drive; the Scratchpad Close is outside the overlay lifecycle and the SH-02 net; no visual scenario for the discard question, the tour popover or a dark-mode signature.
-- **Batch 8 follow-ons** (full text in its block): the recordings table's Skipped reason runs under the reviewer pill and the New row's third button clips at the right edge (wide shot); the queue/stats/log/sampler lists still read the 2,000-row tail; `qaReadExemptions_` is a row-count tail; no editor-suite case for the QA self-review reads or an exemption round trip.
-- **Batch 7b follow-ons** (full text in its block): the Metrics alert badge has CNUI-09's shape (set on the first nav form only); `cnMgrPatchCard_`'s fallback still reloads the whole stack; undo-save of a note missing from local state restores without deleting; no visual of a multi-card manager session.
-- **Batch 7a follow-ons** (full text in its block): pre-fix notes/docs/coaching rows keep their coerced values (a note re-formats on edit, docs and coaching never); the timeline's sent-forms stream does not report its own cap; `spanishSpanStartRow_` / `schedSpanStartRow_` are one function twice; the ScheduledCalls Label column is not '@'.
-- **Batch 6b follow-ons** (full text in its block): other empState readers were not audited for a day rollover; `saveShiftSchedules` checks timezone keys by shape only; the punctuality table sorts a null on-time first.
-- **Batch 6a follow-ons** (full text in its block): approval does not re-check the closed-day rule; `EmployeeAdd`'s audit row has CORE-07's shape; a deny during a tracking-off window clears the record without crediting; no visual fixture for the doctor card; no editor-suite case for the Deducted column, the closed-day refusal or the 16 h bound.
-- **Batch 5 follow-ons** (full text in its block): ~~email-request Spanish threads still read any manual resolve as resolving the whole thread~~ (closed by Batch 13 SP-2); no visual fixture for a 'self' resolve, `claimsUnavailable`, or the resolve page.
-- **TC-02 follow-ons** (full text in its block): two same-type "add" requests for one day in one batch are still a duplicate; the personal-sheet mirror is one slot per type; no editor-suite case drives a real multi-break adjustment.
-- **Batch 4b follow-ons** (full text in its block): a fallback row repeats the ADP sheet's tz verdict; the readiness health row shows raw problem text; `getMyMetrics` does not flag a failed trend the way the range endpoint now does; no visual scenario for a failed search or shift stats with `cdrUnavailable`.
-- **Batch 4a follow-ons — DONE** (4a-FU1/FU2/FU3). Remaining from them: the archive movers may still delete per row under the lock; the mock's automation fixture shows no `failedAt` / `label` state.
-- **Batch 3 follow-ons:** the reader's kbdoc pending chip says "appears after Save" to reps; kbGetImageData's generic refusal gives no hint of a disabled Drive; the QA tab has no standing disabled-Drive banner (both responses now carry `driveDisabled`).
-- **Lead item for cycle 23 — the domain disables Apps Script's Drive (M4-FU3, confirmed 2026-09-29). Update 2026-10-05: article images (converter + paste) moved off Drive to the KbImages tab (Batch 12 DRV-3); embeds, file ingest, the embed check and QA recordings still need Drive.** Every other Drive feature is plausibly broken: the converter's images, paste-a-screenshot, the KB Images folder + the article image fallback, the embed reachability check, QA recording sync/playback. Admin → System's Drive row reads the SCOPE and cannot see an admin-disabled service. Ask IT to allow Apps Script Drive, or rework each. The ~1.6 MB single-call manual upload is unverified in a real runtime (fallback: chunked).
-- **22post reflection candidates, not yet in the library:** INV-350 (no path the manual import or reader reaches calls Drive), INV-351 (an import that fails in transport says so, never as a defect of the file), INV-352 (the floating Scratchpad stacks beneath every modal overlay — a ui-dialog can open beneath the panel today, z 56).
-- **22post batch follow-ons** (full text in the 22post HISTORY block): A — no visual opens the composer on a Close Order, the team Median sub-line ellipsizes at half width, the date range does not reach the server-derived table/cards; B — no pressed toolbar state, no visual of formatted content; C — no DOM harness drives renderManagerView, the manager fixture's Leo Kim has an impossible shape, no toast on the assignee's open window; D — the scan's counts are only logged; E — Half/Full shows on a phone, no drag-to-reorder; M5b — the highlighter marks a two-letter word inside longer words and marks the results heading, `kbMarkReviewed` does not bump the KB generation (named exemption in M5b-I2).
-- **Carried from cycle 22** (full list in its HISTORY block): S6 is server-only; the coaching business-days note and the Spanish auto-assign flag description still say "US holidays"; Save Departments lets two rows share a name; the half-day grade's three gaps; M7's class survives in three readers (the client `coachTsMs_` UTC read was fixed in cycle 23 COA-2); X1 names reads owed a fixture and the mock lacks `adminScanStoredFormulas`; the missing visual scenarios; an intermittent DOM pin (`the resume request states the unpaid gap before it is filed`); `assertNotProdInstance_` permits while INSTANCE_IS_PROD is unset.
-- **Numbers — do not reuse:** INV-225..227 RESERVED (cycle 20); INV-229..232, INV-240..242, INV-301..303 and INV-350..352 PROPOSED (cycles 21, 21post, 22, 22post), not in the library. **Next free: INV-374; gotcha g168; scenario S137.**
+- **Drive for Apps Script (the cycle-23 lead item, still open).** The domain disables it (M4-FU3, 2026-09-29). Article and manual images no longer need it (DRV-3, M4-FU3); Drive embeds, office-file ingest, the embed reachability check and QA recording sync/playback still do. Ask IT to allow Apps Script Drive, or rework each.
+- **Cycle 23 batch follow-ons** — full text in each block (`.cycle/blocks/23-*-broad-implement.md`) and listed in the cycle 23 HISTORY block. The heaviest:
+  - Batch 15: rules still without an editor case (CN-3, INT-2, CORE-04, the Spanish Gmail readers); the two Integration B cases are verified by reading only.
+  - Batch 14: `getTimesheetData` and the manager timesheet ship `archiveError` without rendering it.
+  - Batch 13: the pending core's voicemail `seen` set is pending email threads only (a pre-existing double-fold path).
+  - Batch 12: no cleanup for orphaned KbImages rows; no Storage Health line for the tab.
+  - Batch 8: the QA queue/stats/log/sampler still read the 2,000-row tail; `qaReadExemptions_` is a row-count tail.
+  - Batch 7a: `spanishSpanStartRow_` / `schedSpanStartRow_` are one function twice.
+  - Batch 6a: approval does not re-check the closed-day rule.
+  - Batch 11: the training spec §9.4 still says unlimited retries.
+- **Proposed invariants, not yet in the library:** INV-350, INV-351, INV-352 (22post); INV-374, INV-375 (cycle 23 — `.cycle/blocks/23-a-reflect.md`).
+- **22post and cycle 22 follow-ons** — full text in their HISTORY blocks (incl. the intermittent DOM pin `the resume request states the unpaid gap before it is filed`, and `assertNotProdInstance_` permitting while `INSTANCE_IS_PROD` is unset).
+- **Numbers — do not reuse:** INV-225..227 RESERVED (cycle 20); INV-229..232, INV-240..242, INV-301..303, INV-350..352 and INV-374..375 PROPOSED (cycles 21, 21post, 22, 22post, 23), not in the library. **Next free: INV-376; gotcha g168; scenario S137.**
 
 ## Decisions made (so the next session doesn't re-litigate)
 - **TC2-9 (cycle 23 Batch 14):** the archive gate is the archive's OWN reach (its newest date, cached 6 h and cleared by the archiver, unioned with the current window's date) rather than the configured cutoff alone — a window lowered or disabled after a move would otherwise hide rows still in the tab. The export's in-file dedupe now uses the raw COMMENTS key (the accrual's), so only a byte-identical mid-run duplicate is dropped.
@@ -252,4 +65,4 @@ Updated: 2026-10-05 (cycle 23 Batch 15 /sync-docs)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 23 Batches 1–5 (TC-02 included) are merged to main (PR #284). Batches 6a–15 are committed, pushed and doc-synced on `claude/blissful-johnson-cottl5`, and a PR to main was opened and merged on 2026-10-05 (the operator asked). The scan's plan and the follow-up plan are complete. Next: deploy (clasp push + New version), walk the Batch 1–15 scenarios (incl. S134, S135, S136), run the editor suite (smoke on prod; the DEV nightly for Integration B — Expected 351), then /reflect (which reaches the Seams-audit cadence).
+Cycle 23 is closed: merged to main, deployed 2026-10-05 (`runSmokeTests` clear), reflected (net +10), and its STATE block moved to HISTORY.md. Nothing is in progress. Start the next session with the Seams & Invariants audit (`/audit` in seams mode — the cadence is reached), which opens cycle 24. Fold in whatever the operator has confirmed from the cycle-23 post-deploy list under Pending.
