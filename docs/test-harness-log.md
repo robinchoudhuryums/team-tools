@@ -2652,3 +2652,25 @@ per-change detail. By delta:
 - Two tooling hazards (g116's sixteenth and seventeenth):
   - `stripJsComments_` over a whole HTML partial drops functions, so the INT-3 pin reads the raw source;
   - an earlier pin leaves `Date.now` frozen while `new Date()` runs, so the retry-limit fixture takes its clock from `new Date()`, as the code does.
+
+## Cycle 23 — Batch 12, DRV-3: article images in the KbImages tab
+
+- Node +6, all driven against the REAL constants (`b12Ctx_` runs each `const` declaration from the server source as a var):
+  - the image item (content key, the same bytes giving the same key, type / base64 / size refusals, exactly-the-limit stored);
+  - the store (append-only, reused keys, pieces under the cell limit that rejoin exactly, under the lock, a changed header refused with nothing appended), over a fake sheet;
+  - `getKbImages` through the shared reader;
+  - the Save-time converter (stored → `kbimg:`, over 1.5 MB → pending and named, a missing image → placeholder, a failed store → pending; the `{ keep: true }` contract);
+  - `kbUploadImage`;
+  - the client: the chip charset, the batch mirror, the paste-plan grid, and the cache and source rules.
+- DOM +2:
+  - the hydrator: one batched call for an article, both mentions become images, "not stored" said, a cached success not asked again, a failure not cached;
+  - the paste: a small image sent byte for byte; a 3200 px PNG redrawn at 1600×900 and sent as JPEG; a malformed token never inserted. These stub `Image`, `FileReader` and the canvas, since jsdom has no image decoding.
+- Moved pins:
+  - KBL ("storing");
+  - the paste-cap mirror, now `KB_IMG_MAX_BYTES === KB_IMAGE_MAX_BYTES`, with its mirror-index entry;
+  - KBI-3 (the named Doc-open and store failures);
+  - DRV-2 (the converter no longer reaches the Drive folder);
+  - DRV-5 → DRV-3 (driven through the new resolver);
+  - M3-I2/I3 (the sandboxes load the shared `kbImageTab*` helpers);
+  - the visual mock gains `getKbImages` (X1).
+- 24 bite-checks, all BITE; no NO BITE. The Admin Drive-surface sentence is copy with no pin.

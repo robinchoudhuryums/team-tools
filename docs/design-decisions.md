@@ -3492,6 +3492,11 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   (folder shared, policy relaxed), the endpoint is never called. The wrapping
   anchor keeps its Drive href — the open-full-size path for accounts with
   access, and a `data:` href would be blocked as top-level navigation anyway.
+  **AMENDED (cycle 23 DRV-3).** This fallback now serves only LEGACY links (a
+  Drive thumbnail URL already in an article). New images never touch Drive:
+  they are `kbimg:` keys read through `getKbImages`. It can retire once no
+  article holds a Drive thumbnail link.
+
 - <a id="apps-script-s-missing-scope-refusal-is-not-an-admin-block-an"></a>**Apps Script's missing-SCOPE refusal is NOT an admin block, and a green
   `runAllTests()` does not vouch for Drive (operator 2026-09-09).** A Doc
   conversion left its images as placeholders with `You do not have permission
@@ -3631,6 +3636,13 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   Re-saving the article is the retry — exports are idempotent. Pinned by the
   "kb — Phase 2b" Node tests (token emission, cap, extract/replace,
   walk mirror, preview/final kbMd_ render).
+  **SUPERSEDED (cycle 23 DRV-3, operator 2026-10-05) — the images are stored in
+  the KbImages tab, not exported to Drive.** The domain disables Apps Script's
+  Drive, so this path never stored one image. Save now reads the Doc through
+  DocumentApp and stores each image in the tab (see "Article images live in the
+  KbImages tab"); a token that cannot be stored yet is KEPT pending with a
+  named reason, never rewritten to the placeholder.
+
 - <a id="kb-phase-3-paste-a-screenshot-upload-in-the-article-editor"></a>**KB Phase 3 — paste-a-screenshot upload in the article editor.** Pasting
   an image into the editor textarea uploads it via `kbUploadImage`
   (**admin-gated** — KB content authoring, INV-136; PNG/JPEG/GIF/WebP whitelist
@@ -3646,6 +3658,11 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   ScriptLock (Drive-only write); PHI-free-by-policy reminder sits under
   the textarea; orphaned uploads (pasted, never saved) stay in the
   folder — trim manually. Audit row `KbImageUpload` (INV-118).
+  **SUPERSEDED (cycle 23 DRV-3, operator 2026-10-05).** A pasted image is
+  fitted in the browser (≤1600 px wide, ≤1.5 MB — redrawn as PNG, else JPEG),
+  stored in the KbImages tab under the script lock, and inserted as
+  `![Screenshot](kbimg:<key>)`. See "Article images live in the KbImages tab".
+
 - <a id="kb-ai-phase-a-facet-based-guidance-card-in-the-reference-dra"></a>**KB AI Phase A — facet-based guidance card in the Reference drawer.**
   `kbGetFacetGuidance(facets)` sends ONLY whitelisted enum facets
   (department / update type / tags / flag type) + excerpts from our own
@@ -5255,3 +5272,26 @@ pick them up without re-deriving the context.
   grid pins every reading above, so a later edit cannot flip one silently.
   Rejected: reading "and" as an intersection (wrong for every confirmed cell)
   and refusing every "and" (would turn correct cells unreadable).
+- <a id="article-images-live-in-the-kbimages-tab"></a>**Article images live in the KbImages tab, keyed by content and append-only — the browser fits a paste, Save keeps what it cannot store yet (cycle 23 DRV-3, operator 2026-10-05).**
+  The domain disables Apps Script's Drive, and the IT request may take long or
+  be declined, so article images move to the storage the procedures manual
+  already uses (M4-FU3): a `KbImages` tab in the KB spreadsheet with the
+  ManualImages row shape (Key, Sha, Type, Kind, Part, Data, ImportedAt) —
+  base64 split across rows under the cell limit. One ledger, one reader and one
+  header check serve both tabs (`kbImageTab*`), parameterised by header, key
+  charset, types, size and cache prefix. Three differences from the manual,
+  each deliberate: the tab is APPEND-ONLY (an article holds a key for good, and
+  revisions cite old keys), the key is the CONTENT hash (`kbimg-` + 24 hex, so
+  storing the same bytes twice stores them once), and the batch is 6 (an
+  article image can be 1.5 MB, a manual icon a few KB). A changed header row is
+  refused by name rather than appended to (g142). Size is decided in the
+  browser, because Apps Script has no image library: a paste inside 1600 px
+  and 1.5 MB goes byte for byte (a GIF stays animated); a bigger one is redrawn
+  at ≤1600 px on a white canvas, as PNG if that fits, else JPEG at falling
+  quality. The server re-checks type and size. At Save a converted Doc's image
+  that cannot be stored YET — the Doc will not open, the store failed, it is
+  over 1.5 MB — keeps its `kbdoc:` token with a named reason (DRV-5's rule), so
+  a later save can store it; only an image the Doc does not have becomes the
+  placeholder. Rejected: Script Properties (capped — g07), a new spreadsheet
+  per image (Drive again), and a data URL in the article body (the body cell
+  holds ~49,000 characters).

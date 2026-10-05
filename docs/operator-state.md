@@ -410,8 +410,20 @@ entry says which it is.
   (INV-117). It grows one tiny row per open with no purge yet; the stats scan
   is bounded (last 4000 rows) so growth never slows reads — trim it manually
   if it ever bothers you.
+<a id="operator-the-kbimages-tab-cycle-23"></a>
+- **The `KbImages` tab (KB spreadsheet) — where article images live since cycle 23 DRV-3 (2026-10-05).**
+  Auto-created by the first pasted screenshot or the first Save of a converted
+  Doc with an image; app-owned and APPEND-ONLY — one row per piece of an image
+  (Key, Sha, Type, Kind = paste|doc, Part, Data = base64, ImportedAt). Do not
+  edit, sort or reorder it: a changed header row stops every image store until
+  it is restored, and a broken row reads as "not stored". Images pasted but never
+  saved, or removed from every article, stay as orphans (no cleanup yet — the
+  Drive folder's posture). After the deploy, check the converter once: convert a
+  Doc that has an image and Save — a "Could not open the source Doc" warning
+  means the domain blocks Docs (DocumentApp) for Apps Script as well as Drive;
+  add it to the IT request and paste the images instead.
 <a id="operator-script-property-kb-images-folder-id"></a>
-- **Script Property `KB_IMAGES_FOLDER_ID`** (auto-managed, Phase 2b). The
+- **Script Property `KB_IMAGES_FOLDER_ID`** (auto-managed, Phase 2b). **Since cycle 23 DRV-3 it matters only for KB file ingest (.docx/.xlsx/.pdf through Drive) and for LEGACY article images (a Drive thumbnail link already in an article); new article images go to the `KbImages` tab and never touch Drive.** The
   deployer-owned "KB Images" Drive folder that converted-article images
   export into on save. Auto-provisioned on the first image-bearing save:
   created in the deployer's Drive, set domain-link-viewable (so `<img>`

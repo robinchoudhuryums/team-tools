@@ -1182,6 +1182,16 @@ not restate it. Server endpoints live in the fourteen server files
      card's tag vocabulary is the admin's Auto-tag rules list, never the reps' own
      tags, and its audit row counts facets rather than naming them (KB-2, g167).
 
+     **Cycle 23 Batch 12 (2026-10-05):** article images work again on this
+     domain (Drive is disabled for Apps Script). A pasted screenshot is fitted in
+     the browser to 1600 px wide and 1.5 MB, stored in the `KbImages` tab of the
+     KB spreadsheet and inserted as `![Screenshot](kbimg:…)`; a converted Doc's
+     images are stored there at Save. An image that cannot be stored yet (the Doc
+     will not open, it is over 1.5 MB) stays "appears after Save" with a named
+     warning, and the next Save retries it. Images load in batches; "not stored"
+     and "could not load" read differently. Old Drive-hosted images still render
+     (DRV-3).
+
 ## Training & Employee Docs
 
    - **Training & Employee Docs** — phased module

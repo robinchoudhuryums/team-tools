@@ -4597,6 +4597,13 @@ failure is NOT offered, because the trigger may have died since), and the
 problem line, the System finding and the detail row name the failure instead.
 Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
 
+  **AMENDED (cycle 23 DRV-3, Batch 12).** The article-image surfaces this entry
+  lists no longer depend on Drive: pasted and converted images are stored in
+  the KbImages tab, and the "Drive is disabled" finding now names only Drive
+  embeds and file imports, legacy image links, the embed check and QA. A
+  converted image that cannot be stored yet keeps its token and names why
+  (the Doc did not open, the store failed, over 1.5 MB) — never "check the
+  folder".
 
 <a id="g143-a-leading-underscore-is-not-private"></a>
 
