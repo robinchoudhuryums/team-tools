@@ -2158,6 +2158,60 @@
     "serveResolvePage_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Batch 11: INTAKE_WEIGHT_MIN_LBS / INTAKE_WEIGHT_MAX_LBS (intake weight plausibility)",
+   "added": [
+    "INTAKE_WEIGHT_MAX_LBS",
+    "INTAKE_WEIGHT_MIN_LBS"
+   ],
+   "removed": [],
+   "changed": [
+    "intakeDeriveClinicalFactors_",
+    "intakeExplainFactors_",
+    "intakeParseWeight_",
+    "intakePreviewPPD"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Batch 11: dashboardAlignToData_ (MET-5 follow-up)",
+   "added": [
+    "dashboardAlignToData_"
+   ],
+   "removed": [],
+   "changed": [
+    "getDashboardMetrics"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Batch 11: TRN-1 retry limit + reset, INT-3 external-recipient check",
+   "added": [
+    "TQR",
+    "TRAIN_QUIZ_LOCK_HOURS",
+    "TRAIN_QUIZ_MAX_ATTEMPTS",
+    "TRAIN_QUIZ_RESET_HEADERS",
+    "TRAIN_QUIZ_RESET_TAB",
+    "intakeExternalRecipientCheck_",
+    "resetQuizAttempts",
+    "trainQuizAttemptList_",
+    "trainQuizLockState_",
+    "trainQuizLockout_",
+    "trainReadQuizResets_"
+   ],
+   "removed": [],
+   "changed": [
+    "getQuiz",
+    "getTrainingDashboard",
+    "intakeSendAcct_",
+    "intakeSendPPD",
+    "submitQuizAttempt"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3041,6 +3095,16 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "45f65f6b185a31b3"
+  },
+  "INTAKE_WEIGHT_MAX_LBS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "c2b99a39d6a3eacb"
+  },
+  "INTAKE_WEIGHT_MIN_LBS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6ac4a6e90c1b2b5f"
   },
   "INTERACTIVE_FORM_TYPES": {
    "file": "00_config.js",
@@ -4187,6 +4251,11 @@
    "kind": "const",
    "sha": "32e410bc579ed65b"
   },
+  "TQR": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "374a40da5281b858"
+  },
   "TRAIN_ASSIGN_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
@@ -4242,6 +4311,16 @@
    "kind": "const",
    "sha": "ba4f592154721258"
   },
+  "TRAIN_QUIZ_LOCK_HOURS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e50b47df35ff4d84"
+  },
+  "TRAIN_QUIZ_MAX_ATTEMPTS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "43f402838c38089b"
+  },
   "TRAIN_QUIZ_MAX_OPTIONS": {
    "file": "00_config.js",
    "kind": "const",
@@ -4251,6 +4330,16 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "7fdb4609ed8b1692"
+  },
+  "TRAIN_QUIZ_RESET_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f9f786257fa61bf0"
+  },
+  "TRAIN_QUIZ_RESET_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "478038208546fbe9"
   },
   "TRAIN_QUIZ_TAB": {
    "file": "00_config.js",
@@ -5447,6 +5536,11 @@
    "kind": "function",
    "sha": "b1e1679167bf2a99"
   },
+  "dashboardAlignToData_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "978ccf6c60841822"
+  },
   "dashboardImportPending_": {
    "file": "40_metrics.js",
    "kind": "function",
@@ -6255,7 +6349,7 @@
   "getDashboardMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "46854788be2d9afa"
+   "sha": "0ef2659a73f5b7c0"
   },
   "getDepartmentEmails_": {
    "file": "10_core.js",
@@ -6855,7 +6949,7 @@
   "getQuiz": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "7e8c59d82975e708"
+   "sha": "811c5b36f603bc5c"
   },
   "getQuizAnalytics": {
    "file": "80_training.js",
@@ -6980,7 +7074,7 @@
   "getTrainingDashboard": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "1e648f5646fd1a7a"
+   "sha": "458bea4ed0a5ce96"
   },
   "getUpdateSuggestions_": {
    "file": "10_core.js",
@@ -7125,7 +7219,7 @@
   "intakeDeriveClinicalFactors_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "321514cba8e2e2bd"
+   "sha": "1d614f87b677af09"
   },
   "intakeEmailDomain_": {
    "file": "60_intake.js",
@@ -7140,7 +7234,12 @@
   "intakeExplainFactors_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "be0b8aba90d5a7fb"
+   "sha": "75f5c4072ed97955"
+  },
+  "intakeExternalRecipientCheck_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "e75df115ba3742a1"
   },
   "intakeFeedbackCtaHtml_": {
    "file": "60_intake.js",
@@ -7205,7 +7304,7 @@
   "intakeParseWeight_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "5f0af18e91dcbcc7"
+   "sha": "e81617c5b41176c6"
   },
   "intakePpdAnswerStyles_": {
    "file": "60_intake.js",
@@ -7245,7 +7344,7 @@
   "intakePreviewPPD": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "0b68cf677f624fbf"
+   "sha": "84cae8a8315a0670"
   },
   "intakeRecListHtml_": {
    "file": "60_intake.js",
@@ -7270,7 +7369,7 @@
   "intakeSendAcct_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "89fc003683e72dc1"
+   "sha": "d90858919c31231b"
   },
   "intakeSendPAP": {
    "file": "60_intake.js",
@@ -7285,7 +7384,7 @@
   "intakeSendPPD": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "242a0eba1651e93f"
+   "sha": "61cf8f6e4ccc2f8a"
   },
   "intakeStoreFailWarn_": {
    "file": "60_intake.js",
@@ -9062,6 +9161,11 @@
    "kind": "function",
    "sha": "1d363a0a92539eeb"
   },
+  "resetQuizAttempts": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "177ead9b02a656e5"
+  },
   "resolveDeptRequest": {
    "file": "50_deptrequests.js",
    "kind": "function",
@@ -9760,7 +9864,7 @@
   "submitQuizAttempt": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "d40c0f209739ef3d"
+   "sha": "6d8c32497545cb68"
   },
   "submitTimeOffRange": {
    "file": "20_timeclock.js",
@@ -9877,6 +9981,21 @@
    "kind": "function",
    "sha": "b406f86749e3add5"
   },
+  "trainQuizAttemptList_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "afa884e8672f7d82"
+  },
+  "trainQuizLockState_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "933d524750111aba"
+  },
+  "trainQuizLockout_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "98e0a16bb13f0925"
+  },
   "trainReadAssignments_": {
    "file": "80_training.js",
    "kind": "function",
@@ -9891,6 +10010,11 @@
    "file": "80_training.js",
    "kind": "function",
    "sha": "e441e6d1133a40ee"
+  },
+  "trainReadQuizResets_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "a7e9df0b5c3e5803"
   },
   "trainReadQuizzes_": {
    "file": "80_training.js",

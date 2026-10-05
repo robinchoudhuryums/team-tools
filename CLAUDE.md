@@ -571,6 +571,7 @@ for the reasoning, which is usually the part that matters.
 - [The Dept Request resolve link opens a confirm page, and the sender's own click is recorded as `self` (cycle 23 RES-1, 2026-10-02)](docs/design-decisions.md#the-resolve-link-opens-a-confirm-page)
 - [A QA exemption applies to the period AFTER the one that earned it, and a quarter's holds in its months (cycle 23 QA2-1, 2026-10-02)](docs/design-decisions.md#a-qa-exemption-applies-to-the-next-period)
 - [An editor overlay asks "Discard changes?" before Escape, the backdrop or Cancel throws typed work away (cycle 23 UI-ESC, 2026-10-02)](docs/design-decisions.md#an-editor-overlay-asks-before-it-discards)
+- ["and" in an Area Eligibility cell means EITHER area; a phrase that could mean "both" is unreadable (cycle 23 KB2-6, operator 2026-10-05)](docs/design-decisions.md#and-in-an-eligibility-cell-means-either-area)
 
 ## Operator State Checklist
 
@@ -926,12 +927,12 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1202 | `node test/client/run.js` |
-| DOM harness tests | 214 | `node test/client/dom/runDom.js` |
+| Pure harness tests | 1209 | `node test/client/run.js` |
+| DOM harness tests | 216 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 152 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 340 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 54 | `'Admin access required.'` in the server source |
-| Manager-gated endpoints | 97 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
+| Manager-gated endpoints | 98 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
 | QA-gated endpoints (`canSeeQa_`) | 17 | `'QA access required.'` in the server source |
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 11 | `TRIGGER_GROUPS` |

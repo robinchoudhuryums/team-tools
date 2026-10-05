@@ -565,6 +565,9 @@ function getTrainingDashboard() {
     const titles = trainKbTitles_();
     const quizzes = trainReadQuizzes_();
     const allAttempts = trainReadAttempts_(null);
+    const allResets = trainReadQuizResets_(null);   // TRN-1
+    const nowMs = Date.now(), mgrTz = empTz_(callerEmp);
+    const locked = [];   // TRN-1: reps waiting out the retry limit — the manager can reset them
     function itemTitle_(a) {
       // Cycle-9 L-17: drop DRAFT KB items — getMyTraining and the overdue
       // digest already do (L-9), so the dashboard was counting/overdue-
@@ -607,8 +610,13 @@ function getTrainingDashboard() {
         const status = trainDeriveStatus_(!!completedAt, a.dueDate, todayIso);
         cell[key] = status;
         if (a.itemType === 'quiz') {
-          const stats = trainAttemptStats_(allAttempts.filter(function (at) { return at.empId === e.id; }), a.itemId, a.assignedAt);
+          const mine = allAttempts.filter(function (at) { return at.empId === e.id; });
+          const stats = trainAttemptStats_(mine, a.itemId, a.assignedAt);
           if (stats.count) attemptsByKey[key] = stats.count;
+          if (status !== 'done') {
+            const lk = trainQuizLockState_(mine, a.itemId, e.id, a.assignedAt, allResets, nowMs, mgrTz);
+            if (lk.locked) locked.push({ empId: e.id, empName: e.name, quizId: a.itemId, title: title, retryAtMs: lk.retryAtMs, retryLabel: lk.retryLabel });
+          }
         }
         itemMap[key].assigned++;
         if (status === 'done') itemMap[key].done++;
@@ -630,7 +638,8 @@ function getTrainingDashboard() {
         };
       })
       .sort(function (x, y) { return x.assignedAt < y.assignedAt ? 1 : -1; });
-    return { items: items, reps: reps, assignments: active };
+    locked.sort(function (x, y) { return x.retryAtMs - y.retryAtMs; });
+    return { items: items, reps: reps, assignments: active, locked: locked, maxAttempts: TRAIN_QUIZ_MAX_ATTEMPTS, lockHours: TRAIN_QUIZ_LOCK_HOURS };
   } catch (err) { return { error: err.message }; }
 }
 /** Manager-gated (INV-02), locked (INV-01). Assigns one KB item to one or
@@ -720,6 +729,36 @@ function saveTrainingAssignment(payload) {
     // M-7: best-effort mail fires only after the global lock is released.
     if (notifyAfter) { try { notifyAfter(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } }
   }
+}
+/** Manager-gated (INV-02), locked (INV-01) — TRN-1 (cycle 23 Batch 11). Ends
+ *  a rep's retry wait on one quiz: appends a QuizResets row (ids + the
+ *  manager's address only), after which a fresh set of attempts opens.
+ *  Attempts and scores are kept. Audit: QuizAttemptsReset. */
+function resetQuizAttempts(empId, quizId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    empId = String(empId || '').trim();
+    quizId = String(quizId || '').trim();
+    if (!empId || !quizId) return { success: false, error: 'Missing employee or quiz.' };
+    if (!trainReadQuizzes_()[quizId]) return { success: false, error: 'That quiz no longer exists.' };
+    const rows = getEmployeeRosterRows_();
+    let known = false;
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][EMP.ID]).trim() === empId && empRosterEmail_(rows[i])) { known = true; break; }
+    }
+    if (!known) return { success: false, error: 'That employee is not on the roster.' };
+    const now = new Date();
+    getOrCreateTrainSheet_(TRAIN_QUIZ_RESET_TAB, TRAIN_QUIZ_RESET_HEADERS).appendRow(sheetSafeRow_([
+      fmtDate_(now) + ' ' + fmtTime_(now), quizId, empId, callerEmp.email, now.getTime(),
+    ]));
+    writeAuditLog_(callerEmp, 'QuizAttemptsReset', fmtDate_(now), '', false, 0,
+      'quizId=' + quizId + '; empId=' + empId, callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
 }
 /** Manager-gated (INV-02), locked (INV-01). Revokes one assignment row
  *  (sets RevokedAt — never deletes; the history stays legible). Idempotent.
@@ -900,6 +939,66 @@ function trainAttemptStats_(attempts, quizId, assignedAt) {
   }
   return { count: count, lastScorePct: lastScore ? lastScore.scorePct : null };
 }
+/** PURE (TRN-1, cycle 23 Batch 11; Node-pinned) — the retry limit over one
+ *  rep's attempts at one quiz in the current round (`list` = [{ms, passed}],
+ *  any order). A failed attempt uses one of `max`; a pass starts the count
+ *  over; once `max` are used the rep waits `waitMs` from the LAST of them,
+ *  after which a fresh set of `max` opens. Returns
+ *  { locked, retryAtMs, attemptsLeft } — retryAtMs is set only while locked. */
+function trainQuizLockout_(list, nowMs, max, waitMs) {
+  const xs = (list || []).filter(function (a) { return a && isFinite(a.ms); })
+    .slice().sort(function (a, b) { return a.ms - b.ms; });
+  let used = 0, lastMs = 0;
+  xs.forEach(function (a) {
+    if (used >= max && a.ms - lastMs >= waitMs) used = 0;   // the wait elapsed: a new set
+    lastMs = a.ms;
+    if (a.passed) { used = 0; return; }
+    used++;
+  });
+  if (used >= max && nowMs - lastMs < waitMs) return { locked: true, retryAtMs: lastMs + waitMs, attemptsLeft: 0 };
+  return { locked: false, retryAtMs: null, attemptsLeft: used >= max ? max : max - used };
+}
+/** PURE (TRN-1) — the attempts the limit counts: this quiz, after the current
+ *  assignment round began (the §3a rule trainAttemptStats_ already uses), and
+ *  after the latest manager reset. Stamps are CONFIG.TIMEZONE wall clock,
+ *  parsed by coachParseTs_ (g149 — never read as UTC on the server). */
+function trainQuizAttemptList_(attempts, quizId, assignedAt, resetMs) {
+  const out = [];
+  (attempts || []).forEach(function (a) {
+    if (a.quizId !== quizId || !(a.submittedAt > assignedAt)) return;
+    const ms = coachParseTs_(a.submittedAt);
+    if (!isFinite(ms) || (resetMs && ms <= resetMs)) return;
+    out.push({ ms: ms, passed: !!a.passed });
+  });
+  return out;
+}
+/** The latest manager reset per 'empId|quizId' (epoch ms). A failed read
+ *  THROWS — "no resets" is a reading the limit acts on (g53). */
+function trainReadQuizResets_(empIdFilter) {
+  const sheet = getOrCreateTrainSheet_(TRAIN_QUIZ_RESET_TAB, TRAIN_QUIZ_RESET_HEADERS);
+  const last = sheet.getLastRow();
+  const map = {};
+  if (last < 2) return map;
+  const rows = sheet.getRange(2, 1, last - 1, TRAIN_QUIZ_RESET_HEADERS.length).getValues();
+  rows.forEach(function (r) {
+    const empId = String(r[TQR.EMP_ID] || '').trim();
+    if (!empId || (empIdFilter && empId !== empIdFilter)) return;
+    const ms = Number(r[TQR.AT_MS]);
+    if (!isFinite(ms) || ms <= 0) return;
+    const k = empId + '|' + String(r[TQR.QUIZ_ID] || '').trim();
+    if (!map[k] || ms > map[k]) map[k] = ms;
+  });
+  return map;
+}
+/** The lock state the rep (or a manager) is shown, with the retry time
+ *  formatted in `tz`. */
+function trainQuizLockState_(attempts, quizId, empId, assignedAt, resets, nowMs, tz) {
+  const list = trainQuizAttemptList_(attempts, quizId, assignedAt, (resets || {})[empId + '|' + quizId] || 0);
+  const lk = trainQuizLockout_(list, nowMs, TRAIN_QUIZ_MAX_ATTEMPTS, TRAIN_QUIZ_LOCK_HOURS * 3600000);
+  lk.maxAttempts = TRAIN_QUIZ_MAX_ATTEMPTS;
+  lk.retryLabel = lk.locked ? Utilities.formatDate(new Date(lk.retryAtMs), tz || CONFIG.TIMEZONE, 'EEE MMM d, h:mm a') : '';
+  return lk;
+}
 /** Rep-callable — the quiz WITHOUT its answer key (trainStripQuizForRep_ is
  *  the only shape that leaves the server; the caller must hold a live
  *  assignment, same scoping rule as markTrainingComplete). */
@@ -912,13 +1011,21 @@ function getQuiz(quizId) {
     if (!quiz) return { error: 'Quiz not found.' };
     const eff = trainEffectiveForEmp_(trainReadAssignments_(), emp.id);
     if (!eff['quiz:' + quizId] && !emp.isManager) return { error: 'That quiz is not assigned to you.' };
-    return trainStripQuizForRep_(quizId, quiz);
+    const out = trainStripQuizForRep_(quizId, quiz);
+    // TRN-1: the rep sees the retry limit before answering, not only after.
+    if (eff['quiz:' + quizId]) {
+      out.lockout = trainQuizLockState_(trainReadAttempts_(emp.id), quizId, emp.id, eff['quiz:' + quizId].assignedAt,
+        trainReadQuizResets_(emp.id), Date.now(), empTz_(emp));
+    }
+    return out;
   } catch (err) { return { error: err.message }; }
 }
 /** Rep-callable, locked (INV-01). Grades server-side, appends the attempt,
  *  and on a pass appends the TrainingCompletions row (via='quiz'). Returns
  *  score + per-question right/wrong ONLY — never the correct options
- *  (spec §9.4). Unlimited retries; attempt # rides back for display. */
+ *  (spec §9.4). Retries are capped (TRN-1: TRAIN_QUIZ_MAX_ATTEMPTS failed
+ *  attempts, then a TRAIN_QUIZ_LOCK_HOURS wait or a manager reset); the
+ *  attempt #, attempts left and any wait ride back for display. */
 function submitQuizAttempt(quizId, answers) {
   // ── A10 (cycle 13): auth, assignment check and GRADING run BEFORE the lock ──
   // This is the F12 shape the project already ruled against: every one of these
@@ -933,12 +1040,13 @@ function submitQuizAttempt(quizId, answers) {
   const emp = getEmployeeInfo_();
   if (!emp) return { success: false, error: 'Not authorized.' };
   quizId = String(quizId || '').trim();
-  let quiz, a;
+  let quiz, a, resets;
   try {
     quiz = trainReadQuizzes_()[quizId];
     if (!quiz) return { success: false, error: 'Quiz not found.' };
     a = trainEffectiveForEmp_(trainReadAssignments_(), emp.id)['quiz:' + quizId];
     if (!a) return { success: false, error: 'That quiz is not assigned to you.' };
+    resets = trainReadQuizResets_(emp.id);   // TRN-1 (a failed read refuses the attempt, never reads as "no reset")
   } catch (err) { return { success: false, error: err.message }; }
   if (!Array.isArray(answers)) answers = [];
   const graded = trainGradeQuiz_(quiz.questions, answers);   // pure
@@ -949,12 +1057,25 @@ function submitQuizAttempt(quizId, answers) {
   try {
     const now = new Date();
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
+    // TRN-1: the retry limit is checked INSIDE the lock, over the same read the
+    // attempt count uses — two quick submits cannot both slip under it.
+    const prior = trainReadAttempts_(emp.id);
+    const tz = empTz_(emp);
+    const before = trainQuizLockState_(prior, quizId, emp.id, a.assignedAt, resets, now.getTime(), tz);
+    if (before.locked) {
+      return { success: false, locked: true, retryAtMs: before.retryAtMs, retryLabel: before.retryLabel,
+        error: 'You have used all ' + TRAIN_QUIZ_MAX_ATTEMPTS + ' attempts. You can try again after ' + before.retryLabel +
+          ', or ask your manager to reset your attempts. This attempt was not recorded.' };
+    }
     const attemptId = Utilities.getUuid();
     getOrCreateTrainSheet_(TRAIN_ATTEMPT_TAB, TRAIN_ATTEMPT_HEADERS).appendRow(sheetSafeRow_([
       attemptId, quizId, emp.id, ts, graded.scorePct, passed ? 'TRUE' : 'FALSE',
       JSON.stringify(graded.perQuestion),
     ]));
-    const stats = trainAttemptStats_(trainReadAttempts_(emp.id), quizId, a.assignedAt);
+    // The row just written joins the read in memory (it was a second read).
+    const withThis = prior.concat([{ quizId: quizId, empId: emp.id, submittedAt: ts, scorePct: graded.scorePct, passed: passed }]);
+    const stats = trainAttemptStats_(withThis, quizId, a.assignedAt);
+    const after = trainQuizLockState_(withThis, quizId, emp.id, a.assignedAt, resets, now.getTime(), tz);
     // Completion: only on a pass, and only once per assignment round.
     let alreadyComplete = false;
     if (passed) {
@@ -974,14 +1095,14 @@ function submitQuizAttempt(quizId, answers) {
     return {
       success: true, scorePct: graded.scorePct, passed: passed,
       right: graded.right, total: graded.total,
-      // S10 (cycle 22; operator 2026-09-25): per-question marks only once the
-      // attempt PASSES. With unlimited retries, right/wrong on a failed attempt
-      // was an answer key — change one answer, read its mark, repeat. A failed
-      // attempt now reports the score alone. (The attempt row still records
-      // perQuestion for managers; the score delta can still be probed one
-      // question per attempt — slower, not impossible; the attempt count on
-      // the manager matrix is what shows it.)
-      perQuestion: passed ? graded.perQuestion : null, attempt: stats.count, passPct: quiz.passPct,
+      // TRN-1 (cycle 23 Batch 11, operator 2026-10-05): the marks ride every
+      // attempt — which questions were wrong, NEVER the right option. S10 had
+      // withheld them on a fail because unlimited retries made right/wrong an
+      // answer key by elimination; the retry limit (TRAIN_QUIZ_MAX_ATTEMPTS,
+      // then a TRAIN_QUIZ_LOCK_HOURS wait) is what closes that now.
+      perQuestion: graded.perQuestion, attempt: stats.count, passPct: quiz.passPct,
+      attemptsLeft: after.attemptsLeft, maxAttempts: TRAIN_QUIZ_MAX_ATTEMPTS,
+      locked: after.locked, retryAtMs: after.retryAtMs, retryLabel: after.retryLabel,
     };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }

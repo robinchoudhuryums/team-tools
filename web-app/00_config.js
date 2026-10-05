@@ -1606,6 +1606,13 @@ var _csrTransferWarning = null;
  *  only). Sourced from the SUBMISSION tabs' Timestamp column (every send =
  *  one row), bounded tail per tab. Answers "average occurrences per month"
  *  with real monthly counts rather than a single averaged number. */
+/** Batch 11 (cycle 23, operator 2026-10-05): the weights a PPD answer may
+ *  carry. Nothing in the catalog is pediatric, and nothing is rated past
+ *  1000 lbs, so a reading outside [MIN, MAX] is a typo or a misread unit
+ *  (an "18 st", a "12" meant as 120) — read as UNREADABLE, with the reason,
+ *  never fed to the capacity filter. */
+const INTAKE_WEIGHT_MIN_LBS = 20;
+const INTAKE_WEIGHT_MAX_LBS = 1000;
 const INTAKE_VOLUME_MONTHS = 6;
 const INTAKE_VOLUME_SCAN_MAX = 4000;
 // ════════════════════════════════════════════════════════════════════════════
@@ -2310,8 +2317,9 @@ const TRAIN_ASSIGN_MAX_EMPS = 100;   // per saveTrainingAssignment call
 const TRAIN_COMPLETE_MAX_SCAN = 10000;
 const TRAIN_ATTEMPT_MAX_SCAN = 4000;
 // ── T2: Quizzes (server-graded; answer keys NEVER ship to the client) ──────
-// docs/training-employee-docs-spec.md §5 + §9.4 (unlimited retries, never
-// reveal correct answers — only per-question right/wrong; attempts tracked).
+// docs/training-employee-docs-spec.md §5 + §9.4 (never reveal correct answers
+// — only per-question right/wrong; attempts tracked; retries capped since
+// cycle 23 TRN-1, see TRAIN_QUIZ_MAX_ATTEMPTS below).
 const TRAIN_QUIZ_TAB = 'Quizzes';
 const TRAIN_ATTEMPT_TAB = 'QuizAttempts';
 const TRAIN_QUIZ_HEADERS = ['QuizId','Title','KbItemId','PassPct','QuestionsJson','UpdatedBy','UpdatedAt'];
@@ -2321,6 +2329,18 @@ const TQA = { ATTEMPT_ID:0, QUIZ_ID:1, EMP_ID:2, SUBMITTED_AT:3, SCORE_PCT:4, PA
 const TRAIN_QUIZ_MAX_QUESTIONS = 50;
 const TRAIN_QUIZ_MAX_OPTIONS = 6;
 const TRAIN_QUIZ_JSON_MAX = 45000;   // under the 50k Sheets cell limit (INV-96 spirit)
+// TRN-1 (cycle 23 Batch 11, operator 2026-10-05): retries are no longer
+// unlimited. A failed attempt now shows WHICH questions were wrong (never the
+// right option), and with unlimited retries that is an answer key by
+// elimination — so after MAX failed attempts in a row the rep waits LOCK_HOURS
+// before the next set, unless a manager resets them (QuizResets: one row per
+// reset, append-only, ids only). A pass, a re-assignment (§3a) or a reset
+// starts the count over.
+const TRAIN_QUIZ_MAX_ATTEMPTS = 3;
+const TRAIN_QUIZ_LOCK_HOURS = 24;
+const TRAIN_QUIZ_RESET_TAB = 'QuizResets';
+const TRAIN_QUIZ_RESET_HEADERS = ['ResetAt','QuizId','EmpId','ResetBy','AtMs'];
+const TQR = { RESET_AT:0, QUIZ_ID:1, EMP_ID:2, RESET_BY:3, AT_MS:4 };
 // ── T3: Employee Docs (per-employee signable documents) ────────────────────
 // docs/training-employee-docs-spec.md §3b/§4/§5. A DEDICATED spreadsheet
 // (Script Property HR_DOCS_SS_ID — NEVER co-located with the KB, ADP, or PHI

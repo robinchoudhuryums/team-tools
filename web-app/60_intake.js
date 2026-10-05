@@ -245,7 +245,12 @@ function intakeParseWeight_(text) {
   const value = pick ? pick.v : 0;
   const lbs = !pick ? 0 : (pick.unit === 'kg' ? Math.round(value * 2.20462 * 10) / 10 : value);
   const ok = isFinite(lbs) && lbs > 0;
-  return { lbs: ok ? lbs : 0, unreadable: !ok, raw: t, unit: pick ? (pick.unit || 'lb') : '', value: value };
+  // Batch 11: a number outside the weights the catalog serves is a typo or a
+  // misread unit, not a patient — unreadable, and says which bound it broke.
+  const implausible = ok && (lbs < INTAKE_WEIGHT_MIN_LBS || lbs > INTAKE_WEIGHT_MAX_LBS);
+  return { lbs: ok && !implausible ? lbs : 0, unreadable: !ok || implausible, raw: t,
+           unit: pick ? (pick.unit || 'lb') : '', value: value,
+           implausible: implausible ? lbs : 0 };
 }
 function intakeCatalogIssues_(rows) {
   const out = [];
@@ -565,6 +570,7 @@ function intakeDeriveClinicalFactors_(answers) {
     weight: intakeParseWeight_(getAnswerText('38')).lbs,   // I3 + INT2-2: by unit, not by first number
     weightUnreadable: intakeParseWeight_(getAnswerText('38')).unreadable,
     weightFromKg: intakeParseWeight_(getAnswerText('38')).unit === 'kg' ? intakeParseWeight_(getAnswerText('38')).value : 0,
+    weightImplausible: intakeParseWeight_(getAnswerText('38')).implausible,   // Batch 11: the out-of-range reading, 0 when none
     neuroCondition: getAnswerText('43'),
     numbnessAnswer: getAnswerText('25'),
     amputationStatus: getAnswerText('34'),
@@ -648,7 +654,8 @@ function intakeExplainFactors_(answers) {
   const yn = (b) => b ? 'Yes' : 'No';
   const rows = [];
   rows.push({ label: 'Weight', value: p.weight ? (p.weight + ' lbs' + (p.weightFromKg ? ' (from ' + p.weightFromKg + ' kg)' : ''))
-    : (p.weightUnreadable ? 'UNREADABLE — the answer could not be read as one weight (no number, or several numbers without a unit), so NO weight-capacity check was applied; re-enter it as one number in lbs'
+    : (p.weightImplausible ? 'UNREADABLE — the answer reads as ' + p.weightImplausible + ' lbs, outside ' + INTAKE_WEIGHT_MIN_LBS + '–' + INTAKE_WEIGHT_MAX_LBS + ' lbs (a typo or a wrong unit), so NO weight-capacity check was applied; re-enter it as one number in lbs'
+      : p.weightUnreadable ? 'UNREADABLE — the answer could not be read as one weight (no number, or several numbers without a unit), so NO weight-capacity check was applied; re-enter it as one number in lbs'
       : 'not provided') });
   rows.push({ label: 'Dwelling (Q39a)', value: p.dwelling || 'not provided' });
   if (p.livesInMobileHome) {
@@ -1328,10 +1335,14 @@ function intakePreviewPPD(payload) {
     // I3 follow-up (cycle 22): an answer with no number in it ran NO weight-
     // capacity check — said in the explain factors, now also on the screen the
     // rep reads before sending (additive; the engine is unchanged).
-    const weightUnreadable = !!intakeDeriveClinicalFactors_(payload.answers || {}).patient.weightUnreadable;
+    const wp = intakeDeriveClinicalFactors_(payload.answers || {}).patient;
+    const weightUnreadable = !!wp.weightUnreadable;
     return { success: true, html: html, subject: subject, recommendations: recData, bodyHash: intakeBodyHash_(body, subject),
              answersHash: intakePpdAnswersHash_(patientInfo, payload.answers, subject),   // INT2-4
-             weightUnreadable: weightUnreadable };
+             weightUnreadable: weightUnreadable,
+             // Batch 11: the out-of-range reading and the bounds, so the warning names them
+             weightImplausible: wp.weightImplausible || 0,
+             weightRange: [INTAKE_WEIGHT_MIN_LBS, INTAKE_WEIGHT_MAX_LBS] };
   } catch (err) { return { error: err.message }; }
 }
 /** INT2-4 (cycle 23) — the preview hash of the ANSWERS alone: the PPD body
@@ -1389,6 +1400,8 @@ function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
         : 'The form changed since you previewed it. Please preview again before sending.' };
     }
     const recipient = intakeResolveRecipient_('PPD', recipientSpec);
+    const extRefuse = intakeExternalRecipientCheck_(recipient, recipientSpec);   // INT-3
+    if (extRefuse) return extRefuse;
     // Amend & re-send (operator 2026-08-25): validate the source BEFORE the
     // send — a bad/foreign id fails the whole send rather than silently
     // sending an unmarked amendment.
@@ -1412,7 +1425,7 @@ function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
       sendSubject = 'AMENDED: ' + subject;
     }
     const finalBody = amendBanner + intakeBuildPpdBodyHtml_(patientInfo, ppdRows, recData, payload.selections || {})
-      + intakeFeedbackCta_(submissionId, 'PPD');
+      + (isOrgEmail_(recipient) ? intakeFeedbackCta_(submissionId, 'PPD') : '');   // INT-3: the feedback page needs a staff sign-in
     const html = intakeEmailShell_(sendSubject, finalBody, 'Intake · PPD');
 
     // M-5 (cycle 10): size-bound the PHI store cells BEFORE the send (INV-96
@@ -1477,6 +1490,8 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
     return { success: false, error: 'The form changed since you previewed it. Please preview again before sending.' };
   }
   const recipient = intakeResolveRecipient_(formType, recipientSpec);
+  const extRefuse = intakeExternalRecipientCheck_(recipient, recipientSpec);   // INT-3
+  if (extRefuse) return extRefuse;
 
   // Amend & re-send (operator 2026-08-25) — see intakeSendPPD; validated
   // before the send, applied post-hash.
@@ -1510,7 +1525,7 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
   // no preview-hash over the inner body sections the CTA joins, but the same
   // final-body-only placement keeps the two send paths uniform.
   const submissionId = Utilities.getUuid();
-  const htmlBody = intakeEmailShell_(sendSubject, innerBody + intakeFeedbackCta_(submissionId, formType),
+  const htmlBody = intakeEmailShell_(sendSubject, innerBody + (isOrgEmail_(recipient) ? intakeFeedbackCta_(submissionId, formType) : ''),   // INT-3
     'Intake · ' + (formType === 'PAP' ? 'PAP' : 'PMD'));
 
   // M-5 (cycle 10): size-bound the PHI store cell BEFORE the send (INV-96
@@ -1540,6 +1555,20 @@ function intakePreviewPMD(payload) { try { return intakePreviewAcct_('PMD', payl
 function intakeSendPMD(payload, recipientSpec, images, expectedBodyHash) { try { return intakeSendAcct_('PMD', payload, recipientSpec, images, expectedBodyHash); } catch (e) { return { success: false, error: e.message }; } }
 function intakePreviewPAP(payload) { try { return intakePreviewAcct_('PAP', payload); } catch (e) { return { error: e.message }; } }
 function intakeSendPAP(payload, recipientSpec, images, expectedBodyHash) { try { return intakeSendAcct_('PAP', payload, recipientSpec, images, expectedBodyHash); } catch (e) { return { success: false, error: e.message }; } }
+/** PURE (INT-3, cycle 23 Batch 11; Node-pinned) — an intake email carries
+ *  full PHI, and the custom recipient accepts any address. One outside the
+ *  org's domains (CONFIG.ORG_EMAIL_DOMAINS, read through isOrgEmail_) is sent
+ *  only once the rep has CONFIRMED that domain: the refusal names it, the
+ *  client asks, and the resend carries `confirmedExternal` equal to it. The
+ *  check is the server's (INT-2's lesson: a client-only guard is no guard),
+ *  and nothing is sent until it passes. Returns null when the send may go. */
+function intakeExternalRecipientCheck_(recipient, spec) {
+  if (isOrgEmail_(recipient)) return null;
+  const domain = intakeEmailDomain_(recipient);
+  if (spec && String(spec.confirmedExternal || '').trim().toLowerCase() === domain) return null;
+  return { success: false, needsExternalConfirm: domain,
+    error: recipient + ' is outside UniversalMed Supply (' + domain + '). Confirm before patient information is sent there. Nothing was sent.' };
+}
 function intakeEmailDomain_(email) {
   const at = String(email || '').indexOf('@');
   return at >= 0 ? String(email).substring(at + 1).toLowerCase() : '(none)';

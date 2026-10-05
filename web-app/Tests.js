@@ -6701,6 +6701,7 @@ function test_managerGates_rejectNonManager() {
     ['getTrainingDashboard',           function () { return getTrainingDashboard(); }],
     ['saveTrainingAssignment',         function () { return saveTrainingAssignment({ itemId: 'no-such-item', empIds: ['x'] }); }],
     ['revokeTrainingAssignment',       function () { return revokeTrainingAssignment('no-such-assign'); }],
+    ['resetQuizAttempts',              function () { return resetQuizAttempts('no-such-emp', 'no-such-quiz'); }],   // TRN-1 (cycle 23)
     // T2 quiz gates.
     ['getQuizzes',                     function () { return getQuizzes(); }],
     ['saveQuiz',                       function () { return saveQuiz({ title: 'gate', passPct: 80, questions: [{ q: 'q', options: ['a', 'b'], correct: 0 }] }); }],

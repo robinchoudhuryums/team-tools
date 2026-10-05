@@ -5221,3 +5221,18 @@ pick them up without re-deriving the context.
   moment, and a structural edit changes the field set) and a native
   `beforeunload`-style prompt (an in-app dialog must be a `uiConfirm`,
   the native-dialog replacement decision).
+- <a id="and-in-an-eligibility-cell-means-either-area"></a>**"and" in an Area Eligibility cell means EITHER area; a phrase that could mean "both" is unreadable, never guessed (cycle 23 KB2-6, operator 2026-10-05).**
+  The scan flagged that `oopEligibilityParse_` reads "listed cities and 100
+  miles of Dallas" as `any[radius, cities]` — either one qualifies — and asked
+  whether the operator meant both. The operator reviewed the parser's reading
+  of every "and" shape in use and confirmed each: "100 miles of Dallas and San
+  Antonio" is near either warehouse, "TX and OK" is either state (an address is
+  never in both), "Open and listed cities" is open, and a radius "and" the
+  city list is either. For place names "and" lists areas, so "either" is its
+  meaning, not a fail-open. The phrasings where "and" could narrow ("TX and
+  listed cities", "100 miles of Dallas and TX only", "listed cities and
+  surrounding areas") already parse as UNKNOWN, so the rep is told to check —
+  the g41 fail direction, unchanged. No grammar change; the Batch 11 KB2-6
+  grid pins every reading above, so a later edit cannot flip one silently.
+  Rejected: reading "and" as an intersection (wrong for every confirmed cell)
+  and refusing every "and" (would turn correct cells unreadable).

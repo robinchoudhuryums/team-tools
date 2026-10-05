@@ -1214,6 +1214,19 @@ function clkDashCompareNote_(res, prevLabel) {
   return '';
 }
 
+/** MET-5 follow-up (cycle 23 Batch 11): before the daily call-data import
+ *  the period's figures end on its newest DATA day, and the card says so —
+ *  otherwise a morning load reads as the whole period to date. */
+function clkDashDataNote_(res) {
+  if (!res || !res.importPending) return '';
+  var t = res.dataThrough;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(t || ''))) return ' · the latest day is not imported yet';
+  var d = new Date(t + 'T12:00:00Z');
+  var lbl = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getUTCDay()] + ' ' +
+    ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getUTCMonth()] + ' ' + d.getUTCDate();
+  return ' · calls through ' + lbl + ' — the latest day is not imported yet';
+}
+
 /** The comparison side for one card, or null. `which` is 'own' | 'team'. */
 function clkDashPrev_(res, which) {
   var p = res && res.prev;
@@ -1256,7 +1269,7 @@ function clkDashOwnCard_(res) {
       { delta: dashDelta_(o.attSeconds, pv && pv.attSeconds, 'sec'), prevLabel: pl }) +
   '</div>';
   var foot = '<div class="dash-card-foot mono">' + esc(res.label) + (o.calls != null ? ' · ' + o.calls + ' calls' : '') +
-    clkDashCompareNote_(res, pl) + '</div>';
+    clkDashCompareNote_(res, pl) + clkDashDataNote_(res) + '</div>';
   // Run-rate projection (MTD/YTD only, ≥3 days elapsed) — a client calc on the
   // aggregate. The full daily "cone" chart would need a series in the endpoint.
   // M8 (cycle 22): elapsed = the days the CDR HOLDS (dataThrough), never today.
@@ -1285,7 +1298,7 @@ function clkDashTeamCard_(res) {
     clkDashKpi_('Missed', t.missed != null ? t.missed : '—',
       { delta: dashDelta_(t.missed, pv && pv.missed, 'count'), prevLabel: pl }) +
   '</div><div class="dash-card-foot mono">' + esc(res.label) + ' · ' + (res.cohort || 0) + ' reps' +
-    clkDashCompareNote_(res, pl) + '</div>';
+    clkDashCompareNote_(res, pl) + clkDashDataNote_(res) + '</div>';
   var proj = dashProjection_(t.answered, res.from, res.dataThrough, res.periodKey);   // M8
   return kpis + (proj ? '<div class="dash-proj mono">' + icon('chart', 11) +
     ' On pace for ~' + proj.projected + ' answered by ' + esc(proj.endLabel) + '</div>' : '');

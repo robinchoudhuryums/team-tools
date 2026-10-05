@@ -1324,6 +1324,27 @@ function dashboardImportPending_(range, latestDate, prevWorkday) {
   if (prevWorkday < range.from) return false;
   return !latestDate || latestDate < prevWorkday;
 }
+/** PURE (MET-5 follow-up, cycle 23 Batch 11; Node-pinned) — where a
+ *  period-to-date window's DATA actually ends. M8 lag-aligns on the assumption
+ *  that the previous workday is in; before the daily import it is not, so the
+ *  window holds a day fewer than the prior window it is compared with (every
+ *  volume delta read ~1/d low) and the run-rate divided by a day with no data.
+ *  While the import is pending the window ends on its NEWEST DATA DAY: that is
+ *  the projection's denominator, and the prior window is anchored the day after
+ *  it, so dashboardPrevRange_ takes the same days of last month. No data day in
+ *  the window yet means no denominator and no comparison.
+ *  Returns { importPending, dataThrough, prevAnchor } — prevAnchor is the
+ *  "today" dashboardPrevRange_ is called with (null = no comparison). */
+function dashboardAlignToData_(range, latestDate, prevWorkday, todayIso) {
+  var through = (range && range.dataThrough) || null;
+  if (!dashboardImportPending_(range, latestDate, prevWorkday)) {
+    return { importPending: false, dataThrough: through, prevAnchor: todayIso };
+  }
+  if (!latestDate || latestDate < range.from) return { importPending: true, dataThrough: null, prevAnchor: null };
+  var d = new Date(Date.parse(latestDate + 'T00:00:00Z') + 86400000);
+  var next = d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
+  return { importPending: true, dataThrough: latestDate, prevAnchor: next };
+}
 /** Pure (Node-pinned) — the LIKE-FOR-LIKE prior window for a period, used for
  *  the MTD deltas (operator 2026-08-12: "show the delta from last month").
  *
@@ -1433,7 +1454,10 @@ function getDashboardMetrics(periodKey) {
     // dashboard's team-avg excludes.
     // v6 (cycle 22 M2/M8): 'yesterday' is the previous workday, the MTD prior
     // window is lag-aligned, and the payload carries dataThrough.
-    var cacheKey = 'dash_metrics_v6:' + emp.id + ':' + periodKey + ':' + todayIso;
+    // v7 (cycle 23 Batch 11): a pre-import window ends on its newest data day
+    // and the payload carries importPending — a v6 entry cached by the code
+    // before MET-5 could still be a misaligned pre-import round.
+    var cacheKey = 'dash_metrics_v7:' + emp.id + ':' + periodKey + ':' + todayIso;
     if (useCache) {
       try { var hit = cache.get(cacheKey); if (hit) { var co = JSON.parse(hit); co.cached = true; return co; } } catch (_) {}
     }
@@ -1509,7 +1533,10 @@ function getDashboardMetrics(periodKey) {
     // a failed comparison read drops the DELTAS, never the numbers — but it is
     // reported (prevUnavailable) rather than rendering as "no change", which is
     // the reassuring-silence failure INV-187 exists to stop.
-    var prevRange = dashboardPrevRange_(periodKey, todayIso), prev = null, prevUnavailable = false;
+    // MET-5 follow-up (Batch 11): before the daily import, both windows end on
+    // the newest DATA day, so the comparison stays like-for-like.
+    var align = dashboardAlignToData_(range, cur.latestDate, prevWorkdayIso_(todayIso), todayIso);
+    var prevRange = align.prevAnchor ? dashboardPrevRange_(periodKey, align.prevAnchor) : null, prev = null, prevUnavailable = false;
     if (prevRange) {
       try {
         var pShaped = shapeWindow(prevRange.from, prevRange.to);
@@ -1526,7 +1553,8 @@ function getDashboardMetrics(periodKey) {
 
     var result = {
       periodKey: periodKey, from: from, to: to, label: range.label,
-      dataThrough: range.dataThrough || null,   // M8: the projection's denominator
+      dataThrough: align.dataThrough,   // M8: the projection's denominator; MET-5 follow-up: the newest data day while the import is pending
+      importPending: align.importPending,   // MET-5 follow-up: the card says the latest day is not in yet
       own: cur.own,
       team: cur.team,
       cohort: cur.cohort,
@@ -1560,7 +1588,7 @@ function getDashboardMetrics(periodKey) {
     // read ~1/d low and the run-rate divides by a day with no data — and the
     // 6-hour TTL pinned those WRONG numbers past the import. Not cached until
     // the newest data day reaches the previous workday.
-    var importPending = dashboardImportPending_(range, cur.latestDate, prevWorkdayIso_(todayIso));
+    var importPending = align.importPending;
     if (useCache && !noteRes.unavailable && !prevUnavailable && cur.team && !importPending) {
       try { cache.put(cacheKey, JSON.stringify(result), DASHBOARD_CACHE_TTL); } catch (_) {}
     }

@@ -841,7 +841,10 @@ test('dashboardPeriodRange_: yesterday is the previous WORKDAY; mtd/ytd resolve 
 });
 test('M2/M8 (cycle 22): getDashboardMetrics ships dataThrough, the cards project from it, and a window nobody reported in is never cached', () => {
   const dash = stripJsComments_(extractRawFunction('Code.js', 'getDashboardMetrics'));
-  assert.ok(/dataThrough: range\.dataThrough \|\| null,/.test(dash), 'the payload carries the last day with data');
+  // Batch 11 (MET-5 follow-up): dataThrough comes from dashboardAlignToData_, which
+  // returns range.dataThrough unless the import is pending (pinned by the Batch 11 drive).
+  assert.ok(/dataThrough: align\.dataThrough,/.test(dash) && /var align = dashboardAlignToData_\(range, cur\.latestDate, prevWorkdayIso_\(todayIso\), todayIso\);/.test(dash),
+    'the payload carries the last day with data');
   assert.ok(/if \(useCache && !noteRes\.unavailable && !prevUnavailable && cur\.team && !importPending\) \{/.test(dash),   // MET-5 (cycle 23) added the import gate
     'M2 — an all-empty window (the pre-import morning) is not pinned for the dashboard TTL');
   const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
@@ -1062,8 +1065,10 @@ test('TRIPWIRE (H-1): coaching overdue consumers use coachParseTs_, never the T-
   // nothing guarded it — this pin is the one enumerated-reader check in the
   // sample with NO global-scan sibling, so a sixth consumer on the wrong parser
   // would have been invisible. The completeness assert below is the sibling.
+  // trainQuizAttemptList_ (cycle 23 TRN-1) reads a QuizAttempts SubmittedAt —
+  // the same CONFIG.TIMEZONE space-form stamp — for the quiz retry limit.
   const GUARDED = ['getCoachingDashboard', 'coachUnackedAll_', 'getMyCoaching',
-    'coachRecapBuckets_', 'coachAnalytics_'];
+    'coachRecapBuckets_', 'coachAnalytics_', 'trainQuizAttemptList_'];
   GUARDED.forEach((fn) => {
     const src = extractRawFunction('Code.js', fn);
     assert.ok(/coachParseTs_\(/.test(src), fn + ' parses createdAt via coachParseTs_');
@@ -2809,7 +2814,15 @@ function extractClientObject(file, name) {
 }
 
 console.log('\nCode.js — intakeFilterRecommendations_() (PPD engine)');
+// Batch 11 (cycle 23): the weight parser reads the two plausibility bounds —
+// taken from the REAL declarations, so a sandbox never carries its own copy.
+const intakeWeightBoundsSrc_ = () => ['INTAKE_WEIGHT_MIN_LBS', 'INTAKE_WEIGHT_MAX_LBS'].map((k) => {
+  const m = serverSource().match(new RegExp('const ' + k + ' = (\\d+);'));
+  if (!m) throw new Error(k + ' is not declared in the server source');
+  return 'var ' + k + ' = ' + m[1] + ';';
+}).join('\n');
 const engineCtx = vm.createContext({});
+vm.runInContext(intakeWeightBoundsSrc_(), engineCtx);
 // The engine now derives its clinical factors via the shared
 // intakeDeriveClinicalFactors_ helper (so the engine + the explainability
 // surface can't drift) — load it into the ctx first or the engine's call throws.
@@ -4092,7 +4105,10 @@ test('trainParseFormId_: edit URL → id; bare id; /d/e/ published → error; ju
 });
 test('getQuiz source tripwire: the rep response is built ONLY by trainStripQuizForRep_', () => {
   const src = extractRawFunction('Code.js', 'getQuiz');
-  assert.ok(src.indexOf('return trainStripQuizForRep_(') >= 0, 'getQuiz returns the stripped shape');
+  // TRN-1 (cycle 23): the stripped shape carries the rep's retry-limit state
+  // beside it — still built by trainStripQuizForRep_, never from the raw row.
+  assert.ok(src.indexOf('const out = trainStripQuizForRep_(') >= 0 && /return out;/.test(src) &&
+    /out\.lockout = trainQuizLockState_\(/.test(src), 'getQuiz returns the stripped shape');
   assert.strictEqual(src.indexOf('questionsJson'), -1, 'raw questions JSON never returned');
 });
 
@@ -8423,9 +8439,9 @@ test('Dashboard team card shows the aggregate at any cohort; the My Stats series
   // operator 2026-08-18) — a stale entry must never serve the previous
   // contract for the TTL after a deploy. The day in the key is load-bearing
   // at the longer TTL: a payload must never straddle the rep-local midnight.
-  assert.ok(/dash_metrics_v6:/.test(dash) && !/dash_metrics_v[12345]:/.test(dash),
-    'the cache key bumped with the payload semantics (v6: M2 workday + M8 lag-aligned prior window)');
-  assert.ok(/dash_metrics_v6:' \+ emp\.id \+ ':' \+ periodKey \+ ':' \+ todayIso/.test(dash),
+  assert.ok(/dash_metrics_v7:/.test(dash) && !/dash_metrics_v[123456]:/.test(dash),
+    'the cache key bumped with the payload semantics (v7: the pre-import window ends on its newest data day — cycle 23 Batch 11)');
+  assert.ok(/dash_metrics_v7:' \+ emp\.id \+ ':' \+ periodKey \+ ':' \+ todayIso/.test(dash),
     'the v4 key carries the rep-local day');
   assert.ok(/DASHBOARD_CACHE_TTL\)/.test(dash), 'the put uses the dashboard TTL, not the 5-min CDR TTL');
   // The decision is SCOPED: the per-day anonymized series (the back-solvable
@@ -15061,7 +15077,7 @@ const X1_NO_FIXTURE_WRITES = [  // writes: no scenario performs them, and a fixt
     'mergeCallNoteTags', 'nudgeCoaching', 'offboardEmployee', 'provisionCallNotesSheet', 'qaAddComment',
     'qaAssignRecording', 'qaDeleteComment', 'qaSampleRecordings', 'qaSaveScorecard', 'qaSetExemption',
     'qaSetRecordingAgent', 'qaSetRecordingDuration', 'qaSetRecordingShared', 'qaSetRecordingStatus',
-    'qaSyncRecordings', 'reconcileCallNotes', 'recordPunch', 'releaseDoc', 'releaseSpanishThread',
+    'qaSyncRecordings', 'reconcileCallNotes', 'recordPunch', 'releaseDoc', 'releaseSpanishThread', 'resetQuizAttempts',
     'renameCallNoteTag', 'resolveSpanishThread', 'revokeTrainingAssignment', 'saveAutoTagRules', 'saveBreakSchedules',
     'saveDepartmentEmails', 'saveDeptRequestSla', 'saveEmailTemplates', 'saveEmpDocTemplate', 'saveExternalLinks',
     'saveFeatureFlags', 'saveKbAiSettings', 'saveMyScratchpad', 'saveQaMembers', 'saveQaScorecardCriteria',
@@ -28242,11 +28258,13 @@ test('I2: a seat cell is read WORD BY WORD — "Captain Seat" is a captain seat,
 
 test('I3: the patient weight is the FIRST number in the answer — "250-260" is 250 lbs, and an answer with no number is a named decision factor', () => {
   const ctx = vm.createContext({});
+  vm.runInContext(intakeWeightBoundsSrc_(), ctx);
   vm.runInContext(extractRawFunction('Code.js', 'intakeParseWeight_'), ctx);
   const W = (t) => JSON.parse(JSON.stringify(ctx.intakeParseWeight_(t)));
   assert.strictEqual(W('250-260').lbs, 250, 'a range reads its first number (it read 250260)');
   assert.strictEqual(W('250.5 lbs').lbs, 250.5, 'the decimal survives (the cycle-8 fix)');
-  assert.strictEqual(W('about 1,250 lbs').lbs, 1250, 'a thousands comma is not a separator');
+  // Batch 11: 1,000 is the plausibility ceiling, so the thousands-comma case sits ON it.
+  assert.strictEqual(W('about 1,000 lbs').lbs, 1000, 'a thousands comma is not a separator');
   assert.deepStrictEqual([W('n/a').lbs, W('n/a').unreadable], [0, true], 'no number → 0 and UNREADABLE');
   assert.deepStrictEqual([W('').lbs, W('').unreadable], [0, false], 'blank is simply not provided');
   const rows = intakeExplainFactors_({ '38': 'heavy' });
@@ -28562,7 +28580,8 @@ test('FU-B8b: an unreadable weight answer is said ON the recommendation screen �
   assert.strictEqual(w({ weightUnreadable: false }), '');
   assert.strictEqual(w(null), '');
   const prev = stripJsComments_(extractRawFunction('Code.js', 'intakePreviewPPD'));
-  assert.ok(/intakeDeriveClinicalFactors_\(payload\.answers \|\| \{\}\)\.patient\.weightUnreadable/.test(prev) && /weightUnreadable: weightUnreadable/.test(prev),
+  assert.ok(/const wp = intakeDeriveClinicalFactors_\(payload\.answers \|\| \{\}\)\.patient;/.test(prev) && /weightUnreadable = !!wp\.weightUnreadable/.test(prev)
+    && /weightUnreadable: weightUnreadable/.test(prev),
     'the preview ships the SAME derivation the engine and the explain factors read');
   const intk = fs.readFileSync(path.join(FU_WEB, 'intake/script_intake.html'), 'utf8');
   assert.ok(/weightUnreadable: !!res\.weightUnreadable/.test(intk) && /intakeWeightWarnHtml_\(INTAKE_STATE\.preview\)/.test(intk), 'the modal renders it');
@@ -28768,21 +28787,29 @@ test('S8: no page the app serves can be framed by another site — no ALLOWALL a
   assert.ok(/XFrameOptionsMode\.DEFAULT/.test(extractRawFunction('Code.js', 'serveExternalForm_')), 'including the public form');
 });
 
-test('S10: a FAILED quiz attempt reports the score alone — per-question marks only once passed (driven client)', () => {
+test('S10 → TRN-1 (cycle 23): a FAILED attempt shows WHICH questions were wrong, never the right option; the retry limit is what closes the elimination key (driven client)', () => {
   const q = stripJsComments_(extractRawFunction('Code.js', 'submitQuizAttempt'));
-  assert.ok(/perQuestion: passed \? graded\.perQuestion : null/.test(q), 'the server withholds the marks on a fail');
+  assert.ok(/perQuestion: graded\.perQuestion,/.test(q) && !/perQuestion: passed \?/.test(q), 'the marks ride every attempt (operator 2026-10-05)');
   assert.ok(/JSON\.stringify\(graded\.perQuestion\)/.test(q), 'the attempt row still records them for managers');
+  assert.ok(!/correct(Idx|Index|Option|Answer)/.test(q.slice(q.indexOf('return {\n      success: true'))), 'the success payload names no correct option');
   const s2 = buildSandbox([]);
   s2.icon = () => ''; s2.esc = (x) => String(x == null ? '' : x);
   const overlay = { innerHTML: '' };
   s2.document.getElementById = (id) => (id === 'train-quiz-overlay' ? overlay : null);
+  loadFunction(s2, 'train/script_training.html', 'trainAttemptsLeftText_');
+  loadFunction(s2, 'train/script_training.html', 'trainQuizLockedHtml_');
   const render = loadFunction(s2, 'train/script_training.html', 'trainRenderQuizResult_');
-  const quiz = { questions: [{ q: 'A?', options: ['x', 'y'] }, { q: 'B?', options: ['x', 'y'] }] };
-  render(quiz, [0, 1], { passed: false, scorePct: 50, right: 1, total: 2, passPct: 100, attempt: 1, perQuestion: null });
-  assert.ok(/data-quiz-marks="withheld"/.test(overlay.innerHTML) && !/Correct|Incorrect/.test(overlay.innerHTML) && !/tr-q (right|wrong)/.test(overlay.innerHTML),
-    'no mark on any question after a fail');
-  render(quiz, [0, 1], { passed: true, scorePct: 100, right: 2, total: 2, passPct: 100, attempt: 2, perQuestion: [true, true] });
-  assert.ok(/✓ Correct/.test(overlay.innerHTML) && !/withheld/.test(overlay.innerHTML), 'the marks after a pass');
+  const quiz = { questions: [{ q: 'A?', options: ['x', 'y'] }, { q: 'B?', options: ['x', 'yy'] }] };
+  render(quiz, [0, 1], { passed: false, scorePct: 50, right: 1, total: 2, passPct: 100, attempt: 1, perQuestion: [true, false], attemptsLeft: 2, locked: false });
+  assert.ok(/tr-q right/.test(overlay.innerHTML) && /tr-q wrong/.test(overlay.innerHTML) && /✗ Incorrect/.test(overlay.innerHTML), 'the wrong question is marked after a fail');
+  assert.ok(/Your answer: yy/.test(overlay.innerHTML) && !/Your answer: y</.test(overlay.innerHTML), "the rep's own answer only — the other option is never named as right");
+  assert.ok(/2 attempts left before a wait/.test(overlay.innerHTML) && /tr-quiz-retake/.test(overlay.innerHTML), 'the limit is said, and a retake is offered');
+  render(quiz, [0, 1], { passed: false, scorePct: 50, right: 1, total: 2, passPct: 100, attempt: 3, perQuestion: [true, false], attemptsLeft: 0, locked: true,
+    maxAttempts: 3, retryLabel: 'Tue Oct 6, 9:15 AM' });
+  assert.ok(/data-quiz-lock="locked"/.test(overlay.innerHTML) && /Tue Oct 6, 9:15 AM/.test(overlay.innerHTML) && !/tr-quiz-retake/.test(overlay.innerHTML),
+    'the third fail says when, and offers no retake');
+  render(quiz, [0, 0], { passed: true, scorePct: 100, right: 2, total: 2, passPct: 100, attempt: 2, perQuestion: [true, true] });
+  assert.ok(/✓ Correct/.test(overlay.innerHTML) && !/attempts left/.test(overlay.innerHTML), 'the marks after a pass, no limit line');
 });
 
 test('M6: Dept Request SLAs are WORKING DAYS, compared in business time; a legacy hours map is read as its calendar intent (driven)', () => {
@@ -33203,6 +33230,7 @@ console.log('\ncycle 23 Batch 10 — PHI boundary, config, metrics polish');
 const b10Ctx_ = (fns, extra) => {
   const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, Date, isFinite, parseFloat, parseInt, RegExp, Error },
     extra || {}));
+  if (fns.indexOf('intakeParseWeight_') >= 0) vm.runInContext(intakeWeightBoundsSrc_(), ctx);   // Batch 11
   fns.forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
   return ctx;
 };
@@ -33456,7 +33484,10 @@ test('MET-5 + MET2-1 (cycle 23): a period-to-date window read before the daily i
   assert.strictEqual(ctx.dashboardImportPending_({ from: '2026-10-01', to: '2026-10-01', dataThrough: null }, null, '2026-09-30'), false, 'no complete day: M2 handles it');
   assert.strictEqual(ctx.dashboardImportPending_({ from: '2026-10-05', to: '2026-10-05' }, null, '2026-10-02'), false, "'yesterday' is never pending here");
   const dash = stripJsComments_(extractRawFunction('Code.js', 'getDashboardMetrics'));
-  assert.ok(/var importPending = dashboardImportPending_\(range, cur\.latestDate, prevWorkdayIso_\(todayIso\)\);/.test(dash) &&
+  // Batch 11: the pending flag now rides dashboardAlignToData_, which calls dashboardImportPending_.
+  assert.ok(/var align = dashboardAlignToData_\(range, cur\.latestDate, prevWorkdayIso_\(todayIso\), todayIso\);/.test(dash) &&
+    /var importPending = align\.importPending;/.test(dash) &&
+    /dashboardImportPending_\(range, latestDate, prevWorkday\)/.test(extractRawFunction('Code.js', 'dashboardAlignToData_')) &&
     /if \(useCache && [^)]*!importPending\) \{\s*try \{ cache\.put\(cacheKey/.test(dash), 'the cache put is gated on it');
   const sb = buildSandbox([]);
   const w = loadFunction(sb, 'metrics/script_metrics.html', 'mTrendWeightedPct_');
@@ -33465,6 +33496,220 @@ test('MET-5 + MET2-1 (cycle 23): a period-to-date window read before the daily i
   const mp = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8'));
   assert.ok(!/mTrendAvg_\(/.test(mp), 'the unweighted mean is gone from every surface');
   assert.ok(/if \(!multiDay && avg != null && t\.pctAnswered != null\)/.test(mp), 'a multi-day range draws no delta against itself');
+});
+
+
+// ---------------------------------------------------------------------------
+// cycle 23 Batch 11 — the deferred items decided 2026-10-05
+console.log('\ncycle 23 Batch 11 — retry limit, outside recipients, plausible weights, the pre-import window');
+
+test('Batch 11 weight (cycle 23): a weight outside 20–1000 lbs is UNREADABLE and names the reading — never fed to the capacity filter (driven)', () => {
+  const ctx = b10Ctx_(['intakeParseWeight_']);
+  const W = (t) => b10J(ctx.intakeParseWeight_(t));
+  assert.strictEqual(W('250').lbs, 250, 'an ordinary weight is untouched');
+  assert.deepStrictEqual([W('20').lbs, W('20').unreadable], [20, false], 'the floor is inside');
+  assert.deepStrictEqual([W('1000 lbs').lbs, W('1000 lbs').unreadable], [1000, false], 'the ceiling is inside');
+  assert.deepStrictEqual([W('19').lbs, W('19').unreadable, W('19').implausible], [0, true, 19], 'under 20 lbs: no pediatric supply — a typo');
+  assert.deepStrictEqual([W('1001').unreadable, W('1001').implausible], [true, 1001], 'over 1000 lbs');
+  assert.strictEqual(W('5 kg').implausible, 11, 'the bound is in POUNDS after the kg conversion (5 kg = 11 lbs)');
+  assert.strictEqual(W('500 kg').implausible, 1102.3, '500 kg is 1102.3 lbs — over the ceiling');
+  assert.strictEqual(W('120 kg').lbs, 264.6, 'a plausible kg weight still converts');
+  assert.strictEqual(W('abc').implausible, 0, 'an answer with no number stays the plain unreadable case');
+  // The explain row names the reading and the bounds.
+  const eng = engineCtx;
+  const ex = (ans) => b10J(eng.intakeExplainFactors_(ans)).find((r) => r.label === 'Weight').value;
+  assert.ok(/reads as 12 lbs, outside 20–1000 lbs/.test(ex({ '38': '12' })), ex({ '38': '12' }));
+  assert.ok(/could not be read as one weight/.test(ex({ '38': '250 260 280' })), 'the old reason for the old case');
+  // The preview ships the reading and the bounds; the client warning names them.
+  const prev = stripJsComments_(extractRawFunction('Code.js', 'intakePreviewPPD'));
+  assert.ok(/weightImplausible: wp\.weightImplausible \|\| 0,/.test(prev) && /weightRange: \[INTAKE_WEIGHT_MIN_LBS, INTAKE_WEIGHT_MAX_LBS\]/.test(prev));
+  const s2 = buildSandbox([]); s2.icon = () => ''; s2.esc = (x) => String(x == null ? '' : x).replace(/</g, '&lt;');
+  const w = loadFunction(s2, 'intake/script_intake.html', 'intakeWeightWarnHtml_');
+  assert.ok(/reads as 12 lbs, outside 20–1000 lbs/.test(w({ weightUnreadable: true, weightImplausible: 12, weightRange: [20, 1000] })), 'the warning on the recommendation screen names it');
+  assert.ok(/could not be read as one weight/.test(w({ weightUnreadable: true })), 'an older payload keeps the old words');
+});
+
+test('Batch 11 MET-5 follow-up (cycle 23): before the daily import BOTH windows end on the newest DATA day — the comparison stays like-for-like (driven)', () => {
+  const ctx = b10Ctx_(['dashboardImportPending_', 'dashboardAlignToData_', 'dashboardPrevRange_'], { DASH_MONTH_ABBR: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] });
+  const mtd = { from: '2026-10-01', to: '2026-10-07', dataThrough: '2026-10-06' };
+  // Wed Oct 7, the import of Tue Oct 6 has not landed: the data runs to Mon Oct 5.
+  const a = b10J(ctx.dashboardAlignToData_(mtd, '2026-10-05', '2026-10-06', '2026-10-07'));
+  assert.deepStrictEqual(a, { importPending: true, dataThrough: '2026-10-05', prevAnchor: '2026-10-06' });
+  const prev = b10J(ctx.dashboardPrevRange_('mtd', a.prevAnchor));
+  assert.strictEqual(prev.to, '2026-09-05', 'Sep 1–5 against Oct 1–5 — five days each');
+  assert.strictEqual(b10J(ctx.dashboardPrevRange_('mtd', '2026-10-07')).to, '2026-09-06', 'THE TRANSIENT: unaligned, six days of September against five of October');
+  // The import landed: M8's window, unchanged.
+  assert.deepStrictEqual(b10J(ctx.dashboardAlignToData_(mtd, '2026-10-06', '2026-10-06', '2026-10-07')), { importPending: false, dataThrough: '2026-10-06', prevAnchor: '2026-10-07' });
+  // Pending with no data day in the window yet: no denominator, no comparison.
+  assert.deepStrictEqual(b10J(ctx.dashboardAlignToData_({ from: '2026-10-01', to: '2026-10-02', dataThrough: '2026-10-01' }, '2026-09-30', '2026-10-01', '2026-10-02')),
+    { importPending: true, dataThrough: null, prevAnchor: null });
+  assert.deepStrictEqual(b10J(ctx.dashboardAlignToData_(mtd, null, '2026-10-06', '2026-10-07')), { importPending: true, dataThrough: null, prevAnchor: null }, 'no data at all');
+  // The card says so.
+  const s2 = buildSandbox([]);
+  const note = loadFunction(s2, 'tc/script_clock.html', 'clkDashDataNote_');
+  assert.strictEqual(note({ importPending: true, dataThrough: '2026-10-05' }), ' · calls through Mon Oct 5 — the latest day is not imported yet');
+  assert.strictEqual(note({ importPending: true, dataThrough: null }), ' · the latest day is not imported yet');
+  assert.strictEqual(note({ importPending: false, dataThrough: '2026-10-06' }), '', 'no note once the import is in');
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  assert.strictEqual((clk.match(/clkDashCompareNote_\(res, pl\) \+ clkDashDataNote_\(res\)/g) || []).length, 2, 'both cards carry it');
+});
+
+test('Batch 11 INT-3 (cycle 23): an intake recipient outside the org is sent to only after the rep confirms THAT domain; outside copies carry no feedback link (driven)', () => {
+  const ctx = b10Ctx_(['isOrgEmail_', 'intakeEmailDomain_', 'intakeExternalRecipientCheck_'],
+    { CONFIG: { ORG_EMAIL_DOMAINS: ['universalmedsupply.com', 'umsupply.com'] } });
+  const C = (r, spec) => b10J(ctx.intakeExternalRecipientCheck_(r, spec));
+  assert.strictEqual(C('sales@universalmedsupply.com', { kind: 'custom' }), null, 'an org address goes');
+  assert.strictEqual(C('Rep@UMSupply.com', { kind: 'agent' }), null, 'case-insensitive');
+  const r = C('dr.smith@gmail.com', { kind: 'custom', email: 'dr.smith@gmail.com' });
+  assert.strictEqual(r.success, false); assert.strictEqual(r.needsExternalConfirm, 'gmail.com');
+  assert.ok(/outside UniversalMed Supply \(gmail\.com\)/.test(r.error) && /Nothing was sent/.test(r.error));
+  assert.strictEqual(C('dr.smith@gmail.com', { kind: 'custom', confirmedExternal: 'GMAIL.com' }), null, 'the confirmed domain goes');
+  assert.strictEqual(C('dr.smith@yahoo.com', { kind: 'custom', confirmedExternal: 'gmail.com' }).needsExternalConfirm, 'yahoo.com', 'a confirmation is for ONE domain');
+  assert.strictEqual(C('x@universalmedsupply.com.evil.io', { kind: 'custom' }).needsExternalConfirm, 'universalmedsupply.com.evil.io', 'a look-alike is outside');
+  // Both send paths: checked right after the recipient resolves, before anything is sent.
+  [['intakeSendPPD', "intakeResolveRecipient_('PPD', recipientSpec)"], ['intakeSendAcct_', 'intakeResolveRecipient_(formType, recipientSpec)']].forEach(([fn, res]) => {
+    const src = stripJsComments_(extractRawFunction('Code.js', fn));
+    const iRes = src.indexOf(res), iChk = src.indexOf('intakeExternalRecipientCheck_(recipient, recipientSpec)'), iSend = src.indexOf('sendRepEmail_(');
+    assert.ok(iRes > 0 && iChk > iRes && iSend > iChk && /if \(extRefuse\) return extRefuse;/.test(src), fn + ': resolve → check → send');
+    assert.ok(/isOrgEmail_\(recipient\) \? intakeFeedbackCta_\(submissionId, /.test(src), fn + ': the feedback link only for an org reader');
+  });
+  // The client asks, naming the domain, and resends with it; Go back restores the button.
+  const s2 = buildSandbox([]); s2.icon = () => '';
+  let asked = null, answer = true;
+  s2.uiConfirm = (o) => { asked = o; return { then: (f) => f(answer) } ; };   // a sync thenable — the harness is synchronous
+  const ask = loadFunction(s2, 'intake/script_intake.html', 'intakeExternalConfirm_');
+  const btn = { disabled: true, innerHTML: 'Sending…' };
+  let resent = null;
+  assert.strictEqual(ask({ success: false, error: 'x' }, btn, () => { resent = 'no'; }), false, 'an ordinary failure is not handled here');
+  assert.strictEqual(ask({ success: false, needsExternalConfirm: 'gmail.com' }, btn, (d) => { resent = d; }), true);
+  assert.ok(/gmail\.com/.test(asked.message) && /Send to gmail\.com/.test(asked.confirmLabel), 'the confirm names the domain');
+  assert.strictEqual(resent, 'gmail.com', 'yes → the same send, carrying the confirmation');
+  answer = false; resent = null; btn.disabled = true;
+  ask({ success: false, needsExternalConfirm: 'gmail.com' }, btn, (d) => { resent = d; });
+  assert.strictEqual(resent, null); assert.strictEqual(btn.disabled, false, 'Go back → nothing sent, the button is live again');
+  // Raw source: stripJsComments_ is a per-function tool and mis-reads this whole partial.
+  const intk = fs.readFileSync(path.join(__dirname, '../../web-app/intake/script_intake.html'), 'utf8');
+  assert.ok(/if \(intakeExternalConfirm_\(res, btn, intakePpdSend_\)\) return;/.test(intk) &&
+    /if \(intakeExternalConfirm_\(res, btn, function \(dom\) \{ intakeAcctSend_\(form, dom\); \}\)\) return;/.test(intk), 'both send handlers ask first');
+  assert.strictEqual((intk.match(/if \(typeof confirmedExternal === 'string' && confirmedExternal\) spec\.confirmedExternal = confirmedExternal;/g) || []).length, 2,
+    'both sends carry the confirmation (and an onclick event object is never mistaken for one)');
+});
+
+
+const b11Stamp_ = (ms) => new Date(ms).toISOString().replace('T', ' ').slice(0, 19);   // CONFIG.TIMEZONE stand-in: UTC, as coachParseTs_ reads with no Utilities.parseDate
+test('Batch 11 TRN-1 (cycle 23): three failed attempts, then a 24-hour wait; a pass, a re-assignment or a manager reset starts the count over (driven)', () => {
+  const ctx = b10Ctx_(['trainQuizLockout_', 'coachParseTs_', 'trainQuizAttemptList_']);
+  const H = 3600000, W = 24 * H, T0 = Date.UTC(2026, 9, 5, 9, 0, 0);
+  const L = (list, now) => b10J(ctx.trainQuizLockout_(list, now, 3, W));
+  const f = (ms) => ({ ms: ms, passed: false }), p = (ms) => ({ ms: ms, passed: true });
+  assert.deepStrictEqual(L([], T0), { locked: false, retryAtMs: null, attemptsLeft: 3 });
+  assert.strictEqual(L([f(T0)], T0 + 1).attemptsLeft, 2);
+  assert.deepStrictEqual(L([f(T0), f(T0 + H), f(T0 + 2 * H)], T0 + 3 * H), { locked: true, retryAtMs: T0 + 2 * H + W, attemptsLeft: 0 },
+    'THE KEY BY ELIMINATION: the third fail locks for 24 hours from the last');
+  assert.deepStrictEqual(L([f(T0 + 2 * H), f(T0), f(T0 + H)], T0 + 3 * H).retryAtMs, T0 + 2 * H + W, 'append order is not time order');
+  assert.deepStrictEqual(L([f(T0), f(T0 + H), f(T0 + 2 * H)], T0 + 2 * H + W), { locked: false, retryAtMs: null, attemptsLeft: 3 }, 'the wait over: a fresh set');
+  assert.strictEqual(L([f(T0), f(T0 + H), f(T0 + 2 * H), f(T0 + 2 * H + W + 1)], T0 + 2 * H + W + 2).attemptsLeft, 2, 'the new set counts from the wait');
+  assert.strictEqual(L([f(T0), f(T0 + H), p(T0 + 2 * H)], T0 + 3 * H).attemptsLeft, 3, 'a pass starts it over');
+  assert.strictEqual(L([f(T0), f(T0 + H), f(T0 + 2 * H), f(T0 + 3 * H)], T0 + 4 * H).retryAtMs, T0 + 3 * H + W, 'a legacy fourth attempt in the wait extends it');
+  // What the limit counts: this quiz, this round, after the latest reset.
+  const at = (ms, quizId, passed) => ({ quizId: quizId || 'q1', submittedAt: b11Stamp_(ms), passed: !!passed });
+  const atts = [at(T0 - 10 * W), at(T0), at(T0 + H), at(T0 + 2 * H, 'q2')];
+  const list = b10J(ctx.trainQuizAttemptList_(atts, 'q1', b11Stamp_(T0 - W), 0));
+  assert.deepStrictEqual(list.map((x) => x.ms), [T0, T0 + H], 'another quiz and an earlier assignment round do not count');
+  assert.deepStrictEqual(b10J(ctx.trainQuizAttemptList_(atts, 'q1', b11Stamp_(T0 - W), T0 + 30 * 60000)).map((x) => x.ms), [T0 + H], 'a reset drops what came before it');
+});
+
+test('Batch 11 TRN-1 (cycle 23): submitQuizAttempt refuses a fourth attempt inside the wait WITHOUT recording it, returns the wrong-question marks and the limit, and a manager reset reopens it (driven)', () => {
+  // new Date(), not Date.now(): an earlier pin leaves Date.now frozen, and submitQuizAttempt reads new Date().
+  const H = 3600000, NOW = new Date().getTime();
+  const appended = [], audits = [], resetRows = [];
+  let prior = [], resets = {};
+  const quiz = { title: 'Safety', passPct: 100, questions: [{ q: 'A', options: ['x', 'y'], correct: 0 }, { q: 'B', options: ['x', 'y'], correct: 1 }] };
+  const ctx = b10Ctx_(['trainGradeQuiz_', 'trainAttemptStats_', 'trainQuizLockout_', 'coachParseTs_', 'trainQuizAttemptList_', 'trainQuizLockState_', 'submitQuizAttempt', 'resetQuizAttempts'], {
+    CONFIG: { TIMEZONE: 'UTC' }, TRAIN_QUIZ_MAX_ATTEMPTS: 3, TRAIN_QUIZ_LOCK_HOURS: 24,
+    TRAIN_ATTEMPT_TAB: 'QuizAttempts', TRAIN_ATTEMPT_HEADERS: [], TRAIN_COMPLETE_TAB: 'C', TRAIN_COMPLETE_HEADERS: [],
+    TRAIN_QUIZ_RESET_TAB: 'QuizResets', TRAIN_QUIZ_RESET_HEADERS: [], EMP: { ID: 0, NAME: 1 },
+    Utilities: { getUuid: () => 'att-' + appended.length, formatDate: (d) => 'WHEN ' + d.toISOString() },
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    getEmployeeInfo_: () => ctx._who, empTz_: () => 'UTC',
+    trainReadQuizzes_: () => ({ q1: quiz }), trainReadAssignments_: () => [],
+    trainEffectiveForEmp_: () => ({ 'quiz:q1': { assignedAt: '2000-01-01 00:00:00' } }),
+    trainReadQuizResets_: () => resets, trainReadAttempts_: () => prior.slice(), trainReadCompletions_: () => [],
+    fmtDate_: (d) => b11Stamp_(d.getTime()).slice(0, 10), fmtTime_: (d) => b11Stamp_(d.getTime()).slice(11),
+    sheetSafeRow_: (r) => r, writeAuditLog_: (...a) => audits.push(a), pendingTasksBust_() {},
+    getOrCreateTrainSheet_: (tab) => ({ appendRow: (r) => (tab === 'QuizResets' ? resetRows : appended).push(r) }),
+    getEmployeeRosterRows_: () => [['h'], ['E-1', 'Rep One']], empRosterEmail_: () => 'rep@x',
+  });
+  ctx._who = { id: 'E-1', email: 'rep@x', name: 'Rep One' };
+  const fail = (ms) => ({ quizId: 'q1', empId: 'E-1', submittedAt: b11Stamp_(ms), scorePct: 50, passed: false });
+  // Attempt 2 of the set: the marks ride the FAIL, and say which question — never which option.
+  prior = [fail(NOW - 2 * H)];
+  let r = b10J(ctx.submitQuizAttempt('q1', [0, 0]));
+  assert.strictEqual(r.success, true); assert.strictEqual(r.passed, false);
+  assert.deepStrictEqual(r.perQuestion, [true, false], 'which question was wrong (operator 2026-10-05)');
+  assert.ok(!('correct' in r) && !JSON.stringify(r).includes('"correct"'), 'no correct option in the payload');
+  assert.deepStrictEqual([r.attemptsLeft, r.locked, r.attempt], [1, false, 2]);
+  // Attempt 3: recorded, and it locks — the response says until when.
+  prior = [fail(NOW - 2 * H), fail(NOW - H)];
+  r = b10J(ctx.submitQuizAttempt('q1', [0, 0]));
+  assert.deepStrictEqual([r.success, r.locked, r.attemptsLeft], [true, true, 0]);
+  assert.ok(/^WHEN /.test(r.retryLabel) && r.retryAtMs > NOW, 'the third fail names the retry time');
+  assert.strictEqual(appended.length, 2);
+  // Attempt 4 inside the wait: refused, NOT recorded.
+  prior = [fail(NOW - 3 * H), fail(NOW - 2 * H), fail(NOW - H)];
+  r = b10J(ctx.submitQuizAttempt('q1', [0, 1]));
+  assert.deepStrictEqual([r.success, r.locked], [false, true]);
+  assert.ok(/used all 3 attempts/.test(r.error) && /ask your manager to reset/.test(r.error) && /not recorded/.test(r.error));
+  assert.strictEqual(appended.length, 2, 'THE BYPASS: nothing appended while locked');
+  // A rep cannot reset; a manager can, and the next attempt goes through.
+  assert.strictEqual(ctx.resetQuizAttempts('E-1', 'q1').error, 'Manager access required.');
+  ctx._who = { id: 'M-1', email: 'mgr@x', isManager: true };
+  assert.strictEqual(ctx.resetQuizAttempts('E-9', 'q1').success, false, 'an unknown rep is refused');
+  assert.strictEqual(ctx.resetQuizAttempts('E-1', 'nope').success, false, 'an unknown quiz is refused');
+  assert.strictEqual(ctx.resetQuizAttempts('E-1', 'q1').success, true);
+  assert.deepStrictEqual(b10J(resetRows[0].slice(1, 4)), ['q1', 'E-1', 'mgr@x']); assert.ok(isFinite(resetRows[0][4]), 'AtMs is a NUMBER cell');
+  assert.ok(audits.some((a) => a[1] === 'QuizAttemptsReset' && /quizId=q1; empId=E-1/.test(a[6])));
+  resets = { 'E-1|q1': resetRows[0][4] };
+  ctx._who = { id: 'E-1', email: 'rep@x', name: 'Rep One' };
+  r = b10J(ctx.submitQuizAttempt('q1', [0, 1]));
+  assert.deepStrictEqual([r.success, r.passed, r.locked], [true, true, false], 'after the reset the rep retries at once');
+});
+
+test('Batch 11 TRN-1 (cycle 23): getQuiz carries the limit (built beside the stripped shape), the dashboard lists who is waiting, and the manager card resets through the endpoint (source + driven client)', () => {
+  const gq = stripJsComments_(extractRawFunction('Code.js', 'getQuiz'));
+  assert.ok(/out\.lockout = trainQuizLockState_\(trainReadAttempts_\(emp\.id\), quizId, emp\.id, eff\['quiz:' \+ quizId\]\.assignedAt,\s*trainReadQuizResets_\(emp\.id\), Date\.now\(\), empTz_\(emp\)\)/.test(gq));
+  const dash = stripJsComments_(extractRawFunction('Code.js', 'getTrainingDashboard'));
+  assert.ok(/if \(status !== 'done'\) \{\s*const lk = trainQuizLockState_\(/.test(dash) && /locked: locked, maxAttempts: TRAIN_QUIZ_MAX_ATTEMPTS, lockHours: TRAIN_QUIZ_LOCK_HOURS/.test(dash));
+  const sub = stripJsComments_(extractRawFunction('Code.js', 'submitQuizAttempt'));
+  assert.ok(sub.indexOf('lock.waitLock(') < sub.indexOf('const before = trainQuizLockState_(') &&
+    sub.indexOf('const before = trainQuizLockState_(') < sub.indexOf('.appendRow('), 'the limit is checked inside the lock, before the append');
+  const tr = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_training.html'), 'utf8');
+  assert.ok(/if \(quiz\.lockout && quiz\.lockout\.locked\) \{ trainRenderQuizLocked_\(quiz\.lockout\); return; \}/.test(tr), 'a locked quiz opens on the wait, not the form');
+  assert.ok(/if \(res && res\.locked && !res\.success\) \{ trainRenderQuizLocked_\(res\); return; \}/.test(tr), 'a refused submit shows the wait');
+  assert.ok(/\.tr-quiz-lock \{/.test(tr), 'with a rule (the T6 ratchet)');
+  const s2 = buildSandbox([]); s2.icon = () => ''; s2.esc = (x) => String(x == null ? '' : x).replace(/</g, '&lt;');
+  let call = null; s2.currentView = 'x';
+  s2.uiConfirm = () => ({ then: (f) => f(true) });
+  s2.google = { script: { run: { withSuccessHandler() { return this; }, withFailureHandler() { return this; }, resetQuizAttempts: (e, q) => { call = [e, q]; } } } };
+  const reset = loadFunction(s2, 'train/script_training.html', 'trainResetQuizAttempts_');
+  reset('E-1', 'q1', '<b>Rep</b>');
+  assert.deepStrictEqual(call, ['E-1', 'q1'], 'the reset reaches the endpoint with the ids from the row');
+  assert.ok(/data-tr-quiz-reset="' \+ esc\(l\.empId\) \+ '" data-tr-quiz-reset-quiz="' \+ esc\(l\.quizId\)/.test(tr), 'the row carries escaped ids (g49)');
+});
+
+test('Batch 11 KB2-6 (cycle 23, operator 2026-10-05): "and" in an Area Eligibility cell reads as EITHER area — confirmed correct; a phrase that could mean both reads as unreadable (driven grid)', () => {
+  const WH = ['Dallas', 'San Antonio'];
+  const P = (t) => JSON.parse(vm.runInContext('JSON.stringify(oopEligibilityParse_(' + JSON.stringify(t) + ',' + JSON.stringify(WH) + '))', _vmCtx));
+  const kinds = (r) => (r.kind === 'any' ? r.rules.map((x) => x.kind).sort().join('+') : r.kind);
+  assert.strictEqual(kinds(P('listed cities and 100 miles of Dallas')), 'cities+radius', 'the listed cities OR the radius');
+  assert.strictEqual(kinds(P('100 miles of Dallas and listed cities')), 'cities+radius', 'either order');
+  assert.deepStrictEqual(P('100 miles of Dallas and San Antonio'), { kind: 'radius', miles: 100, warehouses: ['Dallas', 'San Antonio'] }, 'near EITHER warehouse');
+  assert.strictEqual(kinds(P('100 miles of Dallas and 50 miles of San Antonio')), 'radius+radius', 'either radius');
+  assert.deepStrictEqual(P('TX and OK'), { kind: 'states', states: ['TX', 'OK'] }, 'either state — an address is never in both');
+  assert.strictEqual(P('Open and listed cities').kind, 'open', 'open covers the city list');
+  // The phrasings that COULD mean "both" are not guessed at — a person checks.
+  ['TX and listed cities', '100 miles of Dallas and TX only', 'listed cities and surrounding areas'].forEach((t) =>
+    assert.strictEqual(P(t).kind, 'unknown', t + ' reads as unreadable'));
 });
 
 

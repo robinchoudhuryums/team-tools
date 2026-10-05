@@ -6405,3 +6405,50 @@ test('ADM-12: a tag merge that fails in transit says it may have PARTLY applied,
     'THE REGRESSION: a half-applied merge read as a bare "Server error"');
   assert.ok(t.classList.contains('toast-sticky'), 'it stays until read');
 });
+
+// ── cycle 23 Batch 11 — the quiz retry limit and the outside-recipient confirm ──
+section('Cycle 23 Batch 11 — the quiz retry limit and the outside-recipient confirm');
+test('Batch 11 TRN-1: a failed quiz shows which questions were wrong and the attempts left; the third fail and a locked quiz show the wait, with no retake', async () => {
+  const h = boot();
+  const quiz = { quizId: 'q1', title: 'Safety', passPct: 100, questions: [{ q: 'A?', options: ['x', 'y'] }, { q: 'B?', options: ['m', 'n'] }] };
+  h.read('trainOpenQuiz_')('q1');
+  h.run.flushSuccess(Object.assign({}, quiz, { lockout: { locked: true, attemptsLeft: 0, maxAttempts: 3, retryLabel: 'Tue Oct 6, 9:15 AM' } }), 'getQuiz');
+  const ov = () => h.$('#train-quiz-overlay');
+  assert.ok(ov().querySelector('[data-quiz-lock="locked"]') && /Tue Oct 6, 9:15 AM/.test(ov().textContent), 'a locked quiz opens on the wait');
+  assert.ok(!h.$('#tr-quiz-submit'), 'and offers no form to fill in for nothing');
+  h.read('trainOpenQuiz_')('q1');
+  h.run.flushSuccess(Object.assign({}, quiz, { lockout: { locked: false, attemptsLeft: 2, maxAttempts: 3 } }), 'getQuiz');
+  assert.ok(/2 attempts left before a wait/.test(ov().textContent), 'the limit is stated before answering');
+  h.click('input[name="tr-q-0"][value="0"]'); h.click('input[name="tr-q-1"][value="0"]');
+  h.click('#tr-quiz-submit');
+  h.run.flushSuccess({ success: true, passed: false, scorePct: 50, right: 1, total: 2, passPct: 100, attempt: 2, perQuestion: [true, false],
+    attemptsLeft: 1, maxAttempts: 3, locked: false }, 'submitQuizAttempt');
+  assert.ok(ov().querySelector('.tr-q.wrong') && /✗ Incorrect/.test(ov().textContent), 'THE ASK: the rep sees which question was wrong');
+  assert.ok(!/\bn\b/.test(ov().querySelector('.tr-q.wrong').textContent.replace('Your answer: m', '')), 'never the right option');
+  assert.ok(/1 attempt left before a wait/.test(ov().textContent) && h.$('#tr-quiz-retake'), 'the limit, and a retake');
+  h.click('#tr-quiz-retake');
+  h.click('input[name="tr-q-0"][value="0"]'); h.click('input[name="tr-q-1"][value="0"]');
+  h.click('#tr-quiz-submit');
+  h.run.flushSuccess({ success: true, passed: false, scorePct: 50, right: 1, total: 2, passPct: 100, attempt: 3, perQuestion: [true, false],
+    attemptsLeft: 0, maxAttempts: 3, locked: true, retryLabel: 'Wed Oct 7, 10:00 AM' }, 'submitQuizAttempt');
+  assert.ok(ov().querySelector('[data-quiz-lock="locked"]') && /Wed Oct 7, 10:00 AM/.test(ov().textContent), 'the third fail says when');
+  assert.ok(!h.$('#tr-quiz-retake'), 'and offers no retake');
+});
+
+test('Batch 11 INT-3: an outside intake recipient is confirmed by its domain, and the resend carries that confirmation; Go back sends nothing', async () => {
+  const h = boot();
+  h.read('INTAKE_STATE.preview = { formType: "PPD", payload: {}, bodyHash: "h", recommendations: [] }');
+  h.read('intakeOpenModal_')('Preview', '<button id="intk-ppd-send">Send</button>');
+  h.read('intakePpdSend_')();
+  h.run.flushSuccess({ success: false, needsExternalConfirm: 'gmail.com', error: 'outside' }, 'intakeSendPPD');
+  const dlg = h.$('.ui-dialog');
+  assert.ok(dlg && /gmail\.com/.test(dlg.textContent), 'the confirm names the domain');
+  h.click('.ui-dialog-ok'); await tick();
+  const again = h.run.pending('intakeSendPPD');
+  assert.strictEqual(again.length, 1, 'yes → the send goes again');
+  assert.strictEqual(again[0].args[1].confirmedExternal, 'gmail.com', 'carrying the confirmed domain');
+  h.run.flushSuccess({ success: false, needsExternalConfirm: 'yahoo.com', error: 'outside' }, 'intakeSendPPD');
+  h.click('.ui-dialog-cancel'); await tick();
+  assert.strictEqual(h.run.pending('intakeSendPPD').length, 0, 'Go back → nothing sent');
+  assert.strictEqual(h.$('#intk-ppd-send').disabled, false, 'and the Send button is live again');
+});
