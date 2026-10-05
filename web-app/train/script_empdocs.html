@@ -8,7 +8,12 @@
   .ed-sig-section { display: none; margin-top: 12px; }
   .ed-sig-section.show { display: block; }
   .ed-sig-wrap { position: relative; border: 1px dashed var(--border-strong); border-radius: 8px; background: var(--paper-card); }
-  .ed-sig-wrap canvas { display: block; border-radius: 8px; touch-action: none; }
+  /* TRUI-2 (cycle 23): the pad is PAPER in every theme — the signature is
+     stored as a PNG and printed on white, so it is drawn in a fixed ink on a
+     fixed white surface (g58: text on a fixed-palette surface uses a fixed
+     colour). It took dark mode's near-white --ink, and the stored HR
+     signature was near-invisible on paper. */
+  .ed-sig-wrap canvas { display: block; border-radius: 8px; touch-action: none; background: #ffffff; }
   /* Typed-signature alternative (a11y) — link-style disclosure under the pad. */
   .ed-sig-typed-toggle {
     display: inline-block; margin-top: 6px; padding: 0;
@@ -16,7 +21,7 @@
     font-size: 12px; color: var(--accent-2); text-decoration: underline;
     font-family: inherit;
   }
-  .ed-sig-ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: .82rem; pointer-events: none; }
+  .ed-sig-ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #5b6470; font-size: .82rem; pointer-events: none; }
   .ed-sig-row { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
   .ed-integrity-note { border-left: 3px solid var(--warning-deep); background: var(--warn-soft); padding: 8px 12px; border-radius: 0 8px 8px 0; font-size: .84rem; margin-bottom: 12px; }
   .ed-integrity-note[data-integrity="unverifiable"] { border-left-color: var(--muted-3); background: var(--paper-3); color: var(--muted); }
@@ -83,6 +88,10 @@ function edChipHtml_(doc) {
 }
 
 // ── Signature pad (adapted from form_public.html initSignaturePad) ────────
+// TRUI-2 (cycle 23): the signature ink is FIXED. The stored PNG has no
+// background and is printed on paper, so a theme ink (dark mode's near-white
+// --ink) produced a signature nobody could read on the printed record.
+var ED_SIG_INK = '#101418';
 function edInitSigPad_(canvas, placeholderEl) {
   var ctx = canvas.getContext('2d');
   var drawing = false, hasDrawn = false;
@@ -98,7 +107,7 @@ function edInitSigPad_(canvas, placeholderEl) {
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--ink') || '#0f1623';
+    ctx.strokeStyle = ED_SIG_INK;   // TRUI-2: a fixed ink, never the theme's
   }
   resizeCanvas();
   function getPos(e) {
@@ -146,7 +155,7 @@ function edInitSigPad_(canvas, placeholderEl) {
       size = Math.max(14, Math.floor(size * (w - 24) / tw));
       ctx.font = face.replace('{s}', size);
     }
-    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--ink') || '#0f1623';
+    ctx.fillStyle = ED_SIG_INK;
     ctx.textBaseline = 'middle';
     ctx.fillText(name, 12, 70);
     hasDrawn = true;
@@ -239,7 +248,11 @@ function edRenderMy_() {
 function edOpenDoc_(docId) {
   ED_STATE.readerDocId = docId;
   ED_STATE.sigPad = null;
-  var overlay = ensureOverlay('ed-reader-overlay', { label: 'Employee document', onClose: edCloseDoc_ });
+  // UI-ESC (cycle 23): guarded — a filled field or a drawn signature is asked
+  // about before Escape or the backdrop discards it; a submit in flight is not.
+  var overlay = ensureOverlay('ed-reader-overlay', { label: 'Employee document', onClose: edCloseDoc_,
+    unsaved: { what: 'this document', busy: function () { return !!ED_STATE.submitting; },
+      dirty: function () { return !!(ED_STATE.sigPad && !ED_STATE.sigPad.isEmpty()); } } });
   overlay.innerHTML = '<div class="modal ed-reader"><div class="body"><div class="m-loading" role="status"><span class="lo-dots"><span></span><span></span><span></span></span> Loading&hellip;</div></div></div>';
   google.script.run
     .withSuccessHandler(function (doc) {
@@ -333,7 +346,7 @@ function edRenderDoc_(doc) {
   overlay.innerHTML =
     '<div class="modal ed-reader">' +
       '<div class="body">' + body + '</div>' +
-      '<div class="foot"><button class="kb-btn" onclick="edCloseDoc_()">Close</button></div>' +
+      '<div class="foot"><button class="kb-btn" onclick="closeOverlay(document.getElementById(\'ed-reader-overlay\'))">Close</button></div>' +
     '</div>';
   if (canSign) {
     var canvas = document.getElementById('ed-sig-canvas');
@@ -387,8 +400,10 @@ function edSubmitSignature_(docId, btn, needsSig) {
   }
   var label = needsSig ? ' Sign document' : ' Submit';
   if (btn) { btn.disabled = true; btn.textContent = needsSig ? 'Signing…' : 'Submitting…'; }
+  ED_STATE.submitting = true;
   google.script.run
     .withSuccessHandler(function (res) {
+      ED_STATE.submitting = false;
       if (!res || !res.success) {
         if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + label; }
         showToast((res && res.error) || 'Could not submit.', 'error');
@@ -400,10 +415,13 @@ function edSubmitSignature_(docId, btn, needsSig) {
       for (var i = 0; i < docs.length; i++) {
         if (docs[i].docId === docId) { docs[i].status = needsSig ? 'signed' : 'completed'; docs[i].signedAt = res.signedAt; docs[i].needsAction = false; }
       }
-      edCloseDoc_();
+      // SH-02: through closeOverlay so focus goes back to the opener; `discard`
+      // because what was entered has just been saved (UI-ESC asks nothing).
+      closeOverlay(document.getElementById('ed-reader-overlay'), { discard: true });
       if (currentView === 'myDocs') edRenderMy_();
     })
     .withFailureHandler(function (err) {
+      ED_STATE.submitting = false;
       if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + label; }
       showToast('Could not submit: ' + ((err && err.message) || err), 'error');
     })

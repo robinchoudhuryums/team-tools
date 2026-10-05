@@ -83,6 +83,42 @@ not restate it. Server endpoints live in the fourteen server files
      through, so the Dashboard is never empty. A manager saves or clears the
      team default from the same panel. A hidden widget loads nothing.
 
+     **Cycle 23 Batch 6a (2026-10-02) — PTO and punch correctness.** A
+     single-date time-off request on a weekend or company holiday is refused by
+     name, as the range path already skipped them (rep and manager). An
+     approval records what it took on the request row (`Deducted`), and Deny
+     restores exactly that — nothing, when tracking or the rep's PTO was off. A
+     rep's adjustment that would leave an equal Clock In / Clock Out or a shift
+     over 16 hours (an AM/PM slip) is refused at Apply now, at submit and again
+     at approval; a real overnight shift is allowed. On Manage Time, the PTO
+     drift card's Credit & reconcile refuses while tracking is off and no longer
+     lists reps with PTO off; the Timesheet Doctor keeps the stamp the hours
+     already count ("keeps HH:MM:SS" on each line), so a collapse never changes
+     pay; Day Edit's hint says "check AM or PM"; and the offboarding audit row
+     names the person offboarded.
+
+     **Cycle 23 Batch 6b (2026-10-02) — schedules, reminders, planner.** The
+     reminder ticker uses a state snapshot only for its own day, so a window
+     left open overnight fetches the new day's state before it reminds of
+     anything. A column-O shift override keeps only the default breaks inside
+     its own shift. Onboarding refuses a timezone the system does not
+     recognise. On Manage: the Coverage planner closes company holidays and
+     shows an approved half day as a tentative presence; Punctuality reads "not
+     started yet" before the shift, and Team on-time "—" when nothing in the
+     range was graded; the manager sparkline and trends skip holidays. The
+     coaching board reads its stamps in the server's storage timezone, and the
+     inbound-volume average leaves holidays out.
+
+     **Cycle 23 Batch 14 (2026-10-05) — archived periods read whole.** With
+     Timesheet archiving on, the pay statement, the timesheet views, the rep
+     calendar, the team punches calendar and Punctuality (both windows) read
+     the archived rows, through the same reader the payroll export and the
+     accrual use; that reader no longer skips the archive when one late
+     correction for an old date sits in the live tab. The pay statement and
+     team-calendar notes now appear only when the archive could not be read
+     (they used to say "may have been moved" on every old period), and
+     Punctuality says so too (TC2-9).
+
 <a id="call-notes"></a>
      **2026-09-17 (the /broad-scan's Batches 1 + 2):** an EQUAL Clock In /
      Clock Out is zero hours, not the 24-hour day the `<=` overnight wrap paid
@@ -156,6 +192,31 @@ not restate it. Server endpoints live in the fourteen server files
      has one — deny it and ask for it again. Range mode in Day Edit refuses a range
      that includes a day with more than one break when its break slots are filled,
      and names those days (g163, the break-adjustment decision).
+
+     **Cycle 23 Batch 9 (2026-10-02) — shell.** A self-undo whose dashboard
+     refresh fails now says so ("The punch was undone, but the dashboard could not
+     refresh — … Reload to see the change.") instead of leaving the undone punch on
+     screen in silence (TCUI-1). The onboarding tour is a named dialog: focus moves
+     into it each step, Tab stays inside, and focus goes back when it ends (SH-04).
+     A view-as switch no longer adds another pair of sidebar-drag listeners
+     (SH-05). Every close button returns focus to whatever opened the dialog, and
+     Tab cannot leave the keyboard-shortcuts dialog (SH-02, SH-03 — g100).
+
+     **Cycle 23 Batch 10 (2026-10-02) — shell and automation.** The outsider page
+     reads the org's two domains exactly (`CONFIG.ORG_EMAIL_DOMAINS` —
+     universalmedsupply.com and umsupply.com); it had tested `@umsupply.com` alone
+     (CORE-05). The nightly self-test refuses a browser caller who is not the
+     script owner before it stamps anything, so a manager can no longer store a
+     false red result and mask a dead trigger; the trigger-owner stamp names the
+     account the triggers run as, and removing the triggers writes an audit row
+     (CORE-03, g26).
+
+     **Cycle 23 Batch 11 (2026-10-05) — Dashboard.** Before the day's call-data
+     import lands, the month-to-date cards end on the newest day with data, the
+     comparison takes the same days of last month, and the card foot says "calls
+     through Mon Oct 5 — the latest day is not imported yet" (the MET-5 follow-up,
+     g148).
+
 
 ## Call Notes
 
@@ -284,6 +345,27 @@ not restate it. Server endpoints live in the fourteen server files
      never overwrites the next note they started: the draft is kept, and the
      note that did not save is shown to copy (CNUI-01, g86).
 
+     **Cycle 23 Batch 7a (2026-10-02) — what the store keeps.** The note's
+     free-text columns are plain-text cells, so a callback "0123…" keeps its
+     zero and "12/5" stays text (CN-7, g144). A note can carry several
+     submitted forms, each with its own pill (FORM-3). The patient timeline
+     reads the archive too and says when a stream was capped (CN-5). A note
+     whose time cannot be read cannot be self-deleted (CN-2). Scheduled-call
+     reminders are read by creation time, so one set weeks ahead still fires
+     (CN-1). An external email whose second form link fails withdraws the first
+     (CN-4), and the links' stated expiry is the configured one (FORM-5).
+
+     **Cycle 23 Batch 7b (2026-10-02) — what the rep typed, and what the server
+     said.** Cancelling Save & Compose more than five minutes after the save
+     keeps the note and clears the form ("the note stays saved"), instead of
+     leaving the text to be saved twice (CNUI-02). Undo-save says "note deleted"
+     and restores the text only once the server has deleted it (CNUI-06). The
+     timeline and submission viewers ignore a late answer (CNUI-03). A Clarify
+     follow-up being typed survives a refresh (CNUI-05); a manager's comment or
+     reply save refreshes only that card, so replies typed on other cards
+     survive (CNUI-04). Creating a reminder refreshes Needs you (CNUI-08), and
+     the overdue-flag count shows on the phone's bottom nav too (CNUI-09).
+
 <a id="metrics"></a>
      **Batch 6 (2026-09-18):** the Admin Overview KPI strip reports TEAM
      numbers — notes across every enrolled rep (all-time) and the cross-rep
@@ -306,6 +388,25 @@ not restate it. Server endpoints live in the fourteen server files
      clean. The manager Stats tab says "Call data could not be read — … unknown, not
      zero" above the table instead of a column of dashes, and a note's lifecycle
      history says when older history was not scanned (g122, g151, g02, g05, g53).
+
+     **Cycle 23 Batch 9 (2026-10-02) — Manage → Admin.** Saving the state tax
+     rates with a blank rate is refused, naming the state ("0 for no tax"); it used
+     to drop the state from the composer's State list (ADM-06). An "Add team
+     member" form being filled in survives the panel's reload after an offboard —
+     values, open state, focus and caret; only a completed add empties it (ADM-10,
+     g141).
+
+     **Cycle 23 Batch 10 (2026-10-02) — Manage → Admin.** A cross-rep tag rename
+     or merge writes a "started" audit row before it walks, walks each rep's
+     NotesArchive as well as Notes (the completion row counts `archived=N`), and a
+     transport failure says the run "may have PARTLY applied" and is safe to repeat,
+     in a toast that stays (ADM-12). Turning on or shortening a diagnostics purge
+     window (ViewUsage, ClientErrors) asks "Delete older diagnostics rows?" before
+     the save (ADM-13). Saving an empty department map keeps it empty instead of
+     bringing back CONFIG's addresses (CORE-04, g122). An email to an "Other"
+     recipient records that recipient's DOMAIN on the CallNoteEmail audit row,
+     never the address (CN-3, g36).
+
 
 ## Metrics
 
@@ -488,6 +589,24 @@ not restate it. Server endpoints live in the fourteen server files
      click is recorded as "marked by the sender", untimed. Both modules' median
      tiles are true medians (an even count averages the middle two).
 
+     **Cycle 23 Batch 10 (2026-10-02):** the range hero's rate is call-weighted
+     (Σanswered / Σ(answered + missed)) and is never compared with itself: My Stats
+     on a range shows the baseline with no delta, and Team Metrics draws a delta
+     only for a single day, "vs 30-day team rate" (MET2-1). A Dashboard load before
+     the day's CDR import is not cached, so the six-hour cache no longer pins a
+     month-to-date comparison taken against a day of data that had not arrived
+     (MET-5, g148, g129).
+
+     **Cycle 23 Batch 13 (2026-10-05) — a Spanish request that comes back.** A
+     requester who writes again after an answer, or after Mark resolved, is a
+     new pending card with a **follow-up** pill, aged from the new message and
+     showing it — and unclaimed: the earlier claim was on the request that was
+     answered, so it leaves the claimant's Needs-you list and the card counts
+     for Auto-assign. A plain thank-you ("Gracias!", "Thank you 🙏") does not
+     reopen. The Resolved list and the stats count each answered request, and
+     voicemails a member answered by reply are listed and credited. The
+     Mark-resolved confirm says a later message brings the request back.
+
 <a id="intake"></a>
      **Batch 5 (2026-09-18):** `QaRecordings` carries a trailing `AgentId`
      written from the roster when a reviewer attributes a recording, and the
@@ -604,6 +723,26 @@ not restate it. Server endpoints live in the fourteen server files
      the image opened in a new tab or the browser blocked that too, instead of
      always "Opened image" (U3, g135).
 
+     **Cycle 23 Batch 10 (2026-10-02):** Q43 is read entry by entry, by token —
+     "Not sure", "Unknown", "No", "N/A" and the like are not a neuro diagnosis, on
+     the server and in the chip guard (INT-1). "Not solid" and "Sling (no solid)"
+     are no longer read as solid seats (INT2-1). The weight is read by unit: kg
+     converts ("264.6 lbs (from 120 kg)"), a height is not a weight, one bare
+     number or a range is pounds, and several bare numbers are "could not be read
+     as one weight" (INT2-2, g156). A submission that has already been amended
+     cannot be amended again — the send names the newer one and sends nothing
+     (INT-2). A catalog change between preview and send is named as a catalog
+     change, not "the form changed" (INT2-4). A saved draft belongs to the person
+     who typed it: the shell drops expired drafts and other users' drafts at load,
+     and a draft with another owner is never restored — a draft saved before this
+     deploy has no owner and is dropped (INT2-3).
+
+     **Cycle 23 Batch 11 (2026-10-05):** a weight under 20 lbs or over 1000 lbs is
+     unreadable and named ("reads as 12 lbs, outside 20–1000 lbs") — no capacity
+     check runs on it (g156). Sending an intake email to an address outside the
+     org's two domains asks first, naming the domain, and the email goes only on
+     yes; an outside copy carries no feedback link (INT-3).
+
 <a id="reference"></a>
      **Batch 5 (2026-09-18):** the email's question LABELS come from
      SERVER-held English banks (`INTAKE_PPD_Q_EN` / `INTAKE_PMD_Q_EN` /
@@ -611,6 +750,10 @@ not restate it. Server endpoints live in the fourteen server files
      nowhere, so the g43 English rule no longer depends on the client keeping
      it (F-27). The banks mirror the client's byte-for-byte and are pinned
      equal.
+
+     **Cycle 23 Batch 9 (2026-10-02):** the preview modal cannot be closed while
+     its send is in flight — Escape, × and Cancel say "Sending — one moment…" — so a
+     second Send can no longer go out as a duplicate PHI email (INTUI-1, g130).
 
 ## Reference
 
@@ -1042,6 +1185,33 @@ not restate it. Server endpoints live in the fourteen server files
      drawer, never "No matches" with the request-an-article button. The query is not
      part of the message (g146, g53).
 
+     **Cycle 23 Batch 9 (2026-10-02):** the article editor asks "Discard
+     changes?" before Escape, the backdrop or × throws typed work away; a
+     converted Doc or an ingested file counts as work, and Save closes without
+     asking (UI-ESC, g166). A file dropped into the editor is dropped if the
+     admin has opened another item before it is read or converted (KB2-9, g147).
+     A new comment being typed survives an edit or delete of another comment, and
+     a posted one leaves the box (KBUI-5, g141). A manual import interrupted
+     between a section's write and its ledger row is reported as "written by an
+     earlier import that did not finish" on Check and recorded on Import, instead
+     of being skipped as foreign for ever (KB2-8).
+
+     **Cycle 23 Batch 10 (2026-10-02):** a failed eligibility lookup still shows
+     its message — which may quote the closest place the geocoder found — but the
+     shared error log gets a fixed line instead (KBUI-2, g146). The AI guidance
+     card's tag vocabulary is the admin's Auto-tag rules list, never the reps' own
+     tags, and its audit row counts facets rather than naming them (KB-2, g167).
+
+     **Cycle 23 Batch 12 (2026-10-05):** article images work again on this
+     domain (Drive is disabled for Apps Script). A pasted screenshot is fitted in
+     the browser to 1600 px wide and 1.5 MB, stored in the `KbImages` tab of the
+     KB spreadsheet and inserted as `![Screenshot](kbimg:…)`; a converted Doc's
+     images are stored there at Save. An image that cannot be stored yet (the Doc
+     will not open, it is over 1.5 MB) stays "appears after Save" with a named
+     warning, and the next Save retries it. Images load in batches; "not stored"
+     and "could not load" read differently. Old Drive-hosted images still render
+     (DRV-3).
+
 ## Training & Employee Docs
 
    - **Training & Employee Docs** — phased module
@@ -1060,8 +1230,8 @@ not restate it. Server endpoints live in the fourteen server files
      `QuestionsJson` are SERVER-ONLY), assignable like KB items
      (`itemType='quiz'`), graded server-side (`submitQuizAttempt` →
      append-only `QuizAttempts`; a pass auto-writes the completion,
-     `via='quiz'`). Per §9.4: unlimited retries, correct answers are
-     NEVER revealed (only per-question right/wrong), attempt counts
+     `via='quiz'`). Per §9.4: correct answers are NEVER revealed (only
+     per-question right/wrong); retries are capped since cycle 23 TRN-1; attempt counts
      surface on the checklist + matrix. In the quiz editor, adding or
      removing an OPTION re-renders only that question's block
      (`trainQedQuestionHtml_` / `trainQedRerenderQuestion_` — an `outerHTML`
@@ -1184,6 +1354,33 @@ not restate it. Server endpoints live in the fourteen server files
      digest or employee nudge is stamped too. The weekly coaching recap counts
      a failed send as failed (it counted every send as delivered) and stamps
      an unreachable store.
+
+     **Cycle 23 Batch 7a (2026-10-02):** a document's title, body and void
+     reason, and a coaching item's patient/TRX and free text, are written as
+     plain text, so a title that reads as a date or number keeps its text —
+     and its content hash, so it signs and verifies (HR-1, g144). A doc issued
+     before the fix with such a title still verifies as tampered: void it and
+     reissue it.
+
+     **Cycle 23 Batch 9 (2026-10-02):** the quiz editor, a fillable document and
+     the coaching composer ask "Discard changes?" before Escape, the backdrop or
+     Cancel discards typed work, a structural quiz edit or a drawn signature; a
+     coaching prefill alone is not work (UI-ESC, g166). The coaching drawer cannot
+     close while a save is in flight, so a second HR record cannot be filed
+     (INTUI-1). The signature pad is white with a fixed dark ink in both themes, so
+     a dark-mode signature prints dark (TRUI-2, g58).
+
+     **Cycle 23 Batch 10 (2026-10-02):** a quiz imported from a Google Form whose
+     correct answer was past the first six options warns that the answer was cut
+     off, instead of "had no correct answer marked" (TRN-2).
+
+     **Cycle 23 Batch 11 (2026-10-05):** a failed quiz attempt marks each
+     question correct or incorrect — never naming the right option — and says
+     how many attempts are left. After 3 failed attempts in a row the rep waits
+     24 hours: the quiz opens on "You can try again after …" instead of the form,
+     and a submit in the wait is refused unrecorded. Team Training lists the reps
+     who are waiting, with a Reset that lets one retry now (the `QuizResets` tab;
+     attempts and scores are kept) (TRN-1).
 
 <a id="qa"></a>
 ## QA
@@ -1379,3 +1576,16 @@ not restate it. Server endpoints live in the fourteen server files
      so a full grid of expired rows no longer throws on its last delete, deletes
      contiguous runs in one call each, and a failed run is stamped as
      `QaReviewPurge` — QA-3, 4a-FU2.
+
+     **Cycle 23 Batch 8 (2026-10-02) — QA logic.** An exemption is granted for
+     the NEXT period ("Exempt for Nov 2026"), and a quarter's exemption holds in
+     its months (QA2-1). "Sample the gaps" draws only the period's own calls
+     (QA2-2), and neither sampling nor assignment hands a reviewer their own
+     call (QA-4); a reviewer cannot read or comment on the reviews of their own
+     call before release either, though an admin can (QA-2). "Coach on this
+     call" uses the agent id stored at attribution, and a name two roster rows
+     share hands off to nobody (QA2-3). A recording older than the newest 2,000
+     is still found and still on its agent's My Reviews (QA-5). The "vs
+     previous period" average is card-weighted like the current one (QA2-4);
+     "maria garcia" and "Maria Garcia" are one Stats row (QA2-5); and a rating
+     click keeps keyboard focus on the button (QAUI-1).

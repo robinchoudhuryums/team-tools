@@ -256,11 +256,12 @@ function createCoaching(payload) {
     const coachId = Utilities.getUuid();
     const now = new Date();
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
-    getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS).appendRow(sheetSafeRow_([
+    // HR-1 (cycle 23): the free text lands in '@' cells (COACH_TEXT_IDX).
+    appendRowsTextSafe_(getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS), [[
       coachId, target.id, target.name, v.item.patientTRX, v.item.severity,
       v.item.whatHappened, v.item.whatShould, v.item.noteId, 'open',
       callerEmp.email, ts, '', '', '', '', v.item.followUpAt, '', v.item.noteDate, v.item.qaFileId,
-    ]));
+    ]], COACH_TEXT_IDX);
     writeAuditLog_(callerEmp, 'CoachingCreate', fmtDate_(now), '', false, 0,
       'coachId=' + coachId + '; empId=' + target.id + '; severity=' + v.item.severity, callerEmp.email);
     pendingTasksBust_(target.id);   // follow-up to T10 (cycle 22): a new item to acknowledge
@@ -346,7 +347,7 @@ function acknowledgeCoaching(coachId, response) {
     sheet.getRange(found.rowIdx, CO.STATUS + 1).setValue(sheetSafe_('acknowledged'));
     sheet.getRange(found.rowIdx, CO.ACK_AT + 1).setValue(sheetSafe_(ts));
     sheet.getRange(found.rowIdx, CO.ACK_BY + 1).setValue(sheetSafe_(emp.email));
-    if (reply) sheet.getRange(found.rowIdx, CO.REP_RESPONSE + 1).setValue(sheetSafe_(reply));
+    if (reply) sheet.getRange(found.rowIdx, CO.REP_RESPONSE + 1).setNumberFormat('@').setValue(sheetText_(reply));   // HR-1: a '@' column
     writeAuditLog_(emp, 'CoachingAck', fmtDate_(now), '', false, 0,
       'coachId=' + found.item.coachId + '; ackAt=' + ts);
     notifyAfter = function () { notifyManagerOfCoachingAck_(found.item, emp, !!reply); };   // M-7: post-lock
@@ -433,7 +434,7 @@ function voidCoaching(coachId, reason) {
     // HR store's VoidReason column, NEVER in the shared PHI-free AuditLog
     // (INV-134/INV-32 — the row previously carried `reason=` and surfaced in
     // the compliance panel + admin sheet viewer). Mirrors voidDoc.
-    if (reason) sheet.getRange(found.rowIdx, CO.VOID_REASON + 1).setValue(sheetSafe_(String(reason).slice(0, 500)));
+    if (reason) sheet.getRange(found.rowIdx, CO.VOID_REASON + 1).setNumberFormat('@').setValue(sheetText_(String(reason).slice(0, 500)));   // HR-1: a '@' column
     writeAuditLog_(callerEmp, 'CoachingVoid', '', '', false, 0,
       'coachId=' + found.item.coachId, callerEmp.email);
     pendingTasksBust_(found.item.empId);   // T10 (cycle 22): nothing left to acknowledge

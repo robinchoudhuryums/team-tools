@@ -126,6 +126,13 @@ const CONFIG = {
 
   MANAGER_EMAILS: ['YOUR_EMAIL@umsupply.com'],
 
+  // CORE-05 (cycle 23): the org's sign-in domains — doGet's outsider check
+  // reads them through isOrgEmail_. It tested @umsupply.com alone, while every
+  // org address in this file is @universalmedsupply.com (the Workspace domain
+  // docs/operator-state.md confirms), so the carve-out never matched it. Both
+  // are listed: umsupply.com is the login form the roster and docs use.
+  ORG_EMAIL_DOMAINS: ['universalmedsupply.com', 'umsupply.com'],
+
   ADJUST_WINDOW_DAYS:        30,
   OLD_ADJUST_ALERT_DAYS:     7,   // also: reason becomes required beyond this
   MGR_DELETE_WINDOW_DAYS:    7,   // how far back a manager can delete a punch
@@ -464,7 +471,13 @@ const EMP = {
  *  PTO_ACCRUAL_CATCHUP_MAX_MONTHS with the overflow RETURNED, not silently
  *  absorbed (INV-187 — the audit row names what the cap dropped). */
 const PTO_ACCRUAL_CATCHUP_MAX_MONTHS = 12;
-const TO  = { EMP_ID:0, EMP_NAME:1, DATE:2, TYPE:3, NOTES:4, STATUS:5, SUBMITTED_AT:6 };
+// TC-04 (cycle 23): DEDUCTED (col 8, a trailing add, self-healed by
+// getOrCreateTimeOffSheet_) records what an APPROVAL actually took from the
+// balance — 'annual:1', 'sick:0.5', or 'none' when nothing moved (tracking off,
+// the rep's PtoEnabled FALSE, an unpaid type). Un-approving restores exactly
+// that. Blank = a row approved before the column existed: the old by-type rule.
+const TO  = { EMP_ID:0, EMP_NAME:1, DATE:2, TYPE:3, NOTES:4, STATUS:5, SUBMITTED_AT:6, DEDUCTED:7 };
+const TO_HEADERS = ['EmployeeId','EmployeeName','Date','Type','Notes','Status','SubmittedAt','Deducted'];
 // Shared AuditLog columns (the ADP-spreadsheet AuditLog tab — writeAuditLog_ /
 // getOrCreateAuditSheet_ header order). Batch 3 (cycle-8): the AuditLog was the
 // ONE core sheet with NO named column enum, so its cells were read as bare
@@ -562,6 +575,10 @@ const CN_HEADERS = [
   'EmailedAt','EmailDepartments',
   'Subform','SubformData',
 ];
+// CN-7 (cycle 23) — the free-text note columns are written into PLAIN-TEXT
+// ('@') cells: Sheets parsed a callback "0123…" as a number (the zero lost) and
+// "12/5" as a Date. One list, read by every writer of these columns.
+const CN_TEXT_IDX = [CN.CALLBACK, CN.CALLER, CN.RELATIONSHIP, CN.PATIENT_TRX, CN.ISSUE, CN.TRANSFERRED_TO, CN.RESOLUTION];
 const CN_FLAG_TYPES = ['action','training','review'];
 // Round 2 · 8e — extended flag set for the multi-select toolbar. 'urgent'
 // is new; pin lives separately in subformData.pinned (subject to its own
@@ -1221,6 +1238,9 @@ const CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN = 2000;
 // archiveSheetRowsOlderThan_ (append-then-delete + flush: a mid-run failure
 // can only duplicate into the archive, never lose a payroll row).
 const TIMESHEET_ARCHIVE_TAB = 'TimesheetArchive';
+// TC2-9 (cycle 23 Batch 14): the cached newest date in TimesheetArchive — see
+// timesheetArchiveReach_. Cleared by archiveOldTimesheetRows after a move.
+const TS_ARCHIVE_REACH_CACHE_KEY = 'ts_archive_reach_v1';
 // Floor: the live tab must always retain every ACTIVE window — adjustments
 // (ADJUST_WINDOW_DAYS 30), manager day-edit/delete, the current export period
 // (≤ ~31d), dashboard trends (14d) — with generous margin. A configured window
@@ -1450,10 +1470,13 @@ const SPANISH_PENDING_IDS_TTL = 900;   // 15 min — a reply-resolved request le
 // background push — a closed browser gets nothing. The reminder serves a rep
 // with the app open, which is the pilot's case (the pinned pop-out).
 const SCHED_CALLS_TAB = 'ScheduledCalls';
-const SCHED_CALLS_SCAN = 2000;      // bounded tail — the read stays cheap
 const SCHED_ACTIVE_CAP = 20;        // per-rep active bound (stale ones surface in the list)
 const SCHED_LABEL_MAX = 300;
 const SCHED_MAX_DAYS_AHEAD = 60;
+// CN-1 (cycle 23) — how far back the reminder read reaches, by CREATION time:
+// past the furthest a reminder may be set ahead, plus 30 days for one left
+// active (overdue, not marked done) to stay on the rep's list.
+const SCHED_STATE_SPAN_DAYS = SCHED_MAX_DAYS_AHEAD + 30;
 const SC = { ID: 0, EMP_ID: 1, WHEN_MS: 2, LEAD_MIN: 3, LABEL: 4, STATUS: 5, CREATED_MS: 6 };
 // ── Per-rep scratchpad (pilot round 3 #5 — server-backed sticky notes) ──────
 // Personal scratch space that follows the rep across browsers/devices —
@@ -1541,6 +1564,13 @@ const PUNCH_ADJUST_BULK_MAX = 50;
 // Cycle-11 L-11 — time-off date sanity horizon (see the submit paths).
 const TIMEOFF_MAX_DAYS_AHEAD = 370;   // ~a year of planned leave + slop
 const TIMEOFF_MAX_DAYS_BACK  = 90;    // retroactive filing window
+// TC-05 (cycle 23) — the longest shift a REP's own adjustment may create.
+// calcHours_ wraps Clock Out < Clock In as overnight on purpose (overnight-local
+// reps exist), so an AM/PM typo (in 08:00, out 05:00) used to be paid as a
+// 21-hour shift. A real overnight shift is ~9 h; anything past this bound is
+// refused and the rep is asked to check AM and PM. Managers (Day Edit) are not
+// bound by it.
+const ADJUST_MAX_SHIFT_HOURS = 16;
 let _adpSsMemo = null;
 let _adpTzMemo = null;
 // ── Host-sheet timezone for CN coercion recovery (Part A, operator 2026-08-27) ──
@@ -1579,6 +1609,13 @@ var _csrTransferWarning = null;
  *  only). Sourced from the SUBMISSION tabs' Timestamp column (every send =
  *  one row), bounded tail per tab. Answers "average occurrences per month"
  *  with real monthly counts rather than a single averaged number. */
+/** Batch 11 (cycle 23, operator 2026-10-05): the weights a PPD answer may
+ *  carry. Nothing in the catalog is pediatric, and nothing is rated past
+ *  1000 lbs, so a reading outside [MIN, MAX] is a typo or a misread unit
+ *  (an "18 st", a "12" meant as 120) — read as UNREADABLE, with the reason,
+ *  never fed to the capacity filter. */
+const INTAKE_WEIGHT_MIN_LBS = 20;
+const INTAKE_WEIGHT_MAX_LBS = 1000;
 const INTAKE_VOLUME_MONTHS = 6;
 const INTAKE_VOLUME_SCAN_MAX = 4000;
 // ════════════════════════════════════════════════════════════════════════════
@@ -2125,8 +2162,24 @@ const DRIVE_DISABLED_MSG = 'Apps Script\u2019s Drive service is disabled for thi
 // to scrub patient data before pasting. Orphaned uploads (pasted but never
 // saved into an article) stay in the folder — trim manually if it bothers you
 // (same posture as KbViews growth).
-const KB_IMG_UPLOAD_MAX_CHARS = 4 * 1024 * 1024;   // base64 chars ≈ 3MB binary
+const KB_IMG_UPLOAD_MAX_CHARS = 4 * 1024 * 1024;   // base64 chars ≈ 3MB binary — the request sanity cap, before the store cap below
 const KB_IMG_UPLOAD_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+// ── DRV-3 (cycle 23 Batch 12, operator 2026-10-05): article images live in the
+// KbImages TAB, not a Drive folder — this domain disables Apps Script's Drive,
+// so every image the converter exported or a paste uploaded was unreadable.
+// The ManualImages row shape (Key, Sha, Type, Kind, Part, Data, ImportedAt —
+// KBMG), its ledger and its reader are shared; the difference is that this tab
+// is APPEND-ONLY (an article holds a key for good) and keyed by CONTENT hash,
+// so storing the same image twice stores it once. An article cites
+// `![alt](kbimg:<key>)`; any employee reads it through getKbImages. Kind is
+// 'paste' or 'doc'. Old Drive-thumbnail links keep rendering through the http
+// path and the kbGetImageData fallback below.
+const KB_IMAGES_TAB = 'KbImages';
+const KB_IMAGES_HEADERS = KB_MANUAL_IMAGES_HEADERS;
+const KB_IMAGE_KEY_RE = /^kbimg-[a-f0-9]{24}$/;
+const KB_IMAGE_MAX_BYTES = 1572864;            // 1.5 MB per image (operator default); the client downscales pasted images to fit
+const KB_IMAGES_BATCH = 6;                     // keys per getKbImages call — an article image is far larger than a manual icon
+const KB_IMAGE_CACHE_PREFIX = 'kbimg_';        // + content hash (g157: names the bytes, not the code)
 // ── Article-image fallback: serve KB Images through the app ─────────────────
 // (Operator 2026-08-13.) The Drive thumbnail URLs kbMd_ renders load only for
 // accounts the KB Images folder is visible to — and on this domain Workspace
@@ -2283,8 +2336,9 @@ const TRAIN_ASSIGN_MAX_EMPS = 100;   // per saveTrainingAssignment call
 const TRAIN_COMPLETE_MAX_SCAN = 10000;
 const TRAIN_ATTEMPT_MAX_SCAN = 4000;
 // ── T2: Quizzes (server-graded; answer keys NEVER ship to the client) ──────
-// docs/training-employee-docs-spec.md §5 + §9.4 (unlimited retries, never
-// reveal correct answers — only per-question right/wrong; attempts tracked).
+// docs/training-employee-docs-spec.md §5 + §9.4 (never reveal correct answers
+// — only per-question right/wrong; attempts tracked; retries capped since
+// cycle 23 TRN-1, see TRAIN_QUIZ_MAX_ATTEMPTS below).
 const TRAIN_QUIZ_TAB = 'Quizzes';
 const TRAIN_ATTEMPT_TAB = 'QuizAttempts';
 const TRAIN_QUIZ_HEADERS = ['QuizId','Title','KbItemId','PassPct','QuestionsJson','UpdatedBy','UpdatedAt'];
@@ -2294,6 +2348,18 @@ const TQA = { ATTEMPT_ID:0, QUIZ_ID:1, EMP_ID:2, SUBMITTED_AT:3, SCORE_PCT:4, PA
 const TRAIN_QUIZ_MAX_QUESTIONS = 50;
 const TRAIN_QUIZ_MAX_OPTIONS = 6;
 const TRAIN_QUIZ_JSON_MAX = 45000;   // under the 50k Sheets cell limit (INV-96 spirit)
+// TRN-1 (cycle 23 Batch 11, operator 2026-10-05): retries are no longer
+// unlimited. A failed attempt now shows WHICH questions were wrong (never the
+// right option), and with unlimited retries that is an answer key by
+// elimination — so after MAX failed attempts in a row the rep waits LOCK_HOURS
+// before the next set, unless a manager resets them (QuizResets: one row per
+// reset, append-only, ids only). A pass, a re-assignment (§3a) or a reset
+// starts the count over.
+const TRAIN_QUIZ_MAX_ATTEMPTS = 3;
+const TRAIN_QUIZ_LOCK_HOURS = 24;
+const TRAIN_QUIZ_RESET_TAB = 'QuizResets';
+const TRAIN_QUIZ_RESET_HEADERS = ['ResetAt','QuizId','EmpId','ResetBy','AtMs'];
+const TQR = { RESET_AT:0, QUIZ_ID:1, EMP_ID:2, RESET_BY:3, AT_MS:4 };
 // ── T3: Employee Docs (per-employee signable documents) ────────────────────
 // docs/training-employee-docs-spec.md §3b/§4/§5. A DEDICATED spreadsheet
 // (Script Property HR_DOCS_SS_ID — NEVER co-located with the KB, ADP, or PHI
@@ -2310,6 +2376,11 @@ const EMPDOC_SIG_TAB = 'DocSignatures';
 const EMPDOC_HEADERS = ['DocId','EmpId','DocType','Title','BodyMd','ContentHash','RequiresSignature','Status','IssuedBy','IssuedAt','DueAt','SignedAt','VoidReason','FieldsJson','ResponsesJson'];
 const EMPDOC_SIG_HEADERS = ['DocId','EmpId','SignedAt','SignatureDataUrl','AckVersion','SignatureHash','Certificate'];
 const ED = { DOC_ID:0, EMP_ID:1, DOC_TYPE:2, TITLE:3, BODY_MD:4, CONTENT_HASH:5, REQUIRES_SIG:6, STATUS:7, ISSUED_BY:8, ISSUED_AT:9, DUE_AT:10, SIGNED_AT:11, VOID_REASON:12, FIELDS:13, RESPONSES:14 };
+// HR-1 (cycle 23) — the doc's text columns are written into '@' cells: a title
+// that read as a date or number was coerced on write, so the content hash
+// recomputed from the cell never matched — the doc could not be signed and
+// verified as TAMPERED.
+const EMPDOC_TEXT_IDX = [ED.TITLE, ED.BODY_MD, ED.VOID_REASON];
 const EDS = { DOC_ID:0, EMP_ID:1, SIGNED_AT:2, SIGNATURE:3, ACK_VERSION:4, SIG_HASH:5, CERTIFICATE:6 };
 const EMPDOC_TYPES = ['review','pip','policy','other'];
 // v2 — manager-curated reusable templates (e.g. "Annual Performance Review").
@@ -2369,6 +2440,9 @@ const COACH_TAB = 'Coaching';
 // them stay in the HR store; none reaches the shared AuditLog.
 const COACH_HEADERS = ['CoachId','EmpId','EmpName','PatientTRX','Severity','WhatHappened','WhatShould','NoteId','Status','CreatedBy','CreatedAt','AcknowledgedAt','AckBy','VoidReason','RepResponse','FollowUpAt','NudgedAt','NoteDate','QaFileId'];
 const CO = { COACH_ID:0, EMP_ID:1, EMP_NAME:2, PATIENT_TRX:3, SEVERITY:4, WHAT_HAPPENED:5, WHAT_SHOULD:6, NOTE_ID:7, STATUS:8, CREATED_BY:9, CREATED_AT:10, ACK_AT:11, ACK_BY:12, VOID_REASON:13, REP_RESPONSE:14, FOLLOW_UP_AT:15, NUDGED_AT:16, NOTE_DATE:17, QA_FILE_ID:18 };
+// HR-1 (cycle 23) — the coaching free text is written into '@' cells (a TRX
+// "0012" lost its zeros, a "3/4" became a Date).
+const COACH_TEXT_IDX = [CO.PATIENT_TRX, CO.WHAT_HAPPENED, CO.WHAT_SHOULD, CO.VOID_REASON, CO.REP_RESPONSE];
 const COACH_SEVERITIES = ['praise','minor','major','critical'];
 // K4 — DISPLAY labels only. The stored enum is untouched (`major` stays
 // `major` in every row, every audit line, `coachSevTone_` and the analytics

@@ -1118,6 +1118,7 @@ test('M-2: intakeFlushDraftNow_ captures a pending save synchronously while the 
     '<button data-set="TRUE">Yes</button><button data-set="FALSE">No</button></div>';
   h.document.body.appendChild(form);
   h.window.localStorage.removeItem('umsIntakeDrafts');
+  h.read('empState = { email: "rep@umsupply.com" }');   // INT2-3: a draft is written only with an owner
   h.window.intakeSaveDraft_('pmd');    // debounce armed, not yet fired
   h.window.intakeFlushDraftNow_();     // the showView navigation flush
   const draft = JSON.parse(h.window.localStorage.getItem('umsIntakeDrafts') || '{}');
@@ -2263,7 +2264,17 @@ test('QA-LOG-DOM: the typed scorecard form — Yes/No pair, dropdown, unselect, 
   h.read('qaSetRating_')('outcome', '');
   assert.strictEqual(h.read('QA_STATE').ratings.outcome, undefined, 'the blank option clears the choice');
   h.read('qaSetRating_')('outcome', 'Resolved');
+  // QAUI-1 (cycle 23): a rating is patched IN PLACE — the button the reviewer
+  // pressed is the same node afterwards, and keeps the focus.
+  const g4 = h.$('[data-qa-crit="greeting"] button[data-v="4"]');
+  g4.focus();
+  h.read('qaSetRating_')('greeting', 4);
+  assert.strictEqual(h.$('[data-qa-crit="greeting"] button[data-v="4"]'), g4, 'THE REGRESSION: every click rebuilt the form');
+  assert.strictEqual(h.window.document.activeElement, g4, 'focus stays on the pressed rating');
+  assert.strictEqual(g4.getAttribute('aria-pressed'), 'true');
+  assert.ok(/running avg 4/.test(h.$('.qa-score-running').textContent), 'the running line updates in place');
   h.read('qaSetRating_')('greeting', 5);
+  assert.strictEqual(g4.getAttribute('aria-pressed'), 'false', 'a different rating un-presses the old one');
   assert.ok(/running avg 5/.test(h.$('.qa-score-running').textContent), 'the running average counts ONLY the scale answer');
   assert.ok(/3 of 3 rated/.test(h.$('.qa-score-running').textContent), 'but completeness counts every answered criterion');
   h.$('#qa-score-notes').value = 'Escalated correctly.';
@@ -2723,6 +2734,37 @@ test('SP1/SP2 DOM: Mark resolved removes the request from STATE (count, header a
   // A re-render from the SAME state must not resurrect it (the cache-half path).
   h.read('spanishRenderList_')();
   assert.strictEqual(cards().length, 1, 'a re-render does not bring it back');
+});
+
+// SP-2 (cycle 23 Batch 13) — a requester's follow-up after an answer is a new,
+// UNCLAIMED request. The card says so, carries no claim pill (and so counts
+// toward Auto-assign), and Mark resolved no longer reads as permanent.
+test('SP-2 DOM: a reopened request renders with a follow-up pill and no claim, counts as unclaimed, and the resolve confirm says a follow-up comes back', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true, canSeeSpanish: true });
+  h.run.respond('getSpanishInboxStats', () => ({ address: 'spanishcalls@x.com', days: 30, pending: 2, resolved: 1,
+    avgMinutes: 60, medianMinutes: 60, avgBusinessMinutes: 60, medianBusinessMinutes: 60, businessCount: 1,
+    businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true }, membersConfigured: true, threadsScanned: 2, truncated: false }));
+  h.run.respond('getSpanishInboxPending', () => ({ pending: [
+    { threadId: 'f1', requester: 'a@x.com', ageHours: 2, subject: 'Uno', snippet: 'otra pregunta', permalink: 'https://mail.google.com/1', claim: null, followUp: true, claimFloorMs: 1 },
+    { threadId: 'f2', requester: 'b@x.com', ageHours: 3, subject: 'Dos', snippet: 'y', permalink: 'https://mail.google.com/2', claim: { by: 'sam@x.com', atMs: 5 }, followUp: false, claimFloorMs: 0 }],
+    members: ['sam@x.com', 'ines@x.com'], self: 'me@x.com', truncated: false }));
+  h.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['sam@x.com'], truncated: false }));
+  h.window.enterTool('metrics', 'metricsSpanish');
+  h.flushTimers();
+  const card = (tid) => h.$('.sp-resolve[data-thread="' + tid + '"]').closest('.sp-task');
+  assert.ok(card('f1').querySelector('.sp-followup-pill'), 'the reopened card says follow-up');
+  assert.ok(/follow-up/i.test(card('f1').querySelector('.sp-followup-pill').textContent));
+  assert.strictEqual(card('f1').querySelector('.sp-claim-pill'), null, 'and carries no claim — it came back unclaimed');
+  assert.strictEqual(card('f2').querySelector('.sp-followup-pill'), null, 'a first request has no pill');
+  assert.ok(/Auto-assign 1 unclaimed/.test(h.$('#sp-autoassign').textContent), 'the reopened request is in the unclaimed count');
+  let seen = null;
+  h.window.__stubConfirm = (o) => { seen = o; return Promise.resolve(false); };
+  h.read('uiConfirm = window.__stubConfirm');
+  h.read('spanishResolve_')(h.$('.sp-resolve[data-thread="f2"]'));
+  await tick();
+  assert.ok(seen && /If the requester writes again, it comes back as a new request, unclaimed\./.test(seen.message), 'the confirm no longer reads as permanent');
 });
 
 // SP4 (operator 2026-09-16) — a suppressed voicemail card is invisible BY
@@ -5830,4 +5872,686 @@ test('TC-02: a day without that break is plainly an add; a reply for a date the 
   $('adj-time').value = '17:00';
   $('adj-add').click();
   assert.strictEqual(batch().length, 2); assert.strictEqual(batch()[1].breakIntent, undefined, 'and carries none');
+});
+
+test('FORM-3 (cycle 23): a note with two submitted forms renders two pills, each opening its own submission — the second no longer hides the first', () => {
+  const h = boot(); const area = mount_(h, 'view-area');
+  const base = { noteId: 'n1', timestamp: '2026-06-15T10:00:00', dateLocal: '2026-06-15', callback: '', caller: 'C', relationship: '',
+    patientAndTrx: 'P', issue: 'i', transferredTo: '', resolution: '', flagType: '', resolved: false, emailedAt: '', emailDepartments: '', subform: '' };
+  area.innerHTML = h.window.cnRenderCardCore_(Object.assign({}, base, { subformData: {
+    formSubmissions: [{ token: 'tok-A', formType: 'cmn' }, { token: 'tok-B', formType: 'aob' }],
+    formSubmission: { token: 'tok-B', formType: 'aob' } } }), false);
+  const pills = Array.from(area.querySelectorAll('.cn-form-pill'));
+  assert.deepStrictEqual(pills.map((p) => p.getAttribute('data-token')), ['tok-A', 'tok-B'], 'THE REGRESSION: only tok-B had a pill');
+  assert.deepStrictEqual(pills.map((p) => p.textContent.trim()), ['form 1', 'form 2']);
+  assert.ok(/\(cmn\)/.test(pills[0].getAttribute('title')), 'the title names the form type');
+  assert.ok(pills.every((p) => p.parentElement.classList.contains('cn-form-pills')), 'several pills stack in one column — side by side they squeezed the compact card\'s text (measured in cn-log-light-compact)');
+  area.innerHTML = h.window.cnRenderCardCore_(Object.assign({}, base, { subformData: { formSubmission: { token: 'tok-old' } } }), false);
+  const one = area.querySelectorAll('.cn-form-pill');
+  assert.strictEqual(one.length, 1); assert.strictEqual(one[0].textContent.trim(), 'form', 'a note stamped before the list: one pill, labelled as before');
+  assert.ok(!one[0].parentElement.classList.contains('cn-form-pills'), 'and unwrapped, as before');
+});
+
+section('Cycle 23 Batch 7b — Call Notes client: what the rep typed, and what the server said');
+
+const b7Toasts = (h) => h.$$('#toast-stack .toast').map((t) => t.textContent);
+const b7ArmCompose = (h, issue) => {
+  h.setField('cn-fld-caller', 'Jane');
+  h.setField('cn-fld-issue', issue);
+  h.window.cnSubmitActiveForm_({ keepForm: true });
+  h.run.flushSuccess({ success: true, note: noteFixture({ noteId: 'real-a', caller: 'Jane', issue: issue, _pending: false }) }, 'submitCallNote');
+};
+
+test('CNUI-02: a Save & Compose cancelled past the undo window KEEPS the note and clears the form, so the next Save cannot file it twice', () => {
+  let h = bootLog();
+  b7ArmCompose(h, 'Patient A issue');
+  h.window.cnCloseComposerModal_();
+  assert.strictEqual(h.run.pending('deleteCallNote').length, 1, 'the rollback asks the server to delete');
+  h.run.flushSuccess({ success: false, error: 'Notes can only be deleted within 5 minutes of creation.', windowClosed: true }, 'deleteCallNote');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), '', 'THE REGRESSION: the saved text stayed in the form and the next Save duplicated it');
+  assert.ok(h.read('CN_STATE.rollingNotes.some(function (n) { return n.noteId === "real-a"; })'), 'the note stays in the stack — it IS saved');
+  assert.ok(b7Toasts(h).some((t) => /stays saved/.test(t) && /form was cleared/.test(t)), 'and the rep is told why');
+  assert.ok(!b7Toasts(h).some((t) => /Notes can only be deleted/.test(t)), 'not the raw refusal');
+  // The rep had already started the next call: their text is never cleared.
+  h = bootLog();
+  b7ArmCompose(h, 'Patient A issue');
+  h.window.cnCloseComposerModal_();
+  h.setField('cn-fld-issue', 'Patient B — new call');
+  h.run.flushSuccess({ success: false, error: 'x', windowClosed: true }, 'deleteCallNote');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), 'Patient B — new call', 'a form holding another note is left alone');
+  assert.ok(b7Toasts(h).some((t) => /stays saved/.test(t) && !/form was cleared/.test(t)));
+  // Any OTHER refusal is a failure, as before: the text stays for the rep.
+  h = bootLog();
+  b7ArmCompose(h, 'Patient A issue');
+  h.window.cnCloseComposerModal_();
+  h.run.flushSuccess({ success: false, error: 'Lock timeout' }, 'deleteCallNote');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), 'Patient A issue', 'a failed delete keeps the text');
+  assert.ok(b7Toasts(h).some((t) => /Lock timeout/.test(t)));
+});
+
+test('CNUI-06: undo-save says "deleted" and restores the text only AFTER the server deletes — a refused undo restores nothing', () => {
+  const undo = (h) => {
+    const form = h.$('#cn-active-form');
+    form.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true }));
+  };
+  let h = bootLog();
+  h.setField('cn-fld-issue', 'Refill request');
+  h.window.cnSubmitActiveForm_();
+  h.run.flushSuccess({ success: true, note: noteFixture({ noteId: 'real-1', issue: 'Refill request', _pending: false }) }, 'submitCallNote');
+  undo(h);
+  assert.strictEqual(h.run.pending('deleteCallNote').length, 1, 'the undo asks the server');
+  assert.ok(!b7Toasts(h).some((t) => /note deleted/.test(t)), 'THE REGRESSION: "note deleted" was announced before the server answered');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), '', 'and nothing is restored yet');
+  h.run.flushSuccess({ success: true }, 'deleteCallNote');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), 'Refill request', 'deleted: the text comes back');
+  assert.ok(b7Toasts(h).some((t) => /Save undone — note deleted, text restored/.test(t)));
+  // Refused: the note is still saved, so its text is NOT put back (that would file it twice).
+  h = bootLog();
+  h.setField('cn-fld-issue', 'Refill request');
+  h.window.cnSubmitActiveForm_();
+  h.run.flushSuccess({ success: true, note: noteFixture({ noteId: 'real-2', issue: 'Refill request', _pending: false }) }, 'submitCallNote');
+  undo(h);
+  h.run.flushSuccess({ success: false, error: 'Lock timeout' }, 'deleteCallNote');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), '', 'a refused undo restores nothing');
+  assert.ok(!b7Toasts(h).some((t) => /note deleted/.test(t)), 'and claims nothing');
+  // Deleted while the rep had begun typing: their text is kept.
+  h = bootLog();
+  h.setField('cn-fld-issue', 'Refill request');
+  h.window.cnSubmitActiveForm_();
+  h.run.flushSuccess({ success: true, note: noteFixture({ noteId: 'real-3', issue: 'Refill request', _pending: false }) }, 'submitCallNote');
+  undo(h);
+  h.setField('cn-fld-issue', 'next call');
+  h.run.flushSuccess({ success: true }, 'deleteCallNote');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), 'next call');
+  assert.ok(b7Toasts(h).some((t) => /not put back because the form is in use/.test(t)));
+});
+
+test('CNUI-03: a late timeline or submission answer never re-opens a closed viewer or paints the previous patient', () => {
+  const h = bootLog();
+  const tl = (trx) => ({ trx: trx, events: [], partial: false, failedSources: [], truncatedSources: [] });
+  h.window.cnOpenPatientTimeline_('TRX-A');
+  h.window.cnCloseTimelineOverlay_();
+  h.run.flushSuccess(tl('TRX-A'), 'getPatientTimeline');
+  assert.ok(!h.$('#cn-timeline-overlay'), 'THE REGRESSION: the closed timeline popped back up');
+  h.window.cnOpenPatientTimeline_('TRX-A');
+  h.window.cnOpenPatientTimeline_('TRX-B');
+  h.run.flushSuccess(tl('TRX-A'), 'getPatientTimeline');
+  assert.ok(!/TRX-A/.test(h.$('#cn-timeline-overlay').textContent), 'A\'s late answer does not paint under B');
+  h.run.flushSuccess(tl('TRX-B'), 'getPatientTimeline');
+  assert.ok(/TRX-B/.test(h.$('#cn-timeline-overlay').textContent), 'B\'s answer does');
+});
+
+test('CNUI-03: the submission viewer drops a stale answer too (rep and manager)', () => {
+  const h = bootLog();
+  h.window.cnViewFormSubmission_('tok-1');
+  h.window.cnCloseFormSubOverlay_();
+  h.run.flushSuccess({ formName: 'One', fields: [] }, 'getFormSubmission');
+  assert.ok(!h.$('#cn-form-sub-overlay'), 'closed stays closed');
+  h.window.cnViewFormSubmission_('tok-1');
+  h.window.cnViewFormSubmission_('tok-2');
+  h.run.flushFailure(new Error('late failure for tok-1'), 'getFormSubmission');
+  assert.ok(h.$('#cn-form-sub-overlay'), 'a stale FAILURE does not close the current viewer');
+  h.read("CN_STATE.mgrRepView = { repId: 'E9', date: '2026-06-16' }");
+  const btn = h.window.document.createElement('button');
+  btn.dataset.token = 'tok-m'; btn.dataset.repId = 'E9';
+  h.window.cnMgrViewFormSubmission_(btn);
+  h.window.cnCloseFormSubOverlay_();
+  h.run.flushSuccess({ formName: 'M', fields: [] }, 'managerGetFormSubmission');
+  assert.ok(!h.$('#cn-form-sub-overlay'), 'the manager viewer too');
+});
+
+test('CNUI-04: saving a manager comment re-renders THAT card only — a reply typed on another card survives', () => {
+  const h = boot(); h.bootShell();
+  const area = mount_(h, 'view-area');
+  h.read("CN_STATE.mgrRepView = { repId: 'E9', date: '2026-06-16' }");
+  const n1 = noteFixture({ noteId: 'm1', caller: 'One' }), n2 = noteFixture({ noteId: 'm2', caller: 'Two' });
+  area.innerHTML = '<div id="cn-mgr-rep-stack">' + h.window.cnMgrRenderReadonlyCard_(n1) + h.window.cnMgrRenderReadonlyCard_(n2) + '</div>';
+  const input = (id) => h.$('#cn-mgr-rep-stack .cn-mgr-reply-row[data-note-id="' + id + '"] .cn-mgr-reply-input');
+  input('m2').value = 'half-typed for card two';
+  input('m2').focus();
+  input('m1').value = 'Nice save';
+  h.window.cnMgrSaveComment_(h.$('#cn-mgr-rep-stack .cn-mgr-reply-row[data-note-id="m1"] .cn-mgr-reply-save'));
+  const saved = noteFixture({ noteId: 'm1', caller: 'One', subformData: { feedback: [{ role: 'manager', kind: 'comment', message: 'Nice save', at: '2026-06-16 11:00:00' }] } });
+  h.run.flushSuccess({ success: true, note: saved }, 'setCallNoteManagerComment');
+  assert.strictEqual(h.run.pending('managerGetCallNotes').length, 0, 'THE REGRESSION: the whole stack reloaded');
+  assert.strictEqual(input('m2').value, 'half-typed for card two', 'the other card\'s typing survives');
+  assert.strictEqual(h.window.document.activeElement, input('m2'), 'and keeps its focus (the node was never replaced)');
+  assert.ok(/Nice save/.test(h.$('#cn-mgr-rep-stack .cn-card[data-note-id="m1"]').textContent), 'the saved card shows its comment');
+  assert.strictEqual(h.$$('#cn-mgr-rep-stack .cn-card').length, 2, 'one card replaced, none added (g66)');
+  // Another rep on screen by the time the save lands: the stack reloads.
+  h.read("CN_STATE.mgrRepView = { repId: 'E7', date: '2026-06-16' }");
+  h.window.cnMgrPatchCard_('E9', saved);
+  assert.strictEqual(h.run.pending('managerGetCallNotes').length, 1, 'a different rep reloads, as before');
+});
+
+test('CNUI-05: a Clarify box the rep is typing in survives a stack re-render — open, with its text and caret', () => {
+  const qn = noteFixture({ noteId: 'q1', flagType: 'training', subformData: { trainingQuestion: 'Q?', feedback: [{ role: 'manager', kind: 'reply', message: 'A.', at: '2026-06-16 11:00:00' }] } });
+  const h = bootLog([qn]);
+  const row = () => h.$('.qa-clarify-row[data-qa-clarify-row="q1"]');
+  h.$('[data-qa-clarify="q1"]').click();
+  assert.ok(!row().hidden, 'the box opens');
+  const ta = row().querySelector('textarea');
+  ta.value = 'Does that cover the mask too';
+  ta.focus(); ta.setSelectionRange(5, 9);
+  h.window.cnReRenderActiveView_();   // a flag on another card, the live refresh …
+  assert.ok(row() && !row().hidden, 'THE REGRESSION: the re-render closed it');
+  const ta2 = row().querySelector('textarea');
+  assert.strictEqual(ta2.value, 'Does that cover the mask too', 'and dropped the text');
+  assert.strictEqual(h.window.document.activeElement, ta2, 'focus is back in it');
+  assert.deepStrictEqual([ta2.selectionStart, ta2.selectionEnd], [5, 9], 'at the same caret');
+  // Sent: the box empties and closes, and the re-render does not put the text
+  // back. The returned thread still takes a reply (the manager answered again
+  // meanwhile), so the box IS re-rendered — the case where a restore would bite.
+  row().querySelector('.qa-clarify-submit').click();
+  h.run.flushSuccess({ success: true, note: noteFixture({ noteId: 'q1', flagType: 'training', subformData: { trainingQuestion: 'Q?', feedback: [
+    { role: 'manager', kind: 'reply', message: 'A.', at: '2026-06-16 11:00:00' }, { role: 'agent', kind: 'clarification', message: 'Does that cover the mask too', at: '2026-06-16 11:05:00' },
+    { role: 'manager', kind: 'reply', message: 'Yes.', at: '2026-06-16 11:06:00' }] } }) }, 'appendCallNoteFeedback');
+  assert.ok(row(), 'sanity: the thread still takes a reply, so the box is rendered');
+  assert.ok(row().hidden && !row().querySelector('textarea').value, 'a SENT follow-up is not put back into a reopened box');
+});
+
+test('CNUI-08: creating a reminder refetches Needs you, as done and cancel already did', () => {
+  const h = bootLog();
+  let invalidated = 0;
+  h.window.clkNeedsYouInvalidate_ = () => { invalidated++; };
+  h.window.cnOpenSchedModal_();
+  h.$('#cn-sched-date').value = '2026-10-05'; h.$('#cn-sched-time').value = '10:00';
+  h.window.cnSchedCreate_(h.window.document.createElement('button'));
+  h.run.flushSuccess({ success: true, call: { id: 'c1', whenMs: 1, leadMin: 5, label: 'x', status: 'active' } }, 'createScheduledCall');
+  assert.strictEqual(invalidated, 1, 'THE REGRESSION: a new reminder never reached Needs you until a reload');
+});
+
+test('CNUI-09: the stale-flag count lands on BOTH nav forms — a phone shows the bottom-nav button, not the sidebar', () => {
+  const h = boot(); h.bootShell();
+  const both = h.$$('.sb-link[data-tool="callNotes"], .nav-btn[data-tool="callNotes"]');
+  assert.ok(both.length >= 2, 'sanity: the shell renders both forms');
+  h.window.cnRenderStaleBadge_(3);
+  assert.deepStrictEqual(both.map((l) => (l.querySelector('.cn-stale-badge') || {}).textContent), both.map(() => '3'), 'THE REGRESSION: only the first form ever got it');
+  h.window.cnRenderStaleBadge_(0);
+  assert.strictEqual(h.$$('.cn-stale-badge').length, 0, 'zero clears both');
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+section('Cycle 23 Batch 9 — editors that ask before discarding, closes that return focus');
+
+const b9Toasts = (h) => h.$$('#toast-stack .toast').map((t) => t.textContent);
+const b9TourSeen = (h) => h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+// jsdom never compiles an inline onclick — run the attribute's own text.
+const b9Press = (h, el) => { assert.ok(el, 'the button exists'); h.read(el.getAttribute('onclick')); };
+const b9Ask = (h) => { const d = h.$('.ui-dialog'); return d && /Discard changes\?/.test(d.textContent) ? d : null; };
+
+test('UI-ESC: the KB article editor ASKS before Escape or the backdrop discards a typed article — Keep editing keeps it, Discard closes; a clean editor closes at once', async () => {
+  const h = boot();
+  h.read('kbOpenEditor_')();
+  assert.ok(h.$('#kb-ed-overlay.open'), 'the editor opened');
+  h.dispatchKey('Escape');
+  assert.ok(!h.$('#kb-ed-overlay') && !h.$('.ui-dialog'), 'nothing typed: Escape closes at once, no question');
+  h.read('kbOpenEditor_')();
+  h.setField('kb-ed-title', 'New refill policy');
+  h.dispatchKey('Escape', { target: h.$('#kb-ed-title') });
+  assert.ok(h.$('#kb-ed-overlay'), 'THE REGRESSION: one Escape (even inside a field) threw the article away');
+  assert.ok(b9Ask(h), 'the discard question is up');
+  h.dispatchKey('Escape');                      // the question's own Escape = Keep editing
+  await tick();
+  assert.ok(!h.$('.ui-dialog'), 'the question closed');
+  assert.strictEqual(h.$('#kb-ed-title').value, 'New refill policy', 'and the article is still there');
+  h.dispatchKey('Escape'); h.dispatchKey('Escape');
+  assert.strictEqual(h.$$('.ui-dialog').length, 0, 'a second Escape answered the first question, never stacked a second');
+  await tick();
+  h.click(h.$('#kb-ed-overlay'));               // the backdrop asks too
+  assert.ok(b9Ask(h), 'a backdrop click asks');
+  h.click('.ui-dialog-ok');
+  await tick();
+  assert.ok(!h.$('#kb-ed-overlay'), 'Discard closes the editor');
+  // The × asks as well (it routes through closeOverlay — SH-02).
+  h.read('kbOpenEditor_')();
+  h.setField('kb-ed-title', 'Again');
+  h.click(h.$('#kb-ed-overlay [data-kb-close]'));
+  assert.ok(h.$('#kb-ed-overlay') && b9Ask(h), 'the × asks rather than discarding');
+  // A file the module filled in is work too, though no key was pressed.
+  h.click('.ui-dialog-ok'); await tick();
+  h.read('kbOpenEditor_')();
+  h.read('overlayMarkDirty_')('kb-ed-overlay');
+  h.dispatchKey('Escape');
+  assert.ok(b9Ask(h), 'a module-marked editor asks');
+});
+
+test('UI-ESC: the quiz editor asks after a STRUCTURAL edit; the coaching composer does not treat its prefill as work, asks once typed, and refuses mid-save (INTUI-1)', async () => {
+  let h = boot();
+  b9TourSeen(h);
+  h.bootShell({ isManager: true });
+  h.read('trainOpenQuizEditor_')(null);
+  h.click('[data-qed-addopt="0"]');            // no key pressed — still work
+  h.dispatchKey('Escape');
+  assert.ok(h.$('#train-qed-overlay.open') && b9Ask(h), 'the quiz editor asks after "+ Option"');
+  h.click('.ui-dialog-ok'); await tick();
+  assert.ok(!h.$('#train-qed-overlay.open'), 'Discard closes it');
+  // Coaching.
+  h = boot();
+  b9TourSeen(h);
+  h.bootShell({ isManager: true });
+  h.run.drain();
+  h.read('COACH_STATE.emps = { employees: [{ id: "E-1", name: "Sam Ortiz" }] }');
+  h.read('coachOpenDrawer_')({ empId: 'E-1', what: 'prefilled from the call note' });
+  h.dispatchKey('Escape');
+  assert.ok(!h.$('#coach-compose-overlay.open') && !h.$('.ui-dialog'), 'a prefill alone is not work: Escape closes at once');
+  h.read('coachOpenDrawer_')({ empId: 'E-1' });
+  h.setField('coach-what', 'Talked over the patient twice');
+  h.dispatchKey('Escape', { target: h.$('#coach-what') });
+  assert.ok(h.$('#coach-compose-overlay.open') && b9Ask(h), 'typed: Escape asks');
+  h.click('.ui-dialog-cancel'); await tick();
+  assert.strictEqual(h.$('#coach-what').value, 'Talked over the patient twice', 'Keep editing keeps it');
+  // INTUI-1: mid-save, nothing is being discarded — the drawer refuses instead of asking.
+  h.read('coachCreate_')();
+  assert.strictEqual(h.run.pending('createCoaching').length, 1, 'the save is in flight');
+  h.dispatchKey('Escape');
+  h.click('#coach-cancel');
+  assert.ok(h.$('#coach-compose-overlay.open'), 'THE REGRESSION: closing mid-save let the manager press Log again — a second HR record');
+  assert.ok(!h.$('.ui-dialog'), 'no discard question while saving');
+  assert.ok(b9Toasts(h).some((t) => /Saving — one moment/.test(t)), 'the refusal is said');
+  h.run.flushSuccess({ success: true }, 'createCoaching');
+  assert.ok(!h.$('#coach-compose-overlay.open'), 'the save closes it — without a question');
+  assert.ok(!h.$('.ui-dialog'));
+  // A fresh open starts clean: the last drawer's typing does not make the next one "dirty".
+  h.read('coachOpenDrawer_')({ empId: 'E-1' });
+  h.dispatchKey('Escape');
+  assert.ok(!h.$('#coach-compose-overlay.open') && !h.$('.ui-dialog'), 'a reopened, untouched drawer closes at once');
+});
+
+test('UI-ESC + TRUI-2: a filled HR document or a drawn signature is asked about before it is discarded — and the signature ink is a FIXED dark in dark mode', async () => {
+  const h = boot();
+  const ctx = { scale() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, clearRect() {}, fillText() {}, measureText: () => ({ width: 40 }) };
+  h.window.HTMLCanvasElement.prototype.getContext = () => ctx;
+  h.window.HTMLElement.prototype.getBoundingClientRect = () => ({ width: 300, height: 140, left: 0, top: 0, right: 300, bottom: 140 });
+  h.document.documentElement.setAttribute('data-theme', 'dark');
+  h.document.documentElement.style.setProperty('--ink', '#eef1f5');
+  const doc = { docId: 'd1', title: 'Self assessment', bodyMd: 'Read and sign.', status: 'issued', canComplete: true,
+    fields: [{ id: 'f1', label: 'Goals', type: 'textarea' }], responses: {}, ackText: 'I have read this document.' };
+  const open = () => { h.read('edOpenDoc_')('d1'); h.run.flushSuccess(JSON.parse(JSON.stringify(doc)), 'getMyDoc'); };
+  open();
+  h.dispatchKey('Escape');
+  assert.ok(!h.$('#ed-reader-overlay.open') && !h.$('.ui-dialog'), 'untouched: closes at once');
+  open();
+  const resp = h.$('#ed-reader-overlay .ed-resp');
+  resp.value = 'Shorter holds'; resp.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  h.dispatchKey('Escape', { target: resp });
+  assert.ok(h.$('#ed-reader-overlay.open') && b9Ask(h), 'THE REGRESSION: every answer was lost on one Escape');
+  h.click('.ui-dialog-ok'); await tick();
+  assert.ok(!h.$('#ed-reader-overlay.open'), 'Discard closes');
+  // A drawn signature fires no input event — the reader's own dirty() covers it.
+  open();
+  const cv = h.$('#ed-sig-canvas');
+  cv.dispatchEvent(new h.window.MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+  cv.dispatchEvent(new h.window.MouseEvent('mousemove', { bubbles: true, cancelable: true, clientX: 40, clientY: 30 }));
+  cv.dispatchEvent(new h.window.MouseEvent('mouseup', { bubbles: true }));
+  assert.strictEqual(ctx.strokeStyle, '#101418', 'TRUI-2: dark-mode ink is the fixed #101418, not the theme\'s near-white --ink');
+  h.dispatchKey('Escape');
+  assert.ok(b9Ask(h), 'a drawn signature is asked about');
+  h.click('.ui-dialog-cancel'); await tick();
+  h.read('ED_STATE.sigPad').setTypedName('Jo Rep');
+  assert.strictEqual(ctx.fillStyle, '#101418', 'a TYPED signature uses the same fixed ink');
+});
+
+test('INTUI-1: the intake preview cannot close while its send is in flight — Escape and × refuse, a failure re-opens the way', () => {
+  const h = boot();
+  h.read('INTAKE_STATE.preview = { formType: "PPD", payload: {}, bodyHash: "h", recommendations: [] }');
+  h.read('intakeOpenModal_')('Preview', '<button id="intk-ppd-send">Send</button>');
+  h.read('intakePpdSend_')();
+  assert.strictEqual(h.run.pending('intakeSendPPD').length, 1, 'the send is in flight');
+  h.dispatchKey('Escape');
+  h.click(h.$('#intk-modal-overlay [data-intk-close]'));
+  assert.ok(h.$('#intk-modal-overlay'), 'THE REGRESSION: closing mid-send put the rep back on the filled form, and a second Send was a duplicate PHI email');
+  assert.ok(b9Toasts(h).some((t) => /Sending — one moment/.test(t)));
+  h.run.flushFailure('quota', 'intakeSendPPD');
+  h.dispatchKey('Escape');
+  assert.ok(!h.$('#intk-modal-overlay'), 'once the send has answered, it closes');
+});
+
+test('TCUI-1: a self-undo whose dashboard refresh fails SAYS so — the undone punch may still be on screen', () => {
+  const h = boot();
+  h.bootShell();
+  h.run.drain();
+  const undo = () => { const b = h.document.createElement('button'); h.read('cnDoSelfUndo_')(b, '2026-10-02', '09:00', 'IN'); h.run.flushSuccess({ success: true }, 'selfDeletePunch'); };
+  undo();
+  h.run.flushFailure('timeout', 'getEmployeeState');
+  assert.ok(b9Toasts(h).some((t) => /could not refresh/.test(t)), 'THE REGRESSION: a failed refresh was silent');
+  undo();
+  h.run.flushSuccess({ error: 'Not enrolled' }, 'getEmployeeState');
+  assert.strictEqual(b9Toasts(h).filter((t) => /could not refresh/.test(t)).length, 2, 'an {error} reply is a failed refresh too');
+  undo();
+  h.run.flushSuccess(h.read('empState'), 'getEmployeeState');
+  assert.strictEqual(b9Toasts(h).filter((t) => /could not refresh/.test(t)).length, 2, 'a good refresh says nothing more');
+});
+
+test('ADM-10: reloading the team-members panel keeps an "Add team member" form being filled — values, open state, focus and caret; a completed add empties it', () => {
+  const h = boot();
+  h.bootShell({ isManager: true });
+  h.run.drain();
+  mount_(h, 'cn-admin-onboard');
+  const load = (opts, reps) => { h.read('cnAdminLoadOnboarding_')(opts); h.run.flushSuccess({ reps: reps || [] }, 'getOnboardingPanel'); h.run.drain(); };
+  load();
+  h.click('#cn-ob-toggle');
+  assert.strictEqual(h.$('#cn-ob-form').hidden, false, 'the form is open');
+  h.setField('cn-ob-name', 'Ana Ruiz');
+  h.setField('cn-ob-email', 'ana@ums.com');
+  const name = h.$('#cn-ob-name'); name.focus(); name.setSelectionRange(2, 2);
+  load(null, [{ id: 'E-9', name: 'Leo Kim', email: 'leo@ums.com', enrolled: true, managerEmail: '', tzValid: true, timezone: 'America/Chicago' }]);   // e.g. after an offboard
+  assert.strictEqual(h.$('#cn-ob-name').value, 'Ana Ruiz', 'THE REGRESSION: an offboard mid-form wiped the new member being added');
+  assert.strictEqual(h.$('#cn-ob-email').value, 'ana@ums.com');
+  assert.strictEqual(h.$('#cn-ob-form').hidden, false, 'still open');
+  assert.strictEqual(h.$('#cn-ob-toggle').getAttribute('aria-expanded'), 'true', 'and the toggle says so (INV-174)');
+  assert.strictEqual(h.document.activeElement && h.document.activeElement.id, 'cn-ob-name', 'focus came back');
+  assert.strictEqual(h.document.activeElement.selectionStart, 2, 'with the caret where it was');
+  load({ resetForm: true });
+  assert.strictEqual(h.$('#cn-ob-name').value, '', 'a completed add empties the form');
+  assert.strictEqual(h.$('#cn-ob-form').hidden, true);
+});
+
+test('KBUI-5: refreshing an article\'s comments keeps a new comment being typed — text, focus and caret; a POSTED comment leaves the box', () => {
+  const h = boot();
+  const host = mount_(h, 'kb-comments');
+  h.read('kbRenderComments_')(host, 'kb1', { comments: [{ commentId: 'c1', name: 'Me', mine: true, atMs: 0, text: 'old' }], total: 1 });
+  const ta = host.querySelector('.kb-cmt-add textarea');
+  ta.value = 'half typed'; ta.focus(); ta.setSelectionRange(4, 4);
+  h.read('kbRenderComments_')(host, 'kb1', { comments: [], total: 0 });   // an edit or delete elsewhere refreshed the block
+  const nb = host.querySelector('.kb-cmt-add textarea');
+  assert.strictEqual(nb.value, 'half typed', 'THE REGRESSION: editing or deleting a comment wiped the new one being typed');
+  assert.strictEqual(h.document.activeElement, nb, 'focus rides the re-render');
+  assert.strictEqual(nb.selectionStart, 4, 'and the caret');
+  // Post: the sent text is not put back by the refresh it triggers.
+  nb.value = 'Posted text';
+  h.read('KB_STATE.currentId = "kb1"');
+  h.read('kbAddComment_')(host.querySelector('[data-kb-item]'));
+  h.run.flushSuccess({ success: true }, 'kbAddComment');
+  h.run.flushSuccess({ comments: [{ commentId: 'c2', name: 'Me', mine: true, atMs: 0, text: 'Posted text' }], total: 1 }, 'kbGetComments');
+  assert.strictEqual(host.querySelector('.kb-cmt-add textarea').value, '', 'a posted comment is not restored into the box');
+});
+
+test('KB2-9: a file dropped into one editor never lands in the NEXT editor — a slow read or a slow conversion is dropped', () => {
+  const h = boot();
+  const readers = [];
+  h.window.FileReader = function () { readers.push(this); this.readAsDataURL = () => {}; };
+  const file = { name: 'policy.txt', size: 10, type: 'text/plain' };
+  h.read('kbOpenEditor_')();
+  h.read('kbIngestFile_')(file);
+  h.read('kbOpenEditor_')();                     // the admin moved on to another item
+  readers[0].result = 'data:text/plain;base64,aGk=';
+  readers[0].onload();
+  assert.strictEqual(h.run.pending('kbIngestFile').length, 0, 'a read that finished under another editor is dropped');
+  h.read('kbIngestFile_')(file);
+  readers[1].result = 'data:text/plain;base64,aGk=';
+  readers[1].onload();
+  assert.strictEqual(h.run.pending('kbIngestFile').length, 1);
+  h.read('kbOpenEditor_')();
+  h.setField('kb-ed-title', 'Other item');
+  h.run.flushSuccess({ kind: 'article', title: 'From the file', markdown: '# the file' }, 'kbIngestFile');
+  assert.strictEqual(h.$('#kb-ed-title').value, 'Other item', 'THE REGRESSION: the conversion overwrote the next article, and Save would have kept it');
+  assert.strictEqual(h.read('KB_EDIT.body'), '', 'nothing landed in the open editor');
+});
+
+test('SH-02: the close buttons go through closeOverlay — focus returns to the button that opened the dialog', () => {
+  const h = boot();
+  b9TourSeen(h);
+  h.bootShell({ isManager: true });
+  h.run.drain();
+  const opener = h.document.createElement('button'); h.document.body.appendChild(opener);
+  const check = (label, openFn, closeBtn) => {
+    opener.focus();
+    openFn();
+    h.flushTimers();
+    b9Press(h, closeBtn());
+    assert.strictEqual(h.document.activeElement, opener, label + ': THE REGRESSION — focus fell to <body>');
+  };
+  h.window.WHATSNEW_STATE = { id: 'kb1', title: 'T', bodyMd: 'hello', stamp: 'S9' };
+  check('What\'s new', () => h.window.whatsNewOpen_(), () => h.$('#whatsnew-overlay .btn-modal-ok'));
+  check('quiz editor (clean)', () => h.read('trainOpenQuizEditor_')(null), () => h.$('#train-qed-overlay .foot .kb-btn'));
+  const doc = { docId: 'd2', title: 'Handbook', bodyMd: 'x', status: 'signed', canComplete: false, fields: [], responses: {}, signedAt: '2026-09-01' };
+  check('employee document', () => { h.read('edOpenDoc_')('d2'); h.run.flushSuccess(doc, 'getMyDoc'); }, () => h.$('#ed-reader-overlay .foot .kb-btn'));
+});
+
+test('SH-03: Tab cannot leave the keyboard-shortcuts dialog for the page behind it', () => {
+  const h = bootLog();
+  h.window.cnOpenShortcutsOverlay_();
+  const outside = h.document.createElement('button'); h.document.body.insertBefore(outside, h.document.body.firstChild);
+  outside.focus();
+  outside.dispatchEvent(new h.window.FocusEvent('focusin', { bubbles: true }));
+  assert.ok(h.$('.cn-shortcuts-modal').contains(h.document.activeElement), 'THE REGRESSION: the trap looked for .modal only, so focus walked out of the shortcuts dialog');
+});
+
+test('SH-04: the tour popover is a named dialog that takes focus, keeps Tab inside, and hands focus back when it ends', () => {
+  const h = boot();
+  b9TourSeen(h);
+  h.bootShell();
+  h.run.drain();
+  const view = h.read('currentView');
+  h.window.tourVisibleSteps_ = () => [{ view: view, title: 'Welcome', body: 'This is the Dashboard.', selector: null }];
+  const opener = h.document.createElement('button'); h.document.body.appendChild(opener); opener.focus();
+  h.window.tourStart();
+  h.flushTimers();
+  const pop = h.$('#tour-pop');
+  assert.strictEqual(pop.getAttribute('role'), 'dialog', 'THE REGRESSION: no role — a screen reader never heard a dialog');
+  assert.strictEqual(pop.getAttribute('aria-modal'), 'true');
+  assert.strictEqual(h.$('#' + pop.getAttribute('aria-labelledby')).textContent, 'Welcome', 'named by the step title');
+  assert.ok(h.$('#' + pop.getAttribute('aria-describedby')), 'described by the step body');
+  assert.strictEqual(h.document.activeElement, pop.querySelector('[data-tour="next"]'), 'focus moved INTO the popover');
+  // jsdom never moves focus on Tab by itself, so "focus is still inside" would
+  // hold with no handler at all — assert the handler MOVES it, and wraps.
+  const next = pop.querySelector('[data-tour="next"]'), skip = pop.querySelector('[data-tour="skip"]');
+  const tabEv = h.dispatchKey('Tab', { target: h.document.activeElement });
+  assert.ok(tabEv.defaultPrevented, 'the popover handles Tab itself — the browser never takes focus under the dim');
+  assert.strictEqual(h.document.activeElement, skip, 'Tab from the last button wraps to the first, inside the popover');
+  h.dispatchKey('Tab', { target: h.document.activeElement, shift: true });
+  assert.strictEqual(h.document.activeElement, next, 'Shift+Tab wraps back');
+  h.dispatchKey('Escape');
+  assert.ok(!h.$('#tour-pop'), 'Escape ends the tour');
+  assert.strictEqual(h.document.activeElement, opener, 'and focus goes back where it was');
+});
+
+test('SH-05: re-rendering the shell (each view-as switch) binds the sidebar drag ONCE — and a drag still moves the CURRENT sidebar', () => {
+  const h = boot();
+  let moves = 0;
+  const orig = h.document.addEventListener.bind(h.document);
+  h.document.addEventListener = function (t, fn, o) { if (t === 'mousemove') moves++; return orig(t, fn, o); };
+  h.bootShell();
+  h.run.drain();
+  h.read('renderShell')(h.read('empState')); h.run.drain();
+  h.read('renderShell')(h.read('empState')); h.run.drain();
+  assert.strictEqual(moves, 1, 'THE REGRESSION: one document mousemove listener per render, each holding a stale sidebar');
+  const sb = h.$('.sidebar');
+  sb.getBoundingClientRect = () => ({ width: 168 });
+  h.$('#sidebar-grip').dispatchEvent(new h.window.MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 100 }));
+  h.document.dispatchEvent(new h.window.MouseEvent('mousemove', { bubbles: true, clientX: 150 }));
+  h.document.dispatchEvent(new h.window.MouseEvent('mouseup', { bubbles: true }));
+  assert.strictEqual(h.document.documentElement.style.getPropertyValue('--sidebar-w'), '218px', 'the drag resized the live sidebar');
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+section('Cycle 23 Batch 10 — PHI at the boundary, honest admin, metrics');
+
+const b10Toasts = (h) => h.$$('#toast-stack .toast').map((t) => t.textContent);
+
+test('KBUI-2: an eligibility error that quotes the typed address is SHOWN to the rep but never beaconed to the shared log', () => {
+  const h = boot();
+  const sent = [];
+  h.window.errBeaconSend_ = (m) => sent.push(String(m));
+  const host = mount_(h, 'kb-oop-results');
+  const quoted = 'That address only partly matched (the closest place found was "12 Elm St, Springfield") — add the street number and city';
+  h.read('oopRenderResults_')('', { item: '', addr: '12 Elm', elig: true }, { error: quoted });
+  assert.ok(/12 Elm St, Springfield/.test(host.textContent), 'the rep still reads the server\'s message (g128)');
+  assert.strictEqual(sent.length, 1);
+  assert.ok(!/Elm|Springfield/.test(sent[0]), 'THE REGRESSION: the partial-match location rode the error beacon into ClientErrors: ' + sent[0]);
+  assert.strictEqual(sent[0], h.read('OOP_ELIG_BEACON'));
+  // A price-only (no address) error still beacons its own text — nothing typed is in it.
+  sent.length = 0;
+  h.read('oopRenderResults_')('', { item: 'cane', addr: '', elig: false }, { error: 'Pricing tab unreadable' });
+  assert.deepStrictEqual(sent, ['Pricing tab unreadable']);
+});
+
+test('INT2-3: intake drafts are per USER — another user\'s or an ownerless draft is dropped at boot and never restored; your own fresh draft survives', () => {
+  const h = boot();
+  const now = Date.now();
+  h.window.localStorage.setItem('umsIntakeDrafts', JSON.stringify({
+    ppd: { answers: { '38': '250' }, patientInfo: 'Other rep\'s patient', at: now, owner: 'someone@else.com' },
+    pmd: { answers: { '1': 'Mine' }, at: now, owner: 'rep@umsupply.com' },
+    pap: { answers: { '1': 'Old' }, at: now },   // saved before drafts had owners
+  }));
+  h.bootShell();   // empState.email = rep@umsupply.com
+  const left = JSON.parse(h.window.localStorage.getItem('umsIntakeDrafts') || '{}');
+  assert.deepStrictEqual(Object.keys(left), ['pmd'], 'THE REGRESSION: the previous rep\'s patient draft sat at rest until that form was opened');
+  // A draft written after boot carries the owner, and a restore refuses a mismatch.
+  h.window.localStorage.setItem('umsIntakeDrafts', JSON.stringify({ ppd: { answers: { '38': '300' }, patientInfo: 'X', at: now, owner: 'someone@else.com' } }));
+  mount_(h, 'view-area');
+  h.run.drain();
+  h.window.enterIntakePpdView();
+  assert.notStrictEqual(h.document.getElementById('intk-ppd-patient').value, 'X', 'another user\'s draft is never restored');
+  assert.ok(!b10Toasts(h).some((t) => /Draft restored/.test(t)));
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem('umsIntakeDrafts') || '{}').ppd, undefined, 'and it is dropped');
+});
+
+test('ADM-13: shortening a diagnostics purge window asks before anything is saved', async () => {
+  const h = boot();
+  h.bootShell({ isManager: true }); h.run.drain();
+  const area = mount_(h, 'cn-ret-host');
+  area.innerHTML = '<input id="cn-ret-archive" value=""><input id="cn-ret-purge" value=""><input id="cn-ret-archpurge" value="">' +
+    '<input id="cn-ret-viewusage" value="30"><input id="cn-ret-clienterr" value="90"><button id="cn-ret-save">Save retention</button>';
+  h.read('CN_STATE.retentionCfg = { retentionDays: { value: 0 }, archiveRetentionDays: { value: 0 }, viewUsageDays: { value: 90 }, clientErrDays: { value: 90 } }');
+  h.read('cnSaveRetention_')();
+  assert.strictEqual(h.run.pending('saveRetentionConfig').length, 0, 'THE REGRESSION: an irreversible window saved with no question');
+  const d = h.$('.ui-dialog');
+  assert.ok(d && /Delete older diagnostics rows\?/.test(d.textContent) && /ViewUsage\) rows older than 30 days/.test(d.textContent));
+  h.click('.ui-dialog-ok'); await tick();
+  assert.strictEqual(h.run.pending('saveRetentionConfig').length, 1, 'confirmed: saved');
+});
+
+test('ADM-12: a tag merge that fails in transit says it may have PARTLY applied, and the warning stays on screen', async () => {
+  const h = boot();
+  h.read('cnPromptMergeTag_')('old-tag');
+  h.$('.ui-dialog-input').value = 'new-tag';
+  h.click('.ui-dialog-ok'); await tick();
+  h.click('.ui-dialog-ok'); await tick();   // the merge confirm
+  assert.strictEqual(h.run.pending('mergeCallNoteTags').length, 1, 'the merge was sent');
+  h.run.flushFailure('Exceeded maximum execution time', 'mergeCallNoteTags');
+  const t = h.$$('#toast-stack .toast').find((x) => /did not finish/.test(x.textContent));
+  assert.ok(t && /PARTLY applied/.test(t.textContent) && /safe to repeat/.test(t.textContent),
+    'THE REGRESSION: a half-applied merge read as a bare "Server error"');
+  assert.ok(t.classList.contains('toast-sticky'), 'it stays until read');
+});
+
+// ── cycle 23 Batch 11 — the quiz retry limit and the outside-recipient confirm ──
+section('Cycle 23 Batch 11 — the quiz retry limit and the outside-recipient confirm');
+test('Batch 11 TRN-1: a failed quiz shows which questions were wrong and the attempts left; the third fail and a locked quiz show the wait, with no retake', async () => {
+  const h = boot();
+  const quiz = { quizId: 'q1', title: 'Safety', passPct: 100, questions: [{ q: 'A?', options: ['x', 'y'] }, { q: 'B?', options: ['m', 'n'] }] };
+  h.read('trainOpenQuiz_')('q1');
+  h.run.flushSuccess(Object.assign({}, quiz, { lockout: { locked: true, attemptsLeft: 0, maxAttempts: 3, retryLabel: 'Tue Oct 6, 9:15 AM' } }), 'getQuiz');
+  const ov = () => h.$('#train-quiz-overlay');
+  assert.ok(ov().querySelector('[data-quiz-lock="locked"]') && /Tue Oct 6, 9:15 AM/.test(ov().textContent), 'a locked quiz opens on the wait');
+  assert.ok(!h.$('#tr-quiz-submit'), 'and offers no form to fill in for nothing');
+  h.read('trainOpenQuiz_')('q1');
+  h.run.flushSuccess(Object.assign({}, quiz, { lockout: { locked: false, attemptsLeft: 2, maxAttempts: 3 } }), 'getQuiz');
+  assert.ok(/2 attempts left before a wait/.test(ov().textContent), 'the limit is stated before answering');
+  h.click('input[name="tr-q-0"][value="0"]'); h.click('input[name="tr-q-1"][value="0"]');
+  h.click('#tr-quiz-submit');
+  h.run.flushSuccess({ success: true, passed: false, scorePct: 50, right: 1, total: 2, passPct: 100, attempt: 2, perQuestion: [true, false],
+    attemptsLeft: 1, maxAttempts: 3, locked: false }, 'submitQuizAttempt');
+  assert.ok(ov().querySelector('.tr-q.wrong') && /✗ Incorrect/.test(ov().textContent), 'THE ASK: the rep sees which question was wrong');
+  assert.ok(!/\bn\b/.test(ov().querySelector('.tr-q.wrong').textContent.replace('Your answer: m', '')), 'never the right option');
+  assert.ok(/1 attempt left before a wait/.test(ov().textContent) && h.$('#tr-quiz-retake'), 'the limit, and a retake');
+  h.click('#tr-quiz-retake');
+  h.click('input[name="tr-q-0"][value="0"]'); h.click('input[name="tr-q-1"][value="0"]');
+  h.click('#tr-quiz-submit');
+  h.run.flushSuccess({ success: true, passed: false, scorePct: 50, right: 1, total: 2, passPct: 100, attempt: 3, perQuestion: [true, false],
+    attemptsLeft: 0, maxAttempts: 3, locked: true, retryLabel: 'Wed Oct 7, 10:00 AM' }, 'submitQuizAttempt');
+  assert.ok(ov().querySelector('[data-quiz-lock="locked"]') && /Wed Oct 7, 10:00 AM/.test(ov().textContent), 'the third fail says when');
+  assert.ok(!h.$('#tr-quiz-retake'), 'and offers no retake');
+  // A submit the server REFUSES (a second window, a stale form) shows the wait, not a bare error toast.
+  h.read('trainOpenQuiz_')('q1');
+  h.run.flushSuccess(Object.assign({}, quiz, { lockout: { locked: false, attemptsLeft: 1, maxAttempts: 3 } }), 'getQuiz');
+  h.click('#tr-quiz-submit'); await tick();
+  h.click('.ui-dialog-ok'); await tick();   // the unanswered-questions confirm
+  h.run.flushSuccess({ success: false, locked: true, maxAttempts: 3, retryLabel: 'Wed Oct 7, 10:00 AM', error: 'You have used all 3 attempts.' }, 'submitQuizAttempt');
+  assert.ok(ov().querySelector('[data-quiz-lock="locked"]') && !h.$('#tr-quiz-submit'), 'the refusal opens the wait');
+});
+
+test('Batch 11 INT-3: an outside intake recipient is confirmed by its domain, and the resend carries that confirmation; Go back sends nothing', async () => {
+  const h = boot();
+  h.read('INTAKE_STATE.preview = { formType: "PPD", payload: {}, bodyHash: "h", recommendations: [] }');
+  h.read('intakeOpenModal_')('Preview', '<button id="intk-ppd-send">Send</button>');
+  h.read('intakePpdSend_')();
+  h.run.flushSuccess({ success: false, needsExternalConfirm: 'gmail.com', error: 'outside' }, 'intakeSendPPD');
+  const dlg = h.$('.ui-dialog');
+  assert.ok(dlg && /gmail\.com/.test(dlg.textContent), 'the confirm names the domain');
+  h.click('.ui-dialog-ok'); await tick();
+  const again = h.run.pending('intakeSendPPD');
+  assert.strictEqual(again.length, 1, 'yes → the send goes again');
+  assert.strictEqual(again[0].args[1].confirmedExternal, 'gmail.com', 'carrying the confirmed domain');
+  h.run.flushSuccess({ success: false, needsExternalConfirm: 'yahoo.com', error: 'outside' }, 'intakeSendPPD');
+  h.click('.ui-dialog-cancel'); await tick();
+  assert.strictEqual(h.run.pending('intakeSendPPD').length, 0, 'Go back → nothing sent');
+  assert.strictEqual(h.$('#intk-ppd-send').disabled, false, 'and the Send button is live again');
+});
+
+// ── cycle 23 Batch 12 — DRV-3: article images from the KbImages tab ──
+section('Cycle 23 Batch 12 — DRV-3: article images from the KbImages tab');
+test('DRV-3 DOM: an article\'s kbimg chips arrive in ONE batched call and are set by property; "not stored" is said; a failed call is not cached', async () => {
+  const h = boot();
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const kA = 'kbimg-' + 'a'.repeat(24), kB = 'kbimg-' + 'b'.repeat(24), kGone = 'kbimg-' + 'c'.repeat(24);
+  const art = mount_(h, 'b12-art'); art.className = 'kb-article';
+  art.innerHTML = h.read('kbMd_')('![Shot A](kbimg:' + kA + ')\n\n![Shot A again](kbimg:' + kA + ')\n\n![Gone](kbimg:' + kGone + ')');
+  await tick(); h.flushTimers(); await tick();
+  const calls = h.run.pending('getKbImages');
+  assert.strictEqual(calls.length, 1, 'one call for the article');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(calls[0].args[0])).sort(), [kA, kGone], 'each key once');
+  assert.strictEqual(h.$$('.kb-kbimg[data-ki="loading"]').length, 3, 'the chips say they are loading meanwhile');
+  h.run.flushSuccess({ success: true, images: { [kA]: PNG }, missing: [kGone], failed: [] }, 'getKbImages');
+  const imgs = h.$$('#b12-art img.kb-kbimg-img');
+  assert.strictEqual(imgs.length, 2, 'both mentions become the image');
+  assert.ok(imgs.every((im) => im.getAttribute('src') === PNG) && imgs[0].alt === 'Shot A', 'the data URL by property, the alt from the chip');
+  const gone = h.$('.kb-kbimg[data-kbimg="' + kGone + '"]');
+  assert.ok(gone && gone.getAttribute('data-ki') === 'missing' && /not stored/.test(gone.title), '"not stored" is said on the chip');
+  // A failed call is marked and NOT cached; the success above IS (no second call for kA).
+  const art2 = mount_(h, 'b12-art2'); art2.className = 'kb-article';
+  art2.innerHTML = h.read('kbMd_')('![B](kbimg:' + kB + ') ![A](kbimg:' + kA + ')');
+  await tick(); h.flushTimers(); await tick();
+  const c2 = h.run.pending('getKbImages');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c2[0].args[0])), [kB], 'the cached success is not asked for again');
+  assert.ok(h.$('#b12-art2 img.kb-kbimg-img'), 'and renders at once');
+  h.run.flushFailure('Service timed out', 'getKbImages');
+  assert.strictEqual(h.$('.kb-kbimg[data-kbimg="' + kB + '"]').getAttribute('data-ki'), 'failed');
+  const art3 = mount_(h, 'b12-art3'); art3.className = 'kb-article';
+  art3.innerHTML = h.read('kbMd_')('![B](kbimg:' + kB + ')');
+  await tick(); h.flushTimers(); await tick();
+  assert.strictEqual(h.run.pending('getKbImages').length, 1, 'a failure was not cached — the next render asks again (g129)');
+});
+
+test('DRV-3 DOM: a pasted screenshot is fitted to 1600 px / 1.5 MB in the browser before it is sent, and the editor gets the kbimg: token', async () => {
+  const h = boot();
+  const w = h.window;
+  let size = { w: 1200, h: 800 };
+  w.Image = function () { const self = this; Object.defineProperty(self, 'src', { set(v) { self._src = v; self.naturalWidth = size.w; self.naturalHeight = size.h; self.onload(); }, get() { return self._src; } }); };
+  let drawn = null;
+  w.HTMLCanvasElement.prototype.getContext = function () { const cv = this; return { fillRect() {}, drawImage() { drawn = [cv.width, cv.height]; }, set fillStyle(v) {} }; };
+  const bigPng = 'data:image/png;base64,' + 'A'.repeat(2200000), jpg = 'data:image/jpeg;base64,' + 'B'.repeat(4000);
+  w.HTMLCanvasElement.prototype.toDataURL = function (type) { return type === 'image/png' ? bigPng : jpg; };
+  const paste = (url) => { w.FileReader = function () { this.readAsDataURL = () => this.onload({ target: { result: url } }); }; };
+  const ta = h.document.createElement('textarea'); ta.id = 'kb-ed-bodymd'; ta.value = 'Before '; h.document.body.appendChild(ta);
+  ta.selectionStart = ta.selectionEnd = ta.value.length;
+  const small = 'data:image/png;base64,' + 'C'.repeat(1000);
+  paste(small);
+  h.read('kbPasteUploadImage_')(ta, {}, () => {});
+  let call = h.run.pending('kbUploadImage')[0];
+  assert.strictEqual(call.args[0], small, 'inside both limits: sent byte for byte');
+  assert.strictEqual(drawn, null, 'and never redrawn');
+  const tok = 'kbimg:kbimg-' + 'd'.repeat(24);
+  h.run.flushSuccess({ success: true, key: tok.slice(6), token: tok }, 'kbUploadImage');
+  assert.ok(ta.value.indexOf('![Screenshot](' + tok + ')') >= 0 && ta.value.indexOf('kbpaste:pending') < 0, 'the token replaces the placeholder');
+  size = { w: 3200, h: 1800 };
+  paste('data:image/png;base64,' + 'E'.repeat(5000));
+  h.read('kbPasteUploadImage_')(ta, {}, () => {});
+  call = h.run.pending('kbUploadImage')[0];
+  assert.deepStrictEqual(drawn, [1600, 900], 'a wide screenshot is redrawn at 1600 px, aspect kept');
+  assert.strictEqual(call.args[0], jpg, 'the PNG was over 1.5 MB, so the JPEG went');
+  h.run.flushSuccess({ success: true, token: 'https://evil.example/x.png' }, 'kbUploadImage');
+  assert.ok(ta.value.indexOf('evil.example') < 0 && ta.value.indexOf('kbpaste:pending') < 0, 'a malformed token is never inserted — the placeholder goes');
 });

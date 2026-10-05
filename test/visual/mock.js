@@ -189,6 +189,28 @@ function qaExemptEligible_(row) {
   if (!(row.minCriterion != null && row.prevMinCriterion != null)) return false;
   return row.minCriterion >= QA_EXEMPT_CRIT_MIN && row.prevMinCriterion >= QA_EXEMPT_CRIT_MIN;
 }
+function qaNextPeriod_(key) {
+  const k = String(key || '').trim();
+  let m = /^(\d{4})-(\d{2})$/.exec(k);
+  if (m) {
+    let y = Number(m[1]), mo = Number(m[2]) + 1;
+    if (mo > 12) { mo = 1; y++; }
+    return y + '-' + (mo < 10 ? '0' : '') + mo;
+  }
+  m = /^(\d{4})-Q([1-4])$/.exec(k);
+  if (m) {
+    let y = Number(m[1]), q = Number(m[2]) + 1;
+    if (q > 4) { q = 1; y++; }
+    return y + '-Q' + q;
+  }
+  return '';
+}
+function qaExemptFor_(exemptions, nameKey, period) {
+  const ex = exemptions || {};
+  if (ex[nameKey + '|' + period]) return true;
+  const ks = /^\d{4}-\d{2}$/.test(String(period || '')) ? qaPeriodKeysForYmd_(period + '-01') : null;
+  return !!(ks && ex[nameKey + '|' + ks.quarter]);
+}
 function qaCoverageRows_(recs, latestCards, rosterNames, period, target, exemptions, prevPeriod) {
   const cardsByFile = {};
   (latestCards || []).forEach(function (c) {
@@ -224,14 +246,20 @@ function qaCoverageRows_(recs, latestCards, rosterNames, period, target, exempti
   return Object.keys(byName).sort().map(function (k) {
     const row = byName[k];
     const cur = fin(row.cur), prev = fin(row.prev);
-    const exempt = !!(exemptions || {})[k + '|' + period];
+    // QA2-1 (cycle 23): an exemption EARNED in this period applies to the
+    // NEXT one — granting it for the period that earned it saved no review —
+    // and a quarter's exemption covers its months (qaExemptFor_).
+    const exempt = qaExemptFor_(exemptions, k, period);
+    const next = qaNextPeriod_(period);
+    const exemptNext = !!next && qaExemptFor_(exemptions, k, next);
     const out = {
       name: row.name, sampled: row.cur.sampled, target: exempt ? 0 : (Number(target) || 0),
       cardCount: row.cur.cards, avg: cur.avg, minCriterion: cur.min,
-      prevSampled: row.prev.sampled, prevAvg: prev.avg, prevMinCriterion: prev.min,
+      prevSampled: row.prev.sampled, prevCardCount: row.prev.cards, prevAvg: prev.avg, prevMinCriterion: prev.min,
       lastReviewedMs: row.lastReviewedMs, exempt: exempt, exemptUntil: exempt ? period : '',
+      exemptNext: exemptNext,
     };
-    out.eligible = !exempt && qaExemptEligible_(out);
+    out.eligible = !exempt && !exemptNext && qaExemptEligible_(out);
     return out;
   });
 }
@@ -282,7 +310,9 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       transferredTo: i === 1 ? 'Billing' : '', resolution: 'Confirmed the order ships Friday; updated the callback number on file.',
       flagType: i === 0 ? 'action' : (i === 1 ? 'training' : ''), resolved: false,
       emailedAt: i === 2 ? ts(todayIso, '10:44:12') : '', emailDepartments: i === 2 ? 'Shipping' : '',
-      subformData: { flags: i === 0 ? ['action'] : [], tags: i === 0 ? ['resupply'] : [], trainingQuestion: i === 1 ? 'Should we escalate mask-fit questions to clinical?' : '' },
+      subformData: Object.assign({ flags: i === 0 ? ['action'] : [], tags: i === 0 ? ['resupply'] : [], trainingQuestion: i === 1 ? 'Should we escalate mask-fit questions to clinical?' : '' },
+        // FORM-3 (cycle 23): the emailed note carries two submitted forms — the server's list + its latest.
+        i === 2 ? { formSubmissions: [{ token: 'tok-fx-1', formType: 'cmn' }, { token: 'tok-fx-2', formType: 'aob' }], formSubmission: { token: 'tok-fx-2', formType: 'aob' } } : {}),
     }, over || {});
   }
 
@@ -825,6 +855,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         agentOptions: agentOptions, criteria: criteria,
         period: period, periodOptions: opts, target: 3, todayYmd: todayIso,
         periodEnd: qaPeriodBounds_(period).end,
+        nextPeriod: qaNextPeriod_(period), nextPeriodLabel: qaPeriodLabel_(qaNextPeriod_(period)),
         recordings: recs, total: recs.length, cap: 200,
         coverage: coverage,
       };
@@ -975,7 +1006,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // Oldest-first (the tab's own sort) — and the CLAIMED item leads, so the
       // Dashboard Spanish card's slide 1 (index 0) carries the pill on camera.
       { threadId: 't2', requester: 'mgarcia@umsupply.com', ageHours: 29, subject: 'Ayuda con formulario de admisión', snippet: 'El paciente necesita ayuda para completar el formulario…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t2', claim: { by: 'sam@umsupply.com', assignedBy: 'avery@umsupply.com', atMs: Date.now() - 3600000 } },
-      { threadId: 't1', requester: 'jrivera@umsupply.com', ageHours: 3.2, subject: 'Paciente pregunta por su pedido', snippet: 'La paciente llama para preguntar cuándo llega…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t1', claim: null },
+      { threadId: 't1', requester: 'jrivera@umsupply.com', ageHours: 3.2, subject: 'Paciente pregunta por su pedido', snippet: 'La paciente llama para preguntar cuándo llega…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t1', claim: null, followUp: true, claimFloorMs: Date.now() - 4 * 3600000 },   // SP-2 — a reopened request, back unclaimed (the follow-up pill on camera)
       { threadId: 't5', requester: 'lchen@umsupply.com', ageHours: 1.1, subject: 'Verificación de seguro', snippet: 'El paciente quiere verificar la cobertura antes de la cita…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t5', claim: { by: 'avery@umsupply.com', atMs: Date.now() - 600000 } },
       // Operator 2026-08-25: an 8x8 voicemail item (kind:'voicemail' — the
       // sender+subject fold) so the VM pill is on camera.
@@ -1033,6 +1064,15 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       var have = (typeof window !== 'undefined' && window.__MANUAL_IMAGES__) || {};
       var res = { success: true, images: {}, missing: [], failed: [] };
       (keys || []).forEach(function (k) { if (have[k]) res.images[k] = have[k]; else res.missing.push(k); });
+      return res;
+    },
+    // DRV-3 (cycle 23 Batch 12) — getKbImages: {images, missing, failed} like the
+    // server. Any key reads as a small grey PNG except one ending in zeros,
+    // which is "not stored", so both states can be photographed.
+    getKbImages: function (keys) {
+      var png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+      var res = { success: true, images: {}, missing: [], failed: [] };
+      (keys || []).forEach(function (k) { if (/0{6}$/.test(k)) res.missing.push(k); else res.images[k] = png; });
       return res;
     },
     // Batch M5b — searchReference: {results:[{id,title,department,type,status,
@@ -1127,7 +1167,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true },
       membersConfigured: 3, threadsScanned: 15, truncated: false,
       vmOn: true, vmCounted: 2, vmSuppressed: 2, vmUnparsed: 0, vmMinSeconds: 5 },
-    getPatientTimeline: { events: [], partial: false, failedSources: [] },
+    getPatientTimeline: { events: [], partial: false, failedSources: [], truncatedSources: [] },
     cnPing: { ok: true },
     getCalendarData: function (year, month) {
       var m2 = String(month).padStart(2, '0');
@@ -1365,10 +1405,10 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       var days = [];
       for (var d = 0; d < n; d++) {
-        var iso = addIso(from, d), dow = new Date(iso + 'T12:00:00Z').getUTCDay(), closed = dow === 0 || dow === 6;
+        var iso = addIso(from, d), dow = new Date(iso + 'T12:00:00Z').getUTCDay(), closed = dow === 0 || dow === 6 || d === 5;   // TC2-8: the holiday (d === 5) is closed too
         var reps = [
           { name: 'Avery Blake', tz: 'America/Chicago', status: (d === 2) ? 'off' : 'working', ptoType: (d === 2) ? 'Full Day' : null, startMgr: '8:00 AM', endMgr: '5:00 PM', startsPrevDay: false },
-          { name: 'Sam Ortiz', tz: 'America/Chicago', status: (d === 3) ? 'tentative' : 'working', ptoType: (d === 3) ? 'Half Day' : null, startMgr: '8:30 AM', endMgr: '5:00 PM', startsPrevDay: false },
+          { name: 'Sam Ortiz', tz: 'America/Chicago', status: (d === 3) ? 'half' : (d === 4 ? 'tentative' : 'working'), ptoType: (d === 3) ? 'Half day' : (d === 4 ? 'Pending' : null), startMgr: '8:30 AM', endMgr: '5:00 PM', startsPrevDay: false },
           { name: 'Nina Patel', tz: 'America/Chicago', status: 'working', ptoType: null, startMgr: '8:00 AM', endMgr: '5:00 PM', startsPrevDay: false },
           { name: 'Leo Kim', tz: 'Asia/Kolkata', status: 'working', ptoType: null, startMgr: '9:30 PM', endMgr: '6:30 AM', startsPrevDay: true },
         ];
@@ -1377,7 +1417,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
           var c = 0, t = 0;
           if (!closed) {
             if (h >= 8 && h < 17) c += reps.filter(function (r, i) { return i < 3 && r.status === 'working' && !(i === 1 && h < 9); }).length;
-            if (h >= 8 && h < 17 && reps[1].status === 'tentative' && h >= 9) t++;
+            if (h >= 8 && h < 17 && (reps[1].status === 'tentative' || reps[1].status === 'half') && h >= 9) t++;   // TC2-3: a half day is a tentative presence
             if (h < 7 || h >= 21) c++;   // Leo's cross-tz shift
           }
           hours.push({ hour: h, confirmed: c, tentative: t });

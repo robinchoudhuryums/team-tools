@@ -107,12 +107,14 @@ function submitCallNote(payload) {
     row[CN.EMAIL_DEPARTMENTS] = '';
     row[CN.SUBFORM]         = subform;
     row[CN.SUBFORM_DATA]    = subformDataJson;
-    sheet.appendRow(sheetSafeRow_(row));
+    // CN-7 (cycle 23): the free text lands in '@' cells (CN_TEXT_IDX) — a
+    // callback "0123…" kept its zero, a "12/5" stayed text.
+    const newRowIndex = appendRowsTextSafe_(sheet, [row], CN_TEXT_IDX);
 
     writeAuditLog_(emp, 'CallNoteCreate', dateLocal, '', false, 0,
       `noteId=${noteId}${flagType ? ', flag=' + flagType : ''}`);
 
-    const createdNote = callNoteRowToObject_({ row, rowIndex: sheet.getLastRow() });
+    const createdNote = callNoteRowToObject_({ row, rowIndex: newRowIndex });
 
     if (flagType === 'training' && cleaned.subformData && cleaned.subformData.trainingQuestion) {
       // Cycle-9 M-7: fires post-lock in the finally.
@@ -152,13 +154,12 @@ function updateCallNote(noteId, payload) {
     // multi-flag toolbar, never the inline text editor. If a future caller
     // passes flags/tags to updateCallNote expecting them to persist, surface a
     // dedicated endpoint instead of silently widening this write.
-    sheet.getRange(located.rowIndex, CN.CALLBACK + 1).setValue(sheetSafe_(cleaned.callback));
-    sheet.getRange(located.rowIndex, CN.CALLER + 1).setValue(sheetSafe_(cleaned.caller));
-    sheet.getRange(located.rowIndex, CN.RELATIONSHIP + 1).setValue(sheetSafe_(cleaned.relationship));
-    sheet.getRange(located.rowIndex, CN.PATIENT_TRX + 1).setValue(sheetSafe_(cleaned.patientAndTrx));
-    sheet.getRange(located.rowIndex, CN.ISSUE + 1).setValue(sheetSafe_(cleaned.issue));
-    sheet.getRange(located.rowIndex, CN.TRANSFERRED_TO + 1).setValue(sheetSafe_(cleaned.transferredTo));
-    sheet.getRange(located.rowIndex, CN.RESOLUTION + 1).setValue(sheetSafe_(cleaned.resolution));
+    // CN-7 (cycle 23): the seven content columns are CN_TEXT_IDX, contiguous
+    // CALLBACK..RESOLUTION — one '@' range, re-asserted by the statement that
+    // writes it (a note created before the fix gains the format on its edit).
+    sheet.getRange(located.rowIndex, CN.CALLBACK + 1, 1, CN_TEXT_IDX.length).setNumberFormat('@')
+      .setValues(sheetTextRows_([[cleaned.callback, cleaned.caller, cleaned.relationship, cleaned.patientAndTrx,
+        cleaned.issue, cleaned.transferredTo, cleaned.resolution]], null));
 
     const diffs = [];
     [['callback', CN.CALLBACK], ['caller', CN.CALLER], ['relationship', CN.RELATIONSHIP],
@@ -292,6 +293,20 @@ function setCallNoteResolved(noteId, resolved) {
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
+/** PURE (Node-pinned) — the self-delete window's verdict: null when the note
+ *  may be deleted, else the message. CN-2 (cycle 23): a timestamp that cannot
+ *  be read is REFUSED — the window used to be skipped for it, so a note whose
+ *  cell had been hand-edited or mangled could be deleted at any age. */
+function cnDeleteWindowError_(noteMs, nowMs, windowSeconds) {
+  const mins = Math.round(windowSeconds / 60);
+  if (!noteMs || !isFinite(noteMs)) {
+    return 'This note\'s time could not be read, so it cannot be deleted here. Edit the note instead, or ask your manager.';
+  }
+  if ((nowMs - noteMs) / 1000 > windowSeconds) {
+    return `Notes can only be deleted within ${mins} minutes of creation. Edit the note instead, or ask your manager.`;
+  }
+  return null;
+}
 /** Deletes a call note within the delete window. Hard-delete (Sheet row
  *  removed); audit row keeps the trail. Notes older than
  *  CONFIG.CALL_NOTES.DELETE_WINDOW_SECONDS cannot be self-deleted — they
@@ -311,14 +326,10 @@ function deleteCallNote(noteId) {
     // raw made parseTimestampMs_ return null, silently DISABLING the 5-min
     // delete window (fail-open) on a coercing per-rep sheet.
     const noteMs = parseTimestampMs_(cnTimestampString_(located.row[CN.TIMESTAMP]), empTz);
-    if (noteMs) {
-      const elapsed = (Date.now() - noteMs) / 1000;
-      if (elapsed > CONFIG.CALL_NOTES.DELETE_WINDOW_SECONDS) {
-        const mins = Math.round(CONFIG.CALL_NOTES.DELETE_WINDOW_SECONDS / 60);
-        return { success: false, error:
-          `Notes can only be deleted within ${mins} minutes of creation. Edit the note instead, or ask your manager.` };
-      }
-    }
+    const windowErr = cnDeleteWindowError_(noteMs, Date.now(), CONFIG.CALL_NOTES.DELETE_WINDOW_SECONDS);
+    // CNUI-02 (cycle 23): `windowClosed` lets a caller tell "too late to undo"
+    // (the note stays saved) from a failure — the Save & Compose cancel acts on it.
+    if (windowErr) return { success: false, error: windowErr, windowClosed: true };
 
     const dateLocal = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
     sheet.deleteRow(located.rowIndex);
@@ -785,8 +796,11 @@ function searchMyCallNotes(query, field, dateRange, exact, includeArchive) {
     }
 
     results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-    if (results.length > 200) results.length = 200;
-    return { results, timezone: empTz, exact: isExact };
+    // CN-5 (cycle 23): a capped result says so — the timeline read the
+    // newest 200 as the whole history.
+    const truncated = results.length > 200;
+    if (truncated) results.length = 200;
+    return { results, timezone: empTz, exact: isExact, truncated: truncated };
   } catch (err) { return { error: err.message }; }
 }
 /** Pure (Node-pinned) — stitches a single patient/order's events from the
@@ -812,7 +826,7 @@ function buildPatientTimeline_(notes, submissions, forms, trx) {
       noteId: String(n.noteId || ''), caller: String(n.caller || ''),
       patientAndTrx: String(n.patientAndTrx || ''), issue: String(n.issue || ''),
       resolution: String(n.resolution || ''), flagType: String(n.flagType || ''),
-      emailedAt: String(n.emailedAt || ''),
+      emailedAt: String(n.emailedAt || ''), archived: n._archived === true,
     });
   });
   (submissions || []).forEach(function (s) {
@@ -856,9 +870,15 @@ function getPatientTimeline(trx) {
     // throwing; both shapes count as a failed source.
     const failedSources = [];
     let notes = [];
+    // CN-5 (cycle 23): the archive is part of the patient's history — the
+    // timeline read the live tab only, and a patient whose older notes had
+    // been cold-archived showed a short history marked complete. A capped
+    // search is incomplete too, and says which stream.
+    const truncatedSources = [];
     try {
-      const nr = searchMyCallNotes(t, 'trx', null, false);
+      const nr = searchMyCallNotes(t, 'trx', null, false, true);
       if (nr && nr.error) failedSources.push('call notes');
+      if (nr && nr.truncated) truncatedSources.push('call notes (newest 200 shown)');
       notes = (nr && nr.results) || [];
     } catch (e) { failedSources.push('call notes'); }
 
@@ -880,7 +900,8 @@ function getPatientTimeline(trx) {
 
     const events = buildPatientTimeline_(notes, submissions, forms, t);
     return { trx: t, events: events, timezone: empTz_(emp), count: events.length,
-             partial: failedSources.length > 0, failedSources: failedSources };
+             partial: failedSources.length > 0 || truncatedSources.length > 0,
+             failedSources: failedSources, truncatedSources: truncatedSources };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -1311,7 +1332,7 @@ function normalizeTagForAdmin_(raw) {
  *  caller holding LockService.getScriptLock. */
 function applyTagTransformAcrossReps_(oldTag, transform) {
   const roster = getEmployeeRosterRows_();
-  let repsTouched = 0, notesUpdated = 0;
+  let repsTouched = 0, notesUpdated = 0, archivedUpdated = 0;
   // F-10 (2026-09-18): a rep Sheet the deployer cannot open used to be skipped
   // in SILENCE — the rename reported success and the audit row counted N-1
   // reps, so the old tag lived on in that rep's notes with nothing saying so.
@@ -1327,29 +1348,51 @@ function applyTagTransformAcrossReps_(oldTag, transform) {
     };
     try {
       const sheet = getCallNotesSheet_(repEmp);
-      const rows = sheet.getDataRange().getValues();
+      // ADM-12 (cycle 23): the cold NotesArchive tab too. It was never walked,
+      // so archived notes kept the old tag and still showed under it in an
+      // "Include archive" search while the result reported the rename complete.
+      // Same columns as Notes (archiving MOVES rows); read only if it exists.
+      const tabs = [sheet];
+      const archive = sheet.getParent().getSheetByName(CONFIG.CALL_NOTES.ARCHIVE_TAB);
+      if (archive) tabs.push(archive);
       let repHadUpdate = false;
-      for (let j = 1; j < rows.length; j++) {
-        const subRaw = rows[j][CN.SUBFORM_DATA];
-        if (!subRaw) continue;
-        let sub = null;
-        try { sub = JSON.parse(subRaw); } catch (e) { continue; }
-        if (!sub || !Array.isArray(sub.tags)) continue;
-        if (sub.tags.indexOf(oldTag) < 0) continue;
-        const next = transform(sub.tags.slice());
-        if (!arraysEqual_(next, sub.tags)) {
-          sub.tags = next;
-          sheet.getRange(j + 1, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(sub)));
-          notesUpdated++;
-          repHadUpdate = true;
+      tabs.forEach(function (tab, ti) {
+        const rows = tab.getDataRange().getValues();
+        for (let j = 1; j < rows.length; j++) {
+          const subRaw = rows[j][CN.SUBFORM_DATA];
+          if (!subRaw) continue;
+          let sub = null;
+          try { sub = JSON.parse(subRaw); } catch (e) { continue; }
+          if (!sub || !Array.isArray(sub.tags)) continue;
+          if (sub.tags.indexOf(oldTag) < 0) continue;
+          const next = transform(sub.tags.slice());
+          if (!arraysEqual_(next, sub.tags)) {
+            sub.tags = next;
+            tab.getRange(j + 1, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(sub)));
+            notesUpdated++;
+            if (ti > 0) archivedUpdated++;
+            repHadUpdate = true;
+          }
         }
-      }
+      });
       if (repHadUpdate) repsTouched++;
     } catch (e) {
       skippedReps.push({ id: repEmp.id, error: String((e && e.message) || e).slice(0, 200) });   // F-10: reported, never silent
     }
   }
-  return { repsTouched: repsTouched, notesUpdated: notesUpdated, skippedReps: skippedReps };
+  return { repsTouched: repsTouched, notesUpdated: notesUpdated, archivedUpdated: archivedUpdated, skippedReps: skippedReps };
+}
+/** ADM-12 (cycle 23): the audit row written BEFORE a cross-rep tag transform.
+ *  The walk writes one cell per note across every rep's Sheet and can be cut
+ *  off by the 6-minute limit or a lost connection; the completion row is
+ *  written only at the end, so a run that died partway left rewritten notes
+ *  and no trace at all. This row says the run STARTED; a started row with no
+ *  completion row after it is a partial run. The transform is idempotent, so
+ *  running it again finishes the job. */
+function cnTagAdminStartAudit_(callerEmp, verb, from, to) {
+  writeAuditLog_(callerEmp, 'CallNoteTagAdmin', '', '', false, 0,
+    `${verb} ${from} → ${to}; started — no completion row after this one means the run stopped partway; run it again to finish`,
+    callerEmp.email);
 }
 /** F-10: the audit-row tail naming the rep Sheets a cross-rep tag transform
  *  could NOT read — ids only (INV-32: the shared trail carries no names). */
@@ -1374,6 +1417,7 @@ function renameCallNoteTag(oldTag, newTag) {
     if (!oldT) return { success: false, error: 'Invalid source tag.' };
     if (!newT) return { success: false, error: 'Invalid target tag (lowercase kebab-case, 2–24 chars).' };
     if (oldT === newT) return { success: false, error: 'Source and target are the same tag.' };
+    cnTagAdminStartAudit_(callerEmp, 'rename', oldT, newT);   // ADM-12: before the walk
     const result = applyTagTransformAcrossReps_(oldT, function (tags) {
       // Replace oldT with newT; dedupe so the same tag never appears twice.
       const seen = {};
@@ -1385,7 +1429,7 @@ function renameCallNoteTag(oldTag, newTag) {
       return out;
     });
     writeAuditLog_(callerEmp, 'CallNoteTagAdmin', '', '', false, 0,
-      `rename ${oldT} → ${newT}; reps=${result.repsTouched}, notes=${result.notesUpdated}` + cnTagSkippedNote_(result.skippedReps),
+      `rename ${oldT} → ${newT}; done; reps=${result.repsTouched}, notes=${result.notesUpdated} (archived=${result.archivedUpdated})` + cnTagSkippedNote_(result.skippedReps),
       callerEmp.email);
     invalidateCnTaxonomyCache_();
     return { success: true, action: 'rename', oldTag: oldT, newTag: newT,
@@ -1411,6 +1455,7 @@ function mergeCallNoteTags(sourceTag, targetTag) {
     if (!srcT) return { success: false, error: 'Invalid source tag.' };
     if (!tgtT) return { success: false, error: 'Invalid target tag (lowercase kebab-case, 2–24 chars).' };
     if (srcT === tgtT) return { success: false, error: 'Source and target are the same tag.' };
+    cnTagAdminStartAudit_(callerEmp, 'merge', srcT, tgtT);   // ADM-12: before the walk
     const result = applyTagTransformAcrossReps_(srcT, function (tags) {
       const seen = {};
       const out = [];
@@ -1421,7 +1466,7 @@ function mergeCallNoteTags(sourceTag, targetTag) {
       return out;
     });
     writeAuditLog_(callerEmp, 'CallNoteTagAdmin', '', '', false, 0,
-      `merge ${srcT} → ${tgtT}; reps=${result.repsTouched}, notes=${result.notesUpdated}` + cnTagSkippedNote_(result.skippedReps),
+      `merge ${srcT} → ${tgtT}; done; reps=${result.repsTouched}, notes=${result.notesUpdated} (archived=${result.archivedUpdated})` + cnTagSkippedNote_(result.skippedReps),
       callerEmp.email);
     invalidateCnTaxonomyCache_();
     return { success: true, action: 'merge', sourceTag: srcT, targetTag: tgtT,
@@ -2507,8 +2552,16 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     // addresses, neither of which belongs in the shared AuditLog. Record
     // the noteId (an investigator can open the note for full detail), the
     // department label, and the recipient count instead.
+    // CN-3 (cycle 23): an 'Other' recipient mails the full note to any address,
+    // and this row recorded only "Other" and a count — while ExternalEmailSent
+    // records the recipient DOMAIN (g36). The domain says where PHI went
+    // without naming anyone; the full address stays in the note's own
+    // subformData (individualEmail).
+    const otherDomain = (selections.departments.indexOf('Other') >= 0 && selections.individualEmail)
+      ? intakeEmailDomain_(selections.individualEmail) : '';
     writeAuditLog_(emp, 'CallNoteEmail', note.dateLocal, '', false, 0,
       `noteId=${noteId}; depts=${deptLabel || '(none)'}; recipients=${recipientList.to.split(',').length}` +
+      (otherDomain ? `; otherDomain=${otherDomain}` : '') +
       (externalSendFailed ? '; externalCopyFailed' : ''));
 
     // Auto-log the inter-department request (best-effort — never fails the send).
@@ -3176,6 +3229,10 @@ function sendExternalEmail(payload) {
       noteId: noteId,
     });
     if (!tokenResult.success) {
+      // CN-4 (cycle 23): the links made before this one are withdrawn — no
+      // email goes out, so they would sit live and unsent for their whole life.
+      formTokensVoid_(formLinks.map(function (fl) { return fl.token; }), emp,
+        'a later form link for the same email could not be created, so the email was not sent');
       return { success: false, error: 'Failed to create form link for "' + catalogById[fid].name + '": ' + tokenResult.error };
     }
     formLinks.push({
@@ -3403,7 +3460,7 @@ function buildCustomerEmailText_(recipientName, message, formNames, formLinks) {
     lines.push('');
     lines.push('Please complete the following form(s) online:');
     formLinks.forEach(function (fl) { lines.push('  - ' + fl.name + ': ' + fl.url); });
-    lines.push('(These links expire in 72 hours. No account or login required.)');
+    lines.push('(These links expire in ' + formLinkExpiryPhrase_(CONFIG.FORM_TOKEN_EXPIRY_HOURS) + '. No account or login required.)');   // FORM-5
   }
   if (formNames.length > 0) {
     lines.push('');
@@ -3428,7 +3485,7 @@ function buildProviderEmailText_(recipientName, message, formNames, formLinks) {
     lines.push('');
     lines.push('Please complete the following form(s) online:');
     formLinks.forEach(function (fl) { lines.push('  - ' + fl.name + ': ' + fl.url); });
-    lines.push('(These links expire in 72 hours. No account or login required.)');
+    lines.push('(These links expire in ' + formLinkExpiryPhrase_(CONFIG.FORM_TOKEN_EXPIRY_HOURS) + '. No account or login required.)');   // FORM-5
   }
   if (formNames.length > 0) {
     lines.push('');
@@ -4208,6 +4265,18 @@ function getOrCreateScheduledCallsSheet_() {
   }
   return sh;
 }
+/** PURE (Node-pinned) — CN-1: the first ScheduledCalls row worth reading —
+ *  the row after the LAST one created before `cutoffMs` (CreatedAtMs is an
+ *  epoch-ms NUMBER, appended in creation order). A row with no stamp is read
+ *  rather than skipped; with no row before the cutoff the whole tab is read. */
+function schedSpanStartRow_(msCells, cutoffMs) {
+  let lastOld = -1;
+  for (let i = 0; i < (msCells || []).length; i++) {
+    const ms = Number(msCells[i] && msCells[i][0]);
+    if (ms > 0 && ms < cutoffMs) lastOld = i;
+  }
+  return 2 + lastOld + 1;   // data starts at row 2
+}
 /** PURE (Node-pinned) — shape validation for a create. Date/time reuse the
  *  INV-04 regexes; the label is trimmed + cell-capped (a blank one gets a
  *  neutral default); leadMin clamps to 0..120 with a 5-min default. Returns
@@ -4221,14 +4290,21 @@ function schedValidateShape_(dateStr, timeStr, label, leadMin) {
   if (lead > 120) lead = 120;
   return { label: lab, leadMin: lead };
 }
-/** Bounded-tail read of ONE rep's ACTIVE reminders (+ their live rowIndex for
+/** Span-bounded read of ONE rep's ACTIVE reminders (+ their live rowIndex for
  *  the status write). The status compare is trimmed + lowercased in this ONE
- *  reader (the DR.STATUS/INV-183 lesson applied from birth). */
+ *  reader (the DR.STATUS/INV-183 lesson applied from birth).
+ *  CN-1 (cycle 23): the read was the last 2000 rows of a TEAM-WIDE tab, so a
+ *  reminder set weeks ahead scrolled out behind everyone else's and never
+ *  fired — and the cap check stopped counting it. The span is now TIME: every
+ *  row created inside SCHED_STATE_SPAN_DAYS (longer than the furthest a
+ *  reminder may be set ahead), found by one CreatedAtMs column read. */
 function schedReadMine_(sh, empId) {
   const out = [];
   const last = sh.getLastRow();
   if (last < 2) return out;
-  const start = Math.max(2, last - SCHED_CALLS_SCAN + 1);
+  const start = schedSpanStartRow_(sh.getRange(2, SC.CREATED_MS + 1, last - 1, 1).getValues(),
+    Date.now() - SCHED_STATE_SPAN_DAYS * 86400000);
+  if (start > last) return out;
   const rows = sh.getRange(start, 1, last - start + 1, 7).getValues();
   for (let i = 0; i < rows.length; i++) {
     if (String(rows[i][SC.EMP_ID] || '').trim() !== String(empId || '').trim()) continue;
@@ -4272,6 +4348,7 @@ function createScheduledCall(payload) {
     const id = Utilities.getUuid();
     sh.appendRow(sheetSafeRow_([id, emp.id, whenMs, v.leadMin, v.label, 'active', now]));
     writeAuditLog_(emp, 'ScheduledCallCreate', '', '', false, 0, 'id=' + id);
+    pendingTasksBust_(emp.id);   // CNUI-08 / TC2-5 (cycle 23): a new reminder is a Needs-you task (g67)
     return { success: true, call: { id: id, whenMs: whenMs, leadMin: v.leadMin, label: v.label, status: 'active' } };
   } catch (err) { return { error: err.message }; }
   finally { lock.releaseLock(); }

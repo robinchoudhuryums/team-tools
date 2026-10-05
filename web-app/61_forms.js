@@ -61,6 +61,35 @@ function getFormCatalog() {
   });
   return { forms: catalog };
 }
+/** PURE (Node-pinned) — FORM-5 (cycle 23): how long a form link lives, in the
+ *  words the email gives the recipient, from the SAME setting createFormToken
+ *  stamps (the emails said "72 hours" whatever it was set to). */
+function formLinkExpiryPhrase_(hours) {
+  const h = Number(hours) > 0 ? Math.round(Number(hours)) : 72;
+  return h + (h === 1 ? ' hour' : ' hours');
+}
+/** PURE (Node-pinned) — FORM-5: who the submission notice goes to. The token
+ *  names the rep who sent the form, but that address outlives the person: an
+ *  offboarded rep's roster email is cleared (g153), and the completed form —
+ *  PHI — still went to their mailbox. Only a creator still on the roster is
+ *  mailed; otherwise the managers are, and told why. `rosterEmails` are the
+ *  live roster addresses (empRosterEmail_), lower-cased. */
+function formNotifyRoute_(createdBy, rosterEmails, managerEmails) {
+  const c = String(createdBy || '').trim().toLowerCase();
+  if (!c) return { to: [], rerouted: false };
+  if ((rosterEmails || []).indexOf(c) >= 0) return { to: [String(createdBy).trim()], rerouted: false };
+  return { to: (managerEmails || []).slice(), rerouted: true };
+}
+/** FORM-5: formNotifyRoute_ over the live roster and MANAGER_EMAILS. */
+function formNotifyTargets_(createdBy) {
+  const roster = getEmployeeRosterRows_();
+  const emails = [];
+  for (let i = 1; i < roster.length; i++) {
+    const e = empRosterEmail_(roster[i]).toLowerCase();
+    if (e) emails.push(e);
+  }
+  return formNotifyRoute_(createdBy, emails, getManagerEmails_());
+}
 /** Builds an HTML block for interactive form link buttons in email bodies. */
 function buildFormLinksBlock_(formLinks, palette) {
   if (!formLinks || formLinks.length === 0) return '';
@@ -81,7 +110,7 @@ function buildFormLinksBlock_(formLinks, palette) {
         'Please click the button(s) below to complete the required form(s) online:</p>' +
       '<div>' + buttons + '</div>' +
       '<p style="margin:8px 0 0;font-size:11px;color:' + P.muted + ';">' +
-        'These links expire in 72 hours. No account or login is required.</p>' +
+        'These links expire in ' + esc_(formLinkExpiryPhrase_(CONFIG.FORM_TOKEN_EXPIRY_HOURS)) + '. No account or login is required.</p>' +
     '</div>'
   );
 }
@@ -176,7 +205,7 @@ function normalizeWebAppExecUrl_(url) {
  *  'voided', refused by the public route and hidden from Sent Forms. Locked
  *  (the tokens tab is appended under the same lock); best-effort — the send
  *  already failed and says so, and an unvoided token still expires. */
-function formTokensVoid_(tokens, emp) {
+function formTokensVoid_(tokens, emp, reason) {
   const list = (tokens || []).filter(Boolean);
   if (!list.length) return 0;
   const lock = LockService.getScriptLock();
@@ -193,7 +222,7 @@ function formTokensVoid_(tokens, emp) {
       // made; without this nothing in the trail said it was withdrawn. The
       // same REFERENCE, never the live token (S4).
       writeAuditLog_(emp || { id: '', name: '', email: '' }, 'FormTokenVoided', '', '', false, 0,
-        'tokenRef=' + formTokenRef_(t) + '; reason=the email carrying it failed to send');
+        'tokenRef=' + formTokenRef_(t) + '; reason=' + (reason || 'the email carrying it failed to send'));
     });
   } catch (e) { Logger.log('formTokensVoid_ failed: ' + e.message); }
   finally { try { lock.releaseLock(); } catch (_) {} }
@@ -284,23 +313,35 @@ function createFormToken(payload) {
 function formTokenShapeOk_(token) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(token == null ? '' : token).trim());
 }
-/** Look up a FormTokens row by token string. Returns { rowIndex, row } or null. */
+/** Look up a FormTokens row by token string. Returns { rowIndex, row } or null.
+ *  FORM-1 (cycle 23): the column scan and the row fetch are TWO reads, and the
+ *  public route makes them without the lock — a purge deleting rows between
+ *  them shifts a different token's row under the index, and the caller served
+ *  THAT patient's prefill. The fetched row must carry the token it was found
+ *  by (formLocatedRowIs_); a moved row is located once more, then refused. */
 function findFormTokenRow_(sheet, token) {
   if (!token) return null;
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return null;
-  // Scan only the Token column to locate the row, then fetch that single full
-  // row — avoids reading every column of the whole FormTokens sheet on each
-  // token validation / submission. Return shape unchanged (L9).
-  const tokens = sheet.getRange(2, FT.TOKEN + 1, lastRow - 1, 1).getValues();
-  for (let i = 0; i < tokens.length; i++) {
-    if (String(tokens[i][0]).trim() === token) {
-      const rowIndex = i + 2;
-      const row = sheet.getRange(rowIndex, 1, 1, sheet.getLastColumn()).getValues()[0];
-      return { rowIndex: rowIndex, row: row };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return null;
+    // Scan only the Token column to locate the row, then fetch that single full
+    // row — avoids reading every column of the whole FormTokens sheet on each
+    // token validation / submission. Return shape unchanged (L9).
+    const tokens = sheet.getRange(2, FT.TOKEN + 1, lastRow - 1, 1).getValues();
+    let rowIndex = 0;
+    for (let i = 0; i < tokens.length; i++) {
+      if (String(tokens[i][0]).trim() === token) { rowIndex = i + 2; break; }
     }
+    if (!rowIndex) return null;
+    const row = sheet.getRange(rowIndex, 1, 1, sheet.getLastColumn()).getValues()[0];
+    if (formLocatedRowIs_(row, FT.TOKEN, token)) return { rowIndex: rowIndex, row: row };
   }
   return null;
+}
+/** PURE (Node-pinned) — FORM-1: does a row fetched by index still carry the
+ *  token it was located by? */
+function formLocatedRowIs_(row, col, token) {
+  return !!row && String(row[col] == null ? '' : row[col]).trim() === String(token || '');
 }
 /** Public endpoint — NO auth required. Validates the token and returns the
  *  form definition + prefill data. Called by google.script.run from the
@@ -568,10 +609,14 @@ function submitFormByToken(token, formData) {
             let subformData = null;
             try { subformData = JSON.parse(noteLocated.row[CN.SUBFORM_DATA]); } catch(_) {}
             if (!subformData || typeof subformData !== 'object') subformData = {};
-            subformData.formSubmission = {
-              token: token, formType: formType, submittedAt: submittedAt,
-              recipientEmail: recipientEmail,
-            };
+            // FORM-3 (cycle 23): a note can carry several forms — the single
+            // slot let a second submission overwrite the first one's link.
+            // `formSubmissions` keeps them all; `formSubmission` stays the
+            // latest for any reader of the old key.
+            const sub = { token: token, formType: formType, submittedAt: submittedAt,
+              recipientEmail: recipientEmail };
+            subformData.formSubmissions = formSubmissionsWith_(subformData, sub);
+            subformData.formSubmission = sub;
             cnSheet.getRange(noteLocated.rowIndex, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(subformData)));
           }
         }
@@ -604,8 +649,10 @@ function submitFormByToken(token, formData) {
       // PHI-adjacent — lives on the FormTokens row, reachable via the token).
       const fromDomain = intakeEmailDomain_(recipientEmail);
       const auditEmp = { id: 'EXTERNAL', name: 'External recipient', email: fromDomain };
+      // FORM-2 (cycle 23): the token by REFERENCE (S4) — the shared AuditLog
+      // is read by every manager, and the noteId + hash already pin the row.
       writeWitnessAuditLog_(auditEmp, 'FormSubmissionReceived', '', '', false, 0,
-        'token=' + token + '; formType=' + formType + '; fromDomain=' + fromDomain +
+        'tokenRef=' + formTokenRef_(token) + '; formType=' + formType + '; fromDomain=' + fromDomain +
         '; hash=' + submissionHash + '; submittedAt=' + submittedAt +
         (noteId ? '; noteId=' + noteId : ''));
     } catch(_) {}
@@ -616,19 +663,27 @@ function submitFormByToken(token, formData) {
     // recipient. The token is only marked 'submitted' after a successful
     // write, so a failure here leaves it 'pending' and the recipient can
     // retry. Log for ops to investigate (e.g. oversized signature payload).
-    console.warn('submitFormByToken failed (token=' + token + '): ' + err.message);
+    // FORM-2: a failed submit leaves the token LIVE — log its reference only.
+    console.warn('submitFormByToken failed (tokenRef=' + formTokenRef_(token) + '): ' + err.message);
     return { success: false, error: 'We could not submit your form. Please try again, or contact UMS if the problem persists.' };
   } finally {
     lock.releaseLock();
+    // FORM-5 (cycle 23): both notices go to the creator only while they are
+    // on the roster — otherwise to the managers (formNotifyRoute_).
     if (failNotify) {
-      try { notifyRepOfFailedSubmission_(failNotify.createdBy, failNotify.recipientEmail, failNotify.formType, failNotify.reason); }
-      catch (e2) { console.warn('submitFormByToken: failure notice failed: ' + e2.message); }
+      try {
+        const fr = formNotifyTargets_(failNotify.createdBy);
+        if (fr.to.length) notifyRepOfFailedSubmission_(fr.to.join(','), failNotify.recipientEmail, failNotify.formType, failNotify.reason,
+          fr.rerouted ? failNotify.createdBy : '');
+      } catch (e2) { console.warn('submitFormByToken: failure notice failed: ' + e2.message); }
     }
     if (notifyPayload) {
       try {
-        notifyRepOfFormSubmission_(notifyPayload.createdBy, notifyPayload.formType,
+        const nr = formNotifyTargets_(notifyPayload.createdBy);
+        if (nr.to.length) notifyRepOfFormSubmission_(nr.to.join(','), notifyPayload.formType,
           notifyPayload.recipientName, notifyPayload.recipientEmail,
-          notifyPayload.submittedAt, notifyPayload.sanitizedData, notifyPayload.signatureData);
+          notifyPayload.submittedAt, notifyPayload.sanitizedData, notifyPayload.signatureData,
+          nr.rerouted ? notifyPayload.createdBy : '');
       } catch (emailErr) {
         console.warn('submitFormByToken: notification email failed: ' + emailErr.message);
       }
@@ -769,6 +824,18 @@ function managerGetFormSubmission(repEmpId, token) {
  *  the stored cells. submittedAt is deliberately excluded (Sheets may coerce an
  *  ISO datetime to a Date on read) — its integrity is witnessed by the
  *  append-only FormSubmissionReceived audit row instead. */
+/** PURE (Node-pinned) — FORM-3: the note's submitted forms with `sub` added,
+ *  oldest first, one entry per token (a re-stamp replaces its own entry). A
+ *  note stamped before the list existed seeds it from its single
+ *  `formSubmission`. */
+function formSubmissionsWith_(subformData, sub) {
+  const d = (subformData && typeof subformData === 'object') ? subformData : {};
+  let list = Array.isArray(d.formSubmissions) ? d.formSubmissions.slice()
+    : (d.formSubmission && d.formSubmission.token ? [d.formSubmission] : []);
+  list = list.filter(function (x) { return x && x.token && x.token !== sub.token; });
+  list.push(sub);
+  return list;
+}
 /** Pure (Node-pinned) — an audit-safe REFERENCE to a form token: its first
  *  eight characters, enough to find the FormTokens row by eye or filter, and
  *  useless as a credential (the public route matches the whole token; a v4
@@ -797,15 +864,18 @@ function computeFormSubmissionHash_(dataJson, signatureData, token, consentVersi
  *  the hardening columns as '' (treated as "legacy, no hash" by callers). */
 function findFormSubmissionRow_(sheet, token) {
   if (!token) return null;
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return null;
-  const tokens = sheet.getRange(2, FS.TOKEN + 1, lastRow - 1, 1).getValues();
-  for (let i = tokens.length - 1; i >= 0; i--) {
-    if (String(tokens[i][0]).trim() === token) {
-      const rowIndex = i + 2;
-      const row = sheet.getRange(rowIndex, 1, 1, FS_HEADERS.length).getValues()[0];
-      return { rowIndex: rowIndex, row: row };
+  // FORM-1 (cycle 23): the same two-read re-check as findFormTokenRow_.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return null;
+    const tokens = sheet.getRange(2, FS.TOKEN + 1, lastRow - 1, 1).getValues();
+    let rowIndex = 0;
+    for (let i = tokens.length - 1; i >= 0; i--) {
+      if (String(tokens[i][0]).trim() === token) { rowIndex = i + 2; break; }
     }
+    if (!rowIndex) return null;
+    const row = sheet.getRange(rowIndex, 1, 1, FS_HEADERS.length).getValues()[0];
+    if (formLocatedRowIs_(row, FS.TOKEN, token)) return { rowIndex: rowIndex, row: row };
   }
   return null;
 }
@@ -1032,13 +1102,14 @@ function signatureDataUrlToBlob_(signatureDataUrl, name) {
  *  a silently-rejected submission isn't invisible to the rep. PHI-free beyond
  *  the recipient address the rep already has (they sent the form); never throws
  *  (INV-14) — the recipient response is unaffected. No-op without a createdBy. */
-function notifyRepOfFailedSubmission_(createdBy, recipientEmail, formType, reason) {
+function notifyRepOfFailedSubmission_(createdBy, recipientEmail, formType, reason, departedSender) {
   if (!createdBy) return;
   try {
     appSendMail_({
       to: createdBy,
       subject: 'Form submission could not be saved',
       body:
+        (departedSender ? formDepartedSenderLine_(departedSender) + '\n\n' : '') +
         'A recipient tried to submit a form you sent, but it could not be saved.\n\n' +
         'Form: ' + formType + '\n' +
         'Recipient: ' + recipientEmail + '\n' +
@@ -1054,7 +1125,11 @@ function notifyRepOfFailedSubmission_(createdBy, recipientEmail, formType, reaso
  *  best-effort PDF of the whole completed form. Each sub-step degrades
  *  gracefully — the recipient's submission already succeeded, so this is a
  *  convenience notice that must never throw the caller. */
-function notifyRepOfFormSubmission_(createdBy, formType, recipientName, recipientEmail, submittedAt, sanitizedData, signatureData) {
+/** FORM-5: the line a rerouted notice opens with. */
+function formDepartedSenderLine_(sender) {
+  return 'This form was sent by ' + sender + ', who is no longer on the team roster, so this notice comes to the managers instead.';
+}
+function notifyRepOfFormSubmission_(createdBy, formType, recipientName, recipientEmail, submittedAt, sanitizedData, signatureData, departedSender) {
   const formCat = CONFIG.CALL_NOTES.FORM_CATALOG || [];
   let formName = formType;
   for (let i = 0; i < formCat.length; i++) {
@@ -1065,10 +1140,12 @@ function notifyRepOfFormSubmission_(createdBy, formType, recipientName, recipien
     submittedAt, sanitizedData, signatureData, false);
 
   // Plain-text fallback — same content, no styling.
-  const textLines = ['A form submission was received.', '',
+  const textLines = [].concat(departedSender ? [formDepartedSenderLine_(departedSender), ''] : [],
+    ['A form submission was received.', ''],
+    [
     'Form:      ' + formName,
     'From:      ' + (recipientName ? recipientName + ' (' + recipientEmail + ')' : recipientEmail),
-    'Submitted: ' + submittedAt, '', 'Responses:'];
+    'Submitted: ' + submittedAt, '', 'Responses:']);
   Object.keys(sanitizedData || {}).forEach(function (k) {
     textLines.push('  ' + humanizeFormFieldKey_(k) + ': ' + formatFormFieldValue_(sanitizedData[k]));
   });
@@ -1098,7 +1175,8 @@ function notifyRepOfFormSubmission_(createdBy, formType, recipientName, recipien
 
   const opts = {
     to: createdBy,
-    subject: 'Form Submission Received: ' + formName + ' from ' + (recipientName || recipientEmail),
+    subject: 'Form Submission Received' + (departedSender ? ' (sender has left the team)' : '') + ': ' +
+      formName + ' from ' + (recipientName || recipientEmail),
     body: textBody,
     htmlBody: htmlBody,
   };
@@ -1140,12 +1218,26 @@ function parseRetentionDateMs_(val) {
   if (val instanceof Date) return val.getTime();
   const s = String(val || '').trim();
   if (!s) return null;
+  // FORM-4 (cycle 23): ONLY the shapes the app writes. The Date.parse fallback
+  // read free text like "9/30" as 30 Sep 2001 — "old" — so the purge deleted
+  // the row; anything else is unparseable, and an unparseable row is never
+  // deleted. The date-only shape is the Timesheet / call-note DATE column's
+  // (the archive and purge tiers share this reader), read as CONFIG.TIMEZONE
+  // midnight — Date.parse had read it as UTC midnight.
+  const pattern = retentionStampPattern_(s);
+  if (!pattern) return null;
   try {
-    return Utilities.parseDate(s, CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss").getTime();
-  } catch (_) {
-    const t = Date.parse(s);
-    return isNaN(t) ? null : t;
-  }
+    const t = Utilities.parseDate(s, CONFIG.TIMEZONE, pattern).getTime();
+    return isFinite(t) ? t : null;
+  } catch (_) { return null; }
+}
+/** PURE (Node-pinned) — FORM-4: the parse pattern for the stamp shapes a
+ *  retention cell holds, or null for anything else. */
+function retentionStampPattern_(s) {
+  const t = String(s || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(t)) return "yyyy-MM-dd'T'HH:mm:ss";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return 'yyyy-MM-dd';
+  return null;
 }
 function purgeExpiredFormData() {
   // Top-level (time-trigger target) → reachable via google.script.run, so gate
@@ -1196,7 +1288,7 @@ function serveResolvePage_(token) {
       // Anonymous / unidentifiable visitor (the ANYONE_ANONYMOUS executeAs case):
       // don't resolve unattributed — ask them to open it from their work account.
       heading = 'Sign in to confirm';
-      msg = 'Open this link while signed in to your @umsupply.com account so we can record who resolved the request.';
+      msg = 'Open this link while signed in to your UniversalMed Supply work account so we can record who resolved the request.';
     } else {
       heading = 'Mark the ' + (String(hit.row[DR.TO_DEPT] || '') || 'department') + ' request resolved?';
       msg = 'Press the button once the request has been actioned. Nothing has been recorded yet.';
@@ -1240,7 +1332,7 @@ function confirmDeptRequestResolve(token) {
     const tok = String(token || '').trim();
     if (!/^[A-Za-z0-9_-]{1,80}$/.test(tok)) return { heading: 'Request not found', message: 'This link is invalid or the request was removed.' };
     const by = getActiveUserEmail_();
-    if (!by) return { heading: 'Sign in to confirm', message: 'Open this link while signed in to your @umsupply.com account so we can record who resolved the request.' };
+    if (!by) return { heading: 'Sign in to confirm', message: 'Open this link while signed in to your UniversalMed Supply work account so we can record who resolved the request.' };
     const res = markDeptRequestResolved_(tok, by, 'email');
     if (!res.found) return { heading: 'Request not found', message: 'This link is invalid or the request was removed.' };
     if (res.already) return { heading: 'Already resolved', message: 'This was already marked resolved' + (res.resolvedBy ? ' by ' + res.resolvedBy : '') + (res.resolvedAt ? ' on ' + res.resolvedAt : '') + '.' };

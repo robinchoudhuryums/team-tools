@@ -3195,10 +3195,11 @@ function kbSaveItem(payload) {
     } else {
       bodyMd = String(payload.body || '');
       // Phase 2b — resolve converter image tokens (kbdoc:<fileId>:<n>) to
-      // Drive-hosted URLs BEFORE acquiring the lock: the Doc re-walk + blob
-      // exports can take seconds and must not stall the global ScriptLock
-      // (every punch / call-note write shares it). Length-check the RESOLVED
-      // body — that's what the cell stores.
+      // KbImages keys (DRV-3, cycle 23 Batch 12 — no longer Drive files)
+      // BEFORE acquiring the lock: the Doc re-walk can take seconds and must
+      // not stall the global ScriptLock; the store takes it only for its one
+      // append. `imagesExported` now counts images newly STORED. Length-check
+      // the RESOLVED body — that's what the cell stores.
       if (bodyMd.indexOf('](kbdoc:') >= 0) {
         const resolved = kbResolveDocImages_(bodyMd);
         bodyMd = resolved.bodyMd;
@@ -3572,7 +3573,7 @@ function kbManualValidate_(data) {
  *  'deleted' (the ledger knows it, the KB does not), 'foreign' (a man- id the
  *  import never wrote). */
 function kbManualPlan_(items, rows, ledger, hashFn) {
-  const plan = { create: [], update: [], unchanged: [], skipped: [] };
+  const plan = { create: [], update: [], unchanged: [], skipped: [], repair: [] };
   items.forEach(function (it) {
     const row = rows[it.id], led = ledger[it.id];
     if (!row) {
@@ -3580,8 +3581,19 @@ function kbManualPlan_(items, rows, ledger, hashFn) {
       else plan.create.push(it);
       return;
     }
+    // KB2-8 (cycle 23): the import writes the KB rows BEFORE its ledger, so an
+    // import stopped partway (the 6-minute limit, a lost connection) left rows
+    // with no ledger entry ("foreign") or a stale one ("edited"), and every
+    // later Check refused them. A row that already holds EXACTLY this file's
+    // text is the import's own work: it is a REPAIR — only the ledger is
+    // written — never a refusal.
+    const rowHash = hashFn(row.department, row.title, row.body);
+    if ((!led || rowHash !== led.bodyHash) && rowHash === hashFn(it.department, it.title, it.body)) {
+      plan.repair.push(it);
+      return;
+    }
     if (!led) { plan.skipped.push({ id: it.id, title: it.title, reason: 'foreign' }); return; }
-    if (hashFn(row.department, row.title, row.body) !== led.bodyHash) {
+    if (rowHash !== led.bodyHash) {
       plan.skipped.push({ id: it.id, title: row.title || it.title, reason: 'edited' });
       return;
     }
@@ -3697,8 +3709,12 @@ function getOrCreateManualImagesSheet_() {
  *  (M3's Key/Sha/FileId/…) holds no image bytes, so it reads as EMPTY and the
  *  next import rewrites it. */
 function kbManualImagesHeaderOk_(sheet) {
+  return kbImageTabHeaderOk_(sheet, KB_MANUAL_IMAGES_HEADERS);
+}
+/** DRV-3 (cycle 23 Batch 12): the header check both image tabs share. */
+function kbImageTabHeaderOk_(sheet, headers) {
   if (!sheet || sheet.getLastRow() < 1) return false;
-  return sheet.getRange(1, 1, 1, KB_MANUAL_IMAGES_HEADERS.length).getValues()[0].map(String).join('|') === KB_MANUAL_IMAGES_HEADERS.join('|');
+  return sheet.getRange(1, 1, 1, headers.length).getValues()[0].map(String).join('|') === headers.join('|');
 }
 /** The images tab as { key → { sha, type, kind, rows: [sheetRow by part] } }
  *  — read WITHOUT the Data column. A key whose parts are not exactly
@@ -3706,14 +3722,19 @@ function kbManualImagesHeaderOk_(sheet) {
  *  not imported and the next import rewrites it. A missing tab, or one in the
  *  old layout, is an empty ledger. */
 function kbManualImagesLedger_(sheet) {
+  return kbImageTabLedger_(sheet, KB_MANUAL_IMAGES_HEADERS, KB_MANUAL_IMAGE_KEY_RE);
+}
+/** DRV-3 (cycle 23 Batch 12): the ledger both image tabs share (the
+ *  ManualImages rule, parameterised by header and key charset). */
+function kbImageTabLedger_(sheet, headers, keyRe) {
   const out = {};
-  if (!kbManualImagesHeaderOk_(sheet)) return out;
+  if (!kbImageTabHeaderOk_(sheet, headers)) return out;
   const last = sheet.getLastRow();
   if (last < 2) return out;
   const seen = {};
   sheet.getRange(2, 1, last - 1, KBMG.PART + 1).getValues().forEach(function (r, i) {
     const key = String(r[KBMG.KEY] || '').trim();
-    if (!KB_MANUAL_IMAGE_KEY_RE.test(key)) return;
+    if (!keyRe.test(key)) return;
     const e = seen[key] || (seen[key] = { sha: String(r[KBMG.SHA] || ''), type: String(r[KBMG.TYPE] || ''), kind: String(r[KBMG.KIND] || ''), rows: [], bad: false });
     const part = Number(r[KBMG.PART]);
     if (!(part >= 0 && part === Math.floor(part)) || e.rows[part] !== undefined || String(r[KBMG.SHA] || '') !== e.sha) e.bad = true;
@@ -3750,48 +3771,120 @@ function getManualImages(keys) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Not authorized.' };
-    const want = [];
-    (Array.isArray(keys) ? keys : []).slice(0, KB_MANUAL_IMAGES_BATCH).forEach(function (k) {
-      k = String(k == null ? '' : k);
-      if (KB_MANUAL_IMAGE_KEY_RE.test(k) && want.indexOf(k) < 0) want.push(k);
-    });
-    const res = { success: true, images: {}, missing: [], failed: [] };
-    if (!want.length) return res;
-    const sheet = getKbSS_().getSheetByName(KB_MANUAL_IMAGES_TAB);
-    const ledger = kbManualImagesLedger_(sheet);
-    const cache = CacheService.getScriptCache();
-    let hit = {};
-    try { hit = cache.getAll(want.filter(function (k) { return ledger[k]; }).map(function (k) { return KB_MANUAL_IMAGE_CACHE_PREFIX + ledger[k].sha; })) || {}; }
-    catch (e) { hit = {}; }
-    const need = [];
-    want.forEach(function (k) {
-      const led = ledger[k];
-      if (!led) { res.missing.push(k); return; }
-      const ck = KB_MANUAL_IMAGE_CACHE_PREFIX + led.sha;
-      if (hit[ck]) res.images[k] = hit[ck]; else need.push(k);
-    });
-    if (!need.length) return res;
-    // ONE read of the Data column across the rows this batch needs.
-    let lo = Infinity, hi = 0;
-    need.forEach(function (k) { ledger[k].rows.forEach(function (r) { lo = Math.min(lo, r); hi = Math.max(hi, r); }); });
-    let data;
-    try { data = sheet.getRange(lo, KBMG.DATA + 1, hi - lo + 1, 1).getValues(); }
-    catch (e) { need.forEach(function (k) { res.failed.push(k); }); return res; }
-    const put = {};
-    need.forEach(function (k) {
-      const led = ledger[k];
-      const b64 = led.rows.map(function (r) { return String(data[r - lo][0] || ''); }).join('');
-      const type = led.type.toLowerCase();
-      if (KB_MANUAL_IMAGE_TYPES.indexOf(type) < 0 || !/^[A-Za-z0-9+\/]+={0,2}$/.test(b64) || Math.floor(b64.length * 3 / 4) > KB_MANUAL_IMAGE_MAX_BYTES) {
-        res.failed.push(k); return;
-      }
-      const url = 'data:' + type + ';base64,' + b64;
-      res.images[k] = url;
-      if (url.length <= 95000) put[KB_MANUAL_IMAGE_CACHE_PREFIX + led.sha] = url;   // one cache value holds 100 KB
-    });
-    if (Object.keys(put).length) { try { cache.putAll(put, 21600); } catch (e) {} }
-    return res;
+    return kbImageTabServe_(getKbSS_().getSheetByName(KB_MANUAL_IMAGES_TAB), keys, {
+      headers: KB_MANUAL_IMAGES_HEADERS, keyRe: KB_MANUAL_IMAGE_KEY_RE, batch: KB_MANUAL_IMAGES_BATCH,
+      types: KB_MANUAL_IMAGE_TYPES, maxBytes: KB_MANUAL_IMAGE_MAX_BYTES, cachePrefix: KB_MANUAL_IMAGE_CACHE_PREFIX });
   } catch (err) { return { error: err.message }; }
+}
+/** DRV-3 (cycle 23 Batch 12): the reader both image tabs share — the M4-FU3
+ *  rule, parameterised. Valid keys only (spec.keyRe), at most spec.batch of
+ *  them; "not stored" (missing) and "could not read" (failed) apart (g128);
+ *  ONE read of the Data column for the rows the batch needs; every image
+ *  re-checked against spec.types, base64 and spec.maxBytes before it leaves;
+ *  cached by content hash when it fits one cache value. */
+function kbImageTabServe_(sheet, keys, spec) {
+  const want = [];
+  (Array.isArray(keys) ? keys : []).slice(0, spec.batch).forEach(function (k) {
+    k = String(k == null ? '' : k);
+    if (spec.keyRe.test(k) && want.indexOf(k) < 0) want.push(k);
+  });
+  const res = { success: true, images: {}, missing: [], failed: [] };
+  if (!want.length) return res;
+  const ledger = kbImageTabLedger_(sheet, spec.headers, spec.keyRe);
+  const cache = CacheService.getScriptCache();
+  let hit = {};
+  try { hit = cache.getAll(want.filter(function (k) { return ledger[k]; }).map(function (k) { return spec.cachePrefix + ledger[k].sha; })) || {}; }
+  catch (e) { hit = {}; }
+  const need = [];
+  want.forEach(function (k) {
+    const led = ledger[k];
+    if (!led) { res.missing.push(k); return; }
+    const ck = spec.cachePrefix + led.sha;
+    if (hit[ck]) res.images[k] = hit[ck]; else need.push(k);
+  });
+  if (!need.length) return res;
+  // ONE read of the Data column across the rows this batch needs.
+  let lo = Infinity, hi = 0;
+  need.forEach(function (k) { ledger[k].rows.forEach(function (r) { lo = Math.min(lo, r); hi = Math.max(hi, r); }); });
+  let data;
+  try { data = sheet.getRange(lo, KBMG.DATA + 1, hi - lo + 1, 1).getValues(); }
+  catch (e) { need.forEach(function (k) { res.failed.push(k); }); return res; }
+  const put = {};
+  need.forEach(function (k) {
+    const led = ledger[k];
+    const b64 = led.rows.map(function (r) { return String(data[r - lo][0] || ''); }).join('');
+    const type = led.type.toLowerCase();
+    if (spec.types.indexOf(type) < 0 || !/^[A-Za-z0-9+\/]+={0,2}$/.test(b64) || Math.floor(b64.length * 3 / 4) > spec.maxBytes) {
+      res.failed.push(k); return;
+    }
+    const url = 'data:' + type + ';base64,' + b64;
+    res.images[k] = url;
+    if (url.length <= 95000) put[spec.cachePrefix + led.sha] = url;   // one cache value holds 100 KB
+  });
+  if (Object.keys(put).length) { try { cache.putAll(put, 21600); } catch (e) {} }
+  return res;
+}
+
+/** DRV-3 (cycle 23 Batch 12) — Employee: article images as data URLs, by key,
+ *  from the KbImages tab (no Drive). The manual reader's rule exactly; a
+ *  smaller batch, because an article image can be 1.5 MB. Read-only, no lock. */
+function getKbImages(keys) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    return kbImageTabServe_(getKbSS_().getSheetByName(KB_IMAGES_TAB), keys, {
+      headers: KB_IMAGES_HEADERS, keyRe: KB_IMAGE_KEY_RE, batch: KB_IMAGES_BATCH,
+      types: KB_IMG_UPLOAD_TYPES, maxBytes: KB_IMAGE_MAX_BYTES, cachePrefix: KB_IMAGE_CACHE_PREFIX });
+  } catch (err) { return { error: err.message }; }
+}
+/** PURE (DRV-3; Node-pinned) — one image as a KbImages item: the content
+ *  hash names it, so the same bytes always get the same key. Refuses (returns
+ *  `{ error }`) a type off the list or bytes over KB_IMAGE_MAX_BYTES. */
+function kbImageItem_(contentType, base64, kind, hashFn) {
+  const type = String(contentType || '').toLowerCase();
+  const b64 = String(base64 || '').replace(/\s+/g, '');
+  if (KB_IMG_UPLOAD_TYPES.indexOf(type) < 0) return { error: 'not a PNG, JPEG, GIF or WebP image' };
+  if (!/^[A-Za-z0-9+\/]+={0,2}$/.test(b64)) return { error: 'not image data' };
+  const bytes = Math.floor(b64.length * 3 / 4);
+  if (bytes > KB_IMAGE_MAX_BYTES) return { error: (Math.round(bytes / 104857.6) / 10) + ' MB \u2014 over the ' + (KB_IMAGE_MAX_BYTES / 1048576) + ' MB limit', tooLarge: true };
+  const sha = hashFn(b64);
+  return { key: 'kbimg-' + sha.substring(0, 24), sha: sha, contentType: type, kind: kind, base64: b64, bytes: bytes };
+}
+function getOrCreateKbImagesSheet_() {
+  const ss = getKbSS_();
+  let sheet = ss.getSheetByName(KB_IMAGES_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(KB_IMAGES_TAB);
+    sheet.appendRow(sheetSafeRow_(KB_IMAGES_HEADERS));
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, KB_IMAGES_HEADERS.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+/** DRV-3 — store images in the KbImages tab, under the script lock (the tab is
+ *  shared state, g17). APPEND-ONLY: a key already stored whole is reused, never
+ *  rewritten. A tab whose header someone changed is REFUSED by name rather than
+ *  appended to — its rows may be real images the next read could not find
+ *  (g142). Returns { stored, reused }. */
+function kbImagesStoreLocked_(items) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const sheet = getOrCreateKbImagesSheet_();
+    if (!kbImageTabHeaderOk_(sheet, KB_IMAGES_HEADERS)) {
+      throw new Error('the ' + KB_IMAGES_TAB + ' tab\'s header row was changed \u2014 restore it to ' + KB_IMAGES_HEADERS.join(', ') + ' (nothing was stored)');
+    }
+    const ledger = kbImageTabLedger_(sheet, KB_IMAGES_HEADERS, KB_IMAGE_KEY_RE);
+    const fresh = [], seen = {};
+    let reused = 0;
+    (items || []).forEach(function (it) {
+      if (ledger[it.key] || seen[it.key]) { reused++; return; }
+      seen[it.key] = 1;
+      fresh.push(it);
+    });
+    if (fresh.length) appendRowsSafe_(sheet, kbManualImagesRows_(fresh, fmtDate_(new Date()) + ' ' + fmtTime_(new Date())));
+    return { stored: fresh.length, reused: reused };
+  } finally { lock.releaseLock(); }
 }
 
 /** Pure (Node-pinned) — validate and normalize the bundle's meta. Every target
@@ -4063,6 +4156,7 @@ function kbImportManual(source, opts) {
       const summary = {
         total: v.items.length, created: plan.create.length, updated: plan.update.length,
         unchanged: plan.unchanged.length, skipped: plan.skipped,
+        repaired: plan.repair.length,   // KB2-8: rows an unfinished import wrote; this run records them
         orphaned: orphaned, removed: 0, metaUpdated: metaChanged, hasMeta: !!metaJson,
         version: mv.meta ? mv.meta.version : '',
         images: null,
@@ -4093,6 +4187,8 @@ function kbImportManual(source, opts) {
         sheet.getRange(at.sheetRow, 1, 1, KB_HEADERS.length).setValues(sheetSafeRows_([vals]));
         ledgerWrites.push([it.id, it.sourceHash, hashFn(it.department, it.title, it.body)]);
       });
+      // KB2-8: the rows are already this file's text — record them, write nothing else.
+      plan.repair.forEach(function (it) { ledgerWrites.push([it.id, it.sourceHash, hashFn(it.department, it.title, it.body)]); });
       if (plan.create.length) {
         appendRowsSafe_(sheet, plan.create.map(function (it) {
           return [it.id, it.department, it.title, 'article', it.body, '', '', it.sortOrder,
@@ -4145,7 +4241,7 @@ function kbImportManual(source, opts) {
       plan.skipped.forEach(function (s) { skipBy[s.reason] = (skipBy[s.reason] || 0) + 1; });
       writeAuditLog_(emp, 'KbManualImport', '', '', false, 0,
         'total=' + summary.total + '; created=' + summary.created + '; updated=' + summary.updated +
-        '; unchanged=' + summary.unchanged + '; skipped=' + plan.skipped.length +
+        '; unchanged=' + summary.unchanged + '; skipped=' + plan.skipped.length + '; repaired=' + summary.repaired +
         '; orphaned=' + orphaned.length + '; removed=' + summary.removed + '; meta=' + (metaChanged ? 'updated' : 'same') +
         (summary.images ? '; imagesStored=' + summary.images.stored + '; imagesRemoved=' + summary.images.removed +
           (summary.images.error ? '; imagesError=1' : '') : '') +
@@ -4230,20 +4326,25 @@ function kbExtractDocImageRefs_(bodyMd) {
   }
   return out;
 }
-/** PURE: swap each kbdoc image token via resolve(fileId, ord) → https URL.
- *  null / a throwing resolver degrades that token to the italic placeholder;
- *  the caller reports `failed` as a warning. */
+/** PURE: swap each kbdoc image token via resolve(fileId, ord) → a URL (or a
+ *  `kbimg:` key). null / a throwing resolver degrades that token to the italic
+ *  placeholder; the caller reports `failed` as a warning. DRV-3 (cycle 23
+ *  Batch 12): a resolver that returns `{ keep: true }` leaves the token AS IT
+ *  IS (counted in `kept`) — a failure a later save can retry (the Doc did not
+ *  open, the store failed, the image is over the size limit) must not throw
+ *  away the only record of which Doc image belonged there (DRV-5's rule). */
 function kbReplaceDocImageTokens_(bodyMd, resolve) {
-  let failed = 0;
+  let failed = 0, kept = 0;
   const out = String(bodyMd || '').replace(
     /!\[([^\]]*)\]\(kbdoc:([a-zA-Z0-9_-]+):(\d+)\)/g,
     function (whole, alt, fileId, ordStr) {
       let url = null;
       try { url = resolve(fileId, parseInt(ordStr, 10)); } catch (e) { url = null; }
+      if (url && typeof url === 'object' && url.keep) { kept++; return whole; }
       if (!url) { failed++; return '*[image — see the original Doc]*'; }
       return '![' + alt + '](' + url + ')';
     });
-  return { bodyMd: out, failed: failed };
+  return { bodyMd: out, failed: failed, kept: kept };
 }
 /** Collects a Doc body's INLINE_IMAGE blobs in the SAME walk order the
  *  converter assigns ordinals: paragraph children, document order. Drawings
@@ -4312,67 +4413,68 @@ function getOrCreateKbImagesFolder_() {
   props.setProperty(KB_IMAGES_FOLDER_PROP, folder.getId());
   return folder;
 }
-/** Resolves kbdoc image tokens at SAVE time. Runs OUTSIDE the script lock —
- *  Drive exports are slow and only the sheet write needs the lock. Every
- *  failure degrades per-token to the placeholder (warned), never throws. */
+/** Resolves kbdoc image tokens at SAVE time. DRV-3 (cycle 23 Batch 12): the
+ *  images are STORED IN THE KbImages TAB (kbImagesStoreLocked_), not exported
+ *  to a Drive folder — the domain disables Apps Script's Drive. The Doc is read
+ *  through DocumentApp OUTSIDE any lock; the store takes the lock for its one
+ *  append. A token becomes `kbimg:<key>`. What a later save can fix KEEPS its
+ *  token (pending, named): the Doc did not open, the store failed, or the image
+ *  is over KB_IMAGE_MAX_BYTES. Only an image the Doc does not have, or a type
+ *  that can never be stored, becomes the placeholder. Never throws. */
 function kbResolveDocImages_(bodyMd) {
   const refs = kbExtractDocImageRefs_(bodyMd);
   if (refs.length === 0) return { bodyMd: bodyMd, exported: 0, warnings: [] };
   const warnings = [];
-  let folder = null;
-  try { folder = getOrCreateKbImagesFolder_(); }
-  catch (e) {
-    // DRV-5 (cycle 23): KEEP the tokens. Rewriting them to the placeholder
-    // threw away the only record of which Doc image belonged where, so a
-    // folder that could not open for an hour (or a disabled Drive service)
-    // made the article's images unrecoverable by any later save. A kept
-    // token renders as the pending chip and the next save retries it.
-    warnings.push('KB Images folder: ' + e.message + ' — ' + refs.length +
-      ' image(s) kept as pending; save again once Drive is reachable to export them.');
-    return { bodyMd: bodyMd, exported: 0, warnings: warnings, pending: refs.length };
-  }
   const blobsByDoc = {};   // fileId → blobs[] | null (Doc unreachable)
-  const urlCache = {};     // "fileId:ord" → resolved URL
-  let exported = 0;
-  const resolve = function (fileId, ord) {
-    const key = fileId + ':' + ord;
-    if (urlCache[key]) return urlCache[key];
-    if (!(fileId in blobsByDoc)) {
+  const keyByRef = {}, keep = {}, items = [];
+  refs.forEach(function (ref) {
+    const rk = ref.fileId + ':' + ref.ord;
+    if (!(ref.fileId in blobsByDoc)) {
       try {
-        blobsByDoc[fileId] = kbCollectDocInlineImages_(DocumentApp.openById(fileId).getBody(), KB_DOC_IMAGE_CAP);
+        blobsByDoc[ref.fileId] = kbCollectDocInlineImages_(DocumentApp.openById(ref.fileId).getBody(), KB_DOC_IMAGE_CAP);
       } catch (e) {
-        blobsByDoc[fileId] = null;
-        warnings.push('Could not open the source Doc to export its image(s): ' + e.message);
+        blobsByDoc[ref.fileId] = null;
+        warnings.push('Could not open the source Doc to store its image(s): ' + e.message + ' \u2014 kept as pending; save again to retry.');
       }
     }
-    const blobs = blobsByDoc[fileId];
-    if (!blobs || ord < 1 || ord > blobs.length) return null;
-    // NAME a per-image Drive failure. The token replacer's own catch reduces
-    // any throw to a bare null, so before this the ONLY message a failed
-    // createFile ever produced was the generic "N token(s) could not be
-    // resolved" — the operator hit exactly that live (2026-08-27) and had no
-    // way to learn WHY (a domain Drive policy, a quota, anything).
+    const blobs = blobsByDoc[ref.fileId];
+    if (!blobs) { keep[rk] = 1; return; }
+    if (ref.ord < 1 || ref.ord > blobs.length) return;   // the Doc has no such image: placeholder
+    let it;
     try {
-      const name = 'kbdoc-' + fileId + '-' + ord;
-      let file = null;
-      const existing = folder.getFilesByName(name);
-      if (existing.hasNext()) {
-        file = existing.next();   // reuse — idempotent re-saves, stable URLs
+      const blob = blobs[ref.ord - 1];
+      it = kbImageItem_(blob.getContentType(), Utilities.base64Encode(blob.getBytes()), 'doc', kbSha256Hex_);
+    } catch (e) { it = { error: e.message, retry: true }; }
+    if (it.error) {
+      if (it.tooLarge || it.retry) {
+        keep[rk] = 1;
+        warnings.push('Image ' + ref.ord + ' is ' + it.error + (it.tooLarge ? ' \u2014 shrink it in the Doc and save again' : ' \u2014 save again to retry') + ' (kept as pending).');
       } else {
-        file = folder.createFile(blobs[ord - 1].copyBlob().setName(name));
-        exported++;
+        warnings.push('Image ' + ref.ord + ' is ' + it.error + ' \u2014 it cannot be stored; left as a placeholder.');
       }
-      const url = 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w1200';
-      urlCache[key] = url;
-      return url;
-    } catch (e) {
-      warnings.push('Image ' + ord + ' could not be exported to Drive: ' + e.message);
-      return null;
+      return;
     }
-  };
-  const r = kbReplaceDocImageTokens_(bodyMd, resolve);
-  if (r.failed > 0) warnings.push(r.failed + ' image token(s) could not be resolved — left as placeholders.');
-  return { bodyMd: r.bodyMd, exported: exported, warnings: warnings };
+    keyByRef[rk] = it.key;
+    items.push(it);
+  });
+  let stored = 0;
+  if (items.length) {
+    try { stored = kbImagesStoreLocked_(items).stored; }
+    catch (e) {
+      warnings.push('The image(s) could not be stored: ' + e.message + ' \u2014 kept as pending; save again to retry.');
+      Object.keys(keyByRef).forEach(function (k) { keep[k] = 1; delete keyByRef[k]; });
+    }
+  }
+  const r = kbReplaceDocImageTokens_(bodyMd, function (fileId, ord) {
+    const rk = fileId + ':' + ord;
+    if (keyByRef[rk]) return 'kbimg:' + keyByRef[rk];
+    if (keep[rk]) return { keep: true };
+    return null;
+  });
+  if (r.failed > 0) warnings.push(r.failed + ' image token(s) could not be resolved \u2014 left as placeholders.');
+  const out = { bodyMd: r.bodyMd, exported: stored, warnings: warnings };
+  if (r.kept) out.pending = r.kept;
+  return out;
 }
 /** PURE: parse a data:image/…;base64,… URL → { contentType, base64 } or null.
  *  The whitelist check happens at the caller (this just shape-parses). */
@@ -4382,32 +4484,30 @@ function kbParseImageDataUrl_(dataUrl) {
   return { contentType: m[1].toLowerCase(), base64: m[2].replace(/\s+/g, '') };
 }
 /** ADMIN-gated (`emp.isAdmin`) — the KB editor is admin-only in the code,
- *  whatever INV-02 says about the tier (F-26). Validates the data
- *  URL (type whitelist + size cap), writes the blob to the KB Images folder
- *  as kbpaste-<stamp>-<rand>, audits a PHI-free KbImageUpload row, and
- *  returns the thumbnail URL. Deliberately NO ScriptLock: this writes only a
- *  Drive file (atomic, no shared-sheet state) — holding the global lock
- *  through a multi-second blob upload would stall every punch/note write. */
+ *  whatever INV-02 says about the tier (F-26). DRV-3 (cycle 23 Batch 12):
+ *  validates the data URL (type whitelist, the request cap, then the
+ *  KB_IMAGE_MAX_BYTES store cap — the client downscales before it sends),
+ *  stores it in the KbImages tab under the script lock (a shared tab now, not
+ *  a Drive file — g17), audits a PHI-free KbImageUpload row, and returns the
+ *  `kbimg:` token the editor inserts. The same bytes twice are one row set. */
 function kbUploadImage(dataUrl) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
     const raw = String(dataUrl || '');
     if (raw.length > KB_IMG_UPLOAD_MAX_CHARS) {
-      return { success: false, error: 'Image too large (max ~3MB) — crop or downscale the screenshot.' };
+      return { success: false, error: 'Image too large (max ' + (KB_IMAGE_MAX_BYTES / 1048576) + ' MB) \u2014 crop or downscale the screenshot.' };
     }
     const parsed = kbParseImageDataUrl_(raw);
     if (!parsed || KB_IMG_UPLOAD_TYPES.indexOf(parsed.contentType) < 0) {
       return { success: false, error: 'Paste a PNG/JPEG/GIF/WebP image.' };
     }
-    const folder = getOrCreateKbImagesFolder_();
-    const stamp = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyyMMdd-HHmmss');
-    const name = 'kbpaste-' + stamp + '-' + Utilities.getUuid().substring(0, 8);
-    const blob = Utilities.newBlob(Utilities.base64Decode(parsed.base64), parsed.contentType, name);
-    const file = folder.createFile(blob);
+    const it = kbImageItem_(parsed.contentType, parsed.base64, 'paste', kbSha256Hex_);
+    if (it.error) return { success: false, error: 'Image is ' + it.error + ' \u2014 crop or downscale the screenshot.' };
+    const r = kbImagesStoreLocked_([it]);
     writeAuditLog_(emp, 'KbImageUpload', '', '', false, 0,
-      'fileId=' + file.getId() + '; name=' + name + '; type=' + parsed.contentType, emp.email);
-    return { success: true, url: 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w1200' };
+      'key=' + it.key + '; type=' + it.contentType + '; bytes=' + it.bytes + (r.reused ? '; reused' : ''), emp.email);
+    return { success: true, key: it.key, token: 'kbimg:' + it.key };
   } catch (err) { return { success: false, error: err.message }; }
 }
 /** Rep-callable, READ-ONLY, folder-scoped. Returns one KB image as a data URL.
@@ -4655,6 +4755,13 @@ function kbAiCanonicalFacets_(clean) {
   if (tags.length) parts.push('tags=' + tags.join(','));
   return parts.join('|');
 }
+/** PURE (KB-2, cycle 23): what the AuditLog row says about the facets —
+ *  how many of each kind, never a value. */
+function kbAiFacetCounts_(clean) {
+  clean = clean || {};
+  return 'dept:' + (clean.department ? 1 : 0) + ',update:' + (clean.updateType ? 1 : 0) +
+    ',flag:' + (clean.flagType ? 1 : 0) + ',tags:' + ((clean.tags || []).length);
+}
 /** PURE: search-query terms derived from sanitized facets — feeds the
  *  existing section search (kebab-case tags split into words). */
 function kbAiQueryTerms_(clean) {
@@ -4812,22 +4919,25 @@ function kbGetFacetGuidance(facets) {
     if (!emp) return { error: 'Not authorized.' };
     if (!getFlag_('kbAiGuidance')) return { none: true, reason: 'disabled' };
 
-    // Vocabularies: departments + update types are org config; tags are the
-    // CALLER's own established tag vocabulary (tags already on their saved
-    // notes — the same source as the tag-autocomplete datalist), so a novel
-    // tag typed this minute never reaches the vendor.
+    // Vocabularies: departments, update types AND tags are all org config.
+    // KB-2 (cycle 23): tags used to be the CALLER's own established tags —
+    // free text from the per-rep PHI store, so a tag that was once a patient's
+    // surname or member id became "vocabulary" and went to the vendor and the
+    // AuditLog. Tags are now the ADMIN's taxonomy only: the tags of the
+    // auto-tag rules (Admin → Config → Auto-tag rules, `getAutoTagRules_`),
+    // which an admin wrote on purpose and which no rep can add to.
     const updByDept = getUpdateSuggestions_() || {};
     const updateTypes = (CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT || []).slice();
     Object.keys(updByDept).forEach(function (d) {
       (updByDept[d] || []).forEach(function (u) { if (updateTypes.indexOf(u) < 0) updateTypes.push(u); });
     });
-    let ownTags = [];
-    try { const ts = getCallNoteTagSuggestions(); ownTags = (ts && ts.tags) || []; } catch (_) {}
+    let adminTags = [];
+    try { adminTags = (getAutoTagRules_() || []).map(function (r) { return r.tag; }); } catch (_) {}
     const clean = kbAiSanitizeFacets_(facets, {
       departments: Object.keys(getDepartmentEmails_() || {}),
       updateTypes: updateTypes,
       flagTypes: CN_FLAG_TYPES.concat(['urgent']),
-      tags: ownTags,
+      tags: adminTags,
     });
     // Department alone is too generic to guide on — require a real signal.
     if (!clean.updateType && !clean.flagType && !clean.tags.length) {
@@ -4878,9 +4988,11 @@ function kbGetFacetGuidance(facets) {
 
     const cost = kbAiEstimateCostUsd_(cfg.model, vendor.usage);
     kbAiApplySpend_(cost - KB_AI_CALL_RESERVE_USD, 1);
-    // PHI-free audit row — facets are validated enums, never note content.
+    // KB-2: the shared AuditLog carries COUNTS of facets, never their values —
+    // the row records that a guidance call happened and what it cost, and
+    // nothing a later vocabulary change could turn into note content.
     writeAuditLog_(emp, 'KbAiGuidance', '', '', false, 0,
-      'facets=' + canonical + '; model=' + cfg.model + '; usd=' + cost.toFixed(4), emp.email);
+      'facets=' + kbAiFacetCounts_(clean) + '; model=' + cfg.model + '; usd=' + cost.toFixed(4), emp.email);
     if (!vendor.text || vendor.text.indexOf('NOT_COVERED') >= 0) return noneOut('not-covered', true);
 
     const out = {

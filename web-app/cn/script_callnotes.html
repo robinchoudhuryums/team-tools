@@ -1603,6 +1603,13 @@
     border-radius: 999px;
     margin-left: 6px;
   }
+  /* CNUI-09 (cycle 23) — on the phone's bottom nav the button is a column
+     (icon over label): the count sits on the icon's corner instead of
+     becoming a third row. */
+  .nav-btn .cn-stale-badge {
+    position: absolute; top: 4px; left: calc(50% + 4px);
+    margin-left: 0; min-width: 14px; height: 14px; font-size: 9px;
+  }
 
   /* ── Email composer modal ───────────────────────────────────────── */
   .cn-compose-section {
@@ -2175,6 +2182,11 @@
     letter-spacing: .04em; vertical-align: middle; cursor: pointer;
   }
   .cn-form-pill svg { flex-shrink: 0; }
+  /* FORM-3 (cycle 23) — a note's several form pills stack, one pill wide. */
+  .cn-form-pills {
+    display: inline-flex; flex-direction: column; align-items: stretch; gap: 2px;
+    vertical-align: middle;
+  }
   /* Intake-sourced note chip — a note auto-logged after an intake form send.
      Colored by intake category (PPD blue / PMD orange / PAP purple) to match
      the Intake tab section headers. */
@@ -3486,9 +3498,13 @@ function cnWireActiveForm_() {
         return;
       }
       CN_STATE.lastSaveUndo = null;
-      if (cnFindNoteAnywhere_(su.note.noteId)) cnDoDeleteNote_(su.note.noteId);
-      cnRestoreFromSnapshot_(su.snap);
-      showToast('Save undone — note deleted, text restored', 'toast-success');
+      // CNUI-06 (cycle 23): the undo is announced — and the text restored —
+      // only when the server has deleted the note. It used to say "note
+      // deleted" at once and restore the text even when the delete was then
+      // refused, so the next Save filed the note a second time.
+      if (!cnFindNoteAnywhere_(su.note.noteId)) { cnRestoreFromSnapshot_(su.snap); return; }
+      showToast('Undoing the save…', 'toast-info');
+      cnDoDeleteNote_(su.note.noteId, { toast: '', onDeleted: function () { cnFinishSaveUndo_(su.snap); } });
     }
   });
   document.getElementById('cn-form-submit').addEventListener('click', function () { cnSubmitActiveForm_(); });
@@ -3522,6 +3538,19 @@ function cnWireActiveForm_() {
   if (extBtn) extBtn.addEventListener('click', function () { cnOpenExternalEmailModal_(); });
 }
 
+/** CNUI-06 — the undone note is gone on the server: put its text back, unless
+ *  the rep has started typing in the meantime (their new text is kept). */
+function cnFinishSaveUndo_(snap) {
+  var f = function (k) { return String(cnGetFieldValue_('cn-fld-' + k) || '').trim(); };
+  var empty = !document.getElementById('cn-active-form')
+    || !(f('callback') || f('caller') || f('patient') || f('issue') || f('resolution'));
+  if (empty && document.getElementById('cn-active-form')) {
+    cnRestoreFromSnapshot_(snap);
+    showToast('Save undone — note deleted, text restored', 'toast-success');
+  } else {
+    showToast('Save undone — note deleted. Its text was not put back because the form is in use.', 'toast-success');
+  }
+}
 function cnRestoreFromSnapshot_(snap) {
   if (!snap) return;
   Object.keys(snap.values || {}).forEach(function (k) {
@@ -4303,7 +4332,7 @@ function cnSubmitActiveForm_(opts) {
       // Composer was cancelled while the save was still in flight → finish
       // the rollback now that the server row exists, and skip the composer.
       if (pendingNote._deleteOnConfirm) {
-        cnDoDeleteNote_(res.note.noteId, { toast: 'Compose cancelled — save undone, your text is still in the form' });
+        cnDoDeleteNote_(res.note.noteId, cnRollbackDeleteOpts_(res.note));
         return;
       }
       if (opts && typeof opts.onConfirmed === 'function' && currentView === requestedView) {
@@ -4537,17 +4566,53 @@ function cnFormatTimestampForCopy_(iso) {
  *  from the note's STORED values — silently discarding everything typed since
  *  the editor opened. */
 function cnEditSnapshot_() {
-  if (!CN_STATE.editingNoteId) return null;
+  // CNUI-05 (cycle 23): an open or typed-into Clarify box rides the same
+  // snapshot — any stack re-render (a flag on another card, the live refresh)
+  // used to close it and drop the follow-up the rep was writing.
+  const clarify = cnClarifySnapshot_();
+  if (!CN_STATE.editingNoteId) return clarify.length ? { vals: {}, clarify: clarify } : null;
   const fields = document.querySelectorAll('[id^="cnE-"]');
-  if (!fields.length) return null;
+  if (!fields.length) return clarify.length ? { vals: {}, clarify: clarify } : null;
   const vals = {};
   fields.forEach(function (el) {
     vals[el.id] = el.isContentEditable ? el.textContent : el.value;
   });
-  return { active: document.activeElement && document.activeElement.id, vals: vals };
+  return { active: document.activeElement && document.activeElement.id, vals: vals, clarify: clarify };
+}
+/** CNUI-05 — every Clarify box that is open or holds text: its note, text,
+ *  and (for the focused one) the caret, so the restore puts the rep back
+ *  where they were typing (g141 — values alone are not enough). */
+function cnClarifySnapshot_() {
+  const out = [];
+  document.querySelectorAll('.qa-clarify-row[data-qa-clarify-row]').forEach(function (row) {
+    const ta = row.querySelector('textarea');
+    const text = ta ? ta.value : '';
+    if (row.hidden && !text) return;
+    const focused = !!ta && document.activeElement === ta;
+    out.push({ noteId: row.getAttribute('data-qa-clarify-row'), open: !row.hidden, text: text,
+      focused: focused, start: focused ? ta.selectionStart : 0, end: focused ? ta.selectionEnd : 0 });
+  });
+  return out;
+}
+function cnClarifyRestore_(list) {
+  (list || []).forEach(function (c) {
+    let row = null;
+    document.querySelectorAll('.qa-clarify-row[data-qa-clarify-row]').forEach(function (r) {
+      if (!row && r.getAttribute('data-qa-clarify-row') === c.noteId) row = r;
+    });
+    if (!row) return;   // the thread no longer takes a reply (acknowledged) — nothing to put back
+    const ta = row.querySelector('textarea');
+    row.hidden = !c.open;
+    if (ta) {
+      ta.value = c.text;
+      if (c.focused) { try { ta.focus(); ta.setSelectionRange(c.start, c.end); } catch (e) {} }
+    }
+  });
 }
 function cnEditRestore_(snap) {
-  if (!snap || !CN_STATE.editingNoteId) return;
+  if (!snap) return;
+  cnClarifyRestore_(snap.clarify);
+  if (!CN_STATE.editingNoteId) return;
   Object.keys(snap.vals).forEach(function (id) {
     const el = document.getElementById(id);
     if (!el) return;
@@ -4703,6 +4768,13 @@ function cnSubmitClarification_(noteId, message) {
         if (typeof showToast === 'function') showToast((res && res.error) || 'Could not send', 'toast-error');
         return;
       }
+      // CNUI-05: the sent text leaves the box before the re-render, so the
+      // snapshot does not put it back (text typed after Send stays).
+      document.querySelectorAll('.qa-clarify-row[data-qa-clarify-row]').forEach(function (r) {
+        if (r.getAttribute('data-qa-clarify-row') !== noteId) return;
+        const ta = r.querySelector('textarea');
+        if (ta && ta.value.trim() === trimmed) { ta.value = ''; r.hidden = true; }
+      });
       if (typeof cnReplaceNoteInState_ === 'function') cnReplaceNoteInState_(res.note);
       if (typeof cnReRenderActiveView_ === 'function') cnReRenderActiveView_();
       if (typeof showToast === 'function') showToast('Sent', 'toast-success');
@@ -4908,12 +4980,18 @@ function cnRenderCardCore_(note, expandable) {
   // G3 — when a fillable form linked to this note has been submitted, show a
   // clickable pill that opens the submitted form data in a read-only modal
   // (so the rep doesn't have to open the FormSubmissions sheet).
-  const formSub = (note.subformData && note.subformData.formSubmission) ? note.subformData.formSubmission : null;
-  const formIndicator = (formSub && formSub.token)
-    ? '<button class="cn-form-pill" title="Form received — click to view submission" ' +
-      'data-cn-action="view-form" data-token="' + esc(formSub.token) + '">' +
-      icon('paperclip', 11) + '<span>form</span></button>'
-    : '';
+  // FORM-3 (cycle 23): one pill per submitted form — a second form on the
+  // same note used to replace the first one's link.
+  const formSubs = cnFormSubsOf_(note);
+  const formIndicator = formSubs.map(function (fs, i) {
+    return '<button class="cn-form-pill" title="Form received' + (fs.formType ? ' (' + esc(fs.formType) + ')' : '') +
+      ' — click to view submission" ' +
+      'data-cn-action="view-form" data-token="' + esc(fs.token) + '">' +
+      icon('paperclip', 11) + '<span>form' + (formSubs.length > 1 ? ' ' + (i + 1) : '') + '</span></button>';
+  }).join('');
+  // Several pills STACK (.cn-form-pills) — side by side they squeezed the
+  // compact card's text column to a word per line.
+  const formIndicatorHtml = formSubs.length > 1 ? '<span class="cn-form-pills">' + formIndicator + '</span>' : formIndicator;
 
   return `
     <div class="cn-card${flagCls}${staleCls}${urgentCls}${pendingCls}" data-note-id="${esc(note.noteId)}">
@@ -4932,7 +5010,7 @@ function cnRenderCardCore_(note, expandable) {
             ? '<span class="cn-pending-badge" title="Saving to server"><span class="cn-pending-dot"></span>Saving</span>'
             : flagBtn('action', 'flag', note.flagType === 'action') +
               flagBtn('training', 'bulb', note.flagType === 'training') +
-              pinBtn + copyBtn + emailBtn + extIndicator + formIndicator +
+              pinBtn + copyBtn + emailBtn + extIndicator + formIndicatorHtml +
               (function () {
                 var urgentBtn = '<button class="cn-act-btn cn-urgent-toggle' + (isUrgent ? ' is-on' : '') +
                   '" title="' + (isUrgent ? 'Remove urgent flag' : 'Mark urgent') +
@@ -5163,6 +5241,9 @@ function cnSchedCreate_(btn) {
       var l = document.getElementById('cn-sched-label'); if (l) l.value = '';
       cnSchedRenderList_();
       showToast('Reminder scheduled', 'toast-success');
+      // CNUI-08 (cycle 23): a new reminder is a Needs-you task — mark-done and
+      // cancel already refetched the list; create did not.
+      if (typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();
     })
     .withFailureHandler(function (e) { btn.disabled = false; showToast((e && e.message) || 'Could not schedule', 'toast-error'); })
     .createScheduledCall({ date: date, time: time, label: label, leadMin: parseInt(lead, 10) });
@@ -5646,15 +5727,22 @@ function cnScratchSave_(force) {
 // Fetches the submission (caller-scoped: server verifies the calling rep
 // created the token) and shows the entered fields + signature in a modal, so
 // the rep doesn't have to open the FormSubmissions sheet.
+// CNUI-03 (cycle 23): every open and every close moves the viewer's sequence;
+// a response that is not the CURRENT open's is dropped. A late answer used to
+// re-open a modal the rep had closed, or paint the previous submission (or
+// patient) under the next one's title.
+var CN_VIEWER_SEQ = { formSub: 0, timeline: 0 };
 function cnViewFormSubmission_(token) {
   token = String(token || '').trim();
   if (!token) return;
+  var seq = ++CN_VIEWER_SEQ.formSub;
   cnRenderFormSubOverlay_(
     '<div class="modal cn-form-sub-modal" style="max-width:560px">' +
       '<div class="state-center" role="status"><span class="lo-dots"><span></span><span></span><span></span></span>' +
       '<div class="state-label">Loading submission…</div></div></div>');
   google.script.run
     .withSuccessHandler(function (res) {
+      if (seq !== CN_VIEWER_SEQ.formSub) return;   // CNUI-03: closed, or another opened
       if (!res || res.error) {
         cnCloseFormSubOverlay_();
         if (typeof showToast === 'function') showToast((res && res.error) || 'Could not load submission', 'toast-error');
@@ -5663,6 +5751,7 @@ function cnViewFormSubmission_(token) {
       cnRenderFormSubOverlay_(cnBuildFormSubModalHtml_(res));
     })
     .withFailureHandler(function (err) {
+      if (seq !== CN_VIEWER_SEQ.formSub) return;
       cnCloseFormSubOverlay_();
       if (typeof showToast === 'function') showToast('Could not load submission: ' + (err && err.message || err), 'toast-error');
     })
@@ -5675,8 +5764,19 @@ function cnRenderFormSubOverlay_(html) {
 }
 
 function cnCloseFormSubOverlay_() {
+  CN_VIEWER_SEQ.formSub++;   // CNUI-03: an answer still on its way is now stale
   var overlay = document.getElementById('cn-form-sub-overlay');
   if (overlay) overlay.remove();
+}
+
+// FORM-3 (cycle 23) — a note's submitted forms, oldest first: the server's
+// `formSubmissions` list, or a note stamped before it existed, its single
+// `formSubmission`. Entries without a token are dropped.
+function cnFormSubsOf_(note) {
+  var d = (note && note.subformData) || {};
+  var list = Array.isArray(d.formSubmissions) ? d.formSubmissions
+    : (d.formSubmission ? [d.formSubmission] : []);
+  return list.filter(function (x) { return x && x.token; });
 }
 
 // ── #3: patient/TRX timeline ────────────────────────────────────────────────
@@ -5688,12 +5788,14 @@ function cnCloseFormSubOverlay_() {
 function cnOpenPatientTimeline_(trx) {
   trx = String(trx || '').trim();
   if (!trx) return;
+  var seq = ++CN_VIEWER_SEQ.timeline;   // CNUI-03
   cnRenderTimelineOverlay_(
     '<div class="modal cn-timeline-modal" style="max-width:600px">' +
       '<div class="state-center" role="status"><span class="lo-dots"><span></span><span></span><span></span></span>' +
       '<div class="state-label">Building timeline…</div></div></div>');
   google.script.run
     .withSuccessHandler(function (res) {
+      if (seq !== CN_VIEWER_SEQ.timeline) return;   // CNUI-03: closed, or another patient opened
       if (!res || res.error) {
         cnCloseTimelineOverlay_();
         if (typeof showToast === 'function') showToast((res && res.error) || 'Could not build timeline', 'toast-error');
@@ -5702,6 +5804,7 @@ function cnOpenPatientTimeline_(trx) {
       cnRenderTimelineOverlay_(cnBuildTimelineHtml_(res));
     })
     .withFailureHandler(function (err) {
+      if (seq !== CN_VIEWER_SEQ.timeline) return;
       cnCloseTimelineOverlay_();
       if (typeof showToast === 'function') showToast('Could not build timeline: ' + ((err && err.message) || err), 'toast-error');
     })
@@ -5712,6 +5815,7 @@ function cnRenderTimelineOverlay_(html) {
   overlay.innerHTML = html;
 }
 function cnCloseTimelineOverlay_() {
+  CN_VIEWER_SEQ.timeline++;   // CNUI-03
   var overlay = document.getElementById('cn-timeline-overlay');
   if (overlay) overlay.remove();
 }
@@ -5728,7 +5832,7 @@ function cnTimelineRowHtml_(ev) {
     detail = 'Status: ' + esc(ev.status || '') + (ev.recipientName ? ' · ' + esc(ev.recipientName) : '');
   } else {
     glyph = icon('adjust', 15);
-    head = 'Call note' + (ev.caller ? ' · ' + esc(ev.caller) : '');
+    head = 'Call note' + (ev.caller ? ' · ' + esc(ev.caller) : '') + (ev.archived ? ' · archived' : '');
     var bits = [];
     if (ev.issue) bits.push(esc(ev.issue));
     if (ev.flagType) bits.push('[' + esc(ev.flagType) + ']');
@@ -5749,13 +5853,20 @@ function cnTimelineRowHtml_(ev) {
 function cnBuildTimelineHtml_(res) {
   var events = (res && res.events) || [];
   var head = '<div class="head"><h3>Patient timeline · ' + esc(res.trx || '') + '</h3>' +
-    '<button class="xclose" onclick="cnCloseTimelineOverlay_()" aria-label="Close">' + icon('x', 16) + '</button></div>';
+    '<button class="xclose" onclick="closeOverlay(document.getElementById(\'cn-timeline-overlay\'))" aria-label="Close">' + icon('x', 16) + '</button></div>';
   // Cycle-9 L-8: a failed source stream is meaningfully different from "no
   // data" on a patient-context surface — surface which streams are missing
   // instead of rendering an authoritative-looking partial timeline.
-  var partialBanner = (res && res.partial && res.failedSources && res.failedSources.length)
+  // CN-5 (cycle 23): a CAPPED stream is incomplete too — it names what it
+  // cut, and a retry would not help, so it says so differently.
+  var failed = (res && res.failedSources) || [];
+  var cut = (res && res.truncatedSources) || [];
+  var bannerBits = [];
+  if (failed.length) bannerBits.push('could not load: ' + esc(failed.join(', ')) + '. Retry for the full picture.');
+  if (cut.length) bannerBits.push((failed.length ? 'Only' : 'only') + ' part shown: ' + esc(cut.join(', ')) + '.');
+  var partialBanner = (res && res.partial && bannerBits.length)
     ? '<div style="font-size:12px;color:var(--warning-deep);background:var(--warn-soft);border-radius:8px;padding:6px 10px;margin-bottom:8px">' +
-      icon('warning', 12) + ' Incomplete — could not load: ' + esc(res.failedSources.join(', ')) + '. Retry for the full picture.</div>'
+      icon('warning', 12) + ' Incomplete — ' + bannerBits.join(' ') + '</div>'
     : '';
   if (!events.length) {
     return '<div class="modal cn-timeline-modal" style="max-width:600px">' + head +
@@ -5777,12 +5888,14 @@ function cnMgrViewFormSubmission_(btn) {
   var token = btn && btn.dataset ? btn.dataset.token : '';
   var repId = btn && btn.dataset ? btn.dataset.repId : '';
   if (!token || !repId) return;
+  var seq = ++CN_VIEWER_SEQ.formSub;   // CNUI-03
   cnRenderFormSubOverlay_(
     '<div class="modal cn-form-sub-modal" style="max-width:560px">' +
       '<div class="state-center" role="status"><span class="lo-dots"><span></span><span></span><span></span></span>' +
       '<div class="state-label">Loading submission…</div></div></div>');
   google.script.run
     .withSuccessHandler(function (res) {
+      if (seq !== CN_VIEWER_SEQ.formSub) return;   // CNUI-03: closed, or another opened
       if (!res || res.error) {
         cnCloseFormSubOverlay_();
         if (typeof showToast === 'function') showToast((res && res.error) || 'Could not load submission', 'toast-error');
@@ -5791,6 +5904,7 @@ function cnMgrViewFormSubmission_(btn) {
       cnRenderFormSubOverlay_(cnBuildFormSubModalHtml_(res));
     })
     .withFailureHandler(function (err) {
+      if (seq !== CN_VIEWER_SEQ.formSub) return;
       cnCloseFormSubOverlay_();
       if (typeof showToast === 'function') showToast('Could not load submission: ' + (err && err.message || err), 'toast-error');
     })
@@ -5803,7 +5917,7 @@ function cnBuildFormSubModalHtml_(res) {
     return '<div class="modal cn-form-sub-modal" style="max-width:560px">' +
       '<div class="modal-title">' + head + '</div>' +
       '<div class="modal-sub">Not submitted yet' + (res.status ? ' (' + esc(res.status) + ')' : '') + '.</div>' +
-      '<div class="modal-footer"><button class="btn-modal-ok" onclick="cnCloseFormSubOverlay_()">Close</button></div>' +
+      '<div class="modal-footer"><button class="btn-modal-ok" onclick="closeOverlay(document.getElementById(\'cn-form-sub-overlay\'))">Close</button></div>' +
       '</div>';
   }
   var who = esc(res.recipientName || res.recipientEmail || '');
@@ -5833,7 +5947,7 @@ function cnBuildFormSubModalHtml_(res) {
     '<div class="modal-title">' + head + '</div>' +
     '<div class="modal-sub">' + (who ? 'From ' + who : '') + (when ? ' · ' + when : '') + '</div>' +
     '<div class="cn-form-sub-fields">' + body + '</div>' +
-    '<div class="modal-footer"><button class="btn-modal-ok" onclick="cnCloseFormSubOverlay_()">Close</button></div>' +
+    '<div class="modal-footer"><button class="btn-modal-ok" onclick="closeOverlay(document.getElementById(\'cn-form-sub-overlay\'))">Close</button></div>' +
     '</div>';
 }
 
@@ -5914,6 +6028,9 @@ function cnDoDeleteNote_(noteId, opts) {
     .withSuccessHandler(function (res) {
       if (!res.success) {
         document.querySelectorAll('[data-note-id="' + noteId + '"]').forEach(function (c) { c.classList.remove('is-deleting'); });
+        // CNUI-02 (cycle 23): a caller that owns the refusal (the compose
+        // rollback) handles "past the undo window" itself.
+        if (res.windowClosed && opts && typeof opts.onWindowClosed === 'function') { opts.onWindowClosed(res); return; }
         showToast(res.error || 'Delete failed', 'toast-error');
         return;
       }
@@ -5924,7 +6041,8 @@ function cnDoDeleteNote_(noteId, opts) {
       cnReRenderActiveView_();
       cnRenderFilterBar_();
       cnRenderPinnedTray_();
-      showToast((opts && opts.toast) || 'Deleted', 'toast-success');
+      if (opts && typeof opts.onDeleted === 'function') { try { opts.onDeleted(res); } catch (e) {} }
+      if (!opts || opts.toast !== '') showToast((opts && opts.toast) || 'Deleted', 'toast-success');
     })
     .withFailureHandler(function (err) {
       document.querySelectorAll('[data-note-id="' + noteId + '"]').forEach(function (c) { c.classList.remove('is-deleting'); });
@@ -6561,8 +6679,32 @@ function cnRollbackComposeFlow_() {
     fl.note._deleteOnConfirm = true;   // finish the rollback when the save confirms
     showToast('Compose cancelled — undoing the save…', 'toast-warn');
   } else if (cnFindNoteAnywhere_(fl.note.noteId)) {
-    cnDoDeleteNote_(fl.note.noteId, { toast: 'Compose cancelled — save undone, your text is still in the form' });
+    cnDoDeleteNote_(fl.note.noteId, cnRollbackDeleteOpts_(fl.note));
   }
+}
+/** CNUI-02 (cycle 23) — the rollback's delete. Past the server's 5-minute
+ *  self-delete window the delete is refused and the note STAYS saved, while
+ *  its text was still in the form: the next Save duplicated it. A refusal
+ *  for the window now keeps the note, clears the form (restorable from the
+ *  cleared-form snapshot) when it still holds that note, and says so. */
+function cnRollbackDeleteOpts_(note) {
+  return {
+    toast: 'Compose cancelled — save undone, your text is still in the form',
+    onWindowClosed: function () {
+      var holds = !!document.getElementById('cn-active-form') && cnFormHoldsNote_(note);
+      if (holds) { cnClearActiveForm_(); cnFormTimerReset_(); cnClearStickyFormDraft_(); }
+      showToast('Compose cancelled — the note stays saved (it is past the 5-minute undo window)' +
+        (holds ? ', so the form was cleared to keep it from being saved twice.' : '.'), 'toast-warn');
+    },
+  };
+}
+/** CNUI-02 — does the Log form still hold this saved note's text? Compared on
+ *  the caller and the issue, trimmed: a rep who has started the next call is
+ *  never cleared. */
+function cnFormHoldsNote_(note) {
+  var t = function (v) { return String(v == null ? '' : v).trim(); };
+  return t(cnGetFieldValue_('cn-fld-caller')) === t(note && note.caller)
+      && t(cnGetFieldValue_('cn-fld-issue')) === t(note && note.issue);
 }
 /** Complete the Save & Compose transaction on a SEND: the note stays, and the
  *  form (kept populated while composing — r3), its timer and the sticky draft
@@ -6654,7 +6796,7 @@ function cnRenderComposerFormStep_() {
       ${cnComposerNoteRefHtml_()}
 
       <div class="modal-footer">
-        <button class="btn-modal-cancel" onclick="cnCloseComposerModal_()">Cancel</button>
+        <button class="btn-modal-cancel" onclick="closeOverlay(document.getElementById('cn-compose-overlay'))">Cancel</button>
         <button class="btn-modal-ok" id="cnC-preview-btn" onclick="cnComposerGoToPreview_()">Preview →</button>
       </div>
     </div>
@@ -8409,11 +8551,12 @@ function cnMgrRenderReadonlyCard_(note) {
   const sentPill = cnDeptEmailPillHtml_(note);   // readable "emailed to <depts>" (no truncation)
   // Manager-side form-submission viewer: clickable pill when the rep's note
   // carries a submitted fillable form (parallels the rep's cn-form-pill).
-  const mgrFormSub = (note.subformData && note.subformData.formSubmission) ? note.subformData.formSubmission : null;
+  const mgrFormSubs = cnFormSubsOf_(note);   // FORM-3: every submitted form
   const mgrRepIdForForm = (CN_STATE.mgrRepView && CN_STATE.mgrRepView.repId) || '';
-  const formPill = (mgrFormSub && mgrFormSub.token)
-    ? `<button class="cn-form-pill" title="Form received — view submission" data-token="${esc(mgrFormSub.token)}" data-rep-id="${esc(mgrRepIdForForm)}" onclick="cnMgrViewFormSubmission_(this)">${icon('paperclip', 11)}<span>form</span></button>`
-    : '';
+  const formPill = mgrFormSubs.map(function (fs, i) {
+    return `<button class="cn-form-pill" title="Form received${fs.formType ? ' (' + esc(fs.formType) + ')' : ''} — view submission" data-token="${esc(fs.token)}" data-rep-id="${esc(mgrRepIdForForm)}" onclick="cnMgrViewFormSubmission_(this)">${icon('paperclip', 11)}<span>form${mgrFormSubs.length > 1 ? ' ' + (i + 1) : ''}</span></button>`;
+  }).join('');
+  const formPillHtml = mgrFormSubs.length > 1 ? '<span class="cn-form-pills">' + formPill + '</span>' : formPill;
   const urgentCls = cnIsUrgent_(note) ? ' is-urgent' : '';
   return `
     <div class="cn-card${flagCls}${urgentCls}" data-note-id="${esc(note.noteId)}">
@@ -8430,7 +8573,7 @@ function cnMgrRenderReadonlyCard_(note) {
           ${flagPill}
           ${sentPill}
           ${cnExtEmailPillHtml_(note)}
-          ${formPill}
+          ${formPillHtml}
         </div>
       </div>
       ${editor}
@@ -8520,8 +8663,7 @@ function cnMgrSaveTrainingReply_(btn) {
       btn.disabled = false;
       if (!res.success) { showToast(res.error || 'Reply failed', 'toast-error'); return; }
       showToast('Reply saved', 'toast-success');
-      // Refresh the per-rep view so the reply line shows on the card
-      cnMgrLoadRepNotes_();
+      cnMgrPatchCard_(repId, res.note);   // CNUI-04: this card only
     })
     .withFailureHandler(function (err) {
       btn.disabled = false;
@@ -8530,6 +8672,22 @@ function cnMgrSaveTrainingReply_(btn) {
     .setCallNoteTrainingReply(repId, noteId, reply);
 }
 
+/** CNUI-04 (cycle 23) — re-render ONE card of the per-rep stack from the note
+ *  the save returned. Saving a comment or reply used to reload the whole
+ *  stack, which wiped a reply half-typed on every OTHER card (g141 — the
+ *  result of the manager's own action rides a targeted patch). The card is
+ *  replaced by the renderer's whole root (g66). No note, a different rep on
+ *  screen, or the card gone: the stack reloads, as before. */
+function cnMgrPatchCard_(repId, note) {
+  var stack = document.getElementById('cn-mgr-rep-stack');
+  if (!stack || !note || !note.noteId || !CN_STATE.mgrRepView || CN_STATE.mgrRepView.repId !== repId) { cnMgrLoadRepNotes_(); return; }
+  var card = null;
+  stack.querySelectorAll('.cn-card').forEach(function (c) { if (!card && c.dataset.noteId === note.noteId) card = c; });
+  if (!card) { cnMgrLoadRepNotes_(); return; }
+  var tmp = document.createElement('div');
+  tmp.innerHTML = cnMgrRenderReadonlyCard_(note).trim();
+  if (tmp.firstElementChild) card.replaceWith(tmp.firstElementChild);
+}
 /** Item 9 — manager comment (feedback / praise) on ANY note. Reads the text
  *  from the sibling input and fires setCallNoteManagerComment; refreshes the
  *  per-rep view so the comment thread renders. */
@@ -8548,7 +8706,7 @@ function cnMgrSaveComment_(btn) {
       btn.disabled = false;
       if (!res || !res.success) { showToast((res && res.error) || 'Comment failed', 'toast-error'); return; }
       showToast('Comment added', 'toast-success');
-      cnMgrLoadRepNotes_();
+      cnMgrPatchCard_(repId, res.note);   // CNUI-04: this card only
     })
     .withFailureHandler(function (err) {
       btn.disabled = false;
@@ -8577,7 +8735,7 @@ function cnMgrClearTrainingReply_(btn) {
         btn.disabled = false;
         if (!res.success) { showToast(res.error || 'Clear failed', 'toast-error'); return; }
         showToast('Reply cleared', 'toast-success');
-        cnMgrLoadRepNotes_();
+        cnMgrPatchCard_(repId, res.note);   // CNUI-04: this card only
       })
       .withFailureHandler(function (err) {
         btn.disabled = false;
@@ -9073,19 +9231,7 @@ function cnPollAmbient_() {
       // wake and nav paths refresh unconditionally (cross-window sync).
       const stackFresh = CN_STATE.rollingEntry && (Date.now() - (CN_STATE.rollingEntry.at || 0)) < 15000;
       if (currentView === 'callNotes' && !stackFresh) cnRefreshRollingStack_();
-      // Update sidebar badge on the Call Notes nav link
-      const link = document.querySelector('.sb-link[data-tool="callNotes"]')
-                || document.querySelector('.nav-btn[data-tool="callNotes"]');
-      if (!link) return;
-      let badge = link.querySelector('.cn-stale-badge');
-      const count = res.staleActionCount || 0;
-      if (count <= 0) { if (badge) badge.remove(); return; }
-      if (!badge) {
-        badge = document.createElement('span');
-        badge.className = 'cn-stale-badge';
-        link.appendChild(badge);
-      }
-      badge.textContent = String(count);
+      cnRenderStaleBadge_(res.staleActionCount || 0);
     })
     .withFailureHandler(function (err) {
       // Benign: the next 60s tick retries. Log only (matches the
@@ -9094,6 +9240,23 @@ function cnPollAmbient_() {
       console.warn('cnPollAmbient_ failed: ' + ((err && err.message) || err));
     })
     .getCallNotesAmbient();
+}
+
+/** The stale-action-flag count on the Call Notes nav. CNUI-09 (cycle 23): on
+ *  BOTH nav forms — the sidebar link and the phone-width bottom nav button;
+ *  the `||` lookup always found the sidebar link (present, only hidden, on a
+ *  phone), so a mobile rep never saw the badge. The health dot's pattern. */
+function cnRenderStaleBadge_(count) {
+  document.querySelectorAll('.sb-link[data-tool="callNotes"], .nav-btn[data-tool="callNotes"]').forEach(function (link) {
+    let badge = link.querySelector('.cn-stale-badge');
+    if (count <= 0) { if (badge) badge.remove(); return; }
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'cn-stale-badge';
+      link.appendChild(badge);
+    }
+    badge.textContent = String(count);
+  });
 }
 
 /** Round 2 · 8g — render multi-turn Q&A thread on training-flagged note
@@ -9809,6 +9972,19 @@ function cnRenderRetentionHtml_(res) {
     '</div>' +
   '</div>';
 }
+/** PURE (ADM-13, cycle 23; Node-pinned) — the diagnostics windows this save
+ *  turns on or SHORTENS, as phrases for the confirm. A window omitted from the
+ *  payload, unchanged, lengthened or turned off is not listed. */
+function cnRetentionDiagChanges_(prev, payload) {
+  var out = [];
+  [['viewUsageDays', 'feature-usage (ViewUsage) rows'], ['clientErrDays', 'client-error (ClientErrors) rows']].forEach(function (k) {
+    if (!payload || !Object.prototype.hasOwnProperty.call(payload, k[0])) return;
+    var n = parseInt(payload[k[0]], 10) || 0;
+    var p = parseInt(prev && prev[k[0]] && prev[k[0]].value, 10) || 0;
+    if (n > 0 && (p === 0 || n < p)) out.push(k[1] + ' older than ' + n + ' days');
+  });
+  return out;
+}
 function cnSaveRetention_() {
   var rd = function (id) { var el = document.getElementById('cn-ret-' + id); return el ? el.value : ''; };
   var payload = { archiveDays: rd('archive'), retentionDays: rd('purge'), archiveRetentionDays: rd('archpurge') };
@@ -9837,6 +10013,21 @@ function cnSaveRetention_() {
       .withFailureHandler(function (err) { showToast((err && err.message) || 'Save failed', 'toast-error'); if (btn) { btn.disabled = false; btn.textContent = 'Save retention'; } })
       .saveRetentionConfig(payload);
   };
+  // ADM-13 (cycle 23): the two DIAGNOSTICS windows (ViewUsage, ClientErrors)
+  // are labelled irreversible too, but saved with no question. They hold no
+  // PHI, so they get their own, plainer confirm — when a window is turned on
+  // or SHORTENED (the change that deletes rows sooner); lengthening one keeps
+  // more and is not asked about.
+  var diagLines = cnRetentionDiagChanges_(prev, payload);
+  if (!(raisingPurge || raisingCold) && diagLines.length) {
+    uiConfirm({
+      title: 'Delete older diagnostics rows?',
+      message: 'This permanently deletes ' + diagLines.join(' and ') + ' on the next nightly run. ' +
+        'These rows hold no patient data, but they cannot be brought back.',
+      confirmLabel: 'Save and delete', tone: 'danger',
+    }).then(function (ok) { if (ok) doSave(); });
+    return;
+  }
   if (raisingPurge || raisingCold) {
     uiConfirm({
       title: 'Enable an irreversible purge?',
@@ -9844,7 +10035,8 @@ function cnSaveRetention_() {
         (raisingPurge ? 'live notes older than ' + newPurge + ' days' : '') +
         (raisingPurge && raisingCold ? ' and ' : '') +
         (raisingCold ? 'archived notes older than ' + newCold + ' days' : '') +
-        '. This cannot be undone. Confirm the canonical record lives elsewhere first.',
+        '. This cannot be undone. Confirm the canonical record lives elsewhere first.' +
+        (diagLines.length ? ' It also permanently deletes ' + diagLines.join(' and ') + '.' : ''),   // ADM-13
       confirmLabel: 'Enable purge', tone: 'danger',
     }).then(function (ok) { if (ok) doSave(); });
   } else {
@@ -10308,7 +10500,7 @@ function cnPromptRenameTag_(oldTag) {
           cnLoadAdminAugment_();
         })
         .withFailureHandler(function (err) {
-          showToast((err && err.message) || 'Server error', 'toast-error');
+          showToast(cnTagTransformFailMsg_('Rename', err), 'toast-error', { sticky: true });   // ADM-12
         })
         .renameCallNoteTag(oldTag, trimmed);
     });
@@ -10348,7 +10540,7 @@ function cnPromptMergeTag_(sourceTag) {
           cnLoadAdminAugment_();
         })
         .withFailureHandler(function (err) {
-          showToast((err && err.message) || 'Server error', 'toast-error');
+          showToast(cnTagTransformFailMsg_('Merge', err), 'toast-error', { sticky: true });   // ADM-12
         })
         .mergeCallNoteTags(sourceTag, trimmed);
     });
@@ -10913,6 +11105,13 @@ function cnLoadStoragePanel_() {
 /** F-10 (2026-09-18): the tag rename/merge outcome. A rep Sheet the server
  *  could not read is NAMED and the toast is a WARNING — the old tag still
  *  lives in that rep's notes, which a green "Renamed" toast used to hide. */
+/** ADM-12 (cycle 23) — a transport failure during a cross-rep tag transform
+ *  is not "nothing happened": the server writes one note at a time, so the
+ *  change may be half applied. Said, with the way out (it is safe to re-run). */
+function cnTagTransformFailMsg_(verb, err) {
+  return verb + ' did not finish (' + ((err && err.message) || 'server error') + '). It may have PARTLY applied — ' +
+    'some notes may carry the new tag and some the old. Run the same ' + verb.toLowerCase() + ' again to finish; it is safe to repeat.';
+}
 function cnTagTransformToast_(verb, res) {
   var skipped = (res && res.skippedReps) || [];
   var base = verb + ': ' + res.notesUpdated + ' notes across ' + res.repsTouched + ' rep(s)';
@@ -11029,7 +11228,9 @@ function cnRenderStoragePanel_(res) {
 
 /** DRV-1 (cycle 23): what a dead Drive takes down — one list, for the line and the finding. */
 function cnDriveSurfaces_() {
-  return 'Reference article images (converter export, paste-a-screenshot, the image fallback), the embed reachability check, and QA recording sync and playback';
+  // DRV-3 (cycle 23 Batch 12): article images moved to the KbImages tab, so
+  // only images uploaded BEFORE that (old Drive thumbnail links) still need Drive.
+  return 'Reference Drive embeds and file imports, article images uploaded before the move to the KbImages tab, the embed reachability check, and QA recording sync and playback';
 }
 /** DRV-1 (cycle 23, g142): the KB Images folder advice. "Clear the property"
  *  was destructive whenever the folder still existed — the images already
@@ -12365,9 +12566,10 @@ function cnDTableImport_(key, btn) {
 
 // ── Team-member onboarding (Admin → Config → Team Members) ──────────────────
 
-function cnAdminLoadOnboarding_() {
+function cnAdminLoadOnboarding_(opts) {
   var slot = document.getElementById('cn-admin-onboard');
   if (!slot) return;
+  var keepForm = !(opts && opts.resetForm);   // ADM-10: only a completed ADD empties the form
   if (!slot._onboardDelegated) {
     slot.addEventListener('click', function (e) {
       var t = e.target.closest ? e.target.closest('button') : null;
@@ -12396,7 +12598,12 @@ function cnAdminLoadOnboarding_() {
         return;
       }
       CN_STATE.onboardPanel = res;
+      // ADM-10 (cycle 23): an offboard (or any other reload) re-renders this
+      // panel, and it used to wipe an "Add team member" form being filled in.
+      // The form rides the re-render — values, open state, focus and caret (g141).
+      var formSnap = keepForm ? cnOnboardFormSnapshot_(slot) : null;
       slot.innerHTML = cnRenderOnboardingHtml_(res);
+      cnOnboardFormRestore_(slot, formSnap);
       cnOnboardLoadCdr_(requestedView);
     })
     .withFailureHandler(function (err) {
@@ -12570,6 +12777,45 @@ function cnOnboardNoEmailHtml_(list) {
       'Clear the row’s ID and add them with the form above, or fill the row in by hand');
 }
 
+/** ADM-10 — the add form's state: every cn-ob-* field's value (or checked),
+ *  whether the form is open, and the focused field's caret. null when there
+ *  is no form, or nothing typed and the form is closed. */
+function cnOnboardFormSnapshot_(slot) {
+  var form = slot && slot.querySelector('#cn-ob-form');
+  if (!form) return null;
+  var vals = {}, typed = false;
+  form.querySelectorAll('input[id^="cn-ob-"], select[id^="cn-ob-"], textarea[id^="cn-ob-"]').forEach(function (el) {
+    if (el.type === 'checkbox') vals[el.id] = { checked: el.checked };
+    else { vals[el.id] = { value: el.value }; if (el.value && el.type !== 'select-one') typed = true; }
+  });
+  if (form.hidden && !typed) return null;
+  var a = document.activeElement, focus = null;
+  if (a && a.id && vals[a.id]) {
+    focus = { id: a.id, start: null, end: null };
+    try { focus.start = a.selectionStart; focus.end = a.selectionEnd; } catch (e) {}
+  }
+  return { open: !form.hidden, vals: vals, focus: focus };
+}
+function cnOnboardFormRestore_(slot, snap) {
+  if (!snap || !slot) return;
+  var form = slot.querySelector('#cn-ob-form');
+  if (!form) return;
+  form.hidden = !snap.open;
+  var tog = slot.querySelector('#cn-ob-toggle');
+  if (tog) tog.setAttribute('aria-expanded', String(!!snap.open));   // INV-174
+  Object.keys(snap.vals).forEach(function (id) {
+    var el = slot.querySelector('#' + id);
+    if (!el) return;
+    if ('checked' in snap.vals[id]) el.checked = snap.vals[id].checked;
+    else el.value = snap.vals[id].value;
+  });
+  var anchor = slot.querySelector('#cn-ob-anchor'), cyc = slot.querySelector('#cn-ob-paycycle');
+  if (anchor && cyc) anchor.disabled = cyc.value !== 'biweekly';   // the change handler's rule
+  if (snap.focus) {
+    var f = slot.querySelector('#' + snap.focus.id);
+    if (f) { try { f.focus(); if (snap.focus.start != null) f.setSelectionRange(snap.focus.start, snap.focus.end); } catch (e) {} }
+  }
+}
 function cnOnboardToggleForm_(btn) {
   var f = document.getElementById('cn-ob-form');
   if (!f) return;
@@ -12610,7 +12856,7 @@ function cnOnboardSubmit_(btn) {
         if (!res || res.error) { showToast((res && res.error) || 'Add failed', 'toast-error'); return; }
         if (res.provisionWarning) showToast(res.name + ' added — but ' + res.provisionWarning, 'toast-warn');
         else showToast(res.name + ' added' + (res.provision ? ' + Call Notes Sheet provisioned' : ''), 'toast-success');
-        cnAdminLoadOnboarding_();
+        cnAdminLoadOnboarding_({ resetForm: true });   // ADM-10: the person is added — the form empties
         cnAdminLoadEnrollment_();
       })
       .withFailureHandler(function (err) {
@@ -13116,13 +13362,11 @@ function cnRenderAdminBody_(cfg) {
     var btn = this;
     var nameEls = document.querySelectorAll('.cn-admin-rate-state');
     var rateEls = document.querySelectorAll('.cn-admin-rate-value');
-    var map = {};
-    for (var i = 0; i < nameEls.length; i++) {
-      var st = nameEls[i].textContent.trim();
-      var rv = rateEls[i].value.trim();
-      if (!st || rv === '') continue;
-      map[st] = parseFloat(rv);
-    }
+    var rows = [];
+    for (var i = 0; i < nameEls.length; i++) rows.push({ state: nameEls[i].textContent, value: rateEls[i] ? rateEls[i].value : '' });
+    var built = cnRateMapFromRows_(rows);
+    if (built.error) { showToast(built.error, 'toast-warn'); return; }   // ADM-06: nothing is saved
+    var map = built.map;
     btn.disabled = true; btn.textContent = 'Saving…';
     google.script.run
       .withSuccessHandler(function (res) {
@@ -14056,6 +14300,25 @@ function cnRenderTemplateRow_(t) {
   '</div>';
 }
 
+/** PURE (Node-pinned) — ADM-06 (cycle 23): the tax-rate map to save from the
+ *  editor's rows, or {error}. A BLANK rate is refused by name: it used to be
+ *  skipped, so the saved map simply lost that state — and the same map feeds
+ *  the composer's State dropdown, with no way to add a state back in the app. */
+function cnRateMapFromRows_(rows) {
+  var map = {}, blank = [];
+  (rows || []).forEach(function (r) {
+    var st = String((r && r.state) || '').trim();
+    if (!st) return;
+    var rv = String((r && r.value) == null ? '' : r.value).trim();
+    if (rv === '') { blank.push(st); return; }
+    map[st] = parseFloat(rv);
+  });
+  if (blank.length) {
+    return { error: 'Enter a rate for ' + blank.join(', ') + ' (0 for no tax) — a blank would remove ' +
+      (blank.length === 1 ? 'that state' : 'those states') + ' from the map and the composer\'s State list. Nothing was saved.' };
+  }
+  return { map: map };
+}
 function cnRenderRateRows_(rates) {
   return Object.keys(rates).sort().map(function (st) {
     return '<div class="field-row" style="gap:8px;margin-bottom:4px;align-items:center">' +
@@ -14646,7 +14909,7 @@ function cnBuildExternalEmailHtml_() {
     '</div>' +
 
     '<div class="modal-footer">' +
-      '<button class="btn-modal-cancel" onclick="cnCloseExternalEmailModal_()">Cancel</button>' +
+      '<button class="btn-modal-cancel" onclick="closeOverlay(document.getElementById(\'cn-ext-overlay\'))">Cancel</button>' +
       '<button class="btn-modal-ok" id="cnX-send-btn">' + icon('send', 14) + ' Send</button>' +
     '</div>' +
   '</div>';

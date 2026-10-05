@@ -397,6 +397,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the manager completes the row or removes it on purpose. Verify: the T1 and
   F5 Node/DOM pins, `test_managerSaveDay_openBreakRoundTrips` and
   `test_managerSaveDay_strayBreakRefused`.
+  **AMENDED (cycle 23 TC-08, 2026-10-02): the sheet doctor's collapse keeps
+  the stamp the hours COUNT.** It kept the last row APPENDED per (rep, date,
+  type), and append order is not time order (g14) — so on a day with one leave
+  and two returns it could delete the return the break was paired with and keep
+  a stray, lengthening the unpaid break. `tsDoctorKeepIndex_` keeps the
+  last-appended Clock In / Clock Out (the stamp `punchDayAdd_` pays — INV-155
+  unchanged) and, for a break type, the stamp `breakPairs_` pairs or the open
+  leave, so a collapse never changes paid hours; the detector ships the kept
+  stamp and the card names it. Verify: the TC-08 drive (calcHours_ before and
+  after the collapse).
 
 <a id="g16-cn-date-local-is-a-sheets-coerced"></a>
 
@@ -698,6 +708,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `runNightlySelfTest` keeps the trigger gate, since it runs as the
   installer.
 
+  **AMENDED (cycle 23 CORE-03, 2026-10-02): a MANAGER gate is not enough for a
+  job that runs as the owner.** A manager could call `runNightlySelfTest` from
+  the browser; it stamped the heartbeat, failed the suite's owner check, stored
+  a false red and emailed every manager — and the fresh heartbeat masked a dead
+  1am trigger. It now refuses anyone but the script owner (`callerIsScriptOwner_`)
+  BEFORE stamping. The trigger-owner record names the account the triggers RUN
+  AS (the effective user), not whoever pressed the button, and removing the
+  triggers writes an `AutomationTriggersRemoved` audit row. Verify: the CORE-03
+  drive.
+
 <a id="g27-pto-balance-transitions"></a>
 
 - **PTO balance transitions.** `updateTimeOffStatus` only changes
@@ -706,6 +726,18 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the Pending stage and deducts immediately. Skipping the
   transition guard double-deducts on re-approval or fails to
   restore on revert.
+  **AMENDED (cycle 23 TC-04, 2026-10-02): a transition restores what the
+  approval TOOK, not what the type implies.** The restore on Approved→other
+  credited the type's deduction whenever the row had been Approved, so a request
+  approved while tracking was off, or while the rep's PtoEnabled was FALSE —
+  nothing deducted — credited a day back on a later Deny once either was on. An
+  approval now records what `adjustLeaveBalance_` actually moved in the
+  trailing `TO.DEDUCTED` cell (`annual:1`, `sick:0.5`, or `none`), un-approving
+  restores exactly that and clears the cell, and `managerSubmitTimeOff`'s
+  auto-approve records the same. A row approved before the column existed is
+  blank and keeps the by-type rule — nothing says what it took. Verify: the
+  TC-04 drive (tracking off then on, PTO off, half day, unpaid, legacy blank, a
+  recorded bucket that differs from the type).
 
 <a id="g28-time-off-submit-has-a-duplicate-date"></a>
 
@@ -730,6 +762,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   (`TIMEOFF_MAX_DAYS_AHEAD`=370 / `_BACK`=90, in the rep's/target's tz) —
   a typo'd year used to create an approvable, balance-deducting row no
   month view ever showed.
+  **AMENDED (cycle 23 TC-03, 2026-10-02): the single-date paths share the
+  range path's CLOSED-DAY rule.** The range path skipped weekends and company
+  holidays (T7, cycle 22), but `submitTimeOffRequest` and `managerSubmitTimeOff`
+  filed a single date on either, and approving it deducted a day the office was
+  closed. Both now refuse through `timeOffClosedDayReason_` ("2026-11-26 is a
+  company holiday (Thanksgiving Day) — no time off is needed for it."), which
+  reads the ONE calendar (g123) and degrades to weekends only when the calendar
+  cannot be read. The editor suite's time-off fixture date is moved onto a
+  working day for the same reason. Approval does not re-check it (a follow-on).
+  Verify: the TC-03 drive.
 
 <a id="g29-bi-weekly-anchor-read"></a>
 
@@ -874,6 +916,11 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the FormTokens row, reachable via the token), and the submission row's
   synthetic actor identity is likewise de-identified ("External
   recipient" + domain, never the recipient's name or raw address).
+
+  **AMENDED (cycle 23 CN-3, 2026-10-02):** the internal composer's "Other"
+  recipient mails the full note to any address, and its CallNoteEmail row
+  recorded only "Other" and a count. It now records the recipient's DOMAIN
+  (`otherDomain=`), the same rule; the address stays on the note itself.
 
 <a id="g37-buildcallnoteemailhtml-must-esc-every-user-supplied-field"></a>
 
@@ -1047,6 +1094,10 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   unknown, and unknown never lifts. Verify: the KB-1 and KB2-1/2/4/5 drives,
   bite-checked.
 
+  **AMENDED (cycle 23 INT2-1, 2026-10-02):** the seat validator said a "Not
+  solid" row "matches no seat branch" while the engine recommended it AS solid
+  — a diagnostic that pointed away from the real effect (g142). With the
+  negation read, the engine and the validator now agree.
 
 <a id="g42-intake-ppd-controls-are-engine-safe-via"></a>
 
@@ -1484,6 +1535,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `claimsUnavailable` named in both headers and Auto-assign disabled; a claim,
   release or auto-assign refuses ("nothing was assigned"). Verify: the SP-3
   pins (both maps driven over a throwing sheet; the auto-assign refusal).
+  **AMENDED (cycle 23 CN-5, 2026-10-02): a stream that read only PART of its
+  source is partial.** The patient timeline searched the live Notes tab only,
+  and a capped search said nothing, so a patient whose older notes had been
+  cold-archived showed a short history marked complete. It now reads the
+  archive (archived notes are marked), and a search that hit its 200 cap ships
+  `truncated`, which the timeline names in `truncatedSources`. Verify: the CN-5
+  drive.
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 
@@ -1616,6 +1674,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   is white-on-amber at the same ~1.5:1 — so it needs an operator design call
   (scrim, or a darker gradient end), not a per-span patch.
 
+  **AMENDED (cycle 23 TRUI-2, 2026-10-02): a canvas whose pixels are STORED is
+  a fixed palette by definition.** The Employee Docs signature pad drew in the
+  theme's `--ink`, which is near-white in dark mode — so a signature made in
+  dark mode was stored as a near-invisible PNG on the HR record and on paper.
+  The pad is now white in both themes, its placeholder a fixed grey, and its
+  ink a fixed `#101418` (`ED_SIG_INK`) for drawn and typed signatures alike.
+  Fires when you draw anything that is exported, printed or stored. Verify: the
+  TRUI-2 Node pin + the DOM drive (dark mode, `--ink` near-white, stroke and
+  fill both read `#101418`).
+
 <a id="g59-the-coverage-planner-counted-a-rep-on"></a>
 
 - **The Coverage planner counted a rep on lunch as PRESENT until 2026-09-03 —
@@ -1640,6 +1708,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   holds) and its columns are found BY HEADER NAME (the Phase-1 rule) with a
   missing column NAMED — a pre-extension export renders no bars, never a
   strip of zeros. Pinned by BCV-1..4 (11 mutations bite-checked).
+  **AMENDED (cycle 23 TC2-4, 2026-10-02): a shift override trims the
+  defaults.** The tz layer's breaks were laid out for the DEFAULT shift, and a
+  column-O override kept them whole — a 1 pm–9 pm rep was reminded of, and
+  graded against, a 12:00 lunch. `empShiftSchedule_` now keeps only the tz-default
+  breaks that lie wholly inside an overridden shift (`shiftBreaksInside_`)
+  unless the rep has a per-employee list, which is never trimmed; the ticker
+  also reminds only of a break inside the shift (`remindBreakInShift_`).
+  Verify: the TC2-4 drive.
 
 <a id="g60-a-max-height-on-a-grid-container"></a>
 
@@ -1854,7 +1930,11 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   and by every completing partial, and it broadcasts on a `BroadcastChannel`
   (no persisted key) so a task finished in the pinned pop-out refreshes the
   main window's list as well. Verify: the T9/T10 pins and FU-B7a/FU-B7c.
-
+  **AMENDED (cycle 23 CNUI-08 / TC2-5, 2026-10-02): CREATE was the missing
+  flow for reminders.** Mark-done and cancel busted and refetched Needs you;
+  creating a scheduled call did neither, so the new task appeared only after a
+  reload. `createScheduledCall` busts the server cache and `cnSchedCreate_`
+  broadcasts the client invalidation. Verify: the CNUI-08 pins.
 
 <a id="g68-an-async-prefill-must-fill-only-the"></a>
 
@@ -2195,7 +2275,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   recording cleared that recording's composer and pin and resumed its player.
   The handler now returns (with a toast) unless the same recording is still
   open. A late handler must check the ITEM it acted on, not just the view.
-
+  **AMENDED (cycle 23 CNUI-03, 2026-10-02): a viewer is a loader too, and its
+  stale FAILURE is dropped as well.** The patient timeline and the form-
+  submission viewers (rep and manager) painted whatever answer arrived: a late
+  one re-opened a viewer the rep had closed, or drew the previous patient under
+  the next one's title — and a stale failure closed the viewer that replaced
+  it. `CN_VIEWER_SEQ` moves on every open and every close; a handler whose
+  number is no longer current returns. Verify: the two CNUI-03 DOM pins.
 
 <a id="g82-cnrendersubforms-is-shape-keyed-via-host-dataset"></a>
 
@@ -2247,6 +2333,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   is a counter, not a clock: a confirm and a poll can share a millisecond.
   Verify: the C10 DOM pin, both ways (kept against an older poll, dropped by a
   newer one).
+  **AMENDED (cycle 23 CNUI-02 + CNUI-06, 2026-10-02): an optimistic UNDO
+  claims nothing before the server answers.** Undo-save said "note deleted" and
+  restored the text at once, so a refused delete left the saved note's text in
+  the form and the next Save filed it twice; it now announces and restores on
+  the delete's success, and keeps text typed meanwhile. A Save & Compose
+  cancelled past the 5-minute window had the same shape: `deleteCallNote` names
+  that refusal (`windowClosed`), and the cancel keeps the note and clears the
+  form when it still holds that note. Verify: the CNUI-02 and CNUI-06 DOM pins.
 
 <a id="g85-form-completion-timer-is-persisted-to-localstorage"></a>
 
@@ -2324,6 +2418,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `sendDailyMissedPunchAlerts`. New code reading timezone values from
   the roster for trigger/automation contexts should route through this
   helper rather than raw `|| CONFIG.TIMEZONE` fallback.
+  **AMENDED (cycle 23 TC2-6, 2026-10-02): onboarding closes the residual
+  gap.** A well-shaped misspelling ("America/Chicgo") passed the shape check
+  and became GMT for every punch the new rep made. `addEmployee` now injects
+  `tzIdKnown_` — an Intl.DateTimeFormat probe, which THROWS on an unknown id
+  where `Utilities.formatDate` silently uses GMT — into the pure validator, and
+  a definite "unknown" is refused by name. The probe answers null (cannot
+  judge) for a UTC/GMT offset token, which Intl does not read, and when the
+  runtime fails a zone it must know, so a missing Intl never blocks onboarding.
+  `safeTimezone_` itself is unchanged. Verify: the TC2-6 drive.
 
 <a id="g89-personal-sheet-sync-failures-log-to-the"></a>
 
@@ -2465,6 +2568,12 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `.sb-link[data-tool="..."]`, not `data-view`. A prior mismatch
   caused the CN stale-flag badge to silently never render. The
   Metrics alert badge follows the same `data-tool` pattern.
+  **AMENDED (cycle 23 CNUI-09, 2026-10-02): a badge goes on EVERY nav form.**
+  The stale-flag count looked up `.sb-link … || .nav-btn …`, and the sidebar
+  link is always present (hidden, not removed, at phone width), so the phone's
+  bottom nav never got it. `cnRenderStaleBadge_` writes every form, the health
+  dot's pattern; on the column-shaped bottom-nav button it sits on the icon's
+  corner. Verify: the CNUI-09 DOM pin.
 
 <a id="g100-modals-close-on-escape-through-their-close"></a>
 
@@ -2545,6 +2654,26 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   re-rendered while open is left where it is. Verify: the SH-01 DOM pin,
   bite-checked.
 
+  **AMENDED (cycle 23 SH-02 + SH-03 + SH-04, 2026-10-02): every close BUTTON
+  goes through `closeOverlay` too.** Escape and the backdrop did, but a dozen
+  Close / Cancel / × / "Got it" buttons called the module's hook directly —
+  the timeline, both submission viewers, both composers, What's new, the
+  training reader and quiz, the quiz editor, the doc reader, the intake modal
+  and the KB editor — so focus was never handed back, and since UI-ESC (g166)
+  the discard question would have been skipped as well. They now call
+  `closeOverlay(…)`; a module's own close after a SAVE may still call its hook
+  (or `closeOverlay(el, { discard: true })`). The keyboard-shortcuts dialog's
+  container is `.cn-shortcuts-modal`, so the focus trap (which looked for
+  `.modal` / `.cn-compose-modal`) returned early and Tab walked into the page
+  behind; the trap now falls back to `.cn-shortcuts-modal` and then to the
+  overlay's first child. The onboarding tour is NOT an overlay (it has its own
+  dim layer), so it carries its own dialog contract: `role="dialog"`, named by
+  the step title, focus on the primary button each step, Tab cycling inside,
+  and focus handed back on end. Verify: the SH-02 DERIVED net (every hook
+  registered through `ensureOverlay(…, { onClose })` is collected, and no
+  `onclick="hook()"` or delegated `closest(…)) hook()` may call one) + the SH-02
+  / SH-03 / SH-04 DOM drives.
+
 <a id="g101-public-form-endpoints-have-no-employee-auth"></a>
 
 - **Public form endpoints have no employee auth — token is the
@@ -2563,6 +2692,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   signature — returning a specific, actionable error and leaving the
   token `pending` for retry instead of throwing mid-append on an
   oversized signature (INV-96).
+  **AMENDED (cycle 23 FORM-1, 2026-10-02): the token lookup is two reads, and
+  a row can move between them.** `findFormTokenRow_` scans the Token column,
+  then fetches the row by index — unlocked on the public route. A purge that
+  deleted rows between the two put ANOTHER token's row under the index, and the
+  visitor got that patient's prefill. Both form lookups now re-check that the
+  fetched row carries the token it was found by (g164). Verify: the FORM-1
+  drive.
 
 <a id="g102-form-submissions-are-phi-and-segregated-hashed"></a>
 
@@ -3177,6 +3313,25 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   invalid anyway), is recorded as equivalent and the check kept. It is not
   "fixed" by weakening the code to make a test fail.
 
+  **A FIFTEENTH direction (cycle 23 Batch 9, SH-04): the harness does not do
+  what the browser does.** The tour pin dispatched Tab and asserted focus was
+  "still inside the popover" — which held with the Tab handler REMOVED, because
+  jsdom never moves focus on Tab by itself. The assertion must be one only the
+  handler can satisfy: Tab is `defaultPrevented`, and focus MOVES to the other
+  button and wraps back. Before you assert a state, ask whether the harness
+  would have produced it anyway.
+
+  **A SIXTEENTH and a SEVENTEENTH (cycle 23 Batch 11).** `stripJsComments_` is
+  a per-function tool: run over a WHOLE HTML partial it mis-reads a string and
+  drops everything after it (it loses `intakeAcctSend_` from
+  script_intake.html, before and after the change), so a regex over the
+  stripped partial can pass vacuously or fail for nothing — read the raw source,
+  or extract the function first. And an earlier pin leaves `Date.now` frozen in
+  the harness while `new Date()` keeps running, so a fixture built on
+  `Date.now()` was a week behind the code it drove (which reads `new Date()`):
+  the retry-limit drive read "unlocked" for a rep locked an hour ago. Build a
+  fixture's clock from the SAME source the code reads.
+
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
   done (operator 2026-09-15).** The reconcile pass (g115) makes late punch data
@@ -3452,6 +3607,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   fallback, so its reachability and timezone stay visible. Verify: the ADM-04 pin
   (drives `getStorageHealth` with and without the properties).
 
+  **AMENDED (cycle 23 CORE-04, 2026-10-02): a CLEARED setting is not an unset
+  one.** Saving an empty department map wrote `{}`, and the read fell back to
+  CONFIG's eleven real department addresses, so the composer kept offering
+  departments the admin had removed. A deliberately-cleared map now stays empty
+  — the cycle-10 C5 rule tax rates and update suggestions already had; only an
+  all-junk object degrades to CONFIG. Verify: the CORE-04 pin.
+
 <a id="g123-the-holiday-calendar-is-the-cdr-report-s"></a>
 
 - **The holiday calendar is the CDR Report's `Company Holidays` tab, and it
@@ -3526,6 +3688,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the balance preview skips `SERVER_COMPANY_HOLIDAYS`), and the reminder ticker
   nagged "not clocked in" on Labor Day (`remindIsDayOff_` reads the same list).
   Verify: the T7 and T8 pins.
+  **Three more readers (cycle 23 TC2-8 + MET2-2, 2026-10-02).** The manager
+  sparkline, punch trend and missed-punch trend walked weekdays only, so Labor
+  Day sat in each as a workday bar the whole team "missed" (`mgrWorkdaysEnding_`
+  now takes the `companyHolidayMap_` map); the coverage planner drew a holiday as
+  an open, understaffed day (now closed like a weekend); and the inbound-volume
+  average counted a holiday's few calls as a working weekday in its
+  denominator (`inboundVolumeBuckets_` skips `opts.holidays`). Verify: the TC2-8
+  and MET2-2 drives.
 
 
 <a id="g124-answer-is-the-dashboard-s-formula-and"></a>
@@ -3737,6 +3907,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `managerClockOrderError_` pin (behavioural + both writers + the strict wrap +
   the doctor's minute compare), and the smoke test
   `calcHours_equalMinuteIsZeroNotADay`.
+  **AMENDED (cycle 23 TC-05, 2026-10-02): a REP's adjustment is bounded,
+  because the wrap pays an AM/PM slip.** A rep could adjust Clock Out to 05:00
+  on a day clocked in at 08:00, and the deliberate wrap paid a 21-hour shift.
+  The wrap stays (overnight-local reps exist); what changed is that a rep's own
+  adjustment — Apply now, a request at submit, and the request again at
+  approval — is refused when it leaves an equal pair or a shift longer than
+  `ADJUST_MAX_SHIFT_HOURS` (16), through one pure rule, `adjustShiftSpanError_`
+  ("Clock In 8:00 AM and Clock Out 5:00 AM would make a 21-hour shift — check AM
+  and PM."). Manager Day Edit is not bound. Verify: the TC-05 span grid (the
+  16-hour boundary both sides, an overnight shift allowed) and the submit drive.
 
 <a id="g128-not-found-and-could-not-look-up"></a>
 
@@ -3859,6 +4039,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `closeOverlay`, Escape and the Close button's wiring, the scratchpad's
   flush-on-close, and a SWEEP that closes every hook registered at that moment
   (a floor, not a claim that no hook may ever refuse).
+
+  **AMENDED (cycle 23 INTUI-1, 2026-10-02): two more hooks refuse mid-send.**
+  The intake preview and the coaching drawer closed while their send was in
+  flight; the rep was put back on the still-filled form and a second send went
+  out — a duplicate PHI email, or a second never-purged HR record.
+  `intakeCloseModal_` refuses while `INTAKE_STATE.sending`, and
+  `coachCloseDrawer_` while `COACH_SENDING` ("Sending — one moment…" / "Saving —
+  one moment…"); each send sets the flag before its RPC and clears it in both
+  handlers, before its own close. A guarded overlay's `busy()` (g166) hands the
+  answer to this refusal rather than asking "Discard changes?". Verify: the
+  INTUI-1 DOM drives.
 
 <a id="g131-a-null-a-payload-ships-is-a-rule"></a>
 
@@ -4289,7 +4480,23 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   Verify: the K6 + K2, D6 and D7 DOM pins. D6's reset is driven through the
   real `edSubmitIssue_`, after a first draft that set the flag by hand passed
   with the reset deleted (a NO BITE, g138).
-
+  **AMENDED (cycle 23 CNUI-04 + CNUI-05, 2026-10-02): two more instances.**
+  Saving a manager comment or reply reloaded the whole per-rep stack, wiping a
+  reply half-typed on every other card — it now patches the saved card only
+  (`cnMgrPatchCard_`, the whole renderer root, g66). A rep's Clarify follow-up
+  was closed and lost on any stack re-render — the box (open state, text,
+  focus, caret) now rides the existing edit snapshot (`cnClarifySnapshot_` /
+  `cnClarifyRestore_`), and a SENT follow-up leaves the box before the
+  re-render so it is never put back. Verify: the CNUI-04 and CNUI-05 DOM pins.
+  **AMENDED (cycle 23 ADM-10 + KBUI-5, 2026-10-02): two more instances.** An
+  offboard reloaded the Team Members panel and wiped an "Add team member" form
+  being filled in; the form (values, checked state, open state, `aria-expanded`,
+  focus, caret) now rides the re-render, and only a completed ADD asks for an
+  empty form (`cnAdminLoadOnboarding_({ resetForm: true })`). Editing or
+  deleting a KB comment refreshed the block and wiped a new comment being typed
+  below; the draft rides the re-render, and a POSTED comment leaves the box
+  before its refresh so it is never put back. Verify: the ADM-10 and KBUI-5 DOM
+  drives.
 
 <a id="g142-a-diagnostic-that-names-the-wrong-source"></a>
 ### g142 — A diagnostic that names the WRONG source is worse than a vague one, because it is actionable and the action is destructive
@@ -4390,6 +4597,13 @@ failure is NOT offered, because the trigger may have died since), and the
 problem line, the System finding and the detail row name the failure instead.
 Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
 
+  **AMENDED (cycle 23 DRV-3, Batch 12).** The article-image surfaces this entry
+  lists no longer depend on Drive: pasted and converted images are stored in
+  the KbImages tab, and the "Drive is disabled" finding now names only Drive
+  embeds and file imports, legacy image links, the embed check and QA. A
+  converted image that cannot be stored yet keeps its token and names why
+  (the Doc did not open, the store failed, over 1.5 MB) — never "check the
+  folder".
 
 <a id="g143-a-leading-underscore-is-not-private"></a>
 
@@ -4430,6 +4644,13 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   Verify: the RES-1 pins (the page writes nothing; the button's token is
   shape-checked and script-safe; `self` for the sender).
 
+  **AMENDED (cycle 23 CORE-06, 2026-10-02):** DevTools.js gained two editor
+  entry points (`devScrubRosterForMe`, `devShowConfig`) — the documented
+  `devScrubRoster_('…')` could not be run, because the editor's Run button
+  hides `_` functions and passes no arguments. Being public, each is gated
+  owner-first by `_assertSuiteCaller_`, and the PUBLIC-GATE pin holds
+  DevTools.js to the Tests.js rule (the owner check is the first statement).
+
 <a id="g144-a-string-written-to-a-cell-is-parsed"></a>
 
 - **A string written to a cell is parsed AS IF TYPED: `=…`, and `+`/`-`/`@`
@@ -4456,6 +4677,18 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   Verify: the SHEET-SAFE rule in `npm run lint:server` (Tests.js exempt:
   fixtures write raw by design), the S2 pins, the F2 mirror pin (`tsvCell_`
   driven against `sheetSafe_` over one grid) and the F3 scan pins.
+  **AMENDED (cycle 23 HR-1 + CN-7, 2026-10-02): COERCION is the other half of
+  "parsed as if typed".** The neutraliser stops a formula, but a value that reads
+  as a number or a date is still converted on write: an Employee Doc titled
+  "3/4" was stored as a Date, so the content hash recomputed from the cell never
+  matched and the doc could not be signed — it verified as TAMPERED; a callback
+  "0123…" lost its zero; "12/5" in a note became a Date. The free-text columns
+  of notes (`CN_TEXT_IDX`), Employee Docs (`EMPDOC_TEXT_IDX`) and coaching
+  (`COACH_TEXT_IDX`) are now '@' cells, written through `appendRowsTextSafe_` /
+  `setNumberFormat('@')` + `sheetText_`. Rows written before the fix keep what
+  Sheets made of them (a note re-formats on its next edit). Verify: the
+  HR-1 + CN-7 pin, the S2 writer lists, and the editor suite's
+  `cn_textColumnsKeepTheirText` round trip.
 
 <a id="g145-a-positional-write-at-getlastrow-1"></a>
 
@@ -4524,6 +4757,15 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   beacon, the markup escapes once, and a derived scan of every partial finds
   every interpolating call site passing a beacon-safe message).
 
+  **AMENDED (cycle 23 KBUI-2, 2026-10-02): a SERVER message that QUOTES the
+  input is the same leak.** The eligibility check's partial-geocode error says
+  where "the closest place found was" — the typed address, read back — and the
+  panel rendered it through `errorStateHtml_`, which beaconed it verbatim. The
+  three eligibility render paths now pass a fixed beacon line
+  (`OOP_ELIG_BEACON`); the rep still reads the server's message (g128). Ask of
+  every error a surface beacons: could the SERVER have echoed what was typed?
+  Verify: the KBUI-2 DOM drive.
+
 <a id="g147-a-repaint-cache-keyed-per-host-dies"></a>
 
 - **A repaint cache keyed per HOST dies with the host: a rebuilt host
@@ -4548,6 +4790,13 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   fresh open forgets both caches, and a late payor answer paints nothing) and
   the `reference-drawer-xref-light-wide` shot, which now shows its typed inputs
   above its results.
+  **AMENDED (cycle 23 KB2-9, 2026-10-02): an editor is a host too.** A file
+  dropped into the KB editor is read, then converted on the server; when either
+  was slow and the admin had opened another item meanwhile, the result landed
+  in THAT editor, and Save overwrote the other article. `kbIngestFile_` now
+  captures the editor (`KB_EDIT`) it was dropped into, and the read's handlers
+  and the RPC's both drop a result for any other. Verify: the KB2-9 DOM drive (a
+  late read and a late conversion).
 
 <a id="g148-a-lagged-source-s-windows-count-days"></a>
 
@@ -4570,6 +4819,23 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   projection assertions, and the M2/M8 endpoint pin (both cards project from
   `res.dataThrough`).
 
+  **AMENDED (cycle 23 MET-5, 2026-10-02): and a window read BEFORE its data
+  lands is not cached.** M8 assumes yesterday's data is in; before the daily
+  import it is not, so the deltas read ~1/d low and the run-rate divides by an
+  empty day — and the Dashboard's 6-hour cache pinned those numbers past the
+  import. A period-to-date window is now not cached while its newest data day
+  is earlier than the previous WORKDAY (`dashboardImportPending_`; the DQE
+  reader's meta carries `latestDate`). Verify: the MET-5 grid + the gated put.
+
+  **AMENDED (cycle 23 Batch 11 — the MET-5 follow-up).** Not caching the
+  pre-import round stopped it being PINNED; the load itself still compared
+  d−2 days of this month with d−1 of last. Before the import, both windows now
+  end on the newest DATA day (`dashboardAlignToData_`: `dataThrough` is
+  `latestDate`, and `dashboardPrevRange_` is anchored the day after it), and
+  the card says "calls through Mon Oct 5 — the latest day is not imported
+  yet". With no data day in the window yet there is no denominator and no
+  comparison. Verify: the Batch 11 MET-5 drive (the Oct 7 case).
+
 <a id="g149-a-stamp-parser-documented-as-differences-only"></a>
 
 - **A timestamp parser documented as "only used for differences" is a claim
@@ -4589,6 +4855,13 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   compare a parsed stamp with now. Verify: the D1 pin (an Intl-backed
   `parseDate`: 09:00 IST is 03:30 UTC, an item exactly seven days old on the
   real clock is overdue at 7, and a DST zone resolves through its own offset).
+  **AMENDED (cycle 23 COA-2, 2026-10-02): the client twin is fixed.**
+  `coachTsMs_` now reads the stamp in CONFIG.TIMEZONE, which `doGet` ships as
+  `window.SERVER_STORAGE_TZ`, through the shell's `tzOffsetMinAt_` — the offset
+  taken at the stamp's own instant and refined once (a stamp just after a DST
+  change lands on the other side of it at the first guess). No zone shipped, or
+  one the browser cannot resolve, reads as UTC, the old answer. Verify: the
+  COA-2 drive (IST; both sides of a CDT→CST fall-back; no zone).
 
 <a id="g150-a-client-rpc-with-no-mock-fixture"></a>
 
@@ -4676,7 +4949,30 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   180): `spanishSpanStartRow_` starts after the last row stamped before the
   cutoff, and an unstamped (legacy) row is always kept, since nothing says when
   it happened. Verify: the SP-3 span pin (cutoff, legacy rows, empty tab).
-
+  **AMENDED (cycle 23 CN-1, 2026-10-02): a per-REP read of a TEAM-WIDE tab
+  is the same blind spot.** Scheduled-call reminders were read from the last
+  2,000 rows of the shared ScheduledCalls tab, so a reminder set weeks ahead
+  scrolled out behind everyone else's rows, stopped firing, and stopped counting
+  toward the active cap. They are read by CREATION TIME now
+  (`SCHED_STATE_SPAN_DAYS`, longer than the furthest a reminder may be set;
+  `schedSpanStartRow_` over one CreatedAtMs column read). Verify: the CN-1
+  drive.
+  **AMENDED (cycle 23 QA-5, 2026-10-02): a LOOKUP bounded by the tail fails
+  as "not found".** `qaFindRecordingRow_` read the last 2,000 rows of the QA
+  index, so every action on an older recording said "Recording not found.",
+  and My Reviews dropped a released review once 2,000 newer recordings were
+  indexed. The lookup now reads the tail first, then the rest of the one id
+  column; My Reviews picks the caller's shared rows from three narrow column
+  reads (`qaMySharedRowIdxs_`). Verify: the QA-5 drive.
+  **AMENDED (cycle 23 TC2-9, Batch 14): a coverage GATE is the same blind
+  spot.** The payroll export and the accrual read the Timesheet archive only
+  when the range started before the live tab's OLDEST row — so one late
+  back-filled live row for an old date made the live tab look complete, the
+  archive was skipped, and the period read short. The other four timesheet
+  readers never read the archive at all. The gate now asks the archive how far
+  back IT reaches (`timesheetArchiveReach_`: its newest date, cached, unioned
+  with the window's), and all six readers share `timesheetRowsInRange_`.
+  Verify: the TC2-9 reader drive (the back-filled-row case).
 
 <a id="g153-clearing-the-roster-email-does-not-reach-the-gate-lists"></a>
 
@@ -4706,6 +5002,12 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   installer who is on the offboarded record and not back on the roster.
   `QA_MEMBERS` / `SPANISH_INBOX_MEMBERS` need no edit: both gates require a
   roster employee, so an offboarded member has no access. Verify: FU-B6e.
+  **AMENDED (cycle 23 FORM-5, 2026-10-02): an address STORED on a record
+  outlives the person too.** A form token carries its creator's email, and a
+  submission — PHI — was mailed there after the rep was offboarded.
+  `formNotifyRoute_` mails the creator only while they are on the live roster
+  (`empRosterEmail_`); otherwise MANAGER_EMAILS, with a line saying why.
+  Verify: the FORM-5 route grid.
 
 <a id="g154-a-half-day-has-no-fixed-start"></a>
 
@@ -4731,6 +5033,16 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   'afternoon'); the minimum ships as `halfDayMinHours` so the client carries no
   literal. Fires when you read approved time off, grade or remind against a
   schedule, or treat PTO as a yes/no. Verify: the T5 (rework) pins, both driven.
+  **AMENDED (cycle 23 TC2-3 + TC2-1, 2026-10-02): two more readers.** The
+  coverage planner treated an approved half day as a full day OFF; it now counts
+  the rep as a TENTATIVE presence across the whole shift (when they work is
+  theirs to choose, so no hour is assumed), labelled "Half day — works part of
+  the shift", while a morning plus an afternoon half is still a full day off
+  (`timeOffKindsCombine_`). And the reminder ticker applied the half-day plan
+  from whatever state snapshot it held — in a window left open overnight,
+  yesterday's half day (or day off) shaped today's reminders; it now uses a
+  snapshot only for the day it describes (`remindStateIsToday_`). Verify: the
+  TC2-3 and TC2-1 drives.
 
 <a id="g155-the-first-message-is-not-the-thread"></a>
 
@@ -4759,6 +5071,16 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   Needs-you list asks the pending ids rather than "a resolve exists". Verify:
   the SP-1 pins (the fold, the endpoint's already-test, the Needs-you wiring).
 
+  **AMENDED (cycle 23 SP-2, operator 2026-10-05): the first REPLY is not the
+  end of the thread either.** An email request was resolved for ever by the
+  first member reply, and a manual resolve hid the thread for good, so a
+  requester's follow-up question never became pending. A thread is now a
+  sequence of requests (`spanishEpisodes_`): a requester message opens one, a
+  member reply closes it, a click closes what was open at its stamp, and a
+  later message from the requester is new work — unclaimed, because the claim
+  was on the request that was answered. A courtesy reply is not a request
+  (g159). Verify: the SP-2 pins (INV-369/370/371).
+
 <a id="g156-read-a-word-or-a-number-by-token"></a>
 
 - **Read an operator's word or a rep's number by TOKEN, never by character
@@ -4772,6 +5094,27 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   and, since the follow-ups, the recommendation screen itself say that NO
   weight-capacity check ran (`intakeWeightWarnHtml_`). Fires when you parse free
   text an engine then acts on. Verify: the I2/I3 pins and FU-B8b.
+
+  **AMENDED (cycle 23 INT-1 + INT2-1 + INT2-2, 2026-10-02): three more, on the
+  server.** Any non-empty Q43 text was a neuro diagnosis, so a chip reading
+  "Not sure" switched on the solid-seat and Group-3 rules; Q43 is now read entry
+  by entry, and a leading negation or an uncertainty token anywhere is not a
+  diagnosis (`intakeNeuroEntryIsDx_`, the client chip guard its pinned twin).
+  "Not solid" read as SOLID (the engine dropped the word it did not know and
+  kept the one it did); a negation now cancels the seat word after it. And a
+  weight was the first number whatever its unit — "120 kg" read as 120 lbs,
+  "5'6", 250" as 5 lbs; it is now read BY UNIT, heights are not weights, and
+  several bare numbers are UNREADABLE rather than a guess. Verify: the
+  INT-1 / INT2-1 / INT2-2 drive (server and client grids, the engine, the
+  explain row).
+
+  **AMENDED (cycle 23 Batch 11, operator 2026-10-05).** A number read by its
+  unit can still be no patient's weight: "12" meant as 120, an "18 st" read as
+  pounds. A reading under `INTAKE_WEIGHT_MIN_LBS` (20 — nothing in the catalog
+  is pediatric) or over `INTAKE_WEIGHT_MAX_LBS` (1000), checked AFTER the kg
+  conversion, is UNREADABLE and names itself ("reads as 12 lbs, outside
+  20–1000 lbs") on the explain row and the recommendation screen; it never
+  reaches the capacity filter. Verify: the Batch 11 weight drive.
 
 <a id="g157-scriptcache-is-shared-by-every-deployment"></a>
 
@@ -4848,6 +5191,14 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   link carries it, and a reply quotes it); naming only another sharer is not a
   reply to this one, and naming none is a look, never a resolve. Verify: the
   DR-2 pick grid and the DR-1 scan drive (`c23DrScan_`).
+  **A SECOND instance (cycle 23 SP-2 follow-up, operator 2026-10-05): the
+  Spanish courtesy filter.** A thank-you from a requester no longer reopens
+  their answered request, which makes the filter a heuristic that HIDES work.
+  So it is built the same way round: a message is a courtesy only when EVERY
+  word of its new text is on a short courtesy list (or it is a lone courtesy
+  emoji); a "?", a digit, a name, any other word or an empty new text keeps it
+  a request. "Gracias Ana" reopens — one click — rather than "gracias, ya
+  está?" hiding. Verify: the courtesy grid (`spanishIsCourtesyOnly_`).
 
 <a id="g160-an-escape-first-renderer-must-match-escaped-markers"></a>
 
@@ -4922,3 +5273,71 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   when a write identifies a punch by its TYPE, or you add a punch type a day
   can hold more than once. Verify: the TC-02 pins (the resolver grid, the
   writer over a fake Timesheet, submit, approval/range, the modal DOM pins).
+
+<a id="g164-a-row-fetched-by-index-must-carry-its-key"></a>
+
+- **A row fetched by INDEX after an unlocked scan must still carry the key it
+  was located by (cycle 23 FORM-1, 2026-10-02).** The bounded lookups (L9) scan
+  one column, then read the one full row at the index they found — two reads.
+  Without the lock, a delete between them (the nightly purge) shifts another
+  row under that index, and the caller acts on the wrong record: the public
+  form route served another patient's prefill. `formLocatedRowIs_` re-checks
+  the fetched row's key; a mismatch is located once more, then refused. Fires
+  when you add a scan-then-fetch lookup that can run without the lock, or
+  reuse one from a public endpoint. Verify: the FORM-1 drive (a table that
+  shifts between the two reads, once and for ever).
+
+<a id="g165-a-grant-earned-by-a-covered-period-applies-forward"></a>
+
+- **A grant EARNED by a period that is already covered must apply FORWARD
+  (cycle 23 QA2-1, 2026-10-02).** QA exemption eligibility needs two covered
+  periods in a row, the viewed one included — so the viewed period's reviews
+  were already done when the Grant button appeared, and the grant was written
+  for that same period. It saved nothing, ever. It is now written for the next
+  period (`qaNextPeriod_`). The same audit found the key read in two shapes: an
+  exemption granted from the quarter view did not hold in the month view; ONE
+  reader (`qaExemptFor_`) now answers for both. Fires when you grant, waive or
+  reward something computed from a period's own results, or key a record by a
+  period another view reads at a different grain. Verify: the QA2-1 drive (the
+  row before the grant, after it, and in the next period's own view).
+
+
+<a id="g166-a-close-that-discards-typed-work-must-ask"></a>
+
+- **A close that DISCARDS typed work must ASK — Escape is pressed for other
+  reasons (cycle 23 UI-ESC, 2026-10-02).** The shell's Escape closes the
+  topmost overlay even when the key is pressed inside a textarea (to dismiss an
+  autocomplete, a browser suggestion, a habit), and a backdrop click does the
+  same. Four editors threw their work away that way with no question: the KB
+  article editor, the quiz editor, a fillable HR document and the coaching
+  composer — and "Add item" resets the editor state on reopen, so nothing came
+  back. An editor overlay now opens with `unsaved: { what, busy?, dirty? }`;
+  while it is DIRTY, every close through `closeOverlay` puts up one
+  `uiConfirm` "Discard changes?" (Discard / Keep editing) and refuses until the
+  answer is Discard. "Dirty" is an EVENT since this open, never a diff:
+  `ensureOverlay` marks any `input` / `change` inside the overlay, a
+  closed→open transition starts clean, a module marks work no key produced
+  (`overlayMarkDirty_`: a converted Doc, an ingested file, imported questions,
+  a structural quiz edit), and `dirty()` covers what fires no event (a drawn
+  signature). A prefill is not work. `busy()` true means a save is in flight
+  and the hook's own refusal answers (g130). A module's close after a SAVE
+  calls its hook directly and is never asked. Fires when you add an overlay a
+  person types into, or a close path to one. Verify: the UI-ESC Node pin (the
+  four editors register `unsaved`; the guard runs first in `closeOverlay`) +
+  the UI-ESC DOM drives (Escape inside a field, the backdrop, the ×, Keep
+  editing, Discard, a prefill, a reopen, a module mark, mid-save).
+
+<a id="g167-a-vocabulary-built-from-user-text-is-user-text"></a>
+
+- **A VOCABULARY built from user text is user text — "enum-only" holds only if
+  the enum is authored by someone who chose it (cycle 23 KB-2, 2026-10-02).**
+  The AI guidance boundary whitelisted facets against a vocabulary, and called
+  the vendor payload and its AuditLog row PHI-free by construction (INV-119).
+  But the TAG vocabulary was every tag the caller had ever saved — free text in
+  the per-rep PHI store — so a tag that was once a patient's surname became
+  "established" and was sent to the vendor and written to the shared log. The
+  vocabulary is now the admin's auto-tag taxonomy (`getAutoTagRules_`), which
+  no rep can add to, and the audit row carries facet COUNTS, never values. Ask
+  of any allowlist: who wrote the list? Fires when you whitelist input against
+  a list, or call a payload safe because it is validated. Verify: the KB-2
+  drive (`kbGetFacetGuidance` end to end).

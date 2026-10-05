@@ -331,6 +331,15 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   PtoEnabled per-employee toggle). Time-off rows in
   TimeOffRequests don't carry balance — they trigger balance
   updates on approve/revert transitions.
+  **AMENDED (cycle 23 TC-04, 2026-10-02): a time-off row records what its
+  approval took.** The row still carries no balance, but a trailing `Deducted`
+  cell now says what the approval moved (`annual:1`, `sick:0.5`, `none`), so
+  un-approving restores exactly that instead of inferring it from the type —
+  which over-credited any request approved while tracking or the rep's PTO was
+  off. Rejected: re-deriving "was tracking on at approval time" from the
+  AuditLog (a bounded tail, g152) and refusing to restore legacy rows (blank
+  cells keep the by-type rule; guessing "none" would under-credit every
+  legitimate pre-deploy deduction).
 - <a id="per-employee-pto-opt-out-via-emp-pto-enabled-column"></a>**Per-employee PTO opt-out via `EMP.PTO_ENABLED` column.**
   An employee who earns no paid leave gets `FALSE` in column K; their UI
   hides the PTO ring and balance line entirely, and `adjustLeaveBalance_`
@@ -619,6 +628,12 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   **AMENDED (cycle 23 TC-02, 2026-10-02):** a BREAK request carries its intent
   in a trailing `BreakTarget` column — see "A break adjustment says which break it
   means".
+  **AMENDED (cycle 23 TC-05, 2026-10-02):** a rep's own clock adjustment is
+  checked for a plausible shift (an equal pair, or longer than 16 hours, is
+  refused) at Apply now, at submit and again at approval, where the queue row
+  stays Pending — see g127. Refusing every Clock Out earlier than Clock In was
+  rejected: the overnight wrap is deliberate (g127) and needs an operator
+  decision to change.
 
 - <a id="normalizetime-as-the-universal-read-shim"></a>**`normalizeTime_` as the universal read shim.** Because Sheets
   auto-coerces time strings to Dates on read, every read of
@@ -670,6 +685,12 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   it most: a page that takes a consent and a signature must not be framable
   by another site (clickjacking). Embedding the app somewhere later means
   changing these three calls on purpose, not working around them.
+  **AMENDED (cycle 23 CORE-05, 2026-10-02):** the shell's outsider page tests
+  the visitor against `CONFIG.ORG_EMAIL_DOMAINS` (universalmedsupply.com and
+  umsupply.com) through `isOrgEmail_`, an exact domain match. It tested
+  `@umsupply.com` alone while the Workspace domain is universalmedsupply.com.
+  The carve-out is still defence in depth — every endpoint gates on the roster.
+
 - <a id="design-tokens-are-the-single-source-of-truth-for-color-typog"></a>**Design tokens are the single source of truth for color,
   typography, radii, shadows, and motion.** All declared in
   `web-app/styles_design_tokens.html` and consumed via CSS
@@ -1116,6 +1137,16 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   apps have no background push, so a closed browser still gets nothing —
   the reminder is for a rep with the app open, which is the case the operator
   asked about.
+  **AMENDED (cycle 23 TC2-1, 2026-10-02): a snapshot is used only for its
+  own day.** Every inferred reminder reads the `getEmployeeState` snapshot,
+  which describes the day it was fetched; a pinned pop-out left open overnight
+  ran today's reminders on yesterday's day off, half day, schedule and punch
+  state. The ticker now compares the payload's `today` with the rep-local date:
+  another day's snapshot fires no inferred reminder, today's is requested at
+  once (the 10-minute throttle is reset once per day), and the rep-created
+  scheduled-call reminders still run. Chosen over refreshing on every rollover
+  tick and firing meanwhile: a reminder on the wrong day's state is the false
+  positive the channel cannot afford.
 - <a id="two-way-sheet-entry-via-the-reconcile-pass-8"></a>**Two-way Sheet entry via the reconcile pass (#8).** Because the per-rep
   Sheets are real Google Sheets, a rep can type notes directly into the
   `Notes` tab. Such hand-entered rows lack the app-assigned `noteId`,
@@ -1239,6 +1270,13 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   into the CRM before the network has acknowledged anything. Email
   and edit actions stay pessimistic — they need a server-issued noteId
   and can't easily undo.
+  **AMENDED (cycle 23 CNUI-02 + CNUI-06, 2026-10-02): an optimistic UNDO waits
+  for the server.** Undo-save (Ctrl/⌘+Z after a save) announces "note deleted"
+  and puts the text back only when `deleteCallNote` succeeds — a refused delete
+  leaves the note saved and the form empty, so nothing is filed twice — and text
+  the rep typed meanwhile is kept. A Save & Compose cancelled past the 5-minute
+  window is told apart from a failure (`windowClosed` on the response): the note
+  stays, and the form is cleared when it still holds that note.
 - <a id="pay-statement-own-data-payroll-self-check-operator-2026-08-1"></a>**Pay statement — own-data payroll self-check (operator 2026-08-17).**
   Time / PTO (side-rail pay-period block since the 2026-08-18 consolidation)
   → **"View pay statement"** opens a per-period
@@ -1478,6 +1516,13 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   instead (INV-175). Best-effort is preserved by construction: the rest of the
   submission detail still renders, and a genuinely empty list still renders
   nothing. Pinned by the feedback-loop Node pins.
+  **AMENDED (cycle 23 INT-3, operator 2026-10-05).** The feedback link rides
+  only an email to an org address (`isOrgEmail_`): the page needs a staff
+  sign-in, so for an outside reader it was a dead button. An intake email to an
+  outside domain is sent only after the rep confirms that domain — the server
+  refuses with `needsExternalConfirm` and the client asks, then resends with
+  the confirmation; the domain list never leaves the server.
+
 - <a id="manager-q-a-reply-on-training-flagged-notes"></a>**Manager Q&A reply on training-flagged notes.** Training-flagged
   notes can carry a free-text question (`subformData.trainingQuestion`,
   set client-side when the rep picks the training flag) and a manager
@@ -1507,6 +1552,11 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   specialized clearable reply editor on training notes and a general
   "Comment" box on every other note. Audit row `CallNoteManagerComment`
   (PHI-free: noteId only). See INV-103.
+  **AMENDED (cycle 23 CNUI-04, 2026-10-02): a save refreshes ITS card.** A
+  comment, a training reply and a cleared reply re-render only the saved card
+  from the note the endpoint returns (`cnMgrPatchCard_`); the whole per-rep
+  stack used to reload and wipe replies typed on other cards. A different rep on
+  screen, or the card gone, still reloads the stack.
 - <a id="automated-notification-emails-are-branded-item-2"></a>**Automated notification emails are branded (item 2).** A shared
   `buildBrandedEmailHtml_(heading, bodyHtml, opts)` wrapper (logo bar +
   colored header + white card + footer, inline hex from `CN_EMAIL_PALETTE`
@@ -1623,6 +1673,17 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   "Billing, West" name round-tripped as TWO phantom departments through
   every `drSplitDepts_` consumer (the INV-131 dedup, the Incoming inbox,
   per-dept SLA and `deptStats`).
+  **AMENDED (cycle 23 ADM-06, 2026-10-02):** a BLANK rate is refused, naming
+  every blank state ("Enter a rate for NM, AZ (0 for no tax) …"), and nothing
+  is saved. It used to be skipped, which deleted the state from the map — and
+  from the composer's State list, with no way to add it back in the app. A
+  zero is a rate. The rows → map rule is one pure helper,
+  `cnRateMapFromRows_`.
+  **AMENDED (cycle 23 CORE-04, 2026-10-02):** a deliberately-cleared
+  department map stays EMPTY, as the tax rates and update suggestions already
+  did (C5); it used to fall back to CONFIG's real department addresses. The
+  client still refuses an empty save; this closes the direct-RPC path.
+
 - <a id="runtime-feature-toggles-via-a-registry-the-admin-tab"></a>**Runtime feature toggles via a registry + the Admin tab.** A
   manager-flippable boolean store lets features be turned on/off live,
   no redeploy. `FEATURE_FLAGS` (a `Code.js` constant) is the single
@@ -1724,6 +1785,16 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   (INV-94), so this surfaces pre-fix damage. Pinned by
   `test_getPtoReconciliation_detectsDoubleDeduct` +
   `test_fixPtoReconciliation_creditsAndIdempotent` (INV-99 / INV-102).
+  **AMENDED (cycle 23 TC-06 + TC-04, 2026-10-02): no Reconciled row without a
+  credit that landed.** With tracking off, `adjustLeaveBalance_` writes nothing,
+  yet the fix marked the rows Reconciled (so they could never be detected
+  again) and audited `creditedAnnual=N`. It now refuses up front when tracking is
+  off or the rep's PtoEnabled is FALSE, and a credit that writes nothing inside
+  the run is a failure that reverts the rows. Both the detector and the fix now
+  count what each approval actually TOOK (`toRowCharge_` — the recorded
+  `Deducted` cell, else the type), so a duplicate that took nothing is no
+  over-charge; and the detector skips PTO-off reps, whose card would otherwise
+  offer a fix that must refuse.
 - <a id="cn-card-actions-use-a-primary-secondary-split"></a>**CN card actions use a primary/secondary split.** Frequently used
   actions (flag-action, flag-training, pin, copy, email) are always
   visible. Less-frequent actions (urgent-toggle, flag-review, resolve,
@@ -2062,6 +2133,15 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   — fillable forms generate tokens and embed "Complete this form"
   CTA buttons in the email body. Reps can pre-fill key fields
   (patient name, dates) before sending.
+  **AMENDED (cycle 23 FORM-2/3/5 + CN-4, 2026-10-02):** a note keeps EVERY form
+  submitted on it — `subformData.formSubmissions` (oldest first, one per token),
+  with `formSubmission` kept as the latest for the old key — and the card shows
+  one pill each, stacked. The email's "expire in N hours" is
+  `FORM_TOKEN_EXPIRY_HOURS`, the value the token is stamped with. The
+  submission notice goes to the creating rep only while they are on the roster,
+  otherwise to MANAGER_EMAILS saying why. The FormSubmissionReceived witness
+  names the token by reference (S4). When one of several links in an email
+  fails to create, the links already made are voided and the email is not sent.
 - <a id="in-app-form-submission-viewer"></a>**In-app form-submission viewer.** Once a recipient submits a
   fillable form, the rep who sent it can review the entered data
   without opening the `FormSubmissions` sheet. Note cards carrying a
@@ -2095,6 +2175,9 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   note (`submitFormByToken` stamps only `if (noteId)`), so it has no
   `.cn-form-pill` — the **Sent Forms** tab (below) is the in-app surface for
   those.
+  **AMENDED (cycle 23 CNUI-03, 2026-10-02):** the viewer (rep and manager)
+  paints only the answer to its CURRENT open — a late answer never re-opens a
+  closed viewer or draws a previous submission (`CN_VIEWER_SEQ`).
 - <a id="sent-forms-tab-rep-facing-read-only"></a>**Sent Forms tab (rep-facing, read-only).** A Call Notes tab
   (`callNotesForms` → `enterCallNotesFormsView`) listing every fillable
   form the rep has sent. Backed by `getMySentForms`, caller-scoped to
@@ -2138,6 +2221,14 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   (`intakeReenterForm_`). The draft in storage is overwritten on the next
   keystroke, as it always was: an amend was never a merge. Verify: the I1 DOM
   pin (ES and EN) and the extended amend order pin.
+  **AMENDED (cycle 23 INT-2, 2026-10-02):** amending a submission that is
+  ALREADY amended is refused by the server, naming the newer one ("open the
+  newest version … and amend that"); the guard used to be client-only, so a
+  stale view or a second window dropped the first amendment's changes. And a
+  product-catalog edit between preview and send is named as one ("The
+  recommended products changed since you previewed") rather than "The form
+  changed" — the preview ships an answers-only hash the send compares (INT2-4).
+
 - <a id="form-submission-notification-renders-the-completed-form"></a>**Form-submission notification renders the completed form.** When a
   recipient submits a fillable form, `submitFormByToken` calls
   `notifyRepOfFormSubmission_` (best-effort, try/catch — never blocks the
@@ -2506,6 +2597,9 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   actionable specific (first missed rep + day, oldest pending rep).
   Sparkline data is computed in-memory from already-loaded `toRows`
   / `adpRows` — no extra Sheet reads (INV-13 honored).
+  **AMENDED (cycle 23 TC2-8, 2026-10-02):** the sparkline and both trends walk
+  WORKDAYS from the one holiday calendar, not weekdays — a company holiday is no
+  longer a bar (`mgrWorkdaysEnding_` with the `companyHolidayMap_` map).
 - <a id="live-status-sparkline"></a>**Live-status sparkline.** Each live-status emp-card on the
   manager dashboard carries a 7-bar daily-hours sparkline + a
   `Xh·Nd` total/days-worked label. Driven by `recentHours[]` on
@@ -2560,6 +2654,15 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   `vector-effect: non-scaling-stroke` to the polyline: it moves the §4
   draw-in `stroke-dasharray` to screen space, where `--len:600`
   under-runs the stretched path and the "drawn" end state shows a gap).
+  **AMENDED (cycle 23 MET2-1, 2026-10-02): the hero compares only against a
+  DIFFERENT window, call-weighted.** On a range the trend covers the hero's own
+  days, so "vs period daily average" compared the period with itself under two
+  weightings (the unweighted mean of daily rates vs the call-weighted total) —
+  it measured volume skew. The baseline is now the call-weighted rate
+  (`mTrendWeightedPct_`); My Stats on a range and Team on a multi-day range draw
+  no delta (the dashed baseline stays), and single-day Team compares with the
+  "30-day team rate".
+
 - <a id="per-queue-attribution-exists-only-for-transfers-cycle-14-pha"></a>**Per-queue attribution exists ONLY for TRANSFERS (cycle-14 Phase 1).** Phase
   0's inventory settled the question against the operator's real sheet: **DQE
   carries ONE row per (agent, date)**, so `answered` / `missed` / `% answered` /
@@ -3389,6 +3492,11 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   (folder shared, policy relaxed), the endpoint is never called. The wrapping
   anchor keeps its Drive href — the open-full-size path for accounts with
   access, and a `data:` href would be blocked as top-level navigation anyway.
+  **AMENDED (cycle 23 DRV-3).** This fallback now serves only LEGACY links (a
+  Drive thumbnail URL already in an article). New images never touch Drive:
+  they are `kbimg:` keys read through `getKbImages`. It can retire once no
+  article holds a Drive thumbnail link.
+
 - <a id="apps-script-s-missing-scope-refusal-is-not-an-admin-block-an"></a>**Apps Script's missing-SCOPE refusal is NOT an admin block, and a green
   `runAllTests()` does not vouch for Drive (operator 2026-09-09).** A Doc
   conversion left its images as placeholders with `You do not have permission
@@ -3528,6 +3636,13 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   Re-saving the article is the retry — exports are idempotent. Pinned by the
   "kb — Phase 2b" Node tests (token emission, cap, extract/replace,
   walk mirror, preview/final kbMd_ render).
+  **SUPERSEDED (cycle 23 DRV-3, operator 2026-10-05) — the images are stored in
+  the KbImages tab, not exported to Drive.** The domain disables Apps Script's
+  Drive, so this path never stored one image. Save now reads the Doc through
+  DocumentApp and stores each image in the tab (see "Article images live in the
+  KbImages tab"); a token that cannot be stored yet is KEPT pending with a
+  named reason, never rewritten to the placeholder.
+
 - <a id="kb-phase-3-paste-a-screenshot-upload-in-the-article-editor"></a>**KB Phase 3 — paste-a-screenshot upload in the article editor.** Pasting
   an image into the editor textarea uploads it via `kbUploadImage`
   (**admin-gated** — KB content authoring, INV-136; PNG/JPEG/GIF/WebP whitelist
@@ -3543,6 +3658,11 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   ScriptLock (Drive-only write); PHI-free-by-policy reminder sits under
   the textarea; orphaned uploads (pasted, never saved) stay in the
   folder — trim manually. Audit row `KbImageUpload` (INV-118).
+  **SUPERSEDED (cycle 23 DRV-3, operator 2026-10-05).** A pasted image is
+  fitted in the browser (≤1600 px wide, ≤1.5 MB — redrawn as PNG, else JPEG),
+  stored in the KbImages tab under the script lock, and inserted as
+  `![Screenshot](kbimg:<key>)`. See "Article images live in the KbImages tab".
+
 - <a id="kb-ai-phase-a-facet-based-guidance-card-in-the-reference-dra"></a>**KB AI Phase A — facet-based guidance card in the Reference drawer.**
   `kbGetFacetGuidance(facets)` sends ONLY whitelisted enum facets
   (department / update type / tags / flag type) + excerpts from our own
@@ -3584,6 +3704,13 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   facet-hash (`umsKbPanel.aiSeen`). Model default `claude-haiku-4-5`
   ($1/$5 per MTok). Phase B (ask box) is deliberately NOT built —
   gated on observed demand. See INV-119 + S66.
+  **AMENDED (cycle 23 KB-2, 2026-10-02):** the TAG vocabulary is the admin's
+  auto-tag taxonomy (`getAutoTagRules_`), not the caller's own saved tags — those
+  are free text from the PHI store, so "enum-only" did not hold for them (g167).
+  A rep's other tags no longer drive guidance until an admin adds them to the
+  taxonomy. The `KbAiGuidance` audit row carries facet COUNTS
+  (`dept:N,update:N,flag:N,tags:N`), never values.
+
 - <a id="kb-reference-drawer-mid-call-lookup-as-a-shell-capability"></a>**KB reference drawer — mid-call lookup as a shell capability.** A
   slide-over panel (`#kb-drawer`, right edge, z-index 55 — ABOVE the
   `.overlay` layer (50) so it stays readable + usable while the email
@@ -3756,6 +3883,11 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   every server string `esc()`'d. **v1 is rep's-own-patient context, NOT a
   cross-rep manager view** (a manager-gated variant reusing
   `managerSearchCallNotes` is the follow-on if needed).
+  **AMENDED (cycle 23 CN-5 + CNUI-03, 2026-10-02):** the notes stream includes
+  the cold archive (archived notes are marked "· archived"), and a stream the
+  search capped at 200 is named in `truncatedSources` — the timeline is
+  `partial` when a source failed OR was capped, and the banner says which. A
+  late answer is dropped once the timeline is closed or another patient opened.
 - <a id="storage-health-leads-with-drive-which-no-store-row-can-see-o"></a>**Storage Health leads with DRIVE, which no store row can see (operator
   2026-09-09).** Every row in the inventory is a Spreadsheet, and Sheets ride
   a different scope — so all eight could read OK while the KB image export,
@@ -4046,6 +4178,12 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   (`cnTagSkippedNote_` — ids only, INV-32) and ship the list; the Admin toast
   turns WARN and names the reps to re-share and re-run. INV-220 generalises
   it: a cross-rep walk that skips a member owes all three.
+  **AMENDED (cycle 23 ADM-12, 2026-10-02):** a rename/merge also walks each
+  rep's NotesArchive tab, writes a "started" audit row BEFORE the walk (a
+  started row with no completion row after it is a run that stopped partway),
+  and a transport failure tells the admin it may have PARTLY applied and is
+  safe to run again — the transform is idempotent.
+
 - <a id="uiconfirm-uiprompt-replace-native-window-confirm-window-prom"></a>**`uiConfirm` / `uiPrompt` replace native `window.confirm` /
   `window.prompt`.** Promise-returning helpers in `script_core.html`
   that consume the existing `.overlay` + `.modal` vocabulary so
@@ -4107,6 +4245,18 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   roster column M team scoping) lives in
   `docs/training-employee-docs-spec.md`; operator decisions are resolved
   in its §9. See INV-120 / S67.
+  **AMENDED (cycle 23 TRN-1, operator 2026-10-05) — quiz retries are capped.**
+  A failed attempt shows which questions were wrong, never the right option;
+  with unlimited retries that is an answer key by elimination, so after
+  `TRAIN_QUIZ_MAX_ATTEMPTS` (3) failed attempts in a row the rep waits
+  `TRAIN_QUIZ_LOCK_HOURS` (24) from the last before a fresh set. A pass, a
+  re-assignment (§3a) or a manager reset (`resetQuizAttempts`, an append-only
+  `QuizResets` row) starts the count over. The limit is checked INSIDE the
+  submit's lock, over the read the attempt count uses, and a locked submit is
+  refused unrecorded. Rejected: score-only feedback (S10 — the operator wants
+  reps to see what they missed) and a cap with no wait (a rep who failed three
+  times would be stuck until a manager noticed).
+
 - <a id="operator-feedback-round-2026-06-12-note-template-ergonomics"></a>**Operator feedback round (2026-06-12) — note-template ergonomics for the
   pinned pop-out workflow.** The operator runs the compact pop-out pinned
   via PowerToys "Always On Top" beside the CRM, which drove a density +
@@ -4232,6 +4382,14 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   a managers-only closing step. Interactive gating ("now type here…") was
   deliberately deferred — the passive spotlight teaches the same things
   without fighting the optimistic re-renders.
+  **AMENDED (cycle 23 SH-04, 2026-10-02):** the popover is a modal dialog in
+  everything but name, so it now says so — `role="dialog"`, `aria-modal`,
+  named by the step title and described by its body. Each step focuses its
+  primary button, Tab / Shift+Tab cycle the popover's buttons, and the element
+  focused when the tour started gets focus back when it ends. It stays outside
+  the overlay lifecycle (its own dim layer and keys), so it carries this
+  contract itself.
+
 - <a id="the-script-property-budget-badge-has-one-home-propbudgethtml"></a>**The Script-Property budget badge has ONE home (`propBudgetHtml_` +
   `.prop-budget`, Batch Q).** Eleven Admin editors and the Reference synonyms
   modal each save into a capped Script Property, and a size the operator cannot
@@ -4616,6 +4774,12 @@ pick them up without re-deriving the context.
   auto-assign — refuses. A resolve map that could not be read fails the list
   outright, because without it every resolved request would read as pending.
 
+  **AMENDED (cycle 23 SP-2, 2026-10-05): the Resolved list reads it too.** It
+  had its own `msgs[0]` voicemail loop that listed only manual resolves; it
+  now lists one row per resolved voicemail from this fold, a member reply
+  timed and credited, a click untimed — what the stats card already counted.
+  Each row carries `resolverFrom` and its thread's claim `floorMs`.
+
 - <a id="a-gate-claim-is-derived-from-the-refusal"></a>**A gate CLAIM is derived from the refusal, never written by hand (Batch 7 of the cycle-20 scan, F-26 + F-51, 2026-09-18)**
 
   Twenty-one places in this repo said "manager-gated" about an endpoint that
@@ -4741,6 +4905,9 @@ pick them up without re-deriving the context.
   hours can no longer fit. The first version (mid-shift start) was replaced
   rather than kept as a default, because a default that encodes the wrong rule
   would grade every morning half day. Verify: the T5 (rework) pins (g154).
+  **AMENDED (cycle 23 TC2-3, 2026-10-02):** the coverage planner reads a half
+  day by the same rule — the rep is a tentative presence across the shift,
+  never absent and never placed in a half of it.
 - <a id="dept-request-sla-targets-are-working-days"></a>**Dept Request SLA targets
   are WORKING DAYS, and the stored map carries its unit (cycle 22 M6, operator
   2026-09-25).** The tracker has measured a request's age in BUSINESS time
@@ -4869,6 +5036,15 @@ pick them up without re-deriving the context.
   inside a quote), never HTML carried in the file. Rejected: converting the
   Word/HTML output with the Doc converter (lossy, and one-way) and a sync
   that overwrites (it would silently discard an admin's fix).
+  **AMENDED (cycle 23 KB2-8, 2026-10-02): a fourth class, REPAIR.** An import
+  that wrote a section's KB row and stopped before its ledger row left the
+  section looking "foreign" — skipped on every later import, so it never
+  updated again. A `man-` row with no matching ledger row whose text already
+  EQUALS the file's is the import's own unfinished work: Check reports it,
+  Import writes only its ledger row (never the KB row), and the result panel
+  and the audit row (`repaired=`) count it. A row whose text differs is still
+  foreign, and is skipped and reported as before.
+
 - <a id="the-procedures-manual-is-its-own-surface-and-the-repo-is-its-one-source"></a>**The procedures manual is its own surface, and the repo is its one source (22post M2, operator 2026-09-28).** The operator asked whether a different shape would make a better manual than
   the per-department guides Reference started with, and confirmed they alone
   maintain it. So the app is READ-ONLY for manual sections: `kbSaveItem`,
@@ -5057,3 +5233,117 @@ pick them up without re-deriving the context.
   the sender" on the card). Rejected: keeping the write on the GET behind a
   filter for known scanners (an unbounded list, and the sender's own click is
   not a scanner).
+- <a id="a-qa-exemption-applies-to-the-next-period"></a>**A QA exemption applies to the period AFTER the one that earned it, and a quarter's holds in its months (cycle 23 QA2-1, 2026-10-02).**
+  Eligibility reads two COVERED periods in a row (the viewed one and the one
+  before it, at 4.5+ with no criterion under 4). The grant used to be written
+  for the viewed period — already covered — so it never saved a single review.
+  It is now written for the next period (`qaNextPeriod_`); the coverage row
+  shows "Exempt for <next>" until granted, then "Revoke for <next>", and the
+  next period's own view shows the rep at target 0. Every reader asks ONE rule
+  (`qaExemptFor_`): the period's own key, or — for a month — the quarter it
+  falls in; a month's exemption does not exempt its whole quarter. Rejected:
+  exempting the CURRENT period's remainder (the rep may already have been
+  sampled, and the target math would need partial periods).
+- <a id="an-editor-overlay-asks-before-it-discards"></a>**An editor overlay asks "Discard changes?" before Escape, the backdrop or Cancel throws typed work away — `unsaved` on `ensureOverlay`, and "dirty" is an event since open (cycle 23 UI-ESC, 2026-10-02).**
+  The shell's Escape closes the topmost overlay wherever the key is pressed,
+  which is right for a viewer and wrong for an editor. Rather than exempt
+  textareas from Escape (a viewer with a search box would stop closing) or add
+  a per-module check (four modules, each forgetting a path), the guard is ONE
+  option on the shared lifecycle: `ensureOverlay(id, { unsaved: { what, busy?,
+  dirty? } })`, honoured by `closeOverlay` before the hook runs, so every close
+  path that already goes through it — Escape, the backdrop, a Cancel / × wired
+  to it (SH-02) — asks the same question. Dirty means an `input` or `change`
+  event inside the overlay since this open, a module's `overlayMarkDirty_` for
+  work no key produced, or the overlay's own `dirty()`; it is not a diff, so
+  typing a field back to its original value still asks. `busy()` true (a save
+  in flight) hands the answer to the hook's refusal (INV-145). A module's close
+  after a successful save calls its hook directly. Guarded: the KB article
+  editor, the quiz editor, the Employee Docs reader and the coaching composer.
+  Rejected: a snapshot diff (async-rendered editors have no stable "clean"
+  moment, and a structural edit changes the field set) and a native
+  `beforeunload`-style prompt (an in-app dialog must be a `uiConfirm`,
+  the native-dialog replacement decision).
+- <a id="and-in-an-eligibility-cell-means-either-area"></a>**"and" in an Area Eligibility cell means EITHER area; a phrase that could mean "both" is unreadable, never guessed (cycle 23 KB2-6, operator 2026-10-05).**
+  The scan flagged that `oopEligibilityParse_` reads "listed cities and 100
+  miles of Dallas" as `any[radius, cities]` — either one qualifies — and asked
+  whether the operator meant both. The operator reviewed the parser's reading
+  of every "and" shape in use and confirmed each: "100 miles of Dallas and San
+  Antonio" is near either warehouse, "TX and OK" is either state (an address is
+  never in both), "Open and listed cities" is open, and a radius "and" the
+  city list is either. For place names "and" lists areas, so "either" is its
+  meaning, not a fail-open. The phrasings where "and" could narrow ("TX and
+  listed cities", "100 miles of Dallas and TX only", "listed cities and
+  surrounding areas") already parse as UNKNOWN, so the rep is told to check —
+  the g41 fail direction, unchanged. No grammar change; the Batch 11 KB2-6
+  grid pins every reading above, so a later edit cannot flip one silently.
+  Rejected: reading "and" as an intersection (wrong for every confirmed cell)
+  and refusing every "and" (would turn correct cells unreadable).
+- <a id="article-images-live-in-the-kbimages-tab"></a>**Article images live in the KbImages tab, keyed by content and append-only — the browser fits a paste, Save keeps what it cannot store yet (cycle 23 DRV-3, operator 2026-10-05).**
+  The domain disables Apps Script's Drive, and the IT request may take long or
+  be declined, so article images move to the storage the procedures manual
+  already uses (M4-FU3): a `KbImages` tab in the KB spreadsheet with the
+  ManualImages row shape (Key, Sha, Type, Kind, Part, Data, ImportedAt) —
+  base64 split across rows under the cell limit. One ledger, one reader and one
+  header check serve both tabs (`kbImageTab*`), parameterised by header, key
+  charset, types, size and cache prefix. Three differences from the manual,
+  each deliberate: the tab is APPEND-ONLY (an article holds a key for good, and
+  revisions cite old keys), the key is the CONTENT hash (`kbimg-` + 24 hex, so
+  storing the same bytes twice stores them once), and the batch is 6 (an
+  article image can be 1.5 MB, a manual icon a few KB). A changed header row is
+  refused by name rather than appended to (g142). Size is decided in the
+  browser, because Apps Script has no image library: a paste inside 1600 px
+  and 1.5 MB goes byte for byte (a GIF stays animated); a bigger one is redrawn
+  at ≤1600 px on a white canvas, as PNG if that fits, else JPEG at falling
+  quality. The server re-checks type and size. At Save a converted Doc's image
+  that cannot be stored YET — the Doc will not open, the store failed, it is
+  over 1.5 MB — keeps its `kbdoc:` token with a named reason (DRV-5's rule), so
+  a later save can store it; only an image the Doc does not have becomes the
+  placeholder. Rejected: Script Properties (capped — g07), a new spreadsheet
+  per image (Drive again), and a data URL in the article body (the body cell
+  holds ~49,000 characters).
+
+- <a id="a-spanish-thread-is-a-sequence-of-requests"></a>**A Spanish thread is a sequence of requests; a reopened one comes back unclaimed, and a thank-you does not reopen (cycle 23 SP-2, operator 2026-10-05).**
+  An email to the Spanish inbox was one request for ever: the first member
+  reply resolved it, and a manual resolve hid it. A requester's follow-up
+  question after the answer was invisible to the pending list, the stats and
+  Needs-you. One pure rule now reads a thread as requests over its messages'
+  roles — the requester writing (or an 8x8 voicemail) opens or joins one, a
+  member reply closes it, the manual resolve closes what was open at its
+  stamp, a cc'd non-member is neutral — and the pending card, the Resolved
+  list and the stats card all read it, so they cannot disagree.
+
+  Three choices. **The first close wins:** a reply after a click closes
+  nothing, so that request counts as resolved by hand and untimed (before, a
+  later reply timed it); the operator accepted this. **A reopened request is
+  unclaimed** (the operator's call): the claim was on the request that was
+  answered, so a claim older than the thread's last close is read as none on
+  every surface that reads claims — the card, Needs-you, auto-assign and the
+  steal guard — rather than being released by a write. **A courtesy reply is
+  not a request** (the operator's call, after Batch 13 reported the noise): a
+  message wholly of courtesy words is neutral, and anything else stays a
+  request, so the filter fails toward a look (g159). Rejected: a reply-count
+  rule (a double-send would look like two requests) and releasing claims on
+  reopen (a write on a read path, and lost history).
+
+- <a id="every-timesheet-range-read-goes-through-one-reader"></a>**Every Timesheet range read goes through ONE archive-aware reader, gated on the archive's own reach (cycle 23 TC2-9, 2026-10-05).**
+  Cold archiving (INV-153) moves old payroll rows to `TimesheetArchive`. Cycle
+  12 F1 taught the export to read through it, and the accrual copied that walk;
+  the pay statement, both calendars and Punctuality never learned, and showed
+  short periods once archiving was on. Both read-throughs gated on "the range
+  starts before the live tab's oldest row", which a single late back-filled
+  live row defeats. `timesheetRowsInRange_` is now the one reader: live rows
+  first (g14), archive rows when the range reaches what the archive holds, an
+  identical row counted once (INV-132), a `keep` filter applied while
+  walking, and the caller's own live values reused.
+
+  The gate is the archive's OWN newest date, not the configured cutoff: a
+  window lowered or switched off after a move leaves rows in the tab that a
+  cutoff-only gate would never read. Reading that date costs one column, so it
+  is cached for 6 hours (a data value — g157) and cleared by the archiver; the
+  current window's date is unioned in so a missed clear cannot hide a fresh
+  move. A failed archive read is the caller's to judge: payroll and the
+  accrual pass `strict` and refuse rather than read short; the display
+  surfaces keep their live rows and say the archive could not be read
+  (INV-187). Rejected: a per-surface archive read (the drift this replaces),
+  and reading the archive whole on every range read (the common
+  current-period case would pay for history it never shows).

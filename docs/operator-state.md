@@ -52,10 +52,36 @@ entry says which it is.
   Health self-test line rather than silently. Dev-only tooling
   (`web-app/DevTools.js`: `devScrubRoster_(keeperEmail)` anonymizes a copied
   roster so dev's per-employee emails can't reach real staff; `devShowConfig_()`)
-  is `assertDevInstance_`-guarded so it can never mutate the live roster even
+  is `assertDevInstance_`-guarded — and since cycle 23 CORE-06 you RUN them
+  through the owner-only editor entry points **`devScrubRosterForMe`** (the
+  keeper is the account running the editor) and **`devShowConfig`**, which
+  also marks every unset recipient key that falls back to a REAL address so it can never mutate the live roster even
   though it deploys to both. Pinned by the instance-guard Node tests (incl. the
   A5 "a LABEL alone is NOT dev" case) + the DEV-banner DOM test. Deploy: the
   same `clasp push -f` + New version; prod is unaffected until you set them.
+<a id="operator-config-org-email-domains-cycle-23"></a>
+- **`CONFIG.ORG_EMAIL_DOMAINS` — the org's sign-in domains (cycle 23 CORE-05).**
+  `['universalmedsupply.com', 'umsupply.com']`. doGet's "Access Restricted" page
+  is shown only to a signed-in visitor who is neither on one of these domains
+  (`isOrgEmail_`, an exact match) nor a registered employee. If the org adds or
+  retires a sign-in domain, edit this list and deploy. Defence in depth only —
+  every endpoint still gates on the roster. **Since cycle 23 Batch 11 (INT-3)
+  the same list decides which intake recipients are OUTSIDE:** an intake email
+  to any other domain is sent only after the rep confirms that domain, and an
+  outside copy carries no feedback link. On a DEV instance whose intake
+  recipients are a personal inbox, every send asks — by design.
+<a id="operator-the-quizresets-tab-cycle-23"></a>
+- **The `QuizResets` tab (KB spreadsheet) — the quiz retry limit's reset ledger (cycle 23 TRN-1, operator 2026-10-05).**
+  Auto-created on first use; append-only; columns ResetAt, QuizId, EmpId,
+  ResetBy, AtMs (a NUMBER cell). A rep with `TRAIN_QUIZ_MAX_ATTEMPTS` (3)
+  failed attempts in a row waits `TRAIN_QUIZ_LOCK_HOURS` (24) before the next
+  set; a manager ends the wait from Training → Team Training → "Waiting to
+  retry a quiz" → Reset, which writes one row here (ids and the manager's
+  address only — no answers) and a `QuizAttemptsReset` audit row. Attempts and
+  scores are never deleted. The two limits are code constants (00_config.js),
+  not Script Properties. If this tab cannot be read, a quiz submit is REFUSED
+  rather than ignoring resets — fix access to the KB spreadsheet. Do not
+  hand-edit rows; a row whose AtMs is not a number is ignored.
 <a id="operator-the-server-is-fourteen-files-and-filepushorder-is-load-bearing"></a>
 - **The server is FOURTEEN files, and `filePushOrder` is load-bearing (Batch F2,
   2026-09-14).** `web-app/Code.js` no longer exists: it was split, as a MOVE, into
@@ -227,6 +253,13 @@ entry says which it is.
   playback both say so ("Apps Script's Drive service is disabled for this
   domain…") instead of blaming the folder id or the recording — QA sync and
   playback cannot work until IT allows Drive for Apps Script.
+  **AMENDED (cycle 23 Batch 8, 2026-10-02) — one thing to check after the
+  deploy.** An exemption now applies to the period AFTER the one that earned
+  it ("Exempt for <next period>" on the coverage row). One a manager granted
+  before this deploy stays on the period it was granted for, where it is still
+  honoured; if the next period was meant, grant it again from the coverage
+  row. Nothing else to set up.
+
 <a id="operator-set-script-property-adp-ss-id"></a>
 - **Set Script Property `ADP_SS_ID`** to the real spreadsheet ID in
   Apps Script editor → Project Settings → Script Properties. Without
@@ -377,8 +410,20 @@ entry says which it is.
   (INV-117). It grows one tiny row per open with no purge yet; the stats scan
   is bounded (last 4000 rows) so growth never slows reads — trim it manually
   if it ever bothers you.
+<a id="operator-the-kbimages-tab-cycle-23"></a>
+- **The `KbImages` tab (KB spreadsheet) — where article images live since cycle 23 DRV-3 (2026-10-05).**
+  Auto-created by the first pasted screenshot or the first Save of a converted
+  Doc with an image; app-owned and APPEND-ONLY — one row per piece of an image
+  (Key, Sha, Type, Kind = paste|doc, Part, Data = base64, ImportedAt). Do not
+  edit, sort or reorder it: a changed header row stops every image store until
+  it is restored, and a broken row reads as "not stored". Images pasted but never
+  saved, or removed from every article, stay as orphans (no cleanup yet — the
+  Drive folder's posture). After the deploy, check the converter once: convert a
+  Doc that has an image and Save — a "Could not open the source Doc" warning
+  means the domain blocks Docs (DocumentApp) for Apps Script as well as Drive;
+  add it to the IT request and paste the images instead.
 <a id="operator-script-property-kb-images-folder-id"></a>
-- **Script Property `KB_IMAGES_FOLDER_ID`** (auto-managed, Phase 2b). The
+- **Script Property `KB_IMAGES_FOLDER_ID`** (auto-managed, Phase 2b). **Since cycle 23 DRV-3 it matters only for KB file ingest (.docx/.xlsx/.pdf through Drive) and for LEGACY article images (a Drive thumbnail link already in an article); new article images go to the `KbImages` tab and never touch Drive.** The
   deployer-owned "KB Images" Drive folder that converted-article images
   export into on save. Auto-provisioned on the first image-bearing save:
   created in the deployer's Drive, set domain-link-viewable (so `<img>`
@@ -635,6 +680,10 @@ entry says which it is.
   `from`/`to`/`customOpen`, the D5 midnight re-anchor of the DEFAULT range only,
   and the `Manage › Coverage` app-bar; the hand-rolled `cov-controls` row and
   `toneCol` are retired (INV-184).
+  **Cycle 23 TC2-3 + TC2-8 (2026-10-02):** a company holiday is CLOSED in the
+  grid like a weekend (drawn, never flagged), and an approved half day shows
+  as "Half day — works part of the shift", counted as a tentative presence
+  across the shift rather than as a day off.
 <a id="operator-spanish-inbox-tracking-gmail-needs-3-things"></a>
 - **Spanish-inbox tracking (Gmail) needs 3 things.** The Metrics → **Spanish
   Inbox** tab (`getSpanishInboxStats`, manager-gated, read-only, 5-min cached)
@@ -802,6 +851,12 @@ entry says which it is.
   median tiles are true medians since this batch (an even count averages the
   two middle values), so a figure can move on deploy with no change in the
   data (DR-3).
+  **AMENDED (cycle 23 SP-2, 2026-10-05): "resolved" is per REQUEST, not per
+  thread.** A requester's later message after a member's reply, or after Mark
+  resolved, reopens the thread as a new, UNCLAIMED request (a thank-you
+  built only of courtesy words does not); the cached pending-id list
+  (`SPANISH_PENDING_IDS_PREFIX`) carries each reopened thread's claim floor
+  beside its id — timestamps only. Nothing to set; tell the members.
 
 <a id="operator-elapsed-time-is-business-hours-and-one-pure-core-computes-it"></a>
 - **Elapsed time is BUSINESS hours, and ONE pure core computes it (operator
@@ -1033,6 +1088,10 @@ entry says which it is.
   differently). Offboarding is the panel's Offboard button (clears the login
   email, keeps the name + history — the documented roster convention). The
   manual sheet-edit path still works; the panel is the recommended one.
+  **Since cycle 23 TC2-6 (2026-10-02)** the Add form refuses a timezone the
+  system does not recognise ("America/Chicgo") instead of storing it — an
+  unknown id was silently read as GMT. Fix the spelling; a UTC/GMT offset
+  (GMT+5) is still accepted on its shape.
 <a id="operator-daily-automation-triggers"></a>
 - **Daily automation triggers** must be installed by a manager
   account via `installAutomationTriggers()` from the editor. **The
@@ -1125,13 +1184,20 @@ entry says which it is.
   `removeAutomationTriggers()` first.
   **The installer is recorded (cycle 22 follow-ups, 2026-09-25).** Each run
   stores who ran it in the auto-managed Script Property
-  `AUTOMATION_TRIGGER_OWNER` (`{email, at}`). Installable triggers run AS that
+  `AUTOMATION_TRIGGER_OWNER` (`{email, by, at}` — since cycle 23 CORE-03
+  `email` is the account the triggers RUN AS, the effective user, and `by` is
+  who pressed the button; it was the caller before). Installable triggers run AS that
   account, so if that person is offboarded (the account disabled) every job
   stops; the Automation Health detector "The automation triggers' installer is
   still on the team" then reads DEAD. **After this deploy, re-run
   `installAutomationTriggers()` once from an active manager account** so the
   record exists — until then the detector has nothing to check and stays
   silent. When it reads DEAD, re-run the installer from an active account.
+  **Removing the triggers is recorded (cycle 23 CORE-03):**
+  `removeAutomationTriggers()` writes an `AutomationTriggersRemoved` AuditLog row
+  with the count — it switches EVERY job off, the failure digest included. And
+  `runNightlySelfTest` refuses anyone but the script owner, so it runs only from
+  its trigger or the editor; a browser call returns an error and records nothing.
 <a id="operator-call-notes-retention-is-off-by-default"></a>
 - **Call-notes retention is OFF by default.** `purgeOldCallNotes`
   (daily manager-tz 4am trigger) deletes per-rep `Notes` rows whose
@@ -1477,7 +1543,12 @@ entry says which it is.
   `parseShiftOverride_`; a typo'd/overnight/out-of-range cell silently falls
   back to the per-tz schedule (fail-safe — a bad cell can never break the
   ribbon). Breaks + the break reminder still come from the per-tz schedule
-  (the override changes start/length only). Overnight shifts are unsupported.
+  (the override changes start/length only) — **but since cycle 23 TC2-4
+  (2026-10-02) only the per-tz breaks that fall wholly inside the overridden
+  shift are kept**, so a rep moved to 1 pm–9 pm is no longer reminded of or
+  graded against a noon lunch. To give an overridden rep breaks of their own,
+  set them per employee (Manage → Admin → break schedule); a per-employee list
+  is never trimmed. Overnight shifts are unsupported.
   `ROSTER_CACHE_KEY` bumped to `employee_roster_v8` for this column.
 <a id="operator-the-insurancepayors-tab-kb-spreadsheet"></a>
 - **The `InsurancePayors` tab** (operator 2026-08-25) lives in the **KB
@@ -1809,6 +1880,14 @@ entry says which it is.
   be checked today: …", and stamps `TrainingOverdueDigest`; the daily brief
   names the source; the weekly coaching recap stamps `CoachingRecapDigest`.
   UNSET stays quiet — that is a deployment without the feature.
+  **AMENDED (cycle 23 HR-1, 2026-10-02) — a one-time check, optional.** A
+  document's title and body, and coaching free text, are now written as plain
+  text. A document issued BEFORE this deploy whose title or body reads as a
+  date or a number (e.g. "3/4", "2026") was stored converted, so it still
+  verifies as tampered and cannot be signed: void it (Issue Docs) and issue it
+  again. Coaching rows written before keep their converted values; nothing
+  depends on them byte-for-byte.
+
 
 <a id="operator-employees-sheet-column-p-payrate"></a>
 - **`Employees` sheet column P = `PayRate`** (operator 2026-08-17) — an
@@ -2167,9 +2246,9 @@ entry says which it is.
   `TIMESHEET_ARCHIVE_DAYS=365`** (a payroll year). Values below the
   `TIMESHEET_ARCHIVE_MIN_DAYS` (120) safety floor clamp UP so a typo can never
   strip active-window rows (adjust window 30d, current export period,
-  dashboard trends). NOTE archived rows leave the in-app month navigation
-  (the employee calendar / manager timesheet views read the live tab only) —
-  they remain in `TimesheetArchive` for payroll audit. No redeploy to change
+  dashboard trends). Archived rows stay in `TimesheetArchive` for payroll
+  audit, and since cycle 23 TC2-9 (Batch 14) every in-app timesheet range read
+  reads them too — see the amendment at the end of this entry. No redeploy to change
   the window; installing the trigger requires `installAutomationTriggers()`.
   **Two cycle-12 fixes make enabling this genuinely safe — do NOT enable it on
   a build older than that batch:** (a) F1 — the **ADP export now reads through**
@@ -2181,9 +2260,17 @@ entry says which it is.
   drains over successive nights instead of timing out mid-run and re-appending
   (duplicating) payroll rows into the archive every night. Expect several
   nights of `rowsArchived=2000; hitPerRunCap=2000` audit rows on the first
-  enable — that is the backlog draining, not an error. Still live-tab-only
-  (accepted): the employee calendar, `getPunctualityReport`, and the sheet
-  doctor's 92-day scan.
+  enable — that is the backlog draining, not an error. **AMENDED (cycle 23
+  TC2-9, Batch 14): enabling it no longer shortens ANY in-app view.** The
+  export, the accrual, the pay statement (and the timesheet views sharing its
+  builder), the rep calendar, the team punches calendar and Punctuality all
+  read through ONE reader (`timesheetRowsInRange_`), which reads the archive
+  whenever a range reaches what it holds — its newest date, cached for 6 hours
+  under `ts_archive_reach_v1` (auto-managed; the archiver clears it after a
+  move) and unioned with the current window's date. A failed archive read
+  refuses the export, stops the accrual, and is named on the other surfaces
+  ("the timesheet archive could not be read"). Still live-tab-only (accepted):
+  the sheet doctor's 92-day scan, inside the 120-day floor.
 <a id="operator-call-notes-eod-weekly-digest-knobs"></a>
 - **Call-notes EOD + weekly digest knobs** are
   `CONFIG.CALL_NOTES.EOD_WARNING_HOUR` (default 17 — the local hour at
@@ -2250,6 +2337,17 @@ entry says which it is.
   No manual setup needed — the `getOrCreateFormTokensSheet_()` /
   `getOrCreateFormSubmissionsSheet_()` helpers provision them with headers on
   first call.
+  **AMENDED (cycle 23 Batch 7a, 2026-10-02) — nothing to set up, three things
+  to know.** `CONFIG.FORM_TOKEN_EXPIRY_HOURS` now also sets the "these links
+  expire in N hours" line in the customer and provider emails (it was a fixed
+  "72 hours"), so change the one value and both agree. A submission notice for
+  a rep who is no longer on the roster goes to `MANAGER_EMAILS` (with a line
+  saying the sender has left), so keep that list current. And the
+  `ScheduledCalls` tab in the same store is read over a 90-day CREATION span
+  (`SCHED_STATE_SPAN_DAYS`), not its last 2,000 rows: a reminder left active
+  more than about 30 days past the furthest it could be set drops off its rep's
+  list.
+
 <a id="operator-punchadjustrequests-sheet-tab-4a"></a>
 - **`PunchAdjustRequests` sheet tab (#4a)** is auto-created in the ADP
   spreadsheet on first adjustment request (`getOrCreatePunchAdjustSheet_`).
@@ -2269,6 +2367,24 @@ entry says which it is.
   REFUSED (the row stays Pending and the queue row says so in advance) — deny it
   and ask the rep to file it again from Adjust, which now asks. A correction whose
   target was changed in the meantime is refused the same way.
+  **Since cycle 23 TC-05 (2026-10-02)** a Clock In / Clock Out request is also
+  refused at approval (row left Pending) when it would leave the day with an
+  equal pair or a shift over 16 hours — the AM/PM slip; deny it and ask for the
+  right time.
+<a id="operator-timeoffrequests-deducted-column-cycle-23"></a>
+- **`TimeOffRequests` — the trailing `Deducted` column (cycle 23 TC-04,
+  2026-10-02).** Self-heals onto the existing tab on first use; no setup. Each
+  approval records what it took from the balance: `annual:1`, `sick:0.5`, or
+  `none` (tracking off, the rep's PtoEnabled FALSE, or an unpaid type). Deny
+  or Pending restores exactly that and clears the cell. Leave it alone — a
+  hand edit changes what a later Deny credits. A blank cell on an Approved
+  row means it was approved before this column existed, and a Deny restores
+  by type as before. Two related refusals shipped with it: the PTO drift
+  card's **Credit & reconcile** now refuses while PTO tracking is off ("no
+  balance can be credited — nothing was changed") and for a rep with PTO off,
+  whom the card no longer lists; and a single-date time-off request on a
+  weekend or company holiday is refused by name (filed before the deploy, one
+  can still be approved — deny it).
 <a id="operator-form-catalog"></a>
 - **Form catalog** is configured in
   `CONFIG.CALL_NOTES.FORM_CATALOG` — each entry maps an ID to a
@@ -2291,7 +2407,13 @@ entry says which it is.
   could until cycle 22 — see g143). The nightly self-test keeps its
   MANAGER_EMAILS trigger gate and runs as the installer. `INSTANCE_IS_PROD`
   is unchanged: unset still PERMITS the full suite. Treating unset as prod
-  waits on standing up the DEV instance, and is still an operator decision.
+  waits on standing up the DEV instance, and is still an operator decision.  **Cycle 23 Batch 15 (2026-10-05):** eleven cases cover the server rules of
+  Batches 10–14 — nine pure ones in the smoke shard (safe on prod: run
+  `runSmokeTests` after the push) and two in Integration B (the DEV nightly,
+  or `runAllTestsPartB` on DEV: they write TEST rows to the Timesheet and an
+  image to the KB fixture). Read the expected count off the run's
+  `Expected:` line.
+
 <a id="operator-stored-formulas-one-time-clean-up-cycle-22"></a>
 - **Stored formulas — a one-time clean-up (cycle 22 S2 + F3, 2026-09-23).**
   From this deploy every app write is stored as literal text (g144). Text a

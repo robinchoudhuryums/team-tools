@@ -24,7 +24,9 @@
  *   • the keeper row is forced isManager = TRUE so you can drive the whole app.
  *
  * `keeperEmail` = the Google account you log into dev with (usually you).
- * Run it from the editor: devScrubRoster_('you@yourdomain.com').
+ * Run it from the editor through `devScrubRosterForMe` (below) — the editor's
+ * Run button passes no arguments and hides functions ending in `_`, so this
+ * one cannot be run directly (CORE-06, cycle 23).
  * Idempotent — re-running only re-anonymizes and is safe.
  */
 function devScrubRoster_(keeperEmail) {
@@ -77,10 +79,45 @@ function devShowConfig_() {
   assertDevInstance_('devShowConfig_');
   const p = PropertiesService.getScriptProperties();
   const keys = ['INSTANCE_LABEL', 'INSTANCE_IS_PROD', 'ADP_SS_ID', 'CDR_SS_ID', 'INTAKE_SS_ID',
-    'KB_SS_ID', 'HR_DOCS_SS_ID', 'FORMS_SS_ID', 'DEPT_REQUESTS_SS_ID',
+    'KB_SS_ID', 'HR_DOCS_SS_ID', 'FORMS_SS_ID', 'DEPT_REQUESTS_SS_ID', 'QA_SS_ID', 'KB_IMAGES_FOLDER_ID',
     'MANAGER_EMAILS', 'ADMIN_EMAILS', 'CN_DEPARTMENT_EMAILS',
     'INTAKE_SALES_EMAIL', 'INTAKE_SLEEP_EMAIL', 'INTAKE_BCC_EMAIL', 'INTAKE_ALL_AGENTS_EMAIL',
-    'SPANISH_INBOX_MEMBERS', 'SPANISH_INBOX_ADDRESS'];
+    'SPANISH_INBOX_MEMBERS', 'SPANISH_INBOX_ADDRESS', 'MAIL_BCC_ALL', 'REP_SENDER_FROM'];
   Logger.log('── DEV instance config (verify none point at prod) ──');
-  keys.forEach(function (k) { Logger.log(k + ' = ' + (p.getProperty(k) || '(unset)')); });
+  keys.forEach(function (k) { Logger.log(k + ' = ' + devConfigValueLine_(k, p.getProperty(k))); });
+}
+/** CORE-06 (cycle 23) — PURE: what "(unset)" MEANS for a key. A recipient key
+ *  that is unset does not mean "no mail": it falls back to CONFIG's REAL
+ *  production addresses, so a dev user reading "(unset)" could still email
+ *  real departments. Say so on the line itself. */
+function devConfigValueLine_(key, value) {
+  if (value) return value;
+  const FALLS_BACK = {
+    CN_DEPARTMENT_EMAILS: 'CONFIG\'s REAL department addresses',
+    INTAKE_SALES_EMAIL: 'CONFIG\'s REAL sales address', INTAKE_SLEEP_EMAIL: 'CONFIG\'s REAL sleep address',
+    INTAKE_BCC_EMAIL: 'CONFIG\'s REAL intake BCC', INTAKE_ALL_AGENTS_EMAIL: 'CONFIG\'s REAL all-agents address',
+    SPANISH_INBOX_ADDRESS: 'CONFIG\'s REAL Spanish inbox',
+  };
+  return FALLS_BACK[key] ? '(unset — FALLS BACK to ' + FALLS_BACK[key] + '; set it to your inbox on dev)' : '(unset)';
+}
+
+// ── Editor entry points (CORE-06, cycle 23) ────────────────────────────────
+// The editor's Run button calls a function with NO arguments and does not
+// list functions ending in `_`, so the two helpers above could not be run as
+// the docs said. These two can. They are reachable through google.script.run
+// like any public function (g143), so the FIRST statement is the owner check
+// (the Tests.js rule) and the dev-instance guard follows inside the helper.
+
+/** Run from the dev editor: scrub the roster, keeping YOUR account (the one
+ *  running the editor) as the keeper. */
+function devScrubRosterForMe() {
+  _assertSuiteCaller_('devScrubRosterForMe');
+  let me = '';
+  try { me = Session.getEffectiveUser().getEmail(); } catch (e) { me = ''; }
+  devScrubRoster_(me);
+}
+/** Run from the dev editor: print the dev config (see devShowConfig_). */
+function devShowConfig() {
+  _assertSuiteCaller_('devShowConfig');
+  devShowConfig_();
 }

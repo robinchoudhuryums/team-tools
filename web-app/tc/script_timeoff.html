@@ -818,7 +818,7 @@ function payStmtHtml_(d) {
     : `<div style="margin-top:10px;font-size:12px;color:var(--muted)">Pay rate not on file — hours shown only. Ask your manager if you expected a rate here.</div>`;
 
   const archive = d.archiveNote
-    ? `<div style="margin-top:8px;font-size:12px;color:var(--warning-deep)">Part of this period may have been moved to the timesheet archive — older rows can be missing here. Ask a manager for an export if the totals look short.</div>`
+    ? `<div style="margin-top:8px;font-size:12px;color:var(--warning-deep)">The timesheet archive could not be read, so rows from this period may be missing and the totals may be short. Reload, or ask a manager for an export.</div>`
     : '';
 
   const incomplete = d.incompleteCount

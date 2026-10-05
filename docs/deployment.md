@@ -153,12 +153,17 @@ re-copy the creds; nothing is lost, it's all in git or Google).
      `INTAKE_BCC_EMAIL`, `INTAKE_ALL_AGENTS_EMAIL`, `SPANISH_INBOX_MEMBERS`.
    - `CDR_SS_ID`: the CDR report is read-only (owned by another repo). Point at a
      copy, or the same sheet (read-only), or leave unset (Metrics degrades cleanly).
-5. **Make the dev roster safe.** After copying the ADP sheet, run once from the dev
-   editor: `devScrubRoster_('you@yourdomain.com')` (from `DevTools.js`). It replaces
-   every employee email except yours with a `@example.invalid` alias and blanks
-   column L, so dev's per-employee emails can never reach a real colleague and no
-   dev rep points at a real per-rep Sheet. Then `devShowConfig_()` prints the dev
-   config so you can confirm nothing points at prod.
+5. **Make the dev roster safe.** After copying the ADP sheet, pick
+   **`devScrubRosterForMe`** in the dev editor's function dropdown and press Run
+   (from `DevTools.js`; it takes no arguments — the keeper is the account running
+   the editor, i.e. you). It replaces every employee email except yours with a
+   `@example.invalid` alias and blanks column L, so dev's per-employee emails can
+   never reach a real colleague and no dev rep points at a real per-rep Sheet.
+   Then run **`devShowConfig`** the same way: it prints the dev config so you can
+   confirm nothing points at prod. A recipient key it shows as **"FALLS BACK to
+   CONFIG's REAL …"** is unset and would mail the real address — set it to your
+   inbox. (The `_`-suffixed helpers behind these two cannot be run from the
+   editor: the Run button hides them and passes no arguments.)
 6. **Deploy the dev project** as a Web App: Deploy → New deployment → Web app →
    Execute as **Me**, Who has access **Only myself**. Grab the **`/dev`** (Test
    deployment / HEAD) URL and bookmark it. Every future `npm run push:dev` is live
@@ -215,7 +220,9 @@ zero behavior change**, so prod is unaffected until you set them.
 - **Dev-only tooling** (`devScrubRoster_`, `devShowConfig_` in `DevTools.js`) is
   guarded by `assertDevInstance_` — it runs ONLY when `INSTANCE_LABEL` is set and
   `INSTANCE_IS_PROD` is not — so a mutating dev helper can never touch the live
-  roster even though the file deploys to both projects.
+  roster even though the file deploys to both projects. You run them through their
+  editor entry points `devScrubRosterForMe` / `devShowConfig`, which are owner-only
+  (the suite's `_assertSuiteCaller_` is their first statement — CORE-06).
 
 Recommended property matrix:
 
@@ -235,4 +242,5 @@ Recommended property matrix:
   account silently fails until the real sheets are re-shared (see CLAUDE.md).
 - Dev email is **not sandboxed** — it truly sends, to whatever dev is configured to
   email. The isolation is that dev's recipients are all *you*. Double-check with
-  `devShowConfig_()` before your first send.
+  `devShowConfig` (the editor entry point) before your first send — a recipient it
+  reports as "FALLS BACK to CONFIG's REAL …" would mail the real address.

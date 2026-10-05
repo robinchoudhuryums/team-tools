@@ -50,6 +50,7 @@
   .tr-cell-done { color: var(--success-deep); font-weight: 700; }
   .tr-cell-overdue { color: var(--danger-deep); font-weight: 700; }
   .tr-cell-pending { color: var(--muted); }
+  .tr-quiz-lock { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: 8px; background: var(--paper-2); font-size: .82rem; line-height: 1.45; }
   .tr-revoke-btn { font: inherit; font-size: .74rem; padding: 3px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-2); color: var(--danger-deep); cursor: pointer; }
   :root[data-compact] .tr-row { flex-wrap: wrap; }
   .tr-link { font: inherit; font-size: .76rem; background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
@@ -395,7 +396,7 @@ function trainSyncReaderFoot_(itemId) {
   var foot = document.getElementById('tr-reader-foot');
   if (!foot || TRAIN_STATE.readerItemId !== itemId) return;
   var it = trainItemById_(itemId);
-  var h = '<button class="kb-btn" onclick="trainCloseReader_()">Close</button>';
+  var h = '<button class="kb-btn" onclick="closeOverlay(document.getElementById(\'train-reader-overlay\'))">Close</button>';
   if (it && !it.completed) {
     h = '<button class="tr-complete-btn" data-tr-complete-reader="1">' + icon('check', 13) + ' Mark complete</button>' + h;
   } else if (it && it.completed) {
@@ -429,6 +430,7 @@ function trainOpenQuiz_(quizId) {
         return;
       }
       TRAIN_STATE.quizDef = quiz;
+      if (quiz.lockout && quiz.lockout.locked) { trainRenderQuizLocked_(quiz.lockout); return; }   // TRN-1
       trainRenderQuizForm_(quiz);
     })
     .withFailureHandler(function (err) {
@@ -439,12 +441,32 @@ function trainOpenQuiz_(quizId) {
     .getQuiz(quizId);
 }
 
+/** TRN-1 (cycle 23 Batch 11): the retry wait, said in place of the form. The
+ *  server refuses an attempt while it lasts, so nothing typed here is lost. */
+function trainQuizLockedHtml_(lk) {
+  return '<div class="tr-quiz-lock" role="status" data-quiz-lock="locked">' + icon('clock', 13) +
+    ' You have used all ' + esc(String((lk && lk.maxAttempts) || '')) + ' attempts. You can try again after <strong>' +
+    esc((lk && lk.retryLabel) || 'the wait') + '</strong>, or ask your manager to reset your attempts. Review the material in the meantime.</div>';
+}
+function trainRenderQuizLocked_(lk) {
+  var overlay = document.getElementById('train-quiz-overlay');
+  if (!overlay) return;
+  overlay.innerHTML = '<div class="modal tr-quiz"><div class="body">' + trainQuizLockedHtml_(lk) + '</div><div class="foot">' +
+    '<button class="tr-complete-btn" onclick="closeOverlay(document.getElementById(\'train-quiz-overlay\'))">Close</button></div></div>';
+}
+/** TRN-1: "N attempts left" on the form and after a fail — the limit is never a surprise. */
+function trainAttemptsLeftText_(n) {
+  if (n == null || !isFinite(n)) return '';
+  return n + ' attempt' + (n === 1 ? '' : 's') + ' left before a wait';
+}
 function trainRenderQuizForm_(quiz) {
   var overlay = document.getElementById('train-quiz-overlay');
   if (!overlay) return;
+  var lk = quiz.lockout;
   var h = '<div class="modal tr-quiz"><div class="body">' +
     '<h2 style="margin:0 0 4px;">' + esc(quiz.title) + '</h2>' +
-    '<div class="tr-meta" style="margin-bottom:12px;">' + quiz.questions.length + ' question' + (quiz.questions.length === 1 ? '' : 's') + ' · pass ≥' + quiz.passPct + '%</div>';
+    '<div class="tr-meta" style="margin-bottom:12px;">' + quiz.questions.length + ' question' + (quiz.questions.length === 1 ? '' : 's') + ' · pass ≥' + quiz.passPct + '%' +
+      (lk && !lk.locked ? ' · ' + esc(trainAttemptsLeftText_(lk.attemptsLeft)) : '') + '</div>';
   quiz.questions.forEach(function (q, qi) {
     h += '<div class="tr-q" data-qi="' + qi + '"><div class="tr-q-text">' + (qi + 1) + '. ' + esc(q.q) + '</div>';
     q.options.forEach(function (opt, oi) {
@@ -453,7 +475,7 @@ function trainRenderQuizForm_(quiz) {
     h += '</div>';
   });
   h += '</div><div class="foot">' +
-    '<button class="kb-btn" onclick="trainCloseQuiz_()">Cancel</button>' +
+    '<button class="kb-btn" onclick="closeOverlay(document.getElementById(\'train-quiz-overlay\'))">Cancel</button>' +
     '<button class="tr-complete-btn" id="tr-quiz-submit">' + icon('check', 13) + ' Submit answers</button>' +
     '</div></div>';
   overlay.innerHTML = h;
@@ -494,11 +516,13 @@ function trainSubmitQuiz_() {
           if (currentView === 'trainingHome') trainRenderMy_();
         }
         if (TRAIN_STATE.quizTaking !== quizId) return;
+        if (res && res.locked && !res.success) { trainRenderQuizLocked_(res); return; }   // TRN-1: nothing was recorded
         if (!res || !res.success) {
           if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + ' Submit answers'; }
           showToast((res && res.error) || 'Could not grade the quiz.', 'error');
           return;
         }
+        quiz.lockout = { locked: !!res.locked, attemptsLeft: res.attemptsLeft, maxAttempts: res.maxAttempts, retryLabel: res.retryLabel };
         trainRenderQuizResult_(quiz, answers, res);
       })
       .withFailureHandler(function (err) {
@@ -524,12 +548,14 @@ function trainRenderQuizResult_(quiz, answers, res) {
       '<div class="big">' + res.scorePct + '%</div>' +
       '<div class="sub">' + (res.passed ? 'Passed' : 'Not passed') + ' · ' + res.right + '/' + res.total + ' correct · pass ≥' + res.passPct + '% · attempt ' + res.attempt + '</div>' +
     '</div>';
-  // S10 (cycle 22): a failed attempt carries no per-question marks (the
-  // server sends perQuestion: null) — the rep reviews the material and
-  // retakes; which answers were wrong is shown once they pass.
+  // TRN-1 (cycle 23 Batch 11): every attempt carries the per-question marks —
+  // which questions were wrong, never the right option (the server does not
+  // have it to send). An older server's null still renders the plain list.
   var marks = Array.isArray(res.perQuestion) ? res.perQuestion : null;
-  if (!marks) {
-    h += '<div class="tr-meta" data-quiz-marks="withheld">Which questions you missed is shown once you pass — review the material and retake.</div>';
+  if (!res.passed) {
+    if (res.locked) h += trainQuizLockedHtml_(res);
+    else if (res.attemptsLeft != null) h += '<div class="tr-meta" data-quiz-left="' + esc(String(res.attemptsLeft)) + '">' + esc(trainAttemptsLeftText_(res.attemptsLeft)) +
+      ' — review the questions marked incorrect, then retake.</div>';
   }
   quiz.questions.forEach(function (q, qi) {
     var your = answers[qi] >= 0 ? q.options[answers[qi]] : '(no answer)';
@@ -548,8 +574,8 @@ function trainRenderQuizResult_(quiz, answers, res) {
       '</div>';
   });
   h += '</div><div class="foot">' +
-    (res.passed ? '' : '<button class="kb-btn" id="tr-quiz-retake">' + icon('refresh', 13) + ' Retake</button>') +
-    '<button class="tr-complete-btn" onclick="trainCloseQuiz_()">Done</button>' +
+    ((res.passed || res.locked) ? '' : '<button class="kb-btn" id="tr-quiz-retake">' + icon('refresh', 13) + ' Retake</button>') +
+    '<button class="tr-complete-btn" onclick="closeOverlay(document.getElementById(\'train-quiz-overlay\'))">Done</button>' +
     '</div></div>';
   overlay.innerHTML = h;
   var rt = document.getElementById('tr-quiz-retake');
@@ -795,6 +821,21 @@ function trainRenderMgr_() {
     });
     h += '</tbody></table></div>';
   }
+  // TRN-1 (cycle 23 Batch 11): reps waiting out the quiz retry limit.
+  var lockedReps = dash.locked || [];
+  if (lockedReps.length) {
+    h += '<div class="tr-card"><div class="tr-card-h"><h2 class="tr-card-title">Waiting to retry a quiz</h2>' +
+        '<span class="tr-card-badge">' + lockedReps.length + '</span></div>' +
+      '<div class="tr-meta" style="margin-bottom:8px;">These reps used all ' + esc(String(dash.maxAttempts || '')) + ' attempts and are waiting ' +
+        esc(String(dash.lockHours || '')) + ' hours. Reset to let one retry now; their attempts and scores are kept.</div>' +
+      '<table class="tr-table"><thead><tr><th>Employee</th><th>Quiz</th><th>Can retry</th><th></th></tr></thead><tbody>';
+    lockedReps.forEach(function (l) {
+      h += '<tr><td>' + esc(l.empName) + '</td><td>' + esc(l.title) + '</td><td>' + esc(l.retryLabel) + '</td>' +
+        '<td><button class="tr-revoke-btn" data-tr-quiz-reset="' + esc(l.empId) + '" data-tr-quiz-reset-quiz="' + esc(l.quizId) +
+        '" data-tr-quiz-reset-name="' + esc(l.empName) + '">Reset</button></td></tr>';
+    });
+    h += '</tbody></table></div>';
+  }
   // Quizzes — authoring (T2).
   h += '<div class="tr-card"><div class="tr-card-h"><h2 class="tr-card-title">Quizzes</h2>' +
       (quizzes.length ? '<span class="tr-card-badge">' + quizzes.length + '</span>' : '') + '</div>';
@@ -847,6 +888,8 @@ function trainRenderMgr_() {
     el.addEventListener('click', function (e) {
       var rv = e.target.closest('[data-tr-revoke]');
       if (rv) { trainRevoke_(rv.getAttribute('data-tr-revoke')); return; }
+      var qr = e.target.closest('[data-tr-quiz-reset]');   // TRN-1
+      if (qr) { trainResetQuizAttempts_(qr.getAttribute('data-tr-quiz-reset'), qr.getAttribute('data-tr-quiz-reset-quiz'), qr.getAttribute('data-tr-quiz-reset-name')); return; }
       var qe = e.target.closest('[data-tr-quiz-edit]');
       if (qe) { trainOpenQuizEditor_(qe.getAttribute('data-tr-quiz-edit')); return; }
       var qd = e.target.closest('[data-tr-quiz-del]');
@@ -897,7 +940,7 @@ function trainOpenQuizEditor_(quizId) {
     ? { quizId: quizId, title: existing.title, kbItemId: existing.kbItemId, passPct: existing.passPct,
         questions: existing.questions.map(function (q) { return { q: q.q, options: q.options.slice(), correct: q.correct }; }) }
     : { quizId: '', title: '', kbItemId: '', passPct: 80, questions: [{ q: '', options: ['', ''], correct: 0 }] };
-  var overlay = ensureOverlay('train-qed-overlay', { label: 'Quiz editor', onClose: trainCloseQuizEditor_ });
+  var overlay = ensureOverlay('train-qed-overlay', { label: 'Quiz editor', onClose: trainCloseQuizEditor_, unsaved: { what: 'this quiz' } });   // UI-ESC
   trainRenderQuizEditor_(overlay);
 }
 
@@ -933,7 +976,7 @@ function trainRenderQuizEditor_(overlay) {
   h += st.questions.map(function (q, qi) { return trainQedQuestionHtml_(q, qi, st.questions.length); }).join('');
   h += (st.questions.length < 50 ? '<button class="kb-btn" id="tr-qed-addq">+ Question</button>' : '') +
     '</div><div class="foot">' +
-    '<button class="kb-btn" onclick="trainCloseQuizEditor_()">Cancel</button>' +
+    '<button class="kb-btn" onclick="closeOverlay(document.getElementById(\'train-qed-overlay\'))">Cancel</button>' +
     '<button class="tr-complete-btn" id="tr-qed-save">' + icon('check', 13) + ' Save quiz</button>' +
     '</div></div>';
   overlay.innerHTML = h;
@@ -942,6 +985,7 @@ function trainRenderQuizEditor_(overlay) {
   if (imp) imp.addEventListener('click', trainImportQuizFromForm_);
   var aq = document.getElementById('tr-qed-addq');
   if (aq) aq.addEventListener('click', function () {
+    overlayMarkDirty_(overlay);   // UI-ESC: a structural edit is work too
     trainQedSnapshot_();
     TRAIN_STATE.qed.questions.push({ q: '', options: ['', ''], correct: 0 });
     trainRenderQuizEditor_();
@@ -951,6 +995,7 @@ function trainRenderQuizEditor_(overlay) {
     overlay._qedDelegated = true;
     overlay.addEventListener('click', function (e) {
       var t;
+      if (e.target.closest('[data-qed-addopt],[data-qed-delopt],[data-qed-delq]')) overlayMarkDirty_(overlay);   // UI-ESC
       if ((t = e.target.closest('[data-qed-addopt]'))) {
         trainQedSnapshot_();
         var qa = Number(t.getAttribute('data-qed-addopt'));
@@ -1058,6 +1103,7 @@ function trainImportQuizFromForm_() {
         if (res.questions && res.questions.length) st.questions = res.questions;
         st._importWarnings = res.warnings || [];
         trainRenderQuizEditor_();
+        overlayMarkDirty_('train-qed-overlay');   // UI-ESC: imported questions are unsaved until Save quiz
         var w = (res.warnings || []).length;
         showToast('Imported ' + res.questions.length + ' question' + (res.questions.length === 1 ? '' : 's') +
           (w ? ' · ' + w + ' note' + (w === 1 ? '' : 's') + ' — review below' : '') + '.', w ? 'warn' : 'success');
@@ -1124,6 +1170,26 @@ function trainDeleteQuiz_(quizId, btn) {
   });
 }
 
+/** TRN-1 (cycle 23 Batch 11) — manager reset of a rep's quiz retry wait. The
+ *  values come from data-* attributes (decoded — g49), so they go to the RPC
+ *  and to the confirm's text (uiConfirm escapes it), never back into innerHTML raw. */
+function trainResetQuizAttempts_(empId, quizId, name) {
+  uiConfirm({
+    title: 'Reset quiz attempts?',
+    message: (name || 'This rep') + ' can retry the quiz now, with a fresh set of attempts. Past attempts and scores are kept.',
+    confirmLabel: 'Reset',
+  }).then(function (ok) {
+    if (!ok) return;
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || !res.success) { showToast((res && res.error) || 'Reset failed.', 'error'); return; }
+        showToast('Attempts reset.', 'success');
+        if (currentView === 'trainingManage') trainLoadMgr_();
+      })
+      .withFailureHandler(function (err) { showToast('Reset failed: ' + ((err && err.message) || err), 'error'); })
+      .resetQuizAttempts(empId, quizId);
+  });
+}
 function trainRevoke_(assignId) {
   uiConfirm({
     title: 'Revoke assignment?',

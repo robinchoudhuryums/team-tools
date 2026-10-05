@@ -311,6 +311,9 @@ window.addEventListener('load', () => {
       if (BOOT_T.stateStart !== null) { var _bn = bootNow_(); BOOT_T.stateMs = _bn === null ? null : _bn - BOOT_T.stateStart; }
       if (state.error) { renderError(state.error); return; }
       empState = state;
+      // INT2-3 (cycle 23): drop expired and other users' intake drafts (PHI at
+      // rest) now that we know who signed in — not only when a form is opened.
+      if (typeof intakeSweepDrafts_ === 'function') { try { intakeSweepDrafts_(); } catch (e) {} }
       adjustWindowDays = state.adjustWindowDays || 30;
       if (state.selfUndoWindowSeconds) SELF_UNDO_WINDOW_SECONDS = state.selfUndoWindowSeconds;
       document.getElementById('adj-days-disp').textContent = adjustWindowDays;
@@ -754,7 +757,7 @@ function whatsNewOpen_() {
       '<div class="modal-title">' + icon('star', 15) + ' ' + esc(res.title) + '</div>' +
       '<div class="kb-article" style="max-height:60vh;overflow-y:auto;margin-top:8px">' + bodyHtml + '</div>' +
       '<div class="modal-footer">' +
-        '<button type="button" class="btn-modal-ok" onclick="whatsNewClose_()">Got it</button>' +
+        '<button type="button" class="btn-modal-ok" onclick="closeOverlay(document.getElementById(\'whatsnew-overlay\'))">Got it</button>' +
       '</div>' +
     '</div>';
 }
@@ -1089,6 +1092,9 @@ function renderShell(state) {
  *  Persisted to localStorage.umsSidebarW so the rep's chosen width
  *  survives reload. */
 const SIDEBAR_MIN = 56, SIDEBAR_MAX = 280, SIDEBAR_SNAP_THRESHOLD = 100, SIDEBAR_DEFAULT = 168, SIDEBAR_ICON_ONLY = 56;
+var SIDEBAR_DRAG = null;          // SH-05: the drag in progress, or null
+var _sidebarDocBound = false;     // SH-05: the document pair is bound once
+
 function initResizableSidebar_() {
   const sb = document.querySelector('.sidebar');
   const grip = document.getElementById('sidebar-grip');
@@ -1101,27 +1107,17 @@ function initResizableSidebar_() {
     }
   } catch (e) { /* localStorage unavailable — stay default */ }
 
-  let dragging = false, startX = 0, startW = 0;
+  // SH-05 (cycle 23): renderShell runs this on every view-as switch, and each
+  // run added ANOTHER document mousemove/mouseup pair holding that render's
+  // sidebar — harmless no-ops, never removed. The document pair is bound ONCE
+  // and reads the drag in progress; the grip binds once per grip element.
+  if (grip._sbResizeBound) return;
+  grip._sbResizeBound = true;
   grip.addEventListener('mousedown', (e) => {
-    dragging = true;
-    startX = e.clientX;
-    startW = sb.getBoundingClientRect().width;
+    SIDEBAR_DRAG = { sb: sb, startX: e.clientX, startW: sb.getBoundingClientRect().width };
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
     e.preventDefault();
-  });
-  document.addEventListener('mousemove', (e) => {
-    if (!dragging) return;
-    const w = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, startW + (e.clientX - startX)));
-    applySidebarWidth_(sb, w);
-  });
-  document.addEventListener('mouseup', () => {
-    if (!dragging) return;
-    dragging = false;
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-    try { localStorage.setItem('umsSidebarW', String(Math.round(sb.getBoundingClientRect().width))); }
-    catch (e) {}
   });
   grip.addEventListener('dblclick', () => {
     const cur = sb.getBoundingClientRect().width;
@@ -1130,8 +1126,24 @@ function initResizableSidebar_() {
     applySidebarWidth_(sb, next);
     try { localStorage.setItem('umsSidebarW', String(next)); } catch (e) {}
   });
+  if (_sidebarDocBound) return;
+  _sidebarDocBound = true;
+  document.addEventListener('mousemove', (e) => {
+    const d = SIDEBAR_DRAG;
+    if (!d) return;
+    const w = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, d.startW + (e.clientX - d.startX)));
+    applySidebarWidth_(d.sb, w);
+  });
+  document.addEventListener('mouseup', () => {
+    const d = SIDEBAR_DRAG;
+    if (!d) return;
+    SIDEBAR_DRAG = null;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    try { localStorage.setItem('umsSidebarW', String(Math.round(d.sb.getBoundingClientRect().width))); }
+    catch (e) {}
+  });
 }
-
 function applySidebarWidth_(sb, w) {
   sb.style.setProperty('--sidebar-w', w + 'px');
   // Also set on documentElement so the .app-shell grid (which reads --sidebar-w)
@@ -2335,6 +2347,7 @@ var _remindFired = {};        // key → true, reset on the rep's day rollover
 var _remindDay = '';
 var _remindStateAt = 0;       // last punch-state refresh ATTEMPT (ms — the throttle)
 var _remindStateOkAt = 0;     // last CONFIRMED snapshot (ms — boot or a successful refresh)
+var _remindStaleDay = '';     // TC2-1 — the rep-local day a stale-snapshot refresh was last forced for
 var _remindLastActivityAt = 0; // last real user input anywhere in the shell (ms)
 var REMIND_CLOCKIN_GRACE_MIN = 15;            // no clock-in nag in the first shift minutes
 var REMIND_ACTIVITY_WINDOW_MS = 5 * 60 * 1000;   // "activity" = input in the last 5 min
@@ -2566,6 +2579,19 @@ function remindersTick_() {
     if (!tz) return;
     var today = isoDateTz(tz);
     if (today !== _remindDay) { _remindDay = today; _remindFired = {}; }
+    // TC2-1 (cycle 23): every inferred reminder below reads empState — the
+    // day-off flag, the half day, the schedule and the punch state — and that
+    // snapshot describes the day it was FETCHED. A window left open overnight
+    // ran today's reminders on yesterday's PTO, half day and clock-out: a day
+    // off was nagged, or a working day silenced. A snapshot of another day
+    // is not used: the ticker asks for today's at once (the throttle is reset
+    // on the rollover) and fires nothing inferred until it arrives.
+    if (!remindStateIsToday_(empState, today)) {
+      if (_remindStaleDay !== today) { _remindStaleDay = today; _remindStateAt = 0; }
+      remindMaybeRefreshState_();
+      schedTick_();   // (d) rep-created reminders do not read empState
+      return;
+    }
     var sched = remindersSchedule_();
     if (!sched) return;
     // F2 (cycle 18) — a shift SHAPE exists every day of the week, so without
@@ -2588,7 +2614,12 @@ function remindersTick_() {
     var lead = sched.breakReminderMin || 10;
     // T5 rework: none on a half day — its hours are the rep's to place, so a
     // scheduled break is not a break they are due.
-    var breaks = dayOff ? [] : ((plan.breaks && Array.isArray(sched.breaks)) ? sched.breaks : []).filter(function (b) { return !!b; });
+    // TC2-4 (cycle 23): only a break inside today's shift is reminded of —
+    // the server now trims a column-O override's tz-default breaks, and this
+    // guard holds the same line for any list that still reaches here.
+    var breaks = dayOff ? [] : ((plan.breaks && Array.isArray(sched.breaks)) ? sched.breaks : []).filter(function (b) {
+      return !!b && remindBreakInShift_(b, sched.startMin, sched.lengthMin);
+    });
     for (var i = 0; i < breaks.length; i++) {
       var b = breaks[i];
       var until = b.startMin - nowMin;
@@ -2737,6 +2768,20 @@ function schedFetch_(force) {
  *  midnight (the F6 discipline). `offToday` is server-computed approved PTO
  *  (empTimeOffToday_ — a FULL day only since T5); an older server that does not send it simply yields the
  *  weekend-only guard, which is the additive-field posture. */
+/** TC2-1 (cycle 23) — PURE (Node-pinned). Does the state snapshot describe
+ *  `today` (the rep-local yyyy-MM-dd)? getEmployeeState ships the day it was
+ *  built for as `today`; a snapshot without one (an older server) is trusted,
+ *  as before. */
+function remindStateIsToday_(state, today) {
+  if (!state || !state.today) return true;
+  return String(state.today) === String(today);
+}
+/** TC2-4 (cycle 23) — PURE (Node-pinned). Does break `b` ({startMin}) start
+ *  inside the shift [startMin, startMin + lengthMin)? */
+function remindBreakInShift_(b, startMin, lengthMin) {
+  var bs = Number(b && b.startMin), s = Number(startMin) || 0, e = s + (Number(lengthMin) || 0);
+  return isFinite(bs) && bs >= s && bs < e;
+}
 function remindIsDayOff_(tz) {
   if (empState && empState.offToday) return true;
   try {
@@ -3029,7 +3074,13 @@ function ensureOverlay(id, opts) {
       if (e.target === overlay && overlay._downOnBackdrop !== false) closeOverlay(overlay);
       overlay._downOnBackdrop = null;
     });
+    // UI-ESC (cycle 23): anything typed, picked or toggled inside the overlay
+    // marks it dirty — the discard guard in closeOverlay reads it. A module's
+    // own programmatic fill fires no event, so a prefill is not "work".
+    overlay.addEventListener('input', function () { overlay._dirty = true; });
+    overlay.addEventListener('change', function () { overlay._dirty = true; });
   }
+  if (opts.unsaved !== undefined) overlay._unsaved = opts.unsaved || null;
   // A11y batch H — focus lifecycle. On a closed→open transition, stash the
   // trigger element so closeOverlay can hand focus back, and (deferred, so
   // the caller's innerHTML mount lands first) move focus INTO the dialog —
@@ -3067,6 +3118,7 @@ function ensureOverlay(id, opts) {
   }
   if (opts.onClose) OVERLAY_CLOSE_HOOKS[id] = opts.onClose;
   if (!wasOpen) {
+    overlay._dirty = false;   // UI-ESC: a fresh open starts clean
     var ae = document.activeElement;
     overlay._restoreFocus = (ae && ae !== document.body) ? ae : null;
     setTimeout(function () {
@@ -3081,12 +3133,57 @@ function ensureOverlay(id, opts) {
   return overlay;
 }
 
+// ── UI-ESC (cycle 23): an EDITOR asks before it discards ───────────────────
+// The shell's Escape closes the topmost overlay even when the key was pressed
+// inside a textarea (to dismiss an autocomplete, say), and a backdrop click
+// does the same — so the KB article editor, the quiz editor, a fillable HR
+// document and the coaching composer each threw away what was being written,
+// with no question asked. An overlay opened with `unsaved: { what, busy?,
+// dirty? }` is GUARDED: while it is dirty (anything typed into it since this
+// open, a module's overlayMarkDirty_, or its own `dirty()`), every close path
+// that goes through closeOverlay — Escape, the backdrop, a Cancel/× wired to
+// closeOverlay — asks "Discard changes?" first, and refuses until the answer
+// is Discard. `busy()` true means a save is in flight: the hook's own refusal
+// (INV-145) answers instead, since nothing is being discarded. A module's own
+// close after a SAVE calls its hook directly and is never asked.
+function overlayMarkDirty_(el) {
+  if (typeof el === 'string') el = document.getElementById(el);
+  if (el) el._dirty = true;
+}
+/** PURE-ish — does this close need the discard question? */
+function overlayNeedsDiscardAsk_(el) {
+  var u = el && el._unsaved;
+  if (!u || !el.classList.contains('open')) return false;
+  if (typeof u.busy === 'function') { try { if (u.busy()) return false; } catch (_) {} }
+  var dirty = !!el._dirty;
+  if (!dirty && typeof u.dirty === 'function') { try { dirty = !!u.dirty(); } catch (_) {} }
+  return dirty;
+}
+/** True = the close was intercepted (a question is up, or already pending). */
+function overlayDiscardGuard_(el) {
+  if (!overlayNeedsDiscardAsk_(el)) return false;
+  if (el._discardAsking) return true;
+  if (typeof uiConfirm !== 'function') return false;
+  el._discardAsking = true;
+  var what = (el._unsaved && el._unsaved.what) || 'this form';
+  uiConfirm({
+    title: 'Discard changes?',
+    message: 'What you have entered in ' + what + ' has not been saved. Closing now loses it.',
+    confirmLabel: 'Discard', cancelLabel: 'Keep editing', tone: 'danger',
+  }).then(function (ok) {
+    el._discardAsking = false;
+    if (ok) closeOverlay(el, { discard: true });
+  });
+  return true;
+}
+
 /** Close one overlay through its registered hook. Static modals with no hook
  *  just lose the `open` class (their long-standing behavior — they hold no
  *  module state). A throwing hook degrades to the plain hide so Escape can
  *  never get stuck. */
-function closeOverlay(el) {
+function closeOverlay(el, opts) {
   if (!el) return;
+  if (!(opts && opts.discard) && overlayDiscardGuard_(el)) return;
   var hook = el.id && OVERLAY_CLOSE_HOOKS[el.id];
   if (hook) {
     try { hook(); } catch (err) { el.classList.remove('open'); /* degrade to plain hide */ }
@@ -3224,7 +3321,13 @@ document.addEventListener('focusin', function (e) {
     function (o) { return !o.classList.contains('hover-mode'); });
   if (!opens.length) return;
   var open = opens[opens.length - 1];
-  var modal = open.querySelector('.modal') || open.querySelector('.cn-compose-modal');
+  // SH-03 (cycle 23): the container is whatever the overlay holds, not only a
+  // `.modal` / `.cn-compose-modal` — the keyboard-shortcuts dialog is a
+  // `.cn-shortcuts-modal`, so the trap returned early and Tab walked out of it
+  // into the page behind. The named containers still win (a `.modal` nested
+  // under a wrapper), and the overlay's own first child is the fallback.
+  var modal = open.querySelector('.modal') || open.querySelector('.cn-compose-modal') ||
+    open.querySelector('.cn-shortcuts-modal') || open.firstElementChild;
   if (!modal) return;
   if (modal.contains(e.target)) return;
   var focusable = modal.querySelectorAll('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])');

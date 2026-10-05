@@ -1449,10 +1449,12 @@ function intakeCondAddCustom_(btn) {
   // negation. Block on the LEADING TOKEN; the list is deliberately
   // conservative ("normal…"/"non-epileptic…" are real conditions and must
   // not be blocked).
-  var negTok = val.toLowerCase().split(/[\s.,:;\/-]+/)[0];
-  if (['no', 'n/a', 'na', 'none', 'nothing', 'denies', 'denied', 'negative', 'neg'].indexOf(negTok) >= 0
-      || ['no.', 'n/a'].indexOf(val.toLowerCase()) >= 0) {
-    if (typeof showToast === 'function') showToast('Leave the picker empty for "none" — a selected chip means a condition IS present.', 'toast-warn');
+  // INT-1 (cycle 23): ONE rule with the server engine (`intakeNeuroEntryIsDx_`,
+  // pinned equal) — a leading negation OR an uncertainty ("Not sure",
+  // "Unknown", "Pt unsure") is not a diagnosis. The server applies it too, so
+  // a chip that slipped past here (or a direct call) still reads as no Dx.
+  if (!intakeNeuroEntryIsDxClient_(val)) {
+    if (typeof showToast === 'function') showToast('Leave the picker empty for "none" or "not sure" — a selected chip means a condition IS present.', 'toast-warn');
     return;
   }
   var cur = intakeMultiParse_(grp.getAttribute('data-val') || '');
@@ -1461,6 +1463,18 @@ function intakeCondAddCustom_(btn) {
   var f = grp.querySelector('.intk-cond-filter'); if (f) { f.value = ''; intakeCondFilter_(f); }
   intakeCondRender_(grp);
   intakePpdAfterChange_();
+}
+/** INT-1 (cycle 23) — the client twin of the server's intakeNeuroEntryIsDx_
+ *  (pinned to agree on a grid): is one Q43 entry a diagnosis? */
+function intakeNeuroEntryIsDxClient_(entry) {
+  var e = String(entry == null ? '' : entry).toLowerCase().trim();
+  if (!e || /^\?+$/.test(e)) return false;
+  var toks = e.replace(/['\u2019]/g, '').split(/[^a-z0-9/]+/).filter(Boolean);
+  if (!toks.length) return false;
+  if (['no', 'n/a', 'na', 'none', 'nothing', 'denies', 'denied', 'negative', 'neg', 'not', 'nil'].indexOf(toks[0]) >= 0) return false;
+  if (toks.some(function (t) { return ['unsure', 'unknown', 'unk', 'uncertain', 'tbd', 'dunno'].indexOf(t) >= 0; })) return false;
+  if (/\bnot\s+sure\b|\bdon'?t\s+know\b|\bdo\s+not\s+know\b|\?/.test(e.replace(/\u2019/g, "'"))) return false;
+  return true;
 }
 function intakeCondRemoveChip_(btn) {
   var grp = btn.closest('.intk-condition'); if (!grp) return;
@@ -1765,7 +1779,9 @@ function intakePpdPreviewGo_(payload) {
       if (currentView !== requested) return;
       if (!res || res.error) { showToast((res && res.error) || 'Preview failed.', 'toast-error'); return; }
       INTAKE_STATE.preview = { formType: 'PPD', bodyHash: res.bodyHash, subject: res.subject, recommendations: res.recommendations, payload: payload,
-        weightUnreadable: !!res.weightUnreadable };
+        weightUnreadable: !!res.weightUnreadable,
+        weightImplausible: res.weightImplausible || 0, weightRange: res.weightRange || null };
+      payload.previewAnswersHash = res.answersHash || '';   // INT2-4: lets the send name a catalog change
       if (payload.amendsSubmissionId) showToast('Amending — the sent email will carry the AMENDED banner + subject prefix.', 'toast-info');
       intakeOpenPpdPreviewModal_(res.html, res.recommendations);
     })
@@ -1799,9 +1815,13 @@ function intakeOpenPpdPreviewModal_(html, recs) {
  *  patient's weight. Said on the screen the rep acts on, before sending. */
 function intakeWeightWarnHtml_(preview) {
   if (!preview || !preview.weightUnreadable) return '';
+  // Batch 11: an out-of-range reading is named with the bounds the server shipped.
+  var why = (preview.weightImplausible && preview.weightRange)
+    ? 'reads as ' + esc(String(preview.weightImplausible)) + ' lbs, outside ' + esc(String(preview.weightRange[0])) + '–' + esc(String(preview.weightRange[1])) + ' lbs (a typo or a wrong unit)'
+    : 'could not be read as one weight (no number, or several numbers without a unit)';
   return '<div class="intk-weight-warn" role="alert">' + icon('warning', 12) +
-    ' The weight answer (Q38) has no number in it, so <strong>no weight-capacity check</strong> was applied — ' +
-    'these chairs are not filtered by weight. Re-enter the weight in lbs and preview again.</div>';
+    ' The weight answer (Q38) ' + why + ', so <strong>no weight-capacity check</strong> was applied — ' +
+    'these chairs are not filtered by weight. Re-enter the weight as one number in lbs (or kg, with the unit) and preview again.</div>';
 }
 function intakeBuildPpdModal_(html, recs) {
   var items = [].concat((recs && recs.complex) || [], (recs && recs.standard) || []);
@@ -1960,7 +1980,25 @@ function intakeGatherSelections_() {
   return sel;
 }
 
-function intakePpdSend_() {
+/** INT-3 (cycle 23 Batch 11): the server refuses an intake recipient outside
+ *  the org's domains until the rep confirms THAT domain (needsExternalConfirm
+ *  names it; the domain list never leaves the server). Asks, and on yes calls
+ *  `resend(domain)` — the same send, now carrying the confirmation. Returns
+ *  true when it handled the response. */
+function intakeExternalConfirm_(res, btn, resend) {
+  if (!res || !res.needsExternalConfirm) return false;
+  var dom = String(res.needsExternalConfirm);
+  uiConfirm({ title: 'Send patient information outside the company?',
+    message: 'This address is at ' + dom + ', which is not a UniversalMed Supply address. The email carries the patient\'s full intake answers. Send it there?',
+    confirmLabel: 'Send to ' + dom, cancelLabel: 'Go back', tone: 'danger' })
+    .then(function (ok) {
+      if (ok) { resend(dom); return; }
+      if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; }
+    });
+  return true;
+}
+
+function intakePpdSend_(confirmedExternal) {
   var st = INTAKE_STATE.preview;
   if (!st || st.formType !== 'PPD') { showToast('Preview expired — please preview again.', 'toast-warn'); return; }
   var recEl = document.getElementById('intk-ppd-recipient');
@@ -1972,12 +2010,16 @@ function intakePpdSend_() {
     spec = { kind: 'custom', email: custom ? custom.value.trim() : '' };
     if (!spec.email) { showToast('Enter a recipient email.', 'toast-warn'); return; }
   } else spec = { kind: 'agent', id: val.replace(/^agent:/, '') };
+  if (typeof confirmedExternal === 'string' && confirmedExternal) spec.confirmedExternal = confirmedExternal;   // INT-3
   st.payload.selections = intakeGatherSelections_();
   var btn = document.getElementById('intk-ppd-send');
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
   var requestedView = currentView;   // M8 — late-success guard (CN loader pattern)
+  INTAKE_STATE.sending = true;   // INTUI-1: the modal cannot close until the send answers
   google.script.run
     .withSuccessHandler(function (res) {
+      INTAKE_STATE.sending = false;
+      if (intakeExternalConfirm_(res, btn, intakePpdSend_)) return;   // INT-3: nothing was sent; ask, then resend
       if (!res || !res.success) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast((res && res.error) || 'Send failed.', 'toast-error'); return; }
       intakeCloseModal_();
       intakeClearDraft_('ppd');   // drop the persisted draft (PHI) on a successful send
@@ -1992,7 +2034,7 @@ function intakePpdSend_() {
       else showToast('PPD emailed to ' + res.recipient, 'toast-success');
       intakeAutoLogNote_('ppd', st.payload, res.recipient, st.recommendations, currentView === requestedView);
     })
-    .withFailureHandler(function (err) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })
+    .withFailureHandler(function (err) { INTAKE_STATE.sending = false; if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })
     .intakeSendPPD(st.payload, spec, st.bodyHash);
 }
 
@@ -2219,7 +2261,7 @@ function intakeBuildAcctModal_(form, html) {
   intakeSetupImageUpload_(form);
 }
 
-function intakeAcctSend_(form) {
+function intakeAcctSend_(form, confirmedExternal) {
   var st = INTAKE_STATE.preview;
   if (!st || st.form !== form) { showToast('Preview expired — please preview again.', 'toast-warn'); return; }
   var recSel = document.getElementById('intk-acct-recipient');
@@ -2231,14 +2273,18 @@ function intakeAcctSend_(form) {
     spec = { kind: 'custom', email: custom ? custom.value.trim() : '' };
     if (!spec.email) { showToast('Enter a recipient email.', 'toast-warn'); return; }
   } else spec = { kind: 'agent', id: val.replace(/^agent:/, '') };
+  if (typeof confirmedExternal === 'string' && confirmedExternal) spec.confirmedExternal = confirmedExternal;   // INT-3
 
   var images = INTAKE_STATE[form].images || [];
   var fn = form === 'pap' ? 'intakeSendPAP' : 'intakeSendPMD';
   var btn = document.getElementById('intk-acct-send');
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
   var requestedView = currentView;   // M8 — late-success guard (CN loader pattern)
+  INTAKE_STATE.sending = true;   // INTUI-1
   google.script.run
     .withSuccessHandler(function (res) {
+      INTAKE_STATE.sending = false;
+      if (intakeExternalConfirm_(res, btn, function (dom) { intakeAcctSend_(form, dom); })) return;   // INT-3
       if (!res || !res.success) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast((res && res.error) || 'Send failed.', 'toast-error'); return; }
       intakeCloseModal_();
       intakeClearDraft_(form);   // drop the persisted draft (PHI) on a successful send
@@ -2249,7 +2295,7 @@ function intakeAcctSend_(form) {
       else showToast(form.toUpperCase() + ' emailed to ' + res.recipient, 'toast-success');
       intakeAutoLogNote_(form, st.payload, res.recipient, null, currentView === requestedView);
     })
-    .withFailureHandler(function (err) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })
+    .withFailureHandler(function (err) { INTAKE_STATE.sending = false; if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })
     [fn](st.payload, spec, images, st.bodyHash);
 }
 
@@ -2321,6 +2367,39 @@ var INTAKE_DRAFT_KEY = 'umsIntakeDrafts';
 var INTAKE_DRAFT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 var _intakeDraftTimer = null;
 
+/** INT2-3 (cycle 23) — whose drafts these are. The key is shared by everyone
+ *  who signs in on this browser profile, and the 24h expiry used to be checked
+ *  only when that form's view was entered (never while an amend was pending),
+ *  so a patient's draft could sit at rest indefinitely, and the next rep on a
+ *  shared profile got the previous rep's patient ("Draft restored"). Every
+ *  draft now carries its OWNER; a restore takes only the signed-in user's, and
+ *  `intakeSweepDrafts_` drops expired and other users' drafts at boot. */
+function intakeDraftOwner_() {
+  try { return String((empState && (empState.email || empState.id)) || '').trim().toLowerCase(); }
+  catch (e) { return ''; }
+}
+/** PURE (Node-pinned) — the drafts to KEEP: the owner's own, younger than the
+ *  limit. A draft with no owner (saved before INT2-3) cannot be attributed, so
+ *  it is dropped too — it is PHI of unknown provenance. */
+function intakeDraftsKept_(all, owner, now) {
+  var out = {}, dropped = 0;
+  Object.keys(all || {}).forEach(function (form) {
+    var d = all[form];
+    var ok = d && owner && d.owner === owner && d.at && (now - d.at) <= INTAKE_DRAFT_MAX_AGE_MS;
+    if (ok) out[form] = d; else dropped++;
+  });
+  return { kept: out, dropped: dropped };
+}
+/** INT2-3 — the boot sweep (called by the shell once the user is known). */
+function intakeSweepDrafts_() {
+  var owner = intakeDraftOwner_();
+  if (!owner) return;
+  var r = intakeDraftsKept_(intakeReadDrafts_(), owner, Date.now());
+  if (!r.dropped) return;
+  if (Object.keys(r.kept).length) intakeWriteDrafts_(r.kept);
+  else { try { localStorage.removeItem(INTAKE_DRAFT_KEY); } catch (e) {} }
+}
+
 function intakeReadDrafts_() {
   try { return JSON.parse(localStorage.getItem(INTAKE_DRAFT_KEY) || '{}') || {}; }
   catch (e) { return {}; }
@@ -2343,7 +2422,9 @@ function intakeDraftSaveNow_(form) {
   // the last flushed/saved draft stands.
   if (!intakeFormRoot_(form)) return;
   var snap = (form === 'ppd') ? intakeCollectPpd_() : intakeCollectAcct_(form);
-  var draft = { answers: snap.answers || {}, at: Date.now() };
+  var owner = intakeDraftOwner_();
+  if (!owner) return;   // INT2-3: a draft nobody can be named as owning is never written
+  var draft = { answers: snap.answers || {}, at: Date.now(), owner: owner };
   if (form === 'ppd') draft.patientInfo = snap.patientInfo || '';
   var all = intakeReadDrafts_();
   all[form] = draft;
@@ -2379,6 +2460,9 @@ function intakeRestoreDraft_(form) {
   var d = all[form];
   if (!d) return;
   if (!d.at || (Date.now() - d.at) > INTAKE_DRAFT_MAX_AGE_MS) { intakeClearDraft_(form); return; }
+  // INT2-3: someone else's draft (or one saved before drafts had owners) is
+  // another patient's PHI — drop it, never restore it under this user.
+  if (!d.owner || d.owner !== intakeDraftOwner_()) { intakeClearDraft_(form); return; }
   var restored = false;
   if (form === 'ppd') {
     var root = document.getElementById('intk-ppd-form');
@@ -2548,11 +2632,14 @@ function intakeCatalogSearch_(q) {
 function intakeSeatKindsClient_(cell) {
   var words = String(cell == null ? '' : cell).toLowerCase().replace(/['\u2019]/g, '').split(/[^a-z]+/).filter(Boolean);
   var out = { solid: false, captain: false, unknown: [] };
+  var negated = false;   // INT2-1: "Not solid" / "no solid" cancels the seat word after it
   words.forEach(function (w) {
-    if (w === 's' || w === 'solid') out.solid = true;
-    else if (w === 'c' || w === 'captain' || w === 'captains') out.captain = true;
+    if (w === 'not' || w === 'no' || w === 'non' || w === 'without') { negated = true; return; }
+    if (w === 's' || w === 'solid') { if (!negated) out.solid = true; }
+    else if (w === 'c' || w === 'captain' || w === 'captains') { if (!negated) out.captain = true; }
     else if (w === 'seat' || w === 'seats' || w === 'and' || w === 'or') return;
     else out.unknown.push(w);
+    negated = false;
   });
   return out;
 }
@@ -3050,13 +3137,19 @@ function intakeOpenModal_(title, bodyHtml) {
     '<div class="head"><h3>' + esc(title) + '</h3><button class="xclose" data-intk-close="1" aria-label="Close">' + icon('x', 16) + '</button></div>' +
     '<div class="body">' + bodyHtml + '</div></div>';
   ov.addEventListener('click', function (e) {
-    if (e.target.closest && e.target.closest('[data-intk-close]')) intakeCloseModal_();
+    if (e.target.closest && e.target.closest('[data-intk-close]')) closeOverlay(ov);   // SH-02: focus returns to the opener
   });
 }
 
 function intakeCloseModal_() {
   var ov = document.getElementById('intk-modal-overlay');
   if (!ov) return;
+  // INTUI-1 (cycle 23): refuse to close while a send is in flight (the
+  // composer's INV-145 rule). Closing mid-send put the rep back on the still-
+  // filled form, and a second Send went out as a DUPLICATE PHI email. A
+  // registered close hook owns the close (g130), so returning here keeps the
+  // modal open under Close, Escape and the backdrop alike.
+  if (INTAKE_STATE.sending) { showToast('Sending — one moment…', 'toast-info'); return; }
   var drop = document.getElementById('intk-drop');
   if (drop && drop._intkPaste) document.removeEventListener('paste', drop._intkPaste);
   ov.remove();

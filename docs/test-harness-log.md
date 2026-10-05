@@ -2444,3 +2444,266 @@ per-change detail. By delta:
 - 11 bite-checks, all BITE. Hazard met: a vm context with no `Date` makes any
   server stamp throw "Invalid time value" far from the cause — a context that
   drives a writer sets `ctx.Date = Date` (the scan helper does).
+
+## Cycle 23 — Batch 6a, PTO and punch correctness (2026-10-02)
+
+- Node +7, one per finding, each driven: TC-03 (the closed-day reason, both
+  single-date submit paths, a calendar that throws); TC-04 (a shared
+  `c23ToCtx_` context — a fake TimeOffRequests sheet whose writes land back in
+  its rows, and a balance ledger the fake `adjustLeaveBalance_` moves exactly as
+  the real one, null when tracking or PTO is off — driven through approve /
+  deny across tracking off then on, PTO off, a half day, an unpaid type, a
+  legacy blank row and a recorded bucket that differs from the type); TC-05
+  (the span grid both sides of 16 h, submit through the TC-02 harness, the
+  writer's ctx update); TC-06 (the fix's refusals, a null credit reverting the
+  rows, the detector on a `none` duplicate and a coerced-FALSE PTO-off rep);
+  TC-08 (the keep index with `calcHours_` before and after); CORE-07; VIS-1.
+- Two old doubles moved: the sheet-doctor structural pin asserted
+  `g.rows.length - 1` — it encoded TC-08 — and now asserts the shared keep
+  index; the TC-02 context loads the span helpers, and its writer's fake sheet
+  gained `getLastRow` (the writer now indexes an append).
+- The editor suite's `_TEST_DATE_FUTURE` became `let`: weekend-skipped at load
+  (pure date math, no sheet read at global scope) and holiday-skipped in
+  `setupTestEnvironment` through the server's own rule — the time-off tests
+  would otherwise fail on any day whose +30 lands on a closed day.
+- 19 bite-checks, all BITE. Hazard met: a quote inside the python mutation
+  string ends the shell argument; write it as `chr(39)`.
+
+## Cycle 23 — Batch 6b, schedules, reminders, planner (2026-10-02)
+
+- Node +8, one per finding, each driven: TC2-1 drives `remindersTick_` itself
+  in a sandbox (a stale snapshot runs no inferred reminder, resets the throttle
+  once per day, still runs `schedTick_`); TC2-6 the Intl probe and the
+  validator; TC2-3 `getCoveragePlan` over a single half and a morning +
+  afternoon pair; TC2-4 the trim grid and the ticker guard; TC2-7 the not-yet
+  grid; TC2-8 the workday walk with a holiday, the planner close, the unknown
+  tile and the fixture; COA-2 the client parser in IST and across a CDT→CST
+  fall-back; MET2-2 the inbound denominator.
+- Two old pins moved: OPS-1's literal `mgrWorkdaysEnding_` call shapes, and the
+  T5-rework report context (it now needs `fmtTimeTz_` and `punctNotYet_`).
+- The coverage fixture had shipped a `tentative` row with `ptoType: 'Half
+  Day'` — a shape the server never sent — and an open holiday; it now carries
+  a `half` day, a separate Pending day and a closed holiday (INV-185).
+- 15 bite-checks, all BITE after one NO BITE acted on: COA-2's DST case
+  (01:30 on the fall-back day) is CDT on both readings, so the one-step offset
+  refine never ran; a 03:00 stamp, where the first guess lands in CDT and the
+  answer is CST, now pins it. Pick a fixture the code's own shortcut cannot
+  satisfy (g116's fourteenth direction).
+
+## Cycle 23 — Batch 7a, forms and call-note integrity (2026-10-02)
+
+- Node +10, one per finding, driven wherever the code is pure: FORM-1 drives
+  both form lookups over a fake table that shifts between the column scan and
+  the row fetch (once → located again; for ever → refused); FORM-4 refuses
+  seven free-text shapes and parses the two written ones; FORM-5 the expiry
+  phrase and the notify route grid; CN-1 `schedReadMine_` over a 2,500-row tab
+  with the rep's reminder at row 3; CN-2 the delete-window grid; CN-5 the
+  timeline event, the endpoint wiring and the rendered banner; HR-1 + CN-7
+  resolve the three `_TEXT_IDX` lists to header names. FORM-2 and CN-4 are
+  structural (the witness/log lines and the void call's place).
+- DOM +1: a real card with two submitted forms renders two STACKED pills
+  (`.cn-form-pills`); a pre-fix note one unwrapped pill. The stacking came from
+  a shot: side by side, two pills squeezed the compact card's text column to a
+  word per line (cn-log-light-compact, 0px overflow — g72's lesson again).
+- Editor suite +1: `cn_textColumnsKeepTheirText` — only a real sheet coerces,
+  so the '@' round trip (a leading-zero callback, a date-shaped caller and
+  issue) is the editor's to prove.
+- Moved pins: S2's raw-writer and appender lists (the new '@' writers), PR4-1's
+  createCoaching row literal, R2 #3's bounded-read assertion, and the C5 + F3
+  retention drives — their `parseDate` fake THREW to force the old `Date.parse`
+  fallback, which FORM-4 removed; the fake now parses the written shapes.
+- Fixtures: the emailed fixture note carries two `formSubmissions`; the
+  timeline mock gained `truncatedSources: []` (INV-185).
+- 18 bite-checks, all BITE.
+
+## Cycle 23 — Batch 7b, the Call Notes client (2026-10-02)
+
+- DOM +8, every one driving the real partial: CNUI-02 (the window refusal
+  clears the form and keeps the note; a form holding the next call is
+  untouched; any other refusal keeps the text), CNUI-06 (the announcement waits
+  for the delete; a refused undo restores nothing; text typed meanwhile is
+  kept), CNUI-03 ×2 (timeline; rep + manager submission viewers, incl. a stale
+  FAILURE), CNUI-04 (the other card's input value AND focus survive; one card
+  replaced), CNUI-05 (open state, text, focus and caret survive
+  `cnReRenderActiveView_`), CNUI-08, CNUI-09 (both nav forms).
+- Node +2: `windowClosed` only on the window refusal; the reminder bust after
+  the row lands.
+- 17 bite-checks, all BITE after one NO BITE acted on: CNUI-05's "a sent
+  follow-up is not put back" case returned a thread that no longer took a
+  reply, so the box was never rendered and the assertion held either way. It
+  now returns a thread the manager answered again — the only shape where a
+  restore could bite (g116's fourteenth direction: a fixture the code's own
+  filter erases cannot tell two paths apart).
+
+## Cycle 23 — Batch 8, QA logic (2026-10-02)
+
+- Node +7, each driving the real QA functions in a shared sandbox (`b8Ctx_`
+  loads the named functions plus the config enums; `b8Sheet_` is a recordings
+  sheet that records its reads): QA2-1 the coverage row before a grant, after
+  it and in the next period's own view; QA2-2 + QA-4 `qaSampleRecordings` over
+  another period's call, the caller's own and a good one; QA-4 the assignment
+  grid; QA2-3 the id index and resolver; QA-2 both review reads for the owner,
+  an admin and another reviewer; QA-5 a 2,500-row sheet; QA2-4 + QA2-5 the
+  summary weighting and the Stats fold.
+- DOM: the QA-LOG-DOM drive gained the QAUI-1 checks (the pressed button is
+  the same node and keeps focus). It exposed that a programmatic
+  `qaSetRating_` on a choice must mirror the select's value — the in-place
+  patch now does.
+- Moved pins: QA-10/11/19/21/27 and F-17's exemption regexes (the old
+  attribute and key shapes). The fixture's verbatim region gained
+  `qaNextPeriod_` / `qaExemptFor_` and the new `qaCoverageRows_` (the F4
+  mirror pin).
+- 14 bite-checks, all BITE.
+
+## Cycle 23 — Batch 9, editors, closes and imports (2026-10-02)
+
+- Node +5: ADM-06 drives `cnRateMapFromRows_` and checks the handler refuses
+  before the RPC; KB2-8 drives `kbImportManual` over the M1 fake book with a
+  lost ledger row (a check reports it and writes nothing, the import records
+  it with no KB write, the audit counts it, a re-import is a no-op); SH-02 is a
+  DERIVED net — the hook set is collected from every `ensureOverlay(…,
+  { onClose })` in the partials, and no `onclick="hook()"` or delegated
+  `closest(…)) hook()` may call one; UI-ESC checks the four editors register
+  `unsaved` and the guard runs first in `closeOverlay`; TRUI-2 the fixed ink
+  and the white pad.
+- DOM +12, in a new section driving the real partials: the UI-ESC editors (KB
+  — inside a field, the backdrop, the ×, Keep editing, no stacked question,
+  Discard, a module mark; quiz — a structural edit; coaching — a prefill is
+  not work, typed text asks, a reopen starts clean; the doc reader — typed
+  answers and a drawn signature), INTUI-1 for intake and coaching, TRUI-2
+  (dark mode with a near-white `--ink`; stroke and fill read `#101418`, via a
+  stubbed 2D context and a stubbed `getBoundingClientRect`, since jsdom has
+  neither), TCUI-1, ADM-10, KBUI-5, KB2-9 (a fake `FileReader` whose `onload`
+  the test fires), SH-02 (each close button's own `onclick` text is run with
+  `h.read`, since jsdom never compiles inline handlers), SH-03, SH-04 and SH-05
+  (a counting wrapper on `document.addEventListener` across three shell
+  renders).
+- Moved pins: PR4-5 (the coaching `ensureOverlay` line carries `unsaved`),
+  TW-B (two canvas fallbacks, not four — empdocs left that category for the
+  fixed ink), M1-S3 (man-5 is a repair) and M1-S5 (the audit row carries
+  `repaired=0`).
+- 31 bite-checks, all BITE. One NO BITE first: SH-04's Tab case asserted focus
+  was "still inside the popover", which held with the handler removed — jsdom
+  never moves focus on Tab (g116's fifteenth direction). It now asserts the
+  key is handled and focus MOVES and wraps.
+
+## Cycle 23 — Batch 10, engine reads, vendor vocabularies and owner gates (2026-10-02)
+
+- Node +11, all driving real functions in a sandbox except CN-3 (structural,
+  with `intakeEmailDomain_` driven): KB-2 runs `kbGetFacetGuidance` end to end
+  (a surname-shaped rep tag never reaches the vendor prompt; the audit row
+  counts facets); the INT-1 / INT2-1 / INT2-2 grids drive Q43, the seat kinds
+  and the weight on the server AND the client twin, entry by entry, and through
+  the engine and the explain row; INT-2 drives `intakeAmendSource_` over a fake
+  sheet and checks the refusal sits before the send; INT2-4 drives
+  `intakeSendPPD` with the catalog changed vs the answers changed; ADM-12 drives
+  `renameCallNoteTag` over a live and an archive tab, then a run killed mid-walk;
+  ADM-13; CORE-03 drives `runNightlySelfTest` as a non-owner manager (nothing
+  stamped) and `removeAutomationTriggers` (the audit row); CORE-04/05/06 grids
+  plus the doGet line; TRN-2 drives `importQuizFromForm` over a fake FormApp;
+  MET-5 / MET2-1 the import-pending grid (a Monday's bar is the Friday) and the
+  weighted-rate grid.
+- DOM +4: KBUI-2 (the eligibility message is shown, the beacon gets the fixed
+  line; a price-only error still beacons its own text), INT2-3 (the boot sweep
+  keeps only the signed-in user's draft; another user's is never restored),
+  ADM-13 (the confirm precedes the RPC), ADM-12 (the real merge flow fails in
+  transit and the sticky "PARTLY applied" warning shows).
+- Moved pins: C17-13 now drives the shared Q43 rule (it had encoded the old
+  `negTok`); the engine sandbox loads the two Q43 helpers; F-10's fake rep
+  Sheet gained `getParent` and the archive tab name; FU-B6e asserts the runs-as
+  owner stamp; #8's wording pin reads "vs 30-day team rate"; F-32's average
+  check moved to `mTrendWeightedPct_`; the M2/M8 and M7 dashboard pins carry the
+  import gate and the kept `dqRes`; the M-2 intake flush test sets the
+  signed-in user.
+- 33 bite-checks, all BITE. One NO BITE first: MET-5's cache gate was asserted
+  only in the M2/M8 pin, not the MET-5 pin the bite named — the MET-5 pin now
+  asserts the gated put as well, and bites against both. TRN-2's first draft
+  carried a source-shape fallback for when the drive could not run, and took it
+  (a stub was named `trainParseFormRef_`; the real helper is
+  `trainParseFormId_`) — the fallback is deleted, so the pin can only pass by
+  driving (g138).
+
+## Cycle 23 — Batch 11, the deferred items decided 2026-10-05
+
+- Node +7. The quiz retry limit:
+  - the lockout grid (out-of-order rows, the wait opening a fresh set, a pass resetting, the reset filter);
+  - `submitQuizAttempt` + `resetQuizAttempts` driven together: marks on a fail and no correct option; the third fail locks with a label; a fourth attempt refused and NOT appended; the reset gate and refusals, the row and the audit; a retry after the reset passes;
+  - `getTrainingDashboard` driven, listing only the rep in the wait.
+
+  The outside intake recipient: an org / outside / confirmed / wrong-domain / look-alike grid, the resolve → check → send order on both paths, the CTA gate and the client confirm with a sync thenable. The weight bounds: driven through the parser, the explain row, the preview and the warning. The pre-import Dashboard window: driven through `dashboardAlignToData_` + `dashboardPrevRange_`, plus the card note and the endpoint wiring. The KB2-6 "and" grid.
+- DOM +2:
+  - TRN-1: a locked quiz opens on the wait; the form states the limit; a fail marks the wrong question with attempts left and Retake; the third fail and a refused submit show the wait.
+  - INT-3: the confirm names the domain; the resend carries it; Go back sends nothing.
+- Moved pins:
+  - the engine sandboxes read the weight bounds from the REAL declarations (`intakeWeightBoundsSrc_`);
+  - I3's thousands-comma case is now 1,000, the ceiling;
+  - FU-B8b, M2/M8 and MET-5 read the new derivations;
+  - the dashboard cache key is v7;
+  - H-1 guards `trainQuizAttemptList_`;
+  - the getQuiz tripwire allows the lockout beside the stripped shape;
+  - S10 became "S10 → TRN-1";
+  - X1 names `resetQuizAttempts`;
+  - the F9 gate omnibus covers it;
+  - the editor `test_training_quizFlow` now expects marks on a fail and the attempts left. Its S10 assertion would have failed the next nightly run.
+- 29 bite-checks, all BITE. Three were NO BITE first:
+  - the prior window's anchor: nothing asserted it, so the MET-5 pin now checks the wiring;
+  - the dashboard's waiting list: the pin was source-only, so `getTrainingDashboard` is now driven;
+  - a refused submit: no DOM step sent one, so one now does.
+- Two tooling hazards (g116's sixteenth and seventeenth):
+  - `stripJsComments_` over a whole HTML partial drops functions, so the INT-3 pin reads the raw source;
+  - an earlier pin leaves `Date.now` frozen while `new Date()` runs, so the retry-limit fixture takes its clock from `new Date()`, as the code does.
+
+## Cycle 23 — Batch 12, DRV-3: article images in the KbImages tab
+
+- Node +6, all driven against the REAL constants (`b12Ctx_` runs each `const` declaration from the server source as a var):
+  - the image item (content key, the same bytes giving the same key, type / base64 / size refusals, exactly-the-limit stored);
+  - the store (append-only, reused keys, pieces under the cell limit that rejoin exactly, under the lock, a changed header refused with nothing appended), over a fake sheet;
+  - `getKbImages` through the shared reader;
+  - the Save-time converter (stored → `kbimg:`, over 1.5 MB → pending and named, a missing image → placeholder, a failed store → pending; the `{ keep: true }` contract);
+  - `kbUploadImage`;
+  - the client: the chip charset, the batch mirror, the paste-plan grid, and the cache and source rules.
+- DOM +2:
+  - the hydrator: one batched call for an article, both mentions become images, "not stored" said, a cached success not asked again, a failure not cached;
+  - the paste: a small image sent byte for byte; a 3200 px PNG redrawn at 1600×900 and sent as JPEG; a malformed token never inserted. These stub `Image`, `FileReader` and the canvas, since jsdom has no image decoding.
+- Moved pins:
+  - KBL ("storing");
+  - the paste-cap mirror, now `KB_IMG_MAX_BYTES === KB_IMAGE_MAX_BYTES`, with its mirror-index entry;
+  - KBI-3 (the named Doc-open and store failures);
+  - DRV-2 (the converter no longer reaches the Drive folder);
+  - DRV-5 → DRV-3 (driven through the new resolver);
+  - M3-I2/I3 (the sandboxes load the shared `kbImageTab*` helpers);
+  - the visual mock gains `getKbImages` (X1).
+- 24 bite-checks, all BITE; no NO BITE. The Admin Drive-surface sentence is copy with no pin.
+
+## Cycle 23 — Batch 13, SP-2: a Spanish request that comes back (and its courtesy follow-up)
+
+- Node +8 (seven driven), over a fake Gmail (`b13Msg_` / `b13Th_`). `b13Ctx_` is `b10Ctx_` plus the courtesy rule the roles read (`SPANISH_COURTESY_WORDS_`, `drReplyNewText_`, `spanishIsCourtesyOnly_`):
+  - the episode grid (`spanishEpisodes_`: reply closes, follow-up reopens with the reply as floor, double-send, second reply, cc neutral, click then follow-up, click at the request, legacy, first close wins, a click after the answer raises the floor) and `spanishClaimLive_`;
+  - the role grid (`spanishThreadRoles_`);
+  - the pending list (two reopened threads, unclaimed or claimed after the reopen; answered and clicked threads absent; the cached ids carry the floors);
+  - the resolved list and the stats card over the same threads;
+  - `claimSpanishThread`'s steal guard;
+  - the voicemail fold's floor and resolver through the real fold;
+  - the courtesy grid (11 courtesy, 14 request cases) with its pending and Expand drives;
+  - plus one wiring pin (Needs-you, auto-assign, the claim guard's lock order, the pill, the confirm, the CSS rule, the fixture).
+- DOM +1: a reopened card renders the follow-up pill and no claim pill, counts in "Auto-assign N unclaimed", and the resolve confirm carries the new sentence.
+- Moved pins: M4, R2 #4, the fold wiring (the resolved list now reads the ONE fold), BIZ-2 and N3-SP (per-episode literals, the v4 key), C-8 (the floors), and the F-34 / M5 / SP-3+4 sandboxes (they load the new helpers).
+- The pending drive reads `Date.now()` for its fixture clock, because the core ages by `Date.now()` and an earlier pin may have frozen it (g116's seventeenth direction, met from the other side).
+- 27 bite-checks, all BITE in the end. The voicemail floor first bit only a source assertion, so a driven fold pin was added. The courtesy question rule first read NO BITE, because every question case also held a non-courtesy word; an all-courtesy question ("¿Todo bien?") now carries it (g116: a case that fails two guards proves neither).
+
+## Cycle 23 — Batch 14, TC2-9: one archive-aware Timesheet range reader
+
+- Node +3, all driven over the REAL ADP enum and the real reader (`b14Ctx_`, with `b14ReaderSrc_` / `b14Ss_` shared with older sandboxes):
+  - the reader and its gate: the back-filled-row regression, dedupe, `keep`, the one-column reach read and its cache, the window union, no tab, a named or thrown failure, `liveValues`;
+  - every reader: the accrual's archived hours and its throw, the export's archived rows and its refusal, the statement whole or naming the failure, and the calendars and Punctuality on the reader;
+  - Punctuality grading an archived previous window.
+- Moved pins: F1 and A7 (the export), the accrual source pin, the pay-statement note, T5's PTO-before-walk order, and the team calendar's behavioural pin (an archived month now READS). The team-calendar and T5 sandboxes return no archive tab for `TimesheetArchive` — a stub that answers every tab name with the live sheet made the reach read throw.
+- 21 bite-checks, all BITE.
+
+## Cycle 23 — Batch 15, editor-suite cases for the server rules of Batches 10–14
+
+- Editor suite +11 (the running-totals block carries the count):
+  - nine pure cases in the SMOKE shard (intake Dx / seat / weight, the org-domain and outside-recipient confirm, the AI facet audit counts, the pre-import Dashboard alignment, the quiz retry limit, the KbImages content key, the Spanish request episodes and courtesy filter);
+  - two in Integration B (the archive-aware Timesheet reader over TEST rows, cleared in `finally`; the KbImages store and reader on the KB FIXTURE, since the tab is append-only).
+- Node +1, a new pattern: **a pure editor case is RUN by the Node harness.** The pin loads the real server functions, the real constants and the real `Tests.js` assertions (`_describe_`, `_assertEq`, …) into a vm and calls each smoke case, so an editor case that cannot pass is caught before the operator's first editor run. Store-backed cases are still verified by reading every call they make.
+- 12 bite-checks against that runner, all BITE in the end. The neuro case first read NO BITE: "Not sure" is caught by its leading "not" too, so the uncertainty-phrase rule was untested; a case only the phrase rule catches ("Possibly MS, not sure") now carries it (g116's twelfth direction).

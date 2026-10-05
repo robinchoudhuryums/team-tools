@@ -80,10 +80,24 @@ const _TEST_DATE_RECENT = (() => {
   const d = new Date(); d.setDate(d.getDate() - 3);
   return Utilities.formatDate(d, CONFIG.TIMEZONE, 'yyyy-MM-dd');
 })();
-const _TEST_DATE_FUTURE = (() => {
+// TC-03 (cycle 23): a single-date time-off request is refused on a weekend or
+// a company holiday, so the time-off fixture date must be a WORKING day. At
+// load it is +30 days moved past a weekend (pure date math — no sheet read at
+// global scope, which runs on every execution); setupTestEnvironment then
+// moves it past a company holiday too (_testWorkdayOnOrAfter_), before any
+// test or cleanup reads it.
+let _TEST_DATE_FUTURE = (() => {
   const d = new Date(); d.setDate(d.getDate() + 30);
+  for (let k = 0; k < 3 && /^(Sat|Sun)$/.test(Utilities.formatDate(d, CONFIG.TIMEZONE, 'EEE')); k++) d.setDate(d.getDate() + 1);
   return Utilities.formatDate(d, CONFIG.TIMEZONE, 'yyyy-MM-dd');
 })();
+/** TC-03 — the first date on or after `iso` that takes time off (not a
+ *  weekend, not a company holiday), via the server's own rule. */
+function _testWorkdayOnOrAfter_(iso) {
+  let d = iso;
+  for (let k = 0; k < 14 && timeOffClosedDayReason_(d); k++) d = addDaysIso_(d, 1);
+  return d;
+}
 const _TEST_DATE_OLD = (() => {
   const d = new Date(); d.setDate(d.getDate() - 14);
   return Utilities.formatDate(d, CONFIG.TIMEZONE, 'yyyy-MM-dd');
@@ -510,6 +524,7 @@ function setupTestEnvironment() {
   _assertSuiteCaller_('setupTestEnvironment');   // S1 — WHO, before assertNotProdInstance_'s WHERE
   try { _suiteEnvCheck_(); } catch (e) { Logger.log('_suiteEnvCheck_ skipped: ' + e.message); }
   assertNotProdInstance_('setupTestEnvironment');   // blue-green guard (see runAllTests)
+  _TEST_DATE_FUTURE = _testWorkdayOnOrAfter_(_TEST_DATE_FUTURE);   // TC-03 — past a company holiday too
   const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
 
   // Ensure column K has a PtoEnabled header so getDataRange() reliably
@@ -1430,6 +1445,17 @@ function _registerSmokeTests_() {
   _smokeTest('metrics_cdrRosterHash_distinctSetsDiffer', test_metrics_cdrRosterHash_distinctSetsDiffer);
   _smokeTest('metrics_cdrRosterHash_emptyIsAll',        test_metrics_cdrRosterHash_emptyIsAll);
   _smokeTest('metrics_cnCountNotesResult_noSheetReturnsZero', test_metrics_cnCountNotesResult_noSheetReturnsZero);
+
+  // ── Cycle 23 Batch 15: the server rules of Batches 10–14 (pure) ─────────
+  _smokeTest('c23_intakeNeuroDxByToken',               test_c23_intakeNeuroDxByToken);
+  _smokeTest('c23_intakeSeatKindsNegation',            test_c23_intakeSeatKindsNegation);
+  _smokeTest('c23_intakeWeightUnitsAndBounds',         test_c23_intakeWeightUnitsAndBounds);
+  _smokeTest('c23_orgEmailAndExternalIntakeConfirm',   test_c23_orgEmailAndExternalIntakeConfirm);
+  _smokeTest('c23_kbAiFacetCountsCarryNoValue',        test_c23_kbAiFacetCountsCarryNoValue);
+  _smokeTest('c23_dashboardAlignToData',               test_c23_dashboardAlignToData);
+  _smokeTest('c23_trainQuizLockout',                   test_c23_trainQuizLockout);
+  _smokeTest('c23_kbImageItemContentKey',              test_c23_kbImageItemContentKey);
+  _smokeTest('c23_spanishEpisodesAndCourtesy',         test_c23_spanishEpisodesAndCourtesy);
 }
 
 /** Integration half A — Time Clock: punches, adjustments, PTO, the adjust
@@ -1564,6 +1590,7 @@ function _registerIntegrationB_() {
   _integrationTest('cn_setCallNoteResolved_actionOnly',      test_cn_setCallNoteResolved_actionOnly);
   _integrationTest('cn_setCallNoteResolved_rejectsNonAction',test_cn_setCallNoteResolved_rejectsNonAction);
   _integrationTest('cn_deleteCallNote_basic',                test_cn_deleteCallNote_basic);
+  _integrationTest('cn_textColumnsKeepTheirText',            test_cn_textColumnsKeepTheirText);
   _integrationTest('cn_setCallNotePinned_capAt3',            test_cn_setCallNotePinned_capAt3);
   _integrationTest('cn_updateCallNote_basic',                test_cn_updateCallNote_basic);
   _integrationTest('cn_search_phoneTrxFieldScopes',          test_cn_search_phoneTrxFieldScopes);
@@ -1712,6 +1739,9 @@ function _registerIntegrationB_() {
   _integrationTest('getMyNoteHourBuckets_contract',        test_getMyNoteHourBuckets_contract);
   _integrationTest('getPatientTimeline_contract',          test_getPatientTimeline_contract);
   _integrationTest('deptRequest_resolveLinkIdempotent',    test_deptRequest_resolveLinkIdempotent);
+  // Cycle 23 Batch 15 — the store-backed rules of Batches 12 and 14
+  _integrationTest('c23_timesheetRangeReader',             test_c23_timesheetRangeReader);
+  _integrationTest('c23_kbImagesStoreAndRead',             test_c23_kbImagesStoreAndRead);
 }
 
 
@@ -5010,6 +5040,29 @@ function test_cn_deleteCallNote_basic() {
   _assertFailure(r, 'not found', 'Double-delete should fail');
 }
 
+// CN-7 (cycle 23) — the note's free-text columns are '@' cells: a callback
+// with a leading zero, a date-shaped caller and a number-shaped TRX read back
+// exactly as typed, on create and on edit. Only a real sheet coerces, so this
+// round trip is the pin the Node harness cannot be.
+function test_cn_textColumnsKeepTheirText() {
+  _assertSuiteCaller_();
+  _clearTestCallNotes();
+  var noteId;
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    noteId = submitCallNote(_cnTestPayload({ callback: '0123456789', caller: '12/5', patientAndTrx: '0042' })).note.noteId;
+  });
+  var found = _asUser(_TEST_INDIA_EMAIL, function () { return searchMyCallNotes('0042', 'trx', null, true); });
+  _assertEq((found.results || []).length, 1, 'the number-shaped TRX is found as text (exact match)');
+  _assertEq(found.results[0].callback, '0123456789', 'the leading zero survives');
+  _assertEq(found.results[0].caller, '12/5', 'a date-shaped caller stays text');
+  _assertSuccess(_asUser(_TEST_INDIA_EMAIL, function () {
+    return updateCallNote(noteId, _cnTestPayload({ callback: '0123456789', caller: '12/5', patientAndTrx: '0042', issue: '3/4' }));
+  }), 'edit');
+  found = _asUser(_TEST_INDIA_EMAIL, function () { return searchMyCallNotes('0042', 'trx', null, true); });
+  _assertEq(found.results[0].issue, '3/4', 'an edited date-shaped issue stays text');
+  _clearTestCallNotes();
+}
+
 // ── setCallNotePinned (cap enforcement) ──
 
 function test_cn_setCallNotePinned_capAt3() {
@@ -6299,7 +6352,7 @@ function _deleteFormWitnessAuditRow_(token) {
   try {
     _deleteRowsWhereLocked_(getAdpSS_().getSheetByName(CONFIG.AUDIT_TAB), 2, function (r) {
       return String(r[AUDIT.ACTION]) === 'FormSubmissionReceived'
-        && String(r[AUDIT.NOTES]).indexOf('token=' + token) >= 0;
+        && String(r[AUDIT.NOTES]).indexOf('tokenRef=' + formTokenRef_(token)) >= 0;   // FORM-2: the row names a REFERENCE
     });
   } catch (e) { Logger.log('_deleteFormWitnessAuditRow_ skipped: ' + e.message); }
 }
@@ -6662,6 +6715,7 @@ function test_managerGates_rejectNonManager() {
     ['getTrainingDashboard',           function () { return getTrainingDashboard(); }],
     ['saveTrainingAssignment',         function () { return saveTrainingAssignment({ itemId: 'no-such-item', empIds: ['x'] }); }],
     ['revokeTrainingAssignment',       function () { return revokeTrainingAssignment('no-such-assign'); }],
+    ['resetQuizAttempts',              function () { return resetQuizAttempts('no-such-emp', 'no-such-quiz'); }],   // TRN-1 (cycle 23)
     // T2 quiz gates.
     ['getQuizzes',                     function () { return getQuizzes(); }],
     ['saveQuiz',                       function () { return saveQuiz({ title: 'gate', passPct: 80, questions: [{ q: 'q', options: ['a', 'b'], correct: 0 }] }); }],
@@ -7811,7 +7865,10 @@ function _trainingQuizFlowBody_() {
     _assertEq(fail.scorePct, 50, 'score graded server-side');
     _assertEq(fail.attempt, 1, 'attempt counter = 1');
     _assertTrue(JSON.stringify(fail).indexOf('correct') < 0, 'graded response carries no answer key');
-    _assertEq(fail.perQuestion, null, 'S10: a FAILED attempt carries no per-question marks (they were an answer key under unlimited retries)');
+    // TRN-1 (cycle 23 Batch 11): a fail shows WHICH questions were wrong — never the option — and the retry limit.
+    _assertEq(JSON.stringify(fail.perQuestion), JSON.stringify([true, false]), 'TRN-1: a FAILED attempt marks the wrong question (S10 withheld it; the retry limit now closes the elimination key)');
+    _assertEq(fail.attemptsLeft, TRAIN_QUIZ_MAX_ATTEMPTS - 1, 'TRN-1: the attempts left before a wait');
+    _assertEq(fail.locked, false, 'TRN-1: one fail does not lock');
 
     let mine = _asUser(_TEST_INDIA_EMAIL, function () { return getMyTraining(); });
     let item = (mine.items || []).filter(function (i) { return i.itemId === quizId; })[0];
@@ -7823,7 +7880,7 @@ function _trainingQuizFlowBody_() {
     const pass = _asUser(_TEST_INDIA_EMAIL, function () { return submitQuizAttempt(quizId, [1, 0]); });
     _assertTrue(pass && pass.success && pass.passed, 'passing attempt');
     _assertEq(pass.attempt, 2, 'attempt counter = 2');
-    _assertTrue(Array.isArray(pass.perQuestion) && pass.perQuestion.length === 2, 'S10: a PASSING attempt shows which questions were right');
+    _assertTrue(Array.isArray(pass.perQuestion) && pass.perQuestion.length === 2, 'a PASSING attempt shows which questions were right');
     mine = _asUser(_TEST_INDIA_EMAIL, function () { return getMyTraining(); });
     item = (mine.items || []).filter(function (i) { return i.itemId === quizId; })[0];
     _assertEq(item && item.status, 'done', 'pass completes the item');
@@ -9390,4 +9447,190 @@ function test_deptRequest_resolveLinkIdempotent() {
   } finally {
     _deleteRowsWhereLocked_(sh, 2, function (r) { return String(r[DR.REQ_ID]) === token || String(r[DR.REQ_ID]) === token2; }, 2);
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  CYCLE 23 BATCH 15 — editor-suite cases for the server rules of Batches
+//  10–14. The pure ones run in the smoke shard (no sheet writes); the two that
+//  need a store run in Integration B, against the TEST_ rows and the KB
+//  fixture. Each mirrors a Node pin, so a rule that drifts between the harness
+//  and the deployed code shows up in the editor run too.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** INT-1 (Batch 10): a Q43 entry is a diagnosis only when it is not a
+ *  negation or an uncertainty — read by token, never by character (g156). */
+function test_c23_intakeNeuroDxByToken() {
+  _assertSuiteCaller_();
+  _assertFalse(intakeNeuroEntryIsDx_('Not sure'), '"Not sure" is not a neuro diagnosis (INT-1)');
+  _assertFalse(intakeNeuroEntryIsDx_('Possibly MS, not sure'), 'an uncertainty PHRASE anywhere is not a diagnosis (no leading negation to catch it)');
+  _assertFalse(intakeNeuroEntryIsDx_('None'), 'a negation is not a diagnosis');
+  _assertFalse(intakeNeuroEntryIsDx_('unknown'), 'uncertainty is not a diagnosis');
+  _assertFalse(intakeNeuroEntryIsDx_('?'), 'a bare "?" is not a diagnosis');
+  _assertTrue(intakeNeuroEntryIsDx_('Multiple sclerosis'), 'a named condition is');
+  _assertTrue(intakeNeuroEntryIsDx_('Normal pressure hydrocephalus'), '"normal …" is a real condition');
+  _assertEq(intakeNeuroDxEntries_('ALS, not sure, MS'), ['ALS', 'MS'], 'the comma-joined multi-select keeps only the diagnoses');
+}
+
+/** INT2-1 (Batch 10): a negation cancels the seat word after it. */
+function test_c23_intakeSeatKindsNegation() {
+  _assertSuiteCaller_();
+  _assertFalse(intakeSeatKinds_('Not solid').solid, '"Not solid" is not a solid seat');
+  const sling = intakeSeatKinds_('Sling (no solid)');
+  _assertFalse(sling.solid, '"Sling (no solid)" is not a solid seat');
+  _assertEq(sling.unknown, ['sling'], 'the negation is understood, so only "sling" is unknown');
+  _assertTrue(intakeSeatKinds_('Solid Seat').solid, 'a solid seat still is');
+  const cap = intakeSeatKinds_("Captain's Seat");
+  _assertTrue(cap.captain && !cap.solid, "\"Captain's\" is a captain seat, never a solid one (I2)");
+}
+
+/** INT2-2 (Batch 10) + the plausibility bounds (Batch 11): the weight is read
+ *  by UNIT, and a reading outside INTAKE_WEIGHT_MIN_LBS–MAX_LBS is unreadable. */
+function test_c23_intakeWeightUnitsAndBounds() {
+  _assertSuiteCaller_();
+  _assertEq(intakeParseWeight_('120 kg').lbs, 264.6, '"120 kg" converts — it read as 120 lbs before INT2-2');
+  _assertEq(intakeParseWeight_('5\'6", 250').lbs, 250, 'a height is not a weight');
+  _assertEq(intakeParseWeight_('250-260').lbs, 250, 'a range reads its first number');
+  _assertEq(intakeParseWeight_('250 lbs (was 265)').lbs, 250, 'the number with a unit wins');
+  const low = intakeParseWeight_('15');
+  _assertTrue(low.unreadable && low.implausible === 15 && low.lbs === 0, 'under ' + INTAKE_WEIGHT_MIN_LBS + ' lbs is unreadable, and names the reading');
+  const high = intakeParseWeight_('1,200 lbs');
+  _assertTrue(high.unreadable && high.implausible === 1200, 'over ' + INTAKE_WEIGHT_MAX_LBS + ' lbs is unreadable');
+  _assertEq(intakeParseWeight_(String(INTAKE_WEIGHT_MIN_LBS)).lbs, INTAKE_WEIGHT_MIN_LBS, 'the bound itself is readable');
+  _assertTrue(intakeParseWeight_('about two-fifty').unreadable, 'no number is unreadable, never a guess');
+}
+
+/** CORE-05 (Batch 10) + INT-3 (Batch 11): the org's own domains, exactly; an
+ *  outside intake recipient is sent to only once that domain is confirmed. */
+function test_c23_orgEmailAndExternalIntakeConfirm() {
+  _assertSuiteCaller_();
+  const org = String((CONFIG.ORG_EMAIL_DOMAINS || [])[0] || '');
+  _assertTrue(!!org, 'CONFIG.ORG_EMAIL_DOMAINS is set');
+  _assertTrue(isOrgEmail_('Someone@' + org.toUpperCase()), 'case-insensitive');
+  _assertFalse(isOrgEmail_('x@not' + org), 'a look-alike prefix is not the org');
+  _assertFalse(isOrgEmail_('x@' + org + '.evil.test'), 'a look-alike suffix is not the org');
+  _assertNull(intakeExternalRecipientCheck_('rep@' + org, {}), 'an org recipient needs no confirmation');
+  const out = intakeExternalRecipientCheck_('clinic@gmail.com', {});
+  _assertEq(out && out.needsExternalConfirm, 'gmail.com', 'an outside recipient is refused and the domain named');
+  _assertContains(out.error, 'Nothing was sent');
+  _assertNull(intakeExternalRecipientCheck_('clinic@gmail.com', { confirmedExternal: 'GMAIL.com' }), 'the confirmed domain passes');
+  _assertNotNull(intakeExternalRecipientCheck_('clinic@gmail.com', { confirmedExternal: 'yahoo.com' }), 'confirming a different domain does not');
+}
+
+/** KB-2 (Batch 10): the AI guidance audit row carries facet COUNTS, never a
+ *  value — a tag can be a patient's surname (g167). */
+function test_c23_kbAiFacetCountsCarryNoValue() {
+  _assertSuiteCaller_();
+  const line = kbAiFacetCounts_({ department: 'Billing', tags: ['smith-patient', 'oxygen'] });
+  _assertEq(line, 'dept:1,update:0,flag:0,tags:2');
+  _assertFalse(/smith|billing|oxygen/i.test(line), 'no facet value reaches the audit row');
+}
+
+/** MET-5 follow-up (Batch 11): before the daily import, both period-to-date
+ *  windows end on the newest DATA day (g148). */
+function test_c23_dashboardAlignToData() {
+  _assertSuiteCaller_();
+  const range = { from: '2026-10-01', dataThrough: '2026-10-04' };
+  _assertEq(dashboardAlignToData_(range, '2026-10-02', '2026-10-03', '2026-10-05'),
+    { importPending: true, dataThrough: '2026-10-02', prevAnchor: '2026-10-03' }, 'pending: the window ends on its newest data day, the prior window the day after');
+  _assertEq(dashboardAlignToData_(range, '2026-10-03', '2026-10-03', '2026-10-05'),
+    { importPending: false, dataThrough: '2026-10-04', prevAnchor: '2026-10-05' }, 'imported: the M8 lag alignment stands');
+  _assertEq(dashboardAlignToData_(range, '2026-09-30', '2026-10-03', '2026-10-05'),
+    { importPending: true, dataThrough: null, prevAnchor: null }, 'no data day in the window: no comparison');
+}
+
+/** TRN-1 (Batch 11): three failed attempts, then a 24-hour wait; a pass
+ *  starts the count over. */
+function test_c23_trainQuizLockout() {
+  _assertSuiteCaller_();
+  const H = 3600000, max = TRAIN_QUIZ_MAX_ATTEMPTS, wait = TRAIN_QUIZ_LOCK_HOURS * H;
+  _assertEq(max, 3, 'the operator\'s limit (2026-10-05)');
+  _assertEq(TRAIN_QUIZ_LOCK_HOURS, 24);
+  const fails = [{ ms: 1 * H, passed: false }, { ms: 2 * H, passed: false }, { ms: 3 * H, passed: false }];
+  const locked = trainQuizLockout_(fails, 4 * H, max, wait);
+  _assertTrue(locked.locked, 'three fails lock');
+  _assertEq(locked.retryAtMs, 3 * H + wait, 'the wait runs from the last attempt');
+  _assertEq(trainQuizLockout_(fails, 3 * H + wait, max, wait), { locked: false, retryAtMs: null, attemptsLeft: max }, 'after the wait a fresh set opens');
+  _assertEq(trainQuizLockout_(fails.slice(0, 2), 4 * H, max, wait).attemptsLeft, 1, 'two fails leave one');
+  _assertEq(trainQuizLockout_(fails.slice(0, 2).concat([{ ms: 3 * H, passed: true }]), 4 * H, max, wait).attemptsLeft, max, 'a pass starts the count over');
+}
+
+/** DRV-3 (Batch 12): an article image is keyed by its CONTENT, and only a
+ *  PNG/JPEG/GIF/WebP under KB_IMAGE_MAX_BYTES is stored. */
+function test_c23_kbImageItemContentKey() {
+  _assertSuiteCaller_();
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+  const a = kbImageItem_('image/png', png, 'paste', kbSha256Hex_);
+  const b = kbImageItem_('IMAGE/PNG', png, 'doc', kbSha256Hex_);
+  _assertTrue(KB_IMAGE_KEY_RE.test(a.key), 'a kbimg- key of the image charset');
+  _assertEq(a.key, b.key, 'the same bytes are the same image');
+  _assertContains(kbImageItem_('image/svg+xml', png, 'paste', kbSha256Hex_).error, 'not a PNG', 'SVG is refused');
+  const big = kbImageItem_('image/png', new Array(Math.ceil(KB_IMAGE_MAX_BYTES * 4 / 3) + 9).join('A'), 'paste', kbSha256Hex_);
+  _assertTrue(big.tooLarge === true, 'over ' + KB_IMAGE_MAX_BYTES + ' bytes is refused as too large');
+}
+
+/** SP-2 + its follow-up (Batch 13): a Spanish thread is a sequence of
+ *  requests; a reopened one comes back unclaimed; a thank-you does not reopen. */
+function test_c23_spanishEpisodesAndCourtesy() {
+  _assertSuiteCaller_();
+  const q = function (ms) { return { role: 'request', ms: ms }; };
+  const r = function (ms) { return { role: 'resolver', ms: ms, from: 'm@x' }; };
+  let x = spanishEpisodes_([q(100), r(130), q(200)], null);
+  _assertEq(x.episodes.length, 2, 'a follow-up after the answer is a request of its own');
+  _assertEq([x.episodes[1].resolveMs, x.floorMs], [null, 130], 'open, with the reply as its claim floor');
+  x = spanishEpisodes_([q(100), q(200)], { by: 'boss@x', ms: 150 });
+  _assertEq(x.episodes.map(function (e) { return e.wasManual; }), [true, false], 'a manual resolve closes only what was open at its stamp');
+  _assertEq(x.floorMs, 150);
+  x = spanishEpisodes_([q(100), r(300)], { by: 'boss@x', ms: 200 });
+  _assertEq([x.episodes.length, x.episodes[0].wasManual], [1, true], 'the first close wins');
+  _assertNull(spanishClaimLive_({ by: 'a@x', atMs: 120 }, 130), 'a claim from before the reopen is not on the reopened request');
+  _assertNotNull(spanishClaimLive_({ by: 'a@x', atMs: 140 }, 130), 'one after it stands');
+  _assertTrue(spanishIsCourtesyOnly_('¡Muchas gracias! 🙏'), 'a thank-you is a courtesy');
+  _assertTrue(spanishIsCourtesyOnly_('Thanks!\n\nOn Mon, Ana <m@x> wrote:\n> ¿algo más?'), 'quoted history is not new text');
+  _assertFalse(spanishIsCourtesyOnly_('¿Todo bien?'), 'a question is a request, even in courtesy words');
+  _assertFalse(spanishIsCourtesyOnly_('Gracias, TRX 123456'), 'a number is a request');
+  _assertFalse(spanishIsCourtesyOnly_(''), 'an empty new text is a look, never a courtesy');
+}
+
+/** TC2-9 (Batch 14): every timesheet range read goes through ONE reader —
+ *  against the real Timesheet, the TEST rep's rows come back filtered, once,
+ *  and the builder reads through it with no archive failure. */
+function test_c23_timesheetRangeReader() {
+  _assertSuiteCaller_();
+  _clearTestState(_TEST_INDIA_ID);
+  try {
+    _appendTestPunch(_TEST_INDIA_ID, _TEST_INDIA_NAME, _TEST_DATE_OLD, '09:00:00', 'IN', 'ClockIn');
+    _appendTestPunch(_TEST_INDIA_ID, _TEST_INDIA_NAME, _TEST_DATE_OLD, '17:00:00', 'OUT', 'ClockOut');
+    const read = timesheetRowsInRange_(_TEST_DATE_OLD, _TEST_DATE_OLD, { keep: function (r) { return String(r[ADP.EMP_ID]).trim() === _TEST_INDIA_ID; } });
+    _assertEq(read.rows.length, 2, 'the TEST rep\'s two rows, filtered by `keep`, each once');
+    _assertEq(read.archiveError, '', 'no archive failure');
+    _assertEq(typeof timesheetArchiveReach_(getAdpSS_()), 'string', 'the archive reach is a date or empty');
+    const emp = lookupEmployeeById_(_TEST_INDIA_ID);
+    const ts = buildTimesheetForEmployee_(emp, _TEST_DATE_OLD, _TEST_DATE_OLD);
+    _assertEq(ts.totalHours, 8, 'the builder reads the day through the reader');
+    _assertEq(ts.archiveError, '', 'and ships no archive failure');
+    const liveValues = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
+    const again = timesheetRowsInRange_(_TEST_DATE_OLD, _TEST_DATE_OLD, { strict: true, liveValues: liveValues,
+      keep: function (r) { return String(r[ADP.EMP_ID]).trim() === _TEST_INDIA_ID; } });
+    _assertEq(again.rows.length, 2, 'a caller\'s own live values read the same rows (the export\'s path)');
+  } finally {
+    _clearTestState(_TEST_INDIA_ID);
+  }
+}
+
+/** DRV-3 (Batch 12): an image stored in the KbImages tab is served back by
+ *  key; the same bytes twice are one image. Against the KB FIXTURE — the tab
+ *  is append-only, so the live KB must never carry test rows. */
+function test_c23_kbImagesStoreAndRead() {
+  _assertSuiteCaller_();
+  return _withTestKb_(function () {
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+    const it = kbImageItem_('image/png', png, 'paste', kbSha256Hex_);
+    const first = kbImagesStoreLocked_([it]);
+    _assertEq(first.stored + first.reused, 1, 'stored (or already there from an earlier run)');
+    _assertEq(kbImagesStoreLocked_([it]), { stored: 0, reused: 1 }, 'the same bytes twice are one image — append-only, never rewritten');
+    const got = _asUser(_TEST_INDIA_EMAIL, function () { return getKbImages([it.key, 'kbimg-' + new Array(25).join('0')]); });
+    _assertTrue(got && got.success, 'an employee reads article images');
+    _assertEq(got.images[it.key], 'data:image/png;base64,' + png, 'served back whole, as a data URL');
+    _assertEq(got.missing, ['kbimg-' + new Array(25).join('0')], 'an unknown key is missing, not failed');
+  });
 }

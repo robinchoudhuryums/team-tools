@@ -90,6 +90,98 @@ function accrualMonthsToCredit_(stampYm, nowYm) {
 const TIMESHEET_DAY_INCOMPLETE = 'incomplete';
 const TIMESHEET_DAY_ORPHAN = 'orphan';
 
+/** TC2-9 (cycle 23 Batch 14) — how far back the cold archive can hold
+ *  rows: the later of the newest date actually in `TimesheetArchive` and the
+ *  date the CURRENT window would archive up to. A range that starts after it
+ *  never needs the archive. The old gate was "the range starts before the live
+ *  tab's oldest row", which one late back-filled row for an old date defeats:
+ *  the live tab then LOOKS like it reaches back, the archive is skipped, and
+ *  every other row of that period reads as missing. The tab's own newest date
+ *  is read from ONE column and cached (`TS_ARCHIVE_REACH_CACHE_KEY`, 6 h —
+ *  a data value, never a code-derived one, g157); `archiveOldTimesheetRows`
+ *  clears it after a move. The window's date is unioned in so a move whose
+ *  clear failed is still covered, and so a lowered window is too. '' = there
+ *  is nothing to read. Throws if the archive column cannot be read — the
+ *  caller decides what a failed archive read means. */
+function timesheetArchiveReach_(ss) {
+  const days = getTimesheetArchiveDays_();
+  const windowReach = days > 0 ? fmtDate_(new Date(Date.now() - days * 86400000)) : '';
+  let tabReach = null;
+  let cache = null;
+  try { cache = CacheService.getScriptCache(); const hit = cache.get(TS_ARCHIVE_REACH_CACHE_KEY); if (hit !== null) tabReach = (hit === '-' ? '' : hit); } catch (e) { cache = null; }
+  if (tabReach === null) {
+    tabReach = '';
+    const sh = (ss || getAdpSS_()).getSheetByName(TIMESHEET_ARCHIVE_TAB);   // read-only, never create (INV-133)
+    if (sh && sh.getLastRow() > 2) {
+      const col = sh.getRange(3, ADP.DATE + 1, sh.getLastRow() - 2, 1).getValues();
+      for (let i = 0; i < col.length; i++) { const d = normalizeDate_(col[i][0]); if (d && d > tabReach) tabReach = d; }
+    }
+    try { if (cache) cache.put(TS_ARCHIVE_REACH_CACHE_KEY, tabReach || '-', 21600); } catch (e) {}
+  }
+  return tabReach > windowReach ? tabReach : windowReach;
+}
+/** TC2-9 (cycle 23 Batch 14) — THE Timesheet range reader: every row dated in
+ *  [startIso, endIso] from the live tab, plus TimesheetArchive whenever the
+ *  range reaches what the archive can hold (`timesheetArchiveReach_`). The
+ *  payroll export and the accrual index read through the archive since
+ *  cycle 12 F1, each with its own copy of the walk; the pay statement, both
+ *  calendars and Punctuality read the live tab only, so once archiving was on
+ *  an old period showed short hours, empty days and "no punch" grades with,
+ *  at best, a note. One reader now serves all of them.
+ *
+ *  A row present in BOTH tabs (a mid-run archive move appends before it
+ *  deletes — INV-132 "can duplicate, never lose") is returned ONCE: an archive
+ *  row identical to a live row (id, date, time, COMMENTS) is skipped. Live
+ *  rows come first, in append order (g14), then archive rows.
+ *
+ *  `opts.keep(row)` filters as it walks (one rep's rows, say), so a caller
+ *  never holds the whole archive. `opts.strict`: a failed archive read THROWS
+ *  (the export and the accrual — a short read under-pays or under-credits);
+ *  otherwise it is returned as `archiveError` beside the live rows, for a
+ *  display that says so (INV-187). Never provisions a tab.
+ *  Returns { rows, liveRows (the live tab's row count, headers included),
+ *  archivedRows, archiveRead, archiveError }. */
+function timesheetRowsInRange_(startIso, endIso, opts) {
+  opts = opts || {};
+  const keep = typeof opts.keep === 'function' ? opts.keep : null;
+  const ss = getAdpSS_();
+  // `opts.liveValues`: the live tab's values a caller already read (the export
+  // needs its header rows) — never a second full read of the payroll tab.
+  const live = Array.isArray(opts.liveValues) ? opts.liveValues : ss.getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
+  const keyOf = (r) => String(r[ADP.EMP_ID]).trim() + '|' + normalizeDate_(r[ADP.DATE]) + '|' +
+    normalizeTime_(r[ADP.TIME]) + '|' + String(r[ADP.COMMENTS]);
+  const out = [], liveKeys = new Set();
+  for (let i = 2; i < live.length; i++) {
+    const d = normalizeDate_(live[i][ADP.DATE]);
+    if (!d || d < startIso || d > endIso) continue;
+    if (keep && !keep(live[i])) continue;
+    liveKeys.add(keyOf(live[i]));
+    out.push(live[i]);
+  }
+  const res = { rows: out, liveRows: live.length, archivedRows: 0, archiveRead: false, archiveError: '' };
+  try {
+    const reach = timesheetArchiveReach_(ss);
+    if (!reach || startIso > reach) return res;
+    const arch = ss.getSheetByName(TIMESHEET_ARCHIVE_TAB);
+    if (!arch || arch.getLastRow() <= 2) return res;
+    const a = arch.getDataRange().getValues();
+    res.archiveRead = true;
+    for (let k = 2; k < a.length; k++) {
+      const d = normalizeDate_(a[k][ADP.DATE]);
+      if (!d || d < startIso || d > endIso) continue;
+      if (keep && !keep(a[k])) continue;
+      if (liveKeys.has(keyOf(a[k]))) continue;   // the INV-132 duplicate
+      out.push(a[k]);
+      res.archivedRows++;
+    }
+  } catch (e) {
+    if (opts.strict) throw e;
+    res.archiveError = String((e && e.message) || e);
+    res.archiveRead = false;
+  }
+  return res;
+}
+
 /** ONE Timesheet read for a whole date range → {empId: {hours, incompleteDays}}.
  *  Built for the accrual credit, which runs inside the global ScriptLock and
  *  needs every accruing rep's worked hours: calling buildTimesheetForEmployee_
@@ -99,9 +191,10 @@ const TIMESHEET_DAY_ORPHAN = 'orphan';
  *  SAME arithmetic payroll and the pay statement use.
  *
  *  ARCHIVE READ-THROUGH (the INV-153/F1 precedent): a catch-up range can reach
- *  months the cold-archive has already moved out of the live tab. When the
- *  range predates the live tab this reads TimesheetArchive too, skipping rows
- *  that exist in both (INV-132 can duplicate, never lose). A FAILED archive
+ *  months the cold-archive has already moved out of the live tab. Through
+ *  `timesheetRowsInRange_` (TC2-9) it reads TimesheetArchive when the range
+ *  reaches it, skipping rows that exist in both (INV-132 can duplicate, never
+ *  lose). A FAILED archive
  *  read THROWS rather than returning short hours — crediting from a partial
  *  read would under-credit real earned PTO, and the export refuses the same
  *  way rather than emitting a short payroll file.
@@ -109,43 +202,20 @@ const TIMESHEET_DAY_ORPHAN = 'orphan';
  *  A day whose times are unparseable is counted as INCOMPLETE, never as 0
  *  hours (INV-176) — the caller reports it rather than silently under-crediting. */
 function workedHoursByEmpForRange_(startIso, endIso) {
-  const sheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
-  const rows = sheet.getDataRange().getValues();
   const perDay = {};            // empId -> dateIso -> {ClockIn, ClockOut, LunchOut, LunchIn}
-  const liveKeys = new Set();
-  let oldestLiveDate = null;
-  const put = (id, date, type, time, keyRow) => {
-    if (!id || !date || date < startIso || date > endIso) return;
+  // TC2-9 (cycle 23 Batch 14): THE range reader — the archive gate keys on how
+  // far the archive reaches, not the live tab's oldest row; strict, so a
+  // failed archive read throws rather than under-crediting.
+  const read = timesheetRowsInRange_(startIso, endIso, { strict: true });
+  read.rows.forEach((r) => {
+    const id = String(r[ADP.EMP_ID]).trim();
+    const date = normalizeDate_(r[ADP.DATE]);
+    if (!id || !date) return;
     if (!perDay[id]) perDay[id] = {};
     if (!perDay[id][date]) perDay[id][date] = {};
-    punchDayAdd_(perDay[id][date], type, time);
-    if (keyRow) liveKeys.add(keyRow);
-  };
-  for (let i = 2; i < rows.length; i++) {
-    const id = String(rows[i][ADP.EMP_ID]).trim();
-    const date = normalizeDate_(rows[i][ADP.DATE]);
-    if (date && (oldestLiveDate === null || date < oldestLiveDate)) oldestLiveDate = date;
-    if (!id || !date) continue;
-    const key = id + '|' + date + '|' + normalizeTime_(rows[i][ADP.TIME]) + '|' + String(rows[i][ADP.COMMENTS]);
-    put(id, date, normalizeType_(String(rows[i][ADP.COMMENTS])), normalizeTime_(rows[i][ADP.TIME]), key);
-  }
-  let archivedRows = 0;
-  if (oldestLiveDate === null || startIso < oldestLiveDate) {
-    const archive = getAdpSS_().getSheetByName(TIMESHEET_ARCHIVE_TAB);   // read-only, never create (INV-133)
-    if (archive && archive.getLastRow() > 2) {
-      const aRows = archive.getDataRange().getValues();
-      for (let a = 2; a < aRows.length; a++) {
-        const id = String(aRows[a][ADP.EMP_ID]).trim();
-        const date = normalizeDate_(aRows[a][ADP.DATE]);
-        if (!id || !date) continue;
-        const time = normalizeTime_(aRows[a][ADP.TIME]);
-        const key = id + '|' + date + '|' + time + '|' + String(aRows[a][ADP.COMMENTS]);
-        if (liveKeys.has(key)) continue;                    // mid-run archive duplicate
-        put(id, date, normalizeType_(String(aRows[a][ADP.COMMENTS])), time, null);
-        archivedRows++;
-      }
-    }
-  }
+    punchDayAdd_(perDay[id][date], normalizeType_(String(r[ADP.COMMENTS])), normalizeTime_(r[ADP.TIME]));
+  });
+  const archivedRows = read.archivedRows;
   const byEmp = {}, perDayByEmp = {};
   Object.keys(perDay).forEach((id) => {
     let hours = 0, incomplete = 0, orphan = 0, daysWorked = 0;
@@ -1445,6 +1515,13 @@ function recordPunchCore_(punchType, custom) {
       // and is refused rather than guessed when the day already has one.
       const ds = {}; ds[date] = true;
       const c = buildAdjustPunchIndex_(emp.id, ds);
+      // TC-05 (cycle 23): an AM/PM slip on a clock punch is refused, not paid.
+      if (punchType === 'ClockIn' || punchType === 'ClockOut') {
+        const spanErr = punchType === 'ClockIn'
+          ? adjustShiftSpanError_(custom.time, adjustIndexLastTime_(c, date, 'ClockOut'))
+          : adjustShiftSpanError_(adjustIndexLastTime_(c, date, 'ClockIn'), custom.time);
+        if (spanErr) return { success: false, error: spanErr };
+      }
       const target = breakAdjustTargetRow_(c.all[date + '|' + punchType] || [], punchType, custom.breakIntent, date);
       if (target.code === 'stale') return { success: false, error: 'There is no ' + target.label + ' at ' +
         breakIntentNorm_(custom.breakIntent).target + ' on ' + date + ' to correct — reopen Adjust to see that day\'s breaks.' };
@@ -1585,12 +1662,12 @@ function getMyPayStatement(offset, repEmpId) {
     pto.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
 
     const rate = empPayRateById_(target.id);
-    // INV-153 honesty: buildTimesheetForEmployee_ reads the LIVE tab only, so
-    // with archiving enabled an old period may be partially archived — say so
-    // rather than presenting a short statement as complete (INV-187).
-    const archiveDays = getTimesheetArchiveDays_();
-    const archiveNote = !!(archiveDays > 0 &&
-      daysBetween_(range.start, todayStr) > archiveDays);
+    // TC2-9 (cycle 23 Batch 14): the builder reads THROUGH the archive now, so
+    // the note means what it says — the archive was needed and could not be
+    // read, and the statement may be short (INV-187). It used to be a guess
+    // from the window ("old enough to be archived"), shown whether or not
+    // anything was missing.
+    const archiveNote = !!ts.archiveError;
     return {
       period: { start: ts.startDate, end: ts.endDate, cycle: cycle, offset: range.offset },
       days: ts.days, totalHours: ts.totalHours, daysWorked: ts.daysWorked,
@@ -1634,6 +1711,11 @@ function submitTimeOffRequest(date, type, notes) {
     }
     if (!isValidTimeOffType_(type))
       return { success: false, error: 'Invalid leave type.' };
+    // TC-03 (cycle 23): the range path skipped weekends and company holidays,
+    // but a single date was filed and, once approved, deducted for a day the
+    // office is closed. The same closed-day rule now applies here.
+    const closed = timeOffClosedDayReason_(date);
+    if (closed) return { success: false, error: date + ' is ' + closed + ' — no time off is needed for it.' };
     const toSheet = getOrCreateTimeOffSheet_();
     if (hasActiveTimeOffOnDate_(toSheet, emp.id, date))
       return { success: false, error: 'You already have a pending or approved time-off request for that date.' };
@@ -1869,7 +1951,10 @@ function getManagerDashboard() {
     // since reps still mid-shift would always register as 0 hours)
     // for each liveStatus entry. Reuses already-loaded adpRows; one
     // extra in-memory pass — no Sheet reads, INV-13 honored.
-    const sparkIsos = mgrWorkdaysEnding_(now, mgrTz, 7, 1);    // 7 WORKDAYS, excluding today (operator 2026-09-03)
+    // TC2-8 (cycle 23): the ONE calendar (g123), over a window the walks
+    // below cannot outrun; a calendar that cannot be read leaves weekends only.
+    const mgrHolidays = companyHolidayMap_(addDaysIso_(fmtDateTz_(now, mgrTz), -60), fmtDateTz_(now, mgrTz));
+    const sparkIsos = mgrWorkdaysEnding_(now, mgrTz, 7, 1, mgrHolidays);    // 7 WORKDAYS, excluding today (operator 2026-09-03)
     const sparkStart = sparkIsos[0];
     const sparkEnd = sparkIsos[sparkIsos.length - 1];
     const sparkPunchMap = {}; // {empId}|{date} → { ClockIn, LunchOut, LunchIn, ClockOut }
@@ -2078,7 +2163,7 @@ function getManagerDashboard() {
     // aggregate excluded them.
     // Operator 2026-09-03: WORKDAYS, not calendar days — the chart carried two
     // guaranteed-zero weekend bars every week (see mgrWorkdaysEnding_).
-    const analyticsIsos = mgrWorkdaysEnding_(now, mgrTz, 8, 0);   // 8 bars: today + 7 prior workdays
+    const analyticsIsos = mgrWorkdaysEnding_(now, mgrTz, 8, 0, mgrHolidays);   // 8 bars: today + 7 prior workdays
     const punchCountsByDate = {};
     const analyticsStart = analyticsIsos[0];
     for (let i = 2; i < adpRows.length; i++) {
@@ -2112,7 +2197,7 @@ function getManagerDashboard() {
     // missedTrend walks WORKDAYS (a weekend can never carry a missed clock-out
     // on this roster); pendingTrend stays on CALENDAR days — a PTO request can
     // be SUBMITTED on a Saturday, and that bar is data, not a structural zero.
-    const missedIsos = mgrWorkdaysEnding_(now, mgrTz, trendDays, 1);
+    const missedIsos = mgrWorkdaysEnding_(now, mgrTz, trendDays, 1, mgrHolidays);
     const missedTrendStart = missedIsos[0];
     const missedTrendEnd = missedIsos[missedIsos.length - 1];
 
@@ -2193,15 +2278,15 @@ function getManagerDashboard() {
  *  calcHours_ null → INCOMPLETE, never 0; a ClockIn with no ClockOut is
  *  in-progress on the rep's own today, incomplete on a past day) so this
  *  table can never disagree with the pay statement over the same rows.
- *  Live-tab-only by design (the calendar/Punctuality posture) — a month
- *  predating the live tab's oldest row carries archiveNote (INV-187). */
+ *  Reads THROUGH the cold archive (TC2-9, cycle 23 Batch 14); archiveNote
+ *  says the archive was needed and could not be read (INV-187). */
 /* Operator 2026-09-03: the manager trends counted CALENDAR days, so the Punch
  * Activity chart and every live-status sparkline carried two guaranteed-zero
  * bars a week (no rep works Sat/Sun — operator-confirmed 2026-08-21; the
  * weekend is INFERRED, the same limit remindIsDayOff_ carries). Walks back
  * from (today − endOffset) in the manager tz collecting `n` weekdays, oldest
  * → newest. Bounded so a bad `n` can never spin. */
-function mgrWorkdaysEnding_(now, tz, n, endOffset) {
+function mgrWorkdaysEnding_(now, tz, n, endOffset, holidays) {
   const out = [];
   const limit = endOffset + n * 2 + 7;
   for (let off = endOffset; out.length < n && off < limit; off++) {
@@ -2209,6 +2294,9 @@ function mgrWorkdaysEnding_(now, tz, n, endOffset) {
     const iso = fmtDateTz_(d, tz);
     const dow = new Date(iso + 'T12:00:00Z').getUTCDay();
     if (dow === 0 || dow === 6) continue;
+    // TC2-8 (cycle 23): a company holiday is not a workday either — a bar for
+    // it reads as a day the whole team missed (`holidays`: {iso: truthy}).
+    if (holidays && holidays[iso]) continue;
     out.unshift(iso);
   }
   return out;
@@ -2237,24 +2325,23 @@ function getTeamCalendar(monthIso) {
     // ONE Timesheet read; rows are APPEND order, so per-(rep,date) the last
     // row per type wins (deliberately NOT time-sorted first — the Day Edit /
     // managerSaveDay last-row-wins snapshot is what a pencil click will edit).
-    const adpRows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
+    // TC2-9 (cycle 23 Batch 14): through THE range reader — an archived month
+    // lists its punches (live rows first, so last-row-wins still reads the
+    // live snapshot a pencil edits; an archived day is past the edit window).
+    const monthEnd = monthIso + '-' + String(new Date(Date.UTC(+monthIso.substring(0, 4), +monthIso.substring(5, 7), 0)).getUTCDate()).padStart(2, '0');
+    const read = timesheetRowsInRange_(monthIso + '-01', monthEnd, { keep: (r) => !!reps[String(r[ADP.EMP_ID] || '').trim()] });
     const byDay = {};                   // dateIso -> id -> [{time, type, isAdjustment}]
-    let oldestLiveIso = null;
-    for (let i = 2; i < adpRows.length; i++) {
-      const dateIso = normalizeDate_(adpRows[i][ADP.DATE]);
-      if (!dateIso) continue;
-      if (oldestLiveIso === null || dateIso < oldestLiveIso) oldestLiveIso = dateIso;
-      if (dateIso.substring(0, 7) !== monthIso) continue;
-      const id = String(adpRows[i][ADP.EMP_ID] || '').trim();
-      if (!reps[id]) continue;
-      const rawType = String(adpRows[i][ADP.COMMENTS] || '');
+    read.rows.forEach((r) => {
+      const dateIso = normalizeDate_(r[ADP.DATE]);
+      const id = String(r[ADP.EMP_ID] || '').trim();
+      const rawType = String(r[ADP.COMMENTS] || '');
       const type = normalizeType_(rawType);
-      if (PUNCH_LABELS_.indexOf(type) === -1) continue;   // garbage row ≠ a punch (the getNextActions_ lesson)
+      if (PUNCH_LABELS_.indexOf(type) === -1) return;   // garbage row ≠ a punch (the getNextActions_ lesson)
       if (!byDay[dateIso]) byDay[dateIso] = {};
       if (!byDay[dateIso][id]) byDay[dateIso][id] = [];
-      byDay[dateIso][id].push({ time: normalizeTime_(adpRows[i][ADP.TIME]), type,
+      byDay[dateIso][id].push({ time: normalizeTime_(r[ADP.TIME]), type,
         isAdjustment: rawType.indexOf('ADJ-') === 0 });
-    }
+    });
 
     const days = {};                    // dateIso -> { reps: [...], off: [...] }
     Object.keys(byDay).forEach(dateIso => {
@@ -2326,12 +2413,42 @@ function getTeamCalendar(monthIso) {
       month: monthIso, days, holidays,
       rosterCount: Object.keys(reps).length,
       adjustWindowDays: CONFIG.ADJUST_WINDOW_DAYS,
-      // Live-tab-only read: a month wholly older than the live tab may have
-      // been moved to TimesheetArchive — say so instead of rendering a
-      // confident empty month (INV-187; the pay-statement archiveNote shape).
-      archiveNote: !!(oldestLiveIso && monthIso < oldestLiveIso.substring(0, 7)),
+      // TC2-9: the archive is read now — the note means it was needed and
+      // could not be read, so the month may be short (INV-187).
+      archiveNote: !!read.archiveError,
     };
   } catch (err) { return { error: err.message }; }
+}
+/** TC-03 (cycle 23) — why a single date takes no time off: 'a weekend' (no
+ *  rep works Sat/Sun, operator-confirmed 2026-08-21), 'a company holiday
+ *  (<name>)' from the ONE calendar (getCompanyHolidays_, g123), or '' for a
+ *  working day. A calendar that cannot be read degrades to weekends only, as
+ *  companyHolidayMap_ does for the range path. */
+function timeOffClosedDayReason_(date) {
+  const dow = new Date(String(date) + 'T00:00:00Z').getUTCDay();
+  if (dow === 0 || dow === 6) return 'a weekend';
+  let name = null;
+  try {
+    getCompanyHolidays_(parseInt(String(date).substring(0, 4), 10)).forEach(function (h) {
+      if (h && h.date === date && name === null) name = String(h.name || '').trim();
+    });
+  } catch (e) { /* weekends-only is the honest degrade */ }
+  if (name === null) return '';
+  return name ? 'a company holiday (' + name + ')' : 'a company holiday';
+}
+/** TC-04 (cycle 23) — PURE. The Deducted cell for what an approval took:
+ *  'annual:1' / 'sick:0.5' when a balance moved, else 'none'. */
+function toDeductionCell_(bucket, days, moved) {
+  return (moved && bucket && days > 0) ? bucket + ':' + days : 'none';
+}
+/** TC-04 — PURE. Read a Deducted cell: {known: true, bucket, days} ('none' is
+ *  bucket '' and 0 days), or {known: false} for a blank or unreadable cell —
+ *  a row approved before the column existed, which keeps the by-type rule. */
+function toDeductionRead_(cell) {
+  const v = String(cell == null ? '' : cell).trim().toLowerCase();
+  if (v === 'none') return { known: true, bucket: '', days: 0 };
+  const m = /^(annual|sick):(\d+(?:\.\d+)?)$/.exec(v);
+  return m ? { known: true, bucket: m[1], days: parseFloat(m[2]) } : { known: false };
 }
 function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
   const lock = LockService.getScriptLock();
@@ -2399,24 +2516,45 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
         // failure after a successful deduction would make the retry
         // DOUBLE-deduct — the INV-03/94 class. The compensating revert keeps
         // retry self-healing in both directions; all inside the ScriptLock.)
+        //
+        // TC-04 (cycle 23): an approval RECORDS what it took (TO.DEDUCTED), and
+        // un-approving restores exactly that. The old rule restored by TYPE
+        // whenever the row had been Approved, so a request approved while
+        // tracking was off, or while the rep's PtoEnabled was FALSE (nothing
+        // deducted), credited a day back once either was turned on. A row
+        // approved before the column existed (blank cell) keeps the by-type
+        // rule — nothing says what it took.
         let newBalance = null;
-        if (getFlag_('enablePtoTracking')) {
-          const dedu = getLeaveDeduction_(type);
-          if (dedu.bucket) {
-            try {
-              if (oldStatus !== 'approved' && newStatus === 'Approved') {
-                newBalance = adjustLeaveBalance_(empId, dedu.bucket, -dedu.days);
-              } else if (oldStatus === 'approved' && newStatus !== 'Approved') {
-                newBalance = adjustLeaveBalance_(empId, dedu.bucket, dedu.days);
-              }
-            } catch (balErr) {
-              try { sheet.getRange(i + 1, TO.STATUS + 1).setValue(sheetSafe_(oldStatusRaw)); } catch (revertErr) {
-                Logger.log('updateTimeOffStatus: status revert after balance failure ALSO failed (' +
-                  revertErr.message + ') — row ' + (i + 1) + ' may need a manual status fix.');
-              }
-              throw balErr;
+        let stamp = null;   // the Deducted cell to write once the balance has moved
+        const dedu = getLeaveDeduction_(type);
+        const tracking = getFlag_('enablePtoTracking');
+        try {
+          if (oldStatus !== 'approved' && newStatus === 'Approved') {
+            let moved = false;
+            if (tracking && dedu.bucket) {
+              newBalance = adjustLeaveBalance_(empId, dedu.bucket, -dedu.days);
+              moved = newBalance !== null;
             }
+            stamp = toDeductionCell_(dedu.bucket, dedu.days, moved);
+          } else if (oldStatus === 'approved' && newStatus !== 'Approved') {
+            const taken = toDeductionRead_(rows[i][TO.DEDUCTED]);
+            const bucket = taken.known ? taken.bucket : dedu.bucket;
+            const days = taken.known ? taken.days : dedu.days;
+            if (tracking && bucket && days > 0) newBalance = adjustLeaveBalance_(empId, bucket, days);
+            stamp = '';
           }
+        } catch (balErr) {
+          try { sheet.getRange(i + 1, TO.STATUS + 1).setValue(sheetSafe_(oldStatusRaw)); } catch (revertErr) {
+            Logger.log('updateTimeOffStatus: status revert after balance failure ALSO failed (' +
+              revertErr.message + ') — row ' + (i + 1) + ' may need a manual status fix.');
+          }
+          throw balErr;
+        }
+        if (stamp !== null) {
+          // Best-effort: a failed stamp leaves the cell blank, which is the
+          // by-type rule — right for a deduction that DID happen.
+          try { sheet.getRange(i + 1, TO.DEDUCTED + 1).setValue(sheetSafe_(stamp)); }
+          catch (stampErr) { Logger.log('updateTimeOffStatus: Deducted stamp failed (' + stampErr.message + ') on row ' + (i + 1) + '.'); }
         }
 
         // Look up target now (we'll need it for both audit and notification)
@@ -2474,6 +2612,10 @@ function managerSubmitTimeOff(empId, date, type, notes, autoApprove) {
         return { success: false, error: 'That date is more than ' + TIMEOFF_MAX_DAYS_BACK + ' days in the past.' };
     }
 
+    // TC-03 (cycle 23): the same closed-day rule as the rep's single-date path.
+    const closed = timeOffClosedDayReason_(date);
+    if (closed) return { success: false, error: date + ' is ' + closed + ' — no time off is needed for it.' };
+
     const toSheet = getOrCreateTimeOffSheet_();
     if (hasActiveTimeOffOnDate_(toSheet, targetEmp.id, date))
       return { success: false, error: 'That employee already has a pending or approved request for that date.' };
@@ -2482,14 +2624,17 @@ function managerSubmitTimeOff(empId, date, type, notes, autoApprove) {
     const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
     toSheet
       .appendRow(sheetSafeRow_([targetEmp.id, targetEmp.name, date, type, notes || '', status, submittedAt]));
+    const newRowIndex = toSheet.getLastRow();
 
     // Apply leave deduction immediately if auto-approving
     let newBalance = null;
+    let moved = false;
     if (autoApprove && getFlag_('enablePtoTracking')) {
       const dedu = getLeaveDeduction_(type);
       if (dedu.bucket) {
         try {
           newBalance = adjustLeaveBalance_(empId, dedu.bucket, -dedu.days);
+          moved = newBalance !== null;
         } catch (balErr) {
           // Cycle-9 M-2 (the updateTimeOffStatus compensating-revert pattern):
           // the Approved row is already appended — without removing it, a
@@ -2505,6 +2650,13 @@ function managerSubmitTimeOff(empId, date, type, notes, autoApprove) {
           throw balErr;
         }
       }
+    }
+    // TC-04 (cycle 23): an auto-approved row records what it took, so a later
+    // Deny restores exactly that (nothing, when no balance moved).
+    if (autoApprove) {
+      const ded = getLeaveDeduction_(type);
+      try { toSheet.getRange(newRowIndex, TO.DEDUCTED + 1).setValue(sheetSafe_(toDeductionCell_(ded.bucket, ded.days, moved))); }
+      catch (stampErr) { Logger.log('managerSubmitTimeOff: Deducted stamp failed (' + stampErr.message + ') — a later Deny uses the by-type rule.'); }
     }
 
     writeAuditLog_(targetEmp, 'TimeOffRequest', date, '', false, 0,
@@ -2546,6 +2698,7 @@ function getPtoReconciliation() {
         name:   String(empRows[i][EMP.NAME]).trim(),
         annual: parseFloat(empRows[i][EMP.ANNUAL_LEAVE]) || 0,
         sick:   parseFloat(empRows[i][EMP.SICK_LEAVE]) || 0,
+        ptoOff: empPtoDisabledCell_(empRows[i][EMP.PTO_ENABLED]),
       };
     }
 
@@ -2556,8 +2709,11 @@ function getPtoReconciliation() {
       if (String(toRows[i][TO.STATUS]).toLowerCase().trim() !== 'approved') continue;
       const id = String(toRows[i][TO.EMP_ID]).trim();
       if (!id) continue;
-      const dedu = getLeaveDeduction_(String(toRows[i][TO.TYPE]));
-      if (!dedu.bucket || !(dedu.days > 0)) continue;   // unpaid / non-deducting
+      // TC-06 (cycle 23): a rep with PTO off has no tracked balance, so a
+      // duplicate costs them nothing — and the fix can credit nothing back.
+      if (empById[id] && empById[id].ptoOff) continue;
+      const dedu = toRowCharge_(toRows[i]);   // TC-04: what the approval actually took
+      if (!dedu.bucket || !(dedu.days > 0)) continue;   // unpaid / non-deducting / nothing taken
       const date = normalizeDate_(toRows[i][TO.DATE]);
       if (!byEmp[id]) byEmp[id] = {};
       if (!byEmp[id][date]) byEmp[id][date] = [];
@@ -2613,6 +2769,20 @@ function getPtoReconciliation() {
  *  H1 double-deduct signature. Flagging it made the one-click "Credit &
  *  reconcile" wrongly credit 0.5d and neutralize a legitimate row (making a
  *  later revert impossible). Exactly-two rows, one morning + one afternoon. */
+/** TC-04/TC-06 (cycle 23) — what an Approved TimeOffRequests row charged:
+ *  the recorded Deducted cell when there is one ('none' charges nothing),
+ *  else the by-type deduction (a row approved before the column existed). */
+function toRowCharge_(row) {
+  const taken = toDeductionRead_(row[TO.DEDUCTED]);
+  if (taken.known) return { bucket: taken.bucket, days: taken.days };
+  return getLeaveDeduction_(String(row[TO.TYPE]));
+}
+/** TC-06 — PURE. A roster PtoEnabled cell that turns PTO OFF (blank = on;
+ *  Sheets coerces 'FALSE' to a boolean — the getEmployeeInfo_ parse). */
+function empPtoDisabledCell_(v) {
+  const raw = (v === null || v === undefined || v === '') ? '' : String(v).trim().toLowerCase();
+  return raw === 'false' || raw === 'no' || raw === 'n' || raw === '0';
+}
 function ptoLegitHalfDayPair_(list) {
   if (!list || list.length !== 2) return false;
   const t0 = String(list[0].type || '').toLowerCase();
@@ -2637,6 +2807,16 @@ function fixPtoReconciliation(empId) {
     if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const target = lookupEmployeeById_(empId);
     if (!target) return { success: false, error: 'Employee not found.' };
+    // TC-06 (cycle 23): a credit that cannot land must not be reported, and
+    // its rows must not be neutralized. With tracking off adjustLeaveBalance_
+    // writes nothing, yet the run marked the rows Reconciled (so they could
+    // never be re-detected) and audited a credit that never happened.
+    if (!getFlag_('enablePtoTracking')) {
+      return { success: false, error: 'PTO tracking is off, so no balance can be credited — nothing was changed.' };
+    }
+    if (target.ptoEnabled === false) {
+      return { success: false, error: target.name + ' has PTO turned off, so there is no balance to credit — nothing was changed.' };
+    }
 
     const sheet = getOrCreateTimeOffSheet_();
     const rows = sheet.getDataRange().getValues();
@@ -2644,7 +2824,7 @@ function fixPtoReconciliation(empId) {
     for (let i = 1; i < rows.length; i++) {
       if (String(rows[i][TO.EMP_ID]).trim() !== empId) continue;
       if (String(rows[i][TO.STATUS]).toLowerCase().trim() !== 'approved') continue;
-      const dedu = getLeaveDeduction_(String(rows[i][TO.TYPE]));
+      const dedu = toRowCharge_(rows[i]);   // TC-04: what the approval actually took
       if (!dedu.bucket || !(dedu.days > 0)) continue;
       const date = normalizeDate_(rows[i][TO.DATE]);
       if (!byDate[date]) byDate[date] = [];
@@ -2681,11 +2861,11 @@ function fixPtoReconciliation(empId) {
     // written best-effort before the rethrow) and can never double-credit
     // because its rows are no longer 'Approved'. All inside the ScriptLock.
     //
-    // Note (M-1 interaction): adjustLeaveBalance_ RETURNS NULL (no throw) for
-    // a PtoEnabled=FALSE contractor, so their rows still neutralize with no
-    // credit — the right call going forward (contractors no longer accrue
-    // drift). Any pre-M-1 contractor over-charge needing an actual balance
-    // credit remains a manual sheet edit.
+    // TC-06 (cycle 23): adjustLeaveBalance_ RETURNS NULL (no throw) when it
+    // writes nothing — tracking off, or a PtoEnabled=FALSE rep. Both are now
+    // refused up front, and a null credit inside the loop is treated as a
+    // failure, so rows are only ever marked Reconciled beside a real credit.
+    // (The detector skips PTO-off reps, so their card never offers the fix.)
     let newAnnual = null, newSick = null;
     let doneAnnual = 0, doneSick = 0, rowsDone = 0;
     [{ bucket: 'annual', rows: reconRows.annual, credit: creditAnnual },
@@ -2694,6 +2874,9 @@ function fixPtoReconciliation(empId) {
       u.rows.forEach(function (ri) { sheet.getRange(ri, TO.STATUS + 1).setValue(sheetSafe_('Reconciled')); });
       try {
         const nb = (u.credit > 0) ? adjustLeaveBalance_(empId, u.bucket, u.credit) : null;
+        // TC-06: a credit that wrote nothing (the rep's row is gone, or a flag
+        // changed under us) is a failure — the revert below puts the rows back.
+        if (u.credit > 0 && nb === null) throw new Error('the ' + u.bucket + ' balance could not be credited');
         if (u.bucket === 'annual') { newAnnual = nb; doneAnnual = u.credit; }
         else { newSick = nb; doneSick = u.credit; }
         rowsDone += u.rows.length;
@@ -2767,6 +2950,31 @@ function tsDoctorLegitBreaks_(days, empId, date, type) {
   }
   return false;
 }
+/** TC-08 (cycle 23) — PURE. Which row of a duplicate group the collapse
+ *  keeps: the stamp the hours ALREADY count, so collapsing never changes what
+ *  is paid. It used to keep the last row APPENDED — rows are in append order,
+ *  not time order (g14) — so a later stray return could survive while the
+ *  return the break was actually paired with was deleted, lengthening the
+ *  unpaid break. Clock In / Clock Out keep the last appended row, which is the
+ *  one the hours read (punchDayAdd_ overwrites in sheet order). A break type
+ *  keeps the stamp breakPairs_ pairs (with calcHours_'s own anchor), or the
+ *  open leave; a group none of whose stamps is used keeps the last row, since
+ *  deleting unused stamps changes nothing. Returns an index into g.rows. */
+function tsDoctorKeepIndex_(g, days) {
+  const last = g.rows.length - 1;
+  if (g.type !== 'LunchOut' && g.type !== 'LunchIn') return last;
+  const d = days && days[g.empId + '|' + g.date];
+  if (!d) return last;
+  const anchor = d.in.length ? timeToMins_(d.in[d.in.length - 1]) : null;
+  const used = {};
+  breakPairs_(d.lo, d.li, anchor).forEach(function (p) { used[g.type === 'LunchOut' ? p.out : p.in] = true; });
+  if (g.type === 'LunchOut') {
+    const open = breakOpenLeave_(d.lo, d.li, anchor);
+    if (open) used[open] = true;
+  }
+  for (let j = last; j >= 0; j--) { if (used[g.times[j]]) return j; }
+  return last;
+}
 /** Shared scan. Returns { byKey: { 'empId|date|type': {rows:[rowIdx…], times:[…]} },
  *  days: { 'empId|date': { in:[times], out:[times], name } } } over the window. */
 function tsDoctorScan_() {
@@ -2818,7 +3026,8 @@ function getTimesheetDoctor() {
         totalDuplicateRows += g.rows.length - 1;   // rows a collapse would delete
         if (duplicates.length < TS_DOCTOR_MAX_GROUPS) {
           duplicates.push({ empId: g.empId, name: g.name, date: g.date, type: g.type,
-            count: g.rows.length, times: g.times.slice() });
+            count: g.rows.length, times: g.times.slice(),
+            keep: g.times[tsDoctorKeepIndex_(g, scan.days)] });   // TC-08 — the row the collapse keeps
         }
       }
     });
@@ -2896,9 +3105,11 @@ function getTimesheetDoctor() {
 }
 /** Manager-gated, locked, IDEMPOTENT collapse of every duplicate group found
  *  by a fresh server-side re-scan (never trusts client row indices). Keeps
- *  the LAST row per (emp, date, type) in append order — agreeing with
- *  findExistingPunch_'s last-match and managerSaveDay's collapse (INV-155) —
- *  and deletes the earlier rows bottom-up with a PunchDelete audit row each.
+ *  ONE row per (emp, date, type) — the stamp the hours already count
+ *  (tsDoctorKeepIndex_, TC-08): the last-appended Clock In / Clock Out
+ *  (agreeing with findExistingPunch_ and managerSaveDay, INV-155), and for a
+ *  break type the stamp the pairing uses — and deletes the others bottom-up
+ *  with a PunchDelete audit row each.
  *  The kept row is untouched, so the personal-sheet mirror stays correct.
  *  Inverted pairs are deliberately NOT auto-fixed (Day Edit is the path). */
 function fixTimesheetDuplicates(empIdFilter) {
@@ -2916,8 +3127,11 @@ function fixTimesheetDuplicates(empIdFilter) {
       if (g.rows.length < 2) return;
       if (tsDoctorLegitBreaks_(scan.days, g.empId, g.date, g.type)) return;   // never delete a matched break pair
       if (filter && g.empId !== filter) return;
-      // Keep the LAST row (highest row index = latest append); delete the rest.
-      for (let j = 0; j < g.rows.length - 1; j++) {
+      // TC-08 (cycle 23): keep the stamp the hours already count
+      // (tsDoctorKeepIndex_, the same answer the detector shows); delete the rest.
+      const keep = tsDoctorKeepIndex_(g, scan.days);
+      for (let j = 0; j < g.rows.length; j++) {
+        if (j === keep) continue;
         toDelete.push({ rowIdx: g.rows[j], empId: g.empId, name: g.name,
           date: g.date, type: g.type, time: g.times[j] });
       }
@@ -2929,10 +3143,11 @@ function fixTimesheetDuplicates(empIdFilter) {
     // 92-day scan found — regardless of what the button offered (the report is
     // capped at TS_DOCTOR_MAX_GROUPS, so "Collapse 200 group(s)" could delete
     // 500+ rows) — with no ceiling on how long the global ScriptLock was held.
-    // Slice bottom-up so the kept row per group is still the LAST one
-    // (INV-155: agreeing with findExistingPunch_ / managerSaveDay) whether or
-    // not this run reaches every group; the op stays idempotent, so the
-    // operator re-clicks until `remaining` is 0.
+    // The kept row is excluded from toDelete, so a run that stops part-way
+    // through a group never removes it, and deleting stamps the pairing does
+    // not use leaves the pairing — and so the next run's keep — unchanged
+    // (TC-08); the op stays idempotent, so the operator re-clicks until
+    // `remaining` is 0.
     const remaining = Math.max(0, toDelete.length - TS_DOCTOR_FIX_MAX_ROWS);
     const batch = toDelete.slice(0, TS_DOCTOR_FIX_MAX_ROWS);
     batch.forEach(function (d) {
@@ -3908,6 +4123,32 @@ function managerPlanDay_(rowsByType, cleanSlots, cleanBreaks) {
  *  not a shift, and calcHours_ used to pay it as 24 hours — while a reversed
  *  pair is still accepted as the C3 overnight wrap. Returns an error string
  *  or null. Both slots blank, or only one present, is not this rule's call. */
+/** TC-05 (cycle 23) — PURE. Whether a REP's adjustment leaves the day with a
+ *  plausible shift. Clock In / Clock Out as HH:mm (seconds ignored); '' when
+ *  either is missing (nothing to compare yet). calcHours_ wraps Clock Out <
+ *  Clock In as an overnight shift ON PURPOSE (g127 — overnight-local reps
+ *  exist), so the wrap is allowed; what is refused is an equal pair and a
+ *  shift longer than ADJUST_MAX_SHIFT_HOURS, which is what an AM/PM slip makes
+ *  (in 08:00, out 05:00 = 21 h). Returns the message, or null. */
+function adjustShiftSpanError_(clockIn, clockOut) {
+  const ci = String(clockIn || '').trim().substring(0, 5), co = String(clockOut || '').trim().substring(0, 5);
+  if (!ci || !co) return null;
+  const a = timeToMins_(ci), b = timeToMins_(co);
+  if (a === null || b === null) return null;
+  if (a === b) return 'Clock In and Clock Out would both be ' + toDisplayTime_(ci) + ' — that is not a shift. Check the times.';
+  let span = b - a;
+  if (span < 0) span += 1440;
+  if (span > ADJUST_MAX_SHIFT_HOURS * 60) {
+    return 'Clock In ' + toDisplayTime_(ci) + ' and Clock Out ' + toDisplayTime_(co) + ' would make a ' +
+      (Math.round(span / 6) / 10) + '-hour shift — check AM and PM. Nothing was changed.';
+  }
+  return null;
+}
+/** TC-05 — the last stamp of a punch type in an adjust index ('' if none). */
+function adjustIndexLastTime_(ix, date, type) {
+  const l = (ix && ix.all && ix.all[date + '|' + type]) || [];
+  return l.length ? l[l.length - 1].time : '';
+}
 function managerClockOrderError_(cleanSlots) {
   const ci = String((cleanSlots && cleanSlots.ClockIn) || '').trim();
   const co = String((cleanSlots && cleanSlots.ClockOut) || '').trim();
@@ -4131,6 +4372,23 @@ function exportAdpRange(startDate, endDate) {
  *  - SCHEDULE must be the full H:mm-H:mm form: parseShiftOverride_ accepts
  *    bare hours, but Sheets date-coerces a bare `9-17` typed into the cell —
  *    and setValue of the same string risks the same coercion. */
+/** TC2-6 (cycle 23) — does the runtime know this IANA zone id? `true` /
+ *  `false` from an Intl probe (an unknown id throws a RangeError there,
+ *  where Utilities.formatDate silently uses GMT); `null` when the runtime
+ *  cannot judge — a zone it must know (America/Chicago) fails the probe too —
+ *  so a missing Intl never blocks onboarding. */
+function tzIdKnown_(tz) {
+  const probe = function (id) {
+    try { new Intl.DateTimeFormat('en-US', { timeZone: id }).format(new Date(0)); return true; }
+    catch (e) { return false; }
+  };
+  const t = String(tz || '').trim();
+  // A UTC/GMT offset token (GMT+5) is a form the shape gate allows and
+  // Utilities.formatDate reads, but Intl does not — not Intl's to judge.
+  if (/^(UTC|GMT([+-]\d{1,2}(:\d{2})?)?)$/i.test(t)) return null;
+  if (!probe('America/Chicago')) return null;
+  return probe(t);
+}
 function empValidateNewEmployee_(p, ctx) {
   p = p || {}; ctx = ctx || {};
   var bad = function (msg) { return { ok: false, error: msg }; };
@@ -4172,6 +4430,14 @@ function empValidateNewEmployee_(p, ctx) {
   var tzShapeOk = /^[A-Za-z]+(\/[A-Za-z0-9_+\-]+)+$/.test(tz) ||
                   /^(UTC|GMT([+-]\d{1,2}(:\d{2})?)?)$/i.test(tz);
   if (!tzShapeOk) return bad('"' + tz + '" is not a valid timezone id (use the Area/Location form, e.g. America/Chicago).');
+  // TC2-6 (cycle 23): the shape check passes a misspelling ("America/Chicgo"),
+  // which the runtime then silently reads as GMT — splitting every punch day
+  // at the wrong midnight. The caller injects a probe of the runtime's own
+  // zone list; false is a definite "unknown", null means it cannot judge.
+  if (typeof ctx.tzKnown === 'function' && ctx.tzKnown(tz) === false) {
+    return bad('"' + tz + '" is not a timezone this system recognises — check the spelling (e.g. America/Chicago, Asia/Manila). ' +
+      'An unknown id is silently read as GMT, which would split every punch day at the wrong midnight.');
+  }
   var cycle = String(p.payCycle || '').trim().toLowerCase();
   if (cycle && cycle !== 'biweekly' && cycle !== 'monthly') return bad('Pay cycle must be biweekly or monthly (or blank).');
   var anchor = String(p.payAnchor || '').trim();
@@ -4296,6 +4562,7 @@ function addEmployee(payload) {
         managerEmails: getManagerEmails_().map(function (e) { return String(e).toLowerCase(); }),
         deptKeys: Object.keys(getDepartmentEmails_()),
         hasBiweeklyAnchor: hasBiweeklyAnchor,
+        tzKnown: tzIdKnown_,   // TC2-6
       });
       if (!check.ok) return { error: check.error };
       sheet.appendRow(sheetSafeRow_(check.row));
@@ -4417,7 +4684,10 @@ function offboardEmployee(repEmpId) {
       // MANAGER_EMAILS / ADMIN_EMAILS are Script Properties — an offboarded
       // manager kept the daily brief (PHI) and every assertManagerCaller_ gate.
       const lists = offboardFromGateLists_(repEmail);
-      writeAuditLog_(callerEmp, 'EmployeeOffboard', repEmpId, '', false, 0,
+      // CORE-07 (cycle 23): the row's SUBJECT is the person offboarded, and
+      // PunchDate stays blank — the admin rides the actor column only. It
+      // used to name the admin as the subject and put the id in PunchDate.
+      writeAuditLog_({ id: repEmpId, name: repName }, 'EmployeeOffboard', '', '', false, 0,
         'id=' + repEmpId + '; name=' + repName +
         (lists.removed.length ? '; removedFrom=' + lists.removed.join('+') : '') +
         (lists.kept.length ? '; keptIn=' + lists.kept.map(function (k) { return k.prop; }).join('+') : ''), callerEmp.email);
@@ -4658,6 +4928,9 @@ function archiveOldTimesheetRows() {
     } finally {
       lock.releaseLock();
     }
+    // TC2-9: the readers' archive gate caches the archive's newest date — a
+    // move changes it. Best-effort: the gate also unions the window's own date.
+    if (moved > 0) { try { CacheService.getScriptCache().remove(TS_ARCHIVE_REACH_CACHE_KEY); } catch (e) {} }
     // Written on every ENABLED run (the CN archive convention) — a zero-moved
     // row is the Automation Health "last seen" heartbeat proving the job ran.
     // F3: flag a run that hit the per-run bound, so a draining backlog is
@@ -5059,76 +5332,40 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
 
   const matched = [];
   const seenIds = new Set();
-  // Cycle-12 F1: the live-tab key set, used to drop an archive row that is
-  // byte-identical to a live one (see the archive read-through below).
-  const liveKeys = new Set();
-  let oldestLiveDate = null;
-  const rowKey = function (r) {
-    return String(r[ADP.EMP_ID]).trim() + '|' + normalizeDate_(r[ADP.DATE]) + '|' +
-      normalizeTime_(r[ADP.TIME]) + '|' + normalizeType_(String(r[ADP.COMMENTS]));
-  };
-  for (let i = 2; i < rows.length; i++) {
-    const rowDate = normalizeDate_(rows[i][ADP.DATE]);
-    // Track the live tab's coverage floor BEFORE the range filter — it decides
-    // whether the cold archive has to be consulted at all (F1).
-    if (rowDate && (oldestLiveDate === null || rowDate < oldestLiveDate)) oldestLiveDate = rowDate;
-    if (rowDate < startDate || rowDate > endDate) continue;
-    const rowId = String(rows[i][ADP.EMP_ID]).trim();
-    if (allowedIds && !allowedIds.has(rowId)) continue;
+  // TC2-9 (cycle 23 Batch 14): THE range reader (cycle-12 F1's read-through,
+  // shared). TIMESHEET_ARCHIVE_DAYS (INV-153) MOVES old payroll rows to the
+  // TimesheetArchive tab; before F1 a retroactive export (a payroll dispute, a
+  // corrected period) silently produced a PARTIAL .xlsx with {success:true}.
+  // The reader consults the archive whenever the window reaches what the
+  // archive can hold — keyed on the archive's own reach, since one late
+  // back-filled live row for an old date used to make the live tab look
+  // complete — skips an archive row identical to a live one (INV-132: a
+  // mid-run move can duplicate, and exporting it twice would overstate
+  // payroll), and never provisions a tab (INV-133). The common case (current
+  // period, inside the ≥120-day floor) never touches the archive.
+  let read;
+  try {
+    read = timesheetRowsInRange_(startDate, endDate, { strict: true, liveValues: rows,
+      keep: (r) => !allowedIds || allowedIds.has(String(r[ADP.EMP_ID]).trim()) });
+  } catch (archErr) {
+    // REFUSE rather than return a short file. Producing a partial payroll
+    // export behind {success:true} is the exact F1 failure mode, so a broken
+    // archive read must be loud even though it costs the manager a retry.
+    console.warn('generateExportSheet_: archive read failed: ' + archErr.message);
+    return { error: 'The Timesheet cold archive could not be read (' + archErr.message +
+      '), and this date range reaches into it — the export would be incomplete. ' +
+      'Re-try, or narrow the range to recent dates.' };
+  }
+  const liveCount = read.rows.length - read.archivedRows;   // live rows first, then archive rows
+  read.rows.forEach((r, n) => {
+    const rowId = String(r[ADP.EMP_ID]).trim();
+    if (!rowId && n >= liveCount) return;   // an archive row with no id was skipped before the move too
     seenIds.add(rowId);
-    liveKeys.add(rowKey(rows[i]));
-    const cleaned = rows[i].slice(0, 9);
+    const cleaned = r.slice(0, 9);
     cleaned[ADP.COMMENTS] = '';
     matched.push(cleaned);
-  }
-
-  // ── Cold-archive read-through (cycle-12 F1) ───────────────────────────────
-  // TIMESHEET_ARCHIVE_DAYS (INV-153) MOVES old payroll rows to a
-  // TimesheetArchive tab. That tab had NO reader anywhere, so once archiving
-  // was enabled a retroactive export (a payroll dispute, a corrected period)
-  // silently produced a PARTIAL .xlsx with {success:true} and an audit row
-  // that reported the truncated count as authoritative. Read the archive
-  // whenever the requested window reaches past the live tab's oldest row.
-  // Bounded by design: the common case (current period, inside the ≥120-day
-  // floor) never touches the archive, so it stays byte-identical to before.
-  // Read-only w.r.t. tab existence (getSheetByName, never create — the
-  // INV-133 discipline).
-  let archivedRowCount = 0;
-  if (oldestLiveDate === null || startDate < oldestLiveDate) {
-    try {
-      const archiveSheet = getAdpSS_().getSheetByName(TIMESHEET_ARCHIVE_TAB);
-      if (archiveSheet && archiveSheet.getLastRow() > 2) {
-        const aRows = archiveSheet.getDataRange().getValues();
-        for (let a = 2; a < aRows.length; a++) {
-          const aDate = normalizeDate_(aRows[a][ADP.DATE]);
-          if (!aDate || aDate < startDate || aDate > endDate) continue;
-          const aId = String(aRows[a][ADP.EMP_ID]).trim();
-          if (!aId) continue;
-          if (allowedIds && !allowedIds.has(aId)) continue;
-          // A mid-run archive failure appends before it deletes, so the SAME
-          // row can exist in both tabs (INV-132 "can only duplicate, never
-          // lose"). Exporting it twice would overstate payroll, so skip an
-          // exact live match. Genuine duplicate punch rows inside ONE tab are
-          // untouched — the sheet doctor (INV-159) is that fix.
-          if (liveKeys.has(rowKey(aRows[a]))) continue;
-          seenIds.add(aId);
-          const aCleaned = aRows[a].slice(0, 9);
-          aCleaned[ADP.COMMENTS] = '';
-          matched.push(aCleaned);
-          archivedRowCount++;
-        }
-      }
-    } catch (archErr) {
-      // REFUSE rather than return a short file. Producing a partial payroll
-      // export behind {success:true} is the exact F1 failure mode being fixed,
-      // so a broken archive read must be loud even though it costs the manager
-      // a retry. Ranges that do NOT reach the archive never get here.
-      console.warn('generateExportSheet_: archive read failed: ' + archErr.message);
-      return { error: 'The Timesheet cold archive could not be read (' + archErr.message +
-        '), and this date range reaches into it — the export would be incomplete. ' +
-        'Re-try, or narrow the range to ' + (oldestLiveDate || startDate) + ' or later.' };
-    }
-  }
+  });
+  const archivedRowCount = read.archivedRows;
 
   if (matched.length === 0) {
     return { error: `No punches found between ${startDate} and ${endDate}` +
@@ -5202,18 +5439,20 @@ function buildTimesheetForEmployee_(emp, startDate, endDate) {
   if (daysBetween_(startDate, endDate) > 370) return { error: 'Range too large (max ~1 year).' };
   const empTz = empTz_(emp);
   const todayStr = fmtDateTz_(new Date(), empTz);
-  const rows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
+  // TC2-9 (cycle 23 Batch 14): through THE range reader, so a period the cold
+  // archive has moved reads whole (the pay statement, the timesheet view and
+  // the manager's view of a rep). A failed archive read keeps the live rows and
+  // is SAID (`archiveError`) — never a short period presented as complete.
+  const read = timesheetRowsInRange_(startDate, endDate, { keep: (r) => String(r[ADP.EMP_ID]).trim() === emp.id });
   const byDate = {};
-  for (let i = 2; i < rows.length; i++) {
-    const rowId   = String(rows[i][ADP.EMP_ID]).trim();
-    const rowDate = normalizeDate_(rows[i][ADP.DATE]);
-    if (rowId !== emp.id || rowDate < startDate || rowDate > endDate) continue;
-    const rawType = String(rows[i][ADP.COMMENTS]);
+  read.rows.forEach((r) => {
+    const rowDate = normalizeDate_(r[ADP.DATE]);
+    const rawType = String(r[ADP.COMMENTS]);
     const type    = normalizeType_(rawType);
     if (!byDate[rowDate]) byDate[rowDate] = [];
-    byDate[rowDate].push({ time: normalizeTime_(rows[i][ADP.TIME]), type,
+    byDate[rowDate].push({ time: normalizeTime_(r[ADP.TIME]), type,
       isAdjustment: rawType.indexOf('ADJ-') === 0 });
-  }
+  });
 
   let totalHours = 0, daysWorked = 0, incompleteCount = 0;
   const days = [];
@@ -5265,7 +5504,8 @@ function buildTimesheetForEmployee_(emp, startDate, endDate) {
     cur.setUTCDate(cur.getUTCDate() + 1);
   }
   return { startDate, endDate, days, totalHours, daysWorked, incompleteCount,
-    payCycle: emp.payCycle, payAnchor: emp.payAnchor, timezone: empTz };
+    payCycle: emp.payCycle, payAnchor: emp.payAnchor, timezone: empTz,
+    archivedRows: read.archivedRows, archiveError: read.archiveError };   // TC2-9 — additive
 }
 function buildCalendarForEmployee_(emp, year, month) {
   const empTz = empTz_(emp);
@@ -5274,20 +5514,20 @@ function buildCalendarForEmployee_(emp, year, month) {
   const lastDay   = new Date(year, month, 0).getDate();
   const startDate = `${year}-${monthStr}-01`;
   const endDate   = `${year}-${monthStr}-${String(lastDay).padStart(2,'0')}`;
-  const rows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
+  // TC2-9 (cycle 23 Batch 14): through THE range reader — an archived month
+  // shows its worked days and hours; a failed archive read is SAID.
+  const read = timesheetRowsInRange_(startDate, endDate, { keep: (r) => String(r[ADP.EMP_ID]).trim() === emp.id });
   const workedDates = new Set();
   // Group punches per date so we can compute hours per day
   const punchesByDate = {};
-  for (let i = 2; i < rows.length; i++) {
-    const rowId   = String(rows[i][ADP.EMP_ID]).trim();
-    const rowDate = normalizeDate_(rows[i][ADP.DATE]);
-    if (rowId !== emp.id || rowDate < startDate || rowDate > endDate) continue;
-    const type = normalizeType_(String(rows[i][ADP.COMMENTS]));
-    const time = normalizeTime_(rows[i][ADP.TIME]);
+  read.rows.forEach((r) => {
+    const rowDate = normalizeDate_(r[ADP.DATE]);
+    const type = normalizeType_(String(r[ADP.COMMENTS]));
+    const time = normalizeTime_(r[ADP.TIME]);
     if (!punchesByDate[rowDate]) punchesByDate[rowDate] = {};
     punchDayAdd_(punchesByDate[rowDate], type, time);
     if (type === 'ClockIn') workedDates.add(rowDate);
-  }
+  });
   // Compute hours per worked date (when both ClockIn and ClockOut are present)
   const hoursByDate = {};
   Object.keys(punchesByDate).forEach(dateStr => {
@@ -5362,6 +5602,7 @@ function buildCalendarForEmployee_(emp, year, month) {
     year, month, monthName: `${MONTH_NAMES[month-1]} ${year}`,
     lastDay, firstDayOfWeek: new Date(year, month - 1, 1).getDay(),
     workedDates: [...workedDates], workedHoursByDate: hoursByDate,
+    archiveError: read.archiveError,   // TC2-9 — additive; '' when the archive read (or was not needed)
     timeOffRequests, teammates, holidays, allRequests,
     today: todayStr, timezone: empTz,
     ptoEnabled: !!(getFlag_('enablePtoTracking') && emp.ptoEnabled),
@@ -5787,9 +6028,25 @@ function empShiftSchedule_(empLike, tz) {
     }
   }
   if (!ov && !perEmployee) return base;
+  // TC2-4 (cycle 23): the tz layer's breaks were laid out for the DEFAULT
+  // shift. A column-O override kept them whole, so a 1 pm–9 pm rep was
+  // reminded of, and graded against, a 12:00 lunch before their shift began.
+  // With an override and no per-employee list, only the defaults that fall
+  // wholly inside the overridden shift are kept (shiftBreaksInside_); an
+  // operator who wants that rep's breaks set says so per employee.
+  if (ov && !perEmployee) breaks = shiftBreaksInside_(breaks, ov.startMin, ov.lengthMin);
   return { startMin: ov ? ov.startMin : base.startMin, lengthMin: ov ? ov.lengthMin : base.lengthMin,
            breaks: breaks, breakReminderMin: base.breakReminderMin,
            override: !!ov, perEmployee: perEmployee };
+}
+/** TC2-4 (cycle 23) — PURE. The breaks that lie wholly inside a shift that
+ *  starts at `startMin` and runs `lengthMin` (minutes of the rep's day). */
+function shiftBreaksInside_(breaks, startMin, lengthMin) {
+  const s = Number(startMin) || 0, e = s + (Number(lengthMin) || 0);
+  return (breaks || []).filter(function (b) {
+    const bs = Number(b && b.startMin), bl = Number(b && b.lenMin) || 0;
+    return isFinite(bs) && bs >= s && bs + bl <= e;
+  });
 }
 /** PURE (Node-pinned): split one shift interval [absStart, absEnd) at its
  *  breaks — `breaks` are {offsetMin, lenMin} RELATIVE to the shift start (an
@@ -5926,6 +6183,12 @@ function getCoveragePlan(fromDate, toDate) {
     let ptoUnavailable = false;
     try {
       const trows = getOrCreateTimeOffSheet_().getDataRange().getValues();
+      // TC2-3 (cycle 23): an approved HALF day is not a day off — the rep
+      // works part of the shift, at a time they choose (T5 rework), so they
+      // count as a TENTATIVE presence across it, never as absent. Approved
+      // kinds are combined per day by the one rule (a morning + an afternoon
+      // half, or any full day, is a full day off).
+      const approvedKinds = {};
       for (let i = 1; i < trows.length; i++) {
         const eid = String(trows[i][TO.EMP_ID]).trim();
         const dt = normalizeDate_(trows[i][TO.DATE]);
@@ -5933,8 +6196,17 @@ function getCoveragePlan(fromDate, toDate) {
         if (!eid || !dt || dt < padStart || dt > padEnd) continue;
         if (st !== 'approved' && st !== 'pending') continue;
         if (!ptoMap[eid]) ptoMap[eid] = {};
-        if (ptoMap[eid][dt] !== 'Approved') ptoMap[eid][dt] = (st === 'approved') ? 'Approved' : 'Pending';
+        if (st === 'approved') {
+          ((approvedKinds[eid] || (approvedKinds[eid] = {}))[dt] || (approvedKinds[eid][dt] = [])).push(timeOffDayKind_(trows[i][TO.TYPE]));
+        } else if (!ptoMap[eid][dt]) {
+          ptoMap[eid][dt] = 'Pending';
+        }
       }
+      Object.keys(approvedKinds).forEach(function (eid) {
+        Object.keys(approvedKinds[eid]).forEach(function (dt) {
+          ptoMap[eid][dt] = timeOffKindsCombine_(approvedKinds[eid][dt]) === 'full' ? 'Approved' : 'Half';
+        });
+      });
     } catch (e) {
       // F4 (cycle 16) — best-effort is right (a coverage grid with no PTO
       // overlay still beats no grid at all), but SILENT was not. With ptoMap
@@ -5965,7 +6237,9 @@ function getCoveragePlan(fromDate, toDate) {
       const dateIso = addDaysIso_(fromDate, d);
       const dow = new Date(dateIso + 'T12:00:00Z').getUTCDay();
       // Weekends are closed (we're only open weekdays) — shown but never flagged.
-      const closed = weekdaysOnly && (dow === 0 || dow === 6);
+      // TC2-8 (cycle 23): a company holiday is closed like a weekend — it was
+      // drawn and flagged as an understaffed working day.
+      const closed = (weekdaysOnly && (dow === 0 || dow === 6)) || !!holMap[dateIso];
       days.push({ date: dateIso, weekday: DOW[dow], holidayName: holMap[dateIso] || null, closed: closed, reps: [] });
     }
 
@@ -5980,7 +6254,8 @@ function getCoveragePlan(fromDate, toDate) {
         const localDate = addDaysIso_(fromDate, dd);
         const pto = (ptoMap[r.id] && ptoMap[r.id][localDate]) || '';
         const off = (pto === 'Approved');
-        const tentative = (pto === 'Pending');
+        const half = (pto === 'Half');   // TC2-3 — works part of the shift, when is theirs to choose
+        const tentative = (pto === 'Pending') || half;
         const conv = convertDateTime_(localDate, startHH, r.tz, mgrTz);
         const dayDelta = daysBetween_(fromDate, conv.date);
         const convMins = timeToMins_(conv.time);
@@ -6006,8 +6281,8 @@ function getCoveragePlan(fromDate, toDate) {
           const endConv = convertDateTime_(localDate, endHH, r.tz, mgrTz);
           days[dd].reps.push({
             name: r.name, tz: r.tz,
-            status: off ? 'off' : (tentative ? 'tentative' : 'working'),
-            ptoType: pto || null,
+            status: off ? 'off' : (half ? 'half' : (tentative ? 'tentative' : 'working')),
+            ptoType: half ? 'Half day' : (pto || null),
             startMgr: conv.displayTime,
             endMgr: endConv.displayTime,
             // F(cycle-8): an IST rep's local Jul-10 shift converts to mgr-tz
@@ -6076,6 +6351,14 @@ function punctLunchNearest_(lunches, lunchMin) {
         (Math.abs(m - lunchMin) === Math.abs(best - lunchMin) && m < best)) best = m;
   });
   return best;
+}
+/** TC2-7 (cycle 23) — PURE. Is a day with no clock-in still ahead? A date
+ *  after the rep's today, or today before `dueMin` (the shift start plus the
+ *  grace window; minutes of the rep's day). An unknown `nowMin` is not "not
+ *  yet" — the old answer stands. */
+function punctNotYet_(dIso, todayIso, nowMin, dueMin) {
+  if (dIso > todayIso) return true;
+  return dIso === todayIso && nowMin != null && nowMin < dueMin;
 }
 function punctDayState_(hasIn, lateMin, grace, holidayName, ptoType, isWeekend) {
   if (hasIn) return (lateMin > grace) ? 'late' : 'ontime';
@@ -6168,8 +6451,11 @@ function getPunctualityReport(fromDate, toDate) {
       ptoUnavailable = true;
       console.warn('getPunctualityReport: PTO overlay unavailable — ' + e.message);
     }
-    const rows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
-    for (let i = 2; i < rows.length; i++) {
+    // TC2-9 (cycle 23 Batch 14): BOTH windows through THE range reader — a
+    // previous window the archive holds no longer grades every day "no punch".
+    const read = timesheetRowsInRange_(prevFrom, toDate, { keep: (row) => !!repMap[String(row[ADP.EMP_ID]).trim()] });
+    const rows = read.rows;
+    for (let i = 0; i < rows.length; i++) {
       const id = String(rows[i][ADP.EMP_ID]).trim();
       const r = repMap[id]; if (!r) continue;
       const d = normalizeDate_(rows[i][ADP.DATE]);
@@ -6257,6 +6543,7 @@ function getPunctualityReport(fromDate, toDate) {
       // M2 — the attendance record, one entry per day in range (the client's
       // day strip, late-day chips, timeline and weekly bars all draw from it).
       const dayDetail = [];
+      const repNowMin = timeToMins_(fmtTimeTz_(new Date(), r.tz));   // TC2-7 (repToday is the half-day guard's, above)
       for (let k = 0; k < numDays; k++) {
         const dIso = addDaysIso_(fromDate, k);
         const dow = new Date(dIso + 'T12:00:00Z').getUTCDay();
@@ -6269,8 +6556,12 @@ function getPunctualityReport(fromDate, toDate) {
           continue;
         }
         const lateMin = hasIn ? (r.days[dIso].in - r.startMin) : null;
-        const state = punctDayState_(hasIn, lateMin, grace, holMap[dIso] || null, ptoType, dow === 0 || dow === 6);
+        let state = punctDayState_(hasIn, lateMin, grace, holMap[dIso] || null, ptoType, dow === 0 || dow === 6);
         if (!state) continue;
+        // TC2-7 (cycle 23): no clock-in is not yet a missed one — today before
+        // the shift has started (plus grace), or a date still ahead, reads
+        // `notyet`, never `nopunch`.
+        if (state === 'nopunch' && punctNotYet_(dIso, repToday, repNowMin, r.startMin + grace)) state = 'notyet';
         dayDetail.push({ date: dIso, schedStartMin: r.startMin, actualMin: hasIn ? r.days[dIso].in : null,
           lateMin: (hasIn && lateMin > grace) ? lateMin : (hasIn ? 0 : null), state: state,
           ptoType: ptoType, holidayName: holMap[dIso] || null });
@@ -6295,7 +6586,8 @@ function getPunctualityReport(fromDate, toDate) {
     });
     reps.sort(function (a, b) { return a.onTimePct - b.onTimePct || b.late - a.late; });   // least punctual first
     return { from: fromDate, to: toDate, grace: grace, reps: reps,
-             prevFrom: prevFrom, prevTo: prevTo, ptoUnavailable: ptoUnavailable };
+             prevFrom: prevFrom, prevTo: prevTo, ptoUnavailable: ptoUnavailable,
+             archiveUnavailable: !!read.archiveError };   // TC2-9 — the archive was needed and could not be read
   } catch (err) { return { error: err.message }; }
 }
 /** The caller's resolved department memberships (canonical names), validated
@@ -6741,9 +7033,17 @@ function getOrCreateTimeOffSheet_() {
   let sheet = ss.getSheetByName(CONFIG.TIMEOFF_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(CONFIG.TIMEOFF_TAB);
-    sheet.appendRow(sheetSafeRow_(['EmployeeId','EmployeeName','Date','Type','Notes','Status','SubmittedAt']));
+    sheet.appendRow(sheetSafeRow_(TO_HEADERS));
     sheet.setFrozenRows(1);
+    return sheet;
   }
+  // TC-04 (cycle 23): self-heal the trailing Deducted header once (the
+  // getOrCreatePunchAdjustSheet_ pattern) — an existing tab predates it.
+  try {
+    if (sheet.getLastColumn() < TO_HEADERS.length) {
+      sheet.getRange(1, 1, 1, TO_HEADERS.length).setValues(sheetSafeRows_([TO_HEADERS]));
+    }
+  } catch (e) { /* best-effort — a read still works, DEDUCTED just reads '' (the legacy rule) */ }
   return sheet;
 }
 function getOrCreatePunchAdjustSheet_() {
@@ -6819,10 +7119,15 @@ function submitPunchAdjustRequests(requests) {
     // punch is plainly an add; on a day with one it is refused (the form asks);
     // a correction must name a punch the day actually has. Re-checked at
     // approval — the day can be edited while the request waits.
-    const breakDates = {};
-    clean.forEach(function (c) { if (c.breakIntent) breakDates[c.date] = true; });
+    // TC-05 (cycle 23): the same ONE read also serves the clock-span check.
+    const breakDates = {}, clockDates = {};
+    clean.forEach(function (c) {
+      if (c.breakIntent) breakDates[c.date] = true;
+      if (c.action === 'set' && (c.punchType === 'ClockIn' || c.punchType === 'ClockOut')) clockDates[c.date] = true;
+    });
+    const ixDates = Object.assign({}, breakDates, clockDates);
+    const bix = Object.keys(ixDates).length ? buildAdjustPunchIndex_(emp.id, ixDates) : null;
     if (Object.keys(breakDates).length) {
-      const bix = buildAdjustPunchIndex_(emp.id, breakDates);
       for (let i = 0; i < clean.length; i++) {
         const c = clean[i];
         if (!c.breakIntent) continue;
@@ -6834,6 +7139,20 @@ function submitPunchAdjustRequests(requests) {
         if (t.code === 'ambiguous') return { success: false, error: 'Adjustment #' + (i + 1) + ': ' + c.date + ' already has a ' + t.label +
           ' at ' + t.times + ' — choose "add a missing break" or the break it corrects.' };
       }
+    }
+    // TC-05: the day as it would stand — this batch's Clock In / Clock Out
+    // over the day's own — must be a plausible shift.
+    const clockDateList = Object.keys(clockDates);
+    for (let k = 0; k < clockDateList.length; k++) {
+      const d = clockDateList[k];
+      let ci = adjustIndexLastTime_(bix, d, 'ClockIn'), co = adjustIndexLastTime_(bix, d, 'ClockOut');
+      clean.forEach(function (c) {
+        if (c.date !== d || c.action !== 'set') return;
+        if (c.punchType === 'ClockIn') ci = c.time;
+        if (c.punchType === 'ClockOut') co = c.time;
+      });
+      const spanErr = adjustShiftSpanError_(ci, co);
+      if (spanErr) return { success: false, error: d + ': ' + spanErr };
     }
     // Duplicate guards (same family as INV-94's time-off dup-guard): reject a
     // batch carrying two entries for the same (date, punchType), and reject an
@@ -7102,6 +7421,16 @@ function punchAdjustDecideAll_(reqIds, newStatus) {
           // intent on a day that already has the punch. Nothing is written and
           // the row stays Pending, so the manager denies with the reason shown.
           const breakTarget = rows[i][PAR.BREAK_TARGET];
+          // TC-05 (cycle 23): re-checked against the day as it stands now —
+          // it can be edited while the request waits. The writer keeps the
+          // ctx current, so a Clock In approved earlier in this batch counts.
+          if (punchType === 'ClockIn' || punchType === 'ClockOut') {
+            const cx = ctxFor(empId);
+            const spanErr = punchType === 'ClockIn'
+              ? adjustShiftSpanError_(reqTime, adjustIndexLastTime_(cx, date, 'ClockOut'))
+              : adjustShiftSpanError_(adjustIndexLastTime_(cx, date, 'ClockIn'), reqTime);
+            if (spanErr) { fail(id, spanErr + ' Deny it and ask for the right time.'); return; }
+          }
           const w = writeAdjustPunchForEmployee_(targetEmp, date, punchType, reqTime, callerEmp.email, reason, ctxFor(empId), breakTarget);
           if (w && w.error) { fail(id, w.error); return; }
           // An APPENDED break, or a correction, changes what this employee's
@@ -7335,11 +7664,20 @@ function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEma
   const target = breakAdjustTargetRow_((c.all || {})[date + '|' + punchType] ||
     (c.idx[date + '|' + punchType] ? [{ rowIndex: c.idx[date + '|' + punchType], time: '' }] : []), punchType, intent, date);
   if (target.error) return { error: target.error };
+  const key = date + '|' + punchType;
   if (target.rowIndex) {
     c.sheet.getRange(target.rowIndex, ADP.TIME + 1).setValue(sheetSafe_(timeFull));
     c.sheet.getRange(target.rowIndex, ADP.COMMENTS + 1).setValue(sheetSafe_(commentLabel));
+    // TC-05 (cycle 23): keep a caller's ctx current, so a later check in the
+    // same run (a Clock Out approved after its Clock In) reads this time.
+    ((c.all || {})[key] || []).forEach(function (m) { if (m.rowIndex === target.rowIndex) m.time = time; });
   } else {
     appendToAdpSheet_(targetEmp, date, timeFull, dir, commentLabel);
+    if (c.all) {
+      const ri = c.sheet.getLastRow();
+      (c.all[key] || (c.all[key] = [])).push({ rowIndex: ri, time: time });
+      c.idx[key] = ri;
+    }
   }
   if (targetEmp.sheetId) {
     try { writeToEmployeeSheet_(targetEmp, date, timeFull, dir, punchType); } catch (e) {}
@@ -8068,12 +8406,15 @@ function getMyPendingTasks() {
         var anyMine = Object.keys(spClaims).some(function (t) { return spClaims[t].by === me; });
         if (anyMine) {
           var spIds = spanishPendingIdsGet_(SPANISH_AUTO_ASSIGN_DAYS);
+          var spFloors = spanishPendingFloorsGet_(SPANISH_AUTO_ASSIGN_DAYS);   // SP-2 — a reopened request comes back unclaimed
           if (!spIds) {
             var spRes = getSpanishInboxPending(SPANISH_AUTO_ASSIGN_DAYS);
             if (!spRes || spRes.error) throw new Error((spRes && spRes.error) || 'unreadable');
             spIds = (spRes.pending || []).map(function (p) { return p.threadId; });
+            spFloors = {};
+            (spRes.pending || []).forEach(function (p) { if (p.claimFloorMs) spFloors[p.threadId] = p.claimFloorMs; });
           }
-          var spOpen = spanishMyOpenClaims_(spClaims, me, spIds);
+          var spOpen = spanishMyOpenClaims_(spClaims, me, spIds, spFloors);
           if (spOpen.length) {
             var spOldest = spOpen[0];
             var spAssigned = spOpen.filter(function (o) { return o.assignedBy; }).length;
