@@ -5,7 +5,7 @@ Cycle: 24 — opened 2026-10-05 by the Seams & Invariants audit (cycle 23 is CLO
 Phase: implement
 Scope: Seams & Invariants — the small production batch (F1, F2, F3, F4, F6, F8 client note, F19) is DONE; the nets-and-library batch is next.
 Test Command: manual
-Estimates: production batch (F1/F2/F3/F4/F6/F8/F19): M (~5 h) — written before the first edit. Actual ~2.5 h.
+Estimates: production batch (F1/F2/F3/F4/F6/F8/F19): M (~5 h) — written before the first edit. Actual ~2.5 h. · nets-and-library batch (F5, F7, F8r, F9–F18, F20, F21?): L (~8 h) — written before the first edit.
 Subsystem cycles since last Seams audit: 0 — reset by the Seams & Invariants audit of 2026-10-05 (cycle 24). The cadence is every 4.
 Updated: 2026-10-05 (cycle 24 production batch)
 
@@ -37,7 +37,7 @@ Updated: 2026-10-05 (cycle 24 production batch)
   - F8 remainder: pin `TS_DOCTOR_WINDOW_DAYS` (92) below `TIMESHEET_ARCHIVE_MIN_DAYS` (120).
   - F11: `assertNotProdInstance_` permits while `INSTANCE_IS_PROD` is unset (opposite of `isDevInstance_`) — fail closed unless dev, with an explicit override.
   - F20 (KbImages header edit reads "not stored"), F21 (quoted local part vs `isOrgEmail_`, low confidence) — Low.
-- **F7 — HELD for the operator:** should the external (and department) email composer ask "Discard changes?" before Escape / the backdrop / × throws typed work away? Recommendation given 2026-10-05: yes, via the existing `unsaved` guard, asking only when the rep typed since open; after Discard today's rollback runs unchanged.
+- **F7 — APPROVED by the operator 2026-10-05 (rides the nets-and-library batch):** should the external (and department) email composer ask "Discard changes?" before Escape / the backdrop / × throws typed work away? Recommendation given 2026-10-05: yes, via the existing `unsaved` guard, asking only when the rep typed since open; after Discard today's rollback runs unchanged.
 - **Cycle 23 post-deploy — NOT confirmed** (each batch's deploy line, with its scenario list, is in the cycle 23 HISTORY block under Pending):
   - one-time operator steps:
     - Batch 2: read Admin → System → Reference lookups ("Cannot read", "Rows that could not be read in full") and fix the named cells.
