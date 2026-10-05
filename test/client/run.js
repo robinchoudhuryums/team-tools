@@ -34774,6 +34774,21 @@ test('Seams F13 (cycle 24): INV-360\'s client twins ARE the server rules — com
   });
 });
 
+test('Seams F8 remainder (cycle 24): every live-tab-only Timesheet window stays BELOW the archive floor — the relation INV-372\'s exemptions rest on', () => {
+  const num = (re, what) => { const m = re.exec(codeSrc); assert.ok(m, what + ' is declared'); return Number(m[1]); };
+  const floor = num(/^const TIMESHEET_ARCHIVE_MIN_DAYS = (\d+);/m, 'TIMESHEET_ARCHIVE_MIN_DAYS');
+  const doctor = num(/^var TS_DOCTOR_WINDOW_DAYS = (\d+);/m, 'TS_DOCTOR_WINDOW_DAYS');
+  const adjust = num(/^\s*ADJUST_WINDOW_DAYS:\s*(\d+),/m, 'CONFIG.ADJUST_WINDOW_DAYS');
+  // The sheet doctor (live row indexes) and the 30-day write indexes read the
+  // LIVE tab only. That is correct only while the archiver can never move a
+  // row they could need — i.e. while each window is shorter than the floor
+  // every archive cutoff is clamped up to.
+  assert.ok(doctor < floor, 'TS_DOCTOR_WINDOW_DAYS (' + doctor + ') must stay below TIMESHEET_ARCHIVE_MIN_DAYS (' + floor + ') — or the doctor must read through timesheetRowsInRange_');
+  assert.ok(adjust < floor, 'ADJUST_WINDOW_DAYS (' + adjust + ') must stay below the archive floor (' + floor + ') — the adjust/day-edit indexes read the live tab only');
+  const clamp = stripJsComments_(extractRawFunction('Code.js', 'getTimesheetArchiveDays_'));
+  assert.ok(/if \(v < TIMESHEET_ARCHIVE_MIN_DAYS\)/.test(clamp) && /return TIMESHEET_ARCHIVE_MIN_DAYS;/.test(clamp), 'every configured cutoff below the floor clamps UP to it');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
