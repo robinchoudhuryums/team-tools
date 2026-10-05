@@ -34071,6 +34071,21 @@ test('SP-2 (cycle 23 Batch 13): a claim from before the reopen neither blocks a 
   assert.ok(r.success && !r.already && appended.length === 1, 'the old claimant re-claiming stamps a claim on the reopened request — not "already"');
 });
 
+test('SP-2 (cycle 23 Batch 13): a repeat voicemail after an answered one carries the claim floor and its answered sibling names who answered it — through the real fold (driven)', () => {
+  const T = 1790000000000, M = 60000;
+  const vmMsg = (ms) => b13Msg_('no-reply@8x8.com', ms, 'Duration: 1:00', 'New voicemail from Ana via A_Q_Spanish');
+  const thread = b13Th_('v1', [vmMsg(T), b13Msg_('m@x', T + 30 * M), vmMsg(T + 120 * M)]);
+  const ctx = b10Ctx_(['spanishVmFold_', 'spanishVmResolution_', 'spanishThreadFloorMs_', 'spanishThreadRoles_', 'spanishEpisodes_', 'spanishVmMatch_'], {
+    getSpanishVmMinSeconds_: () => 5, getSpanishVmSender_: () => 'no-reply@8x8.com', getSpanishVmFilter_: () => 'A_Q_Spanish',
+    GmailApp: { search: () => [thread] }, spanishVmQuery_: () => 'q', SPANISH_THREAD_SCAN_MAX: 200, emailAddrOnly_: b13Addr_,
+    spanishVmDurationSec_: () => 60, spanishVmTooShort_: () => 'show' });
+  const rows = b10J(ctx.spanishVmFold_(7, {}, { 'm@x': true }, true, {}).rows).map((r) => [r.msgIndex, r.resolveMs, r.resolverFrom, r.floorMs]);
+  assert.deepStrictEqual(rows, [[0, T + 30 * M, 'm@x', T + 30 * M], [2, null, '', T + 30 * M]],
+    'the answered voicemail names its member; the repeat one is pending with the answer as its claim floor');
+  const man = b10J(ctx.spanishVmFold_(7, { v1: { by: 'boss@x', ms: T + 60 * M } }, { 'm@x': true }, true, {}).rows).map((r) => r.floorMs);
+  assert.deepStrictEqual(man, [T + 60 * M, T + 60 * M], 'a resolve click after the answer raises the floor to the click');
+});
+
 test('SP-2 (cycle 23 Batch 13): the wiring — Expand shows the follow-up, Needs-you and auto-assign read the floors, the card carries a follow-up pill with its own rule, and the resolve confirm says a follow-up comes back', () => {
   const bctx = b10Ctx_(['spanishThreadBodyMessage_', 'spanishVmMatch_'], { emailAddrOnly_: b13Addr_ });
   const req = b13Msg_('jo@x', 1, 'primera'), staff = b13Msg_('m@x', 2, 'resp'), fu = b13Msg_('Jo <jo@x>', 3, 'segunda');
