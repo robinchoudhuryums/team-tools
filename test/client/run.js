@@ -34084,7 +34084,7 @@ test('SP-2 follow-up (operator 2026-10-05): a COURTESY reply does not reopen —
   const yes = ['Gracias!', '¡Muchas gracias!', 'Thank you so much 🙏', 'ok, perfecto', 'Thanks!\n\nOn Mon, Oct 5, 2026 at 9:00 AM Ana <m@x> wrote:\n> Ya está listo, ¿algo más?',
     'Mil gracias, que tenga buen día', '👍', 'Got it, thanks', 'Gracias\n\nEnviado desde mi iPhone', 'Recibido, gracias. Saludos', 'thx'];
   yes.forEach((b) => assert.strictEqual(c.spanishIsCourtesyOnly_(b), true, 'courtesy: ' + JSON.stringify(b)));
-  const no = ['Gracias, ¿y el pedido?', 'Thanks — can you also check the delivery', 'Gracias Ana', 'gracias, TRX 123456', 'No gracias', '',
+  const no = ['¿Todo bien?', 'Ok, thank you?', 'Gracias, ¿y el pedido?', 'Thanks — can you also check the delivery', 'Gracias Ana', 'gracias, TRX 123456', 'No gracias', '',
     '> Gracias (only quoted text)', '.', 'Gracias pero todavía no llega', 'thanks '.repeat(40)];
   no.forEach((b) => assert.strictEqual(c.spanishIsCourtesyOnly_(b), false, 'a request (fails toward a look): ' + JSON.stringify(b)));
   // Through the pending list: an answered thread whose requester then says thanks stays answered.
