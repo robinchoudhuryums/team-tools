@@ -3,11 +3,11 @@
 ## Current
 Cycle: 23 — opened by the 2026-10-01 `/broad-scan` (0 Critical / 5 High; plan of 13 batches + 8 deferred, in chat). Cycle 22 and 22post are in `.cycle/HISTORY.md`.
 Phase: implement
-Scope: broad — Batches 1–5 (TC-02 included), 6a, 6b, 7a and 7b done and doc-synced; Batch 8 done and doc-synced; Batch 9 done and doc-synced; Batch 10 done (docs not yet synced); next /sync-docs, then Batch 11 if planned (the scan's plan ends at Batch 10 + Deferred)
+Scope: broad — Batches 1–5 (TC-02 included), 6a, 6b, 7a and 7b done and doc-synced; Batch 8 done and doc-synced; Batch 9 done and doc-synced; Batch 10 done and doc-synced — the scan's plan is complete; next: deploy + walk, decide the Deferred items, /reflect
 Test Command: manual
 Estimates: Batch 1: M (~9 h) · Batch 2: M (~11 h) · Batch 3: M (~9.5 h) · Batch 4a: M (~10 h) · 4a follow-ons: S (~3 h) · Batch 4b: M (~11 h) · TC-02 (option a): M (~8 h) · Batch 5: M (~10 h) · Batch 6a: M (~9.5 h) · Batch 6b: M (~10 h) · Batch 7a: M (~10 h) · Batch 7b: M (~7.5 h) · Batch 8: M (~9.5 h) · Batch 9: L (~13 h) · Batch 10: L (~11 h) — each written before its first edit
 Subsystem cycles since last Seams audit: 3 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25) and 22post's /reflect (2026-09-30). The cadence is every 4, so the next reflection reaches it.
-Updated: 2026-10-02 (cycle 23 Batch 10)
+Updated: 2026-10-05 (cycle 23 Batch 10 /sync-docs)
 
 ## In progress (facts to carry forward — NOT judgments)
 - Cycle 23 opened 2026-10-01 with a `/broad-scan` (0 Critical / 5 High / ~110 findings; the full report and 13-batch plan are in that session's chat — the batch→ID list is copied under Pending below).
@@ -25,10 +25,11 @@ Updated: 2026-10-02 (cycle 23 Batch 10)
 - Batch 7b implemented on the same branch (block: `.cycle/blocks/23-batch7b-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Batch 8 implemented on the same branch (block: `.cycle/blocks/23-batch8-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Batch 9 implemented on the same branch (block: `.cycle/blocks/23-batch9-broad-implement.md`); NOT yet deployed. /sync-docs done.
-- Batch 10 implemented on the same branch (block: `.cycle/blocks/23-batch10-broad-implement.md`); NOT yet deployed. /sync-docs NOT yet run — the block's DOCUMENTATION UPDATES NEEDED is the list.
+- Batch 10 implemented on the same branch (block: `.cycle/blocks/23-batch10-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Everything through 22post is merged (PRs #274–#282) and deployed (2026-09-30). The operator was finishing two 22post steps at close: the manual.json re-export + import, and the S124–S128 walks.
 
 ## Completed this cycle
+- /sync-docs (Batch 10) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/test-harness-log.md, .cycle/config.md | g146/g156/g41/g122/g26/g36/g148/g143 extended + new g167 (a vocabulary built from user text is user text); six decisions amended; `CONFIG.ORG_EMAIL_DOMAINS` operator entry, trigger owner `{email, by, at}`, DevTools entry points; module notes; INV-360..362 + INV-66/INV-119 amended; S135 added and twelve scenarios extended; harness log
 - KBUI-2 | kb/script_kb.html | an eligibility error that quotes the typed address is shown, never beaconed (OOP_ELIG_BEACON)
 - KB-2 | 70_kb.js | AI guidance tags come from the admin auto-tag taxonomy; the audit row carries counts
 - INT2-3 | intake/script_intake.html, script_core.html | intake drafts carry an owner; a boot sweep drops expired and other users' drafts
@@ -212,4 +213,4 @@ Updated: 2026-10-02 (cycle 23 Batch 10)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 23 Batches 1–5 (TC-02 included) are merged to main (PR #284). Batches 6a–9 are committed, pushed and doc-synced on `claude/blissful-johnson-cottl5`. Batch 10 — the last batch in the scan's plan — is committed and pushed (block: `.cycle/blocks/23-batch10-broad-implement.md`); its /sync-docs is next. Then: deploy and walk the Batch 1–10 scenarios (incl. S134), decide the Deferred items, and /reflect (which reaches the Seams-audit cadence).
+Cycle 23 Batches 1–5 (TC-02 included) are merged to main (PR #284). Batches 6a–9 are committed, pushed and doc-synced on `claude/blissful-johnson-cottl5`. Batch 10 — the last batch in the scan's plan — is committed, pushed and doc-synced (block: `.cycle/blocks/23-batch10-broad-implement.md`). Next: deploy and walk the Batch 1–10 scenarios (incl. S134, S135), decide the Deferred items, and /reflect (which reaches the Seams-audit cadence).

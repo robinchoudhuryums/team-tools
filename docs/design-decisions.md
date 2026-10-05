@@ -685,6 +685,12 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   it most: a page that takes a consent and a signature must not be framable
   by another site (clickjacking). Embedding the app somewhere later means
   changing these three calls on purpose, not working around them.
+  **AMENDED (cycle 23 CORE-05, 2026-10-02):** the shell's outsider page tests
+  the visitor against `CONFIG.ORG_EMAIL_DOMAINS` (universalmedsupply.com and
+  umsupply.com) through `isOrgEmail_`, an exact domain match. It tested
+  `@umsupply.com` alone while the Workspace domain is universalmedsupply.com.
+  The carve-out is still defence in depth — every endpoint gates on the roster.
+
 - <a id="design-tokens-are-the-single-source-of-truth-for-color-typog"></a>**Design tokens are the single source of truth for color,
   typography, radii, shadows, and motion.** All declared in
   `web-app/styles_design_tokens.html` and consumed via CSS
@@ -1666,6 +1672,10 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   from the composer's State list, with no way to add it back in the app. A
   zero is a rate. The rows → map rule is one pure helper,
   `cnRateMapFromRows_`.
+  **AMENDED (cycle 23 CORE-04, 2026-10-02):** a deliberately-cleared
+  department map stays EMPTY, as the tax rates and update suggestions already
+  did (C5); it used to fall back to CONFIG's real department addresses. The
+  client still refuses an empty save; this closes the direct-RPC path.
 
 - <a id="runtime-feature-toggles-via-a-registry-the-admin-tab"></a>**Runtime feature toggles via a registry + the Admin tab.** A
   manager-flippable boolean store lets features be turned on/off live,
@@ -2204,6 +2214,14 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   (`intakeReenterForm_`). The draft in storage is overwritten on the next
   keystroke, as it always was: an amend was never a merge. Verify: the I1 DOM
   pin (ES and EN) and the extended amend order pin.
+  **AMENDED (cycle 23 INT-2, 2026-10-02):** amending a submission that is
+  ALREADY amended is refused by the server, naming the newer one ("open the
+  newest version … and amend that"); the guard used to be client-only, so a
+  stale view or a second window dropped the first amendment's changes. And a
+  product-catalog edit between preview and send is named as one ("The
+  recommended products changed since you previewed") rather than "The form
+  changed" — the preview ships an answers-only hash the send compares (INT2-4).
+
 - <a id="form-submission-notification-renders-the-completed-form"></a>**Form-submission notification renders the completed form.** When a
   recipient submits a fillable form, `submitFormByToken` calls
   `notifyRepOfFormSubmission_` (best-effort, try/catch — never blocks the
@@ -2629,6 +2647,15 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   `vector-effect: non-scaling-stroke` to the polyline: it moves the §4
   draw-in `stroke-dasharray` to screen space, where `--len:600`
   under-runs the stretched path and the "drawn" end state shows a gap).
+  **AMENDED (cycle 23 MET2-1, 2026-10-02): the hero compares only against a
+  DIFFERENT window, call-weighted.** On a range the trend covers the hero's own
+  days, so "vs period daily average" compared the period with itself under two
+  weightings (the unweighted mean of daily rates vs the call-weighted total) —
+  it measured volume skew. The baseline is now the call-weighted rate
+  (`mTrendWeightedPct_`); My Stats on a range and Team on a multi-day range draw
+  no delta (the dashed baseline stays), and single-day Team compares with the
+  "30-day team rate".
+
 - <a id="per-queue-attribution-exists-only-for-transfers-cycle-14-pha"></a>**Per-queue attribution exists ONLY for TRANSFERS (cycle-14 Phase 1).** Phase
   0's inventory settled the question against the operator's real sheet: **DQE
   carries ONE row per (agent, date)**, so `answered` / `missed` / `% answered` /
@@ -3653,6 +3680,13 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   facet-hash (`umsKbPanel.aiSeen`). Model default `claude-haiku-4-5`
   ($1/$5 per MTok). Phase B (ask box) is deliberately NOT built —
   gated on observed demand. See INV-119 + S66.
+  **AMENDED (cycle 23 KB-2, 2026-10-02):** the TAG vocabulary is the admin's
+  auto-tag taxonomy (`getAutoTagRules_`), not the caller's own saved tags — those
+  are free text from the PHI store, so "enum-only" did not hold for them (g167).
+  A rep's other tags no longer drive guidance until an admin adds them to the
+  taxonomy. The `KbAiGuidance` audit row carries facet COUNTS
+  (`dept:N,update:N,flag:N,tags:N`), never values.
+
 - <a id="kb-reference-drawer-mid-call-lookup-as-a-shell-capability"></a>**KB reference drawer — mid-call lookup as a shell capability.** A
   slide-over panel (`#kb-drawer`, right edge, z-index 55 — ABOVE the
   `.overlay` layer (50) so it stays readable + usable while the email
@@ -4120,6 +4154,12 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   (`cnTagSkippedNote_` — ids only, INV-32) and ship the list; the Admin toast
   turns WARN and names the reps to re-share and re-run. INV-220 generalises
   it: a cross-rep walk that skips a member owes all three.
+  **AMENDED (cycle 23 ADM-12, 2026-10-02):** a rename/merge also walks each
+  rep's NotesArchive tab, writes a "started" audit row BEFORE the walk (a
+  started row with no completion row after it is a run that stopped partway),
+  and a transport failure tells the admin it may have PARTLY applied and is
+  safe to run again — the transform is idempotent.
+
 - <a id="uiconfirm-uiprompt-replace-native-window-confirm-window-prom"></a>**`uiConfirm` / `uiPrompt` replace native `window.confirm` /
   `window.prompt`.** Promise-returning helpers in `script_core.html`
   that consume the existing `.overlay` + `.modal` vocabulary so

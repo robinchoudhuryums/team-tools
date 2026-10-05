@@ -708,6 +708,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `runNightlySelfTest` keeps the trigger gate, since it runs as the
   installer.
 
+  **AMENDED (cycle 23 CORE-03, 2026-10-02): a MANAGER gate is not enough for a
+  job that runs as the owner.** A manager could call `runNightlySelfTest` from
+  the browser; it stamped the heartbeat, failed the suite's owner check, stored
+  a false red and emailed every manager — and the fresh heartbeat masked a dead
+  1am trigger. It now refuses anyone but the script owner (`callerIsScriptOwner_`)
+  BEFORE stamping. The trigger-owner record names the account the triggers RUN
+  AS (the effective user), not whoever pressed the button, and removing the
+  triggers writes an `AutomationTriggersRemoved` audit row. Verify: the CORE-03
+  drive.
+
 <a id="g27-pto-balance-transitions"></a>
 
 - **PTO balance transitions.** `updateTimeOffStatus` only changes
@@ -907,6 +917,11 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   synthetic actor identity is likewise de-identified ("External
   recipient" + domain, never the recipient's name or raw address).
 
+  **AMENDED (cycle 23 CN-3, 2026-10-02):** the internal composer's "Other"
+  recipient mails the full note to any address, and its CallNoteEmail row
+  recorded only "Other" and a count. It now records the recipient's DOMAIN
+  (`otherDomain=`), the same rule; the address stays on the note itself.
+
 <a id="g37-buildcallnoteemailhtml-must-esc-every-user-supplied-field"></a>
 
 - **`buildCallNoteEmailHtml_` must `esc_` every user-supplied field.**
@@ -1079,6 +1094,10 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   unknown, and unknown never lifts. Verify: the KB-1 and KB2-1/2/4/5 drives,
   bite-checked.
 
+  **AMENDED (cycle 23 INT2-1, 2026-10-02):** the seat validator said a "Not
+  solid" row "matches no seat branch" while the engine recommended it AS solid
+  — a diagnostic that pointed away from the real effect (g142). With the
+  negation read, the engine and the validator now agree.
 
 <a id="g42-intake-ppd-controls-are-engine-safe-via"></a>
 
@@ -3577,6 +3596,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   fallback, so its reachability and timezone stay visible. Verify: the ADM-04 pin
   (drives `getStorageHealth` with and without the properties).
 
+  **AMENDED (cycle 23 CORE-04, 2026-10-02): a CLEARED setting is not an unset
+  one.** Saving an empty department map wrote `{}`, and the read fell back to
+  CONFIG's eleven real department addresses, so the composer kept offering
+  departments the admin had removed. A deliberately-cleared map now stays empty
+  — the cycle-10 C5 rule tax rates and update suggestions already had; only an
+  all-junk object degrades to CONFIG. Verify: the CORE-04 pin.
+
 <a id="g123-the-holiday-calendar-is-the-cdr-report-s"></a>
 
 - **The holiday calendar is the CDR Report's `Company Holidays` tab, and it
@@ -4600,6 +4626,13 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   Verify: the RES-1 pins (the page writes nothing; the button's token is
   shape-checked and script-safe; `self` for the sender).
 
+  **AMENDED (cycle 23 CORE-06, 2026-10-02):** DevTools.js gained two editor
+  entry points (`devScrubRosterForMe`, `devShowConfig`) — the documented
+  `devScrubRoster_('…')` could not be run, because the editor's Run button
+  hides `_` functions and passes no arguments. Being public, each is gated
+  owner-first by `_assertSuiteCaller_`, and the PUBLIC-GATE pin holds
+  DevTools.js to the Tests.js rule (the owner check is the first statement).
+
 <a id="g144-a-string-written-to-a-cell-is-parsed"></a>
 
 - **A string written to a cell is parsed AS IF TYPED: `=…`, and `+`/`-`/`@`
@@ -4706,6 +4739,15 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   beacon, the markup escapes once, and a derived scan of every partial finds
   every interpolating call site passing a beacon-safe message).
 
+  **AMENDED (cycle 23 KBUI-2, 2026-10-02): a SERVER message that QUOTES the
+  input is the same leak.** The eligibility check's partial-geocode error says
+  where "the closest place found was" — the typed address, read back — and the
+  panel rendered it through `errorStateHtml_`, which beaconed it verbatim. The
+  three eligibility render paths now pass a fixed beacon line
+  (`OOP_ELIG_BEACON`); the rep still reads the server's message (g128). Ask of
+  every error a surface beacons: could the SERVER have echoed what was typed?
+  Verify: the KBUI-2 DOM drive.
+
 <a id="g147-a-repaint-cache-keyed-per-host-dies"></a>
 
 - **A repaint cache keyed per HOST dies with the host: a rebuilt host
@@ -4758,6 +4800,14 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   a one-day window), the `dashboardPeriodRange_` pin's `dataThrough` and
   projection assertions, and the M2/M8 endpoint pin (both cards project from
   `res.dataThrough`).
+
+  **AMENDED (cycle 23 MET-5, 2026-10-02): and a window read BEFORE its data
+  lands is not cached.** M8 assumes yesterday's data is in; before the daily
+  import it is not, so the deltas read ~1/d low and the run-rate divides by an
+  empty day — and the Dashboard's 6-hour cache pinned those numbers past the
+  import. A period-to-date window is now not cached while its newest data day
+  is earlier than the previous WORKDAY (`dashboardImportPending_`; the DQE
+  reader's meta carries `latestDate`). Verify: the MET-5 grid + the gated put.
 
 <a id="g149-a-stamp-parser-documented-as-differences-only"></a>
 
@@ -4999,6 +5049,19 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   weight-capacity check ran (`intakeWeightWarnHtml_`). Fires when you parse free
   text an engine then acts on. Verify: the I2/I3 pins and FU-B8b.
 
+  **AMENDED (cycle 23 INT-1 + INT2-1 + INT2-2, 2026-10-02): three more, on the
+  server.** Any non-empty Q43 text was a neuro diagnosis, so a chip reading
+  "Not sure" switched on the solid-seat and Group-3 rules; Q43 is now read entry
+  by entry, and a leading negation or an uncertainty token anywhere is not a
+  diagnosis (`intakeNeuroEntryIsDx_`, the client chip guard its pinned twin).
+  "Not solid" read as SOLID (the engine dropped the word it did not know and
+  kept the one it did); a negation now cancels the seat word after it. And a
+  weight was the first number whatever its unit — "120 kg" read as 120 lbs,
+  "5'6", 250" as 5 lbs; it is now read BY UNIT, heights are not weights, and
+  several bare numbers are UNREADABLE rather than a guess. Verify: the
+  INT-1 / INT2-1 / INT2-2 drive (server and client grids, the engine, the
+  explain row).
+
 <a id="g157-scriptcache-is-shared-by-every-deployment"></a>
 
 - **A ScriptCache entry is shared by HEAD and every versioned deployment, so
@@ -5201,3 +5264,18 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   four editors register `unsaved`; the guard runs first in `closeOverlay`) +
   the UI-ESC DOM drives (Escape inside a field, the backdrop, the ×, Keep
   editing, Discard, a prefill, a reopen, a module mark, mid-save).
+
+<a id="g167-a-vocabulary-built-from-user-text-is-user-text"></a>
+
+- **A VOCABULARY built from user text is user text — "enum-only" holds only if
+  the enum is authored by someone who chose it (cycle 23 KB-2, 2026-10-02).**
+  The AI guidance boundary whitelisted facets against a vocabulary, and called
+  the vendor payload and its AuditLog row PHI-free by construction (INV-119).
+  But the TAG vocabulary was every tag the caller had ever saved — free text in
+  the per-rep PHI store — so a tag that was once a patient's surname became
+  "established" and was sent to the vendor and written to the shared log. The
+  vocabulary is now the admin's auto-tag taxonomy (`getAutoTagRules_`), which
+  no rep can add to, and the audit row carries facet COUNTS, never values. Ask
+  of any allowlist: who wrote the list? Fires when you whitelist input against
+  a list, or call a payload safe because it is validated. Verify: the KB-2
+  drive (`kbGetFacetGuidance` end to end).

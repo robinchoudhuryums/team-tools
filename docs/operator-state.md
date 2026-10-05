@@ -52,10 +52,20 @@ entry says which it is.
   Health self-test line rather than silently. Dev-only tooling
   (`web-app/DevTools.js`: `devScrubRoster_(keeperEmail)` anonymizes a copied
   roster so dev's per-employee emails can't reach real staff; `devShowConfig_()`)
-  is `assertDevInstance_`-guarded so it can never mutate the live roster even
+  is `assertDevInstance_`-guarded — and since cycle 23 CORE-06 you RUN them
+  through the owner-only editor entry points **`devScrubRosterForMe`** (the
+  keeper is the account running the editor) and **`devShowConfig`**, which
+  also marks every unset recipient key that falls back to a REAL address so it can never mutate the live roster even
   though it deploys to both. Pinned by the instance-guard Node tests (incl. the
   A5 "a LABEL alone is NOT dev" case) + the DEV-banner DOM test. Deploy: the
   same `clasp push -f` + New version; prod is unaffected until you set them.
+<a id="operator-config-org-email-domains-cycle-23"></a>
+- **`CONFIG.ORG_EMAIL_DOMAINS` — the org's sign-in domains (cycle 23 CORE-05).**
+  `['universalmedsupply.com', 'umsupply.com']`. doGet's "Access Restricted" page
+  is shown only to a signed-in visitor who is neither on one of these domains
+  (`isOrgEmail_`, an exact match) nor a registered employee. If the org adds or
+  retires a sign-in domain, edit this list and deploy. Defence in depth only —
+  every endpoint still gates on the roster.
 <a id="operator-the-server-is-fourteen-files-and-filepushorder-is-load-bearing"></a>
 - **The server is FOURTEEN files, and `filePushOrder` is load-bearing (Batch F2,
   2026-09-14).** `web-app/Code.js` no longer exists: it was split, as a MOVE, into
@@ -1140,13 +1150,20 @@ entry says which it is.
   `removeAutomationTriggers()` first.
   **The installer is recorded (cycle 22 follow-ups, 2026-09-25).** Each run
   stores who ran it in the auto-managed Script Property
-  `AUTOMATION_TRIGGER_OWNER` (`{email, at}`). Installable triggers run AS that
+  `AUTOMATION_TRIGGER_OWNER` (`{email, by, at}` — since cycle 23 CORE-03
+  `email` is the account the triggers RUN AS, the effective user, and `by` is
+  who pressed the button; it was the caller before). Installable triggers run AS that
   account, so if that person is offboarded (the account disabled) every job
   stops; the Automation Health detector "The automation triggers' installer is
   still on the team" then reads DEAD. **After this deploy, re-run
   `installAutomationTriggers()` once from an active manager account** so the
   record exists — until then the detector has nothing to check and stays
   silent. When it reads DEAD, re-run the installer from an active account.
+  **Removing the triggers is recorded (cycle 23 CORE-03):**
+  `removeAutomationTriggers()` writes an `AutomationTriggersRemoved` AuditLog row
+  with the count — it switches EVERY job off, the failure digest included. And
+  `runNightlySelfTest` refuses anyone but the script owner, so it runs only from
+  its trigger or the editor; a browser call returns an error and records nothing.
 <a id="operator-call-notes-retention-is-off-by-default"></a>
 - **Call-notes retention is OFF by default.** `purgeOldCallNotes`
   (daily manager-tz 4am trigger) deletes per-rep `Notes` rows whose

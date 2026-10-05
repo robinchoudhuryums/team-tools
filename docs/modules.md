@@ -192,6 +192,15 @@ not restate it. Server endpoints live in the fourteen server files
      (SH-05). Every close button returns focus to whatever opened the dialog, and
      Tab cannot leave the keyboard-shortcuts dialog (SH-02, SH-03 — g100).
 
+     **Cycle 23 Batch 10 (2026-10-02) — shell and automation.** The outsider page
+     reads the org's two domains exactly (`CONFIG.ORG_EMAIL_DOMAINS` —
+     universalmedsupply.com and umsupply.com); it had tested `@umsupply.com` alone
+     (CORE-05). The nightly self-test refuses a browser caller who is not the
+     script owner before it stamps anything, so a manager can no longer store a
+     false red result and mask a dead trigger; the trigger-owner stamp names the
+     account the triggers run as, and removing the triggers writes an audit row
+     (CORE-03, g26).
+
 ## Call Notes
 
    - **Call Notes** — rolling-note panel for CSR call logging. Each
@@ -369,6 +378,18 @@ not restate it. Server endpoints live in the fourteen server files
      member" form being filled in survives the panel's reload after an offboard —
      values, open state, focus and caret; only a completed add empties it (ADM-10,
      g141).
+
+     **Cycle 23 Batch 10 (2026-10-02) — Manage → Admin.** A cross-rep tag rename
+     or merge writes a "started" audit row before it walks, walks each rep's
+     NotesArchive as well as Notes (the completion row counts `archived=N`), and a
+     transport failure says the run "may have PARTLY applied" and is safe to repeat,
+     in a toast that stays (ADM-12). Turning on or shortening a diagnostics purge
+     window (ViewUsage, ClientErrors) asks "Delete older diagnostics rows?" before
+     the save (ADM-13). Saving an empty department map keeps it empty instead of
+     bringing back CONFIG's addresses (CORE-04, g122). An email to an "Other"
+     recipient records that recipient's DOMAIN on the CallNoteEmail audit row,
+     never the address (CN-3, g36).
+
 
 ## Metrics
 
@@ -551,6 +572,14 @@ not restate it. Server endpoints live in the fourteen server files
      click is recorded as "marked by the sender", untimed. Both modules' median
      tiles are true medians (an even count averages the middle two).
 
+     **Cycle 23 Batch 10 (2026-10-02):** the range hero's rate is call-weighted
+     (Σanswered / Σ(answered + missed)) and is never compared with itself: My Stats
+     on a range shows the baseline with no delta, and Team Metrics draws a delta
+     only for a single day, "vs 30-day team rate" (MET2-1). A Dashboard load before
+     the day's CDR import is not cached, so the six-hour cache no longer pins a
+     month-to-date comparison taken against a day of data that had not arrived
+     (MET-5, g148, g129).
+
 <a id="intake"></a>
      **Batch 5 (2026-09-18):** `QaRecordings` carries a trailing `AgentId`
      written from the roster when a reviewer attributes a recording, and the
@@ -666,6 +695,20 @@ not restate it. Server endpoints live in the fourteen server files
      will wipe (`intakeConfirmClear_`). The "Copy image" fallback says whether
      the image opened in a new tab or the browser blocked that too, instead of
      always "Opened image" (U3, g135).
+
+     **Cycle 23 Batch 10 (2026-10-02):** Q43 is read entry by entry, by token —
+     "Not sure", "Unknown", "No", "N/A" and the like are not a neuro diagnosis, on
+     the server and in the chip guard (INT-1). "Not solid" and "Sling (no solid)"
+     are no longer read as solid seats (INT2-1). The weight is read by unit: kg
+     converts ("264.6 lbs (from 120 kg)"), a height is not a weight, one bare
+     number or a range is pounds, and several bare numbers are "could not be read
+     as one weight" (INT2-2, g156). A submission that has already been amended
+     cannot be amended again — the send names the newer one and sends nothing
+     (INT-2). A catalog change between preview and send is named as a catalog
+     change, not "the form changed" (INT2-4). A saved draft belongs to the person
+     who typed it: the shell drops expired drafts and other users' drafts at load,
+     and a draft with another owner is never restored — a draft saved before this
+     deploy has no owner and is dropped (INT2-3).
 
 <a id="reference"></a>
      **Batch 5 (2026-09-18):** the email's question LABELS come from
@@ -1120,6 +1163,12 @@ not restate it. Server endpoints live in the fourteen server files
      earlier import that did not finish" on Check and recorded on Import, instead
      of being skipped as foreign for ever (KB2-8).
 
+     **Cycle 23 Batch 10 (2026-10-02):** a failed eligibility lookup still shows
+     its message — which may quote the closest place the geocoder found — but the
+     shared error log gets a fixed line instead (KBUI-2, g146). The AI guidance
+     card's tag vocabulary is the admin's Auto-tag rules list, never the reps' own
+     tags, and its audit row counts facets rather than naming them (KB-2, g167).
+
 ## Training & Employee Docs
 
    - **Training & Employee Docs** — phased module
@@ -1277,6 +1326,10 @@ not restate it. Server endpoints live in the fourteen server files
      close while a save is in flight, so a second HR record cannot be filed
      (INTUI-1). The signature pad is white with a fixed dark ink in both themes, so
      a dark-mode signature prints dark (TRUI-2, g58).
+
+     **Cycle 23 Batch 10 (2026-10-02):** a quiz imported from a Google Form whose
+     correct answer was past the first six options warns that the answer was cut
+     off, instead of "had no correct answer marked" (TRN-2).
 
 <a id="qa"></a>
 ## QA

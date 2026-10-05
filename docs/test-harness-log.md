@@ -2586,3 +2586,39 @@ per-change detail. By delta:
   was "still inside the popover", which held with the handler removed — jsdom
   never moves focus on Tab (g116's fifteenth direction). It now asserts the
   key is handled and focus MOVES and wraps.
+
+## Cycle 23 — Batch 10, engine reads, vendor vocabularies and owner gates (2026-10-02)
+
+- Node +11, all driving real functions in a sandbox except CN-3 (structural,
+  with `intakeEmailDomain_` driven): KB-2 runs `kbGetFacetGuidance` end to end
+  (a surname-shaped rep tag never reaches the vendor prompt; the audit row
+  counts facets); the INT-1 / INT2-1 / INT2-2 grids drive Q43, the seat kinds
+  and the weight on the server AND the client twin, entry by entry, and through
+  the engine and the explain row; INT-2 drives `intakeAmendSource_` over a fake
+  sheet and checks the refusal sits before the send; INT2-4 drives
+  `intakeSendPPD` with the catalog changed vs the answers changed; ADM-12 drives
+  `renameCallNoteTag` over a live and an archive tab, then a run killed mid-walk;
+  ADM-13; CORE-03 drives `runNightlySelfTest` as a non-owner manager (nothing
+  stamped) and `removeAutomationTriggers` (the audit row); CORE-04/05/06 grids
+  plus the doGet line; TRN-2 drives `importQuizFromForm` over a fake FormApp;
+  MET-5 / MET2-1 the import-pending grid (a Monday's bar is the Friday) and the
+  weighted-rate grid.
+- DOM +4: KBUI-2 (the eligibility message is shown, the beacon gets the fixed
+  line; a price-only error still beacons its own text), INT2-3 (the boot sweep
+  keeps only the signed-in user's draft; another user's is never restored),
+  ADM-13 (the confirm precedes the RPC), ADM-12 (the real merge flow fails in
+  transit and the sticky "PARTLY applied" warning shows).
+- Moved pins: C17-13 now drives the shared Q43 rule (it had encoded the old
+  `negTok`); the engine sandbox loads the two Q43 helpers; F-10's fake rep
+  Sheet gained `getParent` and the archive tab name; FU-B6e asserts the runs-as
+  owner stamp; #8's wording pin reads "vs 30-day team rate"; F-32's average
+  check moved to `mTrendWeightedPct_`; the M2/M8 and M7 dashboard pins carry the
+  import gate and the kept `dqRes`; the M-2 intake flush test sets the
+  signed-in user.
+- 33 bite-checks, all BITE. One NO BITE first: MET-5's cache gate was asserted
+  only in the M2/M8 pin, not the MET-5 pin the bite named — the MET-5 pin now
+  asserts the gated put as well, and bites against both. TRN-2's first draft
+  carried a source-shape fallback for when the drive could not run, and took it
+  (a stub was named `trainParseFormRef_`; the real helper is
+  `trainParseFormId_`) — the fallback is deleted, so the pin can only pass by
+  driving (g138).
