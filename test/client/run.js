@@ -33682,7 +33682,7 @@ test('Batch 11 TRN-1 (cycle 23): submitQuizAttempt refuses a fourth attempt insi
 test('Batch 11 TRN-1 (cycle 23): getQuiz carries the limit (built beside the stripped shape), the dashboard lists who is waiting, and the manager card resets through the endpoint (source + driven client)', () => {
   const gq = stripJsComments_(extractRawFunction('Code.js', 'getQuiz'));
   assert.ok(/out\.lockout = trainQuizLockState_\(trainReadAttempts_\(emp\.id\), quizId, emp\.id, eff\['quiz:' \+ quizId\]\.assignedAt,\s*trainReadQuizResets_\(emp\.id\), Date\.now\(\), empTz_\(emp\)\)/.test(gq));
-  // The dashboard, driven: a rep three fails into the wait is listed for the manager; a rep with one fail, or who passed, is not.
+  // The dashboard, driven: a rep three fails into the wait is listed for the manager; a rep with one fail is not.
   const H = 3600000, NOW = new Date().getTime();
   const fail = (emp, ms) => ({ quizId: 'q1', empId: emp, submittedAt: b11Stamp_(ms), scorePct: 0, passed: false });
   const dctx = b10Ctx_(['trainEffectiveForEmp_', 'trainDeriveStatus_', 'trainAttemptStats_', 'trainQuizLockout_', 'coachParseTs_', 'trainQuizAttemptList_', 'trainQuizLockState_', 'getTrainingDashboard'], {
