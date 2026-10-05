@@ -1,23 +1,43 @@
 # Cycle State
 
 ## Current
-Cycle: 23 — CLOSED 2026-10-05 (deployed, reflected net +10; the whole block is in `.cycle/HISTORY.md`). The next audit opens cycle 24.
-Phase: idle
-Scope: — (none open). Next: the Seams & Invariants audit — the cadence is reached.
+Cycle: 24 — opened 2026-10-05 by the Seams & Invariants audit (cycle 23 is CLOSED; its block is in `.cycle/HISTORY.md`).
+Phase: implement
+Scope: Seams & Invariants — the small production batch (F1, F2, F3, F4, F6, F8 client note, F19) is DONE; the nets-and-library batch is next.
 Test Command: manual
-Estimates: — (record each batch's S/M/L + hours here BEFORE its first edit)
-Subsystem cycles since last Seams audit: 4 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25), 22post's (2026-09-30) and cycle 23's (2026-10-05). The cadence is every 4 — REACHED: the next /audit is a Seams & Invariants audit (it resets this to 0).
-Updated: 2026-10-05 (cycle 23 close-out)
+Estimates: production batch (F1/F2/F3/F4/F6/F8/F19): M (~5 h) — written before the first edit. Actual ~2.5 h.
+Subsystem cycles since last Seams audit: 0 — reset by the Seams & Invariants audit of 2026-10-05 (cycle 24). The cadence is every 4.
+Updated: 2026-10-05 (cycle 24 production batch)
 
 ## In progress (facts to carry forward — NOT judgments)
-- Nothing in progress. Cycle 23 is merged to main (PRs #284, #285, and the close-out PR) and deployed 2026-10-05; `runSmokeTests` on prod came back clear (operator).
-- The cycle-23 reflection (`.cycle/blocks/23-a-reflect.md`) proposes INV-374 and INV-375; they are not in the library yet.
+- The seams audit's handoff block travelled by paste (as `/audit` does). Its findings, session-local F1–F21, are listed under Pending so a fresh session can continue without it.
+- The production batch is committed and pushed on `claude/beautiful-bohr-7l8epj` (7 fix commits + this checkpoint); block: `.cycle/blocks/24-seams-prod-broad-implement.md`. Not deployed.
 
 ## Completed this cycle
-- (none — no cycle open; cycle 23's record is in HISTORY.md)
+- Seams F1 | 90_qa.js, qa/script_qa.html, test/visual/mock.js | a QA exemption revoke clears the KEY that granted it (`qaExemptKeyFor_`); a revoke of a key with no active grant is refused by name
+- Seams F2 | 30_callnotes.js, 00_config.js | the EOD digest stamps `CallNotesEodDigest` on a failed send or an unreadable Sheet; only a run that reached a rep clears it
+- Seams F3 | 00_config.js, 10_core.js | `TRIGGER_HANDLER_JOB_KEYS` — the dispatcher stamps a grouped job's KEY (labelled, seen by its heartbeat) and never clears a key the job owns
+- Seams F4 | kb/script_kb.html | the Search synonyms and Revision history × go through `closeOverlay` (INV-358); the SH-02 net now flags a hand removal
+- Seams F6 | 30_callnotes.js | `findCallNoteRow_` re-checks the fetched row's NoteId (the FORM-1 rule)
+- Seams F8 | tc/script_timeoff.html | the Time / PTO calendar names a failed archive read
+- Seams F19 | 20_timeclock.js | an un-approve that cannot credit keeps the Deducted charge, names it, and a re-approval never takes the day twice
 
 ## Pending / not yet done
-- **Next: the Seams & Invariants audit** (`/audit`, seams mode). It should probe the cycle-23 invariants (INV-353..373) and the proposed INV-374/375, and reset the Seams counter.
+- **Deploy the cycle-24 production batch** (`clasp push -f` + New version), then walk S4 (TC-04 step), S22, S30, S100 (QA2-1 step: grant from the quarter view, then revoke from one of its months — the button reads "Revoke exemption (Q4 …)" and the rep leaves Exempt), S117 (4a-FU1/FU3 step) and the Dept Request Expand.
+- **Next batch — nets and library (from the seams audit, not yet done):**
+  - F5: the reserved-number guard in the id-uniqueness pin never runs (it matches STATE prose the close-out reworded); read reserved/proposed numbers from a structured list in config.md.
+  - F9: `x1ClientRpcNames_` stops at a `//` comment inside a chain and never sees computed names (`kbGetRevisions`, `kbGetSearchConfig`, `kbGetFacetGuidance`, `intakePreviewPMD/PAP`, `intakeSendPMD/PAP`, `submitTimeOffRequest/Range`, `kbConvertDriveSheet` have no fixture).
+  - F10: `gatedEndpointsFromSource_` knows two gate families; add QA.
+  - F12: INV-362 cites "INT2-3 Node pins" that do not exist — pin `intakeDraftsKept_` / `intakeDraftOwner_`.
+  - F13: the INV-360 parity grid misses tokens (n/a, na, no, neg, nil, unk, uncertain, tbd, dunno, "do not know", seat `without`) — compare the lists directly.
+  - F14: the Batch 15 runner's `test_c23_*` list is hand-written — derive it from `_registerSmokeTests_`.
+  - F18: `kbSearchIndexKey_` hashes three functions but not `kbSlug_`.
+  - F15/F16: invariant text drift (INV-190 `empIsOffToday_`, INV-85 `cdr_metrics_v3`, INV-306 `dept_req_v2`, INV-44 dispatcher counts, INV-371 "14") and docs drift (Area Eligibility "not displayed"; `dash_metrics_v4/v6` in design-decisions.md; g112 "Eighteen" localStorage keys).
+  - F17: adopt INV-374 (scoped to its three readers) and INV-375 (worded "an image stored in KbImages/ManualImages" — `kbGetImageData` reads legacy Drive links on purpose; its pin should walk the call graph); decide the other PROPOSED numbers (229–232 are already pinned).
+  - F8 remainder: pin `TS_DOCTOR_WINDOW_DAYS` (92) below `TIMESHEET_ARCHIVE_MIN_DAYS` (120).
+  - F11: `assertNotProdInstance_` permits while `INSTANCE_IS_PROD` is unset (opposite of `isDevInstance_`) — fail closed unless dev, with an explicit override.
+  - F20 (KbImages header edit reads "not stored"), F21 (quoted local part vs `isOrgEmail_`, low confidence) — Low.
+- **F7 — HELD for the operator:** should the external (and department) email composer ask "Discard changes?" before Escape / the backdrop / × throws typed work away? Recommendation given 2026-10-05: yes, via the existing `unsaved` guard, asking only when the rep typed since open; after Discard today's rollback runs unchanged.
 - **Cycle 23 post-deploy — NOT confirmed** (each batch's deploy line, with its scenario list, is in the cycle 23 HISTORY block under Pending):
   - one-time operator steps:
     - Batch 2: read Admin → System → Reference lookups ("Cannot read", "Rows that could not be read in full") and fix the named cells.
@@ -52,6 +72,10 @@ Updated: 2026-10-05 (cycle 23 close-out)
 - **Numbers — do not reuse:** INV-225..227 RESERVED (cycle 20); INV-229..232, INV-240..242, INV-301..303, INV-350..352 and INV-374..375 PROPOSED (cycles 21, 21post, 22, 22post, 23), not in the library. **Next free: INV-376; gotcha g168; scenario S137.**
 
 ## Decisions made (so the next session doesn't re-litigate)
+- **Seams F19 (cycle 24):** the `Deducted` cell means what the row CURRENTLY holds against the balance — an un-approve that cannot credit (tracking off / PtoEnabled FALSE) keeps it, and a re-approval of a row still holding a charge takes nothing. Keeping the cell alone would restore nothing, so the re-approval guard is what makes it matter. No client path un-approves today.
+- **Seams F3 (cycle 24):** the dispatcher keys a grouped job's failure by the job's own key (`TRIGGER_HANDLER_JOB_KEYS`) and never clears a key the job owns — clearing after a normal return would erase the job's own stamp (the EOD digest stamps and returns). `owns` is checked against each job body by a pin, not trusted.
+- **Seams F2 (cycle 24):** the EOD digest clears its failure flag only on a run that reached a rep — most hours match nobody, and an idle hour would wipe a failure before the 9am failure digest reads it.
+- **Seams F1 (cycle 24):** `qaSetExemption` refuses a revoke of a key with no active grant (a stale page's month revoke) rather than appending a no-op row.
 - **TC2-9 (cycle 23 Batch 14):** the archive gate is the archive's OWN reach (its newest date, cached 6 h and cleared by the archiver, unioned with the current window's date) rather than the configured cutoff alone — a window lowered or disabled after a move would otherwise hide rows still in the tab. The export's in-file dedupe now uses the raw COMMENTS key (the accrual's), so only a byte-identical mid-run duplicate is dropped.
 - **SP-2 (cycle 23 Batch 13):** the FIRST close wins — a member reply after a manual resolve closes nothing (the old rule let a later reply time the request); a cc'd non-member is neutral (neither answers nor reopens); a member's message answers even on a thread a member opened, as the first-reply rule read it. Operator 2026-10-05: the first-close-wins trade is accepted; courtesy replies are ignored (a message wholly of courtesy words, or a lone courtesy emoji; anything else is a request).
 - **Deferred-item decisions (operator, 2026-10-05):** TRN-1 — 3 attempts, then a 24 h wait with a manager reset; the rep sees which questions were wrong and the limit state after a fail, never the correct option. SP-2 — a reopened request comes back unclaimed. KB2-6 — every "and" → either reading in the grid is correct; no grammar change. DRV-3 — the sheet-storage plan proceeds while the IT request runs; defaults: downscale to ≤1600 px wide, cap 1.5 MB, keep GIF/WebP. Intake weight — under 20 lbs or over 1000 lbs reads as unreadable. CN-8 — closed (inside the Workspace BAA). HR-2 — roadmap.
@@ -65,4 +89,4 @@ Updated: 2026-10-05 (cycle 23 close-out)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 23 is closed: merged to main, deployed 2026-10-05 (`runSmokeTests` clear), reflected (net +10), and its STATE block moved to HISTORY.md. Nothing is in progress. Start the next session with the Seams & Invariants audit (`/audit` in seams mode — the cadence is reached), which opens cycle 24. Fold in whatever the operator has confirmed from the cycle-23 post-deploy list under Pending.
+Cycle 24 is open (the Seams & Invariants audit, 2026-10-05). The production batch (F1, F2, F3, F4, F6, F8 note, F19) is committed and pushed on `claude/beautiful-bohr-7l8epj`, green (pure 1232, DOM 221, lint, counts), 13/13 bite-checks; it needs `/sync-docs`, a deploy and the scenario walks under Pending. Next: the nets-and-library batch (F5, F9, F10, F12–F18, F11) and the operator's answer on F7.
