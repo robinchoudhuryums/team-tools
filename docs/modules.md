@@ -109,6 +109,16 @@ not restate it. Server endpoints live in the fourteen server files
      coaching board reads its stamps in the server's storage timezone, and the
      inbound-volume average leaves holidays out.
 
+     **Cycle 23 Batch 14 (2026-10-05) — archived periods read whole.** With
+     Timesheet archiving on, the pay statement, the timesheet views, the rep
+     calendar, the team punches calendar and Punctuality (both windows) read
+     the archived rows, through the same reader the payroll export and the
+     accrual use; that reader no longer skips the archive when one late
+     correction for an old date sits in the live tab. The pay statement and
+     team-calendar notes now appear only when the archive could not be read
+     (they used to say "may have been moved" on every old period), and
+     Punctuality says so too (TC2-9).
+
 <a id="call-notes"></a>
      **2026-09-17 (the /broad-scan's Batches 1 + 2):** an EQUAL Clock In /
      Clock Out is zero hours, not the 24-hour day the `<=` overnight wrap paid

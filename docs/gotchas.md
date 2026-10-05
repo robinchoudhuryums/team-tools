@@ -4964,6 +4964,15 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   indexed. The lookup now reads the tail first, then the rest of the one id
   column; My Reviews picks the caller's shared rows from three narrow column
   reads (`qaMySharedRowIdxs_`). Verify: the QA-5 drive.
+  **AMENDED (cycle 23 TC2-9, Batch 14): a coverage GATE is the same blind
+  spot.** The payroll export and the accrual read the Timesheet archive only
+  when the range started before the live tab's OLDEST row — so one late
+  back-filled live row for an old date made the live tab look complete, the
+  archive was skipped, and the period read short. The other four timesheet
+  readers never read the archive at all. The gate now asks the archive how far
+  back IT reaches (`timesheetArchiveReach_`: its newest date, cached, unioned
+  with the window's), and all six readers share `timesheetRowsInRange_`.
+  Verify: the TC2-9 reader drive (the back-filled-row case).
 
 <a id="g153-clearing-the-roster-email-does-not-reach-the-gate-lists"></a>
 

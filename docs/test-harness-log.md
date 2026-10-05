@@ -2690,3 +2690,12 @@ per-change detail. By delta:
 - Moved pins: M4, R2 #4, the fold wiring (the resolved list now reads the ONE fold), BIZ-2 and N3-SP (per-episode literals, the v4 key), C-8 (the floors), and the F-34 / M5 / SP-3+4 sandboxes (they load the new helpers).
 - The pending drive reads `Date.now()` for its fixture clock, because the core ages by `Date.now()` and an earlier pin may have frozen it (g116's seventeenth direction, met from the other side).
 - 27 bite-checks, all BITE in the end. The voicemail floor first bit only a source assertion, so a driven fold pin was added. The courtesy question rule first read NO BITE, because every question case also held a non-courtesy word; an all-courtesy question ("¿Todo bien?") now carries it (g116: a case that fails two guards proves neither).
+
+## Cycle 23 — Batch 14, TC2-9: one archive-aware Timesheet range reader
+
+- Node +3, all driven over the REAL ADP enum and the real reader (`b14Ctx_`, with `b14ReaderSrc_` / `b14Ss_` shared with older sandboxes):
+  - the reader and its gate: the back-filled-row regression, dedupe, `keep`, the one-column reach read and its cache, the window union, no tab, a named or thrown failure, `liveValues`;
+  - every reader: the accrual's archived hours and its throw, the export's archived rows and its refusal, the statement whole or naming the failure, and the calendars and Punctuality on the reader;
+  - Punctuality grading an archived previous window.
+- Moved pins: F1 and A7 (the export), the accrual source pin, the pay-statement note, T5's PTO-before-walk order, and the team calendar's behavioural pin (an archived month now READS). The team-calendar and T5 sandboxes return no archive tab for `TimesheetArchive` — a stub that answers every tab name with the live sheet made the reach read throw.
+- 21 bite-checks, all BITE.

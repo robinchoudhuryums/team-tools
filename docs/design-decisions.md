@@ -5324,3 +5324,26 @@ pick them up without re-deriving the context.
   request, so the filter fails toward a look (g159). Rejected: a reply-count
   rule (a double-send would look like two requests) and releasing claims on
   reopen (a write on a read path, and lost history).
+
+- <a id="every-timesheet-range-read-goes-through-one-reader"></a>**Every Timesheet range read goes through ONE archive-aware reader, gated on the archive's own reach (cycle 23 TC2-9, 2026-10-05).**
+  Cold archiving (INV-153) moves old payroll rows to `TimesheetArchive`. Cycle
+  12 F1 taught the export to read through it, and the accrual copied that walk;
+  the pay statement, both calendars and Punctuality never learned, and showed
+  short periods once archiving was on. Both read-throughs gated on "the range
+  starts before the live tab's oldest row", which a single late back-filled
+  live row defeats. `timesheetRowsInRange_` is now the one reader: live rows
+  first (g14), archive rows when the range reaches what the archive holds, an
+  identical row counted once (INV-132), a `keep` filter applied while
+  walking, and the caller's own live values reused.
+
+  The gate is the archive's OWN newest date, not the configured cutoff: a
+  window lowered or switched off after a move leaves rows in the tab that a
+  cutoff-only gate would never read. Reading that date costs one column, so it
+  is cached for 6 hours (a data value — g157) and cleared by the archiver; the
+  current window's date is unioned in so a missed clear cannot hide a fresh
+  move. A failed archive read is the caller's to judge: payroll and the
+  accrual pass `strict` and refuse rather than read short; the display
+  surfaces keep their live rows and say the archive could not be read
+  (INV-187). Rejected: a per-surface archive read (the drift this replaces),
+  and reading the archive whole on every range read (the common
+  current-period case would pay for history it never shows).

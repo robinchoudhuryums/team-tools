@@ -2246,9 +2246,9 @@ entry says which it is.
   `TIMESHEET_ARCHIVE_DAYS=365`** (a payroll year). Values below the
   `TIMESHEET_ARCHIVE_MIN_DAYS` (120) safety floor clamp UP so a typo can never
   strip active-window rows (adjust window 30d, current export period,
-  dashboard trends). NOTE archived rows leave the in-app month navigation
-  (the employee calendar / manager timesheet views read the live tab only) —
-  they remain in `TimesheetArchive` for payroll audit. No redeploy to change
+  dashboard trends). Archived rows stay in `TimesheetArchive` for payroll
+  audit, and since cycle 23 TC2-9 (Batch 14) every in-app timesheet range read
+  reads them too — see the amendment at the end of this entry. No redeploy to change
   the window; installing the trigger requires `installAutomationTriggers()`.
   **Two cycle-12 fixes make enabling this genuinely safe — do NOT enable it on
   a build older than that batch:** (a) F1 — the **ADP export now reads through**
@@ -2260,9 +2260,17 @@ entry says which it is.
   drains over successive nights instead of timing out mid-run and re-appending
   (duplicating) payroll rows into the archive every night. Expect several
   nights of `rowsArchived=2000; hitPerRunCap=2000` audit rows on the first
-  enable — that is the backlog draining, not an error. Still live-tab-only
-  (accepted): the employee calendar, `getPunctualityReport`, and the sheet
-  doctor's 92-day scan.
+  enable — that is the backlog draining, not an error. **AMENDED (cycle 23
+  TC2-9, Batch 14): enabling it no longer shortens ANY in-app view.** The
+  export, the accrual, the pay statement (and the timesheet views sharing its
+  builder), the rep calendar, the team punches calendar and Punctuality all
+  read through ONE reader (`timesheetRowsInRange_`), which reads the archive
+  whenever a range reaches what it holds — its newest date, cached for 6 hours
+  under `ts_archive_reach_v1` (auto-managed; the archiver clears it after a
+  move) and unioned with the current window's date. A failed archive read
+  refuses the export, stops the accrual, and is named on the other surfaces
+  ("the timesheet archive could not be read"). Still live-tab-only (accepted):
+  the sheet doctor's 92-day scan, inside the 120-day floor.
 <a id="operator-call-notes-eod-weekly-digest-knobs"></a>
 - **Call-notes EOD + weekly digest knobs** are
   `CONFIG.CALL_NOTES.EOD_WARNING_HOUR` (default 17 — the local hour at
