@@ -200,9 +200,11 @@ function spanishSearchQuery_(addr, days) {
  *  'request' (the requester writing: the email requester, or an 8x8 voicemail),
  *  'resolver' (a member reply — any non-requester when no member list is set,
  *  the old fallback; a member's message answers even on a thread a member
- *  opened, exactly as the first-reply rule read it), or 'other' (a cc'd colleague, a non-member — NEUTRAL: it
- *  neither answers nor reopens). The first message is always the request.
- *  `kind` is 'email' or 'vm'. Reads only From/Subject/Date. */
+ *  opened, exactly as the first-reply rule read it), or 'other' (a cc'd colleague, a non-member, or the
+ *  requester's COURTESY reply — `spanishIsCourtesyOnly_`, operator 2026-10-05 — NEUTRAL: it neither
+ *  answers nor reopens). The first message is always the request.
+ *  `kind` is 'email' or 'vm'. Reads From/Subject/Date, and the body of a
+ *  requester's later message. */
 function spanishThreadRoles_(msgs, kind, members, haveMembers, vmSender, vmFilter) {
   const requester = msgs.length ? emailAddrOnly_(msgs[0].getFrom()) : '';
   return msgs.map(function (m, i) {
@@ -212,10 +214,44 @@ function spanishThreadRoles_(msgs, kind, members, haveMembers, vmSender, vmFilte
     else if (kind === 'vm') role = spanishVmMatch_(m.getFrom(), m.getSubject(), vmSender, vmFilter) ? 'request'
       : ((haveMembers ? !!members[from] : !!from) ? 'resolver' : 'other');
     else if (haveMembers && members[from]) role = 'resolver';   // a member's message answers, as before — even on a thread a member opened
-    else if (from && from === requester) role = 'request';
+    else if (from && from === requester) role = spanishIsCourtesyOnly_(m.getPlainBody()) ? 'other' : 'request';   // a thank-you is not a request (operator 2026-10-05)
     else role = (!haveMembers && from) ? 'resolver' : 'other';
     return { ms: m.getDate().getTime(), role: role, from: from };
   });
+}
+/** SP-2 follow-up (operator 2026-10-05): the words a COURTESY reply is made
+ *  of — English and Spanish, accents folded. A requester's message whose new
+ *  text is built only from these (plus punctuation and a courtesy emoji) is a
+ *  thank-you, not a request. A word outside the list — a name, a TRX, a new
+ *  ask — makes it a request: a heuristic that hides work fails toward a look
+ *  (g159). Function words ("que", "de", "it") are here only so the common
+ *  phrases parse whole; on their own they carry nothing. */
+const SPANISH_COURTESY_WORDS_ = [
+  'thanks', 'thank', 'you', 'u', 'thx', 'ty', 'tysm', 'much', 'many', 'so', 'very', 'a', 'lot', 'appreciated', 'appreciate',
+  'it', 'i', 'ok', 'okay', 'okey', 'k', 'kk', 'perfect', 'great', 'got', 'sounds', 'good', 'awesome', 'cool', 'noted',
+  'have', 'nice', 'day', 'received', 'all', 'set', 'wonderful', 'excellent', 'best', 'regards',
+  'gracias', 'muchas', 'muchisimas', 'mil', 'muy', 'amable', 'perfecto', 'perfecta', 'excelente', 'genial', 'listo', 'lista',
+  'entendido', 'entendida', 'vale', 'de', 'acuerdo', 'bueno', 'buena', 'buenas', 'saludos', 'bendiciones', 'dios', 'le', 'te',
+  'les', 'bendiga', 'igualmente', 'que', 'tenga', 'buen', 'dia', 'tarde', 'noche', 'recibido', 'recibida', 'ya', 'esta',
+  'todo', 'bien', 'super', 'claro', 'se', 'lo', 'agradezco', 'agradecida', 'agradecido', 'mucho', 'feliz',
+];
+/** PURE (Node-pinned; SP-2 follow-up, operator 2026-10-05) — is this message
+ *  ONLY a courtesy reply ("Gracias!", "Thank you so much 🙏", "Ok, perfecto")?
+ *  Reads the NEW text (`drReplyNewText_` — quoted history and the signature
+ *  cut — then a "Sent from / Enviado desde" line dropped). True only when every
+ *  word is a courtesy word, or there is no word and a courtesy emoji. A "?"
+ *  or "¿", a digit, any other word, an empty new text or more than 200
+ *  characters is a REQUEST — the direction that costs one click, never a
+ *  hidden question. */
+function spanishIsCourtesyOnly_(body) {
+  const t = drReplyNewText_(body).split('\n').filter(function (l) {
+    return !/^\s*(enviado desde mi|sent from my|get outlook for|obtener outlook para)\b/i.test(l);
+  }).join(' ').trim();
+  if (!t || t.length > 200 || /[?¿0-9]/.test(t)) return false;
+  const folded = t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const words = folded.split(/[^a-z]+/).filter(Boolean);
+  if (!words.length) return /👍|🙏|🙂|😊|👌|❤/.test(t);
+  return words.every(function (w) { return SPANISH_COURTESY_WORDS_.indexOf(w) >= 0; });
 }
 /** PURE (SP-2, cycle 23 Batch 13; Node-pinned) — a thread as a SEQUENCE of
  *  requests. M5 made every voicemail its own request; an email thread was one
@@ -714,7 +750,7 @@ function getSpanishInboxResolved(days) {
 /** PURE (M5 follow-up) — which message a thread's body is read from: on a
  *  voicemail thread (its FIRST message is an 8x8 notification) the NEWEST
  *  voicemail message, with the count of voicemails; otherwise the requester's
- *  NEWEST message (SP-2, cycle 23 Batch 13 — the pending card of a reopened
+ *  NEWEST message that is not a courtesy reply (SP-2, cycle 23 Batch 13 — the pending card of a reopened
  *  thread shows the follow-up, so Expand must too; a thread with one request
  *  message reads exactly as before), vmCount 0. */
 function spanishThreadBodyMessage_(msgs, vmSender, vmFilter) {
@@ -722,7 +758,9 @@ function spanishThreadBodyMessage_(msgs, vmSender, vmFilter) {
   if (!spanishVmMatch_(first.getFrom(), first.getSubject(), vmSender, vmFilter)) {
     const requester = emailAddrOnly_(first.getFrom());
     let newestReq = first;
-    msgs.forEach(function (m, k) { if (k > 0 && requester && emailAddrOnly_(m.getFrom()) === requester) newestReq = m; });
+    msgs.forEach(function (m, k) {
+      if (k > 0 && requester && emailAddrOnly_(m.getFrom()) === requester && !spanishIsCourtesyOnly_(m.getPlainBody())) newestReq = m;   // a thank-you is not the request
+    });
     return { msg: newestReq, vmCount: 0 };
   }
   let newest = first, n = 0;

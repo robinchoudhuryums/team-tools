@@ -2279,6 +2279,20 @@
     "getSpanishInboxResolved"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "SP-2 follow-up: a courtesy reply does not reopen (operator 2026-10-05)",
+   "added": [
+    "SPANISH_COURTESY_WORDS_",
+    "spanishIsCourtesyOnly_"
+   ],
+   "removed": [],
+   "changed": [
+    "spanishThreadBodyMessage_",
+    "spanishThreadRoles_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4242,6 +4256,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "af4ddd03640b9439"
+  },
+  "SPANISH_COURTESY_WORDS_": {
+   "file": "51_spanish.js",
+   "kind": "const",
+   "sha": "f82191b6f51d522a"
   },
   "SPANISH_PENDING_IDS_PREFIX": {
    "file": "00_config.js",
@@ -9823,6 +9842,11 @@
    "kind": "function",
    "sha": "e7c8c4706f293846"
   },
+  "spanishIsCourtesyOnly_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "4b72c1995029e025"
+  },
   "spanishManualResolvedFold_": {
    "file": "51_spanish.js",
    "kind": "function",
@@ -9891,7 +9915,7 @@
   "spanishThreadBodyMessage_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "add445d8982ef43b"
+   "sha": "5103b64a9deb6f33"
   },
   "spanishThreadFloorMs_": {
    "file": "51_spanish.js",
@@ -9911,7 +9935,7 @@
   "spanishThreadRoles_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "802f7a62a7ab1b88"
+   "sha": "b2bee0f2cca166a3"
   },
   "spanishVmCaller_": {
    "file": "51_spanish.js",

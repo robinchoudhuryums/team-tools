@@ -33931,6 +33931,14 @@ test('DRV-3 (cycle 23 Batch 12): the client — a kbimg: chip carries only a key
 console.log('\ncycle 23 Batch 13 — SP-2 reopened Spanish requests');
 
 const b13Msg_ = (from, ms, body, subj) => ({ getFrom: () => from, getDate: () => new Date(ms), getPlainBody: () => body || '', getSubject: () => subj || 'Pregunta' });
+const b13CourtesySrc_ = () => {
+  const i = codeSrc.indexOf('const SPANISH_COURTESY_WORDS_ = [');
+  if (i < 0) throw new Error('SPANISH_COURTESY_WORDS_ is not declared');
+  return codeSrc.slice(i, codeSrc.indexOf('];', i) + 2).replace(/^const /, 'var ') + '\n' +
+    extractRawFunction('Code.js', 'drReplyNewText_') + '\n' + extractRawFunction('Code.js', 'spanishIsCourtesyOnly_');
+};
+// b10Ctx_ plus the courtesy rule the roles read (SP-2 follow-up).
+const b13Ctx_ = (fns, extra) => { const ctx = b10Ctx_([], extra); vm.runInContext(b13CourtesySrc_(), ctx); fns.forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx)); return ctx; };
 const b13Th_ = (id, msgs) => ({ getId: () => id, getMessages: () => msgs, getPermalink: () => 'https://mail/' + id });
 const b13Addr_ = (x) => String(x || '').replace(/^.*</, '').replace(/>.*$/, '').trim().toLowerCase();
 
@@ -33972,7 +33980,7 @@ test('SP-2 (cycle 23 Batch 13): the episode rule — a reply closes the open req
 });
 
 test('SP-2 (cycle 23 Batch 13): the message roles — the requester writing again is a request, a member answers (even on a member\'s own thread), a cc\'d non-member is neutral, and with no member list any other sender answers (driven)', () => {
-  const ctx = b10Ctx_(['spanishThreadRoles_', 'spanishVmMatch_'], { emailAddrOnly_: b13Addr_ });
+  const ctx = b13Ctx_(['spanishThreadRoles_', 'spanishVmMatch_'], { emailAddrOnly_: b13Addr_ });
   const R = (msgs, kind, members) => b10J(ctx.spanishThreadRoles_(msgs, kind, members || {}, Object.keys(members || {}).length > 0, 'no-reply@8x8.com', 'A_Q_Spanish')).map((e) => e.role);
   const m = { 'm@x': true };
   assert.deepStrictEqual(R([b13Msg_('Jo <jo@x>', 1), b13Msg_('m@x', 2), b13Msg_('jo@x', 3), b13Msg_('cc@x', 4)], 'email', m), ['request', 'resolver', 'request', 'other']);
@@ -33984,7 +33992,7 @@ test('SP-2 (cycle 23 Batch 13): the message roles — the requester writing agai
 
 const b13Pending_ = (threads, manual, claims) => {
   const puts = [];
-  const ctx = b10Ctx_(['spanishPendingCore_', 'spanishThreadRoles_', 'spanishEpisodes_', 'spanishClaimLive_'], {
+  const ctx = b13Ctx_(['spanishPendingCore_', 'spanishThreadRoles_', 'spanishEpisodes_', 'spanishClaimLive_'], {
     getSpanishInboxAddress_: () => 'es@x', getSpanishInboxMembers_: () => ({ 'm@x': true, 'm2@x': true }),
     GmailApp: { search: () => threads }, spanishSearchQuery_: () => 'q', SPANISH_THREAD_SCAN_MAX: 200,
     spanishManualResolvedMap_: () => manual || {}, spanishClaimsMap_: () => claims || {}, emailAddrOnly_: b13Addr_,
@@ -34033,12 +34041,12 @@ test('SP-2 (cycle 23 Batch 13): the resolved list and the stats card count each 
     spanishVmFold_: () => ({ rows: [], truncated: false, suppressed: 0, unparsed: 0, minSeconds: 5, on: false }),
     businessMinutesBetween_: (a, b) => Math.round((b - a) / 60000),
   };
-  const rctx = b10Ctx_(['getSpanishInboxResolved', 'spanishThreadRoles_', 'spanishEpisodes_'], base);
+  const rctx = b13Ctx_(['getSpanishInboxResolved', 'spanishThreadRoles_', 'spanishEpisodes_'], base);
   const rows = b10J(rctx.getSpanishInboxResolved(7)).resolved;
   assert.deepStrictEqual(rows.map((x) => [x.threadId, x.resolver, x.manual, x.resolveWallMinutes]).sort(),
     [['tA', 'm2@x', false, 60], ['tA', 'm@x', false, 60], ['tB', 'boss@x', true, null], ['tF', 'boss@x', true, null]],
     'THE REGRESSION: tA\'s second answer is listed and attributed; tB\'s pending follow-up is not a row; tF\'s click came before the reply, so it was the close');
-  const sctx = b10Ctx_(['getSpanishInboxStats', 'spanishThreadRoles_', 'spanishEpisodes_', 'medianWhole_'], Object.assign({}, base, {
+  const sctx = b13Ctx_(['getSpanishInboxStats', 'spanishThreadRoles_', 'spanishEpisodes_', 'medianWhole_'], Object.assign({}, base, {
     CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) }, spanishCacheHash_: () => 'h',
     getSpanishVmSender_: () => '', getSpanishVmFilter_: () => '', getSpanishVmMinSeconds_: () => 5, businessHours_: () => ({}),
   }));
@@ -34051,7 +34059,7 @@ test('SP-2 (cycle 23 Batch 13): a claim from before the reopen neither blocks a 
   const appended = [];
   const run = (claimAtMs, who) => {
     appended.length = 0;
-    const ctx = b10Ctx_(['claimSpanishThread', 'spanishThreadFloorMs_', 'spanishThreadRoles_', 'spanishEpisodes_', 'spanishClaimLive_', 'spanishVmMatch_'], {
+    const ctx = b13Ctx_(['claimSpanishThread', 'spanishThreadFloorMs_', 'spanishThreadRoles_', 'spanishEpisodes_', 'spanishClaimLive_', 'spanishVmMatch_'], {
       getEmployeeInfo_: () => ({ email: who || 'b@x', isManager: false }), canSeeSpanishInbox_: () => true,
       GmailApp: { getThreadById: () => b13Th_('t1', [b13Msg_('jo@x', NOW - 5 * H), b13Msg_('a@x', NOW - 4 * H), b13Msg_('jo@x', NOW - 1 * H)]) },
       getSpanishInboxAddress_: () => 'es@x', spanishThreadInScope_: () => true, getSpanishInboxMembers_: () => ({ 'a@x': true, 'b@x': true }),
@@ -34071,6 +34079,27 @@ test('SP-2 (cycle 23 Batch 13): a claim from before the reopen neither blocks a 
   assert.ok(r.success && !r.already && appended.length === 1, 'the old claimant re-claiming stamps a claim on the reopened request — not "already"');
 });
 
+test('SP-2 follow-up (operator 2026-10-05): a COURTESY reply does not reopen — only a thank-you built wholly of courtesy words is ignored; a question, a number, any other word or an empty new text is still a request (driven grid + pending + Expand)', () => {
+  const c = b13Ctx_([]);
+  const yes = ['Gracias!', '¡Muchas gracias!', 'Thank you so much 🙏', 'ok, perfecto', 'Thanks!\n\nOn Mon, Oct 5, 2026 at 9:00 AM Ana <m@x> wrote:\n> Ya está listo, ¿algo más?',
+    'Mil gracias, que tenga buen día', '👍', 'Got it, thanks', 'Gracias\n\nEnviado desde mi iPhone', 'Recibido, gracias. Saludos', 'thx'];
+  yes.forEach((b) => assert.strictEqual(c.spanishIsCourtesyOnly_(b), true, 'courtesy: ' + JSON.stringify(b)));
+  const no = ['Gracias, ¿y el pedido?', 'Thanks — can you also check the delivery', 'Gracias Ana', 'gracias, TRX 123456', 'No gracias', '',
+    '> Gracias (only quoted text)', '.', 'Gracias pero todavía no llega', 'thanks '.repeat(40)];
+  no.forEach((b) => assert.strictEqual(c.spanishIsCourtesyOnly_(b), false, 'a request (fails toward a look): ' + JSON.stringify(b)));
+  // Through the pending list: an answered thread whose requester then says thanks stays answered.
+  const NOW = Date.now(), H = 3600000;
+  const { res } = b13Pending_([
+    b13Th_('tG', [b13Msg_('jo@x', NOW - 5 * H, 'hola'), b13Msg_('m@x', NOW - 4 * H, 'listo'), b13Msg_('jo@x', NOW - 3 * H, '¡Muchas gracias! 🙏')]),
+    b13Th_('tH', [b13Msg_('lu@x', NOW - 5 * H, 'hola'), b13Msg_('m@x', NOW - 4 * H, 'listo'), b13Msg_('lu@x', NOW - 3 * H, 'Gracias, ¿y la factura?')]),
+  ], {}, {});
+  assert.deepStrictEqual(res.pending.map((p) => p.threadId), ['tH'], 'THE ASK: a thank-you does not reopen; a thank-you with a question does');
+  // Expand shows the real request, never the thank-you after it.
+  const bctx = b13Ctx_(['spanishThreadBodyMessage_', 'spanishVmMatch_'], { emailAddrOnly_: b13Addr_ });
+  const req = b13Msg_('jo@x', 1, 'primera'), fu = b13Msg_('jo@x', 3, 'segunda pregunta'), ty = b13Msg_('jo@x', 4, 'gracias!');
+  assert.strictEqual(bctx.spanishThreadBodyMessage_([req, b13Msg_('m@x', 2, 'r'), fu, ty], 'no-reply@8x8.com', 'A_Q_Spanish').msg, fu, 'the newest NON-courtesy requester message');
+});
+
 test('SP-2 (cycle 23 Batch 13): a repeat voicemail after an answered one carries the claim floor and its answered sibling names who answered it — through the real fold (driven)', () => {
   const T = 1790000000000, M = 60000;
   const vmMsg = (ms) => b13Msg_('no-reply@8x8.com', ms, 'Duration: 1:00', 'New voicemail from Ana via A_Q_Spanish');
@@ -34087,7 +34116,7 @@ test('SP-2 (cycle 23 Batch 13): a repeat voicemail after an answered one carries
 });
 
 test('SP-2 (cycle 23 Batch 13): the wiring — Expand shows the follow-up, Needs-you and auto-assign read the floors, the card carries a follow-up pill with its own rule, and the resolve confirm says a follow-up comes back', () => {
-  const bctx = b10Ctx_(['spanishThreadBodyMessage_', 'spanishVmMatch_'], { emailAddrOnly_: b13Addr_ });
+  const bctx = b13Ctx_(['spanishThreadBodyMessage_', 'spanishVmMatch_'], { emailAddrOnly_: b13Addr_ });
   const req = b13Msg_('jo@x', 1, 'primera'), staff = b13Msg_('m@x', 2, 'resp'), fu = b13Msg_('Jo <jo@x>', 3, 'segunda');
   assert.strictEqual(bctx.spanishThreadBodyMessage_([req, staff, fu], 'no-reply@8x8.com', 'A_Q_Spanish').msg, fu, 'the requester\'s NEWEST message — what the reopened card shows');
   assert.strictEqual(bctx.spanishThreadBodyMessage_([req, staff], 'no-reply@8x8.com', 'A_Q_Spanish').msg, req, 'one request message: as before');
