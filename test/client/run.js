@@ -34429,10 +34429,15 @@ console.log('\ncycle 23 Batch 15 — editor-suite cases for Batches 10–14');
 
 test('Batch 15 (cycle 23): the nine new smoke cases are registered in the smoke shard and PASS against the real server functions (run in a vm with the real Tests.js assertions)', () => {
   const testsSrc = fs.readFileSync(path.join(PA_WEB, 'Tests.js'), 'utf8');
-  const names = ['c23_intakeNeuroDxByToken', 'c23_intakeSeatKindsNegation', 'c23_intakeWeightUnitsAndBounds', 'c23_orgEmailAndExternalIntakeConfirm',
-    'c23_kbAiFacetCountsCarryNoValue', 'c23_dashboardAlignToData', 'c23_trainQuizLockout', 'c23_kbImageItemContentKey', 'c23_spanishEpisodesAndCourtesy'];
   const smoke = extractRawFunction('Tests.js', '_registerSmokeTests_');
-  names.forEach((n) => assert.ok(new RegExp("_smokeTest\\('" + n + "',\\s+test_" + n + '\\);').test(smoke), n + ' is registered in the SMOKE shard (pure — it runs on prod too)'));
+  // Seams F14 (cycle 24): the cases to RUN are derived from the smoke shard —
+  // a hand list here meant a tenth c23 case registered there was silently
+  // never executed. The nine below are the floor the derivation must cover.
+  const names = [...smoke.matchAll(/_smokeTest\('(c23_[A-Za-z0-9_]+)',\s+test_\1\);/g)].map((m) => m[1]);
+  ['c23_intakeNeuroDxByToken', 'c23_intakeSeatKindsNegation', 'c23_intakeWeightUnitsAndBounds', 'c23_orgEmailAndExternalIntakeConfirm',
+    'c23_kbAiFacetCountsCarryNoValue', 'c23_dashboardAlignToData', 'c23_trainQuizLockout', 'c23_kbImageItemContentKey', 'c23_spanishEpisodesAndCourtesy']
+    .forEach((n) => assert.ok(names.indexOf(n) >= 0, n + ' is registered in the SMOKE shard (pure — it runs on prod too) and is run below'));
+  assert.ok(!/_smokeTest\('c23_/.test(smoke.replace(/_smokeTest\('(c23_[A-Za-z0-9_]+)',\s+test_\1\);/g, '')), 'every c23 smoke registration has the shape the derivation reads');
   const intB = extractRawFunction('Tests.js', '_registerIntegrationB_');
   ['c23_timesheetRangeReader', 'c23_kbImagesStoreAndRead'].forEach((n) => assert.ok(new RegExp("_integrationTest\\('" + n + "',\\s+test_" + n + '\\);').test(intB), n + ' is an Integration B case'));
   assert.ok(/return _withTestKb_\(function \(\) \{/.test(extractRawFunction('Tests.js', 'test_c23_kbImagesStoreAndRead')), 'the image store case writes only to the KB FIXTURE (the tab is append-only)');
