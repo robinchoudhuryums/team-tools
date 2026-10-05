@@ -20631,7 +20631,7 @@ console.log('\nDesign handoff PR 5 — QA surface');
 test('QA-19: qaCoverageRows_ behavioural — one row per roster name, case-insensitive attribution, period split, null-not-0, exempt target 0', () => {
   const ctx = {};
   vm.createContext(ctx);
-  ['qaPeriodKeysForYmd_', 'qaPeriodMatches_', 'qaCardStats_', 'qaExemptEligible_', 'qaNextPeriod_', 'qaExemptFor_', 'qaCoverageRows_'].forEach((fn) => {
+  ['qaPeriodKeysForYmd_', 'qaPeriodMatches_', 'qaCardStats_', 'qaExemptEligible_', 'qaNextPeriod_', 'qaExemptKeyFor_', 'qaExemptFor_', 'qaCoverageRows_'].forEach((fn) => {
     vm.runInContext(extractRawFunction('Code.js', fn), ctx);
   });
   vm.runInContext('const QA_EXEMPT_AVG_MIN = 4.5; const QA_EXEMPT_CRIT_MIN = 4;', ctx);
@@ -33046,7 +33046,7 @@ const b8Sheet_ = (rows) => {
 const b8Rec_ = (o) => { const r = new Array(15).fill(''); Object.keys(o).forEach((k) => { r[{ fid: 0, created: 4, status: 6, assignee: 7, agent: 10, shared: 11, agentId: 14 }[k]] = o[k]; }); return r; };
 
 test('QA2-1 (cycle 23): an exemption EARNED in a period is granted for the NEXT one, and a quarter\'s exemption holds in its months (driven)', () => {
-  const ctx = b8Ctx_(['qaPeriodKeysForYmd_', 'qaPeriodMatches_', 'qaCardStats_', 'qaExemptEligible_', 'qaNextPeriod_', 'qaExemptFor_', 'qaCoverageRows_']);
+  const ctx = b8Ctx_(['qaPeriodKeysForYmd_', 'qaPeriodMatches_', 'qaCardStats_', 'qaExemptEligible_', 'qaNextPeriod_', 'qaExemptKeyFor_', 'qaExemptFor_', 'qaCoverageRows_']);
   assert.deepStrictEqual(['2026-09', '2026-12', '2026-Q3', '2026-Q4', 'x'].map((k) => ctx.qaNextPeriod_(k)), ['2026-10', '2027-01', '2026-Q4', '2027-Q1', '']);
   const ex = { 'ann|2026-Q3': true, 'bob|2026-08': true };
   assert.strictEqual(ctx.qaExemptFor_(ex, 'ann', '2026-08'), true, 'THE REGRESSION (keys): a quarter exemption did not hold in the month view');
@@ -33073,7 +33073,7 @@ test('QA2-1 (cycle 23): an exemption EARNED in a period is granted for the NEXT 
   const qa = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/qa/script_qa.html'), 'utf8'));
   const cov = stripJsComments_(extractFnFrom(qa, 'qaCoverageSectionHtml_'));
   assert.ok(/if \(r\.eligible && d\.nextPeriod\) return btn\(true, d\.nextPeriod,/.test(cov), 'THE REGRESSION: Grant wrote the VIEWED period');
-  assert.ok(/if \(r\.exemptNext\) return btn\(false, d\.nextPeriod/.test(cov), 'a granted next-period exemption can be revoked from here');
+  assert.ok(/if \(r\.exemptNext\) \{\s*const k = r\.exemptNextKey \|\| d\.nextPeriod/.test(cov), 'a granted next-period exemption can be revoked from here (by the key that granted it — seams F1)');
   assert.ok(/\.qaSetExemption\(name, per, !!on\)/.test(stripJsComments_(extractFnFrom(qa, 'qaSetExemption_'))), 'the call carries the button\'s period');
 });
 
@@ -33086,7 +33086,7 @@ test('QA2-2 + QA-4 (cycle 23): "Sample the gaps" draws only the period\'s own ca
   ];
   const sheet = b8Sheet_(rows);
   const me = { id: 'E-R', name: 'Rev Iewer', email: 'r@x', isAdmin: false };
-  const ctx = b8Ctx_(['qaPeriodKeysForYmd_', 'qaPeriodMatches_', 'qaPeriodValid_', 'qaPeriodLabel_', 'qaStatus_', 'qaMsToYmd_', 'qaExemptFor_',
+  const ctx = b8Ctx_(['qaPeriodKeysForYmd_', 'qaPeriodMatches_', 'qaPeriodValid_', 'qaPeriodLabel_', 'qaStatus_', 'qaMsToYmd_', 'qaExemptKeyFor_', 'qaExemptFor_',
     'qaIsOwnRecording_', 'qaSelfReviewRefusal_', 'qaSamplePick_', 'qaSampleRecordings'], {
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     getEmployeeInfo_: () => me, canSeeQa_: () => true, getOrCreateQaRecordingsSheet_: () => sheet,
@@ -34381,6 +34381,60 @@ test('Batch 15 (cycle 23): the nine new smoke cases are registered in the smoke 
     try { ctx['test_' + n](); } catch (e) { assert.fail('editor case ' + n + ' FAILS against the real code: ' + e.message); }
   });
   assert.ok(testsSrc.indexOf('test_c23_') > 0);
+});
+
+// ── Seams & Invariants (cycle 24) — the small production batch ────────────
+console.log('\nSeams cycle 24 — production batch (F1, F2, F3, F4, F6, F8, F19)');
+
+test('Seams F1 (cycle 24): a revoke clears the KEY that granted the exemption — a quarter\'s grant read in a month view is revoked as the quarter (driven)', () => {
+  const ctx = b8Ctx_(['qaPeriodKeysForYmd_', 'qaPeriodMatches_', 'qaCardStats_', 'qaExemptEligible_', 'qaNextPeriod_', 'qaExemptKeyFor_', 'qaExemptFor_', 'qaCoverageRows_']);
+  const ex = { 'ann|2026-Q4': true, 'bob|2026-10': true };
+  assert.strictEqual(ctx.qaExemptKeyFor_(ex, 'ann', '2026-10'), '2026-Q4', 'a month exempt through its quarter names the QUARTER');
+  assert.strictEqual(ctx.qaExemptKeyFor_(ex, 'bob', '2026-10'), '2026-10', 'its own key first');
+  assert.strictEqual(ctx.qaExemptKeyFor_(ex, 'bob', '2026-Q4'), '', 'a month never exempts its quarter');
+  assert.strictEqual(ctx.qaExemptKeyFor_(ex, 'cy', '2026-10'), '');
+  const oct = ctx.qaCoverageRows_([], [], ['Ann', 'Bob', 'Cy'], '2026-10', 3, ex, '2026-09');
+  assert.deepStrictEqual(oct.map((r) => [r.name, r.exempt, r.exemptKey]), [['Ann', true, '2026-Q4'], ['Bob', true, '2026-10'], ['Cy', false, '']]);
+  const sep = ctx.qaCoverageRows_([], [], ['Ann'], '2026-09', 3, ex, '2026-08')[0];
+  assert.deepStrictEqual([sep.exempt, sep.exemptNext, sep.exemptNextKey], [false, true, '2026-Q4'], 'next period exempt through the quarter names the quarter too');
+
+  // The client button carries the key, and labels a key that is not the viewed period.
+  const qaSrc = fs.readFileSync(path.join(__dirname, '../../web-app/qa/script_qa.html'), 'utf8');
+  let captured = null;
+  const cctx = vm.createContext({ String, Number, Math, Object, Array, JSON,
+    esc: (x) => String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'),
+    QA_STATE: { queue: { periodOptions: [{ key: '2026-10', label: 'Oct 2026' }, { key: '2026-Q4', label: 'Q4 2026' }] } },
+    errorStateHtml_: () => '', qaSummaryStripHtml_: () => '', qaFmtDate_: () => '', qaScoreTone_: () => '',
+    qaCoverageSummary_: () => ({ gaps: 0 }), qaCoverageTier_: () => ({ key: '' }),
+    mtRenderTable_: (o) => { captured = o; return ''; } });
+  ['qaPeriodLabelOf_', 'qaCoverageSectionHtml_'].forEach((f) => vm.runInContext(extractFnFrom(qaSrc, f), cctx));
+  const d = { isManager: true, period: '2026-10', nextPeriod: '2026-11', nextPeriodLabel: 'Nov 2026', target: 3, coverage: oct };
+  cctx.qaCoverageSectionHtml_(d);
+  const act = captured.columns.filter((c) => c.key === 'actions')[0];
+  const ann = act.cell(oct[0]), bob = act.cell(oct[1]);
+  assert.ok(/data-qa-exempt-on="0" data-qa-exempt-period="2026-Q4"/.test(ann), 'THE REGRESSION: Ann\'s revoke wrote the viewed month 2026-10, which no row granted');
+  assert.ok(/Revoke exemption \(Q4 2026\)/.test(ann), 'the button says which period it revokes');
+  assert.ok(/data-qa-exempt-period="2026-10"/.test(bob) && />Revoke exemption</.test(bob), 'a month\'s own grant is unchanged');
+  cctx.qaCoverageSectionHtml_(Object.assign({}, d, { period: '2026-09', nextPeriod: '2026-10', nextPeriodLabel: 'Oct 2026', coverage: [sep] }));
+  const sepBtn = captured.columns.filter((c) => c.key === 'actions')[0].cell(sep);
+  assert.ok(/data-qa-exempt-period="2026-Q4"/.test(sepBtn) && /Revoke for Q4 2026/.test(sepBtn), 'the next-period revoke carries — and names — the quarter key');
+
+  // The server refuses a revoke of a key that was never granted, and appends nothing.
+  const appended = [];
+  const sctx = vm.createContext({ String, Number, Math, Object, Array, JSON, Date,
+    LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
+    getEmployeeInfo_: () => ({ isManager: true, email: 'm@x' }),
+    qaPeriodValid_: () => true, qaPeriodLabel_: (k) => 'L(' + k + ')',
+    getOrCreateQaExemptionsSheet_: () => ({}), qaReadExemptions_: () => ex,
+    appendRowsTextSafe_: (sh, rows) => appended.push(rows[0]), writeAuditLog_: () => {}, QA_EXEMPTIONS_TEXT_IDX: [] });
+  vm.runInContext(extractRawFunction('Code.js', 'qaSetExemption'), sctx);
+  const bad = sctx.qaSetExemption('Ann', '2026-10', false);
+  assert.strictEqual(bad.success, false, 'a revoke under a quarter\'s grant used to answer "revoked" and change nothing');
+  assert.ok(/no exemption recorded for L\(2026-10\)/.test(bad.error) && /nothing was changed/.test(bad.error));
+  assert.strictEqual(appended.length, 0, 'nothing appended');
+  assert.strictEqual(sctx.qaSetExemption('Ann', '2026-Q4', false).success, true);
+  assert.strictEqual(sctx.qaSetExemption('Cy', '2026-11', true).success, true, 'a grant is never refused by this check');
+  assert.deepStrictEqual(appended.map((r) => [r[0], r[1], r[4]]), [['Ann', '2026-Q4', 'FALSE'], ['Cy', '2026-11', 'TRUE']]);
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

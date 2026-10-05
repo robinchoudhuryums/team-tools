@@ -205,11 +205,14 @@ function qaNextPeriod_(key) {
   }
   return '';
 }
-function qaExemptFor_(exemptions, nameKey, period) {
+function qaExemptKeyFor_(exemptions, nameKey, period) {
   const ex = exemptions || {};
-  if (ex[nameKey + '|' + period]) return true;
+  if (ex[nameKey + '|' + period]) return String(period);
   const ks = /^\d{4}-\d{2}$/.test(String(period || '')) ? qaPeriodKeysForYmd_(period + '-01') : null;
-  return !!(ks && ex[nameKey + '|' + ks.quarter]);
+  return (ks && ex[nameKey + '|' + ks.quarter]) ? ks.quarter : '';
+}
+function qaExemptFor_(exemptions, nameKey, period) {
+  return !!qaExemptKeyFor_(exemptions, nameKey, period);
 }
 function qaCoverageRows_(recs, latestCards, rosterNames, period, target, exemptions, prevPeriod) {
   const cardsByFile = {};
@@ -249,15 +252,19 @@ function qaCoverageRows_(recs, latestCards, rosterNames, period, target, exempti
     // QA2-1 (cycle 23): an exemption EARNED in this period applies to the
     // NEXT one — granting it for the period that earned it saved no review —
     // and a quarter's exemption covers its months (qaExemptFor_).
-    const exempt = qaExemptFor_(exemptions, k, period);
+    // Seams F1 (cycle 24): each flag ships the KEY that set it, which is
+    // what a revoke must clear (a quarter's grant read in a month view).
+    const exemptKey = qaExemptKeyFor_(exemptions, k, period);
+    const exempt = !!exemptKey;
     const next = qaNextPeriod_(period);
-    const exemptNext = !!next && qaExemptFor_(exemptions, k, next);
+    const exemptNextKey = next ? qaExemptKeyFor_(exemptions, k, next) : '';
+    const exemptNext = !!exemptNextKey;
     const out = {
       name: row.name, sampled: row.cur.sampled, target: exempt ? 0 : (Number(target) || 0),
       cardCount: row.cur.cards, avg: cur.avg, minCriterion: cur.min,
       prevSampled: row.prev.sampled, prevCardCount: row.prev.cards, prevAvg: prev.avg, prevMinCriterion: prev.min,
       lastReviewedMs: row.lastReviewedMs, exempt: exempt, exemptUntil: exempt ? period : '',
-      exemptNext: exemptNext,
+      exemptNext: exemptNext, exemptKey: exemptKey, exemptNextKey: exemptNextKey,
     };
     out.eligible = !exempt && !exemptNext && qaExemptEligible_(out);
     return out;

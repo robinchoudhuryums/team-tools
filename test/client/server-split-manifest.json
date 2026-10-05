@@ -2314,6 +2314,20 @@
     "workedHoursByEmpForRange_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Seams F1 (cycle 24): qaExemptKeyFor_ — the exemption key a revoke must clear",
+   "added": [
+    "qaExemptKeyFor_"
+   ],
+   "removed": [],
+   "changed": [
+    "qaCoverageRows_",
+    "qaExemptFor_",
+    "qaSetExemption"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -8911,7 +8925,7 @@
   "qaCoverageRows_": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "0fa01415b012c378"
+   "sha": "453b81c173ce6b54"
   },
   "qaCreateManualRecording": {
    "file": "90_qa.js",
@@ -8941,7 +8955,12 @@
   "qaExemptFor_": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "c52433d32fedf7fc"
+   "sha": "d08542935f6ac040"
+  },
+  "qaExemptKeyFor_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "1fbcbed7342237cd"
   },
   "qaFindRecordingRow_": {
    "file": "90_qa.js",
@@ -9141,7 +9160,7 @@
   "qaSetExemption": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "39aca44de78f2296"
+   "sha": "7d9051049186e9ff"
   },
   "qaSetRecordingAgent": {
    "file": "90_qa.js",
