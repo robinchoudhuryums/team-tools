@@ -1238,6 +1238,9 @@ const CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN = 2000;
 // archiveSheetRowsOlderThan_ (append-then-delete + flush: a mid-run failure
 // can only duplicate into the archive, never lose a payroll row).
 const TIMESHEET_ARCHIVE_TAB = 'TimesheetArchive';
+// TC2-9 (cycle 23 Batch 14): the cached newest date in TimesheetArchive — see
+// timesheetArchiveReach_. Cleared by archiveOldTimesheetRows after a move.
+const TS_ARCHIVE_REACH_CACHE_KEY = 'ts_archive_reach_v1';
 // Floor: the live tab must always retain every ACTIVE window — adjustments
 // (ADJUST_WINDOW_DAYS 30), manager day-edit/delete, the current export period
 // (≤ ~31d), dashboard trends (14d) — with generous margin. A configured window

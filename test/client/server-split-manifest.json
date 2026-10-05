@@ -2293,6 +2293,27 @@
     "spanishThreadRoles_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Batch 14 (TC2-9): one archive-aware Timesheet range reader",
+   "added": [
+    "TS_ARCHIVE_REACH_CACHE_KEY",
+    "timesheetArchiveReach_",
+    "timesheetRowsInRange_"
+   ],
+   "removed": [],
+   "changed": [
+    "archiveOldTimesheetRows",
+    "buildCalendarForEmployee_",
+    "buildTimesheetForEmployee_",
+    "generateExportSheet_",
+    "getMyPayStatement",
+    "getPunctualityReport",
+    "getTeamCalendar",
+    "workedHoursByEmpForRange_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4467,6 +4488,11 @@
    "kind": "const",
    "sha": "dacdbe9c4c9b1f09"
   },
+  "TS_ARCHIVE_REACH_CACHE_KEY": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "395d4a5947265b63"
+  },
   "TS_DOCTOR_FIX_MAX_ROWS": {
    "file": "00_config.js",
    "kind": "var",
@@ -4845,7 +4871,7 @@
   "archiveOldTimesheetRows": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "9e6994f9466be50f"
+   "sha": "2a6fa055a54e901f"
   },
   "archiveSheetRowsOlderThan_": {
    "file": "30_callnotes.js",
@@ -5045,7 +5071,7 @@
   "buildCalendarForEmployee_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "a1af0940271704fd"
+   "sha": "0b6ac7a3c6cb3aff"
   },
   "buildCallNoteEmailHtml_": {
    "file": "30_callnotes.js",
@@ -5130,7 +5156,7 @@
   "buildTimesheetForEmployee_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "c6273c947751d233"
+   "sha": "4356b3a08f9d1677"
   },
   "businessHours_": {
    "file": "10_core.js",
@@ -6275,7 +6301,7 @@
   "generateExportSheet_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "ba6ec536d9d9a14a"
+   "sha": "9ffc6d2b720956ab"
   },
   "generateFormToken_": {
    "file": "61_forms.js",
@@ -6790,7 +6816,7 @@
   "getMyPayStatement": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "76df8e61413d5897"
+   "sha": "f4aedfbc373cdf2a"
   },
   "getMyPendingTasks": {
    "file": "20_timeclock.js",
@@ -7040,7 +7066,7 @@
   "getPunctualityReport": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "0f6c78b05b31b848"
+   "sha": "50a3d228f786a843"
   },
   "getQaLog": {
    "file": "90_qa.js",
@@ -7165,7 +7191,7 @@
   "getTeamCalendar": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "c9aa9441bcd04bcf"
+   "sha": "e4b50f577934318c"
   },
   "getTeamMetrics": {
    "file": "40_metrics.js",
@@ -10092,6 +10118,16 @@
    "kind": "function",
    "sha": "cc0a0c6d0641fa02"
   },
+  "timesheetArchiveReach_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "76c3c074c03e5c6f"
+  },
+  "timesheetRowsInRange_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "ef489866251a563d"
+  },
   "toDeductionCell_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -10380,7 +10416,7 @@
   "workedHoursByEmpForRange_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "d302c628b063f1ad"
+   "sha": "b7389e6a065a78b3"
   },
   "workedHoursForEmpMonth_": {
    "file": "20_timeclock.js",

@@ -678,6 +678,27 @@ console.log('\nCode.js — isValidTimeOffType_() (M1 leave-type whitelist)');
 // (no local re-declaration → no Category-B drift). Strip the `const` so the
 // array lands as a sandbox global the extracted function reads as a free var.
 const codeSrc = serverSource();
+
+// TC2-9 (cycle 23 Batch 14) — the shared Timesheet range reader + its archive
+// gate, for any sandbox that drives a reader built on it. `b14Ss_` fakes the
+// ADP spreadsheet: the live tab, the archive tab (or none), and an archive
+// that throws.
+function b14ReaderSrc_() {
+  return "var TIMESHEET_ARCHIVE_TAB = 'TimesheetArchive'; var TS_ARCHIVE_REACH_CACHE_KEY = 'ts_archive_reach_v1';\n" +
+    extractRawFunction('Code.js', 'timesheetArchiveReach_') + '\n' + extractRawFunction('Code.js', 'timesheetRowsInRange_');
+}
+function b14Ss_(liveRows, archRows, opts) {
+  opts = opts || {};
+  const arch = archRows ? {
+    getLastRow: () => archRows.length,
+    getRange: (r, c, n) => ({ getValues: () => { if (opts.archiveThrows) throw new Error('archive unreadable'); return archRows.slice(r - 1, r - 1 + n).map((x) => [x[c - 1]]); } }),
+    getDataRange: () => ({ getValues: () => { if (opts.archiveThrows) throw new Error('archive unreadable'); return archRows; } }),
+  } : null;
+  return {
+    getSheetByName: (tab) => (tab === 'Timesheet' ? { getDataRange: () => ({ getValues: () => liveRows }) }
+      : tab === 'TimesheetArchive' ? arch : (opts.other ? opts.other(tab) : null)),
+  };
+}
 const totMatch = codeSrc.match(/const (TIME_OFF_TYPES\s*=\s*\[[\s\S]*?\]);/);
 assert.ok(totMatch, 'TIME_OFF_TYPES declaration found in Code.js');
 vm.runInContext(totMatch[1] + ';', sb, { filename: 'Code.js#TIME_OFF_TYPES' });
@@ -5569,13 +5590,16 @@ console.log('\ncycle 12 — broad-scan fix pins (F1–F5)');
 // export silently produced a PARTIAL payroll .xlsx behind {success:true}.
 test('F1: generateExportSheet_ reads through the Timesheet cold archive when the range predates the live tab', () => {
   const src = extractRawFunction('Code.js', 'generateExportSheet_');
-  assert.ok(src.indexOf('TIMESHEET_ARCHIVE_TAB') >= 0,
-    'the export consults the archive tab — without this the range silently returns live rows only');
-  assert.ok(/getSheetByName\(TIMESHEET_ARCHIVE_TAB\)/.test(src),
+  // TC2-9 (cycle 23 Batch 14): the read-through is THE shared range reader,
+  // strict (a failed archive read refuses the export), handed the live values
+  // the export already holds. Its gate (the archive's own reach), read-only
+  // tab access (INV-133) and INV-132 dedupe are driven in the Batch 14 pins.
+  assert.ok(/timesheetRowsInRange_\(startDate, endDate, \{ strict: true, liveValues: rows,/.test(src),
+    'the export consults the archive through the ONE reader — without it the range silently returns live rows only');
+  const reader = extractRawFunction('Code.js', 'timesheetRowsInRange_');
+  assert.ok(/getSheetByName\(TIMESHEET_ARCHIVE_TAB\)/.test(reader) && !/insertSheet|getOrCreate/.test(reader),
     'read-only w.r.t. tab existence (getSheetByName, never create — the INV-133 discipline)');
-  assert.ok(/oldestLiveDate/.test(src) && /startDate < oldestLiveDate/.test(src),
-    'the archive read is gated on the window reaching past the live tab (current-period exports stay byte-identical)');
-  assert.ok(/liveKeys\.has\(/.test(src),
+  assert.ok(/liveKeys\.has\(/.test(reader),
     'an archive row identical to a live one is skipped — the INV-132 append-then-delete duplicate must not double-count payroll');
   assert.ok(/archivedRowCount/.test(src), 'the result reports how many rows came from the archive');
   const exp = extractRawFunction('Code.js', 'exportAdpRange');
@@ -7292,10 +7316,11 @@ test('A7: the export requires only a HEADER from the live tab, not data rows', (
   assert.ok(/if \(rows\.length < 2\)/.test(fn), 'only the two header rows are genuinely required');
   // The archive block must still be reachable from the empty-live-tab state.
   const guardIdx = fn.indexOf('rows.length < 2');
-  const archiveIdx = fn.indexOf('TIMESHEET_ARCHIVE_TAB');
+  const archiveIdx = fn.indexOf('timesheetRowsInRange_(');
   assert.ok(guardIdx >= 0 && archiveIdx > guardIdx, 'the archive read-through comes after the header guard');
-  assert.ok(/oldestLiveDate === null \|\| startDate < oldestLiveDate/.test(fn),
-    'a live tab with no data rows (oldestLiveDate null) still consults the archive');
+  // TC2-9: the gate no longer reads the live tab at all, so an empty live tab
+  // still consults the archive (driven in the Batch 14 export pin).
+  assert.ok(!/oldestLiveDate/.test(fn), 'no live-tab coverage gate left to defeat');
 });
 
 // A10: the F12 shape — non-transactional reads inside the ONE project-wide lock
@@ -11058,8 +11083,8 @@ test('pay statement: the rate never leaves its one reader; other-rep view is man
     'viewing another rep requires isManager (own-data rule)');
   assert.ok(/empPayRateById_\(target\.id\)/.test(stmt), 'the rate resolves for the TARGET, via the one lookup path');
   assert.ok(/toLowerCase\(\) !== 'approved'/.test(stmt), 'PTO status compared normalized (INV-183)');
-  assert.ok(/getTimesheetArchiveDays_\(\)/.test(stmt) && /archiveNote/.test(stmt),
-    'an archived-away period says so instead of presenting a short total as complete (INV-153/187)');
+  assert.ok(/const archiveNote = !!ts\.archiveError;/.test(stmt),
+    'a period whose archive could not be read says so instead of presenting a short total as complete (INV-153/187; TC2-9: the builder reads through the archive, so the note is no longer a guess)');
   assert.ok(/estGross: rate != null \?/.test(stmt), 'gross only when a rate is on file');
   // Client: both failure shapes render the error card; the nav is seq-guarded.
   const load = nc(extractFunction('tc/script_timeoff.html', 'payStmtLoad_'));
@@ -11747,18 +11772,17 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
     'the CREDIT passes an EMPTY inspect month — a diagnostic month here would credit an arbitrary one and advance the stamp past it');
   const idx = code.match(/function workedHoursByEmpForRange_\(startIso, endIso\) \{[\s\S]*?\n\}/);
   assert.ok(idx, 'the index helper exists');
-  assert.strictEqual((idx[0].match(/getDataRange\(\)\.getValues\(\)/g) || []).length, 2,
-    'one live read + one archive read, no more');
+  // TC2-9 (cycle 23 Batch 14): the reads are THE range reader's — ONE call,
+  // strict (a failed archive read throws). Its gate, dedupe and read count
+  // are driven in the Batch 14 pins.
+  assert.strictEqual((idx[0].match(/getDataRange\(\)\.getValues\(\)/g) || []).length, 0, 'no read of its own');
+  assert.ok(/timesheetRowsInRange_\(startIso, endIso, \{ strict: true \}\)/.test(idx[0]), 'one strict range read');
   assert.ok(/calcHours_\(pm\.ClockIn, pm\.ClockOut/.test(idx[0]),
     'per-day hours use the SAME calcHours_ arithmetic as payroll');
   assert.ok(/if \(h === null\) \{ incomplete\+\+/.test(idx[0]),
     'INV-176 — an unparseable day is INCOMPLETE, never a silent 0 hours');
   // Archive read-through (INV-153/F1): a catch-up range can predate the live
   // tab, and reading short would UNDER-credit real earned PTO.
-  assert.ok(/TIMESHEET_ARCHIVE_TAB/.test(idx[0]) && /startIso < oldestLiveDate/.test(idx[0]),
-    'the index reads through the archive when the range predates the live tab');
-  assert.ok(/liveKeys\.has\(key\)/.test(idx[0]),
-    'a row present in BOTH tabs is counted once (INV-132 duplicate-not-lose)');
   assert.ok(!/catch/.test(idx[0]),
     'a failed read THROWS — the run aborts with no credits rather than crediting from partial hours');
   // ── Unchanged guarantees, re-pinned against the rewrite.
@@ -18301,13 +18325,17 @@ test('getTeamCalendar — behavioral (real enums + empRosterEmail_/normalizeType
     normalizeTime_: (v) => String(v || ''),
     getUsHolidays_: () => [{ date: '2026-08-31', name: 'Test Holiday' }],
     getCompanyHolidays_: () => [{ date: '2026-08-31', name: 'Test Holiday' }],   // H1: consumers read the company calendar
-    getAdpSS_: () => ({ getSheetByName: (tab) => ({ getDataRange: () => ({ getValues:
+    getAdpSS_: () => ({ getSheetByName: (tab) => (tab === 'TimesheetArchive' ? null : { getDataRange: () => ({ getValues:
       () => (tab === 'Timesheet' ? adpRows : toRows) }) }) }),
     // F-49: the time-off tab is read through the PROVISIONER, never by name.
     getOrCreateTimeOffSheet_: () => ({ getDataRange: () => ({ getValues: () => toRows }) }),
     CONFIG: { ADP_TAB: 'Timesheet', TIMEOFF_TAB: 'TimeOffRequests', ADJUST_WINDOW_DAYS: 30 },
   });
   vm.runInContext(extractRawFunction('Code.js', 'getTeamCalendar'), tcCtx, { filename: 'Code.js#getTeamCalendar' });
+  // TC2-9: the calendar reads through the shared range reader.
+  Object.assign(tcCtx, { getTimesheetArchiveDays_: () => 0, fmtDate_: (d) => d.toISOString().substring(0, 10),
+    CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) } });
+  vm.runInContext(b14ReaderSrc_(), tcCtx);
 
   // Gate + read shape (bare {error}, never success:false — the GATE-SHAPE rule).
   const gCtx = tcCtx; const realGei = gCtx.getEmployeeInfo_;
@@ -18340,10 +18368,19 @@ test('getTeamCalendar — behavioral (real enums + empRosterEmail_/normalizeType
     'a PADDED " Approved " cell is normalized at the ONE read (the TO.STATUS family)');
   assert.strictEqual(res.holidays['2026-08-31'], 'Test Holiday');
   assert.strictEqual(res.rosterCount, 2, 'the offboarded row is not a person to count (INV-183)');
-  assert.strictEqual(res.archiveNote, false, 'live rows reach back past the month — no archive note');
+  assert.strictEqual(res.archiveNote, false, 'nothing to read from an archive — no note');
+  // TC2-9 (cycle 23 Batch 14): an archived month READS through the archive —
+  // it used to render empty under a "may have moved" note.
+  const archRows = [[], [], adpRow('A1', '2026-06-03', '08:00:00', 'ClockIn'), adpRow('A1', '2026-06-03', '16:00:00', 'ClockOut')];
+  const realSs = tcCtx.getAdpSS_;
+  tcCtx.getAdpSS_ = () => b14Ss_(adpRows, archRows, { other: () => ({ getDataRange: () => ({ getValues: () => toRows }) }) });
   const older = vm.runInContext("getTeamCalendar('2026-06')", tcCtx);
-  assert.strictEqual(older.archiveNote, true,
-    'a month wholly older than the live tab says so instead of rendering a confident empty month (INV-187)');
+  assert.strictEqual(older.days['2026-06-03'].reps[0].hours, 8, 'THE REGRESSION: the archived day is on the calendar, with its hours');
+  assert.strictEqual(older.archiveNote, false, 'and nothing is said to be missing');
+  tcCtx.getAdpSS_ = () => b14Ss_(adpRows, archRows, { archiveThrows: true });
+  const broken = vm.runInContext("getTeamCalendar('2026-06')", tcCtx);
+  assert.strictEqual(broken.archiveNote, true, 'an archive that cannot be read is SAID (INV-187), never a confident empty month');
+  tcCtx.getAdpSS_ = realSs;
   // F-49 (2026-09-18): a FRESH deployment has no TimeOffRequests tab yet, so a
   // by-name read is `null.getDataRange` and the whole calendar failed to load
   // until the first request was submitted. The provisioner path renders.
@@ -27891,10 +27928,12 @@ test('T5 (rework): a HALF day has no fixed start — graded on HOURS WORKED (>= 
     getEmployeeRosterRows_: () => [['h'], ['E1', 'Ann', 'America/Chicago', ''], ['E2', 'Bo', 'America/Chicago', '']],
     empRosterEmail_: () => 'x@y', safeTimezone_: (t) => t,
     empShiftSchedule_: () => ({ startMin: 480, lengthMin: 540, breaks: [{ label: 'Lunch', startMin: 720, lenMin: 30 }] }),
-    getAdpSS_: () => ({ getSheetByName: () => ({ getDataRange: () => ({ getValues: () => ts }) }) }),
+    getAdpSS_: () => b14Ss_(ts, null),   // TC2-9: no archive tab
+    getTimesheetArchiveDays_: () => 0, fmtDate_: (d) => d.toISOString().slice(0, 10), CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
     getOrCreateTimeOffSheet_: () => ({ getDataRange: () => ({ getValues: () => to }) }),
     getCompanyHolidays_: () => [], normalizeDate_: (x) => x, normalizeTime_: (x) => x,
     Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) }, fmtDateTz_: () => rTodayIso, fmtTimeTz_: () => '09:00:00' });
+  vm.runInContext(b14ReaderSrc_(), rctx);
   ['daysBetween_', 'addDaysIso_', 'normalizeType_', 'timeToMins_', 'timeOffDayKind_', 'calcHours_', 'breakPairs_', 'breakSortKey_',
    'punchDayAdd_', 'punctIsHalfDay_', 'punctHalfDayVerdict_', 'punctLunchNearest_', 'punctDayState_', 'punctNotYet_', 'punctWeeklyBuckets_',
    'getPunctualityReport'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), rctx));
@@ -27920,7 +27959,7 @@ test('T5 (rework): a HALF day has no fixed start — graded on HOURS WORKED (>= 
   assert.ok(e2, 'a rep with only a half day in range is still listed');
   assert.deepStrictEqual([e2.days, e2.onTimePct, e2.halfDays, e2.halfShort], [0, null, 1, 0], 'no graded day is no on-time figure, never 0% or 100%');
   const src = stripJsComments_(extractRawFunction('Code.js', 'getPunctualityReport'));
-  assert.ok(src.indexOf('getOrCreateTimeOffSheet_()') < src.indexOf('getAdpSS_()'), 'the PTO overlay is read BEFORE the timesheet walk that needs it');
+  assert.ok(src.indexOf('getOrCreateTimeOffSheet_()') < src.indexOf('timesheetRowsInRange_('), 'the PTO overlay is read BEFORE the timesheet walk that needs it');
 
   // Server: the state endpoint ships the kind of day and the minimum; driven over a fake tab.
   const rows = [['E1', 'Ann', '2026-09-24', 'Half Day - Morning', '', 'Approved', 't']];
@@ -34142,6 +34181,166 @@ test('SP-2 (cycle 23 Batch 13): the wiring — Expand shows the follow-up, Needs
   assert.ok(/If the requester writes again, it comes back as a new request, unclaimed\./.test(extractFnFrom(met, 'spanishResolve_')), 'the resolve confirm no longer reads as permanent');
   assert.ok(/\.sp-followup-pill \{/.test(fs.readFileSync(path.join(PA_WEB, 'styles.html'), 'utf8')), 'the pill has its rule (g140)');
   assert.ok(/followUp: true, claimFloorMs:/.test(fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8')), 'the fixture photographs it (INV-185)');
+});
+
+// ---------------------------------------------------------------------------
+// Cycle 23 Batch 14 — TC2-9: ONE archive-aware Timesheet range reader.
+console.log('\ncycle 23 Batch 14 — TC2-9 archive-aware timesheet readers');
+
+// A sandbox with the REAL ADP enum, the reader, its gate and the helpers the
+// six readers lean on. `env` = { live, arch, archiveThrows, days, cache }.
+const b14Ctx_ = (fns, env, extra) => {
+  const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, Date, Set, isFinite, parseInt, RegExp, Error, console: { warn() {} } }, extra || {}));
+  ['const ADP = \\{[\\s\\S]*?\\};', "const PUNCH_LABELS_ = \\[[\\s\\S]*?\\];"].forEach((re) => vm.runInContext(new RegExp(re).exec(codeSrc)[0].replace(/^const /, 'var '), ctx));
+  const reads = { live: 0, archFull: 0, archCol: 0 };
+  const live = env.live, arch = env.arch;
+  const archSheet = arch ? {
+    getLastRow: () => arch.length,
+    getRange: (r, c, n) => ({ getValues: () => { reads.archCol++; if (env.archiveThrows) throw new Error('archive unreadable'); return arch.slice(r - 1, r - 1 + n).map((x) => [x[c - 1]]); } }),
+    getDataRange: () => ({ getValues: () => { reads.archFull++; if (env.archiveThrows) throw new Error('archive unreadable'); return arch; } }),
+  } : null;
+  const cache = env.cache || {};
+  Object.assign(ctx, {
+    CONFIG: Object.assign({ ADP_TAB: 'Timesheet', TIMEZONE: 'America/Chicago' }, (extra && extra.CONFIG) || {}),
+    getAdpSS_: () => ({ getSheetByName: (t) => (t === 'Timesheet' ? { getDataRange: () => ({ getValues: () => { reads.live++; return live; } }) } : t === 'TimesheetArchive' ? archSheet : null) }),
+    getTimesheetArchiveDays_: () => env.days || 0,
+    fmtDate_: (d) => d.toISOString().substring(0, 10),
+    CacheService: { getScriptCache: () => ({ get: (k) => (k in cache ? cache[k] : null), put: (k, v) => { cache[k] = v; }, remove: (k) => { delete cache[k]; } }) },
+    normalizeDate_: (v) => String(v || ''), normalizeTime_: (v) => String(v || ''),
+  });
+  ['normalizeType_', 'timeToMins_', 'breakSortKey_', 'breakPairs_', 'punchDayAdd_', 'punchFirst_', 'calcHours_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  vm.runInContext(b14ReaderSrc_(), ctx);
+  fns.forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  ctx.__reads = reads; ctx.__cache = cache;
+  return ctx;
+};
+const b14Row_ = (id, date, time, type) => { const r = new Array(9).fill(''); r[0] = id; r[2] = date; r[3] = time; r[5] = type; return r; };
+
+test('TC2-9 (cycle 23 Batch 14): THE range reader — the archive is read when the range reaches what it HOLDS (not when it starts before the live tab\'s oldest row), a live duplicate counts once, a failed archive read is said or thrown (driven)', () => {
+  const ADPi = vm.runInContext("var ADP = " + /const ADP = (\{[\s\S]*?\});/.exec(codeSrc)[1] + "; ADP", vm.createContext({}));
+  const row = (id, date, time, type) => { const r = new Array(9).fill(''); r[ADPi.EMP_ID] = id; r[ADPi.DATE] = date; r[ADPi.TIME] = time; r[ADPi.COMMENTS] = type; return r; };
+  const live = [[], [], row('A1', '2026-06-01', '09:00:00', 'ClockIn'), row('A1', '2026-01-14', '17:00:00', 'ADJ-ClockOut'),   // a LATE back-fill for an old date
+    row('A1', '2026-06-01', '17:00:00', 'ClockOut')];
+  const arch = [[], [], row('A1', '2026-01-14', '09:00:00', 'ClockIn'), row('A1', '2026-01-14', '17:00:00', 'ADJ-ClockOut'),   // the same row in BOTH tabs (INV-132)
+    row('A1', '2026-01-15', '09:00:00', 'ClockIn'), row('B2', '2026-01-15', '09:00:00', 'ClockIn')];
+  let c = b14Ctx_([], { live, arch });
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  let r = J(c.timesheetRowsInRange_('2026-01-01', '2026-01-31'));
+  assert.strictEqual(r.rows.length, 4, 'THE REGRESSION: the January rows are read from the archive — the old gate saw a live January row and skipped it');
+  assert.deepStrictEqual([r.archivedRows, r.archiveRead, r.archiveError], [3, true, ''], 'the duplicate live row counts once');
+  assert.strictEqual(J(c.timesheetRowsInRange_('2026-01-01', '2026-01-31', { keep: (x) => x[ADPi.EMP_ID] === 'A1' })).rows.length, 3, '`keep` filters both tabs');
+  // A range after everything the archive holds never reads it whole.
+  c = b14Ctx_([], { live, arch });
+  r = J(c.timesheetRowsInRange_('2026-05-01', '2026-06-30'));
+  assert.deepStrictEqual([r.rows.length, r.archiveRead, c.__reads.archFull, c.__reads.archCol], [2, false, 0, 1], 'one date-column read decides; the archive itself is not read');
+  r = J(c.timesheetRowsInRange_('2026-05-01', '2026-06-30'));
+  assert.strictEqual(c.__reads.archCol, 1, 'the archive reach is CACHED — a second call reads no column');
+  // The window's own date is unioned in: with 120 days set, a range inside
+  // what the window archives reads the tab even if the cached reach is stale.
+  c = b14Ctx_([], { live, arch, days: 120, cache: { ts_archive_reach_v1: '2025-01-01' } });
+  assert.ok(J(c.timesheetRowsInRange_('2026-01-01', '2026-01-31')).archiveRead, 'a stale cached reach cannot hide what the window would have moved');
+  // No archive tab: nothing to read, nothing to report.
+  c = b14Ctx_([], { live, arch: null, days: 120 });
+  r = J(c.timesheetRowsInRange_('2026-01-01', '2026-01-31'));
+  assert.deepStrictEqual([r.rows.length, r.archiveRead, r.archiveError], [1, false, '']);
+  // A failed archive read: said beside the live rows, or thrown under strict.
+  c = b14Ctx_([], { live, arch, archiveThrows: true });
+  r = J(c.timesheetRowsInRange_('2026-01-01', '2026-01-31'));
+  assert.deepStrictEqual([r.rows.length, r.archiveRead, /archive unreadable/.test(r.archiveError)], [1, false, true], 'non-strict: the live rows stand and the failure is named');
+  assert.throws(() => c.timesheetRowsInRange_('2026-01-01', '2026-01-31', { strict: true }), /archive unreadable/, 'strict: it throws (payroll and accrual never read short)');
+  // A caller's own live values are used — never a second read of the payroll tab.
+  c = b14Ctx_([], { live, arch: null });
+  c.timesheetRowsInRange_('2026-06-01', '2026-06-30', { liveValues: live });
+  assert.strictEqual(c.__reads.live, 0, '`liveValues` saves the second full read');
+  // The archiver clears the cached reach after a move.
+  const archiver = stripJsComments_(extractRawFunction('Code.js', 'archiveOldTimesheetRows'));
+  assert.ok(/if \(moved > 0\) \{ try \{ CacheService\.getScriptCache\(\)\.remove\(TS_ARCHIVE_REACH_CACHE_KEY\); \} catch \(e\) \{\} \}/.test(archiver)
+    && archiver.indexOf('remove(TS_ARCHIVE_REACH_CACHE_KEY)') > archiver.indexOf('lock.releaseLock()'), 'the archiver clears the reach after the move, outside the lock');
+});
+
+test('TC2-9 (cycle 23 Batch 14): every timesheet range reader goes through the ONE reader — the export and the accrual strictly, the pay statement, both calendars and Punctuality saying a failed archive read (driven)', () => {
+  const ADPi = vm.runInContext("var ADP = " + /const ADP = (\{[\s\S]*?\});/.exec(codeSrc)[1] + "; ADP", vm.createContext({}));
+  const row = (id, date, time, type) => { const r = new Array(9).fill(''); r[ADPi.EMP_ID] = id; r[ADPi.DATE] = date; r[ADPi.TIME] = time; r[ADPi.COMMENTS] = type; return r; };
+  const live = [['h1'], ['h2'], row('A1', '2026-01-14', '17:00:00', 'ClockOut'), row('A1', '2026-06-01', '09:00:00', 'ClockIn')];
+  const arch = [['h1'], ['h2'], row('A1', '2026-01-14', '09:00:00', 'ClockIn'), row('A1', '2026-01-15', '09:00:00', 'ClockIn'), row('A1', '2026-01-15', '13:00:00', 'ClockOut')];
+  // (a) The accrual index: the archived month's hours are counted, and a
+  // failed archive read throws (never under-credits).
+  let c = b14Ctx_(['workedHoursByEmpForRange_'], { live, arch }, { TIMESHEET_DAY_INCOMPLETE: 'incomplete', TIMESHEET_DAY_ORPHAN: 'orphan' });
+  const acc = JSON.parse(JSON.stringify(c.workedHoursByEmpForRange_('2026-01-01', '2026-01-31')));
+  assert.deepStrictEqual([acc.byEmp.A1.hours, acc.byEmp.A1.daysWorked, acc.archivedRows], [12, 2, 3], 'THE REGRESSION: 8 h + 4 h from a month the live tab only partly holds');
+  c = b14Ctx_(['workedHoursByEmpForRange_'], { live, arch, archiveThrows: true }, { TIMESHEET_DAY_INCOMPLETE: 'incomplete', TIMESHEET_DAY_ORPHAN: 'orphan' });
+  assert.throws(() => c.workedHoursByEmpForRange_('2026-01-01', '2026-01-31'), /archive unreadable/);
+  // (b) The export: the archived rows are in the file; a failed archive read refuses.
+  let appended = null;
+  const expExtra = { appendRowsSafe_: (sh, rows) => { appended = rows; }, sheetSafeRows_: (x) => x, fmtTime_: () => '120000',
+    createPinnedSpreadsheet_: () => ({ getActiveSheet: () => ({ setName() {}, getRange: () => ({ setValues() {}, setFontWeight() {} }), setFrozenRows() {} }), getId: () => 'f', getUrl: () => 'u', addEditor() {} }),
+    SpreadsheetApp: { flush() {} }, getActiveUserEmail_: () => '', Session: { getEffectiveUser: () => ({ getEmail: () => 'o' }) } };
+  c = b14Ctx_(['generateExportSheet_'], { live, arch }, expExtra);
+  const ex = JSON.parse(JSON.stringify(c.generateExportSheet_('2026-01-01', '2026-01-31', '')));
+  assert.deepStrictEqual([ex.rowCount, ex.archivedRowCount, appended.length], [4, 3, 4], 'the payroll file holds the archived rows');
+  c = b14Ctx_(['generateExportSheet_'], { live, arch, archiveThrows: true }, expExtra);
+  assert.ok(/cold archive could not be read/.test(c.generateExportSheet_('2026-01-01', '2026-01-31', '').error), 'a failed archive read REFUSES — never a short payroll file');
+  // (c) The pay statement / timesheet builder: the archived period's hours, or
+  // the failure named.
+  const tsExtra = { empTz_: () => 'America/Chicago', fmtDateTz_: () => '2026-07-01', daysBetween_: () => 30, isoFromUtc_: (d) => d.toISOString().substring(0, 10),
+    DAY_ABBR: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], MONTH_NAMES: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+    breakOpenLeave_: () => null, breakStrays_: () => [] };
+  c = b14Ctx_(['buildTimesheetForEmployee_'], { live, arch }, tsExtra);
+  let ts = JSON.parse(JSON.stringify(c.buildTimesheetForEmployee_({ id: 'A1' }, '2026-01-14', '2026-01-15')));
+  assert.deepStrictEqual([ts.totalHours, ts.daysWorked, ts.archivedRows, ts.archiveError], [12, 2, 3, ''], 'THE REGRESSION: the statement for an archived period is whole');
+  c = b14Ctx_(['buildTimesheetForEmployee_'], { live, arch, archiveThrows: true }, tsExtra);
+  ts = JSON.parse(JSON.stringify(c.buildTimesheetForEmployee_({ id: 'A1' }, '2026-01-14', '2026-01-15')));
+  assert.ok(/archive unreadable/.test(ts.archiveError) && ts.totalHours === 0, 'a failed archive read is carried to the statement, which says so');
+  const stmt = stripJsComments_(extractRawFunction('Code.js', 'getMyPayStatement'));
+  assert.ok(/const archiveNote = !!ts\.archiveError;/.test(stmt), 'the pay statement note is the failure, not a guess from the window');
+  // (d) The callers: every timesheet range read is the reader's.
+  [['buildCalendarForEmployee_', /timesheetRowsInRange_\(startDate, endDate, \{ keep:/], ['getTeamCalendar', /timesheetRowsInRange_\(monthIso \+ '-01', monthEnd,/],
+   ['getPunctualityReport', /timesheetRowsInRange_\(prevFrom, toDate, \{ keep:/]].forEach(([fn, re]) => {
+    const src = stripJsComments_(extractRawFunction('Code.js', fn));
+    assert.ok(re.test(src), fn + ' reads through the ONE reader');
+    assert.ok(!/getSheetByName\(CONFIG\.ADP_TAB\)/.test(src), fn + ' keeps no live-only read of its own');
+  });
+  const pr = stripJsComments_(extractRawFunction('Code.js', 'getPunctualityReport'));
+  assert.ok(/archiveUnavailable: !!read\.archiveError/.test(pr), 'Punctuality ships a failed archive read');
+  const cal = stripJsComments_(extractRawFunction('Code.js', 'buildCalendarForEmployee_'));
+  assert.ok(/archiveError: read\.archiveError/.test(cal), 'the rep calendar ships it too');
+  // (e) The clients say it.
+  const mgr = fs.readFileSync(path.join(PA_WEB, 'tc/script_manager.html'), 'utf8');
+  assert.ok(/data\.archiveUnavailable \? ' <span style="color:var\(--warning-deep\)">' \+ icon\('warning', 11\) \+ ' The timesheet archive could not be read/.test(mgr), 'Punctuality says the archive could not be read');
+  assert.ok(/The timesheet archive could not be read, so punches from this month may be missing/.test(mgr), 'the team calendar note names the failure, not "may have moved"');
+  assert.ok(/The timesheet archive could not be read, so rows from this period may be missing/.test(fs.readFileSync(path.join(PA_WEB, 'tc/script_timeoff.html'), 'utf8')), 'and the pay statement');
+});
+
+test('TC2-9 (cycle 23 Batch 14): Punctuality grades a previous window the archive holds — it no longer reads as every day without a clock-in (driven)', () => {
+  const ADPi = vm.runInContext("var ADP = " + /const ADP = (\{[\s\S]*?\});/.exec(codeSrc)[1] + "; ADP", vm.createContext({}));
+  const row = (id, date, time, type) => { const r = new Array(9).fill(''); r[ADPi.EMP_ID] = id; r[ADPi.DATE] = date; r[ADPi.TIME] = time; r[ADPi.COMMENTS] = type; return r; };
+  // This window (live): Mon–Fri on time. The previous window (archived): Mon–Fri on time too.
+  const days = (from) => [0, 1, 2, 3, 4].map((k) => { const d = new Date(from + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + k); return d.toISOString().substring(0, 10); });
+  const cur = days('2026-01-19'), prev = days('2026-01-12');
+  const live = [[], []].concat(cur.map((d) => row('E1', d, '08:00:00', 'ClockIn')));
+  const arch = [[], []].concat(prev.map((d) => row('E1', d, '08:00:00', 'ClockIn')));
+  const env = { live, arch };
+  const extra = {
+    CONFIG: { PUNCT_MAX_RANGE_DAYS: 92, PUNCTUALITY_GRACE_MIN: 5, PTO_HOURS_PER_DAY: 8 },
+    EMP: { ID: 0, NAME: 1, TIMEZONE: 2, SCHEDULE: 3 }, TO: { EMP_ID: 0, NAME: 1, DATE: 2, TYPE: 3, NOTES: 4, STATUS: 5, SUBMITTED_AT: 6 },
+    getEmployeeInfo_: () => ({ isManager: true }),
+    getEmployeeRosterRows_: () => [['h'], ['E1', 'Ann', 'America/Chicago', '']],
+    empRosterEmail_: () => 'x@y', safeTimezone_: (t) => t,
+    empShiftSchedule_: () => ({ startMin: 480, lengthMin: 540, breaks: [] }),
+    getOrCreateTimeOffSheet_: () => ({ getDataRange: () => ({ getValues: () => [['h']] }) }),
+    getCompanyHolidays_: () => [], Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) }, fmtDateTz_: () => '2026-02-01', fmtTimeTz_: () => '09:00:00',
+  };
+  const fns = ['daysBetween_', 'addDaysIso_', 'timeOffDayKind_', 'punctIsHalfDay_', 'punctHalfDayVerdict_', 'punctLunchNearest_', 'punctDayState_', 'punctNotYet_', 'punctWeeklyBuckets_', 'getPunctualityReport'];
+  let c = b14Ctx_(fns, env, extra);
+  let rep = JSON.parse(JSON.stringify(c.getPunctualityReport('2026-01-19', '2026-01-23')));
+  assert.ok(!rep.error, rep.error);
+  const e1 = rep.reps.find((r) => r.id === 'E1');
+  assert.strictEqual(e1.onTimePct, 100);
+  assert.strictEqual(e1.prevOnTimePct, 100, 'THE REGRESSION: the archived previous window is graded, so the delta is real');
+  assert.strictEqual(rep.archiveUnavailable, false);
+  c = b14Ctx_(fns, Object.assign({}, env, { archiveThrows: true }), extra);
+  rep = JSON.parse(JSON.stringify(c.getPunctualityReport('2026-01-19', '2026-01-23')));
+  assert.strictEqual(rep.archiveUnavailable, true, 'a failed archive read is shipped, so the page can say so');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -1550,7 +1550,7 @@ function tcalRender_() {
     '</div>';
 
   var archNote = data.archiveNote
-    ? '<div class="tcal-note">This month predates the live Timesheet tab — rows may have moved to the archive; use an export for full history.</div>'
+    ? '<div class="tcal-note">The timesheet archive could not be read, so punches from this month may be missing — reload, or use an export for full history.</div>'
     : '';
   var legend = '<div class="tcal-note">Cell badge = reps punched · +N = reps off · amber tint = incomplete day(s) present</div>';
 
@@ -2667,7 +2667,10 @@ function punctRender_(data) {
     : ((teamPct - prevPct > 0 ? '+' : '') + (teamPct - prevPct) + 'pt vs ' + esc(punctFmtDate_(data.prevFrom)) + '–' + esc(punctFmtDate_(data.prevTo)));
   var note = '<div style="font-size:12px;color:var(--muted);margin-bottom:14px">On-time = clock-in within ' + esc(String(data.grace)) +
     ' min of the scheduled start. Only days with a clock-in are graded; time off and holidays are drawn in the day-by-day record but never counted against a rep. A half day has no fixed start, so it is graded on hours worked instead (at least half the typical day), never on its start or lunch.' +
-    (data.ptoUnavailable ? ' <span style="color:var(--warning-deep)">' + icon('warning', 11) + ' Time-off data could not be read — approved PTO days show as no clock-in.</span>' : '') + '</div>';
+    (data.ptoUnavailable ? ' <span style="color:var(--warning-deep)">' + icon('warning', 11) + ' Time-off data could not be read — approved PTO days show as no clock-in.</span>' : '') +
+    // TC2-9 (cycle 23 Batch 14): a window the timesheet archive holds, read
+    // while the archive could not be — those days grade as no clock-in.
+    (data.archiveUnavailable ? ' <span style="color:var(--warning-deep)">' + icon('warning', 11) + ' The timesheet archive could not be read — older days in this range may show as no clock-in.</span>' : '') + '</div>';
   var summary = '<div class="telemetry" style="margin-bottom:16px">' +
     '<div class="tel-cell"><div class="tel-label">Team on-time</div><div class="tel-value ' + teamCls + '">' + (teamPct == null ? '—' : teamPct + '%') + '</div><div class="tel-sub">' + totOn + ' / ' + totDays + ' days · ' + deltaTxt + '</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Reps</div><div class="tel-value">' + reps.length + '</div><div class="tel-sub">with clock-ins</div></div>' +

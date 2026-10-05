@@ -90,6 +90,98 @@ function accrualMonthsToCredit_(stampYm, nowYm) {
 const TIMESHEET_DAY_INCOMPLETE = 'incomplete';
 const TIMESHEET_DAY_ORPHAN = 'orphan';
 
+/** TC2-9 (cycle 23 Batch 14) — how far back the cold archive can hold
+ *  rows: the later of the newest date actually in `TimesheetArchive` and the
+ *  date the CURRENT window would archive up to. A range that starts after it
+ *  never needs the archive. The old gate was "the range starts before the live
+ *  tab's oldest row", which one late back-filled row for an old date defeats:
+ *  the live tab then LOOKS like it reaches back, the archive is skipped, and
+ *  every other row of that period reads as missing. The tab's own newest date
+ *  is read from ONE column and cached (`TS_ARCHIVE_REACH_CACHE_KEY`, 6 h —
+ *  a data value, never a code-derived one, g157); `archiveOldTimesheetRows`
+ *  clears it after a move. The window's date is unioned in so a move whose
+ *  clear failed is still covered, and so a lowered window is too. '' = there
+ *  is nothing to read. Throws if the archive column cannot be read — the
+ *  caller decides what a failed archive read means. */
+function timesheetArchiveReach_(ss) {
+  const days = getTimesheetArchiveDays_();
+  const windowReach = days > 0 ? fmtDate_(new Date(Date.now() - days * 86400000)) : '';
+  let tabReach = null;
+  let cache = null;
+  try { cache = CacheService.getScriptCache(); const hit = cache.get(TS_ARCHIVE_REACH_CACHE_KEY); if (hit !== null) tabReach = (hit === '-' ? '' : hit); } catch (e) { cache = null; }
+  if (tabReach === null) {
+    tabReach = '';
+    const sh = (ss || getAdpSS_()).getSheetByName(TIMESHEET_ARCHIVE_TAB);   // read-only, never create (INV-133)
+    if (sh && sh.getLastRow() > 2) {
+      const col = sh.getRange(3, ADP.DATE + 1, sh.getLastRow() - 2, 1).getValues();
+      for (let i = 0; i < col.length; i++) { const d = normalizeDate_(col[i][0]); if (d && d > tabReach) tabReach = d; }
+    }
+    try { if (cache) cache.put(TS_ARCHIVE_REACH_CACHE_KEY, tabReach || '-', 21600); } catch (e) {}
+  }
+  return tabReach > windowReach ? tabReach : windowReach;
+}
+/** TC2-9 (cycle 23 Batch 14) — THE Timesheet range reader: every row dated in
+ *  [startIso, endIso] from the live tab, plus TimesheetArchive whenever the
+ *  range reaches what the archive can hold (`timesheetArchiveReach_`). The
+ *  payroll export and the accrual index read through the archive since
+ *  cycle 12 F1, each with its own copy of the walk; the pay statement, both
+ *  calendars and Punctuality read the live tab only, so once archiving was on
+ *  an old period showed short hours, empty days and "no punch" grades with,
+ *  at best, a note. One reader now serves all of them.
+ *
+ *  A row present in BOTH tabs (a mid-run archive move appends before it
+ *  deletes — INV-132 "can duplicate, never lose") is returned ONCE: an archive
+ *  row identical to a live row (id, date, time, COMMENTS) is skipped. Live
+ *  rows come first, in append order (g14), then archive rows.
+ *
+ *  `opts.keep(row)` filters as it walks (one rep's rows, say), so a caller
+ *  never holds the whole archive. `opts.strict`: a failed archive read THROWS
+ *  (the export and the accrual — a short read under-pays or under-credits);
+ *  otherwise it is returned as `archiveError` beside the live rows, for a
+ *  display that says so (INV-187). Never provisions a tab.
+ *  Returns { rows, liveRows (the live tab's row count, headers included),
+ *  archivedRows, archiveRead, archiveError }. */
+function timesheetRowsInRange_(startIso, endIso, opts) {
+  opts = opts || {};
+  const keep = typeof opts.keep === 'function' ? opts.keep : null;
+  const ss = getAdpSS_();
+  // `opts.liveValues`: the live tab's values a caller already read (the export
+  // needs its header rows) — never a second full read of the payroll tab.
+  const live = Array.isArray(opts.liveValues) ? opts.liveValues : ss.getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
+  const keyOf = (r) => String(r[ADP.EMP_ID]).trim() + '|' + normalizeDate_(r[ADP.DATE]) + '|' +
+    normalizeTime_(r[ADP.TIME]) + '|' + String(r[ADP.COMMENTS]);
+  const out = [], liveKeys = new Set();
+  for (let i = 2; i < live.length; i++) {
+    const d = normalizeDate_(live[i][ADP.DATE]);
+    if (!d || d < startIso || d > endIso) continue;
+    if (keep && !keep(live[i])) continue;
+    liveKeys.add(keyOf(live[i]));
+    out.push(live[i]);
+  }
+  const res = { rows: out, liveRows: live.length, archivedRows: 0, archiveRead: false, archiveError: '' };
+  try {
+    const reach = timesheetArchiveReach_(ss);
+    if (!reach || startIso > reach) return res;
+    const arch = ss.getSheetByName(TIMESHEET_ARCHIVE_TAB);
+    if (!arch || arch.getLastRow() <= 2) return res;
+    const a = arch.getDataRange().getValues();
+    res.archiveRead = true;
+    for (let k = 2; k < a.length; k++) {
+      const d = normalizeDate_(a[k][ADP.DATE]);
+      if (!d || d < startIso || d > endIso) continue;
+      if (keep && !keep(a[k])) continue;
+      if (liveKeys.has(keyOf(a[k]))) continue;   // the INV-132 duplicate
+      out.push(a[k]);
+      res.archivedRows++;
+    }
+  } catch (e) {
+    if (opts.strict) throw e;
+    res.archiveError = String((e && e.message) || e);
+    res.archiveRead = false;
+  }
+  return res;
+}
+
 /** ONE Timesheet read for a whole date range → {empId: {hours, incompleteDays}}.
  *  Built for the accrual credit, which runs inside the global ScriptLock and
  *  needs every accruing rep's worked hours: calling buildTimesheetForEmployee_
@@ -99,9 +191,10 @@ const TIMESHEET_DAY_ORPHAN = 'orphan';
  *  SAME arithmetic payroll and the pay statement use.
  *
  *  ARCHIVE READ-THROUGH (the INV-153/F1 precedent): a catch-up range can reach
- *  months the cold-archive has already moved out of the live tab. When the
- *  range predates the live tab this reads TimesheetArchive too, skipping rows
- *  that exist in both (INV-132 can duplicate, never lose). A FAILED archive
+ *  months the cold-archive has already moved out of the live tab. Through
+ *  `timesheetRowsInRange_` (TC2-9) it reads TimesheetArchive when the range
+ *  reaches it, skipping rows that exist in both (INV-132 can duplicate, never
+ *  lose). A FAILED archive
  *  read THROWS rather than returning short hours — crediting from a partial
  *  read would under-credit real earned PTO, and the export refuses the same
  *  way rather than emitting a short payroll file.
@@ -109,43 +202,20 @@ const TIMESHEET_DAY_ORPHAN = 'orphan';
  *  A day whose times are unparseable is counted as INCOMPLETE, never as 0
  *  hours (INV-176) — the caller reports it rather than silently under-crediting. */
 function workedHoursByEmpForRange_(startIso, endIso) {
-  const sheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
-  const rows = sheet.getDataRange().getValues();
   const perDay = {};            // empId -> dateIso -> {ClockIn, ClockOut, LunchOut, LunchIn}
-  const liveKeys = new Set();
-  let oldestLiveDate = null;
-  const put = (id, date, type, time, keyRow) => {
-    if (!id || !date || date < startIso || date > endIso) return;
+  // TC2-9 (cycle 23 Batch 14): THE range reader — the archive gate keys on how
+  // far the archive reaches, not the live tab's oldest row; strict, so a
+  // failed archive read throws rather than under-crediting.
+  const read = timesheetRowsInRange_(startIso, endIso, { strict: true });
+  read.rows.forEach((r) => {
+    const id = String(r[ADP.EMP_ID]).trim();
+    const date = normalizeDate_(r[ADP.DATE]);
+    if (!id || !date) return;
     if (!perDay[id]) perDay[id] = {};
     if (!perDay[id][date]) perDay[id][date] = {};
-    punchDayAdd_(perDay[id][date], type, time);
-    if (keyRow) liveKeys.add(keyRow);
-  };
-  for (let i = 2; i < rows.length; i++) {
-    const id = String(rows[i][ADP.EMP_ID]).trim();
-    const date = normalizeDate_(rows[i][ADP.DATE]);
-    if (date && (oldestLiveDate === null || date < oldestLiveDate)) oldestLiveDate = date;
-    if (!id || !date) continue;
-    const key = id + '|' + date + '|' + normalizeTime_(rows[i][ADP.TIME]) + '|' + String(rows[i][ADP.COMMENTS]);
-    put(id, date, normalizeType_(String(rows[i][ADP.COMMENTS])), normalizeTime_(rows[i][ADP.TIME]), key);
-  }
-  let archivedRows = 0;
-  if (oldestLiveDate === null || startIso < oldestLiveDate) {
-    const archive = getAdpSS_().getSheetByName(TIMESHEET_ARCHIVE_TAB);   // read-only, never create (INV-133)
-    if (archive && archive.getLastRow() > 2) {
-      const aRows = archive.getDataRange().getValues();
-      for (let a = 2; a < aRows.length; a++) {
-        const id = String(aRows[a][ADP.EMP_ID]).trim();
-        const date = normalizeDate_(aRows[a][ADP.DATE]);
-        if (!id || !date) continue;
-        const time = normalizeTime_(aRows[a][ADP.TIME]);
-        const key = id + '|' + date + '|' + time + '|' + String(aRows[a][ADP.COMMENTS]);
-        if (liveKeys.has(key)) continue;                    // mid-run archive duplicate
-        put(id, date, normalizeType_(String(aRows[a][ADP.COMMENTS])), time, null);
-        archivedRows++;
-      }
-    }
-  }
+    punchDayAdd_(perDay[id][date], normalizeType_(String(r[ADP.COMMENTS])), normalizeTime_(r[ADP.TIME]));
+  });
+  const archivedRows = read.archivedRows;
   const byEmp = {}, perDayByEmp = {};
   Object.keys(perDay).forEach((id) => {
     let hours = 0, incomplete = 0, orphan = 0, daysWorked = 0;
@@ -1592,12 +1662,12 @@ function getMyPayStatement(offset, repEmpId) {
     pto.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
 
     const rate = empPayRateById_(target.id);
-    // INV-153 honesty: buildTimesheetForEmployee_ reads the LIVE tab only, so
-    // with archiving enabled an old period may be partially archived — say so
-    // rather than presenting a short statement as complete (INV-187).
-    const archiveDays = getTimesheetArchiveDays_();
-    const archiveNote = !!(archiveDays > 0 &&
-      daysBetween_(range.start, todayStr) > archiveDays);
+    // TC2-9 (cycle 23 Batch 14): the builder reads THROUGH the archive now, so
+    // the note means what it says — the archive was needed and could not be
+    // read, and the statement may be short (INV-187). It used to be a guess
+    // from the window ("old enough to be archived"), shown whether or not
+    // anything was missing.
+    const archiveNote = !!ts.archiveError;
     return {
       period: { start: ts.startDate, end: ts.endDate, cycle: cycle, offset: range.offset },
       days: ts.days, totalHours: ts.totalHours, daysWorked: ts.daysWorked,
@@ -2208,8 +2278,8 @@ function getManagerDashboard() {
  *  calcHours_ null → INCOMPLETE, never 0; a ClockIn with no ClockOut is
  *  in-progress on the rep's own today, incomplete on a past day) so this
  *  table can never disagree with the pay statement over the same rows.
- *  Live-tab-only by design (the calendar/Punctuality posture) — a month
- *  predating the live tab's oldest row carries archiveNote (INV-187). */
+ *  Reads THROUGH the cold archive (TC2-9, cycle 23 Batch 14); archiveNote
+ *  says the archive was needed and could not be read (INV-187). */
 /* Operator 2026-09-03: the manager trends counted CALENDAR days, so the Punch
  * Activity chart and every live-status sparkline carried two guaranteed-zero
  * bars a week (no rep works Sat/Sun — operator-confirmed 2026-08-21; the
@@ -2255,24 +2325,23 @@ function getTeamCalendar(monthIso) {
     // ONE Timesheet read; rows are APPEND order, so per-(rep,date) the last
     // row per type wins (deliberately NOT time-sorted first — the Day Edit /
     // managerSaveDay last-row-wins snapshot is what a pencil click will edit).
-    const adpRows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
+    // TC2-9 (cycle 23 Batch 14): through THE range reader — an archived month
+    // lists its punches (live rows first, so last-row-wins still reads the
+    // live snapshot a pencil edits; an archived day is past the edit window).
+    const monthEnd = monthIso + '-' + String(new Date(Date.UTC(+monthIso.substring(0, 4), +monthIso.substring(5, 7), 0)).getUTCDate()).padStart(2, '0');
+    const read = timesheetRowsInRange_(monthIso + '-01', monthEnd, { keep: (r) => !!reps[String(r[ADP.EMP_ID] || '').trim()] });
     const byDay = {};                   // dateIso -> id -> [{time, type, isAdjustment}]
-    let oldestLiveIso = null;
-    for (let i = 2; i < adpRows.length; i++) {
-      const dateIso = normalizeDate_(adpRows[i][ADP.DATE]);
-      if (!dateIso) continue;
-      if (oldestLiveIso === null || dateIso < oldestLiveIso) oldestLiveIso = dateIso;
-      if (dateIso.substring(0, 7) !== monthIso) continue;
-      const id = String(adpRows[i][ADP.EMP_ID] || '').trim();
-      if (!reps[id]) continue;
-      const rawType = String(adpRows[i][ADP.COMMENTS] || '');
+    read.rows.forEach((r) => {
+      const dateIso = normalizeDate_(r[ADP.DATE]);
+      const id = String(r[ADP.EMP_ID] || '').trim();
+      const rawType = String(r[ADP.COMMENTS] || '');
       const type = normalizeType_(rawType);
-      if (PUNCH_LABELS_.indexOf(type) === -1) continue;   // garbage row ≠ a punch (the getNextActions_ lesson)
+      if (PUNCH_LABELS_.indexOf(type) === -1) return;   // garbage row ≠ a punch (the getNextActions_ lesson)
       if (!byDay[dateIso]) byDay[dateIso] = {};
       if (!byDay[dateIso][id]) byDay[dateIso][id] = [];
-      byDay[dateIso][id].push({ time: normalizeTime_(adpRows[i][ADP.TIME]), type,
+      byDay[dateIso][id].push({ time: normalizeTime_(r[ADP.TIME]), type,
         isAdjustment: rawType.indexOf('ADJ-') === 0 });
-    }
+    });
 
     const days = {};                    // dateIso -> { reps: [...], off: [...] }
     Object.keys(byDay).forEach(dateIso => {
@@ -2344,10 +2413,9 @@ function getTeamCalendar(monthIso) {
       month: monthIso, days, holidays,
       rosterCount: Object.keys(reps).length,
       adjustWindowDays: CONFIG.ADJUST_WINDOW_DAYS,
-      // Live-tab-only read: a month wholly older than the live tab may have
-      // been moved to TimesheetArchive — say so instead of rendering a
-      // confident empty month (INV-187; the pay-statement archiveNote shape).
-      archiveNote: !!(oldestLiveIso && monthIso < oldestLiveIso.substring(0, 7)),
+      // TC2-9: the archive is read now — the note means it was needed and
+      // could not be read, so the month may be short (INV-187).
+      archiveNote: !!read.archiveError,
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -4860,6 +4928,9 @@ function archiveOldTimesheetRows() {
     } finally {
       lock.releaseLock();
     }
+    // TC2-9: the readers' archive gate caches the archive's newest date — a
+    // move changes it. Best-effort: the gate also unions the window's own date.
+    if (moved > 0) { try { CacheService.getScriptCache().remove(TS_ARCHIVE_REACH_CACHE_KEY); } catch (e) {} }
     // Written on every ENABLED run (the CN archive convention) — a zero-moved
     // row is the Automation Health "last seen" heartbeat proving the job ran.
     // F3: flag a run that hit the per-run bound, so a draining backlog is
@@ -5261,76 +5332,40 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
 
   const matched = [];
   const seenIds = new Set();
-  // Cycle-12 F1: the live-tab key set, used to drop an archive row that is
-  // byte-identical to a live one (see the archive read-through below).
-  const liveKeys = new Set();
-  let oldestLiveDate = null;
-  const rowKey = function (r) {
-    return String(r[ADP.EMP_ID]).trim() + '|' + normalizeDate_(r[ADP.DATE]) + '|' +
-      normalizeTime_(r[ADP.TIME]) + '|' + normalizeType_(String(r[ADP.COMMENTS]));
-  };
-  for (let i = 2; i < rows.length; i++) {
-    const rowDate = normalizeDate_(rows[i][ADP.DATE]);
-    // Track the live tab's coverage floor BEFORE the range filter — it decides
-    // whether the cold archive has to be consulted at all (F1).
-    if (rowDate && (oldestLiveDate === null || rowDate < oldestLiveDate)) oldestLiveDate = rowDate;
-    if (rowDate < startDate || rowDate > endDate) continue;
-    const rowId = String(rows[i][ADP.EMP_ID]).trim();
-    if (allowedIds && !allowedIds.has(rowId)) continue;
+  // TC2-9 (cycle 23 Batch 14): THE range reader (cycle-12 F1's read-through,
+  // shared). TIMESHEET_ARCHIVE_DAYS (INV-153) MOVES old payroll rows to the
+  // TimesheetArchive tab; before F1 a retroactive export (a payroll dispute, a
+  // corrected period) silently produced a PARTIAL .xlsx with {success:true}.
+  // The reader consults the archive whenever the window reaches what the
+  // archive can hold — keyed on the archive's own reach, since one late
+  // back-filled live row for an old date used to make the live tab look
+  // complete — skips an archive row identical to a live one (INV-132: a
+  // mid-run move can duplicate, and exporting it twice would overstate
+  // payroll), and never provisions a tab (INV-133). The common case (current
+  // period, inside the ≥120-day floor) never touches the archive.
+  let read;
+  try {
+    read = timesheetRowsInRange_(startDate, endDate, { strict: true, liveValues: rows,
+      keep: (r) => !allowedIds || allowedIds.has(String(r[ADP.EMP_ID]).trim()) });
+  } catch (archErr) {
+    // REFUSE rather than return a short file. Producing a partial payroll
+    // export behind {success:true} is the exact F1 failure mode, so a broken
+    // archive read must be loud even though it costs the manager a retry.
+    console.warn('generateExportSheet_: archive read failed: ' + archErr.message);
+    return { error: 'The Timesheet cold archive could not be read (' + archErr.message +
+      '), and this date range reaches into it — the export would be incomplete. ' +
+      'Re-try, or narrow the range to recent dates.' };
+  }
+  const liveCount = read.rows.length - read.archivedRows;   // live rows first, then archive rows
+  read.rows.forEach((r, n) => {
+    const rowId = String(r[ADP.EMP_ID]).trim();
+    if (!rowId && n >= liveCount) return;   // an archive row with no id was skipped before the move too
     seenIds.add(rowId);
-    liveKeys.add(rowKey(rows[i]));
-    const cleaned = rows[i].slice(0, 9);
+    const cleaned = r.slice(0, 9);
     cleaned[ADP.COMMENTS] = '';
     matched.push(cleaned);
-  }
-
-  // ── Cold-archive read-through (cycle-12 F1) ───────────────────────────────
-  // TIMESHEET_ARCHIVE_DAYS (INV-153) MOVES old payroll rows to a
-  // TimesheetArchive tab. That tab had NO reader anywhere, so once archiving
-  // was enabled a retroactive export (a payroll dispute, a corrected period)
-  // silently produced a PARTIAL .xlsx with {success:true} and an audit row
-  // that reported the truncated count as authoritative. Read the archive
-  // whenever the requested window reaches past the live tab's oldest row.
-  // Bounded by design: the common case (current period, inside the ≥120-day
-  // floor) never touches the archive, so it stays byte-identical to before.
-  // Read-only w.r.t. tab existence (getSheetByName, never create — the
-  // INV-133 discipline).
-  let archivedRowCount = 0;
-  if (oldestLiveDate === null || startDate < oldestLiveDate) {
-    try {
-      const archiveSheet = getAdpSS_().getSheetByName(TIMESHEET_ARCHIVE_TAB);
-      if (archiveSheet && archiveSheet.getLastRow() > 2) {
-        const aRows = archiveSheet.getDataRange().getValues();
-        for (let a = 2; a < aRows.length; a++) {
-          const aDate = normalizeDate_(aRows[a][ADP.DATE]);
-          if (!aDate || aDate < startDate || aDate > endDate) continue;
-          const aId = String(aRows[a][ADP.EMP_ID]).trim();
-          if (!aId) continue;
-          if (allowedIds && !allowedIds.has(aId)) continue;
-          // A mid-run archive failure appends before it deletes, so the SAME
-          // row can exist in both tabs (INV-132 "can only duplicate, never
-          // lose"). Exporting it twice would overstate payroll, so skip an
-          // exact live match. Genuine duplicate punch rows inside ONE tab are
-          // untouched — the sheet doctor (INV-159) is that fix.
-          if (liveKeys.has(rowKey(aRows[a]))) continue;
-          seenIds.add(aId);
-          const aCleaned = aRows[a].slice(0, 9);
-          aCleaned[ADP.COMMENTS] = '';
-          matched.push(aCleaned);
-          archivedRowCount++;
-        }
-      }
-    } catch (archErr) {
-      // REFUSE rather than return a short file. Producing a partial payroll
-      // export behind {success:true} is the exact F1 failure mode being fixed,
-      // so a broken archive read must be loud even though it costs the manager
-      // a retry. Ranges that do NOT reach the archive never get here.
-      console.warn('generateExportSheet_: archive read failed: ' + archErr.message);
-      return { error: 'The Timesheet cold archive could not be read (' + archErr.message +
-        '), and this date range reaches into it — the export would be incomplete. ' +
-        'Re-try, or narrow the range to ' + (oldestLiveDate || startDate) + ' or later.' };
-    }
-  }
+  });
+  const archivedRowCount = read.archivedRows;
 
   if (matched.length === 0) {
     return { error: `No punches found between ${startDate} and ${endDate}` +
@@ -5404,18 +5439,20 @@ function buildTimesheetForEmployee_(emp, startDate, endDate) {
   if (daysBetween_(startDate, endDate) > 370) return { error: 'Range too large (max ~1 year).' };
   const empTz = empTz_(emp);
   const todayStr = fmtDateTz_(new Date(), empTz);
-  const rows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
+  // TC2-9 (cycle 23 Batch 14): through THE range reader, so a period the cold
+  // archive has moved reads whole (the pay statement, the timesheet view and
+  // the manager's view of a rep). A failed archive read keeps the live rows and
+  // is SAID (`archiveError`) — never a short period presented as complete.
+  const read = timesheetRowsInRange_(startDate, endDate, { keep: (r) => String(r[ADP.EMP_ID]).trim() === emp.id });
   const byDate = {};
-  for (let i = 2; i < rows.length; i++) {
-    const rowId   = String(rows[i][ADP.EMP_ID]).trim();
-    const rowDate = normalizeDate_(rows[i][ADP.DATE]);
-    if (rowId !== emp.id || rowDate < startDate || rowDate > endDate) continue;
-    const rawType = String(rows[i][ADP.COMMENTS]);
+  read.rows.forEach((r) => {
+    const rowDate = normalizeDate_(r[ADP.DATE]);
+    const rawType = String(r[ADP.COMMENTS]);
     const type    = normalizeType_(rawType);
     if (!byDate[rowDate]) byDate[rowDate] = [];
-    byDate[rowDate].push({ time: normalizeTime_(rows[i][ADP.TIME]), type,
+    byDate[rowDate].push({ time: normalizeTime_(r[ADP.TIME]), type,
       isAdjustment: rawType.indexOf('ADJ-') === 0 });
-  }
+  });
 
   let totalHours = 0, daysWorked = 0, incompleteCount = 0;
   const days = [];
@@ -5467,7 +5504,8 @@ function buildTimesheetForEmployee_(emp, startDate, endDate) {
     cur.setUTCDate(cur.getUTCDate() + 1);
   }
   return { startDate, endDate, days, totalHours, daysWorked, incompleteCount,
-    payCycle: emp.payCycle, payAnchor: emp.payAnchor, timezone: empTz };
+    payCycle: emp.payCycle, payAnchor: emp.payAnchor, timezone: empTz,
+    archivedRows: read.archivedRows, archiveError: read.archiveError };   // TC2-9 — additive
 }
 function buildCalendarForEmployee_(emp, year, month) {
   const empTz = empTz_(emp);
@@ -5476,20 +5514,20 @@ function buildCalendarForEmployee_(emp, year, month) {
   const lastDay   = new Date(year, month, 0).getDate();
   const startDate = `${year}-${monthStr}-01`;
   const endDate   = `${year}-${monthStr}-${String(lastDay).padStart(2,'0')}`;
-  const rows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
+  // TC2-9 (cycle 23 Batch 14): through THE range reader — an archived month
+  // shows its worked days and hours; a failed archive read is SAID.
+  const read = timesheetRowsInRange_(startDate, endDate, { keep: (r) => String(r[ADP.EMP_ID]).trim() === emp.id });
   const workedDates = new Set();
   // Group punches per date so we can compute hours per day
   const punchesByDate = {};
-  for (let i = 2; i < rows.length; i++) {
-    const rowId   = String(rows[i][ADP.EMP_ID]).trim();
-    const rowDate = normalizeDate_(rows[i][ADP.DATE]);
-    if (rowId !== emp.id || rowDate < startDate || rowDate > endDate) continue;
-    const type = normalizeType_(String(rows[i][ADP.COMMENTS]));
-    const time = normalizeTime_(rows[i][ADP.TIME]);
+  read.rows.forEach((r) => {
+    const rowDate = normalizeDate_(r[ADP.DATE]);
+    const type = normalizeType_(String(r[ADP.COMMENTS]));
+    const time = normalizeTime_(r[ADP.TIME]);
     if (!punchesByDate[rowDate]) punchesByDate[rowDate] = {};
     punchDayAdd_(punchesByDate[rowDate], type, time);
     if (type === 'ClockIn') workedDates.add(rowDate);
-  }
+  });
   // Compute hours per worked date (when both ClockIn and ClockOut are present)
   const hoursByDate = {};
   Object.keys(punchesByDate).forEach(dateStr => {
@@ -5564,6 +5602,7 @@ function buildCalendarForEmployee_(emp, year, month) {
     year, month, monthName: `${MONTH_NAMES[month-1]} ${year}`,
     lastDay, firstDayOfWeek: new Date(year, month - 1, 1).getDay(),
     workedDates: [...workedDates], workedHoursByDate: hoursByDate,
+    archiveError: read.archiveError,   // TC2-9 — additive; '' when the archive read (or was not needed)
     timeOffRequests, teammates, holidays, allRequests,
     today: todayStr, timezone: empTz,
     ptoEnabled: !!(getFlag_('enablePtoTracking') && emp.ptoEnabled),
@@ -6412,8 +6451,11 @@ function getPunctualityReport(fromDate, toDate) {
       ptoUnavailable = true;
       console.warn('getPunctualityReport: PTO overlay unavailable — ' + e.message);
     }
-    const rows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
-    for (let i = 2; i < rows.length; i++) {
+    // TC2-9 (cycle 23 Batch 14): BOTH windows through THE range reader — a
+    // previous window the archive holds no longer grades every day "no punch".
+    const read = timesheetRowsInRange_(prevFrom, toDate, { keep: (row) => !!repMap[String(row[ADP.EMP_ID]).trim()] });
+    const rows = read.rows;
+    for (let i = 0; i < rows.length; i++) {
       const id = String(rows[i][ADP.EMP_ID]).trim();
       const r = repMap[id]; if (!r) continue;
       const d = normalizeDate_(rows[i][ADP.DATE]);
@@ -6544,7 +6586,8 @@ function getPunctualityReport(fromDate, toDate) {
     });
     reps.sort(function (a, b) { return a.onTimePct - b.onTimePct || b.late - a.late; });   // least punctual first
     return { from: fromDate, to: toDate, grace: grace, reps: reps,
-             prevFrom: prevFrom, prevTo: prevTo, ptoUnavailable: ptoUnavailable };
+             prevFrom: prevFrom, prevTo: prevTo, ptoUnavailable: ptoUnavailable,
+             archiveUnavailable: !!read.archiveError };   // TC2-9 — the archive was needed and could not be read
   } catch (err) { return { error: err.message }; }
 }
 /** The caller's resolved department memberships (canonical names), validated
