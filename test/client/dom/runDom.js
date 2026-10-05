@@ -6309,6 +6309,25 @@ test('SH-02: the close buttons go through closeOverlay — focus returns to the 
   check('employee document', () => { h.read('edOpenDoc_')('d2'); h.run.flushSuccess(doc, 'getMyDoc'); }, () => h.$('#ed-reader-overlay .foot .kb-btn'));
 });
 
+test('Seams F4 (cycle 24): the Search synonyms and Revision history × close through closeOverlay — focus returns to the opener (INV-358)', () => {
+  const h = boot();
+  b9TourSeen(h);
+  h.bootShell({ isManager: true, isAdmin: true });
+  h.run.drain();
+  const opener = h.document.createElement('button'); h.document.body.appendChild(opener);
+  [['Search synonyms', () => h.read('kbOpenSynonyms_')(), '#kb-syn-overlay', '[data-kb-synclose]'],
+   ['Revision history', () => h.read('kbOpenRevisions_')('kb1'), '#kb-rev-overlay', '[data-kb-revclose]']].forEach(([label, open, ov, x]) => {
+    opener.focus();
+    open();
+    h.flushTimers();
+    assert.ok(h.$(ov), label + ' opened');
+    h.$(ov + ' ' + x).click();   // a delegated handler — no onclick attribute to read
+    h.flushTimers();
+    assert.ok(!h.$(ov), label + ': the dialog closed');
+    assert.strictEqual(h.document.activeElement, opener, label + ': THE REGRESSION — × removed the node by hand and focus fell to <body>');
+  });
+});
+
 test('SH-03: Tab cannot leave the keyboard-shortcuts dialog for the page behind it', () => {
   const h = bootLog();
   h.window.cnOpenShortcutsOverlay_();

@@ -33259,6 +33259,15 @@ test('SH-02 (cycle 23): no button calls a registered close hook directly — eve
       if (new RegExp("closest\\([^)]*\\)\\)\\s*\\{?\\s*" + h.replace(/\$/g, '\\$') + '\\(\\)').test(src)) bad.push(f + ': a delegated click calls ' + h + '()');
     });
   });
+  // Seams F4 (cycle 24): an INLINE hook has no name to match, so its × could
+  // repeat the hook's body — `ov.remove()` — and skip closeOverlay unseen
+  // (the Search synonyms and Revision history dialogs did). Any delegated
+  // close click that removes or un-opens a node by hand is the same bypass.
+  const handClose = /closest\('\[data-[\w-]*close[\w-]*\]'\)\)\s*\{?\s*(?:[\w$.]+\.remove\(\)|[\w$.]+\.classList\.remove\('open'\))/g;
+  files.forEach((f) => {
+    const src = stripJsComments_(read(f));
+    let m; while ((m = handClose.exec(src))) bad.push(f + ': a close click removes the overlay by hand — ' + m[0]);
+  });
   assert.deepStrictEqual(bad, [], 'a direct hook call skips closeOverlay — no focus restore (g100), and no UI-ESC question');
 });
 
