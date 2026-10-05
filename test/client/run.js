@@ -34343,6 +34343,46 @@ test('TC2-9 (cycle 23 Batch 14): Punctuality grades a previous window the archiv
   assert.strictEqual(rep.archiveUnavailable, true, 'a failed archive read is shipped, so the page can say so');
 });
 
+// ---------------------------------------------------------------------------
+// Cycle 23 Batch 15 — the editor-suite cases for Batches 10–14. The SMOKE ones
+// are pure, so they are RUN here against the real server functions: an
+// editor test that cannot pass is caught before the operator's first run.
+console.log('\ncycle 23 Batch 15 — editor-suite cases for Batches 10–14');
+
+test('Batch 15 (cycle 23): the nine new smoke cases are registered in the smoke shard and PASS against the real server functions (run in a vm with the real Tests.js assertions)', () => {
+  const testsSrc = fs.readFileSync(path.join(PA_WEB, 'Tests.js'), 'utf8');
+  const names = ['c23_intakeNeuroDxByToken', 'c23_intakeSeatKindsNegation', 'c23_intakeWeightUnitsAndBounds', 'c23_orgEmailAndExternalIntakeConfirm',
+    'c23_kbAiFacetCountsCarryNoValue', 'c23_dashboardAlignToData', 'c23_trainQuizLockout', 'c23_kbImageItemContentKey', 'c23_spanishEpisodesAndCourtesy'];
+  const smoke = extractRawFunction('Tests.js', '_registerSmokeTests_');
+  names.forEach((n) => assert.ok(new RegExp("_smokeTest\\('" + n + "',\\s+test_" + n + '\\);').test(smoke), n + ' is registered in the SMOKE shard (pure — it runs on prod too)'));
+  const intB = extractRawFunction('Tests.js', '_registerIntegrationB_');
+  ['c23_timesheetRangeReader', 'c23_kbImagesStoreAndRead'].forEach((n) => assert.ok(new RegExp("_integrationTest\\('" + n + "',\\s+test_" + n + '\\);').test(intB), n + ' is an Integration B case'));
+  assert.ok(/return _withTestKb_\(function \(\) \{/.test(extractRawFunction('Tests.js', 'test_c23_kbImagesStoreAndRead')), 'the image store case writes only to the KB FIXTURE (the tab is append-only)');
+  assert.ok(/finally \{\s*_clearTestState\(_TEST_INDIA_ID\);/.test(extractRawFunction('Tests.js', 'test_c23_timesheetRangeReader')), 'the reader case clears its TEST rows in finally');
+  // Run the smoke cases.
+  const crypto = require('crypto');
+  const ctx = vm.createContext({ String, Number, Math, Object, Array, JSON, Date, isFinite, parseFloat, parseInt, RegExp, Error, Set,
+    _assertSuiteCaller_: () => {},
+    CONFIG: { ORG_EMAIL_DOMAINS: JSON.parse(/ORG_EMAIL_DOMAINS: (\[[^\]]*\])/.exec(codeSrc)[1].replace(/'/g, '"')) },
+    Utilities: { DigestAlgorithm: { SHA_256: 's' }, Charset: { UTF_8: 'u' },
+      computeDigest: (a, str) => Array.from(crypto.createHash('sha256').update(String(str), 'utf8').digest()).map((b) => (b > 127 ? b - 256 : b)) } });
+  ['INTAKE_WEIGHT_MIN_LBS', 'INTAKE_WEIGHT_MAX_LBS', 'KB_IMG_UPLOAD_TYPES', 'KB_IMAGE_KEY_RE', 'KB_IMAGE_MAX_BYTES', 'TRAIN_QUIZ_MAX_ATTEMPTS', 'TRAIN_QUIZ_LOCK_HOURS'].forEach((k) => {
+    const m = codeSrc.match(new RegExp('^const ' + k + ' = ([^\\n]+?);(?:\\s*//[^\\n]*)?$', 'm'));
+    assert.ok(m, k + ' declared');
+    vm.runInContext('var ' + k + ' = ' + m[1] + ';', ctx);
+  });
+  vm.runInContext(b13CourtesySrc_(), ctx);
+  ['intakeNeuroEntryIsDx_', 'intakeNeuroDxEntries_', 'intakeSeatKinds_', 'intakeParseWeight_', 'isOrgEmail_', 'intakeExternalRecipientCheck_', 'intakeEmailDomain_',
+   'kbAiFacetCounts_', 'dashboardImportPending_', 'dashboardAlignToData_', 'trainQuizLockout_', 'kbImageItem_', 'kbSha256Hex_', 'spanishEpisodes_', 'spanishClaimLive_']
+    .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  ['_describe_', '_assertEq', '_assertTrue', '_assertFalse', '_assertNull', '_assertNotNull', '_assertContains'].forEach((f) => vm.runInContext(extractRawFunction('Tests.js', f), ctx));
+  names.forEach((n) => {
+    vm.runInContext(extractRawFunction('Tests.js', 'test_' + n), ctx);
+    try { ctx['test_' + n](); } catch (e) { assert.fail('editor case ' + n + ' FAILS against the real code: ' + e.message); }
+  });
+  assert.ok(testsSrc.indexOf('test_c23_') > 0);
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
