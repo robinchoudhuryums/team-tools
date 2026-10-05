@@ -33682,8 +33682,22 @@ test('Batch 11 TRN-1 (cycle 23): submitQuizAttempt refuses a fourth attempt insi
 test('Batch 11 TRN-1 (cycle 23): getQuiz carries the limit (built beside the stripped shape), the dashboard lists who is waiting, and the manager card resets through the endpoint (source + driven client)', () => {
   const gq = stripJsComments_(extractRawFunction('Code.js', 'getQuiz'));
   assert.ok(/out\.lockout = trainQuizLockState_\(trainReadAttempts_\(emp\.id\), quizId, emp\.id, eff\['quiz:' \+ quizId\]\.assignedAt,\s*trainReadQuizResets_\(emp\.id\), Date\.now\(\), empTz_\(emp\)\)/.test(gq));
-  const dash = stripJsComments_(extractRawFunction('Code.js', 'getTrainingDashboard'));
-  assert.ok(/if \(status !== 'done'\) \{\s*const lk = trainQuizLockState_\(/.test(dash) && /locked: locked, maxAttempts: TRAIN_QUIZ_MAX_ATTEMPTS, lockHours: TRAIN_QUIZ_LOCK_HOURS/.test(dash));
+  // The dashboard, driven: a rep three fails into the wait is listed for the manager; a rep with one fail, or who passed, is not.
+  const H = 3600000, NOW = new Date().getTime();
+  const fail = (emp, ms) => ({ quizId: 'q1', empId: emp, submittedAt: b11Stamp_(ms), scorePct: 0, passed: false });
+  const dctx = b10Ctx_(['trainEffectiveForEmp_', 'trainDeriveStatus_', 'trainAttemptStats_', 'trainQuizLockout_', 'coachParseTs_', 'trainQuizAttemptList_', 'trainQuizLockState_', 'getTrainingDashboard'], {
+    CONFIG: { TIMEZONE: 'UTC' }, TRAIN_QUIZ_MAX_ATTEMPTS: 3, TRAIN_QUIZ_LOCK_HOURS: 24, KB_STATUS_DRAFT: 'draft', EMP: { ID: 0, NAME: 1 },
+    Utilities: { formatDate: (d) => 'WHEN ' + d.toISOString() },
+    getEmployeeInfo_: () => ({ id: 'M-1', isManager: true }), empTz_: () => 'UTC', trainTodayIso_: () => '2026-10-05',
+    trainReadAssignments_: () => [{ assignId: 'a1', itemType: 'quiz', itemId: 'q1', empId: '*', assignedAt: '2000-01-01 00:00:00', dueDate: '' }],
+    trainReadCompletions_: () => [], trainKbTitles_: () => ({}), trainReadQuizzes_: () => ({ q1: { title: 'Safety' } }),
+    trainReadAttempts_: () => [fail('E-1', NOW - 3 * H), fail('E-1', NOW - 2 * H), fail('E-1', NOW - H), fail('E-2', NOW - H)],
+    trainReadQuizResets_: () => ({}),
+    getEmployeeRosterRows_: () => [['h'], ['E-1', 'Ana'], ['E-2', 'Ben']], empRosterEmail_: () => 'x@y',
+  });
+  const d = b10J(dctx.getTrainingDashboard());
+  assert.deepStrictEqual(d.locked.map((l) => [l.empId, l.quizId, l.title]), [['E-1', 'q1', 'Safety']], 'only the rep in the wait is listed');
+  assert.ok(/^WHEN /.test(d.locked[0].retryLabel) && d.maxAttempts === 3 && d.lockHours === 24);
   const sub = stripJsComments_(extractRawFunction('Code.js', 'submitQuizAttempt'));
   assert.ok(sub.indexOf('lock.waitLock(') < sub.indexOf('const before = trainQuizLockState_(') &&
     sub.indexOf('const before = trainQuizLockState_(') < sub.indexOf('.appendRow('), 'the limit is checked inside the lock, before the append');

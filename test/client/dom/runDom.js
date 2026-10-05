@@ -6433,6 +6433,13 @@ test('Batch 11 TRN-1: a failed quiz shows which questions were wrong and the att
     attemptsLeft: 0, maxAttempts: 3, locked: true, retryLabel: 'Wed Oct 7, 10:00 AM' }, 'submitQuizAttempt');
   assert.ok(ov().querySelector('[data-quiz-lock="locked"]') && /Wed Oct 7, 10:00 AM/.test(ov().textContent), 'the third fail says when');
   assert.ok(!h.$('#tr-quiz-retake'), 'and offers no retake');
+  // A submit the server REFUSES (a second window, a stale form) shows the wait, not a bare error toast.
+  h.read('trainOpenQuiz_')('q1');
+  h.run.flushSuccess(Object.assign({}, quiz, { lockout: { locked: false, attemptsLeft: 1, maxAttempts: 3 } }), 'getQuiz');
+  h.click('#tr-quiz-submit'); await tick();
+  h.click('.ui-dialog-ok'); await tick();   // the unanswered-questions confirm
+  h.run.flushSuccess({ success: false, locked: true, maxAttempts: 3, retryLabel: 'Wed Oct 7, 10:00 AM', error: 'You have used all 3 attempts.' }, 'submitQuizAttempt');
+  assert.ok(ov().querySelector('[data-quiz-lock="locked"]') && !h.$('#tr-quiz-submit'), 'the refusal opens the wait');
 });
 
 test('Batch 11 INT-3: an outside intake recipient is confirmed by its domain, and the resend carries that confirmation; Go back sends nothing', async () => {
