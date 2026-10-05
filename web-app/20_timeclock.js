@@ -2524,24 +2524,41 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
         // deducted), credited a day back once either was turned on. A row
         // approved before the column existed (blank cell) keeps the by-type
         // rule — nothing says what it took.
+        //
+        // Seams F19 (cycle 24): the cell is what this row CURRENTLY holds
+        // against the balance. An un-approve whose credit cannot land
+        // (tracking off, or the rep's PtoEnabled FALSE — adjustLeaveBalance_
+        // returns null) used to clear it anyway, erasing the record of a day
+        // still taken; it now stays (a blank legacy cell records the by-type
+        // charge), the response names it, and a later re-approval of the row
+        // never takes the same day twice.
         let newBalance = null;
         let stamp = null;   // the Deducted cell to write once the balance has moved
+        let notRestored = null;
         const dedu = getLeaveDeduction_(type);
         const tracking = getFlag_('enablePtoTracking');
         try {
           if (oldStatus !== 'approved' && newStatus === 'Approved') {
-            let moved = false;
-            if (tracking && dedu.bucket) {
-              newBalance = adjustLeaveBalance_(empId, dedu.bucket, -dedu.days);
-              moved = newBalance !== null;
+            const held = toDeductionRead_(rows[i][TO.DEDUCTED]);
+            if (!(held.known && held.bucket && held.days > 0)) {   // F19: a charge still held is not taken again
+              let moved = false;
+              if (tracking && dedu.bucket) {
+                newBalance = adjustLeaveBalance_(empId, dedu.bucket, -dedu.days);
+                moved = newBalance !== null;
+              }
+              stamp = toDeductionCell_(dedu.bucket, dedu.days, moved);
             }
-            stamp = toDeductionCell_(dedu.bucket, dedu.days, moved);
           } else if (oldStatus === 'approved' && newStatus !== 'Approved') {
             const taken = toDeductionRead_(rows[i][TO.DEDUCTED]);
             const bucket = taken.known ? taken.bucket : dedu.bucket;
             const days = taken.known ? taken.days : dedu.days;
             if (tracking && bucket && days > 0) newBalance = adjustLeaveBalance_(empId, bucket, days);
-            stamp = '';
+            if (bucket && days > 0 && newBalance === null) {
+              notRestored = { bucket: bucket, days: days, reason: tracking ? 'ptoOff' : 'trackingOff' };
+              stamp = taken.known ? null : toDeductionCell_(bucket, days, true);
+            } else {
+              stamp = '';
+            }
           }
         } catch (balErr) {
           try { sheet.getRange(i + 1, TO.STATUS + 1).setValue(sheetSafe_(oldStatusRaw)); } catch (revertErr) {
@@ -2562,7 +2579,8 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
         const targetForAudit = targetEmp || { id: empId, name: empName, email: '' };
 
         writeAuditLog_(targetForAudit, 'TimeOffStatusChange', date, '', false, 0,
-          `${oldStatusRaw}→${newStatus} (${type})`, callerEmp.email);
+          `${oldStatusRaw}→${newStatus} (${type})` +
+          (notRestored ? `; notRestored=${notRestored.bucket}:${notRestored.days} (${notRestored.reason})` : ''), callerEmp.email);
 
         // Email the employee (best-effort — cycle-9 M-7: fires post-lock in
         // the finally so the send never holds the global ScriptLock).
@@ -2570,7 +2588,7 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
           notifyAfter = function () { notifyEmployeeOfDecision_(targetEmp, date, type, notes, newStatus); };
         }
 
-        return { success: true, newBalance };
+        return notRestored ? { success: true, newBalance, notRestored } : { success: true, newBalance };
       }
     }
     return { success: false, error: 'Request not found (may have been modified).' };

@@ -2363,6 +2363,16 @@
     "findCallNoteRow_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Seams F19 (cycle 24): an un-approve whose credit cannot land keeps the Deducted charge",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "updateTimeOffStatus"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -10395,7 +10405,7 @@
   "updateTimeOffStatus": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "00e5b95af22b8a40"
+   "sha": "1d050f881266a016"
   },
   "utf8Len_": {
    "file": "10_core.js",

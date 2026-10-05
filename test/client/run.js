@@ -34544,6 +34544,37 @@ test('Seams F6 (cycle 24): a note row fetched by index must still carry its Note
   assert.strictEqual(ctx.findCallNoteRow_(mk(rows, 0), ''), null);
 });
 
+test('Seams F19 (cycle 24): an un-approve whose credit cannot land keeps the charge recorded and says so — and a re-approval never takes the day twice (driven through the TC-04 harness)', () => {
+  const row = (status, type, ded) => ['E1', 'Ann', '2026-10-05', type || 'Full Day', '', status, 's1'].concat(ded === undefined ? [] : [ded]);
+  // Approved with a day taken, then denied while the rep's PTO is OFF: nothing can be credited back.
+  let t = c23ToCtx_({ rows: [['h'], row('Approved', 'Full Day', 'annual:1')], ptoOff: true });
+  const r = t.ctx.updateTimeOffStatus('E1', '2026-10-05', 's1', 'Denied');
+  assert.ok(r.success);
+  assert.strictEqual(t.rows[1][7], 'annual:1', 'THE REGRESSION: the record of a day still taken was cleared, so it could never be restored or even seen');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r.notRestored)), { bucket: 'annual', days: 1, reason: 'ptoOff' }, 'the response names what was not restored');
+  // Tracking off: the same, with its reason.
+  t = c23ToCtx_({ rows: [['h'], row('Approved', 'Full Day', 'annual:1')], tracking: false });
+  assert.strictEqual(t.ctx.updateTimeOffStatus('E1', '2026-10-05', 's1', 'Pending').notRestored.reason, 'trackingOff');
+  assert.strictEqual(t.rows[1][7], 'annual:1');
+  // Re-approved later with everything back ON: the held charge is not taken again.
+  const back = c23ToCtx_({ rows: t.rows });
+  const before = back.balance.annual;
+  assert.ok(back.ctx.updateTimeOffStatus('E1', '2026-10-05', 's1', 'Approved').success);
+  assert.strictEqual(back.balance.annual, before, 'one request, one day — never two');
+  assert.strictEqual(back.rows[1][7], 'annual:1');
+  // ...and a normal deny then restores it exactly.
+  back.ctx.updateTimeOffStatus('E1', '2026-10-05', 's1', 'Denied');
+  assert.strictEqual(back.balance.annual, before + 1); assert.strictEqual(back.rows[1][7], '');
+  // A legacy row (no record) that cannot be credited records the by-type charge rather than staying blank.
+  t = c23ToCtx_({ rows: [['h'], row('Approved')], ptoOff: true });
+  assert.ok(t.ctx.updateTimeOffStatus('E1', '2026-10-05', 's1', 'Denied').notRestored);
+  assert.strictEqual(t.rows[1][7], 'annual:1');
+  // Nothing taken ('none') is nothing owed: cleared, nothing named.
+  t = c23ToCtx_({ rows: [['h'], row('Approved', 'Full Day', 'none')], ptoOff: true });
+  const n = t.ctx.updateTimeOffStatus('E1', '2026-10-05', 's1', 'Denied');
+  assert.strictEqual(n.notRestored, undefined); assert.strictEqual(t.rows[1][7], '');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
