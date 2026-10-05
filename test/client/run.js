@@ -15098,33 +15098,35 @@ test('T2: a value the panel COLOURS is a value it can EXPLAIN — the tone and t
 // with no fixture fails, and a listed one that gains a fixture — or stops
 // being called — must leave the list. The list only shrinks.
 const X1_NO_FIXTURE_READS = [   // reads no scenario photographs yet — each is owed a fixture when one does
-    'adminScanStoredFormulas', 'exportAdpRange', 'exportCallNotesRange', 'getCallNoteAuditHistory', 'getDeployStamp', 'getDocsDashboard',
-    'getEmpDocTemplates', 'getFormByToken', 'getFormCatalog', 'getFormSubmission', 'getIntakeAgents',
-    'getMyCallNotesRange', 'getMyDoc', 'getMyDocs', 'getMySentForms', 'getQuiz',
-    'getQuizAnalytics', 'getQuizzes', 'getTrainingDashboard', 'intakeGetSubmission', 'intakeListMySubmissions',
-    'intakePreviewPPD', 'kbGetImageData', 'kbMapDistances', 'managerGetFormSubmission', 'managerGetShiftStats',
-    'managerSearchCallNotes', 'searchMyCallNotes', 'verifyDocSignature',
+    'adminScanStoredFormulas', 'exportAdpRange', 'exportCallNotesRange', 'getCallNoteAuditHistory', 'getDeployStamp',
+    'getDocsDashboard', 'getEmpDocTemplates', 'getFormByToken', 'getFormCatalog', 'getFormSubmission',
+    'getIntakeAgents', 'getMyCallNotesRange', 'getMyDoc', 'getMyDocs', 'getMySentForms', 'getQuiz', 'getQuizAnalytics',
+    'getQuizzes', 'getTrainingDashboard', 'intakeGetSubmission', 'intakeListMySubmissions', 'intakePreviewPAP',
+    'intakePreviewPMD', 'intakePreviewPPD', 'kbGetFacetGuidance', 'kbGetImageData', 'kbGetRevisions',
+    'kbGetSearchConfig', 'kbMapDistances', 'managerGetFormSubmission', 'managerGetShiftStats', 'managerSearchCallNotes',
+    'searchMyCallNotes', 'verifyDocSignature',
 ];
 const X1_NO_FIXTURE_WRITES = [  // writes: no scenario performs them, and a fixture would only fake a success
-    'acknowledgeCoaching', 'acknowledgeDoc', 'addEmployee', 'appendCallNoteFeedback',
-    'archiveCallNoteTag', 'cancelTimeOffRequest', 'claimSpanishThread', 'createCoaching', 'createScheduledCall',
-    'deleteCallNote', 'deleteEmpDocTemplate', 'deletePunch', 'deleteQuiz', 'emailFromCallNote',
-    'fixPtoReconciliation', 'fixTimesheetDuplicates', 'importQuizFromForm', 'intakeSendPPD', 'issueDoc',
-    'kbConvertDriveDoc', 'kbDeleteItem', 'kbFlagItem', 'kbMarkReviewed', 'kbPublishItem', 'kbRequestArticle',
-    'kbResolveContentRequest', 'kbRevertItem', 'kbSaveItem', 'kbSaveSearchConfig', 'kbUploadImage',
+    'acknowledgeCoaching', 'acknowledgeDoc', 'addEmployee', 'appendCallNoteFeedback', 'archiveCallNoteTag',
+    'cancelTimeOffRequest', 'claimSpanishThread', 'createCoaching', 'createScheduledCall', 'deleteCallNote',
+    'deleteEmpDocTemplate', 'deletePunch', 'deleteQuiz', 'emailFromCallNote', 'fixPtoReconciliation',
+    'fixTimesheetDuplicates', 'importQuizFromForm', 'intakeSendPAP', 'intakeSendPMD', 'intakeSendPPD', 'issueDoc',
+    'kbConvertDriveDoc', 'kbConvertDriveSheet', 'kbDeleteItem', 'kbFlagItem', 'kbMarkReviewed', 'kbPublishItem',
+    'kbRequestArticle', 'kbResolveContentRequest', 'kbRevertItem', 'kbSaveItem', 'kbSaveSearchConfig', 'kbUploadImage',
     'managerDeleteCallNote', 'managerSaveDay', 'managerSaveDayRange', 'managerSubmitTimeOff', 'markTrainingComplete',
     'mergeCallNoteTags', 'nudgeCoaching', 'offboardEmployee', 'provisionCallNotesSheet', 'qaAddComment',
     'qaAssignRecording', 'qaDeleteComment', 'qaSampleRecordings', 'qaSaveScorecard', 'qaSetExemption',
-    'qaSetRecordingAgent', 'qaSetRecordingDuration', 'qaSetRecordingShared', 'qaSetRecordingStatus',
-    'qaSyncRecordings', 'reconcileCallNotes', 'recordPunch', 'releaseDoc', 'releaseSpanishThread', 'resetQuizAttempts',
-    'renameCallNoteTag', 'resolveSpanishThread', 'revokeTrainingAssignment', 'saveAutoTagRules', 'saveBreakSchedules',
+    'qaSetRecordingAgent', 'qaSetRecordingDuration', 'qaSetRecordingShared', 'qaSetRecordingStatus', 'qaSyncRecordings',
+    'reconcileCallNotes', 'recordPunch', 'releaseDoc', 'releaseSpanishThread', 'renameCallNoteTag', 'resetQuizAttempts',
+    'resolveSpanishThread', 'revokeTrainingAssignment', 'saveAutoTagRules', 'saveBreakSchedules',
     'saveDepartmentEmails', 'saveDeptRequestSla', 'saveEmailTemplates', 'saveEmpDocTemplate', 'saveExternalLinks',
-    'saveFeatureFlags', 'saveKbAiSettings', 'saveMyScratchpad', 'saveQaMembers', 'saveQaScorecardCriteria',
-    'saveQuiz', 'saveRetentionConfig', 'saveSpanishInboxMembers', 'saveStateTaxRates', 'saveTrainingAssignment',
+    'saveFeatureFlags', 'saveKbAiSettings', 'saveMyScratchpad', 'saveQaMembers', 'saveQaScorecardCriteria', 'saveQuiz',
+    'saveRetentionConfig', 'saveSpanishInboxMembers', 'saveStateTaxRates', 'saveTrainingAssignment',
     'saveUpdateSuggestions', 'selfDeletePunch', 'sendExternalEmail', 'setCallNoteFlag', 'setCallNoteManagerComment',
     'setCallNotePinned', 'setCallNoteResolved', 'setCallNoteTrainingReply', 'setCoachingFollowUp',
     'setScheduledCallStatus', 'submitCallNote', 'submitFormByToken', 'submitPunchAdjustRequests', 'submitQuizAttempt',
-    'updatePunchAdjustStatus', 'updatePunchAdjustStatusBulk', 'updateTimeOffStatus', 'voidCoaching', 'voidDoc',
+    'submitTimeOffRange', 'submitTimeOffRequest', 'updatePunchAdjustStatus', 'updatePunchAdjustStatusBulk',
+    'updateTimeOffStatus', 'voidCoaching', 'voidDoc',
 ];
 function x1ClientRpcNames_() {
   const dir = path.join(__dirname, '../../web-app');
@@ -15132,34 +15134,77 @@ function x1ClientRpcNames_() {
   (function walk(d) { fs.readdirSync(d).forEach((f) => { const p = path.join(d, f); if (fs.statSync(p).isDirectory()) walk(p); else if (/\.html$/.test(f)) files.push(p); }); })(dir);
   const out = new Set();
   const KEY = 'google.script.run';
+  // Seams F9 (cycle 24): the walker stopped at a `//` comment BETWEEN two links
+  // (`.withFailureHandler(…)   // A12` then `.kbGetRevisions(id)`), never saw
+  // a name computed in brackets (`[isSheet ? 'a' : 'b'](…)`, `[fn](…)` with
+  // `var fn = … ? 'x' : 'y'`), nor a runner stored in a variable and called
+  // later (`const runner = google.script.run…; runner.submitTimeOffRange(…)`).
+  // Each was photographed as "no fixture" with nothing failing (g150).
+  const skipGap = (src, j) => {
+    for (;;) {
+      while (j < src.length && /\s/.test(src[j])) j++;
+      if (src[j] === '/' && src[j + 1] === '/') { while (j < src.length && src[j] !== '\n') j++; continue; }
+      if (src[j] === '/' && src[j + 1] === '*') { j = src.indexOf('*/', j + 2) + 2; continue; }
+      return j;
+    }
+  };
+  const skipParens = (src, j) => {   // j at '(' or '['; returns the index after the balanced close
+    const open = src[j], close = open === '(' ? ')' : ']';
+    let depth = 0;
+    for (; j < src.length; j++) {
+      const c = src[j];
+      if (c === '"' || c === "'" || c === '`') { const q = c; j++; while (j < src.length && src[j] !== q) { if (src[j] === '\\') j++; j++; } continue; }
+      if (c === '/' && src[j + 1] === '/') { while (j < src.length && src[j] !== '\n') j++; continue; }
+      if (c === '/' && src[j + 1] === '*') { j = src.indexOf('*/', j + 2) + 1; continue; }
+      if (c === open) depth++;
+      else if (c === close) { depth--; if (depth === 0) return j + 1; }
+    }
+    return j;
+  };
+  // The names a computed expression can YIELD: in a ternary, only its branches
+  // (`kind === 'training' ? 'a' : 'b'` yields a or b, never 'training').
+  const literals = (txt) => {
+    const q = txt.indexOf('?');
+    return [...(q >= 0 ? txt.slice(q + 1) : txt).matchAll(/'([A-Za-z_$][\w$]*)'|"([A-Za-z_$][\w$]*)"/g)].map((m) => m[1] || m[2]);
+  };
   files.forEach((file) => {
     const src = fs.readFileSync(file, 'utf8');
+    const runners = new Set();
     let i = 0;
     while ((i = src.indexOf(KEY, i)) >= 0) {
-      let j = i + KEY.length;
+      const assign = /(?:var|let|const)\s+([A-Za-z_$][\w$]*)\s*=\s*$/.exec(src.slice(Math.max(0, i - 60), i));
+      let j = i + KEY.length, named = false;
       for (;;) {
-        while (/\s/.test(src[j])) j++;
+        j = skipGap(src, j);
+        if (src[j] === '[') {   // a computed name
+          const end = skipParens(src, j);
+          const inner = src.slice(j + 1, end - 1).trim();
+          let names = literals(inner);
+          if (!names.length && /^[A-Za-z_$][\w$]*$/.test(inner)) {
+            const decl = new RegExp('(?:var|let|const)\\s+' + inner.replace(/\$/g, '\\$') + '\\s*=\\s*([^;\\n]+)', 'g');
+            let d, last = null; while ((d = decl.exec(src.slice(0, j)))) last = d[1];
+            names = last ? literals(last) : [];
+          }
+          names.forEach((n) => out.add(n));
+          named = true;
+          break;
+        }
         if (src[j] !== '.') break;
-        j++;
+        j = skipGap(src, j + 1);
         const m = /^[A-Za-z_$][\w$]*/.exec(src.slice(j));
         if (!m) break;
-        j += m[0].length;
-        while (/\s/.test(src[j])) j++;
+        j = skipGap(src, j + m[0].length);
         if (src[j] !== '(') break;
-        if (!/^with/.test(m[0])) { out.add(m[0]); break; }
-        // skip the handler's balanced parens, stepping over strings and comments
-        let depth = 0;
-        for (; j < src.length; j++) {
-          const c = src[j];
-          if (c === '"' || c === "'" || c === '`') { const q = c; j++; while (j < src.length && src[j] !== q) { if (src[j] === '\\') j++; j++; } continue; }
-          if (c === '/' && src[j + 1] === '/') { while (j < src.length && src[j] !== '\n') j++; continue; }
-          if (c === '/' && src[j + 1] === '*') { j = src.indexOf('*/', j + 2) + 1; continue; }
-          if (c === '(') depth++;
-          else if (c === ')') { depth--; if (depth === 0) { j++; break; } }
-        }
+        if (!/^with/.test(m[0])) { out.add(m[0]); named = true; break; }
+        j = skipParens(src, j);
       }
+      if (!named && assign) runners.add(assign[1]);
       i += KEY.length;
     }
+    runners.forEach((r) => {
+      [...src.matchAll(new RegExp('\\b' + r.replace(/\$/g, '\\$') + '\\s*\\.\\s*([A-Za-z_$][\\w$]*)\\s*\\(', 'g'))]
+        .map((m) => m[1]).filter((n) => !/^with/.test(n)).forEach((n) => out.add(n));
+    });
   });
   return out;
 }
@@ -34664,6 +34709,15 @@ test('Seams F17 (cycle 24): INV-375 — no path that stores or serves a KbImages
   // Non-vacuous: the same walk DOES find the paths that stay on Drive by design.
   assert.ok(reach(['kbIngestFile']).hits.length > 0, 'the detector finds Drive where it is (file ingest)');
   assert.ok(reach(['kbGetImageData']).hits.length > 0, 'the legacy image read is on Drive, deliberately out of scope');
+});
+
+test('Seams F9 (cycle 24): the X1 RPC derivation sees a chain broken by a comment, a name computed in brackets, and a stored runner — and never a ternary\'s condition', () => {
+  const names = x1ClientRpcNames_();
+  assert.ok(names.has('kbGetRevisions') && names.has('kbGetSearchConfig'), 'THE REGRESSION: a `// A12` comment between two links stopped the walk');
+  assert.ok(names.has('kbConvertDriveSheet') && names.has('kbConvertDriveDoc'), 'a bracketed ternary of literals: both branches');
+  assert.ok(names.has('intakePreviewPAP') && names.has('intakePreviewPMD') && names.has('managerGetTrainingQueue'), 'a bracketed variable resolves to its declaration\'s branches');
+  assert.ok(names.has('submitTimeOffRange') && names.has('submitTimeOffRequest'), 'a runner stored in a variable and called later');
+  assert.ok(!names.has('training') && !names.has('pap'), 'a ternary\'s CONDITION literal is not a name');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
