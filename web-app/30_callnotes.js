@@ -2231,24 +2231,33 @@ function sanitizeFlagType_(t) {
   const v = String(t || '').trim().toLowerCase();
   return CN_FLAG_TYPES.indexOf(v) >= 0 ? v : '';
 }
+/** Seams F6 (cycle 24) — the FORM-1 rule (g164, INV-355) for notes: the
+ *  column scan and the row fetch are TWO reads, and getDeptRequestDetail makes
+ *  them without the lock — a note delete or the archive pass between them
+ *  shifts another note (another patient) under the index. The fetched row
+ *  must carry the id it was found by (formLocatedRowIs_); a moved row is
+ *  located once more, then refused. Under the lock the row cannot move, so
+ *  the mutation callers pay one extra compare and nothing else. */
 function findCallNoteRow_(sheet, noteId) {
   if (!noteId) return null;
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return null;
-  // Scan only the NoteId column to locate the row, then fetch that single full
-  // row — avoids pulling every column of the rep's entire history on every
-  // single-note mutation (flag/resolve/pin/edit/email/delete). Return shape is
-  // unchanged: { rowIndex, row } with `row` the full row array (L9).
-  const ids = sheet.getRange(2, CN.NOTE_ID + 1, lastRow - 1, 1).getValues();
-  for (let i = 0; i < ids.length; i++) {
-    if (String(ids[i][0]).trim() === noteId) {
-      const rowIndex = i + 2;
-      // Fetch just the known schema width (L-10) — not getLastColumn(), which
-      // would pull any stray/human-added trailing columns in the rep's Sheet.
-      // All consumers index by CN.* (< CN_HEADERS.length).
-      const row = sheet.getRange(rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
-      return { rowIndex: rowIndex, row: row };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return null;
+    // Scan only the NoteId column to locate the row, then fetch that single full
+    // row — avoids pulling every column of the rep's entire history on every
+    // single-note mutation (flag/resolve/pin/edit/email/delete). Return shape is
+    // unchanged: { rowIndex, row } with `row` the full row array (L9).
+    const ids = sheet.getRange(2, CN.NOTE_ID + 1, lastRow - 1, 1).getValues();
+    let rowIndex = 0;
+    for (let i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]).trim() === noteId) { rowIndex = i + 2; break; }
     }
+    if (!rowIndex) return null;
+    // Fetch just the known schema width (L-10) — not getLastColumn(), which
+    // would pull any stray/human-added trailing columns in the rep's Sheet.
+    // All consumers index by CN.* (< CN_HEADERS.length).
+    const row = sheet.getRange(rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+    if (formLocatedRowIs_(row, CN.NOTE_ID, noteId)) return { rowIndex: rowIndex, row: row };
   }
   return null;
 }

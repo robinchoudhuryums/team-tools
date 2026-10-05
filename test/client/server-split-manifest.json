@@ -2353,6 +2353,16 @@
     "runTriggerGroup_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Seams F6 (cycle 24): findCallNoteRow_ re-checks the fetched row's NoteId (the FORM-1 rule)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "findCallNoteRow_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -6180,7 +6190,7 @@
   "findCallNoteRow_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "f57d9bc2cd9b858a"
+   "sha": "1528ff3c4839f2db"
   },
   "findCoachingRow_": {
    "file": "82_coaching.js",

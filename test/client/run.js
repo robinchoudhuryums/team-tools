@@ -34515,6 +34515,35 @@ test('Seams F3 (cycle 24): a grouped job\'s unexpected throw is stamped under it
   });
 });
 
+test('Seams F6 (cycle 24): a note row fetched by index must still carry its NoteId — the unlocked Dept Request detail never shows another patient\'s note (driven, the FORM-1 shape)', () => {
+  const ctx = vm.createContext({ String, CN: { NOTE_ID: 0 }, CN_HEADERS: ['NoteId', 'Issue'] });
+  ['formLocatedRowIs_', 'findCallNoteRow_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  // The column scan sees the rows BEFORE a delete/archive; the row fetch sees them after (`shiftFetches` times).
+  const mk = (rows, shiftFetches) => {
+    let fetches = 0, scans = 0;
+    return {
+      get scans() { return scans; },
+      getLastRow: () => rows.length + 1,
+      getRange: (r, c, n, w) => ({ getValues: () => {
+        if (n > 1 || w === 1) { scans++; return rows.map((x) => [x[0]]); }
+        fetches++;
+        const after = fetches <= shiftFetches ? rows.filter((x, i) => i !== 0) : rows;
+        return [after[r - 2] || ['', '']];
+      } }),
+    };
+  };
+  const rows = [['n-deleted', 'old'], ['n-mine', 'MY NOTE'], ['n-other', 'ANOTHER PATIENT']];
+  const once = mk(rows, 1);
+  const hit = ctx.findCallNoteRow_(once, 'n-mine');
+  assert.ok(hit && hit.row[1] === 'MY NOTE' && hit.rowIndex === 3, 'THE REGRESSION: the first fetch read n-other\'s row and returned it as n-mine');
+  assert.strictEqual(once.scans, 2, 'located twice');
+  assert.strictEqual(ctx.findCallNoteRow_(mk(rows, 9), 'n-mine'), null, 'a row that keeps moving is refused, never served');
+  const still = mk(rows, 0);
+  assert.strictEqual(ctx.findCallNoteRow_(still, 'n-mine').row[1], 'MY NOTE'); assert.strictEqual(still.scans, 1, 'a still sheet (every locked caller): one locate');
+  assert.strictEqual(ctx.findCallNoteRow_(mk(rows, 0), 'n-absent'), null);
+  assert.strictEqual(ctx.findCallNoteRow_(mk(rows, 0), ''), null);
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
