@@ -65,7 +65,23 @@ entry says which it is.
   is shown only to a signed-in visitor who is neither on one of these domains
   (`isOrgEmail_`, an exact match) nor a registered employee. If the org adds or
   retires a sign-in domain, edit this list and deploy. Defence in depth only —
-  every endpoint still gates on the roster.
+  every endpoint still gates on the roster. **Since cycle 23 Batch 11 (INT-3)
+  the same list decides which intake recipients are OUTSIDE:** an intake email
+  to any other domain is sent only after the rep confirms that domain, and an
+  outside copy carries no feedback link. On a DEV instance whose intake
+  recipients are a personal inbox, every send asks — by design.
+<a id="operator-the-quizresets-tab-cycle-23"></a>
+- **The `QuizResets` tab (KB spreadsheet) — the quiz retry limit's reset ledger (cycle 23 TRN-1, operator 2026-10-05).**
+  Auto-created on first use; append-only; columns ResetAt, QuizId, EmpId,
+  ResetBy, AtMs (a NUMBER cell). A rep with `TRAIN_QUIZ_MAX_ATTEMPTS` (3)
+  failed attempts in a row waits `TRAIN_QUIZ_LOCK_HOURS` (24) before the next
+  set; a manager ends the wait from Training → Team Training → "Waiting to
+  retry a quiz" → Reset, which writes one row here (ids and the manager's
+  address only — no answers) and a `QuizAttemptsReset` audit row. Attempts and
+  scores are never deleted. The two limits are code constants (00_config.js),
+  not Script Properties. If this tab cannot be read, a quiz submit is REFUSED
+  rather than ignoring resets — fix access to the KB spreadsheet. Do not
+  hand-edit rows; a row whose AtMs is not a number is ignored.
 <a id="operator-the-server-is-fourteen-files-and-filepushorder-is-load-bearing"></a>
 - **The server is FOURTEEN files, and `filePushOrder` is load-bearing (Batch F2,
   2026-09-14).** `web-app/Code.js` no longer exists: it was split, as a MOVE, into

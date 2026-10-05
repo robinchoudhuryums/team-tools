@@ -3,11 +3,11 @@
 ## Current
 Cycle: 23 — opened by the 2026-10-01 `/broad-scan` (0 Critical / 5 High; plan of 13 batches + 8 deferred, in chat). Cycle 22 and 22post are in `.cycle/HISTORY.md`.
 Phase: implement
-Scope: broad — Batches 1–5 (TC-02 included), 6a, 6b, 7a and 7b done and doc-synced; Batch 8 done and doc-synced; Batch 9 done and doc-synced; Batch 10 done and doc-synced — the scan's plan is complete; follow-up Batches 11–15 planned 2026-10-05 from the deferred decisions; Batch 11 done (docs not yet synced); next /sync-docs, then Batch 12
+Scope: broad — Batches 1–5 (TC-02 included), 6a, 6b, 7a and 7b done and doc-synced; Batch 8 done and doc-synced; Batch 9 done and doc-synced; Batch 10 done and doc-synced — the scan's plan is complete; follow-up Batches 11–15 planned 2026-10-05 from the deferred decisions; Batch 11 done and doc-synced; next Batch 12
 Test Command: manual
 Estimates: Batch 1: M (~9 h) · Batch 2: M (~11 h) · Batch 3: M (~9.5 h) · Batch 4a: M (~10 h) · 4a follow-ons: S (~3 h) · Batch 4b: M (~11 h) · TC-02 (option a): M (~8 h) · Batch 5: M (~10 h) · Batch 6a: M (~9.5 h) · Batch 6b: M (~10 h) · Batch 7a: M (~10 h) · Batch 7b: M (~7.5 h) · Batch 8: M (~9.5 h) · Batch 9: L (~13 h) · Batch 10: L (~11 h) · Batch 11: M (~10.5 h) — each written before its first edit
 Subsystem cycles since last Seams audit: 3 — reset to 0 by the 2026-09-18 audit; incremented by cycle 22's /reflect (2026-09-25) and 22post's /reflect (2026-09-30). The cadence is every 4, so the next reflection reaches it.
-Updated: 2026-10-05 (cycle 23 Batch 11)
+Updated: 2026-10-05 (cycle 23 Batch 11 /sync-docs)
 
 ## In progress (facts to carry forward — NOT judgments)
 - Cycle 23 opened 2026-10-01 with a `/broad-scan` (0 Critical / 5 High / ~110 findings; the full report and 13-batch plan are in that session's chat — the batch→ID list is copied under Pending below).
@@ -26,10 +26,11 @@ Updated: 2026-10-05 (cycle 23 Batch 11)
 - Batch 8 implemented on the same branch (block: `.cycle/blocks/23-batch8-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Batch 9 implemented on the same branch (block: `.cycle/blocks/23-batch9-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Batch 10 implemented on the same branch (block: `.cycle/blocks/23-batch10-broad-implement.md`); NOT yet deployed. /sync-docs done.
-- Batch 11 implemented on the same branch (block: `.cycle/blocks/23-batch11-broad-implement.md`); NOT yet deployed. /sync-docs NOT yet run — the block's DOCUMENTATION UPDATES NEEDED is the list.
+- Batch 11 implemented on the same branch (block: `.cycle/blocks/23-batch11-broad-implement.md`); NOT yet deployed. /sync-docs done.
 - Everything through 22post is merged (PRs #274–#282) and deployed (2026-09-30). The operator was finishing two 22post steps at close: the manual.json re-export + import, and the S124–S128 walks.
 
 ## Completed this cycle
+- /sync-docs (Batch 11) | CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/operator-state.md, docs/modules.md, docs/training-employee-docs-spec.md, docs/test-harness-log.md, .cycle/config.md, web-app/Tests.js | g156/g148/g116 extended; T1 + intake-feedback decisions amended; QuizResets operator entry + ORG_EMAIL_DOMAINS now gates intake recipients; the spec's §9.4 retry policy; module notes; INV-363..366 (INV-298 superseded); S59/S60/S68/S116 extended; the editor quiz test moved to the TRN-1 rule (its S10 assertion would have failed the nightly run)
 - TRN-1 | 80_training.js, 00_config.js, train/script_training.html | a failed quiz shows which questions were wrong (never the option); 3 fails then a 24 h wait, inside the lock; manager reset (QuizResets tab)
 - INT-3 | 60_intake.js, intake/script_intake.html | an outside-domain intake recipient is sent to only after the rep confirms that domain (server-enforced); outside copies carry no feedback link
 - Weight bounds | 60_intake.js, 00_config.js, intake/script_intake.html | a reading under 20 or over 1000 lbs is unreadable and named
@@ -214,7 +215,7 @@ Updated: 2026-10-05 (cycle 23 Batch 11)
 - **22post reflection candidates, not yet in the library:** INV-350 (no path the manual import or reader reaches calls Drive), INV-351 (an import that fails in transport says so, never as a defect of the file), INV-352 (the floating Scratchpad stacks beneath every modal overlay — a ui-dialog can open beneath the panel today, z 56).
 - **22post batch follow-ons** (full text in the 22post HISTORY block): A — no visual opens the composer on a Close Order, the team Median sub-line ellipsizes at half width, the date range does not reach the server-derived table/cards; B — no pressed toolbar state, no visual of formatted content; C — no DOM harness drives renderManagerView, the manager fixture's Leo Kim has an impossible shape, no toast on the assignee's open window; D — the scan's counts are only logged; E — Half/Full shows on a phone, no drag-to-reorder; M5b — the highlighter marks a two-letter word inside longer words and marks the results heading, `kbMarkReviewed` does not bump the KB generation (named exemption in M5b-I2).
 - **Carried from cycle 22** (full list in its HISTORY block): S6 is server-only; the coaching business-days note and the Spanish auto-assign flag description still say "US holidays"; Save Departments lets two rows share a name; the half-day grade's three gaps; M7's class survives in three readers (the client `coachTsMs_` UTC read was fixed in cycle 23 COA-2); X1 names reads owed a fixture and the mock lacks `adminScanStoredFormulas`; the missing visual scenarios; an intermittent DOM pin (`the resume request states the unpaid gap before it is filed`); `assertNotProdInstance_` permits while INSTANCE_IS_PROD is unset.
-- **Numbers — do not reuse:** INV-225..227 RESERVED (cycle 20); INV-229..232, INV-240..242, INV-301..303 and INV-350..352 PROPOSED (cycles 21, 21post, 22, 22post), not in the library. **Next free: INV-363; gotcha g168; scenario S136.** (Batch 11 added none yet — its /sync-docs will.)
+- **Numbers — do not reuse:** INV-225..227 RESERVED (cycle 20); INV-229..232, INV-240..242, INV-301..303 and INV-350..352 PROPOSED (cycles 21, 21post, 22, 22post), not in the library. **Next free: INV-367; gotcha g168; scenario S136.**
 
 ## Decisions made (so the next session doesn't re-litigate)
 - **Deferred-item decisions (operator, 2026-10-05):** TRN-1 — 3 attempts, then a 24 h wait with a manager reset; the rep sees which questions were wrong and the limit state after a fail, never the correct option. SP-2 — a reopened request comes back unclaimed. KB2-6 — every "and" → either reading in the grid is correct; no grammar change. DRV-3 — the sheet-storage plan proceeds while the IT request runs; defaults: downscale to ≤1600 px wide, cap 1.5 MB, keep GIF/WebP. Intake weight — under 20 lbs or over 1000 lbs reads as unreadable. CN-8 — closed (inside the Workspace BAA). HR-2 — roadmap.
@@ -228,4 +229,4 @@ Updated: 2026-10-05 (cycle 23 Batch 11)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 23 Batches 1–5 (TC-02 included) are merged to main (PR #284). Batches 6a–10 are committed, pushed and doc-synced on `claude/blissful-johnson-cottl5`. Follow-up Batch 11 (from the 2026-10-05 deferred decisions) is committed and pushed (block: `.cycle/blocks/23-batch11-broad-implement.md`); its /sync-docs is next, then Batches 12–15 (Pending lists them). Then deploy and walk the Batch 1–15 scenarios (incl. S134, S135) and /reflect (which reaches the Seams-audit cadence).
+Cycle 23 Batches 1–5 (TC-02 included) are merged to main (PR #284). Batches 6a–10 are committed, pushed and doc-synced on `claude/blissful-johnson-cottl5`. Follow-up Batch 11 (from the 2026-10-05 deferred decisions) is committed and pushed (block: `.cycle/blocks/23-batch11-broad-implement.md`); doc-synced; next Batch 12 (KB images in a KbImages tab), then 13–15 (Pending lists them). Then deploy and walk the Batch 1–15 scenarios (incl. S134, S135) and /reflect (which reaches the Seams-audit cadence).

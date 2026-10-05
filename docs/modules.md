@@ -201,6 +201,13 @@ not restate it. Server endpoints live in the fourteen server files
      account the triggers run as, and removing the triggers writes an audit row
      (CORE-03, g26).
 
+     **Cycle 23 Batch 11 (2026-10-05) — Dashboard.** Before the day's call-data
+     import lands, the month-to-date cards end on the newest day with data, the
+     comparison takes the same days of last month, and the card foot says "calls
+     through Mon Oct 5 — the latest day is not imported yet" (the MET-5 follow-up,
+     g148).
+
+
 ## Call Notes
 
    - **Call Notes** — rolling-note panel for CSR call logging. Each
@@ -710,6 +717,12 @@ not restate it. Server endpoints live in the fourteen server files
      and a draft with another owner is never restored — a draft saved before this
      deploy has no owner and is dropped (INT2-3).
 
+     **Cycle 23 Batch 11 (2026-10-05):** a weight under 20 lbs or over 1000 lbs is
+     unreadable and named ("reads as 12 lbs, outside 20–1000 lbs") — no capacity
+     check runs on it (g156). Sending an intake email to an address outside the
+     org's two domains asks first, naming the domain, and the email goes only on
+     yes; an outside copy carries no feedback link (INT-3).
+
 <a id="reference"></a>
      **Batch 5 (2026-09-18):** the email's question LABELS come from
      SERVER-held English banks (`INTAKE_PPD_Q_EN` / `INTAKE_PMD_Q_EN` /
@@ -1187,8 +1200,8 @@ not restate it. Server endpoints live in the fourteen server files
      `QuestionsJson` are SERVER-ONLY), assignable like KB items
      (`itemType='quiz'`), graded server-side (`submitQuizAttempt` →
      append-only `QuizAttempts`; a pass auto-writes the completion,
-     `via='quiz'`). Per §9.4: unlimited retries, correct answers are
-     NEVER revealed (only per-question right/wrong), attempt counts
+     `via='quiz'`). Per §9.4: correct answers are NEVER revealed (only
+     per-question right/wrong); retries are capped since cycle 23 TRN-1; attempt counts
      surface on the checklist + matrix. In the quiz editor, adding or
      removing an OPTION re-renders only that question's block
      (`trainQedQuestionHtml_` / `trainQedRerenderQuestion_` — an `outerHTML`
@@ -1330,6 +1343,14 @@ not restate it. Server endpoints live in the fourteen server files
      **Cycle 23 Batch 10 (2026-10-02):** a quiz imported from a Google Form whose
      correct answer was past the first six options warns that the answer was cut
      off, instead of "had no correct answer marked" (TRN-2).
+
+     **Cycle 23 Batch 11 (2026-10-05):** a failed quiz attempt marks each
+     question correct or incorrect — never naming the right option — and says
+     how many attempts are left. After 3 failed attempts in a row the rep waits
+     24 hours: the quiz opens on "You can try again after …" instead of the form,
+     and a submit in the wait is refused unrecorded. Team Training lists the reps
+     who are waiting, with a Reset that lets one retry now (the `QuizResets` tab;
+     attempts and scores are kept) (TRN-1).
 
 <a id="qa"></a>
 ## QA

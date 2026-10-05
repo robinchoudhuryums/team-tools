@@ -7851,7 +7851,10 @@ function _trainingQuizFlowBody_() {
     _assertEq(fail.scorePct, 50, 'score graded server-side');
     _assertEq(fail.attempt, 1, 'attempt counter = 1');
     _assertTrue(JSON.stringify(fail).indexOf('correct') < 0, 'graded response carries no answer key');
-    _assertEq(fail.perQuestion, null, 'S10: a FAILED attempt carries no per-question marks (they were an answer key under unlimited retries)');
+    // TRN-1 (cycle 23 Batch 11): a fail shows WHICH questions were wrong — never the option — and the retry limit.
+    _assertEq(JSON.stringify(fail.perQuestion), JSON.stringify([true, false]), 'TRN-1: a FAILED attempt marks the wrong question (S10 withheld it; the retry limit now closes the elimination key)');
+    _assertEq(fail.attemptsLeft, TRAIN_QUIZ_MAX_ATTEMPTS - 1, 'TRN-1: the attempts left before a wait');
+    _assertEq(fail.locked, false, 'TRN-1: one fail does not lock');
 
     let mine = _asUser(_TEST_INDIA_EMAIL, function () { return getMyTraining(); });
     let item = (mine.items || []).filter(function (i) { return i.itemId === quizId; })[0];
@@ -7863,7 +7866,7 @@ function _trainingQuizFlowBody_() {
     const pass = _asUser(_TEST_INDIA_EMAIL, function () { return submitQuizAttempt(quizId, [1, 0]); });
     _assertTrue(pass && pass.success && pass.passed, 'passing attempt');
     _assertEq(pass.attempt, 2, 'attempt counter = 2');
-    _assertTrue(Array.isArray(pass.perQuestion) && pass.perQuestion.length === 2, 'S10: a PASSING attempt shows which questions were right');
+    _assertTrue(Array.isArray(pass.perQuestion) && pass.perQuestion.length === 2, 'a PASSING attempt shows which questions were right');
     mine = _asUser(_TEST_INDIA_EMAIL, function () { return getMyTraining(); });
     item = (mine.items || []).filter(function (i) { return i.itemId === quizId; })[0];
     _assertEq(item && item.status, 'done', 'pass completes the item');

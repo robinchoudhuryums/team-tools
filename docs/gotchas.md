@@ -3321,6 +3321,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   button and wraps back. Before you assert a state, ask whether the harness
   would have produced it anyway.
 
+  **A SIXTEENTH and a SEVENTEENTH (cycle 23 Batch 11).** `stripJsComments_` is
+  a per-function tool: run over a WHOLE HTML partial it mis-reads a string and
+  drops everything after it (it loses `intakeAcctSend_` from
+  script_intake.html, before and after the change), so a regex over the
+  stripped partial can pass vacuously or fail for nothing — read the raw source,
+  or extract the function first. And an earlier pin leaves `Date.now` frozen in
+  the harness while `new Date()` keeps running, so a fixture built on
+  `Date.now()` was a week behind the code it drove (which reads `new Date()`):
+  the retry-limit drive read "unlocked" for a rep locked an hour ago. Build a
+  fixture's clock from the SAME source the code reads.
+
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
   done (operator 2026-09-15).** The reconcile pass (g115) makes late punch data
@@ -4809,6 +4820,15 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   is earlier than the previous WORKDAY (`dashboardImportPending_`; the DQE
   reader's meta carries `latestDate`). Verify: the MET-5 grid + the gated put.
 
+  **AMENDED (cycle 23 Batch 11 — the MET-5 follow-up).** Not caching the
+  pre-import round stopped it being PINNED; the load itself still compared
+  d−2 days of this month with d−1 of last. Before the import, both windows now
+  end on the newest DATA day (`dashboardAlignToData_`: `dataThrough` is
+  `latestDate`, and `dashboardPrevRange_` is anchored the day after it), and
+  the card says "calls through Mon Oct 5 — the latest day is not imported
+  yet". With no data day in the window yet there is no denominator and no
+  comparison. Verify: the Batch 11 MET-5 drive (the Oct 7 case).
+
 <a id="g149-a-stamp-parser-documented-as-differences-only"></a>
 
 - **A timestamp parser documented as "only used for differences" is a claim
@@ -5061,6 +5081,14 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   several bare numbers are UNREADABLE rather than a guess. Verify: the
   INT-1 / INT2-1 / INT2-2 drive (server and client grids, the engine, the
   explain row).
+
+  **AMENDED (cycle 23 Batch 11, operator 2026-10-05).** A number read by its
+  unit can still be no patient's weight: "12" meant as 120, an "18 st" read as
+  pounds. A reading under `INTAKE_WEIGHT_MIN_LBS` (20 — nothing in the catalog
+  is pediatric) or over `INTAKE_WEIGHT_MAX_LBS` (1000), checked AFTER the kg
+  conversion, is UNREADABLE and names itself ("reads as 12 lbs, outside
+  20–1000 lbs") on the explain row and the recommendation screen; it never
+  reaches the capacity filter. Verify: the Batch 11 weight drive.
 
 <a id="g157-scriptcache-is-shared-by-every-deployment"></a>
 

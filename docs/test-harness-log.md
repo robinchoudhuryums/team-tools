@@ -2622,3 +2622,33 @@ per-change detail. By delta:
   (a stub was named `trainParseFormRef_`; the real helper is
   `trainParseFormId_`) — the fallback is deleted, so the pin can only pass by
   driving (g138).
+
+## Cycle 23 — Batch 11, the deferred items decided 2026-10-05
+
+- Node +7. The quiz retry limit:
+  - the lockout grid (out-of-order rows, the wait opening a fresh set, a pass resetting, the reset filter);
+  - `submitQuizAttempt` + `resetQuizAttempts` driven together: marks on a fail and no correct option; the third fail locks with a label; a fourth attempt refused and NOT appended; the reset gate and refusals, the row and the audit; a retry after the reset passes;
+  - `getTrainingDashboard` driven, listing only the rep in the wait.
+
+  The outside intake recipient: an org / outside / confirmed / wrong-domain / look-alike grid, the resolve → check → send order on both paths, the CTA gate and the client confirm with a sync thenable. The weight bounds: driven through the parser, the explain row, the preview and the warning. The pre-import Dashboard window: driven through `dashboardAlignToData_` + `dashboardPrevRange_`, plus the card note and the endpoint wiring. The KB2-6 "and" grid.
+- DOM +2:
+  - TRN-1: a locked quiz opens on the wait; the form states the limit; a fail marks the wrong question with attempts left and Retake; the third fail and a refused submit show the wait.
+  - INT-3: the confirm names the domain; the resend carries it; Go back sends nothing.
+- Moved pins:
+  - the engine sandboxes read the weight bounds from the REAL declarations (`intakeWeightBoundsSrc_`);
+  - I3's thousands-comma case is now 1,000, the ceiling;
+  - FU-B8b, M2/M8 and MET-5 read the new derivations;
+  - the dashboard cache key is v7;
+  - H-1 guards `trainQuizAttemptList_`;
+  - the getQuiz tripwire allows the lockout beside the stripped shape;
+  - S10 became "S10 → TRN-1";
+  - X1 names `resetQuizAttempts`;
+  - the F9 gate omnibus covers it;
+  - the editor `test_training_quizFlow` now expects marks on a fail and the attempts left. Its S10 assertion would have failed the next nightly run.
+- 29 bite-checks, all BITE. Three were NO BITE first:
+  - the prior window's anchor: nothing asserted it, so the MET-5 pin now checks the wiring;
+  - the dashboard's waiting list: the pin was source-only, so `getTrainingDashboard` is now driven;
+  - a refused submit: no DOM step sent one, so one now does.
+- Two tooling hazards (g116's sixteenth and seventeenth):
+  - `stripJsComments_` over a whole HTML partial drops functions, so the INT-3 pin reads the raw source;
+  - an earlier pin leaves `Date.now` frozen while `new Date()` runs, so the retry-limit fixture takes its clock from `new Date()`, as the code does.

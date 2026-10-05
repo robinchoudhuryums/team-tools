@@ -1516,6 +1516,13 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   instead (INV-175). Best-effort is preserved by construction: the rest of the
   submission detail still renders, and a genuinely empty list still renders
   nothing. Pinned by the feedback-loop Node pins.
+  **AMENDED (cycle 23 INT-3, operator 2026-10-05).** The feedback link rides
+  only an email to an org address (`isOrgEmail_`): the page needs a staff
+  sign-in, so for an outside reader it was a dead button. An intake email to an
+  outside domain is sent only after the rep confirms that domain — the server
+  refuses with `needsExternalConfirm` and the client asks, then resends with
+  the confirmation; the domain list never leaves the server.
+
 - <a id="manager-q-a-reply-on-training-flagged-notes"></a>**Manager Q&A reply on training-flagged notes.** Training-flagged
   notes can carry a free-text question (`subformData.trainingQuestion`,
   set client-side when the rep picks the training flag) and a manager
@@ -4221,6 +4228,18 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   roster column M team scoping) lives in
   `docs/training-employee-docs-spec.md`; operator decisions are resolved
   in its §9. See INV-120 / S67.
+  **AMENDED (cycle 23 TRN-1, operator 2026-10-05) — quiz retries are capped.**
+  A failed attempt shows which questions were wrong, never the right option;
+  with unlimited retries that is an answer key by elimination, so after
+  `TRAIN_QUIZ_MAX_ATTEMPTS` (3) failed attempts in a row the rep waits
+  `TRAIN_QUIZ_LOCK_HOURS` (24) from the last before a fresh set. A pass, a
+  re-assignment (§3a) or a manager reset (`resetQuizAttempts`, an append-only
+  `QuizResets` row) starts the count over. The limit is checked INSIDE the
+  submit's lock, over the read the attempt count uses, and a locked submit is
+  refused unrecorded. Rejected: score-only feedback (S10 — the operator wants
+  reps to see what they missed) and a cap with no wait (a rep who failed three
+  times would be stuck until a manager noticed).
+
 - <a id="operator-feedback-round-2026-06-12-note-template-ergonomics"></a>**Operator feedback round (2026-06-12) — note-template ergonomics for the
   pinned pop-out workflow.** The operator runs the compact pop-out pinned
   via PowerToys "Always On Top" beside the CRM, which drove a density +

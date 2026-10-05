@@ -199,10 +199,12 @@ change (INV-08/32), best-effort email (INV-14).
 - `submitQuizAttempt(quizId, answers[])` — locked. Grades server-side
   against `questionsJson`; appends `QuizAttempts`; on `scorePct >=
   passPct` also appends a `TrainingCompletions` row (`via='quiz'`).
-  Returns the score, and per-question right/wrong booleans ONLY on a
-  PASSING attempt (`perQuestion: null` on a fail, cycle 22 S10) — correct
-  options are NEVER revealed, pass or fail (§9.4). Unlimited retries;
-  attempt counts are tracked per (quiz, emp) and surfaced on both the
+  Returns the score and the per-question right/wrong booleans on EVERY
+  attempt (cycle 23 TRN-1; cycle 22 S10 had withheld them on a fail) —
+  correct options are NEVER revealed, pass or fail (§9.4). Retries are
+  capped: 3 failed attempts in a row, then a 24-hour wait or a manager
+  reset (`resetQuizAttempts`; the `QuizResets` tab). Attempt counts are
+  tracked per (quiz, emp) and surfaced on both the
   rep's checklist ("passed on attempt 3") and the manager matrix.
   Audit `QuizAttempt` (quizId, score, passed, attempt # — never
   question text).
@@ -327,11 +329,13 @@ One operator prerequisite for T3: fill the new Employees column M
    the §3b team-scoping rule: new roster column M `ManagerEmail`
    (`EMP.MANAGER_EMAIL`), visibility = owner + issuer + listed
    manager, fail-closed on blank. `ROSTER_CACHE_KEY` bumps v5 → v6.
-4. **Quiz policy — unlimited retries; NEVER reveal correct answers**
-   (pass or fail). A FAILED attempt shows the score only; per-question
-   right/wrong is shown once the attempt passes (cycle 22 S10, operator
-   2026-09-25 — per-question marks on a fail let a rep find the key by
-   flipping one answer per retry). Attempt counts tracked and surfaced to
-   rep + manager.
+4. **Quiz policy — NEVER reveal correct answers (pass or fail); retries
+   capped.** Superseded twice. Cycle 22 S10 (2026-09-25) showed a failed
+   attempt's score only, because per-question marks on a fail let a rep find
+   the key by flipping one answer per retry. Cycle 23 TRN-1 (operator
+   2026-10-05): a failed attempt shows WHICH questions were wrong (still never
+   the right option), and the elimination is closed instead by a retry limit —
+   3 failed attempts in a row, then a 24-hour wait, ended early by a manager
+   reset. Attempt counts tracked and surfaced to rep + manager.
 5. **Naming — "Training & Employee Docs"** (tool label). `docType`
    vocabulary stays `'review' | 'pip' | 'policy' | 'other'`.
