@@ -2398,6 +2398,16 @@
     "kbImageTabServe_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Seams F18 (cycle 24): kbSearchIndexKey_ hashes kbSlug_ too",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "kbSearchIndexKey_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -8270,7 +8280,7 @@
   "kbSearchIndexKey_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "4b4b2b342557be83"
+   "sha": "276596ca2994e33a"
   },
   "kbSearchIndex_": {
    "file": "70_kb.js",

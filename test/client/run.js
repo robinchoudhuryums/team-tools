@@ -34606,6 +34606,26 @@ test('Seams F20 (cycle 24): an image tab whose header was EDITED reads "could no
   assert.ok(!/headerChangedFails/.test(extractRawFunction('Code.js', 'getManualImages')), 'the manual tab keeps "an old layout is not imported" (M4-FU3) — the next import rewrites it');
 });
 
+test('Seams F18 (cycle 24): the section-index cache key hashes EVERY function the builder reaches — derived from the builder\'s call closure (kbSlug_ was missing)', () => {
+  const code = serverSource();
+  const declared = new Set([...code.matchAll(/^function ([A-Za-z_$][\w$]*)\(/gm)].map((m) => m[1]));
+  const closure = new Set();
+  const walk = (fn) => {
+    if (closure.has(fn)) return;
+    closure.add(fn);
+    const body = stripJsComments_(extractRawFunction('Code.js', fn)).replace(/^function [\w$]+\(/, '(');
+    [...body.matchAll(/\b([A-Za-z_$][\w$]*)\s*\(/g)].map((m) => m[1]).filter((n) => declared.has(n)).forEach(walk);
+  };
+  walk('kbBuildSearchIndex_');
+  assert.ok(closure.has('kbSplitSections_') && closure.has('kbSlug_'), 'non-vacuous: the walk reached the slug');
+  const key = extractRawFunction('Code.js', 'kbSearchIndexKey_');
+  const hashed = new Set([...key.matchAll(/String\(([A-Za-z_$][\w$]*)\)/g)].map((m) => m[1]));
+  const missing = [...closure].filter((f) => !hashed.has(f));
+  assert.deepStrictEqual(missing, [], 'THE REGRESSION: the key omitted a function that shapes the cached index — a deploy changing it served the old shape from cache (g157)');
+  const extra = [...hashed].filter((f) => !closure.has(f));
+  assert.deepStrictEqual(extra, [], 'the key hashes nothing the builder does not reach');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

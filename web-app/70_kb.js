@@ -459,9 +459,14 @@ function kbHashStr_(s) {
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
   return ('0000000' + h.toString(16)).slice(-8);
 }
-/** The cache key prefix: the code that shapes the index, and the generation. */
+/** The cache key prefix: the code that shapes the index, and the generation.
+ *  Seams F18 (cycle 24): EVERY function the builder reaches, kbSlug_ included
+ *  (kbSplitSections_ names each section's anchor with it) — a deploy that
+ *  changed only the slug served the old anchors from cache. Pinned against the
+ *  builder's call closure, so a new helper cannot be left out. */
 function kbSearchIndexKey_() {
-  return KB_INDEX_CACHE_PREFIX + kbHashStr_(String(kbBuildSearchIndex_) + String(kbSplitSections_) + String(kbRowStatus_)) + ':' + kbGeneration_() + ':';
+  return KB_INDEX_CACHE_PREFIX + kbHashStr_(String(kbBuildSearchIndex_) + String(kbSplitSections_) + String(kbRowStatus_) +
+    String(kbSlug_)) + ':' + kbGeneration_() + ':';
 }
 /** The section index: from the cache when every piece is there, else built
  *  from the KB tab and cached. A cache failure only costs a sheet read. */
