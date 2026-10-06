@@ -2,16 +2,18 @@
 
 ## Current
 Cycle: 24 — opened 2026-10-05 by the Seams & Invariants audit (cycle 23 is CLOSED; its block is in `.cycle/HISTORY.md`).
-Phase: implement
-Scope: Seams & Invariants — BOTH batches DONE: the production batch (F1, F2, F3, F4, F6, F8 note, F19) and the nets-and-library batch (F5, F7, F8 remainder, F9–F18, F20, F21). Owed: deploy, walks, /reflect (/sync-docs done 2026-10-06).
+Phase: implement — the operator's MANUAL-UPDATE thread (cycle 24's seams batches are deployed 2026-10-06 and reflected; PR #287, #288 merged)
+Scope: the CSR Procedures Manual update (`manual/`), Phase 1 of 7 DONE. The plan, with every operator decision, is `.cycle/manual-update-plan.md`; the operator's original list (verbatim) is `.cycle/manual-update-list.md`.
 Test Command: manual
-Estimates: production batch (F1/F2/F3/F4/F6/F8/F19): M (~5 h) — written before the first edit. Actual ~2.5 h. · nets-and-library batch (F5, F7, F8r, F9–F18, F20, F21?): L (~8 h) — written before the first edit. Actual ~4.5 h. · **Manual Phase 1 (Foundations, the operator's manual-update plan): L (~8 h)** — written before the first edit, 2026-10-06.
+Estimates: production batch (F1/F2/F3/F4/F6/F8/F19): M (~5 h) — written before the first edit. Actual ~2.5 h. · nets-and-library batch (F5, F7, F8r, F9–F18, F20, F21?): L (~8 h) — written before the first edit. Actual ~4.5 h. · **Manual Phase 1 (Foundations, the operator's manual-update plan): L (~8 h)** — written before the first edit, 2026-10-06. Actual ~5 h.
 Subsystem cycles since last Seams audit: 1 — reset to 0 by the Seams & Invariants audit of 2026-10-05 (cycle 24); incremented by cycle 24's /reflect (2026-10-06). The cadence is every 4.
-Updated: 2026-10-06 (cycle 24 /sync-docs)
+Updated: 2026-10-06 (manual-update Phase 1)
 
 ## In progress (facts to carry forward — NOT judgments)
-- The seams audit's handoff block travelled by paste (as `/audit` does). Its findings, session-local F1–F21, are listed under Pending so a fresh session can continue without it.
-- Both batches are committed and pushed on `claude/beautiful-bohr-7l8epj`; blocks: `.cycle/blocks/24-seams-prod-broad-implement.md` and `.cycle/blocks/24-seams-nets-broad-implement.md`. Not deployed. No PR opened (not asked).
+- **Manual update (operator request 2026-10-06).** The operator's ~425-line edit list for the procedures manual was researched item by item; the resulting plan (`.cycle/manual-update-plan.md`) records every decision in Part A0–A0d, the pushback in Part B, existing errors in Part C, the approved design items in Part D, the seven phases in Part E, the review-packet questions in Part F, and an item-by-item status in Appendix 1. Phase 1 (Foundations) is committed and pushed; block: `.cycle/blocks/24-manual-p1-broad-implement.md`.
+- Next: Phase 2 — the text edits, chapter by chapter, at TODAY's numbering (it matches the operator's list): batches 0–1 · 2–3 · 4+9 · 5–6 · 7–8 · 10+appendices. Then Phase 3 (consolidations), Phase 4 (the ONE renumber + Chapter rename + app id migration + deploy), Phase 5 (directory, glossary, index curation, cards), Phase 6 (packets), Phase 7 (sweeps, PDF pass).
+- The colour-family swatch is with the operator for approval (generated from the plan; the values are in the Phase 1 block). Apply only after approval.
+
 
 ## Completed this cycle
 - Seams F1 | 90_qa.js, qa/script_qa.html, test/visual/mock.js | a QA exemption revoke clears the KEY that granted it (`qaExemptKeyFor_`); a revoke of a key with no active grant is refused by name
@@ -33,7 +35,12 @@ Updated: 2026-10-06 (cycle 24 /sync-docs)
 - Seams F15 / F16 | config.md, CLAUDE.md, docs/* | INV-44/85/190/306/371/357 text; Area Eligibility "displayed"; stale dash keys; g112 count and two missing keys (anchor renamed)
 - Seams F21 | 60_intake.js | an intake recipient has exactly one @ and no quoted local part
 
+- Manual Phase 1 | manual/{build,make_html,md2model,render,export_reference}.py, render_docx.js, make_all.sh, new roles.py, footnotes.py, rasterize_diagrams.py, check_pdf.py, data/extracts.json; web-app/kb/script_kb.html; run.js MP1-1..6 | role links to the person's B.1 row (one exact-first resolver), Transfer column restored, real tables, Step and ✓/✗ tables (HTML, Word, app), footnotes, index fixes, Word images/diagrams/links/page breaks, PDF blank-page check, Start-here front page, department-guide manifest
+
 ## Pending / not yet done
+- **Manual Phase 1 deploy (app part):** `cd web-app && clasp push -f` + New version — the Reference renderer's step / ✓/✗ table styles. Then re-export `manual.json` and import (Reference → Manual → Choose File → Check → Import): the front page, the four ✓/✗ tables and 6.2's corrected role link update.
+- **Manual Phases 2–7** per `.cycle/manual-update-plan.md` Part E. Operator answers still owed: none blocking (A1); defaults 61–87 approved; item 38 deferred.
+- Cycle 24 seams batches: DEPLOYED 2026-10-06 (smoke clear) and REFLECTED; their scenario walks below are still owed.
 - ~~`/sync-docs` for both cycle-24 batches~~ DONE 2026-10-06 (gotchas ×11 + their index lines, INV-353/355/356/358/362/372/373 amendments, modules.md, design-decisions.md, deployment.md, README, operator-state.md, operator-log.md, test-harness-log.md).
 - **Deploy the cycle-24 batches** (`clasp push -f` + New version; `runSmokeTests` on prod), then walk S4 (TC-04 step), S22, S30, S100 (quarter grant → month revoke), S117, the Dept Request Expand, **S137** (both composers ask), **S2's new F11 step** (an unmarked project refuses; `allowFullSuiteHere()` opens two hours), S34, S52, S59/S60 (a normal custom recipient still sends), S62/S128 (search after the index key changes once).
 - **Operator, after the deploy:** the full suite now REFUSES on prod (unmarked) — run `allowFullSuiteHere()` first when you mean to run it there, or (better) stand up the DEV instance (cycle 19 step 8).
@@ -94,4 +101,4 @@ Updated: 2026-10-06 (cycle 24 /sync-docs)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 24 (the Seams & Invariants audit, 2026-10-05): both implementation batches and their `/sync-docs` pass are committed and pushed on `claude/beautiful-bohr-7l8epj` (green: pure 1240, DOM 222, lint, counts). Next: deploy (`clasp push -f` + New version; `runSmokeTests` on prod), the walks under Pending (S137 and S2's F11 step are new), then `/reflect`.
+Manual-update Phase 1 is committed and pushed on `claude/beautiful-bohr-7l8epj` (green: pure 1246, DOM 222, lint, counts; 11 bite-checks BITE plus the two Python self-tests). Next: the operator approves the colour swatch and deploys the app part; then start Phase 2 (text edits, chapters 0–1 first) from `.cycle/manual-update-plan.md`.

@@ -59,4 +59,8 @@ if __name__ == "__main__":
     assert find(R, "used equipment")["id"] == "fo-used"
     assert find(R, "nobody at all") is None
     assert anchor(R[1]) == "role-svc-esc"
+    # a name every word of which another role's name also holds: only the exact pass tells them apart
+    R2 = [{"id": "fop-sup", "role": "Field Operations — Power Supervisor", "note": ""},
+          {"id": "fo-sup", "role": "Field Operations Supervisor", "note": ""}]
+    assert find(R2, "Field Operations Supervisor")["id"] == "fo-sup", "the exact name beats a row holding all its words"
     print("roles selftest ok")
