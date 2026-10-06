@@ -298,6 +298,8 @@ All defaults (61–87) are approved.
    - A two-tone left edge for cross-department sections is possible.
    
    This goes on chapter headings (all of them, not just 0–4), cards, the nav, and an accent strip in the app reader. I'd send a swatch mock for approval first.
+
+   **Status 2026-10-06:** palette v2 (distinct hues within each family) + option A (a thin family stripe beside the chapter stripe) + a round icon badge BEFORE each chapter title, also on the sidebar and chips. Icons per the operator: headset, phone, walker, PAP mask, clipboard, lightning bolt (Power — chosen over three wheelchair drafts), truck, the CRM's Repair icon from 0.10.1 redrawn as an outline (Service), crescent moon, oxygen tank, dollar. The colours, icon paths and families are in `.cycle/manual-chapter-style-draft.json`. **Awaiting the operator's final look at the v3 mock; nothing is applied yet.**
 5. **Clearer hierarchy (414):** chapter number in a coloured chip, 4.7-level headings with a left rule, 4.7.4-level smaller. Points stay as unnumbered bullets.
 6. **Front matter as a distinct "Start here" panel.** The five banner types are shown as real coloured examples (no code; the renderers already colour them). "Confidential – Internal Use Only" moves to an HTML footer line; the Word footer already has it.
 7. **Equipment "spec cards"** (photo plus a two-column spec grid) instead of wide tables. Medium size, build only, no deploy.
