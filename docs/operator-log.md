@@ -10,6 +10,26 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-05 — cycle 24 seams round: composers ask, the suite guard closes, QA revoke
+
+**Adds ONE operator state item:** the Script Property `SUITE_UNMARKED_OK_UNTIL`,
+written only by `allowFullSuiteHere()` (see below). Deploy as usual
+(`clasp push -f` + New version; `runSmokeTests()` on prod).
+- **The full editor suite now REFUSES on prod** (an unmarked project).
+  `runSmokeTests` is unaffected. When you mean to run `runAllTests` /
+  `runAllTestsPartB` on prod, run `allowFullSuiteHere()` from the editor first —
+  it opens a two-hour window. Better: stand up the DEV project and mark it
+  (`INSTANCE_LABEL` + `INSTANCE_IS_PROD="false"`), where nothing is needed.
+- **Tell the team:** both email composers now ask "Discard changes?" before
+  Escape, the backdrop or × throws a typed email away. Keep editing changes
+  nothing; Discard is today's cancel (S137).
+- **QA managers:** "Revoke exemption" now revokes the period that granted it —
+  a quarter's exemption reads "Revoke exemption (Q4 2026)" in a month view. If
+  you revoked one from a month view before this deploy and the rep still reads
+  Exempt, revoke it again.
+- Health: a failed end-of-day reminder send, and a grouped job's crash, now
+  reach the health dot and the failure digest by name.
+
 ## 2026-09-30 — manual search: word forms, glossary phrases, the call router (M5b)
 
 **Adds NO operator state.** Deploy as usual (`clasp push -f` + New version).

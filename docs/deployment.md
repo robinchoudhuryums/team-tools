@@ -202,8 +202,9 @@ re-copy the creds; nothing is lost, it's all in git or Google).
 
 ## The instance guards (code-side, already built)
 
-Two optional Script Properties tag an instance. **Both unset = the prod default =
-zero behavior change**, so prod is unaffected until you set them.
+Two optional Script Properties tag an instance. Both unset is the prod default —
+and **since seams F11 (cycle 24, 2026-10-05) an unset `INSTANCE_IS_PROD` is treated
+as production by the full suite too** (see the override below).
 
 - **`INSTANCE_LABEL`** (e.g. `DEV`) — renders a strong top **banner** in the app so
   you can never confuse the isolated dev tab with the team's live one. Unset on prod.
@@ -211,6 +212,15 @@ zero behavior change**, so prod is unaffected until you set them.
   destructive `TEST_`-row writers (`runAllTests` / `setupTestEnvironment`) **refuse**
   to run, so you can never seed test rows into live payroll/PHI. (`runSmokeTests`,
   pure logic, still runs anywhere.)
+- **An UNMARKED instance refuses the full suite too (seams F11, cycle 24).** With
+  `INSTANCE_IS_PROD` unset, `runAllTests`, the two Parts and `setupTestEnvironment`
+  refuse and name the way out. On the dev project, set `INSTANCE_LABEL` and
+  `INSTANCE_IS_PROD="false"` and they run. To run the full suite on an unmarked
+  project KNOWINGLY (it writes `TEST_` rows into that project's live stores), run
+  `allowFullSuiteHere()` from the editor first: it stamps `SUITE_UNMARKED_OK_UNTIL`
+  two hours ahead (owner-only; never on a project marked `INSTANCE_IS_PROD=true`;
+  delete the property to close it sooner). The suite-environment block says which
+  state the run is in.
 - **The suite is also OWNER-only, on every instance (cycle 22 S1).** Every runner,
   `setupTestEnvironment`, `cleanupTestData` and every `test_*` refuses a caller who
   is not the script owner (`Session.getActiveUser()` must equal

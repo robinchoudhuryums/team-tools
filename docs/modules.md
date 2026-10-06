@@ -217,6 +217,13 @@ not restate it. Server endpoints live in the fourteen server files
      through Mon Oct 5 — the latest day is not imported yet" (the MET-5 follow-up,
      g148).
 
+     **Cycle 24 seams (2026-10-05) — Time / PTO and automation.** The Time /
+     PTO calendar says when the timesheet archive could not be read, instead of
+     showing a short month as complete (F8). Un-approving a request while PTO
+     tracking or the rep's PTO is off keeps the record of the day taken and
+     names it, and re-approving that row never takes the day twice — no screen
+     un-approves today (F19). A grouped automation job that crashes is reported
+     under its own, labelled name (F3).
 
 ## Call Notes
 
@@ -407,6 +414,12 @@ not restate it. Server endpoints live in the fourteen server files
      recipient records that recipient's DOMAIN on the CallNoteEmail audit row,
      never the address (CN-3, g36).
 
+     **Cycle 24 seams (2026-10-05) — the composers and the digest.** Both email
+     composers ask "Discard changes?" before Escape, the backdrop or × throws a
+     typed email away; Keep editing changes nothing, Discard is today's cancel
+     (F7, operator-approved; S137). A failed end-of-day reminder send, or a rep
+     Sheet the digest cannot read, now shows on the health dot and in the
+     failure digest (F2).
 
 ## Metrics
 
@@ -617,6 +630,11 @@ not restate it. Server endpoints live in the fourteen server files
      `data-qa-exempt` handler, so an apostrophe in an agent's name no longer
      breaks the click (F-17, g133).
 
+     **Cycle 24 seams (2026-10-05):** a department member's Expand on a Dept
+     Request re-checks that the note it fetched is the one the request links
+     to, so a delete at the same moment can never show another patient's note
+     (F6).
+
 ## Intake
 
    - **Intake** — patient-intake forms ported from the bound
@@ -754,6 +772,10 @@ not restate it. Server endpoints live in the fourteen server files
      **Cycle 23 Batch 9 (2026-10-02):** the preview modal cannot be closed while
      its send is in flight — Escape, × and Cancel say "Sending — one moment…" — so a
      second Send can no longer go out as a duplicate PHI email (INTUI-1, g130).
+
+     **Cycle 24 seams (2026-10-05):** a custom recipient written with quotes or
+     a second @ is refused by name — the org check and the logged domain could
+     read such an address two ways (F21).
 
 ## Reference
 
@@ -1212,6 +1234,12 @@ not restate it. Server endpoints live in the fourteen server files
      and "could not load" read differently. Old Drive-hosted images still render
      (DRV-3).
 
+     **Cycle 24 seams (2026-10-05):** the Search synonyms and Revision history
+     × return focus to the button that opened them (F4); a KbImages tab whose
+     header row was edited reads "could not load", not "not stored" (F20); and
+     the search index's cache key covers every function that shapes it, so a
+     deploy that changes an anchor is never served from an old cache (F18).
+
 ## Training & Employee Docs
 
    - **Training & Employee Docs** — phased module
@@ -1589,3 +1617,9 @@ not restate it. Server endpoints live in the fourteen server files
      previous period" average is card-weighted like the current one (QA2-4);
      "maria garcia" and "Maria Garcia" are one Stats row (QA2-5); and a rating
      click keeps keyboard focus on the button (QAUI-1).
+
+     **Cycle 24 seams (2026-10-05):** revoking an exemption clears the period
+     that granted it — a quarter's exemption seen in a month view is revoked as
+     the quarter, and the button says so ("Revoke exemption (Q4 2026)"); a
+     revoke of a period with no exemption is refused by name instead of
+     answering "revoked" and changing nothing (F1).

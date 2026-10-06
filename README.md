@@ -206,7 +206,9 @@ it auto-starts once and is replayable from the Call Notes **?** menu.
 The Apps Script test suite (`web-app/Tests.js`) runs from the editor
 (`runSmokeTests()` / `runAllTests()`; `runAllTestsPartA()` + `PartB()` split a
 full run across two executions). Smoke on prod, full on dev nightly —
-`runAllTests` on prod is the exception, not the routine; the summary prints
+`runAllTests` on prod is the exception, not the routine, and since cycle 24 it
+refuses on any project not marked DEV until `allowFullSuiteHere()` opens a
+two-hour window (`docs/deployment.md`); the summary prints
 the expected count derived from the registration list. Client-side helpers have two
 off-editor harnesses (both outside `web-app/`, so `clasp` never pushes
 them): a **dependency-free** pure-helper + parse-guard harness

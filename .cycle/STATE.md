@@ -3,11 +3,11 @@
 ## Current
 Cycle: 24 — opened 2026-10-05 by the Seams & Invariants audit (cycle 23 is CLOSED; its block is in `.cycle/HISTORY.md`).
 Phase: implement
-Scope: Seams & Invariants — BOTH batches DONE: the production batch (F1, F2, F3, F4, F6, F8 note, F19) and the nets-and-library batch (F5, F7, F8 remainder, F9–F18, F20, F21). Owed: /sync-docs, deploy, walks, /reflect.
+Scope: Seams & Invariants — BOTH batches DONE: the production batch (F1, F2, F3, F4, F6, F8 note, F19) and the nets-and-library batch (F5, F7, F8 remainder, F9–F18, F20, F21). Owed: deploy, walks, /reflect (/sync-docs done 2026-10-06).
 Test Command: manual
 Estimates: production batch (F1/F2/F3/F4/F6/F8/F19): M (~5 h) — written before the first edit. Actual ~2.5 h. · nets-and-library batch (F5, F7, F8r, F9–F18, F20, F21?): L (~8 h) — written before the first edit. Actual ~4.5 h.
 Subsystem cycles since last Seams audit: 0 — reset by the Seams & Invariants audit of 2026-10-05 (cycle 24). The cadence is every 4.
-Updated: 2026-10-05 (cycle 24 nets-and-library batch)
+Updated: 2026-10-06 (cycle 24 /sync-docs)
 
 ## In progress (facts to carry forward — NOT judgments)
 - The seams audit's handoff block travelled by paste (as `/audit` does). Its findings, session-local F1–F21, are listed under Pending so a fresh session can continue without it.
@@ -34,7 +34,7 @@ Updated: 2026-10-05 (cycle 24 nets-and-library batch)
 - Seams F21 | 60_intake.js | an intake recipient has exactly one @ and no quoted local part
 
 ## Pending / not yet done
-- **`/sync-docs` for both cycle-24 batches** — each block's DOCUMENTATION UPDATES NEEDED (gotchas g164/g100/g53/g142/g166/g128/g150; INV-353/355/356/358/372 amendments; operator-state for `AUTOMATION_LAST_ERRORS` keys; the test-harness log).
+- ~~`/sync-docs` for both cycle-24 batches~~ DONE 2026-10-06 (gotchas ×11 + their index lines, INV-353/355/356/358/362/372/373 amendments, modules.md, design-decisions.md, deployment.md, README, operator-state.md, operator-log.md, test-harness-log.md).
 - **Deploy the cycle-24 batches** (`clasp push -f` + New version; `runSmokeTests` on prod), then walk S4 (TC-04 step), S22, S30, S100 (quarter grant → month revoke), S117, the Dept Request Expand, **S137** (both composers ask), **S2's new F11 step** (an unmarked project refuses; `allowFullSuiteHere()` opens two hours), S34, S52, S59/S60 (a normal custom recipient still sends), S62/S128 (search after the index key changes once).
 - **Operator, after the deploy:** the full suite now REFUSES on prod (unmarked) — run `allowFullSuiteHere()` first when you mean to run it there, or (better) stand up the DEV instance (cycle 19 step 8).
 - **Then `/reflect`** for cycle 24.
@@ -94,4 +94,4 @@ Updated: 2026-10-05 (cycle 24 nets-and-library batch)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 24 (the Seams & Invariants audit, 2026-10-05) has both implementation batches committed and pushed on `claude/beautiful-bohr-7l8epj`: green (pure 1240, DOM 222, lint, counts), 13 + 19 bite-checks all BITE. Next: `/sync-docs` (both blocks list what is owed), deploy, the walks under Pending (S137 and S2's F11 step are new), then `/reflect`.
+Cycle 24 (the Seams & Invariants audit, 2026-10-05): both implementation batches and their `/sync-docs` pass are committed and pushed on `claude/beautiful-bohr-7l8epj` (green: pure 1240, DOM 222, lint, counts). Next: deploy (`clasp push -f` + New version; `runSmokeTests` on prod), the walks under Pending (S137 and S2's F11 step are new), then `/reflect`.

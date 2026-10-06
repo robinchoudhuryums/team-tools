@@ -1112,8 +1112,11 @@ entry says which it is.
   `purgeOldQaReviews`, `purgeExpiredFormData`, `purgeArchivedCallNotes` — the
   four DELETE-ONLY retention purges, bounded first, cross-rep walk last).
   `runTriggerGroup_` runs each job in its own try/catch (a throw is stamped
-  under the JOB name into `AUTOMATION_LAST_ERRORS`, a clean run clears it,
-  a typo'd name is stamped by name), and every grouped handler keeps its
+  under the job's KEY into `AUTOMATION_LAST_ERRORS` — `TRIGGER_HANDLER_JOB_KEYS`
+  maps each grouped handler to it since seams F3 (cycle 24), so it is labelled
+  and its heartbeat line names it; a clean run clears a key the job does not
+  manage itself, plus any pre-F3 stamp left under the handler name — a typo'd
+  name is stamped by name), and every grouped handler keeps its
   own `assertManagerCaller_` gate, audit rows and heartbeat, so Automation
   Health's per-job liveness is UNCHANGED. Since Batch 4 (2026-09-18) the two
   stand-alone daily jobs with no audit row — `sendDailyMissedPunchAlerts`

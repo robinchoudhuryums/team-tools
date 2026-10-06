@@ -5245,6 +5245,12 @@ pick them up without re-deriving the context.
   falls in; a month's exemption does not exempt its whole quarter. Rejected:
   exempting the CURRENT period's remainder (the rep may already have been
   sampled, and the target math would need partial periods).
+  **Seams F1 (cycle 24, 2026-10-05):** a REVOKE clears the key that GRANTED
+  the exemption (`exemptKey` / `exemptNextKey` on the coverage row, from
+  `qaExemptKeyFor_` — the rule `qaExemptFor_` reads), and `qaSetExemption`
+  refuses a revoke of a key with no active grant. Rejected: revoking every key
+  that touches the viewed period (a month revoke would silently clear a whole
+  quarter the manager never looked at); the button names the quarter instead.
 - <a id="an-editor-overlay-asks-before-it-discards"></a>**An editor overlay asks "Discard changes?" before Escape, the backdrop or Cancel throws typed work away — `unsaved` on `ensureOverlay`, and "dirty" is an event since open (cycle 23 UI-ESC, 2026-10-02).**
   The shell's Escape closes the topmost overlay wherever the key is pressed,
   which is right for a viewer and wrong for an editor. Rather than exempt
@@ -5264,6 +5270,13 @@ pick them up without re-deriving the context.
   moment, and a structural edit changes the field set) and a native
   `beforeunload`-style prompt (an in-app dialog must be a `uiConfirm`,
   the native-dialog replacement decision).
+  **Seams F7 (cycle 24, operator-approved 2026-10-05):** both call-note email
+  composers (external and department) are guarded too, with the same rule
+  (an event since open; `busy` = sending). Discard runs the existing close
+  unchanged — the Save & Compose rollback included — and Keep editing changes
+  nothing; a send and the Internal/External tab switch close through the hook
+  directly. Rejected: suppressing Escape inside the message box only (the
+  backdrop and × discard the same work).
 - <a id="and-in-an-eligibility-cell-means-either-area"></a>**"and" in an Area Eligibility cell means EITHER area; a phrase that could mean "both" is unreadable, never guessed (cycle 23 KB2-6, operator 2026-10-05).**
   The scan flagged that `oopEligibilityParse_` reads "listed cities and 100
   miles of Dallas" as `any[radius, cities]` — either one qualifies — and asked
