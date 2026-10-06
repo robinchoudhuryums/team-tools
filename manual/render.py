@@ -107,11 +107,12 @@ def expand(m):
     if spec.startswith("roster:"):
         scope = spec.split(":")[1]
         rows = [r for r in ROSTER if scope == "all" or r["part"] in (scope, "shared")]
+        # Transfer is always shown (the legend explains it); Phone rides last, only
+        # where some row has one — it used to REPLACE Transfer, so the directory
+        # silently lost "Direct" and every queue name once on-call phones arrived
         show_phone = any(r.get("phone") for r in rows)
-        hdr = "| Role | Holder | Backup | Transfer | Email |"
-        sep = "|---|---|---|---|---|"
-        if show_phone:
-            hdr = "| Role | Holder | Phone | Backup | Email |"
+        hdr = "| Role | Holder | Backup | Transfer | Email |" + (" Phone |" if show_phone else "")
+        sep = "|---|---|---|---|---|" + ("---|" if show_phone else "")
         out = [hdr, sep]
         for r in sorted(rows, key=lambda x: ({"shared":0,"p1":1,"p2":2,"p3":3,"p4":4,"p5":5,"p6":6,"p7":7,"p8":8}.get(x["part"],9), x["role"])):
             bk = r["backup"] or ""
@@ -121,10 +122,8 @@ def expand(m):
             em = r.get("email") or ""
             if r.get("email_attn"):
                 em += f" — subject “{r['email_attn']}: [name] [TRX #]”"
-            if show_phone:
-                out.append(f"| {r['role']} | {hd} | {r.get('phone') or ''} | {bk} | {em} |")
-            else:
-                out.append(f"| {r['role']} | {hd} | {bk} | {tr} | {em} |")
+            row = f"| {r['role']} | {hd} | {bk} | {tr} | {em} |"
+            out.append(row + (f" {r.get('phone') or ''} |" if show_phone else ""))
         return "\n".join(out)
     if spec.startswith("glossary:"):
         _, cls, _, part = spec.split(":")[1], None, None, None
@@ -178,7 +177,7 @@ def expand(m):
         tag = os.path.splitext(os.path.basename(sys.argv[1]))[0] + (f"-{DIAGRAM_USES[name]}" if DIAGRAM_USES[name] > 1 else "")
         for mid in set(re.findall(r'<marker id="([^"]+)"', svg)):
             svg = svg.replace(f'id="{mid}"', f'id="{mid}-{tag}"').replace(f"url(#{mid})", f"url(#{mid}-{tag})")
-        return f'<div class="fig">{svg}</div>'
+        return f'<div class="fig" data-diagram="{name}">{svg}</div>'
     if spec.startswith("figure:"):
         fid = spec.split(":", 1)[1]
         if fid not in FIGS or fid not in FIGB:

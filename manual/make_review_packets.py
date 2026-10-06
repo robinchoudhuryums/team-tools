@@ -32,7 +32,7 @@ def refs_for(sec_field, part):
 
 
 def clean(md):
-    md = re.sub(r'<div class="fig">.*?</div>', "*[Diagram — see the manual]*", md, flags=re.S)
+    md = re.sub(r'<div class="fig"[^>]*>.*?</div>', "*[Diagram — see the manual]*", md, flags=re.S)
     md = re.sub(r"<figure.*?</figure>", "*[Figure — see the manual]*", md, flags=re.S)
     md = re.sub(r"<img[^>]*>", "", md)
     md = re.sub(r'<span class="phase"[^>]*></span>', "", md)

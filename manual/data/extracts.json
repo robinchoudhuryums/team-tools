@@ -1,0 +1,15 @@
+{
+  "_about": "What each department guide (the per-department Word file) carries. The master manual is the one source; a guide is a filtered copy built from this list. 'default_chapters' go into every guide; a guide adds its own part, any extra 'chapters', and any level-2 'sections' from other parts (e.g. \"§5-9\"), which are carried under 'Related sections from other parts' with their full-manual numbers. 'cards' (optional) lists the quick reference cards; by default a guide carries the cards of the parts it includes. The glossary and the directory are filtered to the guide's parts automatically, and a reference to a section the guide does not carry reads '(in the full manual)' rather than linking nowhere. Edit this file to change what a guide contains — never the text.",
+  "default_chapters": ["p0", "p1", "p10"],
+  "guides": [
+    {"key": "p2", "chapters": [], "sections": []},
+    {"key": "p3", "chapters": [], "sections": []},
+    {"key": "p4", "chapters": [], "sections": []},
+    {"key": "p5", "chapters": [], "sections": []},
+    {"key": "p6", "chapters": [], "sections": []},
+    {"key": "p7", "chapters": [], "sections": []},
+    {"key": "p8", "chapters": [], "sections": []},
+    {"key": "p9", "chapters": [], "sections": []},
+    {"key": "p10", "chapters": [], "sections": []}
+  ]
+}

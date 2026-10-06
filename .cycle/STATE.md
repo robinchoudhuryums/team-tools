@@ -5,7 +5,7 @@ Cycle: 24 — opened 2026-10-05 by the Seams & Invariants audit (cycle 23 is CLO
 Phase: implement
 Scope: Seams & Invariants — BOTH batches DONE: the production batch (F1, F2, F3, F4, F6, F8 note, F19) and the nets-and-library batch (F5, F7, F8 remainder, F9–F18, F20, F21). Owed: deploy, walks, /reflect (/sync-docs done 2026-10-06).
 Test Command: manual
-Estimates: production batch (F1/F2/F3/F4/F6/F8/F19): M (~5 h) — written before the first edit. Actual ~2.5 h. · nets-and-library batch (F5, F7, F8r, F9–F18, F20, F21?): L (~8 h) — written before the first edit. Actual ~4.5 h.
+Estimates: production batch (F1/F2/F3/F4/F6/F8/F19): M (~5 h) — written before the first edit. Actual ~2.5 h. · nets-and-library batch (F5, F7, F8r, F9–F18, F20, F21?): L (~8 h) — written before the first edit. Actual ~4.5 h. · **Manual Phase 1 (Foundations, the operator's manual-update plan): L (~8 h)** — written before the first edit, 2026-10-06.
 Subsystem cycles since last Seams audit: 1 — reset to 0 by the Seams & Invariants audit of 2026-10-05 (cycle 24); incremented by cycle 24's /reflect (2026-10-06). The cadence is every 4.
 Updated: 2026-10-06 (cycle 24 /sync-docs)
 

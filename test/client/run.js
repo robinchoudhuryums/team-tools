@@ -34802,6 +34802,97 @@ test('Seams F21 (cycle 24): an intake recipient has exactly one @ and no quoted 
   ['', 'nobody', 'x@', '@umsupply.com'].forEach((bad) => assert.strictEqual(ctx.intakeValidateEmail_(bad), false, JSON.stringify(bad)));
 });
 
+// ── Manual Phase 1 (2026-10-06) — the foundations of the operator's manual update ──
+console.log('\nManual Phase 1 — role links, real tables, step and do/don\'t tables, footnotes, the index, Word, the front page, department guides');
+const MP1_ = (f) => fs.readFileSync(path.join(__dirname, '../../manual', f), 'utf8');
+
+test('MP1-1: kbMd_ draws the manual\'s two table conventions — a "Step" table and the \u2713/\u2717 columns — and every other table exactly as before (driven)', () => {
+  const c = m1Md_();
+  const steps = c.kbMd_('| Step | Action |\n|---|---|\n| 1 | Call |\n| 2 | Text |\n');
+  assert.ok(/^<table class="kb-steps"><thead><tr><th>Step<\/th><th>Action<\/th>/.test(steps), steps);
+  const dd = c.kbMd_('| \u2713 Do | \u2717 Don\'t | Why |\n|---|---|---|\n| Listen | Interrupt | x |\n');
+  assert.ok(/^<table class="kb-dodont"><thead><tr><th class="kb-do">\u2713 Do<\/th><th class="kb-dont">\u2717 Don't<\/th><th>Why<\/th>/.test(dd), dd);
+  assert.ok(/<tr><td class="kb-do">Listen<\/td><td class="kb-dont">Interrupt<\/td><td>x<\/td><\/tr>/.test(dd), 'each cell carries its column\'s tone: ' + dd);
+  assert.ok(/^<table><thead><tr><th>Team<\/th>/.test(c.kbMd_('| Team | Line |\n|---|---|\n| A | 1 |\n')), 'an ordinary table carries no class');
+  assert.ok(/^<table><thead>/.test(c.kbMd_('| Steps taken | x |\n|---|---|\n| a | b |\n')), 'only a header that IS "Step" makes a step table');
+  assert.ok(/^<table><thead>/.test(c.kbMd_('| Do | Don\'t |\n|---|---|\n| a | b |\n')), 'the tone needs the glyph — a bare "Do" header is an ordinary column');
+  const hostile = c.kbMd_('| \u2713 "><img src=x onerror=alert(1)> | b |\n|---|---|\n| c | d |\n');
+  assert.ok(!/<img/.test(hostile) && /<th class="kb-do">\u2713 "&gt;&lt;img/.test(hostile), 'the class is a constant and the header text stays escaped: ' + hostile);
+  ['table.kb-steps tbody tr:not(:last-child) td:first-child::after', 'table.kb-dodont td.kb-do', 'table.kb-dodont td.kb-dont'].forEach((sel) =>
+    assert.ok(M1_KB_SRC.indexOf('.kb-article ' + sel + ' {') > 0, sel + ' is styled'));
+});
+
+test('MP1-2: the build, the export and the Word model resolve [ROLE:] through ONE resolver (exact name first) and footnotes through ONE transform; a role links to its directory ROW', () => {
+  const bd = MP1_('build.py'), ex = MP1_('export_reference.py'), mm = MP1_('md2model.py'), mh = MP1_('make_html.py'), rl = MP1_('roles.py');
+  [['build.py', bd], ['export_reference.py', ex]].forEach(([who, src]) => {
+    assert.ok(/^import footnotes, roles/m.test(src), who + ' imports both shared modules');
+    assert.ok(/roles\.find\(ROSTER, m\.group\(1\)\)/.test(src), who + ' resolves a role through roles.find');
+    assert.ok(/footnotes\.apply\(/.test(src), who + ' applies the footnotes');
+    assert.ok(!/for r in ROSTER:\s*\n\s*hay = /.test(src), who + ' keeps no resolver loop of its own');
+  });
+  assert.ok(rl.indexOf('_norm(r["role"]) == w') > 0 && rl.indexOf('_norm(r["role"]) == w') < rl.indexOf('r.get("note")'), 'the exact role name is tried before any note (6.2\'s link resolved to the Used Equipment Sales Contact through its note)');
+  assert.ok(/href="#\{roles\.anchor\(best\)\}"/.test(bd), 'a role links to the person\'s row, never the top of B.1');
+  assert.ok(/from roles import anchor as _role_anchor/.test(mh) && /tr\["id"\] = rid/.test(mh), 'make_html.py gives each B.1 row that id');
+  assert.ok(/if\(h\.tagName==='TR'\)/.test(mh), 'and its preview shows that row, under the table\'s header');
+  assert.ok(/bookmark\(roles\.anchor\(r\)\)/.test(mm), 'Word bookmarks the same row');
+  assert.ok(/python3 roles\.py && python3 footnotes\.py/.test(MP1_('make_all.sh')), 'make_all.sh runs both modules\' self-tests');
+  assert.ok(/<!--notes-->/.test(MP1_('footnotes.py')) && /re\.sub\(r"<!--\.\*\?-->", "", text, flags=re\.S\)/.test(ex), 'the notes marker is an HTML comment, which the export already strips');
+});
+
+test('MP1-3: every table stays a table in the HTML; the directory always shows Transfer (Phone last); Word breaks pages on the heading, embeds the diagrams, and a PDF is checked for blank pages', () => {
+  const mh = MP1_('make_html.py');
+  const cls = mh.slice(mh.indexOf('def classify_tables('), mh.indexOf('\ndef ', mh.indexOf('def classify_tables(') + 5));
+  assert.ok(!/new_tag\("dl"\)/.test(cls) && !/"kv"/.test(cls), 'no key/value conversion (index letters, specs, check/where all lost their columns to it)');
+  assert.ok(/heads\[0\]\.strip\(\)\.lower\(\) == "step"/.test(cls) && /h\[:1\] in \("\\u2713", "\\u2717"\)/.test(cls), 'the same two conventions as kbMd_');
+  assert.ok(/hdr = "\| Role \| Holder \| Backup \| Transfer \| Email \|" \+ \(" Phone \|" if show_phone else ""\)/.test(MP1_('render.py')), 'Transfer always; Phone rides last');
+  const rx = MP1_('render_docx.js');
+  assert.ok(!/new PageBreak\(\)/.test(rx) && /pageBreakBefore: pb/.test(rx), 'the page break rides the heading — no break paragraph to land alone on a page');
+  assert.ok(/while \(blocks\[j\] && blocks\[j\]\.k === 'rule'\) j\+\+/.test(rx), 'and no spacer lands before a page-starting heading, past a rule');
+  assert.ok(/TONE\.ok/.test(rx) && /\/\^step\$\/i/.test(rx), 'Word draws the two table conventions too');
+  const mk = MP1_('make_all.sh');
+  assert.ok(mk.indexOf('rasterize_diagrams.py') > 0 && mk.indexOf('rasterize_diagrams.py') < mk.indexOf('render_docx.js'), 'the diagrams are rendered before the Word files');
+  assert.ok(/check_pdf\.py/.test(mk) && /CHROME = re\.compile/.test(MP1_('check_pdf.py')), 'a PDF, when one can be made, fails the build on a page holding only the running header and footer');
+});
+
+test('MP1-4: the front page — "Where to start", the five banner types as real banners, no "Unified" title or version table, the owner and classification shown; the export reads the same page', () => {
+  const bd = MP1_('build.py');
+  const how = /^HOWTO = """([\s\S]*?)"""/m.exec(bd)[1];
+  ['### Where to start', 'You need to find a policy or term', 'formatted to be printed if desired',
+    'Applicable to every call, regardless of the department', 'though each department could have use cases for other department parts']
+    .forEach((t) => assert.ok(how.indexOf(t) >= 0, 'has: ' + t));
+  ['Critical', 'Policy', 'Watch-out', 'Script', 'Note'].forEach((k) => assert.ok(new RegExp('^> \\*\\*' + k + '\\*\\* \u2014 ', 'm').test(how), k + ' is shown as a real banner'));
+  ['You are not expected to read', 'roughly 25 pages', 'Older copies used', 'Your first week', 'state coverage'].forEach((t) => assert.ok(how.indexOf(t) < 0, 'gone: ' + t));
+  assert.ok(!/def control_block/.test(bd) && bd.indexOf('chunks = [f"# CSR Procedures Manual{\' \u2014 \' + title if guide else \'\'}"') > 0, 'the full manual is titled plainly — no "Unified", no version table');
+  assert.ok(/^OWNER = "[^"]+"$/m.test(bd) && MP1_('make_html.py').indexOf('OWNER = re.search(r\'^OWNER = "([^"]+)"\'') > 0, 'the owner is build.py\'s, read by the HTML (and Word) rather than copied');
+  assert.ok(MP1_('export_reference.py').indexOf('re.search(r\'^HOWTO = """(.*?)"""\'') > 0, 'the export still reads the front page from build.py');
+});
+
+test('MP1-5: the index — section numbers link, an abbreviation or code is explained, one entry per term, no sentence-titles, a letter bar, and its filter finds the index again', () => {
+  const bd = MP1_('build.py'), mh = MP1_('make_html.py');
+  const ix = bd.slice(bd.indexOf('def build_index('), bd.indexOf('\ndef glossary_subset('));
+  assert.ok(ix.indexOf('<a class="xr" href="#{_anchor_id(s)}">{dnum(s)}</a>') > 0, 'each section number is a link (and so previews on hover)');
+  assert.ok(ix.indexOf('| Term | Explanation | Sections |') > 0 && ix.indexOf('add(c, "code", " · ".join') > 0, 'the explanation column: a code names its items');
+  assert.ok(ix.indexOf('key = _index_fold(term)') > 0, 'spellings that differ by case or a plural are one entry');
+  const skip = bd.slice(bd.indexOf('INDEX_SKIP_FIRST = {'), bd.indexOf('}', bd.indexOf('INDEX_SKIP_FIRST = {')));
+  ['how', 'what', 'is', 'most', 'no', 'new'].forEach((w) => assert.ok(skip.indexOf('"' + w + '"') > 0, w + ' never opens an index topic'));
+  assert.ok(ix.indexOf('"0–9"') > 0 && ix.indexOf('{{#ix-') > 0, 'the digits bucket is labelled, and every letter has an id');
+  assert.ok(mh.indexOf("getElementById('E-1')") > 0 && !/'F-1'|"F-1"/.test(mh), 'the filter looks for the index where it is (it looked for Appendix F)');
+  assert.ok(mh.indexOf('class="ixaz" role="navigation"') > 0 && mh.indexOf('<nav class="ixaz"') < 0, 'the letter bar is not a <nav> (the sidebar\'s nav rule would style it)');
+});
+
+test('MP1-6: department guides come from data/extracts.json — every guide a part, Billing in each by default, and a reference to a section a guide leaves out reads "(in the full manual)", never a dead link', () => {
+  const bd = MP1_('build.py');
+  const man = JSON.parse(MP1_('data/extracts.json'));
+  const parts = [...bd.matchAll(/^\s+"(p\d+)": \("/gm)].map((m) => m[1]);
+  assert.deepStrictEqual(man.default_chapters, ['p0', 'p1', 'p10'], 'Parts 0, 1 and Billing go into every guide');
+  man.guides.forEach((g) => { assert.ok(parts.indexOf(g.key) >= 0, g.key + ' is a part'); (g.sections || []).forEach((s) => assert.ok(/^§\w+-\w+$/.test(s), s)); });
+  assert.deepStrictEqual(man.guides.map((g) => g.key).sort(), parts.filter((p) => !['p0', 'p1'].includes(p)).sort(), 'one guide per department part');
+  assert.ok(bd.indexOf('MANIFEST = json.load(open("data/extracts.json"))') > 0, 'build.py reads the manifest');
+  assert.ok(bd.indexOf('errors.append(f"extracts.json: ') > 0, 'and refuses a guide, chapter or section that does not exist');
+  assert.ok(bd.indexOf('body = localise_links(body)') > 0 && bd.indexOf('(in the full manual)') > 0, 'a link outside the guide becomes plain text that says where the section is');
+  assert.ok(bd.indexOf('len(part_keys) > 3') < 0, 'a four-part guide no longer carries every card (the old filter kept them all past three parts)');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

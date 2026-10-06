@@ -89,61 +89,97 @@ def anchor(m):
     return m.group(0)
 
 body = re.sub(r"<h([1-4])>(.*?)</h\1>", anchor, body)
-body = body.replace('<h2 id="F-1">',
+_ix_letters = re.findall(r'<h3 id="ix-([0-9a-z])">([^<]*)</h3>', body)
+body = body.replace('<h2 id="E-1">',
     '<div id="ixwrap"><input id="ixq" type="search" placeholder="Filter the index…" '
-    'autocomplete="off" aria-label="Filter index"></div><h2 id="F-1">', 1)
+    'autocomplete="off" aria-label="Filter index"><div class="ixaz" role="navigation" aria-label="Index letters">'
+    + "".join(f'<a href="#ix-{k}">{html.escape(t)}</a>' for k, t in _ix_letters)
+    + '</div></div><h2 id="E-1">', 1)
 from bs4 import BeautifulSoup as _BS
 
 def classify_tables(html):
+    """Every table stays a table. It used to become a stacked key -> value list when
+    it had two short columns — the index letters G/J/Q/V, the 2.3.1 specifications,
+    the 5.2 check/where list and the 7.6 symptom/action table all lost their columns
+    that way, in the HTML only (operator 2026-10-06). Two conventions are drawn:
+      * a table whose first header is "Step" is a STEP table — numbered, with an
+        arrow down to the next step;
+      * a header that opens with \u2713 or \u2717 tints its column — green for what
+        to do or say, red for what not to (the Do's & Don'ts tables).
+    Word (render_docx.js) and the Reference renderer (kbMd_) draw the same two."""
     soup = _BS(html, "html.parser")
-    stats = {"kv": 0, "compact": 0, "matrix": 0}
+    stats = {"compact": 0, "matrix": 0, "steps": 0, "dodont": 0}
     for tbl in soup.find_all("table"):
         if tbl.get("class") and "icons" in tbl.get("class"):
             continue
         head = tbl.find("thead")
-        heads = [th.get_text(" ", strip=True) for th in head.find_all("th")] if head else []
+        ths = head.find_all("th") if head else []
+        heads = [th.get_text(" ", strip=True) for th in ths]
         body_rows = tbl.find("tbody").find_all("tr") if tbl.find("tbody") else []
         ncol = max([len(heads)] + [len(r.find_all("td")) for r in body_rows] or [0])
         nrow = len(body_rows)
-        first_lens, second_lens = [], []
-        for r in body_rows:
-            cells = r.find_all("td")
-            if cells:
-                first_lens.append(len(cells[0].get_text(" ", strip=True)))
-            if len(cells) > 1:
-                second_lens.append(len(cells[1].get_text(" ", strip=True)))
-        short_first = (max(first_lens) if first_lens else 99) <= 34
-        generic_head = all(h.lower() in (
-            "", "field", "value", "item", "detail", "details", "what it is", "note", "notes",
-            "meaning", "what it means", "covers", "requirement") for h in heads)
-
-        if ncol == 2 and nrow <= 9 and short_first:
-            dl = soup.new_tag("dl")
-            dl["class"] = "kv"
-            if heads and not generic_head and len(heads) == 2:
-                cap = soup.new_tag("p")
-                cap["class"] = "kvh"
-                cap.string = f"{heads[0]} \u2192 {heads[1]}"
-                dl.append(cap)
-            for r in body_rows:
-                cells = r.find_all("td")
-                dt = soup.new_tag("dt")
-                for ch in list(cells[0].contents):
-                    dt.append(ch.extract())
-                dd = soup.new_tag("dd")
-                if len(cells) > 1:
-                    for ch in list(cells[1].contents):
-                        dd.append(ch.extract())
-                dl.append(dt)
-                dl.append(dd)
-            tbl.replace_with(dl)
-            stats["kv"] += 1
-            continue
-
         cls = "matrix" if (ncol >= 4 or nrow >= 12) else "compact"
-        tbl["class"] = (tbl.get("class") or []) + [cls]
+        extra = []
+        if heads and heads[0].strip().lower() == "step":
+            extra.append("steps")
+            stats["steps"] += 1
+        tone = {i: ("ok" if h.startswith("\u2713") else "no")
+                for i, h in enumerate(heads) if h[:1] in ("\u2713", "\u2717")}
+        if tone:
+            extra.append("dodont")
+            stats["dodont"] += 1
+            for i, t in tone.items():
+                ths[i]["class"] = (ths[i].get("class") or []) + [t]
+            for r in body_rows:
+                tds = r.find_all("td")
+                for i, t in tone.items():
+                    if i < len(tds):
+                        tds[i]["class"] = (tds[i].get("class") or []) + [t]
+        tbl["class"] = (tbl.get("class") or []) + [cls] + extra
         stats[cls] += 1
-    print(f"tables: {stats['kv']} key/value  {stats['compact']} compact  {stats['matrix']} matrix")
+    print(f"tables: {stats['compact']} compact  {stats['matrix']} matrix  "
+          f"({stats['steps']} step, {stats['dodont']} do/don't)")
+    return str(soup)
+
+
+import json as _json0
+from roles import anchor as _role_anchor
+_ROLE_ID = {r["role"]: _role_anchor(r) for r in _json0.load(open("data/roster.json"))}
+
+
+def anchor_roles(html):
+    """Each row of the B.1 directory gets its role's id, so a role link lands on the
+    PERSON — and its preview shows that row — instead of the top of the table."""
+    soup = _BS(html, "html.parser")
+    h = soup.find(id="B-1")
+    tbl = h.find_next("table") if h else None
+    n = 0
+    if tbl:
+        for tr in (tbl.find("tbody").find_all("tr") if tbl.find("tbody") else []):
+            td = tr.find("td")
+            rid = _ROLE_ID.get(td.get_text(" ", strip=True)) if td else None
+            if rid:
+                tr["id"] = rid
+                n += 1
+    print(f"directory    : {n} role rows anchored")
+    return str(soup)
+
+
+def wrap_notes(html):
+    """A section's footnotes (footnotes.py marks them <!--notes-->) set in small type."""
+    soup = _BS(html, "html.parser")
+    from bs4 import Comment
+    for c in [x for x in soup.find_all(string=lambda t: isinstance(t, Comment)) if x.strip() == "notes"]:
+        box = soup.new_tag("div")
+        box["class"] = ["fnotes"]
+        node = c.next_sibling
+        c.replace_with(box)
+        while node is not None:
+            nxt = node.next_sibling
+            if getattr(node, "name", None) not in (None, "p"):
+                break
+            box.append(node.extract())
+            node = nxt
     return str(soup)
 
 
@@ -259,6 +295,11 @@ def wrap_cards(html):
 
 body = wrap_cards(body)
 body = classify_tables(body)
+body = anchor_roles(body)
+body = wrap_notes(body)
+# the front page is its own panel: build.py brackets it with <!--start--> markers
+body = body.replace("<!--start-->", '<section class="start" aria-label="How to use this manual">', 1)
+body = body.replace("<!--/start-->", "</section>", 1)
 body = re.sub(r"<table", '<div class="tw"><table', body)
 body = re.sub(r"</table>", "</table></div>", body)
 
@@ -417,7 +458,10 @@ nav a:hover{color:var(--accent)}
 nav a.n1{font-weight:600;margin-top:16px;font-size:14px;color:var(--navy)}
 nav a.n1.p0{border-left-color:var(--p0)} nav a.n1.p1{border-left-color:var(--p1)}
 nav a.n1.p2{border-left-color:var(--p2)} nav a.n1.p3{border-left-color:var(--p3)}
-nav a.n1.p4{border-left-color:var(--p4)}
+nav a.n1.p4{border-left-color:var(--p4)} nav a.n1.p5{border-left-color:var(--p5)}
+nav a.n1.p6{border-left-color:var(--p6)} nav a.n1.p7{border-left-color:var(--p7)}
+nav a.n1.p8{border-left-color:var(--p8)} nav a.n1.p9{border-left-color:var(--p9)}
+nav a.n1.p10{border-left-color:var(--p10)}
 nav a.n1[class*="ap"]{border-left-color:var(--muted)}
 nav a.n2{color:var(--muted);padding-left:24px}
 main{padding:44px 52px 120px;min-width:0;max-width:none}
@@ -425,7 +469,10 @@ h1.part{font-size:30px;line-height:1.2;margin:72px 0 28px;padding:0 0 12px 18px;
  border-left:6px solid var(--navy);border-bottom:1px solid var(--rule);color:var(--navy)}
 h1.part.p0{border-left-color:var(--p0)} h1.part.p1{border-left-color:var(--p1)}
 h1.part.p2{border-left-color:var(--p2)} h1.part.p3{border-left-color:var(--p3)}
-h1.part.p4{border-left-color:var(--p4)}
+h1.part.p4{border-left-color:var(--p4)} h1.part.p5{border-left-color:var(--p5)}
+h1.part.p6{border-left-color:var(--p6)} h1.part.p7{border-left-color:var(--p7)}
+h1.part.p8{border-left-color:var(--p8)} h1.part.p9{border-left-color:var(--p9)}
+h1.part.p10{border-left-color:var(--p10)}
 h1:first-of-type{margin-top:0}
 h2{font-size:21px;color:var(--navy);margin:44px 0 12px;line-height:1.25}
 h3{font-size:17px;color:var(--accent);margin:30px 0 10px}
@@ -507,7 +554,7 @@ nav summary.p2{border-left-color:var(--p2)} nav summary.p3{border-left-color:var
 nav summary.p4{border-left-color:var(--p4)} nav summary.p5{border-left-color:var(--p5)}
 nav summary.p6{border-left-color:var(--p6)} nav summary.p7{border-left-color:var(--p7)}
 nav summary.p8{border-left-color:var(--p8)} nav summary.p9{border-left-color:var(--p9)}
-nav summary.p10{border-left-color:var(--navy)}
+nav summary.p10{border-left-color:var(--p10)}
 nav summary[class*="ap"]{border-left-color:var(--muted)}
 nav .ngb{padding-left:4px}
 nav a.n2.cur{color:var(--accent);border-left-color:var(--accent);background:var(--tint)}
@@ -897,10 +944,53 @@ ol.toclist .cp{text-align:right}
 #xpop .xpf a{font-weight:600;color:var(--accent);text-decoration:none}
 @media print{#xpop{display:none!important}}
 a:focus-visible,nav a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ============================================ manual-update Phase 1 (2026-10-06) === */
+nav .cls{font-size:11.5px;color:var(--muted);margin:-8px 0 14px;line-height:1.4}
+/* the front page: a distinct "start here" panel */
+section.start{max-width:80ch;margin:8px 0 48px;padding:26px 30px 10px;background:var(--panel);
+ border:1px solid var(--rule);border-top:5px solid var(--navy);border-radius:0 0 6px 6px}
+section.start > h2{margin-top:0;font-size:28px}
+section.start > h3{margin-top:26px}
+section.start > hr{display:none}
+section.start .cb{margin-bottom:10px}
+/* step tables: numbered steps with an arrow down to the next */
+table.steps tbody tr:nth-child(even){background:transparent}
+table.steps td:first-child{width:3.4em;text-align:center;font-weight:700;color:var(--accent);
+ position:relative;vertical-align:middle}
+table.steps tbody tr:not(:last-child) td:first-child::after{content:"\2193";position:absolute;
+ left:50%;bottom:-.8em;transform:translateX(-50%);z-index:1;font-size:15px;line-height:1.3;
+ color:var(--muted);background:var(--bg);padding:0 3px}
+/* do / don't columns */
+:root{--ok-bg:#E7F4EC;--ok-ink:#1E6B43;--no-bg:#FCEBEA;--no-ink:#A1281F}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--ok-bg:#12271B;--ok-ink:#7FCFA0;--no-bg:#2C1512;--no-ink:#F29E95}}
+:root[data-theme="dark"]{--ok-bg:#12271B;--ok-ink:#7FCFA0;--no-bg:#2C1512;--no-ink:#F29E95}
+table.dodont th.ok{color:var(--ok-ink);border-bottom-color:var(--ok-ink)}
+table.dodont th.no{color:var(--no-ink);border-bottom-color:var(--no-ink)}
+table.dodont td.ok{background:var(--ok-bg)}
+table.dodont td.no{background:var(--no-bg)}
+table.dodont tbody tr:hover td{filter:brightness(.97)}
+/* footnotes */
+.fnotes{max-width:74ch;margin:6px 0 24px;padding-top:8px;border-top:1px solid var(--rule);
+ font-size:13px;line-height:1.5;color:var(--muted)}
+.fnotes p{margin:0 0 4px}
+.fnotes p:first-child{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase}
+/* the directory: a role link lands on its row */
+tr:target td{animation:flash 1.6s ease-out}
+/* index: a letter bar that stays in reach while the index scrolls */
+.ixaz{display:flex;flex-wrap:wrap;gap:2px 4px;margin-top:8px}
+.ixaz a{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12.5px;font-weight:600;
+ text-decoration:none;color:var(--accent);padding:2px 6px;border:1px solid var(--rule);border-radius:3px}
+.ixaz a:hover{background:var(--tint)}
+h3[id^="ix-"]{scroll-margin-top:150px}
+#ixwrap{top:45px}            /* under the sticky breadcrumb, not behind it */
+@media (max-width:900px){#ixwrap{top:86px}}
+@media print{.ixaz{display:none}}
 </style></head>
 <body><button class="navtoggle" id="nt">☰ &nbsp;Contents &amp; search</button><div class="wrap">
 <nav><div class="brand">UniversalMed Supply<br>CSR Procedures Manual</div>
 <div class="ver">v3.0 draft &middot; built 09/15/2026</div>
+<div class="cls">Confidential &mdash; Internal Use Only &middot; Owner: __OWNER__</div>
 <input id="q" type="search" placeholder="Search the manual…" autocomplete="off" aria-label="Search">
 <button id="openrouter">What did the caller say?</button>
 <div id="pinbox" hidden><div class="pbh">Pinned <span id="pincount"></span></div><div id="pinlist"></div>
@@ -1020,7 +1110,7 @@ dr.addEventListener('click',()=>setD('comfortable'));
 // index filter
 const ixq=document.getElementById('ixq');
 if(ixq){
- const start=document.getElementById('F-1');
+ const start=document.getElementById('E-1');
  const rows=[];let n=start;
  while(n=n.nextElementSibling){ if(n.tagName==='H1')break;
   if(n.tagName==='H3')rows.push({h:n,tr:[]});
@@ -1201,6 +1291,16 @@ const coarse=window.matchMedia('(pointer: coarse)').matches;
 let xpShow=null,xpHide=null,xpFor=null;
 function sectionOpening(id){
   const h=document.getElementById(id); if(!h) return null;
+  if(h.tagName==='TR'){
+    // a directory row: the table's header and that one row
+    const t=h.closest('table'), tw=document.createElement('div'), nt=document.createElement('table');
+    tw.className='tw'; nt.className=t.className;
+    if(t.tHead) nt.appendChild(t.tHead.cloneNode(true));
+    const tb=document.createElement('tbody'), r=h.cloneNode(true); r.removeAttribute('id');
+    tb.appendChild(r); nt.appendChild(tb); tw.appendChild(nt);
+    const frag=document.createDocumentFragment(); frag.appendChild(tw);
+    return {h,frag,row:true};
+  }
   const lvl=+h.tagName.slice(1)||2, frag=document.createDocumentFragment();
   let n=h.nextElementSibling, taken=0;
   while(n&&taken<4){
@@ -1220,9 +1320,10 @@ function partOf(h){
 function showPreview(a){
   const id=(a.getAttribute('href')||'').slice(1); const got=sectionOpening(id);
   if(!got){xpop.hidden=true;return;}
-  const part=partOf(got.h), key=part&&[...part.classList].find(c=>PARTC[c]);
+  const part=partOf(got.row?got.h.closest('.tw'):got.h), key=part&&[...part.classList].find(c=>PARTC[c]);
   xpop.style.setProperty('--pacc', key?`var(${PARTC[key]})`:'var(--accent)');
-  const title=got.h.textContent.replace(/#$/,'').replace(/\+ Pin|\u2713 Pinned/,'').trim();
+  const title=got.row?got.h.cells[0].textContent.trim()
+    :got.h.textContent.replace(/#$/,'').replace(/\+ Pin|\u2713 Pinned/,'').trim();
   xpop.innerHTML=`<div class="xph"><span class="xpt"></span><span class="xpp"></span></div>`+
     `<div class="xpb"></div><div class="xpf"><span>Esc to close</span><a href="#${id}">Go to section \u2192</a></div>`;
   xpop.querySelector('.xpt').textContent=title;
@@ -1290,6 +1391,7 @@ document.addEventListener('keydown',e=>{
 </script>
 </body></html>"""
 
-open(DST, "w").write(TPL.replace("__NAV__", "\n".join(navhtml)).replace("__BODY__", body).replace("__SEARCH__", _json.dumps(SEARCH, ensure_ascii=False)).replace("__ROUTER__", _json.dumps(ROUTER, ensure_ascii=False)))
+OWNER = re.search(r'^OWNER = "([^"]+)"', open("build.py").read(), re.M).group(1)
+open(DST, "w").write(TPL.replace("__OWNER__", html.escape(OWNER)).replace("__NAV__", "\n".join(navhtml)).replace("__BODY__", body).replace("__SEARCH__", _json.dumps(SEARCH, ensure_ascii=False)).replace("__ROUTER__", _json.dumps(ROUTER, ensure_ascii=False)))
 print(f"wrote {DST}  ({len(open(DST).read()):,} bytes)")
 print(f"nav entries: {len(nav)}   callouts styled: {body.count('class=\"cb ')}")

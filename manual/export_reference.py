@@ -48,6 +48,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 os.chdir(HERE)
 sys.path.insert(0, HERE)
 from numbering import display as dnum  # noqa: E402
+import footnotes, roles  # noqa: E402  (shared with build.py)
 
 # Mirrors KB_BODY_MAX in web-app/00_config.js — the importer refuses a longer
 # body, so the export refuses first (pinned equal by the Node harness).
@@ -216,6 +217,7 @@ def render(key, src, tmp):
     text = open(dst, encoding="utf-8").read()
     text = SCAFFOLD.sub("", text)
     text = DRAFTNOTE.sub("\n", text)
+    text = footnotes.apply(text, src, errors)   # its <!--notes--> marker goes with the comments
     return html_to_md(text, src)
 
 
@@ -585,11 +587,9 @@ def main():
         return f"[{label}](kb:{target})"
 
     def role(m):
-        want = m.group(1).strip().lower()
-        for r in ROSTER:
-            hay = (r["role"] + " " + (r.get("note") or "")).lower()
-            if want in hay or all(w in hay for w in want.split()):
-                return f"[{r['role']}](kb:man-b-1)"
+        r = roles.find(ROSTER, m.group(1))   # the app focuses the B.1 row the link text names
+        if r:
+            return f"[{r['role']}](kb:man-b-1)"
         errors.append(f"ROLE {m.group(1)!r} matches nothing in roster.json")
         return m.group(0)
 
