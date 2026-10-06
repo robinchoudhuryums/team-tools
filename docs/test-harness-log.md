@@ -2707,3 +2707,25 @@ per-change detail. By delta:
   - two in Integration B (the archive-aware Timesheet reader over TEST rows, cleared in `finally`; the KbImages store and reader on the KB FIXTURE, since the tab is append-only).
 - Node +1, a new pattern: **a pure editor case is RUN by the Node harness.** The pin loads the real server functions, the real constants and the real `Tests.js` assertions (`_describe_`, `_assertEq`, …) into a vm and calls each smoke case, so an editor case that cannot pass is caught before the operator's first editor run. Store-backed cases are still verified by reading every call they make.
 - 12 bite-checks against that runner, all BITE in the end. The neuro case first read NO BITE: "Not sure" is caught by its leading "not" too, so the uncertainty-phrase rule was untested; a case only the phrase rule catches ("Possibly MS, not sure") now carries it (g116's twelfth direction).
+
+## Cycle 24 — Seams & Invariants, the production batch (F1, F2, F3, F4, F6, F8 note, F19)
+
+- Node +5 and DOM +2 (the running-totals block carries the counts). Every new pin DRIVES the code it is named for: the QA revoke through `qaCoverageRows_`, the client button and `qaSetExemption`; the EOD digest over a stubbed roster (a failed send, an unreadable Sheet, an idle hour); the dispatcher over real `TRIGGER_HANDLER_JOB_KEYS`; `findCallNoteRow_` over a sheet that shifts between its two reads; the TC-04 harness for the un-approve that cannot credit; and two DOM drives (the KB dialogs' × and focus, the calendar's archive note).
+- One two-sided net (INV-229's shape): `TRIGGER_HANDLER_JOB_KEYS` must equal the TRIGGER_GROUPS handlers, each row's `owns` must match whether that job's body stamps AND clears its key, and every key must be labelled or tabled.
+- The SH-02 net widened: it also flags a delegated close click that removes or un-opens a node by hand — an INLINE hook had hidden two dialogs from it.
+- Pins rewritten because they encoded the old behaviour: TQ-2 (the dispatcher's stamp message; unmapped jobs keep the pre-F3 key), QA2-1 (the next-period revoke regex), and the QA contexts that now load `qaExemptKeyFor_`. The mock's verbatim QA copies were updated in the same commit (the verbatim pin holds them byte-identical).
+- 13 bite-checks in throwaway worktrees, all BITE.
+
+## Cycle 24 — Seams & Invariants, the nets-and-library batch (F5, F7, F8 remainder, F9–F18, F20, F21)
+
+- Node +8 and DOM +1. New and changed nets:
+  - the id pin reads the library's `HELD NUMBERS` line and FAILS when it cannot parse it — it used to read STATE.md prose and had silently stopped running (F5, g116's eighteenth direction);
+  - INV-375's pin walks the CALL GRAPH from the derived image/manual roots and bans Drive anywhere reached; non-vacuous because the same walk finds Drive from `kbIngestFile` and `kbGetImageData` (F17);
+  - `x1ClientRpcNames_` sees comment-broken chains, bracketed names (a ternary's branches, never its condition) and stored runners (F9);
+  - the gate-coverage net enumerates the QA family (F10);
+  - INV-360's twins are compared as whole normalised bodies, not sampled (F13);
+  - the Batch 15 runner derives its cases from the smoke shard (F14);
+  - the search-index key is checked against the builder's derived call closure (F18);
+  - the live-tab Timesheet windows are pinned below the archive floor (F8 remainder).
+- The instance-guard pin that asserted "prod default runs the full suite" as CORRECT was rewritten for F11 (unmarked refuses; the override opens, expires, never applies to marked prod).
+- 19 bite-checks, all BITE. One NO BITE along the way was about the MUTATION, not the pin: renaming `getQaQueue` to `getQaQueueX` kept the substring the gate net matches by `indexOf`; the re-bite used a name that removes it (g116's nineteenth direction; the substring matching itself is a follow-on).

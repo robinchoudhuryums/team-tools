@@ -6309,6 +6309,98 @@ test('SH-02: the close buttons go through closeOverlay — focus returns to the 
   check('employee document', () => { h.read('edOpenDoc_')('d2'); h.run.flushSuccess(doc, 'getMyDoc'); }, () => h.$('#ed-reader-overlay .foot .kb-btn'));
 });
 
+test('Seams F4 (cycle 24): the Search synonyms and Revision history × close through closeOverlay — focus returns to the opener (INV-358)', () => {
+  const h = boot();
+  b9TourSeen(h);
+  h.bootShell({ isManager: true, isAdmin: true });
+  h.run.drain();
+  const opener = h.document.createElement('button'); h.document.body.appendChild(opener);
+  [['Search synonyms', () => h.read('kbOpenSynonyms_')(), '#kb-syn-overlay', '[data-kb-synclose]'],
+   ['Revision history', () => h.read('kbOpenRevisions_')('kb1'), '#kb-rev-overlay', '[data-kb-revclose]']].forEach(([label, open, ov, x]) => {
+    opener.focus();
+    open();
+    h.flushTimers();
+    assert.ok(h.$(ov), label + ' opened');
+    h.$(ov + ' ' + x).click();   // a delegated handler — no onclick attribute to read
+    h.flushTimers();
+    assert.ok(!h.$(ov), label + ': the dialog closed');
+    assert.strictEqual(h.document.activeElement, opener, label + ': THE REGRESSION — × removed the node by hand and focus fell to <body>');
+  });
+});
+
+test('Seams F8 (cycle 24): the Time / PTO calendar SAYS when the timesheet archive could not be read — and says nothing on a clean read', () => {
+  const h = boot();
+  b9TourSeen(h);
+  h.bootShell();
+  h.run.drain();
+  const cal = (archiveError) => ({ year: 2026, month: 6, monthName: 'June 2026', lastDay: 30, firstDayOfWeek: 1,
+    workedDates: ['2026-06-02'], workedHoursByDate: { '2026-06-02': 8 }, archiveError: archiveError,
+    timeOffRequests: [], teammates: [], holidays: [], allRequests: [], today: '2026-06-24', timezone: 'America/Chicago',
+    ptoEnabled: false, annualLeave: 0, sickLeave: 0 });
+  const area = h.document.createElement('div'); h.document.body.appendChild(area);
+  h.read('renderTimeOffView')(area, cal('Exception: archive tab unreadable'));
+  const note = area.querySelector('.cal-card [role="status"]');
+  assert.ok(note && /timesheet archive could not be read/.test(note.textContent), 'THE REGRESSION: archiveError shipped and the calendar showed a short month as complete');
+  assert.ok(!/unreadable/.test(area.innerHTML), 'the server message itself never reaches the page');
+  h.read('renderTimeOffView')(area, cal(''));
+  assert.ok(!/timesheet archive could not be read/.test(area.innerHTML), 'a clean read shows no note');
+});
+
+test('Seams F7 (cycle 24, operator-approved): both email composers ASK before a close discards typed work — Keep editing leaves the email and the saved note as they were; Discard runs the rollback unchanged; an untouched composer closes at once', async () => {
+  const arm = (toExternal) => {
+    const h = bootLog();
+    h.read('CN_STATE.formCatalog = []');   // the external composer mounts synchronously
+    h.setField('cn-fld-issue', 'Patient A issue');
+    h.window.cnSubmitActiveForm_({ keepForm: true });
+    h.run.flushSuccess({ success: true, note: noteFixture({ noteId: 'real-a', issue: 'Patient A issue', _pending: false }) }, 'submitCallNote');
+    h.read("CN_STATE.composer = { noteId: 'real-a', step: 'form', selections: { departments: [] } }");
+    if (toExternal) h.window.cnSwitchComposerTab_('external'); else h.window.cnOpenEmailComposer_('real-a');
+    return h;
+  };
+  // External: typed, Escape inside the message → asked; Keep editing keeps everything.
+  let h = arm(true);
+  h.setField('cnX-message', 'Your replacement ships Monday.');
+  h.dispatchKey('Escape', { target: h.$('#cnX-message') });
+  assert.ok(h.$('#cn-ext-overlay') && b9Ask(h), 'THE REGRESSION: one Escape in the message threw the email away (and rolled the saved note back)');
+  assert.strictEqual(h.run.pending('deleteCallNote').length, 0, 'nothing is rolled back while the question is up');
+  h.dispatchKey('Escape');   // the question's own Escape = Keep editing
+  await tick();
+  assert.ok(!h.$('.ui-dialog'), 'the question closed');
+  assert.strictEqual(h.$('#cnX-message').value, 'Your replacement ships Monday.', 'the message is still there');
+  assert.ok(h.read('CN_STATE.extComposer') !== null && h.read('CN_STATE.composeFlow') !== null, 'the composer and the Save & Compose transaction are untouched');
+  assert.strictEqual(h.run.pending('deleteCallNote').length, 0, 'Keep editing never deletes the saved note');
+  h.click(h.$('#cn-ext-overlay'));   // the backdrop asks too
+  assert.ok(b9Ask(h), 'a backdrop click asks');
+  h.click('.ui-dialog-ok');           // Discard
+  await tick();
+  assert.ok(!h.$('#cn-ext-overlay'), 'Discard closes the composer');
+  assert.strictEqual(h.run.pending('deleteCallNote').length, 1, 'and runs today\'s rollback, unchanged');
+  // External, untouched: closes at once, as before.
+  h = arm(true);
+  h.dispatchKey('Escape');
+  assert.ok(!h.$('#cn-ext-overlay') && !h.$('.ui-dialog'), 'nothing typed: no question');
+  assert.strictEqual(h.run.pending('deleteCallNote').length, 1, 'the untouched cancel still rolls back');
+  // Department composer: the same contract.
+  h = arm(false);
+  assert.ok(h.$('#cn-compose-overlay'), 'the department composer is open');
+  h.dispatchKey('Escape');
+  assert.ok(!h.$('#cn-compose-overlay') && !h.$('.ui-dialog'), 'untouched: closes at once');
+  h = arm(false);
+  h.setField('cnC-update-info', 'Order shipped');
+  h.dispatchKey('Escape', { target: h.$('#cnC-update-info') });
+  assert.ok(h.$('#cn-compose-overlay') && b9Ask(h), 'typed: the department composer asks');
+  h.click('.ui-dialog-ok');
+  await tick();
+  assert.ok(!h.$('#cn-compose-overlay'), 'Discard closes it');
+  assert.strictEqual(h.run.pending('deleteCallNote').length, 1, 'and rolls the Save & Compose back, as before');
+  // Mid-send: the hook's own refusal answers, never the question (busy).
+  h = arm(true);
+  h.setField('cnX-message', 'x');
+  h.read('CN_STATE.extComposer.sending = true');
+  h.dispatchKey('Escape');
+  assert.ok(h.$('#cn-ext-overlay') && !b9Ask(h), 'mid-send: no question, the composer stays (INV-145)');
+});
+
 test('SH-03: Tab cannot leave the keyboard-shortcuts dialog for the page behind it', () => {
   const h = bootLog();
   h.window.cnOpenShortcutsOverlay_();

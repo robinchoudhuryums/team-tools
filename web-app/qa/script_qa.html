@@ -580,8 +580,17 @@ function qaCoverageSectionHtml_(d) {
         return '<button type="button" class="qa-btn" data-qa-exempt="' + esc(r.name) + '" data-qa-exempt-on="' + (on ? '1' : '0') +
           '" data-qa-exempt-period="' + esc(per) + '">' + esc(label) + '</button>';
       };
-      if (r.exempt) return btn(false, d.period || '', 'Revoke exemption');
-      if (r.exemptNext) return btn(false, d.nextPeriod || '', 'Revoke for ' + (d.nextPeriodLabel || 'next period'));
+      // Seams F1 (cycle 24): a revoke clears the KEY that granted the
+      // exemption (r.exemptKey) — a quarter's grant read in a month view is
+      // revoked as the quarter, and the button says so.
+      if (r.exempt) {
+        const k = r.exemptKey || d.period || '';
+        return btn(false, k, k === d.period ? 'Revoke exemption' : 'Revoke exemption (' + qaPeriodLabelOf_(k) + ')');
+      }
+      if (r.exemptNext) {
+        const k = r.exemptNextKey || d.nextPeriod || '';
+        return btn(false, k, 'Revoke for ' + (k === d.nextPeriod ? (d.nextPeriodLabel || 'next period') : qaPeriodLabelOf_(k)));
+      }
       if (r.eligible && d.nextPeriod) return btn(true, d.nextPeriod, 'Exempt for ' + (d.nextPeriodLabel || 'next period'));
       return '';
     } });
@@ -782,7 +791,7 @@ function qaSetExemption_(name, on, period) {
     google.script.run
       .withSuccessHandler(function (r) {
         if (!r || !r.success) { showToast((r && r.error) || 'Exemption change failed.', 'toast-error'); return; }
-        showToast(on ? 'Exempt for ' + label : 'Exemption revoked', 'toast-success');
+        showToast(on ? 'Exempt for ' + label : 'Exemption revoked for ' + label, 'toast-success');
         if (currentView === 'qaQueue' && !QA_STATE.det) {
           renderLoading(document.getElementById('view-area'), 'Refreshing…', 'waveform');
           qaLoadQueue_();

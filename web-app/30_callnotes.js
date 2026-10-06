@@ -2231,24 +2231,33 @@ function sanitizeFlagType_(t) {
   const v = String(t || '').trim().toLowerCase();
   return CN_FLAG_TYPES.indexOf(v) >= 0 ? v : '';
 }
+/** Seams F6 (cycle 24) — the FORM-1 rule (g164, INV-355) for notes: the
+ *  column scan and the row fetch are TWO reads, and getDeptRequestDetail makes
+ *  them without the lock — a note delete or the archive pass between them
+ *  shifts another note (another patient) under the index. The fetched row
+ *  must carry the id it was found by (formLocatedRowIs_); a moved row is
+ *  located once more, then refused. Under the lock the row cannot move, so
+ *  the mutation callers pay one extra compare and nothing else. */
 function findCallNoteRow_(sheet, noteId) {
   if (!noteId) return null;
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return null;
-  // Scan only the NoteId column to locate the row, then fetch that single full
-  // row — avoids pulling every column of the rep's entire history on every
-  // single-note mutation (flag/resolve/pin/edit/email/delete). Return shape is
-  // unchanged: { rowIndex, row } with `row` the full row array (L9).
-  const ids = sheet.getRange(2, CN.NOTE_ID + 1, lastRow - 1, 1).getValues();
-  for (let i = 0; i < ids.length; i++) {
-    if (String(ids[i][0]).trim() === noteId) {
-      const rowIndex = i + 2;
-      // Fetch just the known schema width (L-10) — not getLastColumn(), which
-      // would pull any stray/human-added trailing columns in the rep's Sheet.
-      // All consumers index by CN.* (< CN_HEADERS.length).
-      const row = sheet.getRange(rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
-      return { rowIndex: rowIndex, row: row };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return null;
+    // Scan only the NoteId column to locate the row, then fetch that single full
+    // row — avoids pulling every column of the rep's entire history on every
+    // single-note mutation (flag/resolve/pin/edit/email/delete). Return shape is
+    // unchanged: { rowIndex, row } with `row` the full row array (L9).
+    const ids = sheet.getRange(2, CN.NOTE_ID + 1, lastRow - 1, 1).getValues();
+    let rowIndex = 0;
+    for (let i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]).trim() === noteId) { rowIndex = i + 2; break; }
     }
+    if (!rowIndex) return null;
+    // Fetch just the known schema width (L-10) — not getLastColumn(), which
+    // would pull any stray/human-added trailing columns in the rep's Sheet.
+    // All consumers index by CN.* (< CN_HEADERS.length).
+    const row = sheet.getRange(rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+    if (formLocatedRowIs_(row, CN.NOTE_ID, noteId)) return { rowIndex: rowIndex, row: row };
   }
   return null;
 }
@@ -3946,6 +3955,11 @@ function sendCallNotesEodDigest() {
     const now = new Date();
     const roster = getEmployeeRosterRows_();
     let sentCount = 0;
+    // Seams F2 (cycle 24) — the MAIL-4 sibling this digest was missing: a
+    // reminder that could not be sent, or a rep whose Sheet could not be read,
+    // reached only the log while the heartbeat below read healthy. Count both
+    // and stamp them; `attempted` = reps whose local EOD hour this run was.
+    let attempted = 0, unread = 0, sendFailed = 0, lastError = '';
     for (let r = 1; r < roster.length; r++) {
       const emailAddr = String(roster[r][EMP.EMAIL] || '').trim();
       const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
@@ -3971,6 +3985,7 @@ function sendCallNotesEodDigest() {
         timezone: tz,
       };
       const today = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+      attempted++;
       let unresolved;
       try {
         const sheet = getCallNotesSheet_(empObj);
@@ -3989,6 +4004,7 @@ function sendCallNotesEodDigest() {
         }
       } catch (e) {
         Logger.log(`sendCallNotesEodDigest: skipped ${empObj.id} (${e.message})`);
+        unread++; lastError = e.message;
         continue;
       }
       if (unresolved.length === 0) continue;
@@ -3997,12 +4013,23 @@ function sendCallNotesEodDigest() {
         sentCount++;
       } catch (e) {
         Logger.log(`Failed to email rep ${empObj.email} EOD digest: ${e.message}`);
+        sendFailed++; lastError = e.message;
       }
     }
     stampDigestLastRun_('eod');
+    // One stamp names everything that went wrong (the TrainingOverdueDigest
+    // shape). Only a run that reached a rep may CLEAR it: most hours match no
+    // rep's EOD hour, and an hour that did nothing proves nothing — clearing
+    // there would wipe a failure before the morning failure digest reads it.
+    const problems = [];
+    if (unread) problems.push('could not read ' + unread + ' rep Call Notes Sheet(s)');
+    if (sendFailed) problems.push(sendFailed + ' EOD reminder email(s) failed to send');
+    if (problems.length) stampAutomationError_('CallNotesEodDigest', problems.join(' · ') + (lastError ? ' (' + lastError + ')' : ''));
+    else if (attempted) clearAutomationError_('CallNotesEodDigest');
     Logger.log(`sendCallNotesEodDigest: sent ${sentCount} reminder(s).`);
   } catch (err) {
     Logger.log('sendCallNotesEodDigest failed: ' + err.message);
+    stampAutomationError_('CallNotesEodDigest', err.message);   // seams F2: a throw is not a quiet hour
   }
 }
 function sendOneRepEodDigest_(emp, unresolvedNotes) {

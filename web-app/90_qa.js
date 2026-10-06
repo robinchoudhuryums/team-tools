@@ -1797,15 +1797,23 @@ function qaNextPeriod_(key) {
   }
   return '';
 }
-/** PURE (Node-pinned) — QA2-1: is `nameKey` (lowercased) exempt for
- *  `period`? Its own key, or — for a month — the quarter it falls in, so an
- *  exemption granted from the quarter view holds in each of its months. A
- *  month's exemption does not exempt the whole quarter. */
-function qaExemptFor_(exemptions, nameKey, period) {
+/** PURE (Node-pinned) — QA2-1: the exemption KEY that makes `nameKey`
+ *  (lowercased) exempt for `period`, or '' when none does. Its own key, or —
+ *  for a month — the quarter it falls in, so an exemption granted from the
+ *  quarter view holds in each of its months. A month's exemption does not
+ *  exempt the whole quarter. Seams F1 (cycle 24): the KEY rides the coverage
+ *  row, because a revoke must clear the row that GRANTED the exemption — a
+ *  revoke of the viewed month left a quarter's grant standing. */
+function qaExemptKeyFor_(exemptions, nameKey, period) {
   const ex = exemptions || {};
-  if (ex[nameKey + '|' + period]) return true;
+  if (ex[nameKey + '|' + period]) return String(period);
   const ks = /^\d{4}-\d{2}$/.test(String(period || '')) ? qaPeriodKeysForYmd_(period + '-01') : null;
-  return !!(ks && ex[nameKey + '|' + ks.quarter]);
+  return (ks && ex[nameKey + '|' + ks.quarter]) ? ks.quarter : '';
+}
+/** PURE (Node-pinned) — QA2-1: is `nameKey` exempt for `period`? The ONE
+ *  key rule, qaExemptKeyFor_. */
+function qaExemptFor_(exemptions, nameKey, period) {
+  return !!qaExemptKeyFor_(exemptions, nameKey, period);
 }
 /** PURE — a human label: `2026-08` → 'Aug 2026', `2026-Q3` → 'Q3 2026'. */
 function qaPeriodLabel_(key) {
@@ -1918,15 +1926,19 @@ function qaCoverageRows_(recs, latestCards, rosterNames, period, target, exempti
     // QA2-1 (cycle 23): an exemption EARNED in this period applies to the
     // NEXT one — granting it for the period that earned it saved no review —
     // and a quarter's exemption covers its months (qaExemptFor_).
-    const exempt = qaExemptFor_(exemptions, k, period);
+    // Seams F1 (cycle 24): each flag ships the KEY that set it, which is
+    // what a revoke must clear (a quarter's grant read in a month view).
+    const exemptKey = qaExemptKeyFor_(exemptions, k, period);
+    const exempt = !!exemptKey;
     const next = qaNextPeriod_(period);
-    const exemptNext = !!next && qaExemptFor_(exemptions, k, next);
+    const exemptNextKey = next ? qaExemptKeyFor_(exemptions, k, next) : '';
+    const exemptNext = !!exemptNextKey;
     const out = {
       name: row.name, sampled: row.cur.sampled, target: exempt ? 0 : (Number(target) || 0),
       cardCount: row.cur.cards, avg: cur.avg, minCriterion: cur.min,
       prevSampled: row.prev.sampled, prevCardCount: row.prev.cards, prevAvg: prev.avg, prevMinCriterion: prev.min,
       lastReviewedMs: row.lastReviewedMs, exempt: exempt, exemptUntil: exempt ? period : '',
-      exemptNext: exemptNext,
+      exemptNext: exemptNext, exemptKey: exemptKey, exemptNextKey: exemptNextKey,
     };
     out.eligible = !exempt && !exemptNext && qaExemptEligible_(out);
     return out;
@@ -1968,6 +1980,13 @@ function qaSetExemption(empName, period, on) {
     if (!qaPeriodValid_(per)) return { success: false, error: 'Unknown audit period.' };
     const sheet = getOrCreateQaExemptionsSheet_();
     const active = !!on;
+    // Seams F1 (cycle 24): a revoke must clear a grant that EXISTS under this
+    // exact key. An inactive row for a key that was never granted changed
+    // nothing — a month revoke under a quarter's grant — yet answered
+    // "revoked" while the rep stayed exempt. Refuse it by name instead.
+    if (!active && !qaReadExemptions_()[name.toLowerCase() + '|' + per]) {
+      return { success: false, error: name + ' has no exemption recorded for ' + qaPeriodLabel_(per) + ' — nothing was changed. Reload to see which period their exemption covers.' };
+    }
     appendRowsTextSafe_(sheet, [[name, per, String(emp.email || ''), Date.now(), active ? 'TRUE' : 'FALSE']], QA_EXEMPTIONS_TEXT_IDX);
     writeAuditLog_(emp, 'QaExemption', '', '', false, 0, 'period=' + per + '; active=' + active, emp.email);
     return { success: true, active: active, period: per };

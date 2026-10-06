@@ -3779,7 +3779,9 @@ function kbAddBtnHtml_() {
 function kbOpenSynonyms_() {
   var ov = ensureOverlay('kb-syn-overlay', { label: 'Search synonyms', onClose: function () { var o = document.getElementById('kb-syn-overlay'); if (o) o.remove(); } });
   ov.innerHTML = '<div class="modal kb-ed"><div class="head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><h3 style="margin:0">Search synonyms</h3><button class="kb-btn" data-kb-synclose="1">' + icon('x', 15) + '</button></div><div class="body" id="kb-syn-body">' + loSweep() + '</div></div>';
-  ov.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('[data-kb-synclose]')) ov.remove(); });
+  // Seams F4 (cycle 24): × closes THROUGH closeOverlay — removing the node
+  // directly skipped the focus restore (g100, INV-358).
+  ov.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('[data-kb-synclose]')) closeOverlay(ov); });
   google.script.run
     .withSuccessHandler(function (res) {
       var body = document.getElementById('kb-syn-body'); if (!body) return;
@@ -6084,7 +6086,7 @@ function kbPublishItem_(id) {
 function kbOpenRevisions_(id) {
   var ov = ensureOverlay('kb-rev-overlay', { label: 'Revision history', onClose: function () { var o = document.getElementById('kb-rev-overlay'); if (o) o.remove(); } });
   ov.innerHTML = '<div class="modal kb-ed"><div class="head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><h3 style="margin:0">Revision history</h3><button class="kb-btn" data-kb-revclose="1">' + icon('x', 15) + '</button></div><div class="body" id="kb-rev-body">' + loSweep() + '</div></div>';
-  ov.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('[data-kb-revclose]')) { ov.remove(); } });
+  ov.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('[data-kb-revclose]')) closeOverlay(ov); });   // seams F4 (INV-358)
   google.script.run
     .withSuccessHandler(function (res) {
       var body = document.getElementById('kb-rev-body'); if (!body) return;

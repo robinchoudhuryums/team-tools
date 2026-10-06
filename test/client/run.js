@@ -1373,23 +1373,36 @@ test('managerSourceDrift_: a demoted email appears once even on duplicate roster
 });
 
 console.log('\nCode.js — dev/prod instance guards (blue-green deploy support)');
-const instCtx = { String, JSON, Object, console, _p: {} };
+const instCtx = { String, JSON, Object, console, Number, isFinite, Date, _p: {}, SUITE_UNMARKED_OVERRIDE_PROP: 'SUITE_UNMARKED_OK_UNTIL', SUITE_UNMARKED_OVERRIDE_HOURS: 2 };
 instCtx.PropertiesService = { getScriptProperties: function () {
   return { getProperty: function (k) {
     return Object.prototype.hasOwnProperty.call(instCtx._p, k) ? instCtx._p[k] : null;
   } };
 } };
 vm.createContext(instCtx);
-['instanceLabel_', 'isProdInstance_', 'assertNotProdInstance_', 'isDevInstance_', 'assertDevInstance_'].forEach(function (fn) {
+['instanceLabel_', 'isProdInstance_', 'assertNotProdInstance_', 'suiteUnmarkedOverrideLive_', 'isDevInstance_', 'assertDevInstance_'].forEach(function (fn) {
   vm.runInContext(extractRawFunction('Code.js', fn), instCtx, { filename: 'Code.js#' + fn });
 });
-test('instance guards: prod default (no props) — destructive tests OK, dev tools refuse', () => {
+test('instance guards: an UNMARKED instance (no props — production today) refuses the destructive suite AND the dev tools; only the expiring override opens the suite (seams F11)', () => {
   instCtx._p = {};
   assert.strictEqual(instCtx.instanceLabel_(), '');
   assert.strictEqual(instCtx.isProdInstance_(), false);
   assert.strictEqual(instCtx.isDevInstance_(), false);
-  assert.doesNotThrow(() => instCtx.assertNotProdInstance_('runAllTests'));   // prod today still runs runAllTests
+  assert.throws(() => instCtx.assertNotProdInstance_('runAllTests'), /not marked as DEV[\s\S]*allowFullSuiteHere\(\)/,
+    'THE REGRESSION (F11): unset PERMITTED the full suite — the opposite of isDevInstance_ — and production is unset');
   assert.throws(() => instCtx.assertDevInstance_('devScrubRoster_'), /not a confirmed DEV instance/);
+  instCtx._p = { SUITE_UNMARKED_OK_UNTIL: String(Date.now() + 60000) };
+  assert.doesNotThrow(() => instCtx.assertNotProdInstance_('runAllTests'), 'an open override permits it');
+  assert.throws(() => instCtx.assertDevInstance_('devScrubRoster_'), /not a confirmed DEV instance/, 'the override never makes the dev TOOLS run');
+  instCtx._p = { SUITE_UNMARKED_OK_UNTIL: String(Date.now() - 1) };
+  assert.throws(() => instCtx.assertNotProdInstance_('runAllTests'), /not marked as DEV/, 'an EXPIRED override is closed');
+  instCtx._p = { SUITE_UNMARKED_OK_UNTIL: 'junk' };
+  assert.throws(() => instCtx.assertNotProdInstance_('runAllTests'), /not marked as DEV/, 'an unreadable override is closed');
+  instCtx._p = { INSTANCE_IS_PROD: 'true', SUITE_UNMARKED_OK_UNTIL: String(Date.now() + 60000) };
+  assert.throws(() => instCtx.assertNotProdInstance_('runAllTests'), /PRODUCTION instance/, 'a MARKED prod instance refuses whatever the override says');
+  const allow = extractRawFunction('Tests.js', 'allowFullSuiteHere');
+  assert.ok(/^function allowFullSuiteHere\(\) \{\s*_assertSuiteCaller_\('allowFullSuiteHere'\);/.test(allow), 'the override is owner-only (g143)');
+  assert.ok(/if \(isProdInstance_\(\)\) throw/.test(allow) && /SUITE_UNMARKED_OVERRIDE_HOURS \* 3600000/.test(allow), 'never on marked prod; it expires');
 });
 test('instance guards: INSTANCE_IS_PROD=true blocks destructive tests AND dev tools', () => {
   instCtx._p = { INSTANCE_IS_PROD: 'true', INSTANCE_LABEL: 'PROD' };
@@ -5954,7 +5967,7 @@ test('F9: the catalog scan is OPT-IN and a failed read is distinguishable from c
 // `assertManagerCaller_` (which THROWS), so they never contain the returned
 // error string — their own tripwire (INV-44) covers them.
 function gatedEndpointsFromSource_() {
-  const out = { admin: [], manager: [] };
+  const out = { admin: [], manager: [], qa: [] };   // seams F10 (cycle 24): the QA family too
   const re = /^function ([A-Za-z0-9_]+)\s*\(/gm;
   let m;
   while ((m = re.exec(codeSrc)) !== null) {
@@ -5969,6 +5982,7 @@ function gatedEndpointsFromSource_() {
     // Admin wins: an admin-gated endpoint returns the admin message only.
     if (body.indexOf("'Admin access required.'") >= 0) out.admin.push(m[1]);
     else if (body.indexOf("'Manager access required.'") >= 0) out.manager.push(m[1]);
+    else if (body.indexOf("'QA access required.'") >= 0) out.qa.push(m[1]);
   }
   return out;
 }
@@ -6006,11 +6020,15 @@ test('F9: every gated endpoint is covered by a gate test (enumerated from source
     managerAggregateFlagged_: 'private helper; public wrappers are covered',
     punchAdjustDecideAll_: 'private helper (operator 2026-09-03); both public wrappers — updatePunchAdjustStatus + updatePunchAdjustStatusBulk — are covered',
   };
-  const uncovered = gated.admin.concat(gated.manager)
+  // Seams F10 (cycle 24): the QA family (canSeeQa_) is enumerated as well —
+  // every endpoint was covered by test_qa_gates_rejectNonMember, but nothing
+  // required the NEXT one to be.
+  assert.ok(gated.qa.length >= 10, 'sanity: the QA-gated surface was found (' + gated.qa.length + ')');
+  const uncovered = gated.admin.concat(gated.manager, gated.qa)
     .filter((n) => !ALLOW[n] && blob.indexOf(n) < 0);
   assert.deepStrictEqual(uncovered, [],
     'gated endpoint(s) with no gate test — add them to test_managerGates_rejectNonManager ' +
-    '(or a dedicated *_nonManagerRejected test): ' + uncovered.join(', '));
+    '(or a dedicated *_nonManagerRejected test; a QA endpoint to test_qa_gates_rejectNonMember): ' + uncovered.join(', '));
 });
 
 test('F7: INV-136 NAMES the admin-gated set, and the COUNT lives only in the generated block', () => {
@@ -15085,33 +15103,35 @@ test('T2: a value the panel COLOURS is a value it can EXPLAIN — the tone and t
 // with no fixture fails, and a listed one that gains a fixture — or stops
 // being called — must leave the list. The list only shrinks.
 const X1_NO_FIXTURE_READS = [   // reads no scenario photographs yet — each is owed a fixture when one does
-    'adminScanStoredFormulas', 'exportAdpRange', 'exportCallNotesRange', 'getCallNoteAuditHistory', 'getDeployStamp', 'getDocsDashboard',
-    'getEmpDocTemplates', 'getFormByToken', 'getFormCatalog', 'getFormSubmission', 'getIntakeAgents',
-    'getMyCallNotesRange', 'getMyDoc', 'getMyDocs', 'getMySentForms', 'getQuiz',
-    'getQuizAnalytics', 'getQuizzes', 'getTrainingDashboard', 'intakeGetSubmission', 'intakeListMySubmissions',
-    'intakePreviewPPD', 'kbGetImageData', 'kbMapDistances', 'managerGetFormSubmission', 'managerGetShiftStats',
-    'managerSearchCallNotes', 'searchMyCallNotes', 'verifyDocSignature',
+    'adminScanStoredFormulas', 'exportAdpRange', 'exportCallNotesRange', 'getCallNoteAuditHistory', 'getDeployStamp',
+    'getDocsDashboard', 'getEmpDocTemplates', 'getFormByToken', 'getFormCatalog', 'getFormSubmission',
+    'getIntakeAgents', 'getMyCallNotesRange', 'getMyDoc', 'getMyDocs', 'getMySentForms', 'getQuiz', 'getQuizAnalytics',
+    'getQuizzes', 'getTrainingDashboard', 'intakeGetSubmission', 'intakeListMySubmissions', 'intakePreviewPAP',
+    'intakePreviewPMD', 'intakePreviewPPD', 'kbGetFacetGuidance', 'kbGetImageData', 'kbGetRevisions',
+    'kbGetSearchConfig', 'kbMapDistances', 'managerGetFormSubmission', 'managerGetShiftStats', 'managerSearchCallNotes',
+    'searchMyCallNotes', 'verifyDocSignature',
 ];
 const X1_NO_FIXTURE_WRITES = [  // writes: no scenario performs them, and a fixture would only fake a success
-    'acknowledgeCoaching', 'acknowledgeDoc', 'addEmployee', 'appendCallNoteFeedback',
-    'archiveCallNoteTag', 'cancelTimeOffRequest', 'claimSpanishThread', 'createCoaching', 'createScheduledCall',
-    'deleteCallNote', 'deleteEmpDocTemplate', 'deletePunch', 'deleteQuiz', 'emailFromCallNote',
-    'fixPtoReconciliation', 'fixTimesheetDuplicates', 'importQuizFromForm', 'intakeSendPPD', 'issueDoc',
-    'kbConvertDriveDoc', 'kbDeleteItem', 'kbFlagItem', 'kbMarkReviewed', 'kbPublishItem', 'kbRequestArticle',
-    'kbResolveContentRequest', 'kbRevertItem', 'kbSaveItem', 'kbSaveSearchConfig', 'kbUploadImage',
+    'acknowledgeCoaching', 'acknowledgeDoc', 'addEmployee', 'appendCallNoteFeedback', 'archiveCallNoteTag',
+    'cancelTimeOffRequest', 'claimSpanishThread', 'createCoaching', 'createScheduledCall', 'deleteCallNote',
+    'deleteEmpDocTemplate', 'deletePunch', 'deleteQuiz', 'emailFromCallNote', 'fixPtoReconciliation',
+    'fixTimesheetDuplicates', 'importQuizFromForm', 'intakeSendPAP', 'intakeSendPMD', 'intakeSendPPD', 'issueDoc',
+    'kbConvertDriveDoc', 'kbConvertDriveSheet', 'kbDeleteItem', 'kbFlagItem', 'kbMarkReviewed', 'kbPublishItem',
+    'kbRequestArticle', 'kbResolveContentRequest', 'kbRevertItem', 'kbSaveItem', 'kbSaveSearchConfig', 'kbUploadImage',
     'managerDeleteCallNote', 'managerSaveDay', 'managerSaveDayRange', 'managerSubmitTimeOff', 'markTrainingComplete',
     'mergeCallNoteTags', 'nudgeCoaching', 'offboardEmployee', 'provisionCallNotesSheet', 'qaAddComment',
     'qaAssignRecording', 'qaDeleteComment', 'qaSampleRecordings', 'qaSaveScorecard', 'qaSetExemption',
-    'qaSetRecordingAgent', 'qaSetRecordingDuration', 'qaSetRecordingShared', 'qaSetRecordingStatus',
-    'qaSyncRecordings', 'reconcileCallNotes', 'recordPunch', 'releaseDoc', 'releaseSpanishThread', 'resetQuizAttempts',
-    'renameCallNoteTag', 'resolveSpanishThread', 'revokeTrainingAssignment', 'saveAutoTagRules', 'saveBreakSchedules',
+    'qaSetRecordingAgent', 'qaSetRecordingDuration', 'qaSetRecordingShared', 'qaSetRecordingStatus', 'qaSyncRecordings',
+    'reconcileCallNotes', 'recordPunch', 'releaseDoc', 'releaseSpanishThread', 'renameCallNoteTag', 'resetQuizAttempts',
+    'resolveSpanishThread', 'revokeTrainingAssignment', 'saveAutoTagRules', 'saveBreakSchedules',
     'saveDepartmentEmails', 'saveDeptRequestSla', 'saveEmailTemplates', 'saveEmpDocTemplate', 'saveExternalLinks',
-    'saveFeatureFlags', 'saveKbAiSettings', 'saveMyScratchpad', 'saveQaMembers', 'saveQaScorecardCriteria',
-    'saveQuiz', 'saveRetentionConfig', 'saveSpanishInboxMembers', 'saveStateTaxRates', 'saveTrainingAssignment',
+    'saveFeatureFlags', 'saveKbAiSettings', 'saveMyScratchpad', 'saveQaMembers', 'saveQaScorecardCriteria', 'saveQuiz',
+    'saveRetentionConfig', 'saveSpanishInboxMembers', 'saveStateTaxRates', 'saveTrainingAssignment',
     'saveUpdateSuggestions', 'selfDeletePunch', 'sendExternalEmail', 'setCallNoteFlag', 'setCallNoteManagerComment',
     'setCallNotePinned', 'setCallNoteResolved', 'setCallNoteTrainingReply', 'setCoachingFollowUp',
     'setScheduledCallStatus', 'submitCallNote', 'submitFormByToken', 'submitPunchAdjustRequests', 'submitQuizAttempt',
-    'updatePunchAdjustStatus', 'updatePunchAdjustStatusBulk', 'updateTimeOffStatus', 'voidCoaching', 'voidDoc',
+    'submitTimeOffRange', 'submitTimeOffRequest', 'updatePunchAdjustStatus', 'updatePunchAdjustStatusBulk',
+    'updateTimeOffStatus', 'voidCoaching', 'voidDoc',
 ];
 function x1ClientRpcNames_() {
   const dir = path.join(__dirname, '../../web-app');
@@ -15119,34 +15139,77 @@ function x1ClientRpcNames_() {
   (function walk(d) { fs.readdirSync(d).forEach((f) => { const p = path.join(d, f); if (fs.statSync(p).isDirectory()) walk(p); else if (/\.html$/.test(f)) files.push(p); }); })(dir);
   const out = new Set();
   const KEY = 'google.script.run';
+  // Seams F9 (cycle 24): the walker stopped at a `//` comment BETWEEN two links
+  // (`.withFailureHandler(…)   // A12` then `.kbGetRevisions(id)`), never saw
+  // a name computed in brackets (`[isSheet ? 'a' : 'b'](…)`, `[fn](…)` with
+  // `var fn = … ? 'x' : 'y'`), nor a runner stored in a variable and called
+  // later (`const runner = google.script.run…; runner.submitTimeOffRange(…)`).
+  // Each was photographed as "no fixture" with nothing failing (g150).
+  const skipGap = (src, j) => {
+    for (;;) {
+      while (j < src.length && /\s/.test(src[j])) j++;
+      if (src[j] === '/' && src[j + 1] === '/') { while (j < src.length && src[j] !== '\n') j++; continue; }
+      if (src[j] === '/' && src[j + 1] === '*') { j = src.indexOf('*/', j + 2) + 2; continue; }
+      return j;
+    }
+  };
+  const skipParens = (src, j) => {   // j at '(' or '['; returns the index after the balanced close
+    const open = src[j], close = open === '(' ? ')' : ']';
+    let depth = 0;
+    for (; j < src.length; j++) {
+      const c = src[j];
+      if (c === '"' || c === "'" || c === '`') { const q = c; j++; while (j < src.length && src[j] !== q) { if (src[j] === '\\') j++; j++; } continue; }
+      if (c === '/' && src[j + 1] === '/') { while (j < src.length && src[j] !== '\n') j++; continue; }
+      if (c === '/' && src[j + 1] === '*') { j = src.indexOf('*/', j + 2) + 1; continue; }
+      if (c === open) depth++;
+      else if (c === close) { depth--; if (depth === 0) return j + 1; }
+    }
+    return j;
+  };
+  // The names a computed expression can YIELD: in a ternary, only its branches
+  // (`kind === 'training' ? 'a' : 'b'` yields a or b, never 'training').
+  const literals = (txt) => {
+    const q = txt.indexOf('?');
+    return [...(q >= 0 ? txt.slice(q + 1) : txt).matchAll(/'([A-Za-z_$][\w$]*)'|"([A-Za-z_$][\w$]*)"/g)].map((m) => m[1] || m[2]);
+  };
   files.forEach((file) => {
     const src = fs.readFileSync(file, 'utf8');
+    const runners = new Set();
     let i = 0;
     while ((i = src.indexOf(KEY, i)) >= 0) {
-      let j = i + KEY.length;
+      const assign = /(?:var|let|const)\s+([A-Za-z_$][\w$]*)\s*=\s*$/.exec(src.slice(Math.max(0, i - 60), i));
+      let j = i + KEY.length, named = false;
       for (;;) {
-        while (/\s/.test(src[j])) j++;
+        j = skipGap(src, j);
+        if (src[j] === '[') {   // a computed name
+          const end = skipParens(src, j);
+          const inner = src.slice(j + 1, end - 1).trim();
+          let names = literals(inner);
+          if (!names.length && /^[A-Za-z_$][\w$]*$/.test(inner)) {
+            const decl = new RegExp('(?:var|let|const)\\s+' + inner.replace(/\$/g, '\\$') + '\\s*=\\s*([^;\\n]+)', 'g');
+            let d, last = null; while ((d = decl.exec(src.slice(0, j)))) last = d[1];
+            names = last ? literals(last) : [];
+          }
+          names.forEach((n) => out.add(n));
+          named = true;
+          break;
+        }
         if (src[j] !== '.') break;
-        j++;
+        j = skipGap(src, j + 1);
         const m = /^[A-Za-z_$][\w$]*/.exec(src.slice(j));
         if (!m) break;
-        j += m[0].length;
-        while (/\s/.test(src[j])) j++;
+        j = skipGap(src, j + m[0].length);
         if (src[j] !== '(') break;
-        if (!/^with/.test(m[0])) { out.add(m[0]); break; }
-        // skip the handler's balanced parens, stepping over strings and comments
-        let depth = 0;
-        for (; j < src.length; j++) {
-          const c = src[j];
-          if (c === '"' || c === "'" || c === '`') { const q = c; j++; while (j < src.length && src[j] !== q) { if (src[j] === '\\') j++; j++; } continue; }
-          if (c === '/' && src[j + 1] === '/') { while (j < src.length && src[j] !== '\n') j++; continue; }
-          if (c === '/' && src[j + 1] === '*') { j = src.indexOf('*/', j + 2) + 1; continue; }
-          if (c === '(') depth++;
-          else if (c === ')') { depth--; if (depth === 0) { j++; break; } }
-        }
+        if (!/^with/.test(m[0])) { out.add(m[0]); named = true; break; }
+        j = skipParens(src, j);
       }
+      if (!named && assign) runners.add(assign[1]);
       i += KEY.length;
     }
+    runners.forEach((r) => {
+      [...src.matchAll(new RegExp('\\b' + r.replace(/\$/g, '\\$') + '\\s*\\.\\s*([A-Za-z_$][\\w$]*)\\s*\\(', 'g'))]
+        .map((m) => m[1]).filter((n) => !/^with/.test(n)).forEach((n) => out.add(n));
+    });
   });
   return out;
 }
@@ -20631,7 +20694,7 @@ console.log('\nDesign handoff PR 5 — QA surface');
 test('QA-19: qaCoverageRows_ behavioural — one row per roster name, case-insensitive attribution, period split, null-not-0, exempt target 0', () => {
   const ctx = {};
   vm.createContext(ctx);
-  ['qaPeriodKeysForYmd_', 'qaPeriodMatches_', 'qaCardStats_', 'qaExemptEligible_', 'qaNextPeriod_', 'qaExemptFor_', 'qaCoverageRows_'].forEach((fn) => {
+  ['qaPeriodKeysForYmd_', 'qaPeriodMatches_', 'qaCardStats_', 'qaExemptEligible_', 'qaNextPeriod_', 'qaExemptKeyFor_', 'qaExemptFor_', 'qaCoverageRows_'].forEach((fn) => {
     vm.runInContext(extractRawFunction('Code.js', fn), ctx);
   });
   vm.runInContext('const QA_EXEMPT_AVG_MIN = 4.5; const QA_EXEMPT_CRIT_MIN = 4;', ctx);
@@ -24905,7 +24968,7 @@ test('TQ-2: runTriggerGroup_ isolates each job — a throw is stamped under the 
       jobB: () => { log.ran.push('B'); throw new Error('boom'); },
       jobC: () => { log.ran.push('C'); return { success: true }; },
     });
-    vm.runInContext(groupSrc + '\n' + extractRawFunction('Code.js', 'runTriggerGroup_'), ctx, { filename: 'Code.js#runTriggerGroup_' });
+    vm.runInContext('var TRIGGER_HANDLER_JOB_KEYS = {};\n' + groupSrc + '\n' + extractRawFunction('Code.js', 'runTriggerGroup_'), ctx, { filename: 'Code.js#runTriggerGroup_' });   // unmapped jobs: the pre-F3 behaviour
     return { ctx, log };
   };
   let t = mk("const TRIGGER_GROUPS = { g: ['jobA', 'jobB', 'jobNope', 'jobC'] };");
@@ -24915,7 +24978,7 @@ test('TQ-2: runTriggerGroup_ isolates each job — a throw is stamped under the 
   assert.strictEqual(r.results.length, 4, 'one result per job, the undefined one included');
   assert.strictEqual(r.results[1].ok, false); assert.strictEqual(r.results[1].error, 'boom');
   assert.strictEqual(r.results[2].job, 'jobNope'); assert.strictEqual(r.results[2].ok, false);
-  assert.strictEqual(t.log.stamped.filter((x) => x.indexOf('jobB:boom') === 0).length, 1, 'the throw is stamped under the JOB name (the health dot + failure digest read it — INV-161)');
+  assert.strictEqual(t.log.stamped.filter((x) => x === 'jobB:jobB stopped with an unexpected error: boom').length, 1, 'the throw is stamped under the JOB name (the health dot + failure digest read it — INV-161)');
   assert.ok(t.log.stamped.some((x) => /^jobNope:.*not a defined top-level function/.test(x)), 'a typo in TRIGGER_GROUPS is stamped BY NAME, never silently skipped');
   assert.strictEqual(t.log.cleared.join('|'), 'jobA|jobC', 'each clean job clears its own stamp');
   t = mk("const TRIGGER_GROUPS = { g: ['jobA', 'jobC'] };");
@@ -26139,20 +26202,26 @@ test('F4 (seams 2026-09-18): every Regression Scenario and Invariant id in .cycl
   assert.deepStrictEqual(dupes('invariants', /^(INV-\d+)\s*\|/gm), [],
     'duplicate Invariant id(s) — a reused number silently merges two rules');
 
-  // The RESERVED numbers stay absent while STATE.md holds them. Cycle 20's
-  // reflection proposed INV-225..227 and could not verify any; reusing one
-  // would attach a new rule to a number another session is still holding.
-  const state = fs.readFileSync(path.join(__dirname, '../../.cycle/STATE.md'), 'utf8');
-  const reserved = [...state.matchAll(/INV-(\d+)[^\n]*RESERVED|RESERVED[^\n]*INV-(\d+)/g)];
-  if (reserved.length) {
-    const held = [...state.matchAll(/\*\*INV-(\d+), INV-(\d+) and INV-(\d+) are RESERVED/g)][0];
-    if (held) {
-      held.slice(1).forEach((n) => {
-        assert.ok(!new RegExp('^INV-' + n + '\\s*\\|', 'm').test(cfg),
-          'INV-' + n + ' is RESERVED in STATE.md but WRITTEN in config.md — do not reuse a held number');
-      });
-    }
-  }
+  // Seams F5 (cycle 24): the HELD numbers (reserved, proposed, retired) stay
+  // unwritten. They are read from the library's own `HELD NUMBERS` line — the
+  // old half read STATE.md's prose, and when the cycle-23 close-out reworded
+  // that sentence the match came back null and the check silently skipped.
+  // A missing or unparseable line FAILS here, never skips.
+  const heldLine = (cfg.match(/^\*\*HELD NUMBERS[^\n]*$/m) || [])[0];
+  assert.ok(heldLine, 'the Invariant Library carries its HELD NUMBERS line');
+  const listPart = heldLine.split(/Adopted out of this list/)[0];
+  const held = [];
+  // Each `·`-separated item LEADS with its number or range; a number inside
+  // the item's parenthesis is prose (e.g. "subsumed by INV-375"), not held.
+  listPart.replace(/^[\s\S]*?:\*\*/, '').split(' · ').map((it) => it.trim().match(/^INV-(\d+)(?:\.\.(\d+))?/)).filter(Boolean).forEach((m) => {
+    const a = Number(m[1]), b = m[2] ? Number(m[2]) : a;
+    for (let n = a; n <= b; n++) held.push(n);
+  });
+  assert.ok(held.indexOf(225) >= 0 && held.indexOf(227) >= 0 && held.length >= 10, 'non-vacuous: the held line parsed (' + held.join(',') + ')');
+  held.forEach((n) => {
+    assert.ok(!new RegExp('^INV-' + n + '\\s*\\|', 'm').test(cfg),
+      'INV-' + n + ' is HELD but WRITTEN in config.md — a held number is never reused; adopting it means taking it off the HELD line in the same edit');
+  });
 });
 
 test('F5 (seams 2026-09-18): every invariant from INV-139 up NAMES its verification — the ratchet', () => {
@@ -33046,7 +33115,7 @@ const b8Sheet_ = (rows) => {
 const b8Rec_ = (o) => { const r = new Array(15).fill(''); Object.keys(o).forEach((k) => { r[{ fid: 0, created: 4, status: 6, assignee: 7, agent: 10, shared: 11, agentId: 14 }[k]] = o[k]; }); return r; };
 
 test('QA2-1 (cycle 23): an exemption EARNED in a period is granted for the NEXT one, and a quarter\'s exemption holds in its months (driven)', () => {
-  const ctx = b8Ctx_(['qaPeriodKeysForYmd_', 'qaPeriodMatches_', 'qaCardStats_', 'qaExemptEligible_', 'qaNextPeriod_', 'qaExemptFor_', 'qaCoverageRows_']);
+  const ctx = b8Ctx_(['qaPeriodKeysForYmd_', 'qaPeriodMatches_', 'qaCardStats_', 'qaExemptEligible_', 'qaNextPeriod_', 'qaExemptKeyFor_', 'qaExemptFor_', 'qaCoverageRows_']);
   assert.deepStrictEqual(['2026-09', '2026-12', '2026-Q3', '2026-Q4', 'x'].map((k) => ctx.qaNextPeriod_(k)), ['2026-10', '2027-01', '2026-Q4', '2027-Q1', '']);
   const ex = { 'ann|2026-Q3': true, 'bob|2026-08': true };
   assert.strictEqual(ctx.qaExemptFor_(ex, 'ann', '2026-08'), true, 'THE REGRESSION (keys): a quarter exemption did not hold in the month view');
@@ -33073,7 +33142,7 @@ test('QA2-1 (cycle 23): an exemption EARNED in a period is granted for the NEXT 
   const qa = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/qa/script_qa.html'), 'utf8'));
   const cov = stripJsComments_(extractFnFrom(qa, 'qaCoverageSectionHtml_'));
   assert.ok(/if \(r\.eligible && d\.nextPeriod\) return btn\(true, d\.nextPeriod,/.test(cov), 'THE REGRESSION: Grant wrote the VIEWED period');
-  assert.ok(/if \(r\.exemptNext\) return btn\(false, d\.nextPeriod/.test(cov), 'a granted next-period exemption can be revoked from here');
+  assert.ok(/if \(r\.exemptNext\) \{\s*const k = r\.exemptNextKey \|\| d\.nextPeriod/.test(cov), 'a granted next-period exemption can be revoked from here (by the key that granted it — seams F1)');
   assert.ok(/\.qaSetExemption\(name, per, !!on\)/.test(stripJsComments_(extractFnFrom(qa, 'qaSetExemption_'))), 'the call carries the button\'s period');
 });
 
@@ -33086,7 +33155,7 @@ test('QA2-2 + QA-4 (cycle 23): "Sample the gaps" draws only the period\'s own ca
   ];
   const sheet = b8Sheet_(rows);
   const me = { id: 'E-R', name: 'Rev Iewer', email: 'r@x', isAdmin: false };
-  const ctx = b8Ctx_(['qaPeriodKeysForYmd_', 'qaPeriodMatches_', 'qaPeriodValid_', 'qaPeriodLabel_', 'qaStatus_', 'qaMsToYmd_', 'qaExemptFor_',
+  const ctx = b8Ctx_(['qaPeriodKeysForYmd_', 'qaPeriodMatches_', 'qaPeriodValid_', 'qaPeriodLabel_', 'qaStatus_', 'qaMsToYmd_', 'qaExemptKeyFor_', 'qaExemptFor_',
     'qaIsOwnRecording_', 'qaSelfReviewRefusal_', 'qaSamplePick_', 'qaSampleRecordings'], {
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     getEmployeeInfo_: () => me, canSeeQa_: () => true, getOrCreateQaRecordingsSheet_: () => sheet,
@@ -33258,6 +33327,15 @@ test('SH-02 (cycle 23): no button calls a registered close hook directly — eve
       if (new RegExp('onclick=\\\\?"' + h.replace(/\$/g, '\\$') + '\\(\\)').test(src)) bad.push(f + ': onclick="' + h + '()"');
       if (new RegExp("closest\\([^)]*\\)\\)\\s*\\{?\\s*" + h.replace(/\$/g, '\\$') + '\\(\\)').test(src)) bad.push(f + ': a delegated click calls ' + h + '()');
     });
+  });
+  // Seams F4 (cycle 24): an INLINE hook has no name to match, so its × could
+  // repeat the hook's body — `ov.remove()` — and skip closeOverlay unseen
+  // (the Search synonyms and Revision history dialogs did). Any delegated
+  // close click that removes or un-opens a node by hand is the same bypass.
+  const handClose = /closest\('\[data-[\w-]*close[\w-]*\]'\)\)\s*\{?\s*(?:[\w$.]+\.remove\(\)|[\w$.]+\.classList\.remove\('open'\))/g;
+  files.forEach((f) => {
+    const src = stripJsComments_(read(f));
+    let m; while ((m = handClose.exec(src))) bad.push(f + ': a close click removes the overlay by hand — ' + m[0]);
   });
   assert.deepStrictEqual(bad, [], 'a direct hook call skips closeOverlay — no focus restore (g100), and no UI-ESC question');
 });
@@ -34351,10 +34429,15 @@ console.log('\ncycle 23 Batch 15 — editor-suite cases for Batches 10–14');
 
 test('Batch 15 (cycle 23): the nine new smoke cases are registered in the smoke shard and PASS against the real server functions (run in a vm with the real Tests.js assertions)', () => {
   const testsSrc = fs.readFileSync(path.join(PA_WEB, 'Tests.js'), 'utf8');
-  const names = ['c23_intakeNeuroDxByToken', 'c23_intakeSeatKindsNegation', 'c23_intakeWeightUnitsAndBounds', 'c23_orgEmailAndExternalIntakeConfirm',
-    'c23_kbAiFacetCountsCarryNoValue', 'c23_dashboardAlignToData', 'c23_trainQuizLockout', 'c23_kbImageItemContentKey', 'c23_spanishEpisodesAndCourtesy'];
   const smoke = extractRawFunction('Tests.js', '_registerSmokeTests_');
-  names.forEach((n) => assert.ok(new RegExp("_smokeTest\\('" + n + "',\\s+test_" + n + '\\);').test(smoke), n + ' is registered in the SMOKE shard (pure — it runs on prod too)'));
+  // Seams F14 (cycle 24): the cases to RUN are derived from the smoke shard —
+  // a hand list here meant a tenth c23 case registered there was silently
+  // never executed. The nine below are the floor the derivation must cover.
+  const names = [...smoke.matchAll(/_smokeTest\('(c23_[A-Za-z0-9_]+)',\s+test_\1\);/g)].map((m) => m[1]);
+  ['c23_intakeNeuroDxByToken', 'c23_intakeSeatKindsNegation', 'c23_intakeWeightUnitsAndBounds', 'c23_orgEmailAndExternalIntakeConfirm',
+    'c23_kbAiFacetCountsCarryNoValue', 'c23_dashboardAlignToData', 'c23_trainQuizLockout', 'c23_kbImageItemContentKey', 'c23_spanishEpisodesAndCourtesy']
+    .forEach((n) => assert.ok(names.indexOf(n) >= 0, n + ' is registered in the SMOKE shard (pure — it runs on prod too) and is run below'));
+  assert.ok(!/_smokeTest\('c23_/.test(smoke.replace(/_smokeTest\('(c23_[A-Za-z0-9_]+)',\s+test_\1\);/g, '')), 'every c23 smoke registration has the shape the derivation reads');
   const intB = extractRawFunction('Tests.js', '_registerIntegrationB_');
   ['c23_timesheetRangeReader', 'c23_kbImagesStoreAndRead'].forEach((n) => assert.ok(new RegExp("_integrationTest\\('" + n + "',\\s+test_" + n + '\\);').test(intB), n + ' is an Integration B case'));
   assert.ok(/return _withTestKb_\(function \(\) \{/.test(extractRawFunction('Tests.js', 'test_c23_kbImagesStoreAndRead')), 'the image store case writes only to the KB FIXTURE (the tab is append-only)');
@@ -34381,6 +34464,342 @@ test('Batch 15 (cycle 23): the nine new smoke cases are registered in the smoke 
     try { ctx['test_' + n](); } catch (e) { assert.fail('editor case ' + n + ' FAILS against the real code: ' + e.message); }
   });
   assert.ok(testsSrc.indexOf('test_c23_') > 0);
+});
+
+// ── Seams & Invariants (cycle 24) — the small production batch ────────────
+console.log('\nSeams cycle 24 — production batch (F1, F2, F3, F4, F6, F8, F19)');
+
+test('Seams F1 (cycle 24): a revoke clears the KEY that granted the exemption — a quarter\'s grant read in a month view is revoked as the quarter (driven)', () => {
+  const ctx = b8Ctx_(['qaPeriodKeysForYmd_', 'qaPeriodMatches_', 'qaCardStats_', 'qaExemptEligible_', 'qaNextPeriod_', 'qaExemptKeyFor_', 'qaExemptFor_', 'qaCoverageRows_']);
+  const ex = { 'ann|2026-Q4': true, 'bob|2026-10': true };
+  assert.strictEqual(ctx.qaExemptKeyFor_(ex, 'ann', '2026-10'), '2026-Q4', 'a month exempt through its quarter names the QUARTER');
+  assert.strictEqual(ctx.qaExemptKeyFor_(ex, 'bob', '2026-10'), '2026-10', 'its own key first');
+  assert.strictEqual(ctx.qaExemptKeyFor_(ex, 'bob', '2026-Q4'), '', 'a month never exempts its quarter');
+  assert.strictEqual(ctx.qaExemptKeyFor_(ex, 'cy', '2026-10'), '');
+  const oct = ctx.qaCoverageRows_([], [], ['Ann', 'Bob', 'Cy'], '2026-10', 3, ex, '2026-09');
+  assert.deepStrictEqual(oct.map((r) => [r.name, r.exempt, r.exemptKey]), [['Ann', true, '2026-Q4'], ['Bob', true, '2026-10'], ['Cy', false, '']]);
+  const sep = ctx.qaCoverageRows_([], [], ['Ann'], '2026-09', 3, ex, '2026-08')[0];
+  assert.deepStrictEqual([sep.exempt, sep.exemptNext, sep.exemptNextKey], [false, true, '2026-Q4'], 'next period exempt through the quarter names the quarter too');
+
+  // The client button carries the key, and labels a key that is not the viewed period.
+  const qaSrc = fs.readFileSync(path.join(__dirname, '../../web-app/qa/script_qa.html'), 'utf8');
+  let captured = null;
+  const cctx = vm.createContext({ String, Number, Math, Object, Array, JSON,
+    esc: (x) => String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'),
+    QA_STATE: { queue: { periodOptions: [{ key: '2026-10', label: 'Oct 2026' }, { key: '2026-Q4', label: 'Q4 2026' }] } },
+    errorStateHtml_: () => '', qaSummaryStripHtml_: () => '', qaFmtDate_: () => '', qaScoreTone_: () => '',
+    qaCoverageSummary_: () => ({ gaps: 0 }), qaCoverageTier_: () => ({ key: '' }),
+    mtRenderTable_: (o) => { captured = o; return ''; } });
+  ['qaPeriodLabelOf_', 'qaCoverageSectionHtml_'].forEach((f) => vm.runInContext(extractFnFrom(qaSrc, f), cctx));
+  const d = { isManager: true, period: '2026-10', nextPeriod: '2026-11', nextPeriodLabel: 'Nov 2026', target: 3, coverage: oct };
+  cctx.qaCoverageSectionHtml_(d);
+  const act = captured.columns.filter((c) => c.key === 'actions')[0];
+  const ann = act.cell(oct[0]), bob = act.cell(oct[1]);
+  assert.ok(/data-qa-exempt-on="0" data-qa-exempt-period="2026-Q4"/.test(ann), 'THE REGRESSION: Ann\'s revoke wrote the viewed month 2026-10, which no row granted');
+  assert.ok(/Revoke exemption \(Q4 2026\)/.test(ann), 'the button says which period it revokes');
+  assert.ok(/data-qa-exempt-period="2026-10"/.test(bob) && />Revoke exemption</.test(bob), 'a month\'s own grant is unchanged');
+  cctx.qaCoverageSectionHtml_(Object.assign({}, d, { period: '2026-09', nextPeriod: '2026-10', nextPeriodLabel: 'Oct 2026', coverage: [sep] }));
+  const sepBtn = captured.columns.filter((c) => c.key === 'actions')[0].cell(sep);
+  assert.ok(/data-qa-exempt-period="2026-Q4"/.test(sepBtn) && /Revoke for Q4 2026/.test(sepBtn), 'the next-period revoke carries — and names — the quarter key');
+
+  // The server refuses a revoke of a key that was never granted, and appends nothing.
+  const appended = [];
+  const sctx = vm.createContext({ String, Number, Math, Object, Array, JSON, Date,
+    LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
+    getEmployeeInfo_: () => ({ isManager: true, email: 'm@x' }),
+    qaPeriodValid_: () => true, qaPeriodLabel_: (k) => 'L(' + k + ')',
+    getOrCreateQaExemptionsSheet_: () => ({}), qaReadExemptions_: () => ex,
+    appendRowsTextSafe_: (sh, rows) => appended.push(rows[0]), writeAuditLog_: () => {}, QA_EXEMPTIONS_TEXT_IDX: [] });
+  vm.runInContext(extractRawFunction('Code.js', 'qaSetExemption'), sctx);
+  const bad = sctx.qaSetExemption('Ann', '2026-10', false);
+  assert.strictEqual(bad.success, false, 'a revoke under a quarter\'s grant used to answer "revoked" and change nothing');
+  assert.ok(/no exemption recorded for L\(2026-10\)/.test(bad.error) && /nothing was changed/.test(bad.error));
+  assert.strictEqual(appended.length, 0, 'nothing appended');
+  assert.strictEqual(sctx.qaSetExemption('Ann', '2026-Q4', false).success, true);
+  assert.strictEqual(sctx.qaSetExemption('Cy', '2026-11', true).success, true, 'a grant is never refused by this check');
+  assert.deepStrictEqual(appended.map((r) => [r[0], r[1], r[4]]), [['Ann', '2026-Q4', 'FALSE'], ['Cy', '2026-11', 'TRUE']]);
+});
+
+test('Seams F2 (cycle 24): the EOD digest stamps a failed send or an unreadable Sheet, and only a run that reached a rep clears it (driven)', () => {
+  const runEod = (opts) => {
+    const calls = { stamp: [], clear: [], beat: 0 };
+    const ctx = vm.createContext({ String, Number, Math, Object, Array, JSON, Date, parseInt,
+      assertManagerCaller_: () => {}, Logger: { log: () => {} },
+      CONFIG: { CALL_NOTES: { EOD_WARNING_HOUR: 17 } },
+      EMP: { EMAIL: 0, ID: 1, NAME: 2, TIMEZONE: 3 }, CN: { DATE_LOCAL: 0, FLAG_TYPE: 1, RESOLVED: 2 },
+      getEmployeeRosterRows_: () => [['h'], ['a@x', 'A', 'Ann', 'EOD'], ['b@x', 'B', 'Bob', 'EOD'], ['c@x', 'C', 'Cy', 'NOT']],
+      cnEnrolledSheetId_: () => 'sheet', safeTimezone_: (t) => t,
+      Utilities: { formatDate: (d, tz, f) => (f === 'H' ? (tz === 'EOD' && opts.hourMatches ? '17' : '3') : '2026-10-05') },
+      getCallNotesSheet_: (e) => { if (opts.unreadable && e.id === 'A') throw new Error('Sheet A gone'); return {}; },
+      readCallNoteRowsInRange_: () => [{ row: ['2026-10-05', 'action', ''] }],
+      cnDateLocalString_: (v) => v, callNoteRowToObject_: () => ({}),
+      sendOneRepEodDigest_: (e) => { if (opts.sendFails && e.id === 'B') throw new Error('Service invoked too many times'); },
+      stampDigestLastRun_: () => { calls.beat++; },
+      stampAutomationError_: (k, m) => calls.stamp.push([k, m]), clearAutomationError_: (k) => calls.clear.push(k) });
+    vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesEodDigest'), ctx);
+    ctx.sendCallNotesEodDigest();
+    return calls;
+  };
+  const failed = runEod({ hourMatches: true, unreadable: true, sendFails: true });
+  assert.strictEqual(failed.beat, 1, 'the heartbeat still says the trigger ran');
+  assert.strictEqual(failed.stamp.length, 1, 'THE REGRESSION: a failed send and an unreadable Sheet reached only the log');
+  assert.strictEqual(failed.stamp[0][0], 'CallNotesEodDigest');
+  assert.ok(/could not read 1 rep Call Notes Sheet/.test(failed.stamp[0][1]) && /1 EOD reminder email\(s\) failed to send/.test(failed.stamp[0][1]), failed.stamp[0][1]);
+  assert.deepStrictEqual(failed.clear, [], 'a failing run does not clear');
+  const clean = runEod({ hourMatches: true });
+  assert.deepStrictEqual([clean.stamp.length, clean.clear], [0, ['CallNotesEodDigest']], 'a run that reached reps and sent cleanly clears the flag');
+  const idle = runEod({ hourMatches: false });
+  assert.deepStrictEqual([idle.stamp.length, idle.clear.length, idle.beat], [0, 0, 1],
+    'an hour that matched no rep proves nothing — it must not wipe a failure before the morning digest reads it');
+  // The key is wired to the heartbeat and labelled (the 4a-FU3 maps).
+  assert.ok(/eod: 'CallNotesEodDigest'/.test(codeSrc) && /CallNotesEodDigest: '[^']+'/.test(codeSrc), 'DIGEST_ERROR_KEYS + AUTOMATION_ERROR_LABELS carry the EOD key');
+});
+
+test('Seams F3 (cycle 24): a grouped job\'s unexpected throw is stamped under its JOB key — labelled, and seen by its heartbeat — and the dispatcher never clears a key the job owns (driven + a two-sided net)', () => {
+  const code = serverSource();
+  const log = { stamped: [], cleared: [] };
+  const ctx = vm.createContext({ Logger: { log: () => {} },
+    stampAutomationError_: (j, m) => log.stamped.push([j, m]), clearAutomationError_: (j) => log.cleared.push(j),
+    sendCallNotesUrgentDigest: () => { throw new Error('quota'); },
+    checkOpenPunches: () => ({}), purgeOldQaReviews: () => ({}) });
+  vm.runInContext(extractConstDecl_('TRIGGER_HANDLER_JOB_KEYS').replace(/^const /, 'var ') +
+    "\nvar TRIGGER_GROUPS = { g: ['sendCallNotesUrgentDigest', 'checkOpenPunches', 'purgeOldQaReviews'] };\n" +
+    extractRawFunction('Code.js', 'runTriggerGroup_'), ctx);
+  ctx.runTriggerGroup_('g');
+  assert.deepStrictEqual(log.stamped.map((x) => x[0]), ['CallNotesUrgentDigest'], 'THE REGRESSION: the throw was stamped as "sendCallNotesUrgentDigest", a key no label or heartbeat knew');
+  assert.ok(/^sendCallNotesUrgentDigest stopped with an unexpected error: quota$/.test(log.stamped[0][1]), 'the message still names the handler');
+  assert.ok(log.cleared.indexOf('OpenPunchCheck') >= 0, 'a job that does not manage its key is cleared on a clean run');
+  assert.ok(log.cleared.indexOf('QaReviewPurge') < 0, 'a job that OWNS its key is never cleared by the dispatcher — that would erase its own failure stamp');
+  assert.ok(log.cleared.indexOf('checkOpenPunches') >= 0 && log.cleared.indexOf('purgeOldQaReviews') >= 0, 'a pre-F3 stamp under the handler name is cleaned up');
+  // Two-sided net: every grouped handler has a row; `owns` matches the job's own body; every key is labelled.
+  const groups = vm.runInContext('(' + /const TRIGGER_GROUPS = (\{[\s\S]*?\n\});/.exec(code)[1] + ')', vm.createContext({}));
+  const map = ctx.TRIGGER_HANDLER_JOB_KEYS;
+  const handlers = [].concat.apply([], Object.keys(groups).map((k) => groups[k]));
+  assert.ok(handlers.length >= 10, 'non-vacuous');
+  assert.deepStrictEqual(Object.keys(map).sort(), handlers.slice().sort(), 'every grouped handler — and only those — has a job-key row');
+  const lab = vm.createContext({});
+  vm.runInContext(/^const AUTOMATION_ERROR_LABELS = \{[\s\S]*?\n\};$/m.exec(code)[0].replace(/^const /, 'var '), lab);
+  const tabled = {}; (code.match(/action: '([A-Za-z]+)'/g) || []).forEach((m) => { tabled[m.slice(9, -1)] = true; });
+  handlers.forEach((h) => {
+    const body = extractRawFunction('Code.js', h);
+    const k = map[h].key;
+    const self = body.indexOf("stampAutomationError_('" + k + "'") >= 0 && body.indexOf("clearAutomationError_('" + k + "'") >= 0;
+    assert.strictEqual(map[h].owns, self, h + ': owns=' + map[h].owns + ' but its body ' + (self ? 'does' : 'does not') + ' stamp and clear ' + k);
+    assert.ok(tabled[k] || lab.AUTOMATION_ERROR_LABELS[k], k + ' (' + h + ') has neither a job-table row nor a label');
+  });
+});
+
+test('Seams F6 (cycle 24): a note row fetched by index must still carry its NoteId — the unlocked Dept Request detail never shows another patient\'s note (driven, the FORM-1 shape)', () => {
+  const ctx = vm.createContext({ String, CN: { NOTE_ID: 0 }, CN_HEADERS: ['NoteId', 'Issue'] });
+  ['formLocatedRowIs_', 'findCallNoteRow_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  // The column scan sees the rows BEFORE a delete/archive; the row fetch sees them after (`shiftFetches` times).
+  const mk = (rows, shiftFetches) => {
+    let fetches = 0, scans = 0;
+    return {
+      get scans() { return scans; },
+      getLastRow: () => rows.length + 1,
+      getRange: (r, c, n, w) => ({ getValues: () => {
+        if (n > 1 || w === 1) { scans++; return rows.map((x) => [x[0]]); }
+        fetches++;
+        const after = fetches <= shiftFetches ? rows.filter((x, i) => i !== 0) : rows;
+        return [after[r - 2] || ['', '']];
+      } }),
+    };
+  };
+  const rows = [['n-deleted', 'old'], ['n-mine', 'MY NOTE'], ['n-other', 'ANOTHER PATIENT']];
+  const once = mk(rows, 1);
+  const hit = ctx.findCallNoteRow_(once, 'n-mine');
+  assert.ok(hit && hit.row[1] === 'MY NOTE' && hit.rowIndex === 3, 'THE REGRESSION: the first fetch read n-other\'s row and returned it as n-mine');
+  assert.strictEqual(once.scans, 2, 'located twice');
+  assert.strictEqual(ctx.findCallNoteRow_(mk(rows, 9), 'n-mine'), null, 'a row that keeps moving is refused, never served');
+  const still = mk(rows, 0);
+  assert.strictEqual(ctx.findCallNoteRow_(still, 'n-mine').row[1], 'MY NOTE'); assert.strictEqual(still.scans, 1, 'a still sheet (every locked caller): one locate');
+  assert.strictEqual(ctx.findCallNoteRow_(mk(rows, 0), 'n-absent'), null);
+  assert.strictEqual(ctx.findCallNoteRow_(mk(rows, 0), ''), null);
+});
+
+test('Seams F19 (cycle 24): an un-approve whose credit cannot land keeps the charge recorded and says so — and a re-approval never takes the day twice (driven through the TC-04 harness)', () => {
+  const row = (status, type, ded) => ['E1', 'Ann', '2026-10-05', type || 'Full Day', '', status, 's1'].concat(ded === undefined ? [] : [ded]);
+  // Approved with a day taken, then denied while the rep's PTO is OFF: nothing can be credited back.
+  let t = c23ToCtx_({ rows: [['h'], row('Approved', 'Full Day', 'annual:1')], ptoOff: true });
+  const r = t.ctx.updateTimeOffStatus('E1', '2026-10-05', 's1', 'Denied');
+  assert.ok(r.success);
+  assert.strictEqual(t.rows[1][7], 'annual:1', 'THE REGRESSION: the record of a day still taken was cleared, so it could never be restored or even seen');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r.notRestored)), { bucket: 'annual', days: 1, reason: 'ptoOff' }, 'the response names what was not restored');
+  // Tracking off: the same, with its reason.
+  t = c23ToCtx_({ rows: [['h'], row('Approved', 'Full Day', 'annual:1')], tracking: false });
+  assert.strictEqual(t.ctx.updateTimeOffStatus('E1', '2026-10-05', 's1', 'Pending').notRestored.reason, 'trackingOff');
+  assert.strictEqual(t.rows[1][7], 'annual:1');
+  // Re-approved later with everything back ON: the held charge is not taken again.
+  const back = c23ToCtx_({ rows: t.rows });
+  const before = back.balance.annual;
+  assert.ok(back.ctx.updateTimeOffStatus('E1', '2026-10-05', 's1', 'Approved').success);
+  assert.strictEqual(back.balance.annual, before, 'one request, one day — never two');
+  assert.strictEqual(back.rows[1][7], 'annual:1');
+  // ...and a normal deny then restores it exactly.
+  back.ctx.updateTimeOffStatus('E1', '2026-10-05', 's1', 'Denied');
+  assert.strictEqual(back.balance.annual, before + 1); assert.strictEqual(back.rows[1][7], '');
+  // A legacy row (no record) that cannot be credited records the by-type charge rather than staying blank.
+  t = c23ToCtx_({ rows: [['h'], row('Approved')], ptoOff: true });
+  assert.ok(t.ctx.updateTimeOffStatus('E1', '2026-10-05', 's1', 'Denied').notRestored);
+  assert.strictEqual(t.rows[1][7], 'annual:1');
+  // Nothing taken ('none') is nothing owed: cleared, nothing named.
+  t = c23ToCtx_({ rows: [['h'], row('Approved', 'Full Day', 'none')], ptoOff: true });
+  const n = t.ctx.updateTimeOffStatus('E1', '2026-10-05', 's1', 'Denied');
+  assert.strictEqual(n.notRestored, undefined); assert.strictEqual(t.rows[1][7], '');
+});
+
+test('Seams F20 (cycle 24): an image tab whose header was EDITED reads "could not read", never "not stored" — for KbImages; the manual tab\'s old layout still reads as not imported (driven)', () => {
+  const k1 = 'kbimg-' + '1'.repeat(24);
+  const edited = b12Sheet_([[k1, 's1', 'image/png', 'paste', 0, B12_PNG_B64, 't']], ['Key', 'Hash', 'Type', 'Kind', 'Part', 'Data', 'ImportedAt']);
+  let sheet = edited;
+  const ctx = b12Ctx_(['kbImageTabHeaderOk_', 'kbImageTabLedger_', 'kbImageTabServe_', 'getKbImages'], {
+    getEmployeeInfo_: () => ({ email: 'rep@ums.com' }), getKbSS_: () => ({ getSheetByName: () => sheet }),
+    CacheService: { getScriptCache: () => ({ getAll: () => ({}), putAll() {} }) } });
+  const r = b10J(ctx.getKbImages([k1, 'kbimg-' + '2'.repeat(24), 'icon-a']));
+  assert.deepStrictEqual(r.missing, [], 'THE REGRESSION: every image read as "not stored" while the store said the header changed');
+  assert.deepStrictEqual(r.failed, [k1, 'kbimg-' + '2'.repeat(24)], 'every valid key is "could not read"');
+  assert.strictEqual(r.headerChanged, true);
+  sheet = null;
+  assert.deepStrictEqual(b10J(ctx.getKbImages([k1])).missing, [k1], 'no tab at all is nothing stored yet');
+  sheet = b12Sheet_([[k1, 's1', 'image/png', 'paste', 0, B12_PNG_B64, 't']]);
+  assert.ok(b10J(ctx.getKbImages([k1])).images[k1], 'the right header serves as before');
+  assert.ok(!/headerChangedFails/.test(extractRawFunction('Code.js', 'getManualImages')), 'the manual tab keeps "an old layout is not imported" (M4-FU3) — the next import rewrites it');
+});
+
+test('Seams F18 (cycle 24): the section-index cache key hashes EVERY function the builder reaches — derived from the builder\'s call closure (kbSlug_ was missing)', () => {
+  const code = serverSource();
+  const declared = new Set([...code.matchAll(/^function ([A-Za-z_$][\w$]*)\(/gm)].map((m) => m[1]));
+  const closure = new Set();
+  const walk = (fn) => {
+    if (closure.has(fn)) return;
+    closure.add(fn);
+    const body = stripJsComments_(extractRawFunction('Code.js', fn)).replace(/^function [\w$]+\(/, '(');
+    [...body.matchAll(/\b([A-Za-z_$][\w$]*)\s*\(/g)].map((m) => m[1]).filter((n) => declared.has(n)).forEach(walk);
+  };
+  walk('kbBuildSearchIndex_');
+  assert.ok(closure.has('kbSplitSections_') && closure.has('kbSlug_'), 'non-vacuous: the walk reached the slug');
+  const key = extractRawFunction('Code.js', 'kbSearchIndexKey_');
+  const hashed = new Set([...key.matchAll(/String\(([A-Za-z_$][\w$]*)\)/g)].map((m) => m[1]));
+  const missing = [...closure].filter((f) => !hashed.has(f));
+  assert.deepStrictEqual(missing, [], 'THE REGRESSION: the key omitted a function that shapes the cached index — a deploy changing it served the old shape from cache (g157)');
+  const extra = [...hashed].filter((f) => !closure.has(f));
+  assert.deepStrictEqual(extra, [], 'the key hashes nothing the builder does not reach');
+});
+
+test('Seams F17 (cycle 24): INV-375 — no path that stores or serves a KbImages/ManualImages image, or imports the manual, reaches Drive — derived over the call graph, not each function\'s own body', () => {
+  const code = serverSource();
+  const declared = [...code.matchAll(/^function ([A-Za-z_$][\w$]*)\(/gm)].map((m) => m[1]);
+  const decl = new Set(declared);
+  const bodies = {};
+  const body = (fn) => bodies[fn] || (bodies[fn] = stripJsComments_(extractRawFunction('Code.js', fn)));
+  const DRIVE = /\bDriveApp\b|\bDrive\.(Files|Permissions|Drives)\b|googleapis\.com\/(drive|upload\/drive)|\bgetOrCreateKbImagesFolder_\b|\bkbDriveUpload_\b/;
+  const reach = (roots) => {
+    const seen = new Set(), path = {}, hits = [];
+    const walk = (fn, from) => {
+      if (seen.has(fn)) return;
+      seen.add(fn); path[fn] = from;
+      const b = body(fn);
+      if (DRIVE.test(b.replace(/^function [\w$]+\(/, '('))) {
+        const chain = []; for (let f = fn; f; f = path[f]) chain.unshift(f);
+        hits.push(chain.join(' → '));
+      }
+      [...b.replace(/^function [\w$]+\(/, '(').matchAll(/\b([A-Za-z_$][\w$]*)\s*\(/g)].map((m) => m[1]).filter((n) => decl.has(n)).forEach((n) => walk(n, fn));
+    };
+    roots.forEach((r) => walk(r, null));
+    return { seen, hits };
+  };
+  const roots = declared.filter((n) => /^kbImage|^kbManual/.test(n))
+    .concat(['getKbImages', 'getManualImages', 'kbImportManual', 'kbResolveDocImages_', 'kbUploadImage']);
+  ['getKbImages', 'getManualImages', 'kbImportManual', 'kbResolveDocImages_', 'kbUploadImage'].forEach((r) => assert.ok(decl.has(r), r + ' is still a server function'));
+  assert.ok(roots.length >= 15, 'the roots were derived (' + roots.length + ')');
+  const r = reach(roots);
+  assert.deepStrictEqual(r.hits, [], 'a KbImages/ManualImages path reaches Drive, which this domain disables (INV-375)');
+  assert.ok(r.seen.size > roots.length, 'the walk descended into helpers');
+  // Non-vacuous: the same walk DOES find the paths that stay on Drive by design.
+  assert.ok(reach(['kbIngestFile']).hits.length > 0, 'the detector finds Drive where it is (file ingest)');
+  assert.ok(reach(['kbGetImageData']).hits.length > 0, 'the legacy image read is on Drive, deliberately out of scope');
+});
+
+test('Seams F9 (cycle 24): the X1 RPC derivation sees a chain broken by a comment, a name computed in brackets, and a stored runner — and never a ternary\'s condition', () => {
+  const names = x1ClientRpcNames_();
+  assert.ok(names.has('kbGetRevisions') && names.has('kbGetSearchConfig'), 'THE REGRESSION: a `// A12` comment between two links stopped the walk');
+  assert.ok(names.has('kbConvertDriveSheet') && names.has('kbConvertDriveDoc'), 'a bracketed ternary of literals: both branches');
+  assert.ok(names.has('intakePreviewPAP') && names.has('intakePreviewPMD') && names.has('managerGetTrainingQueue'), 'a bracketed variable resolves to its declaration\'s branches');
+  assert.ok(names.has('submitTimeOffRange') && names.has('submitTimeOffRequest'), 'a runner stored in a variable and called later');
+  assert.ok(!names.has('training') && !names.has('pap'), 'a ternary\'s CONDITION literal is not a name');
+});
+
+test('Seams F12 (cycle 24): INV-362\'s Node pins — a draft is written only with an owner, and the sweep keeps only the owner\'s unexpired drafts (driven)', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/intake/script_intake.html'), 'utf8');
+  const maxAge = vm.runInNewContext(/var INTAKE_DRAFT_MAX_AGE_MS = ([^;]+);/.exec(src)[1]);
+  assert.ok(maxAge > 0, 'the draft age limit is declared');
+  const store = {};
+  const ctx = vm.createContext({ String, Object, JSON, Date, Number,
+    INTAKE_DRAFT_MAX_AGE_MS: maxAge, INTAKE_DRAFT_KEY: 'umsIntakeDrafts', empState: null,
+    localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } },
+    intakeFormRoot_: () => ({}), intakeCollectAcct_: () => ({ answers: { 1: 'Jane Doe' } }), intakeCollectPpd_: () => ({ answers: {}, patientInfo: 'x' }) });
+  ['intakeDraftOwner_', 'intakeDraftsKept_', 'intakeReadDrafts_', 'intakeWriteDrafts_', 'intakeDraftSaveNow_'].forEach((f) => vm.runInContext(extractFnFrom(src, f), ctx));
+  // No owner → nothing is ever written (PHI nobody can be named as owning).
+  ctx.intakeDraftSaveNow_('pmd');
+  assert.strictEqual(store.umsIntakeDrafts, undefined, 'THE RULE: no signed-in owner, no draft');
+  ctx.empState = { email: 'Rep@UMSupply.com' };
+  assert.strictEqual(ctx.intakeDraftOwner_(), 'rep@umsupply.com', 'the owner is the lowercased signed-in email');
+  ctx.intakeDraftSaveNow_('pmd');
+  const saved = JSON.parse(store.umsIntakeDrafts).pmd;
+  assert.strictEqual(saved.owner, 'rep@umsupply.com'); assert.strictEqual(saved.answers['1'], 'Jane Doe');
+  // The sweep: own + fresh kept; own + expired, another user's and an ownerless one dropped.
+  const now = 1e12;
+  const r = JSON.parse(JSON.stringify(ctx.intakeDraftsKept_({
+    pmd: { owner: 'rep@umsupply.com', at: now - 1000 },
+    pap: { owner: 'rep@umsupply.com', at: now - maxAge - 1 },
+    ppd: { owner: 'other@umsupply.com', at: now - 1000 },
+    x: { at: now - 1000 } }, 'rep@umsupply.com', now)));
+  assert.deepStrictEqual(Object.keys(r.kept), ['pmd'], 'only the owner\'s unexpired draft is kept');
+  assert.strictEqual(r.dropped, 3, 'an expired own draft, another user\'s and an ownerless one are dropped');
+  assert.deepStrictEqual(Object.keys(ctx.intakeDraftsKept_({ pmd: { owner: 'a', at: now } }, '', now).kept), [], 'no owner keeps nothing');
+});
+
+test('Seams F13 (cycle 24): INV-360\'s client twins ARE the server rules — compared as whole bodies (every token list, every connective), not sampled through a grid', () => {
+  const cli = fs.readFileSync(path.join(__dirname, '../../web-app/intake/script_intake.html'), 'utf8');
+  // Normalised: comments out, const/let → var (the client partial's dialect), whitespace collapsed, the name masked.
+  const norm = (fnSrc, name) => stripJsComments_(fnSrc).replace(new RegExp('^function ' + name.replace(/\$/g, '\\$') + '\\('), 'function F(')
+    .replace(/\b(const|let)\b/g, 'var').replace(/\s+/g, ' ').trim();
+  [['intakeNeuroEntryIsDx_', 'intakeNeuroEntryIsDxClient_', ['n/a', 'nil', 'dunno', 'uncertain', 'tbd']],
+   ['intakeSeatKinds_', 'intakeSeatKindsClient_', ['without', 'captains', 'non']]].forEach(([srvName, cliName, tokens]) => {
+    const a = norm(extractRawFunction('Code.js', srvName), srvName);
+    const b = norm(extractFnFrom(cli, cliName), cliName);
+    tokens.forEach((t) => assert.ok(a.indexOf("'" + t + "'") >= 0, srvName + ' still carries ' + t + ' (non-vacuous)'));
+    assert.strictEqual(b, a, cliName + ' has drifted from ' + srvName + ' — the chip guard and the engine would read one entry two ways (INV-360)');
+  });
+});
+
+test('Seams F8 remainder (cycle 24): every live-tab-only Timesheet window stays BELOW the archive floor — the relation INV-372\'s exemptions rest on', () => {
+  const num = (re, what) => { const m = re.exec(codeSrc); assert.ok(m, what + ' is declared'); return Number(m[1]); };
+  const floor = num(/^const TIMESHEET_ARCHIVE_MIN_DAYS = (\d+);/m, 'TIMESHEET_ARCHIVE_MIN_DAYS');
+  const doctor = num(/^var TS_DOCTOR_WINDOW_DAYS = (\d+);/m, 'TS_DOCTOR_WINDOW_DAYS');
+  const adjust = num(/^\s*ADJUST_WINDOW_DAYS:\s*(\d+),/m, 'CONFIG.ADJUST_WINDOW_DAYS');
+  // The sheet doctor (live row indexes) and the 30-day write indexes read the
+  // LIVE tab only. That is correct only while the archiver can never move a
+  // row they could need — i.e. while each window is shorter than the floor
+  // every archive cutoff is clamped up to.
+  assert.ok(doctor < floor, 'TS_DOCTOR_WINDOW_DAYS (' + doctor + ') must stay below TIMESHEET_ARCHIVE_MIN_DAYS (' + floor + ') — or the doctor must read through timesheetRowsInRange_');
+  assert.ok(adjust < floor, 'ADJUST_WINDOW_DAYS (' + adjust + ') must stay below the archive floor (' + floor + ') — the adjust/day-edit indexes read the live tab only');
+  const clamp = stripJsComments_(extractRawFunction('Code.js', 'getTimesheetArchiveDays_'));
+  assert.ok(/if \(v < TIMESHEET_ARCHIVE_MIN_DAYS\)/.test(clamp) && /return TIMESHEET_ARCHIVE_MIN_DAYS;/.test(clamp), 'every configured cutoff below the floor clamps UP to it');
+});
+
+test('Seams F21 (cycle 24): an intake recipient has exactly one @ and no quoted local part — the org check and the logged domain can never read one address two ways (driven)', () => {
+  const ctx = vm.createContext({ String, CONFIG: { ORG_EMAIL_DOMAINS: ['umsupply.com'] } });
+  ['intakeValidateEmail_', 'isOrgEmail_', 'intakeEmailDomain_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  const sneaky = '"x@gmail.com,y"@umsupply.com';
+  assert.strictEqual(ctx.isOrgEmail_(sneaky), true, 'the shape: the org check reads the LAST @…');
+  assert.ok(/^gmail\.com/.test(ctx.intakeEmailDomain_(sneaky)), '…while the logged domain reads the FIRST');
+  assert.strictEqual(ctx.intakeValidateEmail_(sneaky), false, 'THE REGRESSION: the validator accepted it, so it skipped the outside-recipient confirm');
+  assert.strictEqual(ctx.intakeValidateEmail_('"quoted"@umsupply.com'), false, 'a quoted local part is refused');
+  assert.strictEqual(ctx.intakeValidateEmail_('a@b@umsupply.com'), false, 'two @ are refused');
+  ['agent@umsupply.com', 'first.last@umsupply.com', 'pat@example.org'].forEach((ok) => assert.strictEqual(ctx.intakeValidateEmail_(ok), true, ok));
+  ['', 'nobody', 'x@', '@umsupply.com'].forEach((bad) => assert.strictEqual(ctx.intakeValidateEmail_(bad), false, JSON.stringify(bad)));
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

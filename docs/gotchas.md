@@ -718,6 +718,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   triggers writes an `AutomationTriggersRemoved` audit row. Verify: the CORE-03
   drive.
 
+  **Seams cycle 24 F11 (operator-approved 2026-10-05):** the full suite's
+  instance guard failed OPEN — `assertNotProdInstance_` refused only
+  `INSTANCE_IS_PROD='true'`, so an unmarked instance (production's state) ran
+  `runAllTests` against live payroll and PHI, the opposite default of
+  `isDevInstance_`. It now refuses an unmarked instance unless the owner
+  opened the expiring override, `allowFullSuiteHere()` (two hours,
+  `SUITE_UNMARKED_OK_UNTIL`, never on a project marked prod). Verify: the
+  instance-guard pins.
+
 <a id="g27-pto-balance-transitions"></a>
 
 - **PTO balance transitions.** `updateTimeOffStatus` only changes
@@ -1541,6 +1550,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   cold-archived showed a short history marked complete. It now reads the
   archive (archived notes are marked), and a search that hit its 200 cap ships
   `truncated`, which the timeline names in `truncatedSources`. Verify: the CN-5
+  drive.
+
+  **Seams cycle 24 F2 (2026-10-05):** the EOD digest was the MAIL-4 sibling
+  nobody converted — a failed reminder send or an unreadable rep Sheet reached
+  only the log, then a fresh heartbeat read healthy. It stamps
+  `CallNotesEodDigest` (one message naming both counts), and clears it only on
+  a run that REACHED a rep: most hours match nobody, and an idle hour would
+  wipe a failure before the 9am failure digest reads it. Verify: the Seams F2
   drive.
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
@@ -2674,6 +2691,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `onclick="hook()"` or delegated `closest(…)) hook()` may call one) + the SH-02
   / SH-03 / SH-04 DOM drives.
 
+  **Seams cycle 24 F4 (2026-10-05):** an INLINE hook has no name for the SH-02
+  net to match, so the Search synonyms and Revision history × repeated the
+  hook's body (`ov.remove()`) and skipped `closeOverlay` — focus fell to
+  `<body>`, INV-358 violated, invisible to the net. Both now call
+  `closeOverlay(ov)`, and the net also flags any delegated close click that
+  removes or un-opens a node by hand. Verify: the widened SH-02 net + the
+  Seams F4 DOM drive.
+
 <a id="g101-public-form-endpoints-have-no-employee-auth"></a>
 
 - **Public form endpoints have no employee auth — token is the
@@ -2907,9 +2932,11 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
 
-<a id="g112-eighteen-client-side-localstorage-keys-total"></a>
+<a id="g112-client-side-localstorage-keys"></a>
 
-- **Eighteen client-side localStorage keys total.** All per-browser, all
+- **Client-side localStorage keys — the full list (the COUNT is the running-totals
+  block's `localStorage keys` row; seams F16, cycle 24, removed a hand-carried
+  "Eighteen" that had drifted, and added the two live keys it lacked).** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -3031,7 +3058,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
     `period` always wins on load (an unknown key lands on the current
     month), so a stale pref can never pin a period the server would not
     compute. Absent = the current month.
-  Clearing browser data wipes all eighteen. (`umsMergeMode` — the Time/PTO
+  - `umsDashLayout` — the rep's own Dashboard widget layout (22post E): the
+    order, sizes and hidden widgets; resolved own → the manager's team default
+    (`DASH_TEAM_LAYOUTS`) → the standard layout, so an empty or unreadable value
+    falls through and the Dashboard is never empty.
+  - `umsScratchGeom` — where the floating Scratchpad panel was left (22post
+    B-2b): position and size, fitted back inside the window on restore
+    (`cnScratchGeomFor_`).
+  Clearing browser data wipes them all. (`umsMergeMode` — the Time/PTO
   Time Off ⇄ Timesheet mode — was RETIRED with the 2026-08-18 consolidation:
   the two modes were one page with a swapped 240px rail, so the rail now
   stacks both; a stale stored value is simply ignored.) (`umsCallNotesLastDept` — the
@@ -3331,6 +3365,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `Date.now()` was a week behind the code it drove (which reads `new Date()`):
   the retry-limit drive read "unlocked" for a rep locked an hour ago. Build a
   fixture's clock from the SAME source the code reads.
+
+  **Seams cycle 24 (an EIGHTEENTH and NINETEENTH direction):** a net that
+  reads a file the CLOSE-OUT rewrites stops running when the wording changes —
+  the reserved-number guard matched a STATE.md sentence the cycle-23 close-out
+  reworded, came back null and silently skipped (F5: the held numbers now live
+  on a library line the pin must parse or fail); and a NO BITE can be about
+  the MUTATION — renaming `getQaQueue` to `getQaQueueX` kept the substring the
+  gate net matches by `indexOf`, so the mutant was still "covered" (F10's re-
+  bite used a name that removes the substring).
 
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
@@ -3990,6 +4033,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   never an empty one). Verify: the MET-1 pin (drives `getMyMetricsRange` over a
   meta.error, a missing-tab trend and a clean read).
 
+  **Seams cycle 24 F20 (2026-10-05):** an image tab whose header row someone
+  EDITED made every article image read "not stored" while the store named the
+  header. `getKbImages` now answers every valid key as could-not-read
+  (`headerChanged`). The ManualImages tab keeps "an old layout reads as not
+  imported" on purpose — the next import rewrites it. Verify: the Seams F20
+  drive.
+
 <a id="g129-never-cache-a-failure-as-a-value"></a>
 
 - **Never cache a FAILURE as a value (Batch 2 of the 2026-09-17 /broad-scan,
@@ -4605,6 +4655,14 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   (the Doc did not open, the store failed, over 1.5 MB) — never "check the
   folder".
 
+  **Seams cycle 24 F3 (2026-10-05):** the trigger dispatcher's own backstop
+  stamped an unexpected throw under the raw HANDLER name, which no label map
+  knew (the digest showed "checkOpenPunches failed…") and no heartbeat read,
+  so the stale line still blamed the trigger. `TRIGGER_HANDLER_JOB_KEYS` maps
+  each grouped handler to its job key and whether the job OWNS it; the
+  dispatcher stamps the job key and never clears one the job owns (that would
+  erase the job's own stamp). Verify: the Seams F3 two-sided net.
+
 <a id="g143-a-leading-underscore-is-not-private"></a>
 
 - **A LEADING underscore is not private — `google.script.run` reaches every
@@ -4882,6 +4940,13 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   fixture. Verify: the two X1 pins (bite-checked with a removed fixture and a
   renamed RPC).
 
+  **Seams cycle 24 F9 (2026-10-05):** the X1 derivation itself had blind spots
+  — it stopped at a `//` comment between two chain links, never read a name
+  computed in brackets, and missed a runner stored in a variable, so ten
+  client RPCs were photographed as "no fixture" with nothing failing. The
+  walker now sees all three shapes (a bracketed ternary yields its branches,
+  never its condition). Verify: the Seams F9 pin.
+
 <a id="g151-a-health-surface-that-derives-its-own-subset"></a>
 
 - **A health surface that derives its OWN subset of the list the dot counts can
@@ -5139,6 +5204,13 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   from anything a deployment changes. Verify: BCN-1 and BCN-1b (a hash another
   deployment left in the cache is never served, and nothing is written there).
 
+  **Seams cycle 24 F18 (2026-10-05):** a cache key that hashes the code must
+  hash ALL of it. `kbSearchIndexKey_` hashed the builder and two helpers but
+  not `kbSlug_`, which names every cached section's anchor, so a deploy
+  changing only the slug served old anchors from the shared cache. The key now
+  hashes `kbSlug_`, and a pin derives the builder's call closure and requires
+  the key to hash exactly that set. Verify: the Seams F18 pin.
+
 <a id="g158-a-threshold-changes-meaning-with-its-basis"></a>
 
 - **A stored threshold silently changes meaning when what it is compared
@@ -5287,6 +5359,13 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   reuse one from a public endpoint. Verify: the FORM-1 drive (a table that
   shifts between the two reads, once and for ever).
 
+  **Seams cycle 24 F6 (2026-10-05):** the rule now covers notes.
+  `findCallNoteRow_` made the same two reads, and `getDeptRequestDetail`
+  reaches it WITHOUT the lock, so a note delete or the archive pass between
+  them could put another patient's note under a department member's Expand. It
+  takes the FORM-1 shape (`formLocatedRowIs_`, one re-locate, then refuse).
+  Verify: the Seams F6 drive.
+
 <a id="g165-a-grant-earned-by-a-covered-period-applies-forward"></a>
 
 - **A grant EARNED by a period that is already covered must apply FORWARD
@@ -5301,6 +5380,14 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   period another view reads at a different grain. Verify: the QA2-1 drive (the
   row before the grant, after it, and in the next period's own view).
 
+  **Seams cycle 24 F1 (2026-10-05):** a REVOKE must clear the key that GRANTED
+  the exemption. The one reader made a quarter's grant read as exempt in its
+  months, but the month view's revoke button sent the viewed month, so the
+  server appended an inactive row for a key no row had granted, answered
+  "revoked", and the rep stayed exempt. The coverage row now ships `exemptKey`
+  / `exemptNextKey` (`qaExemptKeyFor_`, the rule `qaExemptFor_` reads), the
+  button carries and names it, and `qaSetExemption` refuses a revoke of a key
+  with no active grant. Verify: the Seams F1 drive.
 
 <a id="g166-a-close-that-discards-typed-work-must-ask"></a>
 
@@ -5326,6 +5413,15 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   four editors register `unsaved`; the guard runs first in `closeOverlay`) +
   the UI-ESC DOM drives (Escape inside a field, the backdrop, the ×, Keep
   editing, Discard, a prefill, a reopen, a module mark, mid-save).
+
+  **Seams cycle 24 F7 (operator-approved 2026-10-05):** both call-note email
+  composers (external and department) are guarded too. Escape inside the
+  external message box threw the email away and, in a Save & Compose flow,
+  rolled the just-saved note back. Keep editing leaves the composer, the email
+  and the transaction exactly as they were; Discard runs the existing close
+  unchanged (rollback and toasts included); a send and the Internal/External
+  tab switch close through the hook directly and never ask. Verify: the Seams
+  F7 DOM drive + scenario S137.
 
 <a id="g167-a-vocabulary-built-from-user-text-is-user-text"></a>
 

@@ -63,6 +63,18 @@ function calNavTo_(ny, nm) {
   }
 }
 
+/** Seams F8 (cycle 24) — TC2-9's `archiveError` reaches the rep. The month
+ *  is read through the archive-aware reader; when the archive was needed and
+ *  could not be read, the worked days it holds are missing, and an empty day
+ *  must not read as a day not worked (g53). The message itself stays on the
+ *  server — only the fact rides into the page. */
+function calArchiveNoteHtml_(data) {
+  return (data && data.archiveError)
+    ? '<div role="status" style="margin-top:8px;font-size:12px;color:var(--warning-deep)">' + icon('warning', 11) +
+      ' The timesheet archive could not be read, so days worked earlier in this month may be missing from the calendar. Reload, or ask a manager for an export.</div>'
+    : '';
+}
+
 function renderTimeOffView(area, data) {
   const tz = empTz();
   const todayIso = data.today || isoDateTz(tz);
@@ -341,7 +353,7 @@ function renderTimeOffView(area, data) {
     </div>
     <div class="timeoff-layout">
       <div class="timeoff-main">
-        <div class="card cal-card">${calHtml}${legendHtml}</div>
+        <div class="card cal-card">${calHtml}${legendHtml}${calArchiveNoteHtml_(data)}</div>
       </div>
       <div class="timeoff-side">
         ${sideRailHtml}

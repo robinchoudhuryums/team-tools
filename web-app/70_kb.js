@@ -459,9 +459,14 @@ function kbHashStr_(s) {
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
   return ('0000000' + h.toString(16)).slice(-8);
 }
-/** The cache key prefix: the code that shapes the index, and the generation. */
+/** The cache key prefix: the code that shapes the index, and the generation.
+ *  Seams F18 (cycle 24): EVERY function the builder reaches, kbSlug_ included
+ *  (kbSplitSections_ names each section's anchor with it) — a deploy that
+ *  changed only the slug served the old anchors from cache. Pinned against the
+ *  builder's call closure, so a new helper cannot be left out. */
 function kbSearchIndexKey_() {
-  return KB_INDEX_CACHE_PREFIX + kbHashStr_(String(kbBuildSearchIndex_) + String(kbSplitSections_) + String(kbRowStatus_)) + ':' + kbGeneration_() + ':';
+  return KB_INDEX_CACHE_PREFIX + kbHashStr_(String(kbBuildSearchIndex_) + String(kbSplitSections_) + String(kbRowStatus_) +
+    String(kbSlug_)) + ':' + kbGeneration_() + ':';
 }
 /** The section index: from the cache when every piece is there, else built
  *  from the KB tab and cached. A cache failure only costs a sheet read. */
@@ -3790,6 +3795,16 @@ function kbImageTabServe_(sheet, keys, spec) {
   });
   const res = { success: true, images: {}, missing: [], failed: [] };
   if (!want.length) return res;
+  // Seams F20 (cycle 24): a tab that EXISTS with a changed header (someone
+  // edited row 1) holds images this reader can no longer locate — "could not
+  // read", never "not stored" (g128), which the store already says by name.
+  // Opt-in per tab: the ManualImages tab's OLD (Drive-backed) layout reads as
+  // not imported on purpose, so the next import rewrites it (M4-FU3).
+  if (spec.headerChangedFails && sheet && sheet.getLastRow() >= 1 && !kbImageTabHeaderOk_(sheet, spec.headers)) {
+    res.failed = want.slice();
+    res.headerChanged = true;
+    return res;
+  }
   const ledger = kbImageTabLedger_(sheet, spec.headers, spec.keyRe);
   const cache = CacheService.getScriptCache();
   let hit = {};
@@ -3834,7 +3849,7 @@ function getKbImages(keys) {
     if (!emp) return { error: 'Not authorized.' };
     return kbImageTabServe_(getKbSS_().getSheetByName(KB_IMAGES_TAB), keys, {
       headers: KB_IMAGES_HEADERS, keyRe: KB_IMAGE_KEY_RE, batch: KB_IMAGES_BATCH,
-      types: KB_IMG_UPLOAD_TYPES, maxBytes: KB_IMAGE_MAX_BYTES, cachePrefix: KB_IMAGE_CACHE_PREFIX });
+      types: KB_IMG_UPLOAD_TYPES, maxBytes: KB_IMAGE_MAX_BYTES, cachePrefix: KB_IMAGE_CACHE_PREFIX, headerChangedFails: true });
   } catch (err) { return { error: err.message }; }
 }
 /** PURE (DRV-3; Node-pinned) — one image as a KbImages item: the content

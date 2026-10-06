@@ -1112,8 +1112,11 @@ entry says which it is.
   `purgeOldQaReviews`, `purgeExpiredFormData`, `purgeArchivedCallNotes` — the
   four DELETE-ONLY retention purges, bounded first, cross-rep walk last).
   `runTriggerGroup_` runs each job in its own try/catch (a throw is stamped
-  under the JOB name into `AUTOMATION_LAST_ERRORS`, a clean run clears it,
-  a typo'd name is stamped by name), and every grouped handler keeps its
+  under the job's KEY into `AUTOMATION_LAST_ERRORS` — `TRIGGER_HANDLER_JOB_KEYS`
+  maps each grouped handler to it since seams F3 (cycle 24), so it is labelled
+  and its heartbeat line names it; a clean run clears a key the job does not
+  manage itself, plus any pre-F3 stamp left under the handler name — a typo'd
+  name is stamped by name), and every grouped handler keeps its
   own `assertManagerCaller_` gate, audit rows and heartbeat, so Automation
   Health's per-job liveness is UNCHANGED. Since Batch 4 (2026-09-18) the two
   stand-alone daily jobs with no audit row — `sendDailyMissedPunchAlerts`
@@ -1672,7 +1675,9 @@ entry says which it is.
     price, "Eligible Regions" as the area. Reorder freely. Any column the
     matcher does not recognise is shown VERBATIM beside the result rather than
     dropped.
-  - **`Area Eligibility` is READ BY AN ENGINE, not displayed.** It is parsed
+  - **`Area Eligibility` is READ BY AN ENGINE** — and also shown verbatim, as
+    an `area` chip on each price result (seams F16, cycle 24, corrected "not
+    displayed"; the chip is the cell, the verdict is the engine's). It is parsed
     into a rule and answered twice — once for an order through insurance and
     once for one paid out of pocket. The grammar and what each value means is
     INV-209; the short version is `Open` / a list of two-letter state codes /
@@ -2405,9 +2410,17 @@ entry says which it is.
   runs as the deployer and every visitor differs, so a rep, manager or admin
   can no longer fire the suite or its helpers from a browser console (they
   could until cycle 22 — see g143). The nightly self-test keeps its
-  MANAGER_EMAILS trigger gate and runs as the installer. `INSTANCE_IS_PROD`
-  is unchanged: unset still PERMITS the full suite. Treating unset as prod
-  waits on standing up the DEV instance, and is still an operator decision.  **Cycle 23 Batch 15 (2026-10-05):** eleven cases cover the server rules of
+  MANAGER_EMAILS trigger gate and runs as the installer. **Seams F11 (cycle
+  24, operator-approved 2026-10-05): an UNSET `INSTANCE_IS_PROD` now REFUSES
+  the full suite** (`runAllTests`, `runAllTestsPartA`/`PartB`,
+  `setupTestEnvironment`) — production is unmarked, and the old default let the
+  integration tier write TEST_ rows into live payroll and PHI stores. On the
+  DEV project set `INSTANCE_LABEL` and `INSTANCE_IS_PROD="false"` and nothing
+  else changes. To run the full suite on an unmarked project KNOWINGLY, run
+  `allowFullSuiteHere()` from the editor first: it stamps the Script Property
+  `SUITE_UNMARKED_OK_UNTIL` (epoch ms) two hours ahead, and the suite runs until
+  then (delete the property to close it sooner). It never opens on a project
+  marked `INSTANCE_IS_PROD=true`. `runSmokeTests` is unaffected.  **Cycle 23 Batch 15 (2026-10-05):** eleven cases cover the server rules of
   Batches 10–14 — nine pure ones in the smoke shard (safe on prod: run
   `runSmokeTests` after the push) and two in Integration B (the DEV nightly,
   or `runAllTestsPartB` on DEV: they write TEST rows to the Timesheet and an

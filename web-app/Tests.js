@@ -473,7 +473,8 @@ function _suiteEnvCheck_() {
   // Instance markers (isDevInstance_ needs BOTH; unset INSTANCE_IS_PROD = prod).
   const label = get('INSTANCE_LABEL'), isProd = get('INSTANCE_IS_PROD');
   let inst;
-  try { inst = isDevInstance_() ? 'DEV (full suite allowed nightly)' : (isProdInstance_() ? 'PROD (runAllTests REFUSES)' : 'UNMARKED (treated as prod; runAllTests still allowed)'); }
+  try { inst = isDevInstance_() ? 'DEV (full suite allowed nightly)' : (isProdInstance_() ? 'PROD (runAllTests REFUSES)' :
+    (suiteUnmarkedOverrideLive_() ? 'UNMARKED (treated as prod; the allowFullSuiteHere() override is OPEN)' : 'UNMARKED (treated as prod; runAllTests REFUSES — see allowFullSuiteHere)')); }
   catch (e) { inst = 'unknown'; }
   lines.push('INSTANCE_LABEL: ' + (label ? JSON.stringify(String(label)) : 'unset') + ' · INSTANCE_IS_PROD: ' + (isProd == null || String(isProd).trim() === '' ? 'unset' : JSON.stringify(String(isProd))) + ' → ' + inst);
   // The gates the suite impersonates through.
@@ -1126,10 +1127,26 @@ function _deleteRowsWhereLocked_(sheet, firstDataRow, pred, max) {
 //  ENTRY POINTS
 // ════════════════════════════════════════════════════════════════════════════
 
+/** Seams F11 (cycle 24) — the explicit, EXPIRING override for running the full
+ *  suite on an UNMARKED instance (assertNotProdInstance_ refuses one now). It
+ *  writes TEST_ rows into this project's live stores, so it is opened by hand,
+ *  from the editor, for SUITE_UNMARKED_OVERRIDE_HOURS; never on a project
+ *  marked INSTANCE_IS_PROD=true. The DEV instance needs no override. */
+function allowFullSuiteHere() {
+  _assertSuiteCaller_('allowFullSuiteHere');
+  if (isProdInstance_()) throw new Error('This instance is marked INSTANCE_IS_PROD=true — the full suite never runs here.');
+  const until = Date.now() + SUITE_UNMARKED_OVERRIDE_HOURS * 3600000;
+  PropertiesService.getScriptProperties().setProperty(SUITE_UNMARKED_OVERRIDE_PROP, String(until));
+  Logger.log('allowFullSuiteHere: the full suite may run on this UNMARKED instance until ' + new Date(until).toISOString() +
+    ' — it writes TEST_ rows into this project\'s live stores. Delete ' + SUITE_UNMARKED_OVERRIDE_PROP + ' to close it sooner.');
+  return { allowedUntil: new Date(until).toISOString() };
+}
+
 function runAllTests() {
-  // Blue-green guard: refuse on the PROD instance (INSTANCE_IS_PROD='true') so
-  // TEST_ rows never land in the team's live payroll/PHI. No-op until set — run
-  // the full suite on the DEV project. runSmokeTests (pure logic) stays unguarded.
+  // Blue-green guard: refuse on the PROD instance (INSTANCE_IS_PROD='true') and
+  // on an UNMARKED one (seams F11) unless allowFullSuiteHere() is open, so
+  // TEST_ rows never land in the team's live payroll/PHI by default — run the
+  // full suite on the DEV project. runSmokeTests (pure logic) stays unguarded.
   // Batch S (2026-09-11): the registration list is SHARDED into a smoke list
   // and two integration halves (see _runAllTests). This entry point still runs
   // ALL of them in ONE execution — `runNightlySelfTest` calls it on the dev

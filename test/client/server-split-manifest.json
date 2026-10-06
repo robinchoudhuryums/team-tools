@@ -2314,6 +2314,110 @@
     "workedHoursByEmpForRange_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Seams F1 (cycle 24): qaExemptKeyFor_ — the exemption key a revoke must clear",
+   "added": [
+    "qaExemptKeyFor_"
+   ],
+   "removed": [],
+   "changed": [
+    "qaCoverageRows_",
+    "qaExemptFor_",
+    "qaSetExemption"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Seams F2 (cycle 24): the EOD digest stamps CallNotesEodDigest on a failed send or unreadable Sheet",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "AUTOMATION_ERROR_LABELS",
+    "DIGEST_ERROR_KEYS",
+    "sendCallNotesEodDigest"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Seams F3 (cycle 24): TRIGGER_HANDLER_JOB_KEYS — the dispatcher stamps a grouped job's key",
+   "added": [
+    "TRIGGER_HANDLER_JOB_KEYS"
+   ],
+   "removed": [],
+   "changed": [
+    "AUTOMATION_ERROR_LABELS",
+    "runTriggerGroup_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Seams F6 (cycle 24): findCallNoteRow_ re-checks the fetched row's NoteId (the FORM-1 rule)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "findCallNoteRow_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Seams F19 (cycle 24): an un-approve whose credit cannot land keeps the Deducted charge",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "updateTimeOffStatus"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Seams F11 (cycle 24): the suite guard fails closed on an unmarked instance; an expiring override",
+   "added": [
+    "SUITE_UNMARKED_OVERRIDE_HOURS",
+    "SUITE_UNMARKED_OVERRIDE_PROP",
+    "suiteUnmarkedOverrideLive_"
+   ],
+   "removed": [],
+   "changed": [
+    "assertNotProdInstance_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Seams F20 (cycle 24): a KbImages tab with an edited header reads could-not-read",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "getKbImages",
+    "kbImageTabServe_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Seams F18 (cycle 24): kbSearchIndexKey_ hashes kbSlug_ too",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "kbSearchIndexKey_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Seams F21 (cycle 24): intakeValidateEmail_ refuses a quoted local part or a second @",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "intakeValidateEmail_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2371,7 +2475,7 @@
   "AUTOMATION_ERROR_LABELS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "9f6abc97e3d4316f"
+   "sha": "4f181d511e4eef62"
   },
   "AUTOMATION_ERROR_PROP": {
    "file": "00_config.js",
@@ -2831,7 +2935,7 @@
   "DIGEST_ERROR_KEYS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "d0ada0e56f1c0ad7"
+   "sha": "89d34316c2f32eea"
   },
   "DIGEST_LAST_RUN_PROP": {
    "file": "00_config.js",
@@ -4313,6 +4417,16 @@
    "kind": "const",
    "sha": "836b046a3cbdd83f"
   },
+  "SUITE_UNMARKED_OVERRIDE_HOURS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5fd29a336b90878e"
+  },
+  "SUITE_UNMARKED_OVERRIDE_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "54ffb36b7039d544"
+  },
   "TA": {
    "file": "00_config.js",
    "kind": "const",
@@ -4487,6 +4601,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "dacdbe9c4c9b1f09"
+  },
+  "TRIGGER_HANDLER_JOB_KEYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8c64c512a3018b5e"
   },
   "TS_ARCHIVE_REACH_CACHE_KEY": {
    "file": "00_config.js",
@@ -4896,7 +5015,7 @@
   "assertNotProdInstance_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "a26898e1e4503d83"
+   "sha": "7f02c96cb71fc44d"
   },
   "auditRowObj_": {
    "file": "10_core.js",
@@ -6136,7 +6255,7 @@
   "findCallNoteRow_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "f57d9bc2cd9b858a"
+   "sha": "1528ff3c4839f2db"
   },
   "findCoachingRow_": {
    "file": "82_coaching.js",
@@ -6711,7 +6830,7 @@
   "getKbImages": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "76933ab9bc37e276"
+   "sha": "34b69757083c54d1"
   },
   "getKbSS_": {
    "file": "70_kb.js",
@@ -7561,7 +7680,7 @@
   "intakeValidateEmail_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "1238cbb1fb5a587c"
+   "sha": "e0e73048c3bc6431"
   },
   "intakeVolumeBuckets_": {
    "file": "60_intake.js",
@@ -7931,7 +8050,7 @@
   "kbImageTabServe_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "f09cf03690f2a5ee"
+   "sha": "b0ee1a6be0bb1d57"
   },
   "kbImagesStoreLocked_": {
    "file": "70_kb.js",
@@ -8171,7 +8290,7 @@
   "kbSearchIndexKey_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "4b4b2b342557be83"
+   "sha": "276596ca2994e33a"
   },
   "kbSearchIndex_": {
    "file": "70_kb.js",
@@ -8911,7 +9030,7 @@
   "qaCoverageRows_": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "0fa01415b012c378"
+   "sha": "453b81c173ce6b54"
   },
   "qaCreateManualRecording": {
    "file": "90_qa.js",
@@ -8941,7 +9060,12 @@
   "qaExemptFor_": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "c52433d32fedf7fc"
+   "sha": "d08542935f6ac040"
+  },
+  "qaExemptKeyFor_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "1fbcbed7342237cd"
   },
   "qaFindRecordingRow_": {
    "file": "90_qa.js",
@@ -9141,7 +9265,7 @@
   "qaSetExemption": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "39aca44de78f2296"
+   "sha": "7d9051049186e9ff"
   },
   "qaSetRecordingAgent": {
    "file": "90_qa.js",
@@ -9421,7 +9545,7 @@
   "runTriggerGroup_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "4d14b09cfe487358"
+   "sha": "84e54426f402cad1"
   },
   "runWeeklyDigests": {
    "file": "10_core.js",
@@ -9646,7 +9770,7 @@
   "sendCallNotesEodDigest": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "d34177267bca4054"
+   "sha": "22f082b4467b8f71"
   },
   "sendCallNotesUrgentDigest": {
    "file": "30_callnotes.js",
@@ -10083,6 +10207,11 @@
    "kind": "function",
    "sha": "02371f6e1e0b9ea6"
   },
+  "suiteUnmarkedOverrideLive_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "befe34762d40e5be"
+  },
   "teamMetricsRepView_": {
    "file": "40_metrics.js",
    "kind": "function",
@@ -10336,7 +10465,7 @@
   "updateTimeOffStatus": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "00e5b95af22b8a40"
+   "sha": "1d050f881266a016"
   },
   "utf8Len_": {
    "file": "10_core.js",

@@ -1081,7 +1081,7 @@ const AUTOMATION_ERROR_PROP = 'AUTOMATION_LAST_ERRORS';
 // disabled") beside a stamp saying the job had just run and failed — g142.
 // With this map the stale line names the failure instead.
 const DIGEST_ERROR_KEYS = {
-  urgent: 'CallNotesUrgentDigest', weekly: 'CallNotesWeeklyDigests', trainingOverdue: 'TrainingOverdueDigest',
+  eod: 'CallNotesEodDigest', urgent: 'CallNotesUrgentDigest', weekly: 'CallNotesWeeklyDigests', trainingOverdue: 'TrainingOverdueDigest',
   deptReqReminder: 'DeptRequestReminderDigest', managerBrief: 'ManagerDailyBrief', coachingRecap: 'CoachingRecapDigest',
   spanishAutoAssign: 'SpanishAutoAssign', deptReplyScan: 'DeptReplyScan', missedPunch: 'MissedPunchAlerts',
   exportCheck: 'DailyExportCheck', automationHealth: 'AutomationHealthDigest',
@@ -1091,12 +1091,14 @@ const DIGEST_ERROR_KEYS = {
 // computeAutomationHealth_, so the digest, the dot and the System tab never
 // show a raw key — and the client keeps no copy of its own to drift.
 const AUTOMATION_ERROR_LABELS = {
+  CallNotesEodDigest: 'End-of-day unresolved-flag reminders',
   CallNotesUrgentDigest: 'Urgent-flag digest', CallNotesWeeklyDigests: 'Weekly call-notes digests',
   TrainingOverdueDigest: 'Training-overdue digest', DeptRequestReminderDigest: 'Dept-request SLA reminder',
   ManagerDailyBrief: 'Manager daily brief', CoachingRecapDigest: 'Weekly coaching recap',
   SpanishAutoAssign: 'Spanish Inbox auto-assign', DeptReplyScan: 'Dept Request reply scan',
   MissedPunchAlerts: 'Daily missed-punch alerts', DailyExportCheck: 'Daily ADP export check',
   AutomationHealthDigest: 'Automation-health failure digest',
+  OpenPunchCheck: 'Daily open-punch check',
 };
 const CN_EMAIL_PALETTE = {
   paperCard:    '#ffffff',
@@ -1297,6 +1299,28 @@ const TRIGGER_GROUPS = {
   // derived from these lists, so a re-install removes its old trigger).
   runDailyChecks:   ['checkOpenPunches', 'sendCallNotesUrgentDigest'],
 };
+// Seams F3 (cycle 24) — the KEY each grouped handler's failures live under.
+// runTriggerGroup_ stamped an unexpected throw under the raw handler name,
+// which no label map knew (the digest showed "checkOpenPunches failed…") and
+// which DIGEST_ERROR_KEYS could not see, so a stale heartbeat still blamed the
+// trigger. `owns` = the job stamps AND clears this key itself, so the
+// dispatcher must never clear it after a normal return (that would erase the
+// job's own failure stamp); a job that does not own its key is cleared by the
+// dispatcher on a clean run. Every TRIGGER_GROUPS handler has a row, and
+// `owns` is checked against each job's body (pinned both ways).
+const TRIGGER_HANDLER_JOB_KEYS = {
+  sendCallNotesEodDigest:            { key: 'CallNotesEodDigest',     owns: true },
+  scanDeptRequestReplies:            { key: 'DeptReplyScan',          owns: true },
+  autoAssignSpanishThreadsScheduled: { key: 'SpanishAutoAssign',      owns: true },
+  sendCallNotesWeeklyDigests:        { key: 'CallNotesWeeklyDigests', owns: true },
+  sendCoachingRecapDigest:           { key: 'CoachingRecapDigest',    owns: true },
+  purgeOldDiagnostics:               { key: 'DiagnosticsPurge',       owns: true },
+  purgeOldQaReviews:                 { key: 'QaReviewPurge',          owns: true },
+  purgeExpiredFormData:              { key: 'FormDataPurge',          owns: false },
+  purgeArchivedCallNotes:            { key: 'CallNotesArchivePurge',  owns: false },
+  checkOpenPunches:                  { key: 'OpenPunchCheck',         owns: false },
+  sendCallNotesUrgentDigest:         { key: 'CallNotesUrgentDigest',  owns: true },
+};
 // Handlers that USED to own a trigger of their own. Both delete loops consult
 // this list so a re-install removes the standalone triggers a previous install
 // created (the 2026-09-11 deployment holds eight of them). DERIVED from the
@@ -1312,6 +1336,13 @@ const _SYSTEM_AUDIT_EMP_ = { id: 'SYSTEM', name: 'Automation', email: 'automatio
 // Property heartbeat; getAutomationHealth surfaces it with a staleness flag —
 // closing the "silently dead digest trigger" blind spot.
 const DIGEST_LAST_RUN_PROP = 'AUTOMATION_DIGEST_LAST_RUNS';
+// Seams F11 (cycle 24): an UNMARKED instance is treated as production by the
+// suite guard too (isDevInstance_ already was). Running the full suite on one
+// knowingly takes an explicit, EXPIRING override: allowFullSuiteHere() (an
+// owner-only editor entry point in Tests.js) stamps this property with an
+// epoch-ms deadline SUITE_UNMARKED_OVERRIDE_HOURS ahead.
+const SUITE_UNMARKED_OVERRIDE_PROP = 'SUITE_UNMARKED_OK_UNTIL';
+const SUITE_UNMARKED_OVERRIDE_HOURS = 2;
 const SELF_TEST_RESULT_PROP = 'SELF_TEST_LAST_RESULT';   // {date, mode, pass, fail, skip[, error]} — nightly self-test outcome
 // F15 (cycle 12): how long a {running:true} sentinel may persist before it means
 // "the last run never finished". Apps Script kills an execution at 6 minutes and

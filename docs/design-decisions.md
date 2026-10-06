@@ -1233,7 +1233,7 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   omits it, so existing pastes are byte-identical; the operator opts in
   by adding a `Direction: {callDirection}` line to the template.
 - <a id="client-side-persistence-is-localstorage-based"></a>**Client-side persistence is localStorage-based.** See the
-  authoritative "Eighteen client-side localStorage keys total" entry in
+  authoritative "Client-side localStorage keys" entry (g112) in
   Common Gotchas for the full key list (`umsTimeClockMode`, `umsTheme`,
   `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`,
@@ -2328,7 +2328,7 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   "nobody reported at all"; INV-124's per-day My Stats series guard is
   UNCHANGED) — over **Yesterday / MTD / YTD**, fed by
   `getDashboardMetrics(periodKey)` (all three fetched up front, server-cached;
-  cache key `dash_metrics_v4` — it bumps with every payload-semantics change; since 2026-08-18 the key carries the rep-local DAY and the TTL is 21600s — the CacheService max, operator-approved: the CDR data does not change again once the daily import lands, and the day in the key rolls the cache at the rep-local midnight; a load BEFORE the import can pin the pre-import aggregate for up to 6h, while the Metrics tabs keep their 5-min caches).
+  cache key `dash_metrics_v4` at the time — the current key is INV-366's — it bumps with every payload-semantics change; since 2026-08-18 the key carries the rep-local DAY and the TTL is 21600s — the CacheService max, operator-approved: the CDR data does not change again once the daily import lands, and the day in the key rolls the cache at the rep-local midnight; a load BEFORE the import can pin the pre-import aggregate for up to 6h, while the Metrics tabs keep their 5-min caches).
   **BOTH cards open on MTD** (operator 2026-08-12; `CLK_DASH_DEFAULT_IDX`,
   DERIVED from the period list so a reorder can't repoint it). Asked for on the
   Department card and applied to both, because they sit side by side with
@@ -2483,8 +2483,9 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   today, so the prior window is the same days OF DATA (1..d-1, so "vs Jul 1–11"
   on the 12th, and no comparison on the 1st). The run-rate projection divides by
   the payload's `dataThrough` (the last day with data) rather than by a today
-  that never has any (g148). The cache key is now `dash_metrics_v6` (v5 was
-  H2's formula).
+  that never has any (g148). The cache key was then `dash_metrics_v6` (v5 was
+  H2's formula); the CURRENT key is INV-366's (seams F16, cycle 24 — this
+  paragraph and the one above each named a key two bumps stale).
 - <a id="clock-view-hero-shift-strip-ledger-architecture"></a>**Clock view: hero + shift-strip + ledger architecture.** The
   Clock tab's `renderClockView` emits, in order: a `.hero` block
   (greet kicker + name + live status sentence on the left, live
@@ -5244,6 +5245,12 @@ pick them up without re-deriving the context.
   falls in; a month's exemption does not exempt its whole quarter. Rejected:
   exempting the CURRENT period's remainder (the rep may already have been
   sampled, and the target math would need partial periods).
+  **Seams F1 (cycle 24, 2026-10-05):** a REVOKE clears the key that GRANTED
+  the exemption (`exemptKey` / `exemptNextKey` on the coverage row, from
+  `qaExemptKeyFor_` — the rule `qaExemptFor_` reads), and `qaSetExemption`
+  refuses a revoke of a key with no active grant. Rejected: revoking every key
+  that touches the viewed period (a month revoke would silently clear a whole
+  quarter the manager never looked at); the button names the quarter instead.
 - <a id="an-editor-overlay-asks-before-it-discards"></a>**An editor overlay asks "Discard changes?" before Escape, the backdrop or Cancel throws typed work away — `unsaved` on `ensureOverlay`, and "dirty" is an event since open (cycle 23 UI-ESC, 2026-10-02).**
   The shell's Escape closes the topmost overlay wherever the key is pressed,
   which is right for a viewer and wrong for an editor. Rather than exempt
@@ -5263,6 +5270,13 @@ pick them up without re-deriving the context.
   moment, and a structural edit changes the field set) and a native
   `beforeunload`-style prompt (an in-app dialog must be a `uiConfirm`,
   the native-dialog replacement decision).
+  **Seams F7 (cycle 24, operator-approved 2026-10-05):** both call-note email
+  composers (external and department) are guarded too, with the same rule
+  (an event since open; `busy` = sending). Discard runs the existing close
+  unchanged — the Save & Compose rollback included — and Keep editing changes
+  nothing; a send and the Internal/External tab switch close through the hook
+  directly. Rejected: suppressing Escape inside the message box only (the
+  backdrop and × discard the same work).
 - <a id="and-in-an-eligibility-cell-means-either-area"></a>**"and" in an Area Eligibility cell means EITHER area; a phrase that could mean "both" is unreadable, never guessed (cycle 23 KB2-6, operator 2026-10-05).**
   The scan flagged that `oopEligibilityParse_` reads "listed cities and 100
   miles of Dallas" as `any[radius, cities]` — either one qualifies — and asked

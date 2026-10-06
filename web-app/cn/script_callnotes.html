@@ -6723,7 +6723,14 @@ function cnRenderComposerModal_() {
   // registers the close hook so the shell's Escape path runs OUR teardown —
   // the prior class-strip-only Esc left this overlay hidden-but-stateful,
   // permanently swallowing every later compose until a page reload.
-  const overlay = ensureOverlay('cn-compose-overlay', { label: 'Department email composer', onClose: cnCloseComposerModal_ });
+  // Seams F7 (cycle 24, operator 2026-10-05): the composer is GUARDED like the
+  // four UI-ESC editors — Escape, the backdrop or × after the rep has typed
+  // asks "Discard changes?" first; Keep editing leaves everything as it was,
+  // Discard runs this hook unchanged (the Save & Compose rollback included).
+  // A mid-send close is still the hook's own refusal (busy). A send closes
+  // through the hook directly and is never asked.
+  const overlay = ensureOverlay('cn-compose-overlay', { label: 'Department email composer', onClose: cnCloseComposerModal_,
+    unsaved: { what: 'this email', busy: function () { return !!(CN_STATE.composer && CN_STATE.composer.sending); } } });
   const c = CN_STATE.composer;
   if (!c) { cnCloseComposerModal_(); return; }
   if (c.step === 'form')    overlay.innerHTML = cnRenderComposerFormStep_();
@@ -14427,7 +14434,9 @@ function cnRenderExternalEmailModal_() {
   // Same ensureOverlay rationale as cnRenderComposerModal_ — Esc must run
   // cnCloseExternalEmailModal_ (clearing CN_STATE.extComposer), and a reused
   // node must come back visible.
-  var overlay = ensureOverlay('cn-ext-overlay', { label: 'External email composer', onClose: cnCloseExternalEmailModal_ });
+  // Seams F7 (cycle 24): guarded like the department composer (see there).
+  var overlay = ensureOverlay('cn-ext-overlay', { label: 'External email composer', onClose: cnCloseExternalEmailModal_,
+    unsaved: { what: 'this email', busy: function () { return !!(CN_STATE.extComposer && CN_STATE.extComposer.sending); } } });
   var c = CN_STATE.extComposer;
   if (!c) { cnCloseExternalEmailModal_(); return; }
   overlay.innerHTML = cnBuildExternalEmailHtml_();

@@ -169,15 +169,32 @@ function isProdInstance_() {
   try { return String(PropertiesService.getScriptProperties().getProperty('INSTANCE_IS_PROD') || '').trim().toLowerCase() === 'true'; }
   catch (e) { return false; }
 }
-/** Throws on the PROD instance (INSTANCE_IS_PROD='true') — guards the destructive
- *  TEST_-row writers so they can only run against a dev project's copy sheets.
- *  No-op until an operator sets the property on prod (back-compat: prod today
- *  runs runAllTests fine, and continues to until the property is set). */
+/** Guards the destructive TEST_-row writers so they run only against a dev
+ *  project's copy sheets. Throws on the PROD instance (INSTANCE_IS_PROD='true'),
+ *  and — seams F11 (cycle 24) — on an UNMARKED one too, unless the operator
+ *  has opened the expiring override (allowFullSuiteHere). It used to PERMIT
+ *  an unmarked instance, the opposite of isDevInstance_, and production is
+ *  unmarked: the integration tier wrote TEST_ rows into live payroll and PHI
+ *  stores (2026-09-18). */
 function assertNotProdInstance_(label) {
   if (isProdInstance_()) {
     throw new Error((label || 'This operation') + ' is blocked on the PRODUCTION instance ' +
       '(INSTANCE_IS_PROD is set). Run it on the DEV Apps Script project — see docs/deployment.md.');
   }
+  if (isDevInstance_() || suiteUnmarkedOverrideLive_()) return;
+  throw new Error((label || 'This operation') + ' refuses to run: this instance is not marked as DEV, and an ' +
+    'unmarked instance is treated as production. On the DEV project set INSTANCE_LABEL and INSTANCE_IS_PROD="false" ' +
+    '(docs/deployment.md). To run it HERE knowingly — it writes TEST_ rows into this project\'s live payroll and PHI ' +
+    'stores — run allowFullSuiteHere() from the editor first; that permits the full suite for ' +
+    SUITE_UNMARKED_OVERRIDE_HOURS + ' hours.');
+}
+/** Seams F11 — is the operator's expiring "run the full suite on this
+ *  unmarked instance" override still open? */
+function suiteUnmarkedOverrideLive_() {
+  try {
+    const until = Number(PropertiesService.getScriptProperties().getProperty(SUITE_UNMARKED_OVERRIDE_PROP));
+    return isFinite(until) && until > Date.now();
+  } catch (e) { return false; }
 }
 /**
  * THE dev-instance predicate (A5, cycle 13). An instance counts as DEV only
@@ -3267,8 +3284,11 @@ function purgeSheetRowsOlderThan_(sheet, dateColIdx, cutoffMs, msOf) {
 // Runs a dispatcher's jobs one after another, each in its own try/catch, so a
 // job that throws never starves the ones after it. The jobs already catch
 // their own failures and stamp / audit them; this backstop only catches a
-// throw none of them expected, and stamps it under the JOB's name so the
-// health dot + failure digest see it (INV-161) — a clean run clears it.
+// throw none of them expected, and stamps it under the JOB's key
+// (TRIGGER_HANDLER_JOB_KEYS — seams F3, cycle 24: it used the raw handler
+// name, which no label map or heartbeat knew) so the health dot + failure
+// digest see it, labelled (INV-161). A clean run clears a key the job does
+// not manage itself, and any stamp a pre-F3 run left under the handler name.
 // KNOWN LIMIT: the group shares ONE six-minute execution. All eight grouped
 // jobs are cheap by default (the purges no-op while their windows are 0), but
 // a purge enabled against a large backlog that runs long is killed by the
@@ -3279,19 +3299,21 @@ function runTriggerGroup_(label) {
   const results = [];
   jobs.forEach(function (name) {
     const fn = globalThis[name];
+    const job = TRIGGER_HANDLER_JOB_KEYS[name] || { key: name, owns: false };
     if (typeof fn !== 'function') {
       results.push({ job: name, ok: false, error: 'not a defined function' });
-      stampAutomationError_(name, label + ': "' + name + '" is not a defined top-level function');
+      stampAutomationError_(job.key, label + ': "' + name + '" is not a defined top-level function');
       return;
     }
     try {
       const r = fn();
-      clearAutomationError_(name);
+      if (!job.owns) clearAutomationError_(job.key);
+      if (job.key !== name) clearAutomationError_(name);   // a pre-F3 stamp under the handler name
       results.push({ job: name, ok: true, result: r });
     } catch (e) {
       const msg = (e && e.message) ? e.message : String(e);
       Logger.log(label + ': ' + name + ' threw: ' + msg);
-      stampAutomationError_(name, msg);
+      stampAutomationError_(job.key, name + ' stopped with an unexpected error: ' + msg);
       results.push({ job: name, ok: false, error: msg });
     }
   });
