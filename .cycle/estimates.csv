@@ -160,3 +160,5 @@ date,cycle,action,estimate,estimated_hours,actual_hours,calibration_note
 2026-10-05,23,"Batch 13 follow-up (courtesy filter)",S,1.5,1,0.67x.
 2026-10-05,23,"Batch 14 (TC2-9 archive-aware reader)",M,8,2.5,0.31x.
 2026-10-05,23,"Batch 15 (editor-suite cases)",M,5,1.5,0.3x.
+2026-10-06,24,"Seams production batch (F1/F2/F3/F4/F6/F8 note/F19)",M,5,2.5,0.5x.
+2026-10-06,24,"Seams nets-and-library batch (F5/F7/F8r/F9-F18/F20/F21)",L,8,4.5,0.56x.
