@@ -163,6 +163,13 @@ Status codes used in Appendix 1:
 | 94a | Past PMD patient, 5+ years since delivery | Goes to **Sales**, which creates a new order on the existing patient account. New **9.4.1**; pointers from 4.1, 10.13.5 and a router row (1.1.7). |
 | 94b | PMD within 5 years, wants a new/different one | Usually a Same or Similar conflict. Possible exception: the new PMD is an **upgrade** and the provider attests to a **significant change in physical condition or mobility needs** since the original. In 9.4.1, with a "promise nothing" watch-out. **Routed to Sales for now (operator, 2026-10-07)**; the Sales and Power packets ask them to confirm (spec.json: Part 9 row 21, Part 4 row 29), and Billing's packet asks about the exception. The SOS and RUL glossary entries now also carry Parts 4 and 9, so those department guides include them. |
 
+### A0f. Recorded 2026-10-07 (Phase 4)
+
+| # | Item | Decision / handling |
+|---|---|---|
+| 95 | History migration | **None.** Little or no use is attached to manual sections in the app yet, so the renumber re-imports fresh: new ids as drafts, old rows removed with the orphan box. This replaces the "app id migration" in A0 and Part E. |
+| 96 | The map | **Approved as drafted** — `.cycle/manual-renumber-map.md`. |
+
 ### A1. Still open
 
 Nothing blocking. Recorded on 2026-10-06:
