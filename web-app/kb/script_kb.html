@@ -92,8 +92,8 @@
     --dg-accent: var(--info); --dg-tint: var(--info-soft); --dg-muted: var(--muted); --dg-rule: var(--line);
     --dg-crit-bg: var(--danger-soft); --dg-crit-ink: var(--danger-deep); --dg-pol-bg: var(--info-soft); --dg-pol-ink: var(--info-deep);
     --dg-watch-bg: var(--warn-soft); --dg-watch-ink: var(--warning-deep); --dg-scr-bg: var(--accent-soft); --dg-scr-ink: var(--success-deep);
-    --dg-p0: var(--ink); --dg-p1: var(--muted); --dg-p2: var(--good); --dg-p3: var(--danger); --dg-p4: var(--info); --dg-p5: var(--warn);
-    --dg-p6: var(--good); --dg-p7: var(--info-deep); --dg-p8: var(--intake-pap); --dg-p9: var(--intake-pmd); --dg-p10: var(--intake-pap); }
+    --dg-p0: var(--man-p0); --dg-p1: var(--man-p1); --dg-p2: var(--man-p2); --dg-p3: var(--man-p3); --dg-p4: var(--man-p4); --dg-p5: var(--man-p5);
+    --dg-p6: var(--man-p6); --dg-p7: var(--man-p7); --dg-p8: var(--man-p8); --dg-p9: var(--man-p9); --dg-p10: var(--man-p10); }
   /* A wide flow chart scrolls inside itself rather than shrinking its text
      past reading size (g71) — below ~600px of width it scrolls. */
   .kb-article .kb-diagram-scroll { overflow-x: auto; padding: 10px; border-radius: var(--radius-md); }
@@ -126,6 +126,16 @@
   .kbd-rt-g { font-size: .66rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 10px 4px 4px; }
   .kbd-rt-row { flex-direction: column; align-items: flex-start; }
   .kb-man-head h2 { margin-bottom: 2px; }
+  /* The chapter's colour and icon (operator 2026-10-07): a stripe and a badge on
+     the part's title, and the icon beside it in the tree. --man-pN are tokens;
+     the badge's icon is the page colour, so it reads in light and dark. */
+  .kb-man-p0 { --man-c: var(--man-p0); } .kb-man-p1 { --man-c: var(--man-p1); } .kb-man-p2 { --man-c: var(--man-p2); } .kb-man-p3 { --man-c: var(--man-p3); } 
+  .kb-man-p4 { --man-c: var(--man-p4); } .kb-man-p5 { --man-c: var(--man-p5); } .kb-man-p6 { --man-c: var(--man-p6); } .kb-man-p7 { --man-c: var(--man-p7); } 
+  .kb-man-p8 { --man-c: var(--man-p8); } .kb-man-p9 { --man-c: var(--man-p9); } .kb-man-p10 { --man-c: var(--man-p10); } 
+  .kb-man-chap { border-left: 5px solid var(--man-c); padding-left: 12px; }
+  .kb-man-chap h2 { display: flex; align-items: center; gap: 10px; color: var(--man-c); }
+  .kb-man-badge { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; background: var(--man-c); color: var(--paper-card); }
+  .kb-man-dic { flex: none; display: inline-flex; color: var(--man-c); }
   .kb-man-ver { font-size: .76rem; color: var(--muted); margin: 0 0 12px; min-height: 1em; }
   .kb-man-part { max-width: 760px; }
   .kb-man-sec { padding: 6px 0 18px; border-bottom: 1px solid var(--line); margin-bottom: 18px; scroll-margin-top: 12px; }
@@ -3205,7 +3215,9 @@ function kbManualPartHtml_(part) {
   var admin = KB_STATE.isAdmin;
   var secs = part.sections || [];
   var drafts = secs.filter(function (s) { return s.status === 'draft'; }).length;
-  var html = '<div class="kb-item-head kb-man-head"><h2>' + esc(part.department) + '</h2></div>' +
+  var ck = kbManualChapterKey_(part.department);
+  var html = '<div class="kb-item-head kb-man-head' + (ck ? ' kb-man-chap kb-man-' + ck : '') + '"><h2>' +
+      kbManualChapterIcon_(part.department, 18, 'kb-man-badge') + esc(part.department) + '</h2></div>' +
     '<div class="kb-man-ver" data-kb-man-ver></div>' +
     '<div class="kb-man-back" data-kb-man-back></div>' +
     (admin && drafts ? '<div class="kb-draft-banner">' + icon('warning', 13) + ' ' + drafts + ' of ' + secs.length +
@@ -4059,6 +4071,25 @@ function kbDeptRank_(d) {
   if (/^Appendix [A-Z] \u2014 /.test(s)) return 1;
   return 2;
 }
+// The manual's chapter icons (operator 2026-10-07), by part key — pinned equal
+// to manual/data/chapter_style.json, the source the HTML and Word manuals draw
+// from; each part's colour is its --man-pN token.
+var KB_MANUAL_CHAPTER_ICONS = Object.freeze({
+  p0: 'headset', p1: 'phone', p2: 'walker', p3: 'papMask', p4: 'bolt', p5: 'truck',
+  p6: 'repair', p7: 'oxygenTank', p8: 'moon', p9: 'clipboardList', p10: 'dollar'
+});
+/** "Part 04 — Power Mobility" → "p4"; an appendix or any other department → "". */
+function kbManualChapterKey_(dept) {
+  var m = /^Part (\d+) \u2014 /.exec(String(dept || ''));
+  var k = m ? 'p' + Number(m[1]) : '';
+  return Object.prototype.hasOwnProperty.call(KB_MANUAL_CHAPTER_ICONS, k) ? k : '';
+}
+/** The chapter's icon in a span of the given class, coloured by its part; "" when none. */
+function kbManualChapterIcon_(dept, size, cls) {
+  var k = kbManualChapterKey_(dept);
+  return k ? '<span class="' + cls + ' kb-man-' + k + '" aria-hidden="true">' + icon(KB_MANUAL_CHAPTER_ICONS[k], size) + '</span>' : '';
+}
+
 function kbDeptCompare_(a, b) {
   return (kbDeptRank_(a) - kbDeptRank_(b)) || kbNaturalCompare_(a, b);
 }
@@ -4107,6 +4138,7 @@ function kbRenderTree_() {
     html += '<div class="kb-dept' + (isCol ? ' collapsed' : '') + '">' +
       '<button class="kb-dept-toggle" data-dept="' + esc(d) + '"' + (manual ? ' data-manual="1"' : '') + ' onclick="kbToggleDept_(this)" aria-expanded="' + (!isCol) + '">' +
         '<span class="kb-chevron">' + icon('chevronDown', 13) + '</span>' +
+        (manual ? kbManualChapterIcon_(d, 13, 'kb-man-dic') : '') +
         '<span class="kb-dept-name">' + esc(d) + '</span>' +
         '<span class="kb-dept-count">' + byDept[d].length + '</span>' +
       '</button>' +

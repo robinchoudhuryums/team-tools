@@ -453,6 +453,22 @@
     --pal-teal-paper: #020f12;  --pal-teal-accent: #6ceee9;
   }
 
+  /* The procedures manual's chapter colours (operator 2026-10-07) — each
+     chapter's identity in the Reference reader, the same in every palette, and
+     the colours its diagrams draw with (--dg-pN). The one source is
+     manual/data/chapter_style.json; a tripwire pins these equal to it. Each
+     keeps 4.5:1 against the page in its own mode. */
+  :root {
+    --man-p0: #1C3A5E;  --man-p1: #5B6478;  --man-p2: #653D99;  --man-p3: #9B2377;
+    --man-p4: #1D46B9;  --man-p5: #2D7E52;  --man-p6: #59642A;  --man-p7: #19676D;
+    --man-p8: #1F7514;  --man-p9: #1C75A3;  --man-p10: #9A5E22;
+  }
+  :root[data-mode="dark"], body[data-mode="dark"] {
+    --man-p0: #9EC2E6;  --man-p1: #808AA0;  --man-p2: #9E7ACD;  --man-p3: #DD56B5;
+    --man-p4: #6185EA;  --man-p5: #359D64;  --man-p6: #81913A;  --man-p7: #2199A2;
+    --man-p8: #279F17;  --man-p9: #1F92CE;  --man-p10: #C87827;
+  }
+
   /* ═══════════════════════════════════════════════════════════════════
      WARM-PAPER UTILITY CLASSES
      ───────────────────────────────────────────────────────────────────

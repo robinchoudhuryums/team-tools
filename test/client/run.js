@@ -34893,6 +34893,111 @@ test('MP1-6: department guides come from data/extracts.json — every guide a pa
   assert.ok(bd.indexOf('len(part_keys) > 3') < 0, 'a four-part guide no longer carries every card (the old filter kept them all past three parts)');
 });
 
+/* ── Manual chapter colours + icons (operator 2026-10-07) ─────────────────────
+ * ONE source, manual/data/chapter_style.json: the HTML and Word manuals draw
+ * from it, and the app's copies (the icon set, the --man-pN tokens, the part →
+ * icon map) are pinned equal to it here.
+ */
+console.log('\nManual chapter colours and icons — one source, the HTML, Word and the Reference reader');
+const MP2_CH = JSON.parse(MP1_('data/chapter_style.json'));
+function mp2Lum_(hex) {
+  const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+}
+function mp2Contrast_(a, b) { const x = mp2Lum_(a), y = mp2Lum_(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+
+test('MP2-1: chapter_style.json names every part once, each icon it uses exists and is outline-only, and every colour keeps 4.5:1 on its page in light and dark — the manual\'s and the app\'s', () => {
+  const parts = [...MP1_('export_reference.py').matchAll(/^\s+"(p\d+)": \("([^"]+)", "src\/p\d+\.md"\),$/gm)].map((m) => [m[1], m[2]]);
+  assert.strictEqual(parts.length, 11, 'the export lists eleven parts (non-vacuous)');
+  assert.deepStrictEqual(Object.keys(MP2_CH.parts).sort(), parts.map((p) => p[0]).sort(), 'one entry per part, and nothing else');
+  parts.forEach(([k, name]) => assert.strictEqual(MP2_CH.parts[k].department, name, k + ' is ' + name));
+  const used = new Set(Object.values(MP2_CH.parts).map((c) => c.icon));
+  assert.strictEqual(used.size, 11, 'every chapter has its own icon');
+  assert.deepStrictEqual([...used].sort(), Object.keys(MP2_CH.icons).sort(), 'the file holds exactly the icons it uses');
+  Object.entries(MP2_CH.icons).forEach(([n, body]) => {
+    const tags = [...body.matchAll(/<([a-z]+)((?:\s+[a-z-]+="[^"<>]*")*)\s*\/>/g)];
+    assert.ok(tags.length && tags.map((t) => t[0]).join('') === body, n + ': only self-closing elements');
+    tags.forEach((t) => {
+      assert.ok(['path', 'circle', 'rect'].includes(t[1]), n + ': <' + t[1] + '>');
+      [...t[2].matchAll(/\s([a-z-]+)="/g)].forEach((a) => assert.ok(['d', 'cx', 'cy', 'r', 'x', 'y', 'width', 'height', 'rx', 'transform'].includes(a[1]), n + ': ' + a[1] + ' (the colour and stroke come from the caller, so the icon follows the theme)'));
+    });
+  });
+  // the manual's own pages, then EVERY paper and card the app's tokens define, every palette included (derived)
+  const tokSrc = fs.readFileSync(path.join(PA_WEB, 'styles_design_tokens.html'), 'utf8');
+  const appPapers = [...new Set([...tokSrc.matchAll(/--paper(?:-card)?:\s*(#[0-9a-fA-F]{6})/g)].map((m) => m[1]))];
+  const pages = { light: ['#FFFFFF'].concat(appPapers.filter((p) => mp2Lum_(p) > 0.5)), dark: ['#0F161D'].concat(appPapers.filter((p) => mp2Lum_(p) <= 0.5)) };
+  assert.ok(pages.light.length >= 5 && pages.dark.length >= 5, 'the app\'s papers were found (non-vacuous)');
+  Object.entries(MP2_CH.parts).forEach(([k, c]) => ['light', 'dark'].forEach((t) => {
+    assert.ok(/^#[0-9A-Fa-f]{6}$/.test(c[t]), k + ' ' + t);
+    pages[t].forEach((bg) => assert.ok(mp2Contrast_(c[t], bg) >= 4.5, k + ' ' + t + ' ' + c[t] + ' on ' + bg + ': ' + mp2Contrast_(c[t], bg).toFixed(2)));
+  }));
+});
+
+test('MP2-2: the HTML, Word and the Word badges all READ chapter_style.json — no part colour is typed into any of them, and the two UI accents that borrowed one keep their own token', () => {
+  const mh = MP1_('make_html.py'), rx = MP1_('render_docx.js'), rz = MP1_('rasterize_diagrams.py');
+  assert.ok(mh.indexOf('CHAPTERS = _jcs.load(open("data/chapter_style.json"') > 0, 'make_html.py loads it');
+  assert.strictEqual((mh.match(/__PAL_LIGHT__/g) || []).length, 2, 'the light palette is a placeholder, filled once');
+  assert.strictEqual((mh.match(/__PAL_DARK__/g) || []).length, 3, 'and the dark one in both dark blocks');
+  assert.ok(mh.indexOf('TPL.replace("__PAL_LIGHT__", palette("light")).replace("__PAL_DARK__", palette("dark"))') > 0, 'filled from the file at write time');
+  assert.ok(!/--p\d+:#[0-9A-Fa-f]{6}/.test(mh), 'no part colour is hand-typed into the HTML template');
+  assert.ok(!/(#res a\.ali|\.misscap|\.pinbtn\.on|#pinlist a)\{[^}]*var\(--p\d+\)/.test(mh), 'search hits, the missing-capture box and pins use --hit / --pin, so a chapter colour change never repaints them');
+  ['pbadge', '"eic", 12', '"nic", 15', '"cic", 14', '"tic", 16'].forEach((t) => assert.ok(mh.indexOf(t) > 0, 'the icon rides: ' + t));
+  assert.ok(/path\.join\(__dirname, 'data', 'chapter_style\.json'\)/.test(rx) && !/p0: '1C3A5E'/.test(rx), 'Word reads the light colours from the file');
+  assert.ok(/out', 'icons'/.test(rx) && /left: \{ style: BorderStyle\.SINGLE, size: 36, color: accent/.test(rx), 'a Word chapter heading carries its badge and its stripe');
+  assert.ok(rz.indexOf('json.load(open("data/chapter_style.json"') > 0 && rz.indexOf('root.replace("__PAL_LIGHT__"') > 0 && rz.indexOf('assert "__" not in root') > 0,
+    'the rasterizer fills the light palette from the file (the diagrams would otherwise lose every part colour) and refuses a placeholder it does not fill');
+  assert.ok(/out\/icons\/\{k\}\.png/.test(rz), 'and draws each chapter badge for Word');
+  const mk = MP1_('make_all.sh');
+  assert.ok(mk.indexOf('rasterize_diagrams.py') < mk.indexOf('render_docx.js'), 'the badges exist before Word is rendered');
+});
+
+test('MP2-3: the app\'s copies ARE the source — the icon set holds each chapter icon\'s exact paths, the --man-pN tokens are its colours in both modes, the reader\'s part → icon map is its map, and the diagrams draw in those tokens', () => {
+  const ctx = { window: {} }; vm.createContext(ctx);
+  vm.runInContext(/<script>([\s\S]*)<\/script>/.exec(fs.readFileSync(path.join(PA_WEB, 'script_icons.html'), 'utf8'))[1], ctx);
+  Object.entries(MP2_CH.icons).forEach(([n, body]) => {
+    const svg = ctx.window.icon(n, 24);
+    assert.ok(svg, n + ' is in the app\'s icon set');
+    assert.strictEqual(/aria-hidden="true">([\s\S]*)<\/svg>$/.exec(svg)[1], body, n + ': the app draws the same paths as the manual');
+  });
+  const tok = fs.readFileSync(path.join(PA_WEB, 'styles_design_tokens.html'), 'utf8');
+  const lightB = /:root \{\n((?:\s*--man-p\d+: #[0-9A-Fa-f]{6};)+)\s*\}/.exec(tok), darkB = /:root\[data-mode="dark"\], body\[data-mode="dark"\] \{\n((?:\s*--man-p\d+: #[0-9A-Fa-f]{6};)+)\s*\}/.exec(tok);
+  assert.ok(lightB && darkB, 'one light and one dark block of --man-pN');
+  [['light', lightB[1]], ['dark', darkB[1]]].forEach(([t, b]) => {
+    const got = {}; [...b.matchAll(/--man-(p\d+): (#[0-9A-Fa-f]{6});/g)].forEach((m) => { got[m[1]] = m[2]; });
+    const want = {}; Object.entries(MP2_CH.parts).forEach(([k, c]) => { want[k] = c[t]; });
+    assert.deepStrictEqual(got, want, 'the ' + t + ' tokens are the file\'s ' + t + ' colours');
+  });
+  const map = vm.runInContext('(' + /var KB_MANUAL_CHAPTER_ICONS = Object\.freeze\((\{[\s\S]*?\})\);/.exec(M1_KB_SRC)[1] + ')', vm.createContext({}));
+  const want = {}; Object.entries(MP2_CH.parts).forEach(([k, c]) => { want[k] = c.icon; });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(map)), want, 'the reader names the file\'s icon for every part');
+  const dg = /\.kb-article \.kb-diagram \{([^}]*)\}/.exec(M1_KB_SRC)[1];
+  Object.keys(MP2_CH.parts).forEach((k) => assert.ok(new RegExp('--dg-' + k + ': var\\(--man-' + k + '\\);').test(dg), '--dg-' + k + ' is the chapter\'s colour, as in the HTML manual'));
+});
+
+test('MP2-4: the reader puts a part\'s badge and colour on its title and its icon in the tree — only for a "Part NN — " department, and never anything built from the name (driven)', () => {
+  const ctx = vm.createContext({ String, Object, Number, KB_STATE: { isAdmin: false }, icon: (n, s) => '<i data-icon="' + n + '" data-s="' + s + '"></i>',
+    esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+    kbShiftHeadings_: (h) => h, kbMd_: (m) => m, kbManualFeedbackBarHtml_: () => '', kbBookmarkBtnHtml_: () => '', kbIsManualCard_: () => false });
+  vm.runInContext(/var KB_MANUAL_CHAPTER_ICONS = Object\.freeze\(\{[\s\S]*?\}\);/.exec(M1_KB_SRC)[0], ctx);
+  ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualPartHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
+  const head = (d) => /^<div class="kb-item-head[^"]*">[\s\S]*?<\/div>/.exec(ctx.kbManualPartHtml_({ department: d, sections: [] }))[0];
+  assert.strictEqual(head('Part 04 — Power Mobility'),
+    '<div class="kb-item-head kb-man-head kb-man-chap kb-man-p4"><h2><span class="kb-man-badge kb-man-p4" aria-hidden="true"><i data-icon="bolt" data-s="18"></i></span>Part 04 — Power Mobility</h2></div>');
+  assert.ok(/kb-man-p10"[\s\S]*data-icon="dollar"/.test(head('Part 10 — Billing & Insurance')), 'two digits read as one number');
+  ['Appendix A — Master Glossary', 'Part 11 — Nothing', 'Part 4 - Hyphen', 'Sales', '', 'Part 04 — <img src=x onerror=alert(1)>'].forEach((d) => {
+    const h = head(d);
+    if (d.indexOf('<img') > 0) {
+      assert.ok(!/<img/.test(h) && /kb-man-p4/.test(h), 'a hostile name is escaped and only its number picks the chapter');
+    } else {
+      assert.ok(!/kb-man-chap|kb-man-badge/.test(h), JSON.stringify(d) + ' has no chapter badge');
+    }
+  });
+  assert.strictEqual(ctx.kbManualChapterIcon_('Part 06 — Service', 13, 'kb-man-dic'), '<span class="kb-man-dic kb-man-p6" aria-hidden="true"><i data-icon="repair" data-s="13"></i></span>');
+  ['__proto__', 'constructor', 'toString'].forEach((n) => assert.strictEqual(ctx.kbManualChapterKey_('Part ' + n + ' — x'), '', n));
+  assert.ok(/\(manual \? kbManualChapterIcon_\(d, 13, 'kb-man-dic'\) : ''\)/.test(extractFnFrom(M1_KB_SRC, 'kbRenderTree_')), 'the tree shows the icon on a manual part only');
+  assert.ok(!/var\(--man-c,/.test(M1_KB_SRC), 'no fallback on the chapter colour (g57)');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

@@ -5,7 +5,7 @@ Cycle: 24 — opened 2026-10-05 by the Seams & Invariants audit (cycle 23 is CLO
 Phase: implement — the operator's MANUAL-UPDATE thread (cycle 24's seams batches are deployed 2026-10-06 and reflected; PR #287, #288 merged)
 Scope: the CSR Procedures Manual update (`manual/`), Phase 1 of 7 DONE. The plan, with every operator decision, is `.cycle/manual-update-plan.md`; the operator's original list (verbatim) is `.cycle/manual-update-list.md`.
 Test Command: manual
-Estimates: production batch (F1/F2/F3/F4/F6/F8/F19): M (~5 h) — written before the first edit. Actual ~2.5 h. · nets-and-library batch (F5, F7, F8r, F9–F18, F20, F21?): L (~8 h) — written before the first edit. Actual ~4.5 h. · **Manual Phase 1 (Foundations, the operator's manual-update plan): L (~8 h)** — written before the first edit, 2026-10-06. Actual ~5 h.
+Estimates: production batch (F1/F2/F3/F4/F6/F8/F19): M (~5 h) — written before the first edit. Actual ~2.5 h. · nets-and-library batch (F5, F7, F8r, F9–F18, F20, F21?): L (~8 h) — written before the first edit. Actual ~4.5 h. · **Manual Phase 1 (Foundations, the operator's manual-update plan): L (~8 h)** — written before the first edit, 2026-10-06. Actual ~5 h. · **Manual chapter colours + icons (operator-approved 2026-10-07): M (~4 h)** — written before the first edit.
 Subsystem cycles since last Seams audit: 1 — reset to 0 by the Seams & Invariants audit of 2026-10-05 (cycle 24); incremented by cycle 24's /reflect (2026-10-06). The cadence is every 4.
 Updated: 2026-10-06 (manual-update Phase 1)
 

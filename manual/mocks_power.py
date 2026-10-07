@@ -151,7 +151,7 @@ def refs(x, y, w, h, t):
 b.append(panel(200, 44, 560, 196, "--p4", "1 · Intake and education — PAK", "§4-3"))
 b.append(panel(200, 272, 360, 390, "--p9", "2 · Qualifications", "§4-4 · §4-5 · §4-6"))
 b.append(panel(576, 272, 290, 390, "--p7", "3 · Verification & authorization", "§4-7 · §4-8"))
-b.append(panel(882, 272, 258, 390, "--p8", "4 · Delivery (Field Ops Power)", "§4-9"))
+b.append(panel(882, 272, 258, 390, "--p5", "4 · Delivery (Field Ops Power)", "§4-9"))
 
 
 def tag(x, y, w, text):
@@ -200,9 +200,9 @@ b.append(node(404, 318, 150, 84, "PT Eval", "scheduling, finding|eligible PT/OT 
 b.append(check(410, 420, "PT Rx", True))
 b.append(check(410, 436, "PT Report", True))
 b.append('<rect x="404" y="458" width="150" height="84" rx="6" fill="var(--bg)"/>'
-         '<rect x="404" y="458" width="150" height="84" rx="6" fill="var(--p8)" fill-opacity=".10"/>')
+         '<rect x="404" y="458" width="150" height="84" rx="6" fill="var(--p5)" fill-opacity=".10"/>')
 b.append(node(404, 458, 150, 84, "ATP Eval", "Field Ops schedules, up|to 2–3 weeks out based|on ATP travel route", dashed=True,
-              fill="none", stroke="var(--p8)", ink="var(--p8)"))
+              fill="none", stroke="var(--p5)", ink="var(--p5)"))
 b.append(check(410, 560, "ATP Report", True))
 b.append(path("M388 420 H396 V360 H404", True))
 b.append(path("M396 420 V500 H404", True))

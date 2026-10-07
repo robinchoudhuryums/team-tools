@@ -13,8 +13,11 @@ const {
 const C = {
   navy: '1C3A5E', accent: '3D72A4', tint: 'EBF2FA', ink: '1F1F1F',
   muted: '5D6B7A', rule: 'DCE3EB', white: 'FFFFFF',
-  p0: '1C3A5E', p1: '3E5C76', p2: '2E7D5B', p3: 'A34A3C', p4: '3D72A4', p5: '8A6D1B', p6: '5C7A4A', p7: '2E7D8C', p8: '7D4E6B', p9: 'A0662B', p10: '5B4B8A', ap: '5D6B7A',
+  ap: '5D6B7A',
 };
+// the part colours are data/chapter_style.json's LIGHT ones (Word has no dark theme)
+const CHAPTERS = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'chapter_style.json'), 'utf8'));
+Object.keys(CHAPTERS.parts).forEach(k => { C[k] = CHAPTERS.parts[k].light.slice(1).toUpperCase(); });
 // a column headed \u2713 / \u2717 (the Do's & Don'ts tables), as the HTML draws it
 const TONE = { ok: { bg: 'E7F4EC', ink: '1E6B43' }, no: { bg: 'FCEBEA', ink: 'A1281F' } };
 const CO = {
@@ -204,12 +207,19 @@ blocks.forEach((b, k) => {
     const pb = b.pb && !first;
     first = false;
     if (b.lvl === 1) {
+      // a chapter's badge (rasterize_diagrams.py draws it) leads its title, as in the HTML
+      const badge = path.join('out', 'icons', (b.part || '') + '.png');
+      if (CHAPTERS.parts[b.part] && fs.existsSync(badge)) {
+        const buf = fs.readFileSync(badge);
+        kids = [new ImageRun({ type: 'png', data: buf, transformation: { width: 30, height: 30 } }), new TextRun({ text: '  ' })].concat(kids);
+      }
       children.push(new Paragraph({
         children: kids,
         heading: HeadingLevel.HEADING_1,
         pageBreakBefore: pb,
         spacing: { before: 0, after: 200 },
-        border: { bottom: { style: BorderStyle.SINGLE, size: 12, color: accent, space: 8 } },
+        border: { bottom: { style: BorderStyle.SINGLE, size: 12, color: accent, space: 8 },
+                  left: { style: BorderStyle.SINGLE, size: 36, color: accent, space: 10 } },
       }));
     } else {
       children.push(new Paragraph({
