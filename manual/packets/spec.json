@@ -171,6 +171,12 @@
       "sec": "2.2.3",
       "says": "**Below the weight threshold,** bariatric equipment can still be provided if the patient pays the difference — the amounts are on the Upgrade Fee (Mobility) sheet",
       "why": "Is an ABN needed for a Medicare patient? Billing is asked the same question"
+     },
+     {
+      "n": "25",
+      "sec": "2.3.2",
+      "says": "**The bariatric bed (E0301)** is covered by Medicare for a patient who weighs **more than 350 lbs**, up to 600 lbs",
+      "why": "Added October 2026, so the chapter states the threshold Card 2 already quoted. Is it right?"
      }
     ]
    },
@@ -180,15 +186,15 @@
     "intro": "",
     "rows": [
      {
-      "n": "25",
+      "n": "26",
       "q": "**What do you wish a CSR had already collected before transferring a call to your team?**"
      },
      {
-      "n": "26",
+      "n": "27",
       "q": "Is anything your team handles **missing** from Chapter 2 — something CSRs get asked about but won't find?"
      },
      {
-      "n": "27",
+      "n": "28",
       "q": "Does Chapter 2 describe anything your team **no longer does**, or does differently now?"
      }
     ]
@@ -1858,7 +1864,7 @@
      {
       "n": "26",
       "sec": "10.17.1",
-      "says": "**The ABN** — Original Medicare only, signed before delivery, specific to the item and reason",
+      "says": "**The ABN** — traditional Medicare only, signed before delivery, specific to the item and reason",
       "why": ""
      },
      {
@@ -1925,8 +1931,8 @@
      {
       "n": "36",
       "sec": "7.3.1",
-      "says": "**Oxygen repairs aren't separately reimbursed** — servicing runs on a maintenance-and-servicing payment every 6 months",
-      "why": "Is that payment still made?"
+      "says": "**Oxygen repairs aren't separately reimbursed** — UMS services the equipment for the whole 5-year lifetime as part of the oxygen rental",
+      "why": "Corrected in October 2026: 7.3.1 used to say servicing ran on a maintenance-and-servicing payment every 6 months, which contradicted 10.12.2. Is any such payment still made?"
      },
      {
       "n": "37",

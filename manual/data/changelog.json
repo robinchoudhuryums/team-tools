@@ -1,6 +1,51 @@
 [
   {
     "date": "2026-10-07",
+    "part": "p8",
+    "section": "§8-3.3",
+    "summary": "After hours, an oxygen concentrator is troubleshot first and the on-call technician dispatched only if that fails, and only where after-hours dispatch is available — as Chapter 9 says. The section used to say \"dispatch immediately\".",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update — Phase 7 cross-reference audit (plan Part C)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p9",
+    "section": "§9-4.1",
+    "summary": "The Immediate response target now lists cough assist, IPPB and BiPAP ST beside ventilators, matching the dispatch table in 9.3.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update — Phase 7 cross-reference audit (plan Part C)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p7",
+    "section": "§7-3.1",
+    "summary": "Oxygen equipment: UMS services it for the whole 5-year lifetime as part of the oxygen rental, as 10.12.2 says. The \"maintenance-and-servicing payment every 6 months\" line was removed; Billing is asked to confirm.",
+    "authority": "Billing",
+    "retraining": false,
+    "provenance": "Operator manual update — Phase 7 Billing cross-check (plan Part C)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p2",
+    "section": "§2-3.2",
+    "summary": "States Medicare's bariatric bed (E0301) threshold — a patient over 350 lbs, up to 600 lbs — which Card 2 already quoted.",
+    "authority": "Medicare (hospital beds)",
+    "retraining": false,
+    "provenance": "Operator manual update — Phase 7 cross-reference audit (plan Part C)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p5",
+    "section": "§5-2.2",
+    "summary": "MA Education is now written Medical Assistant Education; in the manual, MA means only Medicare Advantage.",
+    "authority": "Operations",
+    "retraining": false,
+    "provenance": "Operator manual update 2026-10-06 — Phase 7 (list line 412)"
+  },
+  {
+    "date": "2026-10-07",
     "part": "appx_b",
     "section": "§B-1",
     "summary": "Directory consolidated: each department's queue now sits on its manager's or supervisor's row (Sales, Field Operations, Service, Manual Mobility, Respiratory & Resupply); new Power Manager (Rajdeep Thakar) as backup across Power; Service under the Field Operations Manager; the Manual Mobility Manager, Power — PAK Team and updated backups; A–Z, with one How to reach column.",

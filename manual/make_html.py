@@ -1039,6 +1039,19 @@ ol.toclist li.p0 .sw{color:var(--p0)} ol.toclist li.p1 .sw{color:var(--p1)} ol.t
 ol.toclist li.p3 .sw{color:var(--p3)} ol.toclist li.p4 .sw{color:var(--p4)} ol.toclist li.p5 .sw{color:var(--p5)}
 ol.toclist li.p6 .sw{color:var(--p6)} ol.toclist li.p7 .sw{color:var(--p7)} ol.toclist li.p8 .sw{color:var(--p8)}
 ol.toclist li.p9 .sw{color:var(--p9)} ol.toclist li.p10 .sw{color:var(--p10)} 
+/* ============================ heading hierarchy (manual update D5, 2026-10-07) === */
+/* A section's number is a chip in its chapter's colour and the section heading
+   carries a thinner left rule than the chapter's; a sub-section's number takes the
+   colour as text. The chapter comes from the heading's id (3-7 is Chapter 3), so
+   the source needs no markup. The cards keep their own heading. */
+h2,h3{--hc:var(--navy)}
+h2[id^="0-"],h3[id^="0-"]{--hc:var(--p0)} h2[id^="1-"],h3[id^="1-"]{--hc:var(--p1)} h2[id^="2-"],h3[id^="2-"]{--hc:var(--p2)} h2[id^="3-"],h3[id^="3-"]{--hc:var(--p3)} h2[id^="4-"],h3[id^="4-"]{--hc:var(--p4)} h2[id^="5-"],h3[id^="5-"]{--hc:var(--p5)} h2[id^="6-"],h3[id^="6-"]{--hc:var(--p6)} h2[id^="7-"],h3[id^="7-"]{--hc:var(--p7)} h2[id^="8-"],h3[id^="8-"]{--hc:var(--p8)} h2[id^="9-"],h3[id^="9-"]{--hc:var(--p9)} h2[id^="10-"],h3[id^="10-"]{--hc:var(--p10)}
+h2[id^="A-"],h3[id^="A-"],h2[id^="B-"],h3[id^="B-"],h2[id^="C-"],h3[id^="C-"]{--hc:var(--muted)}
+h2{border-left:4px solid var(--hc);padding-left:14px}
+h2 .sn{display:inline-block;padding:.2em .55em;border-radius:.3em;background:var(--hc);color:var(--bg);
+ font-weight:600;letter-spacing:.02em;margin-right:.35em}
+h3 .sn{color:var(--hc)}
+section.qrc h2{border-left:0;padding-left:0} section.qrc h2 .sn{margin-right:0}
 </style></head>
 <body><button class="navtoggle" id="nt">☰ &nbsp;Contents &amp; search</button><div class="wrap">
 <nav><div class="brand">UniversalMed Supply<br>CSR Procedures Manual</div>

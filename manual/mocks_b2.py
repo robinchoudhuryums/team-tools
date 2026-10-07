@@ -229,7 +229,7 @@ b.append(f'<text x="{(A + C)/2 + 30}" y="46" text-anchor="middle" style="{MONO}"
 b.append(card(A, 132, AW, 150, "Moves on at", "Eligible|(appt confirmed|& insurance|verified)|— §4-3", "act"))
 # B: PAK sub-steps
 b.append(card(B, 132, BW, 84, "PPD", "~15-minute interview:|mobility needs, options,|the process — §5-2.1"))
-b.append(card(B, 224, BW, 84, "MA Education", "Walks the MDO's office|through the paperwork|— §5-2.2"))
+b.append(card(B, 224, BW, 84, "Medical Assistant Ed.", "Walks the MDO's office|through the paperwork|— §5-2.2"))
 b.append(card(B, 316, BW, 84, "Appt scheduling", "Reschedules if needed;|collects F2F and PAK|after the visit — §5-2.3"))
 # C: concurrent tracks as Gantt bars
 b.append(f'<text x="{C + CW/2}" y="146" text-anchor="middle" style="{MONO}">IN PROGRESS AT THE SAME TIME</text>')

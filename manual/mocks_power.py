@@ -58,7 +58,7 @@ b.append(path(f"M{A + AW/2} 72 V52 H{C + 60} V72", True))
 b.append(label((A + C)/2 + 30, 46, "PAST M.E. DONE IN LAST 6 MOS — SKIPS PAK", "middle"))
 b.append(card(A, 132, AW, 150, "Moves on at", "Eligible|(appt confirmed|& insurance|verified)|— §4-3"))
 b.append(card(B, 132, BW, 84, "PPD", "~15-minute interview:|mobility needs, options,|the process — §5-2.1"))
-b.append(card(B, 224, BW, 84, "MA Education", "Walks the MDO's office|through the paperwork|— §5-2.2"))
+b.append(card(B, 224, BW, 84, "Medical Assistant Ed.", "Walks the MDO's office|through the paperwork|— §5-2.2"))
 b.append(card(B, 316, BW, 84, "Appt scheduling", "Reschedules if needed;|collects F2F and PAK|after the visit — §5-2.3"))
 b.append(label(C + CW/2, 146, "IN PROGRESS AT THE SAME TIME", "middle"))
 def bar(x, y, w, t, sub):
@@ -125,8 +125,10 @@ def node(x, y, w, h, t, sub="", dashed=False, fill="var(--bg)", stroke="var(--ru
     s = (f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="6" fill="{fill}" stroke="{stroke}" '
          f'stroke-width="1.4"{da}/>')
     n = len(sub.split("|")) if sub else 0
-    top = y + h / 2 - (n * 14) / 2 + (4 if not n else -2)
-    s += T(x + w/2, top, t, 12.5, 700, ink, "middle")
+    tl = t.split("|")                    # a long title may take two lines
+    top = y + h / 2 - (n * 14 + (len(tl) - 1) * 15) / 2 + (4 if not n else -2)
+    s += lines(x + w/2, top, t, 12.5, 700, ink, 15, "middle")
+    top += (len(tl) - 1) * 15
     if sub:
         s += lines(x + w/2, top + 17, sub, 11, 500, "var(--ink)", 14, "middle")
     return s
@@ -170,7 +172,7 @@ b.append(f'<path d="M100 420 V436" stroke="var(--accent)" stroke-width="1.2" fil
 
 # ---- phase 1
 b.append(node(218, 96, 160, 100, "PPD", "~15-min interview:|mobility needs,|options, the process"))
-b.append(node(400, 96, 160, 100, "MA Education", "walks the MDO's|office through the|PAK paperwork"))
+b.append(node(400, 96, 160, 100, "Medical Assistant|Education", "walks the MDO's|office through the|PAK paperwork"))
 b.append(node(616, 96, 130, 100, "Appointment", "reschedule if|needed; collect F2F|and PAK after visit"))
 b.append(fl(378, 146, 400, 146))
 b.append(path("M560 132 H616"))
@@ -266,7 +268,7 @@ W = 1160
 rows = [
  ("Sales and eligibility", "Books the mobility evaluation and checks the insurance. Moves on at Eligible —|the appointment is confirmed and insurance verified. See §4-3",
   "With Sales, confirming the appointment|and insurance", "varies", "--scr-ink"),
- ("PAK", "PPD interview (~15 min), then PAK documents go to the MDO. MA Education walks|their office through it. Reschedules if needed; collects F2F and PAK after the visit",
+ ("PAK", "PPD interview (~15 min), then PAK documents go to the MDO. Medical Assistant Education|walks their office through it. Reschedules if needed; collects F2F and PAK after the visit",
   "Paperwork is with the doctor's office|for the evaluation", "varies", "--accent"),
  ("Qualifications", "Checks every document is here and correct, and requests corrections. PT and ATP|evaluations run alongside — only when needed. ATP is scheduled 2–3 weeks out",
   "Reviewing the provider's paperwork —|say exactly what's outstanding", "varies", "--accent"),

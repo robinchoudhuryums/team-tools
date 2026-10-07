@@ -517,8 +517,8 @@ def assemble(name, part_keys, title, banner=None, guide=None):
             body_parts.append("\n---\n\n" + resolve_refs(add_dividers(bodies[k], k), k))
     if guide and guide.get("sections"):
         extra = "\n\n".join(section_text(s) for s in guide["sections"])
-        body_parts.append("\n---\n\n# Related sections from other parts\n\n"
-                          "> These sections belong to other parts of the manual and are carried here "
+        body_parts.append("\n---\n\n# Related sections from other chapters\n\n"
+                          "> These sections belong to other chapters of the manual and are carried here "
                           "because this department uses them. Their numbers are the full manual's.\n\n"
                           + resolve_refs(extra, guide["key"]))
     allowed = {k[1:] for k in part_keys}

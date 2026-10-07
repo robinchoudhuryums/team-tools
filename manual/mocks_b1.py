@@ -215,7 +215,7 @@ def blk(x1, x2, y, h, lines, fill, ink):
         s += (f'<text x="{(x1 + x2) / 2}" y="{y + h/2 - (len(lines)-1)*8 + i*16 + 4}" text-anchor="middle" '
               f'style="font:{w} 12px \'IBM Plex Sans\',sans-serif;fill:var({ink})">{l}</text>')
     return s
-b = [title(W, "Original Medicare — who pays for approved charges through the year")]
+b = [title(W, "Traditional (Original) Medicare — who pays for approved charges through the year")]
 b.append(f'<text x="{L}" y="56" style="font:600 11px \'IBM Plex Mono\',monospace;fill:var(--muted)">JANUARY 1</text>')
 b.append(f'<text x="{R}" y="56" text-anchor="end" style="font:600 11px \'IBM Plex Mono\',monospace;fill:var(--muted)">DECEMBER 31</text>')
 b.append(blk(L, M - 4, TOP, HT, ["Patient pays 100%", "until the annual Part B", "deductible is met — §10-1"], "--watch-bg", "--watch-ink"))

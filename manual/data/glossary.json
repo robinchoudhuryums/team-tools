@@ -9,7 +9,7 @@
   },
   {
     "term": "ABN",
-    "definition": "Advance Beneficiary Notice — Original Medicare form telling the patient Medicare may not cover an item, signed before delivery. Not used for Medicare Advantage or commercial plans",
+    "definition": "Advance Beneficiary Notice — traditional Medicare form telling the patient Medicare may not cover an item, signed before delivery. Not used for Medicare Advantage or commercial plans",
     "parts": [
       "p10"
     ],
@@ -240,7 +240,7 @@
   },
   {
     "term": "FFS",
-    "definition": "Fee-for-Service — Original Medicare, as distinct from a Medicare Advantage plan",
+    "definition": "Fee-for-Service — traditional (Original) Medicare, as distinct from a Medicare Advantage plan",
     "parts": [
       "p10",
       "p8"
@@ -331,7 +331,7 @@
   },
   {
     "term": "MA",
-    "definition": "Two meanings. **Medical Assistant** in PAK and provider-office context. **Medicare Advantage** in insurance context.",
+    "definition": "Medicare Advantage — a private plan that replaces Part B. The manual writes **Medical Assistant** in full (for example, Medical Assistant Education in Chapter 5), so MA always means Medicare Advantage",
     "parts": [
       "p10",
       "p5"
@@ -424,7 +424,7 @@
   },
   {
     "term": "MOOP",
-    "definition": "Maximum Out-of-Pocket. Medicare Advantage plans have one; Original Medicare does not",
+    "definition": "Maximum Out-of-Pocket. Medicare Advantage plans have one; traditional Medicare does not",
     "parts": [
       "p10"
     ],
@@ -435,14 +435,6 @@
     "definition": "Mobility Related Activities of Daily Living",
     "parts": [
       "p2",
-      "p5"
-    ],
-    "class": "manual"
-  },
-  {
-    "term": "MRX",
-    "definition": "Master Prescription",
-    "parts": [
       "p5"
     ],
     "class": "manual"
@@ -461,7 +453,7 @@
   },
   {
     "term": "MSN",
-    "definition": "Medicare Summary Notice — Original Medicare's quarterly equivalent of an EOB. Not a bill",
+    "definition": "Medicare Summary Notice — traditional Medicare's quarterly equivalent of an EOB. Not a bill",
     "parts": [
       "p10"
     ],
@@ -521,11 +513,19 @@
   },
   {
     "term": "OOR",
-    "definition": "Out of Range — the delivery address falls outside the delivery radius for the item ordered, so the order cannot be completed. The radius varies by item; for walkers, out of state is out of range",
+    "definition": "Out of Range — the delivery address falls outside the delivery radius for the item ordered, so the order cannot be completed. The radius varies by item; for a walker on an insurance order, out of state is out of range",
     "parts": [
       "p2",
       "p5",
       "p3"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "Original Medicare",
+    "definition": "The name CMS, Medicare.gov and the patient's MSN use for **traditional Medicare** — the federal fee-for-service program (Parts A and B), as distinct from a Medicare Advantage plan. The manual says traditional Medicare",
+    "parts": [
+      "p10"
     ],
     "class": "manual"
   },
