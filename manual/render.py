@@ -15,7 +15,7 @@ BY_ID = {r["id"]: r for r in EQ}
 COLS = [
     ("name", "Model"),
     ("hcpcs", "HCPCS"),
-    ("part", "Part"),
+    ("part", "Chapter"),
     ("product_weight_lbs", "Product Wt."),
     ("capacity_lbs", "User Capacity"),
     ("dimensions", "Dimensions"),
@@ -32,7 +32,7 @@ def cell(r, key):
     if key == "hcpcs":
         return " / ".join(v)
     if key == "part":
-        return "Part " + v[1:]
+        return "Chapter " + v[1:]
     if key == "product_weight_lbs":
         return f"{v:g} lbs"
     if key == "capacity_lbs":
@@ -94,6 +94,65 @@ def table(rows, drop=(), extra_specs=None):
     return "\n".join(out)
 
 
+# The billing tables name a category as a reader says it, not as its data key
+CATEGORY_NAMES = {
+    "bed-accessory": "Bed accessories", "bipap": "BiPAP", "cpap": "CPAP",
+    "hospital-bed": "Hospital beds", "manual-wheelchair": "Manual wheelchairs",
+    "oxygen-concentrator": "Oxygen concentrators", "oxygen-cylinder": "Oxygen cylinders",
+    "patient-lift": "Patient lifts", "pov": "Scooters (POV)", "pwc": "Power wheelchairs",
+    "respiratory-device": "Respiratory devices", "suction": "Suction machines",
+    "ventilator": "Ventilators",
+}
+
+
+def oncall_table():
+    """8.5: the on-call people only — one row per person, grouped by location.
+    A roster row holding several people ("A / B / C") is split, and its phone
+    and email lists are split alongside it; a role with no holder still shows,
+    because the escalation chain names it."""
+    def where(loc):
+        loc = loc or ""
+        if loc.startswith("Irving"):
+            return "Irving office (DFW)"
+        if loc.startswith("San Antonio"):
+            return "San Antonio"
+        return "All locations"
+    order = ["Irving office (DFW)", "San Antonio", "All locations"]
+    rows = []
+    for r in ROSTER:
+        if r["part"] != "p9" or not re.search(r"On-Call|Technician", r["role"]):
+            continue
+        label = re.sub(r"^On-Call ", "", r["role"])
+        if label.endswith(" — San Antonio"):
+            label = label[:-len(" — San Antonio")] + " — oxygen concentrator service only"
+        label = re.sub(r" — Irving office$", "", label)
+        names = [n.strip() for n in (r["holder"] or "").split(" / ") if n.strip()]
+        phones = [re.sub(r"\s*\([^)]*[A-Za-z][^)]*\)$", "", p).strip() for p in (r.get("phone") or "").split(" / ")]
+        mails = [m.strip() for m in (r.get("email") or "").split(" / ")]
+        dom = mails[-1].split("@", 1)[1] if mails and "@" in mails[-1] else ""
+        mails = [m + dom if m.endswith("@") else m for m in mails]
+        if not names:
+            rows.append((where(r.get("location")), "**None currently named**", label, "", ""))
+            continue
+        for i, n in enumerate(names):
+            rows.append((where(r.get("location")), n, label,
+                         phones[i] if i < len(phones) else "", mails[i] if i < len(mails) else ""))
+    rows.sort(key=lambda x: order.index(x[0]))
+    # every address shares the company domain, so the header names it once
+    # and the cell carries what precedes the @ — the full address clipped
+    doms = {m.split("@", 1)[1] for *_, m in rows if "@" in m}
+    one = len(doms) == 1
+    if one:
+        rows = [(*x[:4], x[4].split("@", 1)[0]) for x in rows]
+    out = [f"| Location | Name | Role | Phone | Email{' (@' + doms.pop() + ')' if one else ''} |", "|---|---|---|---|---|"]
+    last = None
+    for loc, n, label, ph, em in rows:
+        ph = ph.replace(" ", "\u00a0").replace("-", "\u2011")  # a phone number never wraps
+        out.append(f"| {'**' + loc + '**' if loc != last else ''} | {n} | {label} | {ph} | {em} |")
+        last = loc
+    return "\n".join(out)
+
+
 def expand(m):
     spec = m.group(1).strip()
     if spec == "roster:leads":
@@ -104,27 +163,31 @@ def expand(m):
             who = r.get("holder") or r.get("current_named_individual") or "—"
             out.append(f"| {r['lead_of']} | **{who}** | {r['role']} |")
         return "\n".join(out)
+    if spec == "roster:oncall":
+        return oncall_table()
     if spec.startswith("roster:"):
         scope = spec.split(":")[1]
         rows = [r for r in ROSTER if scope == "all" or r["part"] in (scope, "shared")]
-        show_phone = any(r.get("phone") for r in rows)
-        hdr = "| Role | Holder | Backup | Transfer | Email |"
-        sep = "|---|---|---|---|---|"
-        if show_phone:
-            hdr = "| Role | Holder | Phone | Backup | Email |"
+        # How to reach carries everything a CSR uses to reach the role — "Direct",
+        # the queue (a manager's row carries its department's), the email and a
+        # phone — so the table stays four columns wide. A–Z by role; "-" marks an
+        # empty cell. Phones also sit in 9.5's on-call table.
+        hdr = "| Role | Holder | Backup | How to reach |"
+        sep = "|---|---|---|---|"
         out = [hdr, sep]
-        for r in sorted(rows, key=lambda x: ({"shared":0,"p1":1,"p2":2,"p3":3,"p4":4,"p5":5,"p6":6,"p7":7,"p8":8}.get(x["part"],9), x["role"])):
+        for r in sorted(rows, key=lambda x: x["role"].lower()):
             bk = r["backup"] or ""
-            bk = "**none**" if bk == "NONE" else ("—" if bk.startswith("—") else bk)
-            hd = "—" if (r["holder"] or "").startswith("—") else (r["holder"] or r.get("current_named_individual") or "")
-            tr = "Direct" if r["direct_transfer"] else (r.get("queue") or "")
+            bk = "-" if (not bk or bk == "NONE" or bk.startswith("—")) else bk
+            hd = r["holder"] or r.get("current_named_individual") or ""
+            hd = "Team" if hd.startswith("— team") else ("-" if (not hd or hd.startswith("—")) else hd)
             em = r.get("email") or ""
-            if r.get("email_attn"):
+            if em and r.get("email_attn"):
                 em += f" — subject “{r['email_attn']}: [name] [TRX #]”"
-            if show_phone:
-                out.append(f"| {r['role']} | {hd} | {r.get('phone') or ''} | {bk} | {em} |")
-            else:
-                out.append(f"| {r['role']} | {hd} | {bk} | {tr} | {em} |")
+            # each number stays whole; the " / " between several numbers may wrap
+            ph = re.sub(r"\((\d{3})\) (\d{3})-(\d{4})", "(\\1)\u00a0\\2\u2011\\3", r.get("phone") or "")
+            tr = " · ".join(x for x in ("Direct" if r["direct_transfer"] else "", r.get("queue") or "", em, ph) if x) or "-"
+            row = f"| {r['role']} | {hd} | {bk} | {tr} |"
+            out.append(row)
         return "\n".join(out)
     if spec.startswith("glossary:"):
         _, cls, _, part = spec.split(":")[1], None, None, None
@@ -146,12 +209,12 @@ def expand(m):
         by = {}
         for r in rows:
             by.setdefault(r["category"], []).append(r)
-        out = ["| Category | Items | HCPCS | Part |", "|---|---|---|---|"]
-        for cat in sorted(by):
+        out = ["| Category | HCPCS |", "|---|---|"]
+        for cat in sorted(by, key=lambda c: CATEGORY_NAMES.get(c, c)):
             rs = by[cat]
             codes = sorted({c for r in rs for c in r["hcpcs"]})
-            cs = ", ".join(codes[:4]) + ("…" if len(codes) > 4 else "")
-            out.append(f"| {cat.replace('-', ' ').title()} | {len(rs)} | {cs} | Part {rs[0]['part'][1:]} |")
+            name = CATEGORY_NAMES.get(cat, cat.replace("-", " ").capitalize())
+            out.append(f"| {name} | {', '.join(codes)} |")
         return "\n".join(out)
     if spec == "waivers":
         rules = [f for f in FEES if f.get("type") == "rule"]
@@ -178,7 +241,7 @@ def expand(m):
         tag = os.path.splitext(os.path.basename(sys.argv[1]))[0] + (f"-{DIAGRAM_USES[name]}" if DIAGRAM_USES[name] > 1 else "")
         for mid in set(re.findall(r'<marker id="([^"]+)"', svg)):
             svg = svg.replace(f'id="{mid}"', f'id="{mid}-{tag}"').replace(f"url(#{mid})", f"url(#{mid}-{tag})")
-        return f'<div class="fig">{svg}</div>'
+        return f'<div class="fig" data-diagram="{name}">{svg}</div>'
     if spec.startswith("figure:"):
         fid = spec.split(":", 1)[1]
         if fid not in FIGS or fid not in FIGB:
@@ -210,7 +273,7 @@ def expand(m):
         return "\n".join(out)
     if spec == "fees":
         rows = [f for f in FEES if f.get("intake_amount")]
-        out = ["| Upgrade | HCPCS | Intake Fee | Field Ops Fee |", "|---|---|---|---|"]
+        out = ["| Common Upgrades | HCPCS | Intake Fee | Field Ops Fee |", "|---|---|---|---|"]
         for f in rows:
             e = BY_ID.get(f["equipment_id"], {})
             out.append(f"| {f['label']} | {' / '.join(e.get('hcpcs', []))} | "

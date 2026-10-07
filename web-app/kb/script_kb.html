@@ -92,8 +92,8 @@
     --dg-accent: var(--info); --dg-tint: var(--info-soft); --dg-muted: var(--muted); --dg-rule: var(--line);
     --dg-crit-bg: var(--danger-soft); --dg-crit-ink: var(--danger-deep); --dg-pol-bg: var(--info-soft); --dg-pol-ink: var(--info-deep);
     --dg-watch-bg: var(--warn-soft); --dg-watch-ink: var(--warning-deep); --dg-scr-bg: var(--accent-soft); --dg-scr-ink: var(--success-deep);
-    --dg-p0: var(--ink); --dg-p1: var(--muted); --dg-p2: var(--good); --dg-p3: var(--danger); --dg-p4: var(--info); --dg-p5: var(--warn);
-    --dg-p6: var(--good); --dg-p7: var(--info-deep); --dg-p8: var(--intake-pap); --dg-p9: var(--intake-pmd); --dg-p10: var(--intake-pap); }
+    --dg-p0: var(--man-p0); --dg-p1: var(--man-p1); --dg-p2: var(--man-p2); --dg-p3: var(--man-p3); --dg-p4: var(--man-p4); --dg-p5: var(--man-p5);
+    --dg-p6: var(--man-p6); --dg-p7: var(--man-p7); --dg-p8: var(--man-p8); --dg-p9: var(--man-p9); --dg-p10: var(--man-p10); }
   /* A wide flow chart scrolls inside itself rather than shrinking its text
      past reading size (g71) — below ~600px of width it scrolls. */
   .kb-article .kb-diagram-scroll { overflow-x: auto; padding: 10px; border-radius: var(--radius-md); }
@@ -126,6 +126,16 @@
   .kbd-rt-g { font-size: .66rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 10px 4px 4px; }
   .kbd-rt-row { flex-direction: column; align-items: flex-start; }
   .kb-man-head h2 { margin-bottom: 2px; }
+  /* The chapter's colour and icon (operator 2026-10-07): a stripe and a badge on
+     the part's title, and the icon beside it in the tree. --man-pN are tokens;
+     the badge's icon is the page colour, so it reads in light and dark. */
+  .kb-man-p0 { --man-c: var(--man-p0); } .kb-man-p1 { --man-c: var(--man-p1); } .kb-man-p2 { --man-c: var(--man-p2); } .kb-man-p3 { --man-c: var(--man-p3); } 
+  .kb-man-p4 { --man-c: var(--man-p4); } .kb-man-p5 { --man-c: var(--man-p5); } .kb-man-p6 { --man-c: var(--man-p6); } .kb-man-p7 { --man-c: var(--man-p7); } 
+  .kb-man-p8 { --man-c: var(--man-p8); } .kb-man-p9 { --man-c: var(--man-p9); } .kb-man-p10 { --man-c: var(--man-p10); } 
+  .kb-man-chap { border-left: 5px solid var(--man-c); padding-left: 12px; }
+  .kb-man-chap h2 { display: flex; align-items: center; gap: 10px; color: var(--man-c); }
+  .kb-man-badge { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; background: var(--man-c); color: var(--paper-card); }
+  .kb-man-dic { flex: none; display: inline-flex; color: var(--man-c); }
   .kb-man-ver { font-size: .76rem; color: var(--muted); margin: 0 0 12px; min-height: 1em; }
   .kb-man-part { max-width: 760px; }
   .kb-man-sec { padding: 6px 0 18px; border-bottom: 1px solid var(--line); margin-bottom: 18px; scroll-margin-top: 12px; }
@@ -211,6 +221,16 @@
   .kb-article th { font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); text-align: left; padding: 6px 16px 6px 0; border-bottom: 1px solid var(--border-strong); }
   .kb-article td { padding: 8px 16px 8px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
   .kb-article tbody tr:last-child td { border-bottom: none; }
+  /* Manual Phase 1 (2026-10-06): the manual's two table conventions, as its HTML draws them.
+     A STEP table (first header "Step") numbers its steps with an arrow down to the next;
+     a header opening with \2713 / \2717 tints its column (the Do's & Don'ts tables). */
+  .kb-article table.kb-steps td:first-child { position: relative; text-align: center; font-weight: 600; color: var(--accent); padding-left: 10px; vertical-align: middle; }
+  .kb-article table.kb-steps tbody tr:not(:last-child) td:first-child::after { content: "\2193"; position: absolute; left: 50%; bottom: -0.75em; transform: translateX(-50%); z-index: 1; padding: 0 3px; background: var(--paper-card); color: var(--muted); font-weight: 400; line-height: 1.3; }
+  .kb-article table.kb-dodont td, .kb-article table.kb-dodont th { padding-left: 10px; }
+  .kb-article table.kb-dodont th.kb-do { color: var(--good); border-bottom-color: var(--good); }
+  .kb-article table.kb-dodont th.kb-dont { color: var(--danger); border-bottom-color: var(--danger); }
+  .kb-article table.kb-dodont td.kb-do { background: var(--good-soft); }
+  .kb-article table.kb-dodont td.kb-dont { background: var(--danger-soft); }
   .kb-article img { max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); display: block; margin: .9em 0; }
   .kb-article a.kb-img-lnk { display: inline-block; max-width: 100%; }
   .kb-article .kb-img-pending { display: inline-block; padding: 6px 10px; margin: 4px 0;
@@ -2520,9 +2540,15 @@ function kbMd_(src) {
         var al = /^:/.test(sep), ar = /:$/.test(sep);
         return al && ar ? 'center' : (ar ? 'right' : (al ? 'left' : ''));
       });
-      var tbl = '<table><thead><tr>';
+      // The manual's conventions (Phase 1): a first header "Step" is a step table;
+      // a header opening with \u2713 / \u2717 tints its column. The header text is
+      // already escaped and neither glyph is touched by the escape.
+      var tone = headCells.map(function (c) { return /^\u2713/.test(c) ? 'kb-do' : (/^\u2717/.test(c) ? 'kb-dont' : ''); });
+      var tcls = (/^step$/i.test(headCells[0] || '') ? ['kb-steps'] : [])
+        .concat(tone.some(function (t) { return t; }) ? ['kb-dodont'] : []);
+      var tbl = '<table' + (tcls.length ? ' class="' + tcls.join(' ') + '"' : '') + '><thead><tr>';
       headCells.forEach(function (c, ci) {
-        tbl += '<th' + (aligns[ci] ? ' style="text-align:' + aligns[ci] + '"' : '') + '>' + inline(c) + '</th>';
+        tbl += '<th' + (tone[ci] ? ' class="' + tone[ci] + '"' : '') + (aligns[ci] ? ' style="text-align:' + aligns[ci] + '"' : '') + '>' + inline(c) + '</th>';
       });
       tbl += '</tr></thead><tbody>';
       i += 2;
@@ -2530,7 +2556,7 @@ function kbMd_(src) {
         var cells = tableCells(lines[i]);
         tbl += '<tr>';
         for (var ci2 = 0; ci2 < headCells.length; ci2++) {
-          tbl += '<td' + (aligns[ci2] ? ' style="text-align:' + aligns[ci2] + '"' : '') + '>' +
+          tbl += '<td' + (tone[ci2] ? ' class="' + tone[ci2] + '"' : '') + (aligns[ci2] ? ' style="text-align:' + aligns[ci2] + '"' : '') + '>' +
             inline(cells[ci2] == null ? '' : cells[ci2]) + '</td>';
         }
         tbl += '</tr>';
@@ -3167,7 +3193,7 @@ function kbOpenManualSection_(id, anchor, nav) {
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requested || seq !== KB_STATE.manualSeq || KB_STATE.currentId !== id) return;
-      if (!res || res.error) { main.innerHTML = errorStateHtml_((res && res.error) || 'Failed to load this part of the manual'); return; }
+      if (!res || res.error) { main.innerHTML = errorStateHtml_((res && res.error) || 'Failed to load this chapter of the manual'); return; }
       if (!(res.sections || []).some(function (s) { return s.id === id; })) { main.innerHTML = errorStateHtml_('That section is not available.'); return; }
       KB_STATE.manualPart = res;
       main.innerHTML = kbManualPartHtml_(res);
@@ -3177,7 +3203,7 @@ function kbOpenManualSection_(id, anchor, nav) {
       kbManualFocus_(id, anchor, true, nav);
     })
     .withFailureHandler(function (err) {
-      if (currentView === requested && seq === KB_STATE.manualSeq && KB_STATE.currentId === id) main.innerHTML = errorStateHtml_((err && err.message) || 'Failed to load this part of the manual');
+      if (currentView === requested && seq === KB_STATE.manualSeq && KB_STATE.currentId === id) main.innerHTML = errorStateHtml_((err && err.message) || 'Failed to load this chapter of the manual');
     })
     .getManualPart(dept);
   return true;
@@ -3189,11 +3215,13 @@ function kbManualPartHtml_(part) {
   var admin = KB_STATE.isAdmin;
   var secs = part.sections || [];
   var drafts = secs.filter(function (s) { return s.status === 'draft'; }).length;
-  var html = '<div class="kb-item-head kb-man-head"><h2>' + esc(part.department) + '</h2></div>' +
+  var ck = kbManualChapterKey_(part.department);
+  var html = '<div class="kb-item-head kb-man-head' + (ck ? ' kb-man-chap kb-man-' + ck : '') + '"><h2>' +
+      kbManualChapterIcon_(part.department, 18, 'kb-man-badge') + esc(part.department) + '</h2></div>' +
     '<div class="kb-man-ver" data-kb-man-ver></div>' +
     '<div class="kb-man-back" data-kb-man-back></div>' +
     (admin && drafts ? '<div class="kb-draft-banner">' + icon('warning', 13) + ' ' + drafts + ' of ' + secs.length +
-      ' section' + (secs.length === 1 ? '' : 's') + ' in this part ' + (drafts === 1 ? 'is a draft' : 'are drafts') + ' — hidden from reps until published (Reference → Manual).</div>' : '') +
+      ' section' + (secs.length === 1 ? '' : 's') + ' in this chapter ' + (drafts === 1 ? 'is a draft' : 'are drafts') + ' — hidden from reps until published (Reference → Manual).</div>' : '') +
     '<div class="kb-man-part">';
   secs.forEach(function (s) {
     var draft = s.status === 'draft';
@@ -3617,11 +3645,13 @@ function kbManualNumberTarget_(q, tree) {
   var hit = function (id, anchor, num) { var it = byId[id]; return it ? { id: id, anchor: anchor, title: it.title, num: num } : null; };
   var m;
   if ((m = s.match(/^card\s*#?\s*(\d{1,2})$/i)) || (m = s.match(/^§?\s*[CG]\s*[-.]\s*(\d{1,2})$/i))) return hit('man-c-' + (+m[1]), '', 'CARD ' + (+m[1]));
-  if ((m = s.match(/^part\s*(\d{1,2})$/i))) {
-    var pre = 'Part ' + ('0' + (+m[1])).slice(-2) + ' ';
-    var first = (tree || []).filter(function (it) { return kbIsManualId_(it.id) && String(it.department || '').indexOf(pre) === 0; })
-      .sort(function (a, b) { return (a.sortOrder || 0) - (b.sortOrder || 0); })[0];
-    return first ? { id: first.id, anchor: '', title: first.title, num: 'Part ' + (+m[1]) } : null;
+  if ((m = s.match(/^(?:chapter|part)\s*(\d{1,2})$/i))) {
+    var nn = ('0' + (+m[1])).slice(-2);
+    var first = (tree || []).filter(function (it) {
+      var d = String(it.department || '');
+      return kbIsManualId_(it.id) && (d.indexOf('Chapter ' + nn + ' ') === 0 || d.indexOf('Part ' + nn + ' ') === 0);
+    }).sort(function (a, b) { return (a.sortOrder || 0) - (b.sortOrder || 0); })[0];
+    return first ? { id: first.id, anchor: '', title: first.title, num: 'Chapter ' + (+m[1]) } : null;
   }
   if ((m = s.match(/^§?\s*([AB])\s*[-.]\s*(\d{1,2})((?:\.\d{1,2})*)$/i))) {
     var L = m[1].toUpperCase(), n = L + '.' + (+m[2]) + m[3];
@@ -3857,8 +3887,8 @@ function kbOpenManualImport_() {
       '<div class="kb-man-pub">' +
         '<div class="kb-man-lbl">Publish manual drafts</div>' +
         (depts.length
-          ? '<div class="kb-man-pubrow"><select id="kb-man-dept" aria-label="Which part to publish">' +
-              '<option value="">Every part (' + depts.reduce(function (n, d) { return n + d.count; }, 0) + ' drafts)</option>' +
+          ? '<div class="kb-man-pubrow"><select id="kb-man-dept" aria-label="Which chapter to publish">' +
+              '<option value="">Every chapter (' + depts.reduce(function (n, d) { return n + d.count; }, 0) + ' drafts)</option>' +
               depts.map(function (d) { return '<option value="' + esc(d.name) + '">' + esc(d.name) + ' (' + d.count + ')</option>'; }).join('') +
             '</select><button class="kb-btn" onclick="kbManualPublish_(this)">' + icon('check', 13) + ' Publish</button></div>' +
             '<p class="kb-man-note">Review dates are spread across the review window, so the queue gains a few each day rather than every article at once.</p>'
@@ -4001,7 +4031,7 @@ function kbManualGate_(imp) {
 function kbManualPublish_(btn) {
   var sel = document.getElementById('kb-man-dept');
   var dept = sel ? sel.value : '';
-  var label = dept || 'every part of the manual';
+  var label = dept || 'every chapter of the manual';
   uiConfirm({ title: 'Publish the manual drafts in ' + label + '?', message: 'Reps will be able to see and search them immediately.', confirmLabel: 'Publish' }).then(function (ok) {
     if (!ok) return;
     if (btn) btn.disabled = true;
@@ -4039,10 +4069,31 @@ function kbNaturalCompare_(a, b) {
  *  drives both over one grid. */
 function kbDeptRank_(d) {
   var s = String(d == null ? '' : d);
-  if (/^Part \d+ \u2014 /.test(s)) return 0;
+  if (/^(?:Chapter|Part) \d+ \u2014 /.test(s)) return 0;
   if (/^Appendix [A-Z] \u2014 /.test(s)) return 1;
   return 2;
 }
+// The manual's chapter icons (operator 2026-10-07), by chapter key — pinned equal
+// to manual/data/chapter_style.json, the source the HTML and Word manuals draw
+// from; each part's colour is its --man-pN token.
+var KB_MANUAL_CHAPTER_ICONS = Object.freeze({
+  p0: 'headset', p1: 'phone', p2: 'walker', p3: 'papMask', p4: 'clipboardList', p5: 'bolt',
+  p6: 'truck', p7: 'repair', p8: 'oxygenTank', p9: 'moon', p10: 'dollar'
+});
+/** "Chapter 05 — Power Mobility" → "p5" (keys are chapter numbers since the
+ *  October 2026 renumber; "Part NN —" still reads, for rows imported before it);
+ *  an appendix or any other department → "". */
+function kbManualChapterKey_(dept) {
+  var m = /^(?:Chapter|Part) (\d+) \u2014 /.exec(String(dept || ''));
+  var k = m ? 'p' + Number(m[1]) : '';
+  return Object.prototype.hasOwnProperty.call(KB_MANUAL_CHAPTER_ICONS, k) ? k : '';
+}
+/** The chapter's icon in a span of the given class, coloured by its part; "" when none. */
+function kbManualChapterIcon_(dept, size, cls) {
+  var k = kbManualChapterKey_(dept);
+  return k ? '<span class="' + cls + ' kb-man-' + k + '" aria-hidden="true">' + icon(KB_MANUAL_CHAPTER_ICONS[k], size) + '</span>' : '';
+}
+
 function kbDeptCompare_(a, b) {
   return (kbDeptRank_(a) - kbDeptRank_(b)) || kbNaturalCompare_(a, b);
 }
@@ -4091,6 +4142,7 @@ function kbRenderTree_() {
     html += '<div class="kb-dept' + (isCol ? ' collapsed' : '') + '">' +
       '<button class="kb-dept-toggle" data-dept="' + esc(d) + '"' + (manual ? ' data-manual="1"' : '') + ' onclick="kbToggleDept_(this)" aria-expanded="' + (!isCol) + '">' +
         '<span class="kb-chevron">' + icon('chevronDown', 13) + '</span>' +
+        (manual ? kbManualChapterIcon_(d, 13, 'kb-man-dic') : '') +
         '<span class="kb-dept-name">' + esc(d) + '</span>' +
         '<span class="kb-dept-count">' + byDept[d].length + '</span>' +
       '</button>' +
@@ -4116,7 +4168,7 @@ function kbToggleDept_(btn) {
   var prefs = kbPanelPrefs_();
   var nowCollapsed;
   if (btn.getAttribute && btn.getAttribute('data-manual')) {
-    // A manual part is collapsed by default, so its remembered state is OPEN.
+    // A manual chapter is collapsed by default, so its remembered state is OPEN.
     prefs.deptOpen = prefs.deptOpen || {};
     var wasCollapsed = box ? box.classList.contains('collapsed') : !prefs.deptOpen[d];
     if (wasCollapsed) prefs.deptOpen[d] = true; else delete prefs.deptOpen[d];

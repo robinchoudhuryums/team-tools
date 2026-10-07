@@ -28,6 +28,8 @@ CSS = """
   .dg-ti{font:600 12px 'IBM Plex Sans',sans-serif;fill:var(--navy)}
   .dg-s{font:400 10.5px 'IBM Plex Sans',sans-serif;fill:var(--muted)}
   .dg-sec{font:600 10px 'IBM Plex Sans',sans-serif;fill:var(--accent)}
+  .dg-so{font:400 10.5px 'IBM Plex Sans',sans-serif;fill:var(--bg);opacity:.88}
+  .dg-seco{font:700 10px 'IBM Plex Sans',sans-serif;fill:var(--bg);text-decoration:underline}
   .dg-arr{stroke:var(--muted);stroke-width:1.5;fill:none;marker-end:url(#MKID)}
   .dg-arr-d{stroke:var(--muted);stroke-width:1.5;fill:none;stroke-dasharray:4 3;
     marker-end:url(#MKID)}
@@ -49,14 +51,14 @@ def box(x, y, w, h, title, sub, sec, colour, light=False):
     for i, line in enumerate(title.split("|")):
         out.append(f'<text class="{tcls}" x="{x+10}" y="{ty+i*14}">{line}</text>')
     if sub:
-        out.append(f'<text class="dg-s" x="{x+10}" y="{y+h-18}">{sub}</text>')
+        out.append(f'<text class="{"dg-s" if light else "dg-so"}" x="{x+10}" y="{y+h-18}">{sub}</text>')
     if sec:
-        out.append(f'<text class="dg-sec" x="{x+10}" y="{y+h-6}">{sec}</text>')
+        out.append(f'<text class="{"dg-sec" if light else "dg-seco"}" x="{x+10}" y="{y+h-6}">{sec}</text>')
     return "".join(out)
 
 
 # ---------------------------------------------------------------- lifecycle --
-W, H = 1160, 470
+W, H = 1160, 392
 p = [f'<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" '
      f'role="img" aria-label="Order lifecycle across departments">'
      f'{MARK.replace("MKID","mkL")}<style>{CSS.replace("MKID","mkL")}</style>']
@@ -66,11 +68,11 @@ p.append('<rect class="dg-lane" x="0" y="26" width="1160" height="96" rx="5"/>')
 p.append('<rect class="dg-lane-b" x="0" y="26" width="1160" height="96" rx="5"/>')
 std = [("Referral|received", "MDO sends the order", "§0-8", "--navy"),
        ("Insurance|Verification", "Coverage confirmed", "§0-8.1", "--navy"),
-       ("Documentation|Request", "SWO, F2F notes", "§10-13.6", "--navy"),
-       ("Prior|Authorization", "If required", "§10-9", "--navy"),
+       ("Documentation|Request", "SWO, F2F notes", "§10-12.6", "--navy"),
+       ("Prior|Authorization", "If required", "§10-8", "--navy"),
        ("Validation", "Final check", "§0-8", "--navy"),
-       ("Field Ops|Delivery", "Scheduled, delivered", "§5-1", "--p5"),
-       ("Service", "After delivery", "§6-1", "--p6")]
+       ("Field Ops|Delivery", "Scheduled, delivered", "§6-1", "--p6"),
+       ("Service", "After delivery", "§7-1", "--p7")]
 x = 12
 for i, (t, s_, sec, c) in enumerate(std):
     p.append(box(x, 38, 148, 72, t, s_, sec, c))
@@ -81,88 +83,83 @@ for i, (t, s_, sec, c) in enumerate(std):
 p.append(f'<text class="dg-h" x="0" y="160">Power mobility order</text>')
 p.append('<rect class="dg-lane" x="0" y="172" width="1160" height="210" rx="5"/>')
 p.append('<rect class="dg-lane-b" x="0" y="172" width="1160" height="210" rx="5"/>')
-p.append('<text class="dg-lbl" x="12" y="192">Sales — Part 9</text>')
-p.append('<text class="dg-lbl" x="492" y="192">Power intake — Part 4</text>')
+p.append('<text class="dg-lbl" x="12" y="192">Sales — Chapter 4</text>')
+p.append('<text class="dg-lbl" x="492" y="192">Power intake — Chapter 5</text>')
 p.append('<text class="dg-lbl" x="972" y="192">Delivery</text>')
 p.append('<path class="dg-lane-b" d="M484 200 V372"/><path class="dg-lane-b" d="M964 200 V372"/>')
 
-sales = [("Lead|callback", "Confirm interest", "§9-2"),
-         ("Create TRX", "Details, insurance, PCP", "§9-2"),
-         ("Mobility Eval|appointment", "Verified both sides", "§9-2")]
+sales = [("Lead|callback", "Confirm interest", "§4-2"),
+         ("Create TRX", "Details, insurance, PCP", "§4-2"),
+         ("Mobility Eval|appointment", "Verified both sides", "§4-2")]
 x = 12
 for i, (t, s_, sec) in enumerate(sales):
-    p.append(box(x, 202, 148, 72, t, s_, sec, "--p9"))
+    p.append(box(x, 202, 148, 72, t, s_, sec, "--p4"))
     if i < 2:
         p.append(f'<path class="dg-arr" d="M{x+148} 238 H{x+158}"/>')
     x += 160
-p.append(box(332, 292, 148, 72, "Eligibility", "Payer verification", "§4-2", "--p9"))
+p.append(box(332, 292, 148, 72, "Eligibility", "Payer verification", "§4-4", "--p4"))
 p.append('<path class="dg-arr" d="M406 274 V292"/>')
 p.append('<path class="dg-arr" d="M480 328 H484 V238 H494"/>')
 
-power = [("PAK", "Paperwork sent", "§4-3"),
-         ("Qualifications", "Docs reviewed", "§4-4"),
-         ("PT / ATP", "Where required", "§4-5"),
-         ("PAR", "Sent to insurance", "§4-7")]
+power = [("PAK", "Paperwork sent", "§5-2"),
+         ("Qualifications", "Docs reviewed", "§5-3"),
+         ("PT / ATP", "Where required", "§5-4"),
+         ("PAR", "Sent to insurance", "§5-6")]
 x = 494
 for i, (t, s_, sec) in enumerate(power):
-    p.append(box(x, 202, 108, 72, t, s_, sec, "--p4"))
+    p.append(box(x, 202, 108, 72, t, s_, sec, "--p5"))
     if i < 3:
         p.append(f'<path class="dg-arr" d="M{x+108} 238 H{x+118}"/>')
     x += 118
-p.append(box(494, 292, 226, 72, "Order Verification", "Model, seat, joystick, color", "§4-8", "--p4"))
-p.append('<path class="dg-arr-d" d="M607 274 V292"/>')
-p.append('<path class="dg-arr" d="M720 328 H964 V238 H974"/>')
-p.append(box(974, 202, 172, 72, "Field Ops-Power", "Manufacturer, then delivery", "§4-9", "--p5"))
-p.append(box(974, 292, 172, 72, "Service", "Repairs, adjustments", "§6-1", "--p6"))
+p.append(box(848, 292, 108, 72, "Order|Verification", "Model and options", "§5-7", "--p5"))
+p.append('<path d="M902 274 V292" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 3"/>')
+p.append('<path class="dg-arr" d="M956 238 H974"/>')
+p.append('<path class="dg-arr" d="M956 328 H965 V256 H974"/>')
+p.append(box(974, 202, 172, 72, "Field Ops-Power", "Manufacturer, then delivery", "§5-8", "--p6"))
+p.append(box(974, 292, 172, 72, "Service", "Repairs, adjustments", "§7-1", "--p7"))
 p.append('<path class="dg-arr" d="M1060 274 V292"/>')
 
-p.append('<rect class="dg-lane" x="0" y="396" width="1160" height="62" rx="5"/>')
-p.append('<rect class="dg-lane-b" x="0" y="396" width="1160" height="62" rx="5"/>')
-p.append('<text class="dg-lbl" x="12" y="416">Running underneath every stage</text>')
-p.append(box(12, 420, 368, 30, "Billing &amp; Insurance — Part 10", "", "", "--p10", light=True))
-p.append(box(392, 420, 368, 30, "Call Handling — Part 1", "", "", "--p1", light=True))
-p.append(box(772, 420, 374, 30, "Compliance — §3-12", "", "", "--navy", light=True))
 p.append("</svg>")
 open("diagrams/lifecycle.svg", "w").write(_dn("".join(p)))
 
 # ------------------------------------------------------- transaction anatomy --
 GROUPS = [
  ("", [("Patient", "Name, DOB, address, contacts", "§0-3"),
-       ("Transaction", "Order type, category, market.", "§7-2.2"),
+       ("Transaction", "Order type, category, market.", "§8-2.2"),
        ("  \u21b3 Fax History", "button inside Transaction", "§0-2.2"),
        ("State Validation", "", ""),
        ("Grids", "", "")]),
  ("Medical", [("Insurances", "Plan, member ID, effective date", "§0-3.2"),
               ("Doctors", "Prescribing provider", ""),
               ("Diagnoses", "", ""),
-              ("Eligibility", "Eligibility Status — Sales or Power", "§9-3")]),
+              ("Eligibility", "Eligibility Status — Sales or Power", "§4-3")]),
  ("Equipment", [("Refill Request", "Resupply", "§3-3"),
                 ("Items", "", ""),
-                ("Selection", "Equipment and quantities", "§7-2.2"),
-                ("SoS", "Same or Similar check", "§10-13.5"),
-                ("Pat. Resp.", "What the patient owes", "§10-20.1"),
-                ("Authorization", "Prior authorization", "§10-9"),
+                ("Selection", "Equipment and quantities", "§8-2.2"),
+                ("SoS", "Same or Similar check", "§10-12.5"),
+                ("Pat. Resp.", "What the patient owes", "§10-19.1"),
+                ("Authorization", "Prior authorization", "§10-8"),
                 ("DX Validation", "", ""),
                 ("Med Nec", "Medical necessity", ""),
-                ("Prescriptions", "SWO / Rx", "§10-13.6"),
-                ("Presc. Forms", "PPD Completed date", "§9-6"),
+                ("Prescriptions", "SWO / Rx", "§10-12.6"),
+                ("Presc. Forms", "PPD Completed date", "§4-7"),
                 ("Order Validation", "", "")]),
- ("Fulfillment", [("Ticket", "Date scheduled, route, tracking", "§5-2"),
+ ("Fulfillment", [("Ticket", "Date scheduled, route, tracking", "§6-2"),
                   ("Procurement", "", "")]),
  ("Claims", [("DX Validation", "", ""),
              ("Date Validation", "", ""),
              ("Claim Plan", "", ""),
              ("Claim Prep", "", ""),
-             ("Denials", "Denied claims", "§10-18.3")]),
+             ("Denials", "Denied claims", "§10-17.3")]),
 ]
-BUTTONS = [("Edit Patient", "Invoices, Payments", "§10-20.2"),
-           ("Patient Artifacts", "Signed documents", "§5-6"),
+BUTTONS = [("Edit Patient", "Invoices, Payments", "§10-19.2"),
+           ("Patient Artifacts", "Signed documents", "§6-6"),
            ("Patient Auths", "", ""),
-           ("Process Payment", "Card, Pre-Pay, Save Card", "§10-20.3"),
+           ("Process Payment", "Card, Pre-Pay, Save Card", "§10-19.3"),
            ("Messages", "Opens the Notes modal", "§0-11"),
-           ("Order Artifacts", "Delivery ticket, PRF", "§5-6"),
+           ("Order Artifacts", "Delivery ticket, PRF", "§6-6"),
            ("Email", "", ""), ("SMS", "", ""),
-           ("Resolutions", "Lead Resolutions", "§9-5")]
+           ("Resolutions", "Lead Resolutions", "§4-6")]
 
 ROW, SUB, GAP = 18, 10, 10
 COLW = 222
@@ -192,7 +189,7 @@ t.append('<text class="dg-s" x="16" y="44">Entries the manual refers to are anno
          'section that uses them.</text>')
 t.append(f'<rect class="dg-box" x="16" y="58" width="{W2-32}" height="28" fill="var(--tint)" stroke="var(--rule)"/>')
 t.append('<text class="dg-ti" x="26" y="76">Header bar &#183; Patient &#183; Date of Birth &#183; Gender &#183; Address &#183; Phone</text>')
-t.append(f'<text class="dg-sec" x="{W2-380}" y="76">verify name and DOB before discussing &#8212; §10-23</text>')
+t.append(f'<text class="dg-sec" x="{W2-380}" y="76">verify name and DOB before discussing &#8212; §10-22</text>')
 
 x = 16
 for (gname, items), ch in zip(GROUPS, col_h):

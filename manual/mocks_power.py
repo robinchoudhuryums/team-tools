@@ -56,10 +56,10 @@ for x1, x2 in ((A + AW, B), (B + BW, C), (C + CW, D), (D + DW, E)):
     b.append(fl(x1, 94, x2, 94))
 b.append(path(f"M{A + AW/2} 72 V52 H{C + 60} V72", True))
 b.append(label((A + C)/2 + 30, 46, "PAST M.E. DONE IN LAST 6 MOS — SKIPS PAK", "middle"))
-b.append(card(A, 132, AW, 150, "Moves on at", "Eligible|(appt confirmed|& insurance|verified)|— §9-3"))
-b.append(card(B, 132, BW, 84, "PPD", "~15-minute interview:|mobility needs, options,|the process — §4-3.1"))
-b.append(card(B, 224, BW, 84, "MA Education", "Walks the MDO's office|through the paperwork|— §4-3.2"))
-b.append(card(B, 316, BW, 84, "Appt scheduling", "Reschedules if needed;|collects F2F and PAK|after the visit — §4-3.3"))
+b.append(card(A, 132, AW, 150, "Moves on at", "Eligible|(appt confirmed|& insurance|verified)|— §4-3"))
+b.append(card(B, 132, BW, 84, "PPD", "~15-minute interview:|mobility needs, options,|the process — §5-2.1"))
+b.append(card(B, 224, BW, 84, "Medical Assistant Ed.", "Walks the MDO's office|through the paperwork|— §5-2.2"))
+b.append(card(B, 316, BW, 84, "Appt scheduling", "Reschedules if needed;|collects F2F and PAK|after the visit — §5-2.3"))
 b.append(label(C + CW/2, 146, "IN PROGRESS AT THE SAME TIME", "middle"))
 def bar(x, y, w, t, sub):
     return (f'<rect x="{x}" y="{y}" width="{w}" height="50" rx="5" fill="var(--panel)" stroke="var(--muted)" '
@@ -67,8 +67,8 @@ def bar(x, y, w, t, sub):
             + T(x + 10, y + 38, sub, 11.5))
 b.append(bar(C, 156, CW - 40, "PT Eval — if required", "Waiting on the PT Rx or report"))
 b.append(bar(C, 214, CW - 10, "ATP Eval — if required", "Field Ops schedules, 2–3 wks out"))
-b.append(T(C + CW/2, 290, "Only when the order needs it — §4-5, §4-6", 11, 500, "var(--muted)", "middle"))
-b.append(card(D, 132, DW, 104, "Submitted", "Final review and|preparation of all docs,|then submitted to|insurance — §4-7"))
+b.append(T(C + CW/2, 290, "Only when the order needs it — §5-4, §5-5", 11, 500, "var(--muted)", "middle"))
+b.append(card(D, 132, DW, 104, "Submitted", "Final review and|preparation of all docs,|then submitted to|insurance — §5-6"))
 b.append(fl(D + DW/2, 236, D + DW/2, 256))
 b.append(fbox(D, 256, DW, 34, "**What came back?", "dec"))
 b.append(path(f"M{D + DW/2} 290 V300 H{D + 39} V312"))
@@ -80,12 +80,12 @@ b.append(path(f"M{D + 39} 356 V366"))
 b.append(card(E, 132, 150, 70, "Order placed", "with the|manufacturer"))
 b.append(card(E + 174, 132, 150, 70, "Received", "in our|warehouse"))
 b.append(fl(E + 150, 167, E + 174, 167))
-b.append(card(E, 222, 324, 58, "Field Ops-Power calls to schedule", "Delivery — the patient must be home — §4-9"))
+b.append(card(E, 222, 324, 58, "Field Ops-Power calls to schedule", "Delivery — the patient must be home — §5-8"))
 b.append(fl(E + 249, 202, E + 249, 222))
 b.append(path(f"M{D + DW} 334 H{E - 22} V167 H{E}"))
 OVx1, OVx2, OVy = C + 90, E - 8, 436
 b.append(f'<rect x="{OVx1}" y="{OVy}" width="{OVx2 - OVx1}" height="72" rx="5" fill="var(--pol-bg)" stroke="var(--pol-ink)" stroke-width="1.4"/>')
-b.append(T(OVx1 + 12, OVy + 22, "Order verification — §4-8", 12, 700, "var(--pol-ink)"))
+b.append(T(OVx1 + 12, OVy + 22, "Order verification — §5-7", 12, 700, "var(--pol-ink)"))
 b.append(T(OVx1 + 12, OVy + 41, "Confirms model, seat, joystick and color. After any PT / ATP eval;", 11.5, 500, "var(--pol-ink)"))
 b.append(T(OVx1 + 12, OVy + 58, "can overlap Qualifications or PAR.", 11.5, 500, "var(--pol-ink)"))
 b.append(f'<line x1="{E - 8}" y1="{OVy - 30}" x2="{E - 8}" y2="{OVy + 72}" stroke="var(--pol-ink)" stroke-width="2.5"/>')
@@ -125,8 +125,10 @@ def node(x, y, w, h, t, sub="", dashed=False, fill="var(--bg)", stroke="var(--ru
     s = (f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="6" fill="{fill}" stroke="{stroke}" '
          f'stroke-width="1.4"{da}/>')
     n = len(sub.split("|")) if sub else 0
-    top = y + h / 2 - (n * 14) / 2 + (4 if not n else -2)
-    s += T(x + w/2, top, t, 12.5, 700, ink, "middle")
+    tl = t.split("|")                    # a long title may take two lines
+    top = y + h / 2 - (n * 14 + (len(tl) - 1) * 15) / 2 + (4 if not n else -2)
+    s += lines(x + w/2, top, t, 12.5, 700, ink, 15, "middle")
+    top += (len(tl) - 1) * 15
     if sub:
         s += lines(x + w/2, top + 17, sub, 11, 500, "var(--ink)", 14, "middle")
     return s
@@ -148,10 +150,10 @@ def small(x, y, t, fill="var(--muted)", anchor="start"):
 # ---- panels (section references sit bottom-right, so headers can carry full titles)
 def refs(x, y, w, h, t):
     return f'<text x="{x + w - 10}" y="{y + h - 8}" text-anchor="end" style="font:600 10px \'IBM Plex Mono\',monospace;fill:var(--muted)">{t}</text>'
-b.append(panel(200, 44, 560, 196, "--p4", "1 · Intake and education — PAK", "§4-3"))
-b.append(panel(200, 272, 360, 390, "--p9", "2 · Qualifications", "§4-4 · §4-5 · §4-6"))
-b.append(panel(576, 272, 290, 390, "--p7", "3 · Verification & authorization", "§4-7 · §4-8"))
-b.append(panel(882, 272, 258, 390, "--p8", "4 · Delivery (Field Ops Power)", "§4-9"))
+b.append(panel(200, 44, 560, 196, "--p5", "1 · Intake and education — PAK", "§5-2"))
+b.append(panel(200, 272, 360, 390, "--p4", "2 · Qualifications", "§5-3 · §5-4 · §5-5"))
+b.append(panel(576, 272, 290, 390, "--p8", "3 · Verification & authorization", "§5-6 · §5-7"))
+b.append(panel(882, 272, 258, 390, "--p6", "4 · Delivery (Field Ops Power)", "§5-8"))
 
 
 def tag(x, y, w, text):
@@ -166,10 +168,11 @@ b.append(path("M150 196 V148 H218"))
 b.append(tag(22, 96, 118, "Eligible —|appt confirmed|& insurance verified"))
 b.append(path("M60 266 V420 H212", True))
 b.append(tag(22, 436, 164, "Past M.E. done in last|6 mos — skips PAK.|Qualifications still|does the PPD"))
+b.append(f'<path d="M100 420 V436" stroke="var(--accent)" stroke-width="1.2" fill="none"/>')
 
 # ---- phase 1
 b.append(node(218, 96, 160, 100, "PPD", "~15-min interview:|mobility needs,|options, the process"))
-b.append(node(400, 96, 160, 100, "MA Education", "walks the MDO's|office through the|PAK paperwork"))
+b.append(node(400, 96, 160, 100, "Medical Assistant|Education", "walks the MDO's|office through the|PAK paperwork"))
 b.append(node(616, 96, 130, 100, "Appointment", "reschedule if|needed; collect F2F|and PAK after visit"))
 b.append(fl(378, 146, 400, 146))
 b.append(path("M560 132 H616"))
@@ -178,6 +181,7 @@ b.append(small(588, 124, "new appt", anchor="middle"))
 b.append(small(588, 178, "confirmed", anchor="middle"))
 b.append(path("M480 196 V254 H372 V326 H300 V366"))
 b.append(tag(490, 205, 150, "F2F and PAK received"))
+b.append(f'<path d="M480 217 H490" stroke="var(--accent)" stroke-width="1.2" fill="none"/>')
 
 # ---- phase 2
 b.append(diamond(300, 420, 176, 108, "Qualifications", "always"))
@@ -200,10 +204,13 @@ b.append(node(404, 318, 150, 84, "PT Eval", "scheduling, finding|eligible PT/OT 
 b.append(check(410, 420, "PT Rx", True))
 b.append(check(410, 436, "PT Report", True))
 b.append('<rect x="404" y="458" width="150" height="84" rx="6" fill="var(--bg)"/>'
-         '<rect x="404" y="458" width="150" height="84" rx="6" fill="var(--p8)" fill-opacity=".10"/>')
+         '<rect x="404" y="458" width="150" height="84" rx="6" fill="var(--p6)" fill-opacity=".10"/>')
 b.append(node(404, 458, 150, 84, "ATP Eval", "Field Ops schedules, up|to 2–3 weeks out based|on ATP travel route", dashed=True,
-              fill="none", stroke="var(--p8)", ink="var(--p8)"))
+              fill="none", stroke="var(--p6)", ink="var(--p6)"))
 b.append(check(410, 560, "ATP Report", True))
+# a key for the dotted lines and boxes
+b.append(f'<path d="M410 640 H440" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 3" fill="none"/>')
+b.append(small(446, 644, "= if applicable"))
 b.append(path("M388 420 H396 V360 H404", True))
 b.append(path("M396 420 V500 H404", True))
 
@@ -216,7 +223,7 @@ b.append(node(651, 406, 140, 32, "PAR packet prep"))
 b.append(fl(721, 390, 721, 406))
 b.append(fl(721, 438, 721, 454))
 b.append(diamond(721, 492, 164, 76, "PAR Submission"))
-b.append(node(590, 548, 118, 48, "Appeals", "up to a month", fill="var(--watch-bg)", stroke="var(--watch-ink)", ink="var(--watch-ink)"))
+b.append(node(590, 548, 118, 48, "Appeals", "up to 1–2 months", fill="var(--watch-bg)", stroke="var(--watch-ink)", ink="var(--watch-ink)"))
 b.append(node(716, 548, 144, 48, "Approval confirmed", "", fill="var(--scr-bg)", stroke="var(--scr-ink)", ink="var(--scr-ink)"))
 b.append(node(590, 618, 118, 36, "Order closed", "", fill="var(--crit-bg)", stroke="var(--crit-ink)", ink="var(--crit-ink)"))
 b.append(fl(649, 596, 649, 618))
@@ -248,7 +255,7 @@ b.append(label(20, TY - 18, "TYPICAL TIME"))
 b.append(f'<line x1="20" y1="{TY}" x2="566" y2="{TY}" stroke="var(--muted)" stroke-width="2" stroke-dasharray="6 5"/>')
 b.append(T(293, TY + 22, "Sales, PAK and Qualifications vary — mostly on how quickly the provider returns correct paperwork", 11, 500, "var(--muted)", "middle"))
 b.append(f'<rect x="590" y="{TY - 7}" width="262" height="14" rx="3" fill="var(--accent)"/>')
-b.append(T(721, TY + 24, "PAR: 14 days or less", 11.5, 700, "var(--navy)", "middle"))
+b.append(T(721, TY + 24, "PAR: about 14 days", 11.5, 700, "var(--navy)", "middle"))
 b.append(f'<rect x="898" y="{TY - 7}" width="150" height="14" rx="3" fill="var(--accent)"/>')
 b.append(T(973, TY + 24, "2–3 weeks to warehouse", 11.5, 700, "var(--navy)", "middle"))
 b.append(f'<line x1="1054" y1="{TY}" x2="1140" y2="{TY}" stroke="var(--muted)" stroke-width="2" stroke-dasharray="6 5"/>')
@@ -259,9 +266,9 @@ svg("p2-panels", W, H, "Power order phases", b)
 # ============================================== take 3: vertical tracker ===
 W = 1160
 rows = [
- ("Sales and eligibility", "Books the mobility evaluation and checks the insurance. Moves on at Eligible —|the appointment is confirmed and insurance verified. See §9-3",
+ ("Sales and eligibility", "Books the mobility evaluation and checks the insurance. Moves on at Eligible —|the appointment is confirmed and insurance verified. See §4-3",
   "With Sales, confirming the appointment|and insurance", "varies", "--scr-ink"),
- ("PAK", "PPD interview (~15 min), then PAK documents go to the MDO. MA Education walks|their office through it. Reschedules if needed; collects F2F and PAK after the visit",
+ ("PAK", "PPD interview (~15 min), then PAK documents go to the MDO. Medical Assistant Education|walks their office through it. Reschedules if needed; collects F2F and PAK after the visit",
   "Paperwork is with the doctor's office|for the evaluation", "varies", "--accent"),
  ("Qualifications", "Checks every document is here and correct, and requests corrections. PT and ATP|evaluations run alongside — only when needed. ATP is scheduled 2–3 weeks out",
   "Reviewing the provider's paperwork —|say exactly what's outstanding", "varies", "--accent"),
@@ -295,7 +302,7 @@ b.append(f'<text x="{SX - 44}" y="{Y0 + RH + 16}" text-anchor="middle" transform
 bx = 690
 b.append(f'<path d="M{bx} {Y0 + 2*RH} H{bx + 6} M{bx} {Y0 + 2*RH} V{Y0 + 4*RH - 8} H{bx + 6}" stroke="var(--pol-ink)" stroke-width="2.5" fill="none"/>')
 b.append(f'<rect x="{bx - 10}" y="{Y0 + 4*RH - 8}" width="10" height="1" fill="none"/>')
-b.append(fbox(96, H - 58, 590, 40, "**Order verification — model, seat, joystick, color. Any time from Qualifications|through PAR, but it must be done before the order is placed — §4-8", "pol"))
+b.append(fbox(96, H - 58, 590, 40, "**Order verification — model, seat, joystick, color. Any time from Qualifications|through PAR, but it must be done before the order is placed — §5-7", "pol"))
 b.append(f'<path d="M{bx} {Y0 + 3*RH + 20} H{686}" stroke="none"/>')
 b.append(f'<text x="{bx - 8}" y="{Y0 + 3*RH - 6}" text-anchor="middle" transform="rotate(-90 {bx - 8} {Y0 + 3*RH - 6})" '
          f'style="font:700 10.5px \'IBM Plex Mono\',monospace;fill:var(--pol-ink)">ORDER VERIFICATION</text>')

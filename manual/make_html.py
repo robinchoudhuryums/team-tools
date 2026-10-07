@@ -8,6 +8,21 @@ import re, sys, html, markdown
 sys.path.insert(0, '.')
 from numbering import display as dnum, old_forms
 
+# The chapter colours and icons — data/chapter_style.json is the one source
+# (operator 2026-10-07); the palette and every icon below are drawn from it.
+import json as _jcs
+CHAPTERS = _jcs.load(open("data/chapter_style.json", encoding="utf-8"))
+def chapter_icon(part, cls, size=None):
+    """The chapter's icon as inline SVG (decorative), or "" for an appendix."""
+    c = CHAPTERS["parts"].get(part)
+    if not c:
+        return ""
+    wh = f' width="{size}" height="{size}"' if size else ""
+    return (f'<svg class="chi {cls}" viewBox="0 0 24 24"{wh} aria-hidden="true" focusable="false">'
+            f'{CHAPTERS["icons"][c["icon"]]}</svg>')
+def palette(theme):
+    return " ".join(f'--{k}:{v[theme]};' for k, v in CHAPTERS["parts"].items())
+
 SRC, DST = sys.argv[1], sys.argv[2]
 raw = open(SRC).read()
 
@@ -41,6 +56,8 @@ def tag_callouts(text):
 
 raw = tag_callouts(raw)
 body = markdown.markdown(raw, extensions=["tables", "sane_lists", "attr_list", "md_in_html"])
+# a "☐ item" list is a checklist: the box replaces the bullet
+body = re.sub(r"<li>☐\s*", '<li class="chk">☐ ', body)
 
 # Anchor every §-numbered heading and collect navigation entries.
 nav, part = [], None
@@ -54,7 +71,7 @@ def anchor(m):
     sec = re.match(r"(§[\w\-.]+)\s", plain)
     if lvl == "1":
         PART_LABEL_PENDING[0] = re.sub(r"<[^>]+>", "", txt)
-        pm = re.match(r"(Part (\d+)|Appendix ([A-Z]))", plain)
+        pm = re.match(r"((?:Part|Chapter) (\d+)|Appendix ([A-Z]))", plain)
         if pm and pm.group(2):
             part = "p" + pm.group(2)
         elif pm and pm.group(3):
@@ -67,7 +84,10 @@ def anchor(m):
         SEEN_H1[part] = SEEN_H1.get(part, 0) + 1
         nav.append((1, plain, hid, part))
         PART_LABEL[part] = re.sub(r"\s*—\s*", " · ", plain.replace("#", "").strip())
-        return f'<h1 id="{hid}" class="part {part}">{txt}</h1>'
+        badge = chapter_icon(part, "pic")
+        if badge:
+            badge = f'<span class="pbadge">{badge}</span>'
+        return f'<h1 id="{hid}" class="part {part}">{badge}<span class="pt">{txt}</span></h1>'
     if sec:
         sid = sec.group(1)[1:].replace(".", "_")
         shown = dnum(sec.group(1))
@@ -77,7 +97,7 @@ def anchor(m):
         if lvl == "2":
             nav.append((2, plain, sid, part))
             eb = PART_LABEL.get(part, "")
-            pre = (f'<div class="eyerow"><span class="eyebrow {part}">{eb}</span>'
+            pre = (f'<div class="eyerow"><span class="eyebrow {part}">{chapter_icon(part, "eic", 12)}{eb}</span>'
                    f'<button class="pinbtn" data-id="{sid}" title="Pin this section">+ Pin</button></div>'
                    ) if eb and not sid.startswith("C-") else ""
             return (pre + f'<h{lvl} id="{sid}">{txt}'
@@ -89,61 +109,97 @@ def anchor(m):
     return m.group(0)
 
 body = re.sub(r"<h([1-4])>(.*?)</h\1>", anchor, body)
-body = body.replace('<h2 id="F-1">',
+_ix_letters = re.findall(r'<h3 id="ix-([0-9a-z])">([^<]*)</h3>', body)
+body = body.replace('<h2 id="E-1">',
     '<div id="ixwrap"><input id="ixq" type="search" placeholder="Filter the index…" '
-    'autocomplete="off" aria-label="Filter index"></div><h2 id="F-1">', 1)
+    'autocomplete="off" aria-label="Filter index"><div class="ixaz" role="navigation" aria-label="Index letters">'
+    + "".join(f'<a href="#ix-{k}">{html.escape(t)}</a>' for k, t in _ix_letters)
+    + '</div></div><h2 id="E-1">', 1)
 from bs4 import BeautifulSoup as _BS
 
 def classify_tables(html):
+    """Every table stays a table. It used to become a stacked key -> value list when
+    it had two short columns — the index letters G/J/Q/V, the 2.3.1 specifications,
+    the 5.2 check/where list and the 7.6 symptom/action table all lost their columns
+    that way, in the HTML only (operator 2026-10-06). Two conventions are drawn:
+      * a table whose first header is "Step" is a STEP table — numbered, with an
+        arrow down to the next step;
+      * a header that opens with \u2713 or \u2717 tints its column — green for what
+        to do or say, red for what not to (the Do's & Don'ts tables).
+    Word (render_docx.js) and the Reference renderer (kbMd_) draw the same two."""
     soup = _BS(html, "html.parser")
-    stats = {"kv": 0, "compact": 0, "matrix": 0}
+    stats = {"compact": 0, "matrix": 0, "steps": 0, "dodont": 0}
     for tbl in soup.find_all("table"):
         if tbl.get("class") and "icons" in tbl.get("class"):
             continue
         head = tbl.find("thead")
-        heads = [th.get_text(" ", strip=True) for th in head.find_all("th")] if head else []
+        ths = head.find_all("th") if head else []
+        heads = [th.get_text(" ", strip=True) for th in ths]
         body_rows = tbl.find("tbody").find_all("tr") if tbl.find("tbody") else []
         ncol = max([len(heads)] + [len(r.find_all("td")) for r in body_rows] or [0])
         nrow = len(body_rows)
-        first_lens, second_lens = [], []
-        for r in body_rows:
-            cells = r.find_all("td")
-            if cells:
-                first_lens.append(len(cells[0].get_text(" ", strip=True)))
-            if len(cells) > 1:
-                second_lens.append(len(cells[1].get_text(" ", strip=True)))
-        short_first = (max(first_lens) if first_lens else 99) <= 34
-        generic_head = all(h.lower() in (
-            "", "field", "value", "item", "detail", "details", "what it is", "note", "notes",
-            "meaning", "what it means", "covers", "requirement") for h in heads)
-
-        if ncol == 2 and nrow <= 9 and short_first:
-            dl = soup.new_tag("dl")
-            dl["class"] = "kv"
-            if heads and not generic_head and len(heads) == 2:
-                cap = soup.new_tag("p")
-                cap["class"] = "kvh"
-                cap.string = f"{heads[0]} \u2192 {heads[1]}"
-                dl.append(cap)
-            for r in body_rows:
-                cells = r.find_all("td")
-                dt = soup.new_tag("dt")
-                for ch in list(cells[0].contents):
-                    dt.append(ch.extract())
-                dd = soup.new_tag("dd")
-                if len(cells) > 1:
-                    for ch in list(cells[1].contents):
-                        dd.append(ch.extract())
-                dl.append(dt)
-                dl.append(dd)
-            tbl.replace_with(dl)
-            stats["kv"] += 1
-            continue
-
         cls = "matrix" if (ncol >= 4 or nrow >= 12) else "compact"
-        tbl["class"] = (tbl.get("class") or []) + [cls]
+        extra = []
+        if heads and heads[0].strip().lower() == "step":
+            extra.append("steps")
+            stats["steps"] += 1
+        tone = {i: ("ok" if h.startswith("\u2713") else "no")
+                for i, h in enumerate(heads) if h[:1] in ("\u2713", "\u2717")}
+        if tone:
+            extra.append("dodont")
+            stats["dodont"] += 1
+            for i, t in tone.items():
+                ths[i]["class"] = (ths[i].get("class") or []) + [t]
+            for r in body_rows:
+                tds = r.find_all("td")
+                for i, t in tone.items():
+                    if i < len(tds):
+                        tds[i]["class"] = (tds[i].get("class") or []) + [t]
+        tbl["class"] = (tbl.get("class") or []) + [cls] + extra
         stats[cls] += 1
-    print(f"tables: {stats['kv']} key/value  {stats['compact']} compact  {stats['matrix']} matrix")
+    print(f"tables: {stats['compact']} compact  {stats['matrix']} matrix  "
+          f"({stats['steps']} step, {stats['dodont']} do/don't)")
+    return str(soup)
+
+
+import json as _json0
+from roles import anchor as _role_anchor
+_ROLE_ID = {r["role"]: _role_anchor(r) for r in _json0.load(open("data/roster.json"))}
+
+
+def anchor_roles(html):
+    """Each row of the B.1 directory gets its role's id, so a role link lands on the
+    PERSON — and its preview shows that row — instead of the top of the table."""
+    soup = _BS(html, "html.parser")
+    h = soup.find(id="B-1")
+    tbl = h.find_next("table") if h else None
+    n = 0
+    if tbl:
+        for tr in (tbl.find("tbody").find_all("tr") if tbl.find("tbody") else []):
+            td = tr.find("td")
+            rid = _ROLE_ID.get(td.get_text(" ", strip=True)) if td else None
+            if rid:
+                tr["id"] = rid
+                n += 1
+    print(f"directory    : {n} role rows anchored")
+    return str(soup)
+
+
+def wrap_notes(html):
+    """A section's footnotes (footnotes.py marks them <!--notes-->) set in small type."""
+    soup = _BS(html, "html.parser")
+    from bs4 import Comment
+    for c in [x for x in soup.find_all(string=lambda t: isinstance(t, Comment)) if x.strip() == "notes"]:
+        box = soup.new_tag("div")
+        box["class"] = ["fnotes"]
+        node = c.next_sibling
+        c.replace_with(box)
+        while node is not None:
+            nxt = node.next_sibling
+            if getattr(node, "name", None) not in (None, "p"):
+                break
+            box.append(node.extract())
+            node = nxt
     return str(soup)
 
 
@@ -169,6 +225,11 @@ def wrap_cards(html):
                 break
             sec.append(node.extract())
             node = nxt
+        # the CARD chip carries its chapter's icon (the marker names the chapter)
+        chip = sec.find("span", class_="card")
+        ic = chapter_icon(part, "cic", 14)
+        if chip is not None and ic:
+            chip.insert(0, _BS(ic, "html.parser"))
         # group headings with what follows them
         kids = [k for k in sec.children if getattr(k, "name", None) or str(k).strip()]
         group = None
@@ -222,7 +283,11 @@ def wrap_cards(html):
             if num:
                 title = title.replace(num.get_text(strip=True), "", 1).strip().rstrip("#").strip()
             li = soup.new_tag("li"); li["class"] = [part]
-            sw = soup.new_tag("i"); sw["class"] = ["sw"]; li.append(sw)
+            sw = soup.new_tag("i"); sw["class"] = ["sw"]
+            ic = chapter_icon(part, "tic", 16)
+            if ic:
+                sw.append(_BS(ic, "html.parser"))
+            li.append(sw)
             n = soup.new_tag("span"); n["class"] = ["cn"]
             n.string = (num.get_text(strip=True) if num else "").replace("CARD ", "")
             li.append(n)
@@ -259,6 +324,11 @@ def wrap_cards(html):
 
 body = wrap_cards(body)
 body = classify_tables(body)
+body = anchor_roles(body)
+body = wrap_notes(body)
+# the front page is its own panel: build.py brackets it with <!--start--> markers
+body = body.replace("<!--start-->", '<section class="start" aria-label="How to use this manual">', 1)
+body = body.replace("<!--/start-->", "</section>", 1)
 body = re.sub(r"<table", '<div class="tw"><table', body)
 body = re.sub(r"</table>", "</table></div>", body)
 
@@ -312,6 +382,8 @@ print(f"aliases      : {sum(len(v) for v in ALIASES.values())} phrases "
 
 # searchable records: id, label, body snippet
 import json as _json, html as _html
+# the October 2026 renumber: a section is also found by the number it had before
+FORMERLY = _json.load(open("data/renumber-2026-10.json", encoding="utf-8"))["formerly"]
 SEARCH = []
 for m in re.finditer(r'<h([23]) id="([\w_.-]+)">(.*?)</h\1>(.*?)(?=<h[123]|\Z)', body, re.S):
     label = re.sub(r'<a\b[^>]*class="ah"[^>]*>.*?</a>', "", m.group(3))
@@ -326,6 +398,9 @@ for m in re.finditer(r'<h([23]) id="([\w_.-]+)">(.*?)</h\1>(.*?)(?=<h[123]|\Z)',
     sid = m.group(2)
     src = "§" + sid.replace("_", ".") if re.match(r"^[0-9A-Z]+-", sid) else ""
     nums = old_forms(src) if src else []
+    if src in FORMERLY:
+        was = FORMERLY[src]
+        nums = nums + [f for f in old_forms(was) if f not in nums] + ["formerly " + dnum(was)]
     SEARCH.append({"i": sid, "t": label, "b": txt,
                    "a": " ".join(nums),
                    "p": ALIASES.get(sid, [])})
@@ -340,7 +415,7 @@ for lvl, txt, tid, p in nav:
         if open_part is not None:
             navhtml.append("</div></details>")
         navhtml.append(f'<details class="ng {p or ""}"><summary class="n1 {p or ""}">'
-                       f'<a href="#{tid}">{html.escape(html.unescape(txt))}</a></summary><div class="ngb">')
+                       f'{chapter_icon(p, "nic", 15)}<a href="#{tid}">{html.escape(html.unescape(txt))}</a></summary><div class="ngb">')
         open_part = p
     else:
         t2 = html.unescape(txt)
@@ -364,7 +439,8 @@ TPL = r"""<!DOCTYPE html>
 :root{
   --navy:#1C3A5E; --accent:#3D72A4; --tint:#EBF2FA; --ink:#1F1F1F;
   --muted:#5D6B7A; --rule:#DCE3EB; --bg:#FFFFFF; --panel:#F7F9FC;
-  --p0:#1C3A5E; --p1:#3E5C76; --p2:#2E7D5B; --p3:#A34A3C; --p4:#3D72A4; --p5:#8A6D1B; --p6:#5C7A4A; --p7:#2E7D8C; --p8:#7D4E6B; --p9:#A0662B; --p10:#5B4B8A;
+  __PAL_LIGHT__
+  --hit:#2E7D5B; --pin:#8A6D1B;
   --crit-bg:#FDECEA; --crit-ink:#B3261E;
   --pol-bg:#EBF2FA;  --pol-ink:#1C3A5E;
   --watch-bg:#FFF3CD;--watch-ink:#856404;
@@ -374,7 +450,8 @@ TPL = r"""<!DOCTYPE html>
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --navy:#9EC2E6; --accent:#7FB0DC; --tint:#17222E; --ink:#E6EAEF;
   --muted:#9AA7B4; --rule:#2A3947; --bg:#0F161D; --panel:#141D26;
-  --p0:#9EC2E6; --p1:#A8BDD4; --p2:#63BE95; --p3:#DD8878; --p4:#7FB0DC; --p5:#D6B45C; --p6:#9CBE86; --p7:#6FC0CE; --p8:#C48FB4; --p9:#E0A06A; --p10:#A38FD6;
+  __PAL_DARK__
+  --hit:#63BE95; --pin:#D6B45C;
   --crit-bg:#2C1512; --crit-ink:#F29E95;
   --pol-bg:#152230;  --pol-ink:#9EC2E6;
   --watch-bg:#2C2410;--watch-ink:#E5C978;
@@ -384,7 +461,8 @@ TPL = r"""<!DOCTYPE html>
 :root[data-theme="dark"]{
   --navy:#9EC2E6; --accent:#7FB0DC; --tint:#17222E; --ink:#E6EAEF;
   --muted:#9AA7B4; --rule:#2A3947; --bg:#0F161D; --panel:#141D26;
-  --p0:#9EC2E6; --p1:#A8BDD4; --p2:#63BE95; --p3:#DD8878; --p4:#7FB0DC; --p5:#D6B45C; --p6:#9CBE86; --p7:#6FC0CE; --p8:#C48FB4; --p9:#E0A06A; --p10:#A38FD6;
+  __PAL_DARK__
+  --hit:#63BE95; --pin:#D6B45C;
   --crit-bg:#2C1512; --crit-ink:#F29E95; --pol-bg:#152230; --pol-ink:#9EC2E6;
   --watch-bg:#2C2410;--watch-ink:#E5C978; --scr-bg:#12262A; --scr-ink:#7FCCC6;
   --note-bg:#1A222B; --note-ink:#A8B3BE; --thead-ink:#0F161D;
@@ -417,15 +495,21 @@ nav a:hover{color:var(--accent)}
 nav a.n1{font-weight:600;margin-top:16px;font-size:14px;color:var(--navy)}
 nav a.n1.p0{border-left-color:var(--p0)} nav a.n1.p1{border-left-color:var(--p1)}
 nav a.n1.p2{border-left-color:var(--p2)} nav a.n1.p3{border-left-color:var(--p3)}
-nav a.n1.p4{border-left-color:var(--p4)}
+nav a.n1.p4{border-left-color:var(--p4)} nav a.n1.p5{border-left-color:var(--p5)}
+nav a.n1.p6{border-left-color:var(--p6)} nav a.n1.p7{border-left-color:var(--p7)}
+nav a.n1.p8{border-left-color:var(--p8)} nav a.n1.p9{border-left-color:var(--p9)}
+nav a.n1.p10{border-left-color:var(--p10)}
 nav a.n1[class*="ap"]{border-left-color:var(--muted)}
 nav a.n2{color:var(--muted);padding-left:24px}
 main{padding:44px 52px 120px;min-width:0;max-width:none}
 h1.part{font-size:30px;line-height:1.2;margin:72px 0 28px;padding:0 0 12px 18px;
  border-left:6px solid var(--navy);border-bottom:1px solid var(--rule);color:var(--navy)}
-h1.part.p0{border-left-color:var(--p0)} h1.part.p1{border-left-color:var(--p1)}
-h1.part.p2{border-left-color:var(--p2)} h1.part.p3{border-left-color:var(--p3)}
-h1.part.p4{border-left-color:var(--p4)}
+h1.part.p0{border-left-color:var(--p0);color:var(--p0)} h1.part.p1{border-left-color:var(--p1);color:var(--p1)}
+h1.part.p2{border-left-color:var(--p2);color:var(--p2)} h1.part.p3{border-left-color:var(--p3);color:var(--p3)}
+h1.part.p4{border-left-color:var(--p4);color:var(--p4)} h1.part.p5{border-left-color:var(--p5);color:var(--p5)}
+h1.part.p6{border-left-color:var(--p6);color:var(--p6)} h1.part.p7{border-left-color:var(--p7);color:var(--p7)}
+h1.part.p8{border-left-color:var(--p8);color:var(--p8)} h1.part.p9{border-left-color:var(--p9);color:var(--p9)}
+h1.part.p10{border-left-color:var(--p10);color:var(--p10)}
 h1:first-of-type{margin-top:0}
 h2{font-size:21px;color:var(--navy);margin:44px 0 12px;line-height:1.25}
 h3{font-size:17px;color:var(--accent);margin:30px 0 10px}
@@ -507,7 +591,7 @@ nav summary.p2{border-left-color:var(--p2)} nav summary.p3{border-left-color:var
 nav summary.p4{border-left-color:var(--p4)} nav summary.p5{border-left-color:var(--p5)}
 nav summary.p6{border-left-color:var(--p6)} nav summary.p7{border-left-color:var(--p7)}
 nav summary.p8{border-left-color:var(--p8)} nav summary.p9{border-left-color:var(--p9)}
-nav summary.p10{border-left-color:var(--navy)}
+nav summary.p10{border-left-color:var(--p10)}
 nav summary[class*="ap"]{border-left-color:var(--muted)}
 nav .ngb{padding-left:4px}
 nav a.n2.cur{color:var(--accent);border-left-color:var(--accent);background:var(--tint)}
@@ -751,13 +835,7 @@ section.qrc > .qrf{margin-top:auto;padding-top:20px}
 ol.toclist{list-style:none;margin:0;padding:0}
 ol.toclist li{display:grid;grid-template-columns:14px 44px 1fr 40px;align-items:baseline;
  gap:0 12px;padding:9px 0;border-bottom:1px solid var(--rule);font-size:15.5px}
-ol.toclist .sw{width:11px;height:11px;background:var(--navy);display:inline-block}
-ol.toclist li.p0 .sw{background:var(--p0)} ol.toclist li.p1 .sw{background:var(--p1)}
-ol.toclist li.p2 .sw{background:var(--p2)} ol.toclist li.p3 .sw{background:var(--p3)}
-ol.toclist li.p4 .sw{background:var(--p4)} ol.toclist li.p5 .sw{background:var(--p5)}
-ol.toclist li.p6 .sw{background:var(--p6)} ol.toclist li.p7 .sw{background:var(--p7)}
-ol.toclist li.p8 .sw{background:var(--p8)} ol.toclist li.p9 .sw{background:var(--p9)}
-ol.toclist li.p10 .sw{background:var(--p10)}
+ol.toclist .sw{display:inline-block}
 ol.toclist .cn,ol.toclist .cp{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:13px;
  color:var(--muted)}
 ol.toclist .cp{text-align:right}
@@ -789,19 +867,19 @@ ol.toclist .cp{text-align:right}
 #res .alh{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:10.5px;font-weight:600;
  letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:2px 0 6px}
 #res .alh2{margin-top:14px;padding-top:10px;border-top:1px solid var(--rule)}
-#res a.ali{border:1px solid var(--p2);border-left-width:3px;padding:9px 10px;margin-bottom:7px}
+#res a.ali{border:1px solid var(--hit);border-left-width:3px;padding:9px 10px;margin-bottom:7px}
 #res .alc{display:inline-block;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:9.5px;
- font-weight:600;letter-spacing:.1em;color:#fff;background:var(--p2);padding:2px 6px;
+ font-weight:600;letter-spacing:.1em;color:#fff;background:var(--hit);padding:2px 6px;
  border-radius:2px;margin-bottom:5px}
 #res .sibs{display:block;font-size:11.5px;color:var(--muted);margin-top:5px}
 #res .chip{display:inline-block;border:1px solid var(--rule);border-radius:10px;padding:1px 7px;
  margin:2px 3px 0 0;font-size:11px}
-.misscap{margin-top:10px;padding:11px 12px;border:1px dashed var(--p5);border-radius:4px}
+.misscap{margin-top:10px;padding:11px 12px;border:1px dashed var(--pin);border-radius:4px}
 .misscap .mch{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:10.5px;font-weight:600;
- letter-spacing:.1em;text-transform:uppercase;color:var(--p5);margin-bottom:6px}
+ letter-spacing:.1em;text-transform:uppercase;color:var(--pin);margin-bottom:6px}
 .misscap p{font-size:12px;color:var(--muted);line-height:1.45;margin:0 0 8px}
-.misscap button{font:inherit;font-size:12px;padding:5px 10px;border:1px solid var(--p5);
- background:var(--bg);color:var(--p5);border-radius:3px;cursor:pointer;width:100%}
+.misscap button{font:inherit;font-size:12px;padding:5px 10px;border:1px solid var(--pin);
+ background:var(--bg);color:var(--pin);border-radius:3px;cursor:pointer;width:100%}
 .misscap button:disabled{opacity:.55;cursor:default}
 .mcnote{font-size:11.5px;color:var(--muted);margin-top:7px}
 
@@ -812,7 +890,7 @@ ol.toclist .cp{text-align:right}
  letter-spacing:.08em;color:var(--muted);background:var(--bg);border:1px solid var(--rule);
  border-radius:3px;padding:2px 7px;cursor:pointer;opacity:0;transition:opacity .12s}
 .eyerow:hover .pinbtn,.pinbtn:focus{opacity:1}
-.pinbtn.on{opacity:1;color:var(--p5);border-color:var(--p5)}
+.pinbtn.on{opacity:1;color:var(--pin);border-color:var(--pin)}
 #pinbox[hidden]{display:none}
 #pinbox{margin:0 0 16px}
 #pinbox .pbh{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:10.5px;font-weight:600;
@@ -820,7 +898,7 @@ ol.toclist .cp{text-align:right}
 #pinbox .pbh2{margin-top:14px}
 #pinlist a,#recentlist a{display:flex;align-items:baseline;gap:6px;font-size:12.5px;
  text-decoration:none;color:var(--ink);padding:4px 6px;line-height:1.3}
-#pinlist a{background:var(--bg);border-left:3px solid var(--p5);margin-bottom:3px}
+#pinlist a{background:var(--bg);border-left:3px solid var(--pin);margin-bottom:3px}
 #recentlist a{color:var(--muted)}
 #pinlist a:hover,#recentlist a:hover{color:var(--accent)}
 #pinlist .x{margin-left:auto;color:var(--muted);font-size:12px;padding:0 3px}
@@ -897,10 +975,88 @@ ol.toclist .cp{text-align:right}
 #xpop .xpf a{font-weight:600;color:var(--accent);text-decoration:none}
 @media print{#xpop{display:none!important}}
 a:focus-visible,nav a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ============================================ manual-update Phase 1 (2026-10-06) === */
+nav .cls{font-size:11.5px;color:var(--muted);margin:-8px 0 14px;line-height:1.4}
+/* the front page: a distinct "start here" panel */
+section.start{max-width:80ch;margin:8px 0 48px;padding:26px 30px 10px;background:var(--panel);
+ border:1px solid var(--rule);border-top:5px solid var(--navy);border-radius:0 0 6px 6px}
+section.start > h2{margin-top:0;font-size:28px}
+section.start > h3{margin-top:26px}
+section.start > hr{display:none}
+section.start .cb{margin-bottom:10px}
+/* step tables: numbered steps with an arrow down to the next */
+table.steps tbody tr:nth-child(even){background:transparent}
+table.steps td:first-child{width:3.4em;text-align:center;font-weight:700;color:var(--accent);
+ position:relative;vertical-align:middle}
+table.steps tbody tr:not(:last-child) td:first-child::after{content:"\2193";position:absolute;
+ left:50%;bottom:-.8em;transform:translateX(-50%);z-index:1;font-size:15px;line-height:1.3;
+ color:var(--muted);background:var(--bg);padding:0 3px}
+/* checklist items: the box stands where the bullet was */
+li.chk{list-style:none;margin-left:-1.15em}
+/* do / don't columns */
+:root{--ok-bg:#E7F4EC;--ok-ink:#1E6B43;--no-bg:#FCEBEA;--no-ink:#A1281F}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--ok-bg:#12271B;--ok-ink:#7FCFA0;--no-bg:#2C1512;--no-ink:#F29E95}}
+:root[data-theme="dark"]{--ok-bg:#12271B;--ok-ink:#7FCFA0;--no-bg:#2C1512;--no-ink:#F29E95}
+table.dodont th.ok{color:var(--ok-ink);border-bottom-color:var(--ok-ink)}
+table.dodont th.no{color:var(--no-ink);border-bottom-color:var(--no-ink)}
+/* a wider do/don't table is a matrix, whose header is navy: there the column's own tint carries the header */
+table.matrix.dodont th.ok{background:var(--ok-bg);color:var(--ok-ink)}
+table.matrix.dodont th.no{background:var(--no-bg);color:var(--no-ink)}
+table.dodont td.ok{background:var(--ok-bg)}
+table.dodont td.no{background:var(--no-bg)}
+table.dodont tbody tr:hover td{filter:brightness(.97)}
+/* footnotes */
+.fnotes{max-width:74ch;margin:6px 0 24px;padding-top:8px;border-top:1px solid var(--rule);
+ font-size:13px;line-height:1.5;color:var(--muted)}
+.fnotes p{margin:0 0 4px}
+.fnotes p:first-child{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase}
+/* the directory: a role link lands on its row */
+tr:target td{animation:flash 1.6s ease-out}
+/* index: a letter bar that stays in reach while the index scrolls */
+.ixaz{display:flex;flex-wrap:wrap;gap:2px 4px;margin-top:8px}
+.ixaz a{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12.5px;font-weight:600;
+ text-decoration:none;color:var(--accent);padding:2px 6px;border:1px solid var(--rule);border-radius:3px}
+.ixaz a:hover{background:var(--tint)}
+h3[id^="ix-"]{scroll-margin-top:150px}
+#ixwrap{top:45px}            /* under the sticky breadcrumb, not behind it */
+@media (max-width:900px){#ixwrap{top:86px}}
+@media print{.ixaz{display:none}}
+/* ===================================== chapter icons (operator 2026-10-07) === */
+/* The icon is data/chapter_style.json's, drawn in currentColor. A heading's
+   badge is the chapter colour with the page colour inside, so it reads in both
+   themes; everywhere else the icon is simply the chapter colour. */
+svg.chi{display:block;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+h1.part{display:flex;align-items:center;gap:16px}
+h1.part .pbadge{flex:none;display:inline-flex;align-items:center;justify-content:center;
+ width:1.15em;height:1.15em;border-radius:50%;background:currentColor}
+h1.part .pbadge svg{width:.62em;height:.62em;color:var(--bg)}
+nav details.ng > summary .nic{flex:none;color:var(--nacc,var(--navy))}
+.eyebrow .eic{display:inline-block;vertical-align:-1px;margin-right:6px}
+.sn.card .cic{display:inline-block;vertical-align:-.1em;margin-right:.4em}
+ol.toclist .sw{width:16px;height:16px;color:var(--navy);align-self:center}
+ol.toclist li.p0 .sw{color:var(--p0)} ol.toclist li.p1 .sw{color:var(--p1)} ol.toclist li.p2 .sw{color:var(--p2)}
+ol.toclist li.p3 .sw{color:var(--p3)} ol.toclist li.p4 .sw{color:var(--p4)} ol.toclist li.p5 .sw{color:var(--p5)}
+ol.toclist li.p6 .sw{color:var(--p6)} ol.toclist li.p7 .sw{color:var(--p7)} ol.toclist li.p8 .sw{color:var(--p8)}
+ol.toclist li.p9 .sw{color:var(--p9)} ol.toclist li.p10 .sw{color:var(--p10)} 
+/* ============================ heading hierarchy (manual update D5, 2026-10-07) === */
+/* A section's number is a chip in its chapter's colour and the section heading
+   carries a thinner left rule than the chapter's; a sub-section's number takes the
+   colour as text. The chapter comes from the heading's id (3-7 is Chapter 3), so
+   the source needs no markup. The cards keep their own heading. */
+h2,h3{--hc:var(--navy)}
+h2[id^="0-"],h3[id^="0-"]{--hc:var(--p0)} h2[id^="1-"],h3[id^="1-"]{--hc:var(--p1)} h2[id^="2-"],h3[id^="2-"]{--hc:var(--p2)} h2[id^="3-"],h3[id^="3-"]{--hc:var(--p3)} h2[id^="4-"],h3[id^="4-"]{--hc:var(--p4)} h2[id^="5-"],h3[id^="5-"]{--hc:var(--p5)} h2[id^="6-"],h3[id^="6-"]{--hc:var(--p6)} h2[id^="7-"],h3[id^="7-"]{--hc:var(--p7)} h2[id^="8-"],h3[id^="8-"]{--hc:var(--p8)} h2[id^="9-"],h3[id^="9-"]{--hc:var(--p9)} h2[id^="10-"],h3[id^="10-"]{--hc:var(--p10)}
+h2[id^="A-"],h3[id^="A-"],h2[id^="B-"],h3[id^="B-"],h2[id^="C-"],h3[id^="C-"]{--hc:var(--muted)}
+h2{border-left:4px solid var(--hc);padding-left:14px}
+h2 .sn{display:inline-block;padding:.2em .55em;border-radius:.3em;background:var(--hc);color:var(--bg);
+ font-weight:600;letter-spacing:.02em;margin-right:.35em}
+h3 .sn{color:var(--hc)}
+section.qrc h2{border-left:0;padding-left:0} section.qrc h2 .sn{margin-right:0}
 </style></head>
 <body><button class="navtoggle" id="nt">☰ &nbsp;Contents &amp; search</button><div class="wrap">
 <nav><div class="brand">UniversalMed Supply<br>CSR Procedures Manual</div>
 <div class="ver">v3.0 draft &middot; built 09/15/2026</div>
+<div class="cls">Confidential &mdash; Internal Use Only &middot; Owner: __OWNER__</div>
 <input id="q" type="search" placeholder="Search the manual…" autocomplete="off" aria-label="Search">
 <button id="openrouter">What did the caller say?</button>
 <div id="pinbox" hidden><div class="pbh">Pinned <span id="pincount"></span></div><div id="pinlist"></div>
@@ -1020,7 +1176,7 @@ dr.addEventListener('click',()=>setD('comfortable'));
 // index filter
 const ixq=document.getElementById('ixq');
 if(ixq){
- const start=document.getElementById('F-1');
+ const start=document.getElementById('E-1');
  const rows=[];let n=start;
  while(n=n.nextElementSibling){ if(n.tagName==='H1')break;
   if(n.tagName==='H3')rows.push({h:n,tr:[]});
@@ -1201,6 +1357,16 @@ const coarse=window.matchMedia('(pointer: coarse)').matches;
 let xpShow=null,xpHide=null,xpFor=null;
 function sectionOpening(id){
   const h=document.getElementById(id); if(!h) return null;
+  if(h.tagName==='TR'){
+    // a directory row: the table's header and that one row
+    const t=h.closest('table'), tw=document.createElement('div'), nt=document.createElement('table');
+    tw.className='tw'; nt.className=t.className;
+    if(t.tHead) nt.appendChild(t.tHead.cloneNode(true));
+    const tb=document.createElement('tbody'), r=h.cloneNode(true); r.removeAttribute('id');
+    tb.appendChild(r); nt.appendChild(tb); tw.appendChild(nt);
+    const frag=document.createDocumentFragment(); frag.appendChild(tw);
+    return {h,frag,row:true};
+  }
   const lvl=+h.tagName.slice(1)||2, frag=document.createDocumentFragment();
   let n=h.nextElementSibling, taken=0;
   while(n&&taken<4){
@@ -1220,9 +1386,10 @@ function partOf(h){
 function showPreview(a){
   const id=(a.getAttribute('href')||'').slice(1); const got=sectionOpening(id);
   if(!got){xpop.hidden=true;return;}
-  const part=partOf(got.h), key=part&&[...part.classList].find(c=>PARTC[c]);
+  const part=partOf(got.row?got.h.closest('.tw'):got.h), key=part&&[...part.classList].find(c=>PARTC[c]);
   xpop.style.setProperty('--pacc', key?`var(${PARTC[key]})`:'var(--accent)');
-  const title=got.h.textContent.replace(/#$/,'').replace(/\+ Pin|\u2713 Pinned/,'').trim();
+  const title=got.row?got.h.cells[0].textContent.trim()
+    :got.h.textContent.replace(/#$/,'').replace(/\+ Pin|\u2713 Pinned/,'').trim();
   xpop.innerHTML=`<div class="xph"><span class="xpt"></span><span class="xpp"></span></div>`+
     `<div class="xpb"></div><div class="xpf"><span>Esc to close</span><a href="#${id}">Go to section \u2192</a></div>`;
   xpop.querySelector('.xpt').textContent=title;
@@ -1290,6 +1457,7 @@ document.addEventListener('keydown',e=>{
 </script>
 </body></html>"""
 
-open(DST, "w").write(TPL.replace("__NAV__", "\n".join(navhtml)).replace("__BODY__", body).replace("__SEARCH__", _json.dumps(SEARCH, ensure_ascii=False)).replace("__ROUTER__", _json.dumps(ROUTER, ensure_ascii=False)))
+OWNER = re.search(r'^OWNER = "([^"]+)"', open("build.py").read(), re.M).group(1)
+open(DST, "w").write(TPL.replace("__PAL_LIGHT__", palette("light")).replace("__PAL_DARK__", palette("dark")).replace("__OWNER__", html.escape(OWNER)).replace("__NAV__", "\n".join(navhtml)).replace("__BODY__", body).replace("__SEARCH__", _json.dumps(SEARCH, ensure_ascii=False)).replace("__ROUTER__", _json.dumps(ROUTER, ensure_ascii=False)))
 print(f"wrote {DST}  ({len(open(DST).read()):,} bytes)")
 print(f"nav entries: {len(nav)}   callouts styled: {body.count('class=\"cb ')}")

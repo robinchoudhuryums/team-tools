@@ -4915,7 +4915,7 @@ test('M1 DOM: the Manual dialog — Check shows the plan and every skipped artic
   assert.strictEqual(doc.getElementById('kb-man-import').getAttribute('onclick'), 'kbManualRun_(false)');
   const run = h.read('kbManualRun_');
   const opts = [...ov.querySelectorAll('#kb-man-dept option')].map((o) => o.textContent);
-  assert.deepStrictEqual(opts, ['Every part (3 drafts)', 'Part 2 — Manual Mobility (1)', 'Part 10 — Billing & Insurance (1)', 'Appendix C — Quick Reference Cards (1)'], 'only the manual’s DRAFTS, by part, in order — never the hand-written draft');
+  assert.deepStrictEqual(opts, ['Every chapter (3 drafts)', 'Part 2 — Manual Mobility (1)', 'Part 10 — Billing & Insurance (1)', 'Appendix C — Quick Reference Cards (1)'], 'only the manual’s DRAFTS, by part, in order — never the hand-written draft');
   const imp = doc.getElementById('kb-man-import');
   assert.strictEqual(imp.disabled, true, 'Import starts locked');
   // Check with no file chosen: said, and no RPC.
@@ -5008,7 +5008,7 @@ test('M2 DOM: a manual section opens its WHOLE PART — one fetch per part, a cl
   assert.ok(h.$('#kb-man-sec-man-0-10 h3') && /0\.10\.1 Trx Type/.test(h.$('#kb-man-sec-man-0-10 h3').textContent), 'a section’s own ## demotes under its title');
   assert.strictEqual(h.$$('#kb-main .kb-man-fb').length, 2, 'a feedback bar per section');
   assert.ok(!/>\s*Edit\s*</.test(main.innerHTML) && !/kbDeleteItem_|kbOpenEditor_|kbOpenRevisions_/.test(main.innerHTML), 'no Edit, Delete or History on a manual section');
-  assert.ok(/1 of 2 sections in this part is a draft/.test(main.textContent), 'an admin is told which sections reps cannot see');
+  assert.ok(/1 of 2 sections in this chapter is a draft/.test(main.textContent), 'an admin is told which sections reps cannot see');
   assert.ok(doc.getElementById('kb-man-sec-man-0-11').contains(doc.getElementById('kb-comments')), 'the comments host sits under the OPEN section');
   assert.deepStrictEqual(h.run.pending('kbGetComments').map((c) => c.args[0]), ['man-0-11']);
   assert.ok(!box('Part 00 — CSR Core').classList.contains('collapsed'), 'and its part opens in the rail');

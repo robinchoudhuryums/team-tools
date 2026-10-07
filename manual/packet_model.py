@@ -103,7 +103,10 @@ def model(key):
             B.append({"t": "h3", "runs": runs(f"{r['n']}. {r['says'].replace('**', '')}")})
             if r.get("why"):
                 B.append({"t": "why", "runs": runs(r["why"])})
-            for sec in MRP.refs_for(r["sec"], key):
+            if r.get("roster"):
+                t, body, _ = MRP.directory_rows(r["roster"])
+                B.append({"t": "excerpt", "title": t, "blocks": blocks(body)})
+            for sec in MRP.refs_for(r.get("sec", ""), key):
                 if sec in shown:
                     B.append({"t": "pointer", "runs": runs(f"The text of {display(sec)} is shown with question {shown[sec]}.")})
                     continue

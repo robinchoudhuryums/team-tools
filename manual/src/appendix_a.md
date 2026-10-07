@@ -9,7 +9,7 @@ Three classes. The distinction matters: about twenty entries in the original Man
 | [[§A-2]] | **Note-taking shorthand** — abbreviations for call notes, not used in the manual text |
 | [[§A-3]] | **Systems and platforms** — named tools and reference documents |
 
-In a standalone part, each section shows only the terms used in that part plus those marked All.
+In a standalone chapter, each section shows only the terms used in that chapter plus those marked All.
 
 ---
 

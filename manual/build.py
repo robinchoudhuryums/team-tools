@@ -14,9 +14,11 @@ version stamp, extract banner.
 """
 import json, os, re, subprocess, sys, datetime
 from numbering import display as dnum
+import footnotes, roles
 
 VERSION = "v3.0"
 BUILT = "09/15/2026"
+OWNER = "Robin Choudhury"
 COMMIT = subprocess.run(["date", "+%s"], capture_output=True, text=True).stdout.strip()[:7]
 
 PARTS = {
@@ -24,16 +26,15 @@ PARTS = {
     "p1": ("Call Handling", "src/p1.md"),
     "p2": ("Manual Mobility & General DME", "src/p2.md"),
     "p3": ("Respiratory & Resupply", "src/p3.md"),
-    "p4": ("Power Mobility", "src/p4.md"),
-    "p5": ("Field Operations", "src/p5.md"),
-    "p6": ("Service", "src/p6.md"),
-    "p7": ("Oxygen", "src/p7.md"),
-    "p8": ("After Hours", "src/p8.md"),
-    "p9": ("Sales", "src/p9.md"),
-    "p10": ("Billing & Insurance", "src/p10.md"),
+    "p4": ("Sales", "src/p4.md"),
+    "p5": ("Power Mobility", "src/p5.md"),
+    "p6": ("Field Operations", "src/p6.md"),
+    "p7": ("Service", "src/p7.md"),
+    "p8": ("Oxygen", "src/p8.md"),
+    "p9": ("After Hours", "src/p9.md"),
+    "p10": ("Billing & Denials", "src/p10.md"),
 }
 APPX = {"a": "src/appendix_a.md", "b": "src/appendix_b.md", "c": "src/appendix_c.md"}
-EXTRACTS = ["p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9", "p10"]
 
 errors, warnings = [], []
 os.makedirs("out", exist_ok=True)
@@ -64,7 +65,8 @@ def render(src):
     if r.returncode:
         errors.append(f"{src}: render failed — {r.stdout.strip()} {r.stderr.strip()}")
         return ""
-    return strip_scaffold(open(dst).read(), os.path.basename(src))
+    return footnotes.apply(strip_scaffold(open(dst).read(), os.path.basename(src)),
+                           os.path.basename(src), errors)
 
 
 bodies = {}
@@ -104,14 +106,14 @@ def _anchor_id(sec):
 
 
 def add_dividers(text, key):
-    """Part 10 splits into an on-a-call half and a reference half."""
+    """Chapter 10 splits into an on-a-call half and a reference half."""
     if key != "p10":
         return text
-    return text.replace("\n## §10-17 Billing scenarios",
-        "\n---\n\n# Part 10 — Billing reference\n\n"
+    return text.replace("\n## §10-16 Billing scenarios",
+        "\n---\n\n# Chapter 10 — Billing reference\n\n"
         "> The sections above are what a CSR uses on a call. What follows is reference — "
         "worked examples, appeals detail, payment mechanics and patient-facing language. "
-        "Consult it rather than reading it.\n\n## §10-17 Billing scenarios")
+        "Consult it rather than reading it.\n\n## §10-16 Billing scenarios")
 
 
 def resolve_refs(text, own_part=None):
@@ -132,16 +134,11 @@ def resolve_refs(text, own_part=None):
         return f'<a class="xr" href="#{_anchor_id(sec)}">{label}</a>'
 
     def role(m):
-        want = m.group(1).strip().lower()
-        best = None
-        for r in ROSTER:
-            hay = (r["role"] + " " + (r.get("note") or "")).lower()
-            if want in hay or all(w in hay for w in want.split()):
-                best = r
-                break
+        best = roles.find(ROSTER, m.group(1))
         if not best:
             return f'<span class="xr-bad">[ROLE: {m.group(1)}]</span>'
-        return f'<a class="xr" href="#B-1">{best["role"]}</a>'
+        # the person's own row in the B.1 directory (make_html.py gives each row its id)
+        return f'<a class="xr" href="#{roles.anchor(best)}">{best["role"]}</a>'
 
     text = re.sub(r"\[\[(§[\w\-.]+)\]\]", ref, text)
     text = re.sub(r"`?\[ROLE:\s*([^\]]+)\]`?", role, text)
@@ -157,12 +154,12 @@ for tok in sorted(set(re.findall(r"§[0-9A-Z]+-[0-9A-Z]+(?:\.[0-9]+)*", src_dg))
     if tok not in ANCHORS:
         errors.append(f"diagram label {tok} in make_diagrams.py points at no section")
 
-for lab, num in re.findall(r"([A-Z][A-Za-z &;]+?) — Part (\d+)", src_dg):
+for lab, num in re.findall(r"([A-Z][A-Za-z &;]+?) — Chapter (\d+)", src_dg):
     want = PARTS.get("p" + num, ("",))[0]
     got = lab.replace("&amp;", "&").strip()
     owner = next((k for k, v in PARTS.items() if v[0] == got), None)
     if owner and owner != "p" + num:
-        errors.append(f"diagram labels '{got}' as Part {num}, but '{got}' is Part {owner[1:]}")
+        errors.append(f"diagram labels '{got}' as Chapter {num}, but '{got}' is Chapter {owner[1:]}")
 
 # ------------------------------------------------------------ check: refs ---
 refs = {}
@@ -190,11 +187,7 @@ for k, text in bodies.items():
     if not text:
         continue
     for m in re.finditer(r"\[ROLE:\s*([^\]]+)\]", text):
-        want = m.group(1).strip().lower()
-        if not any(want in (r["role"] + " " + (r.get("note") or "")).lower()
-                   or all(w in (r["role"] + " " + (r.get("note") or "")).lower()
-                          for w in want.split())
-                   for r in ROSTER):
+        if not roles.find(ROSTER, m.group(1)):
             errors.append(f"ROLE '{m.group(1)}' in {k} matches nothing in roster.json")
 
 # ----------------------------------------------------------- check: roles ---
@@ -248,8 +241,9 @@ def recent_updates(part=None):
     return "\n".join(out)
 
 
-def cards_for(part_keys):
-    """Appendix C, filtered to the cards relevant to this artifact."""
+def cards_for(card_keys):
+    """Appendix C, filtered to the cards this artifact carries (all of them, or the
+    manifest's list for a department guide)."""
     text = bodies["appx_c"]
     head, _, rest = text.partition("<!--card:")
     rest = "<!--card:" + rest
@@ -259,7 +253,7 @@ def cards_for(part_keys):
         m = re.match(r"<!--card:(\w+)-->", bl)
         if not m:
             continue
-        if len(part_keys) > 3 or m.group(1) in part_keys:
+        if card_keys is None or m.group(1) in card_keys:
             keep.append(bl.rstrip())
     return head.rstrip() + "\n\n" + "\n\n".join(keep)
 
@@ -271,16 +265,41 @@ def full_changelog(part=None):
     out = ["| Date | Part | Section | Change | Authority | Retraining |", "|---|---|---|---|---|---|"]
     for c in sorted(rows, key=lambda x: x["date"], reverse=True):
         d = datetime.date.fromisoformat(c["date"]).strftime("%m/%d/%Y")
-        out.append(f"| {d} | Part {c['part'][1:]} | {dnum(c['section'])} | {c['summary']} | "
+        out.append(f"| {d} | {('Chapter ' + c['part'][1:]) if re.fullmatch(r'p\d+', c['part']) else 'Appendix ' + c['part'][-1].upper()} | {dnum(c['section'])} | {c['summary']} | "
                    f"{c['authority']} | {'Yes' if c['retraining'] else 'No'} |")
     return "\n".join(out)
 
 
 ARTICLES = ("a ", "an ", "the ")
+# A section title is indexed as a topic only when it NAMES something. A title
+# that opens with a question word or a hedge ("How long a service request
+# takes", "Is the order in Field Ops?", "Most common COB problem", "No
+# additional documentation required") is a sentence, not a term.
+INDEX_SKIP_FIRST = {"how", "what", "when", "where", "who", "why", "which", "whose", "is", "are",
+                    "can", "do", "does", "should", "will", "no", "new", "most"}
 
 
-def build_index():
-    """Term -> sections, built by scanning the assembled text for each term."""
+def _index_fold(t):
+    """The key two spellings of one term share: case, and a trailing plural, aside."""
+    w = t.lower().strip().split()
+    if w and len(w[-1]) > 3 and w[-1].endswith("s") and not w[-1].endswith("ss"):
+        w[-1] = w[-1][:-1]
+    return " ".join(w)
+
+
+def _index_explain(g):
+    """A glossary abbreviation's spelled-out meaning — the first clause of its definition."""
+    term = g["term"]
+    if not re.fullmatch(r"[A-Z0-9][A-Za-z0-9&]{1,7}", term) or sum(ch.isupper() for ch in term) < 2:
+        return ""
+    d = re.sub(r"\*\*|`", "", g["definition"]).strip()
+    d = re.split(r"\s+[—–]\s+|\.\s|;|\s\(", d, maxsplit=1)[0].strip().rstrip(".")
+    return d if len(d) <= 70 else ""
+
+
+def build_index(include=None):
+    """Term -> sections, built by scanning the assembled text for each term.
+    `include` limits it to the sections an artifact actually carries."""
     # split every rendered body into (section_id, text)
     segs = []
     for k, text in bodies.items():
@@ -298,15 +317,40 @@ def build_index():
                 buf.append(line)
         if cur:
             segs.append((cur, "\n".join(buf)))
+    if include is not None:
+        segs = [(s, t) for s, t in segs if s in include]
 
-    terms = {}
+    # one entry per FOLDED term: "Knee Walker" (equipment) and "Knee walkers" (a
+    # section title) are one entry, with both spellings searched
+    entries = {}
+    RANK = {"term": 0, "equipment": 1, "code": 2, "topic": 3}
+
+    def add(term, kind, explain=""):
+        key = _index_fold(term)
+        e = entries.get(key)
+        if e is None:
+            entries[key] = {"t": term, "kind": kind, "spell": {term}, "x": explain}
+            return
+        e["spell"].add(term)
+        if RANK[kind] < RANK[e["kind"]]:
+            e["t"], e["kind"] = term, kind
+        if explain and not e["x"]:
+            e["x"] = explain
+
     for g in GLOSSARY:
         if g["class"] != "shorthand":
-            terms[g["term"]] = "term"
+            add(g["term"], "term", _index_explain(g))
+    # curated extras — the email update types and note statuses (data/index.json)
+    for t in json.load(open("data/index.json", encoding="utf-8")).get("extra", []):
+        add(t, "topic")
+    items_by_code = {}
     for r in EQ:
-        terms[r["name"]] = "equipment"
+        add(r["name"], "equipment")
         for c in r["hcpcs"]:
-            terms[c] = "code"
+            items_by_code.setdefault(c, []).append(r["name"])
+    for c, names in items_by_code.items():
+        names = sorted(set(names))
+        add(c, "code", " · ".join(names[:2]) + (f" (+{len(names) - 2} more)" if len(names) > 2 else ""))
     for sec, (title, owner) in ANCHORS.items():
         t = title.strip()
         low = t.lower()
@@ -314,36 +358,41 @@ def build_index():
             if low.startswith(art):
                 t = t[len(art):]
                 break
-        terms[t[0].upper() + t[1:]] = "topic"
+        if " — " in t and len(t.split(" — ")[0]) >= 3:
+            t = t.split(" — ")[0]          # "Inbound — the caller needs a Spanish speaker" → "Inbound"
+        first = re.split(r"[\s/]", t.lower(), maxsplit=1)[0]
+        if first in INDEX_SKIP_FIRST or t.rstrip().endswith("?"):
+            continue
+        add(t[0].upper() + t[1:], "topic")
 
     # index words, not pictures: drop embedded images and diagram markup before searching
     _strip = re.compile(r'<svg.*?</svg>|<img[^>]*>|data:image/[^"\')\s]+', re.S)
     segs = [(s, _strip.sub(" ", txt)) for s, txt in segs]
 
-    entries = {}
-    for term, kind in terms.items():
-        pat = re.compile(r"(?<![\w-])" + re.escape(term) + r"(?![\w-])",
-                         0 if (term.isupper() or kind == "code") else re.I)
-        hits = [s for s, txt in segs if pat.search(txt)]
-        if not hits:
+    found = []
+    for e in entries.values():
+        hits = []
+        for term in e["spell"]:
+            pat = re.compile(r"(?<![\w-])" + re.escape(term) + r"(?![\w-])",
+                             0 if (term.isupper() or e["kind"] == "code") else re.I)
+            hits += [s for s, txt in segs if pat.search(txt) and s not in hits]
+        if not hits or len(hits) > 10:      # too common to be useful as an index term
             continue
-        if len(hits) > 10:          # too common to be useful as an index term
-            continue
-        entries[term] = hits
+        order = {s: i for i, (s, _) in enumerate(segs)}
+        found.append((e["t"], e["x"], sorted(hits, key=lambda s: order[s])))
 
     letters = {}
-    for term in sorted(entries, key=lambda t: (t.lower(), t)):
-        key = term[0].upper()
-        if not key.isalpha():
-            key = "#"
-        letters.setdefault(key, []).append((term, entries[term]))
+    for term, x, secs in sorted(found, key=lambda f: (f[0].lower(), f[0])):
+        key = term[0].upper() if term[0].isalpha() else "0–9"
+        letters.setdefault(key, []).append((term, x, secs))
     out = []
-    for L in sorted(letters, key=lambda x: (x != "#", x)):
-        out.append(f"\n### {L}\n")
-        out.append("| Term | Sections |")
-        out.append("|---|---|")
-        for term, secs in letters[L]:
-            out.append(f"| {term} | " + ", ".join(dnum(x) for x in secs) + " |")
+    for L in sorted(letters, key=lambda x: (x != "0–9", x)):
+        out.append(f"\n### {L} {{#ix-{'0' if L == '0–9' else L.lower()}}}\n")
+        out.append("| Term | Explanation | Sections |")
+        out.append("|---|---|---|")
+        for term, x, secs in letters[L]:
+            links = ", ".join(f'<a class="xr" href="#{_anchor_id(s)}">{dnum(s)}</a>' for s in secs)
+            out.append(f"| {term} | {x} | {links} |")
     return "\n".join(out), sum(len(v) for v in letters.values())
 
 
@@ -353,101 +402,157 @@ def glossary_subset(part):
 
 HOWTO = """## How to use this manual
 
-**You are not expected to read this.** It is a reference, and it is built so you can find things
-three different ways.
+This manual is a reference, built so you can find things three different ways.
 
 | When | Use |
 |---|---|
-| The phone rings and you don't know where the answer is | The **call router** — what the caller says, mapped to a section |
-| You need a rule you half-remember | **Search**, or the **index** |
+| The phone rings and you don't know where the answer is | The **call router** — what the caller says, mapped to a section. In Reference press **Ctrl/⌘+K**; in this manual use **What did the caller say?** or section **1.1** |
+| You need to find a policy or term | **Search**, or the **index** |
 | You want the short version for a department | Its **quick reference card** |
 
-### Your first week
+### Where to start
 
-1. **Quick reference cards.** Eleven cards, one per part. About four pages. Print them
-2. **Part 0 — CSR Core.** The procedures that apply to every call
-3. **Part 1 — Call Handling.** Routing, who you may speak to, what you cannot do, and the calls
+1. **Quick reference cards.** One per chapter, formatted to be printed if desired
+2. **Chapter 0 — CSR Core.** The procedures that apply to every call
+3. **Chapter 1 — Call Handling.** Routing, who you may speak to, what you cannot do, and the calls
    that are hard for reasons other than complexity
-4. **Your own department's part**
-
-That is roughly 25 pages. Everything else is lookup.
+4. **Your own department's chapter**
 
 ### How the manual is organised
 
 | | |
 |---|---|
-| **Part 0 and Part 1** | Apply to every call, whatever the department. They appear in every copy |
-| **Parts 2 to 9** | One per department, in roughly the order an order travels |
-| **Part 10** | Billing and insurance. Its first half is what you use on a call; the second half is reference |
-| **Appendices** | Glossary, escalation directory, compliance items, state coverage, changelog, index, and the quick reference cards |
+| **Chapters 0 and 1** | Applicable to every call, regardless of the department |
+| **Chapters 2 to 9** | One per department (though each department could have use cases for other department chapters) |
+| **Chapter 10** | Billing & Denials. Its first half is what you use on a call; the second half is reference |
+| **Appendices** | Glossary, escalation directory, quick reference cards, changelog and index |
 
 ### Reading the manual
 
-**Section numbers, not page numbers.** Every section has a number such as **4.7.4** — part 4,
-section 7, subsection 4. Use these when asking a question or citing a procedure; page numbers
+**Section numbers, not page numbers.** Every section has a number such as **5.6.3** — chapter 5,
+section 6, subsection 3. Use these when asking a question or citing a procedure; page numbers
 move between versions. Quick reference cards are numbered separately, as **CARD 5**.
 
-**Older copies used a different format** — `§4-7.4`, and `§G-5` for cards. Search accepts either
-form, so a number from a printed copy or an old note will still find the right section.
+**Five kinds of banner**, and the colour tells you what it is:
 
-**Five kinds of callout**, and the type tells you what it is:
+> **Critical** — Patient safety, or a legal requirement (HIPAA, Medicare) where a mistake is serious. Act on it.
 
-| | |
-|---|---|
-| **Critical** | Patient safety or federal law. Act on it |
-| **Policy** | A binding rule, usually with coverage or money attached |
-| **Watch-out** | A mistake that happens often enough to be worth naming |
-| **Script** | Suggested wording. Adapt it; don't read it |
-| **Note** | Context that helps you understand a process |
+> **Policy** — A binding rule, usually with coverage or money attached.
 
-**When a department part contradicts Part 0, the department part wins** — but only where it says
+> **Watch-out** — A mistake that happens often enough to be worth naming.
+
+> **Script** — Suggested wording. Adapt it; don't read it.
+
+> **Note** — Context that helps you understand a process.
+
+**When a department chapter contradicts Chapter 0, the department chapter wins** — but only where it says
 explicitly that it is overriding.
-
----
 
 """
 
 
-def control_block(title, part=None):
-    lines = [
-        "| Field | Value |", "|---|---|",
-        f"| Document | CSR Procedures Manual{' — ' + title if part else ''} |",
-        f"| Version | {VERSION} |", f"| Built | {BUILT} |",
-        "| Owner | Customer Service Manager |",
-        "| Approved by | Director of Operations |",
-        "| Review cadence | Semi-annual |",
-        "| Classification | Confidential — Internal Use Only |",
-        f"| Source | commit {COMMIT} |",
-    ]
-    return "\n".join(lines)
+# ---------------------------------------------------- department guides ---
+# data/extracts.json says what each department guide carries; the master manual is
+# the one source and a guide is a filtered copy of it (operator 2026-10-06).
+MANIFEST = json.load(open("data/extracts.json"))
+for g in MANIFEST["guides"]:
+    if g["key"] not in PARTS:
+        errors.append(f"extracts.json: guide {g['key']} is not a part")
+    for c in g.get("chapters", []) + MANIFEST["default_chapters"]:
+        if c not in PARTS:
+            errors.append(f"extracts.json: {g['key']} lists chapter {c}, which is not a part")
+    for sec in g.get("sections", []):
+        if sec not in ANCHORS or not re.fullmatch(r"§[\w]+-[\w]+", sec):
+            errors.append(f"extracts.json: {g['key']} lists section {sec}, which is not a level-2 section")
 
 
-def assemble(name, part_keys, title, banner=None):
-    chunks = [f"# CSR Procedures Manual — {title}", ""]
+def section_text(sec):
+    """One level-2 section, its sub-sections included, as rendered."""
+    owner = ANCHORS[sec][1]
+    m = re.search(r"^## " + re.escape(sec) + r" .*?(?=^#{1,2} (?!#)|\Z)", bodies[owner], re.M | re.S)
+    return m.group(0).rstrip() if m else ""
+
+
+def _keep_rows(md, keep_row):
+    """Drop the body rows of every Markdown table in md that keep_row refuses."""
+    out, lines, i = [], md.split("\n"), 0
+    while i < len(lines):
+        ln = lines[i]
+        if ln.startswith("|") and i + 1 < len(lines) and re.match(r"^\|[\s:|-]+\|$", lines[i + 1]):
+            head = [c.strip() for c in ln.strip().strip("|").split("|")]
+            out += [ln, lines[i + 1]]
+            i += 2
+            while i < len(lines) and lines[i].startswith("|"):
+                cells = [c.strip() for c in lines[i].strip().strip("|").split("|")]
+                if keep_row(head, cells):
+                    out.append(lines[i])
+                i += 1
+            continue
+        out.append(ln)
+        i += 1
+    return "\n".join(out)
+
+
+def localise_links(body):
+    """A link to a section this artifact does not carry becomes plain text that says
+    where the section is — never a dead link (validate_html / Word would see one)."""
+    present = {_anchor_id(m.group(1)) for m in re.finditer(r"^#{2,3} (§[\w\-.]+) ", body, re.M)}
+    def fix(m):
+        if m.group(1).startswith("role-") or m.group(1) in present:
+            return m.group(0)
+        return f"{m.group(2)} (in the full manual)"
+    return re.sub(r'<a class="xr" href="#([\w\-.]+)">(.*?)</a>', fix, body)
+
+
+def assemble(name, part_keys, title, banner=None, guide=None):
+    chunks = [f"# CSR Procedures Manual{' — ' + title if guide else ''}", ""]
     if banner:
         chunks += [f"> {banner}", ""]
-    chunks += [control_block(title, part_keys[0] if banner else None), ""]
     body_parts = []
     for k in part_keys:
         if bodies.get(k) is None:
-            body_parts.append(f"\n---\n\n# Part {k[1]} — {PARTS[k][0]}\n\n"
-                              f"> **Not yet written.** This part is pending.\n")
+            body_parts.append(f"\n---\n\n# Chapter {k[1:]} — {PARTS[k][0]}\n\n"
+                              f"> **Not yet written.** This chapter is pending.\n")
         else:
             body_parts.append("\n---\n\n" + resolve_refs(add_dividers(bodies[k], k), k))
+    if guide and guide.get("sections"):
+        extra = "\n\n".join(section_text(s) for s in guide["sections"])
+        body_parts.append("\n---\n\n# Related sections from other chapters\n\n"
+                          "> These sections belong to other chapters of the manual and are carried here "
+                          "because this department uses them. Their numbers are the full manual's.\n\n"
+                          + resolve_refs(extra, guide["key"]))
+    allowed = {k[1:] for k in part_keys}
     for k in ("appx_a", "appx_b"):
-        body_parts.append("\n---\n\n" + resolve_refs(bodies[k]))
-    body_parts.append("\n---\n\n" + resolve_refs(cards_for(part_keys)))
-    scope = None if len(part_keys) > 3 else part_keys[-1]
+        text = resolve_refs(bodies[k])
+        if guide and k == "appx_a":
+            # each glossary section shows the terms of this guide's parts, plus those marked All
+            text = _keep_rows(text, lambda h, c: "Parts" not in h or c[h.index("Parts")] == "All"
+                              or bool(allowed & {x.strip() for x in c[h.index("Parts")].split(",")}))
+        body_parts.append("\n---\n\n" + text)
+    body_parts.append("\n---\n\n" + resolve_refs(cards_for(guide["cards"] if guide else None)))
+    scope = guide["key"] if guide else None
     body_parts.append("\n---\n\n# Appendix D — Changelog\n\n"
                       "## §D-1 Recent updates\n\n_Entries from the last 12 months._\n\n"
                       + recent_updates(scope)
                       + "\n\n## §D-2 Full changelog\n\n" + full_changelog(scope))
-    idx, n_terms = build_index()
-    body_parts.append("\n---\n\n# Appendix E — Index\n\n## §E-1 Index\n\n"
-                      f"_{n_terms} terms. Section numbers link to the unified manual; "
-                      "'see P2' style entries point to the part rather than a section._\n" + idx)
     body = "\n".join(body_parts)
-    chunks += ["", HOWTO, body]
+    present = {m.group(1) for m in re.finditer(r"^#{2,3} (§[\w\-.]+) ", body, re.M)}
+    idx, n_terms = build_index(present if guide else None)
+    body += ("\n\n---\n\n# Appendix E — Index\n\n## §E-1 Index\n\n"
+             f"_{n_terms} terms. Each section number links to its section; hover it for a preview. "
+             "The explanation spells out an abbreviation, or names the items an HCPCS code covers._\n" + idx)
+    if guide:
+        # the directory keeps this guide's roles, the shared ones, and every role it links to
+        linked = set(re.findall(r'href="#role-([\w-]+)"', body))
+        by_role = {r["role"]: r for r in ROSTER}
+        def keep_role(h, c):
+            r = by_role.get(re.sub(r"<[^>]+>", "", c[0]).strip()) if h and h[0] == "Role" else None
+            return r is None or r["part"] in ("shared",) or r["part"][1:] in allowed or r["id"] in linked
+        b1 = body.index("## §B-1 ")
+        b1_end = body.index("\n## ", b1 + 5)
+        body = body[:b1] + _keep_rows(body[b1:b1_end], keep_role) + body[b1_end:]
+        body = localise_links(body)
+    chunks += ["", "<!--start-->", HOWTO.rstrip(), "<!--/start-->", "", body]
     out = "\n".join(chunks)
     open(f"out/{name}.md", "w").write(out)
     return len(out)
@@ -456,11 +561,17 @@ def assemble(name, part_keys, title, banner=None):
 sizes = {}
 sizes["CSR-Procedures-Manual-" + VERSION] = assemble(
     "CSR-Procedures-Manual-" + VERSION, list(PARTS), "Unified", None)
-for p in EXTRACTS:
-    n = f"CSR-Procedures-Part-{p[1:]}-{PARTS[p][0].replace(' & ', '-and-').replace(' ', '-')}-{VERSION}"
-    sizes[n] = assemble(n, ["p0", "p1", p], PARTS[p][0],
-        f"Extracted from the CSR Procedures Manual {VERSION} (built {BUILT}) — Part {p[1:]} of 11. "
-        "This is a generated copy. Do not edit; submit changes to the Customer Service Manager.")
+for g in MANIFEST["guides"]:
+    p = g["key"]
+    keys = [k for k in PARTS if k in set(MANIFEST["default_chapters"]) | {p} | set(g.get("chapters", []))]
+    g = dict(g, cards=g.get("cards") or keys)
+    n = f"CSR-Procedures-Chapter-{p[1:]}-{PARTS[p][0].replace(' & ', '-and-').replace(' ', '-')}-{VERSION}"
+    parts_txt = ", ".join(k[1:] for k in keys[:-1]) + " and " + keys[-1][1:]
+    sizes[n] = assemble(n, keys, PARTS[p][0],
+        f"Department guide generated from the CSR Procedures Manual {VERSION} (built {BUILT}) — "
+        f"Chapters {parts_txt}" + (" plus related sections" if g.get("sections") else "") + ". "
+        "This is a generated copy. Do not edit; submit changes to the Customer Service Manager.",
+        guide=g)
 
 
 # ============================================================ extra checks ===
@@ -519,7 +630,7 @@ for k, text in bodies.items():
 cards = set(re.findall(r"<!--card:(\w+)-->", bodies.get("appx_c", "")))
 for p in PARTS:
     if p not in cards:
-        warnings.append(f"Part {p[1:]} has no quick reference card in Appendix C")
+        warnings.append(f"Chapter {p[1:]} has no quick reference card in Appendix C")
 
 # HCPCS codes cited in prose but absent from equipment.json
 KNOWN_CODES = {c for r in EQ for c in r["hcpcs"]} | {f["id"] for f in FEES}
@@ -546,8 +657,13 @@ KNOWN_CODES |= {"L33718", "L33832", "L33803", "L33612", "L33788", "L33820", "L33
                 "L1820", "L1830", "L0457", "L0641", "K0800", "K0801", "K0821",
                 "K0822", "K0823", "K0824", "K0825", "K0826", "K0827", "K0835",
                 "K0836", "K0837", "K0861", "K0862", "K0863", "E0118"}
+# a model number shaped like a code (the Luna G3 X APAP's G4600) is part of
+# an equipment record's name, not a code citation
+MODEL_NUMBERS = {m for r in EQ for m in re.findall(r"\b([A-Z]\d{4})\b", r["name"])} - KNOWN_CODES
 unknown_codes = set()
 for m in re.finditer(r"\b([A-Z]\d{4})\b", ALL_TEXT):
+    if m.group(1) in MODEL_NUMBERS:
+        continue
     if m.group(1) not in KNOWN_CODES:
         unknown_codes.add(m.group(1))
 for c in sorted(unknown_codes):
@@ -584,7 +700,7 @@ print(f"sections indexed      : {len(ANCHORS)}")
 print(f"cross-references      : {sum(len(v) for v in refs.values())} ({len(refs)} unique)")
 print(f"changelog entries     : {len(CL)} (all with valid section refs)"
       if all(c["section"] in ANCHORS for c in CL) else "changelog: SEE ERRORS")
-print(f"glossary subsets      : " + ", ".join(f"{p}={glossary_subset(p)}" for p in EXTRACTS))
+print(f"glossary subsets      : " + ", ".join(f"{p}={glossary_subset(p)}" for p in (g["key"] for g in MANIFEST["guides"])))
 print("\nartifacts:")
 for n, s in sizes.items():
     print(f"  {n}.md  ({s:,} chars)")

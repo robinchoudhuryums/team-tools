@@ -3503,7 +3503,7 @@ function kbNaturalCompare_(a, b) {
  *  kb/script_kb.html; the harness drives both over one grid. */
 function kbDeptRank_(d) {
   const s = String(d == null ? '' : d);
-  if (/^Part \d+ \u2014 /.test(s)) return 0;
+  if (/^(?:Chapter|Part) \d+ \u2014 /.test(s)) return 0;
   if (/^Appendix [A-Z] \u2014 /.test(s)) return 1;
   return 2;
 }
@@ -4068,7 +4068,7 @@ function getManualPart(department) {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Not authorized.' };
     department = String(department || '').trim();
-    if (!department) return { error: 'Missing part.' };
+    if (!department) return { error: 'Missing chapter.' };
     const sheet = getOrCreateKbSheet_();
     const last = sheet.getLastRow();
     if (last < 2) return { department: department, sections: [] };

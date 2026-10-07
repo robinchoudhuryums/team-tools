@@ -30062,6 +30062,7 @@ test('M2-R2: a typed section number names a VISIBLE section — every form the H
     { id: 'man-5-1', title: '5.1 Overview', department: 'Part 05 — Field Operations', sortOrder: 1 },
     { id: 'man-10-b', title: '10.B Quick reference', department: 'Part 10 — Billing', sortOrder: 25 },
     { id: 'man-10-1', title: '10.1 How billing works', department: 'Part 10 — Billing', sortOrder: 1 },
+    { id: 'man-4-1', title: '4.1 Scope', department: 'Chapter 04 — Sales', sortOrder: 1 },
     { id: 'man-b-1', title: 'B.1 Directory', department: 'Appendix B', sortOrder: 1 },
     { id: 'man-a', title: 'Glossary', department: 'Appendix A — Glossary', sortOrder: 1 },
     { id: 'man-c-5', title: 'Card 5 — Field Operations', department: 'Appendix C', sortOrder: 6 },
@@ -30072,7 +30073,8 @@ test('M2-R2: a typed section number names a VISIBLE section — every form the H
     '5.9.2': 'man-5-9#5.9.2|5.9.2', '§5-9.2': 'man-5-9#5.9.2|5.9.2', '05.09': 'man-5-9#|5.9',
     '10.B': 'man-10-b#|10.B', '10-b': 'man-10-b#|10.B', 'B.1': 'man-b-1#|B.1', '§B-1': 'man-b-1#|B.1',
     'A.2': 'man-a#A.2|A.2', 'a-2': 'man-a#A.2|A.2', 'card 5': 'man-c-5#|CARD 5', 'Card5': 'man-c-5#|CARD 5', 'C-5': 'man-c-5#|CARD 5', 'G-5': 'man-c-5#|CARD 5', '§G-5': 'man-c-5#|CARD 5',
-    'part 5': 'man-5-1#|Part 5', 'Part 10': 'man-10-1#|Part 10',
+    'part 5': 'man-5-1#|Chapter 5', 'Part 10': 'man-10-1#|Chapter 10', 'chapter 5': 'man-5-1#|Chapter 5', 'Chapter10': 'man-10-1#|Chapter 10',
+    'chapter 4': 'man-4-1#|Chapter 4', 'part 4': 'man-4-1#|Chapter 4',
     '5.8': null, 'part 7': null, 'card 9': null, 'pick-up': null, '5.9 pickup': null, 'oxygen 5.9': null, '': null, '1.5 lbs': null, '555-1234': null,
   };
   Object.keys(grid).forEach((q) => assert.strictEqual(t(q), grid[q], JSON.stringify(q)));
@@ -30261,18 +30263,19 @@ test('M3-S1: departments list parts, then appendices, then everything else — t
   const c = vm.createContext({ String, parseInt, Math });
   ['kbNaturalCompare_', 'kbDeptRank_', 'kbDeptCompare_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), c));
   const names = ['Appendix C — Quick Reference Cards', 'Part 10 — Billing & Insurance', 'Billing', 'Appendix A — Glossary', 'Part 00 — CSR Core',
-    'Part 2 — Manual Mobility', 'Appendix B — Escalation Directory', 'Appendix forms', 'Parts list', 'Shipping', '', 'Appendix a — lower', 'Part 1 - hyphen'];
+    'Part 2 — Manual Mobility', 'Appendix B — Escalation Directory', 'Appendix forms', 'Parts list', 'Shipping', '', 'Appendix a — lower', 'Part 1 - hyphen',
+    'Chapter 10 — Billing & Denials', 'Chapter 04 — Sales', 'Chapters list', 'Chapter 5 - hyphen'];
   const sorted = names.slice().sort(s.kbDeptCompare_);
-  assert.deepStrictEqual(sorted, ['Part 00 — CSR Core', 'Part 2 — Manual Mobility', 'Part 10 — Billing & Insurance',
+  assert.deepStrictEqual(sorted, ['Chapter 04 — Sales', 'Chapter 10 — Billing & Denials', 'Part 00 — CSR Core', 'Part 2 — Manual Mobility', 'Part 10 — Billing & Insurance',
     'Appendix A — Glossary', 'Appendix B — Escalation Directory', 'Appendix C — Quick Reference Cards',
-    '', 'Appendix a — lower', 'Appendix forms', 'Billing', 'Part 1 - hyphen', 'Parts list', 'Shipping'],
+    '', 'Appendix a — lower', 'Appendix forms', 'Billing', 'Chapter 5 - hyphen', 'Chapters list', 'Part 1 - hyphen', 'Parts list', 'Shipping'],
     'the manual\'s own two shapes only (em dash, as department() writes them) — an ordinary "Appendix forms" is not pulled forward');
   names.forEach((a) => names.forEach((b) => {
     assert.strictEqual(Math.sign(c.kbDeptCompare_(a, b)), Math.sign(s.kbDeptCompare_(a, b)), 'client mirrors server: ' + a + ' vs ' + b);
     names.forEach((d) => { if (s.kbDeptCompare_(a, b) < 0 && s.kbDeptCompare_(b, d) < 0) assert.ok(s.kbDeptCompare_(a, d) < 0, 'transitive: ' + [a, b, d].join(' < ')); });
   }));
   const ex = fs.readFileSync(path.join(__dirname, '../../manual/export_reference.py'), 'utf8');
-  assert.ok(/return f"Part \{int\(key\[1:\]\):02d\} \u2014 \{PARTS\[key\]\[0\]\}"/.test(ex) && /"appx_a": "Appendix A \u2014 Glossary"/.test(ex), 'the exporter still writes the two shapes the rank reads');
+  assert.ok(/return f"Chapter \{int\(key\[1:\]\):02d\} \u2014 \{PARTS\[key\]\[0\]\}"/.test(ex) && /"appx_a": "Appendix A \u2014 Glossary"/.test(ex), 'the exporter still writes the two shapes the rank reads');
   assert.ok(/kbDeptCompare_\(a\.department, b\.department\)/.test(extractRawFunction('Code.js', 'kbPublishManual')), 'the publish order (and so the review stagger) follows it');
   assert.ok(/Object\.keys\(by\)\.sort\(kbDeptCompare_\)/.test(extractFnFrom(M1_KB_SRC, 'kbManualDraftDepts_')), 'and the dialog\'s part list');
 });
@@ -34800,6 +34803,205 @@ test('Seams F21 (cycle 24): an intake recipient has exactly one @ and no quoted 
   assert.strictEqual(ctx.intakeValidateEmail_('a@b@umsupply.com'), false, 'two @ are refused');
   ['agent@umsupply.com', 'first.last@umsupply.com', 'pat@example.org'].forEach((ok) => assert.strictEqual(ctx.intakeValidateEmail_(ok), true, ok));
   ['', 'nobody', 'x@', '@umsupply.com'].forEach((bad) => assert.strictEqual(ctx.intakeValidateEmail_(bad), false, JSON.stringify(bad)));
+});
+
+// ── Manual Phase 1 (2026-10-06) — the foundations of the operator's manual update ──
+console.log('\nManual Phase 1 — role links, real tables, step and do/don\'t tables, footnotes, the index, Word, the front page, department guides');
+const MP1_ = (f) => fs.readFileSync(path.join(__dirname, '../../manual', f), 'utf8');
+
+test('MP1-1: kbMd_ draws the manual\'s two table conventions — a "Step" table and the \u2713/\u2717 columns — and every other table exactly as before (driven)', () => {
+  const c = m1Md_();
+  const steps = c.kbMd_('| Step | Action |\n|---|---|\n| 1 | Call |\n| 2 | Text |\n');
+  assert.ok(/^<table class="kb-steps"><thead><tr><th>Step<\/th><th>Action<\/th>/.test(steps), steps);
+  const dd = c.kbMd_('| \u2713 Do | \u2717 Don\'t | Why |\n|---|---|---|\n| Listen | Interrupt | x |\n');
+  assert.ok(/^<table class="kb-dodont"><thead><tr><th class="kb-do">\u2713 Do<\/th><th class="kb-dont">\u2717 Don't<\/th><th>Why<\/th>/.test(dd), dd);
+  assert.ok(/<tr><td class="kb-do">Listen<\/td><td class="kb-dont">Interrupt<\/td><td>x<\/td><\/tr>/.test(dd), 'each cell carries its column\'s tone: ' + dd);
+  assert.ok(/^<table><thead><tr><th>Team<\/th>/.test(c.kbMd_('| Team | Line |\n|---|---|\n| A | 1 |\n')), 'an ordinary table carries no class');
+  assert.ok(/^<table><thead>/.test(c.kbMd_('| Steps taken | x |\n|---|---|\n| a | b |\n')), 'only a header that IS "Step" makes a step table');
+  assert.ok(/^<table><thead>/.test(c.kbMd_('| Do | Don\'t |\n|---|---|\n| a | b |\n')), 'the tone needs the glyph — a bare "Do" header is an ordinary column');
+  const hostile = c.kbMd_('| \u2713 "><img src=x onerror=alert(1)> | b |\n|---|---|\n| c | d |\n');
+  assert.ok(!/<img/.test(hostile) && /<th class="kb-do">\u2713 "&gt;&lt;img/.test(hostile), 'the class is a constant and the header text stays escaped: ' + hostile);
+  ['table.kb-steps tbody tr:not(:last-child) td:first-child::after', 'table.kb-dodont td.kb-do', 'table.kb-dodont td.kb-dont'].forEach((sel) =>
+    assert.ok(M1_KB_SRC.indexOf('.kb-article ' + sel + ' {') > 0, sel + ' is styled'));
+});
+
+test('MP1-2: the build, the export and the Word model resolve [ROLE:] through ONE resolver (exact name first) and footnotes through ONE transform; a role links to its directory ROW', () => {
+  const bd = MP1_('build.py'), ex = MP1_('export_reference.py'), mm = MP1_('md2model.py'), mh = MP1_('make_html.py'), rl = MP1_('roles.py');
+  [['build.py', bd], ['export_reference.py', ex]].forEach(([who, src]) => {
+    assert.ok(/^import footnotes, roles/m.test(src), who + ' imports both shared modules');
+    assert.ok(/roles\.find\(ROSTER, m\.group\(1\)\)/.test(src), who + ' resolves a role through roles.find');
+    assert.ok(/footnotes\.apply\(/.test(src), who + ' applies the footnotes');
+    assert.ok(!/for r in ROSTER:\s*\n\s*hay = /.test(src), who + ' keeps no resolver loop of its own');
+  });
+  assert.ok(rl.indexOf('_norm(r["role"]) == w') > 0 && rl.indexOf('_norm(r["role"]) == w') < rl.indexOf('r.get("note")'), 'the exact role name is tried before any note (6.2\'s link resolved to the Used Equipment Sales Contact through its note)');
+  assert.ok(/href="#\{roles\.anchor\(best\)\}"/.test(bd), 'a role links to the person\'s row, never the top of B.1');
+  assert.ok(/from roles import anchor as _role_anchor/.test(mh) && /tr\["id"\] = rid/.test(mh), 'make_html.py gives each B.1 row that id');
+  assert.ok(/if\(h\.tagName==='TR'\)/.test(mh), 'and its preview shows that row, under the table\'s header');
+  assert.ok(/bookmark\(roles\.anchor\(r\)\)/.test(mm), 'Word bookmarks the same row');
+  assert.ok(/python3 roles\.py && python3 footnotes\.py/.test(MP1_('make_all.sh')), 'make_all.sh runs both modules\' self-tests');
+  assert.ok(/<!--notes-->/.test(MP1_('footnotes.py')) && /re\.sub\(r"<!--\.\*\?-->", "", text, flags=re\.S\)/.test(ex), 'the notes marker is an HTML comment, which the export already strips');
+});
+
+test('MP1-3: every table stays a table in the HTML; the directory always shows How to reach (Direct, queue, email, phone); Word breaks pages on the heading, embeds the diagrams, and a PDF is checked for blank pages', () => {
+  const mh = MP1_('make_html.py');
+  const cls = mh.slice(mh.indexOf('def classify_tables('), mh.indexOf('\ndef ', mh.indexOf('def classify_tables(') + 5));
+  assert.ok(!/new_tag\("dl"\)/.test(cls) && !/"kv"/.test(cls), 'no key/value conversion (index letters, specs, check/where all lost their columns to it)');
+  assert.ok(/heads\[0\]\.strip\(\)\.lower\(\) == "step"/.test(cls) && /h\[:1\] in \("\\u2713", "\\u2717"\)/.test(cls), 'the same two conventions as kbMd_');
+  assert.ok(/hdr = "\| Role \| Holder \| Backup \| How to reach \|"\n/.test(MP1_('render.py')) && /"Direct" if r\["direct_transfer"\] else "", r\.get\("queue"\) or "", em, ph/.test(MP1_('render.py')), 'How to reach always carries Direct, the queue, the email and the phone');
+  assert.ok(!/\(r\.get\("phone"\) or ""\)\.replace\(" ", /.test(MP1_('render.py')), 'only the space INSIDE a number is non-breaking — a list of numbers must still wrap (it pushed B.1 to 842px in a 700px column)');
+  const rx = MP1_('render_docx.js');
+  assert.ok(!/new PageBreak\(\)/.test(rx) && /pageBreakBefore: pb/.test(rx), 'the page break rides the heading — no break paragraph to land alone on a page');
+  assert.ok(/while \(blocks\[j\] && blocks\[j\]\.k === 'rule'\) j\+\+/.test(rx), 'and no spacer lands before a page-starting heading, past a rule');
+  assert.ok(/TONE\.ok/.test(rx) && /\/\^step\$\/i/.test(rx), 'Word draws the two table conventions too');
+  const mk = MP1_('make_all.sh');
+  assert.ok(mk.indexOf('rasterize_diagrams.py') > 0 && mk.indexOf('rasterize_diagrams.py') < mk.indexOf('render_docx.js'), 'the diagrams are rendered before the Word files');
+  assert.ok(/check_pdf\.py/.test(mk) && /CHROME = re\.compile/.test(MP1_('check_pdf.py')), 'a PDF, when one can be made, fails the build on a page holding only the running header and footer');
+});
+
+test('MP1-4: the front page — "Where to start", the five banner types as real banners, no "Unified" title or version table, the owner and classification shown; the export reads the same page', () => {
+  const bd = MP1_('build.py');
+  const how = /^HOWTO = """([\s\S]*?)"""/m.exec(bd)[1];
+  ['### Where to start', 'You need to find a policy or term', 'formatted to be printed if desired',
+    'Applicable to every call, regardless of the department', 'though each department could have use cases for other department chapters']
+    .forEach((t) => assert.ok(how.indexOf(t) >= 0, 'has: ' + t));
+  ['Critical', 'Policy', 'Watch-out', 'Script', 'Note'].forEach((k) => assert.ok(new RegExp('^> \\*\\*' + k + '\\*\\* \u2014 ', 'm').test(how), k + ' is shown as a real banner'));
+  ['You are not expected to read', 'roughly 25 pages', 'Older copies used', 'Your first week', 'state coverage'].forEach((t) => assert.ok(how.indexOf(t) < 0, 'gone: ' + t));
+  assert.ok(!/def control_block/.test(bd) && bd.indexOf('chunks = [f"# CSR Procedures Manual{\' \u2014 \' + title if guide else \'\'}"') > 0, 'the full manual is titled plainly — no "Unified", no version table');
+  assert.ok(/^OWNER = "[^"]+"$/m.test(bd) && MP1_('make_html.py').indexOf('OWNER = re.search(r\'^OWNER = "([^"]+)"\'') > 0, 'the owner is build.py\'s, read by the HTML (and Word) rather than copied');
+  assert.ok(MP1_('export_reference.py').indexOf('re.search(r\'^HOWTO = """(.*?)"""\'') > 0, 'the export still reads the front page from build.py');
+});
+
+test('MP1-5: the index — section numbers link, an abbreviation or code is explained, one entry per term, no sentence-titles, a letter bar, and its filter finds the index again', () => {
+  const bd = MP1_('build.py'), mh = MP1_('make_html.py');
+  const ix = bd.slice(bd.indexOf('def build_index('), bd.indexOf('\ndef glossary_subset('));
+  assert.ok(ix.indexOf('<a class="xr" href="#{_anchor_id(s)}">{dnum(s)}</a>') > 0, 'each section number is a link (and so previews on hover)');
+  assert.ok(ix.indexOf('| Term | Explanation | Sections |') > 0 && ix.indexOf('add(c, "code", " · ".join') > 0, 'the explanation column: a code names its items');
+  assert.ok(ix.indexOf('key = _index_fold(term)') > 0, 'spellings that differ by case or a plural are one entry');
+  const skip = bd.slice(bd.indexOf('INDEX_SKIP_FIRST = {'), bd.indexOf('}', bd.indexOf('INDEX_SKIP_FIRST = {')));
+  ['how', 'what', 'is', 'most', 'no', 'new'].forEach((w) => assert.ok(skip.indexOf('"' + w + '"') > 0, w + ' never opens an index topic'));
+  assert.ok(ix.indexOf('"0–9"') > 0 && ix.indexOf('{{#ix-') > 0, 'the digits bucket is labelled, and every letter has an id');
+  assert.ok(mh.indexOf("getElementById('E-1')") > 0 && !/'F-1'|"F-1"/.test(mh), 'the filter looks for the index where it is (it looked for Appendix F)');
+  assert.ok(mh.indexOf('class="ixaz" role="navigation"') > 0 && mh.indexOf('<nav class="ixaz"') < 0, 'the letter bar is not a <nav> (the sidebar\'s nav rule would style it)');
+});
+
+test('MP1-6: department guides come from data/extracts.json — every guide a part, Billing in each by default, and a reference to a section a guide leaves out reads "(in the full manual)", never a dead link', () => {
+  const bd = MP1_('build.py');
+  const man = JSON.parse(MP1_('data/extracts.json'));
+  const parts = [...bd.matchAll(/^\s+"(p\d+)": \("/gm)].map((m) => m[1]);
+  assert.deepStrictEqual(man.default_chapters, ['p0', 'p1', 'p10'], 'Parts 0, 1 and Billing go into every guide');
+  man.guides.forEach((g) => { assert.ok(parts.indexOf(g.key) >= 0, g.key + ' is a part'); (g.sections || []).forEach((s) => assert.ok(/^§\w+-\w+$/.test(s), s)); });
+  assert.deepStrictEqual(man.guides.map((g) => g.key).sort(), parts.filter((p) => !['p0', 'p1'].includes(p)).sort(), 'one guide per department part');
+  assert.ok(bd.indexOf('MANIFEST = json.load(open("data/extracts.json"))') > 0, 'build.py reads the manifest');
+  assert.ok(bd.indexOf('errors.append(f"extracts.json: ') > 0, 'and refuses a guide, chapter or section that does not exist');
+  assert.ok(bd.indexOf('body = localise_links(body)') > 0 && bd.indexOf('(in the full manual)') > 0, 'a link outside the guide becomes plain text that says where the section is');
+  assert.ok(bd.indexOf('len(part_keys) > 3') < 0, 'a four-part guide no longer carries every card (the old filter kept them all past three parts)');
+});
+
+/* ── Manual chapter colours + icons (operator 2026-10-07) ─────────────────────
+ * ONE source, manual/data/chapter_style.json: the HTML and Word manuals draw
+ * from it, and the app's copies (the icon set, the --man-pN tokens, the part →
+ * icon map) are pinned equal to it here.
+ */
+console.log('\nManual chapter colours and icons — one source, the HTML, Word and the Reference reader');
+const MP2_CH = JSON.parse(MP1_('data/chapter_style.json'));
+function mp2Lum_(hex) {
+  const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+}
+function mp2Contrast_(a, b) { const x = mp2Lum_(a), y = mp2Lum_(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+
+test('MP2-1: chapter_style.json names every part once, each icon it uses exists and is outline-only, and every colour keeps 4.5:1 on its page in light and dark — the manual\'s and the app\'s', () => {
+  const parts = [...MP1_('export_reference.py').matchAll(/^\s+"(p\d+)": \("([^"]+)", "src\/p\d+\.md"\),$/gm)].map((m) => [m[1], m[2]]);
+  assert.strictEqual(parts.length, 11, 'the export lists eleven parts (non-vacuous)');
+  assert.deepStrictEqual(Object.keys(MP2_CH.parts).sort(), parts.map((p) => p[0]).sort(), 'one entry per part, and nothing else');
+  parts.forEach(([k, name]) => assert.strictEqual(MP2_CH.parts[k].department, name, k + ' is ' + name));
+  const used = new Set(Object.values(MP2_CH.parts).map((c) => c.icon));
+  assert.strictEqual(used.size, 11, 'every chapter has its own icon');
+  assert.deepStrictEqual([...used].sort(), Object.keys(MP2_CH.icons).sort(), 'the file holds exactly the icons it uses');
+  Object.entries(MP2_CH.icons).forEach(([n, body]) => {
+    const tags = [...body.matchAll(/<([a-z]+)((?:\s+[a-z-]+="[^"<>]*")*)\s*\/>/g)];
+    assert.ok(tags.length && tags.map((t) => t[0]).join('') === body, n + ': only self-closing elements');
+    tags.forEach((t) => {
+      assert.ok(['path', 'circle', 'rect'].includes(t[1]), n + ': <' + t[1] + '>');
+      [...t[2].matchAll(/\s([a-z-]+)="/g)].forEach((a) => assert.ok(['d', 'cx', 'cy', 'r', 'x', 'y', 'width', 'height', 'rx', 'transform'].includes(a[1]), n + ': ' + a[1] + ' (the colour and stroke come from the caller, so the icon follows the theme)'));
+    });
+  });
+  // the manual's own pages, then EVERY paper and card the app's tokens define, every palette included (derived)
+  const tokSrc = fs.readFileSync(path.join(PA_WEB, 'styles_design_tokens.html'), 'utf8');
+  const appPapers = [...new Set([...tokSrc.matchAll(/--paper(?:-card)?:\s*(#[0-9a-fA-F]{6})/g)].map((m) => m[1]))];
+  const pages = { light: ['#FFFFFF'].concat(appPapers.filter((p) => mp2Lum_(p) > 0.5)), dark: ['#0F161D'].concat(appPapers.filter((p) => mp2Lum_(p) <= 0.5)) };
+  assert.ok(pages.light.length >= 5 && pages.dark.length >= 5, 'the app\'s papers were found (non-vacuous)');
+  Object.entries(MP2_CH.parts).forEach(([k, c]) => ['light', 'dark'].forEach((t) => {
+    assert.ok(/^#[0-9A-Fa-f]{6}$/.test(c[t]), k + ' ' + t);
+    pages[t].forEach((bg) => assert.ok(mp2Contrast_(c[t], bg) >= 4.5, k + ' ' + t + ' ' + c[t] + ' on ' + bg + ': ' + mp2Contrast_(c[t], bg).toFixed(2)));
+  }));
+});
+
+test('MP2-2: the HTML, Word and the Word badges all READ chapter_style.json — no part colour is typed into any of them, and the two UI accents that borrowed one keep their own token', () => {
+  const mh = MP1_('make_html.py'), rx = MP1_('render_docx.js'), rz = MP1_('rasterize_diagrams.py');
+  assert.ok(mh.indexOf('CHAPTERS = _jcs.load(open("data/chapter_style.json"') > 0, 'make_html.py loads it');
+  assert.strictEqual((mh.match(/__PAL_LIGHT__/g) || []).length, 2, 'the light palette is a placeholder, filled once');
+  assert.strictEqual((mh.match(/__PAL_DARK__/g) || []).length, 3, 'and the dark one in both dark blocks');
+  assert.ok(mh.indexOf('TPL.replace("__PAL_LIGHT__", palette("light")).replace("__PAL_DARK__", palette("dark"))') > 0, 'filled from the file at write time');
+  assert.ok(!/--p\d+:#[0-9A-Fa-f]{6}/.test(mh), 'no part colour is hand-typed into the HTML template');
+  assert.ok(!/(#res a\.ali|\.misscap|\.pinbtn\.on|#pinlist a)\{[^}]*var\(--p\d+\)/.test(mh), 'search hits, the missing-capture box and pins use --hit / --pin, so a chapter colour change never repaints them');
+  ['pbadge', '"eic", 12', '"nic", 15', '"cic", 14', '"tic", 16'].forEach((t) => assert.ok(mh.indexOf(t) > 0, 'the icon rides: ' + t));
+  assert.ok(/path\.join\(__dirname, 'data', 'chapter_style\.json'\)/.test(rx) && !/p0: '1C3A5E'/.test(rx), 'Word reads the light colours from the file');
+  assert.ok(/out', 'icons'/.test(rx) && /left: \{ style: BorderStyle\.SINGLE, size: 36, color: accent/.test(rx), 'a Word chapter heading carries its badge and its stripe');
+  assert.ok(rz.indexOf('json.load(open("data/chapter_style.json"') > 0 && rz.indexOf('root.replace("__PAL_LIGHT__"') > 0 && rz.indexOf('assert "__" not in root') > 0,
+    'the rasterizer fills the light palette from the file (the diagrams would otherwise lose every part colour) and refuses a placeholder it does not fill');
+  assert.ok(/out\/icons\/\{k\}\.png/.test(rz), 'and draws each chapter badge for Word');
+  const mk = MP1_('make_all.sh');
+  assert.ok(mk.indexOf('rasterize_diagrams.py') < mk.indexOf('render_docx.js'), 'the badges exist before Word is rendered');
+});
+
+test('MP2-3: the app\'s copies ARE the source — the icon set holds each chapter icon\'s exact paths, the --man-pN tokens are its colours in both modes, the reader\'s part → icon map is its map, and the diagrams draw in those tokens', () => {
+  const ctx = { window: {} }; vm.createContext(ctx);
+  vm.runInContext(/<script>([\s\S]*)<\/script>/.exec(fs.readFileSync(path.join(PA_WEB, 'script_icons.html'), 'utf8'))[1], ctx);
+  Object.entries(MP2_CH.icons).forEach(([n, body]) => {
+    const svg = ctx.window.icon(n, 24);
+    assert.ok(svg, n + ' is in the app\'s icon set');
+    assert.strictEqual(/aria-hidden="true">([\s\S]*)<\/svg>$/.exec(svg)[1], body, n + ': the app draws the same paths as the manual');
+  });
+  const tok = fs.readFileSync(path.join(PA_WEB, 'styles_design_tokens.html'), 'utf8');
+  const lightB = /:root \{\n((?:\s*--man-p\d+: #[0-9A-Fa-f]{6};)+)\s*\}/.exec(tok), darkB = /:root\[data-mode="dark"\], body\[data-mode="dark"\] \{\n((?:\s*--man-p\d+: #[0-9A-Fa-f]{6};)+)\s*\}/.exec(tok);
+  assert.ok(lightB && darkB, 'one light and one dark block of --man-pN');
+  [['light', lightB[1]], ['dark', darkB[1]]].forEach(([t, b]) => {
+    const got = {}; [...b.matchAll(/--man-(p\d+): (#[0-9A-Fa-f]{6});/g)].forEach((m) => { got[m[1]] = m[2]; });
+    const want = {}; Object.entries(MP2_CH.parts).forEach(([k, c]) => { want[k] = c[t]; });
+    assert.deepStrictEqual(got, want, 'the ' + t + ' tokens are the file\'s ' + t + ' colours');
+  });
+  const map = vm.runInContext('(' + /var KB_MANUAL_CHAPTER_ICONS = Object\.freeze\((\{[\s\S]*?\})\);/.exec(M1_KB_SRC)[1] + ')', vm.createContext({}));
+  const want = {}; Object.entries(MP2_CH.parts).forEach(([k, c]) => { want[k] = c.icon; });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(map)), want, 'the reader names the file\'s icon for every part');
+  const dg = /\.kb-article \.kb-diagram \{([^}]*)\}/.exec(M1_KB_SRC)[1];
+  Object.keys(MP2_CH.parts).forEach((k) => assert.ok(new RegExp('--dg-' + k + ': var\\(--man-' + k + '\\);').test(dg), '--dg-' + k + ' is the chapter\'s colour, as in the HTML manual'));
+});
+
+test('MP2-4: the reader puts a chapter\'s badge and colour on its title and its icon in the tree — only for a "Chapter NN — " (or pre-renumber "Part NN — ") department, by its number, and never anything built from the name (driven)', () => {
+  const ctx = vm.createContext({ String, Object, Number, KB_STATE: { isAdmin: false }, icon: (n, s) => '<i data-icon="' + n + '" data-s="' + s + '"></i>',
+    esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+    kbShiftHeadings_: (h) => h, kbMd_: (m) => m, kbManualFeedbackBarHtml_: () => '', kbBookmarkBtnHtml_: () => '', kbIsManualCard_: () => false });
+  vm.runInContext(/var KB_MANUAL_CHAPTER_ICONS = Object\.freeze\(\{[\s\S]*?\}\);/.exec(M1_KB_SRC)[0], ctx);
+  ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualPartHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
+  const head = (d) => /^<div class="kb-item-head[^"]*">[\s\S]*?<\/div>/.exec(ctx.kbManualPartHtml_({ department: d, sections: [] }))[0];
+  assert.strictEqual(head('Chapter 05 — Power Mobility'),
+    '<div class="kb-item-head kb-man-head kb-man-chap kb-man-p5"><h2><span class="kb-man-badge kb-man-p5" aria-hidden="true"><i data-icon="bolt" data-s="18"></i></span>Chapter 05 — Power Mobility</h2></div>');
+  assert.ok(/kb-man-p4"[\s\S]*data-icon="clipboardList"/.test(head('Chapter 04 — Sales')), 'Sales is Chapter 4 since the October 2026 renumber');
+  assert.ok(/kb-man-p10"[\s\S]*data-icon="dollar"/.test(head('Chapter 10 — Billing & Denials')), 'two digits read as one number');
+  assert.ok(/kb-man-p10"[\s\S]*data-icon="dollar"/.test(head('Part 10 — Billing & Insurance')), 'a row imported before the renumber still reads by its number');
+  ['Appendix A — Master Glossary', 'Chapter 11 — Nothing', 'Part 11 — Nothing', 'Chapter 4 - Hyphen', 'Part 4 - Hyphen', 'Sales', '', 'Chapter 04 — <img src=x onerror=alert(1)>'].forEach((d) => {
+    const h = head(d);
+    if (d.indexOf('<img') > 0) {
+      assert.ok(!/<img/.test(h) && /kb-man-p4/.test(h), 'a hostile name is escaped and only its number picks the chapter');
+    } else {
+      assert.ok(!/kb-man-chap|kb-man-badge/.test(h), JSON.stringify(d) + ' has no chapter badge');
+    }
+  });
+  assert.strictEqual(ctx.kbManualChapterIcon_('Chapter 07 — Service', 13, 'kb-man-dic'), '<span class="kb-man-dic kb-man-p7" aria-hidden="true"><i data-icon="repair" data-s="13"></i></span>');
+  ['__proto__', 'constructor', 'toString'].forEach((n) => { assert.strictEqual(ctx.kbManualChapterKey_('Chapter ' + n + ' — x'), '', n); assert.strictEqual(ctx.kbManualChapterKey_('Part ' + n + ' — x'), '', n); });
+  assert.ok(/\(manual \? kbManualChapterIcon_\(d, 13, 'kb-man-dic'\) : ''\)/.test(extractFnFrom(M1_KB_SRC, 'kbRenderTree_')), 'the tree shows the icon on a manual part only');
+  assert.ok(!/var\(--man-c,/.test(M1_KB_SRC), 'no fallback on the chapter colour (g57)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

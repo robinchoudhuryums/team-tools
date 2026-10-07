@@ -1040,9 +1040,9 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // a wrapped item, a Script snippet, a diagram and an icon awaiting the
       // images import, and kb: cross-references (plain text until Phase 2).
       if (id === 'man-0-10' || id === 'man-0-11') {
-        return Object.assign({ department: 'Part 00 — CSR Core', status: 'draft', type: 'article' }, manualSection(id));
+        return Object.assign({ department: 'Chapter 00 — CSR Core', status: 'draft', type: 'article' }, manualSection(id));
       }
-      if (id === 'man-10-1') return Object.assign({ department: 'Part 10 — Billing & Insurance', status: 'draft', type: 'article' }, manualSection(id));
+      if (id === 'man-10-1') return Object.assign({ department: 'Chapter 10 — Billing & Denials', status: 'draft', type: 'article' }, manualSection(id));
       return { id: 'kb-1', title: 'HIPAA refresher', department: 'Billing', status: 'published', type: 'article',
         bodyMd: '# HIPAA refresher\n\nMinimum-necessary rule: share only what the task needs.\n\n- Verify the caller before any PHI\n- Fax cover sheets on every outbound fax' };
     },
@@ -1055,11 +1055,11 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // getManualMeta its {version, built, router, changelog} (INV-185). One
     // changelog entry is recent, so the "Updated" badge is photographed.
     getManualPart: function (dept) {
-      if (dept === 'Part 10 — Billing & Insurance') {   // M5a — a second part, so the cross-part jump and its chip are shootable
+      if (dept === 'Chapter 10 — Billing & Denials') {   // M5a — a second part, so the cross-part jump and its chip are shootable
         var b = manualSection('man-10-1');
         return { department: dept, isAdmin: true, sections: [{ id: 'man-10-1', title: b.title, status: 'draft', sortOrder: 1, bodyMd: b.bodyMd }] };
       }
-      if (dept !== 'Part 00 — CSR Core') return { department: dept, sections: [], isAdmin: true };
+      if (dept !== 'Chapter 00 — CSR Core') return { department: dept, sections: [], isAdmin: true };
       return { department: dept, isAdmin: true, sections: ['man-0-10', 'man-0-11'].map(function (id, i) {
         var m = manualSection(id); return { id: id, title: m.title, status: 'draft', sortOrder: 10 + i, bodyMd: m.bodyMd };
       }) };
@@ -1089,9 +1089,9 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // the client marks.
     searchReference: function (q) {
       return { sectioned: true, terms: ['waiting', 'wait', 'fax history'], results: [
-        { id: 'man-0-10', title: '0.10 Anatomy of a transaction', department: 'Part 00 — CSR Core', type: 'article', status: 'draft', router: true,
+        { id: 'man-0-10', title: '0.10 Anatomy of a transaction', department: 'Chapter 00 — CSR Core', type: 'article', status: 'draft', router: true,
           heading: 'The caller said \u201cYou\'re waiting on my doctor?\u201d', anchor: '0.10.2', chunkMd: '0.10.2 \u2014 check Fax History', truncated: false, score: 20, snippet: '' },
-        { id: 'man-0-10', title: '0.10 Anatomy of a transaction', department: 'Part 00 — CSR Core', type: 'article', status: 'draft',
+        { id: 'man-0-10', title: '0.10 Anatomy of a transaction', department: 'Chapter 00 — CSR Core', type: 'article', status: 'draft',
           heading: '0.10.2 Before you transfer', anchor: '0-10-2-before-you-transfer', chunkMd: '1. Check the **Trx State**\n2. If the order is waiting on paperwork, open **Fax History** first', truncated: true, score: 12, snippet: '' },
         { id: 'kb-1', title: 'HIPAA refresher', department: 'Billing', type: 'article', status: 'published',
           heading: '', anchor: '', chunkMd: 'Wait for the caller to verify before any PHI.', truncated: false, score: 4, snippet: '' }] };
@@ -1507,9 +1507,9 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       { id: 'kb-4', department: 'Resupply', title: 'CPAP mask sizing guide', type: 'article', status: 'draft', sortOrder: 1 },
       // Batch M1 — imported manual drafts (ids man-…, zero-padded parts), so
       // the Manual dialog has parts to publish and the tree shows the order.
-      { id: 'man-0-10', department: 'Part 00 — CSR Core', title: '0.10 Anatomy of a transaction', type: 'article', status: 'draft', sortOrder: 10 },
-      { id: 'man-0-11', department: 'Part 00 — CSR Core', title: '0.11 Notes and email conventions', type: 'article', status: 'draft', sortOrder: 11 },
-      { id: 'man-10-1', department: 'Part 10 — Billing & Insurance', title: '10.1 How billing works', type: 'article', status: 'draft', sortOrder: 1 }] },
+      { id: 'man-0-10', department: 'Chapter 00 — CSR Core', title: '0.10 Anatomy of a transaction', type: 'article', status: 'draft', sortOrder: 10 },
+      { id: 'man-0-11', department: 'Chapter 00 — CSR Core', title: '0.11 Notes and email conventions', type: 'article', status: 'draft', sortOrder: 11 },
+      { id: 'man-10-1', department: 'Chapter 10 — Billing & Denials', title: '10.1 How billing works', type: 'article', status: 'draft', sortOrder: 1 }] },
     // C17 batch-3 (INV-185): FIELD NAMES mirror the server return sites —
     // `views` (a prior fixture key had drifted to a name the client never
     // reads), plus total/cap/dueDays so the F18 cap-note path is renderable;

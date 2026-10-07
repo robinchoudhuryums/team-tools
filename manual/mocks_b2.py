@@ -109,7 +109,7 @@ for x0, lst in opts.items():
         b.append(fbox(x, 282, 144, 54, cond, "act"))
         b.append(fl(x + 72, 336, x + 72, 352))
         b.append(fbox(x, 352, 144, 58, out, k))
-b.append(fbox(20, 424, 460, 34, "CSRs can't waive or reduce a fee outside these rules — §10-16", "note"))
+b.append(fbox(20, 424, 460, 34, "CSRs can't waive or reduce a fee outside these rules — §10-15", "note"))
 b.append(fbox(500, 424, 460, 34, "If unsure whether UMS is enrolled, check with Eligibility", "pol"))
 b.append(fbox(20, 470, 1120, 34, "**Uncommon payers — Workers' Compensation or the VA, for example, may pay for the item in full, including the upgrade fee", "pol"))
 svg("m7-waivers", W, H, "Upgrade fee waiver decision", b)
@@ -168,7 +168,7 @@ b.append(f'<text x="{dx(-10) - 8}" y="62" text-anchor="end" style="{MONO}">Shipp
 b.append(f'<text x="{dx(-5)}" y="62" text-anchor="middle" style="{MONO};fill:var(--scr-ink)">SHIP DATE = DATE OF SERVICE</text>')
 b.append(fbox(40, 206, 350, 66, "**PAP has a second gate|Documented use and a doctor visit —|out of compliance, no supplies — §3-7.4", "pol"))
 b.append(fbox(405, 206, 350, 66, "**Nebulizer supplies|No more than a three-month quantity|in one shipment — §3-3.3", "note"))
-b.append(fbox(770, 206, 350, 66, "**Oxygen tanks are different|A rental accessory — once a week, two|business days' notice — §7-2.1", "note"))
+b.append(fbox(770, 206, 350, 66, "**Oxygen tanks are different|A rental accessory — once a week, two|business days' notice — §8-2.1", "note"))
 b.append(fbox(40, 290, 1080, 60, "**Say:|\"Insurance sets the window for when we can send the next shipment — we're not able to ship earlier than the allowed|timeframe before you run out, per insurance guidelines. I'll follow up with that team to make sure it goes out as soon as possible.\"", "note"))
 b.append(txt(W/2, 386, "Medicare's rules. Texas Medicaid bills one month's supply at a time, so eligibility is checked each month."))
 svg("m11-resupply", W, H, "Resupply contact and shipping windows", b)
@@ -180,7 +180,7 @@ stages = [("Pending|(Appoint. Req.)", "An appointment is|needed. Nothing|arrange
           ("Pending|(Appt. Sched.)", "Being scheduled —|by the patient or|by Sales", "tint"),
           ("Pending|(Appoint. Verification)", "A date exists but|isn't confirmed by|both sides yet", "watch"),
           ("Pending|(Payer Verification)", "Sales Eligibility is|checking the|insurance", "tint"),
-          ("Eligible", "Sales is done — the|order is now with|Power. See §4-1", "scr")]
+          ("Eligible", "Sales is done — the|order is now with|Power. See §5-1", "scr")]
 x = 30; w = 208; gap = 16
 for i, (name, what, tone) in enumerate(stages):
     fill = {"tint": "--tint", "watch": "--watch-bg", "scr": "--scr-bg"}[tone]
@@ -192,8 +192,10 @@ for i, (name, what, tone) in enumerate(stages):
                  f'style="font:{"700" if j == 0 else "600"} 12px \'IBM Plex Sans\',sans-serif;fill:var({ink})">{ln}</text>')
     b.append(fbox(x + 4, 148, w - 12, 70, what, "act"))
     x += w + gap
-b.append(f'<rect x="30" y="236" width="{4*(w+gap)-gap}" height="26" rx="3" fill="var(--panel)" stroke="var(--rule)"/>')
-b.append(f'<text x="{30 + (4*(w+gap)-gap)/2}" y="253" text-anchor="middle" style="{MONO}">WITH SALES — route calls to Sales</text>')
+b.append(f'<rect x="30" y="236" width="{3*(w+gap)-gap}" height="26" rx="3" fill="var(--panel)" stroke="var(--rule)"/>')
+b.append(f'<text x="{30 + (3*(w+gap)-gap)/2}" y="253" text-anchor="middle" style="{MONO}">WITH SALES — route calls to Sales</text>')
+b.append(f'<rect x="{30 + 3*(w+gap)}" y="236" width="{w}" height="26" rx="3" fill="var(--panel)" stroke="var(--rule)"/>')
+b.append(f'<text x="{30 + 3*(w+gap) + w/2}" y="253" text-anchor="middle" style="{MONO}">SALES ELIGIBILITY</text>')
 b.append(f'<rect x="{30 + 4*(w+gap)}" y="236" width="{w}" height="26" rx="3" fill="var(--scr-bg)" stroke="var(--scr-ink)"/>')
 b.append(f'<text x="{30 + 4*(w+gap) + w/2}" y="253" text-anchor="middle" style="{MONO};fill:var(--scr-ink)">WITH POWER</text>')
 b.append(txt(W/2, 300, "Only Appoint. Verification has a date — and it isn't confirmed yet, so don't give it out as settled.  Eligibility can return here if insurance changes."))
@@ -224,11 +226,11 @@ for x1, x2 in ((A + AW, B), (B + BW, C), (C + CW, D), (D + DW, E)):
 b.append(f'<path class="dg-arr" d="M{A + AW/2} 72 V52 H{C + 60} V72" stroke-dasharray="5 3"/>')
 b.append(f'<text x="{(A + C)/2 + 30}" y="46" text-anchor="middle" style="{MONO}">PAST M.E. DONE IN LAST 6 MOS — SKIPS PAK</text>')
 # A: sales
-b.append(card(A, 132, AW, 150, "Moves on at", "Eligible|(appt confirmed|& insurance|verified)|— §9-3", "act"))
+b.append(card(A, 132, AW, 150, "Moves on at", "Eligible|(appt confirmed|& insurance|verified)|— §4-3", "act"))
 # B: PAK sub-steps
-b.append(card(B, 132, BW, 84, "PPD", "~15-minute interview:|mobility needs, options,|the process — §4-3.1"))
-b.append(card(B, 224, BW, 84, "MA Education", "Walks the MDO's office|through the paperwork|— §4-3.2"))
-b.append(card(B, 316, BW, 84, "Appt scheduling", "Reschedules if needed;|collects F2F and PAK|after the visit — §4-3.3"))
+b.append(card(B, 132, BW, 84, "PPD", "~15-minute interview:|mobility needs, options,|the process — §5-2.1"))
+b.append(card(B, 224, BW, 84, "Medical Assistant Ed.", "Walks the MDO's office|through the paperwork|— §5-2.2"))
+b.append(card(B, 316, BW, 84, "Appt scheduling", "Reschedules if needed;|collects F2F and PAK|after the visit — §5-2.3"))
 # C: concurrent tracks as Gantt bars
 b.append(f'<text x="{C + CW/2}" y="146" text-anchor="middle" style="{MONO}">IN PROGRESS AT THE SAME TIME</text>')
 def bar(x, y, w, t, sub, dashed=False, kind="dec"):
@@ -240,9 +242,9 @@ def bar(x, y, w, t, sub, dashed=False, kind="dec"):
 b.append(bar(C, 156, CW, "Qualifications — always", "Checks every document is here and correct"))
 b.append(bar(C, 214, CW - 70, "PT Eval — if required", "Waiting on the PT Rx or report", True, "note"))
 b.append(bar(C, 272, CW - 30, "ATP Eval — if required", "Field Ops schedules, 2–3 wks out", True, "note"))
-b.append(f'<text x="{C + CW/2}" y="344" text-anchor="middle" class="dg-s">Dashed = only when the order needs it — §4-5, §4-6</text>')
+b.append(f'<text x="{C + CW/2}" y="344" text-anchor="middle" class="dg-s">Dashed = only when the order needs it — §5-4, §5-5</text>')
 # D: PAR
-b.append(card(D, 132, DW, 104, "Submitted", "Final review and|preparation of all docs,|then submitted to|insurance — §4-7", "act"))
+b.append(card(D, 132, DW, 104, "Submitted", "Final review and|preparation of all docs,|then submitted to|insurance — §5-6", "act"))
 b.append(fl(D + DW/2, 236, D + DW/2, 256))
 b.append(fbox(D, 256, DW, 34, "**What came back?", "dec"))
 b.append(elbow(D + DW/2, 290, D + 40, 312, "", ym=300))
@@ -255,13 +257,13 @@ b.append(f'<path class="dg-arr" d="M{D + 39} 356 V366"/>')
 b.append(card(E, 132, 150, 70, "Order placed", "with the|manufacturer"))
 b.append(card(E + 174, 132, 150, 70, "Received", "in our|warehouse"))
 b.append(fl(E + 150, 167, E + 174, 167))
-b.append(card(E, 222, 324, 58, "Field Ops-Power calls to schedule", "Delivery — the patient must be home — §4-9"))
+b.append(card(E, 222, 324, 58, "Field Ops-Power calls to schedule", "Delivery — the patient must be home — §5-8"))
 b.append(fl(E + 249, 202, E + 249, 222))
 b.append(f'<path class="dg-arr" d="M{D + DW} 334 H{E - 22} V167 H{E}"/>')
 # order verification: floating task with a gate
 OVx1, OVx2, OVy = C + 90, E - 8, 436
 b.append(f'<rect x="{OVx1}" y="{OVy}" width="{OVx2 - OVx1}" height="72" rx="5" fill="var(--pol-bg)" stroke="var(--pol-ink)" stroke-width="1.4"/>')
-b.append(f'<text x="{OVx1 + 12}" y="{OVy + 22}" style="font:700 12px {SANS};fill:var(--pol-ink)">Order verification — §4-8</text>')
+b.append(f'<text x="{OVx1 + 12}" y="{OVy + 22}" style="font:700 12px {SANS};fill:var(--pol-ink)">Order verification — §5-7</text>')
 b.append(f'<text x="{OVx1 + 12}" y="{OVy + 41}" style="font:500 11.5px {SANS};fill:var(--pol-ink)">Confirms model, seat, joystick and color. After any PT / ATP eval;</text>')
 b.append(f'<text x="{OVx1 + 12}" y="{OVy + 58}" style="font:500 11.5px {SANS};fill:var(--pol-ink)">can overlap Qualifications or PAR.</text>')
 b.append(f'<line x1="{E - 8}" y1="{OVy - 30}" x2="{E - 8}" y2="{OVy + 72}" stroke="var(--pol-ink)" stroke-width="2.5"/>')
@@ -279,7 +281,7 @@ b.append(f'<rect x="{E}" y="{TY - 7}" width="{EW - 120}" height="14" rx="3" fill
 b.append(f'<text x="{E + (EW - 120)/2}" y="{TY + 22}" text-anchor="middle" style="font:700 11.5px {SANS};fill:var(--navy)">2–3 weeks to the warehouse</text>')
 b.append(f'<line x1="{E + EW - 116}" y1="{TY}" x2="{E + EW}" y2="{TY}" stroke="var(--muted)" stroke-width="2" stroke-dasharray="6 5"/>')
 b.append(f'<text x="{E + EW - 58}" y="{TY + 22}" text-anchor="middle" class="dg-s">then scheduled</text>')
-b.append(fbox(20, 620, 1120, 46, "**Don't quote 90 days|Give the stage and what it's waiting on — §4-1.2", "pol"))
+b.append(fbox(20, 620, 1120, 46, "**Don't quote 90 days|Give the stage and what it's waiting on — §5-1.2", "pol"))
 svg("m13-power", W, H, "Power order status", b)
 
 # --------------------------------------------------------------- mock page ---

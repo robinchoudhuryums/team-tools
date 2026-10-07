@@ -1174,6 +1174,45 @@ not restate it. Server endpoints live in the fourteen server files
      section index instead of the whole KB tab — every change made in the app
      is seen at once, a by-hand edit to the sheet within five minutes.
 
+     **Cycle 24 manual update (2026-10-06 → 10-07, the operator's edit list —
+     `.cycle/manual-update-plan.md`).** The manual source is edited and RENUMBERED
+     once. **Chapters, not parts:**
+     - Departments are labelled "Chapter NN — Name", and the file and part keys are
+       the chapter numbers (p4 = Sales, which took Power's insurance-eligibility
+       section as 4.4; Power and the chapters after it moved up one; Billing is
+       Chapter 10, "Billing & Denials", and 10.B became 10.A).
+     - `manual/data/renumber-2026-10.json` is the new → old crosswalk. The HTML
+       manual's search finds a section by its old number ("formerly 9.4"); the app
+       does not.
+     - The app reads both words: `kbDeptRank_` (server and client) and
+       `kbManualChapterKey_` accept "Chapter NN —" and legacy "Part NN —", and
+       `kbManualNumberTarget_` accepts "chapter 5" as well as "part 5".
+     - The renumbered manual re-imports FRESH: no app history migration (operator
+       decision). The import matches by id, so a reused id carries its row's status
+       and history to the section that now has that number; new ids arrive as
+       drafts; old ids go only with "Remove sections no longer in the manual"
+       ticked.
+
+     **Colours and icons:** each chapter has a colour (light and dark) and an icon,
+     from ONE file, `manual/data/chapter_style.json`. It feeds the HTML, the Word
+     files, the diagrams, and the reader's `KB_MANUAL_CHAPTER_ICONS` and
+     `--man-pN` tokens (both generated from it).
+
+     **Tables:** every table stays a table. A first header of "Step" draws numbered
+     steps; a ✓ or ✗ header tints its column (Do's & Don'ts). Both draw alike in
+     the HTML, Word and `kbMd_`.
+
+     **Roles:** a role link lands on that person's row in the B.1 directory, which
+     is A–Z by role with full names in four columns (Role, Holder, Backup, How to
+     reach). Queue and team rows are folded into their manager.
+
+     **The Word department guides** are filtered copies driven by
+     `manual/data/extracts.json`, and diagrams and chapter badges are rasterised
+     for Word.
+
+     **Moved out:** the Billing knowledge check left the manual for the Training
+     module (`manual/training/`, not built).
+
      **Cycle 23 Batch 2 (2026-10-01) — the eligibility lookup reads less
      generously.** "TX or OK" is Texas and Oklahoma (no longer Oregon); a state
      beside "listed cities" needs its "or"; an Open note must only elaborate;

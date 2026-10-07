@@ -48,6 +48,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 os.chdir(HERE)
 sys.path.insert(0, HERE)
 from numbering import display as dnum  # noqa: E402
+import footnotes, roles  # noqa: E402  (shared with build.py)
 
 # Mirrors KB_BODY_MAX in web-app/00_config.js — the importer refuses a longer
 # body, so the export refuses first (pinned equal by the Node harness).
@@ -59,13 +60,13 @@ PARTS = {
     "p1": ("Call Handling", "src/p1.md"),
     "p2": ("Manual Mobility & General DME", "src/p2.md"),
     "p3": ("Respiratory & Resupply", "src/p3.md"),
-    "p4": ("Power Mobility", "src/p4.md"),
-    "p5": ("Field Operations", "src/p5.md"),
-    "p6": ("Service", "src/p6.md"),
-    "p7": ("Oxygen", "src/p7.md"),
-    "p8": ("After Hours", "src/p8.md"),
-    "p9": ("Sales", "src/p9.md"),
-    "p10": ("Billing & Insurance", "src/p10.md"),
+    "p4": ("Sales", "src/p4.md"),
+    "p5": ("Power Mobility", "src/p5.md"),
+    "p6": ("Field Operations", "src/p6.md"),
+    "p7": ("Service", "src/p7.md"),
+    "p8": ("Oxygen", "src/p8.md"),
+    "p9": ("After Hours", "src/p9.md"),
+    "p10": ("Billing & Denials", "src/p10.md"),
 }
 APPX = {"a": "src/appendix_a.md", "b": "src/appendix_b.md", "c": "src/appendix_c.md"}
 
@@ -216,6 +217,7 @@ def render(key, src, tmp):
     text = open(dst, encoding="utf-8").read()
     text = SCAFFOLD.sub("", text)
     text = DRAFTNOTE.sub("\n", text)
+    text = footnotes.apply(text, src, errors)   # its <!--notes--> marker goes with the comments
     return html_to_md(text, src)
 
 
@@ -284,7 +286,7 @@ def article_id(sec):
 
 def department(key):
     if key.startswith("p"):
-        return f"Part {int(key[1:]):02d} — {PARTS[key][0]}"
+        return f"Chapter {int(key[1:]):02d} — {PARTS[key][0]}"
     return {"appx_a": "Appendix A — Glossary",
             "appx_b": "Appendix B — Escalation Directory",
             "appx_c": "Appendix C — Quick Reference Cards"}[key]
@@ -585,11 +587,9 @@ def main():
         return f"[{label}](kb:{target})"
 
     def role(m):
-        want = m.group(1).strip().lower()
-        for r in ROSTER:
-            hay = (r["role"] + " " + (r.get("note") or "")).lower()
-            if want in hay or all(w in hay for w in want.split()):
-                return f"[{r['role']}](kb:man-b-1)"
+        r = roles.find(ROSTER, m.group(1))   # the app focuses the B.1 row the link text names
+        if r:
+            return f"[{r['role']}](kb:man-b-1)"
         errors.append(f"ROLE {m.group(1)!r} matches nothing in roster.json")
         return m.group(0)
 

@@ -1,8 +1,395 @@
 [
   {
-    "date": "2026-01-12",
+    "date": "2026-10-07",
+    "part": "p8",
+    "section": "§8-3.3",
+    "summary": "After hours, an oxygen concentrator is troubleshot first and the on-call technician dispatched only if that fails, and only where after-hours dispatch is available — as Chapter 9 says. The section used to say \"dispatch immediately\".",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update — Phase 7 cross-reference audit (plan Part C)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p9",
+    "section": "§9-4.1",
+    "summary": "The Immediate response target now lists cough assist, IPPB and BiPAP ST beside ventilators, matching the dispatch table in 9.3.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update — Phase 7 cross-reference audit (plan Part C)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p7",
+    "section": "§7-3.1",
+    "summary": "Oxygen equipment: UMS services it for the whole 5-year lifetime as part of the oxygen rental, as 10.12.2 says. The \"maintenance-and-servicing payment every 6 months\" line was removed; Billing is asked to confirm.",
+    "authority": "Billing",
+    "retraining": false,
+    "provenance": "Operator manual update — Phase 7 Billing cross-check (plan Part C)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p2",
+    "section": "§2-3.2",
+    "summary": "States Medicare's bariatric bed (E0301) threshold — a patient over 350 lbs, up to 600 lbs — which Card 2 already quoted.",
+    "authority": "Medicare (hospital beds)",
+    "retraining": false,
+    "provenance": "Operator manual update — Phase 7 cross-reference audit (plan Part C)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p5",
+    "section": "§5-2.2",
+    "summary": "MA Education is now written Medical Assistant Education; in the manual, MA means only Medicare Advantage.",
+    "authority": "Operations",
+    "retraining": false,
+    "provenance": "Operator manual update 2026-10-06 — Phase 7 (list line 412)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "appx_b",
+    "section": "§B-1",
+    "summary": "Directory consolidated: each department's queue now sits on its manager's or supervisor's row (Sales, Field Operations, Service, Manual Mobility, Respiratory & Resupply); new Power Manager (Rajdeep Thakar) as backup across Power; Service under the Field Operations Manager; the Manual Mobility Manager, Power — PAK Team and updated backups; A–Z, with one How to reach column.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 — Phase 5 (list lines 360–383; decisions 49–53)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p0",
+    "section": "§0-11.3",
+    "summary": "Any email carrying protected information outside the company must be sent with Virtru encryption enabled.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 — Phase 5 (list line 359)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p3",
+    "section": "§3-7.1",
+    "summary": "APAP bills as E0601, the CPAP code, so E0601 documentation covers either; the Luna G3 X APAP works as a CPAP or an APAP.",
+    "authority": "Respiratory & Resupply",
+    "retraining": false,
+    "provenance": "Operator note 2026-10-07"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p10",
+    "section": "§10-12.8",
+    "summary": "Oxygen restart rules moved from 7.9 into Billing. The short-break example now counts the rental month (from the delivery anniversary), not the calendar month.",
+    "authority": "Billing",
+    "retraining": false,
+    "provenance": "Operator manual update 2026-10-06 — Phase 3 consolidation (list line 270; pushback B-22)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p10",
+    "section": "§10-19.6",
+    "summary": "The EAA and payment plans now live in Billing (formerly 5.9.3). Neither is available on an out-of-pocket order.",
+    "authority": "Billing",
+    "retraining": false,
+    "provenance": "Operator manual update 2026-10-06 — Phase 3 consolidation (list line 17)"
+  },
+  {
+    "date": "2026-10-07",
     "part": "p4",
-    "section": "§4-10.1",
+    "section": "§4-5.1",
+    "summary": "A past PMD patient who wants a new PMD goes to Sales: after 5 years, a new order on the existing account; within 5 years, usually a Same or Similar conflict, unless the new PMD is an upgrade and the provider attests to a significant change in condition.",
+    "authority": "Sales",
+    "retraining": true,
+    "provenance": "Operator note 2026-10-07"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p10",
+    "section": "§10-10",
+    "summary": "Coinsurance is a percentage, a copay a flat amount. Orders with a very high coinsurance (often 50% or more) may be declined, depending on the item — the intake team decides.",
+    "authority": "Billing",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list lines 324–326; decision 11)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p10",
+    "section": "§10-5.3",
+    "summary": "Billing order: Medicare first, then Medicaid — except a hospital bed for a full-Medicaid patient in an enrolled state, where Medicaid is primary. The QMB protection is a Policy callout.",
+    "authority": "Billing",
+    "retraining": false,
+    "provenance": "Operator manual update 2026-10-06 (list lines 318, 323; pushback B-7)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p10",
+    "section": "§10-14.1",
+    "summary": "Pick-up write-offs: Field Ops decides. Waived (a company decision) — the balance is waived and the item is the patient's; failed pick-up — the balance stays and the patient is still liable. Never promise either.",
+    "authority": "Billing",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (decisions 9, 89)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p10",
+    "section": "§10-17.3",
+    "summary": "Insurance calling about a Denials request, or a patient calling about a Denials invoice while the case is open, goes to the Denials team member working it, otherwise the Denials Q (ext 101).",
+    "authority": "Billing",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 342; decision 12)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p10",
+    "section": "§10-19.1",
+    "summary": "Patient Responsibility holds pre-delivery balances; invoiced balances after delivery are under Edit Patient → Invoices.",
+    "authority": "Billing",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 345)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p10",
+    "section": "§10-19.5",
+    "summary": "The Claim Prep tab: (paid / eligible) months per item, and the RR (rental) / NU (new purchase) modifiers.",
+    "authority": "Billing",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (decisions 7, 8)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p8",
+    "section": "§8-4.1",
+    "summary": "Every O2 supplies service ticket carries the non-billable supplies tag on the Ticket tab (also step 5 of 7.2.2).",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 262; decision 45)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p8",
+    "section": "§8-8.4",
+    "summary": "Oxygen tanks are not delivered to a medical facility for general stock — a request not tied to a named patient — except rarely, with the Field Operations Supervisor.",
+    "authority": "Field Operations",
+    "retraining": false,
+    "provenance": "Operator manual update 2026-10-06 (list line 269; decision 27)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p8",
+    "section": "§8-9",
+    "summary": "Oxygen is provided only within 50 miles of the Dallas (Irving) or San Antonio warehouses.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 273; decision 23)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p9",
+    "section": "§9-4",
+    "summary": "Escalation chain: call and text the on-call, then call and text again, then Level 1, then Level 2 — 30 minutes each. A dispatch is not acknowledged until the technician or RT confirms it.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list lines 285–287; decision 88)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p9",
+    "section": "§9-7",
+    "summary": "An after-hours service ticket sets Service Type to After Hours on the Ticket tab.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 292; decision 26)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p9",
+    "section": "§9-9",
+    "summary": "On-call technicians and RTs call the patient first and troubleshoot by phone, confirm a dispatch to the on-call phone, and message it again once the issue is resolved.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list lines 282, 284, 287; decision 25)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p6",
+    "section": "§6-3",
+    "summary": "A patient calling back about a scheduling message: never confirm the date yourself — transfer to Field Ops so they schedule against current availability.",
+    "authority": "Field Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 199)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p6",
+    "section": "§6-9.1",
+    "summary": "Before an SOS-affecting pick-up, tell the patient they will likely struggle to get similar equipment through insurance for five years. Patient-owned equipment is never picked up, even on request.",
+    "authority": "Field Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 219)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p6",
+    "section": "§6-10",
+    "summary": "Hospital bed relocation: a Field Ops or Service supervisor approves, and the call routes to Service.",
+    "authority": "Field Operations",
+    "retraining": false,
+    "provenance": "Operator manual update 2026-10-06 (list lines 222, 249)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p7",
+    "section": "§7-2",
+    "summary": "A package the carrier shows as delivered that the patient never received goes to Service, which opens a lost-package claim with FedEx — no police report. Insurance-rep complaints about a service refusal go to the Service Supervisor.",
+    "authority": "Service",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list lines 235–236; decisions 18, 28)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p7",
+    "section": "§7-3.2",
+    "summary": "A diagnostic visit is charged when the patient refuses the requested photos or video, or a technician recently found the equipment working and it is again fully functional.",
+    "authority": "Service",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 242; decision 17 — the $75 stands until confirmed)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p7",
+    "section": "§7-14",
+    "summary": "Competitor PMD referrals removed. A patient we can't service is pointed to a local DME repair service, which must be enrolled with or in network for the plan for insurance to pay.",
+    "authority": "Service",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list lines 258–259; decision 21)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p5",
+    "section": "§5-6.2",
+    "summary": "PAR responses: email Power with \"PAR Response Received:\"; requests for more information go to the Authorization (PAR) team, subject \"PAR Additional Info Requested:\". Some PARs are a dual submission to traditional Medicare and the MA plan.",
+    "authority": "Power Mobility",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list lines 170–172; decisions 33, 34)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p5",
+    "section": "§5-8",
+    "summary": "A PMD can be delivered to a nursing home that is the patient's permanent residence — never a hospital, rehab facility or SNF.",
+    "authority": "Power Mobility",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 179)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p5",
+    "section": "§5-9.3",
+    "summary": "Standard vs complex rehab power wheelchairs, by Medicare group; complex rehab needs a specialty evaluation and an ATP, and can be billed as a purchase.",
+    "authority": "Power Mobility",
+    "retraining": false,
+    "provenance": "Operator manual update 2026-10-06 (decision 29)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p4",
+    "section": "§4-6.1",
+    "summary": "A brand-new lead: name and DOB, then the phone number; with no record, transfer to the Sales Q.",
+    "authority": "Sales",
+    "retraining": false,
+    "provenance": "Operator manual update 2026-10-06 (decision 35)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p2",
+    "section": "§2-2.1",
+    "summary": "A walker on an insurance order isn't shipped out of state; an out-of-pocket order lifts the state limit, but never a delivery radius.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 70)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p2",
+    "section": "§2-4.2",
+    "summary": "No cutoff for a wheelchair size change: before delivery the Manual Mobility team acts on it; after delivery, Service or a pick-up-ticket swap.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (decision 42)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p3",
+    "section": "§3-3.1",
+    "summary": "A same-items resupply goes to the Resupply team on the email tool's Repeat Resupply form, subject \"[Category] [Month] Resupply: [Patient name], DOB: [date]\".",
+    "authority": "Respiratory & Resupply",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (decision 41)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p3",
+    "section": "§3-10",
+    "summary": "Ventilator issue: Service Q first; if no answer, email respiratory@ and service@ and notify an RT.",
+    "authority": "Respiratory & Resupply",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (decision 40)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p3",
+    "section": "§3-12.1",
+    "summary": "Compliance has a grace period of about one month after a lapse; persistent non-compliance — more than a month past it, after several notices — may lead to a pick-up. Compliance is noted with an end date.",
+    "authority": "Respiratory & Resupply",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (decisions 13, 14)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p3",
+    "section": "§3-2",
+    "summary": "Respiratory machine pick-ups: create the ticket; Field Ops reviews every pick-up ticket and decides whether more is needed. No discontinue prescription is needed to create it.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (A0 note 2)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p0",
+    "section": "§0-14",
+    "summary": "Outbound calls: open \"on a recorded line\", make at least two attempts using another caller ID, and leave no patient details on a voicemail.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 415)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p7",
+    "section": "§7-3.2",
+    "summary": "A diagnostic visit is charged when the patient hasn't sent photos or video of the equipment and the issue, or a recent service visit found no issue.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 40); the fee amount is with Service to confirm"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p1",
+    "section": "§1-7",
+    "summary": "Never transfer directly to a Spanish-speaking agent to get around the Spanish Queue or inbox — a direct transfer isn't queued or tracked.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 65)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p1",
+    "section": "§1-6.1",
+    "summary": "A complaint record has five fields; the health insurance claim number is no longer collected.",
+    "authority": "Operations",
+    "retraining": false,
+    "provenance": "Operator manual update 2026-10-06 (list line 60)"
+  },
+  {
+    "date": "2026-01-12",
+    "part": "p5",
+    "section": "§5-9.1",
     "summary": "POVs are ineligible for ROHO cushions.",
     "authority": "Power Mobility",
     "retraining": false,
@@ -37,8 +424,8 @@
   },
   {
     "date": "2025-02-18",
-    "part": "p9",
-    "section": "§9-6",
+    "part": "p4",
+    "section": "§4-7",
     "authority": "Sales",
     "retraining": true,
     "summary": "If the PPD date on an order is over 1 year old, a new order is created via Sales. Under 1 year, the Power team can re-open and resume the existing order.",
@@ -64,8 +451,8 @@
   },
   {
     "date": "2024-12-05",
-    "part": "p4",
-    "section": "§4-10.1",
+    "part": "p5",
+    "section": "§5-9.1",
     "summary": "The Ultra X replaced the Go-Go Traveller as the standard K0800 POV.",
     "authority": "Power Mobility",
     "retraining": false,
@@ -82,8 +469,8 @@
   },
   {
     "date": "2024-09-13",
-    "part": "p4",
-    "section": "§4-3.1",
+    "part": "p5",
+    "section": "§5-2.1",
     "summary": "After the PPD interview, send the AOR consent form link to the patient.",
     "authority": "Power Mobility",
     "retraining": true,
@@ -91,8 +478,8 @@
   },
   {
     "date": "2024-08-14",
-    "part": "p9",
-    "section": "§9-5",
+    "part": "p4",
+    "section": "§4-6",
     "authority": "Sales",
     "retraining": false,
     "summary": "When transferring a call from a lead with no order yet created, post the standard notation on the Lead Resolutions page.",
@@ -109,8 +496,8 @@
   },
   {
     "date": "2024-05-17",
-    "part": "p4",
-    "section": "§4-6",
+    "part": "p5",
+    "section": "§5-5",
     "summary": "ATP drive-by handling.",
     "authority": "Power Mobility",
     "retraining": false,

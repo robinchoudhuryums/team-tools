@@ -1,15 +1,15 @@
 # Appendix C — Quick Reference Cards
 
-**One card per part.** Each card carries the rules that change what you say on a call — not a
-summary of the part, but the things that are wrong often enough to be worth keeping in front of you.
+**One card per chapter.** Each card carries the rules that change what you say on a call — not a
+summary of the chapter, but the things that are wrong often enough to be worth keeping in front of you.
 
-In a standalone extract, only the cards for Part 0, Part 1 and that part are included.
+In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapter are included.
 
 <!--card:p0-->
 ## §C-0 Core
 
 ### Identity
-- Match **name and date of birth** before discussing any account — [[§10-23]]
+- Match **name and date of birth** before discussing any account — [[§1-3]]
 
 ### Coverage
 - If the primary denies an item, a secondary **generally can't** cover the full cost — **except Texas Medicaid**, for items Medicare never covers
@@ -21,8 +21,11 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 
 | Notate | Transfer | Email |
 |---|---|---|
-| You answered it fully | Caller needs a specialist now | Specialist unavailable and it can wait |
+| You answered it fully | Caller needs a specialist now | Specialist unavailable, or not urgent or same-day |
 | Demographic or insurance updates | Complex billing, compliance | Re-opens; OOP purchases you've completed |
+
+### Outbound calls
+- Open with your name, UniversalMed Supply and **"on a recorded line"** · at least **two attempts**, the second from another caller ID · **no patient details on a voicemail** — [[§0-14]]
 
 ### Where to look
 - `Eligibility` — whose order it is · `Ticket` — when it's coming · `Pat. Resp.` — what they owe
@@ -33,28 +36,28 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 <!--card:p1-->
 ## §C-1 Call Handling
 
-### Emergencies
+### Emergencies and verification
 - **In immediate distress?** Hang up and dial **9-1-1**, before anything else — [[§1-4.1]]
+- **Not the patient?** Once they confirm relationship, full name, and DOB or address — order and billing details. Before that, take information only
 
-### Who you may speak to
-- **Not the patient?** Once they confirm their relationship, the patient's full name, and date of birth or address — order and billing details. Before that, take information only
+### The most common calls
 
-### Escalation
-- **Supervisor request:** name and DOB → understand the concern → relevant team's supervisor → your own → offer an emailed callback
-- **Medicare or 1-800-MEDICARE with a complaint** → straight to a supervisor. Don't try to resolve it
+| The caller says | Do |
+|---|---|
+| "Where is my equipment?" | The status, then the `Ticket` date — only a date the system shows |
+| "It's broken." | Delivered → **Service Q**. Concentrator → **you troubleshoot**. Ventilator → **top priority** |
+| "Come pick this up." | Present the options first (Same or Similar). Promise no date |
+| "I need more supplies." | Within 30 days of running out; ship no sooner than **10 days** before |
+| "The patient has died." | Condolences, date of death; patient-owned stays, else a pick-up ticket |
 
-### Complaints
-- A complaint record needs **six fields** — name, address, phone, health insurance claim number, summary, actions taken
-- Acknowledge within **48 hours**
-
-### Conduct
-- **Abusive caller:** warn once, clearly. If it continues, say you are ending the call, then disconnect. Never without the warning
+### Escalation and complaints
+- **Supervisor:** name and DOB → the concern → that team's supervisor → your own → a callback. **Medicare complaint** → straight to a supervisor
+- A complaint: **five fields** (name, address, phone, summary, actions) · acknowledged within **48 hours**
 
 ### Language
-- **Inbound:** Spanish Q, then voicemail
-- **Outbound:** ask for a translator present, then Spanish Q, then email. The email is required **outbound only**
+- **Spanish Q** — inbound, then its voicemail; outbound, then the email. Never a direct transfer
 
-**Never say** — "your insurance will cover this" · "you'll only owe $X" · "I can waive that" · "you'll own the oxygen after 36 months" · "we take UHC"
+**Never say** — "your insurance will cover this" · "you'll only owe $X" · "I can waive that" · "we take UHC"
 
 <!--card:p2-->
 ## §C-2 Manual Mobility & General DME
@@ -64,41 +67,68 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 - **251–300 lbs → K0006**, the Medline K3 Guardian 20". The extra-wide chairs are K0007 and need **over 300**
 
 ### Delivery
-- **OOR = outside the delivery radius**, which varies by item. For walkers, out of state **is** out of range
+- **OOR = outside the delivery radius**, which varies by item. For a walker on an insurance order, out of state **is** out of range; out of pocket, only the radius applies
 
 ### Codes
-- **E0143** is the front-wheeled walker *and* the basic rollator. **E0149** is the bariatric walker *and* the heavy-duty rollator
+- **E0143** is the front-wheeled walker *and* the basic rollator. **E0149** is the bariatric walker *and* the heavy-duty rollator. **E0265** covers both fully-electric beds; **E0635** both battery lifts
 
 ### Coverage
 - **Bathroom items differ** — 3-in-1 commode can be covered by Medicare; shower chair and tub bench are TX Medicaid only; raised toilet seat is OOP only
-- Lift chairs are **Texas only**, via the Medicaid Waiver Program, with **no backup coordinator**
+- Lift chairs are **Texas only**, via the Medicaid Waiver Program — the Lift Chair Coordinator, backed up by the Manual Mobility Manager
 
 **Never** — say a bariatric item is covered because the patient is "close to" the threshold
 
 <!--card:p3-->
 ## §C-3 Respiratory & Resupply
 
-### Overrides to Part 0
+### Overrides to Chapter 0
 - Oxygen concentrators, PAP devices and ventilators need an **Rx even for out-of-pocket** purchase
 
 ### PAP compliance
 - ≥ 4 hours a night on **70% of nights** in any consecutive **30-day** period inside the first 90
 - **And** a face-to-face re-evaluation **between day 31 and day 91** — where coverage is most often lost
-- Failing the trial needs a new evaluation **and** a repeat facility-based sleep test
+- Failing the trial (Medicare and MA) needs a new evaluation **and** a repeat sleep study in a lab — a home test doesn't count. Medicaid and commercial plans differ
 
 ### Coverage
 - **Incontinence is not a Medicare benefit** — TX Medicaid only, TMHP allowances
 
 ### Priority
-- **Ventilator issues are the highest priority in the manual**
-- Oxygen has its own card — [[§C-7]]
+- **Ventilator issues are the highest priority in the manual** — Service Q; if no answer, email respiratory@ and service@ and notify an RT
+- Oxygen has its own card — [[§C-8]]
+
+**Never** — tell a patient Medicare covers briefs · ship supplies sooner than 10 days before they run out · decide compliance where the notes are silent
 
 <!--card:p4-->
-## §C-4 Power Mobility
+## §C-4 Sales
+
+### Where the order is
+
+| Status | Whose |
+|---|---|
+| Pending (Appoint. Req.) → (Appt. Sched.) → (Appoint. Verification) | Sales |
+| Pending (Payer Verification) | Sales Eligibility |
+| **Eligible** | **Power** |
+
+### Handoff
+- **"Eligible" is the handoff marker** — stop routing to Sales
+- Only the **Verification** stage has a date, and it still isn't confirmed
+- Eligibility **doesn't end at handoff** — insurance changes send it back
+
+### Stale orders
+- **PPD over 1 year old** → new order via Sales. **Under 1 year** → Power reopens the existing one
+
+### Qualified leads
+- Ask whether they've **already seen their doctor about it** — that may be a Qualified Lead, which skips PAK (a PPD is still done, by Qualifications)
+- The appointment must be **specifically a PMD Mobility Evaluation**
+
+**Never** — route an Eligible order back to Sales · call an appointment confirmed before Verification · promise or rule out a new PMD within five years
+
+<!--card:p5-->
+## §C-5 Power Mobility
 
 ### Process
 - Power **does not** follow the standard order process — Sales → PAK → Qualifications → PAR → Field Ops-Power
-- **90 days is the national average, not this order's estimate.** Say so, then give the current stage and what it's waiting on
+- **90 days is the national average, and we're faster.** Say so to set expectations, then give the current stage and what it's waiting on
 - ATP scheduling noted as a **"drive-by"** → still transfer to Field Ops-Power
 
 ### Insurance
@@ -106,17 +136,19 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 
 ### Equipment
 - **POVs are not eligible for ROHO cushions**
-- **PWCs generally cannot be returned** — custom-built, cannot be reissued
+- **PWCs often cannot be returned** — custom-built, cannot be reissued; create the ticket anyway once the checks are done, and promise neither outcome
 
 ### Delivery
-- PMDs are **never delivered to a facility**, and the patient must be present
+- PMDs are **not delivered to a hospital, rehab or SNF** — a nursing home that is the permanent residence is fine — and the patient must be present
 
 ### Route
 - **Scheduling** — delivery, ATP, service visits → **Field Ops-Power Q (ext 344)**
 - **Reporting a problem** with a PMD → **Service Q**
 
-<!--card:p5-->
-## §C-5 Field Operations
+**Never** — promise a PWC return or a write-off · call an MA plan a secondary · deliver a PMD to a hospital, rehab or SNF
+
+<!--card:p6-->
+## §C-6 Field Operations
 
 ### Delivery timing
 - **Two-day rule:** delivery to a facility no earlier than 2 days before discharge, for fitting or training only. **DOS is the discharge date.** The item goes home with the patient or we redeliver free
@@ -134,12 +166,12 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 - The **PRF** is signed at delivery and covers the 13-month billing. Check *Order Artifacts* before conceding that call
 
 ### Relocation
-- Hospital beds: Dallas, San Antonio, Hawaii only, within the same area, rental only, **$150**, supervisor verification
+- Hospital beds: Dallas, San Antonio, Hawaii only, within the same area, rental only, **$150** — a Field Ops or Service supervisor approves; route the call to Service
 
 **Never** — promise a pick-up · quote a tracking date as a service date
 
-<!--card:p6-->
-## §C-6 Service
+<!--card:p7-->
+## §C-7 Service
 
 ### Who pays for a repair
 
@@ -156,21 +188,24 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 - One question — does the change need MDO documentation? **No** → Service ticket. **Yes** → pick-up ticket **plus an email** to the intake team, coordinated so the patient isn't left without equipment
 
 ### Replacement
-- **Lost or stolen** → a **police report** is required to start a replacement request. It's the entry requirement, not the outcome
-- **Referrals out** only when we cannot repair through insurance **and** the patient refuses to pay OOP
+- **Lost or stolen** → a **police report** starts a replacement request — the entry requirement, not the outcome. A **package** shown delivered but never received → Service's FedEx claim, no report
+- **We can't service it** → a local DME repair service, in network for insurance to pay
 
 ### Visits and loaners
-- **No trip charge during a repair.** A diagnostic-only visit that finds nothing wrong is **$75** — say so before booking
+- **Diagnostic visit:** **$75** if the patient refuses photos or video of the issue, or a technician recently found it working — say so before booking
 - **Don't raise loaners.** If asked: possible only while **patient-owned** equipment is repaired, and Service confirms
+
+### Ventilators
+- **Service Q** first. If no answer, email respiratory@ and service@ and notify an RT — [[§7-5.1]]
 
 ### Timing and notes
 - **Turnaround:** days for small issues, weeks if parts come from the manufacturer
 - `(For internal use only)` notes are **not relayed** — a tracking number may be shipping to a warehouse
 
-**Never** — promise a loaner · quote a repair cost · charge for a trip during a repair
+**Never** — promise a loaner · quote a repair cost
 
-<!--card:p7-->
-## §C-7 Oxygen
+<!--card:p8-->
+## §C-8 Oxygen
 
 ### Ownership
 - **The patient never owns the concentrator.** Rental billing stops at 36 months; UMS keeps ownership and keeps servicing to 5 years
@@ -187,11 +222,13 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 - **Concentrator troubleshooting is CSR work**, not Service
 
 ### Urgent
-- Same-day tickets for urgent need and power outages. After hours — [[§C-8]]
+- Same-day tickets for urgent need and power outages. After hours — [[§C-9]]
 - **In immediate distress?** 9-1-1 first — [[§1-4.1]]
 
-<!--card:p8-->
-## §C-8 After Hours
+**Never** — tell a patient they will own the concentrator · send a concentrator fault to Service · supply tanks for another company's concentrator · change a flow rate
+
+<!--card:p9-->
+## §C-9 After Hours
 
 ### Scope
 - **DFW only.** Both RTs and the technicians work out of Irving. **San Antonio:** oxygen concentrator service only. **Hawaii:** none
@@ -204,43 +241,22 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 - **Ventilator, cough assist, IPPB, BiPAP ST** → dispatch the RT immediately, **do not troubleshoot**
 
 ### Escalation
-- Call → text, wait 30 → Level 1 backup, wait 30 → Level 2, wait 30 → repeat. Only scheduled on-call staff
-- The 0–60 minute target assumes someone answers. When nobody does, **keep cycling**
+- Call and text, wait 30 → call and text again, wait 30 → Level 1 backup, wait 30 → Level 2, wait 30 → repeat. Only scheduled on-call staff
+- Not acknowledged until the technician or RT **confirms**. The 0–60 minute target is an aim, not a guarantee — **keep cycling**
 - While cycling: confirm a working backup, keep the caller updated, **9-1-1 if distress develops**
 
 ### Afterward
 - Both records required — **service ticket and logbook**
 
-<!--card:p9-->
-## §C-9 Sales
-
-### Where the order is
-
-| Status | Whose |
-|---|---|
-| Pending (Appoint. Req.) → (Appt. Sched.) → (Appoint. Verification) | Sales |
-| Pending (Payer Verification) | Sales |
-| **Eligible** | **Power** |
-
-### Handoff
-- **"Eligible" is the handoff marker** — stop routing to Sales
-- Only the **Verification** stage has a date, and it still isn't confirmed
-- Eligibility **doesn't end at handoff** — insurance changes send it back
-
-### Stale orders
-- **PPD over 1 year old** → new order via Sales. **Under 1 year** → Power reopens the existing one
-
-### Qualified leads
-- Ask whether they've **already seen their doctor about it** — that may be a Qualified Lead, which skips PAK (a PPD is still done, by Qualifications)
-- The appointment must be **specifically a PMD Mobility Evaluation**
+**Never** — troubleshoot a ventilator call · contact off-schedule staff · tell a caller outside the dispatch area that someone is coming
 
 <!--card:p10-->
-## §C-10 Billing & Insurance
+## §C-10 Billing & Denials
 
-The full Billing card is at [[§10-B]]. This is the condensed version.
+The full Billing card is at [[§10-A]]. This is the condensed version.
 
 ### Rental
-- **Capped rental:** 13 paid months, then the patient owns it automatically. No purchase option, no 15 months
+- **Capped rental:** 13 paid months, then the patient owns it automatically. No purchase option (complex rehab PWC aside), no 15 months
 - **E0471 and ventilators:** monthly rental for as long as needed, **never owned**
 - **Oxygen:** 36 months of rental, then no rental charge — but **UMS keeps ownership** and keeps servicing to 5 years
 
@@ -258,3 +274,5 @@ The full Billing card is at [[§10-B]]. This is the condensed version.
 ### Paying
 - Network status is **plan by plan**, never carrier by carrier
 - Can't pay in full? A **payment plan** through Billing, or the **EAA** — neither on an out-of-pocket order
+
+**Never** — collect Medicare cost-sharing from a QMB patient · waive a fee outside the three rules · say "we take UHC" · say a denial will be overturned
