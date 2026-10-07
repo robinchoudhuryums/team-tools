@@ -166,6 +166,7 @@ b.append(path("M150 196 V148 H218"))
 b.append(tag(22, 96, 118, "Eligible —|appt confirmed|& insurance verified"))
 b.append(path("M60 266 V420 H212", True))
 b.append(tag(22, 436, 164, "Past M.E. done in last|6 mos — skips PAK.|Qualifications still|does the PPD"))
+b.append(f'<path d="M100 420 V436" stroke="var(--accent)" stroke-width="1.2" fill="none"/>')
 
 # ---- phase 1
 b.append(node(218, 96, 160, 100, "PPD", "~15-min interview:|mobility needs,|options, the process"))
@@ -178,6 +179,7 @@ b.append(small(588, 124, "new appt", anchor="middle"))
 b.append(small(588, 178, "confirmed", anchor="middle"))
 b.append(path("M480 196 V254 H372 V326 H300 V366"))
 b.append(tag(490, 205, 150, "F2F and PAK received"))
+b.append(f'<path d="M480 217 H490" stroke="var(--accent)" stroke-width="1.2" fill="none"/>')
 
 # ---- phase 2
 b.append(diamond(300, 420, 176, 108, "Qualifications", "always"))
@@ -204,6 +206,9 @@ b.append('<rect x="404" y="458" width="150" height="84" rx="6" fill="var(--bg)"/
 b.append(node(404, 458, 150, 84, "ATP Eval", "Field Ops schedules, up|to 2–3 weeks out based|on ATP travel route", dashed=True,
               fill="none", stroke="var(--p5)", ink="var(--p5)"))
 b.append(check(410, 560, "ATP Report", True))
+# a key for the dotted lines and boxes
+b.append(f'<path d="M410 640 H440" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 3" fill="none"/>')
+b.append(small(446, 644, "= if applicable"))
 b.append(path("M388 420 H396 V360 H404", True))
 b.append(path("M396 420 V500 H404", True))
 
@@ -216,7 +221,7 @@ b.append(node(651, 406, 140, 32, "PAR packet prep"))
 b.append(fl(721, 390, 721, 406))
 b.append(fl(721, 438, 721, 454))
 b.append(diamond(721, 492, 164, 76, "PAR Submission"))
-b.append(node(590, 548, 118, 48, "Appeals", "up to a month", fill="var(--watch-bg)", stroke="var(--watch-ink)", ink="var(--watch-ink)"))
+b.append(node(590, 548, 118, 48, "Appeals", "up to 1–2 months", fill="var(--watch-bg)", stroke="var(--watch-ink)", ink="var(--watch-ink)"))
 b.append(node(716, 548, 144, 48, "Approval confirmed", "", fill="var(--scr-bg)", stroke="var(--scr-ink)", ink="var(--scr-ink)"))
 b.append(node(590, 618, 118, 36, "Order closed", "", fill="var(--crit-bg)", stroke="var(--crit-ink)", ink="var(--crit-ink)"))
 b.append(fl(649, 596, 649, 618))
@@ -248,7 +253,7 @@ b.append(label(20, TY - 18, "TYPICAL TIME"))
 b.append(f'<line x1="20" y1="{TY}" x2="566" y2="{TY}" stroke="var(--muted)" stroke-width="2" stroke-dasharray="6 5"/>')
 b.append(T(293, TY + 22, "Sales, PAK and Qualifications vary — mostly on how quickly the provider returns correct paperwork", 11, 500, "var(--muted)", "middle"))
 b.append(f'<rect x="590" y="{TY - 7}" width="262" height="14" rx="3" fill="var(--accent)"/>')
-b.append(T(721, TY + 24, "PAR: 14 days or less", 11.5, 700, "var(--navy)", "middle"))
+b.append(T(721, TY + 24, "PAR: about 14 days", 11.5, 700, "var(--navy)", "middle"))
 b.append(f'<rect x="898" y="{TY - 7}" width="150" height="14" rx="3" fill="var(--accent)"/>')
 b.append(T(973, TY + 24, "2–3 weeks to warehouse", 11.5, 700, "var(--navy)", "middle"))
 b.append(f'<line x1="1054" y1="{TY}" x2="1140" y2="{TY}" stroke="var(--muted)" stroke-width="2" stroke-dasharray="6 5"/>')

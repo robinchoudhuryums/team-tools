@@ -192,8 +192,10 @@ for i, (name, what, tone) in enumerate(stages):
                  f'style="font:{"700" if j == 0 else "600"} 12px \'IBM Plex Sans\',sans-serif;fill:var({ink})">{ln}</text>')
     b.append(fbox(x + 4, 148, w - 12, 70, what, "act"))
     x += w + gap
-b.append(f'<rect x="30" y="236" width="{4*(w+gap)-gap}" height="26" rx="3" fill="var(--panel)" stroke="var(--rule)"/>')
-b.append(f'<text x="{30 + (4*(w+gap)-gap)/2}" y="253" text-anchor="middle" style="{MONO}">WITH SALES — route calls to Sales</text>')
+b.append(f'<rect x="30" y="236" width="{3*(w+gap)-gap}" height="26" rx="3" fill="var(--panel)" stroke="var(--rule)"/>')
+b.append(f'<text x="{30 + (3*(w+gap)-gap)/2}" y="253" text-anchor="middle" style="{MONO}">WITH SALES — route calls to Sales</text>')
+b.append(f'<rect x="{30 + 3*(w+gap)}" y="236" width="{w}" height="26" rx="3" fill="var(--panel)" stroke="var(--rule)"/>')
+b.append(f'<text x="{30 + 3*(w+gap) + w/2}" y="253" text-anchor="middle" style="{MONO}">SALES ELIGIBILITY</text>')
 b.append(f'<rect x="{30 + 4*(w+gap)}" y="236" width="{w}" height="26" rx="3" fill="var(--scr-bg)" stroke="var(--scr-ink)"/>')
 b.append(f'<text x="{30 + 4*(w+gap) + w/2}" y="253" text-anchor="middle" style="{MONO};fill:var(--scr-ink)">WITH POWER</text>')
 b.append(txt(W/2, 300, "Only Appoint. Verification has a date — and it isn't confirmed yet, so don't give it out as settled.  Eligibility can return here if insurance changes."))

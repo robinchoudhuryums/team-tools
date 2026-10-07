@@ -102,7 +102,7 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 
 ### Process
 - Power **does not** follow the standard order process — Sales → PAK → Qualifications → PAR → Field Ops-Power
-- **90 days is the national average, not this order's estimate.** Say so, then give the current stage and what it's waiting on
+- **90 days is the national average, and we're faster.** Say so to set expectations, then give the current stage and what it's waiting on
 - ATP scheduling noted as a **"drive-by"** → still transfer to Field Ops-Power
 
 ### Insurance
@@ -110,10 +110,10 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 
 ### Equipment
 - **POVs are not eligible for ROHO cushions**
-- **PWCs generally cannot be returned** — custom-built, cannot be reissued
+- **PWCs often cannot be returned** — custom-built, cannot be reissued; create the ticket anyway once the checks are done, and promise neither outcome
 
 ### Delivery
-- PMDs are **never delivered to a facility**, and the patient must be present
+- PMDs are **not delivered to a hospital, rehab or SNF** — a nursing home that is the permanent residence is fine — and the patient must be present
 
 ### Route
 - **Scheduling** — delivery, ATP, service visits → **Field Ops-Power Q (ext 344)**
@@ -226,7 +226,7 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 | Status | Whose |
 |---|---|
 | Pending (Appoint. Req.) → (Appt. Sched.) → (Appoint. Verification) | Sales |
-| Pending (Payer Verification) | Sales |
+| Pending (Payer Verification) | Sales Eligibility |
 | **Eligible** | **Power** |
 
 ### Handoff

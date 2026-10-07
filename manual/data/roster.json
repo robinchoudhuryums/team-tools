@@ -288,24 +288,6 @@
     "type": "team"
   },
   {
-    "id": "pw-local-pt",
-    "role": "Local PT/OT Practice (external)",
-    "part": "p4",
-    "holder": "— varies —",
-    "backup": "— varies —",
-    "queue": null,
-    "email": null,
-    "email_attn": null,
-    "direct_transfer": false,
-    "current_named_individual": "On Call PT & Wellness",
-    "source": "PW p.12, p.31",
-    "note": "Not a fixed contact. Refers to the stage of the order where we work with a separate PT/OT practice near the patient. On Call Physical Therapy & Wellness (972-514-4030, Suite 114) is the practice co-located with our office.",
-    "flags": [
-      "external"
-    ],
-    "type": "process"
-  },
-  {
     "id": "rr-queue",
     "role": "Resupply Queue",
     "part": "p3",
@@ -845,5 +827,53 @@
     "source": "Robin, 09/2026",
     "flags": [],
     "lead_of": "Billing"
+  },
+  {
+    "part": "p4",
+    "backup": "— team —",
+    "queue": null,
+    "email": "power@universalmedsupply.com",
+    "email_attn": "PAR Additional Info Requested",
+    "current_named_individual": null,
+    "flags": [],
+    "source": "Robin, 10/2026",
+    "id": "pw-par-team",
+    "role": "Power Authorization (PAR) Team",
+    "type": "team",
+    "holder": "Kadija Sylla, Ashton Elumalai, Bella Singha, Parker Roychowdhury",
+    "direct_transfer": true,
+    "note": "The four PAR team members. Kadija (Standard PWC) and Ashton (Complex PWC / Appeals) also have their own rows."
+  },
+  {
+    "part": "p4",
+    "backup": "— team —",
+    "queue": null,
+    "email": null,
+    "email_attn": null,
+    "current_named_individual": null,
+    "flags": [],
+    "source": "Robin, 10/2026",
+    "id": "pw-pak-appt",
+    "role": "PAK Appointment Scheduling",
+    "type": "team",
+    "holder": "Erica Thongvan",
+    "direct_transfer": true,
+    "note": "The PAK sub-team that helps a patient schedule the Mobility Evaluation; Erica Thongvan manages the PAK team."
+  },
+  {
+    "part": "p4",
+    "backup": "— team —",
+    "queue": null,
+    "email": null,
+    "email_attn": null,
+    "current_named_individual": null,
+    "flags": [],
+    "source": "Robin, 10/2026",
+    "id": "pw-t3q",
+    "role": "T3Q (Qualifications sub-team)",
+    "type": "team",
+    "holder": "Ahmed Ramadan",
+    "direct_transfer": true,
+    "note": "Completes the PPD for Qualified Leads; Ahmed Ramadan manages Qualifications."
   }
 ]
