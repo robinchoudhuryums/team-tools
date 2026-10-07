@@ -161,7 +161,7 @@ Status codes used in Appendix 1:
 | # | Item | Decision / handling |
 |---|---|---|
 | 94a | Past PMD patient, 5+ years since delivery | Goes to **Sales**, which creates a new order on the existing patient account. New **9.4.1**; pointers from 4.1, 10.13.5 and a router row (1.1.7). |
-| 94b | PMD within 5 years, wants a new/different one | Usually a Same or Similar conflict. Possible exception: the new PMD is an **upgrade** and the provider attests to a **significant change in physical condition or mobility needs** since the original. In 9.4.1, with a "promise nothing" watch-out. Routed to Sales by assumption → packet (Sales, Power, Billing). |
+| 94b | PMD within 5 years, wants a new/different one | Usually a Same or Similar conflict. Possible exception: the new PMD is an **upgrade** and the provider attests to a **significant change in physical condition or mobility needs** since the original. In 9.4.1, with a "promise nothing" watch-out. **Routed to Sales for now (operator, 2026-10-07)**; the Sales and Power packets ask them to confirm (spec.json: Part 9 row 21, Part 4 row 30), and Billing's packet asks about the exception. The SOS and RUL glossary entries now also carry Parts 4 and 9, so those department guides include them. |
 
 ### A1. Still open
 
@@ -405,8 +405,8 @@ These go into the packets in Phase 6, alongside the "add to X's packet" items on
 - Write-off types and who tells the patient.
 - Anything in Denials' process a CSR should know that the manual lacks? (Its Denials content is thin.)
 
-**Sales and Power (9.4.1)**
-- A PMD patient within 5 years who wants an upgrade: does the call go to Sales (as written) or to Power? Who checks whether the provider's attestation is enough?
+**Sales (Mary Carson) — already in `packets/spec.json`, Part 9 row 21**
+- 9.4.1: the 5-year rule and the within-5-years exception as written; the within-5-years call goes to Sales for now (operator, 2026-10-07) — confirm, or should it go to Power? Who decides whether the provider's attestation is enough?
 
 **Each intake lead (Manual Mobility, Power, Respiratory & Resupply)**
 - At what coinsurance level is an order declined, and does it depend on the item?
@@ -434,6 +434,7 @@ These go into the packets in Phase 6, alongside the "add to X's packet" items on
 - The "if the trial fails" wording, split by payer.
 
 **Power (Rajdeep Thakar; Ozaire/Shah where marked)**
+- 9.4.1 (Part 9, pointed to from 4.1): the same question as Sales — already in `packets/spec.json`, Part 4 row 30.
 - Dual submission (Medicare + MA): is the wording right? (item 34)
 - Product guide: add any missing active models (your 4.10.2 item).
 - When a PT or ATP evaluation is needed per insurance (your 4.1.1 item).

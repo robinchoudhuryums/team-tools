@@ -555,6 +555,10 @@
      {
       "n": "29",
       "q": "Does Part 4 describe anything your teams **no longer do**, or do differently now?"
+     },
+     {
+      "n": "30",
+      "q": "**9.4.1 (in Part 9) — a past PMD patient who wants a new PMD** (added 2026-10-07). Five years or more since the last PMD was delivered → Sales creates a new order on the existing account. Within five years → usually a Same or Similar conflict, with a possible exception when the new PMD is an **upgrade** and the provider attests to a **significant change in physical condition or mobility needs**; for now this call also goes to **Sales**, and 4.1 points there. Is all of this right? Should the within-five-years call go to Power instead, and who decides whether the provider's attestation is enough?"
      }
     ]
    }
@@ -1415,6 +1419,10 @@
      {
       "n": "20",
       "q": "Does Part 9 describe anything your teams **no longer do**, or do differently now?"
+     },
+     {
+      "n": "21",
+      "q": "**9.4.1 — a past PMD patient who wants a new PMD** (added 2026-10-07). Five years or more since the last PMD was delivered → Sales creates a new order on the existing account. Within five years → usually a Same or Similar conflict, with a possible exception when the new PMD is an **upgrade** and the provider attests to a **significant change in physical condition or mobility needs**; for now this call also goes to **Sales**. Is all of this right? Should the within-five-years call stay with Sales or go to Power, and who decides whether the provider's attestation is enough?"
      }
     ]
    }
