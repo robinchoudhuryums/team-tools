@@ -654,8 +654,13 @@ KNOWN_CODES |= {"L33718", "L33832", "L33803", "L33612", "L33788", "L33820", "L33
                 "L1820", "L1830", "L0457", "L0641", "K0800", "K0801", "K0821",
                 "K0822", "K0823", "K0824", "K0825", "K0826", "K0827", "K0835",
                 "K0836", "K0837", "K0861", "K0862", "K0863", "E0118"}
+# a model number shaped like a code (the Luna G3 X APAP's G4600) is part of
+# an equipment record's name, not a code citation
+MODEL_NUMBERS = {m for r in EQ for m in re.findall(r"\b([A-Z]\d{4})\b", r["name"])} - KNOWN_CODES
 unknown_codes = set()
 for m in re.finditer(r"\b([A-Z]\d{4})\b", ALL_TEXT):
+    if m.group(1) in MODEL_NUMBERS:
+        continue
     if m.group(1) not in KNOWN_CODES:
         unknown_codes.add(m.group(1))
 for c in sorted(unknown_codes):

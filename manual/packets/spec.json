@@ -357,7 +357,7 @@
      },
      {
       "n": "28",
-      "q": "**3.7.1 — APAP** (added 2026-10-07). An APAP bills as E0601, the CPAP code, so E0601 documentation covers either, and the **Luna G3 X APAP (G4600)** works as either. Is that right? The equipment list names our Luna G3 CPAP as **LG3600** — is the G4600 a different model we should add, or the same machine? When a patient switches from a fixed pressure to auto, does the provider need to send a new pressure order?"
+      "q": "**3.7.1 — APAP** (added 2026-10-07). An APAP bills as E0601, the CPAP code, so E0601 documentation covers either, and the **Luna G3 X APAP (G4600)**, now in the CPAP table, works as either. Is that right? When a patient switches from a fixed pressure to auto, does the provider need to send a new pressure order?"
      }
     ]
    }

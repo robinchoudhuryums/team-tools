@@ -3258,6 +3258,31 @@
     "billing_type": "capped-rental"
   },
   {
+    "id": "cpap-react-health-luna-g3x-apap",
+    "name": "React Health Luna G3 X APAP G4600",
+    "part": "p3",
+    "category": "cpap",
+    "hcpcs": [
+      "E0601"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Works as a CPAP or an APAP — both bill as E0601",
+    "source": "Operator 2026-10-07",
+    "images": [],
+    "verified": "2026-10-07",
+    "flags": [
+      "compliance",
+      "rx-required-pickup"
+    ],
+    "billing_type": "capped-rental"
+  },
+  {
     "id": "cpap-resmed-airsense-11",
     "name": "Resmed AirSense 11 CPAP S-11 39001",
     "part": "p3",
