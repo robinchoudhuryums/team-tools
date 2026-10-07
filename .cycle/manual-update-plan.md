@@ -392,6 +392,8 @@ Why text before structure: your list uses today's numbers, so editing first keep
 
 These go into the packets in Phase 6, alongside the "add to X's packet" items on your list. Each question quotes the manual's current wording, so the reviewer can confirm or correct it in place.
 
+**Done in Phase 6 (2026-10-07):** every question below, and every "add to X's packet" item, is in `manual/packets/spec.json` at the NEW numbering — each packet's "Added in the October 2026 update" group, plus the new Denials packet (key `denials`). The section numbers below are the old ones.
+
 **Billing (Bhoj Bhat and the Billing supervisors)**
 - 4.9.1 rent-to-own: does a pick-up mean the insurance expects months already paid to be refunded? (Under a Medicare capped rental, paid months are normally earned.)
 - Texas Medicaid CPAP: purchase after 10 months of rental? Children's adherence at 50% of nights?
