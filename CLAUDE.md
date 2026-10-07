@@ -734,7 +734,7 @@ the dated round entries that used to sit here moved to
 - [Dept Request reply resolution — the `deptReplyResolve` toggle, the deployer mailbox on Reply-To (22post D)](docs/operator-state.md#operator-dept-request-reply-resolution-22post-d)
 - [Script Property `DASH_TEAM_LAYOUTS` — the managers' team-default Dashboard layouts (22post E)](docs/operator-state.md#operator-script-property-dash-team-layouts-22post-e)
 - [The `QuizResets` tab (KB spreadsheet) — the quiz retry limit's reset ledger: 3 failed attempts, then a 24-hour wait or a manager reset (cycle 23 TRN-1)](docs/operator-state.md#operator-the-quizresets-tab-cycle-23)
-- [The procedures manual import — export, choose `manual.json` from the computer (no Drive — the domain disables it), Check → Import → Publish; the `ManualImport`, `ManualMeta` and `ManualImages` tabs; a diagram change is a deploy; the export's xref report and the search synonyms the file carries (22post M1–M5b, M4-FU3)](docs/operator-state.md#operator-the-procedures-manual-import-22post-m)
+- [The procedures manual import — export, choose `manual.json` from the computer (no Drive — the domain disables it), Check → Import → Publish; the `ManualImport`, `ManualMeta` and `ManualImages` tabs; a diagram change is a deploy; the export's xref report and the search synonyms the file carries; since the cycle 24 renumber, deploy first, tick the removal box and publish by chapter (22post M1–M5b, M4-FU3)](docs/operator-state.md#operator-the-procedures-manual-import-22post-m)
 
 Documented ONLY in the operator log, because the round that introduced them is
 the only place they are explained — all three are operator-settable, so they are

@@ -2529,7 +2529,7 @@ entry says which it is.
   disabled Apps Script's Drive service ("The feature you are attempting to use
   has been disabled by your domain administrator"), so the file goes from your
   computer straight to the app — there is no Drive link to share. New sections are drafts
-  only admins see; vet them, then **Publish** all or one part. Sections the file
+  only admins see; vet them, then **Publish** all or one chapter. Sections the file
   no longer carries are listed after a check and removed only when "Remove
   sections no longer in the manual" is ticked. A skipped section (edited,
   deleted or hand-made in the app) is named with its reason. To take the
@@ -2556,3 +2556,19 @@ entry says which it is.
   The import does not carry diagrams. **Recently changed (M4):** the changelog's
   recent entries show on the Reference landing and in What's new without any
   setting; a section only appears once published.
+  **The October 2026 renumber (cycle 24 manual update):** sections are now
+  numbered by CHAPTER, and Sales is Chapter 4. Publish therefore offers all or
+  one CHAPTER. The order is fixed:
+  1. **Deploy the app first** (`clasp push -f` + New version). The new
+     "Chapter NN —" labels need the deployed rank, icons and number search; a
+     legacy "Part NN —" row still reads, but with the new chapter's icon and
+     colour until the import replaces it.
+  2. **Import with "Remove sections no longer in the manual" ticked.** Ids are
+     the new numbers, so every renumbered or deleted section's old id is an
+     orphan. A reused id is updated in place and keeps its status, comments
+     and views, though it may now be a different section; there is no history
+     migration.
+  3. **Publish by chapter.**
+
+  `manual/data/renumber-2026-10.json` maps each new number to the old one. Only
+  the HTML manual's search finds a section by its old number.
