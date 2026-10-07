@@ -94,6 +94,54 @@ def table(rows, drop=(), extra_specs=None):
     return "\n".join(out)
 
 
+def oncall_table():
+    """8.5: the on-call people only — one row per person, grouped by location.
+    A roster row holding several people ("A / B / C") is split, and its phone
+    and email lists are split alongside it; a role with no holder still shows,
+    because the escalation chain names it."""
+    def where(loc):
+        loc = loc or ""
+        if loc.startswith("Irving"):
+            return "Irving office (DFW)"
+        if loc.startswith("San Antonio"):
+            return "San Antonio"
+        return "All locations"
+    order = ["Irving office (DFW)", "San Antonio", "All locations"]
+    rows = []
+    for r in ROSTER:
+        if r["part"] != "p8" or not re.search(r"On-Call|Technician", r["role"]):
+            continue
+        label = re.sub(r"^On-Call ", "", r["role"])
+        if label.endswith(" — San Antonio"):
+            label = label[:-len(" — San Antonio")] + " — oxygen concentrator service only"
+        label = re.sub(r" — Irving office$", "", label)
+        names = [n.strip() for n in (r["holder"] or "").split(" / ") if n.strip()]
+        phones = [re.sub(r"\s*\([^)]*[A-Za-z][^)]*\)$", "", p).strip() for p in (r.get("phone") or "").split(" / ")]
+        mails = [m.strip() for m in (r.get("email") or "").split(" / ")]
+        dom = mails[-1].split("@", 1)[1] if mails and "@" in mails[-1] else ""
+        mails = [m + dom if m.endswith("@") else m for m in mails]
+        if not names:
+            rows.append((where(r.get("location")), "**None currently named**", label, "", ""))
+            continue
+        for i, n in enumerate(names):
+            rows.append((where(r.get("location")), n, label,
+                         phones[i] if i < len(phones) else "", mails[i] if i < len(mails) else ""))
+    rows.sort(key=lambda x: order.index(x[0]))
+    # every address shares the company domain, so the header names it once
+    # and the cell carries what precedes the @ — the full address clipped
+    doms = {m.split("@", 1)[1] for *_, m in rows if "@" in m}
+    one = len(doms) == 1
+    if one:
+        rows = [(*x[:4], x[4].split("@", 1)[0]) for x in rows]
+    out = [f"| Location | Name | Role | Phone | Email{' (@' + doms.pop() + ')' if one else ''} |", "|---|---|---|---|---|"]
+    last = None
+    for loc, n, label, ph, em in rows:
+        ph = ph.replace(" ", "\u00a0").replace("-", "\u2011")  # a phone number never wraps
+        out.append(f"| {'**' + loc + '**' if loc != last else ''} | {n} | {label} | {ph} | {em} |")
+        last = loc
+    return "\n".join(out)
+
+
 def expand(m):
     spec = m.group(1).strip()
     if spec == "roster:leads":
@@ -104,6 +152,8 @@ def expand(m):
             who = r.get("holder") or r.get("current_named_individual") or "—"
             out.append(f"| {r['lead_of']} | **{who}** | {r['role']} |")
         return "\n".join(out)
+    if spec == "roster:oncall":
+        return oncall_table()
     if spec.startswith("roster:"):
         scope = spec.split(":")[1]
         rows = [r for r in ROSTER if scope == "all" or r["part"] in (scope, "shared")]

@@ -56,6 +56,8 @@ def tag_callouts(text):
 
 raw = tag_callouts(raw)
 body = markdown.markdown(raw, extensions=["tables", "sane_lists", "attr_list", "md_in_html"])
+# a "☐ item" list is a checklist: the box replaces the bullet
+body = re.sub(r"<li>☐\s*", '<li class="chk">☐ ', body)
 
 # Anchor every §-numbered heading and collect navigation entries.
 nav, part = [], None
@@ -985,6 +987,8 @@ table.steps td:first-child{width:3.4em;text-align:center;font-weight:700;color:v
 table.steps tbody tr:not(:last-child) td:first-child::after{content:"\2193";position:absolute;
  left:50%;bottom:-.8em;transform:translateX(-50%);z-index:1;font-size:15px;line-height:1.3;
  color:var(--muted);background:var(--bg);padding:0 3px}
+/* checklist items: the box stands where the bullet was */
+li.chk{list-style:none;margin-left:-1.15em}
 /* do / don't columns */
 :root{--ok-bg:#E7F4EC;--ok-ink:#1E6B43;--no-bg:#FCEBEA;--no-ink:#A1281F}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--ok-bg:#12271B;--ok-ink:#7FCFA0;--no-bg:#2C1512;--no-ink:#F29E95}}

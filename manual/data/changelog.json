@@ -1,6 +1,60 @@
 [
   {
     "date": "2026-10-07",
+    "part": "p7",
+    "section": "§7-4.1",
+    "summary": "Every O2 supplies service ticket carries the non-billable supplies tag on the Ticket tab (also step 5 of 7.2.2).",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 262; decision 45)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p7",
+    "section": "§7-8.4",
+    "summary": "Oxygen tanks are not delivered to a medical facility for general stock — a request not tied to a named patient — except rarely, with the Field Operations Supervisor.",
+    "authority": "Field Operations",
+    "retraining": false,
+    "provenance": "Operator manual update 2026-10-06 (list line 269; decision 27)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p7",
+    "section": "§7-10",
+    "summary": "Oxygen is provided only within 50 miles of the Dallas (Irving) or San Antonio warehouses.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 273; decision 23)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p8",
+    "section": "§8-4",
+    "summary": "Escalation chain: call and text the on-call, then call and text again, then Level 1, then Level 2 — 30 minutes each. A dispatch is not acknowledged until the technician or RT confirms it.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list lines 285–287; decision 88)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p8",
+    "section": "§8-7",
+    "summary": "An after-hours service ticket sets Service Type to After Hours on the Ticket tab.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 292; decision 26)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p8",
+    "section": "§8-9",
+    "summary": "On-call technicians and RTs call the patient first and troubleshoot by phone, confirm a dispatch to the on-call phone, and message it again once the issue is resolved.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list lines 282, 284, 287; decision 25)"
+  },
+  {
+    "date": "2026-10-07",
     "part": "p5",
     "section": "§5-3",
     "summary": "A patient calling back about a scheduling message: never confirm the date yourself — transfer to Field Ops so they schedule against current availability.",

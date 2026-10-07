@@ -111,8 +111,8 @@ svg("m2a-dispatch", W, H, "After-hours dispatch decision", b)
 # =========================================================== 2b. escalation loop ===
 W, H = 1160, 470
 b = [title(W, "After hours — when the on-call doesn't answer")]
-steps = [(60, "Call the on-call|technician or RT", "immediately"),
-         (330, "Send a text", "wait 30 min"),
+steps = [(60, "Call and text the|on-call technician|or RT", "wait 30 min"),
+         (330, "Call again and|re-send the text", "wait 30 min"),
          (600, "Call and text|Level 1 backup|(RT call: the other RT)", "wait 30 min"),
          (870, "Call Level 2 backup,|if one is listed", "wait 30 min")]
 SW2 = 220
@@ -121,7 +121,7 @@ for i, (x, t, wait) in enumerate(steps):
     b.append(fl(x + SW2/2, 116, x + SW2/2, 156))
     b.append(f'<text x="{x + SW2/2 + 8}" y="140" '
              f'style="font:600 11px \'IBM Plex Mono\',monospace;fill:var(--muted)">{wait}</text>')
-    b.append(fbox(x + 20, 156, SW2 - 40, 36, "Responded?", "dec"))
+    b.append(fbox(x + 20, 156, SW2 - 40, 36, "Confirmed?", "dec"))
     b.append(fl(x + SW2/2, 192, x + SW2/2, 222, "YES"))
     b.append(fbox(x + 20, 222, SW2 - 40, 32, "Dispatch", "ok"))
     if i < 3:

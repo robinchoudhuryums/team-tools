@@ -211,8 +211,8 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 - **Ventilator, cough assist, IPPB, BiPAP ST** → dispatch the RT immediately, **do not troubleshoot**
 
 ### Escalation
-- Call → text, wait 30 → Level 1 backup, wait 30 → Level 2, wait 30 → repeat. Only scheduled on-call staff
-- The 0–60 minute target assumes someone answers. When nobody does, **keep cycling**
+- Call and text, wait 30 → call and text again, wait 30 → Level 1 backup, wait 30 → Level 2, wait 30 → repeat. Only scheduled on-call staff
+- Not acknowledged until the technician or RT **confirms**. The 0–60 minute target is an aim, not a guarantee — **keep cycling**
 - While cycling: confirm a working backup, keep the caller updated, **9-1-1 if distress develops**
 
 ### Afterward
