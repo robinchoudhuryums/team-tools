@@ -20,7 +20,7 @@ generated from this directory. **Edit here, never in the outputs.**
 | `training/` | Material taken out of the manual for the app's Training module (the Billing knowledge check). Not built |
 | `data/thumbs.json`, `data/figures_b64.json` | Embedded product photos and screenshots (base64) |
 | `mocks_b1.py`, `mocks_b2.py`, `mocks_power.py`, `make_diagrams.py` | Diagram sources. `make_flow_diagrams.py` writes them to `diagrams/` |
-| `packets/spec.json` | The departmental review questions |
+| `packets/spec.json` | The departmental review questions, one packet per chapter key plus `denials`. A row quotes the manual's current text for each section in `sec`; `roster` (a chapter key or a list of role names) shows that team's rows cut from the built B.1 directory; a `q` row is an open question |
 
 ## Conventions the build enforces
 
@@ -30,6 +30,9 @@ generated from this directory. **Edit here, never in the outputs.**
 - **Roles** are written `` `[ROLE: Name]` `` and must exist in `data/roster.json`. Each links to that person's B.1 row. The match tries the exact role name first (`roles.py`), so name the role exactly.
 - **Tables** stay tables in every output. A table whose first header is `Step` is drawn as numbered steps; a header that opens with ✓ or ✗ tints its column green or red (the Do's & Don'ts tables). A list item that opens with `☐` is a checklist line.
 - **Footnotes** are `text.[^1]` with `[^1]: note` on its own line in the same level-2 section; they are numbered per section and gathered under "Notes" at its end. A marker without a definition, or the reverse, fails the build.
+- **Headings:** in the HTML, a section number is a chip in its chapter's colour and the section heading carries a thinner left rule; sub-section numbers take the colour. Both are keyed off the heading id, so the source needs no markup.
+- **Wording:** MA means only Medicare Advantage — Medical Assistant is written in full. The first mention in a chapter is "traditional (Original) Medicare", later ones "traditional Medicare".
+- **Glossary:** an abbreviation whose definition spells it out becomes a search synonym in the app. A full-name entry such as "Original Medicare" is there so a search for the other name finds the glossary.
 - **Callouts** are `> **Critical — …**`, `**Policy**`, `**Watch-out**`, `**Script**` or `**Note**`. Critical is reserved for patient safety or federal law.
 - **`[PENDING: …]`** markers are allowed in drafts; `RELEASE=1 python3 build.py` fails while any remain.
 
@@ -42,7 +45,7 @@ Requires Python 3 with Playwright (Chromium) and Pillow, and Node with the `docx
 ./make_packets.sh    # review packets (Markdown + Word); run after make_all.sh
 ```
 
-Output goes to `$MANUAL_OUT` (default `./dist`). `out/` holds intermediate Markdown. Both are git-ignored.
+Output goes to `$MANUAL_OUT` (default `./dist`). The packets are `review-packets/Review-Packet-C<N>-<Name>.md` and `review-packets/word/Review-Packet-C<N>-<Name>.docx`; a reported MISSING names a section or directory row that a question quotes but the manual no longer has. A PDF of the Word manual is made and checked for blank pages only where LibreOffice works; otherwise export it from Word or Google Docs and check it by eye. `out/` holds intermediate Markdown. Both are git-ignored.
 
 ## Reference articles (team-tools)
 

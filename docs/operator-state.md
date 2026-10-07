@@ -2572,3 +2572,10 @@ entry says which it is.
 
   `manual/data/renumber-2026-10.json` maps each new number to the old one. Only
   the HTML manual's search finds a section by its old number.
+  **Review packets (cycle 24 manual update):** `manual/make_packets.sh` after
+  `make_all.sh` writes one packet per department plus a Denials packet, in
+  Markdown and Word, each quoting the manual's current text. Answers go back
+  into `manual/` and reach the app by a re-export and import. **PDF:** the build
+  makes and checks a PDF of the Word manual only where LibreOffice works; if it
+  prints "pdf: not made", export the Word file from Word or Google Docs and
+  check it for blank pages yourself.
