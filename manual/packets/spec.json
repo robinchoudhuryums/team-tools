@@ -131,7 +131,7 @@
      },
      {
       "n": "19",
-      "sec": "2.6.1",
+      "sec": "10.11",
       "says": "**Knee walkers** are out-of-pocket, except through VGM Homelink",
       "why": ""
      },
@@ -503,36 +503,30 @@
      },
      {
       "n": "21",
-      "sec": "4.5.2",
-      "says": "**Local PT practice:** On Call Physical Therapy & Wellness, 972-514-4030, Suite 114 in our building",
-      "why": ""
-     },
-     {
-      "n": "22",
       "sec": "4.6",
       "says": "An ATP visit noted as a **\"drive-by\"** still gets transferred to Field Ops-Power if the patient calls ◆",
       "why": ""
      },
      {
-      "n": "23",
+      "n": "22",
       "sec": "4.7.2",
       "says": "**An MA plan is the primary**, not a secondary. Where an order goes to both Medicare and an MA plan, the Authorization team submits to both at once or in sequence",
       "why": ""
      },
      {
-      "n": "24",
+      "n": "23",
       "sec": "4.7",
       "says": "**PAR specialists:** Kadija S. (standard PWC) and Ashton E. (complex PWC and appeals). Neither currently has a backup",
       "why": ""
      },
      {
-      "n": "25",
+      "n": "24",
       "sec": "4.10.1",
       "says": "**POVs aren't eligible for ROHO cushions.** Out-of-pocket POV pricing runs roughly **$1,200–$1,900**",
       "why": ""
      },
      {
-      "n": "26",
+      "n": "25",
       "sec": "4.11",
       "says": "**No vehicle lifts** of any kind; **ramps** are out-of-pocket only; **cup holders** can be added (after delivery, through Service)",
       "why": ""
@@ -545,19 +539,19 @@
     "intro": "",
     "rows": [
      {
-      "n": "27",
+      "n": "26",
       "q": "**What do you wish a CSR had already collected before transferring a call to your team?** Please answer separately for PAK, Qualifications and Field Ops-Power if the answers differ"
      },
      {
-      "n": "28",
+      "n": "27",
       "q": "Is anything your teams handle **missing** from Part 4 — something CSRs get asked about but won't find?"
      },
      {
-      "n": "29",
+      "n": "28",
       "q": "Does Part 4 describe anything your teams **no longer do**, or do differently now?"
      },
      {
-      "n": "30",
+      "n": "29",
       "q": "**9.4.1 (in Part 9) — a past PMD patient who wants a new PMD** (added 2026-10-07). Five years or more since the last PMD was delivered → Sales creates a new order on the existing account. Within five years → usually a Same or Similar conflict, with a possible exception when the new PMD is an **upgrade** and the provider attests to a **significant change in physical condition or mobility needs**; for now this call also goes to **Sales**, and 4.1 points there. Is all of this right? Should the within-five-years call go to Power instead, and who decides whether the provider's attestation is enough?"
      }
     ]
@@ -598,7 +592,7 @@
      },
      {
       "n": "5",
-      "sec": "5.9.3",
+      "sec": "10.20.6",
       "says": "The EAA is processed by Billing. A CSR or Billing sends the blank form from the CSR shared drive; the patient returns it with their income and expenses; usually 1–2 weeks. Out-of-pocket orders qualify for neither the EAA nor a payment plan",
       "why": "The EAA process wasn't described before"
      },
@@ -915,9 +909,9 @@
      },
      {
       "n": "23",
-      "sec": "6.14",
-      "says": "**Referrals** when we can no longer service a PMD — only when we can't repair it through insurance and the patient won't pay out of pocket. Numotion 800-500-9150 · WSR 888-584-3095 · National Seating & Mobility 833-289-1020",
-      "why": "Please check the phone numbers are still current"
+      "sec": "6.15",
+      "says": "**A PMD we can no longer service** — suggest a local DME repair service; for insurance to pay, it must be enrolled with or in network for the patient's plan. The competitor referrals (Numotion, WSR, National Seating & Mobility) were removed",
+      "why": "Changed 2026-10-07 at the Customer Service Manager's direction. Should any referral guidance replace it?"
      }
     ]
    },
@@ -968,7 +962,7 @@
      },
      {
       "n": "3",
-      "sec": "7.4.1",
+      "sec": "10.13.2",
       "says": "**Oxygen accessories are included for the full 5 years** — through the 36-month rental and, after it, in months 37–60, when the supplier must keep providing them with no separate payment. A patient shouldn't see a bill for cannulas or tubing at any point",
       "why": "Previously said \"during the 36-month rental period\" only. CMS Policy Article A52514 extends it through the useful lifetime"
      },
@@ -1017,19 +1011,19 @@
     "rows": [
      {
       "n": "10",
-      "sec": "7.9.1",
+      "sec": "10.13.8",
       "says": "**A short break in need** — 60 days plus the rest of that rental month — resumes the existing rental",
       "why": ""
      },
      {
       "n": "11",
-      "sec": "7.9.4",
+      "sec": "10.13.8",
       "says": "**What restarts the 36 months** — including a switch from Medicare Advantage to fee-for-service, which resumes with no new blood gas test",
       "why": ""
      },
      {
       "n": "12",
-      "sec": "7.9.5",
+      "sec": "10.13.8",
       "says": "**Replacement after the 5-year useful lifetime is all or nothing** — stationary and portable equipment are replaced together, starting a new 36 months",
       "why": ""
      }
@@ -1450,7 +1444,7 @@
      },
      {
       "n": "3",
-      "sec": "10.3.4",
+      "sec": "7.5.3",
       "says": "**The oxygen conserver is included in the oxygen rental** — never billed separately. It's supplied at no charge if the provider orders it; otherwise $320 out of pocket, with an ABN for Medicare patients. It's coded **A9900**",
       "why": "Previously coded E1352 and described as needing a prescription \"for insurance coverage.\" Medicare's oxygen accessory list names conserving devices as A9900, included in the rental. **If UMS has been billing E1352, please check**"
      },
@@ -1498,13 +1492,13 @@
      },
      {
       "n": "11",
-      "sec": "5.9.3",
+      "sec": "10.20.6",
       "says": "**The EAA** is processed by Billing. A CSR or Billing sends the blank form; the patient returns it with their income and expenses; usually 1–2 weeks. Out-of-pocket orders qualify for neither the EAA nor a payment plan",
       "why": ""
      },
      {
       "n": "12",
-      "sec": "7.4.1",
+      "sec": "10.13.2",
       "says": "**Oxygen accessories are included for the full 5 years**, not only the 36-month rental — a patient shouldn't see a bill for cannulas or tubing in months 37–60 either",
       "why": "Per CMS Policy Article A52514"
      },
@@ -1617,12 +1611,6 @@
       "sec": "10.21.2",
       "says": "**What CSRs can and can't promise** about coverage, approval, delivery dates and fees",
       "why": ""
-     },
-     {
-      "n": "29",
-      "sec": "10.A",
-      "says": "**The knowledge check** — ten questions and answers, restored from v2.0. Please check the answers still hold",
-      "why": ""
      }
     ]
    },
@@ -1632,15 +1620,15 @@
     "intro": "",
     "rows": [
      {
-      "n": "30",
+      "n": "29",
       "q": "**What do you wish a CSR had already collected before transferring a call to Billing?**"
      },
      {
-      "n": "31",
+      "n": "30",
       "q": "Is anything Billing handles **missing** from Part 10 — something CSRs get asked about but won't find?"
      },
      {
-      "n": "32",
+      "n": "31",
       "q": "Does Part 10 describe anything Billing **no longer does**, or does differently now?"
      }
     ]

@@ -144,7 +144,7 @@ b.append(fl(cx, 78, cx, 102))
 b.append(fbox(cx - 170, 102, 340, 44, "**Why do they want it collected?", "dec"))
 reasons = [(20, "Uncomfortable, or sounds|adjustable", "**Transfer to Service|No pick-up ticket.|Fit problems are often|adjustable", "ok"),
            (305, "Technical fault", "**Repair, not pick-up|No pick-up ticket", "ok"),
-           (590, "Can't afford it", "**Offer the EAA or a payment|plan first — §5-9.3|(n/a for OOP orders)", "tech"),
+           (590, "Can't afford it", "**Offer the EAA or a payment|plan first — §10-20.6|(n/a for OOP orders)", "tech"),
            (875, "None of these", "**Is it patient-owned?", "dec")]
 for x, lab, out, k in reasons:
     mid = x + 132
