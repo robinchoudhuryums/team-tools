@@ -33,6 +33,15 @@
     "class": "manual"
   },
   {
+    "term": "APAP",
+    "definition": "Auto-adjusting positive airway pressure — a CPAP that adjusts its pressure through the night. Billed under the same code as a CPAP, E0601",
+    "parts": [
+      "p3",
+      "p10"
+    ],
+    "class": "manual"
+  },
+  {
     "term": "ATP",
     "definition": "Assistive Technology Professional",
     "parts": [

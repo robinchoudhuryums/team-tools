@@ -1,6 +1,15 @@
 [
   {
     "date": "2026-10-07",
+    "part": "p3",
+    "section": "§3-7.1",
+    "summary": "APAP bills as E0601, the CPAP code, so E0601 documentation covers either; the Luna G3 X APAP works as a CPAP or an APAP.",
+    "authority": "Respiratory & Resupply",
+    "retraining": false,
+    "provenance": "Operator note 2026-10-07"
+  },
+  {
+    "date": "2026-10-07",
     "part": "p10",
     "section": "§10-13.8",
     "summary": "Oxygen restart rules moved from 7.9 into Billing. The short-break example now counts the rental month (from the delivery anniversary), not the calendar month.",
