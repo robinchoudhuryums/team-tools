@@ -247,7 +247,7 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 The full Billing card is at [[§10-B]]. This is the condensed version.
 
 ### Rental
-- **Capped rental:** 13 paid months, then the patient owns it automatically. No purchase option, no 15 months
+- **Capped rental:** 13 paid months, then the patient owns it automatically. No purchase option (complex rehab PWC aside), no 15 months
 - **E0471 and ventilators:** monthly rental for as long as needed, **never owned**
 - **Oxygen:** 36 months of rental, then no rental charge — but **UMS keeps ownership** and keeps servicing to 5 years
 

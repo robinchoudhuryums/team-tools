@@ -1,6 +1,24 @@
 [
   {
     "date": "2026-10-07",
+    "part": "p10",
+    "section": "§10-13.8",
+    "summary": "Oxygen restart rules moved from 7.9 into Billing. The short-break example now counts the rental month (from the delivery anniversary), not the calendar month.",
+    "authority": "Billing",
+    "retraining": false,
+    "provenance": "Operator manual update 2026-10-06 — Phase 3 consolidation (list line 270; pushback B-22)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p10",
+    "section": "§10-20.6",
+    "summary": "The EAA and payment plans now live in Billing (formerly 5.9.3). Neither is available on an out-of-pocket order.",
+    "authority": "Billing",
+    "retraining": false,
+    "provenance": "Operator manual update 2026-10-06 — Phase 3 consolidation (list line 17)"
+  },
+  {
+    "date": "2026-10-07",
     "part": "p9",
     "section": "§9-4.1",
     "summary": "A past PMD patient who wants a new PMD goes to Sales: after 5 years, a new order on the existing account; within 5 years, usually a Same or Similar conflict, unless the new PMD is an upgrade and the provider attests to a significant change in condition.",
