@@ -829,6 +829,22 @@
     "lead_of": "Billing"
   },
   {
+    "id": "billing-denials",
+    "role": "Denials Team",
+    "part": "p10",
+    "type": "team",
+    "holder": "Monil Shah",
+    "backup": "Bhoj Bhatt",
+    "queue": "Denials Q (ext 101)",
+    "email": null,
+    "email_attn": null,
+    "direct_transfer": true,
+    "current_named_individual": null,
+    "note": "Denials members take direct transfers; call the member working the case first. Monil Shah leads the team.",
+    "source": "Robin, 10/2026",
+    "flags": []
+  },
+  {
     "part": "p4",
     "backup": "— team —",
     "queue": null,

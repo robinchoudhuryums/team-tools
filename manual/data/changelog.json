@@ -1,6 +1,60 @@
 [
   {
     "date": "2026-10-07",
+    "part": "p10",
+    "section": "§10-11",
+    "summary": "Coinsurance is a percentage, a copay a flat amount. Orders with a very high coinsurance (often 50% or more) may be declined, depending on the item — the intake team decides.",
+    "authority": "Billing",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list lines 324–326; decision 11)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p10",
+    "section": "§10-6.3",
+    "summary": "Billing order: Medicare first, then Medicaid — except a hospital bed for a full-Medicaid patient in an enrolled state, where Medicaid is primary. The QMB protection is a Policy callout.",
+    "authority": "Billing",
+    "retraining": false,
+    "provenance": "Operator manual update 2026-10-06 (list lines 318, 323; pushback B-7)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p10",
+    "section": "§10-15.1",
+    "summary": "Pick-up write-offs: Field Ops decides. Waived (a company decision) — the balance is waived and the item is the patient's; failed pick-up — the balance stays and the patient is still liable. Never promise either.",
+    "authority": "Billing",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (decisions 9, 89)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p10",
+    "section": "§10-18.3",
+    "summary": "Insurance calling about a Denials request, or a patient calling about a Denials invoice while the case is open, goes to the Denials team member working it, otherwise the Denials Q (ext 101).",
+    "authority": "Billing",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 342; decision 12)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p10",
+    "section": "§10-20.1",
+    "summary": "Patient Responsibility holds pre-delivery balances; invoiced balances after delivery are under Edit Patient → Invoices.",
+    "authority": "Billing",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 345)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p10",
+    "section": "§10-20.5",
+    "summary": "The Claim Prep tab: (paid / eligible) months per item, and the RR (rental) / NU (new purchase) modifiers.",
+    "authority": "Billing",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (decisions 7, 8)"
+  },
+  {
+    "date": "2026-10-07",
     "part": "p7",
     "section": "§7-4.1",
     "summary": "Every O2 supplies service ticket carries the non-billable supplies tag on the Ticket tab (also step 5 of 7.2.2).",

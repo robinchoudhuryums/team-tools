@@ -1174,7 +1174,7 @@
   },
   {
     "term": "Upgrade Fee Sheet (Mobility)",
-    "definition": "Fee schedule reference",
+    "definition": "The master list of upgrade fee amounts by item. The manual's fee tables are copied from it — [[§10-16]]",
     "parts": [
       "p10",
       "p2"
@@ -1191,7 +1191,7 @@
   },
   {
     "term": "Virtru",
-    "definition": "Email encryption, enabled when sending protected information to a provider's office",
+    "definition": "Email encryption service; must be enabled when sending protected information outside of the company",
     "parts": [
       "p4",
       "p3"

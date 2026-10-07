@@ -204,6 +204,30 @@ b.append(seg(0, 60, y, "Rented monthly for as long as it's needed — never owne
 b.append(fbox(20, 400, 1120, 48, "**The patient never owns oxygen equipment|Say: \"Medicare pays for the rental for 36 months. After that you keep using it at no rental charge and we keep servicing it, for up to 5 years total.\"", "pol"))
 svg("m9-rental", W, H, "Rental, ownership and useful lifetime timeline", b)
 
+# ======================================================== 10. deductible, then 80/20 ===
+W, H = 1160, 330
+L, M, R, TOP, HT = 40, 380, 1120, 70, 150     # M: where the deductible is met
+def blk(x1, x2, y, h, lines, fill, ink):
+    s = (f'<rect x="{x1}" y="{y}" width="{x2 - x1}" height="{h}" rx="4" fill="var({fill})" '
+         f'stroke="var({ink})" stroke-width="1.2"/>')
+    for i, l in enumerate(lines):
+        w = "700" if i == 0 else "500"
+        s += (f'<text x="{(x1 + x2) / 2}" y="{y + h/2 - (len(lines)-1)*8 + i*16 + 4}" text-anchor="middle" '
+              f'style="font:{w} 12px \'IBM Plex Sans\',sans-serif;fill:var({ink})">{l}</text>')
+    return s
+b = [title(W, "Original Medicare — who pays for approved charges through the year")]
+b.append(f'<text x="{L}" y="56" style="font:600 11px \'IBM Plex Mono\',monospace;fill:var(--muted)">JANUARY 1</text>')
+b.append(f'<text x="{R}" y="56" text-anchor="end" style="font:600 11px \'IBM Plex Mono\',monospace;fill:var(--muted)">DECEMBER 31</text>')
+b.append(blk(L, M - 4, TOP, HT, ["Patient pays 100%", "until the annual Part B", "deductible is met — §10-2"], "--watch-bg", "--watch-ink"))
+mh = HT * 0.8
+b.append(blk(M + 4, R, TOP, mh - 3, ["Medicare pays 80%", "of the approved amount"], "--tint", "--accent"))
+b.append(blk(M + 4, R, TOP + mh + 3, HT - mh - 3, ["Patient pays 20%"], "--watch-bg", "--watch-ink"))
+b.append(f'<line x1="{M}" y1="{TOP - 10}" x2="{M}" y2="{TOP + HT + 14}" stroke="var(--muted)" stroke-dasharray="4 3"/>')
+b.append(f'<text x="{M}" y="{TOP + HT + 30}" text-anchor="middle" '
+         f'style="font:600 11px \'IBM Plex Mono\',monospace;fill:var(--muted)">DEDUCTIBLE MET</text>')
+b.append(fbox(L, 270, R - L, 44, "**A secondary can take the patient's share|Medigap (most plans) covers the 20%. Full Medicaid or QMB → $0, including the deductible. No secondary → no yearly cap — §10-6", "note"))
+svg("m10-costshare", W, H, "Deductible, then the 80/20 split", b)
+
 # ------------------------------------------------------------------ mock page ---
 md = ["# Diagram mocks — batch 1", "",
       "Four proposed diagrams for review. Each would sit in the section named, above or beside the "

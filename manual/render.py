@@ -94,6 +94,17 @@ def table(rows, drop=(), extra_specs=None):
     return "\n".join(out)
 
 
+# The billing tables name a category as a reader says it, not as its data key
+CATEGORY_NAMES = {
+    "bed-accessory": "Bed accessories", "bipap": "BiPAP", "cpap": "CPAP",
+    "hospital-bed": "Hospital beds", "manual-wheelchair": "Manual wheelchairs",
+    "oxygen-concentrator": "Oxygen concentrators", "oxygen-cylinder": "Oxygen cylinders",
+    "patient-lift": "Patient lifts", "pov": "Scooters (POV)", "pwc": "Power wheelchairs",
+    "respiratory-device": "Respiratory devices", "suction": "Suction machines",
+    "ventilator": "Ventilators",
+}
+
+
 def oncall_table():
     """8.5: the on-call people only — one row per person, grouped by location.
     A roster row holding several people ("A / B / C") is split, and its phone
@@ -195,12 +206,12 @@ def expand(m):
         by = {}
         for r in rows:
             by.setdefault(r["category"], []).append(r)
-        out = ["| Category | Items | HCPCS | Part |", "|---|---|---|---|"]
-        for cat in sorted(by):
+        out = ["| Category | HCPCS |", "|---|---|"]
+        for cat in sorted(by, key=lambda c: CATEGORY_NAMES.get(c, c)):
             rs = by[cat]
             codes = sorted({c for r in rs for c in r["hcpcs"]})
-            cs = ", ".join(codes[:4]) + ("…" if len(codes) > 4 else "")
-            out.append(f"| {cat.replace('-', ' ').title()} | {len(rs)} | {cs} | Part {rs[0]['part'][1:]} |")
+            name = CATEGORY_NAMES.get(cat, cat.replace("-", " ").capitalize())
+            out.append(f"| {name} | {', '.join(codes)} |")
         return "\n".join(out)
     if spec == "waivers":
         rules = [f for f in FEES if f.get("type") == "rule"]

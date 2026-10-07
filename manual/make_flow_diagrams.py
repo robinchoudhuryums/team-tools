@@ -8,7 +8,7 @@ with contextlib.redirect_stdout(io.StringIO()):
 NAMES = {
     "m1-status": "status-tree", "m2a-dispatch": "afterhours-dispatch", "m2b-escalation": "afterhours-escalation",
     "m3-pickup": "pmd-pickup", "m5-routing": "routing", "m7-waivers": "waivers", "m8a-death": "death-call",
-    "m8b-swap": "swap-out", "m9-rental": "rental-timeline", "m11-resupply": "resupply-windows",
+    "m8b-swap": "swap-out", "m9-rental": "rental-timeline", "m10-costshare": "cost-share", "m11-resupply": "resupply-windows",
     "m12-eligibility": "eligibility-status", "p2-panels": "power-process",
 }
 ALL = {**mocks_b1.OUT, **mocks_b2.OUT, **mocks_power.OUT}
