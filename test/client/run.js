@@ -30062,6 +30062,7 @@ test('M2-R2: a typed section number names a VISIBLE section — every form the H
     { id: 'man-5-1', title: '5.1 Overview', department: 'Part 05 — Field Operations', sortOrder: 1 },
     { id: 'man-10-b', title: '10.B Quick reference', department: 'Part 10 — Billing', sortOrder: 25 },
     { id: 'man-10-1', title: '10.1 How billing works', department: 'Part 10 — Billing', sortOrder: 1 },
+    { id: 'man-4-1', title: '4.1 Scope', department: 'Chapter 04 — Sales', sortOrder: 1 },
     { id: 'man-b-1', title: 'B.1 Directory', department: 'Appendix B', sortOrder: 1 },
     { id: 'man-a', title: 'Glossary', department: 'Appendix A — Glossary', sortOrder: 1 },
     { id: 'man-c-5', title: 'Card 5 — Field Operations', department: 'Appendix C', sortOrder: 6 },
@@ -30072,7 +30073,8 @@ test('M2-R2: a typed section number names a VISIBLE section — every form the H
     '5.9.2': 'man-5-9#5.9.2|5.9.2', '§5-9.2': 'man-5-9#5.9.2|5.9.2', '05.09': 'man-5-9#|5.9',
     '10.B': 'man-10-b#|10.B', '10-b': 'man-10-b#|10.B', 'B.1': 'man-b-1#|B.1', '§B-1': 'man-b-1#|B.1',
     'A.2': 'man-a#A.2|A.2', 'a-2': 'man-a#A.2|A.2', 'card 5': 'man-c-5#|CARD 5', 'Card5': 'man-c-5#|CARD 5', 'C-5': 'man-c-5#|CARD 5', 'G-5': 'man-c-5#|CARD 5', '§G-5': 'man-c-5#|CARD 5',
-    'part 5': 'man-5-1#|Part 5', 'Part 10': 'man-10-1#|Part 10',
+    'part 5': 'man-5-1#|Chapter 5', 'Part 10': 'man-10-1#|Chapter 10', 'chapter 5': 'man-5-1#|Chapter 5', 'Chapter10': 'man-10-1#|Chapter 10',
+    'chapter 4': 'man-4-1#|Chapter 4', 'part 4': 'man-4-1#|Chapter 4',
     '5.8': null, 'part 7': null, 'card 9': null, 'pick-up': null, '5.9 pickup': null, 'oxygen 5.9': null, '': null, '1.5 lbs': null, '555-1234': null,
   };
   Object.keys(grid).forEach((q) => assert.strictEqual(t(q), grid[q], JSON.stringify(q)));
@@ -30261,18 +30263,19 @@ test('M3-S1: departments list parts, then appendices, then everything else — t
   const c = vm.createContext({ String, parseInt, Math });
   ['kbNaturalCompare_', 'kbDeptRank_', 'kbDeptCompare_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), c));
   const names = ['Appendix C — Quick Reference Cards', 'Part 10 — Billing & Insurance', 'Billing', 'Appendix A — Glossary', 'Part 00 — CSR Core',
-    'Part 2 — Manual Mobility', 'Appendix B — Escalation Directory', 'Appendix forms', 'Parts list', 'Shipping', '', 'Appendix a — lower', 'Part 1 - hyphen'];
+    'Part 2 — Manual Mobility', 'Appendix B — Escalation Directory', 'Appendix forms', 'Parts list', 'Shipping', '', 'Appendix a — lower', 'Part 1 - hyphen',
+    'Chapter 10 — Billing & Denials', 'Chapter 04 — Sales', 'Chapters list', 'Chapter 5 - hyphen'];
   const sorted = names.slice().sort(s.kbDeptCompare_);
-  assert.deepStrictEqual(sorted, ['Part 00 — CSR Core', 'Part 2 — Manual Mobility', 'Part 10 — Billing & Insurance',
+  assert.deepStrictEqual(sorted, ['Chapter 04 — Sales', 'Chapter 10 — Billing & Denials', 'Part 00 — CSR Core', 'Part 2 — Manual Mobility', 'Part 10 — Billing & Insurance',
     'Appendix A — Glossary', 'Appendix B — Escalation Directory', 'Appendix C — Quick Reference Cards',
-    '', 'Appendix a — lower', 'Appendix forms', 'Billing', 'Part 1 - hyphen', 'Parts list', 'Shipping'],
+    '', 'Appendix a — lower', 'Appendix forms', 'Billing', 'Chapter 5 - hyphen', 'Chapters list', 'Part 1 - hyphen', 'Parts list', 'Shipping'],
     'the manual\'s own two shapes only (em dash, as department() writes them) — an ordinary "Appendix forms" is not pulled forward');
   names.forEach((a) => names.forEach((b) => {
     assert.strictEqual(Math.sign(c.kbDeptCompare_(a, b)), Math.sign(s.kbDeptCompare_(a, b)), 'client mirrors server: ' + a + ' vs ' + b);
     names.forEach((d) => { if (s.kbDeptCompare_(a, b) < 0 && s.kbDeptCompare_(b, d) < 0) assert.ok(s.kbDeptCompare_(a, d) < 0, 'transitive: ' + [a, b, d].join(' < ')); });
   }));
   const ex = fs.readFileSync(path.join(__dirname, '../../manual/export_reference.py'), 'utf8');
-  assert.ok(/return f"Part \{int\(key\[1:\]\):02d\} \u2014 \{PARTS\[key\]\[0\]\}"/.test(ex) && /"appx_a": "Appendix A \u2014 Glossary"/.test(ex), 'the exporter still writes the two shapes the rank reads');
+  assert.ok(/return f"Chapter \{int\(key\[1:\]\):02d\} \u2014 \{PARTS\[key\]\[0\]\}"/.test(ex) && /"appx_a": "Appendix A \u2014 Glossary"/.test(ex), 'the exporter still writes the two shapes the rank reads');
   assert.ok(/kbDeptCompare_\(a\.department, b\.department\)/.test(extractRawFunction('Code.js', 'kbPublishManual')), 'the publish order (and so the review stagger) follows it');
   assert.ok(/Object\.keys\(by\)\.sort\(kbDeptCompare_\)/.test(extractFnFrom(M1_KB_SRC, 'kbManualDraftDepts_')), 'and the dialog\'s part list');
 });
@@ -34858,7 +34861,7 @@ test('MP1-4: the front page — "Where to start", the five banner types as real 
   const bd = MP1_('build.py');
   const how = /^HOWTO = """([\s\S]*?)"""/m.exec(bd)[1];
   ['### Where to start', 'You need to find a policy or term', 'formatted to be printed if desired',
-    'Applicable to every call, regardless of the department', 'though each department could have use cases for other department parts']
+    'Applicable to every call, regardless of the department', 'though each department could have use cases for other department chapters']
     .forEach((t) => assert.ok(how.indexOf(t) >= 0, 'has: ' + t));
   ['Critical', 'Policy', 'Watch-out', 'Script', 'Note'].forEach((k) => assert.ok(new RegExp('^> \\*\\*' + k + '\\*\\* \u2014 ', 'm').test(how), k + ' is shown as a real banner'));
   ['You are not expected to read', 'roughly 25 pages', 'Older copies used', 'Your first week', 'state coverage'].forEach((t) => assert.ok(how.indexOf(t) < 0, 'gone: ' + t));
@@ -34974,17 +34977,19 @@ test('MP2-3: the app\'s copies ARE the source — the icon set holds each chapte
   Object.keys(MP2_CH.parts).forEach((k) => assert.ok(new RegExp('--dg-' + k + ': var\\(--man-' + k + '\\);').test(dg), '--dg-' + k + ' is the chapter\'s colour, as in the HTML manual'));
 });
 
-test('MP2-4: the reader puts a part\'s badge and colour on its title and its icon in the tree — only for a "Part NN — " department, and never anything built from the name (driven)', () => {
+test('MP2-4: the reader puts a chapter\'s badge and colour on its title and its icon in the tree — only for a "Chapter NN — " (or pre-renumber "Part NN — ") department, by its number, and never anything built from the name (driven)', () => {
   const ctx = vm.createContext({ String, Object, Number, KB_STATE: { isAdmin: false }, icon: (n, s) => '<i data-icon="' + n + '" data-s="' + s + '"></i>',
     esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
     kbShiftHeadings_: (h) => h, kbMd_: (m) => m, kbManualFeedbackBarHtml_: () => '', kbBookmarkBtnHtml_: () => '', kbIsManualCard_: () => false });
   vm.runInContext(/var KB_MANUAL_CHAPTER_ICONS = Object\.freeze\(\{[\s\S]*?\}\);/.exec(M1_KB_SRC)[0], ctx);
   ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualPartHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
   const head = (d) => /^<div class="kb-item-head[^"]*">[\s\S]*?<\/div>/.exec(ctx.kbManualPartHtml_({ department: d, sections: [] }))[0];
-  assert.strictEqual(head('Part 04 — Power Mobility'),
-    '<div class="kb-item-head kb-man-head kb-man-chap kb-man-p4"><h2><span class="kb-man-badge kb-man-p4" aria-hidden="true"><i data-icon="bolt" data-s="18"></i></span>Part 04 — Power Mobility</h2></div>');
-  assert.ok(/kb-man-p10"[\s\S]*data-icon="dollar"/.test(head('Part 10 — Billing & Insurance')), 'two digits read as one number');
-  ['Appendix A — Master Glossary', 'Part 11 — Nothing', 'Part 4 - Hyphen', 'Sales', '', 'Part 04 — <img src=x onerror=alert(1)>'].forEach((d) => {
+  assert.strictEqual(head('Chapter 05 — Power Mobility'),
+    '<div class="kb-item-head kb-man-head kb-man-chap kb-man-p5"><h2><span class="kb-man-badge kb-man-p5" aria-hidden="true"><i data-icon="bolt" data-s="18"></i></span>Chapter 05 — Power Mobility</h2></div>');
+  assert.ok(/kb-man-p4"[\s\S]*data-icon="clipboardList"/.test(head('Chapter 04 — Sales')), 'Sales is Chapter 4 since the October 2026 renumber');
+  assert.ok(/kb-man-p10"[\s\S]*data-icon="dollar"/.test(head('Chapter 10 — Billing & Denials')), 'two digits read as one number');
+  assert.ok(/kb-man-p10"[\s\S]*data-icon="dollar"/.test(head('Part 10 — Billing & Insurance')), 'a row imported before the renumber still reads by its number');
+  ['Appendix A — Master Glossary', 'Chapter 11 — Nothing', 'Part 11 — Nothing', 'Chapter 4 - Hyphen', 'Part 4 - Hyphen', 'Sales', '', 'Chapter 04 — <img src=x onerror=alert(1)>'].forEach((d) => {
     const h = head(d);
     if (d.indexOf('<img') > 0) {
       assert.ok(!/<img/.test(h) && /kb-man-p4/.test(h), 'a hostile name is escaped and only its number picks the chapter');
@@ -34992,8 +34997,8 @@ test('MP2-4: the reader puts a part\'s badge and colour on its title and its ico
       assert.ok(!/kb-man-chap|kb-man-badge/.test(h), JSON.stringify(d) + ' has no chapter badge');
     }
   });
-  assert.strictEqual(ctx.kbManualChapterIcon_('Part 06 — Service', 13, 'kb-man-dic'), '<span class="kb-man-dic kb-man-p6" aria-hidden="true"><i data-icon="repair" data-s="13"></i></span>');
-  ['__proto__', 'constructor', 'toString'].forEach((n) => assert.strictEqual(ctx.kbManualChapterKey_('Part ' + n + ' — x'), '', n));
+  assert.strictEqual(ctx.kbManualChapterIcon_('Chapter 07 — Service', 13, 'kb-man-dic'), '<span class="kb-man-dic kb-man-p7" aria-hidden="true"><i data-icon="repair" data-s="13"></i></span>');
+  ['__proto__', 'constructor', 'toString'].forEach((n) => { assert.strictEqual(ctx.kbManualChapterKey_('Chapter ' + n + ' — x'), '', n); assert.strictEqual(ctx.kbManualChapterKey_('Part ' + n + ' — x'), '', n); });
   assert.ok(/\(manual \? kbManualChapterIcon_\(d, 13, 'kb-man-dic'\) : ''\)/.test(extractFnFrom(M1_KB_SRC, 'kbRenderTree_')), 'the tree shows the icon on a manual part only');
   assert.ok(!/var\(--man-c,/.test(M1_KB_SRC), 'no fallback on the chapter colour (g57)');
 });

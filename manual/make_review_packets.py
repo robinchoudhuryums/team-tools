@@ -14,8 +14,8 @@ from numbering import display
 OUT = os.path.join(os.environ.get("MANUAL_OUT", "dist"), "review-packets")
 MANUAL = open("out/CSR-Procedures-Manual-v3.0.md", encoding="utf-8").read()
 SPEC = json.load(open("packets/spec.json", encoding="utf-8"))
-FAQ = {"p2": "§2-11", "p3": "§3-13", "p4": "§4-11", "p5": "§5-16", "p6": "§6-15",
-       "p7": "§7-10", "p8": "§8-9", "p9": "§9-9", "p10": "§10-22"}
+FAQ = {"p2": "§2-11", "p3": "§3-13", "p5": "§5-10", "p6": "§6-16", "p7": "§7-14",
+       "p8": "§8-9", "p10": "§10-21"}   # Sales (p4) and After Hours (p9) have no FAQ
 MAX = 2400
 
 
@@ -24,7 +24,8 @@ def refs_for(sec_field, part):
     for tok in re.split(r",\s*", sec_field):
         tok = tok.strip()
         if tok.upper() == "FAQ":
-            out.append(FAQ[part])
+            if part in FAQ:
+                out.append(FAQ[part])
         elif re.match(r"^\d+\.[\dA-Z]+(\.\d+)?$", tok):
             a, rest = tok.split(".", 1)
             out.append(f"§{a}-{rest}")
@@ -108,9 +109,9 @@ def packet(key):
 
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
-    names = {"p2": "P2-Manual-Mobility", "p3": "P3-Respiratory-and-Resupply", "p4": "P4-Power-Mobility",
-             "p5": "P5-Field-Operations", "p6": "P6-Service", "p7": "P7-Oxygen", "p8": "P8-After-Hours",
-             "p9": "P9-Sales", "p10": "P10-Billing-and-Insurance"}
+    names = {"p2": "C2-Manual-Mobility", "p3": "C3-Respiratory-and-Resupply", "p4": "C4-Sales",
+             "p5": "C5-Power-Mobility", "p6": "C6-Field-Operations", "p7": "C7-Service", "p8": "C8-Oxygen",
+             "p9": "C9-After-Hours", "p10": "C10-Billing-and-Denials"}
     for key in (sys.argv[1:] or SPEC.keys()):
         text, missing = packet(key)
         path = f"{OUT}/Review-Packet-{names[key]}.md"

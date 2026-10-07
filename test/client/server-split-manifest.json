@@ -2418,6 +2418,17 @@
     "intakeValidateEmail_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-07",
+   "why": "Manual Phase 4 renumber: kbDeptRank_ reads 'Chapter NN —' as well as 'Part NN —'; getManualPart's missing-department message says chapter",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "getManualPart",
+    "kbDeptRank_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -6875,7 +6886,7 @@
   "getManualPart": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "5ddfbfc0c8baf631"
+   "sha": "9e5f0b325de1a204"
   },
   "getMetricsAmbient": {
    "file": "40_metrics.js",
@@ -7890,7 +7901,7 @@
   "kbDeptRank_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "a7e1bec76885fc79"
+   "sha": "41a0a6fbb38c8b1c"
   },
   "kbDocBodyToMarkdown_": {
    "file": "70_kb.js",

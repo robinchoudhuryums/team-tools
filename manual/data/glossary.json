@@ -3,7 +3,7 @@
     "term": "ABG",
     "definition": "Arterial Blood Gas — one of the qualifying tests for oxygen coverage",
     "parts": [
-      "p7"
+      "p8"
     ],
     "class": "manual"
   },
@@ -19,7 +19,7 @@
     "term": "ALF",
     "definition": "Assisted Living Facility. Generally qualifies as the patient's home, so no discharge date is required before delivery",
     "parts": [
-      "p5"
+      "p6"
     ],
     "class": "manual"
   },
@@ -28,7 +28,7 @@
     "definition": "Appointment of Representative (form)",
     "parts": [
       "p10",
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -45,7 +45,7 @@
     "term": "ATP",
     "definition": "Assistive Technology Professional",
     "parts": [
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -79,7 +79,7 @@
     "definition": "Certificate of Medical Necessity — required by some states and insurances",
     "parts": [
       "p10",
-      "p4"
+      "p5"
     ],
     "class": "manual",
     "verify": "which"
@@ -112,7 +112,7 @@
     "term": "CST",
     "definition": "Central Standard Time — the time zone the after-hours coverage window is stated in",
     "parts": [
-      "p8"
+      "p9"
     ],
     "class": "manual"
   },
@@ -128,7 +128,7 @@
     "term": "D/C",
     "definition": "Discharge",
     "parts": [
-      "p5"
+      "p6"
     ],
     "class": "manual"
   },
@@ -147,7 +147,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "manual"
@@ -157,7 +157,7 @@
     "definition": "Durable Medical Equipment Medicare Administrative Contractor — the regional contractor that processes DME claims",
     "parts": [
       "p10",
-      "p7"
+      "p8"
     ],
     "class": "manual"
   },
@@ -176,7 +176,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "manual"
@@ -185,7 +185,7 @@
     "term": "EAA",
     "definition": "Economic Assistance Application — offered to patients requesting equipment pick-up because they cannot afford the cost",
     "parts": [
-      "p5",
+      "p6",
       "p10"
     ],
     "class": "manual"
@@ -210,7 +210,7 @@
     "term": "ETA",
     "definition": "Estimated Time of Arrival",
     "parts": [
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -218,7 +218,7 @@
     "term": "F2F",
     "definition": "Face-to-Face Evaluation. Also called clinical notes or progress notes",
     "parts": [
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -235,7 +235,7 @@
     "definition": "Fee-for-Service — Original Medicare, as distinct from a Medicare Advantage plan",
     "parts": [
       "p10",
-      "p7"
+      "p8"
     ],
     "class": "manual"
   },
@@ -255,7 +255,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "manual"
@@ -267,7 +267,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "manual"
@@ -284,7 +284,7 @@
     "term": "HST",
     "definition": "Hawaii Standard Time",
     "parts": [
-      "p8"
+      "p9"
     ],
     "class": "manual"
   },
@@ -309,7 +309,7 @@
     "term": "LCMP",
     "definition": "Licensed Certified Medical Professional — signature attestation and financial disclosure form",
     "parts": [
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -326,7 +326,7 @@
     "definition": "Two meanings. **Medical Assistant** in PAK and provider-office context. **Medicare Advantage** in insurance context.",
     "parts": [
       "p10",
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -345,13 +345,13 @@
       "p0",
       "p10",
       "p2",
-      "p4",
-      "p3",
       "p5",
+      "p3",
       "p6",
       "p7",
       "p8",
       "p9",
+      "p4",
       "p1"
     ],
     "class": "manual"
@@ -373,13 +373,13 @@
       "p0",
       "p10",
       "p2",
-      "p4",
-      "p3",
       "p5",
+      "p3",
       "p6",
       "p7",
       "p8",
       "p9",
+      "p4",
       "p1"
     ],
     "class": "manual"
@@ -391,7 +391,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "manual"
@@ -400,7 +400,7 @@
     "term": "ME",
     "definition": "Mobility Evaluation",
     "parts": [
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -427,7 +427,7 @@
     "definition": "Mobility Related Activities of Daily Living",
     "parts": [
       "p2",
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -435,7 +435,7 @@
     "term": "MRX",
     "definition": "Master Prescription",
     "parts": [
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -446,8 +446,8 @@
       "p0",
       "p2",
       "p3",
-      "p4",
-      "p6"
+      "p5",
+      "p7"
     ],
     "class": "manual"
   },
@@ -498,7 +498,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "manual"
@@ -508,7 +508,7 @@
     "definition": "Out of Range — the delivery address falls outside the delivery radius for the item ordered, so the order cannot be completed. The radius varies by item; for walkers, out of state is out of range",
     "parts": [
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "manual"
@@ -517,7 +517,7 @@
     "term": "OT",
     "definition": "Occupational Therapist / Occupational Therapy",
     "parts": [
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -528,7 +528,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "manual"
@@ -537,7 +537,7 @@
     "term": "PAK",
     "definition": "Pre-Appointment Kit",
     "parts": [
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -553,7 +553,7 @@
     "term": "PAR",
     "definition": "Prior Authorization Request — the submission itself",
     "parts": [
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -561,7 +561,7 @@
     "term": "PCP",
     "definition": "Primary Care Physician",
     "parts": [
-      "p9",
+      "p4",
       "p10"
     ],
     "class": "manual"
@@ -573,7 +573,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "manual"
@@ -585,7 +585,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "manual"
@@ -594,7 +594,7 @@
     "term": "PMD",
     "definition": "Power Mobility Device — covers both PWC and POV",
     "parts": [
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -605,7 +605,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "manual"
@@ -623,7 +623,7 @@
     "definition": "Proof of Delivery",
     "parts": [
       "p10",
-      "p5"
+      "p6"
     ],
     "class": "manual"
   },
@@ -631,7 +631,7 @@
     "term": "POV",
     "definition": "Power Operated Vehicle — commonly called a scooter",
     "parts": [
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -639,7 +639,7 @@
     "term": "PPD",
     "definition": "Patient Provided Data",
     "parts": [
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -648,7 +648,7 @@
     "definition": "Purchase Capped Rental Form — signed at delivery, acknowledging Medicare's billing procedure for capped rental versus routinely purchased items",
     "parts": [
       "p10",
-      "p5"
+      "p6"
     ],
     "class": "manual"
   },
@@ -664,7 +664,7 @@
     "term": "PT",
     "definition": "Physical Therapist / Physical Therapy",
     "parts": [
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -672,7 +672,7 @@
     "term": "PT Eval",
     "definition": "Physical Therapy Evaluation",
     "parts": [
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -680,7 +680,7 @@
     "term": "PT Rx",
     "definition": "Prescription for a Physical Therapy Evaluation",
     "parts": [
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -688,7 +688,7 @@
     "term": "PWC",
     "definition": "Power Wheelchair",
     "parts": [
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -699,7 +699,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "manual"
@@ -716,7 +716,7 @@
     "term": "QL",
     "definition": "Qualified Lead — a patient who has already completed a valid Mobility Evaluation",
     "parts": [
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -734,7 +734,7 @@
     "definition": "Rent-to-Own",
     "parts": [
       "p10",
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -753,8 +753,8 @@
       "p10",
       "p2",
       "p3",
-      "p4",
-      "p9"
+      "p5",
+      "p4"
     ],
     "class": "manual"
   },
@@ -762,7 +762,7 @@
     "term": "SE",
     "definition": "Seating Evaluation",
     "parts": [
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -789,8 +789,8 @@
       "p10",
       "p2",
       "p3",
-      "p4",
-      "p9"
+      "p5",
+      "p4"
     ],
     "class": "manual"
   },
@@ -801,7 +801,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "manual"
@@ -810,7 +810,7 @@
     "term": "T3Q",
     "definition": "A Qualifications sub-team in Power intake that completes the PPD for Qualified Leads — see the directory",
     "parts": [
-      "p4"
+      "p5"
     ],
     "class": "manual"
   },
@@ -819,7 +819,7 @@
     "definition": "Texas Medicaid & Healthcare Partnership",
     "parts": [
       "p10",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "manual"
@@ -839,14 +839,14 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "manual"
   },
   {
     "term": "UPG Fee",
-    "definition": "Upgrade Fee. Amounts differ between the Intake and Field Ops schedules — see [[§10-16]]",
+    "definition": "Upgrade Fee. Amounts differ between the Intake and Field Ops schedules — see [[§10-15]]",
     "parts": [
       "p10",
       "p2"
@@ -867,7 +867,7 @@
     "definition": "Written Order Prior to Delivery",
     "parts": [
       "p10",
-      "p7"
+      "p8"
     ],
     "class": "manual"
   },
@@ -878,7 +878,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "shorthand"
@@ -890,7 +890,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "shorthand"
@@ -902,7 +902,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "shorthand"
@@ -914,7 +914,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "shorthand"
@@ -926,7 +926,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "shorthand"
@@ -938,7 +938,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "shorthand"
@@ -950,7 +950,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "shorthand"
@@ -962,7 +962,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "shorthand"
@@ -974,7 +974,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "shorthand"
@@ -986,7 +986,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "shorthand"
@@ -998,7 +998,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "shorthand"
@@ -1010,7 +1010,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "shorthand"
@@ -1022,7 +1022,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "shorthand"
@@ -1034,7 +1034,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "shorthand"
@@ -1046,7 +1046,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "shorthand"
@@ -1058,7 +1058,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "shorthand"
@@ -1070,7 +1070,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "shorthand"
@@ -1082,7 +1082,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "shorthand"
@@ -1094,7 +1094,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "shorthand"
@@ -1106,7 +1106,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "shorthand"
@@ -1118,7 +1118,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "shorthand"
@@ -1130,7 +1130,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "system"
@@ -1142,7 +1142,7 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "system"
@@ -1151,7 +1151,7 @@
     "term": "Parachute",
     "definition": "Third-party referral and documentation platform. Requests may go out through it rather than by fax",
     "parts": [
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "system"
@@ -1160,7 +1160,7 @@
     "term": "Payor/HCPCS Order Acceptance Sheet",
     "definition": "Reference for confirming insurance eligibility by device category and region",
     "parts": [
-      "p4"
+      "p5"
     ],
     "class": "system"
   },
@@ -1168,7 +1168,7 @@
     "term": "SutureSign",
     "definition": "Third-party documentation platform, used alongside Parachute",
     "parts": [
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "system"
@@ -1180,14 +1180,14 @@
       "p0",
       "p10",
       "p2",
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "system"
   },
   {
     "term": "Upgrade Fee Sheet (Mobility)",
-    "definition": "The master list of upgrade fee amounts by item. The manual's fee tables are copied from it — [[§10-16]]",
+    "definition": "The master list of upgrade fee amounts by item. The manual's fee tables are copied from it — [[§10-15]]",
     "parts": [
       "p10",
       "p2"
@@ -1206,7 +1206,7 @@
     "term": "Virtru",
     "definition": "Email encryption service; must be enabled when sending protected information outside of the company",
     "parts": [
-      "p4",
+      "p5",
       "p3"
     ],
     "class": "system"

@@ -1,84 +1,84 @@
 {
- "_about": "The chapter colours and icons (operator-approved 2026-10-07): ONE source read by make_html.py (the HTML palette, heading badges, sidebar and card icons), render_docx.js (the Word palette), rasterize_diagrams.py (the Word heading badges) and pinned equal to the app (web-app/script_icons.html ICONS, the --man-pN tokens and KB_MANUAL_CHAPTER_ICONS in web-app/kb/script_kb.html). Keys are the CURRENT part keys; the Phase 4 renumber re-keys them. light = on #FFFFFF, dark = on #0F161D, both at least 4.5:1. Icons are 24-viewBox outline paths drawn like the app's icon set (stroke currentColor, width 1.75, round caps and joins).",
- "parts": {
-  "p0": {
-   "department": "CSR Core",
-   "icon": "headset",
-   "light": "#1C3A5E",
-   "dark": "#9EC2E6"
+  "_about": "The chapter colours and icons (operator-approved 2026-10-07): ONE source read by make_html.py (the HTML palette, heading badges, sidebar and card icons), render_docx.js (the Word palette), rasterize_diagrams.py (the Word heading badges) and pinned equal to the app (web-app/script_icons.html ICONS, the --man-pN tokens and KB_MANUAL_CHAPTER_ICONS in web-app/kb/script_kb.html). Keys are the chapter keys (p4 = Sales since the October 2026 renumber; each department kept its colour and icon). light = on #FFFFFF, dark = on #0F161D, both at least 4.5:1. Icons are 24-viewBox outline paths drawn like the app's icon set (stroke currentColor, width 1.75, round caps and joins).",
+  "parts": {
+    "p0": {
+      "department": "CSR Core",
+      "icon": "headset",
+      "light": "#1C3A5E",
+      "dark": "#9EC2E6"
+    },
+    "p1": {
+      "department": "Call Handling",
+      "icon": "phone",
+      "light": "#5B6478",
+      "dark": "#808AA0"
+    },
+    "p2": {
+      "department": "Manual Mobility & General DME",
+      "icon": "walker",
+      "light": "#653D99",
+      "dark": "#9E7ACD"
+    },
+    "p3": {
+      "department": "Respiratory & Resupply",
+      "icon": "papMask",
+      "light": "#9B2377",
+      "dark": "#DD56B5"
+    },
+    "p4": {
+      "department": "Sales",
+      "icon": "clipboardList",
+      "light": "#1C75A3",
+      "dark": "#1F92CE"
+    },
+    "p5": {
+      "department": "Power Mobility",
+      "icon": "bolt",
+      "light": "#1D46B9",
+      "dark": "#6185EA"
+    },
+    "p6": {
+      "department": "Field Operations",
+      "icon": "truck",
+      "light": "#2D7E52",
+      "dark": "#359D64"
+    },
+    "p7": {
+      "department": "Service",
+      "icon": "repair",
+      "light": "#59642A",
+      "dark": "#81913A"
+    },
+    "p8": {
+      "department": "Oxygen",
+      "icon": "oxygenTank",
+      "light": "#19676D",
+      "dark": "#2199A2"
+    },
+    "p9": {
+      "department": "After Hours",
+      "icon": "moon",
+      "light": "#1F7514",
+      "dark": "#279F17"
+    },
+    "p10": {
+      "department": "Billing & Denials",
+      "icon": "dollar",
+      "light": "#9A5E22",
+      "dark": "#C87827"
+    }
   },
-  "p1": {
-   "department": "Call Handling",
-   "icon": "phone",
-   "light": "#5B6478",
-   "dark": "#808AA0"
-  },
-  "p2": {
-   "department": "Manual Mobility & General DME",
-   "icon": "walker",
-   "light": "#653D99",
-   "dark": "#9E7ACD"
-  },
-  "p3": {
-   "department": "Respiratory & Resupply",
-   "icon": "papMask",
-   "light": "#9B2377",
-   "dark": "#DD56B5"
-  },
-  "p4": {
-   "department": "Power Mobility",
-   "icon": "bolt",
-   "light": "#1D46B9",
-   "dark": "#6185EA"
-  },
-  "p5": {
-   "department": "Field Operations",
-   "icon": "truck",
-   "light": "#2D7E52",
-   "dark": "#359D64"
-  },
-  "p6": {
-   "department": "Service",
-   "icon": "repair",
-   "light": "#59642A",
-   "dark": "#81913A"
-  },
-  "p7": {
-   "department": "Oxygen",
-   "icon": "oxygenTank",
-   "light": "#19676D",
-   "dark": "#2199A2"
-  },
-  "p8": {
-   "department": "After Hours",
-   "icon": "moon",
-   "light": "#1F7514",
-   "dark": "#279F17"
-  },
-  "p9": {
-   "department": "Sales",
-   "icon": "clipboardList",
-   "light": "#1C75A3",
-   "dark": "#1F92CE"
-  },
-  "p10": {
-   "department": "Billing & Insurance",
-   "icon": "dollar",
-   "light": "#9A5E22",
-   "dark": "#C87827"
+  "icons": {
+    "bolt": "<path d=\"M13 2 4 14h7l-1 8 9-12h-7z\"/>",
+    "clipboardList": "<rect x=\"8\" y=\"2\" width=\"8\" height=\"4\" rx=\"1\"/><path d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\"/><path d=\"M8 11h8\"/><path d=\"M8 15h6\"/>",
+    "dollar": "<path d=\"M12 2v20\"/><path d=\"M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6\"/>",
+    "headset": "<path d=\"M3 11h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5a9 9 0 0 1 18 0v5a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3\"/><path d=\"M21 16v2a4 4 0 0 1-4 4h-5\"/>",
+    "moon": "<path d=\"M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z\"/>",
+    "oxygenTank": "<path d=\"M7 11a4 4 0 0 1 8 0v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2z\"/><path d=\"M10 7V4h2v3\"/><path d=\"M8.5 3h5\"/><path d=\"M12 5.5h3\"/><circle cx=\"17\" cy=\"5.5\" r=\"2\"/><path d=\"M7 14h8\"/>",
+    "papMask": "<path d=\"M12 2.5c3.6 0 6.5 3.2 6.5 7.5 0 2.2-.7 4-1.9 5.3\"/><path d=\"M12 2.5C8.4 2.5 5.5 5.7 5.5 10c0 2.2.7 4 1.9 5.3\"/><path d=\"M12 8.5c-1.6 0-3.5 3.3-3.5 5a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2c0-1.7-1.9-5-3.5-5z\"/><path d=\"M8.7 12.5 5.8 11.5\"/><path d=\"M15.3 12.5l2.9-1\"/><path d=\"M12 15.5v2.5a3 3 0 0 0 3 3h5\"/>",
+    "phone": "<path d=\"M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.37 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.33 1.85.57 2.81.7A2 2 0 0 1 22 16.92z\"/>",
+    "repair": "<path d=\"M3.52 9.17 4.93 7.76 5.35 8.18 7.83 5.71Q9.45 4.08 11.15 3.8Q10.16 5.92 9.87 7.89L7.46 10.29 7.9 10.73 6.49 12.14z\"/><path d=\"M7.88 9.86 18.5 20.5A1.4 1.4 0 0 0 20.5 18.5L9.86 7.88\"/><path d=\"M9.31 12.71 3.5 18.5A1.4 1.4 0 0 0 5.5 20.5L11.29 14.69\"/><path d=\"M12.71 9.31 13.47 8.55A3.6 3.6 0 0 1 18.26 3.9L16.1 6.07 17.93 7.9 20.1 5.74A3.6 3.6 0 0 1 15.45 10.53L14.69 11.29\"/>",
+    "truck": "<path d=\"M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2\"/><path d=\"M15 18H9\"/><path d=\"M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14\"/><circle cx=\"17\" cy=\"18\" r=\"2\"/><circle cx=\"7\" cy=\"18\" r=\"2\"/>",
+    "walker": "<path d=\"M4 21V7a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v14\"/><path d=\"M10 6V5a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v14\"/><path d=\"M12 12l6-2\"/>"
   }
- },
- "icons": {
-  "bolt": "<path d=\"M13 2 4 14h7l-1 8 9-12h-7z\"/>",
-  "clipboardList": "<rect x=\"8\" y=\"2\" width=\"8\" height=\"4\" rx=\"1\"/><path d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\"/><path d=\"M8 11h8\"/><path d=\"M8 15h6\"/>",
-  "dollar": "<path d=\"M12 2v20\"/><path d=\"M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6\"/>",
-  "headset": "<path d=\"M3 11h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5a9 9 0 0 1 18 0v5a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3\"/><path d=\"M21 16v2a4 4 0 0 1-4 4h-5\"/>",
-  "moon": "<path d=\"M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z\"/>",
-  "oxygenTank": "<path d=\"M7 11a4 4 0 0 1 8 0v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2z\"/><path d=\"M10 7V4h2v3\"/><path d=\"M8.5 3h5\"/><path d=\"M12 5.5h3\"/><circle cx=\"17\" cy=\"5.5\" r=\"2\"/><path d=\"M7 14h8\"/>",
-  "papMask": "<path d=\"M12 2.5c3.6 0 6.5 3.2 6.5 7.5 0 2.2-.7 4-1.9 5.3\"/><path d=\"M12 2.5C8.4 2.5 5.5 5.7 5.5 10c0 2.2.7 4 1.9 5.3\"/><path d=\"M12 8.5c-1.6 0-3.5 3.3-3.5 5a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2c0-1.7-1.9-5-3.5-5z\"/><path d=\"M8.7 12.5 5.8 11.5\"/><path d=\"M15.3 12.5l2.9-1\"/><path d=\"M12 15.5v2.5a3 3 0 0 0 3 3h5\"/>",
-  "phone": "<path d=\"M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.37 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.33 1.85.57 2.81.7A2 2 0 0 1 22 16.92z\"/>",
-  "repair": "<path d=\"M3.52 9.17 4.93 7.76 5.35 8.18 7.83 5.71Q9.45 4.08 11.15 3.8Q10.16 5.92 9.87 7.89L7.46 10.29 7.9 10.73 6.49 12.14z\"/><path d=\"M7.88 9.86 18.5 20.5A1.4 1.4 0 0 0 20.5 18.5L9.86 7.88\"/><path d=\"M9.31 12.71 3.5 18.5A1.4 1.4 0 0 0 5.5 20.5L11.29 14.69\"/><path d=\"M12.71 9.31 13.47 8.55A3.6 3.6 0 0 1 18.26 3.9L16.1 6.07 17.93 7.9 20.1 5.74A3.6 3.6 0 0 1 15.45 10.53L14.69 11.29\"/>",
-  "truck": "<path d=\"M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2\"/><path d=\"M15 18H9\"/><path d=\"M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14\"/><circle cx=\"17\" cy=\"18\" r=\"2\"/><circle cx=\"7\" cy=\"18\" r=\"2\"/>",
-  "walker": "<path d=\"M4 21V7a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v14\"/><path d=\"M10 6V5a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v14\"/><path d=\"M12 12l6-2\"/>"
- }
 }

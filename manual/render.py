@@ -15,7 +15,7 @@ BY_ID = {r["id"]: r for r in EQ}
 COLS = [
     ("name", "Model"),
     ("hcpcs", "HCPCS"),
-    ("part", "Part"),
+    ("part", "Chapter"),
     ("product_weight_lbs", "Product Wt."),
     ("capacity_lbs", "User Capacity"),
     ("dimensions", "Dimensions"),
@@ -32,7 +32,7 @@ def cell(r, key):
     if key == "hcpcs":
         return " / ".join(v)
     if key == "part":
-        return "Part " + v[1:]
+        return "Chapter " + v[1:]
     if key == "product_weight_lbs":
         return f"{v:g} lbs"
     if key == "capacity_lbs":
@@ -120,7 +120,7 @@ def oncall_table():
     order = ["Irving office (DFW)", "San Antonio", "All locations"]
     rows = []
     for r in ROSTER:
-        if r["part"] != "p8" or not re.search(r"On-Call|Technician", r["role"]):
+        if r["part"] != "p9" or not re.search(r"On-Call|Technician", r["role"]):
             continue
         label = re.sub(r"^On-Call ", "", r["role"])
         if label.endswith(" — San Antonio"):
@@ -175,7 +175,7 @@ def expand(m):
         hdr = "| Role | Holder | Backup | Transfer | Email |" + (" Phone |" if show_phone else "")
         sep = "|---|---|---|---|---|" + ("---|" if show_phone else "")
         out = [hdr, sep]
-        for r in sorted(rows, key=lambda x: ({"shared":0,"p1":1,"p2":2,"p3":3,"p4":4,"p5":5,"p6":6,"p7":7,"p8":8}.get(x["part"],9), x["role"])):
+        for r in sorted(rows, key=lambda x: (0 if x["part"] == "shared" else int(x["part"][1:]) + 1 if x["part"][1:].isdigit() else 99, x["role"])):
             bk = r["backup"] or ""
             bk = "**none**" if bk == "NONE" else ("—" if bk.startswith("—") else bk)
             hd = "—" if (r["holder"] or "").startswith("—") else (r["holder"] or r.get("current_named_individual") or "")

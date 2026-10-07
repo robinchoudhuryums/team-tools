@@ -83,14 +83,14 @@ Ten questions covering the rules most often answered wrongly. Each has one best 
 
 | # | Answer | Why | See |
 |---|---|---|---|
-| 1 | **B** | Title stays with the supplier after the 36-month cap; servicing continues through the 5-year useful life | [[§10-13.2]] |
-| 2 | **B** | Ownership transfers automatically after 13 months; the purchase-option and 15-month rules are obsolete | [[§10-13.1]] |
-| 3 | **C** | Federal QMB billing protection — correct and refund | [[§10-6.3]] |
-| 4 | **B** | Rule A: any Medicaid plan, any state, waives both rollator fees. Only QMB-only is limited to the standard fee | [[§10-16]] |
-| 5 | **C** | Rule C waives hospital bed fees only | [[§10-16]] |
+| 1 | **B** | Title stays with the supplier after the 36-month cap; servicing continues through the 5-year useful life | [[§10-12.2]] |
+| 2 | **B** | Ownership transfers automatically after 13 months; the purchase-option and 15-month rules are obsolete | [[§10-12.1]] |
+| 3 | **C** | Federal QMB billing protection — correct and refund | [[§10-5.3]] |
+| 4 | **B** | Rule A: any Medicaid plan, any state, waives both rollator fees. Only QMB-only is limited to the standard fee | [[§10-15]] |
+| 5 | **C** | Rule C waives hospital bed fees only | [[§10-15]] |
 | 6 | **A** | Both the usage threshold and the follow-up visit are required | [[§3-7.4]] |
-| 7 | **C** | A rental month isn't billable while the patient is inpatient on the billing date | [[§10-15]] |
-| 8 | **B** | An EOB or MSN is not a bill; the allowed and patient-responsibility amounts are what matter | [[§10-18.2]] |
-| 9 | **B** | Only the patient can update a payer's COB record | [[§10-7.1]] |
-| 10 | **B** | The hospice per diem covers related equipment; a capped rental hasn't transferred ownership at month 5 | [[§10-12]] |
+| 7 | **C** | A rental month isn't billable while the patient is inpatient on the billing date | [[§10-14]] |
+| 8 | **B** | An EOB or MSN is not a bill; the allowed and patient-responsibility amounts are what matter | [[§10-17.2]] |
+| 9 | **B** | Only the patient can update a payer's COB record | [[§10-6.1]] |
+| 10 | **B** | The hospice per diem covers related equipment; a capped rental hasn't transferred ownership at month 5 | [[§10-11]] |
 

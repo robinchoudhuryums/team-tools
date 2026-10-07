@@ -60,13 +60,13 @@ PARTS = {
     "p1": ("Call Handling", "src/p1.md"),
     "p2": ("Manual Mobility & General DME", "src/p2.md"),
     "p3": ("Respiratory & Resupply", "src/p3.md"),
-    "p4": ("Power Mobility", "src/p4.md"),
-    "p5": ("Field Operations", "src/p5.md"),
-    "p6": ("Service", "src/p6.md"),
-    "p7": ("Oxygen", "src/p7.md"),
-    "p8": ("After Hours", "src/p8.md"),
-    "p9": ("Sales", "src/p9.md"),
-    "p10": ("Billing & Insurance", "src/p10.md"),
+    "p4": ("Sales", "src/p4.md"),
+    "p5": ("Power Mobility", "src/p5.md"),
+    "p6": ("Field Operations", "src/p6.md"),
+    "p7": ("Service", "src/p7.md"),
+    "p8": ("Oxygen", "src/p8.md"),
+    "p9": ("After Hours", "src/p9.md"),
+    "p10": ("Billing & Denials", "src/p10.md"),
 }
 APPX = {"a": "src/appendix_a.md", "b": "src/appendix_b.md", "c": "src/appendix_c.md"}
 
@@ -286,7 +286,7 @@ def article_id(sec):
 
 def department(key):
     if key.startswith("p"):
-        return f"Part {int(key[1:]):02d} — {PARTS[key][0]}"
+        return f"Chapter {int(key[1:]):02d} — {PARTS[key][0]}"
     return {"appx_a": "Appendix A — Glossary",
             "appx_b": "Appendix B — Escalation Directory",
             "appx_c": "Appendix C — Quick Reference Cards"}[key]

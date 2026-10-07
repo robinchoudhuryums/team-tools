@@ -71,7 +71,7 @@ def anchor(m):
     sec = re.match(r"(§[\w\-.]+)\s", plain)
     if lvl == "1":
         PART_LABEL_PENDING[0] = re.sub(r"<[^>]+>", "", txt)
-        pm = re.match(r"(Part (\d+)|Appendix ([A-Z]))", plain)
+        pm = re.match(r"((?:Part|Chapter) (\d+)|Appendix ([A-Z]))", plain)
         if pm and pm.group(2):
             part = "p" + pm.group(2)
         elif pm and pm.group(3):
@@ -382,6 +382,8 @@ print(f"aliases      : {sum(len(v) for v in ALIASES.values())} phrases "
 
 # searchable records: id, label, body snippet
 import json as _json, html as _html
+# the October 2026 renumber: a section is also found by the number it had before
+FORMERLY = _json.load(open("data/renumber-2026-10.json", encoding="utf-8"))["formerly"]
 SEARCH = []
 for m in re.finditer(r'<h([23]) id="([\w_.-]+)">(.*?)</h\1>(.*?)(?=<h[123]|\Z)', body, re.S):
     label = re.sub(r'<a\b[^>]*class="ah"[^>]*>.*?</a>', "", m.group(3))
@@ -396,6 +398,9 @@ for m in re.finditer(r'<h([23]) id="([\w_.-]+)">(.*?)</h\1>(.*?)(?=<h[123]|\Z)',
     sid = m.group(2)
     src = "§" + sid.replace("_", ".") if re.match(r"^[0-9A-Z]+-", sid) else ""
     nums = old_forms(src) if src else []
+    if src in FORMERLY:
+        was = FORMERLY[src]
+        nums = nums + [f for f in old_forms(was) if f not in nums] + ["formerly " + dnum(was)]
     SEARCH.append({"i": sid, "t": label, "b": txt,
                    "a": " ".join(nums),
                    "p": ALIASES.get(sid, [])})

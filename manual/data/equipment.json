@@ -1555,7 +1555,7 @@
   {
     "id": "pov-ultra-x-3wheel-s39",
     "name": "Ultra X 3-Wheel (S39)",
-    "part": "p4",
+    "part": "p5",
     "category": "pov",
     "hcpcs": [
       "K0800"
@@ -1596,7 +1596,7 @@
   {
     "id": "pov-ultra-x-4wheel-s49",
     "name": "Ultra X 4-Wheel (S49)",
-    "part": "p4",
+    "part": "p5",
     "category": "pov",
     "hcpcs": [
       "K0800"
@@ -1637,7 +1637,7 @@
   {
     "id": "pov-sport-3wheel-s73",
     "name": "Sport 3-Wheel (S73)",
-    "part": "p4",
+    "part": "p5",
     "category": "pov",
     "hcpcs": [
       "K0801"
@@ -1682,7 +1682,7 @@
   {
     "id": "pov-sport-4wheel-s74",
     "name": "Sport 4-Wheel (S74)",
-    "part": "p4",
+    "part": "p5",
     "category": "pov",
     "hcpcs": [
       "K0801"
@@ -1727,7 +1727,7 @@
   {
     "id": "pwc-pride-go-chair-med",
     "name": "Pride Go Chair MED",
-    "part": "p4",
+    "part": "p5",
     "category": "pwc",
     "hcpcs": [
       "K0821"
@@ -1756,7 +1756,7 @@
   {
     "id": "pwc-jazzy-elite-es-2sc",
     "name": "Pride Jazzy Elite ES 2S-C",
-    "part": "p4",
+    "part": "p5",
     "category": "pwc",
     "hcpcs": [
       "K0822",
@@ -1786,7 +1786,7 @@
   {
     "id": "pwc-jazzy-elite-hd-2hdc",
     "name": "Jazzy Elite HD 2HD-C",
-    "part": "p4",
+    "part": "p5",
     "category": "pwc",
     "hcpcs": [
       "K0824",
@@ -1816,7 +1816,7 @@
   {
     "id": "pwc-merits-atlantis-p710",
     "name": "Merits Atlantis P710",
-    "part": "p4",
+    "part": "p5",
     "category": "pwc",
     "hcpcs": [
       "K0826",
@@ -1846,7 +1846,7 @@
   {
     "id": "pwc-shoprider-xlr14-p424le",
     "name": "Shoprider XLR-14 P424LE",
-    "part": "p4",
+    "part": "p5",
     "category": "pwc",
     "hcpcs": [
       "K0835",
@@ -1876,7 +1876,7 @@
   {
     "id": "pwc-merits-vision-ultra-hd-p331",
     "name": "Merits Vision Ultra HD P331",
-    "part": "p4",
+    "part": "p5",
     "category": "pwc",
     "hcpcs": [
       "K0837"
@@ -1905,7 +1905,7 @@
   {
     "id": "pwc-invacare-tdx-sp2",
     "name": "Invacare TDX-SP2",
-    "part": "p4",
+    "part": "p5",
     "category": "pwc",
     "hcpcs": [
       "K0861"
@@ -1934,7 +1934,7 @@
   {
     "id": "pwc-invacare-tdx-sp2-hd",
     "name": "Invacare TDX-SP2 HD",
-    "part": "p4",
+    "part": "p5",
     "category": "pwc",
     "hcpcs": [
       "K0862"
@@ -1963,7 +1963,7 @@
   {
     "id": "pwc-amysystems-alltrack-hd3",
     "name": "Amysystems ALLTRACK HD 3",
-    "part": "p4",
+    "part": "p5",
     "category": "pwc",
     "hcpcs": [
       "K0863"
@@ -1992,7 +1992,7 @@
   {
     "id": "o2-philips-everflo",
     "name": "Philips Respironics EverFlo",
-    "part": "p7",
+    "part": "p8",
     "category": "oxygen-concentrator",
     "hcpcs": [
       "E1390"
@@ -2029,7 +2029,7 @@
   {
     "id": "o2-drive-devilbiss-525",
     "name": "Drive DeVilbiss 525",
-    "part": "p7",
+    "part": "p8",
     "category": "oxygen-concentrator",
     "hcpcs": [
       "E1390"
@@ -2066,7 +2066,7 @@
   {
     "id": "o2-drive-deco2",
     "name": "Drive DECO2",
-    "part": "p7",
+    "part": "p8",
     "category": "oxygen-concentrator",
     "hcpcs": [
       "E1390"
@@ -2103,7 +2103,7 @@
   {
     "id": "o2-invacare-perfecto-2v",
     "name": "Invacare Perfecto 2V",
-    "part": "p7",
+    "part": "p8",
     "category": "oxygen-concentrator",
     "hcpcs": [
       "E1390"
@@ -2140,7 +2140,7 @@
   {
     "id": "o2-drive-devilbiss-1025",
     "name": "Drive DeVilbiss 1025 (10 LPM)",
-    "part": "p7",
+    "part": "p8",
     "category": "oxygen-concentrator",
     "hcpcs": [
       "E1390"
@@ -2177,7 +2177,7 @@
   {
     "id": "o2-conserver-sunset-chad",
     "name": "Sunset CHAD Oxygen Conserver RES049",
-    "part": "p7",
+    "part": "p8",
     "category": "oxygen-accessory",
     "hcpcs": [
       "A9900"
@@ -3711,7 +3711,7 @@
   {
     "id": "o2-cylinder-m6",
     "name": "M6 Oxygen Cylinder",
-    "part": "p7",
+    "part": "p8",
     "category": "oxygen-cylinder",
     "hcpcs": [
       "E0431"
@@ -3746,7 +3746,7 @@
   {
     "id": "o2-cylinder-e",
     "name": "E Oxygen Cylinder",
-    "part": "p7",
+    "part": "p8",
     "category": "oxygen-cylinder",
     "hcpcs": [
       "E0431"
@@ -3781,7 +3781,7 @@
   {
     "id": "o2-cannula-nasal",
     "name": "Nasal Cannula (with 7 ft tubing)",
-    "part": "p7",
+    "part": "p8",
     "category": "oxygen-supply",
     "hcpcs": [
       "A4615"
@@ -3806,7 +3806,7 @@
   {
     "id": "o2-tubing-25ft",
     "name": "Oxygen Tubing — 25 ft",
-    "part": "p7",
+    "part": "p8",
     "category": "oxygen-supply",
     "hcpcs": [
       "A4616"
@@ -3831,7 +3831,7 @@
   {
     "id": "o2-tubing-50ft",
     "name": "Oxygen Tubing — 50 ft",
-    "part": "p7",
+    "part": "p8",
     "category": "oxygen-supply",
     "hcpcs": [
       "A4616"
@@ -3856,7 +3856,7 @@
   {
     "id": "o2-connector-straight",
     "name": "Straight Connector",
-    "part": "p7",
+    "part": "p8",
     "category": "oxygen-supply",
     "hcpcs": [],
     "hcpcs_note": null,
@@ -3879,7 +3879,7 @@
   {
     "id": "o2-connector-swivel",
     "name": "Swivel Connector",
-    "part": "p7",
+    "part": "p8",
     "category": "oxygen-supply",
     "hcpcs": [],
     "hcpcs_note": null,
@@ -3902,7 +3902,7 @@
   {
     "id": "o2-humidifier-bottle",
     "name": "Humidifier Bottle",
-    "part": "p7",
+    "part": "p8",
     "category": "oxygen-accessory",
     "hcpcs": [
       "E0555"
@@ -3926,7 +3926,7 @@
   {
     "id": "o2-regulator-standard",
     "name": "Standard Oxygen Regulator",
-    "part": "p7",
+    "part": "p8",
     "category": "oxygen-accessory",
     "hcpcs": [
       "E1353"
@@ -3952,7 +3952,7 @@
   {
     "id": "o2-stand-rack",
     "name": "Oxygen Cylinder Stand / Rack",
-    "part": "p7",
+    "part": "p8",
     "category": "oxygen-accessory",
     "hcpcs": [
       "E1355"
@@ -3976,7 +3976,7 @@
   {
     "id": "o2-cylinder-carrier-bag",
     "name": "Oxygen Cylinder Carrier Bag",
-    "part": "p7",
+    "part": "p8",
     "category": "oxygen-accessory",
     "hcpcs": [
       "E1399"

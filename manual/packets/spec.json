@@ -1,6 +1,6 @@
 {
  "p2": {
-  "head": "# Review Packet — Part 2: Manual Mobility & General DME\n\n**For:** Manual Mobility (Parth Dave, Manager)\n**Read alongside:** *CSR-Procedures-Part-2-Manual-Mobility-and-General-DME-v3.0* (Word), or Part 2 of the online manual\n**Section numbers** refer to the current manual — for example, **2.4.1**.\n\n",
+  "head": "# Review Packet — Chapter 2: Manual Mobility & General DME\n\n**For:** Manual Mobility (Parth Dave, Manager)\n**Read alongside:** *CSR-Procedures-Chapter-2-Manual-Mobility-and-General-DME-v3.0* (Word), or Chapter 2 of the online manual\n**Section numbers** refer to the current manual — for example, **2.4.1**.\n\n",
   "groups": [
    {
     "num": "1",
@@ -131,7 +131,7 @@
      },
      {
       "n": "19",
-      "sec": "10.11",
+      "sec": "10.10",
       "says": "**Knee walkers** are out-of-pocket, except through VGM Homelink",
       "why": ""
      },
@@ -171,7 +171,7 @@
   ]
  },
  "p3": {
-  "head": "# Review Packet — Part 3: Respiratory & Resupply\n\n**For:** Respiratory & Resupply (Nikunj Solanki, Manager)\n**Read alongside:** *CSR-Procedures-Part-3-Respiratory-and-Resupply-v3.0* (Word), or Part 3 of the online manual\n**Section numbers** refer to the current manual — for example, **3.7.4**.\n\n",
+  "head": "# Review Packet — Chapter 3: Respiratory & Resupply\n\n**For:** Respiratory & Resupply (Nikunj Solanki, Manager)\n**Read alongside:** *CSR-Procedures-Chapter-3-Respiratory-and-Resupply-v3.0* (Word), or Chapter 3 of the online manual\n**Section numbers** refer to the current manual — for example, **3.7.4**.\n\n",
   "groups": [
    {
     "num": "1",
@@ -228,7 +228,7 @@
      },
      {
       "n": "9",
-      "sec": "5.8.1",
+      "sec": "6.8.1",
       "says": "**Resupply timing (Medicare):** the patient confirms the refill **within the 30 days** before their supply runs out, and we ship **no sooner than 10 days** before. For a shipped order, **the ship date is the date of service**",
       "why": "**The contact window changed from 14 days to 30.** CMS moved to 30 days, and codified it in January 2024"
      },
@@ -364,928 +364,7 @@
   ]
  },
  "p4": {
-  "head": "# Review Packet — Part 4: Power Mobility\n\n**For:** Power intake — **Erica Thongvan** (PAK) and **Ahmed Ramadan** (Qualifications)\n**Also for:** **Ozaire (MD) Hawa** (Field Ops-Power) — questions marked **◆**\n**Read alongside:** *CSR-Procedures-Part-4-Power-Mobility-v3.0* (Word), or Part 4 of the online manual\n**Section numbers** refer to the current manual — for example, **4.7.2**. Power was Part 3 in earlier drafts.\n\n",
-  "groups": [
-   {
-    "num": "1",
-    "title": "Changed in the September 2026 revision — please confirm",
-    "intro": "These came from the Customer Service Manager or from current Medicare guidance, not from your team's guide. Please confirm each one reflects how your teams work.",
-    "rows": [
-     {
-      "n": "1",
-      "sec": "4.1.1",
-      "says": "**The Power Order Process diagram** — four phases: Intake and education (PAK), Qualifications, Verification & authorization, and Delivery. Sales feeds in two ways: at *Eligible* (appointment confirmed and insurance verified), or directly to Qualifications when a **mobility evaluation was done in the last 6 months**",
-      "why": "Replaces the process image from your guide. Please check the phases, the order, and the two ways in"
-     },
-     {
-      "n": "2",
-      "sec": "4.1.1",
-      "says": "**Documents Qualifications reviews and requests.** Always: **M.E. F2F, SWO, SE, LCMP Declaration, MRx**. When applicable: **Addendum, PT/OT Report Concurrence**. With a PT evaluation: **PT Rx, PT Report**. With an ATP evaluation: **ATP Report**",
-      "why": "Is the list complete, and is each in the right group?"
-     },
-     {
-      "n": "3",
-      "sec": "4.1.1, 4.7",
-      "says": "**Typical times:** PAR decision in **14 days or less**; appeals **up to a month**; **2–3 weeks** from the manufacturer order to our warehouse. **If the appeals are also denied, the order is closed**",
-      "why": "The closed-order outcome is new"
-     },
-     {
-      "n": "4",
-      "sec": "4.4.3",
-      "says": "**A Qualified Lead skips PAK, but still gets a PPD** — conducted by a Qualifications team member rather than the PPD team",
-      "why": "New clarification"
-     },
-     {
-      "n": "5",
-      "sec": "4.8",
-      "says": "**Order verification** happens after any PT or ATP evaluation, can overlap Qualifications or PAR, and **must be complete before the manufacturer order**. The manual says **Field Ops-Power** calls the patient to do it. ◆",
-      "why": "Please confirm both the timing and who does it"
-     },
-     {
-      "n": "6",
-      "sec": "5.1",
-      "says": "**Field Ops-Power Q (ext 344) takes scheduling** — delivery, ATP evaluations, and service visits once a repair is arranged. **A patient reporting a problem with their PMD goes to the Service Q**, which starts the service request ◆",
-      "why": "Replaces \"all Power-related calls go to Field Ops-Power\""
-     },
-     {
-      "n": "7",
-      "sec": "4.6",
-      "says": "**ATP evaluations** are scheduled by Field Ops-Power, **up to 2–3 weeks out depending on the ATP's travel route**. **Virtual ATP evaluations** — the uncommon remote case — are scheduled only by Erica Thongvan ◆",
-      "why": ""
-     },
-     {
-      "n": "8",
-      "sec": "4.9.1",
-      "says": "**Returns:** PWCs generally aren't picked up, but once the repair and affordability checks are clear, **the CSR still creates the pick-up ticket** — whether the chair is collected or written off is decided afterward, and neither is promised ◆",
-      "why": "Previously read as \"we don't pick them up,\" which could lead a CSR to refuse the request"
-     },
-     {
-      "n": "9",
-      "sec": "4.7.2",
-      "says": "**An insurance rep giving a PAR decision:** the CSR records the decision and reference number, confirms the letter will be faxed or emailed, posts notes, and **emails the Power intake team** — no transfer",
-      "why": "The previous guide said \"no further action needed,\" with no email to intake"
-     },
-     {
-      "n": "10",
-      "sec": "4.5, 4.7.2",
-      "says": "**Email subject lines:** `PT Eval: [Patient name] [TRX #]` and `Authorization Request: [Patient name] [TRX #]`",
-      "why": "The manual's email format changed to `[Update type]: [Patient name] [TRX #]`"
-     },
-     {
-      "n": "11",
-      "sec": "4.9",
-      "says": "**Delivery** is to the patient's home — never a facility — and the patient must be home. **Freight calls:** get the freight company's name and the city they're delivering to, then transfer to Field Ops-Power, relaying both ◆",
-      "why": ""
-     },
-     {
-      "n": "12",
-      "sec": "4.9",
-      "says": "**Repairs:** who pays depends on **rental status and warranty**, not time since delivery. Patients are told to report issues as soon as possible",
-      "why": "The previous guide suggested coverage lapsed \"months later\""
-     },
-     {
-      "n": "13",
-      "sec": "4.1.2, 4.11",
-      "says": "**The 90-day figure:** CSRs may say the national average for this type of order is about 90 days and that UMS is faster — but that actual time varies with the paperwork, and then give the current stage",
-      "why": ""
-     },
-     {
-      "n": "14",
-      "sec": "4.2.3",
-      "says": "**Sales Eligibility** can be reached by email (`saleseligibility@`) or direct transfer to its supervisor, April Arredondo — go to her where possible",
-      "why": ""
-     }
-    ]
-   },
-   {
-    "num": "2",
-    "title": "Stated in the manual, not taken from your guide — please verify",
-    "intro": "",
-    "rows": [
-     {
-      "n": "15",
-      "sec": "10.13.6",
-      "says": "**Power wheelchairs need a face-to-face encounter and a written order before delivery** — a Medicare requirement by statute",
-      "why": ""
-     },
-     {
-      "n": "16",
-      "sec": "10.13.1",
-      "says": "**PWCs are capped rentals** at 15% of the purchase price for months 1–3 and 6% for months 4–13; the patient owns the chair after 13 paid months",
-      "why": ""
-     },
-     {
-      "n": "17",
-      "sec": "10.13.5",
-      "says": "**A patient who surrenders a PMD** may not be able to get another for five years under the Same or Similar rule",
-      "why": ""
-     }
-    ]
-   },
-   {
-    "num": "3",
-    "title": "Carried over from your guide — still accurate?",
-    "intro": "",
-    "rows": [
-     {
-      "n": "18",
-      "sec": "4.3.1",
-      "says": "**The PPD** is a ~15-minute interview on the patient's mobility issues, PMD options and the process. Afterwards the PAK team sends links to a **consent form and an AOR form** — neither mandatory, both used for appeals",
-      "why": ""
-     },
-     {
-      "n": "19",
-      "sec": "4.3.1",
-      "says": "**The Seating Evaluation mistake:** the PAK includes a pre-filled SE watermarked \"Patient Provided Data\" as a guide, plus two blank SE pages for the provider to complete",
-      "why": ""
-     },
-     {
-      "n": "20",
-      "sec": "4.4.2",
-      "says": "**A documentation request older than 3 days** — confirm the fax number, ask for a backup, re-fax; offer secure email if the MDO is hard to reach",
-      "why": ""
-     },
-     {
-      "n": "21",
-      "sec": "4.6",
-      "says": "An ATP visit noted as a **\"drive-by\"** still gets transferred to Field Ops-Power if the patient calls ◆",
-      "why": ""
-     },
-     {
-      "n": "22",
-      "sec": "4.7.2",
-      "says": "**An MA plan is the primary**, not a secondary. Where an order goes to both Medicare and an MA plan, the Authorization team submits to both at once or in sequence",
-      "why": ""
-     },
-     {
-      "n": "23",
-      "sec": "4.7",
-      "says": "**PAR specialists:** Kadija S. (standard PWC) and Ashton E. (complex PWC and appeals). Neither currently has a backup",
-      "why": ""
-     },
-     {
-      "n": "24",
-      "sec": "4.10.1",
-      "says": "**POVs aren't eligible for ROHO cushions.** Out-of-pocket POV pricing runs roughly **$1,200–$1,900**",
-      "why": ""
-     },
-     {
-      "n": "25",
-      "sec": "4.11",
-      "says": "**No vehicle lifts** of any kind; **ramps** are out-of-pocket only; **cup holders** can be added (after delivery, through Service)",
-      "why": ""
-     }
-    ]
-   },
-   {
-    "num": "4",
-    "title": "Open questions",
-    "intro": "",
-    "rows": [
-     {
-      "n": "26",
-      "q": "**What do you wish a CSR had already collected before transferring a call to your team?** Please answer separately for PAK, Qualifications and Field Ops-Power if the answers differ"
-     },
-     {
-      "n": "27",
-      "q": "Is anything your teams handle **missing** from Part 4 — something CSRs get asked about but won't find?"
-     },
-     {
-      "n": "28",
-      "q": "Does Part 4 describe anything your teams **no longer do**, or do differently now?"
-     },
-     {
-      "n": "29",
-      "q": "**9.4.1 (in Part 9) — a past PMD patient who wants a new PMD** (added 2026-10-07). Five years or more since the last PMD was delivered → Sales creates a new order on the existing account. Within five years → usually a Same or Similar conflict, with a possible exception when the new PMD is an **upgrade** and the provider attests to a **significant change in physical condition or mobility needs**; for now this call also goes to **Sales**, and 4.1 points there. Is all of this right? Should the within-five-years call go to Power instead, and who decides whether the provider's attestation is enough?"
-     }
-    ]
-   }
-  ]
- },
- "p5": {
-  "head": "# Review Packet — Part 5: Field Operations\n\n**For:** Field Operations — **Parth Shah** (Manager) and **Mahesh Patel** (Supervisor)\n**Also for:** **Ozaire (MD) Hawa** (Field Ops-Power) — questions marked **◆**\n**Read alongside:** *CSR-Procedures-Part-5-Field-Operations-v3.0* (Word), or Part 5 of the online manual\n**Section numbers** refer to the current manual — for example, **5.9.2**.\n\n",
-  "groups": [
-   {
-    "num": "1",
-    "title": "Changed in the September 2026 revision — please confirm",
-    "intro": "These came from the Customer Service Manager or from current Medicare guidance, not from your team's guide. Please confirm each one reflects how your team works.",
-    "rows": [
-     {
-      "n": "1",
-      "sec": "5.1.1",
-      "says": "The Field Ops-Power Q (ext 344) takes Power scheduling — delivery, ATP evaluations, and service visits once a repair is arranged. A patient reporting a problem with their PMD goes to the Service Q ◆",
-      "why": "Replaces \"all Power-related calls go to Field Ops-Power, including PMD service or repair\""
-     },
-     {
-      "n": "2",
-      "sec": "5.9",
-      "says": "Every pick-up: the CSR tells the caller Field Ops will verify the request and **call back within 24–48 hours** to confirm if and when it can happen",
-      "why": "A new commitment made on your team's behalf. Is 24–48 hours right for all pick-ups?"
-     },
-     {
-      "n": "3",
-      "sec": "5.9.4",
-      "says": "A pick-up ticket includes the reason, the **best contact, the pick-up address, and access instructions**",
-      "why": "The pick-up address was added, and the empty \"date constraints\" row was removed"
-     },
-     {
-      "n": "4",
-      "sec": "5.9.2",
-      "says": "PMD pick-up requests: uncomfortable or adjustable → Service · technical fault → Service · can't afford it → the EAA or a payment plan first · patient-owned → can't be picked up · otherwise, create the ticket ◆",
-      "why": "Two versions of this table, in Parts 5 and 6, have been merged into one here, with a decision diagram"
-     },
-     {
-      "n": "5",
-      "sec": "10.20.6",
-      "says": "The EAA is processed by Billing. A CSR or Billing sends the blank form from the CSR shared drive; the patient returns it with their income and expenses; usually 1–2 weeks. Out-of-pocket orders qualify for neither the EAA nor a payment plan",
-      "why": "The EAA process wasn't described before"
-     },
-     {
-      "n": "6",
-      "sec": "5.10",
-      "says": "Hospital bed relocation: either a Field Ops supervisor or a Service supervisor decides, and a CSR routes the call to Service. Generally not done — possible within the Dallas, San Antonio and Hawaii areas, rental beds only, $150",
-      "why": "Previously said it had to be verified by the Field Operations Supervisor alone"
-     },
-     {
-      "n": "7",
-      "sec": "5.8.1",
-      "says": "Resupply timing (Medicare): the patient confirms the refill within the 30 days before their supply runs out; we ship no sooner than 10 days before. For a shipped order, the ship date is the date of service",
-      "why": "The contact window changed from 14 days to 30, per CMS"
-     },
-     {
-      "n": "8",
-      "sec": "5.14",
-      "says": "Freight company calls: get the company's name and the city they're delivering to, then transfer to Field Ops-Power, relaying both ◆",
-      "why": ""
-     },
-     {
-      "n": "9",
-      "sec": "5.12",
-      "says": "Used equipment: items that need a prescription for out-of-pocket purchase still need one — oxygen concentrators, PAP devices (CPAP and BiPAP), and ventilators",
-      "why": "PAP devices were added: federal law restricts their sale to a prescriber's order"
-     },
-     {
-      "n": "10",
-      "sec": "1.5",
-      "says": "After a patient dies: if the equipment isn't patient-owned, the CSR confirms the best contact and pick-up address and creates a ticket; Field Ops verifies and calls back within 24–48 hours. A family who'd rather pay the remaining cost and keep the items goes to Billing",
-      "why": "These tickets come to your team"
-     }
-    ]
-   },
-   {
-    "num": "2",
-    "title": "Stated in the manual, not taken from your guide — please verify",
-    "intro": "",
-    "rows": [
-     {
-      "n": "11",
-      "sec": "5.4.1",
-      "says": "The two-day rule: equipment may be delivered to a hospital or nursing facility no earlier than two days before discharge, for fitting or training only. If discharge moves, the item is picked up and redelivered",
-      "why": ""
-     },
-     {
-      "n": "12",
-      "sec": "5.4.2",
-      "says": "During a Medicare Part A SNF stay, consolidated billing makes the facility responsible for the patient's equipment. An assisted living facility generally counts as the patient's home",
-      "why": ""
-     },
-     {
-      "n": "13",
-      "sec": "5.4.3",
-      "says": "Supplies can't be shipped until the patient is discharged — the two-day window covers equipment, not supplies",
-      "why": ""
-     },
-     {
-      "n": "14",
-      "sec": "5.6.1",
-      "says": "What every proof of delivery must contain, and that it's kept for seven years from the date of service",
-      "why": ""
-     },
-     {
-      "n": "15",
-      "sec": "5.11",
-      "says": "Backorders: Field Ops proactively updates the patient; no estimated date is given unless the manufacturer has provided one",
-      "why": ""
-     }
-    ]
-   },
-   {
-    "num": "3",
-    "title": "Carried over from your guide — still accurate?",
-    "intro": "",
-    "rows": [
-     {
-      "n": "16",
-      "sec": "5.1.2",
-      "says": "Field Ops or Service: validated but not delivered → Field Ops · delivered, and the caller says it was wrong → Service · delivered same day with items missing and no Delivered icon yet → Field Ops · mask fitting → Field Ops Q",
-      "why": ""
-     },
-     {
-      "n": "17",
-      "sec": "5.3",
-      "says": "Routing rules for common calls — callbacks to a scheduling message, discharge dates, deliveries \"verified via documentation,\" and PMD dates differing by 1–3 days",
-      "why": ""
-     },
-     {
-      "n": "18",
-      "sec": "5.5",
-      "says": "The driver or technician calls 30–60 minutes before arrival; builds equipment on site; adjusts and instructs on PMDs",
-      "why": ""
-     },
-     {
-      "n": "19",
-      "sec": "5.5.1",
-      "says": "For a hospital bed, the patient must clear the space in advance",
-      "why": ""
-     },
-     {
-      "n": "20",
-      "sec": "5.4.4",
-      "says": "A PMD is never delivered to a facility, and the patient must be present ◆",
-      "why": ""
-     },
-     {
-      "n": "21",
-      "sec": "5.6.3",
-      "says": "The Purchase Capped Rental Form is signed at delivery; check Artifacts for it before conceding a \"nobody told me\" call",
-      "why": ""
-     },
-     {
-      "n": "22",
-      "sec": "5.8.2",
-      "says": "Emergency overnight shipping is possible for respiratory supplies if the patient pays the difference — contact the Field Operations Supervisor",
-      "why": ""
-     },
-     {
-      "n": "23",
-      "sec": "5.12",
-      "says": "The used equipment pool is limited — most commonly PWC K0821 and K0823, and CPAP",
-      "why": ""
-     },
-     {
-      "n": "24",
-      "sec": "5.13",
-      "says": "An order with a paid upgrade fee can be returned unused within 15 days, less a non-refundable 20% restocking fee; after 15 days the fee isn't refundable",
-      "why": ""
-     },
-     {
-      "n": "25",
-      "sec": "5.15",
-      "says": "Oximetry devices: delivery and pick-up are scheduled together, so a pick-up can appear before the item shows as delivered",
-      "why": ""
-     }
-    ]
-   },
-   {
-    "num": "4",
-    "title": "Open questions",
-    "intro": "",
-    "rows": [
-     {
-      "n": "26",
-      "q": "**What do you wish a CSR had already collected before transferring a call to your team?** Please answer separately for Field Ops and Field Ops-Power if they differ"
-     },
-     {
-      "n": "27",
-      "q": "Is anything your team handles **missing** from Part 5 — something CSRs get asked about but won't find?"
-     },
-     {
-      "n": "28",
-      "q": "Does Part 5 describe anything your team **no longer does**, or does differently now?"
-     }
-    ]
-   }
-  ]
- },
- "p6": {
-  "head": "# Review Packet — Part 6: Service\n\n**For:** Service — **Arnav Pan** (Supervisor)\n**Read alongside:** *CSR-Procedures-Part-6-Service-v3.0* (Word), or Part 6 of the online manual\n**Section numbers** refer to the current manual — for example, **6.3.2**.\n\n",
-  "groups": [
-   {
-    "num": "1",
-    "title": "Changed in the September 2026 revision — please confirm",
-    "intro": "These came from the Customer Service Manager or from current Medicare guidance, not from your team's guide. Please confirm each one reflects how your team works.",
-    "rows": [
-     {
-      "n": "1",
-      "sec": "6.3",
-      "says": "Who pays for a repair depends on **rental status and warranty**, not time since delivery. A patient can't be charged a service charge, curb-side fee or delivery charge while their equipment is being repaired",
-      "why": "Replaces wording that implied coverage lapsed with time. The no-trip-charge rule comes from Medicare's supplier requirements"
-     },
-     {
-      "n": "2",
-      "sec": "6.3.2",
-      "says": "A **$75 out-of-pocket charge** applies to a diagnostic-only visit where no service or repair turns out to be needed. CSRs say so **before** booking; there's no charge if a repair is performed",
-      "why": "New section"
-     },
-     {
-      "n": "3",
-      "sec": "6.6.2",
-      "says": "**Loaners:** CSRs don't raise them unprompted. A loaner is possible only while patient-owned equipment is being repaired, and Service confirms — not during the rental period, and not while waiting for a new device",
-      "why": "Previously described loaners more generally"
-     },
-     {
-      "n": "4",
-      "sec": "6.6",
-      "says": "A patient **reporting a problem with their PMD** comes to the Service Q. Once Service has arranged the repair, the visit is scheduled through the Field Ops-Power Q",
-      "why": "The split between reporting a problem and scheduling the visit is new"
-     },
-     {
-      "n": "5",
-      "sec": "6.6.3",
-      "says": "**PMD pick-up requests:** discomfort, fit problems and technical faults come to Service rather than becoming a pick-up. The full table now lives in 5.9.2, with a decision diagram",
-      "why": "The two versions of this table, in Parts 5 and 6, were merged"
-     },
-     {
-      "n": "6",
-      "sec": "6.4",
-      "says": "**Warranties:** Service requests coverage, and the manufacturer decides whether it applies",
-      "why": "Previously read as though UMS approved warranties"
-     },
-     {
-      "n": "7",
-      "sec": "6.10.1",
-      "says": "**Irreparable damage** means a specific accident or natural disaster, such as a fire or flood — Medicare's definition. Damage from neglect, like a chair left out in the rain, doesn't qualify. The incident has to be documented",
-      "why": "Previously suggested rain damage might qualify for a covered replacement"
-     },
-     {
-      "n": "8",
-      "sec": "6.5.1",
-      "says": "**After hours, a ventilator issue** means dispatching the on-call RT immediately, without troubleshooting",
-      "why": "New line, matching Part 8"
-     },
-     {
-      "n": "9",
-      "sec": "6.9",
-      "says": "**Hospital bed relocation:** either a Field Ops or a Service supervisor decides, and **a CSR routes the call to Service**. If approved: Service ticket, validated by Service, pushed to Field Ops for scheduling",
-      "why": ""
-     },
-     {
-      "n": "10",
-      "sec": "6.7",
-      "says": "**Swap-outs:** if the change needs new documents from the MDO — a different or additional HCPCS code, or a new MRx — the CSR creates a pick-up ticket, notes it to coordinate with the new delivery, and emails intake. If not, it goes to Service for a swap-out ticket",
-      "why": ""
-     },
-     {
-      "n": "11",
-      "sec": "6.2",
-      "says": "The only ventilator UMS carries is the **Trilogy**; ventilator and cough assist issues go to the Service Q",
-      "why": ""
-     }
-    ]
-   },
-   {
-    "num": "2",
-    "title": "Stated in the manual, not taken from your guide — please verify",
-    "intro": "",
-    "rows": [
-     {
-      "n": "12",
-      "sec": "6.3.1",
-      "says": "**Where the repair table doesn't apply:** oxygen equipment, ventilators and E0471 devices, capped rentals still in their rental period, and anything under warranty",
-      "why": ""
-     },
-     {
-      "n": "13",
-      "sec": "6.3",
-      "says": "**Patient-owned equipment** (month 14 or later): Medicare covers medically necessary repairs and parts, and the deductible and coinsurance apply",
-      "why": ""
-     },
-     {
-      "n": "14",
-      "sec": "6.10.2",
-      "says": "**Lost or stolen equipment:** a police report is required before a replacement request can be submitted — it's the entry requirement, not a guarantee",
-      "why": ""
-     }
-    ]
-   },
-   {
-    "num": "3",
-    "title": "Carried over from your guide — still accurate?",
-    "intro": "",
-    "rows": [
-     {
-      "n": "15",
-      "sec": "6.2",
-      "says": "**The routing table** — including the resupply distinction: items that differ from the transaction go to Service; items that match but aren't what the patient expected go to Resupply",
-      "why": ""
-     },
-     {
-      "n": "16",
-      "sec": "6.4",
-      "says": "**Warranty periods:** usually 1 year, sometimes 6 months or 2 years. Water damage is the common way one is voided",
-      "why": ""
-     },
-     {
-      "n": "17",
-      "sec": "6.5.2",
-      "says": "**Complex respiratory service** routes through the Service Q; oxygen concentrator servicing stays with CSR",
-      "why": ""
-     },
-     {
-      "n": "18",
-      "sec": "6.5.3",
-      "says": "**CPAP set-up and instruction:** Service creates the ticket, and Field Ops schedules an RT",
-      "why": ""
-     },
-     {
-      "n": "19",
-      "sec": "6.6.1",
-      "says": "**Chargers and batteries** can be sold out of pocket even to callers who didn't get their PMD from us, depending on warehouse availability",
-      "why": ""
-     },
-     {
-      "n": "20",
-      "sec": "6.11",
-      "says": "**Turnaround** varies widely and isn't quoted as a range",
-      "why": ""
-     },
-     {
-      "n": "21",
-      "sec": "6.12",
-      "says": "Notes marked **\"(For internal use only)\"** aren't relayed to patients, and a tracking date in a note isn't given as a delivery date",
-      "why": ""
-     },
-     {
-      "n": "22",
-      "sec": "6.13",
-      "says": "A patient calling back about one of our **outbound service calls** is routed to the Service Q",
-      "why": ""
-     },
-     {
-      "n": "23",
-      "sec": "6.15",
-      "says": "**A PMD we can no longer service** — suggest a local DME repair service; for insurance to pay, it must be enrolled with or in network for the patient's plan. The competitor referrals (Numotion, WSR, National Seating & Mobility) were removed",
-      "why": "Changed 2026-10-07 at the Customer Service Manager's direction. Should any referral guidance replace it?"
-     }
-    ]
-   },
-   {
-    "num": "4",
-    "title": "Open questions",
-    "intro": "",
-    "rows": [
-     {
-      "n": "24",
-      "q": "**Does your team have troubleshooting guides** for power wheelchairs, or for any other equipment category? If so, please provide them — they'd let CSRs, including after hours, work through basic checks before a service request is created"
-     },
-     {
-      "n": "25",
-      "q": "**What do you wish a CSR had already collected before transferring a call to your team?**"
-     },
-     {
-      "n": "26",
-      "q": "Is anything your team handles **missing** from Part 6 — something CSRs get asked about but won't find?"
-     },
-     {
-      "n": "27",
-      "q": "Does Part 6 describe anything your team **no longer does**, or does differently now?"
-     }
-    ]
-   }
-  ]
- },
- "p7": {
-  "head": "# Review Packet — Part 7: Oxygen\n\n**For:** **Nikunj Solanki** (Respiratory & Resupply) — oxygen supplies, initial orders, compliance and the rental rules\n**Also for:** **Arnav Pan** (Service) — concentrator servicing and troubleshooting, questions marked **◆**\n**Read alongside:** *CSR-Procedures-Part-7-Oxygen-v3.0* (Word), or Part 7 of the online manual\n**Section numbers** refer to the current manual — for example, **7.2.1**.\n\n",
-  "groups": [
-   {
-    "num": "1",
-    "title": "Changed in the September 2026 revision — please confirm",
-    "intro": "These came from the Customer Service Manager or from current Medicare guidance, not from your team's guide. Please confirm each one reflects how your teams work.",
-    "rows": [
-     {
-      "n": "1",
-      "sec": "7.1",
-      "says": "**A new oxygen patient:** Resupply processes the initial order — documents and insurance — and CSR work starts once the concentrator is delivered",
-      "why": "Makes the handoff between Resupply and CSR explicit"
-     },
-     {
-      "n": "2",
-      "sec": "7.2.1",
-      "says": "**Oxygen tanks are a rental accessory, not a resupply item**, so the resupply contact and shipping windows don't apply. The limit is once a week, with 2 business days' notice",
-      "why": ""
-     },
-     {
-      "n": "3",
-      "sec": "10.13.2",
-      "says": "**Oxygen accessories are included for the full 5 years** — through the 36-month rental and, after it, in months 37–60, when the supplier must keep providing them with no separate payment. A patient shouldn't see a bill for cannulas or tubing at any point",
-      "why": "Previously said \"during the 36-month rental period\" only. CMS Policy Article A52514 extends it through the useful lifetime"
-     },
-     {
-      "n": "4",
-      "sec": "7.5.3",
-      "says": "**The conserver is included in the oxygen rental, not billed.** If the provider orders one, we supply it at no charge; without an order it's $320 out of pocket, with an ABN for Medicare patients. It's coded **A9900**",
-      "why": "Previously described as needing a prescription \"for insurance coverage,\" and coded E1352. Medicare's oxygen accessory list names conserving devices as A9900, included in the rental"
-     },
-     {
-      "n": "5",
-      "sec": "7.8.2",
-      "says": "**Compliance — notes first.** CSRs answer from the compliance specialists' notes and transfer only when the notes don't settle it",
-      "why": "Replaces \"compliance calls go to the Compliance Specialist\""
-     },
-     {
-      "n": "6",
-      "sec": "7.8.1",
-      "says": "**The patient doesn't own the concentrator.** After 36 months rental billing stops, but UMS keeps ownership and keeps furnishing the equipment, supplies and servicing for up to 5 years",
-      "why": ""
-     },
-     {
-      "n": "7",
-      "sec": "7.6",
-      "says": "**The troubleshooting flowchart** — the emergency check comes first, then troubleshooting only for a patient who's stable and on a backup **cylinder**, then a technician visit if it's still faulty ◆",
-      "why": "Redrawn from your guide's flowchart. \"Switch to their portable system\" became \"switch to a cylinder,\" since we don't carry portable concentrators"
-     },
-     {
-      "n": "8",
-      "sec": "8.8",
-      "says": "**After hours,** the same flowchart applies, but where it says to schedule a technician visit, the CSR dispatches the on-call DME technician instead ◆",
-      "why": ""
-     },
-     {
-      "n": "9",
-      "sec": "7.7",
-      "says": "**Reorder at least 2 business days ahead**, matching the ordering rule",
-      "why": "Previously said 48 hours, which differs over a weekend"
-     }
-    ]
-   },
-   {
-    "num": "2",
-    "title": "Stated in the manual, not taken from your guide — please verify",
-    "intro": "",
-    "rows": [
-     {
-      "n": "10",
-      "sec": "10.13.8",
-      "says": "**A short break in need** — 60 days plus the rest of that rental month — resumes the existing rental",
-      "why": ""
-     },
-     {
-      "n": "11",
-      "sec": "10.13.8",
-      "says": "**What restarts the 36 months** — including a switch from Medicare Advantage to fee-for-service, which resumes with no new blood gas test",
-      "why": ""
-     },
-     {
-      "n": "12",
-      "sec": "10.13.8",
-      "says": "**Replacement after the 5-year useful lifetime is all or nothing** — stationary and portable equipment are replaced together, starting a new 36 months",
-      "why": ""
-     }
-    ]
-   },
-   {
-    "num": "3",
-    "title": "Carried over from your guide — still accurate?",
-    "intro": "",
-    "rows": [
-     {
-      "n": "13",
-      "sec": "7.1",
-      "says": "**We only supply oxygen to patients who received their concentrator from us.** A patient with another supplier's concentrator returns it there, then has their provider send us a referral",
-      "why": ""
-     },
-     {
-      "n": "14",
-      "sec": "7.2.1",
-      "says": "**Ordering rules:** 2 business days' lead time (same or next day for Irving office pick-up) · once a week · up to 10 tanks per delivery, generally 6 · the same number of empties collected · at least one E cylinder at home · M6 and E cylinders only",
-      "why": ""
-     },
-     {
-      "n": "15",
-      "sec": "7.2.2",
-      "says": "**Creating an oxygen supply ticket** — the steps and screenshots",
-      "why": ""
-     },
-     {
-      "n": "16",
-      "sec": "7.3.1",
-      "says": "**Same-day tanks** can be created on request, with the patient told the standard is 2 business days",
-      "why": ""
-     },
-     {
-      "n": "17",
-      "sec": "7.3.2",
-      "says": "**Power outage** — check they have their E cylinder, then create a same-day ticket",
-      "why": ""
-     },
-     {
-      "n": "18",
-      "sec": "7.4",
-      "says": "**Supply allowances** — cannulas come in packs of 4 with 7 ft tubing; add humidifier adapter tubing whenever a bottle is ordered",
-      "why": ""
-     },
-     {
-      "n": "19",
-      "sec": "7.5.1",
-      "says": "**Concentrators:** home units only, 5 LPM and 10 LPM ◆",
-      "why": ""
-     },
-     {
-      "n": "20",
-      "sec": "7.5.2",
-      "says": "**Cylinder durations** — at 2 LPM, an M6 lasts about 1.4 hours and an E about 5.7",
-      "why": ""
-     },
-     {
-      "n": "21",
-      "sec": "7.6.1",
-      "says": "**Maintenance:** the patient cleans the filter weekly; we schedule a maintenance visit every 6 months ◆",
-      "why": ""
-     },
-     {
-      "n": "22",
-      "sec": "7.8.4",
-      "says": "**Facility stays** where the patient still needs oxygen aren't a break in need",
-      "why": ""
-     }
-    ]
-   },
-   {
-    "num": "4",
-    "title": "Open questions",
-    "intro": "",
-    "rows": [
-     {
-      "n": "23",
-      "q": "**What do you wish a CSR had already collected before transferring or escalating an oxygen call?**"
-     },
-     {
-      "n": "24",
-      "q": "Is anything about oxygen **missing** from Part 7 — something CSRs get asked about but won't find?"
-     },
-     {
-      "n": "25",
-      "q": "Does Part 7 describe anything your teams **no longer do**, or do differently now?"
-     }
-    ]
-   }
-  ]
- },
- "p8": {
-  "head": "# Review Packet — Part 8: After Hours\n\n**For:** After-hours coverage — **Robin** (Customer Service Manager), **Parth Shah** and **Shagun Shastri**\n**Read alongside:** *CSR-Procedures-Part-8-After-Hours-v3.0* (Word), or Part 8 of the online manual\n**Section numbers** refer to the current manual — for example, **8.4**.\n\n",
-  "groups": [
-   {
-    "num": "1",
-    "title": "Changed in the September 2026 revision — please confirm",
-    "intro": "These came from the Customer Service Manager or from current Medicare guidance, not from the after-hours guide. Please confirm each one reflects how after hours actually runs.",
-    "rows": [
-     {
-      "n": "1",
-      "sec": "8.4",
-      "says": "**Escalation step 5:** if no one responds, **repeat from step 1** — and if distress develops at any point, 9-1-1 comes first",
-      "why": "Previously offered \"or wait until business hours\" as an option, which the rest of Part 8 rules out for equipment with a 0–60 minute target"
-     },
-     {
-      "n": "2",
-      "sec": "8.4",
-      "says": "**Escalation step 3, for an RT call** — ventilator, cough assist, IPPB, BiPAP ST — call **the other RT** rather than the Level 1 backup, who is a DME technician",
-      "why": "This caveat used to appear only in 8.5, not in the chain itself"
-     },
-     {
-      "n": "3",
-      "sec": "8.3",
-      "says": "**Power wheelchairs after hours:** advise calling back during business hours. If the patient is stuck in a vulnerable situation, advise non-emergency services or 9-1-1",
-      "why": "Previously said to \"troubleshoot,\" with nothing in the manual to troubleshoot with. A basic checklist is planned"
-     },
-     {
-      "n": "4",
-      "sec": "8.8",
-      "says": "**Concentrator troubleshooting** after hours uses the same flowchart as 7.6. Where it says to schedule a technician visit, dispatch the on-call DME technician instead",
-      "why": "Replaces a shorter list that had drifted — it didn't start with the distress check or mention the backup cylinder"
-     },
-     {
-      "n": "5",
-      "sec": "8.2.1",
-      "says": "**The order of questions** is now also a dispatch diagram: emergency first, then existing patient, then **location**, then equipment",
-      "why": "Location comes before equipment because dispatch outside DFW is limited"
-     },
-     {
-      "n": "6",
-      "sec": "8.2.1",
-      "says": "**A family member or caregiver** confirms their relationship to the patient, the patient's full name, and date of birth or address — then can be given order and billing details",
-      "why": "The rule in 1.3 changed, and after-hours callers are often family"
-     },
-     {
-      "n": "7",
-      "sec": "8.4.2",
-      "says": "**While the chain is worked,** confirm the patient has a working backup — a **spare cylinder**, or a second device",
-      "why": "Previously listed \"portable oxygen,\" which we don't carry"
-     },
-     {
-      "n": "8",
-      "sec": "8.5",
-      "says": "**Menzise Richardson's** on-call number, (214) 264-0720, is now in the directory",
-      "why": ""
-     }
-    ]
-   },
-   {
-    "num": "2",
-    "title": "Stated in the manual, not taken from the after-hours guide — please verify",
-    "intro": "",
-    "rows": [
-     {
-      "n": "9",
-      "sec": "8.4",
-      "says": "**Working the chain takes time** — steps 1 to 4 take at least 90 minutes of waiting before the last backup is reached, so the 0–60 minute target assumes someone answers early",
-      "why": ""
-     }
-    ]
-   },
-   {
-    "num": "3",
-    "title": "Carried over from the after-hours guide — still accurate?",
-    "intro": "",
-    "rows": [
-     {
-      "n": "10",
-      "sec": "8.1",
-      "says": "**Hours:** 5:00 PM to 8:00 AM Monday to Friday, Central Time, and any time on weekends and company holidays",
-      "why": ""
-     },
-     {
-      "n": "11",
-      "sec": "8.1.1",
-      "says": "**Dispatch is DFW only.** San Antonio gets oxygen concentrator service only; Hawaii and everywhere else get none",
-      "why": ""
-     },
-     {
-      "n": "12",
-      "sec": "8.1.2",
-      "says": "**The on-call rota:** RTs and DME technicians alternate weeks within their own groups; check the schedule at the start of every shift",
-      "why": ""
-     },
-     {
-      "n": "13",
-      "sec": "8.1.3",
-      "says": "**Before the shift:** phone and laptop charged, the logbook, and the on-call schedule in the After Hours Call Log",
-      "why": ""
-     },
-     {
-      "n": "14",
-      "sec": "8.3",
-      "says": "**Dispatch by equipment:** oxygen concentrators and suction machines → the on-call DME technician, after troubleshooting · ventilators, cough assist, IPPB and BiPAP ST → the on-call RT, immediately · anything routine → business hours",
-      "why": ""
-     },
-     {
-      "n": "15",
-      "sec": "8.3.1",
-      "says": "**What to relay when dispatching** — including the troubleshooting already attempted",
-      "why": ""
-     },
-     {
-      "n": "16",
-      "sec": "8.4.1",
-      "says": "**Response targets:** Immediate, 0–60 minutes — ventilators, oxygen concentrators, suction machines · Quick, 1–2 hours — other equipment needing a prompt response",
-      "why": ""
-     },
-     {
-      "n": "17",
-      "sec": "8.4",
-      "says": "**Never contact off-schedule staff** — only the scheduled on-call personnel and designated backups",
-      "why": ""
-     },
-     {
-      "n": "18",
-      "sec": "8.6",
-      "says": "**The voicemail script**",
-      "why": ""
-     },
-     {
-      "n": "19",
-      "sec": "8.7",
-      "says": "**After the service:** create a service ticket with full detail, **and** log it in the After-Hours Logbook",
-      "why": ""
-     }
-    ]
-   },
-   {
-    "num": "4",
-    "title": "Open questions",
-    "intro": "",
-    "rows": [
-     {
-      "n": "20",
-      "q": "**Is there a Level 2 on-call backup?** The escalation chain refers to one \"if listed,\" but none is named, so the chain effectively ends at step 3. If there is one, who?"
-     },
-     {
-      "n": "21",
-      "q": "**What do you wish an after-hours CSR had already collected before dispatching or escalating?**"
-     },
-     {
-      "n": "22",
-      "q": "Is anything that happens after hours **missing** from Part 8 — calls CSRs get but won't find guidance for?"
-     },
-     {
-      "n": "23",
-      "q": "Does Part 8 describe anything that **no longer happens**, or happens differently now?"
-     }
-    ]
-   }
-  ]
- },
- "p9": {
-  "head": "# Review Packet — Part 9: Sales\n\n**For:** Sales — **Mary Carson** (Sales Manager)\n**Also for:** **April Arredondo** (Sales Eligibility) — questions marked **◆**\n**Read alongside:** *CSR-Procedures-Part-9-Sales-v3.0* (Word), or Part 9 of the online manual\n**Section numbers** refer to the current manual — for example, **9.2.1**.\n\n",
+  "head": "# Review Packet — Chapter 4: Sales\n\n**For:** Sales — **Mary Carson** (Sales Manager)\n**Also for:** **April Arredondo** (Sales Eligibility) — questions marked **◆**\n**Read alongside:** *CSR-Procedures-Chapter-4-Sales-v3.0* (Word), or Chapter 4 of the online manual\n**Section numbers** refer to the current manual — for example, **9.2.1**.\n\n",
   "groups": [
    {
     "num": "1",
@@ -1300,13 +379,13 @@
      },
      {
       "n": "2",
-      "sec": "9.2.1",
+      "sec": "4.2.1",
       "says": "**A Qualified Lead skips PAK but still gets a PPD**, conducted by a Qualifications team member",
       "why": "Previously read as though a QL skipped the PPD too"
      },
      {
       "n": "3",
-      "sec": "9.2.1",
+      "sec": "4.2.1",
       "says": "**An evaluation more than 6 months old doesn't qualify** as a Qualified Lead — the patient needs a new appointment, and the order follows the standard path",
       "why": ""
      },
@@ -1318,25 +397,25 @@
      },
      {
       "n": "5",
-      "sec": "9.5",
+      "sec": "4.6",
       "says": "**Lead Resolutions notes** use the same format and wording as any call note",
       "why": "This was left open in the previous draft"
      },
      {
       "n": "6",
-      "sec": "9.3",
+      "sec": "4.3",
       "says": "**The Eligibility Status** is now also shown as a progression diagram, with *Eligible* marked as the handoff to Power ◆",
       "why": ""
      },
      {
       "n": "7",
-      "sec": "4.1.1",
+      "sec": "5.1.1",
       "says": "**The Power Order Process diagram** shows Sales feeding in two ways: at *Eligible* — appointment confirmed and insurance verified — or straight to Qualifications when a mobility evaluation was done in the last 6 months",
       "why": "Please check that Sales' part of the picture is right"
      },
      {
       "n": "8",
-      "sec": "9.7.2",
+      "sec": "4.8.2",
       "says": "**Fax numbers:** Sales often uses its department fax, 210-761-7887; the main UMS fax, 972-572-1112, is always acceptable for referrals",
       "why": ""
      }
@@ -1349,49 +428,49 @@
     "rows": [
      {
       "n": "9",
-      "sec": "9.1",
+      "sec": "4.1",
       "says": "**Scope:** Sales handles PMD leads through the Sales Q; PAP and manual wheelchair leads sit under Sales but have their own queues — the PAP Q and the Sales MWC Q",
       "why": ""
      },
      {
       "n": "10",
-      "sec": "9.2",
+      "sec": "4.2",
       "says": "**The Sales process** — eight stages, from lead outreach to the handoff to Power",
       "why": ""
      },
      {
       "n": "11",
-      "sec": "9.2",
+      "sec": "4.2",
       "says": "**The appointment must be specifically a PMD Mobility Evaluation**, and it's only *verified* once confirmed with both the patient and the provider's office",
       "why": ""
      },
      {
       "n": "12",
-      "sec": "9.3",
+      "sec": "4.3",
       "says": "**What each Eligibility Status means**, and that the appointment statuses run in order ◆",
       "why": ""
      },
      {
       "n": "13",
-      "sec": "9.1",
+      "sec": "4.1",
       "says": "**Eligibility doesn't end at the handoff** — if a patient's insurance changes after the order reaches Power, it goes back to Sales Eligibility ◆",
       "why": ""
      },
      {
       "n": "14",
-      "sec": "9.4",
+      "sec": "4.5",
       "says": "**A caller interested in a PMD:** if a lead exists and isn't closed, transfer to the most recent Sales rep if available, otherwise call the Sales Q; if there's no lead, call the Sales Q with the caller's phone number and full name. CSRs ask as well as search",
       "why": ""
      },
      {
       "n": "15",
-      "sec": "9.6",
+      "sec": "4.7",
       "says": "**The one-year PPD rule:** a PPD over a year old means a new order through Sales; under a year, Power can re-open the existing order",
       "why": ""
      },
      {
       "n": "16",
-      "sec": "9.7.1",
+      "sec": "4.8.1",
       "says": "**Member ID callbacks:** add it to the transaction and note it — after checking the notes to confirm that's all that was needed",
       "why": ""
      }
@@ -1426,8 +505,929 @@
    }
   ]
  },
+ "p5": {
+  "head": "# Review Packet — Chapter 5: Power Mobility\n\n**For:** Power intake — **Erica Thongvan** (PAK) and **Ahmed Ramadan** (Qualifications)\n**Also for:** **Ozaire (MD) Hawa** (Field Ops-Power) — questions marked **◆**\n**Read alongside:** *CSR-Procedures-Chapter-5-Power-Mobility-v3.0* (Word), or Chapter 5 of the online manual\n**Section numbers** refer to the current manual — for example, **4.7.2**. Power was Part 3 in earlier drafts.\n\n",
+  "groups": [
+   {
+    "num": "1",
+    "title": "Changed in the September 2026 revision — please confirm",
+    "intro": "These came from the Customer Service Manager or from current Medicare guidance, not from your team's guide. Please confirm each one reflects how your teams work.",
+    "rows": [
+     {
+      "n": "1",
+      "sec": "5.1.1",
+      "says": "**The Power Order Process diagram** — four phases: Intake and education (PAK), Qualifications, Verification & authorization, and Delivery. Sales feeds in two ways: at *Eligible* (appointment confirmed and insurance verified), or directly to Qualifications when a **mobility evaluation was done in the last 6 months**",
+      "why": "Replaces the process image from your guide. Please check the phases, the order, and the two ways in"
+     },
+     {
+      "n": "2",
+      "sec": "5.1.1",
+      "says": "**Documents Qualifications reviews and requests.** Always: **M.E. F2F, SWO, SE, LCMP Declaration, MRx**. When applicable: **Addendum, PT/OT Report Concurrence**. With a PT evaluation: **PT Rx, PT Report**. With an ATP evaluation: **ATP Report**",
+      "why": "Is the list complete, and is each in the right group?"
+     },
+     {
+      "n": "3",
+      "sec": "5.1.1, 5.6",
+      "says": "**Typical times:** PAR decision in **14 days or less**; appeals **up to a month**; **2–3 weeks** from the manufacturer order to our warehouse. **If the appeals are also denied, the order is closed**",
+      "why": "The closed-order outcome is new"
+     },
+     {
+      "n": "4",
+      "sec": "5.3.3",
+      "says": "**A Qualified Lead skips PAK, but still gets a PPD** — conducted by a Qualifications team member rather than the PPD team",
+      "why": "New clarification"
+     },
+     {
+      "n": "5",
+      "sec": "5.7",
+      "says": "**Order verification** happens after any PT or ATP evaluation, can overlap Qualifications or PAR, and **must be complete before the manufacturer order**. The manual says **Field Ops-Power** calls the patient to do it. ◆",
+      "why": "Please confirm both the timing and who does it"
+     },
+     {
+      "n": "6",
+      "sec": "6.1",
+      "says": "**Field Ops-Power Q (ext 344) takes scheduling** — delivery, ATP evaluations, and service visits once a repair is arranged. **A patient reporting a problem with their PMD goes to the Service Q**, which starts the service request ◆",
+      "why": "Replaces \"all Power-related calls go to Field Ops-Power\""
+     },
+     {
+      "n": "7",
+      "sec": "5.5",
+      "says": "**ATP evaluations** are scheduled by Field Ops-Power, **up to 2–3 weeks out depending on the ATP's travel route**. **Virtual ATP evaluations** — the uncommon remote case — are scheduled only by Erica Thongvan ◆",
+      "why": ""
+     },
+     {
+      "n": "8",
+      "sec": "5.8.1",
+      "says": "**Returns:** PWCs generally aren't picked up, but once the repair and affordability checks are clear, **the CSR still creates the pick-up ticket** — whether the chair is collected or written off is decided afterward, and neither is promised ◆",
+      "why": "Previously read as \"we don't pick them up,\" which could lead a CSR to refuse the request"
+     },
+     {
+      "n": "9",
+      "sec": "5.6.2",
+      "says": "**An insurance rep giving a PAR decision:** the CSR records the decision and reference number, confirms the letter will be faxed or emailed, posts notes, and **emails the Power intake team** — no transfer",
+      "why": "The previous guide said \"no further action needed,\" with no email to intake"
+     },
+     {
+      "n": "10",
+      "sec": "5.4, 5.6.2",
+      "says": "**Email subject lines:** `PT Eval: [Patient name] [TRX #]` and `Authorization Request: [Patient name] [TRX #]`",
+      "why": "The manual's email format changed to `[Update type]: [Patient name] [TRX #]`"
+     },
+     {
+      "n": "11",
+      "sec": "5.8",
+      "says": "**Delivery** is to the patient's home — never a facility — and the patient must be home. **Freight calls:** get the freight company's name and the city they're delivering to, then transfer to Field Ops-Power, relaying both ◆",
+      "why": ""
+     },
+     {
+      "n": "12",
+      "sec": "5.8",
+      "says": "**Repairs:** who pays depends on **rental status and warranty**, not time since delivery. Patients are told to report issues as soon as possible",
+      "why": "The previous guide suggested coverage lapsed \"months later\""
+     },
+     {
+      "n": "13",
+      "sec": "5.1.2, 5.10",
+      "says": "**The 90-day figure:** CSRs may say the national average for this type of order is about 90 days and that UMS is faster — but that actual time varies with the paperwork, and then give the current stage",
+      "why": ""
+     },
+     {
+      "n": "14",
+      "sec": "4.4.3",
+      "says": "**Sales Eligibility** can be reached by email (`saleseligibility@`) or direct transfer to its supervisor, April Arredondo — go to her where possible",
+      "why": ""
+     }
+    ]
+   },
+   {
+    "num": "2",
+    "title": "Stated in the manual, not taken from your guide — please verify",
+    "intro": "",
+    "rows": [
+     {
+      "n": "15",
+      "sec": "10.12.6",
+      "says": "**Power wheelchairs need a face-to-face encounter and a written order before delivery** — a Medicare requirement by statute",
+      "why": ""
+     },
+     {
+      "n": "16",
+      "sec": "10.12.1",
+      "says": "**PWCs are capped rentals** at 15% of the purchase price for months 1–3 and 6% for months 4–13; the patient owns the chair after 13 paid months",
+      "why": ""
+     },
+     {
+      "n": "17",
+      "sec": "10.12.5",
+      "says": "**A patient who surrenders a PMD** may not be able to get another for five years under the Same or Similar rule",
+      "why": ""
+     }
+    ]
+   },
+   {
+    "num": "3",
+    "title": "Carried over from your guide — still accurate?",
+    "intro": "",
+    "rows": [
+     {
+      "n": "18",
+      "sec": "5.2.1",
+      "says": "**The PPD** is a ~15-minute interview on the patient's mobility issues, PMD options and the process. Afterwards the PAK team sends links to a **consent form and an AOR form** — neither mandatory, both used for appeals",
+      "why": ""
+     },
+     {
+      "n": "19",
+      "sec": "5.2.1",
+      "says": "**The Seating Evaluation mistake:** the PAK includes a pre-filled SE watermarked \"Patient Provided Data\" as a guide, plus two blank SE pages for the provider to complete",
+      "why": ""
+     },
+     {
+      "n": "20",
+      "sec": "5.3.2",
+      "says": "**A documentation request older than 3 days** — confirm the fax number, ask for a backup, re-fax; offer secure email if the MDO is hard to reach",
+      "why": ""
+     },
+     {
+      "n": "21",
+      "sec": "5.5",
+      "says": "An ATP visit noted as a **\"drive-by\"** still gets transferred to Field Ops-Power if the patient calls ◆",
+      "why": ""
+     },
+     {
+      "n": "22",
+      "sec": "5.6.2",
+      "says": "**An MA plan is the primary**, not a secondary. Where an order goes to both Medicare and an MA plan, the Authorization team submits to both at once or in sequence",
+      "why": ""
+     },
+     {
+      "n": "23",
+      "sec": "5.6",
+      "says": "**PAR specialists:** Kadija S. (standard PWC) and Ashton E. (complex PWC and appeals). Neither currently has a backup",
+      "why": ""
+     },
+     {
+      "n": "24",
+      "sec": "5.9.1",
+      "says": "**POVs aren't eligible for ROHO cushions.** Out-of-pocket POV pricing runs roughly **$1,200–$1,900**",
+      "why": ""
+     },
+     {
+      "n": "25",
+      "sec": "5.10",
+      "says": "**No vehicle lifts** of any kind; **ramps** are out-of-pocket only; **cup holders** can be added (after delivery, through Service)",
+      "why": ""
+     }
+    ]
+   },
+   {
+    "num": "4",
+    "title": "Open questions",
+    "intro": "",
+    "rows": [
+     {
+      "n": "26",
+      "q": "**What do you wish a CSR had already collected before transferring a call to your team?** Please answer separately for PAK, Qualifications and Field Ops-Power if the answers differ"
+     },
+     {
+      "n": "27",
+      "q": "Is anything your teams handle **missing** from Part 4 — something CSRs get asked about but won't find?"
+     },
+     {
+      "n": "28",
+      "q": "Does Part 4 describe anything your teams **no longer do**, or do differently now?"
+     },
+     {
+      "n": "29",
+      "q": "**9.4.1 (in Part 9) — a past PMD patient who wants a new PMD** (added 2026-10-07). Five years or more since the last PMD was delivered → Sales creates a new order on the existing account. Within five years → usually a Same or Similar conflict, with a possible exception when the new PMD is an **upgrade** and the provider attests to a **significant change in physical condition or mobility needs**; for now this call also goes to **Sales**, and 4.1 points there. Is all of this right? Should the within-five-years call go to Power instead, and who decides whether the provider's attestation is enough?"
+     }
+    ]
+   }
+  ]
+ },
+ "p6": {
+  "head": "# Review Packet — Chapter 6: Field Operations\n\n**For:** Field Operations — **Parth Shah** (Manager) and **Mahesh Patel** (Supervisor)\n**Also for:** **Ozaire (MD) Hawa** (Field Ops-Power) — questions marked **◆**\n**Read alongside:** *CSR-Procedures-Chapter-6-Field-Operations-v3.0* (Word), or Chapter 6 of the online manual\n**Section numbers** refer to the current manual — for example, **5.9.2**.\n\n",
+  "groups": [
+   {
+    "num": "1",
+    "title": "Changed in the September 2026 revision — please confirm",
+    "intro": "These came from the Customer Service Manager or from current Medicare guidance, not from your team's guide. Please confirm each one reflects how your team works.",
+    "rows": [
+     {
+      "n": "1",
+      "sec": "6.1.1",
+      "says": "The Field Ops-Power Q (ext 344) takes Power scheduling — delivery, ATP evaluations, and service visits once a repair is arranged. A patient reporting a problem with their PMD goes to the Service Q ◆",
+      "why": "Replaces \"all Power-related calls go to Field Ops-Power, including PMD service or repair\""
+     },
+     {
+      "n": "2",
+      "sec": "6.9",
+      "says": "Every pick-up: the CSR tells the caller Field Ops will verify the request and **call back within 24–48 hours** to confirm if and when it can happen",
+      "why": "A new commitment made on your team's behalf. Is 24–48 hours right for all pick-ups?"
+     },
+     {
+      "n": "3",
+      "sec": "6.9.3",
+      "says": "A pick-up ticket includes the reason, the **best contact, the pick-up address, and access instructions**",
+      "why": "The pick-up address was added, and the empty \"date constraints\" row was removed"
+     },
+     {
+      "n": "4",
+      "sec": "6.9.2",
+      "says": "PMD pick-up requests: uncomfortable or adjustable → Service · technical fault → Service · can't afford it → the EAA or a payment plan first · patient-owned → can't be picked up · otherwise, create the ticket ◆",
+      "why": "Two versions of this table, in Parts 5 and 6, have been merged into one here, with a decision diagram"
+     },
+     {
+      "n": "5",
+      "sec": "10.19.6",
+      "says": "The EAA is processed by Billing. A CSR or Billing sends the blank form from the CSR shared drive; the patient returns it with their income and expenses; usually 1–2 weeks. Out-of-pocket orders qualify for neither the EAA nor a payment plan",
+      "why": "The EAA process wasn't described before"
+     },
+     {
+      "n": "6",
+      "sec": "6.10",
+      "says": "Hospital bed relocation: either a Field Ops supervisor or a Service supervisor decides, and a CSR routes the call to Service. Generally not done — possible within the Dallas, San Antonio and Hawaii areas, rental beds only, $150",
+      "why": "Previously said it had to be verified by the Field Operations Supervisor alone"
+     },
+     {
+      "n": "7",
+      "sec": "6.8.1",
+      "says": "Resupply timing (Medicare): the patient confirms the refill within the 30 days before their supply runs out; we ship no sooner than 10 days before. For a shipped order, the ship date is the date of service",
+      "why": "The contact window changed from 14 days to 30, per CMS"
+     },
+     {
+      "n": "8",
+      "sec": "6.14",
+      "says": "Freight company calls: get the company's name and the city they're delivering to, then transfer to Field Ops-Power, relaying both ◆",
+      "why": ""
+     },
+     {
+      "n": "9",
+      "sec": "6.12",
+      "says": "Used equipment: items that need a prescription for out-of-pocket purchase still need one — oxygen concentrators, PAP devices (CPAP and BiPAP), and ventilators",
+      "why": "PAP devices were added: federal law restricts their sale to a prescriber's order"
+     },
+     {
+      "n": "10",
+      "sec": "1.5",
+      "says": "After a patient dies: if the equipment isn't patient-owned, the CSR confirms the best contact and pick-up address and creates a ticket; Field Ops verifies and calls back within 24–48 hours. A family who'd rather pay the remaining cost and keep the items goes to Billing",
+      "why": "These tickets come to your team"
+     }
+    ]
+   },
+   {
+    "num": "2",
+    "title": "Stated in the manual, not taken from your guide — please verify",
+    "intro": "",
+    "rows": [
+     {
+      "n": "11",
+      "sec": "6.4.1",
+      "says": "The two-day rule: equipment may be delivered to a hospital or nursing facility no earlier than two days before discharge, for fitting or training only. If discharge moves, the item is picked up and redelivered",
+      "why": ""
+     },
+     {
+      "n": "12",
+      "sec": "6.4.2",
+      "says": "During a Medicare Part A SNF stay, consolidated billing makes the facility responsible for the patient's equipment. An assisted living facility generally counts as the patient's home",
+      "why": ""
+     },
+     {
+      "n": "13",
+      "sec": "6.4.3",
+      "says": "Supplies can't be shipped until the patient is discharged — the two-day window covers equipment, not supplies",
+      "why": ""
+     },
+     {
+      "n": "14",
+      "sec": "6.6.1",
+      "says": "What every proof of delivery must contain, and that it's kept for seven years from the date of service",
+      "why": ""
+     },
+     {
+      "n": "15",
+      "sec": "6.11",
+      "says": "Backorders: Field Ops proactively updates the patient; no estimated date is given unless the manufacturer has provided one",
+      "why": ""
+     }
+    ]
+   },
+   {
+    "num": "3",
+    "title": "Carried over from your guide — still accurate?",
+    "intro": "",
+    "rows": [
+     {
+      "n": "16",
+      "sec": "6.1.2",
+      "says": "Field Ops or Service: validated but not delivered → Field Ops · delivered, and the caller says it was wrong → Service · delivered same day with items missing and no Delivered icon yet → Field Ops · mask fitting → Field Ops Q",
+      "why": ""
+     },
+     {
+      "n": "17",
+      "sec": "6.3",
+      "says": "Routing rules for common calls — callbacks to a scheduling message, discharge dates, deliveries \"verified via documentation,\" and PMD dates differing by 1–3 days",
+      "why": ""
+     },
+     {
+      "n": "18",
+      "sec": "6.5",
+      "says": "The driver or technician calls 30–60 minutes before arrival; builds equipment on site; adjusts and instructs on PMDs",
+      "why": ""
+     },
+     {
+      "n": "19",
+      "sec": "6.5.1",
+      "says": "For a hospital bed, the patient must clear the space in advance",
+      "why": ""
+     },
+     {
+      "n": "20",
+      "sec": "6.4.4",
+      "says": "A PMD is never delivered to a facility, and the patient must be present ◆",
+      "why": ""
+     },
+     {
+      "n": "21",
+      "sec": "6.6.2",
+      "says": "The Purchase Capped Rental Form is signed at delivery; check Artifacts for it before conceding a \"nobody told me\" call",
+      "why": ""
+     },
+     {
+      "n": "22",
+      "sec": "6.8.2",
+      "says": "Emergency overnight shipping is possible for respiratory supplies if the patient pays the difference — contact the Field Operations Supervisor",
+      "why": ""
+     },
+     {
+      "n": "23",
+      "sec": "6.12",
+      "says": "The used equipment pool is limited — most commonly PWC K0821 and K0823, and CPAP",
+      "why": ""
+     },
+     {
+      "n": "24",
+      "sec": "6.13",
+      "says": "An order with a paid upgrade fee can be returned unused within 15 days, less a non-refundable 20% restocking fee; after 15 days the fee isn't refundable",
+      "why": ""
+     },
+     {
+      "n": "25",
+      "sec": "6.15",
+      "says": "Oximetry devices: delivery and pick-up are scheduled together, so a pick-up can appear before the item shows as delivered",
+      "why": ""
+     }
+    ]
+   },
+   {
+    "num": "4",
+    "title": "Open questions",
+    "intro": "",
+    "rows": [
+     {
+      "n": "26",
+      "q": "**What do you wish a CSR had already collected before transferring a call to your team?** Please answer separately for Field Ops and Field Ops-Power if they differ"
+     },
+     {
+      "n": "27",
+      "q": "Is anything your team handles **missing** from Part 5 — something CSRs get asked about but won't find?"
+     },
+     {
+      "n": "28",
+      "q": "Does Part 5 describe anything your team **no longer does**, or does differently now?"
+     }
+    ]
+   }
+  ]
+ },
+ "p7": {
+  "head": "# Review Packet — Chapter 7: Service\n\n**For:** Service — **Arnav Pan** (Supervisor)\n**Read alongside:** *CSR-Procedures-Chapter-7-Service-v3.0* (Word), or Chapter 7 of the online manual\n**Section numbers** refer to the current manual — for example, **6.3.2**.\n\n",
+  "groups": [
+   {
+    "num": "1",
+    "title": "Changed in the September 2026 revision — please confirm",
+    "intro": "These came from the Customer Service Manager or from current Medicare guidance, not from your team's guide. Please confirm each one reflects how your team works.",
+    "rows": [
+     {
+      "n": "1",
+      "sec": "7.3",
+      "says": "Who pays for a repair depends on **rental status and warranty**, not time since delivery. A patient can't be charged a service charge, curb-side fee or delivery charge while their equipment is being repaired",
+      "why": "Replaces wording that implied coverage lapsed with time. The no-trip-charge rule comes from Medicare's supplier requirements"
+     },
+     {
+      "n": "2",
+      "sec": "7.3.2",
+      "says": "A **$75 out-of-pocket charge** applies to a diagnostic-only visit where no service or repair turns out to be needed. CSRs say so **before** booking; there's no charge if a repair is performed",
+      "why": "New section"
+     },
+     {
+      "n": "3",
+      "sec": "7.6.2",
+      "says": "**Loaners:** CSRs don't raise them unprompted. A loaner is possible only while patient-owned equipment is being repaired, and Service confirms — not during the rental period, and not while waiting for a new device",
+      "why": "Previously described loaners more generally"
+     },
+     {
+      "n": "4",
+      "sec": "7.6",
+      "says": "A patient **reporting a problem with their PMD** comes to the Service Q. Once Service has arranged the repair, the visit is scheduled through the Field Ops-Power Q",
+      "why": "The split between reporting a problem and scheduling the visit is new"
+     },
+     {
+      "n": "5",
+      "sec": "7.6.3",
+      "says": "**PMD pick-up requests:** discomfort, fit problems and technical faults come to Service rather than becoming a pick-up. The full table now lives in 5.9.2, with a decision diagram",
+      "why": "The two versions of this table, in Parts 5 and 6, were merged"
+     },
+     {
+      "n": "6",
+      "sec": "7.4",
+      "says": "**Warranties:** Service requests coverage, and the manufacturer decides whether it applies",
+      "why": "Previously read as though UMS approved warranties"
+     },
+     {
+      "n": "7",
+      "sec": "7.10.1",
+      "says": "**Irreparable damage** means a specific accident or natural disaster, such as a fire or flood — Medicare's definition. Damage from neglect, like a chair left out in the rain, doesn't qualify. The incident has to be documented",
+      "why": "Previously suggested rain damage might qualify for a covered replacement"
+     },
+     {
+      "n": "8",
+      "sec": "7.5.1",
+      "says": "**After hours, a ventilator issue** means dispatching the on-call RT immediately, without troubleshooting",
+      "why": "New line, matching Part 8"
+     },
+     {
+      "n": "9",
+      "sec": "7.9",
+      "says": "**Hospital bed relocation:** either a Field Ops or a Service supervisor decides, and **a CSR routes the call to Service**. If approved: Service ticket, validated by Service, pushed to Field Ops for scheduling",
+      "why": ""
+     },
+     {
+      "n": "10",
+      "sec": "7.7",
+      "says": "**Swap-outs:** if the change needs new documents from the MDO — a different or additional HCPCS code, or a new MRx — the CSR creates a pick-up ticket, notes it to coordinate with the new delivery, and emails intake. If not, it goes to Service for a swap-out ticket",
+      "why": ""
+     },
+     {
+      "n": "11",
+      "sec": "7.2",
+      "says": "The only ventilator UMS carries is the **Trilogy**; ventilator and cough assist issues go to the Service Q",
+      "why": ""
+     }
+    ]
+   },
+   {
+    "num": "2",
+    "title": "Stated in the manual, not taken from your guide — please verify",
+    "intro": "",
+    "rows": [
+     {
+      "n": "12",
+      "sec": "7.3.1",
+      "says": "**Where the repair table doesn't apply:** oxygen equipment, ventilators and E0471 devices, capped rentals still in their rental period, and anything under warranty",
+      "why": ""
+     },
+     {
+      "n": "13",
+      "sec": "7.3",
+      "says": "**Patient-owned equipment** (month 14 or later): Medicare covers medically necessary repairs and parts, and the deductible and coinsurance apply",
+      "why": ""
+     },
+     {
+      "n": "14",
+      "sec": "7.10.2",
+      "says": "**Lost or stolen equipment:** a police report is required before a replacement request can be submitted — it's the entry requirement, not a guarantee",
+      "why": ""
+     }
+    ]
+   },
+   {
+    "num": "3",
+    "title": "Carried over from your guide — still accurate?",
+    "intro": "",
+    "rows": [
+     {
+      "n": "15",
+      "sec": "7.2",
+      "says": "**The routing table** — including the resupply distinction: items that differ from the transaction go to Service; items that match but aren't what the patient expected go to Resupply",
+      "why": ""
+     },
+     {
+      "n": "16",
+      "sec": "7.4",
+      "says": "**Warranty periods:** usually 1 year, sometimes 6 months or 2 years. Water damage is the common way one is voided",
+      "why": ""
+     },
+     {
+      "n": "17",
+      "sec": "7.5.2",
+      "says": "**Complex respiratory service** routes through the Service Q; oxygen concentrator servicing stays with CSR",
+      "why": ""
+     },
+     {
+      "n": "18",
+      "sec": "7.5.3",
+      "says": "**CPAP set-up and instruction:** Service creates the ticket, and Field Ops schedules an RT",
+      "why": ""
+     },
+     {
+      "n": "19",
+      "sec": "7.6.1",
+      "says": "**Chargers and batteries** can be sold out of pocket even to callers who didn't get their PMD from us, depending on warehouse availability",
+      "why": ""
+     },
+     {
+      "n": "20",
+      "sec": "7.11",
+      "says": "**Turnaround** varies widely and isn't quoted as a range",
+      "why": ""
+     },
+     {
+      "n": "21",
+      "sec": "7.12",
+      "says": "Notes marked **\"(For internal use only)\"** aren't relayed to patients, and a tracking date in a note isn't given as a delivery date",
+      "why": ""
+     },
+     {
+      "n": "22",
+      "sec": "7.13",
+      "says": "A patient calling back about one of our **outbound service calls** is routed to the Service Q",
+      "why": ""
+     },
+     {
+      "n": "23",
+      "sec": "7.14",
+      "says": "**A PMD we can no longer service** — suggest a local DME repair service; for insurance to pay, it must be enrolled with or in network for the patient's plan. The competitor referrals (Numotion, WSR, National Seating & Mobility) were removed",
+      "why": "Changed 2026-10-07 at the Customer Service Manager's direction. Should any referral guidance replace it?"
+     }
+    ]
+   },
+   {
+    "num": "4",
+    "title": "Open questions",
+    "intro": "",
+    "rows": [
+     {
+      "n": "24",
+      "q": "**Does your team have troubleshooting guides** for power wheelchairs, or for any other equipment category? If so, please provide them — they'd let CSRs, including after hours, work through basic checks before a service request is created"
+     },
+     {
+      "n": "25",
+      "q": "**What do you wish a CSR had already collected before transferring a call to your team?**"
+     },
+     {
+      "n": "26",
+      "q": "Is anything your team handles **missing** from Part 6 — something CSRs get asked about but won't find?"
+     },
+     {
+      "n": "27",
+      "q": "Does Part 6 describe anything your team **no longer does**, or does differently now?"
+     }
+    ]
+   }
+  ]
+ },
+ "p8": {
+  "head": "# Review Packet — Chapter 8: Oxygen\n\n**For:** **Nikunj Solanki** (Respiratory & Resupply) — oxygen supplies, initial orders, compliance and the rental rules\n**Also for:** **Arnav Pan** (Service) — concentrator servicing and troubleshooting, questions marked **◆**\n**Read alongside:** *CSR-Procedures-Chapter-8-Oxygen-v3.0* (Word), or Chapter 8 of the online manual\n**Section numbers** refer to the current manual — for example, **7.2.1**.\n\n",
+  "groups": [
+   {
+    "num": "1",
+    "title": "Changed in the September 2026 revision — please confirm",
+    "intro": "These came from the Customer Service Manager or from current Medicare guidance, not from your team's guide. Please confirm each one reflects how your teams work.",
+    "rows": [
+     {
+      "n": "1",
+      "sec": "8.1",
+      "says": "**A new oxygen patient:** Resupply processes the initial order — documents and insurance — and CSR work starts once the concentrator is delivered",
+      "why": "Makes the handoff between Resupply and CSR explicit"
+     },
+     {
+      "n": "2",
+      "sec": "8.2.1",
+      "says": "**Oxygen tanks are a rental accessory, not a resupply item**, so the resupply contact and shipping windows don't apply. The limit is once a week, with 2 business days' notice",
+      "why": ""
+     },
+     {
+      "n": "3",
+      "sec": "10.12.2",
+      "says": "**Oxygen accessories are included for the full 5 years** — through the 36-month rental and, after it, in months 37–60, when the supplier must keep providing them with no separate payment. A patient shouldn't see a bill for cannulas or tubing at any point",
+      "why": "Previously said \"during the 36-month rental period\" only. CMS Policy Article A52514 extends it through the useful lifetime"
+     },
+     {
+      "n": "4",
+      "sec": "8.5.3",
+      "says": "**The conserver is included in the oxygen rental, not billed.** If the provider orders one, we supply it at no charge; without an order it's $320 out of pocket, with an ABN for Medicare patients. It's coded **A9900**",
+      "why": "Previously described as needing a prescription \"for insurance coverage,\" and coded E1352. Medicare's oxygen accessory list names conserving devices as A9900, included in the rental"
+     },
+     {
+      "n": "5",
+      "sec": "8.8.2",
+      "says": "**Compliance — notes first.** CSRs answer from the compliance specialists' notes and transfer only when the notes don't settle it",
+      "why": "Replaces \"compliance calls go to the Compliance Specialist\""
+     },
+     {
+      "n": "6",
+      "sec": "8.8.1",
+      "says": "**The patient doesn't own the concentrator.** After 36 months rental billing stops, but UMS keeps ownership and keeps furnishing the equipment, supplies and servicing for up to 5 years",
+      "why": ""
+     },
+     {
+      "n": "7",
+      "sec": "8.6",
+      "says": "**The troubleshooting flowchart** — the emergency check comes first, then troubleshooting only for a patient who's stable and on a backup **cylinder**, then a technician visit if it's still faulty ◆",
+      "why": "Redrawn from your guide's flowchart. \"Switch to their portable system\" became \"switch to a cylinder,\" since we don't carry portable concentrators"
+     },
+     {
+      "n": "8",
+      "sec": "9.8",
+      "says": "**After hours,** the same flowchart applies, but where it says to schedule a technician visit, the CSR dispatches the on-call DME technician instead ◆",
+      "why": ""
+     },
+     {
+      "n": "9",
+      "sec": "8.7",
+      "says": "**Reorder at least 2 business days ahead**, matching the ordering rule",
+      "why": "Previously said 48 hours, which differs over a weekend"
+     }
+    ]
+   },
+   {
+    "num": "2",
+    "title": "Stated in the manual, not taken from your guide — please verify",
+    "intro": "",
+    "rows": [
+     {
+      "n": "10",
+      "sec": "10.12.8",
+      "says": "**A short break in need** — 60 days plus the rest of that rental month — resumes the existing rental",
+      "why": ""
+     },
+     {
+      "n": "11",
+      "sec": "10.12.8",
+      "says": "**What restarts the 36 months** — including a switch from Medicare Advantage to fee-for-service, which resumes with no new blood gas test",
+      "why": ""
+     },
+     {
+      "n": "12",
+      "sec": "10.12.8",
+      "says": "**Replacement after the 5-year useful lifetime is all or nothing** — stationary and portable equipment are replaced together, starting a new 36 months",
+      "why": ""
+     }
+    ]
+   },
+   {
+    "num": "3",
+    "title": "Carried over from your guide — still accurate?",
+    "intro": "",
+    "rows": [
+     {
+      "n": "13",
+      "sec": "8.1",
+      "says": "**We only supply oxygen to patients who received their concentrator from us.** A patient with another supplier's concentrator returns it there, then has their provider send us a referral",
+      "why": ""
+     },
+     {
+      "n": "14",
+      "sec": "8.2.1",
+      "says": "**Ordering rules:** 2 business days' lead time (same or next day for Irving office pick-up) · once a week · up to 10 tanks per delivery, generally 6 · the same number of empties collected · at least one E cylinder at home · M6 and E cylinders only",
+      "why": ""
+     },
+     {
+      "n": "15",
+      "sec": "8.2.2",
+      "says": "**Creating an oxygen supply ticket** — the steps and screenshots",
+      "why": ""
+     },
+     {
+      "n": "16",
+      "sec": "8.3.1",
+      "says": "**Same-day tanks** can be created on request, with the patient told the standard is 2 business days",
+      "why": ""
+     },
+     {
+      "n": "17",
+      "sec": "8.3.2",
+      "says": "**Power outage** — check they have their E cylinder, then create a same-day ticket",
+      "why": ""
+     },
+     {
+      "n": "18",
+      "sec": "8.4",
+      "says": "**Supply allowances** — cannulas come in packs of 4 with 7 ft tubing; add humidifier adapter tubing whenever a bottle is ordered",
+      "why": ""
+     },
+     {
+      "n": "19",
+      "sec": "8.5.1",
+      "says": "**Concentrators:** home units only, 5 LPM and 10 LPM ◆",
+      "why": ""
+     },
+     {
+      "n": "20",
+      "sec": "8.5.2",
+      "says": "**Cylinder durations** — at 2 LPM, an M6 lasts about 1.4 hours and an E about 5.7",
+      "why": ""
+     },
+     {
+      "n": "21",
+      "sec": "8.6.1",
+      "says": "**Maintenance:** the patient cleans the filter weekly; we schedule a maintenance visit every 6 months ◆",
+      "why": ""
+     },
+     {
+      "n": "22",
+      "sec": "8.8.4",
+      "says": "**Facility stays** where the patient still needs oxygen aren't a break in need",
+      "why": ""
+     }
+    ]
+   },
+   {
+    "num": "4",
+    "title": "Open questions",
+    "intro": "",
+    "rows": [
+     {
+      "n": "23",
+      "q": "**What do you wish a CSR had already collected before transferring or escalating an oxygen call?**"
+     },
+     {
+      "n": "24",
+      "q": "Is anything about oxygen **missing** from Part 7 — something CSRs get asked about but won't find?"
+     },
+     {
+      "n": "25",
+      "q": "Does Part 7 describe anything your teams **no longer do**, or do differently now?"
+     }
+    ]
+   }
+  ]
+ },
+ "p9": {
+  "head": "# Review Packet — Chapter 9: After Hours\n\n**For:** After-hours coverage — **Robin** (Customer Service Manager), **Parth Shah** and **Shagun Shastri**\n**Read alongside:** *CSR-Procedures-Chapter-9-After-Hours-v3.0* (Word), or Chapter 9 of the online manual\n**Section numbers** refer to the current manual — for example, **8.4**.\n\n",
+  "groups": [
+   {
+    "num": "1",
+    "title": "Changed in the September 2026 revision — please confirm",
+    "intro": "These came from the Customer Service Manager or from current Medicare guidance, not from the after-hours guide. Please confirm each one reflects how after hours actually runs.",
+    "rows": [
+     {
+      "n": "1",
+      "sec": "9.4",
+      "says": "**Escalation step 5:** if no one responds, **repeat from step 1** — and if distress develops at any point, 9-1-1 comes first",
+      "why": "Previously offered \"or wait until business hours\" as an option, which the rest of Part 8 rules out for equipment with a 0–60 minute target"
+     },
+     {
+      "n": "2",
+      "sec": "9.4",
+      "says": "**Escalation step 3, for an RT call** — ventilator, cough assist, IPPB, BiPAP ST — call **the other RT** rather than the Level 1 backup, who is a DME technician",
+      "why": "This caveat used to appear only in 8.5, not in the chain itself"
+     },
+     {
+      "n": "3",
+      "sec": "9.3",
+      "says": "**Power wheelchairs after hours:** advise calling back during business hours. If the patient is stuck in a vulnerable situation, advise non-emergency services or 9-1-1",
+      "why": "Previously said to \"troubleshoot,\" with nothing in the manual to troubleshoot with. A basic checklist is planned"
+     },
+     {
+      "n": "4",
+      "sec": "9.8",
+      "says": "**Concentrator troubleshooting** after hours uses the same flowchart as 7.6. Where it says to schedule a technician visit, dispatch the on-call DME technician instead",
+      "why": "Replaces a shorter list that had drifted — it didn't start with the distress check or mention the backup cylinder"
+     },
+     {
+      "n": "5",
+      "sec": "9.2.1",
+      "says": "**The order of questions** is now also a dispatch diagram: emergency first, then existing patient, then **location**, then equipment",
+      "why": "Location comes before equipment because dispatch outside DFW is limited"
+     },
+     {
+      "n": "6",
+      "sec": "9.2.1",
+      "says": "**A family member or caregiver** confirms their relationship to the patient, the patient's full name, and date of birth or address — then can be given order and billing details",
+      "why": "The rule in 1.3 changed, and after-hours callers are often family"
+     },
+     {
+      "n": "7",
+      "sec": "9.4.2",
+      "says": "**While the chain is worked,** confirm the patient has a working backup — a **spare cylinder**, or a second device",
+      "why": "Previously listed \"portable oxygen,\" which we don't carry"
+     },
+     {
+      "n": "8",
+      "sec": "9.5",
+      "says": "**Menzise Richardson's** on-call number, (214) 264-0720, is now in the directory",
+      "why": ""
+     }
+    ]
+   },
+   {
+    "num": "2",
+    "title": "Stated in the manual, not taken from the after-hours guide — please verify",
+    "intro": "",
+    "rows": [
+     {
+      "n": "9",
+      "sec": "9.4",
+      "says": "**Working the chain takes time** — steps 1 to 4 take at least 90 minutes of waiting before the last backup is reached, so the 0–60 minute target assumes someone answers early",
+      "why": ""
+     }
+    ]
+   },
+   {
+    "num": "3",
+    "title": "Carried over from the after-hours guide — still accurate?",
+    "intro": "",
+    "rows": [
+     {
+      "n": "10",
+      "sec": "9.1",
+      "says": "**Hours:** 5:00 PM to 8:00 AM Monday to Friday, Central Time, and any time on weekends and company holidays",
+      "why": ""
+     },
+     {
+      "n": "11",
+      "sec": "9.1.1",
+      "says": "**Dispatch is DFW only.** San Antonio gets oxygen concentrator service only; Hawaii and everywhere else get none",
+      "why": ""
+     },
+     {
+      "n": "12",
+      "sec": "9.1.2",
+      "says": "**The on-call rota:** RTs and DME technicians alternate weeks within their own groups; check the schedule at the start of every shift",
+      "why": ""
+     },
+     {
+      "n": "13",
+      "sec": "9.1.3",
+      "says": "**Before the shift:** phone and laptop charged, the logbook, and the on-call schedule in the After Hours Call Log",
+      "why": ""
+     },
+     {
+      "n": "14",
+      "sec": "9.3",
+      "says": "**Dispatch by equipment:** oxygen concentrators and suction machines → the on-call DME technician, after troubleshooting · ventilators, cough assist, IPPB and BiPAP ST → the on-call RT, immediately · anything routine → business hours",
+      "why": ""
+     },
+     {
+      "n": "15",
+      "sec": "9.3.1",
+      "says": "**What to relay when dispatching** — including the troubleshooting already attempted",
+      "why": ""
+     },
+     {
+      "n": "16",
+      "sec": "9.4.1",
+      "says": "**Response targets:** Immediate, 0–60 minutes — ventilators, oxygen concentrators, suction machines · Quick, 1–2 hours — other equipment needing a prompt response",
+      "why": ""
+     },
+     {
+      "n": "17",
+      "sec": "9.4",
+      "says": "**Never contact off-schedule staff** — only the scheduled on-call personnel and designated backups",
+      "why": ""
+     },
+     {
+      "n": "18",
+      "sec": "9.6",
+      "says": "**The voicemail script**",
+      "why": ""
+     },
+     {
+      "n": "19",
+      "sec": "9.7",
+      "says": "**After the service:** create a service ticket with full detail, **and** log it in the After-Hours Logbook",
+      "why": ""
+     }
+    ]
+   },
+   {
+    "num": "4",
+    "title": "Open questions",
+    "intro": "",
+    "rows": [
+     {
+      "n": "20",
+      "q": "**Is there a Level 2 on-call backup?** The escalation chain refers to one \"if listed,\" but none is named, so the chain effectively ends at step 3. If there is one, who?"
+     },
+     {
+      "n": "21",
+      "q": "**What do you wish an after-hours CSR had already collected before dispatching or escalating?**"
+     },
+     {
+      "n": "22",
+      "q": "Is anything that happens after hours **missing** from Part 8 — calls CSRs get but won't find guidance for?"
+     },
+     {
+      "n": "23",
+      "q": "Does Part 8 describe anything that **no longer happens**, or happens differently now?"
+     }
+    ]
+   }
+  ]
+ },
  "p10": {
-  "head": "# Review Packet — Part 10: Billing & Insurance\n\n**For:** Billing — **Bhoj Bhatt** (Billing Manager), with **Sara (Shweta) Sharma**, **Lourdes Cano** and **Bharat Golwala** (Billing Supervisors)\n**Read alongside:** *CSR-Procedures-Part-10-Billing-and-Insurance-v3.0* (Word), or Part 10 of the online manual\n**Section numbers** refer to the current manual — for example, **10.13.6**.\n\n",
+  "head": "# Review Packet — Chapter 10: Billing & Denials\n\n**For:** Billing — **Bhoj Bhatt** (Billing Manager), with **Sara (Shweta) Sharma**, **Lourdes Cano** and **Bharat Golwala** (Billing Supervisors)\n**Read alongside:** *CSR-Procedures-Chapter-10-Billing-and-Denials-v3.0* (Word), or Chapter 10 of the online manual\n**Section numbers** refer to the current manual — for example, **10.13.6**.\n\n",
   "groups": [
    {
     "num": "1",
@@ -1436,85 +1436,85 @@
     "rows": [
      {
       "n": "1",
-      "sec": "1.3, 10.23",
+      "sec": "1.3, 10.22",
       "says": "**A verified family member or caregiver gets billing details** — including balances — and can make a payment, once they confirm their relationship to the patient, the patient's full name, and date of birth or address",
       "why": "Previously family members could only give information, not receive it. This affects many billing calls"
      },
      {
       "n": "2",
-      "sec": "10.12",
+      "sec": "10.11",
       "says": "**Hospice covers equipment related to the terminal diagnosis.** Those claims deny from the election date; **unrelated equipment can still be billed to Part B**. Billing decides which applies, and CSRs don't promise a pick-up",
       "why": "Previously said all of our claims deny from the election date"
      },
      {
       "n": "3",
-      "sec": "7.5.3",
+      "sec": "8.5.3",
       "says": "**The oxygen conserver is included in the oxygen rental** — never billed separately. It's supplied at no charge if the provider orders it; otherwise $320 out of pocket, with an ABN for Medicare patients. It's coded **A9900**",
       "why": "Previously coded E1352 and described as needing a prescription \"for insurance coverage.\" Medicare's oxygen accessory list names conserving devices as A9900, included in the rental. **If UMS has been billing E1352, please check**"
      },
      {
       "n": "4",
-      "sec": "10.13.6",
+      "sec": "10.12.6",
       "says": "**Face-to-face and written order before delivery:** required for power wheelchairs by statute, and for some other items on CMS's list — including the **bariatric bed (E0301)**, but not the semi-electric bed. **Every hospital bed** still needs clinical notes from the last 6 months",
       "why": "Previously said all hospital beds needed a face-to-face before delivery"
      },
      {
       "n": "5",
-      "sec": "10.15",
+      "sec": "10.14",
       "says": "**A break in medical need** continues the rental if it's 60 days **plus the rest of that rental month** or less; longer starts a new 13-month rental",
       "why": "Previously said \"under 60 days\" and \"over 60 days\" — imprecise near the threshold"
      },
      {
       "n": "6",
-      "sec": "10.13, 10.19",
+      "sec": "10.12, 10.18",
       "says": "**Resupply timing (Medicare):** the patient confirms the refill within the **30 days** before their supply runs out; we ship no sooner than 10 days before. For a shipped order, **the ship date is the date of service**",
       "why": "The contact window changed from 14 days to 30, per CMS"
      },
      {
       "n": "7",
-      "sec": "10.17",
+      "sec": "10.16",
       "says": "**Out-of-pocket purchases** are processed by CSRs at the Item Master price, with **no sales tax** unless the order tool says so",
       "why": "Previously said \"plus sales tax unless there's an Rx\""
      },
      {
       "n": "8",
-      "sec": "10.14",
+      "sec": "10.13",
       "says": "**Compliance — notes first.** CSRs answer from the compliance specialists' notes and transfer only when the notes don't settle it",
       "why": ""
      },
      {
       "n": "9",
-      "sec": "10.9",
+      "sec": "10.8",
       "says": "**Prior authorizations are submitted by the intake team's authorization members**",
       "why": "Previously said \"Verification submits prior authorizations\""
      },
      {
       "n": "10",
-      "sec": "10.16",
+      "sec": "10.15",
       "says": "**The waiver rules** are also shown as a decision diagram — QMB-only is checked first, since it waives the standard rollator fee only. **Uncommon payers** such as Workers' Compensation or the VA may pay in full, including the upgrade fee. If unsure whether UMS is enrolled in a Medicaid state, CSRs check with Eligibility",
       "why": ""
      },
      {
       "n": "11",
-      "sec": "10.20.6",
+      "sec": "10.19.6",
       "says": "**The EAA** is processed by Billing. A CSR or Billing sends the blank form; the patient returns it with their income and expenses; usually 1–2 weeks. Out-of-pocket orders qualify for neither the EAA nor a payment plan",
       "why": ""
      },
      {
       "n": "12",
-      "sec": "10.13.2",
+      "sec": "10.12.2",
       "says": "**Oxygen accessories are included for the full 5 years**, not only the 36-month rental — a patient shouldn't see a bill for cannulas or tubing in months 37–60 either",
       "why": "Per CMS Policy Article A52514"
      },
      {
       "n": "13",
-      "sec": "6.3",
+      "sec": "7.3",
       "says": "**No trip charge during a repair,** and a **$75 out-of-pocket charge** for a diagnostic-only visit where no repair is needed — said before the visit is booked",
       "why": ""
      },
      {
       "n": "14",
-      "sec": "10.6.3",
+      "sec": "10.5.3",
       "says": "**Texas Medicaid as secondary** can cover items Medicare never covers, such as incontinence supplies and shower chairs",
       "why": ""
      }
@@ -1527,7 +1527,7 @@
     "rows": [
      {
       "n": "15",
-      "sec": "10.2",
+      "sec": "10.1",
       "says": "**The 2026 figures** — the Part B deductible ($283) and Part A deductible ($1,736) were checked against CMS. **Please confirm the Medicare Advantage maximum and the Medigap high-deductible figures**",
       "why": ""
      },
@@ -1539,13 +1539,13 @@
      },
      {
       "n": "17",
-      "sec": "10.13.3",
+      "sec": "10.12.3",
       "says": "**Timely filing:** Medicare 12 months from the date of service; Texas Medicaid 95 days",
       "why": ""
      },
      {
       "n": "18",
-      "sec": "10.18.3",
+      "sec": "10.17.3",
       "says": "**Appeals:** a Medicare redetermination must be requested within 120 days of the MSN",
       "why": ""
      }
@@ -1558,61 +1558,61 @@
     "rows": [
      {
       "n": "19",
-      "sec": "10.5.1",
+      "sec": "10.4.1",
       "says": "**The cost estimate in five steps**, and the worked examples in 10.5.2",
       "why": ""
      },
      {
       "n": "20",
-      "sec": "10.6.3",
+      "sec": "10.5.3",
       "says": "**QMB patients are never billed** for Medicare deductible or coinsurance",
       "why": ""
      },
      {
       "n": "21",
-      "sec": "10.7",
+      "sec": "10.6",
       "says": "**Coordination of benefits** — only the patient can update a payer's COB record",
       "why": ""
      },
      {
       "n": "22",
-      "sec": "10.13.1",
+      "sec": "10.12.1",
       "says": "**Capped rentals:** 13 paid months, then the patient owns the item; power wheelchairs at 15% then 6%",
       "why": ""
      },
      {
       "n": "23",
-      "sec": "10.13.2",
+      "sec": "10.12.2",
       "says": "**Oxygen:** 36 months of rental, then no rental charge — UMS keeps ownership and keeps servicing it for up to 5 years",
       "why": ""
      },
      {
       "n": "24",
-      "sec": "10.16",
+      "sec": "10.15",
       "says": "**Upgrade fee rules A, B and C**, and the fee amounts",
       "why": ""
      },
      {
       "n": "25",
-      "sec": "10.17",
+      "sec": "10.16",
       "says": "**The billing scenarios** — nine worked examples",
       "why": ""
      },
      {
       "n": "26",
-      "sec": "10.18.1",
+      "sec": "10.17.1",
       "says": "**The ABN** — Original Medicare only, signed before delivery, specific to the item and reason",
       "why": ""
      },
      {
       "n": "27",
-      "sec": "10.20.3",
+      "sec": "10.19.3",
       "says": "**Payments:** Save Card only with explicit permission, noted on the account; Pre-Pay for out-of-pocket orders and upgrade fees",
       "why": ""
      },
      {
       "n": "28",
-      "sec": "10.21.2",
+      "sec": "10.20.2",
       "says": "**What CSRs can and can't promise** about coverage, approval, delivery dates and fees",
       "why": ""
      }

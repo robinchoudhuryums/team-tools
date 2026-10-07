@@ -151,7 +151,7 @@ while i < len(lines):
     if m:
         in_notes = False
         lvl, txt = len(m.group(1)), re.sub(r"\s*\{#[\w-]+\}\s*$", "", m.group(2))
-        pm = re.match(r"Part (\d+)", txt)
+        pm = re.match(r"(?:Part|Chapter) (\d+)", txt)
         if lvl == 1 and pm:
             cur_part = "p" + pm.group(1)
         elif lvl == 1:

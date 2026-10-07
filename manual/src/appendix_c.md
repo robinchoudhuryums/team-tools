@@ -1,9 +1,9 @@
 # Appendix C — Quick Reference Cards
 
-**One card per part.** Each card carries the rules that change what you say on a call — not a
-summary of the part, but the things that are wrong often enough to be worth keeping in front of you.
+**One card per chapter.** Each card carries the rules that change what you say on a call — not a
+summary of the chapter, but the things that are wrong often enough to be worth keeping in front of you.
 
-In a standalone extract, only the cards for Part 0, Part 1 and that part are included.
+In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapter are included.
 
 <!--card:p0-->
 ## §C-0 Core
@@ -82,7 +82,7 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 <!--card:p3-->
 ## §C-3 Respiratory & Resupply
 
-### Overrides to Part 0
+### Overrides to Chapter 0
 - Oxygen concentrators, PAP devices and ventilators need an **Rx even for out-of-pocket** purchase
 
 ### PAP compliance
@@ -95,10 +95,33 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 
 ### Priority
 - **Ventilator issues are the highest priority in the manual** — Service Q; if no answer, email respiratory@ and service@ and notify an RT
-- Oxygen has its own card — [[§C-7]]
+- Oxygen has its own card — [[§C-8]]
 
 <!--card:p4-->
-## §C-4 Power Mobility
+## §C-4 Sales
+
+### Where the order is
+
+| Status | Whose |
+|---|---|
+| Pending (Appoint. Req.) → (Appt. Sched.) → (Appoint. Verification) | Sales |
+| Pending (Payer Verification) | Sales Eligibility |
+| **Eligible** | **Power** |
+
+### Handoff
+- **"Eligible" is the handoff marker** — stop routing to Sales
+- Only the **Verification** stage has a date, and it still isn't confirmed
+- Eligibility **doesn't end at handoff** — insurance changes send it back
+
+### Stale orders
+- **PPD over 1 year old** → new order via Sales. **Under 1 year** → Power reopens the existing one
+
+### Qualified leads
+- Ask whether they've **already seen their doctor about it** — that may be a Qualified Lead, which skips PAK (a PPD is still done, by Qualifications)
+- The appointment must be **specifically a PMD Mobility Evaluation**
+
+<!--card:p5-->
+## §C-5 Power Mobility
 
 ### Process
 - Power **does not** follow the standard order process — Sales → PAK → Qualifications → PAR → Field Ops-Power
@@ -119,8 +142,8 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 - **Scheduling** — delivery, ATP, service visits → **Field Ops-Power Q (ext 344)**
 - **Reporting a problem** with a PMD → **Service Q**
 
-<!--card:p5-->
-## §C-5 Field Operations
+<!--card:p6-->
+## §C-6 Field Operations
 
 ### Delivery timing
 - **Two-day rule:** delivery to a facility no earlier than 2 days before discharge, for fitting or training only. **DOS is the discharge date.** The item goes home with the patient or we redeliver free
@@ -142,8 +165,8 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 
 **Never** — promise a pick-up · quote a tracking date as a service date
 
-<!--card:p6-->
-## §C-6 Service
+<!--card:p7-->
+## §C-7 Service
 
 ### Who pays for a repair
 
@@ -168,7 +191,7 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 - **Don't raise loaners.** If asked: possible only while **patient-owned** equipment is repaired, and Service confirms
 
 ### Ventilators
-- **Service Q** first. If no answer, email respiratory@ and service@ and notify an RT — [[§6-5.1]]
+- **Service Q** first. If no answer, email respiratory@ and service@ and notify an RT — [[§7-5.1]]
 
 ### Timing and notes
 - **Turnaround:** days for small issues, weeks if parts come from the manufacturer
@@ -176,8 +199,8 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 
 **Never** — promise a loaner · quote a repair cost
 
-<!--card:p7-->
-## §C-7 Oxygen
+<!--card:p8-->
+## §C-8 Oxygen
 
 ### Ownership
 - **The patient never owns the concentrator.** Rental billing stops at 36 months; UMS keeps ownership and keeps servicing to 5 years
@@ -194,11 +217,11 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 - **Concentrator troubleshooting is CSR work**, not Service
 
 ### Urgent
-- Same-day tickets for urgent need and power outages. After hours — [[§C-8]]
+- Same-day tickets for urgent need and power outages. After hours — [[§C-9]]
 - **In immediate distress?** 9-1-1 first — [[§1-4.1]]
 
-<!--card:p8-->
-## §C-8 After Hours
+<!--card:p9-->
+## §C-9 After Hours
 
 ### Scope
 - **DFW only.** Both RTs and the technicians work out of Irving. **San Antonio:** oxygen concentrator service only. **Hawaii:** none
@@ -218,33 +241,10 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 ### Afterward
 - Both records required — **service ticket and logbook**
 
-<!--card:p9-->
-## §C-9 Sales
-
-### Where the order is
-
-| Status | Whose |
-|---|---|
-| Pending (Appoint. Req.) → (Appt. Sched.) → (Appoint. Verification) | Sales |
-| Pending (Payer Verification) | Sales Eligibility |
-| **Eligible** | **Power** |
-
-### Handoff
-- **"Eligible" is the handoff marker** — stop routing to Sales
-- Only the **Verification** stage has a date, and it still isn't confirmed
-- Eligibility **doesn't end at handoff** — insurance changes send it back
-
-### Stale orders
-- **PPD over 1 year old** → new order via Sales. **Under 1 year** → Power reopens the existing one
-
-### Qualified leads
-- Ask whether they've **already seen their doctor about it** — that may be a Qualified Lead, which skips PAK (a PPD is still done, by Qualifications)
-- The appointment must be **specifically a PMD Mobility Evaluation**
-
 <!--card:p10-->
-## §C-10 Billing & Insurance
+## §C-10 Billing & Denials
 
-The full Billing card is at [[§10-B]]. This is the condensed version.
+The full Billing card is at [[§10-A]]. This is the condensed version.
 
 ### Rental
 - **Capped rental:** 13 paid months, then the patient owns it automatically. No purchase option (complex rehab PWC aside), no 15 months

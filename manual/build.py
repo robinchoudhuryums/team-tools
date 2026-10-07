@@ -26,13 +26,13 @@ PARTS = {
     "p1": ("Call Handling", "src/p1.md"),
     "p2": ("Manual Mobility & General DME", "src/p2.md"),
     "p3": ("Respiratory & Resupply", "src/p3.md"),
-    "p4": ("Power Mobility", "src/p4.md"),
-    "p5": ("Field Operations", "src/p5.md"),
-    "p6": ("Service", "src/p6.md"),
-    "p7": ("Oxygen", "src/p7.md"),
-    "p8": ("After Hours", "src/p8.md"),
-    "p9": ("Sales", "src/p9.md"),
-    "p10": ("Billing & Insurance", "src/p10.md"),
+    "p4": ("Sales", "src/p4.md"),
+    "p5": ("Power Mobility", "src/p5.md"),
+    "p6": ("Field Operations", "src/p6.md"),
+    "p7": ("Service", "src/p7.md"),
+    "p8": ("Oxygen", "src/p8.md"),
+    "p9": ("After Hours", "src/p9.md"),
+    "p10": ("Billing & Denials", "src/p10.md"),
 }
 APPX = {"a": "src/appendix_a.md", "b": "src/appendix_b.md", "c": "src/appendix_c.md"}
 
@@ -106,14 +106,14 @@ def _anchor_id(sec):
 
 
 def add_dividers(text, key):
-    """Part 10 splits into an on-a-call half and a reference half."""
+    """Chapter 10 splits into an on-a-call half and a reference half."""
     if key != "p10":
         return text
-    return text.replace("\n## §10-17 Billing scenarios",
-        "\n---\n\n# Part 10 — Billing reference\n\n"
+    return text.replace("\n## §10-16 Billing scenarios",
+        "\n---\n\n# Chapter 10 — Billing reference\n\n"
         "> The sections above are what a CSR uses on a call. What follows is reference — "
         "worked examples, appeals detail, payment mechanics and patient-facing language. "
-        "Consult it rather than reading it.\n\n## §10-17 Billing scenarios")
+        "Consult it rather than reading it.\n\n## §10-16 Billing scenarios")
 
 
 def resolve_refs(text, own_part=None):
@@ -154,12 +154,12 @@ for tok in sorted(set(re.findall(r"§[0-9A-Z]+-[0-9A-Z]+(?:\.[0-9]+)*", src_dg))
     if tok not in ANCHORS:
         errors.append(f"diagram label {tok} in make_diagrams.py points at no section")
 
-for lab, num in re.findall(r"([A-Z][A-Za-z &;]+?) — Part (\d+)", src_dg):
+for lab, num in re.findall(r"([A-Z][A-Za-z &;]+?) — Chapter (\d+)", src_dg):
     want = PARTS.get("p" + num, ("",))[0]
     got = lab.replace("&amp;", "&").strip()
     owner = next((k for k, v in PARTS.items() if v[0] == got), None)
     if owner and owner != "p" + num:
-        errors.append(f"diagram labels '{got}' as Part {num}, but '{got}' is Part {owner[1:]}")
+        errors.append(f"diagram labels '{got}' as Chapter {num}, but '{got}' is Chapter {owner[1:]}")
 
 # ------------------------------------------------------------ check: refs ---
 refs = {}
@@ -265,7 +265,7 @@ def full_changelog(part=None):
     out = ["| Date | Part | Section | Change | Authority | Retraining |", "|---|---|---|---|---|---|"]
     for c in sorted(rows, key=lambda x: x["date"], reverse=True):
         d = datetime.date.fromisoformat(c["date"]).strftime("%m/%d/%Y")
-        out.append(f"| {d} | Part {c['part'][1:]} | {dnum(c['section'])} | {c['summary']} | "
+        out.append(f"| {d} | Chapter {c['part'][1:]} | {dnum(c['section'])} | {c['summary']} | "
                    f"{c['authority']} | {'Yes' if c['retraining'] else 'No'} |")
     return "\n".join(out)
 
@@ -409,25 +409,25 @@ This manual is a reference, built so you can find things three different ways.
 
 ### Where to start
 
-1. **Quick reference cards.** One per part, formatted to be printed if desired
-2. **Part 0 — CSR Core.** The procedures that apply to every call
-3. **Part 1 — Call Handling.** Routing, who you may speak to, what you cannot do, and the calls
+1. **Quick reference cards.** One per chapter, formatted to be printed if desired
+2. **Chapter 0 — CSR Core.** The procedures that apply to every call
+3. **Chapter 1 — Call Handling.** Routing, who you may speak to, what you cannot do, and the calls
    that are hard for reasons other than complexity
-4. **Your own department's part**
+4. **Your own department's chapter**
 
 ### How the manual is organised
 
 | | |
 |---|---|
-| **Part 0 and Part 1** | Applicable to every call, regardless of the department |
-| **Parts 2 to 9** | One per department (though each department could have use cases for other department parts) |
-| **Part 10** | Billing and insurance. Its first half is what you use on a call; the second half is reference |
+| **Chapters 0 and 1** | Applicable to every call, regardless of the department |
+| **Chapters 2 to 9** | One per department (though each department could have use cases for other department chapters) |
+| **Chapter 10** | Billing & Denials. Its first half is what you use on a call; the second half is reference |
 | **Appendices** | Glossary, escalation directory, quick reference cards, changelog and index |
 
 ### Reading the manual
 
-**Section numbers, not page numbers.** Every section has a number such as **4.7.4** — part 4,
-section 7, subsection 4. Use these when asking a question or citing a procedure; page numbers
+**Section numbers, not page numbers.** Every section has a number such as **5.6.3** — chapter 5,
+section 6, subsection 3. Use these when asking a question or citing a procedure; page numbers
 move between versions. Quick reference cards are numbered separately, as **CARD 5**.
 
 **Five kinds of banner**, and the colour tells you what it is:
@@ -442,7 +442,7 @@ move between versions. Quick reference cards are numbered separately, as **CARD 
 
 > **Note** — Context that helps you understand a process.
 
-**When a department part contradicts Part 0, the department part wins** — but only where it says
+**When a department chapter contradicts Chapter 0, the department chapter wins** — but only where it says
 explicitly that it is overriding.
 
 """
@@ -508,8 +508,8 @@ def assemble(name, part_keys, title, banner=None, guide=None):
     body_parts = []
     for k in part_keys:
         if bodies.get(k) is None:
-            body_parts.append(f"\n---\n\n# Part {k[1]} — {PARTS[k][0]}\n\n"
-                              f"> **Not yet written.** This part is pending.\n")
+            body_parts.append(f"\n---\n\n# Chapter {k[1:]} — {PARTS[k][0]}\n\n"
+                              f"> **Not yet written.** This chapter is pending.\n")
         else:
             body_parts.append("\n---\n\n" + resolve_refs(add_dividers(bodies[k], k), k))
     if guide and guide.get("sections"):
@@ -562,11 +562,11 @@ for g in MANIFEST["guides"]:
     p = g["key"]
     keys = [k for k in PARTS if k in set(MANIFEST["default_chapters"]) | {p} | set(g.get("chapters", []))]
     g = dict(g, cards=g.get("cards") or keys)
-    n = f"CSR-Procedures-Part-{p[1:]}-{PARTS[p][0].replace(' & ', '-and-').replace(' ', '-')}-{VERSION}"
+    n = f"CSR-Procedures-Chapter-{p[1:]}-{PARTS[p][0].replace(' & ', '-and-').replace(' ', '-')}-{VERSION}"
     parts_txt = ", ".join(k[1:] for k in keys[:-1]) + " and " + keys[-1][1:]
     sizes[n] = assemble(n, keys, PARTS[p][0],
         f"Department guide generated from the CSR Procedures Manual {VERSION} (built {BUILT}) — "
-        f"Parts {parts_txt}" + (" plus related sections" if g.get("sections") else "") + ". "
+        f"Chapters {parts_txt}" + (" plus related sections" if g.get("sections") else "") + ". "
         "This is a generated copy. Do not edit; submit changes to the Customer Service Manager.",
         guide=g)
 
@@ -627,7 +627,7 @@ for k, text in bodies.items():
 cards = set(re.findall(r"<!--card:(\w+)-->", bodies.get("appx_c", "")))
 for p in PARTS:
     if p not in cards:
-        warnings.append(f"Part {p[1:]} has no quick reference card in Appendix C")
+        warnings.append(f"Chapter {p[1:]} has no quick reference card in Appendix C")
 
 # HCPCS codes cited in prose but absent from equipment.json
 KNOWN_CODES = {c for r in EQ for c in r["hcpcs"]} | {f["id"] for f in FEES}

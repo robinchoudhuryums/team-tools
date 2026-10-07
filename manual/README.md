@@ -8,7 +8,7 @@ generated from this directory. **Edit here, never in the outputs.**
 
 | Path | What it holds |
 |---|---|
-| `src/p0.md` … `src/p10.md` | The eleven parts. Part 0 (CSR Core) and Part 1 (Call Handling) go into every extract |
+| `src/p0.md` … `src/p10.md` | The eleven chapters (the file key is the chapter number since the October 2026 renumber). Chapter 0 (CSR Core) and Chapter 1 (Call Handling) go into every extract |
 | `src/appendix_a.md`, `_b`, `_c` | Glossary, escalation directory, quick reference cards. Appendices D (changelog) and E (index) are generated |
 | `data/*.json` | Structured facts rendered into the text: equipment (`equipment.json`), roster, glossary, fees, changelog, icons, figures. **Curated by hand — these are the source, not generated** |
 | `data/thumbs.json`, `data/figures_b64.json` | Embedded product photos and screenshots (base64) |
@@ -39,7 +39,7 @@ Output goes to `$MANUAL_OUT` (default `./dist`). `out/` holds intermediate Markd
 
 `python3 export_reference.py` (run last by `make_all.sh`, or on its own — it needs only Python 3.12)
 writes `$MANUAL_OUT/reference/manual.json` — **the one file to upload**. It carries the version and build
-date, the Part 1 call router, the dated changelog, the images every section cites (icons, figures,
+date, the Chapter 1 call router, the dated changelog, the images every section cites (icons, figures,
 equipment photos — the import unpacks them into the app's KB Images folder on Drive), and the articles: one per level-2 section, one per quick reference card, one per
 Appendix B section, one glossary article, and the front page — ids `man-5-9`, `man-c-5`, `man-b-1`, `man-a`,
 `man-howto`. Bodies are the Markdown the Reference renderer draws: callouts stay `>` blocks, Script callouts

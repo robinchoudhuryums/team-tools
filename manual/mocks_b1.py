@@ -48,13 +48,13 @@ b.append(fbox(40, 100, 290, 44, "Search the caller's phone number", "act"))
 b.append(fl(185, 144, 185, 170))
 b.append(fbox(60, 170, 250, 40, "Found a lead?", "dec"))
 b.append(fl(185, 210, 185, 238, "YES"))
-b.append(fbox(40, 238, 290, 62, "**Sales is working with them|Route to the Sales team member in the|lead notes, or the Sales Q — §9-4", "ok"))
+b.append(fbox(40, 238, 290, 62, "**Sales is working with them|Route to the Sales team member in the|lead notes, or the Sales Q — §4-5", "ok"))
 b.append(elbow(310, 190, 350, 238, ym=190, label="NO", lx=316, ly=184))
 b.append(fl(350, 238, 350, 322))
 b.append(fbox(40, 322, 330, 76, "**No patient in the system|Likely not received, or too recent. Say we'll|update once it exists. Provider calling?|Ask them to resend the referral", "act"))
 b.append(fl(cx, 144, cx, 238, "YES"))
 b.append(fbox(cx - 150, 238, 300, 40, "**What does the order show?", "dec"))
-b.append(fbox(800, 232, 340, 52, "**Power mobility order?|Also see the Power status diagram — §4-1", "note"))
+b.append(fbox(800, 232, 340, 52, "**Power mobility order?|Also see the Power status diagram — §5-1", "note"))
 b.append(f'<path d="M{cx + 150} 258 H800" stroke="var(--rule)" stroke-width="1.4" stroke-dasharray="4 3" fill="none"/>')
 cols = [(20, "Received recently,|no updates"), (305, "Additional documentation|requested"),
         (590, "Pending|authorization"), (875, "Needs to be|re-opened")]
@@ -93,7 +93,7 @@ b.append(elbow(cx, 292, 985, 330, ym=312, label="SAN ANTONIO", lx=990, ly=326))
 b.append(fbox(830, 330, 310, 60, "Oxygen concentrator service only —|dispatch the San Antonio technician.|Anything else: business hours", "act"))
 b.append(fl(cx, 292, cx, 330, "DFW", cx + 6, 318))
 b.append(fbox(cx - 150, 330, 300, 44, "**What equipment?", "dec"))
-eq = [(20, "Oxygen concentrator|or suction", "Troubleshoot first — §7-6.|Unresolved → dispatch the|on-call DME technician", "act"),
+eq = [(20, "Oxygen concentrator|or suction", "Troubleshoot first — §8-6.|Unresolved → dispatch the|on-call DME technician", "act"),
       (305, "Ventilator, cough assist,|IPPB, BiPAP ST", "**Dispatch the on-call RT|immediately. Don't|troubleshoot", "crit"),
       (590, "Power wheelchair", "Advise business hours.|Stuck and vulnerable →|non-emergency services or 9-1-1", "act"),
       (875, "Anything else", "Order status, supplies,|product questions →|business hours. Log the call", "note")]
@@ -103,7 +103,7 @@ for x, lab, out, k in eq:
     b.append(fbox(x, 410, 264, 44, lab, "dec"))
     b.append(fl(mid, 454, mid, 476))
     b.append(fbox(x, 476, 264, 64, out, k))
-b.append(fbox(20, 568, 1120, 48, "**When dispatching, relay all seven details — §8-3.1|Name · address · phone · caller and relationship · equipment · issue · troubleshooting already tried", "note"))
+b.append(fbox(20, 568, 1120, 48, "**When dispatching, relay all seven details — §9-3.1|Name · address · phone · caller and relationship · equipment · issue · troubleshooting already tried", "note"))
 b.append(f'<text x="{W/2}" y="650" text-anchor="middle" class="dg-s">Oxygen combined with a PAP or ventilator '
          f'may call for the RT instead of a DME technician — confirm before dispatching.</text>')
 svg("m2a-dispatch", W, H, "After-hours dispatch decision", b)
@@ -133,7 +133,7 @@ b.append(f'<path class="dg-arr" d="M{lx + SW2 - 20} 174 H1130 V300 H30 V89 H{ste
 b.append(f'<text x="{lx + SW2 - 12}" y="168" style="font:700 11px \'IBM Plex Mono\',monospace;fill:var(--muted)">NO</text>')
 b.append(fbox(410, 284, 340, 32, "No one responded — repeat from step 1", "tech"))
 b.append(fbox(30, 350, 540, 80, "**Throughout the wait|Confirm the patient has a working backup.|Tell the caller you're reaching on-call staff; call back|with updates even when there's no news", "note"))
-b.append(fbox(590, 350, 540, 80, "**If distress develops at any point|Tell them to dial 9-1-1 first — the dispatch attempt continues|afterward. Never contact off-schedule staff to fill the gap — §8-4", "crit"))
+b.append(fbox(590, 350, 540, 80, "**If distress develops at any point|Tell them to dial 9-1-1 first — the dispatch attempt continues|afterward. Never contact off-schedule staff to fill the gap — §9-4", "crit"))
 svg("m2b-escalation", W, H, "After-hours escalation chain", b)
 
 # =============================================================== 3. PMD pick-up ===
@@ -144,7 +144,7 @@ b.append(fl(cx, 78, cx, 102))
 b.append(fbox(cx - 170, 102, 340, 44, "**Why do they want it collected?", "dec"))
 reasons = [(20, "Uncomfortable, or sounds|adjustable", "**Transfer to Service|No pick-up ticket.|Fit problems are often|adjustable", "ok"),
            (305, "Technical fault", "**Repair, not pick-up|No pick-up ticket", "ok"),
-           (590, "Can't afford it", "**Offer the EAA or a payment|plan first — §10-20.6|(n/a for OOP orders)", "tech"),
+           (590, "Can't afford it", "**Offer the EAA or a payment|plan first — §10-19.6|(n/a for OOP orders)", "tech"),
            (875, "None of these", "**Is it patient-owned?", "dec")]
 for x, lab, out, k in reasons:
     mid = x + 132
@@ -153,10 +153,10 @@ for x, lab, out, k in reasons:
     b.append(fl(mid, 228, mid, 252))
     b.append(fbox(x, 252, 264, 72 if k != "dec" else 44, out, k))
 b.append(fl(960, 296, 960, 340, "YES", 966, 322))
-b.append(fbox(870, 340, 180, 62, "Can't be picked up —|theirs to keep, donate|or dispose — §4-9.1", "act"))
+b.append(fbox(870, 340, 180, 62, "Can't be picked up —|theirs to keep, donate|or dispose — §5-8.1", "act"))
 b.append(fl(1090, 296, 1090, 420, "NO", 1096, 362))
-b.append(fbox(870, 420, 270, 40, "Create the pick-up ticket — §5-9.4", "act"))
-b.append(fbox(20, 420, 830, 56, "**A pick-up may be irreversible|A patient who surrenders a PMD may not be able to get another for five years under Same or Similar — §10-13.5", "tech"))
+b.append(fbox(870, 420, 270, 40, "Create the pick-up ticket — §6-9.3", "act"))
+b.append(fbox(20, 420, 830, 56, "**A pick-up may be irreversible|A patient who surrenders a PMD may not be able to get another for five years under Same or Similar — §10-12.5", "tech"))
 
 svg("m3-pickup", W, H, "PMD pick-up decision", b)
 
@@ -218,14 +218,14 @@ def blk(x1, x2, y, h, lines, fill, ink):
 b = [title(W, "Original Medicare — who pays for approved charges through the year")]
 b.append(f'<text x="{L}" y="56" style="font:600 11px \'IBM Plex Mono\',monospace;fill:var(--muted)">JANUARY 1</text>')
 b.append(f'<text x="{R}" y="56" text-anchor="end" style="font:600 11px \'IBM Plex Mono\',monospace;fill:var(--muted)">DECEMBER 31</text>')
-b.append(blk(L, M - 4, TOP, HT, ["Patient pays 100%", "until the annual Part B", "deductible is met — §10-2"], "--watch-bg", "--watch-ink"))
+b.append(blk(L, M - 4, TOP, HT, ["Patient pays 100%", "until the annual Part B", "deductible is met — §10-1"], "--watch-bg", "--watch-ink"))
 mh = HT * 0.8
 b.append(blk(M + 4, R, TOP, mh - 3, ["Medicare pays 80%", "of the approved amount"], "--tint", "--accent"))
 b.append(blk(M + 4, R, TOP + mh + 3, HT - mh - 3, ["Patient pays 20%"], "--watch-bg", "--watch-ink"))
 b.append(f'<line x1="{M}" y1="{TOP - 10}" x2="{M}" y2="{TOP + HT + 14}" stroke="var(--muted)" stroke-dasharray="4 3"/>')
 b.append(f'<text x="{M}" y="{TOP + HT + 30}" text-anchor="middle" '
          f'style="font:600 11px \'IBM Plex Mono\',monospace;fill:var(--muted)">DEDUCTIBLE MET</text>')
-b.append(fbox(L, 270, R - L, 44, "**A secondary can take the patient's share|Medigap (most plans) covers the 20%. Full Medicaid or QMB → $0, including the deductible. No secondary → no yearly cap — §10-6", "note"))
+b.append(fbox(L, 270, R - L, 44, "**A secondary can take the patient's share|Medigap (most plans) covers the 20%. Full Medicaid or QMB → $0, including the deductible. No secondary → no yearly cap — §10-5", "note"))
 svg("m10-costshare", W, H, "Deductible, then the 80/20 split", b)
 
 # ------------------------------------------------------------------ mock page ---
