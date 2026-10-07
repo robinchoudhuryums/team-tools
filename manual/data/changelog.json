@@ -1,6 +1,15 @@
 [
   {
     "date": "2026-10-07",
+    "part": "p9",
+    "section": "§9-4.1",
+    "summary": "A past PMD patient who wants a new PMD goes to Sales: after 5 years, a new order on the existing account; within 5 years, usually a Same or Similar conflict, unless the new PMD is an upgrade and the provider attests to a significant change in condition.",
+    "authority": "Sales",
+    "retraining": true,
+    "provenance": "Operator note 2026-10-07"
+  },
+  {
+    "date": "2026-10-07",
     "part": "p10",
     "section": "§10-11",
     "summary": "Coinsurance is a percentage, a copay a flat amount. Orders with a very high coinsurance (often 50% or more) may be declined, depending on the item — the intake team decides.",

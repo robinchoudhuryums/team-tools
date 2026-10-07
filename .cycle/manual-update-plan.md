@@ -156,6 +156,13 @@ Status codes used in Appendix 1:
 | 92 | Bhoj's surname | **Bhatt.** |
 | 93 | PAR team | All four listed as one team, with no specialties for Bella or Parker. Kadija (Standard) and Ashton (Complex/Appeals) keep their own rows. |
 
+### A0e. Recorded 2026-10-07 (operator note, after Phase 2)
+
+| # | Item | Decision / handling |
+|---|---|---|
+| 94a | Past PMD patient, 5+ years since delivery | Goes to **Sales**, which creates a new order on the existing patient account. New **9.4.1**; pointers from 4.1, 10.13.5 and a router row (1.1.7). |
+| 94b | PMD within 5 years, wants a new/different one | Usually a Same or Similar conflict. Possible exception: the new PMD is an **upgrade** and the provider attests to a **significant change in physical condition or mobility needs** since the original. In 9.4.1, with a "promise nothing" watch-out. Routed to Sales by assumption → packet (Sales, Power, Billing). |
+
 ### A1. Still open
 
 Nothing blocking. Recorded on 2026-10-06:
@@ -390,11 +397,16 @@ These go into the packets in Phase 6, alongside the "add to X's packet" items on
 - 10.10 "Medicare is always billed first for dual eligibles" vs Rule B (Medicaid primary for the bed): which is right?
 - Upgrade Fee (Mobility) sheet vs the manual's fee tables: confirm the amounts match.
 
+- PMD within 5 years (9.4.1): the upgrade + change-in-condition exception — is it described right, and does Billing see it as a Same or Similar exception or as a different item?
+
 **Denials (Monil Shah, new packet)**
 - 10.18.3's two scenarios; the Denials Q (ext 101); direct transfers to members.
 - Claim Prep (paid / eligible) and RR / NU: is the description right?
 - Write-off types and who tells the patient.
 - Anything in Denials' process a CSR should know that the manual lacks? (Its Denials content is thin.)
+
+**Sales and Power (9.4.1)**
+- A PMD patient within 5 years who wants an upgrade: does the call go to Sales (as written) or to Power? Who checks whether the provider's attestation is enough?
 
 **Each intake lead (Manual Mobility, Power, Respiratory & Resupply)**
 - At what coinsurance level is an order declined, and does it depend on the item?
