@@ -13,11 +13,12 @@
 
 | Value | Meaning |
 |---|---|
-| **none** | Confirmed: no backup currently exists |
-| — | A team or shared function; no individual holder |
+| **-** | Nothing recorded — for a backup, none exists today |
+| Team | A team or shared function; no individual holder |
 | Direct | Takes direct transfers |
-| A queue name | Transfer to that queue rather than an individual |
+| A queue name | Transfer to that queue rather than an individual — a manager's row carries its department's queue |
+| An email address, a phone number | Email the team (with the subject format shown, where there is one); a phone number is a direct line — the on-call numbers are also in [[§9-5]] |
 
-> **Watch-out — two people named Parth.** **Parth Dave** is the Manual Mobility manager and handles its authorization escalations. **Parth Shah** is the Field Operations manager, and also the used equipment contact, one of the Service escalation contacts for insurance complaints, and the after-hours Level 1 backup. Route by role, not by first name.
+Rows are in A–Z order by role, and every name is written in full.
 
 For who handles a particular situation, use the call router — [[§1-1]].

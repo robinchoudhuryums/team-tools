@@ -265,7 +265,7 @@ def full_changelog(part=None):
     out = ["| Date | Part | Section | Change | Authority | Retraining |", "|---|---|---|---|---|---|"]
     for c in sorted(rows, key=lambda x: x["date"], reverse=True):
         d = datetime.date.fromisoformat(c["date"]).strftime("%m/%d/%Y")
-        out.append(f"| {d} | Chapter {c['part'][1:]} | {dnum(c['section'])} | {c['summary']} | "
+        out.append(f"| {d} | {('Chapter ' + c['part'][1:]) if re.fullmatch(r'p\d+', c['part']) else 'Appendix ' + c['part'][-1].upper()} | {dnum(c['section'])} | {c['summary']} | "
                    f"{c['authority']} | {'Yes' if c['retraining'] else 'No'} |")
     return "\n".join(out)
 
@@ -340,6 +340,9 @@ def build_index(include=None):
     for g in GLOSSARY:
         if g["class"] != "shorthand":
             add(g["term"], "term", _index_explain(g))
+    # curated extras — the email update types and note statuses (data/index.json)
+    for t in json.load(open("data/index.json", encoding="utf-8")).get("extra", []):
+        add(t, "topic")
     items_by_code = {}
     for r in EQ:
         add(r["name"], "equipment")

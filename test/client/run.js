@@ -34842,12 +34842,13 @@ test('MP1-2: the build, the export and the Word model resolve [ROLE:] through ON
   assert.ok(/<!--notes-->/.test(MP1_('footnotes.py')) && /re\.sub\(r"<!--\.\*\?-->", "", text, flags=re\.S\)/.test(ex), 'the notes marker is an HTML comment, which the export already strips');
 });
 
-test('MP1-3: every table stays a table in the HTML; the directory always shows Transfer (Phone last); Word breaks pages on the heading, embeds the diagrams, and a PDF is checked for blank pages', () => {
+test('MP1-3: every table stays a table in the HTML; the directory always shows How to reach (Direct, queue, email, phone); Word breaks pages on the heading, embeds the diagrams, and a PDF is checked for blank pages', () => {
   const mh = MP1_('make_html.py');
   const cls = mh.slice(mh.indexOf('def classify_tables('), mh.indexOf('\ndef ', mh.indexOf('def classify_tables(') + 5));
   assert.ok(!/new_tag\("dl"\)/.test(cls) && !/"kv"/.test(cls), 'no key/value conversion (index letters, specs, check/where all lost their columns to it)');
   assert.ok(/heads\[0\]\.strip\(\)\.lower\(\) == "step"/.test(cls) && /h\[:1\] in \("\\u2713", "\\u2717"\)/.test(cls), 'the same two conventions as kbMd_');
-  assert.ok(/hdr = "\| Role \| Holder \| Backup \| Transfer \| Email \|" \+ \(" Phone \|" if show_phone else ""\)/.test(MP1_('render.py')), 'Transfer always; Phone rides last');
+  assert.ok(/hdr = "\| Role \| Holder \| Backup \| How to reach \|"\n/.test(MP1_('render.py')) && /"Direct" if r\["direct_transfer"\] else "", r\.get\("queue"\) or "", em, ph/.test(MP1_('render.py')), 'How to reach always carries Direct, the queue, the email and the phone');
+  assert.ok(!/\(r\.get\("phone"\) or ""\)\.replace\(" ", /.test(MP1_('render.py')), 'only the space INSIDE a number is non-breaking — a list of numbers must still wrap (it pushed B.1 to 842px in a 700px column)');
   const rx = MP1_('render_docx.js');
   assert.ok(!/new PageBreak\(\)/.test(rx) && /pageBreakBefore: pb/.test(rx), 'the page break rides the heading — no break paragraph to land alone on a page');
   assert.ok(/while \(blocks\[j\] && blocks\[j\]\.k === 'rule'\) j\+\+/.test(rx), 'and no spacer lands before a page-starting heading, past a rule');

@@ -168,23 +168,26 @@ def expand(m):
     if spec.startswith("roster:"):
         scope = spec.split(":")[1]
         rows = [r for r in ROSTER if scope == "all" or r["part"] in (scope, "shared")]
-        # Transfer is always shown (the legend explains it); Phone rides last, only
-        # where some row has one — it used to REPLACE Transfer, so the directory
-        # silently lost "Direct" and every queue name once on-call phones arrived
-        show_phone = any(r.get("phone") for r in rows)
-        hdr = "| Role | Holder | Backup | Transfer | Email |" + (" Phone |" if show_phone else "")
-        sep = "|---|---|---|---|---|" + ("---|" if show_phone else "")
+        # How to reach carries everything a CSR uses to reach the role — "Direct",
+        # the queue (a manager's row carries its department's), the email and a
+        # phone — so the table stays four columns wide. A–Z by role; "-" marks an
+        # empty cell. Phones also sit in 9.5's on-call table.
+        hdr = "| Role | Holder | Backup | How to reach |"
+        sep = "|---|---|---|---|"
         out = [hdr, sep]
-        for r in sorted(rows, key=lambda x: (0 if x["part"] == "shared" else int(x["part"][1:]) + 1 if x["part"][1:].isdigit() else 99, x["role"])):
+        for r in sorted(rows, key=lambda x: x["role"].lower()):
             bk = r["backup"] or ""
-            bk = "**none**" if bk == "NONE" else ("—" if bk.startswith("—") else bk)
-            hd = "—" if (r["holder"] or "").startswith("—") else (r["holder"] or r.get("current_named_individual") or "")
-            tr = "Direct" if r["direct_transfer"] else (r.get("queue") or "")
+            bk = "-" if (not bk or bk == "NONE" or bk.startswith("—")) else bk
+            hd = r["holder"] or r.get("current_named_individual") or ""
+            hd = "Team" if hd.startswith("— team") else ("-" if (not hd or hd.startswith("—")) else hd)
             em = r.get("email") or ""
-            if r.get("email_attn"):
+            if em and r.get("email_attn"):
                 em += f" — subject “{r['email_attn']}: [name] [TRX #]”"
-            row = f"| {r['role']} | {hd} | {bk} | {tr} | {em} |"
-            out.append(row + (f" {r.get('phone') or ''} |" if show_phone else ""))
+            # each number stays whole; the " / " between several numbers may wrap
+            ph = re.sub(r"\((\d{3})\) (\d{3})-(\d{4})", "(\\1)\u00a0\\2\u2011\\3", r.get("phone") or "")
+            tr = " · ".join(x for x in ("Direct" if r["direct_transfer"] else "", r.get("queue") or "", em, ph) if x) or "-"
+            row = f"| {r['role']} | {hd} | {bk} | {tr} |"
+            out.append(row)
         return "\n".join(out)
     if spec.startswith("glossary:"):
         _, cls, _, part = spec.split(":")[1], None, None, None

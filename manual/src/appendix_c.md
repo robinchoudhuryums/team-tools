@@ -36,29 +36,28 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 <!--card:p1-->
 ## §C-1 Call Handling
 
-### Emergencies
+### Emergencies and verification
 - **In immediate distress?** Hang up and dial **9-1-1**, before anything else — [[§1-4.1]]
+- **Not the patient?** Once they confirm relationship, full name, and DOB or address — order and billing details. Before that, take information only
 
-### Who you may speak to
-- **Not the patient?** Once they confirm their relationship, the patient's full name, and date of birth or address — order and billing details. Before that, take information only
+### The most common calls
 
-### Escalation
-- **Supervisor request:** name and DOB → understand the concern → relevant team's supervisor → your own → offer an emailed callback
-- **Medicare or 1-800-MEDICARE with a complaint** → straight to a supervisor. Don't try to resolve it
+| The caller says | Do |
+|---|---|
+| "Where is my equipment?" | The status, then the `Ticket` date — only a date the system shows |
+| "It's broken." | Delivered → **Service Q**. Concentrator → **you troubleshoot**. Ventilator → **top priority** |
+| "Come pick this up." | Present the options first (Same or Similar). Promise no date |
+| "I need more supplies." | Within 30 days of running out; ship no sooner than **10 days** before |
+| "The patient has died." | Condolences, date of death; patient-owned stays, else a pick-up ticket |
 
-### Complaints
-- A complaint record needs **five fields** — name, address, phone, summary, actions taken
-- Acknowledge within **48 hours**
-
-### Conduct
-- **Abusive caller:** warn once, clearly. If it continues, say you are ending the call, then disconnect. Never without the warning
+### Escalation and complaints
+- **Supervisor:** name and DOB → the concern → that team's supervisor → your own → a callback. **Medicare complaint** → straight to a supervisor
+- A complaint: **five fields** (name, address, phone, summary, actions) · acknowledged within **48 hours**
 
 ### Language
-- **Inbound:** Spanish Q, then voicemail
-- **Outbound:** ask the patient whether someone with them can translate, then Spanish Q, then email. The email is required **outbound only**
-- Never transfer to a Spanish-speaking agent directly — it isn't queued or tracked
+- **Spanish Q** — inbound, then its voicemail; outbound, then the email. Never a direct transfer
 
-**Never say** — "your insurance will cover this" · "you'll only owe $X" · "I can waive that" · "you'll own the oxygen after 36 months" · "we take UHC"
+**Never say** — "your insurance will cover this" · "you'll only owe $X" · "I can waive that" · "we take UHC"
 
 <!--card:p2-->
 ## §C-2 Manual Mobility & General DME
@@ -75,7 +74,7 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 
 ### Coverage
 - **Bathroom items differ** — 3-in-1 commode can be covered by Medicare; shower chair and tub bench are TX Medicaid only; raised toilet seat is OOP only
-- Lift chairs are **Texas only**, via the Medicaid Waiver Program, with **no backup coordinator**
+- Lift chairs are **Texas only**, via the Medicaid Waiver Program — the Lift Chair Coordinator, backed up by the Manual Mobility Manager
 
 **Never** — say a bariatric item is covered because the patient is "close to" the threshold
 
@@ -96,6 +95,8 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 ### Priority
 - **Ventilator issues are the highest priority in the manual** — Service Q; if no answer, email respiratory@ and service@ and notify an RT
 - Oxygen has its own card — [[§C-8]]
+
+**Never** — tell a patient Medicare covers briefs · ship supplies sooner than 10 days before they run out · decide compliance where the notes are silent
 
 <!--card:p4-->
 ## §C-4 Sales
@@ -120,6 +121,8 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 - Ask whether they've **already seen their doctor about it** — that may be a Qualified Lead, which skips PAK (a PPD is still done, by Qualifications)
 - The appointment must be **specifically a PMD Mobility Evaluation**
 
+**Never** — route an Eligible order back to Sales · call an appointment confirmed before Verification · promise or rule out a new PMD within five years
+
 <!--card:p5-->
 ## §C-5 Power Mobility
 
@@ -141,6 +144,8 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 ### Route
 - **Scheduling** — delivery, ATP, service visits → **Field Ops-Power Q (ext 344)**
 - **Reporting a problem** with a PMD → **Service Q**
+
+**Never** — promise a PWC return or a write-off · call an MA plan a secondary · deliver a PMD to a hospital, rehab or SNF
 
 <!--card:p6-->
 ## §C-6 Field Operations
@@ -220,6 +225,8 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 - Same-day tickets for urgent need and power outages. After hours — [[§C-9]]
 - **In immediate distress?** 9-1-1 first — [[§1-4.1]]
 
+**Never** — tell a patient they will own the concentrator · send a concentrator fault to Service · supply tanks for another company's concentrator · change a flow rate
+
 <!--card:p9-->
 ## §C-9 After Hours
 
@@ -240,6 +247,8 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 
 ### Afterward
 - Both records required — **service ticket and logbook**
+
+**Never** — troubleshoot a ventilator call · contact off-schedule staff · tell a caller outside the dispatch area that someone is coming
 
 <!--card:p10-->
 ## §C-10 Billing & Denials
@@ -265,3 +274,5 @@ The full Billing card is at [[§10-A]]. This is the condensed version.
 ### Paying
 - Network status is **plan by plan**, never carrier by carrier
 - Can't pay in full? A **payment plan** through Billing, or the **EAA** — neither on an out-of-pocket order
+
+**Never** — collect Medicare cost-sharing from a QMB patient · waive a fee outside the three rules · say "we take UHC" · say a denial will be overturned

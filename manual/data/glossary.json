@@ -101,6 +101,14 @@
     "class": "manual"
   },
   {
+    "term": "COBRA",
+    "definition": "Continuation coverage — the patient keeps a former employer's group plan after the job ends. Alongside Medicare, Medicare is primary — [[§10-6.2]]",
+    "parts": [
+      "p10"
+    ],
+    "class": "manual"
+  },
+  {
     "term": "CPAP",
     "definition": "Continuous Positive Airway Pressure device — delivers constant pressure",
     "parts": [
@@ -484,6 +492,14 @@
     "class": "manual"
   },
   {
+    "term": "NU",
+    "definition": "Billing modifier: the item is billed as a **new purchase**. Shown on the Claim Prep tab — [[§10-19.5]]",
+    "parts": [
+      "p10"
+    ],
+    "class": "manual"
+  },
+  {
     "term": "O2",
     "definition": "Oxygen",
     "parts": [
@@ -518,6 +534,15 @@
     "definition": "Occupational Therapist / Occupational Therapy",
     "parts": [
       "p5"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "Overutilization",
+    "definition": "Supplies shipped beyond the allowance, or sooner than the shipping windows allow. Insurance denies the excess — [[§10-18]]",
+    "parts": [
+      "p3",
+      "p10"
     ],
     "class": "manual"
   },
@@ -735,6 +760,22 @@
     "parts": [
       "p10",
       "p5"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "Remittance",
+    "definition": "The payer's statement to UMS of what it paid on a claim and what the patient owes. UMS invoices the patient from it — [[§10-12.4]]",
+    "parts": [
+      "p10"
+    ],
+    "class": "manual"
+  },
+  {
+    "term": "RR",
+    "definition": "Billing modifier: the item is billed as a **rental**. Shown on the Claim Prep tab — [[§10-19.5]]",
+    "parts": [
+      "p10"
     ],
     "class": "manual"
   },
@@ -1182,6 +1223,14 @@
       "p2",
       "p5",
       "p3"
+    ],
+    "class": "system"
+  },
+  {
+    "term": "UMS App",
+    "definition": "The order system (CRM) — where transactions, notes, tickets and the patient's account live",
+    "parts": [
+      "p0"
     ],
     "class": "system"
   },

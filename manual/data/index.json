@@ -1,0 +1,13 @@
+{
+  "_about": "Curated index terms (manual-update Phase 5, item 403). 'extra' adds terms the index would not otherwise list — the email update types and note statuses a CSR types or reads — each indexed wherever the text uses it, like any other entry. A term the text never uses gets no entry.",
+  "extra": [
+    "Re-open Request",
+    "Authorization Decision",
+    "Complaint",
+    "Escalation",
+    "OOP Purchase",
+    "Repeat Resupply",
+    "Spanish Callback",
+    "Trying to Obtain After Visit Documents"
+  ]
+}

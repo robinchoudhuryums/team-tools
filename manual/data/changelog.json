@@ -1,6 +1,24 @@
 [
   {
     "date": "2026-10-07",
+    "part": "appx_b",
+    "section": "§B-1",
+    "summary": "Directory consolidated: each department's queue now sits on its manager's or supervisor's row (Sales, Field Operations, Service, Manual Mobility, Respiratory & Resupply); new Power Manager (Rajdeep Thakar) as backup across Power; Service under the Field Operations Manager; the Manual Mobility Manager, Power — PAK Team and updated backups; A–Z, with one How to reach column.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 — Phase 5 (list lines 360–383; decisions 49–53)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p0",
+    "section": "§0-11.3",
+    "summary": "Any email carrying protected information outside the company must be sent with Virtru encryption enabled.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 — Phase 5 (list line 359)"
+  },
+  {
+    "date": "2026-10-07",
     "part": "p3",
     "section": "§3-7.1",
     "summary": "APAP bills as E0601, the CPAP code, so E0601 documentation covers either; the Luna G3 X APAP works as a CPAP or an APAP.",
