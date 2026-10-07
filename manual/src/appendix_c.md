@@ -138,7 +138,7 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 - The **PRF** is signed at delivery and covers the 13-month billing. Check *Order Artifacts* before conceding that call
 
 ### Relocation
-- Hospital beds: Dallas, San Antonio, Hawaii only, within the same area, rental only, **$150**, supervisor verification
+- Hospital beds: Dallas, San Antonio, Hawaii only, within the same area, rental only, **$150** — a Field Ops or Service supervisor approves; route the call to Service
 
 **Never** — promise a pick-up · quote a tracking date as a service date
 
@@ -160,11 +160,11 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 - One question — does the change need MDO documentation? **No** → Service ticket. **Yes** → pick-up ticket **plus an email** to the intake team, coordinated so the patient isn't left without equipment
 
 ### Replacement
-- **Lost or stolen** → a **police report** is required to start a replacement request. It's the entry requirement, not the outcome
-- **Referrals out** only when we cannot repair through insurance **and** the patient refuses to pay OOP
+- **Lost or stolen** → a **police report** starts a replacement request — the entry requirement, not the outcome. A **package** shown delivered but never received → Service's FedEx claim, no report
+- **We can't service it** → a local DME repair service, in network for insurance to pay
 
 ### Visits and loaners
-- **Diagnostic visit:** **$75** if the patient hasn't sent photos or video of the equipment and the issue, or a recent visit found no issue — say so before booking
+- **Diagnostic visit:** **$75** if the patient refuses photos or video of the issue, or a technician recently found it working — say so before booking
 - **Don't raise loaners.** If asked: possible only while **patient-owned** equipment is repaired, and Service confirms
 
 ### Ventilators

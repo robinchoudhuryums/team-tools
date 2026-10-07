@@ -1,6 +1,60 @@
 [
   {
     "date": "2026-10-07",
+    "part": "p5",
+    "section": "§5-3",
+    "summary": "A patient calling back about a scheduling message: never confirm the date yourself — transfer to Field Ops so they schedule against current availability.",
+    "authority": "Field Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 199)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p5",
+    "section": "§5-9.1",
+    "summary": "Before an SOS-affecting pick-up, tell the patient they will likely struggle to get similar equipment through insurance for five years. Patient-owned equipment is never picked up, even on request.",
+    "authority": "Field Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 219)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p5",
+    "section": "§5-10",
+    "summary": "Hospital bed relocation: a Field Ops or Service supervisor approves, and the call routes to Service.",
+    "authority": "Field Operations",
+    "retraining": false,
+    "provenance": "Operator manual update 2026-10-06 (list lines 222, 249)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p6",
+    "section": "§6-2",
+    "summary": "A package the carrier shows as delivered that the patient never received goes to Service, which opens a lost-package claim with FedEx — no police report. Insurance-rep complaints about a service refusal go to the Service Supervisor.",
+    "authority": "Service",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list lines 235–236; decisions 18, 28)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p6",
+    "section": "§6-3.2",
+    "summary": "A diagnostic visit is charged when the patient refuses the requested photos or video, or a technician recently found the equipment working and it is again fully functional.",
+    "authority": "Service",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 242; decision 17 — the $75 stands until confirmed)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p6",
+    "section": "§6-15",
+    "summary": "Competitor PMD referrals removed. A patient we can't service is pointed to a local DME repair service, which must be enrolled with or in network for the plan for insurance to pay.",
+    "authority": "Service",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list lines 258–259; decision 21)"
+  },
+  {
+    "date": "2026-10-07",
     "part": "p4",
     "section": "§4-7.2",
     "summary": "PAR responses: email Power with \"PAR Response Received:\"; requests for more information go to the Authorization (PAR) team, subject \"PAR Additional Info Requested:\". Some PARs are a dual submission to traditional Medicare and the MA plan.",
