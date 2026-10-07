@@ -1,6 +1,60 @@
 [
   {
     "date": "2026-10-07",
+    "part": "p2",
+    "section": "§2-2.1",
+    "summary": "A walker on an insurance order isn't shipped out of state; an out-of-pocket order lifts the state limit, but never a delivery radius.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (list line 70)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p2",
+    "section": "§2-4.2",
+    "summary": "No cutoff for a wheelchair size change: before delivery the Manual Mobility team acts on it; after delivery, Service or a pick-up-ticket swap.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (decision 42)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p3",
+    "section": "§3-3.1",
+    "summary": "A same-items resupply goes to the Resupply team on the email tool's Repeat Resupply form, subject \"[Category] [Month] Resupply: [Patient name], DOB: [date]\".",
+    "authority": "Respiratory & Resupply",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (decision 41)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p3",
+    "section": "§3-10",
+    "summary": "Ventilator issue: Service Q first; if no answer, email respiratory@ and service@ and notify an RT.",
+    "authority": "Respiratory & Resupply",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (decision 40)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p3",
+    "section": "§3-12.1",
+    "summary": "Compliance has a grace period of about one month after a lapse; persistent non-compliance — more than a month past it, after several notices — may lead to a pick-up. Compliance is noted with an end date.",
+    "authority": "Respiratory & Resupply",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (decisions 13, 14)"
+  },
+  {
+    "date": "2026-10-07",
+    "part": "p3",
+    "section": "§3-2",
+    "summary": "Respiratory machine pick-ups: create the ticket; Field Ops reviews every pick-up ticket and decides whether more is needed. No discontinue prescription is needed to create it.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator manual update 2026-10-06 (A0 note 2)"
+  },
+  {
+    "date": "2026-10-07",
     "part": "p0",
     "section": "§0-14",
     "summary": "Outbound calls: open \"on a recorded line\", make at least two attempts using another caller ID, and leave no patient details on a voicemail.",

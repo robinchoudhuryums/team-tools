@@ -209,7 +209,7 @@ def expand(m):
         return "\n".join(out)
     if spec == "fees":
         rows = [f for f in FEES if f.get("intake_amount")]
-        out = ["| Upgrade | HCPCS | Intake Fee | Field Ops Fee |", "|---|---|---|---|"]
+        out = ["| Common Upgrades | HCPCS | Intake Fee | Field Ops Fee |", "|---|---|---|---|"]
         for f in rows:
             e = BY_ID.get(f["equipment_id"], {})
             out.append(f"| {f['label']} | {' / '.join(e.get('hcpcs', []))} | "

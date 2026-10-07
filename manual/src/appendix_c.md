@@ -68,10 +68,10 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 - **251–300 lbs → K0006**, the Medline K3 Guardian 20". The extra-wide chairs are K0007 and need **over 300**
 
 ### Delivery
-- **OOR = outside the delivery radius**, which varies by item. For walkers, out of state **is** out of range
+- **OOR = outside the delivery radius**, which varies by item. For a walker on an insurance order, out of state **is** out of range; out of pocket, only the radius applies
 
 ### Codes
-- **E0143** is the front-wheeled walker *and* the basic rollator. **E0149** is the bariatric walker *and* the heavy-duty rollator
+- **E0143** is the front-wheeled walker *and* the basic rollator. **E0149** is the bariatric walker *and* the heavy-duty rollator. **E0265** covers both fully-electric beds; **E0635** both battery lifts
 
 ### Coverage
 - **Bathroom items differ** — 3-in-1 commode can be covered by Medicare; shower chair and tub bench are TX Medicaid only; raised toilet seat is OOP only
@@ -88,13 +88,13 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 ### PAP compliance
 - ≥ 4 hours a night on **70% of nights** in any consecutive **30-day** period inside the first 90
 - **And** a face-to-face re-evaluation **between day 31 and day 91** — where coverage is most often lost
-- Failing the trial needs a new evaluation **and** a repeat facility-based sleep test
+- Failing the trial (Medicare and MA) needs a new evaluation **and** a repeat sleep study in a lab — a home test doesn't count. Medicaid and commercial plans differ
 
 ### Coverage
 - **Incontinence is not a Medicare benefit** — TX Medicaid only, TMHP allowances
 
 ### Priority
-- **Ventilator issues are the highest priority in the manual**
+- **Ventilator issues are the highest priority in the manual** — Service Q; if no answer, email respiratory@ and service@ and notify an RT
 - Oxygen has its own card — [[§C-7]]
 
 <!--card:p4-->
@@ -167,11 +167,14 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 - **Diagnostic visit:** **$75** if the patient hasn't sent photos or video of the equipment and the issue, or a recent visit found no issue — say so before booking
 - **Don't raise loaners.** If asked: possible only while **patient-owned** equipment is repaired, and Service confirms
 
+### Ventilators
+- **Service Q** first. If no answer, email respiratory@ and service@ and notify an RT — [[§6-5.1]]
+
 ### Timing and notes
 - **Turnaround:** days for small issues, weeks if parts come from the manufacturer
 - `(For internal use only)` notes are **not relayed** — a tracking number may be shipping to a warehouse
 
-**Never** — promise a loaner · quote a repair cost · charge for a trip during a repair
+**Never** — promise a loaner · quote a repair cost
 
 <!--card:p7-->
 ## §C-7 Oxygen

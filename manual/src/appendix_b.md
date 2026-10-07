@@ -43,4 +43,4 @@ These roles have a single holder and no documented backup. If that person is una
 
 > **Watch-out** — When one of these roles is unavailable, don't commit a caller to a timeline. Email the department queue and tell the caller we'll follow up.
 
-The three Resupply category owners change relatively often. Check this directory rather than relying on a name from a previous call.
+The three Resupply category owners are listed above. Also check the notes, to see who has been handling the patient's order.

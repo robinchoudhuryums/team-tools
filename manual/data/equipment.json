@@ -980,7 +980,7 @@
     "seat": null,
     "specs": [],
     "allowance": null,
-    "notes": "Short-term use for lower leg injury recovery. Out-of-pocket only, except where the patient is covered through VGM Homelink.",
+    "notes": "Short-term use for lower leg injury recovery. Out-of-pocket only ($199), except where the patient is covered through VGM Homelink.",
     "source": "MM p.16",
     "images": [
       "mm/image1.jpg"
@@ -1015,7 +1015,7 @@
   },
   {
     "id": "lift-medline-battery",
-    "name": "Medline Battery-Powered Lift",
+    "name": "Medline Battery-Powered Lift (MDS450EL)",
     "part": "p2",
     "category": "patient-lift",
     "hcpcs": [
@@ -1054,7 +1054,9 @@
     "allowance": null,
     "notes": null,
     "source": "MM p.17",
-    "images": [],
+    "images": [
+      "mm/image33.jpg"
+    ],
     "verified": "2026-03-01",
     "flags": [],
     "billing_type": "capped-rental"
@@ -1148,7 +1150,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "2 per month, in addition to the administration set",
+    "allowance": "2 / month, in addition to the administration set",
     "notes": null,
     "source": "MM p.18",
     "images": [],
@@ -1171,7 +1173,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "2 per month",
+    "allowance": "2 / month",
     "notes": null,
     "source": "MM p.18",
     "images": [],
@@ -1194,7 +1196,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "2 per month",
+    "allowance": "2 / month",
     "notes": null,
     "source": "MM p.18",
     "images": [],
@@ -1217,7 +1219,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "1 per month",
+    "allowance": "1 / month",
     "notes": null,
     "source": "MM p.18",
     "images": [],
@@ -1240,7 +1242,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "2 per month",
+    "allowance": "2 / month",
     "notes": null,
     "source": "MM p.18",
     "images": [],
@@ -2242,7 +2244,7 @@
         "value": "5 mL bullet"
       }
     ],
-    "allowance": "100 per month",
+    "allowance": "100 / month",
     "notes": null,
     "source": "RR p.8",
     "images": [
@@ -2270,7 +2272,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "4 per month",
+    "allowance": "4 / month",
     "notes": null,
     "source": "RR p.8",
     "images": [
@@ -2297,7 +2299,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "12 per month",
+    "allowance": "12 / month",
     "notes": null,
     "source": "RR p.8",
     "images": [
@@ -2324,7 +2326,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "90 per month",
+    "allowance": "90 / month",
     "notes": null,
     "source": "RR p.8",
     "images": [],
@@ -2349,7 +2351,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "1 per 3 months",
+    "allowance": "1 / 3 months",
     "notes": null,
     "source": "RR p.9",
     "images": [
@@ -2376,7 +2378,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "31 per month",
+    "allowance": "31 / month",
     "notes": null,
     "source": "RR p.9",
     "images": [
@@ -2403,7 +2405,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "62 per month",
+    "allowance": "62 / month",
     "notes": null,
     "source": "RR p.9",
     "images": [
@@ -2431,7 +2433,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "31 per month",
+    "allowance": "31 / month",
     "notes": null,
     "source": "RR p.9",
     "images": [
@@ -2458,7 +2460,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "1 per month",
+    "allowance": "1 / month",
     "notes": null,
     "source": "RR p.9",
     "images": [
@@ -2485,7 +2487,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "62 per month",
+    "allowance": "62 / month",
     "notes": null,
     "source": "RR p.9",
     "images": [
@@ -2544,7 +2546,7 @@
         "value": "Petite, S, M, L"
       }
     ],
-    "allowance": "1 per 3 months",
+    "allowance": "1 / 3 months",
     "notes": null,
     "source": "RR p.13",
     "images": [
@@ -2576,7 +2578,7 @@
         "value": "Petite, S, M, L"
       }
     ],
-    "allowance": "1 per month",
+    "allowance": "1 / month",
     "notes": null,
     "source": "RR p.13",
     "images": [
@@ -2603,7 +2605,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "2 per month",
+    "allowance": "2 / month",
     "notes": null,
     "source": "RR p.13",
     "images": [
@@ -2630,7 +2632,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "2 per month",
+    "allowance": "2 / month",
     "notes": null,
     "source": "RR p.13",
     "images": [
@@ -2657,7 +2659,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "1 per 3 months",
+    "allowance": "1 / 3 months",
     "notes": null,
     "source": "RR p.13",
     "images": [
@@ -2684,7 +2686,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "1 per 6 months",
+    "allowance": "1 / 6 months",
     "notes": null,
     "source": "RR p.13",
     "images": [
@@ -2711,7 +2713,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "1 per 6 months",
+    "allowance": "1 / 6 months",
     "notes": null,
     "source": "RR p.13",
     "images": [
@@ -2743,7 +2745,7 @@
         "value": "2 ft, 4 ft, 6 ft, 8 ft, 10 ft"
       }
     ],
-    "allowance": "1 per 3 months",
+    "allowance": "1 / 3 months",
     "notes": null,
     "source": "RR p.14",
     "images": [
@@ -2770,7 +2772,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "2 per month",
+    "allowance": "2 / month",
     "notes": null,
     "source": "RR p.14",
     "images": [
@@ -2797,7 +2799,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "1 per 6 months",
+    "allowance": "1 / 6 months",
     "notes": null,
     "source": "RR p.14",
     "images": [
@@ -2824,7 +2826,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "1 per 6 months",
+    "allowance": "1 / 6 months",
     "notes": null,
     "source": "RR p.14",
     "images": [
@@ -2883,7 +2885,7 @@
         "value": "S, M, L"
       }
     ],
-    "allowance": "35 per month",
+    "allowance": "35 / month",
     "notes": null,
     "source": "RR p.16",
     "images": [
@@ -2911,7 +2913,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "200 per month",
+    "allowance": "200 / month",
     "notes": null,
     "source": "RR p.16",
     "images": [
@@ -2938,7 +2940,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "200 per month",
+    "allowance": "200 / month",
     "notes": null,
     "source": "RR p.16",
     "images": [
@@ -2965,7 +2967,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "200 per month",
+    "allowance": "200 / month",
     "notes": null,
     "source": "RR p.16",
     "images": [
@@ -2992,7 +2994,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "2 per month",
+    "allowance": "2 / month",
     "notes": null,
     "source": "RR p.17",
     "images": [
@@ -3019,7 +3021,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "2 per month",
+    "allowance": "2 / month",
     "notes": null,
     "source": "RR p.17",
     "images": [
@@ -3051,7 +3053,7 @@
         "value": "100 wipes per package"
       }
     ],
-    "allowance": "2 packs per month",
+    "allowance": "2 packs / month",
     "notes": null,
     "source": "RR p.15",
     "images": [
@@ -3084,7 +3086,7 @@
         "value": "23\"×36\", 30\"×30\", 30\"×36\", 36\"×36\". Also called chux/chucks"
       }
     ],
-    "allowance": "120 per month",
+    "allowance": "120 / month",
     "notes": null,
     "source": "RR p.15",
     "images": [
@@ -3117,7 +3119,7 @@
         "value": "S (22–36\"), M (32–44\"), L (45–58\"), XL (58–64\"), XXL (63–69\"). XXL is T4524"
       }
     ],
-    "allowance": "240 per month",
+    "allowance": "240 / month",
     "notes": null,
     "source": "RR p.15",
     "images": [
@@ -3150,7 +3152,7 @@
         "value": "Same size chart as briefs. XXL is T4544"
       }
     ],
-    "allowance": "240 per month",
+    "allowance": "240 / month",
     "notes": null,
     "source": "RR p.15",
     "images": [
@@ -3183,7 +3185,7 @@
         "value": "Size 5.5\" × 9\"–15\""
       }
     ],
-    "allowance": "240 per month",
+    "allowance": "240 / month",
     "notes": null,
     "source": "RR p.15",
     "images": [
@@ -3435,7 +3437,7 @@
       }
     ],
     "allowance": null,
-    "notes": "Simulates a cough to clear mucus. Used by patients with neuromuscular disorders or weakened respiratory muscles. Service requests route through the Service Q.",
+    "notes": "Simulates a cough to clear mucus. Used by patients with neuromuscular disorders or weakened respiratory muscles.",
     "source": "RR p.18",
     "images": [
       "rr/image31.jpg"
@@ -3515,7 +3517,7 @@
       }
     ],
     "allowance": null,
-    "notes": "Highest priority equipment. Cannot be picked up without a discontinue prescription from the MDO.",
+    "notes": "Highest priority equipment. Pick-up: create the ticket; Field Ops reviews it and decides whether anything more is needed.",
     "source": "RR p.19",
     "images": [
       "rr/image21.jpg"
@@ -3615,7 +3617,7 @@
     "seat": null,
     "specs": [],
     "allowance": null,
-    "notes": "Considered outdated. No new units provided; existing patients still serviced. Cannot be picked up without a discontinue prescription from the MDO.",
+    "notes": "Considered outdated. No new units provided; existing patients still serviced. Pick-up: create the ticket; Field Ops reviews it and decides whether anything more is needed.",
     "source": "RR p.20",
     "images": [
       "rr/image20.jpg"
@@ -3670,7 +3672,7 @@
         "value": "Length varies by machine model"
       }
     ],
-    "allowance": "1 per 3 months",
+    "allowance": "1 / 3 months",
     "notes": null,
     "source": "Billing & Insurance v2.0 §19",
     "images": [],
@@ -3765,7 +3767,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "4 per month",
+    "allowance": "4 / month",
     "notes": "Supplied in packs of 4, each including 7 ft tubing. Patients do not need to request 7 ft tubing separately. Included in the monthly oxygen rental payment during the 36-month period — no separate charge to the patient.",
     "source": "Oxygen guide",
     "images": [],
@@ -3790,7 +3792,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "2 per month",
+    "allowance": "2 / month",
     "notes": "Request separately from cannulas. Can be cut to a shorter custom length on request. Included in the monthly oxygen rental payment during the 36-month period — no separate charge to the patient.",
     "source": "Oxygen guide",
     "images": [],
@@ -3815,7 +3817,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "1 per month",
+    "allowance": "1 / month",
     "notes": "Maximum tubing length is 50 ft. Tubing must not be cut and spliced. Included in the monthly oxygen rental payment during the 36-month period — no separate charge to the patient.",
     "source": "Oxygen guide",
     "images": [],
@@ -3838,7 +3840,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "2–3 per month",
+    "allowance": "2–3 / month",
     "notes": "Included in the monthly oxygen rental payment during the 36-month period — no separate charge to the patient.",
     "source": "Oxygen guide",
     "images": [],
@@ -3861,7 +3863,7 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "2 per month",
+    "allowance": "2 / month",
     "notes": "Included in the monthly oxygen rental payment during the 36-month period — no separate charge to the patient.",
     "source": "Oxygen guide",
     "images": [],
@@ -3991,5 +3993,27 @@
     "verified": "2026-09-25",
     "billing_type": "capped-rental",
     "flags": []
+  },
+  {
+    "id": "heel-protector-e0191",
+    "name": "Heel Protector",
+    "part": "p2",
+    "category": "other-medical-device",
+    "hcpcs": [
+      "E0191"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": null,
+    "notes": "Out-of-pocket $9.76 for 2 units.",
+    "source": "Operator, 2026-10-06 (list line 94)",
+    "images": [],
+    "verified": "2026-10-06",
+    "flags": [],
+    "billing_type": null
   }
 ]

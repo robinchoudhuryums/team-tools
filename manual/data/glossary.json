@@ -153,6 +153,14 @@
     "class": "manual"
   },
   {
+    "term": "DOB",
+    "definition": "Date of birth — as written in email subjects, e.g. the Repeat Resupply format",
+    "parts": [
+      "p3"
+    ],
+    "class": "manual"
+  },
+  {
     "term": "DOS",
     "definition": "Date of Service",
     "parts": [
