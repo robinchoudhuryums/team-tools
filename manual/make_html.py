@@ -991,6 +991,9 @@ table.steps tbody tr:not(:last-child) td:first-child::after{content:"\2193";posi
 :root[data-theme="dark"]{--ok-bg:#12271B;--ok-ink:#7FCFA0;--no-bg:#2C1512;--no-ink:#F29E95}
 table.dodont th.ok{color:var(--ok-ink);border-bottom-color:var(--ok-ink)}
 table.dodont th.no{color:var(--no-ink);border-bottom-color:var(--no-ink)}
+/* a wider do/don't table is a matrix, whose header is navy: there the column's own tint carries the header */
+table.matrix.dodont th.ok{background:var(--ok-bg);color:var(--ok-ink)}
+table.matrix.dodont th.no{background:var(--no-bg);color:var(--no-ink)}
 table.dodont td.ok{background:var(--ok-bg)}
 table.dodont td.no{background:var(--no-bg)}
 table.dodont tbody tr:hover td{filter:brightness(.97)}

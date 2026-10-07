@@ -8,6 +8,8 @@
   .dg-ti{font:600 12px 'IBM Plex Sans',sans-serif;fill:var(--navy)}
   .dg-s{font:400 10.5px 'IBM Plex Sans',sans-serif;fill:var(--muted)}
   .dg-sec{font:600 10px 'IBM Plex Sans',sans-serif;fill:var(--accent)}
+  .dg-so{font:400 10.5px 'IBM Plex Sans',sans-serif;fill:var(--bg);opacity:.88}
+  .dg-seco{font:700 10px 'IBM Plex Sans',sans-serif;fill:var(--bg);text-decoration:underline}
   .dg-arr{stroke:var(--muted);stroke-width:1.5;fill:none;marker-end:url(#mkm3pick)}
   .dg-arr-d{stroke:var(--muted);stroke-width:1.5;fill:none;stroke-dasharray:4 3;
     marker-end:url(#mkm3pick)}

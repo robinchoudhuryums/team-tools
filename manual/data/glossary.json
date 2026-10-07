@@ -476,7 +476,7 @@
   },
   {
     "term": "OOP",
-    "definition": "Out of Pocket. Pricing is in the Item Master; add sales tax unless the item is prescription",
+    "definition": "Out of Pocket. Pricing is in the Item Master; no sales tax unless otherwise stated — most of what we sell is exempt",
     "parts": [
       "p0",
       "p10",

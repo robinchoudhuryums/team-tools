@@ -28,6 +28,8 @@ CSS = """
   .dg-ti{font:600 12px 'IBM Plex Sans',sans-serif;fill:var(--navy)}
   .dg-s{font:400 10.5px 'IBM Plex Sans',sans-serif;fill:var(--muted)}
   .dg-sec{font:600 10px 'IBM Plex Sans',sans-serif;fill:var(--accent)}
+  .dg-so{font:400 10.5px 'IBM Plex Sans',sans-serif;fill:var(--bg);opacity:.88}
+  .dg-seco{font:700 10px 'IBM Plex Sans',sans-serif;fill:var(--bg);text-decoration:underline}
   .dg-arr{stroke:var(--muted);stroke-width:1.5;fill:none;marker-end:url(#MKID)}
   .dg-arr-d{stroke:var(--muted);stroke-width:1.5;fill:none;stroke-dasharray:4 3;
     marker-end:url(#MKID)}
@@ -49,14 +51,14 @@ def box(x, y, w, h, title, sub, sec, colour, light=False):
     for i, line in enumerate(title.split("|")):
         out.append(f'<text class="{tcls}" x="{x+10}" y="{ty+i*14}">{line}</text>')
     if sub:
-        out.append(f'<text class="dg-s" x="{x+10}" y="{y+h-18}">{sub}</text>')
+        out.append(f'<text class="{"dg-s" if light else "dg-so"}" x="{x+10}" y="{y+h-18}">{sub}</text>')
     if sec:
-        out.append(f'<text class="dg-sec" x="{x+10}" y="{y+h-6}">{sec}</text>')
+        out.append(f'<text class="{"dg-sec" if light else "dg-seco"}" x="{x+10}" y="{y+h-6}">{sec}</text>')
     return "".join(out)
 
 
 # ---------------------------------------------------------------- lifecycle --
-W, H = 1160, 470
+W, H = 1160, 392
 p = [f'<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" '
      f'role="img" aria-label="Order lifecycle across departments">'
      f'{MARK.replace("MKID","mkL")}<style>{CSS.replace("MKID","mkL")}</style>']
@@ -109,19 +111,14 @@ for i, (t, s_, sec) in enumerate(power):
     if i < 3:
         p.append(f'<path class="dg-arr" d="M{x+108} 238 H{x+118}"/>')
     x += 118
-p.append(box(494, 292, 226, 72, "Order Verification", "Model, seat, joystick, color", "§4-8", "--p4"))
-p.append('<path class="dg-arr-d" d="M607 274 V292"/>')
-p.append('<path class="dg-arr" d="M720 328 H964 V238 H974"/>')
+p.append(box(848, 292, 108, 72, "Order|Verification", "Model and options", "§4-8", "--p4"))
+p.append('<path d="M902 274 V292" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 3"/>')
+p.append('<path class="dg-arr" d="M956 238 H974"/>')
+p.append('<path class="dg-arr" d="M956 328 H965 V256 H974"/>')
 p.append(box(974, 202, 172, 72, "Field Ops-Power", "Manufacturer, then delivery", "§4-9", "--p5"))
 p.append(box(974, 292, 172, 72, "Service", "Repairs, adjustments", "§6-1", "--p6"))
 p.append('<path class="dg-arr" d="M1060 274 V292"/>')
 
-p.append('<rect class="dg-lane" x="0" y="396" width="1160" height="62" rx="5"/>')
-p.append('<rect class="dg-lane-b" x="0" y="396" width="1160" height="62" rx="5"/>')
-p.append('<text class="dg-lbl" x="12" y="416">Running underneath every stage</text>')
-p.append(box(12, 420, 368, 30, "Billing &amp; Insurance — Part 10", "", "", "--p10", light=True))
-p.append(box(392, 420, 368, 30, "Call Handling — Part 1", "", "", "--p1", light=True))
-p.append(box(772, 420, 374, 30, "Compliance — §3-12", "", "", "--navy", light=True))
 p.append("</svg>")
 open("diagrams/lifecycle.svg", "w").write(_dn("".join(p)))
 

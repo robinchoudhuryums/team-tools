@@ -9,7 +9,7 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 ## §C-0 Core
 
 ### Identity
-- Match **name and date of birth** before discussing any account — [[§10-23]]
+- Match **name and date of birth** before discussing any account — [[§1-3]]
 
 ### Coverage
 - If the primary denies an item, a secondary **generally can't** cover the full cost — **except Texas Medicaid**, for items Medicare never covers
@@ -21,8 +21,11 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 
 | Notate | Transfer | Email |
 |---|---|---|
-| You answered it fully | Caller needs a specialist now | Specialist unavailable and it can wait |
+| You answered it fully | Caller needs a specialist now | Specialist unavailable, or not urgent or same-day |
 | Demographic or insurance updates | Complex billing, compliance | Re-opens; OOP purchases you've completed |
+
+### Outbound calls
+- Open with your name, UniversalMed Supply and **"on a recorded line"** · at least **two attempts**, the second from another caller ID · **no patient details on a voicemail** — [[§0-14]]
 
 ### Where to look
 - `Eligibility` — whose order it is · `Ticket` — when it's coming · `Pat. Resp.` — what they owe
@@ -44,7 +47,7 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 - **Medicare or 1-800-MEDICARE with a complaint** → straight to a supervisor. Don't try to resolve it
 
 ### Complaints
-- A complaint record needs **six fields** — name, address, phone, health insurance claim number, summary, actions taken
+- A complaint record needs **five fields** — name, address, phone, summary, actions taken
 - Acknowledge within **48 hours**
 
 ### Conduct
@@ -52,7 +55,8 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 
 ### Language
 - **Inbound:** Spanish Q, then voicemail
-- **Outbound:** ask for a translator present, then Spanish Q, then email. The email is required **outbound only**
+- **Outbound:** ask the patient whether someone with them can translate, then Spanish Q, then email. The email is required **outbound only**
+- Never transfer to a Spanish-speaking agent directly — it isn't queued or tracked
 
 **Never say** — "your insurance will cover this" · "you'll only owe $X" · "I can waive that" · "you'll own the oxygen after 36 months" · "we take UHC"
 
@@ -160,7 +164,7 @@ In a standalone extract, only the cards for Part 0, Part 1 and that part are inc
 - **Referrals out** only when we cannot repair through insurance **and** the patient refuses to pay OOP
 
 ### Visits and loaners
-- **No trip charge during a repair.** A diagnostic-only visit that finds nothing wrong is **$75** — say so before booking
+- **Diagnostic visit:** **$75** if the patient hasn't sent photos or video of the equipment and the issue, or a recent visit found no issue — say so before booking
 - **Don't raise loaners.** If asked: possible only while **patient-owned** equipment is repaired, and Service confirms
 
 ### Timing and notes
