@@ -14,7 +14,7 @@ P2 | packets/spec.json | plan 2.3 Add + Opt, each rewritten so its ask is in its
 TEST RESULTS: Test Command `manual`; no Regression Scenario covers the build date, the equipment notes or the packets. Ran: manual make_all.sh ERRORS 0 / WARNINGS 25 (unchanged), diagram partial unchanged; export writes "built": "10/08/2026"; HTML sidebar "built 10/08/2026"; make_packets.sh 10 packets, no MISSING, every ~filter matches ≥1 row (one bad filter, 7.2~"delivered but", caught and fixed to "never arrived"). Pure 1252/0 (M2-E1 re-pinned), DOM 223/0, lint:server ok, counts --check ok.
 REGRESSION RISKS: built_date() shells out to git — in a tree with uncommitted content edits the date is today (intended); a shallow clone deeper than the last content change returns the shallow boundary's date (acceptable). make_html.py replaces "__BUILT__" across the whole page (no manual text contains it).
 INVARIANTS AT RISK: None (web-app/ untouched; the app's importer reads "built" into ManualMeta only)
-NET SCORE: 5 − 0 = 5 (A1 the stale date in every artifact; A2 a wrong patient-cost statement in 8.4; A3 a missing route for real callers; A4 wording — counted as defensive, so 4 production; P2 the packets the operator approved going out) → 4 production + P2 = 5
+NET SCORE: 4 − 0 = 4 (production: A1 the stale date on every artifact, A2 a wrong patient-cost statement in 8.4, A3 a missing route for real callers, P2 the approved packets; A4 is wording — defensive)
 
 OPERATOR ACTIONS / DEPLOY:
 - Review the 10 Word packets; send them to departments only after F1 lands | BLOCKS DEPLOY: N
