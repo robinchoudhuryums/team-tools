@@ -46,7 +46,7 @@ Requires Python 3 with Playwright (Chromium) and Pillow, and Node with the `docx
 ./make_packets.sh    # review packets (Markdown + Word); run after make_all.sh — packet_diagrams.py screenshots the built HTML's diagrams (Python Playwright)
 ```
 
-Output goes to `$MANUAL_OUT` (default `./dist`). The packets are `review-packets/Review-Packet-C<N>-<Name>.md` and `review-packets/word/Review-Packet-C<N>-<Name>.docx`; a reported MISSING names a section or directory row that a question quotes but the manual no longer has. A PDF of the Word manual is made and checked for blank pages only where LibreOffice works; otherwise export it from Word or Google Docs and check it by eye. `out/` holds intermediate Markdown. Both are git-ignored.
+Output goes to `$MANUAL_OUT` (default `./dist`). The packets are `review-packets/Review-Packet-C<N>-<Name>.md` and `review-packets/word/Review-Packet-C<N>-<Name>.docx`; a reported MISSING names a section or directory row that a question quotes but the manual no longer has. The full manual's Word file opens with a cover and a contents list linked to every chapter and section — Word fills its page numbers when the file opens (answer **Yes** to updating fields) — and every diagram prints on a landscape page of its own. Its headings carry outline levels, so a PDF saved from Word (Save as PDF → Options → *Create bookmarks using: Headings*) has bookmarks. A PDF of the Word manual is made and checked for blank pages only where LibreOffice works; otherwise export it from Word or Google Docs and check it by eye. `out/` holds intermediate Markdown. Both are git-ignored.
 
 ## Reference articles (team-tools)
 

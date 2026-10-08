@@ -34996,6 +34996,23 @@ test('MC-1 (change list 2026-10-08 C): the Word print copy — numbered lists re
   assert.ok(!/"_[A-Z{][^"\n]*_\\n/.test(bd) && !/return "_No/.test(bd), 'no _italic_ in the generated appendices (Word does not read it)');
 });
 
+test('MC-2 (change list 2026-10-08 C8 + A6): every diagram prints on its own landscape page, and the full manual opens with a cover and a linked contents list over headings that carry outline levels', () => {
+  const rx = MP1_('render_docx.js'), mm = MP1_('md2model.py');
+  // C8: a diagram opens a landscape section and the text resumes in a portrait one
+  const diag = rx.slice(rx.indexOf("} else if (b.k === 'diagram') {"), rx.indexOf("const doc = new Document({"));
+  assert.ok(/openSection\(true\);[\s\S]*?LAND_PX, LAND_PX_H[\s\S]*?openSection\(false\);/.test(diag), 'a diagram is its own landscape section, sized to the landscape page');
+  assert.ok(/orientation: s\.landscape \? PageOrientation\.LANDSCAPE : PageOrientation\.PORTRAIT/.test(rx) && /const LAND_PX = Math\.floor\(\(PAGE_H - MARGIN \* 2\) \/ 15\)/.test(rx), 'landscape is the page turned, not a wider portrait');
+  assert.ok(/const pb = b\.pb && !first && children\.length > 0;/.test(rx), 'a heading that opens a section adds no page break of its own (no blank page after a diagram)');
+  assert.ok(/position: s\.landscape \? PAGE_H - MARGIN \* 2 : CONTENT_W/.test(rx), 'the footer page number sits at the right edge on either orientation');
+  assert.ok(/sections: sections\.filter\(s => s\.children\.length\)/.test(rx), 'no empty section reaches the file');
+  // A6: cover + contents, full manual only
+  assert.ok(/FULL = os\.path\.basename\(SRC\)\.startswith\("CSR-Procedures-Manual-"\)/.test(mm) && /"full": FULL/.test(mm) && /"built": built_date\(\)/.test(mm), 'md2model marks the full manual and carries the version and build date');
+  assert.ok(/if \(meta\.full\) \{/.test(rx) && /openSection\(false, \{ cover: true \}\)/.test(rx) && /titlePage: !!s\.cover/.test(rx), 'only the full manual gets the cover, which has no running header');
+  assert.ok(/new InternalHyperlink\(\{ anchor: b\.bm/.test(rx) && /new PageReference\(b\.bm/.test(rx) && /features: meta\.full \? \{ updateFields: true \}/.test(rx), 'each contents line links to its heading, with a page number Word fills on open');
+  assert.ok(/b\.bm = 'x_ch_' \+ k/.test(rx), 'a chapter title gets a bookmark so the contents can link it');
+  assert.ok(/outlineLevel: 0,/.test(rx) && /outlineLevel: Math\.min\(b\.lvl - 1, 3\)/.test(rx), 'headings carry outline levels — the PDF bookmarks and the navigation pane');
+});
+
 test('MP1-6: department guides come from data/extracts.json — every guide a part, Billing in each by default, and a reference to a section a guide leaves out reads "(in the full manual)", never a dead link', () => {
   const bd = MP1_('build.py');
   const man = JSON.parse(MP1_('data/extracts.json'));

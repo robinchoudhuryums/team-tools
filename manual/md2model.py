@@ -14,12 +14,16 @@ import json, re, sys, os
 sys.path.insert(0, '.')
 from numbering import display as dnum
 import roles
+from built_date import built_date
 
 SRC, DST = sys.argv[1], sys.argv[2]
 raw = open(SRC).read()
 ROSTER = json.load(open("data/roster.json"))
 ROLE_BY_NAME = {r["role"]: r for r in ROSTER}
-OWNER = re.search(r'^OWNER = "([^"]+)"', open("build.py").read(), re.M).group(1)
+_BUILD = open("build.py").read()
+OWNER = re.search(r'^OWNER = "([^"]+)"', _BUILD, re.M).group(1)
+VERSION = re.search(r'^VERSION = "([^"]+)"', _BUILD, re.M).group(1)
+FULL = os.path.basename(SRC).startswith("CSR-Procedures-Manual-")   # the full manual gets a cover and contents (A6)
 
 
 def bookmark(anchor_id):
@@ -300,6 +304,7 @@ while i < len(lines):
         continue
     i += 1
 
-json.dump({"meta": {"owner": OWNER}, "blocks": blocks}, open(DST, "w"), ensure_ascii=False)
+json.dump({"meta": {"owner": OWNER, "version": VERSION, "built": built_date(), "full": FULL},
+           "blocks": blocks}, open(DST, "w"), ensure_ascii=False)
 from collections import Counter
 print(f"{len(blocks)} blocks:", dict(Counter(b['k'] for b in blocks)))

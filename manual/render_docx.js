@@ -6,7 +6,7 @@ const {
   Table, TableRow, TableCell, WidthType, ShadingType, BorderStyle, convertInchesToTwip,
   Header, Footer, PageNumber, TableOfContents, LevelFormat, PositionalTab,
   PositionalTabAlignment, PositionalTabLeader, ImageRun, ExternalHyperlink, InternalHyperlink,
-  Bookmark,
+  Bookmark, PageReference, PageOrientation, TabStopType, TabStopPosition, LeaderType,
 } = d;
 
 // ---------------------------------------------------------------- palette --
@@ -222,9 +222,21 @@ function calloutBlock(b) {
 }
 
 // ------------------------------------------------------------------ build --
-const children = [];
+// The document is a run of SECTIONS: portrait text, and a landscape page for each diagram, so
+// a diagram prints at the landscape width (~7.4 pt text) rather than shrunk into a portrait
+// column (~5 pt) — change list C8. A section break starts a page by itself, so a heading that
+// opens a section takes no page break of its own.
+const sections = [];
+let children = [];
+function openSection(landscape, extra) {
+  children = [];
+  sections.push(Object.assign({ landscape, children }, extra || {}));
+}
 let first = true;
 const blocks = model.blocks;
+const meta = model.meta || {};
+// every heading the contents lists needs a bookmark: a chapter title carries none of its own
+blocks.forEach((b, k) => { if (b.k === 'h' && b.lvl === 1 && !b.bm) b.bm = 'x_ch_' + k; });
 // a page-starting heading follows: no spacer, which could land alone on a page
 const breakNext = (k) => {
   let j = k + 1;
@@ -234,6 +246,53 @@ const breakNext = (k) => {
 };
 const spacer = () => new Paragraph({ text: '', spacing: { after: 120, line: 200 } });
 const CONTENT_PX = Math.floor(CONTENT_W / 15);   // twips -> px at 96 dpi
+const LAND_PX = Math.floor((PAGE_H - MARGIN * 2) / 15);              // a landscape page's width
+const LAND_PX_H = Math.floor((PAGE_W - MARGIN * 2 - 1100) / 15);     // and its height, less header and footer
+
+// ---- the cover and the contents (A6): the full manual only; a department guide opens on its banner
+if (meta.full) {
+  const accent = C.navy;
+  const coverKids = [
+    new Paragraph({ spacing: { before: 2600, after: 0 }, children: [] }),
+    new Paragraph({ children: [new TextRun({ text: 'UniversalMed Supply', bold: true, size: 28, color: C.accent })],
+                    spacing: { after: 120 } }),
+    new Paragraph({ children: [new TextRun({ text: 'CSR Procedures Manual', bold: true, size: 64, color: accent })],
+                    spacing: { after: 240 },
+                    border: { bottom: { style: BorderStyle.SINGLE, size: 18, color: accent, space: 12 } } }),
+    new Paragraph({ children: [new TextRun({ text: 'What a customer service representative needs to know, department by department',
+                                             size: 26, color: C.muted })], spacing: { after: 1600 } }),
+    new Paragraph({ children: [new TextRun({ text: 'Version ' + (meta.version || ''), bold: true, size: 22, color: C.ink }),
+                               new TextRun({ text: '   \u00b7   Built ' + (meta.built || ''), size: 22, color: C.ink })],
+                    spacing: { after: 80 } }),
+    new Paragraph({ children: [new TextRun({ text: 'Owner: ' + (meta.owner || ''), size: 22, color: C.ink })], spacing: { after: 80 } }),
+    new Paragraph({ children: [new TextRun({ text: 'Confidential \u2014 Internal Use Only', size: 20, color: C.muted })] }),
+  ];
+  openSection(false, { cover: true });
+  coverKids.forEach(p => children.push(p));
+  // a contents list linked to every chapter and section; Word fills the page numbers when the
+  // document opens (updateFields), and a PDF of it keeps the links
+  children.push(new Paragraph({ pageBreakBefore: true, spacing: { after: 240 },
+    children: [new TextRun({ text: 'Contents', bold: true, size: 40, color: accent })] }));
+  blocks.forEach(b => {
+    if (b.k !== 'h' || b.lvl > 2 || !b.bm) return;
+    let text = (b.runs || []).map(r => r.t || '').join('').trim();
+    if (!text) return;
+    if (b.lvl === 1 && text === 'CSR Procedures Manual') text = 'How to use this manual';   // the front matter, not the cover's title again
+    const top = b.lvl === 1;
+    children.push(new Paragraph({
+      tabStops: [{ type: TabStopType.RIGHT, position: CONTENT_W, leader: LeaderType.DOT }],
+      indent: { left: top ? 0 : 360 },
+      spacing: { before: top ? 160 : 0, after: top ? 60 : 20 },
+      keepNext: top,
+      children: [new InternalHyperlink({ anchor: b.bm, children: [new TextRun({ text, bold: top, size: top ? 21 : 19,
+                   color: top ? (C[b.part] || C.navy) : C.ink })] }),
+                 new TextRun({ text: '\t', size: 19 }),
+                 new PageReference(b.bm, { size: 19 })],
+    }));
+  });
+  first = false;
+}
+openSection(false);
 let listNo = 0;   // each numbered list is its own instance, so it restarts at 1 (C2)
 blocks.forEach((b, k) => {
   if (b.k === 'h') {
@@ -241,7 +300,7 @@ blocks.forEach((b, k) => {
     let kids = runs(b.runs, b.lvl === 1 ? { bold: true, size: 40, color: accent }
       : { bold: true, size: b.lvl === 2 ? 26 : 22, color: b.lvl === 2 ? C.navy : C.accent });
     if (b.bm) kids = [new Bookmark({ id: b.bm, children: kids })];
-    const pb = b.pb && !first;
+    const pb = b.pb && !first && children.length > 0;   // a fresh section already starts a page
     first = false;
     if (b.lvl === 1) {
       // a chapter's badge (rasterize_diagrams.py draws it) leads its title, as in the HTML
@@ -253,6 +312,7 @@ blocks.forEach((b, k) => {
       children.push(new Paragraph({
         children: kids,
         heading: HeadingLevel.HEADING_1,
+        outlineLevel: 0,   // the outline a PDF's bookmarks and Word's navigation pane are built from (A6)
         pageBreakBefore: pb,
         spacing: { before: 0, after: 200 },
         border: { bottom: { style: BorderStyle.SINGLE, size: 12, color: accent, space: 8 },
@@ -262,6 +322,7 @@ blocks.forEach((b, k) => {
       children.push(new Paragraph({
         children: kids,
         heading: b.lvl === 2 ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_3,
+        outlineLevel: Math.min(b.lvl - 1, 3),
         pageBreakBefore: pb,
         spacing: { before: pb ? 0 : (b.lvl === 2 ? 320 : 240), after: 100 },
         keepNext: true,
@@ -291,9 +352,12 @@ blocks.forEach((b, k) => {
   } else if (b.k === 'diagram') {
     const f = path.join('out', 'diagrams', (b.name || '') + '.png');
     if (b.name && fs.existsSync(f)) {
+      // its own landscape page (C8), then the text resumes on a portrait one
       const buf = fs.readFileSync(f);
-      children.push(new Paragraph({ children: [imageRun({ buf, type: 'png', size: imgSize(buf) }, CONTENT_PX, 860)],
-                                    alignment: AlignmentType.CENTER, spacing: { after: 160 } }));
+      openSection(true);
+      children.push(new Paragraph({ children: [imageRun({ buf, type: 'png', size: imgSize(buf) }, LAND_PX, LAND_PX_H)],
+                                    alignment: AlignmentType.CENTER, spacing: { after: 0 } }));
+      openSection(false);
     } else {
       children.push(new Paragraph({
         children: [new TextRun({ text: '[ Diagram — see the online manual ]', italics: true,
@@ -314,12 +378,16 @@ const doc = new Document({
                style: { paragraph: { indent: { left: 480, hanging: 360 } } } }],   // room for "10."
   }] },
   styles: { default: { document: { run: { font: 'Aptos', size: 20, color: C.ink } } } },
-  sections: [{
+  features: meta.full ? { updateFields: true } : undefined,   // the contents' page numbers fill in on open
+  sections: sections.filter(s => s.children.length).map(s => ({
     properties: {
-      page: { size: { width: PAGE_W, height: PAGE_H },
+      titlePage: !!s.cover,            // the cover carries no running header or footer
+      page: { size: { width: PAGE_W, height: PAGE_H,
+                      orientation: s.landscape ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT },
               margin: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN } },
     },
-    headers: { default: new Header({ children: [new Paragraph({
+    headers: { first: new Header({ children: [new Paragraph({ children: [] })] }),
+               default: new Header({ children: [new Paragraph({
       spacing: { after: 200 },
       border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: C.accent, space: 6 } },
       children: [
@@ -328,7 +396,7 @@ const doc = new Document({
       ],
     })] }) },
     footers: { default: new Footer({ children: [new Paragraph({
-      tabStops: [{ type: d.TabStopType.RIGHT, position: CONTENT_W }],
+      tabStops: [{ type: d.TabStopType.RIGHT, position: s.landscape ? PAGE_H - MARGIN * 2 : CONTENT_W }],
       children: [
         new TextRun({ text: 'Confidential \u2014 Internal Use Only' +
                       (model.meta && model.meta.owner ? '  \u00b7  Owner: ' + model.meta.owner : ''),
@@ -341,12 +409,13 @@ const doc = new Document({
         new TextRun({ text: ' of ', size: 15, color: C.muted }),
         new TextRun({ children: [PageNumber.TOTAL_PAGES], size: 15, color: C.muted }),
       ],
-    })] }) },
-    children,
-  }],
+    })] }),
+               first: new Footer({ children: [new Paragraph({ children: [] })] }) },
+    children: s.children,
+  })),
 });
 
 Packer.toBuffer(doc).then(buf => {
   fs.writeFileSync(OUT, buf);
-  console.log(`${OUT}  ${(buf.length / 1024).toFixed(0)} KB  ${children.length} elements`);
+  console.log(`${OUT}  ${(buf.length / 1024).toFixed(0)} KB  ${sections.reduce((n, s) => n + s.children.length, 0)} elements in ${sections.length} sections`);
 });
