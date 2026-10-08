@@ -2429,6 +2429,16 @@
     "kbDeptRank_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-08",
+   "why": "Manual reader follow-ups (operator testing 2026-10-08): getManualParts — every chapter in one read, so chapter switches and previews paint from a session cache",
+   "added": [
+    "getManualParts"
+   ],
+   "removed": [],
+   "changed": [],
+   "moved": []
   }
  ],
  "order": [
@@ -6887,6 +6897,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "9e5f0b325de1a204"
+  },
+  "getManualParts": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "20a657b464147bd1"
   },
   "getMetricsAmbient": {
    "file": "40_metrics.js",

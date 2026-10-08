@@ -129,6 +129,7 @@
   /* The chapter's colour and icon (operator 2026-10-07): a stripe and a badge on
      the part's title, and the icon beside it in the tree. --man-pN are tokens;
      the badge's icon is the page colour, so it reads in light and dark. */
+  .kb-man-part { --man-c: var(--muted); }   /* an appendix has no chapter colour; the chapter classes below override */
   .kb-man-p0 { --man-c: var(--man-p0); } .kb-man-p1 { --man-c: var(--man-p1); } .kb-man-p2 { --man-c: var(--man-p2); } .kb-man-p3 { --man-c: var(--man-p3); } 
   .kb-man-p4 { --man-c: var(--man-p4); } .kb-man-p5 { --man-c: var(--man-p5); } .kb-man-p6 { --man-c: var(--man-p6); } .kb-man-p7 { --man-c: var(--man-p7); } 
   .kb-man-p8 { --man-c: var(--man-p8); } .kb-man-p9 { --man-c: var(--man-p9); } .kb-man-p10 { --man-c: var(--man-p10); } 
@@ -143,6 +144,34 @@
   .kb-man-sec-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 6px 0 4px; }
   .kb-man-sec-h { font-family: var(--display); font-size: 1.3rem; font-weight: 700; letter-spacing: -.015em; margin: 0; flex: 0 1 auto; }
   .kb-man-badges:empty { display: none; }
+  /* Operator testing 2026-10-08 — the reader reads like the HTML manual: the
+     section number is a chip in the chapter colour beside a rule, sub-section
+     numbers take the colour, the column is wider, and tables follow the HTML
+     manual's two kinds (kbManualDecorate_): a small one keeps the quiet kicker
+     header, a large one (4+ columns or 12+ rows) gets a header in the chapter
+     colour and striped rows. Scoped to manual sections — hand-written articles
+     are unchanged. */
+  .kb-man-part { max-width: 900px; }
+  .kb-man-part .kb-article { max-width: none; font-size: .97rem; line-height: 1.72; }
+  .kb-man-sec { padding: 10px 0 26px; margin-bottom: 22px; }
+  .kb-man-sec-head { border-left: 4px solid var(--man-c); padding-left: 12px; margin: 4px 0 12px; }
+  .kb-man-sec-h { font-size: 1.5rem; line-height: 1.25; }
+  .kb-man-sn { display: inline-block; font-family: var(--mono); font-size: .6em; font-weight: 700; letter-spacing: .02em; padding: .24em .55em; border-radius: 5px;
+    background: var(--man-c); color: var(--paper-card); margin-right: .5em; vertical-align: .2em; }
+  .kb-man-part .kb-article h3 { font-size: 1.14rem; font-weight: 650; margin: 1.7em 0 .55em; }
+  .kb-man-part .kb-article h4 { font-size: 1rem; margin: 1.4em 0 .4em; }
+  .kb-man-ssn { color: var(--man-c); font-variant-numeric: tabular-nums; margin-right: .45em; }
+  .kb-man-part .kb-article blockquote { padding: 11px 16px; margin: 1em 0 1.1em; }
+  .kb-man-tw { overflow-x: auto; margin: 1em 0 1.25em; }
+  .kb-man-tw.kb-man-tw-m { border: 1px solid var(--line); border-radius: 8px; }
+  .kb-man-part .kb-article .kb-man-tw > table { display: table; width: 100%; margin: 0; font-size: .93rem; }
+  .kb-man-part .kb-article table.kb-man-compact th { color: var(--ink); font-size: 11px; padding: 6px 14px 7px 0; }
+  .kb-man-part .kb-article table.kb-man-compact td { padding: 9px 14px 9px 0; }
+  .kb-man-part .kb-article table.kb-man-matrix th { background: color-mix(in oklab, var(--man-c) 14%, var(--paper-card)); color: var(--ink); border-bottom: 2px solid var(--man-c); padding: 9px 12px; letter-spacing: .06em; }
+  .kb-man-part .kb-article table.kb-man-matrix td { padding: 9px 12px; }
+  .kb-man-part .kb-article table.kb-man-matrix tbody tr:nth-child(even) td { background: var(--paper-2); }
+  @media (max-width: 640px) { .kb-man-sec-h { font-size: 1.28rem; } }
+  .kb-man-part .kb-article td img.kb-manimg-thumb { max-height: 64px; max-width: 96px; margin: 2px 10px 2px 0; }
   /* Batch M4 — the manual's "recently changed" list (the What's new panel and
      the Reference landing share one renderer, manualRecentListHtml_). */
   .mr-list { display: flex; flex-direction: column; }
@@ -215,6 +244,7 @@
   .kb-man-chk { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-weight: 600; }
   .kb-man-pub { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
   .kb-man-pubrow { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .kb-man-progress { display: flex; align-items: center; gap: 10px; font-size: .84rem; color: var(--muted); padding: 6px 0; }
   .kb-man-pubrow select { flex: 1; min-width: 0; font: inherit; font-size: .84rem; padding: 5px 7px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); color: var(--ink); }
   .kb-article hr { border: none; border-top: 1px solid var(--line); margin: 1.2em 0; }
   .kb-article table { border-collapse: collapse; margin: 1em 0; display: block; max-width: 100%; overflow-x: auto; }
@@ -3186,27 +3216,126 @@ function kbOpenManualSection_(id, anchor, nav) {
     kbManualFocus_(id, anchor, false, nav);
     return true;
   }
-  main.innerHTML = loSweep();
-  var requested = currentView;
   var seq = (KB_STATE.manualSeq = (KB_STATE.manualSeq || 0) + 1);
   kbEnsureManualMeta_(function () { if (KB_STATE.manualPart && seq === KB_STATE.manualSeq) kbManualPaintMeta_(); });
+  // Operator testing 2026-10-08: a chapter already in the session cache paints
+  // at once — no server call between chapters. The first open still asks for
+  // its one chapter (the fastest read), while the whole manual arrives behind it.
+  var cached = kbManualCachedPart_(dept);
+  if (cached && cached.sections.some(function (s) { return s.id === id; })) { kbManualPaintPart_(main, cached, id, anchor, nav); return true; }
+  kbPrefetchManualParts_();
+  main.innerHTML = loSweep();
+  var requested = currentView;
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requested || seq !== KB_STATE.manualSeq || KB_STATE.currentId !== id) return;
       if (!res || res.error) { main.innerHTML = errorStateHtml_((res && res.error) || 'Failed to load this chapter of the manual'); return; }
       if (!(res.sections || []).some(function (s) { return s.id === id; })) { main.innerHTML = errorStateHtml_('That section is not available.'); return; }
-      KB_STATE.manualPart = res;
-      main.innerHTML = kbManualPartHtml_(res);
-      kbGlossaryAnnotate_(main);
-      kbLinkHcpcs_(main);
-      kbManualPaintMeta_();
-      kbManualFocus_(id, anchor, true, nav);
+      kbManualPaintPart_(main, res, id, anchor, nav);
     })
     .withFailureHandler(function (err) {
       if (currentView === requested && seq === KB_STATE.manualSeq && KB_STATE.currentId === id) main.innerHTML = errorStateHtml_((err && err.message) || 'Failed to load this chapter of the manual');
     })
     .getManualPart(dept);
   return true;
+}
+
+/** Paint one chapter into the reader and land on the section. Shared by the
+ *  server read and the session cache, so the two cannot paint differently. */
+function kbManualPaintPart_(main, part, id, anchor, nav) {
+  KB_STATE.manualPart = part;
+  main.innerHTML = kbManualPartHtml_(part);
+  kbManualDecorate_(main);
+  kbGlossaryAnnotate_(main);
+  kbLinkHcpcs_(main);
+  kbManualPaintMeta_();
+  kbManualFocus_(id, anchor, true, nav);
+}
+
+/** Operator testing 2026-10-08 — the whole manual, fetched ONCE per session by
+ *  getManualParts (one sheet read) and kept by chapter. A chapter switch paints
+ *  from it, and a cross-reference preview reads its target from it, so neither
+ *  waits on the server after the first load. A failed read is never cached as
+ *  a value (g129): the reader simply keeps asking per chapter, as before.
+ *  Import and publish clear it (kbManualInvalidate_), so a stale draft or an
+ *  old body never paints. */
+function kbPrefetchManualParts_() {
+  if (KB_STATE.manualParts || KB_STATE.manualPartsLoading) return;
+  KB_STATE.manualPartsLoading = true;
+  var gen = KB_STATE.manualPartsGen = (KB_STATE.manualPartsGen || 0) + 1;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (gen !== KB_STATE.manualPartsGen) return;   // an import or publish cleared the cache mid-flight
+      KB_STATE.manualPartsLoading = false;
+      if (!res || res.error || !Array.isArray(res.parts)) return;
+      var by = {};
+      res.parts.forEach(function (p) {
+        if (!p || !p.department || !Array.isArray(p.sections)) return;
+        by[p.department] = { department: p.department, sections: p.sections, isAdmin: !!res.isAdmin };
+        p.sections.forEach(function (s) {
+          KB_XREF.cache[s.id] = { id: s.id, title: s.title, department: p.department, status: s.status, type: 'article', bodyMd: s.bodyMd };
+        });
+      });
+      KB_STATE.manualParts = by;
+    })
+    .withFailureHandler(function () { if (gen === KB_STATE.manualPartsGen) KB_STATE.manualPartsLoading = false; })
+    .getManualParts();
+}
+/** The cached chapter, or null when the manual has not arrived yet. */
+function kbManualCachedPart_(dept) {
+  var p = KB_STATE.manualParts && KB_STATE.manualParts[dept];
+  return p && Array.isArray(p.sections) ? p : null;
+}
+/** Forget every cached chapter and preview — an import or a publish changed
+ *  what the manual holds (bodies, drafts, statuses). The next open reads fresh. */
+function kbManualInvalidate_() {
+  KB_STATE.manualParts = null;
+  KB_STATE.manualPartsLoading = false;
+  KB_STATE.manualPartsGen = (KB_STATE.manualPartsGen || 0) + 1;
+  KB_STATE.manualPart = null;
+  KB_XREF.cache = {};
+}
+
+/** Pure (Node-pinned) — a section title with its number as a chip: "3.8
+ *  Incontinence and catheter" → <span class="kb-man-sn">3.8</span> Incontinence
+ *  and catheter. The text stays "3.8 Incontinence…", so every reader of the
+ *  heading's textContent (the Back chip, landing) is unchanged; a title with no
+ *  number (a card, the glossary) is escaped as it is. */
+function kbManualTitleHtml_(title) {
+  var m = /^((?:\d+|[A-C])\.[0-9A-Z]+)\s+(.+)$/.exec(String(title || ''));
+  return m ? '<span class="kb-man-sn">' + esc(m[1]) + '</span> ' + esc(m[2]) : esc(title || '');
+}
+/** After a chapter paints: a sub-section heading's number takes the chapter
+ *  colour, and each table is classed the way the HTML manual classes it
+ *  (make_html.py classify_tables: 4+ columns or 12+ rows is a MATRIX) and wrapped
+ *  so a wide one scrolls inside itself. The step and ✓/✗ tables keep their own
+ *  look. Text is never changed — landing and search read the same words. */
+function kbManualDecorate_(root) {
+  if (!root || !root.querySelectorAll) return;
+  root.querySelectorAll('.kb-man-sec .kb-article h3, .kb-man-sec .kb-article h4').forEach(function (h) {
+    var first = h.firstChild;
+    if (!first || first.nodeType !== 3 || h.querySelector('.kb-man-ssn')) return;
+    var m = /^\s*((?:\d+|[A-C])\.[0-9A-Z]+(?:\.\d+)*)(\s+)/.exec(first.nodeValue);
+    if (!m) return;
+    var span = document.createElement('span');
+    span.className = 'kb-man-ssn';
+    span.textContent = m[1];
+    first.nodeValue = m[2] + first.nodeValue.slice(m[0].length);
+    h.insertBefore(span, first);
+  });
+  root.querySelectorAll('.kb-man-sec .kb-article table').forEach(function (t) {
+    if (t.parentElement && t.parentElement.classList.contains('kb-man-tw')) return;
+    var head = t.querySelector('tr');
+    var cols = head ? head.children.length : 0;
+    var rows = t.querySelectorAll('tbody tr').length;
+    var own = t.classList.contains('kb-steps') || t.classList.contains('kb-dodont');
+    var matrix = !own && (cols >= 4 || rows >= 12);
+    if (!own) t.classList.add(matrix ? 'kb-man-matrix' : 'kb-man-compact');
+    var w = document.createElement('div');
+    w.className = 'kb-man-tw' + (matrix ? ' kb-man-tw-m' : '');
+    t.parentNode.insertBefore(w, t);
+    w.appendChild(t);
+  });
 }
 
 /** Pure-ish — the part page. Section bodies render through kbMd_ (escape
@@ -3222,12 +3351,12 @@ function kbManualPartHtml_(part) {
     '<div class="kb-man-back" data-kb-man-back></div>' +
     (admin && drafts ? '<div class="kb-draft-banner">' + icon('warning', 13) + ' ' + drafts + ' of ' + secs.length +
       ' section' + (secs.length === 1 ? '' : 's') + ' in this chapter ' + (drafts === 1 ? 'is a draft' : 'are drafts') + ' — hidden from reps until published (Reference → Manual).</div>' : '') +
-    '<div class="kb-man-part">';
+    '<div class="kb-man-part' + (ck ? ' kb-man-' + ck : '') + '">';
   secs.forEach(function (s) {
     var draft = s.status === 'draft';
     html += '<section class="kb-man-sec" id="kb-man-sec-' + esc(s.id) + '" data-kb-id="' + esc(s.id) + '">' +
       '<div class="kb-man-sec-head">' +
-        '<h2 class="kb-man-sec-h">' + esc(s.title) + '</h2>' +
+        '<h2 class="kb-man-sec-h">' + kbManualTitleHtml_(s.title) + '</h2>' +
         (draft ? '<span class="kb-draft-pill">Draft</span>' : '') +
         '<span class="kb-man-badges" data-kb-badges="' + esc(s.id) + '"></span>' +
         '<span class="kb-man-sec-acts">' + kbBookmarkBtnHtml_({ id: s.id, title: s.title }) +
@@ -3775,6 +3904,7 @@ function enterReferenceView(area) {
       if (!res || res.error) { el.innerHTML = errorStateHtml_((res && res.error) || 'Failed to load'); return; }
       KB_STATE.tree = res.items || []; KB_STATE.isManager = !!res.isManager; KB_STATE.isAdmin = !!res.isAdmin;
       kbRenderTree_();
+      if (KB_STATE.tree.some(function (it) { return kbIsManualId_(it.id); })) kbPrefetchManualParts_();
       // Batch M2 — a section parked by the drawer's "Read in context" (the C8
       // cross-view hint: parked on window, consumed and nulled on arrival).
       var hint = window.KB_OPEN_HINT; window.KB_OPEN_HINT = null;
@@ -3884,16 +4014,7 @@ function kbOpenManualImport_() {
       '</div>' +
       '<p class="kb-man-note kb-man-gate" id="kb-man-gate">Import unlocks after a clean <b>Check</b> of this file.</p>' +
       '<div id="kb-man-result" role="status" aria-live="polite"></div>' +
-      '<div class="kb-man-pub">' +
-        '<div class="kb-man-lbl">Publish manual drafts</div>' +
-        (depts.length
-          ? '<div class="kb-man-pubrow"><select id="kb-man-dept" aria-label="Which chapter to publish">' +
-              '<option value="">Every chapter (' + depts.reduce(function (n, d) { return n + d.count; }, 0) + ' drafts)</option>' +
-              depts.map(function (d) { return '<option value="' + esc(d.name) + '">' + esc(d.name) + ' (' + d.count + ')</option>'; }).join('') +
-            '</select><button class="kb-btn" onclick="kbManualPublish_(this)">' + icon('check', 13) + ' Publish</button></div>' +
-            '<p class="kb-man-note">Review dates are spread across the review window, so the queue gains a few each day rather than every article at once.</p>'
-          : '<p class="kb-man-note">No manual drafts to publish.</p>') +
-      '</div>' +
+      '<div class="kb-man-pub" id="kb-man-pub">' + kbManualPubHtml_(depts) + '</div>' +
     '</div></div>';
   ov.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('[data-kb-manclose]')) closeOverlay(ov); });
   KB_MANUAL_FILE = null;
@@ -3906,6 +4027,40 @@ function kbOpenManualImport_() {
     rd.onload = function () { kbManualSetFile_({ name: f.name, size: f.size, text: String(rd.result || '') }); };
     rd.onerror = function () { kbManualSetFile_(null); var o = document.getElementById('kb-man-result'); if (o) o.innerHTML = kbManualResultHtml_({ success: false, error: 'Could not read that file on this computer.' }); };
     rd.readAsText(f);
+  });
+}
+/** The "Publish manual drafts" block, from the draft chapters in the tree.
+ *  Rebuilt after an import (operator testing 2026-10-08: it kept the state it
+ *  had when the dialog opened — often "No manual drafts" — so a finished import
+ *  looked like nothing had happened). */
+function kbManualPubHtml_(depts) {
+  return '<div class="kb-man-lbl">Publish manual drafts</div>' +
+    (depts.length
+      ? '<div class="kb-man-pubrow"><select id="kb-man-dept" aria-label="Which chapter to publish">' +
+          '<option value="">Every chapter (' + depts.reduce(function (n, d) { return n + d.count; }, 0) + ' drafts)</option>' +
+          depts.map(function (d) { return '<option value="' + esc(d.name) + '">' + esc(d.name) + ' (' + d.count + ')</option>'; }).join('') +
+        '</select><button class="kb-btn" onclick="kbManualPublish_(this)">' + icon('check', 13) + ' Publish</button></div>' +
+        '<p class="kb-man-note">Review dates are spread across the review window, so the queue gains a few each day rather than every article at once.</p>'
+      : '<p class="kb-man-note">No manual drafts to publish.</p>');
+}
+/** A finished import, said three ways (operator testing 2026-10-08: the result
+ *  appeared quietly where the Check's had been, and nothing else changed): a
+ *  toast, the result scrolled into view, and the publish block rebuilt from
+ *  the refreshed tree so the new drafts are offered. The reader's cached
+ *  chapters are forgotten — the import changed what they hold. */
+function kbManualImported_(r) {
+  kbManualInvalidate_();
+  var bits = [(r.created || 0) + ' new draft' + (r.created === 1 ? '' : 's'), (r.updated || 0) + ' updated'];
+  if (r.removed) bits.push(r.removed + ' removed');
+  if ((r.skipped || []).length) bits.push(r.skipped.length + ' skipped');
+  showToast('Manual imported — ' + bits.join(' · '), (r.skipped || []).length || (r.images && r.images.error) ? 'toast-warn' : 'toast-success');
+  var picked = document.getElementById('kb-man-picked');
+  if (picked && KB_MANUAL_FILE) picked.textContent = KB_MANUAL_FILE.name + ' — imported';
+  var box = document.getElementById('kb-man-result');
+  if (box && box.scrollIntoView) box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  kbReloadTree_(function () {
+    var pub = document.getElementById('kb-man-pub');
+    if (pub) pub.innerHTML = kbManualPubHtml_(kbManualDraftDepts_());
   });
 }
 /** M4-FU3 — the chosen manual.json, held in the page until Check / Import send
@@ -4002,7 +4157,8 @@ function kbManualRun_(dryRun) {
   var chk = document.getElementById('kb-man-check'), imp = document.getElementById('kb-man-import');
   if (!file) { if (out) out.innerHTML = kbManualResultHtml_({ success: false, error: 'Choose manual.json from the manual build first.' }); if (inp) inp.focus(); return; }
   if (chk) chk.disabled = true; if (imp) imp.disabled = true;
-  if (out) out.innerHTML = loSweep();
+  if (out) out.innerHTML = '<div class="kb-man-progress">' + loSweep() + '<span>' +
+    (dryRun ? 'Checking the file…' : 'Importing — this can take a minute or two. Keep this window open.') + '</span></div>';
   google.script.run
     .withSuccessHandler(function (r) {
       if (chk) chk.disabled = false;
@@ -4012,12 +4168,13 @@ function kbManualRun_(dryRun) {
       // leaves it locked (checking again shows everything unchanged).
       if (imp) imp.disabled = !(dryRun && r && r.success && ((r.created || 0) + (r.updated || 0) > 0 || r.metaUpdated || (r.orphaned || []).length));
       kbManualGate_(imp);
-      if (!dryRun && r && r.success) kbReloadTree_();
+      if (!dryRun && r && r.success) kbManualImported_(r);
     })
     .withFailureHandler(function (e) {
       if (chk) chk.disabled = false;
       var box = document.getElementById('kb-man-result');
       if (box) box.innerHTML = kbManualResultHtml_({ success: false, error: (e && e.message) || 'The import failed.' });
+      if (!dryRun) showToast('The manual import failed — see the dialog', 'toast-error');
     })
     .kbImportManual({ text: file.text }, { dryRun: !!dryRun, removeOrphans: !dryRun && !!(document.getElementById('kb-man-remove') || {}).checked });
 }
@@ -4040,6 +4197,7 @@ function kbManualPublish_(btn) {
         if (btn) btn.disabled = false;
         if (!r || !r.success) { showToast((r && r.error) || 'Publish failed', 'toast-error'); return; }
         showToast('Published ' + r.count + ' article' + (r.count === 1 ? '' : 's') + (r.count ? ' · review dates spread over ' + r.reviewSpreadDays + ' days' : ''), 'toast-success');
+        kbManualInvalidate_();
         kbReloadTree_();
         var o = document.getElementById('kb-man-overlay'); if (o) closeOverlay(o);
       })
@@ -6126,6 +6284,7 @@ function kbPublishItem_(id) {
         .withSuccessHandler(function (r) {
           if (!r || !r.success) { showToast((r && r.error) || 'Publish failed', 'toast-error'); return; }
           showToast('Published', 'toast-success');
+          if (kbIsManualId_(id)) kbManualInvalidate_();
           kbReloadTree_();
           kbOpenItem_(id);
         })
@@ -6384,7 +6543,7 @@ function kbShowConvertWarnings_(warnings) {
  *  The natural response to that is to save again. The write itself already
  *  succeeded, so the toast says exactly that: the change landed, the list is
  *  stale, reload to see it. */
-function kbReloadTree_() {
+function kbReloadTree_(after) {
   var stale = function (msg) {
     showToast((msg || 'Could not refresh the Reference list') +
       ' — your change was saved, but this list is out of date. Reload to see it.', 'toast-warn');
@@ -6394,6 +6553,7 @@ function kbReloadTree_() {
     KB_STATE.tree = res.items || []; KB_STATE.isManager = !!res.isManager; KB_STATE.isAdmin = !!res.isAdmin;
     var si = document.getElementById('kb-search');
     if (si && si.value.trim().length >= 2) kbDoSearch_(si.value); else kbRenderTree_();
+    if (typeof after === 'function') after();
   }).withFailureHandler(function (err) {
     stale(err && err.message);
   }).getReferenceTree();

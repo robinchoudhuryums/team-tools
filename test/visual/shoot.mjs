@@ -345,6 +345,21 @@ const SCENARIOS = [
     "kbDrawerOpen_(); setTimeout(function(){ var q=document.getElementById('kbd-q'); if(q){ q.value='waiting on doctor'; kbDrawerSearch_('waiting on doctor'); } }, 300)"],
   ['reference-manual-import-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
     "kbOpenManualImport_(); kbManualSetFile_({ name: 'manual.json', size: 1577555, text: 'x'.repeat(1577555) }); kbManualRun_(true)"],
+  // Operator testing 2026-10-08 — the reader's polish on two REAL sections (3.8's
+  // thumbnail table and policy callout; 5.2's tables and numbered list): the
+  // number chips, the chapter-coloured rule and sub-section numbers, and both
+  // table kinds, in light, dark and at phone width; and an import that finished
+  // (the toast, the result, the rebuilt publish block).
+  ['reference-manual-polish-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', "kbOpenItem_('man-3-8')"],
+  ['reference-manual-polish-dark-wide', { tool: 'reference', tab: null }, WIDE, 'dark', '', "kbOpenItem_('man-3-8')"],
+  ['reference-manual-polish-light-mobile', { tool: 'reference', tab: null }, MOBILE, 'light', '', "kbOpenItem_('man-3-8')"],
+  ['reference-manual-polish-pak-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', "kbOpenItem_('man-5-2')"],
+  ['reference-manual-power-diagram-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
+    "kbOpenItem_('man-5-1'); setTimeout(function(){ var f=document.querySelector('figure.kb-diagram'); if(f) f.scrollIntoView(); }, 400)"],
+  ['reference-manual-power-diagram-dark-wide', { tool: 'reference', tab: null }, WIDE, 'dark', '',
+    "kbOpenItem_('man-5-1'); setTimeout(function(){ var f=document.querySelector('figure.kb-diagram'); if(f) f.scrollIntoView(); }, 400)"],
+  ['reference-manual-imported-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
+    "kbOpenManualImport_(); kbManualSetFile_({ name: 'manual.json', size: 1577555, text: 'x'.repeat(1577555) }); kbManualRun_(false)"],
   // Cycle 21 (operator report, 2026-09-21) — the KB DRAWER had never been shot,
   // by any scenario, at any width. That is why both lookups sat inside
   // `.kbd-sec` — a mono/uppercase flex HEADING bar — for weeks: every result

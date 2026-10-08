@@ -4949,10 +4949,20 @@ test('M1 DOM: the Manual dialog — Check shows the plan and every skipped artic
   run(false);
   call = h.run.pending('kbImportManual').slice(-1)[0];
   assert.strictEqual(call.args[1].dryRun, false, 'Import is the real thing');
-  h.run.flushSuccess({ success: true, dryRun: false, total: 3, created: 1, updated: 0, unchanged: 2, skipped: [] }, 'kbImportManual');
+  assert.ok(/Importing — this can take a minute or two/.test(doc.getElementById('kb-man-result').textContent), 'operator testing 2026-10-08: the import SAYS it is running');
+  tree.items.push({ id: 'man-2-3', department: 'Part 2 — Manual Mobility', title: '2.3 New', type: 'article', status: 'draft', sortOrder: 3 });   // what the import wrote
+  h.run.flushSuccess({ success: true, dryRun: false, total: 3, created: 1, updated: 0, unchanged: 2, removed: 4, skipped: [] }, 'kbImportManual');
   assert.ok(/Imported 3 articles/.test(doc.getElementById('kb-man-result').textContent));
   assert.strictEqual(imp.disabled, true, 'an import done leaves Import locked');
   assert.strictEqual(treeReads, treeBefore + 1, 'and reloads the tree');
+  // Operator testing 2026-10-08: a finished import used to look like nothing had
+  // happened — the result replaced the check's quietly, and the publish block
+  // kept the drafts it had when the dialog opened.
+  const toast = h.$$('#toast-stack .toast').map((t) => t.textContent).filter((t) => /Manual imported/.test(t))[0];
+  assert.ok(toast && /1 new draft · 0 updated · 4 removed/.test(toast), 'a toast says the import finished, and what it did');
+  assert.ok(/manual\.json — imported/.test(doc.getElementById('kb-man-picked').textContent), 'the file line no longer says "press Check"');
+  assert.deepStrictEqual([...ov.querySelectorAll('#kb-man-dept option')].map((o) => o.textContent)[0], 'Every chapter (4 drafts)', 'the publish block is rebuilt from the refreshed tree — the new draft is offered');
+  tree.items.pop();
   // A refused file lists the problems.
   run(true);
   h.run.flushSuccess({ success: false, error: 'The file was refused; nothing was imported.', problems: ['man-9: no title.'], problemCount: 3 }, 'kbImportManual');
@@ -5330,6 +5340,36 @@ test('M4 DOM: a failed load of the recent changes is SAID on the landing (never 
   // And a manual with nothing recent draws nothing at all.
   const h2 = m4Boot_({ whatsNew: () => ({ none: true }) });
   assert.ok(!/recently changed/.test(h2.$('#kb-main').textContent), 'nothing recent → no block');
+});
+
+test('MR2 DOM (operator testing 2026-10-08): the reader reads like the HTML manual — a number chip in the section title, coloured sub-section numbers, and the HTML manual\'s two table kinds — without changing a word that landing or search reads', () => {
+  const h = m4Boot_();
+  const doc = h.window.document;
+  const part = JSON.parse(JSON.stringify(M2_PART0));
+  part.sections[1].bodyMd = 'Notes.\n\n## 0.11.1 Small table\n\n| Item | Code |\n|---|---|\n| Bed | E0260 |\n\n' +
+    '## 0.11.2 Big table\n\n| Model | HCPCS | Allowance | Sizing |\n|---|---|---|---|\n| Wipes | A4335 | 2 packs | 100 |\n\n' +
+    '| \u2713 Do | \u2717 Don\'t |\n|---|---|\n| Ask | Guess |\n\n### 0.11.2.1 Deeper\n\nText.\n';
+  h.read('kbOpenItem_')('man-0-11');
+  h.run.flushSuccess(part, 'getManualPart');
+  const sec = doc.getElementById('kb-man-sec-man-0-11');
+  const title = sec.querySelector('.kb-man-sec-h');
+  assert.strictEqual(title.querySelector('.kb-man-sn').textContent, '0.11', 'the section number is a chip');
+  assert.strictEqual(title.textContent, '0.11 Notes and email conventions', 'and the title still READS the same (the Back chip and landing use it)');
+  assert.ok(doc.querySelector('.kb-man-part').classList.contains('kb-man-p0'), 'the part carries its chapter, so its colour reaches every section');
+  const h3 = [...sec.querySelectorAll('.kb-article h3')];
+  assert.deepStrictEqual(h3.map((x) => x.querySelector('.kb-man-ssn') && x.querySelector('.kb-man-ssn').textContent), ['0.11.1', '0.11.2'], 'each sub-section number takes the colour');
+  assert.deepStrictEqual(h3.map((x) => x.textContent), ['0.11.1 Small table', '0.11.2 Big table'], 'the heading text is unchanged');
+  assert.strictEqual(sec.querySelector('.kb-article h4 .kb-man-ssn').textContent, '0.11.2.1');
+  assert.strictEqual(h.read('kbFindNumberedHeading_')(sec, '0.11.2'), h3[1], 'a numbered landing still finds the heading');
+  const tables = [...sec.querySelectorAll('.kb-article table')];
+  assert.deepStrictEqual(tables.map((t) => ['kb-man-compact', 'kb-man-matrix', 'kb-dodont'].filter((c) => t.classList.contains(c)).join(' ')), ['kb-man-compact', 'kb-man-matrix', 'kb-dodont'], 'two columns is compact, four is a matrix, a \u2713/\u2717 table keeps its own look');
+  assert.ok(tables.every((t) => t.parentElement.classList.contains('kb-man-tw')), 'every table scrolls inside its own box');
+  assert.ok(tables[1].parentElement.classList.contains('kb-man-tw-m') && !tables[0].parentElement.classList.contains('kb-man-tw-m'), 'only the matrix is framed');
+  h.read('kbManualDecorate_')(doc.getElementById('kb-main'));
+  assert.strictEqual(sec.querySelectorAll('.kb-man-tw').length, 3, 'decorating again wraps nothing twice');
+  assert.strictEqual(sec.querySelectorAll('.kb-man-ssn').length, 3, 'nor numbers a heading twice');
+  assert.strictEqual(h.read('kbManualTitleHtml_')('Card 3 — Oxygen <x>'), 'Card 3 — Oxygen &lt;x&gt;', 'a title with no section number is escaped as it is');
+  assert.strictEqual(h.read('kbManualTitleHtml_')('10.A Quick <b>'), '<span class="kb-man-sn">10.A</span> Quick &lt;b&gt;', 'the chip and the rest are both escaped');
 });
 
 test('M4 DOM: Print marks ONLY its own section for the one print block, for exactly as long as the dialog is up; a Quick Reference Card\'s button says "Print card"', async () => {

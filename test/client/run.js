@@ -30210,6 +30210,68 @@ test('M2-S3: getManualPart returns ONE part\'s manual sections in order (drafts 
   assert.strictEqual(c.getManualMeta().version, 'v3.0', 'served from the cache');
 });
 
+test('MR1 (operator testing 2026-10-08): getManualParts returns EVERY chapter in one block read, each exactly getManualPart\'s shape and rules (drafts admin-only, manual rows only, section order)', () => {
+  const row = (id, dept, order, status, title) => [id, dept, title || id, 'article', 'body ' + id, '', '', order, 'u', 'x', 'r', 'x', status];
+  const P = 'Chapter 06 — Field Operations', Q = 'Chapter 07 — Service';
+  const book = m1Book_([row('man-6-2', P, 2, 'published', '6.2 Two'), row('kb-7', P, 1, 'published'), row('man-6-1', P, 1, 'draft', '6.1 One'),
+    row('man-7-1', Q, 1, 'published', '7.1 One'), row('kb-9', 'Billing', 1, 'published')], null);
+  const reads = [];
+  const mk = (who) => {
+    const ctx = vm.createContext({ String, Number, Object, JSON, Array,
+      KB: M1_KB_ENUM, KB_HEADERS: new Array(13).fill('h'), KB_STATUS_DRAFT: 'draft', KB_STATUS_PUBLISHED: 'published',
+      KB_MANUAL_ID_RE: /^man-[a-z0-9]+(?:-[a-z0-9]+)*$/,
+      getEmployeeInfo_: () => who, getKbSS_: () => book,
+      getOrCreateKbSheet_: () => Object.assign({}, book.sheets.KB, { getRange: (r, c, nr, nc) => { reads.push([r, c, nr, nc]); return book.sheets.KB.getRange(r, c, nr, nc); } }) });
+    ['kbRowStatus_', 'kbNaturalCompare_', 'getManualPart', 'getManualParts'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+    return ctx;
+  };
+  const admin = mk({ email: 'a@ums.com', isAdmin: true });
+  reads.length = 0;
+  const all = J2(admin.getManualParts());
+  assert.deepStrictEqual(reads.map((x) => x[1] + ',' + x[3]), ['1,2', '1,13'], 'the id column, then ONE full-width block for the whole manual');
+  assert.deepStrictEqual(all.parts.map((p) => p.department).sort(), [P, Q], 'manual chapters only — hand-written departments never');
+  const byDept = {}; all.parts.forEach((p) => { byDept[p.department] = p.sections; });
+  assert.deepStrictEqual(byDept[P].map((s) => s.id + ':' + s.status), ['man-6-1:draft', 'man-6-2:published'], 'section order, the draft included for an admin');
+  assert.deepStrictEqual(byDept[P], J2(admin.getManualPart(P)).sections, 'each chapter is exactly what getManualPart returns for it');
+  const rep = mk({ email: 'r@ums.com', isAdmin: false });
+  const repAll = J2(rep.getManualParts());
+  assert.strictEqual(repAll.isAdmin, false);
+  repAll.parts.forEach((p) => p.sections.forEach((s) => assert.notStrictEqual(s.status, 'draft', 'a rep never receives a draft')));
+  assert.deepStrictEqual(repAll.parts.find((p) => p.department === P).sections.map((s) => s.id), ['man-6-2']);
+  assert.strictEqual(mk(null).getManualParts().error, 'Not authorized.');
+});
+
+test('MR1: the reader paints a chapter from the session cache, previews read from it, and an import or publish clears it (driven)', () => {
+  const src = extractFnFrom(M1_KB_SRC, 'kbOpenManualSection_');
+  assert.ok(/var cached = kbManualCachedPart_\(dept\);\s*if \(cached && cached\.sections\.some\(function \(s\) \{ return s\.id === id; \}\)\) \{ kbManualPaintPart_\(main, cached, id, anchor, nav\); return true; \}/.test(src), 'a cached chapter paints without a server call');
+  const calls = [], kb = { manualParts: null, manualPartsLoading: false };
+  const xref = { cache: {} };
+  let success = null;
+  const ctx = vm.createContext({ KB_STATE: kb, KB_XREF: xref, Array,
+    google: { script: { run: { withSuccessHandler: (f) => { success = f; return { withFailureHandler: () => ({ getManualParts: () => calls.push('getManualParts') }) }; } } } } });
+  ['kbPrefetchManualParts_', 'kbManualCachedPart_', 'kbManualInvalidate_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
+  ctx.kbPrefetchManualParts_(); ctx.kbPrefetchManualParts_();
+  assert.deepStrictEqual(calls, ['getManualParts'], 'ONE read per session, however often it is asked for');
+  success({ isAdmin: false, parts: [{ department: 'Chapter 06 — Field Operations', sections: [{ id: 'man-6-1', title: '6.1 One', status: 'published', bodyMd: 'b' }] }] });
+  assert.strictEqual(ctx.kbManualCachedPart_('Chapter 06 — Field Operations').sections[0].id, 'man-6-1');
+  assert.strictEqual(ctx.kbManualCachedPart_('Chapter 07 — Service'), null, 'a chapter not in the cache is not invented');
+  assert.strictEqual(xref.cache['man-6-1'].bodyMd, 'b', 'the preview of a cached section needs no server call');
+  ctx.kbManualInvalidate_();
+  assert.strictEqual(ctx.kbManualCachedPart_('Chapter 06 — Field Operations'), null, 'an import or publish forgets the cache');
+  assert.deepStrictEqual(Object.keys(xref.cache), []);
+  ctx.kbPrefetchManualParts_();
+  const stale = success;
+  ctx.kbManualInvalidate_();
+  stale({ parts: [{ department: 'X', sections: [] }] });
+  assert.strictEqual(kb.manualParts, null, 'a read that was in flight when the cache was cleared never repopulates it');
+  calls.length = 0; success = null;
+  ctx.kbPrefetchManualParts_();
+  success({ error: 'boom' });
+  assert.strictEqual(kb.manualParts, null, 'a failed read is not cached as a value (g129)');
+  ctx.kbPrefetchManualParts_();
+  assert.deepStrictEqual(calls, ['getManualParts', 'getManualParts'], 'and a later open asks again');
+});
+
 test('M2-S4: manual sections are READ-ONLY in the app — save, delete and revert refuse a man- id and name the manual source; a hand-written item is unaffected', () => {
   const src = (n) => stripJsComments_(extractRawFunction('Code.js', n));
   assert.ok(/if \(KB_MANUAL_ID_RE\.test\(String\(payload\.id \|\| ''\)\.trim\(\)\)\) return \{ success: false, error: KB_MANUAL_READONLY_MSG \};/.test(src('kbSaveItem')));
