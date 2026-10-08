@@ -35013,6 +35013,45 @@ test('MC-2 (change list 2026-10-08 C8 + A6): every diagram prints on its own lan
   assert.ok(/outlineLevel: 0,/.test(rx) && /outlineLevel: Math\.min\(b\.lvl - 1, 3\)/.test(rx), 'headings carry outline levels — the PDF bookmarks and the navigation pane');
 });
 
+test('MD-1 (change list 2026-10-08 D): the HTML manual — a phone gets one column and a contents panel of its own, headings land below the bar, an old number is found but ranked under the current one (driven), "part N" names its new chapter (driven), dark mode never prints, one section prints alone, and the router is a modal whose answers link', () => {
+  const mh = MP1_('make_html.py');
+  // D3, driven: the search code as shipped, over three records and the chapter list
+  const js = mh.slice(mh.indexOf("const esc=s=>"), mh.indexOf('function missStore('));
+  const box = { innerHTML: '', hidden: true };
+  const ctx = { res: box, nl: { hidden: false }, CH: [{ ch: 5, i: 'p5', t: 'Chapter 5 — Power Mobility' }, { ch: 6, i: 'p6', t: 'Chapter 6 — Field Operations' }, { ch: 2, i: 'p2', t: 'Chapter 2 — Manual Mobility' }],
+    D: [{ i: '4-5', t: '4.5 A caller interested in a PMD', b: 'Check the name', a: [], o: ['§9-4', '9-4', '9.4'], f: ['9.4'], p: [] },
+        { i: '9-4', t: '9.4 Escalation chain', b: 'If the on-call', a: ['§9-4', '9-4', '9.4'], o: [], f: [], p: [] },
+        { i: '1-1', t: '1.1 Call router', b: 'see 9.4 for the chain', a: ['§1-1', '1-1', '1.1'], o: [], f: [], p: [] }] };
+  vm.createContext(ctx); vm.runInContext(js + ';this.runSearch=runSearch;', ctx);
+  const hrefs = () => [...box.innerHTML.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]);
+  ['9.4', '§9-4', 'formerly 9.4'].forEach((q) => {
+    ctx.runSearch(q);
+    assert.deepStrictEqual(hrefs().slice(0, 2), ['9-4', '4-5'], q + ': the current 9.4 first, then the section that USED to be 9.4');
+    assert.ok(/class="was">formerly 9\.4</.test(box.innerHTML), q + ': and the old one says why it is there');
+  });
+  ctx.runSearch('part 5'); assert.strictEqual(hrefs()[0], 'p6', '"part 5" opens what Part 5 became'); assert.ok(/Part 5 is now Chapter 6/.test(box.innerHTML), 'and says so');
+  ctx.runSearch('part 2'); assert.ok(hrefs()[0] === 'p2' && /Parts are now called chapters/.test(box.innerHTML), 'an unmoved part still lands');
+  ctx.runSearch('chapter 5'); assert.ok(hrefs()[0] === 'p5' && !/is now/.test(box.innerHTML), '"chapter 5" is just chapter 5');
+  // D3: the records split current numbers from old ones
+  assert.ok(/"a": nums, "o": olds, "f": shown/.test(mh) && /for table in \(FORMERLY, MOVED\):/.test(mh), 'an old number is its own field, from both the renumber and the earlier moves');
+  // D1: the 280px column is bounded below; the open contents is fixed and stretches
+  assert.ok(/@media \(min-width:901px\) and \(max-width:1240px\)\{\.wrap\{grid-template-columns:280px minmax\(0,1fr\)\}\}/.test(mh) && !/@media \(max-width:1240px\)\{\.wrap\{grid-template-columns:280px/.test(mh), 'a phone no longer inherits the tablet\'s 280px column');
+  assert.ok(/nav\.show\{display:block;position:fixed;top:var\(--ntH,41px\)[^}]*align-self:stretch\}/.test(mh), 'the open contents is fixed under the bar, and stretches (align-self:start slid it up under the bar)');
+  // D2 + D5
+  assert.ok(/:target,h1\[id\],h2\[id\],h3\[id\],h4\[id\],tr\[id\]\{scroll-margin-top:64px\}/.test(mh) && /tr\[id\]\{scroll-margin-top:110px\}/.test(mh), 'every target lands below the bar, further on a phone');
+  assert.ok(/window\.addEventListener\('hashchange',landSoon\)/.test(mh) && /function clearBar\(id\)/.test(mh) && /function landOn\(id\)/.test(mh), 'a landing nudges a row out from under the bar and moves the breadcrumb to it');
+  // D6: every dark rule is screen-only
+  assert.strictEqual((mh.match(/@media \(prefers-color-scheme:dark\)/g) || []).length, 0, 'no dark rule without screen');
+  assert.strictEqual((mh.match(/@media screen and \(prefers-color-scheme:dark\)/g) || []).length, 3, 'the three dark rules are screen-only');
+  assert.ok(!/(^|\n):root\[data-theme="dark"\]\{/.test(mh) && (mh.match(/@media screen\{:root\[data-theme="dark"\]/g) || []).length === 3, 'and so is the forced dark theme');
+  // D7
+  assert.ok(/id="prsec"/.test(mh) && /id="prcards"/.test(mh) && /body:not\(\.print-sec\) main > \*\{display:none!important\}/.test(mh) && /body\.print-sec main > :not\(\.psel\)\{display:none!important\}/.test(mh), 'Print section prints the marked section; Ctrl+P still prints the cards');
+  // D8 + D10
+  assert.ok(/role="dialog" aria-modal="true" aria-label="Call router"/.test(mh) && /rtOpener\.focus\(\{preventScroll:true\}\)/.test(mh) && /if\(e\.key!=='Tab'\) return;/.test(mh), 'the router keeps Tab inside and returns focus');
+  assert.ok(/\$\{r\.h\|\|esc\(r\.a\)\}/.test(mh) && /"h": _tight\(/.test(mh), 'its answer keeps its links');
+  assert.ok(/id="ixnone" hidden/.test(mh) && /\.tw\.more\{/.test(mh), 'the index says when nothing matches; a wide table fades at its edge');
+});
+
 test('MP1-6: department guides come from data/extracts.json — every guide a part, Billing in each by default, and a reference to a section a guide leaves out reads "(in the full manual)", never a dead link', () => {
   const bd = MP1_('build.py');
   const man = JSON.parse(MP1_('data/extracts.json'));

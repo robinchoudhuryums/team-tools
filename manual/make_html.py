@@ -116,7 +116,7 @@ body = body.replace('<h2 id="E-1">',
     '<div id="ixwrap"><input id="ixq" type="search" placeholder="Filter the index…" '
     'autocomplete="off" aria-label="Filter index"><div class="ixaz" role="navigation" aria-label="Index letters">'
     + "".join(f'<a href="#ix-{k}">{html.escape(t)}</a>' for k, t in _ix_letters)
-    + '</div></div><h2 id="E-1">', 1)
+    + '</div><div id="ixnone" hidden>No index entries match.</div></div><h2 id="E-1">', 1)
 from bs4 import BeautifulSoup as _BS
 
 def classify_tables(html):
@@ -359,15 +359,36 @@ def build_router(html):
             links = cells[1].find_all("a", class_="xr")
             if not links:
                 continue
-            answer = cells[1].get_text(" ", strip=True)
+            answer = _tight(cells[1].get_text(" ", strip=True))
             for p in re.split(r"\s*/\s*(?=[\"\u201c])", phrase):
                 p = p.strip()
                 if len(p) < 4:
                     continue
                 rows.append({"g": group, "q": p.strip('"\u201c\u201d'),
                              "i": links[0].get("href", "")[1:], "a": answer,
+                             "h": _tight(re.sub(r"\s+", " ", _answer_html(cells[1])).strip()),
                              "all": [l.get("href", "")[1:] for l in links]})
     return rows
+
+
+def _tight(s):
+    """get_text(" ") puts a space before the comma that followed a link (D10)."""
+    return re.sub(r"\s+([,.;:)])", r"\1", s)
+
+
+def _answer_html(el):
+    """The router answer as HTML: its text escaped, its section links kept (D10)."""
+    out = []
+    for c in el.children:
+        nm = getattr(c, "name", None)
+        if nm is None:
+            out.append(html.escape(str(c), quote=False))
+        elif nm == "a" and "xr" in (c.get("class") or []):
+            out.append(f'<a class="xr" href="{html.escape(c.get("href", ""))}">'
+                       f'{html.escape(c.get_text(" ", strip=True), quote=False)}</a>')
+        else:
+            out.append(_answer_html(c))
+    return "".join(out)
 
 
 ROUTER = build_router(body)
@@ -400,16 +421,26 @@ for m in re.finditer(r'<h([23]) id="([\w_.-]+)">(.*?)</h\1>(.*?)(?=<h[123]|\Z)',
     txt = re.sub(r"([.:;,])\s*\.", r"\1", txt)[:600]
     sid = m.group(2)
     src = "§" + sid.replace("_", ".") if re.match(r"^[0-9A-Z]+-", sid) else ""
-    nums = old_forms(src) if src else []
-    if src in FORMERLY:
-        was = FORMERLY[src]
-        nums = nums + [f for f in old_forms(was) if f not in nums] + ["formerly " + dnum(was)]
-    if src in MOVED:   # the number before a Phase 3 move — the one CSRs actually knew
-        was = MOVED[src]
-        nums = nums + [f for f in old_forms(was) if f not in nums] + ["formerly " + dnum(was)]
+    nums = old_forms(src) if src else []          # the number it has now
+    olds, shown = [], []                            # a number it had before, and how to say it
+    # FORMERLY is the October 2026 renumber; MOVED, the number before a Phase 3 move —
+    # the one CSRs actually knew. A current number always outranks an old one (D3).
+    for table in (FORMERLY, MOVED):
+        if src in table:
+            was = table[src]
+            olds += [f for f in old_forms(was) if f not in nums and f not in olds]
+            shown.append(dnum(was))
     SEARCH.append({"i": sid, "t": label, "b": txt,
-                   "a": " ".join(nums),
+                   "a": nums, "o": olds, "f": shown,
                    "p": ALIASES.get(sid, [])})
+
+# "chapter 5", and the old "part 4" (D3): each chapter's first heading
+CHAPTERS_IX = []
+for _lvl, _txt, _tid, _p in nav:
+    _m = re.match(r"Chapter (\d+)\b", html.unescape(_txt)) if _lvl == 1 else None
+    if _m and not any(c["ch"] == int(_m.group(1)) for c in CHAPTERS_IX):
+        CHAPTERS_IX.append({"ch": int(_m.group(1)), "i": _tid,
+                            "t": html.unescape(_txt).replace("#", "").strip()})
 
 navhtml = []
 open_part = None
@@ -453,7 +484,7 @@ TPL = r"""<!DOCTYPE html>
   --scr-bg:#E3F2F1;  --scr-ink:#0F6E6E;
   --note-bg:#F4F4F4; --note-ink:#555555; --thead-ink:#FFFFFF;
 }
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+@media screen and (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --navy:#9EC2E6; --accent:#7FB0DC; --tint:#17222E; --ink:#E6EAEF;
   --muted:#9AA7B4; --rule:#2A3947; --bg:#0F161D; --panel:#141D26;
   __PAL_DARK__
@@ -464,7 +495,7 @@ TPL = r"""<!DOCTYPE html>
   --scr-bg:#12262A;  --scr-ink:#7FCCC6;
   --note-bg:#1A222B; --note-ink:#A8B3BE; --thead-ink:#0F161D;
 }}
-:root[data-theme="dark"]{
+@media screen{:root[data-theme="dark"]{
   --navy:#9EC2E6; --accent:#7FB0DC; --tint:#17222E; --ink:#E6EAEF;
   --muted:#9AA7B4; --rule:#2A3947; --bg:#0F161D; --panel:#141D26;
   __PAL_DARK__
@@ -472,7 +503,7 @@ TPL = r"""<!DOCTYPE html>
   --crit-bg:#2C1512; --crit-ink:#F29E95; --pol-bg:#152230; --pol-ink:#9EC2E6;
   --watch-bg:#2C2410;--watch-ink:#E5C978; --scr-bg:#12262A; --scr-ink:#7FCCC6;
   --note-bg:#1A222B; --note-ink:#A8B3BE; --thead-ink:#0F161D;
-}
+}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);
  font-family:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;
@@ -491,8 +522,14 @@ nav .ver{color:var(--muted);font-size:13px;margin-bottom:14px}
 #res .rt{display:block;font-size:13px;font-weight:600;color:var(--navy)}
 #res .rs{display:block;font-size:12px;color:var(--muted);line-height:1.4;margin-top:2px}
 #res .rn{padding:7px 10px;font-size:13px;color:var(--muted)}
+#res .was{display:inline-block;margin-top:3px;font-family:'IBM Plex Mono',ui-monospace,monospace;
+ font-size:10.5px;font-weight:600;letter-spacing:.04em;color:var(--muted);border:1px solid var(--rule);
+ border-radius:3px;padding:0 5px}
+#res a.chh{border-left-color:var(--navy)}
 mark{background:var(--watch-bg);color:inherit;padding:0 1px;border-radius:2px}
-:target{scroll-margin-top:16px}
+/* below the sticky breadcrumb (and the phone's Contents bar), not under it (D2) */
+:target,h1[id],h2[id],h3[id],h4[id],tr[id]{scroll-margin-top:64px}
+@media (max-width:900px){:target,h1[id],h2[id],h3[id],h4[id],tr[id]{scroll-margin-top:110px}}
 :target > :first-child, h2:target, h3:target{animation:flash 1.6s ease-out}
 @keyframes flash{from{background:var(--watch-bg)}to{background:transparent}}
 nav a{display:block;text-decoration:none;color:var(--ink);font-size:13.5px;
@@ -617,7 +654,11 @@ h2:hover .ah,h3:hover .ah,.ah:focus{opacity:1}
 @media (max-width:900px){
  .navtoggle{display:block}
  nav{display:none;position:static;max-height:none;border-right:0;border-bottom:1px solid var(--rule)}
- nav.show{display:block}
+ /* open, the contents covers the page below the bar and scrolls by itself — it used to
+    open at the top of the document, wherever the reader was (D1) */
+ nav.show{display:block;position:fixed;top:var(--ntH,41px);left:0;right:0;bottom:0;z-index:30;
+  max-height:none;overflow-y:auto;overscroll-behavior:contain;border-bottom:0;
+  align-self:stretch}  /* nav's own align-self:start would size a fixed box to its content and slide it up under the bar */
 }
 /* print */
 @media print{
@@ -640,6 +681,11 @@ h2:hover .ah,h3:hover .ah,.ah:focus{opacity:1}
  background:var(--bg);border:1px solid var(--rule);border-radius:5px}
 #ixq:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
 .ixhide{display:none!important}
+#ixnone{margin-top:8px;font-size:13.5px;color:var(--muted)}
+#ixnone[hidden]{display:none}
+/* a table wider than the screen fades at the edge it scrolls from (D10) */
+@media screen{.tw.more{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 36px),transparent);
+ mask-image:linear-gradient(to right,#000 calc(100% - 36px),transparent)}}
 /* density */
 .dens{display:flex;gap:4px;margin:14px 0 4px}
 .dens button{flex:1;padding:4px 6px;font:600 11px 'IBM Plex Sans',sans-serif;color:var(--muted);
@@ -773,7 +819,10 @@ section.qrc{width:816px;max-width:100%}
 
 /* ================================================= screen layout (5a) === */
 .wrap{grid-template-columns:300px minmax(0,1fr) 196px;max-width:1500px}
-@media (max-width:1240px){.wrap{grid-template-columns:280px minmax(0,1fr)} #otp{display:none}}
+@media (max-width:1240px){#otp{display:none}}
+/* bounded below: this rule came after the phone's one-column rule and gave phones a 280px column (D1) */
+@media (min-width:901px) and (max-width:1240px){.wrap{grid-template-columns:280px minmax(0,1fr)}}
+@media (max-width:900px){.wrap{grid-template-columns:minmax(0,1fr)}}
 /* nav: only the current part is expanded */
 nav a.ntop{display:block;font-size:13px;color:var(--muted);padding:4px 0 10px 12px;text-decoration:none}
 nav a.ntop:hover{color:var(--accent)}
@@ -803,6 +852,12 @@ nav details.p9{--nacc:var(--p9)} nav details.p10{--nacc:var(--p10)}
  color:var(--thead-ink);background:var(--cur,var(--navy));padding:3px 10px;border-radius:3px;
  text-decoration:none}
 #ctx .cardchip:hover{filter:brightness(1.1)}
+#ctx .ctxr{flex:none;display:flex;align-items:center;gap:6px}
+#ctx .ctxr button{font:inherit;font-size:11.5px;color:var(--muted);background:none;cursor:pointer;
+ border:1px solid var(--rule);border-radius:3px;padding:2px 8px}
+#ctx .ctxr button:hover{color:var(--accent);border-color:var(--accent)}
+#ctx .ctxr button[hidden]{display:none}
+@media (max-width:600px){#ctx .ctxr button{display:none}}
 /* eyebrow */
 .eyebrow{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:11px;font-weight:600;
  letter-spacing:.14em;text-transform:uppercase;margin:52px 0 -40px;color:var(--navy)}
@@ -853,14 +908,22 @@ ol.toclist .cp{text-align:right}
  nav,.navtoggle,#q,#res,#otp,#ctx,.ah,.eyebrow,#ixwrap,.dens{display:none!important}
  .wrap{display:block;max-width:none}
  main{padding:0;max-width:none}
- /* only the cards and their contents sheet print */
- main > *{display:none!important}
+ /* only the cards and their contents sheet print — unless "Print section" marked one (D7) */
+ body:not(.print-sec) main > *{display:none!important}
  main > #cardtoc, main > section.qrc{display:block!important}
  section.qrc,#cardtoc{display:block!important;border:0;width:auto;max-width:none;
   padding:0;margin:0}
  section.qrc > .qrf,#cardtoc > .qrf{margin-top:28px}
  section.qrc{break-before:page}
  #cardtoc{break-after:auto}
+ /* "Print section" (D7): only the marked section, in its own layout */
+ body.print-sec main > :not(.psel){display:none!important}
+ body.print-sec main > section.psel{display:block!important;break-before:auto}
+ body.print-sec #cardtoc{display:none!important}
+ body.print-sec .pinbtn{display:none!important}
+ body.print-sec *{animation:none!important}
+ /* browsers drop backgrounds when printing, which would leave the number badge white on white */
+ body.print-sec h2 .sn{background:none;color:var(--hc);padding:0}
  section.qrc h2,#cardtoc .toch{font-size:23px}
  .qb{font-size:13px}
  .ql,.qrh,.qrf{font-size:10.5px}
@@ -1002,13 +1065,15 @@ table.steps tbody tr:not(:last-child) td:first-child::after{content:"\2193";posi
 li.chk{list-style:none;margin-left:-1.15em}
 /* do / don't columns */
 :root{--ok-bg:#E7F4EC;--ok-ink:#1E6B43;--no-bg:#FCEBEA;--no-ink:#A1281F}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--ok-bg:#12271B;--ok-ink:#7FCFA0;--no-bg:#2C1512;--no-ink:#F29E95}}
-:root[data-theme="dark"]{--ok-bg:#12271B;--ok-ink:#7FCFA0;--no-bg:#2C1512;--no-ink:#F29E95}
+@media screen and (prefers-color-scheme:dark){:root:not([data-theme="light"]){--ok-bg:#12271B;--ok-ink:#7FCFA0;--no-bg:#2C1512;--no-ink:#F29E95}}
+@media screen{:root[data-theme="dark"]{--ok-bg:#12271B;--ok-ink:#7FCFA0;--no-bg:#2C1512;--no-ink:#F29E95}}
 table.dodont th.ok{color:var(--ok-ink);border-bottom-color:var(--ok-ink)}
 table.dodont th.no{color:var(--no-ink);border-bottom-color:var(--no-ink)}
 /* a wider do/don't table is a matrix, whose header is navy: there the column's own tint carries the header */
 table.matrix.dodont th.ok{background:var(--ok-bg);color:var(--ok-ink)}
 table.matrix.dodont th.no{background:var(--no-bg);color:var(--no-ink)}
+@media screen and (prefers-color-scheme:dark){:root:not([data-theme="light"]) table.matrix.dodont th:not(.ok):not(.no){background:var(--tint);color:var(--navy)}}
+@media screen{:root[data-theme="dark"] table.matrix.dodont th:not(.ok):not(.no){background:var(--tint);color:var(--navy)}}
 table.dodont td.ok{background:var(--ok-bg)}
 table.dodont td.no{background:var(--no-bg)}
 table.dodont tbody tr:hover td{filter:brightness(.97)}
@@ -1070,16 +1135,17 @@ section.qrc h2{border-left:0;padding-left:0} section.qrc h2 .sn{margin-right:0}
 <div class="dens" role="group" aria-label="Text density"><button id="dc" aria-pressed="false">Compact</button><button id="dr" aria-pressed="true">Comfortable</button></div>
 <div id="res" hidden></div>
 <div id="navlist">__NAV__</div></nav>
-<main><div id="ctx"><span class="bc"><b></b><i></i></span><a class="cardchip" hidden></a></div>__BODY__</main>
+<main><div id="ctx"><span class="bc"><b></b><i></i></span><span class="ctxr"><a class="cardchip" hidden></a><button id="prsec" type="button" title="Print the section you are reading">Print section</button><button id="prcards" type="button" title="Print the quick-reference cards">Print cards</button></span></div>__BODY__</main>
 <aside id="otp" aria-label="On this page"><div class="otph">On this page</div><div id="otpl"></div></aside>
 </div>
 <div id="xpop" hidden role="tooltip"></div>
-<div id="router" hidden role="dialog" aria-label="Call router"><div class="rtbox">
+<div id="router" hidden role="dialog" aria-modal="true" aria-label="Call router"><div class="rtbox">
 <div class="rthead"><b>What did the caller say?</b><button id="rtclose" aria-label="Close">&#10005;</button></div>
 <div class="rtbody"><div class="rtleft"><input id="rtq" type="search" placeholder="Filter phrases&hellip;" aria-label="Filter phrases"><div id="rtlist"></div></div>
 <div class="rtright" id="rtpane"></div></div></div></div>
 <script>
 const D=__SEARCH__;
+const CH=__CHAPTERS__;
 const RT=__ROUTER__;
 const q=document.getElementById('q'),res=document.getElementById('res'),nl=document.getElementById('navlist');
 const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -1095,16 +1161,29 @@ function aliasHit(d,q){
   for(let i=0;i<d._p.length;i++) if(d._p[i].includes(q)||q.includes(d._p[i])) return d.p[i];
   return null;
 }
+// a section number, as typed: "9.4", "§9-4", "formerly 9.4" (D3)
+const numKey=s=>s.toLowerCase().replace(/^formerly\s+/,'').replace(/^§\s*/,'').trim();
+const hasNum=(list,k)=>(list||[]).some(x=>numKey(x)===k);
+// "chapter 5", and the old "part 4": the October 2026 renumber moved Parts 4-9 (D3)
+const PART_WAS={4:5,5:6,6:7,7:8,8:9,9:4};
+function chapterHit(n){
+  const m=n.match(/^(chapter|ch\.?|part)\s*(\d{1,2})$/); if(!m) return null;
+  const k=+m[2], part=m[1]==='part', ch=part&&PART_WAS[k]!==undefined?PART_WAS[k]:k;
+  const c=CH.find(x=>x.ch===ch); if(!c) return null;
+  return {c,note:!part?'':ch!==k?`Part ${k} is now Chapter ${ch}`:'Parts are now called chapters'};
+}
 function runSearch(raw){
-  const n=raw.trim().toLowerCase(), q=norm(raw);
+  const n=raw.trim().toLowerCase(), q=norm(raw), k=numKey(n);
   if(n.length<2){res.hidden=true;res.innerHTML='';nl.hidden=false;return;}
   nl.hidden=true;res.hidden=false;
   const aliasHits=[],textHits=[];
+  const chap=chapterHit(n);
   for(const d of D){
-    const numHit=(d.a||'').toLowerCase().split(' ').includes(n.replace(/^§/,''));
+    const cur=hasNum(d.a,k), old=!cur&&hasNum(d.o,k);
     const ah=aliasHit(d,q);
-    if(ah) aliasHits.push({d,ah});
-    else if(numHit) textHits.push({d,score:-1});
+    if(cur) textHits.push({d,score:-3});
+    else if(old) textHits.push({d,score:-2,was:true});
+    else if(ah) aliasHits.push({d,ah});
     else{
       const ti=d._t.indexOf(q), bi=d._b.indexOf(q);
       if(ti>=0||bi>=0) textHits.push({d,score:(ti>=0?0:1)+(ti===0?-1:0)});
@@ -1127,9 +1206,12 @@ function runSearch(raw){
     if(aliasHits.length) html+='<div class="alh alh2">In the text</div>';
     html+=textHits.slice(0,30).map(h=>
       `<a href="#${h.d.i}"><span class="rt">${esc(h.d.t)}</span>`+
+      (h.was?`<span class="was">formerly ${esc((h.d.f||[]).join(', '))}</span>`:'')+
       `<span class="rs">${mark(h.d.b,n)}</span></a>`).join('');
   }
-  if(!aliasHits.length&&!textHits.length) html=missPanel(raw);
+  if(chap) html=`<a class="chh" href="#${chap.c.i}"><span class="rt">${esc(chap.c.t)}</span>`+
+    (chap.note?`<span class="rs">${esc(chap.note)}</span>`:'')+`</a>`+html;
+  if(!chap&&!aliasHits.length&&!textHits.length) html=missPanel(raw);
   res.innerHTML=html;
 }
 function missPanel(raw){
@@ -1192,12 +1274,16 @@ if(ixq){
  }
  ixq.addEventListener('input',()=>{
   const v=ixq.value.trim().toLowerCase();
+  let shown=0;
   for(const g of rows){ let any=false;
    for(const tr of g.tr){ const hit=!v||tr.textContent.toLowerCase().includes(v);
     tr.classList.toggle('ixhide',!hit); if(hit)any=true; }
    g.h.classList.toggle('ixhide',!any);
    if(g.tw)g.tw.classList.toggle('ixhide',!any);
-  }});
+   if(any)shown++;
+  }
+  document.getElementById('ixnone').hidden=!v||shown>0;
+ });
  ixq.addEventListener('keydown',e=>{if(e.key==='Escape'){ixq.value='';ixq.dispatchEvent(new Event('input'));}});
 }
 
@@ -1272,7 +1358,8 @@ function setCurrent(el){
       d.open = !!s && s.getAttribute('href')==='#'+part.id;
     });
   }
-  if(h2!==curH2){curH2=h2;ctxS.textContent=h2?clean(h2):'';buildRail(h2);if(h2&&h2.id)noteRecent(h2.id);}
+  if(h2!==curH2){curH2=h2;ctxS.textContent=h2?clean(h2):'';buildRail(h2);if(h2&&h2.id)noteRecent(h2.id);
+    const pb=document.getElementById('prsec'); if(pb)pb.hidden=!h2;}
   const t=el.tagName==='H3'?el.id:null;
   otpl.querySelectorAll('a').forEach(a=>a.classList.toggle('on',a.dataset.t===t));
 }
@@ -1341,20 +1428,39 @@ function rtShow(k){
   const d=D.find(x=>x.i===r.i);
   rtPane.innerHTML=`<div class="ph">&ldquo;${esc(r.q)}&rdquo;</div>`+
     `<div class="tg">${esc(r.g)}</div>`+
-    `<div class="ans">${esc(r.a)}</div>`+
+    `<div class="ans">${r.h||esc(r.a)}</div>`+
     (d?`<div class="snip">${esc(d.b.slice(0,420))}${d.b.length>420?'\u2026':''}</div>`:'')+
     `<a class="go" href="#${r.i}">Open ${esc(d?d.t.split(' ')[0]:r.i)} \u2192</a>`;
 }
-document.getElementById('openrouter').addEventListener('click',()=>{
+// a modal dialog (D8): Tab stays inside, and closing returns focus to what opened it —
+// except when the reader followed a link out, where focus belongs with the section
+let rtOpener=null;
+function openRouter(){
+  rtOpener=document.activeElement;
   rt.hidden=false;rtRender('');rtPane.innerHTML='<div class="empty">Pick what the caller said.</div>';
   rtQ.value='';rtQ.focus();
-});
-document.getElementById('rtclose').addEventListener('click',()=>rt.hidden=true);
-rt.addEventListener('click',e=>{if(e.target===rt)rt.hidden=true;});
+}
+function closeRouter(followed){
+  if(rt.hidden) return;
+  rt.hidden=true;
+  if(!followed&&rtOpener&&document.contains(rtOpener)) rtOpener.focus({preventScroll:true});
+  rtOpener=null;
+}
+document.getElementById('openrouter').addEventListener('click',openRouter);
+document.getElementById('rtclose').addEventListener('click',()=>closeRouter());
+rt.addEventListener('click',e=>{if(e.target===rt)closeRouter();});
 rtQ.addEventListener('input',()=>rtRender(rtQ.value));
 rtList.addEventListener('click',e=>{const b=e.target.closest('button');if(b)rtShow(+b.dataset.k);});
-rtPane.addEventListener('click',e=>{if(e.target.closest('a.go'))rt.hidden=true;});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!rt.hidden)rt.hidden=true;});
+rtPane.addEventListener('click',e=>{if(e.target.closest('a.go, a.xr'))closeRouter(true);});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!rt.hidden)closeRouter();});
+rt.addEventListener('keydown',e=>{
+  if(e.key!=='Tab') return;
+  const f=[...rt.querySelectorAll('button,input,a[href]')].filter(x=>x.offsetParent!==null);
+  if(!f.length) return;
+  const first=f[0],last=f[f.length-1],a=document.activeElement;
+  if(e.shiftKey&&(a===first||!rt.contains(a))){e.preventDefault();last.focus();}
+  else if(!e.shiftKey&&(a===last||!rt.contains(a))){e.preventDefault();first.focus();}
+});
 
 
 // ---- cross-reference preview: the opening of the target section, in place ----
@@ -1414,6 +1520,7 @@ function scheduleHide(){clearTimeout(xpShow);clearTimeout(xpHide);xpHide=setTime
 if(!coarse){
   document.addEventListener('mouseover',e=>{
     const a=e.target.closest('a.xr');
+    if(a&&rt.contains(a)) return;
     if(a){clearTimeout(xpHide);clearTimeout(xpShow);if(a!==xpFor)xpShow=setTimeout(()=>showPreview(a),320);}
     else if(e.target.closest('#xpop')){clearTimeout(xpHide);}
   });
@@ -1421,7 +1528,7 @@ if(!coarse){
     if(e.target.closest('a.xr')||e.target.closest('#xpop')) scheduleHide();
   });
 }
-document.addEventListener('focusin',e=>{const a=e.target.closest&&e.target.closest('a.xr');if(a)showPreview(a);});
+document.addEventListener('focusin',e=>{const a=e.target.closest&&e.target.closest('a.xr');if(a&&!rt.contains(a))showPreview(a);});
 document.addEventListener('focusout',e=>{if(e.target.closest&&e.target.closest('a.xr'))scheduleHide();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!xpop.hidden){xpop.hidden=true;xpFor=null;}});
 xpop.addEventListener('click',e=>{if(e.target.closest('a'))xpop.hidden=true;});
@@ -1429,8 +1536,13 @@ window.addEventListener('scroll',()=>{if(!xpop.hidden&&xpFor&&!xpop.matches(':ho
 
 // mobile nav
 const nt=document.getElementById('nt'),navEl=document.querySelector('nav');
-nt.addEventListener('click',()=>navEl.classList.toggle('show'));
-navEl.addEventListener('click',e=>{if(e.target.closest('a')&&window.innerWidth<=900)navEl.classList.remove('show');});
+function navShow(on){
+  navEl.classList.toggle('show',on); nt.setAttribute('aria-expanded',on?'true':'false');
+  if(on) document.documentElement.style.setProperty('--ntH',nt.offsetHeight+'px');
+}
+nt.setAttribute('aria-expanded','false');
+nt.addEventListener('click',()=>navShow(!navEl.classList.contains('show')));
+navEl.addEventListener('click',e=>{if(e.target.closest('a')&&window.innerWidth<=900)navShow(false);});
 // scrollspy
 const links=[...document.querySelectorAll('nav a.n2')];
 const byId=new Map(links.map(a=>[a.getAttribute('href').slice(1),a]));
@@ -1446,6 +1558,57 @@ const spy2=new IntersectionObserver(es=>{for(const e of es){if(e.isIntersecting)
   {rootMargin:'0px 0px -75% 0px'});
 heads.forEach(h=>spy2.observe(h));
 setCurrent(heads[0]);
+// landing on a target the observers cannot see — a directory row, or a heading in a long
+// section — still moves the breadcrumb, the rail and the sidebar to where it is (D5)
+function landOn(id){
+  let t=null; try{t=document.getElementById(decodeURIComponent(id));}catch(e){}
+  if(!t||!mainEl.contains(t)) return;
+  let h=null;
+  for(const x of heads){ if(x!==t&&(x.compareDocumentPosition(t)&Node.DOCUMENT_POSITION_PRECEDING)) break; h=x; }
+  if(!h) return;
+  setCurrent(h);
+  const i=heads.indexOf(h);
+  for(let j=i;j>=0;j--){ const a=byId.get(heads[j].id); if(a){
+    if(cur)cur.classList.remove('cur'); a.classList.add('cur'); cur=a;
+    const d=a.closest('details'); if(d&&!d.open)d.open=true; break; } }
+}
+// Chrome ignores a table ROW's scroll-margin (it lands the row under the bar), so a
+// target that came to rest above its margin is nudged down to it (D2/D5)
+function clearBar(id){
+  let t=null; try{t=document.getElementById(decodeURIComponent(id));}catch(e){}
+  if(!t) return;
+  const want=parseFloat(getComputedStyle(t).scrollMarginTop)||0, top=t.getBoundingClientRect().top;
+  if(top>=0&&top<want-2) window.scrollBy(0,top-want);
+}
+// after the scroll settles, so the observers' own pass does not overwrite it
+const landSoon=()=>{const id=location.hash.slice(1); if(!id) return; clearBar(id); setTimeout(()=>landOn(id),180);};
+window.addEventListener('hashchange',landSoon);
+landSoon();
+
+// "Print section" and "Print cards" (D7); Ctrl+P still prints the cards
+const prsec=document.getElementById('prsec');
+function printSection(){
+  const h=curH2; if(!h) return;
+  const card=h.closest('section.qrc'), sel=card?[card]:[h];
+  if(!card){ let n=h.nextElementSibling;
+    while(n&&!/^H[12]$/.test(n.tagName)&&!(n.tagName==='SECTION'&&n.classList.contains('qrc'))){sel.push(n);n=n.nextElementSibling;}
+    // the rule and the eyebrow row before the next section belong to it
+    while(sel.length>1&&(sel[sel.length-1].tagName==='HR'||/\beye(row|brow)\b/.test(sel[sel.length-1].className)))sel.pop(); }
+  sel.forEach(x=>x.classList.add('psel')); document.body.classList.add('print-sec');
+  const done=()=>{document.body.classList.remove('print-sec');sel.forEach(x=>x.classList.remove('psel'));
+    window.removeEventListener('afterprint',done);};
+  window.addEventListener('afterprint',done);
+  window.print();
+}
+prsec.addEventListener('click',printSection);
+document.getElementById('prcards').addEventListener('click',()=>window.print());
+
+// a wide table fades at its right edge while there is more to scroll to (D10)
+const tws=[...mainEl.querySelectorAll('.tw')];
+const twMore=t=>t.classList.toggle('more',t.scrollLeft+t.clientWidth<t.scrollWidth-2);
+tws.forEach(t=>{t.addEventListener('scroll',()=>twMore(t),{passive:true});twMore(t);});
+window.addEventListener('resize',()=>tws.forEach(twMore));
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>tws.forEach(twMore));
 // copy section link
 document.addEventListener('click',e=>{
  const a=e.target.closest('.ah'); if(!a) return;
@@ -1464,6 +1627,6 @@ document.addEventListener('keydown',e=>{
 </body></html>"""
 
 OWNER = re.search(r'^OWNER = "([^"]+)"', open("build.py").read(), re.M).group(1)
-open(DST, "w").write(TPL.replace("__PAL_LIGHT__", palette("light")).replace("__PAL_DARK__", palette("dark")).replace("__OWNER__", html.escape(OWNER)).replace("__NAV__", "\n".join(navhtml)).replace("__BODY__", body).replace("__SEARCH__", _json.dumps(SEARCH, ensure_ascii=False)).replace("__ROUTER__", _json.dumps(ROUTER, ensure_ascii=False)).replace("__BUILT__", BUILT))
+open(DST, "w").write(TPL.replace("__PAL_LIGHT__", palette("light")).replace("__PAL_DARK__", palette("dark")).replace("__OWNER__", html.escape(OWNER)).replace("__NAV__", "\n".join(navhtml)).replace("__BODY__", body).replace("__SEARCH__", _json.dumps(SEARCH, ensure_ascii=False)).replace("__CHAPTERS__", _json.dumps(CHAPTERS_IX, ensure_ascii=False)).replace("__ROUTER__", _json.dumps(ROUTER, ensure_ascii=False)).replace("__BUILT__", BUILT))
 print(f"wrote {DST}  ({len(open(DST).read()):,} bytes)")
 print(f"nav entries: {len(nav)}   callouts styled: {body.count('class=\"cb ')}")
