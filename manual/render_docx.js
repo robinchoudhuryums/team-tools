@@ -113,15 +113,51 @@ function cell(list, o = {}) {
     shading: o.bg ? { type: ShadingType.CLEAR, fill: o.bg, color: 'auto' } : undefined,
     borders: o.borders || cellBorders,
     margins: { top: 60, bottom: 60, left: 110, right: 110 },
-    children: [new Paragraph({ children: kids, spacing: { after: 0, line: 252 } })],
+    // a cell holding a photo gets plain single spacing: a set line height is how a renderer
+    // that reads it as exact clips the photo to a strip (change list 2026-10-08 C1)
+    children: [new Paragraph({ children: kids,
+      spacing: (list || []).some(r => r.img) ? { after: 0 } : { after: 0, line: 252 } })],
   });
+}
+
+// A column's share of the width follows what it holds — a long "How to reach" or "Notes"
+// column gets room, a short code column doesn't — and no column is narrower than its longest
+// word (a date or a phone number never wraps mid-way) (change list C5).
+const MIN_COL = 1000;
+const TW_PER_CHAR = 100, CELL_PAD = 240;          // 9 pt text, the cell's side margins
+function cellLen(c) {
+  return (c || []).reduce((s, r) => s + (r.img ? 14 : (r.t || '').length), 0);
+}
+function colWidths(b, n) {
+  const all = [b.head].concat(b.rows);
+  const mins = [], weight = [];
+  for (let i = 0; i < n; i++) {
+    const lens = all.map(r => cellLen(r[i])).filter(x => x > 0);
+    const longestWord = Math.max(0, ...all.map(r => Math.max(0, ...(r[i] || []).map(x =>
+      x.img ? 10 : Math.max(0, ...((x.t || '').split(/\s+/).map(w => w.length)))))));
+    const mean = lens.length ? lens.reduce((s, x) => s + x, 0) / lens.length : 0;
+    const max = lens.length ? Math.max(...lens) : 0;
+    mins.push(Math.min(3700, Math.max(MIN_COL, longestWord * TW_PER_CHAR + CELL_PAD)));   // an email address fits whole
+    weight.push(Math.max(6, Math.min(60, 0.5 * mean + 0.5 * Math.min(max, 80))));
+  }
+  const total = weight.reduce((s, x) => s + x, 0);
+  let widths = weight.map((x, i) => Math.max(mins[i], CONTENT_W * x / total));
+  for (let pass = 0; pass < 4; pass++) {                // shrink the roomy columns to fit
+    const over = widths.reduce((s, x) => s + x, 0) - CONTENT_W;
+    if (over <= 0.5) break;
+    const flex = widths.map((x, i) => x - mins[i]), room = flex.reduce((s, x) => s + x, 0);
+    if (room <= 0) { widths = widths.map(x => x * CONTENT_W / (CONTENT_W + over)); break; }
+    widths = widths.map((x, i) => x - Math.min(flex[i], over * flex[i] / room));
+  }
+  widths = widths.map(Math.floor);
+  widths[n - 1] = CONTENT_W - widths.slice(0, n - 1).reduce((s, x) => s + x, 0);
+  return widths;
 }
 
 function table(b) {
   const n = Math.max(b.head.length, ...b.rows.map(r => r.length));
-  const w = Math.floor(CONTENT_W / n);
-  const widths = Array(n).fill(w);
-  widths[n - 1] = CONTENT_W - w * (n - 1);
+  const widths = n * MIN_COL > CONTENT_W ? Array(n).fill(Math.floor(CONTENT_W / n)) : colWidths(b, n);
+  if (n * MIN_COL > CONTENT_W) widths[n - 1] = CONTENT_W - widths[0] * (n - 1);
   const pad = r => { const c = r.slice(); while (c.length < n) c.push([]); return c.slice(0, n); };
   const hasHead = b.head.some(c => c && c.length);
   const headText = b.head.map(c => (c || []).map(r => r.t || '').join('').trim());
@@ -139,7 +175,7 @@ function table(b) {
       return cell(c, { w: widths[i], bg: tone[i] ? tone[i].bg : (ri % 2 && !steps ? C.tint : undefined),
                        bm: i === 0 && b.bm ? b.bm[ri] : undefined });
     });
-    rows.push(new TableRow({ children: cells }));
+    rows.push(new TableRow({ cantSplit: true, children: cells }));   // a row never breaks across a page (C4)
   });
   return new Table({ rows, columnWidths: widths, width: { size: CONTENT_W, type: WidthType.DXA } });
 }
@@ -150,7 +186,7 @@ function calloutBlock(b) {
   inner.push(new Paragraph({
     children: [new TextRun({ text: b.kind.toUpperCase(), bold: true, size: 15,
                              color: s.ink, characterSpacing: 20 })],
-    spacing: { after: 60 },
+    spacing: { after: 60 }, keepNext: true,
   }));
   b.body.forEach(x => {
 
@@ -172,7 +208,7 @@ function calloutBlock(b) {
   return new Table({
     columnWidths: [CONTENT_W],
     width: { size: CONTENT_W, type: WidthType.DXA },
-    rows: [new TableRow({ children: [new TableCell({
+    rows: [new TableRow({ cantSplit: true, children: [new TableCell({
       width: { size: CONTENT_W, type: WidthType.DXA },
       shading: { type: ShadingType.CLEAR, fill: s.bg, color: 'auto' },
       borders: {
@@ -198,6 +234,7 @@ const breakNext = (k) => {
 };
 const spacer = () => new Paragraph({ text: '', spacing: { after: 120, line: 200 } });
 const CONTENT_PX = Math.floor(CONTENT_W / 15);   // twips -> px at 96 dpi
+let listNo = 0;   // each numbered list is its own instance, so it restarts at 1 (C2)
 blocks.forEach((b, k) => {
   if (b.k === 'h') {
     const accent = C[b.part] || C.navy;
@@ -233,10 +270,11 @@ blocks.forEach((b, k) => {
   } else if (b.k === 'p') {
     children.push(b.small ? para(b.runs, { size: 16, color: C.muted, after: 60 }) : para(b.runs));
   } else if (b.k === 'list') {
+    const inst = b.ordered ? ++listNo : 0;
     b.items.forEach(it => children.push(new Paragraph({
       children: runs(it),
       bullet: b.ordered ? undefined : { level: 0 },
-      numbering: b.ordered ? { reference: 'num', level: 0 } : undefined,
+      numbering: b.ordered ? { reference: 'num', level: 0, instance: inst } : undefined,
       spacing: { after: 60, line: 276 },
     })));
   } else if (b.k === 'table') {
@@ -273,7 +311,7 @@ const doc = new Document({
     reference: 'num',
     levels: [{ level: 0, format: LevelFormat.DECIMAL, text: '%1.',
                alignment: AlignmentType.START,
-               style: { paragraph: { indent: { left: 400, hanging: 240 } } } }],
+               style: { paragraph: { indent: { left: 480, hanging: 360 } } } }],   // room for "10."
   }] },
   styles: { default: { document: { run: { font: 'Aptos', size: 20, color: C.ink } } } },
   sections: [{
@@ -296,8 +334,12 @@ const doc = new Document({
                       (model.meta && model.meta.owner ? '  \u00b7  Owner: ' + model.meta.owner : ''),
                       size: 15, color: C.muted }),
         new TextRun({ text: '\t', size: 15 }),
-        new TextRun({ children: ['Page ', PageNumber.CURRENT, ' of ', PageNumber.TOTAL_PAGES],
-                      size: 15, color: C.muted }),
+        // each field in its own run at the label's size, so no renderer draws "Page" and the
+        // numbers at different sizes (C7)
+        new TextRun({ text: 'Page ', size: 15, color: C.muted }),
+        new TextRun({ children: [PageNumber.CURRENT], size: 15, color: C.muted }),
+        new TextRun({ text: ' of ', size: 15, color: C.muted }),
+        new TextRun({ children: [PageNumber.TOTAL_PAGES], size: 15, color: C.muted }),
       ],
     })] }) },
     children,

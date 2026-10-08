@@ -34956,6 +34956,46 @@ test('MP1-5: the index — section numbers link, an abbreviation or code is expl
   assert.ok(mh.indexOf('class="ixaz" role="navigation"') > 0 && mh.indexOf('<nav class="ixaz"') < 0, 'the letter bar is not a <nav> (the sidebar\'s nav rule would style it)');
 });
 
+test('MC-1 (change list 2026-10-08 C): the Word print copy — numbered lists restart, rows and callouts never split, a column is as wide as its content needs (driven), callout leads are capitalised, and no raw markup survives', () => {
+  const rx = MP1_('render_docx.js'), mm = MP1_('md2model.py'), bd = MP1_('build.py');
+  // C5, driven: the width rule itself
+  const src = rx.slice(rx.indexOf('const MIN_COL = '), rx.indexOf('function table(b) {'));
+  const ctx = { CONTENT_W: 10080 }; vm.createContext(ctx);
+  vm.runInContext(src + '\nthis.colWidths = colWidths;', ctx);
+  const R = (t) => [{ t }];
+  const b1 = { head: [R('Role'), R('Holder'), R('Backup'), R('How to reach')],
+    rows: [[R('Respiratory Therapists'), R('Parth Shah (manager)'), R('Shagun Shastri'), R('respiratory@universalmedsupply.com')],
+           [R('Denials Team'), R('Monil Shah'), R('Bhoj Bhatt'), R('Direct · Denials Q (ext 101)')]] };
+  const w = Array.from(ctx.colWidths(b1, 4));
+  assert.strictEqual(w.reduce((s, x) => s + x, 0), 10080, 'the columns fill the page exactly');
+  assert.ok(w[3] >= 'respiratory@universalmedsupply.com'.length * 100 + 240 && w[3] === Math.max(...w), 'How to reach is the widest, and holds the address whole: ' + w);
+  // the minimum is what protects an address when the other columns are long: its share alone would wrap it
+  const long = 'A long cell that runs well past the width of any one column in this table, twice over.';
+  const crowd = { head: [R('Role'), R('Holder'), R('Backup'), R('How to reach')],
+    rows: [[R(long), R(long), R(long), R('respiratory@universalmedsupply.com')]] };
+  const cw = Array.from(ctx.colWidths(crowd, 4));
+  assert.ok(cw[3] >= 'respiratory@universalmedsupply.com'.length * 100 + 240, 'an address column is never narrower than the address: ' + cw);
+  const log = { head: [R('Date'), R('Section'), R('Change'), R('Retraining')],
+    rows: [[R('2026-10-08'), R('10.12.2'), R('After month 36, Medicare pays one maintenance-and-servicing visit every 6 months for a concentrator.'), R('Yes')]] };
+  const lw = Array.from(ctx.colWidths(log, 4));
+  assert.ok(lw[0] >= 10 * 100 + 240 && lw[2] > 5000, 'a date never wraps, and the Change column takes the room: ' + lw);
+  // C2: each numbered list its own instance, restarting at 1, with room for "10."
+  assert.ok(/const inst = b\.ordered \? \+\+listNo : 0;/.test(rx) && /numbering: b\.ordered \? \{ reference: 'num', level: 0, instance: inst \}/.test(rx), 'every numbered list restarts');
+  assert.ok(/indent: \{ left: 480, hanging: 360 \}/.test(rx), 'and a two-digit number keeps its gap');
+  // C4: a data row and a callout box never break across a page; the label stays with its text
+  assert.ok(/new TableRow\(\{ cantSplit: true, children: cells \}\)/.test(rx) && /rows: \[new TableRow\(\{ cantSplit: true, children: \[new TableCell/.test(rx), 'rows and callouts stay whole');
+  assert.ok(/spacing: \{ after: 60 \}, keepNext: true,/.test(rx), 'the callout label keeps with its text');
+  // C1: a photo cell has no set line height; C7: every footer field its own run
+  assert.ok(/\(list \|\| \[\]\)\.some\(r => r\.img\) \? \{ after: 0 \} : \{ after: 0, line: 252 \}/.test(rx), 'a photo cell is single-spaced');
+  assert.ok(/new TextRun\(\{ children: \[PageNumber\.CURRENT\], size: 15/.test(rx) && !/children: \['Page ', PageNumber\.CURRENT/.test(rx), 'the footer fields are separate runs at one size');
+  // C3 + C6: md2model
+  assert.ok(/t\[:1\]\.islower\(\) and t\[:1\]\.isascii\(\)/.test(mm), 'a callout lead is capitalised after its label, as make_html.py does');
+  assert.ok(/if S\.startswith\("```"\):/.test(mm), 'a fenced block is code, not text with backticks');
+  assert.ok(/runs \+= \[dict\(r, b=True\) for r in emphasis\(m\.group\(1\)\)\]/.test(mm), 'bold holding code is parsed inside');
+  assert.ok(/zip\(marks\[0::2\], marks\[1::2\]\)/.test(mm) && /HAS_TOKEN\.search\(s, a \+ 2, b\)/.test(mm), 'bold round a cross-reference pairs its markers left to right');
+  assert.ok(!/"_[A-Z{][^"\n]*_\\n/.test(bd) && !/return "_No/.test(bd), 'no _italic_ in the generated appendices (Word does not read it)');
+});
+
 test('MP1-6: department guides come from data/extracts.json — every guide a part, Billing in each by default, and a reference to a section a guide leaves out reads "(in the full manual)", never a dead link', () => {
   const bd = MP1_('build.py');
   const man = JSON.parse(MP1_('data/extracts.json'));
