@@ -4093,6 +4093,44 @@ function getManualPart(department) {
   } catch (err) { return { error: err.message }; }
 }
 
+/** Every chapter of the manual in ONE read (operator testing 2026-10-08: moving
+ *  between chapters, and hovering a cross-reference into one, waited on a
+ *  server call each time). The reader fetches this once per session and paints
+ *  a chapter, or a preview, from it. Each part is exactly getManualPart's
+ *  shape, by the same rules: manual ids only, drafts to admins only, sorted
+ *  by SortOrder then title. */
+function getManualParts() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const sheet = getOrCreateKbSheet_();
+    const last = sheet.getLastRow();
+    if (last < 2) return { parts: [], isAdmin: !!emp.isAdmin };
+    const keys = sheet.getRange(2, 1, last - 1, 2).getValues();
+    const hits = [];
+    keys.forEach(function (r, i) { if (KB_MANUAL_ID_RE.test(String(r[KB.ID] || '').trim())) hits.push(i); });
+    if (!hits.length) return { parts: [], isAdmin: !!emp.isAdmin };
+    const lo = hits[0], hi = hits[hits.length - 1];
+    const block = sheet.getRange(lo + 2, 1, hi - lo + 1, KB_HEADERS.length).getValues();
+    const by = {};
+    hits.forEach(function (i) {
+      const r = block[i - lo];
+      const status = kbRowStatus_(r[KB.STATUS]);
+      if (status === KB_STATUS_DRAFT && !emp.isAdmin) return;
+      const dept = String(r[KB.DEPARTMENT] || '').trim();
+      if (!dept) return;
+      (by[dept] = by[dept] || []).push({ id: String(r[KB.ID]).trim(), title: String(r[KB.TITLE] || ''), status: status,
+        sortOrder: Number(r[KB.SORT_ORDER] || 0) || 0, bodyMd: String(r[KB.BODY_MD] || '') });
+    });
+    const parts = Object.keys(by).map(function (dept) {
+      const sections = by[dept];
+      sections.sort(function (a, b) { return (a.sortOrder - b.sortOrder) || kbNaturalCompare_(a.title, b.title); });
+      return { department: dept, sections: sections };
+    });
+    return { parts: parts, isAdmin: !!emp.isAdmin };
+  } catch (err) { return { error: err.message }; }
+}
+
 
 function getOrCreateManualImportSheet_() {
   const ss = getKbSS_();

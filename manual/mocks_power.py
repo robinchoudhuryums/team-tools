@@ -152,8 +152,8 @@ def refs(x, y, w, h, t):
     return f'<text x="{x + w - 10}" y="{y + h - 8}" text-anchor="end" style="font:600 10px \'IBM Plex Mono\',monospace;fill:var(--muted)">{t}</text>'
 b.append(panel(200, 44, 560, 196, "--p5", "1 · Intake and education — PAK", "§5-2"))
 b.append(panel(200, 272, 360, 390, "--p4", "2 · Qualifications", "§5-3 · §5-4 · §5-5"))
-b.append(panel(576, 272, 290, 390, "--p8", "3 · Verification & authorization", "§5-6 · §5-7"))
-b.append(panel(882, 272, 258, 390, "--p6", "4 · Delivery (Field Ops Power)", "§5-8"))
+b.append(panel(576, 272, 290, 390, "--p8", "3 · Verification & PAR", "§5-6 · §5-7"))   # the long title ran into its section numbers in the app font
+b.append(panel(882, 272, 258, 390, "--p6", "4 · Delivery", "§5-8"))   # the owner is named in the first box, so the title fits beside 5.8
 
 
 def tag(x, y, w, text):
@@ -200,7 +200,12 @@ y = 526
 for form, opt in forms:
     b.append(check(218, y, form, opt))
     y += 16
-b.append(node(404, 318, 150, 84, "PT Eval", "scheduling, finding|eligible PT/OT services,|PT/OT explanation", dashed=True, fill="var(--panel)"))
+# Operator 2026-10-08: the PT evaluation is scheduled and handled by Power intake,
+# so it carries Power's colour; only the ATP evaluation is Field Ops-Power's.
+b.append('<rect x="404" y="318" width="150" height="84" rx="6" fill="var(--bg)"/>'
+         '<rect x="404" y="318" width="150" height="84" rx="6" fill="var(--p5)" fill-opacity=".10"/>')
+b.append(node(404, 318, 150, 84, "PT Eval", "Power intake schedules,|finds eligible PT/OT|services, explains PT/OT", dashed=True,
+              fill="none", stroke="var(--p5)", ink="var(--p5)"))
 b.append(check(410, 420, "PT Rx", True))
 b.append(check(410, 436, "PT Report", True))
 b.append('<rect x="404" y="458" width="150" height="84" rx="6" fill="var(--bg)"/>'
@@ -235,7 +240,7 @@ b.append(small(816, 538, "approved", "var(--scr-ink)", "end"))
 b.append(path("M708 572 H716"))
 
 # ---- phase 4
-b.append(node(898, 318, 226, 50, "Order placed", "with the manufacturer"))
+b.append(node(898, 318, 226, 50, "Manufacturer order", "placed by Field Ops-Power"))
 b.append(f'<rect x="966" y="380" width="90" height="24" rx="12" fill="var(--accent)"/>')
 b.append(T(1011, 396, "2–3 weeks", 11.5, 700, "var(--bg)", "middle"))
 b.append(node(898, 416, 226, 50, "Received", "in our warehouse"))
@@ -260,7 +265,7 @@ b.append(f'<rect x="898" y="{TY - 7}" width="150" height="14" rx="3" fill="var(-
 b.append(T(973, TY + 24, "2–3 weeks to warehouse", 11.5, 700, "var(--navy)", "middle"))
 b.append(f'<line x1="1054" y1="{TY}" x2="1140" y2="{TY}" stroke="var(--muted)" stroke-width="2" stroke-dasharray="6 5"/>')
 b.append(T(W/2, 778, "Dashed boxes happen only when the order needs them. With no PT or ATP eval, Qualifications moves straight to order verification.", 11, 500, "var(--muted)", "middle"))
-svg("p2-panels", W, H, "Power order phases", b)
+svg("p2-panels", W, H, "Power Order Process", b)
 
 
 # ============================================== take 3: vertical tracker ===
