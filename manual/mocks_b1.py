@@ -156,7 +156,7 @@ b.append(fl(960, 296, 960, 340, "YES", 966, 322))
 b.append(fbox(870, 340, 180, 62, "Can't be picked up —|theirs to keep, donate|or dispose — §5-8.1", "act"))
 b.append(fl(1090, 296, 1090, 420, "NO", 1096, 362))
 b.append(fbox(870, 420, 270, 40, "Create the pick-up ticket — §6-9.3", "act"))
-b.append(fbox(20, 420, 830, 56, "**A pick-up may be irreversible|A patient who surrenders a PMD may not be able to get another for five years under Same or Similar — §10-12.5", "tech"))
+b.append(fbox(20, 420, 830, 56, "**A pick-up may be irreversible|A patient who surrenders a PMD may have difficulty getting another for five years under Same or Similar — §10-12.5", "tech"))
 
 svg("m3-pickup", W, H, "PMD pick-up decision", b)
 
@@ -195,11 +195,11 @@ b.append(seg(13, 60, y, "Patient owns it|Medicare covers repairs, with cost-shar
 y = 196
 b.append(rowlab(y, "Oxygen", "concentrators, cylinders"))
 b.append(seg(0, 36, y, "Rented — 36 months|UMS owns and services it", "--tint", "--accent"))
-b.append(seg(36, 60, y, "No rental charge — UMS still owns it|Servicing continues; fee every 6 months", "--watch-bg", "--watch-ink"))
+b.append(seg(36, 60, y, "No rental charge — UMS still owns it|Concentrator visit paid every 6 months", "--watch-bg", "--watch-ink"))
 b.append(f'<text x="{mx(60) - 4}" y="{y + 64}" text-anchor="end" '
          f'style="font:500 11px \'IBM Plex Sans\',sans-serif;fill:var(--muted)">After 5 years: a new 36-month rental may begin</text>')
 y = 296
-b.append(rowlab(y, "Continuous rental", "ventilators, E0471"))
+b.append(rowlab(y, "Continuous rental", "ventilators"))
 b.append(seg(0, 60, y, "Rented monthly for as long as it's needed — never owned", "--pol-bg", "--pol-ink"))
 b.append(fbox(20, 400, 1120, 48, "**The patient never owns oxygen equipment|Say: \"Medicare pays for the rental for 36 months. After that you keep using it at no rental charge and we keep servicing it, for up to 5 years total.\"", "pol"))
 svg("m9-rental", W, H, "Rental, ownership and useful lifetime timeline", b)

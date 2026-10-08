@@ -198,9 +198,9 @@ def expand(m):
         if part != "all":
             rows = [g for g in rows if part in g["parts"] or "p0" in g["parts"]]
         hdr = "Term" if cls != "system" else "Name"
-        out = [f"| {hdr} | Definition | Parts |", "|---|---|---|"]
+        out = [f"| {hdr} | Definition | Chapters |", "|---|---|---|"]
         for g in rows:
-            pl = "All" if len(g["parts"]) == 5 else ", ".join(p[1:] for p in g["parts"])
+            pl = "All" if "p0" in g["parts"] else ", ".join(p[1:] for p in g["parts"])   # a CSR Core term is everyone's
             out.append(f"| **{g['term']}** | {g['definition']} | {pl} |")
         return "\n".join(out)
     if spec.startswith("billing:"):

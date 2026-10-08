@@ -384,7 +384,9 @@ print(f"aliases      : {sum(len(v) for v in ALIASES.values())} phrases "
 # searchable records: id, label, body snippet
 import json as _json, html as _html
 # the October 2026 renumber: a section is also found by the number it had before
-FORMERLY = _json.load(open("data/renumber-2026-10.json", encoding="utf-8"))["formerly"]
+_RENUM = _json.load(open("data/renumber-2026-10.json", encoding="utf-8"))
+FORMERLY = _RENUM["formerly"]
+MOVED = {k: v for k, v in _RENUM.get("moved_before_renumber", {}).items() if not k.startswith("_")}
 SEARCH = []
 for m in re.finditer(r'<h([23]) id="([\w_.-]+)">(.*?)</h\1>(.*?)(?=<h[123]|\Z)', body, re.S):
     label = re.sub(r'<a\b[^>]*class="ah"[^>]*>.*?</a>', "", m.group(3))
@@ -401,6 +403,9 @@ for m in re.finditer(r'<h([23]) id="([\w_.-]+)">(.*?)</h\1>(.*?)(?=<h[123]|\Z)',
     nums = old_forms(src) if src else []
     if src in FORMERLY:
         was = FORMERLY[src]
+        nums = nums + [f for f in old_forms(was) if f not in nums] + ["formerly " + dnum(was)]
+    if src in MOVED:   # the number before a Phase 3 move — the one CSRs actually knew
+        was = MOVED[src]
         nums = nums + [f for f in old_forms(was) if f not in nums] + ["formerly " + dnum(was)]
     SEARCH.append({"i": sid, "t": label, "b": txt,
                    "a": " ".join(nums),

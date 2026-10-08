@@ -210,7 +210,7 @@ b.append(check(410, 420, "PT Rx", True))
 b.append(check(410, 436, "PT Report", True))
 b.append('<rect x="404" y="458" width="150" height="84" rx="6" fill="var(--bg)"/>'
          '<rect x="404" y="458" width="150" height="84" rx="6" fill="var(--p6)" fill-opacity=".10"/>')
-b.append(node(404, 458, 150, 84, "ATP Eval", "Field Ops schedules, up|to 2–3 weeks out based|on ATP travel route", dashed=True,
+b.append(node(404, 458, 150, 84, "ATP Eval", "Field Ops-Power schedules|up to 2–3 weeks out,|by ATP travel route", dashed=True,
               fill="none", stroke="var(--p6)", ink="var(--p6)"))
 b.append(check(410, 560, "ATP Report", True))
 # a key for the dotted lines and boxes

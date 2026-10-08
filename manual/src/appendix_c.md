@@ -50,11 +50,10 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 | "I need more supplies." | Within 30 days of running out; ship no sooner than **10 days** before |
 | "The patient has died." | Condolences, date of death; patient-owned stays, else a pick-up ticket |
 
-### Escalation and complaints
+### Escalation, complaints and language
 - **Supervisor:** name and DOB → the concern → that team's supervisor → your own → a callback. **Medicare complaint** → straight to a supervisor
 - A complaint: **five fields** (name, address, phone, summary, actions) · acknowledged within **48 hours**
-
-### Language
+- **Abusive caller:** warn once; if it goes on, say you're ending the call, then disconnect — [[§1-4.3]]
 - **Spanish Q** — inbound, then its voicemail; outbound, then the email. Never a direct transfer
 
 **Never say** — "your insurance will cover this" · "you'll only owe $X" · "I can waive that" · "we take UHC"
@@ -142,7 +141,7 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 - PMDs are **not delivered to a hospital, rehab or SNF** — a nursing home that is the permanent residence is fine — and the patient must be present
 
 ### Route
-- **Scheduling** — delivery, ATP, service visits → **Field Ops-Power Q (ext 344)**
+- **Scheduling** — delivery, ATP, service visits → **Field Ops-Power Q (ext 344)**. A virtual ATP evaluation → Virtual ATP Scheduling
 - **Reporting a problem** with a PMD → **Service Q**
 
 **Never** — promise a PWC return or a write-off · call an MA plan a secondary · deliver a PMD to a hospital, rehab or SNF
@@ -257,7 +256,7 @@ The full Billing card is at [[§10-A]]. This is the condensed version.
 
 ### Rental
 - **Capped rental:** 13 paid months, then the patient owns it automatically. No purchase option (complex rehab PWC aside), no 15 months
-- **E0471 and ventilators:** monthly rental for as long as needed, **never owned**
+- **Ventilators:** monthly rental for as long as needed, **never owned**
 - **Oxygen:** 36 months of rental, then no rental charge — but **UMS keeps ownership** and keeps servicing to 5 years
 
 ### Protections

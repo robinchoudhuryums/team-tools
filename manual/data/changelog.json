@@ -1,6 +1,42 @@
 [
   {
     "date": "2026-10-08",
+    "part": "p10",
+    "section": "§10-2",
+    "summary": "E0471 (a BiPAP with a backup rate) is a capped rental, like E0470: 13 paid months, then the patient owns it. Medicare moved it out of the continuous-rental (frequent and substantial servicing) category in April 2006; the manual still said \"never owned\".",
+    "authority": "Billing",
+    "retraining": true,
+    "provenance": "Change list 2026-10-08 F1 — checked against CMS (CMS-1167-F; 42 CFR 414.222, 414.210(e)(5))"
+  },
+  {
+    "date": "2026-10-08",
+    "part": "p10",
+    "section": "§10-12.2",
+    "summary": "After month 36, Medicare pays one maintenance-and-servicing visit every 6 months for a concentrator or transfill equipment (not tanks or liquid oxygen) — a real visit, with the patient's 20% coinsurance. Repairs are still never separately paid.",
+    "authority": "Billing",
+    "retraining": true,
+    "provenance": "Change list 2026-10-08 F1 — checked against CMS (CMS-1167-F; 42 CFR 414.222, 414.210(e)(5))"
+  },
+  {
+    "date": "2026-10-08",
+    "part": "p10",
+    "section": "§10-2.3",
+    "summary": "Oxygen cylinders (E0431) are billed in the 36-month oxygen rental, not as a capped rental.",
+    "authority": "Billing",
+    "retraining": false,
+    "provenance": "Change list 2026-10-08 F1 — checked against CMS (CMS-1167-F; 42 CFR 414.222, 414.210(e)(5))"
+  },
+  {
+    "date": "2026-10-08",
+    "part": "p3",
+    "section": "§3-3.2",
+    "summary": "Texas Medicaid resupply ships one month at a time, with eligibility checked before each shipment.",
+    "authority": "Respiratory & Resupply",
+    "retraining": false,
+    "provenance": "Change list 2026-10-08 F4 — a line lost in an earlier edit"
+  },
+  {
+    "date": "2026-10-08",
     "part": "p8",
     "section": "§8-4",
     "summary": "The oxygen accessory notes now say accessories are included in the oxygen rental at no separate charge for the whole 5-year useful lifetime. They used to say \"during the 36-month period\", which contradicted 8.4.1 and 10.12.2.",
@@ -93,7 +129,7 @@
     "date": "2026-10-07",
     "part": "p10",
     "section": "§10-12.8",
-    "summary": "Oxygen restart rules moved from 7.9 into Billing. The short-break example now counts the rental month (from the delivery anniversary), not the calendar month.",
+    "summary": "Oxygen restart rules moved into Billing from the Oxygen chapter (formerly 7.9). The short-break example now counts the rental month (from the delivery anniversary), not the calendar month.",
     "authority": "Billing",
     "retraining": false,
     "provenance": "Operator manual update 2026-10-06 — Phase 3 consolidation (list line 270; pushback B-22)"
@@ -102,7 +138,7 @@
     "date": "2026-10-07",
     "part": "p10",
     "section": "§10-19.6",
-    "summary": "The EAA and payment plans now live in Billing (formerly 5.9.3). Neither is available on an out-of-pocket order.",
+    "summary": "The EAA and payment plans now live in Billing — they were in the Field Operations chapter (formerly 5.9.3). Neither is available on an out-of-pocket order.",
     "authority": "Billing",
     "retraining": false,
     "provenance": "Operator manual update 2026-10-06 — Phase 3 consolidation (list line 17)"
@@ -376,15 +412,6 @@
     "authority": "Operations",
     "retraining": true,
     "provenance": "Operator manual update 2026-10-06 (list line 415)"
-  },
-  {
-    "date": "2026-10-07",
-    "part": "p7",
-    "section": "§7-3.2",
-    "summary": "A diagnostic visit is charged when the patient hasn't sent photos or video of the equipment and the issue, or a recent service visit found no issue.",
-    "authority": "Operations",
-    "retraining": true,
-    "provenance": "Operator manual update 2026-10-06 (list line 40); the fee amount is with Service to confirm"
   },
   {
     "date": "2026-10-07",

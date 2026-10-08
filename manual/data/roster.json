@@ -80,10 +80,8 @@
     "direct_transfer": false,
     "current_named_individual": null,
     "source": "Robin, 10/2026 (Phase 5 directory changes)",
-    "note": "TX Medicaid Waiver Program orders handled exclusively by this role. Confirmed 09/2026: no backup currently exists.",
-    "flags": [
-      "no-backup-confirmed"
-    ],
+    "note": "TX Medicaid Waiver Program orders handled exclusively by this role.",
+    "flags": [],
     "type": "individual"
   },
   {
@@ -144,7 +142,7 @@
     "part": "p5",
     "holder": "Erica Thongvan",
     "backup": "Field Ops-Power team",
-    "queue": "Field Ops-Power",
+    "queue": null,
     "email": null,
     "email_attn": null,
     "direct_transfer": false,
@@ -162,7 +160,7 @@
     "backup": "Power Manager (Rajdeep Thakar)",
     "queue": null,
     "email": "power@universalmedsupply.com",
-    "email_attn": "Authorization Request",
+    "email_attn": "PAR Additional Info Requested",
     "direct_transfer": true,
     "current_named_individual": null,
     "source": "Robin, 10/2026 (Phase 5 directory changes)",
@@ -180,7 +178,7 @@
     "backup": "Power Manager (Rajdeep Thakar)",
     "queue": null,
     "email": "power@universalmedsupply.com",
-    "email_attn": "Authorization Request",
+    "email_attn": "PAR Additional Info Requested",
     "direct_transfer": true,
     "current_named_individual": null,
     "source": "Robin, 10/2026 (Phase 5 directory changes)",
@@ -309,7 +307,7 @@
     "email_attn": null,
     "direct_transfer": false,
     "current_named_individual": "Parth Shah",
-    "note": "Email directly with used-equipment requests. Parth Shah also holds the Service escalation role for insurance complaints and the after-hours Level 1 backup role — three roles in total.",
+    "note": "Email directly with used-equipment requests.",
     "source": "Field Ops guide",
     "flags": []
   },
@@ -403,11 +401,10 @@
     "current_named_individual": null,
     "phone": "(214) 929-1055 (Ursula Collins) / (214) 264-0720 (Menzise Richardson)",
     "location": "Irving office — DFW patients only",
-    "note": "Two RTs based at the Irving office, alternating weeks on call. Contact details for Menzise Richardson still needed.",
+    "note": "Two RTs based at the Irving office, alternating weeks on call.",
     "source": "After Hours guide",
     "flags": [
-      "rotating",
-      "incomplete-contact-details"
+      "rotating"
     ]
   },
   {
@@ -424,7 +421,7 @@
     "current_named_individual": null,
     "phone": "(667) 231-5113",
     "location": "Irving office",
-    "note": "DME technician backup for all locations. Also holds two daytime roles.",
+    "note": "DME technician backup for all locations.",
     "source": "After Hours guide",
     "flags": []
   },
@@ -597,7 +594,8 @@
     "current_named_individual": null,
     "note": "Denials members take direct transfers; call the member working the case first. Monil Shah leads the team.",
     "source": "Robin, 10/2026",
-    "flags": []
+    "flags": [],
+    "lead_of": "Denials"
   },
   {
     "part": "p5",

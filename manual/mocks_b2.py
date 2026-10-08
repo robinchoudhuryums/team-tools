@@ -167,7 +167,7 @@ for d, lab, sub in [(-30, "30 days before", "contact window opens"), (-10, "10 d
 b.append(f'<text x="{dx(-10) - 8}" y="62" text-anchor="end" style="{MONO}">Shipping before this line makes the claim non-payable →</text>')
 b.append(f'<text x="{dx(-5)}" y="62" text-anchor="middle" style="{MONO};fill:var(--scr-ink)">SHIP DATE = DATE OF SERVICE</text>')
 b.append(fbox(40, 206, 350, 66, "**PAP has a second gate|Documented use and a doctor visit —|out of compliance, no supplies — §3-7.4", "pol"))
-b.append(fbox(405, 206, 350, 66, "**Nebulizer supplies|No more than a three-month quantity|in one shipment — §3-3.3", "note"))
+b.append(fbox(405, 206, 350, 66, "**Any supply|No more than a three-month quantity|in one shipment — §3-3.2", "note"))
 b.append(fbox(770, 206, 350, 66, "**Oxygen tanks are different|A rental accessory — once a week, two|business days' notice — §8-2.1", "note"))
 b.append(fbox(40, 290, 1080, 60, "**Say:|\"Insurance sets the window for when we can send the next shipment — we're not able to ship earlier than the allowed|timeframe before you run out, per insurance guidelines. I'll follow up with that team to make sure it goes out as soon as possible.\"", "note"))
 b.append(txt(W/2, 386, "Medicare's rules. Texas Medicaid bills one month's supply at a time, so eligibility is checked each month."))

@@ -398,7 +398,7 @@ def build_index(include=None):
 
 
 def glossary_subset(part):
-    return sum(1 for g in GLOSSARY if part in g["parts"] or len(g["parts"]) == 5)
+    return sum(1 for g in GLOSSARY if part in g["parts"] or "p0" in g["parts"])
 
 
 HOWTO = """## How to use this manual
@@ -527,8 +527,8 @@ def assemble(name, part_keys, title, banner=None, guide=None):
         text = resolve_refs(bodies[k])
         if guide and k == "appx_a":
             # each glossary section shows the terms of this guide's parts, plus those marked All
-            text = _keep_rows(text, lambda h, c: "Parts" not in h or c[h.index("Parts")] == "All"
-                              or bool(allowed & {x.strip() for x in c[h.index("Parts")].split(",")}))
+            text = _keep_rows(text, lambda h, c: "Chapters" not in h or c[h.index("Chapters")] == "All"
+                              or bool(allowed & {x.strip() for x in c[h.index("Chapters")].split(",")}))
         body_parts.append("\n---\n\n" + text)
     body_parts.append("\n---\n\n" + resolve_refs(cards_for(guide["cards"] if guide else None)))
     scope = guide["key"] if guide else None
