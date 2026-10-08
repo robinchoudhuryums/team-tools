@@ -4003,14 +4003,14 @@
     "hcpcs": [
       "K0006"
     ],
-    "hcpcs_note": "May also appear as K0003 with E2201 — the add-on code for a 20–24\" seat",
+    "hcpcs_note": "K0003 tops out at 250 lbs, so a heavier patient is K0006. E2201 is the add-on for a seat 20\" up to, but not including, 24\"",
     "product_weight_lbs": null,
     "capacity_lbs": 300,
     "dimensions": null,
     "seat": "20\" wide",
     "specs": [],
     "allowance": null,
-    "notes": "The 20\" version of the K3 Guardian. Billed as K0006 — or K0003 with E2201 — for a patient over 250 lbs who does not reach the 300 lb threshold for an extra-wide K0007 chair.",
+    "notes": "The 20\" version of the K3 Guardian. Billed as K0006 for a patient over 250 lbs who does not reach the 300 lb threshold for an extra-wide K0007 chair.",
     "source": "Robin, 09/2026",
     "images": [
       "mm/image14.jpg"

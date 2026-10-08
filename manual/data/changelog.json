@@ -1,6 +1,60 @@
 [
   {
     "date": "2026-10-08",
+    "part": "p7",
+    "section": "§7-3.2",
+    "summary": "There is no diagnostic charge when the technician finds a fault and repairs it; 1.1 and Card 7 now state the two $75 conditions exactly as 7.3.2 does.",
+    "authority": "Service",
+    "retraining": true,
+    "provenance": "Change list 2026-10-08 F3 — a line lost in an earlier edit"
+  },
+  {
+    "date": "2026-10-08",
+    "part": "p0",
+    "section": "§0-10",
+    "summary": "Pat. Resp. holds what the patient owes before delivery; billed balances are under Edit Patient → Invoices (0.10 and Card 0 now match 10.19.1).",
+    "authority": "Billing",
+    "retraining": false,
+    "provenance": "Change list 2026-10-08 F8"
+  },
+  {
+    "date": "2026-10-08",
+    "part": "p10",
+    "section": "§10-14",
+    "summary": "Pick-ups are created by CSRs or the Denials team; there is no separate discontinuation form or queue.",
+    "authority": "Billing",
+    "retraining": false,
+    "provenance": "Change list 2026-10-08 F10 — a line lost in an earlier edit"
+  },
+  {
+    "date": "2026-10-08",
+    "part": "p6",
+    "section": "§6-16",
+    "summary": "The nursing-home FAQ separates a short-term SNF or rehab stay (deliver up to two days before a confirmed discharge) from a nursing home that is the patient's permanent residence.",
+    "authority": "Field Operations",
+    "retraining": false,
+    "provenance": "Change list 2026-10-08 F12"
+  },
+  {
+    "date": "2026-10-08",
+    "part": "appx_b",
+    "section": "§B-1",
+    "summary": "The Spanish Queue row no longer says Direct — never transfer to a Spanish speaker directly (1.7).",
+    "authority": "Operations",
+    "retraining": false,
+    "provenance": "Change list 2026-10-08 F11"
+  },
+  {
+    "date": "2026-10-08",
+    "part": "p2",
+    "section": "§2-4",
+    "summary": "The Medline K3 Guardian 20\" is K0006 for a patient over 250 lbs (K0003 tops out at 250 lbs); E2201 covers a seat 20\" up to, but not including, 24\".",
+    "authority": "Billing",
+    "retraining": false,
+    "provenance": "Change list 2026-10-08 F2"
+  },
+  {
+    "date": "2026-10-08",
     "part": "p10",
     "section": "§10-2",
     "summary": "E0471 (a BiPAP with a backup rate) is a capped rental, like E0470: 13 paid months, then the patient owns it. Medicare moved it out of the continuous-rental (frequent and substantial servicing) category in April 2006; the manual still said \"never owned\".",

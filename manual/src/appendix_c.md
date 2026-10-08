@@ -28,7 +28,7 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 - Open with your name, UniversalMed Supply and **"on a recorded line"** · at least **two attempts**, the second from another caller ID · **no patient details on a voicemail** — [[§0-14]]
 
 ### Where to look
-- `Eligibility` — whose order it is · `Ticket` — when it's coming · `Pat. Resp.` — what they owe
+- `Eligibility` — whose order it is · `Ticket` — when it's coming · `Pat. Resp.` — what's owed before delivery (billed: *Invoices*)
 - **Notes** are behind *Messages*; **Fax History** is inside *Transaction*; signed documents are behind the *Artifacts* buttons — [[§0-10]]
 
 **Never** — quote a delivery date not in the system · promise a callback window you don't control · cold transfer
@@ -191,7 +191,7 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 - **We can't service it** → a local DME repair service, in network for insurance to pay
 
 ### Visits and loaners
-- **Diagnostic visit:** **$75** if the patient refuses photos or video of the issue, or a technician recently found it working — say so before booking
+- **Diagnostic visit:** **$75** if they refuse photos or video, or a technician recently found it working and it still is; **no charge** if a fault is repaired. Say so first
 - **Don't raise loaners.** If asked: possible only while **patient-owned** equipment is repaired, and Service confirms
 
 ### Ventilators
@@ -273,5 +273,8 @@ The full Billing card is at [[§10-A]]. This is the condensed version.
 ### Paying
 - Network status is **plan by plan**, never carrier by carrier
 - Can't pay in full? A **payment plan** through Billing, or the **EAA** — neither on an out-of-pocket order
+
+### Denials
+- A denial is **under review** — route to the Denials team member in the notes, else the **Denials Q (ext 101)** — [[§10-17.3]]
 
 **Never** — collect Medicare cost-sharing from a QMB patient · waive a fee outside the three rules · say "we take UHC" · say a denial will be overturned

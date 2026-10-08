@@ -35050,6 +35050,10 @@ test('MD-1 (change list 2026-10-08 D): the HTML manual — a phone gets one colu
   assert.ok(/role="dialog" aria-modal="true" aria-label="Call router"/.test(mh) && /rtOpener\.focus\(\{preventScroll:true\}\)/.test(mh) && /if\(e\.key!=='Tab'\) return;/.test(mh), 'the router keeps Tab inside and returns focus');
   assert.ok(/\$\{r\.h\|\|esc\(r\.a\)\}/.test(mh) && /"h": _tight\(/.test(mh), 'its answer keeps its links');
   assert.ok(/id="ixnone" hidden/.test(mh) && /\.tw\.more\{/.test(mh), 'the index says when nothing matches; a wide table fades at its edge');
+  // F2 batch: a diagram's <style> was the search preview of 16 sections ("dg-lane{fill:var(--panel)} …")
+  const srch = mh.slice(mh.indexOf('SEARCH = []'), mh.indexOf('SEARCH.append('));
+  assert.ok(srch.indexOf(`raw = re.sub(r'<svg\\b[^>]*?aria-label="([^"]*)"[^>]*>.*?</svg>', r" \\1. ", raw, flags=re.S)`) > 0, 'an inline diagram reads as its label');
+  assert.ok(srch.indexOf('raw = re.sub(r"<(svg|style|script)\\b.*?</\\1>", " ", raw, flags=re.S)') > srch.indexOf('aria-label='), 'and any other svg, style or script is dropped before the tags are');
 });
 
 test('MP1-6: department guides come from data/extracts.json — every guide a part, Billing in each by default, and a reference to a section a guide leaves out reads "(in the full manual)", never a dead link', () => {

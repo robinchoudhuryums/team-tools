@@ -455,7 +455,7 @@
     "queue": "Spanish Q",
     "email": "spanishcalls@universalmedsupply.com",
     "email_attn": null,
-    "direct_transfer": true,
+    "direct_transfer": false,
     "current_named_individual": null,
     "note": "Bilingual team members. If no one answers, transfer to the Spanish Queue Voicemail and email.",
     "source": "Robin, 10/2026 (Phase 5 directory changes)",

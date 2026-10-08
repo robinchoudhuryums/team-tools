@@ -414,6 +414,10 @@ for m in re.finditer(r'<h([23]) id="([\w_.-]+)">(.*?)</h\1>(.*?)(?=<h[123]|\Z)',
     label = re.sub(r"<[^>]+>", "", label).strip()
     raw = re.sub(r'<span class="cb-k">[^<]*</span>', " ", m.group(4))
     raw = re.sub(r'<img[^>]*alt="([^"]*)"[^>]*>', r" \1 ", raw)
+    # an inline diagram reads as its label, like an image as its alt — its <style> was
+    # landing in the search preview as "dg-lane{fill:var(--panel)} …"
+    raw = re.sub(r'<svg\b[^>]*?aria-label="([^"]*)"[^>]*>.*?</svg>', r" \1. ", raw, flags=re.S)
+    raw = re.sub(r"<(svg|style|script)\b.*?</\1>", " ", raw, flags=re.S)
     raw = re.sub(r"</(p|li|td|h3|h4|div)>", ". ", raw)
     txt = re.sub(r"<[^>]+>", " ", raw)
     txt = _html.unescape(re.sub(r"\s+", " ", txt)).strip()
