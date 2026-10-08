@@ -15,9 +15,10 @@ version stamp, extract banner.
 import json, os, re, subprocess, sys, datetime
 from numbering import display as dnum
 import footnotes, roles
+from built_date import built_date
 
 VERSION = "v3.0"
-BUILT = "09/15/2026"
+BUILT = built_date()   # the last content change — built_date.py
 OWNER = "Robin Choudhury"
 COMMIT = subprocess.run(["date", "+%s"], capture_output=True, text=True).stdout.strip()[:7]
 

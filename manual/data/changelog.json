@@ -1,5 +1,23 @@
 [
   {
+    "date": "2026-10-08",
+    "part": "p8",
+    "section": "§8-4",
+    "summary": "The oxygen accessory notes now say accessories are included in the oxygen rental at no separate charge for the whole 5-year useful lifetime. They used to say \"during the 36-month period\", which contradicted 8.4.1 and 10.12.2.",
+    "authority": "Operations",
+    "retraining": false,
+    "provenance": "Change list 2026-10-08 A2 — an approved fix that never reached the repo"
+  },
+  {
+    "date": "2026-10-08",
+    "part": "p0",
+    "section": "§0-2.1",
+    "summary": "A caller matching a lead can be after a manual wheelchair too: route them to the Sales MWC Q if the named Sales team member is unavailable.",
+    "authority": "Sales",
+    "retraining": false,
+    "provenance": "Change list 2026-10-08 A3 — an approved fix that never reached the repo"
+  },
+  {
     "date": "2026-10-07",
     "part": "p8",
     "section": "§8-3.3",

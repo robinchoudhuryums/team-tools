@@ -7,6 +7,8 @@ guides, the five callout types, and the per-part accent colours.
 import re, sys, html, markdown
 sys.path.insert(0, '.')
 from numbering import display as dnum, old_forms
+from built_date import built_date
+BUILT = built_date()   # one date for the sidebar and the card footers
 
 # The chapter colours and icons — data/chapter_style.json is the one source
 # (operator 2026-10-07); the palette and every icon below are drawn from it.
@@ -264,7 +266,6 @@ def wrap_cards(html):
                 group.find("div", class_="qb").append(k.extract())
     # running head + folio inside each card, and a contents sheet before the first
     cards = soup.find_all("section", class_="qrc")
-    BUILT = "09/15/2026"
     if cards:
         toc = soup.new_tag("section")
         toc["id"] = "cardtoc"
@@ -1055,7 +1056,7 @@ section.qrc h2{border-left:0;padding-left:0} section.qrc h2 .sn{margin-right:0}
 </style></head>
 <body><button class="navtoggle" id="nt">☰ &nbsp;Contents &amp; search</button><div class="wrap">
 <nav><div class="brand">UniversalMed Supply<br>CSR Procedures Manual</div>
-<div class="ver">v3.0 draft &middot; built 09/15/2026</div>
+<div class="ver">v3.0 draft &middot; built __BUILT__</div>
 <div class="cls">Confidential &mdash; Internal Use Only &middot; Owner: __OWNER__</div>
 <input id="q" type="search" placeholder="Search the manual…" autocomplete="off" aria-label="Search">
 <button id="openrouter">What did the caller say?</button>
@@ -1458,6 +1459,6 @@ document.addEventListener('keydown',e=>{
 </body></html>"""
 
 OWNER = re.search(r'^OWNER = "([^"]+)"', open("build.py").read(), re.M).group(1)
-open(DST, "w").write(TPL.replace("__PAL_LIGHT__", palette("light")).replace("__PAL_DARK__", palette("dark")).replace("__OWNER__", html.escape(OWNER)).replace("__NAV__", "\n".join(navhtml)).replace("__BODY__", body).replace("__SEARCH__", _json.dumps(SEARCH, ensure_ascii=False)).replace("__ROUTER__", _json.dumps(ROUTER, ensure_ascii=False)))
+open(DST, "w").write(TPL.replace("__PAL_LIGHT__", palette("light")).replace("__PAL_DARK__", palette("dark")).replace("__OWNER__", html.escape(OWNER)).replace("__NAV__", "\n".join(navhtml)).replace("__BODY__", body).replace("__SEARCH__", _json.dumps(SEARCH, ensure_ascii=False)).replace("__ROUTER__", _json.dumps(ROUTER, ensure_ascii=False)).replace("__BUILT__", BUILT))
 print(f"wrote {DST}  ({len(open(DST).read()):,} bytes)")
 print(f"nav entries: {len(nav)}   callouts styled: {body.count('class=\"cb ')}")

@@ -30305,9 +30305,19 @@ test('M2-E1: the exporter writes ONE bundle in the format the importer reads, wi
   // Batch M3: the images ride the same file (the importer unpacks them).
   // Batch M5b: and the glossary's abbreviations, as search synonyms.
   assert.ok(/bundle = \{"format": BUNDLE_FORMAT, "version": version, "built": built,\s*"router": router, "changelog": changelog, "synonyms": synonyms, "articles": articles, "images": images\}/.test(ex));
-  assert.ok(/\^VERSION = "\(\[\^"\]\+\)"/.test(ex) && /\^BUILT = "\(\[\^"\]\+\)"/.test(ex), 'VERSION / BUILT come from build.py');
+  assert.ok(/\^VERSION = "\(\[\^"\]\+\)"/.test(ex), 'VERSION comes from build.py');
   const bd = fs.readFileSync(path.join(M, 'build.py'), 'utf8');
-  assert.ok(/^VERSION = "v[\d.]+"$/m.test(bd) && /^BUILT = "[\d/]+"$/m.test(bd), 'and build.py still declares them in that shape');
+  assert.ok(/^VERSION = "v[\d.]+"$/m.test(bd), 'and build.py still declares it in that shape');
+  // Change list 2026-10-08 A1: the build date was a literal that stuck at 09/15/2026 for
+  // weeks. It is now ONE helper's answer — the date of the last content change — read by
+  // build.py, make_html.py (sidebar + card footers) and the export alike; no literal anywhere.
+  const bdt = fs.readFileSync(path.join(M, 'built_date.py'), 'utf8');
+  assert.ok(/^BUILT = built_date\(\)/m.test(bd) && /from built_date import built_date/.test(bd), 'build.py takes the date from built_date.py');
+  assert.ok(/from built_date import built_date/.test(ex) && /return ver\.group\(1\), built_date\(\)/.test(ex), 'and so does the export');
+  const mh = fs.readFileSync(path.join(M, 'make_html.py'), 'utf8');
+  assert.ok(/^BUILT = built_date\(\)/m.test(mh) && /built __BUILT__/.test(mh) && /\.replace\("__BUILT__", BUILT\)/.test(mh), 'and the HTML sidebar and card footers');
+  assert.ok(/SOURCE = \("src", "data", "diagrams"\)/.test(bdt) && /"status", "--porcelain"/.test(bdt) && /"log", "-1"/.test(bdt) && /MANUAL_BUILT/.test(bdt), 'the last committed content change; uncommitted content or no git means today; MANUAL_BUILT overrides');
+  [bd, mh, ex].forEach((s) => assert.ok(!/\d\d\/\d\d\/20\d\d"/.test(s.replace(/^.*e\.g\..*$/gm, '')), 'no hand-typed build date left'));
   assert.ok(/re\.search\(r"\^## §1-1 \.\*\?\(\?=\^## §\)"/.test(ex), 'the router is §1-1');
   assert.ok(/re\.split\(r"\\s\*\/\\s\*\(\?=\[\\"\\u201c\]\)", cells\[0\]\)/.test(ex), 'split on " / " between quoted phrases, as make_html.py does');
   assert.ok(/data\/changelog\.json/.test(ex) && /def sec_target/.test(ex) && /UNRESOLVABLE REF \{sec\} \(router or changelog\)/.test(ex), 'every router and changelog target is resolved or the export fails');
