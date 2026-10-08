@@ -20,7 +20,8 @@ generated from this directory. **Edit here, never in the outputs.**
 | `training/` | Material taken out of the manual for the app's Training module (the Billing knowledge check). Not built |
 | `data/thumbs.json`, `data/figures_b64.json` | Embedded product photos and screenshots (base64) |
 | `mocks_b1.py`, `mocks_b2.py`, `mocks_power.py`, `make_diagrams.py` | Diagram sources. `make_flow_diagrams.py` writes them to `diagrams/` |
-| `packets/spec.json` | The departmental review questions, one packet per chapter key plus `denials`. A row quotes the manual's current text for each section in `sec`; `roster` (a chapter key or a list of role names) shows that team's rows cut from the built B.1 directory; a `q` row is an open question |
+| `packets/spec.json` | The departmental review questions, one packet per chapter key (plus `denials` if that packet is approved). They are the questions approved on 2026-10-01/02, renumbered to the October chapters, plus the October additions the operator approves. A row quotes the manual's current text for each section in `sec` (`5.3~text` shows only the table rows containing *text*; `"diagrams": true` shows the section's diagram as an image); `roster` (a chapter key or a list of role names) shows that team's rows cut from the built B.1 directory; a `q` row is an open question. The approved format has no "why" line, so a question carries its ask in its own text. Keys starting with `_` are notes |
+| `packets/spec-october-full.json` | The October 2026 update's full question set, kept as the source for candidate questions; not built |
 
 ## Conventions the build enforces
 
@@ -42,7 +43,7 @@ Requires Python 3 with Playwright (Chromium) and Pillow, and Node with the `docx
 
 ```bash
 ./make_all.sh        # manual HTML + Word extracts, with all structural and render checks
-./make_packets.sh    # review packets (Markdown + Word); run after make_all.sh
+./make_packets.sh    # review packets (Markdown + Word); run after make_all.sh — packet_diagrams.py screenshots the built HTML's diagrams (Python Playwright)
 ```
 
 Output goes to `$MANUAL_OUT` (default `./dist`). The packets are `review-packets/Review-Packet-C<N>-<Name>.md` and `review-packets/word/Review-Packet-C<N>-<Name>.docx`; a reported MISSING names a section or directory row that a question quotes but the manual no longer has. A PDF of the Word manual is made and checked for blank pages only where LibreOffice works; otherwise export it from Word or Google Docs and check it by eye. `out/` holds intermediate Markdown. Both are git-ignored.
