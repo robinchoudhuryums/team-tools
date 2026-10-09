@@ -126,23 +126,19 @@
   .kbd-rt-g { font-size: .66rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 10px 4px 4px; }
   .kbd-rt-row { flex-direction: column; align-items: flex-start; }
   .kb-man-head h2 { margin-bottom: 2px; }
-  /* The chapter's colour and icon (operator 2026-10-07): a stripe and a badge on
-     the part's title, and the icon beside it in the tree. --man-pN are tokens;
+  /* The chapter's colour and icon (operator 2026-10-07): a badge on the part's
+     title (its stripe went in the design handoff's M6, 2026-10-09 — one colour
+     cue per level), and the icon beside it in the tree. --man-pN are tokens;
      the badge's icon is the page colour, so it reads in light and dark. */
   .kb-man-part { --man-c: var(--muted); }   /* an appendix has no chapter colour; the chapter classes below override */
   .kb-man-p0 { --man-c: var(--man-p0); } .kb-man-p1 { --man-c: var(--man-p1); } .kb-man-p2 { --man-c: var(--man-p2); } .kb-man-p3 { --man-c: var(--man-p3); } 
   .kb-man-p4 { --man-c: var(--man-p4); } .kb-man-p5 { --man-c: var(--man-p5); } .kb-man-p6 { --man-c: var(--man-p6); } .kb-man-p7 { --man-c: var(--man-p7); } 
   .kb-man-p8 { --man-c: var(--man-p8); } .kb-man-p9 { --man-c: var(--man-p9); } .kb-man-p10 { --man-c: var(--man-p10); } 
-  .kb-man-chap { border-left: 5px solid var(--man-c); padding-left: 12px; }
   .kb-man-chap h2 { display: flex; align-items: center; gap: 10px; color: var(--man-c); }
   .kb-man-badge { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; background: var(--man-c); color: var(--paper-card); }
   .kb-man-dic { flex: none; display: inline-flex; color: var(--man-c); }
   .kb-man-ver { font-size: .76rem; color: var(--muted); margin: 0 0 12px; min-height: 1em; }
-  .kb-man-part { max-width: 760px; }
-  .kb-man-sec { padding: 6px 0 18px; border-bottom: 1px solid var(--line); margin-bottom: 18px; scroll-margin-top: 12px; }
   .kb-man-sec:last-child { border-bottom: none; }
-  .kb-man-sec-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 6px 0 4px; }
-  .kb-man-sec-h { font-family: var(--display); font-size: 1.3rem; font-weight: 700; letter-spacing: -.015em; margin: 0; flex: 0 1 auto; }
   .kb-man-badges:empty { display: none; }
   /* Operator testing 2026-10-08 — the reader reads like the HTML manual: the
      section number is a chip in the chapter colour beside a rule, sub-section
@@ -153,11 +149,13 @@
      are unchanged. */
   .kb-man-part { max-width: 900px; }
   .kb-man-part .kb-article { max-width: none; font-size: .97rem; line-height: 1.72; }
-  .kb-man-sec { padding: 10px 0 26px; margin-bottom: 22px; }
-  .kb-man-sec-head { border-left: 4px solid var(--man-c); padding-left: 12px; margin: 4px 0 12px; }
-  .kb-man-sec-h { font-size: 1.5rem; line-height: 1.25; }
+  .kb-man-sec { padding: 10px 0 26px; border-bottom: 1px solid var(--line); margin-bottom: 22px; scroll-margin-top: 12px; }
+  /* M6 (design handoff, operator 2026-10-09): one colour cue per level — the
+     number chip over a hairline, no left stripe (the HTML manual's h2 matches). */
+  .kb-man-sec-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 0 0 12px; border-bottom: 1px solid var(--line); margin: 4px 0 6px; }
+  .kb-man-sec-h { font-family: var(--display); font-size: 1.5rem; font-weight: 600; line-height: 1.25; letter-spacing: -.015em; margin: 0; flex: 0 1 auto; }
   .kb-man-sn { display: inline-block; font-family: var(--mono); font-size: .6em; font-weight: 700; letter-spacing: .02em; padding: .24em .55em; border-radius: 5px;
-    background: var(--man-c); color: var(--paper-card); margin-right: .5em; vertical-align: .2em; }
+    background: var(--man-c); color: var(--paper-card); margin-right: .5em; vertical-align: .25em; }
   .kb-man-part .kb-article h3 { font-size: 1.14rem; font-weight: 650; margin: 1.7em 0 .55em; }
   .kb-man-part .kb-article h4 { font-size: 1rem; margin: 1.4em 0 .4em; }
   .kb-man-ssn { color: var(--man-c); font-variant-numeric: tabular-nums; margin-right: .45em; }
@@ -172,6 +170,62 @@
   .kb-man-part .kb-article table.kb-man-matrix tbody tr:nth-child(even) td { background: var(--paper-2); }
   @media (max-width: 640px) { .kb-man-sec-h { font-size: 1.28rem; } }
   .kb-man-part .kb-article td img.kb-manimg-thumb { max-height: 64px; max-width: 96px; margin: 2px 10px 2px 0; }
+  /* Manual reader design handoff, Phase 1 (operator 2026-10-09; the handoff is
+     docs/design_handoff_manual_reader/README.md). Scoped to manual sections. */
+  /* M1 — running text stops at a reading width; tables, diagrams, snippets keep the column. */
+  .kb-man-part .kb-article > p, .kb-man-part .kb-article > ul, .kb-man-part .kb-article > ol, .kb-man-part .kb-article > blockquote { max-width: 68ch; }
+  /* M2 — a callout reads kicker, title, body: a hairline box, the label in mono
+     (kbManualDecorate_ wraps it — text never changes), and only Critical keeps a
+     full-strength border. */
+  .kb-man-part .kb-article blockquote.kb-callout { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 16px 13px; }
+  .kb-man-part .kb-article blockquote.kb-callout-critical { border: 1.5px solid var(--danger); }
+  .kb-man-part .kb-article blockquote.kb-callout-policy { border-color: color-mix(in oklab, var(--info) 35%, transparent); }
+  .kb-man-part .kb-article blockquote.kb-callout-watch-out { border-color: color-mix(in oklab, var(--warn) 35%, transparent); }
+  .kb-man-part .kb-article blockquote.kb-callout > p:first-child > strong:first-child { display: block; }
+  .kb-co-kick { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+  .kb-callout-critical .kb-co-kick { color: var(--danger-deep); }
+  .kb-callout-policy .kb-co-kick { color: var(--info-deep); }
+  .kb-callout-watch-out .kb-co-kick { color: var(--warning-deep); }
+  .kb-callout-note .kb-co-kick { color: var(--muted); }
+  .kb-co-sep { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }   /* kept so the text reads the same */
+  .kb-co-title { display: block; margin-top: 4px; font-weight: 600; }
+  .kb-co-title::first-letter { text-transform: uppercase; }
+  .kb-man-part .kb-snippet-label { font-family: var(--mono); letter-spacing: .1em; }
+  /* M3 — a situation → action table: the first column is the row's label, and a
+     two-column table stacks when the READER is narrow — a container query, the one
+     trigger right in the pop-out, on a phone and in the 340px drawer alike (A2). */
+  .kb-man-part .kb-article table.kb-man-compact tr > :first-child { width: 34%; }
+  .kb-man-part .kb-article table.kb-man-compact td:first-child { font-weight: 600; }
+  .kb-man-tw { container-type: inline-size; }
+  @container (max-width: 480px) {
+    .kb-man-part .kb-article table.kb-man-2col thead { display: none; }
+    .kb-man-part .kb-article table.kb-man-2col, .kb-man-part .kb-article table.kb-man-2col tbody,
+    .kb-man-part .kb-article table.kb-man-2col tr, .kb-man-part .kb-article table.kb-man-2col td { display: block; width: auto; }
+    .kb-man-part .kb-article table.kb-man-2col tr { padding: 9px 0; border-bottom: 1px solid var(--line); }
+    .kb-man-part .kb-article table.kb-man-2col td { padding: 0; border: none; }
+    .kb-man-part .kb-article table.kb-man-2col tr > :first-child { width: auto; }   /* outranks the 34% label column */
+  }
+  /* M4b — a step's number sits in a circle in the chapter colour; the arrow to the
+     next step stays (the operator's pick over a plain rail). Still a <table>. */
+  .kb-man-part .kb-article table.kb-steps td:first-child { z-index: 0; width: 44px; vertical-align: top; padding-top: 12px;
+    font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--ink); border-bottom-color: transparent; }
+  .kb-man-part .kb-article table.kb-steps td:first-child::before { content: ""; position: absolute; z-index: -1; left: 50%; top: 9px;
+    width: 24px; height: 24px; margin-left: -12px; box-sizing: border-box; border-radius: 50%;
+    border: 1.5px solid var(--man-c); background: color-mix(in oklab, var(--man-c) 12%, var(--paper-card)); }
+  .kb-man-part .kb-article table.kb-steps tbody tr:not(:last-child) td:first-child::after { color: var(--man-c); }
+  /* M5 — a section link is a solid underline; a bare number link reads as a number. */
+  .kb-man-part .kb-article a.kb-xref { text-decoration-style: solid; text-decoration-thickness: 1px; text-decoration-color: color-mix(in oklab, var(--accent) 50%, transparent); }
+  .kb-man-part .kb-article a.kb-xref.kb-xref-num { font-family: var(--mono); font-size: .88em; font-weight: 600; }
+  /* M6 — the per-section Bookmark / Print are quiet until hovered. */
+  .kb-man-sec-acts .kb-btn { border-color: transparent; color: var(--muted); }
+  .kb-man-sec-acts .kb-btn:hover { border-color: var(--line); color: var(--ink); }
+  /* M7 — the feedback line is quieter, so a 15-section page does not read as 15 footers. */
+  .kb-man-fb { margin-top: 20px; padding-top: 0; border-top: none; gap: 4px; }
+  .kb-man-fb .kb-fb-q { font-size: .8rem; color: var(--muted-2); margin-right: 4px; }
+  .kb-man-fb .kb-fb-btns { flex: 1; gap: 2px; }
+  .kb-man-fb .kb-btn { border-color: transparent; background: none; color: var(--muted); padding: 4px 8px; }
+  .kb-man-fb .kb-btn:hover { background: var(--paper-2); color: var(--ink); }
+  .kb-man-fb .kb-fb-btns .kb-btn:last-child { margin-left: auto; }
   /* Batch M4 — the manual's "recently changed" list (the What's new panel and
      the Reference landing share one renderer, manualRecentListHtml_). */
   .mr-list { display: flex; flex-direction: column; }
@@ -187,12 +241,13 @@
   .mr-sec h3 { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 4px; font-size: .95rem; }
   .mr-sub { font-size: .74rem; font-weight: 400; color: var(--muted); }
   .mr-err { font-size: .84rem; color: var(--muted); font-style: italic; }
-  a.kb-hcpcs { color: var(--info-deep); text-decoration: underline dotted; text-underline-offset: 2px; font-variant-numeric: tabular-nums; }
-  a.kb-hcpcs:hover, a.kb-hcpcs:focus-visible { text-decoration-style: solid; }
+  /* M5: a code is a chip (it LOOKS UP), a section link a solid underline (it OPENS),
+     a glossary term the one dotted mark (it EXPLAINS). */
+  a.kb-hcpcs { font-family: var(--mono); font-size: .86em; padding: 1px 5px; border-radius: 4px; background: var(--info-soft); color: var(--info-deep); text-decoration: none; font-variant-numeric: tabular-nums; }
+  a.kb-hcpcs:hover, a.kb-hcpcs:focus-visible { background: color-mix(in oklab, var(--info) 22%, var(--paper-card)); }
   .kb-man-print { white-space: nowrap; }
   .kb-man-upd { font-size: .7rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--info-soft); color: var(--info-deep); white-space: nowrap; }
   .kb-man-sec-acts { margin-left: auto; display: inline-flex; gap: 6px; }
-  .kb-man-fb { margin-top: 10px; }
   .kb-article a.kb-xref { color: var(--accent); text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; cursor: pointer; }
   #kb-xrefcard { position: fixed; z-index: 61; display: none; flex-direction: column; width: min(440px, calc(100vw - 24px)); max-height: 340px;
     background: var(--paper-card); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow-lg); padding: 10px 12px; font-size: .84rem; }
@@ -230,7 +285,7 @@
   .kb-man-note { font-size: .8rem; color: var(--muted); margin: 0 0 10px; line-height: 1.5; }
   .kb-man-lbl { display: block; font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 6px 0 4px; }
   .kb-man-input { width: 100%; box-sizing: border-box; font: inherit; font-size: .85rem; padding: 7px 9px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); color: var(--ink); }
-  .kb-man-go:not(:disabled) { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .kb-man-go:not(:disabled) { background: var(--accent); color: var(--paper-card); border-color: var(--accent); }   /* not #fff: --accent is a light green / lilac in dark mode */
   .kb-man-go:disabled { opacity: .5; cursor: not-allowed; }
   .kb-man-gate { margin: 4px 0 0; }
   .kb-man-picked { margin: 4px 0 0; color: var(--ink); }
@@ -569,7 +624,7 @@
   .kb-ed textarea { min-height: 200px; font-family: var(--mono); font-size: .85rem; resize: vertical; }
   .kb-typetog { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
   .kb-typetog button { background: var(--paper-2); border: none; padding: 6px 14px; cursor: pointer; font: inherit; color: var(--muted); }
-  .kb-typetog button.on { background: var(--accent); color: #fff; }
+  .kb-typetog button.on { background: var(--accent); color: var(--paper-card); }
   .kb-ed-prev { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; background: var(--paper); margin-top: 6px; max-height: 240px; overflow: auto; }
   /* Operator 2026-08-25 — editor file ingest (drop zone + result note). */
   .kb-ed-drop {
@@ -3331,12 +3386,31 @@ function kbManualDecorate_(root) {
     var own = t.classList.contains('kb-steps') || t.classList.contains('kb-dodont');
     var matrix = !own && (cols >= 4 || rows >= 12);
     if (!own) t.classList.add(matrix ? 'kb-man-matrix' : 'kb-man-compact');
+    if (!own && !matrix && cols === 2) t.classList.add('kb-man-2col');   // M3: stacks when the reader is narrow
     var w = document.createElement('div');
     w.className = 'kb-man-tw' + (matrix ? ' kb-man-tw-m' : '');
     t.parentNode.insertBefore(w, t);
     w.appendChild(t);
   });
+  // M2 (design handoff): a callout's bold opener becomes kicker + title. The text is
+  // WRAPPED, never changed — the separator stays in the DOM, visually hidden — so the
+  // landing, the previews and search read the same words. Plain-text labels only.
+  root.querySelectorAll('.kb-man-sec blockquote.kb-callout').forEach(function (q) {
+    var p = q.firstElementChild, s = p && p.tagName === 'P' ? p.firstElementChild : null;
+    if (!s || s.tagName !== 'STRONG' || s !== p.firstChild || s.children.length) return;
+    var m = /^\s*(Critical|Policy|Watch-out|Note)\b(\s*\u2014\s*)?([\s\S]*)$/.exec(s.textContent);
+    if (!m || (!m[2] && /\w/.test(m[3]))) return;   // a label run straight into words is left as written
+    // "Critical." — punctuation with no title rides the hidden separator
+    var tail = m[2] ? '<span class="kb-co-sep">' + esc(m[2]) + '</span>' + (m[3] ? '<span class="kb-co-title">' + esc(m[3]) + '</span>' : '')
+      : (m[3] ? '<span class="kb-co-sep">' + esc(m[3]) + '</span>' : '');
+    s.innerHTML = '<span class="kb-co-kick">' + icon(KB_CO_ICON[m[1].toLowerCase()], 13) + esc(m[1]) + '</span>' + tail;
+  });
+  // M5: a link whose whole text is a section number reads as a number.
+  root.querySelectorAll('.kb-man-sec .kb-article a.kb-xref').forEach(function (a) {
+    if (!a.closest('svg') && /^(?:\d+|[A-C])\.[0-9A-Z]+(?:\.\d+)*$|^CARD \d+$/.test(a.textContent.trim())) a.classList.add('kb-xref-num');
+  });
 }
+var KB_CO_ICON = { critical: 'warning', 'watch-out': 'warning', policy: 'fileText', note: 'info' };
 
 /** Pure-ish — the part page. Section bodies render through kbMd_ (escape
  *  first) with their headings demoted under the section title. */
@@ -3963,7 +4037,7 @@ function kbOpenSynonyms_() {
         // class the codebase bans. Nothing renders without a server budget.
         propBudgetHtml_(synBudget, 'margin-top:6px;margin-bottom:0') +
         '<div class="kb-ed-foot"><button class="kb-btn" data-kb-synclose="1">Cancel</button>' +
-        '<button class="kb-btn" style="background:var(--accent);color:#fff;border-color:var(--accent)" onclick="kbSaveSynonyms_(this)">' + icon('check', 13) + ' Save</button></div>';
+        '<button class="kb-btn" style="background:var(--accent);color:var(--paper-card);border-color:var(--accent)" onclick="kbSaveSynonyms_(this)">' + icon('check', 13) + ' Save</button></div>';
     })
     .withFailureHandler(function (e) { var body = document.getElementById('kb-syn-body'); if (body) body.innerHTML = errorStateHtml_((e && e.message) || 'Failed to load synonyms'); })   // A12
     .kbGetSearchConfig();
@@ -6035,7 +6109,7 @@ function kbRenderItem_(item) {
   // #4 — draft→publish + revision history (admin authoring affordances).
   var isDraft = item.status === 'draft';
   var publishBtn = (mgr && isDraft)
-    ? '<button class="kb-btn" style="background:var(--accent);color:#fff;border-color:var(--accent)" onclick="kbPublishItem_(\'' + esc(item.id) + '\')">' + icon('check', 13) + ' Publish</button>'
+    ? '<button class="kb-btn" style="background:var(--accent);color:var(--paper-card);border-color:var(--accent)" onclick="kbPublishItem_(\'' + esc(item.id) + '\')">' + icon('check', 13) + ' Publish</button>'
     : '';
   var historyBtn = mgr
     ? '<button class="kb-btn" onclick="kbOpenRevisions_(\'' + esc(item.id) + '\')">' + icon('list', 13) + ' History</button>'
@@ -6624,7 +6698,7 @@ function kbRenderEditor_() {
     '<div class="kb-ed-foot">' +
       '<label class="kb-ed-draft" title="A draft is hidden from reps until you publish it"><input type="checkbox" id="kb-ed-draft"' + (e.status === 'draft' ? ' checked' : '') + '> Save as draft</label>' +
       '<button class="kb-btn" data-kb-close="1">Cancel</button>' +
-      '<button class="kb-btn" style="background:var(--accent);color:#fff;border-color:var(--accent);" onclick="kbSaveFromEditor_(this)">' + icon('check', 13) + ' Save</button></div>' +
+      '<button class="kb-btn" style="background:var(--accent);color:var(--paper-card);border-color:var(--accent);" onclick="kbSaveFromEditor_(this)">' + icon('check', 13) + ' Save</button></div>' +
   '</div>';
   ov.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('[data-kb-close]')) closeOverlay(ov); });   // SH-02: focus returns; UI-ESC: asks first
   kbBindEditorDrop_(ov);

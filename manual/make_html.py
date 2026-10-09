@@ -1102,7 +1102,7 @@ h3[id^="ix-"]{scroll-margin-top:150px}
    badge is the chapter colour with the page colour inside, so it reads in both
    themes; everywhere else the icon is simply the chapter colour. */
 svg.chi{display:block;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
-h1.part{display:flex;align-items:center;gap:16px}
+h1.part{display:flex;align-items:center;gap:16px;border-left:0;padding-left:0}   /* M6 (design handoff, 2026-10-09): the badge carries the chapter, no stripe */
 h1.part .pbadge{flex:none;display:inline-flex;align-items:center;justify-content:center;
  width:1.15em;height:1.15em;border-radius:50%;background:currentColor}
 h1.part .pbadge svg{width:.62em;height:.62em;color:var(--bg)}
@@ -1115,18 +1115,18 @@ ol.toclist li.p3 .sw{color:var(--p3)} ol.toclist li.p4 .sw{color:var(--p4)} ol.t
 ol.toclist li.p6 .sw{color:var(--p6)} ol.toclist li.p7 .sw{color:var(--p7)} ol.toclist li.p8 .sw{color:var(--p8)}
 ol.toclist li.p9 .sw{color:var(--p9)} ol.toclist li.p10 .sw{color:var(--p10)} 
 /* ============================ heading hierarchy (manual update D5, 2026-10-07) === */
-/* A section's number is a chip in its chapter's colour and the section heading
-   carries a thinner left rule than the chapter's; a sub-section's number takes the
-   colour as text. The chapter comes from the heading's id (3-7 is Chapter 3), so
+/* A section's number is a chip in its chapter's colour over a hairline (M6, the
+   design handoff, 2026-10-09 — the app's reader matches; the left rule went); a
+   sub-section's number takes the colour as text. The chapter comes from the heading's id (3-7 is Chapter 3), so
    the source needs no markup. The cards keep their own heading. */
 h2,h3{--hc:var(--navy)}
 h2[id^="0-"],h3[id^="0-"]{--hc:var(--p0)} h2[id^="1-"],h3[id^="1-"]{--hc:var(--p1)} h2[id^="2-"],h3[id^="2-"]{--hc:var(--p2)} h2[id^="3-"],h3[id^="3-"]{--hc:var(--p3)} h2[id^="4-"],h3[id^="4-"]{--hc:var(--p4)} h2[id^="5-"],h3[id^="5-"]{--hc:var(--p5)} h2[id^="6-"],h3[id^="6-"]{--hc:var(--p6)} h2[id^="7-"],h3[id^="7-"]{--hc:var(--p7)} h2[id^="8-"],h3[id^="8-"]{--hc:var(--p8)} h2[id^="9-"],h3[id^="9-"]{--hc:var(--p9)} h2[id^="10-"],h3[id^="10-"]{--hc:var(--p10)}
 h2[id^="A-"],h3[id^="A-"],h2[id^="B-"],h3[id^="B-"],h2[id^="C-"],h3[id^="C-"]{--hc:var(--muted)}
-h2{border-left:4px solid var(--hc);padding-left:14px}
+h2{padding-bottom:12px;border-bottom:1px solid var(--rule)}
 h2 .sn{display:inline-block;padding:.2em .55em;border-radius:.3em;background:var(--hc);color:var(--bg);
  font-weight:600;letter-spacing:.02em;margin-right:.35em}
 h3 .sn{color:var(--hc)}
-section.qrc h2{border-left:0;padding-left:0} section.qrc h2 .sn{margin-right:0}
+section.qrc h2 .sn{margin-right:0}
 </style></head>
 <body><button class="navtoggle" id="nt">☰ &nbsp;Contents &amp; search</button><div class="wrap">
 <nav><div class="brand">UniversalMed Supply<br>CSR Procedures Manual</div>

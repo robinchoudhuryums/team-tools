@@ -5372,6 +5372,41 @@ test('MR2 DOM (operator testing 2026-10-08): the reader reads like the HTML manu
   assert.strictEqual(h.read('kbManualTitleHtml_')('10.A Quick <b>'), '<span class="kb-man-sn">10.A</span> Quick &lt;b&gt;', 'the chip and the rest are both escaped');
 });
 
+test('MRD-1 DOM (manual reader design Phase 1): a callout opener becomes kicker + title with its text unchanged, punctuation-only and run-on labels are left readable, a two-column table is marked to stack, a bare-number link reads as a number — and decorating twice changes nothing', async () => {
+  const h = m4Boot_();
+  const doc = h.window.document;
+  const part = JSON.parse(JSON.stringify(M2_PART0));
+  part.sections[1].bodyMd = 'Notes.\n\n' +
+    '> **Critical — emergencies come first.** Dial 9-1-1.\n\n' +
+    '> **Critical.** Federal law.\n\n' +
+    '> **Note** — the TRX, never a name.\n\n' +
+    '> **Policy — never quote a final amount.**\n\n' +
+    '> **Note that** this one runs on.\n\n' +
+    '| Situation | Action |\n|---|---|\n| A | B |\n\n' +
+    '| Item | Code | Note |\n|---|---|---|\n| Bed | E0260 | x |\n\n' +
+    '| Step | Action |\n|---|---|\n| 1 | Ask |\n| 2 | Act |\n\n' +
+    '| Code | Item |\n|---|---|\n' + Array.from({ length: 12 }, (_, i) => '| E0' + (100 + i) + ' | Item ' + i + ' |').join('\n') + '\n\n' +
+    'See [6.4.4](kb:man-6-4#6.4.4) and [10.1 2026 annual figures (Billing & Denials)](kb:man-10-1).\n';
+  h.read('kbOpenItem_')('man-0-11');
+  h.run.flushSuccess(part, 'getManualPart');
+  const sec = doc.getElementById('kb-man-sec-man-0-11');
+  const qs = [...sec.querySelectorAll('blockquote')];
+  const strong = (q) => q.querySelector('p > strong');
+  assert.strictEqual(qs.length, 5, 'five quotes (non-vacuous)');
+  // the text a reader, the landing and search see is unchanged
+  assert.deepStrictEqual(qs.map((q) => strong(q).textContent), ['Critical — emergencies come first.', 'Critical.', 'Note', 'Policy — never quote a final amount.', 'Note that'], 'every opener reads exactly as written');
+  assert.deepStrictEqual(qs.map((q) => { const k = q.querySelector('.kb-co-kick'); return k ? k.textContent : null; }), ['Critical', 'Critical', 'Note', 'Policy', null], 'the label is the kicker; a label run into words is left alone');
+  assert.deepStrictEqual(qs.map((q) => { const t = q.querySelector('.kb-co-title'); return t ? t.textContent : null; }), ['emergencies come first.', null, null, 'never quote a final amount.', null], 'the rest is the title — never a lone full stop');
+  assert.ok(qs[0].querySelector('.kb-co-kick svg, .kb-co-kick [data-icon]'), 'the kicker carries its icon');
+  const tables = [...sec.querySelectorAll('.kb-article table')];
+  assert.deepStrictEqual(tables.map((t) => t.classList.contains('kb-man-2col')), [true, false, false, false], 'only the two-column situation table stacks — not a three-column table, a step table, or a long two-column one (a matrix keeps its frame)');
+  const xs = [...sec.querySelectorAll('a.kb-xref')];
+  assert.deepStrictEqual(xs.map((a) => a.classList.contains('kb-xref-num')), [true, false], 'a bare number link reads as a number; a titled link does not');
+  const before = sec.innerHTML;
+  h.read('kbManualDecorate_')(doc.getElementById('kb-main'));
+  assert.strictEqual(sec.innerHTML, before, 'decorating again changes nothing');
+});
+
 test('M4 DOM: Print marks ONLY its own section for the one print block, for exactly as long as the dialog is up; a Quick Reference Card\'s button says "Print card"', async () => {
   const h = m4Boot_();
   const w = h.window, doc = w.document;

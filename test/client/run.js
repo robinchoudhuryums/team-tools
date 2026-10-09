@@ -35056,6 +35056,29 @@ test('MD-1 (change list 2026-10-08 D): the HTML manual — a phone gets one colu
   assert.ok(srch.indexOf('raw = re.sub(r"<(svg|style|script)\\b.*?</\\1>", " ", raw, flags=re.S)') > srch.indexOf('aria-label='), 'and any other svg, style or script is dropped before the tags are');
 });
 
+test('MRD-1 (manual reader design Phase 1): no text is white on the accent, each reader rule has one home, M6 left no stripe in the reader OR the HTML manual, a two-column table stacks by container query, and step circles take the chapter colour', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const mh = MP1_('make_html.py');
+  // the contrast fix: the app's own idiom (styles.html) is background --accent + color --paper-card
+  assert.ok(!/background:\s*var\(--accent\);\s*color:\s*#fff/i.test(kb), 'no white text on a filled accent — it is a pale green / lilac in dark mode');
+  assert.strictEqual((kb.match(/background:\s*var\(--accent\);\s*color:\s*var\(--paper-card\)/g) || []).length, 5, 'the five filled-accent buttons read --paper-card (non-vacuous)');
+  // one home per property: the superseded duplicates are gone
+  [['.kb-man-sec', /^  \.kb-man-sec \{/gm], ['.kb-man-sec-head', /^  \.kb-man-sec-head \{/gm], ['.kb-man-sec-h', /^  \.kb-man-sec-h \{/gm], ['.kb-man-part max-width', /^  \.kb-man-part \{ max-width/gm], ['.kb-man-fb', /^  \.kb-man-fb \{/gm]]
+    .forEach(([n, re]) => assert.strictEqual((kb.match(re) || []).length, 1, n + ' has one rule'));
+  // M6 (operator option b): no left stripe on the chapter title or section heads, in the reader and the HTML manual
+  const head = /^  \.kb-man-sec-head \{([^}]*)\}/m.exec(kb)[1];
+  assert.ok(!/border-left/.test(head) && /border-bottom: 1px solid var\(--line\)/.test(head), 'a section head is a chip over a hairline');
+  assert.ok(!/\.kb-man-chap \{[^}]*border-left/.test(kb), 'the chapter title has no stripe');
+  assert.ok(!/h2\{border-left:4px solid var\(--hc\)/.test(mh) && /h2\{padding-bottom:12px;border-bottom:1px solid var\(--rule\)\}/.test(mh), 'the HTML manual\'s h2 matches the reader');
+  assert.ok(/h1\.part\{display:flex;align-items:center;gap:16px;border-left:0;padding-left:0\}/.test(mh), 'and its chapter title lost the stripe too');
+  // M3: the stack is a container query (right in the pop-out, a phone and the drawer — A2), and the label column yields inside it
+  assert.ok(/\.kb-man-tw \{ container-type: inline-size; \}/.test(kb) && /@container \(max-width: 480px\) \{[\s\S]*?table\.kb-man-2col tr > :first-child \{ width: auto; \}[\s\S]*?\n  \}/.test(kb), 'stacked by container query, and the 34% label column yields when stacked');
+  // M4b: circles and arrows in the chapter colour, scoped to the manual
+  assert.ok(/\.kb-man-part \.kb-article table\.kb-steps td:first-child::before \{[^}]*border: 1\.5px solid var\(--man-c\)/.test(kb) && /\.kb-man-part \.kb-article table\.kb-steps tbody tr:not\(:last-child\) td:first-child::after \{ color: var\(--man-c\); \}/.test(kb), 'step circles and arrows take the chapter colour, manual sections only');
+  // colour mixing toward transparent / a neutral is in oklab (V-1)
+  assert.ok(!/color-mix\(in oklch[^)]*var\(--(info|warn|danger|accent|man-c)\)/.test(kb.slice(kb.indexOf('Manual reader design handoff, Phase 1'), kb.indexOf('M7 —'))), 'the new mixes are oklab');
+});
+
 test('MP1-6: department guides come from data/extracts.json — every guide a part, Billing in each by default, and a reference to a section a guide leaves out reads "(in the full manual)", never a dead link', () => {
   const bd = MP1_('build.py');
   const man = JSON.parse(MP1_('data/extracts.json'));

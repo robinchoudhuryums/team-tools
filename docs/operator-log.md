@@ -10,6 +10,30 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-09 — manual reader design, Phase 1 (the Claude Design handoff)
+
+**Adds NO operator state.** Deploy as usual (`clasp push -f` + New version); the
+HTML manual changes on the next `manual/make_all.sh` (no re-import: `manual.json`
+does not change). The handoff, its mockup and every decision are in
+`docs/design_handoff_manual_reader/` and `.cycle/manual-reader-design-plan.md`;
+phases 2–8 wait for your go-ahead.
+- **The reader** (Reference → a manual chapter): running text stops at a reading
+  width; callouts read kicker (icon + CRITICAL / POLICY / WATCH-OUT / NOTE), title,
+  body in a hairline box; two-column tables stack on a narrow reader (pop-out,
+  phone, the Ctrl+K drawer); step tables show each number in a circle in the
+  chapter colour with the arrow kept; HCPCS codes are chips, section links a solid
+  underline, glossary terms the one dotted mark; section headings lose the coloured
+  left stripe for a hairline (your M6 choice (b)), and Bookmark / Print / the
+  feedback buttons are quieter.
+- **The HTML manual** matches: no stripe on chapter titles or section headings.
+  The Word copy keeps its stripe.
+- **Fixed:** five buttons put white text on the accent colour, unreadable in dark
+  mode (the Manual dialog's Import, the type toggle, Save / Publish).
+- **Adapted from the handoff (the repo wins):** the callout colours use the file's
+  own `--danger` names; the contrast fix covers five buttons, not two; the one
+  "Critical." callout keeps its full stop without a lone "." title; a stacked table's
+  label column now yields its 34% width.
+
 ## 2026-10-08 → 10-09 — manual fixes: a reviewer's change list, the Word and HTML copies, the packets
 
 **Adds NO new Script Property.** The `manual/` changes ship by export and
