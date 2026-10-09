@@ -77,3 +77,17 @@ against the repo; all exist as described. Repo-side corrections to the handoff:
   chapter, so nothing moves when the chapter lands; the version line lives in it.
 - **The "N updated" window** is derived from `KB_MANUAL_UPDATED_DAYS`, never a literal.
 
+## Phase 4 adaptations (2026-10-09)
+
+- **Footnote pairing:** the build restarts note numbers per sub-section, so a
+  reference pairs with the first note of its number AFTER it (never the first on
+  the page); a number with no such note is left as written.
+- **Glossary:** "Go to glossary" flashes the definition row on the same page
+  (`kbGlossRowFor_`) rather than opening `man-a`; manual chapters still mark terms
+  only on the Glossary page (the annotator reads definitions from the page).
+- **One card, one binding:** `KB_POP_SEL` (links, footnotes, glossary marks) rides
+  the existing hover / focus / Escape-first binding; marks inside the card are inert.
+- **Results:** one callout decorator (`kbDecorateCallouts_`) serves the chapter and
+  the search results (tab and drawer); the callout and step CSS extends to
+  `.kb-chunk-body[data-kb-man]`.
+

@@ -1346,11 +1346,11 @@
   }
   /* Color-coded chip variants — picked up by cnRenderFilterBar_ */
   .cn-filter-chip.cn-fc-action:not([aria-pressed="true"])    { color: var(--warning-deep); border-color: color-mix(in srgb, var(--warn), transparent 70%); }
-  .cn-filter-chip.cn-fc-action[aria-pressed="true"]          { background: var(--warn); border-color: var(--warn); color: white; }
+  .cn-filter-chip.cn-fc-action[aria-pressed="true"]          { background: var(--warn); border-color: var(--warn); color: var(--paper-card); }
   .cn-filter-chip.cn-fc-training:not([aria-pressed="true"])  { color: var(--info-deep); border-color: color-mix(in srgb, var(--accent), transparent 70%); }
   .cn-filter-chip.cn-fc-training[aria-pressed="true"]        { background: var(--accent); border-color: var(--accent); color: var(--paper-card); }
   .cn-filter-chip.cn-fc-review:not([aria-pressed="true"])    { color: var(--success-deep); border-color: color-mix(in srgb, var(--good), transparent 70%); }
-  .cn-filter-chip.cn-fc-review[aria-pressed="true"]          { background: var(--good); border-color: var(--good); color: white; }
+  .cn-filter-chip.cn-fc-review[aria-pressed="true"]          { background: var(--good); border-color: var(--good); color: var(--paper-card); }
 
   /* ── Rolling stack — saved note cards ───────────────────────────── */
   .cn-stack-empty {
@@ -1597,7 +1597,7 @@
   /* ── Stale-flag badge in sidebar nav (count pill) ───────────────── */
   .cn-stale-badge {
     display: inline-flex; align-items: center; justify-content: center;
-    background: var(--warn); color: white;
+    background: var(--warn); color: var(--paper-card);
     font-family: var(--mono); font-size: 10px; font-weight: 700;
     min-width: 16px; height: 16px; padding: 0 4px;
     border-radius: 999px;

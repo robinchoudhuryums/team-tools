@@ -10,6 +10,35 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-09 — manual reader design, Phase 4 (footnotes, glossary, search hits) + Phase 3's found items
+
+**Adds NO operator state.** Deploy as usual (`clasp push -f` + New version); no
+re-import, no manual rebuild. Phases 5–8 wait for your go-ahead.
+- **Footnotes (M17):** a footnote number in a chapter (¹, ²) is now a small
+  button. Hovering, focusing or clicking it shows the note in the same card as a
+  section link — "Note ¹ · 3.7 PAP" and its text — and "Go to note" jumps to it.
+  Numbers restart in each sub-section, and each one finds its own note.
+- **Glossary terms (M17):** a dotted glossary term opens the same card (term and
+  definition), with "Go to glossary" jumping to its row on the page. This replaces
+  the old hover-only bubble and works from the keyboard. (In the manual, terms are
+  marked only on the Glossary page itself, as before.)
+- **Search (M18):** a manual hit looks like the manual — chapter badge, number chip,
+  "Manual · CSR Core", numbered sub-headings in the chapter colour, and callouts and
+  step tables drawn as in the chapter; in the side list, a chapter dot and number
+  column. Hand-written articles look as before. The Ctrl+K drawer shares this.
+- **Fixed — a stray "—" under 42 callout labels:** where the source writes
+  `**Note** — text` (dash outside the bold label), the text under the NOTE kicker
+  began with a dash. It now reads cleanly; the words are unchanged.
+- **Fixed — white text on other status colours** in dark mode (measured contrast
+  1.4–2.8, the target is 4.5): Call Notes' Action and Review filter chips and its
+  stale-flag badge, Intake's remove-image button, Metrics' alert badge, and
+  Coaching's severity chips. A test now checks every themed file. Left as they
+  are, on measurement: Call Notes' Clear button on hover (white already passes on
+  its dark red) and the public form page (its own fixed colours, no dark mode).
+- **Adapted from the handoff (the repo wins):** "Go to glossary" jumps to the
+  definition on the same page rather than always opening Appendix A (a
+  hand-written article's glossary lives in that article).
+
 ## 2026-10-09 — manual reader design, Phase 3 (masthead, loading, chapter cards) + Phase 2's open items
 
 **Adds NO operator state.** Deploy as usual (`clasp push -f` + New version); no

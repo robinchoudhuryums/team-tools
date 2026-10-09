@@ -129,7 +129,7 @@
      title (its stripe went in the design handoff's M6, 2026-10-09 — one colour
      cue per level), and the icon beside it in the tree. --man-pN are tokens;
      the badge's icon is the page colour, so it reads in light and dark. */
-  .kb-man-part, .kb-man-bar { --man-c: var(--muted); }   /* an appendix has no chapter colour; the chapter classes below override */
+  .kb-man-part, .kb-man-bar, .kb-chunk-doc-man, .kb-res-dot { --man-c: var(--muted); }   /* an appendix has no chapter colour; the chapter classes below override */
   .kb-man-p0 { --man-c: var(--man-p0); } .kb-man-p1 { --man-c: var(--man-p1); } .kb-man-p2 { --man-c: var(--man-p2); } .kb-man-p3 { --man-c: var(--man-p3); } 
   .kb-man-p4 { --man-c: var(--man-p4); } .kb-man-p5 { --man-c: var(--man-p5); } .kb-man-p6 { --man-c: var(--man-p6); } .kb-man-p7 { --man-c: var(--man-p7); } 
   .kb-man-p8 { --man-c: var(--man-p8); } .kb-man-p9 { --man-c: var(--man-p9); } .kb-man-p10 { --man-c: var(--man-p10); } 
@@ -206,11 +206,11 @@
   /* M2 — a callout reads kicker, title, body: a hairline box, the label in mono
      (kbManualDecorate_ wraps it — text never changes), and only Critical keeps a
      full-strength border. */
-  .kb-man-part .kb-article blockquote.kb-callout { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 16px 13px; }
-  .kb-man-part .kb-article blockquote.kb-callout-critical { border: 1.5px solid var(--danger); }
-  .kb-man-part .kb-article blockquote.kb-callout-policy { border-color: color-mix(in oklab, var(--info) 35%, transparent); }
-  .kb-man-part .kb-article blockquote.kb-callout-watch-out { border-color: color-mix(in oklab, var(--warn) 35%, transparent); }
-  .kb-man-part .kb-article blockquote.kb-callout > p:first-child > strong:first-child { display: block; }
+  .kb-man-part .kb-article blockquote.kb-callout, .kb-chunk-body[data-kb-man] blockquote.kb-callout { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 16px 13px; }
+  .kb-man-part .kb-article blockquote.kb-callout-critical, .kb-chunk-body[data-kb-man] blockquote.kb-callout-critical { border: 1.5px solid var(--danger); }
+  .kb-man-part .kb-article blockquote.kb-callout-policy, .kb-chunk-body[data-kb-man] blockquote.kb-callout-policy { border-color: color-mix(in oklab, var(--info) 35%, transparent); }
+  .kb-man-part .kb-article blockquote.kb-callout-watch-out, .kb-chunk-body[data-kb-man] blockquote.kb-callout-watch-out { border-color: color-mix(in oklab, var(--warn) 35%, transparent); }
+  .kb-man-part .kb-article blockquote.kb-callout > p:first-child > strong:first-child, .kb-chunk-body[data-kb-man] blockquote.kb-callout > p:first-child > strong:first-child { display: block; }
   .kb-co-kick { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
   .kb-callout-critical .kb-co-kick { color: var(--danger-deep); }
   .kb-callout-policy .kb-co-kick { color: var(--info-deep); }
@@ -236,12 +236,12 @@
   }
   /* M4b — a step's number sits in a circle in the chapter colour; the arrow to the
      next step stays (the operator's pick over a plain rail). Still a <table>. */
-  .kb-man-part .kb-article table.kb-steps td:first-child { z-index: 0; width: 44px; vertical-align: top; padding-top: 12px;
+  .kb-man-part .kb-article table.kb-steps td:first-child, .kb-chunk-body[data-kb-man] table.kb-steps td:first-child { z-index: 0; width: 44px; vertical-align: top; padding-top: 12px;
     font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--ink); border-bottom-color: transparent; }
-  .kb-man-part .kb-article table.kb-steps td:first-child::before { content: ""; position: absolute; z-index: -1; left: 50%; top: 9px;
+  .kb-man-part .kb-article table.kb-steps td:first-child::before, .kb-chunk-body[data-kb-man] table.kb-steps td:first-child::before { content: ""; position: absolute; z-index: -1; left: 50%; top: 9px;
     width: 24px; height: 24px; margin-left: -12px; box-sizing: border-box; border-radius: 50%;
     border: 1.5px solid var(--man-c); background: color-mix(in oklab, var(--man-c) 12%, var(--paper-card)); }
-  .kb-man-part .kb-article table.kb-steps tbody tr:not(:last-child) td:first-child::after { color: var(--man-c); }
+  .kb-man-part .kb-article table.kb-steps tbody tr:not(:last-child) td:first-child::after, .kb-chunk-body[data-kb-man] table.kb-steps tbody tr:not(:last-child) td:first-child::after { color: var(--man-c); }
   /* M5 — a section link is a solid underline; a bare number link reads as a number. */
   .kb-man-part .kb-article a.kb-xref { text-decoration-style: solid; text-decoration-thickness: 1px; text-decoration-color: color-mix(in oklab, var(--accent) 50%, transparent); }
   .kb-man-part .kb-article a.kb-xref.kb-xref-num { font-family: var(--mono); font-size: .88em; font-weight: 600; }
@@ -308,6 +308,10 @@
     background: var(--paper-card); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow-lg); padding: 10px 12px; font-size: .84rem; }
   #kb-xrefcard.show { display: flex; }
   #kb-xrefcard .xc-h { font-weight: 700; margin-bottom: 4px; }
+  /* M17 — a footnote's or a glossary term's card names its kind. */
+  #kb-xrefcard .xc-k { font-family: var(--mono); font-size: .66rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2); margin-bottom: 4px; }
+  .kb-fn-ref { font: inherit; font-size: .8em; font-weight: 700; line-height: 1; vertical-align: .45em; margin-left: 1px; padding: 2px 4px; border: none; border-radius: 4px; background: var(--accent-soft); color: var(--accent-2); cursor: pointer; }
+  .kb-fn-ref:hover, .kb-fn-ref:focus-visible { box-shadow: 0 0 0 2px var(--accent); outline: none; }
   #kb-xrefcard .xc-body { font-size: .84rem; line-height: 1.5; max-width: none; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
   #kb-xrefcard .xc-body h3, #kb-xrefcard .xc-body h4, #kb-xrefcard .xc-body h5 { font-size: .9rem; margin: .6em 0 .3em; }
   #kb-xrefcard .xc-more, #kb-xrefcard .xc-none { color: var(--muted); }
@@ -803,13 +807,8 @@
   .kb-gloss-aka { display: block; font-weight: 500; font-size: .7rem; color: var(--muted-2); }
   .kb-gloss-def { margin: 0; font-size: .84rem; color: var(--muted); }
   /* The in-article mention: quiet enough to read past, obvious enough to try. */
-  .kb-gloss-mark { border-bottom: 1px dotted var(--muted-3); cursor: help; position: relative; }
-  .kb-gloss-mark:hover::after, .kb-gloss-mark:focus::after {
-    content: attr(data-tip); position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 6;
-    width: max-content; max-width: min(320px, 70vw); white-space: normal;
-    font-size: .74rem; font-weight: 500; line-height: 1.35; padding: 6px 9px; border-radius: 6px;
-    background: var(--ink); color: var(--paper); box-shadow: var(--shadow-sm);
-  }
+  .kb-gloss-mark { border-bottom: 1px dotted var(--muted-3); cursor: help; }
+  .kb-gloss-mark:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; }   /* M17: it opens the shared card */
   @media (max-width: 560px) {
     .kb-gloss-row { grid-template-columns: 1fr; gap: 2px; }
   }
@@ -1065,6 +1064,15 @@
   .kb-chunk-go { margin-left: auto; flex: 0 0 auto; white-space: nowrap; font: inherit; font-size: .72rem; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-2); color: var(--muted); cursor: pointer; padding: 2px 8px; }
   .kb-chunk-go:hover { color: var(--ink); background: var(--paper-card); }
   .kb-chunk-body { font-size: .9rem; }
+  /* M18 — a manual hit looks like the manual: the chapter badge, number chip and
+     short chapter name on the result, a coloured number on each chunk heading
+     (sentence case), and the chapter's dot + number column in the side list. */
+  .kb-chunk-doc-man .kb-chunk-doc-h .kb-man-badge { width: 20px; height: 20px; }
+  .kb-chunk-doc-man .kb-chunk-doc-h .kb-man-sn { font-size: .72em; margin-right: 0; vertical-align: .1em; }
+  .kb-chunk-h.kb-chunk-h-man { font-family: var(--ui); font-size: .8rem; letter-spacing: 0; text-transform: none; color: var(--ink); }
+  .kb-chunk-num { font-family: var(--mono); font-weight: 700; color: var(--man-c); margin-right: .45em; font-variant-numeric: tabular-nums; }
+  .kb-res-dot { flex: none; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--man-c); }
+  .kb-item-sec .kb-item-num { min-width: 42px; }
   .kb-h-flash { background: var(--accent-soft); border-radius: 4px; transition: background 1.2s ease; }
   /* Operator feedback (2026-06-12): search-term highlight in result chunks
      (drawer + Reference compiled view). */
@@ -1457,7 +1465,9 @@ function kbGlossaryAnnotate_(rootEl) {
         var mark = document.createElement('span');
         mark.className = 'kb-gloss-mark';
         mark.setAttribute('tabindex', '0');
-        mark.setAttribute('data-tip', info.def);
+        mark.setAttribute('role', 'button');   // M17: it opens the shared card (click, hover, focus)
+        mark.setAttribute('data-term', info.term);
+        mark.setAttribute('data-def', info.def);
         mark.setAttribute('aria-label', info.term + ': ' + info.def);
         mark.textContent = m[0];
         frag.appendChild(mark);
@@ -3496,10 +3506,21 @@ function kbManualDecorate_(root) {
     t.parentNode.insertBefore(w, t);
     w.appendChild(t);
   });
+  kbDecorateCallouts_(root, '.kb-man-sec blockquote.kb-callout');
+  kbManualFootnotes_(root);
+  // M5: a link whose whole text is a section number reads as a number.
+  root.querySelectorAll('.kb-man-sec .kb-article a.kb-xref').forEach(function (a) {
+    if (!a.closest('svg') && /^(?:\d+|[A-C])\.[0-9A-Z]+(?:\.\d+)*$|^CARD \d+$/.test(a.textContent.trim())) a.classList.add('kb-xref-num');
+  });
+}
+var KB_CO_ICON = { critical: 'warning', 'watch-out': 'warning', policy: 'fileText', note: 'info' };
+/** M2 (design handoff) — a callout's opener becomes kicker + title, for the
+ *  chapter and (M18) the manual's search results. */
+function kbDecorateCallouts_(root, sel) {
   // M2 (design handoff): a callout's bold opener becomes kicker + title. The text is
   // WRAPPED, never changed — the separator stays in the DOM, visually hidden — so the
   // landing, the previews and search read the same words. Plain-text labels only.
-  root.querySelectorAll('.kb-man-sec blockquote.kb-callout').forEach(function (q) {
+  root.querySelectorAll(sel).forEach(function (q) {
     var p = q.firstElementChild, s = p && p.tagName === 'P' ? p.firstElementChild : null;
     if (!s || s.tagName !== 'STRONG' || s !== p.firstChild || s.children.length) return;
     var m = /^\s*(Critical|Policy|Watch-out|Note)\b(\s*\u2014\s*)?([\s\S]*)$/.exec(s.textContent);
@@ -3508,13 +3529,133 @@ function kbManualDecorate_(root) {
     var tail = m[2] ? '<span class="kb-co-sep">' + esc(m[2]) + '</span>' + (m[3] ? '<span class="kb-co-title">' + esc(m[3]) + '</span>' : '')
       : (m[3] ? '<span class="kb-co-sep">' + esc(m[3]) + '</span>' : '');
     s.innerHTML = '<span class="kb-co-kick">' + icon(KB_CO_ICON[m[1].toLowerCase()], 13) + esc(m[1]) + '</span>' + tail;
-  });
-  // M5: a link whose whole text is a section number reads as a number.
-  root.querySelectorAll('.kb-man-sec .kb-article a.kb-xref').forEach(function (a) {
-    if (!a.closest('svg') && /^(?:\d+|[A-C])\.[0-9A-Z]+(?:\.\d+)*$|^CARD \d+$/.test(a.textContent.trim())) a.classList.add('kb-xref-num');
+    // "**Note** — If the note reads…" (42 callouts in the source put the dash
+    // OUTSIDE the label): the dash rides the hidden separator too, or the body
+    // opens with a stray "—" under the kicker.
+    var nx = !m[2] && !m[3] ? s.nextSibling : null, dm = nx && nx.nodeType === 3 && /^\s*[\u2014\u2013]\s*/.exec(nx.nodeValue);
+    if (dm) {
+      var sep = document.createElement('span');
+      sep.className = 'kb-co-sep';
+      sep.textContent = dm[0];
+      nx.nodeValue = nx.nodeValue.slice(dm[0].length);
+      p.insertBefore(sep, nx);
+    }
   });
 }
-var KB_CO_ICON = { critical: 'warning', 'watch-out': 'warning', policy: 'fileText', note: 'info' };
+/** M18 — a manual hit in the search results reads like the chapter: the same
+ *  callout kicker (the CSS extends to .kb-chunk-body[data-kb-man]). */
+function kbDecorateManualResults_(rootEl) {
+  if (rootEl) kbDecorateCallouts_(rootEl, '.kb-chunk-body[data-kb-man] blockquote.kb-callout');
+}
+
+// ── M17 (design handoff, Phase 4) — footnotes ────────────────────────────────
+var KB_FN_DIGITS = { '\u00b9': '1', '\u00b2': '2', '\u00b3': '3', '\u2074': '4', '\u2075': '5', '\u2076': '6', '\u2077': '7', '\u2078': '8', '\u2079': '9', '\u2070': '0' };
+/** Pure (Node-pinned) — "¹²" → "12". */
+function kbFnNum_(sup) { return String(sup || '').split('').map(function (c) { return KB_FN_DIGITS[c] || ''; }).join(''); }
+/** The build puts a sub-section's notes under a "Notes" paragraph at its END
+ *  (manual/footnotes.py), each opening with its superscript, and the numbers
+ *  restart per sub-section. So a reference pairs with the first note of its
+ *  number AFTER it — never the first on the page. Each reference becomes a
+ *  button (its text unchanged) that opens the note in the shared card;
+ *  references inside the notes, code, links, buttons and diagrams are left. */
+function kbManualFootnotes_(root) {
+  root.querySelectorAll('.kb-man-sec .kb-article').forEach(function (art, ai) {
+    var notes = [];
+    [].slice.call(art.querySelectorAll('p')).forEach(function (p) {
+      if (!(p.children.length === 1 && p.firstElementChild.tagName === 'STRONG' && p.textContent.trim() === 'Notes')) return;
+      p.setAttribute('data-fn-h', '');
+      for (var n = p.nextElementSibling; n && n.tagName === 'P'; n = n.nextElementSibling) {
+        var m = /^\s*([\u00b9\u00b2\u00b3\u2074-\u2079\u2070]+)\s/.exec(n.textContent);
+        if (!m) break;
+        n.setAttribute('data-fn-note', m[1]);
+        if (!n.id) n.id = 'kb-fn-' + (art.closest('.kb-man-sec') || {}).id + '-' + notes.length;
+        notes.push(n);
+      }
+    });
+    if (!notes.length) return;
+    var walker = document.createTreeWalker(art, NodeFilter.SHOW_TEXT, null), targets = [], t;
+    while ((t = walker.nextNode())) {
+      var pe = t.parentElement;
+      if (!pe || pe.closest('[data-fn-note], [data-fn-h], a, button, code, pre, svg, figure.kb-diagram, h1, h2, h3, h4, h5, h6')) continue;
+      if (/[\u00b9\u00b2\u00b3\u2074-\u2079\u2070]/.test(t.nodeValue)) targets.push(t);
+    }
+    targets.forEach(function (tn) {
+      var frag = document.createDocumentFragment(), str = tn.nodeValue, last = 0, mm, re = /[\u00b9\u00b2\u00b3\u2074-\u2079\u2070]+/g;
+      while ((mm = re.exec(str))) {
+        var note = null;
+        for (var k = 0; k < notes.length && !note; k++) {
+          if (notes[k].getAttribute('data-fn-note') === mm[0] && (tn.compareDocumentPosition(notes[k]) & Node.DOCUMENT_POSITION_FOLLOWING)) note = notes[k];
+        }
+        if (!note) continue;   // no note of that number after it: left as written
+        if (mm.index > last) frag.appendChild(document.createTextNode(str.slice(last, mm.index)));
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'kb-fn-ref';
+        b.setAttribute('data-fn-note', note.id);
+        b.setAttribute('aria-label', 'Note ' + kbFnNum_(mm[0]));
+        b.textContent = mm[0];
+        frag.appendChild(b);
+        last = mm.index + mm[0].length;
+      }
+      if (!last) return;
+      if (last < str.length) frag.appendChild(document.createTextNode(str.slice(last)));
+      tn.parentNode.replaceChild(frag, tn);
+    });
+  });
+}
+/** The note a reference opens, in the shared card: "Note ¹ · <section>", its
+ *  text, and Go to note. */
+function kbFnShow_(b) {
+  var note = document.getElementById(b.getAttribute('data-fn-note')); if (!note) return;
+  var key = 'fn:' + note.id;
+  if (KB_XREF.origin === b && KB_XREF.key === key && KB_XREF.el && KB_XREF.el.classList.contains('show')) return;
+  kbPopTake_(b, key);
+  var sec = b.closest('.kb-man-sec'), h = sec && sec.querySelector('.kb-man-sec-h');
+  var body = note.cloneNode(true), lead = body.firstChild;
+  if (lead && lead.nodeType === 3) lead.nodeValue = lead.nodeValue.replace(/^\s*[\u00b9\u00b2\u00b3\u2074-\u2079\u2070]+\s*/, '');
+  var el = kbXrefEl_();
+  el.innerHTML = '<div class="xc-k">Note ' + esc(b.textContent) + (h ? ' · ' + esc(h.textContent) : '') + '</div>' +
+    '<div class="kb-article xc-body">' + body.innerHTML + '</div>' +
+    '<div class="xc-row"><button type="button" class="lc-btn" data-fn-go="' + esc(note.id) + '">Go to note</button></div>';
+  el.classList.add('show');
+  kbTetherPopover_(el, b);
+}
+/** M17 — a glossary mark opens the same card: "Glossary", the term, its
+ *  definition, and Go to glossary (the definition row on the same page). */
+function kbGlossShow_(m) {
+  var term = m.getAttribute('data-term') || m.textContent, key = 'gl:' + term;
+  if (KB_XREF.origin === m && KB_XREF.key === key && KB_XREF.el && KB_XREF.el.classList.contains('show')) return;
+  kbPopTake_(m, key);
+  var el = kbXrefEl_();
+  el.innerHTML = '<div class="xc-k">Glossary</div><div class="xc-h">' + esc(term) + '</div>' +
+    '<div class="xc-body">' + esc(m.getAttribute('data-def') || '') + '</div>' +
+    (kbGlossRowFor_(m) ? '<div class="xc-row"><button type="button" class="lc-btn" data-gloss-go>Go to glossary</button></div>' : '');
+  el.classList.add('show');
+  kbTetherPopover_(el, m);
+}
+/** The definition row a mark came from: the nearest enclosing page that holds
+ *  a glossary row of that term. */
+function kbGlossRowFor_(m) {
+  var term = m.getAttribute('data-term');
+  for (var host = m.parentElement; host; host = host.parentElement) {
+    var rows = host.querySelectorAll ? host.querySelectorAll('.kb-gloss-row') : [];
+    for (var i = 0; i < rows.length; i++) if (rows[i].getAttribute('data-term') === term) return rows[i];
+  }
+  return null;
+}
+/** The card now describes `origin` (the previous origin is released). */
+function kbPopTake_(origin, key) {
+  if (KB_XREF.origin && KB_XREF.origin !== origin && KB_XREF.origin.removeAttribute) KB_XREF.origin.removeAttribute('aria-describedby');
+  KB_XREF.key = key; KB_XREF.origin = origin;
+  origin.setAttribute('aria-describedby', 'kb-xrefcard');
+}
+/** The one card, for whichever kind of mark asked. */
+function kbPopShow_(el) {
+  if (el.classList.contains('kb-fn-ref')) kbFnShow_(el);
+  else if (el.classList.contains('kb-gloss-mark')) kbGlossShow_(el);
+  else kbXrefShow_(el);
+}
+var KB_POP_SEL = 'a.kb-xref, button.kb-fn-ref, .kb-gloss-mark';
 
 /** Pure-ish — the part page. Section bodies render through kbMd_ (escape
  *  first) with their headings demoted under the section title. */
@@ -4116,16 +4257,34 @@ function kbXrefShow_(a) {
 }
 (function kbBindXrefs_() {
   document.addEventListener('click', function (e) {
+    // M17: a footnote or glossary mark shows its card at once (no target to open);
+    // inside the card they are inert — the card never nests.
+    var mk = e.target.closest && e.target.closest('button.kb-fn-ref, .kb-gloss-mark');
+    if (mk) {
+      e.preventDefault();
+      if (mk.closest('#kb-xrefcard')) return;
+      clearTimeout(KB_XREF.timer); clearTimeout(KB_XREF.hideTimer);
+      kbPopShow_(mk);
+      return;
+    }
+    var go = e.target.closest && e.target.closest('#kb-xrefcard [data-fn-go], #kb-xrefcard [data-gloss-go]');
+    if (go) {
+      var origin = KB_XREF.origin;
+      var dest = go.hasAttribute('data-fn-go') ? document.getElementById(go.getAttribute('data-fn-go')) : (origin && kbGlossRowFor_(origin));
+      kbXrefHide_(true);
+      if (dest) kbFlashBlock_(dest);
+      return;
+    }
     var a = e.target.closest && e.target.closest('a.kb-xref');
     if (!a) return;
     e.preventDefault();
     kbXrefOpen_(a.getAttribute('data-kb-id'), a.getAttribute('data-kb-anchor') || '', a);
   });
   document.addEventListener('mouseover', function (e) {
-    var a = e.target.closest && e.target.closest('a.kb-xref');
+    var a = e.target.closest && e.target.closest(KB_POP_SEL);
     if (a && !a.closest('#kb-xrefcard')) {
       clearTimeout(KB_XREF.hideTimer); clearTimeout(KB_XREF.timer);
-      KB_XREF.timer = setTimeout(function () { kbXrefShow_(a); }, 350);
+      KB_XREF.timer = setTimeout(function () { kbPopShow_(a); }, 350);
     } else if (!(e.target.closest && e.target.closest('#kb-xrefcard'))) {
       clearTimeout(KB_XREF.timer);
       if (KB_XREF.el && KB_XREF.el.classList.contains('show')) kbXrefHide_();
@@ -4137,13 +4296,13 @@ function kbXrefShow_(a) {
   // one Escape that dismisses a preview does not also close the drawer or the
   // modal underneath (the shell's Escape handler listens in the bubble phase).
   document.addEventListener('focusin', function (e) {
-    var a = e.target.closest && e.target.closest('a.kb-xref');
+    var a = e.target.closest && e.target.closest(KB_POP_SEL);
     if (!a || a.closest('#kb-xrefcard')) return;
     clearTimeout(KB_XREF.hideTimer); clearTimeout(KB_XREF.timer);
-    KB_XREF.timer = setTimeout(function () { if (document.activeElement === a) kbXrefShow_(a); }, 350);
+    KB_XREF.timer = setTimeout(function () { if (document.activeElement === a) kbPopShow_(a); }, 350);
   });
   document.addEventListener('focusout', function (e) {
-    var a = e.target.closest && e.target.closest('a.kb-xref');
+    var a = e.target.closest && e.target.closest(KB_POP_SEL);
     if (!a || a.closest('#kb-xrefcard')) return;
     var to = e.relatedTarget;
     if (to && to.closest && to.closest('#kb-xrefcard')) return;
@@ -6207,22 +6366,35 @@ function kbHighlightTerms_(rootEl, query, terms) {
   } catch (_) {}
 }
 
+/** Pure (Node-pinned) — a chunk heading with a sub-section number ("0.2.2 Fax
+ *  History", "B.1 Directory", "5.9.2.1 Pick-up") → {num, rest}; else {num: ''}. */
+function kbManualSplitHeading_(h) {
+  var s = String(h == null ? '' : h);
+  var m = /^((?:\d+|[A-C])\.[0-9A-Z]+(?:\.\d+)*)\s+(.+)$/.exec(s);
+  return m ? { num: m[1], rest: m[2] } : { num: '', rest: s };
+}
 function kbChunkGroupsHtml_(results, openFn) {
   var html = '';
   kbGroupResults_(results).forEach(function (g) {
-    html += '<div class="kb-chunk-doc">' +
+    // M18: a manual hit reads like the manual — the chapter's badge, the number
+    // chip and title, "Manual · <short chapter name>"; chunks take its colour.
+    var man = kbIsManualId_(g.id), ck = man ? kbManualChapterKey_(g.department) : '', gt = man ? kbManualSplitTitle_(g.title) : null;
+    html += '<div class="kb-chunk-doc' + (man ? ' kb-chunk-doc-man' + (ck ? ' kb-man-' + ck : '') : '') + '">' +
       '<button class="kb-chunk-doc-h" onclick="' + openFn + '(this.getAttribute(\'data-kb-id\'))" data-kb-id="' + esc(g.id) + '">' +
-      icon(kbItemIcon_(g), 13) + ' <span class="kb-chunk-doc-t">' + esc(g.title) + '</span>' +
+      (man ? kbManualChapterIcon_(g.department, 12, 'kb-man-badge') + (gt.num ? '<span class="kb-man-sn">' + esc(gt.num) + '</span>' : '') + ' <span class="kb-chunk-doc-t">' + esc(gt.rest) + '</span>'
+        : icon(kbItemIcon_(g), 13) + ' <span class="kb-chunk-doc-t">' + esc(g.title) + '</span>') +
       // C17 batch-5: an admin's search showed a DRAFT chunk identically to a
       // published one — the doc header now carries the same Draft pill as
       // the tree/reader (reps never receive draft hits, so this renders
       // only for admins).
       (g.status === 'draft' ? '<span class="kb-draft-pill">Draft</span>' : '') +
-      '<span class="kb-snip">' + esc(g.department) + (g.type === 'embed' ? ' \u00b7 Drive' : '') + '</span></button>';
+      '<span class="kb-snip">' + (man ? 'Manual \u00b7 ' + esc(kbManualChapterParts_(g.department).name) : esc(g.department)) + (g.type === 'embed' ? ' \u00b7 Drive' : '') + '</span></button>';
     g.chunks.forEach(function (c) {
+      var ch = man && !c.router ? kbManualSplitHeading_(c.heading || '') : null;
       html += '<div class="kb-chunk">' +
         // M5b — a call-router row ("The caller said …") carries the router's phone mark.
-        '<div class="kb-chunk-h' + (c.router ? ' kb-chunk-router' : '') + '"><span>' + (c.router ? icon('phone', 12) + ' ' : '') + (c.heading ? esc(c.heading) : 'Intro') + '</span>' +
+        '<div class="kb-chunk-h' + (c.router ? ' kb-chunk-router' : '') + (ch ? ' kb-chunk-h-man' : '') + '"><span>' + (c.router ? icon('phone', 12) + ' ' : '') +
+          (ch && ch.num ? '<span class="kb-chunk-num">' + esc(ch.num) + '</span>' + esc(ch.rest) : (c.heading ? esc(c.heading) : 'Intro')) + '</span>' +
         '<button class="kb-chunk-go" data-kb-id="' + esc(c.id) + '" data-kb-anchor="' + esc(c.anchor || '') + '" ' +
         'onclick="' + openFn + '(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">Open \u00b6</button></div>' +
         (c.chunkMd ? '<div class="kb-article kb-chunk-body"' + (kbIsManualId_(c.id) ? ' data-kb-man' : '') + '>' + kbMd_(c.chunkMd) +
@@ -6323,11 +6495,17 @@ function kbRenderSearchResults_() {
   }
   if (!results.length) html += '<div class="kb-empty">No matches' + (ftype !== 'all' || fdept ? ' with these filters' : '') + '.</div>';
   groups.forEach(function (g) {
-    html += '<button class="kb-item" data-kb-id="' + esc(g.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))"><span>' + esc(g.title) + '</span></button>';
+    // M18: a manual hit — the chapter's dot, the number column, the title (as M10).
+    var man = kbIsManualId_(g.id), ck = man ? kbManualChapterKey_(g.department) : '', gt = man ? kbManualSplitTitle_(g.title) : null;
+    html += '<button class="kb-item" data-kb-id="' + esc(g.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
+      (man ? '<span class="kb-item-line"><span class="kb-res-dot' + (ck ? ' kb-man-' + ck : '') + '" aria-hidden="true"></span><span class="kb-item-num">' + esc(gt.num) + '</span><span class="kb-item-t">' + esc(gt.rest) + '</span></span>'
+        : '<span>' + esc(g.title) + '</span>') + '</button>';
     g.chunks.forEach(function (c) {
+      var ch = man && !c.router ? kbManualSplitHeading_(c.heading || '') : null;
       html += '<button class="kb-item kb-item-sec" data-kb-id="' + esc(c.id) + '" data-kb-anchor="' + esc(c.anchor || '') + '" ' +
-        'onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))"><span>' +
-        (c.heading ? esc(c.heading) : 'Intro') + '</span></button>';
+        'onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' +
+        (ch && ch.num ? '<span class="kb-item-line"><span class="kb-item-num">' + esc(ch.num) + '</span><span class="kb-item-t">' + esc(ch.rest) + '</span></span>'
+          : '<span>' + (c.heading ? esc(c.heading) : 'Intro') + '</span>') + '</button>';
     });
   });
   el.innerHTML = html;
@@ -6339,6 +6517,7 @@ function kbRenderSearchResults_() {
       (results.length ? kbChunkGroupsHtml_(results, 'kbOpenItem_')
         : (all.length ? '<div class="kb-empty">No matches with these filters.</div>' : kbNoResultsHtml_(q)));
     kbLinkHcpcsInResults_(main);   // M5a — before the marks, so a mark never splits a code
+    kbDecorateManualResults_(main);
     kbHighlightTerms_(main, q, KB_STATE.searchTerms);
   }
 }
@@ -7817,6 +7996,7 @@ function kbDrawerSearch_(q) {
       else html += kbChunkGroupsHtml_(results, 'kbDrawerOpenItem_');
       body.innerHTML = html;
       kbLinkHcpcsInResults_(body);   // M5a — before the marks, so a mark never splits a code
+      kbDecorateManualResults_(body);
       kbHighlightTerms_(body, q, res && res.terms);
     })
     .withFailureHandler(function () {

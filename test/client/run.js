@@ -9071,7 +9071,9 @@ test('the annotator marks the FIRST mention only, and never inside the glossary'
     'longest term first, so "PT Eval" wins over "PT"');
   assert.ok(/catch \(e\) \{ \/\* annotation is decoration/.test(fn), 'and it can never break the reader');
   const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
-  assert.ok(/\.kb-gloss-mark:hover::after, \.kb-gloss-mark:focus::after/.test(kb),
+  // M17 (design handoff Phase 4): the definition opens in the shared card — on hover,
+  // keyboard focus and click — so the CSS tooltip is gone.
+  assert.ok(/var KB_POP_SEL = '[^']*\.kb-gloss-mark/.test(kb) && /addEventListener\('focusin', function \(e\) \{\s*var a = e\.target\.closest && e\.target\.closest\(KB_POP_SEL\)/.test(kb) && !/kb-gloss-mark:hover::after/.test(kb),
     'the definition opens on keyboard focus as well as hover');
   assert.ok(/@media \(max-width: 560px\)[\s\S]{0,200}\.kb-gloss-row \{ grid-template-columns: 1fr/.test(kb),
     'the two-column term list stacks on a phone');
@@ -35075,7 +35077,7 @@ test('MRD-1 (manual reader design Phase 1): no text is white on the accent, each
   // M3: the stack is a container query (right in the pop-out, a phone and the drawer — A2), and the label column yields inside it
   assert.ok(/\.kb-man-tw \{ container-type: inline-size; \}/.test(kb) && /@container \(max-width: 480px\) \{[\s\S]*?table\.kb-man-2col tr > :first-child \{ width: auto; \}[\s\S]*?\n  \}/.test(kb), 'stacked by container query, and the 34% label column yields when stacked');
   // M4b: circles and arrows in the chapter colour, scoped to the manual
-  assert.ok(/\.kb-man-part \.kb-article table\.kb-steps td:first-child::before \{[^}]*border: 1\.5px solid var\(--man-c\)/.test(kb) && /\.kb-man-part \.kb-article table\.kb-steps tbody tr:not\(:last-child\) td:first-child::after \{ color: var\(--man-c\); \}/.test(kb), 'step circles and arrows take the chapter colour, manual sections only');
+  assert.ok(/\.kb-man-part \.kb-article table\.kb-steps td:first-child::before[^{]*\{[^}]*border: 1\.5px solid var\(--man-c\)/.test(kb) && /\.kb-man-part \.kb-article table\.kb-steps tbody tr:not\(:last-child\) td:first-child::after[^{]*\{ color: var\(--man-c\); \}/.test(kb), 'step circles and arrows take the chapter colour, manual sections (and, since M18, manual search hits) only');
   // colour mixing toward transparent / a neutral is in oklab (V-1)
   assert.ok(!/color-mix\(in oklch[^)]*var\(--(info|warn|danger|accent|man-c)\)/.test(kb.slice(kb.indexOf('Manual reader design handoff, Phase 1'), kb.indexOf('M7 —'))), 'the new mixes are oklab');
 });
@@ -35135,6 +35137,51 @@ test('MRD-2 (manual reader design Phase 2): the reader bar\'s title split, chapt
   // the follow-on from Phase 1: the toast's Reload was white on the accent
   const css = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
   assert.ok(!/background:\s*var\(--accent\);\s*color:\s*#fff/i.test(css) && /\.toast-act \{[^}]*background: var\(--accent\); color: var\(--paper-card\)/.test(css), 'the toast action reads --paper-card on the accent');
+});
+
+test('MRD-4 (manual reader design Phase 4 + Phase 3\'s found items): no themed partial puts white text on a semantic fill; footnote numbers read as digits; a chunk heading splits its number; footnotes, glossary marks and cross-references share ONE card and ONE binding, inert inside the card; manual search hits are decorated like the chapter (driven)', () => {
+  const kb = M1_KB_SRC;
+  // the semantic-fill sweep — measured 2026-10-09: in dark mode white reads 1.40 on --good, 1.76 on --warn,
+  // 1.85 on --info and 2.83 on --danger/--destructive (WCAG wants 4.5); --paper-card reads 6.5–13.2, and is white
+  // in light mode. --danger-deep is left out on purpose: white measures 4.62 on it in dark mode (it passes).
+  // form_public.html is its own fixed-palette page (no dark mode), so it is not swept.
+  const files = [];
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).forEach((e) => { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else if (/\.html$/.test(e.name) && e.name !== 'form_public.html') files.push(f); });
+  walk(PA_WEB);
+  let filled = 0;
+  const bad = [];
+  files.forEach((f) => {
+    const src = fs.readFileSync(f, 'utf8');
+    for (const m of src.matchAll(/\{([^{}]*)\}|style="([^"]*)"/g)) {
+      const body = m[1] || m[2] || '';
+      if (!/background(?:-color)?:\s*var\(--(warn|good|info|danger|destructive)\)/.test(body)) continue;
+      filled++;
+      if (/(^|[;\s])color:\s*(#fff\b|#ffffff\b|white\b)/i.test(body)) bad.push(path.relative(PA_WEB, f) + ': ' + body.trim().slice(0, 80));
+    }
+  });
+  assert.deepStrictEqual(bad, [], 'white text on a semantic fill — under 3:1 in dark mode');
+  assert.ok(filled >= 8, 'the sweep sees the semantic fills (non-vacuous): ' + filled);
+  // pure helpers
+  const ctx = vm.createContext({ String });
+  vm.runInContext(/var KB_FN_DIGITS = \{[^}]*\};/.exec(kb)[0], ctx);
+  ['kbFnNum_', 'kbManualSplitHeading_'].forEach((n) => vm.runInContext(extractFnFrom(kb, n), ctx));
+  assert.strictEqual(ctx.kbFnNum_('¹'), '1'); assert.strictEqual(ctx.kbFnNum_('¹²'), '12'); assert.strictEqual(ctx.kbFnNum_('⁰⁹'), '09'); assert.strictEqual(ctx.kbFnNum_(''), '');
+  const j = (v) => JSON.parse(JSON.stringify(v));
+  assert.deepStrictEqual(j(ctx.kbManualSplitHeading_('0.2.2 Fax History')), { num: '0.2.2', rest: 'Fax History' });
+  assert.deepStrictEqual(j(ctx.kbManualSplitHeading_('5.9.2.1 Pick-up')), { num: '5.9.2.1', rest: 'Pick-up' });
+  assert.deepStrictEqual(j(ctx.kbManualSplitHeading_('B.1 Directory')), { num: 'B.1', rest: 'Directory' });
+  ['Intro', 'The caller said "where is it"', '2026 figures', ''].forEach((h) => assert.deepStrictEqual(j(ctx.kbManualSplitHeading_(h)), { num: '', rest: h }, JSON.stringify(h)));
+  // one card, one binding, three kinds
+  assert.ok(/var KB_POP_SEL = 'a\.kb-xref, button\.kb-fn-ref, \.kb-gloss-mark';/.test(kb), 'the three kinds the card serves');
+  const bind = extractFnFrom(kb, 'kbBindXrefs_');
+  ['mouseover', 'focusin', 'focusout'].forEach((ev) => assert.ok(new RegExp("addEventListener\\('" + ev + "', function \\(e\\) \\{\\s*var a = e\\.target\\.closest && e\\.target\\.closest\\(KB_POP_SEL\\)").test(bind), ev + ' serves all three'));
+  assert.ok(/if \(mk\.closest\('#kb-xrefcard'\)\) return;/.test(bind), 'a mark inside the card is inert — the card never nests');
+  const gl = extractFnFrom(kb, 'kbGlossaryAnnotate_');
+  assert.ok(!/data-tip/.test(gl) && /setAttribute\('role', 'button'\)/.test(gl) && /setAttribute\('data-def', info\.def\)/.test(gl), 'the glossary mark carries its definition for the card; no CSS tooltip');
+  // M18 — results decorated like the chapter, in the tab AND the drawer
+  assert.strictEqual((kb.match(/kbDecorateManualResults_\((main|body)\);/g) || []).length, 2, 'both result surfaces decorate');
+  assert.ok((kb.match(/\.kb-chunk-body\[data-kb-man\] blockquote\.kb-callout/g) || []).length >= 5 && (kb.match(/\.kb-chunk-body\[data-kb-man\] table\.kb-steps/g) || []).length >= 3, 'the callout and step rules reach manual results');
+  assert.ok(/kbDecorateCallouts_\(root, '\.kb-man-sec blockquote\.kb-callout'\);/.test(extractFnFrom(kb, 'kbManualDecorate_')), 'ONE callout decorator for the chapter and the results');
 });
 
 test('MRD-3 (manual reader design Phase 3 + Phase 2\'s open items): no filled-accent rule anywhere in web-app/ puts white text on it; the bar\'s ‹ › shrink to chevrons when narrow and keep a name; the masthead renders from one function for the skeleton and the chapter; the skeleton is not a section; a failed load keeps the masthead (driven)', () => {
