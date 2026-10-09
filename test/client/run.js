@@ -35137,6 +35137,57 @@ test('MRD-2 (manual reader design Phase 2): the reader bar\'s title split, chapt
   assert.ok(!/background:\s*var\(--accent\);\s*color:\s*#fff/i.test(css) && /\.toast-act \{[^}]*background: var\(--accent\); color: var\(--paper-card\)/.test(css), 'the toast action reads --paper-card on the accent');
 });
 
+test('MRD-3 (manual reader design Phase 3 + Phase 2\'s open items): no filled-accent rule anywhere in web-app/ puts white text on it; the bar\'s ‹ › shrink to chevrons when narrow and keep a name; the masthead renders from one function for the skeleton and the chapter; the skeleton is not a section; a failed load keeps the masthead (driven)', () => {
+  const kb = M1_KB_SRC;
+  // the white-on-accent sweep: every block that fills with --accent reads --paper-card (the app's idiom)
+  const files = [];
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).forEach((e) => { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else if (/\.html$/.test(e.name)) files.push(f); });
+  walk(PA_WEB);
+  let filled = 0;
+  const bad = [];
+  files.forEach((f) => {
+    const src = fs.readFileSync(f, 'utf8');
+    for (const m of src.matchAll(/\{([^{}]*)\}|style="([^"]*)"/g)) {
+      const body = m[1] || m[2] || '';
+      if (!/background:\s*var\(--accent\)/.test(body)) continue;   // --accent-soft and friends do not match: the ")" must follow "accent"
+      filled++;
+      if (/(^|[;\s])color:\s*(#fff\b|#ffffff\b|white\b)/i.test(body)) bad.push(path.relative(PA_WEB, f) + ': ' + body.trim().slice(0, 80));
+    }
+  });
+  assert.deepStrictEqual(bad, [], 'white text on a filled accent — a pale green / lilac in dark mode');
+  assert.ok(filled >= 10, 'the sweep sees the filled-accent rules (non-vacuous): ' + filled);
+  // the bar when narrow: the labels go, the name stays
+  assert.ok(/@container \(max-width: 560px\) \{[^}]*\.kb-man-bar-nav span \{ display: none; \}|@container \(max-width: 560px\) \{ [^@]*\.kb-man-bar-nav span[^{]*\{ display: none; \}/.test(kb), 'the ‹ › labels hide inside the narrow container query');
+  assert.ok(/b\.setAttribute\('aria-label', b\.title\);/.test(extractFnFrom(kb, 'kbManualBarPaint_')), 'and each keeps its accessible name');
+  // the masthead, driven
+  const ctx = vm.createContext({ String, Object, Number, icon: (n, sz) => '<i data-icon="' + n + '"></i>',
+    esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') });
+  vm.runInContext(/var KB_MANUAL_CHAPTER_ICONS = Object\.freeze\(\{[\s\S]*?\}\);/.exec(kb)[0], ctx);
+  ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualChapterParts_', 'kbManualSplitTitle_', 'kbManualMastheadHtml_'].forEach((n) => vm.runInContext(extractFnFrom(kb, n), ctx));
+  const three = ctx.kbManualMastheadHtml_('Chapter 05 — Power Mobility', [{ id: 'man-5-1', title: '5.1 Scope', status: 'published' }, { id: 'man-5-2', title: '5.2 PAK <b>', status: 'published' }, { id: 'man-5-3', title: '5.3 New', status: 'draft' }]);
+  assert.ok(/Procedures manual · Chapter 05/.test(three) && />3 sections</.test(three) && /In this chapter/.test(three), 'kicker, count, index');
+  assert.strictEqual((three.match(/class="kb-man-ix"/g) || []).length, 3);
+  assert.strictEqual((three.match(/onclick="kbOpenItem_\(this\.getAttribute\('data-kb-id'\)\)"/g) || []).length, 3, 'each row opens the section the ordinary way (a fresh start: the Back chip goes)');
+  assert.ok(/5\.2<\/span><span class="kb-man-ix-t">PAK &lt;b&gt;/.test(three), 'number and title, escaped');
+  assert.ok(/data-kb-ix-upd="man-5-2"/.test(three) && !/data-kb-ix-upd="man-5-3"/.test(three) && /kb-draft-pill/.test(three), 'a draft shows Draft, never Updated');
+  const one = ctx.kbManualMastheadHtml_('Appendix A — Glossary', [{ id: 'man-a-1', title: 'Glossary', status: 'published' }]);
+  assert.ok(/Procedures manual · Appendix A/.test(one) && />1 section</.test(one) && !/In this chapter/.test(one) && !/kb-man-badge/.test(one), 'one section: no index; an appendix: no chapter badge');
+  assert.ok(/<div class="kb-man-mast-k">Procedures manual<\/div>/.test(ctx.kbManualMastheadHtml_('Billing', [])), 'any other department: no number');
+  // the skeleton is not a section: the spy, Print, the decorators and focus all ignore it
+  const skel = extractFnFrom(kb, 'kbManualSkeletonHtml_');
+  assert.ok(/kbManualMastheadHtml_\(dept, secs\)/.test(skel) && /kbManualMastheadHtml_\(part\.department, secs\)/.test(extractFnFrom(kb, 'kbManualPartHtml_')), 'ONE masthead renderer, so nothing jumps when the chapter lands');
+  assert.ok(/class="skel skel-bar"/.test(skel) && /aria-busy="true"/.test(skel) && !/kb-man-sec"|kb-man-sec-'|data-kb-id/.test(skel), 'the app\'s shimmer, busy, and no section element');
+  const open = extractFnFrom(kb, 'kbOpenManualSection_');
+  assert.ok(!/loSweep\(\)/.test(open) && /main\.innerHTML = kbManualSkeletonHtml_\(dept, id\);/.test(open), 'the skeleton replaces the full-panel sweep');
+  assert.strictEqual((open.match(/kbManualLoadFail_\(main,/g) || []).length, 3, 'every failure keeps the masthead');
+  assert.ok(!/errorStateHtml_/.test(open), 'no failure path wipes the reader directly');
+  // the updated count's window is the badge\'s, never a hand-carried literal
+  const pm = extractFnFrom(kb, 'kbManualPaintMeta_');
+  assert.ok(/Math\.round\(KB_MANUAL_UPDATED_DAYS \/ 30\.44\)/.test(pm) && !/12 months/.test(pm), 'the "N updated in the last M months" window is derived');
+  // M11: the chapter cards reuse the bar's chapter list
+  assert.ok(/kbManualDepts_\(\)/.test(extractFnFrom(kb, 'kbManualPaintChapNav_')) && /kbManualPaintChapNav_\(main\)/.test(extractFnFrom(kb, 'kbManualPaintPart_')), 'cards painted with the chapter, from the one chapter list');
+});
+
 test('MP1-6: department guides come from data/extracts.json — every guide a part, Billing in each by default, and a reference to a section a guide leaves out reads "(in the full manual)", never a dead link', () => {
   const bd = MP1_('build.py');
   const man = JSON.parse(MP1_('data/extracts.json'));
@@ -35236,10 +35287,11 @@ test('MP2-4: the reader puts a chapter\'s badge and colour on its title and its 
     esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
     kbShiftHeadings_: (h) => h, kbMd_: (m) => m, kbManualFeedbackBarHtml_: () => '', kbBookmarkBtnHtml_: () => '', kbIsManualCard_: () => false });
   vm.runInContext(/var KB_MANUAL_CHAPTER_ICONS = Object\.freeze\(\{[\s\S]*?\}\);/.exec(M1_KB_SRC)[0], ctx);
-  ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualChapterParts_', 'kbManualBarHtml_', 'kbManualPartHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
-  const head = (d) => /<div class="kb-item-head[^"]*">[\s\S]*?<\/div>/.exec(ctx.kbManualPartHtml_({ department: d, sections: [] }))[0];
+  ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualChapterParts_', 'kbManualSplitTitle_', 'kbManualBarHtml_', 'kbManualMastheadHtml_', 'kbManualPartHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
+  // since M9 (design handoff Phase 3) the chapter's title is the masthead's
+  const head = (d) => /<header class="kb-man-mast[^"]*">[\s\S]*?<\/h2>/.exec(ctx.kbManualPartHtml_({ department: d, sections: [] }))[0];
   assert.strictEqual(head('Chapter 05 — Power Mobility'),
-    '<div class="kb-item-head kb-man-head kb-man-chap kb-man-p5"><h2><span class="kb-man-badge kb-man-p5" aria-hidden="true"><i data-icon="bolt" data-s="18"></i></span>Chapter 05 — Power Mobility</h2></div>');
+    '<header class="kb-man-mast kb-man-p5"><div class="kb-man-mast-k">Procedures manual · Chapter 05</div><h2 class="kb-man-mast-h"><span class="kb-man-badge kb-man-p5" aria-hidden="true"><i data-icon="bolt" data-s="22"></i></span><span>Power Mobility</span></h2>');
   assert.ok(/kb-man-p4"[\s\S]*data-icon="clipboardList"/.test(head('Chapter 04 — Sales')), 'Sales is Chapter 4 since the October 2026 renumber');
   assert.ok(/kb-man-p10"[\s\S]*data-icon="dollar"/.test(head('Chapter 10 — Billing & Denials')), 'two digits read as one number');
   assert.ok(/kb-man-p10"[\s\S]*data-icon="dollar"/.test(head('Part 10 — Billing & Insurance')), 'a row imported before the renumber still reads by its number');
@@ -35248,7 +35300,7 @@ test('MP2-4: the reader puts a chapter\'s badge and colour on its title and its 
     if (d.indexOf('<img') > 0) {
       assert.ok(!/<img/.test(h) && /kb-man-p4/.test(h), 'a hostile name is escaped and only its number picks the chapter');
     } else {
-      assert.ok(!/kb-man-chap|kb-man-badge/.test(h), JSON.stringify(d) + ' has no chapter badge');
+      assert.ok(!/kb-man-p\d|kb-man-badge/.test(h), JSON.stringify(d) + ' has no chapter badge');
     }
   });
   assert.strictEqual(ctx.kbManualChapterIcon_('Chapter 07 — Service', 13, 'kb-man-dic'), '<span class="kb-man-dic kb-man-p7" aria-hidden="true"><i data-icon="repair" data-s="13"></i></span>');

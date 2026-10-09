@@ -19,8 +19,8 @@ against the repo; all exist as described. Repo-side corrections to the handoff:
   the container query.
 - `styles.html` line ~2408 also put `#fff` on `--accent` (the toast's Reload) —
   fixed with Phase 2 (operator 2026-10-09). `metrics/script_metrics.html`
-  (`.m-scope-btn.on`) and `qa/script_qa.html` (`.qa-btn.prime`) do the same —
-  follow-on, outside this plan.
+  (`.m-scope-btn.on`) and `qa/script_qa.html` (`.qa-btn.prime`) did the same —
+  fixed with Phase 3, with four more the app-wide sweep found (MRD-3 pins every file).
 
 ## Operator decisions
 
@@ -65,4 +65,15 @@ against the repo; all exist as described. Repo-side corrections to the handoff:
   under the shell's tab strip; `kbReaderScroll_` scrolls `#kb-main` only.
 - The bar and the Back row share one sticky band (`.kb-man-top`), with
   `scroll-padding-top` so a target heading lands below it.
+
+## Phase 3 adaptations (2026-10-09)
+
+- **Skeleton** uses the app's `.skel` shimmer (styles.html's loader vocabulary),
+  not new `--paper-2` blocks; the skeleton is not a `.kb-man-sec`, so the spy,
+  Print, the decorators and focus all ignore it.
+- **Index rows** open by `kbOpenItem_` (a fresh start clears the Back chip), not
+  `kbManualFocus_`; a one-section chapter has no index.
+- **One masthead renderer** (`kbManualMastheadHtml_`) for the skeleton and the
+  chapter, so nothing moves when the chapter lands; the version line lives in it.
+- **The "N updated" window** is derived from `KB_MANUAL_UPDATED_DAYS`, never a literal.
 

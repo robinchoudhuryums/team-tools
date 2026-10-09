@@ -125,7 +125,6 @@
   .kbd-rt-filter input { width: 100%; box-sizing: border-box; font: inherit; font-size: .84rem; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); color: var(--ink); }
   .kbd-rt-g { font-size: .66rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 10px 4px 4px; }
   .kbd-rt-row { flex-direction: column; align-items: flex-start; }
-  .kb-man-head h2 { margin-bottom: 2px; }
   /* The chapter's colour and icon (operator 2026-10-07): a badge on the part's
      title (its stripe went in the design handoff's M6, 2026-10-09 — one colour
      cue per level), and the icon beside it in the tree. --man-pN are tokens;
@@ -134,11 +133,41 @@
   .kb-man-p0 { --man-c: var(--man-p0); } .kb-man-p1 { --man-c: var(--man-p1); } .kb-man-p2 { --man-c: var(--man-p2); } .kb-man-p3 { --man-c: var(--man-p3); } 
   .kb-man-p4 { --man-c: var(--man-p4); } .kb-man-p5 { --man-c: var(--man-p5); } .kb-man-p6 { --man-c: var(--man-p6); } .kb-man-p7 { --man-c: var(--man-p7); } 
   .kb-man-p8 { --man-c: var(--man-p8); } .kb-man-p9 { --man-c: var(--man-p9); } .kb-man-p10 { --man-c: var(--man-p10); } 
-  .kb-man-chap h2 { display: flex; align-items: center; gap: 10px; color: var(--man-c); }
   .kb-man-badge { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; background: var(--man-c); color: var(--paper-card); }
   .kb-man-dic { flex: none; display: inline-flex; color: var(--man-c); }
-  .kb-man-ver { font-size: .76rem; color: var(--muted); margin: 0 0 12px; min-height: 1em; }
-  .kb-man-sec:last-child { border-bottom: none; }
+  /* M9 (design handoff, Phase 3): the chapter's masthead — kicker, the badge at
+     44px, the short name, a meta line (kbManualPaintMeta_) and "In this chapter".
+     The skeleton paints the same masthead from the tree, so nothing jumps. */
+  .kb-man-mast { padding: 14px 0 22px; border-bottom: 1px solid var(--line); margin-bottom: 8px; max-width: 900px; }
+  .kb-man-mast-k { font-family: var(--mono); font-size: .7rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-2); margin-bottom: 10px; }
+  .kb-man-mast-h { display: flex; align-items: center; gap: 14px; margin: 0; font-family: var(--display); font-size: 1.85rem; font-weight: 600; letter-spacing: -.02em; line-height: 1.15; color: var(--ink); }
+  .kb-man-mast .kb-man-badge { width: 44px; height: 44px; }
+  .kb-man-mast-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 10px; font-size: .78rem; color: var(--muted-2); }
+  .kb-man-mast-meta > span:empty { display: none; }
+  .kb-man-mast-ix-h { margin-top: 20px; font-family: var(--mono); font-size: .66rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2); }
+  .kb-man-mast-ix { margin-top: 8px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 24px; }
+  .kb-man-ix { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: baseline; gap: 6px; text-align: left; font: inherit; padding: 7px 6px; border: none; border-bottom: 1px solid var(--line); background: none; cursor: pointer; color: var(--ink); }
+  .kb-man-ix:hover, .kb-man-ix:focus-visible { background: var(--paper-2); }
+  .kb-man-ix-n { font-family: var(--mono); font-size: .75rem; font-weight: 700; color: var(--man-c); font-variant-numeric: tabular-nums; }
+  .kb-man-ix-t { font-size: .88rem; min-width: 0; }
+  .kb-man-ix .kb-draft-pill { grid-column: 3; }
+  .kb-man-ix-upd:empty { display: none; }
+  /* One column when the reader is narrow — the pop-out, a phone (A2: by container). */
+  @container (max-width: 620px) { .kb-man-mast-ix { grid-template-columns: minmax(0, 1fr); } .kb-man-mast-h { font-size: 1.5rem; } }
+  .kb-man-skel-p { display: flex; flex-direction: column; gap: 10px; margin: 18px 0 26px; }
+  .kb-man-skel-p .skel-bar { height: 12px; }
+  /* M11: the chapter's neighbours, after its last section. */
+  .kb-man-chapnav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
+  .kb-man-chapnav:empty { display: none; }
+  .kb-man-cn { display: flex; align-items: center; gap: 12px; padding: 14px 16px; font: inherit; text-align: left; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); color: var(--ink); cursor: pointer; min-width: 0; }
+  .kb-man-cn:hover, .kb-man-cn:focus-visible { border-color: var(--border-strong); background: var(--paper-2); }
+  .kb-man-cn-next { grid-column: 2; justify-content: flex-end; text-align: right; }
+  .kb-man-cn > svg { flex: none; color: var(--muted-2); }
+  .kb-man-cn-txt { display: flex; flex-direction: column; min-width: 0; }
+  .kb-man-cn-k { font-family: var(--mono); font-size: .66rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-2); }
+  .kb-man-cn-n { font-size: .95rem; font-weight: 600; overflow-wrap: anywhere; }
+  @container (max-width: 520px) { .kb-man-chapnav { grid-template-columns: minmax(0, 1fr); } .kb-man-cn-next { grid-column: auto; } }
+  .kb-man-sec:last-of-type { border-bottom: none; }   /* the chapter cards follow it (M11) */
   .kb-man-badges:empty { display: none; }
   /* Operator testing 2026-10-08 — the reader reads like the HTML manual: the
      section number is a chip in the chapter colour beside a rule, sub-section
@@ -232,6 +261,7 @@
   .kb-man-bar-sn { flex: none; font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: var(--man-c); color: var(--paper-card); }
   .kb-man-bar-sn:empty { display: none; }
   .kb-man-bar-t { flex: 1 1 auto; min-width: 0; font-size: .84rem; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kb-man-bar-skel .kb-man-bar-acts { visibility: hidden; }
   .kb-man-bar-acts { margin-left: auto; display: flex; align-items: center; gap: 4px; flex: none; }
   .kb-man-bar .kb-man-bar-ic { width: 30px; height: 30px; padding: 0; justify-content: center; border-color: transparent; background: none; color: var(--muted); }
   .kb-man-bar .kb-man-bar-ic:hover, .kb-man-bar .kb-man-bar-ic:focus-visible { background: var(--paper-2); color: var(--ink); }
@@ -240,8 +270,10 @@
   .kb-man-bar-nav { display: inline-flex; align-items: center; gap: 3px; font: inherit; font-family: var(--mono); font-size: 11px; font-weight: 600; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-card); color: var(--muted); cursor: pointer; white-space: nowrap; }
   .kb-man-bar-nav:hover:not(:disabled), .kb-man-bar-nav:focus-visible { background: var(--paper-2); color: var(--ink); }
   .kb-man-bar-nav:disabled { opacity: .4; cursor: default; }
-  /* A narrow reader (the pop-out, a phone) keeps the section, not the chapter name. */
-  @container (max-width: 560px) { .kb-man-bar-cn, .kb-man-bar-chev { display: none; } .kb-man-bar-sep { margin: 0 1px; } }
+  /* A narrow reader (the pop-out, a phone) keeps the section, not the chapter name,
+     and ‹ › shrink to their chevrons (the label stays in the tooltip and the
+     accessible name) — at 390px the title had kept five letters. */
+  @container (max-width: 560px) { .kb-man-bar-cn, .kb-man-bar-chev, .kb-man-bar-sep, .kb-man-bar-nav span { display: none; } .kb-man-bar { gap: 6px; padding-right: 10px; } .kb-man-bar-nav { padding: 5px 6px; } }
   /* M7 — the feedback line is quieter, so a 15-section page does not read as 15 footers. */
   .kb-man-fb { margin-top: 20px; padding-top: 0; border-top: none; gap: 4px; }
   .kb-man-fb .kb-fb-q { font-size: .8rem; color: var(--muted-2); margin-right: 4px; }
@@ -3322,24 +3354,25 @@ function kbOpenManualSection_(id, anchor, nav) {
     return true;
   }
   var seq = (KB_STATE.manualSeq = (KB_STATE.manualSeq || 0) + 1);
-  kbEnsureManualMeta_(function () { if (KB_STATE.manualPart && seq === KB_STATE.manualSeq) kbManualPaintMeta_(); });
+  kbEnsureManualMeta_(function () { if (seq === KB_STATE.manualSeq) kbManualPaintMeta_(); });   // the skeleton's masthead too
   // Operator testing 2026-10-08: a chapter already in the session cache paints
   // at once — no server call between chapters. The first open still asks for
   // its one chapter (the fastest read), while the whole manual arrives behind it.
   var cached = kbManualCachedPart_(dept);
   if (cached && cached.sections.some(function (s) { return s.id === id; })) { kbManualPaintPart_(main, cached, id, anchor, nav); return true; }
   kbPrefetchManualParts_();
-  main.innerHTML = loSweep();
+  main.innerHTML = kbManualSkeletonHtml_(dept, id);
+  kbManualPaintMeta_();
   var requested = currentView;
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requested || seq !== KB_STATE.manualSeq || KB_STATE.currentId !== id) return;
-      if (!res || res.error) { main.innerHTML = errorStateHtml_((res && res.error) || 'Failed to load this chapter of the manual'); return; }
-      if (!(res.sections || []).some(function (s) { return s.id === id; })) { main.innerHTML = errorStateHtml_('That section is not available.'); return; }
+      if (!res || res.error) { kbManualLoadFail_(main, (res && res.error) || 'Failed to load this chapter of the manual'); return; }
+      if (!(res.sections || []).some(function (s) { return s.id === id; })) { kbManualLoadFail_(main, 'That section is not available.'); return; }
       kbManualPaintPart_(main, res, id, anchor, nav);
     })
     .withFailureHandler(function (err) {
-      if (currentView === requested && seq === KB_STATE.manualSeq && KB_STATE.currentId === id) main.innerHTML = errorStateHtml_((err && err.message) || 'Failed to load this chapter of the manual');
+      if (currentView === requested && seq === KB_STATE.manualSeq && KB_STATE.currentId === id) kbManualLoadFail_(main, (err && err.message) || 'Failed to load this chapter of the manual');
     })
     .getManualPart(dept);
   return true;
@@ -3355,6 +3388,7 @@ function kbManualPaintPart_(main, part, id, anchor, nav) {
   kbGlossaryAnnotate_(main);
   kbLinkHcpcs_(main);
   kbManualPaintMeta_();
+  kbManualPaintChapNav_(main);
   kbManualSpyBind_(main);
   kbManualFocus_(id, anchor, true, nav);
 }
@@ -3489,10 +3523,7 @@ function kbManualPartHtml_(part) {
   var secs = part.sections || [];
   var drafts = secs.filter(function (s) { return s.status === 'draft'; }).length;
   var ck = kbManualChapterKey_(part.department);
-  var html = kbManualBarHtml_(part.department) +
-    '<div class="kb-item-head kb-man-head' + (ck ? ' kb-man-chap kb-man-' + ck : '') + '"><h2>' +
-      kbManualChapterIcon_(part.department, 18, 'kb-man-badge') + esc(part.department) + '</h2></div>' +
-    '<div class="kb-man-ver" data-kb-man-ver></div>' +
+  var html = kbManualBarHtml_(part.department) + kbManualMastheadHtml_(part.department, secs) +
     (admin && drafts ? '<div class="kb-draft-banner">' + icon('warning', 13) + ' ' + drafts + ' of ' + secs.length +
       ' section' + (secs.length === 1 ? '' : 's') + ' in this chapter ' + (drafts === 1 ? 'is a draft' : 'are drafts') + ' — hidden from reps until published (Reference → Manual).</div>' : '') +
     '<div class="kb-man-part' + (ck ? ' kb-man-' + ck : '') + '">';
@@ -3511,22 +3542,87 @@ function kbManualPartHtml_(part) {
       kbManualFeedbackBarHtml_(s) +
     '</section>';
   });
-  return html + '</div>';
+  return html + '<nav class="kb-man-chapnav" data-kb-man-chapnav aria-label="Other chapters"></nav></div>';
+}
+
+/** M9 (design handoff, Phase 3) — the chapter's masthead: kicker, badge, short
+ *  name, a meta line (the section count here; the updated count and the version
+ *  are kbManualPaintMeta_'s), and "In this chapter" — each section a link. ONE
+ *  renderer for the skeleton (from the tree) and the painted chapter, so the page
+ *  does not move when the chapter lands. `secs` are [{id, title, status}]. */
+function kbManualMastheadHtml_(dept, secs) {
+  var ck = kbManualChapterKey_(dept), cp = kbManualChapterParts_(dept);
+  var html = '<header class="kb-man-mast' + (ck ? ' kb-man-' + ck : '') + '">' +
+    '<div class="kb-man-mast-k">Procedures manual' + (cp.num ? ' · ' + (cp.appendix ? 'Appendix ' : 'Chapter ') + esc(cp.num) : '') + '</div>' +
+    '<h2 class="kb-man-mast-h">' + kbManualChapterIcon_(dept, 22, 'kb-man-badge') + '<span>' + esc(cp.name) + '</span></h2>' +
+    '<div class="kb-man-mast-meta"><span>' + secs.length + ' section' + (secs.length === 1 ? '' : 's') + '</span>' +
+      '<span data-kb-man-updcount></span><span data-kb-man-ver></span></div>';
+  if (secs.length > 1) {
+    html += '<div class="kb-man-mast-ix-h">In this chapter</div><div class="kb-man-mast-ix">';
+    secs.forEach(function (s) {
+      var t = kbManualSplitTitle_(s.title);
+      html += '<button type="button" class="kb-man-ix" data-kb-id="' + esc(s.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
+        '<span class="kb-man-ix-n">' + esc(t.num) + '</span><span class="kb-man-ix-t">' + esc(t.rest) + '</span>' +
+        (s.status === 'draft' ? '<span class="kb-draft-pill">Draft</span>' : '<span class="kb-man-ix-upd" data-kb-ix-upd="' + esc(s.id) + '"></span>') + '</button>';
+    });
+    html += '</div>';
+  }
+  return html + '</header>';
+}
+/** M9 — what the reader shows while a chapter loads: the bar and masthead from
+ *  the tree, the target section's heading, and skeleton lines (the app's .skel)
+ *  where the bodies will be. No focus, no open recorded, no comments — those run
+ *  when kbManualPaintPart_ replaces it. */
+function kbManualSkeletonHtml_(dept, id) {
+  var secs = (KB_STATE.tree || []).filter(function (it) { return it.department === dept && kbIsManualId_(it.id); });
+  var tgt = secs.filter(function (x) { return x.id === id; })[0] || { title: '' };
+  var ck = kbManualChapterKey_(dept), lines = '';
+  [100, 96, 88, 100, 62].forEach(function (w) { lines += '<div class="skel skel-bar" style="width:' + w + '%"></div>'; });
+  return kbManualBarHtml_(dept, tgt.title) + kbManualMastheadHtml_(dept, secs) +
+    '<div class="kb-man-part' + (ck ? ' kb-man-' + ck : '') + '" data-kb-man-skel aria-busy="true" aria-label="Loading this chapter">' +
+      '<div class="kb-man-sec-head"><h2 class="kb-man-sec-h">' + kbManualTitleHtml_(tgt.title) + '</h2></div>' +
+      '<div class="kb-man-skel-p">' + lines + '</div><div class="kb-man-skel-p">' + lines + '</div>' +
+    '</div>';
+}
+/** A chapter that failed to load keeps its masthead; the error goes where the
+ *  bodies were (or fills the reader when no skeleton is up). */
+function kbManualLoadFail_(main, msg) {
+  var host = main.querySelector('[data-kb-man-skel]');
+  if (host) { host.removeAttribute('aria-busy'); host.removeAttribute('aria-label'); host.innerHTML = errorStateHtml_(msg); }
+  else main.innerHTML = errorStateHtml_(msg);
+}
+/** M11 — after the last section, the neighbouring chapters (their first section,
+ *  as the bar's ‹ › at a chapter's edge). */
+function kbManualPaintChapNav_(main) {
+  var host = main.querySelector('[data-kb-man-chapnav]'); if (!host || !KB_STATE.manualPart) return;
+  var md = kbManualDepts_(), d = md.list.indexOf(KB_STATE.manualPart.department);
+  var card = function (dept, dir) {
+    var first = dept ? md.first(dept) : '';
+    if (!first) return '';
+    var cp = kbManualChapterParts_(dept);
+    var txt = '<span class="kb-man-cn-txt"><span class="kb-man-cn-k">' + (dir < 0 ? 'Previous' : 'Next') +
+      (cp.num ? ' · ' + (cp.appendix ? 'Appendix ' : 'Chapter ') + esc(cp.num) : '') + '</span><span class="kb-man-cn-n">' + esc(cp.name) + '</span></span>';
+    var badge = kbManualChapterIcon_(dept, 15, 'kb-man-badge');
+    return '<button type="button" class="kb-man-cn' + (dir > 0 ? ' kb-man-cn-next' : '') + '" data-kb-id="' + esc(first) + '" title="' + esc(dept) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
+      (dir < 0 ? icon('chevronLeft', 14) + badge + txt : txt + badge + icon('chevronRight', 14)) + '</button>';
+  };
+  host.innerHTML = d < 0 ? '' : card(md.list[d - 1], -1) + card(md.list[d + 1], 1);
 }
 
 // ── M8 (design handoff, Phase 2) — the reader bar and its scroll-spy ─────────
 /** The reader's one sticky band: the "Back to" row (kbManualPaintBack_) above the
  *  bar — the chapter, the section in view, and Bookmark / Print / previous /
  *  next for THAT section. The section half is painted by kbManualBarPaint_. */
-function kbManualBarHtml_(dept) {
+function kbManualBarHtml_(dept, skelTitle) {
   var ck = kbManualChapterKey_(dept), cp = kbManualChapterParts_(dept);
+  var skel = skelTitle != null, st = kbManualSplitTitle_(skel ? skelTitle : '');   // the skeleton names its target; its buttons wait for the chapter
   return '<div class="kb-man-top">' +
     '<div class="kb-man-back" data-kb-man-back></div>' +
-    '<div class="kb-man-bar' + (ck ? ' kb-man-' + ck : '') + '" data-kb-man-bar>' +
+    '<div class="kb-man-bar' + (ck ? ' kb-man-' + ck : '') + (skel ? ' kb-man-bar-skel' : '') + '" data-kb-man-bar>' +
       kbManualChapterIcon_(dept, 13, 'kb-man-bar-badge') +
       '<span class="kb-man-bar-cn" title="' + esc(dept) + '">' + esc(cp.name) + '</span>' +
       '<span class="kb-man-bar-chev" aria-hidden="true">' + icon('chevronRight', 12) + '</span>' +
-      '<span class="kb-man-bar-sn" data-kb-man-bar-sn></span><span class="kb-man-bar-t" data-kb-man-bar-t></span>' +
+      '<span class="kb-man-bar-sn" data-kb-man-bar-sn>' + esc(st.num) + '</span><span class="kb-man-bar-t" data-kb-man-bar-t>' + esc(st.rest) + '</span>' +
       '<span class="kb-man-bar-acts">' +
         kbBookmarkBtnHtml_({ id: '', title: '' }, 'kb-man-bar-ic') +
         '<button type="button" class="kb-btn kb-man-bar-ic kb-man-print" data-kb-man-bar-print data-kb-id="" title="Print" aria-label="Print" onclick="kbPrintSectionById_(this.getAttribute(\'data-kb-id\'))">' + icon('printer', 15) + '</button>' +
@@ -3594,6 +3690,7 @@ function kbManualBarPaint_(id) {
     b.disabled = !x[1];
     b.querySelector('span').textContent = x[1] ? x[1].label : '';
     b.title = x[1] ? x[2] + (x[1].chapter ? ' chapter: ' : ': ') + x[1].title : 'No ' + x[2].toLowerCase() + ' section';
+    b.setAttribute('aria-label', b.title);
   });
   kbMarkTreeCurrent_(id);
   kbTreeRevealRow_(id);
@@ -3785,8 +3882,19 @@ function kbManualPaintMeta_() {
       (KB_STATE.isAdmin ? ' · read-only here — change it in the manual source and re-import' : '');
   }
   var today = new Date().toISOString().substring(0, 10);
+  var memo = {}, upd = function (id) { return memo[id] || (memo[id] = kbManualUpdates_(meta.changelog, id, today, KB_MANUAL_UPDATED_DAYS)); };
+  // M9: the masthead's index pills and its "N updated" — counted over the
+  // chapter's sections (the index's, or the page's when there is no index).
+  var seen = {}, n = 0;
+  main.querySelectorAll('[data-kb-ix-upd], [data-kb-badges]').forEach(function (el) {
+    var id = el.getAttribute('data-kb-ix-upd') || el.getAttribute('data-kb-badges');
+    if (!seen[id]) { seen[id] = true; if (upd(id).length) n++; }
+    if (el.hasAttribute('data-kb-ix-upd')) el.innerHTML = upd(id).length ? '<span class="kb-man-upd">Updated</span>' : '';
+  });
+  var uc = main.querySelector('[data-kb-man-updcount]');
+  if (uc) uc.textContent = n ? n + ' updated in the last ' + Math.round(KB_MANUAL_UPDATED_DAYS / 30.44) + ' months' : '';
   main.querySelectorAll('[data-kb-badges]').forEach(function (b) {
-    var ups = kbManualUpdates_(meta.changelog, b.getAttribute('data-kb-badges'), today, KB_MANUAL_UPDATED_DAYS);
+    var ups = upd(b.getAttribute('data-kb-badges'));
     b.innerHTML = ups.length
       ? '<span class="kb-man-upd" title="' + esc(ups.map(kbManualUpdLine_).join('\n')) + '">' +
           'Updated ' + esc(kbManualDateLabel_(ups[0].date)) + (ups.some(function (u) { return u.retraining; }) ? ' · retraining' : '') + '</span>'

@@ -10,6 +10,32 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-09 — manual reader design, Phase 3 (masthead, loading, chapter cards) + Phase 2's open items
+
+**Adds NO operator state.** Deploy as usual (`clasp push -f` + New version); no
+re-import, no manual rebuild. Phases 4–8 wait for your go-ahead.
+- **Chapter masthead (M9):** each chapter opens with "Procedures manual ·
+  Chapter 05", its badge, its name, a line with the section count, how many
+  sections were updated in the last 12 months and the manual's version, then
+  "In this chapter" — every section as a link, with an Updated or Draft pill.
+  The version line that sat under the chapter title moved here.
+- **Loading:** a chapter not yet loaded shows its bar, masthead and the section's
+  heading at once, with shimmer lines where the text will be, instead of a blank
+  panel. If the load fails, the masthead stays and the error appears where the
+  text would have been.
+- **Chapter cards (M11):** after a chapter's last section, "Previous · Chapter 04"
+  and "Next · Chapter 06" cards open the neighbouring chapter.
+- **Phone / pop-out:** the reader bar's ‹ › shrink to arrows so the section title
+  keeps its room (at 390px it went from about 5 letters to about 20).
+- **Fixed — white text on the accent colour** (unreadable in dark mode), in six
+  more places: Metrics' scope buttons, QA's main button, Coaching's main button,
+  Call Notes' Training filter chip (when on), the note-reply Save and the
+  manager-reply Save (on hover). A test now checks every file in the app.
+- **Adapted from the handoff (the repo wins):** the loading lines use the app's
+  own shimmer (`.skel`), not new grey blocks; an index row opens its section the
+  ordinary way (`kbOpenItem_`, so a stale "Back to" chip clears) rather than
+  `kbManualFocus_`; a one-section chapter (Glossary) has no index.
+
 ## 2026-10-09 — manual reader design, Phase 2 (reader bar, tree rows)
 
 **Adds NO operator state.** Deploy as usual (`clasp push -f` + New version); no

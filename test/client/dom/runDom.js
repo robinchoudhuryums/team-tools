@@ -5482,6 +5482,51 @@ test('MRD-2 DOM (manual reader design Phase 2): the tree reads "00 CSR Core" wit
   w.Element.prototype.scrollIntoView = origSiv;
 });
 
+test('MRD-3 DOM (manual reader design Phase 3): an uncached chapter paints its bar, masthead and target heading from the tree with skeleton lines — no section, no open recorded, no comments; the meta fills the masthead\'s count and version; the chapter replaces the skeleton under the SAME masthead and ends with its neighbour\'s card; a failed load keeps the masthead', async () => {
+  const h = m4Boot_();
+  const w = h.window, doc = w.document;
+  let recorded = 0;
+  const origRecord = w.kbPanelRecordOpen_;
+  w.kbPanelRecordOpen_ = function () { recorded++; return origRecord.apply(this, arguments); };
+  h.read('kbOpenItem_')('man-0-11');
+  // the skeleton
+  assert.ok(h.$('#kb-main [data-kb-man-bar].kb-man-bar-skel') && h.$('[data-kb-man-bar-sn]').textContent === '0.11' && h.$('[data-kb-man-bar-t]').textContent === 'Notes and email conventions', 'the bar names the target at once');
+  assert.strictEqual(h.$('#kb-main .kb-man-mast-h').textContent, 'CSR Core');
+  assert.ok(/Procedures manual · Chapter 00/.test(h.$('#kb-main .kb-man-mast-k').textContent));
+  assert.deepStrictEqual(h.$$('#kb-main .kb-man-ix').map((b) => b.getAttribute('data-kb-id')), ['man-0-10', 'man-0-11'], 'the index, from the tree');
+  const sk = h.$('#kb-main [data-kb-man-skel]');
+  assert.ok(sk && sk.getAttribute('aria-busy') === 'true' && sk.querySelectorAll('.skel').length >= 5 && /Notes and email conventions/.test(sk.querySelector('.kb-man-sec-h').textContent), 'the target heading over shimmer lines');
+  assert.ok(!h.$('#kb-main .kb-man-sec') && !h.$('#kb-main #kb-comments'), 'no section and no comments host yet');
+  assert.deepStrictEqual([recorded, h.run.pending('kbGetComments').length], [0, 0], 'nothing recorded, no comments asked for');
+  // the meta lands first: the masthead\'s count and version
+  const today = new Date(); const ago = (n) => new Date(today.getTime() - n * 86400000).toISOString().slice(0, 10);
+  h.run.flushSuccess({ version: 'v3.0', built: '09/15/2026', router: [], changelog: [{ date: ago(40), num: '0.10', id: 'man-0-10', anchor: '', summary: 'x', retraining: false }] }, 'getManualMeta');
+  assert.strictEqual(h.$('#kb-main [data-kb-man-updcount]').textContent, '1 updated in the last 12 months');
+  assert.ok(/CSR Procedures Manual v3\.0/.test(h.$('#kb-main [data-kb-man-ver]').textContent), 'the version line rides the masthead');
+  assert.ok(h.$('#kb-main [data-kb-ix-upd="man-0-10"] .kb-man-upd') && !h.$('#kb-main [data-kb-ix-upd="man-0-11"] .kb-man-upd'), 'the index pill marks the updated section only');
+  // the chapter lands
+  h.run.flushSuccess(M2_PART0, 'getManualPart');
+  assert.ok(!h.$('#kb-main [data-kb-man-skel]') && h.$$('#kb-main .kb-man-sec').length === 2 && !h.$('#kb-main .kb-man-bar-skel'), 'the chapter replaces the skeleton');
+  assert.strictEqual(h.$('#kb-main .kb-man-mast-h').textContent, 'CSR Core', 'under the same masthead');
+  assert.ok(h.$('#kb-main [data-kb-ix-upd="man-0-10"] .kb-man-upd') && /1 updated/.test(h.$('#kb-main [data-kb-man-updcount]').textContent), 'painted again from the meta');
+  assert.ok(h.$('#kb-main .kb-man-ix[data-kb-id="man-0-11"] .kb-draft-pill'), 'the chapter\'s own statuses: an admin sees the draft in the index');
+  assert.strictEqual(recorded, 1, 'the open is recorded once the chapter is real');
+  // M11: Chapter 00 is the first — only a Next card, in the second column
+  const cards = h.$$('#kb-main [data-kb-man-chapnav] .kb-man-cn');
+  assert.strictEqual(cards.length, 1);
+  assert.ok(cards[0].classList.contains('kb-man-cn-next') && /Next · Chapter 10/.test(cards[0].textContent) && /Billing & Denials/.test(cards[0].textContent) && cards[0].getAttribute('data-kb-id') === 'man-10-1', 'the next chapter, by its first section');
+  assert.ok(cards[0].querySelector('.kb-man-badge.kb-man-p10'), 'in its own colour');
+  h.read('kbOpenItem_')(cards[0].getAttribute('data-kb-id'));
+  assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Chapter 10 — Billing & Denials']);
+  // a failure keeps the masthead and puts the error where the bodies were
+  assert.strictEqual(h.$('#kb-main .kb-man-mast-h').textContent, 'Billing & Denials', 'Chapter 10\'s skeleton');
+  h.run.flushFailure('Service unavailable', 'getManualPart');
+  assert.strictEqual(h.$('#kb-main .kb-man-mast-h').textContent, 'Billing & Denials', 'the masthead stays');
+  const host = h.$('#kb-main [data-kb-man-skel]');
+  assert.ok(host && !host.hasAttribute('aria-busy') && /Service unavailable/.test(host.textContent) && !host.querySelector('.skel'), 'the error replaces the shimmer, and the reader is no longer busy');
+  w.kbPanelRecordOpen_ = origRecord;
+});
+
 test('M4 DOM: Print marks ONLY its own section for the one print block, for exactly as long as the dialog is up; since M8 it is the reader bar\'s Print, aimed at the section in view, and on a Quick Reference Card it says "card"', async () => {
   const h = m4Boot_();
   const w = h.window, doc = w.document;
