@@ -17,8 +17,10 @@ against the repo; all exist as described. Repo-side corrections to the handoff:
   leaves no lone "." as a title, and a label run straight into words is left as written.
 - A stacked two-column table kept its 34% label column (specificity) — fixed in
   the container query.
-- `styles.html` line ~2408 also puts `#fff` on `--accent` (outside the reader;
-  not in this plan's scope — follow-on).
+- `styles.html` line ~2408 also put `#fff` on `--accent` (the toast's Reload) —
+  fixed with Phase 2 (operator 2026-10-09). `metrics/script_metrics.html`
+  (`.m-scope-btn.on`) and `qa/script_qa.html` (`.qa-btn.prime`) do the same —
+  follow-on, outside this plan.
 
 ## Operator decisions
 
@@ -49,3 +51,18 @@ against the repo; all exist as described. Repo-side corrections to the handoff:
 | 6 | M12 manual home on the Reference landing (router examples from the real router) |
 | 7 | M13 compact pop-out (pop-out AND ≤720px triggers) |
 | 8 | M14 masthead card, M19 card print, the dark-mode print fix, card diagrams in the source |
+
+## Phase 2 adaptations (2026-10-09)
+
+- **Spy:** one scroll listener bound once to `#kb-main` (rAF-throttled), not an
+  IntersectionObserver: an observer fires only on a band crossing, so a short last
+  section could never be named, and a listener bound once has nothing to disconnect.
+  At the foot of the page the section the rep opened wins while its heading shows.
+- **Version line** kept under the chapter title until M9's masthead absorbs it.
+- **‹ › at a chapter edge** open the neighbouring chapter's first section (M11's rule).
+- **Reader-only scrolling (found by measurement):** `scrollIntoView` scrolled the
+  app's page too (136px before Phase 2, 196px with the band), which hid the bar
+  under the shell's tab strip; `kbReaderScroll_` scrolls `#kb-main` only.
+- The bar and the Back row share one sticky band (`.kb-man-top`), with
+  `scroll-padding-top` so a target heading lands below it.
+

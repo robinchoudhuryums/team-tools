@@ -2405,7 +2405,7 @@
   .toast-act {
     appearance: none; flex-shrink: 0; align-self: center;
     padding: 4px 10px; border: 0; border-radius: 6px;
-    background: var(--accent); color: #fff; cursor: pointer;
+    background: var(--accent); color: var(--paper-card); cursor: pointer;
     font: inherit; font-size: var(--text-sm); font-weight: 600;
     transition: filter .15s ease;
   }
@@ -2856,8 +2856,8 @@
     .card, tr, .emp-card, .pay-stmt-row { break-inside: avoid; page-break-inside: avoid; }
     a[href] { text-decoration: none; color: inherit; }
 
-    /* (4) — ONE subject, marked by its Print button (Batch M4: a manual
-       section or a Quick Reference Card, kbPrintSection_). Everything that
+    /* (4) — ONE subject, marked by the reader bar's Print (Batch M4: a manual
+       section or a Quick Reference Card, kbPrintSectionById_). Everything that
        neither HOLDS the subject nor sits INSIDE it is removed — by display,
        not visibility, so the hidden page leaves no blank sheets behind — and
        every ancestor collapses to a plain block, so a grid column (the

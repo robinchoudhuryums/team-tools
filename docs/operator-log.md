@@ -10,6 +10,31 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-09 — manual reader design, Phase 2 (reader bar, tree rows)
+
+**Adds NO operator state.** Deploy as usual (`clasp push -f` + New version); no
+re-import, no manual rebuild. Phases 3–8 wait for your go-ahead
+(`.cycle/manual-reader-design-plan.md`).
+- **The reader bar** (Reference → a manual chapter): one bar stays at the top of
+  the reader while you scroll. It names the chapter and the section you are
+  reading, and its star, Print and ‹ › buttons act on that section. ‹ › step
+  section by section, then to the neighbouring chapter (labelled "Ch 06" and so
+  on). A "Back to" chip sits in its own row above the bar. Bookmark and Print are
+  no longer repeated on every section; an admin's Publish stays on its draft.
+- **The tree:** a chapter reads "05 Power Mobility", each section a number column
+  and its title, and a small blue dot marks a section updated inside the same
+  window as its Updated badge (hover it for the date).
+- **Fixed:** opening a section scrolled the whole app page as well as the reader,
+  so the page title slid out of view (measured: 136px before this phase). With the
+  bar it would have hidden the bar under the tab strip, so the reader now scrolls
+  only itself. Also fixed: the deploy toast's Reload button put white text on the
+  accent colour (unreadable in dark mode).
+- **Adapted from the handoff (the repo wins):** the scroll-spy is one scroll
+  listener rather than an IntersectionObserver (an observer could never name a
+  short last section); the version line stays under the chapter title until
+  Phase 3's masthead takes it; ‹ › at a chapter's edge open the neighbouring
+  chapter's first section (M11's rule) rather than its last.
+
 ## 2026-10-09 — manual reader design, Phase 1 (the Claude Design handoff)
 
 **Adds NO operator state.** Deploy as usual (`clasp push -f` + New version); the
