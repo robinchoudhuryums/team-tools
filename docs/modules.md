@@ -1224,6 +1224,38 @@ not restate it. Server endpoints live in the fourteen server files
      manual as it is; the DOM harness's manual fixtures use the October chapter
      names.
 
+     **Manual reader design (2026-10-09, eight phases — the Claude Design
+     handoff; plan and decisions in `.cycle/manual-reader-design-plan.md`).** The
+     reader now reads like the HTML manual:
+     - **Bar:** one sticky bar names the chapter and the section in view (a
+       scroll-spy), with Bookmark, Print and ‹ › for that section; Print and
+       Bookmark left the section headings.
+     - **Chapters:** each opens with a masthead (badge, name, section count,
+       version, "In this chapter") — the same while it loads — and ends with
+       previous / next chapter cards. Section headings carry their number as a
+       chip under a hairline (no stripe, here or in the HTML manual); tables,
+       callouts and numbered steps take the chapter colour, in search results and
+       the drawer too.
+     - **Notes and terms:** footnote markers and glossary terms open the same
+       popover as a cross-reference.
+     - **Trail and resume:** the tab shows the last few sections opened on purpose
+       ("Read …" chips, replacing the "Back to" chip — the drawer keeps its Back);
+       opening a chapter without a target returns to where the rep left off in it
+       ("Back where you left off — 5.6.2", with Start of chapter).
+     - **Manual home:** the landing opens with the manual's version, three router
+       openers, "Go to a section" and a tile per chapter; in the pop-out and on a
+       phone the lookups come first.
+     - **Narrow screens:** in the pop-out and at ≤720px the side is one row —
+       search and **Contents** (every chapter and article in a dialog) — and the
+       tree shows only while searching.
+     - **Quick cards:** a chapter's Quick Reference Card closes its masthead (open
+       unless closed for that chapter), Print card prints it as a card with its
+       diagram on the next sheet, and Appendix C offers Print all cards. Cards 4,
+       5 and 8 carry their chapter's diagram from the manual source.
+     - **Colour:** no white text on a theme fill anywhere in the app (the accent's
+       is the card colour, amber's `--on-warn`), and a dark-mode printout is ink on
+       white with the light chapter and status colours.
+
      **Cycle 23 Batch 2 (2026-10-01) — the eligibility lookup reads less
      generously.** "TX or OK" is Texas and Oklahoma (no longer Oregon); a state
      beside "listed cities" needs its "or"; an Open note must only elaborate;

@@ -5361,3 +5361,54 @@ pick them up without re-deriving the context.
   (INV-187). Rejected: a per-surface archive read (the drift this replaces),
   and reading the archive whole on every range read (the common
   current-period case would pay for history it never shows).
+
+- <a id="the-manual-reader-follows-the-design-handoff"></a>**The manual reader follows the design handoff, adapted to the repo: a bar for the section in view, a masthead per chapter, a reading trail and resume, a manual home, Contents on a narrow screen (manual reader design, operator 2026-10-09).**
+  The handoff (`docs/design_handoff_manual_reader/`) was implemented in eight
+  phases, one deploy each; the plan and every operator decision are
+  `.cycle/manual-reader-design-plan.md`, and **the repo won every conflict** —
+  the adaptations are recorded there per phase. The shape: one sticky reader bar
+  names the chapter and the section in view, with Bookmark, Print and previous /
+  next for THAT section (a scroll listener bound once and rAF-throttled, not an
+  IntersectionObserver, so a short last section can still be named); each chapter
+  opens with a masthead (kicker, badge, name, meta line, "In this chapter") drawn
+  by ONE renderer for the skeleton and the painted page, so nothing moves when the
+  bodies land, and a failed load keeps it; the chapter ends with its neighbours.
+  Footnote markers, glossary terms and cross-references share ONE popover and ONE
+  binding. **The trail is the tab's** (the last five sections opened on purpose —
+  never by scrolling — replacing the "Back to" chip); the Ctrl/⌘+K drawer keeps
+  its Back (decision 3). **Resume** lands a chapter-level open (a chapter row, a
+  tile, a neighbour) on the section and numbered sub-heading last read there, for
+  seven days, inside `umsKbPanel` — ids and numbers only, no new key. The landing
+  opens with a **manual home** (version, the call router's real openers, "Go to a
+  section", a tile per chapter); it is inserted ONCE and only its read-only parts
+  repaint, so the jump box survives a re-render (T1). Below 680px the lookups come
+  first (operator: keep the narrow-only order). In the pop-out and at ≤720px (both
+  triggers, A2) the side is one row — search and **Contents**, a named dialog over
+  the whole library — and the tree shows only while a search has a query.
+  Rejected: a trail in the drawer (it has its own short Back), resume by scroll
+  position (a re-imported section moves), and a separate storage key per feature
+  (g112's budget).
+
+- <a id="a-quick-card-prints-as-a-card"></a>**A chapter's quick card rides its masthead and prints as a card with its diagram on the reverse; the dark chapter and semantic colours are for the screen (manual reader design Phase 8, operator decisions 2 + 4, 2026-10-09).**
+  Card N (the Appendix C article `man-c-N`) closes chapter N's masthead as a
+  disclosure, read from the session's prefetched manual only — before that lands
+  the masthead simply has none, never a wait or a server call. It is open unless
+  the rep closed it for that chapter (`umsKbPanel.cardOpen` keeps only the closed
+  ones). **The card diagrams are in the manual SOURCE** (Cards 4, 5, 8 —
+  decision 2), so the card carries its diagram in Reference, the HTML manual and
+  Word alike, with no app-side map. **The diagram is the card's reverse:** one
+  shape pass (`kbManualCardShape_`) puts the card's text in a columns wrapper and
+  the diagram AFTER it in the document; the screen lifts the diagram first with a
+  flex order, and a printout is a plain block, so the diagram lands on the next
+  sheet. The HTML manual does the same (`.qrrev`, counted in its folios and its
+  pagination check), and Word holds the diagram until the card's text has run so
+  its landscape page follows the card. Print card, the Appendix C bar and Print
+  all cards mark the root `data-print-card`; rule (5) of the one print block lays
+  it out (band, two columns, a card a sheet). **Dark mode prints light**
+  (decision 4): the dark semantic and chapter colours live in `@media screen`
+  blocks, so paper takes the light values declared once — no second copy of any
+  hex, and the chapter-style tripwire still reads both sets; the neutrals are
+  forced on `:root, body` (g168). Rejected: an app-only card→diagram map (the
+  printed and Word cards would lack it), re-declaring the light hexes inside the
+  print block (a second source the tripwire cannot see), and a lazily rendered
+  card body (per-copy diagram ids, g169, made hiding safe).

@@ -1811,15 +1811,27 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   real engine.
 
   **Rule (4), 22post M4 (2026-09-29): ONE subject, marked by its Print button.**
-  `kbPrintSection_` marks a manual section `.print-one` and the root
-  `[data-print-one]`, prints, and clears both on `afterprint` (a timer behind
-  it). Inside the same block, everything that neither holds the subject nor sits
+  `kbPrintSectionById_` (since the manual reader design's Phase 2 the reader
+  bar's Print, aimed at the section in view; through `kbPrintEls_` since Phase
+  8) marks a manual section `.print-one` and the root `[data-print-one]`,
+  prints, and clears both on `afterprint` (a timer behind it). Inside the same block, everything that neither holds the subject nor sits
   inside it is removed by DISPLAY, not visibility, so the hidden page leaves no
   blank sheets. Every ancestor collapses to a plain block, so the Reference
   rail's grid column cannot keep its width on paper. The subject's own buttons,
   feedback bar and comments are dropped. `print-check.mjs` measures it in both
   themes (the section alone, full width, dark ink). M4-P1 pins that the rules
   live inside the one block.
+
+  **Rule (5), manual reader design Phase 8 (2026-10-09): a Quick Reference Card
+  prints AS a card.** `kbPrintEls_` adds `[data-print-card]` for a card (its
+  Appendix C page, a chapter masthead's Print card, or Print all cards): the
+  chapter colour as a band, two columns, one card a sheet (`.print-one ~
+  .print-one`), and the card's diagram on the NEXT sheet — the shape pass put it
+  after the text in the document, and the print rules make the body a plain
+  block so the screen's flex order no longer lifts it. **And (a) above was half
+  true until then:** the neutrals were forced on `:root` only, while `<body>`
+  also carries `data-mode` — see g168. The forcing selector is `:root, body`,
+  and `print-check.mjs` reads `--ink` on `<body>` and measures a card print.
 
 <a id="g113-read-the-server-through-serversource-never-by"></a>
 
@@ -5437,3 +5449,62 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   of any allowlist: who wrote the list? Fires when you whitelist input against
   a list, or call a payload safe because it is validated. Verify: the KB-2
   drive (`kbGetFacetGuidance` end to end).
+
+<a id="g168-an-important-on-root-loses-to-a-declaration-on-body"></a>
+
+- **An `!important` custom property on `:root` LOSES to a plain declaration on
+  `<body>` — importance beats specificity among rules for the SAME element, but
+  an inherited value never beats a declaration on the element itself (manual
+  reader design Phase 8, 2026-10-09).** The print block forced the neutrals with
+  `:root { --ink: #111 !important }` precisely so the palette blocks could not
+  out-specify it (g64 (a)). But `index.html` sets `data-mode` on `<html>` AND
+  `<body>`, and the dark blocks are `:root[data-mode="dark"], body[data-mode=
+  "dark"]` — so `body` declared its own near-white `--ink`, every element below
+  inherited `body`'s value, and every dark-mode printout in the app came out
+  near-white on white. `print-check.mjs` had measured "dark ink" all along, by
+  reading `--ink` on `document.documentElement`, which was the one element the
+  defect did not reach. Found by PRINTING a dark-mode section to PDF. RULE: an
+  override of a custom property goes on every element the theme blocks declare
+  it on (here `:root, body`), and a measurement reads the value where the text
+  inherits it. Fires when you override a token in a media block or a mode, or
+  measure one. Verify: MRD-8 (the forcing selector) + `print-check.mjs`'s
+  `bodyInk` and `textColor`.
+
+<a id="g169-a-diagram-drawn-twice-must-not-share-its-ids"></a>
+
+- **An inline SVG drawn TWICE on one page must not share its ids — `url(#id)`
+  resolves to the FIRST element with that id, and nothing inside a hidden
+  subtree draws (manual reader design Phase 8, 2026-10-09; measured).** The
+  manual's diagrams find their arrowheads by `marker-end: url(#mk…)`. With a
+  chapter's quick card in its masthead, the Power diagram appears twice — the
+  card, then 5.1.1 — and a COLLAPSED card (display:none) held the first
+  `#mkp2pane`, so 5.1.1's diagram lost every arrowhead; printing 5.1.1 alone did
+  the same, since rule (4) hides everything else by display. A two-SVG test page
+  in Chromium confirmed it before any design was built around it. Full size had
+  always duplicated the ids too, harmlessly only because its copy came last.
+  `kbDiagramScopeIds_` suffixes every real `id` and every `url(#…)` per drawn
+  copy (a `data-kb-id` cross-reference is not an id); `kbDiagramHtml_` and Full
+  size both draw through it. The same family as g161: inline SVG is page DOM,
+  not a component. Fires when you draw an SVG that defines ids (markers,
+  gradients, clip paths) in more than one place, or hide one copy. Verify:
+  MRD-8 (driven, and over every diagram in the real partial) + the MRD-8 DOM
+  drive (no duplicate id, each copy's markers its own).
+
+<a id="g170-text-on-a-filled-colour-takes-the-token-that-flips-with-it"></a>
+
+- **Text on a FILLED theme colour takes the token that flips with that fill —
+  `#fff` is right in one mode and fails in the other (manual reader design
+  Phases 1–5, 2026-10-09).** The accent is a deep green in light mode and a
+  pale green (`#7af2a1`, Plum's `#e5d2fe`) in dark, so white text on a filled
+  accent was far below AA in dark mode — five buttons in the reader, six more
+  across Metrics, QA, coaching and Call Notes, and the toast's Reload. The
+  semantic fills split the same way, and amber is the odd one: it is mid-light
+  in BOTH modes, so white reads 3.64:1 on light-mode amber. The pairs are:
+  `--paper-card` on `--accent` and on the other semantic fills (white in light,
+  the dark card in dark); `--on-warn` on `--warn` (ink in light, the dark card
+  in dark — declared beside `--warn` in the two base blocks only). RULE: never
+  write a literal white on a theme fill; choose the token measured against that
+  fill in both modes. Fires when you put text on `--accent`, `--good`, `--warn`,
+  `--destructive` or `--info`. Verify: MRD-3 (no white on a filled accent,
+  anywhere in `web-app/`), MRD-4 (none on a semantic fill), MRD-5 (amber text is
+  `--on-warn`) — each a sweep over every themed partial.

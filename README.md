@@ -91,7 +91,7 @@ Script project synced via [clasp](https://github.com/google/clasp).
     out of pocket, because a state limit lifts when nobody is billing
     insurance and a delivery radius or a service-city list does not.
     The CSR Procedures Manual is imported from `manual/` (the one
-    source; read-only in the app, with "Suggest an edit"): each part
+    source; read-only in the app, with "Suggest an edit"): each chapter
     reads as one page with cross-references and previews, a section
     number typed into search jumps to it, and the drawer carries the
     manual's call router. Its diagrams draw in place (with a Full size
@@ -99,10 +99,16 @@ Script project synced via [clasp](https://github.com/google/clasp).
     (the domain disables Apps Script's Drive, so `manual.json` is chosen
     from the computer). Its recent changes show on the landing and in
     What's new, an HCPCS code opens the drawer's lookups, previews work
-    from the keyboard, and a section or Quick Reference Card prints on
-    its own. A cross-reference previews — and a click lands on — the part
-    of its target it is about, and a "Back to" control returns to the
-    section a jump left. Search finds a word's forms ("delivered" →
+    from the keyboard, and a section prints on its own. A
+    cross-reference previews — and a click lands on — the part of its
+    target it is about. The reader follows the manual's own design: a bar
+    naming the section in view, a masthead per chapter that ends with
+    the chapter's Quick Reference Card (which prints as a card, its
+    diagram on the next sheet), footnotes and glossary terms in the same
+    popover as cross-references, a reading trail and "back where you
+    left off" in the tab (the drawer keeps its Back), a manual home on
+    the landing, and a one-row side with a Contents dialog in the
+    pop-out and on a phone. Search finds a word's forms ("delivered" →
     "delivery"), the glossary's abbreviations as phrases ("ABN" ↔
     "Advance Beneficiary Notice"), and the call router's answer for a
     caller's own words.
