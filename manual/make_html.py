@@ -266,6 +266,12 @@ def wrap_cards(html):
                 group.find("div", class_="qb").append(k.extract())
     # running head + folio inside each card, and a contents sheet before the first
     cards = soup.find_all("section", class_="qrc")
+    # a card that carries a diagram prints it on the next page (operator 2026-10-09),
+    # so the folios count that page too
+    pages, at = [], 2
+    for c in cards:
+        pages.append(at)
+        at += 2 if c.find("div", class_="fig", recursive=False) else 1
     if cards:
         toc = soup.new_tag("section")
         toc["id"] = "cardtoc"
@@ -276,7 +282,7 @@ def wrap_cards(html):
         t = soup.new_tag("h2"); t["class"] = ["toch"]; t.string = "Quick reference cards"
         toc.append(t)
         lst = soup.new_tag("ol"); lst["class"] = ["toclist"]
-        for i, c in enumerate(cards, start=2):
+        for i, c in zip(pages, cards):
             part = next((x for x in c.get("class", []) if x.startswith("p")), "p0")
             head = c.find("h2")
             num = head.find("span", class_="sn")
@@ -301,7 +307,7 @@ def wrap_cards(html):
         fb = soup.new_tag("span"); fb.string = "1"
         f.append(fa); f.append(fb); toc.append(f)
         cards[0].insert_before(toc)
-    for i, c in enumerate(cards, start=2):
+    for i, c in zip(pages, cards):
         head = c.find("h2")
         partname = ""
         if head:
@@ -320,6 +326,23 @@ def wrap_cards(html):
         fb = soup.new_tag("span"); fb.string = str(i)
         fo.append(fa); fo.append(fb)
         c.append(fo)
+        # the card's diagram is its reverse: after the footer in the document, so the
+        # printout puts it on its own page with its own head and folio; on screen a
+        # flex order shows it under the title (and its head and folio stay hidden)
+        figs = c.find_all("div", class_="fig", recursive=False)
+        if figs:
+            rev = soup.new_tag("div"); rev["class"] = ["qrrev"]
+            rh2 = soup.new_tag("div"); rh2["class"] = ["qrh"]
+            a2 = soup.new_tag("span"); a2.string = "Quick Reference"
+            b2 = soup.new_tag("span"); b2.string = partname
+            rh2.append(a2); rh2.append(b2); rev.append(rh2)
+            for fg in figs:
+                rev.append(fg.extract())
+            fo2 = soup.new_tag("div"); fo2["class"] = ["qrf"]
+            fa2 = soup.new_tag("span"); fa2.string = f"Built {BUILT}"
+            fb2 = soup.new_tag("span"); fb2.string = str(i + 1)
+            fo2.append(fa2); fo2.append(fb2); rev.append(fo2)
+            c.append(rev)
     return str(soup)
 
 
@@ -892,6 +915,11 @@ main > .eyebrow{max-width:74ch}
 .qrf{padding-top:11px;margin-top:22px;border-top:1px solid var(--rule)}
 section.qrc{display:flex;flex-direction:column}
 section.qrc > .qrf{margin-top:auto;padding-top:20px}
+/* a card's diagram (its printed reverse) shows under the title on screen */
+section.qrc > .qrh,section.qrc > h2{order:-2}
+section.qrc > .qrrev{order:-1;margin:0 0 6px}
+.qrrev > .qrh,.qrrev > .qrf{display:none}
+.qrrev .fig svg{min-width:0}
 #cardtoc{width:816px;max-width:100%;border:1px solid var(--rule);padding:44px 48px 36px;
  margin:0 0 40px;display:flex;flex-direction:column;box-sizing:border-box}
 #cardtoc > .qrf{margin-top:auto;padding-top:20px}
@@ -933,6 +961,10 @@ ol.toclist .cp{text-align:right}
  .ql,.qrh,.qrf{font-size:10.5px}
  ol.toclist li{font-size:13px}
  .qg,p.never{break-inside:avoid}
+ /* the reverse: the card's diagram on its own page, with the card's head and folio */
+ section.qrc > .qrrev{break-before:page;display:block;margin:0}
+ .qrrev > .qrh,.qrrev > .qrf{display:flex}
+ .qrrev > .qrf{margin-top:28px}
  a.xr{color:#000;border:0;text-decoration:none}
 }
 

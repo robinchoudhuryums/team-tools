@@ -29657,7 +29657,8 @@ function m1Md_() {
   const ctx = vm.createContext({ String, Object, Array, JSON, parseInt, Math, icon: (n) => '<i data-icon="' + n + '"></i>',
     kbGlossaryHtml_: (b) => '<GLOSS>' + b + '</GLOSS>', kbRosterHtml_: () => '', kbDecideHtml_: () => '', kbMapHtml_: () => '' });
   vm.runInContext(/var KB_CALLOUT_KINDS = [^\n]+/.exec(M1_KB_SRC)[0], ctx);
-  ['kbSlug_', 'kbMd_', 'kbCalloutKind_', 'kbDiagramHtml_', 'kbDiagramPendingHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
+  ['kbSlug_', 'kbMd_', 'kbCalloutKind_', 'kbDiagramHtml_', 'kbDiagramPendingHtml_', 'kbDiagramScopeIds_', 'kbDiagramSeq_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
+  vm.runInContext('var KB_DIAGRAM_SEQ = 0;', ctx);
   return ctx;
 }
 
@@ -35139,6 +35140,96 @@ test('MRD-2 (manual reader design Phase 2): the reader bar\'s title split, chapt
   assert.ok(!/background:\s*var\(--accent\);\s*color:\s*#fff/i.test(css) && /\.toast-act \{[^}]*background: var\(--accent\); color: var\(--paper-card\)/.test(css), 'the toast action reads --paper-card on the accent');
 });
 
+test('MRD-8 (manual reader design Phase 8): a diagram drawn twice keeps its markers (per-copy ids, driven over the real partial); the dark semantic and chapter colours are SCREEN-only and print forces the neutrals on body too; a chapter\'s card comes from the prefetched manual, open unless closed (umsKbPanel); a card prints as a card with its diagram on the reverse; the manual source and both print builds carry the card diagrams', () => {
+  const kb = M1_KB_SRC;
+  // (1) per-copy ids — driven
+  const sc = vm.createContext({ String });
+  vm.runInContext(extractFnFrom(kb, 'kbDiagramScopeIds_'), sc);
+  const one = sc.kbDiagramScopeIds_('<svg><marker id="mk"/><path style="marker-end:url(#mk)"/><a class="kb-xref" data-kb-id="man-5-2">5.2</a></svg>', 3);
+  assert.strictEqual(one, '<svg><marker id="mk-d3"/><path style="marker-end:url(#mk-d3)"/><a class="kb-xref" data-kb-id="man-5-2">5.2</a></svg>', 'ids and url(#…) take the suffix; a data-kb-id is not an id');
+  const c = m1Md_();
+  c.KB_MANUAL_DIAGRAMS = { x: '<svg class="kbdg"><marker id="m"/><path d="M0 0" marker-end="url(#m)"/></svg>' };
+  const two = c.kbMd_('```diagram x\nX\n```\n\n```diagram x\nX\n```');
+  const ids = [...two.matchAll(/\sid="([\w-]+)"/g)].map((m) => m[1]), refs = [...two.matchAll(/url\(#([\w-]+)\)/g)].map((m) => m[1]);
+  assert.ok(ids.length === 2 && ids[0] !== ids[1] && refs.join() === ids.join(), 'two copies, two ids, each copy pointing at its own: ' + ids + ' / ' + refs);
+  assert.ok(/kbDiagramScopeIds_\(reg\[key\], kbDiagramSeq_\(\)\)/.test(extractFnFrom(kb, 'kbDiagramOpen_')), 'Full size draws its copy the same way');
+  // ... and over the REAL partial: every marker reference resolves inside its own scoped copy
+  const dg = fs.readFileSync(path.join(PA_WEB, 'kb/script_manual_diagrams.html'), 'utf8');
+  const reg = vm.runInContext('(' + /var KB_MANUAL_DIAGRAMS = Object\.freeze\((\{[\s\S]*?\})\);\s*<\/script>/.exec(dg)[1] + ')', vm.createContext({}));
+  let withRefs = 0;
+  Object.keys(reg).forEach((k) => {
+    const svg = sc.kbDiagramScopeIds_(reg[k], 9);
+    const have = new Set([...svg.matchAll(/\sid="([\w-]+)"/g)].map((m) => m[1]));
+    const want = [...svg.matchAll(/url\(#([\w-]+)\)/g)].map((m) => m[1]);
+    if (want.length) withRefs++;
+    want.forEach((r) => assert.ok(have.has(r), k + ': url(#' + r + ') has no id in its own copy'));
+    assert.ok(![...have].some((i) => !/-d9$/.test(i)), k + ': an id kept its shared name');
+  });
+  assert.ok(withRefs >= 10, 'the partial\'s diagrams do use markers (non-vacuous): ' + withRefs);
+  // (2) dark semantic + chapter colours are screen-only — derived from the token file
+  const tok = fs.readFileSync(path.join(PA_WEB, 'styles_design_tokens.html'), 'utf8');
+  const SCOPED = /--(?:good|good-soft|warn|warn-soft|warn-glow|on-warn|destructive|destructive-soft|info|info-soft|intake-[a-z-]+|man-p\d+)\s*:/;
+  let screen = '', rest = tok.replace(/\/\*[\s\S]*?\*\//g, ''), at;
+  while ((at = rest.indexOf('@media screen {')) >= 0) {
+    let i = rest.indexOf('{', at) + 1, depth = 1;
+    while (depth) { if (rest[i] === '{') depth++; else if (rest[i] === '}') depth--; i++; }
+    screen += rest.slice(at, i); rest = rest.slice(0, at) + rest.slice(i);
+  }
+  const darkBlocks = (txt) => [...txt.matchAll(/([^{}]*data-mode="dark"[^{}]*)\{([^{}]*)\}/g)].map((m) => m[2]);
+  assert.ok(darkBlocks(screen).some((b) => /--destructive:/.test(b)) && darkBlocks(screen).some((b) => /--man-p5:/.test(b)), 'the dark sets live in @media screen (non-vacuous)');
+  darkBlocks(rest).forEach((b) => b.split(';').forEach((d) => assert.ok(!SCOPED.test(d), 'a dark semantic or chapter colour outside @media screen would reach paper: ' + d.trim())));
+  const styles = fs.readFileSync(path.join(PA_WEB, 'styles.html'), 'utf8');
+  assert.strictEqual((styles.match(/@media print\s*\{/g) || []).length, 1, 'ONE print block (g64)');
+  const pr = styles.slice(styles.indexOf('@media print {'));
+  assert.ok(/@media print \{[\s\S]*?:root, body \{\s*--paper: #fff !important;/.test(styles), 'the neutrals are forced on body too — index.html sets data-mode on <body>');
+  // (3) the card in the masthead — driven
+  const ctx = vm.createContext({ String, Object, Number, Array, KB_STATE: {}, icon: (n) => '<i data-icon="' + n + '"></i>',
+    esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+    kbMd_: (m) => '<MD>' + m + '</MD>', kbShiftHeadings_: (h) => h, kbPanelPrefs_: () => ctx.__prefs, __prefs: {} });
+  vm.runInContext(/var KB_MANUAL_CHAPTER_ICONS = Object\.freeze\(\{[\s\S]*?\}\);/.exec(kb)[0], ctx);
+  ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualChapterParts_', 'kbManualSplitTitle_', 'kbManualCachedPart_', 'kbManualCardFor_', 'kbManualCardOpen_', 'kbManualMastCardHtml_', 'kbManualMastheadHtml_'].forEach((n) => vm.runInContext(extractFnFrom(kb, n), ctx));
+  const P5 = 'Chapter 05 — Power Mobility', AC = 'Appendix C — Quick Reference Cards';
+  assert.strictEqual(ctx.kbManualMastHtml_ === undefined && ctx.kbManualCardFor_(P5), null, 'no prefetched manual, no card — never a wait');
+  ctx.KB_STATE.manualParts = { [AC]: { department: AC, sections: [{ id: 'man-c-5', title: 'Card 5 — Power Mobility', bodyMd: 'B <x>' }] }, [P5]: { department: P5, sections: [] } };
+  assert.strictEqual(ctx.kbManualCardFor_(P5).id, 'man-c-5', 'card N is chapter N\'s');
+  assert.strictEqual(ctx.kbManualCardFor_(AC), null, 'an appendix has no card');
+  assert.strictEqual(ctx.kbManualCardFor_('Chapter 06 — Field Operations'), null, 'a chapter whose card is not in the manual has none');
+  const m = ctx.kbManualMastheadHtml_(P5, [{ id: 'man-5-1', title: '5.1 Scope', status: 'published' }]);
+  assert.ok(/<section class="kb-man-card" data-kb-man-card="man-c-5"/.test(m) && /aria-expanded="true" aria-controls="kb-man-card-b"/.test(m) && /CARD 5/.test(m), 'the disclosure, open by default');
+  assert.ok(/<MD>B <x><\/MD>/.test(m) && !/kb-man-card-b"[^>]*hidden/.test(m), 'the body is the card article through kbMd_');
+  assert.ok(/onclick="kbManualCardToggle_\(this\)"/.test(m) && /onclick="kbPrintSectionById_\(this\.getAttribute\('data-kb-id'\)\)">/.test(m), 'toggle and Print card carry no name in the onclick (g133)');
+  ctx.__prefs = { cardOpen: { [P5]: false } };
+  assert.ok(/aria-expanded="false"/.test(ctx.kbManualMastheadHtml_(P5, [])) && /id="kb-man-card-b" hidden>/.test(ctx.kbManualMastheadHtml_(P5, [])), 'a closed chapter stays closed');
+  const ac = ctx.kbManualMastheadHtml_(AC, []);
+  assert.ok(/onclick="kbPrintAllCards_\(\)"/.test(ac) && !/kb-man-card"/.test(ac), 'Appendix C: Print all cards, and no masthead card');
+  const tg = extractFnFrom(kb, 'kbManualCardToggle_');
+  assert.ok(/kbPanelSave_\(p\)/.test(tg) && /p\.cardOpen = o/.test(tg) && !/localStorage/.test(tg), 'the open state rides umsKbPanel — no new storage key (g112)');
+  // (4) a card prints as a card: the flag, the shape, the rules
+  assert.ok(/if \(card\) root\.setAttribute\('data-print-card', ''\);/.test(extractFnFrom(kb, 'kbPrintEls_')) && /root\.removeAttribute\('data-print-card'\);/.test(extractFnFrom(kb, 'kbPrintEls_')));
+  assert.ok(/kbPrintEls_\(\[sec\], kbIsManualCard_\(id\)\)/.test(extractFnFrom(kb, 'kbPrintSectionById_')), 'a card — from its page or a masthead — sets the flag; a section does not');
+  const shape = extractFnFrom(kb, 'kbManualCardShape_');
+  assert.ok(/art\.appendChild\(cols\);\s*figs\.forEach\(function \(f\) \{ art\.appendChild\(f\); \}\);/.test(shape), 'the diagram follows the text in the document');
+  assert.ok(/\.kb-article\.kb-man-card-art > figure \{ order: -1;/.test(kb), 'and shows first on screen');
+  [':root[data-print-card] .print-one ~ .print-one { break-before: page; }',
+   ':root[data-print-card] .print-one .kb-article.kb-man-card-art { display: block !important; }',
+   ':root[data-print-card] .print-one .kb-man-card-cols { columns: 2;',
+   ':root[data-print-card] .print-one .kb-man-card-art > figure { break-before: page;',
+   'background: var(--man-c) !important;'].forEach((r) => assert.ok(pr.indexOf(r) >= 0, 'print block: ' + r));
+  // (5) the manual: the source, the HTML print and the Word order
+  const MAN = path.join(__dirname, '../../manual');
+  const apx = fs.readFileSync(path.join(MAN, 'src/appendix_c.md'), 'utf8');
+  [['§C-4 Sales', 'eligibility-status'], ['§C-5 Power Mobility', 'power-process'], ['§C-8 Oxygen', 'o2-troubleshoot']].forEach(([h, d]) => {
+    assert.ok(apx.indexOf('## ' + h + '\n\n{{diagram:' + d + '}}\n\n') >= 0, h + ' leads with ' + d);
+    assert.ok(fs.existsSync(path.join(MAN, 'diagrams', d + '.svg')), d + ' exists');
+  });
+  const mh = fs.readFileSync(path.join(MAN, 'make_html.py'), 'utf8');
+  assert.ok(/at \+= 2 if c\.find\("div", class_="fig", recursive=False\) else 1/.test(mh), 'the card folios count a reverse page');
+  assert.ok(/section\.qrc > \.qrrev\{break-before:page/.test(mh) && /section\.qrc > \.qrrev\{order:-1/.test(mh), 'the HTML card prints its diagram on the next page and shows it first on screen');
+  assert.ok(/want = len\(res\["cardWidth"\]\) \+ 1 \+ res\["reverses"\]/.test(fs.readFileSync(path.join(MAN, 'validate_render.py'), 'utf8')), 'the pagination check expects the reverses');
+  const mm = fs.readFileSync(path.join(MAN, 'md2model.py'), 'utf8');
+  assert.ok(/\(card_figs if in_card else blocks\)\.append\(\{"k": "diagram"/.test(mm) && /end_card\(\)\njson\.dump/.test(mm), 'Word holds a card\'s diagram until the card ends, so its landscape page follows the card');
+});
+
 test('MRD-7 (manual reader design Phase 7): a narrow Reference (the pop-out AND ≤720px — A2) is one row, search + Contents; the tree shows only while a search has a query; Contents is an ensureOverlay dialog closed through closeOverlay; the bar\'s ‹ › are 44px there', () => {
   const kb = M1_KB_SRC;
   const rule = (sel, body) => assert.ok(kb.indexOf(sel + ' { ' + body) >= 0 || new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' \\{[^}]*' + body.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(kb), sel + ' → ' + body);
@@ -35310,10 +35401,10 @@ test('MRD-3 (manual reader design Phase 3 + Phase 2\'s open items): no filled-ac
   assert.ok(/@container \(max-width: 560px\) \{[^}]*\.kb-man-bar-nav span \{ display: none; \}|@container \(max-width: 560px\) \{ [^@]*\.kb-man-bar-nav span[^{]*\{ display: none; \}/.test(kb), 'the ‹ › labels hide inside the narrow container query');
   assert.ok(/b\.setAttribute\('aria-label', b\.title\);/.test(extractFnFrom(kb, 'kbManualBarPaint_')), 'and each keeps its accessible name');
   // the masthead, driven
-  const ctx = vm.createContext({ String, Object, Number, icon: (n, sz) => '<i data-icon="' + n + '"></i>',
+  const ctx = vm.createContext({ String, Object, Number, KB_STATE: {}, icon: (n, sz) => '<i data-icon="' + n + '"></i>',
     esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') });
   vm.runInContext(/var KB_MANUAL_CHAPTER_ICONS = Object\.freeze\(\{[\s\S]*?\}\);/.exec(kb)[0], ctx);
-  ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualChapterParts_', 'kbManualSplitTitle_', 'kbManualMastheadHtml_'].forEach((n) => vm.runInContext(extractFnFrom(kb, n), ctx));
+  ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualChapterParts_', 'kbManualSplitTitle_', 'kbManualMastheadHtml_', 'kbManualMastCardHtml_', 'kbManualCardFor_'].forEach((n) => vm.runInContext(extractFnFrom(kb, n), ctx));
   const three = ctx.kbManualMastheadHtml_('Chapter 05 — Power Mobility', [{ id: 'man-5-1', title: '5.1 Scope', status: 'published' }, { id: 'man-5-2', title: '5.2 PAK <b>', status: 'published' }, { id: 'man-5-3', title: '5.3 New', status: 'draft' }]);
   assert.ok(/Procedures manual · Chapter 05/.test(three) && />3 sections</.test(three) && /In this chapter/.test(three), 'kicker, count, index');
   assert.strictEqual((three.match(/class="kb-man-ix"/g) || []).length, 3);
@@ -35437,7 +35528,7 @@ test('MP2-4: the reader puts a chapter\'s badge and colour on its title and its 
     esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
     kbShiftHeadings_: (h) => h, kbMd_: (m) => m, kbManualFeedbackBarHtml_: () => '', kbBookmarkBtnHtml_: () => '', kbIsManualCard_: () => false });
   vm.runInContext(/var KB_MANUAL_CHAPTER_ICONS = Object\.freeze\(\{[\s\S]*?\}\);/.exec(M1_KB_SRC)[0], ctx);
-  ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualChapterParts_', 'kbManualSplitTitle_', 'kbManualBarHtml_', 'kbManualMastheadHtml_', 'kbManualPartHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
+  ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualChapterParts_', 'kbManualSplitTitle_', 'kbManualBarHtml_', 'kbManualMastheadHtml_', 'kbManualMastCardHtml_', 'kbManualCardFor_', 'kbManualPartHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
   // since M9 (design handoff Phase 3) the chapter's title is the masthead's
   const head = (d) => /<header class="kb-man-mast[^"]*">[\s\S]*?<\/h2>/.exec(ctx.kbManualPartHtml_({ department: d, sections: [] }))[0];
   assert.strictEqual(head('Chapter 05 — Power Mobility'),

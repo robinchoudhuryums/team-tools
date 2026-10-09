@@ -154,6 +154,31 @@
   .kb-man-ix-upd:empty { display: none; }
   /* One column when the reader is narrow — the pop-out, a phone (A2: by container). */
   @container (max-width: 620px) { .kb-man-mast-ix { grid-template-columns: minmax(0, 1fr); } .kb-man-mast-h { font-size: 1.5rem; } }
+  /* M14 (Phase 8): the chapter's quick card, a disclosure at the foot of its masthead. */
+  .kb-man-mast-acts { margin-top: 14px; }
+  .kb-man-card { margin-top: 18px; border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; container-type: inline-size; }
+  .kb-man-card-h { display: flex; align-items: center; gap: 8px; padding-right: 10px; background: color-mix(in oklab, var(--man-c) 8%, var(--paper-card)); }
+  .kb-man-card-tog { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 14px; border: none; background: none; font: inherit; color: var(--ink); cursor: pointer; text-align: left; }
+  .kb-man-card-tog > svg { flex: none; color: var(--muted-2); transition: transform .15s; }
+  .kb-man-card-tog[aria-expanded="false"] > svg { transform: rotate(-90deg); }
+  .kb-man-card-tog:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .kb-man-card-chip { flex: none; font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .06em; padding: 3px 8px; border-radius: 4px; background: var(--man-c); color: var(--paper-card); }
+  .kb-man-card-t { font-weight: 600; }
+  .kb-man-card-nm { display: none; }   /* the printed card's title (styles.html print block) */
+  .kb-man-card-pr { flex: none; }
+  .kb-man-card-b { padding: 14px 18px 16px; border-top: 1px solid var(--line); }
+  .kb-man-card-b .kb-man-card-cols { columns: 2; column-gap: 28px; font-size: .9rem; }
+  .kb-man-card-b .kb-article h3, .kb-man-card-b .kb-article h4 { font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--man-c); margin: 0 0 4px; break-after: avoid; }
+  .kb-man-card-b .kb-article ul { break-inside: avoid; margin: 0 0 12px; }
+  .kb-man-card-b .kb-man-tw, .kb-man-card-b .kb-article table { break-inside: avoid; }
+  :root[data-compact] .kb-man-card-b .kb-man-card-cols { columns: 1; }
+  @container (max-width: 560px) { .kb-man-card-b .kb-man-card-cols { columns: 1; } }
+  /* M14/M19: a card's body (masthead or its own page) — the diagram FOLLOWS the
+     text in the document, the printed reverse; on screen it shows first. */
+  .kb-article.kb-man-card-art { display: flex; flex-direction: column; }
+  .kb-article.kb-man-card-art > * { min-width: 0; }
+  .kb-article.kb-man-card-art > figure { order: -1; margin-top: 0; }
+  .kb-article p.kb-man-never { column-span: all; margin: 12px 0 0; padding: 9px 12px; border-radius: var(--radius-sm); background: var(--danger-soft); color: var(--ink); }
   .kb-man-skel-p { display: flex; flex-direction: column; gap: 10px; margin: 18px 0 26px; }
   .kb-man-skel-p .skel-bar { height: 12px; }
   /* M11: the chapter's neighbours, after its last section. */
@@ -2904,8 +2929,24 @@ function kbDiagramHtml_(name, body) {
   var label = String(body || '').trim() || key;
   return '<figure class="kb-diagram" data-kb-diagram="' + key + '">' +
     '<div class="kb-diagram-bar"><button type="button" class="kb-diagram-full" onclick="kbDiagramOpen_(this)" title="Open the diagram at full size">' + icon('popOut', 12) + ' Full size</button></div>' +
-    '<div class="kb-diagram-scroll" tabindex="0" aria-label="' + label.replace(/"/g, '&quot;') + '">' + reg[key] + '</div></figure>';
+    '<div class="kb-diagram-scroll" tabindex="0" aria-label="' + label.replace(/"/g, '&quot;') + '">' + kbDiagramScopeIds_(reg[key], kbDiagramSeq_()) + '</div></figure>';
 }
+/** Phase 8 (M14) — one diagram can be drawn twice on a page (a chapter's card
+ *  in its masthead and the section it comes from; Full size), and its arrowhead
+ *  MARKERS are found by id. Chromium resolves `url(#id)` to the FIRST element
+ *  with that id, and draws nothing for a marker inside a hidden subtree
+ *  (measured, 2026-10-09) — so a collapsed card, or a section printed alone
+ *  while the card is not, took the arrowheads off the other copy. Pure
+ *  (Node-pinned): every real `id` and every `url(#…)` gets the copy's own
+ *  suffix. `data-kb-id` (a cross-reference) is not an id and is untouched. */
+function kbDiagramScopeIds_(svg, n) {
+  var sfx = '-d' + n;
+  return String(svg == null ? '' : svg)
+    .replace(/(\s)id="([A-Za-z][\w-]*)"/g, function (m, sp, id) { return sp + 'id="' + id + sfx + '"'; })
+    .replace(/url\(#([A-Za-z][\w-]*)\)/g, function (m, id) { return 'url(#' + id + sfx + ')'; });
+}
+var KB_DIAGRAM_SEQ = 0;
+function kbDiagramSeq_() { return ++KB_DIAGRAM_SEQ; }
 /** The reading column is 760px, and a dense flow chart drawn into it puts its
  *  smallest labels near 6px — so every diagram offers Full size: the same SVG
  *  at its natural width in an overlay (ensureOverlay / closeOverlay, g100),
@@ -2922,7 +2963,7 @@ function kbDiagramOpen_(btn) {
     onClose: function () { var o = document.getElementById('kb-diagram-overlay'); if (o) o.remove(); } });
   ov.innerHTML = '<div class="modal kb-diagram-modal"><div class="kb-diagram-mhead"><h3>' + esc(label) + '</h3>' +
     '<button type="button" class="kb-btn" onclick="closeOverlay(document.getElementById(\'kb-diagram-overlay\'))" aria-label="Close">' + icon('x', 15) + '</button></div>' +
-    '<div class="kb-article kb-diagram-big"><figure class="kb-diagram"><div class="kb-diagram-scroll" tabindex="0" aria-label="' + esc(label) + '">' + reg[key] + '</div></figure></div></div>';
+    '<div class="kb-article kb-diagram-big"><figure class="kb-diagram"><div class="kb-diagram-scroll" tabindex="0" aria-label="' + esc(label) + '">' + kbDiagramScopeIds_(reg[key], kbDiagramSeq_()) + '</div></figure></div></div>';
   ov._kbOrigin = fig;
   ov.addEventListener('click', function (e) {
     var a = e.target.closest && e.target.closest('a.kb-xref');
@@ -3466,6 +3507,7 @@ function kbOpenManualSection_(id, anchor, nav) {
   if (cached && cached.sections.some(function (s) { return s.id === id; })) { kbManualPaintPart_(main, cached, id, anchor, nav); return true; }
   kbPrefetchManualParts_();
   main.innerHTML = kbManualSkeletonHtml_(dept, id);
+  kbManualCardShape_(main);   // a masthead card looks the same before and after the bodies land
   kbManualPaintMeta_();
   var requested = currentView;
   google.script.run
@@ -3575,6 +3617,7 @@ function kbManualChapterParts_(dept) {
  *  look. Text is never changed — landing and search read the same words. */
 function kbManualDecorate_(root) {
   if (!root || !root.querySelectorAll) return;
+  kbManualCardShape_(root);
   root.querySelectorAll('.kb-man-sec .kb-article h3, .kb-man-sec .kb-article h4').forEach(function (h) {
     var first = h.firstChild;
     if (!first || first.nodeType !== 3 || h.querySelector('.kb-man-ssn')) return;
@@ -3586,7 +3629,7 @@ function kbManualDecorate_(root) {
     first.nodeValue = m[2] + first.nodeValue.slice(m[0].length);
     h.insertBefore(span, first);
   });
-  root.querySelectorAll('.kb-man-sec .kb-article table').forEach(function (t) {
+  root.querySelectorAll('.kb-man-sec .kb-article table, .kb-man-card-b .kb-article table').forEach(function (t) {
     if (t.parentElement && t.parentElement.classList.contains('kb-man-tw')) return;
     var head = t.querySelector('tr');
     var cols = head ? head.children.length : 0;
@@ -3606,6 +3649,36 @@ function kbManualDecorate_(root) {
   root.querySelectorAll('.kb-man-sec .kb-article a.kb-xref').forEach(function (a) {
     if (!a.closest('svg') && /^(?:\d+|[A-C])\.[0-9A-Z]+(?:\.\d+)*$|^CARD \d+$/.test(a.textContent.trim())) a.classList.add('kb-xref-num');
   });
+}
+/** M14 / M19 — a card's body (in a masthead, or its own Appendix C page): the
+ *  text goes into one wrapper the columns apply to, and the diagram follows it
+ *  in the document. On screen a flex order shows the diagram first (above the
+ *  columns); a printout is a plain block, so the diagram lands AFTER the text,
+ *  on its own page — the card's reverse. The **Never** line is marked for its
+ *  box. Nodes MOVE (nothing is re-parsed or re-escaped); idempotent. */
+function kbManualCardShape_(root) {
+  root.querySelectorAll('.kb-man-card-b > .kb-article, .kb-man-sec[data-kb-id^="man-c-"] > .kb-article').forEach(function (art) {
+    if (art.querySelector(':scope > .kb-man-card-cols')) return;
+    var cols = document.createElement('div'), figs = [];
+    cols.className = 'kb-man-card-cols';
+    [].slice.call(art.childNodes).forEach(function (n) {
+      if (n.nodeType === 1 && /^(?:kb-diagram|kb-diagram-pending)$/.test(n.className) && n.tagName === 'FIGURE') figs.push(n);
+      else cols.appendChild(n);
+    });
+    art.appendChild(cols);
+    figs.forEach(function (f) { art.appendChild(f); });
+    art.classList.add('kb-man-card-art');
+    [].forEach.call(cols.children, function (p) {
+      var b = p.tagName === 'P' ? p.firstChild : null;
+      if (b && b.nodeType === 1 && b.tagName === 'STRONG' && /^Never\b/.test(b.textContent)) p.classList.add('kb-man-never');
+    });
+  });
+}
+/** M19 — every card at once, from the Appendix C page (the cards are its
+ *  sections). The print rules already cope with several subjects. */
+function kbPrintAllCards_() {
+  var els = [].filter.call(document.querySelectorAll('.kb-man-sec'), function (el) { return kbIsManualCard_(el.getAttribute('data-kb-id')); });
+  kbPrintEls_(els, true);
 }
 var KB_CO_ICON = { critical: 'warning', 'watch-out': 'warning', policy: 'fileText', note: 'info' };
 /** M2 (design handoff) — a callout's opener becomes kicker + title, for the
@@ -3767,7 +3840,8 @@ function kbManualPartHtml_(part) {
     '<div class="kb-man-part' + (ck ? ' kb-man-' + ck : '') + '">';
   secs.forEach(function (s) {
     var draft = s.status === 'draft';
-    html += '<section class="kb-man-sec" id="kb-man-sec-' + esc(s.id) + '" data-kb-id="' + esc(s.id) + '">' +
+    var cardN = kbIsManualCard_(s.id) ? Number(String(s.id).replace('man-c-', '')) : -1;   // M19: card N wears chapter N's colour
+    html += '<section class="kb-man-sec' + (cardN >= 0 && cardN <= 10 ? ' kb-man-p' + cardN : '') + '" id="kb-man-sec-' + esc(s.id) + '" data-kb-id="' + esc(s.id) + '">' +
       '<div class="kb-man-sec-head">' +
         '<h2 class="kb-man-sec-h">' + kbManualTitleHtml_(s.title) + '</h2>' +
         (draft ? '<span class="kb-draft-pill">Draft</span>' : '') +
@@ -3805,7 +3879,69 @@ function kbManualMastheadHtml_(dept, secs) {
     });
     html += '</div>';
   }
-  return html + '</header>';
+  if (cp.appendix && cp.num === 'C') {   // M19: the cards' own chapter prints them all at once
+    html += '<div class="kb-man-mast-acts"><button type="button" class="kb-btn" onclick="kbPrintAllCards_()">' + icon('printer', 13) + ' Print all cards</button></div>';
+  }
+  return html + kbManualMastCardHtml_(dept) + '</header>';
+}
+/** M14 (design handoff, Phase 8) — the chapter's Quick Reference Card. Card N is
+ *  the Appendix C article man-c-N, read from the session's prefetched manual
+ *  (kbManualCachedPart_): before that arrives the masthead has no card — never
+ *  a wait, never a server call. Pure over KB_STATE (Node-pinned). */
+function kbManualCardFor_(dept) {
+  var cp = kbManualChapterParts_(dept);
+  if (!cp.num || cp.appendix || !KB_STATE.manualParts) return null;
+  var id = 'man-c-' + Number(cp.num), found = null;
+  Object.keys(KB_STATE.manualParts).some(function (d) {
+    var p = kbManualCachedPart_(d);
+    (p ? p.sections : []).some(function (x) { if (x && x.id === id) found = x; return !!found; });
+    return !!found;
+  });
+  return found;
+}
+/** M14 — open unless this rep closed it for this chapter (umsKbPanel.cardOpen
+ *  keeps only the closed ones; no new storage key — g112). */
+function kbManualCardOpen_(dept) {
+  var o = kbPanelPrefs_().cardOpen;
+  return !(o && typeof o === 'object' && o[dept] === false);
+}
+/** M14 — the disclosure: chevron, the CARD chip in the chapter colour, "Quick
+ *  reference", Print card; the body is the card article through kbMd_, the same
+ *  renderer as its own page. The body is only HIDDEN when closed — the
+ *  diagram's marker ids are per copy (kbDiagramScopeIds_), so a hidden copy
+ *  costs the chapter's own diagram nothing. */
+function kbManualMastCardHtml_(dept) {
+  var card = kbManualCardFor_(dept);
+  if (!card) return '';
+  var open = kbManualCardOpen_(dept), num = card.id.replace('man-c-', '');
+  var cp = kbManualChapterParts_(dept);
+  return '<section class="kb-man-card" data-kb-man-card="' + esc(card.id) + '" aria-label="Quick reference card">' +
+    '<div class="kb-man-card-h">' +
+      '<button type="button" class="kb-man-card-tog" aria-expanded="' + open + '" aria-controls="kb-man-card-b" data-dept="' + esc(dept) + '" onclick="kbManualCardToggle_(this)">' +
+        icon('chevronDown', 14) + '<span class="kb-man-card-chip">CARD ' + esc(num) + '</span>' +
+        '<span class="kb-man-card-t">Quick reference</span><span class="kb-man-card-nm">' + esc(cp.name) + '</span></button>' +
+      '<button type="button" class="kb-btn kb-man-card-pr" data-kb-id="' + esc(card.id) + '" onclick="kbPrintSectionById_(this.getAttribute(\'data-kb-id\'))">' + icon('printer', 13) + ' Print card</button>' +
+    '</div>' +
+    '<div class="kb-man-card-b" id="kb-man-card-b"' + (open ? '' : ' hidden') + '>' +
+      '<div class="kb-article" data-kb-man>' + kbShiftHeadings_(kbMd_(card.bodyMd || '')) + '</div>' +
+    '</div>' +
+  '</section>';
+}
+/** M14 — open or close the card in place (no re-render, so nothing the rep
+ *  typed elsewhere moves — T1) and remember it for this chapter. */
+function kbManualCardToggle_(btn) {
+  var card = btn && btn.closest ? btn.closest('.kb-man-card') : null;
+  var body = card ? card.querySelector('.kb-man-card-b') : null;
+  if (!body) return;
+  var open = btn.getAttribute('aria-expanded') !== 'true';
+  btn.setAttribute('aria-expanded', String(open));
+  body.hidden = !open;
+  var dept = btn.getAttribute('data-dept') || '';
+  var p = kbPanelPrefs_();
+  var o = (p.cardOpen && typeof p.cardOpen === 'object' && !Array.isArray(p.cardOpen)) ? p.cardOpen : {};
+  if (open) delete o[dept]; else o[dept] = false;
+  p.cardOpen = o;
+  kbPanelSave_(p);
 }
 /** M9 — what the reader shows while a chapter loads: the bar and masthead from
  *  the tree, the target section's heading, and skeleton lines (the app's .skel)
@@ -4008,17 +4144,28 @@ function kbIsManualCard_(id) { return /^man-c-\d+$/.test(String(id || '')); }
  *  reader bar's Print names the section in view by id. */
 function kbPrintSectionById_(id) {
   var sec = id ? document.getElementById('kb-man-sec-' + id) : null;
+  // M14: a chapter's card is printed from its masthead, where it is not a section
+  if (!sec && kbIsManualCard_(id)) sec = document.querySelector('.kb-man-card[data-kb-man-card="' + id + '"]');
   if (!sec) return;
+  kbPrintEls_([sec], kbIsManualCard_(id));
+}
+/** The marks for one or several subjects. M19: a card adds `data-print-card`
+ *  to the root, which the print block lays out as a card (a coloured band,
+ *  two columns, the diagram on the reverse, one card a sheet). */
+function kbPrintEls_(els, card) {
+  if (!els || !els.length) return;
   kbXrefHide_(true);
   document.querySelectorAll('.print-one').forEach(function (el) { el.classList.remove('print-one'); });
-  sec.classList.add('print-one');
+  els.forEach(function (el) { el.classList.add('print-one'); });
   var root = document.documentElement;
   root.setAttribute('data-print-one', '');
+  if (card) root.setAttribute('data-print-card', '');
   var done = false;
   var clear = function () {
     if (done) return; done = true;
-    sec.classList.remove('print-one');
+    els.forEach(function (el) { el.classList.remove('print-one'); });
     root.removeAttribute('data-print-one');
+    root.removeAttribute('data-print-card');
     window.removeEventListener('afterprint', clear);
   };
   window.addEventListener('afterprint', clear);

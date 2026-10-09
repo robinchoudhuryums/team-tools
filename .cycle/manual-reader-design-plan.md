@@ -108,7 +108,8 @@ against the repo; all exist as described. Repo-side corrections to the handoff:
 
 - **Order:** the home leads a wide landing (the handoff); a landing ≤680px wide
   (the pop-out, a phone) puts the lookups first by CSS `order` — measured, the
-  lookups sat ~1,100px down at 480px. Flagged to the operator.
+  lookups sat ~1,100px down at 480px. **Operator 2026-10-09: keep the narrow-only
+  order.**
 - **The jump box** lives in a home that is inserted ONCE (`kbHomeEnsure_`); only
   its read-only parts repaint (`kbHomePaint_`) — the T1 rule.
 - **Router openers** are the first three router rows whose targets the reader can
@@ -128,3 +129,39 @@ against the repo; all exist as described. Repo-side corrections to the handoff:
   an `onClose` hook that removes it, the × through `closeOverlay`; a row closes then
   opens.
 
+
+## Phase 8 adaptations (2026-10-09)
+
+- **Per-copy diagram ids (found while building M14):** a diagram's arrowheads are
+  markers found by `url(#id)`, and Chromium resolves that to the FIRST element with
+  the id — drawing nothing when it sits in a hidden subtree (measured). With the
+  Power card in the masthead and 5.1.1 below it, a collapsed card (or 5.1.1 printed
+  alone) took the arrowheads off the section's diagram. `kbDiagramHtml_` and Full
+  size now draw every copy through `kbDiagramScopeIds_` (each `id` and `url(#…)`
+  suffixed per copy), so the card body is simply hidden when closed.
+- **The diagram follows the text in the document:** the handoff's "flex + order"
+  and "columns" cannot share one element, so `kbManualCardShape_` moves the card's
+  text into one columns wrapper and the diagram after it; the screen lifts the
+  diagram first with a flex order, and print (a plain block) puts it on the next
+  sheet. The same shape serves the masthead card and the Appendix C card pages,
+  which now wear their chapter's colour (`kb-man-pN`), as in the HTML manual.
+- **Print card** reuses `kbPrintSectionById_`: an id that is a card and has no
+  section on the page finds the masthead card. `kbPrintEls_` marks one subject or
+  several (Print all cards) and sets `data-print-card` for a card.
+- **The masthead card renders only from the prefetched manual** (the handoff's "omit
+  rather than wait"); no repaint is triggered when the prefetch lands.
+- **Dark-mode print — two causes, both fixed:** (1) the dark semantic and chapter
+  colours now sit in `@media screen` blocks in the tokens partial (no second copy of
+  any hex); (2) found by printing: `index.html` sets `data-mode` on `<body>` too, and
+  `body[data-mode="dark"]` re-declared the neutrals one level below the print
+  block's `:root` override, so every dark-mode printout in the app kept its
+  near-white ink. The print block now forces the neutrals on `:root, body`. The
+  accent family is not covered (each palette's dark block redefines it, and a print
+  rule cannot darken a property from its own value) — follow-on.
+- **The HTML manual and Word:** the card diagram is the card's reverse in both —
+  `make_html.py` moves it after the footer with its own head and folio (the contents
+  sheet's page numbers count it), `validate_render.py` expects one sheet more per
+  diagram card (15), and `md2model.py` holds it until the card's text has run, so
+  the landscape page follows the card instead of splitting its heading from it.
+- `test/visual/print-check.mjs` had called the Phase 2-renamed `kbPrintSection_`
+  since Phase 2; repaired, it now reads `--ink` on `<body>` too and measures a card.

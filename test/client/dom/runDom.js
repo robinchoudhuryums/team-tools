@@ -5738,6 +5738,75 @@ test('MRD-7 DOM (manual reader design Phase 7): the side carries Contents; a sea
   assert.ok(!ov(), 'Escape closes it');
 });
 
+test('MRD-8 DOM (manual reader design Phase 8): once the whole manual has arrived, a chapter\'s masthead carries its Quick Reference Card — open by default, the diagram AFTER the text in the document (the printed reverse), the Never line boxed; a diagram drawn twice keeps unique ids; closing it is remembered for the chapter and survives a repaint; Print card prints the masthead card as a card; the Appendix C page prints every card at once', async () => {
+  const h = m4Boot_();
+  const w = h.window, doc = w.document;
+  h.read('kbOpenItem_')('man-0-10');
+  const part = JSON.parse(JSON.stringify(M2_PART0));
+  part.sections[0].bodyMd += '\n```diagram lifecycle\nOrder lifecycle\n```\n';
+  h.run.flushSuccess(part, 'getManualPart');
+  assert.ok(!h.$('#kb-main .kb-man-card'), 'before the manual arrives the masthead has no card — it never waits');
+  const card0 = { id: 'man-c-0', title: 'Card 0 — Core', status: 'published', sortOrder: 0,
+    bodyMd: '```diagram lifecycle\nOrder lifecycle\n```\n\n### Identity\n- Match name and date of birth\n\n### Routing\n- Billing → 10.1\n\n**Never** — quote a delivery date not in the system\n' };
+  h.run.flushSuccess({ isAdmin: true, parts: [part, { department: 'Appendix C — Quick Reference Cards', sections: [card0] }] }, 'getManualParts');
+  const main = doc.getElementById('kb-main');
+  const repaint = (id) => h.read('kbManualPaintPart_')(main, h.read('kbManualCachedPart_')(id === 'man-c-0' ? 'Appendix C — Quick Reference Cards' : 'Chapter 00 — CSR Core'), id);
+  repaint('man-0-10');
+  const card = () => h.$('#kb-main .kb-man-mast .kb-man-card');
+  assert.ok(card() && card().getAttribute('data-kb-man-card') === 'man-c-0', 'card N rides chapter N\'s masthead');
+  const tog = () => card().querySelector('.kb-man-card-tog');
+  assert.strictEqual(tog().getAttribute('aria-expanded'), 'true', 'open by default');
+  assert.ok(!card().querySelector('.kb-man-card-b').hidden && /CARD 0/.test(card().querySelector('.kb-man-card-chip').textContent));
+  const art = card().querySelector('.kb-article.kb-man-card-art');
+  assert.deepStrictEqual([...art.children].map((c) => c.className), ['kb-man-card-cols', 'kb-diagram'], 'the text, then the diagram: a plain-block printout puts the diagram on the next page');
+  assert.ok(art.querySelector('.kb-man-card-cols > p.kb-man-never') && /^Never/.test(art.querySelector('p.kb-man-never').textContent), 'the Never line is marked for its box');
+  // the same diagram twice on one page (card + section): every id is unique, every marker reference resolves inside its own copy
+  const svgs = h.$$('#kb-main svg.kbdg-lifecycle');
+  assert.strictEqual(svgs.length, 2, 'drawn in the card and in its section');
+  const ids = h.$$('#kb-main [id]').map((e) => e.id);
+  assert.deepStrictEqual(ids.filter((x, i) => ids.indexOf(x) !== i), [], 'no id appears twice');
+  svgs.forEach((svg) => {
+    const refs = [...svg.outerHTML.matchAll(/url\(#([\w-]+)\)/g)].map((m) => m[1]);
+    assert.ok(refs.length && refs.every((r) => svg.querySelector('[id="' + r + '"]')), 'each copy\'s markers are its own: ' + refs.join(','));
+  });
+  // close it: remembered for this chapter, in umsKbPanel, and a repaint keeps it closed
+  // (jsdom under runScripts:'outside-only' never runs an inline onclick — assert it, then call it)
+  assert.strictEqual(tog().getAttribute('onclick'), 'kbManualCardToggle_(this)');
+  const click = () => h.read('kbManualCardToggle_')(tog());
+  click();
+  assert.ok(card().querySelector('.kb-man-card-b').hidden && tog().getAttribute('aria-expanded') === 'false', 'closed in place');
+  assert.deepStrictEqual(JSON.parse(w.localStorage.getItem('umsKbPanel')).cardOpen, { 'Chapter 00 — CSR Core': false });
+  repaint('man-0-10');
+  assert.ok(card().querySelector('.kb-man-card-b').hidden && tog().getAttribute('aria-expanded') === 'false', 'a repaint keeps it closed');
+  click();
+  assert.deepStrictEqual(JSON.parse(w.localStorage.getItem('umsKbPanel')).cardOpen, {}, 'opening forgets the entry (open is the default)');
+  // Print card: the masthead card is the subject, laid out as a card
+  let during = null;
+  w.print = () => { during = { marked: h.$$('.print-one').map((e) => e.className), card: doc.documentElement.hasAttribute('data-print-card'), one: doc.documentElement.hasAttribute('data-print-one') }; };
+  const pr = card().querySelector('.kb-man-card-pr');
+  assert.strictEqual(pr.getAttribute('onclick'), "kbPrintSectionById_(this.getAttribute('data-kb-id'))");
+  h.read('kbPrintSectionById_')(pr.getAttribute('data-kb-id'));
+  assert.deepStrictEqual(during, { marked: ['kb-man-card print-one'], card: true, one: true }, 'the masthead card alone, with the card flag');
+  w.dispatchEvent(new w.Event('afterprint'));
+  assert.deepStrictEqual([h.$$('.print-one').length, doc.documentElement.hasAttribute('data-print-card')], [0, false], 'afterprint takes both marks off');
+  during = null;
+  h.read('kbPrintSectionById_')('man-0-10');
+  assert.strictEqual(during.card, false, 'a section is not printed as a card');
+  w.dispatchEvent(new w.Event('afterprint'));
+  // Appendix C: its sections are the cards — no masthead card, a Print all cards button, each card in its chapter colour and shaped
+  repaint('man-c-0');
+  assert.ok(!h.$('#kb-main .kb-man-mast .kb-man-card'), 'the cards\' own chapter shows no masthead card');
+  const sec = doc.getElementById('kb-man-sec-man-c-0');
+  assert.ok(sec.classList.contains('kb-man-p0') && sec.querySelector('.kb-article.kb-man-card-art > .kb-man-card-cols + figure'), 'card 0 wears chapter 0\'s colour and has the printed shape');
+  const all = h.$('#kb-main .kb-man-mast-acts button');
+  assert.ok(all && /Print all cards/.test(all.textContent));
+  during = null;
+  assert.strictEqual(all.getAttribute('onclick'), 'kbPrintAllCards_()');
+  h.read('kbPrintAllCards_')();
+  assert.deepStrictEqual(during, { marked: ['kb-man-sec kb-man-p0 print-one'], card: true, one: true }, 'every card section, as cards');
+  w.dispatchEvent(new w.Event('afterprint'));
+});
+
 test('M4 DOM: Print marks ONLY its own section for the one print block, for exactly as long as the dialog is up; since M8 it is the reader bar\'s Print, aimed at the section in view, and on a Quick Reference Card it says "card"', async () => {
   const h = m4Boot_();
   const w = h.window, doc = w.document;

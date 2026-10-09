@@ -199,25 +199,6 @@
     --accent-glow:  rgba(122, 242, 161, 0.22);
     --selection-bg: rgba(122, 242, 161, 0.32);
 
-    --good:         #7af2a1;
-    --good-soft:    rgba(122, 242, 161, 0.12);
-
-    --warn:         #ffb547;
-    --warn-soft:    rgba(255, 181, 71, 0.14);
-    --warn-glow:    rgba(255, 181, 71, 0.22);
-    --on-warn:      var(--paper-card);
-    --destructive:  #ff6679;
-    --destructive-soft: rgba(255, 102, 121, 0.14);
-
-    --info:         #74c7ff;
-    --info-soft:    rgba(116, 199, 255, 0.14);
-
-    /* Intake form-type accents — lightened for dark mode (parity with --info). */
-    --intake-ppd:   #74c7ff;   /* blue   */
-    --intake-pmd:   #ffa657;   /* orange */
-    --intake-pap:   #c4a5ff;   /* purple */
-    --intake-pap-soft: rgba(196, 165, 255, .14);   /* --intake-pap @14% */
-
     --shadow-sm: 0 1px 2px rgba(0,0,0,.25);
     --shadow:    0 1px 3px rgba(0,0,0,.30);
     --shadow-md: 0 2px 8px rgba(0,0,0,.35);
@@ -229,6 +210,36 @@
     --danger-deep:   #ffa0a8;
     --info-deep:     #b0ddff;
     --border-strong: #4a5260;
+  }
+  /* The dark SEMANTIC colours are for the SCREEN (manual-reader design Phase 8,
+     operator decision 4, 2026-10-09). Paper is white whatever the mode — the
+     print block forces the neutrals — so a dark-mode printout drew its status
+     colours, callouts and fills in the light-on-dark values (#ff6679 red on
+     white). Scoping them to `screen` lets print fall back to the light values
+     declared once above: no second copy of any hex. The -deep aliases follow,
+     since they mix --good/--warn/… with --paper-card. */
+  @media screen {
+    :root[data-mode="dark"],
+    body[data-mode="dark"] {
+      --good:         #7af2a1;
+      --good-soft:    rgba(122, 242, 161, 0.12);
+
+      --warn:         #ffb547;
+      --warn-soft:    rgba(255, 181, 71, 0.14);
+      --warn-glow:    rgba(255, 181, 71, 0.22);
+      --on-warn:      var(--paper-card);
+      --destructive:  #ff6679;
+      --destructive-soft: rgba(255, 102, 121, 0.14);
+
+      --info:         #74c7ff;
+      --info-soft:    rgba(116, 199, 255, 0.14);
+
+      /* Intake form-type accents — lightened for dark mode (parity with --info). */
+      --intake-ppd:   #74c7ff;   /* blue   */
+      --intake-pmd:   #ffa657;   /* orange */
+      --intake-pap:   #c4a5ff;   /* purple */
+      --intake-pap-soft: rgba(196, 165, 255, .14);   /* --intake-pap @14% */
+    }
   }
   @supports (color: color-mix(in oklch, red, blue)) {
     :root[data-mode="dark"],
@@ -470,10 +481,14 @@
     --man-p4: #1C75A3;  --man-p5: #1D46B9;  --man-p6: #2D7E52;  --man-p7: #59642A;
     --man-p8: #19676D;  --man-p9: #1F7514;  --man-p10: #9A5E22;
   }
-  :root[data-mode="dark"], body[data-mode="dark"] {
-    --man-p0: #9EC2E6;  --man-p1: #808AA0;  --man-p2: #9E7ACD;  --man-p3: #DD56B5;
-    --man-p4: #1F92CE;  --man-p5: #6185EA;  --man-p6: #359D64;  --man-p7: #81913A;
-    --man-p8: #2199A2;  --man-p9: #279F17;  --man-p10: #C87827;
+  /* The dark set is for the SCREEN (Phase 8, operator decision 4): a printout is
+     white paper in either mode, so it takes the light set above. */
+  @media screen {
+    :root[data-mode="dark"], body[data-mode="dark"] {
+      --man-p0: #9EC2E6;  --man-p1: #808AA0;  --man-p2: #9E7ACD;  --man-p3: #DD56B5;
+      --man-p4: #1F92CE;  --man-p5: #6185EA;  --man-p6: #359D64;  --man-p7: #81913A;
+      --man-p8: #2199A2;  --man-p9: #279F17;  --man-p10: #C87827;
+    }
   }
 
   /* ═══════════════════════════════════════════════════════════════════

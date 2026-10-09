@@ -66,7 +66,9 @@ for (const mode of ['light', 'dark']) {
   await page.waitForTimeout(1200);
   await page.evaluate(() => window.kbOpenItem_('man-0-11'));
   await page.waitForTimeout(1200);
-  await page.evaluate(() => { window.print = () => {}; window.kbPrintSection_(document.querySelector('#kb-man-sec-man-0-11 .kb-man-print')); });
+  // (Phase 2 renamed kbPrintSection_(btn) to kbPrintSectionById_(id); the 1.5s
+  // clear timer is held off so the marks are still on when the page is measured)
+  await page.evaluate(() => { window.print = () => {}; const st = window.setTimeout; window.setTimeout = (f, ms) => (ms === 1500 ? 0 : st(f, ms)); window.kbPrintSectionById_('man-0-11'); window.setTimeout = st; });
   await page.emulateMedia({ media: 'print' });
   const one = await page.evaluate(() => {
     const vis = (s) => { const e = document.querySelector(s); return !!e && getComputedStyle(e).display !== 'none' && e.getClientRects().length > 0; };
@@ -78,9 +80,44 @@ for (const mode of ['light', 'dark']) {
       sectionButtons: vis('.print-one .kb-man-sec-acts'), feedback: vis('.print-one .kb-man-fb'),
       sectionLeft: Math.round(sec.getBoundingClientRect().left), sectionWidth: Math.round(sec.getBoundingClientRect().width),
       ink: getComputedStyle(document.documentElement).getPropertyValue('--ink').trim(),
+      // Phase 8: <body> carries data-mode too, so the ink must be read where the text inherits it
+      bodyInk: getComputedStyle(document.body).getPropertyValue('--ink').trim(),
+      textColor: getComputedStyle(sec.querySelector('.kb-article p')).color,
+      chapterColor: getComputedStyle(sec).getPropertyValue('--man-c').trim(),
     };
   });
   results.push({ mode, printOneSection: one });
+  await page.close();
+}
+// Phase 8 (M19) — a Quick Reference Card from a chapter's masthead prints AS a
+// card: the root flag, the chapter-colour band, two columns, the diagram after
+// the text with a page break before it, and the light chapter colour in either mode.
+for (const mode of ['light', 'dark']) {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await page.addInitScript((m) => { try { localStorage.clear(); localStorage.setItem('umsTimeClockMode', m); localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 })); localStorage.setItem('umsTzWarnedDay', new Date().toLocaleDateString('sv-SE')); } catch (e) {} }, mode);
+  await page.goto(PAGE);
+  await page.waitForTimeout(900);
+  await page.evaluate(() => window.enterTool('reference'));
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => window.kbOpenItem_('man-5-1'));
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => { window.print = () => {}; const st = window.setTimeout; window.setTimeout = (f, ms) => (ms === 1500 ? 0 : st(f, ms)); window.kbPrintSectionById_('man-c-5'); window.setTimeout = st; });
+  await page.emulateMedia({ media: 'print' });
+  const card = await page.evaluate(() => {
+    const c = document.querySelector('.kb-man-card.print-one');
+    if (!c) return { marked: false };
+    const fig = c.querySelector('.kb-man-card-art > figure'), cols = c.querySelector('.kb-man-card-cols');
+    return {
+      marked: document.documentElement.hasAttribute('data-print-card'),
+      band: getComputedStyle(c.querySelector('.kb-man-card-h')).backgroundColor,
+      columns: getComputedStyle(cols).columnCount,
+      figureAfterText: !!(fig && (cols.compareDocumentPosition(fig) & 4)) && fig.getBoundingClientRect().top >= cols.getBoundingClientRect().bottom,
+      figureBreak: fig ? getComputedStyle(fig).breakBefore : null,
+      printButton: getComputedStyle(c.querySelector('.kb-man-card-pr')).display,
+      chapterColor: getComputedStyle(c).getPropertyValue('--man-c').trim(),
+    };
+  });
+  results.push({ mode, printCard: card });
   await page.close();
 }
 await browser.close();

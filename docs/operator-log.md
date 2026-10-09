@@ -10,6 +10,38 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-09 — manual reader design, Phase 8 (quick cards, card print, dark-mode print)
+
+**Adds NO operator state.** Two releases, in this order:
+1. **App deploy** (`clasp push -f` + New version) — with Phases 1–7 if they are not
+   out yet.
+2. **Manual release:** `./make_all.sh` → Reference → Manual → Choose File →
+   `manual.json` → Check → Import → Publish. Appendix C changed (Cards 4, 5 and 8
+   now carry a diagram), so those three cards come up for publishing. No diagram
+   changed, so no clasp push is needed for this part.
+
+Then check the **Word** copy's card pages by eye: a card with a diagram is
+followed by the diagram's landscape page, and the next card starts a fresh page
+(the structure was checked here; LibreOffice could not render the file).
+- **Quick card in the chapter (M14):** each chapter's page now ends its masthead
+  with its Quick Reference Card — CARD N, "Quick reference", Print card — the
+  card's diagram first, then its points in two columns, the **Never** line in a
+  red box. It is open by default; close it and it stays closed for that chapter.
+  It shows once the whole manual has arrived (a second or two after the first
+  chapter of a session), never with a wait.
+- **Cards on paper (M19):** Print card (in a chapter) or the reader bar's Print
+  (on an Appendix C card) prints a card as a card — the chapter colour as a band,
+  two columns, one card a sheet, and the diagram on the NEXT sheet (print two-sided
+  for a card with the diagram on the back). **Print all cards** on the Appendix C
+  page prints every card at once. The HTML manual does the same: its print check
+  now counts a diagram's back page beside each card that has one (contents + 11 cards + 3 diagram reverses).
+- **Dark-mode printing (all of the app):** a printout from dark mode used to put
+  near-white text on white paper, because the dark colours were set on the page
+  body as well as the page itself and the print reset only reached the page. Now
+  every print is ink on white, the status colours and chapter colours print in
+  their light versions, and nothing changes on screen. One leftover: links in a
+  dark-mode printout keep the dark mode's pale accent colour (follow-on).
+
 ## 2026-10-09 — manual reader design, Phase 7 (compact pop-out)
 
 **Adds NO operator state.** Deploy as usual (`clasp push -f` + New version); no
