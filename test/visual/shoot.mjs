@@ -278,9 +278,9 @@ const SCENARIOS = [
   // delete cluster, add form) + the feedback bar were unshootable while the
   // matrix only walked the Reference landing.
   ['reference-reader-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', "kbOpenItem_('kb-1')"],
-  // Batch M1 — a procedures-manual article as the export writes it (label-toned
-  // callouts, a table inside a callout, a nested list, a Script snippet, a
-  // pending diagram and icon chips), and the admin Manual dialog after a Check.
+  // Batch M1 — a procedures-manual article as the export writes it (the real
+  // 0.10 since manual fixes E: label-toned callouts, a table inside a callout,
+  // the diagram and the icon tables), and the admin Manual dialog after a Check.
   ['reference-manual-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', "kbOpenItem_('man-0-10')"],
   // Batch M2 — the part page scrolled to its second section (the "Updated"
   // badge, the per-section feedback bar), and a cross-reference preview card.
@@ -295,7 +295,7 @@ const SCENARIOS = [
   ['reference-manual-xref-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
     "kbOpenItem_('man-0-11'); setTimeout(function(){ var a=document.querySelector('#kb-man-sec-man-0-11 a.kb-xref[data-kb-id=\"man-0-10\"]'); if(a) kbXrefShow_(a); }, 400)"],
   ['reference-manual-dark-wide',  { tool: 'reference', tab: null }, WIDE, 'dark',  '',
-    "kbOpenItem_('man-0-10'); setTimeout(function(){ var h=document.getElementById('kb-h-0-10-2-before-you-transfer'); if(h) h.scrollIntoView(); }, 300)"],   // the lower half: nested list, Critical, Policy, snippet
+    "kbOpenItem_('man-0-11'); setTimeout(function(){ var h=document.getElementById('kb-h-0-11-1-notating-a-call'); if(h) h.scrollIntoView(); }, 300)"],   // the 0.11 feature fixture: nested list, Critical, snippet
   // Batch M3 — the manual's diagrams (the generated partial, themed through
   // the --dg-* token map) in both themes and at phone width (it must scroll
   // inside itself), and its images (a figure, an equipment photo, the icons,
@@ -309,7 +309,7 @@ const SCENARIOS = [
   ['reference-manual-diagram-full-dark-wide', { tool: 'reference', tab: null }, WIDE, 'dark', '',
     "kbOpenItem_('man-0-10'); setTimeout(function(){ var b=document.querySelector('figure.kb-diagram .kb-diagram-full'); if(b) kbDiagramOpen_(b); }, 400)"],
   ['reference-manual-images-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
-    "kbOpenItem_('man-0-11'); setTimeout(function(){ var h=document.getElementById('kb-h-0-11-2-what-the-equipment-looks-like'); if(h) h.scrollIntoView(); }, 600)"],
+    "kbOpenItem_('man-0-11'); setTimeout(function(){ var h=document.getElementById('kb-h-0-11-3-what-to-include-in-the-body'); if(h) h.scrollIntoView(); }, 600)"],
   ['reference-manual-images-dark-wide', { tool: 'reference', tab: null }, WIDE, 'dark', '',
     "kbOpenItem_('man-0-10'); setTimeout(function(){ var h=document.getElementById('kb-h-0-10-1-trx-type'); if(h) h.scrollIntoView(); }, 600)"],
   // Batch M4 — the manual's recent changes on the Reference landing and in the
@@ -325,15 +325,15 @@ const SCENARIOS = [
     "kbOpenItem_('man-0-11'); setTimeout(function(){ var a=document.querySelector('#kb-man-sec-man-0-11 a.kb-xref[data-kb-id=\"man-0-10\"]'); if(a) a.focus(); }, 500)"],
   // Batch M5a — a preview focused on the part of its target the link is about
   // (the fax row → 0.10's navigation callout), the click that jumped to another
-  // part (10.1, landed on the deductible row, with the "Back to 0.11" chip —
+  // chapter (10.4, landed on the deductible answer, with the "Back to 0.11" chip —
   // wide and at phone width, where the chip's title must ellipsize), and the
   // drawer's trail after a cross-reference ("Back to 0.11" above the reader).
   ['reference-manual-xref-part-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
     "kbOpenItem_('man-0-11'); setTimeout(function(){ var a=document.querySelector('#kb-man-sec-man-0-11 a.kb-xref[data-kb-id=\"man-0-10\"][data-kb-anchor=\"\"]'); if(a){ a.scrollIntoView({block:'center'}); kbXrefShow_(a); } }, 500)"],
   ['reference-manual-backchip-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
-    "kbOpenItem_('man-0-11'); setTimeout(function(){ var a=document.querySelector('#kb-man-sec-man-0-11 a.kb-xref[data-kb-id=\"man-10-1\"]'); if(a) a.click(); }, 500)"],
+    "kbOpenItem_('man-0-11'); setTimeout(function(){ var a=document.querySelector('#kb-man-sec-man-0-11 a.kb-xref[data-kb-id=\"man-10-4\"]'); if(a) a.click(); }, 500)"],
   ['reference-manual-backchip-dark-mobile', { tool: 'reference', tab: null }, MOBILE, 'dark', '',
-    "kbOpenItem_('man-0-11'); setTimeout(function(){ var a=document.querySelector('#kb-man-sec-man-0-11 a.kb-xref[data-kb-id=\"man-10-1\"]'); if(a) a.click(); setTimeout(function(){ var m=document.getElementById('kb-main'); if(m) m.scrollIntoView(); window.scrollTo(0,0); }, 600); }, 500)"],
+    "kbOpenItem_('man-0-11'); setTimeout(function(){ var a=document.querySelector('#kb-man-sec-man-0-11 a.kb-xref[data-kb-id=\"man-10-4\"]'); if(a) a.click(); setTimeout(function(){ var m=document.getElementById('kb-main'); if(m) m.scrollIntoView(); window.scrollTo(0,0); }, 600); }, 500)"],
   ['reference-drawer-backto-dark-wide', { tool: 'reference', tab: null }, WIDE, 'dark', '',
     "kbDrawerOpen_(); kbDrawerOpenItem_('man-0-11'); setTimeout(function(){ var a=document.querySelector('#kbd-body a.kb-xref[data-kb-id=\"man-0-10\"][data-kb-anchor=\"\"]'); if(a) a.click(); }, 600)"],
   // Batch M5b — Reference search: a call-router hit ("The caller said …", the
