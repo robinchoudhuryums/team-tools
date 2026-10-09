@@ -10,6 +10,47 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-08 → 10-09 — manual fixes: a reviewer's change list, the Word and HTML copies, the packets
+
+**Adds NO new Script Property.** The `manual/` changes ship by export and
+import; one app file changed: the diagram partial
+(`web-app/kb/script_manual_diagrams.html` — the rental timeline's Purchase row
+and oxygen servicing visit, the Power ATP box), which ships by deploy.
+- **Deploy** (`clasp push -f` + New version) for the diagrams, then **export and
+  import** `manual.json` (Check → Import → Publish) — the order in the
+  procedures-manual entry of `docs/operator-state.md`.
+- **Content:** CMS billing classes checked and corrected (E0471 a capped rental;
+  E0431 in the 36-month oxygen class; one paid servicing visit every 6 months
+  after month 36, concentrators and transfill only); Card 1's abusive-caller
+  "warn once" rule; no diagnostic charge when a fault is repaired (7.3.2); Pat.
+  Resp. is the pre-delivery balance; the Spanish Queue row no longer says Direct;
+  a dozen smaller corrections, each with a changelog line.
+- **The Word manual** opens with a cover and a linked contents list — answer
+  **Yes** when Word asks to update fields — and every diagram prints on its own
+  landscape page. Check it in Word: nothing in the build environment renders a
+  .docx.
+- **The HTML manual** works on a phone, lands headings below the bar, finds a
+  section by its old number, prints one section or the cards, and prints light
+  from a dark-mode computer.
+- **Review packets:** ten, the Denials packet included, rebuilt on the corrected
+  text and kept brief (`manual/make_packets.sh`). Send them; Billing's answers
+  settle four questions the text leaves alone (F15).
+- Optional: the three resupply category owners' full names, so B.1 can again say
+  every name is in full.
+
+## 2026-10-06 → 10-08 — the manual update: the renumber, chapter colours, and the reader's follow-ups (PRs #289, #290)
+
+**Adds NO new Script Property.** The operator's edit list
+(`.cycle/manual-update-plan.md`) was applied in seven phases: the manual is
+renumbered ONCE by chapter (Sales is Chapter 4; departments read "Chapter NN —
+Name"), each chapter has one colour and icon (`manual/data/chapter_style.json`),
+the B.1 directory is consolidated, and the review packets were written. The
+reader then got faster chapter navigation (every chapter read once), the HTML
+manual's look, the Power diagram's PT Eval colour and import completion
+feedback. **Order matters for the renumber:** deploy first, import with "Remove
+sections no longer in the manual" ticked, publish by chapter — the
+procedures-manual entry of `docs/operator-state.md`.
+
 ## 2026-10-05 — cycle 24 seams round: composers ask, the suite guard closes, QA revoke
 
 **Adds ONE operator state item:** the Script Property `SUITE_UNMARKED_OK_UNTIL`,

@@ -2575,7 +2575,15 @@ entry says which it is.
   **Review packets (cycle 24 manual update):** `manual/make_packets.sh` after
   `make_all.sh` writes one packet per department plus a Denials packet, in
   Markdown and Word, each quoting the manual's current text. Answers go back
-  into `manual/` and reach the app by a re-export and import. **PDF:** the build
+  into `manual/` and reach the app by a re-export and import. **The Word manual
+  (manual fixes, 2026-10-08):** it opens with a cover and a linked contents list —
+  when Word asks to update fields, answer **Yes** to fill in the page numbers —
+  and each diagram prints on its own landscape page. **Build date:** every output
+  shows the date of the last commit to `manual/src`, `data` or `diagrams`
+  (`manual/built_date.py`); set `MANUAL_BUILT=MM/DD/YYYY` to override. **Visual
+  matrix:** after a manual change, `node test/visual/manual-fixtures.mjs
+  <MANUAL_OUT>/reference/manual.json` refreshes the Reference screenshots' fixtures
+  (developer step, not a deploy). **PDF:** the build
   makes and checks a PDF of the Word manual only where LibreOffice works; if it
   prints "pdf: not made", export the Word file from Word or Google Docs and
   check it for blank pages yourself.
