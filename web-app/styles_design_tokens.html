@@ -62,6 +62,12 @@
        (Batch P, 2026-09-11 — the rgba twin it replaced was Console-only, so a
        Sage/Plum browser without color-mix drew the wrong hue). */
     --warn-glow:    rgba(183, 121, 31, 0.16);
+    /* `--on-warn` — text ON a filled --warn (a pressed amber chip, a badge).
+       The amber is mid-light in both modes, so the readable text flips: ink
+       in light (4.98:1 on #b7791f; white read 3.64), the dark card in dark
+       (10.49:1 on #ffb547). Declared in the two BASE blocks only, like
+       --warn itself (2026-10-09, manual reader design Phase 5's open item). */
+    --on-warn:      var(--ink);
     --destructive:      #c13030;
     --destructive-soft: #fce5e5;
 
@@ -199,6 +205,7 @@
     --warn:         #ffb547;
     --warn-soft:    rgba(255, 181, 71, 0.14);
     --warn-glow:    rgba(255, 181, 71, 0.22);
+    --on-warn:      var(--paper-card);
     --destructive:  #ff6679;
     --destructive-soft: rgba(255, 102, 121, 0.14);
 

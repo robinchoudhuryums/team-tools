@@ -530,8 +530,8 @@
   .cn-ok-list li .why { color: var(--muted-3); }
   @media (max-width: 560px) { .cn-finding { grid-template-columns: 1fr; } .cn-finding .cn-finding-d, .cn-finding .cn-finding-f, .cn-finding .cn-finding-area { grid-column: 1; } }
   /* The System tab's count badge — a text equivalent rides aria-label (A6). */
-  .cn-admin-tab-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 5px; border-radius: var(--radius-pill); font-size: 10px; font-weight: 700; letter-spacing: 0; background: var(--warn); color: var(--paper); }
-  .cn-admin-tab-badge[data-tone="fail"] { background: var(--destructive); }
+  .cn-admin-tab-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 5px; border-radius: var(--radius-pill); font-size: 10px; font-weight: 700; letter-spacing: 0; background: var(--warn); color: var(--on-warn); }
+  .cn-admin-tab-badge[data-tone="fail"] { background: var(--destructive); color: var(--paper-card); }   /* its own text: the amber badge's --on-warn is ink in light mode */
   .toolbar-tab[aria-current="page"] .cn-admin-tab-badge { background: var(--paper); color: var(--ink); }
 
   /* ─── ADMIN TAG TRENDS PANEL (#5) ────────────────────────────────── */
@@ -1346,7 +1346,7 @@
   }
   /* Color-coded chip variants — picked up by cnRenderFilterBar_ */
   .cn-filter-chip.cn-fc-action:not([aria-pressed="true"])    { color: var(--warning-deep); border-color: color-mix(in srgb, var(--warn), transparent 70%); }
-  .cn-filter-chip.cn-fc-action[aria-pressed="true"]          { background: var(--warn); border-color: var(--warn); color: var(--paper-card); }
+  .cn-filter-chip.cn-fc-action[aria-pressed="true"]          { background: var(--warn); border-color: var(--warn); color: var(--on-warn); }
   .cn-filter-chip.cn-fc-training:not([aria-pressed="true"])  { color: var(--info-deep); border-color: color-mix(in srgb, var(--accent), transparent 70%); }
   .cn-filter-chip.cn-fc-training[aria-pressed="true"]        { background: var(--accent); border-color: var(--accent); color: var(--paper-card); }
   .cn-filter-chip.cn-fc-review:not([aria-pressed="true"])    { color: var(--success-deep); border-color: color-mix(in srgb, var(--good), transparent 70%); }
@@ -1597,7 +1597,7 @@
   /* ── Stale-flag badge in sidebar nav (count pill) ───────────────── */
   .cn-stale-badge {
     display: inline-flex; align-items: center; justify-content: center;
-    background: var(--warn); color: var(--paper-card);
+    background: var(--warn); color: var(--on-warn);
     font-family: var(--mono); font-size: 10px; font-weight: 700;
     min-width: 16px; height: 16px; padding: 0 4px;
     border-radius: 999px;

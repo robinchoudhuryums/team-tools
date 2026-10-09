@@ -10,6 +10,34 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-09 — manual reader design, Phase 5 (reading trail, resume) + Phase 4's open items
+
+**Adds NO operator state** — no Script Property and no new browser storage key (the
+resume point lives inside the existing `umsKbPanel`). Deploy as usual
+(`clasp push -f` + New version); no re-import, no manual rebuild. Phases 6–8 wait
+for your go-ahead.
+- **Reading trail (M15):** above the reader bar, "Read" and a chip for each of the
+  last few sections you opened (up to five, newest last, no repeats) — each with
+  its chapter badge and number; the open section is the plain end. A chip takes
+  you back to that section, to the row you left from when you followed a link,
+  and drops the chips after it. This replaces the single "Back to" chip, and now
+  works for any jump, not only one to another chapter. The Ctrl+K drawer keeps its
+  own Back, as decided.
+- **Resume (M16):** opening a chapter from a chapter-level control (the Previous /
+  Next chapter cards, or ‹ › across a chapter's edge) returns you to where you
+  were reading in that chapter within the last week, with "Back where you left off —
+  5.2.4 …", Start of chapter and dismiss. Opening a specific section (a link, a
+  search hit, the tree, a section number, a trail chip) always goes where you
+  asked. Only the section id and heading number are kept.
+- **Fixed — amber chips in light mode:** text on the amber fill read 3.4–3.6:1 in
+  light mode. A new paired colour (ink in light, the card colour in dark) now
+  reads 4.96–4.98 in light and 10.5 in dark across all five palettes. It's used by
+  Call Notes' Action filter chip, stale-flag badge and admin-tab badge, Coaching's
+  warn chip, Intake's "Mod" chip, and the Clock's lunch chip and amber button. The
+  admin badge's red variant keeps light text (5.6:1).
+- **Fixed — footnotes in the Ctrl+K drawer:** a manual section opened in the drawer
+  now turns its footnote numbers into the same note card as the Reference tab.
+
 ## 2026-10-09 — manual reader design, Phase 4 (footnotes, glossary, search hits) + Phase 3's found items
 
 **Adds NO operator state.** Deploy as usual (`clasp push -f` + New version); no

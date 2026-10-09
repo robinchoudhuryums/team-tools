@@ -35139,6 +35139,68 @@ test('MRD-2 (manual reader design Phase 2): the reader bar\'s title split, chapt
   assert.ok(!/background:\s*var\(--accent\);\s*color:\s*#fff/i.test(css) && /\.toast-act \{[^}]*background: var\(--accent\); color: var\(--paper-card\)/.test(css), 'the toast action reads --paper-card on the accent');
 });
 
+test('MRD-5 (manual reader design Phase 5 + Phase 4\'s open items): text on a filled amber is --on-warn (ink in light, the card in dark); the trail and resume helpers are pure and driven; the trail is the tab\'s and the drawer keeps Back; resume stores an id and a heading NUMBER; the drawer runs the footnote pass (driven)', () => {
+  const kb = M1_KB_SRC;
+  const tok = fs.readFileSync(path.join(PA_WEB, 'styles_design_tokens.html'), 'utf8');
+  // --on-warn — measured 2026-10-09 across all five palettes: 4.96–4.98 in light, 10.48–10.51 in dark (white read 3.64 in light)
+  assert.strictEqual((tok.match(/--on-warn:\s*var\(--ink\);/g) || []).length, 1, 'light: the ink');
+  assert.strictEqual((tok.match(/--on-warn:\s*var\(--paper-card\);/g) || []).length, 1, 'dark: the card');
+  const files = [];
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).forEach((e) => { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else if (/\.html$/.test(e.name) && e.name !== 'form_public.html') files.push(f); });
+  walk(PA_WEB);
+  let amber = 0;
+  const bad = [];
+  files.forEach((f) => {
+    const src = fs.readFileSync(f, 'utf8');
+    for (const m of src.matchAll(/\{([^{}]*)\}|style="([^"]*)"/g)) {
+      const body = m[1] || m[2] || '';
+      if (!/background(?:-color)?:\s*var\(--warn\)/.test(body)) continue;
+      const c = /(?:^|[;\s])color:\s*([^;}"]+)/.exec(body);
+      if (!c) continue;
+      amber++;
+      if (c[1].trim() !== 'var(--on-warn)') bad.push(path.relative(PA_WEB, f) + ': ' + body.trim().slice(0, 80));
+    }
+  });
+  assert.deepStrictEqual(bad, [], 'text on the amber fill reads --on-warn');
+  assert.ok(amber >= 4, 'the sweep sees the amber text rules (non-vacuous): ' + amber);
+  const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.ok(/\.cn-admin-tab-badge\[data-tone="fail"\] \{ background: var\(--destructive\); color: var\(--paper-card\); \}/.test(cn), 'the red variant of an amber badge sets its own text — it would inherit --on-warn (ink on red in light mode)');
+  // pure helpers
+  const ctx = vm.createContext({ Object, Number, Math });
+  ['kbTrailPush_', 'kbTrailCut_', 'kbResumePick_', 'kbResumeStore_'].forEach((n) => vm.runInContext(extractFnFrom(kb, n), ctx));
+  const j = (v) => JSON.parse(JSON.stringify(v));
+  const e = (id) => ({ id, title: id, land: null });
+  let t = [];
+  ['a', 'b', 'c'].forEach((id) => { t = ctx.kbTrailPush_(t, e(id), 5); });
+  assert.deepStrictEqual(j(t).map((x) => x.id), ['a', 'b', 'c']);
+  t = ctx.kbTrailPush_(t, { id: 'a', title: 'a', land: { kind: 'row', text: 'x' } }, 5);
+  assert.deepStrictEqual(j(t).map((x) => x.id), ['b', 'c', 'a'], 'an entry already on the trail moves to the end');
+  assert.deepStrictEqual(j(t)[2].land, { kind: 'row', text: 'x' }, 'with its newer landing');
+  ['d', 'e', 'f'].forEach((id) => { t = ctx.kbTrailPush_(t, e(id), 5); });
+  assert.deepStrictEqual(j(t).map((x) => x.id), ['c', 'a', 'd', 'e', 'f'], 'at most five, the oldest drops');
+  assert.deepStrictEqual(j(ctx.kbTrailCut_(t, 1)).map((x) => x.id), ['c', 'a'], 'a chip drops the chips after it');
+  assert.deepStrictEqual(j(ctx.kbTrailCut_([], 0)), []);
+  const now = 1e12, day = 86400000, ids = ['man-5-1', 'man-5-6'];
+  const store = { 'Chapter 05 — Power Mobility': { id: 'man-5-6', h: '5.6.2', at: now - day } };
+  assert.deepStrictEqual(j(ctx.kbResumePick_(store, 'Chapter 05 — Power Mobility', ids, now, 7)), { id: 'man-5-6', h: '5.6.2' });
+  assert.strictEqual(ctx.kbResumePick_({ 'Chapter 05 — Power Mobility': { id: 'man-5-6', h: '', at: now - 7 * day } }, 'Chapter 05 — Power Mobility', ids, now, 7), null, 'a week old: no resume');
+  assert.strictEqual(ctx.kbResumePick_(store, 'Chapter 05 — Power Mobility', ['man-5-1'], now, 7), null, 'a section the reader cannot see: no resume');
+  assert.strictEqual(ctx.kbResumePick_({ 'Chapter 05 — Power Mobility': { id: 'man-5-6', at: now + day } }, 'Chapter 05 — Power Mobility', ids, now, 7), null, 'a stamp from the future is not trusted');
+  ['__proto__', 'constructor', 'toString'].forEach((k) => assert.strictEqual(ctx.kbResumePick_({}, k, ids, now, 7), null, k));
+  assert.strictEqual(ctx.kbResumePick_(null, 'x', ids, now, 7), null);
+  assert.deepStrictEqual(j(ctx.kbResumeStore_({ old: { id: 'man-1-1', at: now - 8 * day }, keep: { id: 'man-2-1', at: now - day } }, 'Chapter 05 — Power Mobility', { id: 'man-5-6', h: '5.6.2', at: now }, now, 7)),
+    { keep: { id: 'man-2-1', at: now - day }, 'Chapter 05 — Power Mobility': { id: 'man-5-6', h: '5.6.2', at: now } }, 'a stale chapter drops as another is saved');
+  // structure: the trail is the tab's; the drawer keeps Back; resume stores numbers only
+  assert.ok(!/KB_STATE\.backTo|kbManualBack_|kbManualPaintBack_/.test(kb), 'the single "Back to" chip is gone — the trail replaced it');
+  assert.ok(!/KB_STATE\.trail/.test(extractFnFrom(kb, 'kbDrawerOpenItem_')) && /kbDrawerBackToHtml_\(\)/.test(extractFnFrom(kb, 'kbDrawerOpenItem_')), 'the drawer keeps its own Back (operator decision 3)');
+  assert.ok(/\{ id: p\.id, h: p\.h, at: now \}/.test(extractFnFrom(kb, 'kbManualResumeNote_')) && /querySelectorAll\('\.kb-article \.kb-man-ssn'\)/.test(extractFnFrom(kb, 'kbManualSpy_')), 'a section id and a heading NUMBER (the .kb-man-ssn chip), never text');
+  assert.ok(/kbPanelPrefs_\(\)/.test(extractFnFrom(kb, 'kbManualResumeNote_')) && !/localStorage/.test(extractFnFrom(kb, 'kbManualResumeNote_')), 'inside umsKbPanel — no new storage key');
+  assert.ok(/if \(nav && nav\.chapter\)/.test(extractFnFrom(kb, 'kbOpenManualSection_')), 'only a chapter-level open resumes; an explicit target wins');
+  assert.ok(/kbManualFootnotes_\(body, '\.kb-article'\)/.test(extractFnFrom(kb, 'kbDrawerOpenItem_')), 'the drawer runs the footnote pass on a manual section');
+  assert.ok(/var band = main\.querySelector\('\.kb-man-top'\), pad = band && band\.offsetHeight \? band\.offsetHeight \+ 12/.test(extractFnFrom(kb, 'kbReaderScroll_')), 'a heading lands below the band\'s REAL height — the trail and the resume line make it taller than a fixed padding (measured: 12px clear at 1440 and 390)');
+  assert.ok(/class="kb-man-resume-acts"/.test(extractFnFrom(kb, 'kbManualPaintResume_')), 'Start of chapter and the dismiss wrap together');
+});
+
 test('MRD-4 (manual reader design Phase 4 + Phase 3\'s found items): no themed partial puts white text on a semantic fill; footnote numbers read as digits; a chunk heading splits its number; footnotes, glossary marks and cross-references share ONE card and ONE binding, inert inside the card; manual search hits are decorated like the chapter (driven)', () => {
   const kb = M1_KB_SRC;
   // the semantic-fill sweep — measured 2026-10-09: in dark mode white reads 1.40 on --good, 1.76 on --warn,

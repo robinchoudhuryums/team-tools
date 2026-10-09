@@ -91,3 +91,16 @@ against the repo; all exist as described. Repo-side corrections to the handoff:
   the search results (tab and drawer); the callout and step CSS extends to
   `.kb-chunk-body[data-kb-man]`.
 
+## Phase 5 adaptations (2026-10-09)
+
+- **Trail:** replaces `KB_STATE.backTo` (the single "Back to" chip) in the tab; the
+  section a link sits in joins the trail WITH its landing block, so any jump — not
+  only a cross-chapter one — is undoable; the drawer keeps its own Back (decision 3).
+  The handoff's "newest first" in compact is met by scrolling the row to its newest
+  end, not by reversing it.
+- **Resume:** "untargeted" means a chapter-level control (the M11 cards, ‹ › across
+  a chapter edge) — `nav.chapter`; the M12 home tiles will pass the same. Stored in
+  `umsKbPanel.resume` per chapter as {id, h, at}, entries over 7 days dropped on save.
+- **`--on-warn`** (tokens partial, both base blocks): the readable text on the amber
+  fill flips between modes, so no single existing token served.
+

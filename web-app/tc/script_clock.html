@@ -97,7 +97,7 @@
   .clk-brk-label { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
   .clk-brk-chip { font-family: var(--mono); font-size: 10.5px; background: var(--warn-soft); color: var(--warning-deep); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
   /* Lunch shaded darker than the 15-min breaks so it reads as the main break. */
-  .clk-brk-chip.lunch { background: var(--warn); color: var(--paper); font-weight: 600; }
+  .clk-brk-chip.lunch { background: var(--warn); color: var(--on-warn); font-weight: 600; }
   /* Pending punch-adjustment chip (operator 2026-08-31) — INFO-toned, because
      a request awaiting approval is a FACT about state, not a warning about
      the rep's day. Sits directly above the punch buttons: the whole point is
@@ -161,7 +161,7 @@
     background: var(--warn-glow); background: color-mix(in oklch, var(--warn) 20%, transparent); }
 
   /* Lunch / clock action colors (mirror the ribbon lunch = warn). */
-  .actions .prime.prime-warn { background: var(--warn); border-color: var(--warn); color: var(--paper); }
+  .actions .prime.prime-warn { background: var(--warn); border-color: var(--warn); color: var(--on-warn); }
   .actions .prime.prime-neutral { background: var(--paper-card); border-color: var(--line-2); color: var(--ink); }
   .actions .sec.act-lunchout { color: var(--warning-deep); }
   .actions .sec.act-lunchin, .actions .sec.act-clockin, .actions .sec.act-lunchin svg { color: var(--success-deep); }

@@ -5595,6 +5595,60 @@ test('MRD-4 DOM (manual reader design Phase 4): a footnote number becomes a butt
   assert.ok(!other.classList.contains('kb-chunk-doc-man') && other.querySelector('.kb-snip').textContent === 'Billing', 'the hand-written result keeps its own header');
 });
 
+test('MRD-5 DOM (manual reader design Phase 5): explicit opens build the reading trail (newest last, no duplicates) and a chip cuts it; a chapter-level open resumes where the rep left off and offers Start of chapter, an explicit one never does and a week-old point is ignored; the spy saves the point inside umsKbPanel; the drawer\'s section opens its footnotes', async () => {
+  const h = m4Boot_();
+  const w = h.window, doc = w.document;
+  const st = h.read('KB_STATE');
+  const ids = () => JSON.parse(JSON.stringify((st.trail || []).map((e) => e.id)));
+  h.read('kbOpenItem_')('man-0-10');
+  h.run.flushSuccess(M2_PART0, 'getManualPart');
+  assert.ok(!doc.querySelector('#kb-main .kb-trail'), 'one section: no trail row');
+  h.read('kbOpenItem_')('man-0-11');
+  assert.deepStrictEqual(ids(), ['man-0-10', 'man-0-11']);
+  const trail = doc.querySelector('#kb-main [data-kb-man-back] .kb-trail');
+  assert.ok(trail && trail.querySelector('.kb-trail-k').textContent === 'Read' && trail.querySelectorAll('.kb-trail-chip').length === 1, 'two sections: "Read" and one chip');
+  const chip = trail.querySelector('.kb-trail-chip');
+  assert.ok(chip.querySelector('.kb-trail-badge.kb-man-p0') && chip.querySelector('.kb-trail-n').textContent === '0.10', 'the chip carries the chapter badge and the number');
+  assert.ok(/0\.11/.test(trail.querySelector('.kb-trail-cur').textContent) && trail.querySelector('.kb-trail-cur').getAttribute('aria-current') === 'page');
+  h.read('kbOpenItem_')('man-0-10');
+  assert.deepStrictEqual(ids(), ['man-0-11', 'man-0-10'], 'a section opened again moves to the end — never twice');
+  h.read('kbManualTrailGo_')(0);
+  assert.deepStrictEqual(ids(), ['man-0-11'], 'a chip drops the chips after it, and the open it makes adds nothing');
+  // M16 — resume (inside umsKbPanel)
+  const prefs = () => JSON.parse(w.localStorage.getItem('umsKbPanel') || '{}');
+  const setResume = (r) => { const p = prefs(); p.resume = r; w.localStorage.setItem('umsKbPanel', JSON.stringify(p)); };
+  setResume({ 'Chapter 00 — CSR Core': { id: 'man-0-11', h: '', at: Date.now() - 86400000 } });
+  h.read('kbOpenItem_')('man-0-10');
+  assert.strictEqual(st.currentId, 'man-0-10', 'an explicit open never resumes');
+  assert.strictEqual(doc.querySelector('#kb-main [data-kb-man-resume]').innerHTML, '');
+  h.read('kbOpenItem_')('man-0-10', '', { chapter: true });
+  assert.strictEqual(st.currentId, 'man-0-11', 'a chapter-level open resumes at the saved section');
+  const line = doc.querySelector('#kb-main [data-kb-man-resume] .kb-man-resume');
+  assert.ok(line && /Back where you left off/.test(line.textContent) && /0\.11/.test(line.textContent) && /Notes and email conventions/.test(line.textContent), 'and says so');
+  const start = line.querySelector('[data-kb-id]');
+  assert.strictEqual(start.getAttribute('data-kb-id'), 'man-0-10', 'Start of chapter names the first section');
+  h.read('kbManualResumeStart_')(start.getAttribute('data-kb-id'));
+  assert.ok(st.currentId === 'man-0-10' && doc.querySelector('#kb-main [data-kb-man-resume]').innerHTML === '', 'Start of chapter opens it and the line goes');
+  setResume({ 'Chapter 00 — CSR Core': { id: 'man-0-11', h: '', at: Date.now() - 8 * 86400000 } });
+  h.read('kbOpenItem_')('man-0-10', '', { chapter: true });
+  assert.strictEqual(st.currentId, 'man-0-10', 'a point over a week old is ignored');
+  // the reading point is saved — an id and a number, after the throttle
+  h.read('kbOpenItem_')('man-0-11');
+  h.flushTimers();
+  const saved = prefs().resume['Chapter 00 — CSR Core'];
+  assert.ok(saved && saved.id === 'man-0-11' && typeof saved.at === 'number' && Object.keys(saved).sort().join() === 'at,h,id', 'umsKbPanel.resume holds {id, h, at} — no text');
+  // the drawer: a manual section's footnote opens its note
+  h.read('kbDrawerOpen_')();
+  h.read('kbDrawerOpenItem_')('man-0-11');
+  h.run.flushSuccess({ id: 'man-0-11', title: '0.11 Notes and email conventions', department: 'Chapter 00 — CSR Core', type: 'article', status: 'published',
+    bodyMd: 'Text\u00b9 here.\n\n**Notes**\n\n\u00b9 The drawer note.\n' }, 'getReferenceItem');
+  const ref = doc.querySelector('#kbd-body button.kb-fn-ref');
+  assert.ok(ref, 'the drawer wraps the reference');
+  h.click(ref);
+  const card = doc.getElementById('kb-xrefcard');
+  assert.ok(card.classList.contains('show') && /^Note \u00b9 · 0\.11 Notes and email conventions$/.test(card.querySelector('.xc-k').textContent) && /The drawer note/.test(card.textContent), 'and opens the note, named by the drawer\'s section');
+});
+
 test('M4 DOM: Print marks ONLY its own section for the one print block, for exactly as long as the dialog is up; since M8 it is the reader bar\'s Print, aimed at the section in view, and on a Quick Reference Card it says "card"', async () => {
   const h = m4Boot_();
   const w = h.window, doc = w.document;
@@ -5708,32 +5762,36 @@ test('M5a DOM: a cross-reference previews the PART of its target the link is abo
   assert.ok(!card().querySelector('.xc-focus') && /cup holder/.test(card().textContent), 'the opening, as before M5a');
 });
 
-test('M5a DOM: the click lands on that part — the target part loads and the ramps ROW is the landing, not the heading; a jump to another part leaves a "Back to 0.7" chip that returns to the row the rep left from; any other open clears it', async () => {
+test('M5a DOM: the click lands on that part — the target part loads and the ramps ROW is the landing, not the heading; since M15 (Phase 5) the section left from is a trail chip that returns to the row the rep left from; a chip drops the chips after it; a tree open never duplicates an entry', async () => {
   const h = m5aBoot_();
   const doc = h.window.document;
   h.read('kbOpenItem_')('man-0-7');
   h.run.flushSuccess(M5A_P0, 'getManualPart');
+  const chips = () => [...doc.querySelectorAll('#kb-main [data-kb-man-back] .kb-trail-chip')];
+  assert.strictEqual(chips().length, 0, 'one section read: no trail yet');
   h.click(m5aRow_(doc.getElementById('kb-man-sec-man-0-7'), 'Ramps').querySelector('a.kb-xref'));
   assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Chapter 05 — Power Mobility']);
   h.run.flushSuccess(M5A_P4, 'getManualPart');
   const faq = doc.getElementById('kb-man-sec-man-5-10');
   assert.ok(m5aRow_(faq, 'Do you sell ramps').classList.contains('kb-h-flash'), 'the ramps row is where the click landed');
   assert.ok(!faq.querySelector('.kb-man-sec-h').classList.contains('kb-h-flash') && !m5aRow_(faq, 'cup holders').classList.contains('kb-h-flash'), 'not the heading, not the opening row');
-  const chip = () => doc.querySelector('#kb-main [data-kb-man-back] button');
-  assert.ok(chip() && /Back to 0\.7/.test(chip().textContent) && /Insurance acceptance/.test(chip().textContent), 'the chip names where the rep came from');
-  assert.strictEqual(chip().getAttribute('onclick'), 'kbManualBack_()');
-  h.read('kbManualBack_')();
+  assert.strictEqual(chips().length, 1);
+  const c0 = chips()[0];
+  assert.ok(/0\.7/.test(c0.textContent) && /Insurance acceptance/.test(c0.getAttribute('title')), 'the chip names where the rep came from');
+  assert.ok(/5\.10/.test(doc.querySelector('#kb-main .kb-trail-cur').textContent), 'and the open section is the plain end of the trail');
+  assert.strictEqual(c0.getAttribute('onclick'), "kbManualTrailGo_(+this.getAttribute('data-trail-i'))");
+  h.read('kbManualTrailGo_')(0);
   assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Chapter 00 — CSR Core'], 'the part it came from reloads');
   h.run.flushSuccess(M5A_P0, 'getManualPart');
-  assert.ok(m5aRow_(doc.getElementById('kb-man-sec-man-0-7'), 'Ramps').classList.contains('kb-h-flash'), 'Back lands on the row the rep left from');
-  assert.ok(!chip(), 'and the chip is spent');
-  // Jump again, then open something the ordinary way: the chip goes.
+  assert.ok(m5aRow_(doc.getElementById('kb-man-sec-man-0-7'), 'Ramps').classList.contains('kb-h-flash'), 'the chip lands on the row the rep left from');
+  assert.strictEqual(chips().length, 0, 'and the chips after it dropped — back to one section');
+  // Jump again, then open the same section from the tree: no duplicate entry.
   h.click(m5aRow_(doc.getElementById('kb-man-sec-man-0-7'), 'Truck').querySelector('a.kb-xref'));
   h.run.flushSuccess(M5A_P4, 'getManualPart');
   assert.ok(m5aRow_(doc.getElementById('kb-man-sec-man-5-10'), 'truck lift').classList.contains('kb-h-flash'), 'the truck row lands on the truck answer');
-  assert.ok(chip(), 'a chip again');
+  assert.strictEqual(chips().length, 1, 'a chip again');
   h.read('kbOpenItem_')('man-5-10');
-  assert.ok(!chip(), 'an open from the tree or a search is a fresh start — no chip');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.read('KB_STATE').trail.map((e) => e.id))), ['man-0-7', 'man-5-10'], 'opening the section already at the end adds nothing');   // through JSON: the array is the window's (g116)
 });
 
 test('M5a DOM: the drawer keeps the trail — the preview\'s Open lands on the row; leaving a section by a code, a search or the router offers "Back to" it, which restores the scroll and pops (never pushes); closing the drawer forgets the trail', async () => {

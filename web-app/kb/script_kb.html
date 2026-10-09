@@ -273,7 +273,7 @@
   /* A narrow reader (the pop-out, a phone) keeps the section, not the chapter name,
      and ‹ › shrink to their chevrons (the label stays in the tooltip and the
      accessible name) — at 390px the title had kept five letters. */
-  @container (max-width: 560px) { .kb-man-bar-cn, .kb-man-bar-chev, .kb-man-bar-sep, .kb-man-bar-nav span { display: none; } .kb-man-bar { gap: 6px; padding-right: 10px; } .kb-man-bar-nav { padding: 5px 6px; } }
+  @container (max-width: 560px) { .kb-man-bar-cn, .kb-man-bar-chev, .kb-man-bar-sep, .kb-man-bar-nav span { display: none; } .kb-man-bar { gap: 6px; padding-right: 10px; } .kb-man-bar-nav { padding: 5px 6px; } .kb-trail-chip { min-height: 32px; } }
   /* M7 — the feedback line is quieter, so a 15-section page does not read as 15 footers. */
   .kb-man-fb { margin-top: 20px; padding-top: 0; border-top: none; gap: 4px; }
   .kb-man-fb .kb-fb-q { font-size: .8rem; color: var(--muted-2); margin-right: 4px; }
@@ -328,15 +328,29 @@
   .kbd-backto b { font-family: var(--mono); color: var(--accent); }
   .kb-man-back:empty { display: none; }
   /* M5a follow-on: the way back stays in reach — since M8 it is the first row of
-     the reader's one sticky band (.kb-man-top), above the reader bar. */
+     the reader's one sticky band (.kb-man-top), above the reader bar; since M15
+     (Phase 5) it holds the reading trail, which replaced the one "Back to" chip. */
   .kb-man-back { padding: 6px 22px; border-bottom: 1px solid var(--line); }
-  .kb-man-back-btn { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; font: inherit; font-size: .78rem; padding: 4px 10px;
-    border: 1px solid var(--line); border-radius: 999px; background: var(--paper-2); color: var(--ink); cursor: pointer; }
+  .kb-trail { display: flex; align-items: center; gap: 6px; overflow-x: auto; white-space: nowrap; min-width: 0; scrollbar-width: thin; }
+  .kb-trail-k { flex: none; font-family: var(--mono); font-size: .62rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2); margin-right: 2px; }
+  .kb-trail-chip { flex: none; display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: .76rem; padding: 3px 9px 3px 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper-2); color: var(--ink); cursor: pointer; }
+  .kb-trail-chip:hover, .kb-trail-chip:focus-visible { border-color: var(--border-strong); background: var(--paper-card); }
+  .kb-trail-badge { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: var(--man-c); color: var(--paper-card); }
+  .kb-trail-n { font-family: var(--mono); font-size: .92em; font-weight: 700; }
+  .kb-trail-t { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; color: var(--muted); }
+  .kb-trail-cur { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: .76rem; padding-left: 4px; }
+  .kb-trail-cur .kb-trail-t { color: var(--ink); }
+  .kb-trail > svg { flex: none; color: var(--muted-3); }
+  /* M16: "Back where you left off", under the bar. */
+  .kb-man-resume { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 14px 7px 22px; border-top: 1px solid var(--line); font-size: .78rem; color: var(--muted); background: var(--info-soft); }
+  .kb-man-resume > svg { flex: none; color: var(--info-deep); }
+  .kb-man-resume > span:not(.kb-man-resume-acts) { flex: 1 1 14em; min-width: 0; }   /* it shrinks beside the icon; the buttons wrap below it, together (390px) */
+  .kb-man-resume-acts { flex: none; margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+  .kb-man-resume b { font-family: var(--mono); color: var(--ink); }
+  .kb-man-resume-x { display: inline-flex; padding: 4px; border: none; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
+  .kb-man-resume-x:hover, .kb-man-resume-x:focus-visible { background: var(--paper-card); color: var(--ink); }
   /* A landed callout already has a tinted background, which outranks the flash — ring it instead. */
   .kb-article blockquote.kb-h-flash { box-shadow: 0 0 0 2px var(--accent); }
-  .kb-man-back-btn:hover, .kb-man-back-btn:focus-visible { border-color: var(--border-strong); background: var(--paper-card); }
-  .kb-man-back-btn b { font-family: var(--mono); color: var(--accent); }
-  .kb-man-back-t { color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #kb-xrefcard .lc-btn { font: inherit; font-size: .74rem; padding: 3px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper-2); color: var(--ink); text-decoration: none; }
   /* Batch M1 — the manual import dialog */
   .kb-man { max-width: 560px; }
@@ -3294,8 +3308,11 @@ function kbReaderScroll_(el, block, smooth) {
   if (!el) return;
   if (!main || !main.contains(el)) { try { el.scrollIntoView({ block: block, behavior: smooth ? 'smooth' : 'auto' }); } catch (e) {} return; }
   var mr = main.getBoundingClientRect(), r = el.getBoundingClientRect(), cs = window.getComputedStyle ? getComputedStyle(main) : {};
+  // Below the sticky band's REAL height when there is one — the trail row and the
+  // resume line (Phase 5) make it taller than any fixed scroll-padding.
+  var band = main.querySelector('.kb-man-top'), pad = band && band.offsetHeight ? band.offsetHeight + 12 : (parseFloat(cs.scrollPaddingTop) || 0);
   var off = block === 'center' ? (main.clientHeight - r.height) / 2
-    : (parseFloat(cs.scrollPaddingTop) || 0) + (parseFloat((window.getComputedStyle ? getComputedStyle(el) : {}).scrollMarginTop) || 0);
+    : pad + (parseFloat((window.getComputedStyle ? getComputedStyle(el) : {}).scrollMarginTop) || 0);
   var y = Math.max(0, main.scrollTop + (r.top - mr.top - (main.clientTop || 0)) - off);
   try { main.scrollTo({ top: y, behavior: smooth ? 'smooth' : 'auto' }); } catch (e) { main.scrollTop = y; }
 }
@@ -3356,6 +3373,13 @@ function kbMarkTreeCurrent_(id) {
 function kbOpenManualSection_(id, anchor, nav) {
   var dept = kbManualDeptOf_(id);
   if (!dept) return false;
+  // M16: a chapter-level open (a chapter card, ‹ › across chapters) resumes where
+  // the rep left off in that chapter, under a week ago; any explicit target wins.
+  if (nav && nav.chapter) {
+    var ids = (KB_STATE.tree || []).filter(function (it) { return it.department === dept; }).map(function (it) { return it.id; });
+    var r = kbResumePick_(kbPanelPrefs_().resume, dept, ids, Date.now(), KB_RESUME_DAYS);
+    if (r && (r.id !== id || r.h)) { KB_STATE.resumeLine = { id: r.id, h: r.h || '', first: id }; id = r.id; anchor = r.h || ''; }
+  }
   var main = document.getElementById('kb-main'); if (!main) return true;
   KB_STATE.currentId = id; KB_STATE.landing = false;
   kbMarkTreeCurrent_(id);
@@ -3558,8 +3582,9 @@ function kbFnNum_(sup) { return String(sup || '').split('').map(function (c) { r
  *  number AFTER it — never the first on the page. Each reference becomes a
  *  button (its text unchanged) that opens the note in the shared card;
  *  references inside the notes, code, links, buttons and diagrams are left. */
-function kbManualFootnotes_(root) {
-  root.querySelectorAll('.kb-man-sec .kb-article').forEach(function (art, ai) {
+function kbManualFootnotes_(root, sel) {
+  // `sel`: the chapter's section bodies by default; the drawer passes its one article.
+  root.querySelectorAll(sel || '.kb-man-sec .kb-article').forEach(function (art, ai) {
     var notes = [];
     [].slice.call(art.querySelectorAll('p')).forEach(function (p) {
       if (!(p.children.length === 1 && p.firstElementChild.tagName === 'STRONG' && p.textContent.trim() === 'Notes')) return;
@@ -3568,7 +3593,7 @@ function kbManualFootnotes_(root) {
         var m = /^\s*([\u00b9\u00b2\u00b3\u2074-\u2079\u2070]+)\s/.exec(n.textContent);
         if (!m) break;
         n.setAttribute('data-fn-note', m[1]);
-        if (!n.id) n.id = 'kb-fn-' + (art.closest('.kb-man-sec') || {}).id + '-' + notes.length;
+        if (!n.id) n.id = 'kb-fn-' + ((art.closest('.kb-man-sec') || {}).id || 'kbd') + '-' + notes.length;
         notes.push(n);
       }
     });
@@ -3611,10 +3636,11 @@ function kbFnShow_(b) {
   if (KB_XREF.origin === b && KB_XREF.key === key && KB_XREF.el && KB_XREF.el.classList.contains('show')) return;
   kbPopTake_(b, key);
   var sec = b.closest('.kb-man-sec'), h = sec && sec.querySelector('.kb-man-sec-h');
+  var where = h ? h.textContent : (b.closest('#kbd-body') && KB_DRAWER.cur ? KB_DRAWER.cur.title : '');   // the drawer reads one section
   var body = note.cloneNode(true), lead = body.firstChild;
   if (lead && lead.nodeType === 3) lead.nodeValue = lead.nodeValue.replace(/^\s*[\u00b9\u00b2\u00b3\u2074-\u2079\u2070]+\s*/, '');
   var el = kbXrefEl_();
-  el.innerHTML = '<div class="xc-k">Note ' + esc(b.textContent) + (h ? ' · ' + esc(h.textContent) : '') + '</div>' +
+  el.innerHTML = '<div class="xc-k">Note ' + esc(b.textContent) + (where ? ' · ' + esc(where) : '') + '</div>' +
     '<div class="kb-article xc-body">' + body.innerHTML + '</div>' +
     '<div class="xc-row"><button type="button" class="lc-btn" data-fn-go="' + esc(note.id) + '">Go to note</button></div>';
   el.classList.add('show');
@@ -3728,6 +3754,7 @@ function kbManualSkeletonHtml_(dept, id) {
 /** A chapter that failed to load keeps its masthead; the error goes where the
  *  bodies were (or fills the reader when no skeleton is up). */
 function kbManualLoadFail_(main, msg) {
+  KB_STATE.resumeLine = null;
   var host = main.querySelector('[data-kb-man-skel]');
   if (host) { host.removeAttribute('aria-busy'); host.removeAttribute('aria-label'); host.innerHTML = errorStateHtml_(msg); }
   else main.innerHTML = errorStateHtml_(msg);
@@ -3744,14 +3771,14 @@ function kbManualPaintChapNav_(main) {
     var txt = '<span class="kb-man-cn-txt"><span class="kb-man-cn-k">' + (dir < 0 ? 'Previous' : 'Next') +
       (cp.num ? ' · ' + (cp.appendix ? 'Appendix ' : 'Chapter ') + esc(cp.num) : '') + '</span><span class="kb-man-cn-n">' + esc(cp.name) + '</span></span>';
     var badge = kbManualChapterIcon_(dept, 15, 'kb-man-badge');
-    return '<button type="button" class="kb-man-cn' + (dir > 0 ? ' kb-man-cn-next' : '') + '" data-kb-id="' + esc(first) + '" title="' + esc(dept) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
+    return '<button type="button" class="kb-man-cn' + (dir > 0 ? ' kb-man-cn-next' : '') + '" data-kb-id="' + esc(first) + '" title="' + esc(dept) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'), \'\', { chapter: true })">' +
       (dir < 0 ? icon('chevronLeft', 14) + badge + txt : txt + badge + icon('chevronRight', 14)) + '</button>';
   };
   host.innerHTML = d < 0 ? '' : card(md.list[d - 1], -1) + card(md.list[d + 1], 1);
 }
 
 // ── M8 (design handoff, Phase 2) — the reader bar and its scroll-spy ─────────
-/** The reader's one sticky band: the "Back to" row (kbManualPaintBack_) above the
+/** The reader's one sticky band: the reading-trail row (kbManualPaintTrail_) above the
  *  bar — the chapter, the section in view, and Bookmark / Print / previous /
  *  next for THAT section. The section half is painted by kbManualBarPaint_. */
 function kbManualBarHtml_(dept, skelTitle) {
@@ -3771,7 +3798,7 @@ function kbManualBarHtml_(dept, skelTitle) {
         '<button type="button" class="kb-man-bar-nav" data-kb-man-bar-prev onclick="kbManualStep_(-1)" disabled>' + icon('chevronLeft', 12) + '<span></span></button>' +
         '<button type="button" class="kb-man-bar-nav" data-kb-man-bar-next onclick="kbManualStep_(1)" disabled><span></span>' + icon('chevronRight', 12) + '</button>' +
       '</span>' +
-    '</div></div>';
+    '</div><div data-kb-man-resume></div></div>';
 }
 /** Pure (Node-pinned) — previous / next for the reader bar: the neighbouring
  *  section of this chapter, or at a chapter's edge the neighbouring chapter (its
@@ -3838,7 +3865,7 @@ function kbManualBarPaint_(id) {
 }
 function kbManualStep_(dir) {
   var nb = KB_STATE.manualBarNav || {}, t = dir < 0 ? nb.prev : nb.next;
-  if (t && t.id) kbOpenItem_(t.id);
+  if (t && t.id) kbOpenItem_(t.id, '', t.chapter ? { chapter: true } : undefined);   // M16: a chapter step may resume
 }
 /** Keep a tree row in view by scrolling the TREE, never scrollIntoView (that can
  *  scroll the outer page inside the HtmlService iframe). */
@@ -3892,6 +3919,11 @@ function kbManualSpy_(main) {
   var i = kbManualSpyPick_(tops, line, atEnd, main.clientHeight, openIdx);
   var id = i >= 0 ? secs[i].getAttribute('data-kb-id') : '';
   if (id && id !== KB_STATE.manualSpyId) kbManualBarPaint_(id);
+  if (id) {   // M16: the sub-heading the rep has reached, by its NUMBER only
+    var sub = '';
+    [].forEach.call(secs[i].querySelectorAll('.kb-article .kb-man-ssn'), function (n) { if (n.getBoundingClientRect().top - top <= line) sub = n.textContent; });
+    kbManualResumeNote_(kbManualDeptOf_(id), id, sub);
+  }
 }
 
 // ── Batch M4 — print one section or card ─────────────────────────────────
@@ -4056,6 +4088,9 @@ function kbManualDateLabel_(iso) {
 function kbManualFocus_(id, anchor, instant, nav) {
   var sec = document.getElementById('kb-man-sec-' + id); if (!sec) return;
   KB_STATE.currentId = id;
+  // M15: an explicit open joins the trail — a section already on it moves to the
+  // end, so a chip's open (the trail already cut to it) adds nothing.
+  KB_STATE.trail = kbTrailPush_(KB_STATE.trail, { id: id, title: ((sec.querySelector('.kb-man-sec-h') || {}).textContent || id), land: null }, KB_TRAIL_MAX);
   kbMarkTreeCurrent_(id);
   var dept = sec.closest && sec.closest('.kb-main') ? kbManualDeptOf_(id) : '';
   // Open the part's tree group, so the rail shows where the reader is.
@@ -4070,7 +4105,9 @@ function kbManualFocus_(id, anchor, instant, nav) {
   var block = null;
   if (nav && nav.land) block = kbFindBlockEl_(sec, nav.land);
   if (!block && nav && (nav.ctx || nav.text)) block = kbXrefLandEl_(sec.querySelector('.kb-article'), kbManualSectionMd_(id), anchor, nav.ctx, nav.text);
-  kbManualPaintBack_();
+  kbManualPaintTrail_();
+  kbManualPaintResume_(id);
+  kbManualResumeNote_(kbManualDeptOf_(id), id, anchor && /^(?:\d+|[A-C])\./.test(anchor) ? anchor : '');
   KB_STATE.manualSpyHold = instant ? 0 : Date.now() + 800;   // a smooth scroll would name every section it passes
   kbManualBarPaint_(id);
   if (block) kbFlashBlock_(block, instant);
@@ -4094,23 +4131,96 @@ function kbManualSectionMd_(id) {
   var s = ((KB_STATE.manualPart || {}).sections || []).filter(function (x) { return x.id === id; })[0];
   return s ? (s.bodyMd || '') : '';
 }
-/** M5a — the "Back to" chip on a part page: shown after a cross-reference
- *  jumped here from ANOTHER part (the page it came from is gone); a click
- *  reopens that section on the block the rep left from. */
-function kbManualPaintBack_() {
+// ── M15 (design handoff, Phase 5) — the reading trail (the tab only; the drawer keeps Back) ──
+var KB_TRAIL_MAX = 5;
+/** Pure (Node-pinned) — push `e` onto the trail: newest last, de-duplicated (an
+ *  entry already on it moves to the end, its newer land kept), at most `max`. */
+function kbTrailPush_(trail, e, max) {
+  var out = (trail || []).filter(function (x) { return x && x.id !== e.id; });
+  out.push(e);
+  return out.slice(-(max || 5));
+}
+/** Pure (Node-pinned) — a chip goes back to entry `i`: the chips after it drop. */
+function kbTrailCut_(trail, i) { return (trail || []).slice(0, Math.max(0, i) + 1); }
+/** The trail row above the bar, once it holds two sections: "Read", a chip per
+ *  earlier section (its chapter badge, number, title), the open one as text. It
+ *  replaced the single "Back to" chip — the trail's previous entry is that place. */
+function kbManualPaintTrail_() {
   var host = document.querySelector('#kb-main [data-kb-man-back]'); if (!host) return;
-  var b = KB_STATE.backTo;
-  var here = b && ((KB_STATE.manualPart || {}).sections || []).some(function (s) { return s.id === b.id; });
-  if (!b || here) { host.innerHTML = ''; return; }
-  var t = String(b.title || ''), num = t.split(' ')[0];
-  host.innerHTML = '<button type="button" class="kb-man-back-btn" onclick="kbManualBack_()" title="Back to ' + esc(t) + '">' +
-    icon('chevronLeft', 12) + ' Back to <b>' + esc(num) + '</b> <span class="kb-man-back-t">' + esc(t.slice(num.length).trim()) + '</span></button>';
+  var t = KB_STATE.trail || [];
+  if (t.length < 2) { host.innerHTML = ''; return; }
+  var chips = '';
+  t.slice(0, -1).forEach(function (e, i) {
+    var st = kbManualSplitTitle_(e.title);
+    chips += '<button type="button" class="kb-trail-chip" data-trail-i="' + i + '" onclick="kbManualTrailGo_(+this.getAttribute(\'data-trail-i\'))" title="Back to ' + esc(e.title) + '">' +
+      kbManualChapterIcon_(kbManualDeptOf_(e.id), 10, 'kb-trail-badge') + (st.num ? '<b class="kb-trail-n">' + esc(st.num) + '</b>' : '') +
+      '<span class="kb-trail-t">' + esc(st.rest) + '</span></button>' + icon('chevronRight', 11);
+  });
+  var cs = kbManualSplitTitle_(t[t.length - 1].title);
+  host.innerHTML = '<nav class="kb-trail" aria-label="Reading trail"><span class="kb-trail-k">Read</span>' + chips +
+    '<span class="kb-trail-cur" aria-current="page">' + (cs.num ? '<b class="kb-trail-n">' + esc(cs.num) + '</b>' : '') + '<span class="kb-trail-t">' + esc(cs.rest) + '</span></span></nav>';
+  try { host.firstChild.scrollLeft = host.firstChild.scrollWidth; } catch (e) {}   // a narrow reader shows the newest end
 }
-function kbManualBack_() {
-  var b = KB_STATE.backTo; if (!b) return;
-  KB_STATE.backTo = null;
-  kbOpenItem_(b.id, '', { land: b.land });
+/** A chip: back to that section, on the block the rep left from; the chips after it drop. */
+function kbManualTrailGo_(i) {
+  var t = KB_STATE.trail || [], e = t[i]; if (!e) return;
+  KB_STATE.trail = kbTrailCut_(t, i);
+  kbOpenItem_(e.id, '', { land: e.land });
 }
+
+// ── M16 (design handoff, Phase 5) — resume where you left off ───────────────
+// Kept inside the umsKbPanel blob (operator 2026-10-09: no new storage key), per
+// chapter: {id, h, at} — a section id and a heading NUMBER, never text.
+var KB_RESUME_DAYS = 7;
+/** Pure (Node-pinned) — where to resume `dept`, or null: an entry under `days`
+ *  old at `now` that names a section the reader can see (`ids`). */
+function kbResumePick_(store, dept, ids, now, days) {
+  var e = store && typeof store === 'object' && Object.prototype.hasOwnProperty.call(store, dept) ? store[dept] : null;
+  if (!e || typeof e.id !== 'string' || (ids || []).indexOf(e.id) < 0) return null;
+  var age = now - Number(e.at || 0);
+  return age >= 0 && age < days * 86400000 ? { id: e.id, h: typeof e.h === 'string' ? e.h : '' } : null;
+}
+/** Pure (Node-pinned) — the store with `dept` set to `entry`, and every entry
+ *  older than `days` dropped (so the blob never grows past the chapters read this week). */
+function kbResumeStore_(store, dept, entry, now, days) {
+  var out = {};
+  Object.keys(store && typeof store === 'object' ? store : {}).forEach(function (k) {
+    var e = store[k];
+    if (e && now - Number(e.at || 0) < days * 86400000) out[k] = e;
+  });
+  out[dept] = entry;
+  return out;
+}
+/** Note the reading point — at most one write every 3 seconds, the latest wins. */
+function kbManualResumeNote_(dept, id, h) {
+  if (!dept || !id) return;
+  var key = dept + '|' + id + '|' + (h || '');
+  if (KB_STATE.resumeKey === key) return;
+  KB_STATE.resumeKey = key;
+  KB_STATE.resumePending = { dept: dept, id: id, h: h || '' };
+  if (KB_STATE.resumeTimer) return;
+  KB_STATE.resumeTimer = setTimeout(function () {
+    KB_STATE.resumeTimer = null;
+    var p = KB_STATE.resumePending; KB_STATE.resumePending = null;
+    if (!p) return;
+    var prefs = kbPanelPrefs_(), now = Date.now();
+    prefs.resume = kbResumeStore_(prefs.resume, p.dept, { id: p.id, h: p.h, at: now }, now, KB_RESUME_DAYS);
+    kbPanelSave_(prefs);
+  }, 3000);
+}
+/** "Back where you left off — 5.6.2 …" under the bar, after a resumed open. */
+function kbManualPaintResume_(id) {
+  var host = document.querySelector('#kb-main [data-kb-man-resume]'); if (!host) return;
+  var r = KB_STATE.resumeLine; KB_STATE.resumeLine = null;
+  if (!r || r.id !== id) { host.innerHTML = ''; return; }
+  var it = (KB_STATE.tree || []).filter(function (x) { return x.id === r.id; })[0], st = kbManualSplitTitle_(it ? it.title : '');
+  host.innerHTML = '<div class="kb-man-resume" role="status">' + icon('clock', 13) +
+    '<span>Back where you left off — <b>' + esc(r.h || st.num) + '</b> ' + esc(st.rest) + '</span>' +
+    '<span class="kb-man-resume-acts"><button type="button" class="kb-btn" data-kb-id="' + esc(r.first) + '" onclick="kbManualResumeStart_(this.getAttribute(\'data-kb-id\'))">Start of chapter</button>' +
+    '<button type="button" class="kb-man-resume-x" aria-label="Dismiss" title="Dismiss" onclick="kbManualResumeDismiss_()">' + icon('x', 12) + '</button></span></div>';
+}
+function kbManualResumeDismiss_() { var host = document.querySelector('#kb-main [data-kb-man-resume]'); if (host) host.innerHTML = ''; }
+function kbManualResumeStart_(firstId) { kbManualResumeDismiss_(); kbOpenItem_(firstId); }
 
 /** A manual section's feedback bar: Yes / No, and "Suggest an edit" in place
  *  of "Out of date" (the same review-queue flag, with a required note). */
@@ -4176,12 +4286,12 @@ function kbXrefOpen_(id, anchor, a) {
   var nav = { ctx: kbXrefContext_(ctx), text: ctx && ctx.textContent || '' };
   if (ctx && ctx.closest && ctx.closest('#kb-drawer')) { kbDrawerOpenItem_(id, anchor, nav); return; }
   if (ctx && ctx.closest && ctx.closest('#kb-main')) {
-    // M5a: a jump to ANOTHER part of the manual leaves a "Back to" chip — the
-    // part page it replaces is gone, and the rep was mid-read there.
+    // M15: the section the link sits in joins the trail with the block the rep
+    // left from, so its chip lands back there (M5a's "Back to", for any jump).
     var fromSec = ctx.closest('.kb-man-sec'), fromId = fromSec && fromSec.getAttribute('data-kb-id');
-    if (fromId && kbIsManualId_(id) && kbManualDeptOf_(id) && kbManualDeptOf_(id) !== kbManualDeptOf_(fromId)) {
+    if (fromId && kbIsManualId_(id)) {
       var h = fromSec.querySelector('.kb-man-sec-h');
-      KB_STATE.backTo = { id: fromId, title: h ? h.textContent : fromId, land: kbXrefLandOf_(ctx) };
+      KB_STATE.trail = kbTrailPush_(KB_STATE.trail, { id: fromId, title: h ? h.textContent : fromId, land: kbXrefLandOf_(ctx) }, KB_TRAIL_MAX);
     }
     kbOpenItem_(id, anchor, nav);
     return;
@@ -6582,9 +6692,6 @@ function kbRequestArticlePrompt_(query) {
 }
 
 function kbOpenItem_(id, anchor, nav) {
-  // M5a: only a cross-reference (or its Back) carries `nav`; any other open —
-  // the tree, search, a jump row — is a fresh start, so the Back chip goes.
-  if (!nav) KB_STATE.backTo = null;
   // Batch M2 — a manual section opens in its part's continuous page.
   if (kbIsManualId_(id) && kbOpenManualSection_(id, anchor, nav)) return;
   KB_STATE.manualPart = null;
@@ -8046,7 +8153,7 @@ function kbDrawerOpenItem_(id, anchor, nav) {
         body.innerHTML = back + '<div class="kb-article">' + kbMd_(res.bodyMd || '') + '</div>' + kbFeedbackBarHtml_(res) + '<div id="kbd-comments"></div>';
         kbGlossaryAnnotate_(body);
         var art = body.querySelector('.kb-article');
-        if (kbIsManualId_(id)) kbLinkHcpcs_(art);
+        if (kbIsManualId_(id)) { kbLinkHcpcs_(art); kbManualFootnotes_(body, '.kb-article'); }   // Phase 5: footnotes open their note here too
         // M5a: a Back restores where the rep was; a cross-reference lands on the
         // block its preview chose; else the anchor, as before.
         var landed = null;
