@@ -10,6 +10,24 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-09 — manual reader design, Phase 6 (manual home) + the drawer's decoration
+
+**Adds NO operator state.** Deploy as usual (`clasp push -f` + New version); no
+re-import, no manual rebuild. Phases 7–8 wait for your go-ahead.
+- **Manual home (M12):** the Reference landing opens with "Procedures manual" and
+  its version line, then two cards — "What did the caller say?" (the call router,
+  with three openers taken from the real router) and "Go to a section" (type 5.2,
+  B.1 or card 5; Enter opens) — then a tile per chapter and per appendix (badge,
+  name, section count, how many were updated). A tile resumes where you left off
+  in that chapter, like the chapter cards. The payor and price lookups follow.
+- **Your call — pop-out order:** on a wide screen the manual home comes first, as
+  the handoff drew it. In the pop-out and on a phone the lookups come first (they
+  are the mid-call tools; below the chapter grid they sat ~1,100px down). Say if
+  you would rather have one order everywhere.
+- **The Ctrl+K drawer:** a manual section opened there now shows its callout labels
+  (CRITICAL / POLICY / WATCH-OUT / NOTE) and numbered step circles in its chapter
+  colour, as the Reference tab does.
+
 ## 2026-10-09 — manual reader design, Phase 5 (reading trail, resume) + Phase 4's open items
 
 **Adds NO operator state** — no Script Property and no new browser storage key (the

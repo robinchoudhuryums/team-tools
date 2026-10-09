@@ -5649,6 +5649,65 @@ test('MRD-5 DOM (manual reader design Phase 5): explicit opens build the reading
   assert.ok(card.classList.contains('show') && /^Note \u00b9 · 0\.11 Notes and email conventions$/.test(card.querySelector('.xc-k').textContent) && /The drawer note/.test(card.textContent), 'and opens the note, named by the drawer\'s section');
 });
 
+test('MRD-6 DOM (manual reader design Phase 6): the manual home sits above the lookups — version, three openers from the REAL router (rows the reader can reach), chapter tiles with counts; "Go to a section" survives a landing re-render with its focus and value and opens on Enter; a tile is a chapter-level open that resumes; no manual, no home; the drawer\'s manual section draws its callout labels in its chapter colour', async () => {
+  const h = m4Boot_();
+  const w = h.window, doc = w.document;
+  const land = doc.querySelector('#kb-main .kb-land');
+  const home = doc.getElementById('kb-home');
+  assert.ok(home && land.firstElementChild === home && land.querySelector('.kb-lookups'), 'the home leads the landing, the lookups follow');
+  const tiles = () => [...doc.querySelectorAll('#kb-home .kb-home-tile')];
+  assert.deepStrictEqual(tiles().map((t) => [t.querySelector('.kb-home-n').textContent, t.querySelector('.kb-home-name').textContent, t.querySelector('.kb-home-meta').textContent]),
+    [['Chapter 00', 'CSR Core', '2 sections'], ['Chapter 10', 'Billing & Denials', '1 section']], 'a tile per chapter, in order, with its section count');
+  assert.ok(tiles()[0].querySelector('.kb-man-badge.kb-man-p0') && tiles()[0].getAttribute('data-kb-id') === 'man-0-10', 'its badge, and its first section');
+  const today = new Date(); const ago = (n) => new Date(today.getTime() - n * 86400000).toISOString().slice(0, 10);
+  h.run.flushSuccess({ version: 'v3.0', built: '09/15/2026', changelog: [{ date: ago(40), num: '0.11', id: 'man-0-11', anchor: '', summary: 'x', retraining: false }],
+    router: [{ q: 'Where is my equipment?', t: [{ id: 'man-0-10' }] }, { q: 'A row for a section this reader cannot see', t: [{ id: 'man-9-9' }] }, { q: 'You\'re waiting on my <doctor>?', t: [{ id: 'man-0-11' }] }] }, 'getManualMeta');
+  assert.ok(/CSR Procedures Manual v3\.0 · built 09\/15\/2026/.test(doc.querySelector('#kb-home .kb-home-ver').textContent), 'the version line');
+  assert.deepStrictEqual([...doc.querySelectorAll('#kb-home-ex span')].map((x) => x.textContent), ['“Where is my equipment?”', '“You\'re waiting on my <doctor>?”'], 'openers from the real router, only rows the reader can reach, escaped');
+  assert.ok(/2 sections · 1 updated/.test(tiles()[0].textContent), 'the updated count, once the meta is in');
+  // "Go to a section"
+  const input = doc.getElementById('kb-home-jump');
+  input.focus();
+  input.value = '0.11';
+  h.read('kbHomeJump_')(input);
+  assert.ok(/Go to\s*0\.11/.test(doc.getElementById('kb-home-jhit').textContent), 'the typed number\'s section');
+  h.read('kbRenderLanding_')();   // a manager loader landing late
+  assert.ok(doc.getElementById('kb-home-jump') === input && input.value === '0.11' && doc.activeElement === input, 'the jump box survives a landing re-render — the same node, its value and its focus (T1)');
+  input.value = '9.99';
+  h.read('kbHomeJump_')(input);
+  assert.ok(/No section by that number/.test(doc.getElementById('kb-home-jhit').textContent));
+  input.value = '0.11';
+  let prevented = false;
+  h.read('kbHomeJumpKey_')({ key: 'Enter', preventDefault: () => { prevented = true; } }, input);
+  assert.ok(prevented && h.read('KB_STATE').currentId === 'man-0-11', 'Enter opens it');
+  // a tile resumes (a chapter-level open)
+  h.run.flushSuccess(M2_PART0, 'getManualPart');
+  const p = JSON.parse(w.localStorage.getItem('umsKbPanel') || '{}');
+  p.resume = { 'Chapter 00 — CSR Core': { id: 'man-0-11', h: '', at: Date.now() - 3600000 } };
+  w.localStorage.setItem('umsKbPanel', JSON.stringify(p));
+  h.read('KB_STATE').currentId = null; h.read('KB_STATE').landing = true;
+  h.read('kbRenderLanding_')();
+  assert.ok(/kbOpenItem_\(this\.getAttribute\('data-kb-id'\), '', \{ chapter: true \}\)/.test(tiles()[0].getAttribute('onclick')), 'a tile is a chapter-level open');
+  h.read('kbOpenItem_')(tiles()[0].getAttribute('data-kb-id'), '', { chapter: true });
+  assert.strictEqual(h.read('KB_STATE').currentId, 'man-0-11', 'so it resumes where the rep left off');
+  // no manual, no home
+  h.read('KB_STATE').tree = [{ id: 'kb-1', department: 'Billing', title: 'Hand-written', type: 'article', status: 'published' }];
+  h.read('KB_STATE').landing = true;
+  doc.getElementById('kb-main').innerHTML = '';
+  h.read('kbRenderLanding_')();
+  assert.ok(!doc.getElementById('kb-home') && doc.querySelector('#kb-main .kb-lookups'), 'a library with no manual has no home');
+  // the drawer's manual section: callout labels, chapter colour
+  h.read('KB_STATE').tree = M2_TREE.items;
+  h.read('kbDrawerOpen_')();
+  h.read('kbDrawerOpenItem_')('man-0-11');
+  h.run.flushSuccess({ id: 'man-0-11', title: '0.11 Notes and email conventions', department: 'Chapter 00 — CSR Core', type: 'article', status: 'published',
+    bodyMd: '> **Watch-out** — the TRX, never a name.\n\n| Step | Action |\n|---|---|\n| 1 | Ask |\n| 2 | Act |\n' }, 'getReferenceItem');
+  const art = doc.querySelector('#kbd-body .kb-article');
+  assert.ok(art.hasAttribute('data-kb-man') && art.classList.contains('kbd-man-art') && art.classList.contains('kb-man-p0'), 'marked as a manual section, in its chapter colour');
+  assert.strictEqual(art.querySelector('.kb-co-kick').textContent, 'Watch-out', 'the callout label');
+  assert.ok(art.querySelector('table.kb-steps'), 'the step table the circles draw on');
+});
+
 test('M4 DOM: Print marks ONLY its own section for the one print block, for exactly as long as the dialog is up; since M8 it is the reader bar\'s Print, aimed at the section in view, and on a Quick Reference Card it says "card"', async () => {
   const h = m4Boot_();
   const w = h.window, doc = w.document;

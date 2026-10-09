@@ -104,3 +104,15 @@ against the repo; all exist as described. Repo-side corrections to the handoff:
 - **`--on-warn`** (tokens partial, both base blocks): the readable text on the amber
   fill flips between modes, so no single existing token served.
 
+## Phase 6 adaptations (2026-10-09)
+
+- **Order:** the home leads a wide landing (the handoff); a landing ≤680px wide
+  (the pop-out, a phone) puts the lookups first by CSS `order` — measured, the
+  lookups sat ~1,100px down at 480px. Flagged to the operator.
+- **The jump box** lives in a home that is inserted ONCE (`kbHomeEnsure_`); only
+  its read-only parts repaint (`kbHomePaint_`) — the T1 rule.
+- **Router openers** are the first three router rows whose targets the reader can
+  see; the "recently changed" list stays where it was in the landing blocks.
+- **The drawer's decoration:** the callout and step CSS now keys on
+  `.kb-article[data-kb-man]` (search chunks and the drawer's section alike).
+

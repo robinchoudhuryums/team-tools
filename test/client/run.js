@@ -35139,6 +35139,24 @@ test('MRD-2 (manual reader design Phase 2): the reader bar\'s title split, chapt
   assert.ok(!/background:\s*var\(--accent\);\s*color:\s*#fff/i.test(css) && /\.toast-act \{[^}]*background: var\(--accent\); color: var\(--paper-card\)/.test(css), 'the toast action reads --paper-card on the accent');
 });
 
+test('MRD-6 (manual reader design Phase 6 + the drawer\'s decoration): the manual home is inserted ONCE ahead of the lookups and only its read-only parts repaint (the jump box survives — T1); its tiles resume; the drawer\'s manual section takes the chapter decoration', () => {
+  const kb = M1_KB_SRC;
+  const land = extractFnFrom(kb, 'kbRenderLanding_');
+  assert.strictEqual((land.match(/kbHomeEnsure_\(main\);/g) || []).length, 2, 'both landing paths (the patch and the full render) ensure the home');
+  const ens = extractFnFrom(kb, 'kbHomeEnsure_');
+  assert.ok(/if \(!home\) land\.insertAdjacentHTML\('afterbegin', kbHomeHtml_\(\)\);/.test(ens), 'inserted once, ahead of the lookups — never re-rendered');
+  assert.ok(/if \(!kbHasManual_\(\) \|\| !land\) \{ if \(home\) home\.remove\(\); return; \}/.test(ens), 'no manual, no home');
+  const paint = extractFnFrom(kb, 'kbHomePaint_');
+  assert.ok(!/kb-home-jump|\.innerHTML = .*kbHomeHtml_/.test(paint) && /getElementById\('kb-home-head'\)/.test(paint), 'the repaint never touches the jump box');
+  assert.ok(/\{ chapter: true \}/.test(paint), 'a tile is a chapter-level open (M16 resumes it)');
+  assert.ok(/@container \(max-width: 680px\) \{ \.kb-land > \.kb-lookups \{ order: -1; \} \}/.test(kb) && /\.kb-land \{[^}]*container-type: inline-size;/.test(kb), 'a narrow landing (pop-out, phone) puts the lookups first — by container, so both triggers (A2)');
+  assert.ok(/kbOpenItem_\(t\.id, t\.anchor\)/.test(extractFnFrom(kb, 'kbHomeJumpKey_')) && /kbManualNumberTarget_\(/.test(extractFnFrom(kb, 'kbHomeJump_')), 'the jump box uses the one section-number reader');
+  const dr = extractFnFrom(kb, 'kbDrawerOpenItem_');
+  assert.ok(/kbDecorateCallouts_\(body, '\.kb-article\[data-kb-man\] blockquote\.kb-callout'\)/.test(dr) && /' kbd-man-art' \+ \(dk \? ' kb-man-' \+ dk : ''\) \+ '" data-kb-man="'/.test(dr), 'the drawer marks its manual section and labels its callouts');
+  assert.ok(!/^ {2}[^\n']*\.kb-chunk-body\[data-kb-man\] (blockquote|table)[^\n]*\{/m.test(kb) && /^ {2}[^\n']*\.kb-article\[data-kb-man\] blockquote\.kb-callout[^\n]*\{/m.test(kb), 'the callout and step CSS rules key on .kb-article[data-kb-man] — results and the drawer alike');
+  assert.ok(/\.kbd-man-art \{ --man-c: var\(--muted\); \}|, \.kbd-man-art \{ --man-c: var\(--muted\); \}/.test(kb), 'an appendix in the drawer has a colour to fall back on');
+});
+
 test('MRD-5 (manual reader design Phase 5 + Phase 4\'s open items): text on a filled amber is --on-warn (ink in light, the card in dark); the trail and resume helpers are pure and driven; the trail is the tab\'s and the drawer keeps Back; resume stores an id and a heading NUMBER; the drawer runs the footnote pass (driven)', () => {
   const kb = M1_KB_SRC;
   const tok = fs.readFileSync(path.join(PA_WEB, 'styles_design_tokens.html'), 'utf8');
@@ -35242,7 +35260,7 @@ test('MRD-4 (manual reader design Phase 4 + Phase 3\'s found items): no themed p
   assert.ok(!/data-tip/.test(gl) && /setAttribute\('role', 'button'\)/.test(gl) && /setAttribute\('data-def', info\.def\)/.test(gl), 'the glossary mark carries its definition for the card; no CSS tooltip');
   // M18 — results decorated like the chapter, in the tab AND the drawer
   assert.strictEqual((kb.match(/kbDecorateManualResults_\((main|body)\);/g) || []).length, 2, 'both result surfaces decorate');
-  assert.ok((kb.match(/\.kb-chunk-body\[data-kb-man\] blockquote\.kb-callout/g) || []).length >= 5 && (kb.match(/\.kb-chunk-body\[data-kb-man\] table\.kb-steps/g) || []).length >= 3, 'the callout and step rules reach manual results');
+  assert.ok((kb.match(/\.kb-article\[data-kb-man\] blockquote\.kb-callout/g) || []).length >= 5 && (kb.match(/\.kb-article\[data-kb-man\] table\.kb-steps/g) || []).length >= 3, 'the callout and step rules reach manual results (and, since Phase 6, the drawer\'s section)');
   assert.ok(/kbDecorateCallouts_\(root, '\.kb-man-sec blockquote\.kb-callout'\);/.test(extractFnFrom(kb, 'kbManualDecorate_')), 'ONE callout decorator for the chapter and the results');
 });
 

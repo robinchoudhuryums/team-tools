@@ -129,7 +129,7 @@
      title (its stripe went in the design handoff's M6, 2026-10-09 — one colour
      cue per level), and the icon beside it in the tree. --man-pN are tokens;
      the badge's icon is the page colour, so it reads in light and dark. */
-  .kb-man-part, .kb-man-bar, .kb-chunk-doc-man, .kb-res-dot { --man-c: var(--muted); }   /* an appendix has no chapter colour; the chapter classes below override */
+  .kb-man-part, .kb-man-bar, .kb-chunk-doc-man, .kb-res-dot, .kbd-man-art { --man-c: var(--muted); }   /* an appendix has no chapter colour; the chapter classes below override */
   .kb-man-p0 { --man-c: var(--man-p0); } .kb-man-p1 { --man-c: var(--man-p1); } .kb-man-p2 { --man-c: var(--man-p2); } .kb-man-p3 { --man-c: var(--man-p3); } 
   .kb-man-p4 { --man-c: var(--man-p4); } .kb-man-p5 { --man-c: var(--man-p5); } .kb-man-p6 { --man-c: var(--man-p6); } .kb-man-p7 { --man-c: var(--man-p7); } 
   .kb-man-p8 { --man-c: var(--man-p8); } .kb-man-p9 { --man-c: var(--man-p9); } .kb-man-p10 { --man-c: var(--man-p10); } 
@@ -206,11 +206,11 @@
   /* M2 — a callout reads kicker, title, body: a hairline box, the label in mono
      (kbManualDecorate_ wraps it — text never changes), and only Critical keeps a
      full-strength border. */
-  .kb-man-part .kb-article blockquote.kb-callout, .kb-chunk-body[data-kb-man] blockquote.kb-callout { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 16px 13px; }
-  .kb-man-part .kb-article blockquote.kb-callout-critical, .kb-chunk-body[data-kb-man] blockquote.kb-callout-critical { border: 1.5px solid var(--danger); }
-  .kb-man-part .kb-article blockquote.kb-callout-policy, .kb-chunk-body[data-kb-man] blockquote.kb-callout-policy { border-color: color-mix(in oklab, var(--info) 35%, transparent); }
-  .kb-man-part .kb-article blockquote.kb-callout-watch-out, .kb-chunk-body[data-kb-man] blockquote.kb-callout-watch-out { border-color: color-mix(in oklab, var(--warn) 35%, transparent); }
-  .kb-man-part .kb-article blockquote.kb-callout > p:first-child > strong:first-child, .kb-chunk-body[data-kb-man] blockquote.kb-callout > p:first-child > strong:first-child { display: block; }
+  .kb-man-part .kb-article blockquote.kb-callout, .kb-article[data-kb-man] blockquote.kb-callout { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 16px 13px; }
+  .kb-man-part .kb-article blockquote.kb-callout-critical, .kb-article[data-kb-man] blockquote.kb-callout-critical { border: 1.5px solid var(--danger); }
+  .kb-man-part .kb-article blockquote.kb-callout-policy, .kb-article[data-kb-man] blockquote.kb-callout-policy { border-color: color-mix(in oklab, var(--info) 35%, transparent); }
+  .kb-man-part .kb-article blockquote.kb-callout-watch-out, .kb-article[data-kb-man] blockquote.kb-callout-watch-out { border-color: color-mix(in oklab, var(--warn) 35%, transparent); }
+  .kb-man-part .kb-article blockquote.kb-callout > p:first-child > strong:first-child, .kb-article[data-kb-man] blockquote.kb-callout > p:first-child > strong:first-child { display: block; }
   .kb-co-kick { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
   .kb-callout-critical .kb-co-kick { color: var(--danger-deep); }
   .kb-callout-policy .kb-co-kick { color: var(--info-deep); }
@@ -236,12 +236,12 @@
   }
   /* M4b — a step's number sits in a circle in the chapter colour; the arrow to the
      next step stays (the operator's pick over a plain rail). Still a <table>. */
-  .kb-man-part .kb-article table.kb-steps td:first-child, .kb-chunk-body[data-kb-man] table.kb-steps td:first-child { z-index: 0; width: 44px; vertical-align: top; padding-top: 12px;
+  .kb-man-part .kb-article table.kb-steps td:first-child, .kb-article[data-kb-man] table.kb-steps td:first-child { z-index: 0; width: 44px; vertical-align: top; padding-top: 12px;
     font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--ink); border-bottom-color: transparent; }
-  .kb-man-part .kb-article table.kb-steps td:first-child::before, .kb-chunk-body[data-kb-man] table.kb-steps td:first-child::before { content: ""; position: absolute; z-index: -1; left: 50%; top: 9px;
+  .kb-man-part .kb-article table.kb-steps td:first-child::before, .kb-article[data-kb-man] table.kb-steps td:first-child::before { content: ""; position: absolute; z-index: -1; left: 50%; top: 9px;
     width: 24px; height: 24px; margin-left: -12px; box-sizing: border-box; border-radius: 50%;
     border: 1.5px solid var(--man-c); background: color-mix(in oklab, var(--man-c) 12%, var(--paper-card)); }
-  .kb-man-part .kb-article table.kb-steps tbody tr:not(:last-child) td:first-child::after, .kb-chunk-body[data-kb-man] table.kb-steps tbody tr:not(:last-child) td:first-child::after { color: var(--man-c); }
+  .kb-man-part .kb-article table.kb-steps tbody tr:not(:last-child) td:first-child::after, .kb-article[data-kb-man] table.kb-steps tbody tr:not(:last-child) td:first-child::after { color: var(--man-c); }
   /* M5 — a section link is a solid underline; a bare number link reads as a number. */
   .kb-man-part .kb-article a.kb-xref { text-decoration-style: solid; text-decoration-thickness: 1px; text-decoration-color: color-mix(in oklab, var(--accent) 50%, transparent); }
   .kb-man-part .kb-article a.kb-xref.kb-xref-num { font-family: var(--mono); font-size: .88em; font-weight: 600; }
@@ -632,7 +632,42 @@
   /* The landing is wider than it was so the two-panel band has room; the
      CONTENT blocks below it keep the old 760px measure, because a Recents list
      at 1200px is worse, not better. */
-  .kb-land { max-width: 1200px; }
+  .kb-land { max-width: 1200px; container-type: inline-size; display: flex; flex-direction: column; }
+  /* Phase 6: the manual home leads a wide landing (the handoff's M12), but where
+     the landing is narrow — the pop-out, a phone — the payor and price lookups
+     come first: they are the mid-call tools, and below a 14-tile chapter grid they
+     sat ~1,100px down (measured at 480px). Visual order only; the DOM, and the
+     jump box inside it, are untouched (A2: by container, not data-compact alone). */
+  @container (max-width: 680px) { .kb-land > .kb-lookups { order: -1; } }
+  /* M12 (design handoff, Phase 6) — the manual home. Its own container, so the
+     tiles and cards reflow by its width: the pop-out, a phone and a wide screen alike (A2). */
+  .kb-home { container-type: inline-size; margin-bottom: 26px; }
+  .kb-home-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 12px; }
+  .kb-home-h { margin: 0; font-family: var(--display); font-size: 1.6rem; font-weight: 600; letter-spacing: -.02em; line-height: 1.2; }
+  .kb-home-ver { font-size: .78rem; color: var(--muted-2); }
+  .kb-home-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .kb-home-card { display: flex; flex-direction: column; gap: 6px; min-width: 0; text-align: left; font: inherit; padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); color: var(--ink); }
+  button.kb-home-card { cursor: pointer; }
+  button.kb-home-card:hover, button.kb-home-card:focus-visible { border-color: var(--border-strong); background: var(--paper-2); }
+  .kb-home-k { display: flex; align-items: center; gap: 6px; font-size: .9rem; font-weight: 600; color: var(--accent); }
+  .kb-home-k-ink { color: var(--ink); }
+  .kb-home-ex { display: flex; flex-direction: column; gap: 2px; font-size: .84rem; color: var(--muted); }
+  .kb-home-hint { font-size: .72rem; color: var(--muted-2); }
+  .kb-home-jump input { font: inherit; padding: 8px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); min-width: 0; }
+  .kb-home-jhit:empty { display: none; }
+  .kb-home-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .kb-home-tile { display: flex; align-items: flex-start; gap: 10px; min-width: 0; text-align: left; font: inherit; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); color: var(--ink); cursor: pointer; }
+  .kb-home-tile:hover, .kb-home-tile:focus-visible { border-color: var(--border-strong); background: var(--paper-2); }
+  .kb-home-let { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line); background: var(--paper-2); color: var(--muted); font-family: var(--mono); font-weight: 700; }
+  .kb-home-tt { display: flex; flex-direction: column; min-width: 0; }
+  .kb-home-n { font-family: var(--mono); font-size: .66rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-2); }
+  .kb-home-name { font-size: .9rem; font-weight: 600; overflow-wrap: anywhere; }
+  .kb-home-meta { margin-top: 2px; font-size: .74rem; color: var(--muted); }
+  .kb-home-meta b { font-weight: 600; color: var(--info-deep); }
+  .kb-home-sub { margin: 14px 0 8px; font-family: var(--mono); font-size: .66rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2); }
+  @container (max-width: 900px) { .kb-home-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @container (max-width: 680px) { .kb-home-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .kb-home-cards { grid-template-columns: minmax(0, 1fr); } }
+  @container (max-width: 380px) { .kb-home-tile { padding: 9px; gap: 8px; } .kb-home-tile .kb-man-badge, .kb-home-let { width: 24px; height: 24px; } }
   .kb-land-sec { margin-bottom: 22px; max-width: 760px; }
   .kb-land-h { font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
   .kb-land-h .kb-land-sub { font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted-2); }
@@ -3567,7 +3602,8 @@ function kbDecorateCallouts_(root, sel) {
   });
 }
 /** M18 — a manual hit in the search results reads like the chapter: the same
- *  callout kicker (the CSS extends to .kb-chunk-body[data-kb-man]). */
+ *  callout kicker (the CSS reaches every .kb-article[data-kb-man]: a result
+ *  chunk, and since Phase 6 the drawer's section). */
 function kbDecorateManualResults_(rootEl) {
   if (rootEl) kbDecorateCallouts_(rootEl, '.kb-chunk-body[data-kb-man] blockquote.kb-callout');
 }
@@ -6281,11 +6317,89 @@ function kbRenderLanding_() {
   var blocks = document.getElementById('kb-land-blocks');
   if (blocks && main.querySelector('.kb-lookups')) {
     blocks.innerHTML = kbLandingBlocksHtml_();   // the band, and anything typed into it, is untouched
+    kbHomeEnsure_(main);
     return;
   }
   kbLookupsForget_('');
   main.innerHTML = '<div class="kb-land">' + kbLandingBandHtml_() +
     '<div id="kb-land-blocks">' + kbLandingBlocksHtml_() + '</div></div>';
+  kbHomeEnsure_(main);
+}
+
+// ── M12 (design handoff, Phase 6) — the manual home on the Reference landing ──
+function kbHasManual_() { return (KB_STATE.tree || []).some(function (it) { return kbIsManualId_(it.id); }); }
+/** The manual home at the top of the landing, when the tree holds the manual: the
+ *  title and version, the call router and "Go to a section" cards, the chapters
+ *  and the appendices. Rendered ONCE and inserted ahead of the lookups — the jump
+ *  box is an input, and an input must survive the landing's re-renders as nodes
+ *  (T1: focus and the caret go with them) — then its siblings are repainted by
+ *  kbHomePaint_ whenever the tree, the meta or the landing changes. */
+function kbHomeHtml_() {
+  return '<section class="kb-home" id="kb-home" aria-label="Procedures manual">' +
+    '<div class="kb-home-head" id="kb-home-head"></div>' +
+    '<div class="kb-home-cards">' +
+      '<button type="button" class="kb-home-card" onclick="kbOpenRouterFromTab_()">' +
+        '<span class="kb-home-k">' + icon('phone', 13) + ' What did the caller say?</span>' +
+        '<span class="kb-home-ex" id="kb-home-ex"></span>' +
+        '<span class="kb-home-hint">The call router — and Ctrl/⌘ K opens the reference drawer anywhere in the app</span>' +
+      '</button>' +
+      '<div class="kb-home-card kb-home-jump">' +
+        '<label class="kb-home-k kb-home-k-ink" for="kb-home-jump">' + icon('search', 13) + ' Go to a section</label>' +
+        '<input id="kb-home-jump" type="text" autocomplete="off" spellcheck="false" placeholder="5.2 · 10.4 · B.1 · card 5" oninput="kbHomeJump_(this)" onkeydown="kbHomeJumpKey_(event, this)">' +
+        '<div class="kb-home-jhit" id="kb-home-jhit" aria-live="polite"></div>' +
+      '</div>' +
+    '</div>' +
+    '<div id="kb-home-grid"></div>' +
+  '</section>';
+}
+function kbHomeEnsure_(main) {
+  var land = main.querySelector('.kb-land');
+  var home = document.getElementById('kb-home');
+  if (!kbHasManual_() || !land) { if (home) home.remove(); return; }
+  if (!home) land.insertAdjacentHTML('afterbegin', kbHomeHtml_());
+  kbHomePaint_();
+  if (KB_STATE.manualMeta === undefined) kbEnsureManualMeta_(function () { if (KB_STATE.landing) kbHomePaint_(); });
+}
+/** Repaint everything in the home but the jump box: the version line, three
+ *  example openers from the REAL call router (rows the reader can reach), and the
+ *  chapter and appendix tiles (section count; updated count once the meta is in).
+ *  A tile is a chapter-level open, so it resumes where the rep left off (M16). */
+function kbHomePaint_() {
+  var head = document.getElementById('kb-home-head'), ex = document.getElementById('kb-home-ex'), grid = document.getElementById('kb-home-grid');
+  if (!head || !ex || !grid) return;
+  var meta = KB_STATE.manualMeta || null, tree = KB_STATE.tree || [], md = kbManualDepts_();
+  var today = new Date().toISOString().substring(0, 10), seen = {};
+  tree.forEach(function (it) { seen[it.id] = true; });
+  head.innerHTML = '<h2 class="kb-home-h">Procedures manual</h2>' +
+    (meta && meta.version ? '<span class="kb-home-ver">CSR Procedures Manual ' + esc(meta.version) + (meta.built ? ' · built ' + esc(meta.built) : '') + '</span>' : '');
+  var rows = ((meta && meta.router) || []).filter(function (r) { return r && r.q && (r.t || []).some(function (x) { return x && seen[x.id]; }); }).slice(0, 3);
+  ex.innerHTML = rows.map(function (r) { return '<span>\u201c' + esc(r.q) + '\u201d</span>'; }).join('');
+  var tile = function (d) {
+    var cp = kbManualChapterParts_(d), first = md.first(d);
+    var items = tree.filter(function (it) { return it.department === d && kbIsManualId_(it.id); });
+    var upd = meta ? items.filter(function (it) { return kbManualUpdates_(meta.changelog, it.id, today, KB_MANUAL_UPDATED_DAYS).length; }).length : 0;
+    return '<button type="button" class="kb-home-tile" data-kb-id="' + esc(first) + '" title="' + esc(d) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'), \'\', { chapter: true })">' +
+      (cp.appendix ? '<span class="kb-home-let" aria-hidden="true">' + esc(cp.num) + '</span>' : kbManualChapterIcon_(d, 15, 'kb-man-badge')) +
+      '<span class="kb-home-tt"><span class="kb-home-n">' + (cp.appendix ? 'Appendix ' : 'Chapter ') + esc(cp.num) + '</span>' +
+        '<span class="kb-home-name">' + esc(cp.name) + '</span>' +
+        '<span class="kb-home-meta">' + items.length + ' section' + (items.length === 1 ? '' : 's') + (upd ? ' · <b>' + upd + ' updated</b>' : '') + '</span></span></button>';
+  };
+  var chapters = md.list.filter(function (d) { var cp = kbManualChapterParts_(d); return cp.num && !cp.appendix; });
+  var apps = md.list.filter(function (d) { return kbManualChapterParts_(d).appendix; });
+  grid.innerHTML = '<div class="kb-home-grid">' + chapters.map(tile).join('') + '</div>' +
+    (apps.length ? '<div class="kb-home-sub">Appendices</div><div class="kb-home-grid">' + apps.map(tile).join('') + '</div>' : '');
+}
+/** "Go to a section": the typed number's section, as the search boxes draw it. */
+function kbHomeJump_(input) {
+  var host = document.getElementById('kb-home-jhit'); if (!host) return;
+  var v = String(input.value || '').trim(), t = v ? kbManualNumberTarget_(v, KB_STATE.tree) : null;
+  host.innerHTML = t ? kbJumpRowHtml_(t, 'kbOpenItem_', 'kb-item') + '<div class="kb-jump-hint">Press Enter to open.</div>'
+    : (v ? '<div class="kb-jump-hint">No section by that number — try 5.2, B.1 or card 5.</div>' : '');
+}
+function kbHomeJumpKey_(e, input) {
+  if (e.key !== 'Enter') return;
+  var t = kbManualNumberTarget_(String(input.value || '').trim(), KB_STATE.tree);
+  if (t) { e.preventDefault(); kbOpenItem_(t.id, t.anchor); }
 }
 
 function kbGroupResults_(results) {
@@ -8150,10 +8264,13 @@ function kbDrawerOpenItem_(id, anchor, nav) {
           '<a class="kb-btn" href="' + esc(res.openUrl) + '" target="_blank" rel="noopener">' + icon('popOut', 13) + ' Open in new tab</a></div>' +
           kbFeedbackBarHtml_(res) + '<div id="kbd-comments"></div>';
       } else {
-        body.innerHTML = back + '<div class="kb-article">' + kbMd_(res.bodyMd || '') + '</div>' + kbFeedbackBarHtml_(res) + '<div id="kbd-comments"></div>';
+        // A manual section reads as it does in the tab: its chapter colour, the
+        // callout labels and the step circles (data-kb-man carries the CSS).
+        var dk = kbIsManualId_(id) ? kbManualChapterKey_(res.department || kbManualDeptOf_(id)) : '';
+        body.innerHTML = back + '<div class="kb-article' + (kbIsManualId_(id) ? ' kbd-man-art' + (dk ? ' kb-man-' + dk : '') + '" data-kb-man="' : '') + '">' + kbMd_(res.bodyMd || '') + '</div>' + kbFeedbackBarHtml_(res) + '<div id="kbd-comments"></div>';
         kbGlossaryAnnotate_(body);
         var art = body.querySelector('.kb-article');
-        if (kbIsManualId_(id)) { kbLinkHcpcs_(art); kbManualFootnotes_(body, '.kb-article'); }   // Phase 5: footnotes open their note here too
+        if (kbIsManualId_(id)) { kbLinkHcpcs_(art); kbManualFootnotes_(body, '.kb-article'); kbDecorateCallouts_(body, '.kb-article[data-kb-man] blockquote.kb-callout'); }   // Phase 5: footnotes; Phase 6: the callout labels
         // M5a: a Back restores where the rep was; a cross-reference lands on the
         // block its preview chose; else the anchor, as before.
         var landed = null;
