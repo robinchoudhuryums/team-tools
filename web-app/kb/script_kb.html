@@ -1063,6 +1063,41 @@
      Stacked, the item cap above still applies per column — each keeps its own
      internal scroll (the V-9 model: the cap must stay on the ITEMS, never move
      to the container). */
+  /* M13 (design handoff, Phase 7): narrow — the pop-out and a phone (A2: both
+     triggers) — the side is ONE row, the search box and Contents, so the reader
+     starts at the top; the tree shows only while a search has a query (its
+     results render there). Contents (kbOpenToc_) is the tree as a dialog. */
+  .kb-toc-btn { display: none; align-items: center; gap: 6px; flex: none; min-height: 44px; padding: 0 14px; font: inherit; font-size: .86rem; font-weight: 600; border: 1px solid var(--line); border-radius: 8px; background: var(--paper-2); color: var(--ink); cursor: pointer; }
+  .kb-toc-btn:hover, .kb-toc-btn:focus-visible { border-color: var(--border-strong); background: var(--paper-card); }
+  :root[data-compact] .kb-side { flex-direction: row; flex-wrap: wrap; align-items: center; }
+  :root[data-compact] .kb-side input#kb-search { flex: 1 1 10em; min-width: 0; min-height: 44px; box-sizing: border-box; }
+  :root[data-compact] .kb-toc-btn { display: inline-flex; }
+  :root[data-compact] .kb-side:not(.kb-side-q) #kb-tree { display: none; }
+  :root[data-compact] .kb-side.kb-side-q #kb-tree { flex-basis: 100%; max-height: 45vh; }
+  :root[data-compact] .kb-man-bar-nav { min-width: 44px; min-height: 44px; justify-content: center; }
+  @media (max-width: 720px) {
+    .kb-side { flex-direction: row; flex-wrap: wrap; align-items: center; }
+    .kb-side input#kb-search { flex: 1 1 10em; min-width: 0; min-height: 44px; box-sizing: border-box; }
+    .kb-toc-btn { display: inline-flex; }
+    .kb-side:not(.kb-side-q) #kb-tree { display: none; }
+    .kb-side.kb-side-q #kb-tree { flex-basis: 100%; }
+    .kb-man-bar-nav { min-width: 44px; min-height: 44px; justify-content: center; }
+  }
+  .kb-toc { width: min(520px, calc(100vw - 24px)); max-height: calc(100vh - 48px); overflow-y: auto; padding: 14px 16px 18px; }
+  .kb-toc-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .kb-toc-head h3 { margin: 0; font-size: 1.05rem; }
+  .kb-toc-chaps { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .kb-toc-chap { display: inline-flex; align-items: center; gap: 5px; min-height: 36px; padding: 0 10px 0 6px; font: inherit; font-size: .8rem; border: 1px solid var(--line); border-radius: 999px; background: var(--paper-card); color: var(--ink); cursor: pointer; }
+  .kb-toc-chap b { font-family: var(--mono); }
+  .kb-toc-chap[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+  .kb-toc-name { font-weight: 600; margin: 4px 0 6px; }
+  .kb-toc-list { display: flex; flex-direction: column; }
+  .kb-toc-row { display: flex; align-items: baseline; gap: 6px; min-height: 40px; padding: 8px 6px; font: inherit; font-size: .88rem; text-align: left; border: none; border-bottom: 1px solid var(--line); background: none; color: var(--ink); cursor: pointer; }
+  .kb-toc-row:hover, .kb-toc-row:focus-visible { background: var(--paper-2); }
+  .kb-toc-row[aria-current="page"] { background: var(--accent-soft); color: var(--success-deep); }
+  .kb-toc-t { min-width: 0; }
+  .kb-toc-sub { margin: 16px 0 4px; font-family: var(--mono); font-size: .66rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2); }
+  .kb-toc-dept { margin: 8px 0 2px; font-size: .74rem; font-weight: 600; color: var(--muted); }
   @media (max-width: 720px) {
     .kb-wrap { grid-template-columns: 1fr; min-height: 0; }
     /* Stacked, a viewport-tall tree would push the reader entirely below the
@@ -4588,6 +4623,8 @@ function enterReferenceView(area) {
     '<div class="kb-wrap">' +
       '<div class="kb-side">' +
         '<input type="text" id="kb-search" placeholder="Search reference…" autocomplete="off" aria-label="Search reference">' +
+        // M13 (Phase 7): in the pop-out and on a phone the tree folds away and this opens it as Contents.
+        '<button type="button" class="kb-toc-btn" aria-haspopup="dialog" onclick="kbOpenToc_()">' + icon('list', 14) + ' Contents</button>' +
         '<div id="kb-tree">' + loSweep() + '</div>' +
       '</div>' +
       '<div class="kb-main" id="kb-main">' + loSweep() + '</div>' +
@@ -6326,6 +6363,50 @@ function kbRenderLanding_() {
   kbHomeEnsure_(main);
 }
 
+// ── M13 (design handoff, Phase 7) — Contents, for the pop-out and a phone ──────
+/** The tree as a dialog: a row of chapter chips, the chosen chapter's sections
+ *  (the open one marked), then the rest of the library — a narrow screen folds
+ *  the tree away, so this is the way to every item, not only the manual's.
+ *  `dept` switches chapters in place (focus stays on the chosen chip). */
+function kbOpenToc_(dept) {
+  var md = kbManualDepts_(), tree = KB_STATE.tree || [], cur = KB_STATE.currentId;
+  var curDept = cur && kbIsManualId_(cur) ? kbManualDeptOf_(cur) : '';
+  var d = dept && md.list.indexOf(dept) >= 0 ? dept : (curDept || md.list[0] || '');
+  var ov = ensureOverlay('kb-man-toc-overlay', { labelledBy: 'kb-toc-h', onClose: function () { var o = document.getElementById('kb-man-toc-overlay'); if (o) o.remove(); } });
+  var row = function (it) {
+    var t = kbIsManualId_(it.id) ? kbManualSplitTitle_(it.title) : { num: '', rest: it.title };
+    return '<button type="button" class="kb-toc-row" data-kb-id="' + esc(it.id) + '"' + (it.id === cur ? ' aria-current="page"' : '') + ' onclick="kbTocGo_(this.getAttribute(\'data-kb-id\'))">' +
+      (kbIsManualId_(it.id) ? '<span class="kb-item-num">' + esc(t.num) + '</span>' : '') + '<span class="kb-toc-t">' + esc(t.rest) + '</span>' +
+      (it.status === 'draft' ? '<span class="kb-draft-pill">Draft</span>' : '') + '</button>';
+  };
+  var html = '<div class="modal kb-toc"><div class="kb-toc-head"><h3 id="kb-toc-h">Contents</h3>' +
+    '<button type="button" class="kb-btn" aria-label="Close" onclick="closeOverlay(document.getElementById(\'kb-man-toc-overlay\'))">' + icon('x', 15) + '</button></div>';
+  if (md.list.length) {
+    html += '<div class="kb-toc-chaps">' + md.list.map(function (x) {
+      var cp = kbManualChapterParts_(x);
+      return '<button type="button" class="kb-toc-chap" data-dept="' + esc(x) + '" aria-pressed="' + (x === d) + '" title="' + esc(x) + '" onclick="kbOpenToc_(this.getAttribute(\'data-dept\'))">' +
+        (cp.appendix || !cp.num ? '<b>' + esc(cp.num || '•') + '</b>' : kbManualChapterIcon_(x, 11, 'kb-trail-badge') + '<b>' + esc(cp.num) + '</b>') + '</button>';
+    }).join('') + '</div>';
+    var cp = kbManualChapterParts_(d);
+    html += '<div class="kb-toc-name">' + (cp.num ? (cp.appendix ? 'Appendix ' : 'Chapter ') + esc(cp.num) + ' · ' : '') + esc(cp.name) + '</div>' +
+      '<div class="kb-toc-list">' + tree.filter(function (it) { return it.department === d && kbIsManualId_(it.id); }).map(row).join('') + '</div>';
+  }
+  var other = tree.filter(function (it) { return !kbIsManualId_(it.id); }), byDept = {}, depts = [];
+  other.forEach(function (it) { if (!byDept[it.department]) { byDept[it.department] = []; depts.push(it.department); } byDept[it.department].push(it); });
+  if (depts.length) {
+    html += '<div class="kb-toc-sub">Other reference</div>';
+    depts.sort(kbDeptCompare_).forEach(function (x) { html += '<div class="kb-toc-dept">' + esc(x) + '</div><div class="kb-toc-list">' + byDept[x].map(row).join('') + '</div>'; });
+  }
+  ov.innerHTML = html + '</div>';
+  if (dept) { var on = ov.querySelector('.kb-toc-chap[aria-pressed="true"]'); if (on) try { on.focus(); } catch (e) {} }
+}
+/** A Contents row: close the dialog, then open the item (the reader takes focus). */
+function kbTocGo_(id) {
+  var ov = document.getElementById('kb-man-toc-overlay');
+  if (ov) closeOverlay(ov);
+  kbOpenItem_(id);
+}
+
 // ── M12 (design handoff, Phase 6) — the manual home on the Reference landing ──
 function kbHasManual_() { return (KB_STATE.tree || []).some(function (it) { return kbIsManualId_(it.id); }); }
 /** The manual home at the top of the landing, when the tree holds the manual: the
@@ -6648,6 +6729,8 @@ function kbScrollToAnchor_(host, anchor) {
 function kbDoSearch_(q) {
   q = String(q || '').trim();
   KB_STATE.jump = null;
+  // M13: a narrow side shows the tree only while a search has a query (the results render into it).
+  var side = document.querySelector('.kb-side'); if (side) side.classList.toggle('kb-side-q', q.length > 0);
   if (q.length < 2) { kbRenderTree_(); if (!KB_STATE.currentId) { KB_STATE.landing = true; kbRenderLanding_(); } return; }
   var el = document.getElementById('kb-tree'); if (!el) return;
   // Batch M2 — a section number jumps; there is nothing to text-search in "5.9".

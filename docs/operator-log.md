@@ -10,6 +10,20 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-09 — manual reader design, Phase 7 (compact pop-out)
+
+**Adds NO operator state.** Deploy as usual (`clasp push -f` + New version); no
+re-import, no manual rebuild. Phase 8 waits for your go-ahead.
+- **Pop-out and phone (M13):** the Reference side panel is now one row — the
+  search box and a **Contents** button — so the reader starts near the top (in the
+  pop-out it began below a tree up to 45% of the screen tall). The tree reappears
+  while you type a search, for its results, and folds away when the box is empty.
+- **Contents:** a dialog with a chip per chapter and appendix, the chosen chapter's
+  sections (the one you are reading marked), then the rest of the library (the
+  hand-written articles) — so every item is still one tap away. A chip switches
+  chapters in place; a row opens the item and closes the dialog; Escape closes it.
+- The reader bar's ‹ › are 44px tap targets there. Wide screens are unchanged.
+
 ## 2026-10-09 — manual reader design, Phase 6 (manual home) + the drawer's decoration
 
 **Adds NO operator state.** Deploy as usual (`clasp push -f` + New version); no

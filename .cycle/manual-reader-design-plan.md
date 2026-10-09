@@ -116,3 +116,15 @@ against the repo; all exist as described. Repo-side corrections to the handoff:
 - **The drawer's decoration:** the callout and step CSS now keys on
   `.kb-article[data-kb-man]` (search chunks and the drawer's section alike).
 
+## Phase 7 adaptations (2026-10-09)
+
+- **Both triggers (A2):** `:root[data-compact]` AND `@media (max-width: 720px)` carry
+  the same rules (one row, Contents shown, the tree folded unless `.kb-side-q`, 44px
+  ‹ ›).
+- **Contents lists the whole library**, not only the current chapter: the tree is
+  folded on a narrow screen, so the dialog is the only way to a hand-written article
+  there. The handoff's chapter switcher + current chapter come first.
+- The overlay follows the shell lifecycle: `ensureOverlay` (named by its heading),
+  an `onClose` hook that removes it, the × through `closeOverlay`; a row closes then
+  opens.
+

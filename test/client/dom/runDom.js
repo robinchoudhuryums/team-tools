@@ -5708,6 +5708,36 @@ test('MRD-6 DOM (manual reader design Phase 6): the manual home sits above the l
   assert.ok(art.querySelector('table.kb-steps'), 'the step table the circles draw on');
 });
 
+test('MRD-7 DOM (manual reader design Phase 7): the side carries Contents; a search marks the side so its results show, and clearing it folds the tree again; Contents lists chapter chips, the open chapter with its section marked, then the rest of the library; a chip switches chapters in place; a row closes the dialog and opens the item; Escape closes it', async () => {
+  const h = m4Boot_();
+  const w = h.window, doc = w.document;
+  const side = doc.querySelector('.kb-side');
+  assert.ok(side.querySelector('.kb-toc-btn') && side.querySelector('.kb-toc-btn').getAttribute('aria-haspopup') === 'dialog', 'the Contents button lives in the side');
+  h.read('kbDoSearch_')('ramps');
+  assert.ok(side.classList.contains('kb-side-q'), 'a query marks the side (its results render in the tree)');
+  h.read('kbDoSearch_')('');
+  assert.ok(!side.classList.contains('kb-side-q'), 'an empty box folds it again');
+  h.read('kbOpenItem_')('man-0-11');
+  h.run.flushSuccess(M2_PART0, 'getManualPart');
+  h.read('kbOpenToc_')();
+  const ov = () => doc.getElementById('kb-man-toc-overlay');
+  assert.ok(ov() && ov().classList.contains('open') && ov().getAttribute('role') === 'dialog' && ov().getAttribute('aria-labelledby') === 'kb-toc-h', 'a named dialog');
+  const chips = () => [...ov().querySelectorAll('.kb-toc-chap')];
+  assert.deepStrictEqual(chips().map((c) => [c.getAttribute('data-dept'), c.getAttribute('aria-pressed')]), [['Chapter 00 — CSR Core', 'true'], ['Chapter 10 — Billing & Denials', 'false']], 'the open chapter is pressed');
+  const rows = () => [...ov().querySelectorAll('.kb-toc-row')];
+  assert.deepStrictEqual(rows().map((r) => [r.getAttribute('data-kb-id'), r.getAttribute('aria-current')]), [['man-0-10', null], ['man-0-11', 'page'], ['kb-1', null]], 'its sections (the open one marked), then the rest of the library');
+  assert.ok(!rows()[2].querySelector('.kb-item-num') && rows()[0].querySelector('.kb-item-num').textContent === '0.10', 'a hand-written row has no number column');
+  h.read('kbOpenToc_')(chips()[1].getAttribute('data-dept'));
+  assert.ok(ov().classList.contains('open') && chips()[1].getAttribute('aria-pressed') === 'true' && rows()[0].getAttribute('data-kb-id') === 'man-10-1', 'a chip switches chapters in place');
+  assert.strictEqual(doc.activeElement, chips()[1], 'and keeps focus on the chosen chip');
+  h.read('kbTocGo_')('man-10-1');
+  assert.ok(!ov(), 'a row closes the dialog');
+  assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Chapter 10 — Billing & Denials'], 'and opens the item');
+  h.read('kbOpenToc_')();
+  doc.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.ok(!ov(), 'Escape closes it');
+});
+
 test('M4 DOM: Print marks ONLY its own section for the one print block, for exactly as long as the dialog is up; since M8 it is the reader bar\'s Print, aimed at the section in view, and on a Quick Reference Card it says "card"', async () => {
   const h = m4Boot_();
   const w = h.window, doc = w.document;

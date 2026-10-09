@@ -35139,6 +35139,29 @@ test('MRD-2 (manual reader design Phase 2): the reader bar\'s title split, chapt
   assert.ok(!/background:\s*var\(--accent\);\s*color:\s*#fff/i.test(css) && /\.toast-act \{[^}]*background: var\(--accent\); color: var\(--paper-card\)/.test(css), 'the toast action reads --paper-card on the accent');
 });
 
+test('MRD-7 (manual reader design Phase 7): a narrow Reference (the pop-out AND ≤720px — A2) is one row, search + Contents; the tree shows only while a search has a query; Contents is an ensureOverlay dialog closed through closeOverlay; the bar\'s ‹ › are 44px there', () => {
+  const kb = M1_KB_SRC;
+  const rule = (sel, body) => assert.ok(kb.indexOf(sel + ' { ' + body) >= 0 || new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' \\{[^}]*' + body.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(kb), sel + ' → ' + body);
+  // both triggers carry the same four rules
+  rule(':root[data-compact] .kb-side', 'flex-direction: row;');
+  rule(':root[data-compact] .kb-toc-btn', 'display: inline-flex;');
+  rule(':root[data-compact] .kb-side:not(.kb-side-q) #kb-tree', 'display: none;');
+  rule(':root[data-compact] .kb-man-bar-nav', 'min-width: 44px; min-height: 44px;');
+  const media = (/@media \(max-width: 720px\) \{\n    \.kb-side \{([\s\S]*?)\n  \}/.exec(kb) || [])[0] || '';
+  ['.kb-side { flex-direction: row;', '.kb-toc-btn { display: inline-flex; }', '.kb-side:not(.kb-side-q) #kb-tree { display: none; }', '.kb-man-bar-nav { min-width: 44px; min-height: 44px;'].forEach((r) => assert.ok(media.indexOf(r) >= 0, 'the ≤720px block also has ' + r));
+  assert.ok(/\.kb-toc-btn \{ display: none;/.test(kb), 'a wide Reference keeps its tree and has no Contents button');
+  // the search keeps the tree visible for its results
+  const ds = extractFnFrom(kb, 'kbDoSearch_');
+  assert.ok(/side\.classList\.toggle\('kb-side-q', q\.length > 0\)/.test(ds) && ds.indexOf("toggle('kb-side-q'") < ds.indexOf('if (q.length < 2)'), 'the class is set before any early return');
+  // Contents: the overlay lifecycle (g100/g130/SH-02)
+  const toc = extractFnFrom(kb, 'kbOpenToc_');
+  assert.ok(/ensureOverlay\('kb-man-toc-overlay', \{ labelledBy: 'kb-toc-h', onClose: function \(\) \{ var o = document\.getElementById\('kb-man-toc-overlay'\); if \(o\) o\.remove\(\); \} \}\)/.test(toc), 'opened by ensureOverlay, named by its heading, its hook removes it');
+  assert.ok(/onclick="closeOverlay\(document\.getElementById\(\\'kb-man-toc-overlay\\'\)\)"/.test(toc), 'its × goes through closeOverlay');
+  assert.ok(/data-dept="' \+ esc\(x\) \+ '"/.test(toc) && !/kbOpenToc_\(\\'' \+/.test(toc), 'a chapter chip passes its department by attribute, never inside the handler string (g133)');
+  const go = extractFnFrom(kb, 'kbTocGo_');
+  assert.ok(go.indexOf('closeOverlay(ov)') >= 0 && go.indexOf('closeOverlay(ov)') < go.indexOf('kbOpenItem_(id)'), 'a row closes the dialog, then opens');
+});
+
 test('MRD-6 (manual reader design Phase 6 + the drawer\'s decoration): the manual home is inserted ONCE ahead of the lookups and only its read-only parts repaint (the jump box survives — T1); its tiles resume; the drawer\'s manual section takes the chapter decoration', () => {
   const kb = M1_KB_SRC;
   const land = extractFnFrom(kb, 'kbRenderLanding_');
