@@ -80,7 +80,7 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 <!--card:p3-->
 ## §C-3 Respiratory & Resupply
 
-### Overrides to Chapter 0
+### Department specific amendments
 - Oxygen concentrators, PAP devices and ventilators need an **Rx even for out-of-pocket** purchase
 
 ### PAP compliance
@@ -195,7 +195,7 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 - **Don't raise loaners.** If asked: possible only while **patient-owned** equipment is repaired, and Service confirms
 
 ### Ventilators
-- **Service Q** first. If no answer, email respiratory@ and service@ and notify an RT — [[§7-5.1]]
+- **Service Q** first. If no answer, email respiratory@ and service@ and notify the **On-Call RT** — [[§7-5.1]]
 
 ### Timing and notes
 - **Turnaround:** days for small issues, weeks if parts come from the manufacturer
