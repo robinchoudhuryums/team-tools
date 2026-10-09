@@ -218,5 +218,10 @@
     "§C-7": "§C-6",
     "§C-8": "§C-7",
     "§C-9": "§C-8"
+  },
+  "moved_before_renumber": {
+    "_about": "Phase 3 moves made before the renumber (2026-10-07): new section -> the number CSRs knew before the move. make_html.py adds these to the HTML search like 'formerly'. Added 2026-10-08 (change list F14).",
+    "§10-12.8": "§7-9",
+    "§10-19.6": "§5-9.3"
   }
 }

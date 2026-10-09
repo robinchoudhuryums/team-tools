@@ -34,7 +34,16 @@ node shoot.mjs cn-log compact   # substring filter: only matching scenarios
 node a13-measure.mjs   # spot-measure: is a tag swap really pixel-identical?
 node map-check.mjs     # spot-measure: the ```map block + article-image fallback
 node settings-check.mjs # spot-measure: the Settings flyout + View-as preview
+node manual-fixtures.mjs <manual.json>  # refresh the procedures-manual fixtures
 ```
+
+The Reference reader's manual scenarios read REAL sections, router rows,
+changelog entries and images copied verbatim from a built `manual.json`
+(`mock.js`'s generated `MANUAL-FIXTURES` block and `manual-images.json`). After a
+manual change, build the manual (`manual/make_all.sh`) and run
+`node manual-fixtures.mjs <MANUAL_OUT>/reference/manual.json` so the shots show
+the manual as it is. The one hand-written section, 0.11, is a feature fixture
+under the real 0.11's headings (see the comment in `manualSection`).
 
 `a13-measure.mjs` exists because a screenshot cannot answer "did this element
 change size" for a surface the matrix does not reach (Team Training is behind

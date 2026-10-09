@@ -156,19 +156,19 @@ b.append(fl(960, 296, 960, 340, "YES", 966, 322))
 b.append(fbox(870, 340, 180, 62, "Can't be picked up —|theirs to keep, donate|or dispose — §5-8.1", "act"))
 b.append(fl(1090, 296, 1090, 420, "NO", 1096, 362))
 b.append(fbox(870, 420, 270, 40, "Create the pick-up ticket — §6-9.3", "act"))
-b.append(fbox(20, 420, 830, 56, "**A pick-up may be irreversible|A patient who surrenders a PMD may not be able to get another for five years under Same or Similar — §10-12.5", "tech"))
+b.append(fbox(20, 420, 830, 56, "**A pick-up may be irreversible|A patient who surrenders a PMD may have difficulty getting another for five years under Same or Similar — §10-12.5", "tech"))
 
 svg("m3-pickup", W, H, "PMD pick-up decision", b)
 
 # ============================================================ 9. rental timeline ===
-W, H = 1160, 470
+W, H = 1160, 570
 L, R = 190, 1120
 def mx(m):                    # month -> x
     return L + (R - L) * m / 60
 b = [title(W, "Rental, ownership and the 5-year lifetime")]
 b.append(f'<line x1="{L}" y1="70" x2="{R}" y2="70" stroke="var(--rule)" stroke-width="1.5"/>')
 for m, lab in [(0, "Delivery"), (13, "Month 13"), (36, "Month 36"), (60, "5 years")]:
-    b.append(f'<line x1="{mx(m)}" y1="62" x2="{mx(m)}" y2="390" stroke="var(--rule)" '
+    b.append(f'<line x1="{mx(m)}" y1="62" x2="{mx(m)}" y2="490" stroke="var(--rule)" '
              f'stroke-dasharray="{"0" if m in (0,60) else "3 4"}"/>')
     b.append(f'<text x="{mx(m)}" y="54" text-anchor="middle" '
              f'style="font:600 11px \'IBM Plex Mono\',monospace;fill:var(--muted)">{lab}</text>')
@@ -189,19 +189,22 @@ def rowlab(y, t, sub):
             f'<text x="20" y="{y + 36}" style="font:500 11px \'IBM Plex Sans\',sans-serif;fill:var(--muted)">{sub}</text>')
 
 y = 96
+b.append(rowlab(y, "Purchase", "walkers, nebulizers, braces"))
+b.append(seg(0, 60, y, "Billed once — the patient owns it from delivery|Medicare covers repairs, with cost-sharing", "--scr-bg", "--scr-ink"))
+y = 196
 b.append(rowlab(y, "Capped rental", "most DME"))
 b.append(seg(0, 13, y, "Rented — 13 months|UMS owns and repairs it", "--tint", "--accent"))
 b.append(seg(13, 60, y, "Patient owns it|Medicare covers repairs, with cost-sharing", "--scr-bg", "--scr-ink"))
-y = 196
+y = 296
 b.append(rowlab(y, "Oxygen", "concentrators, cylinders"))
 b.append(seg(0, 36, y, "Rented — 36 months|UMS owns and services it", "--tint", "--accent"))
-b.append(seg(36, 60, y, "No rental charge — UMS still owns it|Servicing continues; fee every 6 months", "--watch-bg", "--watch-ink"))
+b.append(seg(36, 60, y, "No rental charge — UMS still owns it|Concentrator visit paid every 6 months", "--watch-bg", "--watch-ink"))
 b.append(f'<text x="{mx(60) - 4}" y="{y + 64}" text-anchor="end" '
          f'style="font:500 11px \'IBM Plex Sans\',sans-serif;fill:var(--muted)">After 5 years: a new 36-month rental may begin</text>')
-y = 296
-b.append(rowlab(y, "Continuous rental", "ventilators, E0471"))
+y = 396
+b.append(rowlab(y, "Continuous rental", "ventilators"))
 b.append(seg(0, 60, y, "Rented monthly for as long as it's needed — never owned", "--pol-bg", "--pol-ink"))
-b.append(fbox(20, 400, 1120, 48, "**The patient never owns oxygen equipment|Say: \"Medicare pays for the rental for 36 months. After that you keep using it at no rental charge and we keep servicing it, for up to 5 years total.\"", "pol"))
+b.append(fbox(20, 500, 1120, 48, "**The patient never owns oxygen equipment|Say: \"Medicare pays for the rental for 36 months. After that you keep using it at no rental charge and we keep servicing it, for up to 5 years total.\"", "pol"))
 svg("m9-rental", W, H, "Rental, ownership and useful lifetime timeline", b)
 
 # ======================================================== 10. deductible, then 80/20 ===
@@ -244,7 +247,7 @@ spec = [
   "One diagram for what's currently two sections. Checks ownership last, so a patient-owned chair "
   "with a fault still reaches repair rather than a refusal."),
  ("9 · Rental, ownership and the 5-year lifetime", "§10.13", "m9-rental",
-  "The three billing tracks on one timeline — the rule patients dispute most."),
+  "The four billing tracks on one timeline — the rule patients dispute most."),
 ]
 for t, where, key, why in spec:
     md += [f"## {t}", "", f"**Would sit in:** {where}. {why}", "",

@@ -14,12 +14,16 @@ import json, re, sys, os
 sys.path.insert(0, '.')
 from numbering import display as dnum
 import roles
+from built_date import built_date
 
 SRC, DST = sys.argv[1], sys.argv[2]
 raw = open(SRC).read()
 ROSTER = json.load(open("data/roster.json"))
 ROLE_BY_NAME = {r["role"]: r for r in ROSTER}
-OWNER = re.search(r'^OWNER = "([^"]+)"', open("build.py").read(), re.M).group(1)
+_BUILD = open("build.py").read()
+OWNER = re.search(r'^OWNER = "([^"]+)"', _BUILD, re.M).group(1)
+VERSION = re.search(r'^VERSION = "([^"]+)"', _BUILD, re.M).group(1)
+FULL = os.path.basename(SRC).startswith("CSR-Procedures-Manual-")   # the full manual gets a cover and contents (A6)
 
 
 def bookmark(anchor_id):
@@ -50,8 +54,8 @@ def emphasis(s):
     for m in re.finditer(r"\*\*(.+?)\*\*|`([^`]+)`|\*(.+?)\*", s):
         if m.start() > pos:
             runs.append({"t": s[pos:m.start()]})
-        if m.group(1) is not None:
-            runs.append({"t": m.group(1), "b": True})
+        if m.group(1) is not None:   # bold may hold code — **`Patient`** — so its inside is parsed too
+            runs += [dict(r, b=True) for r in emphasis(m.group(1))]
         elif m.group(2) is not None:
             runs.append({"t": m.group(2), "c": True})
         else:
@@ -62,8 +66,27 @@ def emphasis(s):
     return runs
 
 
+# bold wrapped round a cross-reference, image or link — **within … 9.4.1 …** — must be split on
+# before the tokens are, or the ** survive on either side of the token as literal text. The **
+# markers pair left to right (1st with 2nd, 3rd with 4th), never a closing one with the next opening.
+HAS_TOKEN = re.compile(r'<a class="xr"|<img\s|\[[^\]]+\]\((?:https?|mailto):')
+
+
+def _bold_round_token(s):
+    marks = [m.start() for m in re.finditer(r"\*\*", s)]
+    for a, b in zip(marks[0::2], marks[1::2]):
+        if HAS_TOKEN.search(s, a + 2, b):
+            return a, b
+    return None
+
+
 def inline(s):
     """Markdown inline -> runs: emphasis, code, images, links and cross-references."""
+    span = _bold_round_token(s)
+    if span:
+        a, b = span
+        return [r for r in inline(s[:a]) + [dict(r, b=True) for r in inline(s[a + 2:b])]
+                + inline(s[b + 2:]) if r.get("t") or r.get("img")]
     runs, pos = [], 0
     for m in TOKEN.finditer(s):
         if m.start() > pos:
@@ -104,6 +127,16 @@ in_notes = False
 while i < len(lines):
     L = lines[i]
     S = L.strip()
+
+    # a fenced block (the email subject format): each line verbatim, in code type
+    if S.startswith("```"):
+        i += 1
+        while i < len(lines) and not lines[i].strip().startswith("```"):
+            if lines[i].strip():
+                blocks.append({"k": "p", "runs": [{"t": lines[i].rstrip(), "c": True}], "part": cur_part})
+            i += 1
+        i += 1
+        continue
 
     # a diagram: rendered to PNG by rasterize_diagrams.py, embedded by the renderer
     if S.startswith('<div class="fig"'):
@@ -227,6 +260,13 @@ while i < len(lines):
                                             t=rest_runs[0]["t"].lstrip(" –—:.-"))
                         rest_runs = [r for r in rest_runs if r.get("t") or r.get("img")]
                     sub[0]["runs"] = rest_runs
+            # what follows the label starts a sentence — capitalised, as make_html.py does
+            for r in sub[0]["runs"]:
+                if r.get("t", "").strip():
+                    t = r["t"].lstrip()
+                    if t[:1].islower() and t[:1].isascii():
+                        r["t"] = r["t"][:len(r["t"]) - len(t)] + t[0].upper() + t[1:]
+                    break
         blocks.append({"k": "callout", "kind": kind or "Note", "body": sub, "part": cur_part})
         continue
 
@@ -264,6 +304,7 @@ while i < len(lines):
         continue
     i += 1
 
-json.dump({"meta": {"owner": OWNER}, "blocks": blocks}, open(DST, "w"), ensure_ascii=False)
+json.dump({"meta": {"owner": OWNER, "version": VERSION, "built": built_date(), "full": FULL},
+           "blocks": blocks}, open(DST, "w"), ensure_ascii=False)
 from collections import Counter
 print(f"{len(blocks)} blocks:", dict(Counter(b['k'] for b in blocks)))

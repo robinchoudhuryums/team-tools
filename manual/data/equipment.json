@@ -3386,7 +3386,7 @@
       "compliance",
       "rx-required-pickup"
     ],
-    "billing_type": "continuous-rental"
+    "billing_type": "capped-rental"
   },
   {
     "id": "bipap-resmed-aircurve-11",
@@ -3440,7 +3440,7 @@
       "compliance",
       "rx-required-pickup"
     ],
-    "billing_type": "continuous-rental"
+    "billing_type": "capped-rental"
   },
   {
     "id": "cough-assist-biwaze",
@@ -3740,7 +3740,7 @@
     "source": "Oxygen guide",
     "images": [],
     "verified": "2026-09-15",
-    "billing_type": "capped-rental",
+    "billing_type": "oxygen-36-month",
     "flags": []
   },
   {
@@ -3775,7 +3775,7 @@
     "source": "Oxygen guide",
     "images": [],
     "verified": "2026-09-15",
-    "billing_type": "capped-rental",
+    "billing_type": "oxygen-36-month",
     "flags": []
   },
   {
@@ -3793,7 +3793,7 @@
     "seat": null,
     "specs": [],
     "allowance": "4 / month",
-    "notes": "Supplied in packs of 4, each including 7 ft tubing. Patients do not need to request 7 ft tubing separately. Included in the monthly oxygen rental payment during the 36-month period — no separate charge to the patient.",
+    "notes": "Supplied in packs of 4, each including 7 ft tubing. Patients do not need to request 7 ft tubing separately. Included in the oxygen rental — no separate charge to the patient at any point in the 5-year useful lifetime.",
     "source": "Oxygen guide",
     "images": [],
     "verified": "2026-09-15",
@@ -3818,7 +3818,7 @@
     "seat": null,
     "specs": [],
     "allowance": "2 / month",
-    "notes": "Request separately from cannulas. Can be cut to a shorter custom length on request. Included in the monthly oxygen rental payment during the 36-month period — no separate charge to the patient.",
+    "notes": "Request separately from cannulas. Can be cut to a shorter custom length on request. Included in the oxygen rental — no separate charge to the patient at any point in the 5-year useful lifetime.",
     "source": "Oxygen guide",
     "images": [],
     "verified": "2026-09-15",
@@ -3843,7 +3843,7 @@
     "seat": null,
     "specs": [],
     "allowance": "1 / month",
-    "notes": "Maximum tubing length is 50 ft. Tubing must not be cut and spliced. Included in the monthly oxygen rental payment during the 36-month period — no separate charge to the patient.",
+    "notes": "Maximum tubing length is 50 ft. Tubing must not be cut and spliced. Included in the oxygen rental — no separate charge to the patient at any point in the 5-year useful lifetime.",
     "source": "Oxygen guide",
     "images": [],
     "verified": "2026-09-15",
@@ -3866,7 +3866,7 @@
     "seat": null,
     "specs": [],
     "allowance": "2–3 / month",
-    "notes": "Included in the monthly oxygen rental payment during the 36-month period — no separate charge to the patient.",
+    "notes": "Included in the oxygen rental — no separate charge to the patient at any point in the 5-year useful lifetime.",
     "source": "Oxygen guide",
     "images": [],
     "verified": "2026-09-15",
@@ -3889,7 +3889,7 @@
     "seat": null,
     "specs": [],
     "allowance": "2 / month",
-    "notes": "Included in the monthly oxygen rental payment during the 36-month period — no separate charge to the patient.",
+    "notes": "Included in the oxygen rental — no separate charge to the patient at any point in the 5-year useful lifetime.",
     "source": "Oxygen guide",
     "images": [],
     "verified": "2026-09-15",
@@ -3914,7 +3914,7 @@
     "seat": null,
     "specs": [],
     "allowance": "As needed",
-    "notes": "Always add humidifier adapter tubing to the order as well. Overfilling above the max line is the most common cause of water in the tubing. Included in the monthly oxygen rental payment during the 36-month period — no separate charge to the patient.",
+    "notes": "Always add humidifier adapter tubing to the order as well. Overfilling above the max line is the most common cause of water in the tubing. Included in the oxygen rental — no separate charge to the patient at any point in the 5-year useful lifetime.",
     "source": "Oxygen guide",
     "images": [],
     "verified": "2026-09-15",
@@ -3938,7 +3938,7 @@
     "seat": null,
     "specs": [],
     "allowance": null,
-    "notes": "Standard flow regulator supplied with a portable gaseous system. Included in the monthly oxygen rental payment during the 36-month period — no separate charge to the patient.",
+    "notes": "Standard flow regulator supplied with a portable gaseous system. Included in the oxygen rental — no separate charge to the patient at any point in the 5-year useful lifetime.",
     "source": "Oxygen guide",
     "images": [
       "o2/image14.png"
@@ -3964,7 +3964,7 @@
     "seat": null,
     "specs": [],
     "allowance": null,
-    "notes": "Included in the monthly oxygen rental payment during the 36-month period — no separate charge to the patient.",
+    "notes": "Included in the oxygen rental — no separate charge to the patient at any point in the 5-year useful lifetime.",
     "source": "Oxygen guide",
     "images": [],
     "verified": "2026-09-15",
@@ -4003,14 +4003,14 @@
     "hcpcs": [
       "K0006"
     ],
-    "hcpcs_note": "May also appear as K0003 with E2201 — the add-on code for a 20–24\" seat",
+    "hcpcs_note": "K0003 tops out at 250 lbs, so a heavier patient is K0006. E2201 is the add-on for a seat 20\" up to, but not including, 24\"",
     "product_weight_lbs": null,
     "capacity_lbs": 300,
     "dimensions": null,
     "seat": "20\" wide",
     "specs": [],
     "allowance": null,
-    "notes": "The 20\" version of the K3 Guardian. Billed as K0006 — or K0003 with E2201 — for a patient over 250 lbs who does not reach the 300 lb threshold for an extra-wide K0007 chair.",
+    "notes": "The 20\" version of the K3 Guardian. Billed as K0006 for a patient over 250 lbs who does not reach the 300 lb threshold for an extra-wide K0007 chair.",
     "source": "Robin, 09/2026",
     "images": [
       "mm/image14.jpg"

@@ -4,7 +4,7 @@
 Uses the same spec and excerpt logic as make_review_packets.py, so the Word
 files and the Markdown files always carry identical content.
 """
-import json, re, sys
+import json, os, re, sys
 sys.path.insert(0, ".")
 import make_review_packets as MRP
 from numbering import display
@@ -64,6 +64,12 @@ def blocks(md):
             m = re.match(r"\*\*(Critical|Policy|Watch-out|Script|Note)", paras[0] if paras else "")
             out.append({"t": "callout", "kind": (m.group(1) if m else "Note").lower(), "paras": [runs(p) for p in paras]})
             continue
+        im = re.match(r"^!\[([^\]]*)\]\((images/[^)]+)\)$", ln.strip())
+        if im:
+            info = next((v for k, v in MRP.IMG_INDEX.items() if isinstance(v, dict) and im.group(2).endswith(v["file"])), None)
+            out.append({"t": "image", "alt": im.group(1), "path": os.path.abspath(os.path.join(MRP.OUT, im.group(2))),
+                        "w": info["w"] if info else 1160, "h": info["h"] if info else 700})
+            i += 1; continue
         m = re.match(r"^#{2,4} (.+)$", ln)
         if m:
             out.append({"t": "h4", "runs": runs(m.group(1))}); i += 1; continue
@@ -83,44 +89,40 @@ def model(key):
     title = head[0].lstrip("# ").strip()
     meta = [runs(l) for l in head[1:]]
     B = [{"t": "title", "text": title}] + [{"t": "meta", "runs": r} for r in meta]
-    B += [{"t": "h2", "text": "How to answer"},
-          {"t": "p", "runs": runs("This manual is written for **CSRs** — what they need to know about your department to handle "
-                                  "a call well. It isn't a procedure manual for your team, so it deliberately leaves out how "
-                                  "your team does its own work.")},
-          {"t": "p", "runs": runs("Each question shows **the manual's current text** beneath it, so you don't need to look "
-                                  "anything up. Tick **Correct** or **Needs change**, and add a note if something's wrong or "
-                                  "missing. If you're unsure about one, say so — that's useful too.")}]
+
     shown = {}
     for g in s["groups"]:
-        B.append({"t": "h2", "text": f"{g['num']}. {g['title']}"})
-        if g.get("intro"):
+        if g["title"]:
+            B.append({"t": "h2", "text": f"{g['num']}. {g['title']}"})
+        if g.get("intro") and not g["intro"].startswith("|"):
             B.append({"t": "p", "runs": runs(g["intro"])})
         for r in g["rows"]:
             if "q" in r:
                 B.append({"t": "h3", "runs": runs(f"{r['n']}. {r['q'].replace('**', '')}")})
+                for sec, filt in MRP.refs_for(r.get("sec"), key):
+                    t, body = MRP.excerpt(sec, filt)
+                    if t:
+                        B.append({"t": "excerpt", "title": t + (" (excerpt)" if filt else ""), "blocks": blocks(body)})
                 B.append({"t": "answer_open", "n": r["n"]})
                 continue
             B.append({"t": "h3", "runs": runs(f"{r['n']}. {r['says'].replace('**', '')}")})
-            if r.get("why"):
-                B.append({"t": "why", "runs": runs(r["why"])})
             if r.get("roster"):
                 t, body, _ = MRP.directory_rows(r["roster"])
                 B.append({"t": "excerpt", "title": t, "blocks": blocks(body)})
-            for sec in MRP.refs_for(r.get("sec", ""), key):
-                if sec in shown:
-                    B.append({"t": "pointer", "runs": runs(f"The text of {display(sec)} is shown with question {shown[sec]}.")})
+            for sec, filt in MRP.refs_for(r.get("sec"), key):
+                if (sec, filt) in shown:
+                    B.append({"t": "pointer", "runs": runs(f"The text of {display(sec)} is shown with question {shown[(sec, filt)]}.")})
                     continue
-                t, body = MRP.excerpt(sec)
+                t, body = MRP.excerpt(sec, filt, r.get("diagrams", False))
                 if t is None:
                     continue
-                shown[sec] = r["n"]
-                B.append({"t": "excerpt", "title": t, "blocks": blocks(body)})
+                shown[(sec, filt)] = r["n"]
+                B.append({"t": "excerpt", "title": t + (" (excerpt)" if filt else ""), "blocks": blocks(body)})
             B.append({"t": "answer", "n": r["n"]})
-    B.append({"t": "closing", "runs": runs("Thank you. Please return this to the Customer Service Manager.")})
     return {"title": title, "blocks": B}
 
 
 if __name__ == "__main__":
-    for key in (sys.argv[1:] or MRP.SPEC.keys()):
+    for key in (sys.argv[1:] or MRP.KEYS):
         json.dump(model(key), open(f"/tmp/packet_{key}.json", "w", encoding="utf-8"), ensure_ascii=False)
         print(key, "model ok")

@@ -28,7 +28,7 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 - Open with your name, UniversalMed Supply and **"on a recorded line"** · at least **two attempts**, the second from another caller ID · **no patient details on a voicemail** — [[§0-14]]
 
 ### Where to look
-- `Eligibility` — whose order it is · `Ticket` — when it's coming · `Pat. Resp.` — what they owe
+- `Eligibility` — whose order it is · `Ticket` — when it's coming · `Pat. Resp.` — what's owed before delivery (billed: *Invoices*)
 - **Notes** are behind *Messages*; **Fax History** is inside *Transaction*; signed documents are behind the *Artifacts* buttons — [[§0-10]]
 
 **Never** — quote a delivery date not in the system · promise a callback window you don't control · cold transfer
@@ -50,11 +50,10 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 | "I need more supplies." | Within 30 days of running out; ship no sooner than **10 days** before |
 | "The patient has died." | Condolences, date of death; patient-owned stays, else a pick-up ticket |
 
-### Escalation and complaints
+### Escalation, complaints and language
 - **Supervisor:** name and DOB → the concern → that team's supervisor → your own → a callback. **Medicare complaint** → straight to a supervisor
 - A complaint: **five fields** (name, address, phone, summary, actions) · acknowledged within **48 hours**
-
-### Language
+- **Abusive caller:** warn once; if it goes on, say you're ending the call, then disconnect — [[§1-4.3]]
 - **Spanish Q** — inbound, then its voicemail; outbound, then the email. Never a direct transfer
 
 **Never say** — "your insurance will cover this" · "you'll only owe $X" · "I can waive that" · "we take UHC"
@@ -81,7 +80,7 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 <!--card:p3-->
 ## §C-3 Respiratory & Resupply
 
-### Overrides to Chapter 0
+### Department specific amendments
 - Oxygen concentrators, PAP devices and ventilators need an **Rx even for out-of-pocket** purchase
 
 ### PAP compliance
@@ -142,7 +141,7 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 - PMDs are **not delivered to a hospital, rehab or SNF** — a nursing home that is the permanent residence is fine — and the patient must be present
 
 ### Route
-- **Scheduling** — delivery, ATP, service visits → **Field Ops-Power Q (ext 344)**
+- **Scheduling** — delivery, ATP, service visits → **Field Ops-Power Q (ext 344)**. A virtual ATP evaluation → Virtual ATP Scheduling
 - **Reporting a problem** with a PMD → **Service Q**
 
 **Never** — promise a PWC return or a write-off · call an MA plan a secondary · deliver a PMD to a hospital, rehab or SNF
@@ -192,11 +191,11 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 - **We can't service it** → a local DME repair service, in network for insurance to pay
 
 ### Visits and loaners
-- **Diagnostic visit:** **$75** if the patient refuses photos or video of the issue, or a technician recently found it working — say so before booking
+- **Diagnostic visit:** **$75** if they refuse photos or video, or a technician recently found it working and it still is; **no charge** if a fault is repaired. Say so first
 - **Don't raise loaners.** If asked: possible only while **patient-owned** equipment is repaired, and Service confirms
 
 ### Ventilators
-- **Service Q** first. If no answer, email respiratory@ and service@ and notify an RT — [[§7-5.1]]
+- **Service Q** first. If no answer, email respiratory@ and service@ and notify the **On-Call RT** — [[§7-5.1]]
 
 ### Timing and notes
 - **Turnaround:** days for small issues, weeks if parts come from the manufacturer
@@ -257,7 +256,7 @@ The full Billing card is at [[§10-A]]. This is the condensed version.
 
 ### Rental
 - **Capped rental:** 13 paid months, then the patient owns it automatically. No purchase option (complex rehab PWC aside), no 15 months
-- **E0471 and ventilators:** monthly rental for as long as needed, **never owned**
+- **Ventilators:** monthly rental for as long as needed, **never owned**
 - **Oxygen:** 36 months of rental, then no rental charge — but **UMS keeps ownership** and keeps servicing to 5 years
 
 ### Protections
@@ -274,5 +273,8 @@ The full Billing card is at [[§10-A]]. This is the condensed version.
 ### Paying
 - Network status is **plan by plan**, never carrier by carrier
 - Can't pay in full? A **payment plan** through Billing, or the **EAA** — neither on an out-of-pocket order
+
+### Denials
+- A denial is **under review** — route to the Denials team member in the notes, else the **Denials Q (ext 101)** — [[§10-17.3]]
 
 **Never** — collect Medicare cost-sharing from a QMB patient · waive a fee outside the three rules · say "we take UHC" · say a denial will be overturned

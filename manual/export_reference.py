@@ -49,6 +49,7 @@ os.chdir(HERE)
 sys.path.insert(0, HERE)
 from numbering import display as dnum  # noqa: E402
 import footnotes, roles  # noqa: E402  (shared with build.py)
+from built_date import built_date  # noqa: E402  (the one build date, shared with build.py and make_html.py)
 
 # Mirrors KB_BODY_MAX in web-app/00_config.js — the importer refuses a longer
 # body, so the export refuses first (pinned equal by the Node harness).
@@ -296,14 +297,14 @@ BUNDLE_FORMAT = "ums-manual/1"   # the importer refuses any other format (pinned
 
 
 def build_meta():
-    """version + built date — build.py's own constants, read rather than copied."""
+    """version — build.py's own constant, read rather than copied (importing build.py would
+    run the build) — and the built date, from the helper build.py itself uses."""
     src = open("build.py", encoding="utf-8").read()
     ver = re.search(r'^VERSION = "([^"]+)"', src, re.M)
-    blt = re.search(r'^BUILT = "([^"]+)"', src, re.M)
-    if not ver or not blt:
+    if not ver or not re.search(r"^BUILT = built_date\(\)", src, re.M):
         errors.append("build.py: VERSION / BUILT not found")
         return "", ""
-    return ver.group(1), blt.group(1)
+    return ver.group(1), built_date()
 
 
 def sec_target(sec, anchors):

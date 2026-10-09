@@ -15,9 +15,10 @@ version stamp, extract banner.
 import json, os, re, subprocess, sys, datetime
 from numbering import display as dnum
 import footnotes, roles
+from built_date import built_date
 
 VERSION = "v3.0"
-BUILT = "09/15/2026"
+BUILT = built_date()   # the last content change — built_date.py
 OWNER = "Robin Choudhury"
 COMMIT = subprocess.run(["date", "+%s"], capture_output=True, text=True).stdout.strip()[:7]
 
@@ -232,7 +233,7 @@ def toc(text):
 def recent_updates(part=None):
     rows = [c for c in CL if c["date"] >= "2025-09-15" and (part is None or c["part"] == part)]
     if not rows:
-        return "_No updates in the last 12 months._"
+        return "*No updates in the last 12 months.*"
     out = ["| Date | Section | Change | Retraining |", "|---|---|---|---|"]
     for c in sorted(rows, key=lambda x: x["date"], reverse=True):
         d = datetime.date.fromisoformat(c["date"]).strftime("%m/%d/%Y")
@@ -261,7 +262,7 @@ def cards_for(card_keys):
 def full_changelog(part=None):
     rows = [c for c in CL if part is None or c["part"] == part]
     if not rows:
-        return "_No entries._"
+        return "*No entries.*"
     out = ["| Date | Part | Section | Change | Authority | Retraining |", "|---|---|---|---|---|---|"]
     for c in sorted(rows, key=lambda x: x["date"], reverse=True):
         d = datetime.date.fromisoformat(c["date"]).strftime("%m/%d/%Y")
@@ -397,7 +398,7 @@ def build_index(include=None):
 
 
 def glossary_subset(part):
-    return sum(1 for g in GLOSSARY if part in g["parts"] or len(g["parts"]) == 5)
+    return sum(1 for g in GLOSSARY if part in g["parts"] or "p0" in g["parts"])
 
 
 HOWTO = """## How to use this manual
@@ -526,21 +527,21 @@ def assemble(name, part_keys, title, banner=None, guide=None):
         text = resolve_refs(bodies[k])
         if guide and k == "appx_a":
             # each glossary section shows the terms of this guide's parts, plus those marked All
-            text = _keep_rows(text, lambda h, c: "Parts" not in h or c[h.index("Parts")] == "All"
-                              or bool(allowed & {x.strip() for x in c[h.index("Parts")].split(",")}))
+            text = _keep_rows(text, lambda h, c: "Chapters" not in h or c[h.index("Chapters")] == "All"
+                              or bool(allowed & {x.strip() for x in c[h.index("Chapters")].split(",")}))
         body_parts.append("\n---\n\n" + text)
     body_parts.append("\n---\n\n" + resolve_refs(cards_for(guide["cards"] if guide else None)))
     scope = guide["key"] if guide else None
     body_parts.append("\n---\n\n# Appendix D — Changelog\n\n"
-                      "## §D-1 Recent updates\n\n_Entries from the last 12 months._\n\n"
+                      "## §D-1 Recent updates\n\n*Entries from the last 12 months.*\n\n"
                       + recent_updates(scope)
                       + "\n\n## §D-2 Full changelog\n\n" + full_changelog(scope))
     body = "\n".join(body_parts)
     present = {m.group(1) for m in re.finditer(r"^#{2,3} (§[\w\-.]+) ", body, re.M)}
     idx, n_terms = build_index(present if guide else None)
     body += ("\n\n---\n\n# Appendix E — Index\n\n## §E-1 Index\n\n"
-             f"_{n_terms} terms. Each section number links to its section; hover it for a preview. "
-             "The explanation spells out an abbreviation, or names the items an HCPCS code covers._\n" + idx)
+             f"*{n_terms} terms. Each section number links to its section; hover it for a preview. "
+             "The explanation spells out an abbreviation, or names the items an HCPCS code covers.*\n" + idx)
     if guide:
         # the directory keeps this guide's roles, the shared ones, and every role it links to
         linked = set(re.findall(r'href="#role-([\w-]+)"', body))

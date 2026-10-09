@@ -4894,9 +4894,9 @@ test('M1 DOM: the Manual dialog — Check shows the plan and every skipped artic
   w.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
   h.bootShell({ isManager: true });
   const tree = { isAdmin: true, isManager: true, items: [
-    { id: 'man-10-1', department: 'Part 10 — Billing & Insurance', title: '10.1 How billing works', type: 'article', status: 'draft', sortOrder: 1 },
-    { id: 'man-2-1', department: 'Part 2 — Manual Mobility', title: '2.1 Intake', type: 'article', status: 'draft', sortOrder: 1 },
-    { id: 'man-2-2', department: 'Part 2 — Manual Mobility', title: '2.2 Delivery', type: 'article', status: 'published', sortOrder: 2 },
+    { id: 'man-10-1', department: 'Chapter 10 — Billing & Denials', title: '10.1 2026 annual figures', type: 'article', status: 'draft', sortOrder: 1 },
+    { id: 'man-2-1', department: 'Chapter 02 — Manual Mobility & General DME', title: '2.1 Scope', type: 'article', status: 'draft', sortOrder: 1 },
+    { id: 'man-2-2', department: 'Chapter 02 — Manual Mobility & General DME', title: '2.2 Ordering rules for this department', type: 'article', status: 'published', sortOrder: 2 },
     { id: 'man-c-5', department: 'Appendix C — Quick Reference Cards', title: 'Card 5', type: 'article', status: 'draft', sortOrder: 5 },
     { id: 'kb-1', department: 'Billing', title: 'Hand-written', type: 'article', status: 'draft', sortOrder: 1 }] };
   let treeReads = 0;
@@ -4904,7 +4904,7 @@ test('M1 DOM: the Manual dialog — Check shows the plan and every skipped artic
   w.enterTool('reference', 'reference');
   h.flushTimers();
   // Batch M2: the manual's parts lead the tree under their own heading.
-  assert.deepStrictEqual(h.$$('#kb-tree .kb-dept-name').map((x) => x.textContent), ['Part 2 — Manual Mobility', 'Part 10 — Billing & Insurance', 'Appendix C — Quick Reference Cards', 'Billing'], 'Part 2 before Part 10, the appendices after Part 10 (M3), the manual first');
+  assert.deepStrictEqual(h.$$('#kb-tree .kb-dept-name').map((x) => x.textContent), ['Chapter 02 — Manual Mobility & General DME', 'Chapter 10 — Billing & Denials', 'Appendix C — Quick Reference Cards', 'Billing'], 'Chapter 02 before Chapter 10 (the number order itself is M1-S1\'s pin), the appendices after the chapters (M3), the manual first');
   assert.deepStrictEqual(h.$$('#kb-tree .kb-tree-group').map((x) => x.textContent), ['Procedures manual', 'Other reference']);
   const btn = h.$$('#kb-tree .kb-add').filter((b) => /Manual/.test(b.textContent))[0];
   assert.ok(btn && btn.getAttribute('onclick') === 'kbOpenManualImport_()', 'an admin sees the Manual button, wired to the dialog');
@@ -4915,7 +4915,7 @@ test('M1 DOM: the Manual dialog — Check shows the plan and every skipped artic
   assert.strictEqual(doc.getElementById('kb-man-import').getAttribute('onclick'), 'kbManualRun_(false)');
   const run = h.read('kbManualRun_');
   const opts = [...ov.querySelectorAll('#kb-man-dept option')].map((o) => o.textContent);
-  assert.deepStrictEqual(opts, ['Every chapter (3 drafts)', 'Part 2 — Manual Mobility (1)', 'Part 10 — Billing & Insurance (1)', 'Appendix C — Quick Reference Cards (1)'], 'only the manual’s DRAFTS, by part, in order — never the hand-written draft');
+  assert.deepStrictEqual(opts, ['Every chapter (3 drafts)', 'Chapter 02 — Manual Mobility & General DME (1)', 'Chapter 10 — Billing & Denials (1)', 'Appendix C — Quick Reference Cards (1)'], 'only the manual’s DRAFTS, by part, in order — never the hand-written draft');
   const imp = doc.getElementById('kb-man-import');
   assert.strictEqual(imp.disabled, true, 'Import starts locked');
   // Check with no file chosen: said, and no RPC.
@@ -4950,7 +4950,7 @@ test('M1 DOM: the Manual dialog — Check shows the plan and every skipped artic
   call = h.run.pending('kbImportManual').slice(-1)[0];
   assert.strictEqual(call.args[1].dryRun, false, 'Import is the real thing');
   assert.ok(/Importing — this can take a minute or two/.test(doc.getElementById('kb-man-result').textContent), 'operator testing 2026-10-08: the import SAYS it is running');
-  tree.items.push({ id: 'man-2-3', department: 'Part 2 — Manual Mobility', title: '2.3 New', type: 'article', status: 'draft', sortOrder: 3 });   // what the import wrote
+  tree.items.push({ id: 'man-2-3', department: 'Chapter 02 — Manual Mobility & General DME', title: '2.3 Hospital beds', type: 'article', status: 'draft', sortOrder: 3 });   // what the import wrote
   h.run.flushSuccess({ success: true, dryRun: false, total: 3, created: 1, updated: 0, unchanged: 2, removed: 4, skipped: [] }, 'kbImportManual');
   assert.ok(/Imported 3 articles/.test(doc.getElementById('kb-man-result').textContent));
   assert.strictEqual(imp.disabled, true, 'an import done leaves Import locked');
@@ -4968,33 +4968,33 @@ test('M1 DOM: the Manual dialog — Check shows the plan and every skipped artic
   h.run.flushSuccess({ success: false, error: 'The file was refused; nothing was imported.', problems: ['man-9: no title.'], problemCount: 3 }, 'kbImportManual');
   assert.ok(/nothing was imported/.test(res.textContent) && /man-9: no title\./.test(res.textContent) && /… and 2 more/.test(res.textContent));
   // Publish one part: a confirm that names it, then the RPC with the department.
-  doc.getElementById('kb-man-dept').value = 'Part 10 — Billing & Insurance';
+  doc.getElementById('kb-man-dept').value = 'Chapter 10 — Billing & Denials';
   const pubBtn = h.$$('#kb-man-overlay .kb-man-pubrow .kb-btn')[0];
   assert.strictEqual(pubBtn.getAttribute('onclick'), 'kbManualPublish_(this)');
   h.read('kbManualPublish_')(pubBtn);
   await tick();
   const dlg = h.$('.ui-dialog');
-  assert.ok(dlg && /Part 10 — Billing & Insurance/.test(dlg.textContent), 'the confirm names the part');
+  assert.ok(dlg && /Chapter 10 — Billing & Denials/.test(dlg.textContent), 'the confirm names the part');
   assert.strictEqual(h.run.pending('kbPublishManual').length, 0, 'nothing is published before the confirm');
   h.click(h.$('.ui-dialog-ok'));
   await tick();
   const pub = h.run.pending('kbPublishManual').slice(-1)[0];
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(pub.args[0])), { department: 'Part 10 — Billing & Insurance' });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(pub.args[0])), { department: 'Chapter 10 — Billing & Denials' });
   h.run.flushSuccess({ success: true, count: 1, reviewSpreadDays: 90 }, 'kbPublishManual');
   assert.ok(!doc.getElementById('kb-man-overlay'), 'the dialog closes through its hook');
 });
 
 // ── Batch M2 — the Manual reader ─────────────────────────────────────────────
 const M2_TREE = { isAdmin: true, isManager: true, items: [
-  { id: 'man-0-10', department: 'Part 00 — CSR Core', title: '0.10 Anatomy of a transaction', type: 'article', status: 'published', sortOrder: 10 },
-  { id: 'man-0-11', department: 'Part 00 — CSR Core', title: '0.11 Notes and email conventions', type: 'article', status: 'published', sortOrder: 11 },
-  { id: 'man-10-1', department: 'Part 10 — Billing & Insurance', title: '10.1 How billing works', type: 'article', status: 'published', sortOrder: 1 },
+  { id: 'man-0-10', department: 'Chapter 00 — CSR Core', title: '0.10 Anatomy of a transaction', type: 'article', status: 'published', sortOrder: 10 },
+  { id: 'man-0-11', department: 'Chapter 00 — CSR Core', title: '0.11 Notes and email conventions', type: 'article', status: 'published', sortOrder: 11 },
+  { id: 'man-10-1', department: 'Chapter 10 — Billing & Denials', title: '10.1 2026 annual figures', type: 'article', status: 'published', sortOrder: 1 },
   { id: 'kb-1', department: 'Billing', title: 'Hand-written', type: 'article', status: 'published', sortOrder: 1 }] };
-const M2_PART0 = { department: 'Part 00 — CSR Core', isAdmin: true, sections: [
+const M2_PART0 = { department: 'Chapter 00 — CSR Core', isAdmin: true, sections: [
   { id: 'man-0-10', title: '0.10 Anatomy of a transaction', status: 'published', sortOrder: 10,
-    bodyMd: 'Tabs.\n\n## 0.10.1 Trx Type\n\ntypes\n\n## 0.10.2 Before you transfer\n\n1. Check it\n' },
+    bodyMd: 'Tabs.\n\n## 0.10.1 Trx Type\n\ntypes\n\n## 0.10.2 Trx State\n\n1. Check it\n' },
   { id: 'man-0-11', title: '0.11 Notes and email conventions', status: 'draft', sortOrder: 11,
-    bodyMd: 'Notes.\n\nSee [0.10.2 Before you transfer](kb:man-0-10#0.10.2) and [10.1 How billing works (Billing)](kb:man-10-1).\n\n> **Watch-out** — the TRX, never a name.\n' }] };
+    bodyMd: 'Notes.\n\nSee [0.10.2 Trx State](kb:man-0-10#0.10.2) and [10.1 2026 annual figures (Billing & Denials)](kb:man-10-1).\n\n> **Watch-out** — the TRX, never a name.\n' }] };
 
 test('M2 DOM: a manual section opens its WHOLE PART — one fetch per part, a click inside it scrolls, the comments follow the open section, cross-references open where they live, "Updated" and "Suggest an edit" are there and Edit/Delete are not', async () => {
   const h = boot();
@@ -5005,12 +5005,12 @@ test('M2 DOM: a manual section opens its WHOLE PART — one fetch per part, a cl
   w.enterTool('reference', 'reference');
   h.flushTimers();
   const box = (d) => h.$$('#kb-tree .kb-dept').filter((b) => b.querySelector('.kb-dept-name').textContent === d)[0];
-  assert.ok(box('Part 00 — CSR Core').classList.contains('collapsed') && box('Part 10 — Billing & Insurance').classList.contains('collapsed'), 'the manual’s parts start collapsed');
+  assert.ok(box('Chapter 00 — CSR Core').classList.contains('collapsed') && box('Chapter 10 — Billing & Denials').classList.contains('collapsed'), 'the manual’s parts start collapsed');
   assert.ok(!box('Billing').classList.contains('collapsed'), 'other reference keeps its own default');
   assert.ok(h.$('#kb-tree .kb-router-open'), 'the tree offers the call router');
   const parts = () => h.run.calls.filter((c) => c.method === 'getManualPart');
   h.read('kbOpenItem_')('man-0-11');
-  assert.deepStrictEqual(parts().map((c) => c.args[0]), ['Part 00 — CSR Core'], 'ONE fetch: the section’s part');
+  assert.deepStrictEqual(parts().map((c) => c.args[0]), ['Chapter 00 — CSR Core'], 'ONE fetch: the section’s part');
   assert.strictEqual(h.run.pending('getReferenceItem').length, 0, 'not the single-article read');
   h.run.flushSuccess(M2_PART0, 'getManualPart');
   const main = doc.getElementById('kb-main');
@@ -5021,7 +5021,7 @@ test('M2 DOM: a manual section opens its WHOLE PART — one fetch per part, a cl
   assert.ok(/1 of 2 sections in this chapter is a draft/.test(main.textContent), 'an admin is told which sections reps cannot see');
   assert.ok(doc.getElementById('kb-man-sec-man-0-11').contains(doc.getElementById('kb-comments')), 'the comments host sits under the OPEN section');
   assert.deepStrictEqual(h.run.pending('kbGetComments').map((c) => c.args[0]), ['man-0-11']);
-  assert.ok(!box('Part 00 — CSR Core').classList.contains('collapsed'), 'and its part opens in the rail');
+  assert.ok(!box('Chapter 00 — CSR Core').classList.contains('collapsed'), 'and its part opens in the rail');
   // The meta arrives: the version line and the badge.
   const today = new Date(); const d40 = new Date(today.getTime() - 40 * 86400000).toISOString().slice(0, 10);
   h.run.flushSuccess({ version: 'v3.0', built: '09/15/2026', router: [], changelog: [{ date: d40, num: '0.11', id: 'man-0-11', anchor: '', summary: 'TRX, never a name.', retraining: true }] }, 'getManualMeta');
@@ -5040,8 +5040,8 @@ test('M2 DOM: a manual section opens its WHOLE PART — one fetch per part, a cl
   assert.strictEqual(parts().length, 1, 'a link into the loaded part scrolls to the numbered heading');
   assert.strictEqual(h.read('KB_STATE').currentId, 'man-0-10');
   h.click(h.$('#kb-man-sec-man-0-11 a.kb-xref[data-kb-id="man-10-1"]'));
-  assert.deepStrictEqual(parts().map((c) => c.args[0]).slice(-1), ['Part 10 — Billing & Insurance'], 'a link into another part loads that part');
-  h.run.flushSuccess({ department: 'Part 10 — Billing & Insurance', sections: [{ id: 'man-10-1', title: '10.1 How billing works', status: 'published', bodyMd: 'x' }] }, 'getManualPart');
+  assert.deepStrictEqual(parts().map((c) => c.args[0]).slice(-1), ['Chapter 10 — Billing & Denials'], 'a link into another part loads that part');
+  h.run.flushSuccess({ department: 'Chapter 10 — Billing & Denials', sections: [{ id: 'man-10-1', title: '10.1 2026 annual figures', status: 'published', bodyMd: 'x' }] }, 'getManualPart');
   // Suggest an edit — the review-queue flag, with a required note.
   h.read('kbOpenItem_')('man-0-11');
   h.run.flushSuccess(M2_PART0, 'getManualPart');
@@ -5067,12 +5067,12 @@ test('M3 DOM: a manual diagram draws inside its section as real SVG — scoped, 
   w.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
   h.bootShell({ isManager: true });
   const tree = JSON.parse(JSON.stringify(M2_TREE));
-  tree.items.push({ id: 'man-0-8', department: 'Part 00 — CSR Core', title: '0.8 Order lifecycle', type: 'article', status: 'published', sortOrder: 8 });
+  tree.items.push({ id: 'man-0-8', department: 'Chapter 00 — CSR Core', title: '0.8 Standard order process', type: 'article', status: 'published', sortOrder: 8 });
   h.run.respond('getReferenceTree', () => tree);
   w.enterTool('reference', 'reference');
   h.flushTimers();
   const part = JSON.parse(JSON.stringify(M2_PART0));
-  part.sections.unshift({ id: 'man-0-8', title: '0.8 Order lifecycle', status: 'published', sortOrder: 8, bodyMd: 'Stages.\n' });
+  part.sections.unshift({ id: 'man-0-8', title: '0.8 Standard order process', status: 'published', sortOrder: 8, bodyMd: 'Stages.\n' });
   part.sections[1].bodyMd += '\n```diagram lifecycle\nOrder lifecycle\n```\n\n```diagram not-deployed-yet\nA new one\n```\n';
   h.read('kbOpenItem_')('man-0-10');
   h.run.flushSuccess(part, 'getManualPart');
@@ -5135,7 +5135,7 @@ test('M3 DOM: manual images arrive in ONE batched call per page and are set by p
   assert.ok(gone && gone.getAttribute('data-mi') === 'missing' && /not imported yet/.test(gone.title), '"not imported" is said, on the chip');
   // A failed call: marked, and NOT cached — the next render asks again, while the successes are remembered.
   h.read('kbOpenItem_')('man-10-1');
-  h.run.flushSuccess({ department: 'Part 10 — Billing & Insurance', sections: [{ id: 'man-10-1', title: '10.1 How billing works', status: 'published', bodyMd: '![Other](manimg:thumb-z) ![New Order icon](manimg:icon-a)' }] }, 'getManualPart');
+  h.run.flushSuccess({ department: 'Chapter 10 — Billing & Denials', sections: [{ id: 'man-10-1', title: '10.1 2026 annual figures', status: 'published', bodyMd: '![Other](manimg:thumb-z) ![New Order icon](manimg:icon-a)' }] }, 'getManualPart');
   await tick(); h.flushTimers(); await tick();
   const c2 = h.run.pending('getManualImages');
   assert.deepStrictEqual(JSON.parse(JSON.stringify(c2[c2.length - 1].args[0])), ['thumb-z'], 'a cached image is not asked for again');
@@ -5182,13 +5182,13 @@ test('M2 DOM: the drawer — a typed section number jumps (Enter opens it), the 
   assert.strictEqual(h.run.pending('searchReference').length, 0, 'no text search for a number');
   h.dispatchKey('Enter', { target: s });
   assert.deepStrictEqual(h.run.pending('getReferenceItem').map((c) => c.args[0]), ['man-0-10'], 'Enter opens it');
-  h.run.flushSuccess({ id: 'man-0-10', title: '0.10 Anatomy of a transaction', type: 'article', status: 'published', bodyMd: '## 0.10.2 Before you transfer\n\nx' }, 'getReferenceItem');
+  h.run.flushSuccess({ id: 'man-0-10', title: '0.10 Anatomy of a transaction', type: 'article', status: 'published', bodyMd: '## 0.10.2 Trx State\n\nx' }, 'getReferenceItem');
   const ctx = h.$$('#kbd-body .kbd-back').filter((b) => /Read in context/.test(b.textContent))[0];
   assert.ok(ctx && ctx.getAttribute('data-kb-anchor') === '0.10.2', 'a manual section in the drawer offers its part');
   h.read('kbReadInContext_')(ctx);
   h.flushTimers();
   assert.strictEqual(w.KB_OPEN_HINT, null, 'the parked hint was consumed on arrival');
-  assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Part 00 — CSR Core'], 'and the tab opened the section’s part');
+  assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Chapter 00 — CSR Core'], 'and the tab opened the section’s part');
 });
 
 // ── Batch M4 — the manual's follow-ons ──────────────────────────────────────
@@ -5219,7 +5219,7 @@ test('M4 DOM: keyboard — focusing a cross-reference shows its preview and the 
   assert.ok(shown(), 'the preview shows on focus');
   assert.strictEqual(x.getAttribute('aria-describedby'), 'kb-xrefcard', 'and describes the link for a screen reader');
   assert.deepStrictEqual(h.run.pending('getReferenceItem').map((c) => c.args[0]), ['man-0-10']);
-  h.run.flushSuccess({ id: 'man-0-10', title: '0.10 Anatomy of a transaction', type: 'article', status: 'published', bodyMd: '## 0.10.2 Before you transfer\n\nCheck Fax History.' }, 'getReferenceItem');
+  h.run.flushSuccess({ id: 'man-0-10', title: '0.10 Anatomy of a transaction', type: 'article', status: 'published', bodyMd: '## 0.10.2 Trx State\n\nCheck Fax History.' }, 'getReferenceItem');
   assert.ok(/Check Fax History/.test(doc.getElementById('kb-xrefcard').textContent), 'the excerpt at the anchor');
   // Escape with the drawer open underneath: the preview goes, the drawer stays.
   h.read('kbDrawerOpen_')();
@@ -5307,7 +5307,7 @@ test('M4 DOM: the manual\'s recent changes — ONE getWhatsNew serves the What\'
   // attribute names is called with the row, exactly as the attribute would.)
   assert.strictEqual(rows()[1].getAttribute('onclick'), 'manualRecentOpen_(this)');
   h.read('manualRecentOpen_')(rows()[1]);
-  assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Part 00 — CSR Core'], 'the section\'s part opens');
+  assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Chapter 00 — CSR Core'], 'the section\'s part opens');
   assert.strictEqual(h.read('KB_STATE').currentId, 'man-0-10');
   // The panel.
   h.read('whatsNewOpen_')();
@@ -5423,23 +5423,23 @@ test('M4-FU2/FU3 DOM: the Manual dialog takes manual.json from the computer (no 
 section('Batch M5a — context-focused previews, code links in more places, back to the section');
 
 const M5A_TREE = { isAdmin: true, isManager: true, items: [
-  { id: 'man-0-7', department: 'Part 00 — CSR Core', title: '0.7 Coverage basics', type: 'article', status: 'published', sortOrder: 7 },
-  { id: 'man-4-11', department: 'Part 04 — Power Mobility', title: '4.11 FAQ', type: 'article', status: 'published', sortOrder: 11 },
+  { id: 'man-0-7', department: 'Chapter 00 — CSR Core', title: '0.7 Insurance acceptance', type: 'article', status: 'published', sortOrder: 7 },
+  { id: 'man-5-10', department: 'Chapter 05 — Power Mobility', title: '5.10 FAQ', type: 'article', status: 'published', sortOrder: 11 },
   { id: 'kb-1', department: 'Billing', title: 'Hand-written', type: 'article', status: 'published', sortOrder: 1 }] };
-// The manual's own 4.11 FAQ rows (manual.json, 2026-09-29), one code added.
+// The manual's own Power FAQ rows (manual.json, 2026-09-29 — 4.11 before the October renumber, 5.10 now), one code added.
 const M5A_FAQ_MD = '| Question | Answer |\n|---|---|\n' +
   '| Do you have cup holders? | Yes, a cup holder can be added to a PMD. If the chair is already delivered, transfer to Service |\n' +
   '| Do you offer a truck lift for a PMD? | No. We don\'t offer vehicle attachments of any kind |\n' +
   '| Do you sell ramps? | Yes, but out-of-pocket only. Check the Item Master for pricing (E1399) |\n';
 const M5A_07_MD = 'What is covered, and where to read more.\n\n| Item | Coverage | See |\n|---|---|---|\n' +
-  '| Ramps | Out-of-pocket only | [4.11 FAQ (Power Mobility)](kb:man-4-11) |\n' +
-  '| Truck or vehicle lifts for a PMD | Not offered | [4.11 FAQ (Power Mobility)](kb:man-4-11) |\n' +
-  '| Weather | Unknown | [4.11 FAQ (Power Mobility)](kb:man-4-11) |\n';
-const M5A_P0 = { department: 'Part 00 — CSR Core', isAdmin: true, sections: [{ id: 'man-0-7', title: '0.7 Coverage basics', status: 'published', sortOrder: 7, bodyMd: M5A_07_MD }] };
-const M5A_P4 = { department: 'Part 04 — Power Mobility', isAdmin: true, sections: [{ id: 'man-4-11', title: '4.11 FAQ', status: 'published', sortOrder: 11, bodyMd: M5A_FAQ_MD }] };
-const M5A_ITEM = (id) => id === 'man-4-11'
-  ? { id: 'man-4-11', title: '4.11 FAQ', type: 'article', status: 'published', department: 'Part 04 — Power Mobility', bodyMd: M5A_FAQ_MD }
-  : { id: 'man-0-7', title: '0.7 Coverage basics', type: 'article', status: 'published', department: 'Part 00 — CSR Core', bodyMd: M5A_07_MD };
+  '| Ramps | Out-of-pocket only | [5.10 FAQ (Power Mobility)](kb:man-5-10) |\n' +
+  '| Truck or vehicle lifts for a PMD | Not offered | [5.10 FAQ (Power Mobility)](kb:man-5-10) |\n' +
+  '| Weather | Unknown | [5.10 FAQ (Power Mobility)](kb:man-5-10) |\n';
+const M5A_P0 = { department: 'Chapter 00 — CSR Core', isAdmin: true, sections: [{ id: 'man-0-7', title: '0.7 Insurance acceptance', status: 'published', sortOrder: 7, bodyMd: M5A_07_MD }] };
+const M5A_P4 = { department: 'Chapter 05 — Power Mobility', isAdmin: true, sections: [{ id: 'man-5-10', title: '5.10 FAQ', status: 'published', sortOrder: 11, bodyMd: M5A_FAQ_MD }] };
+const M5A_ITEM = (id) => id === 'man-5-10'
+  ? { id: 'man-5-10', title: '5.10 FAQ', type: 'article', status: 'published', department: 'Chapter 05 — Power Mobility', bodyMd: M5A_FAQ_MD }
+  : { id: 'man-0-7', title: '0.7 Insurance acceptance', type: 'article', status: 'published', department: 'Chapter 00 — CSR Core', bodyMd: M5A_07_MD };
 
 function m5aBoot_() {
   const h = boot();
@@ -5461,8 +5461,8 @@ test('M5a DOM: a cross-reference previews the PART of its target the link is abo
   const link = (w) => m5aRow_(sec, w).querySelector('a.kb-xref');
   const card = () => doc.getElementById('kb-xrefcard');
   h.read('kbXrefShow_')(link('Ramps'));
-  h.run.flushSuccess(M5A_ITEM('man-4-11'), 'getReferenceItem');
-  assert.strictEqual(card().querySelector('.xc-h').textContent, '4.11 FAQ › Do you sell ramps?', 'the card names the part');
+  h.run.flushSuccess(M5A_ITEM('man-5-10'), 'getReferenceItem');
+  assert.strictEqual(card().querySelector('.xc-h').textContent, '5.10 FAQ › Do you sell ramps?', 'the card names the part');
   assert.ok(card().querySelector('.xc-focus'), 'and says it is the part the link is about');
   const rows = [...card().querySelectorAll('.xc-body tbody tr')];
   assert.strictEqual(rows.length, 1, 'ONE row, under its header');
@@ -5473,10 +5473,10 @@ test('M5a DOM: a cross-reference previews the PART of its target the link is abo
   // Another row, same target: no second read, a different card (the card is per LINK, not per target).
   h.read('kbXrefShow_')(link('Truck'));
   assert.strictEqual(h.run.pending('getReferenceItem').length, 0, 'from the cache');
-  assert.strictEqual(card().querySelector('.xc-h').textContent, '4.11 FAQ › Do you offer a truck lift for a PMD?');
+  assert.strictEqual(card().querySelector('.xc-h').textContent, '5.10 FAQ › Do you offer a truck lift for a PMD?');
   // A row nothing clearly matches: the excerpt exactly as before — never a guess in place of the opening.
   h.read('kbXrefShow_')(link('Weather'));
-  assert.strictEqual(card().querySelector('.xc-h').textContent, '4.11 FAQ', 'no part named');
+  assert.strictEqual(card().querySelector('.xc-h').textContent, '5.10 FAQ', 'no part named');
   assert.ok(!card().querySelector('.xc-focus') && /cup holder/.test(card().textContent), 'the opening, as before M5a');
 });
 
@@ -5486,25 +5486,25 @@ test('M5a DOM: the click lands on that part — the target part loads and the ra
   h.read('kbOpenItem_')('man-0-7');
   h.run.flushSuccess(M5A_P0, 'getManualPart');
   h.click(m5aRow_(doc.getElementById('kb-man-sec-man-0-7'), 'Ramps').querySelector('a.kb-xref'));
-  assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Part 04 — Power Mobility']);
+  assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Chapter 05 — Power Mobility']);
   h.run.flushSuccess(M5A_P4, 'getManualPart');
-  const faq = doc.getElementById('kb-man-sec-man-4-11');
+  const faq = doc.getElementById('kb-man-sec-man-5-10');
   assert.ok(m5aRow_(faq, 'Do you sell ramps').classList.contains('kb-h-flash'), 'the ramps row is where the click landed');
   assert.ok(!faq.querySelector('.kb-man-sec-h').classList.contains('kb-h-flash') && !m5aRow_(faq, 'cup holders').classList.contains('kb-h-flash'), 'not the heading, not the opening row');
   const chip = () => doc.querySelector('#kb-main [data-kb-man-back] button');
-  assert.ok(chip() && /Back to 0\.7/.test(chip().textContent) && /Coverage basics/.test(chip().textContent), 'the chip names where the rep came from');
+  assert.ok(chip() && /Back to 0\.7/.test(chip().textContent) && /Insurance acceptance/.test(chip().textContent), 'the chip names where the rep came from');
   assert.strictEqual(chip().getAttribute('onclick'), 'kbManualBack_()');
   h.read('kbManualBack_')();
-  assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Part 00 — CSR Core'], 'the part it came from reloads');
+  assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Chapter 00 — CSR Core'], 'the part it came from reloads');
   h.run.flushSuccess(M5A_P0, 'getManualPart');
   assert.ok(m5aRow_(doc.getElementById('kb-man-sec-man-0-7'), 'Ramps').classList.contains('kb-h-flash'), 'Back lands on the row the rep left from');
   assert.ok(!chip(), 'and the chip is spent');
   // Jump again, then open something the ordinary way: the chip goes.
   h.click(m5aRow_(doc.getElementById('kb-man-sec-man-0-7'), 'Truck').querySelector('a.kb-xref'));
   h.run.flushSuccess(M5A_P4, 'getManualPart');
-  assert.ok(m5aRow_(doc.getElementById('kb-man-sec-man-4-11'), 'truck lift').classList.contains('kb-h-flash'), 'the truck row lands on the truck answer');
+  assert.ok(m5aRow_(doc.getElementById('kb-man-sec-man-5-10'), 'truck lift').classList.contains('kb-h-flash'), 'the truck row lands on the truck answer');
   assert.ok(chip(), 'a chip again');
-  h.read('kbOpenItem_')('man-4-11');
+  h.read('kbOpenItem_')('man-5-10');
   assert.ok(!chip(), 'an open from the tree or a search is a fresh start — no chip');
 });
 
@@ -5521,40 +5521,40 @@ test('M5a DOM: the drawer keeps the trail — the preview\'s Open lands on the r
   const backText = () => { const b = h.$('#kbd-body .kbd-backto'); return b ? b.textContent.replace(/\s+/g, ' ').trim() : ''; };
   // The card's Open, from a link in the drawer: the drawer opens the target on the row.
   h.read('kbXrefShow_')(m5aRow_(body, 'Ramps').querySelector('a.kb-xref'));
-  h.run.flushSuccess(M5A_ITEM('man-4-11'), 'getReferenceItem');
+  h.run.flushSuccess(M5A_ITEM('man-5-10'), 'getReferenceItem');
   h.click(doc.getElementById('kb-xrefcard').querySelector('.xc-row a.kb-xref'));
-  h.run.flushSuccess(M5A_ITEM('man-4-11'), 'getReferenceItem');
+  h.run.flushSuccess(M5A_ITEM('man-5-10'), 'getReferenceItem');
   assert.ok(m5aRow_(body, 'Do you sell ramps').classList.contains('kb-h-flash'), 'Open lands on the part the card showed');
-  assert.strictEqual(backText(), 'Back to 0.7 Coverage basics');
+  assert.strictEqual(backText(), 'Back to 0.7 Insurance acceptance');
   // Back FROM a section: 0.7 again, where it was — and nothing left to go back to (a Back never pushes).
   st = 0;
   h.read('kbDrawerBackTo_')();
   h.run.flushSuccess(M5A_ITEM('man-0-7'), 'getReferenceItem');
   assert.strictEqual(st, 120, 'the scroll 0.7 was left at');
-  assert.strictEqual(backText(), '', 'no "Back to 4.11" — the trail pops, like a browser Back');
+  assert.strictEqual(backText(), '', 'no "Back to 5.10" — the trail pops, like a browser Back');
   // …and forward again the same way.
   h.read('kbXrefShow_')(m5aRow_(body, 'Ramps').querySelector('a.kb-xref'));
   h.click(doc.getElementById('kb-xrefcard').querySelector('.xc-row a.kb-xref'));
-  h.run.flushSuccess(M5A_ITEM('man-4-11'), 'getReferenceItem');
-  assert.strictEqual(backText(), 'Back to 0.7 Coverage basics');
+  h.run.flushSuccess(M5A_ITEM('man-5-10'), 'getReferenceItem');
+  assert.strictEqual(backText(), 'Back to 0.7 Insurance acceptance');
   // Leave by a code: the lookups, with the way back above them.
   st = 300;
   h.click(h.$('#kbd-body a.kb-hcpcs[data-hcpcs="E1399"]'));
   assert.ok(doc.getElementById('kb-oop-item-d') && doc.getElementById('kb-oop-item-d').value === 'E1399', 'the code went to the lookups');
-  assert.strictEqual(backText(), 'Back to 4.11 FAQ', 'home offers the section the code came from');
+  assert.strictEqual(backText(), 'Back to 5.10 FAQ', 'home offers the section the code came from');
   assert.strictEqual(h.$('#kbd-body .kbd-backto').getAttribute('onclick'), 'kbDrawerBackTo_()');
   h.read('kbDrawerBackTo_')();   // inline handlers do not run in this harness
-  h.run.flushSuccess(M5A_ITEM('man-4-11'), 'getReferenceItem');
+  h.run.flushSuccess(M5A_ITEM('man-5-10'), 'getReferenceItem');
   assert.strictEqual(st, 300, 'Back restores where the rep was reading');
-  assert.strictEqual(backText(), 'Back to 0.7 Coverage basics', 'Back POPS — the section it left is not pushed');
+  assert.strictEqual(backText(), 'Back to 0.7 Insurance acceptance', 'Back POPS — the section it left is not pushed');
   // Leave by a search: the results offer the way back.
   h.read('kbDrawerSearch_')('ramps');
-  h.run.flushSuccess({ results: [{ id: 'man-4-11', title: '4.11 FAQ', department: 'Part 04 — Power Mobility', type: 'article', heading: '', anchor: '', chunkMd: 'Ramps: see E1399.' }] }, 'searchReference');
-  assert.strictEqual(backText(), 'Back to 4.11 FAQ', 'the search results offer it');
+  h.run.flushSuccess({ results: [{ id: 'man-5-10', title: '5.10 FAQ', department: 'Chapter 05 — Power Mobility', type: 'article', heading: '', anchor: '', chunkMd: 'Ramps: see E1399.' }] }, 'searchReference');
+  assert.strictEqual(backText(), 'Back to 5.10 FAQ', 'the search results offer it');
   // …and the router does too.
   h.read('kbDrawerOpenRouter_')();
-  assert.strictEqual(backText(), 'Back to 4.11 FAQ', 'so does the call router');
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.read('KB_DRAWER').stack.map((e) => e.id))), ['man-0-7', 'man-4-11'], 'the trail, oldest first, each section once');
+  assert.strictEqual(backText(), 'Back to 5.10 FAQ', 'so does the call router');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.read('KB_DRAWER').stack.map((e) => e.id))), ['man-0-7', 'man-5-10'], 'the trail, oldest first, each section once');
   h.read('kbDrawerClose_')();
   h.read('kbDrawerOpen_')();
   assert.strictEqual(backText(), '', 'a new visit starts with no trail');
@@ -5565,7 +5565,7 @@ test('M5a DOM: codes are lookups in more places — manual search results in the
   const h = m5aBoot_();
   const doc = h.window.document;
   const results = { results: [
-    { id: 'man-4-11', title: '4.11 FAQ', department: 'Part 04 — Power Mobility', type: 'article', heading: '', anchor: '', chunkMd: 'Ramps are out-of-pocket (E1399).' },
+    { id: 'man-5-10', title: '5.10 FAQ', department: 'Chapter 05 — Power Mobility', type: 'article', heading: '', anchor: '', chunkMd: 'Ramps are out-of-pocket (E1399).' },
     { id: 'kb-1', title: 'Hand-written', department: 'Billing', type: 'article', heading: '', anchor: '', chunkMd: 'Ramps (E1399) are covered here.' }] };
   h.read('kbDoSearch_')('E13');
   h.run.flushSuccess(results, 'searchReference');
@@ -5581,7 +5581,7 @@ test('M5a DOM: codes are lookups in more places — manual search results in the
   h.read('kbDrawerClose_')();
   // Training: a manual section assigned as training.
   const ov = mount_(h, 'train-reader-overlay');
-  h.read('trainRenderReader_')({ id: 'man-4-11', type: 'article', title: '4.11 FAQ', bodyMd: 'Ramps: E1399.' });
+  h.read('trainRenderReader_')({ id: 'man-5-10', type: 'article', title: '5.10 FAQ', bodyMd: 'Ramps: E1399.' });
   assert.ok(ov.querySelector('.kb-article a.kb-hcpcs[data-hcpcs="E1399"]'), 'the training reader links a manual section\'s code');
   h.read('trainRenderReader_')({ id: 'kb-1', type: 'article', title: 'Hand-written', bodyMd: 'Ramps: E1399.' });
   assert.ok(!ov.querySelector('a.kb-hcpcs'), 'and leaves a hand-written article alone');
@@ -5591,11 +5591,11 @@ test('M5a DOM: the reader and the report read ONE context — every link\'s rend
   const h = m5aBoot_();
   const doc = h.window.document;
   const md = 'Opening with **bold**, `Trx State` and a [plain link](https://example.com).\n\n' +
-    '| Item | Coverage | See |\n|---|---|---|\n| Ramps | Out-of-pocket only | [4.11 FAQ](kb:man-4-11) |\n| Lifts \\| hoists | *Not* offered | [4.11 FAQ](kb:man-4-11) and [0.7](kb:man-0-7) |\n\n' +
-    '1. Check the **Trx State** first, see [4.11 FAQ](kb:man-4-11)\n   and the ticket after\n   - a nested point about [ramps](kb:man-4-11)\n2. Then decide\n\n' +
-    '> **Watch-out — ramps are out-of-pocket.** See [4.11 FAQ](kb:man-4-11).\n>\n> | You want | Where |\n> |---|---|\n> | **Notes** | the Messages button |\n\n' +
-    '## 0.7.1 More\n\nA closing paragraph naming E1399 and [4.11 FAQ](kb:man-4-11) together.\n';
-  const part = { department: 'Part 00 — CSR Core', isAdmin: true, sections: [{ id: 'man-0-7', title: '0.7 Coverage basics', status: 'published', sortOrder: 7, bodyMd: md }] };
+    '| Item | Coverage | See |\n|---|---|---|\n| Ramps | Out-of-pocket only | [5.10 FAQ](kb:man-5-10) |\n| Lifts \\| hoists | *Not* offered | [5.10 FAQ](kb:man-5-10) and [0.7](kb:man-0-7) |\n\n' +
+    '1. Check the **Trx State** first, see [5.10 FAQ](kb:man-5-10)\n   and the ticket after\n   - a nested point about [ramps](kb:man-5-10)\n2. Then decide\n\n' +
+    '> **Watch-out — ramps are out-of-pocket.** See [5.10 FAQ](kb:man-5-10).\n>\n> | You want | Where |\n> |---|---|\n> | **Notes** | the Messages button |\n\n' +
+    '## 0.7.1 More\n\nA closing paragraph naming E1399 and [5.10 FAQ](kb:man-5-10) together.\n';
+  const part = { department: 'Chapter 00 — CSR Core', isAdmin: true, sections: [{ id: 'man-0-7', title: '0.7 Insurance acceptance', status: 'published', sortOrder: 7, bodyMd: md }] };
   h.read('kbOpenItem_')('man-0-7');
   h.run.flushSuccess(part, 'getManualPart');
   const art = doc.querySelector('#kb-man-sec-man-0-7 .kb-article');
@@ -5623,7 +5623,7 @@ test('M5a-FU DOM: a link that names a directory contact previews and lands on TH
   const dirItem = { id: 'man-b-1', title: 'B.1 Directory', type: 'article', status: 'published', department: 'Appendix B — Directory', bodyMd: dirMd };
   h.read('kbDrawerOpen_')();
   h.read('kbDrawerOpenItem_')('man-0-7');
-  h.run.flushSuccess({ id: 'man-0-7', title: '0.7 Coverage basics', type: 'article', status: 'published', department: 'Part 00 — CSR Core',
+  h.run.flushSuccess({ id: 'man-0-7', title: '0.7 Insurance acceptance', type: 'article', status: 'published', department: 'Chapter 00 — CSR Core',
     bodyMd: 'A patient who already finished a valid evaluation goes to [Qualified Leads](kb:man-b-1) — transfer them.\n' }, 'getReferenceItem');
   const a = h.$('#kbd-body a.kb-xref[data-kb-id="man-b-1"]');
   h.read('kbXrefShow_')(a);
@@ -5643,8 +5643,8 @@ test('M5b DOM: results mark what the SERVER matched on (a stem, a glossary phras
   const h = m5aBoot_();
   const doc = h.window.document;
   const res = { results: [
-    { id: 'man-10-5', title: '10.5 Waivers', department: 'Part 10 — Billing & Insurance', type: 'article', heading: '', anchor: '', chunkMd: 'Schedule the delivery once the Advance Beneficiary Notice is signed.' },
-    { id: 'man-0-2', title: '0.2 Status update', department: 'Part 00 — CSR Core', type: 'article', router: true,
+    { id: 'man-10-17', title: '10.17 ABN, EOBs, denials and appeals', department: 'Chapter 10 — Billing & Denials', type: 'article', heading: '', anchor: '', chunkMd: 'Schedule the delivery once the Advance Beneficiary Notice is signed.' },
+    { id: 'man-0-2', title: '0.2 Status update for a DME order', department: 'Chapter 00 — CSR Core', type: 'article', router: true,
       heading: 'The caller said “<img src=x onerror=alert(1)>Where is my equipment?”', anchor: '0.2.1', chunkMd: '0.2, then 5.2' }],
     terms: ['delivered', 'deliver', 'advance beneficiary notice'] };
   h.read('kbDoSearch_')('delivered');

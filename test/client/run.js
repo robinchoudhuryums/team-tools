@@ -30305,9 +30305,19 @@ test('M2-E1: the exporter writes ONE bundle in the format the importer reads, wi
   // Batch M3: the images ride the same file (the importer unpacks them).
   // Batch M5b: and the glossary's abbreviations, as search synonyms.
   assert.ok(/bundle = \{"format": BUNDLE_FORMAT, "version": version, "built": built,\s*"router": router, "changelog": changelog, "synonyms": synonyms, "articles": articles, "images": images\}/.test(ex));
-  assert.ok(/\^VERSION = "\(\[\^"\]\+\)"/.test(ex) && /\^BUILT = "\(\[\^"\]\+\)"/.test(ex), 'VERSION / BUILT come from build.py');
+  assert.ok(/\^VERSION = "\(\[\^"\]\+\)"/.test(ex), 'VERSION comes from build.py');
   const bd = fs.readFileSync(path.join(M, 'build.py'), 'utf8');
-  assert.ok(/^VERSION = "v[\d.]+"$/m.test(bd) && /^BUILT = "[\d/]+"$/m.test(bd), 'and build.py still declares them in that shape');
+  assert.ok(/^VERSION = "v[\d.]+"$/m.test(bd), 'and build.py still declares it in that shape');
+  // Change list 2026-10-08 A1: the build date was a literal that stuck at 09/15/2026 for
+  // weeks. It is now ONE helper's answer — the date of the last content change — read by
+  // build.py, make_html.py (sidebar + card footers) and the export alike; no literal anywhere.
+  const bdt = fs.readFileSync(path.join(M, 'built_date.py'), 'utf8');
+  assert.ok(/^BUILT = built_date\(\)/m.test(bd) && /from built_date import built_date/.test(bd), 'build.py takes the date from built_date.py');
+  assert.ok(/from built_date import built_date/.test(ex) && /return ver\.group\(1\), built_date\(\)/.test(ex), 'and so does the export');
+  const mh = fs.readFileSync(path.join(M, 'make_html.py'), 'utf8');
+  assert.ok(/^BUILT = built_date\(\)/m.test(mh) && /built __BUILT__/.test(mh) && /\.replace\("__BUILT__", BUILT\)/.test(mh), 'and the HTML sidebar and card footers');
+  assert.ok(/SOURCE = \("src", "data", "diagrams"\)/.test(bdt) && /"status", "--porcelain"/.test(bdt) && /"log", "-1"/.test(bdt) && /MANUAL_BUILT/.test(bdt), 'the last committed content change; uncommitted content or no git means today; MANUAL_BUILT overrides');
+  [bd, mh, ex].forEach((s) => assert.ok(!/\d\d\/\d\d\/20\d\d"/.test(s.replace(/^.*e\.g\..*$/gm, '')), 'no hand-typed build date left'));
   assert.ok(/re\.search\(r"\^## §1-1 \.\*\?\(\?=\^## §\)"/.test(ex), 'the router is §1-1');
   assert.ok(/re\.split\(r"\\s\*\/\\s\*\(\?=\[\\"\\u201c\]\)", cells\[0\]\)/.test(ex), 'split on " / " between quoted phrases, as make_html.py does');
   assert.ok(/data\/changelog\.json/.test(ex) && /def sec_target/.test(ex) && /UNRESOLVABLE REF \{sec\} \(router or changelog\)/.test(ex), 'every router and changelog target is resolved or the export fails');
@@ -34944,6 +34954,106 @@ test('MP1-5: the index — section numbers link, an abbreviation or code is expl
   assert.ok(ix.indexOf('"0–9"') > 0 && ix.indexOf('{{#ix-') > 0, 'the digits bucket is labelled, and every letter has an id');
   assert.ok(mh.indexOf("getElementById('E-1')") > 0 && !/'F-1'|"F-1"/.test(mh), 'the filter looks for the index where it is (it looked for Appendix F)');
   assert.ok(mh.indexOf('class="ixaz" role="navigation"') > 0 && mh.indexOf('<nav class="ixaz"') < 0, 'the letter bar is not a <nav> (the sidebar\'s nav rule would style it)');
+});
+
+test('MC-1 (change list 2026-10-08 C): the Word print copy — numbered lists restart, rows and callouts never split, a column is as wide as its content needs (driven), callout leads are capitalised, and no raw markup survives', () => {
+  const rx = MP1_('render_docx.js'), mm = MP1_('md2model.py'), bd = MP1_('build.py');
+  // C5, driven: the width rule itself
+  const src = rx.slice(rx.indexOf('const MIN_COL = '), rx.indexOf('function table(b) {'));
+  const ctx = { CONTENT_W: 10080 }; vm.createContext(ctx);
+  vm.runInContext(src + '\nthis.colWidths = colWidths;', ctx);
+  const R = (t) => [{ t }];
+  const b1 = { head: [R('Role'), R('Holder'), R('Backup'), R('How to reach')],
+    rows: [[R('Respiratory Therapists'), R('Parth Shah (manager)'), R('Shagun Shastri'), R('respiratory@universalmedsupply.com')],
+           [R('Denials Team'), R('Monil Shah'), R('Bhoj Bhatt'), R('Direct · Denials Q (ext 101)')]] };
+  const w = Array.from(ctx.colWidths(b1, 4));
+  assert.strictEqual(w.reduce((s, x) => s + x, 0), 10080, 'the columns fill the page exactly');
+  assert.ok(w[3] >= 'respiratory@universalmedsupply.com'.length * 100 + 240 && w[3] === Math.max(...w), 'How to reach is the widest, and holds the address whole: ' + w);
+  // the minimum is what protects an address when the other columns are long: its share alone would wrap it
+  const long = 'A long cell that runs well past the width of any one column in this table, twice over.';
+  const crowd = { head: [R('Role'), R('Holder'), R('Backup'), R('How to reach')],
+    rows: [[R(long), R(long), R(long), R('respiratory@universalmedsupply.com')]] };
+  const cw = Array.from(ctx.colWidths(crowd, 4));
+  assert.ok(cw[3] >= 'respiratory@universalmedsupply.com'.length * 100 + 240, 'an address column is never narrower than the address: ' + cw);
+  const log = { head: [R('Date'), R('Section'), R('Change'), R('Retraining')],
+    rows: [[R('2026-10-08'), R('10.12.2'), R('After month 36, Medicare pays one maintenance-and-servicing visit every 6 months for a concentrator.'), R('Yes')]] };
+  const lw = Array.from(ctx.colWidths(log, 4));
+  assert.ok(lw[0] >= 10 * 100 + 240 && lw[2] > 5000, 'a date never wraps, and the Change column takes the room: ' + lw);
+  // C2: each numbered list its own instance, restarting at 1, with room for "10."
+  assert.ok(/const inst = b\.ordered \? \+\+listNo : 0;/.test(rx) && /numbering: b\.ordered \? \{ reference: 'num', level: 0, instance: inst \}/.test(rx), 'every numbered list restarts');
+  assert.ok(/indent: \{ left: 480, hanging: 360 \}/.test(rx), 'and a two-digit number keeps its gap');
+  // C4: a data row and a callout box never break across a page; the label stays with its text
+  assert.ok(/new TableRow\(\{ cantSplit: true, children: cells \}\)/.test(rx) && /rows: \[new TableRow\(\{ cantSplit: true, children: \[new TableCell/.test(rx), 'rows and callouts stay whole');
+  assert.ok(/spacing: \{ after: 60 \}, keepNext: true,/.test(rx), 'the callout label keeps with its text');
+  // C1: a photo cell has no set line height; C7: every footer field its own run
+  assert.ok(/\(list \|\| \[\]\)\.some\(r => r\.img\) \? \{ after: 0 \} : \{ after: 0, line: 252 \}/.test(rx), 'a photo cell is single-spaced');
+  assert.ok(/new TextRun\(\{ children: \[PageNumber\.CURRENT\], size: 15/.test(rx) && !/children: \['Page ', PageNumber\.CURRENT/.test(rx), 'the footer fields are separate runs at one size');
+  // C3 + C6: md2model
+  assert.ok(/t\[:1\]\.islower\(\) and t\[:1\]\.isascii\(\)/.test(mm), 'a callout lead is capitalised after its label, as make_html.py does');
+  assert.ok(/if S\.startswith\("```"\):/.test(mm), 'a fenced block is code, not text with backticks');
+  assert.ok(/runs \+= \[dict\(r, b=True\) for r in emphasis\(m\.group\(1\)\)\]/.test(mm), 'bold holding code is parsed inside');
+  assert.ok(/zip\(marks\[0::2\], marks\[1::2\]\)/.test(mm) && /HAS_TOKEN\.search\(s, a \+ 2, b\)/.test(mm), 'bold round a cross-reference pairs its markers left to right');
+  assert.ok(!/"_[A-Z{][^"\n]*_\\n/.test(bd) && !/return "_No/.test(bd), 'no _italic_ in the generated appendices (Word does not read it)');
+});
+
+test('MC-2 (change list 2026-10-08 C8 + A6): every diagram prints on its own landscape page, and the full manual opens with a cover and a linked contents list over headings that carry outline levels', () => {
+  const rx = MP1_('render_docx.js'), mm = MP1_('md2model.py');
+  // C8: a diagram opens a landscape section and the text resumes in a portrait one
+  const diag = rx.slice(rx.indexOf("} else if (b.k === 'diagram') {"), rx.indexOf("const doc = new Document({"));
+  assert.ok(/openSection\(true\);[\s\S]*?LAND_PX, LAND_PX_H[\s\S]*?openSection\(false\);/.test(diag), 'a diagram is its own landscape section, sized to the landscape page');
+  assert.ok(/orientation: s\.landscape \? PageOrientation\.LANDSCAPE : PageOrientation\.PORTRAIT/.test(rx) && /const LAND_PX = Math\.floor\(\(PAGE_H - MARGIN \* 2\) \/ 15\)/.test(rx), 'landscape is the page turned, not a wider portrait');
+  assert.ok(/const pb = b\.pb && !first && children\.length > 0;/.test(rx), 'a heading that opens a section adds no page break of its own (no blank page after a diagram)');
+  assert.ok(/position: s\.landscape \? PAGE_H - MARGIN \* 2 : CONTENT_W/.test(rx), 'the footer page number sits at the right edge on either orientation');
+  assert.ok(/sections: sections\.filter\(s => s\.children\.length\)/.test(rx), 'no empty section reaches the file');
+  // A6: cover + contents, full manual only
+  assert.ok(/FULL = os\.path\.basename\(SRC\)\.startswith\("CSR-Procedures-Manual-"\)/.test(mm) && /"full": FULL/.test(mm) && /"built": built_date\(\)/.test(mm), 'md2model marks the full manual and carries the version and build date');
+  assert.ok(/if \(meta\.full\) \{/.test(rx) && /openSection\(false, \{ cover: true \}\)/.test(rx) && /titlePage: !!s\.cover/.test(rx), 'only the full manual gets the cover, which has no running header');
+  assert.ok(/new InternalHyperlink\(\{ anchor: b\.bm/.test(rx) && /new PageReference\(b\.bm/.test(rx) && /features: meta\.full \? \{ updateFields: true \}/.test(rx), 'each contents line links to its heading, with a page number Word fills on open');
+  assert.ok(/b\.bm = 'x_ch_' \+ k/.test(rx), 'a chapter title gets a bookmark so the contents can link it');
+  assert.ok(/outlineLevel: 0,/.test(rx) && /outlineLevel: Math\.min\(b\.lvl - 1, 3\)/.test(rx), 'headings carry outline levels — the PDF bookmarks and the navigation pane');
+});
+
+test('MD-1 (change list 2026-10-08 D): the HTML manual — a phone gets one column and a contents panel of its own, headings land below the bar, an old number is found but ranked under the current one (driven), "part N" names its new chapter (driven), dark mode never prints, one section prints alone, and the router is a modal whose answers link', () => {
+  const mh = MP1_('make_html.py');
+  // D3, driven: the search code as shipped, over three records and the chapter list
+  const js = mh.slice(mh.indexOf("const esc=s=>"), mh.indexOf('function missStore('));
+  const box = { innerHTML: '', hidden: true };
+  const ctx = { res: box, nl: { hidden: false }, CH: [{ ch: 5, i: 'p5', t: 'Chapter 5 — Power Mobility' }, { ch: 6, i: 'p6', t: 'Chapter 6 — Field Operations' }, { ch: 2, i: 'p2', t: 'Chapter 2 — Manual Mobility' }],
+    D: [{ i: '4-5', t: '4.5 A caller interested in a PMD', b: 'Check the name', a: [], o: ['§9-4', '9-4', '9.4'], f: ['9.4'], p: [] },
+        { i: '9-4', t: '9.4 Escalation chain', b: 'If the on-call', a: ['§9-4', '9-4', '9.4'], o: [], f: [], p: [] },
+        { i: '1-1', t: '1.1 Call router', b: 'see 9.4 for the chain', a: ['§1-1', '1-1', '1.1'], o: [], f: [], p: [] }] };
+  vm.createContext(ctx); vm.runInContext(js + ';this.runSearch=runSearch;', ctx);
+  const hrefs = () => [...box.innerHTML.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]);
+  ['9.4', '§9-4', 'formerly 9.4'].forEach((q) => {
+    ctx.runSearch(q);
+    assert.deepStrictEqual(hrefs().slice(0, 2), ['9-4', '4-5'], q + ': the current 9.4 first, then the section that USED to be 9.4');
+    assert.ok(/class="was">formerly 9\.4</.test(box.innerHTML), q + ': and the old one says why it is there');
+  });
+  ctx.runSearch('part 5'); assert.strictEqual(hrefs()[0], 'p6', '"part 5" opens what Part 5 became'); assert.ok(/Part 5 is now Chapter 6/.test(box.innerHTML), 'and says so');
+  ctx.runSearch('part 2'); assert.ok(hrefs()[0] === 'p2' && /Parts are now called chapters/.test(box.innerHTML), 'an unmoved part still lands');
+  ctx.runSearch('chapter 5'); assert.ok(hrefs()[0] === 'p5' && !/is now/.test(box.innerHTML), '"chapter 5" is just chapter 5');
+  // D3: the records split current numbers from old ones
+  assert.ok(/"a": nums, "o": olds, "f": shown/.test(mh) && /for table in \(FORMERLY, MOVED\):/.test(mh), 'an old number is its own field, from both the renumber and the earlier moves');
+  // D1: the 280px column is bounded below; the open contents is fixed and stretches
+  assert.ok(/@media \(min-width:901px\) and \(max-width:1240px\)\{\.wrap\{grid-template-columns:280px minmax\(0,1fr\)\}\}/.test(mh) && !/@media \(max-width:1240px\)\{\.wrap\{grid-template-columns:280px/.test(mh), 'a phone no longer inherits the tablet\'s 280px column');
+  assert.ok(/nav\.show\{display:block;position:fixed;top:var\(--ntH,41px\)[^}]*align-self:stretch\}/.test(mh), 'the open contents is fixed under the bar, and stretches (align-self:start slid it up under the bar)');
+  // D2 + D5
+  assert.ok(/:target,h1\[id\],h2\[id\],h3\[id\],h4\[id\],tr\[id\]\{scroll-margin-top:64px\}/.test(mh) && /tr\[id\]\{scroll-margin-top:110px\}/.test(mh), 'every target lands below the bar, further on a phone');
+  assert.ok(/window\.addEventListener\('hashchange',landSoon\)/.test(mh) && /function clearBar\(id\)/.test(mh) && /function landOn\(id\)/.test(mh), 'a landing nudges a row out from under the bar and moves the breadcrumb to it');
+  // D6: every dark rule is screen-only
+  assert.strictEqual((mh.match(/@media \(prefers-color-scheme:dark\)/g) || []).length, 0, 'no dark rule without screen');
+  assert.strictEqual((mh.match(/@media screen and \(prefers-color-scheme:dark\)/g) || []).length, 3, 'the three dark rules are screen-only');
+  assert.ok(!/(^|\n):root\[data-theme="dark"\]\{/.test(mh) && (mh.match(/@media screen\{:root\[data-theme="dark"\]/g) || []).length === 3, 'and so is the forced dark theme');
+  // D7
+  assert.ok(/id="prsec"/.test(mh) && /id="prcards"/.test(mh) && /body:not\(\.print-sec\) main > \*\{display:none!important\}/.test(mh) && /body\.print-sec main > :not\(\.psel\)\{display:none!important\}/.test(mh), 'Print section prints the marked section; Ctrl+P still prints the cards');
+  // D8 + D10
+  assert.ok(/role="dialog" aria-modal="true" aria-label="Call router"/.test(mh) && /rtOpener\.focus\(\{preventScroll:true\}\)/.test(mh) && /if\(e\.key!=='Tab'\) return;/.test(mh), 'the router keeps Tab inside and returns focus');
+  assert.ok(/\$\{r\.h\|\|esc\(r\.a\)\}/.test(mh) && /"h": _tight\(/.test(mh), 'its answer keeps its links');
+  assert.ok(/id="ixnone" hidden/.test(mh) && /\.tw\.more\{/.test(mh), 'the index says when nothing matches; a wide table fades at its edge');
+  // F2 batch: a diagram's <style> was the search preview of 16 sections ("dg-lane{fill:var(--panel)} …")
+  const srch = mh.slice(mh.indexOf('SEARCH = []'), mh.indexOf('SEARCH.append('));
+  assert.ok(srch.indexOf(`raw = re.sub(r'<svg\\b[^>]*?aria-label="([^"]*)"[^>]*>.*?</svg>', r" \\1. ", raw, flags=re.S)`) > 0, 'an inline diagram reads as its label');
+  assert.ok(srch.indexOf('raw = re.sub(r"<(svg|style|script)\\b.*?</\\1>", " ", raw, flags=re.S)') > srch.indexOf('aria-label='), 'and any other svg, style or script is dropped before the tags are');
 });
 
 test('MP1-6: department guides come from data/extracts.json — every guide a part, Billing in each by default, and a reference to a section a guide leaves out reads "(in the full manual)", never a dead link', () => {

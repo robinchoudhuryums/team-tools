@@ -118,7 +118,7 @@
   },
   {
     "term": "CST",
-    "definition": "Central Standard Time — the time zone the after-hours coverage window is stated in",
+    "definition": "Central Time — the time zone the after-hours coverage window is stated in",
     "parts": [
       "p9"
     ],
@@ -226,7 +226,8 @@
     "term": "F2F",
     "definition": "Face-to-Face Evaluation. Also called clinical notes or progress notes",
     "parts": [
-      "p5"
+      "p5",
+      "p4"
     ],
     "class": "manual"
   },
@@ -249,7 +250,7 @@
   },
   {
     "term": "FSS",
-    "definition": "Frequent and Substantial Servicing — Medicare payment category for continuous monthly rental items (ventilators, BiPAP E0471). Ownership never transfers",
+    "definition": "Frequent and Substantial Servicing — Medicare payment category for continuous monthly rental items (ventilators). Ownership never transfers",
     "parts": [
       "p10",
       "p3"
@@ -331,7 +332,7 @@
   },
   {
     "term": "MA",
-    "definition": "Medicare Advantage — a private plan that replaces Part B. The manual writes **Medical Assistant** in full (for example, Medical Assistant Education in Chapter 5), so MA always means Medicare Advantage",
+    "definition": "Medicare Advantage — a private plan that replaces Parts A and B. The manual writes **Medical Assistant** in full (for example, Medical Assistant Education in Chapter 5), so MA always means Medicare Advantage",
     "parts": [
       "p10",
       "p5"
@@ -408,7 +409,8 @@
     "term": "ME",
     "definition": "Mobility Evaluation",
     "parts": [
-      "p5"
+      "p5",
+      "p4"
     ],
     "class": "manual"
   },
@@ -562,7 +564,8 @@
     "term": "PAK",
     "definition": "Pre-Appointment Kit",
     "parts": [
-      "p5"
+      "p5",
+      "p4"
     ],
     "class": "manual"
   },
@@ -619,7 +622,8 @@
     "term": "PMD",
     "definition": "Power Mobility Device — covers both PWC and POV",
     "parts": [
-      "p5"
+      "p5",
+      "p4"
     ],
     "class": "manual"
   },
@@ -656,7 +660,8 @@
     "term": "POV",
     "definition": "Power Operated Vehicle — commonly called a scooter",
     "parts": [
-      "p5"
+      "p5",
+      "p4"
     ],
     "class": "manual"
   },
@@ -664,7 +669,8 @@
     "term": "PPD",
     "definition": "Patient Provided Data",
     "parts": [
-      "p5"
+      "p5",
+      "p4"
     ],
     "class": "manual"
   },
@@ -713,7 +719,8 @@
     "term": "PWC",
     "definition": "Power Wheelchair",
     "parts": [
-      "p5"
+      "p5",
+      "p4"
     ],
     "class": "manual"
   },
@@ -741,7 +748,8 @@
     "term": "QL",
     "definition": "Qualified Lead — a patient who has already completed a valid Mobility Evaluation",
     "parts": [
-      "p5"
+      "p5",
+      "p4"
     ],
     "class": "manual"
   },
@@ -1201,7 +1209,8 @@
     "term": "Payor/HCPCS Order Acceptance Sheet",
     "definition": "Reference for confirming insurance eligibility by device category and region",
     "parts": [
-      "p5"
+      "p5",
+      "p4"
     ],
     "class": "system"
   },

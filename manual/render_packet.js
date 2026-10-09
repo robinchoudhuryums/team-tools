@@ -3,7 +3,7 @@
 const fs = require("fs");
 const {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, ShadingType,
-  BorderStyle, HeadingLevel, AlignmentType, Header, Footer, PageNumber, LevelFormat, HeightRule,
+  BorderStyle, HeadingLevel, AlignmentType, Header, Footer, PageNumber, LevelFormat, HeightRule, ImageRun, LineRuleType,
 } = require("docx");
 
 const [, , inPath, outPath] = process.argv;
@@ -74,6 +74,12 @@ function excerptBlocks(bs) {
       numbering: { reference: "bullets", level: 0 }, children: runsOf(b.runs, { size: 20 }),
       spacing: { after: 40 }, indent: { left: 700, hanging: 260 }, border: { left: line(ACCENT, 12) },
     }));
+    else if (b.t === "image") {
+      const w = 600, h = Math.round(w * b.h / b.w);        // 6.25" wide
+      out.push(new Paragraph({ spacing: { before: 80, after: 120, line: 240, lineRule: LineRuleType.AUTO }, alignment: AlignmentType.CENTER, children: [
+        new ImageRun({ type: "png", data: fs.readFileSync(b.path), transformation: { width: w, height: h },
+                       altText: { title: b.alt, description: b.alt, name: b.alt } })] }));
+    }
     else if (b.t === "table") { out.push(table(b.rows)); out.push(new Paragraph({ spacing: { after: 60 } })); }
     else if (b.t === "callout") {
       const [fill, rule] = CALLOUT[b.kind] || CALLOUT.note;
@@ -154,13 +160,8 @@ const doc = new Document({
   numbering: { config: [{ reference: "bullets", levels: [{ level: 0, format: LevelFormat.BULLET, text: "•", alignment: AlignmentType.LEFT }] }] },
   sections: [{
     properties: { page: { size: { width: 12240, height: 15840 }, margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 } } },
-    headers: { default: new Header({ children: [new Paragraph({ alignment: AlignmentType.RIGHT,
-      children: [new TextRun({ text: M.title, size: 16, color: MUTED })] })] }) },
     footers: { default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [
-      new TextRun({ text: "CSR Procedures Manual v3.0 — departmental review · Page ", size: 16, color: MUTED }),
-      new TextRun({ children: [PageNumber.CURRENT], size: 16, color: MUTED }),
-      new TextRun({ text: " of ", size: 16, color: MUTED }),
-      new TextRun({ children: [PageNumber.TOTAL_PAGES], size: 16, color: MUTED })] })] }) },
+      new TextRun({ children: [PageNumber.CURRENT], size: 18, color: MUTED })] })] }) },
     children,
   }],
 });

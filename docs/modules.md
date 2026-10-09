@@ -1213,6 +1213,17 @@ not restate it. Server endpoints live in the fourteen server files
      **Moved out:** the Billing knowledge check left the manual for the Training
      module (`manual/training/`, not built).
 
+     **Manual fixes (2026-10-08 → 10-09, a reviewer's change list —
+     `.cycle/manual-fixes-2026-10-08-plan.md`).** Content corrections ride the
+     usual export and import. The one app-side change is the regenerated diagram
+     partial (the rental timeline's Purchase row and servicing visit, the Power ATP
+     box), which reaches Reference by deploy. The visual matrix's Reference
+     fixtures are now REAL sections, router rows, changelog and images copied from
+     a built `manual.json` by `test/visual/manual-fixtures.mjs` (0.11 alone stays a
+     hand-written feature fixture under the real headings), so the shots show the
+     manual as it is; the DOM harness's manual fixtures use the October chapter
+     names.
+
      **Cycle 23 Batch 2 (2026-10-01) — the eligibility lookup reads less
      generously.** "TX or OK" is Texas and Oklahoma (no longer Oregon); a state
      beside "listed cities" needs its "or"; an Open note must only elaborate;
