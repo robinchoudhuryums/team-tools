@@ -35153,6 +35153,18 @@ test('PK-1 (review packets, operator 2026-10-12): a closed question is answered 
   [py, js].forEach((src, i) => assert.ok(src.indexOf('☐') < 0, (i ? 'render_packet.js' : 'make_review_packets.py') + ' draws no checkbox'));
 });
 
+test('PK-2 (review packets, operator 2026-10-12): an OPEN question shows a section\'s text once per packet, like a closed one — a later question points back ("shown with question N") — in the Markdown AND the Word packet, so a follow-up on a section already quoted does not repeat it', () => {
+  const MAN = path.join(__dirname, '../../manual');
+  [['make_review_packets.py', fs.readFileSync(path.join(MAN, 'make_review_packets.py'), 'utf8')], ['packet_model.py', fs.readFileSync(path.join(MAN, 'packet_model.py'), 'utf8')]].forEach(([f, src]) => {
+    const i = src.indexOf('if "q" in r:');
+    assert.ok(i > 0, f + ': the open-question branch exists');
+    const br = src.slice(i, src.indexOf('continue\n', src.indexOf('answer', i)) + 8);
+    const chk = br.indexOf('if (sec, filt) in shown:'), rec = br.indexOf('shown[(sec, filt)] = r["n"]'), ex = br.indexOf('excerpt(sec, filt)');
+    assert.ok(chk > 0 && ex > chk && rec > ex, f + ': it checks what was shown, then excerpts, then records — ' + [chk, ex, rec]);
+    assert.ok(/shown with question \{shown\[\(sec, filt\)\]\}/.test(br), f + ': and points back to the question that showed it');
+  });
+});
+
 test('MRD-9 (the Phase 8 follow-on, 2026-10-12): a dark-mode printout draws the accent in each palette\'s LIGHT accent — the swatch tokens, whose dark copy is screen-only — for every palette the token file declares; printed cross-references use the deeper --accent-2', () => {
   const { toks, blocks } = tokenBlocks();
   const styles = fs.readFileSync(path.join(PA_WEB, 'styles.html'), 'utf8');

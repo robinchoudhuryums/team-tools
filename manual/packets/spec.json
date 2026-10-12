@@ -153,7 +153,7 @@
      },
      {
       "sec": "3.13, 6.14",
-      "says": "**Oximetry:** we can facilitate a test. Who performs and reads it, and when is it used?",
+      "q": "**Oximetry** — we can facilitate a test. What is the test process?",
       "n": "11"
      },
      {
@@ -162,29 +162,49 @@
       "n": "12"
      },
      {
-      "sec": "3.4",
-      "says": "**No portable oxygen concentrators**, not even out of pocket. Right?",
+      "sec": "3.7.4",
+      "says": "**A failed PAP trial** — the watch-out covers Medicare and Medicare Advantage. Should it cover Medicaid and commercial plans too?",
       "n": "13"
      },
      {
-      "sec": "3.7.4",
-      "says": "**A failed PAP trial** — the watch-out covers Medicare and Medicare Advantage. Should it cover Medicaid and commercial plans too?",
+      "sec": "3.7.1",
+      "q": "**CPAP vs APAP:** both bill as E0601, and the manual says documentation for E0601 covers either; the Luna G3 X APAP (G4600) works as both. Can the same documents justify either one, interchangeably? And does a switch from fixed pressure to auto need a new pressure order?",
       "n": "14"
      },
      {
-      "sec": "3.7.1",
-      "q": "**APAP:** bills as E0601, so CPAP documentation covers it; the Luna G3 X APAP (G4600) works as either. Right? And does a switch from fixed pressure to auto need a new pressure order?",
+      "sec": "3.2",
+      "q": "**Picking up a respiratory machine** — does a pick-up explicitly require a discontinuation prescription? Is the current process — create the pick-up ticket, then Field Ops reviews it and collects any documents needed — the correct one?",
       "n": "15"
+     },
+     {
+      "sec": "3.3.1",
+      "q": "**When the category owner is unavailable** — is the process in 3.3.1 correct? If the CSR calls the Resupply Q instead, what does the team member who answers do: hold and transfer, chat, email, or something else?",
+      "n": "16"
+     },
+     {
+      "sec": "3.7.1",
+      "q": "**A newer model in stock** — when we start stocking a newer version of a respiratory machine (an AirSense 11 after the AirSense 10, say), is the previous version retired at once for every new incoming order?",
+      "n": "17"
+     },
+     {
+      "sec": "3.7.3",
+      "q": "**PAP mask trial or change** — a patient using PAP for the first time wants a different mask from the one they got. What is the policy on a mask trial or change?",
+      "n": "18"
+     },
+     {
+      "sec": "3.10",
+      "q": "**Ventilator back-up units** — does every ventilator patient get a back-up unit, without exception?",
+      "n": "19"
      },
      {
       "sec": "3.14",
       "q": "**Resources** — any links to add to Chapter 3's resource list?",
-      "n": "16"
+      "n": "20"
      },
      {
       "sec": "",
       "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your team?",
-      "n": "17"
+      "n": "21"
      }
     ]
    }
@@ -216,7 +236,8 @@
      {
       "sec": "4.3",
       "says": "**The Eligibility Status** — what each status means, and the progression diagram ◆",
-      "n": "4"
+      "n": "4",
+      "diagrams": true
      },
      {
       "sec": "5.1.1",
@@ -231,7 +252,7 @@
      },
      {
       "sec": "4.7",
-      "says": "**The one-year PPD rule:** over a year means a new order through Sales",
+      "says": "**The one-year PPD rule:** over a year means a new order through Sales. Are there any other situations where a Sales rep creates a new order for a patient already in the system with an existing PMD order?",
       "n": "7"
      },
      {
@@ -240,29 +261,34 @@
       "n": "8"
      },
      {
-      "sec": "",
-      "q": "**The PAP Q and Sales MWC Q** — what should a CSR know about how each works?",
-      "n": "9"
-     },
-     {
       "roster": "p4",
       "says": "**Your directory rows** — check each name, backup and contact",
-      "n": "10"
+      "n": "9"
      },
      {
       "sec": "4.5.1",
       "q": "**A past PMD patient who wants a new PMD:** 5+ years since delivery → Sales opens a new order. Within 5 years → usually Same or Similar, unless it's an upgrade the provider attests to; for now that call goes to Sales too. Right? Should the within-5-years call go to Power instead?",
+      "n": "10"
+     },
+     {
+      "sec": "4.5",
+      "q": "**Cost and model questions** — how do Sales reps currently answer a patient’s questions about cost and model selection?",
       "n": "11"
+     },
+     {
+      "sec": "4.4",
+      "q": "**The Payor Acceptance sheet** — when a plan shows “No” for POV, does that usually mean the plan doesn’t cover a POV, that we choose not to process POVs for that plan, or does it vary? ◆",
+      "n": "12"
      },
      {
       "sec": "4.9",
       "q": "**Resources** — any links to add to Chapter 4's resource list?",
-      "n": "12"
+      "n": "13"
      },
      {
       "sec": "",
       "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your teams?",
-      "n": "13"
+      "n": "14"
      }
     ]
    }
@@ -470,14 +496,19 @@
       "n": "16"
      },
      {
+      "sec": "3.4",
+      "says": "**No portable oxygen concentrators**, not even out of pocket. Right — or can Field Ops procure one for an out-of-pocket order?",
+      "n": "17"
+     },
+     {
       "sec": "6.16",
       "q": "**Resources** — any links to add to Chapter 6's resource list?",
-      "n": "17"
+      "n": "18"
      },
      {
       "sec": "",
       "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your team?",
-      "n": "18"
+      "n": "19"
      }
     ]
    }

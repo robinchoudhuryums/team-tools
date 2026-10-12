@@ -2750,4 +2750,4 @@ per-change detail. By delta:
 
 - MRD-10 DOM drives the bar's feedback: no section carries a feedback row; the three buttons name the section in view; a vote is disabled in flight, a late answer never paints the section now in view, a section scrolled back to shows its vote pressed, and a failure (thrown or `success: false`) gives the buttons back. Six bite-checks, all BIT (the repaint guard, `r.success`, the failure reset, the remembered vote, the bar paint, a row put back in a section).
 - Old-behaviour encodings updated with the change: the M2 DOM drive (a bar per section → none; Suggest an edit from the bar), the print-block pin and the one-home pin (`.kb-man-fb` is gone), the MP2-4 context stub, and print-check.mjs (now asserts no `.kb-feedback` prints).
-
+- PK-2 pins the packets' once-per-packet rule for OPEN questions in both builders (`make_review_packets.py` and the Word model `packet_model.py`): check what was shown, excerpt, record, and point back. Three bite-checks, all BIT.

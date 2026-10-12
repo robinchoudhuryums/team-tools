@@ -100,9 +100,14 @@ def model(key):
             if "q" in r:
                 B.append({"t": "h3", "runs": runs(f"{r['n']}. {r['q'].replace('**', '')}")})
                 for sec, filt in MRP.refs_for(r.get("sec"), key):
+                    if (sec, filt) in shown:  # once per packet, as in the Markdown packet (2026-10-12)
+                        B.append({"t": "pointer", "runs": runs(f"The text of {display(sec)} is shown with question {shown[(sec, filt)]}.")})
+                        continue
                     t, body = MRP.excerpt(sec, filt)
-                    if t:
-                        B.append({"t": "excerpt", "title": t + (" (excerpt)" if filt else ""), "blocks": blocks(body)})
+                    if t is None:
+                        continue
+                    shown[(sec, filt)] = r["n"]
+                    B.append({"t": "excerpt", "title": t + (" (excerpt)" if filt else ""), "blocks": blocks(body)})
                 B.append({"t": "answer_open", "n": r["n"]})
                 continue
             B.append({"t": "h3", "runs": runs(f"{r['n']}. {r['says'].replace('**', '')}")})

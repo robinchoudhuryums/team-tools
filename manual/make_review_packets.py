@@ -150,9 +150,14 @@ def packet(key):
             if "q" in r:                      # an open question — an excerpt only if it cites a section
                 L += [f"**{r['n']}. {r['q'].replace('**', '')}**", ""]
                 for sec, filt in refs_for(r.get("sec"), key):
+                    if (sec, filt) in shown:  # once per packet, as for a closed question (2026-10-12)
+                        L += [f"*The text of {display(sec)} is shown with question {shown[(sec, filt)]}.*", ""]
+                        continue
                     title, body = excerpt(sec, filt)
-                    if title:
-                        L += [f"#### From the manual — {title}" + (" (excerpt)" if filt else ""), "", body, ""]
+                    if title is None:
+                        missing.append((r["n"], sec)); continue
+                    shown[(sec, filt)] = r["n"]
+                    L += [f"#### From the manual — {title}" + (" (excerpt)" if filt else ""), "", body, ""]
                 L += ["**Your answer:**", "", "&nbsp;", ""]
                 continue
             L += [f"### {r['n']}. {r['says'].replace('**', '')}", ""]

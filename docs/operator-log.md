@@ -10,6 +10,29 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-12 — Resupply, Sales and Field Ops packet changes
+
+**Adds NO operator state.** Rebuild the packets (`./make_packets.sh` after
+`./make_all.sh`) and re-share the Respiratory & Resupply, Sales and Field
+Operations packets. No manual text changed.
+- **Respiratory & Resupply:** Q11 (oximetry) now asks "What is the test
+  process?"; the CPAP vs APAP question asks whether the same documents justify
+  either one interchangeably; the portable-oxygen-concentrator question moved to
+  the Field Ops packet (Field Ops procures equipment); five new open questions —
+  picking up a respiratory machine without a discontinuation prescription, what
+  the Resupply Q does when a category owner is unavailable, retiring an older
+  model when a newer one is stocked, a first-time PAP user's mask trial or
+  change, and back-up units for every ventilator patient.
+- **Sales:** Q4 shows the Eligibility Status diagram; the one-year PPD question
+  also asks for any other case where Sales opens a new order on a patient with an
+  existing PMD order; the PAP Q / Sales MWC Q question is gone; two new questions
+  — how reps answer cost and model questions, and (for Sales Eligibility) what a
+  "No" for POV on the Payor Acceptance sheet means.
+- **Every packet:** an open question that cites a section another question
+  already quoted now points back to it ("shown with question N") instead of
+  repeating the text — the same rule closed questions already followed, in the
+  Markdown and the Word copy alike — so some packets are shorter.
+
 ## 2026-10-12 — manual and packet corrections; feedback moves into the reader bar
 
 **Adds NO operator state.** Three releases, in this order:
