@@ -463,12 +463,17 @@
     --pal-plum-paper: #faf6fa;  --pal-plum-accent: #9262c4;
     --pal-teal-paper: #f2f8fa;  --pal-teal-accent: #098683;
   }
-  :root[data-mode="dark"], body[data-mode="dark"] {
-    --pal-console-paper: #0a0d14;  --pal-console-accent: #7af2a1;
-    --pal-sand-paper: #120c04;  --pal-sand-accent: #87efb1;
-    --pal-sage-paper: #060f08;  --pal-sage-accent: #b6e6c1;
-    --pal-plum-paper: #130a12;  --pal-plum-accent: #e5d2fe;
-    --pal-teal-paper: #020f12;  --pal-teal-accent: #6ceee9;
+  /* The dark swatches are for the SCREEN (2026-10-12): the picker is never
+     printed, and on paper these tokens hold each palette's LIGHT accent — the
+     one copy the print block points a dark-mode printout's accent at. */
+  @media screen {
+    :root[data-mode="dark"], body[data-mode="dark"] {
+      --pal-console-paper: #0a0d14;  --pal-console-accent: #7af2a1;
+      --pal-sand-paper: #120c04;  --pal-sand-accent: #87efb1;
+      --pal-sage-paper: #060f08;  --pal-sage-accent: #b6e6c1;
+      --pal-plum-paper: #130a12;  --pal-plum-accent: #e5d2fe;
+      --pal-teal-paper: #020f12;  --pal-teal-accent: #6ceee9;
+    }
   }
 
   /* The procedures manual's chapter colours (operator 2026-10-07) — each

@@ -16,6 +16,8 @@ import json, re, sys, os
 sys.path.insert(0, ".")
 from numbering import display
 
+ANSWER_LINE = "_" * 28   # the blank a reviewer types on (render_packet.js draws the same)
+
 OUT = os.path.join(os.environ.get("MANUAL_OUT", "dist"), "review-packets")
 MANUAL = open("out/CSR-Procedures-Manual-v3.0.md", encoding="utf-8").read()
 SPEC = json.load(open("packets/spec.json", encoding="utf-8"))
@@ -167,7 +169,9 @@ def packet(key):
                     missing.append((r["n"], sec)); continue
                 shown[(sec, filt)] = r["n"]
                 L += [f"#### From the manual — {title}" + (" (excerpt)" if filt else ""), "", body, ""]
-            L += ["**Your answer:** ☐ Correct &nbsp;&nbsp; ☐ Needs change", "", "**Notes:**", "", "&nbsp;", ""]
+            # a fill-in line, not checkboxes: the packets go out as Google Docs, where
+            # typing on a line is easier than ticking a box (operator 2026-10-12)
+            L += [f"**Correct, or needs change?** {ANSWER_LINE}", "", "**Notes:**", "", "&nbsp;", ""]
 
     return "\n".join(L), missing
 

@@ -9875,7 +9875,8 @@ test('the picker swatches are pinned to the palettes they claim to preview', () 
   // The first hand-typed version of the swatch block had ALREADY drifted from
   // the generated palette hexes — a picker that previews the wrong colour is
   // worse than no preview.
-  const darkAt = toks.indexOf(':root[data-mode="dark"], body[data-mode="dark"] {\n    --pal-');
+  // (the dark swatch block sits inside @media screen since 2026-10-12, so it is indented one level more)
+  const darkAt = toks.search(/:root\[data-mode="dark"\], body\[data-mode="dark"\] \{\n\s*--pal-/);
   assert.ok(darkAt > 0, 'the dark swatch block exists (a swatch must preview what the rep gets)');
   const sw = (mode) => {
     const scope = mode === 'dark' ? toks.slice(darkAt)
@@ -35138,6 +35139,39 @@ test('MRD-2 (manual reader design Phase 2): the reader bar\'s title split, chapt
   // the follow-on from Phase 1: the toast's Reload was white on the accent
   const css = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
   assert.ok(!/background:\s*var\(--accent\);\s*color:\s*#fff/i.test(css) && /\.toast-act \{[^}]*background: var\(--accent\); color: var\(--paper-card\)/.test(css), 'the toast action reads --paper-card on the accent');
+});
+
+test('PK-1 (review packets, operator 2026-10-12): a closed question is answered on a fill-in line, not checkboxes — the Markdown and the Word packet draw the SAME blank (the packets go out as Google Docs)', () => {
+  const MAN = path.join(__dirname, '../../manual');
+  const py = fs.readFileSync(path.join(MAN, 'make_review_packets.py'), 'utf8');
+  const js = fs.readFileSync(path.join(MAN, 'render_packet.js'), 'utf8');
+  const pyN = +(/^ANSWER_LINE = "_" \* (\d+)/m.exec(py) || [])[1], jsN = +(/const ANSWER_LINE = "_"\.repeat\((\d+)\);/.exec(js) || [])[1];
+  assert.ok(pyN >= 20 && pyN === jsN, 'one blank, the same length in both: ' + pyN + ' / ' + jsN);
+  assert.ok(/L \+= \[f"\*\*Correct, or needs change\?\*\* \{ANSWER_LINE\}"/.test(py), 'the Markdown packet writes the label and the blank');
+  const box = extractFnFrom(js, 'answerBox');
+  assert.ok(/text: "Correct, or needs change\?  "/.test(box) && /text: ANSWER_LINE/.test(box), 'the Word packet draws the same label and blank');
+  [py, js].forEach((src, i) => assert.ok(src.indexOf('☐') < 0, (i ? 'render_packet.js' : 'make_review_packets.py') + ' draws no checkbox'));
+});
+
+test('MRD-9 (the Phase 8 follow-on, 2026-10-12): a dark-mode printout draws the accent in each palette\'s LIGHT accent — the swatch tokens, whose dark copy is screen-only — for every palette the token file declares; printed cross-references use the deeper --accent-2', () => {
+  const { toks, blocks } = tokenBlocks();
+  const styles = fs.readFileSync(path.join(PA_WEB, 'styles.html'), 'utf8');
+  const pr = styles.slice(styles.indexOf('@media print {'));
+  // the dark swatch block is screen-only, so on paper --pal-<p>-accent is the light value
+  const scr = toks.indexOf('@media screen {\n    :root[data-mode="dark"], body[data-mode="dark"] {\n      --pal-console-paper');
+  assert.ok(scr > 0, 'the dark swatch redefinition sits inside @media screen');
+  assert.ok(!/\n  :root\[data-mode="dark"\], body\[data-mode="dark"\] \{\n    --pal-/.test(toks), 'and nowhere outside it');
+  const mix = (p) => '--accent: var(--pal-' + p + '-accent) !important;\n      --accent-2: color-mix(in oklab, var(--pal-' + p + '-accent), #000 20%) !important;';
+  assert.ok(pr.indexOf(':root[data-mode="dark"], body[data-mode="dark"] {\n      ' + mix('console')) >= 0, 'Console (and any unnamed palette) prints its light accent');
+  const pals = [...new Set(blocks.map((b) => b.palette))].filter((p) => p !== 'console');
+  assert.ok(pals.length >= 4, 'the palettes are derived from the token file (non-vacuous): ' + pals);
+  pals.forEach((p) => {
+    assert.ok(pr.indexOf(':root[data-mode="dark"][data-palette="' + p + '"], body[data-mode="dark"][data-palette="' + p + '"] {\n      ' + mix(p)) >= 0,
+      p + ': a dark-mode printout must point the accent at --pal-' + p + '-accent');
+    assert.ok(new RegExp('--pal-' + p + '-accent:\\s*#[0-9a-f]{6}').test(toks), p + ' has a swatch accent to point at');
+  });
+  assert.ok(/:root \.kb-article a\.kb-xref \{ color: var\(--accent-2\); \}/.test(pr), 'a printed cross-reference is the deeper accent');
+  assert.ok(!/#[0-9a-fA-F]{6}/.test(pr.slice(pr.indexOf('(6) — dark mode prints the LIGHT accent'), pr.indexOf(':root .kb-article a.kb-xref'))), 'rule (6) carries no hex of its own (only #000 for the mix)');
 });
 
 test('MRD-8 (manual reader design Phase 8): a diagram drawn twice keeps its markers (per-copy ids, driven over the real partial); the dark semantic and chapter colours are SCREEN-only and print forces the neutrals on body too; a chapter\'s card comes from the prefetched manual, open unless closed (umsKbPanel); a card prints as a card with its diagram on the reverse; the manual source and both print builds carry the card diagrams', () => {

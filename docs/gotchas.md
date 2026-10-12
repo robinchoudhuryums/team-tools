@@ -1833,6 +1833,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   also carries `data-mode` — see g168. The forcing selector is `:root, body`,
   and `print-check.mjs` reads `--ink` on `<body>` and measures a card print.
 
+  **Rule (6), 2026-10-12: dark mode prints the LIGHT accent.** Each palette's
+  dark block redefines the accent, so links printed pale. The rule points
+  `--accent` at the swatch token `--pal-<palette>-accent` (whose dark copy is
+  screen-only) per palette — the list is checked against the token file by
+  MRD-9 — and printed cross-references use `--accent-2`. `print-check.mjs`
+  measures a link's printed contrast in every palette.
+
 <a id="g113-read-the-server-through-serversource-never-by"></a>
 
 - **Read the server through `serverSource()` — never by FILENAME, and never by

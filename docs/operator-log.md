@@ -10,6 +10,20 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-12 — dark-mode print accent; review packets answer on a line
+
+**Adds NO operator state.** Deploy as usual (`clasp push -f` + New version) for
+the print fix; rebuild the packets (`./make_packets.sh` after `./make_all.sh`)
+for the new answer line.
+- **Dark-mode printing, the last piece:** links and accent-coloured text in a
+  printout made from dark mode now print in the palette's normal (light-mode)
+  accent instead of its pale dark-mode one; a manual cross-reference prints in
+  the deeper accent in either mode, about 7:1 on white in every palette.
+  Nothing changes on screen.
+- **Review packets:** a question is answered on a fill-in line — "Correct, or
+  needs change? ____" — instead of two checkboxes, so a reviewer can type the
+  answer straight into the Google Doc.
+
 ## 2026-10-09 — manual reader design, Phase 8 (quick cards, card print, dark-mode print)
 
 **Adds NO operator state.** Two releases, in this order:

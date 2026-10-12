@@ -5408,7 +5408,7 @@ pick them up without re-deriving the context.
   (decision 4): the dark semantic and chapter colours live in `@media screen`
   blocks, so paper takes the light values declared once — no second copy of any
   hex, and the chapter-style tripwire still reads both sets; the neutrals are
-  forced on `:root, body` (g168). Rejected: an app-only card→diagram map (the
+  forced on `:root, body` (g168). **The accent prints light too** (2026-10-12): the picker's swatch tokens already hold each palette's light accent once, so their dark copy became screen-only and rule (6) points a dark-mode printout's `--accent` at them, with `--accent-2` mixed 20% toward black; a printed cross-reference takes `--accent-2` in either mode (the accent alone reads 4.4:1 on white). Rejected: an app-only card→diagram map (the
   printed and Word cards would lack it), re-declaring the light hexes inside the
   print block (a second source the tripwire cannot see), and a lazily rendered
   card body (per-copy diagram ids, g169, made hiding safe).

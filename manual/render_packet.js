@@ -94,6 +94,7 @@ function excerptBlocks(bs) {
 }
 
 // ---------------------------------------------------------------- answer boxes
+const ANSWER_LINE = "_".repeat(28);   // make_review_packets.py writes the same blank
 function answerBox(open, n) {
   const cell = (children, fill) => new TableCell({
     width: { size: W, type: WidthType.DXA },
@@ -104,8 +105,10 @@ function answerBox(open, n) {
   });
   const rows = [];
   if (!open) rows.push(new TableRow({ cantSplit: true, children: [cell([new Paragraph({ keepNext: true, keepLines: true, children: [
-    new TextRun({ text: "☐  Correct", bold: true, size: 21 }), new TextRun({ text: "          " }),
-    new TextRun({ text: "☐  Needs change", bold: true, size: 21 }),
+    // a fill-in line, not checkboxes: the packets go out as Google Docs, where typing
+    // on a line is easier than ticking a box (operator 2026-10-12)
+    new TextRun({ text: "Correct, or needs change?  ", bold: true, size: 21 }),
+    new TextRun({ text: ANSWER_LINE, size: 21 }),
     new TextRun({ text: "          Question " + n, size: 17, color: MUTED }),
   ] })], "EEF2F6")] }));
   rows.push(new TableRow({
