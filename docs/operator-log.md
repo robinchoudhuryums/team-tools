@@ -10,6 +10,15 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-12 — packet excerpts trimmed
+
+**Adds NO operator state.** Rebuild the packets. Excerpts that did not help their
+question were cut to the one table row it is about, or dropped: Resupply's 3.1
+(the out-of-pocket row), 3.13 (the oximetry row) and 10.10 (the coinsurance
+row); Power's 10.10 (the coinsurance row); Billing's 8.4.1 and 3.7.4 (dropped),
+7.3.1 (the oxygen row) and 5.8.1 (the rent-to-own row); Field Ops' 9.3 (the
+power wheelchair row); Denials' 10.8 (dropped). About 14.5k characters, ~8%.
+
 ## 2026-10-12 — packet questions consolidated
 
 **Adds NO operator state.** Rebuild the packets (`./make_packets.sh`) and

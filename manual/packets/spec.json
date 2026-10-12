@@ -82,7 +82,7 @@
     "intro": "",
     "rows": [
      {
-      "sec": "3.1",
+      "sec": "3.1~out-of-pocket",
       "says": "**Out-of-pocket purchases** are handled by the CSR team, who email intake, eligibility and Field Operations",
       "n": "1"
      },
@@ -107,7 +107,7 @@
       "n": "5"
      },
      {
-      "sec": "3.8.2, 3.11, 3.13, 6.14",
+      "sec": "3.8.2, 3.11, 3.13~oximetry, 6.14",
       "says": "**What we do and don’t offer:** no new external or Purewick catheters, no new IPPB units; oximetry testing is available. What is the oximetry test process?",
       "n": "6"
      },
@@ -122,7 +122,7 @@
       "n": "8"
      },
      {
-      "sec": "10.10",
+      "sec": "10.10~coinsurance",
       "says": "**Very high coinsurance** (often 50%+) may mean an order is declined. At what level does your team decline, and does it depend on the item?",
       "n": "9"
      },
@@ -278,7 +278,7 @@
       "n": "13"
      },
      {
-      "sec": "10.10",
+      "sec": "10.10~coinsurance",
       "says": "**Very high coinsurance** (often 50%+) may mean an order is declined. At what level does your team decline, and does it depend on the item?",
       "n": "14"
      },
@@ -371,7 +371,7 @@
       "n": "13"
      },
      {
-      "sec": "9.1.1, 9.4.1, 9.3",
+      "sec": "9.1.1, 9.4.1, 9.3~power wheelchair",
       "says": "**Dispatch and targets:** DFW only, San Antonio for concentrators only; 0–60 minutes for ventilators, concentrators and suction. Power wheelchairs after hours: advise business hours; if the patient is stuck, non-emergency services or 9-1-1 ▲",
       "n": "14"
      },
@@ -481,7 +481,7 @@
       "n": "1"
      },
      {
-      "sec": "8.4.1, 8.5.3, 10.12.2, 7.3.1, 10.12.8",
+      "sec": "8.5.3, 10.12.2, 7.3.1~oxygen, 10.12.8",
       "q": "**Oxygen billing** — the conserver is included in the rental when the provider orders one, coded **A9900**; without an order the patient can buy one out of pocket for **$320**, signing an ABN first. Accessories are included for all five years, and UMS keeps ownership after 36 months. After month 36, repairs are never paid separately, but Medicare pays one servicing visit every 6 months for a concentrator (MS modifier, 20% coinsurance). A long enough break in need, or replacement after five years, starts a new 36-month period. **Has UMS been billing the conserver as E1352? Do we bill the 6-month servicing visits? And please check the restart example’s dates, and whether a break of exactly 60 days plus the rest of the month restarts the rental.**",
       "n": "2"
      },
@@ -522,7 +522,7 @@
       "n": "9"
      },
      {
-      "sec": "10.5.3, 3.7.4",
+      "sec": "10.5.3",
       "says": "**Medicaid, QMB and dual eligibles:** QMB patients are never billed cost-sharing; Texas Medicaid as secondary can cover items Medicare never covers. Dual eligibles: Medicare first, then Medicaid — except a hospital bed for a full-Medicaid patient in an enrolled state (Medicaid primary, Rule B). Right? And does Texas Medicaid purchase a CPAP after 10 months of rental?",
       "n": "10"
      },
@@ -537,7 +537,7 @@
       "n": "12"
      },
      {
-      "sec": "5.8.1, 10.14.1",
+      "sec": "5.8.1~rent-to-own, 10.14.1",
       "says": "**Waived balances:** a partly paid rent-to-own PWC — the balance may be waived rather than the chair picked up, since a return may mean refunding insurance; is that right, given paid capped-rental months are normally earned? Pick-up write-offs: *waived* (balance waived, item is the patient’s) or *failed pick-up* (balance stays). How is a waiver documented, and who tells the patient?",
       "n": "13"
      },
@@ -581,7 +581,7 @@
       "n": "2"
      },
      {
-      "sec": "10.8",
+      "sec": "",
       "q": "**Another PAR after delivery** — when does the Denials team have to send another prior authorization request for an order that has already been delivered?",
       "n": "3"
      },
