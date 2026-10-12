@@ -2757,3 +2757,4 @@ per-change detail. By delta:
 - PK-5 derives the packet file-name map from `spec.json` (no name left for a dissolved packet; FAQ names only live packets) and pins `make_packets.sh`'s stale-file removal. Two bite-checks (a leftover C8-Oxygen name; the removal dropped), both BIT.
 - PK-5 extended for the After Hours packet: no `p9` and no C9 file name, and its questions ride the Field Ops packet, marked ▲ for Parth Shah, each quoting Chapter 9.
 - PK-3 also refuses a row carrying both a statement (`says`) and an open question (`q`) — the builders render only the `q`, which hid an edit for one rebuild. Bite-checked, BIT.
+- The question merges: PK-4 now requires the paste slot in BOTH branches of both builders (the Power Roster slot rides the closed directory question; bite-checked the closed slot, BIT); PK-3's and PK-5's non-vacuity floors lowered to the merged packets' real counts (follow-ups and ▲ questions were folded into their sources).

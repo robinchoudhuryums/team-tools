@@ -9,8 +9,8 @@
     "intro": "",
     "rows": [
      {
-      "sec": "2.4, 2.4.1",
-      "q": "**Manual wheelchairs** — are the capacities, codes and coverage thresholds right? And when is the **Medline K3 Guardian 20\"** billed as K0006 rather than K0003 with E2201?",
+      "sec": "2.4, 2.4.1, 2.4.3",
+      "q": "**Manual wheelchairs** — are the capacities, codes and coverage thresholds right? When is the Medline K3 Guardian 20\" billed as K0006 rather than K0003 with E2201? And in what situations is a seat or back cushion added to a wheelchair order, and when isn’t it?",
       "n": "1"
      },
      {
@@ -30,64 +30,44 @@
       "n": "4"
      },
      {
-      "sec": "2.2.1",
-      "says": "**Walkers on an insurance order** never ship out of state (OOR); out of pocket, only the delivery radius applies",
+      "sec": "2.2.1, 2.7",
+      "says": "**Delivery radius:** walkers on an insurance order never ship out of state (OOR); out of pocket, only the delivery radius applies. Is the Hoyer lift delivery radius the same as for hospital beds?",
       "n": "5"
      },
      {
-      "sec": "2.7, 2.2.1",
-      "q": "**Hoyer lift delivery radius** — is it the same as for hospital beds?",
-      "n": "6"
-     },
-     {
       "sec": "2.6, 10.10, 2.8.4",
-      "q": "**Other items** — knee walkers are out-of-pocket except through VGM Homelink, and blood pressure monitors are wrist-only. Are those right? And should **crutches (E0114)** be in the guide at all?",
-      "n": "7"
-     },
-     {
-      "sec": "2.6",
-      "q": "**Knee walkers** — are they always covered through VGM Homelink? And by commercial plans?",
-      "n": "8"
+      "q": "**Other items** — knee walkers are out-of-pocket except through VGM Homelink, and blood pressure monitors are wrist-only. Are those right? Are knee walkers always covered through VGM Homelink, and by commercial plans? And should crutches (E0114) be in the guide at all?",
+      "n": "6"
      },
      {
       "sec": "10.10",
       "says": "**Very high coinsurance** (often 50%+) may mean an order is declined. At what level does your team decline, and does it depend on the item?",
-      "n": "9"
+      "n": "7"
      },
      {
       "sec": "2.4.2",
       "says": "**Wheelchair size changes have no cutoff:** before delivery, email the Manual Mobility Q; after delivery, Service or a swap on a pick-up ticket",
-      "n": "10"
+      "n": "8"
      },
      {
       "roster": "p2",
       "says": "**Your directory rows** — check each name, backup and contact",
-      "n": "11"
+      "n": "9"
      },
      {
       "sec": "2.3.2",
       "says": "**Bariatric bed (E0301):** Medicare covers it for a patient over **350 lbs**, up to 600 lbs",
-      "n": "12"
-     },
-     {
-      "sec": "2.4.3",
-      "q": "**Wheelchair cushions** — in what situations is a seat or back cushion added to a wheelchair order, and when isn't it?",
-      "n": "13"
+      "n": "10"
      },
      {
       "sec": "2.5.1",
       "q": "**\"Upright walker\" referrals** — are they read as a walker with platform attachments by default, or are they rejected?",
-      "n": "14"
+      "n": "11"
      },
      {
       "sec": "2.12",
-      "q": "**Resources** — any links to add to Chapter 2's resource list?",
-      "n": "15"
-     },
-     {
-      "sec": "",
-      "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your team?",
-      "n": "16"
+      "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your team? **Resources** — any links to add to Chapter 2's resource list?",
+      "n": "12"
      }
     ]
    }
@@ -107,104 +87,59 @@
       "n": "1"
      },
      {
-      "sec": "3.3.2, 3.3.3",
-      "says": "**Nebulizer refill supplies** are handled by Resupply at Medicare's allowances; **no supply** ships more than 3 months' worth at once",
+      "sec": "3.3.2, 3.3.3, 6.8.1",
+      "says": "**Nebulizer refills and resupply timing:** nebulizer refill supplies are handled by Resupply at Medicare’s allowances, and no supply ships more than 3 months’ worth at once. Under Medicare the patient confirms within the 30 days before their supply runs out, and we ship no sooner than 10 days before; Texas Medicaid bills a month at a time, with eligibility checked before each shipment",
       "n": "2"
      },
      {
-      "sec": "6.8.1, 3.3.2",
-      "says": "**Resupply timing:** under Medicare the patient confirms within the 30 days before their supply runs out, and we ship no sooner than 10 days before. Texas Medicaid bills a month at a time, with eligibility checked before each shipment",
+      "sec": "3.5.3, 3.7.3, 3.8.1",
+      "says": "**Quantity allowances** for trach, PAP and incontinence supplies. And a patient using PAP for the first time wants a different mask from the one they got: what is the policy on a mask trial or change?",
       "n": "3"
      },
      {
-      "sec": "3.5.3, 3.7.3, 3.8.1",
-      "says": "**Quantity allowances** for trach, PAP and incontinence supplies",
+      "sec": "3.7.4, 3.12.2",
+      "says": "**Compliance requirements** — PAP usage and the follow-up visit, and the documentation for oxygen, ventilators and the low air loss mattress. The failed-PAP-trial watch-out covers Medicare and Medicare Advantage: should it cover Medicaid and commercial plans too?",
       "n": "4"
      },
      {
-      "sec": "3.7.3",
-      "q": "**PAP mask trial or change** — a patient using PAP for the first time wants a different mask from the one they got. What is the policy on a mask trial or change?",
+      "sec": "3.10, 3.10.1, 9.1.1",
+      "says": "**Ventilators:** after hours, dispatch the on-call RT immediately. If an MDO asks about a vent referral we can’t find, check with the Respiratory & Resupply Manager first. Does every ventilator patient get a back-up unit, without exception? And after-hours dispatch is DFW only — do we have ventilator patients outside DFW?",
       "n": "5"
      },
      {
-      "sec": "3.7.4, 3.12.2",
-      "says": "**Compliance requirements** — PAP usage and the follow-up visit, and the documentation for oxygen, ventilators and the low air loss mattress",
+      "sec": "3.8.2, 3.11, 3.13, 6.14",
+      "says": "**What we do and don’t offer:** no new external or Purewick catheters, no new IPPB units; oximetry testing is available. What is the oximetry test process?",
       "n": "6"
      },
      {
-      "sec": "3.7.4",
-      "says": "**A failed PAP trial** — the watch-out covers Medicare and Medicare Advantage. Should it cover Medicaid and commercial plans too?",
-      "n": "7"
-     },
-     {
-      "sec": "3.10, 3.10.1",
-      "says": "**Ventilators:** after hours, dispatch the on-call RT immediately. If an MDO asks about a vent referral we can't find, check with the Respiratory & Resupply Manager first",
-      "n": "8"
-     },
-     {
-      "sec": "3.10",
-      "q": "**Ventilator back-up units** — does every ventilator patient get a back-up unit, without exception?",
-      "n": "9"
-     },
-     {
-      "sec": "3.8.2, 3.11, 3.13",
-      "says": "**What we do and don't offer:** no new external or Purewick catheters, no new IPPB units; oximetry testing is available",
-      "n": "10"
-     },
-     {
-      "sec": "3.13, 6.14",
-      "q": "**Oximetry** — we can facilitate a test. What is the test process?",
-      "n": "11"
-     },
-     {
-      "n": "12",
+      "n": "7",
       "roster": "p3",
       "says": "**Your directory rows** — the resupply category owners and the Respiratory Therapists. Check each name, backup and contact"
      },
      {
       "sec": "3.3.1",
-      "says": "**A same-items resupply** goes on the email tool's **Repeat Resupply** form, subject `[Category] [Month] Resupply: [Patient name], DOB: [date]`. Are the form's fields right?",
-      "n": "13"
-     },
-     {
-      "sec": "3.3.1",
-      "q": "**When the category owner is unavailable** — is the process in 3.3.1 correct? If the CSR calls the Resupply Q instead, what does the team member who answers do: hold and transfer, chat, email, or something else?",
-      "n": "14"
+      "says": "**When the category owner is unavailable:** a same-items resupply goes on the email tool’s **Repeat Resupply** form, subject `[Category] [Month] Resupply: [Patient name], DOB: [date]`. Are the form’s fields right, and is the rest of 3.3.1 correct? If the CSR calls the Resupply Q instead, what does the team member who answers do: hold and transfer, chat, email, or something else?",
+      "n": "8"
      },
      {
       "sec": "10.10",
       "says": "**Very high coinsurance** (often 50%+) may mean an order is declined. At what level does your team decline, and does it depend on the item?",
-      "n": "15"
-     },
-     {
-      "sec": "9.1.1",
-      "says": "**After-hours dispatch is DFW only.** Do we have ventilator patients outside DFW?",
-      "n": "16"
+      "n": "9"
      },
      {
       "sec": "3.7.1",
-      "q": "**CPAP vs APAP:** both bill as E0601, and the manual says documentation for E0601 covers either; the Luna G3 X APAP (G4600) works as both. Can the same documents justify either one, interchangeably? And does a switch from fixed pressure to auto need a new pressure order?",
-      "n": "17"
-     },
-     {
-      "sec": "3.7.1",
-      "q": "**A newer model in stock** — when we start stocking a newer version of a respiratory machine (an AirSense 11 after the AirSense 10, say), is the previous version retired at once for every new incoming order?",
-      "n": "18"
+      "q": "**PAP machines** — CPAP vs APAP: both bill as E0601, and the manual says documentation for E0601 covers either; the Luna G3 X APAP (G4600) works as both. Can the same documents justify either one, interchangeably? Does a switch from fixed pressure to auto need a new pressure order? And when we start stocking a newer version of a respiratory machine (an AirSense 11 after the AirSense 10, say), is the previous version retired at once for every new incoming order?",
+      "n": "10"
      },
      {
       "sec": "3.2",
       "q": "**Picking up a respiratory machine** — does a pick-up explicitly require a discontinuation prescription? Is the current process — create the pick-up ticket, then Field Ops reviews it and collects any documents needed — the correct one?",
-      "n": "19"
+      "n": "11"
      },
      {
       "sec": "3.14",
-      "q": "**Resources** — any links to add to Chapter 3's resource list?",
-      "n": "20"
-     },
-     {
-      "sec": "",
-      "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your team?",
-      "n": "21"
+      "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your team? **Resources** — any links to add to Chapter 3's resource list?",
+      "n": "12"
      }
     ]
    }
@@ -224,71 +159,45 @@
       "n": "1"
      },
      {
-      "sec": "4.2.1",
-      "says": "**Qualified Leads** skip PAK but still get a PPD; an evaluation over 6 months old doesn't qualify",
+      "sec": "4.2, 4.2.1",
+      "says": "**The Sales process** — the eight stages to the handoff; Qualified Leads skip PAK but still get a PPD, and an evaluation over 6 months old doesn’t qualify",
       "n": "2"
      },
      {
       "sec": "0.2.1, 4.5",
-      "says": "**Lead callers:** routed to the rep in the lead notes, or the Sales Q, PAP Q or Sales MWC Q; with no lead, CSRs call the Sales Q with the caller's name and number",
+      "says": "**Lead callers:** routed to the rep in the lead notes, or the Sales Q, PAP Q or Sales MWC Q; with no lead, CSRs call the Sales Q with the caller’s name and number. And how do Sales reps currently answer a patient’s questions about cost and model selection?",
       "n": "3"
      },
      {
-      "sec": "4.5",
-      "q": "**Cost and model questions** — how do Sales reps currently answer a patient’s questions about cost and model selection?",
+      "sec": "4.3, 5.1.1",
+      "says": "**Where an order sits:** the Eligibility Status — what each status means, and the progression diagram — and the Power Order Process: is Sales’ part of it right? ◆",
+      "diagrams": true,
       "n": "4"
      },
      {
-      "sec": "4.3",
-      "says": "**The Eligibility Status** — what each status means, and the progression diagram ◆",
-      "n": "5",
-      "diagrams": true
-     },
-     {
-      "sec": "5.1.1",
-      "says": "**The Power Order Process** — is Sales' part of it right?",
-      "diagrams": true,
-      "n": "6"
-     },
-     {
-      "sec": "4.2",
-      "says": "**The Sales process** — the eight stages to the handoff",
-      "n": "7"
-     },
-     {
-      "sec": "4.7",
-      "says": "**The one-year PPD rule:** over a year means a new order through Sales. Are there any other situations where a Sales rep creates a new order for a patient already in the system with an existing PMD order?",
-      "n": "8"
+      "sec": "4.7, 4.5.1",
+      "says": "**A new order for a patient already in the system:** a PPD over a year old means a new order through Sales. A past PMD patient who wants a new PMD: 5+ years since delivery → Sales opens a new order; within 5 years → usually Same or Similar, unless it’s an upgrade the provider attests to, and for now that call goes to Sales too. Right? Should the within-5-years call go to Power instead? Are there any other situations where a Sales rep creates a new order for a patient already in the system with an existing PMD order?",
+      "n": "5"
      },
      {
       "sec": "4.8.1, 4.8.2",
       "says": "**Member ID callbacks** and **fax numbers** — Sales 210-761-7887, main 972-572-1112",
-      "n": "9"
+      "n": "6"
      },
      {
       "roster": "p4",
       "says": "**Your directory rows** — check each name, backup and contact",
-      "n": "10"
-     },
-     {
-      "sec": "4.5.1",
-      "q": "**A past PMD patient who wants a new PMD:** 5+ years since delivery → Sales opens a new order. Within 5 years → usually Same or Similar, unless it's an upgrade the provider attests to; for now that call goes to Sales too. Right? Should the within-5-years call go to Power instead?",
-      "n": "11"
+      "n": "7"
      },
      {
       "sec": "4.4",
       "q": "**The Payor Acceptance sheet** — when a plan shows “No” for POV, does that usually mean the plan doesn’t cover a POV, that we choose not to process POVs for that plan, or does it vary? ◆",
-      "n": "12"
+      "n": "8"
      },
      {
       "sec": "4.9",
-      "q": "**Resources** — any links to add to Chapter 4's resource list?",
-      "n": "13"
-     },
-     {
-      "sec": "",
-      "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your teams?",
-      "n": "14"
+      "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your teams? **Resources** — any links to add to Chapter 4's resource list?",
+      "n": "9"
      }
     ]
    }
@@ -304,125 +213,85 @@
     "rows": [
      {
       "sec": "5.1.1, 5.6",
-      "says": "**The Power Order Process** — the phases, their order, the two ways in from Sales, and the typical times. If appeals are also denied, the order is closed",
+      "says": "**The Power Order Process** — the phases, their order, the two ways in from Sales, and the typical times; if appeals are also denied, the order is closed. And the Qualifications documents: is the list complete, and is each in the right group? Always: M.E. F2F, SWO, SE, LCMP Declaration, MRx. When applicable: Addendum, PT/OT Report Concurrence, PT Rx and Report, ATP Report",
       "diagrams": true,
       "n": "1"
      },
      {
-      "sec": "5.1.1",
-      "q": "**Qualifications documents** — is the list complete, and is each in the right group? Always: M.E. F2F, SWO, SE, LCMP Declaration, MRx. When applicable: Addendum, PT/OT Report Concurrence, PT Rx and Report, ATP Report",
-      "n": "2"
-     },
-     {
       "sec": "",
       "q": "**Each role’s day** — please describe each Power role’s daily tasks and responsibilities: PAK, Medical Assistant Education, Qualifications, PT Evaluation, Authorization and the others.",
-      "n": "3"
+      "n": "2"
      },
      {
       "sec": "5.2.2",
       "says": "**A provider's PT/OT referral** is fine, but we then need a PT/OT Eval Rx for insurance, and we help the patient through it. How does the team currently handle this? Do the PAK documents sent to the MDO tell the provider what to do if they decide the patient needs a referral elsewhere, to keep the gap from opening?",
-      "n": "4"
+      "n": "3"
      },
      {
       "sec": "5.3.3",
       "says": "**A Qualified Lead skips PAK but still gets a PPD**, from a Qualifications team member",
-      "n": "5"
+      "n": "4"
      },
      {
       "sec": "5.3.2",
       "says": "**The 3-day re-fax rule of thumb:** when we’re waiting on required documents from the provider and the Fax History shows more than 3 days since the last request was faxed or re-faxed, the CSR re-faxes it",
+      "n": "5"
+     },
+     {
+      "sec": "5.4, 5.5",
+      "q": "**PT Evals and ATP visits** — in what conditions is a PT Eval an insurance requirement, and in what conditions a UMS preference? The same for an ATP visit. And in what conditions is a virtual PT Eval or a virtual ATP visit permissible?",
       "n": "6"
      },
      {
-      "sec": "5.4, 5.5",
-      "q": "**PT Eval and ATP visit — requirement or preference?** In what conditions is a PT Eval an insurance requirement, and in what conditions a UMS preference? The same for an ATP visit.",
+      "sec": "5.5",
+      "says": "**ATP scheduling:** in-person ATP evaluations are scheduled by Field Ops-Power, up to 2–3 weeks out depending on the ATP’s route. The manual says only Virtual ATP Scheduling (Erica Thongvan) books virtual ones, but that has likely changed — who books them now, and how should CSRs reach them? ◆",
       "n": "7"
      },
      {
-      "sec": "5.4, 5.5",
-      "q": "**Virtual PT Evals and ATP visits** — in what conditions is a virtual PT Eval or a virtual ATP visit permissible?",
+      "sec": "5.6.2",
+      "says": "**Prior authorization calls:** an insurance rep giving a PAR decision — the CSR records it with the reference number, confirms the letter is coming, notes the account, and emails Power intake (no transfer). Dual submission: some PARs go to both traditional Medicare and the MA plan; if MA denies but Medicare approves, Medicare’s approval goes to the MA plan (2+ weeks). Are the two always submitted at the same time, does it depend on the case, or are they staggered on purpose?",
       "n": "8"
-     },
-     {
-      "sec": "5.5",
-      "says": "**ATP evaluations** are scheduled by Field Ops-Power, up to 2–3 weeks out depending on the ATP’s route ◆",
-      "n": "9"
-     },
-     {
-      "sec": "5.5",
-      "q": "**Virtual ATP scheduling** — the manual says only Virtual ATP Scheduling (Erica Thongvan) books virtual ATP evaluations, but that has likely changed. Who books them now, and how should CSRs reach them? ◆",
-      "n": "10"
-     },
-     {
-      "sec": "5.6.2",
-      "says": "**An insurance rep giving a PAR decision:** the CSR records it with the reference number, confirms the letter is coming, notes the account, and emails Power intake — no transfer",
-      "n": "11"
-     },
-     {
-      "sec": "5.6.2",
-      "says": "**Dual submission:** some PARs go to both traditional Medicare and the MA plan; if MA denies but Medicare approves, Medicare's approval goes to the MA plan (2+ weeks). Are the two always submitted at the same time, does it depend on the case, or are they staggered on purpose?",
-      "n": "12"
      },
      {
       "sec": "5.6.3",
       "q": "**How long an appeal stays possible** — after a denial, how long do we have to file an appeal (about 2 months?), and does it depend on the insurance?",
-      "n": "13"
+      "n": "9"
      },
      {
       "sec": "5.1.2, 5.10",
       "says": "**The 90-day figure** is described as the national average, with UMS faster; CSRs then give the current stage",
-      "n": "14"
+      "n": "10"
      },
      {
       "sec": "5.10",
       "q": "**Out-of-pocket accessories** — how do intake team members handle a request for an out-of-pocket accessory? And which accessories, if any, can insurance cover? ◆",
-      "n": "15"
+      "n": "11"
      },
      {
-      "sec": "5.9.2",
-      "says": "**The power wheelchair product guide** — Rajdeep: please add any active model that's missing",
-      "n": "16"
+      "sec": "5.9.2, 5.9.3",
+      "says": "**The equipment guide:** Rajdeep — please add any active power wheelchair model that’s missing. PMD types: standard vs complex rehab (CRT) — standard = Group 2, no power options; CRT = Group 2 with a single or multiple power options (SPO or MPO), and Group 3 and up. Is this how your team uses the terms, and are there other type distinctions a CSR should know?",
+      "n": "12"
      },
      {
-      "sec": "5.9.3",
-      "says": "**PMD types:** standard vs complex rehab (CRT) — standard = Group 2, no power options; CRT = Group 2 with a single or multiple power options (SPO or MPO), and Group 3 and up. Is this how your team uses the terms, and are there other type distinctions a CSR should know?",
-      "n": "17"
-     },
-     {
-      "sec": "10.12.5",
-      "q": "**Same or Similar** — a patient who surrenders a PMD may not get another for five years. Are there exceptions the guide should mention?",
-      "n": "18"
-     },
-     {
-      "sec": "4.5.1",
-      "q": "**A new PMD within 5 years of the last** (4.5.1) goes to Sales for now. Should it go to Power?",
-      "n": "19"
+      "sec": "10.12.5, 4.5.1",
+      "q": "**Same or Similar** — a patient who surrenders a PMD may not get another for five years. Are there exceptions the guide should mention? And a new PMD within 5 years of the last (4.5.1) goes to Sales for now — should it go to Power?",
+      "n": "13"
      },
      {
       "sec": "10.10",
       "says": "**Very high coinsurance** (often 50%+) may mean an order is declined. At what level does your team decline, and does it depend on the item?",
-      "n": "20"
+      "n": "14"
      },
      {
       "roster": "p5",
-      "says": "**Your directory rows** — check each name, backup and contact. **Who backs up the Power Manager?**",
-      "n": "21"
-     },
-     {
-      "sec": "",
-      "q": "**The Power Roster sheet** — please check the current version, pasted below, for accuracy: every name, role, backup and contact.",
+      "says": "**Your directory rows and the Power Roster sheet** — check each name, backup and contact in your rows below, and in the current Power Roster sheet pasted after them. **Who backs up the Power Manager?**",
       "paste": "Paste the current Power Roster sheet here before sending.",
-      "n": "22"
+      "n": "15"
      },
      {
       "sec": "5.11",
-      "q": "**Resources** — any links to add to Chapter 5's resource list?",
-      "n": "23"
-     },
-     {
-      "sec": "",
-      "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your teams?",
-      "n": "24"
+      "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your teams? **Resources** — any links to add to Chapter 5's resource list?",
+      "n": "16"
      }
     ]
    }
@@ -438,128 +307,88 @@
     "rows": [
      {
       "sec": "6.9.2",
-      "says": "**PMD pick-up requests:** adjustable problems and faults go to Service; affordability gets the EAA or a payment plan first; patient-owned chairs aren't picked up ◆",
+      "says": "**PMD pick-up requests:** adjustable problems and faults go to Service; affordability gets the EAA or a payment plan first; patient-owned chairs aren’t picked up. If we pick up a power wheelchair at the patient’s request and they later change their mind, can it be undone? ◆",
       "n": "1"
-     },
-     {
-      "sec": "6.9.2",
-      "q": "**Is a PWC pick-up final?** If we pick up a power wheelchair at the patient’s request and they later change their mind, can it be undone? ◆",
-      "n": "2"
      },
      {
       "sec": "6.10",
       "says": "**Bed relocation:** generally not done; possible within the Dallas, San Antonio and Hawaii areas for rental beds, at $150. Either supervisor decides, and CSRs route the call to Service",
-      "n": "3"
+      "n": "2"
      },
      {
       "sec": "6.8.1, 6.8.2",
       "says": "**Shipping supplies:** no sooner than 10 days before the current supply runs out, and the ship date is the date of service. Overnight shipping is possible for respiratory supplies if the patient pays the difference. How is the extra shipping cost worked out for an overnight or expedited request?",
-      "n": "4"
+      "n": "3"
      },
      {
       "sec": "6.1.2~Mask fitting, 6.3",
       "says": "**Routing:** mask fitting goes to the Field Ops Q; freight companies go to Field Ops-Power with their name and delivery city; plus the common-call rules ◆",
-      "n": "5"
+      "n": "4"
      },
      {
       "sec": "6.3~verified via documentation, 6.3~differ by 1–3 days",
       "q": "**Delivery dates and patient responsibility** — is the 6.3 row on a delivery date noted as “verified via documentation” correct? Does a PMD delivery date in the TRX still differ from the notes by a few days depending on the route? And when must *Pat. Resp.* be collected before delivery, and when can delivery be scheduled without it? ◆",
-      "n": "6"
+      "n": "5"
      },
      {
-      "sec": "6.4.1, 6.4.2, 6.4.3, 6.4.4",
-      "says": "**Facility deliveries:** equipment no earlier than two days before discharge; the facility covers equipment during a Part A SNF stay; supplies only after discharge. **No PMD to a hospital, rehab facility or SNF** — a nursing home that is the patient's permanent residence is fine, with the patient present ◆",
-      "n": "7"
+      "sec": "6.4.1, 6.4.2, 6.4.3, 6.4.4, 6.4.5, 8.8.4",
+      "says": "**Facility deliveries and Texas Medicaid timing:** equipment no earlier than two days before discharge; the facility covers equipment during a Part A SNF stay; supplies only after discharge. **No PMD to a hospital, rehab facility or SNF** — a nursing home that is the patient’s permanent residence is fine, with the patient present. Oxygen tanks for a facility’s general stock aren’t delivered, except rarely: what’s the exception, and who approves it? And is the Texas Medicaid delivery timing right? ◆",
+      "n": "6"
      },
      {
       "sec": "6.5.2, 6.6.1",
       "q": "**Proof of delivery** — is the list of required contents right? And when are **delivery photos** taken, and when is a **driver's license** collected?",
+      "n": "7"
+     },
+     {
+      "sec": "",
+      "q": "**Contacting the patient** — what are all the situations in which an automated text or email is sent to the patient? And how many failed contact or delivery attempts before an order is closed?",
       "n": "8"
-     },
-     {
-      "sec": "",
-      "q": "**Automated texts and emails** — what are all the situations in which an automated text or email is sent to the patient?",
-      "n": "9"
-     },
-     {
-      "sec": "",
-      "q": "**Failed attempts** — how many failed contact or delivery attempts before an order is closed?",
-      "n": "10"
      },
      {
       "sec": "6.12",
       "says": "**Used equipment:** a limited pool, mostly PWC K0821 and K0823 and CPAP; prescription items still need a prescription",
-      "n": "11"
+      "n": "9"
      },
      {
       "sec": "6.11",
       "says": "**Backorders:** Field Ops updates the patient, and gives a date only if the manufacturer has. How often do you re-contact? Are substitutes offered? Can the patient cancel, and how is an out-of-pocket order refunded?",
-      "n": "12"
+      "n": "10"
      },
      {
       "sec": "6.13",
       "says": "**Upgrade fee returns:** unused, within 15 days, less a 20% restocking fee",
-      "n": "13"
+      "n": "11"
      },
      {
       "roster": "p6",
       "says": "**Your directory rows** — check each name, backup and contact ◆",
+      "n": "12"
+     },
+     {
+      "sec": "5.10~ramps, 3.4",
+      "says": "**Out-of-pocket items:** ramps are out of pocket only — anything a CSR should know about a ramp order? No portable oxygen concentrators, not even out of pocket. Right — or can Field Ops procure one for an out-of-pocket order?",
+      "n": "13"
+     },
+     {
+      "sec": "9.1.1, 9.4.1, 9.3",
+      "says": "**Dispatch and targets:** DFW only, San Antonio for concentrators only; 0–60 minutes for ventilators, concentrators and suction. Power wheelchairs after hours: advise business hours; if the patient is stuck, non-emergency services or 9-1-1 ▲",
       "n": "14"
-     },
-     {
-      "sec": "5.10~ramps",
-      "says": "**Ramps** are out of pocket only. Anything a CSR should know about a ramp order?",
-      "n": "15"
-     },
-     {
-      "sec": "8.8.4",
-      "says": "**Oxygen tanks for a facility's general stock** aren't delivered, except rarely. What's the exception, and who approves it?",
-      "n": "16"
-     },
-     {
-      "sec": "6.4.5",
-      "says": "**Texas Medicaid delivery timing**",
-      "n": "17"
-     },
-     {
-      "sec": "3.4",
-      "says": "**No portable oxygen concentrators**, not even out of pocket. Right — or can Field Ops procure one for an out-of-pocket order?",
-      "n": "18"
-     },
-     {
-      "sec": "9.1.1, 9.4.1",
-      "says": "**Dispatch and targets:** DFW only, San Antonio for concentrators only; 0–60 minutes for ventilators, concentrators and suction ▲",
-      "n": "19"
      },
      {
       "sec": "9.1.2, 9.5",
       "q": "**The on-call team** — please confirm everyone and their numbers: technicians, RTs, and the Level 1 and Level 2 backups. Who, if anyone, is Level 2? ▲",
-      "n": "20"
+      "n": "15"
      },
      {
-      "sec": "9.3",
-      "says": "**Power wheelchairs after hours:** advise business hours; if the patient is stuck, non-emergency services or 9-1-1 ▲",
-      "n": "21"
-     },
-     {
-      "sec": "9.4, 9.4.2",
-      "says": "**The escalation chain:** RT calls go to the other RT at step 3; if no one answers, repeat from step 1; 9-1-1 first if distress develops; confirm a backup cylinder meanwhile. Each step waits 30 minutes, including between steps 1 and 2 — right? ▲",
-      "n": "22"
-     },
-     {
-      "sec": "9.9",
-      "says": "**Phone first:** the on-call RT or technician tries to troubleshoot by phone; the CSR still dispatches a ventilator call immediately ▲",
-      "n": "23"
+      "sec": "9.4, 9.4.2, 9.9",
+      "says": "**The escalation chain:** RT calls go to the other RT at step 3; if no one answers, repeat from step 1; 9-1-1 first if distress develops; confirm a backup cylinder meanwhile. Each step waits 30 minutes, including between steps 1 and 2 — right?. Phone first: the on-call RT or technician tries to troubleshoot by phone; the CSR still dispatches a ventilator call immediately ▲",
+      "n": "16"
      },
      {
       "sec": "6.16",
-      "q": "**Resources** — any links to add to Chapter 6's resource list?",
-      "n": "24"
-     },
-     {
-      "sec": "",
-      "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your team, or to after hours?",
-      "n": "25"
+      "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your team, or to after hours? **Resources** — any links to add to Chapter 6's resource list?",
+      "n": "17"
      }
     ]
    }
@@ -574,95 +403,65 @@
     "intro": "",
     "rows": [
      {
-      "sec": "7.3, 7.3.1",
-      "says": "**Who pays for a repair** — rental status and warranty decide, not time since delivery; and the exceptions (oxygen, ventilators, warranty items)",
+      "sec": "7.3, 7.3.1, 7.3.2",
+      "says": "**Who pays for a repair** — rental status and warranty decide, not time since delivery; and the exceptions (oxygen, ventilators, warranty items). Diagnostic visit: $75 out of pocket if the patient refuses photos or video, or a technician recently found the equipment working and it is again fully functional; said before booking; no charge if a fault is found and repaired. Is it $75 or $150, and is the no-charge rule right?",
       "n": "1"
-     },
-     {
-      "sec": "7.3.2",
-      "says": "**Diagnostic visit: $75 out of pocket** if the patient refuses photos or video, or a technician recently found the equipment working and it is again fully functional; said before booking; no charge if a fault is found and repaired. Is it $75 or $150, and is the no-charge rule right?",
-      "n": "2"
      },
      {
       "sec": "7.6.2",
       "says": "**Loaners:** never offered unprompted; possible only while patient-owned equipment is repaired, and Service confirms. In what scenarios is a loaner provided?",
+      "n": "2"
+     },
+     {
+      "sec": "7.4, 7.10.1, 7.10.2",
+      "says": "**Warranties and damaged equipment:** warranties usually run a year; Service requests coverage and the manufacturer decides; water damage commonly voids one. Irreparable damage means an accident or disaster, not neglect; lost or stolen needs a police report before a replacement request",
       "n": "3"
      },
      {
-      "sec": "7.4",
-      "says": "**Warranties:** usually a year; Service requests coverage and the manufacturer decides; water damage commonly voids one",
-      "n": "4"
-     },
-     {
-      "sec": "7.10.1, 7.10.2",
-      "says": "**Damaged, lost or stolen equipment:** irreparable damage means an accident or disaster, not neglect; lost or stolen needs a police report before a replacement request",
-      "n": "5"
-     },
-     {
       "sec": "7.2, 7.5.3",
-      "says": "**Routing** — including wrong item versus expectation mismatch on resupply, and CPAP set-up",
-      "n": "6"
-     },
-     {
-      "sec": "7.2~never arrived",
-      "says": "**Delivered but not received:** Service Q opens a FedEx lost-package claim; no police report needed",
-      "n": "7"
+      "says": "**Routing** — including wrong item versus expectation mismatch on resupply, and CPAP set-up. Delivered but not received: Service Q opens a FedEx lost-package claim; no police report needed",
+      "n": "4"
      },
      {
       "sec": "7.9",
       "says": "**Bed relocation:** either supervisor decides; if approved, Service tickets and validates it, and Field Ops schedules it",
-      "n": "8"
+      "n": "5"
      },
      {
       "sec": "7.7",
       "says": "**Swap-outs:** with new documents needed, the CSR creates a pick-up ticket, notes it, and emails intake; otherwise Service creates a swap-out ticket",
-      "n": "9"
+      "n": "6"
      },
      {
       "sec": "7.6.1",
       "q": "**Chargers and batteries for non-customers** — does the caller's PMD have to be exactly a model we carry, or is a compatible charger or battery enough?",
-      "n": "10"
+      "n": "7"
      },
      {
       "sec": "7.11",
       "says": "**Turnaround** isn't quoted as a range — days for small issues, weeks for manufacturer parts",
-      "n": "11"
+      "n": "8"
      },
      {
       "sec": "8.6, 8.6.1",
-      "says": "**Concentrator servicing:** the troubleshooting flowchart, weekly filter cleaning, and a maintenance visit every 6 months",
+      "says": "**Concentrator servicing and troubleshooting guides:** the concentrator troubleshooting flowchart, weekly filter cleaning, and a maintenance visit every 6 months. Does your team have any troubleshooting guides — for power wheelchairs or other equipment? If so, please share them",
       "diagrams": true,
-      "n": "12"
-     },
-     {
-      "sec": "",
-      "q": "**Troubleshooting guides** — does your team have any, for power wheelchairs or other equipment? If so, please share them",
-      "n": "13"
+      "n": "9"
      },
      {
       "sec": "7.14~no longer service",
-      "q": "**When we can’t service** — in what scenarios are we most commonly unable to service equipment? Which of those can still be done, at an out-of-pocket cost?",
-      "n": "14"
-     },
-     {
-      "sec": "7.14~no longer service",
-      "says": "**A PMD we can no longer service:** suggest a local DME repair service (in network for insurance to pay). We often suggest a few companies, but the patient commonly calls back to say that company couldn’t help either. In what scenarios, if any, are they likely to get help from the references we give?",
-      "n": "15"
+      "says": "**When we can’t service:** in what scenarios are we most commonly unable to service equipment, and which of those can still be done at an out-of-pocket cost? For a PMD we can no longer service, CSRs suggest a local DME repair service (in network for insurance to pay). We often suggest a few companies, but the patient commonly calls back to say that company couldn’t help either. In what scenarios, if any, are they likely to get help from the references we give?",
+      "n": "10"
      },
      {
       "roster": "p7",
       "says": "**Your directory row** — check the name, backup and contact",
-      "n": "16"
+      "n": "11"
      },
      {
       "sec": "7.15",
-      "q": "**Resources** — any links to add to Chapter 7's resource list?",
-      "n": "17"
-     },
-     {
-      "sec": "",
-      "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your team?",
-      "n": "18"
+      "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your team? **Resources** — any links to add to Chapter 7's resource list?",
+      "n": "12"
      }
     ]
    }
@@ -687,110 +486,75 @@
       "n": "2"
      },
      {
-      "sec": "10.2, 10.2.1, 10.2.2, 10.2.3",
-      "says": "**Billing types** — capped rental, continuous monthly rental, oxygen (36-month), purchase and resupply purchase: are the types, and the products listed under each, correct?",
+      "sec": "10.2, 10.2.1, 10.2.2, 10.2.3, 3.7.2",
+      "says": "**Billing types** — capped rental, continuous monthly rental, oxygen (36-month), purchase and resupply purchase: are the types, and the products listed under each, correct? E0471 is now listed as a capped rental, like E0470 (Medicare since 2006), not “never owned” — right?",
       "n": "3"
      },
      {
       "sec": "10.12.1, 10.14",
-      "says": "**Rentals:** 13 paid months to ownership; a break over 60 days plus the rest of the rental month starts a new rental. Is the rental lifecycle events table in 10.14 accurate?",
+      "says": "**Rentals:** 13 paid months to ownership; a break over 60 days plus the rest of the rental month starts a new rental; capped rental has no purchase option — except a complex rehab PWC, billed as a purchase at delivery. Is the rental lifecycle events table in 10.14 accurate?",
       "n": "4"
-     },
-     {
-      "sec": "10.12.1",
-      "says": "**Capped rental has no purchase option** — except a complex rehab PWC, billed as a purchase at delivery",
-      "n": "5"
-     },
-     {
-      "sec": "10.12.7",
-      "says": "**Geographic rate variation:** Medicare-approved amounts vary by area — rural and non-rural ZIP codes and former competitive bidding areas — and Billing applies the fee schedule for the delivery address, so CSRs don’t quote dollar amounts unless verified",
-      "n": "6"
      },
      {
       "sec": "10.12, 10.18",
       "says": "**Resupply:** the 30-day contact and 10-day shipping windows; the ship date is the date of service",
-      "n": "7"
+      "n": "5"
      },
      {
       "sec": "",
       "q": "**Sales tax on out-of-pocket orders** — how should sales tax be applied, if at all, to an out-of-pocket order?",
-      "n": "8"
+      "n": "6"
      },
      {
-      "sec": "10.4.1, 10.16",
-      "says": "**Cost estimates and the billing scenarios table** (10.16) — is each worked example accurate?",
-      "n": "9"
+      "sec": "10.4.1, 10.16, 10.12.7",
+      "says": "**Cost estimates:** is each worked example in the billing scenarios table (10.16) accurate? Medicare-approved amounts vary by area — rural and non-rural ZIP codes and former competitive bidding areas — and Billing applies the fee schedule for the delivery address, so CSRs don’t quote dollar amounts unless verified",
+      "n": "7"
      },
      {
       "sec": "10.15.1, 10.15.2",
       "says": "**Upgrade fee waivers** — rules A, B and C, uncommon payers, and checking Medicaid enrollment with Eligibility",
-      "n": "10",
+      "n": "8",
       "diagrams": true
      },
      {
       "sec": "10.19.6",
       "says": "**The EAA:** Billing processes it; usually 1–2 weeks; not available on out-of-pocket orders",
-      "n": "11"
+      "n": "9"
      },
      {
-      "sec": "10.5.3",
-      "says": "**Medicaid and QMB:** QMB patients are never billed cost-sharing; Texas Medicaid as secondary can cover items Medicare never covers",
-      "n": "12"
-     },
-     {
-      "sec": "10.5.3",
-      "says": "**Dual eligibles:** Medicare first, then Medicaid — except a hospital bed for a full-Medicaid patient in an enrolled state (Medicaid primary, Rule B). Right?",
-      "n": "13"
+      "sec": "10.5.3, 3.7.4",
+      "says": "**Medicaid, QMB and dual eligibles:** QMB patients are never billed cost-sharing; Texas Medicaid as secondary can cover items Medicare never covers. Dual eligibles: Medicare first, then Medicaid — except a hospital bed for a full-Medicaid patient in an enrolled state (Medicaid primary, Rule B). Right? And does Texas Medicaid purchase a CPAP after 10 months of rental?",
+      "n": "10"
      },
      {
       "sec": "10.12.3, 10.17.3",
       "says": "**Deadlines:** timely filing — Medicare 12 months, Texas Medicaid 95 days; redeterminations within 120 days",
-      "n": "14"
+      "n": "11"
      },
      {
       "sec": "10.6, 10.17.1",
       "says": "**COB and ABNs:** only the patient can update COB; ABNs are Original Medicare only, signed before delivery",
-      "n": "15"
+      "n": "12"
      },
      {
-      "sec": "5.8.1",
-      "says": "**A partly paid rent-to-own PWC:** the balance may be waived rather than the chair picked up, since a return may mean refunding insurance. Is that right, given paid capped-rental months are normally earned?",
-      "n": "16"
-     },
-     {
-      "sec": "3.7.4",
-      "q": "**Texas Medicaid CPAP:** does it purchase after 10 months of rental?",
-      "n": "17"
+      "sec": "5.8.1, 10.14.1",
+      "says": "**Waived balances:** a partly paid rent-to-own PWC — the balance may be waived rather than the chair picked up, since a return may mean refunding insurance; is that right, given paid capped-rental months are normally earned? Pick-up write-offs: *waived* (balance waived, item is the patient’s) or *failed pick-up* (balance stays). How is a waiver documented, and who tells the patient?",
+      "n": "13"
      },
      {
       "sec": "2.2.3",
       "says": "**Bariatric equipment below the weight threshold**, patient paying the difference: is an ABN needed for Medicare?",
-      "n": "18"
-     },
-     {
-      "sec": "10.14.1",
-      "says": "**Pick-up write-offs:** *waived* (balance waived, item is the patient's) or *failed pick-up* (balance stays). How is a waiver documented, and who tells the patient?",
-      "n": "19"
+      "n": "14"
      },
      {
       "sec": "7.7",
       "says": "**Swap-outs:** is the old item picked up at once, or billed until the new order completes?",
-      "n": "20"
-     },
-     {
-      "sec": "3.7.2",
-      "says": "**E0471 is now listed as a capped rental**, like E0470 (Medicare since 2006), not \"never owned\". Right?",
-      "n": "21"
+      "n": "15"
      },
      {
       "sec": "",
-      "q": "**Resources** — Chapter 10 has no resource list. Are there documents, forms or links CSRs should have?",
-      "n": "22"
-     },
-     {
-      "sec": "",
-      "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to Billing?",
-      "n": "23"
+      "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to Billing? **Resources** — Chapter 10 has no resource list. Are there documents, forms or links CSRs should have?",
+      "n": "16"
      }
     ]
    }

@@ -115,6 +115,8 @@ def model(key):
                 t, body, _ = MRP.directory_rows(r["roster"])
                 B.append({"t": "excerpt", "title": t, "blocks": blocks(body)})
             B += excerpt_blocks(MRP.excerpts_for(r, key, shown, []))
+            if r.get("paste"):  # e.g. the directory question's live roster sheet
+                B.append({"t": "pointer", "runs": runs(f"[{r['paste']}]")})
             B.append({"t": "answer", "n": r["n"]})
     return {"title": title, "blocks": B}
 

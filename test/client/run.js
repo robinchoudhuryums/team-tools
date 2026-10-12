@@ -35189,19 +35189,21 @@ test('PK-3 (review packets, operator 2026-10-12): a question that cites a sectio
     rows.forEach((r, i) => assert.strictEqual(r.n, String(i + 1), key + ': questions are numbered in order'));
     rows.forEach((r) => assert.ok(!(r.says && r.q), key + ' Q' + r.n + ' carries both a statement and an open question — the builders render only one'));
   });
-  assert.ok(followUps >= 10, 'non-vacuous: the packets carry follow-up questions (' + followUps + ')');
+  assert.ok(followUps >= 3, 'non-vacuous: the packets carry follow-up questions (' + followUps + ') — fewer since the 2026-10-12 merges folded most follow-ups into their source');
 });
 
-test('PK-4 (review packets, operator 2026-10-12): a question can carry a PASTE slot for something only the operator has (the live Power Roster sheet) — both builders draw it inside the open question, before the answer space, and the Power packet uses it', () => {
+test('PK-4 (review packets, operator 2026-10-12): a question can carry a PASTE slot for something only the operator has (the live Power Roster sheet) — both builders draw it, in an open question before its answer space and in a closed one before its answer line; the Power packet\'s directory question carries it', () => {
   const MAN = path.join(__dirname, '../../manual');
-  [['make_review_packets.py', 'L += ["**Your answer:**"'], ['packet_model.py', 'B.append({"t": "answer_open"']].forEach(([f, ans]) => {
+  [['make_review_packets.py', 'L += ["**Your answer:**"', 'L += [f"**Correct, or needs change?**'], ['packet_model.py', 'B.append({"t": "answer_open"', 'B.append({"t": "answer", "n"']].forEach(([f, ansOpen, ansClosed]) => {
     const src = fs.readFileSync(path.join(MAN, f), 'utf8');
-    const q = src.indexOf('if "q" in r:'), slot = src.indexOf('if r.get("paste"):', q), a = src.indexOf(ans, q);
-    assert.ok(q > 0 && slot > q && a > slot, f + ': the paste slot sits in the open branch, before the answer — ' + [q, slot, a]);
-    assert.ok(/\[\{r\['paste'\]\}\]/.test(src.slice(slot, a)), f + ': it draws the slot text in brackets');
+    const q = src.indexOf('if "q" in r:'), slot1 = src.indexOf('if r.get("paste"):', q), a1 = src.indexOf(ansOpen, q);
+    assert.ok(q > 0 && slot1 > q && a1 > slot1, f + ': open question — the slot, then the answer space — ' + [q, slot1, a1]);
+    const slot2 = src.indexOf('if r.get("paste"):', a1), a2 = src.indexOf(ansClosed, a1);
+    assert.ok(slot2 > a1 && a2 > slot2, f + ': closed question — the slot, then the answer line — ' + [slot2, a2]);
+    [[slot1, a1], [slot2, a2]].forEach(([x, y]) => assert.ok(/\[\{r\['paste'\]\}\]/.test(src.slice(x, y)), f + ': it draws the slot text in brackets'));
   });
   const p5 = JSON.parse(fs.readFileSync(path.join(MAN, 'packets/spec.json'), 'utf8')).p5;
-  assert.ok([].concat(...p5.groups.map((g) => g.rows)).some((r) => r.paste && /Power Roster/.test(r.q || '')), 'the Power packet carries the Power Roster slot');
+  assert.ok([].concat(...p5.groups.map((g) => g.rows)).some((r) => r.paste && r.roster === 'p5' && /Power Roster/.test(r.says || '')), 'the Power packet\'s directory question carries the Power Roster slot');
 });
 
 test('PK-5 (review packets, operator 2026-10-12): the build names exactly the packets the spec has — no map entry for a dissolved packet (Oxygen, After Hours; the After Hours questions now ride Field Ops, marked for Parth Shah) — and make_packets.sh removes a packet file the spec no longer builds', () => {
@@ -35214,7 +35216,7 @@ test('PK-5 (review packets, operator 2026-10-12): the build names exactly the pa
   assert.ok(!keys.includes('p8') && !keys.includes('p9'), 'the Oxygen and After Hours packets are dissolved — the CSR manager reviews Chapters 8 and 9');
   const p6 = JSON.parse(fs.readFileSync(path.join(MAN, 'packets/spec.json'), 'utf8')).p6;
   const tri = [].concat(...p6.groups.map((g) => g.rows)).filter((r) => /\u25b2$/.test(r.says || r.q || ''));
-  assert.ok(/questions marked \*\*\u25b2\*\* are for \*\*Parth Shah\*\*/.test(p6.head) && tri.length >= 5 && tri.every((r) => /^9\./.test(r.sec)), 'the After Hours questions ride the Field Ops packet, marked \u25b2 for Parth Shah, each quoting Chapter 9 (' + tri.length + ')');
+  assert.ok(/questions marked \*\*\u25b2\*\* are for \*\*Parth Shah\*\*/.test(p6.head) && tri.length >= 3 && tri.every((r) => /^9\./.test(r.sec)), 'the After Hours questions ride the Field Ops packet, marked \u25b2 for Parth Shah, each quoting Chapter 9 (' + tri.length + ')');
   const sh = fs.readFileSync(path.join(MAN, 'make_packets.sh'), 'utf8');
   assert.ok(/want = \{NAMES\[k\] for k in KEYS\}/.test(sh) && /os\.remove\(f\)/.test(sh), 'the build removes stale packet files');
 });

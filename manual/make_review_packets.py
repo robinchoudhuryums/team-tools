@@ -194,6 +194,8 @@ def packet(key):
                 missing += [(r["n"], "B.1 " + g) for g in gone]
                 L += [f"#### From the manual — {title}", "", body, ""]
             L += excerpt_lines(excerpts_for(r, key, shown, missing))
+            if r.get("paste"):  # e.g. the directory question's live roster sheet
+                L += [f"**[{r['paste']}]**", ""]
             # a fill-in line, not checkboxes: the packets go out as Google Docs, where
             # typing on a line is easier than ticking a box (operator 2026-10-12)
             L += [f"**Correct, or needs change?** {ANSWER_LINE}", "", "**Notes:**", "", "&nbsp;", ""]

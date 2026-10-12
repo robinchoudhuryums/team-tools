@@ -10,6 +10,21 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-12 — packet questions consolidated
+
+**Adds NO operator state.** Rebuild the packets (`./make_packets.sh`) and
+re-share every packet except Denials. No manual text changed; every ask is
+kept, merged under fewer headings, so a merged statement's single "Correct, or
+needs change?" line covers several facts.
+- **Question counts:** Field Operations 25 → 17, Power 24 → 16, Billing 23 → 16,
+  Respiratory & Resupply 21 → 12, Service 18 → 12, Manual Mobility 16 → 12,
+  Sales 14 → 9; Denials unchanged.
+- **Every packet's Resources question rides its "Anything else?"**
+- **Power:** the directory question and the Power Roster sheet are one question;
+  the paste slot now sits under the directory rows.
+- The cross-packet repeats (coinsurance threshold, a new PMD within 5 years,
+  bed relocation) stay as they were.
+
 ## 2026-10-12 — Billing and Denials packet changes
 
 **Adds NO operator state.** Rebuild the packets (`./make_packets.sh`) and
