@@ -10,6 +10,35 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-12 — Power packet changes; Hem holds the PT Evaluation Team row
+
+**Adds NO operator state.** Two releases:
+1. **Manual release** (`./make_all.sh` → Import → Publish): Appendix B's
+   directory names **Hem** as the PT Evaluation Team holder (the backup is
+   marked unconfirmed). Nothing else in the manual changed.
+2. **Packets** (`./make_packets.sh`): re-share the Power packet. **Before
+   sending, paste the current Power Roster sheet into question 22** — the slot is
+   marked; the sheet lives in the org Drive, which this build cannot read.
+- **Recipients:** Hem (PT Evaluation) and Kajal added (add Kajal's role to the
+  `head` line in `manual/packets/spec.json` when known).
+- **Removed:** "Medicare Advantage is primary" and "Equipment answers" (the
+  previous Q7–8).
+- **Changed:** PT and ATP evaluations now ask when each is an insurance
+  requirement and when a UMS preference; virtual ATP scheduling asks who books
+  them now (likely no longer Erica Thongvan), and the ATP scheduling statement
+  no longer names her; dual submission asks whether the two go in together, by
+  case, or staggered on purpose; the PT/OT referral question asks how the team
+  handles the gap and whether the PAK documents tell the MDO what to do; the
+  standard vs complex rehab question is now PMD types (standard vs CRT, SPO vs
+  MPO, and others).
+- **New:** each role's daily tasks and responsibilities; the 3-day re-fax rule
+  of thumb; when a virtual PT Eval or ATP visit is permissible; how long an
+  appeal stays possible; out-of-pocket accessory requests and which accessories
+  insurance can cover (◆ for Field Ops-Power); the Power Roster sheet.
+- **Order:** the questions follow the Power process — overview, PAK,
+  Qualifications, PT and ATP, authorization and appeals, timelines and
+  equipment, then directory, roster, Resources and Anything else.
+
 ## 2026-10-12 — Resupply, Sales and Field Ops packet changes
 
 **Adds NO operator state.** Rebuild the packets (`./make_packets.sh` after

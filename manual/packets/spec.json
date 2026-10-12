@@ -295,7 +295,7 @@
   ]
  },
  "p5": {
-  "head": "# Review Packet — Chapter 5: Power Mobility\n\n**For:** Power — **Rajdeep Thakar** (Power Manager), **Erica Thongvan** (PAK) and **Ahmed Ramadan** (Qualifications)\n**Also for:** **Ozaire (MD) Hawa** (Field Ops-Power) — questions marked **◆**\n\n\n",
+  "head": "# Review Packet — Chapter 5: Power Mobility\n\n**For:** Power — **Rajdeep Thakar** (Power Manager), **Erica Thongvan** (PAK), **Ahmed Ramadan** (Qualifications), **Hem** (PT Evaluation) and **Kajal**\n**Also for:** **Ozaire (MD) Hawa** (Field Ops-Power) — questions marked **◆**\n\n\n",
   "groups": [
    {
     "num": "",
@@ -314,94 +314,115 @@
       "n": "2"
      },
      {
-      "sec": "5.3.3",
-      "says": "**A Qualified Lead skips PAK but still gets a PPD**, from a Qualifications team member",
+      "sec": "",
+      "q": "**Each role’s day** — please describe each Power role’s daily tasks and responsibilities: PAK, Medical Assistant Education, Qualifications, PT Evaluation, Authorization and the others.",
       "n": "3"
      },
      {
-      "sec": "5.5",
-      "says": "**ATP evaluations** are scheduled by Field Ops-Power, up to 2–3 weeks out depending on the ATP's route. Virtual evaluations are scheduled only by Erica Thongvan ◆",
+      "sec": "5.2.2",
+      "says": "**A provider's PT/OT referral** is fine, but we then need a PT/OT Eval Rx for insurance, and we help the patient through it. How does the team currently handle this? Do the PAK documents sent to the MDO tell the provider what to do if they decide the patient needs a referral elsewhere, to keep the gap from opening?",
       "n": "4"
      },
      {
-      "sec": "5.5",
-      "says": "**Virtual ATP evaluations** are scheduled only by Virtual ATP Scheduling (Erica Thongvan). Right, and how should CSRs reach it? ◆",
+      "sec": "5.3.3",
+      "says": "**A Qualified Lead skips PAK but still gets a PPD**, from a Qualifications team member",
       "n": "5"
+     },
+     {
+      "sec": "5.3.2",
+      "says": "**The 3-day re-fax rule of thumb:** when we’re waiting on required documents from the provider and the Fax History shows more than 3 days since the last request was faxed or re-faxed, the CSR re-faxes it",
+      "n": "6"
+     },
+     {
+      "sec": "5.4, 5.5",
+      "q": "**PT Eval and ATP visit — requirement or preference?** In what conditions is a PT Eval an insurance requirement, and in what conditions a UMS preference? The same for an ATP visit.",
+      "n": "7"
+     },
+     {
+      "sec": "5.4, 5.5",
+      "q": "**Virtual PT Evals and ATP visits** — in what conditions is a virtual PT Eval or a virtual ATP visit permissible?",
+      "n": "8"
+     },
+     {
+      "sec": "5.5",
+      "says": "**ATP evaluations** are scheduled by Field Ops-Power, up to 2–3 weeks out depending on the ATP’s route ◆",
+      "n": "9"
+     },
+     {
+      "sec": "5.5",
+      "q": "**Virtual ATP scheduling** — the manual says only Virtual ATP Scheduling (Erica Thongvan) books virtual ATP evaluations, but that has likely changed. Who books them now, and how should CSRs reach them? ◆",
+      "n": "10"
      },
      {
       "sec": "5.6.2",
       "says": "**An insurance rep giving a PAR decision:** the CSR records it with the reference number, confirms the letter is coming, notes the account, and emails Power intake — no transfer",
-      "n": "6"
+      "n": "11"
      },
      {
       "sec": "5.6.2",
-      "says": "**Dual submission:** some PARs go to both traditional Medicare and the MA plan; if MA denies but Medicare approves, Medicare's approval goes to the MA plan (2+ weeks)",
-      "n": "7"
+      "says": "**Dual submission:** some PARs go to both traditional Medicare and the MA plan; if MA denies but Medicare approves, Medicare's approval goes to the MA plan (2+ weeks). Are the two always submitted at the same time, does it depend on the case, or are they staggered on purpose?",
+      "n": "12"
+     },
+     {
+      "sec": "5.6.3",
+      "q": "**How long an appeal stays possible** — after a denial, how long do we have to file an appeal (about 2 months?), and does it depend on the insurance?",
+      "n": "13"
      },
      {
       "sec": "5.1.2, 5.10",
       "says": "**The 90-day figure** is described as the national average, with UMS faster; CSRs then give the current stage",
-      "n": "8"
+      "n": "14"
      },
      {
-      "sec": "5.9.1, 5.10",
-      "says": "**Equipment answers:** POVs can't take ROHO cushions; POVs run about $1,200–$1,900 out of pocket; no vehicle lifts; ramps out-of-pocket only; cup holders can be added",
-      "n": "9"
-     },
-     {
-      "sec": "10.7",
-      "says": "**Medicare Advantage is primary**, not secondary",
-      "n": "10"
-     },
-     {
-      "sec": "10.12.5",
-      "q": "**Same or Similar** — a patient who surrenders a PMD may not get another for five years. Are there exceptions the guide should mention?",
-      "n": "11"
-     },
-     {
-      "roster": "p5",
-      "says": "**Your directory rows** — check each name, backup and contact. **Who backs up the Power Manager?**",
-      "n": "12"
-     },
-     {
-      "sec": "10.10",
-      "says": "**Very high coinsurance** (often 50%+) may mean an order is declined. At what level does your team decline, and does it depend on the item?",
-      "n": "13"
+      "sec": "5.10",
+      "q": "**Out-of-pocket accessories** — how do intake team members handle a request for an out-of-pocket accessory? And which accessories, if any, can insurance cover? ◆",
+      "n": "15"
      },
      {
       "sec": "5.9.2",
       "says": "**The power wheelchair product guide** — Rajdeep: please add any active model that's missing",
-      "n": "14"
-     },
-     {
-      "sec": "5.4",
-      "says": "**PT and ATP evaluations:** when exactly does insurance require each?",
-      "n": "15"
-     },
-     {
-      "sec": "5.2.2",
-      "says": "**A provider's PT/OT referral** is fine, but we then need a PT/OT Eval Rx for insurance, and we help the patient through it",
       "n": "16"
      },
      {
       "sec": "5.9.3",
-      "says": "**Standard vs complex rehab PWC:** standard = Group 2, no power options; complex = Group 2 with power options, and Group 3+. Is this how your team uses the terms?",
+      "says": "**PMD types:** standard vs complex rehab (CRT) — standard = Group 2, no power options; CRT = Group 2 with a single or multiple power options (SPO or MPO), and Group 3 and up. Is this how your team uses the terms, and are there other type distinctions a CSR should know?",
       "n": "17"
+     },
+     {
+      "sec": "10.12.5",
+      "q": "**Same or Similar** — a patient who surrenders a PMD may not get another for five years. Are there exceptions the guide should mention?",
+      "n": "18"
      },
      {
       "sec": "4.5.1",
       "q": "**A new PMD within 5 years of the last** (4.5.1) goes to Sales for now. Should it go to Power?",
-      "n": "18"
+      "n": "19"
+     },
+     {
+      "sec": "10.10",
+      "says": "**Very high coinsurance** (often 50%+) may mean an order is declined. At what level does your team decline, and does it depend on the item?",
+      "n": "20"
+     },
+     {
+      "roster": "p5",
+      "says": "**Your directory rows** — check each name, backup and contact. **Who backs up the Power Manager?**",
+      "n": "21"
+     },
+     {
+      "sec": "",
+      "q": "**The Power Roster sheet** — please check the current version, pasted below, for accuracy: every name, role, backup and contact.",
+      "paste": "Paste the current Power Roster sheet here before sending.",
+      "n": "22"
      },
      {
       "sec": "5.11",
       "q": "**Resources** — any links to add to Chapter 5's resource list?",
-      "n": "19"
+      "n": "23"
      },
      {
       "sec": "",
       "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your teams?",
-      "n": "20"
+      "n": "24"
      }
     ]
    }

@@ -158,6 +158,8 @@ def packet(key):
                         missing.append((r["n"], sec)); continue
                     shown[(sec, filt)] = r["n"]
                     L += [f"#### From the manual — {title}" + (" (excerpt)" if filt else ""), "", body, ""]
+                if r.get("paste"):  # a slot for something only the operator has, e.g. a live sheet
+                    L += [f"**[{r['paste']}]**", ""]
                 L += ["**Your answer:**", "", "&nbsp;", ""]
                 continue
             L += [f"### {r['n']}. {r['says'].replace('**', '')}", ""]

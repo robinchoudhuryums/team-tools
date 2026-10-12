@@ -124,17 +124,19 @@
     "id": "pw-pt-eval",
     "role": "PT Evaluation Team",
     "part": "p5",
-    "holder": "— team —",
+    "holder": "Hem",
     "backup": "— team —",
     "queue": null,
     "email": "power@universalmedsupply.com",
     "email_attn": "PT Eval",
     "direct_transfer": true,
     "current_named_individual": null,
-    "source": "PW p.31",
-    "note": null,
-    "flags": [],
-    "type": "team"
+    "source": "Robin, 2026-10-12 (Power packet changes)",
+    "note": "Hem holds the PT Evaluation Team role (operator 2026-10-12); the backup is not confirmed yet.",
+    "flags": [
+      "no-backup-confirmed"
+    ],
+    "type": "individual"
   },
   {
     "id": "pw-atp-scheduling",

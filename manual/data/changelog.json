@@ -1,6 +1,15 @@
 [
   {
     "date": "2026-10-12",
+    "part": "appx_b",
+    "section": "§B-1",
+    "summary": "The PT Evaluation Team row names its holder, Hem.",
+    "authority": "Power",
+    "retraining": false,
+    "provenance": "Operator packet changes 2026-10-12"
+  },
+  {
+    "date": "2026-10-12",
     "part": "p6",
     "section": "§6-1",
     "summary": "6.1.2 is now \"Intake, Field Ops or Service?\": an order that isn't authorized yet (the Unauthorized icon) is still with the intake team, not Field Ops.",

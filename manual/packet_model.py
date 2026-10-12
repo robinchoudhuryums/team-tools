@@ -108,6 +108,8 @@ def model(key):
                         continue
                     shown[(sec, filt)] = r["n"]
                     B.append({"t": "excerpt", "title": t + (" (excerpt)" if filt else ""), "blocks": blocks(body)})
+                if r.get("paste"):  # a slot for something only the operator has, e.g. a live sheet
+                    B.append({"t": "pointer", "runs": runs(f"[{r['paste']}]")})
                 B.append({"t": "answer_open", "n": r["n"]})
                 continue
             B.append({"t": "h3", "runs": runs(f"{r['n']}. {r['says'].replace('**', '')}")})

@@ -35186,6 +35186,18 @@ test('PK-3 (review packets, operator 2026-10-12): a question that cites a sectio
   assert.ok(followUps >= 10, 'non-vacuous: the packets carry follow-up questions (' + followUps + ')');
 });
 
+test('PK-4 (review packets, operator 2026-10-12): a question can carry a PASTE slot for something only the operator has (the live Power Roster sheet) — both builders draw it inside the open question, before the answer space, and the Power packet uses it', () => {
+  const MAN = path.join(__dirname, '../../manual');
+  [['make_review_packets.py', 'L += ["**Your answer:**"'], ['packet_model.py', 'B.append({"t": "answer_open"']].forEach(([f, ans]) => {
+    const src = fs.readFileSync(path.join(MAN, f), 'utf8');
+    const q = src.indexOf('if "q" in r:'), slot = src.indexOf('if r.get("paste"):', q), a = src.indexOf(ans, q);
+    assert.ok(q > 0 && slot > q && a > slot, f + ': the paste slot sits in the open branch, before the answer — ' + [q, slot, a]);
+    assert.ok(/\[\{r\['paste'\]\}\]/.test(src.slice(slot, a)), f + ': it draws the slot text in brackets');
+  });
+  const p5 = JSON.parse(fs.readFileSync(path.join(MAN, 'packets/spec.json'), 'utf8')).p5;
+  assert.ok([].concat(...p5.groups.map((g) => g.rows)).some((r) => r.paste && /Power Roster/.test(r.q || '')), 'the Power packet carries the Power Roster slot');
+});
+
 test('MRD-9 (the Phase 8 follow-on, 2026-10-12): a dark-mode printout draws the accent in each palette\'s LIGHT accent — the swatch tokens, whose dark copy is screen-only — for every palette the token file declares; printed cross-references use the deeper --accent-2', () => {
   const { toks, blocks } = tokenBlocks();
   const styles = fs.readFileSync(path.join(PA_WEB, 'styles.html'), 'utf8');
