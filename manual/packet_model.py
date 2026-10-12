@@ -83,6 +83,12 @@ def blocks(md):
     return out
 
 
+def excerpt_blocks(items):
+    """MRP.excerpts_for's items as Word blocks — the SAME once-per-packet rule as the Markdown packet."""
+    return [{"t": "pointer", "runs": runs(it[1])} if it[0] == "pointer"
+            else {"t": "excerpt", "title": it[1], "blocks": blocks(it[2])} for it in items]
+
+
 def model(key):
     s = MRP.SPEC[key]
     head = [l for l in s["head"].split("\n") if l.strip()]
@@ -99,15 +105,7 @@ def model(key):
         for r in g["rows"]:
             if "q" in r:
                 B.append({"t": "h3", "runs": runs(f"{r['n']}. {r['q'].replace('**', '')}")})
-                for sec, filt in MRP.refs_for(r.get("sec"), key):
-                    if (sec, filt) in shown:  # once per packet, as in the Markdown packet (2026-10-12)
-                        B.append({"t": "pointer", "runs": runs(f"The text of {display(sec)} is shown with question {shown[(sec, filt)]}.")})
-                        continue
-                    t, body = MRP.excerpt(sec, filt)
-                    if t is None:
-                        continue
-                    shown[(sec, filt)] = r["n"]
-                    B.append({"t": "excerpt", "title": t + (" (excerpt)" if filt else ""), "blocks": blocks(body)})
+                B += excerpt_blocks(MRP.excerpts_for(r, key, shown, []))
                 if r.get("paste"):  # a slot for something only the operator has, e.g. a live sheet
                     B.append({"t": "pointer", "runs": runs(f"[{r['paste']}]")})
                 B.append({"t": "answer_open", "n": r["n"]})
@@ -116,15 +114,7 @@ def model(key):
             if r.get("roster"):
                 t, body, _ = MRP.directory_rows(r["roster"])
                 B.append({"t": "excerpt", "title": t, "blocks": blocks(body)})
-            for sec, filt in MRP.refs_for(r.get("sec"), key):
-                if (sec, filt) in shown:
-                    B.append({"t": "pointer", "runs": runs(f"The text of {display(sec)} is shown with question {shown[(sec, filt)]}.")})
-                    continue
-                t, body = MRP.excerpt(sec, filt, r.get("diagrams", False))
-                if t is None:
-                    continue
-                shown[(sec, filt)] = r["n"]
-                B.append({"t": "excerpt", "title": t + (" (excerpt)" if filt else ""), "blocks": blocks(body)})
+            B += excerpt_blocks(MRP.excerpts_for(r, key, shown, []))
             B.append({"t": "answer", "n": r["n"]})
     return {"title": title, "blocks": B}
 

@@ -135,6 +135,40 @@ def directory_rows(which):
     return "B.1 Directory — your team's rows", "\n".join(table), sorted(roles - found)
 
 
+def excerpts_for(r, key, shown, missing):
+    """The manual text one question cites, shown ONCE per packet (operator
+    2026-10-12: no excerpt repeated): a section an earlier question showed — or
+    rows of it, when that question showed it in full — becomes a pointer back to
+    that question. `shown` maps (sec, filter) to (question, body). Yields
+    ("excerpt", title, body) or ("pointer", text), one pointer per source."""
+    out, pointed = [], set()
+    for sec, filt in refs_for(r.get("sec"), key):
+        if (sec, filt) in shown:
+            src = shown[(sec, filt)][0]
+        else:
+            title, body = excerpt(sec, filt, r.get("diagrams", False))
+            if title is None:
+                missing.append((r["n"], sec)); continue
+            full = shown.get((sec, None))
+            if filt and full and all(l in full[1] for l in body.split("\n") if l.strip()):
+                src = full[0]  # these rows are already on the page, in the full section
+            else:
+                shown[(sec, filt)] = (r["n"], body)
+                out.append(("excerpt", title + (" (excerpt)" if filt else ""), body))
+                continue
+        if (sec, src) not in pointed:
+            pointed.add((sec, src))
+            out.append(("pointer", f"The text of {display(sec)} is shown with question {src}."))
+    return out
+
+
+def excerpt_lines(items):
+    L = []
+    for it in items:
+        L += [f"*{it[1]}*", ""] if it[0] == "pointer" else [f"#### From the manual — {it[1]}", "", it[2], ""]
+    return L
+
+
 def packet(key):
     s = SPEC[key]
     head = s["head"].rstrip()
@@ -149,15 +183,7 @@ def packet(key):
         for r in g["rows"]:
             if "q" in r:                      # an open question — an excerpt only if it cites a section
                 L += [f"**{r['n']}. {r['q'].replace('**', '')}**", ""]
-                for sec, filt in refs_for(r.get("sec"), key):
-                    if (sec, filt) in shown:  # once per packet, as for a closed question (2026-10-12)
-                        L += [f"*The text of {display(sec)} is shown with question {shown[(sec, filt)]}.*", ""]
-                        continue
-                    title, body = excerpt(sec, filt)
-                    if title is None:
-                        missing.append((r["n"], sec)); continue
-                    shown[(sec, filt)] = r["n"]
-                    L += [f"#### From the manual — {title}" + (" (excerpt)" if filt else ""), "", body, ""]
+                L += excerpt_lines(excerpts_for(r, key, shown, missing))
                 if r.get("paste"):  # a slot for something only the operator has, e.g. a live sheet
                     L += [f"**[{r['paste']}]**", ""]
                 L += ["**Your answer:**", "", "&nbsp;", ""]
@@ -167,15 +193,7 @@ def packet(key):
                 title, body, gone = directory_rows(r["roster"])
                 missing += [(r["n"], "B.1 " + g) for g in gone]
                 L += [f"#### From the manual — {title}", "", body, ""]
-            for sec, filt in refs_for(r.get("sec"), key):
-                if (sec, filt) in shown:
-                    L += [f"*The text of {display(sec)} is shown with question {shown[(sec, filt)]}.*", ""]
-                    continue
-                title, body = excerpt(sec, filt, r.get("diagrams", False))
-                if title is None:
-                    missing.append((r["n"], sec)); continue
-                shown[(sec, filt)] = r["n"]
-                L += [f"#### From the manual — {title}" + (" (excerpt)" if filt else ""), "", body, ""]
+            L += excerpt_lines(excerpts_for(r, key, shown, missing))
             # a fill-in line, not checkboxes: the packets go out as Google Docs, where
             # typing on a line is easier than ticking a box (operator 2026-10-12)
             L += [f"**Correct, or needs change?** {ANSWER_LINE}", "", "**Notes:**", "", "&nbsp;", ""]

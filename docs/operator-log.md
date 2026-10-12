@@ -10,6 +10,30 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-12 — Field Ops and Service packet changes
+
+**Adds NO operator state.** Rebuild the packets (`./make_packets.sh`) and
+re-share the Field Operations and Service packets. No manual text changed.
+- **Field Operations:** removed the Purchase Capped Rental Form and oximetry
+  questions (the previous Q10 and Q12); the supplies-shipping question asks how
+  the extra cost of overnight or expedited shipping is worked out; the
+  patient-responsibility question now also asks whether the 6.3 "verified via
+  documentation" row is right and whether a PMD delivery date in the TRX still
+  differs by a few days by route (◆), and sits right after the routing question
+  that shows 6.3; new questions — whether a PWC pick-up can be undone (◆), every
+  situation that sends the patient an automated text or email, and how many
+  failed contact or delivery attempts close an order.
+- **Service:** removed the PMD-problems and ventilator questions (the previous
+  Q4 and Q7); the loaner question asks in what scenarios a loaner is provided;
+  new question on when we most commonly can't service and which of those can be
+  done out of pocket, followed by the reworded "can no longer service" question
+  (patients often call back because the suggested company couldn't help — when
+  are the references likely to help?); "delivered but not received" now follows
+  the routing question that shows 7.2.
+- **Every packet:** a question that cites rows of a section another question
+  already showed in full now points back to it too, so no manual text appears
+  twice in any packet.
+
 ## 2026-10-12 — Power packet changes; Hem holds the PT Evaluation Team row
 
 **Adds NO operator state.** Two releases:

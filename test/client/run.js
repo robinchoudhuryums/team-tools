@@ -35153,15 +35153,18 @@ test('PK-1 (review packets, operator 2026-10-12): a closed question is answered 
   [py, js].forEach((src, i) => assert.ok(src.indexOf('☐') < 0, (i ? 'render_packet.js' : 'make_review_packets.py') + ' draws no checkbox'));
 });
 
-test('PK-2 (review packets, operator 2026-10-12): an OPEN question shows a section\'s text once per packet, like a closed one — a later question points back ("shown with question N") — in the Markdown AND the Word packet, so a follow-up on a section already quoted does not repeat it', () => {
+test('PK-2 (review packets, operator 2026-10-12): manual text is shown ONCE per packet — a section an earlier question showed, or rows of it when that question showed it in full, becomes "shown with question N"; ONE function decides it, and both question kinds in BOTH builders (Markdown and Word) go through it', () => {
   const MAN = path.join(__dirname, '../../manual');
-  [['make_review_packets.py', fs.readFileSync(path.join(MAN, 'make_review_packets.py'), 'utf8')], ['packet_model.py', fs.readFileSync(path.join(MAN, 'packet_model.py'), 'utf8')]].forEach(([f, src]) => {
-    const i = src.indexOf('if "q" in r:');
-    assert.ok(i > 0, f + ': the open-question branch exists');
-    const br = src.slice(i, src.indexOf('continue\n', src.indexOf('answer', i)) + 8);
-    const chk = br.indexOf('if (sec, filt) in shown:'), rec = br.indexOf('shown[(sec, filt)] = r["n"]'), ex = br.indexOf('excerpt(sec, filt)');
-    assert.ok(chk > 0 && ex > chk && rec > ex, f + ': it checks what was shown, then excerpts, then records — ' + [chk, ex, rec]);
-    assert.ok(/shown with question \{shown\[\(sec, filt\)\]\}/.test(br), f + ': and points back to the question that showed it');
+  const md = fs.readFileSync(path.join(MAN, 'make_review_packets.py'), 'utf8');
+  const wd = fs.readFileSync(path.join(MAN, 'packet_model.py'), 'utf8');
+  const fn = md.slice(md.indexOf('def excerpts_for('), md.indexOf('\ndef ', md.indexOf('def excerpts_for(') + 1));
+  const chk = fn.indexOf('if (sec, filt) in shown:'), ex = fn.indexOf('excerpt(sec, filt'), rows = fn.indexOf('if filt and full and all(l in full[1] for l in body.split('), rec = fn.indexOf('shown[(sec, filt)] = (r["n"], body)');
+  assert.ok(chk > 0 && ex > chk && rows > ex && rec > rows, 'excerpts_for checks what was shown, excerpts, checks the rows against a full section already shown, then records — ' + [chk, ex, rows, rec]);
+  assert.ok(/shown with question \{src\}/.test(fn) && /pointed/.test(fn), 'it points back to the question that showed the text, once per source');
+  const body = (src, name) => src.slice(src.indexOf('def ' + name + '('), src.indexOf('\ndef ', src.indexOf('def ' + name + '(') + 1) > 0 ? src.indexOf('\ndef ', src.indexOf('def ' + name + '(') + 1) : src.length);
+  [['make_review_packets.py packet()', body(md, 'packet'), 'excerpts_for(r, key, shown, missing)'], ['packet_model.py model()', body(wd, 'model'), 'MRP.excerpts_for(r, key, shown,']].forEach(([f, src, call]) => {
+    assert.strictEqual(src.split(call).length - 1, 2, f + ': the open and the closed question both go through excerpts_for');
+    assert.ok(!/excerpt\(sec, filt/.test(src), f + ': and nothing excerpts around it');
   });
 });
 
@@ -35173,7 +35176,9 @@ test('PK-3 (review packets, operator 2026-10-12): a question that cites a sectio
     const first = {}, src = rows.map(() => -1);
     rows.forEach((r, i) => {
       String(r.sec || '').split(/,\s*/).map((t) => t.trim()).filter((t) => /^\d+\.[\dA-Z]+(\.\d+)?(~|$)|^FAQ/i.test(t)).forEach((t) => {
-        if (t in first) { if (src[i] < 0) src[i] = first[t]; } else first[t] = i;
+        // rows of a section ("6.3~…") follow the question that showed it in full ("6.3")
+        const base = t.split('~')[0], from = t in first ? first[t] : (t !== base && base in first ? first[base] : -1);
+        if (from >= 0) { if (src[i] < 0) src[i] = from; } else first[t] = i;
       });
     });
     src.forEach((s, i) => {

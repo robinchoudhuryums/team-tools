@@ -442,94 +442,99 @@
       "n": "1"
      },
      {
-      "sec": "6.10",
-      "says": "**Bed relocation:** generally not done; possible within the Dallas, San Antonio and Hawaii areas for rental beds, at $150. Either supervisor decides, and CSRs route the call to Service",
+      "sec": "6.9.2",
+      "q": "**Is a PWC pick-up final?** If we pick up a power wheelchair at the patient’s request and they later change their mind, can it be undone? ◆",
       "n": "2"
      },
      {
-      "sec": "6.8.1, 6.8.2",
-      "says": "**Shipping supplies:** no sooner than 10 days before the current supply runs out, and the ship date is the date of service. Overnight shipping is possible for respiratory supplies if the patient pays the difference",
+      "sec": "6.10",
+      "says": "**Bed relocation:** generally not done; possible within the Dallas, San Antonio and Hawaii areas for rental beds, at $150. Either supervisor decides, and CSRs route the call to Service",
       "n": "3"
+     },
+     {
+      "sec": "6.8.1, 6.8.2",
+      "says": "**Shipping supplies:** no sooner than 10 days before the current supply runs out, and the ship date is the date of service. Overnight shipping is possible for respiratory supplies if the patient pays the difference. How is the extra shipping cost worked out for an overnight or expedited request?",
+      "n": "4"
      },
      {
       "sec": "6.1.2~Mask fitting, 6.3",
       "says": "**Routing:** mask fitting goes to the Field Ops Q; freight companies go to Field Ops-Power with their name and delivery city; plus the common-call rules ◆",
-      "n": "4"
+      "n": "5"
+     },
+     {
+      "sec": "6.3~verified via documentation, 6.3~differ by 1–3 days",
+      "q": "**Delivery dates and patient responsibility** — is the 6.3 row on a delivery date noted as “verified via documentation” correct? Does a PMD delivery date in the TRX still differ from the notes by a few days depending on the route? And when must *Pat. Resp.* be collected before delivery, and when can delivery be scheduled without it? ◆",
+      "n": "6"
      },
      {
       "sec": "6.4.1, 6.4.2, 6.4.3, 6.4.4",
       "says": "**Facility deliveries:** equipment no earlier than two days before discharge; the facility covers equipment during a Part A SNF stay; supplies only after discharge. **No PMD to a hospital, rehab facility or SNF** — a nursing home that is the patient's permanent residence is fine, with the patient present ◆",
-      "n": "5"
+      "n": "7"
      },
      {
       "sec": "6.5.2, 6.6.1",
       "q": "**Proof of delivery** — is the list of required contents right? And when are **delivery photos** taken, and when is a **driver's license** collected?",
-      "n": "6"
+      "n": "8"
      },
      {
-      "sec": "6.3~verified via documentation",
-      "q": "**Patient-responsibility balances** — when must *Pat. Resp.* be collected before delivery, and when can delivery be scheduled without it?",
-      "n": "7"
+      "sec": "",
+      "q": "**Automated texts and emails** — what are all the situations in which an automated text or email is sent to the patient?",
+      "n": "9"
+     },
+     {
+      "sec": "",
+      "q": "**Failed attempts** — how many failed contact or delivery attempts before an order is closed?",
+      "n": "10"
      },
      {
       "sec": "6.12",
       "says": "**Used equipment:** a limited pool, mostly PWC K0821 and K0823 and CPAP; prescription items still need a prescription",
-      "n": "8"
+      "n": "11"
      },
      {
       "sec": "6.11",
       "says": "**Backorders:** Field Ops updates the patient, and gives a date only if the manufacturer has. How often do you re-contact? Are substitutes offered? Can the patient cancel, and how is an out-of-pocket order refunded?",
-      "n": "9"
-     },
-     {
-      "sec": "6.6.2",
-      "says": "**The Purchase Capped Rental Form** is signed at delivery — CSRs check Artifacts for it before conceding a \"nobody told me\" call",
-      "n": "10"
+      "n": "12"
      },
      {
       "sec": "6.13",
       "says": "**Upgrade fee returns:** unused, within 15 days, less a 20% restocking fee",
-      "n": "11"
-     },
-     {
-      "sec": "6.14",
-      "says": "**Oximetry:** delivery and pick-up are scheduled together",
-      "n": "12"
+      "n": "13"
      },
      {
       "roster": "p6",
       "says": "**Your directory rows** — check each name, backup and contact ◆",
-      "n": "13"
+      "n": "14"
      },
      {
       "sec": "5.10~ramps",
       "says": "**Ramps** are out of pocket only. Anything a CSR should know about a ramp order?",
-      "n": "14"
+      "n": "15"
      },
      {
       "sec": "8.8.4",
       "says": "**Oxygen tanks for a facility's general stock** aren't delivered, except rarely. What's the exception, and who approves it?",
-      "n": "15"
+      "n": "16"
      },
      {
       "sec": "6.4.5",
       "says": "**Texas Medicaid delivery timing**",
-      "n": "16"
+      "n": "17"
      },
      {
       "sec": "3.4",
       "says": "**No portable oxygen concentrators**, not even out of pocket. Right — or can Field Ops procure one for an out-of-pocket order?",
-      "n": "17"
+      "n": "18"
      },
      {
       "sec": "6.16",
       "q": "**Resources** — any links to add to Chapter 6's resource list?",
-      "n": "18"
+      "n": "19"
      },
      {
       "sec": "",
       "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your team?",
-      "n": "19"
+      "n": "20"
      }
     ]
    }
@@ -555,62 +560,62 @@
      },
      {
       "sec": "7.6.2",
-      "says": "**Loaners:** never offered unprompted; possible only while patient-owned equipment is repaired, and Service confirms",
+      "says": "**Loaners:** never offered unprompted; possible only while patient-owned equipment is repaired, and Service confirms. In what scenarios is a loaner provided?",
       "n": "3"
-     },
-     {
-      "sec": "7.6, 7.6.3",
-      "says": "**PMD problems** come to Service — including discomfort and faults behind a pick-up request. Once a repair is arranged, the visit is scheduled through Field Ops-Power",
-      "n": "4"
      },
      {
       "sec": "7.4",
       "says": "**Warranties:** usually a year; Service requests coverage and the manufacturer decides; water damage commonly voids one",
-      "n": "5"
+      "n": "4"
      },
      {
       "sec": "7.10.1, 7.10.2",
       "says": "**Damaged, lost or stolen equipment:** irreparable damage means an accident or disaster, not neglect; lost or stolen needs a police report before a replacement request",
-      "n": "6"
-     },
-     {
-      "sec": "7.5.1, 7.2",
-      "says": "**Ventilators:** the Trilogy is the only one we carry; issues go to the Service Q, and after hours the on-call RT is dispatched immediately",
-      "n": "7"
+      "n": "5"
      },
      {
       "sec": "7.2, 7.5.3",
       "says": "**Routing** — including wrong item versus expectation mismatch on resupply, and CPAP set-up",
-      "n": "8"
+      "n": "6"
+     },
+     {
+      "sec": "7.2~never arrived",
+      "says": "**Delivered but not received:** Service Q opens a FedEx lost-package claim; no police report needed",
+      "n": "7"
      },
      {
       "sec": "7.9",
       "says": "**Bed relocation:** either supervisor decides; if approved, Service tickets and validates it, and Field Ops schedules it",
-      "n": "9"
+      "n": "8"
      },
      {
       "sec": "7.7",
       "says": "**Swap-outs:** with new documents needed, the CSR creates a pick-up ticket, notes it, and emails intake; otherwise Service creates a swap-out ticket",
-      "n": "10"
+      "n": "9"
      },
      {
       "sec": "7.6.1",
       "q": "**Chargers and batteries for non-customers** — does the caller's PMD have to be exactly a model we carry, or is a compatible charger or battery enough?",
-      "n": "11"
+      "n": "10"
      },
      {
       "sec": "7.11",
       "says": "**Turnaround** isn't quoted as a range — days for small issues, weeks for manufacturer parts",
-      "n": "12"
+      "n": "11"
      },
      {
       "sec": "",
       "q": "**Troubleshooting guides** — does your team have any, for power wheelchairs or other equipment? If so, please share them",
+      "n": "12"
+     },
+     {
+      "sec": "7.14~no longer service",
+      "q": "**When we can’t service** — in what scenarios are we most commonly unable to service equipment? Which of those can still be done, at an out-of-pocket cost?",
       "n": "13"
      },
      {
       "sec": "7.14~no longer service",
-      "says": "**A PMD we can no longer service:** suggest a local DME repair service (in network for insurance to pay). The competitor referrals were removed. Should anything replace them?",
+      "says": "**A PMD we can no longer service:** suggest a local DME repair service (in network for insurance to pay). We often suggest a few companies, but the patient commonly calls back to say that company couldn’t help either. In what scenarios, if any, are they likely to get help from the references we give?",
       "n": "14"
      },
      {
@@ -619,19 +624,14 @@
       "n": "15"
      },
      {
-      "sec": "7.2~never arrived",
-      "says": "**Delivered but not received:** Service Q opens a FedEx lost-package claim; no police report needed",
-      "n": "16"
-     },
-     {
       "sec": "7.15",
       "q": "**Resources** — any links to add to Chapter 7's resource list?",
-      "n": "17"
+      "n": "16"
      },
      {
       "sec": "",
       "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your team?",
-      "n": "18"
+      "n": "17"
      }
     ]
    }
