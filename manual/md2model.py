@@ -124,6 +124,20 @@ cur_part = None
 cur_sec = None
 pending_pb = False
 in_notes = False
+# a quick reference card's diagram is its reverse: held back until the card's text
+# has run, so the landscape page FOLLOWS the card rather than splitting its heading
+# from its text (operator 2026-10-09)
+in_card = card_head = False
+card_figs = []
+
+
+def end_card():
+    global in_card, card_head
+    blocks.extend(card_figs)
+    card_figs.clear()
+    in_card = card_head = False
+
+
 while i < len(lines):
     L = lines[i]
     S = L.strip()
@@ -143,7 +157,7 @@ while i < len(lines):
         name = _attr(S, "data-diagram")
         while i < len(lines) and "</div>" not in lines[i]:
             i += 1
-        blocks.append({"k": "diagram", "name": name})
+        (card_figs if in_card else blocks).append({"k": "diagram", "name": name})
         i += 1
         continue
 
@@ -174,6 +188,8 @@ while i < len(lines):
 
     if S.startswith("<!--"):
         if S.startswith("<!--card:"):
+            end_card()
+            in_card = True
             pending_pb = True
         elif S == "<!--notes-->":
             in_notes = True
@@ -184,6 +200,11 @@ while i < len(lines):
     if m:
         in_notes = False
         lvl, txt = len(m.group(1)), re.sub(r"\s*\{#[\w-]+\}\s*$", "", m.group(2))
+        if in_card and lvl <= 2:
+            if card_head:
+                end_card()       # the next chapter or appendix: the card has ended
+            else:
+                card_head = True
         pm = re.match(r"(?:Part|Chapter) (\d+)", txt)
         if lvl == 1 and pm:
             cur_part = "p" + pm.group(1)
@@ -304,6 +325,7 @@ while i < len(lines):
         continue
     i += 1
 
+end_card()
 json.dump({"meta": {"owner": OWNER, "version": VERSION, "built": built_date(), "full": FULL},
            "blocks": blocks}, open(DST, "w"), ensure_ascii=False)
 from collections import Counter

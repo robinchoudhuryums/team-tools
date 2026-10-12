@@ -4904,7 +4904,7 @@ test('M1 DOM: the Manual dialog — Check shows the plan and every skipped artic
   w.enterTool('reference', 'reference');
   h.flushTimers();
   // Batch M2: the manual's parts lead the tree under their own heading.
-  assert.deepStrictEqual(h.$$('#kb-tree .kb-dept-name').map((x) => x.textContent), ['Chapter 02 — Manual Mobility & General DME', 'Chapter 10 — Billing & Denials', 'Appendix C — Quick Reference Cards', 'Billing'], 'Chapter 02 before Chapter 10 (the number order itself is M1-S1\'s pin), the appendices after the chapters (M3), the manual first');
+  assert.deepStrictEqual(h.$$('#kb-tree .kb-dept-toggle').map((x) => x.getAttribute('data-dept')), ['Chapter 02 — Manual Mobility & General DME', 'Chapter 10 — Billing & Denials', 'Appendix C — Quick Reference Cards', 'Billing'], 'Chapter 02 before Chapter 10 (the number order itself is M1-S1\'s pin), the appendices after the chapters (M3), the manual first');
   assert.deepStrictEqual(h.$$('#kb-tree .kb-tree-group').map((x) => x.textContent), ['Procedures manual', 'Other reference']);
   const btn = h.$$('#kb-tree .kb-add').filter((b) => /Manual/.test(b.textContent))[0];
   assert.ok(btn && btn.getAttribute('onclick') === 'kbOpenManualImport_()', 'an admin sees the Manual button, wired to the dialog');
@@ -5004,7 +5004,7 @@ test('M2 DOM: a manual section opens its WHOLE PART — one fetch per part, a cl
   h.run.respond('getReferenceTree', () => M2_TREE);
   w.enterTool('reference', 'reference');
   h.flushTimers();
-  const box = (d) => h.$$('#kb-tree .kb-dept').filter((b) => b.querySelector('.kb-dept-name').textContent === d)[0];
+  const box = (d) => h.$$('#kb-tree .kb-dept').filter((b) => b.querySelector('.kb-dept-toggle').getAttribute('data-dept') === d)[0];
   assert.ok(box('Chapter 00 — CSR Core').classList.contains('collapsed') && box('Chapter 10 — Billing & Denials').classList.contains('collapsed'), 'the manual’s parts start collapsed');
   assert.ok(!box('Billing').classList.contains('collapsed'), 'other reference keeps its own default');
   assert.ok(h.$('#kb-tree .kb-router-open'), 'the tree offers the call router');
@@ -5372,26 +5372,466 @@ test('MR2 DOM (operator testing 2026-10-08): the reader reads like the HTML manu
   assert.strictEqual(h.read('kbManualTitleHtml_')('10.A Quick <b>'), '<span class="kb-man-sn">10.A</span> Quick &lt;b&gt;', 'the chip and the rest are both escaped');
 });
 
-test('M4 DOM: Print marks ONLY its own section for the one print block, for exactly as long as the dialog is up; a Quick Reference Card\'s button says "Print card"', async () => {
+test('MRD-1 DOM (manual reader design Phase 1): a callout opener becomes kicker + title with its text unchanged, punctuation-only and run-on labels are left readable, a two-column table is marked to stack, a bare-number link reads as a number — and decorating twice changes nothing', async () => {
+  const h = m4Boot_();
+  const doc = h.window.document;
+  const part = JSON.parse(JSON.stringify(M2_PART0));
+  part.sections[1].bodyMd = 'Notes.\n\n' +
+    '> **Critical — emergencies come first.** Dial 9-1-1.\n\n' +
+    '> **Critical.** Federal law.\n\n' +
+    '> **Note** — the TRX, never a name.\n\n' +
+    '> **Policy — never quote a final amount.**\n\n' +
+    '> **Note that** this one runs on.\n\n' +
+    '| Situation | Action |\n|---|---|\n| A | B |\n\n' +
+    '| Item | Code | Note |\n|---|---|---|\n| Bed | E0260 | x |\n\n' +
+    '| Step | Action |\n|---|---|\n| 1 | Ask |\n| 2 | Act |\n\n' +
+    '| Code | Item |\n|---|---|\n' + Array.from({ length: 12 }, (_, i) => '| E0' + (100 + i) + ' | Item ' + i + ' |').join('\n') + '\n\n' +
+    'See [6.4.4](kb:man-6-4#6.4.4) and [10.1 2026 annual figures (Billing & Denials)](kb:man-10-1).\n';
+  h.read('kbOpenItem_')('man-0-11');
+  h.run.flushSuccess(part, 'getManualPart');
+  const sec = doc.getElementById('kb-man-sec-man-0-11');
+  const qs = [...sec.querySelectorAll('blockquote')];
+  const strong = (q) => q.querySelector('p > strong');
+  assert.strictEqual(qs.length, 5, 'five quotes (non-vacuous)');
+  // the text a reader, the landing and search see is unchanged
+  assert.deepStrictEqual(qs.map((q) => strong(q).textContent), ['Critical — emergencies come first.', 'Critical.', 'Note', 'Policy — never quote a final amount.', 'Note that'], 'every opener reads exactly as written');
+  assert.deepStrictEqual(qs.map((q) => { const k = q.querySelector('.kb-co-kick'); return k ? k.textContent : null; }), ['Critical', 'Critical', 'Note', 'Policy', null], 'the label is the kicker; a label run into words is left alone');
+  assert.deepStrictEqual(qs.map((q) => { const t = q.querySelector('.kb-co-title'); return t ? t.textContent : null; }), ['emergencies come first.', null, null, 'never quote a final amount.', null], 'the rest is the title — never a lone full stop');
+  assert.ok(qs[0].querySelector('.kb-co-kick svg, .kb-co-kick [data-icon]'), 'the kicker carries its icon');
+  // Phase 4 follow-on: a dash OUTSIDE the label ("**Note** — the TRX") rides the hidden separator
+  const visible = (q) => { const c = q.querySelector('p').cloneNode(true); c.querySelectorAll('.kb-co-sep, .kb-co-kick').forEach((x) => x.remove()); return c.textContent.trim(); };
+  assert.strictEqual(visible(qs[2]), 'the TRX, never a name.', 'the body does not open with a stray dash under the kicker');
+  assert.strictEqual(qs[2].querySelector('p').textContent.replace(/\s+/g, ' '), 'Note — the TRX, never a name.', 'and the paragraph still reads exactly as written');
+  assert.strictEqual(visible(qs[4]), 'Note that this one runs on.', 'a label run into words is untouched');
+  const tables = [...sec.querySelectorAll('.kb-article table')];
+  assert.deepStrictEqual(tables.map((t) => t.classList.contains('kb-man-2col')), [true, false, false, false], 'only the two-column situation table stacks — not a three-column table, a step table, or a long two-column one (a matrix keeps its frame)');
+  const xs = [...sec.querySelectorAll('a.kb-xref')];
+  assert.deepStrictEqual(xs.map((a) => a.classList.contains('kb-xref-num')), [true, false], 'a bare number link reads as a number; a titled link does not');
+  const before = sec.innerHTML;
+  h.read('kbManualDecorate_')(doc.getElementById('kb-main'));
+  assert.strictEqual(sec.innerHTML, before, 'decorating again changes nothing');
+});
+
+test('MRD-2 DOM (manual reader design Phase 2): the tree reads "00 CSR Core" with a number column and an Updated dot; the reader bar names the open section, and the scroll-spy moves the bar, the star, Print and the tree mark to the section in view — without recording an open or moving the comments; previous / next step by section, then by chapter; a smooth open holds the spy', async () => {
+  const h = m4Boot_();
+  const w = h.window, doc = w.document;
+  // M10 — the tree
+  const tog = h.$$('#kb-tree .kb-dept-toggle');
+  const t0 = tog.filter((t) => t.getAttribute('data-dept') === 'Chapter 00 — CSR Core')[0];
+  assert.ok(t0 && t0.querySelector('.kb-dept-num').textContent === '00' && t0.querySelector('.kb-dept-name').textContent === 'CSR Core' && t0.getAttribute('title') === 'Chapter 00 — CSR Core', 'a chapter reads "00 CSR Core"; the full name stays in data-dept and the tooltip');
+  assert.strictEqual(t0.closest('.kb-dept').getAttribute('data-chap'), 'p0', 'its rows take the chapter colour');
+  const tb = tog.filter((t) => t.getAttribute('data-dept') === 'Billing')[0];
+  assert.ok(!tb.querySelector('.kb-dept-num') && tb.querySelector('.kb-dept-name').textContent === 'Billing' && !tb.closest('.kb-dept').hasAttribute('data-chap'), 'other reference is unchanged');
+  const row = (id) => h.$('#kb-tree .kb-item[data-kb-id="' + id + '"]');
+  assert.deepStrictEqual([row('man-0-10').querySelector('.kb-item-num').textContent, row('man-0-10').querySelector('.kb-item-t').textContent, !!row('man-0-10').querySelector('svg, [data-icon]')],
+    ['0.10', 'Anatomy of a transaction', false], 'a manual row is a number column + title, no icon');
+  assert.ok(!row('kb-1').querySelector('.kb-item-num') && /Hand-written/.test(row('kb-1').textContent), 'a hand-written article keeps its icon row');
+  const today = new Date(); const ago = (n) => new Date(today.getTime() - n * 86400000).toISOString().slice(0, 10);
+  h.run.flushSuccess({ version: 'v3.0', built: '09/15/2026', router: [], changelog: [
+    { date: ago(40), num: '0.11', id: 'man-0-11', anchor: '', summary: 'TRX, never a name.', retraining: false },
+    { date: ago(500), num: '0.10', id: 'man-0-10', anchor: '', summary: 'Old.', retraining: false }] }, 'getManualMeta');
+  assert.ok(row('man-0-11').classList.contains('kb-item-upd') && /^Updated \d\d\/\d\d\/\d{4}$/.test(row('man-0-11').getAttribute('title')), 'a section changed inside the window carries the dot, dated');
+  assert.ok(!row('man-0-10').classList.contains('kb-item-upd') && !row('man-0-10').hasAttribute('title'), 'one changed a year and more ago does not');
+  // M8 — the bar
+  let pageScrolls = 0;
+  const origSiv = w.Element.prototype.scrollIntoView;
+  w.Element.prototype.scrollIntoView = function () { if (this.closest && this.closest('#kb-main')) pageScrolls++; };
+  let recorded = 0;
+  const origRecord = w.kbPanelRecordOpen_;
+  w.kbPanelRecordOpen_ = function () { recorded++; return origRecord.apply(this, arguments); };
+  h.read('kbOpenItem_')('man-0-10');
+  h.run.flushSuccess(M2_PART0, 'getManualPart');
+  const bar = h.$('#kb-main [data-kb-man-bar]');
+  const top = h.$('#kb-main > .kb-man-top');
+  assert.ok(top && top.firstElementChild.hasAttribute('data-kb-man-back') && top.children[1] === bar, 'one sticky band: the Back row above the bar');
+  assert.ok(bar.classList.contains('kb-man-p0') && bar.querySelector('.kb-man-bar-cn').textContent === 'CSR Core', 'the bar names the chapter, in its colour');
+  const st = () => ({ sn: bar.querySelector('[data-kb-man-bar-sn]').textContent, t: bar.querySelector('[data-kb-man-bar-t]').textContent, bm: bar.querySelector('.kb-bm').getAttribute('data-kb-id'),
+    print: bar.querySelector('[data-kb-man-bar-print]').getAttribute('data-kb-id'), prev: bar.querySelector('[data-kb-man-bar-prev]').disabled ? null : bar.querySelector('[data-kb-man-bar-prev]').textContent.trim(),
+    next: bar.querySelector('[data-kb-man-bar-next]').disabled ? null : bar.querySelector('[data-kb-man-bar-next]').textContent.trim() });
+  assert.deepStrictEqual(st(), { sn: '0.10', t: 'Anatomy of a transaction', bm: 'man-0-10', print: 'man-0-10', prev: null, next: '0.11' }, 'the open section, and no chapter before Chapter 00');
+  assert.strictEqual(recorded, 1, 'the explicit open is recorded');
+  assert.strictEqual(pageScrolls, 0, 'landing on a section never calls scrollIntoView inside the reader (it scrolls the app\'s page too)');
+  // the spy: the reader scrolls until 0.11's heading passes the reading line
+  const main = doc.getElementById('kb-main');
+  const rect = (el, t) => { el.getBoundingClientRect = () => ({ top: t, bottom: t + 30, left: 0, right: 0, width: 0, height: 30 }); };
+  rect(main, 0);
+  Object.defineProperty(main, 'clientHeight', { configurable: true, get: () => 600 });
+  Object.defineProperty(main, 'scrollHeight', { configurable: true, get: () => 3000 });
+  let scrolled = 800;
+  Object.defineProperty(main, 'scrollTop', { configurable: true, get: () => scrolled, set: (v) => { scrolled = v; } });
+  const hd = (id) => h.$('#kb-man-sec-' + id + ' .kb-man-sec-h');
+  rect(hd('man-0-10'), -400); rect(hd('man-0-11'), 100);
+  main.dispatchEvent(new w.Event('scroll'));
+  h.flushTimers();
+  assert.deepStrictEqual(st(), { sn: '0.11', t: 'Notes and email conventions', bm: 'man-0-11', print: 'man-0-11', prev: '0.10', next: 'Ch 10' }, 'the bar follows the section in view; at the chapter\'s end, next is the next chapter');
+  assert.ok(/Next chapter: Chapter 10 — Billing & Denials/.test(bar.querySelector('[data-kb-man-bar-next]').title));
+  assert.ok(row('man-0-11').classList.contains('on') && row('man-0-11').getAttribute('aria-current') === 'page' && !row('man-0-10').classList.contains('on'), 'the tree marks the section in view');
+  assert.strictEqual(recorded, 1, 'the spy records no open');
+  assert.ok(doc.getElementById('kb-man-sec-man-0-10').contains(doc.getElementById('kb-comments')), 'and the comments stay under the section the rep opened');
+  assert.strictEqual(h.read('KB_STATE').currentId, 'man-0-10');
+  const star = bar.querySelector('.kb-bm');
+  main.dispatchEvent(new w.Event('scroll'));
+  h.flushTimers();
+  assert.strictEqual(bar.querySelector('.kb-bm'), star, 'the same section in view repaints nothing');
+  // a smooth open inside the chapter holds the spy (it would name every section it passes)
+  h.read('kbOpenItem_')('man-0-11');
+  rect(hd('man-0-10'), 50); rect(hd('man-0-11'), 700);
+  main.dispatchEvent(new w.Event('scroll'));
+  h.flushTimers();
+  assert.strictEqual(st().sn, '0.11', 'mid-scroll, the bar keeps the section being opened');
+  // previous / next: by chapter at the edge
+  h.read('kbManualStep_')(1);
+  assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Chapter 10 — Billing & Denials'], 'next from the last section opens the next chapter');
+  assert.strictEqual(pageScrolls, 0, 'nor does a smooth open');
+  w.kbPanelRecordOpen_ = origRecord;
+  w.Element.prototype.scrollIntoView = origSiv;
+});
+
+test('MRD-3 DOM (manual reader design Phase 3): an uncached chapter paints its bar, masthead and target heading from the tree with skeleton lines — no section, no open recorded, no comments; the meta fills the masthead\'s count and version; the chapter replaces the skeleton under the SAME masthead and ends with its neighbour\'s card; a failed load keeps the masthead', async () => {
+  const h = m4Boot_();
+  const w = h.window, doc = w.document;
+  let recorded = 0;
+  const origRecord = w.kbPanelRecordOpen_;
+  w.kbPanelRecordOpen_ = function () { recorded++; return origRecord.apply(this, arguments); };
+  h.read('kbOpenItem_')('man-0-11');
+  // the skeleton
+  assert.ok(h.$('#kb-main [data-kb-man-bar].kb-man-bar-skel') && h.$('[data-kb-man-bar-sn]').textContent === '0.11' && h.$('[data-kb-man-bar-t]').textContent === 'Notes and email conventions', 'the bar names the target at once');
+  assert.strictEqual(h.$('#kb-main .kb-man-mast-h').textContent, 'CSR Core');
+  assert.ok(/Procedures manual · Chapter 00/.test(h.$('#kb-main .kb-man-mast-k').textContent));
+  assert.deepStrictEqual(h.$$('#kb-main .kb-man-ix').map((b) => b.getAttribute('data-kb-id')), ['man-0-10', 'man-0-11'], 'the index, from the tree');
+  const sk = h.$('#kb-main [data-kb-man-skel]');
+  assert.ok(sk && sk.getAttribute('aria-busy') === 'true' && sk.querySelectorAll('.skel').length >= 5 && /Notes and email conventions/.test(sk.querySelector('.kb-man-sec-h').textContent), 'the target heading over shimmer lines');
+  assert.ok(!h.$('#kb-main .kb-man-sec') && !h.$('#kb-main #kb-comments'), 'no section and no comments host yet');
+  assert.deepStrictEqual([recorded, h.run.pending('kbGetComments').length], [0, 0], 'nothing recorded, no comments asked for');
+  // the meta lands first: the masthead\'s count and version
+  const today = new Date(); const ago = (n) => new Date(today.getTime() - n * 86400000).toISOString().slice(0, 10);
+  h.run.flushSuccess({ version: 'v3.0', built: '09/15/2026', router: [], changelog: [{ date: ago(40), num: '0.10', id: 'man-0-10', anchor: '', summary: 'x', retraining: false }] }, 'getManualMeta');
+  assert.strictEqual(h.$('#kb-main [data-kb-man-updcount]').textContent, '1 updated in the last 12 months');
+  assert.ok(/CSR Procedures Manual v3\.0/.test(h.$('#kb-main [data-kb-man-ver]').textContent), 'the version line rides the masthead');
+  assert.ok(h.$('#kb-main [data-kb-ix-upd="man-0-10"] .kb-man-upd') && !h.$('#kb-main [data-kb-ix-upd="man-0-11"] .kb-man-upd'), 'the index pill marks the updated section only');
+  // the chapter lands
+  h.run.flushSuccess(M2_PART0, 'getManualPart');
+  assert.ok(!h.$('#kb-main [data-kb-man-skel]') && h.$$('#kb-main .kb-man-sec').length === 2 && !h.$('#kb-main .kb-man-bar-skel'), 'the chapter replaces the skeleton');
+  assert.strictEqual(h.$('#kb-main .kb-man-mast-h').textContent, 'CSR Core', 'under the same masthead');
+  assert.ok(h.$('#kb-main [data-kb-ix-upd="man-0-10"] .kb-man-upd') && /1 updated/.test(h.$('#kb-main [data-kb-man-updcount]').textContent), 'painted again from the meta');
+  assert.ok(h.$('#kb-main .kb-man-ix[data-kb-id="man-0-11"] .kb-draft-pill'), 'the chapter\'s own statuses: an admin sees the draft in the index');
+  assert.strictEqual(recorded, 1, 'the open is recorded once the chapter is real');
+  // M11: Chapter 00 is the first — only a Next card, in the second column
+  const cards = h.$$('#kb-main [data-kb-man-chapnav] .kb-man-cn');
+  assert.strictEqual(cards.length, 1);
+  assert.ok(cards[0].classList.contains('kb-man-cn-next') && /Next · Chapter 10/.test(cards[0].textContent) && /Billing & Denials/.test(cards[0].textContent) && cards[0].getAttribute('data-kb-id') === 'man-10-1', 'the next chapter, by its first section');
+  assert.ok(cards[0].querySelector('.kb-man-badge.kb-man-p10'), 'in its own colour');
+  h.read('kbOpenItem_')(cards[0].getAttribute('data-kb-id'));
+  assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Chapter 10 — Billing & Denials']);
+  // a failure keeps the masthead and puts the error where the bodies were
+  assert.strictEqual(h.$('#kb-main .kb-man-mast-h').textContent, 'Billing & Denials', 'Chapter 10\'s skeleton');
+  h.run.flushFailure('Service unavailable', 'getManualPart');
+  assert.strictEqual(h.$('#kb-main .kb-man-mast-h').textContent, 'Billing & Denials', 'the masthead stays');
+  const host = h.$('#kb-main [data-kb-man-skel]');
+  assert.ok(host && !host.hasAttribute('aria-busy') && /Service unavailable/.test(host.textContent) && !host.querySelector('.skel'), 'the error replaces the shimmer, and the reader is no longer busy');
+  w.kbPanelRecordOpen_ = origRecord;
+});
+
+test('MRD-4 DOM (manual reader design Phase 4): a footnote number becomes a button paired with the NEXT note of its number (numbers restart per sub-section), its text unchanged; it opens the shared card and Go to note flashes the note; a glossary mark opens the card and Go to glossary flashes its row; a manual search hit reads like the manual and a hand-written one does not', async () => {
+  const h = m4Boot_();
+  const w = h.window, doc = w.document;
+  const part = JSON.parse(JSON.stringify(M2_PART0));
+  part.sections[1].bodyMd = 'Intro¹ text.\n\n**Notes**\n\n¹ Intro note.\n\n## 0.11.1 Sub\n\nSub text¹ here and stray⁹.\n\n**Notes**\n\n¹ Sub note, see [10.1 2026 annual figures (Billing & Denials)](kb:man-10-1).\n';
+  h.read('kbOpenItem_')('man-0-11');
+  h.run.flushSuccess(part, 'getManualPart');
+  const art = h.$('#kb-man-sec-man-0-11 .kb-article');
+  const refs = [...art.querySelectorAll('button.kb-fn-ref')];
+  const notes = [...art.querySelectorAll('[data-fn-note]')].filter((n) => n.tagName === 'P');
+  assert.strictEqual(notes.length, 2, 'two notes (non-vacuous)');
+  assert.deepStrictEqual(refs.map((b) => b.getAttribute('data-fn-note')), [notes[0].id, notes[1].id], 'each reference pairs with the next note of its number — the second ¹ is the sub-section\'s, not the intro\'s');
+  assert.deepStrictEqual(refs.map((b) => [b.textContent, b.getAttribute('aria-label')]), [['¹', 'Note 1'], ['¹', 'Note 1']]);
+  assert.ok(/stray⁹/.test(art.textContent) && !notes.some((n) => n.querySelector('.kb-fn-ref')), 'a number with no note, and the notes\' own numbers, stay as written');
+  assert.strictEqual(art.querySelector('p').textContent, 'Intro¹ text.', 'the text reads exactly as before');
+  // the card
+  h.click(refs[1]);
+  const card = doc.getElementById('kb-xrefcard');
+  assert.ok(card.classList.contains('show') && /^Note ¹ · 0\.11 Notes and email conventions$/.test(card.querySelector('.xc-k').textContent), 'the card names the note and its section');
+  assert.ok(/^Sub note, see/.test(card.querySelector('.xc-body').textContent.trim()) && card.querySelector('.xc-body a.kb-xref'), 'the note\'s text without its number, its link kept');
+  assert.strictEqual(refs[1].getAttribute('aria-describedby'), 'kb-xrefcard');
+  h.click(card.querySelector('[data-fn-go]'));
+  assert.ok(!card.classList.contains('show') && notes[1].classList.contains('kb-h-flash'), 'Go to note flashes the note');
+  // keyboard: focus shows it after the delay; Escape hides it first
+  refs[0].focus();
+  refs[0].dispatchEvent(new w.FocusEvent('focusin', { bubbles: true }));
+  h.flushTimers();
+  assert.ok(card.classList.contains('show') && /Intro note/.test(card.textContent), 'focus shows the note');
+  doc.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.ok(!card.classList.contains('show'), 'Escape hides it');
+  // a glossary mark
+  const host = doc.createElement('div');
+  host.className = 'kb-article';
+  host.innerHTML = '<p>Send the PAR today.</p><div class="kb-glossary"><div class="kb-gloss-row" data-term="PAR" data-def="Prior authorization request" data-aliases=""></div></div>';
+  doc.getElementById('kb-main').appendChild(host);
+  h.read('kbGlossaryAnnotate_')(host);
+  const mark = host.querySelector('.kb-gloss-mark');
+  assert.ok(mark && !mark.hasAttribute('data-tip') && mark.getAttribute('role') === 'button' && mark.getAttribute('tabindex') === '0', 'a focusable mark, no CSS tooltip');
+  h.click(mark);
+  assert.ok(card.classList.contains('show') && card.querySelector('.xc-k').textContent === 'Glossary' && card.querySelector('.xc-h').textContent === 'PAR' && /Prior authorization request/.test(card.textContent), 'term and definition in the card');
+  h.click(card.querySelector('[data-gloss-go]'));
+  assert.ok(host.querySelector('.kb-gloss-row').classList.contains('kb-h-flash'), 'Go to glossary flashes its row');
+  // M18 — search hits
+  const st = h.read('KB_STATE');
+  st.searchResults = [
+    { id: 'man-0-10', title: '0.10 Anatomy of a transaction', department: 'Chapter 00 — CSR Core', type: 'article', status: 'published', anchor: '0.10.1', heading: '0.10.1 Trx Type', chunkMd: '> **Note** — check the type.\n' },
+    { id: 'kb-1', title: 'Hand-written', department: 'Billing', type: 'article', status: 'published', anchor: '', heading: '', chunkMd: 'Plain text.' }];
+  st.searchTerms = []; st.searchQuery = 'type'; st.searchError = ''; st.searchFilterType = 'all'; st.searchFilterDept = '';
+  h.read('kbRenderSearchResults_')();
+  const tr = h.$('#kb-tree .kb-item[data-kb-id="man-0-10"]:not(.kb-item-sec)');
+  assert.ok(tr.querySelector('.kb-res-dot.kb-man-p0') && tr.querySelector('.kb-item-num').textContent === '0.10' && tr.querySelector('.kb-item-t').textContent === 'Anatomy of a transaction', 'the side list: dot, number, title');
+  const sub = h.$('#kb-tree .kb-item-sec[data-kb-id="man-0-10"]');
+  assert.deepStrictEqual([sub.querySelector('.kb-item-num').textContent, sub.querySelector('.kb-item-t').textContent], ['0.10.1', 'Trx Type']);
+  assert.ok(!h.$('#kb-tree .kb-item[data-kb-id="kb-1"] .kb-item-num'), 'a hand-written hit is unchanged');
+  const g = h.$$('#kb-main .kb-chunk-doc')[0];
+  assert.ok(g.classList.contains('kb-chunk-doc-man') && g.classList.contains('kb-man-p0') && g.querySelector('.kb-chunk-doc-h .kb-man-badge') && g.querySelector('.kb-chunk-doc-h .kb-man-sn').textContent === '0.10', 'the result header: badge, number chip');
+  assert.strictEqual(g.querySelector('.kb-chunk-doc-h .kb-snip').textContent, 'Manual · CSR Core');
+  assert.ok(g.querySelector('.kb-chunk-h.kb-chunk-h-man .kb-chunk-num').textContent === '0.10.1', 'the chunk heading\'s number in the chapter colour');
+  assert.strictEqual(g.querySelector('.kb-chunk-body .kb-co-kick').textContent, 'Note', 'the callout reads as it does in the chapter');
+  const other = h.$$('#kb-main .kb-chunk-doc')[1];
+  assert.ok(!other.classList.contains('kb-chunk-doc-man') && other.querySelector('.kb-snip').textContent === 'Billing', 'the hand-written result keeps its own header');
+});
+
+test('MRD-5 DOM (manual reader design Phase 5): explicit opens build the reading trail (newest last, no duplicates) and a chip cuts it; a chapter-level open resumes where the rep left off and offers Start of chapter, an explicit one never does and a week-old point is ignored; the spy saves the point inside umsKbPanel; the drawer\'s section opens its footnotes', async () => {
+  const h = m4Boot_();
+  const w = h.window, doc = w.document;
+  const st = h.read('KB_STATE');
+  const ids = () => JSON.parse(JSON.stringify((st.trail || []).map((e) => e.id)));
+  h.read('kbOpenItem_')('man-0-10');
+  h.run.flushSuccess(M2_PART0, 'getManualPart');
+  assert.ok(!doc.querySelector('#kb-main .kb-trail'), 'one section: no trail row');
+  h.read('kbOpenItem_')('man-0-11');
+  assert.deepStrictEqual(ids(), ['man-0-10', 'man-0-11']);
+  const trail = doc.querySelector('#kb-main [data-kb-man-back] .kb-trail');
+  assert.ok(trail && trail.querySelector('.kb-trail-k').textContent === 'Read' && trail.querySelectorAll('.kb-trail-chip').length === 1, 'two sections: "Read" and one chip');
+  const chip = trail.querySelector('.kb-trail-chip');
+  assert.ok(chip.querySelector('.kb-trail-badge.kb-man-p0') && chip.querySelector('.kb-trail-n').textContent === '0.10', 'the chip carries the chapter badge and the number');
+  assert.ok(/0\.11/.test(trail.querySelector('.kb-trail-cur').textContent) && trail.querySelector('.kb-trail-cur').getAttribute('aria-current') === 'page');
+  h.read('kbOpenItem_')('man-0-10');
+  assert.deepStrictEqual(ids(), ['man-0-11', 'man-0-10'], 'a section opened again moves to the end — never twice');
+  h.read('kbManualTrailGo_')(0);
+  assert.deepStrictEqual(ids(), ['man-0-11'], 'a chip drops the chips after it, and the open it makes adds nothing');
+  // M16 — resume (inside umsKbPanel)
+  const prefs = () => JSON.parse(w.localStorage.getItem('umsKbPanel') || '{}');
+  const setResume = (r) => { const p = prefs(); p.resume = r; w.localStorage.setItem('umsKbPanel', JSON.stringify(p)); };
+  setResume({ 'Chapter 00 — CSR Core': { id: 'man-0-11', h: '', at: Date.now() - 86400000 } });
+  h.read('kbOpenItem_')('man-0-10');
+  assert.strictEqual(st.currentId, 'man-0-10', 'an explicit open never resumes');
+  assert.strictEqual(doc.querySelector('#kb-main [data-kb-man-resume]').innerHTML, '');
+  h.read('kbOpenItem_')('man-0-10', '', { chapter: true });
+  assert.strictEqual(st.currentId, 'man-0-11', 'a chapter-level open resumes at the saved section');
+  const line = doc.querySelector('#kb-main [data-kb-man-resume] .kb-man-resume');
+  assert.ok(line && /Back where you left off/.test(line.textContent) && /0\.11/.test(line.textContent) && /Notes and email conventions/.test(line.textContent), 'and says so');
+  const start = line.querySelector('[data-kb-id]');
+  assert.strictEqual(start.getAttribute('data-kb-id'), 'man-0-10', 'Start of chapter names the first section');
+  h.read('kbManualResumeStart_')(start.getAttribute('data-kb-id'));
+  assert.ok(st.currentId === 'man-0-10' && doc.querySelector('#kb-main [data-kb-man-resume]').innerHTML === '', 'Start of chapter opens it and the line goes');
+  setResume({ 'Chapter 00 — CSR Core': { id: 'man-0-11', h: '', at: Date.now() - 8 * 86400000 } });
+  h.read('kbOpenItem_')('man-0-10', '', { chapter: true });
+  assert.strictEqual(st.currentId, 'man-0-10', 'a point over a week old is ignored');
+  // the reading point is saved — an id and a number, after the throttle
+  h.read('kbOpenItem_')('man-0-11');
+  h.flushTimers();
+  const saved = prefs().resume['Chapter 00 — CSR Core'];
+  assert.ok(saved && saved.id === 'man-0-11' && typeof saved.at === 'number' && Object.keys(saved).sort().join() === 'at,h,id', 'umsKbPanel.resume holds {id, h, at} — no text');
+  // the drawer: a manual section's footnote opens its note
+  h.read('kbDrawerOpen_')();
+  h.read('kbDrawerOpenItem_')('man-0-11');
+  h.run.flushSuccess({ id: 'man-0-11', title: '0.11 Notes and email conventions', department: 'Chapter 00 — CSR Core', type: 'article', status: 'published',
+    bodyMd: 'Text\u00b9 here.\n\n**Notes**\n\n\u00b9 The drawer note.\n' }, 'getReferenceItem');
+  const ref = doc.querySelector('#kbd-body button.kb-fn-ref');
+  assert.ok(ref, 'the drawer wraps the reference');
+  h.click(ref);
+  const card = doc.getElementById('kb-xrefcard');
+  assert.ok(card.classList.contains('show') && /^Note \u00b9 · 0\.11 Notes and email conventions$/.test(card.querySelector('.xc-k').textContent) && /The drawer note/.test(card.textContent), 'and opens the note, named by the drawer\'s section');
+});
+
+test('MRD-6 DOM (manual reader design Phase 6): the manual home sits above the lookups — version, three openers from the REAL router (rows the reader can reach), chapter tiles with counts; "Go to a section" survives a landing re-render with its focus and value and opens on Enter; a tile is a chapter-level open that resumes; no manual, no home; the drawer\'s manual section draws its callout labels in its chapter colour', async () => {
+  const h = m4Boot_();
+  const w = h.window, doc = w.document;
+  const land = doc.querySelector('#kb-main .kb-land');
+  const home = doc.getElementById('kb-home');
+  assert.ok(home && land.firstElementChild === home && land.querySelector('.kb-lookups'), 'the home leads the landing, the lookups follow');
+  const tiles = () => [...doc.querySelectorAll('#kb-home .kb-home-tile')];
+  assert.deepStrictEqual(tiles().map((t) => [t.querySelector('.kb-home-n').textContent, t.querySelector('.kb-home-name').textContent, t.querySelector('.kb-home-meta').textContent]),
+    [['Chapter 00', 'CSR Core', '2 sections'], ['Chapter 10', 'Billing & Denials', '1 section']], 'a tile per chapter, in order, with its section count');
+  assert.ok(tiles()[0].querySelector('.kb-man-badge.kb-man-p0') && tiles()[0].getAttribute('data-kb-id') === 'man-0-10', 'its badge, and its first section');
+  const today = new Date(); const ago = (n) => new Date(today.getTime() - n * 86400000).toISOString().slice(0, 10);
+  h.run.flushSuccess({ version: 'v3.0', built: '09/15/2026', changelog: [{ date: ago(40), num: '0.11', id: 'man-0-11', anchor: '', summary: 'x', retraining: false }],
+    router: [{ q: 'Where is my equipment?', t: [{ id: 'man-0-10' }] }, { q: 'A row for a section this reader cannot see', t: [{ id: 'man-9-9' }] }, { q: 'You\'re waiting on my <doctor>?', t: [{ id: 'man-0-11' }] }] }, 'getManualMeta');
+  assert.ok(/CSR Procedures Manual v3\.0 · built 09\/15\/2026/.test(doc.querySelector('#kb-home .kb-home-ver').textContent), 'the version line');
+  assert.deepStrictEqual([...doc.querySelectorAll('#kb-home-ex span')].map((x) => x.textContent), ['“Where is my equipment?”', '“You\'re waiting on my <doctor>?”'], 'openers from the real router, only rows the reader can reach, escaped');
+  assert.ok(/2 sections · 1 updated/.test(tiles()[0].textContent), 'the updated count, once the meta is in');
+  // "Go to a section"
+  const input = doc.getElementById('kb-home-jump');
+  input.focus();
+  input.value = '0.11';
+  h.read('kbHomeJump_')(input);
+  assert.ok(/Go to\s*0\.11/.test(doc.getElementById('kb-home-jhit').textContent), 'the typed number\'s section');
+  h.read('kbRenderLanding_')();   // a manager loader landing late
+  assert.ok(doc.getElementById('kb-home-jump') === input && input.value === '0.11' && doc.activeElement === input, 'the jump box survives a landing re-render — the same node, its value and its focus (T1)');
+  input.value = '9.99';
+  h.read('kbHomeJump_')(input);
+  assert.ok(/No section by that number/.test(doc.getElementById('kb-home-jhit').textContent));
+  input.value = '0.11';
+  let prevented = false;
+  h.read('kbHomeJumpKey_')({ key: 'Enter', preventDefault: () => { prevented = true; } }, input);
+  assert.ok(prevented && h.read('KB_STATE').currentId === 'man-0-11', 'Enter opens it');
+  // a tile resumes (a chapter-level open)
+  h.run.flushSuccess(M2_PART0, 'getManualPart');
+  const p = JSON.parse(w.localStorage.getItem('umsKbPanel') || '{}');
+  p.resume = { 'Chapter 00 — CSR Core': { id: 'man-0-11', h: '', at: Date.now() - 3600000 } };
+  w.localStorage.setItem('umsKbPanel', JSON.stringify(p));
+  h.read('KB_STATE').currentId = null; h.read('KB_STATE').landing = true;
+  h.read('kbRenderLanding_')();
+  assert.ok(/kbOpenItem_\(this\.getAttribute\('data-kb-id'\), '', \{ chapter: true \}\)/.test(tiles()[0].getAttribute('onclick')), 'a tile is a chapter-level open');
+  h.read('kbOpenItem_')(tiles()[0].getAttribute('data-kb-id'), '', { chapter: true });
+  assert.strictEqual(h.read('KB_STATE').currentId, 'man-0-11', 'so it resumes where the rep left off');
+  // no manual, no home
+  h.read('KB_STATE').tree = [{ id: 'kb-1', department: 'Billing', title: 'Hand-written', type: 'article', status: 'published' }];
+  h.read('KB_STATE').landing = true;
+  doc.getElementById('kb-main').innerHTML = '';
+  h.read('kbRenderLanding_')();
+  assert.ok(!doc.getElementById('kb-home') && doc.querySelector('#kb-main .kb-lookups'), 'a library with no manual has no home');
+  // the drawer's manual section: callout labels, chapter colour
+  h.read('KB_STATE').tree = M2_TREE.items;
+  h.read('kbDrawerOpen_')();
+  h.read('kbDrawerOpenItem_')('man-0-11');
+  h.run.flushSuccess({ id: 'man-0-11', title: '0.11 Notes and email conventions', department: 'Chapter 00 — CSR Core', type: 'article', status: 'published',
+    bodyMd: '> **Watch-out** — the TRX, never a name.\n\n| Step | Action |\n|---|---|\n| 1 | Ask |\n| 2 | Act |\n' }, 'getReferenceItem');
+  const art = doc.querySelector('#kbd-body .kb-article');
+  assert.ok(art.hasAttribute('data-kb-man') && art.classList.contains('kbd-man-art') && art.classList.contains('kb-man-p0'), 'marked as a manual section, in its chapter colour');
+  assert.strictEqual(art.querySelector('.kb-co-kick').textContent, 'Watch-out', 'the callout label');
+  assert.ok(art.querySelector('table.kb-steps'), 'the step table the circles draw on');
+});
+
+test('MRD-7 DOM (manual reader design Phase 7): the side carries Contents; a search marks the side so its results show, and clearing it folds the tree again; Contents lists chapter chips, the open chapter with its section marked, then the rest of the library; a chip switches chapters in place; a row closes the dialog and opens the item; Escape closes it', async () => {
+  const h = m4Boot_();
+  const w = h.window, doc = w.document;
+  const side = doc.querySelector('.kb-side');
+  assert.ok(side.querySelector('.kb-toc-btn') && side.querySelector('.kb-toc-btn').getAttribute('aria-haspopup') === 'dialog', 'the Contents button lives in the side');
+  h.read('kbDoSearch_')('ramps');
+  assert.ok(side.classList.contains('kb-side-q'), 'a query marks the side (its results render in the tree)');
+  h.read('kbDoSearch_')('');
+  assert.ok(!side.classList.contains('kb-side-q'), 'an empty box folds it again');
+  h.read('kbOpenItem_')('man-0-11');
+  h.run.flushSuccess(M2_PART0, 'getManualPart');
+  h.read('kbOpenToc_')();
+  const ov = () => doc.getElementById('kb-man-toc-overlay');
+  assert.ok(ov() && ov().classList.contains('open') && ov().getAttribute('role') === 'dialog' && ov().getAttribute('aria-labelledby') === 'kb-toc-h', 'a named dialog');
+  const chips = () => [...ov().querySelectorAll('.kb-toc-chap')];
+  assert.deepStrictEqual(chips().map((c) => [c.getAttribute('data-dept'), c.getAttribute('aria-pressed')]), [['Chapter 00 — CSR Core', 'true'], ['Chapter 10 — Billing & Denials', 'false']], 'the open chapter is pressed');
+  const rows = () => [...ov().querySelectorAll('.kb-toc-row')];
+  assert.deepStrictEqual(rows().map((r) => [r.getAttribute('data-kb-id'), r.getAttribute('aria-current')]), [['man-0-10', null], ['man-0-11', 'page'], ['kb-1', null]], 'its sections (the open one marked), then the rest of the library');
+  assert.ok(!rows()[2].querySelector('.kb-item-num') && rows()[0].querySelector('.kb-item-num').textContent === '0.10', 'a hand-written row has no number column');
+  h.read('kbOpenToc_')(chips()[1].getAttribute('data-dept'));
+  assert.ok(ov().classList.contains('open') && chips()[1].getAttribute('aria-pressed') === 'true' && rows()[0].getAttribute('data-kb-id') === 'man-10-1', 'a chip switches chapters in place');
+  assert.strictEqual(doc.activeElement, chips()[1], 'and keeps focus on the chosen chip');
+  h.read('kbTocGo_')('man-10-1');
+  assert.ok(!ov(), 'a row closes the dialog');
+  assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Chapter 10 — Billing & Denials'], 'and opens the item');
+  h.read('kbOpenToc_')();
+  doc.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.ok(!ov(), 'Escape closes it');
+});
+
+test('MRD-8 DOM (manual reader design Phase 8): once the whole manual has arrived, a chapter\'s masthead carries its Quick Reference Card — open by default, the diagram AFTER the text in the document (the printed reverse), the Never line boxed; a diagram drawn twice keeps unique ids; closing it is remembered for the chapter and survives a repaint; Print card prints the masthead card as a card; the Appendix C page prints every card at once', async () => {
+  const h = m4Boot_();
+  const w = h.window, doc = w.document;
+  h.read('kbOpenItem_')('man-0-10');
+  const part = JSON.parse(JSON.stringify(M2_PART0));
+  part.sections[0].bodyMd += '\n```diagram lifecycle\nOrder lifecycle\n```\n';
+  h.run.flushSuccess(part, 'getManualPart');
+  assert.ok(!h.$('#kb-main .kb-man-card'), 'before the manual arrives the masthead has no card — it never waits');
+  const card0 = { id: 'man-c-0', title: 'Card 0 — Core', status: 'published', sortOrder: 0,
+    bodyMd: '```diagram lifecycle\nOrder lifecycle\n```\n\n### Identity\n- Match name and date of birth\n\n### Routing\n- Billing → 10.1\n\n**Never** — quote a delivery date not in the system\n' };
+  h.run.flushSuccess({ isAdmin: true, parts: [part, { department: 'Appendix C — Quick Reference Cards', sections: [card0] }] }, 'getManualParts');
+  const main = doc.getElementById('kb-main');
+  const repaint = (id) => h.read('kbManualPaintPart_')(main, h.read('kbManualCachedPart_')(id === 'man-c-0' ? 'Appendix C — Quick Reference Cards' : 'Chapter 00 — CSR Core'), id);
+  repaint('man-0-10');
+  const card = () => h.$('#kb-main .kb-man-mast .kb-man-card');
+  assert.ok(card() && card().getAttribute('data-kb-man-card') === 'man-c-0', 'card N rides chapter N\'s masthead');
+  const tog = () => card().querySelector('.kb-man-card-tog');
+  assert.strictEqual(tog().getAttribute('aria-expanded'), 'true', 'open by default');
+  assert.ok(!card().querySelector('.kb-man-card-b').hidden && /CARD 0/.test(card().querySelector('.kb-man-card-chip').textContent));
+  const art = card().querySelector('.kb-article.kb-man-card-art');
+  assert.deepStrictEqual([...art.children].map((c) => c.className), ['kb-man-card-cols', 'kb-diagram'], 'the text, then the diagram: a plain-block printout puts the diagram on the next page');
+  assert.ok(art.querySelector('.kb-man-card-cols > p.kb-man-never') && /^Never/.test(art.querySelector('p.kb-man-never').textContent), 'the Never line is marked for its box');
+  // the same diagram twice on one page (card + section): every id is unique, every marker reference resolves inside its own copy
+  const svgs = h.$$('#kb-main svg.kbdg-lifecycle');
+  assert.strictEqual(svgs.length, 2, 'drawn in the card and in its section');
+  const ids = h.$$('#kb-main [id]').map((e) => e.id);
+  assert.deepStrictEqual(ids.filter((x, i) => ids.indexOf(x) !== i), [], 'no id appears twice');
+  svgs.forEach((svg) => {
+    const refs = [...svg.outerHTML.matchAll(/url\(#([\w-]+)\)/g)].map((m) => m[1]);
+    assert.ok(refs.length && refs.every((r) => svg.querySelector('[id="' + r + '"]')), 'each copy\'s markers are its own: ' + refs.join(','));
+  });
+  // close it: remembered for this chapter, in umsKbPanel, and a repaint keeps it closed
+  // (jsdom under runScripts:'outside-only' never runs an inline onclick — assert it, then call it)
+  assert.strictEqual(tog().getAttribute('onclick'), 'kbManualCardToggle_(this)');
+  const click = () => h.read('kbManualCardToggle_')(tog());
+  click();
+  assert.ok(card().querySelector('.kb-man-card-b').hidden && tog().getAttribute('aria-expanded') === 'false', 'closed in place');
+  assert.deepStrictEqual(JSON.parse(w.localStorage.getItem('umsKbPanel')).cardOpen, { 'Chapter 00 — CSR Core': false });
+  repaint('man-0-10');
+  assert.ok(card().querySelector('.kb-man-card-b').hidden && tog().getAttribute('aria-expanded') === 'false', 'a repaint keeps it closed');
+  click();
+  assert.deepStrictEqual(JSON.parse(w.localStorage.getItem('umsKbPanel')).cardOpen, {}, 'opening forgets the entry (open is the default)');
+  // Print card: the masthead card is the subject, laid out as a card
+  let during = null;
+  w.print = () => { during = { marked: h.$$('.print-one').map((e) => e.className), card: doc.documentElement.hasAttribute('data-print-card'), one: doc.documentElement.hasAttribute('data-print-one') }; };
+  const pr = card().querySelector('.kb-man-card-pr');
+  assert.strictEqual(pr.getAttribute('onclick'), "kbPrintSectionById_(this.getAttribute('data-kb-id'))");
+  h.read('kbPrintSectionById_')(pr.getAttribute('data-kb-id'));
+  assert.deepStrictEqual(during, { marked: ['kb-man-card print-one'], card: true, one: true }, 'the masthead card alone, with the card flag');
+  w.dispatchEvent(new w.Event('afterprint'));
+  assert.deepStrictEqual([h.$$('.print-one').length, doc.documentElement.hasAttribute('data-print-card')], [0, false], 'afterprint takes both marks off');
+  during = null;
+  h.read('kbPrintSectionById_')('man-0-10');
+  assert.strictEqual(during.card, false, 'a section is not printed as a card');
+  w.dispatchEvent(new w.Event('afterprint'));
+  // Appendix C: its sections are the cards — no masthead card, a Print all cards button, each card in its chapter colour and shaped
+  repaint('man-c-0');
+  assert.ok(!h.$('#kb-main .kb-man-mast .kb-man-card'), 'the cards\' own chapter shows no masthead card');
+  const sec = doc.getElementById('kb-man-sec-man-c-0');
+  assert.ok(sec.classList.contains('kb-man-p0') && sec.querySelector('.kb-article.kb-man-card-art > .kb-man-card-cols + figure'), 'card 0 wears chapter 0\'s colour and has the printed shape');
+  const all = h.$('#kb-main .kb-man-mast-acts button');
+  assert.ok(all && /Print all cards/.test(all.textContent));
+  during = null;
+  assert.strictEqual(all.getAttribute('onclick'), 'kbPrintAllCards_()');
+  h.read('kbPrintAllCards_')();
+  assert.deepStrictEqual(during, { marked: ['kb-man-sec kb-man-p0 print-one'], card: true, one: true }, 'every card section, as cards');
+  w.dispatchEvent(new w.Event('afterprint'));
+});
+
+test('M4 DOM: Print marks ONLY its own section for the one print block, for exactly as long as the dialog is up; since M8 it is the reader bar\'s Print, aimed at the section in view, and on a Quick Reference Card it says "card"', async () => {
   const h = m4Boot_();
   const w = h.window, doc = w.document;
   h.read('kbOpenItem_')('man-0-11');
   h.run.flushSuccess(M2_PART0, 'getManualPart');
   let during = null;
   w.print = () => { during = { marked: h.$$('.print-one').map((s) => s.getAttribute('data-kb-id')), root: doc.documentElement.hasAttribute('data-print-one') }; };
-  const btn = h.$('#kb-man-sec-man-0-11 .kb-man-print');
-  assert.ok(btn && /^\s*Print\s*$/.test(btn.textContent), 'a section says Print');
+  assert.ok(!h.$('.kb-man-sec .kb-man-print') && !h.$('.kb-man-sec .kb-bm'), 'no per-section Print or Bookmark: they ride the bar');
+  const btn = h.$('#kb-main [data-kb-man-bar] .kb-man-print');
+  assert.ok(btn && btn.getAttribute('data-kb-id') === 'man-0-11' && /Print just this section/.test(btn.getAttribute('aria-label')), 'the bar\'s Print names the open section');
   doc.getElementById('kb-man-sec-man-0-10').classList.add('print-one');   // a stale mark from an earlier print
-  assert.strictEqual(btn.getAttribute('onclick'), 'kbPrintSection_(this)');
-  h.read('kbPrintSection_')(btn);
+  assert.strictEqual(btn.getAttribute('onclick'), "kbPrintSectionById_(this.getAttribute('data-kb-id'))");
+  h.read('kbPrintSectionById_')(btn.getAttribute('data-kb-id'));
   assert.deepStrictEqual(during, { marked: ['man-0-11'], root: true }, 'during print(): this section alone, and the root flag the print rules key on');
   w.dispatchEvent(new w.Event('afterprint'));
   assert.deepStrictEqual([h.$$('.print-one').length, doc.documentElement.hasAttribute('data-print-one')], [0, false], 'afterprint takes the marks off');
-  h.read('kbPrintSection_')(btn);
+  h.read('kbPrintSectionById_')('man-0-11');
   h.flushTimers();
   assert.deepStrictEqual([h.$$('.print-one').length, doc.documentElement.hasAttribute('data-print-one')], [0, false], 'and the timer behind it does, for a browser that never fires afterprint');
-  doc.getElementById('kb-main').innerHTML = h.read('kbManualPartHtml_')({ department: 'Appendix C — Quick Reference Cards', sections: [{ id: 'man-c-3', title: 'Card 3 — Oxygen', status: 'published', bodyMd: 'E1390' }] });
-  assert.ok(/Print card/.test(h.$('#kb-man-sec-man-c-3 .kb-man-print').textContent), 'a card says Print card');
+  during = null;
+  h.read('kbPrintSectionById_')('');
+  h.read('kbPrintSectionById_')('man-9-99');
+  assert.strictEqual(during, null, 'no section, no print');
+  h.read('kbManualPaintPart_')(doc.getElementById('kb-main'), { department: 'Appendix C — Quick Reference Cards', sections: [{ id: 'man-c-3', title: 'Card 3 — Oxygen', status: 'published', bodyMd: 'E1390' }] }, 'man-c-3', '', null);
+  assert.ok(/Print just this card/.test(h.$('#kb-main [data-kb-man-bar] .kb-man-print').getAttribute('title')), 'a card says card');
 });
 
 test('M4-FU2/FU3 DOM: the Manual dialog takes manual.json from the computer (no Drive — the domain disables it), and says why Import is locked — the line shows until a clean Check, a failed Check keeps it, and another file locks it again (operator 2026-09-29)', async () => {
@@ -5480,32 +5920,36 @@ test('M5a DOM: a cross-reference previews the PART of its target the link is abo
   assert.ok(!card().querySelector('.xc-focus') && /cup holder/.test(card().textContent), 'the opening, as before M5a');
 });
 
-test('M5a DOM: the click lands on that part — the target part loads and the ramps ROW is the landing, not the heading; a jump to another part leaves a "Back to 0.7" chip that returns to the row the rep left from; any other open clears it', async () => {
+test('M5a DOM: the click lands on that part — the target part loads and the ramps ROW is the landing, not the heading; since M15 (Phase 5) the section left from is a trail chip that returns to the row the rep left from; a chip drops the chips after it; a tree open never duplicates an entry', async () => {
   const h = m5aBoot_();
   const doc = h.window.document;
   h.read('kbOpenItem_')('man-0-7');
   h.run.flushSuccess(M5A_P0, 'getManualPart');
+  const chips = () => [...doc.querySelectorAll('#kb-main [data-kb-man-back] .kb-trail-chip')];
+  assert.strictEqual(chips().length, 0, 'one section read: no trail yet');
   h.click(m5aRow_(doc.getElementById('kb-man-sec-man-0-7'), 'Ramps').querySelector('a.kb-xref'));
   assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Chapter 05 — Power Mobility']);
   h.run.flushSuccess(M5A_P4, 'getManualPart');
   const faq = doc.getElementById('kb-man-sec-man-5-10');
   assert.ok(m5aRow_(faq, 'Do you sell ramps').classList.contains('kb-h-flash'), 'the ramps row is where the click landed');
   assert.ok(!faq.querySelector('.kb-man-sec-h').classList.contains('kb-h-flash') && !m5aRow_(faq, 'cup holders').classList.contains('kb-h-flash'), 'not the heading, not the opening row');
-  const chip = () => doc.querySelector('#kb-main [data-kb-man-back] button');
-  assert.ok(chip() && /Back to 0\.7/.test(chip().textContent) && /Insurance acceptance/.test(chip().textContent), 'the chip names where the rep came from');
-  assert.strictEqual(chip().getAttribute('onclick'), 'kbManualBack_()');
-  h.read('kbManualBack_')();
+  assert.strictEqual(chips().length, 1);
+  const c0 = chips()[0];
+  assert.ok(/0\.7/.test(c0.textContent) && /Insurance acceptance/.test(c0.getAttribute('title')), 'the chip names where the rep came from');
+  assert.ok(/5\.10/.test(doc.querySelector('#kb-main .kb-trail-cur').textContent), 'and the open section is the plain end of the trail');
+  assert.strictEqual(c0.getAttribute('onclick'), "kbManualTrailGo_(+this.getAttribute('data-trail-i'))");
+  h.read('kbManualTrailGo_')(0);
   assert.deepStrictEqual(h.run.pending('getManualPart').map((c) => c.args[0]), ['Chapter 00 — CSR Core'], 'the part it came from reloads');
   h.run.flushSuccess(M5A_P0, 'getManualPart');
-  assert.ok(m5aRow_(doc.getElementById('kb-man-sec-man-0-7'), 'Ramps').classList.contains('kb-h-flash'), 'Back lands on the row the rep left from');
-  assert.ok(!chip(), 'and the chip is spent');
-  // Jump again, then open something the ordinary way: the chip goes.
+  assert.ok(m5aRow_(doc.getElementById('kb-man-sec-man-0-7'), 'Ramps').classList.contains('kb-h-flash'), 'the chip lands on the row the rep left from');
+  assert.strictEqual(chips().length, 0, 'and the chips after it dropped — back to one section');
+  // Jump again, then open the same section from the tree: no duplicate entry.
   h.click(m5aRow_(doc.getElementById('kb-man-sec-man-0-7'), 'Truck').querySelector('a.kb-xref'));
   h.run.flushSuccess(M5A_P4, 'getManualPart');
   assert.ok(m5aRow_(doc.getElementById('kb-man-sec-man-5-10'), 'truck lift').classList.contains('kb-h-flash'), 'the truck row lands on the truck answer');
-  assert.ok(chip(), 'a chip again');
+  assert.strictEqual(chips().length, 1, 'a chip again');
   h.read('kbOpenItem_')('man-5-10');
-  assert.ok(!chip(), 'an open from the tree or a search is a fresh start — no chip');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.read('KB_STATE').trail.map((e) => e.id))), ['man-0-7', 'man-5-10'], 'opening the section already at the end adds nothing');   // through JSON: the array is the window's (g116)
 });
 
 test('M5a DOM: the drawer keeps the trail — the preview\'s Open lands on the row; leaving a section by a code, a search or the router offers "Back to" it, which restores the scroll and pops (never pushes); closing the drawer forgets the trail', async () => {

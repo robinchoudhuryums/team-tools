@@ -879,7 +879,7 @@ function coachRenderMgrKeepFocus_() {
    mode strip is the shared .toolbar-tabs, and the board's tier rule is an
    inset on the first cell (an inset shadow on a <tr> does not paint under
    border-collapse). */
-.coach-primary { appearance:none; border:1px solid transparent; background:var(--accent); color:#fff; cursor:pointer;
+.coach-primary { appearance:none; border:1px solid transparent; background:var(--accent); color:var(--paper-card); cursor:pointer;
   display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:8px;
   font-family:var(--ui); font-size:13px; font-weight:600; transition:filter var(--t) var(--ease); }
 .coach-primary:hover { filter:brightness(.95); }
@@ -982,9 +982,9 @@ function coachRenderMgrKeepFocus_() {
 .coach-sevchips { display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; }
 .coach-sevchip { appearance:none; cursor:pointer; border:1px solid var(--line); background:var(--paper-2); color:var(--muted);
   border-radius:8px; padding:8px 6px; font:600 12px var(--ui); }
-.coach-sevchip.active[data-tone="info"]        { background:var(--info); color:#fff; border-color:transparent; }
-.coach-sevchip.active[data-tone="warn"]        { background:var(--warn); color:#fff; border-color:transparent; }
-.coach-sevchip.active[data-tone="destructive"] { background:var(--destructive); color:#fff; border-color:transparent; }
+.coach-sevchip.active[data-tone="info"]        { background:var(--info); color: var(--paper-card); border-color:transparent; }
+.coach-sevchip.active[data-tone="warn"]        { background:var(--warn); color: var(--on-warn); border-color:transparent; }
+.coach-sevchip.active[data-tone="destructive"] { background:var(--destructive); color: var(--paper-card); border-color:transparent; }
 :root[data-mode="dark"] .coach-sevchip.active { color:var(--paper); }
 .coach-sev-help, .coach-praise-note { margin:6px 0 12px; font:500 11px/1.4 var(--mono); color:var(--muted-2); }
 .coach-praise-note[hidden], #coach-sev-wrap[hidden], #coach-should-wrap[hidden] { display:none; }

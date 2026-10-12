@@ -2737,3 +2737,11 @@ per-change detail. By delta:
 - Visual: the Reference scenarios read REAL manual content. The hand-written 0.10 and 10.1 had kept the pre-renumber numbers for a cycle — a fixture copied by hand drifts from its source silently, because every shot still renders. `test/visual/manual-fixtures.mjs <manual.json>` now writes `mock.js`'s generated block and `manual-images.json`, and throws on a section, router row or search row the export no longer has. A router row appears only when its target is in the tree (`kbRouterRows_`), so the router's targets are fixture sections too.
 - Bite-checks: MC-1's width drive needed a crowded-table fixture before it bit; MD-1 bit on old-before-current ranking, a removed part → chapter map, one dark rule without `screen`, and the dropped svg/style strip.
 
+## Cycle 24 — the manual reader design, Phases 1–8 (2026-10-09)
+
+- One pure pin and one DOM drive per phase, MRD-1..MRD-8. Three of them are SWEEPS over every themed partial rather than lists: no white text on a filled accent (MRD-3), none on a semantic fill (MRD-4), amber text is `--on-warn` (MRD-5) — g170.
+- MRD-8 derives two checks from source rather than listing cases: every marker reference in every diagram of the real partial resolves inside its own scoped copy (g169), and no dark semantic or chapter colour is declared outside `@media screen` in the token file (comments stripped first — a comment naming `--good` tripped the first draft).
+- Test doubles updated as the code grew: `m1Md_` loads the diagram scope helpers; the MRD-3 and MP2-4 masthead contexts load the card functions and a `KB_STATE`.
+- The DOM harness never runs an inline `onclick` (`runScripts: 'outside-only'`): drives assert the attribute, then call the handler — a `.click()` on such a button is a silent no-op, which is how the first MRD-8 toggle assertion failed.
+- `test/visual/print-check.mjs` had called `kbPrintSection_` since Phase 2 renamed it, so it threw before measuring anything; repaired, it now reads `--ink` on `<body>` too (the reading that could never see g168) and measures a card print. The visual fixtures carry Card 5 (`manual-fixtures.mjs`).
+- Bite-checks across the phases all BIT except recorded equivalent mutants — Phase 8's `cp.appendix` guard in `kbManualCardFor_` (an appendix letter gives `man-c-NaN`, which matches no card either way).

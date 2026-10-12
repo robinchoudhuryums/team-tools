@@ -23,9 +23,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+// man-c-5 is Chapter 05's quick card — its masthead shows it (M14, Phase 8).
 // 0.2 and 6.2 are the router's own targets: the router lists a row only when
 // the reader can see a section it points at.
-const SECTIONS = ['man-0-2', 'man-0-10', 'man-3-8', 'man-5-1', 'man-5-2', 'man-6-2', 'man-10-4'];
+const SECTIONS = ['man-0-2', 'man-0-10', 'man-3-8', 'man-5-1', 'man-5-2', 'man-6-2', 'man-10-4', 'man-c-5'];
 const ROUTER_QS = ['Where is my equipment?', "You're waiting on my doctor?", 'How much will this cost me?'];
 // searchReference's section hit: the real table row that answers "waiting on
 // my doctor", under its own heading (the router hit above points at the same).

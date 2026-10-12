@@ -10,6 +10,202 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-09 — manual reader design, Phase 8 (quick cards, card print, dark-mode print)
+
+**Adds NO operator state.** Two releases, in this order:
+1. **App deploy** (`clasp push -f` + New version) — with Phases 1–7 if they are not
+   out yet.
+2. **Manual release:** `./make_all.sh` → Reference → Manual → Choose File →
+   `manual.json` → Check → Import → Publish. Appendix C changed (Cards 4, 5 and 8
+   now carry a diagram), so those three cards come up for publishing. No diagram
+   changed, so no clasp push is needed for this part.
+
+Then check the **Word** copy's card pages by eye: a card with a diagram is
+followed by the diagram's landscape page, and the next card starts a fresh page
+(the structure was checked here; LibreOffice could not render the file).
+- **Quick card in the chapter (M14):** each chapter's page now ends its masthead
+  with its Quick Reference Card — CARD N, "Quick reference", Print card — the
+  card's diagram first, then its points in two columns, the **Never** line in a
+  red box. It is open by default; close it and it stays closed for that chapter.
+  It shows once the whole manual has arrived (a second or two after the first
+  chapter of a session), never with a wait.
+- **Cards on paper (M19):** Print card (in a chapter) or the reader bar's Print
+  (on an Appendix C card) prints a card as a card — the chapter colour as a band,
+  two columns, one card a sheet, and the diagram on the NEXT sheet (print two-sided
+  for a card with the diagram on the back). **Print all cards** on the Appendix C
+  page prints every card at once. The HTML manual does the same: its print check
+  now counts a diagram's back page beside each card that has one (contents + 11 cards + 3 diagram reverses).
+- **Dark-mode printing (all of the app):** a printout from dark mode used to put
+  near-white text on white paper, because the dark colours were set on the page
+  body as well as the page itself and the print reset only reached the page. Now
+  every print is ink on white, the status colours and chapter colours print in
+  their light versions, and nothing changes on screen. One leftover: links in a
+  dark-mode printout keep the dark mode's pale accent colour (follow-on).
+
+## 2026-10-09 — manual reader design, Phase 7 (compact pop-out)
+
+**Adds NO operator state.** Deploy as usual (`clasp push -f` + New version); no
+re-import, no manual rebuild. Phase 8 waits for your go-ahead.
+- **Pop-out and phone (M13):** the Reference side panel is now one row — the
+  search box and a **Contents** button — so the reader starts near the top (in the
+  pop-out it began below a tree up to 45% of the screen tall). The tree reappears
+  while you type a search, for its results, and folds away when the box is empty.
+- **Contents:** a dialog with a chip per chapter and appendix, the chosen chapter's
+  sections (the one you are reading marked), then the rest of the library (the
+  hand-written articles) — so every item is still one tap away. A chip switches
+  chapters in place; a row opens the item and closes the dialog; Escape closes it.
+- The reader bar's ‹ › are 44px tap targets there. Wide screens are unchanged.
+
+## 2026-10-09 — manual reader design, Phase 6 (manual home) + the drawer's decoration
+
+**Adds NO operator state.** Deploy as usual (`clasp push -f` + New version); no
+re-import, no manual rebuild. Phases 7–8 wait for your go-ahead.
+- **Manual home (M12):** the Reference landing opens with "Procedures manual" and
+  its version line, then two cards — "What did the caller say?" (the call router,
+  with three openers taken from the real router) and "Go to a section" (type 5.2,
+  B.1 or card 5; Enter opens) — then a tile per chapter and per appendix (badge,
+  name, section count, how many were updated). A tile resumes where you left off
+  in that chapter, like the chapter cards. The payor and price lookups follow.
+- **Your call — pop-out order:** on a wide screen the manual home comes first, as
+  the handoff drew it. In the pop-out and on a phone the lookups come first (they
+  are the mid-call tools; below the chapter grid they sat ~1,100px down). Say if
+  you would rather have one order everywhere.
+- **The Ctrl+K drawer:** a manual section opened there now shows its callout labels
+  (CRITICAL / POLICY / WATCH-OUT / NOTE) and numbered step circles in its chapter
+  colour, as the Reference tab does.
+
+## 2026-10-09 — manual reader design, Phase 5 (reading trail, resume) + Phase 4's open items
+
+**Adds NO operator state** — no Script Property and no new browser storage key (the
+resume point lives inside the existing `umsKbPanel`). Deploy as usual
+(`clasp push -f` + New version); no re-import, no manual rebuild. Phases 6–8 wait
+for your go-ahead.
+- **Reading trail (M15):** above the reader bar, "Read" and a chip for each of the
+  last few sections you opened (up to five, newest last, no repeats) — each with
+  its chapter badge and number; the open section is the plain end. A chip takes
+  you back to that section, to the row you left from when you followed a link,
+  and drops the chips after it. This replaces the single "Back to" chip, and now
+  works for any jump, not only one to another chapter. The Ctrl+K drawer keeps its
+  own Back, as decided.
+- **Resume (M16):** opening a chapter from a chapter-level control (the Previous /
+  Next chapter cards, or ‹ › across a chapter's edge) returns you to where you
+  were reading in that chapter within the last week, with "Back where you left off —
+  5.2.4 …", Start of chapter and dismiss. Opening a specific section (a link, a
+  search hit, the tree, a section number, a trail chip) always goes where you
+  asked. Only the section id and heading number are kept.
+- **Fixed — amber chips in light mode:** text on the amber fill read 3.4–3.6:1 in
+  light mode. A new paired colour (ink in light, the card colour in dark) now
+  reads 4.96–4.98 in light and 10.5 in dark across all five palettes. It's used by
+  Call Notes' Action filter chip, stale-flag badge and admin-tab badge, Coaching's
+  warn chip, Intake's "Mod" chip, and the Clock's lunch chip and amber button. The
+  admin badge's red variant keeps light text (5.6:1).
+- **Fixed — footnotes in the Ctrl+K drawer:** a manual section opened in the drawer
+  now turns its footnote numbers into the same note card as the Reference tab.
+
+## 2026-10-09 — manual reader design, Phase 4 (footnotes, glossary, search hits) + Phase 3's found items
+
+**Adds NO operator state.** Deploy as usual (`clasp push -f` + New version); no
+re-import, no manual rebuild. Phases 5–8 wait for your go-ahead.
+- **Footnotes (M17):** a footnote number in a chapter (¹, ²) is now a small
+  button. Hovering, focusing or clicking it shows the note in the same card as a
+  section link — "Note ¹ · 3.7 PAP" and its text — and "Go to note" jumps to it.
+  Numbers restart in each sub-section, and each one finds its own note.
+- **Glossary terms (M17):** a dotted glossary term opens the same card (term and
+  definition), with "Go to glossary" jumping to its row on the page. This replaces
+  the old hover-only bubble and works from the keyboard. (In the manual, terms are
+  marked only on the Glossary page itself, as before.)
+- **Search (M18):** a manual hit looks like the manual — chapter badge, number chip,
+  "Manual · CSR Core", numbered sub-headings in the chapter colour, and callouts and
+  step tables drawn as in the chapter; in the side list, a chapter dot and number
+  column. Hand-written articles look as before. The Ctrl+K drawer shares this.
+- **Fixed — a stray "—" under 42 callout labels:** where the source writes
+  `**Note** — text` (dash outside the bold label), the text under the NOTE kicker
+  began with a dash. It now reads cleanly; the words are unchanged.
+- **Fixed — white text on other status colours** in dark mode (measured contrast
+  1.4–2.8, the target is 4.5): Call Notes' Action and Review filter chips and its
+  stale-flag badge, Intake's remove-image button, Metrics' alert badge, and
+  Coaching's severity chips. A test now checks every themed file. Left as they
+  are, on measurement: Call Notes' Clear button on hover (white already passes on
+  its dark red) and the public form page (its own fixed colours, no dark mode).
+- **Adapted from the handoff (the repo wins):** "Go to glossary" jumps to the
+  definition on the same page rather than always opening Appendix A (a
+  hand-written article's glossary lives in that article).
+
+## 2026-10-09 — manual reader design, Phase 3 (masthead, loading, chapter cards) + Phase 2's open items
+
+**Adds NO operator state.** Deploy as usual (`clasp push -f` + New version); no
+re-import, no manual rebuild. Phases 4–8 wait for your go-ahead.
+- **Chapter masthead (M9):** each chapter opens with "Procedures manual ·
+  Chapter 05", its badge, its name, a line with the section count, how many
+  sections were updated in the last 12 months and the manual's version, then
+  "In this chapter" — every section as a link, with an Updated or Draft pill.
+  The version line that sat under the chapter title moved here.
+- **Loading:** a chapter not yet loaded shows its bar, masthead and the section's
+  heading at once, with shimmer lines where the text will be, instead of a blank
+  panel. If the load fails, the masthead stays and the error appears where the
+  text would have been.
+- **Chapter cards (M11):** after a chapter's last section, "Previous · Chapter 04"
+  and "Next · Chapter 06" cards open the neighbouring chapter.
+- **Phone / pop-out:** the reader bar's ‹ › shrink to arrows so the section title
+  keeps its room (at 390px it went from about 5 letters to about 20).
+- **Fixed — white text on the accent colour** (unreadable in dark mode), in six
+  more places: Metrics' scope buttons, QA's main button, Coaching's main button,
+  Call Notes' Training filter chip (when on), the note-reply Save and the
+  manager-reply Save (on hover). A test now checks every file in the app.
+- **Adapted from the handoff (the repo wins):** the loading lines use the app's
+  own shimmer (`.skel`), not new grey blocks; an index row opens its section the
+  ordinary way (`kbOpenItem_`, so a stale "Back to" chip clears) rather than
+  `kbManualFocus_`; a one-section chapter (Glossary) has no index.
+
+## 2026-10-09 — manual reader design, Phase 2 (reader bar, tree rows)
+
+**Adds NO operator state.** Deploy as usual (`clasp push -f` + New version); no
+re-import, no manual rebuild. Phases 3–8 wait for your go-ahead
+(`.cycle/manual-reader-design-plan.md`).
+- **The reader bar** (Reference → a manual chapter): one bar stays at the top of
+  the reader while you scroll. It names the chapter and the section you are
+  reading, and its star, Print and ‹ › buttons act on that section. ‹ › step
+  section by section, then to the neighbouring chapter (labelled "Ch 06" and so
+  on). A "Back to" chip sits in its own row above the bar. Bookmark and Print are
+  no longer repeated on every section; an admin's Publish stays on its draft.
+- **The tree:** a chapter reads "05 Power Mobility", each section a number column
+  and its title, and a small blue dot marks a section updated inside the same
+  window as its Updated badge (hover it for the date).
+- **Fixed:** opening a section scrolled the whole app page as well as the reader,
+  so the page title slid out of view (measured: 136px before this phase). With the
+  bar it would have hidden the bar under the tab strip, so the reader now scrolls
+  only itself. Also fixed: the deploy toast's Reload button put white text on the
+  accent colour (unreadable in dark mode).
+- **Adapted from the handoff (the repo wins):** the scroll-spy is one scroll
+  listener rather than an IntersectionObserver (an observer could never name a
+  short last section); the version line stays under the chapter title until
+  Phase 3's masthead takes it; ‹ › at a chapter's edge open the neighbouring
+  chapter's first section (M11's rule) rather than its last.
+
+## 2026-10-09 — manual reader design, Phase 1 (the Claude Design handoff)
+
+**Adds NO operator state.** Deploy as usual (`clasp push -f` + New version); the
+HTML manual changes on the next `manual/make_all.sh` (no re-import: `manual.json`
+does not change). The handoff, its mockup and every decision are in
+`docs/design_handoff_manual_reader/` and `.cycle/manual-reader-design-plan.md`;
+phases 2–8 wait for your go-ahead.
+- **The reader** (Reference → a manual chapter): running text stops at a reading
+  width; callouts read kicker (icon + CRITICAL / POLICY / WATCH-OUT / NOTE), title,
+  body in a hairline box; two-column tables stack on a narrow reader (pop-out,
+  phone, the Ctrl+K drawer); step tables show each number in a circle in the
+  chapter colour with the arrow kept; HCPCS codes are chips, section links a solid
+  underline, glossary terms the one dotted mark; section headings lose the coloured
+  left stripe for a hairline (your M6 choice (b)), and Bookmark / Print / the
+  feedback buttons are quieter.
+- **The HTML manual** matches: no stripe on chapter titles or section headings.
+  The Word copy keeps its stripe.
+- **Fixed:** five buttons put white text on the accent colour, unreadable in dark
+  mode (the Manual dialog's Import, the type toggle, Save / Publish).
+- **Adapted from the handoff (the repo wins):** the callout colours use the file's
+  own `--danger` names; the contrast fix covers five buttons, not two; the one
+  "Critical." callout keeps its full stop without a lone "." title; a stacked table's
+  label column now yields its 34% width.
+
 ## 2026-10-08 → 10-09 — manual fixes: a reviewer's change list, the Word and HTML copies, the packets
 
 **Adds NO new Script Property.** The `manual/` changes ship by export and

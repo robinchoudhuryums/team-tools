@@ -100,6 +100,8 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 <!--card:p4-->
 ## §C-4 Sales
 
+{{diagram:eligibility-status}}
+
 ### Where the order is
 
 | Status | Whose |
@@ -124,6 +126,8 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 
 <!--card:p5-->
 ## §C-5 Power Mobility
+
+{{diagram:power-process}}
 
 ### Process
 - Power **does not** follow the standard order process — Sales → PAK → Qualifications → PAR → Field Ops-Power
@@ -205,6 +209,8 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 
 <!--card:p8-->
 ## §C-8 Oxygen
+
+{{diagram:o2-troubleshoot}}
 
 ### Ownership
 - **The patient never owns the concentrator.** Rental billing stops at 36 months; UMS keeps ownership and keeps servicing to 5 years

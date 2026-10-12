@@ -9071,7 +9071,9 @@ test('the annotator marks the FIRST mention only, and never inside the glossary'
     'longest term first, so "PT Eval" wins over "PT"');
   assert.ok(/catch \(e\) \{ \/\* annotation is decoration/.test(fn), 'and it can never break the reader');
   const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
-  assert.ok(/\.kb-gloss-mark:hover::after, \.kb-gloss-mark:focus::after/.test(kb),
+  // M17 (design handoff Phase 4): the definition opens in the shared card — on hover,
+  // keyboard focus and click — so the CSS tooltip is gone.
+  assert.ok(/var KB_POP_SEL = '[^']*\.kb-gloss-mark/.test(kb) && /addEventListener\('focusin', function \(e\) \{\s*var a = e\.target\.closest && e\.target\.closest\(KB_POP_SEL\)/.test(kb) && !/kb-gloss-mark:hover::after/.test(kb),
     'the definition opens on keyboard focus as well as hover');
   assert.ok(/@media \(max-width: 560px\)[\s\S]{0,200}\.kb-gloss-row \{ grid-template-columns: 1fr/.test(kb),
     'the two-column term list stacks on a phone');
@@ -29655,7 +29657,8 @@ function m1Md_() {
   const ctx = vm.createContext({ String, Object, Array, JSON, parseInt, Math, icon: (n) => '<i data-icon="' + n + '"></i>',
     kbGlossaryHtml_: (b) => '<GLOSS>' + b + '</GLOSS>', kbRosterHtml_: () => '', kbDecideHtml_: () => '', kbMapHtml_: () => '' });
   vm.runInContext(/var KB_CALLOUT_KINDS = [^\n]+/.exec(M1_KB_SRC)[0], ctx);
-  ['kbSlug_', 'kbMd_', 'kbCalloutKind_', 'kbDiagramHtml_', 'kbDiagramPendingHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
+  ['kbSlug_', 'kbMd_', 'kbCalloutKind_', 'kbDiagramHtml_', 'kbDiagramPendingHtml_', 'kbDiagramScopeIds_', 'kbDiagramSeq_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
+  vm.runInContext('var KB_DIAGRAM_SEQ = 0;', ctx);
   return ctx;
 }
 
@@ -30963,14 +30966,15 @@ test('M5a-FU1: kbNamedRow_ — a link whose text names ONE row (Appendix B\'s co
     'only a table ROW is named — a paragraph under a heading of that name carries it as its LABEL, not as its name (an anchor is how a link points at a heading)');
 });
 
-test('M5a-FU2: the "Back to" controls stay in reach — each is sticky and reaches past its OWN scroller\'s padding (derived from the scroller\'s rule), so no content shows in a gap above it', () => {
+test('M5a-FU2: the "Back to" controls stay in reach — each is sticky and reaches past its OWN scroller\'s padding (derived from the scroller\'s rule), so no content shows in a gap above it (in the tab since M8: the one band that holds the Back row and the reader bar)', () => {
   const rule = (sel) => { const m = new RegExp('\\n\\s*' + sel.replace(/[.#]/g, '\\$&') + ' \\{([^}]*)\\}').exec(M1_KB_SRC); assert.ok(m, sel + ' has a rule'); return m[1]; };
   const px = (decl, prop) => { const m = new RegExp('(?:^|;)\\s*' + prop + ':\\s*([^;]+)').exec(decl); assert.ok(m, prop + ' in ' + decl); return m[1].trim(); };
   const main = px(rule('.kb-main'), 'padding').split(/\s+/);   // 18px 22px
-  const band = rule('.kb-man-back');
+  const band = rule('.kb-man-top');
   assert.strictEqual(px(band, 'position'), 'sticky');
   assert.strictEqual(px(band, 'top'), '-' + main[0], 'the band\'s top is minus .kb-main\'s top padding');
-  assert.deepStrictEqual(px(band, 'margin').split(/\s+/).slice(1, 2), ['-' + main[1]], 'and it spans .kb-main\'s side padding');
+  assert.deepStrictEqual(px(band, 'margin').split(/\s+/).slice(0, 2), ['-' + main[0], '-' + main[1]], 'and it spans .kb-main\'s top and side padding');
+  assert.ok(!/position:\s*sticky/.test(rule('.kb-man-back')), 'the Back row is not a second sticky box (two would stack over each other)');
   assert.ok(/var\(--paper-card\)/.test(px(band, 'background')), 'opaque — the page shows through nothing');
   const body = px(rule('.kbd-body'), 'padding').split(/\s+/);   // 10px 14px 16px
   const row = rule('.kbd-body .kbd-backto');
@@ -35056,6 +35060,375 @@ test('MD-1 (change list 2026-10-08 D): the HTML manual — a phone gets one colu
   assert.ok(srch.indexOf('raw = re.sub(r"<(svg|style|script)\\b.*?</\\1>", " ", raw, flags=re.S)') > srch.indexOf('aria-label='), 'and any other svg, style or script is dropped before the tags are');
 });
 
+test('MRD-1 (manual reader design Phase 1): no text is white on the accent, each reader rule has one home, M6 left no stripe in the reader OR the HTML manual, a two-column table stacks by container query, and step circles take the chapter colour', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const mh = MP1_('make_html.py');
+  // the contrast fix: the app's own idiom (styles.html) is background --accent + color --paper-card
+  assert.ok(!/background:\s*var\(--accent\);\s*color:\s*#fff/i.test(kb), 'no white text on a filled accent — it is a pale green / lilac in dark mode');
+  assert.strictEqual((kb.match(/background:\s*var\(--accent\);\s*color:\s*var\(--paper-card\)/g) || []).length, 5, 'the five filled-accent buttons read --paper-card (non-vacuous)');
+  // one home per property: the superseded duplicates are gone
+  [['.kb-man-sec', /^  \.kb-man-sec \{/gm], ['.kb-man-sec-head', /^  \.kb-man-sec-head \{/gm], ['.kb-man-sec-h', /^  \.kb-man-sec-h \{/gm], ['.kb-man-part max-width', /^  \.kb-man-part \{ max-width/gm], ['.kb-man-fb', /^  \.kb-man-fb \{/gm]]
+    .forEach(([n, re]) => assert.strictEqual((kb.match(re) || []).length, 1, n + ' has one rule'));
+  // M6 (operator option b): no left stripe on the chapter title or section heads, in the reader and the HTML manual
+  const head = /^  \.kb-man-sec-head \{([^}]*)\}/m.exec(kb)[1];
+  assert.ok(!/border-left/.test(head) && /border-bottom: 1px solid var\(--line\)/.test(head), 'a section head is a chip over a hairline');
+  assert.ok(!/\.kb-man-chap \{[^}]*border-left/.test(kb), 'the chapter title has no stripe');
+  assert.ok(!/h2\{border-left:4px solid var\(--hc\)/.test(mh) && /h2\{padding-bottom:12px;border-bottom:1px solid var\(--rule\)\}/.test(mh), 'the HTML manual\'s h2 matches the reader');
+  assert.ok(/h1\.part\{display:flex;align-items:center;gap:16px;border-left:0;padding-left:0\}/.test(mh), 'and its chapter title lost the stripe too');
+  // M3: the stack is a container query (right in the pop-out, a phone and the drawer — A2), and the label column yields inside it
+  assert.ok(/\.kb-man-tw \{ container-type: inline-size; \}/.test(kb) && /@container \(max-width: 480px\) \{[\s\S]*?table\.kb-man-2col tr > :first-child \{ width: auto; \}[\s\S]*?\n  \}/.test(kb), 'stacked by container query, and the 34% label column yields when stacked');
+  // M4b: circles and arrows in the chapter colour, scoped to the manual
+  assert.ok(/\.kb-man-part \.kb-article table\.kb-steps td:first-child::before[^{]*\{[^}]*border: 1\.5px solid var\(--man-c\)/.test(kb) && /\.kb-man-part \.kb-article table\.kb-steps tbody tr:not\(:last-child\) td:first-child::after[^{]*\{ color: var\(--man-c\); \}/.test(kb), 'step circles and arrows take the chapter colour, manual sections (and, since M18, manual search hits) only');
+  // colour mixing toward transparent / a neutral is in oklab (V-1)
+  assert.ok(!/color-mix\(in oklch[^)]*var\(--(info|warn|danger|accent|man-c)\)/.test(kb.slice(kb.indexOf('Manual reader design handoff, Phase 1'), kb.indexOf('M7 —'))), 'the new mixes are oklab');
+});
+
+test('MRD-2 (manual reader design Phase 2): the reader bar\'s title split, chapter names, previous / next and scroll-spy pick are pure and driven; the spy never records an open; the tree row is a number column; Print and Bookmark left the sections; no white on the accent in styles.html either (driven)', () => {
+  const kb = M1_KB_SRC;
+  const ctx = vm.createContext({ String, Object, Number });
+  ['kbManualSplitTitle_', 'kbManualChapterParts_', 'kbManualNeighbours_', 'kbManualSpyPick_'].forEach((n) => vm.runInContext(extractFnFrom(kb, n), ctx));
+  const j = (v) => JSON.parse(JSON.stringify(v));
+  // the title split the heading chip, the bar and the tree share
+  assert.deepStrictEqual(j(ctx.kbManualSplitTitle_('3.8 Incontinence and catheter')), { num: '3.8', rest: 'Incontinence and catheter' });
+  assert.deepStrictEqual(j(ctx.kbManualSplitTitle_('10.C What changed from v1')), { num: '10.C', rest: 'What changed from v1' });
+  assert.deepStrictEqual(j(ctx.kbManualSplitTitle_('B.1 Directory')), { num: 'B.1', rest: 'Directory' });
+  ['Card 5 — Power Mobility', 'Glossary', 'How to use this manual', '3.8', '3.8.1x Odd'].forEach((t) => assert.deepStrictEqual(j(ctx.kbManualSplitTitle_(t)), { num: '', rest: t }, t + ' has no section number'));
+  assert.deepStrictEqual(j(ctx.kbManualSplitTitle_(null)), { num: '', rest: '' });
+  // the chapter's short name (the full one stays in data-dept)
+  assert.deepStrictEqual(j(ctx.kbManualChapterParts_('Chapter 05 — Power Mobility')), { num: '05', name: 'Power Mobility', appendix: false });
+  assert.deepStrictEqual(j(ctx.kbManualChapterParts_('Part 10 — Billing & Insurance')), { num: '10', name: 'Billing & Insurance', appendix: false }, 'a row imported before the renumber still reads');
+  assert.deepStrictEqual(j(ctx.kbManualChapterParts_('Appendix B — Escalation Directory')), { num: 'B', name: 'Escalation Directory', appendix: true });
+  ['Billing', 'Chapter 5 - Hyphen', '', 'Appendix — x'].forEach((d) => assert.deepStrictEqual(j(ctx.kbManualChapterParts_(d)), { num: '', name: d, appendix: false }, JSON.stringify(d) + ' is shown whole'));
+  // previous / next: a neighbouring section, or at the edge the neighbouring chapter's first section
+  const depts = ['Chapter 04 — Sales', 'Chapter 05 — Power Mobility', 'Appendix C — Quick Reference Cards'];
+  const first = (d) => ({ 'Chapter 04 — Sales': 'man-4-1', 'Chapter 05 — Power Mobility': 'man-5-1', 'Appendix C — Quick Reference Cards': 'man-c-0' })[d] || '';
+  const secs = [{ id: 'man-5-1', title: '5.1 Scope and process' }, { id: 'man-5-2', title: '5.2 Insurance eligibility' }, { id: 'man-5-3', title: '5.3 PAK' }];
+  const nb = (id, ds, f) => j(ctx.kbManualNeighbours_(secs, id, ds || depts, 'Chapter 05 — Power Mobility', f || first));
+  assert.deepStrictEqual(nb('man-5-2'), { prev: { id: 'man-5-1', label: '5.1', title: '5.1 Scope and process' }, next: { id: 'man-5-3', label: '5.3', title: '5.3 PAK' } });
+  assert.deepStrictEqual(nb('man-5-1').prev, { id: 'man-4-1', label: 'Ch 04', title: 'Chapter 04 — Sales', chapter: true }, 'the first section steps back a chapter');
+  assert.deepStrictEqual(nb('man-5-3').next, { id: 'man-c-0', label: 'App C', title: 'Appendix C — Quick Reference Cards', chapter: true }, 'the last steps on to the appendix');
+  assert.deepStrictEqual(nb('man-5-1', ['Chapter 05 — Power Mobility']), { prev: null, next: { id: 'man-5-2', label: '5.2', title: '5.2 Insurance eligibility' } }, 'no chapter beyond the edge, no button');
+  assert.strictEqual(nb('man-5-1', null, () => '').prev, null, 'a chapter with no first section is no target');
+  assert.deepStrictEqual(nb('man-9-9'), { prev: null, next: null }, 'a section not on the page has no neighbours');
+  const cards = [{ id: 'man-c-4', title: 'Card 4 — Sales' }, { id: 'man-c-5', title: 'Card 5 — Power Mobility' }];
+  assert.strictEqual(ctx.kbManualNeighbours_(cards, 'man-c-5', depts, 'Appendix C — Quick Reference Cards', first).prev.label, 'Card 4', 'a card is named by its card number');
+  // the spy's pick: the last heading at or above the reading line; at the foot, the opened section while it is on screen
+  assert.strictEqual(ctx.kbManualSpyPick_([-500, -100, 300, 900], 210, false, 700, -1), 1);
+  assert.strictEqual(ctx.kbManualSpyPick_([250, 900], 210, false, 700, -1), 0, 'before any heading reaches the line, the first');
+  assert.strictEqual(ctx.kbManualSpyPick_([-300, -200, -100], 210, false, 700, -1), 2);
+  assert.strictEqual(ctx.kbManualSpyPick_([-300, 100, 400], 210, true, 700, 1), 1, 'at the foot, a short opened section that cannot reach the line is still the one in view');
+  assert.strictEqual(ctx.kbManualSpyPick_([-300, 100, 400], 210, true, 700, 0), 2, 'unless its heading has scrolled away — then the last');
+  assert.strictEqual(ctx.kbManualSpyPick_([-300, 100, 400], 210, true, 700, -1), 2);
+  assert.strictEqual(ctx.kbManualSpyPick_([], 210, false, 700, -1), -1);
+  // the spy marks; it never records an open or moves the comments (those stay on explicit opens)
+  ['kbManualSpy_', 'kbManualBarPaint_', 'kbManualSpyBind_'].forEach((n) => assert.ok(!/kbPanelRecordOpen_|kbLoadComments_|kb-comments/.test(extractFnFrom(kb, n)), n + ' records nothing'));
+  assert.ok(/main\.__kbSpy\) return;/.test(extractFnFrom(kb, 'kbManualSpyBind_')) && /kbManualSpyBind_\(main\)/.test(extractFnFrom(kb, 'kbManualPaintPart_')), 'the listener is bound once per reader, from the one chapter painter');
+  ['kbManualFocus_', 'kbFlashBlock_'].forEach((n) => assert.ok(!/scrollIntoView/.test(extractFnFrom(kb, n).replace(/\/\*[\s\S]*?\*\//g, '')) && /kbReaderScroll_\(/.test(extractFnFrom(kb, n)), n + ' scrolls the reader only — scrollIntoView moved the app\'s page and hid the bar under the tab strip'));
+  assert.ok(/if \(!main \|\| !main\.contains\(el\)\) \{ try \{ el\.scrollIntoView/.test(extractFnFrom(kb, 'kbReaderScroll_')), 'scrollIntoView is kept only for an element outside the reader (the drawer)');
+  const reveal = extractFnFrom(kb, 'kbTreeRevealRow_');
+  assert.ok(!/scrollIntoView/.test(reveal) && /tree\.scrollTop/.test(reveal), 'the tree row is kept in view by the TREE\'s scrollTop — scrollIntoView can scroll the iframe\'s page');
+  // Print and Bookmark ride the bar; the sections keep only an admin's Publish
+  const part = extractFnFrom(kb, 'kbManualPartHtml_');
+  assert.ok(!/kbBookmarkBtnHtml_|kbPrintSection/.test(part) && /kbManualBarHtml_\(part\.department\)/.test(part), 'no per-section star or Print');
+  assert.ok(!/function kbPrintSection_\(/.test(kb) && /kbPrintSectionById_\(this\.getAttribute\(\\'data-kb-id\\'\)\)/.test(extractFnFrom(kb, 'kbManualBarHtml_')), 'one Print, by the id of the section in view');
+  // M10: the tree row is a number column for a manual section; the chapter toggle keeps its full name in data-dept
+  const tree = extractFnFrom(kb, 'kbRenderTree_');
+  assert.ok(/kbManualSplitTitle_\(it\.title\)/.test(tree) && /kb-item-num/.test(tree) && /data-dept="' \+ esc\(d\)/.test(tree), 'number column, full name kept in data-dept');
+  assert.ok(/kbManualUpdates_\(meta\.changelog, id, today, KB_MANUAL_UPDATED_DAYS\)/.test(extractFnFrom(kb, 'kbManualTreeUpd_')), 'the dot reads the Updated badge\'s own window');
+  // the follow-on from Phase 1: the toast's Reload was white on the accent
+  const css = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  assert.ok(!/background:\s*var\(--accent\);\s*color:\s*#fff/i.test(css) && /\.toast-act \{[^}]*background: var\(--accent\); color: var\(--paper-card\)/.test(css), 'the toast action reads --paper-card on the accent');
+});
+
+test('MRD-8 (manual reader design Phase 8): a diagram drawn twice keeps its markers (per-copy ids, driven over the real partial); the dark semantic and chapter colours are SCREEN-only and print forces the neutrals on body too; a chapter\'s card comes from the prefetched manual, open unless closed (umsKbPanel); a card prints as a card with its diagram on the reverse; the manual source and both print builds carry the card diagrams', () => {
+  const kb = M1_KB_SRC;
+  // (1) per-copy ids — driven
+  const sc = vm.createContext({ String });
+  vm.runInContext(extractFnFrom(kb, 'kbDiagramScopeIds_'), sc);
+  const one = sc.kbDiagramScopeIds_('<svg><marker id="mk"/><path style="marker-end:url(#mk)"/><a class="kb-xref" data-kb-id="man-5-2">5.2</a></svg>', 3);
+  assert.strictEqual(one, '<svg><marker id="mk-d3"/><path style="marker-end:url(#mk-d3)"/><a class="kb-xref" data-kb-id="man-5-2">5.2</a></svg>', 'ids and url(#…) take the suffix; a data-kb-id is not an id');
+  const c = m1Md_();
+  c.KB_MANUAL_DIAGRAMS = { x: '<svg class="kbdg"><marker id="m"/><path d="M0 0" marker-end="url(#m)"/></svg>' };
+  const two = c.kbMd_('```diagram x\nX\n```\n\n```diagram x\nX\n```');
+  const ids = [...two.matchAll(/\sid="([\w-]+)"/g)].map((m) => m[1]), refs = [...two.matchAll(/url\(#([\w-]+)\)/g)].map((m) => m[1]);
+  assert.ok(ids.length === 2 && ids[0] !== ids[1] && refs.join() === ids.join(), 'two copies, two ids, each copy pointing at its own: ' + ids + ' / ' + refs);
+  assert.ok(/kbDiagramScopeIds_\(reg\[key\], kbDiagramSeq_\(\)\)/.test(extractFnFrom(kb, 'kbDiagramOpen_')), 'Full size draws its copy the same way');
+  // ... and over the REAL partial: every marker reference resolves inside its own scoped copy
+  const dg = fs.readFileSync(path.join(PA_WEB, 'kb/script_manual_diagrams.html'), 'utf8');
+  const reg = vm.runInContext('(' + /var KB_MANUAL_DIAGRAMS = Object\.freeze\((\{[\s\S]*?\})\);\s*<\/script>/.exec(dg)[1] + ')', vm.createContext({}));
+  let withRefs = 0;
+  Object.keys(reg).forEach((k) => {
+    const svg = sc.kbDiagramScopeIds_(reg[k], 9);
+    const have = new Set([...svg.matchAll(/\sid="([\w-]+)"/g)].map((m) => m[1]));
+    const want = [...svg.matchAll(/url\(#([\w-]+)\)/g)].map((m) => m[1]);
+    if (want.length) withRefs++;
+    want.forEach((r) => assert.ok(have.has(r), k + ': url(#' + r + ') has no id in its own copy'));
+    assert.ok(![...have].some((i) => !/-d9$/.test(i)), k + ': an id kept its shared name');
+  });
+  assert.ok(withRefs >= 10, 'the partial\'s diagrams do use markers (non-vacuous): ' + withRefs);
+  // (2) dark semantic + chapter colours are screen-only — derived from the token file
+  const tok = fs.readFileSync(path.join(PA_WEB, 'styles_design_tokens.html'), 'utf8');
+  const SCOPED = /--(?:good|good-soft|warn|warn-soft|warn-glow|on-warn|destructive|destructive-soft|info|info-soft|intake-[a-z-]+|man-p\d+)\s*:/;
+  let screen = '', rest = tok.replace(/\/\*[\s\S]*?\*\//g, ''), at;
+  while ((at = rest.indexOf('@media screen {')) >= 0) {
+    let i = rest.indexOf('{', at) + 1, depth = 1;
+    while (depth) { if (rest[i] === '{') depth++; else if (rest[i] === '}') depth--; i++; }
+    screen += rest.slice(at, i); rest = rest.slice(0, at) + rest.slice(i);
+  }
+  const darkBlocks = (txt) => [...txt.matchAll(/([^{}]*data-mode="dark"[^{}]*)\{([^{}]*)\}/g)].map((m) => m[2]);
+  assert.ok(darkBlocks(screen).some((b) => /--destructive:/.test(b)) && darkBlocks(screen).some((b) => /--man-p5:/.test(b)), 'the dark sets live in @media screen (non-vacuous)');
+  darkBlocks(rest).forEach((b) => b.split(';').forEach((d) => assert.ok(!SCOPED.test(d), 'a dark semantic or chapter colour outside @media screen would reach paper: ' + d.trim())));
+  const styles = fs.readFileSync(path.join(PA_WEB, 'styles.html'), 'utf8');
+  assert.strictEqual((styles.match(/@media print\s*\{/g) || []).length, 1, 'ONE print block (g64)');
+  const pr = styles.slice(styles.indexOf('@media print {'));
+  assert.ok(/@media print \{[\s\S]*?:root, body \{\s*--paper: #fff !important;/.test(styles), 'the neutrals are forced on body too — index.html sets data-mode on <body>');
+  // (3) the card in the masthead — driven
+  const ctx = vm.createContext({ String, Object, Number, Array, KB_STATE: {}, icon: (n) => '<i data-icon="' + n + '"></i>',
+    esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+    kbMd_: (m) => '<MD>' + m + '</MD>', kbShiftHeadings_: (h) => h, kbPanelPrefs_: () => ctx.__prefs, __prefs: {} });
+  vm.runInContext(/var KB_MANUAL_CHAPTER_ICONS = Object\.freeze\(\{[\s\S]*?\}\);/.exec(kb)[0], ctx);
+  ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualChapterParts_', 'kbManualSplitTitle_', 'kbManualCachedPart_', 'kbManualCardFor_', 'kbManualCardOpen_', 'kbManualMastCardHtml_', 'kbManualMastheadHtml_'].forEach((n) => vm.runInContext(extractFnFrom(kb, n), ctx));
+  const P5 = 'Chapter 05 — Power Mobility', AC = 'Appendix C — Quick Reference Cards';
+  assert.strictEqual(ctx.kbManualMastHtml_ === undefined && ctx.kbManualCardFor_(P5), null, 'no prefetched manual, no card — never a wait');
+  ctx.KB_STATE.manualParts = { [AC]: { department: AC, sections: [{ id: 'man-c-5', title: 'Card 5 — Power Mobility', bodyMd: 'B <x>' }] }, [P5]: { department: P5, sections: [] } };
+  assert.strictEqual(ctx.kbManualCardFor_(P5).id, 'man-c-5', 'card N is chapter N\'s');
+  assert.strictEqual(ctx.kbManualCardFor_(AC), null, 'an appendix has no card');
+  assert.strictEqual(ctx.kbManualCardFor_('Chapter 06 — Field Operations'), null, 'a chapter whose card is not in the manual has none');
+  const m = ctx.kbManualMastheadHtml_(P5, [{ id: 'man-5-1', title: '5.1 Scope', status: 'published' }]);
+  assert.ok(/<section class="kb-man-card" data-kb-man-card="man-c-5"/.test(m) && /aria-expanded="true" aria-controls="kb-man-card-b"/.test(m) && /CARD 5/.test(m), 'the disclosure, open by default');
+  assert.ok(/<MD>B <x><\/MD>/.test(m) && !/kb-man-card-b"[^>]*hidden/.test(m), 'the body is the card article through kbMd_');
+  assert.ok(/onclick="kbManualCardToggle_\(this\)"/.test(m) && /onclick="kbPrintSectionById_\(this\.getAttribute\('data-kb-id'\)\)">/.test(m), 'toggle and Print card carry no name in the onclick (g133)');
+  ctx.__prefs = { cardOpen: { [P5]: false } };
+  assert.ok(/aria-expanded="false"/.test(ctx.kbManualMastheadHtml_(P5, [])) && /id="kb-man-card-b" hidden>/.test(ctx.kbManualMastheadHtml_(P5, [])), 'a closed chapter stays closed');
+  const ac = ctx.kbManualMastheadHtml_(AC, []);
+  assert.ok(/onclick="kbPrintAllCards_\(\)"/.test(ac) && !/kb-man-card"/.test(ac), 'Appendix C: Print all cards, and no masthead card');
+  const tg = extractFnFrom(kb, 'kbManualCardToggle_');
+  assert.ok(/kbPanelSave_\(p\)/.test(tg) && /p\.cardOpen = o/.test(tg) && !/localStorage/.test(tg), 'the open state rides umsKbPanel — no new storage key (g112)');
+  // (4) a card prints as a card: the flag, the shape, the rules
+  assert.ok(/if \(card\) root\.setAttribute\('data-print-card', ''\);/.test(extractFnFrom(kb, 'kbPrintEls_')) && /root\.removeAttribute\('data-print-card'\);/.test(extractFnFrom(kb, 'kbPrintEls_')));
+  assert.ok(/kbPrintEls_\(\[sec\], kbIsManualCard_\(id\)\)/.test(extractFnFrom(kb, 'kbPrintSectionById_')), 'a card — from its page or a masthead — sets the flag; a section does not');
+  const shape = extractFnFrom(kb, 'kbManualCardShape_');
+  assert.ok(/art\.appendChild\(cols\);\s*figs\.forEach\(function \(f\) \{ art\.appendChild\(f\); \}\);/.test(shape), 'the diagram follows the text in the document');
+  assert.ok(/\.kb-article\.kb-man-card-art > figure \{ order: -1;/.test(kb), 'and shows first on screen');
+  [':root[data-print-card] .print-one ~ .print-one { break-before: page; }',
+   ':root[data-print-card] .print-one .kb-article.kb-man-card-art { display: block !important; }',
+   ':root[data-print-card] .print-one .kb-man-card-cols { columns: 2;',
+   ':root[data-print-card] .print-one .kb-man-card-art > figure { break-before: page;',
+   'background: var(--man-c) !important;'].forEach((r) => assert.ok(pr.indexOf(r) >= 0, 'print block: ' + r));
+  // (5) the manual: the source, the HTML print and the Word order
+  const MAN = path.join(__dirname, '../../manual');
+  const apx = fs.readFileSync(path.join(MAN, 'src/appendix_c.md'), 'utf8');
+  [['§C-4 Sales', 'eligibility-status'], ['§C-5 Power Mobility', 'power-process'], ['§C-8 Oxygen', 'o2-troubleshoot']].forEach(([h, d]) => {
+    assert.ok(apx.indexOf('## ' + h + '\n\n{{diagram:' + d + '}}\n\n') >= 0, h + ' leads with ' + d);
+    assert.ok(fs.existsSync(path.join(MAN, 'diagrams', d + '.svg')), d + ' exists');
+  });
+  const mh = fs.readFileSync(path.join(MAN, 'make_html.py'), 'utf8');
+  assert.ok(/at \+= 2 if c\.find\("div", class_="fig", recursive=False\) else 1/.test(mh), 'the card folios count a reverse page');
+  assert.ok(/section\.qrc > \.qrrev\{break-before:page/.test(mh) && /section\.qrc > \.qrrev\{order:-1/.test(mh), 'the HTML card prints its diagram on the next page and shows it first on screen');
+  assert.ok(/want = len\(res\["cardWidth"\]\) \+ 1 \+ res\["reverses"\]/.test(fs.readFileSync(path.join(MAN, 'validate_render.py'), 'utf8')), 'the pagination check expects the reverses');
+  const mm = fs.readFileSync(path.join(MAN, 'md2model.py'), 'utf8');
+  assert.ok(/\(card_figs if in_card else blocks\)\.append\(\{"k": "diagram"/.test(mm) && /end_card\(\)\njson\.dump/.test(mm), 'Word holds a card\'s diagram until the card ends, so its landscape page follows the card');
+});
+
+test('MRD-7 (manual reader design Phase 7): a narrow Reference (the pop-out AND ≤720px — A2) is one row, search + Contents; the tree shows only while a search has a query; Contents is an ensureOverlay dialog closed through closeOverlay; the bar\'s ‹ › are 44px there', () => {
+  const kb = M1_KB_SRC;
+  const rule = (sel, body) => assert.ok(kb.indexOf(sel + ' { ' + body) >= 0 || new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' \\{[^}]*' + body.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(kb), sel + ' → ' + body);
+  // both triggers carry the same four rules
+  rule(':root[data-compact] .kb-side', 'flex-direction: row;');
+  rule(':root[data-compact] .kb-toc-btn', 'display: inline-flex;');
+  rule(':root[data-compact] .kb-side:not(.kb-side-q) #kb-tree', 'display: none;');
+  rule(':root[data-compact] .kb-man-bar-nav', 'min-width: 44px; min-height: 44px;');
+  const media = (/@media \(max-width: 720px\) \{\n    \.kb-side \{([\s\S]*?)\n  \}/.exec(kb) || [])[0] || '';
+  ['.kb-side { flex-direction: row;', '.kb-toc-btn { display: inline-flex; }', '.kb-side:not(.kb-side-q) #kb-tree { display: none; }', '.kb-man-bar-nav { min-width: 44px; min-height: 44px;'].forEach((r) => assert.ok(media.indexOf(r) >= 0, 'the ≤720px block also has ' + r));
+  assert.ok(/\.kb-toc-btn \{ display: none;/.test(kb), 'a wide Reference keeps its tree and has no Contents button');
+  // the search keeps the tree visible for its results
+  const ds = extractFnFrom(kb, 'kbDoSearch_');
+  assert.ok(/side\.classList\.toggle\('kb-side-q', q\.length > 0\)/.test(ds) && ds.indexOf("toggle('kb-side-q'") < ds.indexOf('if (q.length < 2)'), 'the class is set before any early return');
+  // Contents: the overlay lifecycle (g100/g130/SH-02)
+  const toc = extractFnFrom(kb, 'kbOpenToc_');
+  assert.ok(/ensureOverlay\('kb-man-toc-overlay', \{ labelledBy: 'kb-toc-h', onClose: function \(\) \{ var o = document\.getElementById\('kb-man-toc-overlay'\); if \(o\) o\.remove\(\); \} \}\)/.test(toc), 'opened by ensureOverlay, named by its heading, its hook removes it');
+  assert.ok(/onclick="closeOverlay\(document\.getElementById\(\\'kb-man-toc-overlay\\'\)\)"/.test(toc), 'its × goes through closeOverlay');
+  assert.ok(/data-dept="' \+ esc\(x\) \+ '"/.test(toc) && !/kbOpenToc_\(\\'' \+/.test(toc), 'a chapter chip passes its department by attribute, never inside the handler string (g133)');
+  const go = extractFnFrom(kb, 'kbTocGo_');
+  assert.ok(go.indexOf('closeOverlay(ov)') >= 0 && go.indexOf('closeOverlay(ov)') < go.indexOf('kbOpenItem_(id)'), 'a row closes the dialog, then opens');
+});
+
+test('MRD-6 (manual reader design Phase 6 + the drawer\'s decoration): the manual home is inserted ONCE ahead of the lookups and only its read-only parts repaint (the jump box survives — T1); its tiles resume; the drawer\'s manual section takes the chapter decoration', () => {
+  const kb = M1_KB_SRC;
+  const land = extractFnFrom(kb, 'kbRenderLanding_');
+  assert.strictEqual((land.match(/kbHomeEnsure_\(main\);/g) || []).length, 2, 'both landing paths (the patch and the full render) ensure the home');
+  const ens = extractFnFrom(kb, 'kbHomeEnsure_');
+  assert.ok(/if \(!home\) land\.insertAdjacentHTML\('afterbegin', kbHomeHtml_\(\)\);/.test(ens), 'inserted once, ahead of the lookups — never re-rendered');
+  assert.ok(/if \(!kbHasManual_\(\) \|\| !land\) \{ if \(home\) home\.remove\(\); return; \}/.test(ens), 'no manual, no home');
+  const paint = extractFnFrom(kb, 'kbHomePaint_');
+  assert.ok(!/kb-home-jump|\.innerHTML = .*kbHomeHtml_/.test(paint) && /getElementById\('kb-home-head'\)/.test(paint), 'the repaint never touches the jump box');
+  assert.ok(/\{ chapter: true \}/.test(paint), 'a tile is a chapter-level open (M16 resumes it)');
+  assert.ok(/@container \(max-width: 680px\) \{ \.kb-land > \.kb-lookups \{ order: -1; \} \}/.test(kb) && /\.kb-land \{[^}]*container-type: inline-size;/.test(kb), 'a narrow landing (pop-out, phone) puts the lookups first — by container, so both triggers (A2)');
+  assert.ok(/kbOpenItem_\(t\.id, t\.anchor\)/.test(extractFnFrom(kb, 'kbHomeJumpKey_')) && /kbManualNumberTarget_\(/.test(extractFnFrom(kb, 'kbHomeJump_')), 'the jump box uses the one section-number reader');
+  const dr = extractFnFrom(kb, 'kbDrawerOpenItem_');
+  assert.ok(/kbDecorateCallouts_\(body, '\.kb-article\[data-kb-man\] blockquote\.kb-callout'\)/.test(dr) && /' kbd-man-art' \+ \(dk \? ' kb-man-' \+ dk : ''\) \+ '" data-kb-man="'/.test(dr), 'the drawer marks its manual section and labels its callouts');
+  assert.ok(!/^ {2}[^\n']*\.kb-chunk-body\[data-kb-man\] (blockquote|table)[^\n]*\{/m.test(kb) && /^ {2}[^\n']*\.kb-article\[data-kb-man\] blockquote\.kb-callout[^\n]*\{/m.test(kb), 'the callout and step CSS rules key on .kb-article[data-kb-man] — results and the drawer alike');
+  assert.ok(/\.kbd-man-art \{ --man-c: var\(--muted\); \}|, \.kbd-man-art \{ --man-c: var\(--muted\); \}/.test(kb), 'an appendix in the drawer has a colour to fall back on');
+});
+
+test('MRD-5 (manual reader design Phase 5 + Phase 4\'s open items): text on a filled amber is --on-warn (ink in light, the card in dark); the trail and resume helpers are pure and driven; the trail is the tab\'s and the drawer keeps Back; resume stores an id and a heading NUMBER; the drawer runs the footnote pass (driven)', () => {
+  const kb = M1_KB_SRC;
+  const tok = fs.readFileSync(path.join(PA_WEB, 'styles_design_tokens.html'), 'utf8');
+  // --on-warn — measured 2026-10-09 across all five palettes: 4.96–4.98 in light, 10.48–10.51 in dark (white read 3.64 in light)
+  assert.strictEqual((tok.match(/--on-warn:\s*var\(--ink\);/g) || []).length, 1, 'light: the ink');
+  assert.strictEqual((tok.match(/--on-warn:\s*var\(--paper-card\);/g) || []).length, 1, 'dark: the card');
+  const files = [];
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).forEach((e) => { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else if (/\.html$/.test(e.name) && e.name !== 'form_public.html') files.push(f); });
+  walk(PA_WEB);
+  let amber = 0;
+  const bad = [];
+  files.forEach((f) => {
+    const src = fs.readFileSync(f, 'utf8');
+    for (const m of src.matchAll(/\{([^{}]*)\}|style="([^"]*)"/g)) {
+      const body = m[1] || m[2] || '';
+      if (!/background(?:-color)?:\s*var\(--warn\)/.test(body)) continue;
+      const c = /(?:^|[;\s])color:\s*([^;}"]+)/.exec(body);
+      if (!c) continue;
+      amber++;
+      if (c[1].trim() !== 'var(--on-warn)') bad.push(path.relative(PA_WEB, f) + ': ' + body.trim().slice(0, 80));
+    }
+  });
+  assert.deepStrictEqual(bad, [], 'text on the amber fill reads --on-warn');
+  assert.ok(amber >= 4, 'the sweep sees the amber text rules (non-vacuous): ' + amber);
+  const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.ok(/\.cn-admin-tab-badge\[data-tone="fail"\] \{ background: var\(--destructive\); color: var\(--paper-card\); \}/.test(cn), 'the red variant of an amber badge sets its own text — it would inherit --on-warn (ink on red in light mode)');
+  // pure helpers
+  const ctx = vm.createContext({ Object, Number, Math });
+  ['kbTrailPush_', 'kbTrailCut_', 'kbResumePick_', 'kbResumeStore_'].forEach((n) => vm.runInContext(extractFnFrom(kb, n), ctx));
+  const j = (v) => JSON.parse(JSON.stringify(v));
+  const e = (id) => ({ id, title: id, land: null });
+  let t = [];
+  ['a', 'b', 'c'].forEach((id) => { t = ctx.kbTrailPush_(t, e(id), 5); });
+  assert.deepStrictEqual(j(t).map((x) => x.id), ['a', 'b', 'c']);
+  t = ctx.kbTrailPush_(t, { id: 'a', title: 'a', land: { kind: 'row', text: 'x' } }, 5);
+  assert.deepStrictEqual(j(t).map((x) => x.id), ['b', 'c', 'a'], 'an entry already on the trail moves to the end');
+  assert.deepStrictEqual(j(t)[2].land, { kind: 'row', text: 'x' }, 'with its newer landing');
+  ['d', 'e', 'f'].forEach((id) => { t = ctx.kbTrailPush_(t, e(id), 5); });
+  assert.deepStrictEqual(j(t).map((x) => x.id), ['c', 'a', 'd', 'e', 'f'], 'at most five, the oldest drops');
+  assert.deepStrictEqual(j(ctx.kbTrailCut_(t, 1)).map((x) => x.id), ['c', 'a'], 'a chip drops the chips after it');
+  assert.deepStrictEqual(j(ctx.kbTrailCut_([], 0)), []);
+  const now = 1e12, day = 86400000, ids = ['man-5-1', 'man-5-6'];
+  const store = { 'Chapter 05 — Power Mobility': { id: 'man-5-6', h: '5.6.2', at: now - day } };
+  assert.deepStrictEqual(j(ctx.kbResumePick_(store, 'Chapter 05 — Power Mobility', ids, now, 7)), { id: 'man-5-6', h: '5.6.2' });
+  assert.strictEqual(ctx.kbResumePick_({ 'Chapter 05 — Power Mobility': { id: 'man-5-6', h: '', at: now - 7 * day } }, 'Chapter 05 — Power Mobility', ids, now, 7), null, 'a week old: no resume');
+  assert.strictEqual(ctx.kbResumePick_(store, 'Chapter 05 — Power Mobility', ['man-5-1'], now, 7), null, 'a section the reader cannot see: no resume');
+  assert.strictEqual(ctx.kbResumePick_({ 'Chapter 05 — Power Mobility': { id: 'man-5-6', at: now + day } }, 'Chapter 05 — Power Mobility', ids, now, 7), null, 'a stamp from the future is not trusted');
+  ['__proto__', 'constructor', 'toString'].forEach((k) => assert.strictEqual(ctx.kbResumePick_({}, k, ids, now, 7), null, k));
+  assert.strictEqual(ctx.kbResumePick_(null, 'x', ids, now, 7), null);
+  assert.deepStrictEqual(j(ctx.kbResumeStore_({ old: { id: 'man-1-1', at: now - 8 * day }, keep: { id: 'man-2-1', at: now - day } }, 'Chapter 05 — Power Mobility', { id: 'man-5-6', h: '5.6.2', at: now }, now, 7)),
+    { keep: { id: 'man-2-1', at: now - day }, 'Chapter 05 — Power Mobility': { id: 'man-5-6', h: '5.6.2', at: now } }, 'a stale chapter drops as another is saved');
+  // structure: the trail is the tab's; the drawer keeps Back; resume stores numbers only
+  assert.ok(!/KB_STATE\.backTo|kbManualBack_|kbManualPaintBack_/.test(kb), 'the single "Back to" chip is gone — the trail replaced it');
+  assert.ok(!/KB_STATE\.trail/.test(extractFnFrom(kb, 'kbDrawerOpenItem_')) && /kbDrawerBackToHtml_\(\)/.test(extractFnFrom(kb, 'kbDrawerOpenItem_')), 'the drawer keeps its own Back (operator decision 3)');
+  assert.ok(/\{ id: p\.id, h: p\.h, at: now \}/.test(extractFnFrom(kb, 'kbManualResumeNote_')) && /querySelectorAll\('\.kb-article \.kb-man-ssn'\)/.test(extractFnFrom(kb, 'kbManualSpy_')), 'a section id and a heading NUMBER (the .kb-man-ssn chip), never text');
+  assert.ok(/kbPanelPrefs_\(\)/.test(extractFnFrom(kb, 'kbManualResumeNote_')) && !/localStorage/.test(extractFnFrom(kb, 'kbManualResumeNote_')), 'inside umsKbPanel — no new storage key');
+  assert.ok(/if \(nav && nav\.chapter\)/.test(extractFnFrom(kb, 'kbOpenManualSection_')), 'only a chapter-level open resumes; an explicit target wins');
+  assert.ok(/kbManualFootnotes_\(body, '\.kb-article'\)/.test(extractFnFrom(kb, 'kbDrawerOpenItem_')), 'the drawer runs the footnote pass on a manual section');
+  assert.ok(/var band = main\.querySelector\('\.kb-man-top'\), pad = band && band\.offsetHeight \? band\.offsetHeight \+ 12/.test(extractFnFrom(kb, 'kbReaderScroll_')), 'a heading lands below the band\'s REAL height — the trail and the resume line make it taller than a fixed padding (measured: 12px clear at 1440 and 390)');
+  assert.ok(/class="kb-man-resume-acts"/.test(extractFnFrom(kb, 'kbManualPaintResume_')), 'Start of chapter and the dismiss wrap together');
+});
+
+test('MRD-4 (manual reader design Phase 4 + Phase 3\'s found items): no themed partial puts white text on a semantic fill; footnote numbers read as digits; a chunk heading splits its number; footnotes, glossary marks and cross-references share ONE card and ONE binding, inert inside the card; manual search hits are decorated like the chapter (driven)', () => {
+  const kb = M1_KB_SRC;
+  // the semantic-fill sweep — measured 2026-10-09: in dark mode white reads 1.40 on --good, 1.76 on --warn,
+  // 1.85 on --info and 2.83 on --danger/--destructive (WCAG wants 4.5); --paper-card reads 6.5–13.2, and is white
+  // in light mode. --danger-deep is left out on purpose: white measures 4.62 on it in dark mode (it passes).
+  // form_public.html is its own fixed-palette page (no dark mode), so it is not swept.
+  const files = [];
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).forEach((e) => { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else if (/\.html$/.test(e.name) && e.name !== 'form_public.html') files.push(f); });
+  walk(PA_WEB);
+  let filled = 0;
+  const bad = [];
+  files.forEach((f) => {
+    const src = fs.readFileSync(f, 'utf8');
+    for (const m of src.matchAll(/\{([^{}]*)\}|style="([^"]*)"/g)) {
+      const body = m[1] || m[2] || '';
+      if (!/background(?:-color)?:\s*var\(--(warn|good|info|danger|destructive)\)/.test(body)) continue;
+      filled++;
+      if (/(^|[;\s])color:\s*(#fff\b|#ffffff\b|white\b)/i.test(body)) bad.push(path.relative(PA_WEB, f) + ': ' + body.trim().slice(0, 80));
+    }
+  });
+  assert.deepStrictEqual(bad, [], 'white text on a semantic fill — under 3:1 in dark mode');
+  assert.ok(filled >= 8, 'the sweep sees the semantic fills (non-vacuous): ' + filled);
+  // pure helpers
+  const ctx = vm.createContext({ String });
+  vm.runInContext(/var KB_FN_DIGITS = \{[^}]*\};/.exec(kb)[0], ctx);
+  ['kbFnNum_', 'kbManualSplitHeading_'].forEach((n) => vm.runInContext(extractFnFrom(kb, n), ctx));
+  assert.strictEqual(ctx.kbFnNum_('¹'), '1'); assert.strictEqual(ctx.kbFnNum_('¹²'), '12'); assert.strictEqual(ctx.kbFnNum_('⁰⁹'), '09'); assert.strictEqual(ctx.kbFnNum_(''), '');
+  const j = (v) => JSON.parse(JSON.stringify(v));
+  assert.deepStrictEqual(j(ctx.kbManualSplitHeading_('0.2.2 Fax History')), { num: '0.2.2', rest: 'Fax History' });
+  assert.deepStrictEqual(j(ctx.kbManualSplitHeading_('5.9.2.1 Pick-up')), { num: '5.9.2.1', rest: 'Pick-up' });
+  assert.deepStrictEqual(j(ctx.kbManualSplitHeading_('B.1 Directory')), { num: 'B.1', rest: 'Directory' });
+  ['Intro', 'The caller said "where is it"', '2026 figures', ''].forEach((h) => assert.deepStrictEqual(j(ctx.kbManualSplitHeading_(h)), { num: '', rest: h }, JSON.stringify(h)));
+  // one card, one binding, three kinds
+  assert.ok(/var KB_POP_SEL = 'a\.kb-xref, button\.kb-fn-ref, \.kb-gloss-mark';/.test(kb), 'the three kinds the card serves');
+  const bind = extractFnFrom(kb, 'kbBindXrefs_');
+  ['mouseover', 'focusin', 'focusout'].forEach((ev) => assert.ok(new RegExp("addEventListener\\('" + ev + "', function \\(e\\) \\{\\s*var a = e\\.target\\.closest && e\\.target\\.closest\\(KB_POP_SEL\\)").test(bind), ev + ' serves all three'));
+  assert.ok(/if \(mk\.closest\('#kb-xrefcard'\)\) return;/.test(bind), 'a mark inside the card is inert — the card never nests');
+  const gl = extractFnFrom(kb, 'kbGlossaryAnnotate_');
+  assert.ok(!/data-tip/.test(gl) && /setAttribute\('role', 'button'\)/.test(gl) && /setAttribute\('data-def', info\.def\)/.test(gl), 'the glossary mark carries its definition for the card; no CSS tooltip');
+  // M18 — results decorated like the chapter, in the tab AND the drawer
+  assert.strictEqual((kb.match(/kbDecorateManualResults_\((main|body)\);/g) || []).length, 2, 'both result surfaces decorate');
+  assert.ok((kb.match(/\.kb-article\[data-kb-man\] blockquote\.kb-callout/g) || []).length >= 5 && (kb.match(/\.kb-article\[data-kb-man\] table\.kb-steps/g) || []).length >= 3, 'the callout and step rules reach manual results (and, since Phase 6, the drawer\'s section)');
+  assert.ok(/kbDecorateCallouts_\(root, '\.kb-man-sec blockquote\.kb-callout'\);/.test(extractFnFrom(kb, 'kbManualDecorate_')), 'ONE callout decorator for the chapter and the results');
+});
+
+test('MRD-3 (manual reader design Phase 3 + Phase 2\'s open items): no filled-accent rule anywhere in web-app/ puts white text on it; the bar\'s ‹ › shrink to chevrons when narrow and keep a name; the masthead renders from one function for the skeleton and the chapter; the skeleton is not a section; a failed load keeps the masthead (driven)', () => {
+  const kb = M1_KB_SRC;
+  // the white-on-accent sweep: every block that fills with --accent reads --paper-card (the app's idiom)
+  const files = [];
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).forEach((e) => { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else if (/\.html$/.test(e.name)) files.push(f); });
+  walk(PA_WEB);
+  let filled = 0;
+  const bad = [];
+  files.forEach((f) => {
+    const src = fs.readFileSync(f, 'utf8');
+    for (const m of src.matchAll(/\{([^{}]*)\}|style="([^"]*)"/g)) {
+      const body = m[1] || m[2] || '';
+      if (!/background:\s*var\(--accent\)/.test(body)) continue;   // --accent-soft and friends do not match: the ")" must follow "accent"
+      filled++;
+      if (/(^|[;\s])color:\s*(#fff\b|#ffffff\b|white\b)/i.test(body)) bad.push(path.relative(PA_WEB, f) + ': ' + body.trim().slice(0, 80));
+    }
+  });
+  assert.deepStrictEqual(bad, [], 'white text on a filled accent — a pale green / lilac in dark mode');
+  assert.ok(filled >= 10, 'the sweep sees the filled-accent rules (non-vacuous): ' + filled);
+  // the bar when narrow: the labels go, the name stays
+  assert.ok(/@container \(max-width: 560px\) \{[^}]*\.kb-man-bar-nav span \{ display: none; \}|@container \(max-width: 560px\) \{ [^@]*\.kb-man-bar-nav span[^{]*\{ display: none; \}/.test(kb), 'the ‹ › labels hide inside the narrow container query');
+  assert.ok(/b\.setAttribute\('aria-label', b\.title\);/.test(extractFnFrom(kb, 'kbManualBarPaint_')), 'and each keeps its accessible name');
+  // the masthead, driven
+  const ctx = vm.createContext({ String, Object, Number, KB_STATE: {}, icon: (n, sz) => '<i data-icon="' + n + '"></i>',
+    esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') });
+  vm.runInContext(/var KB_MANUAL_CHAPTER_ICONS = Object\.freeze\(\{[\s\S]*?\}\);/.exec(kb)[0], ctx);
+  ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualChapterParts_', 'kbManualSplitTitle_', 'kbManualMastheadHtml_', 'kbManualMastCardHtml_', 'kbManualCardFor_'].forEach((n) => vm.runInContext(extractFnFrom(kb, n), ctx));
+  const three = ctx.kbManualMastheadHtml_('Chapter 05 — Power Mobility', [{ id: 'man-5-1', title: '5.1 Scope', status: 'published' }, { id: 'man-5-2', title: '5.2 PAK <b>', status: 'published' }, { id: 'man-5-3', title: '5.3 New', status: 'draft' }]);
+  assert.ok(/Procedures manual · Chapter 05/.test(three) && />3 sections</.test(three) && /In this chapter/.test(three), 'kicker, count, index');
+  assert.strictEqual((three.match(/class="kb-man-ix"/g) || []).length, 3);
+  assert.strictEqual((three.match(/onclick="kbOpenItem_\(this\.getAttribute\('data-kb-id'\)\)"/g) || []).length, 3, 'each row opens the section the ordinary way (a fresh start: the Back chip goes)');
+  assert.ok(/5\.2<\/span><span class="kb-man-ix-t">PAK &lt;b&gt;/.test(three), 'number and title, escaped');
+  assert.ok(/data-kb-ix-upd="man-5-2"/.test(three) && !/data-kb-ix-upd="man-5-3"/.test(three) && /kb-draft-pill/.test(three), 'a draft shows Draft, never Updated');
+  const one = ctx.kbManualMastheadHtml_('Appendix A — Glossary', [{ id: 'man-a-1', title: 'Glossary', status: 'published' }]);
+  assert.ok(/Procedures manual · Appendix A/.test(one) && />1 section</.test(one) && !/In this chapter/.test(one) && !/kb-man-badge/.test(one), 'one section: no index; an appendix: no chapter badge');
+  assert.ok(/<div class="kb-man-mast-k">Procedures manual<\/div>/.test(ctx.kbManualMastheadHtml_('Billing', [])), 'any other department: no number');
+  // the skeleton is not a section: the spy, Print, the decorators and focus all ignore it
+  const skel = extractFnFrom(kb, 'kbManualSkeletonHtml_');
+  assert.ok(/kbManualMastheadHtml_\(dept, secs\)/.test(skel) && /kbManualMastheadHtml_\(part\.department, secs\)/.test(extractFnFrom(kb, 'kbManualPartHtml_')), 'ONE masthead renderer, so nothing jumps when the chapter lands');
+  assert.ok(/class="skel skel-bar"/.test(skel) && /aria-busy="true"/.test(skel) && !/kb-man-sec"|kb-man-sec-'|data-kb-id/.test(skel), 'the app\'s shimmer, busy, and no section element');
+  const open = extractFnFrom(kb, 'kbOpenManualSection_');
+  assert.ok(!/loSweep\(\)/.test(open) && /main\.innerHTML = kbManualSkeletonHtml_\(dept, id\);/.test(open), 'the skeleton replaces the full-panel sweep');
+  assert.strictEqual((open.match(/kbManualLoadFail_\(main,/g) || []).length, 3, 'every failure keeps the masthead');
+  assert.ok(!/errorStateHtml_/.test(open), 'no failure path wipes the reader directly');
+  // the updated count's window is the badge\'s, never a hand-carried literal
+  const pm = extractFnFrom(kb, 'kbManualPaintMeta_');
+  assert.ok(/Math\.round\(KB_MANUAL_UPDATED_DAYS \/ 30\.44\)/.test(pm) && !/12 months/.test(pm), 'the "N updated in the last M months" window is derived');
+  // M11: the chapter cards reuse the bar's chapter list
+  assert.ok(/kbManualDepts_\(\)/.test(extractFnFrom(kb, 'kbManualPaintChapNav_')) && /kbManualPaintChapNav_\(main\)/.test(extractFnFrom(kb, 'kbManualPaintPart_')), 'cards painted with the chapter, from the one chapter list');
+});
+
 test('MP1-6: department guides come from data/extracts.json — every guide a part, Billing in each by default, and a reference to a section a guide leaves out reads "(in the full manual)", never a dead link', () => {
   const bd = MP1_('build.py');
   const man = JSON.parse(MP1_('data/extracts.json'));
@@ -35155,10 +35528,11 @@ test('MP2-4: the reader puts a chapter\'s badge and colour on its title and its 
     esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
     kbShiftHeadings_: (h) => h, kbMd_: (m) => m, kbManualFeedbackBarHtml_: () => '', kbBookmarkBtnHtml_: () => '', kbIsManualCard_: () => false });
   vm.runInContext(/var KB_MANUAL_CHAPTER_ICONS = Object\.freeze\(\{[\s\S]*?\}\);/.exec(M1_KB_SRC)[0], ctx);
-  ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualPartHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
-  const head = (d) => /^<div class="kb-item-head[^"]*">[\s\S]*?<\/div>/.exec(ctx.kbManualPartHtml_({ department: d, sections: [] }))[0];
+  ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualChapterParts_', 'kbManualSplitTitle_', 'kbManualBarHtml_', 'kbManualMastheadHtml_', 'kbManualMastCardHtml_', 'kbManualCardFor_', 'kbManualPartHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
+  // since M9 (design handoff Phase 3) the chapter's title is the masthead's
+  const head = (d) => /<header class="kb-man-mast[^"]*">[\s\S]*?<\/h2>/.exec(ctx.kbManualPartHtml_({ department: d, sections: [] }))[0];
   assert.strictEqual(head('Chapter 05 — Power Mobility'),
-    '<div class="kb-item-head kb-man-head kb-man-chap kb-man-p5"><h2><span class="kb-man-badge kb-man-p5" aria-hidden="true"><i data-icon="bolt" data-s="18"></i></span>Chapter 05 — Power Mobility</h2></div>');
+    '<header class="kb-man-mast kb-man-p5"><div class="kb-man-mast-k">Procedures manual · Chapter 05</div><h2 class="kb-man-mast-h"><span class="kb-man-badge kb-man-p5" aria-hidden="true"><i data-icon="bolt" data-s="22"></i></span><span>Power Mobility</span></h2>');
   assert.ok(/kb-man-p4"[\s\S]*data-icon="clipboardList"/.test(head('Chapter 04 — Sales')), 'Sales is Chapter 4 since the October 2026 renumber');
   assert.ok(/kb-man-p10"[\s\S]*data-icon="dollar"/.test(head('Chapter 10 — Billing & Denials')), 'two digits read as one number');
   assert.ok(/kb-man-p10"[\s\S]*data-icon="dollar"/.test(head('Part 10 — Billing & Insurance')), 'a row imported before the renumber still reads by its number');
@@ -35167,7 +35541,7 @@ test('MP2-4: the reader puts a chapter\'s badge and colour on its title and its 
     if (d.indexOf('<img') > 0) {
       assert.ok(!/<img/.test(h) && /kb-man-p4/.test(h), 'a hostile name is escaped and only its number picks the chapter');
     } else {
-      assert.ok(!/kb-man-chap|kb-man-badge/.test(h), JSON.stringify(d) + ' has no chapter badge');
+      assert.ok(!/kb-man-p\d|kb-man-badge/.test(h), JSON.stringify(d) + ' has no chapter badge');
     }
   });
   assert.strictEqual(ctx.kbManualChapterIcon_('Chapter 07 — Service', 13, 'kb-man-dic'), '<span class="kb-man-dic kb-man-p7" aria-hidden="true"><i data-icon="repair" data-s="13"></i></span>');

@@ -19,8 +19,11 @@ with sync_playwright() as p:
       }
       out.broken = [...document.querySelectorAll('main img')]
         .filter(i => !(i.complete && i.naturalWidth > 0)).map(i => i.getAttribute('src'));
-      for (const s of document.querySelectorAll('section.qrc'))
+      out.reverses = 0;
+      for (const s of document.querySelectorAll('section.qrc')) {
         out.cardWidth.push(Math.round(s.getBoundingClientRect().width));
+        if (s.querySelector(':scope > .qrrev')) out.reverses++;
+      }
       for (const el of document.querySelectorAll('main p, main li'))
         if (el.scrollWidth > el.clientWidth + 4) out.clipped++;
       return out;
@@ -39,7 +42,8 @@ print(f"render checks: {res['tables']} tables, {len(res['cardWidth'])} cards, "
 for e in errors:
     print("  \u2717", e)
 
-# print pagination: one card per page, contents sheet first
+# print pagination: one card per page, contents sheet first, and a card's
+# diagram on the page after it (its reverse)
 import subprocess, tempfile, os
 try:
     from playwright.sync_api import sync_playwright as _sp
@@ -51,7 +55,7 @@ try:
         b.close()
     n = int(subprocess.run(["pdfinfo", pdf], capture_output=True, text=True)
             .stdout.split("Pages:")[1].split()[0])
-    want = len(res["cardWidth"]) + 1
+    want = len(res["cardWidth"]) + 1 + res["reverses"]
     print(f"print checks : {n} pages for {want} sheets")
     if n != want:
         errors.append(f"print pagination: {n} pages for {want} sheets — cards are splitting")

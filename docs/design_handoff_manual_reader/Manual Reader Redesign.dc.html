@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<script src="manual_diagrams_subset.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+/* Verbatim custom properties from web-app/styles_design_tokens.html — the mockup uses ONLY these. */
+:root{--display:'Inter Tight',system-ui,sans-serif;--ui:'Inter Tight',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,Menlo,monospace;
+--paper:#f6f7f9;--paper-2:#f0f2f6;--paper-3:#e5e8ee;--paper-card:#ffffff;--ink:#0f1623;--muted:#3e4756;--muted-2:#5f6878;--muted-3:#a5acb8;--line:#dce0e7;--line-2:#c3c9d3;
+--accent:#0f8a52;--accent-2:#0b6e40;--accent-soft:#e4f5ec;--good:#0f8a52;--good-soft:#e4f5ec;--warn:#b7791f;--warn-soft:#fbf1d9;--destructive:#c13030;--destructive-soft:#fce5e5;--info:#1e63b8;--info-soft:#e1ecfa;
+--shadow-sm:0 1px 2px rgba(15,23,42,.04);--shadow-md:0 2px 6px rgba(15,23,42,.06);--shadow-lg:0 8px 24px rgba(15,23,42,.10);
+--border-strong:#b8bcc4;--success-deep:#0b6e40;--warning-deep:#8a4500;--danger-deep:#8a1f1f;--info-deep:#154980;
+--man-p0:#1C3A5E;--man-p1:#5B6478;--man-p2:#653D99;--man-p3:#9B2377;--man-p4:#1C75A3;--man-p5:#1D46B9;--man-p6:#2D7E52;--man-p7:#59642A;--man-p8:#19676D;--man-p9:#1F7514;--man-p10:#9A5E22;}
+@supports (color: color-mix(in oklch, red, blue)){:root{--border-strong:color-mix(in oklch,var(--line),var(--ink) 25%);--success-deep:color-mix(in oklab,var(--good),var(--ink) 45%);--warning-deep:color-mix(in oklab,var(--warn),var(--ink) 45%);--danger-deep:color-mix(in oklab,var(--destructive),var(--ink) 45%);--info-deep:color-mix(in oklab,var(--info),var(--ink) 45%);}}
+:root[data-mode="dark"]{--paper:#0a0d14;--paper-2:#161b26;--paper-3:#1e2532;--paper-card:#10141d;--ink:#e8e6e0;--muted:#a6adbc;--muted-2:#7b8496;--muted-3:#454e60;--line:#262d3b;--line-2:#3f4a60;
+--accent:#7af2a1;--accent-2:#4fd683;--accent-soft:rgba(122,242,161,.12);--good:#7af2a1;--good-soft:rgba(122,242,161,.12);--warn:#ffb547;--warn-soft:rgba(255,181,71,.14);--destructive:#ff6679;--destructive-soft:rgba(255,102,121,.14);--info:#74c7ff;--info-soft:rgba(116,199,255,.14);
+--shadow-sm:0 1px 2px rgba(0,0,0,.25);--shadow-md:0 2px 8px rgba(0,0,0,.35);--shadow-lg:0 10px 28px rgba(0,0,0,.45);--success-deep:#b8fbc8;--warning-deep:#ffcb80;--danger-deep:#ffa0a8;--info-deep:#b0ddff;--border-strong:#4a5260;
+--man-p0:#9EC2E6;--man-p1:#808AA0;--man-p2:#9E7ACD;--man-p3:#DD56B5;--man-p4:#1F92CE;--man-p5:#6185EA;--man-p6:#359D64;--man-p7:#81913A;--man-p8:#2199A2;--man-p9:#279F17;--man-p10:#C87827;}
+@supports (color: color-mix(in oklch, red, blue)){:root[data-mode="dark"]{--success-deep:color-mix(in oklab,var(--good),var(--paper-card) 25%);--warning-deep:color-mix(in oklab,var(--warn),var(--paper-card) 25%);--danger-deep:color-mix(in oklab,var(--destructive),var(--paper-card) 25%);--info-deep:color-mix(in oklab,var(--info),var(--paper-card) 25%);--border-strong:color-mix(in oklch,var(--line),var(--ink) 25%);}}
+:root[data-palette="sand"]:not([data-mode="dark"]){--paper:#faf7f2;--paper-2:#f8f1e7;--paper-3:#f0e7d8;--paper-card:#ffffff;--ink:#1e1406;--muted:#504535;--muted-2:#716655;--muted-3:#b4aa9d;--line:#e8dfd0;--line-2:#d1c7b9;--accent:#0d8a52;--accent-2:#086e40;--accent-soft:#dbf8e4;}
+:root[data-palette="sand"][data-mode="dark"]{--paper:#120c04;--paper-2:#211a0f;--paper-3:#2b2419;--paper-card:#1a1309;--ink:#eee5d7;--muted:#b8ab98;--muted-2:#8e8270;--muted-3:#554d41;--line:#332c21;--line-2:#51493d;--accent:#87efb1;--accent-2:#7acf9c;--accent-soft:rgba(135,239,177,.12);}
+:root[data-palette="plum"]:not([data-mode="dark"]){--paper:#faf6fa;--paper-2:#f9eff7;--paper-3:#f2e4f0;--paper-card:#ffffff;--ink:#1f121d;--muted:#51424f;--muted-2:#736371;--muted-3:#b5a8b3;--line:#eadce8;--line-2:#d2c5d0;--accent:#9262c4;--accent-2:#754e9d;--accent-soft:#f5eeff;}
+:root[data-palette="plum"][data-mode="dark"]{--paper:#130a12;--paper-2:#221821;--paper-3:#2c222b;--paper-card:#1a1119;--ink:#f0e2ee;--muted:#b9a8b7;--muted-2:#907f8e;--muted-3:#564a54;--line:#342a33;--line-2:#524650;--accent:#e5d2fe;--accent-2:#d3aefe;--accent-soft:rgba(229,210,254,.12);}
+:root[data-palette="teal"]:not([data-mode="dark"]){--paper:#f2f8fa;--paper-2:#e7f4f8;--paper-3:#d8ebf1;--paper-card:#ffffff;--ink:#03191e;--muted:#334a50;--muted-2:#536c72;--muted-3:#9cafb4;--line:#d0e3e8;--line-2:#b9ccd1;--accent:#098683;--accent-2:#016b69;--accent-soft:#d2f9f6;}
+:root[data-palette="teal"][data-mode="dark"]{--paper:#020f12;--paper-2:#0e1d21;--paper-3:#18272b;--paper-card:#07161a;--ink:#d6eaef;--muted:#97b1b8;--muted-2:#6f888e;--muted-3:#405155;--line:#202f33;--line-2:#3c4d51;--accent:#6ceee9;--accent-2:#65ceca;--accent-soft:rgba(108,238,233,.12);}
+:root[data-palette="sage"]:not([data-mode="dark"]){--paper:#f2f9f3;--paper-2:#e9f5ea;--paper-3:#ddece0;--paper-card:#ffffff;--ink:#0b190e;--muted:#3a4a3d;--muted-2:#5b6c5e;--muted-3:#a2afa4;--line:#d5e3d7;--line-2:#beccc0;--accent:#568262;--accent-2:#44684d;--accent-soft:#ddf8e3;}
+:root[data-palette="sage"][data-mode="dark"]{--paper:#060f08;--paper-2:#131d15;--paper-3:#1d271f;--paper-card:#0c160e;--ink:#d9ebdb;--muted:#9fb1a2;--muted-2:#778879;--muted-3:#455147;--line:#253027;--line-2:#414d43;--accent:#b6e6c1;--accent-2:#a0c7a9;--accent-soft:rgba(182,230,193,.12);}
+html,body{margin:0;background:var(--paper-3);color:var(--ink);font-family:var(--ui);font-feature-settings:'ss01','cv11','cv05';-webkit-font-smoothing:antialiased;}
+a{color:var(--accent);} a:hover{color:var(--accent-2);}
+*{box-sizing:border-box;}
+:root{--selection-bg:color-mix(in oklch,var(--accent) 30%,transparent);}
+</style>
+</helmet>
+<section id="turn2" data-screen-label="Round 2 additions" style="padding:56px 56px 24px;display:flex;flex-direction:column;gap:28px;background:var(--paper-3)">
+<header style="max-width:1180px;display:flex;flex-direction:column;gap:8px">
+  <div style="font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-2)">Round 2 · 10/08/2026</div>
+  <h1 style="margin:0;font-family:var(--display);font-size:30px;font-weight:600;letter-spacing:-.02em;color:var(--ink)">Six additions — M14 to M19</h1>
+  <p style="margin:0;max-width:78ch;font-size:15px;line-height:1.6;color:var(--muted);text-wrap:pretty">The ones you picked. Built on round 1 (below), same tokens. Step tables now use the hybrid, <a href="#m4b">M4b</a>.</p>
+</header>
+<div style="display:flex;flex-wrap:wrap;gap:40px;align-items:flex-start">
+
+<!-- 2a · quick card -->
+<div id="2a" style="display:flex;flex-direction:column;gap:12px">
+  <div style="display:flex;align-items:center;gap:10px">
+    <span style="font-family:var(--mono);font-size:12px;font-weight:700;padding:3px 8px;border-radius:5px;background:var(--ink);color:var(--paper)">2a</span>
+    <span style="font-size:15px;font-weight:600;color:var(--ink)">M14 · The chapter's quick card in its masthead</span>
+    <span style="font-size:13px;color:var(--muted-2)">Switch chapters with the tabs; click the card header to fold it.</span>
+  </div>
+  <div style="display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap">
+  <div data-screen-label="2a Quick card" style="width:1000px;background:var(--paper-card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow-lg);padding:22px 32px 30px;--man-c:{{ tabColor }}">
+    <div style="display:inline-flex;gap:0;border:1px solid var(--line);border-radius:999px;padding:3px;background:var(--paper-card);margin-bottom:20px"><button onClick="{{ tab5 }}" aria-pressed="{{ tabOn5 }}" style="appearance:none;border:none;padding:6px 14px;border-radius:999px;cursor:pointer;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;background:{{ tabBg5 }};color:{{ tabFg5 }}">Ch 05 Power</button><button onClick="{{ tab4 }}" aria-pressed="{{ tabOn4 }}" style="appearance:none;border:none;padding:6px 14px;border-radius:999px;cursor:pointer;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;background:{{ tabBg4 }};color:{{ tabFg4 }}">Ch 04 Sales</button><button onClick="{{ tab8 }}" aria-pressed="{{ tabOn8 }}" style="appearance:none;border:none;padding:6px 14px;border-radius:999px;cursor:pointer;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;background:{{ tabBg8 }};color:{{ tabFg8 }}">Ch 08 Oxygen</button></div>
+    <div style="font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-2);margin-bottom:10px">Procedures manual · Chapter {{ tabNum }}</div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:50%;background:var(--man-c);color:var(--paper-card)">{{ tabIcon }}</span>
+      <h2 style="margin:0;font-family:var(--display);font-size:30px;font-weight:600;letter-spacing:-.02em;color:var(--ink)">{{ tabName }}</h2>
+    </div>
+    <div style="margin-top:10px;font-size:12.5px;color:var(--muted-2);display:flex;flex-wrap:wrap;gap:4px 14px"><span>{{ tabMeta }}</span><span>CSR Procedures Manual v3.0 · built 10/07/2026</span></div>
+    <div style="margin-top:18px;border:1px solid var(--line);border-radius:10px;overflow:hidden">
+      <div style="display:flex;align-items:center;background:color-mix(in oklab,var(--man-c) 8%,var(--paper-card))">
+        <button onClick="{{ toggleCard }}" aria-expanded="{{ cardOpen }}" style="flex:1;display:flex;align-items:center;gap:10px;min-height:44px;padding:8px 14px;border:none;background:none;font:inherit;color:var(--ink);cursor:pointer;text-align:left">
+          <span style="display:inline-flex;color:var(--muted-2);transform:{{ cardChevron }};transition:transform .2s ease"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg></span>
+          <span style="font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.08em;padding:2px 7px;border-radius:4px;background:var(--man-c);color:var(--paper-card)">CARD {{ tabCard }}</span>
+          <span style="font-size:14px;font-weight:600">Quick reference</span>
+          <span style="font-size:12.5px;color:var(--muted-2)">the chapter on one card</span>
+        </button>
+        <button title="Print card" style="display:inline-flex;align-items:center;gap:5px;margin-right:8px;font:inherit;font-size:12.5px;padding:5px 9px;border:none;border-radius:6px;background:none;color:var(--muted);cursor:pointer" style-hover="background:var(--paper-2);color:var(--ink)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"></path><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>Print card</button>
+      </div>
+      <sc-if value="{{ cardOpen }}" hint-placeholder-val="{{ true }}">
+        <div style="padding:14px 18px 16px;border-top:1px solid var(--line);font-size:14px;line-height:1.55;color:var(--ink)">
+          <figure style="margin:0 0 16px;border:1px solid var(--line);border-radius:10px;background:var(--paper-card);--dg-navy:var(--ink);--dg-ink:var(--ink);--dg-bg:var(--paper-card);--dg-panel:var(--paper-2);--dg-accent:var(--info);--dg-tint:var(--info-soft);--dg-muted:var(--muted);--dg-rule:var(--line);--dg-crit-bg:var(--destructive-soft);--dg-crit-ink:var(--danger-deep);--dg-pol-bg:var(--info-soft);--dg-pol-ink:var(--info-deep);--dg-watch-bg:var(--warn-soft);--dg-watch-ink:var(--warning-deep);--dg-scr-bg:var(--accent-soft);--dg-scr-ink:var(--success-deep);--dg-p0:var(--man-p0);--dg-p1:var(--man-p1);--dg-p2:var(--man-p2);--dg-p3:var(--man-p3);--dg-p4:var(--man-p4);--dg-p5:var(--man-p5);--dg-p6:var(--man-p6);--dg-p7:var(--man-p7);--dg-p8:var(--man-p8);--dg-p9:var(--man-p9);--dg-p10:var(--man-p10)">
+            <div style="display:flex;align-items:center;gap:8px;padding:7px 8px 0 12px">
+              <span style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2)">Diagram</span>
+              <span style="font-size:13px;font-weight:600">{{ tabDgmTitle }}</span>
+              <a href="#" style="font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--accent);text-underline-offset:3px">{{ tabDgmSec }}</a>
+              <span style="margin-left:auto;display:inline-flex;align-items:center;gap:4px;font-size:.72rem;padding:3px 8px;border:1px solid var(--line);border-radius:7px;color:var(--muted)">Full size</span>
+            </div>
+            <div style="overflow-x:auto;padding:8px 10px 10px">{{ tabDgm }}</div>
+          </figure>
+          <sc-if value="{{ tabIs5 }}" hint-placeholder-val="{{ true }}"><div style="columns:2;column-gap:28px"><div style="break-inside:avoid;margin-bottom:12px"><div style="font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--man-c);margin-bottom:4px">Process</div><ul style="margin:0;padding-left:1.2em"><li style="margin:.2em 0">Power <strong>does not</strong> follow the standard order process — Sales → PAK → Qualifications → PAR → Field Ops-Power</li><li style="margin:.2em 0"><strong>90 days is the national average, and we're faster.</strong> Say so to set expectations, then give the current stage and what it's waiting on</li><li style="margin:.2em 0">ATP scheduling noted as a <strong>"drive-by"</strong> → still transfer to Field Ops-Power</li></ul></div><div style="break-inside:avoid;margin-bottom:12px"><div style="font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--man-c);margin-bottom:4px">Insurance</div><ul style="margin:0;padding-left:1.2em"><li style="margin:.2em 0">An <strong>MA plan is the primary</strong>, not a secondary. Patients get this wrong constantly</li></ul></div><div style="break-inside:avoid;margin-bottom:12px"><div style="font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--man-c);margin-bottom:4px">Equipment</div><ul style="margin:0;padding-left:1.2em"><li style="margin:.2em 0"><strong>POVs are not eligible for ROHO cushions</strong></li><li style="margin:.2em 0"><strong>PWCs often cannot be returned</strong> — custom-built, cannot be reissued; create the ticket anyway once the checks are done, and promise neither outcome</li></ul></div><div style="break-inside:avoid;margin-bottom:12px"><div style="font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--man-c);margin-bottom:4px">Delivery</div><ul style="margin:0;padding-left:1.2em"><li style="margin:.2em 0">PMDs are <strong>not delivered to a hospital, rehab or SNF</strong> — a nursing home that is the permanent residence is fine — and the patient must be present</li></ul></div><div style="break-inside:avoid;margin-bottom:12px"><div style="font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--man-c);margin-bottom:4px">Route</div><ul style="margin:0;padding-left:1.2em"><li style="margin:.2em 0"><strong>Scheduling</strong> — delivery, ATP, service visits → <strong>Field Ops-Power Q (ext 344)</strong></li><li style="margin:.2em 0"><strong>Reporting a problem</strong> with a PMD → <strong>Service Q</strong></li></ul></div></div><div style="margin-top:4px;padding:9px 12px;border-radius:8px;background:var(--destructive-soft);border:1px solid color-mix(in oklab,var(--destructive) 35%,transparent)"><strong style="color:var(--danger-deep)">Never</strong> — promise a PWC return or a write-off · call an MA plan a secondary · deliver a PMD to a hospital, rehab or SNF</div></sc-if>
+          <sc-if value="{{ tabIs4 }}" hint-placeholder-val="{{ false }}"><div style="columns:2;column-gap:28px"><div style="break-inside:avoid;margin-bottom:12px"><div style="font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--man-c);margin-bottom:4px">Where the order is</div><table style="border-collapse:collapse;width:100%;font-size:13px;line-height:1.45"><thead><tr><th style="font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2);text-align:left;padding:4px 10px 5px 0;border-bottom:1px solid var(--border-strong)">Status</th><th style="font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2);text-align:left;padding:4px 10px 5px 0;border-bottom:1px solid var(--border-strong)">Whose</th></tr></thead><tbody><tr><td style="padding:6px 10px 6px 0;border-bottom:1px solid var(--line);vertical-align:top;font-weight:600">Pending (Appoint. Req.) → (Appt. Sched.) → (Appoint. Verification)</td><td style="padding:6px 10px 6px 0;border-bottom:1px solid var(--line);vertical-align:top">Sales</td></tr><tr><td style="padding:6px 10px 6px 0;border-bottom:1px solid var(--line);vertical-align:top;font-weight:600">Pending (Payer Verification)</td><td style="padding:6px 10px 6px 0;border-bottom:1px solid var(--line);vertical-align:top">Sales Eligibility</td></tr><tr><td style="padding:6px 10px 6px 0;border-bottom:1px solid var(--line);vertical-align:top;font-weight:600;border-bottom:none"><strong>Eligible</strong></td><td style="padding:6px 10px 6px 0;border-bottom:1px solid var(--line);vertical-align:top;border-bottom:none"><strong>Power</strong></td></tr></tbody></table></div><div style="break-inside:avoid;margin-bottom:12px"><div style="font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--man-c);margin-bottom:4px">Handoff</div><ul style="margin:0;padding-left:1.2em"><li style="margin:.2em 0"><strong>"Eligible" is the handoff marker</strong> — stop routing to Sales</li><li style="margin:.2em 0">Only the <strong>Verification</strong> stage has a date, and it still isn't confirmed</li><li style="margin:.2em 0">Eligibility <strong>doesn't end at handoff</strong> — insurance changes send it back</li></ul></div><div style="break-inside:avoid;margin-bottom:12px"><div style="font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--man-c);margin-bottom:4px">Stale orders</div><ul style="margin:0;padding-left:1.2em"><li style="margin:.2em 0"><strong>PPD over 1 year old</strong> → new order via Sales. <strong>Under 1 year</strong> → Power reopens the existing one</li></ul></div><div style="break-inside:avoid;margin-bottom:12px"><div style="font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--man-c);margin-bottom:4px">Qualified leads</div><ul style="margin:0;padding-left:1.2em"><li style="margin:.2em 0">Ask whether they've <strong>already seen their doctor about it</strong> — that may be a Qualified Lead, which skips PAK (a PPD is still done, by Qualifications)</li><li style="margin:.2em 0">The appointment must be <strong>specifically a PMD Mobility Evaluation</strong></li></ul></div></div><div style="margin-top:4px;padding:9px 12px;border-radius:8px;background:var(--destructive-soft);border:1px solid color-mix(in oklab,var(--destructive) 35%,transparent)"><strong style="color:var(--danger-deep)">Never</strong> — route an Eligible order back to Sales · call an appointment confirmed before Verification · promise or rule out a new PMD within five years</div></sc-if>
+          <sc-if value="{{ tabIs8 }}" hint-placeholder-val="{{ false }}"><div style="columns:2;column-gap:28px"><div style="break-inside:avoid;margin-bottom:12px"><div style="font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--man-c);margin-bottom:4px">Ownership</div><ul style="margin:0;padding-left:1.2em"><li style="margin:.2em 0"><strong>The patient never owns the concentrator.</strong> Rental billing stops at 36 months; UMS keeps ownership and keeps servicing to 5 years</li></ul></div><div style="break-inside:avoid;margin-bottom:12px"><div style="font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--man-c);margin-bottom:4px">Tanks</div><ul style="margin:0;padding-left:1.2em"><li style="margin:.2em 0">Supplies go <strong>only</strong> to patients who received a concentrator from us</li><li style="margin:.2em 0">Once per week, <strong>2 business days</strong> lead time, max <strong>10</strong> per delivery (general limit 6), always at least one E cylinder at home</li><li style="margin:.2em 0">Tanks are a <strong>rental accessory</strong> — the 30-day and 10-day resupply windows do <strong>not</strong> apply</li></ul></div><div style="break-inside:avoid;margin-bottom:12px"><div style="font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--man-c);margin-bottom:4px">Equipment</div><ul style="margin:0;padding-left:1.2em"><li style="margin:.2em 0">The <strong>standard regulator (E1353)</strong> is included in the rental — and so is the <strong>conserver (A9900)</strong>, but only if the provider orders it. Otherwise $320 OOP, with an ABN for Medicare</li></ul></div><div style="break-inside:avoid;margin-bottom:12px"><div style="font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--man-c);margin-bottom:4px">Who handles it</div><ul style="margin:0;padding-left:1.2em"><li style="margin:.2em 0"><strong>Concentrator troubleshooting is CSR work</strong>, not Service</li></ul></div><div style="break-inside:avoid;margin-bottom:12px"><div style="font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--man-c);margin-bottom:4px">Urgent</div><ul style="margin:0;padding-left:1.2em"><li style="margin:.2em 0">Same-day tickets for urgent need and power outages. After hours — <a href="#" style="color:var(--accent);text-decoration-thickness:1px;text-underline-offset:3px;font-family:var(--mono);font-size:.88em;font-weight:600">CARD 9</a></li><li style="margin:.2em 0"><strong>In immediate distress?</strong> 9-1-1 first — <a href="#" style="color:var(--accent);text-decoration-thickness:1px;text-underline-offset:3px;font-family:var(--mono);font-size:.88em;font-weight:600">1.4.1</a></li></ul></div></div><div style="margin-top:4px;padding:9px 12px;border-radius:8px;background:var(--destructive-soft);border:1px solid color-mix(in oklab,var(--destructive) 35%,transparent)"><strong style="color:var(--danger-deep)">Never</strong> — tell a patient they will own the concentrator · send a concentrator fault to Service · supply tanks for another company's concentrator · change a flow rate</div></sc-if>
+        </div>
+      </sc-if>
+    </div>
+    <div style="margin-top:14px;font-family:var(--mono);font-size:11px;color:var(--muted-2)">In this chapter … as in 1a</div>
+  </div>
+  <aside style="width:340px;display:flex;flex-direction:column;gap:10px;font-size:13.5px;line-height:1.55;color:var(--muted)">
+    <div style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-2)">M14 · How it works</div>
+    <p style="margin:0;text-wrap:pretty">Each Appendix C card is already its own article (<code style="font-family:var(--mono);font-size:.9em">man-c-5</code>), and the source marks which chapter it belongs to (<code style="font-family:var(--mono);font-size:.9em">&lt;!--card:p5--&gt;</code>; the number matches the chapter). With the manual prefetched (<code style="font-family:var(--mono);font-size:.9em">KB_STATE.manualParts</code>), the masthead renders the card's body through <code style="font-family:var(--mono);font-size:.9em">kbMd_</code> — no extra call.</p>
+    <p style="margin:0;text-wrap:pretty">The chapter's key diagram leads the card — the Power process for Card 5, Eligibility Status for Card 4, concentrator troubleshooting for Card 8 — drawn from the same themed SVGs as the chapter (<code style="font-family:var(--mono);font-size:.9em">KB_MANUAL_DIAGRAMS</code>), with the existing Full size button. Open by default the first time, then remembered per rep in the existing <code style="font-family:var(--mono);font-size:.9em">umsKbPanel</code> prefs. Card headings take the chapter colour; the Never line keeps its destructive tone. Print card reuses <code style="font-family:var(--mono);font-size:.9em">kbPrintSection_</code> on the card (see <a href="#2e">2e</a>).</p>
+    <div style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-2)">Small JS · with M9</div>
+  </aside>
+  </div>
+</div>
+
+<!-- 2b · trail + resume -->
+<div id="2b" style="display:flex;flex-direction:column;gap:12px">
+  <div style="display:flex;align-items:center;gap:10px">
+    <span style="font-family:var(--mono);font-size:12px;font-weight:700;padding:3px 8px;border-radius:5px;background:var(--ink);color:var(--paper)">2b</span>
+    <span style="font-size:15px;font-weight:600;color:var(--ink)">M15 reading trail · M16 resume</span>
+  </div>
+  <div style="display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap">
+  <div style="display:flex;flex-direction:column;gap:18px;width:780px">
+    <div style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2)">Trail · desktop — 1.1 → 10.8 → 5.6 in one call</div>
+    <div data-screen-label="2b Trail desktop" style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow-md);overflow:hidden;--man-c:var(--man-p5)">
+      <div style="display:flex;align-items:center;gap:6px;padding:6px 14px 6px 20px;background:var(--paper-2);border-bottom:1px solid var(--line);font-size:12.5px;min-width:0">
+        <span style="font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2);margin-right:4px">Read</span>
+        <button style="display:inline-flex;align-items:center;gap:6px;max-width:220px;font:inherit;padding:2px 9px 2px 3px;border:1px solid var(--line);border-radius:999px;background:var(--paper-card);color:var(--ink);cursor:pointer" style-hover="border-color:var(--border-strong)"><span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--man-p1);color:var(--paper-card)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.37 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.33 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"></path></svg></span><b style="font-family:var(--mono);font-size:11px">1.1</b><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)">Call router</span></button>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--muted-3)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+        <button style="display:inline-flex;align-items:center;gap:6px;max-width:220px;font:inherit;padding:2px 9px 2px 3px;border:1px solid var(--line);border-radius:999px;background:var(--paper-card);color:var(--ink);cursor:pointer" style-hover="border-color:var(--border-strong)"><span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--man-p10);color:var(--paper-card)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg></span><b style="font-family:var(--mono);font-size:11px">10.8</b><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)">Prior authorization</span></button>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--muted-3)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+        <span style="display:inline-flex;align-items:center;gap:6px;padding:3px 4px;color:var(--ink)"><span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--man-p5);color:var(--paper-card)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"></path></svg></span><b style="font-family:var(--mono);font-size:11px">5.6</b><span style="font-weight:600">here</span></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:9px;padding:9px 14px 9px 20px">
+        <span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--man-c);color:var(--paper-card)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"></path></svg></span>
+        <span style="font-size:13px;color:var(--muted-2)">Power Mobility</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--muted-3)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+        <span style="font-family:var(--mono);font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;background:var(--man-c);color:var(--paper-card)">5.6</span>
+        <span style="font-size:13.5px;font-weight:600">Prior Authorization</span>
+      </div>
+    </div>
+
+    <div style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2)">Resume — reopening Chapter 5 from the tree</div>
+    <div data-screen-label="2b Resume" style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow-md);overflow:hidden;--man-c:var(--man-p5)">
+      <div style="display:flex;align-items:center;gap:9px;padding:9px 14px 9px 20px;border-bottom:1px solid var(--line)">
+        <span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--man-c);color:var(--paper-card)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"></path></svg></span>
+        <span style="font-size:13px;color:var(--muted-2)">Power Mobility</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--muted-3)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+        <span style="font-family:var(--mono);font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;background:var(--man-c);color:var(--paper-card)">5.6</span>
+        <span style="font-size:13.5px;font-weight:600">Prior Authorization</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 14px 8px 20px;background:var(--info-soft);font-size:13px;color:var(--info-deep)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10a6 6 0 0 1 0 12h-3"></path></svg>
+        <span style="color:var(--ink)">Back where you left off — <b style="font-family:var(--mono);font-size:12px">5.6.2</b> Calls from insurance representatives</span>
+        <button style="margin-left:auto;font:inherit;font-size:12.5px;font-weight:600;padding:4px 10px;border:1px solid var(--line);border-radius:6px;background:var(--paper-card);color:var(--ink);cursor:pointer" style-hover="border-color:var(--border-strong)">Start of chapter</button>
+        <button aria-label="Dismiss" style="display:inline-flex;padding:4px;border:none;background:none;color:var(--info-deep);cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+      </div>
+      <div style="padding:18px 36px 22px;font-size:15.5px;line-height:1.7">
+        <h3 style="margin:0 0 .4em;font-family:var(--display);font-size:17px;font-weight:600;padding:2px 6px;margin-left:-6px;border-radius:4px;background:var(--accent-soft)"><span style="color:var(--man-c);margin-right:.45em">5.6.2</span>Calls from insurance representatives</h3>
+        <div style="height:11px;width:88%;border-radius:4px;background:var(--paper-2);margin-top:10px"></div>
+        <div style="height:11px;width:72%;border-radius:4px;background:var(--paper-2);margin-top:9px"></div>
+      </div>
+    </div>
+
+    <div style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2)">Trail · compact pop-out (400px)</div>
+    <div data-screen-label="2b Trail compact" style="width:400px;background:var(--paper-card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow-md);overflow:hidden">
+      <div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--paper-2);border-bottom:1px solid var(--line);font-size:12px;overflow-x:auto;scrollbar-width:none;white-space:nowrap">
+        <button style="flex:none;display:inline-flex;align-items:center;gap:4px;font:inherit;min-height:32px;padding:3px 10px;border:1px solid var(--line);border-radius:999px;background:var(--paper-card);color:var(--ink);cursor:pointer"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg><span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--man-p10);color:var(--paper-card)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg></span><b style="font-family:var(--mono);font-size:11px">10.8</b></button>
+        <button style="flex:none;display:inline-flex;align-items:center;gap:5px;font:inherit;min-height:32px;padding:3px 10px 3px 4px;border:1px solid var(--line);border-radius:999px;background:var(--paper-card);color:var(--ink);cursor:pointer"><span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--man-p1);color:var(--paper-card)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.37 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.33 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"></path></svg></span><b style="font-family:var(--mono);font-size:11px">1.1</b></button>
+        <span style="color:var(--muted-2);margin-left:2px">earlier in this session</span>
+      </div>
+    </div>
+  </div>
+  <aside style="width:340px;display:flex;flex-direction:column;gap:10px;font-size:13.5px;line-height:1.55;color:var(--muted)">
+    <div style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-2)">M15 · Reading trail</div>
+    <p style="margin:0;text-wrap:pretty">The Back-to chip remembers one jump, and only across chapters. The trail keeps the last five sections opened this session (<code style="font-family:var(--mono);font-size:.9em">KB_STATE.trail</code>, newest last, no duplicates, cleared on reload), across chapters and within one. Each chip reopens its section on the block the rep left, using the <code style="font-family:var(--mono);font-size:.9em">land</code> data Back-to already records. The row only appears once there are two entries. In the pop-out it scrolls sideways and the first chip is "back".</p>
+    <div style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-2);margin-top:6px">M16 · Resume</div>
+    <p style="margin:0;text-wrap:pretty">When a chapter opens without a target (its tree row, its home tile, previous/next chapter) and the rep read it before, land on the last sub-heading the scroll-spy saw, with a one-line notice and "Start of chapter". Stored per chapter in <code style="font-family:var(--mono);font-size:.9em">localStorage</code> next to <code style="font-family:var(--mono);font-size:.9em">umsKbPanel</code> as <code style="font-family:var(--mono);font-size:.9em">{id, heading, at}</code>, expiring after 7 days. Section ids and numbers only — never search text, which may name a patient. A cross-reference or a search hit always wins over resume.</p>
+    <div style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-2)">Small JS · with M8</div>
+  </aside>
+  </div>
+</div>
+
+<!-- 2c · popovers -->
+<div id="2c" style="display:flex;flex-direction:column;gap:12px">
+  <div style="display:flex;align-items:center;gap:10px">
+    <span style="font-family:var(--mono);font-size:12px;font-weight:700;padding:3px 8px;border-radius:5px;background:var(--ink);color:var(--paper)">2c</span>
+    <span style="font-size:15px;font-weight:600;color:var(--ink)">M17 · Footnotes and glossary terms open the cross-reference popover</span>
+    <span style="font-size:13px;color:var(--muted-2)">Shown at pop-out width.</span>
+  </div>
+  <div style="display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap">
+  <div data-screen-label="2c Footnote popover" style="position:relative;width:400px;height:560px;background:var(--paper-card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow-lg);overflow:hidden;--man-c:var(--man-p5)">
+    <div style="padding:18px 16px;font-size:15px;line-height:1.65;color:var(--ink)">
+      <div style="display:flex;align-items:center;gap:10px;padding-bottom:10px;border-bottom:1px solid var(--line)"><span style="font-family:var(--mono);font-size:12px;font-weight:700;padding:2px 7px;border-radius:5px;background:var(--man-c);color:var(--paper-card)">5.8</span><span style="font-family:var(--display);font-size:19px;font-weight:600">Delivery and returns</span></div>
+      <div style="display:flex;flex-direction:column;border-top:1px solid var(--border-strong);margin-top:14px">
+        <div style="padding:9px 0;border-bottom:1px solid var(--line)"><div style="font-weight:600">Technician delivery</div><div>Trained technicians deliver, educate the user on functionality, and adjust as needed.</div></div>
+        <div style="padding:9px 0;border-bottom:1px solid var(--line)"><div style="font-weight:600">Where it's delivered</div><div>The patient's home, and the patient <strong>must be home</strong>.<button aria-describedby="fn-card" style="font:inherit;font-size:.8em;font-weight:700;line-height:1;vertical-align:.45em;margin-left:1px;padding:2px 4px;border:none;border-radius:4px;background:var(--accent-soft);color:var(--accent-2);cursor:pointer;box-shadow:0 0 0 2px var(--accent)">¹</button> See <a href="#" style="color:var(--accent);text-decoration-thickness:1px;text-underline-offset:3px;font-family:var(--mono);font-size:.88em;font-weight:600">6.4.4</a></div></div>
+        <div style="padding:9px 0;border-bottom:1px solid var(--line)"><div style="font-weight:600">Reporting issues</div><div>Report any issue as soon as possible — the sooner we know, the easier it is to fix.</div></div>
+      </div>
+      <div style="margin-top:18px;font-size:13.5px;color:var(--muted)"><div style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2)">Notes</div><p style="margin:.3em 0 0">¹ A PMD can't be delivered to a hospital, rehab facility or SNF, but it can be delivered to a nursing home that is the patient's permanent residence.</p></div>
+    </div>
+    <div id="fn-card" role="tooltip" style="position:absolute;left:16px;right:16px;top:252px;z-index:5;background:var(--paper-card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow-lg);padding:10px 12px;font-size:.84rem;line-height:1.5;color:var(--ink)">
+      <div style="font-weight:700;margin-bottom:4px">Note ¹ <span style="font-weight:400;color:var(--muted-2)">· 5.8 Delivery and returns</span></div>
+      <div>A PMD can't be delivered to a hospital, rehab facility or <span style="border-bottom:1px dotted var(--muted-3)">SNF</span>, but it can be delivered to a nursing home that is the patient's permanent residence.</div>
+      <div style="display:flex;justify-content:flex-end;margin-top:6px"><span style="font-size:.74rem;padding:3px 9px;border:1px solid var(--line);border-radius:7px;background:var(--paper-2)">Go to note</span></div>
+    </div>
+  </div>
+  <div data-screen-label="2c Glossary popover" style="position:relative;width:400px;height:560px;background:var(--paper-card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow-lg);overflow:hidden;--man-c:var(--man-p5)">
+    <div style="padding:18px 16px;font-size:15px;line-height:1.65;color:var(--ink)">
+      <div style="font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--man-c);margin-bottom:4px">Delivery</div>
+      <ul style="margin:0;padding-left:1.2em"><li>PMDs are <strong>not delivered to a hospital, rehab or <button aria-describedby="gl-card" style="font:inherit;font-weight:700;padding:0;border:none;border-bottom:1px dotted var(--muted-3);background:var(--selection-bg);color:inherit;cursor:help;border-radius:2px">SNF</button></strong> — a nursing home that is the permanent residence is fine — and the patient must be present</li></ul>
+      <div style="margin-top:110px;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--man-c);margin-bottom:4px">Route</div>
+      <ul style="margin:0;padding-left:1.2em"><li><strong>Scheduling</strong> — delivery, ATP, service visits → <strong>Field Ops-Power Q (ext 344)</strong></li><li><strong>Reporting a problem</strong> with a PMD → <strong>Service Q</strong></li></ul>
+    </div>
+    <div id="gl-card" role="tooltip" style="position:absolute;left:16px;right:16px;top:96px;z-index:5;background:var(--paper-card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow-lg);padding:10px 12px;font-size:.84rem;line-height:1.5;color:var(--ink)">
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="font-family:var(--mono);font-weight:700;font-size:.95rem">SNF</span><span style="font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2)">Glossary</span></div>
+      <div>Skilled Nursing Facility</div>
+      <div style="display:flex;justify-content:flex-end;margin-top:6px"><span style="font-size:.74rem;padding:3px 9px;border:1px solid var(--line);border-radius:7px;background:var(--paper-2)">Open in glossary</span></div>
+    </div>
+  </div>
+  <aside style="width:340px;display:flex;flex-direction:column;gap:10px;font-size:13.5px;line-height:1.55;color:var(--muted)">
+    <div style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-2)">M17 · One popover for every "tell me more"</div>
+    <p style="margin:0;text-wrap:pretty"><b style="color:var(--ink)">Footnotes</b> arrive as plain superscript digits (<code style="font-family:var(--mono);font-size:.9em">footnotes.py</code>) and a Notes list at the section's end, so today a rep scrolls down and back. <code style="font-family:var(--mono);font-size:.9em">kbManualDecorate_</code> wraps each body ¹²³ in a button (text unchanged) and pairs it with the note paragraph of the same section that starts with the same digit.</p>
+    <p style="margin:0;text-wrap:pretty"><b style="color:var(--ink)">Glossary terms</b> today show a CSS <code style="font-family:var(--mono);font-size:.9em">::after</code> tooltip from <code style="font-family:var(--mono);font-size:.9em">data-tip</code>, which the reader's scroll box clips near its edges and a keyboard can only reach if the mark is focusable.</p>
+    <p style="margin:0;text-wrap:pretty">Both now use <code style="font-family:var(--mono);font-size:.9em">#kb-xrefcard</code>: same hover delay, Tab-to-show, Escape-first and <code style="font-family:var(--mono);font-size:.9em">kbTetherPopover_</code> placement the cross-references already have. The card is <code style="font-family:var(--mono);font-size:.9em">position: fixed</code>, so the scroll box never clips it. A glossary term inside a popover still shows its dotted mark but does not open a second card.</p>
+    <div style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-2)">Small JS</div>
+  </aside>
+  </div>
+</div>
+
+<!-- 2d · search -->
+<div id="2d" style="display:flex;flex-direction:column;gap:12px">
+  <div style="display:flex;align-items:center;gap:10px">
+    <span style="font-family:var(--mono);font-size:12px;font-weight:700;padding:3px 8px;border-radius:5px;background:var(--ink);color:var(--paper)">2d</span>
+    <span style="font-size:15px;font-weight:600;color:var(--ink)">M18 · Manual hits look like the manual</span>
+    <span style="font-size:13px;color:var(--muted-2)">Search: "dual submission"</span>
+  </div>
+  <div style="display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap">
+  <div data-screen-label="2d Search results" style="width:980px;display:grid;grid-template-columns:260px minmax(0,1fr);gap:16px;padding:16px;background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-lg)">
+    <div style="display:flex;flex-direction:column;gap:2px;border:1px solid var(--line);border-radius:10px;background:var(--paper-card);padding:12px">
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 11px;border:1px solid var(--border-strong);border-radius:8px;background:var(--paper);font-size:13.5px;color:var(--ink);margin-bottom:8px">dual submission</div>
+      <div style="font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:4px 6px">Search · 2 results</div>
+      <button style="display:grid;grid-template-columns:10px 38px minmax(0,1fr);align-items:center;gap:6px;width:100%;text-align:left;font:inherit;font-size:13px;padding:7px 8px;border:none;border-radius:7px;background:none;color:var(--ink);cursor:pointer" style-hover="background:var(--paper-2)"><span style="width:8px;height:8px;border-radius:50%;background:var(--man-p5)"></span><b style="font-family:var(--mono);font-size:11px;color:var(--man-p5)">5.6</b><span style="font-weight:600">Prior Authorization</span></button>
+      <button style="display:grid;grid-template-columns:10px 38px minmax(0,1fr);gap:6px;width:100%;text-align:left;font:inherit;font-size:12.5px;padding:5px 8px;border:none;border-radius:7px;background:none;color:var(--muted);cursor:pointer" style-hover="background:var(--paper-2);color:var(--ink)"><span></span><span style="font-family:var(--mono);font-size:11px">5.6.2</span><span>Calls from insurance representatives</span></button>
+      <button style="display:grid;grid-template-columns:10px 38px minmax(0,1fr);align-items:center;gap:6px;width:100%;text-align:left;font:inherit;font-size:13px;padding:7px 8px;border:none;border-radius:7px;background:none;color:var(--ink);cursor:pointer;margin-top:4px" style-hover="background:var(--paper-2)"><span style="width:8px;height:8px;border-radius:50%;background:var(--man-p10)"></span><b style="font-family:var(--mono);font-size:11px;color:var(--man-p10)">10.7</b><span style="font-weight:600">Medicare Advantage (Part C)</span></button>
+      <button style="display:grid;grid-template-columns:10px 38px minmax(0,1fr);align-items:center;gap:6px;width:100%;text-align:left;font:inherit;font-size:13px;padding:7px 8px;border:none;border-radius:7px;background:none;color:var(--muted-2);cursor:pointer;margin-top:4px" style-hover="background:var(--paper-2)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="M9 13h6M9 17h4"></path></svg><span></span><span style="font-style:italic">Other reference article — unchanged</span></button>
+    </div>
+    <div style="border:1px solid var(--line);border-radius:10px;background:var(--paper-card);padding:18px 22px">
+      <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:12px"><h2 style="margin:0;font-size:1.15rem">Results for "dual submission"</h2></div>
+      <div style="margin-bottom:14px">
+        <button style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;font:inherit;padding:6px 2px;border:none;background:none;color:var(--ink);cursor:pointer">
+          <span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--man-p5);color:var(--paper-card)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"></path></svg></span>
+          <span style="font-family:var(--mono);font-size:11.5px;font-weight:700;padding:2px 6px;border-radius:4px;background:var(--man-p5);color:var(--paper-card)">5.6</span>
+          <span style="font-size:.95rem;font-weight:600">Prior Authorization</span>
+          <span style="margin-left:auto;font-size:.74rem;color:var(--muted)">Manual · Power Mobility</span>
+        </button>
+        <div style="border:1px solid var(--line);border-radius:10px;background:var(--paper);padding:4px 14px 12px;margin:6px 0">
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 0 4px"><span style="font-family:var(--mono);font-size:11px;font-weight:700;color:var(--man-p5)">5.6.2</span><span style="font-size:13px;font-weight:600;color:var(--ink)">Calls from insurance representatives</span><span style="margin-left:auto;font-size:.72rem;border:1px solid var(--line);border-radius:6px;background:var(--paper-2);color:var(--muted);padding:2px 8px">Open ¶</span></div>
+          <div style="margin-top:4px;padding:10px 14px 11px;border-radius:8px;background:var(--info-soft);border:1px solid color-mix(in oklab,var(--info) 35%,transparent);font-size:.9rem;line-height:1.6">
+            <div style="display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--info-deep)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="M9 13h6M9 17h4"></path></svg>Policy</div>
+            <div style="margin-top:3px;font-weight:600"><mark style="background:var(--selection-bg);color:inherit;border-radius:3px;padding:0 1px">Dual submission</mark>.</div>
+            <div>Some PARs are submitted to both traditional (Original) Medicare and the patient's Medicare Advantage plan — the notes say <strong><mark style="background:var(--selection-bg);color:inherit;border-radius:3px;padding:0 1px">dual submission</mark></strong>. If the MA plan denies but Medicare approves, Medicare's approval is sent to the MA plan to support the case for approval.</div>
+          </div>
+        </div>
+      </div>
+      <div style="padding:10px 12px;border:1px dashed var(--line-2);border-radius:8px;font-family:var(--mono);font-size:11px;color:var(--muted-2)">10.7 Medicare Advantage (Part C) — same treatment · other reference articles keep today's look (file icon, no chip)</div>
+    </div>
+  </div>
+  <aside style="width:340px;display:flex;flex-direction:column;gap:10px;font-size:13.5px;line-height:1.55;color:var(--muted)">
+    <div style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-2)">M18 · What changes</div>
+    <p style="margin:0;text-wrap:pretty">Today every hit carries the same file icon, the full department name as grey text, and a mono uppercase chunk heading — a manual hit and a hand-written article read alike. For manual ids only (<code style="font-family:var(--mono);font-size:.9em">kbIsManualId_</code>):</p>
+    <ul style="margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:4px"><li>Tree rows: chapter-colour dot + section number column, the same row shape as M10.</li><li>Group header in the results: chapter badge, number chip, title, "Manual · Power Mobility".</li><li>Chunk heading: coloured sub-section number + title in sentence case (no uppercase).</li><li>Chunk bodies get the round-1 callout and table styles — scope those rules to <code style="font-family:var(--mono);font-size:.9em">.kb-chunk-body[data-kb-man]</code> as well as <code style="font-family:var(--mono);font-size:.9em">.kb-man-part</code>.</li></ul>
+    <p style="margin:0;text-wrap:pretty">Same changes in the Ctrl/⌘+K drawer's results, which share <code style="font-family:var(--mono);font-size:.9em">kbChunkGroupsHtml_</code>. The 10.7 hit is illustrative.</p>
+    <div style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-2)">Small JS · kbRenderSearchResults_, kbChunkGroupsHtml_</div>
+  </aside>
+  </div>
+</div>
+
+<!-- 2e · printed card -->
+<div id="2e" style="display:flex;flex-direction:column;gap:12px">
+  <div style="display:flex;align-items:center;gap:10px">
+    <span style="font-family:var(--mono);font-size:12px;font-weight:700;padding:3px 8px;border-radius:5px;background:var(--ink);color:var(--paper)">2e</span>
+    <span style="font-size:15px;font-weight:600;color:var(--ink)">M19 · Quick reference cards on paper</span>
+    <span style="font-size:13px;color:var(--muted-2)">Letter, front and back. Print colours — the page is white in every theme.</span>
+  </div>
+  <div style="display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap">
+  <div data-screen-label="2e Printed card" style="width:612px;height:792px;background:#fff;box-shadow:var(--shadow-lg);border:1px solid var(--line);padding:34px 40px;display:flex;flex-direction:column;--paper-card:#fff;--paper-2:#fff;--ink:#111;--muted:#444;--muted-2:#555;--line:#c8c8c8;--man-c:#1D46B9;--destructive:#c13030;--danger-deep:#8a1f1f;color:var(--ink);font-family:var(--ui)">
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:8px;background:var(--man-c);color:var(--paper-card)">
+      <span style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;border:1.5px solid var(--paper-card)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"></path></svg></span>
+      <span style="display:flex;flex-direction:column"><span style="font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.12em">CARD 5 · QUICK REFERENCE</span><span style="font-size:20px;font-weight:700;letter-spacing:-.01em">Power Mobility</span></span>
+      <span style="margin-left:auto;font-family:var(--mono);font-size:9.5px;text-align:right;line-height:1.5">CSR Procedures Manual v3.0<br>built 10/07/2026</span>
+    </div>
+    <div style="margin-top:18px;columns:2;column-gap:26px;font-size:11.5px;line-height:1.5;flex:1">
+      <div style="break-inside:avoid;margin-bottom:12px"><div style="font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--man-c);border-bottom:1.5px solid var(--man-c);padding-bottom:2px;margin-bottom:5px">Process</div><ul style="margin:0;padding-left:1.1em"><li style="margin:.2em 0">Power <strong>does not</strong> follow the standard order process — Sales → PAK → Qualifications → PAR → Field Ops-Power</li><li style="margin:.2em 0"><strong>90 days is the national average, and we're faster.</strong> Say so to set expectations, then give the current stage and what it's waiting on</li><li style="margin:.2em 0">ATP scheduling noted as a <strong>"drive-by"</strong> → still transfer to Field Ops-Power</li></ul></div>
+      <div style="break-inside:avoid;margin-bottom:12px"><div style="font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--man-c);border-bottom:1.5px solid var(--man-c);padding-bottom:2px;margin-bottom:5px">Insurance</div><ul style="margin:0;padding-left:1.1em"><li style="margin:.2em 0">An <strong>MA plan is the primary</strong>, not a secondary. Patients get this wrong constantly</li></ul></div>
+      <div style="break-inside:avoid;margin-bottom:12px"><div style="font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--man-c);border-bottom:1.5px solid var(--man-c);padding-bottom:2px;margin-bottom:5px">Equipment</div><ul style="margin:0;padding-left:1.1em"><li style="margin:.2em 0"><strong>POVs are not eligible for ROHO cushions</strong></li><li style="margin:.2em 0"><strong>PWCs often cannot be returned</strong> — custom-built, cannot be reissued; create the ticket anyway once the checks are done, and promise neither outcome</li></ul></div>
+      <div style="break-inside:avoid;margin-bottom:12px"><div style="font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--man-c);border-bottom:1.5px solid var(--man-c);padding-bottom:2px;margin-bottom:5px">Delivery</div><ul style="margin:0;padding-left:1.1em"><li style="margin:.2em 0">PMDs are <strong>not delivered to a hospital, rehab or SNF</strong> — a nursing home that is the permanent residence is fine — and the patient must be present</li></ul></div>
+      <div style="break-inside:avoid;margin-bottom:12px"><div style="font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--man-c);border-bottom:1.5px solid var(--man-c);padding-bottom:2px;margin-bottom:5px">Route</div><ul style="margin:0;padding-left:1.1em"><li style="margin:.2em 0"><strong>Scheduling</strong> — delivery, ATP, service visits → <strong>Field Ops-Power Q (ext 344)</strong></li><li style="margin:.2em 0"><strong>Reporting a problem</strong> with a PMD → <strong>Service Q</strong></li></ul></div>
+    </div>
+    <div style="padding:10px 14px;border:1.5px solid var(--destructive);border-radius:8px;font-size:11.5px;line-height:1.5"><strong style="color:var(--danger-deep);font-family:var(--mono);font-size:10px;letter-spacing:.12em">NEVER</strong> — promise a PWC return or a write-off · call an MA plan a secondary · deliver a PMD to a hospital, rehab or SNF</div>
+    <div style="margin-top:12px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--muted-2)"><span>Full detail: Reference → Chapter 05 Power Mobility</span><span>Card 5 of 11</span></div>
+  </div>
+  <div data-screen-label="2e Printed card back" style="width:612px;height:792px;background:#fff;box-shadow:var(--shadow-lg);border:1px solid var(--line);padding:34px 40px;display:flex;flex-direction:column;--paper-card:#fff;--paper-2:#fff;--ink:#111;--muted:#444;--muted-2:#555;--line:#c8c8c8;--man-c:#1D46B9;--dg-navy:#111;--dg-ink:#111;--dg-bg:#fff;--dg-panel:#fff;--dg-accent:#1e63b8;--dg-tint:#e1ecfa;--dg-muted:#444;--dg-rule:#c8c8c8;--dg-crit-bg:#fce5e5;--dg-crit-ink:#8a1f1f;--dg-pol-bg:#e1ecfa;--dg-pol-ink:#154980;--dg-watch-bg:#fbf1d9;--dg-watch-ink:#8a4500;--dg-scr-bg:#e4f5ec;--dg-scr-ink:#0b6e40;--dg-p4:#1C75A3;--dg-p5:#1D46B9;--dg-p6:#2D7E52;--dg-p8:#19676D;color:var(--ink);font-family:var(--ui)">
+    <div style="display:flex;align-items:center;gap:10px;padding-bottom:8px;border-bottom:1.5px solid var(--man-c)">
+      <span style="font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.12em;color:var(--man-c)">CARD 5 · REVERSE</span>
+      <span style="font-size:15px;font-weight:700">The Power process</span>
+      <span style="margin-left:auto;font-family:var(--mono);font-size:9.5px;color:var(--muted-2)">from 5.1.1</span>
+    </div>
+    <div style="margin-top:16px">{{ dgmPowerPrint }}</div>
+    <div style="margin-top:auto;display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--muted-2)"><span>Print double-sided: card on the front, diagram on the back</span><span>Card 5 of 11 · reverse</span></div>
+  </div>
+  <aside style="width:340px;display:flex;flex-direction:column;gap:10px;font-size:13.5px;line-height:1.55;color:var(--muted)">
+    <div style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-2)">M19 · Print rules</div>
+    <p style="margin:0;text-wrap:pretty">Rides the existing <code style="font-family:var(--mono);font-size:.9em">data-print-one</code> path in <code style="font-family:var(--mono);font-size:.9em">styles.html</code>. When the subject is a card (<code style="font-family:var(--mono);font-size:.9em">man-c-N</code>), print CSS adds: the chapter-colour header band (<code style="font-family:var(--mono);font-size:.9em">print-color-adjust: exact</code>), two columns with each heading group kept whole, the Never line boxed at the foot, and a footer naming the chapter.</p>
+    <p style="margin:0;text-wrap:pretty"><b style="color:var(--ink)">Diagram on the reverse.</b> The Power process (1160×810) would squeeze the card text onto a second page if it shared the front, so a card with a diagram prints it on page 2 at full width (<code style="font-family:var(--mono);font-size:.9em">break-before: page</code> on the card's figure). Double-sided, that is one sheet per card. Sales and Oxygen work the same way.</p>
+    <p style="margin:0;text-wrap:pretty"><b style="color:var(--ink)">Print all cards</b> on the Appendix C page marks every card section <code style="font-family:var(--mono);font-size:.9em">.print-one</code> with <code style="font-family:var(--mono);font-size:.9em">break-after: page</code> — 11 pages, one card each.</p>
+    <p style="margin:0;text-wrap:pretty"><b style="color:var(--ink)">Dark-mode printing fix:</b> the print block forces paper and ink white/black but not <code style="font-family:var(--mono);font-size:.9em">--man-pN</code> or the semantic colours, so a rep printing in dark mode gets the light dark-mode chapter colours on white paper. Re-declare the light values inside <code style="font-family:var(--mono);font-size:.9em">@media print</code> (this matters for every manual print, not just cards).</p>
+    <div style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-2)">CSS + one button · styles.html, kb/script_kb.html</div>
+  </aside>
+  </div>
+</div>
+
+</div>
+</section>
+
+<section id="turn1" data-screen-label="Manual reader proposals" style="padding:56px 56px 96px;display:flex;flex-direction:column;gap:28px;background:var(--paper-3);min-height:100vh">
+
+<header style="max-width:1180px;display:flex;flex-direction:column;gap:10px">
+  <div style="font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-2)">Team Tools · Reference → Procedures manual</div>
+  <h1 style="margin:0;font-family:var(--display);font-size:36px;font-weight:600;letter-spacing:-.02em;line-height:1.15;color:var(--ink)">Manual reader — presentation proposals</h1>
+  <p style="margin:0;max-width:78ch;font-size:15px;line-height:1.6;color:var(--muted);text-wrap:pretty">Mockups of the in-app reader (<code style="font-family:var(--mono);font-size:.9em">kb/script_kb.html</code>), built only from the custom properties in <code style="font-family:var(--mono);font-size:.9em">styles_design_tokens.html</code>, the <code style="font-family:var(--mono);font-size:.9em">--man-pN</code> chapter colours and icons from the existing <code style="font-family:var(--mono);font-size:.9em">icon()</code> set. Switch light/dark, palette and prose width in Tweaks. Content is the real Chapter 5 and Chapter 1 text. Each change is tagged M1–M13 with its ship size; the CSS and JS are in the handoff <code style="font-family:var(--mono);font-size:.9em">README.md</code> beside this file.</p>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
+    <span style="display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:4px;background:var(--accent-soft);color:var(--success-deep)">CSS only · M1–M7</span>
+    <span style="display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:4px;background:var(--info-soft);color:var(--info-deep)">Small JS · M8–M11</span>
+    <span style="display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:4px;background:var(--warn-soft);color:var(--warning-deep)">Larger · M12–M13</span>
+  </div>
+</header>
+
+<div style="display:flex;flex-wrap:wrap;gap:40px;align-items:flex-start">
+
+<!-- ═════════ 1a · Reader, desktop ═════════ -->
+<div id="1a" style="display:flex;flex-direction:column;gap:12px">
+  <div style="display:flex;align-items:center;gap:10px">
+    <span style="font-family:var(--mono);font-size:12px;font-weight:700;padding:3px 8px;border-radius:5px;background:var(--ink);color:var(--paper)">1a</span>
+    <span style="font-size:15px;font-weight:600;color:var(--ink)">Reader · desktop</span>
+    <span style="font-size:13px;color:var(--muted-2)">Scroll the reader — the bar and the tree follow the section you are in. Sections 5.4–5.11 are not drawn.</span>
+  </div>
+  <div style="display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap">
+  <div data-screen-label="1a Reader desktop" style="width:1180px;background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-lg);padding:20px 24px 24px;--man-c:var(--man-p5)">
+    <h1 style="margin:0 0 16px;font-family:var(--display);font-size:28px;font-weight:600;letter-spacing:-.02em;color:var(--ink)">Reference</h1>
+    <div style="display:grid;grid-template-columns:280px minmax(0,1fr);gap:16px;height:760px">
+      <!-- tree -->
+      <div style="display:flex;flex-direction:column;gap:10px;border:1px solid var(--line);border-radius:10px;background:var(--paper-card);padding:12px;overflow:hidden;min-height:0">
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 11px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--muted-2);font-size:13.5px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg>
+          <span>Search, or type 5.9 · card 5</span>
+        </div>
+        <div style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:2px;min-height:0">
+          <div style="font-size:.64rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-2);margin:4px 6px 4px">Procedures manual</div>
+          <button style="display:flex;align-items:center;gap:7px;width:100%;text-align:left;font:inherit;font-size:13.5px;font-weight:600;padding:7px 9px;border:none;border-radius:7px;background:none;color:var(--accent);cursor:pointer" style-hover="background:var(--paper-2)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.37 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.33 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+            What did the caller say?
+          </button>
+
+          <sc-for list="{{ chaptersBefore }}" as="ch" hint-placeholder-count="5">
+            <button style="display:grid;grid-template-columns:14px 16px 20px minmax(0,1fr) auto;align-items:center;gap:6px;width:100%;text-align:left;font:inherit;padding:7px 6px;border:none;border-radius:7px;background:none;cursor:pointer;color:var(--ink)" style-hover="background:var(--paper-2)">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--muted-3)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+              <span style="display:inline-flex;color:{{ ch.color }}">{{ ch.icon }}</span>
+              <span style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--muted-2)">{{ ch.n }}</span>
+              <span style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ ch.name }}</span>
+              <span style="font-family:var(--mono);font-size:10.5px;color:var(--muted-2)">{{ ch.count }}</span>
+            </button>
+          </sc-for>
+
+          <div style="display:grid;grid-template-columns:14px 16px 20px minmax(0,1fr) auto;align-items:center;gap:6px;padding:7px 6px;color:var(--ink)">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--muted-2)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+            <span style="display:inline-flex;color:var(--man-p5)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"></path></svg></span>
+            <span style="font-family:var(--mono);font-size:11px;font-weight:700;color:var(--man-p5)">05</span>
+            <span style="font-size:13px;font-weight:600">Power Mobility</span>
+            <span style="font-family:var(--mono);font-size:10.5px;color:var(--muted-2)">11</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:1px;margin:0 0 6px 20px">
+            <sc-for list="{{ treeSecs }}" as="s" hint-placeholder-count="11">
+              <button onClick="{{ s.go }}" style="display:grid;grid-template-columns:34px minmax(0,1fr) 8px;align-items:baseline;gap:4px;width:100%;text-align:left;font:inherit;padding:6px 8px;border:none;border-radius:6px;cursor:pointer;color:var(--ink);background:{{ s.bg }};box-shadow:{{ s.rail }}">
+                <span style="font-family:var(--mono);font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;color:{{ s.numColor }}">{{ s.num }}</span>
+                <span style="font-size:13px;line-height:1.35;font-weight:{{ s.weight }}">{{ s.title }}</span>
+                <span title="Updated in the last 12 months" style="width:6px;height:6px;border-radius:50%;background:var(--info);align-self:center;display:{{ s.dot }}"></span>
+              </button>
+            </sc-for>
+          </div>
+
+          <sc-for list="{{ chaptersAfter }}" as="ch" hint-placeholder-count="5">
+            <button style="display:grid;grid-template-columns:14px 16px 20px minmax(0,1fr) auto;align-items:center;gap:6px;width:100%;text-align:left;font:inherit;padding:7px 6px;border:none;border-radius:7px;background:none;cursor:pointer;color:var(--ink)" style-hover="background:var(--paper-2)">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--muted-3)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+              <span style="display:inline-flex;color:{{ ch.color }}">{{ ch.icon }}</span>
+              <span style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--muted-2)">{{ ch.n }}</span>
+              <span style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ ch.name }}</span>
+              <span style="font-family:var(--mono);font-size:10.5px;color:var(--muted-2)">{{ ch.count }}</span>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+
+      <!-- reader -->
+      <div ref="{{ setReader }}" onScroll="{{ onReaderScroll }}" style="position:relative;border:1px solid var(--line);border-radius:10px;background:var(--paper-card);overflow-y:auto;min-height:0">
+        <div style="position:sticky;top:0;z-index:3;display:flex;align-items:center;gap:9px;padding:9px 14px 9px 20px;background:var(--paper-card);border-bottom:1px solid var(--line)">
+          <span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--man-c);color:var(--paper-card)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"></path></svg></span>
+          <span style="font-size:13px;color:var(--muted-2);white-space:nowrap">Power Mobility</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--muted-3)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+          <span style="flex:none;font-family:var(--mono);font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;background:var(--man-c);color:var(--paper-card)">{{ curNum }}</span>
+          <span style="font-size:13.5px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">{{ curTitle }}</span>
+          <span style="margin-left:auto;display:flex;align-items:center;gap:4px;flex:none">
+            <button title="Bookmark this section" style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:none;border-radius:6px;background:none;color:var(--muted);cursor:pointer" style-hover="background:var(--paper-2);color:var(--ink)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg></button>
+            <button title="Print just this section" style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:none;border-radius:6px;background:none;color:var(--muted);cursor:pointer" style-hover="background:var(--paper-2);color:var(--ink)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"></path><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg></button>
+            <span style="width:1px;height:18px;background:var(--line);margin:0 4px"></span>
+            <button onClick="{{ goPrev }}" style="display:inline-flex;align-items:center;gap:3px;font:inherit;font-family:var(--mono);font-size:11px;font-weight:600;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--paper-card);color:var(--muted);cursor:pointer" style-hover="background:var(--paper-2);color:var(--ink)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg>{{ prevLabel }}</button>
+            <button onClick="{{ goNext }}" style="display:inline-flex;align-items:center;gap:3px;font:inherit;font-family:var(--mono);font-size:11px;font-weight:600;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--paper-card);color:var(--muted);cursor:pointer" style-hover="background:var(--paper-2);color:var(--ink)">{{ nextLabel }}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg></button>
+          </span>
+        </div>
+
+        <div style="padding:0 36px 40px;max-width:900px">
+          <!-- masthead -->
+          <header style="padding:30px 0 24px;border-bottom:1px solid var(--line)">
+            <div style="font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-2);margin-bottom:10px">Procedures manual · Chapter 05</div>
+            <div style="display:flex;align-items:center;gap:14px">
+              <span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:50%;background:var(--man-c);color:var(--paper-card)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"></path></svg></span>
+              <h2 style="margin:0;font-family:var(--display);font-size:30px;font-weight:600;letter-spacing:-.02em;line-height:1.15;color:var(--ink)">Power Mobility</h2>
+            </div>
+            <div style="margin-top:10px;font-size:12.5px;color:var(--muted-2);display:flex;flex-wrap:wrap;gap:4px 14px">
+              <span>11 sections</span><span>4 updated in the last 12 months</span><span>CSR Procedures Manual v3.0 · built 10/07/2026</span>
+            </div>
+            <div style="margin-top:20px;font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2)">In this chapter</div>
+            <div style="margin-top:8px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:24px">
+              <sc-for list="{{ treeSecs }}" as="s" hint-placeholder-count="11">
+                <button onClick="{{ s.go }}" style="display:grid;grid-template-columns:40px minmax(0,1fr) auto;align-items:baseline;gap:6px;text-align:left;font:inherit;padding:7px 6px;border:none;border-bottom:1px solid var(--line);background:none;cursor:pointer;color:var(--ink)" style-hover="background:var(--paper-2)">
+                  <span style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--man-c);font-variant-numeric:tabular-nums">{{ s.num }}</span>
+                  <span style="font-size:14px">{{ s.title }}</span>
+                  <span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--info-soft);color:var(--info-deep);display:{{ s.dot }}">Updated</span>
+                </button>
+              </sc-for>
+            </div>
+          </header>
+
+          <!-- 5.1 -->
+          <section data-sec="0" style="padding-top:36px">
+            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;padding-bottom:12px;border-bottom:1px solid var(--line)">
+              <span style="font-family:var(--mono);font-size:13px;font-weight:700;padding:3px 8px;border-radius:5px;background:var(--man-c);color:var(--paper-card)">5.1</span>
+              <h2 style="margin:0;font-family:var(--display);font-size:24px;font-weight:600;letter-spacing:-.015em;line-height:1.25;color:var(--ink)">Scope and process</h2>
+            </div>
+            <div style="font-size:15.5px;line-height:1.7;color:var(--ink)">
+              <p style="margin:.9em 0 .6em;max-width:var(--mock-measure,68ch);text-wrap:pretty">Power Mobility covers power wheelchairs (PWC) and power operated vehicles (POV, commonly called scooters). Manual wheelchairs are in <a href="#" style="color:var(--accent);text-decoration-thickness:1px;text-underline-offset:3px;font-family:var(--mono);font-size:.88em;font-weight:600">2.4</a>.</p>
+              <p style="margin:.6em 0;max-width:var(--mock-measure,68ch);text-wrap:pretty">A past PMD patient who wants a <strong>new</strong> PMD — five years after the last one, or sooner with a significant change in condition — starts with Sales, not Power: see <a href="#" style="color:var(--accent);text-decoration-thickness:1px;text-underline-offset:3px;font-family:var(--mono);font-size:.88em;font-weight:600">4.5.1</a>.</p>
+              <h3 style="margin:1.6em 0 .5em;font-family:var(--display);font-size:17px;font-weight:600;line-height:1.3;color:var(--ink)"><span style="color:var(--man-c);font-variant-numeric:tabular-nums;margin-right:.45em">5.1.1</span>The Power process</h3>
+              <p style="margin:.6em 0;max-width:var(--mock-measure,68ch)"><strong>Sales → Power (PAK → Qualifications → PAR) → Field Ops-Power</strong></p>
+              <figure style="margin:1em 0;height:150px;border:1px solid var(--line);border-radius:10px;background:repeating-linear-gradient(135deg,var(--paper-2) 0 8px,var(--paper-card) 8px 16px);display:flex;align-items:center;justify-content:center">
+                <figcaption style="font-family:var(--mono);font-size:11px;color:var(--muted-2);background:var(--paper-card);padding:4px 8px;border-radius:4px">diagram · power-process (unchanged)</figcaption>
+              </figure>
+              <div style="overflow-x:auto;margin:1em 0 1.25em">
+                <table style="border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.55">
+                  <thead><tr>
+                    <th style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2);text-align:left;padding:6px 14px 7px 0;border-bottom:1px solid var(--border-strong);width:34%">Phase</th>
+                    <th style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2);text-align:left;padding:6px 14px 7px 0;border-bottom:1px solid var(--border-strong)">What happens</th>
+                    <th style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2);text-align:left;padding:6px 0 7px 0;border-bottom:1px solid var(--border-strong)">Sections</th>
+                  </tr></thead>
+                  <tbody>
+                    <tr><td style="padding:10px 14px 10px 0;border-bottom:1px solid var(--line);vertical-align:top;font-weight:600"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--success-deep);margin-right:8px"></span>Sales and eligibility</td><td style="padding:10px 14px 10px 0;border-bottom:1px solid var(--line);vertical-align:top">Insurance confirmed, evaluation booked. Moves on at <strong>Eligible</strong></td><td style="padding:10px 0;border-bottom:1px solid var(--line);vertical-align:top"><a href="#" style="color:var(--accent);text-decoration-thickness:1px;text-underline-offset:3px;font-family:var(--mono);font-size:.88em;font-weight:600">4.4</a></td></tr>
+                    <tr><td style="padding:10px 14px 10px 0;border-bottom:1px solid var(--line);vertical-align:top;font-weight:600"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--man-p4);margin-right:8px"></span>1 · Intake and education — PAK</td><td style="padding:10px 14px 10px 0;border-bottom:1px solid var(--line);vertical-align:top">PPD interview, Medical Assistant Education, appointment. Ends when the F2F and PAK are received</td><td style="padding:10px 0;border-bottom:1px solid var(--line);vertical-align:top"><a href="#" style="color:var(--accent);text-decoration-thickness:1px;text-underline-offset:3px;font-family:var(--mono);font-size:.88em;font-weight:600">5.2</a></td></tr>
+                    <tr><td style="padding:10px 14px 10px 0;border-bottom:1px solid var(--line);vertical-align:top;font-weight:600"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--man-p9);margin-right:8px"></span>2 · Qualifications</td><td style="padding:10px 14px 10px 0;border-bottom:1px solid var(--line);vertical-align:top">Documents reviewed and requested — with PT and ATP evaluations <strong>alongside, if needed</strong></td><td style="padding:10px 0;border-bottom:1px solid var(--line);vertical-align:top;white-space:nowrap"><a href="#" style="color:var(--accent);text-decoration-thickness:1px;text-underline-offset:3px;font-family:var(--mono);font-size:.88em;font-weight:600">5.3</a> · <a href="#" style="color:var(--accent);text-decoration-thickness:1px;text-underline-offset:3px;font-family:var(--mono);font-size:.88em;font-weight:600">5.4</a> · <a href="#" style="color:var(--accent);text-decoration-thickness:1px;text-underline-offset:3px;font-family:var(--mono);font-size:.88em;font-weight:600">5.5</a></td></tr>
+                    <tr><td style="padding:10px 14px 10px 0;border-bottom:1px solid var(--line);vertical-align:top;font-weight:600"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--man-p7);margin-right:8px"></span>3 · Verification &amp; authorization</td><td style="padding:10px 14px 10px 0;border-bottom:1px solid var(--line);vertical-align:top">Order verification <strong>any time before ordering</strong>, then PAR packet prep and submission. Appeals if denied</td><td style="padding:10px 0;border-bottom:1px solid var(--line);vertical-align:top;white-space:nowrap"><a href="#" style="color:var(--accent);text-decoration-thickness:1px;text-underline-offset:3px;font-family:var(--mono);font-size:.88em;font-weight:600">5.6</a> · <a href="#" style="color:var(--accent);text-decoration-thickness:1px;text-underline-offset:3px;font-family:var(--mono);font-size:.88em;font-weight:600">5.7</a></td></tr>
+                    <tr><td style="padding:10px 14px 10px 0;vertical-align:top;font-weight:600"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--man-p5);margin-right:8px"></span>4 · Delivery (Field Ops Power)</td><td style="padding:10px 14px 10px 0;vertical-align:top">Manufacturer order, 2–3 weeks to the warehouse, scheduling, delivery</td><td style="padding:10px 0;vertical-align:top"><a href="#" style="color:var(--accent);text-decoration-thickness:1px;text-underline-offset:3px;font-family:var(--mono);font-size:.88em;font-weight:600">5.8</a></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <p style="margin:.6em 0;max-width:var(--mock-measure,68ch);text-wrap:pretty">An order enters Power once Sales confirms insurance compatibility and an appointment with a qualified provider is set. It leaves Power once authorization approval is received and it is pushed to Field Ops-Power.</p>
+              <h3 style="margin:1.6em 0 .5em;font-family:var(--display);font-size:17px;font-weight:600;line-height:1.3;color:var(--ink)"><span style="color:var(--man-c);font-variant-numeric:tabular-nums;margin-right:.45em">5.1.2</span>Timeline expectations</h3>
+              <p style="margin:.6em 0;max-width:var(--mock-measure,68ch);text-wrap:pretty">The national average turnaround for a PWC is about 90 days, and UMS is typically faster. Actual times vary widely — under 30 days to over a year — depending on provider responsiveness, insurance type, and patient circumstances.</p>
+              <div style="margin:1em 0 1.1em;max-width:var(--mock-measure,68ch);padding:12px 16px 13px;border-radius:8px;background:var(--paper-2);border:1px solid var(--line)">
+                <div style="display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 16v-4M12 8h.01"></path></svg>Note</div>
+                <div style="margin-top:4px;font-weight:600">Using the 90 days.</div>
+                <p style="margin:.3em 0 0;text-wrap:pretty">Quoting the 90-day national turnaround alongside our faster average can help set accurate expectations for a caller who expects the order to be done in a few days. Then give the current stage and what it's waiting on — a patient told "90 days" at day 200 has been given a number, not an answer.</p>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-top:24px;font-size:12.5px;color:var(--muted-2)">
+              <span style="margin-right:4px">Was this helpful?</span>
+              <button style="display:inline-flex;align-items:center;gap:5px;font:inherit;padding:4px 8px;border:none;border-radius:6px;background:none;color:var(--muted);cursor:pointer" style-hover="background:var(--paper-2);color:var(--ink)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3z"></path><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg>Yes</button>
+              <button style="display:inline-flex;align-items:center;gap:5px;font:inherit;padding:4px 8px;border:none;border-radius:6px;background:none;color:var(--muted);cursor:pointer" style-hover="background:var(--paper-2);color:var(--ink)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3z"></path><path d="M17 2h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"></path></svg>No</button>
+              <button style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;font:inherit;padding:4px 8px;border:none;border-radius:6px;background:none;color:var(--muted);cursor:pointer" style-hover="background:var(--paper-2);color:var(--ink)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22V4"></path><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V4s-1 1-4 1-5-2-8-2-4 1-4 1"></path></svg>Suggest an edit</button>
+            </div>
+          </section>
+
+          <!-- 5.2 -->
+          <section data-sec="1" style="padding-top:36px">
+            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;padding-bottom:12px;border-bottom:1px solid var(--line)">
+              <span style="font-family:var(--mono);font-size:13px;font-weight:700;padding:3px 8px;border-radius:5px;background:var(--man-c);color:var(--paper-card)">5.2</span>
+              <h2 style="margin:0;font-family:var(--display);font-size:24px;font-weight:600;letter-spacing:-.015em;line-height:1.25;color:var(--ink)">PAK (Pre-Appointment Kit)</h2>
+              <span title="5.2.2 — MA Education is now written Medical Assistant Education; in the manual, MA means only Medicare Advantage." style="margin-left:auto;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--info-soft);color:var(--info-deep);white-space:nowrap">Updated 10/07/2026</span>
+            </div>
+            <div style="font-size:15.5px;line-height:1.7;color:var(--ink)">
+              <p style="margin:.9em 0 .6em;max-width:var(--mock-measure,68ch);text-wrap:pretty">The PAK stage is about understanding the patient's mobility needs, preparing the packet of documents that is sent to the <span title="Medical Doctor's Office" style="border-bottom:1px dotted var(--muted-3);cursor:help">MDO</span> before the upcoming Mobility Evaluation appointment, and making sure the MDO understands what needs to be done.</p>
+              <h3 style="margin:1.6em 0 .5em;font-family:var(--display);font-size:17px;font-weight:600;line-height:1.3;color:var(--ink)"><span style="color:var(--man-c);font-variant-numeric:tabular-nums;margin-right:.45em">5.2.1</span>PPD (Patient Provided Data)</h3>
+              <p style="margin:.6em 0;max-width:var(--mock-measure,68ch);text-wrap:pretty">The first stage of the Power process. Once eligibility is confirmed and an appointment set, Sales assigns the order to a PPD team member for a roughly 15-minute PPD Interview covering the patient's mobility issues, PMD options, and the process overall.</p>
+              <div style="display:flex;align-items:center;gap:8px;margin:.8em 0;max-width:var(--mock-measure,68ch);padding:7px 10px;border:1px dashed var(--line-2);border-radius:6px;font-size:12.5px;color:var(--muted-2)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="M9 13h6M9 17h4"></path></svg><span><b style="color:var(--muted);font-weight:600">Figure pending</b> — PPD note template — no image in the sanitized export</span></div>
+              <p style="margin:.6em 0;max-width:var(--mock-measure,68ch);text-wrap:pretty">If the order clears this step, the team member creates the PAK documents and sends them to the MDO for the appointment date. The Medical Assistant Education team then contacts the MDO to confirm the PAK was received, and to discuss those documents with the doctor, Medical Assistant, or Nurse.</p>
+              <p style="margin:.6em 0;max-width:var(--mock-measure,68ch);text-wrap:pretty">After the PPD, the PAK team sends the patient a link to an optional consent form and AOR form, used for an appeal if the order is later denied.</p>
+              <div style="margin:1em 0 1.1em;max-width:var(--mock-measure,68ch);padding:12px 16px 13px;border-radius:8px;background:var(--warn-soft);border:1px solid color-mix(in oklab,var(--warn) 35%,transparent)">
+                <div style="display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--warning-deep)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><path d="M12 9v4M12 17h.01"></path></svg>Watch-out</div>
+                <div style="margin-top:4px;font-weight:600">The Seating Evaluation mistake.</div>
+                <p style="margin:.3em 0 0;text-wrap:pretty">The PAK includes a pre-filled SE watermarked "Patient Provided Data" as a reference guideline (based on the patient's PPD responses and insurance guidelines), followed by two blank SE pages for the provider to complete from their own assessment. MDOs frequently return the pre-filled pages instead of completing the blank ones, so it is worth clarifying how that is meant to be completed.</p>
+              </div>
+              <h3 style="margin:1.6em 0 .5em;font-family:var(--display);font-size:17px;font-weight:600;line-height:1.3;color:var(--ink)"><span style="color:var(--man-c);font-variant-numeric:tabular-nums;margin-right:.45em">5.2.2</span>Medical Assistant Education</h3>
+              <p style="margin:.6em 0;max-width:var(--mock-measure,68ch);text-wrap:pretty">After the PAK documents are sent, the Medical Assistant Education team contacts the MDO's office — the doctor, medical assistant or nurse — about them — see <a href="#" style="color:var(--accent);text-decoration-thickness:1px;text-underline-offset:3px;font-family:var(--mono);font-size:.88em;font-weight:600">5.2.1</a>.</p>
+              <p style="margin:1.1em 0 .4em;max-width:var(--mock-measure,68ch)"><strong>When the Medical Assistant Education team is unavailable</strong></p>
+              <div style="overflow-x:auto;margin:.4em 0 1.25em">
+                <table style="border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.55">
+                  <thead><tr>
+                    <th style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2);text-align:left;padding:6px 14px 7px 0;border-bottom:1px solid var(--border-strong);width:34%">Situation</th>
+                    <th style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2);text-align:left;padding:6px 0 7px;border-bottom:1px solid var(--border-strong)">Action</th>
+                  </tr></thead>
+                  <tbody>
+                    <tr><td style="padding:10px 14px 10px 0;border-bottom:1px solid var(--line);vertical-align:top;font-weight:600">Several days until the appointment</td><td style="padding:10px 0;border-bottom:1px solid var(--line);vertical-align:top">Tell the MDO an associate will call back to go over the paperwork</td></tr>
+                    <tr><td style="padding:10px 14px 10px 0;vertical-align:top;font-weight:600">Appointment is same-day, no Medical Assistant Education available</td><td style="padding:10px 0;vertical-align:top">Advise the MDO directly — see the four points below</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <p style="margin:.6em 0;max-width:var(--mock-measure,68ch)">For a same-day appointment, tell the MDO:</p>
+              <ol style="margin:.5em 0;padding-left:1.5em;max-width:var(--mock-measure,68ch)">
+                <li style="margin:.3em 0">Complete the paperwork per the written instructions during the visit</li>
+                <li style="margin:.3em 0">The purpose of the visit must be a <strong>Power Mobility Device Evaluation</strong></li>
+                <li style="margin:.3em 0">SE pages watermarked "Patient Provided Data" are reference only — complete the blank copies</li>
+                <li style="margin:.3em 0">Complete and return the documents, or give us an update as soon as they are able</li>
+                <li style="margin:.3em 0">If the provider decides to refer the patient to a PT/OT for this, that's fine — but we'll then need a <strong>PT/OT Eval Rx</strong> for the insurance. We can help the patient through that process with whichever PT/OT they're referred to or already use, or help them find an eligible local service. See <a href="#" style="color:var(--accent);text-decoration-thickness:1px;text-underline-offset:3px;font-family:var(--mono);font-size:.88em;font-weight:600">5.4</a></li>
+              </ol>
+              <h3 style="margin:1.6em 0 .5em;font-family:var(--display);font-size:17px;font-weight:600;line-height:1.3;color:var(--ink)"><span style="color:var(--man-c);font-variant-numeric:tabular-nums;margin-right:.45em">5.2.3</span>New appointment</h3>
+              <p style="margin:.6em 0;max-width:var(--mock-measure,68ch)">Involved only when the patient needs to reschedule the Mobility Evaluation. Common reasons:</p>
+              <ul style="margin:.5em 0;padding-left:1.5em;max-width:var(--mock-measure,68ch)">
+                <li style="margin:.25em 0">The original appointment wasn't specifically for a PMD Evaluation</li>
+                <li style="margin:.25em 0">The <span title="Face-to-Face Evaluation. Also called clinical notes or progress notes" style="border-bottom:1px dotted var(--muted-3);cursor:help">F2F</span> is over 6 months old</li>
+                <li style="margin:.25em 0">The provider says they or the patient don't qualify</li>
+              </ul>
+              <p style="margin:.6em 0;max-width:var(--mock-measure,68ch);text-wrap:pretty">Ask whether the patient has made a new appointment. If yes, note the date, time, and provider. If no, explain why it's needed, and advise they schedule the appointment and call us back with the details. Contact one of the PAK Appointment Scheduling sub-team members — <a href="#" style="color:var(--accent);text-decoration-thickness:1px;text-decoration-color:color-mix(in oklab,var(--accent) 50%,transparent);text-underline-offset:3px">PAK Appointment Scheduling</a> — if further assistance is needed.</p>
+              <h3 style="margin:1.6em 0 .5em;font-family:var(--display);font-size:17px;font-weight:600;line-height:1.3;color:var(--ink)"><span style="color:var(--man-c);font-variant-numeric:tabular-nums;margin-right:.45em">5.2.4</span>Appointment passed</h3>
+              <p style="margin:.6em 0;max-width:var(--mock-measure,68ch);text-wrap:pretty">When the Mobility Evaluation date has passed but the F2F and PAK documents haven't been returned, this sub-team contacts the MDO and the patient to confirm the appointment took place, and requests the pending paperwork if so.</p>
+              <div style="margin:1em 0 1.1em;max-width:var(--mock-measure,68ch);padding:12px 16px 13px;border-radius:8px;background:var(--paper-2);border:1px solid var(--line)">
+                <div style="display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 16v-4M12 8h.01"></path></svg>Note</div>
+                <p style="margin:.4em 0 0;text-wrap:pretty">If the note reads "Trying to Obtain After Visit Documents," confirm the visit was completed specifically for a PMD Evaluation. We are most likely requesting the F2F and the completed PAK documents. Confirm the fax number and re-fax if needed.</p>
+              </div>
+              <p style="margin:.6em 0;max-width:var(--mock-measure,68ch)">Once the PAK documents and F2F are confirmed received, the order is pushed to Qualifications.</p>
+            </div>
+            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-top:24px;font-size:12.5px;color:var(--muted-2)">
+              <span style="margin-right:4px">Was this helpful?</span>
+              <button style="display:inline-flex;align-items:center;gap:5px;font:inherit;padding:4px 8px;border:none;border-radius:6px;background:none;color:var(--muted);cursor:pointer" style-hover="background:var(--paper-2);color:var(--ink)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3z"></path><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg>Yes</button>
+              <button style="display:inline-flex;align-items:center;gap:5px;font:inherit;padding:4px 8px;border:none;border-radius:6px;background:none;color:var(--muted);cursor:pointer" style-hover="background:var(--paper-2);color:var(--ink)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3z"></path><path d="M17 2h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"></path></svg>No</button>
+              <button style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;font:inherit;padding:4px 8px;border:none;border-radius:6px;background:none;color:var(--muted);cursor:pointer" style-hover="background:var(--paper-2);color:var(--ink)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22V4"></path><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V4s-1 1-4 1-5-2-8-2-4 1-4 1"></path></svg>Suggest an edit</button>
+            </div>
+          </section>
+
+          <!-- 5.3 -->
+          <section data-sec="2" style="padding-top:36px">
+            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;padding-bottom:12px;border-bottom:1px solid var(--line)">
+              <span style="font-family:var(--mono);font-size:13px;font-weight:700;padding:3px 8px;border-radius:5px;background:var(--man-c);color:var(--paper-card)">5.3</span>
+              <h2 style="margin:0;font-family:var(--display);font-size:24px;font-weight:600;letter-spacing:-.015em;line-height:1.25;color:var(--ink)">Qualifications</h2>
+            </div>
+            <div style="font-size:15.5px;line-height:1.7;color:var(--ink)">
+              <p style="margin:.9em 0 .6em;max-width:var(--mock-measure,68ch);text-wrap:pretty">Once the F2F and PAK documents arrive, the Qualifications team reviews them and requests corrections or additional information per insurance guidelines. MDOs can often be unresponsive, so this team follows up regularly until all of the necessary documents are received.</p>
+              <h3 style="margin:1.6em 0 .5em;font-family:var(--display);font-size:17px;font-weight:600;line-height:1.3;color:var(--ink)"><span style="color:var(--man-c);font-variant-numeric:tabular-nums;margin-right:.45em">5.3.1</span>Status update calls</h3>
+              <p style="margin:.6em 0;max-width:var(--mock-measure,68ch)">Most Power calls are status updates, and most of those are about documentation we've requested from the MDO.</p>
+              <p style="margin:.6em 0;max-width:var(--mock-measure,68ch);text-wrap:pretty"><strong>Always check:</strong> open the <code style="background:var(--paper-2);padding:1px 5px;border-radius:4px;font-family:var(--mono);font-size:.86em">Transaction</code> tab and click <strong>Fax History</strong>, then open the most recent fax sent. Compare the documentation request against the most recent artifacts received, and explain any obvious discrepancy — a missing signature, the wrong provider, an incomplete form.</p>
+              <h3 style="margin:1.6em 0 .5em;font-family:var(--display);font-size:17px;font-weight:600;line-height:1.3;color:var(--ink)"><span style="color:var(--man-c);font-variant-numeric:tabular-nums;margin-right:.45em">5.3.2</span>Documentation request older than 3 days</h3>
+              <p style="margin:.6em 0;max-width:var(--mock-measure,68ch)">In order:</p>
+              <ol style="margin:.5em 0;padding-left:1.5em;max-width:var(--mock-measure,68ch)">
+                <li style="margin:.3em 0">Confirm the fax number and ask for a backup number, then re-fax</li>
+                <li style="margin:.3em 0">If the MDO is hard to reach, ask whether they can receive it by secure email — if so, you must enable Virtru protection</li>
+                <li style="margin:.3em 0">Last resort: email the request to the patient, or have a Power team member physically mail the documents to the patient to bring to the MDO in person</li>
+              </ol>
+              <h3 style="margin:1.6em 0 .5em;font-family:var(--display);font-size:17px;font-weight:600;line-height:1.3;color:var(--ink)"><span style="color:var(--man-c);font-variant-numeric:tabular-nums;margin-right:.45em">5.3.3</span>Qualified Lead (QL)</h3>
+              <p style="margin:.6em 0;max-width:var(--mock-measure,68ch);text-wrap:pretty">A patient who has already completed a valid Mobility Evaluation is a Qualified Lead. Once Sales Eligibility confirms eligibility, the order goes directly to <a href="#" style="color:var(--accent);text-decoration-thickness:1px;text-decoration-color:color-mix(in oklab,var(--accent) 50%,transparent);text-underline-offset:3px">T3Q (Qualifications sub-team)</a>, skipping the PAK stage. <strong>A PPD is still conducted</strong> — directly by a member of the Qualifications team rather than the PAK stage's PPD sub-team — and the order continues through Qualifications.</p>
+              <p style="margin:.6em 0;max-width:var(--mock-measure,68ch)">If the Mobility Evaluation is scheduled for a future date, the order follows the standard PAK process instead.</p>
+            </div>
+            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-top:24px;font-size:12.5px;color:var(--muted-2)">
+              <span style="margin-right:4px">Was this helpful?</span>
+              <button style="display:inline-flex;align-items:center;gap:5px;font:inherit;padding:4px 8px;border:none;border-radius:6px;background:none;color:var(--muted);cursor:pointer" style-hover="background:var(--paper-2);color:var(--ink)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3z"></path><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg>Yes</button>
+              <button style="display:inline-flex;align-items:center;gap:5px;font:inherit;padding:4px 8px;border:none;border-radius:6px;background:none;color:var(--muted);cursor:pointer" style-hover="background:var(--paper-2);color:var(--ink)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3z"></path><path d="M17 2h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"></path></svg>No</button>
+              <button style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;font:inherit;padding:4px 8px;border:none;border-radius:6px;background:none;color:var(--muted);cursor:pointer" style-hover="background:var(--paper-2);color:var(--ink)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22V4"></path><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V4s-1 1-4 1-5-2-8-2-4 1-4 1"></path></svg>Suggest an edit</button>
+            </div>
+          </section>
+
+          <div style="margin:36px 0 0;padding:12px 0;border-top:1px dashed var(--line-2);font-family:var(--mono);font-size:11px;color:var(--muted-2);text-align:center">5.4 – 5.11 not drawn in this mockup · end of chapter ↓</div>
+
+          <!-- M11 end-of-chapter -->
+          <nav style="margin-top:20px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
+            <a href="#" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid var(--line);border-radius:10px;text-decoration:none;color:var(--ink)" style-hover="border-color:var(--border-strong);background:var(--paper-2)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted-2)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg>
+              <span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:var(--man-p4);color:var(--paper-card)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><path d="M8 11h8"></path><path d="M8 15h6"></path></svg></span>
+              <span style="display:flex;flex-direction:column"><span style="font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-2)">Previous · Chapter 04</span><span style="font-size:15px;font-weight:600">Sales</span></span>
+            </a>
+            <a href="#" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid var(--line);border-radius:10px;text-decoration:none;color:var(--ink);justify-content:flex-end;text-align:right" style-hover="border-color:var(--border-strong);background:var(--paper-2)">
+              <span style="display:flex;flex-direction:column"><span style="font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-2)">Next · Chapter 06</span><span style="font-size:15px;font-weight:600">Field Operations</span></span>
+              <span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:var(--man-p6);color:var(--paper-card)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"></path><path d="M15 18H9"></path><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"></path><circle cx="17" cy="18" r="2"></circle><circle cx="7" cy="18" r="2"></circle></svg></span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted-2)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+            </a>
+          </nav>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- notes 1a -->
+  <aside style="width:340px;display:flex;flex-direction:column;gap:14px;font-size:13.5px;line-height:1.55;color:var(--muted)">
+    <div style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-2)">What changed in 1a</div>
+    <sc-for list="{{ notes1a }}" as="n" hint-placeholder-count="8">
+      <div style="display:grid;grid-template-columns:36px minmax(0,1fr);gap:8px;padding-bottom:12px;border-bottom:1px solid var(--line)">
+        <span style="font-family:var(--mono);font-size:11px;font-weight:700;color:var(--ink)">{{ n.id }}</span>
+        <div><div style="font-weight:600;color:var(--ink)">{{ n.t }}</div><div style="text-wrap:pretty">{{ n.d }}</div><div style="margin-top:4px;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-2)">{{ n.size }}</div></div>
+      </div>
+    </sc-for>
+  </aside>
+  </div>
+</div>
+
+<!-- ═════════ 1b · Pop-out ═════════ -->
+<div id="1b" style="display:flex;flex-direction:column;gap:12px">
+  <div style="display:flex;align-items:center;gap:10px">
+    <span style="font-family:var(--mono);font-size:12px;font-weight:700;padding:3px 8px;border-radius:5px;background:var(--ink);color:var(--paper)">1b</span>
+    <span style="font-size:15px;font-weight:600;color:var(--ink)">Reader · compact pop-out</span>
+    <span style="font-size:13px;color:var(--muted-2)">Click Contents.</span>
+  </div>
+  <div style="display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap">
+  <div data-screen-label="1b Pop-out reader" style="position:relative;width:400px;height:780px;background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-lg);overflow:hidden;display:flex;flex-direction:column;--man-c:var(--man-p5)">
+    <div style="display:flex;gap:8px;padding:12px 12px 10px">
+      <div style="flex:1;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper-card);color:var(--muted-2);font-size:13.5px;min-width:0">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Search, or type 5.9</span>
+      </div>
+      <button onClick="{{ openSheet }}" style="flex:none;display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:13px;font-weight:600;padding:0 12px;min-height:38px;border:1px solid var(--line);border-radius:8px;background:var(--paper-card);color:var(--ink);cursor:pointer" style-hover="border-color:var(--border-strong)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"></path></svg>Contents</button>
+    </div>
+    <div style="flex:1;min-height:0;margin:0 12px 12px;border:1px solid var(--line);border-radius:10px;background:var(--paper-card);overflow-y:auto;position:relative">
+      <div style="position:sticky;top:0;z-index:2;background:var(--paper-card);border-bottom:1px solid var(--line)">
+        <div style="display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--line);background:var(--paper-2)">
+          <button style="display:inline-flex;align-items:center;gap:4px;max-width:100%;font:inherit;font-size:12px;padding:3px 9px;border:1px solid var(--line);border-radius:999px;background:var(--paper-card);color:var(--ink);cursor:pointer"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg>Back to <b style="font-family:var(--mono);color:var(--accent)">1.1</b> <span style="color:var(--muted)">Call router</span></button>
+        </div>
+        <div style="display:flex;align-items:center;gap:7px;padding:8px 6px 8px 12px">
+          <span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--man-c);color:var(--paper-card)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"></path></svg></span>
+          <span style="flex:none;font-family:var(--mono);font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;background:var(--man-c);color:var(--paper-card)">5.2</span>
+          <span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">PAK (Pre-Appointment Kit)</span>
+          <span style="margin-left:auto;display:flex;flex:none">
+            <button title="Previous section · 5.1" style="display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border:none;border-radius:8px;background:none;color:var(--muted);cursor:pointer" style-hover="background:var(--paper-2)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg></button>
+            <button title="Next section · 5.3" style="display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border:none;border-radius:8px;background:none;color:var(--muted);cursor:pointer" style-hover="background:var(--paper-2)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg></button>
+          </span>
+        </div>
+      </div>
+      <div style="padding:6px 16px 24px;font-size:15px;line-height:1.65;color:var(--ink)">
+        <h3 style="margin:1em 0 .45em;font-family:var(--display);font-size:16px;font-weight:600;line-height:1.3"><span style="color:var(--man-c);margin-right:.45em">5.2.1</span>PPD (Patient Provided Data)</h3>
+        <p style="margin:.5em 0;text-wrap:pretty">The first stage of the Power process. Once eligibility is confirmed and an appointment set, Sales assigns the order to a PPD team member for a roughly 15-minute PPD Interview covering the patient's mobility issues, PMD options, and the process overall.</p>
+        <div style="margin:1em 0;padding:11px 13px 12px;border-radius:8px;background:var(--warn-soft);border:1px solid color-mix(in oklab,var(--warn) 35%,transparent)">
+          <div style="display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--warning-deep)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><path d="M12 9v4M12 17h.01"></path></svg>Watch-out</div>
+          <div style="margin-top:4px;font-weight:600">The Seating Evaluation mistake.</div>
+          <p style="margin:.3em 0 0;text-wrap:pretty">MDOs frequently return the pre-filled pages instead of completing the blank ones, so it is worth clarifying how that is meant to be completed.</p>
+        </div>
+        <h3 style="margin:1.4em 0 .45em;font-family:var(--display);font-size:16px;font-weight:600;line-height:1.3"><span style="color:var(--man-c);margin-right:.45em">5.2.2</span>Medical Assistant Education</h3>
+        <p style="margin:.5em 0 .4em"><strong>When the Medical Assistant Education team is unavailable</strong></p>
+        <div style="display:flex;flex-direction:column;border-top:1px solid var(--border-strong)">
+          <div style="padding:9px 0;border-bottom:1px solid var(--line)"><div style="font-weight:600">Several days until the appointment</div><div>Tell the MDO an associate will call back to go over the paperwork</div></div>
+          <div style="padding:9px 0;border-bottom:1px solid var(--line)"><div style="font-weight:600">Appointment is same-day, no Medical Assistant Education available</div><div>Advise the MDO directly — see the four points below</div></div>
+        </div>
+        <div style="margin-top:6px;font-family:var(--mono);font-size:10px;color:var(--muted-2)">↑ a two-column Situation | Action table stacks under ~480px (M3)</div>
+      </div>
+    </div>
+
+    <sc-if value="{{ sheetOpen }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closeSheet }}" style="position:absolute;inset:0;background:color-mix(in oklab,var(--ink) 38%,transparent);z-index:10"></div>
+      <div role="dialog" aria-label="Contents" style="position:absolute;left:10px;right:10px;top:56px;bottom:10px;z-index:11;background:var(--paper-card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-lg);display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 8px 10px 14px;border-bottom:1px solid var(--line)">
+          <span style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-2);flex:1">Contents</span>
+          <button onClick="{{ closeSheet }}" aria-label="Close" style="display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border:none;border-radius:8px;background:none;color:var(--muted);cursor:pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+        </div>
+        <button style="display:flex;align-items:center;gap:10px;margin:10px 12px 4px;padding:10px 12px;min-height:48px;border:1px solid var(--line);border-radius:8px;background:var(--paper);font:inherit;color:var(--ink);cursor:pointer;text-align:left">
+          <span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:var(--man-c);color:var(--paper-card)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"></path></svg></span>
+          <span style="flex:1;display:flex;flex-direction:column"><span style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-2)">Chapter 05</span><span style="font-size:14px;font-weight:600">Power Mobility</span></span>
+          <span style="font-size:12px;color:var(--muted-2)">Change</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted-2)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div style="flex:1;overflow-y:auto;padding:4px 12px 12px">
+          <sc-for list="{{ popRows }}" as="s" hint-placeholder-count="11">
+            <button onClick="{{ closeSheet }}" style="display:grid;grid-template-columns:40px minmax(0,1fr) 8px;align-items:center;gap:6px;width:100%;min-height:44px;text-align:left;font:inherit;padding:6px 8px;border:none;border-bottom:1px solid var(--line);background:{{ s.bg }};color:var(--ink);cursor:pointer">
+              <span style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--man-c)">{{ s.num }}</span>
+              <span style="font-size:14px;font-weight:{{ s.weight }}">{{ s.title }}</span>
+              <span style="width:6px;height:6px;border-radius:50%;background:var(--info);display:{{ s.dot }}"></span>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+  <aside style="width:340px;display:flex;flex-direction:column;gap:14px;font-size:13.5px;line-height:1.55;color:var(--muted)">
+    <div style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-2)">What changed in 1b</div>
+    <sc-for list="{{ notes1b }}" as="n" hint-placeholder-count="4">
+      <div style="display:grid;grid-template-columns:36px minmax(0,1fr);gap:8px;padding-bottom:12px;border-bottom:1px solid var(--line)">
+        <span style="font-family:var(--mono);font-size:11px;font-weight:700;color:var(--ink)">{{ n.id }}</span>
+        <div><div style="font-weight:600;color:var(--ink)">{{ n.t }}</div><div style="text-wrap:pretty">{{ n.d }}</div><div style="margin-top:4px;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-2)">{{ n.size }}</div></div>
+      </div>
+    </sc-for>
+  </aside>
+  </div>
+</div>
+
+<!-- ═════════ 1c · Loading ═════════ -->
+<div id="1c" style="display:flex;flex-direction:column;gap:12px">
+  <div style="display:flex;align-items:center;gap:10px">
+    <span style="font-family:var(--mono);font-size:12px;font-weight:700;padding:3px 8px;border-radius:5px;background:var(--ink);color:var(--paper)">1c</span>
+    <span style="font-size:15px;font-weight:600;color:var(--ink)">First open of a chapter · loading</span>
+  </div>
+  <div style="display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap">
+  <div data-screen-label="1c Chapter loading" style="width:640px;background:var(--paper-card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow-lg);overflow:hidden;--man-c:var(--man-p8)">
+    <div style="display:flex;align-items:center;gap:9px;padding:9px 14px 9px 20px;border-bottom:1px solid var(--line)">
+      <span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--man-c);color:var(--paper-card)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11a4 4 0 0 1 8 0v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2z"></path><path d="M10 7V4h2v3"></path><path d="M8.5 3h5"></path><path d="M12 5.5h3"></path><circle cx="17" cy="5.5" r="2"></circle><path d="M7 14h8"></path></svg></span>
+      <span style="font-size:13px;color:var(--muted-2)">Oxygen</span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--muted-3)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+      <span style="font-family:var(--mono);font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;background:var(--man-c);color:var(--paper-card)">8.6</span>
+      <span style="font-size:13.5px;font-weight:600">Concentrator troubleshooting</span>
+    </div>
+    <div style="padding:26px 30px 30px">
+      <div style="font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-2);margin-bottom:10px">Procedures manual · Chapter 08</div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:50%;background:var(--man-c);color:var(--paper-card)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11a4 4 0 0 1 8 0v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2z"></path><path d="M10 7V4h2v3"></path><path d="M8.5 3h5"></path><path d="M12 5.5h3"></path><circle cx="17" cy="5.5" r="2"></circle><path d="M7 14h8"></path></svg></span>
+        <h2 style="margin:0;font-family:var(--display);font-size:26px;font-weight:600;letter-spacing:-.02em;color:var(--ink)">Oxygen</h2>
+      </div>
+      <div style="margin-top:20px;display:flex;flex-direction:column">
+        <sc-for list="{{ oxRows }}" as="r" hint-placeholder-count="10">
+          <div style="display:grid;grid-template-columns:40px minmax(0,1fr);gap:6px;padding:6px 6px;border-bottom:1px solid var(--line);font-size:13.5px;background:{{ r.bg }}">
+            <span style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--man-c)">{{ r.num }}</span><span>{{ r.title }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="margin-top:28px;display:flex;align-items:center;gap:10px;padding-bottom:10px;border-bottom:1px solid var(--line)">
+        <span style="font-family:var(--mono);font-size:13px;font-weight:700;padding:3px 8px;border-radius:5px;background:var(--man-c);color:var(--paper-card)">8.6</span>
+        <span style="font-family:var(--display);font-size:22px;font-weight:600;letter-spacing:-.015em">Concentrator troubleshooting</span>
+      </div>
+      <div style="margin-top:16px;display:flex;flex-direction:column;gap:10px">
+        <div style="height:12px;width:92%;border-radius:4px;background:var(--paper-2)"></div>
+        <div style="height:12px;width:86%;border-radius:4px;background:var(--paper-2)"></div>
+        <div style="height:12px;width:64%;border-radius:4px;background:var(--paper-2)"></div>
+        <div style="height:64px;width:100%;border-radius:8px;background:var(--paper-2);margin-top:6px"></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:4px;font-size:12.5px;color:var(--muted-2)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></svg>Loading the chapter text…</div>
+      </div>
+    </div>
+  </div>
+  <aside style="width:340px;display:flex;flex-direction:column;gap:10px;font-size:13.5px;line-height:1.55;color:var(--muted)">
+    <div style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-2)">M9 · Paint what is already known</div>
+    <p style="margin:0;text-wrap:pretty">The tree payload (<code style="font-family:var(--mono);font-size:.9em">getReferenceTree</code>) already carries every section's id, title, department and sort order. The masthead, the contents list and the target section's heading can paint the moment a section is clicked; only the bodies wait on <code style="font-family:var(--mono);font-size:.9em">getManualPart</code> or the session cache. Today the whole reader is one <code style="font-family:var(--mono);font-size:.9em">loSweep()</code> until the part arrives.</p>
+    <p style="margin:0;text-wrap:pretty">The skeleton uses <code style="font-family:var(--mono);font-size:.9em">--paper-2</code> blocks, the same shapes as the text that replaces them, so nothing jumps when the chapter lands. A failure keeps the masthead and puts <code style="font-family:var(--mono);font-size:.9em">errorStateHtml_</code> where the bodies were.</p>
+    <div style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-2)">Small JS · kbOpenManualSection_</div>
+  </aside>
+  </div>
+</div>
+
+<!-- ═════════ 1d · Manual home ═════════ -->
+<div id="1d" style="display:flex;flex-direction:column;gap:12px">
+  <div style="display:flex;align-items:center;gap:10px">
+    <span style="font-family:var(--mono);font-size:12px;font-weight:700;padding:3px 8px;border-radius:5px;background:var(--ink);color:var(--paper)">1d</span>
+    <span style="font-size:15px;font-weight:600;color:var(--ink)">Manual home · Reference landing (M12)</span>
+    <span style="font-size:13px;color:var(--muted-2)">Reader panel only — the tree is as in 1a.</span>
+  </div>
+  <div style="display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap">
+  <div data-screen-label="1d Manual home" style="width:880px;background:var(--paper-card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow-lg);padding:28px 32px 32px">
+    <div style="font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-2)">Procedures manual</div>
+    <h2 style="margin:8px 0 0;font-family:var(--display);font-size:28px;font-weight:600;letter-spacing:-.02em;color:var(--ink)">CSR Procedures Manual v3.0</h2>
+    <div style="margin-top:6px;font-size:12.5px;color:var(--muted-2)">Built 10/07/2026 · 11 chapters · 3 appendices</div>
+
+    <div style="margin-top:22px;display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:14px">
+      <button style="display:flex;flex-direction:column;gap:10px;text-align:left;font:inherit;padding:16px 18px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);cursor:pointer" style-hover="border-color:var(--border-strong)">
+        <span style="display:flex;align-items:center;gap:10px">
+          <span style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:var(--accent-soft);color:var(--success-deep)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.37 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.33 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"></path></svg></span>
+          <span style="font-size:16px;font-weight:600">What did the caller say?</span>
+          <span style="margin-left:auto;font-family:var(--mono);font-size:10.5px;padding:2px 6px;border:1px solid var(--line);border-radius:4px;color:var(--muted-2);background:var(--paper-card)">Ctrl/⌘ K</span>
+        </span>
+        <span style="font-size:13.5px;color:var(--muted);text-wrap:pretty">The Chapter 1 call router: find the call by how it opens, and jump to the answer.</span>
+        <span style="display:flex;flex-wrap:wrap;gap:6px">
+          <span style="font-size:12.5px;padding:3px 9px;border-radius:999px;background:var(--paper-card);border:1px solid var(--line)">"Where is my equipment?"</span>
+          <span style="font-size:12.5px;padding:3px 9px;border-radius:999px;background:var(--paper-card);border:1px solid var(--line)">"I want to pay my bill."</span>
+          <span style="font-size:12.5px;padding:3px 9px;border-radius:999px;background:var(--paper-card);border:1px solid var(--line)">"It's broken."</span>
+        </span>
+      </button>
+      <div style="display:flex;flex-direction:column;gap:10px;padding:16px 18px;border:1px solid var(--line);border-radius:10px;background:var(--paper)">
+        <span style="font-size:16px;font-weight:600;color:var(--ink)">Go to a section</span>
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper-card);color:var(--muted-2);font-family:var(--mono);font-size:13px">§ <span>5.9 · card 5 · B.1 · chapter 8</span></div>
+        <span style="font-size:12.5px;color:var(--muted-2);text-wrap:pretty">Enter opens it. 5-9 and §5-9 work too.</span>
+      </div>
+    </div>
+
+    <div style="margin-top:28px;font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2)">Chapters</div>
+    <div style="margin-top:10px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px">
+      <sc-for list="{{ chapterTiles }}" as="c" hint-placeholder-count="11">
+        <button style="display:flex;flex-direction:column;gap:8px;text-align:left;font:inherit;padding:12px 13px 13px;border:1px solid var(--line);border-radius:10px;background:var(--paper-card);color:var(--ink);cursor:pointer;min-height:112px" style-hover="border-color:var(--border-strong);background:var(--paper-2)">
+          <span style="display:flex;align-items:center;justify-content:space-between">
+            <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:{{ c.color }};color:var(--paper-card)">{{ c.icon }}</span>
+            <span style="font-family:var(--mono);font-size:12px;font-weight:700;color:{{ c.color }}">{{ c.n }}</span>
+          </span>
+          <span style="font-size:14px;font-weight:600;line-height:1.3">{{ c.name }}</span>
+          <span style="margin-top:auto;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted-2)"><span>{{ c.count }} sections</span><span style="display:inline-flex;align-items:center;gap:5px;color:var(--info-deep)"><span style="width:6px;height:6px;border-radius:50%;background:var(--info)"></span>{{ c.upd }} updated</span></span>
+        </button>
+      </sc-for>
+      <button style="display:flex;flex-direction:column;gap:6px;text-align:left;font:inherit;padding:12px 13px;border:1px dashed var(--line-2);border-radius:10px;background:none;color:var(--ink);cursor:pointer;min-height:112px" style-hover="background:var(--paper-2)">
+        <span style="font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-2)">Appendices</span>
+        <span style="font-size:13.5px"><b style="font-family:var(--mono);font-size:12px">A</b> Glossary</span>
+        <span style="font-size:13.5px"><b style="font-family:var(--mono);font-size:12px">B</b> Escalation directory</span>
+        <span style="font-size:13.5px"><b style="font-family:var(--mono);font-size:12px">C</b> Quick reference cards</span>
+      </button>
+    </div>
+
+    <div style="margin-top:28px;display:flex;align-items:baseline;gap:8px">
+      <span style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2)">Recently changed</span>
+      <span style="font-size:12px;color:var(--muted-2)">· last 90 days</span>
+    </div>
+    <div style="margin-top:6px;display:flex;flex-direction:column">
+      <sc-for list="{{ recent }}" as="r" hint-placeholder-count="3">
+        <button style="display:grid;grid-template-columns:70px minmax(0,1fr) auto;align-items:baseline;column-gap:12px;text-align:left;font:inherit;padding:9px 4px;border:none;border-bottom:1px solid var(--line);background:none;color:var(--ink);cursor:pointer" style-hover="background:var(--paper-2)">
+          <span style="font-family:var(--mono);font-size:12.5px;font-weight:700;color:{{ r.color }}">{{ r.num }}</span>
+          <span style="font-size:13.5px;line-height:1.45;text-wrap:pretty">{{ r.sum }}</span>
+          <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted-2);white-space:nowrap">10/07/2026<span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--warn-soft);color:var(--warning-deep);display:{{ r.rt }}">Retraining</span></span>
+        </button>
+      </sc-for>
+    </div>
+  </div>
+  <aside style="width:340px;display:flex;flex-direction:column;gap:10px;font-size:13.5px;line-height:1.55;color:var(--muted)">
+    <div style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-2)">M12 · A front door for the manual</div>
+    <p style="margin:0;text-wrap:pretty">Today the landing shows the manual only as a "recently changed" block among recents and most-used, and the router is a tree row. This puts the two things a rep reaches for mid-call — the router and a section number — at the top, then every chapter at once instead of fourteen collapsed tree groups.</p>
+    <p style="margin:0;text-wrap:pretty">Everything here is data the client already has: chapter names and counts from the tree, update counts from <code style="font-family:var(--mono);font-size:.9em">manualMeta.changelog</code> (the same 12-month window as the badges), the recent list from <code style="font-family:var(--mono);font-size:.9em">manualRecentListHtml_</code>. No new server call.</p>
+    <p style="margin:0;text-wrap:pretty">Recents, most-used and the manager blocks stay below this, unchanged.</p>
+    <div style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-2)">Larger · kbRenderLanding_</div>
+  </aside>
+  </div>
+</div>
+
+<!-- ═════════ 1e · Components ═════════ -->
+<div id="1e" style="display:flex;flex-direction:column;gap:12px">
+  <div style="display:flex;align-items:center;gap:10px">
+    <span style="font-family:var(--mono);font-size:12px;font-weight:700;padding:3px 8px;border-radius:5px;background:var(--ink);color:var(--paper)">1e</span>
+    <span style="font-size:15px;font-weight:600;color:var(--ink)">Content blocks · today and proposed</span>
+    <span style="font-size:13px;color:var(--muted-2)">Chapter 1 text. "Today" is drawn from the current CSS.</span>
+  </div>
+  <div data-screen-label="1e Content blocks" style="width:1180px;background:var(--paper-card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow-lg);padding:28px 32px 36px;--man-c:var(--man-p1);display:grid;grid-template-columns:160px minmax(0,1fr) minmax(0,1fr);gap:22px 32px;font-size:15px;line-height:1.65;color:var(--ink)">
+    <div></div>
+    <div style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-2)">Today</div>
+    <div style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--success-deep)">Proposed</div>
+
+    <!-- row: section head -->
+    <div style="font-size:13px;color:var(--muted);line-height:1.5"><b style="font-family:var(--mono);color:var(--ink)">M6</b><br>Section heading</div>
+    <div style="border-left:5px solid var(--man-c);padding-left:12px">
+      <div style="border-left:4px solid var(--man-c);padding-left:12px;display:flex;align-items:center;flex-wrap:wrap;gap:8px">
+        <h2 style="margin:0;font-family:var(--display);font-size:1.5rem;font-weight:700;letter-spacing:-.015em;line-height:1.25"><span style="display:inline-block;font-family:var(--mono);font-size:.6em;font-weight:700;padding:.24em .55em;border-radius:5px;background:var(--man-c);color:var(--paper-card);margin-right:.5em;vertical-align:.2em">1.3</span>Who you may speak to</h2>
+        <span style="margin-left:auto;display:inline-flex;gap:6px">
+          <span style="display:inline-flex;align-items:center;gap:5px;font-size:.76rem;padding:4px 9px;border:1px solid var(--line);border-radius:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg></span>
+          <span style="display:inline-flex;align-items:center;gap:5px;font-size:.76rem;padding:4px 9px;border:1px solid var(--line);border-radius:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"></path><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>Print</span>
+        </span>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:var(--muted-2)">Two stacked stripes (chapter 5px + section 4px), a button cluster on every section of a 10–20-section page.</div>
+    </div>
+    <div>
+      <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;padding-bottom:12px;border-bottom:1px solid var(--line)">
+        <span style="font-family:var(--mono);font-size:13px;font-weight:700;padding:3px 8px;border-radius:5px;background:var(--man-c);color:var(--paper-card)">1.3</span>
+        <h2 style="margin:0;font-family:var(--display);font-size:24px;font-weight:600;letter-spacing:-.015em;line-height:1.25">Who you may speak to</h2>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:var(--muted-2)">Chip + title over a hairline. Bookmark and Print move to the reader bar and act on the section in view.</div>
+    </div>
+
+    <!-- row: critical callout -->
+    <div style="font-size:13px;color:var(--muted);line-height:1.5"><b style="font-family:var(--mono);color:var(--ink)">M2</b><br>Callouts</div>
+    <blockquote style="margin:0;border-left:3px solid var(--destructive);background:var(--destructive-soft);padding:11px 16px;border-radius:0 8px 8px 0">
+      <p style="margin:0"><strong>Critical — emergencies come first.</strong> Advise the caller to <strong>hang up and dial 9-1-1</strong> if <strong>either</strong>:</p>
+      <ul style="margin:.5em 0;padding-left:1.5em"><li>the caller says they need emergency help <strong>within the next few minutes</strong>, or describes anything comparable; <strong>or</strong></li><li><strong>you believe</strong> a medical emergency is taking place, whatever the caller has said.</li></ul>
+      <p style="margin:0">Do not troubleshoot, do not place them on hold, and do not take details first.</p>
+    </blockquote>
+    <div style="padding:12px 16px 13px;border-radius:8px;background:var(--destructive-soft);border:1.5px solid var(--destructive)">
+      <div style="display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--danger-deep)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><path d="M12 9v4M12 17h.01"></path></svg>Critical</div>
+      <div style="margin-top:4px;font-weight:600">Emergencies come first.</div>
+      <p style="margin:.3em 0 0">Advise the caller to <strong>hang up and dial 9-1-1</strong> if <strong>either</strong>:</p>
+      <ul style="margin:.5em 0;padding-left:1.5em"><li>the caller says they need emergency help <strong>within the next few minutes</strong>, or describes anything comparable; <strong>or</strong></li><li><strong>you believe</strong> a medical emergency is taking place, whatever the caller has said.</li></ul>
+      <p style="margin:0">Do not troubleshoot, do not place them on hold, and do not take details first.</p>
+    </div>
+
+    <!-- row: callout family -->
+    <div style="font-size:13px;color:var(--muted);line-height:1.5">The other four<br><span style="color:var(--muted-2)">Same anatomy: kicker with icon, title, body. Only Critical gets the full-strength border.</span></div>
+    <div style="grid-column:span 2;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px">
+      <div style="padding:12px 16px 13px;border-radius:8px;background:var(--info-soft);border:1px solid color-mix(in oklab,var(--info) 35%,transparent)">
+        <div style="display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--info-deep)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="M9 13h6M9 17h4"></path></svg>Policy</div>
+        <div style="margin-top:4px;font-weight:600">When in doubt, err toward 9-1-1.</div>
+        <p style="margin:.3em 0 0">Being wrong in that direction costs a call. Being wrong in the other direction has no floor.</p>
+      </div>
+      <div style="padding:12px 16px 13px;border-radius:8px;background:var(--warn-soft);border:1px solid color-mix(in oklab,var(--warn) 35%,transparent)">
+        <div style="display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--warning-deep)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><path d="M12 9v4M12 17h.01"></path></svg>Watch-out</div>
+        <div style="margin-top:4px;font-weight:600">Before verification, information flows one way.</div>
+        <p style="margin:.3em 0 0">A caller who isn't verified yet can still <em>give</em> you information — a new address, for instance — but not receive it.</p>
+      </div>
+      <div style="padding:12px 16px 13px;border-radius:8px;background:var(--paper-2);border:1px solid var(--line)">
+        <div style="display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 16v-4M12 8h.01"></path></svg>Note</div>
+        <div style="margin-top:4px;font-weight:600">Oxygen is never patient-owned.</div>
+        <p style="margin:.3em 0 0">A concentrator always comes back, however long the patient had it. See <a href="#" style="color:var(--accent);text-decoration-thickness:1px;text-underline-offset:3px;font-family:var(--mono);font-size:.88em;font-weight:600">8.8.1</a>.</p>
+      </div>
+      <div style="border-radius:8px;background:var(--paper-2);border:1px solid var(--line);overflow:hidden">
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 10px 7px 14px;background:var(--accent-soft);border-bottom:1px solid var(--line)">
+          <span style="display:flex;align-items:center;gap:6px;flex:1;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--success-deep)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.37 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.33 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>Script · caller can't be verified</span>
+          <span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:3px 9px;border:1px solid var(--line);border-radius:6px;background:var(--paper-card)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>Copy</span>
+        </div>
+        <p style="margin:0;padding:10px 14px 12px;font-size:15px">"I want to help, but I'm not able to go over the order without confirming a few details first — that's part of the HIPAA guidelines we follow. What I can do is take down what you've told me and have someone reach out to [patient] directly."</p>
+      </div>
+    </div>
+
+    <!-- row: steps -->
+    <div style="font-size:13px;color:var(--muted);line-height:1.5"><b style="font-family:var(--mono);color:var(--ink)">M4</b><br>Step tables<br><span style="color:var(--muted-2)">1.4.4 · still a &lt;table&gt;</span></div>
+    <table style="border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.55;align-self:start">
+      <thead><tr><th style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);text-align:left;padding:6px 16px 6px 10px;border-bottom:1px solid var(--border-strong)">Step</th><th style="font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);text-align:left;padding:6px 0;border-bottom:1px solid var(--border-strong)">Action</th></tr></thead>
+      <tbody>
+        <tr><td style="padding:8px 16px 8px 10px;border-bottom:1px solid var(--line);text-align:center;font-weight:600;color:var(--accent);vertical-align:middle">1<div style="color:var(--muted);font-weight:400;line-height:1;margin-bottom:-14px">↓</div></td><td style="padding:8px 0;border-bottom:1px solid var(--line)">Collect the <strong>patient name and date of birth</strong> so the account can be found</td></tr>
+        <tr><td style="padding:8px 16px 8px 10px;border-bottom:1px solid var(--line);text-align:center;font-weight:600;color:var(--accent);vertical-align:middle">2<div style="color:var(--muted);font-weight:400;line-height:1;margin-bottom:-14px">↓</div></td><td style="padding:8px 0;border-bottom:1px solid var(--line)"><strong>Understand the caller's specific concern.</strong> Not "they're upset" — what they actually want resolved</td></tr>
+        <tr><td style="padding:8px 16px 8px 10px;border-bottom:1px solid var(--line);text-align:center;font-weight:600;color:var(--accent);vertical-align:middle">3</td><td style="padding:8px 0;border-bottom:1px solid var(--line)">Contact the <strong>relevant team's supervisor or lead</strong> — the department that owns the issue</td></tr>
+      </tbody>
+    </table>
+    <div style="display:flex;flex-direction:column">
+      <div style="display:grid;grid-template-columns:28px minmax(0,1fr);column-gap:14px">
+        <div style="display:flex;flex-direction:column;align-items:center"><span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;border:1.5px solid var(--man-c);background:color-mix(in oklab,var(--man-c) 12%,var(--paper-card));font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ink)">1</span><span style="flex:1;width:1.5px;background:var(--line-2);min-height:10px"></span></div>
+        <div style="padding:2px 0 16px">Collect the <strong>patient name and date of birth</strong> so the account can be found</div>
+      </div>
+      <div style="display:grid;grid-template-columns:28px minmax(0,1fr);column-gap:14px">
+        <div style="display:flex;flex-direction:column;align-items:center"><span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;border:1.5px solid var(--man-c);background:color-mix(in oklab,var(--man-c) 12%,var(--paper-card));font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ink)">2</span><span style="flex:1;width:1.5px;background:var(--line-2);min-height:10px"></span></div>
+        <div style="padding:2px 0 16px"><strong>Understand the caller's specific concern.</strong> Not "they're upset" — what they actually want resolved</div>
+      </div>
+      <div style="display:grid;grid-template-columns:28px minmax(0,1fr);column-gap:14px">
+        <div style="display:flex;flex-direction:column;align-items:center"><span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;border:1.5px solid var(--man-c);background:color-mix(in oklab,var(--man-c) 12%,var(--paper-card));font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ink)">3</span><span style="flex:1;width:1.5px;background:var(--line-2);min-height:10px"></span></div>
+        <div style="padding:2px 0 16px">Contact the <strong>relevant team's supervisor or lead</strong> — the department that owns the issue</div>
+      </div>
+      <div style="display:grid;grid-template-columns:28px minmax(0,1fr);column-gap:14px">
+        <div style="display:flex;flex-direction:column;align-items:center"><span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;border:1.5px solid var(--man-c);background:color-mix(in oklab,var(--man-c) 12%,var(--paper-card));font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ink)">4</span><span style="flex:1;width:1.5px;background:var(--line-2);min-height:10px"></span></div>
+        <div style="padding:2px 0 16px">If that isn't possible, contact <strong>your own supervisor or lead</strong></div>
+      </div>
+      <div style="display:grid;grid-template-columns:28px minmax(0,1fr);column-gap:14px">
+        <div style="display:flex;flex-direction:column;align-items:center"><span style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;border:1.5px solid var(--man-c);background:color-mix(in oklab,var(--man-c) 12%,var(--paper-card));font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ink)">5</span></div>
+        <div style="padding:2px 0 4px">If neither is available, tell the caller that plainly, pass it on immediately by email, and let them know to expect a <strong>callback within 24–48 hours</strong></div>
+      </div>
+    </div>
+
+    <!-- row: steps hybrid -->
+    <div id="m4b" style="font-size:13px;color:var(--muted);line-height:1.5"><b style="font-family:var(--mono);color:var(--ink)">M4b</b><br>Step tables · hybrid<br><span style="color:var(--muted-2)">Recommended. Same table, CSS only.</span></div>
+    <div style="font-size:14px;color:var(--muted);line-height:1.6;text-wrap:pretty">Keeps today's ↓ between rows, which reads as "then", and adds the numbered circle so a step number is findable at a glance ("I'm on step 3"). The arrow takes the chapter colour and sits on the row boundary as it does now, so a multi-line step still points at the next one. Row hairlines stay under the text column only.</div>
+    <div style="display:flex;flex-direction:column;border-top:1px solid var(--border-strong)">
+      <div style="position:relative;display:grid;grid-template-columns:44px minmax(0,1fr)">
+        <div style="padding-top:9px;display:flex;justify-content:center"><span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--man-c);background:color-mix(in oklab,var(--man-c) 12%,var(--paper-card));font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ink)">1</span></div>
+        <div style="padding:9px 0 10px;border-bottom:1px solid var(--line)">Collect the <strong>patient name and date of birth</strong> so the account can be found</div>
+        <span style="position:absolute;left:22px;bottom:-.75em;transform:translateX(-50%);z-index:1;padding:0 3px;background:var(--paper-card);color:var(--man-c);line-height:1.3">↓</span>
+      </div>
+      <div style="position:relative;display:grid;grid-template-columns:44px minmax(0,1fr)">
+        <div style="padding-top:9px;display:flex;justify-content:center"><span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--man-c);background:color-mix(in oklab,var(--man-c) 12%,var(--paper-card));font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ink)">2</span></div>
+        <div style="padding:9px 0 10px;border-bottom:1px solid var(--line)"><strong>Understand the caller's specific concern.</strong> Not "they're upset" — what they actually want resolved</div>
+        <span style="position:absolute;left:22px;bottom:-.75em;transform:translateX(-50%);z-index:1;padding:0 3px;background:var(--paper-card);color:var(--man-c);line-height:1.3">↓</span>
+      </div>
+      <div style="position:relative;display:grid;grid-template-columns:44px minmax(0,1fr)">
+        <div style="padding-top:9px;display:flex;justify-content:center"><span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--man-c);background:color-mix(in oklab,var(--man-c) 12%,var(--paper-card));font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ink)">3</span></div>
+        <div style="padding:9px 0 10px;border-bottom:1px solid var(--line)">Contact the <strong>relevant team's supervisor or lead</strong> — the department that owns the issue</div>
+        <span style="position:absolute;left:22px;bottom:-.75em;transform:translateX(-50%);z-index:1;padding:0 3px;background:var(--paper-card);color:var(--man-c);line-height:1.3">↓</span>
+      </div>
+      <div style="position:relative;display:grid;grid-template-columns:44px minmax(0,1fr)">
+        <div style="padding-top:9px;display:flex;justify-content:center"><span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--man-c);background:color-mix(in oklab,var(--man-c) 12%,var(--paper-card));font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ink)">4</span></div>
+        <div style="padding:9px 0 10px;border-bottom:1px solid var(--line)">If that isn't possible, contact <strong>your own supervisor or lead</strong></div>
+        <span style="position:absolute;left:22px;bottom:-.75em;transform:translateX(-50%);z-index:1;padding:0 3px;background:var(--paper-card);color:var(--man-c);line-height:1.3">↓</span>
+      </div>
+      <div style="position:relative;display:grid;grid-template-columns:44px minmax(0,1fr)">
+        <div style="padding-top:9px;display:flex;justify-content:center"><span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--man-c);background:color-mix(in oklab,var(--man-c) 12%,var(--paper-card));font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ink)">5</span></div>
+        <div style="padding:9px 0 10px">If neither is available, tell the caller that plainly, pass it on immediately by email, and let them know to expect a <strong>callback within 24–48 hours</strong></div>
+      </div>
+    </div>
+
+    <!-- row: decision tables -->
+    <div style="font-size:13px;color:var(--muted);line-height:1.5"><b style="font-family:var(--mono);color:var(--ink)">M3</b><br>Situation → action tables</div>
+    <div style="grid-column:span 2;font-size:14px;color:var(--muted);line-height:1.6;text-wrap:pretty;max-width:78ch">The manual's most common table is two columns — <em>Situation | Action</em>, <em>The caller says… | Go to</em>, <em>Status | What to tell the caller</em>. Proposed: the first column becomes the row's label (600 weight, 34% width), so the eye runs down the left edge to find the case. Under ~480px of reader width (pop-out, phone) each row stacks label-over-answer, as in <a href="#1b">1b</a>, instead of scrolling sideways. Four-plus-column matrices keep today's tinted header and stripes.</div>
+
+    <!-- row: inline marks -->
+    <div style="font-size:13px;color:var(--muted);line-height:1.5"><b style="font-family:var(--mono);color:var(--ink)">M5</b><br>Inline links</div>
+    <div>
+      <p style="margin:0">"Am I too heavy for a standard wheelchair?" → <a href="#" style="color:var(--accent);text-decoration:underline dotted;text-underline-offset:3px">2.4.1</a> — <a href="#" style="color:var(--info-deep);text-decoration:underline dotted;text-underline-offset:2px">K0006</a> over 250 lbs, <a href="#" style="color:var(--info-deep);text-decoration:underline dotted;text-underline-offset:2px">K0007</a> over 300. A <span style="border-bottom:1px dotted var(--muted-3)">QMB</span> patient is never billed.</p>
+      <div style="margin-top:8px;font-size:12px;color:var(--muted-2)">Cross-reference, HCPCS lookup and glossary term are all dotted underlines — three behaviours, one look.</div>
+    </div>
+    <div>
+      <p style="margin:0">"Am I too heavy for a standard wheelchair?" → <a href="#" style="color:var(--accent);text-decoration-thickness:1px;text-underline-offset:3px;font-family:var(--mono);font-size:.88em;font-weight:600">2.4.1</a> — <a href="#" style="font-family:var(--mono);font-size:.86em;font-weight:500;padding:1px 5px;border-radius:4px;background:var(--info-soft);color:var(--info-deep);text-decoration:none">K0006</a> over 250 lbs, <a href="#" style="font-family:var(--mono);font-size:.86em;font-weight:500;padding:1px 5px;border-radius:4px;background:var(--info-soft);color:var(--info-deep);text-decoration:none">K0007</a> over 300. A <span style="border-bottom:1px dotted var(--muted-3)">QMB</span> patient is never billed.</p>
+      <div style="margin-top:8px;font-size:12px;color:var(--muted-2)">Section link: solid underline, mono number (opens). Code: a chip (looks up). Glossary: the only dotted mark (explains on hover).</div>
+    </div>
+  </div>
+</div>
+
+</div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;mode&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;light&quot;,&quot;tsType&quot;:&quot;'light'|'dark'&quot;,&quot;section&quot;:&quot;Theme&quot;},&quot;palette&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;console&quot;,&quot;sand&quot;,&quot;sage&quot;,&quot;plum&quot;,&quot;teal&quot;],&quot;default&quot;:&quot;console&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Theme&quot;},&quot;measure&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;68ch&quot;,&quot;900px&quot;],&quot;default&quot;:&quot;68ch&quot;,&quot;tsType&quot;:&quot;'68ch'|'900px'&quot;,&quot;section&quot;:&quot;Reader&quot;}}">
+class Component extends DCLogic {
+  state = { cur: 0, sheet: false, card: true, tab: '5' };
+  TABS = {
+    '5': { num: '05', name: 'Power Mobility', icon: 'bolt', meta: '11 sections · 4 updated in the last 12 months', card: '5', dgm: 'power-process', dgmTitle: 'The Power process', dgmSec: '5.1.1' },
+    '4': { num: '04', name: 'Sales', icon: 'clipboardList', meta: '9 sections · 2 updated in the last 12 months', card: '4', dgm: 'eligibility-status', dgmTitle: 'Where an order sits — Eligibility Status', dgmSec: '4.3' },
+    '8': { num: '08', name: 'Oxygen', icon: 'oxygenTank', meta: '10 sections · 4 updated in the last 12 months', card: '8', dgm: 'o2-troubleshoot', dgmTitle: 'Concentrator troubleshooting', dgmSec: '8.6' }
+  };
+  dgmEl(name, minW) {
+    const src = (window.MANUAL_DGM || {})[name];
+    if (!src) return null;
+    const html = src.replace('<svg class="kbdg', '<svg style="display:block;width:100%;height:auto;min-width:' + (minW == null ? 600 : minW) + 'px" class="kbdg');
+    return React.createElement('div', { dangerouslySetInnerHTML: { __html: html } });
+  }
+  ICON = {
+    headset: '<path d="M3 11h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5a9 9 0 0 1 18 0v5a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/><path d="M21 16v2a4 4 0 0 1-4 4h-5"/>',
+    phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.37 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.33 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
+    walker: '<path d="M4 21V7a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v14"/><path d="M10 6V5a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v14"/><path d="M12 12l6-2"/>',
+    papMask: '<path d="M12 2.5c3.6 0 6.5 3.2 6.5 7.5 0 2.2-.7 4-1.9 5.3"/><path d="M12 2.5C8.4 2.5 5.5 5.7 5.5 10c0 2.2.7 4 1.9 5.3"/><path d="M12 8.5c-1.6 0-3.5 3.3-3.5 5a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2c0-1.7-1.9-5-3.5-5z"/><path d="M8.7 12.5 5.8 11.5"/><path d="M15.3 12.5l2.9-1"/><path d="M12 15.5v2.5a3 3 0 0 0 3 3h5"/>',
+    clipboardList: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M8 11h8"/><path d="M8 15h6"/>',
+    bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+    truck: '<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>',
+    repair: '<path d="M3.52 9.17 4.93 7.76 5.35 8.18 7.83 5.71Q9.45 4.08 11.15 3.8Q10.16 5.92 9.87 7.89L7.46 10.29 7.9 10.73 6.49 12.14z"/><path d="M7.88 9.86 18.5 20.5A1.4 1.4 0 0 0 20.5 18.5L9.86 7.88"/><path d="M9.31 12.71 3.5 18.5A1.4 1.4 0 0 0 5.5 20.5L11.29 14.69"/><path d="M12.71 9.31 13.47 8.55A3.6 3.6 0 0 1 18.26 3.9L16.1 6.07 17.93 7.9 20.1 5.74A3.6 3.6 0 0 1 15.45 10.53L14.69 11.29"/>',
+    oxygenTank: '<path d="M7 11a4 4 0 0 1 8 0v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2z"/><path d="M10 7V4h2v3"/><path d="M8.5 3h5"/><path d="M12 5.5h3"/><circle cx="17" cy="5.5" r="2"/><path d="M7 14h8"/>',
+    moon: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
+    dollar: '<path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'
+  };
+  CH = [
+    ['00', 'CSR Core', 'headset', 14, 2], ['01', 'Call Handling', 'phone', 7, 2],
+    ['02', 'Manual Mobility & General DME', 'walker', 12, 4], ['03', 'Respiratory & Resupply', 'papMask', 14, 6],
+    ['04', 'Sales', 'clipboardList', 9, 2], ['05', 'Power Mobility', 'bolt', 11, 4],
+    ['06', 'Field Operations', 'truck', 17, 3], ['07', 'Service', 'repair', 15, 3],
+    ['08', 'Oxygen', 'oxygenTank', 10, 4], ['09', 'After Hours', 'moon', 9, 3], ['10', 'Billing & Denials', 'dollar', 23, 6]
+  ];
+  SECS = [
+    { num: '5.1', title: 'Scope and process' }, { num: '5.2', title: 'PAK (Pre-Appointment Kit)', upd: true },
+    { num: '5.3', title: 'Qualifications' }, { num: '5.4', title: 'PT Evaluation' }, { num: '5.5', title: 'ATP Evaluation' },
+    { num: '5.6', title: 'Prior Authorization', upd: true }, { num: '5.7', title: 'Order Verification' },
+    { num: '5.8', title: 'Delivery and returns', upd: true }, { num: '5.9', title: 'Equipment guide', upd: true },
+    { num: '5.10', title: 'FAQ' }, { num: '5.11', title: 'Additional resources' }
+  ];
+  svg(name, size) {
+    const html = '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">' + this.ICON[name] + '</svg>';
+    return React.createElement('span', { style: { display: 'inline-flex' }, dangerouslySetInnerHTML: { __html: html } });
+  }
+  setReader = (el) => { this.reader = el; };
+  componentDidMount() { this.apply(); if (!window.MANUAL_DGM) { this.dgmTimer = setInterval(() => { if (window.MANUAL_DGM) { clearInterval(this.dgmTimer); this.forceUpdate(); } }, 200); } }
+  componentWillUnmount() { clearInterval(this.dgmTimer); }
+  componentDidUpdate() { this.apply(); }
+  apply() {
+    const el = document.documentElement;
+    el.setAttribute('data-mode', this.props.mode === 'dark' ? 'dark' : 'light');
+    const p = this.props.palette || 'console';
+    if (p === 'console') el.removeAttribute('data-palette'); else el.setAttribute('data-palette', p);
+    el.style.setProperty('--mock-measure', (this.props.measure || '68ch') === '68ch' ? '68ch' : 'none');
+  }
+  onScroll = (e) => {
+    const box = e.currentTarget, top = box.scrollTop;
+    let idx = 0;
+    box.querySelectorAll('[data-sec]').forEach((s) => { if (s.offsetTop - top <= 90) idx = +s.getAttribute('data-sec'); });
+    if (idx !== this.state.cur) this.setState({ cur: idx });
+  };
+  go(i) {
+    const box = this.reader; if (!box) return;
+    const t = box.querySelector('[data-sec="' + i + '"]'); if (!t) return;
+    box.scrollTo({ top: t.offsetTop - 52, behavior: 'smooth' });
+  }
+  renderVals() {
+    const cur = this.state.cur, S = this.SECS;
+    const chap = (c) => ({ n: c[0], name: c[1], icon: this.svg(c[2], 13), color: 'var(--man-p' + (+c[0]) + ')', count: c[3] });
+    const treeSecs = S.map((x, i) => ({
+      num: x.num, title: x.title, go: () => this.go(i),
+      bg: i === cur ? 'color-mix(in oklab, var(--man-c) 11%, var(--paper-card))' : 'transparent',
+      rail: i === cur ? 'inset 2px 0 0 var(--man-c)' : 'none',
+      numColor: i === cur ? 'var(--man-c)' : 'var(--muted-2)',
+      weight: i === cur ? '600' : '400', dot: x.upd ? 'inline-block' : 'none'
+    }));
+    const popRows = S.map((x, i) => ({ num: x.num, title: x.title, dot: x.upd ? 'inline-block' : 'none',
+      bg: i === 1 ? 'color-mix(in oklab, var(--man-c) 11%, var(--paper-card))' : 'transparent', weight: i === 1 ? '600' : '400' }));
+    const ox = ['Scope and call types', 'Oxygen supply tickets', 'Urgent and after-hours requests', 'Monthly supply allowances', 'Equipment', 'Concentrator troubleshooting', 'Safety guidelines', 'Rental, compliance and prescriptions', 'FAQ', 'Additional resources'];
+    return {
+      chaptersBefore: this.CH.slice(0, 5).map(chap),
+      chaptersAfter: this.CH.slice(6).map(chap),
+      treeSecs, popRows,
+      oxRows: ox.map((t, i) => ({ num: '8.' + (i + 1), title: t, bg: i === 5 ? 'color-mix(in oklab, var(--man-c) 11%, var(--paper-card))' : 'transparent' })),
+      chapterTiles: this.CH.map((c) => ({ n: c[0], name: c[1], icon: this.svg(c[2], 14), color: 'var(--man-p' + (+c[0]) + ')', count: c[3], upd: c[4] })),
+      recent: [
+        { num: '8.3.3', color: 'var(--man-p8)', rt: 'inline-block', sum: 'After hours, an oxygen concentrator is troubleshot first and the on-call technician dispatched only if that fails, and only where after-hours dispatch is available — as Chapter 9 says. The section used to say "dispatch immediately".' },
+        { num: '9.4.1', color: 'var(--man-p9)', rt: 'inline-block', sum: 'The Immediate response target now lists cough assist, IPPB and BiPAP ST beside ventilators, matching the dispatch table in 9.3.' },
+        { num: '7.3.1', color: 'var(--man-p7)', rt: 'none', sum: 'Oxygen equipment: UMS services it for the whole 5-year lifetime as part of the oxygen rental, as 10.12.2 says. The "maintenance-and-servicing payment every 6 months" line was removed; Billing is asked to confirm.' }
+      ],
+      curNum: S[cur].num, curTitle: S[cur].title,
+      prevLabel: cur > 0 ? S[cur - 1].num : 'Ch 04', nextLabel: S[cur + 1] ? S[cur + 1].num : 'Ch 06',
+      goPrev: () => { if (cur > 0) this.go(cur - 1); },
+      goNext: () => { if (cur < 2) this.go(cur + 1); },
+      onReaderScroll: this.onScroll, setReader: this.setReader,
+      sheetOpen: this.state.sheet,
+      ...(() => {
+        const k = this.state.tab, T = this.TABS[k], o = {};
+        ['5', '4', '8'].forEach((x) => {
+          o['tab' + x] = () => this.setState({ tab: x });
+          o['tabOn' + x] = String(x === k);
+          o['tabBg' + x] = x === k ? 'var(--ink)' : 'transparent';
+          o['tabFg' + x] = x === k ? 'var(--paper)' : 'var(--muted)';
+          o['tabIs' + x] = x === k;
+        });
+        return Object.assign(o, { tabColor: 'var(--man-p' + (+k) + ')', tabNum: T.num, tabName: T.name, tabMeta: T.meta, tabCard: T.card,
+          tabIcon: this.svg(T.icon, 22), tabDgm: this.dgmEl(T.dgm), tabDgmTitle: T.dgmTitle, tabDgmSec: T.dgmSec });
+      })(),
+      dgmPowerPrint: this.dgmEl('power-process', 0),
+      cardOpen: this.state.card,
+      cardChevron: this.state.card ? 'none' : 'rotate(-90deg)',
+      toggleCard: () => this.setState((s) => ({ card: !s.card })),
+      openSheet: () => this.setState({ sheet: true }),
+      closeSheet: () => this.setState({ sheet: false }),
+      notes1a: [
+        { id: 'M1', t: 'Prose at reading width', d: 'Paragraphs and lists cap at 68ch (~640px); tables, diagrams and callouts keep the 900px column. Today prose runs to ~110 characters a line. Toggle in Tweaks.', size: 'CSS only' },
+        { id: 'M6', t: 'One colour cue per level', d: 'The chapter stripe and the per-section stripe go. Chapter = masthead badge; section = number chip over a hairline; sub-section = coloured number (unchanged).', size: 'CSS only' },
+        { id: 'M7', t: 'Quieter feedback line', d: 'Same three buttons, ghost style, no rule above. On a 15-section page they no longer read as 15 footers.', size: 'CSS only' },
+        { id: 'M8', t: 'Reader bar with scroll-spy', d: 'One sticky bar: chapter, the section in view, Bookmark and Print for that section, previous / next. It absorbs the existing Back-to band and the version line.', size: 'Small JS' },
+        { id: 'M9', t: 'Chapter masthead + "In this chapter"', d: 'The chapter page opens with its name, counts, version and a two-column index with Updated flags, so a rep sees the chapter\'s shape before scrolling.', size: 'Small JS' },
+        { id: 'M10', t: 'Tree rows: number column', d: 'Chapter rows read "05 Power Mobility" in sentence case; section rows get a mono number column, an Updated dot, and follow the scroll (today only the clicked row is marked).', size: 'Small JS' },
+        { id: 'M11', t: 'Previous / next chapter', d: 'Two cards close the chapter instead of a dead end.', size: 'Small JS' }
+      ],
+      notes1b: [
+        { id: 'M13', t: 'Reader gets the whole pop-out', d: 'In data-compact (and ≤720px) the tree no longer stacks above the reader at 45vh. A Contents button opens it through ensureOverlay, as a list of the current chapter with a chapter switcher.', size: 'Larger' },
+        { id: 'M8', t: 'Bar in compact', d: 'Chapter badge, section chip and title; previous / next as 44px icon buttons. The Back-to chip sits on its own row above, so neither truncates the other.', size: 'Small JS' },
+        { id: 'M3', t: 'Two-column tables stack', d: 'Situation | Action rows become label-over-answer below ~480px of reader width — a container query on .kb-man-tw, so the Ctrl/⌘+K drawer (340px on a wide screen) stacks too.', size: 'CSS only' },
+        { id: '—', t: 'Hit targets', d: 'Every control in the compact frame is at least 44px tall.', size: 'CSS only' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

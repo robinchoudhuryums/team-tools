@@ -266,6 +266,12 @@ def wrap_cards(html):
                 group.find("div", class_="qb").append(k.extract())
     # running head + folio inside each card, and a contents sheet before the first
     cards = soup.find_all("section", class_="qrc")
+    # a card that carries a diagram prints it on the next page (operator 2026-10-09),
+    # so the folios count that page too
+    pages, at = [], 2
+    for c in cards:
+        pages.append(at)
+        at += 2 if c.find("div", class_="fig", recursive=False) else 1
     if cards:
         toc = soup.new_tag("section")
         toc["id"] = "cardtoc"
@@ -276,7 +282,7 @@ def wrap_cards(html):
         t = soup.new_tag("h2"); t["class"] = ["toch"]; t.string = "Quick reference cards"
         toc.append(t)
         lst = soup.new_tag("ol"); lst["class"] = ["toclist"]
-        for i, c in enumerate(cards, start=2):
+        for i, c in zip(pages, cards):
             part = next((x for x in c.get("class", []) if x.startswith("p")), "p0")
             head = c.find("h2")
             num = head.find("span", class_="sn")
@@ -301,7 +307,7 @@ def wrap_cards(html):
         fb = soup.new_tag("span"); fb.string = "1"
         f.append(fa); f.append(fb); toc.append(f)
         cards[0].insert_before(toc)
-    for i, c in enumerate(cards, start=2):
+    for i, c in zip(pages, cards):
         head = c.find("h2")
         partname = ""
         if head:
@@ -320,6 +326,23 @@ def wrap_cards(html):
         fb = soup.new_tag("span"); fb.string = str(i)
         fo.append(fa); fo.append(fb)
         c.append(fo)
+        # the card's diagram is its reverse: after the footer in the document, so the
+        # printout puts it on its own page with its own head and folio; on screen a
+        # flex order shows it under the title (and its head and folio stay hidden)
+        figs = c.find_all("div", class_="fig", recursive=False)
+        if figs:
+            rev = soup.new_tag("div"); rev["class"] = ["qrrev"]
+            rh2 = soup.new_tag("div"); rh2["class"] = ["qrh"]
+            a2 = soup.new_tag("span"); a2.string = "Quick Reference"
+            b2 = soup.new_tag("span"); b2.string = partname
+            rh2.append(a2); rh2.append(b2); rev.append(rh2)
+            for fg in figs:
+                rev.append(fg.extract())
+            fo2 = soup.new_tag("div"); fo2["class"] = ["qrf"]
+            fa2 = soup.new_tag("span"); fa2.string = f"Built {BUILT}"
+            fb2 = soup.new_tag("span"); fb2.string = str(i + 1)
+            fo2.append(fa2); fo2.append(fb2); rev.append(fo2)
+            c.append(rev)
     return str(soup)
 
 
@@ -892,6 +915,11 @@ main > .eyebrow{max-width:74ch}
 .qrf{padding-top:11px;margin-top:22px;border-top:1px solid var(--rule)}
 section.qrc{display:flex;flex-direction:column}
 section.qrc > .qrf{margin-top:auto;padding-top:20px}
+/* a card's diagram (its printed reverse) shows under the title on screen */
+section.qrc > .qrh,section.qrc > h2{order:-2}
+section.qrc > .qrrev{order:-1;margin:0 0 6px}
+.qrrev > .qrh,.qrrev > .qrf{display:none}
+.qrrev .fig svg{min-width:0}
 #cardtoc{width:816px;max-width:100%;border:1px solid var(--rule);padding:44px 48px 36px;
  margin:0 0 40px;display:flex;flex-direction:column;box-sizing:border-box}
 #cardtoc > .qrf{margin-top:auto;padding-top:20px}
@@ -933,6 +961,10 @@ ol.toclist .cp{text-align:right}
  .ql,.qrh,.qrf{font-size:10.5px}
  ol.toclist li{font-size:13px}
  .qg,p.never{break-inside:avoid}
+ /* the reverse: the card's diagram on its own page, with the card's head and folio */
+ section.qrc > .qrrev{break-before:page;display:block;margin:0}
+ .qrrev > .qrh,.qrrev > .qrf{display:flex}
+ .qrrev > .qrf{margin-top:28px}
  a.xr{color:#000;border:0;text-decoration:none}
 }
 
@@ -1102,7 +1134,7 @@ h3[id^="ix-"]{scroll-margin-top:150px}
    badge is the chapter colour with the page colour inside, so it reads in both
    themes; everywhere else the icon is simply the chapter colour. */
 svg.chi{display:block;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
-h1.part{display:flex;align-items:center;gap:16px}
+h1.part{display:flex;align-items:center;gap:16px;border-left:0;padding-left:0}   /* M6 (design handoff, 2026-10-09): the badge carries the chapter, no stripe */
 h1.part .pbadge{flex:none;display:inline-flex;align-items:center;justify-content:center;
  width:1.15em;height:1.15em;border-radius:50%;background:currentColor}
 h1.part .pbadge svg{width:.62em;height:.62em;color:var(--bg)}
@@ -1115,18 +1147,18 @@ ol.toclist li.p3 .sw{color:var(--p3)} ol.toclist li.p4 .sw{color:var(--p4)} ol.t
 ol.toclist li.p6 .sw{color:var(--p6)} ol.toclist li.p7 .sw{color:var(--p7)} ol.toclist li.p8 .sw{color:var(--p8)}
 ol.toclist li.p9 .sw{color:var(--p9)} ol.toclist li.p10 .sw{color:var(--p10)} 
 /* ============================ heading hierarchy (manual update D5, 2026-10-07) === */
-/* A section's number is a chip in its chapter's colour and the section heading
-   carries a thinner left rule than the chapter's; a sub-section's number takes the
-   colour as text. The chapter comes from the heading's id (3-7 is Chapter 3), so
+/* A section's number is a chip in its chapter's colour over a hairline (M6, the
+   design handoff, 2026-10-09 — the app's reader matches; the left rule went); a
+   sub-section's number takes the colour as text. The chapter comes from the heading's id (3-7 is Chapter 3), so
    the source needs no markup. The cards keep their own heading. */
 h2,h3{--hc:var(--navy)}
 h2[id^="0-"],h3[id^="0-"]{--hc:var(--p0)} h2[id^="1-"],h3[id^="1-"]{--hc:var(--p1)} h2[id^="2-"],h3[id^="2-"]{--hc:var(--p2)} h2[id^="3-"],h3[id^="3-"]{--hc:var(--p3)} h2[id^="4-"],h3[id^="4-"]{--hc:var(--p4)} h2[id^="5-"],h3[id^="5-"]{--hc:var(--p5)} h2[id^="6-"],h3[id^="6-"]{--hc:var(--p6)} h2[id^="7-"],h3[id^="7-"]{--hc:var(--p7)} h2[id^="8-"],h3[id^="8-"]{--hc:var(--p8)} h2[id^="9-"],h3[id^="9-"]{--hc:var(--p9)} h2[id^="10-"],h3[id^="10-"]{--hc:var(--p10)}
 h2[id^="A-"],h3[id^="A-"],h2[id^="B-"],h3[id^="B-"],h2[id^="C-"],h3[id^="C-"]{--hc:var(--muted)}
-h2{border-left:4px solid var(--hc);padding-left:14px}
+h2{padding-bottom:12px;border-bottom:1px solid var(--rule)}
 h2 .sn{display:inline-block;padding:.2em .55em;border-radius:.3em;background:var(--hc);color:var(--bg);
  font-weight:600;letter-spacing:.02em;margin-right:.35em}
 h3 .sn{color:var(--hc)}
-section.qrc h2{border-left:0;padding-left:0} section.qrc h2 .sn{margin-right:0}
+section.qrc h2 .sn{margin-right:0}
 </style></head>
 <body><button class="navtoggle" id="nt">☰ &nbsp;Contents &amp; search</button><div class="wrap">
 <nav><div class="brand">UniversalMed Supply<br>CSR Procedures Manual</div>
