@@ -3,7 +3,7 @@
 const fs = require("fs");
 const {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, ShadingType,
-  BorderStyle, HeadingLevel, AlignmentType, Header, Footer, PageNumber, LevelFormat, HeightRule, ImageRun, LineRuleType,
+  BorderStyle, HeadingLevel, AlignmentType, Header, Footer, PageNumber, LevelFormat, HeightRule, ImageRun, LineRuleType, ExternalHyperlink,
 } = require("docx");
 
 const [, , inPath, outPath] = process.argv;
@@ -133,6 +133,8 @@ for (const b of M.blocks) {
     case "why": children.push(new Paragraph({ keepNext: true, spacing: { after: 100 }, children: [
                  new TextRun({ text: "Why we're asking: ", italics: true, bold: true, color: MUTED, size: 20 }),
                  ...runsOf(b.runs, { italics: true, color: MUTED, size: 20 })] })); break;
+    case "link": children.push(new Paragraph({ keepNext: true, spacing: { after: 120 }, children: [
+      new ExternalHyperlink({ link: b.url, children: [new TextRun({ text: b.text, bold: true, underline: {}, color: ACCENT, size: 21 })] })] })); break;
     case "pointer": children.push(new Paragraph({ keepNext: true, spacing: { after: 100 }, children: runsOf(b.runs, { italics: true, color: MUTED, size: 20 }) })); break;
     case "excerpt":
       children.push(new Paragraph({ keepNext: true, spacing: { before: 60, after: 60 }, indent: { left: 320 },

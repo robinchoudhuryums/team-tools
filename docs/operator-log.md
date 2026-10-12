@@ -10,6 +10,14 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-12 — the Power Roster sheet is a link
+
+**Adds NO operator state.** The Power packet's directory question now links the
+live Power Roster Google Sheet (a clickable link in the Word file) instead of
+asking you to paste the sheet in before sending — nothing to do by hand. The
+link lives in `manual/packets/spec.json`; if the sheet moves, change it there
+and rebuild.
+
 ## 2026-10-12 — a packet per recipient
 
 **Adds NO operator state.** `./make_packets.sh` now also writes one packet for
@@ -28,7 +36,7 @@ each recipient who has questions flagged for them (`recipients` in
   Monil Shah — no questions are flagged for anyone in particular there.
 - A recipient's packet renumbers its questions and shows each manual excerpt
   once within itself, so a question never points at one the reader does not
-  have. Paste the Power Roster into the Power chapter packet as before.
+  have.
 
 ## 2026-10-12 — packet excerpts trimmed
 

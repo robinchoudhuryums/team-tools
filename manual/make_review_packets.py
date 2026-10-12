@@ -224,8 +224,8 @@ def packet(key, v=None):
             if "q" in r:                      # an open question — an excerpt only if it cites a section
                 L += [f"**{r['n']}. {r['q'].replace('**', '')}**", ""]
                 L += excerpt_lines(excerpts_for(r, key, shown, missing))
-                if r.get("paste"):  # a slot for something only the operator has, e.g. a live sheet
-                    L += [f"**[{r['paste']}]**", ""]
+                if r.get("link"):  # a live document the question refers to, e.g. a team's own sheet
+                    L += [f"**[{r['link']['text']}]({r['link']['url']})**", ""]
                 L += ["**Your answer:**", "", "&nbsp;", ""]
                 continue
             L += [f"### {r['n']}. {r['says'].replace('**', '')}", ""]
@@ -234,8 +234,8 @@ def packet(key, v=None):
                 missing += [(r["n"], "B.1 " + g) for g in gone]
                 L += [f"#### From the manual — {title}", "", body, ""]
             L += excerpt_lines(excerpts_for(r, key, shown, missing))
-            if r.get("paste"):  # e.g. the directory question's live roster sheet
-                L += [f"**[{r['paste']}]**", ""]
+            if r.get("link"):  # e.g. the directory question's live roster sheet
+                L += [f"**[{r['link']['text']}]({r['link']['url']})**", ""]
             # a fill-in line, not checkboxes: the packets go out as Google Docs, where
             # typing on a line is easier than ticking a box (operator 2026-10-12)
             L += [f"**Correct, or needs change?** {ANSWER_LINE}", "", "**Notes:**", "", "&nbsp;", ""]

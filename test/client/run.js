@@ -35192,18 +35192,23 @@ test('PK-3 (review packets, operator 2026-10-12): a question that cites a sectio
   assert.ok(followUps >= 3, 'non-vacuous: the packets carry follow-up questions (' + followUps + ') — fewer since the 2026-10-12 merges folded most follow-ups into their source');
 });
 
-test('PK-4 (review packets, operator 2026-10-12): a question can carry a PASTE slot for something only the operator has (the live Power Roster sheet) — both builders draw it, in an open question before its answer space and in a closed one before its answer line; the Power packet\'s directory question carries it', () => {
+test('PK-4 (review packets, operator 2026-10-12): a question can carry a LINK to a live document only the team keeps (the Power Roster Google Sheet) — both builders draw it, in an open question before its answer space and in a closed one before its answer line, and the Word renderer makes it a real hyperlink; the Power packet\'s directory question carries it', () => {
   const MAN = path.join(__dirname, '../../manual');
-  [['make_review_packets.py', 'L += ["**Your answer:**"', 'L += [f"**Correct, or needs change?**'], ['packet_model.py', 'B.append({"t": "answer_open"', 'B.append({"t": "answer", "n"']].forEach(([f, ansOpen, ansClosed]) => {
+  [['make_review_packets.py', 'L += ["**Your answer:**"', 'L += [f"**Correct, or needs change?**', /\[\{r\['link'\]\['text'\]\}\]\(\{r\['link'\]\['url'\]\}\)/],
+   ['packet_model.py', 'B.append({"t": "answer_open"', 'B.append({"t": "answer", "n"', /B\.append\(\{"t": "link", \*\*r\["link"\]\}\)/]].forEach(([f, ansOpen, ansClosed, draw]) => {
     const src = fs.readFileSync(path.join(MAN, f), 'utf8');
-    const q = src.indexOf('if "q" in r:'), slot1 = src.indexOf('if r.get("paste"):', q), a1 = src.indexOf(ansOpen, q);
-    assert.ok(q > 0 && slot1 > q && a1 > slot1, f + ': open question — the slot, then the answer space — ' + [q, slot1, a1]);
-    const slot2 = src.indexOf('if r.get("paste"):', a1), a2 = src.indexOf(ansClosed, a1);
-    assert.ok(slot2 > a1 && a2 > slot2, f + ': closed question — the slot, then the answer line — ' + [slot2, a2]);
-    [[slot1, a1], [slot2, a2]].forEach(([x, y]) => assert.ok(/\[\{r\['paste'\]\}\]/.test(src.slice(x, y)), f + ': it draws the slot text in brackets'));
+    const q = src.indexOf('if "q" in r:'), slot1 = src.indexOf('if r.get("link"):', q), a1 = src.indexOf(ansOpen, q);
+    assert.ok(q > 0 && slot1 > q && a1 > slot1, f + ': open question — the link, then the answer space — ' + [q, slot1, a1]);
+    const slot2 = src.indexOf('if r.get("link"):', a1), a2 = src.indexOf(ansClosed, a1);
+    assert.ok(slot2 > a1 && a2 > slot2, f + ': closed question — the link, then the answer line — ' + [slot2, a2]);
+    [[slot1, a1], [slot2, a2]].forEach(([x, y]) => assert.ok(draw.test(src.slice(x, y)), f + ': it draws the link text pointing at its url'));
+    assert.ok(!/r\.get\("paste"\)|r\['paste'\]/.test(src), f + ': the old paste slot is gone');
   });
+  const rj = fs.readFileSync(path.join(MAN, 'render_packet.js'), 'utf8');
+  assert.ok(/case "link":[^\n]*\n\s*new ExternalHyperlink\(\{ link: b\.url, children: \[new TextRun\(\{ text: b\.text/.test(rj), 'the Word renderer draws a link block as a hyperlink to its url');
   const p5 = JSON.parse(fs.readFileSync(path.join(MAN, 'packets/spec.json'), 'utf8')).p5;
-  assert.ok([].concat(...p5.groups.map((g) => g.rows)).some((r) => r.paste && r.roster === 'p5' && /Power Roster/.test(r.says || '')), 'the Power packet\'s directory question carries the Power Roster slot');
+  const row = [].concat(...p5.groups.map((g) => g.rows)).find((r) => r.link && r.roster === 'p5');
+  assert.ok(row && /Power Roster/.test(row.says || '') && /Power Roster/.test(row.link.text) && /^https:\/\/docs\.google\.com\/spreadsheets\/d\//.test(row.link.url), 'the Power packet\'s directory question links the Power Roster sheet');
 });
 
 test('PK-5 (review packets, operator 2026-10-12): the build names exactly the packets the spec has — no map entry for a dissolved packet (Oxygen, After Hours; the After Hours questions now ride Field Ops, marked for Parth Shah) — and make_packets.sh removes a packet file the spec no longer builds', () => {

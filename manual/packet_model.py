@@ -106,8 +106,8 @@ def model(key, v=None):
             if "q" in r:
                 B.append({"t": "h3", "runs": runs(f"{r['n']}. {r['q'].replace('**', '')}")})
                 B += excerpt_blocks(MRP.excerpts_for(r, key, shown, []))
-                if r.get("paste"):  # a slot for something only the operator has, e.g. a live sheet
-                    B.append({"t": "pointer", "runs": runs(f"[{r['paste']}]")})
+                if r.get("link"):  # a live document the question refers to, e.g. a team's own sheet
+                    B.append({"t": "link", **r["link"]})
                 B.append({"t": "answer_open", "n": r["n"]})
                 continue
             B.append({"t": "h3", "runs": runs(f"{r['n']}. {r['says'].replace('**', '')}")})
@@ -115,8 +115,8 @@ def model(key, v=None):
                 t, body, _ = MRP.directory_rows(r["roster"])
                 B.append({"t": "excerpt", "title": t, "blocks": blocks(body)})
             B += excerpt_blocks(MRP.excerpts_for(r, key, shown, []))
-            if r.get("paste"):  # e.g. the directory question's live roster sheet
-                B.append({"t": "pointer", "runs": runs(f"[{r['paste']}]")})
+            if r.get("link"):  # e.g. the directory question's live roster sheet
+                B.append({"t": "link", **r["link"]})
             B.append({"t": "answer", "n": r["n"]})
     return {"title": title, "blocks": B}
 

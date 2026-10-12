@@ -291,8 +291,8 @@
      },
      {
       "roster": "p5",
-      "says": "**Your directory rows and the Power Roster sheet** — check each name, backup and contact in your rows below, and in the current Power Roster sheet pasted after them. **Who backs up the Power Manager?**",
-      "paste": "Paste the current Power Roster sheet here before sending.",
+      "says": "**Your directory rows and the Power Roster sheet** — check each name, backup and contact in your rows below, and in the current Power Roster sheet linked after them. **Who backs up the Power Manager?**",
+      "link": {"text": "Open the current Power Roster sheet", "url": "https://docs.google.com/spreadsheets/d/1ExPBQ2xcjKI2MQMp68NwNM-VfpekYgnxKEBre1cQRjQ/edit?usp=sharing"},
       "n": "15"
      },
      {
