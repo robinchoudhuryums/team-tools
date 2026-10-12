@@ -35235,12 +35235,15 @@ test('PK-6 (review packets, operator 2026-10-12): a recipient with questions fla
       assert.ok(spec[k].head.split('\n').some((l) => l.includes(mark) && /questions marked|are for/.test(l)), k + ': the marker ' + mark + ' is the one the packet\'s own head explains');
       const hit = rows.filter((r) => (r.says || r.q || '').includes(mark)).length;
       assert.ok(hit > 0 && hit < rows.length, k + ' ' + v.file + ': the marker picks some questions, not none or all (' + hit + ')');
+      const last = rows[rows.length - 1], lt = last.says || last.q || '';
+      assert.ok(/^\*\*Anything else/.test(lt) && !lt.includes(mark), k + ': the packet ends on its open "Anything else" close, which carries no marker — so a cut keeps it only through the closing rule');
     });
   });
   assert.ok(cuts >= 4, 'non-vacuous: April, Ozaire (Power, Field Ops) and Mahesh (' + cuts + ')');
   const py = fs.readFileSync(path.join(MAN, 'make_review_packets.py'), 'utf8');
   const sf = py.slice(py.indexOf('def spec_for('), py.indexOf('\ndef build_name('));
   assert.ok(/\(mark in text\(r\)\) == bool\(v\.get\("only"\)\)/.test(sf) && /n=str\(i \+ 1\)/.test(sf), 'spec_for keeps the marked (only) or unmarked (skip) questions and renumbers them');
+  assert.ok(/closing = lambda r: text\(r\)\.startswith\("\*\*Anything else"\)/.test(sf) && /== bool\(v\.get\("only"\)\) or closing\(r\)\]/.test(sf), 'every cut keeps the open-ended closing question, an only-cut included');
   assert.ok(/BUILDS = \[\(k, None\) for k in KEYS\] \+ \[\(k, v\) for k in KEYS for v in SPEC\[k\]\.get\("recipients", \[\]\)\]/.test(py), 'BUILDS is every packet, then every recipient cut');
   assert.ok(/for key, v in BUILDS:/.test(py) && /packet\(key, v\)/.test(py), 'the Markdown build walks BUILDS');
   const pm = fs.readFileSync(path.join(MAN, 'packet_model.py'), 'utf8');

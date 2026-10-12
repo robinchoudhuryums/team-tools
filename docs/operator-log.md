@@ -18,6 +18,8 @@ each recipient who has questions flagged for them (`recipients` in
 - `Review-Packet-C4-Sales-April-Arredondo` — the three ◆ questions.
 - `Review-Packet-C5-Power-Mobility-Ozaire-Hawa` — the two ◆ questions.
 - `Review-Packet-C6-Field-Operations-Ozaire-Hawa` — the five ◆ questions.
+- Each of those three still ends on the chapter's open "Anything else?"
+  question (operator, same day).
 - `Review-Packet-C6-Field-Operations-Mahesh-Patel` — the Field Ops packet
   without the ▲ after-hours questions, which are Parth Shah's.
 - **Everyone else uses the chapter packet:** Parth Shah (the full Field Ops

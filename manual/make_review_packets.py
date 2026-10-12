@@ -174,7 +174,8 @@ def spec_for(key, v=None):
     packet for each recipient who has questions flagged for them). `v` comes from the
     packet's "recipients" list: {"file", "for", "only": marker} keeps just the
     questions carrying the marker (and drops the marker, which needs no legend
-    there); {"file", "for", "skip": marker} leaves those questions out (they are
+    there) plus the packet's closing "Anything else?" (operator 2026-10-12);
+    {"file", "for", "skip": marker} leaves those questions out (they are
     someone else's). Questions are renumbered; excerpts follow the once-per-packet
     rule within the cut, so a question never points at one the reader lacks."""
     s = SPEC[key]
@@ -183,8 +184,9 @@ def spec_for(key, v=None):
     lines = s["head"].strip().split("\n")
     mark = v.get("only") or v.get("skip")
     text = lambda r: r.get("says") or r.get("q") or ""
+    closing = lambda r: text(r).startswith("**Anything else")  # the open-ended close every packet ends on
     rows = [r for g in s["groups"] for r in g["rows"]
-            if (mark in text(r)) == bool(v.get("only"))]
+            if (mark in text(r)) == bool(v.get("only")) or closing(r)]
     head = [lines[0], "", f"**For:** {v['for']}"]
     if v.get("skip"):  # the other recipients' legends still apply
         head += [l for l in lines[1:] if l.startswith("**") and not l.startswith("**For:**") and mark not in l]
