@@ -23,7 +23,7 @@ Operations packets. No manual text changed.
   the Resupply Q does when a category owner is unavailable, retiring an older
   model when a newer one is stocked, a first-time PAP user's mask trial or
   change, and back-up units for every ventilator patient.
-- **Sales:** Q4 shows the Eligibility Status diagram; the one-year PPD question
+- **Sales:** the Eligibility Status question (now Q5) shows its diagram; the one-year PPD question
   also asks for any other case where Sales opens a new order on a patient with an
   existing PMD order; the PAP Q / Sales MWC Q question is gone; two new questions
   — how reps answer cost and model questions, and (for Sales Eligibility) what a
@@ -32,6 +32,13 @@ Operations packets. No manual text changed.
   already quoted now points back to it ("shown with question N") instead of
   repeating the text — the same rule closed questions already followed, in the
   Markdown and the Word copy alike — so some packets are shorter.
+- **Questions reordered (operator: no excerpt repeated, rearrange if needed):**
+  a follow-up question now sits directly after the question that shows its
+  section, so "shown with question N" always means the one just above. This
+  renumbers the Manual Mobility, Respiratory & Resupply, Sales, Power, Service,
+  After Hours and Billing packets (Resources and Anything else stay last); Field
+  Operations, Oxygen and Denials keep their order. Re-share from the rebuilt
+  packets rather than mapping old question numbers.
 
 ## 2026-10-12 — manual and packet corrections; feedback moves into the reader bar
 

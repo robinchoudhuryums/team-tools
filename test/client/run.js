@@ -35165,6 +35165,27 @@ test('PK-2 (review packets, operator 2026-10-12): an OPEN question shows a secti
   });
 });
 
+test('PK-3 (review packets, operator 2026-10-12): a question that cites a section an earlier question already quoted sits DIRECTLY after that question (or among its other follow-ups) — so "shown with question N" always points just above, never pages back (derived over every packet in spec.json)', () => {
+  const spec = JSON.parse(fs.readFileSync(path.join(__dirname, '../../manual/packets/spec.json'), 'utf8'));
+  let followUps = 0;
+  Object.keys(spec).filter((k) => k[0] !== '_').forEach((key) => {
+    const rows = [].concat(...spec[key].groups.map((g) => g.rows));
+    const first = {}, src = rows.map(() => -1);
+    rows.forEach((r, i) => {
+      String(r.sec || '').split(/,\s*/).map((t) => t.trim()).filter((t) => /^\d+\.[\dA-Z]+(\.\d+)?(~|$)|^FAQ/i.test(t)).forEach((t) => {
+        if (t in first) { if (src[i] < 0) src[i] = first[t]; } else first[t] = i;
+      });
+    });
+    src.forEach((s, i) => {
+      if (s < 0) return;
+      followUps++;
+      for (let j = s + 1; j < i; j++) assert.strictEqual(src[j], s, key + ' Q' + rows[i].n + ' repeats a section Q' + rows[s].n + ' quotes, but Q' + rows[j].n + ' sits between them — move it up to follow Q' + rows[s].n);
+    });
+    rows.forEach((r, i) => assert.strictEqual(r.n, String(i + 1), key + ': questions are numbered in order'));
+  });
+  assert.ok(followUps >= 10, 'non-vacuous: the packets carry follow-up questions (' + followUps + ')');
+});
+
 test('MRD-9 (the Phase 8 follow-on, 2026-10-12): a dark-mode printout draws the accent in each palette\'s LIGHT accent — the swatch tokens, whose dark copy is screen-only — for every palette the token file declares; printed cross-references use the deeper --accent-2', () => {
   const { toks, blocks } = tokenBlocks();
   const styles = fs.readFileSync(path.join(PA_WEB, 'styles.html'), 'utf8');
