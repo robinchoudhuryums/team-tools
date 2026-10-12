@@ -1,5 +1,5 @@
 {
- "_about": "The review questions, one packet per chapter key. The 96 approved on 2026-10-01/02 (the trimmed September packets), renumbered to the October 2026 chapters; the 11 rows the October text overtook reworded or dropped (operator 2026-10-08); the October update's full set is kept in spec-october-full.json. Keys starting with '_' are notes, not packets. P2 (operator 2026-10-08): the approved October candidates (plan 2.3, Add + Opt) added before each packet's closing Resources / Anything-else questions, each carrying its ask in its own text, plus the Denials packet. The Oxygen packet (p8) was dissolved on 2026-10-12: its rental and restart questions merged into Billing’s oxygen billing and oxygen restart questions, concentrator servicing moved to Service, and the CSR manager reviews Chapter 8 directly.",
+ "_about": "The review questions, one packet per chapter key. The 96 approved on 2026-10-01/02 (the trimmed September packets), renumbered to the October 2026 chapters; the 11 rows the October text overtook reworded or dropped (operator 2026-10-08); the October update's full set is kept in spec-october-full.json. Keys starting with '_' are notes, not packets. P2 (operator 2026-10-08): the approved October candidates (plan 2.3, Add + Opt) added before each packet's closing Resources / Anything-else questions, each carrying its ask in its own text, plus the Denials packet. The Oxygen packet (p8) was dissolved on 2026-10-12: its rental and restart questions merged into Billing’s oxygen billing and oxygen restart questions, concentrator servicing moved to Service, and the CSR manager reviews Chapter 8 directly. The After Hours packet (p9) was dissolved the same day: its questions moved to the Field Ops packet, marked ▲ for Parth Shah, and the CSR manager reviews Chapter 9 directly.",
  "p2": {
   "head": "# Review Packet — Chapter 2: Manual Mobility & General DME\n\n**For:** Manual Mobility (Parth Dave, Manager)\n\n\n",
   "groups": [
@@ -429,7 +429,7 @@
   ]
  },
  "p6": {
-  "head": "# Review Packet — Chapter 6: Field Operations\n\n**For:** Field Operations — **Parth Shah** (Manager) and **Mahesh Patel** (Supervisor)\n**Also for:** **Ozaire (MD) Hawa** (Field Ops-Power) — questions marked **◆**\n\n\n",
+  "head": "# Review Packet — Chapter 6: Field Operations\n\n**For:** Field Operations — **Parth Shah** (Manager) and **Mahesh Patel** (Supervisor)\n**Also for:** **Ozaire (MD) Hawa** (Field Ops-Power) — questions marked **◆**\n**After hours:** questions marked **▲** are for **Parth Shah** (after-hours coverage and the Level 1 on-call backup)\n\n\n",
   "groups": [
    {
     "num": "",
@@ -527,14 +527,39 @@
       "n": "18"
      },
      {
-      "sec": "6.16",
-      "q": "**Resources** — any links to add to Chapter 6's resource list?",
+      "sec": "9.1.1, 9.4.1",
+      "says": "**Dispatch and targets:** DFW only, San Antonio for concentrators only; 0–60 minutes for ventilators, concentrators and suction ▲",
       "n": "19"
      },
      {
-      "sec": "",
-      "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your team?",
+      "sec": "9.1.2, 9.5",
+      "q": "**The on-call team** — please confirm everyone and their numbers: technicians, RTs, and the Level 1 and Level 2 backups. Who, if anyone, is Level 2? ▲",
       "n": "20"
+     },
+     {
+      "sec": "9.3",
+      "says": "**Power wheelchairs after hours:** advise business hours; if the patient is stuck, non-emergency services or 9-1-1 ▲",
+      "n": "21"
+     },
+     {
+      "sec": "9.4, 9.4.2",
+      "says": "**The escalation chain:** RT calls go to the other RT at step 3; if no one answers, repeat from step 1; 9-1-1 first if distress develops; confirm a backup cylinder meanwhile. Each step waits 30 minutes, including between steps 1 and 2 — right? ▲",
+      "n": "22"
+     },
+     {
+      "sec": "9.9",
+      "says": "**Phone first:** the on-call RT or technician tries to troubleshoot by phone; the CSR still dispatches a ventilator call immediately ▲",
+      "n": "23"
+     },
+     {
+      "sec": "6.16",
+      "q": "**Resources** — any links to add to Chapter 6's resource list?",
+      "n": "24"
+     },
+     {
+      "sec": "",
+      "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your team, or to after hours?",
+      "n": "25"
      }
     ]
    }
@@ -638,53 +663,6 @@
       "sec": "",
       "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your team?",
       "n": "18"
-     }
-    ]
-   }
-  ]
- },
- "p9": {
-  "head": "# Review Packet — Chapter 9: After Hours\n\n**For:** After-hours coverage — **Robin** (Customer Service Manager), **Parth Shah** and **Shagun Shastri**\n\n\n",
-  "groups": [
-   {
-    "num": "",
-    "title": "",
-    "intro": "",
-    "rows": [
-     {
-      "sec": "9.4, 9.4.2",
-      "says": "**The escalation chain:** RT calls go to the other RT at step 3; if no one answers, repeat from step 1; 9-1-1 first if distress develops; confirm a backup cylinder meanwhile",
-      "n": "1"
-     },
-     {
-      "sec": "9.4",
-      "says": "**Each escalation step waits 30 minutes**, including between steps 1 and 2. Right?",
-      "n": "2"
-     },
-     {
-      "sec": "9.3",
-      "says": "**Power wheelchairs:** advise business hours; if the patient is stuck, non-emergency services or 9-1-1",
-      "n": "3"
-     },
-     {
-      "sec": "9.1.1, 9.4.1",
-      "says": "**Dispatch and targets:** DFW only, San Antonio for concentrators only; 0–60 minutes for ventilators, concentrators and suction",
-      "n": "4"
-     },
-     {
-      "sec": "9.1.2, 9.5",
-      "q": "**The on-call team** — please confirm everyone and their numbers: technicians, RTs, and the Level 1 and Level 2 backups. Who, if anyone, is Level 2?",
-      "n": "5"
-     },
-     {
-      "sec": "9.9",
-      "says": "**Phone first:** the on-call RT or technician tries to troubleshoot by phone; the CSR still dispatches a ventilator call immediately",
-      "n": "6"
-     },
-     {
-      "sec": "",
-      "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to after hours?",
-      "n": "7"
      }
     ]
    }

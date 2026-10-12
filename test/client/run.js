@@ -35203,14 +35203,17 @@ test('PK-4 (review packets, operator 2026-10-12): a question can carry a PASTE s
   assert.ok([].concat(...p5.groups.map((g) => g.rows)).some((r) => r.paste && /Power Roster/.test(r.q || '')), 'the Power packet carries the Power Roster slot');
 });
 
-test('PK-5 (review packets, operator 2026-10-12): the build names exactly the packets the spec has — no map entry for a dissolved packet (the Oxygen packet) — and make_packets.sh removes a packet file the spec no longer builds', () => {
+test('PK-5 (review packets, operator 2026-10-12): the build names exactly the packets the spec has — no map entry for a dissolved packet (Oxygen, After Hours; the After Hours questions now ride Field Ops, marked for Parth Shah) — and make_packets.sh removes a packet file the spec no longer builds', () => {
   const MAN = path.join(__dirname, '../../manual');
   const keys = Object.keys(JSON.parse(fs.readFileSync(path.join(MAN, 'packets/spec.json'), 'utf8'))).filter((k) => k[0] !== '_');
   const py = fs.readFileSync(path.join(MAN, 'make_review_packets.py'), 'utf8');
   const mapKeys = (name) => [...(new RegExp('^' + name + ' = \\{([\\s\\S]*?)\\}', 'm').exec(py) || [])[1].matchAll(/"(\w+)":/g)].map((m) => m[1]);
   assert.deepStrictEqual(mapKeys('NAMES').sort(), keys.slice().sort(), 'every packet has a file name, and no name is left for a packet that is gone');
   mapKeys('FAQ').forEach((k) => assert.ok(keys.includes(k), 'FAQ names a packet that is gone: ' + k));
-  assert.ok(!keys.includes('p8'), 'the Oxygen packet is dissolved — the CSR manager reviews Chapter 8');
+  assert.ok(!keys.includes('p8') && !keys.includes('p9'), 'the Oxygen and After Hours packets are dissolved — the CSR manager reviews Chapters 8 and 9');
+  const p6 = JSON.parse(fs.readFileSync(path.join(MAN, 'packets/spec.json'), 'utf8')).p6;
+  const tri = [].concat(...p6.groups.map((g) => g.rows)).filter((r) => /\u25b2$/.test(r.says || r.q || ''));
+  assert.ok(/questions marked \*\*\u25b2\*\* are for \*\*Parth Shah\*\*/.test(p6.head) && tri.length >= 5 && tri.every((r) => /^9\./.test(r.sec)), 'the After Hours questions ride the Field Ops packet, marked \u25b2 for Parth Shah, each quoting Chapter 9 (' + tri.length + ')');
   const sh = fs.readFileSync(path.join(MAN, 'make_packets.sh'), 'utf8');
   assert.ok(/want = \{NAMES\[k\] for k in KEYS\}/.test(sh) && /os\.remove\(f\)/.test(sh), 'the build removes stale packet files');
 });

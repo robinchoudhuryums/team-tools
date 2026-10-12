@@ -10,6 +10,19 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-12 — the After Hours packet is dissolved
+
+**Adds NO operator state.** Rebuild the packets (`./make_packets.sh`; the build
+deletes the old `Review-Packet-C9-After-Hours` files) and re-share the Field
+Operations packet. No manual text changed.
+- **Chapter 9 is reviewed by the CSR manager**; Shagun Shastri is no longer a
+  recipient.
+- **Field Operations questions 19–23, marked ▲ for Parth Shah:** dispatch and
+  response targets, the on-call team, power wheelchairs after hours, the
+  escalation chain (now including the 30-minute wait per step, formerly its own
+  question), and phone-first troubleshooting. The packet's "Anything else?" also
+  asks what a CSR should have ready before transferring to after hours.
+
 ## 2026-10-12 — the Oxygen packet is dissolved
 
 **Adds NO operator state.** Rebuild the packets (`./make_packets.sh`); the build
