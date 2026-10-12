@@ -10,6 +10,24 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-12 — a packet per recipient
+
+**Adds NO operator state.** `./make_packets.sh` now also writes one packet for
+each recipient who has questions flagged for them (`recipients` in
+`manual/packets/spec.json`); everyone else uses the chapter's packet as before.
+- `Review-Packet-C4-Sales-April-Arredondo` — the three ◆ questions.
+- `Review-Packet-C5-Power-Mobility-Ozaire-Hawa` — the two ◆ questions.
+- `Review-Packet-C6-Field-Operations-Ozaire-Hawa` — the five ◆ questions.
+- `Review-Packet-C6-Field-Operations-Mahesh-Patel` — the Field Ops packet
+  without the ▲ after-hours questions, which are Parth Shah's.
+- **Everyone else uses the chapter packet:** Parth Shah (the full Field Ops
+  packet, ▲ included), Mary Carson, Rajdeep Thakar, Erica Thongvan, Ahmed
+  Ramadan, Hem, Kajal, Parth Dave, Nikunj Solanki, Arnav Pan, Bhoj Bhatt and
+  Monil Shah — no questions are flagged for anyone in particular there.
+- A recipient's packet renumbers its questions and shows each manual excerpt
+  once within itself, so a question never points at one the reader does not
+  have. Paste the Power Roster into the Power chapter packet as before.
+
 ## 2026-10-12 — packet excerpts trimmed
 
 **Adds NO operator state.** Rebuild the packets. Excerpts that did not help their

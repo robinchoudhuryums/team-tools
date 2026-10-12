@@ -1,5 +1,5 @@
 {
- "_about": "The review questions, one packet per chapter key. The 96 approved on 2026-10-01/02 (the trimmed September packets), renumbered to the October 2026 chapters; the 11 rows the October text overtook reworded or dropped (operator 2026-10-08); the October update's full set is kept in spec-october-full.json. Keys starting with '_' are notes, not packets. P2 (operator 2026-10-08): the approved October candidates (plan 2.3, Add + Opt) added before each packet's closing Resources / Anything-else questions, each carrying its ask in its own text, plus the Denials packet. The Oxygen packet (p8) was dissolved on 2026-10-12: its rental and restart questions merged into Billing’s oxygen billing and oxygen restart questions, concentrator servicing moved to Service, and the CSR manager reviews Chapter 8 directly. The After Hours packet (p9) was dissolved the same day: its questions moved to the Field Ops packet, marked ▲ for Parth Shah, and the CSR manager reviews Chapter 9 directly.",
+ "_about": "The review questions, one packet per chapter key. The 96 approved on 2026-10-01/02 (the trimmed September packets), renumbered to the October 2026 chapters; the 11 rows the October text overtook reworded or dropped (operator 2026-10-08); the October update's full set is kept in spec-october-full.json. Keys starting with '_' are notes, not packets. P2 (operator 2026-10-08): the approved October candidates (plan 2.3, Add + Opt) added before each packet's closing Resources / Anything-else questions, each carrying its ask in its own text, plus the Denials packet. The Oxygen packet (p8) was dissolved on 2026-10-12: its rental and restart questions merged into Billing’s oxygen billing and oxygen restart questions, concentrator servicing moved to Service, and the CSR manager reviews Chapter 8 directly. The After Hours packet (p9) was dissolved the same day: its questions moved to the Field Ops packet, marked ▲ for Parth Shah, and the CSR manager reviews Chapter 9 directly. \"recipients\" (2026-10-12): a packet also builds one file per recipient who has questions flagged for them — \"only\" keeps the questions carrying that marker, \"skip\" leaves out the questions marked for someone else; every other recipient uses the packet itself.",
  "p2": {
   "head": "# Review Packet — Chapter 2: Manual Mobility & General DME\n\n**For:** Manual Mobility (Parth Dave, Manager)\n\n\n",
   "groups": [
@@ -201,6 +201,13 @@
      }
     ]
    }
+  ],
+  "recipients": [
+   {
+    "file": "April-Arredondo",
+    "for": "**April Arredondo** (Sales Eligibility) — the Sales questions marked for you",
+    "only": "◆"
+   }
   ]
  },
  "p5": {
@@ -294,6 +301,13 @@
       "n": "16"
      }
     ]
+   }
+  ],
+  "recipients": [
+   {
+    "file": "Ozaire-Hawa",
+    "for": "**Ozaire (MD) Hawa** (Field Ops-Power) — the Power questions marked for you",
+    "only": "◆"
    }
   ]
  },
@@ -391,6 +405,18 @@
       "n": "17"
      }
     ]
+   }
+  ],
+  "recipients": [
+   {
+    "file": "Ozaire-Hawa",
+    "for": "**Ozaire (MD) Hawa** (Field Ops-Power) — the Field Operations questions marked for you",
+    "only": "◆"
+   },
+   {
+    "file": "Mahesh-Patel",
+    "for": "Field Operations — **Mahesh Patel** (Supervisor)",
+    "skip": "▲"
    }
   ]
  },

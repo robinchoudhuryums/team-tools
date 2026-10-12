@@ -169,8 +169,46 @@ def excerpt_lines(items):
     return L
 
 
-def packet(key):
+def spec_for(key, v=None):
+    """A packet's spec, or one recipient's cut of it (operator 2026-10-12: a separate
+    packet for each recipient who has questions flagged for them). `v` comes from the
+    packet's "recipients" list: {"file", "for", "only": marker} keeps just the
+    questions carrying the marker (and drops the marker, which needs no legend
+    there); {"file", "for", "skip": marker} leaves those questions out (they are
+    someone else's). Questions are renumbered; excerpts follow the once-per-packet
+    rule within the cut, so a question never points at one the reader lacks."""
     s = SPEC[key]
+    if v is None:
+        return s
+    lines = s["head"].strip().split("\n")
+    mark = v.get("only") or v.get("skip")
+    text = lambda r: r.get("says") or r.get("q") or ""
+    rows = [r for g in s["groups"] for r in g["rows"]
+            if (mark in text(r)) == bool(v.get("only"))]
+    head = [lines[0], "", f"**For:** {v['for']}"]
+    if v.get("skip"):  # the other recipients' legends still apply
+        head += [l for l in lines[1:] if l.startswith("**") and not l.startswith("**For:**") and mark not in l]
+    out = []
+    for i, r in enumerate(rows):
+        r = dict(r, n=str(i + 1))
+        if v.get("only"):
+            for f in ("says", "q"):
+                if f in r:
+                    r[f] = r[f].replace(" " + mark, "").replace(mark, "")
+        out.append(r)
+    return {"head": "\n".join(head) + "\n\n", "groups": [{"num": "", "title": "", "intro": "", "rows": out}]}
+
+
+def build_name(key, v=None):
+    return NAMES[key] + ("-" + v["file"] if v else "")
+
+
+# every file the build writes: each packet, then each recipient's cut of it
+BUILDS = [(k, None) for k in KEYS] + [(k, v) for k in KEYS for v in SPEC[k].get("recipients", [])]
+
+
+def packet(key, v=None):
+    s = spec_for(key, v)
     head = s["head"].rstrip()
     shown = {}
     L = [head, ""]
@@ -205,9 +243,11 @@ def packet(key):
 
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
-    for key in (sys.argv[1:] or KEYS):
-        text, missing = packet(key)
-        path = f"{OUT}/Review-Packet-{NAMES[key]}.md"
+    for key, v in BUILDS:
+        if sys.argv[1:] and key not in sys.argv[1:]:
+            continue
+        text, missing = packet(key, v)
+        path = f"{OUT}/Review-Packet-{build_name(key, v)}.md"
         open(path, "w", encoding="utf-8").write(text)
-        print(f"{key}: {len(text):>7,} chars · {text.count('#### From the manual'):>2} excerpts"
+        print(f"{key + (' · ' + v['file'] if v else ''):<24} {len(text):>7,} chars · {text.count('#### From the manual'):>2} excerpts"
               + (f" · MISSING {missing}" if missing else ""))

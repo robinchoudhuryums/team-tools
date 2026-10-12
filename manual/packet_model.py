@@ -89,8 +89,8 @@ def excerpt_blocks(items):
             else {"t": "excerpt", "title": it[1], "blocks": blocks(it[2])} for it in items]
 
 
-def model(key):
-    s = MRP.SPEC[key]
+def model(key, v=None):
+    s = MRP.spec_for(key, v)
     head = [l for l in s["head"].split("\n") if l.strip()]
     title = head[0].lstrip("# ").strip()
     meta = [runs(l) for l in head[1:]]
@@ -122,6 +122,9 @@ def model(key):
 
 
 if __name__ == "__main__":
-    for key in (sys.argv[1:] or MRP.KEYS):
-        json.dump(model(key), open(f"/tmp/packet_{key}.json", "w", encoding="utf-8"), ensure_ascii=False)
-        print(key, "model ok")
+    for key, v in MRP.BUILDS:
+        if sys.argv[1:] and key not in sys.argv[1:]:
+            continue
+        name = MRP.build_name(key, v)
+        json.dump(model(key, v), open(f"/tmp/packet_{name}.json", "w", encoding="utf-8"), ensure_ascii=False)
+        print(name, "model ok")

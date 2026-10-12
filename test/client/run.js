@@ -35218,7 +35218,35 @@ test('PK-5 (review packets, operator 2026-10-12): the build names exactly the pa
   const tri = [].concat(...p6.groups.map((g) => g.rows)).filter((r) => /\u25b2$/.test(r.says || r.q || ''));
   assert.ok(/questions marked \*\*\u25b2\*\* are for \*\*Parth Shah\*\*/.test(p6.head) && tri.length >= 3 && tri.every((r) => /^9\./.test(r.sec)), 'the After Hours questions ride the Field Ops packet, marked \u25b2 for Parth Shah, each quoting Chapter 9 (' + tri.length + ')');
   const sh = fs.readFileSync(path.join(MAN, 'make_packets.sh'), 'utf8');
-  assert.ok(/want = \{NAMES\[k\] for k in KEYS\}/.test(sh) && /os\.remove\(f\)/.test(sh), 'the build removes stale packet files');
+  assert.ok(/want = \{build_name\(k, v\) for k, v in BUILDS\}/.test(sh) && /os\.remove\(f\)/.test(sh), 'the build removes stale packet files');
+});
+
+test('PK-6 (review packets, operator 2026-10-12): a recipient with questions flagged for them gets their own packet — "only" keeps the questions carrying their marker, "skip" leaves out someone else\'s — and every builder (Markdown, Word model, render loop, stale-file sweep) walks the SAME list of builds', () => {
+  const MAN = path.join(__dirname, '../../manual');
+  const spec = JSON.parse(fs.readFileSync(path.join(MAN, 'packets/spec.json'), 'utf8'));
+  let cuts = 0;
+  Object.keys(spec).filter((k) => k[0] !== '_').forEach((k) => {
+    const rows = [].concat(...spec[k].groups.map((g) => g.rows)), files = new Set();
+    (spec[k].recipients || []).forEach((v) => {
+      cuts++;
+      const mark = v.only || v.skip;
+      assert.ok(mark && !(v.only && v.skip) && v.file && v.for, k + ': a recipient names a file, who it is for, and ONE of only/skip');
+      assert.ok(!files.has(v.file), k + ': recipient files are unique'); files.add(v.file);
+      assert.ok(spec[k].head.split('\n').some((l) => l.includes(mark) && /questions marked|are for/.test(l)), k + ': the marker ' + mark + ' is the one the packet\'s own head explains');
+      const hit = rows.filter((r) => (r.says || r.q || '').includes(mark)).length;
+      assert.ok(hit > 0 && hit < rows.length, k + ' ' + v.file + ': the marker picks some questions, not none or all (' + hit + ')');
+    });
+  });
+  assert.ok(cuts >= 4, 'non-vacuous: April, Ozaire (Power, Field Ops) and Mahesh (' + cuts + ')');
+  const py = fs.readFileSync(path.join(MAN, 'make_review_packets.py'), 'utf8');
+  const sf = py.slice(py.indexOf('def spec_for('), py.indexOf('\ndef build_name('));
+  assert.ok(/\(mark in text\(r\)\) == bool\(v\.get\("only"\)\)/.test(sf) && /n=str\(i \+ 1\)/.test(sf), 'spec_for keeps the marked (only) or unmarked (skip) questions and renumbers them');
+  assert.ok(/BUILDS = \[\(k, None\) for k in KEYS\] \+ \[\(k, v\) for k in KEYS for v in SPEC\[k\]\.get\("recipients", \[\]\)\]/.test(py), 'BUILDS is every packet, then every recipient cut');
+  assert.ok(/for key, v in BUILDS:/.test(py) && /packet\(key, v\)/.test(py), 'the Markdown build walks BUILDS');
+  const pm = fs.readFileSync(path.join(MAN, 'packet_model.py'), 'utf8');
+  assert.ok(/for key, v in MRP\.BUILDS:/.test(pm) && /MRP\.spec_for\(key, v\)/.test(pm), 'the Word model walks BUILDS through spec_for');
+  const sh = fs.readFileSync(path.join(MAN, 'make_packets.sh'), 'utf8');
+  assert.ok(/want = \{build_name\(k, v\) for k, v in BUILDS\}/.test(sh) && /for k, v in BUILDS:/.test(sh), 'the render loop and the stale sweep walk BUILDS');
 });
 
 test('MRD-9 (the Phase 8 follow-on, 2026-10-12): a dark-mode printout draws the accent in each palette\'s LIGHT accent — the swatch tokens, whose dark copy is screen-only — for every palette the token file declares; printed cross-references use the deeper --accent-2', () => {
