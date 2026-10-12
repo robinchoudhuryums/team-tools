@@ -10,6 +10,22 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-12 — the Oxygen packet is dissolved
+
+**Adds NO operator state.** Rebuild the packets (`./make_packets.sh`); the build
+now deletes the old `Review-Packet-C8-Oxygen` files from the output folder.
+Re-share the Service and Billing packets. No manual text changed.
+- **Chapter 8 is reviewed by the CSR manager**, so it has no packet.
+- **Billing:** the oxygen billing question now includes the $320 out-of-pocket
+  conserver (ABN first) and quotes 8.5.3; the oxygen restart question now also
+  covers the restart rules (breaks in need, what restarts the 36 months,
+  replacement after five years).
+- **Service:** concentrator servicing (the troubleshooting flowchart, weekly
+  filter cleaning, the 6-monthly maintenance visit) is question 12, with the
+  flowchart, just before "Troubleshooting guides".
+- **Dropped:** cylinder durations (confirmed by the CSR manager) and Chapter 8's
+  Resources / Anything else.
+
 ## 2026-10-12 — Field Ops and Service packet changes
 
 **Adds NO operator state.** Rebuild the packets (`./make_packets.sh`) and

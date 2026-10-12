@@ -1,5 +1,5 @@
 {
- "_about": "The review questions, one packet per chapter key. The 96 approved on 2026-10-01/02 (the trimmed September packets), renumbered to the October 2026 chapters; the 11 rows the October text overtook reworded or dropped (operator 2026-10-08); the October update's full set is kept in spec-october-full.json. Keys starting with '_' are notes, not packets. P2 (operator 2026-10-08): the approved October candidates (plan 2.3, Add + Opt) added before each packet's closing Resources / Anything-else questions, each carrying its ask in its own text, plus the Denials packet.",
+ "_about": "The review questions, one packet per chapter key. The 96 approved on 2026-10-01/02 (the trimmed September packets), renumbered to the October 2026 chapters; the 11 rows the October text overtook reworded or dropped (operator 2026-10-08); the October update's full set is kept in spec-october-full.json. Keys starting with '_' are notes, not packets. P2 (operator 2026-10-08): the approved October candidates (plan 2.3, Add + Opt) added before each packet's closing Resources / Anything-else questions, each carrying its ask in its own text, plus the Denials packet. The Oxygen packet (p8) was dissolved on 2026-10-12: its rental and restart questions merged into Billing’s oxygen billing and oxygen restart questions, concentrator servicing moved to Service, and the CSR manager reviews Chapter 8 directly.",
  "p2": {
   "head": "# Review Packet — Chapter 2: Manual Mobility & General DME\n\n**For:** Manual Mobility (Parth Dave, Manager)\n\n\n",
   "groups": [
@@ -604,77 +604,40 @@
       "n": "11"
      },
      {
-      "sec": "",
-      "q": "**Troubleshooting guides** — does your team have any, for power wheelchairs or other equipment? If so, please share them",
+      "sec": "8.6, 8.6.1",
+      "says": "**Concentrator servicing:** the troubleshooting flowchart, weekly filter cleaning, and a maintenance visit every 6 months",
+      "diagrams": true,
       "n": "12"
      },
      {
-      "sec": "7.14~no longer service",
-      "q": "**When we can’t service** — in what scenarios are we most commonly unable to service equipment? Which of those can still be done, at an out-of-pocket cost?",
+      "sec": "",
+      "q": "**Troubleshooting guides** — does your team have any, for power wheelchairs or other equipment? If so, please share them",
       "n": "13"
      },
      {
       "sec": "7.14~no longer service",
-      "says": "**A PMD we can no longer service:** suggest a local DME repair service (in network for insurance to pay). We often suggest a few companies, but the patient commonly calls back to say that company couldn’t help either. In what scenarios, if any, are they likely to get help from the references we give?",
+      "q": "**When we can’t service** — in what scenarios are we most commonly unable to service equipment? Which of those can still be done, at an out-of-pocket cost?",
       "n": "14"
+     },
+     {
+      "sec": "7.14~no longer service",
+      "says": "**A PMD we can no longer service:** suggest a local DME repair service (in network for insurance to pay). We often suggest a few companies, but the patient commonly calls back to say that company couldn’t help either. In what scenarios, if any, are they likely to get help from the references we give?",
+      "n": "15"
      },
      {
       "roster": "p7",
       "says": "**Your directory row** — check the name, backup and contact",
-      "n": "15"
+      "n": "16"
      },
      {
       "sec": "7.15",
       "q": "**Resources** — any links to add to Chapter 7's resource list?",
-      "n": "16"
+      "n": "17"
      },
      {
       "sec": "",
       "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your team?",
-      "n": "17"
-     }
-    ]
-   }
-  ]
- },
- "p8": {
-  "head": "# Review Packet — Chapter 8: Oxygen\n\n**For:** **Nikunj Solanki** (Respiratory & Resupply) — oxygen supplies, initial orders, compliance and the rental rules\n**Also for:** **Arnav Pan** (Service) — concentrator servicing and troubleshooting, questions marked **◆**\n\n\n",
-  "groups": [
-   {
-    "num": "",
-    "title": "",
-    "intro": "",
-    "rows": [
-     {
-      "sec": "8.4.1, 8.5.3, 8.8.1",
-      "says": "**What the oxygen rental includes:** accessories for the full five years; the conserver (A9900) at no charge when ordered, otherwise $320 with an ABN; and UMS keeps ownership after 36 months",
-      "n": "1"
-     },
-     {
-      "sec": "8.6, 8.6.1",
-      "says": "**Concentrator servicing:** the troubleshooting flowchart, weekly filter cleaning, and a maintenance visit every 6 months ◆",
-      "diagrams": true,
-      "n": "2"
-     },
-     {
-      "sec": "10.12.8",
-      "says": "**Restart rules** — breaks in need, what restarts the 36 months, and replacement after five years",
-      "n": "3"
-     },
-     {
-      "sec": "8.5.2",
-      "says": "**Cylinder durations** at 2 LPM — an M6 about 1.4 hours, an E about 5.7",
-      "n": "4"
-     },
-     {
-      "sec": "8.10",
-      "q": "**Resources** — any links to add to Chapter 8's resource list?",
-      "n": "5"
-     },
-     {
-      "sec": "",
-      "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your teams?",
-      "n": "6"
+      "n": "18"
      }
     ]
    }
@@ -741,8 +704,8 @@
       "n": "1"
      },
      {
-      "sec": "8.4.1, 10.12.2",
-      "q": "**Oxygen billing** — the conserver is included in the rental and coded **A9900**; accessories are included for all five years; UMS keeps ownership after 36 months. **Has UMS been billing the conserver as E1352?**",
+      "sec": "8.4.1, 8.5.3, 10.12.2",
+      "q": "**Oxygen billing** — the conserver is included in the rental when the provider orders one, and coded **A9900** — without an order the patient can buy one out of pocket for **$320**, signing an ABN first; accessories are included for all five years; UMS keeps ownership after 36 months. **Has UMS been billing the conserver as E1352?**",
       "n": "2"
      },
      {
@@ -857,7 +820,7 @@
      },
      {
       "sec": "10.12.8",
-      "says": "**The oxygen restart example** — please check the dates, and whether a break of exactly 60 days plus the rest of the month restarts the rental",
+      "says": "**Oxygen restart rules** — breaks in need, what restarts the 36 months, and replacement after five years. Please also check the example’s dates, and whether a break of exactly 60 days plus the rest of the month restarts the rental",
       "n": "25"
      },
      {

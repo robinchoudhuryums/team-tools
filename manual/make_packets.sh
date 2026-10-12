@@ -10,8 +10,14 @@ python3 packet_diagrams.py
 python3 make_review_packets.py
 python3 packet_model.py > /dev/null
 python3 - "$OUT" <<'PY'
-import subprocess, sys
+import glob, os, subprocess, sys
 from make_review_packets import NAMES, KEYS
+# a packet dropped from the spec (the Oxygen packet, 2026-10-12) leaves its old files
+# in the output folder; remove them so a stale packet cannot be sent by mistake
+want = {NAMES[k] for k in KEYS}
+for f in glob.glob(f"{sys.argv[1]}/review-packets/Review-Packet-*.md") + glob.glob(f"{sys.argv[1]}/review-packets/word/Review-Packet-*.docx"):
+    if os.path.basename(f).split(".")[0][len("Review-Packet-"):] not in want:
+        os.remove(f); print("removed stale packet", os.path.basename(f))
 for k in KEYS:
     subprocess.run(["node", "render_packet.js", f"/tmp/packet_{k}.json",
                     f"{sys.argv[1]}/review-packets/word/Review-Packet-{NAMES[k]}.docx"], check=True, capture_output=True)

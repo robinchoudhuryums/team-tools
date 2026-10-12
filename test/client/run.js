@@ -35203,6 +35203,18 @@ test('PK-4 (review packets, operator 2026-10-12): a question can carry a PASTE s
   assert.ok([].concat(...p5.groups.map((g) => g.rows)).some((r) => r.paste && /Power Roster/.test(r.q || '')), 'the Power packet carries the Power Roster slot');
 });
 
+test('PK-5 (review packets, operator 2026-10-12): the build names exactly the packets the spec has — no map entry for a dissolved packet (the Oxygen packet) — and make_packets.sh removes a packet file the spec no longer builds', () => {
+  const MAN = path.join(__dirname, '../../manual');
+  const keys = Object.keys(JSON.parse(fs.readFileSync(path.join(MAN, 'packets/spec.json'), 'utf8'))).filter((k) => k[0] !== '_');
+  const py = fs.readFileSync(path.join(MAN, 'make_review_packets.py'), 'utf8');
+  const mapKeys = (name) => [...(new RegExp('^' + name + ' = \\{([\\s\\S]*?)\\}', 'm').exec(py) || [])[1].matchAll(/"(\w+)":/g)].map((m) => m[1]);
+  assert.deepStrictEqual(mapKeys('NAMES').sort(), keys.slice().sort(), 'every packet has a file name, and no name is left for a packet that is gone');
+  mapKeys('FAQ').forEach((k) => assert.ok(keys.includes(k), 'FAQ names a packet that is gone: ' + k));
+  assert.ok(!keys.includes('p8'), 'the Oxygen packet is dissolved — the CSR manager reviews Chapter 8');
+  const sh = fs.readFileSync(path.join(MAN, 'make_packets.sh'), 'utf8');
+  assert.ok(/want = \{NAMES\[k\] for k in KEYS\}/.test(sh) && /os\.remove\(f\)/.test(sh), 'the build removes stale packet files');
+});
+
 test('MRD-9 (the Phase 8 follow-on, 2026-10-12): a dark-mode printout draws the accent in each palette\'s LIGHT accent — the swatch tokens, whose dark copy is screen-only — for every palette the token file declares; printed cross-references use the deeper --accent-2', () => {
   const { toks, blocks } = tokenBlocks();
   const styles = fs.readFileSync(path.join(PA_WEB, 'styles.html'), 'utf8');
