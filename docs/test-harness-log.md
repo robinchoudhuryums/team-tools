@@ -2745,3 +2745,9 @@ per-change detail. By delta:
 - The DOM harness never runs an inline `onclick` (`runScripts: 'outside-only'`): drives assert the attribute, then call the handler — a `.click()` on such a button is a silent no-op, which is how the first MRD-8 toggle assertion failed.
 - `test/visual/print-check.mjs` had called `kbPrintSection_` since Phase 2 renamed it, so it threw before measuring anything; repaired, it now reads `--ink` on `<body>` too (the reading that could never see g168) and measures a card print. The visual fixtures carry Card 5 (`manual-fixtures.mjs`).
 - Bite-checks across the phases all BIT except recorded equivalent mutants — Phase 8's `cp.appendix` guard in `kbManualCardFor_` (an appendix letter gives `man-c-NaN`, which matches no card either way).
+
+## Cycle 24 — manual and packet corrections, feedback in the reader bar (2026-10-12)
+
+- MRD-10 DOM drives the bar's feedback: no section carries a feedback row; the three buttons name the section in view; a vote is disabled in flight, a late answer never paints the section now in view, a section scrolled back to shows its vote pressed, and a failure (thrown or `success: false`) gives the buttons back. Six bite-checks, all BIT (the repaint guard, `r.success`, the failure reset, the remembered vote, the bar paint, a row put back in a section).
+- Old-behaviour encodings updated with the change: the M2 DOM drive (a bar per section → none; Suggest an edit from the bar), the print-block pin and the one-home pin (`.kb-man-fb` is gone), the MP2-4 context stub, and print-check.mjs (now asserts no `.kb-feedback` prints).
+

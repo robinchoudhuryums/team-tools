@@ -1532,7 +1532,7 @@
     "id": "bpm-medline-wrist",
     "name": "Medline Digital Wrist Blood Pressure Monitor",
     "part": "p2",
-    "category": "general-dme",
+    "category": "other-medical-device",
     "hcpcs": [
       "A4670"
     ],
@@ -3274,7 +3274,9 @@
     "allowance": null,
     "notes": "Works as a CPAP or an APAP — both bill as E0601",
     "source": "Operator 2026-10-07",
-    "images": [],
+    "images": [
+      "pending/photo-to-come.jpg"
+    ],
     "verified": "2026-10-07",
     "flags": [
       "compliance",
@@ -3700,7 +3702,9 @@
     "allowance": "1 / 3 months",
     "notes": null,
     "source": "Billing & Insurance v2.0 §19",
-    "images": [],
+    "images": [
+      "pending/photo-to-come.jpg"
+    ],
     "verified": "2026-09-15",
     "allowance_authority": "Medicare LCD L33718",
     "billing_type": "purchase-resupply",

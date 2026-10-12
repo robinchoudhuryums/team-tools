@@ -30845,7 +30845,7 @@ test('M4-P1: printing one section rides the ONE print block — the subject and 
   const block = css.slice(i, end + 1);
   assert.ok(block.indexOf(':root[data-print-one] body :not(:has(.print-one)):not(.print-one):not(.print-one *) { display: none !important; }') > 0, 'the rule lives inside the one block, by display');
   assert.ok(/:root\[data-print-one\] :has\(\.print-one\) \{[^}]*display: block !important;[^}]*max-width: none !important;/.test(block), 'the ancestors collapse to blocks, so the rail\'s grid column cannot hold its width');
-  ['.kb-man-sec-acts', '.kb-man-fb', '#kb-comments'].forEach((sel) => assert.ok(block.indexOf(':root[data-print-one] .print-one ' + sel) > 0, sel + ' does not print'));
+  ['.kb-man-sec-acts', '#kb-comments'].forEach((sel) => assert.ok(block.indexOf(':root[data-print-one] .print-one ' + sel) > 0, sel + ' does not print'));
   assert.ok(!/data-print-one|print-one/.test(css.slice(0, i) + css.slice(end + 1)), 'no print-one rule outside the block');
 });
 
@@ -35068,7 +35068,7 @@ test('MRD-1 (manual reader design Phase 1): no text is white on the accent, each
   assert.ok(!/background:\s*var\(--accent\);\s*color:\s*#fff/i.test(kb), 'no white text on a filled accent — it is a pale green / lilac in dark mode');
   assert.strictEqual((kb.match(/background:\s*var\(--accent\);\s*color:\s*var\(--paper-card\)/g) || []).length, 5, 'the five filled-accent buttons read --paper-card (non-vacuous)');
   // one home per property: the superseded duplicates are gone
-  [['.kb-man-sec', /^  \.kb-man-sec \{/gm], ['.kb-man-sec-head', /^  \.kb-man-sec-head \{/gm], ['.kb-man-sec-h', /^  \.kb-man-sec-h \{/gm], ['.kb-man-part max-width', /^  \.kb-man-part \{ max-width/gm], ['.kb-man-fb', /^  \.kb-man-fb \{/gm]]
+  [['.kb-man-sec', /^  \.kb-man-sec \{/gm], ['.kb-man-sec-head', /^  \.kb-man-sec-head \{/gm], ['.kb-man-sec-h', /^  \.kb-man-sec-h \{/gm], ['.kb-man-part max-width', /^  \.kb-man-part \{ max-width/gm]]
     .forEach(([n, re]) => assert.strictEqual((kb.match(re) || []).length, 1, n + ' has one rule'));
   // M6 (operator option b): no left stripe on the chapter title or section heads, in the reader and the HTML manual
   const head = /^  \.kb-man-sec-head \{([^}]*)\}/m.exec(kb)[1];
@@ -35560,7 +35560,7 @@ test('MP2-3: the app\'s copies ARE the source — the icon set holds each chapte
 test('MP2-4: the reader puts a chapter\'s badge and colour on its title and its icon in the tree — only for a "Chapter NN — " (or pre-renumber "Part NN — ") department, by its number, and never anything built from the name (driven)', () => {
   const ctx = vm.createContext({ String, Object, Number, KB_STATE: { isAdmin: false }, icon: (n, s) => '<i data-icon="' + n + '" data-s="' + s + '"></i>',
     esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
-    kbShiftHeadings_: (h) => h, kbMd_: (m) => m, kbManualFeedbackBarHtml_: () => '', kbBookmarkBtnHtml_: () => '', kbIsManualCard_: () => false });
+    kbShiftHeadings_: (h) => h, kbMd_: (m) => m, kbBookmarkBtnHtml_: () => '', kbIsManualCard_: () => false });
   vm.runInContext(/var KB_MANUAL_CHAPTER_ICONS = Object\.freeze\(\{[\s\S]*?\}\);/.exec(M1_KB_SRC)[0], ctx);
   ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualChapterParts_', 'kbManualSplitTitle_', 'kbManualBarHtml_', 'kbManualMastheadHtml_', 'kbManualMastCardHtml_', 'kbManualCardFor_', 'kbManualPartHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
   // since M9 (design handoff Phase 3) the chapter's title is the masthead's

@@ -19,9 +19,10 @@
       "n": "2"
      },
      {
-      "sec": "10.15",
+      "sec": "10.15, 10.15.1, 10.15.2",
       "says": "**Upgrade fee waivers** — the table and diagram, including uncommon payers such as Workers' Compensation or the VA, which may pay the fee in full",
-      "n": "3"
+      "n": "3",
+      "diagrams": true
      },
      {
       "sec": "2.8.1, 2.8.3, FAQ~Does Medicare cover bathroom items",
@@ -59,14 +60,34 @@
       "n": "10"
      },
      {
+      "sec": "2.4.3",
+      "q": "**Wheelchair cushions** — in what situations is a seat or back cushion added to a wheelchair order, and when isn't it?",
+      "n": "11"
+     },
+     {
+      "sec": "2.5.1",
+      "q": "**\"Upright walker\" referrals** — are they read as a walker with platform attachments by default, or are they rejected?",
+      "n": "12"
+     },
+     {
+      "sec": "2.6",
+      "q": "**Knee walkers** — are they always covered through VGM Homelink? And by commercial plans?",
+      "n": "13"
+     },
+     {
+      "sec": "2.7, 2.2.1",
+      "q": "**Hoyer lift delivery radius** — is it the same as for hospital beds?",
+      "n": "14"
+     },
+     {
       "sec": "2.12",
       "q": "**Resources** — any links to add to Chapter 2's resource list?",
-      "n": "11"
+      "n": "15"
      },
      {
       "sec": "",
       "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your team?",
-      "n": "12"
+      "n": "16"
      }
     ]
    }
@@ -131,7 +152,7 @@
       "n": "10"
      },
      {
-      "sec": "3.13, 6.15",
+      "sec": "3.13, 6.14",
       "says": "**Oximetry:** we can facilitate a test. Who performs and reads it, and when is it used?",
       "n": "11"
      },
@@ -384,7 +405,7 @@
       "n": "3"
      },
      {
-      "sec": "6.1.2~Mask fitting, 6.3, 6.14",
+      "sec": "6.1.2~Mask fitting, 6.3",
       "says": "**Routing:** mask fitting goes to the Field Ops Q; freight companies go to Field Ops-Power with their name and delivery city; plus the common-call rules ◆",
       "n": "4"
      },
@@ -424,7 +445,7 @@
       "n": "11"
      },
      {
-      "sec": "6.15",
+      "sec": "6.14",
       "says": "**Oximetry:** delivery and pick-up are scheduled together",
       "n": "12"
      },
@@ -449,7 +470,7 @@
       "n": "16"
      },
      {
-      "sec": "6.17",
+      "sec": "6.16",
       "q": "**Resources** — any links to add to Chapter 6's resource list?",
       "n": "17"
      },

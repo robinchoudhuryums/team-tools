@@ -580,6 +580,7 @@ for the reasoning, which is usually the part that matters.
 - ["and" in an Area Eligibility cell means EITHER area; a phrase that could mean "both" is unreadable (cycle 23 KB2-6, operator 2026-10-05)](docs/design-decisions.md#and-in-an-eligibility-cell-means-either-area)
 - [The manual reader follows the design handoff, adapted to the repo: a bar for the section in view, a masthead per chapter, a reading trail and resume, a manual home, Contents on a narrow screen (manual reader design, operator 2026-10-09)](docs/design-decisions.md#the-manual-reader-follows-the-design-handoff)
 - [A chapter's quick card rides its masthead and prints as a card with its diagram on the reverse; the dark chapter and semantic colours are for the screen (manual reader design Phase 8, operator decisions 2 + 4, 2026-10-09)](docs/design-decisions.md#a-quick-card-prints-as-a-card)
+- [A manual section's feedback rides the reader bar, not a row under every section (operator 2026-10-12)](docs/design-decisions.md#manual-feedback-rides-the-reader-bar)
 
 ## Operator State Checklist
 
@@ -938,7 +939,7 @@ this block, or the command that prints the number.
 | Count | Value | Derived from |
 |---|---|---|
 | Pure harness tests | 1265 | `node test/client/run.js` |
-| DOM harness tests | 231 | `node test/client/dom/runDom.js` |
+| DOM harness tests | 232 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 159 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 54 | `'Admin access required.'` in the server source |

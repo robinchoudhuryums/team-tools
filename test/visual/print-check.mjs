@@ -77,7 +77,7 @@ for (const mode of ['light', 'dark']) {
       marked: document.documentElement.hasAttribute('data-print-one'),
       section: vis('#kb-man-sec-man-0-11'), otherSection: vis('#kb-man-sec-man-0-10'),
       sidebar: vis('.sidebar'), rail: vis('.kb-side'), title: vis('.view-title-row'),
-      sectionButtons: vis('.print-one .kb-man-sec-acts'), feedback: vis('.print-one .kb-man-fb'),
+      sectionButtons: vis('.print-one .kb-man-sec-acts'), feedback: vis('.print-one .kb-feedback'),
       sectionLeft: Math.round(sec.getBoundingClientRect().left), sectionWidth: Math.round(sec.getBoundingClientRect().width),
       ink: getComputedStyle(document.documentElement).getPropertyValue('--ink').trim(),
       // Phase 8: <body> carries data-mode too, so the ink must be read where the text inherits it

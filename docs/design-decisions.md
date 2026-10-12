@@ -5412,3 +5412,21 @@ pick them up without re-deriving the context.
   printed and Word cards would lack it), re-declaring the light hexes inside the
   print block (a second source the tripwire cannot see), and a lazily rendered
   card body (per-copy diagram ids, g169, made hiding safe).
+
+- <a id="manual-feedback-rides-the-reader-bar"></a>**A manual section's feedback rides the reader bar, not a row under every section (operator 2026-10-12)**
+  A row closing each section repeated "Was this helpful? Yes No Suggest an edit"
+  fifteen times down a chapter, between sub-sections a rep reads as one page. The
+  bar already names the section in view and carries its Bookmark and Print, so
+  Helpful / Not helpful / Suggest an edit join them there — still keyed to that
+  section's id, so the votes and the review queue are unchanged. The bar is
+  painted in place (`kbManualBarFbPaint_`, attributes only, so a focused button
+  keeps focus); what this session already sent is remembered by id
+  (`KB_STATE.manualFb`) so scrolling back shows the vote pressed rather than
+  asking again; a vote's answer repaints only while the bar still shows the
+  section it was cast for (g147), and F-45 holds (disabled in flight, thanks on
+  success, the buttons back on failure). Under 560px of bar the buttons take a
+  second row — with three more icons the title had kept one letter. Rejected: a
+  smaller row on every section (still fifteen footers), feedback only on a
+  chapter's last section (votes would stop being per section), and a "⋯" menu
+  (one more tap for the commonest action).
+

@@ -4996,7 +4996,7 @@ const M2_PART0 = { department: 'Chapter 00 — CSR Core', isAdmin: true, section
   { id: 'man-0-11', title: '0.11 Notes and email conventions', status: 'draft', sortOrder: 11,
     bodyMd: 'Notes.\n\nSee [0.10.2 Trx State](kb:man-0-10#0.10.2) and [10.1 2026 annual figures (Billing & Denials)](kb:man-10-1).\n\n> **Watch-out** — the TRX, never a name.\n' }] };
 
-test('M2 DOM: a manual section opens its WHOLE PART — one fetch per part, a click inside it scrolls, the comments follow the open section, cross-references open where they live, "Updated" and "Suggest an edit" are there and Edit/Delete are not', async () => {
+test('M2 DOM: a manual section opens its WHOLE PART — one fetch per part, a click inside it scrolls, the comments follow the open section, cross-references open where they live, "Updated" and "Suggest an edit" (in the reader bar) are there and Edit/Delete are not', async () => {
   const h = boot();
   const w = h.window, doc = w.document;
   w.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
@@ -5016,7 +5016,7 @@ test('M2 DOM: a manual section opens its WHOLE PART — one fetch per part, a cl
   const main = doc.getElementById('kb-main');
   assert.deepStrictEqual(h.$$('#kb-main .kb-man-sec').map((s) => s.getAttribute('data-kb-id')), ['man-0-10', 'man-0-11'], 'every section of the part, in order');
   assert.ok(h.$('#kb-man-sec-man-0-10 h3') && /0\.10\.1 Trx Type/.test(h.$('#kb-man-sec-man-0-10 h3').textContent), 'a section’s own ## demotes under its title');
-  assert.strictEqual(h.$$('#kb-main .kb-man-fb').length, 2, 'a feedback bar per section');
+  assert.strictEqual(h.$$('#kb-main .kb-man-sec .kb-feedback').length, 0, 'no feedback row closes a section — it rides the reader bar (operator 2026-10-12)');
   assert.ok(!/>\s*Edit\s*</.test(main.innerHTML) && !/kbDeleteItem_|kbOpenEditor_|kbOpenRevisions_/.test(main.innerHTML), 'no Edit, Delete or History on a manual section');
   assert.ok(/1 of 2 sections in this chapter is a draft/.test(main.textContent), 'an admin is told which sections reps cannot see');
   assert.ok(doc.getElementById('kb-man-sec-man-0-11').contains(doc.getElementById('kb-comments')), 'the comments host sits under the OPEN section');
@@ -5045,8 +5045,8 @@ test('M2 DOM: a manual section opens its WHOLE PART — one fetch per part, a cl
   // Suggest an edit — the review-queue flag, with a required note.
   h.read('kbOpenItem_')('man-0-11');
   h.run.flushSuccess(M2_PART0, 'getManualPart');
-  const sug = h.$$('#kb-man-sec-man-0-11 .kb-man-fb button').filter((b) => /Suggest an edit/.test(b.textContent))[0];
-  assert.ok(sug);
+  const sug = h.$('#kb-main [data-kb-man-bar-fb] [data-kb-man-fb="suggest"]');
+  assert.ok(sug && sug.getAttribute('data-kb-id') === 'man-0-11' && !sug.disabled, 'the bar\'s Suggest an edit names the section in view');
   h.read('kbSuggestEdit_')(sug);
   await tick();
   const input = h.$('.ui-dialog-input');
@@ -5805,6 +5805,44 @@ test('MRD-8 DOM (manual reader design Phase 8): once the whole manual has arrive
   h.read('kbPrintAllCards_')();
   assert.deepStrictEqual(during, { marked: ['kb-man-sec kb-man-p0 print-one'], card: true, one: true }, 'every card section, as cards');
   w.dispatchEvent(new w.Event('afterprint'));
+});
+
+test('MRD-10 DOM (operator 2026-10-12): no section ends in a feedback row — Helpful / Not helpful / Suggest an edit ride the reader bar for the section in view; a vote is disabled in flight, pressed on success and remembered per section; a late answer never paints another section; a failure says so and gives the buttons back', async () => {
+  const h = m4Boot_();
+  const w = h.window;
+  const toasts = [];
+  const origToast = w.showToast;
+  w.showToast = (m, t) => { toasts.push([m, t]); };
+  h.read('kbOpenItem_')('man-0-10');
+  h.run.flushSuccess(M2_PART0, 'getManualPart');
+  assert.strictEqual(h.$$('#kb-main .kb-man-sec .kb-feedback, #kb-main .kb-man-sec [data-kb-man-fb]').length, 0, 'no section carries a feedback row');
+  const fb = (k) => h.$('#kb-main [data-kb-man-bar] [data-kb-man-bar-fb] [data-kb-man-fb="' + k + '"]');
+  const st = () => ['helpful', 'notHelpful', 'suggest'].map((k) => [fb(k).getAttribute('data-kb-id'), fb(k).disabled, fb(k).getAttribute('aria-pressed')]);
+  assert.deepStrictEqual(st(), [['man-0-10', false, 'false'], ['man-0-10', false, 'false'], ['man-0-10', false, null]], 'the bar\'s three buttons name the section in view');
+  assert.ok(/Anatomy of a transaction/.test(fb('helpful').getAttribute('aria-label')) && fb('suggest').getAttribute('data-kb-title') === M2_PART0.sections[0].title, 'their names carry the section');
+  assert.strictEqual(fb('helpful').getAttribute('onclick'), 'kbManualBarVote_(this)', 'the handler takes the button, never a name in the literal (g133)');
+  // vote on 0.10; the rep scrolls to 0.11 before the answer
+  h.read('kbManualBarVote_')(fb('helpful'));
+  assert.deepStrictEqual(h.run.pending('kbFlagItem').map((c) => c.args), [['man-0-10', 'helpful', '']]);
+  assert.ok(fb('helpful').disabled && fb('notHelpful').disabled && !fb('suggest').disabled && fb('helpful').title === 'Saving…', 'the pair is disabled in flight; Suggest stays');
+  h.read('kbManualBarPaint_')('man-0-11');
+  assert.deepStrictEqual(st().slice(0, 2), [['man-0-11', false, 'false'], ['man-0-11', false, 'false']], 'another section is answerable at once');
+  h.run.flushSuccess({ success: true }, 'kbFlagItem');
+  assert.deepStrictEqual(st().slice(0, 2), [['man-0-11', false, 'false'], ['man-0-11', false, 'false']], 'the late answer does not paint the section now in view');
+  assert.deepStrictEqual(toasts.pop(), ['Thanks for the feedback', 'toast-success']);
+  h.read('kbManualBarPaint_')('man-0-10');
+  assert.deepStrictEqual(st(), [['man-0-10', true, 'true'], ['man-0-10', true, 'false'], ['man-0-10', false, null]], 'back on 0.10 the vote reads as sent: pressed, the pair quiet, Suggest still open');
+  assert.ok(/rated this section helpful/.test(fb('helpful').title));
+  // a failed vote on 0.11
+  h.read('kbManualBarPaint_')('man-0-11');
+  h.read('kbManualBarVote_')(fb('notHelpful'));
+  h.run.flushFailure('quota', 'kbFlagItem');
+  assert.deepStrictEqual(st().slice(0, 2), [['man-0-11', false, 'false'], ['man-0-11', false, 'false']], 'a failure gives the buttons back');
+  assert.ok(/Could not record that — quota/.test(toasts.pop()[0]), 'and says so');
+  h.read('kbManualBarVote_')(fb('notHelpful'));
+  h.run.flushSuccess({ success: false, error: 'nope' }, 'kbFlagItem');
+  assert.ok(!fb('notHelpful').disabled && /nope/.test(toasts.pop()[0]), 'an unsuccessful answer is a failure too (F-45)');
+  w.showToast = origToast;
 });
 
 test('M4 DOM: Print marks ONLY its own section for the one print block, for exactly as long as the dialog is up; since M8 it is the reader bar\'s Print, aimed at the section in view, and on a Quick Reference Card it says "card"', async () => {

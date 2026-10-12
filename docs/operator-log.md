@@ -10,6 +10,37 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-12 — manual and packet corrections; feedback moves into the reader bar
+
+**Adds NO operator state.** Three releases, in this order:
+1. **App deploy** (`clasp push -f` + New version) — for the reader bar.
+2. **Manual release:** `./make_all.sh` → Reference → Manual → Choose File →
+   `manual.json` → Check → Import → Publish. The changed sections come up (2.8,
+   3.1, 3.7, 3.13, 5.2, 5.9, 6.1, 6.3 and 6.14–6.16). **§6-14 Freight deliveries
+   was folded into 6.3**, so Oximetry, FAQ and Additional resources are now
+   6.14–6.16 and the old `man-6-17` is gone: tick "remove sections no longer in
+   the manual" when the Check offers it. No diagram changed.
+3. **Packets:** `./make_packets.sh` after `./make_all.sh`.
+- **Manual (operator list):** 2.8.4 BPM and 2.8.5 Heel protector are one
+  sub-section, **2.8.4 Other medical devices**; 3.7 shows a "Photo to come"
+  placeholder for the APAP and heated PAP tubing (replace the image in
+  `manual/data/` when the photos exist); 3.1 notes that a patient with several
+  respiratory machines can mix them up — ask the caller to describe it; the
+  Resupply FAQ answers "more supplies than insurance allows" (out of pocket);
+  5.2.2 is **Medical Assistant (MA) Education**, and the glossary's MA entry names
+  that one exception; 5.9.2 no longer says full dimensions are in the Item
+  Master; 6.1.2 is **Intake, Field Ops or Service?** with a first row for an
+  unauthorized order (Intake); the Irving office's freight hours moved into 6.3's
+  freight row.
+- **Reference reader:** sections no longer end in a "Was this helpful?" row.
+  Helpful, Not helpful and Suggest an edit sit in the reader bar beside Bookmark
+  and Print, for the section in view; votes and suggestions are still per
+  section, and a section already rated this session shows the vote pressed. On a
+  phone or in the pop-out the bar's buttons take a second row.
+- **Manual Mobility packet:** Q3 now carries the waiver rules, the diagram and the
+  matrix; four new open questions — wheelchair cushions, "upright walker"
+  referrals, knee walkers and VGM Homelink, the Hoyer lift delivery radius.
+
 ## 2026-10-12 — dark-mode print accent; review packets answer on a line
 
 **Adds NO operator state.** Deploy as usual (`clasp push -f` + New version) for

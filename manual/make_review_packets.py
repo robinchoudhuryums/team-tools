@@ -21,7 +21,7 @@ ANSWER_LINE = "_" * 28   # the blank a reviewer types on (render_packet.js draws
 OUT = os.path.join(os.environ.get("MANUAL_OUT", "dist"), "review-packets")
 MANUAL = open("out/CSR-Procedures-Manual-v3.0.md", encoding="utf-8").read()
 SPEC = json.load(open("packets/spec.json", encoding="utf-8"))
-FAQ = {"p2": "§2-11", "p3": "§3-13", "p5": "§5-10", "p6": "§6-16", "p7": "§7-14",
+FAQ = {"p2": "§2-11", "p3": "§3-13", "p5": "§5-10", "p6": "§6-15", "p7": "§7-14",
        "p8": "§8-9", "p10": "§10-21", "denials": "§10-21"}   # Sales (p4) and After Hours (p9) have no FAQ
 MAX = 2400
 NAMES = {"p2": "C2-Manual-Mobility", "p3": "C3-Respiratory-and-Resupply", "p4": "C4-Sales",

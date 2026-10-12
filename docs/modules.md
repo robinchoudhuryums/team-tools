@@ -1256,6 +1256,10 @@ not restate it. Server endpoints live in the fourteen server files
        is the card colour, amber's `--on-warn`), and a dark-mode printout is ink on
        white with the light chapter, status and accent colours (the accent since
        2026-10-12; printed cross-references in the deeper accent).
+     - **Feedback in the bar (2026-10-12):** Helpful / Not helpful / Suggest an
+       edit ride the reader bar for the section in view instead of closing every
+       section; votes stay per section, a vote sent this session shows pressed,
+       and a narrow bar puts its buttons on a second row.
 
      **Cycle 23 Batch 2 (2026-10-01) — the eligibility lookup reads less
      generously.** "TX or OK" is Texas and Oklahoma (no longer Oregon); a state
