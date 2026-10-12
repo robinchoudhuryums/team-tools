@@ -50,24 +50,29 @@
       "n": "8"
      },
      {
+      "sec": "",
+      "q": "**Overridden orders** — under what conditions is an order ‘overridden’, and the item delivered (to a medical facility for the patient, say) before the insurance authorization is in, with Intake finishing the paperwork after delivery? How should a CSR read the notes on an overridden order, since it is the exception and not the rule? And is it allowed for a Medicare patient?",
+      "n": "9"
+     },
+     {
       "roster": "p2",
       "says": "**Your directory rows** — check each name, backup and contact",
-      "n": "9"
+      "n": "10"
      },
      {
       "sec": "2.3.2",
       "says": "**Bariatric bed (E0301):** Medicare covers it for a patient over **350 lbs**, up to 600 lbs",
-      "n": "10"
+      "n": "11"
      },
      {
       "sec": "2.5.1",
       "q": "**\"Upright walker\" referrals** — are they read as a walker with platform attachments by default, or are they rejected?",
-      "n": "11"
+      "n": "12"
      },
      {
       "sec": "2.12",
       "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to your team? **Resources** — any links to add to Chapter 2's resource list?",
-      "n": "12"
+      "n": "13"
      }
     ]
    }
@@ -191,7 +196,7 @@
      },
      {
       "sec": "4.4",
-      "q": "**The Payor Acceptance sheet** — when a plan shows “No” for POV, does that usually mean the plan doesn’t cover a POV, that we choose not to process POVs for that plan, or does it vary? ◆",
+      "q": "**The Payor Acceptance sheet** — what do “OON w/ PA” and similar conditions mean, and how should a CSR explain them to a patient? What does “TRY” mean, and how should a CSR explain it, since patients can be upset at the ‘guinea pig’ feel of how those orders are handled? And when a plan shows “No” for POV, does that usually mean the plan doesn’t cover a POV, that we choose not to process POVs for that plan, or does it vary? ◆",
       "n": "8"
      },
      {
@@ -346,7 +351,7 @@
      },
      {
       "sec": "6.4.1, 6.4.2, 6.4.3, 6.4.4, 6.4.5, 8.8.4",
-      "says": "**Facility deliveries and Texas Medicaid timing:** equipment no earlier than two days before discharge; the facility covers equipment during a Part A SNF stay; supplies only after discharge. **No PMD to a hospital, rehab facility or SNF** — a nursing home that is the patient’s permanent residence is fine, with the patient present. Oxygen tanks for a facility’s general stock aren’t delivered, except rarely: what’s the exception, and who approves it? And is the Texas Medicaid delivery timing right? ◆",
+      "says": "**Facility deliveries and Texas Medicaid timing:** equipment no earlier than two days before discharge; the facility covers equipment during a Part A SNF stay; supplies only after discharge. **No PMD to a hospital, rehab facility or SNF** — a nursing home that is the patient’s permanent residence is fine, with the patient present. Oxygen tanks for a facility’s general stock aren’t delivered, except rarely: what’s the exception, and who approves it? **Overridden orders:** under what conditions is an order ‘overridden’ and the item delivered before it is fully processed (before the insurance authorization is in, with Intake finishing the paperwork afterwards) — who approves it, and is it allowed for a Medicare patient? And is the Texas Medicaid delivery timing right? ◆",
       "n": "6"
      },
      {

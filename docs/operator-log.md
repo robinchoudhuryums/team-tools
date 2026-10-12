@@ -10,6 +10,20 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-12 — overridden orders, OON w/ PA and TRY
+
+**Adds NO operator state.** Rebuild the packets.
+- **Manual Mobility:** a new open question 9 — when an order is "overridden"
+  (delivered, e.g. to a facility, before the authorization is in, with Intake
+  finishing the paperwork afterwards), how a CSR should read its notes, and
+  whether it is allowed for a Medicare patient. Later questions renumber.
+- **Field Ops:** the same question folded into question 6 (facility
+  deliveries), so Ozaire's and Mahesh's packets carry it too. The automated
+  texts, failed attempts and power wheelchair pick-up questions were already in
+  the packet (questions 8 and 1).
+- **Sales:** "OON w/ PA", similar conditions and "TRY" folded into the Payor
+  Acceptance sheet question (8, ◆), so April's packet carries them.
+
 ## 2026-10-12 — the Power Roster sheet is a link
 
 **Adds NO operator state.** The Power packet's directory question now links the
