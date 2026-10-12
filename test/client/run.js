@@ -35187,6 +35187,7 @@ test('PK-3 (review packets, operator 2026-10-12): a question that cites a sectio
       for (let j = s + 1; j < i; j++) assert.strictEqual(src[j], s, key + ' Q' + rows[i].n + ' repeats a section Q' + rows[s].n + ' quotes, but Q' + rows[j].n + ' sits between them — move it up to follow Q' + rows[s].n);
     });
     rows.forEach((r, i) => assert.strictEqual(r.n, String(i + 1), key + ': questions are numbered in order'));
+    rows.forEach((r) => assert.ok(!(r.says && r.q), key + ' Q' + r.n + ' carries both a statement and an open question — the builders render only one'));
   });
   assert.ok(followUps >= 10, 'non-vacuous: the packets carry follow-up questions (' + followUps + ')');
 });

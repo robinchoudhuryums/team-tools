@@ -10,6 +10,28 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-12 — Billing and Denials packet changes
+
+**Adds NO operator state.** Rebuild the packets (`./make_packets.sh`) and
+re-share the Billing and Denials packets. No manual text changed: the
+children's-adherence question existed only in the packet (the manual never
+mentioned pediatric adherence), and the manual already says to dial the Denials
+Q when the case's member is unavailable.
+- **Billing:** the three oxygen questions (billing, after month 36, restart) are
+  ONE question (Q2); sales tax on out-of-pocket orders is now a plain question
+  with no tables; the upgrade fee question shows the three rules, the diagram
+  and the waiver matrix instead of the fee table; the Texas Medicaid CPAP
+  question no longer asks about children's adherence; removed "what CSRs can
+  and can't promise", E0431 cylinders, the upgrade fee sheet and the new PMD
+  within 5 years; new questions on the billing types and their products (10.2)
+  and geographic rate variation (10.12.7); the rentals question now asks about
+  the 10.14 lifecycle table, and the cost estimates question about the 10.16
+  billing scenarios table (both were already quoted).
+- **Denials:** Q1 now ends "If that member is unavailable, dial the Denials Q";
+  removed the Claim Prep, denials-and-appeals and prior-authorization questions;
+  new question on when Denials must send another PAR for an order already
+  delivered.
+
 ## 2026-10-12 — the After Hours packet is dissolved
 
 **Adds NO operator state.** Rebuild the packets (`./make_packets.sh`; the build

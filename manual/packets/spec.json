@@ -682,18 +682,18 @@
       "n": "1"
      },
      {
-      "sec": "8.4.1, 8.5.3, 10.12.2",
-      "q": "**Oxygen billing** — the conserver is included in the rental when the provider orders one, and coded **A9900** — without an order the patient can buy one out of pocket for **$320**, signing an ABN first; accessories are included for all five years; UMS keeps ownership after 36 months. **Has UMS been billing the conserver as E1352?**",
+      "sec": "8.4.1, 8.5.3, 10.12.2, 7.3.1, 10.12.8",
+      "q": "**Oxygen billing** — the conserver is included in the rental when the provider orders one, coded **A9900**; without an order the patient can buy one out of pocket for **$320**, signing an ABN first. Accessories are included for all five years, and UMS keeps ownership after 36 months. After month 36, repairs are never paid separately, but Medicare pays one servicing visit every 6 months for a concentrator (MS modifier, 20% coinsurance). A long enough break in need, or replacement after five years, starts a new 36-month period. **Has UMS been billing the conserver as E1352? Do we bill the 6-month servicing visits? And please check the restart example’s dates, and whether a break of exactly 60 days plus the rest of the month restarts the rental.**",
       "n": "2"
      },
      {
-      "sec": "7.3.1, 10.12.2",
-      "says": "**Oxygen after month 36:** repairs are never paid separately, but Medicare pays one servicing visit every 6 months for a concentrator (MS modifier, 20% coinsurance). Do we bill these visits?",
+      "sec": "10.2, 10.2.1, 10.2.2, 10.2.3",
+      "says": "**Billing types** — capped rental, continuous monthly rental, oxygen (36-month), purchase and resupply purchase: are the types, and the products listed under each, correct?",
       "n": "3"
      },
      {
       "sec": "10.12.1, 10.14",
-      "says": "**Rentals:** 13 paid months to ownership; a break over 60 days plus the rest of the rental month starts a new rental",
+      "says": "**Rentals:** 13 paid months to ownership; a break over 60 days plus the rest of the rental month starts a new rental. Is the rental lifecycle events table in 10.14 accurate?",
       "n": "4"
      },
      {
@@ -702,29 +702,30 @@
       "n": "5"
      },
      {
-      "sec": "10.12, 10.18",
-      "says": "**Resupply:** the 30-day contact and 10-day shipping windows; the ship date is the date of service",
+      "sec": "10.12.7",
+      "says": "**Geographic rate variation:** Medicare-approved amounts vary by area — rural and non-rural ZIP codes and former competitive bidding areas — and Billing applies the fee schedule for the delivery address, so CSRs don’t quote dollar amounts unless verified",
       "n": "6"
      },
      {
-      "sec": "10.16, 10.19.3",
-      "says": "**Collecting payment:** out-of-pocket orders at the Item Master price, no sales tax unless flagged; Save Card only with permission",
+      "sec": "10.12, 10.18",
+      "says": "**Resupply:** the 30-day contact and 10-day shipping windows; the ship date is the date of service",
       "n": "7"
      },
      {
-      "sec": "10.4.1, 10.16",
-      "says": "**Cost estimates and billing scenarios**",
+      "sec": "",
+      "q": "**Sales tax on out-of-pocket orders** — how should sales tax be applied, if at all, to an out-of-pocket order?",
       "n": "8"
      },
      {
-      "sec": "10.15",
-      "says": "**Upgrade fee waivers** — rules A, B and C, uncommon payers, and checking Medicaid enrollment with Eligibility",
+      "sec": "10.4.1, 10.16",
+      "says": "**Cost estimates and the billing scenarios table** (10.16) — is each worked example accurate?",
       "n": "9"
      },
      {
-      "sec": "10.15",
-      "says": "**Upgrade fees** in 10.15 — do they match the Upgrade Fee (Mobility) sheet?",
-      "n": "10"
+      "sec": "10.15.1, 10.15.2",
+      "says": "**Upgrade fee waivers** — rules A, B and C, uncommon payers, and checking Medicaid enrollment with Eligibility",
+      "n": "10",
+      "diagrams": true
      },
      {
       "sec": "10.19.6",
@@ -752,64 +753,44 @@
       "n": "15"
      },
      {
-      "sec": "10.20.2",
-      "says": "**What CSRs can and can't promise**",
+      "sec": "5.8.1",
+      "says": "**A partly paid rent-to-own PWC:** the balance may be waived rather than the chair picked up, since a return may mean refunding insurance. Is that right, given paid capped-rental months are normally earned?",
       "n": "16"
      },
      {
-      "sec": "5.8.1",
-      "says": "**A partly paid rent-to-own PWC:** the balance may be waived rather than the chair picked up, since a return may mean refunding insurance. Is that right, given paid capped-rental months are normally earned?",
-      "n": "17"
-     },
-     {
       "sec": "3.7.4",
-      "q": "**Texas Medicaid CPAP:** does it purchase after 10 months of rental? Is children's adherence 50% of nights?",
-      "n": "18"
+      "q": "**Texas Medicaid CPAP:** does it purchase after 10 months of rental?",
+      "n": "17"
      },
      {
       "sec": "2.2.3",
       "says": "**Bariatric equipment below the weight threshold**, patient paying the difference: is an ABN needed for Medicare?",
-      "n": "19"
+      "n": "18"
      },
      {
       "sec": "10.14.1",
       "says": "**Pick-up write-offs:** *waived* (balance waived, item is the patient's) or *failed pick-up* (balance stays). How is a waiver documented, and who tells the patient?",
-      "n": "20"
+      "n": "19"
      },
      {
       "sec": "7.7",
       "says": "**Swap-outs:** is the old item picked up at once, or billed until the new order completes?",
-      "n": "21"
+      "n": "20"
      },
      {
       "sec": "3.7.2",
       "says": "**E0471 is now listed as a capped rental**, like E0470 (Medicare since 2006), not \"never owned\". Right?",
-      "n": "22"
-     },
-     {
-      "sec": "10.2.1",
-      "says": "**Oxygen cylinders (E0431)** are now listed under the 36-month oxygen rental, not capped rental. Right?",
-      "n": "23"
-     },
-     {
-      "sec": "4.5.1",
-      "says": "**A new PMD within 5 years** of the last, as an upgrade the provider attests to: a Same or Similar exception, or a different item?",
-      "n": "24"
-     },
-     {
-      "sec": "10.12.8",
-      "says": "**Oxygen restart rules** — breaks in need, what restarts the 36 months, and replacement after five years. Please also check the example’s dates, and whether a break of exactly 60 days plus the rest of the month restarts the rental",
-      "n": "25"
+      "n": "21"
      },
      {
       "sec": "",
       "q": "**Resources** — Chapter 10 has no resource list. Are there documents, forms or links CSRs should have?",
-      "n": "26"
+      "n": "22"
      },
      {
       "sec": "",
       "q": "**Anything else?** Is anything missing, out of date, or worth changing — and what should a CSR have ready before transferring a call to Billing?",
-      "n": "27"
+      "n": "23"
      }
     ]
    }
@@ -825,7 +806,7 @@
     "rows": [
      {
       "sec": "10.17.3",
-      "says": "**Two calls go straight to the Denials member on the case:** insurance answering a Denials request, and a patient calling about a Denials invoice or status. Otherwise, the Denials Q (ext 101)",
+      "says": "**Two calls go straight to the Denials member on the case:** insurance answering a Denials request, and a patient calling about a Denials invoice or status. If that member is unavailable, dial the Denials Q (ext 101)",
       "n": "1"
      },
      {
@@ -836,27 +817,17 @@
       "n": "2"
      },
      {
-      "sec": "10.19.5",
-      "says": "**The Claim Prep tab** — \"paid\", \"eligible\", and the RR and NU modifiers",
+      "sec": "10.8",
+      "q": "**Another PAR after delivery** — when does the Denials team have to send another prior authorization request for an order that has already been delivered?",
       "n": "3"
      },
      {
-      "sec": "10.17",
-      "says": "**Denials and appeals:** common reasons, the 120-day window, and what a CSR tells the patient",
+      "q": "**What should a CSR collect before transferring a call to you?**",
       "n": "4"
      },
      {
-      "sec": "10.8",
-      "says": "**Prior authorizations** are submitted by the intake teams' authorization members",
-      "n": "5"
-     },
-     {
-      "q": "**What should a CSR collect before transferring a call to you?**",
-      "n": "6"
-     },
-     {
       "q": "**Anything else** a CSR should know that the manual lacks?",
-      "n": "7"
+      "n": "5"
      }
     ]
    }
