@@ -42,11 +42,22 @@ generated from this directory. **Edit here, never in the outputs.**
 
 ## Building
 
-Requires Python 3 with Playwright (Chromium) and Pillow, and Node with the `docx` package.
+Requires **Python 3.12+** (the build uses 3.12 f-strings) with `markdown`, `beautifulsoup4`, Playwright (Chromium) and Pillow, and Node with the `docx` package. LibreOffice Writer is optional: only `make_all.sh`'s blank-page check of the Word PDF uses it.
+
+**In a Claude Code cloud container** (the default `python3` there is 3.11, and Python Playwright must match the pre-installed Chromium in `/opt/pw-browsers`):
+
+```bash
+/usr/bin/python3.12 -m pip install --break-system-packages markdown beautifulsoup4 "playwright==1.56.0" pillow pypdf
+mkdir -p /tmp/py && ln -sf /usr/bin/python3.12 /tmp/py/python3   # then run the scripts with PATH=/tmp/py:$PATH
+apt-get update && apt-get install -y libreoffice-writer           # optional — the Word PDF check only
+PATH=/tmp/py:$PATH MANUAL_OUT=/tmp/out ./make_all.sh && PATH=/tmp/py:$PATH MANUAL_OUT=/tmp/out ./make_packets.sh
+```
+
+Behind the container's HTTPS proxy, `make_review_pdfs.py` fetches the IBM Plex web fonts itself (through the proxy and its CA bundle); without them the PDFs fall back to a system font.
 
 ```bash
 ./make_all.sh        # manual HTML + Word extracts, with all structural and render checks
-./make_packets.sh    # review packets (Markdown + Word); run after make_all.sh — packet_diagrams.py screenshots the built HTML's diagrams (Python Playwright)
+./make_packets.sh    # review packets (Markdown + Word) and the review PDFs (review-packets/pdf/); run after make_all.sh — packet_diagrams.py and make_review_pdfs.py use the built HTML (Python Playwright)
 ```
 
 **The HTML manual** (`Policies-and-Procedures-Handbook-v3.0.html`, one file): search finds a section by its current number first, then by its old number with a "formerly 9.4" label, and "part N" opens the chapter that part became. **Print section** and **Print cards** sit in the breadcrumb bar; Ctrl+P still prints the quick-reference cards. It works at phone width (one column; Contents & search opens a panel that scrolls on its own), and dark mode never prints.

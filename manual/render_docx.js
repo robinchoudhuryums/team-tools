@@ -31,7 +31,7 @@ const CO = {
 const argv = process.argv.slice(2);
 const model = JSON.parse(fs.readFileSync(argv[0], 'utf8'));
 const OUT = argv[1];
-const TITLE = argv[2] || 'Policies & Procedures Handbook v3.0';
+const TITLE = argv[2] || 'Policies & Procedures Handbook';   // no version on the page (operator 2026-10-13)
 
 const PAGE_W = 12240, PAGE_H = 15840, MARGIN = 1080;
 const CONTENT_W = PAGE_W - MARGIN * 2;

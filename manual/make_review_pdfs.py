@@ -31,7 +31,6 @@ BASE = "Policies-and-Procedures-Handbook-v3.0"
 MANUAL_OUT = os.environ.get("MANUAL_OUT", "dist")
 HTML = os.path.join(MANUAL_OUT, BASE + ".html")
 OUT = os.path.join(MANUAL_OUT, "review-packets", "pdf")
-VERSION = re.search(r'^VERSION = "([^"]+)"', open("build.py").read(), re.M).group(1)
 # the chapters a packet reviews — the Denials packet reviews Chapter 10, like Billing's
 CHAPTERS = sorted({"p10" if k == "denials" else k for k in KEYS}, key=lambda k: int(k[1:]))
 
@@ -65,7 +64,7 @@ NOTE = ("This chapter on its own, for review. A section number links to its sect
 
 FOOTER = ('<div style="font-family:\'IBM Plex Sans\',Arial,sans-serif;font-size:7.5px;color:#5B6B7B;width:100%;'
           'padding:0 0.45in;display:flex;justify-content:space-between">'
-          f'<span>UniversalMed Supply · Policies &amp; Procedures Handbook {VERSION} · Confidential — Internal Use Only</span>'
+          f'<span>UniversalMed Supply · Policies &amp; Procedures Handbook · Confidential — Internal Use Only</span>'
           '<span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span></div>')
 
 

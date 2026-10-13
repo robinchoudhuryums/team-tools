@@ -19,7 +19,7 @@ python3 rasterize_diagrams.py   # the diagrams as PNGs, so Word (and a PDF of it
 for f in out/*.md; do
   base=$(basename "$f" .md)
   python3 md2model.py "$f" /tmp/_m.json > /dev/null
-  node render_docx.js /tmp/_m.json "$OUT/docx/$base.docx" "Policies & Procedures Handbook v3.0"
+  node render_docx.js /tmp/_m.json "$OUT/docx/$base.docx" "Policies & Procedures Handbook"
 done
 # A PDF of the full manual, checked for blank pages — when LibreOffice is installed.
 # (The operator's PDFs come from the Word file via Word or Google Docs; this is the
