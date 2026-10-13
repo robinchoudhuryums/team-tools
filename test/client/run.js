@@ -35249,7 +35249,8 @@ test('PK-6 (review packets, operator 2026-10-12): a recipient with questions fla
   const py = fs.readFileSync(path.join(MAN, 'make_review_packets.py'), 'utf8');
   const sf = py.slice(py.indexOf('def spec_for('), py.indexOf('\ndef build_name('));
   assert.ok(/\(mark in text\(r\)\) == bool\(v\.get\("only"\)\)/.test(sf) && /n=str\(i \+ 1\)/.test(sf), 'spec_for keeps the marked (only) or unmarked (skip) questions and renumbers them');
-  assert.ok(/closing = lambda r: text\(r\)\.startswith\("\*\*Anything else"\)/.test(sf) && /== bool\(v\.get\("only"\)\) or closing\(r\)\]/.test(sf), 'every cut keeps the open-ended closing question, an only-cut included');
+  const ic = py.slice(py.indexOf('def is_closing('), py.indexOf('\ndef spec_for('));
+  assert.ok(/return \(r\.get\("says"\) or r\.get\("q"\) or ""\)\.startswith\("\*\*Anything else"\)/.test(ic) && /closing = is_closing/.test(sf) && /== bool\(v\.get\("only"\)\) or closing\(r\)\]/.test(sf), 'every cut keeps the open-ended closing question, an only-cut included');
   assert.ok(/BUILDS = \[\(k, None\) for k in KEYS\] \+ recipient_builds\(\)/.test(py), 'BUILDS is every packet, then every recipient cut');
   // operator 2026-10-13: ONE packet per recipient — a file flagged in two chapters is one combined build
   const rb = py.slice(py.indexOf('def recipient_builds('), py.indexOf('\nBUILDS = '));
@@ -35261,6 +35262,9 @@ test('PK-6 (review packets, operator 2026-10-12): a recipient with questions fla
   const cs = py.slice(py.indexOf('def combined_spec('), py.indexOf('\ndef build_name('));
   assert.ok(/for k, vk in v\["parts"\]:/.test(cs) && /spec_for\(k, vk\)/.test(cs) && /n \+= 1/.test(cs) && /"key": k/.test(cs),
     'the combined packet is each chapter\'s own cut, numbered straight through, each group naming its chapter');
+  // operator 2026-10-13: ONE closing for a combined packet — each part's close is held back, then asked once, citing every part's resources
+  assert.ok(/if is_closing\(r\):\s*\n\s*closes\.append\(r\); continue/.test(cs) && /if closes:/.test(cs) && /"sec": ", "\.join\(c\["sec"\] for c in closes if c\.get\("sec"\)\)/.test(cs) && /"q": f"\*\*Anything else\?\*\*/.test(cs) && /"n": str\(n \+ 1\)/.test(cs),
+    'a combined packet asks ONE closing question, after every chapter\'s questions, citing each chapter\'s resources');
   assert.ok(/for key, v in BUILDS:/.test(py) && /packet\(key, v\)/.test(py), 'the Markdown build walks BUILDS');
   const pm = fs.readFileSync(path.join(MAN, 'packet_model.py'), 'utf8');
   assert.ok(/for key, v in MRP\.BUILDS:/.test(pm) && /MRP\.spec_for\(key, v\)/.test(pm), 'the Word model walks BUILDS through spec_for');

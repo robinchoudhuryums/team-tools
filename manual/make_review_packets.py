@@ -169,6 +169,11 @@ def excerpt_lines(items):
     return L
 
 
+def is_closing(r):
+    """The open-ended close every packet ends on."""
+    return (r.get("says") or r.get("q") or "").startswith("**Anything else")
+
+
 def spec_for(key, v=None):
     """A packet's spec, or one recipient's cut of it (operator 2026-10-12: a separate
     packet for each recipient who has questions flagged for them). `v` comes from the
@@ -186,7 +191,7 @@ def spec_for(key, v=None):
     lines = s["head"].strip().split("\n")
     mark = v.get("only") or v.get("skip")
     text = lambda r: r.get("says") or r.get("q") or ""
-    closing = lambda r: text(r).startswith("**Anything else")  # the open-ended close every packet ends on
+    closing = is_closing
     rows = [r for g in s["groups"] for r in g["rows"]
             if (mark in text(r)) == bool(v.get("only")) or closing(r)]
     head = [lines[0], "", f"**For:** {v['for']}"]
@@ -211,16 +216,29 @@ def chapter_of(key):
 def combined_spec(v):
     """One packet for a recipient flagged in more than one chapter (operator 2026-10-13:
     Ozaire had a Power packet and a Field Ops packet) — each chapter's cut under its
-    own heading, the questions numbered straight through."""
-    groups, n = [], 0
+    own heading, the questions numbered straight through — and ONE closing "Anything
+    else?" for all of them at the end (operator 2026-10-13), citing each chapter's
+    resources section."""
+    groups, n, closes = [], 0, []
     for k, vk in v["parts"]:
         rows = []
         for r in spec_for(k, vk)["groups"][0]["rows"]:
+            if is_closing(r):
+                closes.append(r); continue
             n += 1
             rows.append(dict(r, n=str(n)))
         groups.append({"num": "", "title": chapter_of(k), "intro": "", "key": k, "rows": rows})
     keys = [k for k, _ in v["parts"]]
     nums = [chapter_of(k).split(":")[0].replace("Chapter ", "") for k in keys]
+    both = f"Chapters {', '.join(nums[:-1])} and {nums[-1]}"
+    if closes:
+        groups.append({"num": "", "title": "All " + both if len(nums) > 2 else "Both chapters", "intro": "",
+                       "key": keys[-1], "rows": [{
+            "sec": ", ".join(c["sec"] for c in closes if c.get("sec")),
+            "q": f"**Anything else?** Is anything missing, out of date, or worth changing in {both} — and what "
+                 f"should a CSR have ready before transferring a call to your team? **Resources** — any links "
+                 f"to add to the resource lists of {both}?",
+            "n": str(n + 1)}]})
     head = [f"# Review Packet — Chapters {', '.join(nums[:-1])} and {nums[-1]}", "",   # each chapter heads its own part
             f"**For:** {v['for']}"]
     return {"head": "\n".join(head) + "\n\n", "groups": groups}

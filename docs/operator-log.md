@@ -14,9 +14,9 @@ per-property entries); this file keeps the history of how it got there.
 
 **Adds NO operator state.** Run `./make_packets.sh` after `./make_all.sh` as before.
 - **Ozaire Hawa** gets ONE packet, `Review-Packet-C5-C6-Ozaire-Hawa`: his Power
-  questions, then his Field Ops questions, numbered straight through, each
-  chapter keeping its own closing "Anything else?". The two separate files are
-  gone.
+  questions, then his Field Ops questions, numbered straight through, and ONE
+  closing "Anything else?" covering both chapters (with both chapters' resource
+  lists). The two separate files are gone.
 - **`review-packets/pdf/`** now holds the full manual's PDF and one PDF per
   reviewed chapter (2, 3, 4, 5, 6, 7 and 10), to send with each packet. Section
   numbers, the contents and web addresses are clickable, and the headings are
