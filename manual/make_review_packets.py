@@ -2,7 +2,7 @@
 """Build the departmental review packets, with the manual's current text beside each question.
 
 Input : packets/spec.json            — the questions, with the sections each cites ("_" keys are notes)
-        out/CSR-Procedures-Manual-v3.0.md — the built manual, the source of every excerpt
+        out/Policies-and-Procedures-Handbook-v3.0.md — the built manual, the source of every excerpt
         $MANUAL_OUT/review-packets/images — the diagrams, from packet_diagrams.py
 Output: $MANUAL_OUT/review-packets/Review-Packet-C<N>-<Name>.md
 
@@ -19,7 +19,7 @@ from numbering import display
 ANSWER_LINE = "_" * 28   # the blank a reviewer types on (render_packet.js draws the same)
 
 OUT = os.path.join(os.environ.get("MANUAL_OUT", "dist"), "review-packets")
-MANUAL = open("out/CSR-Procedures-Manual-v3.0.md", encoding="utf-8").read()
+MANUAL = open("out/Policies-and-Procedures-Handbook-v3.0.md", encoding="utf-8").read()
 SPEC = json.load(open("packets/spec.json", encoding="utf-8"))
 FAQ = {"p2": "§2-11", "p3": "§3-13", "p5": "§5-10", "p6": "§6-15", "p7": "§7-14",
        "p10": "§10-21", "denials": "§10-21"}   # Sales (p4) has no FAQ

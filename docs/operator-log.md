@@ -10,6 +10,24 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-13 — the Policies & Procedures Handbook, and PDFs in its digital design
+
+**Operator actions:** deploy the web app (the Reference reader's labels changed),
+then **re-import** `manual.json` from a fresh `./make_all.sh` and publish — the
+section titles "How to use this handbook" and "A.1 Handbook terms" changed.
+- **The name.** "CSR Procedures Manual" is now **Policies & Procedures Handbook**
+  everywhere a reader sees it: the Word and PDF covers and page headers, the HTML
+  handbook's title and sidebar, the department guides' banner, the built file
+  names (`Policies-and-Procedures-Handbook-v3.0.*`,
+  `Policies-and-Procedures-Chapter-N-…`), and the app's reader (its home, chapter
+  masthead, tree heading, version line, What's new and the admin's Handbook
+  button). The handbook's own text says "this handbook" where it meant itself;
+  "Manual Mobility" and manual wheelchairs are untouched.
+- **The review PDFs** are now printed from the HTML handbook (Chromium), so they
+  match the digital design, with a cover, a linked contents page and page
+  numbers; links and bookmarks work as before. The Word file and its
+  LibreOffice PDF are unchanged in design.
+
 ## 2026-10-13 — one packet for Ozaire, and PDFs to send with the packets
 
 **Adds NO operator state.** Run `./make_packets.sh` after `./make_all.sh` as before.

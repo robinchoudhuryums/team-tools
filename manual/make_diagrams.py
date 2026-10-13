@@ -185,7 +185,7 @@ t = [f'<svg viewBox="0 0 {W2} {H2}" xmlns="http://www.w3.org/2000/svg" '
 t.append(f'<rect class="dg-lane" x="0" y="0" width="{W2}" height="{H2}" rx="5"/>')
 t.append(f'<rect class="dg-lane-b" x="0" y="0" width="{W2}" height="{H2}" rx="5"/>')
 t.append('<text class="dg-h" x="16" y="26">Transaction Work Flow — left navigation</text>')
-t.append('<text class="dg-s" x="16" y="44">Entries the manual refers to are annotated with the '
+t.append('<text class="dg-s" x="16" y="44">Entries the handbook refers to are annotated with the '
          'section that uses them.</text>')
 t.append(f'<rect class="dg-box" x="16" y="58" width="{W2-32}" height="28" fill="var(--tint)" stroke="var(--rule)"/>')
 t.append('<text class="dg-ti" x="26" y="76">Header bar &#183; Patient &#183; Date of Birth &#183; Gender &#183; Address &#183; Phone</text>')

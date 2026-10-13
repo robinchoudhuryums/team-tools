@@ -31,7 +31,7 @@ const CO = {
 const argv = process.argv.slice(2);
 const model = JSON.parse(fs.readFileSync(argv[0], 'utf8'));
 const OUT = argv[1];
-const TITLE = argv[2] || 'CSR Procedures Manual v3.0';
+const TITLE = argv[2] || 'Policies & Procedures Handbook v3.0';
 
 const PAGE_W = 12240, PAGE_H = 15840, MARGIN = 1080;
 const CONTENT_W = PAGE_W - MARGIN * 2;
@@ -249,21 +249,18 @@ const CONTENT_PX = Math.floor(CONTENT_W / 15);   // twips -> px at 96 dpi
 const LAND_PX = Math.floor((PAGE_H - MARGIN * 2) / 15);              // a landscape page's width
 const LAND_PX_H = Math.floor((PAGE_W - MARGIN * 2 - 1100) / 15);     // and its height, less header and footer
 
-// ---- the cover and the contents (A6): the full manual only; a department guide opens on its banner
+// ---- the cover and the contents (A6): the full handbook only; a department guide opens on its banner
 if (meta.full) {
   const accent = C.navy;
   const coverKids = [
     new Paragraph({ spacing: { before: 2600, after: 0 }, children: [] }),
     new Paragraph({ children: [new TextRun({ text: 'UniversalMed Supply', bold: true, size: 28, color: C.accent })],
                     spacing: { after: 120 } }),
-    new Paragraph({ children: [new TextRun({ text: 'CSR Procedures Manual', bold: true, size: 64, color: accent })],
+    new Paragraph({ children: [new TextRun({ text: 'Policies & Procedures Handbook', bold: true, size: 64, color: accent })],
                     spacing: { after: 240 },
                     border: { bottom: { style: BorderStyle.SINGLE, size: 18, color: accent, space: 12 } } }),
-    // a review copy of one chapter names it, and how its links behave (make_review_pdfs.py)
-    new Paragraph({ children: [new TextRun({ text: meta.subtitle || 'What a customer service representative needs to know, department by department',
-                                             size: 26, color: meta.subtitle ? accent : C.muted, bold: !!meta.subtitle })],
-                    spacing: { after: meta.note ? 160 : 1600 } }),
-    ...(meta.note ? [new Paragraph({ children: [new TextRun({ text: meta.note, size: 21, color: C.muted })], spacing: { after: 1400 } })] : []),
+    new Paragraph({ children: [new TextRun({ text: 'What a customer service representative needs to know, department by department',
+                                             size: 26, color: C.muted })], spacing: { after: 1600 } }),
     new Paragraph({ children: [new TextRun({ text: 'Version ' + (meta.version || ''), bold: true, size: 22, color: C.ink }),
                                new TextRun({ text: '   \u00b7   Built ' + (meta.built || ''), size: 22, color: C.ink })],
                     spacing: { after: 80 } }),
@@ -280,7 +277,7 @@ if (meta.full) {
     if (b.k !== 'h' || b.lvl > 2 || !b.bm) return;
     let text = (b.runs || []).map(r => r.t || '').join('').trim();
     if (!text) return;
-    if (b.lvl === 1 && text === 'CSR Procedures Manual') text = 'How to use this manual';   // the front matter, not the cover's title again
+    if (b.lvl === 1 && text === 'Policies & Procedures Handbook') text = 'How to use this handbook';   // the front matter, not the cover's title again
     const top = b.lvl === 1;
     children.push(new Paragraph({
       tabStops: [{ type: TabStopType.RIGHT, position: CONTENT_W, leader: LeaderType.DOT }],

@@ -332,7 +332,7 @@
   },
   {
     "term": "MA",
-    "definition": "Medicare Advantage — a private plan that replaces Parts A and B. The one exception is the name of Chapter 5's **Medical Assistant (MA) Education** team; everywhere else in the manual, MA means Medicare Advantage",
+    "definition": "Medicare Advantage — a private plan that replaces Parts A and B. The one exception is the name of Chapter 5's **Medical Assistant (MA) Education** team; everywhere else in the handbook, MA means Medicare Advantage",
     "parts": [
       "p10",
       "p5"
@@ -525,7 +525,7 @@
   },
   {
     "term": "Original Medicare",
-    "definition": "The name CMS, Medicare.gov and the patient's MSN use for **traditional Medicare** — the federal fee-for-service program (Parts A and B), as distinct from a Medicare Advantage plan. The manual says traditional Medicare",
+    "definition": "The name CMS, Medicare.gov and the patient's MSN use for **traditional Medicare** — the federal fee-for-service program (Parts A and B), as distinct from a Medicare Advantage plan. The handbook says traditional Medicare",
     "parts": [
       "p10"
     ],
@@ -1245,7 +1245,7 @@
   },
   {
     "term": "Upgrade Fee Sheet (Mobility)",
-    "definition": "The master list of upgrade fee amounts by item. The manual's fee tables are copied from it — [[§10-15]]",
+    "definition": "The master list of upgrade fee amounts by item. The handbook's fee tables are copied from it — [[§10-15]]",
     "parts": [
       "p10",
       "p2"

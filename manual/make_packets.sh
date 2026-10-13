@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Departmental review packets: Markdown and Word, generated from the built manual.
-# Run after make_all.sh (it reads out/CSR-Procedures-Manual-v3.0.md and the built HTML,
+# Run after make_all.sh (it reads out/Policies-and-Procedures-Handbook-v3.0.md and the built HTML,
 # whose diagrams it screenshots). Output: $MANUAL_OUT/review-packets.
 set -e
 cd "$(dirname "$0")"

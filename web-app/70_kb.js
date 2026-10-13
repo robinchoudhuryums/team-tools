@@ -3541,7 +3541,7 @@ function kbManualValidate_(data) {
   const errors = [];
   if (!Array.isArray(data)) return { items: [], errors: ['The file is not a list of articles — is this articles.json from the manual build?'] };
   if (!data.length) return { items: [], errors: ['The file holds no articles.'] };
-  if (data.length > KB_MANUAL_MAX_ARTICLES) return { items: [], errors: ['The file holds ' + data.length + ' articles — more than ' + KB_MANUAL_MAX_ARTICLES + '; is this the manual?'] };
+  if (data.length > KB_MANUAL_MAX_ARTICLES) return { items: [], errors: ['The file holds ' + data.length + ' articles — more than ' + KB_MANUAL_MAX_ARTICLES + '; is this the handbook?'] };
   const seen = {};
   const items = [];
   data.forEach(function (a, i) {
@@ -3557,7 +3557,7 @@ function kbManualValidate_(data) {
     if (!department) errors.push(id + ': no department.');
     if (!title) errors.push(id + ': no title.');
     if (department.length > 120 || title.length > 200) errors.push(id + ': department or title is too long.');
-    if (String(a.Type || 'article') !== 'article') errors.push(id + ': type "' + String(a.Type).substring(0, 20) + '" — the manual imports articles only.');
+    if (String(a.Type || 'article') !== 'article') errors.push(id + ': type "' + String(a.Type).substring(0, 20) + '" — the handbook imports articles only.');
     if (body == null) errors.push(id + ': no body.');
     else if (body.length > KB_BODY_MAX) errors.push(id + ': body is ' + body.length + ' characters (the limit is ' + KB_BODY_MAX + ').');
     const sortOrder = Number(a.SortOrder);
@@ -3641,7 +3641,7 @@ function kbManualImagesValidate_(images, articles, hashFn) {
   if (typeof images !== 'object' || Array.isArray(images)) return { items: null, errors: ['The file\'s images are not a key → image map.'] };
   const errors = [], items = [], have = {};
   const keys = Object.keys(images).sort();
-  if (keys.length > KB_MANUAL_IMAGES_MAX) errors.push('The file carries ' + keys.length + ' images; the manual has far fewer than ' + KB_MANUAL_IMAGES_MAX + '.');
+  if (keys.length > KB_MANUAL_IMAGES_MAX) errors.push('The file carries ' + keys.length + ' images; the handbook has far fewer than ' + KB_MANUAL_IMAGES_MAX + '.');
   keys.slice(0, KB_MANUAL_IMAGES_MAX).forEach(function (k) {
     const where = 'Image "' + String(k).substring(0, 60) + '"';
     const im = images[k];

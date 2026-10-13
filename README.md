@@ -90,7 +90,7 @@ Script project synced via [clasp](https://github.com/google/clasp).
     and answers twice per item — once through insurance, once paying
     out of pocket, because a state limit lifts when nobody is billing
     insurance and a delivery radius or a service-city list does not.
-    The CSR Procedures Manual is imported from `manual/` (the one
+    The Policies & Procedures Handbook is imported from `manual/` (the one
     source; read-only in the app, with "Suggest an edit"): each chapter
     reads as one page with cross-references and previews, a section
     number typed into search jumps to it, and the drawer carries the

@@ -1953,7 +1953,7 @@ const KB_MANUAL_SYNONYMS_MAX = 300;  // glossary abbreviations the export may se
 // short one a rep scans.
 const KB_MANUAL_RECENT_DAYS = 90;
 const KB_MANUAL_RECENT_MAX = 8;
-const KB_MANUAL_READONLY_MSG = 'This section comes from the procedures manual. Change it in the manual source and re-import — edits made here would be overwritten or lost.';
+const KB_MANUAL_READONLY_MSG = 'This section comes from the Policies & Procedures Handbook. Change it in the handbook source and re-import — edits made here would be overwritten or lost.';
 // Batch M3 — the manual's images. manual.json carries them ({key: {alt, kind,
 // dataUri}}). M4-FU3 (2026-09-29): this domain's administrator has DISABLED
 // Apps Script's Drive service, so they are stored IN the ManualImages tab —

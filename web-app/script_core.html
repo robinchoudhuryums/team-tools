@@ -747,10 +747,10 @@ function whatsNewOpen_() {
     ? kbMd_(res.bodyMd)
     : '<pre style="white-space:pre-wrap">' + esc(res.bodyMd) + '</pre>';
   if ((res.manualRecent || []).length) {
-    bodyHtml += '<div class="mr-sec"><h3>' + icon('fileText', 14) + ' Procedures manual — recently changed <span class="mr-sub">' + manualRecentSubHtml_(res) + '</span></h3>' +
+    bodyHtml += '<div class="mr-sec"><h3>' + icon('fileText', 14) + ' Policies &amp; Procedures Handbook — recently changed <span class="mr-sub">' + manualRecentSubHtml_(res) + '</span></h3>' +
       manualRecentListHtml_(res.manualRecent) + '</div>';
   } else if (res.manualError) {
-    bodyHtml += '<p class="mr-err">' + icon('warning', 12) + ' Could not load the procedures manual’s recent changes.</p>';
+    bodyHtml += '<p class="mr-err">' + icon('warning', 12) + ' Could not load the handbook’s recent changes.</p>';
   }
   ov.innerHTML =
     '<div class="modal" style="max-width:560px" onclick="event.stopPropagation()">' +

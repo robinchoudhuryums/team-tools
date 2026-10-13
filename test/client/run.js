@@ -30285,7 +30285,7 @@ test('M2-S4: manual sections are READ-ONLY in the app — save, delete and rever
     const b = src(n);
     assert.ok(b.indexOf('KB_MANUAL_READONLY_MSG') < b.indexOf('getOrCreateKbSheet_()') || b.indexOf('getOrCreateKbSheet_()') < 0, n + ' refuses BEFORE it touches the sheet');
   });
-  assert.ok(/manual source/.test(/const KB_MANUAL_READONLY_MSG = '([^']+)'/.exec(codeSrc)[1]));
+  assert.ok(/handbook source/.test(/const KB_MANUAL_READONLY_MSG = '([^']+)'/.exec(codeSrc)[1]));
   // Driven: kbSaveItem refuses the man- id, keeps saving a hand-written one.
   const book = m1Book_([['man-5-9', 'P', 'T', 'article', 'b', '', '', 9, 'u', 'x', 'r', 'x', 'published'], ['kb-1', 'B', 'T', 'article', 'b', '', '', 1, 'u', 'x', 'r', 'x', 'published']], null);
   const ctx = vm.createContext({ String, Number, Object, JSON,
@@ -30650,7 +30650,7 @@ test('M3-I3 (M4-FU3): getManualImages serves the tab\'s own bytes — rejoined i
 
 test('M3-I4: the reader side of the images — a chip carries only a key of the image charset, the client batch is the server\'s, and only a PNG/JPEG data URL is ever set as a source', () => {
   const c = m1Md_();
-  assert.strictEqual(c.kbMd_('![Reg](manimg:fig-o2-reg)'), '<p><span class="kb-img-pending kb-manimg" data-manimg="fig-o2-reg" title="Manual image">Reg</span></p>');
+  assert.strictEqual(c.kbMd_('![Reg](manimg:fig-o2-reg)'), '<p><span class="kb-img-pending kb-manimg" data-manimg="fig-o2-reg" title="Handbook image">Reg</span></p>');
   ['manimg:FIG-x', 'manimg:fig-x"onerror=a', 'manimg:evil-x', 'manimg:icon-'].forEach((u) => {
     const h = c.kbMd_('![A](' + u + ')');
     assert.ok(!/data-manimg/.test(h) && !/<img/.test(h) && /kb-img-pending/.test(h), u + ' → a plain chip, no key, no image: ' + h);
@@ -34943,7 +34943,7 @@ test('MP1-4: the front page — "Where to start", the five banner types as real 
     .forEach((t) => assert.ok(how.indexOf(t) >= 0, 'has: ' + t));
   ['Critical', 'Policy', 'Watch-out', 'Script', 'Note'].forEach((k) => assert.ok(new RegExp('^> \\*\\*' + k + '\\*\\* \u2014 ', 'm').test(how), k + ' is shown as a real banner'));
   ['You are not expected to read', 'roughly 25 pages', 'Older copies used', 'Your first week', 'state coverage'].forEach((t) => assert.ok(how.indexOf(t) < 0, 'gone: ' + t));
-  assert.ok(!/def control_block/.test(bd) && bd.indexOf('chunks = [f"# CSR Procedures Manual{\' \u2014 \' + title if guide else \'\'}"') > 0, 'the full manual is titled plainly — no "Unified", no version table');
+  assert.ok(!/def control_block/.test(bd) && bd.indexOf('chunks = [f"# Policies & Procedures Handbook{\' \u2014 \' + title if guide else \'\'}"') > 0, 'the full manual is titled plainly — no "Unified", no version table');
   assert.ok(/^OWNER = "[^"]+"$/m.test(bd) && MP1_('make_html.py').indexOf('OWNER = re.search(r\'^OWNER = "([^"]+)"\'') > 0, 'the owner is build.py\'s, read by the HTML (and Word) rather than copied');
   assert.ok(MP1_('export_reference.py').indexOf('re.search(r\'^HOWTO = """(.*?)"""\'') > 0, 'the export still reads the front page from build.py');
 });
@@ -35011,7 +35011,7 @@ test('MC-2 (change list 2026-10-08 C8 + A6): every diagram prints on its own lan
   assert.ok(/position: s\.landscape \? PAGE_H - MARGIN \* 2 : CONTENT_W/.test(rx), 'the footer page number sits at the right edge on either orientation');
   assert.ok(/sections: sections\.filter\(s => s\.children\.length\)/.test(rx), 'no empty section reaches the file');
   // A6: cover + contents, full manual only
-  assert.ok(/FULL = os\.path\.basename\(SRC\)\.startswith\("CSR-Procedures-Manual-"\)/.test(mm) && /"full": FULL/.test(mm) && /"built": built_date\(\)/.test(mm), 'md2model marks the full manual and carries the version and build date');
+  assert.ok(/FULL = os\.path\.basename\(SRC\)\.startswith\("Policies-and-Procedures-Handbook-"\)/.test(mm) && /"full": FULL/.test(mm) && /"built": built_date\(\)/.test(mm), 'md2model marks the full manual and carries the version and build date');
   assert.ok(/if \(meta\.full\) \{/.test(rx) && /openSection\(false, \{ cover: true \}\)/.test(rx) && /titlePage: !!s\.cover/.test(rx), 'only the full manual gets the cover, which has no running header');
   assert.ok(/new InternalHyperlink\(\{ anchor: b\.bm/.test(rx) && /new PageReference\(b\.bm/.test(rx) && /features: meta\.full \? \{ updateFields: true \}/.test(rx), 'each contents line links to its heading, with a page number Word fills on open');
   assert.ok(/b\.bm = 'x_ch_' \+ k/.test(rx), 'a chapter title gets a bookmark so the contents can link it');
@@ -35050,7 +35050,7 @@ test('MD-1 (change list 2026-10-08 D): the HTML manual — a phone gets one colu
   assert.strictEqual((mh.match(/@media screen and \(prefers-color-scheme:dark\)/g) || []).length, 3, 'the three dark rules are screen-only');
   assert.ok(!/(^|\n):root\[data-theme="dark"\]\{/.test(mh) && (mh.match(/@media screen\{:root\[data-theme="dark"\]/g) || []).length === 3, 'and so is the forced dark theme');
   // D7
-  assert.ok(/id="prsec"/.test(mh) && /id="prcards"/.test(mh) && /body:not\(\.print-sec\) main > \*\{display:none!important\}/.test(mh) && /body\.print-sec main > :not\(\.psel\)\{display:none!important\}/.test(mh), 'Print section prints the marked section; Ctrl+P still prints the cards');
+  assert.ok(/id="prsec"/.test(mh) && /id="prcards"/.test(mh) && /body:not\(\.print-sec,\.print-doc\) main > \*\{display:none!important\}/.test(mh) && /body\.print-sec main > :not\(\.psel\)\{display:none!important\}/.test(mh), 'Print section prints the marked section; Ctrl+P still prints the cards');
   // D8 + D10
   assert.ok(/role="dialog" aria-modal="true" aria-label="Call router"/.test(mh) && /rtOpener\.focus\(\{preventScroll:true\}\)/.test(mh) && /if\(e\.key!=='Tab'\) return;/.test(mh), 'the router keeps Tab inside and returns focus');
   assert.ok(/\$\{r\.h\|\|esc\(r\.a\)\}/.test(mh) && /"h": _tight\(/.test(mh), 'its answer keeps its links');
@@ -35272,21 +35272,28 @@ test('PK-6 (review packets, operator 2026-10-12): a recipient with questions fla
   assert.ok(/want = \{build_name\(k, v\) for k, v in BUILDS\}/.test(sh) && /for k, v in BUILDS:/.test(sh), 'the render loop and the stale sweep walk BUILDS');
 });
 
-test('PK-7 (review PDFs, operator 2026-10-13): each reviewed chapter goes out as a PDF on its own beside the full manual\'s — cut from the built full manual, every link to a section the chapter does not carry made plain text "(in the full manual)" so no link goes nowhere, the cover naming the chapter — and make_packets.sh builds them', () => {
+test('PK-7 (review PDFs, operator 2026-10-13): the full handbook and each reviewed chapter go out as PDFs printed from the HTML handbook — the digital design, a cover and linked contents, links in colour, bookmarks and page numbers; a chapter keeps only its own sections (driven in the DOM harness, PK-7 DOM); make_packets.sh builds them', () => {
   const MAN = path.join(__dirname, '../../manual');
   const py = fs.readFileSync(path.join(MAN, 'make_review_pdfs.py'), 'utf8');
   assert.ok(/CHAPTERS = sorted\(\{"p10" if k == "denials" else k for k in KEYS\}/.test(py), 'one PDF per chapter a packet reviews (Denials reviews Chapter 10), derived from the packets');
-  const cm = py.slice(py.indexOf('def chapter_md('), py.indexOf('\ndef to_pdf('));
-  assert.ok(/present = \{m\.group\(1\)\[1:\]\.replace\("\.", "_"\) for m in re\.finditer\(r"\^#\{2,3\} \(§\[\\w\\-\.\]\+\) ", body, re\.M\)\}/.test(cm),
-    'the sections the chapter carries are its own headings, by the build\'s anchor rule');
-  assert.ok(/m\.group\(0\) if m\.group\(1\) in present else f"\{m\.group\(2\)\} \(in the full manual\)"/.test(cm), 'a link stays only when its section is in the chapter (role links included, as the directory is not)');
-  assert.ok(/startswith\(f"Chapter \{n\} — "\)/.test(cm) && /mine\[-1\] \+ 1/.test(cm), 'every H1 of the chapter — Chapter 10 has two — up to the next one');
-  const b = fs.readFileSync(path.join(MAN, 'build.py'), 'utf8');
-  assert.ok(/def _anchor_id\(sec\):\s*\n\s*return sec\[1:\]\.replace\("\.", "_"\)/.test(b), 'the anchor rule chapter_md mirrors is still build.py\'s');
-  assert.ok(/m\["meta"\]\["subtitle"\] = f"Chapter \{key\[1:\]\} — \{title\}"/.test(py) && /assert m\["meta"\]\["full"\]/.test(py), 'the chapter PDF has the cover and contents, the cover naming the chapter');
-  const rd = fs.readFileSync(path.join(MAN, 'render_docx.js'), 'utf8');
-  assert.ok(/text: meta\.subtitle \|\| 'What a customer service representative needs to know, department by department'/.test(rd) && /meta\.note \?/.test(rd), 'the Word renderer draws the subtitle and note, the full manual\'s cover unchanged');
-  assert.ok(/check_pdf\.py/.test(py) && /BASE \+ "\.docx"/.test(py), 'the full manual\'s PDF ships too, and every PDF is checked for blank pages');
+  assert.ok(/HTML = os\.path\.join\(MANUAL_OUT, BASE \+ "\.html"\)/.test(py) && !/soffice|render_docx|md2model/.test(py), 'printed from the built HTML handbook — not the Word file (operator: the Word PDFs did not match the digital design)');
+  assert.ok(/page\.evaluate\(KEEP_CHAPTER, part\)/.test(py) && /page\.evaluate\("document\.body\.classList\.add\('print-doc'\)"\)/.test(py), 'a chapter is cut in the page, then the print-doc mode prints');
+  assert.ok(/page\.pdf\([^)]*outline=True[^)]*tagged=True[^)]*display_header_footer=True[^)]*footer_template=FOOTER\)/.test(py) && /class="pageNumber"/.test(py) && /class="totalPages"/.test(py),
+    'bookmarks (outline over a tagged PDF) and "Page N of M" on every page');
+  assert.ok(/Confidential — Internal Use Only/.test(py.slice(py.indexOf('FOOTER = '))), 'the footer carries what check_pdf.py treats as page chrome, so a blank page is still caught');
+  assert.ok(/check_pdf\.py/.test(py) && /\[None\] \+ CHAPTERS/.test(py), 'the full handbook ships too, and every PDF is checked for blank pages');
+  const fp = py.slice(py.indexOf('def fonts_through_proxy('), py.indexOf('\ndef print_pdf('));
+  assert.ok(/cafile=os\.environ\.get\("SSL_CERT_FILE"\)/.test(fp) && !/ignore_https_errors|CERT_NONE|check_hostname = False/.test(py), 'the web fonts are fetched through the proxy WITH certificate checks — never by switching them off');
+  // the print-doc mode in make_html.py
+  const mh = fs.readFileSync(path.join(MAN, 'make_html.py'), 'utf8');
+  assert.ok(/body:not\(\.print-sec,\.print-doc\) main > \*\{display:none!important\}/.test(mh),
+    'the cards-only print hides everything but the cards unless print-doc — ONE :not, so main > section.qrc still outranks it (two :nots printed one page for fifteen)');
+  assert.ok(/body\.print-doc main > #pdfdoc\{display:block!important\}/.test(mh) && /#pdfdoc\{display:none\}/.test(mh), 'the cover and contents print only in print-doc');
+  assert.ok(/body\.print-doc main > hr\{display:none!important\}/.test(mh) && /body\.print-doc main > h2\{border-top:1px solid var\(--rule\)/.test(mh), 'a section rule rides its heading — a rule alone landed on a blank page');
+  assert.ok(/body\.print-doc \.fig svg\{min-width:0!important;max-width:100%\}/.test(mh), 'a diagram fits the page instead of clipping at its screen min-width');
+  assert.ok(/body\.print-doc a\.xr\{color:var\(--accent\)/.test(mh) && /body:not\(\.print-doc\) a\.xr\{color:#000/.test(mh), 'links print in colour in the PDF, black on paper otherwise');
+  assert.ok(/data-part="\{p or ""\}"/.test(mh) && /href="#howto"/.test(mh) && /id="howto"/.test(mh), 'every contents row names its chapter, and the front-matter row links a heading that prints');
+  assert.ok(mh.indexOf('.replace("__PDFDOC__", PDFDOC).replace("__OWNER__"') > 0, 'the cover goes in before the owner and build date are filled, so it carries them');
   const sh = fs.readFileSync(path.join(MAN, 'make_packets.sh'), 'utf8');
   assert.ok(/python3 make_review_pdfs\.py/.test(sh), 'make_packets.sh builds the PDFs');
 });
@@ -35578,14 +35585,14 @@ test('MRD-3 (manual reader design Phase 3 + Phase 2\'s open items): no filled-ac
   vm.runInContext(/var KB_MANUAL_CHAPTER_ICONS = Object\.freeze\(\{[\s\S]*?\}\);/.exec(kb)[0], ctx);
   ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualChapterParts_', 'kbManualSplitTitle_', 'kbManualMastheadHtml_', 'kbManualMastCardHtml_', 'kbManualCardFor_'].forEach((n) => vm.runInContext(extractFnFrom(kb, n), ctx));
   const three = ctx.kbManualMastheadHtml_('Chapter 05 — Power Mobility', [{ id: 'man-5-1', title: '5.1 Scope', status: 'published' }, { id: 'man-5-2', title: '5.2 PAK <b>', status: 'published' }, { id: 'man-5-3', title: '5.3 New', status: 'draft' }]);
-  assert.ok(/Procedures manual · Chapter 05/.test(three) && />3 sections</.test(three) && /In this chapter/.test(three), 'kicker, count, index');
+  assert.ok(/Policies &amp; Procedures Handbook · Chapter 05/.test(three) && />3 sections</.test(three) && /In this chapter/.test(three), 'kicker, count, index');
   assert.strictEqual((three.match(/class="kb-man-ix"/g) || []).length, 3);
   assert.strictEqual((three.match(/onclick="kbOpenItem_\(this\.getAttribute\('data-kb-id'\)\)"/g) || []).length, 3, 'each row opens the section the ordinary way (a fresh start: the Back chip goes)');
   assert.ok(/5\.2<\/span><span class="kb-man-ix-t">PAK &lt;b&gt;/.test(three), 'number and title, escaped');
   assert.ok(/data-kb-ix-upd="man-5-2"/.test(three) && !/data-kb-ix-upd="man-5-3"/.test(three) && /kb-draft-pill/.test(three), 'a draft shows Draft, never Updated');
   const one = ctx.kbManualMastheadHtml_('Appendix A — Glossary', [{ id: 'man-a-1', title: 'Glossary', status: 'published' }]);
-  assert.ok(/Procedures manual · Appendix A/.test(one) && />1 section</.test(one) && !/In this chapter/.test(one) && !/kb-man-badge/.test(one), 'one section: no index; an appendix: no chapter badge');
-  assert.ok(/<div class="kb-man-mast-k">Procedures manual<\/div>/.test(ctx.kbManualMastheadHtml_('Billing', [])), 'any other department: no number');
+  assert.ok(/Policies &amp; Procedures Handbook · Appendix A/.test(one) && />1 section</.test(one) && !/In this chapter/.test(one) && !/kb-man-badge/.test(one), 'one section: no index; an appendix: no chapter badge');
+  assert.ok(/<div class="kb-man-mast-k">Policies &amp; Procedures Handbook<\/div>/.test(ctx.kbManualMastheadHtml_('Billing', [])), 'any other department: no number');
   // the skeleton is not a section: the spy, Print, the decorators and focus all ignore it
   const skel = extractFnFrom(kb, 'kbManualSkeletonHtml_');
   assert.ok(/kbManualMastheadHtml_\(dept, secs\)/.test(skel) && /kbManualMastheadHtml_\(part\.department, secs\)/.test(extractFnFrom(kb, 'kbManualPartHtml_')), 'ONE masthead renderer, so nothing jumps when the chapter lands');
@@ -35610,7 +35617,7 @@ test('MP1-6: department guides come from data/extracts.json — every guide a pa
   assert.deepStrictEqual(man.guides.map((g) => g.key).sort(), parts.filter((p) => !['p0', 'p1'].includes(p)).sort(), 'one guide per department part');
   assert.ok(bd.indexOf('MANIFEST = json.load(open("data/extracts.json"))') > 0, 'build.py reads the manifest');
   assert.ok(bd.indexOf('errors.append(f"extracts.json: ') > 0, 'and refuses a guide, chapter or section that does not exist');
-  assert.ok(bd.indexOf('body = localise_links(body)') > 0 && bd.indexOf('(in the full manual)') > 0, 'a link outside the guide becomes plain text that says where the section is');
+  assert.ok(bd.indexOf('body = localise_links(body)') > 0 && bd.indexOf('(in the full handbook)') > 0, 'a link outside the guide becomes plain text that says where the section is');
   assert.ok(bd.indexOf('len(part_keys) > 3') < 0, 'a four-part guide no longer carries every card (the old filter kept them all past three parts)');
 });
 
@@ -35704,7 +35711,7 @@ test('MP2-4: the reader puts a chapter\'s badge and colour on its title and its 
   // since M9 (design handoff Phase 3) the chapter's title is the masthead's
   const head = (d) => /<header class="kb-man-mast[^"]*">[\s\S]*?<\/h2>/.exec(ctx.kbManualPartHtml_({ department: d, sections: [] }))[0];
   assert.strictEqual(head('Chapter 05 — Power Mobility'),
-    '<header class="kb-man-mast kb-man-p5"><div class="kb-man-mast-k">Procedures manual · Chapter 05</div><h2 class="kb-man-mast-h"><span class="kb-man-badge kb-man-p5" aria-hidden="true"><i data-icon="bolt" data-s="22"></i></span><span>Power Mobility</span></h2>');
+    '<header class="kb-man-mast kb-man-p5"><div class="kb-man-mast-k">Policies &amp; Procedures Handbook · Chapter 05</div><h2 class="kb-man-mast-h"><span class="kb-man-badge kb-man-p5" aria-hidden="true"><i data-icon="bolt" data-s="22"></i></span><span>Power Mobility</span></h2>');
   assert.ok(/kb-man-p4"[\s\S]*data-icon="clipboardList"/.test(head('Chapter 04 — Sales')), 'Sales is Chapter 4 since the October 2026 renumber');
   assert.ok(/kb-man-p10"[\s\S]*data-icon="dollar"/.test(head('Chapter 10 — Billing & Denials')), 'two digits read as one number');
   assert.ok(/kb-man-p10"[\s\S]*data-icon="dollar"/.test(head('Part 10 — Billing & Insurance')), 'a row imported before the renumber still reads by its number');

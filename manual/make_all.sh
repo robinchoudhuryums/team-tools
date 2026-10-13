@@ -10,16 +10,16 @@ python3 make_diagrams.py
 python3 make_flow_diagrams.py
 rm -f out/*.md            # a renamed part must not leave a stale extract behind
 python3 build.py
-python3 make_html.py out/CSR-Procedures-Manual-v3.0.md "$OUT/CSR-Procedures-Manual-v3.0.html"
-python3 validate_html.py "$OUT/CSR-Procedures-Manual-v3.0.html"
-python3 validate_render.py "$OUT/CSR-Procedures-Manual-v3.0.html"
-python3 check_svg_fit.py "$OUT/CSR-Procedures-Manual-v3.0.html"
+python3 make_html.py out/Policies-and-Procedures-Handbook-v3.0.md "$OUT/Policies-and-Procedures-Handbook-v3.0.html"
+python3 validate_html.py "$OUT/Policies-and-Procedures-Handbook-v3.0.html"
+python3 validate_render.py "$OUT/Policies-and-Procedures-Handbook-v3.0.html"
+python3 check_svg_fit.py "$OUT/Policies-and-Procedures-Handbook-v3.0.html"
 rm -f "$OUT"/docx/*.docx
 python3 rasterize_diagrams.py   # the diagrams as PNGs, so Word (and a PDF of it) shows them
 for f in out/*.md; do
   base=$(basename "$f" .md)
   python3 md2model.py "$f" /tmp/_m.json > /dev/null
-  node render_docx.js /tmp/_m.json "$OUT/docx/$base.docx" "CSR Procedures Manual v3.0"
+  node render_docx.js /tmp/_m.json "$OUT/docx/$base.docx" "Policies & Procedures Handbook v3.0"
 done
 # A PDF of the full manual, checked for blank pages — when LibreOffice is installed.
 # (The operator's PDFs come from the Word file via Word or Google Docs; this is the
@@ -27,9 +27,9 @@ done
 if command -v soffice >/dev/null 2>&1; then
   mkdir -p "$OUT/pdf"
   if timeout 300 soffice --headless --convert-to pdf --outdir "$OUT/pdf" \
-       "$OUT/docx/CSR-Procedures-Manual-v3.0.docx" >/dev/null 2>&1 \
-       && [ -s "$OUT/pdf/CSR-Procedures-Manual-v3.0.pdf" ]; then
-    python3 check_pdf.py "$OUT/pdf/CSR-Procedures-Manual-v3.0.pdf"
+       "$OUT/docx/Policies-and-Procedures-Handbook-v3.0.docx" >/dev/null 2>&1 \
+       && [ -s "$OUT/pdf/Policies-and-Procedures-Handbook-v3.0.pdf" ]; then
+    python3 check_pdf.py "$OUT/pdf/Policies-and-Procedures-Handbook-v3.0.pdf"
   else
     echo "pdf                   : not made (LibreOffice could not convert the Word file here)"
   fi

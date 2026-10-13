@@ -1,7 +1,7 @@
 # Appendix B — Escalation Directory
 
 
-> **About this appendix.** The manual refers to escalation targets by **role**, never by name. This is the only place names appear, so a person changing teams means one line changes and every artifact updates on the next build.
+> **About this appendix.** The handbook refers to escalation targets by **role**, never by name. This is the only place names appear, so a person changing teams means one line changes and every artifact updates on the next build.
 
 ---
 

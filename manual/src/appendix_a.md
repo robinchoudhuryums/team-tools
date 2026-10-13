@@ -5,15 +5,15 @@ Three classes. The distinction matters: about twenty entries in the original Man
 
 | Section | Holds |
 |---|---|
-| [[§A-1]] | **Manual terms** — acronyms used in the text of the manual |
-| [[§A-2]] | **Note-taking shorthand** — abbreviations for call notes, not used in the manual text |
+| [[§A-1]] | **Handbook terms** — acronyms used in the text of the handbook |
+| [[§A-2]] | **Note-taking shorthand** — abbreviations for call notes, not used in the handbook text |
 | [[§A-3]] | **Systems and platforms** — named tools and reference documents |
 
 In a standalone chapter, each section shows only the terms used in that chapter plus those marked All.
 
 ---
 
-## §A-1 Manual terms
+## §A-1 Handbook terms
 
 {{glossary:manual}}
 
