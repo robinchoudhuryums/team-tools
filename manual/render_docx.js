@@ -259,8 +259,11 @@ if (meta.full) {
     new Paragraph({ children: [new TextRun({ text: 'CSR Procedures Manual', bold: true, size: 64, color: accent })],
                     spacing: { after: 240 },
                     border: { bottom: { style: BorderStyle.SINGLE, size: 18, color: accent, space: 12 } } }),
-    new Paragraph({ children: [new TextRun({ text: 'What a customer service representative needs to know, department by department',
-                                             size: 26, color: C.muted })], spacing: { after: 1600 } }),
+    // a review copy of one chapter names it, and how its links behave (make_review_pdfs.py)
+    new Paragraph({ children: [new TextRun({ text: meta.subtitle || 'What a customer service representative needs to know, department by department',
+                                             size: 26, color: meta.subtitle ? accent : C.muted, bold: !!meta.subtitle })],
+                    spacing: { after: meta.note ? 160 : 1600 } }),
+    ...(meta.note ? [new Paragraph({ children: [new TextRun({ text: meta.note, size: 21, color: C.muted })], spacing: { after: 1400 } })] : []),
     new Paragraph({ children: [new TextRun({ text: 'Version ' + (meta.version || ''), bold: true, size: 22, color: C.ink }),
                                new TextRun({ text: '   \u00b7   Built ' + (meta.built || ''), size: 22, color: C.ink })],
                     spacing: { after: 80 } }),

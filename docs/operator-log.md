@@ -10,6 +10,24 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-13 — one packet for Ozaire, and PDFs to send with the packets
+
+**Adds NO operator state.** Run `./make_packets.sh` after `./make_all.sh` as before.
+- **Ozaire Hawa** gets ONE packet, `Review-Packet-C5-C6-Ozaire-Hawa`: his Power
+  questions, then his Field Ops questions, numbered straight through, each
+  chapter keeping its own closing "Anything else?". The two separate files are
+  gone.
+- **`review-packets/pdf/`** now holds the full manual's PDF and one PDF per
+  reviewed chapter (2, 3, 4, 5, 6, 7 and 10), to send with each packet. Section
+  numbers, the contents and web addresses are clickable, and the headings are
+  the PDF's bookmarks; in a chapter PDF a section from another chapter reads
+  "(in the full manual)" instead of a link to nowhere. Which to send:
+  - each chapter packet → its chapter's PDF (Denials → Chapter 10);
+  - April → Chapter 4; Mahesh → Chapter 6; Ozaire → Chapters 5 and 6;
+  - everyone → the full manual PDF.
+- The PDFs need LibreOffice (`soffice`, with Writer). Without it the step says
+  so and makes nothing; export the Word files from Word or Google Docs instead.
+
 ## 2026-10-12 — overridden orders, OON w/ PA and TRY
 
 **Adds NO operator state.** Rebuild the packets.

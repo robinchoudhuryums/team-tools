@@ -35162,8 +35162,9 @@ test('PK-2 (review packets, operator 2026-10-12): manual text is shown ONCE per 
   assert.ok(chk > 0 && ex > chk && rows > ex && rec > rows, 'excerpts_for checks what was shown, excerpts, checks the rows against a full section already shown, then records — ' + [chk, ex, rows, rec]);
   assert.ok(/shown with question \{src\}/.test(fn) && /pointed/.test(fn), 'it points back to the question that showed the text, once per source');
   const body = (src, name) => src.slice(src.indexOf('def ' + name + '('), src.indexOf('\ndef ', src.indexOf('def ' + name + '(') + 1) > 0 ? src.indexOf('\ndef ', src.indexOf('def ' + name + '(') + 1) : src.length);
-  [['make_review_packets.py packet()', body(md, 'packet'), 'excerpts_for(r, key, shown, missing)'], ['packet_model.py model()', body(wd, 'model'), 'MRP.excerpts_for(r, key, shown,']].forEach(([f, src, call]) => {
+  [['make_review_packets.py packet()', body(md, 'packet'), 'excerpts_for(r, part, shown, missing)'], ['packet_model.py model()', body(wd, 'model'), 'MRP.excerpts_for(r, part, shown,']].forEach(([f, src, call]) => {
     assert.strictEqual(src.split(call).length - 1, 2, f + ': the open and the closed question both go through excerpts_for');
+    assert.ok(/part = g\.get\("key", key\)/.test(src), f + ': with the chapter its group names (a combined packet) or the packet\'s own');
     assert.ok(!/excerpt\(sec, filt/.test(src), f + ': and nothing excerpts around it');
   });
 });
@@ -35249,12 +35250,41 @@ test('PK-6 (review packets, operator 2026-10-12): a recipient with questions fla
   const sf = py.slice(py.indexOf('def spec_for('), py.indexOf('\ndef build_name('));
   assert.ok(/\(mark in text\(r\)\) == bool\(v\.get\("only"\)\)/.test(sf) && /n=str\(i \+ 1\)/.test(sf), 'spec_for keeps the marked (only) or unmarked (skip) questions and renumbers them');
   assert.ok(/closing = lambda r: text\(r\)\.startswith\("\*\*Anything else"\)/.test(sf) && /== bool\(v\.get\("only"\)\) or closing\(r\)\]/.test(sf), 'every cut keeps the open-ended closing question, an only-cut included');
-  assert.ok(/BUILDS = \[\(k, None\) for k in KEYS\] \+ \[\(k, v\) for k in KEYS for v in SPEC\[k\]\.get\("recipients", \[\]\)\]/.test(py), 'BUILDS is every packet, then every recipient cut');
+  assert.ok(/BUILDS = \[\(k, None\) for k in KEYS\] \+ recipient_builds\(\)/.test(py), 'BUILDS is every packet, then every recipient cut');
+  // operator 2026-10-13: ONE packet per recipient — a file flagged in two chapters is one combined build
+  const rb = py.slice(py.indexOf('def recipient_builds('), py.indexOf('\nBUILDS = '));
+  assert.ok(/mine = \[\(k2, v2\) for k2, v2 in cuts if v2\["file"\] == v\["file"\]\]/.test(rb) && /if len\(mine\) == 1:\s*\n\s*out\.append\(\(k, v\)\)/.test(rb) && /elif mine\[0\]\[0\] == k:/.test(rb) && /"parts": mine/.test(rb),
+    'a recipient in one chapter keeps their cut; one in several gets ONE build carrying every part, at their first');
+  const files = [];
+  Object.keys(spec).filter((k) => k[0] !== '_').forEach((k) => (spec[k].recipients || []).forEach((v) => files.push(v.file)));
+  assert.ok(files.some((f, i) => files.indexOf(f) !== i), 'non-vacuous: someone (Ozaire) is a recipient in two chapters');
+  const cs = py.slice(py.indexOf('def combined_spec('), py.indexOf('\ndef build_name('));
+  assert.ok(/for k, vk in v\["parts"\]:/.test(cs) && /spec_for\(k, vk\)/.test(cs) && /n \+= 1/.test(cs) && /"key": k/.test(cs),
+    'the combined packet is each chapter\'s own cut, numbered straight through, each group naming its chapter');
   assert.ok(/for key, v in BUILDS:/.test(py) && /packet\(key, v\)/.test(py), 'the Markdown build walks BUILDS');
   const pm = fs.readFileSync(path.join(MAN, 'packet_model.py'), 'utf8');
   assert.ok(/for key, v in MRP\.BUILDS:/.test(pm) && /MRP\.spec_for\(key, v\)/.test(pm), 'the Word model walks BUILDS through spec_for');
   const sh = fs.readFileSync(path.join(MAN, 'make_packets.sh'), 'utf8');
   assert.ok(/want = \{build_name\(k, v\) for k, v in BUILDS\}/.test(sh) && /for k, v in BUILDS:/.test(sh), 'the render loop and the stale sweep walk BUILDS');
+});
+
+test('PK-7 (review PDFs, operator 2026-10-13): each reviewed chapter goes out as a PDF on its own beside the full manual\'s — cut from the built full manual, every link to a section the chapter does not carry made plain text "(in the full manual)" so no link goes nowhere, the cover naming the chapter — and make_packets.sh builds them', () => {
+  const MAN = path.join(__dirname, '../../manual');
+  const py = fs.readFileSync(path.join(MAN, 'make_review_pdfs.py'), 'utf8');
+  assert.ok(/CHAPTERS = sorted\(\{"p10" if k == "denials" else k for k in KEYS\}/.test(py), 'one PDF per chapter a packet reviews (Denials reviews Chapter 10), derived from the packets');
+  const cm = py.slice(py.indexOf('def chapter_md('), py.indexOf('\ndef to_pdf('));
+  assert.ok(/present = \{m\.group\(1\)\[1:\]\.replace\("\.", "_"\) for m in re\.finditer\(r"\^#\{2,3\} \(§\[\\w\\-\.\]\+\) ", body, re\.M\)\}/.test(cm),
+    'the sections the chapter carries are its own headings, by the build\'s anchor rule');
+  assert.ok(/m\.group\(0\) if m\.group\(1\) in present else f"\{m\.group\(2\)\} \(in the full manual\)"/.test(cm), 'a link stays only when its section is in the chapter (role links included, as the directory is not)');
+  assert.ok(/startswith\(f"Chapter \{n\} — "\)/.test(cm) && /mine\[-1\] \+ 1/.test(cm), 'every H1 of the chapter — Chapter 10 has two — up to the next one');
+  const b = fs.readFileSync(path.join(MAN, 'build.py'), 'utf8');
+  assert.ok(/def _anchor_id\(sec\):\s*\n\s*return sec\[1:\]\.replace\("\.", "_"\)/.test(b), 'the anchor rule chapter_md mirrors is still build.py\'s');
+  assert.ok(/m\["meta"\]\["subtitle"\] = f"Chapter \{key\[1:\]\} — \{title\}"/.test(py) && /assert m\["meta"\]\["full"\]/.test(py), 'the chapter PDF has the cover and contents, the cover naming the chapter');
+  const rd = fs.readFileSync(path.join(MAN, 'render_docx.js'), 'utf8');
+  assert.ok(/text: meta\.subtitle \|\| 'What a customer service representative needs to know, department by department'/.test(rd) && /meta\.note \?/.test(rd), 'the Word renderer draws the subtitle and note, the full manual\'s cover unchanged');
+  assert.ok(/check_pdf\.py/.test(py) && /BASE \+ "\.docx"/.test(py), 'the full manual\'s PDF ships too, and every PDF is checked for blank pages');
+  const sh = fs.readFileSync(path.join(MAN, 'make_packets.sh'), 'utf8');
+  assert.ok(/python3 make_review_pdfs\.py/.test(sh), 'make_packets.sh builds the PDFs');
 });
 
 test('MRD-9 (the Phase 8 follow-on, 2026-10-12): a dark-mode printout draws the accent in each palette\'s LIGHT accent — the swatch tokens, whose dark copy is screen-only — for every palette the token file declares; printed cross-references use the deeper --accent-2', () => {

@@ -178,6 +178,8 @@ def spec_for(key, v=None):
     {"file", "for", "skip": marker} leaves those questions out (they are
     someone else's). Questions are renumbered; excerpts follow the once-per-packet
     rule within the cut, so a question never points at one the reader lacks."""
+    if v is not None and "parts" in v:
+        return combined_spec(v)
     s = SPEC[key]
     if v is None:
         return s
@@ -201,12 +203,55 @@ def spec_for(key, v=None):
     return {"head": "\n".join(head) + "\n\n", "groups": [{"num": "", "title": "", "intro": "", "rows": out}]}
 
 
+def chapter_of(key):
+    """'Chapter 5: Power Mobility', from the packet's own title line."""
+    return SPEC[key]["head"].split("\n")[0].split(" — ", 1)[1]
+
+
+def combined_spec(v):
+    """One packet for a recipient flagged in more than one chapter (operator 2026-10-13:
+    Ozaire had a Power packet and a Field Ops packet) — each chapter's cut under its
+    own heading, the questions numbered straight through."""
+    groups, n = [], 0
+    for k, vk in v["parts"]:
+        rows = []
+        for r in spec_for(k, vk)["groups"][0]["rows"]:
+            n += 1
+            rows.append(dict(r, n=str(n)))
+        groups.append({"num": "", "title": chapter_of(k), "intro": "", "key": k, "rows": rows})
+    keys = [k for k, _ in v["parts"]]
+    nums = [chapter_of(k).split(":")[0].replace("Chapter ", "") for k in keys]
+    head = [f"# Review Packet — Chapters {', '.join(nums[:-1])} and {nums[-1]}", "",   # each chapter heads its own part
+            f"**For:** {v['for']}"]
+    return {"head": "\n".join(head) + "\n\n", "groups": groups}
+
+
 def build_name(key, v=None):
+    if v is not None and "parts" in v:
+        return "-".join(NAMES[k].split("-")[0] for k, _ in v["parts"]) + "-" + v["file"]
     return NAMES[key] + ("-" + v["file"] if v else "")
 
 
+def recipient_builds():
+    """Each recipient's cut — and ONE packet for a recipient flagged in several chapters,
+    at the place of their first."""
+    cuts = [(k, v) for k in KEYS for v in SPEC[k].get("recipients", [])]
+    out = []
+    for k, v in cuts:
+        mine = [(k2, v2) for k2, v2 in cuts if v2["file"] == v["file"]]
+        if len(mine) == 1:
+            out.append((k, v))
+        elif mine[0][0] == k:
+            who = v["for"].split(" — ", 1)[0]
+            names = [chapter_of(k2).split(": ", 1)[1] for k2, _ in mine]
+            out.append(("+".join(k2 for k2, _ in mine),
+                        {"file": v["file"], "parts": mine,
+                         "for": f"{who} — the {' and '.join(names)} questions marked for you"}))
+    return out
+
+
 # every file the build writes: each packet, then each recipient's cut of it
-BUILDS = [(k, None) for k in KEYS] + [(k, v) for k in KEYS for v in SPEC[k].get("recipients", [])]
+BUILDS = [(k, None) for k in KEYS] + recipient_builds()
 
 
 def packet(key, v=None):
@@ -217,13 +262,14 @@ def packet(key, v=None):
     missing = []
     for g in s["groups"]:
         if g["title"]:
-            L += ["---", "", f"## {g['num']}. {g['title']}", ""]
+            L += ["---", "", f"## {g['num'] + '. ' if g['num'] else ''}{g['title']}", ""]
+        part = g.get("key", key)   # a combined packet's group names its own chapter
         if g.get("intro") and not g["intro"].startswith("|"):
             L += [g["intro"], ""]
         for r in g["rows"]:
             if "q" in r:                      # an open question — an excerpt only if it cites a section
                 L += [f"**{r['n']}. {r['q'].replace('**', '')}**", ""]
-                L += excerpt_lines(excerpts_for(r, key, shown, missing))
+                L += excerpt_lines(excerpts_for(r, part, shown, missing))
                 if r.get("link"):  # a live document the question refers to, e.g. a team's own sheet
                     L += [f"**[{r['link']['text']}]({r['link']['url']})**", ""]
                 L += ["**Your answer:**", "", "&nbsp;", ""]
@@ -233,7 +279,7 @@ def packet(key, v=None):
                 title, body, gone = directory_rows(r["roster"])
                 missing += [(r["n"], "B.1 " + g) for g in gone]
                 L += [f"#### From the manual — {title}", "", body, ""]
-            L += excerpt_lines(excerpts_for(r, key, shown, missing))
+            L += excerpt_lines(excerpts_for(r, part, shown, missing))
             if r.get("link"):  # e.g. the directory question's live roster sheet
                 L += [f"**[{r['link']['text']}]({r['link']['url']})**", ""]
             # a fill-in line, not checkboxes: the packets go out as Google Docs, where

@@ -23,4 +23,5 @@ for k, v in BUILDS:
     subprocess.run(["node", "render_packet.js", f"/tmp/packet_{n}.json",
                     f"{sys.argv[1]}/review-packets/word/Review-Packet-{n}.docx"], check=True, capture_output=True)
 PY
+python3 make_review_pdfs.py   # the full manual and each reviewed chapter as PDFs (LibreOffice)
 echo "packets complete -> $OUT/review-packets"

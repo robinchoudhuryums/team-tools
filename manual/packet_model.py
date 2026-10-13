@@ -99,13 +99,14 @@ def model(key, v=None):
     shown = {}
     for g in s["groups"]:
         if g["title"]:
-            B.append({"t": "h2", "text": f"{g['num']}. {g['title']}"})
+            B.append({"t": "h2", "text": f"{g['num'] + '. ' if g['num'] else ''}{g['title']}"})
+        part = g.get("key", key)   # a combined packet's group names its own chapter
         if g.get("intro") and not g["intro"].startswith("|"):
             B.append({"t": "p", "runs": runs(g["intro"])})
         for r in g["rows"]:
             if "q" in r:
                 B.append({"t": "h3", "runs": runs(f"{r['n']}. {r['q'].replace('**', '')}")})
-                B += excerpt_blocks(MRP.excerpts_for(r, key, shown, []))
+                B += excerpt_blocks(MRP.excerpts_for(r, part, shown, []))
                 if r.get("link"):  # a live document the question refers to, e.g. a team's own sheet
                     B.append({"t": "link", **r["link"]})
                 B.append({"t": "answer_open", "n": r["n"]})
@@ -114,7 +115,7 @@ def model(key, v=None):
             if r.get("roster"):
                 t, body, _ = MRP.directory_rows(r["roster"])
                 B.append({"t": "excerpt", "title": t, "blocks": blocks(body)})
-            B += excerpt_blocks(MRP.excerpts_for(r, key, shown, []))
+            B += excerpt_blocks(MRP.excerpts_for(r, part, shown, []))
             if r.get("link"):  # e.g. the directory question's live roster sheet
                 B.append({"t": "link", **r["link"]})
             B.append({"t": "answer", "n": r["n"]})
