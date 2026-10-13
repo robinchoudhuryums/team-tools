@@ -139,7 +139,7 @@ for (const b of M.blocks) {
     case "excerpt":
       children.push(new Paragraph({ keepNext: true, spacing: { before: 60, after: 60 }, indent: { left: 320 },
         shading: { type: ShadingType.CLEAR, color: "auto", fill: PANEL }, border: { left: line(ACCENT, 12) },
-        children: [new TextRun({ text: "FROM THE MANUAL — ", bold: true, size: 17, color: ACCENT }),
+        children: [new TextRun({ text: "FROM THE HANDBOOK — ", bold: true, size: 17, color: ACCENT }),
                    new TextRun({ text: b.title, bold: true, size: 19, color: NAVY })] }));
       children.push(...excerptBlocks(b.blocks));
       children.push(new Paragraph({ spacing: { after: 80 } }));

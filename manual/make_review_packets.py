@@ -46,8 +46,8 @@ def refs_for(sec_field, part):
 
 def clean(md):
     md = re.sub(r'<div class="fig"[^>]*>.*?aria-label="([^"]+)".*?</div>', r"[[DIAGRAM:\1]]", md, flags=re.S)
-    md = re.sub(r'<div class="fig"[^>]*>.*?</div>', "*[Diagram — see the manual]*", md, flags=re.S)
-    md = re.sub(r"<figure.*?</figure>", "*[Figure — see the manual]*", md, flags=re.S)
+    md = re.sub(r'<div class="fig"[^>]*>.*?</div>', "*[Diagram — see the handbook]*", md, flags=re.S)
+    md = re.sub(r"<figure.*?</figure>", "*[Figure — see the handbook]*", md, flags=re.S)
     md = re.sub(r"<img[^>]*>", "", md)
     md = re.sub(r'<span class="phase"[^>]*></span>', "", md)
     md = re.sub(r"<a [^>]*>(.*?)</a>", r"\1", md, flags=re.S)
@@ -58,7 +58,7 @@ def clean(md):
     md = re.sub(r"`\[FIGURE: ([^\]]+)\]`", lambda m: "*[Figure to come: " + m.group(1).split(". ")[0].rstrip(".") + "]*", md)
     # several images in a row → one line
     md = re.sub(r"(\*\[Figure — see the manual\]\*)(?:\s*\n\s*\*\[Figure — see the manual\]\*)+",
-                lambda m: "*[" + str(m.group(0).count("Figure")) + " figures — see the manual]*", md)
+                lambda m: "*[" + str(m.group(0).count("Figure")) + " figures — see the handbook]*", md)
     md = re.sub(r"\n{3,}", "\n\n", md)
     return md.strip()
 
@@ -165,7 +165,7 @@ def excerpts_for(r, key, shown, missing):
 def excerpt_lines(items):
     L = []
     for it in items:
-        L += [f"*{it[1]}*", ""] if it[0] == "pointer" else [f"#### From the manual — {it[1]}", "", it[2], ""]
+        L += [f"*{it[1]}*", ""] if it[0] == "pointer" else [f"#### From the handbook — {it[1]}", "", it[2], ""]
     return L
 
 
@@ -296,7 +296,7 @@ def packet(key, v=None):
             if r.get("roster"):
                 title, body, gone = directory_rows(r["roster"])
                 missing += [(r["n"], "B.1 " + g) for g in gone]
-                L += [f"#### From the manual — {title}", "", body, ""]
+                L += [f"#### From the handbook — {title}", "", body, ""]
             L += excerpt_lines(excerpts_for(r, part, shown, missing))
             if r.get("link"):  # e.g. the directory question's live roster sheet
                 L += [f"**[{r['link']['text']}]({r['link']['url']})**", ""]

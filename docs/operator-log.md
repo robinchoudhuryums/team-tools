@@ -23,6 +23,8 @@ section titles "How to use this handbook" and "A.1 Handbook terms" changed.
   masthead, tree heading, version line, What's new and the admin's Handbook
   button). The handbook's own text says "this handbook" where it meant itself;
   "Manual Mobility" and manual wheelchairs are untouched.
+  The review packets follow: their excerpts are headed "From the handbook", and
+  two questions that said "the manual says" now say "the handbook says".
 - **The review PDFs** are now printed from the HTML handbook (Chromium), so they
   match the digital design, with a cover, a linked contents page and page
   numbers; links and bookmarks work as before. The Word file and its
