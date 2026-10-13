@@ -847,7 +847,7 @@ carries the same number. `/cycle-status` surfaces it.
   one.
 - `PROJECT_HEALTH.md` (repo root) — Current Standing + Score History.
 
-**Command templates: synced to `claude-workflow-tools` v1.33.0 (2026-09-09).**
+**Command templates: synced to `claude-workflow-tools` v1.43.0 (2026-10-13).** The 1.33.0 → 1.43.0 sync updated nine commands: the three audits (`/broad-scan`, `/audit`, `/targeted-audit`) now OPEN the cycle themselves (CYCLE OPEN: Cycle +1, Phase audit, unless Phase is already audit) and every implement/resume/reflect step sets Phase but never touches Cycle; `/broad-scan` numbers findings F1…, gaps G1–G5 and suggestions ST1–ST5, reports dead artifacts only when misleading (SAFE / PROPOSE), and adds an EXPANSION PLAN (E-batches) beside the fix batches; `/broad-implement` takes a batch name and a `New capabilities (G/ST):` field that `/reflect` counts from; `/cycle-init` starts at Cycle 0. `/pr-review` is still not installed, and `scripts/cycle-context.mjs` keeps its local estimate reminder (the template's indented-INV count fix was not ported). Previously synced to v1.33.0 (2026-09-09).
 `.claude/commands/` carries 19 of the template's 20 commands, verified
 byte-identical at sync time; `/pr-review` is the one not installed (it sits
 under the template's separate "Per-Change Review" heading). Record the version
