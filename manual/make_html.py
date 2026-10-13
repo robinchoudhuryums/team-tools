@@ -509,7 +509,7 @@ PDFDOC = ('<div id="pdfdoc"><section id="pdfcover"><div class="pc-brand">Univers
           '<div class="pc-title">Policies &amp; Procedures Handbook</div>'
           '<div class="pc-sub" id="pdfsub">What a customer service representative needs to know, department by department</div>'
           '<div class="pc-note" id="pdfnote"></div>'
-          '<div class="pc-meta"><b>Version v3.0</b> &middot; Built __BUILT__<br>Owner: __OWNER__<br>'
+          '<div class="pc-meta">Owner: __OWNER__<br>'   # no version or build date on the cover (operator 2026-10-13)
           '<span>Confidential &mdash; Internal Use Only</span></div></section>'
           '<section id="pdfcontents"><h1 class="pc-h">Contents</h1><ol id="pdftoc">' + "".join(pdftoc) + '</ol></section></div>')
 

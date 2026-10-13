@@ -261,9 +261,7 @@ if (meta.full) {
                     border: { bottom: { style: BorderStyle.SINGLE, size: 18, color: accent, space: 12 } } }),
     new Paragraph({ children: [new TextRun({ text: 'What a customer service representative needs to know, department by department',
                                              size: 26, color: C.muted })], spacing: { after: 1600 } }),
-    new Paragraph({ children: [new TextRun({ text: 'Version ' + (meta.version || ''), bold: true, size: 22, color: C.ink }),
-                               new TextRun({ text: '   \u00b7   Built ' + (meta.built || ''), size: 22, color: C.ink })],
-                    spacing: { after: 80 } }),
+    // no version or build date on the cover (operator 2026-10-13)
     new Paragraph({ children: [new TextRun({ text: 'Owner: ' + (meta.owner || ''), size: 22, color: C.ink })], spacing: { after: 80 } }),
     new Paragraph({ children: [new TextRun({ text: 'Confidential \u2014 Internal Use Only', size: 20, color: C.muted })] }),
   ];

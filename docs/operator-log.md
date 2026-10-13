@@ -25,6 +25,8 @@ section titles "How to use this handbook" and "A.1 Handbook terms" changed.
   "Manual Mobility" and manual wheelchairs are untouched.
   The review packets follow: their excerpts are headed "From the handbook", and
   two questions that said "the manual says" now say "the handbook says".
+  The PDF and Word covers no longer show "Version v3.0 · Built (date)" (the
+  owner and the classification stay; the page footer still names the version).
 - **The review PDFs** are now printed from the HTML handbook (Chromium), so they
   match the digital design, with a cover, a linked contents page and page
   numbers; links and bookmarks work as before. The Word file and its
