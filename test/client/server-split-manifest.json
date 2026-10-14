@@ -2451,6 +2451,16 @@
     "kbManualValidate_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-14",
+   "why": "cycle 25 Batch 1 F2: drReplyAsksOrHolds_ treats not-done, promise, refusal, hand-off and acknowledgement-only replies as a look",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "drReplyAsksOrHolds_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5993,7 +6003,7 @@
   "drReplyAsksOrHolds_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "774c8b48341b8619"
+   "sha": "0cb8d11609d1ce39"
   },
   "drReplyDirectory_": {
    "file": "50_deptrequests.js",

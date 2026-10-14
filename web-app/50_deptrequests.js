@@ -481,7 +481,20 @@ function drReplyAsksOrHolds_(text) {
   // so a LINE that opens with a question word counts too. A false match only
   // means "needs a look", the safe direction; a missed one resolves a request
   // that is not done.
-  return t.indexOf('?') >= 0 || DR_REPLY_HOLD_RE_.test(t) || DR_REPLY_QUESTION_LINE_RE_.test(t);
+  if (t.indexOf('?') >= 0 || DR_REPLY_HOLD_RE_.test(t) || DR_REPLY_QUESTION_LINE_RE_.test(t)) return true;
+  // F2 (cycle 25): the hold list knew "working on" and "waiting for", so "Not
+  // yet, still waiting", "On it!", "Will do", "I'll take care of it today",
+  // "Let me check with the warehouse" and "We cannot process this" all
+  // RESOLVED their requests. A reply that is not done yet, promises work,
+  // refuses, or passes the request on is a look — the same over-match the
+  // question test makes on purpose (g159).
+  const notDone = /\b(?:not yet|not (?:done|complete|completed|finished|processed)|still (?:waiting|working|checking|looking|pending|processing|open)|waiting|(?:i|we)(?:'ll|’ll| will| shall)|will (?:do|update|check|send|process|confirm|review|handle|ship|call|reach|let|get|follow|fix|take|work)|let (?:me|us) (?:check|see|look|confirm|verify|ask|find)|on it|checking (?:on|with|into|in)|looking (?:at|for)|reviewing|processing|investigating|researching|shortly|asap|cannot|can(?:'|’)?t|can not|unable|not able|won(?:'|’)?t|not possible|denied|rejected|declined?|escalat\w*)\b/i;
+  if (notDone.test(t)) return true;
+  // An acknowledgement and nothing else ("Received.", "Got it, thanks") says
+  // the mail arrived, not that the work is done. A bare thank-you stays a
+  // resolution: it is how a department signs off after the answer (DR-2).
+  const ackOnly = /^(?:(?:ok(?:ay)?|got it|received|noted|acknowledged|copy(?: that)?|sure|thanks?|thank you|ty)\b[\s,.!-]*)+$/i;
+  return ackOnly.test(t.trim()) && /\b(?:ok(?:ay)?|got it|received|noted|acknowledged|copy|sure)\b/i.test(t);
 }
 /** PURE (Node-pinned) — rule 2's automatic-sender half: a bounce, a no-reply
  *  sender, an auto-reply or out-of-office subject, or an Auto-Submitted /

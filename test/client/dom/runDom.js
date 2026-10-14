@@ -2128,6 +2128,63 @@ test('reopening after a range session re-enables Add even when the day has no ro
     'and the add control comes back with it — no RPC required');
 });
 
+test('F1 (cycle 25): filling "To" parks the PREFILLED punches (clearing it restores them), a typed slot is kept, and a range save names what it will SET and waits for the confirm', async () => {
+  // THE DEFECT: the slots arrive filled with the From day's real punches, and
+  // range mode SETS every non-blank slot on every day — a manager filling "To"
+  // to add one missing Clock Out stamped 08:02 / 12:00–12:30 / 17:41 over the
+  // whole range, with no confirmation.
+  const h = boot();
+  h.read('openDayEditModal')('E-1077', 'Nina Patel');
+  const date = h.read('_deDate');
+  h.run.flushSuccess({ days: [{ date, clockIn: '08:02:00', clockOut: '17:41:00',
+    breaks: [{ out: '12:00:00', in: '12:30:00' }] }] }, 'getEmployeeTimesheetForManager');
+  const ci = h.document.getElementById('de-clockin');
+  const co = h.document.getElementById('de-clockout');
+  const to = h.document.getElementById('de-date-to');
+  const setTo = (v) => { to.value = v; to.dispatchEvent(new h.window.Event('change')); };
+  assert.strictEqual(ci.value + '|' + co.value + '|' + deRows(h).length, '08:02|17:41|1', 'the day prefilled');
+  setTo('2099-01-01');
+  assert.strictEqual(ci.value + '|' + co.value + '|' + h.read('deReadBreaks_')().length, '||0',
+    'range mode starts from blank slots — nothing of the From day rides along');
+  // The manager types the one thing every day should get.
+  co.value = '17:30'; co.dispatchEvent(new h.window.Event('input'));
+  h.document.getElementById('de-save').click();
+  await tick();
+  assert.strictEqual(h.run.pending('managerSaveDayRange').length, 0, 'nothing is sent before the confirm');
+  const dlg = h.$('.ui-dialog');
+  assert.ok(dlg, 'a range save asks first');
+  assert.match(dlg.textContent, /Clock Out 5:30 PM/, 'it names the slot, in 12-hour time');
+  assert.ok(!/Clock In|Break/.test(dlg.textContent), 'and ONLY the slot that will be written');
+  h.click(h.$('.ui-dialog-ok'));
+  await tick();
+  const call = h.run.pending('managerSaveDayRange');
+  assert.strictEqual(call.length, 1, 'confirmed, the range is sent');
+  const slots = JSON.parse(JSON.stringify(call[0].args[3]));
+  assert.strictEqual(slots.ClockIn + '|' + slots.ClockOut + '|' + slots.breaks.length, '|17:30|0',
+    'with the prefilled clock-in and break left BLANK (blank = unchanged on the server)');
+  // Clearing "To" brings the parked prefill back; the typed slot stays the manager's.
+  setTo('');
+  assert.strictEqual(ci.value, '08:02', 'the parked clock-in is restored for a single-day save');
+  assert.strictEqual(h.read('deReadBreaks_')().map((b) => b.out + '-' + b.in).join('|'), '12:00-12:30', 'and the break');
+  assert.strictEqual(co.value, '17:30', 'a slot the manager typed is never overwritten');
+
+  // A prefill that lands AFTER "To" was filled is parked too, never written in.
+  const h2 = boot();
+  h2.read('openDayEditModal')('E-1077', 'Nina Patel');
+  const to2 = h2.document.getElementById('de-date-to');
+  to2.value = '2099-01-01'; to2.dispatchEvent(new h2.window.Event('change'));
+  h2.run.flushSuccess({ days: [{ date: h2.read('_deDate'), clockIn: '08:02:00' }] }, 'getEmployeeTimesheetForManager');
+  assert.strictEqual(h2.document.getElementById('de-clockin').value, '', 'a late prefill does not fill a range');
+  to2.value = ''; to2.dispatchEvent(new h2.window.Event('change'));
+  assert.strictEqual(h2.document.getElementById('de-clockin').value, '08:02', 'and comes back when the range is cleared');
+  // A range with nothing typed sends nothing at all.
+  to2.value = '2099-01-01'; to2.dispatchEvent(new h2.window.Event('change'));
+  h2.document.getElementById('de-save').click();
+  await tick();
+  assert.ok(!h2.$('.ui-dialog'), 'no confirm for an empty range');
+  assert.strictEqual(h2.run.pending('managerSaveDayRange').length, 0, 'and no RPC');
+});
+
 test('the async prefill never overwrites what the manager already typed, ignores a stale response, and a failed prefill disables Save', () => {
   // Operator 2026-09-03: a changed Clock In "kept the old time" — the modal
   // opens blank, the prefill lands ~1s later, and a field typed BEFORE that

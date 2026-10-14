@@ -29359,6 +29359,29 @@ test('D-2: the four rules — after the send/reopen, not the agent/mailbox/autom
   assert.strictEqual(c.drThreadIdsMerge_('', 't1'), 't1');
 });
 
+test('F2 (cycle 25): a reply that is not done yet, promises work, refuses, passes the request on, or only acknowledges it is a LOOK — a completion and a sign-off thank-you still resolve (driven grid + verdict + pick)', () => {
+  const c = drDCtx_();
+  // THE REGRESSION: every one of these RESOLVED its request (the hold list knew
+  // "working on" and "waiting for" only), and the request left Incoming, the
+  // open list, the SLA digest and Needs-you.
+  const holds = ['Not yet, still waiting', 'We cannot process this.', 'Will do.', 'On it!', "I'll take care of it today.",
+    'Received, will update shortly.', 'Let me check with the warehouse.', 'Received.', 'Got it, thanks', 'Ok',
+    'We can’t do this one', 'Unable to locate the order', 'Escalated to the supervisor', 'Processing the refund now', 'Denied by the payer'];
+  holds.forEach((t) => assert.strictEqual(c.drReplyAsksOrHolds_(t), true, t));
+  // The over-match must not swallow the answers the feature exists for.
+  const done = ['Done, shipped today.', 'Refund issued.', 'Taken care of.', 'Sorted', 'Found it, refunded.', 'Fixed.',
+    'All set, thanks again.', 'Thanks!', 'Thank you', 'Completed and closed the order.', 'Address corrected and the order shipped.'];
+  done.forEach((t) => assert.strictEqual(c.drReplyAsksOrHolds_(t), false, t));
+  // Through the verdict and the pick, as the scan runs it.
+  const ctx = { afterMs: 1000, excluded: {}, deptAddrs: { 'dana@ums.com': 1 }, deptDomains: {} };
+  const m = (ms, body) => ({ fromAddr: 'dana@ums.com', ms, subject: 'Re: Close Order', body });
+  assert.strictEqual(c.drReplyVerdict_(m(2000, 'On it!'), ctx), 'needs-look');
+  assert.strictEqual(c.drReplyPick_([m(2000, 'Received, will update shortly.')], ctx).verdict, 'needs-look',
+    'an acknowledgement alone leaves the request open, flagged for a look');
+  const settled = c.drReplyPick_([m(2000, 'Let me check with the warehouse.'), m(3000, 'Found it, refunded.'), m(4000, 'Thanks!')], ctx);
+  assert.strictEqual(settled.verdict + '@' + settled.msg.ms, 'resolved@3000', 'the answer after the hold resolves; the thank-you does not re-open it');
+});
+
 test('D-1: the tracked send records its thread (a Gmail draft send), adds the mailbox to Reply-To, and strips both options before the mail service sees them (driven)', () => {
   const calls = [];
   const mk = (opts) => {

@@ -1370,6 +1370,15 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   removed). This deliberately differs from single-day mode (`managerSaveDay`,
   a full-day reconcile where a blank field deletes that punch), so a range
   apply can't silently wipe lunches on days it touches. See INV-108.
+  **AMENDED (cycle 25 F1, 2026-10-14): range mode starts from BLANK slots,
+  and asks.** The slots arrive prefilled with the From day's real punches, and
+  every non-blank slot is SET on every day — so a manager filling "To" to add
+  one missing Clock Out stamped the From day's whole day over the range.
+  Filling "To" now parks every slot the PREFILL filled and the manager has not
+  touched (clearing "To" restores them; a typed slot is the manager's in either
+  mode, and a prefill that lands while a range is set is parked, never written
+  in), and a range save names exactly what it will set, in 12-hour time, and
+  waits for a confirm. An empty range is refused before any RPC.
   **Prefill (team calendar, 2026-08-31):** `openDayEditModal` takes an
   optional 3rd `prefillDate`, honored only inside the picker's own
   [min, today] bounds (the `openAdjustModal(prefillDate)` precedent) — the

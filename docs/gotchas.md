@@ -5282,6 +5282,17 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   link carries it, and a reply quotes it); naming only another sharer is not a
   reply to this one, and naming none is a look, never a resolve. Verify: the
   DR-2 pick grid and the DR-1 scan drive (`c23DrScan_`).
+  **AMENDED (cycle 25 F2, 2026-10-14): "holds" was the narrow half.** The
+  hold list knew "working on", "pending" and "waiting for", so "Not yet, still
+  waiting", "On it!", "Will do", "I'll take care of it today", "Let me check
+  with the warehouse" and "We cannot process this" all RESOLVED their requests,
+  on by default. Rule 4 now treats a reply as a look when it is not done yet,
+  promises work (`I'll` / `we will` / `will do|update|send…` / `let me
+  check…`), refuses (`cannot`, `unable`, `denied`…), passes the request on
+  (`escalat…`), or only acknowledges it ("Received.", "Got it", "Ok"). A bare
+  thank-you still resolves — it is how a department signs off after the answer,
+  and the latest reply decides (DR-2). Verify: the F2 (cycle 25) grid + verdict
+  + pick drive.
   **A SECOND instance (cycle 23 SP-2 follow-up, operator 2026-10-05): the
   Spanish courtesy filter.** A thank-you from a requester no longer reopens
   their answered request, which makes the filter a heuristic that HIDES work.
