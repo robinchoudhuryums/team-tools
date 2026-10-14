@@ -1283,6 +1283,17 @@ const AUTOMATION_TRIGGER_QUOTA = 20;
 // costs nothing at read time (the range index reads the whole tab regardless)
 // and lengthens only the in-memory per-month slicing.
 const PTO_ACCRUAL_RECONCILE_MONTHS = 3;
+// F17 (cycle 25): the accrual ledger's SIDE copy — one Script Property per
+// accruing rep, `PTO_ACCRUAL_LEDGER_<empId>` = {"YYYY-MM": hoursCreditedFor},
+// written beside every PtoAccrualCredit audit row (the cycle-22 A1 run-ledger
+// pattern). The audit rows stay the record; this copy is what the reconcile can
+// still READ once a month's row has scrolled out of the AuditLog tail it scans.
+// `…_SINCE` is the first month the side copy existed (manager tz): a window whose
+// oldest month is at or after it is fully covered, so a truncated tail read no
+// longer matters there. Each rep's map keeps its newest KEEP months.
+const PTO_ACCRUAL_LEDGER_PREFIX = 'PTO_ACCRUAL_LEDGER_';
+const PTO_ACCRUAL_LEDGER_SINCE = 'PTO_ACCRUAL_LEDGER_SINCE';
+const PTO_ACCRUAL_LEDGER_KEEP_MONTHS = 12;
 // Dispatcher → the top-level handlers it runs, IN ORDER. Every name must be a
 // defined top-level function that carries its own assertManagerCaller_ gate
 // (INV-44) — each stays reachable via google.script.run and keeps its own

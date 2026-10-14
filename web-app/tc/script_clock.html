@@ -1555,6 +1555,10 @@ function clkDashSpanishCard_(res, pendingRes) {
   if (!res || res.error) return errorStateHtml_((res && res.error) || 'No data');
   var openLink = '<div class="dash-card-foot"><a class="dash-link" href="#" onclick="event.preventDefault();enterTool(\'metrics\',\'metricsSpanish\')">Open Spanish Inbox →</a></div>';
   var pend = (pendingRes && pendingRes.pending) ? pendingRes.pending : null;
+  // Batch 6b follow-on (cycle 25): the card reads TWO windows — the pending
+  // list over the tab's (SPANISH_PENDING_WINDOW_DAYS, F14) and the stats over
+  // the week — so each figure names its own, from its own payload (no literal).
+  var winOf = function (o) { var d = o && Number(o.days); return d > 0 ? ' · ' + d + 'd' : ''; };
   // With pending requests, preview them (requester · age · snippet) + median
   // reply, paged by ‹ N/total ›. With none, fall back to the count tiles.
   if (pend && pend.length) {
@@ -1567,7 +1571,7 @@ function clkDashSpanishCard_(res, pendingRes) {
     // Business-hours median (operator 2026-08-31); falls back to wall clock on
     // an older server so the line never disappears mid-deploy.
     var medMin = (res.medianBusinessMinutes != null) ? res.medianBusinessMinutes : res.medianMinutes;
-    var median = medMin != null ? '· median reply ' + medMin + 'm' : '';
+    var median = medMin != null ? '· median reply ' + medMin + 'm' + winOf(res) : '';
     // Pilot round-2 follow-on: claim info on the preview. Reuses the metrics
     // partial's pure pill ("you" for the caller's own claim; escapes
     // internally) — a paraphrase here would be the INV-185 drift class.
@@ -1582,7 +1586,7 @@ function clkDashSpanishCard_(res, pendingRes) {
         '<button class="dash-sp-arrow" aria-label="Next request" onclick="clkSpNav_(1)">' + icon('chevronRight', 13) + '</button></span>'
       : '';
     return '<div class="dash-sp-head">' +
-        '<span class="dash-sp-count">' + icon('mail', 13) + n + ' pending</span>' +
+        '<span class="dash-sp-count">' + icon('mail', 13) + n + ' pending' + esc(winOf(pendingRes)) + '</span>' +
         '<span class="dash-sp-median mono">' + esc(median) + '</span>' + nav +
       '</div>' +
       '<div class="dash-sp-req">' +
@@ -1591,9 +1595,9 @@ function clkDashSpanishCard_(res, pendingRes) {
       '</div>' + openLink;
   }
   return '<div class="dash-kpis">' +
-    clkDashKpi_('Pending', res.pending != null ? res.pending : '—', { big: true }) +
-    clkDashKpi_('Resolved · 7d', res.resolved != null ? res.resolved : '—') +
-    clkDashKpi_('Median reply', (function () {
+    clkDashKpi_('Pending' + winOf(res), res.pending != null ? res.pending : '—', { big: true }) +
+    clkDashKpi_('Resolved' + winOf(res), res.resolved != null ? res.resolved : '—') +
+    clkDashKpi_('Median reply' + winOf(res), (function () {
       var m = (res.medianBusinessMinutes != null) ? res.medianBusinessMinutes : res.medianMinutes;
       return m != null ? m + 'm' : '—';
     })()) +
@@ -2483,6 +2487,9 @@ function renderPunchHistory(punches) {
   // Server re-validates on submit, so stale UI just causes a friendly error.
   const tz = empTz();
   const nowHMS = liveTimeHmsTz(tz);
+  // F61 (cycle 25): only the day's LAST punch offers undo — the server refuses
+  // an earlier one, which would leave the day without its clock-in.
+  const lastTime = punches.reduce((mx, p) => (String(p.time) > mx ? String(p.time) : mx), '');
   return '<div class="punch-list">' + punches.map(p => {
     const m  = PUNCH_META[p.type] || { label:p.type, icon:'info', dir:p.direction==='IN'?'in':'out' };
     const dc = m.dir === 'in' ? 'in' : 'out';
@@ -2492,7 +2499,7 @@ function renderPunchHistory(punches) {
     // post-midnight punch list rendered undo buttons on EVERYTHING (each
     // rejected server-side). Eligibility requires a non-negative diff.
     const undoDiff = timeDiffSecondsClient(p.time, nowHMS);
-    const eligible = !p.isAdjustment && undoDiff >= 0 && undoDiff <= SELF_UNDO_WINDOW_SECONDS;
+    const eligible = !p.isAdjustment && String(p.time) === lastTime && undoDiff >= 0 && undoDiff <= SELF_UNDO_WINDOW_SECONDS;
     const undoBtn = eligible
       ? `<button class="punch-undo" title="Undo this punch (within ${Math.round(SELF_UNDO_WINDOW_SECONDS/60)}min)"
            data-date="${esc(empState.today)}" data-time="${esc(p.time)}" data-type="${esc(p.type)}"

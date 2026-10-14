@@ -11642,9 +11642,9 @@ test('Time-off RANGE + accrual PTO tile (operator 2026-08-18)', () => {
   assert.ok(str, 'submitTimeOffRange exists');
   const b = str[0];
   assert.ok(/isValidTimeOffType_\(type\)/.test(b), 'INV-95 type whitelist');
-  assert.ok(/hasActiveTimeOffOnDate_\(toSheet, emp\.id, d\)/.test(b), 'INV-94 dup-date guard per weekday');
+  assert.ok(/timeOffActiveDates_\(toSheet\.getDataRange\(\)\.getValues\(\), emp\.id\)/.test(b) && /days\.filter\(d => active\[d\]\)/.test(b), 'INV-94 dup-date guard per weekday (F62: one read for the range)');
   assert.ok(/if \(conflicts\.length > 0\)/.test(b) &&
-            b.indexOf('if (conflicts.length > 0)') < b.indexOf('appendRow'),
+            b.indexOf('if (conflicts.length > 0)') < b.indexOf('appendRowsSafe_'),
     'conflicts reject the WHOLE batch before any row is written (atomic)');
   assert.ok(/conflicts\.join\(', '\)/.test(b), 'the rejection NAMES the conflicting dates');
   assert.ok(/if \(dow === 0 \|\| dow === 6\) continue;/.test(b), 'weekends inside the range are skipped');
@@ -19279,15 +19279,17 @@ test('T3 (cycle 22): a resume approved after its day has ended needs the filed f
   const ctx = vm.createContext({ String, Math, Date, Array,
     PAR: { END_TIME: 10 }, ADP: { COMMENTS: 4 },
     normalizeTime_: (v) => String(v).trim(),
-    findExistingPunch_: () => co,
+    // F62 (cycle 25): the resume reads the Clock Out through the adjust index.
+    buildAdjustPunchIndex_: (id, ds) => { const d = Object.keys(ds)[0]; return { sheet: co.sheet, idx: { [d + '|ClockOut']: co.rowIndex },
+      all: { [d + '|ClockOut']: [{ rowIndex: co.rowIndex, time: co.time.substring(0, 5) }] } }; },
     appendToAdpSheet_: (e, d, t, dir, c) => writes.push('append:' + c + '@' + t),
     writeAdjustPunchForEmployee_: (e, d, type, t) => writes.push('adjust:' + type + '@' + t),
     clearFromEmployeeSheet_: () => {}, writeToEmployeeSheet_: () => {},
     writeAuditLog_: () => {}, sheetSafe_: (v) => v,
     fmtDateTz_: () => '2026-09-23', empTz_: () => 'Asia/Manila',
     daysBetween_: () => 1 });
-  ['parEndTime_', 'resumeShiftForEmployee_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
-  const sheet = { getRange: () => ({ setValue: (v) => writes.push('convert:' + v) }) };
+  ['parEndTime_', 'adjustIndexRetype_', 'adjustIndexAppend_', 'resumeShiftForEmployee_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  const sheet = { getRange: () => ({ setValue: (v) => writes.push('convert:' + v) }), getLastRow: () => 9 };
   const run = (date, back, end) => { writes.length = 0; co = { sheet, rowIndex: 7, time: '17:00:00' };
     return JSON.parse(JSON.stringify(ctx.resumeShiftForEmployee_({ id: 'E-1' }, date, back, 'mgr@x', '', end))); };
 
@@ -19324,7 +19326,7 @@ test('T3 (cycle 22): a resume approved after its day has ended needs the filed f
   ['empPendingAdjustments_', 'managerGetPendingAdjustments'].forEach((f) =>
     assert.ok(/endTime: parEndTime_\(rows\[i\]\)/.test(extractRawFunction('Code.js', f)), f + ' ships endTime'));
   const dec = stripJsComments_(extractRawFunction('Code.js', 'punchAdjustDecideAll_'));
-  assert.ok(/resumeShiftForEmployee_\(targetEmp, date, reqTime, callerEmp\.email, reason, endTime\)/.test(dec), 'approval passes the finish');
+  assert.ok(/resumeShiftForEmployee_\(targetEmp, date, reqTime, callerEmp\.email, reason, endTime, ctxFor\(empId\)\)/.test(dec), 'approval passes the finish (and, F62, the batch index)');
 });
 
 test('T1 (cycle 22): a break IN PROGRESS round-trips through Day Edit instead of being deleted — the server\'s own day shape, the client\'s prefill rule, the parser and the plan, driven end to end', () => {
@@ -19814,8 +19816,8 @@ test('B3: a resume CONVERTS the clock-out into a break — it never just deletes
   // RE-VALIDATED at approval: the day can be edited while the request waits,
   // and converting a clock-out that is gone leaves an unpaired LunchIn, which
   // breakPairs_ correctly drops — silently costing the rep the whole reopening.
-  assert.ok(/findExistingPunch_\(targetEmp\.id, date, 'ClockOut'\)/.test(stripped),
-    'approval re-checks the clock-out exists');
+  assert.ok(/const coList = \(c\.all \|\| \{\}\)\[date \+ '\|ClockOut'\] \|\| \[\];/.test(stripped) && /buildAdjustPunchIndex_\(targetEmp\.id, ds\)/.test(stripped),
+    'approval re-checks the clock-out exists (F62: through the batch index, or a one-date one)');
   assert.ok(/if \(!co\)[\s\S]{0,200}return \{ error:/.test(stripped),
     'and refuses by name rather than half-applying');
   assert.ok(/resumeTime > coHm/.test(stripped),
@@ -19832,28 +19834,18 @@ test('B3: a resume CONVERTS the clock-out into a break — it never just deletes
   assert.ok(/if \(res && res\.error\) \{ fail\(id, res\.error\); return; \}/.test(upd),
     'a refused resume does NOT mark the request approved');
 
-  // F6 (2026-09-09): a resume writes OUTSIDE the C17-9 index — it retypes the
-  // ClockOut row and appends a LunchIn — so the cached index stops describing
-  // the sheet. The bulk loop DISCARDS it for that employee; without this, a
-  // later request in the same batch reads stale row numbers. Ordering is the
-  // property: dropping it before the write would be a no-op.
+  // F6 → F62 (cycle 25): the resume now writes THROUGH the batch index and
+  // keeps it current, so the bulk loop KEEPS it (the F62 drive below proves
+  // the index matches the sheet after a resume). No drop survives.
   const uncommented = upd.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-  assert.ok(/delete ctxByEmp\[empId\];/.test(uncommented),
-    'a resume discards the employee cached punch index');
-  assertBefore(uncommented, 'resumeShiftForEmployee_(', 'delete ctxByEmp[empId];',
-    'the index is dropped AFTER the resume has written, not before');
-  const resumeBranch = uncommented.slice(uncommented.indexOf("if (action === 'resume')"),
-    uncommented.indexOf('} else {', uncommented.indexOf("if (action === 'resume')")));
-  assert.ok(/delete ctxByEmp\[empId\];/.test(resumeBranch),
-    'the drop is inside the resume branch — a set request must keep the index');
-  // The reason it is owed: the resume path takes no ctx and writes directly.
-  assert.ok(!/\bctx\b/.test(resume),
-    'resumeShiftForEmployee_ takes no index — if it ever does, re-derive the drop');
+  assert.ok(!/delete ctxByEmp\[empId\];/.test(uncommented), 'the batch keeps its index (F62)');
+  assert.ok(/adjustIndexRetype_\(c, date, co\.rowIndex, 'ClockOut', 'LunchOut'\)/.test(stripped) && /adjustIndexAppend_\(c, date, 'LunchIn'/.test(stripped),
+    'the resume records both of its writes in the index');
   // And the index itself no longer claims a universal that is not true.
   const idxDoc = code.slice(Math.max(0, code.indexOf('function buildAdjustPunchIndex_(') - 1400),
     code.indexOf('function buildAdjustPunchIndex_('));
   assert.ok(/PRECONDITION/.test(idxDoc) && /resume/.test(idxDoc),
-    'buildAdjustPunchIndex_ states the precondition a caller owes, and names the resume exception');
+    'buildAdjustPunchIndex_ states the precondition a caller owes, and how the resume meets it');
 
   // SUBMIT-side: a resume is only meaningful against a real clock-out, and it
   // can only ever target one.
@@ -27022,6 +27014,7 @@ test('F-39: the timesheet client\'s computeRange and the server\'s getCurrentBiw
   sbv.getEmployeeRosterRows_ = () => [['cycle', 'anchor'], ['biweekly', ANCHOR]];
   sbv.normalizeDate_ = (v) => String(v);
   vm.runInContext(extractRawFunction('Code.js', 'isoFromUtc_'), sbv, { filename: 'Code.js#isoFromUtc_' });
+  vm.runInContext(extractRawFunction('Code.js', 'orgBiweeklyAnchor_'), sbv, { filename: 'Code.js#orgBiweeklyAnchor_' });   // F18
   vm.runInContext(extractRawFunction('Code.js', 'getCurrentBiweeklyRange_'), sbv, { filename: 'Code.js#getCurrentBiweeklyRange_' });
 
   // Sweep 70 consecutive days across three period boundaries, including the
@@ -28142,10 +28135,11 @@ test('T7: a time-off RANGE skips company holidays on the server and in the previ
     getEmployeeInfo_: () => ({ id: 'E1', name: 'Ann' }), empTz_: () => 'America/Chicago',
     fmtDateTz_: () => '2026-08-30', TIMEOFF_RANGE_MAX_DAYS: 60, TIMEOFF_MAX_DAYS_AHEAD: 400, TIMEOFF_MAX_DAYS_BACK: 30,
     isValidTimeOffType_: () => true, companyHolidayMap_: () => ({ '2026-09-07': true }),
-    getOrCreateTimeOffSheet_: () => ({ appendRow: (r) => written.push(r) }), hasActiveTimeOffOnDate_: () => false,
+    getOrCreateTimeOffSheet_: () => ({ getDataRange: () => ({ getValues: () => [['h']] }) }), TO: { EMP_ID: 0, DATE: 2, STATUS: 5 }, normalizeDate_: (v) => v,
+    appendRowsSafe_: (sh, rows) => rows.forEach((r) => written.push(r)),   // F62 (cycle 25): one block write
     sheetSafeRow_: (r) => r, fmtDate_: () => 'd', fmtTime_: () => 't', writeAuditLog_() {},
     Utilities: { formatDate: (d) => d.toISOString().substring(0, 10) } });
-  ['daysBetween_', 'addDaysIso_', 'submitTimeOffRange'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  ['daysBetween_', 'addDaysIso_', 'timeOffActiveDates_', 'submitTimeOffRange'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   // Fri 4 Sep .. Tue 8 Sep 2026, Labor Day on Mon 7 Sep.
   const r = JSON.parse(JSON.stringify(ctx.submitTimeOffRange('2026-09-04', '2026-09-08', 'Full Day', '')));
   assert.strictEqual(r.success, true, JSON.stringify(r));
@@ -31162,7 +31156,7 @@ test('PAYSTMT-1: a manager opening a biweekly rep\'s Pay Statement gets the rep\
     getOrCreateTimeOffSheet_: () => ({ getDataRange: () => ({ getValues: () => [['h']] }) }), getLeaveDeduction_: () => ({ days: 1 }),
     empPayRateById_: () => null, getTimesheetArchiveDays_: () => 0, daysBetween_: () => 0 });
   vm.runInContext(EMP_SRC, ctx);
-  ['empPayCycle_', 'getEmployeeInfo_', 'lookupEmployeeById_', 'payPeriodRange_', 'getMyPayStatement'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  ['empPayCycle_', 'orgBiweeklyAnchor_', 'getEmployeeInfo_', 'lookupEmployeeById_', 'payPeriodRange_', 'getMyPayStatement'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   const viaManager = J2(ctx.getMyPayStatement(0, 'PH-7'));
   assert.deepStrictEqual(viaManager.period, { start: '2026-09-21', end: '2026-10-04', cycle: 'Biweekly', offset: 0 }, 'the manager sees the rep\'s two-week period, not a month');
   assert.deepStrictEqual(viaManager.viewingOther, { id: 'PH-7', name: 'Ana' });
@@ -31171,7 +31165,7 @@ test('PAYSTMT-1: a manager opening a biweekly rep\'s Pay Statement gets the rep\
   me = 'boss@ums.com';
   assert.deepStrictEqual(J2(ctx.getMyPayStatement(0, 'IN-3')).period, { start: '2026-09-01', end: '2026-09-30', cycle: 'Monthly', offset: 0 }, 'a monthly rep still gets the calendar month');
   assert.deepStrictEqual(J2(ctx.lookupEmployeeById_('PH-7')).payAnchor, '2026-09-07', 'the anchor rides too');
-  ['getEmployeeInfo_', 'lookupEmployeeById_'].forEach((n) => assert.ok(/empPayCycle_\(rows\[i\]\)/.test(extractRawFunction('Code.js', n)), n + ' reads PayCycle through the one helper'));
+  ['getEmployeeInfo_', 'lookupEmployeeById_'].forEach((n) => assert.ok(/empPayCycle_\(rows\[i\], orgBiweeklyAnchor_\(rows\)\)/.test(extractRawFunction('Code.js', n)), n + ' reads PayCycle through the one helper (F18: with the org anchor)'));
 });
 
 
@@ -32637,7 +32631,8 @@ const tc02Ctx_ = (extra) => {
     "const PUNCH_LABELS_ = ['ClockIn','LunchOut','LunchIn','ClockOut']; const ADJUST_MAX_SHIFT_HOURS = 16;", ctx);
   // TC-05 (cycle 23): the adjust paths also run the clock-span check.
   ['breakIntentNorm_', 'breakIntentCell_', 'breakIntentNote_', 'breakAdjustTargetRow_',
-    'timeToMins_', 'toDisplayTime_', 'adjustShiftSpanError_', 'adjustIndexLastTime_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+    'timeToMins_', 'toDisplayTime_', 'adjustShiftSpanError_', 'adjustIndexLastTime_',
+    'adjustIndexAppend_', 'adjustIndexRetype_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));   // F62 (cycle 25)
   return ctx;
 };
 test('TC-02 (cycle 23): which row a punch adjustment writes — ClockIn/Out keep the last-row rule; a BREAK adds, corrects the punch it names, or is refused; nothing an RPC can send reaches the server-only last-row rule (driven grid)', () => {
@@ -32715,9 +32710,9 @@ test('TC-02 (cycle 23): a request is checked against the day at SUBMIT — unsta
   r = run([{ date: D, time: '12:10', punchType: 'LunchOut', breakIntent: { mode: 'correct', target: '12:00' } },
            { date: D, time: '15:00', punchType: 'LunchOut', breakIntent: { mode: 'add' } }], has);
   assert.ok(r.res.success, r.res.error); assert.deepStrictEqual(r.appended.map((a) => a[11]), ['correct@12:00', 'add'], 'a correction and an add on one day are two requests');
-  r = run([{ date: D, time: '15:00', punchType: 'LunchOut', breakIntent: { mode: 'add' } }], has,
+  r = run([{ date: D, time: '14:00', punchType: 'LunchOut', breakIntent: { mode: 'add' } }], has,
     [['old', 'E1', 'Ann', D, 'LunchOut', '14:00', '', 'Pending', 's', 'set', '', 'add']]);
-  assert.ok(!r.res.success && /already have a pending LunchOut adjustment/.test(r.res.error), 'the SAME intent pending is still a duplicate');
+  assert.ok(!r.res.success && /already have a pending LunchOut adjustment/.test(r.res.error), 'the SAME add at the same time pending is still a duplicate (F63 keys an add by its time)');
   r = run([{ date: D, time: '17:00', punchType: 'ClockOut', breakIntent: { mode: 'add' } }], has);
   assert.strictEqual(r.appended[0][11], '', 'a Clock Out carries no break intent');
 });
@@ -32726,7 +32721,7 @@ test('TC-02 (cycle 23): approval and Apply now go through the one resolver, and 
   const body = stripJsComments_(extractRawFunction('Code.js', 'punchAdjustDecideAll_'));
   assert.ok(/const w = writeAdjustPunchForEmployee_\(targetEmp, date, punchType, reqTime, callerEmp\.email, reason, ctxFor\(empId\), breakTarget\);\s*if \(w && w\.error\) \{ fail\(id, w\.error\); return; \}/.test(body),
     'a refused approval fails that id and leaves the row Pending');
-  assert.ok(/if \(BREAK_PUNCH_TYPES\.indexOf\(punchType\) >= 0\) delete ctxByEmp\[empId\];/.test(body), 'a break write drops the cached index (F6)');
+  assert.ok(!/delete ctxByEmp\[empId\];/.test(body), 'a break write keeps the batch index — the writer records it (F62, cycle 25)');
   const rp = stripJsComments_(extractRawFunction('Code.js', 'recordPunchCore_'));
   assert.ok(/breakAdjustTargetRow_\(c\.all\[date \+ '\|' \+ punchType\] \|\| \[\], punchType, custom\.breakIntent, date\)/.test(rp) && /if \(target\.code === 'stale'\) return \{ success: false/.test(rp) && /if \(target\.error\) return \{ success: false, error: date \+ ' already has a '/.test(rp),
     'Apply now resolves through the same rule and refuses rather than guessing');
@@ -33044,6 +33039,211 @@ test('F55 (cycle 25): a resolve-link click by a COPY recipient — the CC mailbo
   const dr = stripJsComments_(fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_deptrequests.html'), 'utf8'));
   assert.ok(/item\.resolvedVia === 'copy' \? 'marked from a copy'/.test(dr) && /r\.resolvedVia === 'app' \|\| r\.resolvedVia === 'self' \|\| r\.resolvedVia === 'copy'/.test(dr)
     && /r\.resolvedVia !== 'self' && r\.resolvedVia !== 'copy'/.test(dr), 'the card names it, the tile counts it manual and the median skips it');
+});
+
+// ── cycle 25 Batch 7 — Time Clock follow-ons + the Dashboard Spanish card ──
+console.log('\ncycle 25 Batch 7 — Time Clock follow-ons');
+test('F17 (cycle 25): the accrual ledger has a per-rep, per-month side copy, so a month whose audit row scrolled out of the AuditLog tail is still reconciled — and a covered window no longer reports a truncated read (driven)', () => {
+  const ctx = vm.createContext({ String, Number, Object, Array, Math, JSON, isFinite });
+  ['accrualLedgerWindowFromIso_', 'mergeAccrualLedger_', 'accrualLedgerPut_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  // The window's oldest month from the read's since-date (ten days before its first).
+  assert.strictEqual(ctx.accrualLedgerWindowFromIso_('2026-06-21'), '2026-07');
+  assert.strictEqual(ctx.accrualLedgerWindowFromIso_('2026-12-22'), '2027-01');
+  assert.strictEqual(ctx.accrualLedgerWindowFromIso_('2026-07-01'), '2026-07');
+  // Put: the higher figure wins, and only the newest `keep` months stay.
+  assert.deepStrictEqual(J(ctx.accrualLedgerPut_({ '2026-07': 80 }, '2026-07', 64, 12)), { '2026-07': 80 }, 'a lower re-run never lowers what was paid for');
+  assert.deepStrictEqual(J(ctx.accrualLedgerPut_({ '2026-07': 64 }, '2026-07', 80.004, 12)), { '2026-07': 80 });
+  assert.deepStrictEqual(Object.keys(J(ctx.accrualLedgerPut_({ '2026-01': 1, '2026-02': 2, '2026-03': 3 }, '2026-04', 4, 3))), ['2026-02', '2026-03', '2026-04']);
+  assert.deepStrictEqual(J(ctx.accrualLedgerPut_({}, 'junk', 4, 3)), {}, 'a malformed month is never stored');
+  // Merge: a month the tail no longer reaches comes from the side copy.
+  const tail = { byEmp: { E1: { '2026-09': { hours: 72, months: ['2026-09'] } } }, rowsRead: 5000, truncated: true };
+  const side = { E1: { '2026-07': 64, '2026-08': 80, '2026-09': 70 } };
+  let m = J(ctx.mergeAccrualLedger_(tail, side, '2026-07', '2026-07'));
+  assert.deepStrictEqual(Object.keys(m.byEmp.E1).sort(), ['2026-07', '2026-08', '2026-09'], 'THE REGRESSION: 2026-07 and 2026-08 had scrolled out of the 5,000-row tail and were never reconciled');
+  assert.strictEqual(m.byEmp.E1['2026-09'].hours, 72, 'per month the HIGHER of the two copies wins');
+  assert.strictEqual(m.truncated, false, 'THE REGRESSION: the side copy covers the window, so a short tail hides nothing — the finding no longer stays on for ever');
+  m = J(ctx.mergeAccrualLedger_(tail, side, '2026-08', '2026-07'));
+  assert.strictEqual(m.truncated, true, 'a side copy that began after the window\'s oldest month does not cover it: the truncated read is still reported');
+  m = J(ctx.mergeAccrualLedger_(tail, {}, '', '2026-07'));
+  assert.strictEqual(m.truncated, true, 'no side copy: the tail decides, as before');
+  // Driven through the real reconcile: the scrolled-out month is topped up.
+  const rctx = vm.createContext({ String, Number, Object, Array, Math, isFinite });
+  rctx.workedHoursForEmpMonth_ = (ix, id, from) => ({ hours: from.startsWith('2026-07') ? 80 : 0, incompleteDays: 0, orphanDays: 0 });
+  rctx.monthEndIso_ = (ym) => ym + '-31';
+  rctx.accrualDaysForHours_ = (h, rate, basis, perDay) => ({ ptoHours: +(h * rate / basis).toFixed(2), days: +(h * rate / basis / perDay).toFixed(2) });
+  vm.runInContext(extractRawFunction('Code.js', 'planAccrualReconcile_'), rctx);
+  const entries = [{ emp: { id: 'E1' }, rate: 3.08 }];
+  const merged = ctx.mergeAccrualLedger_({ byEmp: {}, truncated: true }, { E1: { '2026-07': 64 } }, '2026-07', '2026-07');
+  const plan = J(rctx.planAccrualReconcile_(entries, merged, {}, ['2026-09', '2026-08', '2026-07'], 80, 8));
+  assert.deepStrictEqual(plan.map((p) => [p.monthsKey, p.action]), [['2026-07', 'topup']], 'a late 16 hours on a month only the side copy remembers is credited');
+  // The record: SINCE once, the map through the bounded writer, and a failure drops the coverage claim.
+  const props = {}; let throwOn = '';
+  const ictx = vm.createContext({ String, Number, Object, JSON, Date, Math, isFinite, Logger: { log() {} },
+    CONFIG: { TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago' }, Utilities: { formatDate: () => '2026-10' },
+    PTO_ACCRUAL_LEDGER_PREFIX: 'PTO_ACCRUAL_LEDGER_', PTO_ACCRUAL_LEDGER_SINCE: 'PTO_ACCRUAL_LEDGER_SINCE', PTO_ACCRUAL_LEDGER_KEEP_MONTHS: 12,
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null), deleteProperty: (k) => { delete props[k]; },
+      getProperties: () => Object.assign({}, props) }) },
+    propSetBounded_: (k, v) => { if (throwOn && k.indexOf(throwOn) === 0) throw new Error('over the cap'); props[k] = v; } });
+  ['accrualLedgerPut_', 'recordAccrualLedger_', 'readAccrualSideLedger_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ictx));
+  ictx.recordAccrualLedger_('TEST_IN_001', ['2026-09'], 72);
+  ictx.recordAccrualLedger_('TEST_IN_001', ['2026-09'], 60);
+  ictx.recordAccrualLedger_('TEST_IN_001', ['2026-07', '2026-08'], 99);
+  assert.deepStrictEqual(J(ictx.readAccrualSideLedger_()), { byEmp: { TEST_IN_001: { '2026-09': 72 } }, since: '2026-10' }, 'the higher figure stays, and a legacy multi-month key is never written');
+  throwOn = 'PTO_ACCRUAL_LEDGER_TEST';
+  ictx.recordAccrualLedger_('TEST_IN_001', ['2026-10'], 10);
+  assert.strictEqual(props.PTO_ACCRUAL_LEDGER_SINCE, undefined, 'a failed record drops the coverage claim, so a cut-short tail is reported again');
+  // Wiring: every PtoAccrualCredit row records its month; the ledger read merges; the suite baseline clears it.
+  const credit = stripJsComments_(extractRawFunction('Code.js', 'creditMonthlyPtoAccruals'));
+  assert.strictEqual((credit.match(/recordAccrualLedger_\(/g) || []).length, 3, 'the credit, the zero row and the top-up each record');
+  assert.strictEqual((credit.match(/writeWitnessAuditLog_\(\w+\.emp, 'PtoAccrualCredit'/g) || []).length, 3, 'one per PtoAccrualCredit row');
+  assert.ok(/mergeAccrualLedger_\(out, side\.byEmp, side\.since, accrualLedgerWindowFromIso_\(sinceIso\)\)/.test(extractRawFunction('Code.js', 'readAccrualLedger_')));
+  const tests = fs.readFileSync(path.join(PA_WEB, 'Tests.js'), 'utf8');
+  assert.ok(/deleteProperty\(PTO_ACCRUAL_LEDGER_PREFIX \+ empId\)/.test(extractRawFunction('Tests.js', '_clearTestState')), 'the test baseline clears the side copy (g139)');
+  assert.ok(/k\.indexOf\(PTO_ACCRUAL_LEDGER_PREFIX \+ 'TEST_'\) === 0/.test(tests), 'cleanupTestData sweeps a killed run\'s TEST_ copies (g132)');
+});
+
+test('F18 (cycle 25): a biweekly rep without their own PayAnchor cell gets the ORG anchor, so the Time / PTO rail shows the two-week period; and 80 hours is only ever a 14-day target (driven)', () => {
+  const EMP_SRC = /const EMP = \{[\s\S]*?\n\};/.exec(codeSrc)[0].replace(/^const /, 'var ');
+  const row = (email, id, cycle, anchor) => { const r = new Array(18).fill(''); r[0] = email; r[1] = id; r[2] = id; r[4] = cycle; r[5] = anchor; r[7] = 'Asia/Manila'; return r; };
+  const roster = [new Array(18).fill('h'), row('a@x', 'PH-1', 'Monthly', ''), row('b@x', 'PH-2', 'Biweekly', '2026-09-07'),
+    row('c@x', 'PH-3', ' biweekly ', ''), row('d@x', 'IN-1', 'Monthly', '')];
+  let me = 'c@x';
+  const ctx = vm.createContext({ String, Number, Object, Array, JSON, Math, Date, parseInt, parseFloat, isNaN, isFinite,
+    CONFIG: { TIMEZONE: 'America/Chicago' }, getActiveUserEmail_: () => me, getEmployeeRosterRows_: () => roster,
+    cnEnrolledSheetId_: () => '', empPtoAccrual_: () => null, empIsAdmin_: () => false, normalizeDate_: (v) => String(v).substring(0, 10) });
+  vm.runInContext(EMP_SRC, ctx);
+  ['empPayCycle_', 'orgBiweeklyAnchor_', 'getEmployeeInfo_', 'lookupEmployeeById_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  assert.strictEqual(ctx.orgBiweeklyAnchor_(roster), '2026-09-07');
+  assert.strictEqual(ctx.getEmployeeInfo_().payAnchor, '2026-09-07', 'THE REGRESSION: a biweekly rep who is not the anchor holder had no anchor, so the rail showed the calendar month');
+  assert.strictEqual(ctx.lookupEmployeeById_('PH-3').payAnchor, '2026-09-07', 'the manager path agrees');
+  me = 'd@x'; assert.strictEqual(ctx.getEmployeeInfo_().payAnchor, null, 'a monthly rep gets none');
+  assert.strictEqual(ctx.empPayCycle_(row('e@x', 'X', 'Biweekly', '2026-09-14'), '2026-09-07').payAnchor, '2026-09-14', 'a rep\'s own cell still wins');
+  assert.strictEqual(ctx.empPayCycle_(row('e@x', 'X', 'Biweekly', ''), null).payAnchor, null, 'no org anchor: none');
+  assert.ok(/const anchor = orgBiweeklyAnchor_\(getEmployeeRosterRows_\(\)\);/.test(extractRawFunction('Code.js', 'getCurrentBiweeklyRange_')), 'the export reads the same rule');
+  // The rail's target follows the range it shows.
+  const sb = buildSandbox([], { MONTH_NAMES: ['January','February','March','April','May','June','July','August','September','October','November','December'],
+    fmtHrs: (h) => String(h), esc: (s) => String(s), dispTime: (t) => t });
+  const rail = loadFunction(sb, 'tc/script_timeoff.html', 'renderTimesheetSideRail_');
+  const target = (d) => /\/ (\d+)h target/.exec(rail(d))[1];
+  const days = (from, n) => Array.from({ length: n }, (_, i) => { const iso = new Date(Date.parse(from + 'T12:00:00Z') + i * 86400000).toISOString().slice(0, 10); const dow = new Date(iso + 'T12:00:00Z').getUTCDay(); return { date: iso, isWeekend: dow === 0 || dow === 6 }; });
+  assert.strictEqual(target({ payCycle: 'Biweekly', startDate: '2026-09-21', endDate: '2026-10-04', days: days('2026-09-21', 14), totalHours: 40 }), '80', 'a 14-day period is 80h');
+  assert.strictEqual(target({ payCycle: 'Biweekly', startDate: '2026-10-01', endDate: '2026-10-31', days: days('2026-10-01', 31), totalHours: 40 }), '176',
+    'THE REGRESSION: a biweekly rep shown a calendar month was measured against 80h — a month is its weekdays × 8');
+});
+
+test('F61 (cycle 25): self-undo removes only the day\'s LAST punch — a Clock In under a Lunch Out made two minutes later is refused (it left an orphan day), on the server and in the punch list (driven)', () => {
+  const ctx = vm.createContext({ String, ADP: { EMP_ID: 0, DATE: 2, TIME: 3, COMMENTS: 8 },
+    normalizeDate_: (v) => v, normalizeTime_: (v) => v, normalizeType_: (c) => String(c).replace(/^ADJ-/, '') });
+  vm.runInContext(extractRawFunction('Code.js', 'selfUndoLaterPunch_'), ctx);
+  const r = (id, d, t, c) => [id, 'n', d, t, '', '', '', '', c];
+  const rows = [['h'], ['h'], r('E1', '2026-10-14', '09:00:00', 'ClockIn'), r('E2', '2026-10-14', '09:05:00', 'ClockIn'), r('E1', '2026-10-14', '09:02:00', 'LunchOut')];
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  assert.deepStrictEqual(J(ctx.selfUndoLaterPunch_(rows, 'E1', '2026-10-14', '09:00:00', '2026-10-14')), { date: '2026-10-14', time: '09:02:00', type: 'LunchOut' },
+    'THE REGRESSION: the Clock In could be undone under the Lunch Out');
+  assert.strictEqual(ctx.selfUndoLaterPunch_(rows, 'E1', '2026-10-14', '09:02:00', '2026-10-14'), null, 'the last punch can be undone (another rep\'s later punch is not theirs)');
+  assert.strictEqual(ctx.selfUndoLaterPunch_(rows, 'E1', '2026-10-14', '09:02', '2026-10-14'), null, 'an HH:mm time reads as :00');
+  const night = [['h'], ['h'], r('E1', '2026-10-13', '23:58:00', 'ClockIn'), r('E1', '2026-10-14', '00:01:00', 'LunchOut')];
+  assert.strictEqual(J(ctx.selfUndoLaterPunch_(night, 'E1', '2026-10-13', '23:58:00', '2026-10-14')).time, '00:01:00', 'a punch after midnight is later than one before it');
+  const del = stripJsComments_(extractRawFunction('Code.js', 'selfDeletePunch'));
+  assert.ok(del.indexOf('selfUndoLaterPunch_(rows, emp.id, date, time, todayStr)') > 0 && del.indexOf('selfUndoLaterPunch_(') < del.indexOf('sheet.deleteRow('), 'the refusal comes before the delete');
+  // The punch list offers undo on the last punch only.
+  const sb = buildSandbox([], { PUNCH_META: {}, empTz: () => 'UTC', liveTimeHmsTz: () => '09:03:00', SELF_UNDO_WINDOW_SECONDS: 300,
+    timeDiffSecondsClient: (a, b) => (Date.parse('2026-01-01T' + b + 'Z') - Date.parse('2026-01-01T' + a + 'Z')) / 1000,
+    empState: { today: '2026-10-14' }, esc: (s) => String(s), icon: () => '', dispTime: (t) => t });
+  const html = loadFunction(sb, 'tc/script_clock.html', 'renderPunchHistory')([
+    { type: 'ClockIn', direction: 'IN', time: '09:00:00' }, { type: 'LunchOut', direction: 'OUT', time: '09:02:00' }]);
+  assert.strictEqual((html.match(/class="punch-undo"/g) || []).length, 1, 'one undo button, not two');
+  assert.ok(/data-time="09:02:00"/.test(html) && !/data-time="09:00:00"/.test(html), 'and it is on the last punch');
+});
+
+test('F62 (cycle 25): a bulk approval keeps ONE Timesheet index per employee through resumes and break writes — the writers keep it current instead of the batch re-reading the sheet in the lock; a time-off range reads its tab once (driven)', () => {
+  const ctx = vm.createContext({ String, Array });
+  ['adjustIndexRetype_', 'adjustIndexAppend_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const D = '2026-10-13';
+  const ix = { idx: { [D + '|ClockIn']: 3, [D + '|LunchOut']: 5, [D + '|ClockOut']: 9 },
+    all: { [D + '|ClockIn']: [{ rowIndex: 3, time: '08:00' }], [D + '|LunchOut']: [{ rowIndex: 5, time: '12:00' }], [D + '|ClockOut']: [{ rowIndex: 9, time: '17:00' }] } };
+  ctx.adjustIndexRetype_(ix, D, 9, 'ClockOut', 'LunchOut');
+  ctx.adjustIndexAppend_(ix, D, 'LunchIn', 14, '19:00:00');
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  assert.deepStrictEqual(J(ix), { idx: { [D + '|ClockIn']: 3, [D + '|LunchOut']: 9, [D + '|LunchIn']: 14 },
+    all: { [D + '|ClockIn']: [{ rowIndex: 3, time: '08:00' }], [D + '|LunchOut']: [{ rowIndex: 5, time: '12:00' }, { rowIndex: 9, time: '17:00' }], [D + '|LunchIn']: [{ rowIndex: 14, time: '19:00' }] } },
+    'after a resume the index says what the sheet says: no Clock Out, the old one a Lunch Out, the Lunch In at the new last row');
+  // The resume through a caller's index: no read of its own, and the finish rides the same index.
+  let builds = 0;
+  const writes = [];
+  const sheet = { getRange: (r) => ({ setValue: (v) => writes.push(r + ':' + v) }), getLastRow: () => 14 };
+  const rctx = vm.createContext({ String, Math, Date, Array, ADP: { COMMENTS: 8 },
+    buildAdjustPunchIndex_: () => { builds++; return null; }, appendToAdpSheet_: () => writes.push('append'),
+    writeAdjustPunchForEmployee_: (e, d, type, t, a, r, c) => writes.push('finish:' + type + '@' + t + (c === bix ? ' (same index)' : '')),
+    clearFromEmployeeSheet_() {}, writeToEmployeeSheet_() {}, writeAuditLog_() {}, sheetSafe_: (v) => v,
+    fmtDateTz_: () => '2026-10-14', empTz_: () => 'UTC', daysBetween_: () => 1 });
+  ['adjustIndexRetype_', 'adjustIndexAppend_', 'resumeShiftForEmployee_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), rctx));
+  const bix = { sheet, idx: { [D + '|ClockOut']: 9 }, all: { [D + '|ClockOut']: [{ rowIndex: 9, time: '17:00' }] } };
+  const res = J(rctx.resumeShiftForEmployee_({ id: 'E1' }, D, '19:00', 'm@x', '', '21:00', bix));
+  assert.ok(!res.error, res.error);
+  assert.strictEqual(builds, 0, 'THE REGRESSION: the resume re-read the Timesheet, and the batch then dropped its index and read it again');
+  assert.deepStrictEqual(writes, ['9:ADJ-LunchOut', 'append', 'finish:ClockOut@21:00 (same index)']);
+  assert.deepStrictEqual(J(bix.all[D + '|LunchOut']), [{ rowIndex: 9, time: '17:00' }]);
+  assert.strictEqual(bix.all[D + '|ClockOut'], undefined, 'the converted Clock Out is gone from the index, so the finish APPENDS (it does not overwrite the Lunch Out)');
+  const dec = stripJsComments_(extractRawFunction('Code.js', 'punchAdjustDecideAll_'));
+  assert.ok(!/delete ctxByEmp/.test(dec), 'the batch never drops an employee\'s index');
+  // The range time-off submit: one read for the whole range.
+  const tctx = vm.createContext({ String, TO: { EMP_ID: 0, DATE: 2, STATUS: 5 }, normalizeDate_: (v) => v });
+  vm.runInContext(extractRawFunction('Code.js', 'timeOffActiveDates_'), tctx);
+  const rows = [['h'], ['E1', 'n', '2026-10-20', 'Full Day', '', 'Pending'], ['E1', 'n', '2026-10-21', 'Full Day', '', 'Denied'], ['E2', 'n', '2026-10-22', 'Full Day', '', 'Approved'], ['E1', 'n', '2026-10-23', 'Full Day', '', ' APPROVED ']];
+  assert.deepStrictEqual(J(tctx.timeOffActiveDates_(rows, 'E1')), { '2026-10-20': true, '2026-10-23': true });
+  assert.deepStrictEqual(J(tctx.timeOffActiveDates_(rows, 'E1', 1)), { '2026-10-23': true }, 'the row being re-checked is left out (cycle-11 M-1)');
+  const str = stripJsComments_(extractRawFunction('Code.js', 'submitTimeOffRange'));
+  assert.strictEqual((str.match(/getDataRange\(\)/g) || []).length, 1, 'THE REGRESSION: one full read of the tab per day of the range, inside the lock');
+  assert.ok(!/hasActiveTimeOffOnDate_\(/.test(str) && /appendRowsSafe_\(toSheet,/.test(str), 'and one block write');
+});
+
+test('F63 (cycle 25): two "add a missing break" requests for one day at different times are two requests, not a duplicate — the same add at the same time still is (driven over submit)', () => {
+  const run = (requests, pendingRows) => {
+    const appended = [];
+    const ctx = tc02Ctx_({
+      LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      getEmployeeInfo_: () => ({ id: 'E1', name: 'Ann' }), empTz_: () => 'UTC',
+      fmtDateTz_: () => '2026-10-01', fmtTimeTz_: () => '23:59:00', daysBetween_: () => 1,
+      CONFIG: { ADJUST_WINDOW_DAYS: 30, OLD_ADJUST_ALERT_DAYS: 7 },
+      PAR: { REQ_ID: 0, EMP_ID: 1, EMP_NAME: 2, DATE: 3, PUNCH_TYPE: 4, REQ_TIME: 5, REASON: 6, STATUS: 7, SUBMITTED_AT: 8, ACTION: 9, END_TIME: 10, BREAK_TARGET: 11 },
+      findExistingPunch_: () => null, buildAdjustPunchIndex_: () => ({ all: {} }),
+      getOrCreatePunchAdjustSheet_: () => ({ getDataRange: () => ({ getValues: () => [['h']].concat(pendingRows || []) }), appendRow: (r) => appended.push(r) }),
+      normalizeDate_: (v) => v, normalizeTime_: (v) => v, fmtDate_: () => 'd', fmtTime_: () => 't',
+      Utilities: { getUuid: () => 'u' }, sheetSafeRow_: (r) => r, sheetSafe_: (v) => v,
+      writeAuditLog_: () => {}, notifyManagersOfAdjustRequests_: () => {}, console: { warn() {} } });
+    vm.runInContext(extractRawFunction('Code.js', 'submitPunchAdjustRequests'), ctx);
+    return { res: JSON.parse(JSON.stringify(ctx.submitPunchAdjustRequests(requests))), appended };
+  };
+  const D = '2026-09-30', add = { mode: 'add' };
+  let r = run([{ date: D, time: '12:00', punchType: 'LunchOut', breakIntent: add }, { date: D, time: '15:00', punchType: 'LunchOut', breakIntent: add }]);
+  assert.ok(r.res.success, 'THE REGRESSION: the second forgotten break was refused as a duplicate of the first — ' + r.res.error);
+  assert.strictEqual(r.appended.length, 2);
+  r = run([{ date: D, time: '15:00', punchType: 'LunchOut', breakIntent: add }], [['old', 'E1', 'Ann', D, 'LunchOut', '12:00:00', '', 'Pending', 's', 'set', '', 'add']]);
+  assert.ok(r.res.success, 'a pending add at another time does not block a second add — ' + r.res.error);
+  r = run([{ date: D, time: '12:00', punchType: 'LunchOut', breakIntent: add }], [['old', 'E1', 'Ann', D, 'LunchOut', '12:00:00', '', 'Pending', 's', 'set', '', 'add']]);
+  assert.ok(!r.res.success && /already have a pending LunchOut adjustment/.test(r.res.error), 'the same add at the same time is still one request');
+  r = run([{ date: D, time: '12:00', punchType: 'LunchOut', breakIntent: add }, { date: D, time: '12:00', punchType: 'LunchOut', breakIntent: add }]);
+  assert.ok(!r.res.success && /Duplicate adjustment in this batch/.test(r.res.error), 'and within one batch');
+  r = run([{ date: D, time: '17:00', punchType: 'ClockOut' }], [['old', 'E1', 'Ann', D, 'ClockOut', '16:00:00', '', 'Pending', 's', 'set', '', '']]);
+  assert.ok(!r.res.success, 'a Clock Out still has one pending request per day, whatever its time');
+});
+
+test('Batch 6b follow-on (cycle 25): the Dashboard Spanish card names the window of each figure — the pending count the tab\'s, the median and the tiles the week\'s — from its own payload, never a literal (driven)', () => {
+  const sb = buildSandbox([], { esc: (s) => String(s), icon: () => '', errorStateHtml_: (m) => 'ERR:' + m, CLK_DASH: {},
+    clkDashSkelKpis_: () => 'SKEL', clkDashDeltaHtml_: () => '' });
+  loadFunction(sb, 'tc/script_clock.html', 'clkDashKpi_');
+  const card = loadFunction(sb, 'tc/script_clock.html', 'clkDashSpanishCard_');
+  const stats = { days: 7, pending: 1, resolved: 4, medianBusinessMinutes: 12 };
+  let html = card(stats, { days: 30, pending: [{ requester: 'a@x', ageHours: 200, snippet: 's' }] });
+  assert.ok(/1 pending · 30d</.test(html), 'THE FOLLOW-ON: "N pending" counted 30 days and said nothing');
+  assert.ok(/median reply 12m · 7d/.test(html), 'and the median beside it is the week\'s');
+  html = card(stats, { pending: [] });
+  assert.ok(/Pending · 7d/.test(html) && /Resolved · 7d/.test(html) && /Median reply · 7d/.test(html), 'the tiles are the week\'s stats and say so');
+  html = card({ pending: 1, resolved: 4 }, { pending: [] });
+  assert.ok(/>Pending</.test(html) && />Resolved</.test(html), 'an older payload with no window shows no window — never a guessed one');
+  assert.ok(!/· 7d'|Resolved · 7d/.test(stripJsComments_(extractFunction('tc/script_clock.html', 'clkDashSpanishCard_'))), 'no hand-carried window literal survives (g131)');
 });
 
 test('DR-3 (cycle 23): every response-time median is a true median — an even count is the mean of the two middle values, an empty set is null (driven + every former upper-middle site)', () => {

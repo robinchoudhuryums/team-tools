@@ -2575,6 +2575,52 @@
     "spanishVmResolution_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-14",
+   "why": "cycle 25 Batch 7: F17 accrual side ledger, F18 org anchor, F61 last-punch undo, F62 index kept current + one-read range time-off, F63 add key carries its time",
+   "added": [
+    "PTO_ACCRUAL_LEDGER_KEEP_MONTHS",
+    "PTO_ACCRUAL_LEDGER_PREFIX",
+    "PTO_ACCRUAL_LEDGER_SINCE",
+    "accrualLedgerPut_",
+    "accrualLedgerWindowFromIso_",
+    "adjustIndexAppend_",
+    "adjustIndexRetype_",
+    "mergeAccrualLedger_",
+    "orgBiweeklyAnchor_",
+    "readAccrualSideLedger_",
+    "recordAccrualLedger_",
+    "selfUndoLaterPunch_",
+    "timeOffActiveDates_"
+   ],
+   "removed": [],
+   "changed": [
+    "creditMonthlyPtoAccruals",
+    "empPayCycle_",
+    "getCurrentBiweeklyRange_",
+    "getEmployeeInfo_",
+    "hasActiveTimeOffOnDate_",
+    "lookupEmployeeById_",
+    "punchAdjustDecideAll_",
+    "readAccrualLedger_",
+    "resumeShiftForEmployee_",
+    "selfDeletePunch",
+    "submitPunchAdjustRequests",
+    "submitTimeOffRange",
+    "writeAdjustPunchForEmployee_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-14",
+   "why": "cycle 25 Batch 7: F17 ledger writes through propSetBounded_",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "recordAccrualLedger_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4209,6 +4255,21 @@
    "kind": "const",
    "sha": "7df6b02ee6be477f"
   },
+  "PTO_ACCRUAL_LEDGER_KEEP_MONTHS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "57b22bb7be2f5e83"
+  },
+  "PTO_ACCRUAL_LEDGER_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "0aa6d9fe92b803d2"
+  },
+  "PTO_ACCRUAL_LEDGER_SINCE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "26e4d82567fe421b"
+  },
   "PTO_ACCRUAL_RECONCILE_MONTHS": {
    "file": "00_config.js",
    "kind": "const",
@@ -4979,6 +5040,16 @@
    "kind": "function",
    "sha": "3e4f6d85e71d9b24"
   },
+  "accrualLedgerPut_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "b8727a0c000181af"
+  },
+  "accrualLedgerWindowFromIso_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "531a1fe7b40ed443"
+  },
   "accrualMonthList_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -5054,10 +5125,20 @@
    "kind": "function",
    "sha": "82c777e3a590ec1e"
   },
+  "adjustIndexAppend_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "38fb65d7d86e7410"
+  },
   "adjustIndexLastTime_": {
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "6d25fe746a2efcde"
+  },
+  "adjustIndexRetype_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "27e5ea4631b9eada"
   },
   "adjustLeaveBalance_": {
    "file": "20_timeclock.js",
@@ -5942,7 +6023,7 @@
   "creditMonthlyPtoAccruals": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "884ffa385e871b7f"
+   "sha": "b5b6a3313193c422"
   },
   "csrTransferHeaderMismatches_": {
    "file": "40_metrics.js",
@@ -6377,7 +6458,7 @@
   "empPayCycle_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "a168a4812c3c0521"
+   "sha": "90650ebcbb19d376"
   },
   "empPayRateById_": {
    "file": "20_timeclock.js",
@@ -6802,7 +6883,7 @@
   "getCurrentBiweeklyRange_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "ec7ea85e73efbef0"
+   "sha": "387420cffb815328"
   },
   "getDashboardMetrics": {
    "file": "40_metrics.js",
@@ -6877,7 +6958,7 @@
   "getEmployeeInfo_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "2a20b1e065b1baf2"
+   "sha": "1465bc2ac16fb838"
   },
   "getEmployeeRosterRows_": {
    "file": "20_timeclock.js",
@@ -7582,7 +7663,7 @@
   "hasActiveTimeOffOnDate_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "a7df5c74fff20e6b"
+   "sha": "bb82579f9b1f15c5"
   },
   "hcpcsParse_": {
    "file": "70_kb.js",
@@ -8597,7 +8678,7 @@
   "lookupEmployeeById_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "9ae1631385a2b1f1"
+   "sha": "23252f4eaaa34c97"
   },
   "mailBccAll_": {
    "file": "10_core.js",
@@ -8728,6 +8809,11 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "a94bee326bbd3783"
+  },
+  "mergeAccrualLedger_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "db75d2d330599207"
   },
   "mergeCallNoteTags": {
    "file": "30_callnotes.js",
@@ -8969,6 +9055,11 @@
    "kind": "function",
    "sha": "d55b74af94f02808"
   },
+  "orgBiweeklyAnchor_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "19ad192348b8cec2"
+  },
   "parEndTime_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -9102,7 +9193,7 @@
   "punchAdjustDecideAll_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "724e4b18a97b40ad"
+   "sha": "a93296628b63be96"
   },
   "punchDayAdd_": {
    "file": "20_timeclock.js",
@@ -9527,12 +9618,17 @@
   "readAccrualLedger_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "65ae9808270b14fa"
+   "sha": "fef51621e845317c"
   },
   "readAccrualReconcile_": {
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "77bfbdfb94d3374e"
+  },
+  "readAccrualSideLedger_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "6a9649ea133709b4"
   },
   "readAutomationErrors_": {
    "file": "10_core.js",
@@ -9573,6 +9669,11 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "86b3c1a0d1bb0490"
+  },
+  "recordAccrualLedger_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "343d2c8bb27759ac"
   },
   "recordClientError": {
    "file": "10_core.js",
@@ -9702,7 +9803,7 @@
   "resumeShiftForEmployee_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "4d461c3bf00c4d81"
+   "sha": "e84b61037bfe66a0"
   },
   "retentionStampPattern_": {
    "file": "61_forms.js",
@@ -9962,12 +10063,17 @@
   "selfDeletePunch": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "6f7520447488050c"
+   "sha": "09a47e920f750f15"
   },
   "selfTestFailureEmail_": {
    "file": "10_core.js",
    "kind": "function",
    "sha": "c2bad1096f53a814"
+  },
+  "selfUndoLaterPunch_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "d61a91ea83b94aba"
   },
   "sendAutomatedExport_": {
    "file": "20_timeclock.js",
@@ -10407,7 +10513,7 @@
   "submitPunchAdjustRequests": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "b2ee86d70106f854"
+   "sha": "ee11f96828cb77a4"
   },
   "submitQuizAttempt": {
    "file": "80_training.js",
@@ -10417,7 +10523,7 @@
   "submitTimeOffRange": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "c6c3667fcc33f439"
+   "sha": "d3481310b8230be1"
   },
   "submitTimeOffRequest": {
    "file": "20_timeclock.js",
@@ -10443,6 +10549,11 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "3425cc78d8750744"
+  },
+  "timeOffActiveDates_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "c57228c7c0f876fa"
   },
   "timeOffClosedDayReason_": {
    "file": "20_timeclock.js",
@@ -10772,7 +10883,7 @@
   "writeAdjustPunchForEmployee_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "be8b30a164f70e39"
+   "sha": "5c23f738fc2c7a31"
   },
   "writeAuditLog_": {
    "file": "10_core.js",

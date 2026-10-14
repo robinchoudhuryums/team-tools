@@ -565,6 +565,96 @@ function readAccrualLedger_(sinceIso) {
   }
   // Only a scan that actually reached PAST the window proves it saw all of it.
   out.truncated = !reachedBack && startRow > 2;
+  // F17 (cycle 25): merge the per-rep side ledger, which does not scroll out.
+  const side = readAccrualSideLedger_();
+  return mergeAccrualLedger_(out, side.byEmp, side.since, accrualLedgerWindowFromIso_(sinceIso));
+}
+/** PURE (F17) — the reconcile window's oldest month from the ledger read's
+ *  `sinceIso`, which the callers set ten days before that month's first. */
+function accrualLedgerWindowFromIso_(sinceIso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(sinceIso || ''));
+  if (!m) return '';
+  let y = +m[1], mo = +m[2];
+  if (+m[3] > 1) { mo += 1; if (mo === 13) { mo = 1; y += 1; } }
+  return y + '-' + String(mo).padStart(2, '0');
+}
+/** PURE (Node-pinned; F17, cycle 25) — the AuditLog tail ledger and the side
+ *  ledger as ONE ledger. Per (rep, month) the HIGHER hours wins, the tail's
+ *  rule — so neither copy can lower what has been paid for. `truncated` stays
+ *  true only while the side ledger does not cover the window: once its first
+ *  month is at or before the window's oldest, every month the reconcile reads
+ *  was recorded there, and a tail that stopped short of the window hides
+ *  nothing. sideByEmp: {empId: {ym: hours}}; sinceYm: the side ledger's first
+ *  month ('' = none); oldestYm: the window's oldest month. */
+function mergeAccrualLedger_(tail, sideByEmp, sinceYm, oldestYm) {
+  const out = { byEmp: {}, rowsRead: (tail && tail.rowsRead) || 0, truncated: !!(tail && tail.truncated), sideCovers: false };
+  const tb = (tail && tail.byEmp) || {};
+  Object.keys(tb).forEach(function (id) {
+    out.byEmp[id] = {};
+    Object.keys(tb[id]).forEach(function (k) { out.byEmp[id][k] = { hours: tb[id][k].hours, months: tb[id][k].months.slice() }; });
+  });
+  Object.keys(sideByEmp || {}).forEach(function (id) {
+    const m = sideByEmp[id] || {};
+    Object.keys(m).forEach(function (ym) {
+      const h = Number(m[ym]);
+      if (!/^\d{4}-\d{2}$/.test(ym) || !isFinite(h) || h < 0) return;
+      if (!out.byEmp[id]) out.byEmp[id] = {};
+      if (!out.byEmp[id][ym] || h > out.byEmp[id][ym].hours) out.byEmp[id][ym] = { hours: h, months: [ym] };
+    });
+  });
+  out.sideCovers = !!(sinceYm && oldestYm && sinceYm <= oldestYm);
+  if (out.sideCovers) out.truncated = false;
+  return out;
+}
+/** PURE (Node-pinned; F17) — a rep's side-ledger map with `hours` recorded for
+ *  `ym`: the HIGHER of the old and new figure, then only the newest `keep`
+ *  months. Returns a new map. */
+function accrualLedgerPut_(map, ym, hours, keep) {
+  const out = Object.assign({}, map || {});
+  const h = Number(hours);
+  if (!/^\d{4}-\d{2}$/.test(String(ym)) || !isFinite(h) || h < 0) return out;
+  if (!(Number(out[ym]) >= h)) out[ym] = +h.toFixed(2);
+  const keys = Object.keys(out).sort();
+  keys.slice(0, Math.max(0, keys.length - (keep || 0))).forEach(function (k) { delete out[k]; });
+  return out;
+}
+/** F17 — record what a PtoAccrualCredit row paid for, in the side ledger.
+ *  Called right after the audit row; never throws. The first record stamps
+ *  `…_SINCE`. A FAILED record forgets `…_SINCE`, so the reconcile goes back to
+ *  saying its tail read was cut short rather than trusting a copy with a hole
+ *  in it (the tail still holds the row this run wrote). */
+function recordAccrualLedger_(empId, months, hours) {
+  const id = String(empId || '').trim();
+  if (!id || !months || months.length !== 1) return;   // a legacy multi-month key is never written
+  const props = PropertiesService.getScriptProperties();
+  try {
+    if (!props.getProperty(PTO_ACCRUAL_LEDGER_SINCE)) {
+      propSetBounded_(PTO_ACCRUAL_LEDGER_SINCE,
+        Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM'));
+    }
+    let cur = {};
+    try { cur = JSON.parse(props.getProperty(PTO_ACCRUAL_LEDGER_PREFIX + id) || '{}') || {}; } catch (_) { cur = {}; }
+    // Refusing mode (the default): twelve months is far under the cap, and a
+    // refusal lands in the catch below, which drops the coverage claim.
+    propSetBounded_(PTO_ACCRUAL_LEDGER_PREFIX + id,
+      JSON.stringify(accrualLedgerPut_(cur, months[0], hours, PTO_ACCRUAL_LEDGER_KEEP_MONTHS)));
+  } catch (e) {
+    Logger.log('recordAccrualLedger_ failed for ' + id + ': ' + e.message);
+    try { props.deleteProperty(PTO_ACCRUAL_LEDGER_SINCE); } catch (_) {}
+  }
+}
+/** F17 — every rep's side ledger and the month it began. A failed read is an
+ *  EMPTY side ledger with no coverage: the tail alone decides, as before. */
+function readAccrualSideLedger_() {
+  const out = { byEmp: {}, since: '' };
+  try {
+    const all = PropertiesService.getScriptProperties().getProperties();
+    Object.keys(all).forEach(function (k) {
+      if (k === PTO_ACCRUAL_LEDGER_SINCE) { out.since = String(all[k] || ''); return; }
+      if (k.indexOf(PTO_ACCRUAL_LEDGER_PREFIX) !== 0) return;
+      try { out.byEmp[k.slice(PTO_ACCRUAL_LEDGER_PREFIX.length)] = JSON.parse(all[k]) || {}; } catch (_) {}
+    });
+  } catch (e) { return { byEmp: {}, since: '' }; }
   return out;
 }
 
@@ -888,6 +978,7 @@ function creditMonthlyPtoAccruals() {
             // top up the whole month again. Retry, then stamp WITNESS_AUDIT_FAILS.
             writeWitnessAuditLog_(p.emp, 'PtoAccrualCredit', '', '', false, 0,
               accrualCreditNote_(m, basis, m.earned, newBal));
+            recordAccrualLedger_(p.emp.id, m.months, m.totalHours);   // F17
             repCredited = true;
           } else {
             // Zero hours worked = zero accrual. Correct under an hours-driven
@@ -895,6 +986,7 @@ function creditMonthlyPtoAccruals() {
             // silence is something the operator can act on rather than re-derive.
             writeWitnessAuditLog_(p.emp, 'PtoAccrualCredit', '', '', false, 0,
               accrualZeroNote_(m, basis));
+            recordAccrualLedger_(p.emp.id, m.months, m.totalHours);   // F17
           }
         }
         if (repCredited) credited++; else zeroHourReps++;
@@ -931,6 +1023,7 @@ function creditMonthlyPtoAccruals() {
           if (newBal === null) return;   // gated away mid-run — next run retries
           writeWitnessAuditLog_(r.emp, 'PtoAccrualCredit', '', '', false, 0,
             accrualTopUpNote_(r, basis, r.earnedNow, r.deltaDays, newBal));
+          recordAccrualLedger_(r.emp.id, r.months, r.hoursNow);   // F17
           rec.toppedUp++; rec.days = +(rec.days + r.deltaDays).toFixed(2);
         } else if (r.action === 'shortfall') {
           // NEVER clawed back. A script does not quietly take PTO off a
@@ -1766,12 +1859,14 @@ function submitTimeOffRange(startDate, endDate, type, notes) {
     if (days.length === 0)
       return { success: false, error: 'That range contains only weekend days and company holidays.' };
     const toSheet = getOrCreateTimeOffSheet_();
-    const conflicts = days.filter(d => hasActiveTimeOffOnDate_(toSheet, emp.id, d));
+    // F62 (cycle 25): ONE read of the tab for the whole range, ONE block write.
+    const active = timeOffActiveDates_(toSheet.getDataRange().getValues(), emp.id);
+    const conflicts = days.filter(d => active[d]);
     if (conflicts.length > 0)
       return { success: false, error: 'You already have a pending or approved request on: ' + conflicts.join(', ') + '. Cancel it or adjust the range.' };
     const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
+    appendRowsSafe_(toSheet, days.map(d => [emp.id, emp.name, d, type, notes || '', 'Pending', submittedAt]));
     days.forEach(d => {
-      toSheet.appendRow(sheetSafeRow_([emp.id, emp.name, d, type, notes || '', 'Pending', submittedAt]));
       writeAuditLog_(emp, 'TimeOffRequest', d, '', false, 0,
         type + ' (range ' + startDate + '..' + endDate + ')' + (notes ? ' — ' + notes : ''));
     });
@@ -3734,8 +3829,26 @@ function deletePunch(empId, date, time, punchType) {
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
+/** PURE over Timesheet rows (Node-pinned; F61, cycle 25) — the rep's punch
+ *  that comes AFTER the one at `date` `time`, or null: a later time on the same
+ *  date, or any punch on a later date up to `todayStr` (an undo across
+ *  midnight). Rows start at index 2, as the Timesheet's data does. A punch at
+ *  the SAME second is not later — nothing tells the two apart. */
+function selfUndoLaterPunch_(rows, empId, date, time, todayStr) {
+  const t = String(time).length === 5 ? time + ':00' : String(time);
+  for (let i = 2; i < (rows || []).length; i++) {
+    if (String(rows[i][ADP.EMP_ID]).trim() !== empId) continue;
+    const d = normalizeDate_(rows[i][ADP.DATE]);
+    if (!d || d < date || d > todayStr) continue;
+    const rt = normalizeTime_(rows[i][ADP.TIME]).trim();
+    const rts = rt.length === 5 ? rt + ':00' : rt;
+    if (d > date || rts > t) return { date: d, time: rts, type: normalizeType_(String(rows[i][ADP.COMMENTS])) };
+  }
+  return null;
+}
 /** Employee self-undo of a recent live punch (today, within SELF_UNDO_WINDOW_SECONDS).
- *  Adjustments are NOT eligible — use Adjust to fix those. */
+ *  Adjustments are NOT eligible — use Adjust to fix those. Since cycle 25 F61
+ *  only the day's last punch is (`selfUndoLaterPunch_`). */
 function selfDeletePunch(date, time, punchType) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
@@ -3784,6 +3897,14 @@ function selfDeletePunch(date, time, punchType) {
       if (rawComment.indexOf('ADJ-') === 0) {
         return { success: false, error:
           'Cannot self-undo an adjustment. Use Adjust again to fix it.' };
+      }
+      // F61 (cycle 25): only the day's LAST punch can be undone. Undoing a
+      // Clock In under a Lunch Out made two minutes later left a day with a
+      // break and no clock-in — an orphan no hours can be read from.
+      const later = selfUndoLaterPunch_(rows, emp.id, date, time, todayStr);
+      if (later) {
+        return { success: false, error: 'Undo your later punch first (' + later.type + ' at ' +
+          later.time.slice(0, 5) + ') — only the most recent punch can be undone. Use Adjust to fix an earlier one.' };
       }
       sheet.deleteRow(i + 1);
       if (emp.sheetId) {
@@ -5141,15 +5262,7 @@ function getMonthRange_(date) {
   };
 }
 function getCurrentBiweeklyRange_(todayStr) {
-  const empRows = getEmployeeRosterRows_();
-  let anchor = null;
-  for (let i = 1; i < empRows.length; i++) {
-    const cycle = String(empRows[i][EMP.PAY_CYCLE] || '').toLowerCase();
-    if (cycle === 'biweekly' && empRows[i][EMP.PAY_ANCHOR]) {
-      anchor = normalizeDate_(empRows[i][EMP.PAY_ANCHOR]);
-      break;
-    }
-  }
+  const anchor = orgBiweeklyAnchor_(getEmployeeRosterRows_());   // F18 — the one org-anchor rule
   if (!anchor) return null;
   const anchorMs = new Date(anchor + 'T00:00:00Z').getTime();
   const todayMs  = new Date(todayStr + 'T00:00:00Z').getTime();
@@ -5761,19 +5874,23 @@ function empPendingAdjustments_(empId, dateIso) {
   }
 }
 function hasActiveTimeOffOnDate_(sheet, empId, date, excludeRowIndex) {
-  const rows = sheet.getDataRange().getValues();
+  return !!timeOffActiveDates_(sheet.getDataRange().getValues(), empId, excludeRowIndex)[date];
+}
+/** PURE (Node-pinned; F62, cycle 25) — every date the rep holds a Pending or
+ *  Approved time-off row on, from ONE read of the tab: {date: true}. The
+ *  range submit asked `hasActiveTimeOffOnDate_` once per day, a full-tab read
+ *  each, inside the lock. `excludeRowIndex` (getDataRange indexing — cycle-11
+ *  M-1) leaves out the row being re-checked. */
+function timeOffActiveDates_(rows, empId, excludeRowIndex) {
+  const out = {};
   const id = String(empId).trim();
-  for (let i = 1; i < rows.length; i++) {
-    // Cycle-11 M-1: the status-change re-check passes its own row's index
-    // (same getDataRange indexing, inside the same lock) so a Pending row
-    // being approved doesn't collide with itself.
+  for (let i = 1; i < (rows || []).length; i++) {
     if (excludeRowIndex !== undefined && i === excludeRowIndex) continue;
     if (String(rows[i][TO.EMP_ID]).trim() !== id) continue;
-    if (normalizeDate_(rows[i][TO.DATE]) !== date) continue;
     const st = String(rows[i][TO.STATUS]).toLowerCase().trim();
-    if (st === 'pending' || st === 'approved') return true;
+    if (st === 'pending' || st === 'approved') out[normalizeDate_(rows[i][TO.DATE])] = true;
   }
-  return false;
+  return out;
 }
 function getLeaveDeduction_(type) {
   const t = String(type).toLowerCase().trim();
@@ -6884,12 +7001,30 @@ function findExistingPunch_(empId, date, punchType) {
  *  exports use); everything else is 'Monthly'. Until 2026-09-29 only
  *  getEmployeeInfo_ read these, and lookupEmployeeById_ returned no payCycle
  *  at all — so a manager opening a Philippines rep's Pay Statement got the
- *  'Monthly' default and a month-long period (operator report). */
-function empPayCycle_(row) {
+ *  'Monthly' default and a month-long period (operator report).
+ *  F18 (cycle 25): the anchor is the ORG's — onboarding allows one biweekly
+ *  anchor on the whole roster, so every biweekly rep but its holder has a blank
+ *  cell, and the Time / PTO rail fell back to the calendar month under an
+ *  80-hour target. A biweekly rep with no cell of their own gets `orgAnchor`
+ *  (`orgBiweeklyAnchor_`, the rule the biweekly export already reads). */
+function empPayCycle_(row, orgAnchor) {
   const cycleRaw = String((row && row[EMP.PAY_CYCLE]) || '').trim();
   const anchorRaw = row ? row[EMP.PAY_ANCHOR] : null;
-  return { payCycle: cycleRaw.toLowerCase() === 'biweekly' ? 'Biweekly' : 'Monthly',
-    payAnchor: anchorRaw ? normalizeDate_(anchorRaw) : null };
+  const biweekly = cycleRaw.toLowerCase() === 'biweekly';
+  const own = anchorRaw ? normalizeDate_(anchorRaw) : null;
+  return { payCycle: biweekly ? 'Biweekly' : 'Monthly',
+    payAnchor: own || (biweekly && orgAnchor ? orgAnchor : null) };
+}
+/** F18 (cycle 25) — THE org biweekly anchor: the first biweekly roster row
+ *  with a PayAnchor cell (header row skipped), normalized; null when none.
+ *  `getCurrentBiweeklyRange_` (the automated export) and every employee lookup
+ *  read it, so a rep's pay period and the export's are one period. */
+function orgBiweeklyAnchor_(rows) {
+  for (let i = 1; i < (rows || []).length; i++) {
+    const cycle = String(rows[i][EMP.PAY_CYCLE] || '').trim().toLowerCase();
+    if (cycle === 'biweekly' && rows[i][EMP.PAY_ANCHOR]) return normalizeDate_(rows[i][EMP.PAY_ANCHOR]);
+  }
+  return null;
 }
 function getEmployeeInfo_() {
   const email = getActiveUserEmail_();
@@ -6897,7 +7032,7 @@ function getEmployeeInfo_() {
   const rows = getEmployeeRosterRows_();
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][EMP.EMAIL]).toLowerCase().trim() === email) {
-      const pc = empPayCycle_(rows[i]);
+      const pc = empPayCycle_(rows[i], orgBiweeklyAnchor_(rows));   // F18
       const cycle = pc.payCycle, anchor = pc.payAnchor;
       const mgrRaw = String(rows[i][EMP.IS_MANAGER] || '').trim().toLowerCase();
       const isManager = (mgrRaw === 'true' || mgrRaw === 'yes' || mgrRaw === 'y' || mgrRaw === '1');
@@ -6941,7 +7076,7 @@ function lookupEmployeeById_(empId) {
     const ptoRaw = (ptoVal === null || ptoVal === undefined || ptoVal === '')
       ? '' : String(ptoVal).trim().toLowerCase();
     const ptoEnabled = !(ptoRaw === 'false' || ptoRaw === 'no' || ptoRaw === 'n' || ptoRaw === '0');
-    const pc = empPayCycle_(rows[i]);
+    const pc = empPayCycle_(rows[i], orgBiweeklyAnchor_(rows));   // F18
     return {
       id: empId,
       name: String(rows[i][EMP.NAME]).trim(),
@@ -7180,10 +7315,15 @@ function submitPunchAdjustRequests(requests) {
     // and invites a double-approve race).
     // TC-02: a break request's key carries its intent, so "add a break" and
     // "correct the 12:30 one" on the same day are two requests, not a duplicate.
-    const parKey = function (date, type, cell) { return date + '|' + type + (BREAK_PUNCH_TYPES.indexOf(type) >= 0 ? '|' + cell : ''); };
+    // F63 (cycle 25): an ADD also carries its time — a rep who forgot two
+    // breaks files two adds, and `date|type|add` refused the second as a
+    // duplicate of the first. Two adds at the same time are still one.
+    const parKey = function (date, type, cell, hm) {
+      return date + '|' + type + (BREAK_PUNCH_TYPES.indexOf(type) >= 0 ? '|' + cell + (cell === 'add' ? '@' + hm : '') : '');
+    };
     const batchSeen = {};
     for (let i = 0; i < clean.length; i++) {
-      const key = parKey(clean[i].date, clean[i].punchType, breakIntentCell_(clean[i].breakIntent));
+      const key = parKey(clean[i].date, clean[i].punchType, breakIntentCell_(clean[i].breakIntent), clean[i].time);
       if (batchSeen[key]) return { success: false, error: 'Duplicate adjustment in this batch: ' + clean[i].punchType + ' on ' + clean[i].date + '.' };
       batchSeen[key] = true;
     }
@@ -7220,10 +7360,10 @@ function submitPunchAdjustRequests(requests) {
       if (String(existing[i][PAR.EMP_ID]).trim() !== emp.id) continue;
       if (String(existing[i][PAR.STATUS]).trim().toLowerCase() !== 'pending') continue;
       const key = parKey(normalizeDate_(existing[i][PAR.DATE]), String(existing[i][PAR.PUNCH_TYPE]).trim(),
-        breakIntentCell_(existing[i][PAR.BREAK_TARGET]));
+        breakIntentCell_(existing[i][PAR.BREAK_TARGET]), normalizeTime_(existing[i][PAR.REQ_TIME]).trim().substring(0, 5));
       if (batchSeen[key]) {
         const isResume = String(existing[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume';
-        const ci = clean.findIndex(function (c) { return parKey(c.date, c.punchType, breakIntentCell_(c.breakIntent)) === key; });
+        const ci = clean.findIndex(function (c) { return parKey(c.date, c.punchType, breakIntentCell_(c.breakIntent), c.time) === key; });
         if (isResume && ci >= 0 && clean[ci].action === 'set' && clean[ci].punchType === 'ClockOut') {
           const backAt = normalizeTime_(existing[i][PAR.REQ_TIME]).trim().substring(0, 5);
           if (!(clean[ci].time > backAt)) {
@@ -7420,18 +7560,13 @@ function punchAdjustDecideAll_(reqIds, newStatus) {
         }
         const endTime = parEndTime_(rows[i]);   // T3 — '' when none was filed
         if (action === 'resume') {
-          const res = resumeShiftForEmployee_(targetEmp, date, reqTime, callerEmp.email, reason, endTime);
+          const res = resumeShiftForEmployee_(targetEmp, date, reqTime, callerEmp.email, reason, endTime, ctxFor(empId));
           if (res && res.error) { fail(id, res.error); return; }
-          // F6: a resume writes OUTSIDE the ctx — it retypes the ClockOut row
-          // to ADJ-LunchOut and appends an ADJ-LunchIn — so this employee's
-          // cached index no longer describes the sheet. Drop it; the next
-          // request for them rebuilds from the sheet as it now stands. Today's
-          // (date, punchType) dup guard makes the worst read (a later ClockOut
-          // set landing on the row the resume just converted, undoing the
-          // unpaid gap) unreachable, but that guard is a distant invariant to
-          // rest a payroll write on. Cost is one extra read, only in a batch
-          // that actually contains a resume.
-          delete ctxByEmp[empId];
+          // F6 → F62 (cycle 25): the resume writes THROUGH the ctx and keeps it
+          // current (the Clock Out row retyped, the Lunch In appended, the
+          // finish written by the same writer), so this employee's index is
+          // kept — the batch used to drop it and re-read the whole Timesheet
+          // for the next request, inside the one project lock.
         } else {
           // TC-02 (cycle 23): a break request carries what it means ('add' or
           // 'correct@HH:mm'); the writer refuses a target that is gone (the day
@@ -7451,9 +7586,9 @@ function punchAdjustDecideAll_(reqIds, newStatus) {
           }
           const w = writeAdjustPunchForEmployee_(targetEmp, date, punchType, reqTime, callerEmp.email, reason, ctxFor(empId), breakTarget);
           if (w && w.error) { fail(id, w.error); return; }
-          // An APPENDED break, or a correction, changes what this employee's
-          // cached index says about that day (F6's rule) — drop it, as a resume does.
-          if (BREAK_PUNCH_TYPES.indexOf(punchType) >= 0) delete ctxByEmp[empId];
+          // F62 (cycle 25): an appended break or a correction is recorded in
+          // the index by the writer itself (adjustIndexAppend_ / the time
+          // update), so the index is kept — no re-read for the next request.
         }
         // M-7: the decision email is DEFERRED to the post-lock finally — a
         // MailApp send inside the ONE project lock stalls every rep's punch.
@@ -7608,12 +7743,18 @@ function parEndTime_(row) {
   const hm = normalizeTime_(v).trim().substring(0, 5);
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(hm) ? hm : '';
 }
-function resumeShiftForEmployee_(targetEmp, date, resumeTime, actorEmail, reason, endTime) {
+function resumeShiftForEmployee_(targetEmp, date, resumeTime, actorEmail, reason, endTime, ctx) {
   // Re-validate at APPROVAL time: the day can be edited while the request
   // waits, and converting a ClockOut that is no longer there would leave the
   // rep with a LunchIn and no matching leave (an unpaired half, which
   // breakPairs_ correctly drops — silently costing them the whole reopening).
-  const co = findExistingPunch_(targetEmp.id, date, 'ClockOut');
+  // F62 (cycle 25): through the caller's adjust index (one Timesheet read for
+  // a whole bulk batch), kept current below, so the batch need not re-read the
+  // sheet after a resume. Without one, a one-date index is the single read.
+  const c = ctx || (function () { const ds = {}; ds[date] = true; return buildAdjustPunchIndex_(targetEmp.id, ds); })();
+  const coList = (c.all || {})[date + '|ClockOut'] || [];
+  const coLast = coList.length ? coList[coList.length - 1] : null;
+  const co = coLast ? { sheet: c.sheet, rowIndex: coLast.rowIndex, time: coLast.time } : null;
   if (!co) {
     return { error: 'There is no Clock Out on ' + date + ' any more — deny this request ' +
       '(the day was edited since it was filed).' };
@@ -7642,6 +7783,10 @@ function resumeShiftForEmployee_(targetEmp, date, resumeTime, actorEmail, reason
   // Convert in place — the row keeps its TIME and changes only what it means.
   co.sheet.getRange(co.rowIndex, ADP.COMMENTS + 1).setValue(sheetSafe_('ADJ-LunchOut'));
   appendToAdpSheet_(targetEmp, date, inFull, 'IN', 'ADJ-LunchIn');
+  // F62: the index says what the sheet now says — the Clock Out row is a Lunch
+  // Out, and a Lunch In sits at the new last row.
+  adjustIndexRetype_(c, date, co.rowIndex, 'ClockOut', 'LunchOut');
+  adjustIndexAppend_(c, date, 'LunchIn', c.sheet.getLastRow(), resumeTime);
   if (targetEmp.sheetId) {
     // Best-effort mirror (INV-59): drop the stale Clock Out, write the pair.
     try { clearFromEmployeeSheet_(targetEmp, date, 'ClockOut'); } catch (e) {}
@@ -7657,9 +7802,31 @@ function resumeShiftForEmployee_(targetEmp, date, resumeTime, actorEmail, reason
   // converted, so this APPENDS (writeAdjustPunchForEmployee_ finds no ClockOut).
   if (end) {
     writeAdjustPunchForEmployee_(targetEmp, date, 'ClockOut', end, actorEmail,
-      'finish of a resumed shift' + (reason ? ' — ' + reason : ''));
+      'finish of a resumed shift' + (reason ? ' — ' + reason : ''), c);
   }
   return {};
+}
+/** PURE (Node-pinned; F62, cycle 25) — keep an adjust index current after a
+ *  row on `date` is RETYPED in place: it leaves `fromType`'s list and joins
+ *  `toType`'s in sheet order; each key's `idx` stays its last row. */
+function adjustIndexRetype_(ix, date, rowIndex, fromType, toType) {
+  if (!ix || !ix.all) return;
+  const fk = date + '|' + fromType, tk = date + '|' + toType;
+  let moved = null;
+  ix.all[fk] = (ix.all[fk] || []).filter(function (m) { if (m.rowIndex === rowIndex) { moved = m; return false; } return true; });
+  if (!moved) return;
+  if (ix.all[fk].length) ix.idx[fk] = ix.all[fk][ix.all[fk].length - 1].rowIndex; else { delete ix.all[fk]; delete ix.idx[fk]; }
+  const tl = (ix.all[tk] || (ix.all[tk] = []));
+  tl.push(moved);
+  tl.sort(function (a, b) { return a.rowIndex - b.rowIndex; });
+  ix.idx[tk] = tl[tl.length - 1].rowIndex;
+}
+/** PURE (F62) — an appended row of `type` on `date` at `rowIndex` (HH:mm `time`). */
+function adjustIndexAppend_(ix, date, type, rowIndex, time) {
+  if (!ix || !ix.all) return;
+  const k = date + '|' + type;
+  (ix.all[k] || (ix.all[k] = [])).push({ rowIndex: rowIndex, time: String(time).substring(0, 5) });
+  ix.idx[k] = rowIndex;
 }
 /** Writes a single ADJ-{punchType} punch for a TARGET employee (the approve
  *  path). Find-existing-of-that-type-for-date → update, else append; mirrors
@@ -7691,11 +7858,7 @@ function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEma
     ((c.all || {})[key] || []).forEach(function (m) { if (m.rowIndex === target.rowIndex) m.time = time; });
   } else {
     appendToAdpSheet_(targetEmp, date, timeFull, dir, commentLabel);
-    if (c.all) {
-      const ri = c.sheet.getLastRow();
-      (c.all[key] || (c.all[key] = [])).push({ rowIndex: ri, time: time });
-      c.idx[key] = ri;
-    }
+    if (c.all) adjustIndexAppend_(c, date, punchType, c.sheet.getLastRow(), time);
   }
   if (targetEmp.sheetId) {
     try { writeToEmployeeSheet_(targetEmp, date, timeFull, dir, punchType); } catch (e) {}
@@ -7718,19 +7881,16 @@ function breakIntentNote_(punchType, intent) {
  *  snapshot (INV-155).
  *
  *  THE PRECONDITION, which a caller owes and must re-derive (F6, 2026-09-09):
- *  every write during the index's lifetime goes THROUGH the index, and each
- *  (date, type) is written at most once — so an append can never collide with
- *  a later lookup and the index never needs updating mid-run.
- *  `managerSaveDayRange` satisfies it by construction (one slot per type per
- *  day). `punchAdjustDecideAll_` satisfies it only for `set` requests: a
- *  `resume` decision writes through resumeShiftForEmployee_ instead — it
- *  RETYPES the ClockOut row to ADJ-LunchOut and appends an ADJ-LunchIn — so
- *  three keys for that date are stale the moment it lands, and that caller
- *  DISCARDS the employee's cached index rather than reasoning about which of
- *  them a later request in the same batch might read. A BREAK-type `set`
- *  (TC-02, cycle 23) is discarded the same way: it may APPEND a row the index
- *  never saw, or move the stamp a later correction targets. Any new write path
- *  added to a ctx-bearing loop owes the same. */
+ *  every write during the index's lifetime goes THROUGH the index and leaves
+ *  it describing the sheet. Since cycle 25 F62 every writer that takes the
+ *  index keeps it current: `writeAdjustPunchForEmployee_` records an append
+ *  (`adjustIndexAppend_`) or a moved time, and `resumeShiftForEmployee_`
+ *  records the Clock Out it RETYPES to a Lunch Out (`adjustIndexRetype_`) and
+ *  the Lunch In it appends — so `punchAdjustDecideAll_` keeps one index per
+ *  employee for the whole batch instead of discarding it after a resume or a
+ *  break write and re-reading the Timesheet inside the lock. A write path that
+ *  touches the Timesheet WITHOUT going through the index must still make its
+ *  caller discard it. */
 function buildAdjustPunchIndex_(empId, dateSet) {
   const sheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
   const rows = sheet.getDataRange().getValues();

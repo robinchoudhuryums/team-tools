@@ -596,7 +596,12 @@ function renderTimesheetSideRail_(d) {
   const daysWorked = Number(d.daysWorked) || 0;
   // Target: biweekly = 80h; monthly = 8h × business days in the range.
   let targetHours;
-  if (d.payCycle === 'Biweekly') {
+  // F18 (cycle 25): 80h is a 14-day PERIOD's target. A biweekly rep shown the
+  // calendar month (no org anchor on the roster) is measured like everyone
+  // else on a month, never against 80.
+  const spanDays = (d.startDate && d.endDate)
+    ? Math.round((Date.parse(d.endDate + 'T12:00:00Z') - Date.parse(d.startDate + 'T12:00:00Z')) / 86400000) + 1 : 0;
+  if (d.payCycle === 'Biweekly' && spanDays === 14) {
     targetHours = 80;
   } else {
     // Count weekdays in days[]

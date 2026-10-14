@@ -453,6 +453,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   trigger running as the one installer, so the user lock serialises them all,
   and nothing else takes that lock inside a job. Verify: the A8 driven pin (the
   script lock is never touched; a contended lock still writes).
+  **AMENDED (cycle 25 F62): what runs INSIDE the lock is every rep's wait.** A
+  bulk approval dropped its per-employee Timesheet index after each resume or
+  break write and re-read the whole tab for the next request, and a 31-day
+  time-off range read its tab once per day. The adjust writers now keep the
+  index current (`adjustIndexAppend_`, `adjustIndexRetype_`, the resume writing
+  through it), and the range reads once (`timeOffActiveDates_`) and writes one
+  block. Verify: the F62 drive.
 
 
 <a id="g18-normalizetype-strips-the-adj-prefix"></a>
@@ -791,6 +798,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   rep's anchor the pay-period boundary with no warning). Multiple biweekly
   anchors in the Employees sheet are not supported — the second
   one is silently ignored.
+  **AMENDED (cycle 25 F18): the anchor is the ORG's, and every biweekly rep
+  reads it.** Onboarding allows one anchor on the roster, so only its holder had
+  a `payAnchor` — every other biweekly rep's Time / PTO rail fell back to the
+  calendar month under an 80-hour target. `orgBiweeklyAnchor_` (the rule the
+  biweekly export already used) now fills a biweekly rep's blank cell in both
+  employee lookups, and the rail's 80 hours is the target of a 14-day range
+  only. Verify: the F18 drive.
 
 <a id="g30-future-punches-are-rejected-by-recordpunch"></a>
 
@@ -818,6 +832,12 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   mistakes must go through Adjust so they leave a clear `ADJ-*` row
   in the audit log. Self-undo writes a `PunchSelfUndo` audit row
   before deletion.
+  **AMENDED (cycle 25 F61): only the day's LAST punch.** Inside the 5-minute
+  window a rep could undo a Clock In under a Lunch Out made two minutes later,
+  leaving a break with no clock-in — an orphan day no hours are read from. The
+  server refuses an undo with a later punch on the day (`selfUndoLaterPunch_`,
+  across midnight too) and the punch list shows the button on the last punch
+  only. Verify: the F61 drive.
 
 <a id="g33-getteammatestatus-is-the-low-privilege-view"></a>
 
@@ -4272,6 +4292,11 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   F-07 pin (the two vocabularies agree on nine (value, target, band) triples,
   the null-band and Transfer % branches, both delegations) and the F-08 pin's
   `threshold || \d` ban over the Metrics partial.
+  **AMENDED (cycle 25, the Batch 6b follow-on): a card that shows two WINDOWS
+  names each.** The Dashboard's Spanish card put a 30-day pending count beside
+  a 7-day median and labelled neither ("Resolved · 7d" was a literal). Each
+  figure now names its window from its own payload's `days`, and an older
+  payload with none shows none. Verify: the Batch 6b follow-on drive.
 
 <a id="g132-a-test-that-appends-to-a-gate"></a>
 
@@ -5230,6 +5255,16 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   `SPANISH_PENDING_WINDOW_DAYS`, which IS the tab's default. RULE: two surfaces
   that say "pending" read the same window. Verify: the F14 drive (the real
   Needs-you block over a 10-day-old claim).
+  **AMENDED (cycle 25 F17): the accrual reconcile's own LEDGER was a row-count
+  tail.** `readAccrualLedger_` reads the newest 5,000 AuditLog rows for the
+  `PtoAccrualCredit` rows, and the reconcile walks only the (rep, month) keys it
+  found — so on a busy log a month whose row scrolled out was never re-valued,
+  and the "truncated" finding stayed on for good. Each PtoAccrualCredit row now
+  also records its month in a per-rep side copy (`PTO_ACCRUAL_LEDGER_<empId>`,
+  the cycle-22 A1 run-ledger pattern); the read merges the two (the higher
+  hours win), and once the side copy began at or before the window's oldest
+  month a cut-short tail is no longer reported. A failed side write drops the
+  coverage claim. Verify: the F17 drive.
 
 <a id="g153-clearing-the-roster-email-does-not-reach-the-gate-lists"></a>
 
@@ -5559,6 +5594,10 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   when a write identifies a punch by its TYPE, or you add a punch type a day
   can hold more than once. Verify: the TC-02 pins (the resolver grid, the
   writer over a fake Timesheet, submit, approval/range, the modal DOM pins).
+  **AMENDED (cycle 25 F63): two ADDS are two requests.** The pending-duplicate
+  key was `date|type|add`, so a rep who forgot two breaks could file only one;
+  an add's key now carries its time (`add@HH:mm`), and the same add at the same
+  time is still one request. Verify: the F63 drive.
 
 <a id="g164-a-row-fetched-by-index-must-carry-its-key"></a>
 

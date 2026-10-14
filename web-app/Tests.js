@@ -1020,6 +1020,15 @@ function cleanupTestData() {
     }
   } catch (e) { Logger.log('cleanupTestData: MANAGER_EMAILS strip skipped: ' + e.message); }
 
+  // F17 (cycle 25): the accrual ledger's side copy for a TEST_ rep — a by-key
+  // backstop for a killed run (g132).
+  try {
+    const ledProps = PropertiesService.getScriptProperties();
+    ledProps.getKeys().forEach(function (k) {
+      if (k.indexOf(PTO_ACCRUAL_LEDGER_PREFIX + 'TEST_') === 0) ledProps.deleteProperty(k);
+    });
+  } catch (e) { Logger.log('cleanupTestData: accrual side-ledger sweep skipped: ' + e.message); }
+
   // F-22 (2026-09-18): the two LIVE tabs the suite probes and never swept.
   // DeptRequests (its own store or the ADP fallback) and ClientErrors carry
   // TEST_-keyed rows from three self-cleaning tests whose own tidy-up ran in
@@ -1074,6 +1083,8 @@ function _clearTestState(empId) {
   _clearRowsByEmp(ss.getSheetByName(CONFIG.TIMEOFF_TAB), empId, TO.EMP_ID,  2);
   _clearRowsByEmp(ss.getSheetByName(CONFIG.PUNCH_ADJUST_TAB), empId, PAR.EMP_ID, 2);
   _clearRowsByEmp(ss.getSheetByName(CONFIG.AUDIT_TAB),   empId, 1,          2);
+  // F17 (cycle 25): the accrual ledger's side copy is part of the same baseline.
+  try { PropertiesService.getScriptProperties().deleteProperty(PTO_ACCRUAL_LEDGER_PREFIX + empId); } catch (e) {}
 
   const empSheet = ss.getSheetByName(CONFIG.EMPLOYEE_TAB);
   const rows = empSheet.getDataRange().getValues();
