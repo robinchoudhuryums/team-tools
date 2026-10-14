@@ -10,6 +10,14 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-14 — the reviewers' full handbook PDF leaves out the changelog
+
+**Adds NO operator state.** Rebuild with `./make_packets.sh`. The full handbook
+PDF in `review-packets/pdf/` no longer carries Appendix D (the changelog, about
+14 pages) — it is only useful to the owner; its contents row goes too, and the
+front page lists the appendices without it. The HTML handbook, the Word file and
+the app keep the changelog. The chapter PDFs never had it.
+
 ## 2026-10-13 — the Policies & Procedures Handbook, and PDFs in its digital design
 
 **Operator actions:** deploy the web app (the Reference reader's labels changed),

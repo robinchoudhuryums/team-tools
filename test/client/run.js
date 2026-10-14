@@ -35277,7 +35277,7 @@ test('PK-7 (review PDFs, operator 2026-10-13): the full handbook and each review
   const py = fs.readFileSync(path.join(MAN, 'make_review_pdfs.py'), 'utf8');
   assert.ok(/CHAPTERS = sorted\(\{"p10" if k == "denials" else k for k in KEYS\}/.test(py), 'one PDF per chapter a packet reviews (Denials reviews Chapter 10), derived from the packets');
   assert.ok(/HTML = os\.path\.join\(MANUAL_OUT, BASE \+ "\.html"\)/.test(py) && !/soffice|render_docx|md2model/.test(py), 'printed from the built HTML handbook — not the Word file (operator: the Word PDFs did not match the digital design)');
-  assert.ok(/page\.evaluate\(KEEP_CHAPTER, part\)/.test(py) && /page\.evaluate\("document\.body\.classList\.add\('print-doc'\)"\)/.test(py), 'a chapter is cut in the page, then the print-doc mode prints');
+  assert.ok(/page\.evaluate\(CUT, \[part, DROP_FROM_FULL\]\)/.test(py) && /DROP_FROM_FULL = \["apd"\]/.test(py) && /replace\(', changelog and index', ' and index'\)/.test(py) && /page\.evaluate\("document\.body\.classList\.add\('print-doc'\)"\)/.test(py), 'a chapter is cut in the page — and the full handbook drops Appendix D, the changelog (operator 2026-10-14: only the owner uses it) — then the print-doc mode prints');
   assert.ok(/page\.pdf\([^)]*outline=True[^)]*tagged=True[^)]*display_header_footer=True[^)]*footer_template=FOOTER\)/.test(py) && /class="pageNumber"/.test(py) && /class="totalPages"/.test(py),
     'bookmarks (outline over a tagged PDF) and "Page N of M" on every page');
   assert.ok(/Confidential — Internal Use Only/.test(py.slice(py.indexOf('FOOTER = '))), 'the footer carries what check_pdf.py treats as page chrome, so a blank page is still caught');

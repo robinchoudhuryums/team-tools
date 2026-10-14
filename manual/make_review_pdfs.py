@@ -34,30 +34,38 @@ OUT = os.path.join(MANUAL_OUT, "review-packets", "pdf")
 # the chapters a packet reviews — the Denials packet reviews Chapter 10, like Billing's
 CHAPTERS = sorted({"p10" if k == "denials" else k for k in KEYS}, key=lambda k: int(k[1:]))
 
-# Run in the page: keep one chapter. Every main child from the chapter's first H1
-# up to the next H1 of another chapter stays; a link whose target is not kept
-# becomes its text, plus "(in the full handbook)" for a cross-reference.
-KEEP_CHAPTER = """(part) => {
+# Run in the page: choose what prints. A chapter PDF keeps one chapter (every main
+# child from its first H1 up to the next H1 of another part); the full handbook
+# keeps every part but DROP_FROM_FULL. A link whose target is not kept becomes its
+# text — plus "(in the full handbook)" for a cross-reference out of a chapter.
+CUT = """([part, drop]) => {
   const main = document.querySelector('main');
-  let on = false;
+  const keepPart = (p) => (part ? p === part : !drop.includes(p));
+  const partOf = (h1) => [...h1.classList].find((c) => c !== 'part') || '';
+  let on = !part;   // the full handbook keeps what comes before its first H1
   for (const k of main.children) {
     if (k.id === 'pdfdoc' || k.id === 'ctx') continue;
-    if (k.matches('h1.part')) on = k.classList.contains(part);
+    if (k.matches('h1.part')) on = keepPart(partOf(k));
     if (!on) k.classList.add('pdf-skip');
   }
-  document.querySelectorAll('#pdftoc li').forEach((li) => { if (li.dataset.part !== part) li.classList.add('pdf-skip'); });
+  document.querySelectorAll('#pdftoc li').forEach((li) => { if (!keepPart(li.dataset.part)) li.classList.add('pdf-skip'); });
   const kept = [...main.children].filter((k) => k.id !== 'pdfdoc' && k.id !== 'ctx' && !k.classList.contains('pdf-skip'));
   const ids = new Set();
   kept.forEach((k) => { if (k.id) ids.add(k.id); k.querySelectorAll('[id]').forEach((e) => ids.add(e.id)); });
   let localised = 0;
   kept.forEach((k) => k.querySelectorAll('a[href^="#"]').forEach((a) => {
     if (ids.has(decodeURIComponent(a.getAttribute('href').slice(1)))) return;
-    a.replaceWith(document.createTextNode(a.textContent + (a.classList.contains('xr') ? ' (in the full handbook)' : '')));
+    a.replaceWith(document.createTextNode(a.textContent + (part && a.classList.contains('xr') ? ' (in the full handbook)' : '')));
     localised++;
   }));
-  const h1 = main.querySelector('h1.part.' + part);
+  const h1 = part ? main.querySelector('h1.part.' + part) : null;
   return { title: h1 ? h1.textContent.trim() : '', localised, kept: kept.length };
 }"""
+
+# The full handbook a reviewer gets leaves out Appendix D, the changelog: tens of
+# pages that only the owner uses (operator 2026-10-14). The HTML handbook and the
+# app keep it.
+DROP_FROM_FULL = ["apd"]
 
 NOTE = ("This chapter on its own, for review. A section number links to its section; "
         "a section in another chapter is marked “(in the full handbook)”.")
@@ -101,9 +109,13 @@ def print_pdf(page, part, path):
     page.goto("file://" + os.path.abspath(HTML))
     page.evaluate("document.fonts.ready")
     page.wait_for_timeout(400)
-    info = {}
+    info = page.evaluate(CUT, [part, DROP_FROM_FULL])
+    if not part:   # the front page lists the appendices — this copy has no changelog
+        page.evaluate("""() => {
+          const w = document.createTreeWalker(document.getElementById('howto'), NodeFilter.SHOW_TEXT);
+          for (let n; (n = w.nextNode());) n.nodeValue = n.nodeValue.replace(', changelog and index', ' and index');
+        }""")
     if part:
-        info = page.evaluate(KEEP_CHAPTER, part)
         if not info["kept"] or not info["title"]:
             raise SystemExit(f"{part}: no chapter of that class in {HTML}")
         page.evaluate("""([t, note]) => {

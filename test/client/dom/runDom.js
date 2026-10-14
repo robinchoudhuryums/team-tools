@@ -7170,32 +7170,42 @@ test('DRV-3 DOM: a pasted screenshot is fitted to 1600 px / 1.5 MB in the browse
   assert.ok(ta.value.indexOf('evil.example') < 0 && ta.value.indexOf('kbpaste:pending') < 0, 'a malformed token is never inserted — the placeholder goes');
 });
 
-test('PK-7 DOM (review PDFs, operator 2026-10-13): a chapter PDF keeps its chapter (both of Chapter 10\'s H1s, nothing of Chapter 1 or the appendices), drops the other contents rows, and turns a link to a section it does not carry into plain text "(in the full handbook)" — a link inside it stays (driven over make_review_pdfs.py\'s own KEEP_CHAPTER)', () => {
+test('PK-7 DOM (review PDFs, operator 2026-10-13): a chapter PDF keeps its chapter (both of Chapter 10\'s H1s, nothing of Chapter 1 or the appendices), drops the other contents rows, and turns a link to a section it does not carry into plain text "(in the full handbook)" — a link inside it stays — and the full handbook drops its changelog (operator 2026-10-14) (driven over make_review_pdfs.py\'s own CUT)', () => {
   const fs = require('fs'), path = require('path');
   const { JSDOM } = require('jsdom');
   const py = fs.readFileSync(path.join(__dirname, '../../../manual/make_review_pdfs.py'), 'utf8');
-  const open = 'KEEP_CHAPTER = """', at = py.indexOf(open) + open.length;
+  const open = 'CUT = """', at = py.indexOf(open) + open.length;
   const src = py.slice(at, py.indexOf('"""', at));
-  const dom = new JSDOM('<main><div id="ctx"></div><div id="pdfdoc"><ol id="pdftoc"><li data-part="top"></li><li data-part="p1"></li><li data-part="p10"></li></ol></div>' +
+  const fixture = '<main><div id="ctx"></div><div id="pdfdoc"><ol id="pdftoc"><li data-part="top"></li><li data-part="p1"></li><li data-part="p10"></li><li data-part="apa"></li></ol></div>' +
     '<h1 class="part top" id="top">Title</h1><section class="start" id="howto">x</section><hr>' +
     '<h1 class="part p1" id="p1">Chapter 1 — Call Handling</h1><h2 id="1-1">1.1</h2><p>see <a class="xr" href="#10-2">10.2 Billing</a></p><hr>' +
     '<h1 class="part p10" id="p10">Chapter 10 — Billing &amp; Denials</h1><h2 id="10-2">10.2</h2><p><a class="xr" href="#10-3">10.3 Ref</a> and <a class="xr" href="#1-1">1.1 Call</a> and <a class="xr" href="#role-sales">Sales Q</a></p>' +
-    '<h1 class="part p10" id="p10-1">Chapter 10 — Billing reference</h1><h2 id="10-3">10.3</h2>' +
-    '<h1 class="part apa" id="apa">Appendix A</h1><h2 id="A-1">A.1</h2></main>', { runScripts: 'outside-only' });
+    '<h1 class="part p10" id="p10-1">Chapter 10 — Billing reference</h1><h2 id="10-3">10.3</h2><p id="pz">see <a class="xr" href="#A-1">A.1 Terms</a></p>' +
+    '<h1 class="part apa" id="apa">Appendix A</h1><h2 id="A-1">A.1</h2></main>';
+  const dom = new JSDOM(fixture, { runScripts: 'outside-only' });
   const keep = dom.window.eval('(' + src + ')');
-  const r = keep('p10');
+  const r = keep(['p10', []]);
   const d = dom.window.document, skipped = (id) => d.getElementById(id).classList.contains('pdf-skip');
   assert.deepStrictEqual(['top', 'p1', '1-1', 'p10', '10-2', 'p10-1', '10-3', 'apa', 'A-1'].map(skipped), [true, true, true, false, false, false, false, true, true], 'Chapter 10, both halves, and nothing else');
   assert.ok(!skipped('pdfdoc') && !skipped('ctx'), 'the cover and contents block is never skipped');
-  assert.deepStrictEqual([...d.querySelectorAll('#pdftoc li')].map((li) => li.classList.contains('pdf-skip')), [true, true, false], 'the contents keep only the chapter\'s rows');
+  assert.deepStrictEqual([...d.querySelectorAll('#pdftoc li')].map((li) => li.classList.contains('pdf-skip')), [true, true, false, true], 'the contents keep only the chapter\'s rows');
   const p = d.getElementById('10-2').nextElementSibling;
   assert.strictEqual(p.querySelectorAll('a').length, 1, 'only the in-chapter link survives');
   assert.strictEqual(p.querySelector('a').getAttribute('href'), '#10-3');
   assert.ok(/1\.1 Call \(in the full handbook\)/.test(p.textContent) && /Sales Q \(in the full handbook\)/.test(p.textContent), 'links out — a section, a directory role — say where they are');
-  assert.deepStrictEqual([r.title, r.localised], ['Chapter 10 — Billing & Denials', 2], 'the cover takes the chapter title; two links made plain');
+  assert.deepStrictEqual([r.title, r.localised], ['Chapter 10 — Billing & Denials', 3], 'the cover takes the chapter title; three links made plain');
+  assert.strictEqual(d.getElementById('pz').textContent, 'see A.1 Terms (in the full handbook)');
   // Chapter 1 must not keep Chapter 10 (p1 is not a prefix match of p10)
   const dom2 = new JSDOM(dom.serialize().replace(/\s?pdf-skip/g, ''), { runScripts: 'outside-only' });
-  dom2.window.eval('(' + src + ')')('p1');
+  dom2.window.eval('(' + src + ')')(['p1', []]);
   const d2 = dom2.window.document;
   assert.deepStrictEqual(['p1', '1-1', 'p10', '10-3'].map((id) => d2.getElementById(id).classList.contains('pdf-skip')), [false, false, true, true], 'p1 is its own chapter, not every class starting p1');
+  // the full handbook (no chapter) keeps every part but the dropped ones — the changelog in production — and a link into a dropped part is plain text, with no "(in the full handbook)" in the full handbook itself
+  const dom3 = new JSDOM(fixture, { runScripts: 'outside-only' });
+  const r3 = dom3.window.eval('(' + src + ')')([null, ['apa']]);
+  const d3 = dom3.window.document;
+  assert.deepStrictEqual(['top', 'howto', 'p1', '1-1', 'p10', '10-3', 'apa', 'A-1'].map((id) => d3.getElementById(id).classList.contains('pdf-skip')), [false, false, false, false, false, false, true, true], 'everything but the dropped appendix');
+  assert.deepStrictEqual([...d3.querySelectorAll('#pdftoc li')].map((li) => li.classList.contains('pdf-skip')), [false, false, false, true], 'its contents row goes too');
+  assert.strictEqual(d3.getElementById('pz').textContent, 'see A.1 Terms', 'a link into the dropped part is plain text, without the chapter PDF\'s suffix');
+  assert.ok(!d3.querySelector('#pz a') && r3.title === '', 'no link left behind; no chapter title on a full cut');
 });
