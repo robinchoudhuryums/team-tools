@@ -2544,6 +2544,15 @@ const CN_DEFAULT_FILTERS = ['all','action','training','review','unresolved','ans
 const CN_CLEAR_UNDO_WINDOW_MS = 30000;  // window during which Ctrl/⌘+Z restores a just-cleared form
 const CN_FORM_STARTED_LS_KEY = 'umsCallNotesFormStartedAt';  // persists across refresh so completion-time stays accurate
 const CN_FORM_STICKY_LS_KEY  = 'umsCallNotesActiveFormDraft'; // sticky-form: in-progress draft restored on next load
+// F40(e) (cycle 25, operator option 1, 2026-10-14): the main window and the
+// Call Notes pop-out share the ONE draft slot above. Each page load has an id
+// (memory only — never stored on its own), every draft records the id that
+// wrote it, and a window owns only its own: it never clears or empties another
+// window's draft, and another window's draft — or one from before a reload,
+// which cannot be told apart — is OFFERED on the Log, never loaded silently
+// into this form. A draft with no id (written before this change) restores as
+// it always did.
+const CN_WINDOW_ID = 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 // Draft TTL — the sticky draft carries PHI (patient name/TRX, issue text) in
 // the browser's localStorage, so it must not linger indefinitely on a shared
 // computer. 24h covers an overnight resume; older drafts are wiped on the
@@ -3886,6 +3895,7 @@ function cnPersistActiveFormDraft_() {
       reviewC: rcVal,      // Round-1 #1
       direction: dirVal,   // Round-1 #2
       at: Date.now(),   // drafts expire after CN_FORM_STICKY_MAX_AGE_MS (PHI TTL)
+      by: CN_WINDOW_ID,   // F40(e): the window that wrote it
     };
     const anyContent = Object.keys(values).some(function (k) { return (values[k] || '').trim(); })
                     || flags.length > 0 || tags.length > 0 || dirVal
@@ -3893,8 +3903,8 @@ function cnPersistActiveFormDraft_() {
                     || (data.reviewC && data.reviewC.trim());
     if (anyContent) {
       localStorage.setItem(CN_FORM_STICKY_LS_KEY, JSON.stringify(data));
-    } else {
-      localStorage.removeItem(CN_FORM_STICKY_LS_KEY);
+    } else if (cnStickyDraftIsMine_()) {
+      localStorage.removeItem(CN_FORM_STICKY_LS_KEY);   // F40(e): an empty form never removes ANOTHER window's draft
     }
   } catch (e) { /* localStorage unavailable — accept the loss */ }
 }
@@ -4029,42 +4039,101 @@ function cnLoadTagSuggestions_() {
 
 /** Sticky form: on view enter (after the form is rendered) restore the
  *  draft from localStorage. No-op if no draft exists. */
-function cnRestoreActiveFormDraft_() {
+/** F40(e) — the live (inside the PHI TTL) draft in the slot, or null. An
+ *  expired one is wiped, as before. */
+function cnReadStickyDraft_() {
+  const raw = localStorage.getItem(CN_FORM_STICKY_LS_KEY);
+  if (!raw) return null;
+  const data = JSON.parse(raw);
+  // PHI TTL: a draft older than CN_FORM_STICKY_MAX_AGE_MS is wiped, not
+  // restored (shared-computer hygiene). Legacy drafts without `at` (saved
+  // pre-TTL) restore this once and pick up a timestamp on the next persist.
+  if (data && data.at && (Date.now() - data.at) > CN_FORM_STICKY_MAX_AGE_MS) {
+    localStorage.removeItem(CN_FORM_STICKY_LS_KEY);
+    cnFormTimerReset_();
+    return null;
+  }
+  return data || null;
+}
+/** F40(e) — is the slot's draft this window's (or an un-owned legacy one)? */
+function cnStickyDraftIsMine_() {
   try {
     const raw = localStorage.getItem(CN_FORM_STICKY_LS_KEY);
-    if (!raw) return false;
+    if (!raw) return true;
     const data = JSON.parse(raw);
-    // PHI TTL: a draft older than CN_FORM_STICKY_MAX_AGE_MS is wiped, not
-    // restored (shared-computer hygiene). Legacy drafts without `at` (saved
-    // pre-TTL) restore this once and pick up a timestamp on the next persist.
-    if (data && data.at && (Date.now() - data.at) > CN_FORM_STICKY_MAX_AGE_MS) {
-      localStorage.removeItem(CN_FORM_STICKY_LS_KEY);
-      cnFormTimerReset_();
-      return false;
+    return !data || !data.by || data.by === CN_WINDOW_ID;
+  } catch (e) { return true; }
+}
+function cnApplyStickyDraft_(data) {
+  Object.keys(data.values || {}).forEach(function (k) {
+    cnSetFieldValue_('cn-fld-' + k, data.values[k] || '');
+  });
+  const form = document.getElementById('cn-active-form');
+  if (form) {
+    if (Array.isArray(data.flags) && data.flags.length > 0) {
+      cnSetFormFlags_(form, data.flags);
+    } else if (data.flag) {
+      cnSetFormFlags_(form, [data.flag]);
     }
-    Object.keys(data.values || {}).forEach(function (k) {
-      cnSetFieldValue_('cn-fld-' + k, data.values[k] || '');
-    });
-    const form = document.getElementById('cn-active-form');
-    if (form) {
-      if (Array.isArray(data.flags) && data.flags.length > 0) {
-        cnSetFormFlags_(form, data.flags);
-      } else if (data.flag) {
-        cnSetFormFlags_(form, [data.flag]);
-      }
-      if (Array.isArray(data.tags) && data.tags.length > 0) {
-        cnSetFormTags_(form, data.tags);
-      }
-      if (data.direction) cnSetFormDirection_(form, data.direction);   // Round-1 #2
+    if (Array.isArray(data.tags) && data.tags.length > 0) {
+      cnSetFormTags_(form, data.tags);
     }
-    if (data.trainingQ) cnSetFieldValue_('cn-fld-training-q', data.trainingQ);
-    if (data.reviewC) cnSetFieldValue_('cn-fld-review-c', data.reviewC);   // Round-1 #1
+    if (data.direction) cnSetFormDirection_(form, data.direction);   // Round-1 #2
+  }
+  if (data.trainingQ) cnSetFieldValue_('cn-fld-training-q', data.trainingQ);
+  if (data.reviewC) cnSetFieldValue_('cn-fld-review-c', data.reviewC);   // Round-1 #1
+}
+function cnRestoreActiveFormDraft_() {
+  try {
+    const data = cnReadStickyDraft_();
+    if (!data) return false;
+    // F40(e): another window's draft (or this window's before a reload) is
+    // offered, not loaded — it may be a different caller's note.
+    if (data.by && data.by !== CN_WINDOW_ID) { cnOfferForeignDraft_(data); return false; }
+    cnApplyStickyDraft_(data);
     return true;
   } catch (e) { return false; }
 }
+/** F40(e) — "an unsaved note is waiting": Restore loads it into this form and
+ *  this window takes it over; Not now leaves it in the slot (asked once per
+ *  draft per page). If the rep has typed into the form by the time they answer,
+ *  Restore shows the draft in the copy dialog instead of overwriting their
+ *  typing (g68: an async fill never lands on top of what was typed). */
+function cnOfferForeignDraft_(data) {
+  if (CN_STATE.foreignDraftAsked === data.at) return;
+  CN_STATE.foreignDraftAsked = data.at;
+  const v = data.values || {};
+  const what = String(v.patient || v.caller || v.issue || '').trim();
+  let when = '';
+  try { when = new Date(data.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); } catch (e) {}
+  uiConfirm({
+    title: 'Restore an unsaved call note?',
+    message: 'A call note that was not saved is waiting' + (when ? ' (last typed ' + when + ')' : '') +
+      (what ? ': ' + (what.length > 60 ? what.slice(0, 60) + '…' : what) : '') +
+      '. It came from another Call Notes window, or from before this page reloaded.',
+    confirmLabel: 'Restore', cancelLabel: 'Not now',
+  }).then(function (ok) {
+    if (!ok) return;
+    let cur = null;
+    try { cur = cnReadStickyDraft_(); } catch (e) { cur = null; }
+    if (!cur || cur.at !== data.at) cur = data;   // the slot moved on meanwhile: restore what was offered
+    const form = document.getElementById('cn-active-form');
+    const typed = form && ['callback','caller','relationship','patient','issue','transferred','resolution']
+      .some(function (k) { return String(cnGetFieldValue_('cn-fld-' + k) || '').trim(); });
+    if (!form || typed) {
+      const cv = cur.values || {};
+      manualCopyModal_(cnFormatNoteForCopy_(Object.assign({}, cv, { patientAndTrx: cv.patient })), 'The unsaved call note');
+      return;
+    }
+    cnApplyStickyDraft_(cur);
+    cnPersistActiveFormDraft_();   // this window owns it now
+  });
+}
 
 function cnClearStickyFormDraft_() {
-  try { localStorage.removeItem(CN_FORM_STICKY_LS_KEY); } catch (e) {}
+  // F40(e): a save or a clear in THIS window empties only this window's draft —
+  // the pop-out's save used to wipe the main window's unsaved note too.
+  try { if (cnStickyDraftIsMine_()) localStorage.removeItem(CN_FORM_STICKY_LS_KEY); } catch (e) {}
 }
 
 /** Voice-to-text mic markup, gated on (a) CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED
@@ -4473,6 +4542,7 @@ function cnSaveSnapshotAsStickyDraft_(snap) {
       reviewC: snap.reviewC || '',        // Round-1 #1
       direction: snap.direction || '',    // Round-1 #2
       at: Date.now(),
+      by: CN_WINDOW_ID,   // F40(e)
     }));
   } catch (e) { /* localStorage unavailable — the clipboard copy is the fallback */ }
 }

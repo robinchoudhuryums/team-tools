@@ -686,6 +686,14 @@ function mLoadMyStats_(opts) {
     // then drop the RENDER if a newer load superseded this one (M-6).
     if (data && !data.error) M_STATE.myCache[key] = { data: data, entry: { at: Date.now() } };
     if (currentView !== requestedView || seq !== M_STATE.mySeq) { done(); return; }
+    // F56 (cycle 25): a server {error} during a background refresh is a FAILED
+    // refresh — the transport-failure path below already keeps the painted
+    // last-good view; this one repainted it as an error card.
+    if (painted && (!data || data.error)) {
+      done();
+      showToast('Couldn’t refresh metrics — showing last loaded' + (data && data.error ? ' (' + data.error + ')' : ''), 'toast-warn');
+      return;
+    }
     mRenderMyStats_(data);
     done();
   };
@@ -743,7 +751,13 @@ function mRenderMyStats_(data) {
 
   // No CDR data → minimal fallback (per S43)
   if (!c) {
-    html += '<div class="m-empty">No call data found for ' + (isRange ? esc(data.from) + ' → ' + esc(data.to) : esc(data.date)) +
+    // F53 (cycle 25): `cdrUnavailable` means the call data could not be READ
+    // (F-47) — the quiet "No call data found" card read it as a day without
+    // calls (A12: a failure is never the empty state).
+    html += data.cdrUnavailable
+      ? errorStateHtml_('Call data could not be read for ' + (isRange ? data.from + ' → ' + data.to : data.date) +
+          ' — this is a read failure, not a day without calls. Try again shortly.')
+      : '<div class="m-empty">No call data found for ' + (isRange ? esc(data.from) + ' → ' + esc(data.to) : esc(data.date)) +
       '. This may be a non-working day/range, or the CDR spreadsheet is not yet configured.</div>';
     // C17-14 (cycle 17) — the cycle-16 F5 sweep fixed the CDR branch below
     // but missed this sibling: a failed note read rendered a confident
@@ -798,6 +812,10 @@ function mRenderMyStats_(data) {
     var firstLabel = trend[0].date ? trend[0].date.substring(5) : '';
     var lastLabel = trend[trend.length - 1].date ? trend[trend.length - 1].date.substring(5) : '';
     html += '<div class="m-hero-spark-labels"><span>' + esc(firstLabel) + '</span><span>' + esc(lastLabel) + '</span></div>';   // D7 (cycle 10) — the documented Metrics esc() rule
+  } else if (data.trendUnavailable) {
+    // F53 (cycle 25): the range's day-by-day read failed (L-3 ships the totals
+    // anyway) — the missing sparkline used to read as "too few days to draw".
+    html += '<div class="m-hero-bw" role="status" style="color:var(--warning-deep)">The day-by-day trend could not be read — the totals above are complete.</div>';
   }
   html += '</div>';
 
@@ -1372,7 +1390,8 @@ function mTeamActivePreset_() {
   var today = mTodayIso_();
   var f = M_STATE.teamFrom, t = M_STATE.teamTo;
   if (f === today && t === today) return 'today';
-  if (f === mDaysAgo_(1) && t === mDaysAgo_(1)) return 'yesterday';
+  var yd = mPrevWorkdayIso_(today);   // F15 (cycle 25): the previous WORKDAY, as My Stats
+  if (f === yd && t === yd) return 'yesterday';
   if (f === mDaysAgo_(6) && t === today) return 'week';
   if (f === mDaysAgo_(29) && t === today) return 'month';
   return '';
@@ -1384,7 +1403,11 @@ function mTeamSyncPresets_() {
 function mTeamPreset_(key) {
   var today = mTodayIso_();
   if (key === 'today')     { M_STATE.teamFrom = today; M_STATE.teamTo = today; }
-  if (key === 'yesterday') { M_STATE.teamFrom = mDaysAgo_(1); M_STATE.teamTo = mDaysAgo_(1); }
+  // F15 (cycle 25): "Yesterday" is the previous WORKDAY (weekends and company
+  // holidays skipped) — the CDR has no rows for a Sunday or a holiday, so the
+  // calendar yesterday was an empty table every Monday and post-holiday morning.
+  // My Stats' preset already read it this way (cycle 22 M2).
+  if (key === 'yesterday') { var yd = mPrevWorkdayIso_(today); M_STATE.teamFrom = yd; M_STATE.teamTo = yd; }
   if (key === 'week')      { M_STATE.teamFrom = mDaysAgo_(6); M_STATE.teamTo = today; }
   if (key === 'month')     { M_STATE.teamFrom = mDaysAgo_(29); M_STATE.teamTo = today; }
   var fromEl = document.getElementById('m-team-from');
@@ -1426,6 +1449,11 @@ function mLoadTeamMetrics_(opts) {
     .withSuccessHandler(function (data) {
       if (data && !data.error) M_STATE.teamCache[key] = { data: data, entry: { at: Date.now() } };
       if (currentView !== requestedView || seq !== M_STATE.teamSeq) { done(); return; }
+      if (painted && (!data || data.error)) {   // F56 (cycle 25): keep the painted last-good view
+        done();
+        showToast('Couldn’t refresh metrics — showing last loaded' + (data && data.error ? ' (' + data.error + ')' : ''), 'toast-warn');
+        return;
+      }
       mRenderTeamMetrics_(data);
       done();
     })

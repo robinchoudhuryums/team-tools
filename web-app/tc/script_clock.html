@@ -1184,11 +1184,18 @@ function clkDashEmpty_(res) {
  *  'yesterday' period, a null value, < 3 elapsed days (too early to project),
  *  or a complete period. Rates (pct) are NOT projected — only volumes.
  *  `toIso` is the payload's dataThrough (M8): the last day with call data,
- *  so a null (no complete day yet) projects nothing. */
-function dashProjection_(value, fromIso, toIso, periodKey) {
+ *  so a null (no complete day yet) projects nothing.
+ *  F12 (cycle 25): `workdays` ({elapsed, total} from the server, which owns the
+ *  company calendar) makes the fraction WORKDAYS — calls accrue on no other
+ *  day, so a calendar fraction over-projected a month that opened on a weekend
+ *  and under-projected one that opened mid-week. Absent (an older payload), the
+ *  calendar fraction is kept. */
+function dashProjection_(value, fromIso, toIso, periodKey, workdays) {
   if ((periodKey !== 'mtd' && periodKey !== 'ytd') || value == null ||
       !/^\d{4}-\d{2}-\d{2}$/.test(String(fromIso)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(toIso))) return null;
   var elapsed = Math.round((Date.parse(toIso + 'T00:00:00Z') - Date.parse(fromIso + 'T00:00:00Z')) / 86400000) + 1;
+  var wd = (workdays && workdays.elapsed > 0 && workdays.total > 0) ? workdays : null;
+  if (wd) elapsed = wd.elapsed;
   if (elapsed < 3) return null;
   var y = +toIso.slice(0, 4), total, endLabel;
   if (periodKey === 'mtd') {
@@ -1199,6 +1206,7 @@ function dashProjection_(value, fromIso, toIso, periodKey) {
     total = ((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0) ? 366 : 365;
     endLabel = 'Dec 31';
   }
+  if (wd) total = wd.total;
   if (elapsed >= total) return null;
   return { projected: Math.round(value * (total / elapsed)), elapsed: elapsed, total: total, endLabel: endLabel };
 }
@@ -1273,7 +1281,7 @@ function clkDashOwnCard_(res) {
   // Run-rate projection (MTD/YTD only, ≥3 days elapsed) — a client calc on the
   // aggregate. The full daily "cone" chart would need a series in the endpoint.
   // M8 (cycle 22): elapsed = the days the CDR HOLDS (dataThrough), never today.
-  var proj = dashProjection_(o.answered, res.from, res.dataThrough, res.periodKey);
+  var proj = dashProjection_(o.answered, res.from, res.dataThrough, res.periodKey, res.workdays);   // F12: over workdays
   var projHtml = proj ? '<div class="dash-proj mono">' + icon('chart', 11) +
     ' On pace for ~' + proj.projected + ' answered by ' + esc(proj.endLabel) + '</div>' : '';
   return kpis + foot + projHtml;
@@ -1299,7 +1307,7 @@ function clkDashTeamCard_(res) {
       { delta: dashDelta_(t.missed, pv && pv.missed, 'count'), prevLabel: pl }) +
   '</div><div class="dash-card-foot mono">' + esc(res.label) + ' · ' + (res.cohort || 0) + ' reps' +
     clkDashCompareNote_(res, pl) + clkDashDataNote_(res) + '</div>';
-  var proj = dashProjection_(t.answered, res.from, res.dataThrough, res.periodKey);   // M8
+  var proj = dashProjection_(t.answered, res.from, res.dataThrough, res.periodKey, res.workdays);   // M8; F12: over workdays
   return kpis + (proj ? '<div class="dash-proj mono">' + icon('chart', 11) +
     ' On pace for ~' + proj.projected + ' answered by ' + esc(proj.endLabel) + '</div>' : '');
 }

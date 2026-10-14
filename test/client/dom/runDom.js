@@ -6310,6 +6310,86 @@ test('F40 (cycle 25) — the rest of the bundle: the save card\'s collapse butto
   assert.ok(!doc.querySelector('.cn-hist-group[data-hgdate="2026-06-16"]').classList.contains('collapsed'), 'the other group is untouched');
 });
 
+// ── Cycle 25 Batch 6a — Metrics framing (+ F40(e), operator option 1) ──────
+const c25MyDay_ = (over) => Object.assign({ date: '2026-10-13', repName: 'Rep', cdr: null, noteCount: 0, noteCountUnavailable: false,
+  cdrUnavailable: false, trend: [], series: {}, kpiMinCohort: 3, transfer: null, alertThreshold: null, alertBand: null, standardSource: '' }, over || {});
+
+test('F53 (cycle 25): My Stats says when the call data or the day-by-day trend could not be READ — never the quiet "No call data found" card, never a silently missing chart', () => {
+  const h = boot(); h.bootShell();
+  mount_(h, 'm-my-content');
+  h.window.mRenderMyStats_(c25MyDay_({ cdrUnavailable: true }));
+  const txt = h.$('#m-my-content').textContent;
+  assert.ok(h.$('#m-my-content .error-state') && /Call data could not be read for 2026-10-13 — this is a read failure, not a day without calls/.test(txt),
+    'THE REGRESSION: a failed read showed the empty card: ' + txt.slice(0, 120));
+  assert.ok(!h.$('#m-my-content .m-empty'), 'not the empty-state card (A12)');
+  h.window.mRenderMyStats_(c25MyDay_());
+  assert.ok(h.$('#m-my-content .m-empty') && /No call data found/.test(h.$('#m-my-content').textContent), 'a day that was READ with no calls keeps the empty card');
+  // A range whose trend read failed: the totals render, and the missing chart says why.
+  h.window.mRenderMyStats_({ from: '2026-10-01', to: '2026-10-13', repName: 'Rep', noteCount: 3, noteCountUnavailable: false, trend: [], trendUnavailable: true,
+    cdr: { totalRung: 40, totalAnswered: 36, totalMissed: 4, pctAnswered: 90, tttFormatted: '1:00:00', attFormatted: '1:40', tttSeconds: 3600, attSeconds: 100 },
+    transfer: null, alertThreshold: null, alertBand: null, standardSource: '' });
+  assert.ok(/The day-by-day trend could not be read — the totals above are complete/.test(h.$('#m-my-content').textContent), 'THE REGRESSION: the sparkline just vanished');
+});
+
+test('F56 (cycle 25): a server {error} on a background refresh keeps the painted last-good Metrics view (My Stats and Team Metrics) and says so — the transport-failure path already did', () => {
+  const h = boot(); h.bootShell();
+  h.run.drain();   // the shell's own Dashboard calls getMyMetrics at boot
+  h.window.enterTool('metrics', 'metricsMyStats');
+  const good = c25MyDay_({ cdr: { totalRung: 20, totalAnswered: 18, totalMissed: 2, pctAnswered: 90, tttFormatted: '0:30:00', attFormatted: '1:40', tttSeconds: 1800, attSeconds: 100 } });
+  h.run.flushSuccess(good, 'getMyMetrics');
+  assert.ok(/90/.test(h.$('#m-my-content').textContent), 'painted (non-vacuous)');
+  h.window.mLoadMyStats_();                      // a re-enter: instant paint from cache, refresh behind the pill
+  h.run.flushSuccess({ error: 'CDR read failed' }, 'getMyMetrics');
+  assert.ok(!h.$('#m-my-content .error-state') && /90/.test(h.$('#m-my-content').textContent), 'THE REGRESSION: the error card replaced the last-good view');
+  assert.ok(h.$$('#toast-stack .toast').some((t) => /showing last loaded \(CDR read failed\)/.test(t.textContent)), 'and the rep is told');
+  // Team Metrics, the same.
+  const src = require('fs').readFileSync(require('path').join(__dirname, '../../../web-app/metrics/script_metrics.html'), 'utf8');
+  const team = /function mLoadTeamMetrics_\(opts\) \{[\s\S]*?\n\}/.exec(src)[0];
+  assert.ok(/if \(painted && \(!data \|\| data\.error\)\) \{[\s\S]*?showing last loaded/.test(team), 'Team Metrics keeps its painted view on an {error} too');
+});
+
+test('F40(e) (cycle 25, operator option 1): a draft another window wrote — or this window before a reload — is OFFERED, never loaded silently; Not now leaves it; a save here never wipes it; Restore takes it over, or opens the copy dialog if the rep has started typing', async () => {
+  const draft = (by, issue) => JSON.stringify({ values: { issue: issue, patient: 'TRX-9' }, at: Date.now(), by: by });
+  let h = bootLog();
+  const KEY = h.read('CN_FORM_STICKY_LS_KEY');
+  // Another window's draft is in the slot; this window enters the Log.
+  h.window.localStorage.setItem(KEY, draft('w-other', 'Pop-out note'));
+  h.window.showView('callNotesHistory'); h.run.drain();
+  h.window.showView('callNotes');
+  assert.strictEqual(h.read('cnGetFieldValue_')('cn-fld-issue'), '', 'THE REGRESSION: the other window\'s note was loaded silently into this form');
+  assert.ok(h.$('.ui-dialog') && /Restore an unsaved call note\?/.test(h.$('.ui-dialog').textContent) && /TRX-9/.test(h.$('.ui-dialog').textContent), 'it is offered instead');
+  h.click(h.$('.ui-dialog-cancel')); await tick();
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem(KEY)).values.issue, 'Pop-out note', 'Not now leaves it in the slot');
+  // A save here must not wipe the other window's draft.
+  h.read('cnClearStickyFormDraft_')();
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem(KEY)).values.issue, 'Pop-out note', 'THE REGRESSION: a save in one window cleared the other\'s draft');
+  // Restore loads it and this window takes it over.
+  h = bootLog();
+  h.window.localStorage.setItem(KEY, draft('w-other', 'Pop-out note'));
+  h.window.showView('callNotesHistory'); h.run.drain();
+  h.window.showView('callNotes');
+  h.click(h.$('.ui-dialog-ok')); await tick();
+  assert.strictEqual(h.read('cnGetFieldValue_')('cn-fld-issue'), 'Pop-out note', 'Restore fills the form');
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem(KEY)).by, h.read('CN_WINDOW_ID'), 'and this window owns the draft now');
+  // Typed before answering: the draft goes to the copy dialog, the typing stays.
+  h = bootLog();
+  h.window.localStorage.setItem(KEY, draft('w-other', 'Pop-out note'));
+  h.window.showView('callNotesHistory'); h.run.drain();
+  h.window.showView('callNotes');
+  h.setField('cn-fld-issue', 'New caller, typed first');
+  h.click(h.$('.ui-dialog-ok')); await tick();
+  assert.strictEqual(h.read('cnGetFieldValue_')('cn-fld-issue'), 'New caller, typed first', 'the typing is never overwritten');
+  const mc = h.$('#manual-copy-overlay');
+  assert.ok(mc && mc.classList.contains('open') && /Pop-out note/.test(mc.querySelector('#manual-copy-val').value), 'the draft is shown to copy');
+  // This window's own draft (and a legacy one with no owner) restore silently, as before.
+  h = bootLog();
+  h.window.localStorage.setItem(KEY, draft(h.read('CN_WINDOW_ID'), 'My own note'));
+  h.window.showView('callNotesHistory'); h.run.drain();
+  h.window.showView('callNotes');
+  assert.strictEqual(h.read('cnGetFieldValue_')('cn-fld-issue'), 'My own note', 'own draft: silent restore');
+  assert.ok(!h.$('.ui-dialog'), 'no question asked');
+});
+
 // ── Batch M5a — the reader ──────────────────────────────────────────────────
 section('Batch M5a — context-focused previews, code links in more places, back to the section');
 

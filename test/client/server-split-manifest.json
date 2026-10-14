@@ -2520,6 +2520,33 @@
     "scanDeptRequestReplies"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-14",
+   "why": "cycle 25 Batch 6a: dashWorkdayCount_ (F12)",
+   "added": [
+    "dashWorkdayCount_"
+   ],
+   "removed": [],
+   "changed": [
+    "dashboardPrevRange_",
+    "getDashboardMetrics"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-14",
+   "why": "cycle 25 Batch 6a: dashWorkdayCount_ (F12), _cdrNameMapFailed + cdrNameMapDegraded_ (F16)",
+   "added": [
+    "_cdrNameMapFailed",
+    "cdrNameMapDegraded_"
+   ],
+   "removed": [],
+   "changed": [
+    "getCdrNameMap_",
+    "getDashboardMetrics"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4844,6 +4871,11 @@
    "kind": "var",
    "sha": "e620165957ee73fc"
   },
+  "_cdrNameMapFailed": {
+   "file": "40_metrics.js",
+   "kind": "var",
+   "sha": "361f01ee3f6c0616"
+  },
   "_cdrStandardsMemo": {
    "file": "00_config.js",
    "kind": "var",
@@ -5484,6 +5516,11 @@
    "kind": "function",
    "sha": "068daa5d0bbc20e1"
   },
+  "cdrNameMapDegraded_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "c4910db5c78ab43f"
+  },
   "cdrNameTokens_": {
    "file": "40_metrics.js",
    "kind": "function",
@@ -5914,6 +5951,11 @@
    "kind": "function",
    "sha": "b1e1679167bf2a99"
   },
+  "dashWorkdayCount_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "58b8ceb29944871a"
+  },
   "dashboardAlignToData_": {
    "file": "40_metrics.js",
    "kind": "function",
@@ -5932,7 +5974,7 @@
   "dashboardPrevRange_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "d44b7d4cf4c9aebc"
+   "sha": "41daeead7c6d2219"
   },
   "dashboardTeamAggregate_": {
    "file": "40_metrics.js",
@@ -6687,7 +6729,7 @@
   "getCdrNameMap_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "25d6291df1ed22fc"
+   "sha": "554cf5e0d152c3d8"
   },
   "getCdrQueueGroups_": {
    "file": "40_metrics.js",
@@ -6732,7 +6774,7 @@
   "getDashboardMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "0ef2659a73f5b7c0"
+   "sha": "9e2312012b701b22"
   },
   "getDepartmentEmails_": {
    "file": "10_core.js",

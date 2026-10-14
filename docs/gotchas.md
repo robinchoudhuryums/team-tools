@@ -1607,6 +1607,12 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   tray empty, which reads as "no manager has answered yet". It now says it could
   not load, keeps any answers read before, and asks again on the next Log visit.
   Verify: the F40 (cycle 25) DOM drive.
+  **Cycle 25 F53 + F56 (2026-10-14): Metrics.** My Stats ignored `cdrUnavailable` and
+  `trendUnavailable`, so it showed the quiet "No call data found" card for a read failure
+  and left out a sparkline it could not read without saying so. Both now state the
+  failure. And a server `{error}` on a background refresh repainted a painted last-good
+  view as an error card; it now keeps the view and toasts, as the transport-failure
+  path did. Verify: the F53 and F56 (cycle 25) DOM drives.
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 
@@ -2513,6 +2519,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   holding nothing, or the failed note itself (Save & Compose keeps its text in
   the form), takes the old park-as-draft path. Verify: the two CNUI-01 DOM pins,
   bite-checked.
+  **AMENDED (cycle 25 F40(e), operator option 1, 2026-10-14): the slot is shared by
+  WINDOWS.** The main window and the pop-out wrote one draft. A save in either wiped the
+  other's unsaved note, and a reload loaded the other window's note silently, which may
+  be a different caller. Each draft now records the page that wrote it (`CN_WINDOW_ID`,
+  in memory only). A window clears and empties only its own draft. Another window's
+  draft, or one from before a reload (the two cannot be told apart), is offered
+  (Restore / Not now), and a Restore into a form already typed into opens the copy
+  dialog instead. Verify: the F40(e) (cycle 25) DOM drive.
 
 <a id="g87-voice-dictation-routes-audio-outside-the-baa"></a>
 
@@ -3853,7 +3867,10 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   average counted a holiday's few calls as a working weekday in its
   denominator (`inboundVolumeBuckets_` skips `opts.holidays`). Verify: the TC2-8
   and MET2-2 drives.
-
+  **AMENDED (cycle 25 F15, 2026-10-14):** Team Metrics' "Yesterday" preset was the calendar
+  yesterday — My Stats' had read the previous workday since M2 — so every Monday and
+  post-holiday morning showed an empty team table. It now reads `mPrevWorkdayIso_`.
+  Verify: the F15 (cycle 25) drive.
 
 <a id="g124-answer-is-the-dashboard-s-formula-and"></a>
 
@@ -4189,6 +4206,12 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the meta, and a read in flight across one is answered but not kept (its own
   generation counter, since the chapter prefetch bumps the parts counter).
   Verify: the F11 (cycle 25) DOM drive.
+  **AMENDED (cycle 25 F16, 2026-10-14): the alias map.** `getCdrNameMap_` memoised `{}`
+  when its read threw, so every aliased rep dropped out as off-roster, and
+  `getDashboardMetrics` pinned that round for six hours. A failed read is now answered
+  but not memoised, and the run is marked degraded (`cdrNameMapDegraded_`, which stays
+  set even if a later read succeeds); the dashboard doesn't cache a degraded round.
+  Verify: the F16 (cycle 25) drive.
 
 <a id="g130-a-registered-onclose-hook-owns-the-close"></a>
 
@@ -5035,6 +5058,13 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   the card says "calls through Mon Oct 5 — the latest day is not imported
   yet". With no data day in the window yet there is no denominator and no
   comparison. Verify: the Batch 11 MET-5 drive (the Oct 7 case).
+  **AMENDED (cycle 25 F12, 2026-10-14): a day of data is a WORKDAY.** Calls accrue
+  on no other day, and a month's first days differ in how many are weekends or a
+  holiday. August 2026 opens on a Saturday: on the 4th its data (Aug 1–3) holds
+  one workday, while Jul 1–3 held three, so every volume read −67%. The prior window
+  now ends on last month's same-numbered workday (`dashWorkdayCount_` over the one
+  company calendar), and the run-rate projects over workdays shipped by the server.
+  Verify: the rewritten dashboardPrevRange_ pin and the F12 (cycle 25) pin.
 
 <a id="g149-a-stamp-parser-documented-as-differences-only"></a>
 

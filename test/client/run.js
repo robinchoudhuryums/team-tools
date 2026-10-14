@@ -866,12 +866,12 @@ test('M2/M8 (cycle 22): getDashboardMetrics ships dataThrough, the cards project
   // returns range.dataThrough unless the import is pending (pinned by the Batch 11 drive).
   assert.ok(/dataThrough: align\.dataThrough,/.test(dash) && /var align = dashboardAlignToData_\(range, cur\.latestDate, prevWorkdayIso_\(todayIso\), todayIso\);/.test(dash),
     'the payload carries the last day with data');
-  assert.ok(/if \(useCache && !noteRes\.unavailable && !prevUnavailable && cur\.team && !importPending\) \{/.test(dash),   // MET-5 (cycle 23) added the import gate
+  assert.ok(/if \(useCache && !noteRes\.unavailable && !prevUnavailable && cur\.team && !importPending && !cdrNameMapDegraded_\(\)\) \{/.test(dash),   // MET-5 (cycle 23) added the import gate; F16 (cycle 25) the alias gate
     'M2 — an all-empty window (the pre-import morning) is not pinned for the dashboard TTL');
   const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
   const calls = [...clk.matchAll(/dashProjection_\(([^)]*)\)/g)].map((m) => m[1]).filter((a) => /res\./.test(a));
   assert.strictEqual(calls.length, 2, 'both cards project');
-  calls.forEach((a) => assert.ok(/res\.from, res\.dataThrough, res\.periodKey$/.test(a), 'M8 — projected over the data days, not to today: ' + a));
+  calls.forEach((a) => assert.ok(/res\.from, res\.dataThrough, res\.periodKey, res\.workdays$/.test(a), 'M8 — projected over the data days, not to today; F12 — on the workday basis: ' + a));
 });
 test('dashboardTeamAggregate_: sums, recomputes pct, answered-weighted ATT; null below cohort', () => {
   const agents = {
@@ -8485,9 +8485,9 @@ test('Dashboard team card shows the aggregate at any cohort; the My Stats series
   // operator 2026-08-18) — a stale entry must never serve the previous
   // contract for the TTL after a deploy. The day in the key is load-bearing
   // at the longer TTL: a payload must never straddle the rep-local midnight.
-  assert.ok(/dash_metrics_v7:/.test(dash) && !/dash_metrics_v[123456]:/.test(dash),
+  assert.ok(/dash_metrics_v8:/.test(dash) && !/dash_metrics_v[1234567]:/.test(dash),
     'the cache key bumped with the payload semantics (v7: the pre-import window ends on its newest data day — cycle 23 Batch 11)');
-  assert.ok(/dash_metrics_v7:' \+ emp\.id \+ ':' \+ periodKey \+ ':' \+ todayIso/.test(dash),
+  assert.ok(/dash_metrics_v8:' \+ emp\.id \+ ':' \+ periodKey \+ ':' \+ todayIso/.test(dash),
     'the v4 key carries the rep-local day');
   assert.ok(/DASHBOARD_CACHE_TTL\)/.test(dash), 'the put uses the dashboard TTL, not the 5-min CDR TTL');
   // The decision is SCOPED: the per-day anonymized series (the back-solvable
@@ -9738,34 +9738,40 @@ test('dashDelta_ — an absent comparison is NOT "no change", and volumes get no
   assert.strictEqual(dashDelta_(310, 295, 'sec').text, '▲ 15s', 'talk time reads in seconds');
 });
 
-test('dashboardPrevRange_ — MTD compares LIKE-FOR-LIKE elapsed days, clamped down', () => {
+test('dashboardPrevRange_ — MTD compares the SAME NUMBER OF WORKDAYS of last month (F12, cycle 25), lag-aligned, clamped down', () => {
   const ctx = vm.createContext({ Date, String, Math });
+  vm.runInContext(extractRawFunction('Code.js', 'dashWorkdayCount_'), ctx, { filename: 'Code.js#wd' });
   vm.runInContext(extractRawFunction('Code.js', 'dashboardPrevRange_'), ctx, { filename: 'Code.js#prev' });
   vm.runInContext('var DASH_MONTH_ABBR = ' +
     JSON.stringify(['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']) + ';', ctx);
-  const r = ctx.dashboardPrevRange_('mtd', '2026-08-12');
-  // NOT the whole prior month: 12 days against 31 would read as a collapse
-  // every month and "recover" on the 31st. And LAG-ALIGNED (M8, cycle 22):
-  // on the 12th the CDR holds Aug 1–11, so the prior window is Jul 1–11 —
-  // Jul 1–12 handed the comparison a day the current window cannot have.
-  assert.strictEqual(r.from + '..' + r.to, '2026-07-01..2026-07-11');
-  assert.strictEqual(r.label, 'Jul 1–11', 'the label states the window it compares');
-  assert.strictEqual(!!r.clamped, false);
-  // Clamps DOWN into a shorter month — never up, so the comparison can only
-  // under-report (the safe direction for a figure a rep is judged by).
-  const feb = ctx.dashboardPrevRange_('mtd', '2026-03-31');
-  assert.strictEqual(feb.from + '..' + feb.to, '2026-02-01..2026-02-28');
-  assert.strictEqual(feb.clamped, true);
-  const leap = ctx.dashboardPrevRange_('mtd', '2028-03-30');
-  assert.strictEqual(leap.to, '2028-02-29', 'leap year');
-  assert.strictEqual(leap.clamped, false, '29 days of data against a 29-day February is not clamped');
-  assert.strictEqual(ctx.dashboardPrevRange_('mtd', '2026-01-09').from, '2025-12-01', 'January crosses the year');
-  assert.strictEqual(ctx.dashboardPrevRange_('mtd', '2026-01-09').to, '2025-12-08');
-  assert.strictEqual(ctx.dashboardPrevRange_('mtd', '2026-08-02').label, 'Jul 1', 'one day of data names one day');
-  assert.strictEqual(ctx.dashboardPrevRange_('mtd', '2026-08-01'), null, 'the 1st has no data day, so no comparison');
+  const P = (t, h) => JSON.parse(JSON.stringify(ctx.dashboardPrevRange_('mtd', t, h || {})));
+  // THE REGRESSION (F12): August 2026 opens on a Saturday. On Tue Aug 4 the CDR
+  // holds Aug 1–3 — ONE workday (Mon 3rd) — and the calendar window Jul 1–3
+  // held THREE (Wed–Fri), so every volume read −67% with nothing changed.
+  assert.deepStrictEqual(P('2026-08-04'), { from: '2026-07-01', to: '2026-07-01', label: 'Jul 1', clamped: false, workdays: 1 }, 'one workday against one');
+  assert.strictEqual(ctx.dashboardPrevRange_('mtd', '2026-08-03', {}), null, 'Aug 1–2 is a weekend: no workday of data yet, so no comparison (it read −100%)');
+  // NOT the whole prior month, and LAG-ALIGNED (M8): on the 12th the CDR holds
+  // Aug 1–11 = 7 workdays, so the prior window ends on July's 7th workday.
+  const r = P('2026-08-12');
+  assert.strictEqual(r.from + '..' + r.to, '2026-07-01..2026-07-09');
+  assert.strictEqual(r.label, 'Jul 1–9', 'the label states the window it compares');
+  assert.strictEqual(r.workdays, 7);
+  // A company holiday is not a workday on either side.
+  assert.strictEqual(P('2026-08-12', { '2026-07-03': true }).to, '2026-07-10', 'Jul 3 off: the 7th workday is the 10th');
+  assert.strictEqual(P('2026-01-09', { '2026-01-01': true }).to, '2025-12-05', 'New Year\'s Day leaves Jan 2–8 = 5 workdays; January crosses the year');
+  // Clamps DOWN into a month with fewer workdays — never up, so the comparison
+  // can only under-report (the safe direction for a figure a rep is judged by).
+  const feb = P('2026-03-31');
+  assert.deepStrictEqual([feb.from, feb.to, feb.clamped, feb.workdays], ['2026-02-01', '2026-02-28', true, 21], '21 March workdays against February\'s 20');
+  assert.strictEqual(ctx.dashboardPrevRange_('mtd', '2026-08-01', {}), null, 'the 1st has no data day, so no comparison');
   // Deliberately scoped: only MTD is compared.
-  ['yesterday', 'ytd', ''].forEach((k) => assert.strictEqual(ctx.dashboardPrevRange_(k, '2026-08-12'), null));
-  assert.strictEqual(ctx.dashboardPrevRange_('mtd', 'nonsense'), null);
+  ['yesterday', 'ytd', ''].forEach((k) => assert.strictEqual(ctx.dashboardPrevRange_(k, '2026-08-12', {}), null));
+  assert.strictEqual(ctx.dashboardPrevRange_('mtd', 'nonsense', {}), null);
+  // The counter itself.
+  assert.strictEqual(ctx.dashWorkdayCount_('2026-08-01', '2026-08-11', {}), 7);
+  assert.strictEqual(ctx.dashWorkdayCount_('2026-08-01', '2026-08-02', {}), 0, 'a weekend has none');
+  assert.strictEqual(ctx.dashWorkdayCount_('2026-08-11', '2026-08-01', {}), 0, 'a reversed range is empty');
+  assert.strictEqual(ctx.dashWorkdayCount_('2026-01-01', '2026-12-31', { '2026-01-01': true }), 260, 'a year: 261 weekdays less one holiday');
 });
 
 test('getDashboardMetrics: one shaper for both windows, best-effort prev, degraded rounds uncached', () => {
@@ -13154,7 +13160,7 @@ console.log('\nround-1 pilot — review comment / call direction / sender identi
     const cn = strip(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'));
     const persist = /function cnPersistActiveFormDraft_\(\) \{[\s\S]*?\n\}/.exec(cn)[0];
     assert.ok(/reviewC: rcVal/.test(persist) && /direction: dirVal/.test(persist), 'persist writes both fields');
-    const restore = /function cnRestoreActiveFormDraft_\(\) \{[\s\S]*?\n\}/.exec(cn)[0];
+    const restore = /function cnApplyStickyDraft_\(data\) \{[\s\S]*?\n\}/.exec(cn)[0];   // F40(e) (cycle 25): the restore's apply half
     assert.ok(/data\.reviewC/.test(restore) && /data\.direction/.test(restore), 'restore reads both fields back');
     const park = /function cnSaveSnapshotAsStickyDraft_\([\s\S]*?\n\}/.exec(cn)[0];
     assert.ok(/reviewC: snap\.reviewC/.test(park) && /direction: snap\.direction/.test(park),
@@ -28871,6 +28877,59 @@ test('F68 (cycle 25): a Log card\'s text column cannot be squeezed by its action
   assert.ok(!/@media[^{]*\{[^}]*\.cn-card-row/.test(css), 'and the card rule is not a viewport breakpoint');
 });
 
+test('F12 (cycle 25): the run-rate projects over WORKDAYS when the payload carries them, and getDashboardMetrics ships the workday basis read from the company calendar (driven)', () => {
+  const sb = buildSandbox([]);
+  const proj = loadFunction(sb, 'tc/script_clock.html', 'dashProjection_');
+  // August 2026 opens on a weekend: on the 4th the data (Aug 1–3) holds ONE workday of 21.
+  const cal = proj(30, '2026-08-01', '2026-08-03', 'mtd');
+  assert.strictEqual(cal.projected, 310, 'the calendar fraction (3 of 31 days) — the legacy fallback');
+  assert.strictEqual(proj(30, '2026-08-01', '2026-08-03', 'mtd', { elapsed: 1, total: 21 }), null, 'THE REGRESSION: one workday is too early to project (the calendar said three days and projected 310)');
+  const wd = proj(70, '2026-08-01', '2026-08-11', 'mtd', { elapsed: 7, total: 21 });
+  assert.deepStrictEqual([wd.projected, wd.elapsed, wd.total], [210, 7, 21], '7 of 21 workdays → 3× (the calendar read 11 of 31 → 197)');
+  assert.strictEqual(proj(210, '2026-08-01', '2026-08-31', 'mtd', { elapsed: 21, total: 21 }), null, 'a complete period projects nothing');
+  assert.strictEqual(proj(70, '2026-08-01', '2026-08-11', 'mtd', { elapsed: 0, total: 21 }).total, 31, 'a malformed basis falls back to the calendar');
+  // The endpoint: one calendar read, passed to the comparison, and the basis in the payload.
+  const dash = stripJsComments_(extractRawFunction('Code.js', 'getDashboardMetrics'));
+  assert.ok(/dashHol = companyHolidayMap_\(/.test(dash), 'the company calendar is read once');
+  assert.ok(/workdays: \(align\.dataThrough && \(periodKey === 'mtd' \|\| periodKey === 'ytd'\)\)\s*\? \{ elapsed: dashWorkdayCount_\(from, align\.dataThrough, dashHol\), total: dashWorkdayCount_\(from, periodEnd, dashHol\) \} : null,/.test(dash),
+    'the payload carries the workdays with data and the workdays in the period');
+});
+
+test('F15 (cycle 25): the Team Metrics "Yesterday" preset is the previous WORKDAY — Monday reads Friday, a post-holiday morning skips the holiday; and the chip lights for it (driven)', () => {
+  const ctx = vm.createContext({ Date, String, Math, window: { SERVER_COMPANY_HOLIDAYS: ['2026-11-26'] }, document: { getElementById: () => null },
+    M_STATE: {}, mtDateRangeSync_: () => {}, mLoadTeamMetrics_: () => {} });
+  const mx = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  ['mPrevWorkdayIso_', 'mTeamActivePreset_', 'mTeamSyncPresets_', 'mTeamPreset_'].forEach((n) => vm.runInContext(extractFnFrom(mx, n), ctx));
+  const at = (today) => {
+    ctx.mTodayIso_ = () => today;
+    ctx.mDaysAgo_ = (n) => { const d = new Date(today + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
+    ctx.M_STATE = {};
+    ctx.mTeamPreset_('yesterday');
+    return [ctx.M_STATE.teamFrom, ctx.M_STATE.teamTo, ctx.mTeamActivePreset_()];
+  };
+  assert.deepStrictEqual(at('2026-10-12'), ['2026-10-09', '2026-10-09', 'yesterday'], 'THE REGRESSION: a Monday read the empty Sunday');
+  assert.deepStrictEqual(at('2026-11-27'), ['2026-11-25', '2026-11-25', 'yesterday'], 'the Friday after Thanksgiving skips the holiday');
+  assert.deepStrictEqual(at('2026-10-14'), ['2026-10-13', '2026-10-13', 'yesterday'], 'a mid-week day is the calendar yesterday');
+});
+
+test('F16 (cycle 25): a failed alias-map read is answered with {} but never memoised, the next call reads again, and the round stays marked degraded for the dashboard\'s cache gate (driven)', () => {
+  let throwIt = true, reads = 0;
+  const sheet = { getDataRange: () => ({ getValues: () => [['Old', 'Canonical', 'Active'], ['Ann R', 'Ann Reyes', true]] }) };
+  const ctx = vm.createContext({ Date, String, Logger: { log() {} }, CONFIG: { CDR_CACHE_TTL: 300 },
+    _cdrNameMapCache: null, _cdrNameMapExpiry: 0, _cdrNameMapFailed: false,
+    getCdrSS_: () => { reads++; if (throwIt) throw new Error('Service Spreadsheets timed out'); return { getSheetByName: () => sheet }; } });
+  ['cdrNameMapDegraded_', 'getCdrNameMap_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  assert.strictEqual(JSON.stringify(ctx.getCdrNameMap_()), '{}', 'a failed read answers {} (the readers keep working)');
+  assert.strictEqual(ctx._cdrNameMapCache, null, 'THE REGRESSION: the {} was memoised, dropping every aliased rep as off-roster for the TTL');
+  assert.strictEqual(ctx.cdrNameMapDegraded_(), true, 'and the round is marked degraded');
+  throwIt = false;
+  assert.strictEqual(ctx.getCdrNameMap_()['Ann R'], 'Ann Reyes', 'the next call reads again');
+  assert.strictEqual(reads, 2);
+  assert.strictEqual(ctx.cdrNameMapDegraded_(), true, 'a later success in the same execution does not clear it — the round already used {}');
+  const dash = stripJsComments_(extractRawFunction('Code.js', 'getDashboardMetrics'));
+  assert.ok(/!importPending && !cdrNameMapDegraded_\(\)\) \{/.test(dash), 'the six-hour dashboard cache never pins such a round');
+});
+
 test('FU-B6b: the daily brief names urgent-note rep Sheets it could not read, instead of reading only `.results` (driven)', () => {
   const stamped = [];
   let sentD = null;
@@ -34106,7 +34165,7 @@ test('MET-5 + MET2-1 (cycle 23): a period-to-date window read before the daily i
   assert.ok(/var align = dashboardAlignToData_\(range, cur\.latestDate, prevWorkdayIso_\(todayIso\), todayIso\);/.test(dash) &&
     /var importPending = align\.importPending;/.test(dash) &&
     /dashboardImportPending_\(range, latestDate, prevWorkday\)/.test(extractRawFunction('Code.js', 'dashboardAlignToData_')) &&
-    /if \(useCache && [^)]*!importPending\) \{\s*try \{ cache\.put\(cacheKey/.test(dash), 'the cache put is gated on it');
+    /if \(useCache && [^{]*!importPending[^{]*\) \{\s*try \{ cache\.put\(cacheKey/.test(dash), 'the cache put is gated on it');
   const sb = buildSandbox([]);
   const w = loadFunction(sb, 'metrics/script_metrics.html', 'mTrendWeightedPct_');
   assert.strictEqual(Math.round(w([{ answered: 90, missed: 10 }, { answered: 5, missed: 5 }]) * 10) / 10, 86.4, 'weighted by calls (the plain mean read 70.0)');
@@ -34148,14 +34207,14 @@ test('Batch 11 weight (cycle 23): a weight outside 20–1000 lbs is UNREADABLE a
 });
 
 test('Batch 11 MET-5 follow-up (cycle 23): before the daily import BOTH windows end on the newest DATA day — the comparison stays like-for-like (driven)', () => {
-  const ctx = b10Ctx_(['dashboardImportPending_', 'dashboardAlignToData_', 'dashboardPrevRange_'], { DASH_MONTH_ABBR: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] });
+  const ctx = b10Ctx_(['dashboardImportPending_', 'dashboardAlignToData_', 'dashWorkdayCount_', 'dashboardPrevRange_'], { DASH_MONTH_ABBR: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] });
   const mtd = { from: '2026-10-01', to: '2026-10-07', dataThrough: '2026-10-06' };
   // Wed Oct 7, the import of Tue Oct 6 has not landed: the data runs to Mon Oct 5.
   const a = b10J(ctx.dashboardAlignToData_(mtd, '2026-10-05', '2026-10-06', '2026-10-07'));
   assert.deepStrictEqual(a, { importPending: true, dataThrough: '2026-10-05', prevAnchor: '2026-10-06' });
-  const prev = b10J(ctx.dashboardPrevRange_('mtd', a.prevAnchor));
-  assert.strictEqual(prev.to, '2026-09-05', 'Sep 1–5 against Oct 1–5 — five days each');
-  assert.strictEqual(b10J(ctx.dashboardPrevRange_('mtd', '2026-10-07')).to, '2026-09-06', 'THE TRANSIENT: unaligned, six days of September against five of October');
+  const prev = b10J(ctx.dashboardPrevRange_('mtd', a.prevAnchor, {}));
+  assert.strictEqual(prev.to, '2026-09-03', 'Sep 1–3 against Oct 1–5 — three WORKDAYS each (F12, cycle 25)');
+  assert.strictEqual(b10J(ctx.dashboardPrevRange_('mtd', '2026-10-07', {})).to, '2026-09-04', 'THE TRANSIENT: unaligned, four workdays of September against three of October');
   // The import landed: M8's window, unchanged.
   assert.deepStrictEqual(b10J(ctx.dashboardAlignToData_(mtd, '2026-10-06', '2026-10-06', '2026-10-07')), { importPending: false, dataThrough: '2026-10-06', prevAnchor: '2026-10-07' });
   // Pending with no data day in the window yet: no denominator, no comparison.
@@ -34172,7 +34231,7 @@ test('Batch 11 MET-5 follow-up (cycle 23): before the daily import BOTH windows 
   assert.strictEqual((clk.match(/clkDashCompareNote_\(res, pl\) \+ clkDashDataNote_\(res\)/g) || []).length, 2, 'both cards carry it');
   // The endpoint wiring: the comparison window is taken from the ALIGNED anchor, and dataThrough/importPending ride the payload.
   const dash = stripJsComments_(extractRawFunction('Code.js', 'getDashboardMetrics'));
-  assert.ok(/var prevRange = align\.prevAnchor \? dashboardPrevRange_\(periodKey, align\.prevAnchor\) : null/.test(dash), 'the prior window is anchored on the data, not on today');
+  assert.ok(/var prevRange = align\.prevAnchor \? dashboardPrevRange_\(periodKey, align\.prevAnchor, dashHol\) : null/.test(dash), 'the prior window is anchored on the data, not on today (and counted on the company calendar, F12)');
   assert.ok(/dataThrough: align\.dataThrough,/.test(dash) && /importPending: align\.importPending,/.test(dash), 'the payload carries both');
 });
 
