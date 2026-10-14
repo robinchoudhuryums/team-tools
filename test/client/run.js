@@ -28858,6 +28858,19 @@ test('F67 (cycle 25): every hidden callout separator has a positioned ancestor i
   calls.forEach((sel) => assert.ok(/blockquote\.kb-callout$/.test(sel), sel + ' decorates callouts only'));
 });
 
+test('F68 (cycle 25): a Log card\'s text column cannot be squeezed by its actions — the row wraps them below a 160px text column, and a narrow Q&A thread stacks its message under the label (a layout fact jsdom cannot measure: measured in Chromium, 22–88px → 250–276px at 390px; the bubble 49px → 150px in the 480px pop-out)', () => {
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const css = cn.slice(0, cn.indexOf('</style>'));
+  const rule = (sel) => { const m = new RegExp('\\n\\s*' + sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' \\{([^}]*)\\}').exec(css); return m ? m[1] : ''; };
+  assert.ok(/flex-wrap:\s*wrap/.test(rule('.cn-card-row')), 'THE REGRESSION: one unbreakable row — the actions (178–243px) took the text column down to 22px');
+  assert.ok(/flex:\s*1 1 160px/.test(rule('.cn-card-main')) && /min-width:\s*0/.test(rule('.cn-card-main')), 'the text column claims 160px before the actions may share its line');
+  assert.ok(/margin-left:\s*auto/.test(rule('.cn-card-actions')) && /flex-shrink:\s*0/.test(rule('.cn-card-actions')), 'wrapped actions sit right-aligned, unsquashed');
+  assert.ok(/\.qa-thread \{ container-type: inline-size; \}/.test(css), 'the Q&A thread is its own container (A2: the pop-out is narrow at any viewport, so never a viewport rule)');
+  const cq = /@container \(max-width: (\d+)px\) \{([\s\S]*?)\n  \}/.exec(css.slice(css.indexOf('.qa-thread { container-type')));
+  assert.ok(cq && Number(cq[1]) >= 200 && /\.qa-row \.qa-msg \{ grid-column: 1 \/ -1; grid-row: 2; \}/.test(cq[2]), 'under the threshold the message takes its own full-width line');
+  assert.ok(!/@media[^{]*\{[^}]*\.cn-card-row/.test(css), 'and the card rule is not a viewport breakpoint');
+});
+
 test('FU-B6b: the daily brief names urgent-note rep Sheets it could not read, instead of reading only `.results` (driven)', () => {
   const stamped = [];
   let sentD = null;

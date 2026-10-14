@@ -644,7 +644,19 @@
     color: var(--muted); letter-spacing: .08em; text-transform: uppercase;
     padding-top: 2px;
   }
-  .qa-msg { color: var(--ink); }
+  .qa-msg { color: var(--ink); min-width: 0; }
+  /* F68 (cycle 25, measured): in a narrow card the role label ("You · question",
+     86px) left the message 49px, one word a line — in the default 480×800
+     pop-out too. A container query on the THREAD (A2: never a viewport rule —
+     the pop-out is narrow at any viewport): under 280px the message takes its
+     own full-width line beneath the label and time. */
+  .qa-thread { container-type: inline-size; }
+  @container (max-width: 280px) {
+    .qa-row { grid-template-columns: auto 1fr; }
+    .qa-row .qa-role { grid-column: 1; grid-row: 1; }
+    .qa-row .qa-ts { grid-column: 2; grid-row: 1; justify-self: end; }
+    .qa-row .qa-msg { grid-column: 1 / -1; grid-row: 2; }
+  }
   .qa-ts {
     font-family: var(--mono); font-size: 10px; color: var(--muted-2);
     font-variant-numeric: tabular-nums;
@@ -1415,8 +1427,15 @@
   .rail-dir .flag-btn { width: 100%; }
   .flag-btn.dir-outbound svg { color: var(--info); }
   .flag-btn.dir-outbound.on { background: var(--info-soft); color: var(--info-deep); border-color: transparent; }
+  /* F68 (cycle 25, measured): a card's actions (up to six buttons, 178–243px)
+     sat beside the text in one unbreakable row, so at 390px the text column was
+     22–88px — the caller cut to "P…", the issue one word a line, the Q&A bubble
+     beneath it 49px wide (in the 480×800 pop-out too). The text column now
+     claims at least 160px; when the row cannot also hold the actions, they wrap
+     onto their own line, right-aligned. Wide layouts are unchanged (one row). */
   .cn-card-row {
     display: flex; align-items: center; gap: 10px;
+    flex-wrap: wrap;
   }
   .cn-card-time {
     font-family: var(--mono); font-size: 11px;
@@ -1425,7 +1444,7 @@
     min-width: 50px;
   }
   .cn-card-main {
-    flex: 1; min-width: 0;
+    flex: 1 1 160px; min-width: 0;
     display: flex; flex-direction: column; gap: 2px;
   }
   .cn-card-caller {
@@ -1445,7 +1464,7 @@
   }
   .cn-card-actions {
     display: inline-flex; align-items: center; gap: 2px;
-    flex-shrink: 0;
+    flex-shrink: 0; margin-left: auto;   /* F68: right-aligned when it wraps */
   }
   .cn-card-actions .cn-act-btn {
     appearance: none; border: none; background: transparent;
@@ -4374,16 +4393,20 @@ function cnRevertPendingSubmit_(pendingId, snapshot, message) {
       cnRestoreFromSnapshot_(snapshot);
       outcome = ' — note restored to the form';
     } else if (form) {
-      outcome = ' — the unsaved note is on your clipboard (your current typing was left untouched)';
+      // F21 (cycle 25): the rep is already typing the NEXT note, so the failed
+      // one cannot go back in the form — and "it is on your clipboard" was a
+      // claim about the save-time auto-copy, which may have failed (g76) and
+      // which the rep has very likely copied over since. The note was then
+      // nowhere. Put it in front of the rep to copy, as the CNUI-01 branch does.
+      cnShowUnsavedNote_(lostNote, snapshot);
+      outcome = ' — your current typing was left untouched; the note that did not save is shown so you can copy it';
     } else if (cnStickyDraftHasOtherText_(snapshot)) {
       // CNUI-01 (cycle 23): the ONE draft slot already holds newer typing — the
       // rep started the next note, then left Log while this save was still in
       // flight. Writing the failed note there destroyed that newer note for
       // good while the toast promised the failed one "was kept". Keep the newer
       // draft, and put the note that did not save in front of the rep to copy.
-      const v = snapshot.values || {};
-      manualCopyModal_(cnFormatNoteForCopy_(lostNote || Object.assign({}, v, { patientAndTrx: v.patient })),
-        'The call note that did not save');
+      cnShowUnsavedNote_(lostNote, snapshot);
       outcome = ' — your newer draft was kept; the note that did not save is shown so you can copy it';
     } else {
       cnSaveSnapshotAsStickyDraft_(snapshot);
@@ -4391,6 +4414,15 @@ function cnRevertPendingSubmit_(pendingId, snapshot, message) {
     }
   }
   showToast(message + outcome, 'toast-error');
+}
+
+/** The note that did not save, in the copy dialog — the one place a failed
+ *  save's text goes when it cannot go back into the form or the draft slot
+ *  (CNUI-01, F21). */
+function cnShowUnsavedNote_(lostNote, snapshot) {
+  const v = (snapshot && snapshot.values) || {};
+  manualCopyModal_(cnFormatNoteForCopy_(lostNote || Object.assign({}, v, { patientAndTrx: v.patient })),
+    'The call note that did not save');
 }
 
 /** Park a failed-submit snapshot in the sticky-draft slot (same shape
@@ -5165,10 +5197,17 @@ function cnOpenSchedModal_(opts) {
         '<button type="button" class="cn-act-btn" style="width:auto;padding:6px 14px" onclick="closeOverlay(document.getElementById(\'cn-sched-overlay\'))">Close</button>' +
       '</div>' +
     '</div>';
-  cnSchedRenderList_();
   // The shell list may be stale (created in another window / never fetched) —
-  // refresh on open; cnSchedListChanged_ re-renders when it lands.
+  // refresh on open; cnSchedListChanged_ re-renders when it lands. Started
+  // BEFORE the first paint, so that paint can say "loading" (F24).
   if (typeof schedFetch_ === 'function') schedFetch_(true);
+  cnSchedRenderList_();
+}
+
+/** F24 (cycle 25) — the modal's Try again: a fresh read, shown as loading. */
+function cnSchedRetry_() {
+  if (typeof schedFetch_ === 'function') schedFetch_(true);
+  cnSchedRenderList_();
 }
 
 /** onClose — the hook OWNS the close (closeOverlay delegates entirely to a
@@ -5198,13 +5237,28 @@ function cnSchedFmt_(whenMs) {
 function cnSchedRenderList_() {
   var host = document.getElementById('cn-sched-list');
   if (!host) return;
-  var items = (typeof SCHED_STATE !== 'undefined' && Array.isArray(SCHED_STATE.items)) ? SCHED_STATE.items : null;
-  if (!items || !items.length) {
-    host.innerHTML = '<div class="cn-sched-empty">No upcoming reminders.</div>';
+  // F24 (cycle 25): "No upcoming reminders" is said only for a list that was
+  // READ and came back empty. Before the first read lands it is loading; a
+  // read that failed says so (with a retry), and a failed REFRESH keeps the
+  // last list on screen under a note. It read "No upcoming reminders" while
+  // loading and after a failure, so a rep took a real reminder to be gone.
+  var st = (typeof SCHED_STATE !== 'undefined' && SCHED_STATE) || {};
+  var items = Array.isArray(st.items) ? st.items : null;
+  var failed = !!st.error && !st.inflight;
+  var retry = '<div style="text-align:right;margin-top:6px"><button type="button" class="cn-act-btn" style="width:auto;padding:2px 10px" onclick="cnSchedRetry_()">Try again</button></div>';
+  if (!items) {
+    host.innerHTML = failed
+      ? errorStateHtml_('Could not load your reminders — ' + st.error + '.') + retry   // A12: a failure is never an empty state
+      : '<div class="cn-sched-empty" role="status">Loading your reminders…</div>';
+    return;
+  }
+  var note = failed ? errorStateHtml_('Could not refresh your reminders — this is the list as last loaded.') + retry : '';
+  if (!items.length) {
+    host.innerHTML = note + '<div class="cn-sched-empty">No upcoming reminders.</div>';
     return;
   }
   var nowMs = Date.now();
-  host.innerHTML = '<div class="day-section-label" style="margin:12px 0 6px">Upcoming · ' + items.length + '</div>' +
+  host.innerHTML = note + '<div class="day-section-label" style="margin:12px 0 6px">Upcoming · ' + items.length + '</div>' +
     items.map(function (it) {
       var overdue = Number(it.whenMs) < nowMs;
       return '<div class="cn-sched-item' + (overdue ? ' overdue' : '') + '">' +
@@ -5988,8 +6042,10 @@ function cnSaveEdit_(noteId) {
   };
   var saveBtn = document.querySelector('[data-note-id="' + noteId + '"] [data-cn-action="save-edit"]');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+  cnMutBegin_();   // F22 (cycle 25): a live refresh in flight now predates this write
   google.script.run
     .withSuccessHandler(function (res) {
+      cnMutEnd_();
       if (!res.success) {
         if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
         showToast(res.error || 'Save failed', 'toast-error'); return;
@@ -6001,6 +6057,7 @@ function cnSaveEdit_(noteId) {
       showToast('Saved', 'toast-success');
     })
     .withFailureHandler(function (err) {
+      cnMutEnd_();
       if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
       showToast('Save failed: ' + err.message, 'toast-error');
     })
@@ -6024,8 +6081,10 @@ function cnDoDeleteNote_(noteId, opts) {
   document.querySelectorAll('[data-note-id="' + noteId + '"]').forEach(function (c) {
     c.classList.add('is-deleting');
   });
+  cnMutBegin_();   // F22 (cycle 25): a live refresh in flight now predates this write
   google.script.run
     .withSuccessHandler(function (res) {
+      cnMutEnd_();
       if (!res.success) {
         document.querySelectorAll('[data-note-id="' + noteId + '"]').forEach(function (c) { c.classList.remove('is-deleting'); });
         // CNUI-02 (cycle 23): a caller that owns the refusal (the compose
@@ -6045,6 +6104,7 @@ function cnDoDeleteNote_(noteId, opts) {
       if (!opts || opts.toast !== '') showToast((opts && opts.toast) || 'Deleted', 'toast-success');
     })
     .withFailureHandler(function (err) {
+      cnMutEnd_();
       document.querySelectorAll('[data-note-id="' + noteId + '"]').forEach(function (c) { c.classList.remove('is-deleting'); });
       showToast('Delete failed: ' + err.message, 'toast-error');
     })
@@ -6104,8 +6164,10 @@ function cnDoToggleFlag_(noteId, note, prev, next, trainingQ, reviewC) {
   if (prev.flagType !== next) note.resolved = false;
   cnReRenderActiveView_();
   cnRenderFilterBar_();
+  cnMutBegin_();   // F22 (cycle 25): a live refresh in flight now predates this write
   google.script.run
     .withSuccessHandler(function (res) {
+      cnMutEnd_();
       note._flagInFlight = false;
       if (!res.success) {
         note.flagType = prev.flagType; note.resolved = prev.resolved;
@@ -6117,6 +6179,7 @@ function cnDoToggleFlag_(noteId, note, prev, next, trainingQ, reviewC) {
       cnReRenderActiveView_();
     })
     .withFailureHandler(function (err) {
+      cnMutEnd_();
       note._flagInFlight = false;
       note.flagType = prev.flagType; note.resolved = prev.resolved;
       cnReRenderActiveView_(); cnRenderFilterBar_();
@@ -6145,8 +6208,10 @@ function cnToggleUrgent_(noteId) {
   note.subformData.flags = nextFlags;
   cnReRenderActiveView_();
   if (typeof cnRenderPinnedTray_ === 'function') cnRenderPinnedTray_();
+  cnMutBegin_();   // F22 (cycle 25): a live refresh in flight now predates this write
   google.script.run
     .withSuccessHandler(function (res) {
+      cnMutEnd_();
       note._flagInFlight = false;
       if (!res || !res.success) {
         note.subformData.flags = prevFlags;
@@ -6160,6 +6225,7 @@ function cnToggleUrgent_(noteId) {
       if (typeof cnRenderPinnedTray_ === 'function') cnRenderPinnedTray_();
     })
     .withFailureHandler(function (err) {
+      cnMutEnd_();
       note._flagInFlight = false;
       note.subformData.flags = prevFlags;
       cnReRenderActiveView_();
@@ -6202,8 +6268,10 @@ function cnTogglePinned_(noteId) {
   }
   cnRenderPinnedTray_();
   cnReRenderActiveView_();
+  cnMutBegin_();   // F22 (cycle 25): a live refresh in flight now predates this write
   google.script.run
     .withSuccessHandler(function (res) {
+      cnMutEnd_();
       note._flagInFlight = false;
       if (!res.success) {
         note.subformData.pinned = wasPinned;
@@ -6219,6 +6287,7 @@ function cnTogglePinned_(noteId) {
       cnReRenderActiveView_();
     })
     .withFailureHandler(function (err) {
+      cnMutEnd_();
       note._flagInFlight = false;
       note.subformData.pinned = wasPinned;
       if (prevPinnedAt) note.subformData.pinnedAt = prevPinnedAt;
@@ -6375,8 +6444,10 @@ function cnToggleResolved_(noteId) {
   note.resolved = !prevResolved;
   cnReRenderActiveView_();
   cnRenderFilterBar_();
+  cnMutBegin_();   // F22 (cycle 25): a live refresh in flight now predates this write
   google.script.run
     .withSuccessHandler(function (res) {
+      cnMutEnd_();
       note._flagInFlight = false;
       if (!res.success) {
         note.resolved = prevResolved;
@@ -6396,6 +6467,7 @@ function cnToggleResolved_(noteId) {
       }
     })
     .withFailureHandler(function (err) {
+      cnMutEnd_();
       note._flagInFlight = false;
       note.resolved = prevResolved;
       cnReRenderActiveView_(); cnRenderFilterBar_();
@@ -6926,8 +6998,10 @@ function cnComposerSaveNoteEdits_(then) {
   c.savingNote = true;
   const btn = document.getElementById('cnC-nr-save');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  cnMutBegin_();   // F22 (cycle 25): a live refresh in flight now predates this write
   google.script.run
     .withSuccessHandler(function (res) {
+      cnMutEnd_();
       c.savingNote = false;
       if (!res || !res.success) {
         if (CN_STATE.composer === c && btn) { btn.disabled = false; btn.textContent = 'Save note'; }
@@ -6952,6 +7026,7 @@ function cnComposerSaveNoteEdits_(then) {
       if (then) then(true);
     })
     .withFailureHandler(function (err) {
+      cnMutEnd_();
       c.savingNote = false;
       if (CN_STATE.composer !== c) return;
       if (btn) { btn.disabled = false; btn.textContent = 'Save note'; }
@@ -9116,6 +9191,18 @@ function cnRollingStackSignature_(notes) {
  *  Optimistic `_pending` notes not yet on the server are preserved on top.
  *  Re-render is signature-guarded (cnRollingStackSignature_) so an unchanged
  *  poll doesn't flash the stack. */
+/** F22 (cycle 25) — every write to a note on the stack (delete — Ctrl+Z's
+ *  undo of a save included — edit, flag, urgent, pin, resolve) bumps
+ *  `_mutSeq` when it starts and again when it settles. A live refresh drops a
+ *  server list requested before a write it cannot reflect: such a list
+ *  brought a deleted note back onto the stack and reverted a toggle. The next
+ *  poll (60s, or the next window focus) reads the settled state. A list
+ *  requested AFTER a write began, and answered before it settled, needs no
+ *  guard of its own: deletes and edits are not optimistic (the local note is
+ *  the server's until the write lands), and an in-flight toggle already keeps
+ *  its local object (`_flagInFlight`, INV-56). */
+function cnMutBegin_() { CN_STATE._mutSeq = (CN_STATE._mutSeq || 0) + 1; }
+function cnMutEnd_() { CN_STATE._mutSeq = (CN_STATE._mutSeq || 0) + 1; }
 function cnRefreshRollingStack_(then) {
   // `then` (optional) fires on EVERY exit path, so a caller driving a UI
   // indicator (e.g. the instant-paint "Refreshing…" pill) can always clear it.
@@ -9124,10 +9211,13 @@ function cnRefreshRollingStack_(then) {
   if (CN_STATE.editingNoteId) { done(); return; }   // don't clobber an open inline edit
   const requestedView = currentView;
   const requestedSeq = CN_STATE._confirmSeq || 0;
+  const requestedMut = CN_STATE._mutSeq || 0;
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res || res.error || res.enrolled === false) { done(); return; }
       if (currentView !== requestedView) { done(); return; }
+      // F22 (cycle 25): a list that predates a delete, edit or toggle is not the stack.
+      if ((CN_STATE._mutSeq || 0) !== requestedMut) { done(); return; }
       const server = res.notes || [];
       const serverIds = {};
       server.forEach(function (n) { serverIds[n.noteId] = true; });

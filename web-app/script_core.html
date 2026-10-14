@@ -2693,7 +2693,7 @@ function remindersTick_() {
 // a 10-min re-fetch ONLY while the rep actually HAS active reminders (an
 // empty list never polls — a reminder created in ANOTHER window appears here
 // on the next boot/mutation, a documented v1 limit).
-var SCHED_STATE = { items: null, fetchedAt: 0, inflight: false };
+var SCHED_STATE = { items: null, fetchedAt: 0, inflight: false, error: '' };
 var SCHED_REFRESH_MS = 10 * 60 * 1000;
 var SCHED_FIRE_LATE_MS = 30 * 60 * 1000;   // stop nagging half an hour past due
 
@@ -2742,19 +2742,29 @@ function schedFetch_(force) {
   if (!force && Date.now() - SCHED_STATE.fetchedAt < SCHED_REFRESH_MS) return;
   if (typeof google === 'undefined' || !google.script || !google.script.run) return;
   SCHED_STATE.inflight = true;
+  // Let an open reminders modal re-render (typeof-guarded — the hook lives in
+  // the Call Notes partial; the cnStopAmbientPolling_ cross-partial pattern).
+  var notify = function () { if (typeof cnSchedListChanged_ === 'function') { try { cnSchedListChanged_(); } catch (e) {} } };
   google.script.run
     .withSuccessHandler(function (r) {
       SCHED_STATE.inflight = false;
       SCHED_STATE.fetchedAt = Date.now();
       if (r && !r.error && Array.isArray(r.calls)) {
         SCHED_STATE.items = r.calls;
-        // Let an open reminders modal refresh its list (typeof-guarded — the
-        // hook lives in the Call Notes partial; the cnStopAmbientPolling_
-        // cross-partial pattern).
-        if (typeof cnSchedListChanged_ === 'function') { try { cnSchedListChanged_(); } catch (e) {} }
+        SCHED_STATE.error = '';
+      } else {
+        // F24 (cycle 25): a read that failed is remembered as a failure, and
+        // the last list read stays — the modal used to say "No upcoming
+        // reminders" for a list it could not read (g53).
+        SCHED_STATE.error = (r && r.error) || 'The reminders could not be read.';
       }
+      notify();
     })
-    .withFailureHandler(function () { SCHED_STATE.inflight = false; })
+    .withFailureHandler(function (e) {
+      SCHED_STATE.inflight = false;
+      SCHED_STATE.error = (e && e.message) || 'The reminders could not be read.';   // F24
+      notify();
+    })
     .getMyScheduledCalls();
 }
 

@@ -1596,6 +1596,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `CallNotesReconcileManual`, outside the run ledger). It never touches the job's
   key, and its toast names the reps it could not open. Verify: the F60, F54 and
   F57 (cycle 25) drives.
+  **Cycle 25 F24 (2026-10-14): the reminders modal.** It read "No upcoming
+  reminders" while the list was still loading, and again after the read failed,
+  so a rep took a real scheduled call to be gone. `schedFetch_` now keeps the
+  read's error, and the modal says Loading, Could not load (with Try again), or
+  — after a failed refresh — the last list read under a note. "No upcoming
+  reminders" is said only for a list that came back empty. Verify: the F24
+  (cycle 25) DOM drive.
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 
@@ -2113,6 +2120,18 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   rule, compute the specificity you are competing with; the reasoned fix was
   wrong here and the measured one right. Pinned in D-N10 (chip never nowrap,
   both head rules present).
+  **A third, cycle 25 F68 (2026-10-14, measured): an unshrinkable SIBLING
+  squeezes the text column.** A Call Notes card put its actions (up to six
+  buttons, 178–243px, `flex-shrink: 0`) beside a `flex: 1; min-width: 0` text
+  column in one row that could not wrap. At 390px the text was 22–88px wide:
+  the caller read "P…", the issue one word a line, and the Q&A bubble 49px,
+  in the 480px pop-out too. `min-width: 0` lets a column shrink; nothing
+  stopped it shrinking to nothing. The text column now claims `flex: 1 1
+  160px` and the row wraps the actions below it. The Q&A thread is its own
+  container, and under 280px it puts the message on a full-width line (A2:
+  a container query, never a viewport rule). Measured 22–88 → 250–276px at
+  390px, and the bubble 49 → 150px in the pop-out. Pinned in F68 (cycle 25),
+  which cannot measure. Re-measure with Chromium after any change to the row.
 
 <a id="g73-the-hidden-attribute-loses-to-any-class"></a>
 
@@ -2230,6 +2249,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   copied to the clipboard") rides beside the manual-copy box, so the rep still
   learns the note saved. Verify: the CNUI-07 DOM pin (a blocked clipboard never
   shows "copied"; a working one does), bite-checked.
+  **AMENDED (cycle 25 F21, 2026-10-14): a claim about an EARLIER copy is the
+  same lie.** When a save failed while the rep was already typing the next note,
+  the toast said the failed note was "on your clipboard". It meant the save-time
+  auto-copy, which may have failed and which the rep had very likely copied
+  over since. The note was then nowhere: not in the form, the draft slot or,
+  reliably, the clipboard. It now opens in the copy dialog (the CNUI-01 branch's
+  `cnShowUnsavedNote_`), and the toast says so. Verify: the F21 (cycle 25) DOM
+  drive.
 
 <a id="g77-showtoast-msg-type-normalizes-the-variant-pass"></a>
 
@@ -2414,6 +2441,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   cancelled past the 5-minute window had the same shape: `deleteCallNote` names
   that refusal (`windowClosed`), and the cancel keeps the note and clears the
   form when it still holds that note. Verify: the CNUI-02 and CNUI-06 DOM pins.
+  **AMENDED (cycle 25 F22, 2026-10-14): C10's rule covers every WRITE, not just
+  a save.** A live refresh requested before a delete (Ctrl+Z's undo of a save
+  included), an edit or a flag/urgent/pin/resolve toggle carried the server's
+  earlier state. A deleted note came
+  back onto the stack, and a toggle reverted. Every such write now calls
+  `cnMutBegin_` / `cnMutEnd_` (one sequence counter, bumped at the start and
+  the end), and the refresh drops a list that predates one; the next poll reads
+  the settled state. A list answered while a write is in flight needs no guard:
+  deletes and edits are not optimistic, and an in-flight toggle keeps its local
+  object (INV-56) — a mutant without that half was measured equivalent. Verify: the F22 (cycle 25) DOM drive.
 
 <a id="g85-form-completion-timer-is-persisted-to-localstorage"></a>
 

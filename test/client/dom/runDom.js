@@ -6097,6 +6097,82 @@ test('F52 (cycle 25): a keyboard reader reaches the card\'s buttons — Tab from
   assert.ok(!shown(), 'focus that leaves the card for elsewhere closes it');
 });
 
+// ── Cycle 25 Batch 5a — Call Notes lost work ────────────────────────────────
+test('F21 (cycle 25): a save that fails while the rep is already typing the NEXT note puts the failed note in front of them to copy — the toast no longer claims a clipboard that held something else', async () => {
+  const h = bootLog();
+  c23Clipboard_(h, true);
+  h.setField('cn-fld-issue', 'Note A — will fail');
+  h.window.cnSubmitActiveForm_();
+  await tick(); await tick();                               // the save-time auto-copy settles (it worked)
+  h.setField('cn-fld-issue', 'Note B — the next caller');  // the rep moves on; the form is not empty
+  h.run.flushFailure(new Error('Lock timeout'), 'submitCallNote');
+  const mc = h.$('#manual-copy-overlay');
+  assert.ok(mc && mc.classList.contains('open') && /Note A/.test(mc.querySelector('#manual-copy-val').value),
+    'THE REGRESSION: the failed note was nowhere — not in the form, not in the draft slot, and the clipboard may hold anything since');
+  assert.strictEqual(h.read('cnGetFieldValue_')('cn-fld-issue'), 'Note B — the next caller', 'the current typing is untouched');
+  const t = c23Toasts_(h).filter((x) => /Lock timeout/.test(x));
+  assert.ok(t.length && !/on your clipboard/.test(t.join()), 'no clipboard claim: ' + JSON.stringify(t));
+  assert.ok(/shown so you can copy it/.test(t.join()), 'the toast says where the note is');
+});
+
+test('F22 (cycle 25): a live refresh requested before a delete (the path Ctrl+Z\'s undo of a save takes) or a toggle cannot bring back the old server state; one with no write in between still applies', () => {
+  const two = () => [noteFixture({ noteId: 'n1', issue: 'first' }), noteFixture({ noteId: 'n2', issue: 'second' })];
+  const h = bootLog(two());
+  const ids = () => h.read('CN_STATE.rollingNotes.map(function (n) { return n.noteId; }).join()');
+  // Delete n2 while a poll is in flight; the poll's list was read before the delete.
+  h.window.cnRefreshRollingStack_();
+  h.read('cnDoDeleteNote_')('n2');
+  h.run.flushSuccess({ success: true }, 'deleteCallNote');
+  assert.strictEqual(ids(), 'n1', 'deleted');
+  h.run.flushSuccess({ notes: two(), autoCopyFormat: '' }, 'getMyCallNotes');
+  assert.strictEqual(ids(), 'n1', 'THE REGRESSION: the stale list put the deleted note back on the stack');
+  // A poll requested AFTER the delete began, answered before it settled: the delete is not optimistic, so its own success settles the stack.
+  const h2 = bootLog(two());
+  const ids2 = () => h2.read('CN_STATE.rollingNotes.map(function (n) { return n.noteId; }).join()');
+  h2.read('cnDoDeleteNote_')('n2');
+  h2.window.cnRefreshRollingStack_();
+  h2.run.flushSuccess({ notes: two(), autoCopyFormat: '' }, 'getMyCallNotes');   // the server had not deleted it yet
+  h2.run.flushSuccess({ success: true }, 'deleteCallNote');
+  assert.strictEqual(ids2(), 'n1', 'the delete\'s success removes it, whatever the poll carried');
+  // A toggle: pin n1 while a poll is in flight; the poll's copy is unpinned.
+  const h3 = bootLog([noteFixture({ noteId: 'n1', issue: 'first' })]);
+  h3.window.cnRefreshRollingStack_();
+  h3.read('cnTogglePinned_')('n1');
+  h3.run.flushSuccess({ success: true, note: noteFixture({ noteId: 'n1', issue: 'first', subformData: { pinned: true, pinnedAt: '2026-10-14T09:00:00Z' } }) }, 'setCallNotePinned');
+  const pinnedAfterToggle = h3.read('JSON.stringify(cnFindNoteAnywhere_("n1").subformData)');
+  h3.run.flushSuccess({ notes: [noteFixture({ noteId: 'n1', issue: 'first' })], autoCopyFormat: '' }, 'getMyCallNotes');
+  assert.strictEqual(h3.read('JSON.stringify(cnFindNoteAnywhere_("n1").subformData)'), pinnedAfterToggle, 'the toggle is not reverted by the older list');
+  // Non-vacuous: with no write in between, the poll is believed (an edit made elsewhere lands).
+  h3.window.cnRefreshRollingStack_();
+  h3.run.flushSuccess({ notes: [noteFixture({ noteId: 'n1', issue: 'edited in another window' })], autoCopyFormat: '' }, 'getMyCallNotes');
+  assert.strictEqual(h3.read('CN_STATE.rollingNotes[0].issue'), 'edited in another window', 'a poll with no write in between still applies');
+});
+
+test('F24 (cycle 25): the reminders modal says "Loading" until the list is read and "Could not load" when it is not — "No upcoming reminders" only for a list that came back empty; a failed refresh keeps the last list', () => {
+  const h = bootLog();
+  h.run.pending('getMyScheduledCalls').forEach(() => h.run.flushSuccess({ calls: null }, 'getMyScheduledCalls'));   // boot noise
+  h.read('SCHED_STATE').items = null; h.read('SCHED_STATE').error = '';
+  h.read('cnOpenSchedModal_')();
+  const list = () => h.$('#cn-sched-list').textContent.replace(/\s+/g, ' ').trim();
+  assert.ok(/Loading your reminders/.test(list()) && !/No upcoming/.test(list()), 'THE REGRESSION (loading): ' + list());
+  h.run.flushFailure(new Error('Service unavailable'), 'getMyScheduledCalls');
+  assert.ok(/Could not load your reminders — Service unavailable/.test(list()) && !/No upcoming/.test(list()), 'THE REGRESSION (failed): ' + list());
+  h.read('cnSchedRetry_')();
+  assert.ok(/Loading your reminders/.test(list()), 'Try again shows loading');
+  h.run.flushSuccess({ error: 'The Forms store could not be opened' }, 'getMyScheduledCalls');
+  assert.ok(/Could not load your reminders — The Forms store could not be opened/.test(list()), 'an {error} is a failure too');
+  h.read('cnSchedRetry_')();
+  h.run.flushSuccess({ calls: [] }, 'getMyScheduledCalls');
+  assert.strictEqual(list(), 'No upcoming reminders.', 'an empty list that was READ says so');
+  // A list, then a refresh that fails: the list stays, under a note.
+  h.read('cnSchedRetry_')();
+  h.run.flushSuccess({ calls: [{ id: 's1', whenMs: Date.now() + 3600000, label: 'Call Mrs. Ortiz back', status: 'active' }] }, 'getMyScheduledCalls');
+  assert.ok(/Call Mrs\. Ortiz back/.test(list()) && !/Could not/.test(list()));
+  h.read('cnSchedRetry_')();
+  h.run.flushFailure(new Error('timeout'), 'getMyScheduledCalls');
+  assert.ok(/Could not refresh your reminders — this is the list as last loaded/.test(list()) && /Call Mrs\. Ortiz back/.test(list()), 'the last list read stays: ' + list());
+});
+
 // ── Batch M5a — the reader ──────────────────────────────────────────────────
 section('Batch M5a — context-focused previews, code links in more places, back to the section');
 

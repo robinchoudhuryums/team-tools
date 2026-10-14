@@ -1,0 +1,40 @@
+---BROAD SCAN IMPLEMENTATION SUMMARY---
+Findings implemented:
+- F21 (Medium) — a save that failed while the rep was already typing the next note left the failed note nowhere: the toast said it was "on your clipboard" (the save-time auto-copy, which may have failed and which the rep had very likely copied over since); it now opens in the copy dialog
+- F22 (Medium) — a live refresh requested before a delete, a Ctrl+Z undo of a save, an edit or a toggle brought the older server state back: a deleted note reappeared on the stack, a toggle reverted
+- F24 (Medium) — the scheduled-reminders modal read "No upcoming reminders" while the list was loading and after a failed read
+- F68 (Medium) — the Call Notes Log card's text column collapsed to ~22–88px at 390px ("P…", one word a line, "Confirmed" against the flag icon), and the Q&A bubble wrapped one word a line in the default 480×800 pop-out too
+New capabilities (G/ST): None
+Files modified: web-app/cn/script_callnotes.html, web-app/script_core.html, test/client/run.js, test/client/dom/runDom.js, CLAUDE.md, docs/gotchas.md, .cycle/config.md, .cycle/STATE.md
+Estimate: L (~7 h, the plan's figure) — written before the first edit (STATE.md Estimates line, 2026-10-14)
+Actual: ~2.5 h
+
+CHANGES:
+F21 | web-app/cn/script_callnotes.html | `cnRevertPendingSubmit_`'s `else if (form)` branch (the form holds new typing) shows the failed note through `cnShowUnsavedNote_` — the copy dialog the CNUI-01 branch already used, now one helper for both — and the toast says it is shown to copy, never "on your clipboard"
+F22 | web-app/cn/script_callnotes.html | `cnMutBegin_` / `cnMutEnd_` bump `CN_STATE._mutSeq` at the start and at the settlement (first line of both handlers) of every write to a stack note: `cnSaveEdit_`, `cnDoDeleteNote_` (Ctrl+Z's undo of a save rides it), `cnDoToggleFlag_`, `cnToggleUrgent_`, `cnTogglePinned_`, `cnToggleResolved_`, `cnComposerSaveNoteEdits_`. `cnRefreshRollingStack_` drops a list whose request predates the current sequence. An in-flight counter was written and then REMOVED: its bite-check was a NO BITE, and reading why showed it equivalent (deletes and edits are not optimistic, an in-flight toggle already keeps its local object via `_flagInFlight`, and any write begun after the request changes the sequence)
+F24 | web-app/script_core.html | `SCHED_STATE` gains `error`: a failed read (an `{error}` or a transport failure) records it, keeps the last list read, and notifies an open modal (it used to stay silent on failure); a good read clears it
+F24 | web-app/cn/script_callnotes.html | `cnSchedRenderList_`: no list yet → "Loading your reminders…", or after a failed read `errorStateHtml_` "Could not load your reminders — …" with Try again (`cnSchedRetry_`); a failed refresh keeps the last list under an `errorStateHtml_` note; "No upcoming reminders." only for a list that was read and is empty. `cnOpenSchedModal_` starts the read before its first paint, so that paint can say loading
+F68 | web-app/cn/script_callnotes.html | `.cn-card-row` wraps; `.cn-card-main` is `flex: 1 1 160px; min-width: 0`; `.cn-card-actions` gains `margin-left: auto` (right-aligned when wrapped). `.qa-thread` is a size container, and under 280px a `.qa-row` puts its message on a full-width line beneath the label (A2: a container query, never a viewport rule). Measured in Chromium against the built page (the card rows' children): text column 22–88px → 250–276px at 390×844; the Q&A message 49px → 252px at 390 and → 150px in the 480×800 pop-out; 1440px unchanged (848–914px). Screenshots read: the 390px Log and the 480px pop-out
+Tests | test/client/dom/runDom.js, test/client/run.js | new DOM drives "F21 (cycle 25)" (working clipboard, next note typed, the failure → the dialog holds the failed note, the typing untouched, no clipboard claim), "F22 (cycle 25)" (a delete under a stale poll, a delete-then-poll pair, a pin toggle under a stale poll, and a poll with no write in between still applied — read from state, since the stack's render signature legitimately skips an issue-only change), "F24 (cycle 25)" (loading, failed, {error}, retry, empty-read, list, failed refresh keeps the list); a pure pin "F68 (cycle 25)" (the CSS rules, the container query, no viewport rule — jsdom cannot measure, so the measurement is recorded above). Bite-checked by hand: F21 copy dialog removed; F22 guard removed (before and after the simplification); F24 loading painted as empty; F24 failure not recorded; F68 card row not wrapping (re-run SCOPED to `.cn-card-row` — the first, unscoped mutation hit `.cn-form-actions` and read NO BITE about the wrong rule, g116); F68 160px basis removed; F68 thread container removed — every one red
+Docs | CLAUDE.md, docs/gotchas.md, .cycle/config.md | g76 (F21), g84 (F22), g53 (F24) and g72 (F68, the third measured layout lesson) amended in both files; INV-48 (F21 + F22) and INV-190 (F24) amended; S31, S113 and S73 gain cycle-25 steps; running totals updated
+
+TEST RESULTS: passed — pure harness 1284/1284, DOM harness 242/242, `npm run lint:server` clean, `counts.mjs --check` clean, `split-manifest.mjs --check` current (no server change). Visual matrix `shoot.mjs cn-log cn-sched` (10 scenarios): 0 console errors, 0 horizontal overflow, 0 missing fixtures. Test Command is `manual`: S31 (optimistic submit + revert), S113 (the reminders modal) and S73 (phone width) carry the new steps and need the deployed app — NOT RUN here, owed to the operator after deploy.
+REGRESSION RISKS: (1) F68 — in the 480px pop-out a card whose actions take 243px (six buttons) now puts them on a second line, so that card is one line taller; a 178px card keeps one row. (2) F22 — a poll that started before any note write is discarded, so a change made in another window shows up one poll later (≤60s, or on the next window focus) when a write happened in between. (3) F24 — `errorStateHtml_` reports the reminders failure to the ClientErrors tab each time the modal renders it (the message is the server's, never rep input — g146). (4) F21 — none beyond the dialog opening over the Log on that failure.
+INVARIANTS AT RISK: None violated — INV-48 (amended; optimistic submit/flag/resolve unchanged), INV-56 (`_flagInFlight` unchanged and still relied on), INV-55/INV-148 (the draft slot untouched by F21's branch), INV-190 (amended), A12 (the reminders failure renders through `errorStateHtml_`, never an empty-state container — the net caught the first draft), A2 (container query, not a viewport rule), INV-235 (no new bare class).
+NET SCORE: 1 − 0 = +1 (F68 YES — the Q&A bubble collapsed in the default 480×800 pop-out on every training-flagged note with a question; F21 NO — needs a failed save while typing the next note, none evidenced; F22 NO — a race, none evidenced; F24 NO — the list is fetched 7s after boot, so the false "No upcoming" needs a failed read or an open in the first seconds; no new failure mode)
+
+OPERATOR ACTIONS / DEPLOY:
+- Walk the cycle-25 steps of S31, S113 and S73 on the deployed app | BLOCKS DEPLOY: N
+Deploy: Client (Call Notes views) + Client (shell): `cd web-app && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit → Version: New version → Deploy
+
+(Not complete in production until blocking operator actions are done AND the deploy step is confirmed.)
+
+FOLLOW-ON ITEMS:
+- The failed-save branch with no form and nothing newer in the draft slot still says the note "is on your clipboard" beside parking it as a draft — the draft is real; the clipboard half is the claim F21 removed from its sibling branch
+- The pinned tray and History are not guarded by F22's sequence (only the Log stack's live refresh reads it)
+- The reminders modal's Mark done / Cancel buttons build an `onclick` literal from the reminder id (the g133 shape; ids are server-generated, so safe today)
+(see also the cycle-25 /broad-scan report and the Batch 1–4 blocks)
+
+DOCUMENTATION UPDATES NEEDED:
+- None beyond what this batch made (g76, g84, g53, g72, INV-48, INV-190, S31, S113, S73, running totals)
+---END BROAD SCAN IMPLEMENTATION SUMMARY---
