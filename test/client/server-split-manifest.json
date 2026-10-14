@@ -2681,6 +2681,102 @@
     "qaRowsForFiles_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-14",
+   "why": "cycle 25 Batch 8b: F58 gate before the lock (64 endpoints), F30 search cap flag, F31 card training question mail, F32 pinned re-check (cnBlobPinned_), F33 Sent Forms truncated, F34 token shape check, CN_MGR_SEARCH_CAP",
+   "added": [
+    "CN_MGR_SEARCH_CAP",
+    "cnBlobPinned_"
+   ],
+   "removed": [],
+   "changed": [
+    "acknowledgeCoaching",
+    "acknowledgeDoc",
+    "archiveCallNoteTag",
+    "cancelTimeOffRequest",
+    "createCoaching",
+    "createScheduledCall",
+    "deleteCallNote",
+    "deleteEmpDocTemplate",
+    "deletePunch",
+    "deleteQuiz",
+    "emailFromCallNote",
+    "fixPtoReconciliation",
+    "fixTimesheetDuplicates",
+    "getFormByToken",
+    "getMyPinnedCallNotes",
+    "getMySentForms",
+    "getPatientTimeline",
+    "issueDoc",
+    "kbAddComment",
+    "kbDeleteComment",
+    "kbEditComment",
+    "kbFlagItem",
+    "kbImportDataTable",
+    "kbMarkReviewed",
+    "kbPublishItem",
+    "kbPublishManual",
+    "kbRequestArticle",
+    "kbResolveContentRequest",
+    "kbRevertItem",
+    "managerDeleteCallNote",
+    "managerSaveDay",
+    "managerSaveDayRange",
+    "managerSearchCallNotes",
+    "managerSubmitTimeOff",
+    "markTrainingComplete",
+    "mergeCallNoteTags",
+    "qaAddComment",
+    "qaAssignRecording",
+    "qaCreateManualRecording",
+    "qaDeleteComment",
+    "qaSampleRecordings",
+    "qaSaveScorecard",
+    "qaSetExemption",
+    "qaSetRecordingAgent",
+    "qaSetRecordingDuration",
+    "qaSetRecordingShared",
+    "qaSetRecordingStatus",
+    "releaseDoc",
+    "renameCallNoteTag",
+    "resetQuizAttempts",
+    "revokeTrainingAssignment",
+    "saveEmpDocTemplate",
+    "saveQuiz",
+    "saveTrainingAssignment",
+    "selfDeletePunch",
+    "setCallNoteFlag",
+    "setCallNoteManagerComment",
+    "setCallNotePinned",
+    "setCallNoteResolved",
+    "setCallNoteTrainingReply",
+    "setCoachingFollowUp",
+    "setScheduledCallStatus",
+    "submitCallNote",
+    "submitIntakeFeedback",
+    "submitPunchAdjustRequests",
+    "submitTimeOffRequest",
+    "updateCallNote",
+    "voidCoaching",
+    "voidDoc"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-14",
+   "why": "cycle 25 Batch 8b: F58 six more endpoints (adjacent declarations the first pass skipped)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "appendCallNoteFeedback",
+    "kbDeleteItem",
+    "kbSaveSearchConfig",
+    "nudgeCoaching",
+    "submitTimeOffRange",
+    "updateTimeOffStatus"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3004,6 +3100,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "1137c693d12dca52"
+  },
+  "CN_MGR_SEARCH_CAP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "dc430fdb638f263b"
   },
   "CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN": {
    "file": "00_config.js",
@@ -5173,12 +5274,12 @@
   "acknowledgeCoaching": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "dee059da7f8b94b0"
+   "sha": "0e8a276cad5d69ee"
   },
   "acknowledgeDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "6c6cb9bc361afea5"
+   "sha": "df83ecfc4e87c13a"
   },
   "addDaysIso_": {
    "file": "10_core.js",
@@ -5278,7 +5379,7 @@
   "appendCallNoteFeedback": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "a5b57bf3450b6128"
+   "sha": "67788b145e24a505"
   },
   "appendRowsSafe_": {
    "file": "10_core.js",
@@ -5303,7 +5404,7 @@
   "archiveCallNoteTag": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "28c4e8a553f96adf"
+   "sha": "136e711977e26bf1"
   },
   "archiveOldCallNotes": {
    "file": "30_callnotes.js",
@@ -5653,7 +5754,7 @@
   "cancelTimeOffRequest": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "9135338f9b9ce41a"
+   "sha": "24aeb0e3cd277aea"
   },
   "cdrAgentsOrThrow_": {
    "file": "40_metrics.js",
@@ -5809,6 +5910,11 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "211d405f4ee7f3fe"
+  },
+  "cnBlobPinned_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "abcca07f5f6ac3e7"
   },
   "cnCloseReasonError_": {
    "file": "30_callnotes.js",
@@ -6073,7 +6179,7 @@
   "createCoaching": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "c7bfd908162ba349"
+   "sha": "62a0211971f2fef7"
   },
   "createFormToken": {
    "file": "61_forms.js",
@@ -6088,7 +6194,7 @@
   "createScheduledCall": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "b9fd790113fb100f"
+   "sha": "8c5cc7cc437db276"
   },
   "creditMonthlyPtoAccruals": {
    "file": "20_timeclock.js",
@@ -6173,22 +6279,22 @@
   "deleteCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "602c378e821db298"
+   "sha": "988582f1c624d3ea"
   },
   "deleteEmpDocTemplate": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "73a56f02e645d305"
+   "sha": "55a10ccf776066dc"
   },
   "deletePunch": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "67130065d772681c"
+   "sha": "2b841a2065dc998c"
   },
   "deleteQuiz": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "ddf58bbb12be51c1"
+   "sha": "a4bb1862a7067c88"
   },
   "deployReadinessItems_": {
    "file": "10_core.js",
@@ -6433,7 +6539,7 @@
   "emailFromCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "59bcd1f6d3549b5c"
+   "sha": "66f9f319bfda5ddf"
   },
   "empDepartments_": {
    "file": "20_timeclock.js",
@@ -6638,12 +6744,12 @@
   "fixPtoReconciliation": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "bea87fbe717bd37c"
+   "sha": "9c29e05bc76c1a40"
   },
   "fixTimesheetDuplicates": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "6020f95deb0ea040"
+   "sha": "ba69cae822302d03"
   },
   "fixedHoliday_": {
    "file": "10_core.js",
@@ -7083,7 +7189,7 @@
   "getFormByToken": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "5b9484ec4f8d2fc2"
+   "sha": "87023db5332e1da0"
   },
   "getFormCatalog": {
    "file": "61_forms.js",
@@ -7298,7 +7404,7 @@
   "getMyPinnedCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "ed506328a8e73d12"
+   "sha": "c8fefbae7fc689db"
   },
   "getMyPunchAdjustRequests": {
    "file": "20_timeclock.js",
@@ -7328,7 +7434,7 @@
   "getMySentForms": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "4bcb4b9ba8731339"
+   "sha": "f5828e19123b13e3"
   },
   "getMyTraining": {
    "file": "80_training.js",
@@ -7528,7 +7634,7 @@
   "getPatientTimeline": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "a54343a06310519f"
+   "sha": "6b34dd5a95e8d526"
   },
   "getPtoReconciliation": {
    "file": "20_timeclock.js",
@@ -8123,12 +8229,12 @@
   "issueDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "598f883628af56fb"
+   "sha": "421554291802357f"
   },
   "kbAddComment": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "108821c33cda73d6"
+   "sha": "8743c007ec13ce89"
   },
   "kbAiApplySpend_": {
    "file": "70_kb.js",
@@ -8248,12 +8354,12 @@
   "kbDeleteComment": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "2c18883d80da3234"
+   "sha": "850e16379e057270"
   },
   "kbDeleteItem": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "0a54d173d1eea732"
+   "sha": "0055465cc7f706e7"
   },
   "kbDeleteRowSafe_": {
    "file": "70_kb.js",
@@ -8283,7 +8389,7 @@
   "kbEditComment": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "15e486ac1805d2d4"
+   "sha": "6b1e94dd200ab573"
   },
   "kbEmbedUrl_": {
    "file": "70_kb.js",
@@ -8318,7 +8424,7 @@
   "kbFlagItem": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "c5f1649fe0c49e4e"
+   "sha": "e32a90bea675632e"
   },
   "kbGeneration_": {
    "file": "70_kb.js",
@@ -8438,7 +8544,7 @@
   "kbImportDataTable": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "cf69456f17144747"
+   "sha": "97153e10edcd13b7"
   },
   "kbImportManual": {
    "file": "70_kb.js",
@@ -8558,7 +8664,7 @@
   "kbMarkReviewed": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "99cc92bc5242dbc6"
+   "sha": "fd155e0b7ce8e5b7"
   },
   "kbNaturalCompare_": {
    "file": "70_kb.js",
@@ -8588,12 +8694,12 @@
   "kbPublishItem": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "9c67e668b6571ae7"
+   "sha": "1e3fadb639080c4a"
   },
   "kbPublishManual": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "e2189b65d249282a"
+   "sha": "0a5541593587a557"
   },
   "kbRecordView": {
    "file": "70_kb.js",
@@ -8608,12 +8714,12 @@
   "kbRequestArticle": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "0fc591a027b0622c"
+   "sha": "03c4c11e19d2035c"
   },
   "kbResolveContentRequest": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "fe339540c8369ba9"
+   "sha": "5265490e3da3d135"
   },
   "kbResolveDocImages_": {
    "file": "70_kb.js",
@@ -8623,7 +8729,7 @@
   "kbRevertItem": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "f60a348004df9c61"
+   "sha": "0e2538ccbacb6f21"
   },
   "kbReviewStaggerOffsets_": {
    "file": "70_kb.js",
@@ -8658,7 +8764,7 @@
   "kbSaveSearchConfig": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "694117bf7e832cd6"
+   "sha": "21d451892e045d21"
   },
   "kbScanBrokenEmbeds_": {
    "file": "70_kb.js",
@@ -8818,7 +8924,7 @@
   "managerDeleteCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "90c0384fb8e4a52f"
+   "sha": "817d60d4f2db1852"
   },
   "managerGetCallNotes": {
    "file": "30_callnotes.js",
@@ -8868,17 +8974,17 @@
   "managerSaveDay": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "8d1523c24a907eea"
+   "sha": "634cf286cec0efd0"
   },
   "managerSaveDayRange": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "eb9528d4110bc3e5"
+   "sha": "ab80fd4816faf8b0"
   },
   "managerSearchCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "706822a45d0af0ff"
+   "sha": "f0f9eba3eb1c5c54"
   },
   "managerSourceDrift_": {
    "file": "10_core.js",
@@ -8888,7 +8994,7 @@
   "managerSubmitTimeOff": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "dfa3e95daacd004b"
+   "sha": "e10a0efa5d779c87"
   },
   "markDeptRequestResolved_": {
    "file": "50_deptrequests.js",
@@ -8898,7 +9004,7 @@
   "markTrainingComplete": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "2530bf17138715d6"
+   "sha": "b7c15e8f098eedbd"
   },
   "medianWhole_": {
    "file": "10_core.js",
@@ -8913,7 +9019,7 @@
   "mergeCallNoteTags": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "0a7da66235b1bc80"
+   "sha": "0e8c12808f65a364"
   },
   "metricsBuildKpiSeries_": {
    "file": "40_metrics.js",
@@ -9053,7 +9159,7 @@
   "nudgeCoaching": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "4e91d062c2576b91"
+   "sha": "599fcee3e363ed57"
   },
   "offboardEmployee": {
    "file": "20_timeclock.js",
@@ -9363,7 +9469,7 @@
   "qaAddComment": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "4dac6f089d64a508"
+   "sha": "81368ce61256540a"
   },
   "qaAgentChangeUnshares_": {
    "file": "90_qa.js",
@@ -9378,7 +9484,7 @@
   "qaAssignRecording": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "6838f5c3bd259c03"
+   "sha": "701ab4701dfac7af"
   },
   "qaAudioChunkFor_": {
    "file": "90_qa.js",
@@ -9423,7 +9529,7 @@
   "qaCreateManualRecording": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "ecc45afecb108072"
+   "sha": "f8bce987275d9c73"
   },
   "qaCritType_": {
    "file": "90_qa.js",
@@ -9438,7 +9544,7 @@
   "qaDeleteComment": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "39059184ec07ff4f"
+   "sha": "88e5b5d53b18ec70"
   },
   "qaExemptEligible_": {
    "file": "90_qa.js",
@@ -9643,12 +9749,12 @@
   "qaSampleRecordings": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "c624dcfb10c7393b"
+   "sha": "f1db9cad180d11ef"
   },
   "qaSaveScorecard": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "059eb0a4cd11a49e"
+   "sha": "bee8fa959490b5c1"
   },
   "qaSelfReviewRefusalFor_": {
    "file": "90_qa.js",
@@ -9663,27 +9769,27 @@
   "qaSetExemption": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "7d9051049186e9ff"
+   "sha": "45fe2dbc7fa20abe"
   },
   "qaSetRecordingAgent": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "b9546dbaba4ea4c6"
+   "sha": "f555d0c935fe1ed9"
   },
   "qaSetRecordingDuration": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "44b03f80b981980d"
+   "sha": "c2d28e6519f47bf6"
   },
   "qaSetRecordingShared": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "e633304ff7c86168"
+   "sha": "edee439fecdb1136"
   },
   "qaSetRecordingStatus": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "1ef63226a3fa5ab7"
+   "sha": "58a25e62abeaace3"
   },
   "qaStatsAggregate_": {
    "file": "90_qa.js",
@@ -9813,7 +9919,7 @@
   "releaseDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "51d95a9d3b283d83"
+   "sha": "7a346e9e1c79734d"
   },
   "releaseSpanishThread": {
    "file": "51_spanish.js",
@@ -9828,7 +9934,7 @@
   "renameCallNoteTag": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "917e3dd9051001fb"
+   "sha": "36f576b0e6c64719"
   },
   "renderOopDetailsHtml_": {
    "file": "30_callnotes.js",
@@ -9888,7 +9994,7 @@
   "resetQuizAttempts": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "177ead9b02a656e5"
+   "sha": "955336176612f343"
   },
   "resolveDeptRequest": {
    "file": "50_deptrequests.js",
@@ -9933,7 +10039,7 @@
   "revokeTrainingAssignment": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "26a6d8013be2d7b6"
+   "sha": "9cdc0e7d62fb2b61"
   },
   "rosterHasAccruingRep_": {
    "file": "20_timeclock.js",
@@ -10038,7 +10144,7 @@
   "saveEmpDocTemplate": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "ddcd2107777b3a46"
+   "sha": "9dcfec6e079bc845"
   },
   "saveExternalLinks": {
    "file": "10_core.js",
@@ -10073,7 +10179,7 @@
   "saveQuiz": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "9587ebbd87a52309"
+   "sha": "0a949ae6f505dbf8"
   },
   "saveRetentionConfig": {
    "file": "10_core.js",
@@ -10098,7 +10204,7 @@
   "saveTrainingAssignment": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "4c9b8b624673c09d"
+   "sha": "61c7fd23ffdcc357"
   },
   "saveUpdateSuggestions": {
    "file": "10_core.js",
@@ -10173,7 +10279,7 @@
   "selfDeletePunch": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "09a47e920f750f15"
+   "sha": "c0d7671ac337aaea"
   },
   "selfTestFailureEmail_": {
    "file": "10_core.js",
@@ -10293,37 +10399,37 @@
   "setCallNoteFlag": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "9aa0a2cf260978e2"
+   "sha": "160be3eb5a6de54c"
   },
   "setCallNoteManagerComment": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "2eff5b2554c2d424"
+   "sha": "c4953a2a84ad768f"
   },
   "setCallNotePinned": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "412635b7d29519f0"
+   "sha": "c61d43a717c6e7b1"
   },
   "setCallNoteResolved": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "d45ebf4ab313956f"
+   "sha": "209dff6d7ea11caa"
   },
   "setCallNoteTrainingReply": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "d4ccc3af5a081a63"
+   "sha": "807cf892623b5105"
   },
   "setCoachingFollowUp": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "4af9cf6014087cd0"
+   "sha": "7581016b92e0bf0e"
   },
   "setScheduledCallStatus": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "5655553254bb955d"
+   "sha": "774c300c28243818"
   },
   "sheetColLetter_": {
    "file": "10_core.js",
@@ -10608,7 +10714,7 @@
   "submitCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "fece7ceb0b075466"
+   "sha": "dc1e648a16caee45"
   },
   "submitFormByToken": {
    "file": "61_forms.js",
@@ -10618,12 +10724,12 @@
   "submitIntakeFeedback": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "7b0a34ac67499ee5"
+   "sha": "6e6116eed1d1fc80"
   },
   "submitPunchAdjustRequests": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "ee11f96828cb77a4"
+   "sha": "0be2345a804b6ab8"
   },
   "submitQuizAttempt": {
    "file": "80_training.js",
@@ -10633,12 +10739,12 @@
   "submitTimeOffRange": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "d3481310b8230be1"
+   "sha": "12540f20e3d1e410"
   },
   "submitTimeOffRequest": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "02371f6e1e0b9ea6"
+   "sha": "985a484389297809"
   },
   "suiteUnmarkedOverrideLive_": {
    "file": "10_core.js",
@@ -10883,7 +10989,7 @@
   "updateCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "9c33bab4a4537af3"
+   "sha": "bcc3435f62994a09"
   },
   "updateInfoToSubformKey_": {
    "file": "30_callnotes.js",
@@ -10903,7 +11009,7 @@
   "updateTimeOffStatus": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "e6a7bf682c335a90"
+   "sha": "24b063e5b51094ff"
   },
   "utf8Len_": {
    "file": "10_core.js",
@@ -10963,12 +11069,12 @@
   "voidCoaching": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "a43bf72a5f02e2fa"
+   "sha": "41fab374f83f16de"
   },
   "voidDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "696fbefa28883d9e"
+   "sha": "bad6bdbbd42d42e4"
   },
   "withAutomationErrorLock_": {
    "file": "10_core.js",

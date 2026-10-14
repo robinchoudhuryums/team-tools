@@ -242,13 +242,13 @@ function coachCanManagerSee_(callerEmp, item) {
  *  post-lock (M-7) and best-effort; `mailed` on the response is TRUE only when
  *  the send actually went (false when it threw, absent when none was owed). */
 function createCoaching(payload) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
   let result = null;
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const v = coachValidate_(payload);
     if (!v.ok) return { success: false, error: v.error };
     const target = lookupEmployeeById_(v.item.empId);
@@ -329,12 +329,12 @@ function coachActorName_(email) {
  *  written to RepResponse ONLY on the open→acknowledged transition — a second
  *  ack never overwrites the reply; the reply itself stays in the HR store. */
 function acknowledgeCoaching(coachId, response) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Not authorized.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Not authorized.' };
     const found = findCoachingRow_(coachId);
     if (!found || found.item.empId !== emp.id) return { success: false, error: 'Coaching item not found.' };
     if (found.item.status === 'void') return { success: false, error: 'This item is no longer active.' };
@@ -418,12 +418,12 @@ function getCoachingDashboard() {
  *  a CRITICAL item sends a short retraction to the same recipient (post-lock)
  *  — an unretracted "critical" notice in a rep's inbox is worse than none. */
 function voidCoaching(coachId, reason) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const found = findCoachingRow_(coachId);
     if (!found) return { success: false, error: 'Coaching item not found.' };
     if (!coachCanManagerSee_(callerEmp, found.item)) return { success: false, error: 'Coaching item not found.' };
@@ -457,11 +457,11 @@ function voidCoaching(coachId, reason) {
  *  the item's FollowUpAt (a calendar DATE — "Revisit on"). Audit
  *  CoachingFollowUp, id-only (the date is HR-record detail). */
 function setCoachingFollowUp(coachId, dateOrNull) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const iso = coachIsoDateOrBlank_(dateOrNull);
     if (dateOrNull && !iso) return { success: false, error: 'Pick a date (yyyy-MM-dd) or clear it.' };
     const found = findCoachingRow_(coachId);
@@ -494,13 +494,13 @@ function coachStampDayMgr_(ts) {
   } catch (_) { return ''; }
 }
 function nudgeCoaching(coachId) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
   let result = null;
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const found = findCoachingRow_(coachId);
     if (!found || !coachCanManagerSee_(callerEmp, found.item)) return { success: false, error: 'Coaching item not found.' };
     if (found.item.status !== 'open') return { success: false, error: 'Only an open (unacknowledged) item can be nudged.' };

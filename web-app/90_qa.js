@@ -428,11 +428,11 @@ function qaSelfReviewRefusalFor_(emp, ss, fid) {
  *  so a crafted call can never write garbage into the column (INV-37 spirit).
  *  Audit row is id + status only (the status is an enum, never free text). */
 function qaSetRecordingStatus(fileId, status, reason) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
     const fid = String(fileId || '').trim();
     const st = String(status || '').trim().toLowerCase();
     if (QA_STATUSES.indexOf(st) < 0) return { success: false, error: 'Unknown status.' };
@@ -457,11 +457,11 @@ function qaSetRecordingStatus(fileId, status, reason) {
  *  target must be a configured member; a non-manager cannot take over another
  *  member's live assignment; release is assignee-or-manager, idempotent. */
 function qaAssignRecording(fileId, assigneeEmail) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
     const fid = String(fileId || '').trim();
     const self = String(emp.email || '').trim().toLowerCase();
     const target = String(assigneeEmail || '').trim().toLowerCase();
@@ -656,11 +656,11 @@ function qaListComments(fileId) {
  *  rows — the IntakeFeedback posture), over-cap REFUSES. The audit row is
  *  id-only: comment text may name a patient, so it stays in the QA store. */
 function qaAddComment(fileId, atSec, text) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
     const fid = String(fileId || '').trim();
     if (!fid) return { success: false, error: 'Missing recording id.' };
     const at = Math.round(Number(atSec) * 10) / 10;
@@ -687,11 +687,11 @@ function qaAddComment(fileId, atSec, text) {
 /** Soft-delete a comment — its AUTHOR or a manager (the kbDeleteComment
  *  shape: rows are never removed, Status flips to 'deleted'). */
 function qaDeleteComment(commentId) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
     const wanted = String(commentId || '').trim();
     if (!wanted) return { success: false, error: 'Missing comment id.' };
     const sheet = getQaSS_().getSheetByName(QA_COMMENTS_TAB);
@@ -967,11 +967,11 @@ function qaPurgeMs_(v) {
  *  The audit row is id-only: the agent NAME stays in the QA store, the same
  *  INV-32/196 rule as recording file names. */
 function qaSetRecordingAgent(fileId, agentName) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
     const fid = String(fileId || '').trim();
     const name = String(agentName || '').trim().substring(0, 80);
     const sheet = getOrCreateQaRecordingsSheet_();
@@ -1018,11 +1018,11 @@ function qaAgentChangeUnshares_(prev, next, sharedMs) {
  *  reloads and re-scores. Append-only: latest per (recording, reviewer) wins
  *  everywhere it is read (qaLatestScorecards_). Audit row is id-only. */
 function qaSaveScorecard(fileId, ratings, notes) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
     const fid = String(fileId || '').trim();
     if (!fid) return { success: false, error: 'Missing recording id.' };
     if (!ratings || typeof ratings !== 'object' || Array.isArray(ratings)) {
@@ -1286,11 +1286,11 @@ function qaIsManualId_(fid) { return String(fid || '').indexOf(QA_MANUAL_ID_PREF
  *  reviewed recording. QA-gated, locked, audit row id-only (the label may
  *  name the caller/agent; it stays in the QA store — INV-32/196). */
 function qaCreateManualRecording(agentName, label) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
     const name = String(label || '').trim();
     if (!name) return { success: false, error: 'Give the audit a label (e.g. the call date and caller).' };
     if (name.length > QA_MANUAL_LABEL_MAX) return { success: false, error: 'Label is capped at ' + QA_MANUAL_LABEL_MAX + ' characters.' };
@@ -1476,11 +1476,11 @@ function qaYmdMs_(ymd, tz) {
  *  unattributed recording would release it to nobody while READING as
  *  shared). Audit row is id-only (INV-32/196). */
 function qaSetRecordingShared(fileId, shared) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
     const fid = String(fileId || '').trim();
     const sheet = getOrCreateQaRecordingsSheet_();
     const found = qaFindRecordingRow_(sheet, fid);
@@ -1619,11 +1619,11 @@ function qaSamplePick_(candidates, count, reviewedByAgent, rand, targets) {
  *  qaSamplePick_ (agents with the fewest DONE reviews first). Counts-only
  *  audit (INV-32/196). */
 function qaSampleRecordings(count, period) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
     const n = Math.floor(Number(count) || 0);
     if (!(n >= 1 && n <= 10)) return { success: false, error: 'Sample 1–10 recordings.' };
     const self = String(emp.email || '').trim().toLowerCase();
@@ -2023,11 +2023,11 @@ function qaReadExemptions_() {
  *  append-only ledger; the audit row carries period + flag only (the name
  *  stays in the QA store — INV-196's name rule). */
 function qaSetExemption(empName, period, on) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
     const name = String(empName || '').trim().substring(0, 80);
     const per = String(period || '').trim();
     if (!name) return { success: false, error: 'Employee name required.' };
@@ -2052,11 +2052,11 @@ function qaSetExemption(empName, period, on) {
  *  bounded; a non-blank cell is never overwritten, no audit row (it is
  *  metadata the file already carries, not a review action). */
 function qaSetRecordingDuration(fileId, sec) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
     const fid = String(fileId || '').trim();
     const n = Math.round(Number(sec));
     if (!(n >= 1 && n <= QA_DURATION_MAX_SEC)) return { success: false, error: 'Invalid duration.' };

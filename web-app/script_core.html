@@ -2540,7 +2540,9 @@ function reloadApp_() {
     ? base + '?compact=1&tool=' + encodeURIComponent(currentView)
     : base;
   try { window.top.location.replace(url); return; } catch (e) {}
-  try { window.open(url, '_top'); return; } catch (e) {}
+  // F59 (cycle 25): a BLOCKED window.open returns null, it does not throw
+  // (g135) — the old unconditional return made the reload do nothing at all.
+  try { if (window.open(url, '_top')) return; } catch (e) {}
   location.reload();
 }
 

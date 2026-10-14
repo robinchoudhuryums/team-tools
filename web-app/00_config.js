@@ -583,6 +583,9 @@ const CN_HEADERS = [
 // "12/5" as a Date. One list, read by every writer of these columns.
 const CN_TEXT_IDX = [CN.CALLBACK, CN.CALLER, CN.RELATIONSHIP, CN.PATIENT_TRX, CN.ISSUE, CN.TRANSFERRED_TO, CN.RESOLUTION];
 const CN_FLAG_TYPES = ['action','training','review'];
+/** Cycle 25 F30: the most matches a manager's cross-rep search ships, newest
+ *  first; past it the response says `truncated` with the full `total`. */
+const CN_MGR_SEARCH_CAP = 500;
 // Round 2 · 8e — extended flag set for the multi-select toolbar. 'urgent'
 // is new; pin lives separately in subformData.pinned (subject to its own
 // 3-cap, INV-50). Order matters — it drives deriveFlagType_'s priority.

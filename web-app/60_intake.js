@@ -490,11 +490,11 @@ function intakeFeedbackResult_(formType, submissionId) {
  *  row is PHI-free (id + type only — the feedback TEXT may reference the
  *  patient and stays in the Intake store). */
 function submitIntakeFeedback(submissionId, formType, text) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Not authorized.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Not authorized.' };
     const ft = String(formType || '').trim().toUpperCase();
     if (INTAKE_FORM_TYPES_.indexOf(ft) < 0) return { success: false, error: 'Unknown form type.' };
     const id = String(submissionId || '').trim();

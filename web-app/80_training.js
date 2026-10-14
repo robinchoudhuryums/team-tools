@@ -55,11 +55,11 @@ function getMyTrainingQA() {
  *  Rejects when the target note isn't training-flagged (reply has no
  *  meaning on action/review/unflagged notes). */
 function setCallNoteTrainingReply(repEmpId, noteId, reply) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const target = lookupEmployeeById_(repEmpId);
     if (!target) return { success: false, error: 'Employee not found.' };
     if (!target.callNotesSheetId) return { success: false, error: 'This rep has no call-notes Sheet configured.' };
@@ -522,11 +522,11 @@ function getMyTraining() {
  *  Requires a live effective assignment; idempotent on an already-complete
  *  item. Audit: TrainingComplete (itemId only — never content). */
 function markTrainingComplete(itemId) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Not authorized.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Not authorized.' };
     itemId = String(itemId || '').trim();
     if (!itemId) return { success: false, error: 'Missing item id.' };
     const eff = trainEffectiveForEmp_(trainReadAssignments_(), emp.id);
@@ -648,12 +648,12 @@ function getTrainingDashboard() {
  *  newer assignedAt requires a fresh completion, spec §3a). Best-effort
  *  branded notification per employee (INV-14). Audit: TrainingAssign. */
 function saveTrainingAssignment(payload) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     payload = payload || {};
     const itemType = payload.itemType === 'quiz' ? 'quiz' : 'kb';
     const itemId = String(payload.itemId || '').trim();
@@ -735,11 +735,11 @@ function saveTrainingAssignment(payload) {
  *  manager's address only), after which a fresh set of attempts opens.
  *  Attempts and scores are kept. Audit: QuizAttemptsReset. */
 function resetQuizAttempts(empId, quizId) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     empId = String(empId || '').trim();
     quizId = String(quizId || '').trim();
     if (!empId || !quizId) return { success: false, error: 'Missing employee or quiz.' };
@@ -764,11 +764,11 @@ function resetQuizAttempts(empId, quizId) {
  *  (sets RevokedAt — never deletes; the history stays legible). Idempotent.
  *  Audit: TrainingRevoke. */
 function revokeTrainingAssignment(assignId) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     assignId = String(assignId || '').trim();
     if (!assignId) return { success: false, error: 'Missing assignment id.' };
     const sheet = getOrCreateTrainSheet_(TRAIN_ASSIGN_TAB, TRAIN_ASSIGN_HEADERS);
@@ -1125,11 +1125,11 @@ function getQuizzes() {
  *  Validates via the pure trainValidateQuizDef_; bounds the stored JSON
  *  (INV-96 spirit). Audit: QuizSave (id + question count — never text). */
 function saveQuiz(def) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const v = trainValidateQuizDef_(def);
     if (!v.ok) return { success: false, error: v.error };
     if (v.quiz.kbItemId) {
@@ -1162,11 +1162,11 @@ function saveQuiz(def) {
  *  it drop off checklists/dashboards via the title join, same as a deleted
  *  KB item. Audit: QuizDelete. */
 function deleteQuiz(quizId) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     quizId = String(quizId || '').trim();
     const existing = trainReadQuizzes_()[quizId];
     if (!existing) return { success: false, error: 'Quiz not found.' };

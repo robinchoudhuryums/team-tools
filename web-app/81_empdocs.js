@@ -157,12 +157,12 @@ function getMyDoc(docId) {
  *  DocSignatures row + flips the EmpDocs status in the same lock. Audit:
  *  EmpDocSigned (docId + hash + signedAt — the independent witness). */
 function acknowledgeDoc(docId, signatureDataUrl, responses) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Not authorized.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Not authorized.' };
     const found = findEmpDocRow_(docId);
     if (!found || found.doc.empId !== emp.id) return { success: false, error: 'Document not found.' };
     const d = found.doc;
@@ -253,12 +253,12 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
  *  (issuing reveals nothing); READING stays team-scoped. Audit: EmpDocIssue
  *  (docId/empId/type — never the title or body). */
 function issueDoc(payload) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const v = empDocValidateIssue_(payload);
     if (!v.ok) return { success: false, error: v.error };
     const target = lookupEmployeeById_(v.doc.empId);
@@ -294,12 +294,12 @@ function issueDoc(payload) {
  *  (draft → issued) and notifies them. The frozen content/hash is untouched —
  *  release only flips the gate. Audit: EmpDocRelease. */
 function releaseDoc(docId) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const found = findEmpDocRow_(docId);
     if (!found || !empDocCanManagerSee_(callerEmp, found.doc)) return { success: false, error: 'Document not found.' };
     if (found.doc.status !== 'draft') return { success: false, error: 'Only a draft can be released.' };
@@ -356,11 +356,11 @@ function getDocsDashboard() {
  *  signed doc keeps its DocSignatures row ("signed, later voided"). Audit:
  *  EmpDocVoid (docId only — the reason lives in the scoped HR sheet). */
 function voidDoc(docId, reason) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const found = findEmpDocRow_(docId);
     if (!found || !empDocCanManagerSee_(callerEmp, found.doc)) return { success: false, error: 'Document not found.' };
     if (found.doc.status === 'void') return { success: true, alreadyVoid: true };
@@ -485,11 +485,11 @@ function getEmpDocTemplates() {
  *  (new id minted when absent). Validates via empDocTemplateValidate_. Audit:
  *  EmpDocTemplateSave (id + name only — PHI-free). */
 function saveEmpDocTemplate(payload) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const v = empDocTemplateValidate_(payload);
     if (!v.ok) return { success: false, error: v.error };
     const fieldsRaw = v.tpl.fields.length ? JSON.stringify(v.tpl.fields) : '';
@@ -519,11 +519,11 @@ function saveEmpDocTemplate(payload) {
 /** Manager-gated (INV-02), locked (INV-01). Removes a template row only —
  *  already-issued docs are independent (the body was frozen at issue). */
 function deleteEmpDocTemplate(templateId) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const found = findEmpDocTemplateRow_(templateId);
     if (!found) return { success: false, error: 'Template not found.' };
     getOrCreateEmpDocSheet_(EMPDOC_TPL_TAB, EMPDOC_TPL_HEADERS).deleteRow(found.rowIdx);

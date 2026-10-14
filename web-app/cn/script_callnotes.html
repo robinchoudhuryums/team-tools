@@ -2236,6 +2236,7 @@
 
   /* ── Sent Forms view ────────────────────────────────────────────── */
   .cn-sf-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+  .cn-sf-trunc { display: flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 12px; color: var(--warning-deep); }
   .cn-sf-empty {
     color: var(--muted); font-size: var(--text-base); padding: 28px 12px; text-align: center;
     border: 1.5px dashed var(--line-2); border-radius: var(--radius-md);
@@ -2533,6 +2534,7 @@ const CN_STATE = {
   // here was removed — it silently overrode the §7a declaration above (a
   // drift trap: an intentional change to one was clobbered by the other).
   mgrSearchResults: [],      // results from managerSearchCallNotes
+  mgrSearchTotal: 0,         // F30: every match when the server capped the list (0 = not capped)
   mgrSearchTimer: null,      // debounce timer for manager search
   trainingQA: [],            // rep's recent training Q&A notes (loaded once per Log view enter)
   formCatalog: null,         // cached from getFormCatalog() — [{id, name, category}]
@@ -2677,7 +2679,7 @@ function enterCallNotesFormsView(area) {
     .withSuccessHandler(function (res) {
       if (currentView !== requestedView) return;
       if (res && res.error) { cnRenderSentFormsView_(area, null, res.error); return; }
-      cnRenderSentFormsView_(area, (res && res.forms) || [], null);
+      cnRenderSentFormsView_(area, (res && res.forms) || [], null, !!(res && res.truncated));
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
@@ -2686,7 +2688,7 @@ function enterCallNotesFormsView(area) {
     .getMySentForms();
 }
 
-function cnRenderSentFormsView_(area, forms, errorMsg) {
+function cnRenderSentFormsView_(area, forms, errorMsg, truncated) {
   const compact = (typeof COMPACT_MODE !== 'undefined' && COMPACT_MODE);
   const head = compact
     ? ''   // pop-out: the tool tab bar already names the active tab (operator 2026-08-11)
@@ -2698,13 +2700,18 @@ function cnRenderSentFormsView_(area, forms, errorMsg) {
     area.innerHTML = head + errorStateHtml_(errorMsg);
     return;
   }
+  // F33 (cycle 25): the server read only the newest rows — say so, and never
+  // call an empty result "No fillable forms sent yet" when older ones may exist.
+  const cut = truncated
+    ? '<div class="cn-sf-trunc" role="status">' + icon('warning', 12) + ' Showing your most recent forms only — older ones are not listed here.</div>'
+    : '';
   if (!forms || forms.length === 0) {
-    area.innerHTML = head + '<div class="cn-sf-empty">No fillable forms sent yet. ' +
-      'Send one from the “Open Email” composer on the Log view.</div>';
+    area.innerHTML = head + cut + (truncated ? '' : '<div class="cn-sf-empty">No fillable forms sent yet. ' +
+      'Send one from the “Open Email” composer on the Log view.</div>');
     return;
   }
   const cards = forms.map(function (f) { return cnSentFormCardHtml_(f); }).join('');
-  area.innerHTML = head + '<div class="cn-sf-list">' + cards + '</div>';
+  area.innerHTML = head + cut + '<div class="cn-sf-list">' + cards + '</div>';
 }
 
 function cnSentFormCardHtml_(f) {
@@ -9264,7 +9271,7 @@ function cnMgrFireSearch_() {
       // F(M-5): trimmed-to-trimmed — same whitespace-guard fix as cnFireSearch_.
       if (String(CN_STATE.mgrSearchQuery || '').trim() !== requestedQuery) return;
       if (res.error) {
-        CN_STATE.mgrSearchResults = [];
+        CN_STATE.mgrSearchResults = []; CN_STATE.mgrSearchTotal = 0;
         var eh = document.getElementById('cn-mgr-search-results');
         if (eh) eh.innerHTML = errorStateHtml_('Search failed for "' + requestedQuery + '" - ' + res.error,
           'Search failed - ' + res.error);   // S3: the query is shown, never beaconed
@@ -9272,6 +9279,7 @@ function cnMgrFireSearch_() {
       }
       CN_STATE.mgrSearchResults = res.results || [];
       CN_STATE.mgrSearchSkipped = res.skippedReps || [];   // C17 batch-2 (INV-187)
+      CN_STATE.mgrSearchTotal = res.truncated ? (Number(res.total) || 0) : 0;   // F30: a capped search says so
       cnMgrRenderSearchResults_();
     })
     .withFailureHandler(function (err) {
@@ -9300,7 +9308,10 @@ function cnMgrRenderSearchResults_() {
     host.innerHTML = skipNote + '<div class="cn-stack-empty">No matches.</div>';
     return;
   }
-  const count = `<div class="cn-result-count"><b>${results.length}</b> result${results.length === 1 ? '' : 's'} for &ldquo;${esc(CN_STATE.mgrSearchQuery)}&rdquo; across all reps</div>`;
+  const total = Number(CN_STATE.mgrSearchTotal) || 0;
+  const count = total > results.length
+    ? `<div class="cn-result-count" role="status">Showing the newest <b>${results.length}</b> of ${total} results for &ldquo;${esc(CN_STATE.mgrSearchQuery)}&rdquo; across all reps — narrow by date range to see older ones</div>`
+    : `<div class="cn-result-count"><b>${results.length}</b> result${results.length === 1 ? '' : 's'} for &ldquo;${esc(CN_STATE.mgrSearchQuery)}&rdquo; across all reps</div>`;
   host.innerHTML = skipNote + count + results.map(function (n) { return cnRenderResultCard_(n, n.repName); }).join('');
   if (typeof kbHighlightTerms_ === 'function') kbHighlightTerms_(host, CN_STATE.mgrSearchQuery);
 }

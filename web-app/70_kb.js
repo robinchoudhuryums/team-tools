@@ -627,11 +627,11 @@ function kbGetSearchConfig() {
   return { synonyms: getKbSearchSynonyms_(), propBudget: propBudgetsFor_([KB_SYNONYMS_PROP]), propValueMax: PROP_VALUE_MAX };
 }
 function kbSaveSearchConfig(groups) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
     if (!Array.isArray(groups)) return { success: false, error: 'Invalid synonyms.' };
     if (groups.length > KB_SYNONYM_GROUPS_MAX) return { success: false, error: 'Too many synonym groups (max ' + KB_SYNONYM_GROUPS_MAX + ').' };
     const clean = [];
@@ -2447,11 +2447,11 @@ function kbEnsureGrid_(sh, rows, cols) {
 function kbImportDataTable(tabKey, csvBase64, opts) {
   const o = opts || {};
   const dryRun = o.dryRun !== false;          // default DRY — a bare call never writes
+  const emp = getEmployeeInfo_();
+  if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
   const lock = dryRun ? null : LockService.getScriptLock();
   if (lock) lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
     const spec = Object.prototype.hasOwnProperty.call(KB_DATA_TABLES, String(tabKey)) ? KB_DATA_TABLES[String(tabKey)] : null;
     if (!spec) return { error: 'Unknown data table: ' + String(tabKey) };
 
@@ -2642,11 +2642,11 @@ function kbCellTs_(v, ssTz) {
  *  locked (INV-01), audited (KbItemReviewed). No cache invalidation needed —
  *  the tree cache doesn't carry review state and kbGetReviewDue reads live. */
 function kbMarkReviewed(id) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
     id = String(id || '').trim();
     if (!id) return { success: false, error: 'Missing item id.' };
     const sheet = getOrCreateKbSheet_();
@@ -2907,11 +2907,11 @@ function kbScanBrokenEmbeds_(cap) {
  *  notHelpful are lightweight signal, un-audited like KbViews); the audit row is
  *  PHI-free (id only — the rep's note never enters the shared AuditLog). */
 function kbFlagItem(itemId, kind, note) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Not authorized.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Not authorized.' };
     const id = String(itemId || '').trim().substring(0, 100);
     if (!id) return { success: false, error: 'Missing item id.' };
     const k = String(kind || '').trim();
@@ -2957,11 +2957,11 @@ function kbCommentTargetOk_(emp, itemId) {
  *  Audit row is id-only: the comment TEXT lives in the KB store, never the
  *  shared AuditLog (the INV-32 discipline). */
 function kbAddComment(itemId, text) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Not authorized.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Not authorized.' };
     const id = String(itemId || '').trim().substring(0, 100);
     if (!id) return { success: false, error: 'Missing item id.' };
     const t = String(text || '').trim();
@@ -3017,11 +3017,11 @@ function kbGetComments(itemId) {
  *  The refusal is deliberately NOT the manager-gate string: this is a
  *  per-row ownership rule, not a gated endpoint. Locked; audit row id-only. */
 function kbDeleteComment(commentId) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Not authorized.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Not authorized.' };
     const wanted = String(commentId || '').trim();
     if (!wanted) return { success: false, error: 'Missing comment id.' };
     const sheet = getKbSS_().getSheetByName(KB_COMMENTS_TAB);
@@ -3056,11 +3056,11 @@ function kbDeleteComment(commentId) {
  *  Text mutation is acceptable (unlike FormSubmissions/DocSignatures —
  *  §164.312(c) does not reach it). Audit row id-only (INV-32). */
 function kbEditComment(commentId, text) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Not authorized.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Not authorized.' };
     const wanted = String(commentId || '').trim();
     if (!wanted) return { success: false, error: 'Missing comment id.' };
     const t = String(text || '').trim();
@@ -3105,11 +3105,11 @@ function kbEditComment(commentId, text) {
 // parameter stays in the signature so an older cached client still succeeds;
 // the KbContentRequests Query column is written blank (append-only schema).
 function kbRequestArticle(topic, note, query) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Not authorized.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Not authorized.' };
     const t = String(topic || '').trim().substring(0, KB_REQUEST_TOPIC_MAX);
     if (!t) return { success: false, error: 'Describe what you were looking for.' };
     const n = String(note || '').trim().substring(0, KB_REQUEST_NOTE_MAX);
@@ -3163,11 +3163,11 @@ function kbGetContentRequests() {
  *  locked (INV-01), audited (PHI-free — reqId + action only). Bounded
  *  ReqId-column scan → single-row status/resolution write. */
 function kbResolveContentRequest(reqId, action) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
     reqId = String(reqId || '').trim();
     if (!reqId) return { success: false, error: 'Missing request id.' };
     const act = (action === 'dismissed') ? 'dismissed' : 'resolved';
@@ -3269,11 +3269,11 @@ function kbSaveItem(payload) {
   } catch (err) { return { success: false, error: err.message }; }
 }
 function kbDeleteItem(id) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
     id = String(id || '').trim();
     if (KB_MANUAL_ID_RE.test(id)) return { success: false, error: KB_MANUAL_READONLY_MSG };
     const sheet = getOrCreateKbSheet_();
@@ -3385,11 +3385,11 @@ function kbGetRevisions(id) {
  *  status, and id stay as they are now. The current content is snapshotted first
  *  (action='revert'), so a revert is itself reversible. */
 function kbRevertItem(id, revId) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
     id = String(id || '').trim(); revId = String(revId || '').trim();
     if (!id || !revId) return { success: false, error: 'Missing id.' };
     if (KB_MANUAL_ID_RE.test(id)) return { success: false, error: KB_MANUAL_READONLY_MSG };
@@ -3443,11 +3443,11 @@ function kbRevertItem(id, revId) {
 /** #4 — admin-gated, locked, audited. Flip a draft to published (the "Release"
  *  action, mirroring EmpDocs releaseDoc). No content change. */
 function kbPublishItem(id) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
     id = String(id || '').trim();
     if (!id) return { success: false, error: 'Missing item id.' };
     const sheet = getOrCreateKbSheet_();
@@ -4320,11 +4320,11 @@ function kbImportManual(source, opts) {
  *  rows the import wrote (in the ledger) are touched; a hand-made or already
  *  published article is left alone. opts.dryRun → the count only. */
 function kbPublishManual(opts) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
     opts = opts || {};
     const dept = String(opts.department || '').trim();
     const sheet = getOrCreateKbSheet_();

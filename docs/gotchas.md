@@ -461,6 +461,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   through it), and the range reads once (`timeOffActiveDates_`) and writes one
   block. Verify: the F62 drive. The time-off approval's dup-date check re-read
   the tab it already held; it reads those rows now (cycle 25 Batch 7 FU1).
+  **AMENDED (cycle 25 F58, 2026-10-14): the caller is checked BEFORE the lock.**
+  Seventy public endpoints took the one project ScriptLock and only then read
+  `getEmployeeInfo_` and refused, so a caller with no access (a rep on a
+  manager endpoint, a stranger) waited up to 15 seconds and then held the lock
+  that every punch and note write needs. The gate now runs first. A roster read
+  that throws is a transport failure, which these callers already handle
+  because a `waitLock` timeout has always surfaced that way. A per-user lock
+  (`kbRecordView`, `saveMyScratchpad`) is out of scope: it blocks nobody else.
+  Verify: the F58 (cycle 25) pin — derived from every public function that
+  takes the ScriptLock and reads the caller, and driven with no caller and a
+  LockService that throws if touched.
 
 
 <a id="g18-normalizetype-strips-the-adj-prefix"></a>
@@ -1641,6 +1652,11 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   exempt agents, or ignored targets, and still read as a clean target-aware pick.
   The answer now carries `unread`, the audit row names the inputs, and the toast
   warns. Verify: the F47 (cycle 25) drive.
+  **Cycle 25 F30 (2026-10-14): the manager cross-rep search.** It kept the
+  newest 500 matches and dropped the rest with no flag, so a broad search read
+  as complete. The result now carries `total` and `truncated`
+  (`CN_MGR_SEARCH_CAP`), and the count line says "Showing the newest 500 of N".
+  Verify: the F30 (cycle 25) drive.
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 
@@ -2653,6 +2669,11 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   effort, try/catch) when `flagType=training` and
   `subformData.trainingQuestion` is non-empty. Previously, managers
   only saw training questions in the weekly digest.
+  **AMENDED (cycle 25 F31, 2026-10-14): from a card too.** Only `submitCallNote`
+  sent the immediate mail. A question added when flagging an existing note as
+  training (`setCallNoteFlag`) was stored and told nobody. The card path now
+  mails the managers after the lock, once per question (a re-flag with the same
+  question does not mail again). Verify: the F31 (cycle 25) drive.
 
 <a id="g93-setcallnoteflag-accepts-an-optional-trainingquestion"></a>
 
@@ -2880,6 +2901,11 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   visitor got that patient's prefill. Both form lookups now re-check that the
   fetched row carries the token it was found by (g164). Verify: the FORM-1
   drive.
+  **AMENDED (cycle 25 F34, 2026-10-14): a shape check first on the read path
+  too.** `submitFormByToken` refused a string not shaped like a v4 UUID before
+  any read (cycle 22 S9), but `getFormByToken` read the whole token column for
+  any string. It now runs the same `formTokenShapeOk_` check first. Verify: the
+  F34 (cycle 25) drive.
 
 <a id="g102-form-submissions-are-phi-and-segregated-hashed"></a>
 
@@ -4431,6 +4457,10 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   return null in some browsers even when the tab opens. It now sets
   `opener = null` on the returned window and says which failure it was
   (`intakeCopyImageFallbackMsg_`). Verify: the U1 and U3 pins.
+  **AMENDED (cycle 25 F59, 2026-10-14): `reloadApp_`.** Its second fallback
+  called `window.open(url, '_top')` and returned whatever happened, so a blocked
+  open did nothing at all — no reload, no message. It now reads the return and
+  falls through to the in-frame reload. Verify: the F59 (cycle 25) drive.
 
 <a id="g136-a-per-day-series-must-tell-no-data"></a>
 
@@ -5299,6 +5329,12 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   window's first month; a tab still inside the window after `INTAKE_VOLUME_SCAN_BLOCKS`
   is named in `truncatedTypes`, and the table says so. Verify: the F42 and F43
   (cycle 25) drives.
+  **AMENDED (cycle 25 F33, 2026-10-14): Sent Forms.** `getMySentForms` reads a
+  2,000-row tail of FormTokens and keeps 200, and said neither, so a rep's older
+  forms vanished and the patient timeline called itself complete. It now ships
+  `truncated`; the view says it shows the most recent forms only (and never
+  "No fillable forms sent yet" over a cut list), and the timeline names sent
+  forms among its truncated sources. Verify: the F33 (cycle 25) drive.
 
 <a id="g153-clearing-the-roster-email-does-not-reach-the-gate-lists"></a>
 
@@ -5659,6 +5695,12 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   them could put another patient's note under a department member's Expand. It
   takes the FORM-1 shape (`formLocatedRowIs_`, one re-locate, then refuse).
   Verify: the Seams F6 drive.
+  **AMENDED (cycle 25 F32, 2026-10-14): pinned notes.** `getMyPinnedCallNotes`
+  scans the SubformData column without the lock, then fetched each pinned row by
+  index. A delete in between put another note under that index. The scan now
+  reads the NoteId column too; a fetched row must carry that id and still be
+  pinned, otherwise the note is found again by its id (`findCallNoteRow_`).
+  Verify: the F32 (cycle 25) drive.
 
 <a id="g165-a-grant-earned-by-a-covered-period-applies-forward"></a>
 

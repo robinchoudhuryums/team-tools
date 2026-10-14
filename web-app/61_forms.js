@@ -349,6 +349,10 @@ function formLocatedRowIs_(row, col, token) {
 function getFormByToken(token) {
   token = String(token || '').trim();
   if (!token) return { error: 'No form token provided.' };
+  // F34 (cycle 25): refused on shape before any read — the submit path's S9
+  // check. Anything that loads a page can call this, and every garbage string
+  // used to cost a read of the whole token column.
+  if (!formTokenShapeOk_(token)) return { error: 'Form not found. This link may be invalid.' };
 
   try {
     const sheet = getOrCreateFormTokensSheet_();
@@ -786,8 +790,13 @@ function getMySentForms() {
       });
     }
     forms.sort(function (a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); });
+    // F33 (cycle 25): a short list says so — rows above the scanned tail may
+    // hold this rep's older forms, and the output is capped at 200. Both
+    // read as the whole list before, and the patient timeline called itself
+    // complete on top of it (g152).
+    const truncated = (lastRow - 1 > scanCount) || forms.length > 200;
     if (forms.length > 200) forms.length = 200;
-    return { forms: forms };
+    return { forms: forms, truncated: truncated };
   } catch (err) { return { error: err.message }; }
 }
 /** Manager-side companion to getFormSubmission: lets a manager review a

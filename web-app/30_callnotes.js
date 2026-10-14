@@ -67,12 +67,12 @@ function sanitizeTagsArray_(arr) {
  *  composition is a separate two-stage action (preview → confirm) via
  *  previewCallNoteEmail / emailFromCallNote. */
 function submitCallNote(payload) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
 
     const cleaned = sanitizeCallNotePayload_(payload || {});
     const v = validateCallNotePayload_(cleaned);
@@ -132,11 +132,11 @@ function submitCallNote(payload) {
 /** Updates an existing call note's content. Inline-edit support for the
  *  rolling stack. The audit log records the diff for accountability. */
 function updateCallNote(noteId, payload) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
 
     const cleaned = sanitizeCallNotePayload_(payload || {});
     const v = validateCallNotePayload_(cleaned);
@@ -183,11 +183,12 @@ function updateCallNote(noteId, payload) {
  *  Optional trainingQuestion: when flagging as 'training', merges
  *  the question into subformData so it appears in digests/Q&A. */
 function setCallNoteFlag(noteId, flagType, trainingQuestion, reviewComment) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
+  let notifyAfter = null;
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
     // Round 2 deferred 8e — accept 'urgent' as a card-level toggle. Urgent
     // never enters the FlagType column (sanitizeFlagType_ still rejects it,
     // INV-37 preserved), but it does flip in subformData.flags so the form
@@ -230,8 +231,13 @@ function setCallNoteFlag(noteId, flagType, trainingQuestion, reviewComment) {
       // F(cycle-8): same 2000-char cap as the submit path (sanitizeCallNotePayload_,
       // M-15) — an uncapped write can push the SubformData cell toward the ~50k
       // Sheets limit, after which EVERY later metadata write to the note throws.
+      const prevQ = String(subformData.trainingQuestion || '').trim();
       subformData.trainingQuestion = String(trainingQuestion).trim().slice(0, 2000);
       sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(subformData)));
+      // F31 (cycle 25): a question asked from a card emails the managers like
+      // one asked at submit (g92) — once per question, post-lock (M-7).
+      const q = subformData.trainingQuestion, qDate = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
+      if (q && q !== prevQ) notifyAfter = function () { notifyManagerTrainingQuestion_(emp, q, qDate); };
     }
     if (t === 'review' && reviewComment) {
       // Round-1 pilot #1 — optional review comment from the card toggle; the
@@ -263,16 +269,19 @@ function setCallNoteFlag(noteId, flagType, trainingQuestion, reviewComment) {
     const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
     return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
   } catch (err) { return { success: false, error: err.message }; }
-  finally { lock.releaseLock(); }
+  finally {
+    lock.releaseLock();
+    if (notifyAfter) { try { notifyAfter(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } }
+  }
 }
 /** Marks an action-flagged note as resolved (or un-resolves it). Only
  *  meaningful when FlagType=action. */
 function setCallNoteResolved(noteId, resolved) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
     const sheet = getCallNotesSheet_(emp);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
@@ -312,11 +321,11 @@ function cnDeleteWindowError_(noteMs, nowMs, windowSeconds) {
  *  CONFIG.CALL_NOTES.DELETE_WINDOW_SECONDS cannot be self-deleted — they
  *  must be addressed through the manager or left in place. */
 function deleteCallNote(noteId) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
     const sheet = getCallNotesSheet_(emp);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
@@ -346,11 +355,11 @@ function deleteCallNote(noteId) {
  *  (that's the point — the rep window is 5 min, INV-60). Audit row carries
  *  the manager as actor + a deletedBy marker; PHI-free (noteId only). */
 function managerDeleteCallNote(repEmpId, noteId) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const emp = lookupEmployeeById_(String(repEmpId || '').trim());
     if (!emp || !emp.callNotesSheetId) return { success: false, error: 'Rep not found or not enrolled.' };
     const sheet = getCallNotesSheet_(emp);
@@ -375,11 +384,11 @@ function managerDeleteCallNote(repEmpId, noteId) {
  *  Enforces CN_PIN_LIMIT (3): pinning a 4th note returns an error so the
  *  rep is forced to unpin something first. */
 function setCallNotePinned(noteId, pinned) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
     const sheet = getCallNotesSheet_(emp);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
@@ -448,6 +457,11 @@ function setCallNotePinned(noteId, pinned) {
  *  (~16× fewer cells than a full-history read), with a cheap substring
  *  pre-filter before JSON.parse, then fetches just the few pinned rows
  *  (≤ CN_PIN_LIMIT under the cap) at full width. */
+/** PURE — does a SubformData cell say the note is pinned? A corrupt blob is not. */
+function cnBlobPinned_(raw) {
+  if (!raw) return false;
+  try { const sub = JSON.parse(raw); return !!(sub && sub.pinned); } catch (e) { return false; }
+}
 function getMyPinnedCallNotes() {
   try {
     const emp = getEmployeeInfo_();
@@ -459,6 +473,7 @@ function getMyPinnedCallNotes() {
     if (lastRow >= 2) {
       const n = lastRow - 1;
       const subCol = sheet.getRange(2, CN.SUBFORM_DATA + 1, n, 1).getValues();
+      const idCol = sheet.getRange(2, CN.NOTE_ID + 1, n, 1).getValues();
       for (let i = 0; i < n; i++) {
         const raw = subCol[i][0];
         if (!raw) continue;
@@ -466,12 +481,17 @@ function getMyPinnedCallNotes() {
         // toggle DELETES `pinned`/`pinnedAt` rather than writing false). The
         // JSON.parse below stays authoritative for any substring false-positive.
         if (String(raw).indexOf('"pinned"') < 0) continue;
-        let sub = null;
-        try { sub = JSON.parse(raw); } catch (e) { continue; }
-        if (!sub || !sub.pinned) continue;
-        const rowIndex = i + 2;
-        const row = sheet.getRange(rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
-        notes.push(callNoteRowToObject_({ row: row, rowIndex: rowIndex }));
+        if (!cnBlobPinned_(raw)) continue;
+        const noteId = String(idCol[i][0] || '').trim();
+        if (!noteId) continue;
+        // F32 (cycle 25): this read is unlocked, so a delete between the scan
+        // and the fetch moves another note under the index (g164). The fetched
+        // row must still carry the id it was found by and still be pinned;
+        // otherwise the note is found again by its id.
+        let located = { rowIndex: i + 2, row: sheet.getRange(i + 2, 1, 1, CN_HEADERS.length).getValues()[0] };
+        if (!formLocatedRowIs_(located.row, CN.NOTE_ID, noteId)) located = findCallNoteRow_(sheet, noteId);
+        if (!located || !cnBlobPinned_(located.row[CN.SUBFORM_DATA])) continue;
+        notes.push(callNoteRowToObject_(located));
       }
     }
     // Newest-pinned first
@@ -895,6 +915,7 @@ function getPatientTimeline(trx) {
     try {
       const fr = getMySentForms();
       if (fr && fr.error) failedSources.push('sent forms');
+      if (fr && fr.truncated) truncatedSources.push('sent forms (the newest only)');   // F33
       forms = (fr && fr.forms) || [];
     } catch (e) { failedSources.push('sent forms'); }
 
@@ -1407,11 +1428,11 @@ function cnTagSkippedNote_(skippedReps) {
  *  tag already exists on a note, the rename collapses (dedupes) by
  *  dropping the old tag from those rows. Audit row records old+new+counts. */
 function renameCallNoteTag(oldTag, newTag) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
     const oldT = normalizeTagForAdmin_(oldTag);
     const newT = normalizeTagForAdmin_(newTag);
     if (!oldT) return { success: false, error: 'Invalid source tag.' };
@@ -1445,11 +1466,11 @@ function renameCallNoteTag(oldTag, newTag) {
  *  primarily UX: the manager confirmed they expect targetTag to already
  *  exist on some notes. Audit row labels it 'merge' for trail clarity. */
 function mergeCallNoteTags(sourceTag, targetTag) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
     const srcT = normalizeTagForAdmin_(sourceTag);
     const tgtT = normalizeTagForAdmin_(targetTag);
     if (!srcT) return { success: false, error: 'Invalid source tag.' };
@@ -1483,11 +1504,11 @@ function mergeCallNoteTags(sourceTag, targetTag) {
  *  as a deprecated category. Stored in Script Property CN_ARCHIVED_TAGS
  *  (JSON array of lowercase tag strings). */
 function archiveCallNoteTag(tag, archived) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
     const t = normalizeTagForAdmin_(tag);
     if (!t) return { success: false, error: 'Invalid tag.' };
     const set = getArchivedTagsSet_();
@@ -1643,8 +1664,11 @@ function managerSearchCallNotes(query, field, repFilter, dateRange, includeArchi
       }
     }
     results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-    if (results.length > 500) results.length = 500;
-    return { results, skippedReps };
+    // F30 (cycle 25): the cap is said — `total` is every match, so a search
+    // that found more than the newest CN_MGR_SEARCH_CAP never reads as whole.
+    const total = results.length;
+    if (results.length > CN_MGR_SEARCH_CAP) results.length = CN_MGR_SEARCH_CAP;
+    return { results, skippedReps, total: total, truncated: total > results.length };
   } catch (err) { return { error: err.message }; }
 }
 function managerGetUnresolvedActionCount() {
@@ -1969,11 +1993,11 @@ function exportCallNotesRange(startDate, endDate) {
  *  reply on any note that has a thread). Writes a CallNoteManagerComment audit
  *  row (PHI-free: noteId only). */
 function setCallNoteManagerComment(repEmpId, noteId, message) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const msg = String(message || '').trim().slice(0, 2000);   // F(cycle-8): cell-size guard
     if (!msg) return { success: false, error: 'Comment is empty.' };
     const target = lookupEmployeeById_(repEmpId);
@@ -2010,11 +2034,11 @@ function setCallNoteManagerComment(repEmpId, noteId, message) {
   finally { lock.releaseLock(); }
 }
 function appendCallNoteFeedback(noteId, message, kind) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
     if (!emp.callNotesSheetId) return { success: false, error: 'Your call-notes Sheet is not configured.' };
 
     const kindV = (kind === 'ack' || kind === 'clarification') ? kind : 'clarification';
@@ -2404,11 +2428,11 @@ function computeCnEmailHash_(htmlBody, subject, to) {
  *  success rather than failure — failing here would prompt the rep to re-send
  *  a duplicate. The stamp failure is logged to console for ops to notice. */
 function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
     const sheet = getCallNotesSheet_(emp);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
@@ -4462,11 +4486,11 @@ function schedReadMine_(sh, empId) {
  *  may name a patient, so it persists ONLY in the PHI store and the audit row
  *  carries the id alone (the INV-32 discipline). */
 function createScheduledCall(payload) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { error: 'Not authorized.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { error: 'Not authorized.' };
     const p = payload || {};
     const v = schedValidateShape_(p.date, p.time, p.label, p.leadMin);
     if (v.error) return v;
@@ -4509,11 +4533,11 @@ function getMyScheduledCalls() {
 function setScheduledCallStatus(id, status) {
   const st = String(status || '').trim().toLowerCase();
   if (st !== 'done' && st !== 'cancelled') return { error: 'Status must be done or cancelled.' };
+  const emp = getEmployeeInfo_();
+  if (!emp) return { error: 'Not authorized.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { error: 'Not authorized.' };
     const sh = getFormsSS_().getSheetByName(SCHED_CALLS_TAB);
     if (!sh) return { error: 'Reminder not found.' };
     const wanted = String(id || '').trim();

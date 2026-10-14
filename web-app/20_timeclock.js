@@ -1775,11 +1775,11 @@ function getMyPayStatement(offset, repEmpId) {
   } catch (err) { return { error: err.message }; }
 }
 function submitTimeOffRequest(date, type, notes) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
     // C17 batch-5 — `notes` was the module's only unbounded client free text
     // (every sibling caps: INV-96 forms, INV-143 subformData, COACH_TEXT_MAX):
     // >50k threw mid-lock; ~45k wrote fine and was echoed whole into the
@@ -1820,11 +1820,11 @@ function submitTimeOffRequest(date, type, notes) {
   finally { lock.releaseLock(); }
 }
 function submitTimeOffRange(startDate, endDate, type, notes) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
     notes = String(notes || '').slice(0, 1000);   // the C17-⑤ bound, matching the single-day path
     if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate) ||
         !endDate || !/^\d{4}-\d{2}-\d{2}$/.test(endDate))
@@ -1877,11 +1877,11 @@ function submitTimeOffRange(startDate, endDate, type, notes) {
 }
 /** Employee cancels their own pending time-off request. */
 function cancelTimeOffRequest(date, submittedAt) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
     const sheet = getOrCreateTimeOffSheet_();
     const rows  = sheet.getDataRange().getValues();
     for (let i = 1; i < rows.length; i++) {
@@ -2546,12 +2546,12 @@ function toDeductionRead_(cell) {
   return m ? { known: true, bucket: m[1], days: parseFloat(m[2]) } : { known: false };
 }
 function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     if (!['Approved','Denied','Pending'].includes(newStatus)) {
       return { success: false, error: 'Invalid status.' };
     }
@@ -2697,13 +2697,13 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
 /** Manager files a time-off request on behalf of an employee.
  *  Optionally auto-approves it in the same call (skipping the Pending stage). */
 function managerSubmitTimeOff(empId, date, type, notes, autoApprove) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager)
+    return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager)
-      return { success: false, error: 'Manager access required.' };
 
     if (!empId) return { success: false, error: 'No employee selected.' };
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
@@ -2913,11 +2913,11 @@ function ptoLegitHalfDayPair_(list) {
  *  'Approved', so a re-run finds no duplicates and credits nothing. Writes a
  *  `PtoReconciliationFix` audit row. */
 function fixPtoReconciliation(empId) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const target = lookupEmployeeById_(empId);
     if (!target) return { success: false, error: 'Employee not found.' };
     // TC-06 (cycle 23): a credit that cannot land must not be reported, and
@@ -3226,11 +3226,11 @@ function getTimesheetDoctor() {
  *  The kept row is untouched, so the personal-sheet mirror stays correct.
  *  Inverted pairs are deliberately NOT auto-fixed (Day Edit is the path). */
 function fixTimesheetDuplicates(empIdFilter) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const filter = String(empIdFilter || '').trim();   // optional: one employee only
     const scan = tsDoctorScan_();
     const sheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
@@ -3761,11 +3761,11 @@ function repairSplitDayPunches(opts) {
   return summary;
 }
 function deletePunch(empId, date, time, punchType) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
 
     if (!PUNCH_LABELS_.includes(punchType))
       return { success: false, error: 'Invalid punch type.' };
@@ -3850,11 +3850,11 @@ function selfUndoLaterPunch_(rows, empId, date, time, todayStr) {
  *  Adjustments are NOT eligible — use Adjust to fix those. Since cycle 25 F61
  *  only the day's last punch is (`selfUndoLaterPunch_`). */
 function selfDeletePunch(date, time, punchType) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
     if (!PUNCH_LABELS_.includes(punchType))
       return { success: false, error: 'Invalid punch type.' };
 
@@ -4298,11 +4298,11 @@ function managerClockOrderError_(cleanSlots) {
   return null;
 }
 function managerSaveDay(targetEmpId, date, slots, reason) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     if (!targetEmpId) return { success: false, error: 'No employee specified.' };
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
       return { success: false, error: 'Invalid date format.' };
@@ -7233,12 +7233,12 @@ function getOrCreatePunchAdjustSheet_() {
  *  reject, adjust window, reason beyond OLD_ADJUST_ALERT_DAYS). Caller-scoped,
  *  locked. */
 function submitPunchAdjustRequests(requests) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
     if (!Array.isArray(requests) || requests.length === 0) return { success: false, error: 'No adjustments to submit.' };
     if (requests.length > 20) return { success: false, error: 'Too many adjustments in one submission (max 20).' };
     const empTz = empTz_(emp);
@@ -7977,11 +7977,11 @@ function breakAdjustTargetRow_(matches, punchType, intent, date) {
  *  deletes unspecified punch types — a blank slot leaves that punch untouched
  *  across the range. Manager-gated, locked, window-bounded, span capped at 31. */
 function managerSaveDayRange(targetEmpId, fromDate, toDate, slots, reason) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     if (!targetEmpId) return { success: false, error: 'No employee specified.' };
     if (!fromDate || !/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !toDate || !/^\d{4}-\d{2}-\d{2}$/.test(toDate))
       return { success: false, error: 'Invalid date range (expected yyyy-MM-dd).' };

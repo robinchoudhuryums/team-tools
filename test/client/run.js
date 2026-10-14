@@ -7781,7 +7781,7 @@ test('batch-2: cross-rep walks carry skippedReps and never cache a partial round
   // a result object built lines above the return).
   [['managerAggregateFlagged_', /return \{ flagType, results, skippedReps \};/],
    ['managerAggregateUrgent_', /return \{ results, skippedReps \};/],
-   ['managerSearchCallNotes', /return \{ results, skippedReps \};/],
+   ['managerSearchCallNotes', /return \{ results, skippedReps, total: total, truncated: total > results\.length \};/],   // F30 (cycle 25): + the cap
    ['getCallNotesTagTaxonomy', /skippedReps: skippedReps/],
    ['getCallNotesTagTrends', /out\.skippedReps = skippedReps;/]].forEach(([fn, re]) => {
     const body = c17strip(extractRawFunction('Code.js', fn));
@@ -36787,6 +36787,181 @@ test('F48 (cycle 25): a manual QA audit resolves the agent\'s roster id at write
   assert.strictEqual(appended.length, 1, 'and nothing is written');
   caller = Object.assign({}, caller, { isAdmin: true });
   assert.ok(JSON.parse(JSON.stringify(ctx.qaCreateManualRecording('Rev', 'admin audit'))).success, 'an admin may (the S6 rule)');
+});
+
+// ── Cycle 25 Batch 8b — Call Notes / forms server and shell ────────────────
+console.log('\ncycle 25 Batch 8b — Call Notes / forms server and shell');
+test('F58 (cycle 25): every public endpoint that takes the lock checks its caller FIRST — a refused caller never waits on (or holds) the one project ScriptLock (derived + driven)', () => {
+  // The global ScriptLock only — a per-user lock (kbRecordView, saveMyScratchpad) queues nobody else.
+  const fnDecls = serverDecls().decls;
+  const locked = serverCallersOf('waitLock').filter((n) => !/_$/.test(n) && (fnDecls.get(n) || {}).kind === 'function' &&
+    /getScriptLock\(/.test(extractRawFunction('Code.js', n)));
+  const gated = new Set(serverCallersOf('getEmployeeInfo_'));
+  const set = locked.filter((n) => gated.has(n));
+  assert.ok(set.length >= 64, 'the derived set is the endpoints that both gate and lock (' + set.length + ')');
+  const late = set.filter((n) => {
+    const b = stripJsComments_(extractRawFunction('Code.js', n));
+    return b.indexOf('getEmployeeInfo_(') > b.indexOf('waitLock(');
+  });
+  assert.deepStrictEqual(late, [], 'THE REGRESSION: these took the lock before reading the caller');
+  // Driven: with no caller, each one returns its refusal without touching LockService.
+  const threw = [];
+  set.forEach((n) => {
+    const ctx = vm.createContext({ String, Object, Array, Math, Number, JSON, Date,
+      getEmployeeInfo_: () => null, canSeeQa_: () => false,
+      LockService: { getScriptLock: () => { throw new Error('LOCK TAKEN'); }, getUserLock: () => { throw new Error('LOCK TAKEN'); } } });
+    vm.runInContext(extractRawFunction('Code.js', n), ctx);
+    let r;
+    try { r = ctx[n](); } catch (e) { threw.push(n + ': ' + e.message); return; }
+    if (!r || !(r.error || r.success === false)) threw.push(n + ': no refusal');
+  });
+  assert.deepStrictEqual(threw, [], 'a refused caller never reaches the lock');
+});
+
+test('F59 (cycle 25): reloadApp_ reads a BLOCKED window.open as blocked — it falls through to the in-frame reload instead of doing nothing (driven)', () => {
+  let reloads = 0, opened = null;
+  const top = { location: { replace() { throw new Error('cross-origin'); } } };
+  const sb = buildSandbox([], { SERVER_WEB_APP_URL: 'https://script.test/exec', COMPACT_MODE: false, currentView: 'callNotes' });
+  sb.location = { reload: () => { reloads++; } };
+  sb.top = top; sb.self = sb;
+  loadFunction(sb, 'script_core.html', 'reloadApp_');
+  sb.open = (u, t) => { opened = [u, t]; return null; };
+  sb.reloadApp_();
+  assert.deepStrictEqual(opened, ['https://script.test/exec', '_top'], 'the top-window open is tried');
+  assert.strictEqual(reloads, 1, 'THE REGRESSION: a blocked open returned null and the reload silently did nothing');
+  sb.open = () => ({});
+  sb.reloadApp_();
+  assert.strictEqual(reloads, 1, 'an open that went through does not also reload the frame');
+});
+
+test('F30 (cycle 25): the manager cross-rep search says when it capped the list — `total` and `truncated` ride the result, and the count line names both (driven)', () => {
+  const ctx = vm.createContext({ String, Object, Array, Math, Number, JSON, console: { warn() {} } });
+  vm.runInContext(b8aConst_('CN_MGR_SEARCH_CAP'), ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'managerSearchCallNotes'), ctx);
+  ctx.getEmployeeInfo_ = () => ({ isManager: true });
+  ctx.EMP = { ID: 0, NAME: 1 };
+  ctx.getEmployeeRosterRows_ = () => [['h'], ['E1', 'Ana', 's1']];
+  ctx.cnEnrolledSheetId_ = (r) => r[2];
+  ctx.CONFIG = { CALL_NOTES: { ARCHIVE_TAB: 'NotesArchive' } };
+  let n = 600;
+  ctx.getCallNotesSheet_ = () => ({});
+  ctx.readCallNoteRowsInRange_ = () => Array.from({ length: n }, (_, i) => ({ i }));
+  ctx.callNoteRowToObject_ = (l) => ({ caller: 'smith', callback: '', patientAndTrx: '', issue: '', resolution: '', dateLocal: '2026-10-01', timestamp: '2026-10-01T10:' + String(l.i).padStart(4, '0') });
+  let r = JSON.parse(JSON.stringify(ctx.managerSearchCallNotes('smith', 'all')));
+  assert.strictEqual(r.results.length, 500, 'the newest 500 ship');
+  assert.ok(r.truncated === true && r.total === 600, 'THE REGRESSION: 100 matches were dropped with no flag');
+  n = 3;
+  r = JSON.parse(JSON.stringify(ctx.managerSearchCallNotes('smith', 'all')));
+  assert.ok(r.truncated === false && r.total === 3, 'an uncapped search says it is whole');
+  // The client's count line.
+  const host = { innerHTML: '' };
+  const sb = buildSandbox([], { esc: (x) => String(x), cnSkippedRepsNoteHtml_: () => '', cnRenderResultCard_: () => '<i></i>',
+    CN_STATE: { mgrSearchQuery: 'smith', mgrSearchResults: new Array(500).fill({}), mgrSearchTotal: 600 } });
+  sb.document.getElementById = () => host;
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMgrRenderSearchResults_')();
+  assert.ok(/Showing the newest <b>500<\/b> of 600 results/.test(host.innerHTML), 'the manager is told the list is the newest 500 of 600');
+  sb.CN_STATE.mgrSearchTotal = 0; sb.CN_STATE.mgrSearchResults = [{}, {}];
+  sb.cnMgrRenderSearchResults_();
+  assert.ok(/<b>2<\/b> results/.test(host.innerHTML) && !/newest/.test(host.innerHTML), 'an uncapped list reads as before');
+  assert.ok(/CN_STATE\.mgrSearchTotal = res\.truncated \? \(Number\(res\.total\) \|\| 0\) : 0;/.test(extractFunction('cn/script_callnotes.html', 'cnMgrFireSearch_') || extractScript('cn/script_callnotes.html')), 'the loader keeps the total only for a capped answer');
+});
+
+test('F31 (cycle 25): a training question asked from a card emails the managers like one asked at submit — once per question, after the lock (driven)', () => {
+  const ctx = vm.createContext({ String, Object, Array, JSON, console: { warn() {} } });
+  vm.runInContext(extractRawFunction('Code.js', 'setCallNoteFlag'), ctx);
+  const mails = [];
+  let blob = '{}';
+  let lockHeld = false;
+  ctx.getEmployeeInfo_ = () => ({ id: 'E1', name: 'Ana' });
+  ctx.LockService = { getScriptLock: () => ({ waitLock() { lockHeld = true; }, releaseLock() { lockHeld = false; } }) };
+  ctx.CN = { FLAG_TYPE: 0, RESOLVED: 1, SUBFORM_DATA: 2, DATE_LOCAL: 3 };
+  ctx.CN_FLAG_TYPES = ['action', 'training', 'review']; ctx.CN_HEADERS = [0, 1, 2, 3];
+  ctx.sanitizeFlagType_ = (t) => String(t || '').toLowerCase();
+  ctx.getCallNotesSheet_ = () => ({ getRange: () => ({ setValue: (v) => { if (String(v).startsWith('{')) blob = v; }, getValues: () => [['training', 'FALSE', blob, '2026-10-14']] }) });
+  ctx.findCallNoteRow_ = () => ({ rowIndex: 2, row: ['', 'FALSE', blob, '2026-10-14'] });
+  ctx.sheetSafe_ = (x) => x; ctx.cnDateLocalString_ = (x) => x; ctx.writeAuditLog_ = () => {};
+  ctx.callNoteRowToObject_ = () => ({});
+  ctx.notifyManagerTrainingQuestion_ = (emp, q, d) => mails.push([q, d, lockHeld]);
+  ctx.setCallNoteFlag('n1', 'training', 'How do I bill a rental?');
+  assert.deepStrictEqual(mails, [['How do I bill a rental?', '2026-10-14', false]], 'THE REGRESSION: the card path stored the question and told nobody; the mail goes after the lock');
+  ctx.setCallNoteFlag('n1', 'training', 'How do I bill a rental?');
+  assert.strictEqual(mails.length, 1, 'the same question again does not mail twice');
+  ctx.setCallNoteFlag('n1', 'training', 'And a purchase?');
+  assert.strictEqual(mails.length, 2, 'a new question does');
+  ctx.setCallNoteFlag('n1', 'review', 'not a question', 'a comment');
+  assert.strictEqual(mails.length, 2, 'a review flag never mails');
+});
+
+test('F32 (cycle 25): pinned notes are found by id when a delete moves the rows between the unlocked scan and the fetch — never another note under the old index (driven)', () => {
+  const ctx = vm.createContext({ String, Object, Array, JSON });
+  ['getMyPinnedCallNotes', 'cnBlobPinned_', 'formLocatedRowIs_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  ctx.CN = { NOTE_ID: 0, SUBFORM_DATA: 1 }; ctx.CN_HEADERS = [0, 1]; ctx.CN_PIN_LIMIT = 3;
+  const P = '{"pinned":true,"pinnedAt":"2026-10-14T10:00"}';
+  const before = [['A', P], ['B', '{}'], ['C', P], ['D', P]];
+  const after = [['B', '{}'], ['C', P], ['D', '{}']];   // A deleted and D unpinned between the two reads
+  ctx.getEmployeeInfo_ = () => ({ callNotesSheetId: 's' });
+  const sheet = { getLastRow: () => before.length + 1,
+    getRange: (r, c, n, w) => ({ getValues: () => (w === 1 ? before.slice(r - 2, r - 2 + n).map((x) => [x[c - 1]]) : [after[r - 2] || ['', '']]) }) };
+  ctx.getCallNotesSheet_ = () => sheet;
+  ctx.findCallNoteRow_ = (s, id) => { const i = after.findIndex((x) => x[0] === id); return i < 0 ? null : { rowIndex: i + 2, row: after[i] }; };
+  ctx.callNoteRowToObject_ = (l) => ({ id: l.row[0], subformData: JSON.parse(l.row[1]) });
+  const r = JSON.parse(JSON.stringify(ctx.getMyPinnedCallNotes()));
+  assert.deepStrictEqual(r.notes.map((n) => n.id), ['C'], 'THE REGRESSION: the fetch at A\'s old index returned B (unpinned) or C twice; A is gone, C is found by its id, and D — unpinned since the scan — is not listed');
+  assert.strictEqual(ctx.cnBlobPinned_('not json'), false);
+});
+
+test('F33 (cycle 25): Sent Forms says when its list is short — the tail read or the 200 cap — and the patient timeline names the stream instead of calling itself complete (driven)', () => {
+  const ctx = vm.createContext({ String, Object, Array, Math, Number, JSON, Date });
+  vm.runInContext(extractRawFunction('Code.js', 'getMySentForms'), ctx);
+  ctx.getEmployeeInfo_ = () => ({ email: 'ana@x.com' });
+  ctx.FT = { CREATED_BY: 0, FORM_TYPE: 1, STATUS: 2, EXPIRES_AT: 3, TOKEN: 4, RECIPIENT_NAME: 5, RECIPIENT_EMAIL: 6, CREATED_AT: 7, NOTE_ID: 8 };
+  ctx.FT_HEADERS = new Array(9).fill(0);
+  ctx.CONFIG = { CALL_NOTES: { FORM_CATALOG: [] } };
+  ctx.formTokenIsoString_ = (x) => String(x); ctx.formTokenCellMs_ = () => ({ present: true, ms: Date.now() + 1e6 });
+  let total = 10, every = 1;
+  ctx.getOrCreateFormTokensSheet_ = () => ({ getLastRow: () => total + 1,
+    getRange: (r, c, n) => ({ getValues: () => Array.from({ length: n }, (_, i) => [((r + i) % every === 0) ? 'ana@x.com' : 'bo@x.com', 'f', 'pending', 'x', 't' + (r + i), '', '', '2026-10-' + String(10 + (i % 9)), '']) }) });
+  assert.strictEqual(JSON.parse(JSON.stringify(ctx.getMySentForms())).truncated, false, 'a short tab is whole');
+  total = 2500;
+  const big = JSON.parse(JSON.stringify(ctx.getMySentForms()));
+  assert.ok(big.truncated === true && big.forms.length === 200, 'THE REGRESSION: 2,000 rows read of 2,500 and 200 shown, with no flag');
+  every = 50;
+  const sparse = JSON.parse(JSON.stringify(ctx.getMySentForms()));
+  assert.ok(sparse.forms.length === 40 && sparse.truncated === true, 'under the 200 cap but past the 2,000-row tail: still short, and said');
+  total = 1500;
+  assert.strictEqual(JSON.parse(JSON.stringify(ctx.getMySentForms())).truncated, false, 'the whole tab read, under the cap: whole');
+  // The timeline names it.
+  const tctx = vm.createContext({ String, Object, Array });
+  vm.runInContext(extractRawFunction('Code.js', 'getPatientTimeline'), tctx);
+  tctx.getEmployeeInfo_ = () => ({ id: 'E1' }); tctx.empTz_ = () => 'UTC';
+  tctx.searchMyCallNotes = () => ({ results: [] }); tctx.intakeListMySubmissions = () => ({ submissions: [] });
+  tctx.getMySentForms = () => ({ forms: [], truncated: true }); tctx.buildPatientTimeline_ = () => [];
+  const tl = JSON.parse(JSON.stringify(tctx.getPatientTimeline('TRX1')));
+  assert.ok(tl.partial === true && /sent forms/.test(tl.truncatedSources.join()), 'the timeline is marked partial, naming sent forms');
+  // The view says so, and an empty short list is not "none sent".
+  const sb = buildSandbox([], { esc: (x) => String(x), icon: () => '', COMPACT_MODE: true });
+  const area = { innerHTML: '' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnSentFormCardHtml_');
+  const render = loadFunction(sb, 'cn/script_callnotes.html', 'cnRenderSentFormsView_');
+  render(area, [], null, true);
+  assert.ok(/most recent forms only/.test(area.innerHTML) && !/No fillable forms sent yet/.test(area.innerHTML), 'an empty truncated list never claims nothing was sent');
+  render(area, [], null, false);
+  assert.ok(/No fillable forms sent yet/.test(area.innerHTML) && !/most recent/.test(area.innerHTML), 'a whole empty list reads as before');
+});
+
+test('F34 (cycle 25): getFormByToken refuses a string that is not shaped like a token before any read — the submit path\'s rule (driven)', () => {
+  const ctx = vm.createContext({ String, Object, Array, Date, JSON });
+  ['getFormByToken', 'formTokenShapeOk_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  let reads = 0;
+  ctx.getOrCreateFormTokensSheet_ = () => { reads++; return {}; };
+  ctx.findFormTokenRow_ = () => null;
+  ['junk', '../../etc', 'a'.repeat(5000), '123e4567-e89b-12d3-a456'].forEach((t) => {
+    const r = JSON.parse(JSON.stringify(ctx.getFormByToken(t)));
+    assert.ok(/Form not found/.test(r.error), JSON.stringify(t.slice(0, 20)) + ' is refused');
+  });
+  assert.strictEqual(reads, 0, 'THE REGRESSION: every garbage string read the whole token column');
+  ctx.getFormByToken('123e4567-e89b-42d3-a456-426614174000');
+  assert.strictEqual(reads, 1, 'a well-formed token is looked up as before');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
