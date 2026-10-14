@@ -5356,9 +5356,9 @@ test('cycle-10 batch C: witness wiring + server guards hold', () => {
   assert.ok(ts.indexOf('getEmployeeInfo_') < ts.indexOf("getFlag_('showTeammateStatus')"),
     'getTeammateStatus authenticates before evaluating the flag (C8)');
   // C1 — reconcile routes its Timestamp reads through the boundary helper.
-  const rec = extractRawFunction('Code.js', 'reconcileCallNotes');
+  const rec = extractRawFunction('Code.js', 'reconcileCallNotesCore_');
   assert.ok((rec.match(/cnTimestampString_\(/g) || []).length >= 2,
-    'reconcileCallNotes recovers Timestamps via cnTimestampString_ (C1/INV-142)');
+    'reconcileCallNotesCore_ recovers Timestamps via cnTimestampString_ (C1/INV-142)');
   // C5 — a deliberately-cleared {} config stays empty.
   ['getStateTaxRates_', 'getUpdateSuggestions_'].forEach((fn) => {
     const src = extractRawFunction('Code.js', fn);
@@ -15126,7 +15126,7 @@ const X1_NO_FIXTURE_WRITES = [  // writes: no scenario performs them, and a fixt
     'mergeCallNoteTags', 'nudgeCoaching', 'offboardEmployee', 'provisionCallNotesSheet', 'qaAddComment',
     'qaAssignRecording', 'qaDeleteComment', 'qaSampleRecordings', 'qaSaveScorecard', 'qaSetExemption',
     'qaSetRecordingAgent', 'qaSetRecordingDuration', 'qaSetRecordingShared', 'qaSetRecordingStatus', 'qaSyncRecordings',
-    'reconcileCallNotes', 'recordPunch', 'releaseDoc', 'releaseSpanishThread', 'renameCallNoteTag', 'resetQuizAttempts',
+    'reconcileCallNotesNow', 'recordPunch', 'releaseDoc', 'releaseSpanishThread', 'renameCallNoteTag', 'resetQuizAttempts',
     'resolveSpanishThread', 'revokeTrainingAssignment', 'saveAutoTagRules', 'saveBreakSchedules',
     'saveDepartmentEmails', 'saveDeptRequestSla', 'saveEmailTemplates', 'saveEmpDocTemplate', 'saveExternalLinks',
     'saveFeatureFlags', 'saveKbAiSettings', 'saveMyScratchpad', 'saveQaMembers', 'saveQaScorecardCriteria', 'saveQuiz',
@@ -24997,7 +24997,7 @@ test('TQ-3: installAutomationTriggers refuses with NOTHING deleted when the quot
   // old `slice(indexOf(A), indexOf(B))` swallowed everything between them in
   // the concatenation and evaluated it. A pin that depends on two declarations
   // being NEIGHBOURS is a pin the next move breaks.
-  const consts = ['AUTOMATION_TRIGGER_QUOTA', 'TRIGGER_GROUPS', 'RETIRED_TRIGGER_HANDLERS']
+  const consts = ['AUTOMATION_TRIGGER_QUOTA', 'TRIGGER_GROUPS', 'RETIRED_TRIGGER_HANDLERS', 'MANAGER_BRIEF_HOUR']
     .map((n) => extractConstDecl_(n)).join('\n');
   const drive = (existing, failAt) => {
     const state = { existing: existing.slice(), deleted: [], created: [], mail: null };
@@ -28720,6 +28720,126 @@ test('F7 (cycle 25): the cold-archive mover deletes the moved rows in contiguous
   assert.strictEqual(moved, 26);
   assert.deepStrictEqual(calls, ['28+1', '2+25'], 'two runs, bottom-up — the back-filled row first, then the 25-row prefix in ONE call');
   assert.deepStrictEqual(rows.map((r) => r[1]), ['v', 'new0', 'new1'], 'exactly the new rows survive');
+});
+
+test('F8 (cycle 25): a digest stands down for the brief only while the brief has delivered TODAY, or yesterday before today\'s brief hour is out — never on yesterday\'s beat all day (driven: the pure rule and the real suppression gate)', () => {
+  const cfg = vm.createContext({});
+  vm.runInContext(extractConstDecl_('MANAGER_BRIEF_HOUR').replace(/^const /, 'var '), cfg);
+  const H = cfg.MANAGER_BRIEF_HOUR;
+  const pctx = vm.createContext({ Number });
+  vm.runInContext(extractRawFunction('Code.js', 'briefBeatCoversNow_'), pctx);
+  const covers = pctx.briefBeatCoversNow_;
+  [['2026-10-14', 0, true, 'today\'s beat covers the day'], ['2026-10-14', 23, true, 'to its end'],
+   ['2026-10-13', H - 1, true, 'yesterday\'s, before today\'s brief'], ['2026-10-13', H, true, 'and through the hour it fires in'],
+   ['2026-10-13', H + 1, false, 'THE REGRESSION: past today\'s brief hour, yesterday\'s beat no longer covers'],
+   ['2026-10-13', 21, false, 'the evening digest sends on a day the brief failed'],
+   ['2026-10-12', 3, false, 'two days old never covers'], ['', 3, false, 'no beat never covers']]
+    .forEach(([beat, hour, want, why]) => assert.strictEqual(covers(beat, '2026-10-14', '2026-10-13', hour, H), want, why + ' (' + beat + ' @' + hour + ')'));
+  // Driven: the real gate, with the clock at 09:30 the day after an 08:00 beat
+  // (25.5 hours — inside the old 26-hour window).
+  const drive = (beat, nowIso) => {
+    const fixed = new Date(nowIso);
+    class FakeDate extends Date { constructor(...a) { if (a.length) super(...a); else super(fixed.getTime()); } static now() { return fixed.getTime(); } }
+    const ctx = vm.createContext({ String, JSON, parseInt, Number, Date: FakeDate,
+      CONFIG: { TIMEZONE: 'UTC', MANAGER_TIMEZONE: 'UTC' }, DIGEST_LAST_RUN_PROP: 'P', MANAGER_BRIEF_HOUR: H,
+      getFlag_: () => true,
+      PropertiesService: { getScriptProperties: () => ({ getProperty: () => JSON.stringify({ managerBrief: beat }) }) },
+      Utilities: { parseDate: (s) => new Date(s.replace(' ', 'T') + 'Z'),
+        formatDate: (d, tz, f) => (f === 'H' ? String(d.getUTCHours()) : d.toISOString().slice(0, 10)) },
+      ScriptApp: { getProjectTriggers: () => [{ getHandlerFunction: () => 'sendManagerDailyBrief' }] } });
+    ['briefBeatCoversNow_', 'addDaysIso_', 'managerBriefSuppressionActive_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+    return ctx.managerBriefSuppressionActive_({ checkTrigger: true });
+  };
+  assert.strictEqual(drive('2026-10-13 08:00:00', '2026-10-14T09:30:00Z'), false,
+    'THE REGRESSION: a 25.5-hour-old beat suppressed the 10am dept reminder on a day the brief never ran');
+  assert.strictEqual(drive('2026-10-14 08:00:10', '2026-10-14T21:00:00Z'), true, 'today\'s delivered brief still carries the evening digest');
+  assert.strictEqual(drive('2026-10-13 08:00:00', '2026-10-14T07:00:00Z'), true, 'the 7am digest still stands down before today\'s brief has had its hour');
+  // The trigger installs at the hour the rule assumes — one constant, two readers.
+  const inst = extractRawFunction('Code.js', 'installAutomationTriggers');
+  assert.ok(/newTrigger\('sendManagerDailyBrief'\)[\s\S]{0,120}atHour\(MANAGER_BRIEF_HOUR\)/.test(inst), 'the brief trigger reads MANAGER_BRIEF_HOUR');
+  assert.ok(!/26 \* 3600000/.test(stripJsComments_(extractRawFunction('Code.js', 'managerBriefSuppressionActive_'))), 'no 26-hour window survives in the gate');
+});
+
+test('F57 (cycle 25): the Admin "Reconcile Sheets" button runs the pass WITHOUT touching the nightly job\'s liveness or failure record — its own audit action, no stamp, no clear; the toast names skipped reps (driven)', () => {
+  const drive = (fn, opts) => {
+    const log = { audit: [], err: [], clr: [] };
+    const roster = [['hdr'], ['E1', 'Ana Reyes'], ['E2', 'Sam Ortiz']];
+    const ctx = vm.createContext({ String, Date, Logger: { log() {} }, CONFIG: { TIMEZONE: 'UTC' },
+      CN: { NOTE_ID: 0, TIMESTAMP: 1, DATE_LOCAL: 2, CALLBACK: 3, CALLER: 3, RELATIONSHIP: 3, PATIENT_TRX: 3, ISSUE: 3, TRANSFERRED_TO: 3, RESOLUTION: 3 },
+      EMP: { ID: 0, NAME: 1, TIMEZONE: 2 }, _SYSTEM_AUDIT_EMP_: { email: 'sys' },
+      assertManagerCaller_() {}, getEmployeeInfo_: () => ({ email: 'mgr@x' }), getEmployeeRosterRows_: () => roster,
+      cnEnrolledSheetId_: (r) => 'sheet-' + r[0],
+      LockService: { getScriptLock: () => ({ waitLock() { if (opts.lockThrows) throw new Error('Lock timeout'); }, releaseLock() {} }) },
+      getCallNotesSheet_: (emp) => { if (emp.id === opts.bad) throw new Error('not found'); return { getLastRow: () => 1 }; },
+      writeAuditLog_: (e, action) => log.audit.push(action),
+      stampAutomationError_: (k, m) => log.err.push(k + ':' + m), clearAutomationError_: (k) => log.clr.push(k) });
+    ['reconcileCallNotesCore_', 'reconcileCallNotes', 'reconcileCallNotesNow'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+    log.res = ctx[fn]();
+    return log;
+  };
+  const manual = drive('reconcileCallNotesNow', { bad: 'E2' });
+  assert.deepStrictEqual(manual.audit, ['CallNotesReconcileManual'], 'THE REGRESSION: the press wrote CallNotesReconcile, which stamps the job\'s AUTOMATION_RUN_ liveness record');
+  assert.deepStrictEqual([manual.err, manual.clr], [[], []], 'and it never stamps or clears the job\'s failure');
+  assert.deepStrictEqual(Array.from(manual.res.skippedReps), ['Sam Ortiz'], 'the skipped rep rides the result to the toast');
+  const manualDead = drive('reconcileCallNotesNow', { lockThrows: true });
+  assert.deepStrictEqual([manualDead.res.error, manualDead.err.length], ['Lock timeout', 0], 'a manual failure answers the caller, not the job\'s record');
+  const nightly = drive('reconcileCallNotes', { bad: 'E2' });
+  assert.deepStrictEqual(nightly.audit, ['CallNotesReconcile'], 'the nightly job keeps its action');
+  assert.ok(nightly.err.length === 1 && /^CallNotesReconcile:1 rep Sheet\(s\).*Sam Ortiz/.test(nightly.err[0]), 'and stamps its skips (F5)');
+  assert.deepStrictEqual(drive('reconcileCallNotes', {}).clr, ['CallNotesReconcile'], 'a clean nightly run clears');
+  assert.ok(/^CallNotesReconcile:Lock timeout$/.test(drive('reconcileCallNotes', { lockThrows: true }).err[0]),
+    'a nightly lock timeout is stamped (it used to escape before the try)');
+  // The manual action is NOT a run-ledger action, and the button calls the manual endpoint.
+  const acts = vm.createContext({});
+  vm.runInContext(extractConstDecl_('AUTOMATION_AUDIT_ACTIONS').replace(/^const /, 'var '), acts);
+  assert.ok(acts.AUTOMATION_AUDIT_ACTIONS.indexOf('CallNotesReconcile') >= 0 && acts.AUTOMATION_AUDIT_ACTIONS.indexOf('CallNotesReconcileManual') < 0,
+    'only the nightly action refreshes liveness');
+  const cli = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/\.reconcileCallNotesNow\(\)/.test(cli) && !/\.reconcileCallNotes\(\)/.test(cli), 'the Admin button calls reconcileCallNotesNow');
+  assert.ok(/res\.skippedReps \|\| \[\]/.test(cli), 'and names the reps it could not open');
+});
+
+test('F60 (cycle 25): a digest with no heartbeat is STALE once the triggers have been installed past its window — never on an unknown install, and the problem line says it never ran (driven)', () => {
+  const pctx = vm.createContext({ Number, isFinite });
+  vm.runInContext(extractRawFunction('Code.js', 'digestNeverRanOverdue_'), pctx);
+  const due = pctx.digestNeverRanOverdue_;
+  const NOW = Date.parse('2026-10-14T12:00:00Z');
+  assert.strictEqual(due(NOW - 27 * 3600000, NOW, 26), true, 'THE REGRESSION: installed 27h ago, a daily digest that never ran was "fresh deploy" for ever');
+  assert.strictEqual(due(NOW - 25 * 3600000, NOW, 26), false, 'inside its window it may simply not have fired yet');
+  assert.strictEqual(due(NOW - 3 * 86400000, NOW, 192), false, 'a weekly digest gets its eight days');
+  assert.strictEqual(due(null, NOW, 2), false, 'no install record keeps the fresh-deploy posture');
+  assert.strictEqual(due(NaN, NOW, 2), false, 'nor does an unparseable one');
+  // The problem list names it as never-ran, not "last ran too long ago".
+  const ctx = vm.createContext({ String, Object, Date, Number, parseInt, JSON, CONFIG: { TIMEZONE: 'UTC', MANAGER_TIMEZONE: 'UTC', ADJUST_WINDOW_DAYS: 30 },
+    Utilities: { formatDate: (d, tz, f) => (f === 'd' ? '14' : '2026-10') }, AUTOMATION_JOB_CHECKS: [] });
+  ['automationJobProblems_', 'auditWindowProvesAbsence_', 'automationProblems_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const items = ctx.automationProblems_({ automationLastRuns: [], automationErrors: {},
+    digests: [{ key: 'missedPunch', last: null, stale: true, neverRan: true, installedAt: '2026-10-12 09:00:00' }] });
+  assert.ok(items.some((t) => /"missedPunch" digest has no run on record since the triggers were installed \(2026-10-12 09:00:00\).*re-run installAutomationTriggers/.test(t)), items.join(' | '));
+  // The server derives it from the install record, and both client surfaces render it.
+  const cah = extractRawFunction('Code.js', 'computeAutomationHealth_');
+  assert.ok(/AUTOMATION_TRIGGER_OWNER_PROP/.test(cah) && /neverRan = stale = digestNeverRanOverdue_\(installedMs/.test(cah), 'the health report reads the install time');
+  const cli = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/return !d\.last && !d\.stale;/.test(cli), 'the System tab counts only a not-yet-due digest as "no heartbeat yet"');
+  assert.ok(/if \(!d\.last && d\.neverRan\)/.test(cli), 'and the Automation Health panel warns for an overdue one');
+});
+
+test('F54 (cycle 25): a reply scan past its per-run cap NAMES the requests it did not read on the health dot, instead of clearing its key (driven)', () => {
+  const drive = (core) => {
+    const log = { err: [], clr: [] };
+    const ctx = vm.createContext({ String, JSON, Logger: { log() {} }, DR_REPLY_SCAN_MAX: 150,
+      assertManagerCaller_() {}, stampDigestLastRun_() {}, getFlag_: () => true, drReplyScanCore_: () => core,
+      stampAutomationError_: (k, m) => log.err.push(k + ':' + m), clearAutomationError_: (k) => log.clr.push(k) });
+    vm.runInContext(extractRawFunction('Code.js', 'scanDeptRequestReplies'), ctx);
+    ctx.scanDeptRequestReplies();
+    return log;
+  };
+  const over = drive({ candidates: 172, scanned: 150, truncated: true, errors: 0 });
+  assert.strictEqual(over.clr.length, 0, 'THE REGRESSION: a truncated run cleared DeptReplyScan and read healthy');
+  assert.ok(over.err.length === 1 && /^DeptReplyScan:22 of 172 open request\(s\) were past the 150-thread cap/.test(over.err[0]), over.err.join('|'));
+  const both = drive({ candidates: 160, scanned: 149, truncated: true, errors: 1 });
+  assert.ok(/^DeptReplyScan:1 request thread\(s\) could not be read; 10 of 160/.test(both.err[0]), 'both problems ride one stamp');
+  assert.deepStrictEqual(drive({ candidates: 3, scanned: 3, truncated: false, errors: 0 }).clr, ['DeptReplyScan'], 'a whole run clears');
 });
 
 test('FU-B6b: the daily brief names urgent-note rep Sheets it could not read, instead of reading only `.results` (driven)', () => {

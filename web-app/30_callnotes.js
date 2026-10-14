@@ -3936,13 +3936,47 @@ function purgeArchivedCallNotes() {
  *  Manager-gated + locked; per-rep Sheet failures are skipped. Content fields
  *  are NEVER modified. Writes a CallNotesReconcile audit row. */
 function reconcileCallNotes() {
-  // F1/F2 — this is a DAILY TRIGGER handler (runs as the installer) AS WELL AS a
-  // manual Admin-tab button, so it MUST use the MANAGER_EMAILS trigger-handler
-  // gate (assertManagerCaller_, the INV-44 idiom), NOT emp.isAdmin: under a
-  // narrowed ADMIN_EMAILS, or a MANAGER_EMAILS installer who isn't a roster
-  // employee, an admin/roster gate silently no-ops the nightly reconcile (INV-109).
+  // F1/F2 — this is the DAILY TRIGGER handler (runs as the installer), so it
+  // MUST use the MANAGER_EMAILS trigger-handler gate (assertManagerCaller_, the
+  // INV-44 idiom), NOT emp.isAdmin: under a narrowed ADMIN_EMAILS, or a
+  // MANAGER_EMAILS installer who isn't a roster employee, an admin/roster gate
+  // silently no-ops the nightly reconcile (INV-109). The Admin-tab button calls
+  // reconcileCallNotesNow instead (F57, cycle 25).
   assertManagerCaller_('reconcileCallNotes');
-  const callerEmp = getEmployeeInfo_() || _SYSTEM_AUDIT_EMP_;
+  try {
+    const res = reconcileCallNotesCore_(getEmployeeInfo_() || _SYSTEM_AUDIT_EMP_, 'CallNotesReconcile');
+    // F5 (cycle 25): a rep Sheet that could not be opened is a FAILED run for
+    // that rep (its hand-entered notes stay unreconciled) — it used to reach only Logger.log, and the
+    // audit row read like a clean run with a smaller count. Stamped by name
+    // where the health dot and the failure digest read it; a clean run clears.
+    if (res.skippedReps.length) stampAutomationError_('CallNotesReconcile', res.skippedReps.length + ' rep Sheet(s) could not be opened, so their hand-entered notes were not reconciled: ' + res.skippedReps.join(', '));
+    else clearAutomationError_('CallNotesReconcile');
+    return res;
+  } catch (err) {
+    // F5 (cycle 25): the nightly trigger's {error} reached nobody — stamp it.
+    stampAutomationError_('CallNotesReconcile', err.message);
+    return { error: err.message };
+  }
+}
+/** F57 (cycle 25) — the Admin tab's "Reconcile Sheets" button. The same pass as
+ *  the nightly job, but it is NOT the job: it writes its own audit action
+ *  (CallNotesReconcileManual — outside AUTOMATION_AUDIT_ACTIONS, so it stamps no
+ *  AUTOMATION_RUN_ liveness record) and never stamps or clears the job's error
+ *  key. A manager's press used to refresh the nightly liveness line and clear
+ *  its failure, so a dead 5am trigger read healthy for another 30 hours after
+ *  every press. The skipped reps ride the result, where the toast names them. */
+function reconcileCallNotesNow() {
+  assertManagerCaller_('reconcileCallNotesNow');
+  try {
+    return reconcileCallNotesCore_(getEmployeeInfo_() || _SYSTEM_AUDIT_EMP_, 'CallNotesReconcileManual');
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+/** The reconcile pass itself (#8), shared by the nightly job and the manual
+ *  button. Locked; throws on a lock timeout or an unreadable roster; a rep
+ *  Sheet that will not open is skipped and returned by name. */
+function reconcileCallNotesCore_(callerEmp, auditAction) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -3995,19 +4029,9 @@ function reconcileCallNotes() {
         Logger.log('reconcileCallNotes: skipped rep ' + emp.id + ': ' + e.message);
       }
     }
-    writeAuditLog_(callerEmp, 'CallNotesReconcile', '', '', false, 0,
+    writeAuditLog_(callerEmp, auditAction, '', '', false, 0,
       `repsTouched=${repsTouched}; rowsBackfilled=${rowsBackfilled}` + (skipped.length ? `; repsSkipped=${skipped.length}` : ''), callerEmp.email);
-    // F5 (cycle 25): a rep Sheet that could not be opened is a FAILED run for
-    // that rep (its hand-entered notes stay unreconciled) — it used to reach only Logger.log, and the
-    // audit row read like a clean run with a smaller count. Stamped by name
-    // where the health dot and the failure digest read it; a clean run clears.
-    if (skipped.length) stampAutomationError_('CallNotesReconcile', skipped.length + ' rep Sheet(s) could not be opened, so their hand-entered notes were not reconciled: ' + skipped.join(', '));
-    else clearAutomationError_('CallNotesReconcile');
     return { success: true, repsTouched: repsTouched, rowsBackfilled: rowsBackfilled, skippedReps: skipped };
-  } catch (err) {
-    // F5 (cycle 25): the nightly trigger's {error} reached nobody — stamp it.
-    stampAutomationError_('CallNotesReconcile', err.message);
-    return { error: err.message };
   }
   finally { lock.releaseLock(); }
 }

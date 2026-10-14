@@ -2498,6 +2498,28 @@
     "sendManagerFlagDigest_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-14",
+   "why": "cycle 25 Batch 3b: MANAGER_BRIEF_HOUR + briefBeatCoversNow_ (F8), reconcileCallNotesNow + reconcileCallNotesCore_ (F57), digestNeverRanOverdue_ (F60)",
+   "added": [
+    "MANAGER_BRIEF_HOUR",
+    "briefBeatCoversNow_",
+    "digestNeverRanOverdue_",
+    "reconcileCallNotesCore_",
+    "reconcileCallNotesNow"
+   ],
+   "removed": [],
+   "changed": [
+    "automationProblems_",
+    "computeAutomationHealth_",
+    "deployReadinessItems_",
+    "installAutomationTriggers",
+    "managerBriefSuppressionActive_",
+    "reconcileCallNotes",
+    "scanDeptRequestReplies"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4002,6 +4024,11 @@
    "kind": "const",
    "sha": "bf86c0f36d950537"
   },
+  "MANAGER_BRIEF_HOUR": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "dab689b0ccfce687"
+  },
   "MANAGER_DAY_MAX_BREAKS": {
    "file": "00_config.js",
    "kind": "const",
@@ -5160,7 +5187,7 @@
   "automationProblems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "3b2eeb7c6e5b6008"
+   "sha": "ead9f3fe27e83d1d"
   },
   "automationRunKey_": {
    "file": "10_core.js",
@@ -5261,6 +5288,11 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "75e7196617e7a519"
+  },
+  "briefBeatCoversNow_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "a1417e34df884144"
   },
   "buildAdjustPunchIndex_": {
    "file": "20_timeclock.js",
@@ -5775,7 +5807,7 @@
   "computeAutomationHealth_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "9929657e3cea7115"
+   "sha": "6ff28b012e50f8e3"
   },
   "computeCnEmailHash_": {
    "file": "30_callnotes.js",
@@ -5940,7 +5972,7 @@
   "deployReadinessItems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "cd72584b7ab47937"
+   "sha": "768b3347739744bb"
   },
   "deptRequestsOverdueOpen_": {
    "file": "50_deptrequests.js",
@@ -5966,6 +5998,11 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "6cf8fed74316377e"
+  },
+  "digestNeverRanOverdue_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "50c77b389f46f7ad"
   },
   "doGet": {
    "file": "10_core.js",
@@ -7525,7 +7562,7 @@
   "installAutomationTriggers": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "a00a69010e8e2a78"
+   "sha": "3c3780897ab309e8"
   },
   "instanceLabel_": {
    "file": "10_core.js",
@@ -8520,7 +8557,7 @@
   "managerBriefSuppressionActive_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "01c3bb0a1b4e667b"
+   "sha": "2dff6411c3950a1f"
   },
   "managerClockOrderError_": {
    "file": "20_timeclock.js",
@@ -9450,7 +9487,17 @@
   "reconcileCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "b3b0c2fe39b2ddc4"
+   "sha": "518e0137845f8869"
+  },
+  "reconcileCallNotesCore_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "29cdd59096552a9e"
+  },
+  "reconcileCallNotesNow": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "86b3c1a0d1bb0490"
   },
   "recordClientError": {
    "file": "10_core.js",
@@ -9775,7 +9822,7 @@
   "scanDeptRequestReplies": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "628a6be88d544844"
+   "sha": "c27212a87a0c87b0"
   },
   "scanStoredFormulas_": {
    "file": "10_core.js",

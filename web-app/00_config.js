@@ -1336,6 +1336,11 @@ const _SYSTEM_AUDIT_EMP_ = { id: 'SYSTEM', name: 'Automation', email: 'automatio
 // Property heartbeat; getAutomationHealth surfaces it with a staleness flag —
 // closing the "silently dead digest trigger" blind spot.
 const DIGEST_LAST_RUN_PROP = 'AUTOMATION_DIGEST_LAST_RUNS';
+// F8 (cycle 25): the manager-tz hour the consolidated daily brief's trigger
+// fires in. ONE value for the trigger and for the suppression rule — a digest
+// stands down only while that hour's brief has delivered today, or has not
+// yet had its chance to (briefBeatCoversNow_).
+const MANAGER_BRIEF_HOUR = 8;
 // Seams F11 (cycle 24): an UNMARKED instance is treated as production by the
 // suite guard too (isDevInstance_ already was). Running the full suite on one
 // knowingly takes an explicit, EXPIRING override: allowFullSuiteHere() (an

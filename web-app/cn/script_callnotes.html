@@ -11542,16 +11542,19 @@ function cnHealthFindings_(health, storage, oop) {
         'Run the job from the editor to reproduce; a clean run clears this flag.');
     });
     if (!aeJobs.length) add('automationErrors', 'automation', 'ok', 'Automation jobs', 'no stamped failures');
-    // (d) Digest heartbeats — stale warns; never-ran is the fresh-deploy posture.
+    // (d) Digest heartbeats — stale warns; never-ran is the fresh-deploy
+    // posture only until the triggers have been installed past its window
+    // (F60, cycle 25 — the server marks that case `neverRan` and stale).
     var digests = health.digests || [];
     var stale = digests.filter(function (d) { return d.stale; });
-    var never = digests.filter(function (d) { return !d.last; });
+    var never = digests.filter(function (d) { return !d.last && !d.stale; });
     stale.forEach(function (d) {
       // 4a follow-ons (cycle 23): a stale heartbeat whose job ran and FAILED in
       // the window is that failure, not a dead trigger — reinstalling triggers
       // changes nothing (g142). The failure itself is its own finding above.
-      add('digest:' + d.key, 'automation', 'warn', (CN_DIGEST_LABELS_[d.key] || d.key) + ' is stale',
-        'last ran ' + (d.last || '?') + ' — past its expected cadence' + (d.failedAt ? '; it ran and failed at ' + d.failedAt : ''),
+      add('digest:' + d.key, 'automation', 'warn', (CN_DIGEST_LABELS_[d.key] || d.key) + (d.neverRan ? ' has never run' : ' is stale'),
+        (d.neverRan ? 'no run on record since the triggers were installed' + (d.installedAt ? ' (' + d.installedAt + ')' : '')
+          : 'last ran ' + (d.last || '?')) + ' — past its expected cadence' + (d.failedAt ? '; it ran and failed at ' + d.failedAt : ''),
         d.failedAt ? 'Fix the failure reported for this job — its trigger is running.' : 'The trigger may be dead — re-run installAutomationTriggers().');
     });
     if (!stale.length) {
@@ -12191,7 +12194,13 @@ function cnRenderHealthPanel_(res) {
   var digestsHtml = (res.digests || []).map(function (d) {
     var meta = DIGEST_LABELS[d.key] || { label: d.key, expect: '' };
     var when;
-    if (!d.last) {
+    if (!d.last && d.neverRan) {
+      // F60 (cycle 25): installed longer ago than this digest's window, and
+      // still no run — a missing trigger, not a fresh deploy.
+      when = '<span style="color:var(--warning-deep);font-weight:600">' + icon('warning', 11) + ' no run on record since the triggers were installed' +
+        (d.installedAt ? ' (' + esc(d.installedAt) + (tz ? ' ' + esc(tz) : '') + ')' : '') + ' — ' +
+        (d.failedAt ? 'it ran and failed at ' + esc(d.failedAt) + ' — see the failure above' : 'its trigger may be missing; re-run installAutomationTriggers()') + '</span>';
+    } else if (!d.last) {
       when = '<span style="color:var(--muted)">no heartbeat recorded yet — check the trigger is installed</span>';
     } else if (d.stale) {
       when = '<span style="color:var(--warning-deep);font-weight:600">' + icon('warning', 11) + ' last ran ' +
@@ -13254,12 +13263,17 @@ function cnRenderAdminBody_(cfg) {
         .withSuccessHandler(function (res) {
           btn.disabled = false; btn.textContent = 'Reconcile Sheets';
           if (!res || res.error) { showToast((res && res.error) || 'Reconcile failed', 'toast-error'); return; }
-          showToast(res.rowsBackfilled > 0
+          var done = res.rowsBackfilled > 0
             ? ('Reconciled ' + res.rowsBackfilled + ' row(s) across ' + res.repsTouched + ' rep(s)')
-            : 'Nothing to reconcile — all rows already have IDs', 'toast-success');
+            : 'Nothing to reconcile — all rows already have IDs';
+          // F57 (cycle 25): the manual pass no longer stamps the nightly job's
+          // failure record, so a rep Sheet it could not open is named HERE.
+          var skippedReps = res.skippedReps || [];
+          if (skippedReps.length) showToast(done + ' — but ' + skippedReps.length + ' rep Sheet(s) could not be opened: ' + skippedReps.join(', '), 'toast-warn', { sticky: true });
+          else showToast(done, 'toast-success');
         })
         .withFailureHandler(function (err) { btn.disabled = false; btn.textContent = 'Reconcile Sheets'; showToast((err && err.message) || 'Reconcile failed', 'toast-error'); })
-        .reconcileCallNotes();
+        .reconcileCallNotesNow();
     });
   });
 

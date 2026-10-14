@@ -720,7 +720,14 @@ function scanDeptRequestReplies() {
     stampDigestLastRun_('deptReplyScan');
     if (!getFlag_('deptReplyResolve')) { Logger.log('deptReplyResolve flag is off — no replies read.'); return; }
     const r = drReplyScanCore_();
-    if (r.errors) stampAutomationError_('DeptReplyScan', r.errors + ' request thread(s) could not be read');
+    // F54 (cycle 25): the per-run cap reads the NEWEST open requests, so past
+    // it the oldest were never read — and the run cleared its key and read as
+    // healthy. Those requests wait on a person now, so the run says how many.
+    const problems = [];
+    if (r.errors) problems.push(r.errors + ' request thread(s) could not be read');
+    if (r.truncated) problems.push((r.candidates - DR_REPLY_SCAN_MAX) + ' of ' + r.candidates + ' open request(s) were past the ' +
+      DR_REPLY_SCAN_MAX + '-thread cap, so the oldest were not read for replies — resolve them by hand or close the stale ones');
+    if (problems.length) stampAutomationError_('DeptReplyScan', problems.join('; '));
     else clearAutomationError_('DeptReplyScan');
     Logger.log('deptReplyScan: ' + JSON.stringify(r));
     return r;

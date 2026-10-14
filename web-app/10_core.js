@@ -1509,6 +1509,14 @@ function automationDetectorChecks_() {
   });
   return checks;
 }
+/** PURE (Node-pinned) — F60 (cycle 25): a digest with no heartbeat on record
+ *  is overdue once the triggers have been installed for longer than its stale
+ *  window. An unknown install time is never overdue (the fresh-deploy
+ *  posture: nothing says a trigger should have fired yet). */
+function digestNeverRanOverdue_(installedMs, nowMs, staleHours) {
+  if (installedMs === null || installedMs === undefined || !isFinite(installedMs)) return false;
+  return (Number(nowMs) - Number(installedMs)) > Number(staleHours) * 3600000;
+}
 function computeAutomationHealth_(opts) {
     const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
     // Default OFF: the three direct callers (badge, digest, deploy-readiness)
@@ -1674,16 +1682,31 @@ function computeAutomationHealth_(opts) {
         .getProperty(DIGEST_LAST_RUN_PROP)) || {};
     } catch (_) {}
     if (!digestMap || typeof digestMap !== 'object' || Array.isArray(digestMap)) digestMap = {};
+    // F60 (cycle 25): when the triggers were installed. A digest with NO
+    // heartbeat used to be the fresh-deploy posture for ever — a trigger that
+    // never got created, or whose job died before its first stamp, never
+    // reached the dot. Past its window since the install, it is stale. No
+    // record (installed before cycle 22 kept one) keeps the old posture.
+    let installedMs = null, installedAt = '';
+    try {
+      const owner = JSON.parse(PropertiesService.getScriptProperties().getProperty(AUTOMATION_TRIGGER_OWNER_PROP) || 'null');
+      if (owner && owner.at) {
+        installedMs = Utilities.parseDate(String(owner.at), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime();
+        installedAt = convertAuditTs_(String(owner.at), CONFIG.TIMEZONE, mgrTz);
+      }
+    } catch (_) { installedMs = null; installedAt = ''; }
     // The reported set is DERIVED from the staleness map (INV-179) — a
     // heartbeat with a window but no row here would be stamped and never read.
     const digestHealth = Object.keys(DIGEST_STALE_HOURS).map(function (k) {
       const raw = String(digestMap[k] || '');
-      let stale = false;
+      let stale = false, neverRan = false;
       if (raw) {
         try {
           const ms = Utilities.parseDate(raw, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime();
           stale = (Date.now() - ms) > DIGEST_STALE_HOURS[k] * 3600000;
         } catch (_) { stale = true; }
+      } else {
+        neverRan = stale = digestNeverRanOverdue_(installedMs, Date.now(), DIGEST_STALE_HOURS[k]);
       }
       // 4a follow-ons (cycle 23): a stale heartbeat whose job STAMPED a failure
       // inside the same window ran — and failed. Ship that, so the stale line
@@ -1693,6 +1716,8 @@ function computeAutomationHealth_(opts) {
         key: k,
         last: raw ? convertAuditTs_(raw, CONFIG.TIMEZONE, mgrTz) : null,
         stale: stale,
+        neverRan: neverRan,
+        installedAt: neverRan ? installedAt : '',
         failedAt: (stale && errorKey) ? automationFailedWithin_(automationErrors[errorKey], DIGEST_STALE_HOURS[k], Date.now()) : '',
         errorKey: errorKey,
       };
@@ -1795,9 +1820,14 @@ function automationProblems_(report, opts) {
   if (!report) return done();
   (report.digests || []).forEach(function (d) {
     if (d && d.stale) {
+      // F60 (cycle 25): a digest with no run on record, past its window since
+      // the install, says so — "last ran too long ago" would invent a run.
+      const ran = d.neverRan
+        ? 'The "' + d.key + '" digest has no run on record since the triggers were installed' + (d.installedAt ? ' (' + d.installedAt + ')' : '')
+        : 'The "' + d.key + '" digest last ran ' + (d.last || 'too long ago');
       add('digest', d.key, d.failedAt
-        ? 'The "' + d.key + '" digest last ran ' + (d.last || 'too long ago') + ' — it ran and FAILED at ' + d.failedAt + ' (see that failure), so this is not a missing trigger.'
-        : 'The "' + d.key + '" digest last ran ' + (d.last || 'too long ago') + ' — the trigger may be disabled.');
+        ? ran + ' — it ran and FAILED at ' + d.failedAt + ' (see that failure), so this is not a missing trigger.'
+        : ran + (d.neverRan ? ' — its trigger may be missing; re-run installAutomationTriggers().' : ' — the trigger may be disabled.'));
     }
   });
   // Per-JOB liveness + last-error, DERIVED from AUTOMATION_JOB_CHECKS rather
@@ -2774,7 +2804,9 @@ function deployReadinessItems_(storage, automation, managerCount) {
   var anyStale = digests.some(function (d) { return !!d.stale; });
   if (!autoErr) push('triggers', 'Automation triggers (digest heartbeats)',
     !anyHeartbeat ? 'warn' : (anyStale ? 'warn' : 'ok'),
-    !anyHeartbeat ? 'No digest has run yet — run installAutomationTriggers() (expected on a fresh deploy).'
+    // F60 (cycle 25): no heartbeat at all, long after the install, is not a fresh deploy.
+    !anyHeartbeat ? (anyStale ? 'No digest has run since the triggers were installed — re-run installAutomationTriggers() and check the trigger list.'
+        : 'No digest has run yet — run installAutomationTriggers() (expected on a fresh deploy).')
       : (anyStale ? 'A digest looks stale — check the cross-account trigger-ownership trap.' : 'Heartbeats fresh.'));
 
   // ADM-09 (cycle 23): the readiness headline read "All clear" under a red
@@ -3501,7 +3533,7 @@ function installAutomationTriggers() {
     // trigger on THIS handler name, so folding it into a dispatcher would
     // silently un-suppress the digests it replaces.
     ScriptApp.newTrigger('sendManagerDailyBrief')
-      .timeBased().atHour(8).everyDays(1)
+      .timeBased().atHour(MANAGER_BRIEF_HOUR).everyDays(1)
       .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
     // Timesheet cold-archive (#7, INV-153) — daily manager-tz 6pm. F(cycle-8):
     // moved OFF the 1am slot — 1am CT is ~11:30am IST / ~2pm PHT, the middle of
@@ -3676,6 +3708,16 @@ function stampDigestLastRun_(key) {
  *  every 8am run, even while the flag is off — INV-151) is younger than 26h.
  *  Missing/stale/unparseable heartbeat → FAIL SAFE: the individual digests
  *  keep sending (a doubled email beats a silent outage). */
+/** PURE (Node-pinned) — F8 (cycle 25): does the brief's last delivery cover
+ *  NOW? Days are manager-tz yyyy-MM-dd. Today's beat covers the rest of the
+ *  day; yesterday's covers only until today's brief hour has passed (the
+ *  trigger fires within that hour, so the end of it); anything older, or none,
+ *  never does — the digests send (the fail-safe direction, M-11). */
+function briefBeatCoversNow_(beatDay, todayDay, yesterdayDay, nowHour, briefHour) {
+  if (!beatDay) return false;
+  if (beatDay === todayDay) return true;
+  return beatDay === yesterdayDay && Number(nowHour) < Number(briefHour) + 1;
+}
 function managerBriefSuppressionActive_(opts) {
   if (!getFlag_('managerDailyBrief')) return false;
   try {
@@ -3683,11 +3725,24 @@ function managerBriefSuppressionActive_(opts) {
     try { map = JSON.parse(PropertiesService.getScriptProperties().getProperty(DIGEST_LAST_RUN_PROP)) || {}; } catch (_) {}
     const raw = String((map && map.managerBrief) || '');
     if (!raw) return false;
-    const ms = Utilities.parseDate(raw, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime();
-    if (!((Date.now() - ms) < 26 * 3600000)) return false;
+    // F8 (cycle 25): "a heartbeat under 26h old" let every digest that runs
+    // AFTER the brief stand down on YESTERDAY's beat — the 10am dept reminder
+    // and the evening missed-punch summary skipped the day a brief failed, and
+    // nothing resent them (CORE-01's "the digests resume" held only the next
+    // day). A digest now stands down only while the brief has delivered
+    // TODAY (manager tz), or delivered yesterday and today's brief has not yet
+    // had its hour. The 7am training digest and the 8am urgent digest still
+    // decide before the brief runs; on a failed day they resume tomorrow (both
+    // windows carry their items forward) and the failure is stamped.
+    const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+    const now = new Date();
+    const beat = Utilities.parseDate(raw, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+    const today = Utilities.formatDate(now, mgrTz, 'yyyy-MM-dd');
+    if (!briefBeatCoversNow_(Utilities.formatDate(beat, mgrTz, 'yyyy-MM-dd'), today, addDaysIso_(today, -1),
+        parseInt(Utilities.formatDate(now, mgrTz, 'H'), 10), MANAGER_BRIEF_HOUR)) return false;
     // Cycle-9 L-18: the heartbeat proves "the handler RAN", not "a trigger
     // exists" — a manual editor/console run of sendManagerDailyBrief stamps
-    // it, opening a ~26h window where the four digests suppress but no 8am
+    // it, opening a window (the rest of that day, since F8 cycle 25) where the four digests suppress but no 8am
     // brief will ever fire (the silent-outage class M-11 closed, re-opened by
     // a manual run; the briefConfig detector can't see it because suppression
     // reads active). The four DIGEST call sites pass {checkTrigger:true}: in

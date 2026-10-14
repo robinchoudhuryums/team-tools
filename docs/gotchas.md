@@ -1578,6 +1578,24 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   job-table action (the "FAILED on …" line beside its liveness line), names the
   skipped reps, counts them on the audit row, clears on a clean run, and owns its
   key in `TRIGGER_HANDLER_JOB_KEYS`. Verify: the F4 and F5 (cycle 25) drives.
+  **Cycle 25 Batch 3b (2026-10-14): three more ways a quiet record read as
+  healthy.** (F60) A digest with NO heartbeat was the fresh-deploy posture for
+  ever, so a trigger that was never created, or a job that died before its first
+  stamp, never reached the dot. Once the triggers have been installed longer than
+  the digest's window (`AUTOMATION_TRIGGER_OWNER.at`, through
+  `digestNeverRanOverdue_`), the missing heartbeat is stale, and the line says
+  "no run on record since the triggers were installed" rather than inventing a
+  last run. An install with no record keeps the old posture. (F54) The Dept
+  Request reply scan reads at most `DR_REPLY_SCAN_MAX` threads an hour, newest
+  first. Past the cap the oldest open requests were never read, and the run
+  still cleared `DeptReplyScan`. It now stamps how many it left unread. (F57)
+  The Admin "Reconcile Sheets" button ran the nightly job itself: it wrote the
+  `CallNotesReconcile` audit row, refreshing the job's run-ledger liveness, and
+  cleared its failure, so one press hid a dead 5am trigger for another 30 hours.
+  The button now calls `reconcileCallNotesNow` (audit action
+  `CallNotesReconcileManual`, outside the run ledger). It never touches the job's
+  key, and its toast names the reps it could not open. Verify: the F60, F54 and
+  F57 (cycle 25) drives.
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 
