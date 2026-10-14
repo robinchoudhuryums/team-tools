@@ -5954,6 +5954,149 @@ test('M4-FU2/FU3 DOM: the Manual dialog takes manual.json from the computer (no 
   assert.ok(imp.disabled && !gate.hidden, 'another file locks it again, with the reason back');
 });
 
+// ── Cycle 25 Batch 4 — the handbook reader ──────────────────────────────────
+test('F10 (cycle 25): a search hit\'s slug anchor lands on its sub-heading — the reader\'s focus took only "0.10.2", so "Open ¶" landed on the section top; a numbered anchor still lands, and an unknown one falls back to the title', async () => {
+  const h = m4Boot_();
+  const flashed = (id) => h.$$('#kb-man-sec-' + id + ' h1, #kb-man-sec-' + id + ' h2, #kb-man-sec-' + id + ' h3, #kb-man-sec-' + id + ' h4')
+    .filter((x) => x.classList.contains('kb-h-flash')).map((x) => x.textContent.trim());
+  h.read('kbOpenItem_')('man-0-10', '0-10-2-trx-state');   // what searchReference ships: kbSlug_ of the heading
+  h.run.flushSuccess(JSON.parse(JSON.stringify(M2_PART0)), 'getManualPart');
+  assert.deepStrictEqual(flashed('man-0-10'), ['0.10.2 Trx State'], 'THE REGRESSION: the slug found no heading, and the section title flashed instead');
+  h.flushTimers();
+  h.read('kbOpenItem_')('man-0-10', '0.10.1');   // a cross-reference's numbered anchor, same part (no fetch)
+  assert.deepStrictEqual(flashed('man-0-10'), ['0.10.1 Trx Type'], 'a numbered anchor still lands on its heading');
+  h.flushTimers();
+  h.read('kbOpenItem_')('man-0-10', 'no-such-heading');
+  assert.deepStrictEqual(flashed('man-0-10'), ['0.10 Anatomy of a transaction'], 'an anchor that names nothing lands on the section title');
+  // ONE resolver serves every open path.
+  const host = h.$('#kb-man-sec-man-0-10');
+  const r = h.read('kbFindAnchorHeading_');
+  assert.strictEqual(r(host, '0-10-2-trx-state').textContent.trim(), '0.10.2 Trx State');
+  assert.strictEqual(r(host, '0.10.2').textContent.trim(), '0.10.2 Trx State');
+  assert.strictEqual(r(host, 'a"]bad'), null, 'a string that is neither form is no selector (it would throw)');
+});
+
+test('F11 (cycle 25): a failed handbook-meta read answers every waiter as FAILED and is never cached — the next open asks again; "none" is cached; an import forgets the meta, and a read in flight across it is answered but not kept; the call router says it could not load', async () => {
+  const h = m4Boot_();
+  const st = h.read('KB_STATE');
+  h.run.pending('getManualMeta').forEach(() => h.run.flushFailure('boot noise', 'getManualMeta'));
+  assert.strictEqual(st.manualMeta, undefined, 'a transport failure is not cached');
+  const ens = h.read('kbEnsureManualMeta_');
+  const got = [];
+  ens((m, f) => got.push(['a', m, f])); ens((m, f) => got.push(['b', m, f]));
+  assert.strictEqual(h.run.pending('getManualMeta').length, 1, 'one read for two waiters');
+  h.run.flushFailure('timeout', 'getManualMeta');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(got)), [['a', null, true], ['b', null, true]], 'THE REGRESSION: a transport failure dropped the waiters unanswered');
+  got.length = 0;
+  ens((m, f) => got.push(['c', m, f]));
+  assert.strictEqual(h.run.pending('getManualMeta').length, 1, 'the next open asks again');
+  h.run.flushSuccess({ error: 'KB store unreachable' }, 'getManualMeta');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(got)), [['c', null, true]], 'an {error} is a failure too');
+  assert.strictEqual(st.manualMeta, undefined, 'THE REGRESSION: an {error} was cached as "no meta" for the session');
+  ens(() => {});
+  h.run.flushSuccess({ none: true }, 'getManualMeta');
+  assert.strictEqual(st.manualMeta, null, 'a manual with no meta is an answer, and is kept');
+  ens((m, f) => got.push(['d', m, f]));
+  assert.strictEqual(h.run.pending('getManualMeta').length, 0, 'so it is not asked again');
+  // An import or a publish forgets it; a read that was in flight across one is answered, never kept.
+  h.read('kbManualInvalidate_')();
+  assert.strictEqual(st.manualMeta, undefined, 'THE REGRESSION: an import left the old version, router and changelog in place');
+  ens(() => {});
+  h.read('kbManualInvalidate_')();
+  h.run.flushSuccess({ version: 'v-old', router: [], changelog: [] }, 'getManualMeta');
+  assert.strictEqual(st.manualMeta, undefined, 'a pre-import answer is not kept');
+  // The call router names its failure — "No phrase matches" said the router had been read.
+  h.read('kbOpenRouterFromTab_')();
+  h.run.flushFailure('timeout', 'getManualMeta');
+  const list = h.$('#kbd-rt-list');
+  assert.ok(/could not be loaded/.test(list.textContent) && !/No phrase matches/.test(list.textContent), list.textContent);
+  const inp = h.$('#kbd-rt-q'); inp.value = 'where'; inp.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.ok(/could not be loaded/.test(h.$('#kbd-rt-list').textContent), 'and typing a filter does not turn it into "no matches"');
+});
+
+test('F50 (cycle 25): a Check answers only for the file it read — a late verdict for a file since replaced neither paints over the new one nor unlocks Import; the new file\'s own clean Check does', async () => {
+  const h = m4Boot_();
+  const doc = h.window.document;
+  h.read('kbOpenManualImport_')();
+  const imp = doc.getElementById('kb-man-import'), gate = doc.getElementById('kb-man-gate'), out = doc.getElementById('kb-man-result');
+  h.read('kbManualSetFile_')({ name: 'a.json', size: 2, text: '{"a":1}' });
+  h.read('kbManualRun_')(true);
+  h.read('kbManualSetFile_')({ name: 'b.json', size: 2, text: '{"b":2}' });
+  h.run.flushSuccess({ success: true, dryRun: true, total: 3, created: 3, updated: 0, unchanged: 0, skipped: [], orphaned: [] }, 'kbImportManual');
+  assert.ok(imp.disabled && !gate.hidden, 'THE REGRESSION: A\'s clean check unlocked Import for B, which nobody had checked');
+  assert.strictEqual(out.textContent.trim(), '', 'and A\'s verdict is not painted under B');
+  assert.ok(/b\.json/.test(doc.getElementById('kb-man-picked').textContent), 'B is still the file on screen');
+  assert.strictEqual(doc.getElementById('kb-man-check').disabled, false, 'Check is usable for B');
+  // a late FAILURE for A is dropped the same way
+  h.read('kbManualRun_')(true);
+  h.read('kbManualSetFile_')({ name: 'c.json', size: 2, text: '{"c":3}' });
+  h.run.flushFailure('A timed out', 'kbImportManual');
+  assert.strictEqual(out.textContent.trim(), '', 'a stale failure is not painted either');
+  // C's own clean check unlocks, and Import sends C
+  h.read('kbManualRun_')(true);
+  assert.strictEqual(JSON.parse(JSON.stringify(h.run.pending('kbImportManual').slice(-1)[0].args[0])).text, '{"c":3}');
+  h.run.flushSuccess({ success: true, dryRun: true, total: 1, created: 1, updated: 0, unchanged: 0, skipped: [], orphaned: [] }, 'kbImportManual');
+  assert.ok(!imp.disabled && gate.hidden, 'the chosen file\'s clean check unlocks Import');
+});
+
+test('F51 (cycle 25): the scroll-spy patches the reader bar\'s bookmark IN PLACE — the same button, its focus kept, now naming the section in view', async () => {
+  const h = m4Boot_();
+  const doc = h.window.document;
+  h.read('kbOpenItem_')('man-0-10');
+  h.run.flushSuccess(JSON.parse(JSON.stringify(M2_PART0)), 'getManualPart');
+  const bar = h.$('#kb-main [data-kb-man-bar]');
+  const star = bar.querySelector('.kb-bm');
+  star.focus();
+  assert.strictEqual(doc.activeElement, star, 'a keyboard reader is on the star (non-vacuous)');
+  h.read('kbManualBarPaint_')('man-0-11');   // what the spy does at a section boundary
+  assert.strictEqual(bar.querySelector('.kb-bm'), star, 'THE REGRESSION: the button was replaced (outerHTML) on every boundary');
+  assert.strictEqual(doc.activeElement, star, 'and focus stayed on it');
+  const on = h.read('kbIsBookmarked_')('man-0-11');
+  assert.deepStrictEqual([star.getAttribute('data-kb-id'), star.getAttribute('data-kb-title'), star.getAttribute('aria-pressed'), star.classList.contains('on')],
+    ['man-0-11', '0.11 Notes and email conventions', on ? 'true' : 'false', on], 'it names the section in view, in the state the builder draws');
+  assert.ok(star.classList.contains('kb-man-bar-ic') && star.classList.contains('kb-bm'), 'its own classes are kept');
+});
+
+test('F52 (cycle 25): a keyboard reader reaches the card\'s buttons — Tab from the mark steps INTO the open card, Tab past its last button (or Escape) hands focus back to the mark without reopening it, and focus that leaves the card closes it', async () => {
+  const h = m4Boot_();
+  const w = h.window, doc = w.document;
+  const part = JSON.parse(JSON.stringify(M2_PART0));
+  part.sections[1].bodyMd = 'Intro¹ text.\n\n**Notes**\n\n¹ Intro note.\n';
+  h.read('kbOpenItem_')('man-0-11');
+  h.run.flushSuccess(part, 'getManualPart');
+  const ref = h.$('#kb-man-sec-man-0-11 button.kb-fn-ref');
+  const card = () => doc.getElementById('kb-xrefcard');
+  const shown = () => !!(card() && card().classList.contains('show'));
+  ref.focus(); h.flushTimers();
+  assert.ok(shown(), 'focus on the mark shows the card (non-vacuous)');
+  const go = card().querySelector('[data-fn-go]');
+  const t1 = h.dispatchKey('Tab', { target: ref });
+  assert.ok(t1.defaultPrevented && doc.activeElement === go, 'THE REGRESSION: Tab left the mark, the card hid, and "Go to note" was never reachable');
+  assert.ok(shown(), 'the card stays while focus is inside it');
+  const t2 = h.dispatchKey('Tab', { target: go });
+  assert.ok(t2.defaultPrevented && !shown() && doc.activeElement === ref, 'Tab past the last button hides the card and hands focus back to the mark');
+  h.flushTimers();
+  assert.ok(!shown(), 'and the mark does not reopen it — the next Tab moves on');
+  assert.ok(!h.dispatchKey('Tab', { target: ref }).defaultPrevented, 'with the card closed, Tab from the mark is the browser\'s');
+  // Shift+Tab before the first button, and Escape inside the card, come back the same way.
+  doc.getElementById('kb-search').focus(); h.flushTimers();
+  ref.focus(); h.flushTimers();
+  h.dispatchKey('Tab', { target: ref });
+  h.dispatchKey('Tab', { target: card().querySelector('[data-fn-go]'), shift: true });
+  assert.ok(!shown() && doc.activeElement === ref, 'Shift+Tab out of the card returns to the mark');
+  doc.getElementById('kb-search').focus(); h.flushTimers();
+  ref.focus(); h.flushTimers();
+  h.dispatchKey('Tab', { target: ref });
+  h.dispatchKey('Escape', { target: card().querySelector('[data-fn-go]') });
+  assert.ok(!shown() && doc.activeElement === ref, 'Escape inside the card hides it and returns to the mark (focus was left on a hidden button)');
+  // Focus that leaves the card for somewhere else closes it.
+  doc.getElementById('kb-search').focus(); h.flushTimers();
+  ref.focus(); h.flushTimers();
+  h.dispatchKey('Tab', { target: ref });
+  doc.getElementById('kb-search').focus(); h.flushTimers();
+  assert.ok(!shown(), 'focus that leaves the card for elsewhere closes it');
+});
+
 // ── Batch M5a — the reader ──────────────────────────────────────────────────
 section('Batch M5a — context-focused previews, code links in more places, back to the section');
 

@@ -4122,6 +4122,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   had thrown; the shift-stats client cached a round whose call data was
   unreadable. None of them caches such a round now. Verify: the MET-2/3/4 and
   TC2-2 pins.
+  **AMENDED (cycle 25 F11, 2026-10-14): the handbook's metadata.**
+  `kbEnsureManualMeta_` mapped an `{error}` to "no meta" and kept it for the
+  session, and a transport failure dropped its waiters without an answer. The
+  call router then read "No phrase matches" or showed nothing. Now only an
+  answer is cached. A failure tells each waiter `failed`, the router says it
+  could not load, and the next open asks again. An import or a publish forgets
+  the meta, and a read in flight across one is answered but not kept (its own
+  generation counter, since the chapter prefetch bumps the parts counter).
+  Verify: the F11 (cycle 25) DOM drive.
 
 <a id="g130-a-registered-onclose-hook-owns-the-close"></a>
 
@@ -4603,6 +4612,12 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   below; the draft rides the re-render, and a POSTED comment leaves the box
   before its refresh so it is never put back. Verify: the ADM-10 and KBUI-5 DOM
   drives.
+  **AMENDED (cycle 25 F51, 2026-10-14): a repaint that runs while you READ
+  counts too.** The handbook's scroll-spy repaints the reader bar at every
+  section boundary, and it replaced the bookmark button with `outerHTML`, so a
+  keyboard reader on the star lost focus as the page scrolled. The button is now
+  patched in place (`kbBookmarkBtnPatch_`), as the feedback buttons beside it
+  already were. Verify: the F51 (cycle 25) DOM drive.
 
 <a id="g142-a-diagnostic-that-names-the-wrong-source"></a>
 ### g142 — A diagnostic that names the WRONG source is worse than a vague one, because it is actionable and the action is destructive
@@ -5571,3 +5586,23 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   `--destructive` or `--info`. Verify: MRD-3 (no white on a filled accent,
   anywhere in `web-app/`), MRD-4 (none on a semantic fill), MRD-5 (amber text is
   `--on-warn`) — each a sweep over every themed partial.
+
+<a id="g171-a-visually-hidden-absolute-element-escapes-its-scroller"></a>
+
+- **A visually hidden element is still POSITIONED — `position: absolute` with no
+  positioned ancestor inside its scroll container escapes it and extends the
+  PAGE (cycle 25 F67, measured 2026-10-14).** Reader-design Phase 4 kept each
+  callout's separator in the DOM as a screen-reader-only span (`.kb-co-sep`:
+  absolute, 1px, clipped). Nothing between it and the document was positioned,
+  so it was laid out against the initial containing block at its static
+  position thousands of pixels down the reader's content. The document grew to
+  match: 8,245px for a 900px window, and 14,313px at phone width. The app page
+  then scrolled through blank space beneath the reader. Nothing showed in a
+  screenshot of the reader, and the horizontal-overflow check could not see a
+  vertical one. RULE: an absolutely positioned element, hidden or not, needs a
+  positioned ancestor INSIDE the scroller it belongs to. The callout carries
+  `position: relative`. Fires when you add a visually-hidden or absolutely
+  positioned element inside a scrolling panel. Verify: the F67 (cycle 25) pin
+  (the containing rule, and every separator made only inside a callout). The
+  height itself needs Chromium (`document.documentElement.scrollHeight`), which
+  is F69's planned matrix check.

@@ -242,6 +242,10 @@
   .kb-callout-watch-out .kb-co-kick { color: var(--warning-deep); }
   .kb-callout-note .kb-co-kick { color: var(--muted); }
   .kb-co-sep { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }   /* kept so the text reads the same */
+  /* F67 (cycle 25): the hidden separator is absolutely positioned, so it needs a
+     positioned ancestor INSIDE the reader's scroller — without one it escaped
+     #kb-main and stretched the whole page (8,245px for a 900px window, measured). */
+  blockquote.kb-callout { position: relative; }
   .kb-co-title { display: block; margin-top: 4px; font-weight: 600; }
   .kb-co-title::first-letter { text-transform: uppercase; }
   .kb-man-part .kb-snippet-label { font-family: var(--mono); letter-spacing: .1em; }
@@ -3434,7 +3438,7 @@ function kbXrefLandEl_(host, bodyMd, anchor, ctx, text) {
   if (!host || !(ctx || text)) return null;
   var hit = kbXrefFocus_(bodyMd, anchor, ctx, text);
   if (!hit) return null;
-  return kbFindBlockEl_(host, hit.block, anchor ? kbFindNumberedHeading_(host, anchor) : null);
+  return kbFindBlockEl_(host, hit.block, anchor ? kbFindAnchorHeading_(host, anchor) : null);
 }
 
 /** The first heading inside `host` whose text is the number, or starts with
@@ -3449,26 +3453,47 @@ function kbFindNumberedHeading_(host, num) {
   return null;
 }
 
+/** F10 (cycle 25) — the heading an anchor names inside `host`: a manual
+ *  cross-reference names a NUMBERED heading ("5.9.2", "A.1"), a search hit a
+ *  slug ("0-10-1-trx-type", kbMd_'s `kb-h-` id). ONE resolver for every open
+ *  path — the reader's focus took only the numbered form, so "Open ¶" on a
+ *  search hit landed on the section top. */
+function kbFindAnchorHeading_(host, anchor) {
+  if (!host || !anchor) return null;
+  return kbFindNumberedHeading_(host, anchor) ||
+    (/^[a-z0-9-]+$/.test(anchor) ? host.querySelector('#kb-h-' + anchor) : null);
+}
+
 function kbManualDeptOf_(id) {
   var it = (KB_STATE.tree || []).filter(function (x) { return x.id === id; })[0];
   return it ? it.department : '';
 }
 
 /** The manual's meta (version, router, changelog) — fetched once per session;
- *  `cb(meta)` gets null when there is none or the read failed (the reader then
- *  simply omits the version line, badges and router — never a stale guess). */
+ *  `cb(meta, failed)` gets null when there is none or the read failed (the reader
+ *  then simply omits the version line, badges and router — never a stale guess).
+ *  F11 (cycle 25): only an ANSWER is cached. A read that failed — an `{error}`
+ *  or a transport failure — tells every waiter `failed` and caches nothing, so
+ *  the next open asks again (g129: it used to cache the error as "no meta" for
+ *  the session, and a transport failure dropped the waiters unanswered). An
+ *  import or a publish forgets the meta too (kbManualInvalidate_), and a read
+ *  that was in flight across one is answered but not kept. */
 function kbEnsureManualMeta_(cb) {
-  if (KB_STATE.manualMeta !== undefined) { if (cb) cb(KB_STATE.manualMeta); return; }
+  if (KB_STATE.manualMeta !== undefined) { if (cb) cb(KB_STATE.manualMeta, false); return; }
   (KB_STATE.manualMetaWaiters = KB_STATE.manualMetaWaiters || []).push(cb || function () {});
   if (KB_STATE.manualMetaWaiters.length > 1) return;
-  var done = function (m) {
-    KB_STATE.manualMeta = m;
+  var gen = KB_STATE.manualMetaGen || 0;
+  var done = function (m, failed) {
+    if (!failed && gen === (KB_STATE.manualMetaGen || 0)) KB_STATE.manualMeta = m;
     var ws = KB_STATE.manualMetaWaiters || []; KB_STATE.manualMetaWaiters = [];
-    ws.forEach(function (w) { try { w(m); } catch (e) {} });
+    ws.forEach(function (w) { try { w(m, !!failed); } catch (e) {} });
   };
   google.script.run
-    .withSuccessHandler(function (res) { done(res && !res.error && !res.none ? res : null); })
-    .withFailureHandler(function () { KB_STATE.manualMetaWaiters = []; })   // not cached: a later open retries
+    .withSuccessHandler(function (res) {
+      if (res && res.error) done(null, true);
+      else done(res && !res.none ? res : null, false);
+    })
+    .withFailureHandler(function () { done(null, true); })   // not cached: a later open retries
     .getManualMeta();
 }
 
@@ -3582,6 +3607,8 @@ function kbManualInvalidate_() {
   KB_STATE.manualPartsLoading = false;
   KB_STATE.manualPartsGen = (KB_STATE.manualPartsGen || 0) + 1;
   KB_STATE.manualPart = null;
+  KB_STATE.manualMeta = undefined;   // F11 (cycle 25): the version, router and changelog came from the import too
+  KB_STATE.manualMetaGen = (KB_STATE.manualMetaGen || 0) + 1;   // and a read in flight across it is answered, never kept
   KB_XREF.cache = {};
 }
 
@@ -3821,6 +3848,12 @@ function kbPopTake_(origin, key) {
   KB_XREF.key = key; KB_XREF.origin = origin;
   origin.setAttribute('aria-describedby', 'kb-xrefcard');
 }
+/** F52 (cycle 25) — the card's keyboard stops, in order: its links and buttons
+ *  (a footnote or glossary mark inside the card is inert, so it is not one). */
+function kbPopFocusables_(card) {
+  return Array.prototype.slice.call(card.querySelectorAll('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+    .filter(function (x) { return !x.matches('button.kb-fn-ref, .kb-gloss-mark'); });
+}
 /** The one card, for whichever kind of mark asked. */
 function kbPopShow_(el) {
   if (el.classList.contains('kb-fn-ref')) kbFnShow_(el);
@@ -4058,8 +4091,12 @@ function kbManualBarPaint_(id) {
   var t = kbManualSplitTitle_(s.title);
   bar.querySelector('[data-kb-man-bar-sn]').textContent = t.num;
   var te = bar.querySelector('[data-kb-man-bar-t]'); te.textContent = t.rest; te.title = s.title;
+  // F51 (cycle 25): patched IN PLACE — the scroll-spy repaints the bar as the
+  // reader scrolls, and replacing the button (outerHTML) dropped keyboard focus
+  // from it on every section boundary (the g141 class; the feedback buttons
+  // beside it were already patched this way).
   var bm = bar.querySelector('.kb-bm');
-  if (bm) bm.outerHTML = kbBookmarkBtnHtml_({ id: id, title: s.title }, 'kb-man-bar-ic');
+  if (bm) kbBookmarkBtnPatch_(bm, { id: id, title: s.title });
   kbManualBarFbPaint_(bar, id, s.title);
   var pr = bar.querySelector('[data-kb-man-bar-print]');
   if (pr) {
@@ -4340,7 +4377,7 @@ function kbManualFocus_(id, anchor, instant, nav) {
   kbManualBarPaint_(id);
   if (block) kbFlashBlock_(block, instant);
   else {
-    var target = (anchor && kbFindNumberedHeading_(sec, anchor)) || sec.querySelector('.kb-man-sec-h') || sec;
+    var target = kbFindAnchorHeading_(sec, anchor) || sec.querySelector('.kb-man-sec-h') || sec;
     kbReaderScroll_(target, 'start', !instant);
     target.classList.add('kb-h-flash');
     setTimeout(function () { target.classList.remove('kb-h-flash'); }, 1600);
@@ -4682,11 +4719,19 @@ function kbXrefShow_(a) {
   document.addEventListener('focusin', function (e) {
     var a = e.target.closest && e.target.closest(KB_POP_SEL);
     if (!a || a.closest('#kb-xrefcard')) return;
+    if (KB_XREF.backTo === a) { KB_XREF.backTo = null; return; }   // F52: focus handed back from the card — let the next Tab move on
+    KB_XREF.backTo = null;
     clearTimeout(KB_XREF.hideTimer); clearTimeout(KB_XREF.timer);
     KB_XREF.timer = setTimeout(function () { if (document.activeElement === a) kbPopShow_(a); }, 350);
   });
   document.addEventListener('focusout', function (e) {
     var a = e.target.closest && e.target.closest(KB_POP_SEL);
+    // F52: focus that leaves the card for anywhere but its origin closes it.
+    var card = KB_XREF.el, to0 = e.relatedTarget;
+    if (card && card.contains(e.target)) {
+      if (!(to0 && (card.contains(to0) || to0 === KB_XREF.origin))) kbXrefHide_();
+      return;
+    }
     if (!a || a.closest('#kb-xrefcard')) return;
     var to = e.relatedTarget;
     if (to && to.closest && to.closest('#kb-xrefcard')) return;
@@ -4695,7 +4740,36 @@ function kbXrefShow_(a) {
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape' || !(KB_XREF.el && KB_XREF.el.classList.contains('show'))) return;
     e.preventDefault(); e.stopImmediatePropagation();
+    var back = KB_XREF.el.contains(document.activeElement) ? KB_XREF.origin : null;
     kbXrefHide_(true);
+    if (back && back.focus) { KB_XREF.backTo = back; back.focus(); }   // F52: Escape inside the card returns to its link
+  }, true);
+  // F52 (cycle 25): the card is appended to <body>, so its Open / Go to note /
+  // Go to glossary buttons came LAST in the tab order — and Tabbing away from
+  // the link hid the card first, so no keyboard reader could ever reach them.
+  // Tab from the link now steps INTO the open card; Tab past its last button,
+  // or Shift+Tab before its first, hides it and returns to the link (and the
+  // next Tab moves on from there, without reopening it).
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Tab' || e.altKey || e.ctrlKey || e.metaKey) return;
+    var card = KB_XREF.el, origin = KB_XREF.origin;
+    if (!card || !origin || !card.classList.contains('show')) return;
+    var stops = kbPopFocusables_(card);
+    if (!stops.length) return;
+    if (e.target === origin && !e.shiftKey) {
+      e.preventDefault();
+      clearTimeout(KB_XREF.hideTimer); clearTimeout(KB_XREF.timer);
+      stops[0].focus();
+      return;
+    }
+    if (!card.contains(e.target)) return;
+    var i = stops.indexOf(e.target);
+    if ((e.shiftKey && i <= 0) || (!e.shiftKey && i === stops.length - 1)) {
+      e.preventDefault();
+      KB_XREF.backTo = origin;
+      kbXrefHide_(true);
+      origin.focus();
+    }
   }, true);
 })();
 
@@ -4764,11 +4838,13 @@ function kbRouterVisible_() {
 /** The drawer home's router entry — drawn once the meta and the tree are in. */
 function kbDrawerRenderRouterEntry_() {
   var host = document.getElementById('kbd-router'); if (!host) return;
-  kbEnsureManualMeta_(function (meta) {
+  kbEnsureManualMeta_(function (meta, failed) {
     var h = document.getElementById('kbd-router'); if (!h || !KB_DRAWER.open || KB_DRAWER.view !== 'home') return;
     var any = meta && kbRouterRows_(meta.router, '', kbRouterVisible_()).length;
+    // F11 (cycle 25): a failed read says so — an empty slot read as "this manual has no router".
     h.innerHTML = any ? '<button class="kbd-item kbd-router-btn" onclick="kbDrawerOpenRouter_()"><span>' + icon('phone', 12) +
-      ' <b>What did the caller say?</b> <span class="kb-snip">the handbook’s call router</span></span></button>' : '';
+      ' <b>What did the caller say?</b> <span class="kb-snip">the handbook’s call router</span></span></button>'
+      : (failed ? '<div class="kbd-empty">The handbook’s call router could not be loaded — reopen the drawer to try again.</div>' : '');
   });
 }
 function kbDrawerOpenRouter_() {
@@ -4780,8 +4856,11 @@ function kbDrawerOpenRouter_() {
     '<div class="kbd-sec">What did the caller say?</div>' +
     '<div class="kbd-rt-filter"><input type="search" id="kbd-rt-q" placeholder="Filter phrases…" aria-label="Filter caller phrases" autocomplete="off"></div>' +
     '<div id="kbd-rt-list"></div>';
+  var metaFailed = false;
   var paint = function () {
     var list = document.getElementById('kbd-rt-list'); if (!list) return;
+    // F11 (cycle 25): a router that could not be read is not one with no match.
+    if (metaFailed) { list.innerHTML = '<div class="kbd-empty">The handbook’s call router could not be loaded — go Back and open it again to retry.</div>'; return; }
     var inp = document.getElementById('kbd-rt-q');
     var groups = kbRouterRows_((KB_STATE.manualMeta || {}).router, inp ? inp.value : '', kbRouterVisible_());
     list.innerHTML = groups.length ? groups.map(function (g) {
@@ -4792,7 +4871,7 @@ function kbDrawerOpenRouter_() {
       }).join('');
     }).join('') : '<div class="kbd-empty">No phrase matches — try the search box above.</div>';
   };
-  kbEnsureManualMeta_(function () { paint(); });
+  kbEnsureManualMeta_(function (m, failed) { metaFailed = !!failed; paint(); });
   var inp = document.getElementById('kbd-rt-q');
   if (inp) {
     inp.addEventListener('input', paint);   // repaints the LIST only — the input keeps its value, focus and caret (g141)
@@ -5103,16 +5182,22 @@ function kbManualRun_(dryRun) {
   google.script.run
     .withSuccessHandler(function (r) {
       if (chk) chk.disabled = false;
+      // F50 (cycle 25): a CHECK answers for the file it read. If another file was
+      // chosen while it ran, its verdict is dropped — it painted over the new
+      // file's "press Check" and unlocked Import for a file nobody had checked.
+      // (An import's result is still shown: that import did happen.)
+      if (dryRun && KB_MANUAL_FILE !== file) return;
       var box = document.getElementById('kb-man-result');
       if (box) box.innerHTML = kbManualResultHtml_(r, dryRun);
-      // Import unlocks only after a clean check of THIS link; an import done
+      // Import unlocks only after a clean check of THIS file; an import done
       // leaves it locked (checking again shows everything unchanged).
-      if (imp) imp.disabled = !(dryRun && r && r.success && ((r.created || 0) + (r.updated || 0) > 0 || r.metaUpdated || (r.orphaned || []).length));
+      if (imp) imp.disabled = !(dryRun && KB_MANUAL_FILE === file && r && r.success && ((r.created || 0) + (r.updated || 0) > 0 || r.metaUpdated || (r.orphaned || []).length));
       kbManualGate_(imp);
       if (!dryRun && r && r.success) kbManualImported_(r);
     })
     .withFailureHandler(function (e) {
       if (chk) chk.disabled = false;
+      if (dryRun && KB_MANUAL_FILE !== file) return;   // F50: the failed check was of a file no longer chosen
       var box = document.getElementById('kb-man-result');
       if (box) box.innerHTML = kbManualResultHtml_({ success: false, error: (e && e.message) || 'The import failed.' });
       if (!dryRun) showToast('The handbook import failed — see the dialog', 'toast-error');
@@ -6919,8 +7004,8 @@ function kbScrollToAnchor_(host, anchor) {
   if (!host || !anchor) return;
   try {
     // A manual cross-reference names a NUMBERED heading (5.9.2, A.1, 10.B);
-    // a search hit names a slug. The charsets do not overlap.
-    var el = /[.A-Z]/.test(anchor) ? kbFindNumberedHeading_(host, anchor) : host.querySelector('#kb-h-' + anchor);
+    // a search hit names a slug — one resolver reads both (F10, cycle 25).
+    var el = kbFindAnchorHeading_(host, anchor);
     if (!el) return;
     el.scrollIntoView({ block: 'start', behavior: 'smooth' });
     el.classList.add('kb-h-flash');
@@ -8113,6 +8198,16 @@ function kbToggleBookmark_(id, title, btn) {
   if (KB_STATE.landing && document.getElementById('kb-main')) kbRenderLanding_();
 }
 // Reader/drawer bookmark star button (all users).
+/** F51 (cycle 25) — bring an existing bookmark button to `item`, keeping the
+ *  node (and so its focus): the same state kbBookmarkBtnHtml_ draws. */
+function kbBookmarkBtnPatch_(btn, item) {
+  var on = kbIsBookmarked_(item.id);
+  btn.classList.toggle('on', on);
+  btn.setAttribute('data-kb-id', item.id);
+  btn.setAttribute('data-kb-title', item.title || '');
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  btn.title = on ? 'Bookmarked — click to remove' : 'Bookmark this';
+}
 function kbBookmarkBtnHtml_(item, extraClass) {
   var on = kbIsBookmarked_(item.id);
   return '<button class="kb-btn kb-bm' + (on ? ' on' : '') + (extraClass ? ' ' + extraClass : '') + '" ' +

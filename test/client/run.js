@@ -28842,6 +28842,22 @@ test('F54 (cycle 25): a reply scan past its per-run cap NAMES the requests it di
   assert.deepStrictEqual(drive({ candidates: 3, scanned: 3, truncated: false, errors: 0 }).clr, ['DeptReplyScan'], 'a whole run clears');
 });
 
+test('F67 (cycle 25): every hidden callout separator has a positioned ancestor inside the reader — the CSS contains it at the callout, and every place a separator is created is a callout (a layout fact jsdom cannot measure: the fix was measured in Chromium, 8,245 → 918px at 1440×900)', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const css = kb.slice(0, kb.indexOf('</style>'));
+  assert.ok(/\.kb-co-sep \{ position: absolute;/.test(css), 'the separator is absolutely positioned (non-vacuous: this is what escaped the scroller)');
+  assert.ok(/^\s*blockquote\.kb-callout \{ position: relative; \}/m.test(css),
+    'THE REGRESSION: no positioned ancestor — the separator escaped #kb-main and stretched the whole page');
+  // Every separator is created by kbDecorateCallouts_, and every call scopes it to a callout.
+  const js = stripJsComments_(kb.slice(kb.indexOf('</style>')));
+  const fn = extractFnFrom(kb, 'kbDecorateCallouts_');
+  const outside = js.replace(stripJsComments_(fn), '');
+  assert.ok(!/kb-co-sep/.test(outside), 'no separator is made anywhere else');
+  const calls = [...js.matchAll(/kbDecorateCallouts_\([^,]+, '([^']+)'\)/g)].map((m) => m[1]);
+  assert.ok(calls.length >= 3, 'the call sites (non-vacuous): ' + calls.length);
+  calls.forEach((sel) => assert.ok(/blockquote\.kb-callout$/.test(sel), sel + ' decorates callouts only'));
+});
+
 test('FU-B6b: the daily brief names urgent-note rep Sheets it could not read, instead of reading only `.results` (driven)', () => {
   const stamped = [];
   let sentD = null;
