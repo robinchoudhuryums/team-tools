@@ -297,15 +297,17 @@
   .kb-man-bar-nav:disabled { opacity: .4; cursor: default; }
   /* A narrow reader (the pop-out, a phone) keeps the section, not the chapter name,
      and ‹ › shrink to their chevrons (the label stays in the tooltip and the
-     accessible name) — at 390px the title had kept five letters. */
-  @container (max-width: 560px) { .kb-man-bar-cn, .kb-man-bar-chev, .kb-man-bar-sep, .kb-man-bar-nav span { display: none; } .kb-man-bar { gap: 6px; padding-right: 10px; } .kb-man-bar-nav { padding: 5px 6px; } .kb-trail-chip { min-height: 32px; } }
-  /* M7 — the feedback line is quieter, so a 15-section page does not read as 15 footers. */
-  .kb-man-fb { margin-top: 20px; padding-top: 0; border-top: none; gap: 4px; }
-  .kb-man-fb .kb-fb-q { font-size: .8rem; color: var(--muted-2); margin-right: 4px; }
-  .kb-man-fb .kb-fb-btns { flex: 1; gap: 2px; }
-  .kb-man-fb .kb-btn { border-color: transparent; background: none; color: var(--muted); padding: 4px 8px; }
-  .kb-man-fb .kb-btn:hover { background: var(--paper-2); color: var(--ink); }
-  .kb-man-fb .kb-fb-btns .kb-btn:last-child { margin-left: auto; }
+     accessible name) — at 390px the title had kept five letters. Since the
+     feedback joined the bar (2026-10-12) the buttons take a second row there, or
+     the title kept ONE letter: feedback, star and Print left, ‹ › right. */
+  @container (max-width: 560px) { .kb-man-bar-cn, .kb-man-bar-chev, .kb-man-bar-sep, .kb-man-bar-nav span { display: none; } .kb-man-bar { gap: 6px; padding-right: 10px; flex-wrap: wrap; row-gap: 4px; } .kb-man-bar-acts { flex-basis: 100%; margin-left: 0; } .kb-man-bar-acts [data-kb-man-bar-prev] { margin-left: auto; } .kb-man-bar-nav { padding: 5px 6px; } .kb-trail-chip { min-height: 32px; } }
+  /* Helpful / Suggest an edit ride the reader bar for the section in view (operator
+     2026-10-12 — a row closing every sub-section was clutter). A vote sent is
+     pressed and the pair goes quiet; a disabled pair is faded unless pressed. */
+  .kb-man-bar-fb { display: inline-flex; align-items: center; gap: 2px; }
+  .kb-man-bar .kb-man-bar-ic:disabled { cursor: default; }
+  .kb-man-bar .kb-man-bar-ic:disabled:not([aria-pressed="true"]) { opacity: .4; }
+  .kb-man-bar .kb-man-bar-ic[aria-pressed="true"] { color: var(--accent-2); }
   /* Batch M4 — the manual's "recently changed" list (the What's new panel and
      the Reference landing share one renderer, manualRecentListHtml_). */
   .mr-list { display: flex; flex-direction: column; }
@@ -2738,8 +2740,8 @@ function kbMd_(src) {
       // emitted here at all — the image arrives as a data URL, by property.
       if (/^manimg:/i.test(url)) {
         var mk = url.match(/^manimg:((?:icon|thumb|fig)-[a-z0-9-]{1,80})$/);
-        return keep('<span class="kb-img-pending' + (mk ? ' kb-manimg" data-manimg="' + mk[1] : '') + '" title="Manual image">' +
-          (alt || 'Manual image') + '</span>');
+        return keep('<span class="kb-img-pending' + (mk ? ' kb-manimg" data-manimg="' + mk[1] : '') + '" title="Handbook image">' +
+          (alt || 'Handbook image') + '</span>');
       }
       if (!/^https?:/i.test(url)) return alt;
       url = url.replace(/"/g, '%22').replace(/'/g, '%27');
@@ -2999,8 +3001,8 @@ function kbManimgApply_(key, state) {
       if (n.parentNode) n.parentNode.replaceChild(img, n);
     } else {
       n.setAttribute('data-mi', state === 'missing' ? 'missing' : 'failed');
-      n.title = state === 'missing' ? 'Manual image \u2014 not imported yet (Reference \u2192 Manual \u2192 Import)'
-        : 'Manual image \u2014 could not load it; reopen the section to try again';
+      n.title = state === 'missing' ? 'Handbook image \u2014 not imported yet (Reference \u2192 Handbook \u2192 Import)'
+        : 'Handbook image \u2014 could not load it; reopen the section to try again';
     }
   }
 }
@@ -3513,12 +3515,12 @@ function kbOpenManualSection_(id, anchor, nav) {
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requested || seq !== KB_STATE.manualSeq || KB_STATE.currentId !== id) return;
-      if (!res || res.error) { kbManualLoadFail_(main, (res && res.error) || 'Failed to load this chapter of the manual'); return; }
+      if (!res || res.error) { kbManualLoadFail_(main, (res && res.error) || 'Failed to load this chapter of the handbook'); return; }
       if (!(res.sections || []).some(function (s) { return s.id === id; })) { kbManualLoadFail_(main, 'That section is not available.'); return; }
       kbManualPaintPart_(main, res, id, anchor, nav);
     })
     .withFailureHandler(function (err) {
-      if (currentView === requested && seq === KB_STATE.manualSeq && KB_STATE.currentId === id) kbManualLoadFail_(main, (err && err.message) || 'Failed to load this chapter of the manual');
+      if (currentView === requested && seq === KB_STATE.manualSeq && KB_STATE.currentId === id) kbManualLoadFail_(main, (err && err.message) || 'Failed to load this chapter of the handbook');
     })
     .getManualPart(dept);
   return true;
@@ -3836,7 +3838,7 @@ function kbManualPartHtml_(part) {
   var ck = kbManualChapterKey_(part.department);
   var html = kbManualBarHtml_(part.department) + kbManualMastheadHtml_(part.department, secs) +
     (admin && drafts ? '<div class="kb-draft-banner">' + icon('warning', 13) + ' ' + drafts + ' of ' + secs.length +
-      ' section' + (secs.length === 1 ? '' : 's') + ' in this chapter ' + (drafts === 1 ? 'is a draft' : 'are drafts') + ' — hidden from reps until published (Reference → Manual).</div>' : '') +
+      ' section' + (secs.length === 1 ? '' : 's') + ' in this chapter ' + (drafts === 1 ? 'is a draft' : 'are drafts') + ' — hidden from reps until published (Reference → Handbook).</div>' : '') +
     '<div class="kb-man-part' + (ck ? ' kb-man-' + ck : '') + '">';
   secs.forEach(function (s) {
     var draft = s.status === 'draft';
@@ -3851,7 +3853,6 @@ function kbManualPartHtml_(part) {
         (admin && draft ? '<span class="kb-man-sec-acts"><button class="kb-btn" data-kb-id="' + esc(s.id) + '" onclick="kbPublishItem_(this.getAttribute(\'data-kb-id\'))">' + icon('check', 13) + ' Publish</button></span>' : '') +
       '</div>' +
       '<div class="kb-article">' + kbShiftHeadings_(kbMd_(s.bodyMd || '')) + '</div>' +
-      kbManualFeedbackBarHtml_(s) +
     '</section>';
   });
   return html + '<nav class="kb-man-chapnav" data-kb-man-chapnav aria-label="Other chapters"></nav></div>';
@@ -3865,7 +3866,7 @@ function kbManualPartHtml_(part) {
 function kbManualMastheadHtml_(dept, secs) {
   var ck = kbManualChapterKey_(dept), cp = kbManualChapterParts_(dept);
   var html = '<header class="kb-man-mast' + (ck ? ' kb-man-' + ck : '') + '">' +
-    '<div class="kb-man-mast-k">Procedures manual' + (cp.num ? ' · ' + (cp.appendix ? 'Appendix ' : 'Chapter ') + esc(cp.num) : '') + '</div>' +
+    '<div class="kb-man-mast-k">Policies &amp; Procedures Handbook' + (cp.num ? ' · ' + (cp.appendix ? 'Appendix ' : 'Chapter ') + esc(cp.num) : '') + '</div>' +
     '<h2 class="kb-man-mast-h">' + kbManualChapterIcon_(dept, 22, 'kb-man-badge') + '<span>' + esc(cp.name) + '</span></h2>' +
     '<div class="kb-man-mast-meta"><span>' + secs.length + ' section' + (secs.length === 1 ? '' : 's') + '</span>' +
       '<span data-kb-man-updcount></span><span data-kb-man-ver></span></div>';
@@ -3999,6 +4000,14 @@ function kbManualBarHtml_(dept, skelTitle) {
       '<span class="kb-man-bar-chev" aria-hidden="true">' + icon('chevronRight', 12) + '</span>' +
       '<span class="kb-man-bar-sn" data-kb-man-bar-sn>' + esc(st.num) + '</span><span class="kb-man-bar-t" data-kb-man-bar-t>' + esc(st.rest) + '</span>' +
       '<span class="kb-man-bar-acts">' +
+        // Helpful / Not helpful / Suggest an edit for the section in view — painted per
+        // section by kbManualBarFbPaint_ (the row no longer closes every section).
+        '<span class="kb-man-bar-fb" data-kb-man-bar-fb data-kb-id="">' +
+          '<button type="button" class="kb-btn kb-man-bar-ic" data-kb-man-fb="helpful" data-kb-id="" aria-pressed="false" title="Helpful" aria-label="Helpful" onclick="kbManualBarVote_(this)" disabled>' + icon('thumbsUp', 15) + '</button>' +
+          '<button type="button" class="kb-btn kb-man-bar-ic" data-kb-man-fb="notHelpful" data-kb-id="" aria-pressed="false" title="Not helpful" aria-label="Not helpful" onclick="kbManualBarVote_(this)" disabled>' + icon('thumbsDown', 15) + '</button>' +
+          '<button type="button" class="kb-btn kb-man-bar-ic" data-kb-man-fb="suggest" data-kb-id="" data-kb-title="" title="Suggest an edit" aria-label="Suggest an edit" onclick="kbSuggestEdit_(this)" disabled>' + icon('flag', 15) + '</button>' +
+        '</span>' +
+        '<span class="kb-man-bar-sep" aria-hidden="true"></span>' +
         kbBookmarkBtnHtml_({ id: '', title: '' }, 'kb-man-bar-ic') +
         '<button type="button" class="kb-btn kb-man-bar-ic kb-man-print" data-kb-man-bar-print data-kb-id="" title="Print" aria-label="Print" onclick="kbPrintSectionById_(this.getAttribute(\'data-kb-id\'))">' + icon('printer', 15) + '</button>' +
         '<span class="kb-man-bar-sep" aria-hidden="true"></span>' +
@@ -4051,6 +4060,7 @@ function kbManualBarPaint_(id) {
   var te = bar.querySelector('[data-kb-man-bar-t]'); te.textContent = t.rest; te.title = s.title;
   var bm = bar.querySelector('.kb-bm');
   if (bm) bm.outerHTML = kbBookmarkBtnHtml_({ id: id, title: s.title }, 'kb-man-bar-ic');
+  kbManualBarFbPaint_(bar, id, s.title);
   var pr = bar.querySelector('[data-kb-man-bar-print]');
   if (pr) {
     var what = kbIsManualCard_(id) ? 'card' : 'section';
@@ -4269,8 +4279,8 @@ function kbManualPaintMeta_() {
   var main = document.getElementById('kb-main'); if (!main || !meta) return;
   var ver = main.querySelector('[data-kb-man-ver]');
   if (ver && meta.version) {
-    ver.textContent = 'CSR Procedures Manual ' + meta.version + (meta.built ? ' · built ' + meta.built : '') +
-      (KB_STATE.isAdmin ? ' · read-only here — change it in the manual source and re-import' : '');
+    ver.textContent = 'Policies & Procedures Handbook ' + meta.version + (meta.built ? ' · built ' + meta.built : '') +
+      (KB_STATE.isAdmin ? ' · read-only here — change it in the handbook source and re-import' : '');
   }
   var today = new Date().toISOString().substring(0, 10);
   var memo = {}, upd = function (id) { return memo[id] || (memo[id] = kbManualUpdates_(meta.changelog, id, today, KB_MANUAL_UPDATED_DAYS)); };
@@ -4440,23 +4450,69 @@ function kbManualPaintResume_(id) {
 function kbManualResumeDismiss_() { var host = document.querySelector('#kb-main [data-kb-man-resume]'); if (host) host.innerHTML = ''; }
 function kbManualResumeStart_(firstId) { kbManualResumeDismiss_(); kbOpenItem_(firstId); }
 
-/** A manual section's feedback bar: Yes / No, and "Suggest an edit" in place
- *  of "Out of date" (the same review-queue flag, with a required note). */
-function kbManualFeedbackBarHtml_(s) {
-  return '<div class="kb-feedback kb-man-fb">' +
-    '<span class="kb-fb-q">Was this helpful?</span>' +
-    '<span class="kb-fb-btns">' +
-      '<button class="kb-btn" title="Helpful" data-kb-id="' + esc(s.id) + '" onclick="kbSendFeedback_(this.getAttribute(\'data-kb-id\'), \'helpful\', this)">' + icon('thumbsUp', 13) + ' Yes</button>' +
-      '<button class="kb-btn" title="Not helpful" data-kb-id="' + esc(s.id) + '" onclick="kbSendFeedback_(this.getAttribute(\'data-kb-id\'), \'notHelpful\', this)">' + icon('thumbsDown', 13) + ' No</button>' +
-      '<button class="kb-btn" title="Tell the manual’s owner what should change" data-kb-id="' + esc(s.id) + '" data-kb-title="' + esc(s.title) + '" onclick="kbSuggestEdit_(this)">' + icon('flag', 13) + ' Suggest an edit</button>' +
-    '</span>' +
-  '</div>';
+/** The reader bar's feedback for section `id`, painted IN PLACE (attributes
+ *  only, so a focused button keeps its focus): Helpful / Not helpful, and
+ *  "Suggest an edit" in place of "Out of date" (the same review-queue flag, with
+ *  a required note). Votes stay per section; what this session already sent is
+ *  remembered by id in KB_STATE.manualFb, so a section scrolled back to reads as
+ *  answered rather than asking again. */
+function kbManualBarFbPaint_(bar, id, title) {
+  var host = bar && bar.querySelector('[data-kb-man-bar-fb]'); if (!host) return;
+  var st = (KB_STATE.manualFb || {})[id] || {};
+  host.setAttribute('data-kb-id', id);
+  host.querySelectorAll('button').forEach(function (b) {
+    var kind = b.getAttribute('data-kb-man-fb');
+    b.setAttribute('data-kb-id', id);
+    if (kind === 'suggest') {
+      b.setAttribute('data-kb-title', title);
+      b.disabled = !id;
+      b.title = 'Suggest an edit to this section';
+      b.setAttribute('aria-label', 'Suggest an edit: ' + title);
+      return;
+    }
+    var on = st.vote === kind, word = kind === 'helpful' ? 'Helpful' : 'Not helpful';
+    b.disabled = !id || !!st.vote || !!st.busy;
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.title = on ? 'You rated this section ' + word.toLowerCase() + ' — thanks' : (st.busy ? 'Saving…' : word);
+    b.setAttribute('aria-label', b.title + ': ' + title);
+  });
+}
+/** A vote from the bar. F-45's contract holds: the pair is disabled while the
+ *  write is in flight, thanks only on success, and a failure says so and gives
+ *  the buttons back. The answer is recorded against the section it was CAST
+ *  for, and repaints the bar only while the bar still shows that section (the
+ *  rep may have scrolled on — g147). */
+function kbManualBarVote_(btn) {
+  var id = btn.getAttribute('data-kb-id'), kind = btn.getAttribute('data-kb-man-fb');
+  if (!id || (kind !== 'helpful' && kind !== 'notHelpful')) return;
+  var fb = KB_STATE.manualFb || (KB_STATE.manualFb = {});
+  var repaint = function () {
+    var bar = document.querySelector('#kb-main [data-kb-man-bar]');
+    var host = bar && bar.querySelector('[data-kb-man-bar-fb]');
+    if (host && host.getAttribute('data-kb-id') === id) {
+      var sug = host.querySelector('[data-kb-man-fb="suggest"]');
+      kbManualBarFbPaint_(bar, id, (sug && sug.getAttribute('data-kb-title')) || '');
+    }
+  };
+  var fail = function (msg) {
+    delete fb[id]; repaint();
+    showToast('Could not record that — ' + (msg || 'try again') + '.', 'toast-error');
+  };
+  fb[id] = { busy: true }; repaint();
+  google.script.run
+    .withSuccessHandler(function (r) {
+      if (!r || !r.success) { fail((r && r.error) || 'try again'); return; }
+      fb[id] = { vote: kind }; repaint();
+      showToast('Thanks for the feedback', 'toast-success');
+    })
+    .withFailureHandler(function (err) { fail((err && err.message) || 'try again'); })
+    .kbFlagItem(id, kind, '');
 }
 function kbSuggestEdit_(btn) {
   var id = btn.getAttribute('data-kb-id'), title = btn.getAttribute('data-kb-title') || 'this section';
   uiPrompt({
     title: 'Suggest an edit',
-    message: 'What should change in ' + title + '? It goes to the manual’s review queue.\n\nDescribe the procedure — do NOT include patient names, TRX, or other PHI.',
+    message: 'What should change in ' + title + '? It goes to the handbook’s review queue.\n\nDescribe the procedure — do NOT include patient names, TRX, or other PHI.',
     placeholder: 'e.g. the fee is now $85, not $75',
     confirmLabel: 'Send suggestion',
     validator: function (v) { return String(v || '').trim() ? '' : 'Say what should change.'; },
@@ -4464,7 +4520,7 @@ function kbSuggestEdit_(btn) {
     if (note === null) return;
     google.script.run
       .withSuccessHandler(function (r) {
-        if (r && r.success) { showToast('Suggestion sent — thanks', 'toast-success'); kbFeedbackDone_(btn, 'Suggestion sent.'); }
+        if (r && r.success) showToast('Suggestion sent — thanks', 'toast-success');
         else showToast((r && r.error) || 'Could not send', 'toast-error');
       })
       .withFailureHandler(function (e) { showToast((e && e.message) || 'Could not send', 'toast-error'); })
@@ -4712,7 +4768,7 @@ function kbDrawerRenderRouterEntry_() {
     var h = document.getElementById('kbd-router'); if (!h || !KB_DRAWER.open || KB_DRAWER.view !== 'home') return;
     var any = meta && kbRouterRows_(meta.router, '', kbRouterVisible_()).length;
     h.innerHTML = any ? '<button class="kbd-item kbd-router-btn" onclick="kbDrawerOpenRouter_()"><span>' + icon('phone', 12) +
-      ' <b>What did the caller say?</b> <span class="kb-snip">the manual’s call router</span></span></button>' : '';
+      ' <b>What did the caller say?</b> <span class="kb-snip">the handbook’s call router</span></span></button>' : '';
   });
 }
 function kbDrawerOpenRouter_() {
@@ -4817,7 +4873,7 @@ function kbAddBtnHtml_() {
   if (!KB_STATE.isAdmin) return '';
   return '<button class="kb-add" onclick="kbOpenEditor_()">' + icon('plus', 12) + ' Add item</button>' +
     '<button class="kb-add kb-add-alt" onclick="kbOpenSynonyms_()" title="Search synonyms — help reps find items by alternate terms (#8)">' + icon('list', 12) + ' Synonyms</button>' +
-    '<button class="kb-add kb-add-alt" onclick="kbOpenManualImport_()" title="Import or publish the CSR Procedures Manual">' + icon('upload', 12) + ' Manual</button>';
+    '<button class="kb-add kb-add-alt" onclick="kbOpenManualImport_()" title="Import or publish the Policies &amp; Procedures Handbook">' + icon('upload', 12) + ' Handbook</button>';
 }
 
 // #8 — admin-only search-synonym editor (one group per line, comma-separated).
@@ -4882,10 +4938,10 @@ var KB_MANUAL_SKIP_WHY = {
   foreign: 'a manual id the import did not write',
 };
 function kbOpenManualImport_() {
-  var ov = ensureOverlay('kb-man-overlay', { label: 'Import the procedures manual', onClose: function () { var o = document.getElementById('kb-man-overlay'); if (o) o.remove(); } });
+  var ov = ensureOverlay('kb-man-overlay', { label: 'Import the Policies & Procedures Handbook', onClose: function () { var o = document.getElementById('kb-man-overlay'); if (o) o.remove(); } });
   var depts = kbManualDraftDepts_();
   ov.innerHTML = '<div class="modal kb-ed kb-man"><div class="head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">' +
-      '<h3 style="margin:0">Procedures manual</h3>' +
+      '<h3 style="margin:0">Policies &amp; Procedures Handbook</h3>' +
       '<button class="kb-btn" data-kb-manclose="1" aria-label="Close">' + icon('x', 15) + '</button></div>' +
     '<div class="body">' +
       '<p class="kb-man-note">Choose <code>manual.json</code> from the manual build (<code>manual/export_reference.py</code>) on this computer — it is sent straight to the app, no Drive link needed. ' +
@@ -4914,19 +4970,19 @@ function kbOpenManualImport_() {
     rd.readAsText(f);
   });
 }
-/** The "Publish manual drafts" block, from the draft chapters in the tree.
+/** The "Publish handbook drafts" block, from the draft chapters in the tree.
  *  Rebuilt after an import (operator testing 2026-10-08: it kept the state it
- *  had when the dialog opened — often "No manual drafts" — so a finished import
+ *  had when the dialog opened — often "No handbook drafts" — so a finished import
  *  looked like nothing had happened). */
 function kbManualPubHtml_(depts) {
-  return '<div class="kb-man-lbl">Publish manual drafts</div>' +
+  return '<div class="kb-man-lbl">Publish handbook drafts</div>' +
     (depts.length
       ? '<div class="kb-man-pubrow"><select id="kb-man-dept" aria-label="Which chapter to publish">' +
           '<option value="">Every chapter (' + depts.reduce(function (n, d) { return n + d.count; }, 0) + ' drafts)</option>' +
           depts.map(function (d) { return '<option value="' + esc(d.name) + '">' + esc(d.name) + ' (' + d.count + ')</option>'; }).join('') +
         '</select><button class="kb-btn" onclick="kbManualPublish_(this)">' + icon('check', 13) + ' Publish</button></div>' +
         '<p class="kb-man-note">Review dates are spread across the review window, so the queue gains a few each day rather than every article at once.</p>'
-      : '<p class="kb-man-note">No manual drafts to publish.</p>');
+      : '<p class="kb-man-note">No handbook drafts to publish.</p>');
 }
 /** A finished import, said three ways (operator testing 2026-10-08: the result
  *  appeared quietly where the Check's had been, and nothing else changed): a
@@ -4938,7 +4994,7 @@ function kbManualImported_(r) {
   var bits = [(r.created || 0) + ' new draft' + (r.created === 1 ? '' : 's'), (r.updated || 0) + ' updated'];
   if (r.removed) bits.push(r.removed + ' removed');
   if ((r.skipped || []).length) bits.push(r.skipped.length + ' skipped');
-  showToast('Manual imported — ' + bits.join(' · '), (r.skipped || []).length || (r.images && r.images.error) ? 'toast-warn' : 'toast-success');
+  showToast('Handbook imported — ' + bits.join(' · '), (r.skipped || []).length || (r.images && r.images.error) ? 'toast-warn' : 'toast-success');
   var picked = document.getElementById('kb-man-picked');
   if (picked && KB_MANUAL_FILE) picked.textContent = KB_MANUAL_FILE.name + ' — imported';
   var box = document.getElementById('kb-man-result');
@@ -5013,9 +5069,9 @@ function kbManualResultHtml_(r, dryRun) {
         }).join('') + '</ul>'
       : '') +
     (!dryRun && r.removed
-      ? '<div class="kb-man-skiph">Removed ' + r.removed + ' section' + (r.removed === 1 ? '' : 's') + ' the manual no longer has.</div>'
+      ? '<div class="kb-man-skiph">Removed ' + r.removed + ' section' + (r.removed === 1 ? '' : 's') + ' the handbook no longer has.</div>'
       : (orphaned.length
-        ? '<div class="kb-man-skiph">No longer in the manual:</div><ul>' + orphaned.map(function (o) { return '<li>' + esc(o.title || o.id) + '</li>'; }).join('') + '</ul>' +
+        ? '<div class="kb-man-skiph">No longer in the handbook:</div><ul>' + orphaned.map(function (o) { return '<li>' + esc(o.title || o.id) + '</li>'; }).join('') + '</ul>' +
           (dryRun ? '<label class="kb-man-chk"><input type="checkbox" id="kb-man-remove"> Remove ' + (orphaned.length === 1 ? 'it' : 'these ' + orphaned.length) + ' from Reference on Import</label>' : '')
         : '')) +
     '</div>';
@@ -5059,7 +5115,7 @@ function kbManualRun_(dryRun) {
       if (chk) chk.disabled = false;
       var box = document.getElementById('kb-man-result');
       if (box) box.innerHTML = kbManualResultHtml_({ success: false, error: (e && e.message) || 'The import failed.' });
-      if (!dryRun) showToast('The manual import failed — see the dialog', 'toast-error');
+      if (!dryRun) showToast('The handbook import failed — see the dialog', 'toast-error');
     })
     .kbImportManual({ text: file.text }, { dryRun: !!dryRun, removeOrphans: !dryRun && !!(document.getElementById('kb-man-remove') || {}).checked });
 }
@@ -5073,8 +5129,8 @@ function kbManualGate_(imp) {
 function kbManualPublish_(btn) {
   var sel = document.getElementById('kb-man-dept');
   var dept = sel ? sel.value : '';
-  var label = dept || 'every chapter of the manual';
-  uiConfirm({ title: 'Publish the manual drafts in ' + label + '?', message: 'Reps will be able to see and search them immediately.', confirmLabel: 'Publish' }).then(function (ok) {
+  var label = dept || 'every chapter of the handbook';
+  uiConfirm({ title: 'Publish the handbook drafts in ' + label + '?', message: 'Reps will be able to see and search them immediately.', confirmLabel: 'Publish' }).then(function (ok) {
     if (!ok) return;
     if (btn) btn.disabled = true;
     google.script.run
@@ -5178,7 +5234,7 @@ function kbRenderTree_() {
   depts = manualDepts.concat(otherDepts);
   depts.forEach(function (d, di) {
     var manual = di < manualDepts.length;
-    if (grouped && (di === 0 || di === manualDepts.length)) html += '<div class="kb-tree-group">' + (manual ? 'Procedures manual' : 'Other reference') + '</div>';
+    if (grouped && (di === 0 || di === manualDepts.length)) html += '<div class="kb-tree-group">' + (manual ? 'Policies &amp; Procedures Handbook' : 'Other reference') + '</div>';
     if (di === 0 && manual) html += '<button class="kb-item kb-router-open" onclick="kbOpenRouterFromTab_()"><span class="kb-item-line">' + icon('phone', 13) + ' What did the caller say?</span></button>';
     var holdsCurrent = byDept[d].some(function (it) { return it.id === KB_STATE.currentId; });
     var isCol = manual ? !(opened[d] || holdsCurrent) : !!collapsed[d];
@@ -6563,7 +6619,7 @@ function kbHasManual_() { return (KB_STATE.tree || []).some(function (it) { retu
  *  (T1: focus and the caret go with them) — then its siblings are repainted by
  *  kbHomePaint_ whenever the tree, the meta or the landing changes. */
 function kbHomeHtml_() {
-  return '<section class="kb-home" id="kb-home" aria-label="Procedures manual">' +
+  return '<section class="kb-home" id="kb-home" aria-label="Policies &amp; Procedures Handbook">' +
     '<div class="kb-home-head" id="kb-home-head"></div>' +
     '<div class="kb-home-cards">' +
       '<button type="button" class="kb-home-card" onclick="kbOpenRouterFromTab_()">' +
@@ -6598,8 +6654,8 @@ function kbHomePaint_() {
   var meta = KB_STATE.manualMeta || null, tree = KB_STATE.tree || [], md = kbManualDepts_();
   var today = new Date().toISOString().substring(0, 10), seen = {};
   tree.forEach(function (it) { seen[it.id] = true; });
-  head.innerHTML = '<h2 class="kb-home-h">Procedures manual</h2>' +
-    (meta && meta.version ? '<span class="kb-home-ver">CSR Procedures Manual ' + esc(meta.version) + (meta.built ? ' · built ' + esc(meta.built) : '') + '</span>' : '');
+  head.innerHTML = '<h2 class="kb-home-h">Policies &amp; Procedures Handbook</h2>' +
+    (meta && meta.version ? '<span class="kb-home-ver">Policies &amp; Procedures Handbook ' + esc(meta.version) + (meta.built ? ' · built ' + esc(meta.built) : '') + '</span>' : '');
   var rows = ((meta && meta.router) || []).filter(function (r) { return r && r.q && (r.t || []).some(function (x) { return x && seen[x.id]; }); }).slice(0, 3);
   ex.innerHTML = rows.map(function (r) { return '<span>\u201c' + esc(r.q) + '\u201d</span>'; }).join('');
   var tile = function (d) {
@@ -6829,7 +6885,7 @@ function kbChunkGroupsHtml_(results, openFn) {
   var html = '';
   kbGroupResults_(results).forEach(function (g) {
     // M18: a manual hit reads like the manual — the chapter's badge, the number
-    // chip and title, "Manual · <short chapter name>"; chunks take its colour.
+    // chip and title, "Handbook · <short chapter name>"; chunks take its colour.
     var man = kbIsManualId_(g.id), ck = man ? kbManualChapterKey_(g.department) : '', gt = man ? kbManualSplitTitle_(g.title) : null;
     html += '<div class="kb-chunk-doc' + (man ? ' kb-chunk-doc-man' + (ck ? ' kb-man-' + ck : '') : '') + '">' +
       '<button class="kb-chunk-doc-h" onclick="' + openFn + '(this.getAttribute(\'data-kb-id\'))" data-kb-id="' + esc(g.id) + '">' +
@@ -6840,7 +6896,7 @@ function kbChunkGroupsHtml_(results, openFn) {
       // the tree/reader (reps never receive draft hits, so this renders
       // only for admins).
       (g.status === 'draft' ? '<span class="kb-draft-pill">Draft</span>' : '') +
-      '<span class="kb-snip">' + (man ? 'Manual \u00b7 ' + esc(kbManualChapterParts_(g.department).name) : esc(g.department)) + (g.type === 'embed' ? ' \u00b7 Drive' : '') + '</span></button>';
+      '<span class="kb-snip">' + (man ? 'Handbook \u00b7 ' + esc(kbManualChapterParts_(g.department).name) : esc(g.department)) + (g.type === 'embed' ? ' \u00b7 Drive' : '') + '</span></button>';
     g.chunks.forEach(function (c) {
       var ch = man && !c.router ? kbManualSplitHeading_(c.heading || '') : null;
       html += '<div class="kb-chunk">' +
@@ -8608,16 +8664,16 @@ function kbLoadManualRecentBlock_() {
     if (currentView === requested && KB_STATE.landing) kbRenderLanding_();
   });
 }
-/** The landing's "Manual — recently changed" block: nothing when there is no
+/** The landing's "Handbook — recently changed" block: nothing when there is no
  *  manual or nothing changed in the window; a failure SAYS so (g53) — an absent
  *  list would read as "nothing changed". */
 function kbLandingManualHtml_() {
   var L = KB_STATE.manualRecent;
   if (!L) return '';
-  var head = '<div class="kb-land-h">' + icon('fileText', 13) + ' Manual — recently changed';
+  var head = '<div class="kb-land-h">' + icon('fileText', 13) + ' Handbook — recently changed';
   if (L.failed || (L.res && L.res.manualError)) {
     return '<div class="kb-land-sec">' + head + '</div>' +
-      '<div class="kb-land-none">' + icon('warning', 12) + ' Could not load the manual’s recent changes — retry by re-entering Reference.</div></div>';
+      '<div class="kb-land-none">' + icon('warning', 12) + ' Could not load the handbook’s recent changes — retry by re-entering Reference.</div></div>';
   }
   var res = L.res, items = (res && res.manualRecent) || [];
   if (!items.length) return '';

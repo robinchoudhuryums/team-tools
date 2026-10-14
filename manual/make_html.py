@@ -351,14 +351,14 @@ body = classify_tables(body)
 body = anchor_roles(body)
 body = wrap_notes(body)
 # the front page is its own panel: build.py brackets it with <!--start--> markers
-body = body.replace("<!--start-->", '<section class="start" aria-label="How to use this manual">', 1)
+body = body.replace("<!--start-->", '<section class="start" id="howto" aria-label="How to use this handbook">', 1)
 body = body.replace("<!--/start-->", "</section>", 1)
 body = re.sub(r"<table", '<div class="tw"><table', body)
 body = re.sub(r"</table>", "</table></div>", body)
 
 def build_router(html):
     """Caller phrases from the §1-1 router table, with their groups and targets.
-    Real data authored in the manual — nothing invented."""
+    Real data authored in the handbook — nothing invented."""
     soup = _BS(html, "html.parser")
     rows, group = [], ""
     h = soup.find(id="1-1")
@@ -492,10 +492,31 @@ for lvl, txt, tid, p in nav:
 if open_part is not None:
     navhtml.append("</div></details>")
 
+# The PDF's cover and linked contents (operator 2026-10-13: the PDFs match the
+# digital handbook). Hidden on screen; body.print-doc shows them. A chapter PDF
+# (make_review_pdfs.py) marks the other chapters' rows .pdf-skip and names its
+# chapter in #pdfsub.
+pdftoc = []
+for lvl, txt, tid, p in nav:
+    t = html.escape(html.unescape(txt))
+    if lvl == 1 and tid == "top":
+        pdftoc.append(f'<li class="t1 top" data-part="top"><a href="#howto">How to use this handbook</a></li>')
+    elif lvl == 1:
+        pdftoc.append(f'<li class="t1 {p or ""}" data-part="{p or ""}">{chapter_icon(p, "nic", 14)}<a href="#{tid}">{t}</a></li>')
+    else:
+        pdftoc.append(f'<li class="t2" data-part="{p or ""}"><a href="#{tid}">{t}</a></li>')
+PDFDOC = ('<div id="pdfdoc"><section id="pdfcover"><div class="pc-brand">UniversalMed Supply</div>'
+          '<div class="pc-title">Policies &amp; Procedures Handbook</div>'
+          '<div class="pc-sub" id="pdfsub">What a customer service representative needs to know, department by department</div>'
+          '<div class="pc-note" id="pdfnote"></div>'
+          '<div class="pc-meta">Owner: __OWNER__<br>'   # no version or build date on the cover (operator 2026-10-13)
+          '<span>Confidential &mdash; Internal Use Only</span></div></section>'
+          '<section id="pdfcontents"><h1 class="pc-h">Contents</h1><ol id="pdftoc">' + "".join(pdftoc) + '</ol></section></div>')
+
 TPL = r"""<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CSR Procedures Manual v3.0</title>
+<title>Policies &amp; Procedures Handbook</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -697,8 +718,40 @@ h2:hover .ah,h3:hover .ah,.ah:focus{opacity:1}
  h1.part{break-before:page}
  h2,h3{page-break-after:avoid}
  .tw,table,.cb,.fig{page-break-inside:avoid}
- a.xr{color:#000;border:0}
+ body:not(.print-doc) a.xr{color:#000;border:0}
  a[href^="#"]::after{content:""}
+}
+/* the PDF (operator 2026-10-13): body.print-doc prints the whole handbook, or one
+   chapter of it, in the screen design — a cover, a linked contents page, links in
+   colour; make_review_pdfs.py sets the class and prints through Chromium */
+#pdfdoc{display:none}
+@media print{
+ body.print-doc main > #pdfdoc{display:block!important}
+ body.print-doc main > h1.top,body.print-doc main > .pdf-skip,body.print-doc #pdftoc li.pdf-skip{display:none!important}
+ /* a section's rule rides its heading: a rule of its own can land alone on a page
+    (before a chapter, or before a section whose table will not split) */
+ body.print-doc main > hr{display:none!important}
+ body.print-doc main > h2{border-top:1px solid var(--rule);padding-top:16px}
+ /* a diagram fits the page width — its screen min-width would clip it on paper */
+ body.print-doc .fig{overflow:visible}
+ body.print-doc .fig svg{min-width:0!important;max-width:100%}
+ #pdfcover{min-height:9.4in;display:flex;flex-direction:column;justify-content:center;break-after:page}
+ #pdfcover .pc-brand{font-weight:600;font-size:15px;color:var(--accent);margin-bottom:8px}
+ #pdfcover .pc-title{font-weight:700;font-size:40px;line-height:1.1;color:var(--navy);
+  padding-bottom:14px;border-bottom:3px solid var(--navy);margin-bottom:16px}
+ #pdfcover .pc-sub{font-size:16px;color:var(--navy);font-weight:600}
+ #pdfcover .pc-note{font-size:12.5px;color:var(--muted);margin-top:6px;max-width:62ch}
+ #pdfcover .pc-meta{margin-top:90px;font-size:12.5px;line-height:1.7}
+ #pdfcover .pc-meta span{color:var(--muted)}
+ #pdfcontents{break-after:page}
+ #pdfcontents .pc-h{font-size:28px;margin:0 0 14px;color:var(--navy)}
+ #pdftoc{list-style:none;padding:0;margin:0;columns:2;column-gap:28px}
+ #pdftoc li{break-inside:avoid;margin:0}
+ #pdftoc li.t1{font-weight:700;font-size:13px;margin-top:10px;display:flex;gap:6px;align-items:center;break-after:avoid}
+ #pdftoc li.t2{font-size:11px;padding-left:20px;line-height:1.45}
+ #pdftoc a{color:var(--ink);text-decoration:none;border:0}
+ #pdftoc li.t1 a{color:var(--navy)}
+ body.print-doc a.xr{color:var(--accent);text-decoration:none}
 }
 
 /* index filter */
@@ -941,7 +994,7 @@ ol.toclist .cp{text-align:right}
  .wrap{display:block;max-width:none}
  main{padding:0;max-width:none}
  /* only the cards and their contents sheet print — unless "Print section" marked one (D7) */
- body:not(.print-sec) main > *{display:none!important}
+ body:not(.print-sec,.print-doc) main > *{display:none!important}  /* one :not keeps the specificity the card rule below must beat */
  main > #cardtoc, main > section.qrc{display:block!important}
  section.qrc,#cardtoc{display:block!important;border:0;width:auto;max-width:none;
   padding:0;margin:0}
@@ -965,7 +1018,7 @@ ol.toclist .cp{text-align:right}
  section.qrc > .qrrev{break-before:page;display:block;margin:0}
  .qrrev > .qrh,.qrrev > .qrf{display:flex}
  .qrrev > .qrf{margin-top:28px}
- a.xr{color:#000;border:0;text-decoration:none}
+ body:not(.print-doc) a.xr{color:#000;border:0;text-decoration:none}
 }
 
 /* search: alias hits, miss capture */
@@ -1161,17 +1214,17 @@ h3 .sn{color:var(--hc)}
 section.qrc h2 .sn{margin-right:0}
 </style></head>
 <body><button class="navtoggle" id="nt">☰ &nbsp;Contents &amp; search</button><div class="wrap">
-<nav><div class="brand">UniversalMed Supply<br>CSR Procedures Manual</div>
+<nav><div class="brand">UniversalMed Supply<br>Policies &amp; Procedures Handbook</div>
 <div class="ver">v3.0 draft &middot; built __BUILT__</div>
 <div class="cls">Confidential &mdash; Internal Use Only &middot; Owner: __OWNER__</div>
-<input id="q" type="search" placeholder="Search the manual…" autocomplete="off" aria-label="Search">
+<input id="q" type="search" placeholder="Search the handbook…" autocomplete="off" aria-label="Search">
 <button id="openrouter">What did the caller say?</button>
 <div id="pinbox" hidden><div class="pbh">Pinned <span id="pincount"></span></div><div id="pinlist"></div>
 <div class="pbh pbh2">Recent</div><div id="recentlist"></div></div>
 <div class="dens" role="group" aria-label="Text density"><button id="dc" aria-pressed="false">Compact</button><button id="dr" aria-pressed="true">Comfortable</button></div>
 <div id="res" hidden></div>
 <div id="navlist">__NAV__</div></nav>
-<main><div id="ctx"><span class="bc"><b></b><i></i></span><span class="ctxr"><a class="cardchip" hidden></a><button id="prsec" type="button" title="Print the section you are reading">Print section</button><button id="prcards" type="button" title="Print the quick-reference cards">Print cards</button></span></div>__BODY__</main>
+<main><div id="ctx"><span class="bc"><b></b><i></i></span><span class="ctxr"><a class="cardchip" hidden></a><button id="prsec" type="button" title="Print the section you are reading">Print section</button><button id="prcards" type="button" title="Print the quick-reference cards">Print cards</button></span></div>__PDFDOC____BODY__</main>
 <aside id="otp" aria-label="On this page"><div class="otph">On this page</div><div id="otpl"></div></aside>
 </div>
 <div id="xpop" hidden role="tooltip"></div>
@@ -1663,6 +1716,6 @@ document.addEventListener('keydown',e=>{
 </body></html>"""
 
 OWNER = re.search(r'^OWNER = "([^"]+)"', open("build.py").read(), re.M).group(1)
-open(DST, "w").write(TPL.replace("__PAL_LIGHT__", palette("light")).replace("__PAL_DARK__", palette("dark")).replace("__OWNER__", html.escape(OWNER)).replace("__NAV__", "\n".join(navhtml)).replace("__BODY__", body).replace("__SEARCH__", _json.dumps(SEARCH, ensure_ascii=False)).replace("__CHAPTERS__", _json.dumps(CHAPTERS_IX, ensure_ascii=False)).replace("__ROUTER__", _json.dumps(ROUTER, ensure_ascii=False)).replace("__BUILT__", BUILT))
+open(DST, "w").write(TPL.replace("__PAL_LIGHT__", palette("light")).replace("__PAL_DARK__", palette("dark")).replace("__PDFDOC__", PDFDOC).replace("__OWNER__", html.escape(OWNER)).replace("__NAV__", "\n".join(navhtml)).replace("__BODY__", body).replace("__SEARCH__", _json.dumps(SEARCH, ensure_ascii=False)).replace("__CHAPTERS__", _json.dumps(CHAPTERS_IX, ensure_ascii=False)).replace("__ROUTER__", _json.dumps(ROUTER, ensure_ascii=False)).replace("__BUILT__", BUILT))
 print(f"wrote {DST}  ({len(open(DST).read()):,} bytes)")
 print(f"nav entries: {len(nav)}   callouts styled: {body.count('class=\"cb ')}")

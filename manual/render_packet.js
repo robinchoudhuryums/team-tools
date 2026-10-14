@@ -3,7 +3,7 @@
 const fs = require("fs");
 const {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, ShadingType,
-  BorderStyle, HeadingLevel, AlignmentType, Header, Footer, PageNumber, LevelFormat, HeightRule, ImageRun, LineRuleType,
+  BorderStyle, HeadingLevel, AlignmentType, Header, Footer, PageNumber, LevelFormat, HeightRule, ImageRun, LineRuleType, ExternalHyperlink,
 } = require("docx");
 
 const [, , inPath, outPath] = process.argv;
@@ -94,6 +94,7 @@ function excerptBlocks(bs) {
 }
 
 // ---------------------------------------------------------------- answer boxes
+const ANSWER_LINE = "_".repeat(28);   // make_review_packets.py writes the same blank
 function answerBox(open, n) {
   const cell = (children, fill) => new TableCell({
     width: { size: W, type: WidthType.DXA },
@@ -104,8 +105,10 @@ function answerBox(open, n) {
   });
   const rows = [];
   if (!open) rows.push(new TableRow({ cantSplit: true, children: [cell([new Paragraph({ keepNext: true, keepLines: true, children: [
-    new TextRun({ text: "☐  Correct", bold: true, size: 21 }), new TextRun({ text: "          " }),
-    new TextRun({ text: "☐  Needs change", bold: true, size: 21 }),
+    // a fill-in line, not checkboxes: the packets go out as Google Docs, where typing
+    // on a line is easier than ticking a box (operator 2026-10-12)
+    new TextRun({ text: "Correct, or needs change?  ", bold: true, size: 21 }),
+    new TextRun({ text: ANSWER_LINE, size: 21 }),
     new TextRun({ text: "          Question " + n, size: 17, color: MUTED }),
   ] })], "EEF2F6")] }));
   rows.push(new TableRow({
@@ -130,11 +133,13 @@ for (const b of M.blocks) {
     case "why": children.push(new Paragraph({ keepNext: true, spacing: { after: 100 }, children: [
                  new TextRun({ text: "Why we're asking: ", italics: true, bold: true, color: MUTED, size: 20 }),
                  ...runsOf(b.runs, { italics: true, color: MUTED, size: 20 })] })); break;
+    case "link": children.push(new Paragraph({ keepNext: true, spacing: { after: 120 }, children: [
+      new ExternalHyperlink({ link: b.url, children: [new TextRun({ text: b.text, bold: true, underline: {}, color: ACCENT, size: 21 })] })] })); break;
     case "pointer": children.push(new Paragraph({ keepNext: true, spacing: { after: 100 }, children: runsOf(b.runs, { italics: true, color: MUTED, size: 20 }) })); break;
     case "excerpt":
       children.push(new Paragraph({ keepNext: true, spacing: { before: 60, after: 60 }, indent: { left: 320 },
         shading: { type: ShadingType.CLEAR, color: "auto", fill: PANEL }, border: { left: line(ACCENT, 12) },
-        children: [new TextRun({ text: "FROM THE MANUAL — ", bold: true, size: 17, color: ACCENT }),
+        children: [new TextRun({ text: "FROM THE HANDBOOK — ", bold: true, size: 17, color: ACCENT }),
                    new TextRun({ text: b.title, bold: true, size: 19, color: NAVY })] }));
       children.push(...excerptBlocks(b.blocks));
       children.push(new Paragraph({ spacing: { after: 80 } }));

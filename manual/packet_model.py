@@ -83,8 +83,14 @@ def blocks(md):
     return out
 
 
-def model(key):
-    s = MRP.SPEC[key]
+def excerpt_blocks(items):
+    """MRP.excerpts_for's items as Word blocks — the SAME once-per-packet rule as the Markdown packet."""
+    return [{"t": "pointer", "runs": runs(it[1])} if it[0] == "pointer"
+            else {"t": "excerpt", "title": it[1], "blocks": blocks(it[2])} for it in items]
+
+
+def model(key, v=None):
+    s = MRP.spec_for(key, v)
     head = [l for l in s["head"].split("\n") if l.strip()]
     title = head[0].lstrip("# ").strip()
     meta = [runs(l) for l in head[1:]]
@@ -93,36 +99,33 @@ def model(key):
     shown = {}
     for g in s["groups"]:
         if g["title"]:
-            B.append({"t": "h2", "text": f"{g['num']}. {g['title']}"})
+            B.append({"t": "h2", "text": f"{g['num'] + '. ' if g['num'] else ''}{g['title']}"})
+        part = g.get("key", key)   # a combined packet's group names its own chapter
         if g.get("intro") and not g["intro"].startswith("|"):
             B.append({"t": "p", "runs": runs(g["intro"])})
         for r in g["rows"]:
             if "q" in r:
                 B.append({"t": "h3", "runs": runs(f"{r['n']}. {r['q'].replace('**', '')}")})
-                for sec, filt in MRP.refs_for(r.get("sec"), key):
-                    t, body = MRP.excerpt(sec, filt)
-                    if t:
-                        B.append({"t": "excerpt", "title": t + (" (excerpt)" if filt else ""), "blocks": blocks(body)})
+                B += excerpt_blocks(MRP.excerpts_for(r, part, shown, []))
+                if r.get("link"):  # a live document the question refers to, e.g. a team's own sheet
+                    B.append({"t": "link", **r["link"]})
                 B.append({"t": "answer_open", "n": r["n"]})
                 continue
             B.append({"t": "h3", "runs": runs(f"{r['n']}. {r['says'].replace('**', '')}")})
             if r.get("roster"):
                 t, body, _ = MRP.directory_rows(r["roster"])
                 B.append({"t": "excerpt", "title": t, "blocks": blocks(body)})
-            for sec, filt in MRP.refs_for(r.get("sec"), key):
-                if (sec, filt) in shown:
-                    B.append({"t": "pointer", "runs": runs(f"The text of {display(sec)} is shown with question {shown[(sec, filt)]}.")})
-                    continue
-                t, body = MRP.excerpt(sec, filt, r.get("diagrams", False))
-                if t is None:
-                    continue
-                shown[(sec, filt)] = r["n"]
-                B.append({"t": "excerpt", "title": t + (" (excerpt)" if filt else ""), "blocks": blocks(body)})
+            B += excerpt_blocks(MRP.excerpts_for(r, part, shown, []))
+            if r.get("link"):  # e.g. the directory question's live roster sheet
+                B.append({"t": "link", **r["link"]})
             B.append({"t": "answer", "n": r["n"]})
     return {"title": title, "blocks": B}
 
 
 if __name__ == "__main__":
-    for key in (sys.argv[1:] or MRP.KEYS):
-        json.dump(model(key), open(f"/tmp/packet_{key}.json", "w", encoding="utf-8"), ensure_ascii=False)
-        print(key, "model ok")
+    for key, v in MRP.BUILDS:
+        if sys.argv[1:] and key not in sys.argv[1:]:
+            continue
+        name = MRP.build_name(key, v)
+        json.dump(model(key, v), open(f"/tmp/packet_{name}.json", "w", encoding="utf-8"), ensure_ascii=False)
+        print(name, "model ok")

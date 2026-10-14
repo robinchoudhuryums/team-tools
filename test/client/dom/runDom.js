@@ -4905,9 +4905,9 @@ test('M1 DOM: the Manual dialog — Check shows the plan and every skipped artic
   h.flushTimers();
   // Batch M2: the manual's parts lead the tree under their own heading.
   assert.deepStrictEqual(h.$$('#kb-tree .kb-dept-toggle').map((x) => x.getAttribute('data-dept')), ['Chapter 02 — Manual Mobility & General DME', 'Chapter 10 — Billing & Denials', 'Appendix C — Quick Reference Cards', 'Billing'], 'Chapter 02 before Chapter 10 (the number order itself is M1-S1\'s pin), the appendices after the chapters (M3), the manual first');
-  assert.deepStrictEqual(h.$$('#kb-tree .kb-tree-group').map((x) => x.textContent), ['Procedures manual', 'Other reference']);
-  const btn = h.$$('#kb-tree .kb-add').filter((b) => /Manual/.test(b.textContent))[0];
-  assert.ok(btn && btn.getAttribute('onclick') === 'kbOpenManualImport_()', 'an admin sees the Manual button, wired to the dialog');
+  assert.deepStrictEqual(h.$$('#kb-tree .kb-tree-group').map((x) => x.textContent), ['Policies & Procedures Handbook', 'Other reference']);
+  const btn = h.$$('#kb-tree .kb-add').filter((b) => /Handbook/.test(b.textContent))[0];
+  assert.ok(btn && btn.getAttribute('onclick') === 'kbOpenManualImport_()', 'an admin sees the Handbook button, wired to the dialog');
   h.read('kbOpenManualImport_')();   // the harness does not run inline handlers — the attribute is asserted, the call made
   const ov = doc.getElementById('kb-man-overlay');
   assert.ok(ov && ov.getAttribute('role') === 'dialog' && ov.getAttribute('aria-label'), 'a named dialog through ensureOverlay');
@@ -4958,7 +4958,7 @@ test('M1 DOM: the Manual dialog — Check shows the plan and every skipped artic
   // Operator testing 2026-10-08: a finished import used to look like nothing had
   // happened — the result replaced the check's quietly, and the publish block
   // kept the drafts it had when the dialog opened.
-  const toast = h.$$('#toast-stack .toast').map((t) => t.textContent).filter((t) => /Manual imported/.test(t))[0];
+  const toast = h.$$('#toast-stack .toast').map((t) => t.textContent).filter((t) => /Handbook imported/.test(t))[0];
   assert.ok(toast && /1 new draft · 0 updated · 4 removed/.test(toast), 'a toast says the import finished, and what it did');
   assert.ok(/manual\.json — imported/.test(doc.getElementById('kb-man-picked').textContent), 'the file line no longer says "press Check"');
   assert.deepStrictEqual([...ov.querySelectorAll('#kb-man-dept option')].map((o) => o.textContent)[0], 'Every chapter (4 drafts)', 'the publish block is rebuilt from the refreshed tree — the new draft is offered');
@@ -4996,7 +4996,7 @@ const M2_PART0 = { department: 'Chapter 00 — CSR Core', isAdmin: true, section
   { id: 'man-0-11', title: '0.11 Notes and email conventions', status: 'draft', sortOrder: 11,
     bodyMd: 'Notes.\n\nSee [0.10.2 Trx State](kb:man-0-10#0.10.2) and [10.1 2026 annual figures (Billing & Denials)](kb:man-10-1).\n\n> **Watch-out** — the TRX, never a name.\n' }] };
 
-test('M2 DOM: a manual section opens its WHOLE PART — one fetch per part, a click inside it scrolls, the comments follow the open section, cross-references open where they live, "Updated" and "Suggest an edit" are there and Edit/Delete are not', async () => {
+test('M2 DOM: a manual section opens its WHOLE PART — one fetch per part, a click inside it scrolls, the comments follow the open section, cross-references open where they live, "Updated" and "Suggest an edit" (in the reader bar) are there and Edit/Delete are not', async () => {
   const h = boot();
   const w = h.window, doc = w.document;
   w.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
@@ -5016,7 +5016,7 @@ test('M2 DOM: a manual section opens its WHOLE PART — one fetch per part, a cl
   const main = doc.getElementById('kb-main');
   assert.deepStrictEqual(h.$$('#kb-main .kb-man-sec').map((s) => s.getAttribute('data-kb-id')), ['man-0-10', 'man-0-11'], 'every section of the part, in order');
   assert.ok(h.$('#kb-man-sec-man-0-10 h3') && /0\.10\.1 Trx Type/.test(h.$('#kb-man-sec-man-0-10 h3').textContent), 'a section’s own ## demotes under its title');
-  assert.strictEqual(h.$$('#kb-main .kb-man-fb').length, 2, 'a feedback bar per section');
+  assert.strictEqual(h.$$('#kb-main .kb-man-sec .kb-feedback').length, 0, 'no feedback row closes a section — it rides the reader bar (operator 2026-10-12)');
   assert.ok(!/>\s*Edit\s*</.test(main.innerHTML) && !/kbDeleteItem_|kbOpenEditor_|kbOpenRevisions_/.test(main.innerHTML), 'no Edit, Delete or History on a manual section');
   assert.ok(/1 of 2 sections in this chapter is a draft/.test(main.textContent), 'an admin is told which sections reps cannot see');
   assert.ok(doc.getElementById('kb-man-sec-man-0-11').contains(doc.getElementById('kb-comments')), 'the comments host sits under the OPEN section');
@@ -5025,7 +5025,7 @@ test('M2 DOM: a manual section opens its WHOLE PART — one fetch per part, a cl
   // The meta arrives: the version line and the badge.
   const today = new Date(); const d40 = new Date(today.getTime() - 40 * 86400000).toISOString().slice(0, 10);
   h.run.flushSuccess({ version: 'v3.0', built: '09/15/2026', router: [], changelog: [{ date: d40, num: '0.11', id: 'man-0-11', anchor: '', summary: 'TRX, never a name.', retraining: true }] }, 'getManualMeta');
-  assert.ok(/CSR Procedures Manual v3\.0 · built 09\/15\/2026/.test(h.$('[data-kb-man-ver]').textContent));
+  assert.ok(/Policies & Procedures Handbook v3\.0 · built 09\/15\/2026/.test(h.$('[data-kb-man-ver]').textContent));
   const badge = h.$('[data-kb-badges="man-0-11"] .kb-man-upd');
   assert.ok(badge && /Updated/.test(badge.textContent) && /retraining/.test(badge.textContent) && /TRX, never a name/.test(badge.getAttribute('title')));
   assert.strictEqual(h.$('[data-kb-badges="man-0-10"]').innerHTML, '', 'no badge where nothing changed');
@@ -5045,8 +5045,8 @@ test('M2 DOM: a manual section opens its WHOLE PART — one fetch per part, a cl
   // Suggest an edit — the review-queue flag, with a required note.
   h.read('kbOpenItem_')('man-0-11');
   h.run.flushSuccess(M2_PART0, 'getManualPart');
-  const sug = h.$$('#kb-man-sec-man-0-11 .kb-man-fb button').filter((b) => /Suggest an edit/.test(b.textContent))[0];
-  assert.ok(sug);
+  const sug = h.$('#kb-main [data-kb-man-bar-fb] [data-kb-man-fb="suggest"]');
+  assert.ok(sug && sug.getAttribute('data-kb-id') === 'man-0-11' && !sug.disabled, 'the bar\'s Suggest an edit names the section in view');
   h.read('kbSuggestEdit_')(sug);
   await tick();
   const input = h.$('.ui-dialog-input');
@@ -5298,7 +5298,7 @@ test('M4 DOM: the manual\'s recent changes — ONE getWhatsNew serves the What\'
   const doc = h.window.document;
   const rows = () => h.$$('#kb-main .mr-row');
   assert.strictEqual(rows().length, 2, 'the landing lists the changes');
-  assert.ok(/Manual — recently changed/.test(h.$('#kb-main').textContent) && /last 90 days · showing 2 of 3/.test(h.$('#kb-main').textContent), 'headed, with the window and the cap from the payload');
+  assert.ok(/Handbook — recently changed/.test(h.$('#kb-main').textContent) && /last 90 days · showing 2 of 3/.test(h.$('#kb-main').textContent), 'headed, with the window and the cap from the payload');
   assert.strictEqual(h.$$('#kb-main .mr-retrain').length, 1, 'the retraining change is marked');
   assert.strictEqual(n, 1, 'the shell\'s What\'s new load and the landing shared ONE call');
   assert.ok(doc.getElementById('sb-whatsnew-btn'), 'a manual change alone is enough for the What\'s new star');
@@ -5313,7 +5313,7 @@ test('M4 DOM: the manual\'s recent changes — ONE getWhatsNew serves the What\'
   h.read('whatsNewOpen_')();
   const ov = doc.getElementById('whatsnew-overlay');
   assert.ok(ov.classList.contains('open') && ov.querySelectorAll('.mr-row').length === 2, 'the panel lists them too');
-  assert.ok(/Procedures manual — recently changed/.test(ov.textContent));
+  assert.ok(/Policies & Procedures Handbook — recently changed/.test(ov.textContent));
   h.read('manualRecentOpen_')(ov.querySelector('.mr-row[data-kb-id="man-0-11"]'));
   assert.ok(!ov.classList.contains('open'), 'a row closes the panel');
   assert.ok(/manual:2026-09-28/.test(h.window.localStorage.getItem('umsWhatsNew') || ''), 'closing by a row stamps it seen, like any close');
@@ -5331,12 +5331,12 @@ test('M4 DOM: a failed load of the recent changes is SAID on the landing (never 
   h.flushTimers();
   assert.deepStrictEqual(h.run.pending('getWhatsNew').length, 1, 'the landing asked again — the shell\'s failure was not cached');
   h.run.flushFailure(new Error('network'), 'getWhatsNew');
-  assert.ok(/Could not load the manual’s recent changes/.test(h.$('#kb-main').textContent), 'the failure is said');
+  assert.ok(/Could not load the handbook’s recent changes/.test(h.$('#kb-main').textContent), 'the failure is said');
   // A server that reached the manual but could not read it says so too.
   h.read('whatsNewEnsure_')(() => {});
   h.run.flushSuccess({ none: true, manualError: true }, 'getWhatsNew');
   h.read('kbLoadManualRecentBlock_')();
-  assert.ok(/Could not load the manual’s recent changes/.test(h.$('#kb-main').textContent), 'manualError is a failure, not an empty list');
+  assert.ok(/Could not load the handbook’s recent changes/.test(h.$('#kb-main').textContent), 'manualError is a failure, not an empty list');
   // And a manual with nothing recent draws nothing at all.
   const h2 = m4Boot_({ whatsNew: () => ({ none: true }) });
   assert.ok(!/recently changed/.test(h2.$('#kb-main').textContent), 'nothing recent → no block');
@@ -5497,7 +5497,7 @@ test('MRD-3 DOM (manual reader design Phase 3): an uncached chapter paints its b
   // the skeleton
   assert.ok(h.$('#kb-main [data-kb-man-bar].kb-man-bar-skel') && h.$('[data-kb-man-bar-sn]').textContent === '0.11' && h.$('[data-kb-man-bar-t]').textContent === 'Notes and email conventions', 'the bar names the target at once');
   assert.strictEqual(h.$('#kb-main .kb-man-mast-h').textContent, 'CSR Core');
-  assert.ok(/Procedures manual · Chapter 00/.test(h.$('#kb-main .kb-man-mast-k').textContent));
+  assert.ok(/Policies & Procedures Handbook · Chapter 00/.test(h.$('#kb-main .kb-man-mast-k').textContent));
   assert.deepStrictEqual(h.$$('#kb-main .kb-man-ix').map((b) => b.getAttribute('data-kb-id')), ['man-0-10', 'man-0-11'], 'the index, from the tree');
   const sk = h.$('#kb-main [data-kb-man-skel]');
   assert.ok(sk && sk.getAttribute('aria-busy') === 'true' && sk.querySelectorAll('.skel').length >= 5 && /Notes and email conventions/.test(sk.querySelector('.kb-man-sec-h').textContent), 'the target heading over shimmer lines');
@@ -5507,7 +5507,7 @@ test('MRD-3 DOM (manual reader design Phase 3): an uncached chapter paints its b
   const today = new Date(); const ago = (n) => new Date(today.getTime() - n * 86400000).toISOString().slice(0, 10);
   h.run.flushSuccess({ version: 'v3.0', built: '09/15/2026', router: [], changelog: [{ date: ago(40), num: '0.10', id: 'man-0-10', anchor: '', summary: 'x', retraining: false }] }, 'getManualMeta');
   assert.strictEqual(h.$('#kb-main [data-kb-man-updcount]').textContent, '1 updated in the last 12 months');
-  assert.ok(/CSR Procedures Manual v3\.0/.test(h.$('#kb-main [data-kb-man-ver]').textContent), 'the version line rides the masthead');
+  assert.ok(/Policies & Procedures Handbook v3\.0/.test(h.$('#kb-main [data-kb-man-ver]').textContent), 'the version line rides the masthead');
   assert.ok(h.$('#kb-main [data-kb-ix-upd="man-0-10"] .kb-man-upd') && !h.$('#kb-main [data-kb-ix-upd="man-0-11"] .kb-man-upd'), 'the index pill marks the updated section only');
   // the chapter lands
   h.run.flushSuccess(M2_PART0, 'getManualPart');
@@ -5588,7 +5588,7 @@ test('MRD-4 DOM (manual reader design Phase 4): a footnote number becomes a butt
   assert.ok(!h.$('#kb-tree .kb-item[data-kb-id="kb-1"] .kb-item-num'), 'a hand-written hit is unchanged');
   const g = h.$$('#kb-main .kb-chunk-doc')[0];
   assert.ok(g.classList.contains('kb-chunk-doc-man') && g.classList.contains('kb-man-p0') && g.querySelector('.kb-chunk-doc-h .kb-man-badge') && g.querySelector('.kb-chunk-doc-h .kb-man-sn').textContent === '0.10', 'the result header: badge, number chip');
-  assert.strictEqual(g.querySelector('.kb-chunk-doc-h .kb-snip').textContent, 'Manual · CSR Core');
+  assert.strictEqual(g.querySelector('.kb-chunk-doc-h .kb-snip').textContent, 'Handbook · CSR Core');
   assert.ok(g.querySelector('.kb-chunk-h.kb-chunk-h-man .kb-chunk-num').textContent === '0.10.1', 'the chunk heading\'s number in the chapter colour');
   assert.strictEqual(g.querySelector('.kb-chunk-body .kb-co-kick').textContent, 'Note', 'the callout reads as it does in the chapter');
   const other = h.$$('#kb-main .kb-chunk-doc')[1];
@@ -5662,7 +5662,7 @@ test('MRD-6 DOM (manual reader design Phase 6): the manual home sits above the l
   const today = new Date(); const ago = (n) => new Date(today.getTime() - n * 86400000).toISOString().slice(0, 10);
   h.run.flushSuccess({ version: 'v3.0', built: '09/15/2026', changelog: [{ date: ago(40), num: '0.11', id: 'man-0-11', anchor: '', summary: 'x', retraining: false }],
     router: [{ q: 'Where is my equipment?', t: [{ id: 'man-0-10' }] }, { q: 'A row for a section this reader cannot see', t: [{ id: 'man-9-9' }] }, { q: 'You\'re waiting on my <doctor>?', t: [{ id: 'man-0-11' }] }] }, 'getManualMeta');
-  assert.ok(/CSR Procedures Manual v3\.0 · built 09\/15\/2026/.test(doc.querySelector('#kb-home .kb-home-ver').textContent), 'the version line');
+  assert.ok(/Policies & Procedures Handbook v3\.0 · built 09\/15\/2026/.test(doc.querySelector('#kb-home .kb-home-ver').textContent), 'the version line');
   assert.deepStrictEqual([...doc.querySelectorAll('#kb-home-ex span')].map((x) => x.textContent), ['“Where is my equipment?”', '“You\'re waiting on my <doctor>?”'], 'openers from the real router, only rows the reader can reach, escaped');
   assert.ok(/2 sections · 1 updated/.test(tiles()[0].textContent), 'the updated count, once the meta is in');
   // "Go to a section"
@@ -5805,6 +5805,44 @@ test('MRD-8 DOM (manual reader design Phase 8): once the whole manual has arrive
   h.read('kbPrintAllCards_')();
   assert.deepStrictEqual(during, { marked: ['kb-man-sec kb-man-p0 print-one'], card: true, one: true }, 'every card section, as cards');
   w.dispatchEvent(new w.Event('afterprint'));
+});
+
+test('MRD-10 DOM (operator 2026-10-12): no section ends in a feedback row — Helpful / Not helpful / Suggest an edit ride the reader bar for the section in view; a vote is disabled in flight, pressed on success and remembered per section; a late answer never paints another section; a failure says so and gives the buttons back', async () => {
+  const h = m4Boot_();
+  const w = h.window;
+  const toasts = [];
+  const origToast = w.showToast;
+  w.showToast = (m, t) => { toasts.push([m, t]); };
+  h.read('kbOpenItem_')('man-0-10');
+  h.run.flushSuccess(M2_PART0, 'getManualPart');
+  assert.strictEqual(h.$$('#kb-main .kb-man-sec .kb-feedback, #kb-main .kb-man-sec [data-kb-man-fb]').length, 0, 'no section carries a feedback row');
+  const fb = (k) => h.$('#kb-main [data-kb-man-bar] [data-kb-man-bar-fb] [data-kb-man-fb="' + k + '"]');
+  const st = () => ['helpful', 'notHelpful', 'suggest'].map((k) => [fb(k).getAttribute('data-kb-id'), fb(k).disabled, fb(k).getAttribute('aria-pressed')]);
+  assert.deepStrictEqual(st(), [['man-0-10', false, 'false'], ['man-0-10', false, 'false'], ['man-0-10', false, null]], 'the bar\'s three buttons name the section in view');
+  assert.ok(/Anatomy of a transaction/.test(fb('helpful').getAttribute('aria-label')) && fb('suggest').getAttribute('data-kb-title') === M2_PART0.sections[0].title, 'their names carry the section');
+  assert.strictEqual(fb('helpful').getAttribute('onclick'), 'kbManualBarVote_(this)', 'the handler takes the button, never a name in the literal (g133)');
+  // vote on 0.10; the rep scrolls to 0.11 before the answer
+  h.read('kbManualBarVote_')(fb('helpful'));
+  assert.deepStrictEqual(h.run.pending('kbFlagItem').map((c) => c.args), [['man-0-10', 'helpful', '']]);
+  assert.ok(fb('helpful').disabled && fb('notHelpful').disabled && !fb('suggest').disabled && fb('helpful').title === 'Saving…', 'the pair is disabled in flight; Suggest stays');
+  h.read('kbManualBarPaint_')('man-0-11');
+  assert.deepStrictEqual(st().slice(0, 2), [['man-0-11', false, 'false'], ['man-0-11', false, 'false']], 'another section is answerable at once');
+  h.run.flushSuccess({ success: true }, 'kbFlagItem');
+  assert.deepStrictEqual(st().slice(0, 2), [['man-0-11', false, 'false'], ['man-0-11', false, 'false']], 'the late answer does not paint the section now in view');
+  assert.deepStrictEqual(toasts.pop(), ['Thanks for the feedback', 'toast-success']);
+  h.read('kbManualBarPaint_')('man-0-10');
+  assert.deepStrictEqual(st(), [['man-0-10', true, 'true'], ['man-0-10', true, 'false'], ['man-0-10', false, null]], 'back on 0.10 the vote reads as sent: pressed, the pair quiet, Suggest still open');
+  assert.ok(/rated this section helpful/.test(fb('helpful').title));
+  // a failed vote on 0.11
+  h.read('kbManualBarPaint_')('man-0-11');
+  h.read('kbManualBarVote_')(fb('notHelpful'));
+  h.run.flushFailure('quota', 'kbFlagItem');
+  assert.deepStrictEqual(st().slice(0, 2), [['man-0-11', false, 'false'], ['man-0-11', false, 'false']], 'a failure gives the buttons back');
+  assert.ok(/Could not record that — quota/.test(toasts.pop()[0]), 'and says so');
+  h.read('kbManualBarVote_')(fb('notHelpful'));
+  h.run.flushSuccess({ success: false, error: 'nope' }, 'kbFlagItem');
+  assert.ok(!fb('notHelpful').disabled && /nope/.test(toasts.pop()[0]), 'an unsuccessful answer is a failure too (F-45)');
+  w.showToast = origToast;
 });
 
 test('M4 DOM: Print marks ONLY its own section for the one print block, for exactly as long as the dialog is up; since M8 it is the reader bar\'s Print, aimed at the section in view, and on a Quick Reference Card it says "card"', async () => {
@@ -7130,4 +7168,44 @@ test('DRV-3 DOM: a pasted screenshot is fitted to 1600 px / 1.5 MB in the browse
   assert.strictEqual(call.args[0], jpg, 'the PNG was over 1.5 MB, so the JPEG went');
   h.run.flushSuccess({ success: true, token: 'https://evil.example/x.png' }, 'kbUploadImage');
   assert.ok(ta.value.indexOf('evil.example') < 0 && ta.value.indexOf('kbpaste:pending') < 0, 'a malformed token is never inserted — the placeholder goes');
+});
+
+test('PK-7 DOM (review PDFs, operator 2026-10-13): a chapter PDF keeps its chapter (both of Chapter 10\'s H1s, nothing of Chapter 1 or the appendices), drops the other contents rows, and turns a link to a section it does not carry into plain text "(in the full handbook)" — a link inside it stays — and the full handbook drops its changelog (operator 2026-10-14) (driven over make_review_pdfs.py\'s own CUT)', () => {
+  const fs = require('fs'), path = require('path');
+  const { JSDOM } = require('jsdom');
+  const py = fs.readFileSync(path.join(__dirname, '../../../manual/make_review_pdfs.py'), 'utf8');
+  const open = 'CUT = """', at = py.indexOf(open) + open.length;
+  const src = py.slice(at, py.indexOf('"""', at));
+  const fixture = '<main><div id="ctx"></div><div id="pdfdoc"><ol id="pdftoc"><li data-part="top"></li><li data-part="p1"></li><li data-part="p10"></li><li data-part="apa"></li></ol></div>' +
+    '<h1 class="part top" id="top">Title</h1><section class="start" id="howto">x</section><hr>' +
+    '<h1 class="part p1" id="p1">Chapter 1 — Call Handling</h1><h2 id="1-1">1.1</h2><p>see <a class="xr" href="#10-2">10.2 Billing</a></p><hr>' +
+    '<h1 class="part p10" id="p10">Chapter 10 — Billing &amp; Denials</h1><h2 id="10-2">10.2</h2><p><a class="xr" href="#10-3">10.3 Ref</a> and <a class="xr" href="#1-1">1.1 Call</a> and <a class="xr" href="#role-sales">Sales Q</a></p>' +
+    '<h1 class="part p10" id="p10-1">Chapter 10 — Billing reference</h1><h2 id="10-3">10.3</h2><p id="pz">see <a class="xr" href="#A-1">A.1 Terms</a></p>' +
+    '<h1 class="part apa" id="apa">Appendix A</h1><h2 id="A-1">A.1</h2></main>';
+  const dom = new JSDOM(fixture, { runScripts: 'outside-only' });
+  const keep = dom.window.eval('(' + src + ')');
+  const r = keep(['p10', []]);
+  const d = dom.window.document, skipped = (id) => d.getElementById(id).classList.contains('pdf-skip');
+  assert.deepStrictEqual(['top', 'p1', '1-1', 'p10', '10-2', 'p10-1', '10-3', 'apa', 'A-1'].map(skipped), [true, true, true, false, false, false, false, true, true], 'Chapter 10, both halves, and nothing else');
+  assert.ok(!skipped('pdfdoc') && !skipped('ctx'), 'the cover and contents block is never skipped');
+  assert.deepStrictEqual([...d.querySelectorAll('#pdftoc li')].map((li) => li.classList.contains('pdf-skip')), [true, true, false, true], 'the contents keep only the chapter\'s rows');
+  const p = d.getElementById('10-2').nextElementSibling;
+  assert.strictEqual(p.querySelectorAll('a').length, 1, 'only the in-chapter link survives');
+  assert.strictEqual(p.querySelector('a').getAttribute('href'), '#10-3');
+  assert.ok(/1\.1 Call \(in the full handbook\)/.test(p.textContent) && /Sales Q \(in the full handbook\)/.test(p.textContent), 'links out — a section, a directory role — say where they are');
+  assert.deepStrictEqual([r.title, r.localised], ['Chapter 10 — Billing & Denials', 3], 'the cover takes the chapter title; three links made plain');
+  assert.strictEqual(d.getElementById('pz').textContent, 'see A.1 Terms (in the full handbook)');
+  // Chapter 1 must not keep Chapter 10 (p1 is not a prefix match of p10)
+  const dom2 = new JSDOM(dom.serialize().replace(/\s?pdf-skip/g, ''), { runScripts: 'outside-only' });
+  dom2.window.eval('(' + src + ')')(['p1', []]);
+  const d2 = dom2.window.document;
+  assert.deepStrictEqual(['p1', '1-1', 'p10', '10-3'].map((id) => d2.getElementById(id).classList.contains('pdf-skip')), [false, false, true, true], 'p1 is its own chapter, not every class starting p1');
+  // the full handbook (no chapter) keeps every part but the dropped ones — the changelog in production — and a link into a dropped part is plain text, with no "(in the full handbook)" in the full handbook itself
+  const dom3 = new JSDOM(fixture, { runScripts: 'outside-only' });
+  const r3 = dom3.window.eval('(' + src + ')')([null, ['apa']]);
+  const d3 = dom3.window.document;
+  assert.deepStrictEqual(['top', 'howto', 'p1', '1-1', 'p10', '10-3', 'apa', 'A-1'].map((id) => d3.getElementById(id).classList.contains('pdf-skip')), [false, false, false, false, false, false, true, true], 'everything but the dropped appendix');
+  assert.deepStrictEqual([...d3.querySelectorAll('#pdftoc li')].map((li) => li.classList.contains('pdf-skip')), [false, false, false, true], 'its contents row goes too');
+  assert.strictEqual(d3.getElementById('pz').textContent, 'see A.1 Terms', 'a link into the dropped part is plain text, without the chapter PDF\'s suffix');
+  assert.ok(!d3.querySelector('#pz a') && r3.title === '', 'no link left behind; no chapter title on a full cut');
 });

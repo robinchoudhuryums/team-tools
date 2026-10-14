@@ -2876,7 +2876,6 @@
     }
     :root[data-print-one] .print-one { margin: 0 !important; border: none !important; box-shadow: none !important; }
     :root[data-print-one] .print-one .kb-man-sec-acts,
-    :root[data-print-one] .print-one .kb-man-fb,
     :root[data-print-one] .print-one #kb-comments { display: none !important; }
 
     /* (5) — M19 (manual-reader design Phase 8): a Quick Reference Card prints AS
@@ -2919,5 +2918,39 @@
     :root[data-print-card] .print-one .kb-man-card-art > figure { break-before: page; margin: 0; border: none; }
     :root[data-print-card] .print-one .kb-diagram-bar { display: none !important; }
     :root[data-print-card] .print-one svg.kbdg { min-width: 0 !important; }
+
+    /* (6) — dark mode prints the LIGHT accent (2026-10-12, the Phase 8
+       follow-on). Every palette's dark block redefines the accent with its
+       neutrals, so a dark-mode printout drew links and accent text in a pale
+       green or lilac on white. The light accents already exist ONCE as the
+       picker's swatch tokens (pinned to the palette blocks; their dark
+       redefinition is screen-only), so the accent points at them — no second
+       copy of any hex. --accent-2 (links) is that accent mixed 20% toward
+       black, deeper as the light blocks' own --accent-2 is. A palette the list
+       below does not name prints Console's accent; the MRD-9 pin derives the
+       palette list from the token file, so a new palette cannot be missed. */
+    :root[data-mode="dark"], body[data-mode="dark"] {
+      --accent: var(--pal-console-accent) !important;
+      --accent-2: color-mix(in oklab, var(--pal-console-accent), #000 20%) !important;
+    }
+    :root[data-mode="dark"][data-palette="sand"], body[data-mode="dark"][data-palette="sand"] {
+      --accent: var(--pal-sand-accent) !important;
+      --accent-2: color-mix(in oklab, var(--pal-sand-accent), #000 20%) !important;
+    }
+    :root[data-mode="dark"][data-palette="sage"], body[data-mode="dark"][data-palette="sage"] {
+      --accent: var(--pal-sage-accent) !important;
+      --accent-2: color-mix(in oklab, var(--pal-sage-accent), #000 20%) !important;
+    }
+    :root[data-mode="dark"][data-palette="plum"], body[data-mode="dark"][data-palette="plum"] {
+      --accent: var(--pal-plum-accent) !important;
+      --accent-2: color-mix(in oklab, var(--pal-plum-accent), #000 20%) !important;
+    }
+    :root[data-mode="dark"][data-palette="teal"], body[data-mode="dark"][data-palette="teal"] {
+      --accent: var(--pal-teal-accent) !important;
+      --accent-2: color-mix(in oklab, var(--pal-teal-accent), #000 20%) !important;
+    }
+    /* A manual cross-reference is text on paper: the deeper accent, in either
+       mode (the accent itself reads 4.4:1 on white — measured by print-check). */
+    :root .kb-article a.kb-xref { color: var(--accent-2); }
   }
 </style>

@@ -1,5 +1,68 @@
 [
   {
+    "date": "2026-10-12",
+    "part": "appx_b",
+    "section": "§B-1",
+    "summary": "The PT Evaluation Team row names its holder, Hem.",
+    "authority": "Power",
+    "retraining": false,
+    "provenance": "Operator packet changes 2026-10-12"
+  },
+  {
+    "date": "2026-10-12",
+    "part": "p6",
+    "section": "§6-1",
+    "summary": "6.1.2 is now \"Intake, Field Ops or Service?\": an order that isn't authorized yet (the Unauthorized icon) is still with the intake team, not Field Ops.",
+    "authority": "Field Operations",
+    "retraining": false,
+    "provenance": "Operator corrections 2026-10-12"
+  },
+  {
+    "date": "2026-10-12",
+    "part": "p6",
+    "section": "§6-3",
+    "summary": "The freight-delivery row now carries the Irving office's freight hours (Monday–Friday, 9–5 Central); the separate Freight deliveries section, which repeated it, is gone, so Oximetry, FAQ and Additional resources are now 6.14–6.16.",
+    "authority": "Field Operations",
+    "retraining": false,
+    "provenance": "Operator corrections 2026-10-12"
+  },
+  {
+    "date": "2026-10-12",
+    "part": "p3",
+    "section": "§3-1",
+    "summary": "A patient with more than one respiratory machine can mix them up: have the caller describe the machine before routing or ordering supplies for it.",
+    "authority": "Respiratory & Resupply",
+    "retraining": false,
+    "provenance": "Operator corrections 2026-10-12"
+  },
+  {
+    "date": "2026-10-12",
+    "part": "p3",
+    "section": "§3-13",
+    "summary": "FAQ: supplies beyond the insurance allowance are available out of pocket.",
+    "authority": "Respiratory & Resupply",
+    "retraining": false,
+    "provenance": "Operator corrections 2026-10-12"
+  },
+  {
+    "date": "2026-10-12",
+    "part": "p5",
+    "section": "§5-9",
+    "summary": "5.9.2 no longer says full power wheelchair dimensions are in the Item Master — they are not.",
+    "authority": "Power Mobility",
+    "retraining": false,
+    "provenance": "Operator corrections 2026-10-12"
+  },
+  {
+    "date": "2026-10-12",
+    "part": "p2",
+    "section": "§2-8",
+    "summary": "The blood pressure monitor and the heel protector are one sub-section, 2.8.4 Other medical devices.",
+    "authority": "Operations",
+    "retraining": false,
+    "provenance": "Operator corrections 2026-10-12"
+  },
+  {
     "date": "2026-10-08",
     "part": "p7",
     "section": "§7-3.2",
@@ -29,7 +92,7 @@
   {
     "date": "2026-10-08",
     "part": "p6",
-    "section": "§6-16",
+    "section": "§6-15",
     "summary": "The nursing-home FAQ separates a short-term SNF or rehab stay (deliver up to two days before a confirmed discharge) from a nursing home that is the patient's permanent residence.",
     "authority": "Field Operations",
     "retraining": false,
@@ -147,7 +210,7 @@
     "date": "2026-10-07",
     "part": "p5",
     "section": "§5-2.2",
-    "summary": "MA Education is now written Medical Assistant Education; in the manual, MA means only Medicare Advantage.",
+    "summary": "MA Education is now written Medical Assistant Education; in the handbook, MA means only Medicare Advantage.",
     "authority": "Operations",
     "retraining": false,
     "provenance": "Operator manual update 2026-10-06 — Phase 7 (list line 412)"

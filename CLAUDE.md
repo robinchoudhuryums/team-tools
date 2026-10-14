@@ -364,7 +364,7 @@ Nearly all of these were found by MEASUREMENT, not by reading. A squeezed layout
 - **The app has ONE primary-button vocabulary: `--accent` green (V-8, cycle-12).** Fires when you add a primary action. [Detail](docs/gotchas.md#g61-the-app-has-one-primary-button-vocabulary)
 - **A state that can be ZERO must not be painted in a SURFACE colour (V-10, cycle-12).** Fires when a chart state can legitimately be zero. [Detail](docs/gotchas.md#g62-a-state-that-can-be-zero-must)
 - **Two chip rows with the same shape must not do different things (V-12, cycle-12).** Fires when two chip rows share a shape but not a behaviour. [Detail](docs/gotchas.md#g63-two-chip-rows-with-the-same-shape)
-- **The app prints through ONE `@media print` block, and its two non-obvious rules are load-bearing (cycle-18 batch 8); printing ONE subject is rule (4) in the same block, by display, never a second block (22post M4); a Quick Reference Card prints as a card through rule (5), its diagram on the next sheet (manual reader design Phase 8).** Fires when you change what prints, or hide chrome from the printout. Verify: `print-check.mjs` + M4-P1 + MRD-8. [Detail](docs/gotchas.md#g64-the-app-prints-through-one-media-print)
+- **The app prints through ONE `@media print` block, and its two non-obvious rules are load-bearing (cycle-18 batch 8); printing ONE subject is rule (4) in the same block, by display, never a second block (22post M4); a Quick Reference Card prints as a card through rule (5), its diagram on the next sheet (manual reader design Phase 8); dark mode prints each palette's light accent through rule (6) (2026-10-12).** Fires when you change what prints, or hide chrome from the printout. Verify: `print-check.mjs` + M4-P1 + MRD-8 + MRD-9. [Detail](docs/gotchas.md#g64-the-app-prints-through-one-media-print)
 - **A pill tab strip must scroll inside itself, or it pushes the whole page sideways (operator 2026-08-11).** Fires when a pill strip can outgrow the viewport. [Detail](docs/gotchas.md#g71-a-pill-tab-strip-must-scroll-inside)
 - **Two layout lessons that only MEASUREMENT found, both from one chip (operator testing note 10, 2026-09-10).** Fires when a nowrap pill sits in a `1fr` track, or you fight a shared descendant rule. [Detail](docs/gotchas.md#g72-two-layout-lessons-that-only-measurement-found)
 - **The `hidden` attribute LOSES to any class rule that sets `display` (operator #2 batch, 2026-08-06 — MEASURED).** Fires when an element carries a display-setting class AND the `hidden` attribute. [Detail](docs/gotchas.md#g73-the-hidden-attribute-loses-to-any-class)
@@ -580,6 +580,7 @@ for the reasoning, which is usually the part that matters.
 - ["and" in an Area Eligibility cell means EITHER area; a phrase that could mean "both" is unreadable (cycle 23 KB2-6, operator 2026-10-05)](docs/design-decisions.md#and-in-an-eligibility-cell-means-either-area)
 - [The manual reader follows the design handoff, adapted to the repo: a bar for the section in view, a masthead per chapter, a reading trail and resume, a manual home, Contents on a narrow screen (manual reader design, operator 2026-10-09)](docs/design-decisions.md#the-manual-reader-follows-the-design-handoff)
 - [A chapter's quick card rides its masthead and prints as a card with its diagram on the reverse; the dark chapter and semantic colours are for the screen (manual reader design Phase 8, operator decisions 2 + 4, 2026-10-09)](docs/design-decisions.md#a-quick-card-prints-as-a-card)
+- [A manual section's feedback rides the reader bar, not a row under every section (operator 2026-10-12)](docs/design-decisions.md#manual-feedback-rides-the-reader-bar)
 
 ## Operator State Checklist
 
@@ -846,7 +847,7 @@ carries the same number. `/cycle-status` surfaces it.
   one.
 - `PROJECT_HEALTH.md` (repo root) — Current Standing + Score History.
 
-**Command templates: synced to `claude-workflow-tools` v1.33.0 (2026-09-09).**
+**Command templates: synced to `claude-workflow-tools` v1.43.0 (2026-10-13).** The 1.33.0 → 1.43.0 sync updated nine commands: the three audits (`/broad-scan`, `/audit`, `/targeted-audit`) now OPEN the cycle themselves (CYCLE OPEN: Cycle +1, Phase audit, unless Phase is already audit) and every implement/resume/reflect step sets Phase but never touches Cycle; `/broad-scan` numbers findings F1…, gaps G1–G5 and suggestions ST1–ST5, reports dead artifacts only when misleading (SAFE / PROPOSE), and adds an EXPANSION PLAN (E-batches) beside the fix batches; `/broad-implement` takes a batch name and a `New capabilities (G/ST):` field that `/reflect` counts from; `/cycle-init` starts at Cycle 0. `/pr-review` is still not installed, and `scripts/cycle-context.mjs` keeps its local estimate reminder (the template's indented-INV count fix was not ported). Previously synced to v1.33.0 (2026-09-09).
 `.claude/commands/` carries 19 of the template's 20 commands, verified
 byte-identical at sync time; `/pr-review` is the one not installed (it sits
 under the template's separate "Per-Change Review" heading). Record the version
@@ -937,8 +938,8 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1263 | `node test/client/run.js` |
-| DOM harness tests | 231 | `node test/client/dom/runDom.js` |
+| Pure harness tests | 1271 | `node test/client/run.js` |
+| DOM harness tests | 233 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 159 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 54 | `'Admin access required.'` in the server source |

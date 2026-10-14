@@ -92,7 +92,7 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 - **Incontinence is not a Medicare benefit** — TX Medicaid only, TMHP allowances
 
 ### Priority
-- **Ventilator issues are the highest priority in the manual** — Service Q; if no answer, email respiratory@ and service@ and notify an RT
+- **Ventilator issues are the highest priority in the handbook** — Service Q; if no answer, email respiratory@ and service@ and notify an RT
 - Oxygen has its own card — [[§C-8]]
 
 **Never** — tell a patient Medicare covers briefs · ship supplies sooner than 10 days before they run out · decide compliance where the notes are silent

@@ -77,7 +77,7 @@ for (const mode of ['light', 'dark']) {
       marked: document.documentElement.hasAttribute('data-print-one'),
       section: vis('#kb-man-sec-man-0-11'), otherSection: vis('#kb-man-sec-man-0-10'),
       sidebar: vis('.sidebar'), rail: vis('.kb-side'), title: vis('.view-title-row'),
-      sectionButtons: vis('.print-one .kb-man-sec-acts'), feedback: vis('.print-one .kb-man-fb'),
+      sectionButtons: vis('.print-one .kb-man-sec-acts'), feedback: vis('.print-one .kb-feedback'),
       sectionLeft: Math.round(sec.getBoundingClientRect().left), sectionWidth: Math.round(sec.getBoundingClientRect().width),
       ink: getComputedStyle(document.documentElement).getPropertyValue('--ink').trim(),
       // Phase 8: <body> carries data-mode too, so the ink must be read where the text inherits it
@@ -87,6 +87,36 @@ for (const mode of ['light', 'dark']) {
     };
   });
   results.push({ mode, printOneSection: one });
+  await page.close();
+}
+// 2026-10-12 — dark mode prints the LIGHT accent: a cross-reference link in a
+// dark-mode printout, in every palette, reads at least 4.5:1 on white paper.
+const lum = (rgb) => {
+  const c = (rgb.match(/[\d.]+/g) || []).slice(0, 3).map((v) => { v = +v / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+};
+for (const pal of ['console', 'sand', 'sage', 'plum', 'teal']) {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await page.addInitScript((p) => { try { localStorage.clear(); localStorage.setItem('umsTimeClockMode', 'dark'); if (p !== 'console') localStorage.setItem('umsTheme', p); localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 })); localStorage.setItem('umsTzWarnedDay', new Date().toLocaleDateString('sv-SE')); } catch (e) {} }, pal);
+  await page.goto(PAGE);
+  await page.waitForTimeout(900);
+  await page.evaluate(() => window.enterTool('reference'));
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => window.kbOpenItem_('man-0-11'));
+  await page.waitForTimeout(1200);
+  const screenLink = await page.evaluate(() => getComputedStyle(document.querySelector('#kb-man-sec-man-0-11 a.kb-xref')).color);
+  await page.evaluate(() => { window.print = () => {}; const st = window.setTimeout; window.setTimeout = (f, ms) => (ms === 1500 ? 0 : st(f, ms)); window.kbPrintSectionById_('man-0-11'); window.setTimeout = st; });
+  await page.emulateMedia({ media: 'print' });
+  const link = await page.evaluate(() => ({
+    palette: document.documentElement.getAttribute('data-palette') || 'console',
+    mode: document.documentElement.getAttribute('data-mode'),
+    color: getComputedStyle(document.querySelector('#kb-man-sec-man-0-11 a.kb-xref')).color,
+    // a color-mix() resolves to oklab(...): paint it to read it back as sRGB
+    rgb: (() => { const c = document.createElement('canvas').getContext('2d'); c.fillStyle = getComputedStyle(document.querySelector('#kb-man-sec-man-0-11 a.kb-xref')).color; c.fillRect(0, 0, 1, 1); const d = c.getImageData(0, 0, 1, 1).data; return 'rgb(' + d[0] + ', ' + d[1] + ', ' + d[2] + ')'; })(),
+  }));
+  link.screen = screenLink;
+  link.contrastOnWhite = +(1.05 / (lum(link.rgb) + 0.05)).toFixed(2);
+  results.push({ darkPrintLink: link });
   await page.close();
 }
 // Phase 8 (M19) — a Quick Reference Card from a chapter's masthead prints AS a

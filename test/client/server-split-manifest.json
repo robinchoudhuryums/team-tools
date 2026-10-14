@@ -2439,6 +2439,18 @@
    "removed": [],
    "changed": [],
    "moved": []
+  },
+  {
+   "date": "2026-10-13",
+   "why": "Policies & Procedures Handbook rename (operator 2026-10-13): reader-facing names",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "KB_MANUAL_READONLY_MSG",
+    "kbManualImagesValidate_",
+    "kbManualValidate_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3731,7 +3743,7 @@
   "KB_MANUAL_READONLY_MSG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "5153cb969b4845da"
+   "sha": "7eed790e0dfde0d6"
   },
   "KB_MANUAL_RECENT_DAYS": {
    "file": "00_config.js",
@@ -8136,7 +8148,7 @@
   "kbManualImagesValidate_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "e99ddfb2cb6586d2"
+   "sha": "8b754c6f4bac948e"
   },
   "kbManualImagesWrite_": {
    "file": "70_kb.js",
@@ -8191,7 +8203,7 @@
   "kbManualValidate_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "f5136fbdf9a7ef75"
+   "sha": "27660c8e13bf20db"
   },
   "kbMapCacheKey_": {
    "file": "70_kb.js",

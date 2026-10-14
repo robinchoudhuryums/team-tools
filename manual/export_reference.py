@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export the manual as Reference articles (team-tools Batch M1).
+"""Export the handbook as Reference articles (team-tools Batch M1).
 
 Writes, under $MANUAL_OUT/reference (default dist/reference):
 
@@ -22,7 +22,7 @@ and, when it runs inside the team-tools repo, the diagram partial (Batch M3):
                  every diagrams/*.svg as an allowlisted, app-themed string the
                  Reference renderer draws for a ```diagram fence — elements and
                  attributes from a fixed list, styles scoped to their own
-                 diagram, the manual's colours renamed to --dg-* (the app maps
+                 diagram, the handbook's colours renamed to --dg-* (the app maps
                  them onto its design tokens, so dark mode follows), fonts the
                  app's, and each section link a kb cross-reference. It is CODE:
                  a changed diagram reaches the app by commit + deploy, not by
@@ -72,7 +72,7 @@ PARTS = {
 APPX = {"a": "src/appendix_a.md", "b": "src/appendix_b.md", "c": "src/appendix_c.md"}
 
 # build.py's scaffolding strippers, copied verbatim (pinned equal): the review
-# notes are not part of the manual a CSR reads, in any artifact.
+# notes are not part of the handbook a CSR reads, in any artifact.
 SCAFFOLD = re.compile(
     r"\n(?:-{3,}\s*\n+)?#{2} (?:What changed[^\n]*|Open items[^\n]*|Notes for review[^\n]*)"
     r"\n.*?(?=\n#{1,2} (?!#)|\Z)", re.S)
@@ -402,7 +402,7 @@ def build_changelog(anchors):
 
 # ------------------------------------------------------- diagram partial ---
 DIAGRAM_PARTIAL = os.path.join(HERE, "..", "web-app", "kb", "script_manual_diagrams.html")
-# The manual's diagram colours. Each becomes --dg-<name>, which the app's
+# The handbook's diagram colours. Each becomes --dg-<name>, which the app's
 # stylesheet maps onto a design token (pinned: every --dg-* used is mapped).
 DG_VARS = ("navy", "accent", "tint", "ink", "muted", "rule", "bg", "panel",
            "crit-bg", "crit-ink", "pol-bg", "pol-ink", "watch-bg", "watch-ink",
@@ -573,7 +573,7 @@ def main():
             # Appendix D (changelog) and E (index) are generated per artifact by
             # build.py and are not Reference articles; the number stays readable.
             NOT_IMPORTED.append(sec)
-            return f"**{dnum(sec)}** (the manual's {'changelog' if sec[1] == 'D' else 'index'})"
+            return f"**{dnum(sec)}** (the handbook's {'changelog' if sec[1] == 'D' else 'index'})"
         if not a:
             errors.append(f"UNRESOLVABLE REF {sec}")
             return m.group(0)
@@ -706,15 +706,15 @@ def xref_report(path):
 
 
 def howto_article():
-    """build.py's front page ("How to use this manual") — Part 0 points at it.
+    """build.py's front page ("How to use this handbook") — Part 0 points at it.
     Read from build.py's own HOWTO literal rather than copied, so it cannot drift."""
     m = re.search(r'^HOWTO = """(.*?)"""', open("build.py", encoding="utf-8").read(), re.M | re.S)
     if not m:
         errors.append("build.py: the HOWTO front page was not found")
-        return make_article("man-howto", department("p0"), "How to use this manual", "", 0)
-    body = re.sub(r"^## How to use this manual\n", "", m.group(1).strip())
+        return make_article("man-howto", department("p0"), "How to use this handbook", "", 0)
+    body = re.sub(r"^## How to use this handbook\n", "", m.group(1).strip())
     body = re.sub(r"^### ", "## ", body, flags=re.M)
-    return make_article("man-howto", department("p0"), "How to use this manual", body, 0)
+    return make_article("man-howto", department("p0"), "How to use this handbook", body, 0)
 
 
 def split_articles(k, text):

@@ -9875,7 +9875,8 @@ test('the picker swatches are pinned to the palettes they claim to preview', () 
   // The first hand-typed version of the swatch block had ALREADY drifted from
   // the generated palette hexes — a picker that previews the wrong colour is
   // worse than no preview.
-  const darkAt = toks.indexOf(':root[data-mode="dark"], body[data-mode="dark"] {\n    --pal-');
+  // (the dark swatch block sits inside @media screen since 2026-10-12, so it is indented one level more)
+  const darkAt = toks.search(/:root\[data-mode="dark"\], body\[data-mode="dark"\] \{\n\s*--pal-/);
   assert.ok(darkAt > 0, 'the dark swatch block exists (a swatch must preview what the rep gets)');
   const sw = (mode) => {
     const scope = mode === 'dark' ? toks.slice(darkAt)
@@ -30284,7 +30285,7 @@ test('M2-S4: manual sections are READ-ONLY in the app — save, delete and rever
     const b = src(n);
     assert.ok(b.indexOf('KB_MANUAL_READONLY_MSG') < b.indexOf('getOrCreateKbSheet_()') || b.indexOf('getOrCreateKbSheet_()') < 0, n + ' refuses BEFORE it touches the sheet');
   });
-  assert.ok(/manual source/.test(/const KB_MANUAL_READONLY_MSG = '([^']+)'/.exec(codeSrc)[1]));
+  assert.ok(/handbook source/.test(/const KB_MANUAL_READONLY_MSG = '([^']+)'/.exec(codeSrc)[1]));
   // Driven: kbSaveItem refuses the man- id, keeps saving a hand-written one.
   const book = m1Book_([['man-5-9', 'P', 'T', 'article', 'b', '', '', 9, 'u', 'x', 'r', 'x', 'published'], ['kb-1', 'B', 'T', 'article', 'b', '', '', 1, 'u', 'x', 'r', 'x', 'published']], null);
   const ctx = vm.createContext({ String, Number, Object, JSON,
@@ -30649,7 +30650,7 @@ test('M3-I3 (M4-FU3): getManualImages serves the tab\'s own bytes — rejoined i
 
 test('M3-I4: the reader side of the images — a chip carries only a key of the image charset, the client batch is the server\'s, and only a PNG/JPEG data URL is ever set as a source', () => {
   const c = m1Md_();
-  assert.strictEqual(c.kbMd_('![Reg](manimg:fig-o2-reg)'), '<p><span class="kb-img-pending kb-manimg" data-manimg="fig-o2-reg" title="Manual image">Reg</span></p>');
+  assert.strictEqual(c.kbMd_('![Reg](manimg:fig-o2-reg)'), '<p><span class="kb-img-pending kb-manimg" data-manimg="fig-o2-reg" title="Handbook image">Reg</span></p>');
   ['manimg:FIG-x', 'manimg:fig-x"onerror=a', 'manimg:evil-x', 'manimg:icon-'].forEach((u) => {
     const h = c.kbMd_('![A](' + u + ')');
     assert.ok(!/data-manimg/.test(h) && !/<img/.test(h) && /kb-img-pending/.test(h), u + ' → a plain chip, no key, no image: ' + h);
@@ -30844,7 +30845,7 @@ test('M4-P1: printing one section rides the ONE print block — the subject and 
   const block = css.slice(i, end + 1);
   assert.ok(block.indexOf(':root[data-print-one] body :not(:has(.print-one)):not(.print-one):not(.print-one *) { display: none !important; }') > 0, 'the rule lives inside the one block, by display');
   assert.ok(/:root\[data-print-one\] :has\(\.print-one\) \{[^}]*display: block !important;[^}]*max-width: none !important;/.test(block), 'the ancestors collapse to blocks, so the rail\'s grid column cannot hold its width');
-  ['.kb-man-sec-acts', '.kb-man-fb', '#kb-comments'].forEach((sel) => assert.ok(block.indexOf(':root[data-print-one] .print-one ' + sel) > 0, sel + ' does not print'));
+  ['.kb-man-sec-acts', '#kb-comments'].forEach((sel) => assert.ok(block.indexOf(':root[data-print-one] .print-one ' + sel) > 0, sel + ' does not print'));
   assert.ok(!/data-print-one|print-one/.test(css.slice(0, i) + css.slice(end + 1)), 'no print-one rule outside the block');
 });
 
@@ -34942,7 +34943,7 @@ test('MP1-4: the front page — "Where to start", the five banner types as real 
     .forEach((t) => assert.ok(how.indexOf(t) >= 0, 'has: ' + t));
   ['Critical', 'Policy', 'Watch-out', 'Script', 'Note'].forEach((k) => assert.ok(new RegExp('^> \\*\\*' + k + '\\*\\* \u2014 ', 'm').test(how), k + ' is shown as a real banner'));
   ['You are not expected to read', 'roughly 25 pages', 'Older copies used', 'Your first week', 'state coverage'].forEach((t) => assert.ok(how.indexOf(t) < 0, 'gone: ' + t));
-  assert.ok(!/def control_block/.test(bd) && bd.indexOf('chunks = [f"# CSR Procedures Manual{\' \u2014 \' + title if guide else \'\'}"') > 0, 'the full manual is titled plainly — no "Unified", no version table');
+  assert.ok(!/def control_block/.test(bd) && bd.indexOf('chunks = [f"# Policies & Procedures Handbook{\' \u2014 \' + title if guide else \'\'}"') > 0, 'the full manual is titled plainly — no "Unified", no version table');
   assert.ok(/^OWNER = "[^"]+"$/m.test(bd) && MP1_('make_html.py').indexOf('OWNER = re.search(r\'^OWNER = "([^"]+)"\'') > 0, 'the owner is build.py\'s, read by the HTML (and Word) rather than copied');
   assert.ok(MP1_('export_reference.py').indexOf('re.search(r\'^HOWTO = """(.*?)"""\'') > 0, 'the export still reads the front page from build.py');
 });
@@ -35010,7 +35011,7 @@ test('MC-2 (change list 2026-10-08 C8 + A6): every diagram prints on its own lan
   assert.ok(/position: s\.landscape \? PAGE_H - MARGIN \* 2 : CONTENT_W/.test(rx), 'the footer page number sits at the right edge on either orientation');
   assert.ok(/sections: sections\.filter\(s => s\.children\.length\)/.test(rx), 'no empty section reaches the file');
   // A6: cover + contents, full manual only
-  assert.ok(/FULL = os\.path\.basename\(SRC\)\.startswith\("CSR-Procedures-Manual-"\)/.test(mm) && /"full": FULL/.test(mm) && /"built": built_date\(\)/.test(mm), 'md2model marks the full manual and carries the version and build date');
+  assert.ok(/FULL = os\.path\.basename\(SRC\)\.startswith\("Policies-and-Procedures-Handbook-"\)/.test(mm) && /"full": FULL/.test(mm) && /"built": built_date\(\)/.test(mm), 'md2model marks the full manual and carries the version and build date');
   assert.ok(/if \(meta\.full\) \{/.test(rx) && /openSection\(false, \{ cover: true \}\)/.test(rx) && /titlePage: !!s\.cover/.test(rx), 'only the full manual gets the cover, which has no running header');
   assert.ok(/new InternalHyperlink\(\{ anchor: b\.bm/.test(rx) && /new PageReference\(b\.bm/.test(rx) && /features: meta\.full \? \{ updateFields: true \}/.test(rx), 'each contents line links to its heading, with a page number Word fills on open');
   assert.ok(/b\.bm = 'x_ch_' \+ k/.test(rx), 'a chapter title gets a bookmark so the contents can link it');
@@ -35049,7 +35050,7 @@ test('MD-1 (change list 2026-10-08 D): the HTML manual — a phone gets one colu
   assert.strictEqual((mh.match(/@media screen and \(prefers-color-scheme:dark\)/g) || []).length, 3, 'the three dark rules are screen-only');
   assert.ok(!/(^|\n):root\[data-theme="dark"\]\{/.test(mh) && (mh.match(/@media screen\{:root\[data-theme="dark"\]/g) || []).length === 3, 'and so is the forced dark theme');
   // D7
-  assert.ok(/id="prsec"/.test(mh) && /id="prcards"/.test(mh) && /body:not\(\.print-sec\) main > \*\{display:none!important\}/.test(mh) && /body\.print-sec main > :not\(\.psel\)\{display:none!important\}/.test(mh), 'Print section prints the marked section; Ctrl+P still prints the cards');
+  assert.ok(/id="prsec"/.test(mh) && /id="prcards"/.test(mh) && /body:not\(\.print-sec,\.print-doc\) main > \*\{display:none!important\}/.test(mh) && /body\.print-sec main > :not\(\.psel\)\{display:none!important\}/.test(mh), 'Print section prints the marked section; Ctrl+P still prints the cards');
   // D8 + D10
   assert.ok(/role="dialog" aria-modal="true" aria-label="Call router"/.test(mh) && /rtOpener\.focus\(\{preventScroll:true\}\)/.test(mh) && /if\(e\.key!=='Tab'\) return;/.test(mh), 'the router keeps Tab inside and returns focus');
   assert.ok(/\$\{r\.h\|\|esc\(r\.a\)\}/.test(mh) && /"h": _tight\(/.test(mh), 'its answer keeps its links');
@@ -35067,7 +35068,7 @@ test('MRD-1 (manual reader design Phase 1): no text is white on the accent, each
   assert.ok(!/background:\s*var\(--accent\);\s*color:\s*#fff/i.test(kb), 'no white text on a filled accent — it is a pale green / lilac in dark mode');
   assert.strictEqual((kb.match(/background:\s*var\(--accent\);\s*color:\s*var\(--paper-card\)/g) || []).length, 5, 'the five filled-accent buttons read --paper-card (non-vacuous)');
   // one home per property: the superseded duplicates are gone
-  [['.kb-man-sec', /^  \.kb-man-sec \{/gm], ['.kb-man-sec-head', /^  \.kb-man-sec-head \{/gm], ['.kb-man-sec-h', /^  \.kb-man-sec-h \{/gm], ['.kb-man-part max-width', /^  \.kb-man-part \{ max-width/gm], ['.kb-man-fb', /^  \.kb-man-fb \{/gm]]
+  [['.kb-man-sec', /^  \.kb-man-sec \{/gm], ['.kb-man-sec-head', /^  \.kb-man-sec-head \{/gm], ['.kb-man-sec-h', /^  \.kb-man-sec-h \{/gm], ['.kb-man-part max-width', /^  \.kb-man-part \{ max-width/gm]]
     .forEach(([n, re]) => assert.strictEqual((kb.match(re) || []).length, 1, n + ' has one rule'));
   // M6 (operator option b): no left stripe on the chapter title or section heads, in the reader and the HTML manual
   const head = /^  \.kb-man-sec-head \{([^}]*)\}/m.exec(kb)[1];
@@ -35138,6 +35139,184 @@ test('MRD-2 (manual reader design Phase 2): the reader bar\'s title split, chapt
   // the follow-on from Phase 1: the toast's Reload was white on the accent
   const css = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
   assert.ok(!/background:\s*var\(--accent\);\s*color:\s*#fff/i.test(css) && /\.toast-act \{[^}]*background: var\(--accent\); color: var\(--paper-card\)/.test(css), 'the toast action reads --paper-card on the accent');
+});
+
+test('PK-1 (review packets, operator 2026-10-12): a closed question is answered on a fill-in line, not checkboxes — the Markdown and the Word packet draw the SAME blank (the packets go out as Google Docs)', () => {
+  const MAN = path.join(__dirname, '../../manual');
+  const py = fs.readFileSync(path.join(MAN, 'make_review_packets.py'), 'utf8');
+  const js = fs.readFileSync(path.join(MAN, 'render_packet.js'), 'utf8');
+  const pyN = +(/^ANSWER_LINE = "_" \* (\d+)/m.exec(py) || [])[1], jsN = +(/const ANSWER_LINE = "_"\.repeat\((\d+)\);/.exec(js) || [])[1];
+  assert.ok(pyN >= 20 && pyN === jsN, 'one blank, the same length in both: ' + pyN + ' / ' + jsN);
+  assert.ok(/L \+= \[f"\*\*Correct, or needs change\?\*\* \{ANSWER_LINE\}"/.test(py), 'the Markdown packet writes the label and the blank');
+  const box = extractFnFrom(js, 'answerBox');
+  assert.ok(/text: "Correct, or needs change\?  "/.test(box) && /text: ANSWER_LINE/.test(box), 'the Word packet draws the same label and blank');
+  [py, js].forEach((src, i) => assert.ok(src.indexOf('☐') < 0, (i ? 'render_packet.js' : 'make_review_packets.py') + ' draws no checkbox'));
+});
+
+test('PK-2 (review packets, operator 2026-10-12): manual text is shown ONCE per packet — a section an earlier question showed, or rows of it when that question showed it in full, becomes "shown with question N"; ONE function decides it, and both question kinds in BOTH builders (Markdown and Word) go through it', () => {
+  const MAN = path.join(__dirname, '../../manual');
+  const md = fs.readFileSync(path.join(MAN, 'make_review_packets.py'), 'utf8');
+  const wd = fs.readFileSync(path.join(MAN, 'packet_model.py'), 'utf8');
+  const fn = md.slice(md.indexOf('def excerpts_for('), md.indexOf('\ndef ', md.indexOf('def excerpts_for(') + 1));
+  const chk = fn.indexOf('if (sec, filt) in shown:'), ex = fn.indexOf('excerpt(sec, filt'), rows = fn.indexOf('if filt and full and all(l in full[1] for l in body.split('), rec = fn.indexOf('shown[(sec, filt)] = (r["n"], body)');
+  assert.ok(chk > 0 && ex > chk && rows > ex && rec > rows, 'excerpts_for checks what was shown, excerpts, checks the rows against a full section already shown, then records — ' + [chk, ex, rows, rec]);
+  assert.ok(/shown with question \{src\}/.test(fn) && /pointed/.test(fn), 'it points back to the question that showed the text, once per source');
+  const body = (src, name) => src.slice(src.indexOf('def ' + name + '('), src.indexOf('\ndef ', src.indexOf('def ' + name + '(') + 1) > 0 ? src.indexOf('\ndef ', src.indexOf('def ' + name + '(') + 1) : src.length);
+  [['make_review_packets.py packet()', body(md, 'packet'), 'excerpts_for(r, part, shown, missing)'], ['packet_model.py model()', body(wd, 'model'), 'MRP.excerpts_for(r, part, shown,']].forEach(([f, src, call]) => {
+    assert.strictEqual(src.split(call).length - 1, 2, f + ': the open and the closed question both go through excerpts_for');
+    assert.ok(/part = g\.get\("key", key\)/.test(src), f + ': with the chapter its group names (a combined packet) or the packet\'s own');
+    assert.ok(!/excerpt\(sec, filt/.test(src), f + ': and nothing excerpts around it');
+  });
+});
+
+test('PK-3 (review packets, operator 2026-10-12): a question that cites a section an earlier question already quoted sits DIRECTLY after that question (or among its other follow-ups) — so "shown with question N" always points just above, never pages back (derived over every packet in spec.json)', () => {
+  const spec = JSON.parse(fs.readFileSync(path.join(__dirname, '../../manual/packets/spec.json'), 'utf8'));
+  let followUps = 0;
+  Object.keys(spec).filter((k) => k[0] !== '_').forEach((key) => {
+    const rows = [].concat(...spec[key].groups.map((g) => g.rows));
+    const first = {}, src = rows.map(() => -1);
+    rows.forEach((r, i) => {
+      String(r.sec || '').split(/,\s*/).map((t) => t.trim()).filter((t) => /^\d+\.[\dA-Z]+(\.\d+)?(~|$)|^FAQ/i.test(t)).forEach((t) => {
+        // rows of a section ("6.3~…") follow the question that showed it in full ("6.3")
+        const base = t.split('~')[0], from = t in first ? first[t] : (t !== base && base in first ? first[base] : -1);
+        if (from >= 0) { if (src[i] < 0) src[i] = from; } else first[t] = i;
+      });
+    });
+    src.forEach((s, i) => {
+      if (s < 0) return;
+      followUps++;
+      for (let j = s + 1; j < i; j++) assert.strictEqual(src[j], s, key + ' Q' + rows[i].n + ' repeats a section Q' + rows[s].n + ' quotes, but Q' + rows[j].n + ' sits between them — move it up to follow Q' + rows[s].n);
+    });
+    rows.forEach((r, i) => assert.strictEqual(r.n, String(i + 1), key + ': questions are numbered in order'));
+    rows.forEach((r) => assert.ok(!(r.says && r.q), key + ' Q' + r.n + ' carries both a statement and an open question — the builders render only one'));
+  });
+  assert.ok(followUps >= 3, 'non-vacuous: the packets carry follow-up questions (' + followUps + ') — fewer since the 2026-10-12 merges folded most follow-ups into their source');
+});
+
+test('PK-4 (review packets, operator 2026-10-12): a question can carry a LINK to a live document only the team keeps (the Power Roster Google Sheet) — both builders draw it, in an open question before its answer space and in a closed one before its answer line, and the Word renderer makes it a real hyperlink; the Power packet\'s directory question carries it', () => {
+  const MAN = path.join(__dirname, '../../manual');
+  [['make_review_packets.py', 'L += ["**Your answer:**"', 'L += [f"**Correct, or needs change?**', /\[\{r\['link'\]\['text'\]\}\]\(\{r\['link'\]\['url'\]\}\)/],
+   ['packet_model.py', 'B.append({"t": "answer_open"', 'B.append({"t": "answer", "n"', /B\.append\(\{"t": "link", \*\*r\["link"\]\}\)/]].forEach(([f, ansOpen, ansClosed, draw]) => {
+    const src = fs.readFileSync(path.join(MAN, f), 'utf8');
+    const q = src.indexOf('if "q" in r:'), slot1 = src.indexOf('if r.get("link"):', q), a1 = src.indexOf(ansOpen, q);
+    assert.ok(q > 0 && slot1 > q && a1 > slot1, f + ': open question — the link, then the answer space — ' + [q, slot1, a1]);
+    const slot2 = src.indexOf('if r.get("link"):', a1), a2 = src.indexOf(ansClosed, a1);
+    assert.ok(slot2 > a1 && a2 > slot2, f + ': closed question — the link, then the answer line — ' + [slot2, a2]);
+    [[slot1, a1], [slot2, a2]].forEach(([x, y]) => assert.ok(draw.test(src.slice(x, y)), f + ': it draws the link text pointing at its url'));
+    assert.ok(!/r\.get\("paste"\)|r\['paste'\]/.test(src), f + ': the old paste slot is gone');
+  });
+  const rj = fs.readFileSync(path.join(MAN, 'render_packet.js'), 'utf8');
+  assert.ok(/case "link":[^\n]*\n\s*new ExternalHyperlink\(\{ link: b\.url, children: \[new TextRun\(\{ text: b\.text/.test(rj), 'the Word renderer draws a link block as a hyperlink to its url');
+  const p5 = JSON.parse(fs.readFileSync(path.join(MAN, 'packets/spec.json'), 'utf8')).p5;
+  const row = [].concat(...p5.groups.map((g) => g.rows)).find((r) => r.link && r.roster === 'p5');
+  assert.ok(row && /Power Roster/.test(row.says || '') && /Power Roster/.test(row.link.text) && /^https:\/\/docs\.google\.com\/spreadsheets\/d\//.test(row.link.url), 'the Power packet\'s directory question links the Power Roster sheet');
+});
+
+test('PK-5 (review packets, operator 2026-10-12): the build names exactly the packets the spec has — no map entry for a dissolved packet (Oxygen, After Hours; the After Hours questions now ride Field Ops, marked for Parth Shah) — and make_packets.sh removes a packet file the spec no longer builds', () => {
+  const MAN = path.join(__dirname, '../../manual');
+  const keys = Object.keys(JSON.parse(fs.readFileSync(path.join(MAN, 'packets/spec.json'), 'utf8'))).filter((k) => k[0] !== '_');
+  const py = fs.readFileSync(path.join(MAN, 'make_review_packets.py'), 'utf8');
+  const mapKeys = (name) => [...(new RegExp('^' + name + ' = \\{([\\s\\S]*?)\\}', 'm').exec(py) || [])[1].matchAll(/"(\w+)":/g)].map((m) => m[1]);
+  assert.deepStrictEqual(mapKeys('NAMES').sort(), keys.slice().sort(), 'every packet has a file name, and no name is left for a packet that is gone');
+  mapKeys('FAQ').forEach((k) => assert.ok(keys.includes(k), 'FAQ names a packet that is gone: ' + k));
+  assert.ok(!keys.includes('p8') && !keys.includes('p9'), 'the Oxygen and After Hours packets are dissolved — the CSR manager reviews Chapters 8 and 9');
+  const p6 = JSON.parse(fs.readFileSync(path.join(MAN, 'packets/spec.json'), 'utf8')).p6;
+  const tri = [].concat(...p6.groups.map((g) => g.rows)).filter((r) => /\u25b2$/.test(r.says || r.q || ''));
+  assert.ok(/questions marked \*\*\u25b2\*\* are for \*\*Parth Shah\*\*/.test(p6.head) && tri.length >= 3 && tri.every((r) => /^9\./.test(r.sec)), 'the After Hours questions ride the Field Ops packet, marked \u25b2 for Parth Shah, each quoting Chapter 9 (' + tri.length + ')');
+  const sh = fs.readFileSync(path.join(MAN, 'make_packets.sh'), 'utf8');
+  assert.ok(/want = \{build_name\(k, v\) for k, v in BUILDS\}/.test(sh) && /os\.remove\(f\)/.test(sh), 'the build removes stale packet files');
+});
+
+test('PK-6 (review packets, operator 2026-10-12): a recipient with questions flagged for them gets their own packet — "only" keeps the questions carrying their marker, "skip" leaves out someone else\'s — and every builder (Markdown, Word model, render loop, stale-file sweep) walks the SAME list of builds', () => {
+  const MAN = path.join(__dirname, '../../manual');
+  const spec = JSON.parse(fs.readFileSync(path.join(MAN, 'packets/spec.json'), 'utf8'));
+  let cuts = 0;
+  Object.keys(spec).filter((k) => k[0] !== '_').forEach((k) => {
+    const rows = [].concat(...spec[k].groups.map((g) => g.rows)), files = new Set();
+    (spec[k].recipients || []).forEach((v) => {
+      cuts++;
+      const mark = v.only || v.skip;
+      assert.ok(mark && !(v.only && v.skip) && v.file && v.for, k + ': a recipient names a file, who it is for, and ONE of only/skip');
+      assert.ok(!files.has(v.file), k + ': recipient files are unique'); files.add(v.file);
+      assert.ok(spec[k].head.split('\n').some((l) => l.includes(mark) && /questions marked|are for/.test(l)), k + ': the marker ' + mark + ' is the one the packet\'s own head explains');
+      const hit = rows.filter((r) => (r.says || r.q || '').includes(mark)).length;
+      assert.ok(hit > 0 && hit < rows.length, k + ' ' + v.file + ': the marker picks some questions, not none or all (' + hit + ')');
+      const last = rows[rows.length - 1], lt = last.says || last.q || '';
+      assert.ok(/^\*\*Anything else/.test(lt) && !lt.includes(mark), k + ': the packet ends on its open "Anything else" close, which carries no marker — so a cut keeps it only through the closing rule');
+    });
+  });
+  assert.ok(cuts >= 4, 'non-vacuous: April, Ozaire (Power, Field Ops) and Mahesh (' + cuts + ')');
+  const py = fs.readFileSync(path.join(MAN, 'make_review_packets.py'), 'utf8');
+  const sf = py.slice(py.indexOf('def spec_for('), py.indexOf('\ndef build_name('));
+  assert.ok(/\(mark in text\(r\)\) == bool\(v\.get\("only"\)\)/.test(sf) && /n=str\(i \+ 1\)/.test(sf), 'spec_for keeps the marked (only) or unmarked (skip) questions and renumbers them');
+  const ic = py.slice(py.indexOf('def is_closing('), py.indexOf('\ndef spec_for('));
+  assert.ok(/return \(r\.get\("says"\) or r\.get\("q"\) or ""\)\.startswith\("\*\*Anything else"\)/.test(ic) && /closing = is_closing/.test(sf) && /== bool\(v\.get\("only"\)\) or closing\(r\)\]/.test(sf), 'every cut keeps the open-ended closing question, an only-cut included');
+  assert.ok(/BUILDS = \[\(k, None\) for k in KEYS\] \+ recipient_builds\(\)/.test(py), 'BUILDS is every packet, then every recipient cut');
+  // operator 2026-10-13: ONE packet per recipient — a file flagged in two chapters is one combined build
+  const rb = py.slice(py.indexOf('def recipient_builds('), py.indexOf('\nBUILDS = '));
+  assert.ok(/mine = \[\(k2, v2\) for k2, v2 in cuts if v2\["file"\] == v\["file"\]\]/.test(rb) && /if len\(mine\) == 1:\s*\n\s*out\.append\(\(k, v\)\)/.test(rb) && /elif mine\[0\]\[0\] == k:/.test(rb) && /"parts": mine/.test(rb),
+    'a recipient in one chapter keeps their cut; one in several gets ONE build carrying every part, at their first');
+  const files = [];
+  Object.keys(spec).filter((k) => k[0] !== '_').forEach((k) => (spec[k].recipients || []).forEach((v) => files.push(v.file)));
+  assert.ok(files.some((f, i) => files.indexOf(f) !== i), 'non-vacuous: someone (Ozaire) is a recipient in two chapters');
+  const cs = py.slice(py.indexOf('def combined_spec('), py.indexOf('\ndef build_name('));
+  assert.ok(/for k, vk in v\["parts"\]:/.test(cs) && /spec_for\(k, vk\)/.test(cs) && /n \+= 1/.test(cs) && /"key": k/.test(cs),
+    'the combined packet is each chapter\'s own cut, numbered straight through, each group naming its chapter');
+  // operator 2026-10-13: ONE closing for a combined packet — each part's close is held back, then asked once, citing every part's resources
+  assert.ok(/if is_closing\(r\):\s*\n\s*closes\.append\(r\); continue/.test(cs) && /if closes:/.test(cs) && /"sec": ", "\.join\(c\["sec"\] for c in closes if c\.get\("sec"\)\)/.test(cs) && /"q": f"\*\*Anything else\?\*\*/.test(cs) && /"n": str\(n \+ 1\)/.test(cs),
+    'a combined packet asks ONE closing question, after every chapter\'s questions, citing each chapter\'s resources');
+  assert.ok(/for key, v in BUILDS:/.test(py) && /packet\(key, v\)/.test(py), 'the Markdown build walks BUILDS');
+  const pm = fs.readFileSync(path.join(MAN, 'packet_model.py'), 'utf8');
+  assert.ok(/for key, v in MRP\.BUILDS:/.test(pm) && /MRP\.spec_for\(key, v\)/.test(pm), 'the Word model walks BUILDS through spec_for');
+  const sh = fs.readFileSync(path.join(MAN, 'make_packets.sh'), 'utf8');
+  assert.ok(/want = \{build_name\(k, v\) for k, v in BUILDS\}/.test(sh) && /for k, v in BUILDS:/.test(sh), 'the render loop and the stale sweep walk BUILDS');
+});
+
+test('PK-7 (review PDFs, operator 2026-10-13): the full handbook and each reviewed chapter go out as PDFs printed from the HTML handbook — the digital design, a cover and linked contents, links in colour, bookmarks and page numbers; a chapter keeps only its own sections (driven in the DOM harness, PK-7 DOM); make_packets.sh builds them', () => {
+  const MAN = path.join(__dirname, '../../manual');
+  const py = fs.readFileSync(path.join(MAN, 'make_review_pdfs.py'), 'utf8');
+  assert.ok(/CHAPTERS = sorted\(\{"p10" if k == "denials" else k for k in KEYS\}/.test(py), 'one PDF per chapter a packet reviews (Denials reviews Chapter 10), derived from the packets');
+  assert.ok(/HTML = os\.path\.join\(MANUAL_OUT, BASE \+ "\.html"\)/.test(py) && !/soffice|render_docx|md2model/.test(py), 'printed from the built HTML handbook — not the Word file (operator: the Word PDFs did not match the digital design)');
+  assert.ok(/page\.evaluate\(CUT, \[part, DROP_FROM_FULL\]\)/.test(py) && /DROP_FROM_FULL = \["apd"\]/.test(py) && /replace\(', changelog and index', ' and index'\)/.test(py) && /page\.evaluate\("document\.body\.classList\.add\('print-doc'\)"\)/.test(py), 'a chapter is cut in the page — and the full handbook drops Appendix D, the changelog (operator 2026-10-14: only the owner uses it) — then the print-doc mode prints');
+  assert.ok(/page\.pdf\([^)]*outline=True[^)]*tagged=True[^)]*display_header_footer=True[^)]*footer_template=FOOTER\)/.test(py) && /class="pageNumber"/.test(py) && /class="totalPages"/.test(py),
+    'bookmarks (outline over a tagged PDF) and "Page N of M" on every page');
+  assert.ok(/Confidential — Internal Use Only/.test(py.slice(py.indexOf('FOOTER = '))), 'the footer carries what check_pdf.py treats as page chrome, so a blank page is still caught');
+  assert.ok(/check_pdf\.py/.test(py) && /\[None\] \+ CHAPTERS/.test(py), 'the full handbook ships too, and every PDF is checked for blank pages');
+  const fp = py.slice(py.indexOf('def fonts_through_proxy('), py.indexOf('\ndef print_pdf('));
+  assert.ok(/cafile=os\.environ\.get\("SSL_CERT_FILE"\)/.test(fp) && !/ignore_https_errors|CERT_NONE|check_hostname = False/.test(py), 'the web fonts are fetched through the proxy WITH certificate checks — never by switching them off');
+  // the print-doc mode in make_html.py
+  const mh = fs.readFileSync(path.join(MAN, 'make_html.py'), 'utf8');
+  assert.ok(/body:not\(\.print-sec,\.print-doc\) main > \*\{display:none!important\}/.test(mh),
+    'the cards-only print hides everything but the cards unless print-doc — ONE :not, so main > section.qrc still outranks it (two :nots printed one page for fifteen)');
+  assert.ok(/body\.print-doc main > #pdfdoc\{display:block!important\}/.test(mh) && /#pdfdoc\{display:none\}/.test(mh), 'the cover and contents print only in print-doc');
+  assert.ok(/body\.print-doc main > hr\{display:none!important\}/.test(mh) && /body\.print-doc main > h2\{border-top:1px solid var\(--rule\)/.test(mh), 'a section rule rides its heading — a rule alone landed on a blank page');
+  assert.ok(/body\.print-doc \.fig svg\{min-width:0!important;max-width:100%\}/.test(mh), 'a diagram fits the page instead of clipping at its screen min-width');
+  assert.ok(/body\.print-doc a\.xr\{color:var\(--accent\)/.test(mh) && /body:not\(\.print-doc\) a\.xr\{color:#000/.test(mh), 'links print in colour in the PDF, black on paper otherwise');
+  assert.ok(/data-part="\{p or ""\}"/.test(mh) && /href="#howto"/.test(mh) && /id="howto"/.test(mh), 'every contents row names its chapter, and the front-matter row links a heading that prints');
+  assert.ok(mh.indexOf('.replace("__PDFDOC__", PDFDOC).replace("__OWNER__"') > 0, 'the cover goes in before the owner and build date are filled, so it carries them');
+  const sh = fs.readFileSync(path.join(MAN, 'make_packets.sh'), 'utf8');
+  assert.ok(/python3 make_review_pdfs\.py/.test(sh), 'make_packets.sh builds the PDFs');
+});
+
+test('MRD-9 (the Phase 8 follow-on, 2026-10-12): a dark-mode printout draws the accent in each palette\'s LIGHT accent — the swatch tokens, whose dark copy is screen-only — for every palette the token file declares; printed cross-references use the deeper --accent-2', () => {
+  const { toks, blocks } = tokenBlocks();
+  const styles = fs.readFileSync(path.join(PA_WEB, 'styles.html'), 'utf8');
+  const pr = styles.slice(styles.indexOf('@media print {'));
+  // the dark swatch block is screen-only, so on paper --pal-<p>-accent is the light value
+  const scr = toks.indexOf('@media screen {\n    :root[data-mode="dark"], body[data-mode="dark"] {\n      --pal-console-paper');
+  assert.ok(scr > 0, 'the dark swatch redefinition sits inside @media screen');
+  assert.ok(!/\n  :root\[data-mode="dark"\], body\[data-mode="dark"\] \{\n    --pal-/.test(toks), 'and nowhere outside it');
+  const mix = (p) => '--accent: var(--pal-' + p + '-accent) !important;\n      --accent-2: color-mix(in oklab, var(--pal-' + p + '-accent), #000 20%) !important;';
+  assert.ok(pr.indexOf(':root[data-mode="dark"], body[data-mode="dark"] {\n      ' + mix('console')) >= 0, 'Console (and any unnamed palette) prints its light accent');
+  const pals = [...new Set(blocks.map((b) => b.palette))].filter((p) => p !== 'console');
+  assert.ok(pals.length >= 4, 'the palettes are derived from the token file (non-vacuous): ' + pals);
+  pals.forEach((p) => {
+    assert.ok(pr.indexOf(':root[data-mode="dark"][data-palette="' + p + '"], body[data-mode="dark"][data-palette="' + p + '"] {\n      ' + mix(p)) >= 0,
+      p + ': a dark-mode printout must point the accent at --pal-' + p + '-accent');
+    assert.ok(new RegExp('--pal-' + p + '-accent:\\s*#[0-9a-f]{6}').test(toks), p + ' has a swatch accent to point at');
+  });
+  assert.ok(/:root \.kb-article a\.kb-xref \{ color: var\(--accent-2\); \}/.test(pr), 'a printed cross-reference is the deeper accent');
+  assert.ok(!/#[0-9a-fA-F]{6}/.test(pr.slice(pr.indexOf('(6) — dark mode prints the LIGHT accent'), pr.indexOf(':root .kb-article a.kb-xref'))), 'rule (6) carries no hex of its own (only #000 for the mix)');
 });
 
 test('MRD-8 (manual reader design Phase 8): a diagram drawn twice keeps its markers (per-copy ids, driven over the real partial); the dark semantic and chapter colours are SCREEN-only and print forces the neutrals on body too; a chapter\'s card comes from the prefetched manual, open unless closed (umsKbPanel); a card prints as a card with its diagram on the reverse; the manual source and both print builds carry the card diagrams', () => {
@@ -35406,14 +35585,14 @@ test('MRD-3 (manual reader design Phase 3 + Phase 2\'s open items): no filled-ac
   vm.runInContext(/var KB_MANUAL_CHAPTER_ICONS = Object\.freeze\(\{[\s\S]*?\}\);/.exec(kb)[0], ctx);
   ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualChapterParts_', 'kbManualSplitTitle_', 'kbManualMastheadHtml_', 'kbManualMastCardHtml_', 'kbManualCardFor_'].forEach((n) => vm.runInContext(extractFnFrom(kb, n), ctx));
   const three = ctx.kbManualMastheadHtml_('Chapter 05 — Power Mobility', [{ id: 'man-5-1', title: '5.1 Scope', status: 'published' }, { id: 'man-5-2', title: '5.2 PAK <b>', status: 'published' }, { id: 'man-5-3', title: '5.3 New', status: 'draft' }]);
-  assert.ok(/Procedures manual · Chapter 05/.test(three) && />3 sections</.test(three) && /In this chapter/.test(three), 'kicker, count, index');
+  assert.ok(/Policies &amp; Procedures Handbook · Chapter 05/.test(three) && />3 sections</.test(three) && /In this chapter/.test(three), 'kicker, count, index');
   assert.strictEqual((three.match(/class="kb-man-ix"/g) || []).length, 3);
   assert.strictEqual((three.match(/onclick="kbOpenItem_\(this\.getAttribute\('data-kb-id'\)\)"/g) || []).length, 3, 'each row opens the section the ordinary way (a fresh start: the Back chip goes)');
   assert.ok(/5\.2<\/span><span class="kb-man-ix-t">PAK &lt;b&gt;/.test(three), 'number and title, escaped');
   assert.ok(/data-kb-ix-upd="man-5-2"/.test(three) && !/data-kb-ix-upd="man-5-3"/.test(three) && /kb-draft-pill/.test(three), 'a draft shows Draft, never Updated');
   const one = ctx.kbManualMastheadHtml_('Appendix A — Glossary', [{ id: 'man-a-1', title: 'Glossary', status: 'published' }]);
-  assert.ok(/Procedures manual · Appendix A/.test(one) && />1 section</.test(one) && !/In this chapter/.test(one) && !/kb-man-badge/.test(one), 'one section: no index; an appendix: no chapter badge');
-  assert.ok(/<div class="kb-man-mast-k">Procedures manual<\/div>/.test(ctx.kbManualMastheadHtml_('Billing', [])), 'any other department: no number');
+  assert.ok(/Policies &amp; Procedures Handbook · Appendix A/.test(one) && />1 section</.test(one) && !/In this chapter/.test(one) && !/kb-man-badge/.test(one), 'one section: no index; an appendix: no chapter badge');
+  assert.ok(/<div class="kb-man-mast-k">Policies &amp; Procedures Handbook<\/div>/.test(ctx.kbManualMastheadHtml_('Billing', [])), 'any other department: no number');
   // the skeleton is not a section: the spy, Print, the decorators and focus all ignore it
   const skel = extractFnFrom(kb, 'kbManualSkeletonHtml_');
   assert.ok(/kbManualMastheadHtml_\(dept, secs\)/.test(skel) && /kbManualMastheadHtml_\(part\.department, secs\)/.test(extractFnFrom(kb, 'kbManualPartHtml_')), 'ONE masthead renderer, so nothing jumps when the chapter lands');
@@ -35438,7 +35617,7 @@ test('MP1-6: department guides come from data/extracts.json — every guide a pa
   assert.deepStrictEqual(man.guides.map((g) => g.key).sort(), parts.filter((p) => !['p0', 'p1'].includes(p)).sort(), 'one guide per department part');
   assert.ok(bd.indexOf('MANIFEST = json.load(open("data/extracts.json"))') > 0, 'build.py reads the manifest');
   assert.ok(bd.indexOf('errors.append(f"extracts.json: ') > 0, 'and refuses a guide, chapter or section that does not exist');
-  assert.ok(bd.indexOf('body = localise_links(body)') > 0 && bd.indexOf('(in the full manual)') > 0, 'a link outside the guide becomes plain text that says where the section is');
+  assert.ok(bd.indexOf('body = localise_links(body)') > 0 && bd.indexOf('(in the full handbook)') > 0, 'a link outside the guide becomes plain text that says where the section is');
   assert.ok(bd.indexOf('len(part_keys) > 3') < 0, 'a four-part guide no longer carries every card (the old filter kept them all past three parts)');
 });
 
@@ -35526,13 +35705,13 @@ test('MP2-3: the app\'s copies ARE the source — the icon set holds each chapte
 test('MP2-4: the reader puts a chapter\'s badge and colour on its title and its icon in the tree — only for a "Chapter NN — " (or pre-renumber "Part NN — ") department, by its number, and never anything built from the name (driven)', () => {
   const ctx = vm.createContext({ String, Object, Number, KB_STATE: { isAdmin: false }, icon: (n, s) => '<i data-icon="' + n + '" data-s="' + s + '"></i>',
     esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
-    kbShiftHeadings_: (h) => h, kbMd_: (m) => m, kbManualFeedbackBarHtml_: () => '', kbBookmarkBtnHtml_: () => '', kbIsManualCard_: () => false });
+    kbShiftHeadings_: (h) => h, kbMd_: (m) => m, kbBookmarkBtnHtml_: () => '', kbIsManualCard_: () => false });
   vm.runInContext(/var KB_MANUAL_CHAPTER_ICONS = Object\.freeze\(\{[\s\S]*?\}\);/.exec(M1_KB_SRC)[0], ctx);
   ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualChapterParts_', 'kbManualSplitTitle_', 'kbManualBarHtml_', 'kbManualMastheadHtml_', 'kbManualMastCardHtml_', 'kbManualCardFor_', 'kbManualPartHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
   // since M9 (design handoff Phase 3) the chapter's title is the masthead's
   const head = (d) => /<header class="kb-man-mast[^"]*">[\s\S]*?<\/h2>/.exec(ctx.kbManualPartHtml_({ department: d, sections: [] }))[0];
   assert.strictEqual(head('Chapter 05 — Power Mobility'),
-    '<header class="kb-man-mast kb-man-p5"><div class="kb-man-mast-k">Procedures manual · Chapter 05</div><h2 class="kb-man-mast-h"><span class="kb-man-badge kb-man-p5" aria-hidden="true"><i data-icon="bolt" data-s="22"></i></span><span>Power Mobility</span></h2>');
+    '<header class="kb-man-mast kb-man-p5"><div class="kb-man-mast-k">Policies &amp; Procedures Handbook · Chapter 05</div><h2 class="kb-man-mast-h"><span class="kb-man-badge kb-man-p5" aria-hidden="true"><i data-icon="bolt" data-s="22"></i></span><span>Power Mobility</span></h2>');
   assert.ok(/kb-man-p4"[\s\S]*data-icon="clipboardList"/.test(head('Chapter 04 — Sales')), 'Sales is Chapter 4 since the October 2026 renumber');
   assert.ok(/kb-man-p10"[\s\S]*data-icon="dollar"/.test(head('Chapter 10 — Billing & Denials')), 'two digits read as one number');
   assert.ok(/kb-man-p10"[\s\S]*data-icon="dollar"/.test(head('Part 10 — Billing & Insurance')), 'a row imported before the renumber still reads by its number');

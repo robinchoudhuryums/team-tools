@@ -23,7 +23,7 @@ ROLE_BY_NAME = {r["role"]: r for r in ROSTER}
 _BUILD = open("build.py").read()
 OWNER = re.search(r'^OWNER = "([^"]+)"', _BUILD, re.M).group(1)
 VERSION = re.search(r'^VERSION = "([^"]+)"', _BUILD, re.M).group(1)
-FULL = os.path.basename(SRC).startswith("CSR-Procedures-Manual-")   # the full manual gets a cover and contents (A6)
+FULL = os.path.basename(SRC).startswith("Policies-and-Procedures-Handbook-")   # the full handbook gets a cover and contents (A6)
 
 
 def bookmark(anchor_id):

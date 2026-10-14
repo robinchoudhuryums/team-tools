@@ -9,7 +9,7 @@ import json, os, re
 from playwright.sync_api import sync_playwright
 
 OUT = os.environ.get("MANUAL_OUT", "dist")
-HTML = os.path.join(OUT, "CSR-Procedures-Manual-v3.0.html")
+HTML = os.path.join(OUT, "Policies-and-Procedures-Handbook-v3.0.html")
 IMG = os.path.join(OUT, "review-packets", "images")
 os.makedirs(IMG, exist_ok=True)
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the CSR Procedures Manual: unified volume + department extracts.
+"""Build the Policies & Procedures Handbook: unified volume + department extracts.
 
 Implements the Stage 0 build-time checks:
   FAIL  unresolvable cross-reference
@@ -401,13 +401,13 @@ def glossary_subset(part):
     return sum(1 for g in GLOSSARY if part in g["parts"] or "p0" in g["parts"])
 
 
-HOWTO = """## How to use this manual
+HOWTO = """## How to use this handbook
 
-This manual is a reference, built so you can find things three different ways.
+This handbook is a reference, built so you can find things three different ways.
 
 | When | Use |
 |---|---|
-| The phone rings and you don't know where the answer is | The **call router** — what the caller says, mapped to a section. In Reference press **Ctrl/⌘+K**; in this manual use **What did the caller say?** or section **1.1** |
+| The phone rings and you don't know where the answer is | The **call router** — what the caller says, mapped to a section. In Reference press **Ctrl/⌘+K**; in this handbook use **What did the caller say?** or section **1.1** |
 | You need to find a policy or term | **Search**, or the **index** |
 | You want the short version for a department | Its **quick reference card** |
 
@@ -419,7 +419,7 @@ This manual is a reference, built so you can find things three different ways.
    that are hard for reasons other than complexity
 4. **Your own department's chapter**
 
-### How the manual is organised
+### How the handbook is organised
 
 | | |
 |---|---|
@@ -428,7 +428,7 @@ This manual is a reference, built so you can find things three different ways.
 | **Chapter 10** | Billing & Denials. Its first half is what you use on a call; the second half is reference |
 | **Appendices** | Glossary, escalation directory, quick reference cards, changelog and index |
 
-### Reading the manual
+### Reading the handbook
 
 **Section numbers, not page numbers.** Every section has a number such as **5.6.3** — chapter 5,
 section 6, subsection 3. Use these when asking a question or citing a procedure; page numbers
@@ -453,7 +453,7 @@ explicitly that it is overriding.
 
 
 # ---------------------------------------------------- department guides ---
-# data/extracts.json says what each department guide carries; the master manual is
+# data/extracts.json says what each department guide carries; the master handbook is
 # the one source and a guide is a filtered copy of it (operator 2026-10-06).
 MANIFEST = json.load(open("data/extracts.json"))
 for g in MANIFEST["guides"]:
@@ -501,12 +501,12 @@ def localise_links(body):
     def fix(m):
         if m.group(1).startswith("role-") or m.group(1) in present:
             return m.group(0)
-        return f"{m.group(2)} (in the full manual)"
+        return f"{m.group(2)} (in the full handbook)"
     return re.sub(r'<a class="xr" href="#([\w\-.]+)">(.*?)</a>', fix, body)
 
 
 def assemble(name, part_keys, title, banner=None, guide=None):
-    chunks = [f"# CSR Procedures Manual{' — ' + title if guide else ''}", ""]
+    chunks = [f"# Policies & Procedures Handbook{' — ' + title if guide else ''}", ""]
     if banner:
         chunks += [f"> {banner}", ""]
     body_parts = []
@@ -519,8 +519,8 @@ def assemble(name, part_keys, title, banner=None, guide=None):
     if guide and guide.get("sections"):
         extra = "\n\n".join(section_text(s) for s in guide["sections"])
         body_parts.append("\n---\n\n# Related sections from other chapters\n\n"
-                          "> These sections belong to other chapters of the manual and are carried here "
-                          "because this department uses them. Their numbers are the full manual's.\n\n"
+                          "> These sections belong to other chapters of the handbook and are carried here "
+                          "because this department uses them. Their numbers are the full handbook's.\n\n"
                           + resolve_refs(extra, guide["key"]))
     allowed = {k[1:] for k in part_keys}
     for k in ("appx_a", "appx_b"):
@@ -560,16 +560,16 @@ def assemble(name, part_keys, title, banner=None, guide=None):
 
 
 sizes = {}
-sizes["CSR-Procedures-Manual-" + VERSION] = assemble(
-    "CSR-Procedures-Manual-" + VERSION, list(PARTS), "Unified", None)
+sizes["Policies-and-Procedures-Handbook-" + VERSION] = assemble(
+    "Policies-and-Procedures-Handbook-" + VERSION, list(PARTS), "Unified", None)
 for g in MANIFEST["guides"]:
     p = g["key"]
     keys = [k for k in PARTS if k in set(MANIFEST["default_chapters"]) | {p} | set(g.get("chapters", []))]
     g = dict(g, cards=g.get("cards") or keys)
-    n = f"CSR-Procedures-Chapter-{p[1:]}-{PARTS[p][0].replace(' & ', '-and-').replace(' ', '-')}-{VERSION}"
+    n = f"Policies-and-Procedures-Chapter-{p[1:]}-{PARTS[p][0].replace(' & ', '-and-').replace(' ', '-')}-{VERSION}"
     parts_txt = ", ".join(k[1:] for k in keys[:-1]) + " and " + keys[-1][1:]
     sizes[n] = assemble(n, keys, PARTS[p][0],
-        f"Department guide generated from the CSR Procedures Manual {VERSION} (built {BUILT}) — "
+        f"Department guide generated from the Policies & Procedures Handbook {VERSION} (built {BUILT}) — "
         f"Chapters {parts_txt}" + (" plus related sections" if g.get("sections") else "") + ". "
         "This is a generated copy. Do not edit; submit changes to the Customer Service Manager.",
         guide=g)

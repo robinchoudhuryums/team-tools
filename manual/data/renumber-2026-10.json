@@ -1,5 +1,5 @@
 {
-  "_about": "The October 2026 renumber (manual-update Phase 4, operator-approved 2026-10-07): new section -> the number it had before. Sales became Chapter 4 (taking Power's 4.2 as 4.4), Parts 4-8 became Chapters 5-9, every gap closed, Billing's 10.2 became 10.1 and 10.B became 10.A, and the cards follow the chapters. make_html.py adds each old number to the HTML search ('formerly 9.4'). Never edited after the renumber.",
+  "_about": "The October 2026 renumber (manual-update Phase 4, operator-approved 2026-10-07): new section -> the number it had before. Sales became Chapter 4 (taking Power's 4.2 as 4.4), Parts 4-8 became Chapters 5-9, every gap closed, Billing's 10.2 became 10.1 and 10.B became 10.A, and the cards follow the chapters. make_html.py adds each old number to the HTML search ('formerly 9.4'). Edited once since: on 2026-10-12 §6-14 Freight deliveries folded into §6-3, so Oximetry, FAQ and Additional resources became §6-14–§6-16 and their entries moved with them.",
   "formerly": {
     "§1-6": "§1-7",
     "§1-6.1": "§1-7.1",
@@ -117,10 +117,9 @@
     "§6-11": "§5-11",
     "§6-12": "§5-12",
     "§6-13": "§5-13",
-    "§6-14": "§5-14",
-    "§6-15": "§5-15",
-    "§6-16": "§5-16",
-    "§6-17": "§5-17",
+    "§6-14": "§5-15",
+    "§6-15": "§5-16",
+    "§6-16": "§5-17",
     "§6-2": "§5-2",
     "§6-3": "§5-3",
     "§6-4": "§5-4",

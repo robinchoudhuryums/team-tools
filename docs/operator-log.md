@@ -10,6 +10,300 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-14 — the reviewers' full handbook PDF leaves out the changelog
+
+**Adds NO operator state.** Rebuild with `./make_packets.sh`. The full handbook
+PDF in `review-packets/pdf/` no longer carries Appendix D (the changelog, about
+14 pages) — it is only useful to the owner; its contents row goes too, and the
+front page lists the appendices without it. The HTML handbook, the Word file and
+the app keep the changelog. The chapter PDFs never had it.
+
+## 2026-10-13 — the Policies & Procedures Handbook, and PDFs in its digital design
+
+**Operator actions:** deploy the web app (the Reference reader's labels changed),
+then **re-import** `manual.json` from a fresh `./make_all.sh` and publish — the
+section titles "How to use this handbook" and "A.1 Handbook terms" changed.
+- **The name.** "CSR Procedures Manual" is now **Policies & Procedures Handbook**
+  everywhere a reader sees it: the Word and PDF covers and page headers, the HTML
+  handbook's title and sidebar, the department guides' banner, the built file
+  names (`Policies-and-Procedures-Handbook-v3.0.*`,
+  `Policies-and-Procedures-Chapter-N-…`), and the app's reader (its home, chapter
+  masthead, tree heading, version line, What's new and the admin's Handbook
+  button). The handbook's own text says "this handbook" where it meant itself;
+  "Manual Mobility" and manual wheelchairs are untouched.
+  The review packets follow: their excerpts are headed "From the handbook", and
+  two questions that said "the manual says" now say "the handbook says".
+  The PDF and Word covers no longer show "Version v3.0 · Built (date)" (the
+  owner and the classification stay), and the PDF footers, the Word page header
+  and the PDF title drop "v3.0" too. The built file names still carry v3.0.
+- **The review PDFs** are now printed from the HTML handbook (Chromium), so they
+  match the digital design, with a cover, a linked contents page and page
+  numbers; links and bookmarks work as before. The Word file and its
+  LibreOffice PDF are unchanged in design.
+
+## 2026-10-13 — one packet for Ozaire, and PDFs to send with the packets
+
+**Adds NO operator state.** Run `./make_packets.sh` after `./make_all.sh` as before.
+- **Ozaire Hawa** gets ONE packet, `Review-Packet-C5-C6-Ozaire-Hawa`: his Power
+  questions, then his Field Ops questions, numbered straight through, and ONE
+  closing "Anything else?" covering both chapters (with both chapters' resource
+  lists). The two separate files are gone.
+- **`review-packets/pdf/`** now holds the full manual's PDF and one PDF per
+  reviewed chapter (2, 3, 4, 5, 6, 7 and 10), to send with each packet. Section
+  numbers, the contents and web addresses are clickable, and the headings are
+  the PDF's bookmarks; in a chapter PDF a section from another chapter reads
+  "(in the full manual)" instead of a link to nowhere. Which to send:
+  - each chapter packet → its chapter's PDF (Denials → Chapter 10);
+  - April → Chapter 4; Mahesh → Chapter 6; Ozaire → Chapters 5 and 6;
+  - everyone → the full manual PDF.
+- The PDFs need LibreOffice (`soffice`, with Writer). Without it the step says
+  so and makes nothing; export the Word files from Word or Google Docs instead.
+
+## 2026-10-12 — overridden orders, OON w/ PA and TRY
+
+**Adds NO operator state.** Rebuild the packets.
+- **Manual Mobility:** a new open question 9 — when an order is "overridden"
+  (delivered, e.g. to a facility, before the authorization is in, with Intake
+  finishing the paperwork afterwards), how a CSR should read its notes, and
+  whether it is allowed for a Medicare patient. Later questions renumber.
+- **Field Ops:** the same question folded into question 6 (facility
+  deliveries), so Ozaire's and Mahesh's packets carry it too. The automated
+  texts, failed attempts and power wheelchair pick-up questions were already in
+  the packet (questions 8 and 1).
+- **Sales:** "OON w/ PA", similar conditions and "TRY" folded into the Payor
+  Acceptance sheet question (8, ◆), so April's packet carries them.
+
+## 2026-10-12 — the Power Roster sheet is a link
+
+**Adds NO operator state.** The Power packet's directory question now links the
+live Power Roster Google Sheet (a clickable link in the Word file) instead of
+asking you to paste the sheet in before sending — nothing to do by hand. The
+link lives in `manual/packets/spec.json`; if the sheet moves, change it there
+and rebuild.
+
+## 2026-10-12 — a packet per recipient
+
+**Adds NO operator state.** `./make_packets.sh` now also writes one packet for
+each recipient who has questions flagged for them (`recipients` in
+`manual/packets/spec.json`); everyone else uses the chapter's packet as before.
+- `Review-Packet-C4-Sales-April-Arredondo` — the three ◆ questions.
+- `Review-Packet-C5-Power-Mobility-Ozaire-Hawa` — the two ◆ questions.
+- `Review-Packet-C6-Field-Operations-Ozaire-Hawa` — the five ◆ questions.
+- Each of those three still ends on the chapter's open "Anything else?"
+  question (operator, same day).
+- `Review-Packet-C6-Field-Operations-Mahesh-Patel` — the Field Ops packet
+  without the ▲ after-hours questions, which are Parth Shah's.
+- **Everyone else uses the chapter packet:** Parth Shah (the full Field Ops
+  packet, ▲ included), Mary Carson, Rajdeep Thakar, Erica Thongvan, Ahmed
+  Ramadan, Hem, Kajal, Parth Dave, Nikunj Solanki, Arnav Pan, Bhoj Bhatt and
+  Monil Shah — no questions are flagged for anyone in particular there.
+- A recipient's packet renumbers its questions and shows each manual excerpt
+  once within itself, so a question never points at one the reader does not
+  have.
+
+## 2026-10-12 — packet excerpts trimmed
+
+**Adds NO operator state.** Rebuild the packets. Excerpts that did not help their
+question were cut to the one table row it is about, or dropped: Resupply's 3.1
+(the out-of-pocket row), 3.13 (the oximetry row) and 10.10 (the coinsurance
+row); Power's 10.10 (the coinsurance row); Billing's 8.4.1 and 3.7.4 (dropped),
+7.3.1 (the oxygen row) and 5.8.1 (the rent-to-own row); Field Ops' 9.3 (the
+power wheelchair row); Denials' 10.8 (dropped). About 14.5k characters, ~8%.
+
+## 2026-10-12 — packet questions consolidated
+
+**Adds NO operator state.** Rebuild the packets (`./make_packets.sh`) and
+re-share every packet except Denials. No manual text changed; every ask is
+kept, merged under fewer headings, so a merged statement's single "Correct, or
+needs change?" line covers several facts.
+- **Question counts:** Field Operations 25 → 17, Power 24 → 16, Billing 23 → 16,
+  Respiratory & Resupply 21 → 12, Service 18 → 12, Manual Mobility 16 → 12,
+  Sales 14 → 9; Denials unchanged.
+- **Every packet's Resources question rides its "Anything else?"**
+- **Power:** the directory question and the Power Roster sheet are one question;
+  the paste slot now sits under the directory rows.
+- The cross-packet repeats (coinsurance threshold, a new PMD within 5 years,
+  bed relocation) stay as they were.
+
+## 2026-10-12 — Billing and Denials packet changes
+
+**Adds NO operator state.** Rebuild the packets (`./make_packets.sh`) and
+re-share the Billing and Denials packets. No manual text changed: the
+children's-adherence question existed only in the packet (the manual never
+mentioned pediatric adherence), and the manual already says to dial the Denials
+Q when the case's member is unavailable.
+- **Billing:** the three oxygen questions (billing, after month 36, restart) are
+  ONE question (Q2); sales tax on out-of-pocket orders is now a plain question
+  with no tables; the upgrade fee question shows the three rules, the diagram
+  and the waiver matrix instead of the fee table; the Texas Medicaid CPAP
+  question no longer asks about children's adherence; removed "what CSRs can
+  and can't promise", E0431 cylinders, the upgrade fee sheet and the new PMD
+  within 5 years; new questions on the billing types and their products (10.2)
+  and geographic rate variation (10.12.7); the rentals question now asks about
+  the 10.14 lifecycle table, and the cost estimates question about the 10.16
+  billing scenarios table (both were already quoted).
+- **Denials:** Q1 now ends "If that member is unavailable, dial the Denials Q";
+  removed the Claim Prep, denials-and-appeals and prior-authorization questions;
+  new question on when Denials must send another PAR for an order already
+  delivered.
+
+## 2026-10-12 — the After Hours packet is dissolved
+
+**Adds NO operator state.** Rebuild the packets (`./make_packets.sh`; the build
+deletes the old `Review-Packet-C9-After-Hours` files) and re-share the Field
+Operations packet. No manual text changed.
+- **Chapter 9 is reviewed by the CSR manager**; Shagun Shastri is no longer a
+  recipient.
+- **Field Operations questions 19–23, marked ▲ for Parth Shah:** dispatch and
+  response targets, the on-call team, power wheelchairs after hours, the
+  escalation chain (now including the 30-minute wait per step, formerly its own
+  question), and phone-first troubleshooting. The packet's "Anything else?" also
+  asks what a CSR should have ready before transferring to after hours.
+
+## 2026-10-12 — the Oxygen packet is dissolved
+
+**Adds NO operator state.** Rebuild the packets (`./make_packets.sh`); the build
+now deletes the old `Review-Packet-C8-Oxygen` files from the output folder.
+Re-share the Service and Billing packets. No manual text changed.
+- **Chapter 8 is reviewed by the CSR manager**, so it has no packet.
+- **Billing:** the oxygen billing question now includes the $320 out-of-pocket
+  conserver (ABN first) and quotes 8.5.3; the oxygen restart question now also
+  covers the restart rules (breaks in need, what restarts the 36 months,
+  replacement after five years).
+- **Service:** concentrator servicing (the troubleshooting flowchart, weekly
+  filter cleaning, the 6-monthly maintenance visit) is question 12, with the
+  flowchart, just before "Troubleshooting guides".
+- **Dropped:** cylinder durations (confirmed by the CSR manager) and Chapter 8's
+  Resources / Anything else.
+
+## 2026-10-12 — Field Ops and Service packet changes
+
+**Adds NO operator state.** Rebuild the packets (`./make_packets.sh`) and
+re-share the Field Operations and Service packets. No manual text changed.
+- **Field Operations:** removed the Purchase Capped Rental Form and oximetry
+  questions (the previous Q10 and Q12); the supplies-shipping question asks how
+  the extra cost of overnight or expedited shipping is worked out; the
+  patient-responsibility question now also asks whether the 6.3 "verified via
+  documentation" row is right and whether a PMD delivery date in the TRX still
+  differs by a few days by route (◆), and sits right after the routing question
+  that shows 6.3; new questions — whether a PWC pick-up can be undone (◆), every
+  situation that sends the patient an automated text or email, and how many
+  failed contact or delivery attempts close an order.
+- **Service:** removed the PMD-problems and ventilator questions (the previous
+  Q4 and Q7); the loaner question asks in what scenarios a loaner is provided;
+  new question on when we most commonly can't service and which of those can be
+  done out of pocket, followed by the reworded "can no longer service" question
+  (patients often call back because the suggested company couldn't help — when
+  are the references likely to help?); "delivered but not received" now follows
+  the routing question that shows 7.2.
+- **Every packet:** a question that cites rows of a section another question
+  already showed in full now points back to it too, so no manual text appears
+  twice in any packet.
+
+## 2026-10-12 — Power packet changes; Hem holds the PT Evaluation Team row
+
+**Adds NO operator state.** Two releases:
+1. **Manual release** (`./make_all.sh` → Import → Publish): Appendix B's
+   directory names **Hem** as the PT Evaluation Team holder (the backup is
+   marked unconfirmed). Nothing else in the manual changed.
+2. **Packets** (`./make_packets.sh`): re-share the Power packet. **Before
+   sending, paste the current Power Roster sheet into question 22** — the slot is
+   marked; the sheet lives in the org Drive, which this build cannot read.
+- **Recipients:** Hem (PT Evaluation) and Kajal added (add Kajal's role to the
+  `head` line in `manual/packets/spec.json` when known).
+- **Removed:** "Medicare Advantage is primary" and "Equipment answers" (the
+  previous Q7–8).
+- **Changed:** PT and ATP evaluations now ask when each is an insurance
+  requirement and when a UMS preference; virtual ATP scheduling asks who books
+  them now (likely no longer Erica Thongvan), and the ATP scheduling statement
+  no longer names her; dual submission asks whether the two go in together, by
+  case, or staggered on purpose; the PT/OT referral question asks how the team
+  handles the gap and whether the PAK documents tell the MDO what to do; the
+  standard vs complex rehab question is now PMD types (standard vs CRT, SPO vs
+  MPO, and others).
+- **New:** each role's daily tasks and responsibilities; the 3-day re-fax rule
+  of thumb; when a virtual PT Eval or ATP visit is permissible; how long an
+  appeal stays possible; out-of-pocket accessory requests and which accessories
+  insurance can cover (◆ for Field Ops-Power); the Power Roster sheet.
+- **Order:** the questions follow the Power process — overview, PAK,
+  Qualifications, PT and ATP, authorization and appeals, timelines and
+  equipment, then directory, roster, Resources and Anything else.
+
+## 2026-10-12 — Resupply, Sales and Field Ops packet changes
+
+**Adds NO operator state.** Rebuild the packets (`./make_packets.sh` after
+`./make_all.sh`) and re-share the Respiratory & Resupply, Sales and Field
+Operations packets. No manual text changed.
+- **Respiratory & Resupply:** Q11 (oximetry) now asks "What is the test
+  process?"; the CPAP vs APAP question asks whether the same documents justify
+  either one interchangeably; the portable-oxygen-concentrator question moved to
+  the Field Ops packet (Field Ops procures equipment); five new open questions —
+  picking up a respiratory machine without a discontinuation prescription, what
+  the Resupply Q does when a category owner is unavailable, retiring an older
+  model when a newer one is stocked, a first-time PAP user's mask trial or
+  change, and back-up units for every ventilator patient.
+- **Sales:** the Eligibility Status question (now Q5) shows its diagram; the one-year PPD question
+  also asks for any other case where Sales opens a new order on a patient with an
+  existing PMD order; the PAP Q / Sales MWC Q question is gone; two new questions
+  — how reps answer cost and model questions, and (for Sales Eligibility) what a
+  "No" for POV on the Payor Acceptance sheet means.
+- **Every packet:** an open question that cites a section another question
+  already quoted now points back to it ("shown with question N") instead of
+  repeating the text — the same rule closed questions already followed, in the
+  Markdown and the Word copy alike — so some packets are shorter.
+- **Questions reordered (operator: no excerpt repeated, rearrange if needed):**
+  a follow-up question now sits directly after the question that shows its
+  section, so "shown with question N" always means the one just above. This
+  renumbers the Manual Mobility, Respiratory & Resupply, Sales, Power, Service,
+  After Hours and Billing packets (Resources and Anything else stay last); Field
+  Operations, Oxygen and Denials keep their order. Re-share from the rebuilt
+  packets rather than mapping old question numbers.
+
+## 2026-10-12 — manual and packet corrections; feedback moves into the reader bar
+
+**Adds NO operator state.** Three releases, in this order:
+1. **App deploy** (`clasp push -f` + New version) — for the reader bar.
+2. **Manual release:** `./make_all.sh` → Reference → Manual → Choose File →
+   `manual.json` → Check → Import → Publish. The changed sections come up (2.8,
+   3.1, 3.7, 3.13, 5.2, 5.9, 6.1, 6.3 and 6.14–6.16). **§6-14 Freight deliveries
+   was folded into 6.3**, so Oximetry, FAQ and Additional resources are now
+   6.14–6.16 and the old `man-6-17` is gone: tick "remove sections no longer in
+   the manual" when the Check offers it. No diagram changed.
+3. **Packets:** `./make_packets.sh` after `./make_all.sh`.
+- **Manual (operator list):** 2.8.4 BPM and 2.8.5 Heel protector are one
+  sub-section, **2.8.4 Other medical devices**; 3.7 shows a "Photo to come"
+  placeholder for the APAP and heated PAP tubing (replace the image in
+  `manual/data/` when the photos exist); 3.1 notes that a patient with several
+  respiratory machines can mix them up — ask the caller to describe it; the
+  Resupply FAQ answers "more supplies than insurance allows" (out of pocket);
+  5.2.2 is **Medical Assistant (MA) Education**, and the glossary's MA entry names
+  that one exception; 5.9.2 no longer says full dimensions are in the Item
+  Master; 6.1.2 is **Intake, Field Ops or Service?** with a first row for an
+  unauthorized order (Intake); the Irving office's freight hours moved into 6.3's
+  freight row.
+- **Reference reader:** sections no longer end in a "Was this helpful?" row.
+  Helpful, Not helpful and Suggest an edit sit in the reader bar beside Bookmark
+  and Print, for the section in view; votes and suggestions are still per
+  section, and a section already rated this session shows the vote pressed. On a
+  phone or in the pop-out the bar's buttons take a second row.
+- **Manual Mobility packet:** Q3 now carries the waiver rules, the diagram and the
+  matrix; four new open questions — wheelchair cushions, "upright walker"
+  referrals, knee walkers and VGM Homelink, the Hoyer lift delivery radius.
+
+## 2026-10-12 — dark-mode print accent; review packets answer on a line
+
+**Adds NO operator state.** Deploy as usual (`clasp push -f` + New version) for
+the print fix; rebuild the packets (`./make_packets.sh` after `./make_all.sh`)
+for the new answer line.
+- **Dark-mode printing, the last piece:** links and accent-coloured text in a
+  printout made from dark mode now print in the palette's normal (light-mode)
+  accent instead of its pale dark-mode one; a manual cross-reference prints in
+  the deeper accent in either mode, about 7:1 on white in every palette.
+  Nothing changes on screen.
+- **Review packets:** a question is answered on a fill-in line — "Correct, or
+  needs change? ____" — instead of two checkboxes, so a reviewer can type the
+  answer straight into the Google Doc.
+
 ## 2026-10-09 — manual reader design, Phase 8 (quick cards, card print, dark-mode print)
 
 **Adds NO operator state.** Two releases, in this order:
