@@ -2632,8 +2632,11 @@ function enterCallNotesHistoryView(area) {
     cnLoadDateRange_(start, end, function () {
       if (currentView !== reqV) return;
       cnRenderHistoryStack_();   // stack + summary only — never re-wires the date inputs
-      if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false);
-    });
+    }, { always: function () {
+      // F39: only History's own pill — another view's pill shares the id, and
+      // leaving History already removed this one with #view-area's content.
+      if (currentView === reqV && typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false);
+    } });
     return;
   }
   renderLoading(area, 'Loading history…', 'list');
@@ -2823,13 +2826,20 @@ function cnHistorySpanDays_(startDate, endDate) {
   return Math.round((new Date(endDate + 'T00:00:00Z') - new Date(startDate + 'T00:00:00Z')) / 86400000);
 }
 
-function cnLoadDateRange_(startDate, endDate, then) {
+function cnLoadDateRange_(startDate, endDate, then, opts) {
   const requestedView = currentView;
   const isSingleDate = startDate === endDate;
+  // F39 (cycle 25): `opts.always` runs however the load settles — success, a
+  // failure, a response dropped because the rep has since picked another range
+  // (where `then` never runs), or a view left. The History refresh's
+  // "Refreshing…" pill rode `then` alone, so a range change mid-refresh left it
+  // up for the rest of the visit.
+  const always = function () { if (opts && typeof opts.always === 'function') { try { opts.always(); } catch (e) {} } };
   CN_STATE.historyRangeRefused = '';
   if (cnHistorySpanDays_(startDate, endDate) > CN_HISTORY_MAX_SPAN_DAYS) {
     CN_STATE.historyRangeRefused = 'History shows up to ' + CN_HISTORY_MAX_SPAN_DAYS +
       ' days at a time — narrow the range.';
+    always();
     if (then) then();
     return;
   }
@@ -2847,6 +2857,7 @@ function cnLoadDateRange_(startDate, endDate, then) {
   }
   rpc(
     function (res) {
+      always();
       // F(cycle-8 M-8): drop a response whose RANGE the rep has since moved
       // off (the preset buttons make rapid changes realistic — a slow
       // "Last 30" response used to land after a fast "Yesterday" one and
@@ -2885,6 +2896,7 @@ function cnLoadDateRange_(startDate, endDate, then) {
       if (then) then();
     },
     function (err) {
+      always();
       // C17-5 — mirror of cnLoadToday_'s failure posture.
       CN_STATE.historyLoadFailed = true;
       CN_STATE.historyEntry = null;
@@ -3144,10 +3156,10 @@ function cnRenderActiveForm_() {
         <div class="rail-card" id="cn-save-card">
           <h4><span>Save the note</span><span class="sub">${esc(mod)}⇧C saves</span>
             <button type="button" class="cn-save-collapse" title="Collapse / expand actions"
-                    aria-label="Collapse or expand the save actions"
-                    onclick="document.getElementById('cn-save-card').classList.toggle('collapsed')">${icon('chevronDown', 14)}</button>
+                    aria-label="Save actions" aria-expanded="true" aria-controls="cn-save-actions"
+                    onclick="cnToggleSaveCard_(this)">${icon('chevronDown', 14)}</button>
           </h4>
-          <div class="rail-actions">
+          <div class="rail-actions" id="cn-save-actions">
             <button type="button" class="cn-action-prime" id="cn-form-submit" title="Save the note and copy to clipboard for the CRM (${esc(mod)}+Shift+C)">
               <span>Save &amp; Copy</span><span class="kbd-chip">${esc(mod)}⇧C</span>
             </button>
@@ -6363,14 +6375,22 @@ function cnLoadTrainingQA_() {
   var requestedView = currentView;
   google.script.run
     .withSuccessHandler(function (res) {
+      // F40 (cycle 25): a failed read is said, never an empty tray — an empty
+      // tray reads as "no manager has answered", which may be untrue (g53). The
+      // last answers read stay on screen; the next Log visit asks again.
       if (res && !res.error) {
         CN_STATE.trainingQA = res.notes || [];
+        CN_STATE.trainingQAError = '';
+      } else {
+        CN_STATE.trainingQAError = (res && res.error) || 'unknown error';
       }
       if (currentView !== requestedView) return;
       cnRenderTrainingQATray_();
     })
-    .withFailureHandler(function () {
-      // Silent failure — tray stays empty
+    .withFailureHandler(function (err) {
+      CN_STATE.trainingQAError = (err && err.message) || 'unknown error';   // F40
+      if (currentView !== requestedView) return;
+      cnRenderTrainingQATray_();
     })
     .getMyTrainingQA();
 }
@@ -6413,7 +6433,10 @@ function cnRenderTrainingQATray_() {
   const host = document.getElementById('cn-training-qa-tray');
   if (!host) return;
   const qa = CN_STATE.trainingQA || [];
-  if (qa.length === 0) { host.innerHTML = ''; return; }
+  const failed = CN_STATE.trainingQAError
+    ? errorStateHtml_('Training answers could not be loaded — ' + CN_STATE.trainingQAError + '. They load again when you next open the Log.')
+    : '';
+  if (qa.length === 0) { host.innerHTML = failed; return; }
   const cards = qa.map(function (n) {
     const time = cnFormatTimestampForCopy_(n.timestamp);
     const question = (n.subformData && n.subformData.trainingQuestion) || '';
@@ -6431,7 +6454,7 @@ function cnRenderTrainingQATray_() {
   host.innerHTML =
     // A1 + A11: keyboard-reachable disclosure with its open state exposed.
     `<button type="button" class="cn-qa-label" aria-expanded="true" aria-controls="cn-qa-cards" onclick="cnToggleQaTray_(this)">${icon('bulb', 11)}<span>Training Answers · ${qa.length}</span> ${icon('chevronDown', 10)}</button>` +
-    `<div class="cn-qa-cards" id="cn-qa-cards">${cards}</div>`;
+    `<div class="cn-qa-cards" id="cn-qa-cards">${cards}</div>` + failed;
 }
 
 function cnToggleResolved_(noteId) {
@@ -6724,7 +6747,9 @@ function cnCloseComposerModal_() {
   }
   CN_STATE.composer = null;
   const overlay = document.getElementById('cn-compose-overlay');
+  const back = overlay && overlay._restoreFocus;
   if (overlay) overlay.remove();
+  cnComposerReturnFocus_(back);   // F40 (cycle 25)
   // Operator feedback (2026-06-12 r3): closing a Save&Compose-opened
   // composer WITHOUT sending rolls the whole action back — the just-saved
   // note is deleted (server 5-min window covers it) and the text is still
@@ -6732,6 +6757,31 @@ function cnCloseComposerModal_() {
   // so this only fires on a genuine cancel/Esc — and only for a flow THIS
   // composer owns (a tab switch hands it to the other one first, C4).
   if (cnComposeFlowOwnedBy_('dept')) cnRollbackComposeFlow_();
+}
+
+/** F40 (cycle 25) — the save card's collapse button says whether the actions
+ *  are shown (`aria-expanded`); a screen reader heard only "Collapse or expand
+ *  the save actions", with no state either way. */
+function cnToggleSaveCard_(btn) {
+  var card = document.getElementById('cn-save-card'); if (!card) return;
+  var collapsed = card.classList.toggle('collapsed');
+  if (btn) btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+}
+/** F40 (cycle 25) — hand focus back to what opened a composer. closeOverlay
+ *  does this for Escape, the backdrop and Cancel, but a composer also closes
+ *  ITSELF — after a send, or as the loading stub gives way — through its hook,
+ *  and focus was then left on <body>. Deferred one tick, because a send
+ *  re-renders the Log right after the close (the trigger is found again by id
+ *  if it was rebuilt). Never steals focus: not while another dialog is open
+ *  (a switch to the other composer), nor when focus already sits somewhere real. */
+function cnComposerReturnFocus_(back) {
+  setTimeout(function () {
+    if (document.querySelector('.overlay.open')) return;
+    var ae = document.activeElement;
+    if (ae && ae !== document.body && ae.isConnected) return;
+    if (back && !back.isConnected && back.id) back = document.getElementById(back.id);
+    if (back && back.isConnected) { try { back.focus(); } catch (e) {} }
+  }, 0);
 }
 
 /** C4 — which composer the Save & Compose transaction currently rides. A flow
@@ -8002,10 +8052,15 @@ function cnRenderHistoryStack_() {
     });
     groups.sort(function (a, b) { return b.localeCompare(a); });
     var html = '';
+    // F40 (cycle 25): a group the rep collapsed stays collapsed through a
+    // re-render (a refresh, an edit, a flag) for the rest of the visit — every
+    // repaint used to open them all again. Session memory, not a stored setting.
+    var shut = CN_STATE.histCollapsed || {};
     groups.forEach(function (d) {
       var gnotes = groupMap[d];
-      html += '<div class="cn-hist-group" data-hgdate="' + esc(d) + '">' +
-        '<button class="cn-hist-grouphead" onclick="cnToggleHistGroup_(this)" aria-expanded="true">' +
+      var closed = !!shut[d];
+      html += '<div class="cn-hist-group' + (closed ? ' collapsed' : '') + '" data-hgdate="' + esc(d) + '">' +
+        '<button class="cn-hist-grouphead" onclick="cnToggleHistGroup_(this)" aria-expanded="' + (closed ? 'false' : 'true') + '">' +
           '<span class="cn-hg-caret">' + icon('chevronDown', 14) + '</span>' +
           '<span class="cn-hg-date">' + esc(cnFormatDateLabel_(d)) + '</span>' +
           '<span class="cn-hg-count">' + gnotes.length + ' note' + (gnotes.length !== 1 ? 's' : '') + '</span>' +
@@ -8054,6 +8109,9 @@ function cnToggleHistGroup_(btn) {
   if (!group) return;
   var collapsed = group.classList.toggle('collapsed');
   btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+  var d = group.getAttribute('data-hgdate');   // F40: remembered for the next render
+  CN_STATE.histCollapsed = CN_STATE.histCollapsed || {};
+  if (collapsed) CN_STATE.histCollapsed[d] = true; else delete CN_STATE.histCollapsed[d];
 }
 
 function cnFormatDateLabel_(isoDate) {
@@ -8245,6 +8303,11 @@ function cnSetSearchField_(f) {
 
 function cnFireSearch_() {
   const q = String(CN_STATE.searchQuery || '').trim();
+  // F36 (cycle 25): the guard is the REQUEST, not the query text. Every scope
+  // change (field tab, date range, archive box, exact mode) fires a new search,
+  // and only the latest may paint — matching the query alone let a slower
+  // answer for the old field, range or archive scope paint under the new one.
+  const seq = CN_STATE.searchSeq = (CN_STATE.searchSeq || 0) + 1;
   if (q.length < 2) {
     CN_STATE.searchResults = [];
     cnRenderSearchResults_();
@@ -8258,6 +8321,7 @@ function cnFireSearch_() {
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requestedView) return;
+      if (seq !== CN_STATE.searchSeq) return;   // F36: a later search (any scope) owns the results
       // F(M-5): compare trimmed-to-trimmed — requestedQuery is the TRIMMED q
       // but the state holds the raw input, so a query with surrounding
       // whitespace (a pasted TRX/phone) fetched results and discarded them.
@@ -8276,6 +8340,7 @@ function cnFireSearch_() {
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
+      if (seq !== CN_STATE.searchSeq) return;   // F36
       if (String(CN_STATE.searchQuery || '').trim() !== requestedQuery) return;
       CN_STATE.searchResults = [];
       var fh = document.getElementById('cn-search-results');
@@ -8577,6 +8642,11 @@ function cnMgrLoadRepNotes_() {
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
+      // F38 (cycle 25): the same guard as success — a late FAILURE for the rep
+      // (or day) the manager has left painted over the one they moved to.
+      if (!CN_STATE.mgrRepView
+          || CN_STATE.mgrRepView.repId !== requestedRepId
+          || CN_STATE.mgrRepView.date !== requestedDate) return;
       const liveStack = document.getElementById('cn-mgr-rep-stack');
       if (liveStack) liveStack.innerHTML = errorStateHtml_('Failed: ' + err.message);
     })
@@ -8716,7 +8786,7 @@ function cnMgrDeleteNote_(btn) {
           return;
         }
         showToast('Note deleted', 'toast-success');
-        cnMgrLoadRepNotes_();
+        cnMgrRemoveCard_(repId, noteId);   // F37 (cycle 25): this card only
       })
       .withFailureHandler(function (err) {
         btn.disabled = false;
@@ -8769,6 +8839,17 @@ function cnMgrPatchCard_(repId, note) {
   var tmp = document.createElement('div');
   tmp.innerHTML = cnMgrRenderReadonlyCard_(note).trim();
   if (tmp.firstElementChild) card.replaceWith(tmp.firstElementChild);
+}
+/** F37 (cycle 25) — the delete's own result rides a targeted patch too: the
+ *  deleted card leaves and nothing else is touched. Reloading the whole stack
+ *  wiped a comment or reply half-typed on every OTHER card (g141, the CNUI-04
+ *  shape). The last card gone, or a different rep on screen: the stack
+ *  reloads (its empty state holds nothing to lose). */
+function cnMgrRemoveCard_(repId, noteId) {
+  var stack = document.getElementById('cn-mgr-rep-stack');
+  if (!stack || !CN_STATE.mgrRepView || CN_STATE.mgrRepView.repId !== repId) { cnMgrLoadRepNotes_(); return; }
+  stack.querySelectorAll('.cn-card').forEach(function (c) { if (c.dataset.noteId === noteId) c.remove(); });
+  if (!stack.querySelector('.cn-card')) cnMgrLoadRepNotes_();
 }
 /** Item 9 — manager comment (feedback / praise) on ANY note. Reads the text
  *  from the sibling input and fires setCallNoteManagerComment; refreshes the
@@ -14527,7 +14608,9 @@ function cnCloseExternalEmailModal_() {
   }
   CN_STATE.extComposer = null;
   var overlay = document.getElementById('cn-ext-overlay');
+  var back = overlay && overlay._restoreFocus;
   if (overlay) overlay.remove();
+  cnComposerReturnFocus_(back);   // F40 (cycle 25)
   // C4: an external composer the Save & Compose flow moved into is the
   // transaction now — closing it without sending is the same cancel the
   // department composer's close is. (A send completes the flow first.)

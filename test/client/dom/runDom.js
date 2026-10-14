@@ -6173,6 +6173,143 @@ test('F24 (cycle 25): the reminders modal says "Loading" until the list is read 
   assert.ok(/Could not refresh your reminders — this is the list as last loaded/.test(list()) && /Call Mrs\. Ortiz back/.test(list()), 'the last list read stays: ' + list());
 });
 
+// ── Cycle 25 Batch 5b — Call Notes races and accessibility ─────────────────
+test('F36 (cycle 25): a search answer paints only if it is the LATEST search — a slower answer for the old field scope (same query) cannot paint under the new tab', () => {
+  const h = bootLog();
+  h.window.showView('callNotesSearch');
+  h.read("CN_STATE.searchQuery = 'jane'");
+  h.window.cnFireSearch_();                    // field: all
+  h.window.cnSetSearchField_('caller');        // the rep clicks the Caller tab — same query
+  const [allScope, callerScope] = h.run.pending('searchMyCallNotes');
+  assert.deepStrictEqual([allScope.args[1], callerScope.args[1]], ['all', 'caller'], 'two scopes in flight (non-vacuous)');
+  callerScope.resolved = true; callerScope.success({ results: [noteFixture({ noteId: 'c1', caller: 'Jane CALLER-SCOPE' })] });
+  allScope.resolved = true; allScope.success({ results: [noteFixture({ noteId: 'a1', caller: 'Jane ALL-SCOPE' })] });
+  const txt = h.$('#cn-search-results').textContent;
+  assert.ok(/CALLER-SCOPE/.test(txt) && !/ALL-SCOPE/.test(txt), 'THE REGRESSION: the late all-fields answer painted under the Caller tab: ' + txt.slice(0, 120));
+  // a late FAILURE for the old scope is dropped too
+  h.window.cnSetSearchField_('issue');
+  h.window.cnSetSearchField_('caller');
+  const [issueScope, caller2] = h.run.pending('searchMyCallNotes');
+  caller2.resolved = true; caller2.success({ results: [noteFixture({ noteId: 'c2', caller: 'Jane AGAIN' })] });
+  issueScope.resolved = true; issueScope.failure(new Error('timeout'));
+  assert.ok(/Jane AGAIN/.test(h.$('#cn-search-results').textContent) && !/Search failed/.test(h.$('#cn-search-results').textContent), 'a stale failure does not paint');
+});
+
+test('F37 + F38 (cycle 25): a manager delete removes THAT card only — a comment half-typed on another card survives; and a late failure for the rep the manager left cannot paint over the one they moved to', async () => {
+  const h = boot(); h.bootShell();
+  const area = mount_(h, 'view-area');
+  h.read("CN_STATE.mgrRepView = { repId: 'E9', date: '2026-06-16' }");
+  const n1 = noteFixture({ noteId: 'm1', caller: 'One' }), n2 = noteFixture({ noteId: 'm2', caller: 'Two' });
+  area.innerHTML = '<div id="cn-mgr-rep-stack">' + h.window.cnMgrRenderReadonlyCard_(n1) + h.window.cnMgrRenderReadonlyCard_(n2) + '</div>';
+  const input = (id) => h.$('#cn-mgr-rep-stack .cn-mgr-reply-row[data-note-id="' + id + '"] .cn-mgr-reply-input');
+  input('m2').value = 'half-typed for card two';
+  input('m2').focus();
+  const del = h.document.createElement('button'); del.dataset.noteId = 'm1'; del.dataset.repId = 'E9';
+  h.$('#cn-mgr-rep-stack .cn-card[data-note-id="m1"]').appendChild(del);
+  h.window.cnMgrDeleteNote_(del);
+  h.click(h.$('.ui-dialog-ok')); await tick();
+  h.run.flushSuccess({ success: true }, 'managerDeleteCallNote');
+  assert.strictEqual(h.run.pending('managerGetCallNotes').length, 0, 'THE REGRESSION: the whole stack reloaded');
+  assert.ok(!h.$('#cn-mgr-rep-stack .cn-card[data-note-id="m1"]'), 'the deleted card is gone');
+  assert.strictEqual(input('m2').value, 'half-typed for card two', 'the other card\'s typing survives');
+  assert.strictEqual(h.document.activeElement, input('m2'), 'and its focus');
+  // The last card deleted: the stack reloads (its empty state holds nothing to lose).
+  h.window.cnMgrRemoveCard_('E9', 'm2');
+  assert.strictEqual(h.run.pending('managerGetCallNotes').length, 1, 'no card left → the stack reloads');
+  h.run.drain();
+  // F38: rep A's load fails late, after the manager moved to rep B.
+  h.read("currentView = 'callNotesManager'");
+  h.read("CN_STATE.mgrRepView = { repId: 'A', date: '2026-06-16' }");
+  h.window.cnMgrLoadRepNotes_();
+  h.read("CN_STATE.mgrRepView = { repId: 'B', date: '2026-06-16' }");
+  h.window.cnMgrLoadRepNotes_();
+  const [loadA, loadB] = h.run.pending('managerGetCallNotes');
+  loadB.resolved = true; loadB.success({ notes: [noteFixture({ noteId: 'b1', caller: 'Rep B caller' })], repName: 'B', date: '2026-06-16' });
+  loadA.resolved = true; loadA.failure(new Error('Rep A sheet timed out'));
+  const stackTxt = h.$('#cn-mgr-rep-stack').textContent;
+  assert.ok(/Rep B caller/.test(stackTxt) && !/timed out/.test(stackTxt), 'THE REGRESSION: rep A\'s late failure replaced rep B\'s notes: ' + stackTxt.slice(0, 120));
+});
+
+test('F39 (cycle 25): the History "Refreshing…" pill goes away when its refresh settles — even when the rep picked another range meanwhile and the answer is dropped', () => {
+  const h = bootLog();
+  h.window.showView('callNotesHistory');
+  h.run.flushSuccess({ notes: [noteFixture({ noteId: 'h1' })] }, 'getMyCallNotesRange');
+  h.window.showView('callNotes');
+  h.run.drain();
+  h.window.showView('callNotesHistory');          // within the freshness window: instant paint + pill
+  assert.ok(h.$('#view-refreshing-pill'), 'the pill is up (non-vacuous)');
+  h.read("CN_STATE.historyDate = '2026-01-01'; CN_STATE.historyEndDate = '2026-01-02'");
+  h.window.cnHistoryRangeChanged_();               // the rep picks another range mid-refresh
+  h.run.flushSuccess({ notes: [] }, 'getMyCallNotesRange');   // the refresh's answer — for the old range, dropped
+  assert.ok(!h.$('#view-refreshing-pill'), 'THE REGRESSION: the pill stayed up for the rest of the visit');
+});
+
+test('F40 (cycle 25) — composer focus: a composer that closes ITSELF (after a send) returns focus to what opened it — found again by id if the Log rebuilt it — and never over another open dialog', async () => {
+  const h = boot(); h.bootShell();
+  const doc = h.document;
+  for (let i = 0; i < 6; i++) h.flushTimers();   // settle the shell's own deferred renders (they move focus too)
+  const trigger = doc.createElement('button'); trigger.id = 'f40-trigger'; doc.body.appendChild(trigger);
+  const openComposer = () => {
+    const ov = h.window.ensureOverlay('cn-compose-overlay', { label: 'Department email composer', onClose: h.window.cnCloseComposerModal_ });
+    ov.innerHTML = '<button id="cmp-x">x</button>';
+    doc.getElementById('cmp-x').focus();
+    h.read('CN_STATE.composer = { noteId: "n1" }');
+    return ov;
+  };
+  trigger.focus(); openComposer();
+  h.window.cnCloseComposerModal_();
+  h.flushTimers();
+  assert.strictEqual(doc.activeElement, trigger, 'THE REGRESSION: focus was left on <body> after the composer closed itself');
+  // The send re-renders the Log after the close: the trigger is rebuilt under the same id.
+  trigger.focus(); openComposer();
+  h.window.cnCloseComposerModal_();
+  trigger.remove();
+  const rebuilt = doc.createElement('button'); rebuilt.id = 'f40-trigger'; doc.body.appendChild(rebuilt);
+  h.flushTimers();
+  assert.strictEqual(doc.activeElement, rebuilt, 'the rebuilt trigger takes the focus');
+  // Never over another open dialog (a switch to the other composer).
+  rebuilt.focus(); openComposer();
+  const other = h.window.ensureOverlay('cn-ext-overlay', { label: 'External email composer' });
+  other.innerHTML = '<input id="ext-to">';
+  doc.getElementById('ext-to').focus();
+  h.window.cnCloseComposerModal_();
+  h.flushTimers();
+  assert.strictEqual(doc.activeElement, doc.getElementById('ext-to'), 'focus stays in the dialog that is still open');
+  // The external composer's own close does the same.
+  other.remove();
+  rebuilt.focus();
+  const ext = h.window.ensureOverlay('cn-ext-overlay', { label: 'External email composer', onClose: h.window.cnCloseExternalEmailModal_ });
+  ext.innerHTML = '<input id="ext-to2">'; doc.getElementById('ext-to2').focus();
+  h.read('CN_STATE.extComposer = { noteId: "n1" }');
+  h.window.cnCloseExternalEmailModal_();
+  h.flushTimers();
+  assert.strictEqual(doc.activeElement, rebuilt, 'and so does the external composer');
+});
+
+test('F40 (cycle 25) — the rest of the bundle: the save card\'s collapse button says its state; a collapsed History group stays collapsed through a re-render; a failed Q&A tray load says so', async () => {
+  const h = bootLog();
+  const doc = h.document;
+  // (b) the save card's collapse button exposes its state.
+  const col = doc.querySelector('.cn-save-collapse');
+  assert.strictEqual(col.getAttribute('aria-expanded'), 'true');
+  assert.strictEqual(doc.getElementById(col.getAttribute('aria-controls')), doc.querySelector('#cn-save-card .rail-actions'), 'it names what it controls');
+  h.window.cnToggleSaveCard_(col);
+  assert.ok(doc.getElementById('cn-save-card').classList.contains('collapsed') && col.getAttribute('aria-expanded') === 'false', 'collapsed, and says so');
+  h.window.cnToggleSaveCard_(col);
+  assert.strictEqual(col.getAttribute('aria-expanded'), 'true');
+  // (d) a failed Q&A tray load is said, never an empty tray.
+  h.run.flushFailure(new Error('Quota exceeded'), 'getMyTrainingQA');
+  assert.ok(/Training answers could not be loaded — Quota exceeded/.test(doc.getElementById('cn-training-qa-tray').textContent), 'THE REGRESSION: the tray stayed silently empty');
+  // (c) a History group the rep collapsed stays collapsed through a re-render.
+  h.window.showView('callNotesHistory');
+  h.run.flushSuccess({ notes: [noteFixture({ noteId: 'h1', dateLocal: '2026-06-16' }), noteFixture({ noteId: 'h2', dateLocal: '2026-06-15' })] }, 'getMyCallNotesRange');
+  const head = () => doc.querySelector('.cn-hist-group[data-hgdate="2026-06-15"] .cn-hist-grouphead');
+  h.window.cnToggleHistGroup_(head());
+  h.window.cnRenderHistoryStack_();
+  assert.ok(head().closest('.cn-hist-group').classList.contains('collapsed') && head().getAttribute('aria-expanded') === 'false', 'THE REGRESSION: every re-render opened the groups again');
+  assert.ok(!doc.querySelector('.cn-hist-group[data-hgdate="2026-06-16"]').classList.contains('collapsed'), 'the other group is untouched');
+});
+
 // ── Batch M5a — the reader ──────────────────────────────────────────────────
 section('Batch M5a — context-focused previews, code links in more places, back to the section');
 

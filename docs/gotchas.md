@@ -1603,6 +1603,10 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   — after a failed refresh — the last list read under a note. "No upcoming
   reminders" is said only for a list that came back empty. Verify: the F24
   (cycle 25) DOM drive.
+  **Cycle 25 F40 (2026-10-14): the Training Answers tray.** A failed read left the
+  tray empty, which reads as "no manager has answered yet". It now says it could
+  not load, keeps any answers read before, and asks again on the next Log visit.
+  Verify: the F40 (cycle 25) DOM drive.
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 
@@ -2382,6 +2386,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the next one's title — and a stale failure closed the viewer that replaced
   it. `CN_VIEWER_SEQ` moves on every open and every close; a handler whose
   number is no longer current returns. Verify: the two CNUI-03 DOM pins.
+  **AMENDED (cycle 25 F36 + F38 + F39, 2026-10-14): three more handlers that
+  answered for the wrong request.** (F36) The search guard compared the query text, so
+  a slower answer for the old field tab, range or archive scope painted under the new
+  one; it now compares the request (`CN_STATE.searchSeq`). (F38) The manager's per-rep
+  load guarded its success but not its failure, so rep A's late error replaced rep
+  B's notes. (F39) History's background refresh cleared its "Refreshing…" pill only in
+  the callback a dropped (stale-range) answer never reaches. `cnLoadDateRange_`'s
+  `always` now runs on every settle path — and clears only History's own pill, since
+  another view's shares the id. Verify: the F36, F37 + F38 and F39 (cycle 25) DOM
+  drives.
 
 <a id="g82-cnrendersubforms-is-shape-keyed-via-host-dataset"></a>
 
@@ -2791,6 +2805,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `closeOverlay(ov)`, and the net also flags any delegated close click that
   removes or un-opens a node by hand. Verify: the widened SH-02 net + the
   Seams F4 DOM drive.
+  **AMENDED (cycle 25 F40, 2026-10-14): a dialog that closes ITSELF owes focus too.**
+  `closeOverlay` returns focus, but both email composers also close themselves — after a
+  send, on a switch to the other composer, as the loading stub gives way — through their
+  hook, and focus was left on `<body>`. They now hand it back (`cnComposerReturnFocus_`):
+  deferred a tick, since a send re-renders the Log after the close; found again by id if
+  rebuilt; never while another dialog is open, nor when focus already sits somewhere
+  real. Verify: the F40 (cycle 25) composer-focus DOM drive.
 
 <a id="g101-public-form-endpoints-have-no-employee-auth"></a>
 
@@ -4655,6 +4676,11 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   keyboard reader on the star lost focus as the page scrolled. The button is now
   patched in place (`kbBookmarkBtnPatch_`), as the feedback buttons beside it
   already were. Verify: the F51 (cycle 25) DOM drive.
+  **AMENDED (cycle 25 F37 + F40, 2026-10-14): two more.** A manager's delete reloaded
+  the whole per-rep stack and wiped comments half-typed on other cards; it now removes
+  its card only (`cnMgrRemoveCard_`, CNUI-04's shape). And History's date groups all
+  re-opened on every re-render. A collapsed group is now remembered for the visit
+  (`CN_STATE.histCollapsed`). Verify: the F37 + F38 and F40 (cycle 25) DOM drives.
 
 <a id="g142-a-diagnostic-that-names-the-wrong-source"></a>
 ### g142 — A diagnostic that names the WRONG source is worse than a vague one, because it is actionable and the action is destructive
