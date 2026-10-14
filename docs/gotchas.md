@@ -1636,6 +1636,11 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   failure. And a server `{error}` on a background refresh repainted a painted last-good
   view as an error card; it now keeps the view and toasts, as the transport-failure
   path did. Verify: the F53 and F56 (cycle 25) DOM drives.
+  **Cycle 25 F47 (2026-10-14): QA sampling.** `qaSampleRecordings` swallowed an
+  unreadable exemption list and an unreadable roster. The pick then sampled
+  exempt agents, or ignored targets, and still read as a clean target-aware pick.
+  The answer now carries `unread`, the audit row names the inputs, and the toast
+  warns. Verify: the F47 (cycle 25) drive.
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 
@@ -4078,6 +4083,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the send refused a quote the rep never touched. `cnExtBodyWithQuotes_`
   re-appends every inserted line, in order and never twice. Anything that
   rewrites a body carrying verified text must carry that text through.
+  **AMENDED (cycle 25 F46, 2026-10-14): one capacity reader.** The engine and the
+  catalog validator each read a weight capacity with `parseInt`, so "1,000" was 1:
+  the engine excluded a 1,000 lb chair for every patient, and the validator, reading
+  the same way, saw a valid number. Both now read through `intakeCapLbs_`, which
+  takes the leading number as a token, thousands commas included. The validator
+  also names a capacity below any patient weight ("1.000", "1 000"). Verify: the
+  F46 (cycle 25) drive.
 
 
 <a id="g127-calchours-wraps-out-in-as-overnight"></a>
@@ -4235,6 +4247,12 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   but not memoised, and the run is marked degraded (`cdrNameMapDegraded_`, which stays
   set even if a later read succeeds); the dashboard doesn't cache a degraded round.
   Verify: the F16 (cycle 25) drive.
+  **AMENDED (cycle 25 F20, 2026-10-14): the intake agent list.** The PPD preview
+  stored a failed `getIntakeAgents` read as `[]`, and the account form stored an
+  `{error}` the same way. `[]` is truthy, so no later preview asked again, and the
+  "send to agent" list stayed empty for the session. Only a list that was read is
+  cached now. A failure opens the preview without agents, says so, and the next
+  preview asks again. Verify: the F20 (cycle 25) DOM drive.
 
 <a id="g130-a-registered-onclose-hook-owns-the-close"></a>
 
@@ -5270,6 +5288,17 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   coverage claim. Verify: the F17 drive. The side copies grow with the roster,
   so Storage Health's Script Properties line names their count and bytes
   (cycle 25 Batch 7 FU3).
+  **AMENDED (cycle 25 F42 + F43, 2026-10-14): QA reviews and intake volume.** A
+  shared QA review's scorecards and comments were read from 4,000-row tails, so an
+  old review rendered with no scores and no comments once newer reviews pushed its
+  rows out. The one-recording and my-recordings reads now find rows by recording
+  (`qaRowsForFiles_`: one read of the id column, then only the runs that match).
+  The all-rows reads (queue counts, stats) stay bounded tails. The intake volume
+  table read a 4,000-row tail per form and counted a busy tab's oldest months
+  short without saying so. It now reads back block by block until it passes the
+  window's first month; a tab still inside the window after `INTAKE_VOLUME_SCAN_BLOCKS`
+  is named in `truncatedTypes`, and the table says so. Verify: the F42 and F43
+  (cycle 25) drives.
 
 <a id="g153-clearing-the-roster-email-does-not-reach-the-gate-lists"></a>
 
@@ -5305,6 +5334,13 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   `formNotifyRoute_` mails the creator only while they are on the live roster
   (`empRosterEmail_`); otherwise MANAGER_EMAILS, with a line saying why.
   Verify: the FORM-5 route grid.
+  **AMENDED (cycle 25 F41, 2026-10-14): HR notices.** The document-signed notice
+  went to the doc's stored issuer, and the coaching-acknowledged notice to the
+  item's creator, even after that person was offboarded or demoted. Both now
+  route through `hrNoticeRoute_`: the stored address while it is a manager on the
+  live roster; otherwise the rep's current manager, or MANAGER_EMAILS, never the
+  departed address, with a line saying why the notice came to them. An unreadable
+  roster sends where it always did. Verify: the F41 (cycle 25) drive.
 
 <a id="g154-a-half-day-has-no-fixed-start"></a>
 
@@ -5680,6 +5716,11 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   unchanged (rollback and toasts included); a send and the Internal/External
   tab switch close through the hook directly and never ask. Verify: the Seams
   F7 DOM drive + scenario S137.
+  **AMENDED (cycle 25 F44, 2026-10-14): the quiz.** The quiz-taking overlay had
+  no guard, so Escape or the backdrop threw picked answers away. It now opens with
+  `unsaved`. A grade in flight is `busy` (the attempt is recorded either way), and
+  the result view, the lock view and a retake start clean. Verify: the F44
+  (cycle 25) DOM drive.
 
 <a id="g167-a-vocabulary-built-from-user-text-is-user-text"></a>
 

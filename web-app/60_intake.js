@@ -109,26 +109,50 @@ function intakeVolumeBuckets_(tsByType, months, todayIso) {
   });
   return out;
 }
+/** Pure (Node-pinned) — cycle 25 F43: has a block of submission stamps read
+ *  back PAST the window's first month? Rows are appended at submit, so once a
+ *  block holds a stamp older than `firstMonth` ('yyyy-MM') the rows above it
+ *  are older still and the window is covered. Unreadable stamps prove nothing. */
+function intakeVolumeReachesBack_(tsList, firstMonth) {
+  return (tsList || []).some(function (ts) {
+    const mk = String(ts || '').slice(0, 7);
+    return /^\d{4}-\d{2}$/.test(mk) && mk < firstMonth;
+  });
+}
 function getIntakeVolumeStats() {
   try {
     const emp = getEmployeeInfo_();
     if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    const today = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE, 'yyyy-MM-dd');
+    const keys = intakeVolumeBuckets_({}, INTAKE_VOLUME_MONTHS, today);
+    const firstMonth = keys.length ? keys[keys.length - 1].month : '';
     const tsByType = {};
     const failed = [];
+    const truncated = [];
     INTAKE_FORM_TYPES_.forEach(function (ft) {
       try {
         const sheet = getIntakeSubmissionSheet_(ft);
         const last = sheet.getLastRow();
-        if (last < 2) { tsByType[ft] = []; return; }
-        const start = Math.max(2, last - INTAKE_VOLUME_SCAN_MAX + 1);
-        tsByType[ft] = sheet.getRange(start, 2, last - start + 1, 1).getValues()
-          .map(function (r) { return intakeTsString_(r[0]); });
+        tsByType[ft] = [];
+        // F43: read back block by block until the stamps pass the window's
+        // first month — one 4,000-row tail silently dropped the oldest months
+        // of a busy tab. Past the block cap the type is NAMED, never short.
+        let end = last;
+        for (let blocks = 0; end >= 2; blocks++) {
+          if (blocks >= INTAKE_VOLUME_SCAN_BLOCKS) { truncated.push(ft); break; }
+          const start = Math.max(2, end - INTAKE_VOLUME_SCAN_MAX + 1);
+          const block = sheet.getRange(start, 2, end - start + 1, 1).getValues()
+            .map(function (r) { return intakeTsString_(r[0]); });
+          tsByType[ft] = block.concat(tsByType[ft]);
+          end = start - 1;
+          if (intakeVolumeReachesBack_(block, firstMonth)) break;
+        }
       } catch (e) { failed.push(ft); }
     });
-    const today = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE, 'yyyy-MM-dd');
     return {
       months: intakeVolumeBuckets_(tsByType, INTAKE_VOLUME_MONTHS, today),
       failedTypes: failed,   // INV-187: an unreadable tab is named, never a silent 0 column
+      truncatedTypes: truncated,   // F43: a tab read short of the window is named too
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -252,6 +276,17 @@ function intakeParseWeight_(text) {
            unit: pick ? (pick.unit || 'lb') : '', value: value,
            implausible: implausible ? lbs : 0 };
 }
+/** Pure (Node-pinned) — cycle 25 F46: ONE reader for a catalog weight-capacity
+ *  number, shared by the engine and the validator (g126). The leading number
+ *  is read as a TOKEN, thousands separators included: `parseInt("1,000")` is
+ *  1, so a 1,000 lb chair was excluded for every patient while the validator,
+ *  reading it the same way, saw a valid number. NaN when there is no leading
+ *  number — the F9 fail-closed state. Whatever follows ("lbs", a note) is
+ *  ignored, as parseInt always did. */
+function intakeCapLbs_(text) {
+  const m = /^\s*(\d{1,3}(?:,\d{3})+(?!\d)|\d+)/.exec(String(text == null ? '' : text));
+  return m ? parseInt(m[1].replace(/,/g, ''), 10) : NaN;
+}
 function intakeCatalogIssues_(rows) {
   const out = [];
   (rows || []).forEach(function (r, i) {
@@ -268,17 +303,26 @@ function intakeCatalogIssues_(rows) {
         detail: 'blank — the product is excluded for every patient with a recorded weight' });
     } else if (cap.indexOf('-') >= 0) {
       const parts = cap.split('-');
-      const lo = parseInt(parts[0], 10), hi = parseInt(parts[1], 10);
+      const lo = intakeCapLbs_(parts[0]), hi = intakeCapLbs_(parts[1]);
       if (!isFinite(lo) || !isFinite(hi)) {
         out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'error', field: 'weight capacity',
           detail: 'unreadable range "' + cap + '" — expected e.g. "300-450"' });
       } else if (lo > hi) {
         out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'error', field: 'weight capacity',
           detail: 'range "' + cap + '" is inverted (min above max) — it can never match' });
+      } else if (hi < INTAKE_WEIGHT_MIN_LBS) {
+        out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'error', field: 'weight capacity',
+          detail: '"' + cap + '" reads as at most ' + hi + ' lbs — no patient fits; check the number (a "." or space as a thousands separator?)' });
       }
-    } else if (!isFinite(parseInt(cap, 10))) {
+    } else if (!isFinite(intakeCapLbs_(cap))) {
       out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'error', field: 'weight capacity',
         detail: 'non-numeric "' + cap + '" — the product is excluded for every patient with a recorded weight' });
+    } else if (intakeCapLbs_(cap) < INTAKE_WEIGHT_MIN_LBS) {
+      // F46 (cycle 25): a cap below any patient weight is a misread number
+      // ("1.000", "1 000"), never a real chair — the engine excludes the
+      // product for everyone, so the validator says so.
+      out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'error', field: 'weight capacity',
+        detail: '"' + cap + '" reads as ' + intakeCapLbs_(cap) + ' lbs — no patient fits; check the number (a "." or space as a thousands separator?)' });
     } else if (/[‐-―]/.test(cap)) {
       // An EN/EM dash is not the ASCII '-' the range branch splits on, so
       // "300–450" silently reads as a flat 300 cap. Stricter than intended
@@ -773,13 +817,13 @@ function intakeFilterRecommendations_(answers, allProducts) {
         const capRaw = product.weightCapacityStr.trim();
         if (capRaw.indexOf('-') >= 0) {
           const parts = capRaw.split('-');
-          const minCap = parseInt(parts[0], 10);
-          const maxCap = parseInt(parts[1], 10);
+          const minCap = intakeCapLbs_(parts[0]);   // F46: "1,000" is 1000, not 1
+          const maxCap = intakeCapLbs_(parts[1]);
           if (!isFinite(minCap) || !isFinite(maxCap)) return false;   // unreadable range
           if (patient.weight < minCap) return false;
           if (patient.weight > maxCap) return false;
         } else {
-          const maxCap = parseInt(capRaw, 10);
+          const maxCap = intakeCapLbs_(capRaw);
           if (!isFinite(maxCap)) return false;                        // unreadable cap
           if (patient.weight > maxCap) return false;
         }

@@ -7702,3 +7702,74 @@ test('PK-7 DOM (review PDFs, operator 2026-10-13): a chapter PDF keeps its chapt
   assert.strictEqual(d3.getElementById('pz').textContent, 'see A.1 Terms', 'a link into the dropped part is plain text, without the chapter PDF\'s suffix');
   assert.ok(!d3.querySelector('#pz a') && r3.title === '', 'no link left behind; no chapter title on a full cut');
 });
+
+// ── Cycle 25 Batch 8a — Intake, Training, QA ────────────────────────────────
+section('Cycle 25 Batch 8a — Intake, Training, QA');
+test('F20 (cycle 25): a failed agent-list read is said and NOT cached — the next PPD preview asks again and fills the list; the account form treats an {error} the same', async () => {
+  const h = boot();
+  h.bootShell({});
+  h.run.drain();
+  h.read('INTAKE_STATE.ppd.agents = null');
+  const open = h.read('intakeOpenPpdPreviewModal_');
+  open('<p>preview</p>', []);
+  assert.strictEqual(h.run.pending('getIntakeAgents').length, 1, 'a cold cache fetches');
+  h.run.flushSuccess({ error: 'Roster unavailable' }, 'getIntakeAgents');
+  assert.strictEqual(h.read('INTAKE_STATE.ppd.agents'), null, 'THE REGRESSION: an {error} was cached as [] — truthy, so no later preview asked again');
+  assert.ok(b9Toasts(h).some((t) => /Could not load the agent list: Roster unavailable/.test(t)), 'the failure is said');
+  assert.ok(h.$('#intk-ppd-recipient') || h.$('.intk-foot'), 'the preview still opens — Default and Custom still work');
+  h.read('closeOverlay')(h.$('.overlay.open'));
+  open('<p>preview</p>', []);
+  assert.strictEqual(h.run.pending('getIntakeAgents').length, 1, 'the next preview asks again');
+  h.run.flushFailure('timeout', 'getIntakeAgents');
+  assert.strictEqual(h.read('INTAKE_STATE.ppd.agents'), null, 'a transport failure is not cached either');
+  h.read('closeOverlay')(h.$('.overlay.open'));
+  open('<p>preview</p>', []);
+  h.run.flushSuccess({ agents: [{ id: 'E-7', name: 'Ana Ruiz' }] }, 'getIntakeAgents');
+  assert.ok(/Ana Ruiz/.test(h.$('.overlay.open').innerHTML), 'a real list fills the picker');
+  h.read('closeOverlay')(h.$('.overlay.open'));
+  open('<p>preview</p>', []);
+  assert.strictEqual(h.run.pending('getIntakeAgents').length, 0, 'and a real list IS cached');
+  // The account form: the same rule.
+  h.read('closeOverlay')(h.$('.overlay.open'));
+  h.read('INTAKE_STATE.ppd.agents = null');
+  h.read('intakeBuildAcctModal_')('pmd', '<p>acct</p>');
+  h.run.flushSuccess({ error: 'Roster unavailable' }, 'getIntakeAgents');
+  assert.strictEqual(h.read('INTAKE_STATE.ppd.agents'), null, 'the account form does not cache an {error} either');
+});
+
+test('F44 (cycle 25): a quiz with answers picked asks before Escape or Cancel throws them away; an untouched quiz, a grade in flight and the result view close at once', async () => {
+  const h = boot();
+  b9TourSeen(h);
+  h.bootShell({});
+  h.run.drain();
+  const quiz = { quizId: 'q1', title: 'Safety', passPct: 100, questions: [{ q: 'A?', options: ['x', 'y'] }, { q: 'B?', options: ['m', 'n'] }],
+    lockout: { locked: false, attemptsLeft: 3, maxAttempts: 3 } };
+  const ov = () => h.$('#train-quiz-overlay.open');
+  h.read('trainOpenQuiz_')('q1');
+  h.run.flushSuccess(quiz, 'getQuiz');
+  h.dispatchKey('Escape');
+  assert.ok(!ov() && !b9Ask(h), 'nothing picked: Escape closes at once');
+  h.read('trainOpenQuiz_')('q1');
+  h.run.flushSuccess(quiz, 'getQuiz');
+  h.click('input[name="tr-q-0"][value="1"]');
+  h.dispatchKey('Escape');
+  assert.ok(ov() && b9Ask(h), 'THE REGRESSION: one keypress threw the picked answers away');
+  h.click('.ui-dialog-cancel'); await tick();
+  assert.ok(ov() && h.$('input[name="tr-q-0"][value="1"]').checked, 'Keep editing keeps the answers');
+  // A grade in flight is not a discard — the attempt is recorded either way (E13).
+  h.click('input[name="tr-q-1"][value="0"]');
+  h.click('#tr-quiz-submit');
+  assert.strictEqual(h.run.pending('submitQuizAttempt').length, 1, 'grading');
+  h.dispatchKey('Escape');
+  assert.ok(!b9Ask(h) && !ov(), 'mid-grade: no question, the close goes through');
+  h.run.flushSuccess({ success: true, passed: true, scorePct: 100, right: 2, total: 2, passPct: 100, attempt: 1, perQuestion: [true, true] }, 'submitQuizAttempt');
+  // The result view has nothing left to lose.
+  h.read('trainOpenQuiz_')('q1');
+  h.run.flushSuccess(quiz, 'getQuiz');
+  h.click('input[name="tr-q-0"][value="0"]'); h.click('input[name="tr-q-1"][value="0"]');
+  h.click('#tr-quiz-submit');
+  h.run.flushSuccess({ success: true, passed: false, scorePct: 50, right: 1, total: 2, passPct: 100, attempt: 2, perQuestion: [true, false], attemptsLeft: 1, maxAttempts: 3, locked: false }, 'submitQuizAttempt');
+  assert.ok(h.$('#tr-quiz-retake'), 'the result view');
+  h.dispatchKey('Escape');
+  assert.ok(!ov() && !b9Ask(h), 'a submitted attempt is not asked about');
+});

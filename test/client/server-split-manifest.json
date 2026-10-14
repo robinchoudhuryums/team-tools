@@ -2634,6 +2634,53 @@
     "updateTimeOffStatus"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-14",
+   "why": "cycle 25 Batch 8a: hrNoticeRoute_/hrNoticeTargets_/hrDepartedIssuerLine_, qaRowRuns_/qaRowsForFiles_, intakeVolumeReachesBack_, intakeCapLbs_, QA_ROW_RUN_GAP, INTAKE_VOLUME_SCAN_BLOCKS",
+   "added": [
+    "INTAKE_VOLUME_SCAN_BLOCKS",
+    "QA_ROW_RUN_GAP",
+    "hrDepartedIssuerLine_",
+    "hrNoticeRoute_",
+    "hrNoticeTargets_",
+    "intakeCapLbs_",
+    "intakeVolumeReachesBack_",
+    "qaRowRuns_",
+    "qaRowsForFiles_"
+   ],
+   "removed": [],
+   "changed": [
+    "QA_COMMENTS_SCAN",
+    "getIntakeVolumeStats",
+    "getMyQaReviews",
+    "intakeCatalogIssues_",
+    "intakeFilterRecommendations_",
+    "notifyEmpDocSigned_",
+    "notifyManagerOfCoachingAck_",
+    "qaCreateManualRecording",
+    "qaDeleteComment",
+    "qaListComments",
+    "qaReadScorecards_",
+    "qaSampleRecordings",
+    "voidCoaching"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-14",
+   "why": "cycle 25 Batch 8a: qaWants_ (own-key id lookup), hrNoticeTargets_ roster fallback",
+   "added": [
+    "qaWants_"
+   ],
+   "removed": [],
+   "changed": [
+    "hrNoticeTargets_",
+    "qaListComments",
+    "qaReadScorecards_",
+    "qaRowsForFiles_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3518,6 +3565,11 @@
    "kind": "const",
    "sha": "8918601f642c9814"
   },
+  "INTAKE_VOLUME_SCAN_BLOCKS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "174ea0f7f90bc7e1"
+  },
   "INTAKE_VOLUME_SCAN_MAX": {
    "file": "00_config.js",
    "kind": "const",
@@ -4356,7 +4408,7 @@
   "QA_COMMENTS_SCAN": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "24b465c0f0d162d3"
+   "sha": "ee0402fcd74a8000"
   },
   "QA_COMMENTS_TAB": {
    "file": "00_config.js",
@@ -4482,6 +4534,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "97e0b4e8eaabe7aa"
+  },
+  "QA_ROW_RUN_GAP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6884f184cf72383a"
   },
   "QA_SCORECARDS_HEADERS": {
    "file": "00_config.js",
@@ -7106,7 +7163,7 @@
   "getIntakeVolumeStats": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "b0c15d8072c5f5ab"
+   "sha": "70680a4773099a62"
   },
   "getKbAiConfig_": {
    "file": "70_kb.js",
@@ -7256,7 +7313,7 @@
   "getMyQaReviews": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "3c4ce7e87fa9ce1d"
+   "sha": "e6d9936c17bea9ce"
   },
   "getMyScheduledCalls": {
    "file": "30_callnotes.js",
@@ -7683,10 +7740,25 @@
    "kind": "function",
    "sha": "08431146738269d7"
   },
+  "hrDepartedIssuerLine_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "9b2af61cc9eb80c5"
+  },
   "hrDocsConfigured_": {
    "file": "81_empdocs.js",
    "kind": "function",
    "sha": "f20a6eebfcc11b33"
+  },
+  "hrNoticeRoute_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "a77459da69c6da2a"
+  },
+  "hrNoticeTargets_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "60609e0c3352073c"
   },
   "hrSweepFailed_": {
    "file": "81_empdocs.js",
@@ -7773,10 +7845,15 @@
    "kind": "function",
    "sha": "5a5151a0ce0dec39"
   },
+  "intakeCapLbs_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "59934c7af1ae827b"
+  },
   "intakeCatalogIssues_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "56ea331167b9849b"
+   "sha": "0585e97c9dc66c30"
   },
   "intakeDecodeImages_": {
    "file": "60_intake.js",
@@ -7831,7 +7908,7 @@
   "intakeFilterRecommendations_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "51eebd1a32438cc7"
+   "sha": "ba887b69f72e52e5"
   },
   "intakeGetSubmission": {
    "file": "60_intake.js",
@@ -7982,6 +8059,11 @@
    "file": "60_intake.js",
    "kind": "function",
    "sha": "c1cc44e8adc293e6"
+  },
+  "intakeVolumeReachesBack_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "86f8d8feedcbd4a8"
   },
   "invalidateCnAmbientCache_": {
    "file": "30_callnotes.js",
@@ -8901,7 +8983,7 @@
   "notifyEmpDocSigned_": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "e8c24278518fc4fb"
+   "sha": "7c37fe446335e328"
   },
   "notifyEmployeeOfAdjustDecision_": {
    "file": "20_timeclock.js",
@@ -8916,7 +8998,7 @@
   "notifyManagerOfCoachingAck_": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "327b49e905452781"
+   "sha": "0e0279ed4a1bdfd2"
   },
   "notifyManagerOldAdjustment_": {
    "file": "20_timeclock.js",
@@ -9341,7 +9423,7 @@
   "qaCreateManualRecording": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "e526705eef071f29"
+   "sha": "ecc45afecb108072"
   },
   "qaCritType_": {
    "file": "90_qa.js",
@@ -9356,7 +9438,7 @@
   "qaDeleteComment": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "230c747b20e55958"
+   "sha": "39059184ec07ff4f"
   },
   "qaExemptEligible_": {
    "file": "90_qa.js",
@@ -9411,7 +9493,7 @@
   "qaListComments": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "0c23b81d334b3a90"
+   "sha": "6503194043531133"
   },
   "qaListScorecards": {
    "file": "90_qa.js",
@@ -9511,7 +9593,7 @@
   "qaReadScorecards_": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "32ce675a838f5f74"
+   "sha": "e8428f87a91dc3d9"
   },
   "qaReviewRetentionDays_": {
    "file": "90_qa.js",
@@ -9543,6 +9625,16 @@
    "kind": "function",
    "sha": "4f97e75f88c1d79b"
   },
+  "qaRowRuns_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "45377ab872f64ff0"
+  },
+  "qaRowsForFiles_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "697c79777dc41a4b"
+  },
   "qaSamplePick_": {
    "file": "90_qa.js",
    "kind": "function",
@@ -9551,7 +9643,7 @@
   "qaSampleRecordings": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "2be9d3c2b45ab9ea"
+   "sha": "c624dcfb10c7393b"
   },
   "qaSaveScorecard": {
    "file": "90_qa.js",
@@ -9622,6 +9714,11 @@
    "file": "90_qa.js",
    "kind": "function",
    "sha": "32c51bb108ef696a"
+  },
+  "qaWants_": {
+   "file": "90_qa.js",
+   "kind": "function",
+   "sha": "28a24d01aa8a9d39"
   },
   "qaYmdMs_": {
    "file": "90_qa.js",
@@ -10866,7 +10963,7 @@
   "voidCoaching": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "1fc21036ca9fae2a"
+   "sha": "a43bf72a5f02e2fa"
   },
   "voidDoc": {
    "file": "81_empdocs.js",

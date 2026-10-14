@@ -2866,7 +2866,8 @@ vm.runInContext(intakeWeightBoundsSrc_(), engineCtx);
 // Batch 8 (cycle 22): the engine reads three shared helpers — the seat words
 // (I2), the inherently-solid code list (I6) and the weight parse (I3).
 // Cycle 23 INT-1: and the Q43 entry reader.
-['intakeSeatKinds_', 'intakeInherentlySolidCodes_', 'intakeParseWeight_', 'intakeNeuroEntryIsDx_', 'intakeNeuroDxEntries_'].forEach((n) =>
+// Cycle 25 F46: and the one catalog-capacity reader (intakeCapLbs_).
+['intakeSeatKinds_', 'intakeInherentlySolidCodes_', 'intakeParseWeight_', 'intakeNeuroEntryIsDx_', 'intakeNeuroDxEntries_', 'intakeCapLbs_'].forEach((n) =>
   vm.runInContext(extractRawFunction('Code.js', n), engineCtx, { filename: 'Code.js#' + n }));
 vm.runInContext(extractRawFunction('Code.js', 'intakeDeriveClinicalFactors_'), engineCtx,
   { filename: 'Code.js#intakeDeriveClinicalFactors_' });
@@ -5870,6 +5871,7 @@ test('F9: well-formed capacities are completely unchanged', () => {
 // fixtures carry REAL https URLs, since 'pdf'/'img' placeholders are exactly
 // the schemeless class the new warning names.)
 const intakeCatalogIssues_ = new Function(
+  intakeWeightBoundsSrc_() + ';' + extractRawFunction('Code.js', 'intakeCapLbs_') + ';' +   // F46 (cycle 25)
   extractRawFunction('Code.js', 'intakeHttpOnly_') + ';' +
   extractRawFunction('Code.js', 'intakeSeatKinds_') + ';' + extractRawFunction('Code.js', 'intakeInherentlySolidCodes_') + ';' +
   extractRawFunction('Code.js', 'intakeCatalogIssues_') + '; return intakeCatalogIssues_;')();
@@ -17078,7 +17080,9 @@ test('QA-4: QA comments — QA-gated, target-must-exist, bounded anchor, refuse-
   assert.ok(/setValue\(sheetSafe_\('deleted'\)\)/.test(del) && !/deleteRow/.test(del), 'soft-delete — rows are never removed (the kbDeleteComment shape)');
   assert.ok(/!== String\(emp\.id\) && !emp\.isManager/.test(del), 'author-or-manager moderation');
   const list = nc(extractRawFunction('Code.js', 'qaListComments'));
-  assert.ok(/QA_COMMENTS_SCAN/.test(list), 'bounded tail read');
+  // F42 (cycle 25): bounded by the recording, not by a tail — an old shared
+  // review's comments scrolled out of the 4,000-row window and read as none.
+  assert.ok(/qaRowsForFiles_\(/.test(list) && !/QA_COMMENTS_SCAN/.test(list), 'the comment read finds the recording\'s rows wherever they sit');
 });
 
 test('QA-5: wiring — every endpoint gates before its store, the tab rides also:canSeeQa, the client seq-guards + escapes', () => {
@@ -17828,8 +17832,8 @@ test('QA-11: qaSamplePick_ coverage-fair behavioral + sample endpoint assigns to
   assert.ok(/targets\[nm\] = qaExemptFor_\(exemptions, nm\.toLowerCase\(\), periodKey\) \? 0 : target;/.test(src), 'an exempt rep carries target 0 (the one key rule, QA2-1)');
   assert.ok(/qaSamplePick_\(candidates, n, reviewedByAgent, null, targets\)/.test(src), 'the pick is target-aware');
   assert.ok(/already at target this period/.test(src), 'an empty pick is refused by name');
-  assert.ok(/writeAuditLog_\(emp, 'QaSample', '', '', false, 0,\s*'requested=' \+ n \+ '; assigned=' \+ picked\.length, emp\.email\);/.test(src),
-    'counts-only audit — file names never reach the shared AuditLog (INV-32/196)');
+  assert.ok(/writeAuditLog_\(emp, 'QaSample', '', '', false, 0,\s*'requested=' \+ n \+ '; assigned=' \+ picked\.length \+ \(unread\.length \? '; unread=' \+ unread\.join\(','\) : ''\), emp\.email\);/.test(src),
+    'counts-only audit (plus F47\'s fixed input names) — file names never reach the shared AuditLog (INV-32/196)');
   assert.ok(/waitLock\(15000\)/.test(src) && /finally \{ lock\.releaseLock\(\); \}/.test(src), 'locked (INV-01)');
 });
 
@@ -21658,8 +21662,8 @@ test('QA-26: getQaLog + qaCreateManualRecording contracts — gate shape, self-s
   assert.ok(/lock\.waitLock\(15000\)/.test(man) && /finally \{ lock\.releaseLock\(\); \}/.test(man), 'locked (INV-01)');
   assert.ok(/Give the audit a label/.test(man) && /Label is capped at/.test(man), 'label required + capped, by name');
   assert.ok(/const fid = QA_MANUAL_ID_PREFIX \+ Utilities\.getUuid\(\);/.test(man), 'the id is minted here — never a Drive id');
-  assert.ok(/appendRowsTextSafe_\(getOrCreateQaRecordingsSheet_\(\), \[\[\s*fid, name, 0, 'manual', now, now, 'in_review', String\(emp\.email \|\| ''\)\.trim\(\)\.toLowerCase\(\), now, '', agent, 0, 0, '',\s*\]\], QA_RECORDINGS_TEXT_IDX\)/.test(man),
-    'the row is a FULL-WIDTH QaRecordings row: in_review, assigned to the CALLER, agent attributed, unshared, no duration/skip');
+  assert.ok(/appendRowsTextSafe_\(getOrCreateQaRecordingsSheet_\(\), \[\[\s*fid, name, 0, 'manual', now, now, 'in_review', String\(emp\.email \|\| ''\)\.trim\(\)\.toLowerCase\(\), now, '', agent, 0, 0, '', agentId,\s*\]\], QA_RECORDINGS_TEXT_IDX\)/.test(man),
+    'the row is a FULL-WIDTH QaRecordings row: in_review, assigned to the CALLER, agent attributed with its roster id (F48), unshared, no duration/skip');
   assert.ok(/writeAuditLog_\(emp, 'QaManualRecording', '', '', false, 0, 'fileId=' \+ fid, emp\.email\);/.test(man), 'audit row is id-only — the label may name a caller (INV-32/196)');
   assert.ok(!/name/.test(man.slice(man.indexOf("writeAuditLog_"), man.indexOf("writeAuditLog_") + 120)), 'the label never reaches the audit note');
   const pfx = /const QA_MANUAL_ID_PREFIX = 'manual-';/.test(serverSource());
@@ -29355,6 +29359,7 @@ test('S10 → TRN-1 (cycle 23): a FAILED attempt shows WHICH questions were wron
   s2.icon = () => ''; s2.esc = (x) => String(x == null ? '' : x);
   const overlay = { innerHTML: '' };
   s2.document.getElementById = (id) => (id === 'train-quiz-overlay' ? overlay : null);
+  loadFunction(s2, 'train/script_training.html', 'trainQuizSetClean_');   // F44 (cycle 25)
   loadFunction(s2, 'train/script_training.html', 'trainAttemptsLeftText_');
   loadFunction(s2, 'train/script_training.html', 'trainQuizLockedHtml_');
   const render = loadFunction(s2, 'train/script_training.html', 'trainRenderQuizResult_');
@@ -36568,6 +36573,220 @@ test('MP2-4: the reader puts a chapter\'s badge and colour on its title and its 
   ['__proto__', 'constructor', 'toString'].forEach((n) => { assert.strictEqual(ctx.kbManualChapterKey_('Chapter ' + n + ' — x'), '', n); assert.strictEqual(ctx.kbManualChapterKey_('Part ' + n + ' — x'), '', n); });
   assert.ok(/\(manual \? kbManualChapterIcon_\(d, 13, 'kb-man-dic'\) : ''\)/.test(extractFnFrom(M1_KB_SRC, 'kbRenderTree_')), 'the tree shows the icon on a manual part only');
   assert.ok(!/var\(--man-c,/.test(M1_KB_SRC), 'no fallback on the chapter colour (g57)');
+});
+
+// ── Cycle 25 Batch 8a — Intake, Training, QA ────────────────────────────────
+console.log('\ncycle 25 Batch 8a — Intake, Training, QA');
+const b8aConst_ = (k) => {
+  const m = serverSource().match(new RegExp('^const ' + k + ' = ([^\\n]+?);', 'm'));
+  if (!m) throw new Error(k + ' is not declared in the server source');
+  return 'var ' + k + ' = ' + m[1] + ';';
+};
+test('F41 (cycle 25): an HR notice whose issuer is no longer a roster manager goes to the rep\'s current manager (or the manager list) and says why — never to a departed or demoted address (driven)', () => {
+  const ctx = vm.createContext({ String, Object, Array, Math, JSON, console: { warn() {} } });
+  ['hrNoticeRoute_', 'hrNoticeTargets_', 'hrDepartedIssuerLine_', 'notifyEmpDocSigned_', 'notifyManagerOfCoachingAck_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  const R = (...a) => J(ctx.hrNoticeRoute_(...a));
+  assert.deepStrictEqual(R('Boss@x.com', 'm2@x.com', ['boss@x.com', 'm2@x.com'], ['g@x.com']), { to: ['Boss@x.com'], rerouted: false }, 'a current manager keeps the notice, case-insensitively');
+  assert.deepStrictEqual(R('gone@x.com', 'M2@x.com', ['m2@x.com'], ['g@x.com']), { to: ['m2@x.com'], rerouted: true }, 'THE REGRESSION: the departed issuer — now the rep\'s current manager');
+  assert.deepStrictEqual(R('gone@x.com', 'gone@x.com', ['m2@x.com'], ['g@x.com', 'gone@x.com']), { to: ['g@x.com'], rerouted: true }, 'a stale rep-manager cell is not trusted; the gate list never re-adds the departed');
+  assert.deepStrictEqual(R('gone@x.com', 'nobody@x.com', [], []), { to: [], rerouted: true }, 'no one to send to: nothing is sent');
+  assert.deepStrictEqual(R('', 'm2@x.com', ['m2@x.com'], []), { to: [], rerouted: false }, 'no stored issuer: nothing (the old early return)');
+  // The roster read: only included rows marked manager count, and an unreadable roster keeps the old address.
+  ctx.EMP = { IS_MANAGER: 1 };
+  ctx.empRosterEmail_ = (r) => String(r[0] || '');
+  ctx.getManagerEmails_ = () => ['g@x.com'];
+  let roster = [['hdr'], ['m2@x.com', true], ['rep@x.com', ''], ['demoted@x.com', 'no'], ['', 'TRUE']];
+  ctx.getEmployeeRosterRows_ = () => roster;
+  assert.deepStrictEqual(J(ctx.hrNoticeTargets_('demoted@x.com', 'm2@x.com')), { to: ['m2@x.com'], rerouted: true }, 'a DEMOTED issuer (row kept, manager cleared) is rerouted too');
+  assert.deepStrictEqual(J(ctx.hrNoticeTargets_('m2@x.com', '')), { to: ['m2@x.com'], rerouted: false }, 'a native-boolean manager cell reads as a manager');
+  ctx.getEmployeeRosterRows_ = () => { throw new Error('roster down'); };
+  assert.deepStrictEqual(J(ctx.hrNoticeTargets_('gone@x.com', 'm2@x.com')), { to: ['gone@x.com'], rerouted: false }, 'an unreadable roster sends where it always did rather than nowhere');
+  // Driven through both notifiers.
+  ctx.getEmployeeRosterRows_ = () => roster;
+  const sent = [];
+  ctx.appSendMail_ = (m) => sent.push(m); ctx.coachSendMail_ = (m) => sent.push(m);
+  ctx.buildBrandedEmailHtml_ = (t, b) => b; ctx.brandedKvRows_ = () => ''; ctx.esc_ = (x) => String(x).replace(/</g, '&lt;');
+  ctx.COACH_SEV_LABELS = { minor: 'Minor' }; ctx.safeWebAppUrl_ = () => 'u';
+  ctx.notifyEmpDocSigned_({ issuedBy: 'gone@x.com', title: 'Policy' }, { name: 'Sam', managerEmail: 'm2@x.com' }, false);
+  assert.strictEqual(sent[0].to, 'm2@x.com', 'the signed notice reaches the current manager');
+  assert.ok(/set up by gone@x\.com, who is no longer a manager/.test(sent[0].body) && /no longer a manager/.test(sent[0].htmlBody), 'and says why it came to them');
+  ctx.notifyEmpDocSigned_({ issuedBy: 'm2@x.com', title: 'Policy' }, { name: 'Sam', managerEmail: 'm2@x.com' }, true);
+  assert.ok(sent[1].to === 'm2@x.com' && !/no longer/.test(sent[1].body) && /^Sam completed "Policy"\.$/.test(sent[1].body), 'a current issuer: unchanged');
+  ctx.notifyManagerOfCoachingAck_({ createdBy: 'gone@x.com', severity: 'minor' }, { name: 'Sam', managerEmail: 'm2@x.com' }, false);
+  assert.ok(sent[2].to === 'm2@x.com' && /coaching item was set up by gone@x\.com/.test(sent[2].body) && /acknowledged the coaching/.test(sent[2].body), 'the coaching acknowledgement too');
+  ctx.notifyManagerOfCoachingAck_({ createdBy: 'gone@x.com', severity: 'minor' }, { name: 'Sam', managerEmail: '' }, false);
+  assert.strictEqual(sent[3].to, 'g@x.com', 'no current manager on the rep\'s row: the manager list');
+  // The caller hands the rep's manager in.
+  const ack = stripJsComments_(extractRawFunction('Code.js', 'acknowledgeCoaching'));
+  assert.ok(/notifyManagerOfCoachingAck_\(/.test(ack), 'acknowledgeCoaching still notifies');
+});
+
+test('F42 (cycle 25): a review\'s scorecards and comments are found by recording wherever they sit — an old shared review no longer renders empty past the 4,000-row tails (driven)', () => {
+  const ctx = vm.createContext({ String, Object, Array, Math, Number });
+  vm.runInContext(b8aConst_('QA_ROW_RUN_GAP'), ctx);
+  ['qaRowRuns_', 'qaWants_', 'qaRowsForFiles_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  assert.deepStrictEqual(J(ctx.qaRowRuns_([1, 2, 5, 40, 41], 2)), [[1, 5], [40, 41]], 'near rows share a read; far rows get their own');
+  assert.deepStrictEqual(J(ctx.qaRowRuns_([], 2)), []);
+  assert.strictEqual(ctx.qaWants_({ a: true }, 'constructor'), false, 'an id read off the prototype is not wanted');
+  assert.strictEqual(ctx.qaWants_({ a: true }, ' a '), true, 'a padded cell matches');
+  // A 9,000-row comments tab: the wanted recording's rows are at 10, 11 and 8,990.
+  const rows = []; for (let i = 0; i < 9000; i++) rows.push(['other-' + i, 'c' + i]);
+  rows[10] = ['OLD', 'first']; rows[11] = [' OLD', 'second']; rows[8990] = ['OLD', 'late'];
+  const reads = [];
+  const sheet = { getLastRow: () => rows.length + 1,
+    getRange: (r, c, n, w) => { reads.push([r, c, n, w]); return { getValues: () => rows.slice(r - 2, r - 2 + n).map((x) => (w === 1 ? [x[c - 1]] : x.slice(0, w))) }; } };
+  const got = ctx.qaRowsForFiles_(sheet, 0, 2, { OLD: true });
+  assert.deepStrictEqual(J(got).map((r) => r[1]), ['first', 'second', 'late'], 'THE REGRESSION: rows 10 and 11 sat 8,990 rows above a 4,000-row tail');
+  assert.deepStrictEqual(reads.map((r) => r[2]), [9000, 2, 1], 'one id-column read, then only the runs that hold a match');
+  assert.deepStrictEqual(J(ctx.qaRowsForFiles_({ getLastRow: () => 1 }, 0, 2, { OLD: true })), [], 'an empty tab');
+  // Wiring: every one-recording or my-recordings read goes through it; the all-rows reads stay bounded tails.
+  const sc = stripJsComments_(extractRawFunction('Code.js', 'qaReadScorecards_'));
+  assert.ok(/if \(wanted\) \{\s*rows = qaRowsForFiles_\(sheet, QSC\.FILE_ID/.test(sc) && /QA_SCORECARDS_SCAN/.test(sc), 'scorecards: by recording when asked for one, the tail only for the all-rows read');
+  const mine = stripJsComments_(extractRawFunction('Code.js', 'getMyQaReviews'));
+  assert.ok(/qaReadScorecards_\(null, wanted\)/.test(mine) && /qaRowsForFiles_\(cs, QAC\.FILE_ID/.test(mine) && !/QA_COMMENTS_SCAN|QA_SCORECARDS_SCAN/.test(mine), 'My Reviews reads its own recordings, however old');
+  const del = stripJsComments_(extractRawFunction('Code.js', 'qaDeleteComment'));
+  assert.ok(!/QA_COMMENTS_SCAN/.test(del), 'a comment can be deleted however old it is');
+});
+
+test('F43 (cycle 25): intake volume reads back until it passes the window\'s first month, and a tab it cannot reach the end of is NAMED — a busy tab\'s oldest months were silently short (driven)', () => {
+  const ctx = vm.createContext({ String, Object, Array, Math, Number, Date });
+  ['INTAKE_VOLUME_MONTHS', 'INTAKE_VOLUME_SCAN_MAX', 'INTAKE_VOLUME_SCAN_BLOCKS', 'INTAKE_FORM_TYPES_'].forEach((k) => vm.runInContext(b8aConst_(k), ctx));
+  ['intakeVolumeBuckets_', 'intakeVolumeReachesBack_', 'getIntakeVolumeStats', 'intakeTsString_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  assert.strictEqual(ctx.intakeVolumeReachesBack_(['2026-05-31 10:00:00', '2026-06-01'], '2026-05'), false, 'every stamp inside the window: keep reading');
+  assert.strictEqual(ctx.intakeVolumeReachesBack_(['', 'junk', '2026-04-30 09:00:00'], '2026-05'), true, 'one older stamp: covered');
+  assert.strictEqual(ctx.intakeVolumeReachesBack_(['', 'junk'], '2026-05'), false, 'unreadable stamps prove nothing');
+  ctx.CONFIG = { MANAGER_TIMEZONE: 'America/Chicago', TIMEZONE: 'Asia/Kolkata' };
+  ctx.Utilities = { formatDate: () => '2026-10-14' };
+  ctx.getEmployeeInfo_ = () => ({ isManager: true });
+  const tab = (n, oldFirst) => { const col = []; for (let i = 0; i < n; i++) col.push(i < oldFirst ? '2026-01-15 10:00:00' : '2026-05-20 10:00:00'); return col; };
+  const tabs = { PPD: tab(9000, 500), PMD: tab(10, 0), PAP: tab(50000, 0) };
+  let reads = 0;
+  ctx.getIntakeSubmissionSheet_ = (ft) => ({ getLastRow: () => tabs[ft].length + 1,
+    getRange: (r, c, n) => { reads++; return { getValues: () => tabs[ft].slice(r - 2, r - 2 + n).map((x) => [x]) }; } });
+  const res = JSON.parse(JSON.stringify(ctx.getIntakeVolumeStats()));
+  const may = res.months.find((m) => m.month === '2026-05');
+  assert.strictEqual(may.ppd, 8500, 'THE REGRESSION: a 4,000-row tail counted 4,000 of the 8,500 May PPDs');
+  assert.strictEqual(may.pmd, 10, 'a small tab: one read, as before');
+  assert.deepStrictEqual(res.truncatedTypes, ['PAP'], 'a tab still inside the window after the block cap is NAMED, never counted short in silence');
+  assert.deepStrictEqual(res.failedTypes, []);
+  // The client says so.
+  const m = stripJsComments_(extractFunction('metrics/script_metrics.html', 'mLoadIntakeVolume_'));
+  assert.ok(/res\.truncatedTypes && res\.truncatedTypes\.length/.test(m) && /esc\(res\.truncatedTypes\.join/.test(m) && /earliest months may be undercounted/.test(m), 'the volume block names a short tab, escaped');
+});
+
+test('F45 (cycle 25): a second void of a coaching item writes nothing — the first reason stands on the keep-forever row, and no second audit row (driven)', () => {
+  const ctx = vm.createContext({ String, Object });
+  vm.runInContext(extractRawFunction('Code.js', 'voidCoaching'), ctx);
+  const writes = [], audits = [];
+  let status = 'active';
+  ctx.LockService = { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) };
+  ctx.getEmployeeInfo_ = () => ({ isManager: true, email: 'm@x.com' });
+  ctx.findCoachingRow_ = () => ({ rowIdx: 7, item: { coachId: 'C1', empId: 'E1', severity: 'minor', status } });
+  ctx.coachCanManagerSee_ = () => true;
+  ctx.CO = { STATUS: 5, VOID_REASON: 9 }; ctx.COACH_TAB = 'Coaching'; ctx.COACH_HEADERS = [];
+  ctx.getOrCreateEmpDocSheet_ = () => ({ getRange: (r, c) => { const g = { setNumberFormat: () => g, setValue: (v) => { writes.push([c, v]); return g; } }; return g; } });
+  ctx.sheetSafe_ = (x) => x; ctx.sheetText_ = (x) => x;
+  ctx.writeAuditLog_ = (...a) => audits.push(a); ctx.pendingTasksBust_ = () => {};
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.voidCoaching('C1', 'wrong rep'))), { success: true });
+  assert.strictEqual(writes.length, 2, 'the first void writes the status and its reason');
+  status = 'void';
+  const again = JSON.parse(JSON.stringify(ctx.voidCoaching('C1', 'a different reason')));
+  assert.deepStrictEqual(again, { success: true, alreadyVoid: true }, 'a second void succeeds, and says it was already done');
+  assert.strictEqual(writes.length, 2, 'THE REGRESSION: the second void rewrote the VoidReason on a never-purged HR row');
+  assert.strictEqual(audits.length, 1, 'and wrote a second CoachingVoid audit row');
+  assert.ok(/r\.alreadyVoid \? 'Already voided/.test(extractFunction('train/script_coaching.html', 'coachVoid_')), 'the manager is told the first reason stands');
+});
+
+test('F46 (cycle 25): a catalog capacity of "1,000" is 1,000 lbs to the engine and the validator alike — it read as 1, excluding the chair for every patient while the validator saw a valid number (driven)', () => {
+  const ctx = vm.createContext({ String, parseInt });
+  vm.runInContext(extractRawFunction('Code.js', 'intakeCapLbs_'), ctx);
+  [['1,000', 1000], ['1,000 lbs', 1000], [' 450', 450], ['450 (heavy duty)', 450], ['300', 300], ['12,345', 12345],
+   ['n/a', NaN], ['', NaN], ['1.000', 1], ['1,00', 1], ['10,0000', 10]].forEach(([t, want]) => {
+    const got = ctx.intakeCapLbs_(t);
+    assert.ok(Number.isNaN(want) ? Number.isNaN(got) : got === want, JSON.stringify(t) + ' → ' + got);
+  });
+  const P = 'https://x.test/p.pdf', I = 'https://x.test/i.png';
+  const hits = (w, cap) => { const r = intakeFilterRecommendations_({ '38': String(w) }, [['Std Captain', 'K0823', cap, 'C', P, I]]); return r.standard.length + r.complex.length; };
+  assert.strictEqual(hits(400, '1,000'), 1, 'THE REGRESSION: a 1,000 lb chair was excluded for a 400 lb patient');
+  assert.strictEqual(hits(400, '300-1,000'), 1, 'a range\'s max too');
+  assert.strictEqual(hits(400, '450-1,000'), 0, 'and its min still excludes');
+  assert.deepStrictEqual(intakeCatalogIssues_([['ok', 'K0823', '1,000', 'C', P, I]]), [], 'a thousands comma is clean');
+  ['1.000', '1 000', '10'].forEach((cap) => {
+    const iss = intakeCatalogIssues_([['bad', 'K0823', cap, 'C', P, I]]);
+    assert.ok(iss.length === 1 && iss[0].severity === 'error' && /no patient fits/.test(iss[0].detail), JSON.stringify(cap) + ' is named: the validator was silent while the engine excluded the chair for everyone');
+  });
+  assert.ok(/no patient fits/.test(intakeCatalogIssues_([['bad', 'K0823', '5-10', 'C', P, I]])[0].detail), 'a range whose top is below any patient');
+  // ONE reader: neither the engine nor the validator parses a capacity itself.
+  const eng = stripJsComments_(extractRawFunction('Code.js', 'intakeFilterRecommendations_'));
+  const val = stripJsComments_(extractRawFunction('Code.js', 'intakeCatalogIssues_'));
+  assert.ok(!/parseInt\((capRaw|parts\[|cap\b)/.test(eng + val) && /intakeCapLbs_\(/.test(eng) && /intakeCapLbs_\(/.test(val), 'both go through intakeCapLbs_ (g126)');
+});
+
+test('F47 (cycle 25): a QA sample made without the exemptions or the roster says which, in the answer and the toast — it read as a clean target-aware pick (driven)', () => {
+  const ctx = vm.createContext({ String, Object, Array, Math, Number });
+  vm.runInContext(extractRawFunction('Code.js', 'qaSampleRecordings'), ctx);
+  const audits = [];
+  ctx.LockService = { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) };
+  ctx.getEmployeeInfo_ = () => ({ email: 'r@x.com', id: 'E9', name: 'Rev' });
+  ctx.canSeeQa_ = () => true;
+  ctx.QAR = { FILE_ID: 0, AGENT: 1, CREATED_MS: 2, STATUS: 3, ASSIGNEE: 4, AGENT_ID: 5 };
+  ctx.QA_LIST_SCAN = 100; ctx.QA_RECORDINGS_HEADERS = [0, 1, 2, 3, 4, 5];
+  const rows = [['f1', 'Ana', 1, 'new', '', ''], ['f2', 'Bo', 1, 'new', '', '']];
+  ctx.getOrCreateQaRecordingsSheet_ = () => ({ getLastRow: () => rows.length + 1,
+    getRange: (r, c, n) => ({ getValues: () => rows.slice(r - 2, r - 2 + (n || 1)), setValue() {} }) });
+  ctx.qaPeriodValid_ = () => true; ctx.qaAuditTarget_ = () => 3; ctx.qaPeriodLabel_ = (k) => k;
+  ctx.qaMsToYmd_ = () => '2026-10-01'; ctx.qaStatus_ = (s) => s; ctx.qaPeriodMatches_ = () => true;
+  ctx.qaSelfReviewRefusal_ = () => ''; ctx.qaExemptFor_ = () => false; ctx.empRosterEmail_ = (r) => r[1]; ctx.EMP = { NAME: 0 };
+  ctx.qaSamplePick_ = (c, n) => c.slice(0, n); ctx.sheetSafe_ = (x) => x;
+  ctx.writeAuditLog_ = (...a) => audits.push(a[6]);
+  let exThrows = true, rosterThrows = true;
+  ctx.qaReadExemptions_ = () => { if (exThrows) throw new Error('QA store down'); return {}; };
+  ctx.getEmployeeRosterRows_ = () => { if (rosterThrows) throw new Error('roster down'); return [['hdr'], ['Ana', 'ana@x.com']]; };
+  let r = JSON.parse(JSON.stringify(ctx.qaSampleRecordings(2, '2026-10')));
+  assert.ok(r.success && r.assigned === 2, 'the pick still happens');
+  assert.deepStrictEqual(r.unread, ['exemptions', 'roster'], 'THE REGRESSION: both unreadable inputs were swallowed');
+  assert.ok(/; unread=exemptions,roster$/.test(audits[0]), 'the audit row names them — fixed words, never a name');
+  exThrows = false; rosterThrows = false;
+  r = JSON.parse(JSON.stringify(ctx.qaSampleRecordings(1, '2026-10')));
+  assert.deepStrictEqual(r.unread, [], 'a clean read names nothing');
+  assert.ok(!/unread/.test(audits[1]), 'and the audit row is as before');
+  // The client: driven through the real qaSample_.
+  const toasts = []; let ok = null;
+  const run = { withSuccessHandler(f) { ok = f; return run; }, withFailureHandler() { return run; }, qaSampleRecordings() {} };
+  const cctx = vm.createContext({ Math, Number, Array, QA_STATE: { queue: {}, period: '' }, qaCoverageSummary_: () => ({ gaps: 2 }),
+    document: { getElementById: () => null }, showToast: (m, t) => toasts.push([m, t]), currentView: 'other', google: { script: { run } } });
+  vm.runInContext(extractFunction('qa/script_qa.html', 'qaSample_'), cctx);
+  cctx.qaSample_(); ok({ success: true, assigned: 2, unread: ['exemptions'] });
+  assert.ok(toasts[0][1] === 'toast-warn' && /exemptions could not be read/.test(toasts[0][0]), 'the toast warns instead of claiming a target-aware pick');
+  cctx.qaSample_(); ok({ success: true, assigned: 2, unread: [] });
+  assert.ok(toasts[1][1] === 'toast-success' && /shortest-covered agents first/.test(toasts[1][0]), 'a clean pick says so, as before');
+});
+
+test('F48 (cycle 25): a manual QA audit resolves the agent\'s roster id at write (so the review can release to them) and refuses the reviewer\'s own call (S6) (driven)', () => {
+  const ctx = vm.createContext({ String, Object, Array, Date });
+  ['qaCreateManualRecording', 'qaSelfReviewRefusal_', 'qaIsOwnRecording_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const appended = [];
+  let caller = { email: 'r@x.com', id: 'E9', name: 'Rev', isAdmin: false };
+  ctx.LockService = { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) };
+  ctx.getEmployeeInfo_ = () => caller; ctx.canSeeQa_ = () => true;
+  ctx.QA_MANUAL_LABEL_MAX = 120; ctx.QA_MANUAL_ID_PREFIX = 'manual-'; ctx.QA_RECORDINGS_TEXT_IDX = [];
+  ctx.Utilities = { getUuid: () => 'u1' };
+  ctx.qaRosterIdByName_ = (n) => ({ 'ana ruiz': 'E1', rev: 'E9' })[String(n).toLowerCase()] || '';
+  ctx.getOrCreateQaRecordingsSheet_ = () => ({});
+  ctx.appendRowsTextSafe_ = (s, rows) => appended.push(rows[0]);
+  ctx.writeAuditLog_ = () => {};
+  ctx.QAR = { AGENT: 10, AGENT_ID: 14 };
+  let r = JSON.parse(JSON.stringify(ctx.qaCreateManualRecording('Ana Ruiz', 'Oct 3 call')));
+  assert.ok(r.success, 'created');
+  assert.strictEqual(appended[0][14], 'E1', 'THE REGRESSION: the AgentId cell was never written, so My Reviews (scoped by id) never showed it to Ana');
+  assert.strictEqual(appended[0].length, 15, 'a full-width row');
+  r = JSON.parse(JSON.stringify(ctx.qaCreateManualRecording('Rev', 'my own call')));
+  assert.ok(!r.success && /your own call/.test(r.error), 'THE REGRESSION: a reviewer could log an audit of their own call by hand');
+  assert.strictEqual(appended.length, 1, 'and nothing is written');
+  caller = Object.assign({}, caller, { isAdmin: true });
+  assert.ok(JSON.parse(JSON.stringify(ctx.qaCreateManualRecording('Rev', 'admin audit'))).success, 'an admin may (the S6 rule)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

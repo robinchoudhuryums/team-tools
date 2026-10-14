@@ -427,6 +427,10 @@ function voidCoaching(coachId, reason) {
     const found = findCoachingRow_(coachId);
     if (!found) return { success: false, error: 'Coaching item not found.' };
     if (!coachCanManagerSee_(callerEmp, found.item)) return { success: false, error: 'Coaching item not found.' };
+    // F45 (cycle 25): idempotent, like voidDoc — a second void (a double
+    // click, a second manager, a stale drawer) rewrote the VoidReason on a
+    // keep-forever HR row and wrote a second audit row.
+    if (found.item.status === 'void') return { success: true, alreadyVoid: true };
     const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
     sheet.getRange(found.rowIdx, CO.STATUS + 1).setValue(sheetSafe_('void'));
     // F(cycle-8 M-6): the reason (free text plausibly naming a patient/TRX —
@@ -635,11 +639,14 @@ function notifyRepOfCoachingNudge_(target, item, manager) {
 function notifyManagerOfCoachingAck_(item, rep, replied) {
   try {
     if (!item.createdBy) return;
+    const route = hrNoticeTargets_(item.createdBy, rep && rep.managerEmail);   // F41 — the FORM-5 rule
+    if (!route.to.length) return;
+    const lead = route.rerouted ? hrDepartedIssuerLine_(item.createdBy, 'coaching item') : '';
     const sevLabel = COACH_SEV_LABELS[item.severity] || item.severity;
-    const body = rep.name + ' acknowledged your coaching (' + sevLabel + ').' + (replied ? ' They left a reply — open Coaching to read it.' : '');
-    coachSendMail_({ to: item.createdBy, subject: 'Acknowledged: coaching for ' + rep.name,
+    const body = (lead ? lead + '\n\n' : '') + rep.name + ' acknowledged ' + (lead ? 'the' : 'your') + ' coaching (' + sevLabel + ').' + (replied ? ' They left a reply — open Coaching to read it.' : '');
+    coachSendMail_({ to: route.to.join(','), subject: 'Acknowledged: coaching for ' + rep.name,
       body: body, htmlBody: buildBrandedEmailHtml_('Coaching acknowledged',
-        brandedKvRows_([['Employee', rep.name], ['Type', sevLabel], ['Reply', replied ? 'Yes — in the app' : 'None']]),
+        (lead ? '<p style="margin:0 0 12px;">' + esc_(lead) + '</p>' : '') + brandedKvRows_([['Employee', rep.name], ['Type', sevLabel], ['Reply', replied ? 'Yes — in the app' : 'None']]),
         { tone: 'success', subLabel: 'Training · Coaching', ctaUrl: safeWebAppUrl_('coaching'), ctaLabel: 'Open Coaching' }) });
   } catch (e) { console.warn('notifyManagerOfCoachingAck_ failed: ' + e.message); }
 }

@@ -1803,6 +1803,9 @@ function mLoadIntakeVolume_() {
       var note = (res.failedTypes && res.failedTypes.length)
         ? '<div class="m-vol-note" role="alert">' + esc(res.failedTypes.join(', ')) + ' tab(s) could not be read — those columns may be incomplete.</div>'
         : '';
+      if (res.truncatedTypes && res.truncatedTypes.length) {
+        note += '<div class="m-vol-note" role="alert">' + esc(res.truncatedTypes.join(', ')) + ' tab(s) hold more rows than one read covers — the earliest months may be undercounted.</div>';
+      }
       host.innerHTML = '<h2 class="card-label" style="margin-top:var(--space-lg)">Intake volume <span style="color:var(--muted-2);font-weight:400">· by month sent</span></h2>' +
         note +
         mtRenderTable_({

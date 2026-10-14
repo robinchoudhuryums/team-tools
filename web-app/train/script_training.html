@@ -419,7 +419,11 @@ function trainCloseReader_() {
 // shape; submitQuizAttempt returns only per-question right/wrong — §9.4).
 function trainOpenQuiz_(quizId) {
   TRAIN_STATE.quizTaking = quizId;
-  var overlay = ensureOverlay('train-quiz-overlay', { label: 'Quiz', onClose: trainCloseQuiz_ });
+  // F44 (cycle 25): picked answers are work — Escape, the backdrop or Cancel
+  // asks before throwing them away (UI-ESC). A grade in flight is not a
+  // discard: the server records the attempt either way (E13).
+  var overlay = ensureOverlay('train-quiz-overlay', { label: 'Quiz', onClose: trainCloseQuiz_,
+    unsaved: { what: 'this quiz attempt', busy: function () { return !!TRAIN_STATE.quizGrading; } } });
   overlay.innerHTML = '<div class="modal tr-quiz"><div class="body"><div class="m-loading" role="status"><span class="lo-dots"><span></span><span></span><span></span></span> Loading quiz&hellip;</div></div></div>';
   google.script.run
     .withSuccessHandler(function (quiz) {
@@ -448,9 +452,13 @@ function trainQuizLockedHtml_(lk) {
     ' You have used all ' + esc(String((lk && lk.maxAttempts) || '')) + ' attempts. You can try again after <strong>' +
     esc((lk && lk.retryLabel) || 'the wait') + '</strong>, or ask your manager to reset your attempts. Review the material in the meantime.</div>';
 }
+/** F44: a view with no answers to lose (the lock, the result) or a fresh
+ *  retake starts clean — the answers picked before were submitted. */
+function trainQuizSetClean_(overlay) { if (overlay) overlay._dirty = false; }
 function trainRenderQuizLocked_(lk) {
   var overlay = document.getElementById('train-quiz-overlay');
   if (!overlay) return;
+  trainQuizSetClean_(overlay);
   overlay.innerHTML = '<div class="modal tr-quiz"><div class="body">' + trainQuizLockedHtml_(lk) + '</div><div class="foot">' +
     '<button class="tr-complete-btn" onclick="closeOverlay(document.getElementById(\'train-quiz-overlay\'))">Close</button></div></div>';
 }
@@ -462,6 +470,7 @@ function trainAttemptsLeftText_(n) {
 function trainRenderQuizForm_(quiz) {
   var overlay = document.getElementById('train-quiz-overlay');
   if (!overlay) return;
+  trainQuizSetClean_(overlay);
   var lk = quiz.lockout;
   var h = '<div class="modal tr-quiz"><div class="body">' +
     '<h2 style="margin:0 0 4px;">' + esc(quiz.title) + '</h2>' +
@@ -495,8 +504,10 @@ function trainSubmitQuiz_() {
   var go = function () {
     var btn = document.getElementById('tr-quiz-submit');
     if (btn) { btn.disabled = true; btn.textContent = 'Grading…'; }
+    TRAIN_STATE.quizGrading = true;
     google.script.run
       .withSuccessHandler(function (res) {
+        TRAIN_STATE.quizGrading = false;
         // E13 (cycle 10): update the CHECKLIST STATE before the modal-identity
         // guard — the server recorded the attempt (and, on a pass, the
         // completion) regardless of whether the rep cancelled the modal while
@@ -526,6 +537,7 @@ function trainSubmitQuiz_() {
         trainRenderQuizResult_(quiz, answers, res);
       })
       .withFailureHandler(function (err) {
+        TRAIN_STATE.quizGrading = false;
         if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + ' Submit answers'; }
         showToast('Could not grade the quiz: ' + ((err && err.message) || err), 'error');
       })
@@ -543,6 +555,7 @@ function trainSubmitQuiz_() {
 function trainRenderQuizResult_(quiz, answers, res) {
   var overlay = document.getElementById('train-quiz-overlay');
   if (!overlay) return;
+  trainQuizSetClean_(overlay);
   var h = '<div class="modal tr-quiz"><div class="body">' +
     '<div class="tr-score ' + (res.passed ? 'pass' : 'fail') + '">' +
       '<div class="big">' + res.scorePct + '%</div>' +

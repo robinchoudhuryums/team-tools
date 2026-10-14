@@ -1673,6 +1673,10 @@ const INTAKE_WEIGHT_MIN_LBS = 20;
 const INTAKE_WEIGHT_MAX_LBS = 1000;
 const INTAKE_VOLUME_MONTHS = 6;
 const INTAKE_VOLUME_SCAN_MAX = 4000;
+/** Cycle 25 F43: the volume read goes back in SCAN_MAX-row blocks until it
+ *  passes the window's first month; past this many blocks the type is named
+ *  in `truncatedTypes` rather than counted short. */
+const INTAKE_VOLUME_SCAN_BLOCKS = 10;
 // ════════════════════════════════════════════════════════════════════════════
 //  DASHBOARD METRICS (Time Clock → Dashboard)
 //  Period-aggregated own + cohort-guarded team CDR for the Dashboard carousels.
@@ -2603,7 +2607,11 @@ const QA_SCORECARD_CRITERIA = [
 const QA_STATUSES = ['new', 'in_review', 'done', 'skipped'];
 const QA_LIST_SCAN = 2000;            // bounded tail over QaRecordings
 const QA_LIST_CAP = 200;              // payload cap; pre-slice total reported (INV-169)
-const QA_COMMENTS_SCAN = 4000;        // bounded tail over QaComments
+const QA_COMMENTS_SCAN = 4000;        // bounded tail over QaComments (the queue's comment COUNTS only — F42)
+// F42 (cycle 25): a per-recording read (its comments, its scorecards, My
+// Reviews, a comment's delete) finds its rows through the WHOLE id column and
+// reads only those, in runs — rows closer than this are read as one range.
+const QA_ROW_RUN_GAP = 25;
 const QA_COMMENT_MAX_CHARS = 2000;
 const QA_COMMENT_MAX_AT_SEC = 86400;  // sanity bound on the timestamp anchor
 const QA_SYNC_MAX_FILES = 500;        // folder files SCANNED per sync run; truncated reported
