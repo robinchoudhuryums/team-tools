@@ -274,12 +274,16 @@ function spanishIsCourtesyOnly_(body) {
  *  0 when nothing closed before it, or nothing is open. */
 function spanishEpisodes_(entries, manualRec) {
   const list = (entries || []).map(function (e, i) { return { role: e.role, ms: Number(e.ms) || 0, from: e.from || '', idx: i }; });
-  if (manualRec) {
-    const mMs = Number(manualRec.ms) || 0;
+  // F13 (cycle 25): EVERY manual resolve is placed at its own stamp (oldest
+  // first, so a later one lands after an earlier one). Only the latest was
+  // kept, so a thread resolved twice read as one request resolved at the
+  // second click, and the first resolve vanished.
+  spanishManualStamps_(manualRec).forEach(function (m) {
+    const mMs = Number(m.ms) || 0;
     let at = list.length;
     if (mMs) { at = 0; while (at < list.length && list[at].ms <= mMs) at++; }
-    list.splice(at, 0, { role: 'manual', ms: mMs, from: String(manualRec.by || ''), idx: -1 });
-  }
+    list.splice(at, 0, { role: 'manual', ms: mMs, from: String(m.by || ''), idx: -1 });
+  });
   const eps = [];
   let cur = null, lastClose = 0;
   list.forEach(function (e) {
@@ -342,8 +346,8 @@ function getSpanishInboxStats(days) {
     // Cache key is scoped by address + member set (not just `days`) so an operator
     // editing SPANISH_INBOX_ADDRESS / SPANISH_INBOX_MEMBERS isn't served a stale
     // aggregate computed under the old config for the TTL.
-    const ckey = 'spanish_inbox_v4:' + d + ':' + spanishCacheHash_(addr, members,
-      { sender: getSpanishVmSender_(), filter: getSpanishVmFilter_(), minSec: getSpanishVmMinSeconds_() });   // v2: manual resolves left the duration series (2026-09-10); v3: voicemails joined the counts (F-34, cycle 20); v4: an email thread counts each request episode (SP-2, cycle 23) — INV-85, a cached older aggregate must not keep serving the old numbers for the TTL
+    const ckey = 'spanish_inbox_v5:' + d + ':' + spanishCacheHash_(addr, members,
+      { sender: getSpanishVmSender_(), filter: getSpanishVmFilter_(), minSec: getSpanishVmMinSeconds_() });   // v2: manual resolves left the duration series (2026-09-10); v3: voicemails joined the counts (F-34, cycle 20); v4: an email thread counts each request episode (SP-2, cycle 23); v5: every manual resolve closes its own request (F13, cycle 25) — INV-85, a cached older aggregate must not keep serving the old numbers for the TTL
     const hit = cache.get(ckey);
     if (hit) { try { return JSON.parse(hit); } catch (e) {} }
 
@@ -524,7 +528,7 @@ function spanishVmFold_(days, manual, members, haveMembers, seen) {
       // SP-2 — who resolved it: the member whose reply did, or whoever clicked.
       let resolverFrom = '';
       if (vm.resolveMs != null) {
-        if (vm.wasManual) resolverFrom = String((manual[id] && manual[id].by) || '');
+        if (vm.wasManual) resolverFrom = vm.by || '';   // F13 — the click that resolved THIS voicemail
         else for (let r = 0; r < replies.length; r++) { if (replies[r].idx > k) { resolverFrom = replies[r].from; break; } }
       }
       out.rows.push({ threadId: id, thread: th, from: m.getFrom(), subject: m.getSubject(), msgIndex: k,
@@ -542,8 +546,13 @@ function spanishVmResolution_(idx, reqMs, replies, manualRec) {
   for (let i = 0; i < (replies || []).length; i++) {
     if (replies[i].idx > idx) return { resolveMs: replies[i].ms, wasManual: false };
   }
-  if (manualRec && (!manualRec.ms || manualRec.ms >= reqMs)) {
-    return { resolveMs: Math.max(reqMs, manualRec.ms || reqMs), wasManual: true };
+  // F13 (cycle 25): the FIRST manual resolve at or after the voicemail — a
+  // later one resolved a later voicemail, and stamping this one with it
+  // stretched its time to the second click. `by` is whoever made that click.
+  const stamps = spanishManualStamps_(manualRec);
+  for (let j = 0; j < stamps.length; j++) {
+    const mMs = Number(stamps[j].ms) || 0;
+    if (!mMs || mMs >= reqMs) return { resolveMs: Math.max(reqMs, mMs || reqMs), wasManual: true, by: String(stamps[j].by || '') };
   }
   return { resolveMs: null, wasManual: false };
 }
@@ -841,7 +850,7 @@ function spanishSpanRows_(sh, msCol, width) {
   return sh.getRange(start, 1, last - start + 1, width).getValues();
 }
 /** PURE (Node-pinned) — fold SpanishManualResolved rows (oldest → newest) into
- *  { threadId: { by, ms } }. SP-1 (cycle 23): the LATEST stamped row wins. The
+ *  { threadId: { by, ms, all: [{by, ms}] } }. SP-1 (cycle 23): the LATEST stamped row wins. The
  *  first-wins fold froze a thread at its first resolve, so a repeat voicemail
  *  that arrived after it could never be resolved (the endpoint answered
  *  "already") and stayed pending, counted and assignable for the whole window.
@@ -854,9 +863,20 @@ function spanishManualResolvedFold_(rows) {
     if (!tid) return;
     const ms = Number(r[3]) || 0;
     if (out[tid] && !out[tid].ms) return;   // a legacy resolve-all stands
-    out[tid] = { by: String(r[2] || ''), ms: ms };
+    // F13 (cycle 25): `by`/`ms` are the LATEST (the "already" check reads
+    // them); `all` keeps EVERY resolve, oldest first — each closed the request
+    // open at its own stamp, and folding them to one merged two requests.
+    const rec = out[tid] || (out[tid] = { by: '', ms: 0, all: [] });
+    rec.by = String(r[2] || ''); rec.ms = ms;
+    rec.all.push({ by: rec.by, ms: ms });
   });
   return out;
+}
+/** PURE (F13, cycle 25) — a manual-resolve record's stamps, oldest first: the
+ *  fold's `all`, or the record itself (a `{by, ms}` from an older caller). */
+function spanishManualStamps_(rec) {
+  if (!rec) return [];
+  return (Array.isArray(rec.all) && rec.all.length) ? rec.all : [rec];
 }
 /** Manually-resolved threads over the state span: { threadId: { by, ms } }.
  *  No tab yet (nothing ever marked) reads as empty; SP-3: a FAILED read
@@ -1132,7 +1152,7 @@ function spanishPendingIdsPut_(days, ids, floors) {
 function spanishPendingIdsDrop_(threadId) {
   try {
     const cache = CacheService.getScriptCache();
-    const key = SPANISH_PENDING_IDS_PREFIX + SPANISH_AUTO_ASSIGN_DAYS;
+    const key = SPANISH_PENDING_IDS_PREFIX + SPANISH_PENDING_WINDOW_DAYS;
     const v = JSON.parse(cache.get(key) || 'null');
     if (!v || !Array.isArray(v.ids) || v.ids.indexOf(threadId) < 0) return;
     v.ids = v.ids.filter(function (t) { return t !== threadId; });
@@ -1306,7 +1326,7 @@ function autoAssignSpanishThreadsScheduled() {
     const bizMin = businessMinutesBetween_(nowMs, nowMs + 60000);
     if (!(bizMin > 0)) { Logger.log('spanishAutoAssign: outside business hours — nothing assigned.'); return; }
     const emp = getEmployeeInfo_() || _SYSTEM_AUDIT_EMP_;
-    const r = spanishAutoAssignCore_(emp, SPANISH_AUTO_ASSIGN_DAYS);
+    const r = spanishAutoAssignCore_(emp, SPANISH_PENDING_WINDOW_DAYS);
     if (!r || !r.success) {
       const why = (r && r.error) || 'auto-assign failed';
       Logger.log('spanishAutoAssign: ' + why);

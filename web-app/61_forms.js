@@ -1332,18 +1332,27 @@ function resolvePageHtml_(heading, msg, token) {
  *  is opened from an email by anyone in the department): the TOKEN is the
  *  credential, exactly as the link was, and the caller must be identifiable —
  *  an unattributed resolve is refused, as before. The sender's own click is
- *  recorded as 'self' (untimed) by markDeptRequestResolved_. */
+ *  recorded as 'self' (untimed) by markDeptRequestResolved_, and since cycle 25
+ *  F55 a copy recipient's — the CC mailbox, a MAIL_BCC_ALL address, a roster
+ *  member outside the receiving department — as 'copy' (untimed). */
 function confirmDeptRequestResolve(token) {
   try {
     const tok = String(token || '').trim();
     if (!/^[A-Za-z0-9_-]{1,80}$/.test(tok)) return { heading: 'Request not found', message: 'This link is invalid or the request was removed.' };
     const by = getActiveUserEmail_();
     if (!by) return { heading: 'Sign in to confirm', message: 'Open this link while signed in to your UniversalMed Supply work account so we can record who resolved the request.' };
-    const res = markDeptRequestResolved_(tok, by, 'email');
+    // F55: who the clicker is, read OUTSIDE the resolve's lock. A roster read
+    // that fails leaves the clicker unplaced (the 'email' default) rather than
+    // refusing the resolve — the click is real either way.
+    let clickerDepts = null;
+    try { const ce = getEmployeeInfo_(); if (ce) clickerDepts = empDepartments_(ce); } catch (e) {}
+    const copyAddrs = [].concat(String(CONFIG.CALL_NOTES.CC_EMAIL || '').split(','), mailBccAll_());
+    const res = markDeptRequestResolved_(tok, by, 'email', { copyAddrs: copyAddrs, clickerDepts: clickerDepts });
     if (!res.found) return { heading: 'Request not found', message: 'This link is invalid or the request was removed.' };
     if (res.already) return { heading: 'Already resolved', message: 'This was already marked resolved' + (res.resolvedBy ? ' by ' + res.resolvedBy : '') + (res.resolvedAt ? ' on ' + res.resolvedAt : '') + '.' };
     return { heading: 'Marked resolved — thank you!',
       message: 'The ' + (res.dept || 'department') + ' request is now recorded as resolved (' + by + ')' +
-        (res.self ? ' — as your own clear, since you sent it: it is not counted as a department response time.' : '.') };
+        (res.self ? ' — as your own clear, since you sent it: it is not counted as a department response time.'
+          : res.copy ? ' — as a clear from a copy of the email, not the department: it is not counted as a department response time.' : '.') };
   } catch (e) { return { heading: 'Something went wrong', message: 'Could not record the resolution. Please try again.' }; }
 }

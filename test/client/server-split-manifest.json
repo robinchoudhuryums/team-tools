@@ -2547,6 +2547,34 @@
     "getDashboardMetrics"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-14",
+   "why": "cycle 25 Batch 6b: SPANISH_AUTO_ASSIGN_DAYS renamed SPANISH_PENDING_WINDOW_DAYS (F14), spanishManualStamps_ (F13), drEmailClickVia_ (F55)",
+   "added": [
+    "SPANISH_PENDING_WINDOW_DAYS",
+    "drEmailClickVia_",
+    "spanishManualStamps_"
+   ],
+   "removed": [
+    "SPANISH_AUTO_ASSIGN_DAYS"
+   ],
+   "changed": [
+    "DR_RESOLVED_VIA_VALUES",
+    "autoAssignSpanishThreadsScheduled",
+    "confirmDeptRequestResolve",
+    "drDeptStats_",
+    "drTeamKpis_",
+    "getMyPendingTasks",
+    "getSpanishInboxStats",
+    "markDeptRequestResolved_",
+    "spanishEpisodes_",
+    "spanishManualResolvedFold_",
+    "spanishPendingIdsDrop_",
+    "spanishVmFold_",
+    "spanishVmResolution_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3154,7 +3182,7 @@
   "DR_RESOLVED_VIA_VALUES": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "f80a4d4501620f7c"
+   "sha": "a0bc2da58d60d6f3"
   },
   "DR_RESULT_CACHE_TTL": {
    "file": "00_config.js",
@@ -4511,11 +4539,6 @@
    "kind": "const",
    "sha": "1a64e9138d22e365"
   },
-  "SPANISH_AUTO_ASSIGN_DAYS": {
-   "file": "00_config.js",
-   "kind": "const",
-   "sha": "83d510c1f52d8857"
-  },
   "SPANISH_CLAIMS_TAB": {
    "file": "00_config.js",
    "kind": "const",
@@ -4535,6 +4558,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "9261d0db984d468a"
+  },
+  "SPANISH_PENDING_WINDOW_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "681b65f8cfcbf958"
   },
   "SPANISH_RESOLVED_TAB": {
    "file": "00_config.js",
@@ -5189,7 +5217,7 @@
   "autoAssignSpanishThreadsScheduled": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "498fc23d90a5f700"
+   "sha": "e516fbe005cbcc0b"
   },
   "automationDetectorChecks_": {
    "file": "10_core.js",
@@ -5864,7 +5892,7 @@
   "confirmDeptRequestResolve": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "5fce37077c348527"
+   "sha": "bd5a26f2cd4f3f41"
   },
   "contiguousRowRunsDesc_": {
    "file": "10_core.js",
@@ -6089,7 +6117,12 @@
   "drDeptStats_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "6aeded3b1b75eb22"
+   "sha": "1e9028565f187fec"
+  },
+  "drEmailClickVia_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "f928a980d0018a88"
   },
   "drFindOpenRequest_": {
    "file": "50_deptrequests.js",
@@ -6214,7 +6247,7 @@
   "drTeamKpis_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "406ec76d530f848a"
+   "sha": "4964ee7725f94696"
   },
   "drThreadIdsMerge_": {
    "file": "50_deptrequests.js",
@@ -7109,7 +7142,7 @@
   "getMyPendingTasks": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "e41e5ac71b528cc0"
+   "sha": "9f72eb94be5225fb"
   },
   "getMyPinnedCallNotes": {
    "file": "30_callnotes.js",
@@ -7444,7 +7477,7 @@
   "getSpanishInboxStats": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "52c4c91246a4680b"
+   "sha": "d3c196e73591c1c4"
   },
   "getSpanishInboxThreadBody": {
    "file": "51_spanish.js",
@@ -8684,7 +8717,7 @@
   "markDeptRequestResolved_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "21529fce3d8f8bf8"
+   "sha": "f87476f1687696dc"
   },
   "markTrainingComplete": {
    "file": "80_training.js",
@@ -10169,7 +10202,7 @@
   "spanishEpisodes_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "e7c8c4706f293846"
+   "sha": "b9c6dc5147d09daa"
   },
   "spanishIsCourtesyOnly_": {
    "file": "51_spanish.js",
@@ -10179,12 +10212,17 @@
   "spanishManualResolvedFold_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "3ff8e2aea31beae2"
+   "sha": "4a43e66ff8f6293b"
   },
   "spanishManualResolvedMap_": {
    "file": "51_spanish.js",
    "kind": "function",
    "sha": "81ab90a60a2e0ce8"
+  },
+  "spanishManualStamps_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "63e937f7b25f7eef"
   },
   "spanishMyOpenClaims_": {
    "file": "51_spanish.js",
@@ -10214,7 +10252,7 @@
   "spanishPendingIdsDrop_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "a3a25cbe73346b97"
+   "sha": "689154ac4b9a8a12"
   },
   "spanishPendingIdsGet_": {
    "file": "51_spanish.js",
@@ -10279,7 +10317,7 @@
   "spanishVmFold_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "4e997b4506a8416e"
+   "sha": "84a27e945a5dcf38"
   },
   "spanishVmMatch_": {
    "file": "51_spanish.js",
@@ -10294,7 +10332,7 @@
   "spanishVmResolution_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "2cff7b92dae851c0"
+   "sha": "240aa1cbd81b55e0"
   },
   "spanishVmTooShort_": {
    "file": "51_spanish.js",

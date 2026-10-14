@@ -1376,7 +1376,7 @@ function clkLoadDashboardExtras_() {
     google.script.run
       .withSuccessHandler(function (r) { CLK_DASH.extra.spanishPending = (r && r.pending) ? r : { pending: [] }; fresh(); render(); })
       .withFailureHandler(function () { failSet('spanishPending', { pending: [] }); render(); })
-      .getSpanishInboxPending(7);
+      .getSpanishInboxPending(30);   // F14 (cycle 25) — SPANISH_PENDING_WINDOW_DAYS, the tab's default: "N pending" must not drop a request at 8 days
   }
   // Dept Requests — everyone (a rep sees their own open/resolved; a manager the
   // team aggregate).

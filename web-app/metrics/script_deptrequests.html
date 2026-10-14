@@ -269,12 +269,13 @@ function drKpiStripHtml_(data) {
   // median must skip `resolvedVia === 'app'` explicitly. Only email-link
   // resolves (the receiver's own click) carry a resolution time.
   const resolvedMins = resolvedAll
-    .filter(function (r) { return r.resolvedVia !== 'app' && r.resolvedVia !== 'self'; })
+    .filter(function (r) { return r.resolvedVia !== 'app' && r.resolvedVia !== 'self' && r.resolvedVia !== 'copy'; })
     .map(function (r) { return r.elapsedMin; })
     .filter(function (x) { return x != null; }).sort(function (a, b) { return a - b; });
   // RES-1 (cycle 23): 'self' — the sender clicked their own copy's link — is a
-  // manual clear too, never a timed reply.
-  const manualCount = resolvedAll.filter(function (r) { return r.resolvedVia === 'app' || r.resolvedVia === 'self'; }).length;
+  // manual clear too, never a timed reply; so is 'copy' (cycle 25 F55 — a CC,
+  // BCC-all or other non-department recipient clicked theirs).
+  const manualCount = resolvedAll.filter(function (r) { return r.resolvedVia === 'app' || r.resolvedVia === 'self' || r.resolvedVia === 'copy'; }).length;
   // DR-3 (cycle 23): a true median — the client tile is the server's twin.
   const mm = Math.floor(resolvedMins.length / 2);
   const medianResolve = !resolvedMins.length ? null
@@ -460,11 +461,13 @@ function drCardStatusHtml_(item) {
     // 22post D: 'reply' — the department's own reply resolved it; timed.
     const via = item.resolvedVia === 'app' ? 'marked in app'
       : item.resolvedVia === 'self' ? 'marked by the sender'   // RES-1 — untimed
+      : item.resolvedVia === 'copy' ? 'marked from a copy'     // F55 — untimed
       : (item.resolvedVia === 'reply' && item.elapsedMin != null) ? 'replied · ' + drFmtMin_(item.elapsedMin)
       : (item.resolvedVia === 'email' && item.elapsedMin != null) ? drFmtMin_(item.elapsedMin)
       : 'resolved';
     const viaTtl = item.resolvedVia === 'app' ? ' title="Marked resolved in the app — not counted as a timed reply"'
       : item.resolvedVia === 'self' ? ' title="The sender used the email link on their own copy — not counted as a timed reply"'
+      : item.resolvedVia === 'copy' ? ' title="Someone outside the department used the email link on a copy (CC, BCC or forwarded) — not counted as a timed reply"'
       : item.resolvedVia === 'reply' ? ' title="Resolved by the department\u2019s reply to the email"' : ttl;
     return '<span class="sp-task-age" style="color:var(--success-deep)"' + viaTtl + '>' + icon('check', 12) + ' ' +
       esc(via) + '</span>';

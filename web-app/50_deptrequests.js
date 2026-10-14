@@ -249,8 +249,38 @@ function drResolveCtaHtml_(resolveUrl) {
 // tracking is now AUTOMATIC via emailFromCallNote (auto-logs the DeptRequests
 // row + appends the resolve CTA). drResolveCtaHtml_ above is still used by that
 // auto-log path.
-/** Mark a request resolved (the receiver clicked the email link). Idempotent. */
-function markDeptRequestResolved_(token, byEmail, via) {
+/** PURE (Node-pinned; cycle 25 F55) — WHO clicked a department email's resolve
+ *  link, as a ResolvedVia value. The link reaches more than the department: the
+ *  sender's own copy (RES-1 → 'self'), the CC mailbox and every MAIL_BCC_ALL
+ *  address, and anyone a copy is forwarded to. Only the department's click is a
+ *  response time. The department's own staff are mostly NOT on this roster, so
+ *  a clicker the app cannot place stays 'email'; a clicker it CAN place as not
+ *  the department is 'copy' (untimed):
+ *   - the sender → 'self';
+ *   - an address the email was sent TO → 'email' (the department's address);
+ *   - a roster member (`clickerDepts` is their department list; null = not on
+ *     the roster) → 'email' when they belong to a receiving department, else
+ *     'copy' — a manager or rep reading a copy is not the department;
+ *   - an address in `copyAddrs` (the CC + BCC-all lists) → 'copy';
+ *   - anyone else → 'email'. */
+function drEmailClickVia_(clicker, row, copyAddrs, clickerDepts) {
+  const lc = function (x) { return String(x == null ? '' : x).trim().toLowerCase(); };
+  const c = lc(clicker);
+  if (!c || !row) return 'email';
+  if (c === lc(row[DR.BY_EMAIL])) return 'self';
+  if (String(row[DR.TO_EMAIL] || '').split(/[,;\s]+/).map(lc).indexOf(c) >= 0) return 'email';
+  if (Array.isArray(clickerDepts)) {
+    const toLc = lc(row[DR.TO_DEPT]);
+    const parts = {};
+    drSplitDepts_(String(row[DR.TO_DEPT] || '')).forEach(function (d) { parts[lc(d)] = true; });
+    return clickerDepts.some(function (d) { const k = lc(d); return k === toLc || parts[k]; }) ? 'email' : 'copy';
+  }
+  return (copyAddrs || []).map(lc).indexOf(c) >= 0 ? 'copy' : 'email';
+}
+/** Mark a request resolved (the receiver clicked the email link). Idempotent.
+ *  `clickCtx` (F55, the email path only): `{ copyAddrs, clickerDepts }` for
+ *  drEmailClickVia_; without it only the sender rule applies. */
+function markDeptRequestResolved_(token, byEmail, via, clickCtx) {
   // `via` (operator 2026-09-10): 'email' from the department email's resolve
   // link, 'app' from the tracker's Mark-resolved button. The two paths share
   // this writer, and until the column existed the store could not tell them
@@ -270,9 +300,10 @@ function markDeptRequestResolved_(token, byEmail, via) {
     // RES-1 (cycle 23): the email link reaches the SENDER too (their sent copy,
     // a BCC-all copy). Their click is not the department responding — it is
     // recorded as 'self', untimed, so it can never pass for a fast reply.
-    if (viaClean === 'email' && String(byEmail || '').trim().toLowerCase() &&
-        String(byEmail).trim().toLowerCase() === String(row[DR.BY_EMAIL] || '').trim().toLowerCase()) {
-      viaClean = 'self';
+    // F55 (cycle 25): nor is a CC, BCC-all or other non-department copy's click
+    // — 'copy', untimed (drEmailClickVia_).
+    if (viaClean === 'email') {
+      viaClean = drEmailClickVia_(byEmail, row, clickCtx ? clickCtx.copyAddrs : [], clickCtx ? clickCtx.clickerDepts : null);
     }
     if (drStatus_(row) === 'resolved') {
       return { found: true, already: true, dept: row[DR.TO_DEPT],
@@ -287,7 +318,7 @@ function markDeptRequestResolved_(token, byEmail, via) {
     pendingTasksBust_(row[DR.BY_ID]);   // F4 — and neither must the SENDER's Needs-you list
     try { writeAuditLog_({ id: row[DR.BY_ID], name: row[DR.BY_NAME] }, 'DeptRequestResolved',
       '', '', false, 0, 'reqId=' + token + '; by=' + (byEmail || 'unknown') + (viaClean ? '; via=' + viaClean : ''), byEmail || ''); } catch (e) {}
-    return { found: true, already: false, dept: row[DR.TO_DEPT], self: viaClean === 'self' };
+    return { found: true, already: false, dept: row[DR.TO_DEPT], self: viaClean === 'self', copy: viaClean === 'copy' };
   } finally { lock.releaseLock(); }
 }
 /** In-app resolve (the manual path that complements the email link): the
@@ -792,7 +823,7 @@ function drDeptStats_(items, slaCfg) {
       const b = byDept[k];
       if (it.status === 'resolved') {
         b.resolved++;
-        if (it.resolvedVia === 'app' || it.resolvedVia === 'self') b.manualResolved++;   // RES-1: the sender's own click is manual too
+        if (it.resolvedVia === 'app' || it.resolvedVia === 'self' || it.resolvedVia === 'copy') b.manualResolved++;   // RES-1: the sender's own click is manual too; F55: so is a copy's
         else if (it.resolvedVia !== 'email' && it.resolvedVia !== 'reply') b.untrackedResolved++;   // 22post D: a reply is a response time
         else if (it.elapsedMin != null) b.durations.push(it.elapsedMin);
       } else { b.open++; if (it.slaStatus === 'overdue') b.overdueOpen++; }
@@ -1002,7 +1033,7 @@ function drTeamKpis_(items) {
   (items || []).forEach(function (it) {
     if (it.status === 'resolved') {
       resolved++;
-      if (it.resolvedVia === 'app' || it.resolvedVia === 'self') manual++;   // RES-1
+      if (it.resolvedVia === 'app' || it.resolvedVia === 'self' || it.resolvedVia === 'copy') manual++;   // RES-1; F55
       else if (it.elapsedMin != null) mins.push(it.elapsedMin);
     } else {
       open++;

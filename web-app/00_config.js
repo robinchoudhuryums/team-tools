@@ -533,7 +533,10 @@ const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','
 // RES-1 (cycle 23): and 'self' — the email link clicked by the request's own
 // SENDER (their sent/BCC copy carries the same link). That is a manual clear,
 // not the department responding, so it is UNTIMED, like 'app'.
-const DR_RESOLVED_VIA_VALUES = ['email', 'app', 'reply', 'self'];
+// 'copy' (cycle 25 F55): the resolve link clicked by a COPY recipient — the CC
+// mailbox, a MAIL_BCC_ALL address, or a roster member outside the receiving
+// department. Untimed like 'self': only the department's click is a response.
+const DR_RESOLVED_VIA_VALUES = ['email', 'app', 'reply', 'self', 'copy'];
 const DR_REPLY_VERDICTS = ['resolved', 'needs-look'];
 const DR_THREAD_IDS_MAX = 3;
 const DR_REPLY_SCAN_MAX = 150;      // threads read per hourly run (Gmail read quota + the six-minute limit)
@@ -1486,7 +1489,12 @@ const SPANISH_STATE_SPAN_DAYS = 180;
  *  on the next clean run. The core's own audit row (`SpanishInboxAutoAssign`,
  *  counts only) is written only when something was unclaimed, so an idle
  *  hour adds nothing to the bounded AuditLog tail scans. */
-const SPANISH_AUTO_ASSIGN_DAYS = 7;   // the pending window the button uses by default
+// F14 (cycle 25): ONE pending window for every reader that is not the tab's
+// own select — the scheduled auto-assign, the Dashboard's Needs-you claims and
+// the Dashboard's pending card — and it is the tab's default (30). At 7, a
+// claimed request left 8+ days dropped off its owner's Needs-you while the tab
+// still listed it pending, and the scheduled run never assigned it.
+const SPANISH_PENDING_WINDOW_DAYS = 30;
 // 22post C-8: the PHI-free set of pending THREAD IDS (no subject, no body) that
 // getSpanishInboxPending last read, per window — so the Dashboard's Needs-you
 // list can tell which of a rep's claims are still pending WITHOUT a Gmail read

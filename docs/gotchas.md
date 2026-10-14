@@ -4858,6 +4858,16 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   a GET anyone's software may follow; it may show state, never change it.
   Verify: the RES-1 pins (the page writes nothing; the button's token is
   shape-checked and script-safe; `self` for the sender).
+  **AMENDED (cycle 25 F55): the link reaches more than the sender and the
+  department.** The CC mailbox, every MAIL_BCC_ALL address and anyone a copy is
+  forwarded to holds the same button, and their click was recorded as a timed
+  department response. `drEmailClickVia_` now places the clicker: the sender is
+  `self`; an address the email went TO, or a roster member of a receiving
+  department (column N), is the department (`email`); a roster member outside
+  it, or a CC/BCC-all address, is `copy` — untimed and counted manual, like
+  `self`. Someone the app cannot place stays `email`: the departments' own
+  staff are mostly not on this roster, and refusing them would untime every
+  real response. Verify: the F55 drive.
 
   **AMENDED (cycle 23 CORE-06, 2026-10-02):** DevTools.js gained two editor
   entry points (`devScrubRosterForMe`, `devShowConfig`) — the documented
@@ -5210,6 +5220,16 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   back IT reaches (`timesheetArchiveReach_`: its newest date, cached, unioned
   with the window's), and all six readers share `timesheetRowsInRange_`.
   Verify: the TC2-9 reader drive (the back-filled-row case).
+  **AMENDED (cycle 25 F14): a reader whose WINDOW is narrower than the list's
+  is the same blind spot.** The Spanish tab lists 30 days of pending requests,
+  but the Dashboard's Needs-you, the scheduled auto-assign and the Dashboard's
+  "N pending" card read 7 — so a request a rep claimed and left for eight days
+  dropped off their Needs-you (its absence from the 7-day ids read as "not
+  pending") while the tab still listed it, and the scheduled run never
+  assigned it. Every reader that is not the tab's own select now reads
+  `SPANISH_PENDING_WINDOW_DAYS`, which IS the tab's default. RULE: two surfaces
+  that say "pending" read the same window. Verify: the F14 drive (the real
+  Needs-you block over a 10-day-old claim).
 
 <a id="g153-clearing-the-roster-email-does-not-reach-the-gate-lists"></a>
 
@@ -5317,6 +5337,17 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   later message from the requester is new work — unclaimed, because the claim
   was on the request that was answered. A courtesy reply is not a request
   (g159). Verify: the SP-2 pins (INV-369/370/371).
+
+  **AMENDED (cycle 25 F13): the LATEST resolve is not every resolve.** SP-1
+  made the fold keep the latest manual resolve instead of the first — but
+  still only one. Once SP-2 let a thread carry several requests, a thread
+  resolved by hand twice read as ONE request from the first message to the
+  second click: the first resolve vanished, two requests merged, and the
+  first one's time ran to the second click (a voicemail likewise took the
+  second clicker's name). The fold keeps every stamp (`all`, oldest first;
+  `by`/`ms` stay the latest for the "already" check), and the episode walk
+  and the voicemail rule place each at its own time (`spanishManualStamps_`).
+  Verify: the F13 drive (fold → episodes, and the voicemail rule).
 
 <a id="g156-read-a-word-or-a-number-by-token"></a>
 

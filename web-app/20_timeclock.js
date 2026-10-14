@@ -8423,10 +8423,10 @@ function getMyPendingTasks() {
         // exists" — a repeat voicemail makes a resolved thread pending again.
         var anyMine = Object.keys(spClaims).some(function (t) { return spClaims[t].by === me; });
         if (anyMine) {
-          var spIds = spanishPendingIdsGet_(SPANISH_AUTO_ASSIGN_DAYS);
-          var spFloors = spanishPendingFloorsGet_(SPANISH_AUTO_ASSIGN_DAYS);   // SP-2 — a reopened request comes back unclaimed
+          var spIds = spanishPendingIdsGet_(SPANISH_PENDING_WINDOW_DAYS);
+          var spFloors = spanishPendingFloorsGet_(SPANISH_PENDING_WINDOW_DAYS);   // SP-2 — a reopened request comes back unclaimed
           if (!spIds) {
-            var spRes = getSpanishInboxPending(SPANISH_AUTO_ASSIGN_DAYS);
+            var spRes = getSpanishInboxPending(SPANISH_PENDING_WINDOW_DAYS);
             if (!spRes || spRes.error) throw new Error((spRes && spRes.error) || 'unreadable');
             spIds = (spRes.pending || []).map(function (p) { return p.threadId; });
             spFloors = {};
