@@ -930,6 +930,12 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   recipient mails the full note to any address, and its CallNoteEmail row
   recorded only "Other" and a count. It now records the recipient's DOMAIN
   (`otherDomain=`), the same rule; the address stays on the note itself.
+  **AMENDED (cycle 25 F3, 2026-10-14):** "Other" takes a COMMA LIST, and the
+  domain helper (`intakeEmailDomain_`) returns everything after the FIRST "@",
+  so a second recipient's whole address rode into the log. The row now goes
+  through `drRecipientDomains_` (one deduped domain per address — the Dept
+  Request row's helper). Use the list helper wherever a field can hold several
+  addresses.
 
 <a id="g37-buildcallnoteemailhtml-must-esc-every-user-supplied-field"></a>
 
@@ -4766,6 +4772,14 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   Sheets made of them (a note re-formats on its next edit). Verify: the
   HR-1 + CN-7 pin, the S2 writer lists, and the editor suite's
   `cn_textColumnsKeepTheirText` round trip.
+  **AMENDED (cycle 25 F6 + F49, 2026-10-14): a '@' column must stay '@' wherever
+  the row is COPIED to.** The cold archive (`archiveSheetRowsOlderThan_`) and the
+  manager's call-notes export wrote the note text sheet-safe into ordinary
+  cells, so the archived callback lost its zero again and "3/4" became a Date in
+  the copy; both now format the text columns '@' and write them raw (the mover
+  takes `opts.textIdx`). The intake account backup row's typed DOB was stored
+  the same way ("3/4/28" → 2028-03-04) and is now a '@' cell
+  (`INTAKE_ACCT_TEXT_IDX`). Verify: the F6 and F49 (cycle 25) pins.
 
 <a id="g145-a-positional-write-at-getlastrow-1"></a>
 

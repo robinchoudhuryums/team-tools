@@ -3790,7 +3790,13 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   describes a topic, not a patient — the same posture as form-consent), chosen
   over raw zero-result-query logging precisely because a raw query could carry a
   pasted patient name. It hands managers a data-driven content roadmap instead of
-  guessing. Rep writers are rep-callable/locked/append-only; the manager
+  guessing. **AMENDED (cycle 25 F9, 2026-10-14):** the client nonetheless sent the
+  original query as a hidden third argument even when the rep rewrote the topic,
+  and the landing showed it ("searched “…”"). `kbRequestArticle` now ignores that
+  argument and writes the Query column blank, `kbGetContentRequests` never ships
+  the column, and the client sends only the topic. A PHI-safe search signal (terms
+  matched against an admin vocabulary, team-level, 90 days) is the operator's G4
+  decision, scheduled as expansion E6. Rep writers are rep-callable/locked/append-only; the manager
   triage endpoints (`kbGetContentRequests`/`kbResolveContentRequest`) sit in the
   MANAGER review tier (alongside `kbGetReviewDue`/`kbMarkReviewed`), NOT the admin
   content-authoring tier. **Drawer parity (shipped):** the "Was this helpful? +

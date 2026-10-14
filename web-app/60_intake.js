@@ -1544,13 +1544,20 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
   sendRepEmail_(emp, { to: recipient, bcc: getIntakeBccEmail_(), subject: sendSubject, htmlBody: htmlBody, inlineImages: inlineImagesObj });   // Round-1 #8
 
   let storeWarning = null;
+  // F49 (cycle 25): the DOB lands in a '@' cell (INTAKE_ACCT_TEXT_IDX) through
+  // the positional text-safe append, which needs the ScriptLock held — taken
+  // for the store write only, AFTER the send (g34: mail never inside a lock).
+  // A lock timeout is a store failure like any other: warned, never a lost send.
+  const storeLock = LockService.getScriptLock();
   try {
-    getIntakeSubmissionSheet_(formType).appendRow(sheetSafeRow_([
+    storeLock.waitLock(15000);
+    appendRowsTextSafe_(getIntakeSubmissionSheet_(formType), [[
       submissionId, fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), emp.id, emp.name,
       patientInfo, dob, String(payload.language || 'EN'),
       answersJson, recipient, imgCount, amendId,
-    ]));
+    ]], INTAKE_ACCT_TEXT_IDX);
   } catch (e) { storeWarning = intakeStoreFailWarn_(emp, formType, submissionId, e); }
+  finally { try { storeLock.releaseLock(); } catch (_) {} }
 
   writeAuditLog_(emp, 'IntakeSent', fmtDate_(new Date()), '', false, 0,
     'type=' + formType + '; submissionId=' + submissionId + '; recipientDomain=' + intakeEmailDomain_(recipient) + '; images=' + imgCount +

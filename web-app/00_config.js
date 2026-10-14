@@ -1691,6 +1691,10 @@ var PENDING_TASKS_CAP = 30;                // items returned; `total` carries th
 var PENDING_TASKS_KINDS = ['training', 'coaching', 'notes', 'requests', 'sched', 'docs', 'spanish'];   // 22post C-8: Spanish Inbox requests claimed by / assigned to the rep
 const INTAKE_PPD_SUB_HEADERS  = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','Language','AnswersJSON','Recommendations','Selections','Recipient','AmendsId'];
 const INTAKE_ACCT_SUB_HEADERS = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','DOB','Language','AnswersJSON','Recipient','ImageCount','AmendsId'];
+// F49 (cycle 25): the DOB is typed text, and an ordinary cell COERCES it —
+// "3/4/28" was stored as the date 2028-03-04. A '@' column (g144), derived from
+// the header list so the index cannot drift from it.
+const INTAKE_ACCT_TEXT_IDX = [INTAKE_ACCT_SUB_HEADERS.indexOf('DOB')];
 // ── F-27 (2026-09-18): the ENGLISH question banks, server-held ─────────────
 // The email is ALWAYS English whatever language the form was completed in
 // (g43), and until Batch 5 the server rendered whatever LABEL text the client

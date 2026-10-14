@@ -2461,6 +2461,24 @@
     "drReplyAsksOrHolds_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-14",
+   "why": "cycle 25 Batch 2: F3 otherDomain via drRecipientDomains_; F9 kbRequestArticle/kbGetContentRequests drop the raw query; F6 archive mover + CN export keep the note text columns '@'; F49 intake account DOB in a '@' cell (INTAKE_ACCT_TEXT_IDX)",
+   "added": [
+    "INTAKE_ACCT_TEXT_IDX"
+   ],
+   "removed": [],
+   "changed": [
+    "archiveOldCallNotes",
+    "archiveSheetRowsOlderThan_",
+    "emailFromCallNote",
+    "exportCallNotesRange",
+    "intakeSendAcct_",
+    "kbGetContentRequests",
+    "kbRequestArticle"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3259,6 +3277,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "70fba4cbd9d2a0c4"
+  },
+  "INTAKE_ACCT_TEXT_IDX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7a6bc47407650baa"
   },
   "INTAKE_FEEDBACK_HEADERS": {
    "file": "00_config.js",
@@ -5028,7 +5051,7 @@
   "archiveOldCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "dbd15547ae3f5c9f"
+   "sha": "b308bdc8e43a5e09"
   },
   "archiveOldTimesheetRows": {
    "file": "20_timeclock.js",
@@ -5038,7 +5061,7 @@
   "archiveSheetRowsOlderThan_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "0b9a6810d91f5457"
+   "sha": "16fd7c482b277222"
   },
   "arraysEqual_": {
    "file": "10_core.js",
@@ -6128,7 +6151,7 @@
   "emailFromCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "95d2a947964d19b3"
+   "sha": "59bcd1f6d3549b5c"
   },
   "empDepartments_": {
    "file": "20_timeclock.js",
@@ -6288,7 +6311,7 @@
   "exportCallNotesRange": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "b73757eda7387d39"
+   "sha": "d293c84556a37d55"
   },
   "featureFlagDef_": {
    "file": "10_core.js",
@@ -7688,7 +7711,7 @@
   "intakeSendAcct_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "d90858919c31231b"
+   "sha": "14800e32cd2cc9e3"
   },
   "intakeSendPAP": {
    "file": "60_intake.js",
@@ -8033,7 +8056,7 @@
   "kbGetContentRequests": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "46e077cc8be0bc21"
+   "sha": "b7a8ebc2ae76f9d4"
   },
   "kbGetFacetGuidance": {
    "file": "70_kb.js",
@@ -8278,7 +8301,7 @@
   "kbRequestArticle": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "7a52f4c771cea1f5"
+   "sha": "0fc591a027b0622c"
   },
   "kbResolveContentRequest": {
    "file": "70_kb.js",

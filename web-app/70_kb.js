@@ -3097,6 +3097,13 @@ function kbEditComment(commentId, text) {
  *  PHI-free-by-policy (the rep describes a topic, not patient specifics). Lands
  *  in the manager KbContentRequests queue. Audit row is PHI-free (reqId only —
  *  the topic/note text never enters the shared AuditLog). */
+// F9 (cycle 25): the third argument — the raw search query — is IGNORED and
+// never stored. The design chose the explicit topic over zero-result query
+// logging precisely because a query typed mid-call can carry a pasted patient
+// name (g146), yet the client sent the original query as a hidden third
+// argument even after the rep rewrote the topic, and managers saw it. The
+// parameter stays in the signature so an older cached client still succeeds;
+// the KbContentRequests Query column is written blank (append-only schema).
 function kbRequestArticle(topic, note, query) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
@@ -3106,10 +3113,9 @@ function kbRequestArticle(topic, note, query) {
     const t = String(topic || '').trim().substring(0, KB_REQUEST_TOPIC_MAX);
     if (!t) return { success: false, error: 'Describe what you were looking for.' };
     const n = String(note || '').trim().substring(0, KB_REQUEST_NOTE_MAX);
-    const q = String(query || '').trim().substring(0, KB_REQUEST_TOPIC_MAX);
     const reqId = Utilities.getUuid();
     getOrCreateKbRequestsSheet_().appendRow(sheetSafeRow_([
-      fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), reqId, emp.id, emp.name, t, n, q, 'open', '', '',
+      fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), reqId, emp.id, emp.name, t, n, '', 'open', '', '',
     ]));
     writeAuditLog_(emp, 'KbContentRequest', '', '', false, 0, 'reqId=' + reqId, emp.email);
     return { success: true, reqId: reqId };
@@ -3143,7 +3149,9 @@ function kbGetContentRequests() {
       const item = {
         reqId: reqId, repName: String(r[KBR.REP_NAME] || ''),
         topic: String(r[KBR.TOPIC] || ''), note: String(r[KBR.NOTE] || ''),
-        query: String(r[KBR.QUERY] || ''), createdIso: iso, ageDays: ageDays, status: status,
+        // F9 (cycle 25): rows written before the fix may hold a raw query —
+        // it is never shipped to the client.
+        createdIso: iso, ageDays: ageDays, status: status,
       };
       if (status === 'open') open.push(item);
       else if (resolved.length < KB_REQUESTS_RESOLVED_TAIL) resolved.push(item);

@@ -5076,9 +5076,10 @@ test('no Timesheet purge tier exists (keep-forever); the CN tier keeps the heade
   // width must stay defaulted — the CN Notes tab has ONE header row and the
   // CN_HEADERS width, and passing either explicitly here would be drift.
   const cn = extractRawFunction('Code.js', 'archiveOldCallNotes');
-  assert.ok(/archiveSheetRowsOlderThan_\(live, archive, CN\.DATE_LOCAL, cutoffMs,\s*\{ maxRows: budget \}\)/
+  // Cycle 25 F6: plus the '@' text columns — still no headerRows / width.
+  assert.ok(/archiveSheetRowsOlderThan_\(live, archive, CN\.DATE_LOCAL, cutoffMs,\s*\{ maxRows: budget, textIdx: CN_TEXT_IDX \}\)/
     .test(cn.replace(/\s*\n\s*/g, ' ')),
-    'archiveOldCallNotes passes only the per-run bound (headerRows/width stay defaulted)');
+    'archiveOldCallNotes passes the per-run bound and the text columns (headerRows/width stay defaulted)');
   assert.ok(!/headerRows/.test(cn) && !/width:/.test(cn),
     'no headerRows/width drift at the CN call site');
 });
@@ -27102,6 +27103,43 @@ test('F-48: an UNMEASURABLE day is a gap in the sparkline, never a 0-hour bar', 
 // SHAPE (which caller passes a bound, which scriptlet form injects the stamp)
 // stay where they are. g116's standing lesson, applied to the pins themselves:
 // a green pin is not a checked one.
+test('F6 (cycle 25): the cold archive keeps the call-note text columns as \'@\' cells — formatted on the NEW rows and written raw — and the export does the same (driven mover + export source)', () => {
+  const sb = buildSandbox([]);
+  sb.CONFIG = { TIMEZONE: 'America/Chicago' };
+  sb.CN_HEADERS = ['date', 'callback', 'note'];
+  sb.Utilities = { parseDate: (s) => new Date(Date.parse(s)) };
+  sb.SpreadsheetApp = { flush: () => {} };
+  ['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_', 'sheetTextRows_', 'parseRetentionDateMs_', 'retentionStampPattern_', 'archiveSheetRowsOlderThan_']
+    .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), sb));
+  const rows = [['date', 'callback', 'note'],
+    ['2026-01-05T08:00:00', '09171234567', '=HYPERLINK("x")'],
+    ['2026-01-06T08:00:00', '3/4', '- call back']];
+  const src = { getLastRow: () => rows.length, getMaxRows: () => 100, getDataRange: () => ({ getValues: () => rows.map((r) => r.slice()) }),
+    insertRowAfter: () => {}, deleteRow: (n) => { rows.splice(n - 1, 1); } };
+  const log = [];
+  const arc = { getLastRow: () => 4, getMaxRows: () => 100, getMaxColumns: () => 3, insertRowsAfter() {}, insertColumnsAfter() {},
+    getRange: (r, c, n, w) => ({
+      setNumberFormat: (f) => { log.push('fmt:' + r + ',' + c + ',' + n + 'x' + w + '=' + f); },
+      setValues: (b) => { log.push('write:' + r + ',' + c + '=' + JSON.stringify(b)); },
+    }) };
+  const moved = sb.archiveSheetRowsOlderThan_(src, arc, 0, Date.parse('2026-06-01T00:00:00Z'), { textIdx: [1, 2] });
+  assert.strictEqual(moved, 2);
+  // THE REGRESSION: the block was written sheet-safe into ordinary cells, so the
+  // callback lost its leading zero and "3/4" became a Date in the archive.
+  assert.deepStrictEqual(log, [
+    'fmt:5,2,2x1=@', 'fmt:5,3,2x1=@',
+    'write:5,1=' + JSON.stringify([['2026-01-05T08:00:00', '09171234567', '=HYPERLINK("x")'], ['2026-01-06T08:00:00', '3/4', '- call back']]),
+  ], 'the text columns of the NEW rows are formatted \'@\' first, then written raw — no apostrophe stored in an \'@\' cell');
+  // The export: the seven note-text columns are '@' over the data rows, written through sheetTextRows_.
+  const ex = stripJsComments_(extractRawFunction('Code.js', 'exportCallNotesRange'));
+  assert.ok(/const EXPORT_TEXT_IDX = \[4, 5, 6, 7, 8, 9, 10\];/.test(ex), 'Callback … Resolution');
+  const fAt = ex.indexOf("setNumberFormat('@')"), wAt = ex.indexOf('sheetTextRows_(data, EXPORT_TEXT_IDX)');
+  assert.ok(fAt > 0 && wAt > fAt, 'formatted before the write, and the write is the text-rows helper');
+  // And the export's header list still puts the seven text columns at 4..10.
+  const hdr = /const headers = \[([\s\S]*?)\];/.exec(ex)[1].replace(/\s+/g, '').split(',').map((h) => h.replace(/'/g, ''));
+  assert.strictEqual([4, 5, 6, 7, 8, 9, 10].map((i) => hdr[i]).join(','), 'Callback,Caller,Relationship,PatientAndTRX,Issue,TransferredTo,Resolution');
+});
+
 test('F3 (rewritten BEHAVIOURAL, F-52): archiveSheetRowsOlderThan_ really stops at the bound, and a bounded run is monotonic', () => {
   const sb = buildSandbox([]);
   sb.CONFIG = { TIMEZONE: 'America/Chicago' };
@@ -27109,7 +27147,7 @@ test('F3 (rewritten BEHAVIOURAL, F-52): archiveSheetRowsOlderThan_ really stops 
   sb.Utilities = { parseDate: (s) => new Date(Date.parse(s)) };   // FORM-4: the written shape only, no fallback
   let flushes = 0;
   sb.SpreadsheetApp = { flush: () => { flushes++; } };
-  ['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), sb));   // S2 — the real helpers
+  ['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_', 'sheetTextRows_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), sb));   // S2 — the real helpers (+ F6's text rows)
   vm.runInContext(extractRawFunction('Code.js', 'parseRetentionDateMs_'), sb, { filename: 'Code.js#parseRetentionDateMs_' });
   vm.runInContext(extractRawFunction('Code.js', 'retentionStampPattern_'), sb);
   vm.runInContext(extractRawFunction('Code.js', 'archiveSheetRowsOlderThan_'), sb, { filename: 'Code.js#archiveSheetRowsOlderThan_' });
@@ -27555,12 +27593,14 @@ test('S2: every raw plain-text write sits after a setNumberFormat(\'@\') in its 
   }
   // The guarded set, named — a new raw-text writer must be added here on purpose.
   // Cycle 23 HR-1 + CN-7 added the coaching/doc text columns and the note edit.
-  assert.deepStrictEqual(uses.sort(), ['acknowledgeCoaching', 'kbImportDataTable', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad',
+  // Cycle 25 F6 added the cold-archive mover and the call-notes export: the
+  // note text columns stay '@' wherever a note row is copied to.
+  assert.deepStrictEqual(uses.sort(), ['acknowledgeCoaching', 'archiveSheetRowsOlderThan_', 'exportCallNotesRange', 'kbImportDataTable', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad',
     'updateCallNote', 'voidCoaching', 'voidDoc'].sort(),
-    'the raw plain-text writers are exactly the known eight');
-  assert.deepStrictEqual(appenders.sort(), ['createCoaching', 'issueDoc', 'qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings',
+    'the raw plain-text writers are exactly the known ten');
+  assert.deepStrictEqual(appenders.sort(), ['createCoaching', 'intakeSendAcct_', 'issueDoc', 'qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings',
     'submitCallNote'].sort(),
-    'the plain-text appenders are exactly the five QA writers, plus the coaching, doc and note creators (cycle 23 HR-1 + CN-7)');
+    'the plain-text appenders are exactly the five QA writers, plus the coaching, doc and note creators (cycle 23 HR-1 + CN-7) and the intake account backup row (cycle 25 F49)');
   assert.deepStrictEqual(bad, [], bad.join('\n'));
 });
 
@@ -33594,13 +33634,75 @@ test('INT2-4 (cycle 23): a catalog change between preview and send is named as o
   assert.ok(/answersHash: intakePpdAnswersHash_\(patientInfo, payload\.answers, subject\)/.test(stripJsComments_(extractRawFunction('Code.js', 'intakePreviewPPD'))), 'the preview ships it');
 });
 
+test('F9 (cycle 25): a content request never stores or ships the raw search query — only the topic the rep wrote (driven server + client source)', () => {
+  // THE DEFECT: "Request an article" sent the original zero-result query as a
+  // hidden third argument even when the rep rewrote the topic; it was stored in
+  // the PHI-free KB store and shown to every manager ("searched “…”") — the very
+  // thing the self-improving-KB decision chose the topic to avoid (g146).
+  const rows = [], audits = [];
+  const ctx = b10Ctx_(['kbRequestArticle'], {
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    getEmployeeInfo_: () => ({ id: 'E1', name: 'Ana', email: 'ana@ums.com' }),
+    KB_REQUEST_TOPIC_MAX: 200, KB_REQUEST_NOTE_MAX: 1000,
+    Utilities: { getUuid: () => 'req-1' },
+    getOrCreateKbRequestsSheet_: () => ({ appendRow: (r) => rows.push(r) }),
+    sheetSafeRow_: (r) => r, fmtDate_: () => '2026-10-14', fmtTime_: () => '09:00:00',
+    writeAuditLog_: (...a) => audits.push(a),
+  });
+  const res = b10J(ctx.kbRequestArticle('How to verify a TRX', '', 'Jane Doe TRX 48211'));
+  assert.strictEqual(res.success, true, 'an older client that still sends a query succeeds');
+  assert.strictEqual(rows.length, 1);
+  assert.ok(!JSON.stringify(rows[0]).includes('Jane'), 'the query is never written to the sheet');
+  assert.strictEqual(rows[0][4], 'How to verify a TRX', 'the topic the rep wrote is');
+  assert.ok(!JSON.stringify(audits).includes('Jane'), 'nor to the AuditLog');
+  // Rows stored before the fix are never shipped.
+  const list = stripJsComments_(extractRawFunction('Code.js', 'kbGetContentRequests'));
+  assert.ok(!/KBR\.QUERY/.test(list), 'kbGetContentRequests never reads the Query column out');
+  // The client sends two arguments and renders no "searched" line.
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const prompt = kb.slice(kb.indexOf('function kbRequestArticlePrompt_'), kb.indexOf('function kbRequestArticlePrompt_') + 1500);
+  assert.ok(/\.kbRequestArticle\(topic, ''\)/.test(prompt), 'the client sends the topic and note only');
+  assert.ok(!/searched “/.test(kb), 'and the manager landing has no raw-query line');
+});
+
+test('F49 (cycle 25): the intake account backup row stores the DOB in a \'@\' cell — the index derived from the header list, written by the locked text-safe append after the send', () => {
+  // THE DEFECT: appendRow(sheetSafeRow_(…)) put the typed DOB in an ordinary
+  // cell, so "3/4/28" was stored as the date 2028-03-04.
+  const ctx = vm.createContext({ String, Array });
+  vm.runInContext(/const INTAKE_ACCT_SUB_HEADERS = [^\n]+;/.exec(serverSource())[0].replace(/^const /, 'var '), ctx);
+  vm.runInContext(/const INTAKE_ACCT_TEXT_IDX = [^\n]+;/.exec(serverSource())[0].replace(/^const /, 'var '), ctx);
+  assert.strictEqual(JSON.stringify(ctx.INTAKE_ACCT_TEXT_IDX), '[5]', 'the DOB column, derived from the headers');
+  // Drive the real helper with the real list over the row the send builds.
+  const log = [];
+  const hc = b10Ctx_(['sheetSafe_', 'sheetTextRows_', 'appendRowsTextSafe_']);
+  const sheet = { getLastRow: () => 1, getMaxRows: () => 1000, insertRowsAfter() {},
+    getRange: (r, c, n, w) => ({ setNumberFormat: (f) => log.push('fmt:' + r + ',' + c + '=' + f), setValues: (b) => log.push('write:' + JSON.stringify(b)) }) };
+  hc.appendRowsTextSafe_(sheet, [['S1', 'ts', 'E1', 'Ana', 'Doe, Jane', '3/4/28', 'EN', '{}', 'x@y.com', 0, '']], ctx.INTAKE_ACCT_TEXT_IDX);
+  assert.strictEqual(log[0], 'fmt:2,6=@', 'the DOB cell is formatted plain text first');
+  assert.ok(log[1].includes('"3/4/28"'), 'and written raw — no apostrophe, no coercion');
+  // The send's store write uses it, under the lock, after the mail.
+  const fn = stripJsComments_(extractRawFunction('Code.js', 'intakeSendAcct_'));
+  const mailAt = fn.indexOf('sendRepEmail_('), lockAt = fn.indexOf('waitLock('), appAt = fn.indexOf('appendRowsTextSafe_(');
+  assert.ok(mailAt > 0 && lockAt > mailAt && appAt > lockAt, 'mail first, then the lock, then the append (g34)');
+  assert.ok(/appendRowsTextSafe_\([\s\S]*?\]\], INTAKE_ACCT_TEXT_IDX\)/.test(fn), 'with the account text-column list');
+  assert.ok(!/\.appendRow\(sheetSafeRow_/.test(fn), 'the coercing appendRow is gone');
+  assert.ok(/finally \{ try \{ storeLock\.releaseLock\(\); \}/.test(fn), 'and the lock is released whatever happens');
+});
+
 test('CN-3 (cycle 23): the CallNoteEmail audit row names the DOMAIN an "Other" recipient is at — never the address', () => {
   const src = stripJsComments_(extractRawFunction('Code.js', 'emailFromCallNote'));
-  assert.ok(/const otherDomain = \(selections\.departments\.indexOf\('Other'\) >= 0 && selections\.individualEmail\)\s*\? intakeEmailDomain_\(selections\.individualEmail\) : '';/.test(src), 'the domain is derived from the Other address');
+  // F3 (cycle 25): through the COMMA-LIST helper — "Other" takes several
+  // addresses, and intakeEmailDomain_ keeps everything after the FIRST "@".
+  assert.ok(/const otherDomain = \(selections\.departments\.indexOf\('Other'\) >= 0 && selections\.individualEmail\)\s*\? drRecipientDomains_\(selections\.individualEmail\) : '';/.test(src), 'the domains are derived from the Other address list');
   const audit = src.slice(src.indexOf("'CallNoteEmail'"), src.indexOf("'CallNoteEmail'") + 400);
   assert.ok(/otherDomain=\$\{otherDomain\}/.test(audit) && !/individualEmail/.test(audit), 'the row carries the domain, and the address never reaches it');
-  const ctx = b10Ctx_(['intakeEmailDomain_']);
-  assert.strictEqual(ctx.intakeEmailDomain_('Jane.Doe@Gmail.com'), 'gmail.com');
+  const ctx = b10Ctx_(['intakeEmailDomain_', 'drRecipientDomains_']);
+  assert.strictEqual(ctx.drRecipientDomains_('Jane.Doe@Gmail.com'), 'gmail.com');
+  // THE REGRESSION (F3): the second customer's whole address reached the log.
+  const two = ctx.drRecipientDomains_('jane@gmail.com, john.smith@yahoo.com');
+  assert.strictEqual(two, 'gmail.com, yahoo.com', 'one domain per address');
+  assert.ok(!/john|jane|@/.test(two), 'and no local part of any address');
+  assert.strictEqual(ctx.drRecipientDomains_('a@x.com,b@x.com'), 'x.com', 'deduped');
 });
 
 test('ADM-12 (cycle 23): a cross-rep tag rename writes its STARTED row first, walks the archive too, and a run that dies partway leaves a trace (driven)', () => {

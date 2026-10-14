@@ -6518,8 +6518,7 @@ function kbLandingBlocksHtml_() {
           '<span class="kb-land-dot stale" title="Requested article"></span>' +
           '<div class="kb-land-req-body">' +
             '<span class="kb-land-t">' + esc(rq.topic) + '</span>' +
-            '<span class="kb-land-meta">' + meta +
-              (rq.query ? ' · searched “' + esc(rq.query) + '”' : '') + '</span>' +
+            '<span class="kb-land-meta">' + meta + '</span>' +
             (rq.note ? '<span class="kb-land-note">“' + esc(rq.note) + '”</span>' : '') +
           '</div>' +
           '<div class="kb-land-req-acts">' +
@@ -7087,7 +7086,7 @@ function kbRequestArticlePrompt_(query) {
         else if (typeof showToast === 'function') showToast((r && r.error) || 'Could not send request', 'error');
       })
       .withFailureHandler(function (e) { if (typeof showToast === 'function') showToast((e && e.message) || 'Could not send request', 'error'); })
-      .kbRequestArticle(topic, '', query);
+      .kbRequestArticle(topic, '');   // F9 (cycle 25): the raw query is NEVER sent — only what the rep wrote
   });
 }
 

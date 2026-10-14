@@ -1921,7 +1921,12 @@ function exportCallNotesRange(startDate, endDate) {
       ];
     });
     sh.getRange(1, 1, 1, headers.length).setValues(sheetSafeRows_([headers])).setFontWeight('bold');
-    sh.getRange(2, 1, data.length, headers.length).setValues(sheetSafeRows_(data));
+    // F6 (cycle 25): the seven note-text columns (Callback … Resolution) are
+    // '@' cells in the rep's Sheet (CN-7, g144); written sheet-safe here, a
+    // callback's leading zero was lost and "3/4" became a Date. Same '@' cells.
+    const EXPORT_TEXT_IDX = [4, 5, 6, 7, 8, 9, 10];
+    sh.getRange(2, EXPORT_TEXT_IDX[0] + 1, data.length, EXPORT_TEXT_IDX.length).setNumberFormat('@');
+    sh.getRange(2, 1, data.length, headers.length).setValues(sheetTextRows_(data, EXPORT_TEXT_IDX));
     sh.setFrozenRows(1);
     SpreadsheetApp.flush();
 
@@ -2566,8 +2571,12 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     // records the recipient DOMAIN (g36). The domain says where PHI went
     // without naming anyone; the full address stays in the note's own
     // subformData (individualEmail).
+    // F3 (cycle 25): "Other" takes a COMMA LIST (validateEmailSelections_), and
+    // intakeEmailDomain_ returns everything after the FIRST "@" — so a second
+    // recipient's full address rode into the shared log. Domains of every
+    // address, deduped, through the helper the Dept Request row already uses.
     const otherDomain = (selections.departments.indexOf('Other') >= 0 && selections.individualEmail)
-      ? intakeEmailDomain_(selections.individualEmail) : '';
+      ? drRecipientDomains_(selections.individualEmail) : '';
     writeAuditLog_(emp, 'CallNoteEmail', note.dateLocal, '', false, 0,
       `noteId=${noteId}; depts=${deptLabel || '(none)'}; recipients=${recipientList.to.split(',').length}` +
       (otherDomain ? `; otherDomain=${otherDomain}` : '') +
@@ -3695,7 +3704,17 @@ function archiveSheetRowsOlderThan_(srcSheet, archiveSheet, dateColIdx, cutoffMs
   if (archiveSheet.getMaxRows() < needRows) {
     archiveSheet.insertRowsAfter(archiveSheet.getMaxRows(), needRows - archiveSheet.getMaxRows());
   }
-  archiveSheet.getRange(archiveSheet.getLastRow() + 1, 1, block.length, width).setValues(sheetSafeRows_(block));
+  // F6 (cycle 25): the call-note text columns are '@' cells in Notes (CN-7,
+  // g144) and must stay '@' in the archive — written sheet-safe into an
+  // ordinary cell, a callback "09171234567" lost its leading zero for good and
+  // an issue reading "3/4" became a Date that every archive reader then
+  // printed as "Wed Mar 04 2026 …". opts.textIdx names those columns: they are
+  // formatted '@' on the target rows and written raw; every other cell stays
+  // sheet-safe. A caller that passes none (the Timesheet tier) is unchanged.
+  const archStart = archiveSheet.getLastRow() + 1;
+  const textIdx = Array.isArray(opts.textIdx) ? opts.textIdx : [];
+  textIdx.forEach(function (i) { archiveSheet.getRange(archStart, i + 1, block.length, 1).setNumberFormat('@'); });
+  archiveSheet.getRange(archStart, 1, block.length, width).setValues(sheetTextRows_(block, textIdx));   // textIdx [] = every cell sheet-safe (the Timesheet tier, unchanged)
   SpreadsheetApp.flush();   // ensure the archive write lands before we delete the source
   // Sheets REFUSES to delete every non-frozen row of a grid ("not possible to
   // delete all non-frozen rows" — the _clearTestCallNotes lesson). A run whose
@@ -3784,7 +3803,7 @@ function archiveOldCallNotes() {
           const live = getCallNotesSheet_(emp);
           const archive = getOrCreateNotesArchiveTab_(live.getParent());
           const moved = archiveSheetRowsOlderThan_(live, archive, CN.DATE_LOCAL, cutoffMs,
-            { maxRows: budget });
+            { maxRows: budget, textIdx: CN_TEXT_IDX });   // F6 (cycle 25): the '@' columns stay '@'
           if (moved > 0) { notesArchived += moved; repsTouched++; budget -= moved; }
         } catch (e) {
           Logger.log('archiveOldCallNotes: skipped rep ' + emp.id + ': ' + e.message);
