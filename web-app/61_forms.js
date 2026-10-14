@@ -1247,6 +1247,7 @@ function purgeExpiredFormData() {
     const days = getFormRetentionDays_();
     if (!days) {
       Logger.log('purgeExpiredFormData: retention disabled (FORM_DATA_RETENTION_DAYS=0) — nothing purged.');
+      clearAutomationError_('FormDataPurge');   // F5 (cycle 25): every path rewrites the job's state
       return;
     }
     const cutoffMs = Date.now() - days * 86400000;
@@ -1261,8 +1262,13 @@ function purgeExpiredFormData() {
     }
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'FormDataPurge', '', '', false, 0,
       `retentionDays=${days}; submissionsRemoved=${subsRemoved}; tokensRemoved=${tokensRemoved}`);
+    clearAutomationError_('FormDataPurge');
     Logger.log(`purgeExpiredFormData: removed ${subsRemoved} submission(s) + ${tokensRemoved} token(s) older than ${days} day(s).`);
   } catch (err) {
+    // F5 (cycle 25): a PHI purge that failed (a lock timeout, the forms store
+    // unreachable) only logged, then the dispatcher CLEARED its key as a clean
+    // return, so the only trace was a stale line blaming the trigger (g142).
+    stampAutomationError_('FormDataPurge', err.message);
     Logger.log('purgeExpiredFormData failed: ' + err.message);
   }
 }

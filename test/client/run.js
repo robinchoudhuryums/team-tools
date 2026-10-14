@@ -23316,8 +23316,8 @@ test('ARCH-GUARD: archiveSheetRowsOlderThan_ keeps a spare row so the final dele
   const helper = foNc(extractRawFunction('Code.js', 'archiveSheetRowsOlderThan_'));
   assert.ok(/if \(toDelete\.length && toDelete\.length >= srcSheet\.getMaxRows\(\) - headerRows\) \{\s*srcSheet\.insertRowAfter\(srcSheet\.getMaxRows\(\)\);\s*\}/.test(helper),
     'a run covering every non-header row inserts one spare row first');
-  assert.ok(helper.indexOf('insertRowAfter') > helper.indexOf('SpreadsheetApp.flush()') && helper.indexOf('insertRowAfter') < helper.indexOf('srcSheet.deleteRow('),
-    'the guard sits AFTER the archive append has flushed and BEFORE the bottom-up deletes');
+  assert.ok(helper.indexOf('insertRowAfter') > helper.indexOf('SpreadsheetApp.flush()') && helper.indexOf('insertRowAfter') < helper.indexOf('srcSheet.deleteRows('),
+    'the guard sits AFTER the archive append has flushed and BEFORE the bottom-up deletes (contiguous runs since cycle 25 F7)');
   assert.ok(!/getMaxRows\(\) - headerRows \+ 1/.test(helper), 'the threshold is exactly the non-header row count');
 });
 
@@ -27109,13 +27109,13 @@ test('F6 (cycle 25): the cold archive keeps the call-note text columns as \'@\' 
   sb.CN_HEADERS = ['date', 'callback', 'note'];
   sb.Utilities = { parseDate: (s) => new Date(Date.parse(s)) };
   sb.SpreadsheetApp = { flush: () => {} };
-  ['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_', 'sheetTextRows_', 'parseRetentionDateMs_', 'retentionStampPattern_', 'archiveSheetRowsOlderThan_']
+  ['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_', 'sheetTextRows_', 'contiguousRowRunsDesc_', 'parseRetentionDateMs_', 'retentionStampPattern_', 'archiveSheetRowsOlderThan_']
     .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), sb));
   const rows = [['date', 'callback', 'note'],
     ['2026-01-05T08:00:00', '09171234567', '=HYPERLINK("x")'],
     ['2026-01-06T08:00:00', '3/4', '- call back']];
   const src = { getLastRow: () => rows.length, getMaxRows: () => 100, getDataRange: () => ({ getValues: () => rows.map((r) => r.slice()) }),
-    insertRowAfter: () => {}, deleteRow: (n) => { rows.splice(n - 1, 1); } };
+    insertRowAfter: () => {}, deleteRow: (n) => { rows.splice(n - 1, 1); }, deleteRows: (n, c) => { rows.splice(n - 1, c); } };
   const log = [];
   const arc = { getLastRow: () => 4, getMaxRows: () => 100, getMaxColumns: () => 3, insertRowsAfter() {}, insertColumnsAfter() {},
     getRange: (r, c, n, w) => ({
@@ -27147,7 +27147,7 @@ test('F3 (rewritten BEHAVIOURAL, F-52): archiveSheetRowsOlderThan_ really stops 
   sb.Utilities = { parseDate: (s) => new Date(Date.parse(s)) };   // FORM-4: the written shape only, no fallback
   let flushes = 0;
   sb.SpreadsheetApp = { flush: () => { flushes++; } };
-  ['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_', 'sheetTextRows_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), sb));   // S2 — the real helpers (+ F6's text rows)
+  ['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_', 'sheetTextRows_', 'contiguousRowRunsDesc_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), sb));   // S2 — the real helpers (+ F6's text rows, F7's run deleter)
   vm.runInContext(extractRawFunction('Code.js', 'parseRetentionDateMs_'), sb, { filename: 'Code.js#parseRetentionDateMs_' });
   vm.runInContext(extractRawFunction('Code.js', 'retentionStampPattern_'), sb);
   vm.runInContext(extractRawFunction('Code.js', 'archiveSheetRowsOlderThan_'), sb, { filename: 'Code.js#archiveSheetRowsOlderThan_' });
@@ -27164,8 +27164,10 @@ test('F3 (rewritten BEHAVIOURAL, F-52): archiveSheetRowsOlderThan_ really stops 
       getDataRange: () => ({ getValues: () => rows.map((r) => r.slice()) }),
       insertRowAfter: () => {},
       deleteRow: (n) => { rows.splice(n - 1, 1); },
+      deleteRows: (n, c) => { src.deleteCalls++; rows.splice(n - 1, c); },   // F7 (cycle 25): one call per contiguous run
     };
   };
+  const src = { deleteCalls: 0 };
   const mkArchive = () => {
     const written = [];
     // C1 (cycle 22): a GRID, like Sheets — a small one, so these runs must
@@ -28593,6 +28595,131 @@ test('FU-B6a: the urgent digest STAMPS a failed read (heartbeat withheld) and cl
   assert.deepStrictEqual(calls.splice(0), ['err:CallNotesUrgentDigest:roster unreadable'], 'stamped, and NO heartbeat');
   mk(() => ({ results: [], skippedReps: [] }))();
   assert.deepStrictEqual(calls.splice(0), ['clear:CallNotesUrgentDigest', 'beat:urgent'], 'a clean empty run clears the flag and beats');
+});
+
+// ── cycle 25 Batch 3a — automation failures reach the health dot ─────────────
+test('F4 (cycle 25): a digest whose SEND fails is a failed run — sendManagerFlagDigest_ returns the error, and the weekly and urgent digests stamp it and withhold the heartbeat (driven)', () => {
+  // The sender itself: a MailApp throw is RETURNED, not only logged.
+  const mkSender = (throws) => {
+    const ctx = vm.createContext({ String, Array, Logger: { log() {} }, CN_EMAIL_PALETTE: { muted: '#3', line: '#d' },
+      esc_: (x) => String(x), cnFmtEmailHtml_: (x) => String(x), buildBrandedEmailHtml_: () => '<html>', safeWebAppUrl_: () => 'u',
+      appSendMail_: () => { if (throws) throw new Error('Service invoked too many times for one day: email.'); } });
+    vm.runInContext(extractRawFunction('Code.js', 'sendManagerFlagDigest_'), ctx);
+    return (label) => JSON.parse(JSON.stringify(ctx.sendManagerFlagDigest_(['m@x.com'], label, [], { start: '2026-10-07', end: '2026-10-14' }, ['Ana'])));
+  };
+  assert.deepStrictEqual(mkSender(false)('Urgent'), { sent: true });
+  assert.deepStrictEqual(mkSender(true)('Urgent'), { error: 'Service invoked too many times for one day: email.' },
+    'THE REGRESSION: the throw was swallowed and both callers stamped a healthy heartbeat');
+  // The weekly digest: one queue's send fails, the other still goes, and no heartbeat.
+  const weekly = (sendFor) => {
+    const log = { sent: [], err: [], clr: [], hb: [] };
+    const ctx = vm.createContext({ console, Date, String, JSON,
+      CONFIG: { TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago' },
+      Utilities: { formatDate: () => '2026-10-14' }, Logger: { log() {} },
+      assertManagerCaller_() {}, getManagerEmails_: () => ['m@x.com'],
+      managerAggregateFlagged_: () => ({ results: [{ id: 1 }], skippedReps: [] }),
+      sendManagerFlagDigest_: (to, label) => { log.sent.push(label); return sendFor(label); },
+      stampAutomationError_: (k, m) => log.err.push(k + ':' + m), clearAutomationError_: (k) => log.clr.push(k),
+      stampDigestLastRun_: (k) => log.hb.push(k) });
+    vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesWeeklyDigests'), ctx);
+    ctx.sendCallNotesWeeklyDigests();
+    return log;
+  };
+  const w = weekly((l) => (l === 'Training Queue' ? { error: 'quota' } : { sent: true }));
+  assert.deepStrictEqual(w.sent, ['Training Queue', 'Review Candidates'], 'the other queue still went out');
+  assert.strictEqual(w.hb.length + w.clr.length, 0, 'NO heartbeat, and the previous failure is not cleared');
+  assert.ok(w.err.length === 1 && /^CallNotesWeeklyDigests:.*training digest could not be sent: quota/.test(w.err[0]), w.err.join('|'));
+  const wOk = weekly(() => ({ sent: true }));
+  assert.deepStrictEqual(wOk.hb, ['weekly'], 'a run whose sends went heartbeats');
+  // The urgent digest.
+  const calls = [];
+  const ctxU = vm.createContext({ String, Date, JSON, Logger: { log() {} }, CONFIG: { TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago' },
+    Utilities: { formatDate: () => '2026-10-14' }, assertManagerCaller_() {}, managerBriefSuppressionActive_: () => false,
+    getManagerEmails_: () => ['m@x'], managerAggregateUrgent_: () => ({ results: [{ id: 1 }], skippedReps: [] }),
+    sendManagerFlagDigest_: () => ({ error: 'quota' }),
+    stampAutomationError_: (k, m) => calls.push('err:' + k + ':' + m), clearAutomationError_: (k) => calls.push('clear:' + k),
+    stampDigestLastRun_: (k) => calls.push('beat:' + k) });
+  vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesUrgentDigest'), ctxU);
+  ctxU.sendCallNotesUrgentDigest();
+  assert.deepStrictEqual(calls, ['err:CallNotesUrgentDigest:the urgent digest could not be sent: quota'], 'stamped; no clear, no heartbeat');
+});
+
+test('F5 (cycle 25): the call-note retention, archive and reconcile jobs and the form-data purge STAMP a run that failed or skipped a rep Sheet, clear on a clean run, and own their keys (driven + a net over all five)', () => {
+  const KEYS = { purgeOldCallNotes: 'CallNotesPurge', archiveOldCallNotes: 'CallNotesArchive', purgeArchivedCallNotes: 'CallNotesArchivePurge',
+    purgeExpiredFormData: 'FormDataPurge', reconcileCallNotes: 'CallNotesReconcile' };
+  // The net: each body stamps AND clears its job-table key (the action the health dot reads errors under).
+  const code = serverSource();
+  Object.keys(KEYS).forEach((fn) => {
+    const body = stripJsComments_(extractRawFunction('Code.js', fn));
+    assert.ok(body.indexOf("stampAutomationError_('" + KEYS[fn] + "'") >= 0 && body.indexOf("clearAutomationError_('" + KEYS[fn] + "'") >= 0, fn + ' stamps and clears ' + KEYS[fn]);
+    assert.ok(new RegExp("action: '" + KEYS[fn] + "'").test(code), KEYS[fn] + ' is a job-table action, so the error line is labelled and sits beside its liveness line');
+  });
+  // Driven: a rep Sheet that will not open is a FAILURE, named.
+  const drive = (opts) => {
+    const log = { err: [], clr: [], audit: [] };
+    const roster = [['hdr'], ['E1', 'Ana Reyes'], ['E2', 'Sam Ortiz']];
+    const ctx = vm.createContext({ String, Date, Logger: { log() {} }, CN: { DATE_LOCAL: 1 }, EMP: { ID: 0, NAME: 1 },
+      assertManagerCaller_() {}, getNoteRetentionDays_: () => opts.days,
+      getEmployeeRosterRows_: () => roster, cnEnrolledSheetId_: (r) => 'sheet-' + r[0],
+      LockService: { getScriptLock: () => ({ waitLock() { if (opts.lockThrows) throw new Error('Lock timeout'); }, releaseLock() {} }) },
+      getCallNotesSheet_: (emp) => { if (opts.bad && emp.id === opts.bad) throw new Error('Requested entity was not found.'); return {}; },
+      purgeSheetRowsOlderThan_: () => 1,
+      writeAuditLog_: (e, a, d, t, x, y, notes) => log.audit.push(notes), _SYSTEM_AUDIT_EMP_: {},
+      stampAutomationError_: (k, m) => log.err.push(k + ':' + m), clearAutomationError_: (k) => log.clr.push(k) });
+    vm.runInContext(extractRawFunction('Code.js', 'purgeOldCallNotes'), ctx);
+    ctx.purgeOldCallNotes();
+    return log;
+  };
+  const skip = drive({ days: 30, bad: 'E2' });
+  assert.deepStrictEqual(skip.err, ['CallNotesPurge:1 rep Sheet(s) could not be opened, so their notes stay past the retention window: Sam Ortiz'],
+    'THE REGRESSION: the skip reached only Logger.log and the run read as clean');
+  assert.strictEqual(skip.clr.length, 0, 'and a skipped run never clears');
+  assert.ok(/repsTouched=1; notesRemoved=1; repsSkipped=1$/.test(skip.audit[0]), 'the audit row counts the skip (no names in the shared log)');
+  const clean = drive({ days: 30 });
+  assert.deepStrictEqual([clean.err.length, clean.clr], [0, ['CallNotesPurge']], 'a clean run clears');
+  const dead = drive({ days: 30, lockThrows: true });
+  assert.deepStrictEqual(dead.err, ['CallNotesPurge:Lock timeout'], 'a run that never finished is stamped — not left to read as a stale trigger');
+  assert.deepStrictEqual(drive({ days: 0 }).clr, ['CallNotesPurge'], 'turning retention off clears a stale failure');
+  // The forms purge: a throw is stamped, a clean run clears, and the dispatcher no longer clears its key for it.
+  const fl = { err: [], clr: [] };
+  const fctx = vm.createContext({ String, Date, Logger: { log() {} }, FS: { SUBMITTED_AT: 1 }, FT: { CREATED_AT: 1 },
+    assertManagerCaller_() {}, getFormRetentionDays_: () => 90,
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    getOrCreateFormSubmissionsSheet_: () => { throw new Error('forms store unreachable'); }, getOrCreateFormTokensSheet_: () => ({}),
+    purgeSheetRowsOlderThan_: () => 0, writeAuditLog_() {}, _SYSTEM_AUDIT_EMP_: {},
+    stampAutomationError_: (k, m) => fl.err.push(k + ':' + m), clearAutomationError_: (k) => fl.clr.push(k) });
+  vm.runInContext(extractRawFunction('Code.js', 'purgeExpiredFormData'), fctx);
+  fctx.purgeExpiredFormData();
+  assert.deepStrictEqual([fl.err, fl.clr.length], [['FormDataPurge:forms store unreachable'], 0]);
+  const keys = vm.createContext({});
+  vm.runInContext(extractConstDecl_('TRIGGER_HANDLER_JOB_KEYS').replace(/^const /, 'var '), keys);
+  assert.strictEqual(keys.TRIGGER_HANDLER_JOB_KEYS.purgeExpiredFormData.owns, true);
+  assert.strictEqual(keys.TRIGGER_HANDLER_JOB_KEYS.purgeArchivedCallNotes.owns, true, 'the dispatcher used to CLEAR these keys after the job swallowed its failure');
+});
+
+test('F7 (cycle 25): the cold-archive mover deletes the moved rows in contiguous runs — one deleteRows per run, never one deleteRow per row (driven)', () => {
+  const sb = buildSandbox([]);
+  sb.CONFIG = { TIMEZONE: 'America/Chicago' };
+  sb.CN_HEADERS = ['date', 'v'];
+  sb.Utilities = { parseDate: (s) => new Date(Date.parse(s)) };
+  sb.SpreadsheetApp = { flush: () => {} };
+  ['sheetSafe_', 'sheetSafeRow_', 'sheetSafeRows_', 'sheetTextRows_', 'contiguousRowRunsDesc_', 'parseRetentionDateMs_', 'retentionStampPattern_', 'archiveSheetRowsOlderThan_']
+    .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), sb));
+  // Old rows as one long prefix (the append-ordered norm), then a back-filled old row among new ones.
+  const rows = [['date', 'v']];
+  for (let i = 0; i < 25; i++) rows.push(['2026-01-05T08:00:00', 'old' + i]);
+  rows.push(['2026-09-10T08:00:00', 'new0'], ['2026-01-06T08:00:00', 'late-old'], ['2026-09-11T08:00:00', 'new1']);
+  const calls = [];
+  const src = { getLastRow: () => rows.length, getMaxRows: () => 500, getDataRange: () => ({ getValues: () => rows.map((r) => r.slice()) }),
+    insertRowAfter() {},
+    deleteRow: () => { throw new Error('THE REGRESSION: one deleteRow per row — 2000 of them can pass the 6-minute ceiling'); },
+    deleteRows: (n, c) => { calls.push(n + '+' + c); rows.splice(n - 1, c); } };
+  const arc = { getLastRow: () => 1, getMaxRows: () => 500, getMaxColumns: () => 2, insertRowsAfter() {}, insertColumnsAfter() {},
+    getRange: () => ({ setNumberFormat() {}, setValues() {} }) };
+  const moved = sb.archiveSheetRowsOlderThan_(src, arc, 0, Date.parse('2026-06-01T00:00:00Z'), {});
+  assert.strictEqual(moved, 26);
+  assert.deepStrictEqual(calls, ['28+1', '2+25'], 'two runs, bottom-up — the back-filled row first, then the 25-row prefix in ONE call');
+  assert.deepStrictEqual(rows.map((r) => r[1]), ['v', 'new0', 'new1'], 'exactly the new rows survive');
 });
 
 test('FU-B6b: the daily brief names urgent-note rep Sheets it could not read, instead of reading only `.results` (driven)', () => {

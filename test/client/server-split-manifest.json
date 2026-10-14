@@ -2479,6 +2479,25 @@
     "kbRequestArticle"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-14",
+   "why": "cycle 25 Batch 3a: F4 sendManagerFlagDigest_ returns a failed send and the weekly/urgent digests stamp it; F5 the CN retention/archive/reconcile jobs and the form-data purge stamp failures and skipped rep Sheets and own their keys; F7 the archive mover deletes contiguous runs",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "TRIGGER_HANDLER_JOB_KEYS",
+    "archiveOldCallNotes",
+    "archiveSheetRowsOlderThan_",
+    "purgeArchivedCallNotes",
+    "purgeExpiredFormData",
+    "purgeOldCallNotes",
+    "reconcileCallNotes",
+    "sendCallNotesUrgentDigest",
+    "sendCallNotesWeeklyDigests",
+    "sendManagerFlagDigest_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4671,7 +4690,7 @@
   "TRIGGER_HANDLER_JOB_KEYS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "8c64c512a3018b5e"
+   "sha": "18c6ba840d74285a"
   },
   "TS_ARCHIVE_REACH_CACHE_KEY": {
    "file": "00_config.js",
@@ -5051,7 +5070,7 @@
   "archiveOldCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "b308bdc8e43a5e09"
+   "sha": "b4edf522dcf98a43"
   },
   "archiveOldTimesheetRows": {
    "file": "20_timeclock.js",
@@ -5061,7 +5080,7 @@
   "archiveSheetRowsOlderThan_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "16fd7c482b277222"
+   "sha": "bdb83892d2d38a6b"
   },
   "arraysEqual_": {
    "file": "10_core.js",
@@ -9016,17 +9035,17 @@
   "purgeArchivedCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "9bdee88f77731c53"
+   "sha": "e7e10cbf121e28c7"
   },
   "purgeExpiredFormData": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "a7cfdafb5158dc81"
+   "sha": "2d8e8c6746cb345e"
   },
   "purgeOldCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "7f539660f1dbc553"
+   "sha": "ac624c4be94dc928"
   },
   "purgeOldDiagnostics": {
    "file": "10_core.js",
@@ -9431,7 +9450,7 @@
   "reconcileCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "4b4b2b9af037a027"
+   "sha": "b3b0c2fe39b2ddc4"
   },
   "recordClientError": {
    "file": "10_core.js",
@@ -9846,12 +9865,12 @@
   "sendCallNotesUrgentDigest": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "7cbd33a1de6edfc9"
+   "sha": "5f2098fc292487f4"
   },
   "sendCallNotesWeeklyDigests": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "735d7bda4f3a9301"
+   "sha": "b926aa13648503ee"
   },
   "sendCoachingRecapDigest": {
    "file": "82_coaching.js",
@@ -9891,7 +9910,7 @@
   "sendManagerFlagDigest_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "d9f7e84de0de7ebe"
+   "sha": "3f13188f84ee46dd"
   },
   "sendOneRepEodDigest_": {
    "file": "30_callnotes.js",

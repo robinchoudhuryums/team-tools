@@ -3561,6 +3561,7 @@ function purgeOldCallNotes() {
     const days = getNoteRetentionDays_();
     if (!days) {
       Logger.log('purgeOldCallNotes: retention disabled (CN_NOTE_RETENTION_DAYS=0) — nothing purged.');
+      clearAutomationError_('CallNotesPurge');   // F5 (cycle 25): every path rewrites the job's state
       return;
     }
     const cutoffMs = Date.now() - days * 86400000;
@@ -3568,6 +3569,7 @@ function purgeOldCallNotes() {
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     let repsTouched = 0, notesRemoved = 0;
+    const skipped = [];
     try {
       for (let r = 1; r < roster.length; r++) {
         const sheetId = cnEnrolledSheetId_(roster[r]);
@@ -3581,6 +3583,7 @@ function purgeOldCallNotes() {
           const removed = purgeSheetRowsOlderThan_(getCallNotesSheet_(emp), CN.DATE_LOCAL, cutoffMs);
           if (removed > 0) { notesRemoved += removed; repsTouched++; }
         } catch (e) {
+          skipped.push(emp.name || emp.id);
           Logger.log('purgeOldCallNotes: skipped rep ' + emp.id + ': ' + e.message);
         }
       }
@@ -3588,9 +3591,16 @@ function purgeOldCallNotes() {
       lock.releaseLock();
     }
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'CallNotesPurge', '', '', false, 0,
-      `retentionDays=${days}; repsTouched=${repsTouched}; notesRemoved=${notesRemoved}`);
+      `retentionDays=${days}; repsTouched=${repsTouched}; notesRemoved=${notesRemoved}` + (skipped.length ? `; repsSkipped=${skipped.length}` : ''));
+    // F5 (cycle 25): a rep Sheet that could not be opened is a FAILED run for
+    // that rep (their notes stay past the retention window) — it used to reach only Logger.log, and the
+    // audit row read like a clean run with a smaller count. Stamped by name
+    // where the health dot and the failure digest read it; a clean run clears.
+    if (skipped.length) stampAutomationError_('CallNotesPurge', skipped.length + ' rep Sheet(s) could not be opened, so their notes stay past the retention window: ' + skipped.join(', '));
+    else clearAutomationError_('CallNotesPurge');
     Logger.log(`purgeOldCallNotes: removed ${notesRemoved} note(s) across ${repsTouched} rep(s) older than ${days} day(s).`);
   } catch (err) {
+    stampAutomationError_('CallNotesPurge', err.message);   // F5 (cycle 25): a run that never finished is a failure, not a stale trigger
     Logger.log('purgeOldCallNotes failed: ' + err.message);
   }
 }
@@ -3725,7 +3735,14 @@ function archiveSheetRowsOlderThan_(srcSheet, archiveSheet, dateColIdx, cutoffMs
   if (toDelete.length && toDelete.length >= srcSheet.getMaxRows() - headerRows) {
     srcSheet.insertRowAfter(srcSheet.getMaxRows());
   }
-  for (let j = toDelete.length - 1; j >= 0; j--) srcSheet.deleteRow(toDelete[j]);
+  // F7 (cycle 25): one deleteRows per CONTIGUOUS run, descending — not one
+  // deleteRow per row. The run cap (2000 rows) times the per-row delete cost
+  // the F3 note above estimates (up to ~0.2s) is past the 6-minute ceiling,
+  // and a run killed after the flushed append re-appends the undeleted rows
+  // the next night — the duplication the cap exists to prevent. Old rows are a
+  // prefix of an append-ordered tab, so this is usually ONE call (the purge
+  // tiers' shared deleter since cycle 23 4a-FU2).
+  contiguousRowRunsDesc_(toDelete).forEach(function (run) { srcSheet.deleteRows(run.start, run.count); });
   return toMoveRows.length;
 }
 /** Cold-archive tier for call-note retention (the SAFE alternative to the
@@ -3751,6 +3768,7 @@ function archiveOldCallNotes() {
     const days = getNoteArchiveDays_();
     if (!days) {
       Logger.log('archiveOldCallNotes: archival disabled (CN_NOTE_ARCHIVE_DAYS=0) — nothing archived.');
+      clearAutomationError_('CallNotesArchive');   // F5 (cycle 25)
       return;
     }
     const cutoffMs = Date.now() - days * 86400000;
@@ -3758,6 +3776,7 @@ function archiveOldCallNotes() {
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     let repsTouched = 0, notesArchived = 0;
+    const skipped = [];   // F5 (cycle 25)
     // Cycle-12 F3-sibling: a WHOLE-RUN row budget, shared across reps. The
     // Timesheet twin needed a bound because one tab can hold ~20k rows; here
     // the compounding is worse — the mover is called once PER REP inside one
@@ -3806,6 +3825,7 @@ function archiveOldCallNotes() {
             { maxRows: budget, textIdx: CN_TEXT_IDX });   // F6 (cycle 25): the '@' columns stay '@'
           if (moved > 0) { notesArchived += moved; repsTouched++; budget -= moved; }
         } catch (e) {
+          skipped.push(emp.name || emp.id);
           Logger.log('archiveOldCallNotes: skipped rep ' + emp.id + ': ' + e.message);
         }
       }
@@ -3817,9 +3837,16 @@ function archiveOldCallNotes() {
     const capped = truncated
       ? `; hitPerRunCap=${CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN} (more remain — continues tomorrow)` : '';
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'CallNotesArchive', '', '', false, 0,
-      `archiveDays=${days}; repsTouched=${repsTouched}; notesArchived=${notesArchived}${capped}`);
+      `archiveDays=${days}; repsTouched=${repsTouched}; notesArchived=${notesArchived}${capped}` + (skipped.length ? `; repsSkipped=${skipped.length}` : ''));
+    // F5 (cycle 25): a rep Sheet that could not be opened is a FAILED run for
+    // that rep (their notes stay in the live tab) — it used to reach only Logger.log, and the
+    // audit row read like a clean run with a smaller count. Stamped by name
+    // where the health dot and the failure digest read it; a clean run clears.
+    if (skipped.length) stampAutomationError_('CallNotesArchive', skipped.length + ' rep Sheet(s) could not be opened, so their old notes were not archived: ' + skipped.join(', '));
+    else clearAutomationError_('CallNotesArchive');
     Logger.log(`archiveOldCallNotes: moved ${notesArchived} note(s) across ${repsTouched} rep(s) older than ${days} day(s) to ${CONFIG.CALL_NOTES.ARCHIVE_TAB}.`);
   } catch (err) {
+    stampAutomationError_('CallNotesArchive', err.message);   // F5 (cycle 25)
     Logger.log('archiveOldCallNotes failed: ' + err.message);
   }
 }
@@ -3854,6 +3881,7 @@ function purgeArchivedCallNotes() {
     const days = getArchiveRetentionDays_();
     if (!days) {
       Logger.log('purgeArchivedCallNotes: archive retention disabled (CN_ARCHIVE_RETENTION_DAYS=0) — nothing purged.');
+      clearAutomationError_('CallNotesArchivePurge');   // F5 (cycle 25)
       return;
     }
     const cutoffMs = Date.now() - days * 86400000;
@@ -3861,6 +3889,7 @@ function purgeArchivedCallNotes() {
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     let repsTouched = 0, notesRemoved = 0;
+    const skipped = [];   // F5 (cycle 25)
     try {
       for (let r = 1; r < roster.length; r++) {
         const sheetId = cnEnrolledSheetId_(roster[r]);
@@ -3877,6 +3906,7 @@ function purgeArchivedCallNotes() {
           const removed = purgeSheetRowsOlderThan_(archive, CN.DATE_LOCAL, cutoffMs);
           if (removed > 0) { notesRemoved += removed; repsTouched++; }
         } catch (e) {
+          skipped.push(emp.name || emp.id);
           Logger.log('purgeArchivedCallNotes: skipped rep ' + emp.id + ': ' + e.message);
         }
       }
@@ -3884,9 +3914,16 @@ function purgeArchivedCallNotes() {
       lock.releaseLock();
     }
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'CallNotesArchivePurge', '', '', false, 0,
-      `archiveRetentionDays=${days}; repsTouched=${repsTouched}; notesRemoved=${notesRemoved}`);
+      `archiveRetentionDays=${days}; repsTouched=${repsTouched}; notesRemoved=${notesRemoved}` + (skipped.length ? `; repsSkipped=${skipped.length}` : ''));
+    // F5 (cycle 25): a rep Sheet that could not be opened is a FAILED run for
+    // that rep (their archived notes stay past the window) — it used to reach only Logger.log, and the
+    // audit row read like a clean run with a smaller count. Stamped by name
+    // where the health dot and the failure digest read it; a clean run clears.
+    if (skipped.length) stampAutomationError_('CallNotesArchivePurge', skipped.length + ' rep Sheet(s) could not be opened, so their archived notes stay past the retention window: ' + skipped.join(', '));
+    else clearAutomationError_('CallNotesArchivePurge');
     Logger.log(`purgeArchivedCallNotes: removed ${notesRemoved} archived note(s) across ${repsTouched} rep(s) older than ${days} day(s).`);
   } catch (err) {
+    stampAutomationError_('CallNotesArchivePurge', err.message);   // F5 (cycle 25)
     Logger.log('purgeArchivedCallNotes failed: ' + err.message);
   }
 }
@@ -3912,6 +3949,7 @@ function reconcileCallNotes() {
     const roster = getEmployeeRosterRows_();
     const CONTENT_COLS = [CN.CALLBACK, CN.CALLER, CN.RELATIONSHIP, CN.PATIENT_TRX, CN.ISSUE, CN.TRANSFERRED_TO, CN.RESOLUTION];
     let repsTouched = 0, rowsBackfilled = 0;
+    const skipped = [];   // F5 (cycle 25)
     for (let r = 1; r < roster.length; r++) {
       const sheetId = cnEnrolledSheetId_(roster[r]);
       if (!sheetId) continue;
@@ -3953,13 +3991,24 @@ function reconcileCallNotes() {
         }
         if (repBackfilled > 0) { rowsBackfilled += repBackfilled; repsTouched++; }
       } catch (e) {
+        skipped.push(emp.name || emp.id);
         Logger.log('reconcileCallNotes: skipped rep ' + emp.id + ': ' + e.message);
       }
     }
     writeAuditLog_(callerEmp, 'CallNotesReconcile', '', '', false, 0,
-      `repsTouched=${repsTouched}; rowsBackfilled=${rowsBackfilled}`, callerEmp.email);
-    return { success: true, repsTouched: repsTouched, rowsBackfilled: rowsBackfilled };
-  } catch (err) { return { error: err.message }; }
+      `repsTouched=${repsTouched}; rowsBackfilled=${rowsBackfilled}` + (skipped.length ? `; repsSkipped=${skipped.length}` : ''), callerEmp.email);
+    // F5 (cycle 25): a rep Sheet that could not be opened is a FAILED run for
+    // that rep (its hand-entered notes stay unreconciled) — it used to reach only Logger.log, and the
+    // audit row read like a clean run with a smaller count. Stamped by name
+    // where the health dot and the failure digest read it; a clean run clears.
+    if (skipped.length) stampAutomationError_('CallNotesReconcile', skipped.length + ' rep Sheet(s) could not be opened, so their hand-entered notes were not reconciled: ' + skipped.join(', '));
+    else clearAutomationError_('CallNotesReconcile');
+    return { success: true, repsTouched: repsTouched, rowsBackfilled: rowsBackfilled, skippedReps: skipped };
+  } catch (err) {
+    // F5 (cycle 25): the nightly trigger's {error} reached nobody — stamp it.
+    stampAutomationError_('CallNotesReconcile', err.message);
+    return { error: err.message };
+  }
   finally { lock.releaseLock(); }
 }
 
@@ -4114,21 +4163,24 @@ function sendCallNotesWeeklyDigests() {
     // C17 batch-2: a queue with unreadable rep Sheets is not a silently-
     // skippable empty queue — send (with the warning) whenever there are
     // results OR skipped reps; genuinely-empty-and-clean stays silent (S24).
+    const sendFails = [];   // F4 (cycle 25): a send that failed is a failed run
     if ((training.results && training.results.length > 0) || (training.skippedReps || []).length > 0) {
-      sendManagerFlagDigest_(mgrEmails, 'Training Queue', training.results || [], dateRange, training.skippedReps);
+      const sentT = sendManagerFlagDigest_(mgrEmails, 'Training Queue', training.results || [], dateRange, training.skippedReps);
+      if (sentT && sentT.error) sendFails.push('the training digest could not be sent: ' + sentT.error);
     }
     if ((review.results && review.results.length > 0) || (review.skippedReps || []).length > 0) {
-      sendManagerFlagDigest_(mgrEmails, 'Review Candidates', review.results || [], dateRange, review.skippedReps);
+      const sentR = sendManagerFlagDigest_(mgrEmails, 'Review Candidates', review.results || [], dateRange, review.skippedReps);
+      if (sentR && sentR.error) sendFails.push('the review digest could not be sent: ' + sentR.error);
     }
     // C2 (cycle 22): an {error} is not an empty queue. It used to read as one —
     // nothing sent, and a HEALTHY heartbeat stamped (INV-109's failure mode).
     // Stamp the failure where the digest and the dot read it, and withhold the
     // heartbeat so the weekly row goes stale too. The readable queue still sent.
     const failed = [['training', training], ['review', review]].filter(function (q) { return q[1] && q[1].error; });
-    if (failed.length) {
-      const why = failed.map(function (q) { return q[0] + ' queue: ' + q[1].error; }).join('; ');
+    if (failed.length || sendFails.length) {
+      const why = failed.map(function (q) { return q[0] + ' queue: ' + q[1].error; }).concat(sendFails).join('; ');
       stampAutomationError_('CallNotesWeeklyDigests', why);
-      Logger.log('sendCallNotesWeeklyDigests: could not read ' + why + ' — no heartbeat.');
+      Logger.log('sendCallNotesWeeklyDigests: ' + why + ' — no heartbeat.');
       return;
     }
     clearAutomationError_('CallNotesWeeklyDigests');
@@ -4174,7 +4226,13 @@ function sendCallNotesUrgentDigest() {
 
     const urgent = managerAggregateUrgent_(dateRange);
     if ((urgent.results && urgent.results.length > 0) || (urgent.skippedReps || []).length > 0) {
-      sendManagerFlagDigest_(mgrEmails, 'Urgent', urgent.results || [], dateRange, urgent.skippedReps);
+      const sentU = sendManagerFlagDigest_(mgrEmails, 'Urgent', urgent.results || [], dateRange, urgent.skippedReps);
+      if (sentU && sentU.error) {
+        // F4 (cycle 25): nothing was sent — stamp it and withhold the heartbeat.
+        stampAutomationError_('CallNotesUrgentDigest', 'the urgent digest could not be sent: ' + sentU.error);
+        Logger.log('sendCallNotesUrgentDigest: send failed — no heartbeat.');
+        return;
+      }
     }
     clearAutomationError_('CallNotesUrgentDigest');
     stampDigestLastRun_('urgent');
@@ -4286,7 +4344,15 @@ function sendManagerFlagDigest_(toEmails, label, notes, dateRange, skippedReps) 
       body: textBody,
       htmlBody,
     });
-  } catch (e) { Logger.log(`sendManagerFlagDigest_(${label}) email failed: ${e.message}`); }
+    return { sent: true };
+  } catch (e) {
+    // F4 (cycle 25): a failed send is RETURNED, never only logged — both
+    // callers used to stamp a healthy heartbeat and clear their error key
+    // after a quota or MailApp failure that sent nothing (the g53 / MAIL-4
+    // shape seams F2 closed for the EOD digest). The other queue still sends.
+    Logger.log(`sendManagerFlagDigest_(${label}) email failed: ${e.message}`);
+    return { error: (e && e.message) ? e.message : String(e) };
+  }
 }
 
 

@@ -1316,8 +1316,8 @@ const TRIGGER_HANDLER_JOB_KEYS = {
   sendCoachingRecapDigest:           { key: 'CoachingRecapDigest',    owns: true },
   purgeOldDiagnostics:               { key: 'DiagnosticsPurge',       owns: true },
   purgeOldQaReviews:                 { key: 'QaReviewPurge',          owns: true },
-  purgeExpiredFormData:              { key: 'FormDataPurge',          owns: false },
-  purgeArchivedCallNotes:            { key: 'CallNotesArchivePurge',  owns: false },
+  purgeExpiredFormData:              { key: 'FormDataPurge',          owns: true },   // F5 (cycle 25)
+  purgeArchivedCallNotes:            { key: 'CallNotesArchivePurge',  owns: true },   // F5 (cycle 25)
   checkOpenPunches:                  { key: 'OpenPunchCheck',         owns: false },
   sendCallNotesUrgentDigest:         { key: 'CallNotesUrgentDigest',  owns: true },
 };

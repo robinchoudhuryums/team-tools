@@ -1565,6 +1565,19 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   a run that REACHED a rep: most hours match nobody, and an idle hour would
   wipe a failure before the 9am failure digest reads it. Verify: the Seams F2
   drive.
+  **Cycle 25 F4 + F5 (2026-10-14): the rest of the siblings.** The weekly and
+  urgent digests' shared sender caught a MailApp throw and only logged it, so
+  both stamped a healthy heartbeat and CLEARED their error key after sending
+  nothing; it now returns `{ error }` and both stamp it and withhold the
+  heartbeat. The five retention / archive / reconcile jobs (`purgeOldCallNotes`,
+  `archiveOldCallNotes`, `purgeArchivedCallNotes`, `reconcileCallNotes`,
+  `purgeExpiredFormData`) logged a run that died and a rep Sheet they could not
+  open — the audit row then read like a clean run with a smaller count, and the
+  dispatcher cleared two of their keys after the swallowed failure, so the only
+  trace was a stale line blaming the trigger (g142). Each now stamps under its
+  job-table action (the "FAILED on …" line beside its liveness line), names the
+  skipped reps, counts them on the audit row, clears on a clean run, and owns its
+  key in `TRIGGER_HANDLER_JOB_KEYS`. Verify: the F4 and F5 (cycle 25) drives.
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 
