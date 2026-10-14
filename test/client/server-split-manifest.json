@@ -2621,6 +2621,19 @@
     "recordAccrualLedger_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-14",
+   "why": "cycle 25 Batch 7 follow-ups: FU1 updateTimeOffStatus one read, FU2 onboarding anchor warning, FU3 accrual ledger store share",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "addEmployee",
+    "empValidateNewEmployee_",
+    "scriptPropertiesStatus_",
+    "updateTimeOffStatus"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5118,7 +5131,7 @@
   "addEmployee": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "3bb6f5206e6276ed"
+   "sha": "cc41b4e230e9bf38"
   },
   "addrListMerge_": {
    "file": "10_core.js",
@@ -6508,7 +6521,7 @@
   "empValidateNewEmployee_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "f9dc7a00acf6b5b4"
+   "sha": "5579cdc168927ecb"
   },
   "esc_": {
    "file": "10_core.js",
@@ -10038,7 +10051,7 @@
   "scriptPropertiesStatus_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "aeaadf9fb83b1e82"
+   "sha": "4349ab6f483f7d3a"
   },
   "searchInsurancePayors": {
    "file": "70_kb.js",
@@ -10793,7 +10806,7 @@
   "updateTimeOffStatus": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "1d050f881266a016"
+   "sha": "e6a7bf682c335a90"
   },
   "utf8Len_": {
    "file": "10_core.js",

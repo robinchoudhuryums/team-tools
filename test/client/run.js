@@ -5502,9 +5502,10 @@ test('C13: EmpDocs hashes default to the NUL delimiter; every recompute site dua
 console.log('\nCode.js — cycle-11 fixes (M-1 dup-approve guard, L-1 details cap, L-2 Transfer headers, L-3 range cache)');
 // M-1: the status-change path carries the INV-94 dup-guard (source pin — the
 // behavioral case is the editor test test_updateTimeOff_dupApproveRejected).
-test('updateTimeOffStatus re-checks hasActiveTimeOffOnDate_ (own row excluded) on the approve transition', () => {
+test('updateTimeOffStatus re-checks the dup-date guard (own row excluded) on the approve transition', () => {
   const src = extractRawFunction('Code.js', 'updateTimeOffStatus');
-  assert.ok(/hasActiveTimeOffOnDate_\(sheet,\s*empId,\s*date,\s*i\)/.test(src),
+  // Cycle 25 FU1: through the rows this call already read, not a second read.
+  assert.ok(/timeOffActiveDates_\(rows,\s*empId,\s*i\)\[date\]/.test(src),
     "the →Approved transition must re-run the INV-94 dup-guard excluding the row's own index");
 });
 
@@ -25463,6 +25464,7 @@ test('Q-3: Storage Health reports the Script Property store — read-only, unkno
   vm.createContext(ctx);
   const code = serverSource();
   loadPropGuard_(ctx);
+  ctx.PTO_ACCRUAL_LEDGER_PREFIX = 'PTO_ACCRUAL_LEDGER_'; ctx.PTO_ACCRUAL_LEDGER_SINCE = 'PTO_ACCRUAL_LEDGER_SINCE';   // cycle 25 FU3
   vm.runInContext(extractRawFunction('Code.js', 'scriptPropertiesStatus_'), ctx);
   ctx.PropertiesService = { getScriptProperties: () => ({ getProperties: () => ({ A: 'x'.repeat(100), BB: 'y'.repeat(4000) }) }) };
   const ok = JSON.parse(JSON.stringify(vm.runInContext('scriptPropertiesStatus_()', ctx)));
@@ -33301,10 +33303,64 @@ const c23ToCtx_ = (opts) => {
     writeAuditLog_: (e, action, d, t, adj, back, notes) => audits.push({ e, action, d, notes }),
     notifyEmployeeOfDecision_: () => {},
   }, o.extra || {}));
-  ['timeOffClosedDayReason_', 'toDeductionCell_', 'toDeductionRead_', 'submitTimeOffRequest', 'managerSubmitTimeOff', 'updateTimeOffStatus']
+  ['timeOffClosedDayReason_', 'toDeductionCell_', 'toDeductionRead_', 'timeOffActiveDates_', 'submitTimeOffRequest', 'managerSubmitTimeOff', 'updateTimeOffStatus']
     .forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
   return { ctx, rows, balance, writes, audits, appended };
 };
+
+test('Batch 7 FU1 (cycle 25): approving a time-off request re-checks the duplicate date against the rows it already read — one read of the tab in the lock, and a real duplicate is still refused (driven)', () => {
+  const rows = [['h'], ['E1', 'Ann', '2026-10-05', 'Full Day', '', 'Pending', 's1'], ['E1', 'Ann', '2026-10-05', 'Full Day', '', 'Denied', 's2'],
+    ['E1', 'Ann', '2026-10-06', 'Full Day', '', 'Pending', 's3']];
+  const t = c23ToCtx_({ rows });
+  let reads = 0;
+  const real = t.ctx.getOrCreateTimeOffSheet_;
+  t.ctx.getOrCreateTimeOffSheet_ = () => { const s = real(); return Object.assign({}, s, { getDataRange: () => { reads++; return s.getDataRange(); } }); };
+  const dup = JSON.parse(JSON.stringify(t.ctx.updateTimeOffStatus('E1', '2026-10-05', 's2', 'Approved')));
+  assert.ok(!dup.success && /already has another Pending or Approved request for 2026-10-05/.test(dup.error), 'the other Pending row still blocks the double-booking: ' + JSON.stringify(dup));
+  assert.strictEqual(reads, 1, 'THE REGRESSION: the dup check re-read the whole tab inside the lock');
+  reads = 0;
+  const lone = JSON.parse(JSON.stringify(t.ctx.updateTimeOffStatus('E1', '2026-10-06', 's3', 'Approved')));
+  assert.ok(lone.success, 'a lone PENDING request is not blocked by its own row (cycle-11 M-1): ' + JSON.stringify(lone));
+  assert.strictEqual(reads, 1);
+});
+
+test('Batch 7 FU2 (cycle 25): adding a biweekly rep to a roster with NO pay anchor succeeds and says there is no pay period; with an anchor, or for a monthly rep, nothing is said (driven)', () => {
+  const obCtx = vm.createContext({});
+  vm.runInContext(/const EMP = \{[\s\S]*?\};/.exec(codeSrc)[0], obCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'parseShiftOverride_'), obCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'empValidateNewEmployee_'), obCtx);
+  const CTX = { existingEmails: [], existingIds: [], existingNames: [], managerEmails: [], deptKeys: [], hasBiweeklyAnchor: false };
+  const base = { email: 'ana@x.com', id: 'PH-9', name: 'Ana', timezone: 'Asia/Manila', payCycle: 'biweekly', payAnchor: '', annual: 0, sick: 0 };
+  const v = (over, ctxOver) => JSON.parse(JSON.stringify(obCtx.empValidateNewEmployee_(Object.assign({}, base, over || {}), Object.assign({}, CTX, ctxOver || {}))));
+  let r = v();
+  assert.ok(r.ok && /no row on the roster has a pay anchor yet/.test(r.anchorWarning || ''), 'THE FOLLOW-UP: the add was silent, and the rep\'s pay period then fell back to the calendar month');
+  assert.ok(/column F/.test(r.anchorWarning) && /ONE biweekly row/.test(r.anchorWarning), 'it names the fix');
+  assert.strictEqual(v({}, { hasBiweeklyAnchor: true }).anchorWarning, undefined, 'the roster has an anchor: nothing to say');
+  assert.strictEqual(v({ payAnchor: '2026-09-07' }).anchorWarning, undefined, 'they ARE the anchor: nothing to say');
+  assert.strictEqual(v({ payCycle: 'monthly' }).anchorWarning, undefined, 'a monthly rep: nothing to say');
+  const add = stripJsComments_(extractRawFunction('Code.js', 'addEmployee'));
+  assert.ok(/if \(check\.anchorWarning\) result\.anchorWarning = check\.anchorWarning;/.test(add), 'the add carries it out');
+  const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.ok(/if \(res\.anchorWarning\) showToast\(res\.name \+ ' added — but ' \+ res\.anchorWarning, 'toast-warn', \{ sticky: true \}\);/.test(cn), 'and the admin sees it, sticky');
+});
+
+test('Batch 7 FU3 (cycle 25): Storage Health names the PTO accrual ledger\'s share of the Script Property store — its per-rep side copies grow with the roster (driven)', () => {
+  const ctx = vm.createContext({ String, JSON, Number, Math, Object, Array, RegExp, Error });
+  loadPropGuard_(ctx);
+  ctx.PTO_ACCRUAL_LEDGER_PREFIX = 'PTO_ACCRUAL_LEDGER_'; ctx.PTO_ACCRUAL_LEDGER_SINCE = 'PTO_ACCRUAL_LEDGER_SINCE';
+  vm.runInContext(extractRawFunction('Code.js', 'scriptPropertiesStatus_'), ctx);
+  ctx.PropertiesService = { getScriptProperties: () => ({ getProperties: () => ({ A: 'x', PTO_ACCRUAL_LEDGER_SINCE: '2026-10',
+    PTO_ACCRUAL_LEDGER_PH1: '{"2026-09":80}', PTO_ACCRUAL_LEDGER_PH2: '{"2026-09":72}' }) }) };
+  const ps = JSON.parse(JSON.stringify(vm.runInContext('scriptPropertiesStatus_()', ctx)));
+  assert.deepStrictEqual(ps.accrualLedger, { count: 2, bytes: ('PTO_ACCRUAL_LEDGER_PH1'.length + 14) * 2 }, 'two reps, keys and values counted, the SINCE marker not');
+  const sb = buildSandbox([]);
+  const note = loadFunction(sb, 'cn/script_callnotes.html', 'cnPropLedgerNote_');
+  assert.strictEqual(note(ps), ' · PTO accrual ledger copies: 2 reps, 72 bytes');
+  assert.strictEqual(note({ accrualLedger: { count: 0, bytes: 0 } }), '', 'none: nothing said');
+  assert.strictEqual(note({}), '', 'an older server: nothing said');
+  const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.strictEqual((cn.match(/(?<!function )cnPropLedgerNote_\(ps\)/g) || []).length, 2, 'both the Storage Health line and the System finding carry it');
+});
 
 test('TC-03 (cycle 23): a single-date time-off request on a weekend or a company holiday is refused, on the rep path and the manager path, before anything is written (driven)', () => {
   let t = c23ToCtx_();

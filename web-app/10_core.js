@@ -3222,17 +3222,23 @@ function propBudgetsFor_(keys) {
  *  INV-187). Values are counted, never returned. */
 function scriptPropertiesStatus_() {
   const out = { valueMax: PROP_VALUE_MAX, storeMax: PROP_STORE_MAX, warnPct: PROP_WARN_PCT,
-                count: null, bytes: null, largestKey: '', largestBytes: null, error: '' };
+                count: null, bytes: null, largestKey: '', largestBytes: null, error: '',
+                accrualLedger: null };   // cycle 25 FU3 — {count, bytes} of the F17 per-rep side copies
   try {
     const all = PropertiesService.getScriptProperties().getProperties() || {};
     const keys = Object.keys(all);
     let total = 0, bigKey = '', big = 0;
+    const led = { count: 0, bytes: 0 };
     keys.forEach(function (k) {
       const vb = utf8Len_(all[k]);
       total += utf8Len_(k) + vb;
       if (vb > big) { big = vb; bigKey = k; }
+      // FU3: one Script Property per accruing rep grows with the roster, so
+      // its share of the store is named rather than lost in the total.
+      if (k.indexOf(PTO_ACCRUAL_LEDGER_PREFIX) === 0 && k !== PTO_ACCRUAL_LEDGER_SINCE) { led.count++; led.bytes += utf8Len_(k) + vb; }
     });
     out.count = keys.length; out.bytes = total; out.largestKey = bigKey; out.largestBytes = keys.length ? big : 0;
+    out.accrualLedger = led;
   } catch (e) { out.error = String((e && e.message) || e); }
   return out;
 }

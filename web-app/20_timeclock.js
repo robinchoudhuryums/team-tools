@@ -2593,7 +2593,7 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
         // The submit paths already carry this guard; this row's own index is
         // excluded so approving a lone Pending row is unaffected.
         if (oldStatus !== 'approved' && newStatus === 'Approved'
-            && hasActiveTimeOffOnDate_(sheet, empId, date, i)) {
+            && timeOffActiveDates_(rows, empId, i)[date]) {   // cycle 25 FU1 — the rows this call already read, not a second full read in the lock
           return { success: false, error:
             'This employee already has another Pending or Approved request for ' + date +
             ' — approving this one would double-book (and double-deduct) the date. ' +
@@ -4641,7 +4641,15 @@ function empValidateNewEmployee_(p, ctx) {
   row[EMP.MANAGER_EMAIL] = mgrEmail;
   row[EMP.DEPARTMENTS] = deptsOut;
   row[EMP.SCHEDULE] = sched;
-  return { ok: true, row: row };
+  // Cycle 25 FU2: a biweekly rep with no anchor anywhere (theirs or the
+  // roster's) has no pay period — their Time / PTO rail shows the calendar
+  // month and the biweekly export finds no anchor. The add stands; it says so.
+  var anchorWarning = (cycle === 'biweekly' && !anchor && !ctx.hasBiweeklyAnchor)
+    ? 'they are biweekly, but no row on the roster has a pay anchor yet, so there is no biweekly pay period — ' +
+      'their Time / PTO page shows the calendar month and the biweekly export has no period. ' +
+      'Set the PayAnchor cell (column F) on ONE biweekly row: the first day of a pay period.'
+    : '';
+  return anchorWarning ? { ok: true, row: row, anchorWarning: anchorWarning } : { ok: true, row: row };
 }
 /** Admin-gated, locked — append a VALIDATED roster row, then (optionally)
  *  auto-provision the rep's Call Notes Sheet. Validation runs INSIDE the lock
@@ -4718,6 +4726,7 @@ function addEmployee(payload) {
       lock.releaseLock();
     }
     var result = { success: true, id: String(payload.id).trim(), name: String(payload.name).trim() };
+    if (check.anchorWarning) result.anchorWarning = check.anchorWarning;   // cycle 25 FU2
     if (payload.provisionNotes) {
       // Sequential lock re-acquire (never nested) — see the docstring. The
       // try/catch is load-bearing: provisionCallNotesSheet's own waitLock is

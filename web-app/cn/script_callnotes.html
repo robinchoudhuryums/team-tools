@@ -11587,11 +11587,21 @@ function cnPropStoreHtml_(ps) {
       esc(Number(ps.bytes).toLocaleString()) + ' of ' + esc(Number(ps.storeMax).toLocaleString()) + ' bytes across ' +
       esc(String(ps.count)) + ' propert' + (ps.count === 1 ? 'y' : 'ies') + ' (' + storePct + '%)' +
       (ps.largestKey ? ' · largest <code>' + esc(ps.largestKey) + '</code> at ' + esc(Number(ps.largestBytes).toLocaleString()) +
-        ' of ' + esc(Number(ps.valueMax).toLocaleString()) + ' bytes per value (' + valuePct + '%)' : '') + '.' +
+        ' of ' + esc(Number(ps.valueMax).toLocaleString()) + ' bytes per value (' + valuePct + '%)' : '') +
+      esc(cnPropLedgerNote_(ps)) + '.' +
       (over ? ' A save past the per-value cap is refused by name — shorten or remove entries in the editor that writes it.' : '');
   }
   return '<div class="cn-drive-line cn-drive-' + tone + '">' +
     icon(tone === 'ok' ? 'check' : 'warning', 12) + '<span>' + body + '</span></div>';
+}
+/** Cycle 25 FU3 — the PTO accrual ledger's per-rep side copies (F17) as a
+ *  clause of the Script Properties line: '' when none exist or the server is
+ *  older. Plain text; the callers escape or render it as text. */
+function cnPropLedgerNote_(ps) {
+  var l = ps && ps.accrualLedger;
+  if (!l || !(Number(l.count) > 0)) return '';
+  return ' · PTO accrual ledger copies: ' + Number(l.count) + ' rep' + (Number(l.count) === 1 ? '' : 's') +
+    ', ' + Number(l.bytes).toLocaleString() + ' bytes';
 }
 
 /** Expand/collapse an mtRenderTable_ detail row from its disclosure button/** Expand/collapse an mtRenderTable_ detail row from its disclosure button
@@ -11985,7 +11995,7 @@ function cnHealthFindings_(health, storage, oop) {
         var detail = Number(ps.bytes).toLocaleString() + ' of ' + Number(ps.storeMax).toLocaleString() +
           ' bytes across ' + ps.count + ' propert' + (ps.count === 1 ? 'y' : 'ies') + ' (' + sPct + '%)' +
           (ps.largestKey ? '; largest ' + ps.largestKey + ' at ' + Number(ps.largestBytes).toLocaleString() +
-            ' of ' + Number(ps.valueMax).toLocaleString() + ' per value (' + vPct + '%)' : '');
+            ' of ' + Number(ps.valueMax).toLocaleString() + ' per value (' + vPct + '%)' : '') + cnPropLedgerNote_(ps);
         if (sPct >= warnAt || vPct >= warnAt) {
           add('propStore', 'storage', 'warn', 'Script Properties are filling up', detail,
             'Shorten or remove entries in the Admin editor that writes the largest value — a save past the cap is refused by name, nothing is written.');
@@ -13111,6 +13121,8 @@ function cnOnboardSubmit_(btn) {
         release();
         btn.disabled = false; btn.textContent = 'Add team member';
         if (!res || res.error) { showToast((res && res.error) || 'Add failed', 'toast-error'); return; }
+        // Cycle 25 FU2: a biweekly rep added to a roster with no pay anchor.
+        if (res.anchorWarning) showToast(res.name + ' added — but ' + res.anchorWarning, 'toast-warn', { sticky: true });
         if (res.provisionWarning) showToast(res.name + ' added — but ' + res.provisionWarning, 'toast-warn');
         else showToast(res.name + ' added' + (res.provision ? ' + Call Notes Sheet provisioned' : ''), 'toast-success');
         cnAdminLoadOnboarding_({ resetForm: true });   // ADM-10: the person is added — the form empties

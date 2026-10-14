@@ -459,7 +459,8 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   time-off range read its tab once per day. The adjust writers now keep the
   index current (`adjustIndexAppend_`, `adjustIndexRetype_`, the resume writing
   through it), and the range reads once (`timeOffActiveDates_`) and writes one
-  block. Verify: the F62 drive.
+  block. Verify: the F62 drive. The time-off approval's dup-date check re-read
+  the tab it already held; it reads those rows now (cycle 25 Batch 7 FU1).
 
 
 <a id="g18-normalizetype-strips-the-adj-prefix"></a>
@@ -804,7 +805,9 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   calendar month under an 80-hour target. `orgBiweeklyAnchor_` (the rule the
   biweekly export already used) now fills a biweekly rep's blank cell in both
   employee lookups, and the rail's 80 hours is the target of a 14-day range
-  only. Verify: the F18 drive.
+  only. Verify: the F18 drive. With NO anchor anywhere there is no period at
+  all, so adding a biweekly rep to such a roster now warns the admin (sticky)
+  and names the cell to set (cycle 25 Batch 7 FU2).
 
 <a id="g30-future-punches-are-rejected-by-recordpunch"></a>
 
@@ -5264,7 +5267,9 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   the cycle-22 A1 run-ledger pattern); the read merges the two (the higher
   hours win), and once the side copy began at or before the window's oldest
   month a cut-short tail is no longer reported. A failed side write drops the
-  coverage claim. Verify: the F17 drive.
+  coverage claim. Verify: the F17 drive. The side copies grow with the roster,
+  so Storage Health's Script Properties line names their count and bytes
+  (cycle 25 Batch 7 FU3).
 
 <a id="g153-clearing-the-roster-email-does-not-reach-the-gate-lists"></a>
 
